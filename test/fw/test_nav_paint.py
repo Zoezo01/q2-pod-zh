@@ -1154,7 +1154,7 @@ def test_a_pressed_tile_is_grey_inside_its_card(fw, world, rounded, radius):
 
 def test_a_row_its_own_target_draws_its_pill_as_its_background(fw, world):
     """A page row (its own touch target, no button over it): its clear background is the pill's."""
-    theme(fw, MINIMAL)
+    theme(fw, MINIMAL, ROUNDED='0')
     surface = world.add(world.window('list_page'), 'list', 'scroll_view')
     row = world.add(surface, 'row', 'list_item', box=(0, 0, 375, 52), style='s_listitem_black', state_for_style='pressed')
     world.add(row, 'title', 'label', box=(20, 0, 300, 52))

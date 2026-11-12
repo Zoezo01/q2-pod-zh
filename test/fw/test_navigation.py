@@ -347,7 +347,7 @@ def test_ivory_is_minimal_only(fw, clock):
 
 
 def test_ivory_on_minimal(fw, clock):
-    Config(fw)  # Minimal, its default accent Ivory
+    Config(fw, MINIMAL_ACCENT=b'7')  # Minimal's Ivory
     assert fw.fn('accent_tone', C.c_uint, C.c_int)(2) == O['MINIMAL_FILL']
 
 

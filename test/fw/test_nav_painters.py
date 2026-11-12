@@ -821,7 +821,7 @@ def test_rounded_corners_make_modern_a_pill_inset_from_the_glass(fw, layout):
 
 
 def test_minimal_ivory_lays_a_card_under_the_row(fw, st, layout):
-    page = Page(fw, MINIMAL)
+    page = Page(fw, MINIMAL, MINIMAL_ACCENT=b'7', ROUNDED=b'0')
     S = Scheme(fw, layout)
     page.paint()
     assert S.flags & 1  # Ivory: SCHEME_CARD
@@ -1448,7 +1448,7 @@ def test_a_playlists_quiet_more_is_three_grey_dots_off_the_band(fw, st, layout, 
 def test_minimals_card_redraws_its_radio_in_the_cards_ink(fw, st, layout, image, dot):
     """Stock's white ring and dot would vanish on the off-white card: a ring of ink with the card's
     fill in it, and the dot when checked, one inside the other on the image's middle."""
-    mark = Mark(fw, st, MINIMAL, image)
+    mark = Mark(fw, st, MINIMAL, image, MINIMAL_ACCENT=b'7')
     S = Scheme(fw, layout)
     boxes = mark.paint().boxes
     assert len(boxes) == 2 + dot
@@ -1465,7 +1465,7 @@ def test_minimals_radio_off_the_card_is_stocks(fw, st):
 
 
 def test_minimals_card_redraws_more_dots_and_delete(fw, st, layout):
-    mark = Mark(fw, st, MINIMAL, 'unselect', 'img_more0')
+    mark = Mark(fw, st, MINIMAL, 'unselect', 'img_more0', MINIMAL_ACCENT=b'7')
     S = Scheme(fw, layout)
     (clear, fill, _), *dots = mark.paint().boxes
     assert fill == rgba(S.fill) and middle(clear) == MIDDLE  # stock's white dots wiped in the card's fill
@@ -1521,7 +1521,7 @@ def test_light_modes_chevron_on_a_coloured_bar_is_white(fw, st, layout, light):
 def test_ringnav_paint_returns_stocks_and_hands_the_paint_to_the_parent(fw, st):
     """Stock paints a widget's border after its children: once the card's row's title is done, the
     row is painting again and takes the card's ink; once the row is done, its item, off the card."""
-    page = Page(fw, MINIMAL)
+    page = Page(fw, MINIMAL, MINIMAL_ACCENT=b'7')
     page.paint()
     row = page.rows[1]
     card = text_ink(fw, st, row.children[0])

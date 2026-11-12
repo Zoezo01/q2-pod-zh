@@ -8,7 +8,7 @@
        icon in this theme's row. The row itself is the set's, so it needs no restart. Choosing a theme goes back to Theme. -->
   <option key="STATUSBAR" label="Status Bar" default="Theme" preset="Theme"><value label="Theme"/><value label="Minimal"/><value label="Modern"/><value label="Classic"/></option>
   <option setting="light" preset="off" keep="auto"/>
-  <option setting="accent" key="MINIMAL_ACCENT" default="ivory" preset="graphite"/>
+  <option setting="accent" key="MINIMAL_ACCENT" default="graphite" preset="graphite"/>
   <option setting="corners" preset="round"/>
   <option setting="home" preset="split"/>
   <option setting="shortcut"/>

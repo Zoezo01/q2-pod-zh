@@ -77,8 +77,8 @@ unchanged; Classic keeps the icons' colours.
 The pinned style edits in `patch/ipod.json` remove list fills and corners and make pressed
 feedback neutral grey. Playing titles keep the separate playing glyph.
 
-In Minimal, wheel selection under its own accent (**Accent: Ivory**, the default) is off-white (`#EEEEEC`): a card, under **Rounded Corners** on inset
-`SEL_INSET` (6) pixels from each side of the row, a pill (corners half its height, less on a row whose cover the round end would cut, such as Search's results: `pill_radius` shrinks them until the cover's corners are inside, checking only the row's own visible left-hand, non-centred images, so Folder's hidden multi-select check doesn't square it; grid tiles `SEL_RADIUS`, 6), and under **Rounded Corners** off (the default) a full-width square bar with square tiles,
+In Minimal, wheel selection under its own accent (**Accent: Ivory**) is off-white (`#EEEEEC`): a card, under **Rounded Corners** on inset
+`SEL_INSET` (6) pixels from each side of the row, a pill (corners half its height, less on a row whose cover the round end would cut, such as Search's results: `pill_radius` shrinks them until the cover's corners are inside, checking only the row's own visible left-hand, non-centred images, so Folder's hidden multi-select check doesn't square it; grid tiles `SEL_RADIUS`, 6), and under **Rounded Corners** off a full-width square bar with square tiles,
 drawn with the anti-aliased rounded fill (square without a vgcanvas). Any other accent fills the
 card with its colour and leaves the rows' own (white) ink, as Classic's band does. Minimal's unselected
 secondary text, stock's `#AAAAAA`, is the quieter `SUDO_MUTED` (`#8C8C8C`) everywhere. **Theme:
@@ -830,7 +830,7 @@ Corners is Minimal's and Modern's setting, Square until chosen; Classic's covers
 
 Each theme keeps its own accent, and the Accent row follows Theme in each. Minimal's
 (`MINIMAL_ACCENT`) cycles Ivory, Graphite, Crimson, Tidal, Champagne, Cobalt, Tangerine, Plum, Green;
-its default, Ivory, draws Graphite's greys with its own fills (the progress bars, Spotify's, the
+its default is Graphite, as its preset, and Rounded Corners is on until chosen off; Ivory draws Graphite's greys with its own fills (the progress bars, Spotify's, the
 PEQ curve and the visualizer) in `MINIMAL_FILL`, white on the dark track; a scrub's fill is pure
 white. Another accent colours the selection card, those fills and every mapped red, as in Classic,
 and the card keeps the rows' own ink and stock's `#AAAAAA` metadata. Minimal's grey icons and

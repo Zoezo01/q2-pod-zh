@@ -390,9 +390,9 @@ def test_appearance_lists_theme_then_minimals_options_in_its_order(fw):
     read = readings(page.view())
     # the running theme's name, and Accent at Minimal's own default, under its own key
     assert read['Theme'] == t['name'] and read['Accent'] == accent_name(t, host.tools_theme.accent_default(t))
-    # nothing stored: the payload's own defaults (dark, square, Split, the clock in the title); no Rockbox: Favorites
+    # nothing stored: the payload's own defaults (dark, Minimal round, Split, the clock in the title); no Rockbox: Favorites
     assert (read['Light Mode'], read['Rounded Corners'], read['Home'], read['Shortcut'], read['Time in Title']) == \
-        ('Off', 'Off', 'Split', 'Favorites', 'On')
+        ('Off', 'On' if t['name'] == 'Minimal' else 'Off', 'Split', 'Favorites', 'On')
 
 
 def test_classic_appearance_rows_read_title_and_value_and_its_own_options(fw):
@@ -502,7 +502,7 @@ def test_corners_drop_the_art_cache_only_where_art_takes_them(fw, theme):
     ui = Ui(fw)
     page = appearance(fw, ui, THEME=b'%d' % theme)
     before = repaints(fw)
-    assert clicks_of(fw, ui, page, 'Rounded Corners', 1)[0][1] == [('ROUNDED', 1)]
+    assert clicks_of(fw, ui, page, 'Rounded Corners', 1)[0][1] == [('ROUNDED', int(theme != MINIMAL))]  # Minimal's starts round
     after = repaints(fw)
     # a theme drawing its art square bakes the corners into its thumbnails: those cached images go
     unload = 1 if theme_of(theme)['art_square'] else 0

@@ -32,6 +32,9 @@ CLASSIC=[p for p in range(len(ACCENTS)) if p!=O['MINIMAL_ACCENT']]  # the values
 def color_t(rgb): return 0xff000000|(rgb&255)<<16|(rgb>>8&255)<<8|rgb>>16
 O_GLYPH=re.search(r'#define BT_GLYPH "(\w+)"',INC)[1]  # the plain Bluetooth glyph a codec badge fades into
 CONFIG={}  # config.ini [IPOD] keys a new Machine starts with; the payload reads them on first use
+# Minimal's look the pixel checks were drawn under, read for a missing key: Ivory, square (the defaults are its
+# preset's, Graphite and round)
+SEED={'MINIMAL_ACCENT':'7','ROUNDED':'0'}
 SETUP=[]  # functions a new Machine runs before anything can read config (QueueMachine's constructor does)
 FILL,RADIUS=(0x40<<24)|O['FILL_RGB'],9  # the stock rounded-rect checks' translucent fill and radius
 LCD_COLORS=(0x9abcdef0,0x12345678)
@@ -143,7 +146,7 @@ class Machine:
         self.top=0; self.wm=0x1000000; self.event=0x1000100
         self.char_px=10.0; self.strokes=[]; self.rounded=[]; self.bands=[]; self.icons=[]; self.letters=[]; self.font=None; self.vg_calls=[]; self.fake_vg=0; self.global_alpha=0
         self.rounded_fail=False; self.count=self.budget  # call()'s instruction limit, which nested() shares
-        self.allocs={}; self.config=dict(CONFIG); self.config_reads=[]; self.card=(); self.dirs=set()  # /mnt/mmc's (name, d_type) entries; deeper folders
+        self.allocs={}; self.config=dict(CONFIG); self.seed=SEED; self.config_reads=[]; self.card=(); self.dirs=set()  # /mnt/mmc's (name, d_type) entries; deeper folders
         for f in SETUP: f(self)
         self.rebind=None; self.on_click=None; self.glide=True
         self.timers={}; self.next_timer=1; self.timer_fail=False; self.clicks=[]; self.started=[]
@@ -459,7 +462,7 @@ class Machine:
         elif name=='toolsReadConfig':
             key=self.text(c)
             self.config_reads.append((self.text(a),self.text(b),key,self.text(self.get(u.reg_read(UC_MIPS_REG_SP)+16))))
-            value=self.config.get(key,self.config_reads[-1][3])  # stock copies the default when the key is missing
+            value=self.config.get(key,self.seed.get(key,self.config_reads[-1][3]))  # stock copies the default when the key is missing
             self.u.mem_write(d,value.encode()+b'\0'); ret=1 if key in self.config else -1
         elif name=='tk_str_end_with': ret=self.text(a).endswith(self.text(b))
         elif name=='tk_str_start_with': ret=self.raw(a).startswith(self.raw(b))  # bytes, as C: a cut UTF-8 tail is no error
@@ -11390,18 +11393,18 @@ passed()
 
 m=Machine(); style_color(m,red)
 # config_value passes its default in decimal: SHORTCUT's SETTING_N_SHORTCUT (11) is out of range, so no shortcut
-assert m.config_reads==[('/mnt/data/config.ini','IPOD',key,'0') for key in ('ACCENT','HOME','BATTERY','THEME')]+[('/mnt/data/config.ini','IPOD','SHORTCUT','11'),('/mnt/data/config.ini','IPOD','MINIMAL_ACCENT','7'),('/mnt/data/config.ini','IPOD','ROUNDED','0'),('/mnt/data/config.ini','IPOD','LIGHT','0'),('/mnt/data/config.ini','IPOD','KEEPLIT','0'),('/mnt/data/config.ini','IPOD','NPCENTRED','0'),('/mnt/data/config.ini','IPOD','KEYTONEHP','0'),('/mnt/data/config.ini','IPOD','SCRUBSINGLE','0'),('/mnt/data/config.ini','IPOD','TIMETITLE','1')]+[('/mnt/data/config.ini','IPOD',key,v) for key,v in (('STATUSBAR','0'),('CLASSIC_LIGHT_ACCENT','9'),('HOMELIB','1'),('ROWPREVIEW','1'),('ROWART','1'))]; passed()
+assert m.config_reads==[('/mnt/data/config.ini','IPOD',key,'0') for key in ('ACCENT','HOME','BATTERY','THEME')]+[('/mnt/data/config.ini','IPOD','SHORTCUT','11'),('/mnt/data/config.ini','IPOD','MINIMAL_ACCENT','0'),('/mnt/data/config.ini','IPOD','ROUNDED','1'),('/mnt/data/config.ini','IPOD','LIGHT','0'),('/mnt/data/config.ini','IPOD','KEEPLIT','0'),('/mnt/data/config.ini','IPOD','NPCENTRED','0'),('/mnt/data/config.ini','IPOD','KEYTONEHP','0'),('/mnt/data/config.ini','IPOD','SCRUBSINGLE','0'),('/mnt/data/config.ini','IPOD','TIMETITLE','1')]+[('/mnt/data/config.ini','IPOD',key,v) for key,v in (('STATUSBAR','0'),('CLASSIC_LIGHT_ACCENT','9'),('HOMELIB','1'),('ROWPREVIEW','1'),('ROWART','1'))]; passed()
 # theme()/scheme(): the active built-in and its scheme, settings read on first use. THEME out of
 # range is Minimal; Classic's stored Ivory and an out-of-range CLASSIC_LIGHT_ACCENT are Classic Blue, on Cobalt's
-# tones; Modern's stored Ivory and an out-of-range ACCENT are Graphite's scheme; a missing MINIMAL_ACCENT is Ivory, the
-# card (flags 1); Crimson is raw red (flags 2) in each.
+# tones; Modern's stored Ivory and an out-of-range ACCENT are Graphite's scheme; a missing MINIMAL_ACCENT is Graphite, a stored Ivory
+# the card (flags 1); Crimson is raw red (flags 2) in each.
 K,BLUE='CLASSIC_LIGHT_ACCENT',4  # Cobalt's row
-for config,name,want in (({},'Minimal',7),({'THEME':'1'},'Classic',BLUE),({'THEME':'3','MINIMAL_ACCENT':'3'},'Minimal',3),
+for config,name,want in (({},'Minimal',0),({'MINIMAL_ACCENT':'7'},'Minimal',7),({'THEME':'1'},'Classic',BLUE),({'THEME':'3','MINIMAL_ACCENT':'3'},'Minimal',3),
                          ({'THEME':'1',K:'7'},'Classic',BLUE),({'THEME':'1',K:'12'},'Classic',BLUE),
                          ({'THEME':'1',K:'1'},'Classic',1),({'MINIMAL_ACCENT':'1'},'Minimal',1),({'THEME':'1',K:'8'},'Classic',8),
                          ({'THEME':'2'},'Modern',0),({'THEME':'2','ACCENT':'7'},'Modern',0),({'THEME':'2','ACCENT':'12'},'Modern',0),
                          ({'THEME':'2','ACCENT':'1'},'Modern',1),({'THEME':'2','ACCENT':'8'},'Modern',8)):
-    k=Machine(); k.config=dict(config)
+    k=Machine(); k.config=dict(config); k.seed={}
     t=k.call(address=payload_syms['theme'],args=(0,0,0,0),gap=0)&0xffffffff
     assert k.text(k.get(t))==name and len(k.config_reads)==18,config
     s=k.call(address=payload_syms['scheme'],args=(0,0,0,0),gap=0)&0xffffffff
