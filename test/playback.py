@@ -1654,6 +1654,15 @@ m.word(r+O['REC_TYPE'],0)
 m.fits=0; m.mp4_checks=[]
 assert m.fn('playback_start_fits')==1 and not m.mp4_checks
 m.fn('playback_poll'); assert len(m.toasts)==1
+# The file last started, started again (a CUE book's next chapter), is not checked: its index is
+# freed first. Another file is, and so is a preload of the same file, which opens beside it.
+m.word(r+O['REC_TYPE'],8)
+assert m.fn('playback_start_fits')==1 and not m.mp4_checks
+m.word(r+O['REC_PATH'],m.string('/A/other.m4b'))
+assert m.fn('playback_start_fits')==0 and m.mp4_checks==['/A/other.m4b']
+m.fn('playback_poll'); m.word(r+O['REC_PATH'],m.string('/A/book.m4b'))
+m.word(O['MCL_PREPOS'],2); m.word(O['MCL_PRELOAD'],0)
+assert m.fn('ringnav_open_preload')==1 and m.mp4_checks[-1]=='/A/book.m4b' and m.mcl('MCL_PRELOAD')==-1
 # Equal-speed gapless preloads inspect the successor, not the current track. Refusal
 # marks stock's failed-preload state; fitting successors still reach the stock opener.
 for fits,want in ((0,-1),(1,1)):

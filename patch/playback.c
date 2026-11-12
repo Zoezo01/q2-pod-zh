@@ -430,22 +430,32 @@ int ringnav_speed(int mode) {
 
 /* A local track whose MP4 index would not fit in RAM (mp4_fits) is never opened: the decoder
  * would take the whole device down with it, at boot again through Memory Playback. */
-static int track_fits(int at) {
+static const char *track_path(int at) {
     void *q = queue();
     void *r = q && at >= 0 && (unsigned)at < deque_size(q) ? deque_at(q, (unsigned)at) : 0;
-    return !r || I(r, REC_TYPE) != 8 || mp4_fits(P(r, REC_PATH));
+    return r && I(r, REC_TYPE) == 8 ? P(r, REC_PATH) : 0;
 }
 static int too_long; /* set where mclStartPlayer runs, maybe off the UI thread; toasted by the poll */
+/* The file last started. A start drops the decoder's index before it opens the next file, yet
+ * MemAvailable still counts it here, so the same file again (a CUE book's next chapter) would need
+ * room for two: it starts unchecked. A preload, which opens beside the playing file, is checked.
+ * ponytail: RAM taken since that file's start is not counted; a boot's first start always checks. */
+static char started[1024];
 int playback_start_fits(void) {
-    if (track_fits(M(MCL_POS))) return 1;
-    too_long = 1;
-    return 0;
+    const char *path = track_path(M(MCL_POS));
+    if (path && strcmp(path, started) && !mp4_fits(path)) {
+        too_long = 1;
+        return 0;
+    }
+    if (path) tk_snprintf(started, sizeof started, "%s", path);
+    return 1;
 }
 
 int ringnav_open_preload(void) {
     /* A gapless handoff does not run player_initconfig: reopen at a speed boundary. A track too
      * long to open goes through mclStartPlayer, whose hook declines it. */
-    if (speed_read(M(MCL_PREPOS)) != g_playspeed_mode || !track_fits(M(MCL_PREPOS))) {
+    const char *path = track_path(M(MCL_PREPOS));
+    if (speed_read(M(MCL_PREPOS)) != g_playspeed_mode || (path && !mp4_fits(path))) {
         M(MCL_PRELOAD) = -1; /* stock's failed attempt: do not rescan on every auto-change tick */
         return 1;
     }
