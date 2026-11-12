@@ -3061,6 +3061,8 @@ static int quality = 27; static void *queue;
 #define mcl_pdeqplaylist (&queue)
 static int play_pos;
 #define MCL_POS (&play_pos)
+static int play_type;
+#define MCL_TYPE (&play_type)
 static _Atomic int status = 1, gate, performing, performs, ended;
 static _Atomic unsigned long long clk = 1000;
 static char last[64];

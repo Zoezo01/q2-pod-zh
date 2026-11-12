@@ -12,6 +12,7 @@ from conftest import O, Deques, Game, block, high_halves, libc, text
 from test_coverflow import png  # an icon's header
 from test_netupdate import JOB_INSTALL, JOB_REMOVE, SH_CANCELLED, SH_CARD, SH_NET, SH_OK, Sh  # test_netupdate.py keeps netupdate.c's App Store mirror
 from test_radio import Rd  # test_radio.py keeps the mirror
+from test_tidal import Au, Queue, urls_play  # test_tidal.py keeps tidal.c's au mirror
 
 APPS_MAX = 8
 REPLY_MAX = 64 << 10
@@ -48,7 +49,7 @@ class Ap(C.Structure):
 class Sm(C.Structure):
     _fields_ = [('app', C.c_void_p), ('dir', C.c_char * 160), ('last', C.c_char * 192), ('playing', C.c_char * 512), ('state', C.c_int),
                 ('timer', C.c_uint), ('seen', C.c_long), ('m3u', C.c_int), ('urls', C.c_int), ('next', C.c_int), ('more', C.c_int), ('first', C.c_char * 512),
-                ('want', C.c_char * 512), ('loads', C.c_uint)]
+                ('want', C.c_char * 512), ('loads', C.c_uint), ('seq', C.c_char * 24)]
 
 
 class Sl(C.Structure):
@@ -379,7 +380,7 @@ def test_more_apps_than_slots(fw):
 def test_the_features_are_published_at_every_scan(fw):
     world = card(fw)
     scan(fw)
-    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections art window urls sort\n'
+    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections art window urls sort now\n'
     assert world.of('rename') == [(b'/tmp/q2-addon.caps.tmp', b'/tmp/q2-addon.caps')]
 
 
@@ -4409,6 +4410,209 @@ def test_a_url_queue_waiting_leaves_a_queue_loaded_since(fw, how):
     else:
         fw.fn('addon__urls_start', C.c_int, C.c_void_p)(None)
     assert s.state == S_DONE and b'/tmp/q2-a.urls' not in world.names.values()
+
+
+# Now playing (.now) for a URL queue that asks.
+
+class Nw(C.Structure):
+    _fields_ = [('owner', C.c_int), ('seq', C.c_char * 24), *((n, C.c_int) for n in ('live', 'n', 'state', 'sec', 'total')),
+                ('stopped', C.c_uint), ('polled', C.c_uint), ('swept', C.c_int)]
+
+
+PLAYING, PAUSED, STOPPED = 2, 3, 1  # mclGetPlayStatus
+
+
+class Now:
+    """A card app's URL queue playing: tidal.c's au (its generation and now=1) and stock's queue of its app:<gen>:<n>
+    rows (MCL_TYPE 0xf1, MCL_POS), the player's state and position, and addon_poll's passes, the apps not running."""
+    def __init__(self, fw, mcl, rows=('app:7:0', 'app:7:1', 'app:7:2')):
+        self.fw, self.mcl, self.world = fw, mcl, World(fw)
+        for i, name in enumerate((b'foo', b'bar')):
+            ap(fw).a[i].id = name
+        ap(fw).n = 2
+        self.queue = Queue(fw)
+        for r in rows:
+            self.queue.row(r)
+        self.au = fw.var('tidal__au', Au)
+        self.au.gen, self.au.n, self.au.now = 7, len(rows), 1
+        mcl.type, mcl.pos = 0xf1, 0
+        self.status, self.sec, self.total = PLAYING, 0, 200
+        fw.mock('mclGetPlayStatus', lambda *_: self.status)
+        fw.mock('player_playtime_and_length', self.times)
+
+    def times(self, sec, total, *_):
+        C.c_int.from_address(sec).value, C.c_int.from_address(total).value = self.sec, self.total
+
+    def start(self, slot=0, seq=b'4'):
+        """urls_start's: the app's queue started, its .play's seq."""
+        sm(self.fw).seq = seq
+        self.fw.fn('addon__now_start', None, C.POINTER(App))(C.pointer(ap(self.fw).a[slot]))
+
+    def step(self, sec=None, status=None, pos=None):
+        """A UI pass ADDON_POLL_MS on."""
+        self.sec = self.sec if sec is None else sec
+        self.status = self.status if status is None else status
+        self.mcl.pos = self.mcl.pos if pos is None else pos
+        self.world.ms += 500
+        self.fw.fn('addon_poll', None)()
+
+    def now(self, app=b'foo'):
+        return self.world.files.get(b'/tmp/q2-%s.now' % app)
+
+    def writes(self):
+        return [b for a, b in self.world.of('rename') if b.endswith(b'.now')]
+
+
+def test_a_url_queue_tells_its_app_which_song_plays_and_how_far_in(fw, mcl):
+    n = Now(fw, mcl)
+    n.start()
+    n.step(sec=10, pos=1)
+    assert n.now() == b'4\t1\tplaying\t10\t200\n' and (b'/tmp/q2-now.tmp', b'/tmp/q2-foo.now') in n.world.of('rename')
+    n.step(sec=14)
+    assert n.now() == b'4\t1\tplaying\t10\t200\n' and len(n.writes()) == 1  # under NOW_STEP_S on: not written
+    n.step(sec=15)
+    assert n.now() == b'4\t1\tplaying\t15\t200\n'
+    n.step(status=PAUSED)
+    assert n.now() == b'4\t1\tpaused\t15\t200\n'  # at once
+    n.step()
+    assert len(n.writes()) == 3  # nothing changed: nothing written
+    n.step(sec=40)
+    assert n.now() == b'4\t1\tpaused\t40\t200\n'  # a seek while paused, at once
+    n.step(status=PLAYING, sec=41)
+    n.step(sec=20)
+    assert n.now() == b'4\t1\tplaying\t20\t200\n'  # a seek back, at once
+    n.step(sec=0, pos=2)
+    assert n.now() == b'4\t2\tplaying\t0\t200\n'  # the next song, at once
+    assert n.now(b'bar') is None
+
+
+def test_a_stop_between_songs_isnt_told_and_a_real_stop_is_told_once(fw, mcl):
+    n = Now(fw, mcl)
+    n.start()
+    n.step(sec=180)
+    for _ in range(5):  # 2.5 s stopped: the next song still starting
+        n.step(status=STOPPED, pos=1)
+    assert n.now() == b'4\t0\tplaying\t180\t200\n'
+    n.step(status=PLAYING, sec=0)
+    assert n.now() == b'4\t1\tplaying\t0\t200\n'
+    for _ in range(7):  # 3 s on from the first pass that saw it, less the stamp's | 1
+        n.step(status=STOPPED)
+    assert n.now() == b'4\t1\tplaying\t0\t200\n'
+    n.step()  # NOW_STOP_MS stopped
+    assert n.now() == b'4\t1\tstopped\t0\t200\n'
+    writes = len(n.writes())
+    for _ in range(20):
+        n.step()
+    assert len(n.writes()) == writes
+    n.step(status=PLAYING, sec=0)  # played again
+    assert n.now() == b'4\t1\tplaying\t0\t200\n'
+
+
+@pytest.mark.parametrize('other', ['local', 'tidal', 'older'])
+def test_another_queue_playing_is_told_as_a_stop_at_once(fw, mcl, other):
+    n = Now(fw, mcl, rows=('app:7:0', '12345', 'app:6:0'))
+    n.start()
+    n.step(sec=30)
+    if other == 'local':
+        mcl.type = 0xf001
+    else:
+        mcl.pos = 1 if other == 'tidal' else 2
+    n.step()
+    assert n.now() == b'4\t0\tstopped\t30\t200\n'
+    writes = len(n.writes())
+    n.step(sec=60)
+    n.step()
+    assert len(n.writes()) == writes
+
+
+def test_a_queue_that_didnt_ask_tells_nothing(fw, mcl):
+    n = Now(fw, mcl)
+    n.au.now = 0
+    n.start()
+    for sec in (0, 10, 20):
+        n.step(sec=sec)
+    n.step(status=STOPPED)
+    assert n.writes() == []
+
+
+def test_another_apps_url_queue_stops_the_one_before(fw, mcl):
+    n = Now(fw, mcl, rows=('app:7:0', 'app:8:0'))
+    n.start()
+    n.step(sec=30)
+    n.au.gen = 8
+    n.start(slot=1, seq=b'9')
+    assert n.now() == b'4\t0\tstopped\t30\t200\n'
+    n.step(sec=0, pos=1)
+    assert n.now(b'bar') == b'9\t0\tplaying\t0\t200\n' and n.now() == b'4\t0\tstopped\t30\t200\n'
+
+
+def test_the_same_apps_next_queue_stops_the_one_before(fw, mcl):
+    n = Now(fw, mcl, rows=('app:7:0', 'app:8:0'))
+    n.start()
+    n.step(sec=30)
+    n.au.gen = 8
+    n.start(seq=b'9')
+    assert n.now() == b'4\t0\tstopped\t30\t200\n'
+    n.step(sec=0, pos=1)
+    assert n.now() == b'9\t0\tplaying\t0\t200\n'
+
+
+def test_stopping_the_apps_tells_a_stop_at_once(fw, mcl):
+    """addon_stop: Stop Streaming Services, which stops a URL queue too, and Home's Rockbox row, after which demo is
+    killed with /tmp left as it is: the file says stopped before then."""
+    n = Now(fw, mcl)
+    n.start()
+    n.step(sec=30)
+    fw.fn('addon_stop', None)()
+    assert n.now() == b'4\t0\tstopped\t30\t200\n'
+    writes = len(n.writes())
+    n.step(status=STOPPED)
+    fw.fn('addon_stop', None)()
+    assert len(n.writes()) == writes
+
+
+def test_a_restart_tells_a_stop_for_every_song_left_playing(fw):
+    """demo restarted (a crash, the watchdog) with /tmp kept: at its first poll, every /tmp/q2-<id>.now that says
+    playing or paused says stopped at its last place, its seq and n kept; anything else is left alone, and so is
+    every file after that first poll."""
+    files = {b'/tmp/q2-foo.now': b'4\t2\tplaying\t77\t200\n', b'/tmp/q2-bar.now': b'x9\t0\tpaused\t5\t0\n',
+             b'/tmp/q2-baz.now': b'3\t1\tstopped\t8\t90\n', b'/tmp/q2-foo.playing': b'4\t2\tplaying\t77\t200\n',
+             b'/tmp/q2-Bad!.now': b'4\t2\tplaying\t77\t200\n', b'/tmp/q2-odd.now': b'playing\t1\tplaying\t1\t1\n',
+             b'/tmp/q2-.now': b'1\t1\tplaying\t1\t1\n'}
+    world = World(fw, dict(files), {b'/tmp': [p[5:] for p in files]})
+    fw.fn('addon_poll', None)()
+    assert world.files[b'/tmp/q2-foo.now'] == b'4\t2\tstopped\t77\t200\n'
+    assert world.files[b'/tmp/q2-bar.now'] == b'x9\t0\tstopped\t5\t0\n'
+    assert world.files[b'/tmp/q2-odd.now'] == b'playing\t1\tstopped\t1\t1\n'  # the third field is the state
+    assert {p: world.files[p] for p in files if p not in (b'/tmp/q2-foo.now', b'/tmp/q2-bar.now', b'/tmp/q2-odd.now')} == \
+        {p: files[p] for p in files if p not in (b'/tmp/q2-foo.now', b'/tmp/q2-bar.now', b'/tmp/q2-odd.now')}
+    renames = len(world.of('rename'))
+    world.files[b'/tmp/q2-foo.now'] = b'5\t0\tplaying\t1\t200\n'  # this demo's own, from now on
+    world.ms += 500
+    fw.fn('addon_poll', None)()
+    assert len(world.of('rename')) == renames and world.files[b'/tmp/q2-foo.now'] == b'5\t0\tplaying\t1\t200\n'
+
+
+@pytest.mark.parametrize('play,seq', [(b'42 ', b'42'), (b'1' * 30 + b' ', b'1' * 23), (b'4\t2 ', b'4')])
+def test_a_url_queue_started_is_told_under_its_play_seq(fw, play, seq):
+    """urls_start hands the session's app and its .play's seq (up to a space or a control, at most 23 bytes) to
+    now_start once app_urls_play has played the queue; a queue that didn't play starts nothing."""
+    world = World(fw, {b'/tmp/q2-a.play': play + b'/tmp/q2-a.urls\n',
+                       b'/tmp/q2-a.urls': b'#Q2URLS/1\tnow=1\nhttps://x/a.flac\tA\n'}, now=500)
+    fw.mock('timer_add', lambda *_: 5)
+    Deques(fw)
+    ap(fw).a[0].id, ap(fw).n = b'a', 1
+    fw.fn('addon__stream_poll', None, C.POINTER(App))(C.pointer(ap(fw).a[0]))
+    assert sm(fw).seq == seq and sm(fw).state == S_WAIT
+    urls_play(fw, lambda: fw.fn('addon__urls_start', C.c_int, C.c_void_p)(None))
+    nw = fw.var('addon__nw', Nw)
+    assert nw.owner == 1 and nw.seq == seq and nw.live == 0 and fw.var('tidal__au', Au).now == 1
+    nw.owner = 0
+    world.files[b'/tmp/q2-a.urls'] = b'#Q2URLS/1\tnow=1\n'  # no song: nothing plays
+    world.files[b'/tmp/q2-a.play'] = b'43 /tmp/q2-a.urls\n'
+    fw.fn('addon__stream_poll', None, C.POINTER(App))(C.pointer(ap(fw).a[0]))
+    urls_play(fw, lambda: fw.fn('addon__urls_start', C.c_int, C.c_void_p)(None))
+    assert nw.owner == 0
 
 
 @pytest.mark.parametrize('audio, timers', [(1, 0), (0, 1)])

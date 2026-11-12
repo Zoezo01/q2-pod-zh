@@ -323,7 +323,7 @@ def test_a_thread_that_cant_start_leaves_nothing_waiting_and_the_next_track_star
 class Au(C.Structure):
     """tidal.c's au: a URL queue's URLs (0 for a card path) and generation."""
     _fields_ = [('lock', C.c_uint * 16), ('urls', C.POINTER(C.c_char_p)), ('n', C.c_uint), ('gen', C.c_uint),
-                ('play', C.c_uint), ('lyr', C.c_char * 64), ('start', C.c_uint * 16)]
+                ('play', C.c_uint), ('lyr', C.c_char * 64), ('start', C.c_uint * 16), ('now', C.c_int)]
 
 
 def test_a_url_queue_takes_web_urls_and_card_paths_alone(fw):
@@ -341,20 +341,59 @@ def test_a_url_queue_takes_web_urls_and_card_paths_alone(fw):
         covers.append(C.string_at(cover) if cover else b'')
         deques[q].append(rec)
     fw.mock('fw__deque_push_back', push)
-    # toolsFreeStSongInfo is called at its stock address (tidal.c's own define): a ret there for the test, so each
-    # record's strings stay for the asserts; the byte is put back after, as conftest's map outlives a load
+    assert urls_play(fw) == 1
+    au = fw.var('tidal__au', Au)
+    assert au.n == 3 and [au.urls[i] for i in range(3)] == [b'https://x/a.flac', None, b'https://x/f.flac']
+    assert covers == [b'', b'https://x/e.jpg', b'']
+
+
+def urls_play(fw, play=None):
+    """app_urls_play of /tmp/q2-a.urls, or play(), which calls it. toolsFreeStSongInfo is called at its stock address
+    (tidal.c's own define): a ret there for the test, so each record's strings stay for the asserts; the byte is put
+    back after, as conftest's map outlives a load."""
     free_rec = int(re.findall(r'toolsFreeStSongInfo \(\(void \(\*\)\(void \*\)\)(0x[0-9a-f]+)u\)',
                               (host.ROOT/'patch/tidal.c').read_text())[0], 16)
     claim(free_rec)
     saved = C.string_at(free_rec, 1)
     C.memmove(free_rec, b'\xc3', 1)
     try:
-        assert fw.fn('app_urls_play', C.c_int, C.c_char_p)(b'/tmp/q2-a.urls') == 1
+        return play() if play else fw.fn('app_urls_play', C.c_int, C.c_char_p)(b'/tmp/q2-a.urls')
     finally:
         C.memmove(free_rec, saved, 1)
+
+
+@pytest.mark.parametrize('header,now', [
+    (b'#Q2URLS/1\tnow=1', 1), (b'#Q2URLS/1\tstart=0\tnow=1', 1), (b'#Q2URLS/1\tnow=1\tstart=0', 1), (b'#Q2URLS/1\tnow=1\r', 1),
+    (b'#Q2URLS/1', 0), (b'#Q2URLS/1\tnow=0', 0), (b'#Q2URLS/1\tnow=10', 0), (b'#Q2URLS/1\tknow=1', 0), (b'#Q2URLS/1 now=1', 0),
+])
+def test_a_url_queue_asks_to_be_told_what_plays_in_its_header(fw, header, now):
+    """now=1, a header field of its own, opts the queue in to addon.c's .now; a song line's now=1 is no header's."""
+    Files(fw, {'/tmp/q2-a.urls': header + b'\nhttps://x/a.flac\tA\tnow=1\n'})
+    fw.mock('tk_str_start_with', lambda s, p, *_: C.string_at(s).startswith(C.string_at(p)))
+    Deques(fw)
+    assert urls_play(fw) == 1 and fw.var('tidal__au', Au).now == now
+
+
+def test_the_song_playing_is_told_only_for_the_latest_queue_that_asked(fw, mcl, queue):
+    """app_urls_at: the place among the songs kept of the record at MCL_POS, for the latest URL queue (au.gen) whose
+    header said now=1; -1 for an older queue's song, a Tidal track, a queue that didn't ask, or no 0xf1 queue."""
+    fw.mock('tk_str_start_with', lambda s, p, *_: C.string_at(s).startswith(C.string_at(p)))
     au = fw.var('tidal__au', Au)
-    assert au.n == 3 and [au.urls[i] for i in range(3)] == [b'https://x/a.flac', None, b'https://x/f.flac']
-    assert covers == [b'', b'https://x/e.jpg', b'']
+    au.gen, au.n, au.now = 7, 3, 1
+    for tidal_id in ('app:7:0', 'app:7:2', 'app:6:1', '12345', 'app:7:3', 'app:7'):
+        queue.row(tidal_id)
+    at = fw.fn('app_urls_at', C.c_int)
+    mcl.type = 0xf1
+    seen = []
+    for pos in range(7):
+        mcl.pos = pos
+        seen.append(at())
+    assert seen == [0, 2, -1, -1, -1, -1, -1]
+    mcl.pos = 1
+    au.now = 0
+    assert at() == -1
+    au.now, mcl.type = 1, 0xf001  # a local queue: its records are never an app's
+    assert at() == -1
 
 
 def test_a_full_card_streams_without_a_download(fw):

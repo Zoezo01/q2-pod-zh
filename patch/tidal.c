@@ -326,7 +326,8 @@ int ringnav_tidal_favs(void *offset) {
  * itself (app_track) with the URL kept here, so Tidal's API and stock's stream thread never see the
  * id. A record whose REC_PATH is a card path plays as a local file: mclStartPlayer does that after
  * the call. The URLs are one queue's (au), by its generation, and so is its lyrics folder
- * (app_lyrics). */
+ * (app_lyrics). A queue whose header says now=1 has its song playing told to its app (app_urls_at,
+ * addon.c now_poll). */
 #define AU_MAX (256 << 10) /* the file read this far, as addon.c's M3U_MAX */
 #define AU_SONGS 5000      /* the songs a queue keeps, later lines passed over: records stay small */
 /* A line's URL or card path this long, each } counted as stock's %0x7d, is passed over: stock
@@ -345,6 +346,7 @@ static struct {
     unsigned n, gen, play; /* gen: the queue's; play: app_track's count, the latest start's */
     char lyr[64];          /* the queue's lyrics folder: its path with .lyrics for .urls */
     unsigned start[16];    /* app_start's mutex: one start at a time, as stock's one stream thread */
+    int now;               /* its header asked for now=1: addon.c tells the app what plays */
 } au;
 
 static int web(const char *s) {
@@ -363,6 +365,9 @@ int app_urls_play(const char *path) {
     line = strstr(raw, "\n");
     char *s = strstr(raw, "start=");
     int start = s && (!line || s < line) ? atoi(s + 6) : 0;
+    /* now=1, a header field of its own: a tab before it, a tab or the line's end after */
+    char *o = strstr(raw, "\tnow=1");
+    int now = o && (!line || o < line) && (!o[6] || o[6] == '\t' || o[6] == '\r' || o[6] == '\n');
     unsigned n = 0, gen = au.gen + 1;
     char **urls = calloc(AU_SONGS, sizeof *urls);
     void *q = _create_deque("stSongInfo");
@@ -404,7 +409,7 @@ int app_urls_play(const char *path) {
     pthread_mutex_lock(au.lock);
     char **old = au.urls;
     unsigned had = au.n;
-    au.urls = urls, au.n = n, au.gen = gen;
+    au.urls = urls, au.n = n, au.gen = gen, au.now = now;
     tk_snprintf(au.lyr, sizeof au.lyr, "%.*s.lyrics", (int)strlen(path) - 5, path);
     pthread_mutex_unlock(au.lock);
     for (unsigned i = 0; old && i < had; ++i) free(old[i]);
@@ -412,6 +417,27 @@ int app_urls_play(const char *path) {
     play_folder(q, start >= 0 && (unsigned)start < n ? start : 0, 0xf1); /* playing_page copies it */
     deque_destroy(q);
     return 1;
+}
+
+/* The song playing's place among the songs kept (its id's n, as start= counts) while the queue
+ * playing is the latest URL queue and its header said now=1 (addon.c now_poll); -1 otherwise: a
+ * Tidal or local queue, an older one, or one that didn't ask. The record is the 0xf1 queue's at
+ * MCL_POS, as get_tidal_trackurl finds it. */
+int app_urls_at(void) {
+    void *q = P(mcl_pdeqplaylist, 0);
+    int pos = I(MCL_POS, 0);
+    void *r = I(MCL_TYPE, 0) == 0xf1 && q && pos >= 0 && pos < (int)deque_size(q)
+                  ? deque_at(q, (unsigned)pos)
+                  : 0;
+    const char *id = r ? P(r, REC_TIDAL_ID) : 0;
+    if (!id || !tk_str_start_with(id, "app:")) return -1;
+    char *c;
+    unsigned gen = (unsigned)strtol(id + 4, &c, 10);
+    unsigned n = *c == ':' ? (unsigned)strtol(c + 1, 0, 10) : ~0u;
+    pthread_mutex_lock(au.lock);
+    int ok = au.now && gen == au.gen && n < au.n;
+    pthread_mutex_unlock(au.lock);
+    return ok ? (int)n : -1;
 }
 
 /* The .lrc a card app leaves for a track of its latest queue (id app:<gen>:<n>), in out:
