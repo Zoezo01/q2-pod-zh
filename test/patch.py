@@ -7436,6 +7436,7 @@ for theme in '0':
     q=qs_new('1',theme); arts=qs_paint(q); arts2,bands=qs_scrub(q)
     assert not arts and not arts2 and all(q.u.mem_read(w+0x34,1)[0]==255 for w in q.btns) and wbox(q,q.menu)==(0,20,375,224) and wbox(q,q.labels[0])==(20,66,80,40)
     assert q.nodes[q.suns[0]].get('visible',1) and q.nodes[q.slider]['style:normal:fg_color']!=0 and not q.letters; passed()
+    assert all(q.nodes[q.slider][f'style:{s}:icon']==0 for s in ('normal','pressed','over','focused','disable')); passed()  # nor stock's knob
     qs_down(q,q.btns[0]); assert not qs_paint(q); passed()
 def slider_win(m,name,slider,view,label,ends,y=0,**kw):
     s=m.node('slider',slider,**kw); lab=m.node('label',label,text='5'); l,r=(m.node('image',n) for n in ends)
@@ -13297,6 +13298,7 @@ for cfg in (dict(THEME='1',CLASSIC_LIGHT_ACCENT='3'),dict(THEME='2')):  # Classi
     assert m.nodes[m.slider][FG]==signed(color_t(ACCENTS[3][2])); centre(m)
     assert m.nodes[m.slider][FG]==-1; centre(m,50); assert m.nodes[m.slider][FG]==signed(color_t(ACCENTS[3][2]))
     assert {m.nodes[m.slider][f'style:{s}:fg_color'] for s in ('normal','pressed','over','focused')}=={m.nodes[m.slider][FG]}; passed()  # a touch keeps the accent
+    assert all(m.nodes[m.slider][f'style:{s}:icon']==0 for s in ('normal','pressed','over','focused','disable')); passed()  # no knob: stock's default slider style would supply rounded_n/_o/_p
 
 # Home at init (Minimal and Modern; Classic's in classic_light_home): Split halves the screen and shows the art; Full
 # widens the list to the screen and its rows' tap targets to HOME_FULL_ROW (Modern: HOME_MODERN_ROW) and hides it.

@@ -840,8 +840,9 @@ theme. Classic's (`CLASSIC_LIGHT_ACCENT`) is Classic Blue, its own scheme and th
 Graphite, Crimson, Tidal, Champagne, Cobalt, Tangerine, Plum and Green, each a gloss band turned to
 the accent's colour; Ivory is Minimal's only. Modern's (`ACCENT`, 1.6.5's Classic's key) skips
 Ivory too, and choosing Modern starts it on Cobalt. Now Playing's bar has no thumb:
-stock draws its dragger (a box and knob, the stock theme's blue) unless `border_color` is clear,
-so `playing_page` clears it in every state. 1.3.9 first painted it white, which drew the box at rest.
+stock draws its dragger (a box and knob, the stock theme's blue) unless `border_color` is clear
+and the style has no `icon`, so `playing_page` clears the first in every state and `slider_fill`
+the second, which stock's default slider style would otherwise supply. 1.3.9 first painted it white, which drew the box at rest.
 
 #### Modern
 

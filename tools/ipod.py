@@ -581,8 +581,9 @@ PLAYING_PAGE = 'playing_page.bin'
 
 def plain_slider(props, track, fill, bar):
     """A slider's props drawn in plain colour (stock slider paint uses bg/fg_color without images). The
-    style has no theme entry, so no thumb icon either: stock then fills exactly to the value, and
-    slide_with_bar keeps tap and drag."""
+    style has no theme entry, but stock still reads its default slider style's thumb icon for it, so the
+    payload clears the icon in every state (np_bar.c slider_fill): stock then fills exactly to the value,
+    and slide_with_bar keeps tap and drag."""
     props = {k: v for k, v in props.items() if not k.endswith((':bg_image', ':fg_image', ':icon', ':y_offset'))}
     for key in props:
         if key.endswith(':bg_color'): props[key] = track
@@ -596,7 +597,7 @@ def np_slider(slider, x, cy, w, h):
     the accent's fill and the Theme's height set at runtime (np_bar.c np_fill, np_theme)."""
     slider[1] = [x, cy - NP_TOUCH // 2, w, NP_TOUCH]
     slider[2] = plain_slider(slider[2], NP_TRACK, NP_FILL, h)
-    # No thumb: stock skips the dragger only when border_color is clear, else a touch shows its blue.
+    # No thumb: stock skips the dragger only when border_color is clear and there is no icon (slider_fill's).
     for state in ('normal', 'pressed', 'over', 'disable', 'focused'):
         slider[2][f'style:{state}:border_color'] = '#00000000'
     # Stock draws small radii square; the four-pixel line deliberately has square ends.
