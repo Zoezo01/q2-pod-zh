@@ -667,8 +667,12 @@ static void *sh_worker(void *unused) {
     } else if (sh.job == JOB_INSTALL)
         sh.result = install(i);
     else {
+        /* Erase Spotify Data: the add-on's logs go too, as spot.log names the account and each
+         * track played */
         if (sh.job == JOB_ERASE)
-            system("rm -rf " SPOT_DIR "/cache " SPOT_DIR "/.cache-size"), rmdir(SPOT_DIR);
+            system("rm -rf " SPOT_DIR "/cache " SPOT_DIR "/.cache-size " SPOT_DIR
+                   "/spot.log " SPOT_DIR "/aplay.log " SPOT_DIR "/load.log"),
+                rmdir(SPOT_DIR);
         else {
             addon_quit(apps[i].dir); /* USB storage may take the card meanwhile */
             /* ponytail: read once; USB storage taking the card during the unlinks still says removed */
@@ -873,9 +877,9 @@ static void sh_rows(void) {
     sh_refresh();
 }
 
-/* Streaming → Configuration's Erase Spotify Data (navigation.c): with start, Spotify's login and
- * cache erased on this thread, unless a job is running (a check stops, as an App Store row's press
- * stops it, so the next press acts); whether an erase is running. */
+/* Streaming → Configuration's Erase Spotify Data (navigation.c): with start, Spotify's login, cache
+ * and logs erased on this thread, unless a job is running (a check stops, as an App Store row's
+ * press stops it, so the next press acts); whether an erase is running. */
 int shelf_erase(int start) {
     if (start && sh.job == JOB_CHECK)
         sh.cancel = 1, toast("Stopped checking for updates");
