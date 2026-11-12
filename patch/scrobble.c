@@ -18,7 +18,7 @@
 #define LB_URL "https://api.listenbrainz.org/1/submit-listens"
 #define FM_URL "https://ws.audioscrobbler.com/2.0/"
 
-enum { LB_TOKEN, FM_USER, FM_PASS, FM_KEY, FM_SECRET, CONFIG_N };
+enum { LB_TOKEN, FM_USER, FM_PASS, FM_KEY, FM_SECRET, FM_SK, CONFIG_N };
 typedef struct {
     char *p;
     unsigned n, cap; /* n == cap: overflowed */
@@ -44,15 +44,19 @@ static struct {
 
 static const char header[] = "#AUDIOSCROBBLER/1.1\n#TZ/UTC\n#CLIENT/Q2 Pod\n";
 
-/* Bit 0 ListenBrainz, bit 1 Last.fm. toolsReadConfig leaves the value alone for a missing file. */
+/* Bit 0 ListenBrainz, bit 1 Last.fm: its API pair with a session key (SESSION_KEY, which
+ * tools/lastfm_key.py puts in the password's place) or with the user and password that fetch one
+ * at each upload. toolsReadConfig leaves the value alone for a missing file. */
 static int read_config(char c[][256]) {
-    static const char *const keys[] = { "TOKEN", "USER", "PASSWORD", "API_KEY", "API_SECRET" };
+    static const char *const keys[] = { "TOKEN",   "USER",       "PASSWORD",
+                                        "API_KEY", "API_SECRET", "SESSION_KEY" };
     for (int i = 0; i < CONFIG_N; i++) {
         c[i][0] = 0;
         toolsReadConfig(INI_FILE, i ? "LASTFM" : "LISTENBRAINZ", keys[i], c[i], "");
     }
     return (c[LB_TOKEN][0] != 0) |
-           (c[FM_USER][0] && c[FM_PASS][0] && c[FM_KEY][0] && c[FM_SECRET][0]) << 1;
+           (c[FM_KEY][0] && c[FM_SECRET][0] && (c[FM_SK][0] || (c[FM_USER][0] && c[FM_PASS][0])))
+               << 1;
 }
 
 int scrobble_ready(void) {
@@ -261,7 +265,8 @@ static int lastfm(param_t *p, int n, buf_t *b, reply_t *r) {
     return b->n < b->cap && post(FM_URL, b->p, 0, r) == 200 && !strstr(r->s, "\"error\"");
 }
 
-/* auth.getMobileSession: the session key for the batches, once per upload. */
+/* auth.getMobileSession: the session key for the batches, once per upload, when the file has
+ * none: the one call that carries the password. */
 static int session(char *sk, buf_t *b, reply_t *r) {
     param_t p[5];
     int n = 0;
@@ -328,9 +333,10 @@ static int retire(unsigned done) {
 static void *worker(void *unused) {
     reply_t r;
     entry_t e[BATCH];
-    char sk[64] = "";
+    char got[64] = "";
+    const char *sk = up.cfg[FM_SK][0] ? up.cfg[FM_SK] : got; /* the file's key, else session()'s */
     unsigned size;
-    int lb = !!up.cfg[LB_TOKEN][0], fm = !!up.cfg[FM_USER][0], sent = 0;
+    int lb = !!up.cfg[LB_TOKEN][0], fm = !!up.cfg[FM_KEY][0], sent = 0;
     buf_t b = { calloc(1, BODY_MAX), 0, BODY_MAX };
     int ok = b.p != 0;
     /* A window at a time, each retired before the next is read, until one comes back short. A full
@@ -358,7 +364,7 @@ static void *worker(void *unused) {
                 done = size == LOG_HEAD && size - at > LINE_BYTES ? size : at;
                 break;
             }
-            ok = (!fm || *sk || session(sk, &b, &r)) && (!lb || listenbrainz(e, n, &b, &r)) &&
+            ok = (!fm || *sk || session(got, &b, &r)) && (!lb || listenbrainz(e, n, &b, &r)) &&
                  (!fm || scrobble_lastfm(e, n, sk, &b, &r));
             if (ok) done = at, sent += n;
         }
@@ -378,7 +384,7 @@ int scrobble_start(void) {
     if (up.running) return 0;
     int on = read_config(up.cfg);
     if (!on) return -1; /* nothing would take the batches, so none may leave the log */
-    if (!(on & 2)) up.cfg[FM_USER][0] = 0; /* an incomplete Last.fm is off */
+    if (!(on & 2)) up.cfg[FM_KEY][0] = 0; /* an incomplete Last.fm is off */
     up.done = 0;
     if (pthread_create(&up.thread, 0, worker, 0)) return -1;
     up.running = 1;
