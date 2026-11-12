@@ -425,7 +425,8 @@ def test_a_line_still_being_written_stays_in_the_log(fw):
 
 
 def test_an_incomplete_last_fm_is_off(fw):
-    values = {**LB_ONLY, ('LASTFM', 'USER'): 'u'}
+    """The API pair without a password or session key: no sign-in is tried with an empty password."""
+    values = {**LB_ONLY, ('LASTFM', 'USER'): 'u', ('LASTFM', 'API_KEY'): 'k', ('LASTFM', 'API_SECRET'): 's'}
     (_, result, sent), _, net = upload(fw, HEADER + line(), values=values)
     assert result == 1 and sent == 1 and not net.to('audioscrobbler') and len(net.to('listenbrainz')) == 1
 

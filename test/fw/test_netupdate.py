@@ -2025,7 +2025,8 @@ def test_erasing_spotify_s_data_takes_the_add_on_s_logs_and_leaves_its_settings(
 
 
 def test_erasing_spotify_s_data_after_removing_spotify_leaves_no_folder(fw):
-    """Remove takes the files the add-on's zip listed, so the logs were what kept .spotify on the card; cache/ and .cache-size also stay after Remove."""
+    """Remove takes only the files the add-on's zip listed, so the logs, cache/ and .cache-size stay after it;
+    the erase must take every one of them for the folder to go."""
     card = Disk(fw, {SOURCES: b'x/q2-librespot Spotify\n', b'/mnt/mmc/.spotify/cache/credentials.json': b'{}',
                      **dict.fromkeys(SPOT_LOGS, b'log')})
     card.dirs.add(b'/mnt/mmc/.spotify')
