@@ -957,11 +957,6 @@ def save(fw, name, tmp=b'/tmp/oslyric_1'):
     return n, C.string_at(cmd).decode()
 
 
-def stocks(name, tmp='/tmp/oslyric_1'):
-    command = f'cp -rf {tmp} "/mnt/mmc/.downpic/{name}"'
-    return len(command), command
-
-
 def test_an_accepted_match_goes_beside_the_playing_song_and_its_hiding_copy_goes(fw, mcl, records):
     Queue(fw, mcl, [records.song(b'/m/X/song.flac'), records.song(b'/m/Y/song.mp3')], pos=1)  # both make song.lrc
     disk = Disk(fw, {'/tmp/oslyric_1': b'lyrics', '/mnt/mmc/.downpic/song.lrc': b'stock'})
@@ -981,17 +976,27 @@ def test_an_accepted_match_for_another_queued_song_goes_beside_it(fw, mcl, recor
     (dict(path=b'http://h/song.flac'), 0xf001), (dict(path=b'/m/song.flac', kind=4), 0xf001),              # no file
     (dict(path=b'/m/other.flac'), 0xf001),                                                                  # not queued
 ])
-def test_stock_saves_what_isnt_a_queued_song_of_its_own(fw, mcl, records, song, kind):
+def test_what_isnt_a_queued_song_of_its_own_goes_where_stock_puts_it(fw, mcl, records, song, kind):
     Queue(fw, mcl, [records.song(**song)], kind=kind)
     disk = Disk(fw, {'/tmp/oslyric_1': b'lyrics', '/mnt/mmc/.downpic/song.lrc': b'stock'})
-    assert save(fw, b'song.lrc') == stocks('song.lrc')
-    assert disk.files == {'/tmp/oslyric_1': b'lyrics', '/mnt/mmc/.downpic/song.lrc': b'stock'}
+    assert save(fw, b'song.lrc') == (1, ':')
+    assert disk.files == {'/tmp/oslyric_1': b'lyrics', '/mnt/mmc/.downpic/song.lrc': b'lyrics'}
 
 
-def test_a_copy_that_fails_leaves_it_to_stock(fw, mcl, records):
+def test_a_name_never_reaches_the_shell(fw, mcl, records):
+    """Stock's command ran the name through system() as root (GHSA-qp92-mq7c-6r64)."""
+    Queue(fw, mcl, [records.song(b'/m/song.flac')])
+    disk = Disk(fw, {'/tmp/oslyric_1': b'lyrics'})
+    name = b'x$(touch poc)`id`".lrc'
+    assert save(fw, name) == (1, ':') and disk.files['/mnt/mmc/.downpic/' + name.decode()] == b'lyrics'
+    assert save(fw, b'a' * 0x200) == (1, ':')  # too long for .downpic: nothing written, nothing run
+    assert save(fw, b'../../../etc/x.lrc') == (1, ':') and set(disk.files) == {'/tmp/oslyric_1', '/mnt/mmc/.downpic/' + name.decode()}
+
+
+def test_a_copy_that_fails_leaves_the_card_as_it_was(fw, mcl, records):
     Queue(fw, mcl, [records.song(b'/m/song.flac')])
     disk = Disk(fw, {'/mnt/mmc/.downpic/song.lrc': b'stock'})  # no lyrics file to copy
-    assert save(fw, b'song.lrc') == stocks('song.lrc') and disk.files == {'/mnt/mmc/.downpic/song.lrc': b'stock'}
+    assert save(fw, b'song.lrc') == (1, ':') and disk.files == {'/mnt/mmc/.downpic/song.lrc': b'stock'}
 
 
 def test_an_accepted_lrclib_match_is_what_the_next_load_shows(fw, mcl, records):

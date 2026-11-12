@@ -403,15 +403,21 @@ static int lrc_copy(const char *tmp, const char *lrc) {
  * for system() with snprintf, whose call (LYRIC_SAVE_CALL) jumps here: the lyrics (tmp) go beside the
  * song instead, as <path less extension>.lrc, as Download Album Lyrics saves them, and a .downpic copy
  * that would hide them goes; cmd becomes ":", which system() runs as nothing, and stock reloads the
- * lyrics as before. Stock's command when the song isn't in the queue (or is a CUE track) or the card
- * can't be written. */
+ * lyrics as before. When the song isn't in the queue (or is a CUE track) or the card can't be
+ * written there, the lyrics go to stock's .downpic/<name> instead, copied here too: stock's command
+ * would hand the song's name, a file name or a card app's title, to the shell as root
+ * (GHSA-qp92-mq7c-6r64), so fmt is never used. A name with a '/', which no file name has, saves
+ * nothing, as it could reach out of .downpic. */
 int ringnav_lyric_save(char *cmd, unsigned n, const char *fmt, const char *tmp, const char *name) {
-    char lrc[0x200 + 8], shadow[sizeof DOWNPIC + 0x200];
+    char lrc[0x200 + 8], shadow[sizeof lrc]; /* as long as lrc_copy's .part takes */
     void *r = lrc_song(name);
-    if (!r || !lrc_path(lrc, sizeof lrc, P(r, REC_PATH), ".lrc") || !lrc_copy(tmp, lrc))
-        return snprintf(cmd, n, fmt, tmp, name);
-    snprintf(shadow, sizeof shadow, DOWNPIC "%s", name);
-    unlink(shadow);
+    int named = !strrchr(name, '/') &&
+                snprintf(shadow, sizeof shadow, DOWNPIC "%s", name) < (int)sizeof shadow;
+    (void)fmt;
+    if (r && lrc_path(lrc, sizeof lrc, P(r, REC_PATH), ".lrc") && lrc_copy(tmp, lrc)) {
+        if (named) unlink(shadow);
+    } else if (named)
+        lrc_copy(tmp, shadow);
     return snprintf(cmd, n, ":");
 }
 

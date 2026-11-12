@@ -1831,15 +1831,16 @@ def test_lyrics_for_the_playing_song_go_beside_it_and_load_to_the_millisecond(w,
     assert lyrics.lines == [(1, 'First line'), (3, 'Second line')] and published(w) == [1500, 3250]
 
 
-def test_lyrics_that_cant_be_written_beside_the_song_take_stocks_way(w, lyrics):
+def test_lyrics_on_a_full_card_leave_it_as_it_was_and_run_nothing(w, lyrics):
     w.net.route(LRCLIB, Reply(200, json.dumps([{'id': 2, 'syncedLyrics': SYNCED}]).encode()))
     w.fn('ringnav_lyric_search', C.c_int, C.c_char_p, C.c_char_p)(b'Song 2', b'/tmp/oslyric_0')
     w.card.room = 10  # full
     cmd = C.create_string_buffer(512)
     w.fn('ringnav_lyric_save', C.c_int, C.c_void_p, C.c_uint, C.c_char_p, C.c_char_p, C.c_char_p)(
         cmd, 512, STOCK_CP.encode(), b'/tmp/oslyric_0', b'01 Song 2.lrc')
-    assert cmd.value.decode() == STOCK_CP % ('/tmp/oslyric_0', '01 Song 2.lrc')
+    assert cmd.value == b':'  # never stock's command, which runs the name through the shell (GHSA-qp92-mq7c-6r64)
     assert LRC not in w.card.files and LRC + '.part' not in w.card.files and w.card.files[SHADOW] == b'stale'
+    assert SHADOW + '.part' not in w.card.files
 
 
 def test_lyrics_with_lrclib_unreachable_leave_nothing_to_take(w, lyrics):

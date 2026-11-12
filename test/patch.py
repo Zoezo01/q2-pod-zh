@@ -15983,7 +15983,8 @@ assert m.search('','Coldplay',found)==1 and not m.written and not m.urls; passed
 # Its accept (onlinematch.c ringnav_lyric_save, at LYRIC_SAVE_CALL): stock's snprintf of cp -rf /tmp/oslyric_N
 # "/mnt/mmc/.downpic/<name>" for system() becomes a copy beside the song, through .part, as Download Album Lyrics
 # saves, the .downpic copy stock's loader would show first goes, and system() gets ":". The song is the queue's
-# whose file name stock turns into name. Not in the queue, a CUE track's, or a card that can't be written: stock's.
+# whose file name stock turns into name. Not in the queue, a CUE track's, or a card that can't be written there: the
+# copy goes to stock's .downpic/<name> instead, never stock's command, whose name the shell would run (GHSA-qp92-mq7c-6r64).
 from build import LYRIC_SAVE_CALL
 class LyricSaveMachine(AlbumLyricsMachine):
     def __init__(self,files):
@@ -16018,13 +16019,15 @@ def lyric_save(**rec):
     for off,v in (('REC_NAME','01 Yellow.flac'),('REC_PATH','/mnt/mmc/Coldplay/01 Yellow.flac'))+tuple(rec.items()):
         m.word(r+O[off],m.string(v) if isinstance(v,str) else v)
     return m
-stock='cp -rf /tmp/oslyric_7 "/mnt/mmc/.downpic/01 Yellow.lrc"'
 m=lyric_save(); assert m.save('01 Yellow.lrc')==':' and m.files['/mnt/mmc/Coldplay/01 Yellow.lrc']==LRC
 assert m.unlinked==['/mnt/mmc/.downpic/01 Yellow.lrc'] and '/mnt/mmc/.downpic/01 Yellow.lrc' not in m.files
 assert not [p for p in m.files if p.endswith('.part')]; passed()
-m=lyric_save(); assert m.save('02 Other.lrc')==stock.replace('01 Yellow','02 Other') and not m.unlinked; passed()  # not in the queue
-m=lyric_save(REC_CUE_END=90); assert m.save('01 Yellow.lrc')==stock and '/mnt/mmc/Coldplay/01 Yellow.lrc' not in m.files; passed()
-m=lyric_save(); m.fail_write=True; assert m.save('01 Yellow.lrc')==stock and '/mnt/mmc/.downpic/01 Yellow.lrc' in m.files; passed()  # can't write the card
+m=lyric_save(); assert m.save('02 Other.lrc')==':' and m.files['/mnt/mmc/.downpic/02 Other.lrc']==LRC and not m.unlinked; passed()  # not in the queue
+m=lyric_save(); assert m.save('x$(touch p)`id`".lrc')==':' and m.files['/mnt/mmc/.downpic/x$(touch p)`id`".lrc']==LRC; passed()
+m=lyric_save(); assert m.save('../../x.lrc')==':' and set(m.files)=={'/tmp/oslyric_7','/mnt/mmc/.downpic/01 Yellow.lrc'}; passed()  # a '/' leaves .downpic
+m=lyric_save(REC_CUE_END=90); assert m.save('01 Yellow.lrc')==':' and '/mnt/mmc/Coldplay/01 Yellow.lrc' not in m.files
+assert m.files['/mnt/mmc/.downpic/01 Yellow.lrc']==LRC; passed()
+m=lyric_save(); m.fail_write=True; assert m.save('01 Yellow.lrc')==':' and m.files['/mnt/mmc/.downpic/01 Yellow.lrc']==b'[00:00.00]Kugou'; passed()  # can't write the card
 
 # Spotify's browser (patch/spotify.c, docs/librespot.md's Q2SPOT/1): the row opens spotbrowse_page,
 # each level a request on the fork's --browse-socket, sent and read on a pthread.
