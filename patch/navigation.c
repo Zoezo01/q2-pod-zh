@@ -2739,6 +2739,7 @@ int ringnav_paint(void *w, void *canvas) {
     }
     addon_paint(w, canvas);
     peq_paint(w, canvas);
+    battery_paint(w, canvas);
     visualizer_paint(w, canvas);
     games_paint(w, canvas);
     /* Even a page with no navigable pane must end pending input when it is painted. */
@@ -3368,7 +3369,11 @@ int ringnav_powermanager(void *win, void *ctx) {
     pod_rows(win, "scroll_view_powermanager", POD_CHARGE, 1, icons);
     pod_rows(win, "scroll_view_powermanager", POD_SMART_WIFI, 1, icons + 3);
     pod_rows(win, "scroll_view_powermanager", POD_CARMODE, 1, icons + 2);
-    boot_row(win ? widget_lookup(win, "scroll_view_powermanager", 1) : (void *)0);
+    void *view = win ? widget_lookup(win, "scroll_view_powermanager", 1) : (void *)0;
+    if (view) /* battery.c's page */
+        widget_set_text_utf8(list_row_into(view, "system_powermanager", battery_history, 0),
+                             "Battery History");
+    boot_row(view);
     return result;
 }
 /* The Bluetooth page's list (stock's local builder, btmenu_rows), rebuilt whole on every search and
@@ -9567,7 +9572,7 @@ static void scrobble(void *r, int total, int heard) {
     if (album_artist && *album_artist && scrobble_flag("ALBUM_ARTIST")) artist = album_artist;
     if (!artist || !*artist) return;
     long long now = wall_time();
-    if (now < 1600000000) return; /* clock never set: Last.fm would reject the time */
+    if (now < CLOCK_SET) return; /* clock never set: Last.fm would reject the time */
     if (!addon_scrobbles(P(r, REC_PATH))) return; /* its card app's q2app says scrobble=0 */
     char line[800], name[512], *end = line + sizeof line - 48, *o = line; /* 48: the numbers */
     const char *title = now_tag(r, REC_TITLE);

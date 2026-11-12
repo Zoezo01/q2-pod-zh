@@ -515,6 +515,12 @@ void smart_wake(void); /* Smart Wi-Fi's radio back now, if it had it off */
 int smart_config(const char *section, const char *key);
 void smart_poll(void);
 
+/* battery.c */
+void battery_tick(int level, int cable);
+unsigned battery_log(char *out, unsigned size);
+int battery_history(void *ctx, void *event);
+void battery_paint(void *w, void *canvas);
+
 /* system.c */
 void power_poll(void);
 
