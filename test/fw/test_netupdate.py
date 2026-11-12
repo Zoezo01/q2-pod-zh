@@ -2008,6 +2008,32 @@ def test_erasing_spotify_s_data_runs_as_a_job(fw):
     assert ('rmdir', b'/mnt/mmc/.spotify') in card.log  # tried: still holds librespot
 
 
+SPOT_LOGS = [b'/mnt/mmc/.spotify/spot.log', b'/mnt/mmc/.spotify/aplay.log', b'/mnt/mmc/.spotify/load.log']
+
+
+def test_erasing_spotify_s_data_takes_the_add_on_s_logs_and_leaves_its_settings(fw):
+    """q2-librespot's launcher appends librespot's messages to spot.log, which so names the account at each login and
+    every track played; aplay.log is its sink's and load.log its debug file's. .quality and debug are settings the
+    user put there, and a spot.log elsewhere on the card is not Spotify's."""
+    kept = [b'/mnt/mmc/.spotify/.quality', b'/mnt/mmc/.spotify/debug', b'/mnt/mmc/.spotify/librespot',
+            b'/mnt/mmc/Music/spot.log']
+    card = Disk(fw, {SOURCES: b'x/q2-librespot Spotify\n', b'/mnt/mmc/.spotify/cache/credentials.json': b'{}',
+                     **dict.fromkeys(kept + SPOT_LOGS, b"Authenticated as 'me' !\n")})
+    s = Store(fw, card, wifi=0)
+    assert fw.fn('shelf_erase', C.c_int, C.c_int)(1) == 1 and s.run() == 0
+    assert sorted(k for k in card.files if b'/.spotify/' in k or k.endswith(b'spot.log')) == sorted(kept)
+
+
+def test_erasing_spotify_s_data_after_removing_spotify_leaves_no_folder(fw):
+    """Remove takes the files the add-on's zip listed, so the logs were all that kept .spotify on the card."""
+    card = Disk(fw, {SOURCES: b'x/q2-librespot Spotify\n', b'/mnt/mmc/.spotify/cache/credentials.json': b'{}',
+                     **dict.fromkeys(SPOT_LOGS, b'log')})
+    card.dirs.add(b'/mnt/mmc/.spotify')
+    s = Store(fw, card, wifi=0)
+    assert fw.fn('shelf_erase', C.c_int, C.c_int)(1) == 1 and s.run() == 0
+    assert not [k for k in card.files if b'.spotify' in k] and b'/mnt/mmc/.spotify' not in card.dirs
+
+
 def test_erase_while_checking_stops_the_check(fw):
     card = Disk(fw)
     store_net(fw)
