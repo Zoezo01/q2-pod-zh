@@ -1815,6 +1815,28 @@ def test_a_remove_cut_off_by_usb_storage_says_the_card_was_not_written(fw):
     assert installed <= set(card.files) and not card.of('unlink') and not card.of('rmdir')
 
 
+# The same for Rockbox: its themes go with it only once the card is known to be there.
+def test_a_rockbox_remove_cut_off_by_usb_storage_keeps_the_themes(fw):
+    card = Disk(fw, {SOURCES: b'x/q2-rockbox Rockbox\nx/q2-rockbox-themes Rockbox Themes\n',
+                     b'/mnt/mmc/.rockbox/rockbox': b'bin', b'/mnt/mmc/.rockbox/wps/a.wps': b'wps',
+                     b'/mnt/mmc/.q2/apps/rockbox.files': b'.rockbox/rockbox\n', b'/mnt/mmc/.q2/apps/rockbox.tag': b'2.0',
+                     b'/mnt/mmc/.q2/apps/themes.files': b'.rockbox/wps/a.wps\n', b'/mnt/mmc/.q2/apps/themes.tag': b'2.0'})
+    store_net(fw, {'.rockbox/wps/a.wps': b'wps'})
+    s = Store(fw, card, wifi=0)
+    s.wifi = 1
+    card.files[b'/tmp/q2-rockbox'] = b'4321'  # running
+    card.log.clear()
+
+    def usleep(*_):  # during the wait: USB storage takes the card, and the app ends
+        card.files[MOUNTS] = b'/dev/root / squashfs ro 0 0\n'
+        card.files.pop(b'/tmp/q2-rockbox', None)
+    fw.mock('fw_usleep', usleep)
+    s.click()
+    s.click()
+    assert s.run() == 0 and s.toasts[-1] == "Can't write to the card"
+    assert not card.of('unlink') and b'/mnt/mmc/.rockbox/wps/a.wps' in card.files
+
+
 def test_a_cancel_during_the_release_request_downloads_nothing(fw):
     card = Disk(fw, {SOURCES: b'me/q2-foo Foo\n'})
     net = store_net(fw)
