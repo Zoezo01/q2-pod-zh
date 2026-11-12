@@ -957,6 +957,19 @@ def save(fw, name, tmp=b'/tmp/oslyric_1'):
     return n, C.string_at(cmd).decode()
 
 
+def test_no_lyrics_chosen_unlinks_the_downpic_copy_and_leaves_the_shell_nothing(fw):
+    """ringnav_lyric_drop as stock's other command calls it: rm -rf "<.downpic>/<name>" never reaches system()."""
+    hostile = 'x$(touch p)`id`".lrc'
+    kept = {'/mnt/mmc/x.lrc': b'c', '/mnt/mmc/.downpic/' + 'y' * 0x201: b'd'}  # a '/' and a name too long remove nothing
+    disk = Disk(fw, {'/mnt/mmc/.downpic/song.lrc': b'a', f'/mnt/mmc/.downpic/{hostile}': b'b',
+                     '/mnt/mmc/.downpic/' + 'y' * 0x200: b'e', **kept})
+    drop = fw.fn('ringnav_lyric_drop', C.c_int, C.c_void_p, C.c_uint, C.c_char_p, C.c_char_p)
+    for name in (b'song.lrc', hostile.encode(), b'../x.lrc', b'y' * 0x200, b'y' * 0x201):
+        cmd = block(fw, size=0x400)
+        assert drop(cmd, 0x3ff, b'rm -rf "/mnt/mmc/.downpic/%s"', name) == 1 and C.string_at(cmd) == b':'
+    assert disk.files == kept
+
+
 def test_an_accepted_match_goes_beside_the_playing_song_and_its_hiding_copy_goes(fw, mcl, records):
     Queue(fw, mcl, [records.song(b'/m/X/song.flac'), records.song(b'/m/Y/song.mp3')], pos=1)  # both make song.lrc
     disk = Disk(fw, {'/tmp/oslyric_1': b'lyrics', '/mnt/mmc/.downpic/song.lrc': b'stock'})

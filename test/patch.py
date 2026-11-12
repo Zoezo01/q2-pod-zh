@@ -16088,6 +16088,17 @@ m=lyric_save(); assert m.save('../../x.lrc')==':' and set(m.files)=={'/tmp/oslyr
 m=lyric_save(REC_CUE_END=90); assert m.save('01 Yellow.lrc')==':' and '/mnt/mmc/Coldplay/01 Yellow.lrc' not in m.files
 assert m.files['/mnt/mmc/.downpic/01 Yellow.lrc']==LRC; passed()
 m=lyric_save(); m.fail_write=True; assert m.save('01 Yellow.lrc')==':' and m.files['/mnt/mmc/.downpic/01 Yellow.lrc']==b'[00:00.00]Kugou'; passed()  # can't write the card
+# No lyrics chosen there (ringnav_lyric_drop, at LYRIC_DROP_CALL): stock's snprintf of rm -rf "/mnt/mmc/.downpic/<name>"
+# for the same system() becomes an unlink of that copy, and system() gets ":" again, whatever the name holds.
+from build import LYRIC_DROP_CALL
+def lyric_drop(m,name):
+    cmd=m.alloc(0x400); m.call(address=payload_syms['ringnav_lyric_drop'],args=(cmd,0x3ff,0x786814,m.string(name)),gap=0)
+    return m.text(cmd)
+assert m.text(0x786814)=='rm -rf "/mnt/mmc/.downpic/%s"' and m.get(LYRIC_DROP_CALL)==jal(payload_syms['ringnav_lyric_drop'])
+m=lyric_save(); assert lyric_drop(m,'01 Yellow.lrc')==':' and m.unlinked==['/mnt/mmc/.downpic/01 Yellow.lrc']; passed()
+m=lyric_save(); assert lyric_drop(m,'x$(touch p)`id`".lrc')==':' and m.unlinked==['/mnt/mmc/.downpic/x$(touch p)`id`".lrc']; passed()
+m=lyric_save(); assert lyric_drop(m,'../../x.lrc')==':' and lyric_drop(m,'y'*0x201)==':' and not m.unlinked  # a '/', or too long
+assert lyric_drop(m,'y'*0x200)==':' and m.unlinked==['/mnt/mmc/.downpic/'+'y'*0x200]; passed()  # the longest that fits
 
 # Spotify's browser (patch/spotify.c, docs/librespot.md's Q2SPOT/1): the row opens spotbrowse_page,
 # each level a request on the fork's --browse-socket, sent and read on a pthread.

@@ -421,6 +421,19 @@ int ringnav_lyric_save(char *cmd, unsigned n, const char *fmt, const char *tmp, 
     return snprintf(cmd, n, ":");
 }
 
+/* The same page's choice of no lyrics builds rm -rf "/mnt/mmc/.downpic/<name>" for the same
+ * system(), whose snprintf (LYRIC_DROP_CALL) jumps here: .downpic's copy is unlinked here and cmd
+ * is ":" again, so the name never reaches the shell (GHSA-qp92-mq7c-6r64). A name with a '/'
+ * removes nothing, as in ringnav_lyric_save. */
+int ringnav_lyric_drop(char *cmd, unsigned n, const char *fmt, const char *name) {
+    char shadow[sizeof DOWNPIC + 0x200];
+    (void)fmt;
+    if (!strrchr(name, '/') &&
+        snprintf(shadow, sizeof shadow, DOWNPIC "%s", name) < (int)sizeof shadow)
+        unlink(shadow);
+    return snprintf(cmd, n, ":");
+}
+
 /* Download Album Lyrics (docs/internals.md#album-lyrics): a row under stock's Download Cover &
  * Lyrics on Now Playing's ⋯ page saves LRCLIB's lyrics beside every song of the playing song's
  * album, found as that search finds them, on a thread of its own that outlives the page. */
