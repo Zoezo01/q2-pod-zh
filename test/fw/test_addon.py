@@ -69,7 +69,7 @@ class Lv(C.Structure):
 
 class Pg(C.Structure):
     _fields_ = [*((n, C.c_void_p) for n in ('page', 'view', 'edit')), *((n, C.c_uint) for n in ('timer', 'go', 'leave', 'again')),
-                *((n, C.c_int) for n in ('depth', 'act', 'next', 'arg', 'a', 'code')),
+                *((n, C.c_int) for n in ('depth', 'act', 'next', 'arg', 'a', 'code', 'arow', 'busy')), ('acted', C.c_uint),
                 ('term', C.c_char * 64), ('aop', C.c_char * 16), ('lv', C.POINTER(Lv)), ('buf', C.c_void_p * ADDON_PAGES),
                 ('f', C.POINTER(C.c_char_p)), ('pages', C.c_int), ('paging', C.c_int), ('moved', C.c_byte),
                 ('sec', C.c_void_p), ('nsec', C.c_byte), ('cur', C.c_byte), ('sx', C.c_int), ('sy', C.c_int),
@@ -1841,6 +1841,112 @@ def test_an_action_refused_toasts_why(fw):
     p.click(0)
     p.answer(status=b'error')
     assert p.toasts == [b"Foo didn't answer"]
+
+
+def test_a_second_action_press_while_one_is_in_flight_sends_nothing(fw):
+    """A toggle pressed twice: the app has usually done the first, so a second would undo it and drop the first's
+    reply. Only another action row's press waits for the reply."""
+    p = Page(fw)
+    p.answer(rows=[item(1), item(2)])
+    p.click(0)
+    sent, req = len(fw.calls('fw_pthread_create')), p.req.id
+    p.click(0)
+    p.click(1)
+    assert len(fw.calls('fw_pthread_create')) == sent and p.req.id == req and p.pg.act == 1
+    p.answer(msg=b'Added')
+    assert p.toasts == [b'Added'] and p.request().endswith(b'\tmenu\n')  # one reply, one toast, asked again
+    p.answer(rows=[item(1), item(2)])
+    p.click(1)
+    assert p.request().endswith(b'\top2\n')  # answered: the next press is sent
+
+
+def test_a_list_row_while_an_action_is_in_flight_opens_as_before(fw):
+    """Only action rows wait: a list row opens its level at once, its request in the action's place."""
+    p = Page(fw)
+    p.answer(rows=[item(1), item(2, b'list')])
+    p.click(0)
+    p.click(1)
+    assert p.pg.depth == 2 and p.pg.act == 0 and p.request().endswith(b'\top2\n')
+
+
+def test_a_held_play_pause_while_an_action_is_in_flight_sends_its_op_as_before(fw):
+    p = Page(fw)
+    p.answer(rows=[item(1), item(2, hold=b'h')])
+    p.click(0)
+    p.sel = 1
+    assert fw.fn('addon_hold', C.c_int, C.c_void_p)(p.page) == 1 and p.request().endswith(b'\th\n')
+
+
+def test_return_while_an_action_is_in_flight_still_leaves(fw):
+    p = Page(fw)
+    p.answer(rows=[item(1, b'list')])
+    p.click(0)
+    p.answer(rows=[item(2)])
+    p.click(0)
+    p.back()
+    assert p.pg.depth == 1 and p.pg.act == 0 and p.request().endswith(b'\tmenu\n')
+    p.back()
+    assert p.backs == 1  # and leaves the page from the first level
+
+
+@pytest.mark.parametrize('detail,label', [(b'sub', 1), (b'', 0)])
+def test_an_unanswered_action_says_working_on_its_row_until_the_reply(fw, detail, label):
+    """As the App Store's rows say Installing…: after BUSY_MS the pressed row's detail, or its title when it has
+    none, says Working…; the reply puts its text back before its toast."""
+    rows = [row_of(b'a', b'One', b'one'), row_of(b'b', b'Add to Sync', detail)]
+    p = Page(fw)
+    p.answer(msg=b'refresh', rows=rows)
+    items, kids, written, _ = row_walk(p, rows)
+    p.click(1)
+    p.world.ms += 399
+    p.tick()
+    assert written == []
+    p.world.ms += 1
+    p.tick()
+    p.tick()
+    assert written == [(kids[items[1]][label], 'Working…'.encode())]
+    p.answer(msg=b'Added')
+    assert written[1:] == [(kids[items[1]][label], rows[1][3 - (not detail)])] and p.toasts == [b'Added']
+
+
+def test_working_comes_back_on_a_list_drawn_again_while_the_action_waits(fw):
+    """The search box opened and closed over it draws the list anew, its own texts: the tick says Working… again."""
+    rows = [row_of(b'a', b'One', b'one')]
+    p = Page(fw)
+    p.answer(msg=b'refresh', rows=rows)
+    items, kids, written, _ = row_walk(p, rows)
+    p.click(0)
+    p.world.ms += 400
+    p.tick()
+    p.pg.next = 1  # G_SHOW: the search box's blur
+    fw.fn('addon__go', C.c_int, C.c_void_p)(None)
+    del written[:]
+    p.tick()
+    assert written == [(kids[items[0]][1], 'Working…'.encode())] and p.pg.busy == 1
+
+
+def test_an_action_that_fails_puts_its_row_back_with_the_toast(fw):
+    rows = [row_of(b'a', b'One', b'one')]
+    p = Page(fw)
+    p.answer(msg=b'refresh', rows=rows)
+    items, kids, written, _ = row_walk(p, rows)
+    p.click(0)
+    p.world.ms += 400
+    p.tick()
+    p.answer(fail=REQ_FAIL)
+    assert written[:2] == [(kids[items[0]][1], 'Working…'.encode()), (kids[items[0]][1], b'one')]  # then Loading…, as before
+    assert p.toasts == [b"Foo didn't answer"] and p.pg.busy == 0
+
+
+def test_an_action_answered_at_once_says_nothing_on_its_row(fw):
+    rows = [row_of(b'a', b'One', b'one')]
+    p = Page(fw)
+    p.answer(msg=b'refresh', rows=rows)
+    _, _, written, _ = row_walk(p, rows)
+    p.click(0)
+    p.world.ms += 100
+    p.answer()
+    assert written == [] and p.pg.busy == 0
 
 
 def test_the_stop_action_leaves_the_page(fw):

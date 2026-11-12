@@ -71,6 +71,7 @@
 #define REQ_MAX (8 << 10)
 #define AWAY_MS 3000     /* USB storage waits at most this long for an app to let the card go */
 #define SLOW_MS 3000     /* a page loading or starting this long offers to stop the app */
+#define BUSY_MS 400      /* an action unanswered this long shows Working… on its row */
 #define RESTART_MS 20000 /* Retry's restart starts the app by then, its old loop gone or not */
 #define QUIT_MS 20000    /* the Apps page's worker waits at most this long for an app to end */
 #define APP_ID 16        /* an id's bytes, its NUL included */
@@ -1035,6 +1036,8 @@ static struct {
     int depth, act, next, arg, a,
         code; /* act: what the request in flight is for, 1 an action; a: the app's slot; code: its
                  QR code to show at the first answer */
+    int arow, busy; /* the action's row, and whether it says Working… (busy_row) */
+    unsigned acted; /* when the action was sent */
     char term[64], aop[16];
     lv_t *lv; /* ADDON_DEPTH of them, calloc'd */
     /* The shown reply, the top level's (no other keeps one): pages replies, each realloc'd to its
@@ -1070,12 +1073,17 @@ static void fetch(lv_t *l) {
     l->id = req.id;
 }
 
-static void action(const char *op, const char *ctx) {
+/* Row i's action op sent with its context, the one in flight dropped (its row's own text back).
+ * go() sends none while one is in flight: the app has usually done it, and a second would drop its
+ * reply, so a toggle pressed twice undid itself. */
+static void busy_row(int on);
+static void action(int i, const char *op, const char *ctx) {
     char a[sizeof top()->args] = "";
     if (ctx[0] && !put(a, sizeof a, ctx)) return;
+    busy_row(0);
     tk_snprintf(pg.aop, sizeof pg.aop, "%s", op);
     req_send(app()->browse, op, a);
-    pg.act = 1;
+    pg.act = 1, pg.arow = i, pg.busy = 0, pg.acted = time_now_ms();
 }
 
 static int clicked(void *ctx, void *event);
@@ -1378,6 +1386,15 @@ static int same_rows(const lv_t *l, char **g, int n) {
     return art_rows(n) == l->art;
 }
 
+/* Row item's label w, its title (k 2) or detail (3), says s, from its left in the face it needs;
+ * a new title's marquee starts again at the next paint. */
+static void retext(void *item, void *w, unsigned k, const char *s) {
+    widget_set_text_utf8(w, s);
+    theme_font(w, k == 2 ? ROLE_TALL : ROLE_META, FONT_ROW);
+    widget_set_prop_int(w, "xoffset", 0);
+    if (k == 2) marq_restart(item);
+}
+
 /* The shown rows' texts and progress bars written from the level's reply in place: a refresh that
  * only moves a percentage leaves the other rows, the selection and a long title's marquee as they
  * are, where a rebuild would start them over. A row's labels are its title then its detail, in
@@ -1391,12 +1408,7 @@ static void relabel(const lv_t *l) {
         for (unsigned c = 0, k = 2, m = widget_count_children(item); c < m; ++c) {
             void *w = widget_get_child(item, c);
             if (!tk_strcmp(widget_get_type(w), "hscroll_label")) {
-                if (text_differs(w, cell(i, k))) {
-                    widget_set_text_utf8(w, cell(i, k));
-                    theme_font(w, k == 2 ? ROLE_TALL : ROLE_META, FONT_ROW);
-                    widget_set_prop_int(w, "xoffset", 0);
-                    if (k == 2) marq_restart(item);
-                }
+                if (text_differs(w, cell(i, k))) retext(item, w, k, cell(i, k));
                 ++k;
             } else if (widget_get_prop_int(w, "_pml", -1) >= 0) { /* a progress row's bar */
                 set_pml(w, strtol(cell(i, 5), 0, 10));
@@ -1404,6 +1416,20 @@ static void relabel(const lv_t *l) {
             }
         }
     }
+}
+
+/* The action's row says Working… (on) or its own text again, as the App Store's rows say
+ * Installing…: its detail, or its title when it has none (an empty detail's label is under the
+ * centred title). Its first two children are its labels (page_row_detail, art_row). */
+static void busy_row(int on) {
+    lv_t *l = top();
+    int i = pg.arow;
+    if (on == pg.busy || !pg.view || l->state != K_READY || i >= l->n) return;
+    int k = 2 + !!cell(i, 3)[0];
+    void *item = widget_get_child(pg.view, (unsigned)i);
+    retext(item, widget_get_child(item, (unsigned)k - 2), (unsigned)k,
+           on ? "Working…" : cell(i, k));
+    pg.busy = on;
 }
 
 /* The top level: its rows, or what it waits for. */
@@ -1415,6 +1441,7 @@ static void show(void) {
      * if that is ever pressed for. */
     if (pg.next == G_ROW) stop_timer(&pg.go);
     pg.view = pg.edit = 0;
+    pg.busy = 0; /* new rows, their own texts: the tick says Working… again */
     if (l->state == K_LOAD && !((req.running || req.done) && !pg.act && req.id == l->id)) fetch(l);
     if (l->state == K_LOAD || l->state == K_WAIT) {
         char t[48];
@@ -1566,6 +1593,7 @@ static void got(void) {
     char why[48];
     tk_snprintf(why, sizeof why, req.fail == REQ_NOSOCK ? "%s isn't running" : "%s didn't answer",
                 app()->name);
+    if (act) busy_row(0); /* before the toast, whose loop can pop the level */
     pg.act = 0;
     if (act) {
         if (n >= 0 && f[2][0])
@@ -1779,8 +1807,8 @@ static int go(const void *unused) {
             open_list(uri, ctx, cell(i, 2));
         else if (!strcmp(kind, "page"))
             page_to(l, ctx, strcmp(uri, "prev") ? 1 : -1);
-        else if (!strcmp(kind, "action"))
-            action(uri, ctx);
+        else if (!strcmp(kind, "action") && !pg.act) /* one in flight: this press does nothing */
+            action(i, uri, ctx);
         else if (!strcmp(kind, "remote"))
             qr_open(app()->state, app()->name);
         else if (!strcmp(kind, "local")) { /* a song, or a folder of them, on the card alone */
@@ -1800,6 +1828,8 @@ static int tick(const void *unused) {
     unsigned now = time_now_ms();
     if (req_done())
         got();
+    else if (pg.act && (int)(now - pg.acted) >= BUSY_MS)
+        busy_row(1);
     else if ((l->state == K_LOAD || l->state == K_WAIT) && !l->slow && l->since &&
              (int)(now - l->since) >= SLOW_MS && stoppable())
         show();
@@ -1952,7 +1982,7 @@ int addon_hold(void *w) {
     int i = l && l->state == K_READY && pg.view ? widget_get_prop_int(pg.view, "_ringnav_index", -1)
                                                 : -1;
     if (i < 0 || i >= l->n || !cell(i, 5)[0] || !strcmp(cell(i, 0), "progress")) return 0;
-    action(cell(i, 5), cell(i, 4));
+    action(i, cell(i, 5), cell(i, 4));
     return 1;
 }
 
