@@ -294,7 +294,7 @@ owns the geometry:
   selection bar and the tap target are the whole row. The stock layout skips hidden rows
   (`widget_get_children_for_layout` without `keep_invisible`, `0x5fd074`) and leaves them unsized,
   so a hidden row is mapped once it is shown and laid out. Its icon box shrinks to 40 pixels (`SET_ICON`, drawn
-  `scale_down`, value 5 in the stock draw type table at `0x93a854`, which draws a bitmap that
+  `scale_down`, value 5 in the stock draw type table at `0x93ae54`, which draws a bitmap that
   already fits 1:1; see [Settings icons](#settings-icons)), centred on the row at x 28
   (`SET_ICON_X`). Text starts 12 pixels (`SET_GAP`) after the icon, at x 80, or at x 20
   (`SET_TEXT_X`) without one.
