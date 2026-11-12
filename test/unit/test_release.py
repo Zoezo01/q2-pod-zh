@@ -6,6 +6,7 @@ import pathlib
 import re
 import subprocess
 import tarfile
+import types
 
 import pytest
 
@@ -51,10 +52,19 @@ def built(directory, manifest=None, **tar):
     return directory
 
 
+class Suites(list):
+    """Every suite release.suites started, as (args, kwargs). One named in failing exits 1."""
+    failing = ()
+
+    def start(self, args, **kwargs):
+        self.append((args, kwargs))
+        return types.SimpleNamespace(wait=lambda: int(pathlib.Path(args[1]).stem in self.failing))
+
+
 @pytest.fixture
 def scripts(monkeypatch):
-    calls = []
-    monkeypatch.setattr(subprocess, 'run', lambda args, **kwargs: calls.append((args, kwargs)))
+    calls = Suites()
+    monkeypatch.setattr(subprocess, 'Popen', calls.start)
     return calls
 
 
@@ -67,8 +77,15 @@ def test_validate_runs_every_suite(tmp_path, scripts):
                      ('ldac.py', [s]), ('id3.py', [s]), ('headset_io.py', [s]), ('bluealsa.py', [s]), ('coverflow.py', []),
                      ('mp3.py', []), ('mp3_gapless.py', []), ('mp3_gapless_player.py', [s]), ('player_seam.py', [s]), ('bt_resample.py', [s]),
                      ('xfade_player.py', [s]), ('hci_natural.py', [s]), ('hci_ao.py', [s]), ('hci_wait.py', [s]), ('remote.py', [])]
-    assert all(k == dict(check=True) for _, k in scripts)
+    assert all(k == {} for _, k in scripts)
     assert all(a[0] == release.sys.executable and a[1] == release.ROOT/'test'/n for (a, _), (n, _) in zip(scripts, names))
+
+
+def test_validate_names_the_suites_that_fail(tmp_path, scripts):
+    scripts.failing = ('patch', 'remote')
+    with pytest.raises(ValueError, match=r'^Failed: test/patch\.py, test/remote\.py$'):
+        release.validate(built(tmp_path/'b'))
+    assert len(scripts) == 20  # all were started, and waited for, before any failure was reported
 
 
 @pytest.mark.parametrize('field,value,message', [

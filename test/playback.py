@@ -1480,7 +1480,7 @@ class PickMachine(ChangeMachine):
         return super().hook(u,address,size,unused)
     enter_at=stops_at=None; SAVED=(UC_MIPS_REG_S0,UC_MIPS_REG_S1,UC_MIPS_REG_S2,UC_MIPS_REG_S3)
     def at_site(self,site,q=None,at=1,cls=1):
-        self.enter_at,self.stops_at=site; del self.seen[:]; del self.np[:]; self.now+=600; self.word(ps['restart_ask'],0); queue=self.get(syms['mcl_pdeqplaylist'])
+        self.enter_at,self.stops_at=site; [watch(a) for a in (*site,0x53e1d4)]; del self.seen[:]; del self.np[:]; self.now+=600; self.word(ps['restart_ask'],0); queue=self.get(syms['mcl_pdeqplaylist'])
         q=q or self.same; self.word(self.cell,cls)
         if site==self.PAGE:
             for i,v in enumerate((q,at,cls,2)): self.word(self.ctx+4*i,v)
