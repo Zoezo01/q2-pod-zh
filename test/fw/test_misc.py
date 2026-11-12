@@ -451,7 +451,7 @@ def epub(opf_path, chapters, compression=zipfile.ZIP_DEFLATED, extra=None, spine
         z.writestr('META-INF/container.xml', container or CONTAINER % opf_path.encode())
         z.writestr(opf_path, opf)
         for _, name, text in chapters:
-            z.writestr(name, f'<html><body><p>{text}</p></body></html>')
+            z.writestr(name, text if isinstance(text, bytes) else f'<html><body><p>{text}</p></body></html>')
         for name, data in (extra or {}).items():
             z.writestr(name, data)
     return buf.getvalue()
@@ -552,7 +552,7 @@ def test_what_is_no_zip_is_no_book(fw, data):
     assert convert(fw, data)[0] == 0
 
 
-CD_MAX, ITEM_MAX = 2 << 20, 8 << 20  # books.c's
+CD_MAX, ITEM_MAX, META_MAX, BOOK_MAX = 2 << 20, 8 << 20, 1 << 20, 64 << 20  # books.c's
 ONE = [('a.xhtml', 'a.xhtml', 'One')]
 
 
@@ -580,14 +580,17 @@ def padded_cd(size):
 XML = CONTAINER % b'c.opf'
 
 
-def packed_container(packed):
-    """A one-chapter book whose container.xml is packed bytes of hand-made stored blocks: 128 of at most 65535 bytes,
-    5 bytes over each, so its size, packed - 640, is under ITEM_MAX and only the packed size is at the limit."""
+CHAPTER = b'<html><body><p>One</p></body></html>'
+
+
+def packed_chapter(packed):
+    """A one-chapter book whose chapter is packed bytes of hand-made stored blocks: 128 of at most 65535 bytes, 5 bytes
+    over each, so its size, packed - 640, is under ITEM_MAX and only the packed size is at the limit."""
     size = packed - 640
-    xml = XML.ljust(size)
-    data = epub('c.opf', ONE, zipfile.ZIP_STORED,
-                container=b''.join(stored(xml[k:k + 65535], k + 65535 >= size) for k in range(0, size, 65535)))
-    at = central(data, b'META-INF/container.xml')  # zip_read takes the method and both sizes from this record only
+    doc = CHAPTER.ljust(size)
+    data = epub('c.opf', [('a.xhtml', 'a.xhtml', b''.join(stored(doc[k:k + 65535], k + 65535 >= size)
+                                                          for k in range(0, size, 65535)))], zipfile.ZIP_STORED)
+    at = central(data, b'a.xhtml')  # zip_read takes the method and both sizes from this record only
     return patch(patch(data, at + 10, b'\x08\x00'), at + 24, struct.pack('<I', size))
 
 
@@ -596,14 +599,29 @@ def test_a_central_directory_of_2_mb_is_read_and_one_byte_more_refused(fw):
     assert convert(fw, padded_cd(CD_MAX + 1))[0] == 0
 
 
-def test_an_entry_of_8_mb_is_read_and_one_byte_more_refused(fw):
-    assert convert(fw, epub('c.opf', ONE, container=XML.ljust(ITEM_MAX))) == (1, b'One')
-    assert convert(fw, epub('c.opf', ONE, container=XML.ljust(ITEM_MAX + 1)))[0] == 0  # deflated, packed far under
+def test_a_chapter_of_8_mb_is_read_and_one_byte_more_refused(fw):
+    assert convert(fw, epub('c.opf', [('a.xhtml', 'a.xhtml', CHAPTER.ljust(ITEM_MAX))])) == (1, b'One')
+    assert convert(fw, epub('c.opf', [('a.xhtml', 'a.xhtml', CHAPTER.ljust(ITEM_MAX + 1))]))[0] == 0  # packed far under
 
 
-def test_an_entry_packed_to_8_mb_is_read_and_one_byte_more_refused(fw):
-    assert convert(fw, packed_container(ITEM_MAX)) == (1, b'One')
-    assert convert(fw, packed_container(ITEM_MAX + 1))[0] == 0
+def test_a_chapter_packed_to_8_mb_is_read_and_one_byte_more_refused(fw):
+    assert convert(fw, packed_chapter(ITEM_MAX)) == (1, b'One')
+    assert convert(fw, packed_chapter(ITEM_MAX + 1))[0] == 0
+
+
+def test_the_container_and_the_opf_stop_at_1_mb(fw):
+    """Both stay held while a chapter is unpacked, so each has a cap of its own (GHSA-65pf-59mx-4gmw)."""
+    assert convert(fw, epub('c.opf', ONE, container=XML.ljust(META_MAX))) == (1, b'One')
+    assert convert(fw, epub('c.opf', ONE, container=XML.ljust(META_MAX + 1)))[0] == 0
+    assert convert(fw, epub('c.opf', ONE, spine='<itemref idref="c0"/>'.ljust(META_MAX - 140))) == (1, b'One')
+    assert convert(fw, epub('c.opf', ONE, spine='<itemref idref="c0"/>'.ljust(META_MAX)))[0] == 0
+
+
+def test_a_spine_naming_one_chapter_over_and_over_stops_at_64_mb(fw):
+    """Each itemref unpacks its document again, so a few KB could write gigabytes to the card (GHSA-c4pm-qc4f-fmqx):
+    the book stops at BOOK_MAX unpacked, keeping what came before."""
+    book = epub('c.opf', [('a.xhtml', 'a.xhtml', CHAPTER.ljust(1 << 20))], spine='<itemref idref="c0"/>' * 1000)
+    assert convert(fw, book) == (1, b'\f\n'.join([b'One'] * (BOOK_MAX >> 20)))
 
 
 def test_an_encrypted_entry_is_refused(fw):

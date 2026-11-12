@@ -12,6 +12,8 @@
 #define BOOK_MARKS "/mnt/data/ringnav-books"
 #define CD_MAX (2 << 20)   /* a zip's central directory, at most */
 #define ITEM_MAX (8 << 20) /* one zip entry, packed or not, at most */
+#define META_MAX (1 << 20) /* container.xml, encryption.xml or the OPF, at most */
+#define BOOK_MAX (64 << 20) /* the spine's documents unpacked, in all, at most */
 #define BOOK_LINE 128      /* characters on one line, at most */
 #define BOOK_BACK 3072     /* bytes laid out again to find the previous page */
 
@@ -189,8 +191,9 @@ static int zip_open(zip_t *z, const char *path) {
     return ok;
 }
 
-/* name's entry, NUL-terminated in a new buffer (length *n), or 0. */
-static char *zip_read(zip_t *z, const char *name, unsigned *n) {
+/* name's entry, NUL-terminated in a new buffer (length *n), or 0; 0 too when either of its sizes
+ * is over max. */
+static char *zip_read(zip_t *z, const char *name, unsigned max, unsigned *n) {
     unsigned len = strlen(name);
     for (unsigned char *p = z->cd, *end = z->cd + z->size;
          p + 46 <= end && le(p, 4) == 0x02014b50;) {
@@ -203,7 +206,7 @@ static char *zip_read(zip_t *z, const char *name, unsigned *n) {
         unsigned method = le(p + 10, 2), packed = le(p + 20, 4), size = le(p + 24, 4);
         unsigned char head[30], *in = 0, *out = 0;
         if ((le(p + 8, 2) & 1) || (method != 8 && (method || packed != size)) ||
-            packed > ITEM_MAX || size > ITEM_MAX || fseek(z->f, le(p + 42, 4), 0) ||
+            packed > max || size > max || fseek(z->f, le(p + 42, 4), 0) ||
             fread(head, 1, 30, z->f) != 30 || le(head, 4) != 0x04034b50 ||
             fseek(z->f, le(head + 26, 2) + le(head + 28, 2), 1) || !(in = calloc(packed + 1, 1)) ||
             fread(in, 1, packed, z->f) != packed) {
@@ -326,26 +329,32 @@ unsigned book_xhtml(char *s) {
 }
 
 /* The EPUB at src as plain text into out: the spine's documents in order, each on new pages ('\f').
- * 1 when done; 0 for a book that is not a readable EPUB (DRM included), or when cancel is set. */
+ * 1 when done; 0 for a book that is not a readable EPUB (DRM included), or when cancel is set. A
+ * book stops at BOOK_MAX unpacked, so a spine naming one big document over and over can't fill the
+ * card (GHSA-c4pm-qc4f-fmqx), and what it holds at once is the OPF (META_MAX), the directory
+ * (CD_MAX) and one document packed and not (ITEM_MAX each), about 19 MB (GHSA-65pf-59mx-4gmw).
+ * ponytail: a document is inflated whole; inflate in pieces if 19 MB proves too much for demo. */
 int book_convert(const char *src, const char *out, volatile int *cancel) {
     zip_t z = { 0, 0, 0 };
-    unsigned n, len, done = 0;
+    unsigned n, len, done = 0, unpacked = 0;
     char *xml = 0, *opf = 0, path[512], folder[256];
     const char *v, *e, *p, *q, *qe, *id;
     void *f = 0;
     int ok = 0;
     if (!zip_open(&z, src)) goto end;
-    if ((xml = zip_read(&z, "META-INF/encryption.xml", &n)) && strstr(xml, "htm"))
+    if ((xml = zip_read(&z, "META-INF/encryption.xml", META_MAX, &n)) && strstr(xml, "htm"))
         goto end; /* DRM; fonts alone may be obfuscated */
     free(xml);
-    if (!(xml = zip_read(&z, "META-INF/container.xml", &n)) || !(p = tag(xml, "rootfile", &e)) ||
+    if (!(xml = zip_read(&z, "META-INF/container.xml", META_MAX, &n)) ||
+        !(p = tag(xml, "rootfile", &e)) ||
         !(v = attr(p, e, "full-path", &len)) || len >= sizeof path / 2)
         goto end;
     memcpy(path, v, len), path[len] = 0;
+    free(xml), xml = 0;
     unsigned dir = len;
     while (dir && path[dir - 1] != '/') --dir;
     memcpy(folder, path, dir); /* a ../ href writes over path's copy */
-    if (!(opf = zip_read(&z, path, &n)) || !(f = fopen(out, "wb"))) goto end;
+    if (!(opf = zip_read(&z, path, META_MAX, &n)) || !(f = fopen(out, "wb"))) goto end;
     /* ponytail: each itemref scans the manifest; an id index if big books prepare slowly */
     for (p = opf; !*cancel && (p = tag(p, "itemref", &e)); p = e) {
         if (!(v = attr(p, e, "idref", &len))) continue;
@@ -373,8 +382,12 @@ int book_convert(const char *src, const char *out, volatile int *cancel) {
             path[at++] = *h == '%' && x < 256 ? (h += 2, (char)x) : *h;
         }
         path[at] = 0;
-        char *doc = zip_read(&z, path, &n);
+        char *doc = zip_read(&z, path, ITEM_MAX, &n);
         if (!doc) goto end; /* missing or unreadable: an encrypted book */
+        if ((unpacked += n) > BOOK_MAX) {
+            free(doc);
+            break; /* the book so far */
+        }
         n = book_xhtml(doc);
         int failed = n && ((done && fwrite("\f\n", 1, 2, f) != 2) || fwrite(doc, 1, n, f) != n);
         free(doc);
