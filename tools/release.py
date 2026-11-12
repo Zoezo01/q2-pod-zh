@@ -54,14 +54,25 @@ def validate(directory):
                                   ['kernel_sha256', 'rootfs_sha256']):
             data = need(t.extractfile(name), f'Unreadable {name}').read()
             check(line.split() == [hashlib.md5(data).hexdigest(), name] and sha(data) == m[key], 'Update payload mismatch')
-    for test, *args in (('peq',), ('build', '--build', directory), ('patch', directory),
-                        ('playback', directory), ('m4b', directory), ('ldac', directory),
-                        ('id3', directory), ('headset_io', directory), ('bluealsa', directory),
-                        ('coverflow',), ('mp3',), ('mp3_gapless',),
-                        ('mp3_gapless_player', directory), ('player_seam', directory), ('bt_resample', directory), ('xfade_player', directory), ('hci_natural', directory),
-                        ('hci_ao', directory), ('hci_wait', directory),
-                        ('remote',)):
-        subprocess.run([sys.executable, ROOT/f'test/{test}.py', *map(str, args)], check=True)
+    suites(directory)
+
+
+def suites(directory):
+    """Every release suite at once. Each is a process of its own that only reads the build (the player suites work
+    in folders of their own under it), so together they take the longest one's time, the MIPS suite's."""
+    # ponytail: no limit on how many run (docs/releasing.md has the peak memory); a pool sized to the machine's
+    # memory if one with less ever packages a release.
+    runs = [(test, subprocess.Popen([sys.executable, ROOT/f'test/{test}.py', *map(str, args)]))
+            for test, *args in (('peq',), ('build', '--build', directory), ('patch', directory),
+                                ('playback', directory), ('m4b', directory), ('ldac', directory),
+                                ('id3', directory), ('headset_io', directory), ('bluealsa', directory),
+                                ('coverflow',), ('mp3',), ('mp3_gapless',),
+                                ('mp3_gapless_player', directory), ('player_seam', directory), ('bt_resample', directory),
+                                ('xfade_player', directory), ('hci_natural', directory),
+                                ('hci_ao', directory), ('hci_wait', directory),
+                                ('remote',))]
+    failed = [f'test/{test}.py' for test, suite in runs if suite.wait()]
+    check(not failed, f'Failed: {", ".join(failed)}')
 
 
 def package(stock, out):

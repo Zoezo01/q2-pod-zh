@@ -2,9 +2,10 @@
 """Execute the actual patched MIPS callback with stock filter and mocked UI services.
 Requires unicorn==2.1.4. Does not emulate the entire device or flash hardware.
 """
-import hashlib, io, json, math, os, pathlib, re, sqlite3, struct, sys
+import ctypes, hashlib, io, json, math, os, pathlib, re, sqlite3, struct, subprocess, sys, tempfile
 from functools import cmp_to_key
 from unicorn import Uc, UcError, UC_ARCH_MIPS, UC_MODE_MIPS32, UC_MODE_LITTLE_ENDIAN, UC_HOOK_CODE, UC_HOOK_BLOCK, UC_HOOK_INTR
+from unicorn.unicorn_py3.unicorn import uclib, uccallback, uc_hook_h, HOOK_CODE_CFUNC  # 2.1.4's own: Machine.hooked registers a C hook
 from unicorn.mips_const import *
 sys.path.insert(0, sys.path[0] + '/../tools')  # tools/ first
 from build import jal, j, segments, load_elf, symbols, BASE, SCRATCH, HOOKS, WM_PAINT_LEAF, FUNCTIONS, GLOBALS, CONTEXT_DATA, ROOT, source_sha256, sha, PRIVATE_FUNCTIONS, TAG, VERSION, BETA, dev_tag
@@ -58,6 +59,29 @@ FP64_FIX=_fp64_fix()
 REGS=[UC_MIPS_REG_A0, UC_MIPS_REG_A1, UC_MIPS_REG_A2, UC_MIPS_REG_A3]
 SAVED=[UC_MIPS_REG_S0,UC_MIPS_REG_S1,UC_MIPS_REG_S2,UC_MIPS_REG_S3,
        UC_MIPS_REG_S4,UC_MIPS_REG_S5,UC_MIPS_REG_S6,UC_MIPS_REG_S7,UC_MIPS_REG_FP]
+# What a mocked call may spoil, as the arrays uc_reg_write_batch takes: Machine.returns writes them in one call.
+SPOILED=[UC_MIPS_REG_V1,*REGS,UC_MIPS_REG_T0,UC_MIPS_REG_T1,UC_MIPS_REG_T2,UC_MIPS_REG_T3,UC_MIPS_REG_T4,
+         UC_MIPS_REG_T5,UC_MIPS_REG_T6,UC_MIPS_REG_T7,UC_MIPS_REG_T8,UC_MIPS_REG_T9]
+SPOIL=ctypes.c_uint32(0xdeadbeef)
+SPOILED_IDS=(ctypes.c_int*len(SPOILED))(*SPOILED); SPOILED_VALUES=(ctypes.c_void_p*len(SPOILED))(*[ctypes.addressof(SPOIL)]*len(SPOILED))
+# A machine's hook is Python, and unicorn calling it at every instruction was most of a run's time. Unicorn calls
+# FILTER.filter there instead, which calls the hook only where it has something to do: at each symbol's address, at
+# each address a mock was ever set at (Handlers) or a test named with watch(), and anywhere from the mocks' own
+# region (0x1000000) up. One marked for one machine is marked for all, which costs those only the call.
+def _filter():
+    with tempfile.TemporaryDirectory() as directory:
+        subprocess.run(['cc','-O2','-shared','-fPIC','-x','c','-','-o',directory+'/filter.so'],check=True,input=b'''
+#include <stdint.h>
+static uint8_t marked[0x1000000 >> 5];  /* a bit an instruction */
+void watch(uint32_t a) { if (a < 0x1000000) marked[a >> 5] |= 1 << (a >> 2 & 7); }
+void filter(void *uc, uint64_t a, uint32_t size, void *hook) {
+    if (a >= 0x1000000 || marked[a >> 5] >> (a >> 2 & 7) & 1) ((void (*)(void *, uint64_t, uint32_t, void *))hook)(uc, a, size, 0);
+}''')
+        return ctypes.CDLL(directory+'/filter.so')
+FILTER=_filter()
+watch=FILTER.watch; watch.argtypes=[ctypes.c_uint32]; watch.restype=None
+ENTRIES={*syms.values(),*payload_syms.values(),*(int(v,16) for v in manifest['patch_symbols'].values())}
+for a in ENTRIES: watch(a)
 
 def signed(x): return x if x<0x80000000 else x-0x100000000
 SCOPE_RULES='/mnt/data/q2-library-scope'  # library_scope.c's folder marker rules, written by a library update
@@ -98,6 +122,13 @@ def render(m,code,v):
     return str(signed(v)) if code=='i' else '%08x'%v
 
 
+class Handlers(dict):
+    """A machine's mocks, by address: one at an address no symbol names is marked for FILTER."""
+    def __setitem__(self,a,name):
+        if a not in ENTRIES: watch(a)
+        super().__setitem__(a,name)
+    def update(self,other):
+        for a,name in other.items(): self[a]=name
 class Machine:
     def __init__(self, patched=True):
         self.u=Uc(UC_ARCH_MIPS, UC_MODE_MIPS32|UC_MODE_LITTLE_ENDIAN)
@@ -122,7 +153,7 @@ class Machine:
         self.word(self.canvas+O['CANVAS_LCD'],self.lcd)
         for off,v in zip(('LCD_FILL_COLOR','LCD_STROKE_COLOR'),LCD_COLORS): self.word(self.lcd+O[off],v)
         self.clip=(0,0,240,240)
-        self.handlers={}
+        self.handlers=Handlers()
         if patched:  # a file and a clock; test/playback.py tests them
             self.handlers[payload_syms['press_stamp']]='stock_press_stamp'
             self.handlers[payload_syms['mute_stamp']]='stock_mute_stamp'
@@ -172,7 +203,7 @@ class Machine:
         self.mock('sqrtf@GLIBC_2.0','sinf@GLIBC_2.0','acosf@GLIBC_2.0',prefix='float:')
         self.mock(*VG_MOCKS,prefix='vg:')
         self.handlers[payload_syms['peq_lib_localtime_r']]='localtime_r'
-        self.code_hook=self.u.hook_add(UC_HOOK_CODE,self.hook)
+        self.code_hook=self.hooked()
         for name in GLOBALS: self.byte(syms[name],0)
         for name,size in CONTEXT_DATA.items(): self.u.mem_write(syms[name],bytes(size))
         self.word(syms['g_class_type'],0xf001)
@@ -236,7 +267,10 @@ class Machine:
         a=self.alloc(len(data)); self.u.mem_write(a,data); return a
     def raw(self,a):
         out=bytearray()
-        while a and (c:=self.u.mem_read(a,1))!=b'\0': out+=c; a+=1
+        while a:  # to the page's end at a time: a page is mapped whole, so this faults where a read by the byte would
+            page=self.u.mem_read(a,0x1000-(a&0xfff)); end=page.find(b'\0')
+            if end>=0: return bytes(out+page[:end])
+            out+=page; a+=len(page)
         return bytes(out)
     def text(self,a): return self.raw(a).decode()
     def node(self,t='scroll_view',name='',children=(),visible=1,**kw):
@@ -652,19 +686,23 @@ class Machine:
         for i,v in enumerate(sorted([bytes(self.u.mem_read(base+size*i,size)) for i in range(n)],key=cmp_to_key(cmp))): self.u.mem_write(base+size*i,v)
     def returns(self,ret,clobber=False):
         """Return ret from a mocked call; clobber caller-saved registers to catch accidental ABI assumptions."""
-        if clobber:
-            for r in [UC_MIPS_REG_V1,*REGS,UC_MIPS_REG_T0,UC_MIPS_REG_T1,UC_MIPS_REG_T2,
-                      UC_MIPS_REG_T3,UC_MIPS_REG_T4,UC_MIPS_REG_T5,UC_MIPS_REG_T6,
-                      UC_MIPS_REG_T7,UC_MIPS_REG_T8,UC_MIPS_REG_T9]:
-                self.u.reg_write(r,0xdeadbeef)
+        if clobber:  # unicorn 2.1.4's private call: its public reg_write_batch builds the arrays anew, at fifteen writes' cost
+            assert not self.u._do_reg_write_batch(SPOILED_IDS,SPOILED_VALUES,len(SPOILED))
         self.u.reg_write(UC_MIPS_REG_V0,ret&0xffffffff)
         self.u.reg_write(UC_MIPS_REG_PC,self.u.reg_read(UC_MIPS_REG_RA))
+    def hooked(self,begin=1,end=0):
+        """Hook begin..end (everything, as unicorn reads 1..0) with the hook behind FILTER; returns unicorn's handle."""
+        hook=self.hook; python=uccallback(self.u,HOOK_CODE_CFUNC)(lambda u,address,size,_: hook(u,address,size,None))
+        handle=uc_hook_h()
+        assert not uclib.uc_hook_add(self.u._uch,ctypes.byref(handle),UC_HOOK_CODE,FILTER.filter,ctypes.cast(python,ctypes.c_void_p),begin,end)
+        self.u._callbacks[handle.value]=python  # kept alive as Uc.hook_add's are, where hook_del looks
+        return handle.value
     def fast(self):
         """Hook stock code and the payload's trampolines only, so the payload's own loops (the
         Coverflow renderer) run at native emulator speed."""
         self.u.hook_del(self.code_hook)
-        self.u.hook_add(UC_HOOK_CODE,self.hook,begin=0,end=BASE-1)
-        self.u.hook_add(UC_HOOK_CODE,self.hook,begin=SCRATCH,end=0xffffffff)
+        self.hooked(0,BASE-1)
+        self.hooked(SCRATCH,0xffffffff)
         for a in list(self.handlers):
             if BASE<=a<SCRATCH: self.u.hook_add(UC_HOOK_CODE,self.hook,begin=a,end=a)
     budget=100000  # instructions per call
