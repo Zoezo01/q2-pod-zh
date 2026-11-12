@@ -6982,6 +6982,8 @@ static void quick_swipe(void *target, void *event) {
     I(g_pressdown_y, 0) = QS_SWIPE_STOCK;
 }
 
+static void *np_more(void);
+
 /* Observe actual clicks BEFORE app callbacks can navigate or destroy/rebind their widgets.
  * Do not turn pointer-down into selection: a swipe is not a tap. */
 int ringnav_dispatch(void *target, void *event) {
@@ -7066,6 +7068,8 @@ int ringnav_dispatch(void *target, void *event) {
         pull_cancel();
     }
     if (target && event && I(event, EVENT_TYPE) == EVT_CLICK) {
+        /* Now Playing's ⋯, an app's page instead of stock's while the app's queue plays */
+        if (target == np_more() && addon_more()) return STOP;
         hide_outline();
         cancel_center(); /* A native activation supersedes confirmation, even without touch. */
         drop_spin();
@@ -8922,7 +8926,8 @@ static int qm_run(const void *unused) {
     } else if (a == QA_MORE) {
         void *more = np_more(); /* clicked as a tap would, so stock's own handler opens it */
         char click[0x30];
-        if (more) stock_dispatch_trampoline(more, pointer_event_init(click, EVT_CLICK, more, 0, 0));
+        if (more && !addon_more())
+            stock_dispatch_trampoline(more, pointer_event_init(click, EVT_CLICK, more, 0, 0));
     } else if (r && (a == QA_NEXT_GROUP || a == QA_PREV_GROUP)) {
         if (!playback_group_skip(a == QA_NEXT_GROUP)) toast("No other group");
     } else if (aid && a == QA_RATE) {

@@ -62,6 +62,7 @@
   - Scrobbling: Last.fm no longer needs your password on the card. `tools/lastfm_key.py`, run once on a computer, replaces the `PASSWORD` line in `.scrobble.ini` with a `SESSION_KEY`, which can't sign in to last.fm, and which Last.fm's settings can withdraw. A file with a password works as before.
   - Card apps: an app can leave out the **Stop** row on its pages: a page still loading shows only Loading…, and a failed page offers **Retry** and **Cancel**, which goes back as Return does and leaves the app running.
   - Card apps: an app's page can ask you to type a value, such as a sign-in's user name and password, and stay on the same page, which shows what the app chooses (`***` for a password) and is never titled with what you typed.
+  - Card apps: an app can open its own page from Now Playing's ⋯ while its music plays, such as its playlists, instead of the stock rows that mean nothing for its songs.
 - **1.7.6**:
   - Cover Flow: a fast spin starts going by letters after 0.7 s instead of 0.5 s, as it did before 1.6.9, so a brisk turn through a few albums stays album by album.
   - Quick Settings: under **Theme: Classic** the System Settings button shows a gear. It used to look like the brightness sun.
