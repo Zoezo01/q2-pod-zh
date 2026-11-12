@@ -16109,6 +16109,12 @@ assert m.text(0x782974)=='cp -f "%s" \'%s\'' and m.get(COVER_PICK_CALL)==jal(pay
 src='/mnt/mmc/.downpic/x$(touch p)`id`.flac.jpg'
 m=LyricSaveMachine({src:LRC}); assert cover_copy(m,src)==':' and m.files=={src:LRC,'/tmp/externpic.jpg':LRC}; passed()
 m=LyricSaveMachine({}); assert cover_copy(m,src)==':' and not m.files; passed()  # gone since stock's access()
+# A folder's delete (folder_delete.c ringnav_folder_rm, at FOLDER_RM_CALL): remove_file's rm -rf "<folder>" puts the
+# path in single quotes instead, so the shell expands nothing in it; test/fw runs the command through /bin/sh.
+from build import FOLDER_RM_CALL
+assert m.text(0x782ff8)=='rm -rf "%s"' and m.get(FOLDER_RM_CALL)==jal(payload_syms['ringnav_folder_rm'])
+cmd=m.alloc(0x61b); m.call(address=payload_syms['ringnav_folder_rm'],args=(cmd,0x61b,0x782ff8,m.string("/mnt/mmc/$NOT/Guns N' Roses")),gap=0)
+assert m.text(cmd)=="rm -rf '/mnt/mmc/$NOT/Guns N'\\'' Roses'"; passed()
 
 # Spotify's browser (patch/spotify.c, docs/librespot.md's Q2SPOT/1): the row opens spotbrowse_page,
 # each level a request on the fork's --browse-socket, sent and read on a pthread.
