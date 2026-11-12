@@ -128,7 +128,7 @@ def main(argv, urlopen=urllib.request.urlopen, ask=getpass.getpass):
         raise SystemExit(f"{path} is as it was: the new file couldn't be written ({e.strerror or e})")
     with contextlib.suppress(OSError):
         os.chmod(path, mode)  # as the old file's
-    print(f"{path}: SESSION_KEY is in and no password is. Last.fm's Settings > Applications withdraws the key.")
+    print(f"{path}: SESSION_KEY is in, and the PASSWORD lines are out of [LASTFM]. Last.fm's Settings > Applications withdraws the key.")
 
 
 if __name__ == '__main__':

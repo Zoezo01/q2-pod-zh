@@ -159,7 +159,7 @@ def test_a_run_swaps_the_file_s_password_for_the_key_without_asking(tmp_path, ca
     assert dict(net.calls[0][1])['password'] == 'Example Pass&word' and len(net.calls) == 1
     assert left(tmp_path) == ['.scrobble.ini']  # no .tmp left
     out, err = capsys.readouterr()
-    assert 'SESSION_KEY is in and no password is' in out and not err
+    assert 'SESSION_KEY is in, and the PASSWORD lines are out of [LASTFM].' in out and not err
     assert KEY not in out and 'Example' not in out and 'fedc9876' not in out  # neither secret nor the key is shown
 
 
