@@ -7585,7 +7585,8 @@ enum {
     QA_CHAPTERS,
     QA_MORE,
     QA_NEW_PLAYLIST,
-    QA_EDIT_PLAYLISTS
+    QA_EDIT_PLAYLISTS,
+    QA_CF_OPTIONS
 };
 
 static char *play_key(void) {
@@ -8919,6 +8920,8 @@ static int qm_run(const void *unused) {
         if (r) navigator_to_with_context("localmusic/playlistsmore_page", (void *)(long)st.qm_idx);
     } else if (a == QA_NEW_PLAYLIST || a == QA_EDIT_PLAYLISTS) {
         /* the page's own, not the playlist's: qm_edit_due */
+    } else if (a == QA_CF_OPTIONS) {
+        display_open((void *)DISPLAY_COVERFLOW, 0);
     } else if (a == QA_MORE) {
         void *more = np_more(); /* clicked as a tap would, so stock's own handler opens it */
         char click[0x30];
@@ -9169,6 +9172,9 @@ static int qm_open(const void *unused) {
         acts[n++] = QA_NEW_PLAYLIST;
         if (!geom_val(V_TOOLBAR)) acts[n++] = QA_EDIT_PLAYLISTS;
     }
+    /* a cover's, an album's or a playlist's: Display's Cover Flow page, over the covers */
+    if (st.qm_kind == QM_COVERALBUM || (st.qm_kind == QM_PLAYLIST && coverflow_playlist(page)))
+        acts[n++] = QA_CF_OPTIONS;
     static const char *const rows[] = { "Play Next",
                                         "Add to Queue",
                                         "Shuffle",
@@ -9189,7 +9195,8 @@ static int qm_open(const void *unused) {
                                         "Chapters",
                                         "More…",
                                         "New Playlist",
-                                        "Edit Playlists…" };
+                                        "Edit Playlists…",
+                                        "Cover Flow Options…" };
     char rated[32];
     /* stock sortselect row styles */
     int painted = dialogs_painted(), pitch = painted ? theme()->page_row : QM_ROW;
