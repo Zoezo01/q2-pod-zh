@@ -106,10 +106,11 @@ def far_ifd(entries):
 JFIF = segment(0xe0, b'JFIF\0\x01\x02\0\0\x01\0\x01\0\0')
 XMP = segment(0xe1, b'http://ns.adobe.com/xap/1.0/\0<x:xmpmeta/>')
 SOS = b'\xff\xda\x00\x0c' + bytes(10)
+SOF = segment(0xc0, struct.pack('>BHHB', 8, 480, 640, 3) + bytes(9))  # baseline, so stock's decoder takes it
 
 
 def jpeg(*segments):
-    return b'\xff\xd8' + b''.join(segments) + SOS + bytes(64) + b'\xff\xd9'
+    return b'\xff\xd8' + b''.join(segments) + SOF + SOS + bytes(64) + b'\xff\xd9'
 
 
 def orientation(fw, data, n=None):
@@ -463,7 +464,7 @@ def test_a_new_photo_gets_its_screen_copy_then_a_thumbnail_from_it(fw, o):
 def test_the_orientation_is_read_from_the_first_4_kb(fw, end, o):
     """An IFD0 entry ending at the 4096th byte counts; a byte further it's past what build reads."""
     path = f'{ROOT}/a.jpg'
-    card = Card(fw, {path: b'\xff\xd8' + segment(0xe1, exif([(0x112, 6)], ifd=end - 26)) + SOS + bytes(64)})
+    card = Card(fw, {path: b'\xff\xd8' + segment(0xe1, exif([(0x112, 6)], ifd=end - 26)) + SOF + SOS + bytes(64)})
     Thumbs(fw, card)
     worker_state(fw, [path])
     assert build(fw) == o

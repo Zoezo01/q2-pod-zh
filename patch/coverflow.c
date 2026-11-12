@@ -202,11 +202,13 @@ int ff_thumb(const char *src, const char *dst, int w, int h) {
 static unsigned be16(const unsigned char *p) { return p[0] << 8 | p[1]; }
 
 #define PICTURE_PNG 1
+#define PICTURE_JPEG 0xd8 /* a JPEG whose frame header wasn't found: its size is unknown */
 
-/* path's picture size in *w and *h, read from its header; 0 when it isn't known, else PICTURE_PNG
- * or a JPEG's frame marker (0xc2: progressive). A PNG's size past 16 bits reads as 65536. Magic
- * bytes as toolsGetPictureInfo tells them; the JPEG's frame header is looked for in its first 64
- * segments. Shared with addon.c. */
+/* path's picture size in *w and *h, read from its header; 0 when it isn't a picture we know, else
+ * PICTURE_PNG, a JPEG's frame marker (0xc2: progressive) or PICTURE_JPEG. A PNG's size past 16 bits
+ * reads as 65536. Magic bytes as toolsGetPictureInfo tells them; the JPEG's frame header is looked
+ * for in its first 64 segments, a fill byte (0xff before a marker) counting as one. Shared with
+ * addon.c. */
 int picture_size(const char *path, int *w, int *h) {
     unsigned char b[24];
     void *f = fopen(path, "rb");
@@ -215,15 +217,17 @@ int picture_size(const char *path, int *w, int *h) {
         kind = PICTURE_PNG;
         *w = be16(b + 16) ? 65536 : (int)be16(b + 18);
         *h = be16(b + 20) ? 65536 : (int)be16(b + 22);
-    } else if (got && b[0] == 0xff && b[1] == 0xd8)
+    } else if (got && b[0] == 0xff && b[1] == 0xd8) {
+        kind = PICTURE_JPEG;
         for (long at = 2, n = 0; n < 64 && !fseek(f, at, 0) && fread(b, 1, 9, f) == 9 &&
                                  b[0] == 0xff && b[1] != 0xda; /* image data follows */
-             ++n, at += 2 + be16(b + 2))
+             ++n, at += b[1] == 0xff ? 1 : 2 + be16(b + 2))
             if (b[1] >> 4 == 0xc && b[1] != 0xc4 && b[1] != 0xc8 && b[1] != 0xcc) {
                 /* a frame header, SOF0 to SOF15: SOF2 is the Huffman progressive one */
                 kind = b[1], *h = (int)be16(b + 5), *w = (int)be16(b + 7);
                 break;
             }
+    }
     if (f) fclose(f);
     return kind;
 }
@@ -231,12 +235,14 @@ int picture_size(const char *path, int *w, int *h) {
 /* Whether stock's decoder would hold path's whole picture in demo, which the OOM killer would then
  * take (#216): a PNG over 1024 px either way (its reader, 0x5c8ef8, expands the image with
  * png_read_png before its own 1024 px test) or a progressive JPEG over 1024 px (libjpeg keeps a
- * full-size coefficient buffer at any scale).
+ * full-size coefficient buffer at any scale), and a JPEG it can't size, which may be one
+ * (GHSA-w54x-mvfw-c7v3).
  * ponytail: only SOF2, as ffmpeg 4.2 decodes no arithmetic (SOF10) or hierarchical frames; a
  * progressive cover ffmpeg's -xerror rejects (cut short) no longer falls back to stock. */
 static int big_picture(const char *path) {
     int w = 0, h = 0, kind = picture_size(path, &w, &h);
-    return (kind == PICTURE_PNG || kind == 0xc2) && (w > 1024 || h > 1024);
+    return kind == PICTURE_JPEG ||
+           ((kind == PICTURE_PNG || kind == 0xc2) && (w > 1024 || h > 1024));
 }
 
 /* stock's thumbnailer, under the lock every stock caller holds, else ffmpeg; shared with photos.c.

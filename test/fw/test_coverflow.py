@@ -1666,14 +1666,17 @@ def jpeg(sof, w, h, *before):
     (jpeg(0xc6, 2000, 2000), 0), (jpeg(0xca, 2000, 2000), 0), (jpeg(0xce, 2000, 2000), 0),
     (png(4000, 4000).replace(b'IHDR', b'CgBI'), 0),
     (jpeg(0xc2, 1024, 1024, APP0), 0), (jpeg(0xc0, 4000, 4000, APP0, EXIF), 0), (jpeg(0xc1, 4000, 4000), 0),
-    (jpeg(0xc2, 3000, 3000, *[APP0] * 63), 1), (jpeg(0xc2, 3000, 3000, *[APP0] * 64), 0),
+    (jpeg(0xc2, 3000, 3000, *[APP0] * 63), 1), (jpeg(0xc2, 3000, 3000, *[APP0] * 64), 1),
+    (jpeg(0xc2, 3000, 3000, APP0, b'\xff'), 1), (jpeg(0xc0, 4000, 4000, b'\xff\xff', APP0, b'\xff'), 0),
+    (b'\xff\xd8' + bytes(64), 1),
     (b'RIFF\0\0\0\0WEBPVP8 ' + bytes(16), 0)))
 def test_thumb_sends_a_picture_stock_would_decode_whole_to_ffmpeg(fw, head, big):
     """Stock's PNG reader expands the whole image before its 1024 px test, and libjpeg holds a progressive JPEG's
     full-size coefficients at any scale, both in demo, the OOM killer's pick (#216): those go to ffmpeg alone, whose
     child the kernel kills first. A baseline JPEG decodes scaled, so it stays with stock, as does what thumb can't
-    size (a cut-short header, the frame header past the 64th segment, another type) or ffmpeg can't decode (an
-    arithmetic or hierarchical progressive JPEG)."""
+    size (a cut-short PNG header, another type) or ffmpeg can't decode (an arithmetic or hierarchical progressive JPEG).
+    Fill bytes before a marker are stepped over, and a JPEG whose frame header isn't found in its first 64 segments
+    goes to ffmpeg, as it may be a big progressive one (GHSA-w54x-mvfw-c7v3)."""
     g = api(fw)
     card = Card(fw, {'/p/a': head, '/d.ff': b'jpg'})
     builder(fw, card, thumb=True, ff=0)

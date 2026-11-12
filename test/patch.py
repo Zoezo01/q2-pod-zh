@@ -14715,7 +14715,8 @@ def exif(o,le=True,pad=b''):
     tiff=(b'II' if le else b'MM')+struct.pack(e+'HI',42,8)+struct.pack(e+'H',2)+struct.pack(e+'HHI',0x10f,2,1)+bytes(4)
     tiff+=struct.pack(e+'HHIH',0x112,3,1,o)+bytes(2)+bytes(4)
     app1=b'Exif\0\0'+tiff
-    return b'\xff\xd8'+pad+b'\xff\xe1'+struct.pack('>H',len(app1)+2)+app1+b'\xff\xda'
+    sof=b'\xff\xc0'+struct.pack('>HBHHB',17,8,480,640,3)+bytes(9)  # baseline, so stock's decoder takes it
+    return b'\xff\xd8'+pad+b'\xff\xe1'+struct.pack('>H',len(app1)+2)+app1+sof+b'\xff\xda'
 JFIF=b'\xff\xe0'+struct.pack('>H',16)+b'JFIF\0'+bytes(9)
 def orientation(data): a=m.alloc(len(data)+4); m.u.mem_write(a,data); return ph_call('photo_orientation',a,len(data))
 assert [orientation(d) for d in (exif(6),exif(8,le=False),exif(3,pad=JFIF),exif(9),exif(6)[:30],b'\x89PNG\r\n\x1a\n',b'\xff\xd8\xff\xda')]==[6,8,3,1,1,1,1]
