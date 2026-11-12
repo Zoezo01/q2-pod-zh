@@ -191,7 +191,7 @@ for directory in args.builds:
             assert hashlib.md5(archive.extractfile(path).read()).hexdigest() == expected
         kernel = archive.extractfile('recovery-update/xImage').read()
         assert sha(kernel) == manifest['kernel_sha256'] == (
-            '7ddf82fa78f998677161225d753f65b595981f4a569e30f90a8e66f8ea3bcf76')
+            '1436561f1960ceda229c8e716e631d7b57eca29793b9efa4f06c584f991f1316')
         assert archive.extractfile('recovery-update/rootfs.squashfs').read() == squash.read_bytes()
     print(directory.name, 'experimental/default package integrity passed')
 print('PASS: AIC notifier build guards and all supplied packages')

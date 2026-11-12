@@ -32,10 +32,10 @@ CARD = "/mnt/mmc"
 LOG = "/tmp/q2-demo.log"  # --dev builds' demo output (tools/build.py LOG_HOOK)
 TRAILER = re.compile(rb"\n\0q2rc=(\d+)\n\Z")  # run()'s last line: the exit status
 SETTLE_S, SETTLE_POLL_S, REBOOT_WAIT_S = 5, .15, 360
-# demo's byte globals at stock V1.34's addresses, as build/*/peq_platform.h has them; test/remote.py checks them.
-GLOBALS = {"backlight": ("g_backlight_status", 0x9b2c14), "usb": ("g_usblink_status", 0xa4c44f),
-           "keylock": ("g_keylock_flag", 0xa4c595), "lockscreen": ("g_lockscreen_pageflag", 0xa4c46f),
-           "volume": ("g_volume", 0xa4c5a5)}
+# demo's byte globals at stock V1.36's addresses, as build/*/peq_platform.h has them; test/remote.py checks them.
+GLOBALS = {"backlight": ("g_backlight_status", 0x9b3214), "usb": ("g_usblink_status", 0xa4ca5f),
+           "keylock": ("g_keylock_flag", 0xa4cba5), "lockscreen": ("g_lockscreen_pageflag", 0xa4ca7f),
+           "volume": ("g_volume", 0xa4cbb5)}
 
 
 def event(kind, code, value):

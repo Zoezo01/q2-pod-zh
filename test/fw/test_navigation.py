@@ -884,7 +884,7 @@ def test_cue_text_any_field_in_its_512(fw, heap):
 @pytest.mark.parametrize('data', [b'\xb0\xa1', b'\xb0\xa1' * 170])
 def test_cue_text_gbk_goes_through_stocks_conversion(fw, heap, data):
     log = (C.c_long * 3)()
-    stock_stub(0x5cf50c, 9, log)
+    stock_stub(0x5cf83c, 9, log)
     block = heap.string(data, 512)
     assert fw.fn('ringnav_cue_text', C.c_int, C.c_void_p, C.c_void_p, C.c_void_p)(block, 0x11, 0x22) == 9
     assert list(log) == [block, 0x11, 0x22]
@@ -1698,7 +1698,7 @@ def test_a_modal_dialogs_close_skips_a_dialog_already_freed(fw):
     fw.mock('widget_get_child', lambda w, i, *_: windows[i])
     fw.mock('idle_add', lambda f, ctx, *_: queued.append((f, ctx)) or 1)
     close = fw.fn('system__dialog_close', C.c_int, C.c_void_p)
-    fw.fn('ringnav_dialog_close', C.c_int, C.c_void_p, C.c_void_p)(0x651c7c, dialog)
+    fw.fn('ringnav_dialog_close', C.c_int, C.c_void_p, C.c_void_p)(0x6521dc, dialog)
     assert queued == [(C.cast(close, C.c_void_p).value, dialog)]
     idle = (C.c_char * 0x28)()
     C.c_void_p.from_buffer(idle, O['IDLE_CTX']).value = dialog
@@ -2242,7 +2242,7 @@ def test_each_playlist_writer_waits_for_a_reader_before_its_write(fw):
 
 @pytest.mark.parametrize('opened', [0, 14])
 def test_stock_s_connection_waits_for_a_reader_once_open(fw, opened):
-    """tools/build.py's hook in stock's lazy open (0x5c8ae0): the pragma on the connection it opened, none
+    """tools/build.py's hook in stock's lazy open (0x5c8d64): the pragma on the connection it opened, none
     when the open failed, and the open's result back to stock."""
     sql = Sql(fw)
     fw.mock('sqlite3_open', lambda path, db, *_: C.c_void_p.from_address(db).__setattr__('value', 0xdb) or opened)
@@ -2654,7 +2654,7 @@ def test_hold_info_gives_play_and_return_700_ms(fw):
 @in_fork
 def test_hold_info_of_any_other_key_is_stocks(fw):
     log = (C.c_long * 3)()
-    stock_stub(0x6b32ec, 0x1234, log)
+    stock_stub(0x6b384c, 0x1234, log)
     assert fw.fn('ringnav_hold_info', C.c_void_p, C.c_void_p, C.c_int)(0x55, KEY_CENTER) == 0x1234
     assert list(log[:2]) == [0x55, KEY_CENTER]
 

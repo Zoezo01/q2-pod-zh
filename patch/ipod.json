@@ -4,11 +4,11 @@
     "folder_page.bin": "f17a8e6d1d60b6802a5cdb969b759d728153bc0636bc284d0b97e1626977db46",
     "localmusic_page.bin": "0fd1b05acc0be0db1912552aa766408bde8d4ac9d5e1a437ad5dc70b7258047a",
     "localmusic/album_page.bin": "b0a6420c81b19fd78706dcb1e1db09b365c5c9b817bf615ebc535197bce41ab1",
-    "localmusic/albuminfo_page.bin": "31ad14625bf60d438b93a391ec8f433a91452403f50f76ced183ee01609fca5e",
+    "localmusic/albuminfo_page.bin": "877c395b482e75ab0d2bce0dc93cda0a8b8357121db89bef36a0730e99bc5a69",
     "localmusic/allmusic_page.bin": "d42fbfd1dbdd05f1cc19941054d6dfe2995706093b264b20d8b7e69a6095e147",
     "localmusic/artistinfo_page.bin": "5c30c3a6dc3d3b6350563be3fdc12cb5791764ad47e05ff83738bb7cac09f351",
     "localmusic/localclass_page.bin": "41572b285d5c6a447ae340d8827cacc02eac0359d5d4bd07cbf518e5463a10a1",
-    "localmusic/playlist_page.bin": "68efc8a91545f4c79b649cf177912332c6c493ed2b258d3b759f9bf14e44b962",
+    "localmusic/playlist_page.bin": "b4729e13fad821c787539b717a1980391bcd3c6bee533dc7836cda5800f7fef6",
     "localmusic/playlistsmore_page.bin": "60948d54736bbe913305b960ee3b8c88dd135f4327e7a8c37e526740cec66d9f",
     "home_page.bin": "a634649281eacf120a3e8a92eb7eef74957dc61b6c1eb8220701421956f63a91",
     "system_bar.bin": "8f1e2788c4ae17cc4615149c7f3537153ee225cdb8a476d6b57954dfc6c8d9f8",
@@ -71,12 +71,12 @@
       "value": "pitch",
       "purpose": "row creation, reset or artwork offset divisor",
       "sites": [
-        ["0x4a8d7c", "0x2402004e"],
+        ["0x4a8d2c", "0x2402004e"],
         ["0x4b0b60", "0x2410004e"],
-        ["0x4afa44", "0x2402004e"],
-        ["0x4b55dc", "0x2402004e"],
-        ["0x4b5628", "0x2402004e"],
-        ["0x4b3a98", "0x2402004e"]
+        ["0x4afa78", "0x2402004e"],
+        ["0x4b55cc", "0x2402004e"],
+        ["0x4b5618", "0x2402004e"],
+        ["0x4b3a80", "0x2402004e"]
       ]
     },
     {
@@ -85,226 +85,226 @@
       "sites": [
         ["0x4a45c8", "0x2402004e"],
         ["0x4a45cc", "0x2406004e"],
-        ["0x4a5ea8", "0x2410004e"],
-        ["0x4a69f8", "0x2402004e"],
-        ["0x531cf0", "0x2405004e"],
-        ["0x531ff8", "0x2403004e"],
-        ["0x532f78", "0x2410004e"],
-        ["0x533944", "0x2402004e"]
+        ["0x4a5e74", "0x2410004e"],
+        ["0x4a69c4", "0x2402004e"],
+        ["0x532000", "0x2405004e"],
+        ["0x532308", "0x2403004e"],
+        ["0x533288", "0x2410004e"],
+        ["0x533c54", "0x2402004e"]
       ]
     },
     {
       "value": "pitch",
       "purpose": "local class artwork offset divisor (stock disagrees with its 78px rows)",
       "sites": [
-        ["0x4b2a60", "0x24100078"]
+        ["0x4b2a48", "0x24100078"]
       ]
     },
     {
       "value": "body",
       "purpose": "row background, hit target and full-height children",
       "sites": [
-        ["0x4a7fa4", "0x24020046"],
-        ["0x4afa60", "0x24130046"],
-        ["0x4afc6c", "0x24020046"],
-        ["0x4b4f14", "0x24130046"],
-        ["0x4b50ec", "0x24170046"],
-        ["0x4b5648", "0x24120046"],
-        ["0x4b3ad0", "0x24110046"]
+        ["0x4a7f54", "0x24020046"],
+        ["0x4afa94", "0x24130046"],
+        ["0x4afc9c", "0x24020046"],
+        ["0x4b4f04", "0x24130046"],
+        ["0x4b50dc", "0x24170046"],
+        ["0x4b5638", "0x24120046"],
+        ["0x4b3ab8", "0x24110046"]
       ]
     },
     {
       "value": "art_body",
       "purpose": "row background, hit target and full-height children",
       "sites": [
-        ["0x4a6a14", "0x24150046"],
-        ["0x532a08", "0x24060046"],
-        ["0x53397c", "0x24110046"]
+        ["0x4a69e0", "0x24150046"],
+        ["0x532d18", "0x24060046"],
+        ["0x533c8c", "0x24110046"]
       ]
     },
     {
       "value": "body",
       "purpose": "text/icon container inside row; stock child layout stretches to parent",
       "sites": [
-        ["0x4a80e8", "0x24020078"],
-        ["0x4a8244", "0x24020078"],
-        ["0x4aff10", "0x24020078"]
+        ["0x4a8098", "0x24020078"],
+        ["0x4a81f4", "0x24020078"],
+        ["0x4aff40", "0x24020078"]
       ]
     },
     {
       "value": "art_body",
       "purpose": "text/icon container inside row; stock child layout stretches to parent",
       "sites": [
-        ["0x4a6bc0", "0x24020078"]
+        ["0x4a6b8c", "0x24020078"]
       ]
     },
     {
       "value": "art",
       "purpose": "stock 52px artwork drawn 1:1 in the inset row widget",
       "sites": [
-        ["0x4a6ae0", "0x24070032"]
+        ["0x4a6aac", "0x24070032"]
       ]
     },
     {
       "value": "text_art",
       "purpose": "text pages' stock 50px artwork (Songs, an artist's songs, Artists): 52 drawn 1:1, 0 hides it",
       "sites": [
-        ["0x4ac6a4", "0x24070032"],
-        ["0x4afc74", "0x24070032"],
-        ["0x4b3b7c", "0x24070032"]
+        ["0x4ac6fc", "0x24070032"],
+        ["0x4afca4", "0x24070032"],
+        ["0x4b3b64", "0x24070032"]
       ]
     },
     {
       "value": "art_inset",
       "purpose": "artwork and playing overlay at the 8px top/left inset",
       "sites": [
-        ["0x4a6b54", "0x24060009"],
-        ["0x533a54", "0x24060009"],
-        ["0x533ac4", "0x24060009"]
+        ["0x4a6b20", "0x24060009"],
+        ["0x533d64", "0x24060009"],
+        ["0x533dd4", "0x24060009"]
       ]
     },
     {
       "value": "lib_body",
       "purpose": "the Library's row height (its constructor; navigation.c list_row_core reads it live)",
       "sites": [
-        ["0x535230", "0x24140046"]
+        ["0x535540", "0x24140046"]
       ]
     },
     {
       "value": "lib_inset",
       "purpose": "the Library's row icon x (its constructor; navigation.c list_row_core reads it live)",
       "sites": [
-        ["0x535368", "0x2405000a"]
+        ["0x535678", "0x2405000a"]
       ]
     },
     {
       "value": "text_art_inset",
       "purpose": "text pages' playing overlay at the 8px top inset",
       "sites": [
-        ["0x4ac71c", "0x24060009"],
-        ["0x4afce4", "0x24060009"]
+        ["0x4ac774", "0x24060009"],
+        ["0x4afd14", "0x24060009"]
       ]
     },
     {
       "value": 0,
       "purpose": "folder artwork on the row layout's 8px left margin",
       "sites": [
-        ["0x533a5c", "0x24050004"]
+        ["0x533d6c", "0x24050004"]
       ]
     },
     {
       "value": "title24_y",
       "purpose": "24px title position in the 68px body, font unchanged",
       "sites": [
-        ["0x4a8278", "0x2406000e"]
+        ["0x4a8228", "0x2406000e"]
       ]
     },
     {
       "value": "art_title24_y",
       "purpose": "24px title position in the 68px body, font unchanged",
       "sites": [
-        ["0x4a6c0c", "0x2406000e"]
+        ["0x4a6bd8", "0x2406000e"]
       ]
     },
     {
       "value": "title_y",
       "purpose": "title position in the 68px body, font unchanged",
       "sites": [
-        ["0x4aff9c", "0x2406000b"],
-        ["0x4b527c", "0x2406000b"]
+        ["0x4affcc", "0x2406000b"],
+        ["0x4b526c", "0x2406000b"]
       ]
     },
     {
       "value": "meta_y",
       "purpose": "16px metadata position in the 68px body, font unchanged",
       "sites": [
-        ["0x4a8314", "0x24060028"],
-        ["0x4b0014", "0x24060028"]
+        ["0x4a82c4", "0x24060028"],
+        ["0x4b002c", "0x24060028"]
       ]
     },
     {
       "value": "art_meta_y",
       "purpose": "16px metadata position in the 68px body, font unchanged",
       "sites": [
-        ["0x4a6c74", "0x24060028"]
+        ["0x4a6c3c", "0x24060028"]
       ]
     },
     {
       "value": "count_y",
       "purpose": "playlist count position in the 68px body",
       "sites": [
-        ["0x4b52e0", "0x24060029"]
+        ["0x4b52d0", "0x24060029"]
       ]
     },
     {
       "value": "song_pitch",
       "purpose": "Songs: row creation and the page's row divisor, its own so a set can make them taller than the text rows",
       "sites": [
-        ["0x4abb6c", "0x2410004e"],
-        ["0x4ac5c0", "0x2402004e"]
+        ["0x4abbc4", "0x2410004e"],
+        ["0x4ac618", "0x2402004e"]
       ]
     },
     {
       "value": "song_body",
       "purpose": "Songs: row background and its text container",
       "sites": [
-        ["0x4ac5ec", "0x24120046"],
-        ["0x4ac788", "0x24020078"]
+        ["0x4ac644", "0x24120046"],
+        ["0x4ac7e0", "0x24020078"]
       ]
     },
     {
       "value": "song_title24_y",
       "purpose": "Songs: 24px title position in the body, font unchanged",
       "sites": [
-        ["0x4ac7d4", "0x2406000e"]
+        ["0x4ac82c", "0x2406000e"]
       ]
     },
     {
       "value": "song_meta_y",
       "purpose": "Songs: 16px metadata position in the body, font unchanged",
       "sites": [
-        ["0x4ac824", "0x24060028"]
+        ["0x4ac87c", "0x24060028"]
       ]
     },
     {
       "value": "scroll",
       "purpose": "all songs recreated scrollbar spans the relocated list",
       "sites": [
-        ["0x4aaa28", "0x240200be"]
+        ["0x4aaab8", "0x240200be"]
       ]
     },
     {
       "value": "np_bar_w",
       "purpose": "Now Playing A-B markers span the iPod progress bar (x = start + t * width / length)",
       "sites": [
-        ["0x53b7c8", "0x24020122"]
+        ["0x53ba88", "0x24020122"]
       ]
     },
     {
       "value": "np_bar_x",
       "purpose": "Now Playing A-B markers start at the iPod progress bar's left end",
       "sites": [
-        ["0x53b7e0", "0x24420032"]
+        ["0x53baa0", "0x24420032"]
       ]
     },
     {
       "value": "stock_row",
       "purpose": "stock's own table rows (Go to, Queue, special folders): creation, Go to's scroll divisor, special folders' row height",
       "sites": [
-        ["0x538740", "0x2410004e"],
-        ["0x538a84", "0x2402004e"],
-        ["0x53ae3c", "0x2402004e"],
-        ["0x53f41c", "0x2405004e"],
-        ["0x53ff64", "0x2402004e"]
+        ["0x538a18", "0x2410004e"],
+        ["0x538d5c", "0x2402004e"],
+        ["0x53b0fc", "0x2402004e"],
+        ["0x53f75c", "0x2405004e"],
+        ["0x5402a0", "0x2402004e"]
       ]
     },
     {
       "value": "stock_body",
       "purpose": "stock's own table rows: the button and its full-height children",
       "sites": [
-        ["0x538abc", "0x24030046"],
-        ["0x538b34", "0x24030046"],
-        ["0x53ae68", "0x241e0046"],
+        ["0x538d94", "0x24030046"],
+        ["0x538e0c", "0x24030046"],
+        ["0x53b128", "0x241e0046"],
         ["0x53ff90", "0x24110046"]
       ]
     },
@@ -312,91 +312,91 @@
       "value": "stock_title_y",
       "purpose": "Go to's title y in its row",
       "sites": [
-        ["0x538be8", "0x2406000b"]
+        ["0x538ec0", "0x2406000b"]
       ]
     },
     {
       "value": "stock_title_h",
       "purpose": "Go to's title box, which holds the row's font",
       "sites": [
-        ["0x538bdc", "0x24020014"]
+        ["0x538eb4", "0x24020014"]
       ]
     },
     {
       "value": "search_row",
       "purpose": "Search's rows: creation (Genres' rows take the list's default height)",
       "sites": [
-        ["0x49d484", "0x2402004e"],
-        ["0x49e7f8", "0x2402004e"],
-        ["0x49f3b8", "0x2402004e"]
+        ["0x49d470", "0x2402004e"],
+        ["0x49e7b0", "0x2402004e"],
+        ["0x49f320", "0x2402004e"]
       ]
     },
     {
       "value": "search_body",
       "purpose": "Search's rows: the button and its full-height children",
       "sites": [
-        ["0x49d4bc", "0x24020046"],
-        ["0x49e830", "0x24020046"],
-        ["0x49f3f4", "0x24020046"],
-        ["0x49f794", "0x24020046"],
-        ["0x49cde8", "0x24020046"],
-        ["0x49ced4", "0x24020046"],
-        ["0x49d644", "0x24020046"],
-        ["0x49e9bc", "0x24020046"],
-        ["0x49f1e0", "0x24020046"]
+        ["0x49d4a8", "0x24020046"],
+        ["0x49e7e8", "0x24020046"],
+        ["0x49f35c", "0x24020046"],
+        ["0x49f6fc", "0x24020046"],
+        ["0x49cdd8", "0x24020046"],
+        ["0x49cec4", "0x24020046"],
+        ["0x49d62c", "0x24020046"],
+        ["0x49e970", "0x24020046"],
+        ["0x49f164", "0x24020046"]
       ]
     },
     {
       "value": "search_art",
       "purpose": "Search's rows: the artwork's width; 0 makes two lines of text, as Songs'",
       "sites": [
-        ["0x49cdf0", "0x24070032"]
+        ["0x49cde0", "0x24070032"]
       ]
     },
     {
       "value": "search_title_y",
       "purpose": "Search's Songs rows: the title's y",
       "sites": [
-        ["0x49d694", "0x2406000b"]
+        ["0x49d67c", "0x2406000b"]
       ]
     },
     {
       "value": "search_title24_y",
       "purpose": "Search's Albums rows: the title's y",
       "sites": [
-        ["0x49ea0c", "0x2406000e"]
+        ["0x49e9c0", "0x2406000e"]
       ]
     },
     {
       "value": "search_title_h",
       "purpose": "Search's rows: the title's box, which holds the row's font",
       "sites": [
-        ["0x49d688", "0x24020018"],
-        ["0x49ea00", "0x24020018"]
+        ["0x49d670", "0x24020018"],
+        ["0x49e9b4", "0x24020018"]
       ]
     },
     {
       "value": "search_meta_y",
       "purpose": "Search's rows: the second line's y",
       "sites": [
-        ["0x49d754", "0x24060029"],
-        ["0x49ea8c", "0x24060029"]
+        ["0x49d724", "0x24060029"],
+        ["0x49ea28", "0x24060029"]
       ]
     },
     {
       "value": "search_meta_h",
       "purpose": "Search's rows: the second line's box, which holds the row's font",
       "sites": [
-        ["0x49d748", "0x24020010"],
-        ["0x49ea80", "0x24020010"]
+        ["0x49d718", "0x24020010"],
+        ["0x49ea1c", "0x24020010"]
       ]
     },
     {
       "value": 225,
       "purpose": "toolbar switch pages: the title spans to the switch",
       "sites": [
-        ["0x4b7914", "0x2407006e"],
-        ["0x4d11e0", "0x2407006e"],
+        ["0x4b7a44", "0x2407006e"],
+        ["0x4d1300", "0x2407006e"],
         ["0x4d03e8", "0x2407006e"]
       ]
     },
@@ -404,164 +404,164 @@
       "value": 305,
       "purpose": "toolbar switch pages: the switch takes the right-hand slot",
       "sites": [
-        ["0x4b79f8", "0x240500bd"],
-        ["0x4d12bc", "0x240500bd"],
-        ["0x4d04bc", "0x240500bd"]
+        ["0x4b7b28", "0x240500bd"],
+        ["0x4d13dc", "0x240500bd"],
+        ["0x4d0594", "0x240500bd"]
       ]
     },
     {
       "value": 0,
       "purpose": "toolbar switch pages: no Home or Now Playing button (the keys go there)",
       "sites": [
-        ["0x4b7a80", "0x24070032"],
-        ["0x4b7aec", "0x24070032"],
-        ["0x4d1348", "0x24070032"],
-        ["0x4d13b4", "0x24070032"],
-        ["0x4d0544", "0x24070032"],
-        ["0x4d05b0", "0x24070032"]
+        ["0x4b7bb0", "0x24070032"],
+        ["0x4b7c1c", "0x24070032"],
+        ["0x4d1468", "0x24070032"],
+        ["0x4d14d4", "0x24070032"],
+        ["0x4d061c", "0x24070032"],
+        ["0x4d0688", "0x24070032"]
       ]
     },
     {
       "value": 0,
-      "purpose": "the Library's and Streaming's stock rows take the list's default_item_height, as ours do (V1.32 passed 0, V1.34 passes 78)",
+      "purpose": "the Library's and Streaming's stock rows take the list's default_item_height, as ours do (V1.32 passed 0, V1.36 passes 78)",
       "sites": [
-        ["0x5351fc", "0x2402004e"],
-        ["0x540fb4", "0x2402004e"]
+        ["0x53550c", "0x2402004e"],
+        ["0x5412a4", "0x2402004e"]
       ]
     }
   ],
   "row_layout_calls": {
     "purpose": "fit ordinary row titles and their containers on every native relayout",
     "sites": [
-      ["0x5339ec", "0x0320f809"],
-      ["0x4ac668", "0x0320f809"],
-      ["0x4b3b40", "0x0320f809"],
-      ["0x4a6aa4", "0x0320f809"],
-      ["0x4a807c", "0x0320f809"],
-      ["0x4afb2c", "0x0320f809"],
-      ["0x4b4fec", "0x0320f809"]
+      ["0x533cfc", "0x0320f809"],
+      ["0x4ac6c0", "0x0320f809"],
+      ["0x4b3b28", "0x0320f809"],
+      ["0x4a6a70", "0x0320f809"],
+      ["0x4a802c", "0x0320f809"],
+      ["0x4afb5c", "0x0320f809"],
+      ["0x4b4fdc", "0x0320f809"]
     ]
   },
   "stock_row_layout_calls": {
     "purpose": "stock's own table rows fit their title on a relayout under a set that re-pitches them",
     "sites": [
-      ["0x538b2c", "0x0320f809"],
-      ["0x54000c", "0x0320f809"],
-      ["0x49d56c", "0x0320f809"],
-      ["0x49e8e0", "0x0320f809"],
-      ["0x49f49c", "0x0320f809"],
-      ["0x49f840", "0x0320f809"]
+      ["0x538e04", "0x0320f809"],
+      ["0x540348", "0x0320f809"],
+      ["0x49d554", "0x0320f809"],
+      ["0x49e894", "0x0320f809"],
+      ["0x49f404", "0x0320f809"],
+      ["0x49f7a8", "0x0320f809"]
     ]
   },
   "stock_row_style_calls": {
     "purpose": "Queue's rows: the playing row's mark, and its colour under a set that re-pitches them",
     "sites": [
-      ["0x53abec", "0x0320f809"]
+      ["0x53aeac", "0x0320f809"]
     ]
   },
   "stock_row_text_calls": {
     "purpose": "stock's own table rows: the title's face follows its text, bound with no relayout",
     "sites": [
-      ["0x538208", "0x0320f809"],
-      ["0x53ab88", "0x0320f809"],
-      ["0x53fa08", "0x0320f809"]
+      ["0x538510", "0x0320f809"],
+      ["0x53ae48", "0x0320f809"],
+      ["0x53fd48", "0x0320f809"]
     ]
   },
   "navbar_resize_calls": {
     "purpose": "a page's list keeps its asset's box: stock's resize for its navigation bar switch does nothing",
     "sites": [
-      ["0x49799c", "0x8f99acc0"],
-      ["0x4a4514", "0x8f99acc0"],
-      ["0x4a855c", "0x8f99acc0"],
-      ["0x4a85f4", "0x8f99acc0"],
-      ["0x4a9e58", "0x8f99acc0"],
-      ["0x4aa948", "0x8f99acc0"],
-      ["0x4aa978", "0x8f99acc0"],
-      ["0x4af908", "0x8f99acc0"],
-      ["0x4af930", "0x8f99ac5c"],
-      ["0x4b1ce4", "0x8f99acc0"],
-      ["0x4b54c0", "0x8f99acc0"],
-      ["0x4b83dc", "0x8f99acc0"],
-      ["0x4bab84", "0x8f99acc0"],
-      ["0x4bc18c", "0x8f99acc0"],
-      ["0x4bcc8c", "0x8f99acc0"],
-      ["0x4bd4ec", "0x8f99acc0"],
-      ["0x4bdfa8", "0x8f99acc0"],
-      ["0x4bf2a8", "0x8f99acc0"],
-      ["0x4bfb14", "0x8f99acc0"],
-      ["0x4c0040", "0x8f99acc0"],
-      ["0x4c1650", "0x8f99acc0"],
-      ["0x4c1cf0", "0x8f99acc0"],
-      ["0x4c3dd4", "0x8f99acc0"],
-      ["0x4c5af0", "0x8f99acc0"],
-      ["0x4c6060", "0x8f99acc0"],
-      ["0x4c7348", "0x8f99acc0"],
-      ["0x4c8ae0", "0x8f99acc0"],
-      ["0x4c8e48", "0x8f99acc0"],
-      ["0x4c9cfc", "0x8f99acc0"],
-      ["0x4ca6b8", "0x8f99acc0"],
-      ["0x4cb9ec", "0x8f99acc0"],
-      ["0x4cd724", "0x8f99acc0"],
-      ["0x4ce0e4", "0x8f99acc0"],
-      ["0x4ced28", "0x8f99acc0"],
+      ["0x49798c", "0x8f99acc8"],
+      ["0x4a4514", "0x8f99acc8"],
+      ["0x4a850c", "0x8f99acc8"],
+      ["0x4a85a4", "0x8f99acc8"],
+      ["0x4a9ee8", "0x8f99acc8"],
+      ["0x4aa9d8", "0x8f99acc8"],
+      ["0x4aaa08", "0x8f99acc8"],
+      ["0x4af93c", "0x8f99acc8"],
+      ["0x4af964", "0x8f99ac64"],
+      ["0x4b1ce4", "0x8f99acc8"],
+      ["0x4b54b0", "0x8f99acc8"],
+      ["0x4b850c", "0x8f99acc8"],
+      ["0x4bacb4", "0x8f99acc8"],
+      ["0x4bc2bc", "0x8f99acc8"],
+      ["0x4bcdbc", "0x8f99acc8"],
+      ["0x4bd61c", "0x8f99acc8"],
+      ["0x4be0d8", "0x8f99acc8"],
+      ["0x4bf3d8", "0x8f99acc8"],
+      ["0x4bfc44", "0x8f99acc8"],
+      ["0x4c0170", "0x8f99acc8"],
+      ["0x4c1780", "0x8f99acc8"],
+      ["0x4c1eb0", "0x8f99acc8"],
+      ["0x4c3f94", "0x8f99acc8"],
+      ["0x4c5cb0", "0x8f99acc8"],
+      ["0x4c6220", "0x8f99acc8"],
+      ["0x4c7508", "0x8f99acc8"],
+      ["0x4c8ca0", "0x8f99acc8"],
+      ["0x4c9008", "0x8f99acc8"],
+      ["0x4c9ebc", "0x8f99acc8"],
+      ["0x4ca9b8", "0x8f99acc8"],
+      ["0x4cbbac", "0x8f99acc8"],
+      ["0x4cd8e4", "0x8f99acc8"],
+      ["0x4ce2a4", "0x8f99acc8"],
+      ["0x4ceee8", "0x8f99acc8"],
       ["0x4cfe00", "0x8f99acc0"],
-      ["0x4d1a40", "0x8f99acc0"],
-      ["0x4d30ac", "0x8f99acc0"],
-      ["0x4d3300", "0x8f99acc0"],
-      ["0x4d4270", "0x8f99acc0"],
-      ["0x4d5244", "0x8f99acc0"],
-      ["0x4d58d4", "0x8f99acc0"],
-      ["0x4d7430", "0x8f99acc0"],
-      ["0x4e0c08", "0x8f99acc0"],
-      ["0x4e0c50", "0x8f99acc0"],
-      ["0x4e38ac", "0x8f99acc0"],
-      ["0x4e688c", "0x8f99acc0"],
-      ["0x4e7910", "0x8f99acc0"],
-      ["0x4eb9d0", "0x8f99acc0"],
-      ["0x4ed2e8", "0x8f99acc0"],
-      ["0x4edba8", "0x8f99acc0"],
-      ["0x4ee474", "0x8f99acc0"],
-      ["0x4effdc", "0x8f99acc0"],
-      ["0x531c50", "0x8f99acc0"],
-      ["0x535170", "0x8f99acc0"],
-      ["0x5377f8", "0x8f99acc0"],
-      ["0x539d30", "0x8f99acc0"],
-      ["0x53b048", "0x8f99acc0"],
-      ["0x540f28", "0x8f99acc0"],
-      ["0x541ff4", "0x8f99acc0"]
+      ["0x4d1b60", "0x8f99acc8"],
+      ["0x4d31cc", "0x8f99acc8"],
+      ["0x4d3600", "0x8f99acc8"],
+      ["0x4d4390", "0x8f99acc8"],
+      ["0x4d5364", "0x8f99acc8"],
+      ["0x4d59f4", "0x8f99acc8"],
+      ["0x4d7550", "0x8f99acc8"],
+      ["0x4e0d28", "0x8f99acc8"],
+      ["0x4e0d70", "0x8f99acc8"],
+      ["0x4e39cc", "0x8f99acc8"],
+      ["0x4e69ac", "0x8f99acc8"],
+      ["0x4e7a30", "0x8f99acc8"],
+      ["0x4ebaf0", "0x8f99acc8"],
+      ["0x4ed408", "0x8f99acc8"],
+      ["0x4edcc8", "0x8f99acc8"],
+      ["0x4ee594", "0x8f99acc8"],
+      ["0x4f00fc", "0x8f99acc8"],
+      ["0x531f60", "0x8f99acc8"],
+      ["0x535480", "0x8f99acc8"],
+      ["0x537b08", "0x8f99acc8"],
+      ["0x53a01c", "0x8f99acc8"],
+      ["0x53b308", "0x8f99acc8"],
+      ["0x541218", "0x8f99acc8"],
+      ["0x5422e4", "0x8f99acc8"]
     ]
   },
   "private_prologues": {
-    "bitmap_create_ex": "3f001c3c0c7b9c2721e09903",
-    "bitmap_destroy": "3f001c3c5c7f9c2721e09903",
-    "bitmap_lock_buffer_for_read": "3f001c3cd0749c2721e09903",
-    "bitmap_lock_buffer_for_write": "3f001c3c58749c2721e09903",
-    "bitmap_unlock_buffer": "3f001c3ce0739c2721e09903",
-    "bitmap_get_line_length": "3f001c3c147a9c2721e09903",
-    "canvas_draw_image": "3f001c3c7c229c2721e09903",
-    "slide_menu_set_spacer": "43001c3cd0279c2721e09903",
-    "widget_to_local": "3d001c3c1ccb9c2721e09903",
-    "stock_search": "50001c3c1c579c2721e09903",
-    "mcl_open_preload": "48001c3c78f79c2721e09903",
-    "mcl_shuffle_pick": "48001c3ca0ff9c2721e09903"
+    "bitmap_create_ex": "3f001c3cac7b9c2721e09903",
+    "bitmap_destroy": "3f001c3cfc7f9c2721e09903",
+    "bitmap_lock_buffer_for_read": "3f001c3c70759c2721e09903",
+    "bitmap_lock_buffer_for_write": "3f001c3cf8749c2721e09903",
+    "bitmap_unlock_buffer": "3f001c3c80749c2721e09903",
+    "bitmap_get_line_length": "3f001c3cb47a9c2721e09903",
+    "canvas_draw_image": "3f001c3c1c239c2721e09903",
+    "slide_menu_set_spacer": "43001c3c70289c2721e09903",
+    "widget_to_local": "3d001c3cbccb9c2721e09903",
+    "stock_search": "50001c3c0c5a9c2721e09903",
+    "mcl_open_preload": "48001c3ce8fa9c2721e09903",
+    "mcl_shuffle_pick": "48001c3c10039c2721e09903"
   },
   "event_abi_words": {
-    "0x658768": "0400828c",
-    "0x534a74": "12010524",
-    "0x534a88": "15010524",
-    "0x534ac0": "14010524",
-    "0x534adc": "02010524",
-    "0x534af8": "00010524",
-    "0x534b30": "ff000524",
-    "0x676180": "00010224",
-    "0x676608": "02010224",
-    "0x676898": "04010224",
-    "0x5ddd14": "07010224",
-    "0x67546c": "0c000524",
-    "0x65332c": "180011ae",
-    "0x653338": "1c0002ae",
-    "0x671148": "1000428e",
-    "0x4f2958": "1f008228"
+    "0x658cc8": "0400828c",
+    "0x534d84": "12010524",
+    "0x534d98": "15010524",
+    "0x534dd0": "14010524",
+    "0x534dec": "02010524",
+    "0x534e08": "00010524",
+    "0x534e40": "ff000524",
+    "0x6766e0": "00010224",
+    "0x676b68": "02010224",
+    "0x676df8": "04010224",
+    "0x5de094": "07010224",
+    "0x6759cc": "0c000524",
+    "0x65388c": "180011ae",
+    "0x653898": "1c0002ae",
+    "0x6716a8": "1000428e",
+    "0x4f2b28": "1f008228"
   },
   "settings_icons": {
     "bt_adjvol.png": "e10a70cf0d916f3512a1eb334e78b00b4524299b838a559fb3454f3d77253118",
@@ -607,7 +607,7 @@
   },
   "styles": {
     "default.bin": {
-      "sha256": "880d6eeb1a79b32b22b265cd8f0e296589657e1abbdf36f515c56a1128198b48",
+      "sha256": "96c2b3895936f84332af9c232539a46b798ed50056fe0edc2869502bc28821b7",
       "edits": [
         ["button", "s_btn_listitem", "bg_color", "2b2b2bff", "333333ff", 1, "pressed"],
         ["button", "s_btn_listitem", "bg_color", "2b2b2bff", "00000000", 4],

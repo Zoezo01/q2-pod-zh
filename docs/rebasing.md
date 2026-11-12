@@ -38,14 +38,14 @@ Two tracked tables go with it, both carried by `apply`:
 Start from the site's row in `tools/stock_sites.tsv`, which names the function and what the site is in it. `refs` then finds that in the new build:
 
 - **From a string to the function that uses it:** `refs NEW.zip demo scroll_view_playset` lists each load of a string holding the text, with the function it is in. Widget and page names, config keys and log lines all work.
-- **From a callee to its call sites:** `refs NEW.zip demo 0x4f2adc` lists every call of the function at that address, direct or through its GOT slot, and every place its address is formed (a handler being bound). A row that says "the 2nd of 3 calls to" a function is the second of these inside its own function.
+- **From a callee to its call sites:** `refs NEW.zip demo 0x4f2cac` lists every call of the function at that address, direct or through its GOT slot, and every place its address is formed (a handler being bound). A row that says "the 2nd of 3 calls to" a function is the second of these inside its own function.
 - **From a page's init to its row and click handlers:** the init is the function that loads the page's widget names. The handlers are the addresses it passes to `widget_on` and `widget_foreach`, which the decompiler's export lists in the function's header; `refs` on a handler's address leads back to the init that binds it.
 
 A function that kept its name in the stock map is found by the name: `report` and `refs` print it, and `apply` moves its row.
 
 ## What the tool cannot see
 
-Each of these left a wrong value in place on the V1.34 rebase, and only a test or a sweep found it.
+Each of these left a wrong value in place on the V1.36 rebase, and only a test or a sweep found it.
 
 - **An address written with eight digits** (`0x005b7e80`) reads as an instruction word and is never carried. Write addresses unpadded.
 - **A low half inside a replacement word.** A word we write that loads through a stock data address (`lw $2, 0x1e68($2)`) carries that address's low half, which moves. `docs/rebasing/memsweep.py` lists such words; derive them from the stock word at build time where possible.
@@ -56,7 +56,7 @@ Each of these left a wrong value in place on the V1.34 rebase, and only a test o
 - **A literal given to the wrong binary.** `demo` and `hciplayer` both have code at the same values, and a literal in prose with only weak evidence can be carried with the other binary's map. `docs/rebasing/weaksweep.py` lists the candidates; write the binary's name just before such a literal (`hciplayer's 0x42d9bc`), which decides between binaries that have only weak evidence for it.
 - **A function's tail** can be lost when its start changed although the offsets inside it did not. `map.lookup` says "code changed"; the old offset in the new function is the first place to look.
 - **A short run of identical words in two functions** can carry an address into the wrong one. Step 4 is the guard.
-- **A stock handler that changed with no patch site in it** (V1.34's Shut Down prompt Centre and dark volume, #303). `test/patch.py`'s `stock_keyups` runs stock's key-up handlers on both builds; a failure there means stock's behaviour changed, not that an address moved.
+- **A stock handler that changed with no patch site in it** (V1.36's Shut Down prompt Centre and dark volume, #303). `test/patch.py`'s `stock_keyups` runs stock's key-up handlers on both builds; a failure there means stock's behaviour changed, not that an address moved.
 - **A dated statement that names the stock version.** `apply` renames the version wherever it stands, so an audit dated before the new release came out as an audit of it. Read the lines `apply` changed that hold a date, and put the version the work was done on back.
 
 Beyond addresses, read the UI pages a build makes against the last build's (decode both with `tools/ipod.py` and diff): stock moves boxes and renames styles in assets, and a theme that leaves a widget alone inherits the move.
@@ -78,14 +78,14 @@ analyzeHeadless PROJ demo -process demo -noanalysis -scriptPath docs/rebasing -p
 
 `analyzeHeadless` needs `MAXMEM=4G` for `demo`.
 
-## What V1.32 to V1.34 taught
+## What V1.32 to V1.36 taught
 
 - What moved: every GOT offset (imports by one constant, the rest unevenly), the low halves of `hciplayer`'s `.bss` (`0x1000` up), the order of static functions, and the page inits with the row builders and click handlers after them, which is where the new options went.
 - What stayed: `bluealsa`, the shared libraries `demo` and `hciplayer` link and the kernel modules the experimental flags patch were byte for byte the same, 99.8% of `hciplayer`'s code and 98.8% of `demo`'s aligned, and an exported function that only moved kept every word once its address operands were masked.
 - Static functions change order between builds: align by callers and by address-forming code, never by position.
 - The `$gp` set-up is not an address, and GOT pages are not function starts.
 - Stock regroups its settings lists. A hook that counts stock's rows fails safe (it leaves the page as built) only if the count is checked first.
-- A new stock option can duplicate a Q2 Pod system outright: V1.34 read a headset's keys on a thread of its own, and each press would have acted twice.
+- A new stock option can duplicate a Q2 Pod system outright: V1.36 read a headset's keys on a thread of its own, and each press would have acted twice.
 - `mutmut` ties a test to a function only when the function runs in that test, set-up included. Cached results in `mutants/` survive a test change: delete the folder for a fresh score.
 
 ## Writing hooks that survive

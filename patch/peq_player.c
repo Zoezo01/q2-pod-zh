@@ -458,7 +458,7 @@ static int ao_playing(void) {
  * its flag is what stock's unmute reads) and drops USB, whose mute wouldn't reach the DAC. snd_pcm_drain holds no
  * lock (libasound 0x3ff44, hw 0x4f784) and plug forwards it, and a kernel DROP ends a blocked DRAIN. A rise of the
  * play flag is a press here too: set-songurl (demo's not-playing path, whose mute a hardware-type word and its
- * output way decide, 0x5bf634) sets
+ * output way decide, 0x5bf8c4) sets
  * no other word, and the flag was cleared on the way to this init (0x42da5c). ao_draining keeps the PCM open
  * while the other thread uses it: 1 draining, 2 being cut. The triple can't say: a cold natural change (Gapless off, stock Shuffle,
  * Repeat One, a track under 3 s) resets it just as a skip does. Same-format gapless changes match stock's compare,
@@ -468,7 +468,7 @@ static int ao_playing(void) {
  * was lost, the buffer's rest.
  * ponytail: a press from demo's not-playing state before the drain starts (within a UI pass of the end) can't be
  * told from the cold route's own set-songurl and hears the tail play out, up to the buffer's rest; demo's press word
- * would close that. Demo's mute on the cold route (0x5bf634, 100 ms before set-songurl) is skipped by start_mute for a
+ * would close that. Demo's mute on the cold route (0x5bf8c4, 100 ms before set-songurl) is skipped by start_mute for a
  * natural start from a local queue, and marks PRESS_FILE even: then a same format with Gapless on matches stock's
  * compare, so the PCM never closes and nothing mutes, and any real reopen is drain, stock's mute, close, open, unmute,
  * wait, frames (dac_ioctl). No mark means demo may have muted: stock's timing, no wait. Only the jacks have that mute,
@@ -1092,8 +1092,8 @@ __asm__(".set push\n.set noreorder\n"
         "lui $v0, 0xb1\nli $t0, 2\nsw $t0, 0x1e74($v0)\nli $t0, 1\nsw $t0, 0x1e70($v0)\n"
         "1:\nmove $v0, $zero\njr $ra\naddiu $sp, $sp, 0x50\n.set pop\n");
 
-/* demo learns of a track's end only from the newest player-status it reads (0x5baaa8, 0x5ba2a8): one value, cleared by
- * a read of exit and overwritten by any later reply. An exit moves it on at its next UI pass (0xa4fa1d, mclAutoChange).
+/* demo learns of a track's end only from the newest player-status it reads (0x5bad38, 0x5ba538): one value, cleared by
+ * a read of exit and overwritten by any later reply. An exit moves it on at its next UI pass (0xa5002d, mclAutoChange).
  * So a second exit within a pass of the first, from a next file that ends as it starts, is lost; hciplayer then idles
  * answering ready, demo keeps asking, and with no length to pass the queue sits on that file until a key. exit_hold
  * sends an exit no sooner than EXIT_HOLD_MS after the last: requests are answered on the command thread, so nothing

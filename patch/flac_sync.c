@@ -1,6 +1,6 @@
 /* Coalesce FLAC's redundant heartbeat publication; never batch cancellation checks.
  *
- * Q2 V1.34 hciplayer, pinned by tools/peq.py PLAYER_SHA:
+ * Q2 V1.36 hciplayer, pinned by tools/peq.py PLAYER_SHA:
  *   0x42b710 locks 0xb11db4, sets byte 0xb11e68 to 1, unlocks, and returns
  *   (word 0xb11e70 == 1 || word 0xb11e6c == 1), in that read order.
  * The residual decoder at 0x5b6854 invokes it after each residual at five sites:

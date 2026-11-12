@@ -59,7 +59,7 @@ void crash_note(const char *path, const char *file, const char *log, unsigned ev
 }
 static unsigned scan_counts[2];
 
-/* toolsGetMusicInfo's TagLib branch (0x5d89ac-0x5d8df8) for an Ogg file whose comment header is
+/* toolsGetMusicInfo's TagLib branch (0x5d8cdc-0x5d9128) for an Ogg file whose comment header is
  * over OGG_TAGS_MAX, from xiph.c's fields: each text field through stock's toolsFixId3ErrorCode as
  * libtag_c's pair of copies (Latin-1, UTF-8) and isLatin1 would reach it, then strcpy'd (the genre
  * through GENRE_COPY's ringnav_genre_copy); year, track() split into disc (high half, +0x684) and
@@ -196,7 +196,7 @@ int ringnav_cue_text(char *s, const char *to, const char *from) {
     /* stock's conversion writes back over s unbounded: GBK grows by half as UTF-8, so 340 bytes at
      * most fill the 512; a longer field reads as Windows-1252 */
     if (strlen(s) <= 340 && gbk_text(s))
-        return ((int (*)(char *, const char *, const char *))0x5cf50c)(s, to, from);
+        return ((int (*)(char *, const char *, const char *))0x5cf83c)(s, to, from);
     static const unsigned short cp1252[32] = {
         0x20ac, '?',    0x201a, 0x0192, 0x201e, 0x2026, 0x2020, 0x2021, 0x02c6, 0x2030, 0x0160,
         0x2039, 0x0152, '?',    0x017d, '?',    '?',    0x2018, 0x2019, 0x201c, 0x201d, 0x2022,

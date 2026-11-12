@@ -150,7 +150,7 @@ static void lrc_push(const lrc_line *l, unsigned n, int clear) {
     pthread_mutex_unlock((void *)MCL_LYRIC_LOCK);
 }
 
-/* Stock's .lrc loader (0x5bbb38, in mclLoadExLyric) opens the file it parses here (LYRIC_OPEN in
+/* Stock's .lrc loader (0x5bbdc8, in mclLoadExLyric) opens the file it parses here (LYRIC_OPEN in
  * tools/build.py), a UTF-8 copy when it was in another code page: its first LYRIC_TAG_MAX bytes
  * wait for ringnav_lyric, which reads them again as a tag's, with their milliseconds and word
  * stamps and without blank lines. */
@@ -171,7 +171,7 @@ void *ringnav_lrc_open(const char *path, const char *mode) {
     return f;
 }
 
-/* Stock's mclIsUtf8WithoutBOM (0x5bb9bc), which the .lrc loader and the lyrics match page ask
+/* Stock's mclIsUtf8WithoutBOM (0x5bbc4c), which the .lrc loader and the lyrics match page ask
  * before converting a file from GB18030: it checked only the 6 bytes from the first non-ASCII one
  * and knew no 4-byte character, so a UTF-8 .lrc with an emoji, or a character crossing those 6
  * bytes (an accent, then a ’ four letters on), was converted and loaded garbled or cut short.

@@ -483,8 +483,8 @@ static int label_gone(void *ctx, void *event) {
     return 0;
 }
 
-/* systemset_fwupdate_page_init: stock's two rows (0x4c84a0), each button named by its index, which
- * stock's click (0x4c830c) reads with atoi: 0 TF card update, 1 Shanling's server. Renamed "2", the
+/* systemset_fwupdate_page_init: stock's two rows (0x4c8660), each button named by its index, which
+ * stock's click (0x4c84cc) reads with atoi: 0 TF card update, 1 Shanling's server. Renamed "2", the
  * second does nothing in stock's click and ours runs. */
 int ringnav_fwupdate(void *win, void *ctx) {
     int result = stock_fwupdate_trampoline(win, ctx);

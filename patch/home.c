@@ -10,8 +10,8 @@ static void *library_row(void *view, const char *icon, int (*click)(void *, void
     return P(P(label, W_PARENT), W_PARENT);
 }
 
-/* localmusic_page_init: stock's 11 category rows (0x5351f8), by index (get_localmusic_showinfo
- * 0x50bd40): Update Local Music, All Songs, Album, Artist, Genre, Hi-Res, My Fav, Frequent,
+/* localmusic_page_init: stock's 11 category rows (0x535508), by index (get_localmusic_showinfo
+ * 0x50bf30): Update Local Music, All Songs, Album, Artist, Genre, Hi-Res, My Fav, Frequent,
  * Recent, Recently Added, Playlist. */
 enum {
     L_UPDATE,
@@ -55,13 +55,13 @@ static void library_look(void *view) {
 }
 
 /* 1 when the Library leads with Search, in a set without Library icons (Classic): the pull-down's
- * own stock search (0x534dc4, which ignores its arguments) shown, as Home's Split list hides the
+ * own stock search (0x5350d4, which ignores its arguments) shown, as Home's Split list hides the
  * pull. Home's pane counts Shuffle's row from it (coverflow.c coverflow_home_row). */
 int library_search(void) { return !geom_val(V_LIB_ART); }
 
 /* The Library: Search (library_search), one Shuffle row opening its menu, browsing, the user's own
  * lists, listening history, the card's other media, then upkeep. The added rows' buttons have no
- * name, so stock's row click (atoi of the name, 0x534dfc) never sees them. */
+ * name, so stock's row click (atoi of the name, 0x53510c) never sees them. */
 int ringnav_localmusic(void *win, void *ctx) {
     int result = stock_localmusic_trampoline(win, ctx);
     void *view = win ? widget_lookup(win, "scroll_view_localmusic", 1) : (void *)0;

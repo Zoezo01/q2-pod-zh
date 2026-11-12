@@ -8,7 +8,7 @@ commit, old, new = sys.argv[2], pathlib.Path(sys.argv[3]), pathlib.Path(sys.argv
 class Tree:
     def __init__(self, root, version): self.root, self.version = root, version
     def cat(self, path): return (self.root/path).read_bytes()
-maps = rebase.open_maps(Tree(old, 'V1.32'), Tree(new, 'V1.34'))
+maps = rebase.open_maps(Tree(old, 'V1.32'), Tree(new, 'V1.36'))
 views = {b: rebase.view(mp.a) for b, mp in maps.items()}
 git = lambda *a: subprocess.run(['git', '-C', str(repo), *a], capture_output=True, text=True, check=True).stdout
 files = [f for f in git('ls-tree', '-r', '--name-only', commit, *rebase.SCANNED).split('\n')

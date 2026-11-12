@@ -1320,7 +1320,7 @@ static void bar_icon(int x, int y, int h, const char *s, int code) {
  * bound to G_FIND or G_SORT if that is ever asked for. */
 #define FIND_X 302 /* the rows' list_into chevron's box (row_into), so the icon lines up with them */
 /* The sort icon's box: midway, by ink, between a centred 150 px title (a section's "Newly Added
- * 1/5" at 20 px, which ends at 262) and the glass. Stock's 50 px images (V1.34 images/xx, alpha
+ * 1/5" at 20 px, which ends at 262) and the glass. Stock's 50 px images (V1.36 images/xx, alpha
  * > 0): navbar_search's ink is columns 15 to 35, so 317 to 337 at FIND_X; song_order's
  * (s_img_order_navbar, the Sort of stock's Songs page) is columns 15 to 34, so 280 to 299 here:
  * 17 px after such a title's end and 17 px before the glass. */

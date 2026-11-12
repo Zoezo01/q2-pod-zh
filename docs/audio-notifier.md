@@ -4,7 +4,7 @@ A configured Q2 PCM stream keeps `aic_dma_notice` polling every 10 ms after paus
 The build puts that stopped notifier on its existing wait queue until start/resume or
 teardown. It is off by default: `--dev --aic-idle-wait` builds it.
 
-This is a driver experiment for the audited V1.34 firmware. It does not alter
+This is a driver experiment for the audited V1.36 firmware. It does not alter
 active notification intervals, PCM period/buffer constraints, DMA descriptors,
 decoder code, sample data, volume, output routing, or peripheral clocks. The
 kernel and all modules except `module_driver/soc_aic.ko` remain unchanged.

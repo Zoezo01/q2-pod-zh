@@ -1,4 +1,4 @@
-/* FLAC LPC reconstruction for the pinned V1.34 hciplayer (tools/peq.py PLAYER_SHA).
+/* FLAC LPC reconstruction for the pinned V1.36 hciplayer (tools/peq.py PLAYER_SHA).
  *
  * ABI: decoded samples/residuals, reversed coefficients (oldest history first),
  * order, nonnegative predictor shift, total block size; o32's fifth arg is on

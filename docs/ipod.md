@@ -28,13 +28,13 @@ positions the playing overlay. Font definitions are untouched. Full-height
 text/icon containers are shortened with their button. Titles and metadata keep
 their stock centring, one pixel higher for the two-pixel-shorter body.
 
-Native local row-pool constructors are at 0x5338b4 (folder), 0x4ac530 (songs),
-0x4b3a0c (local categories) and 0x4a6944 (album list/grid). The album grid branch
+Native local row-pool constructors are at 0x533bc4 (folder), 0x4ac588 (songs),
+0x4b39f4 (local categories) and 0x4a6910 (album list/grid). The album grid branch
 is unchanged. Album detail, artist track and playlist constructors have their own
-explicit sites in the audit. Folder reset at 0x531cf0, return offset division at
-0x531ff8 and scrolling cover division at 0x532f78 all use the same compact pitch.
+explicit sites in the audit. Folder reset at 0x532000, return offset division at
+0x532308 and scrolling cover division at 0x533288 all use the same compact pitch.
 The category cover callback originally divides by 120 despite using 78-pixel
-rows; iPod corrects its audited divisor at 0x4b2a60 to 72. Rebinding and delayed
+rows; iPod corrects its audited divisor at 0x4b2a48 to 72. Rebinding and delayed
 cover callbacks keep the same widget geometry and saved cover preferences.
 Artists rows hide their head picture (`CLASS_ICON`), so the title takes its width.
 
@@ -55,8 +55,8 @@ label, with every label's holds and pace (docs/internals.md, `ringnav_hscroll_st
 held `MARQUEE_HOLD_MS`, a scroll at Now Playing's pace, its end held as long, then back to its start.
 The lull at each pass's end counts it, and after `MARQUEE_PASSES` (3) the title rests on its start
 until the selection moves; each pass repaints every 16 ms while it moves. `only_focus` is off while
-it runs, since stock's timer (`0x5fb2ac`) stops an unfocused `only_focus` label on its first tick;
-once running, stock's paint (`0x5fba84`) drops the ellipsis, so the selected title shows its start
+it runs, since stock's timer (`0x5fb7ac`) stops an unfocused `only_focus` label on its first tick;
+once running, stock's paint (`0x5fbff0`) drops the ellipsis, so the selected title shows its start
 without one as it holds. A paint that moves the selection, to another widget or to another row in the
 same pooled widget, stops it from a timer. A title that fits costs one timer per selection.
 ponytail: the first `hscroll_label` of the row is taken as its title, and a dark screen, a covered
@@ -178,7 +178,7 @@ stops the timer first.
 
 **Status Bar** (`STATUSBAR`, an own option every theme declares, under Theme) swaps the look of the bar alone. `bar_theme()` names the theme whose fill, battery and play state are painted, the theme's own at **Theme**, and `bar_scheme()` that theme's row at its own stored accent, in the half this theme's Light Mode picks. The row itself is still the booted set's: its height, its widgets' places and the title's face and case stay the theme's, so a choice applies at the next paint with no restart (a look that moved them would need a geometry set per bar). What a look says of its own group goes with it onto any row: the battery's size (`bar_geom_val`) and the rows Bluetooth and Wi-Fi sit off the layout's (`bar.icons`, Classic's a row down and a row up). Either battery centres on the row's height (`batt_top`), as the icons beside it do, not on its slot's, which is the bar's: Classic's row is 22 px of its bar's 26, sized so the body lands in the middle of the rows above the bar's two lines, and on Minimal's 30 px row the same rule keeps Classic's body level with its icons and the clock, which that row centres on the bar's whole height: 2 px below the middle of the rows above the lines. What the row has room for is the layout's, so `bar_sync` counts Classic's right-hand group by `theme()`. On Classic's dark pages a flat look turns `dark_bar_rows` plain black, and those pages keep their own title and neutral battery. Choosing a theme presets the row to **Theme**.
 
-`systembar_showface` (`0x5414e0`, run by `system_bar_init` and then a 1 s widget
+`systembar_showface` (`0x5417d0`, run by `system_bar_init` and then a 1 s widget
 timer) finds each status bar widget with a recursive `widget_lookup` from the bar,
 so parents and order are free to change. Every tick it re-shows the volume,
 EQ, Bluetooth, SyncLink and Wi-Fi widgets and sets their images and text, but
@@ -282,17 +282,17 @@ builders never move, resize or scroll their widgets afterwards (the stock equali
 the PEQ editor replaces, is the only settings code that calls `widget_move`), so one layout hook
 owns the geometry:
 
-- iPod points the `list_view` children layouter's vtable layout slot (`0x939ec4`, vtable
-  `0x939ebc` + 8, stock `0x5fc7e4`) at `ipod_list_layout`. Every list lays out through it; only a
+- iPod points the `list_view` children layouter's vtable layout slot (`0x93a4c4`, vtable
+  `0x93a4bc` + 8, stock `0x5fcd44`) at `ipod_list_layout`. Every list lays out through it; only a
   list with no `item_height` and a `default_item_height` of 68 gets settings rows, so Home (an
   `item_height` of 39), the local lists (72) and every stock list are untouched.
 - Before the stock layout it sets list items that stock made 78 high to 68: the stock layout keeps
-  an item's own height over `default_item_height` (`0x5fcef4` onward). The stock layout then
+  an item's own height over `default_item_height` (`0x5fd454` onward). The stock layout then
   stacks the rows and sizes the scroll view, so scrolling, the scroll bar and the payload's
   selection all see 68-pixel rows.
 - After it, each stock button (x 20, 335 wide) in a visible row spans its row, 375 by 68, so the
   selection bar and the tap target are the whole row. The stock layout skips hidden rows
-  (`widget_get_children_for_layout` without `keep_invisible`, `0x5fcb14`) and leaves them unsized,
+  (`widget_get_children_for_layout` without `keep_invisible`, `0x5fd074`) and leaves them unsized,
   so a hidden row is mapped once it is shown and laid out. Its icon box shrinks to 40 pixels (`SET_ICON`, drawn
   `scale_down`, value 5 in the stock draw type table at `0x93a854`, which draws a bitmap that
   already fits 1:1; see [Settings icons](#settings-icons)), centred on the row at x 28
@@ -341,7 +341,7 @@ two-line labels start on the same line, 6 pixels under its icon and 12 above the
 brightness slider becomes a 6-pixel track in Now Playing's colours (`TRACK_COLOR`, filled with the accent's light tone as the progress bar, `quick_fill`) in a 48-pixel-high slider that
 still takes a tap or drag anywhere on it (`slide_with_bar`), from x 68 to 307. The stock dim and
 bright suns stay at its ends, in line with the first and last icon columns. Sizes are `QS_*` in
-`tools/ipod.py`. `dialog_statusbar_dialog_init` (`0x4a23b8`) finds every widget by name and
+`tools/ipod.py`. `dialog_statusbar_dialog_init` (`0x4a2338`) finds every widget by name and
 never moves or resizes one. A finger held on Wi-Fi or Bluetooth opens its settings, and on Playback the EQ page
 ([internals.md](internals.md#quick-settings-holds)); a tap stays stock's.
 
@@ -404,8 +404,8 @@ under `CLOCK_MIN` fails the build.
 
 ## Hold Return
 
-The stock long-key function at 0x4f2614 retains all instructions except the final
-Home call at 0x4f27fc (`HOLD_RETURN`). The hold fires after 700 ms, as Play/Pause's does
+The stock long-key function at 0x4f27e4 retains all instructions except the final
+Home call at 0x4f29cc (`HOLD_RETURN`). The hold fires after 700 ms, as Play/Pause's does
 ([internals.md](internals.md#queue-menu), `HOLD_KEYS`); stock waited 1000 ms. Stock power, lock, test and key-lock gates and its release
 latch execute first. The payload cancels centre confirmation and spin state, checks
 the shared screen/navigation restrictions, and then, on Now Playing, goes back
@@ -427,12 +427,12 @@ The dialog is modal and its own idle closes it a pass or two after the quit, so 
 rather than navigating under its loop; one still up `QS_HOLD_MS` (1 s) later is forgotten. Opened
 over the dialog, Now Playing left it open underneath, and stock's pull-down
 (`on_wm_tsmove_fun`) starts none while `g_dropdown_menu_state` is not 0, which only the dialog's
-close (`0x4a1db0`, on `EVT_WINDOW_CLOSE`) makes it: Now Playing had no Quick Settings until Return
+close (`0x4a1d30`, on `EVT_WINDOW_CLOSE`) makes it: Now Playing had no Quick Settings until Return
 had gone back to the one left open and closed it (#303). Inferred from the handlers; the emulator
 mocks the window manager.
 
 Over a prompt (`confirminfo_dialog` in front: Shut Down?, and Q2 Pod's own) the hold cancels it
-with `dialog_quit(top, 4)`, the prompt's own Return (`0x499bec`). `usable` is true there, so the
+with `dialog_quit(top, 4)`, the prompt's own Return (`0x499bdc`). `usable` is true there, so the
 hold used to open Now Playing under the prompt's modal loop, and the prompt came back over it: a
 second Shut Down? (#303). That it was the same prompt back, not a new one, is inferred from a
 tester's video and stock's handlers; the emulator mocks the window manager.
@@ -558,7 +558,7 @@ album, `#BBBBBB` (`NP_ALBUM_RGB`); "3 of 12" and both times remain `#AAAAAA`. Sp
 The art follows the player's cover on both Now Playing pages (`np_art_poll`, each lit UI pass).
 Stock's 250 ms timer reloads `img_cover` only when it finds one of three one-shot flags set: a
 song change (`g_autochange_flag`), a forced refresh (`g_forcerefresh_flag`) or the cover thread's
-finish (`g_playcover_finishflag`). Enlarged Art's timer (`0x52d854`) clears all three while
+finish (`g_playcover_finishflag`). Enlarged Art's timer (`0x52dac0`) clears all three while
 `bigcover_page` is open, so a change it took left the page on the last track's art. The payload
 keys the playing track and the cover it can use, once `g_lastcover_url` is this track's path:
 `/tmp/coverpic.jpg` (type 1), `/tmp/externpic.jpg` (2, 4) or stock's placeholder (3, none). When
@@ -720,8 +720,8 @@ keeps the stock start on Now Playing. See [internals.md](internals.md#boot-resum
 
 ## Display settings
 
-`systemset_display_page_init` (`0x4c6fa8`) destroys the children of `scroll_view_display` and
-builds three rows with `0x4c69d4`: a `list_item_create(view, 0, 0, 0, 0)` in `s_listitem_black`
+`systemset_display_page_init` (`0x4c7168`) destroys the children of `scroll_view_display` and
+builds three rows with `0x4c6b94`: a `list_item_create(view, 0, 0, 0, 0)` in `s_listitem_black`
 (the list view lays it out 78 pixels high), holding a `button_create(item, 20, 0, 335, 70)` in
 `s_btn_listitem` with a click handler, and in it a 52-pixel icon at x 10, a
 `s_scrlabel_white24l` `hscroll_label` at (72, 0, 210, 70) and `list_into` at x 282. The rows
@@ -776,11 +776,11 @@ restarts the Q2 ([Theme](#theme)).
 The build also appends **Boot to: Rockbox / Q2 Pod** to Power when Rockbox is present; see [Boot](boot.md#rockbox).
 The page is `CTX_FIXED`, so the wheel walks onto them like the stock rows.
 
-A change is saved at once with the stock `write_int_config(value, "IPOD", key)` (`0x4fe4ac`):
+A change is saved at once with the stock `write_int_config(value, "IPOD", key)` (`0x4fe67c`):
 `sprintf("%d")`, then `toolsWriteConfig("/mnt/data/config.ini", section, key, text)`, which
 rewrites the key or appends `[IPOD]` with it (`"[%s]\n%s=%s\n"`). The keys are `MINIMAL_ACCENT` (Minimal's accent), `CLASSIC_LIGHT_ACCENT` (Classic's), `ACCENT` (Modern's), `ROUNDED` (Rounded Corners: 0 off, 1 on), `LIGHT` (Light Mode: 0 Off, 1 On, 2 Auto; missing is Off), `HOME`, `BATTERY`, `THEME`, and Classic's own `HOMELIB`, `ROWPREVIEW` and `ROWART`. The values are read once,
 on the payload's first use (after stock `config_init`: `application_init` runs `platform_init`, which
-calls it, before it opens any window), with `toolsReadConfig` (`0x5cfcc4`), in the order stock `config_init`
+calls it, before it opens any window), with `toolsReadConfig` (`0x5cfff4`), in the order stock `config_init`
 calls it: `(path, section, key, out, default)`. It reads the file line by line
 (`strcasecmp` on the section and the key), copies the trimmed value to `out` and returns 1; a
 missing key copies the default and returns -1. The default must not be null (stock reads its

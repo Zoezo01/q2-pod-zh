@@ -717,7 +717,7 @@ def no_such_file(q2):
 
 def startup_picture(q2):
     """Stock's config_init: SYSSET SCREENSAVERPATH into the picture, or the default when it is not a file by its
-    access call, which tools/build.py points at lockscreen_access (0x504b54)."""
+    access call, which tools/build.py points at lockscreen_access (0x504d24)."""
     saved = q2.flash.ini.get((b'SYSSET', b'SCREENSAVERPATH'), DEFAULT_WALL)
     access = q2.fw.fn('lockscreen_access', C.c_int, C.c_char_p, C.c_int)
     picture(q2).value = saved if saved == DEFAULT_WALL or access(saved, 4) == 0 else DEFAULT_WALL  # R_OK
@@ -726,7 +726,7 @@ def startup_picture(q2):
 class Pictures:
     """Stock's get_screensaver_image (stock_saverlist_trampoline) and p_deque_screensaverlist, which it fills: the
     default and the card's images. It resets a picture that is neither the default nor a file by its access call
-    (0x505554): hooked, tools/build.py's lockscreen_access; unhooked, stock's own, to which no built-in is a file."""
+    (0x505724): hooked, tools/build.py's lockscreen_access; unhooked, stock's own, to which no built-in is a file."""
     def __init__(self, q2, names, hooked=True):
         self.names, self.held = list(names), []
         access = q2.fw.fn('lockscreen_access', C.c_int, C.c_char_p, C.c_int)
@@ -1222,9 +1222,9 @@ def nearest(x):
 @pytest.fixture
 def response_level():
     """Stock's responseSetVolume level, a byte at a fixed address the poll writes: put back after."""
-    saved = C.c_byte.from_address(0xa4c5a5).value
+    saved = C.c_byte.from_address(0xa4cbb5).value
     yield
-    C.c_byte.from_address(0xa4c5a5).value = saved
+    C.c_byte.from_address(0xa4cbb5).value = saved
 
 
 def test_control_device_volume_hands_the_volume_to_the_headset_and_follows_its_keys(q2, response_level):

@@ -1120,7 +1120,7 @@ class Card:
         return 0
 
 
-PAGE, LATCH = 0x7000, 0xa4b5ea
+PAGE, LATCH = 0x7000, 0xa4bbfa
 
 
 class Page:

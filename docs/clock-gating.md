@@ -5,7 +5,7 @@ The build defers `gate_rot` until the first valid conversion (off by default;
 decoding, CPU frequency, and audio output.
 
 ```sh
-python3 tools/build.py 'Q2 Firmware V1.34.zip' --out /tmp/q2-rotator --dev --rotator-lazy-clock
+python3 tools/build.py 'Q2 Firmware V1.36.zip' --out /tmp/q2-rotator --dev --rotator-lazy-clock
 python3 test/rotator.py /path/to/stock/soc_rotator.ko
 ```
 
@@ -29,7 +29,7 @@ that every downstream transistor or shared parent is powered off.
 
 ## Exact implementation
 
-The supported input is the stock V1.34 module with SHA-256
+The supported input is the stock V1.36 module with SHA-256
 `a341847285bc2e204f81be19d6cd942b0265275fba9c13ff8257a9f2574f2dc0`.
 It is MIPS32 little-endian ELF32, with vermagic
 `5.10.21+ SMP preempt mod_unload MIPS32_R5 32BIT `.

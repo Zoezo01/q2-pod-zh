@@ -244,7 +244,7 @@ static int online_match_again(void *win, void *unused) {
     return stock_online_match_trampoline(win);
 }
 
-/* Streaming's stock row (stream_page_init binds 0x540c8c): Tidal (0), a login page with the link
+/* Streaming's stock row (stream_page_init binds 0x540f7c): Tidal (0), a login page with the link
  * and msg_notnetwork without; on Streaming's page or Home's Split Streaming list (home.c
  * stream_rows), both waking the radio. ponytail: on Home it runs while Home is still the page in
  * use, as Spotify's row does, the Streaming list gone to another of Home's lists or not; drop it
@@ -256,7 +256,7 @@ int ringnav_stream_row(void *button, void *event) {
                : stock_stream_row_trampoline(button, event);
 }
 
-/* Network service's rows (0x4cd09c): DLNA (0) and AirPlay (1) switch at once (stock starts their
+/* Network service's rows (0x4cce64): DLNA (0) and AirPlay (1) switch at once (stock starts their
  * services once the link is up); Wi-Fi transfer (2) opens its page with the link. */
 int ringnav_netservice_row(void *button, void *event) {
     return row_of(button) == 2 && smart_hold(netservice_row_again, (void *)2, "netservice_page")
@@ -264,7 +264,7 @@ int ringnav_netservice_row(void *button, void *event) {
                : stock_netservice_row_trampoline(button, event);
 }
 
-/* Now Playing More's Download Cover & Lyrics (0x539324, its row's case, given More's window): More
+/* Now Playing More's Download Cover & Lyrics (0x539614, its row's case, given More's window): More
  * itself is no network page, so the radio wakes only for this press. */
 int ringnav_online_match(void *win) {
     return win == page_in_use() && smart_hold(online_match_again, win, "playermore_page")

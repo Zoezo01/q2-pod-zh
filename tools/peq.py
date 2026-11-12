@@ -1,4 +1,4 @@
-"""Checked Q2 V1.34 PEQ hooks and target ABI imports; no vendor code is distributed."""
+"""Checked Q2 V1.36 PEQ hooks and target ABI imports; no vendor code is distributed."""
 import re
 import struct
 from build import ROOT, FLAGS, GP, FUNCTIONS, GLOBALS, PRIVATE_FUNCTIONS, append_payload, check, fileoff, run, sha, symbols, jal, j

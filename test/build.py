@@ -298,17 +298,17 @@ def validate_assets(directory):
     from build import patch_timezones, TIMEZONES, CJK, english_ui
     zones = bytearray(stock)
     patch_timezones(zones)
-    start = fileoff(stock, 0x77ea30)
+    start = fileoff(stock, 0x77efb0)
     labels = [zones[start+i*32:start+(i+1)*32].split(b'\0')[0] for i in range(1+len(TIMEZONES))]
     assert labels == [b'timedate_auto'] + [label.encode() for label, _ in TIMEZONES]
     assert demo[start:start+28*64] == zones[start:start+28*64]
-    for address in (0x4c1a18, 0x4c1d18, 0x4c2234, 0x504d1c):
+    for address in (0x4c1bd8, 0x4c1ed8, 0x4c23f4, 0x504eec):
         off = fileoff(stock, address)
         assert demo[off:off+4] == zones[off:off+4]
     assert manifest['version'].encode()+b'\0' in demo
     # A widget's style, as stock's widget_update_style passes it to the style's notify: lw $4, W_ASTYLE($16).
     astyle = int(re.search(r'#define W_ASTYLE (0x[0-9a-f]+)', (ROOT/'patch/offsets.inc').read_text())[1], 16)
-    off = fileoff(stock, 0x671278)
+    off = fileoff(stock, 0x6717d8)
     assert int.from_bytes(stock[off:off+4], 'little') == 0x8e040000 | astyle
     # .pdr (build.py PDR), past every LOAD segment, ships zeroed.
     assert demo[PDR[0]:PDR[0]+PDR[1]] == bytes(PDR[1]) and any(stock[PDR[0]:PDR[0]+PDR[1]])
@@ -325,7 +325,7 @@ def validate_assets(directory):
     # The slide hint names a stock animator and gives it a duration (a missing one means stock's 500 ms).
     assert re.fullmatch(r'htranslate\(duration=\d+\)', SLIDE) and b'\0htranslate\0' in stock
     # The animated lookup pages need synchronous unwind.
-    for address, slot in ((0x4a7f24, 0x468), (0x4af808, 0x468), (0x537cac, 0x420)):
+    for address, slot in ((0x4a7ed4, 0x468), (0x4af83c, 0x468), (0x537fbc, 0x420)):
         off = fileoff(stock, address)
         want = struct.pack('<III', 0x8f99a914, 0x0320f809, 0x8fa40000 | slot)
         assert demo[off:off+12] == want
@@ -375,7 +375,7 @@ def validate_assets(directory):
     # Home: Carousel's cards in their own colours, stock's untouched, Coverflow's and the Shortcut's added.
     for name in ICONS:
         assert read('rootfs.squashfs', xx+name) == (ROOT/'assets/icons'/name).read_bytes(), name
-    for name in STOCK_NAMED_ICONS:  # stock V1.34's Album Wall card icons have Cover Flow's names: ours take their place
+    for name in STOCK_NAMED_ICONS:  # stock V1.36's Album Wall card icons have Cover Flow's names: ours take their place
         assert name in ICONS and changed[xx+name] == dict(original_sha256=sha(read('stock.squashfs', xx+name)), sha256=sha((ROOT/'assets/icons'/name).read_bytes()))
     tag_old, tag_new = read('stock.squashfs', TAG_C), read('rootfs.squashfs', TAG_C)
     assert tag_new == patch_m4b_cover(tag_old)
@@ -768,7 +768,7 @@ def validate_assets(directory):
             assert all(v == '#00000000' for k,v in root[3][1][2].items() if k.startswith('style:'))
             assert [r[2]['name'] for r in sv[3]] == ['btn_'+n for n in HOME_ROWS] and HOME_ROWS[2] == 'coverflow'
             for name, (_, _, _, (label, image)) in zip(HOME_ROWS, sv[3]):
-                ours = HOME_OURS.get(name, name)  # stock V1.34 binds img_coverflow and translates label_coverflow: ours are named apart
+                ours = HOME_OURS.get(name, name)  # stock V1.36 binds img_coverflow and translates label_coverflow: ours are named apart
                 assert label[2]['name'] == ('label_library' if name == 'localmusic' else 'label_'+ours)
                 assert image[2] == {'name': 'img_'+ours, 'clickable': 'true'}
                 # Labels end before the chevron's glyph; longer ones scroll (only_focus) or end in an ellipsis.
@@ -879,7 +879,7 @@ def validate_assets(directory):
             assert named['label_playlen'][2]['visible'] == 'false'
             assert {v for n in ('label_playtime', 'label_ipod_remain') for k, v in named[n][2].items() if k.endswith(':text_color')} == {'#AAAAAA'}
             # Stock places the A-B markers at y 250 and x = 50 + t * 290 / length; iPod's follow its bar.
-            assert [int.from_bytes(demo[fileoff(demo, a):fileoff(demo, a)+4], 'little') for a in (0x53b7c8, 0x53b7e0)] == [
+            assert [int.from_bytes(demo[fileoff(demo, a):fileoff(demo, a)+4], 'little') for a in (0x53ba88, 0x53baa0)] == [
                 0x24020000 | NP_BAR[2], 0x24420000 | NP_BAR[0]]
             continue
         if short == ARTIST_PAGE:
@@ -1051,7 +1051,7 @@ def validate_assets(directory):
                 assert min(n[1][0], 375 - value[1][0] - value[1][2]) >= corner_x(dy + n[1][1], n[1][3]), (g.name, table[key])
             assert len(info) == 18 and info[8][1][1] + info[8][1][3] <= page['slide_indicator1'][1][1], g.name
     payload_symbols = symbols(directory/'patch.elf')
-    for address in [AUDIT['immediates'][0]['sites'][0][0], '0x532a2c', '0x5349e8', '0x4b5874', AUDIT['row_layout_calls']['sites'][0][0],
+    for address in [AUDIT['immediates'][0]['sites'][0][0], '0x532d3c', '0x534cf8', '0x4b5874', AUDIT['row_layout_calls']['sites'][0][0],
                     hex(inc('LIST_VIEW_LAYOUT_SLOT'))]:
         damaged = bytearray(stock)
         damaged[fileoff(stock, int(address, 16))] ^= 1

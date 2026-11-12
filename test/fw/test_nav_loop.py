@@ -1059,7 +1059,7 @@ def test_the_headsets_level_is_read_at_its_pace(fw, lit, failed, limit, gap):
 
 @pytest.mark.parametrize('limit, want', [(100, reads_as(100)), (60, 60)])
 def test_the_headsets_own_keys_move_the_q2s_volume_to_the_limit(fw, stock_bytes, limit, want):
-    level = stock_bytes(0xa4c5a5, 1)  # stock responseSetVolume's level
+    level = stock_bytes(0xa4cbb5, 1)  # stock responseSetVolume's level
     vol = VolPoll(fw, limit=limit, volume=40)
     vol.headset.level = 100
     vol.poll()
@@ -1069,7 +1069,7 @@ def test_the_headsets_own_keys_move_the_q2s_volume_to_the_limit(fw, stock_bytes,
 
 
 def test_the_volume_dialogs_slider_follows_the_headset(fw, stock_bytes):
-    stock_bytes(0xa4c5a5, 1)
+    stock_bytes(0xa4cbb5, 1)
     vol = VolPoll(fw, volume=40)
     name = C.create_string_buffer(b'volume_dialog')
     fw.mock('window_manager_get_top_window', lambda *_: 0x5100)

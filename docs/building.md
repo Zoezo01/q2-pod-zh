@@ -17,14 +17,14 @@
 - The original stock ZIP. Its SHA-256 is:
 
 ```text
-6d3e5952d0a71e55f247bdbfcab0353ed21c5e64df9d46c081f27b600bb0109a
+4e298cab6c12d86cfc55565645f7e3ae11d3fb44677a93ca13991e7184ecec4e
 ```
 
 ## Build
 
 ```sh
-python3 tools/build.py 'Q2 Firmware V1.34.zip' --out /tmp/q2-build                 # release build
-python3 tools/build.py 'Q2 Firmware V1.34.zip' --out /tmp/q2-dev --dev             # test build
+python3 tools/build.py 'Q2 Firmware V1.36.zip' --out /tmp/q2-build                 # release build
+python3 tools/build.py 'Q2 Firmware V1.36.zip' --out /tmp/q2-dev --dev             # test build
 ```
 
 Rebuilt firmware uses `assets/boot-logo.jpg` as the boot splash. Pass another 320x375 JPEG with `--logo` to use your own; see [boot.md](boot.md#custom-boot-logo).
@@ -39,16 +39,16 @@ buffer limits are unchanged. See
 [audio-notifier.md](audio-notifier.md) for the exact scope.
 
 ```sh
-python3 tools/build.py 'Q2 Firmware V1.34.zip' --out /tmp/q2-notifier --dev --aic-idle-wait
+python3 tools/build.py 'Q2 Firmware V1.36.zip' --out /tmp/q2-notifier --dev --aic-idle-wait
 ```
 
 ### FLAC fast paths
 
-On by default: `--flac-experiments sync,lpc,output` (all three). Pass a subset to build only some, or `--flac-experiments ""` for the stock decoder paths. Each is checked against the pinned V1.34 player.
+On by default: `--flac-experiments sync,lpc,output` (all three). Pass a subset to build only some, or `--flac-experiments ""` for the stock decoder paths. Each is checked against the pinned V1.36 player.
 
 ### Versioning
 
-The updater refuses only a firmware whose version literal is identical to the installed one (`update_firmware`, `0x502a00`; the online check `check_otginfo`, `0x502f28`). So each build carries a 5-character tag, `VERSION` (`x.y.z`, single digits) and `BETA` (a pre-release's beta number, 0 for the release) packed as `V<xyz><beta>`; a release build stops unless both are single digits. For example, 1.8.0 beta 2 is `V1802` and 1.8.0 is `V1800`, so each beta and then the release installs over the one before. Releases up to 1.8.0 BETA were packed as `V<xyz>I` (1.0.0 was `V100I`). The mod installs over stock and over any other build, and stock V1.34 installs back over it.
+The updater refuses only a firmware whose version literal is identical to the installed one (`update_firmware`, `0x502bd0`; the online check `check_otginfo`, `0x5030f8`). So each build carries a 5-character tag, `VERSION` (`x.y.z`, single digits) and `BETA` (a pre-release's beta number, 0 for the release) packed as `V<xyz><beta>`; a release build stops unless both are single digits. For example, 1.8.0 beta 2 is `V1802` and 1.8.0 is `V1800`, so each beta and then the release installs over the one before. Releases up to 1.8.0 BETA were packed as `V<xyz>I` (1.0.0 was `V100I`). The mod installs over stock and over any other build, and stock V1.36 installs back over it.
 
 About's **FW. Version** row reads the same literal, so it shows the stock firmware's version (`STOCK_VERSION`, from the stock `firmware_v20.info`). A **CFW. Version** row below it shows `<version> Pod`, plus ` beta N` in a beta, or ` dev N` in `--dev` builds. Release tags use the plain version (`1.0.0`); releases up to 1.0 were `V`-prefixed. Each release carries `update.tar`.
 
@@ -77,7 +77,7 @@ python3 test/mp3.py                        # native Xing seek bounds, CRC and tr
 python3 test/mp3_gapless.py                # gapless parser/PCM and generated LAME/FFmpeg comparisons (cc, lame, ffmpeg, pkg-config, libavcodec/libavutil/libmad development files)
 python3 test/mp3_gapless_player.py BUILD   # the built gapless hooks, then stock's demuxer and libmad under Unicorn on generated files (lame, unsquashfs, readelf)
 python3 test/build.py                      # JPEG headers, dev tags, and the boot scripts (S90play's dual boot and crash log, S11logo's splash) under the host sh; no ZIP or emulator
-python3 test/build.py 'Q2 Firmware V1.34.zip'   # packaging checks (custom logo, quoted paths)
+python3 test/build.py 'Q2 Firmware V1.36.zip'   # packaging checks (custom logo, quoted paths)
 python3 test/build.py --build BUILD         # a finished build's payloads and packaging
 python3 test/aic.py STOCKFS               # stopped audio notifier: actual MIPS hooks and modeled wait races
 python3 test/aic_build.py STOCKFS BUILD    # notifier development guard, ABI, default/experimental packaging

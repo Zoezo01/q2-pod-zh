@@ -1,4 +1,4 @@
-"""Opt-in, checked FLAC experiments for the pinned V1.34 player only."""
+"""Opt-in, checked FLAC experiments for the pinned V1.36 player only."""
 
 EXPERIMENTS = ('sync', 'lpc', 'output')
 EXPORTS = {

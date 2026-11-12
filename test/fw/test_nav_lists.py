@@ -775,7 +775,7 @@ def test_a_held_power_key_leaves_only_its_shutdown_prompt_the_wheel(fw, ui):
 
 @pytest.mark.parametrize('flag', ['g_power_longkey', 'g_ingore_bootkey_flag', 'guard'])
 def test_the_release_that_ends_the_hold_leaves_the_shutdown_prompt_its_centre(fw, ui, flag):
-    """V1.34's confirm keeps every Centre release from on_wm_keyup_fun, which cleared the hold's flags."""
+    """V1.36's confirm keeps every Centre release from on_wm_keyup_fun, which cleared the hold's flags."""
     def flags():
         return (fw.var('g_power_longkey', C.c_ubyte).value, fw.var('g_ingore_bootkey_flag', C.c_ubyte).value,
                 C.string_at(O['BOOT_KEY_GUARD'], 1)[0])

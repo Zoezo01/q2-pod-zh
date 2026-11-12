@@ -787,7 +787,7 @@ w(NEXT, 0)
 cold(44100); pressed(NEXT); w(NEXT, 0)
 got = nxt(); assert got == [*JACK, WAIT], got
 got = nxt(); assert got == [], got
-# Bluetooth and USB: demo's mute is way 0's only (0x5bf628 tests its output way), so no mark is looked for and the same
+# Bluetooth and USB: demo's mute is way 0's only (0x5bf8b8 tests its output way), so no mark is looked for and the same
 # format stays open with any word or none. A press's stamp, too: it hears the buffer's rest first (the limit in
 # docs/internals.md). LDAC's answer and AAC's and SBC's 48 kHz both meet the compare; neither way waits for a line.
 REOPEN = [DRAIN, CLOSE, OPEN]

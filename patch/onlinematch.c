@@ -142,7 +142,7 @@ int lrc_fold(char *out, unsigned n, const char *s) {
  * the .lrc beside the song, so a copy there hides ours (docs/internals.md#lyrics-search). */
 #define DOWNPIC "/mnt/mmc/.downpic/"
 
-/* stock's name there for a song's file name (modifystringtolrcsuffix @0x51c8b8): its last '.' on
+/* stock's name there for a song's file name (modifystringtolrcsuffix @0x51caa8): its last '.' on
  * made ".lrc", as it is without one; 0 if it does not fit in n. */
 int lrc_name(char *out, unsigned n, const char *name) {
     const char *dot = strrchr(name, '.');
@@ -399,7 +399,7 @@ static int lrc_copy(const char *tmp, const char *lrc) {
     return 0;
 }
 
-/* Download Cover & Lyrics' accept (0x535c14) builds cp -rf /tmp/oslyric_N "/mnt/mmc/.downpic/<name>"
+/* Download Cover & Lyrics' accept (0x535f24) builds cp -rf /tmp/oslyric_N "/mnt/mmc/.downpic/<name>"
  * for system() with snprintf, whose call (LYRIC_SAVE_CALL) jumps here: the lyrics (tmp) go beside the
  * song instead, as <path less extension>.lrc, as Download Album Lyrics saves them, and a .downpic copy
  * that would hide them goes; cmd becomes ":", which system() runs as nothing, and stock reloads the
