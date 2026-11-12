@@ -6253,7 +6253,16 @@ for patched in (True,False):
         assert [(m.text(c[2]),c[3]) for c in gap]==[('loop_interval_distance',200)]*(not patched),(patched,gap)
 passed()
 # Albums' artist line and grid titles keep a focus flag in Volume Mode too (ALBUM_LABELS; test/fw has the hook's two calls).
-assert all(struct.unpack_from('<I',demo,fileoff(demo,a))[0]==jal(payload_syms['ringnav_album_label']) for a in ALBUM_LABELS); passed()
+# Each site is the call for the label stock names beside it, not the list row's title, whose call is the same function's.
+def named_near(at):
+    """The names stock gives widgets within 0x30 bytes of at: addiu $a1, $a1, a string's low half."""
+    words=struct.unpack_from('<25I',demo,fileoff(demo,at-0x30))
+    return {demo[o:demo.index(b'\0',o)].decode() for o in (fileoff(demo,0x780000+signed16(w&0xffff)) for w in words if w>>16==0x24a5)}
+def signed16(x): return x-0x10000 if x&0x8000 else x
+for at,name in zip(ALBUM_LABELS,('scrlabel2_name','scrlabel1_name1','scrlabel1_name2','scrlabel1_name3')):
+    assert struct.unpack_from('<I',demo,fileoff(demo,at))[0]==jal(payload_syms['ringnav_album_label']) and name in named_near(at),(hex(at),named_near(at))
+assert 'scrlabel2_name' not in named_near(0x4a6bfc)  # the list row's title's call
+passed()
 # Stock's focus doesn't come back to a reloaded page's row (FOCUS_RESTORE): with a focused widget in $v0, V1.36's album page and
 # Playlists go on to read its name; patched, both go on as with none, their row index -1.
 def falls(m,start,stops):
@@ -18844,10 +18853,9 @@ passed()
 # V1.34 changed two things here, in functions that hold no patch site: the toast and the confirm stop the wheel and
 # Centre themselves (how the Shut Down prompt lost its Centre, #303), and with the screen off a handler passes every
 # key on untouched, as the volume dialog's did before VOL_DARK (above). V1.36 changed a third: Now Playing's handler
-# takes Centre, for a screen-off of its own 350 ms on (ringnav takes Centre there first: internals.md, Scrub). Each
-# runs alone, lit then dark, with
-# g_wheelmode as WHEEL_MODE holds it; whatever it calls answers 0 (no widget, nothing playing) and is named if stock
-# exports it, widget lookups aside. Q2 Pod patches none of these, so stock's own answer the same.
+# takes Centre, for a screen-off of its own 350 ms on, which NP_CENTRE undoes (below). Each runs alone, lit then dark,
+# with g_wheelmode as WHEEL_MODE holds it; whatever it calls answers 0 (no widget, nothing playing) and is named if
+# stock exports it, widget lookups aside. Q2 Pod patches none of the others, so stock's own answer the same.
 def keyups(patched,handler):
     """{key: (lit, dark)} for each key handler doesn't pass untouched both ways: the functions it calls, then stop if it stops the key."""
     c=Machine(patched); c.handlers.clear(); end=handler+4; names={a:n for n,a in syms.items()}
@@ -18871,8 +18879,6 @@ def stock_keyups():
             # Return goes back by on_return_onclick: on_common_keyup (most pages), allmusic_page, album_page, artistinfo_page,
             # localclass_page, playerqueue_page, playerjumpinfo_page and search_dialog
             ({ret:('on_return_onclick stop','')},(syms['on_common_keyup'],0x4abc34,0x4a608c,0x4b0f50,0x4b2ab8,0x53a930,0x538a88,0x49eb70)),
-            # playing_page: Return as those, and since V1.36 Centre ends here: the screen goes off 350 ms on, or at once on a second
-            ({ret:('on_return_onclick stop',''),centre:('power_keyup_detect power_keyup_pending_custom stop','')},(0x53da5c,)),
             # ... or by a function of the window's own: folder_page, specfolder_page and sortselect_dialog
             ({ret:stop},(0x533310,syms['on_specfolder_keyup'],0x4a0b54)),
             # confirminfo_dialog: Return quits it and goes on; the wheel and Centre end here
@@ -18884,6 +18890,10 @@ def stock_keyups():
             # checkfw_dialog, the update's: every key
             (every,(0x499528,))):
         for handler in handlers: assert keyups(True,handler)==keyups(False,handler)==want,hex(handler)
+    # playing_page: Return as the first group's. Stock V1.36 ends Centre there too (the screen off 350 ms on, or at once on
+    # a second); under NP_CENTRE it goes on to on_wm_keyup_fun, which ringnav's passed-on releases are for.
+    back={ret:('on_return_onclick stop','')}
+    assert keyups(True,0x53da5c)==back and keyups(False,0x53da5c)=={**back,centre:('power_keyup_detect power_keyup_pending_custom stop','')}
 stock_keyups(); passed()
 # SyncLink (#113): Eddict Player's keys, which stock posts with main_loop_post_key_event, reach
 # stock's lock filters dark with the Buttons lock off; the same keys from the buttons stay locked.

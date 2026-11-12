@@ -328,6 +328,7 @@ demo	0x53d10c	0x4	playing_page_update	the only call to playing_page_lyrics_rebui
 demo	0x53d308	0x4	playing_page_update	the only call to np_info, after "play_unfav"; tools/build.py NP_INFO_CALL
 demo	0x53d6d4	0x4	playing_page_update	the load of $25 for the only call to scroll_view_scroll_to, after "play_unfav"; tools/build.py LYRIC_FOLLOW, tools/build.py build
 demo	0x53d6e4	0x4	playing_page_update	the only call to scroll_view_scroll_to, after "play_unfav"; tools/build.py LYRIC_FOLLOW
+demo	0x53dbac	0x4	playing_page_on_keyup_seek	`bne $2, $3, +14 words` (2nd of 2 such), before the only call to power_keyup_detect, after "slider_play"; tools/build.py NP_CENTRE
 demo	0x53e4b4	0x4	playing_page_init	the load of $25 for the only call to check_forbid_play_no_headset, after "/tmp/notsupport"; patch/navigation.c ringnav_playing
 demo	0x53e514	0x4	playing_page_init	`lw $gp, 0x10($sp)` (12th of 13 such), before the only call to playing_page_update, after "/tmp/notsupport"; patch/playback.c PAGE_PICK_RET
 demo	0x53f75c	0x4	specfolder_table_setup	`addiu $5, $zero, 0x4e`, before the only call to table_client_set_row_height, after "specfolder_table_client"; patch/ipod.json immediates stock_row (stock's own table rows (Go to, Queue, special folders): creation, Go to's scroll divisor, special folders' row height)

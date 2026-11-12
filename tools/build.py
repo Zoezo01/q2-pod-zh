@@ -442,6 +442,12 @@ WHEEL_MODE = (0x504ba4, 0x0003100a, 0x24020001)
 # V1.36's home_page_init binds a key-up of its own on Home (0x534a74: Return opens Now Playing and stops there; its wheel and
 # Centre act only outside Volume Mode). Home's keys are ringnav's and on_wm_keyup_fun's, as they were: the widget_on call goes.
 HOME_KEYUP = (0x534c28, 0x0320f809, 0)
+# V1.36's Now Playing key-up handler takes Centre: the screen goes off 350 ms on, or at once on a second release
+# (power_keyup_detect), and the release ends there. ringnav takes Centre on that page first, and what it passes on is for
+# on_wm_keyup_fun: the screen-off of a single press, and stock's power-key rules (a boot key's or a held key's release,
+# the guard after Standby), whose flags only that function clears. So the handler's test for Centre never matches (its
+# bne is a b), and Centre is one more key it knows nothing of, as until V1.34.
+NP_CENTRE = (0x53dbac, 0x1443000d, 0x1000000d)
 # V1.36's on_wm_keyup_before_fun applies Buttons lock on the lit lock window too (beqz g_lockscreen_pageflag past the lock).
 # Buttons lock stays the dark screen's (navigation.c lock_names), as V1.32's: the branch is taken always.
 KEYLOCK_LIT = (0x4f2728, 0x10400010, 0x10000010)
@@ -1882,6 +1888,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     patch_word(patched, *NAV_SHOWN, "stock's navigation bar stays shown")
     patch_word(patched, *WHEEL_MODE, "stock's wheel stays in Volume Mode")
     patch_word(patched, *HOME_KEYUP, 'Home binds no key-up of its own')
+    patch_word(patched, *NP_CENTRE, "Now Playing leaves Centre to stock's power-key handling")
     patch_word(patched, *KEYLOCK_LIT, 'Buttons lock acts only with the screen off')
     patch_word(patched, *VOL_DARK, 'The volume dialog steps with the screen off')
     for site in MORE_ARTIST_CLOSE:
