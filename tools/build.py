@@ -554,10 +554,6 @@ DIALOG_CLOSE = 0x652874
 # slot) becomes jal ringnav_scan_dir, which skips every hidden folder, as Folder view's list does: a card
 # app's own (q2-deezer's stream cache) never joins the Library.
 SCAN_DIRS = (0x5d6864, 0x0320f809)
-# Stock V1.36 scans without a limit of its own (V1.34 stopped at 20,000 songs) until /mnt/data is full. Q2 Pod's
-# is 65,000: toolsLoadAllFile's bal to stock's insert (tools_insert_song_to_db, a0 the entry, a1 the table) becomes jal
-# ringnav_scan_insert, which at 65,000 songs stops the scan as Back does instead (tags.c).
-SCAN_LIMIT = (0x5dc504, 0x0411f6dd)
 # Library Albums' cover cache names (navigation.c art_key): the row renderer's snprintf of the name,
 # with a2 the row (addiu a2,"%s" becomes move a2,s3), the Albums page's albumcoverinfo_init calls
 # and the album page's big cover snprintf become jal to the payload; so do an artist page's albums
@@ -1320,10 +1316,7 @@ FUNCTIONS = {
  'toolsUpdateDbTable': ('int', 'const char *, const char *'),
  'toolsTrimRight': ('void', 'char *'),
  'toolsHanziToPinyin': ('int', 'const char *, char *'),
- 'toolsGetMusicNum': ('int', 'void'),
  'toolsGetUserStop': ('int', 'void'),  # toolsStopUpdateMusic's flag: the scan dialog's Back
- 'toolsStopUpdateMusic': ('void', 'void'),
- 'tools_insert_song_to_db': ('int', 'void *, const char *'),
  'taglib_file_audioproperties': ('void *', 'void *'),
  'taglib_file_free': ('void', 'void *'),
  'deleteMusicFromFav': ('int', 'void *'),
@@ -1486,7 +1479,6 @@ PRIVATE_FUNCTIONS = {
     "btmenu_rows": HOOKS['btmenu_rows'][0],  # systemset_bluetooth_page's list: rows, paired, found
     "mcl_shuffle_pick": 0x5ba7d0,
     "album_row": 0x506e94,  # getAllAlbum's sqlite3_exec callback: id, album, songer, fileurl to a record
-    "tools_insert_song_to_db": 0x5da07c,  # toolsLoadAllFile's insert of one scanned file (a CUE's tracks too)
     "folder_refresh": 0x531efc,  # folder_page's navbar and table from p_deque_showlist (its init, back)
     "class_icon": 0x4b2268,  # a category row's picture: the head for Artists, a genre icon, else .downpic
     "screensaver_rows": HOOKS['screensaver_rows'][0],  # the Lock screen page's rows and picture grid
@@ -1956,7 +1948,6 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, SCAN_DIRS[0] + 4))[0] == 0x24a59870,
           'library scan: expected the "." exclusion')
     patch_word(patched, *SCAN_DIRS, jal(ps['ringnav_scan_dir']), 'the library scan skips hidden folders')
-    patch_word(patched, *SCAN_LIMIT, jal(ps['ringnav_scan_insert']), 'scan up to 65,000 songs')
     for address, old, new in DROP_CACHES:
         patch_word(patched, address, old, new, 'keep the page cache')
     for address, old, new in BT_INPUT:

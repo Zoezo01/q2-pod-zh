@@ -957,16 +957,6 @@ def test_the_scan_any_folder_name(fw, heap):
         heap.free(name)
 
 
-@pytest.mark.parametrize('songs, added', [(0, 1), (64999, 1), (65000, 0), (65001, 0)])
-def test_the_scan_adds_songs_below_65000_and_stops_there(fw, songs, added):
-    """Stock's insert below the limit; at it, stock's own stop (the scan dialog's Back) and no insert."""
-    fw.mock('toolsGetMusicNum', lambda *_: songs)
-    fw.mock('tools_insert_song_to_db', lambda *_: 7)
-    row = C.create_string_buffer(0x60)
-    assert fw.fn('ringnav_scan_insert', C.c_int, C.c_void_p, C.c_char_p)(row, b'songtable') == 7 * added
-    assert len(fw.calls('tools_insert_song_to_db')) == added and len(fw.calls('toolsStopUpdateMusic')) == 1 - added
-
-
 @pytest.mark.parametrize('path, cue, m4b', [
     (None, 0, 0), (b'', 0, 0), (b'/a/b.m4b', 0, 1), (b'/a/b.M4B', 0, 1), (b'/a/b.m4a', 0, 0), (b'/a/m4b', 0, 0), (b'/a.m4b/b', 0, 0),
     (b'x.mp3.m4b', 0, 1), (b'x.m4b.mp3', 0, 0), (b'.m4b', 0, 1), (b'/a/b.m4b', 5, 1),
@@ -2995,11 +2985,12 @@ def test_folder_videos(fw, path, videos):
     assert fw.fn('folder_videos', C.c_int)() == videos
 
 
-@pytest.mark.parametrize('table, exists, songs, want', [(None, 1, 0, 1), (b'playlist', 1, 0, 1), (b'songtable', 0, 64999, 0), (b'songtable', 0, 65000, 1)])
-def test_scan_refresh_early_answers(fw, table, exists, songs, want):
+@pytest.mark.parametrize('table, exists', [(None, 1), (b'playlist', 1), (b'songtable', 0), (b'playlist', 0)])
+def test_scan_refresh_early_answers(fw, table, exists):
+    """Another table's row, or a song the library doesn't have yet (stock adds it): stock's answer, nothing refreshed."""
     fw.mock('toolsCheckItemExist', lambda *_: exists)
-    fw.mock('toolsGetMusicNum', lambda *_: songs)
-    assert fw.fn('ringnav_scan_refresh', C.c_int, C.c_void_p, C.c_char_p, C.c_int)(None, table, 0) == want
+    assert fw.fn('ringnav_scan_refresh', C.c_int, C.c_void_p, C.c_char_p, C.c_int)(None, table, 0) == exists
+    assert not fw.calls('toolsUpdateDbTable')
 
 
 def test_scan_refresh_keeps_a_row_without_a_path(fw):

@@ -4989,17 +4989,14 @@ class SpecFolderMachine(Machine):
 for index,x,want,listed in ((0,200,200,['/m/0']),(1,200,0,['/m/1']),(2,81,0,['/m/2']),(1,80,80,[])):
     m=SpecFolderMachine(); assert m.tap(index,x)==(listed,(0x77,want)),(index,x,m.listed,m.seen)
 m=SpecFolderMachine(); assert m.tap(1,200,on_row=False)==([],(0x77,200)); passed()
-# Update Local Music: the stock scanner, nested folders and all, adds each song through ringnav_scan_insert, which
-# stops the scan at 65,000 songs (stock V1.36 has no limit). Only the folder listing, paths and database insert are mocked.
-from build import SCAN_LIMIT
-assert struct.unpack_from('<I',demo,fileoff(demo,SCAN_LIMIT[0]))[0]==jal(payload_syms['ringnav_scan_insert'])
+# Update Local Music: the stock scanner, nested folders and all, has no song limit: stock's 20,000 went with V1.36, and
+# Q2 Pod's own 65,000 with it. Only the folder listing, paths and database insert are mocked.
 SONGS,STOP,LISTING=0xa50524,0xa50528,0xa50118  # toolsGetMusicNum's count, toolsStopUpdateMusic's flag, the listing deque
 class ScanMachine(Machine):
     def __init__(self,tree,songs,patched=True,stop_at=None):
         super().__init__(patched); self.tree=tree; self.added=[]; self.stop_at=stop_at
         for n in ('toolsSetScanFolderPath','toolsCheckItemExist','deque_size','deque_at','sprintf@GLIBC_2.0'): self.handlers[syms[n]]='scan:'+n
         self.handlers[0x5d6520]='scan:list'; self.handlers[0x5da07c]='scan:insert'  # private: lists a folder, adds a song
-        for n in ('toolsGetMusicNum','toolsStopUpdateMusic'): self.handlers.pop(syms[n],None)  # stock's own run: ringnav_scan_insert's count and stop
         self.word(SONGS,songs); self.word(LISTING,self.alloc(0x20))
     def hook(self,u,address,size,unused):
         name=self.handlers.get(address,'')
@@ -5022,13 +5019,12 @@ def scan(songs,tree={'/m':['a']},**kw):
     """(return, songs added, stop flag, count): 1 finished, 0 stopped."""
     m=ScanMachine(tree,songs,**kw)
     return m.call(address=syms['toolsLoadAllFile'],args=(m.string('/m'),0,0,0),gap=0),m.added,m.u.mem_read(STOP,1)[0],m.get(SONGS)
-for patched,limit in ((True,65000),(False,None)):
+for patched in (True,False):
     for songs in (19999,20000,32767,32768,64999,65000,65001):
-        more=limit is None or songs<limit
-        assert scan(songs,patched=patched)==(more,['/m/a']*more,1-more,songs+more),(patched,songs); passed()
+        assert scan(songs,patched=patched)==(1,['/m/a'],0,songs+1),(patched,songs); passed()
 nested={'/m':['a','sub','b'],'/m/sub':['c','d']}
 assert scan(0,nested)==(1,['/m/a','/m/sub/c','/m/sub/d','/m/b'],0,4); passed()
-assert scan(64998,nested)==(0,['/m/a','/m/sub/c'],1,65000); passed()  # the limit inside a subfolder ends the scan
+assert scan(64998,nested)==(1,['/m/a','/m/sub/c','/m/sub/d','/m/b'],0,65002); passed()  # past 65,000 inside a subfolder
 assert scan(0,nested,stop_at=2)==(0,['/m/a','/m/sub/c'],1,2); passed()  # stock's look at the stop flag before each entry
 assert scan(0,{'/m':['a','b','c']},stop_at=1)==(0,['/m/a'],1,1); passed()
 # A folder rescan refreshes existing tags in place, including quoted paths/tags and CUE rows.
@@ -5045,7 +5041,7 @@ class FolderTagsMachine(ScanMachine):
         self.db.execute('insert into songtable values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',self.old)
         # Another CUE segment in the same file must keep its own tags.
         self.db.execute('insert into songtable values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',(8,*self.old[1:12],30,40,456,ord('O')))
-        for n in ('taglib_file_new','taglib_file_tag','taglib_file_free','toolsGetMusicInfo','toolsUpdateDbTable','toolsTrimLeft','toolsTrimRight','toolsHanziToPinyin','toolsGetMusicNum'):
+        for n in ('taglib_file_new','taglib_file_tag','taglib_file_free','toolsGetMusicInfo','toolsUpdateDbTable','toolsTrimLeft','toolsTrimRight','toolsHanziToPinyin'):
             self.handlers[syms[n]]='refresh:'+n
     def hook(self,u,address,size,unused):
         name=self.handlers.get(address,'')
@@ -5059,8 +5055,7 @@ class FolderTagsMachine(ScanMachine):
             ret=self.text(self.get(a+O['REC_NAME']))!="new.flac"
         elif name.startswith('refresh:'):
             name=name[8:]; ret=0
-            if name=='toolsGetMusicNum': ret=self.get(SONGS)
-            elif name=='taglib_file_new':
+            if name=='taglib_file_new':
                 assert b==0  # TagLib's vendor ABI: tags only, no audio-properties scan.
                 ret=123 if self.valid else 0
             elif name=='taglib_file_tag': assert a==123; ret=456
@@ -5088,9 +5083,9 @@ for patched in (False,True):
 for title,letter in (("  lower title  ",'L'),('7 songs','*'),('!song','#'),('','I'),('(null)','I')):
     m=FolderTagsMachine(title=title); assert m.rescan()==1
     assert m.db.execute('select Initial from songtable where id=7').fetchone()==(ord(letter),); passed()
-m=FolderTagsMachine(songs=65000)
+m=FolderTagsMachine(songs=65000)  # a folder scan adds a new file at any count, and refreshes the old one beside it
 m.tree['/m']=['new.flac',"it's.flac"]
-assert m.rescan()==1 and not m.added and m.get(SONGS)==65000 and not m.u.mem_read(STOP,1)[0]
+assert m.rescan()==1 and m.added==['/m/new.flac'] and m.get(SONGS)==65001 and not m.u.mem_read(STOP,1)[0]
 assert m.db.execute('select albumsonger from songtable where id=7').fetchone()==("New artist's tags",)
 passed()
 # A song's date (toolsGetFileCreateTime) is the card's creation stamp from statx, which reads never

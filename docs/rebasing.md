@@ -96,7 +96,7 @@ analyzeHeadless PROJ demo -process demo -noanalysis -scriptPath docs/rebasing -p
 ## What V1.34 to V1.36 taught
 
 - A small release still moved everything in `demo`: every string by `0x590` to `0x610`, `.data` and `.bss` by `0x610`, the imports' GOT slots by three, the local ones unevenly. `hciplayer`, `bluealsa`, the libraries and the modules the experimental flags patch were byte for byte the same, so nothing of theirs was touched.
-- Stock can drop what a patch stood on. V1.36 has no 20,000-song limit to raise, so the limit became a hook on the scanner's insert; and it took the navigation bar's resize off one page, so that entry left `navbar_resize_calls`.
+- Stock can drop what a patch stood on. V1.36 has no 20,000-song limit to raise, so the patch that raised it went, and Q2 Pod's own limit with it; and it took the navigation bar's resize off one page, so that entry left `navbar_resize_calls`.
 - Stock can rework a subsystem Q2 Pod reshapes. V1.36 gave most rows' labels AWTK's seamless loop through one helper; one dropped call there keeps every label's pass as Q2 Pod's hooks expect it. Decide such a change as a new stock option is decided: taken, or held at what behaved as before.
 - An arithmetic in a test (a GOT page less a low half, `GP` less an import's offset) is not carried. Write the address whole and `apply` carries it.
 

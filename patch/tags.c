@@ -1,6 +1,5 @@
 /* Tag reads and tag text: toolsGetMusicInfo (the library scan and the player), a card app's song's
- * tags and a CUE track's, GBK or Latin-1 tag text, CUE sheet text, the scan's song limit and the
- * folder scan's refresh. */
+ * tags and a CUE track's, GBK or Latin-1 tag text, CUE sheet text and the folder scan's refresh. */
 #include "navigation.h"
 
 extern int stock_music_info_trampoline(int, char *, const char *);
@@ -236,23 +235,11 @@ static int scan_quote(char *sql, unsigned cap, unsigned *n, const char *s) {
     sql[*n] = 0;
     return 1;
 }
-/* The library holds this many songs, as the queue does (QUEUE_LIMIT). Stock stopped a scan at
- * 20,000 until V1.36, which has no limit but /mnt/data's free space. */
-#define SCAN_SONGS 65000
-/* Replaces toolsLoadAllFile's call of stock's insert (SCAN_LIMIT): a full library stops the scan
- * as Back does, and the scanner's next look at that flag ends it. Only a full scan gets here with
- * the library full: a folder scan's new rows are skipped below. */
-int ringnav_scan_insert(void *row, const char *table) {
-    if (toolsGetMusicNum() < SCAN_SONGS) return tools_insert_song_to_db(row, table);
-    toolsStopUpdateMusic();
-    return 0;
-}
 /* Only toolsLoadAllFile's folder-scan duplicate check calls this. Keep the row's ID, CUE bounds,
  * creation time and library count, so saved queues/favourites still refer to the same song. */
 int ringnav_scan_refresh(void *row, const char *table, int type) {
     int exists = toolsCheckItemExist(row, table, type);
-    if (!table || strcmp(table, "songtable")) return exists;
-    if (!exists) return toolsGetMusicNum() >= SCAN_SONGS; /* full: a new row is skipped */
+    if (!exists || !table || strcmp(table, "songtable")) return exists;
     const char *path = P(row, REC_PATH), *name = P(row, REC_NAME);
     if (!path || !name) return exists;
     char info[0x698] = { 0 }, sql[8192];
