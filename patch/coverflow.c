@@ -3498,6 +3498,7 @@ static int closed(void *ctx, void *event) {
     stop_timer(&pl_again);
     tc.down = 0;
     th.on = 0; /* the poll kept the album named (the page may be part-destroyed here) */
+    coverflow_letter(0, 0, 0); /* a held letter has no lift left to end it, and its surface goes */
     if (cf.saved_album) BLOB_IO(LAST_ALBUM, cf.saved_album, 1);
     flip_free();
     drop();

@@ -10852,6 +10852,10 @@ for px in (O['LETTER_PX'],44):
         assert [r['rect'] for r in m.rounded if r['kind']=='fill' and r['color']==O['LETTER_ALPHA']<<24|O['FILL_RGB']]==[box]
 m.u.mem_write(T+LPX,struct.pack('<h',O['LETTER_PX']))
 m.call(address=ps['coverflow_letter'],args=(m.slide,0,0,0),gap=0); m.letters=[]; tpaint(m); assert not m.letters; passed()
+# A page closed under its held letter (Return, the thumb still on the wheel) takes the letter with it: no lift is left
+# to end it, and the next widget at the slide's address would wear it.
+m.call(address=ps['coverflow_letter_hold'],args=(m.slide,ord('B'),0,0),gap=0); m.letters=[]; tpaint(m); assert [l['text'] for l in m.letters]==['B']
+m.close(); m.letters=[]; tpaint(m); assert not m.letters; passed()
 # chord_gate: Centre under a held Return is dropped whole while the wheel's raw, the covers not landed for it.
 def twake(m,kind,key=O['KEY_CENTER'],gap=30):
     inp=HOOKS['window_manager_dispatch_input_event'][0]; m.handlers[inp+12]='stock_input'; n=len(m.calls)
