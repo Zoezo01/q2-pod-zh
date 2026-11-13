@@ -912,11 +912,20 @@ static void hud(void *canvas, const char *name, unsigned v, int x, int y, int ri
  * choice on the band. Any other gets a dark box, the choice on the accent where the selection is
  * a band (Modern), beside Home's dot where it is a card (Minimal). ponytail: no soft shadow under
  * the panel and no chevron on the band; paint_panel's shadow images are per size. */
+/* its own panel needs the scheme's gloss and band: fewer than two stops are none */
+static int pop_own(const theme_t *T, const scheme_t *S) {
+    return T->painter[PAINT_CONFIRM] != CONFIRM_STOCK && S->bar.n > 1 && S->sel.n > 1;
+}
+/* the panel's chosen row, its row i of POP_ROW */
+static unsigned pop_band(const scheme_t *S, int i) {
+    return i == 0 && S->sel_top                ? S->sel_top
+           : i == POP_ROW - 1 && S->sel_edge ? S->sel_edge
+                                             : stops_row(&S->sel, i, POP_ROW);
+}
 static void popup(void *canvas, const char *title, const char *a, const char *b, int choice) {
     const theme_t *T = theme();
     const scheme_t *S = scheme();
-    /* its own panel needs the scheme's gloss and band: fewer than two stops are none */
-    int own = T->painter[PAINT_CONFIRM] != CONFIRM_STOCK && S->bar.n > 1 && S->sel.n > 1;
+    int own = pop_own(T, S);
     int band = T->painter[PAINT_SELECTION] != SEL_CARD;
     int top = POP_ROW + (own ? 1 : 6), h = b ? top + 2 * POP_ROW + (own ? 0 : 8) : POP_ROW + 44;
     int x = (375 - POP_W) / 2, y = (g->h - h) / 2;
@@ -933,10 +942,7 @@ static void popup(void *canvas, const char *title, const char *a, const char *b,
             unsigned c = i < POP_ROW    ? stops_row(&S->bar, i, POP_ROW)
                          : i == POP_ROW ? S->bar_line
                                         : paper;
-            if (i >= sel && i < sel + POP_ROW)
-                c = i == sel && S->sel_top                   ? S->sel_top
-                    : i == sel + POP_ROW - 1 && S->sel_edge ? S->sel_edge
-                                                             : stops_row(&S->sel, i - sel, POP_ROW);
+            if (i >= sel && i < sel + POP_ROW) c = pop_band(S, i - sel);
             round_row(canvas, &r, LETTER_RADIUS, i, 0xff000000u | c);
         }
         text_at(canvas, title, 187, y, POP_ROW, 21, rgba(ink, 255), MID);
@@ -966,6 +972,40 @@ static void popup(void *canvas, const char *title, const char *a, const char *b,
               rgba(!on ? band ? 0xaaaaaa : SUDO_MUTED : band ? unflipped(0xff) : 0xffffff, 255),
               band ? MID : LEFT);
     }
+}
+
+/* RRGGBB as the screen shows rgb through ui_ink, in either half */
+static unsigned drawn(unsigned rgb) {
+    unsigned c = ui_ink(rgba(rgb, 255));
+    return (c & 255) << 16 | (c & 0xff00) | (c >> 16 & 255);
+}
+
+/* popup()'s look for a card game's own menus, the value of the Q2_POPUP that addon_game_start hands
+ * it: "<style> <box> <frame> <title> <text> <pick> <pick_text>", RRGGBB as drawn in either half.
+ * The style is minimal (a dot beside the chosen row, capitals), modern (the chosen row on an accent
+ * bar) or classic (the panel: box its paper, frame its line, then its title strip's POP_ROW rows
+ * and the chosen row's band). */
+void popup_env(char *out, unsigned size) {
+    const theme_t *T = theme();
+    const scheme_t *S = scheme();
+    int own = pop_own(T, S), band = T->painter[PAINT_SELECTION] != SEL_CARD;
+    unsigned paper = ipod_light() ? S->paper : 0, ink = ipod_light() ? S->ink : 0xffffff;
+    /* the band's stops are read only under own: a scheme without them divides by zero */
+    const unsigned *c =
+        own ? (const unsigned[6]){ paper, S->bar_line, ink, ink, pop_band(S, POP_ROW / 2),
+                                   S->sel_text ? S->sel_text : 0xffffff }
+            : (const unsigned[6]){ drawn(band ? 0x1c1c1c : 0),           drawn(band ? 0x3a3a3a : 0x4a4a4a),
+                                   drawn(0xffffff),                      drawn(band ? 0xaaaaaa : SUDO_MUTED),
+                                   drawn(band ? accent_tone(0) : 0xffffff), drawn(band ? unflipped(0xff) : 0xffffff) };
+    int n = tk_snprintf(out, size, "%s %06x %06x %06x %06x %06x %06x",
+                        own    ? "classic"
+                        : band ? "modern"
+                               : "minimal",
+                        c[0] & 0xffffff, c[1] & 0xffffff, c[2] & 0xffffff, c[3] & 0xffffff, c[4] & 0xffffff,
+                        c[5] & 0xffffff);
+    for (int i = 0; own && i < 2 * POP_ROW && n > 0 && (unsigned)n + 8 <= size; ++i)
+        n += tk_snprintf(out + n, size - n, " %06x",
+                         i < POP_ROW ? stops_row(&S->bar, i, POP_ROW) : pop_band(S, i - POP_ROW));
 }
 
 /* Vortex's and Snake's: Return's menu, the game over, the pause. */

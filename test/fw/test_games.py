@@ -2418,6 +2418,46 @@ def test_arcade_paint_return_s_menu_is_classic_s_panel_the_choice_on_its_band(fw
     assert min(band) > ra[1] + ra[3] - 2 and max(band) >= rb[1] + rb[3] // 2  # its last rows are the rounded ones
 
 
+def popup_env(fw):
+    """games.c's Q2_POPUP: the style and its colours as (r, g, b)."""
+    out = C.create_string_buffer(512)
+    fw.fn('popup_env', None, C.c_char_p, C.c_uint)(out, 512)
+    style, *hexes = out.value.decode().split()
+    assert all(len(h) == 6 for h in hexes)
+    return style, [(int(h, 16) >> 16, int(h, 16) >> 8 & 255, int(h, 16) & 255) for h in hexes]
+
+
+@pytest.mark.parametrize('light_mode', (b'0', b'1'))
+@pytest.mark.parametrize('theme, accent', ((MINIMAL, b'0'), (MODERN, b'4'), (CLASSIC, b'0')))
+def test_a_card_game_s_q2_popup_is_the_pop_up_as_it_is_drawn(fw, theme, accent, light_mode):
+    p = themed(fw, theme, ACCENT=accent, LIGHT=light_mode)
+    p.go(VORTEX)
+    p.key(RETURN)
+    ops = popup_ops(paint(p))
+    (_, ct, _), (_, ca, _), (_, cb, _) = words(ops)
+    style, c = popup_env(fw)
+    box, frame, title, text, pick, pick_text = c[:6]
+    assert (title, text, pick_text) == (rgb(ct), rgb(cb), rgb(ca))
+    if theme == CLASSIC:
+        assert style == 'classic' and len(c) == 6 + 2 * 32
+        head, band = c[6:38], c[38:]
+        fills = [o for o in ops if o.kind == 'fill' and o.rect[3] == 1 and o.rect[2] > 200]
+        wide = sorted({o.rect[2] for o in fills})[-2]
+        top = bounds(fills)[1] + 1  # inside the ring
+        sel = 33  # Continue: under the title strip and its line
+        want = [head[i] if i < 32 else frame if i == 32 else band[i - sel] if i < sel + 32 else box for i in range(200)]
+        last = {o.rect[1]: o for o in fills}  # each row's panel, over the ring's
+        rows = {y: o for y, o in last.items() if o.rect[2] == wide}  # but the rounded ones
+        assert len(rows) > 70 and all(rgb(o.color) == want[y - top] for y, o in rows.items())
+        assert pick == band[16]
+    else:
+        assert style == ('modern' if theme == MODERN else 'minimal')
+        rounds = sorted((o for o in ops if o.kind == 'round'), key=lambda o: o.rect[2])
+        assert rgb(rounds[-1].color) == box and rgb(rounds[0].color) == pick  # the box, then the bar or the dot
+        assert {rgb(o.color) for o in ops if o.kind == 'frame'} == {frame}
+        assert light(rgba(box[0] << 16 | box[1] << 8 | box[2])) == (light_mode == b'1')
+
+
 @pytest.mark.parametrize('screen', (VORTEX, SNAKE))
 def test_arcade_paint_pause_and_the_game_over_banners(fw, screen):
     p = Page(fw)

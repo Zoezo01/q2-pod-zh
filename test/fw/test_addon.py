@@ -1551,6 +1551,8 @@ def test_the_child_runs_the_game_first_for_the_oom_killer_and_with_none_of_demos
     g = CardGame(fw)
     fw.mock('fw_fork', lambda *_: 0)
     fw.mock('fw_open', lambda *_: 5)
+    env = []
+    fw.mock('fw_setenv', lambda name, value, over, *_: env.append((C.string_at(name), C.string_at(value), over)) or 0)
     g.start()
     calls = fw.calls()
     order = [n for n, _ in calls]
@@ -1562,6 +1564,9 @@ def test_the_child_runs_the_game_first_for_the_oom_killer_and_with_none_of_demos
     binary = b'/mnt/mmc/.snake/q2-snake'
     assert [C.string_at(p) if p else p for p in calls[execl][1][:3]] == [binary, binary, 0]
     assert order[execl + 1] == 'child_exit' and calls[execl + 1][1][0] == 127  # its exec failed
+    (name, value, over), = env  # the child's own, after demo's files: the theme's pop-up (test_games)
+    assert order.index('fw_setenv') == execl - 1 and name == b'Q2_POPUP' and over == 1
+    assert value.split()[0] in (b'minimal', b'modern', b'classic') and len(value.split()) in (7, 71)
 
 
 def test_a_game_off_the_card_says_so(fw):

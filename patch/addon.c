@@ -837,8 +837,9 @@ int addon_game_start(int k) {
     const char *busy = shelf_busy();
     if (busy && !strcmp(busy + 1, a->id)) return toast("Wait until the App Store finishes"), 0;
     if (access(a->bin, 0)) return toast("It isn't on the card"), 0;
-    char vol[5];
+    char vol[5], pop[POPUP_ENV];
     const char *dev = 0;
+    popup_env(pop, sizeof pop); /* the theme's pop-up, for its own menus */
     if (a->audio) { /* the sound is its: hciplayer off the PCM, the jack readied, as video_play */
         headset_manual();
         spot_yield();
@@ -851,6 +852,7 @@ int addon_game_start(int k) {
     if (!pid) {
         child_oom_first();
         for (int fd = 3; fd < 1024; ++fd) close(fd); /* demo's: the watchdog, the screen, sockets */
+        setenv("Q2_POPUP", pop, 1); /* the child's alone: demo's environment stays as it was */
         if (a->audio) /* q2video's arguments: the device, then a soft output's volume */
             execl(a->bin, a->bin, dev ? dev : "plughw:0,0", dev ? vol : (char *)0, (char *)0);
         else
