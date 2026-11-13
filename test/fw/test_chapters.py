@@ -491,6 +491,26 @@ def test_the_index_must_fit_memavailable_less_the_spare(fw):
     assert fits(fw, samples, info(280 + 16384 - 1)) == 0
 
 
+def start_fits(fw, kb, held=b'held.m4b', **card):
+    files = {b'a.m4b': book(table(1024 * 10)), b'/proc/meminfo': info(kb)}  # 280 KB of index
+    if not card:
+        files[b'held.m4b'] = book(table(1024 * 20))  # 560 KB
+    Card(fw, files, **card)
+    return fw.fn('mp4_start_fits', C.c_int, C.c_char_p, C.c_char_p)(b'a.m4b', held)
+
+
+def test_a_start_gets_back_the_held_files_index_and_keeps_a_smaller_spare(fw):
+    assert start_fits(fw, 280 + 8192 - 560) == 1
+    assert start_fits(fw, 280 + 8192 - 560 - 1) == 0
+
+
+@pytest.mark.parametrize('held, card', [(b'', {'errno': 2}), (b'gone.m4b', {'errno': 2}),
+                                        (b'huge.m4b', {'errno': EOVERFLOW})])
+def test_a_start_with_nothing_held_gets_nothing_back(fw, held, card):
+    assert start_fits(fw, 280 + 8192, held, **card) == 1
+    assert start_fits(fw, 280 + 8192 - 1, held, **card) == 0
+
+
 def test_no_estimate_plays_as_stock(fw):
     assert fits(fw, 10**8, b'MemTotal: 1 kB\n') == 1
     assert fits(fw, 10**8, None) == 1

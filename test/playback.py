@@ -1643,37 +1643,40 @@ assert r.fn('ringnav_memory',r.deque([]))>=0 and r.seek==37
 
 # MP4 admission uses the requested queue row; a refused start reports once, and a later
 # fitting track can start. Nonlocal records never inspect a local file.
-m=PlaybackMachine(); m.handlers[ps['mp4_fits']]='p:mp4_fits'; m.fits=0; m.mp4_checks=[]
+m=PlaybackMachine(); m.handlers[ps['mp4_fits']]=m.handlers[ps['mp4_start_fits']]='p:mp4_fits'; m.fits=0; m.mp4_checks=[]
 r=m.items(m.get(syms['mcl_pdeqplaylist']))[2]
 m.word(r+O['REC_PATH'],m.string('/A/book.m4b'))
 assert m.fn('ringnav_start_player')==-1 and m.mp4_checks==['/A/book.m4b']
 m.fn('playback_poll'); m.fn('playback_poll')
 assert m.toasts==['Too long to play on the Q2: split it into parts']
 m.fits=1; assert m.fn('playback_start_fits')==1
-m.word(r+O['REC_TYPE'],0)
-m.fits=0; m.mp4_checks=[]
-assert m.fn('playback_start_fits')==1 and not m.mp4_checks
-m.fn('playback_poll'); assert len(m.toasts)==1
 # The file last started, started again (a CUE book's next chapter), is not checked: its index is
 # freed first. Another file is, and so is a preload of the same file, which opens beside it.
-m.word(r+O['REC_TYPE'],8)
+m.fits=0; m.mp4_checks=[]
 assert m.fn('playback_start_fits')==1 and not m.mp4_checks
 m.word(r+O['REC_PATH'],m.string('/A/other.m4b'))
 assert m.fn('playback_start_fits')==0 and m.mp4_checks==['/A/other.m4b']
 m.fn('playback_poll'); m.word(r+O['REC_PATH'],m.string('/A/book.m4b'))
 m.word(O['MCL_PREPOS'],2); m.word(O['MCL_PRELOAD'],0)
 assert m.fn('ringnav_open_preload')==1 and m.mp4_checks[-1]=='/A/book.m4b' and m.mcl('MCL_PRELOAD')==-1
+# A nonlocal start closes the book, so the book after it is checked again.
+m.word(r+O['REC_TYPE'],0); m.mp4_checks=[]
+assert m.fn('playback_start_fits')==1 and not m.mp4_checks
+m.fn('playback_poll'); assert len(m.toasts)==2
+m.word(r+O['REC_TYPE'],8)
+assert m.fn('playback_start_fits')==0 and m.mp4_checks==['/A/book.m4b']
+m.fn('playback_poll')
 # Equal-speed gapless preloads inspect the successor, not the current track. Refusal
 # marks stock's failed-preload state; fitting successors still reach the stock opener.
 for fits,want in ((0,-1),(1,1)):
-    m=PlaybackMachine(); m.handlers[ps['mp4_fits']]='p:mp4_fits'; m.fits=fits; m.mp4_checks=[]
+    m=PlaybackMachine(); m.handlers[ps['mp4_fits']]=m.handlers[ps['mp4_start_fits']]='p:mp4_fits'; m.fits=fits; m.mp4_checks=[]
     m.word(O['MCL_PREPOS'],1); m.word(O['MCL_PRELOAD'],0)
     assert m.fn('ringnav_open_preload')==1
     assert m.mp4_checks==['/B/01.flac'] and m.mcl('MCL_PRELOAD')==want
     m.fn('playback_poll'); assert not m.toasts
 # Stock's final-five-seconds gate must not retry a refused successor on every player tick.
 m=PlaybackMachine(); m.options(0,5,0)
-m.handlers[ps['mp4_fits']]='p:mp4_fits'; m.fits=0; m.mp4_checks=[]
+m.handlers[ps['mp4_fits']]=m.handlers[ps['mp4_start_fits']]='p:mp4_fits'; m.fits=0; m.mp4_checks=[]
 m.handlers.pop(syms['mcl_open_preload'])
 m.byte(O['MCL_GAPLESS'],1); m.byte(0xa5002d,1); m.elapsed=296  # stock CUE end-time path
 rows=m.items(m.get(syms['mcl_pdeqplaylist']))

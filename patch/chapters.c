@@ -206,9 +206,18 @@ unsigned mem_available_kb(void) {
     return p ? (unsigned)atoi(p + 13) : ~0u;
 }
 
-int mp4_fits(const char *path) {
+/* freed: bytes the player gives back before this file opens. */
+static int fits(const char *path, unsigned long long freed, unsigned spare_kb) {
     unsigned long long need = mp4_index_bytes(path);
     if (!need) return 1;
     unsigned avail = mem_available_kb();
-    return avail == ~0u || need / 1024 + MP4_SPARE_KB <= avail; /* no estimate: play as stock does */
+    /* no estimate: play as stock does */
+    return avail == ~0u || need / 1024 + spare_kb <= avail + freed / 1024;
+}
+
+int mp4_fits(const char *path) { return fits(path, 0, MP4_SPARE_KB); }
+
+int mp4_start_fits(const char *path, const char *held) {
+    unsigned long long freed = mp4_index_bytes(held);
+    return fits(path, freed == ~0ULL ? 0 : freed, MP4_START_SPARE_KB);
 }

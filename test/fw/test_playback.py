@@ -2403,6 +2403,21 @@ def test_a_track_that_fits_is_not_refused(saved, fw):
     assert fw.fn('playback_start_fits', C.c_int)() == 1
 
 
+def test_another_book_starts_in_the_room_the_held_book_gives_back(saved, fw):
+    saved.load([saved.song(b'/b/a.m4b'), saved.song(b'/b/b.m4b'), saved.song(b'http://x', kind=0)], 0)
+    saved.disk.files['/b/a.m4b'] = saved.disk.files['/b/b.m4b'] = mp4(1 << 20)  # 28 MB of index each
+    start = fw.fn('playback_start_fits', C.c_int)
+    saved.disk.files['/proc/meminfo'] = b'MemAvailable: 40000 kB\n'
+    assert start() == 1
+    saved.disk.files['/proc/meminfo'] = b'MemAvailable: 12000 kB\n'  # a's index is in use
+    saved.mcl.pos = 1
+    assert start() == 1
+    saved.mcl.pos = 2  # a stream closes the book: nothing comes back for the next
+    assert start() == 1
+    saved.mcl.pos = 0
+    assert start() == 0
+
+
 def test_a_preload_too_long_is_not_opened(saved, fw, mcl):
     saved.load([saved.song(b'/b/a.flac'), saved.song(b'/b/long.m4b')], 0)
     saved.disk.files['/b/long.m4b'] = mp4(1 << 26)

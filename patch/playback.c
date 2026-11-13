@@ -436,18 +436,19 @@ static const char *track_path(int at) {
     return r && I(r, REC_TYPE) == 8 ? P(r, REC_PATH) : 0;
 }
 static int too_long; /* set where mclStartPlayer runs, maybe off the UI thread; toasted by the poll */
-/* The file last started. A start drops the decoder's index before it opens the next file, yet
- * MemAvailable still counts it here, so the same file again (a CUE book's next chapter) would need
- * room for two: it starts unchecked. A preload, which opens beside the playing file, is checked.
+/* The file the player holds: the last one started. A start closes it before it opens the next, yet
+ * MemAvailable still counts its index here. The same file again (a CUE book's next chapter) would
+ * need room for two, so it starts unchecked; another book is checked with that index given back
+ * (mp4_start_fits). A preload, which opens beside the playing file, is checked in full.
  * ponytail: RAM taken since that file's start is not counted; a boot's first start always checks. */
 static char started[1024];
 int playback_start_fits(void) {
     const char *path = track_path(M(MCL_POS));
-    if (path && strcmp(path, started) && !mp4_fits(path)) {
+    if (path && strcmp(path, started) && !mp4_start_fits(path, started)) {
         too_long = 1;
         return 0;
     }
-    if (path) tk_snprintf(started, sizeof started, "%s", path);
+    tk_snprintf(started, sizeof started, "%s", path ? path : ""); /* a stream: the book is closed */
     return 1;
 }
 
