@@ -2,6 +2,8 @@
 
 - **1.8.1**:
   - Now Playing: under **Theme: Classic** the song's place in the queue, such as "25 of 40", lines up with the title, artist and album above it. It sat 2 pixels to their left.
+  - Games: the games follow the theme. Under **Theme: Classic**, Solitaire is played on green felt with white cards and blue backs, Vortex has glossy rings on a night sky, Snake is an old LCD, and Sudoku's cursor is the blue selection band; the bar names the game. Pop-ups such as Paused and Game over are drawn in each theme's own style: Classic's panel, Modern's accent bar, Minimal's capitals and dot. Return's menu in Vortex and Snake is titled **Paused**.
+  - Games: Solitaire's cards are easier to read. The rank is on the left and the suit on the right, both larger, and a deep column shrinks them to fit instead of cutting them off.
   - Home: hold Play/Pause on the **Cover Flow** row to open its settings, **Display → Cover Flow**. Return goes back to Home.
   - Status bar: the battery's level and charge show as soon as they change, as the clock does. They used to wait until something else on the screen changed, such as opening a page.
   - Power: **Battery History**, under System settings → Power, graphs and lists how the battery has fallen since the charger was last unplugged, a row a percent with its time, kept through Standby and power-off. A drop during Standby shows as one row at the wake. **Export Log** saves it to `battery-log.txt` on the card.
