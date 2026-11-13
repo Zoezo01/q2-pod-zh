@@ -106,7 +106,7 @@ int main(void) {
     walk(64);
     assert(kept == 2 && !strcmp(pairs[0][0], "REPLAYGAIN_TRACK_GAIN") && !strcmp(pairs[0][1], "-6.50 dB") &&
            !strcmp(pairs[1][0], "REPLAYGAIN_TRACK_PEAK") && !strcmp(pairs[1][1], "0.988123"));
-    begin(4); /* 2.4 writes 200 as 00 00 01 48: read plainly, the walk would land inside the comment */
+    begin(4); /* 2.4 writes 200 as 00 00 01 48: read plainly, the walk would step past the TXXX */
     add("COMM", sizeof long_comment, long_comment, sizeof long_comment), add("TXXX", sizeof latin - 1, latin, sizeof latin - 1);
     walk(64);
     assert(kept == 1 && !strcmp(pairs[0][1], "-6.50 dB"));
