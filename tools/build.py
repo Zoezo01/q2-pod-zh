@@ -19,8 +19,10 @@ REPO = 'DiamondBond/q2-pod'  # whose releases Network Update fetches (--update-r
 # 1.8.0 itself V1800, so each installs over the betas before it. Releases up to 1.8.0 BETA ended in I
 # (1.0.1 was V101I). About shows the stock firmware version and a CFW. Version row with VERSION and
 # the edition instead (ringnav_about).
-# 中文版：1.8.0 这条版本线的第一版，末位字母从 A 起（上游英文版是 V1800，两边标记不同才能互相刷）。
-TAG = 'V' + VERSION.replace('.', '') + 'A'
+# 中文版：1.8.0 这条版本线，末位字母从 A 起（上游英文版是 V1800，两边标记不同才能互相刷）。
+# A 是 1.8.0 的第一版；B 修它的三处：播放设置的死机（reorder 的越界索引）、现代/简约四字的
+# 20 px（bar 的子件按禁用态取样式，字号得每个状态都写）、状态栏空闲时的灰色 Q2（不再显示）。
+TAG = 'V' + VERSION.replace('.', '') + 'B'
 
 def version_ok(version, beta):
     """VERSION is three single digits and BETA one, as TAG packs them; 17.6 or 1.76 would give a 5-character tag too."""
