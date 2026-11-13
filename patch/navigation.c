@@ -9375,35 +9375,22 @@ static int qm_hold(void) {
 }
 
 /* Quick Settings' wheel: 0 its brightness slider, 1 stock's volume (Q2POD QSVOLUME). A held
- * Play/Pause there switches it (ringnav_keylong) and says so in a band for QS_HINT_MS, not a toast:
- * its msginfo_dialog would cover the pull-down, taking the wheel and Centre for 2 s. The band sits
- * between the second row's first label line and the slider. */
-#define QS_HINT "ringnav_qs_hint"
-#define QS_HINT_MS 1500
-static int quick_hint_end(const void *info) {
-    widget_set_visible(P(info, TIMER_CTX), 0, 0);
-    return 7; /* RET_REMOVE */
-}
-static void quick_hint(void *top, int volume) {
-    void *old = widget_lookup(top, QS_HINT, 1);
-    if (old) widget_destroy(old); /* its timer goes with it: a second hold gets its whole time */
-    void *band = band_create(top, QS_HINT, 226, 28);
-    if (!band) return;
-    widget_set_text_utf8(band, volume ? "Wheel: Volume" : "Wheel: Brightness");
-    widget_add_timer(band, quick_hint_end, QS_HINT_MS);
-}
+ * Play/Pause there switches it (ringnav_keylong) and says so in the theme's own toast, over the
+ * pull-down as stock's own messages are.
+ * ponytail: the toast is modal, so it takes the wheel and Centre for its 2 s; a floating band kept
+ * them live (until 1.8.2) but had no theme's look. */
 static int quick_volume(void) {
     if (!st.qs_wheel) st.qs_wheel = 1 + config_value("Q2POD", "QSVOLUME", 2, 0);
     return st.qs_wheel - 1;
 }
-static int quick_wheel_toggle(void *top) {
+/* The words for ringnav_keylong's toast; 0 when the hold is not Quick Settings'. */
+static const char *quick_wheel_toggle(void *top) {
     if (!usable() || !top || tk_strcmp(widget_get_prop_str(top, "name", ""), "statusbar_dialog"))
         return 0;
     int volume = !quick_volume();
     st.qs_wheel = 1 + volume;
     write_int_config(volume, "Q2POD", "QSVOLUME");
-    quick_hint(top, volume);
-    return 1;
+    return volume ? "Wheel: Volume" : "Wheel: Brightness";
 }
 /* The window manager's pointer stays "pressed" when a touch's release never reaches it: every tick
  * and Centre press on a list is then dropped (ringnav's gate) and the selection stays hidden until
@@ -9507,8 +9494,8 @@ int ringnav_keylong(void *ctx, void *event) {
     if (!event || I(event, EVENT_KEY) != KEY_PLAY) return stock_keylong_trampoline(ctx, event);
     void *top = window_manager_get_top_window(window_manager());
     const char *fav = radio_hold(top);
-    int taken = fav || quick_wheel_toggle(top) || spot_hold(top) || addon_hold(top) ||
-                un_hold(top) || home_cf_hold(top);
+    if (!fav) fav = quick_wheel_toggle(top);
+    int taken = fav || spot_hold(top) || addon_hold(top) || un_hold(top) || home_cf_hold(top);
     if (!taken && qm_hold()) return STOP;
     /* Stock has no Play/Pause hold, so its release would play or pause: Classic's does nothing. */
     if (taken || (usable() && classic_pages())) {
