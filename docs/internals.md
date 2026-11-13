@@ -1479,9 +1479,64 @@ A song has 0 to 5 hearts. Five is stock's My Fav (the `myfav` table, `checkFavEx
 
 **Era** (Library, after Genre, `local_era`, a build-added copy of stock's `local_genre`) browses by decade, as Rio Karma's Year menu and Eversolo's Era do. `era_menu` runs one grouped query through `sqlite3_exec` on `/mnt/data/database.db`. Era connections use a 64-page SQLite cache and file-backed temporary sorting to reduce peak memory alongside the library records; the query includes the entire library. A query failure toasts "Era unavailable". The query groups: albums as Coverflow splits them (`ALBUM_GROUP`, now in `offsets.inc`), music only (`MUSIC_WHERE`), named (`album` not empty), each dated by its tracks' latest year (`ALBUM_YEAR`, shared with Coverflow's Year sort, taking the first four digits of full dates such as `20220510` and `2022-05-10`), then counted per `year/10*10` with `year > 0`. No decade gives the toast "No dated albums yet" and no page. `era_page` (runtime, `page_list`) has a 64 px row per decade, oldest first, titled "60s" to "90s" then "2000s" on, the album count under it. A row opens `era_albums_page`: **Play All**, **Shuffle**, then the decade's albums (`having release_year between N and N+9`, by year then name), each with "Artist • 1989" under it (album artist, else artist). The rows (album, artist, year and one track's `fileurl`) are copied into `era.v`, sized from the decade's count, and freed when the page closes. A failing albums query toasts "Era unavailable" too and opens no page, rather than an empty decade. An album's record is the album name's songs (`getMusicByAlbum` through `staged_music`), the one at that path, so it splits as Coverflow does. Decade and album rows carry the `list_into` chevron (`page_row_detail_into`). Centre on an album opens `coverflow_goto_album` (its tracks alone, see [Artist Albums in Coverflow](#artist-albums-in-coverflow)). Play All appends every album's `coverflow_album_tracks` in the page's order and plays from the first song as a library queue (`0xf001`, as Coverflow's All albums); Shuffle is Shuffle Songs (`shuffle_play`, one-shot as ever) over the decade's songs found in one query (`era_shuffle_songs`: the files of `ERA_ALBUMS`' groups dated in the decade, joined on `ALBUM_GROUP`'s keys) and the library's music filtered by exact song-table IDs, since two stock queries an album took many seconds on a large decade. A missing first file toasts "Storage unavailable"; a failing query (either of Shuffle's, an album row's `getMusicByAlbum` count of -1, or every album's for Play All) toasts "Era unavailable"; Play All skips an album whose query failed while another's worked. ponytail: whether stock's `album like '%s'` fails on an album name with an apostrophe isn't known; if it does, Play All skips that album and plays the rest. ponytail: decades only (no year level, no cover view), two queries per album for Play All, and the album rows have no hold menu; a year page under the decade, the decade as a scoped Coverflow (`coverflow_rated`'s pattern) or an album route through `qm_record` are the upgrades.
 
+## Song durations
+
+`durations.c` owns one duration cache and one worker shared by Cover Flow and Long Songs.
+**Display → Cover Flow → Scan Song Durations** is saved as `[Q2POD] SCANDURATIONS=0|1`,
+default 0. Turning it on schedules a library snapshot on the next idle poll; boot, a card remount,
+and `library_gen` changes schedule further passes. A library scan or USB storage prevents a new
+snapshot and cancels an active pass cooperatively. Turning the switch off stops new work and
+requests cancellation; existing cached values and bounded CUE track durations remain readable.
+
+Only the UI thread queries the library and publishes the cache. It copies and sorts full paths
+before starting the worker and deduplicates CUE paths. The worker touches no widgets or database.
+Each file is statted on the worker (audited o32 `__xstat(3)`: size word 12, mtime 16, nanoseconds 17).
+Unchanged signatures reuse the old seconds, including 0 for an unmeasurable file. A changed or new
+file is parsed through the existing TagLib entry points and `AudioProperties::length()` vtable
+slot 3; oversized Ogg headers retain Long Songs' `ogg_tags` guard. A second stat rejects results
+if the file changed during probing. A failed stat stays unknown, allowing a later pass to retry.
+As with any stat signature, a replacement preserving both size and mtime cannot be detected;
+the filesystem's timestamp precision applies. Files the stock o32 stat cannot represent remain
+unknown. Arbitrary edits are checked after Update Local Music, not watched continuously.
+
+The worker's cancel, progress and exit flags use atomic acquire/release operations. Ordinary UI
+polls join only an exited worker, then merge its completed prefix. A complete pass also removes
+paths no longer in the snapshot. Cancelling preserves entries not visited yet and does not
+restart the pass until the next library change, mount, switch cycle or explicit Long Songs open.
+Clean shutdown cancels, waits for the current file to return, then saves the completed prefix.
+This cannot interrupt a TagLib call already running. Closing Long Songs closes its UI only:
+another screen may still need the shared scan. Allocation/thread failures release their jobs;
+an automatic start failure is retried on the next poll.
+
+`/mnt/data/ringnav-durations-v1` stores the 8-byte magic `Q2DUR1\0\0`, followed by records of five
+little-endian 32-bit words (NUL-terminated path byte count, size, mtime seconds, mtime nanoseconds,
+duration seconds) and the path bytes. Exact paths avoid the old cache's hash collisions.
+Reads are capped at 16 MiB, 100,000 entries and 4096 bytes per path; malformed, truncated and
+duplicate records reject the entire file. The old hash-only `ringnav-lengths` is left untouched
+and is not trusted as a source for the new service. A fresh scan is required after upgrading.
+Saves use `blob_io`'s temporary file, fsync and rename. Unchanged scans do not rewrite flash;
+an existing cache that could not be read is never overwritten in that session. A failed save
+leaves the previous disk cache intact and the new results available in RAM.
+
+`duration_seconds` and `duration_text` are UI-thread cache lookups, with no stat or TagLib call.
+A CUE track with both ends uses `end - start`; the last track uses the cached file duration less
+its start, clamped to zero. Unknown or unmeasurable durations have no time label. Cover Flow's
+Classic turned panel reserves a right column only when a duration exists (`m:ss`, or `h:mm:ss`),
+and other themes show it as the track's detail. An already open track panel is a snapshot:
+reopen it after a scan completes to see newly cached values.
+
 ## Long Songs
 
-Stock's `songtable` has no length: its `time` and `time_end` are a CUE track's start and end seconds (`REC_CUE_START`, `REC_CUE_END`). **Long Songs** (Library, after Hi-Res, `local_longsongs`, a copy of stock's `system_time`) therefore measures files itself, once. A CUE track with both ends takes `end - start`; any other song takes its file's length, less a CUE start, from `/mnt/data/ringnav-lengths`: `{FNV-1a path hash, seconds}` pairs sorted by hash, read whole on first use and searched by bisection. The files not in it are probed on a pthread (`ls_worker`) with the TagLib demo already links: `taglib_file_new`, `taglib_file_audioproperties`, then `AudioProperties::length()` through its vtable (`+0xc`), as libtag_c's `taglib_audioproperties_length` calls it (demo imports no `taglib_audioproperties_length`); an unreadable file is kept as 0 seconds so it isn't probed again. While it runs, the page counts ("Measuring songs… n/N", a 250 ms poll) over a Cancel row; finishing, Cancel or closing the page joins the worker and merges what was probed into the table, which is written whole through `blob_io`. Then `longsongs_page` lists every song over `LONG_SONG_S` (600 s), longest first, "Artist · length" under the title, as Most Played's: a row plays the list from itself as a library queue, and a Play/Pause hold opens the song menu (`CTX_FIXED`, the list in `rt_list`). ponytail: a file edited in place keeps its first length, and removed files' entries stay; the table is a few bytes a song.
+Long Songs uses the shared service above, retaining the longest-first list of tracks over
+`LONG_SONG_S` (600 seconds), artist and length details, and the same library queue/hold actions.
+With scanning on, opening it observes the current shared worker or starts a fresh incremental
+pass, and shows progress over a Cancel row on a 250 ms timer. With scanning off it lists only
+known durations. Cancellation becomes visible once the current file's probe returns; its poll
+then joins and lists the completed results. It has no private TagLib worker or duration cache.
+
+Regression checks: `python3 test/durations.py` (portable host),
+`python3 -m pytest test/fw/test_durations.py test/fw/test_nav_library_pages.py`, and the
+Cover Flow / MIPS suites in [Building](building.md#tests).
 
 ## Scrobbling
 
