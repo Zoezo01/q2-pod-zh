@@ -1,17 +1,17 @@
 #!/bin/bash
 # Exercise assets/web/q2cgi — the safe Wi-Fi transfer file manager (docs/internals.md#safe-file-
 # manager) — under busybox ash with synthetic CGI requests. /mnt/mmc is a tmpfs, so the mount check
-# and the filesystem boundary are real. Needs busybox, and that mount:
-# - a mount already at /mnt/mmc is used as it is, and emptied, so the suite needs no root itself:
-#   `sudo mount -t tmpfs -o uid=$(id -u),gid=$(id -g) tmpfs /mnt/mmc` first, as
-#   .github/workflows/firmware.yml does, or a container's `--tmpfs /mnt/mmc`;
+# and the filesystem boundary are real. Needs busybox, python3, and that mount:
+# - a tmpfs already at /mnt/mmc is used as it is, and emptied, so the suite needs no root itself:
+#   `sudo mkdir -p /mnt/mmc && sudo mount -t tmpfs -o uid=$(id -u),gid=$(id -g) tmpfs /mnt/mmc`
+#   first, as .github/workflows/firmware.yml does, or a container's `--tmpfs /mnt/mmc`;
 # - run as root with none there, it mounts a tmpfs and takes it away again.
 # With neither it skips. Under CI (the CI variable, as GitHub sets it) a skip is a failure: a run
 # that tested nothing must not pass for one.
 # With --fat, /mnt/mmc is a throwaway FAT32 image instead, as a real card is: the whole suite runs
 # on it, and so do the 8.3 short-name cases, which only a FAT filesystem can show (a tmpfs has no
 # second names, so they are skipped there). The loop mount needs root; in a container, a privileged
-# one with bash and busybox:
+# one with bash, busybox and python3:
 #   docker run --rm --privileged --network none -v "$PWD:/work:ro" IMAGE bash /work/test/wifi_transfer_cgi.sh --fat
 # No network. Every payload is benign (markers under /tmp or the card tmpfs; nothing destructive).
 set -u
@@ -32,6 +32,7 @@ elif ! grep -q ' /mnt/mmc ' /proc/mounts 2>/dev/null; then
 fi
 FS=$(awk '$2=="/mnt/mmc"{t=$3} END{print t}' /proc/mounts)
 echo "=== /mnt/mmc is a $FS"
+[ "${1:-}" = --fat ] || [ "$FS" = tmpfs ] || { echo "ERROR: /mnt/mmc is a $FS: the suite empties it, so it runs only on a scratch tmpfs"; exit 2; }
 rm -rf /mnt/mmc/* /mnt/mmc/.[!.]* 2>/dev/null
 # Reproduce the Q2's applet set: a PATH with ONLY the applets the stock rootfs symlinks to busybox
 # (notably NO bare `stat`), so a reliance on a tool the device lacks fails here too.
