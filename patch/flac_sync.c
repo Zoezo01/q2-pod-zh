@@ -1,19 +1,19 @@
 /* Coalesce FLAC's redundant heartbeat publication; never batch cancellation checks.
  *
- * Q2 V1.32 hciplayer, pinned by tools/peq.py PLAYER_SHA:
- *   0x42b6b0 locks 0xb10db4, sets byte 0xb10e68 to 1, unlocks, and returns
- *   (word 0xb10e70 == 1 || word 0xb10e6c == 1), in that read order.
- * The residual decoder at 0x5b6334 invokes it after each residual at five sites:
- *   0x5b64a4, 0x5b6558, 0x5b6740, 0x5b67a0, 0x5b6810.
+ * Q2 V1.36 hciplayer, pinned by tools/peq.py PLAYER_SHA:
+ *   0x42b710 locks 0xb11db4, sets byte 0xb11e68 to 1, unlocks, and returns
+ *   (word 0xb11e70 == 1 || word 0xb11e6c == 1), in that read order.
+ * The residual decoder at 0x5b6854 invokes it after each residual at five sites:
+ *   0x5b69c4, 0x5b6a78, 0x5b6c60, 0x5b6cc0, 0x5b6d30.
  * Only these calls may be redirected here; all other codec callers stay stock.
  *
  * Direct heartbeat access audit of the pinned binary:
- *   set 1, under the same mutex: 0x42b64c, 0x42b6d4, 0x42d9e0,
- *                               0x42f550, 0x430048;
- *   snapshot then clear, under that mutex: 0x42b68c/0x42b690 and
- *                                         0x42d844/0x42d848.
- * The latter consumer runs at >=1000 ms intervals (0x42d7e0) and exits after
- * six empty observations (0x42d970). This byte carries liveness, not PCM or a
+ *   set 1, under the same mutex: 0x42b6ac, 0x42b734, 0x42da40,
+ *                               0x42f04c, 0x42f910;
+ *   snapshot then clear, under that mutex: 0x42b6ec/0x42b6f0 and
+ *                                         0x42d8a4/0x42d8a8.
+ * The latter consumer runs at >=1000 ms intervals (0x42d840) and exits after
+ * six empty observations (0x42d9d0). This byte carries liveness, not PCM or a
  * sample count. The stop words have independent, unguarded stock writers.
  *
  * A coherent byte load of 1 makes another set-to-1 redundant. Its publication
@@ -29,9 +29,9 @@
  * including consumer interleavings, before this experiment is used on device.
  */
 int flac_sync_check(void) {
-    if (*(volatile unsigned char *)0xb10e68u != 1)
-        return ((int (*)(void))0x42b6b0u)();
+    if (*(volatile unsigned char *)0xb11e68u != 1)
+        return ((int (*)(void))0x42b710u)();
     __asm__ volatile("sync" ::: "memory");
-    if (*(volatile unsigned *)0xb10e70u == 1) return 1;
-    return *(volatile unsigned *)0xb10e6cu == 1;
+    if (*(volatile unsigned *)0xb11e70u == 1) return 1;
+    return *(volatile unsigned *)0xb11e6cu == 1;
 }

@@ -1120,7 +1120,7 @@ class Card:
         return 0
 
 
-PAGE, LATCH = 0x7000, 0xa37c8b
+PAGE, LATCH = 0x7000, 0xa4bbfa
 
 
 class Page:
@@ -1890,6 +1890,27 @@ def test_the_chooser_lists_its_games_then_the_card_s_by_name_and_each_row_opens_
     press(rows[1])
     run(p.timers[-1][0])
     assert p.s.screen == VORTEX and p.g.games_live()
+
+
+def test_a_game_on_screen_takes_no_tap_for_the_chooser_hidden_under_it(fw):
+    files = card_apps(fw, {'zork': b'name=Zork\ngame=1\n'})
+    sensitive = {}
+    fw.mock('widget_set_sensitive', lambda w, on, *_: sensitive.update({w: on}))
+    p = Page(fw, files)
+    rows, chooser = handlers(fw, EVT_CLICK), 0x7301  # the sheet is 0x7300
+    fw.mock('fw_fork', lambda *_: 4242)
+    fw.mock('fw_access', lambda *_: 0)
+    p.go(SUDOKU)
+    assert sensitive == {chooser: 0}  # stock's hit test skips only the insensitive, hidden or not
+    timers = len(p.timers)
+    for row in rows:  # and a tap that reached a row anyway starts nothing
+        press(row)
+    assert p.s.screen == p.s.target == SUDOKU and len(p.timers) == timers
+    assert not fw.fn('addon_game_on', C.c_int)()
+    p.go(CHOOSER)
+    assert sensitive == {chooser: 1}
+    press(rows[4])
+    assert fw.fn('addon_game_on', C.c_int)() == 4242
 
 
 def test_return_in_the_chooser_goes_back_to_the_library_from_the_next_pass(fw):

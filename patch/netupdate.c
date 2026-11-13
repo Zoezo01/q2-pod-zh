@@ -28,9 +28,9 @@ enum { SH_OK, SH_NET, SH_SPACE, SH_CARD, SH_MISSING, SH_BAD, SH_CANCELLED, SH_BU
 /* repo: its GitHub owner/name; id: the repo's name less "q2-", for the card folder .<id>, the tag
  * and file list; keep: unzip -x patterns an update never writes (the user's); bin: the app's
  * binary, present without a tag file meaning a manual install, and moved after every other file:
- * power-on runs Rockbox's. */
+ * power-on runs Rockbox's. dropped: gone from the list but installed, so it can only be removed. */
 typedef struct {
-    char name[32], id[16], repo[80], dir[17], bin[40], latest[32];
+    char name[32], id[16], repo[80], dir[17], bin[40], latest[32], dropped;
     const char *keep;
 } shelf_app;
 shelf_app shelf_apps[SH_MAX];
@@ -69,15 +69,17 @@ static int only(const char *s, unsigned n, int kind) {
     return n > 0;
 }
 
-/* sources.list's lines, "owner/repo [Name]" ("#" a comment), into out: at most max, each owner,
- * repo and id checked (they go into URLs and shell commands; the id as addon.c's, 1 to 15 of
- * a-z0-9-), a bad or repeated id's line skipped. The count. */
+/* sources.list's lines, "owner/repo [Name]" ("#" a comment, "-" before it a dropped app), into
+ * out: at most max, each owner, repo and id checked (they go into URLs and shell commands; the id
+ * as addon.c's, 1 to 15 of a-z0-9-), a bad or repeated id's line skipped. The count. */
 int shelf_sources(const char *text, shelf_app *out, int max) {
     int n = 0;
     for (const char *p = text, *e; p && *p && n < max; p = *e ? e + 1 : e) {
         e = strstr(p, "\n");
         e = e ? e : p + strlen(p);
         while (p < e && (*p == ' ' || *p == '\t')) ++p;
+        int dropped = p < e && *p == '-';
+        p += dropped;
         const char *end = e, *slash = p, *sp = p;
         while (end > p && (unsigned char)end[-1] <= ' ') --end; /* "\r" too */
         while (sp < end && *sp != ' ' && *sp != '\t') ++sp;
@@ -91,7 +93,7 @@ int shelf_sources(const char *text, shelf_app *out, int max) {
             continue;
         int bad = 0;
         for (const char *c = name; c < end; ++c) bad |= (unsigned char)*c < ' ' || *c == 127;
-        shelf_app a = { 0 };
+        shelf_app a = { .dropped = (char)dropped };
         memcpy(a.repo, p, owner + 1 + rn);
         snprintf(a.name, sizeof a.name, "%.*s", (int)(nn ? nn : rn), nn ? name : repo);
         const char *id = rn > 3 && !memcmp(repo, "q2-", 3) ? repo + 3 : repo;
@@ -299,8 +301,8 @@ void shelf_remove(int i) {
     }
     free(list);
     for (int j = 0; j < shelf_n; ++j) free(other[j]);
-    /* dir is shelf_sources' checked ".<id>". ponytail: addon_quit waits AWAY_MS (3 s), so an app
-     * still saving on its TERM past that can write files back; wait on its pid file if one does. */
+    /* dir is shelf_sources' checked ".<id>". ponytail: addon_quit waits QUIT_MS (20 s), so an app
+     * still saving on its TERM past that can write files back. */
     if (!special_id(apps[i].id)) {
         snprintf(path, sizeof path, "rm -rf '" CARD "/%s'", apps[i].dir);
         system(path);
@@ -388,7 +390,9 @@ static void *worker(void *unused) {
         return 0;
     }
     /* Tags are single-digit x.y.z, so strcmp orders them: nothing older than this build, which
-     * stock's updater would flash. Q2POD_TAG is empty in --dev builds, which take any tag. */
+     * stock's updater would flash. Q2POD_TAG is empty in --dev builds, which take any tag.
+     * ponytail: a beta (BETA in tools/build.py) refuses its own version's release too, so its testers
+     * install that from the card; take an equal tag under a beta if they shouldn't have to. */
     if (*Q2POD_TAG && strcmp(tag, Q2POD_TAG) <= 0) {
         nu.state = NU_LATEST;
         return 0;
@@ -479,8 +483,8 @@ static int label_gone(void *ctx, void *event) {
     return 0;
 }
 
-/* systemset_fwupdate_page_init: stock's two rows (0x4c3140), each button named by its index, which
- * stock's click (0x4c2fac) reads with atoi: 0 TF card update, 1 Shanling's server. Renamed "2", the
+/* systemset_fwupdate_page_init: stock's two rows (0x4c8660), each button named by its index, which
+ * stock's click (0x4c84cc) reads with atoi: 0 TF card update, 1 Shanling's server. Renamed "2", the
  * second does nothing in stock's click and ours runs. */
 int ringnav_fwupdate(void *win, void *ctx) {
     int result = stock_fwupdate_trampoline(win, ctx);
@@ -535,6 +539,10 @@ const char *shelf_busy(void) {
     return sh.running && sh.job != JOB_CHECK && sh.job != JOB_ERASE ? apps[sh.app].dir : 0;
 }
 
+/* The folder a remove is deleting or an install moving into place (stage 3 on), else 0: addon.c
+ * opens no page there. */
+const char *shelf_moving(void) { return sh.stage >= 3 ? shelf_busy() : 0; }
+
 /* glibc 2.28 MIPS o32 stat v3: st_mode at byte 20; 0 when path is missing. */
 static unsigned file_mode(const char *path) {
     unsigned info[36];
@@ -568,7 +576,9 @@ static int release(shelf_app *a, char *tag, char *url, unsigned *size) {
 }
 
 /* A check: the list fetched into sh.next, kept as SH_LIST with any app it dropped that is
- * still installed (so it can be removed), else the page's own; then each one's latest release.
+ * still installed (so it can be removed), else the page's own; then each listed one's latest
+ * release. A dropped app's is never asked, nor installed: dropping it is what stops a taken-over
+ * repo's releases reaching a Q2 (GHSA-8wpr-pmqx-538x).
  * Whether every release was checked: a list that failed is fetched again with the next check. */
 static int check(void) {
     char path[96], tag[32], url[256], text[SH_MAX * 120];
@@ -582,14 +592,17 @@ static int check(void) {
         int listed = 0;
         for (int k = 0; k < n; ++k) listed |= !strcmp(sh.next[k].id, apps[i].id);
         app_file(path, sizeof path, i, ".tag");
-        if (!listed && file_mode(path)) sh.next[n++] = apps[i];
+        if (!listed && file_mode(path))
+            sh.next[n] = apps[i], sh.next[n].dropped = 1, *sh.next[n++].latest = 0;
     }
     for (int k = 0; fresh && k < n; ++k)
-        m += snprintf(text + m, sizeof text - m, "%s %s\n", sh.next[k].repo, sh.next[k].name);
+        m += snprintf(text + m, sizeof text - m, "%s%s %s\n", sh.next[k].dropped ? "-" : "",
+                      sh.next[k].repo, sh.next[k].name);
     if (fresh) mkdir(SH_DIR, 0755), blob_io(SH_LIST, SH_LIST ".tmp", text, m, 1);
     sh.n = n;
     if (!n) sh.result = SH_NET, ok = 0; /* no list at all: said, and the next press fetches it */
     for (int k = 0; k < n && !sh.cancel; ++k) {
+        if (sh.next[k].dropped) continue;
         int r = release(&sh.next[k], tag, url, &size);
         if (r == SH_MISSING) continue; /* checked: no release yet */
         ok &= !r;
@@ -615,7 +628,7 @@ static int install(int i) {
     char tag[32], url[256], part[96], path[96];
     unsigned size = 0, total = 0;
     long code = 0;
-    int r = release(&apps[i], tag, url, &size);
+    int r = apps[i].dropped ? SH_MISSING : release(&apps[i], tag, url, &size);
     if (sh.cancel) return SH_CANCELLED;
     if (r) return r;
     system("rm -rf " STAGING); /* an interrupted install's, too */
@@ -654,11 +667,21 @@ static void *sh_worker(void *unused) {
     } else if (sh.job == JOB_INSTALL)
         sh.result = install(i);
     else {
+        /* Erase Spotify Data: the add-on's logs go too, as spot.log names the account and each
+         * track played */
         if (sh.job == JOB_ERASE)
-            system("rm -rf " SPOT_DIR "/cache " SPOT_DIR "/.cache-size"), rmdir(SPOT_DIR);
-        else if (is(i, "rockbox") && t >= 0)
-            shelf_remove(t); /* no themes without Rockbox */
-        if (sh.job == JOB_REMOVE) addon_quit(apps[i].dir), shelf_remove(i);
+            system("rm -rf " SPOT_DIR "/cache " SPOT_DIR "/.cache-size " SPOT_DIR
+                   "/spot.log " SPOT_DIR "/aplay.log " SPOT_DIR "/load.log"),
+                rmdir(SPOT_DIR);
+        else {
+            addon_quit(apps[i].dir); /* USB storage may take the card meanwhile */
+            /* ponytail: read once; USB storage taking the card during the unlinks still says removed */
+            if (card_mounted()) {
+                if (is(i, "rockbox") && t >= 0) shelf_remove(t); /* no themes without Rockbox */
+                shelf_remove(i);
+            } else
+                sh.result = SH_CARD; /* the bare mount point: nothing removed */
+        }
         system("sync");
     }
     sh.running = 0;
@@ -748,6 +771,9 @@ static int sh_wait(const void *unused) {
     pthread_join(sh.thread, 0);
     int job = sh.job, r = sh.result, i = sh.app, manual = sh.manual;
     sh.job = 0;
+    /* its files replaced or gone: an update that failed or was cancelled before it stopped its app leaves it running, still tracked,
+     * and a remove cut off by USB storage leaves it marked to start again with the card */
+    if (r == SH_OK && (job == JOB_REMOVE || job == JOB_INSTALL)) addon_forget(apps[i].dir);
     if (job == JOB_CHECK) /* the rows built again: the list may have changed */
         memcpy(apps, sh.next, sizeof apps), shelf_n = sh.n, sh.rows = -1;
     if (job == JOB_ERASE || (job != JOB_CHECK && is(i, "spotify")))
@@ -758,7 +784,7 @@ static int sh_wait(const void *unused) {
         sh_told(manual, r ? said[r] : 0);
     else if (job == JOB_INSTALL && r == SH_SPACE)
         snprintf(s, sizeof s, "还需 %u MB 空间", sh.need), toast(s);
-    else if (job == JOB_INSTALL && r)
+    else if ((job == JOB_INSTALL || job == JOB_REMOVE) && r)
         toast(said[r]);
     else if (job == JOB_INSTALL && is(i, "rockbox"))
         toast("Rockbox 已就绪，可在主菜单找到");
@@ -778,7 +804,6 @@ static int sh_wait(const void *unused) {
 static void sh_start(int job, int i) {
     if (job == JOB_ERASE || (is(i, "spotify") && job != JOB_CHECK))
         spot_stop(); /* on this thread: spotify.c's state too */
-    if (job == JOB_INSTALL || job == JOB_REMOVE) addon_forget(apps[i].dir);
     sh.job = job, sh.app = i, sh.cancel = sh.percent = sh.result = sh.manual = 0, sh.running = 1;
     sh.stage = job == JOB_REMOVE ? 4 : 0;
     if (pthread_create(&sh.thread, 0, sh_worker, 0)) {
@@ -832,11 +857,12 @@ static int sh_closed(void *ctx, void *event) {
 }
 
 /* The rows: Check for Updates, then the list's apps in its order, Rockbox Themes only with Rockbox
- * on the card; built again when a job ends changes which. */
+ * on the card and a dropped app only while installed; built again when a job ends changes which. */
 static void sh_rows(void) {
     int map[SH_MAX + 1] = { ROW_CHECK }, n = 1;
     for (int i = 0; i < shelf_n; ++i)
-        if (!is(i, "themes") || rockbox_available()) map[n++] = i;
+        if ((!is(i, "themes") || rockbox_available()) && (!apps[i].dropped || sh_tagged(i) >= 0))
+            map[n++] = i;
     if (sh.page && (n != sh.rows || memcmp(map, sh.map, sizeof map))) {
         memcpy(sh.map, map, sizeof map);
         sh.rows = 0;
@@ -851,9 +877,9 @@ static void sh_rows(void) {
     sh_refresh();
 }
 
-/* Streaming → Configuration's Erase Spotify Data (navigation.c): with start, Spotify's login and
- * cache erased on this thread, unless a job is running (a check stops, as an App Store row's press
- * stops it, so the next press acts); whether an erase is running. */
+/* Streaming → Configuration's Erase Spotify Data (navigation.c): with start, Spotify's login, cache
+ * and logs erased on this thread, unless a job is running (a check stops, as an App Store row's
+ * press stops it, so the next press acts); whether an erase is running. */
 int shelf_erase(int start) {
     if (start && sh.job == JOB_CHECK)
         sh.cancel = 1, toast("已停止检查更新");

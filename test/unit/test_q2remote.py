@@ -381,7 +381,7 @@ def test_state_reads_demo_memory(shell):
     fake = shell(b'7 1.5 01 02 03 04 05\n')
     assert q.state() == {'demo': 7, 'uptime': 1.5, 'backlight': 1, 'usb': 2, 'keylock': 3, 'lockscreen': 4, 'volume': 5}
     reads = ''.join(f'v=$(dd if=/proc/$p/mem bs=1 skip={a} count=1 2>/dev/null | xxd -p); echo "${{v:--}}"; '
-                    for a in (0x99f5b0, 0xa38aef, 0xa38c32, 0xa38b0f, 0xa38c41))
+                    for a in (0x9b3214, 0xa4ca5f, 0xa4cba5, 0xa4ca7f, 0xa4cbb5))
     assert fake.calls[0].cmd == f'p=$(pidof -s demo) && echo $p && cut -d" " -f1 /proc/uptime && {{ {reads}}}'
 
 

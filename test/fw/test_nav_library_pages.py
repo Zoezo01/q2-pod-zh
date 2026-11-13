@@ -25,7 +25,7 @@ LIBRARY, FOLDER = 0xf001, 1
 STOP, REPEAT = 11, 8  # a handler's RET_STOP; a timer's RET_REPEAT
 PLAYS_FILE, RESUME_FILE = '/mnt/data/ringnav-plays', '/mnt/data/ringnav-resume'
 RATINGS, ALBUM_RATINGS, LENGTHS = '/mnt/data/ringnav-ratings', '/mnt/data/ringnav-album-ratings', '/mnt/data/ringnav-lengths'
-FAV_CLICK = 0x52b154  # Now Playing's heart: stock's My Fav toggle
+FAV_CLICK = 0x53c968  # Now Playing's heart: stock's My Fav toggle
 TIDAL_DIR, SPOT_DIR = '/mnt/mmc/.tidal', '/mnt/mmc/.spotify'
 DOT = '·'
 HEART, NO_HEART = '♥', '♡'
@@ -793,7 +793,7 @@ def test_song_seconds_from_the_cache(fw, song):
 # Upload Scrobbles.
 class Up(C.Structure):
     _fields_ = [('lock', C.c_uint * 16), ('thread', C.c_ulong), ('running', C.c_int), ('done', C.c_int), ('ok', C.c_int),
-                ('sent', C.c_int), ('cfg', (C.c_char * 256) * 5)]
+                ('sent', C.c_int), ('cfg', (C.c_char * 256) * 6)]
 
 
 class Scrobbler:
@@ -961,6 +961,11 @@ class Heart:
         self.ui.handler(self.heart, EVT_POINTER_DOWN)()
         return self.ui.fire('rate_long')
 
+    def tap(self, w):
+        """A press and its release on a heart of the picker, or outside it."""
+        self.ui.handler(w, EVT_POINTER_DOWN)()
+        return self.ui.handler(w, EVT_CLICK)()
+
     def key(self, key, top=None):
         return self.fw.fn('rate_key', C.c_int, C.c_void_p, C.c_uint)(top or self.win, key)
 
@@ -1077,8 +1082,34 @@ def test_a_tap_on_a_heart_keeps_that_many(fw, ui, song, mcl):
     heart = Heart(fw, ui, song, mcl, kept=1)
     heart.hold()
     hearts_ = ui.kids[heart.panel()][1:]
-    assert ui.handler(hearts_[1], EVT_CLICK)() == STOP
+    assert heart.tap(hearts_[1]) == STOP
     assert heart.kept() == 2 and heart.picker() is None and heart.badge() == '2'
+
+
+def test_the_release_of_the_hold_that_opened_the_picker_picks_nothing(fw, ui, song, mcl):
+    """#303: the picker opens under the held finger, whose release chose the heart there."""
+    clock = [5001]  # odd: the stamp is the time | 1
+    fw.mock('time_now_ms', lambda *_: clock[0])
+    heart = Heart(fw, ui, song, mcl, kept=1)
+    heart.hold()
+    hearts_ = ui.kids[heart.panel()][1:]
+    assert ui.handler(hearts_[4], EVT_CLICK)() == STOP  # no press came down on it
+    assert heart.kept() == 1 and heart.picker() == ('1 of 5', hearts(1))
+    clock[0] += 399  # the same finger settling
+    assert heart.tap(hearts_[4]) == STOP and heart.kept() == 1 and heart.picker() == ('1 of 5', hearts(1))
+    clock[0] += 1
+    assert heart.tap(hearts_[3]) == STOP and heart.kept() == 4 and heart.picker() is None
+    heart.hold()
+    clock[0] += 400
+    heart.tap(hearts_[2])
+    assert ui.handler(hearts_[1], EVT_CLICK)() == STOP and heart.kept() == 3  # one press, one tap
+
+
+def test_a_tap_on_the_rating_it_has_takes_it_away(fw, ui, song, mcl):
+    heart = Heart(fw, ui, song, mcl, kept=3)
+    heart.hold()
+    assert heart.tap(ui.kids[heart.panel()][3]) == STOP
+    assert heart.kept() == 0 and heart.picker() is None and heart.badge() is None
 
 
 def test_the_picker_is_made_once_per_window(fw, ui, song, mcl):
@@ -1102,7 +1133,8 @@ def test_classic_s_picker_counts_hearts_and_a_tap_outside_leaves_it(fw, ui, song
     assert heart.picker() == ('2 Hearts', hearts(2, on, off))
     out = ui.lookup(heart.win, 'rate_out', 0)
     assert out not in ui.hidden and out not in ui.dull  # a tap outside the panel reaches it
-    assert ui.handler(out, EVT_CLICK)() == STOP
+    assert ui.handler(out, EVT_CLICK)() == STOP and heart.picker() is not None  # the opening hold's release
+    assert heart.tap(out) == STOP
     assert heart.picker() is None and heart.kept() == 1 and out in ui.hidden and out in ui.dull
 
 
@@ -2047,6 +2079,7 @@ ABOUT = [('Model', 'Q2'), ('FW. Version', 'V100I'), ('Serial', '1'), ('Storage',
 
 
 def about(ui, rows):
+    """Stock's About page: its rows, then its thanks, a 100 px item of text."""
     win = ui.new('window_create', 0, 0, 0, 0, 0)
     view = ui.new('scroll_view_create', win, 0, 0, 375, 320)
     ui.name[view] = 'scroll_view_about'
@@ -2054,26 +2087,29 @@ def about(ui, rows):
         button = ui.new('button_create', ui.new('list_item_create', view, 0, 0, 375, 70), 20, 0, 335, 70)
         for x, text in ((10, title), (176, value)):
             ui.text[ui.new('hscroll_label_create', button, x, 0, 149, 70)] = text
+    ui.text[ui.new('hscroll_label_create', ui.new('list_item_create', view, 0, 0, 375, 100), 20, 10, 335, 100)] = 'about_more'
     return win, view
 
 
 def about_rows(ui, view):
-    return [tuple(ui.text[label] for label in ui.kids[ui.kids[item][0]]) for item in ui.kids[view]]
+    """Each row's (title, value); the thanks, where it still stands, as its key alone."""
+    firsts = [ui.kids[item][0] for item in ui.kids[view]]
+    return [tuple(ui.text[label] for label in ui.kids.get(first, ())) or (ui.text[first],) for first in firsts]
 
 
-def test_about_shows_stock_s_version_and_the_payload_s_after_it(fw, ui):
+def test_about_shows_stock_s_version_and_the_payload_s_after_it_without_stock_s_thanks(fw, ui):
     win, view = about(ui, ABOUT)
     fw.mock('stock_about_trampoline', lambda *_: 5)
     assert fw.fn('ringnav_about', C.c_int, C.c_void_p, C.c_void_p)(win, None) == 5
-    version = host.tools_build.VERSION
-    assert about_rows(ui, view) == [ABOUT[0], ('FW. Version', host.tools_build.STOCK_VERSION), ('CFW. Version', f'{version} Pod'),
+    version, beta = host.tools_build.VERSION, host.tools_build.BETA
+    assert about_rows(ui, view) == [ABOUT[0], ('FW. Version', host.tools_build.STOCK_VERSION), ('CFW. Version', f'{version} Pod' + (f' beta {beta}' if beta else '')),
                                     *ABOUT[2:]]
 
 
 def test_an_about_page_that_is_not_stock_s_is_left(fw, ui):
     win, view = about(ui, ABOUT[:6])
     fw.fn('ringnav_about', C.c_int, C.c_void_p, C.c_void_p)(win, None)
-    assert about_rows(ui, view) == ABOUT[:6]
+    assert about_rows(ui, view) == [*ABOUT[:6], ('about_more',)]
 
 
 def test_usb_mode_ends_the_card_s_apps_before_stock_unmounts_it(fw):
@@ -2201,6 +2237,68 @@ def test_a_decade_closes_and_opens_again(fw, ui):
     assert len(ui.rows(ui.top())) == 5
 
 
+# a decade whose albums query fails says 'Era unavailable', as the decade list does, rather than opening an empty page
+def test_a_failing_decade_query_says_era_unavailable(fw, ui):
+    db = EraDb(fw, decades=[(b'1990', b'3')], albums=ERA_ALBUMS)
+    call(fw, 'era_menu')
+    era, run = ui.top(), db.run
+    fw.mock('sqlite3_exec', lambda d, sql, *a: 1 if b'having release_year' in C.string_at(sql) else run(d, sql, *a))
+    ui.click(era, 0)
+    assert ui.toasts == ['Era unavailable'] and ui.windows == [era]
+    fw.mock('sqlite3_exec', run)  # the next try opens it
+    ui.click(era, 0)
+    assert len(ui.rows(ui.top())) == 5
+
+
+# a failing query behind Play All, Shuffle or an album says 'Era unavailable' too, not that the card or album is gone
+@pytest.mark.parametrize('row', [0, 1, 2])
+def test_a_failing_song_query_says_era_unavailable(fw, ui, row):
+    db, page = era_decade(fw, ui)
+    run = db.run
+    fw.mock('sqlite3_exec', lambda d, sql, *a: 1 if b'select distinct s.id' in C.string_at(sql) else run(d, sql, *a))
+    fw.mock('getMusicByAlbum', lambda *_: -1)  # stock's count when its query fails (toolsQueryDbTable: no database, or sqlite3_exec fails)
+    ui.click(page, row)
+    assert ui.toasts == ['Era unavailable'] and not ui.played
+
+
+# Shuffle's key query worked but loading the library failed: still 'Era unavailable', not 'Storage unavailable'
+def test_shuffle_with_the_library_failing_says_era_unavailable(fw, ui, mcl):
+    fw.mock('getAllMusic', lambda *_: -1)
+    db, page = era_decade(fw, ui)
+    db.albums = [(b'9',)]
+    ui.click(page, 1)
+    assert ui.toasts == ['Era unavailable'] and not ui.played
+
+
+# an album row whose query returned rows and then failed does not open
+def test_an_album_row_with_a_partial_failing_query_says_era_unavailable(fw, ui, song):
+    albums = Albums(fw, ui, song)
+    db, page = era_decade(fw, ui)
+    load = albums.load
+    fw.mock('getMusicByAlbum', lambda name, *_: [load(name), -1][1])
+    ui.click(page, 2)
+    assert ui.toasts == ['Era unavailable'] and not ui.played
+
+
+# Play All skips an album whose query failed and plays the rest; it says so only when every album failed
+def test_play_all_skips_a_failed_album(fw, ui, song):
+    albums = Albums(fw, ui, song)
+    db, page = era_decade(fw, ui)
+    load = albums.load
+    fw.mock('getMusicByAlbum', lambda name, *_: -1 if C.string_at(name) == b'Grey' else load(name))
+    ui.click(page, 0)
+    (queue, at, cls), = ui.played
+    assert [field(r, 'title') for r in queue] == [b'B1', b'B2', b'R1'] and not ui.toasts
+
+
+def test_play_all_with_every_album_failing_says_era_unavailable(fw, ui, song):
+    Albums(fw, ui, song)
+    db, page = era_decade(fw, ui)
+    fw.mock('getMusicByAlbum', lambda *_: -1)
+    ui.click(page, 0)
+    assert ui.toasts == ['Era unavailable'] and not ui.played
+
+
 class Albums:
     """getMusicByAlbum: every song of that album name, in no order, and the card's access to them."""
     def __init__(self, fw, ui, song, gone=()):
@@ -2209,8 +2307,9 @@ class Albums:
             b'Grey': [song(b'/m/grey/1.flac', b'G1', album=b'Grey')],
             b'Red': [song(b'/m/red/1.flac', b'R1', album=b'Red'), song(b'/m/other/red.flac', b'Other Red', album=b'Red')],
         }
-        fw.mock('getMusicByAlbum', lambda name, *_: ui.deques[fw.var('fw_ctx_tools_pdeq_directory', C.c_uint).value]
-                .extend(self.songs.get(C.string_at(name), [])) or 0)
+        self.load = lambda name: ui.deques[fw.var('fw_ctx_tools_pdeq_directory', C.c_uint).value] \
+            .extend(self.songs.get(C.string_at(name), [])) or 0
+        fw.mock('getMusicByAlbum', lambda name, *_: self.load(name))
         fw.mock('fw_access', lambda p, *_: -1 if C.string_at(p) in gone else 0)
 
 
@@ -2597,7 +2696,8 @@ def test_add_songs_search_with_no_picker_matches_nothing(fw, ui):
 def test_a_playlist_read_again_keeps_the_selection_in_it(fw, ui, song, selected, size, kept):
     rows = [song(b'/m/%d.flac' % i) for i in range(size)]
     asked = []
-    fw.mock('getMusicByPlayList', lambda n, *_: asked.append(n) or ui.deques[fw.var('fw_ctx_tools_pdeq_directory', C.c_uint).value]
+    # the stored order, whatever stock's Sort shows the playlist in
+    fw.mock('sort_playlist_addtime', lambda n, *_: asked.append(n) or ui.deques[fw.var('fw_ctx_tools_pdeq_directory', C.c_uint).value]
             .extend(rows) or 0)
     ple = fw.var('playlists__ple', Ple)
     old = ui.deques.new([1])
@@ -2697,7 +2797,7 @@ def test_moving_a_playlist_song_swaps_two_rows(fw, song):
     db = Playlists(fw, {201: (3, b'/m/a.flac', 0, 0), 202: (3, b'/m/b.flac', 0, 0), 300: (4, b'/m/c.flac', 0, 0)})
     assert mutate(fw, 3, entry(song, 201, b'/m/a.flac'), entry(song, 202, b'/m/b.flac')) == 1
     assert db.rows == {201: (3, b'/m/b.flac', 0, 0), 202: (3, b'/m/a.flac', 0, 0), 300: (4, b'/m/c.flac', 0, 0)}
-    assert db.log[0] == 'begin immediate' and db.log[-2:] == ['commit', 'close']
+    assert db.log[:2] == ['PRAGMA busy_timeout=500', 'begin immediate'] and db.log[-2:] == ['commit', 'close']
 
 
 def test_removing_a_playlist_song_deletes_its_row(fw, song):

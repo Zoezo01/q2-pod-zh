@@ -957,9 +957,27 @@ def save(fw, name, tmp=b'/tmp/oslyric_1'):
     return n, C.string_at(cmd).decode()
 
 
-def stocks(name, tmp='/tmp/oslyric_1'):
-    command = f'cp -rf {tmp} "/mnt/mmc/.downpic/{name}"'
-    return len(command), command
+def test_no_lyrics_chosen_unlinks_the_downpic_copy_and_leaves_the_shell_nothing(fw):
+    """ringnav_lyric_drop as stock's other command calls it: rm -rf "<.downpic>/<name>" never reaches system()."""
+    hostile = 'x$(touch p)`id`".lrc'
+    kept = {'/mnt/mmc/x.lrc': b'c', '/mnt/mmc/.downpic/' + 'y' * 0x201: b'd'}  # a '/' and a name too long remove nothing
+    disk = Disk(fw, {'/mnt/mmc/.downpic/song.lrc': b'a', f'/mnt/mmc/.downpic/{hostile}': b'b',
+                     '/mnt/mmc/.downpic/' + 'y' * 0x200: b'e', **kept})
+    drop = fw.fn('ringnav_lyric_drop', C.c_int, C.c_void_p, C.c_uint, C.c_char_p, C.c_char_p)
+    for name in (b'song.lrc', hostile.encode(), b'../x.lrc', b'y' * 0x200, b'y' * 0x201):
+        cmd = block(fw, size=0x400)
+        assert drop(cmd, 0x3ff, b'rm -rf "/mnt/mmc/.downpic/%s"', name) == 1 and C.string_at(cmd) == b':'
+    assert disk.files == kept
+
+
+def test_now_playing_copies_a_picked_cover_and_leaves_the_shell_nothing(fw):
+    """ringnav_cover_copy as player_parsecover_thd calls it: cp -f "<.downpic>/<file name>.jpg" '<to>' never reaches system()."""
+    src = '/mnt/mmc/.downpic/A$AP `id` $(touch p).flac.jpg'
+    disk = Disk(fw, {src: b'jpeg'})
+    copy = fw.fn('ringnav_cover_copy', C.c_int, C.c_void_p, C.c_uint, C.c_char_p, C.c_char_p, C.c_char_p)
+    cmd = block(fw, size=0x600)
+    assert copy(cmd, 0x600, b'cp -f "%s" \'%s\'', src.encode(), b'/tmp/externpic.jpg') == 1 and C.string_at(cmd) == b':'
+    assert disk.files == {src: b'jpeg', '/tmp/externpic.jpg': b'jpeg'}
 
 
 def test_an_accepted_match_goes_beside_the_playing_song_and_its_hiding_copy_goes(fw, mcl, records):
@@ -981,17 +999,27 @@ def test_an_accepted_match_for_another_queued_song_goes_beside_it(fw, mcl, recor
     (dict(path=b'http://h/song.flac'), 0xf001), (dict(path=b'/m/song.flac', kind=4), 0xf001),              # no file
     (dict(path=b'/m/other.flac'), 0xf001),                                                                  # not queued
 ])
-def test_stock_saves_what_isnt_a_queued_song_of_its_own(fw, mcl, records, song, kind):
+def test_what_isnt_a_queued_song_of_its_own_goes_where_stock_puts_it(fw, mcl, records, song, kind):
     Queue(fw, mcl, [records.song(**song)], kind=kind)
     disk = Disk(fw, {'/tmp/oslyric_1': b'lyrics', '/mnt/mmc/.downpic/song.lrc': b'stock'})
-    assert save(fw, b'song.lrc') == stocks('song.lrc')
-    assert disk.files == {'/tmp/oslyric_1': b'lyrics', '/mnt/mmc/.downpic/song.lrc': b'stock'}
+    assert save(fw, b'song.lrc') == (1, ':')
+    assert disk.files == {'/tmp/oslyric_1': b'lyrics', '/mnt/mmc/.downpic/song.lrc': b'lyrics'}
 
 
-def test_a_copy_that_fails_leaves_it_to_stock(fw, mcl, records):
+def test_a_name_never_reaches_the_shell(fw, mcl, records):
+    """Stock's command ran the name through system() as root (GHSA-qp92-mq7c-6r64)."""
+    Queue(fw, mcl, [records.song(b'/m/song.flac')])
+    disk = Disk(fw, {'/tmp/oslyric_1': b'lyrics'})
+    name = b'x$(touch poc)`id`".lrc'
+    assert save(fw, name) == (1, ':') and disk.files['/mnt/mmc/.downpic/' + name.decode()] == b'lyrics'
+    assert save(fw, b'a' * 0x200) == (1, ':')  # too long for .downpic: nothing written, nothing run
+    assert save(fw, b'../../../etc/x.lrc') == (1, ':') and set(disk.files) == {'/tmp/oslyric_1', '/mnt/mmc/.downpic/' + name.decode()}
+
+
+def test_a_copy_that_fails_leaves_the_card_as_it_was(fw, mcl, records):
     Queue(fw, mcl, [records.song(b'/m/song.flac')])
     disk = Disk(fw, {'/mnt/mmc/.downpic/song.lrc': b'stock'})  # no lyrics file to copy
-    assert save(fw, b'song.lrc') == stocks('song.lrc') and disk.files == {'/mnt/mmc/.downpic/song.lrc': b'stock'}
+    assert save(fw, b'song.lrc') == (1, ':') and disk.files == {'/mnt/mmc/.downpic/song.lrc': b'stock'}
 
 
 def test_an_accepted_lrclib_match_is_what_the_next_load_shows(fw, mcl, records):
@@ -1129,6 +1157,19 @@ def summed(fw, job, state=LJ_DONE, **counts):
     j = job.al.job
     assert (j.state, j.saved, j.none, j.had, j.failed) == (state, *(counts.get(k, 0) for k in ('saved', 'none', 'had', 'failed')))
     assert job.toasts == [note(fw, 96, state=state, **counts)]
+
+
+@pytest.mark.parametrize('since', [0, 1])
+def test_more_has_no_delete_for_a_playlists_song_played_from_its_cover(fw, more_rows, since):
+    """A playlist's song played from its cover is a song list (0xf001), whose Delete takes it out of the library:
+    Delete's row (kind 7, sixth) is hidden while that queue is the last loaded, and shows once another loads."""
+    more, rows, hidden = More(fw), [widget() for _ in range(8)], []
+    fw.mock('widget_get_child', lambda w, i, *_: C.addressof(rows[i]) if w == C.addressof(more.view) else 0)
+    fw.mock('widget_set_visible', lambda w, on, *_: None if on else hidden.append(w))
+    fw.var('playback_loads', C.c_uint).value = 7 + since
+    fw.var('coverflow__cover_load', C.c_uint).value = 7  # coverflow.c's play, after its load
+    more.open()
+    assert hidden == ([] if since else [C.addressof(rows[5])])
 
 
 def test_download_album_lyrics_from_the_more_page_to_the_card(fw, mcl, records, more_rows):

@@ -242,7 +242,7 @@ static const char *mp3_smpb_text(int fd, long long end, char *t, unsigned cap) {
 }
 
 static mp3_private *mp3_state(void *d) {
-    mp3_private *p = d && AT(d, 0, unsigned) == 0x89fd90u ? AT(d, 0xc70, mp3_private *) : 0;
+    mp3_private *p = d && AT(d, 0, unsigned) == 0x8a0360u ? AT(d, 0xc70, mp3_private *) : 0;
     return p && p->format == 1 ? p : 0;
 }
 
@@ -285,7 +285,7 @@ af_data *mp3_filter(void *filters, af_data *data, void *sh) {
     }
     if (p && p->start) mp3_trim(p, data);
     lavf_trim(d, sh, data);
-    return ((af_data *(*)(void *, af_data *))0x44d350u)(filters, data);
+    return ((af_data *(*)(void *, af_data *))0x44d0d0u)(filters, data);
 }
 
 void mp3_gapless_seek(void *d, int at_start) {
@@ -294,10 +294,10 @@ void mp3_gapless_seek(void *d, int at_start) {
         p->held = 0;
         p->guarded = 0;
         p->seeked = at_start ? 2 : 1;
-        /* Stock's fill after a seek (flag 0xb152b4, 0x48c3b8) checks the next frame's header, goes back, and sizes
-         * the first packet from the next frame (0x48c4d0): the tag frame, cut short if that one is shorter, loses
+        /* Stock's fill after a seek (flag 0xb26254, 0x48c138) checks the next frame's header, goes back, and sizes
+         * the first packet from the next frame (0x48c250): the tag frame, cut short if that one is shorter, loses
          * libmad its sync, and a rewind starts two frames late on VBR. The start needs no checking. */
-        if (at_start) *(volatile int *)0xb152b4u = 0;
+        if (at_start) *(volatile int *)0xb26254u = 0;
         p->skip = at_start ? p->start : 0;
     }
 }
@@ -307,7 +307,7 @@ void mp3_gapless_seek(void *d, int at_start) {
  * frame: the end of the track's audio, which the trailing trim then cut further, a tick into
  * the next track. Zeros after it once, as Rockbox and minimp3 do, decode it. */
 int mp3_read(void *ds, unsigned char *buf, int room) {
-    int got = ((int (*)(void *, unsigned char *, int))0x484c0cu)(ds, buf, room);
+    int got = ((int (*)(void *, unsigned char *, int))0x48498cu)(ds, buf, room);
     mp3_private *p = got > 0 ? 0 : mp3_state(AT(ds, 0x58, void *));
     if (!p || p->guarded || room < 8) return got;
     p->guarded = 1;
@@ -315,17 +315,17 @@ int mp3_read(void *ds, unsigned char *buf, int room) {
     return 8;
 }
 
-/* demux_audio's fill (0x48c184, the descriptor's slot): the stream stops where the tail tags start. */
+/* demux_audio's fill (0x48bf04, the descriptor's slot): the stream stops where the tail tags start. */
 int mp3_fill(void *d, void *ds) {
     mp3_private *p = mp3_state(d);
     void *s = AT(d, 0x20, void *);
     if (p && p->audio_end && AT(s, 0x30, long long) + AT(s, 0x28, int) - AT(s, 0x2c, int) >= p->audio_end) return 0;
-    return ((int (*)(void *, void *))0x48c184u)(d, ds);
+    return ((int (*)(void *, void *))0x48bf04u)(d, ds);
 }
 
 void mp3_close(void *d) {
     mp3_private *p = mp3_state(d);
     if (p) free(p->tail);
-    ((void (*)(void *))0x48b7e4u)(d);
+    ((void (*)(void *))0x48b564u)(d);
 }
 #endif

@@ -29,6 +29,7 @@ void child_exit(int status) __attribute__((noreturn));
 void child_oom_first(void); /* between fork and exec: the OOM killer takes this child, not demo (#169) */
 void ringnav_clean_end(void); /* a clean end begins: the watchdog stops, the state record goes (system.c) */
 void reboot_record(void *caller); /* a Bluetooth abnormal reboot's q2-crash.log (system.c) */
+int card_mounted(void);           /* /proc/mounts has the card (system.c) */
 /* The crash log's record of a long job's current file and demo's memory (tags.c) */
 void crash_note(const char *path, const char *file, const char *log, unsigned every, unsigned *n);
 #ifdef canvas_set_fill_color
@@ -247,6 +248,7 @@ int visual(void *s, int n, int *c, int *frac);
 int thumb(const char *src, const char *dst, int w, int h);
 extern volatile unsigned ff_kills; /* coverflow.c: ffmpeg runs killed or never started */
 int card_space(const char *dir);
+int card_room(const char *dir, unsigned mb, unsigned pct);
 int by_string(const void *a, const void *b);
 unsigned hash_bytes(unsigned h, const unsigned char *s, unsigned n);
 unsigned fnv(unsigned h, const unsigned char *s);
@@ -256,6 +258,7 @@ int center_press(unsigned *timer, unsigned *at, int (*single)(const void *), int
 int config_value(const char *section, const char *key, int n, int def); /* theme_engine.c: a config.ini decimal */
 int image_show(void *img, const char *url, unsigned *size);
 int album_cmp(void *a, void *b);
+int spoken(const char *path); /* navigation.c: under Podcasts or Audiobooks, or an M4B */
 void peq_attach(void); /* peq_ui.c */
 /* EQ per Output (docs/internals.md#eq-per-output): peq_ui.c swaps the EQ when the output named key
  * ("3.5mm", "4.4mm", "usb", a Bluetooth MAC) takes over; forgetting whose it is ends the following. */
@@ -286,6 +289,10 @@ unsigned album_id(void *r), album_dir(const char *p, int disc);
 /* navigation.c: Cover Flow's glide and its letter */
 int carousel_glide(void *w, int goal, unsigned ms, int easing);
 void coverflow_letter(void *w, unsigned letter, unsigned now);
+void coverflow_letter_hold(void *w, unsigned letter);
+int ringnav_big_library(void); /* Display's Large Library Mode: letters, years and half copies */
+/* A letter with this bit is the Year sort's year instead, in its low bits, 0 undated. */
+#define CF_YEAR 0x80000000u
 int blob_io(const char *path, const char *tmp, void *buf, unsigned size, int write);
 #define BLOB_IO(file, buf, write) blob_io(file, file ".tmp", &(buf), sizeof(buf), write)
 int clip_within(void *canvas, int *old, int *clip, int x, int y, int w, int h);
@@ -301,8 +308,8 @@ void tidal_clear(void);
  * slot's index stays its app's), addon_name, addon_id and addon_icon (an image name: file://… or the
  * shared stream_app) are one's while it is on the card (else 0), addon_open
  * its Streaming row's click (ctx: the slot). addon_forget and addon_quit: the Apps page replaces or
- * removes the files of the app in folder dir (".<id>"): forgotten on the UI thread, then asked to
- * end and waited for on the Apps page's worker. */
+ * removes the files of the app in folder dir (".<id>"): asked to end and waited for on the Apps
+ * page's worker, then, once replaced or removed, forgotten on the UI thread. */
 #define APPS_MAX 8 /* card apps on the card at once */
 int addon_scan(void), addon_open(void *ctx, void *event), addon_hold(void *top);
 int addon_games_last(void); /* the card's games as the last addon_scan found them */
@@ -480,6 +487,16 @@ int spot_running(void), scrobble_busy(void), tidal_busy(void), addon_running(voi
 const char *coverflow_sort_name(void); /* coverflow.c */
 void coverflow_sort_step(void), coverflow_refresh_art(void);
 void coverflow_clean_end(void); /* coverflow.c: a clean end mid-build strikes no album */
+/* Playlists as Cover Flow: coverflow.c's covers of lists (p_deque_playlist), 0 when it has none,
+ * its centred playlist (a cover's hold) and its close of the covers; playlists.c's open of playlist
+ * cd_num from its row on the Playlists page win under them, its index in the live list, and New
+ * Playlist (edit 0) or Edit Playlists… (1) on that page. */
+int coverflow_playlists(void *lists);
+int coverflow_playlist_queue(void); /* the queue a playlist's cover played, no load since */
+void *coverflow_playlist(void *page), *coverflow_playlists_close(void);
+void playlist_open(void *win, int cd_num);
+unsigned playlist_index(int cd_num);
+void playlists_edit(int edit);
 int rockbox_available(void);  /* theme_engine.c: a regular Rockbox binary on the card */
 int groovebox_available(void); /* theme_engine.c: the Groovebox card app's binary on the card */
 #define SHORTCUT_GROOVEBOX 10  /* IPOD SHORTCUT's Groovebox, after the ten stock-era values */
@@ -487,6 +504,7 @@ int page_keyup(void *ctx, void *event); /* navigation.c: Return leaves a payload
 int ringnav_localclass(int cls);        /* navigation.c: load_localclass_list's hook */
 int shelf_open(void *ctx, void *event); /* netupdate.c: System settings' Apps page */
 const char *shelf_busy(void);           /* netupdate.c: the app folder a job replaces */
+const char *shelf_moving(void);         /* netupdate.c: the app folder deleted or moved into */
 int shelf_erase(int start);             /* netupdate.c: Spotify's erase, started or running */
 void stream_erased(void);               /* navigation.c: Configuration follows a finished erase */
 void album_lyrics_stop(void);           /* onlinematch.c: Download Album Lyrics before USB storage */

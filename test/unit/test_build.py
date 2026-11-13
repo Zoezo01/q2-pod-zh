@@ -13,6 +13,7 @@ import pytest
 
 import build
 import ipod
+import theme
 
 
 def image(size=0x400000, base=0x400000, null=False):
@@ -40,6 +41,41 @@ def program(*rows, size=0x1000, phoff=52):
 @pytest.mark.parametrize('number,tag', [(1, 'V001i'), (35, 'V00Zi'), (36, 'V010i'), (46655, 'VZZZi'), (46656, 'V001i'), (46657, 'V002i')])
 def test_dev_tag(number, tag):
     assert build.dev_tag(number) == tag
+
+
+def refuse_git(*args):
+    raise subprocess.CalledProcessError(128, args)
+
+
+def test_dev_build_counts_across_worktrees(tmp_path, monkeypatch):
+    # Two worktrees of one repository share the counter, so the second's first --dev build has a new tag.
+    (tmp_path/'repo.git').mkdir()
+    calls = []
+    monkeypatch.setattr(build, 'run', lambda *args: calls.append(args) or '../repo.git\n')  # relative, as a plain checkout's git answers
+    tags = []
+    for checkout in ('a', 'b', 'a'):
+        (tmp_path/checkout).mkdir(exist_ok=True)
+        (tmp_path/checkout/'.git').write_text('gitdir: elsewhere\n')  # a worktree's .git is a file
+        monkeypatch.setattr(build, 'ROOT', tmp_path/checkout)
+        tags.append(build.dev_tag(build.dev_build()))
+    assert tags == ['V001i', 'V002i', 'V003i']
+    assert calls[1] == ('git', '-C', tmp_path/'b', 'rev-parse', '--git-common-dir')
+    assert (tmp_path/'repo.git/build-number').read_text() == '3\n'
+
+
+def test_dev_build_after_an_empty_counter(tmp_path, monkeypatch):
+    # A counter emptied by a power loss mid-write counts as 0, not a crash on int('').
+    (tmp_path/'.build-number').write_text('')
+    monkeypatch.setattr(build, 'ROOT', tmp_path)
+    monkeypatch.setattr(build, 'run', refuse_git)  # a source archive: not a git checkout
+    assert build.dev_build() == 1 and (tmp_path/'.build-number').read_text() == '1\n'
+
+
+def test_dev_build_ignores_an_enclosing_repository(tmp_path, monkeypatch):
+    # A source archive unpacked inside another repo has no .git of its own: git must not be asked.
+    monkeypatch.setattr(build, 'ROOT', tmp_path)
+    monkeypatch.setattr(build, 'run', lambda *args: pytest.fail('asked git'))
+    assert build.dev_build() == 1 and not (tmp_path/'.git').exists()
 
 
 def test_jumps():
@@ -181,6 +217,35 @@ def test_append_payload_wants_one_final_null_slot(rows):
         build.append_payload(program(*rows), b'', 0x500000, 0, 'x')
 
 
+@pytest.mark.parametrize('size,refused', [(build.SCRATCH - build.BASE - 1, False), (build.SCRATCH - build.BASE, False),
+                                          (build.SCRATCH - build.BASE + 1, True)])
+def test_check_layout_payload_may_reach_its_scratch_page(size, refused):
+    # The payload occupies [BASE, BASE+size): ending exactly at SCRATCH is accepted, one byte more refused
+    ps = {'__scratch_start': build.SCRATCH, '__scratch_end': build.SCRATCH}
+    if refused:
+        with pytest.raises(ValueError, match='^Payload overlaps its scratch page$'):
+            build.check_layout(bytes(size), ps)
+    else:
+        build.check_layout(bytes(size), ps)
+
+
+@pytest.mark.parametrize('end,refused', [(build.SCRATCH + 0x20000, False), (build.SCRATCH + 0x20001, True)])
+def test_check_layout_scratch_state_may_fill_128_kb(end, refused):
+    # Scratch state of exactly 128 KB is accepted, one byte more refused
+    ps = {'__scratch_start': build.SCRATCH, '__scratch_end': end}
+    if refused:
+        with pytest.raises(ValueError, match='^Scratch state exceeds its 128 KB$'):
+            build.check_layout(b'', ps)
+    else:
+        build.check_layout(b'', ps)
+
+
+def test_check_layout_wants_the_scratch_state_at_its_page():
+    # A link that put the scratch state anywhere but SCRATCH is refused
+    with pytest.raises(ValueError, match='^Scratch state moved$'):
+        build.check_layout(b'', {'__scratch_start': build.SCRATCH + 4, '__scratch_end': build.SCRATCH + 4})
+
+
 @pytest.mark.parametrize('label,minutes', [('GMT+0 London', 0), ('GMT-3:30 St. John\'s', -210), ('GMT+12:45 Chatham', 765),
                                            ('GMT-12 Baker Island', -720), ('GMT+5:30 Kolkata', 330)])
 def test_timezone_offset(label, minutes):
@@ -189,10 +254,10 @@ def test_timezone_offset(label, minutes):
 
 def zones():
     demo = image()
-    start = build.fileoff(demo, 0x76b5d0)
+    start = build.fileoff(demo, 0x77efb0)
     labels = [b'timedate_auto', *[f'stock{i}'.encode() for i in range(26)], b'timezone_gmt+12']
     demo[start:start + 28 * 64] = b''.join(l.ljust(64, b'\0') for l in labels)
-    for address, old in ((0x4bce34, 0x00102980), (0x4bd090, 0x2402001c), (0x4bd4d0, 0x2402001c), (0x4fa5dc, 0x2c43001b)):
+    for address, old in ((0x4c1bd8, 0x00102980), (0x4c1ed8, 0x2402001c), (0x4c23f4, 0x2402001c), (0x504eec, 0x2c43001b)):
         struct.pack_into('<I', demo, build.fileoff(demo, address), old)
     return demo, start
 
@@ -205,7 +270,7 @@ def test_patch_timezones():
     assert rows == [b'timedate_auto', *[z[0].encode() for z in build.TIMEZONES]]
     assert table[32 * (len(build.TIMEZONES) + 1):] == bytes(len(table) - 32 * (len(build.TIMEZONES) + 1))
     count = len(build.TIMEZONES) + 1
-    assert [struct.unpack_from('<I', demo, build.fileoff(demo, a))[0] for a in (0x4bce34, 0x4bd090, 0x4bd4d0, 0x4fa5dc)] == [
+    assert [struct.unpack_from('<I', demo, build.fileoff(demo, a))[0] for a in (0x4c1bd8, 0x4c1ed8, 0x4c23f4, 0x504eec)] == [
         0x00102940, 0x24020000 | count, 0x24020000 | (count - 1), 0x2c430000 | (count - 1)]
     assert len(demo) == len(zones()[0])
 
@@ -240,7 +305,7 @@ def test_patch_timezones_counts_are_fields_of_the_word(monkeypatch):
     demo, _ = zones()
     monkeypatch.setattr(build, 'TIMEZONES', build.TIMEZONES[:2])
     build.patch_timezones(demo)
-    assert [struct.unpack_from('<I', demo, build.fileoff(demo, a))[0] for a in (0x4bd090, 0x4bd4d0, 0x4fa5dc)] == [0x24020003, 0x24020002, 0x2c430002]
+    assert [struct.unpack_from('<I', demo, build.fileoff(demo, a))[0] for a in (0x4c1ed8, 0x4c23f4, 0x504eec)] == [0x24020003, 0x24020002, 0x2c430002]
 
 
 def test_patch_timezones_label_must_fit(monkeypatch):
@@ -257,7 +322,7 @@ def test_patch_timezones_longest_label_fits(monkeypatch):
     assert demo[start + 32:start + 63] == b'x' * 31 and demo[start + 63] == 0
 
 
-@pytest.mark.parametrize('address', [0x4bce34, 0x4bd090, 0x4bd4d0, 0x4fa5dc])
+@pytest.mark.parametrize('address', [0x4c1bd8, 0x4c1ed8, 0x4c23f4, 0x504eec])
 def test_patch_timezones_wants_stock_code(address):
     demo, _ = zones()
     struct.pack_into('<I', demo, build.fileoff(demo, address), 0)
@@ -365,7 +430,7 @@ def test_bold_font():
     font_bytes, ranges = build.bold_font()
     font = TTFont(io.BytesIO(font_bytes))
     source = TTFont(build.ROOT/'assets/fonts/LiberationSans-Bold.ttf')
-    have = sorted(u for u in source.getBestCmap() if 0x20 <= u < 0x530 or 0x2000 <= u < 0x2200)
+    have = sorted(u for u in source.getBestCmap() if 0x20 <= u < 0x530 or 0x2000 <= u < 0x2200) + [build.PLAY_MARK]
     assert sorted(font.getBestCmap()) == have and 0x41 in have and 0x2013 in have and 0x4e2d not in have
     for rec in font['name'].names:
         if rec.nameID in (1, 3, 4, 6, 16, 17, 18, 21, 22):
@@ -408,7 +473,7 @@ def test_classic_light_font():
     from fontTools.ttLib import TTFont
     font_bytes, ranges = build.classic_light_font()
     font, source = TTFont(io.BytesIO(font_bytes)), TTFont(build.ROOT/'assets/fonts/texgyreheros-bold.otf')
-    have = sorted(u for u in source.getBestCmap() if 0x20 <= u < 0x530 or 0x2000 <= u < 0x2200)
+    have = sorted(u for u in source.getBestCmap() if 0x20 <= u < 0x530 or 0x2000 <= u < 0x2200) + [build.PLAY_MARK]
     assert sorted(font.getBestCmap()) == have and 0x41 in have and 0xe9 in have
     names = {rec.nameID: str(rec) for rec in font['name'].names}
     assert names[1].replace(' ', '').startswith('Q2PodClassicLight') and names[6].startswith('Q2PodClassicLight')  # the Windows record is TeXGyreHeros, unspaced
@@ -418,11 +483,66 @@ def test_classic_light_font():
     assert names[0] == str(source['name'].getName(0, 3, 1, 0x409))
     assert names[7] == str(source['name'].getName(7, 3, 1, 0x409))
     assert 'Modified version of TeX Gyre Heros Bold' in names[10] and 'gust.org.pl' in names[10]  # LPPL 6(a), 6(b), 6(d)2
+    assert 'U+25B6' in names[10] and 'U+25B6' in (build.ROOT/'assets/fonts/README-classic-light.txt').read_text()  # 6(b): every change
     assert (build.ROOT/'assets/fonts/README-classic-light.txt').exists() and (build.ROOT/'assets/fonts/GUST-FONT-LICENSE.txt').exists()
     if 'CFF ' in font:
         assert 'TeXGyre' not in str(font['CFF '].cff.fontNames) + font['CFF '].cff.topDictIndex[0].FullName + font['CFF '].cff.topDictIndex[0].FamilyName
     assert re.fullmatch(r'#define CLASSIC_LIGHT_RANGES \{0x20,0x7e,[0-9a-fx,]+\}', ranges)
     assert 'CFF ' in font and 'glyf' not in font  # the chosen outline form
+
+
+@pytest.mark.parametrize('face', ['bold_font', 'classic_light_font'])
+def test_both_faces_are_given_a_play_mark_on_the_middle_of_their_capitals(face):
+    """View Queue's mark (navigation.c stock_row_style): neither source has U+25B6, and a title holding
+    a character its face lacks leaves that face."""
+    from fontTools.pens.recordingPen import RecordingPen
+    from fontTools.ttLib import TTFont
+    font_bytes, ranges = getattr(build, face)()
+    font = TTFont(io.BytesIO(font_bytes))
+    assert ranges.endswith(',0x25b6,0x25b6}')
+    name, cap = font.getBestCmap()[build.PLAY_MARK], font['OS/2'].sCapHeight
+    pen = RecordingPen()
+    font.getGlyphSet()[name].draw(pen)
+    points = [args[0] for op, args in pen.value if op in ('moveTo', 'lineTo')]
+    assert [op for op, _ in pen.value] == ['moveTo', 'lineTo', 'lineTo', 'closePath']  # a triangle
+    xs, ys = sorted(x for x, _ in points), sorted(y for _, y in points)
+    assert xs[0] == xs[1] and ys[1] == (ys[0] + ys[2]) // 2  # an upright edge on the left, its point level with the middle
+    assert abs(ys[0] + ys[2] - cap) <= 1  # on the capitals' middle
+    assert abs((ys[2] - ys[0]) / cap - .78) < .005 and abs((xs[2] - xs[0]) / cap - .70) < .005
+    # at a Classic row's title px, bold standing in at FACE_FALLBACK_PCT of it (navigation.c fallback_px),
+    # the upright edge lies on a pixel's, so it is drawn sharp
+    px = next(t for t in theme.builtins() if t['id'] == 'classic-light')['font_px[ROLE_TITLE]']
+    pct = re.search(r'#define FACE_FALLBACK_PCT (\d+)', (build.ROOT/'patch/navigation.c').read_text())
+    assert pct
+    pixel = (font['hhea'].ascent - font['hhea'].descent) / (px if face == 'classic_light_font' else (px * int(pct[1]) + 50) // 100)
+    assert abs(xs[0] / pixel - 1) < .02
+    advance, bearing = font['hmtx'][name]
+    assert bearing == xs[0] and advance == xs[2] + bearing  # as much room after it as before
+    area = sum(x0 * y1 - x1 * y0 for (x0, y0), (x1, y1) in zip(points, points[1:] + points[:1]))
+    if 'CFF ' in font:  # the charstring's own width is the advance; outer contours run counter-clockwise
+        charstring = font['CFF '].cff.topDictIndex[0].CharStrings[name]
+        charstring.draw(RecordingPen())
+        assert charstring.width == advance and area > 0
+    else:  # and clockwise in glyf
+        assert area < 0
+    assert font['maxp'].numGlyphs == len(font.getGlyphOrder()) and font.getGlyphOrder()[-1] == name
+
+
+@pytest.mark.parametrize('face, src', [('bold_font', 'LiberationSans-Bold.ttf'), ('classic_light_font', 'texgyreheros-bold.otf')])
+def test_the_faces_keep_every_other_glyph_as_drawn(face, src):
+    """assets/fonts/README-classic-light.txt: no outline or metric of the original's is changed; the
+    mark is the one glyph added, at the end."""
+    from fontTools.pens.recordingPen import DecomposingRecordingPen
+    from fontTools.ttLib import TTFont
+    font, source = TTFont(io.BytesIO(getattr(build, face)()[0])), TTFont(build.ROOT/'assets/fonts'/src)
+    def drawn(font, name):  # components decomposed: the subset drops post's names, so a component's is uniXXXX
+        glyphs = font.getGlyphSet()
+        pen = DecomposingRecordingPen(glyphs)
+        glyphs[name].draw(pen)
+        return pen.value, font['hmtx'][name]
+    cmap, was = font.getBestCmap(), source.getBestCmap()
+    assert all(drawn(font, cmap[u]) == drawn(source, was[u]) for u in cmap if u != build.PLAY_MARK)
+    assert font.getGlyphOrder()[-1] == cmap[build.PLAY_MARK]
 
 
 HEART = [(50, -10), (1250, -10), (1250, 1490), (50, 1490)]
@@ -930,9 +1050,11 @@ def stock_h(dev=0, repo=build.REPO):
     return build.stock_header(context, RANGES, builtins(), dev, repo)
 
 
-@pytest.mark.parametrize('dev,repo,version,tag,flag', [(0, build.REPO, f'{build.VERSION} Pod', build.VERSION, '0'),
-                                                       (7, 'someone/q2-fork', f'{build.VERSION} Pod dev 7', '', '1')])
-def test_stock_header_versions(dev, repo, version, tag, flag):
+@pytest.mark.parametrize('dev,beta,repo,version,tag,flag', [(0, 0, build.REPO, f'{build.VERSION} Pod', build.VERSION, '0'),
+                                                            (0, 2, build.REPO, f'{build.VERSION} Pod beta 2', build.VERSION, '0'),
+                                                            (7, 2, 'someone/q2-fork', f'{build.VERSION} Pod dev 7', '', '1')])
+def test_stock_header_versions(dev, beta, repo, version, tag, flag, monkeypatch):
+    monkeypatch.setattr(build, 'BETA', beta)
     header = stock_h(dev, repo)
     lines = header.splitlines()
     assert header.endswith('\n') and all(line.startswith('#define ') for line in lines)
@@ -946,8 +1068,9 @@ def test_stock_header_versions(dev, repo, version, tag, flag):
 
 
 @pytest.mark.skipif(not shutil.which('clang'), reason='no clang')
-def test_stock_header_is_c(tmp_path):
+def test_stock_header_is_c(tmp_path, monkeypatch):
     """stock.h as the payload's C reads it: built into a host library whose data ctypes reads back."""
+    monkeypatch.setattr(build, 'BETA', 0)
     import art
     import ipod
     import theme
@@ -976,7 +1099,7 @@ const unsigned long h_sizes[] = {{sizeof h_zones / sizeof *h_zones, sizeof h_cit
     zones, cities, order, icons, lit, rounds, bold = array(ctypes.c_ulong, 'h_sizes', 7)
     assert array(ctypes.c_int, 'h_ints', 4) == [build.RING_STEP, len(themes), len(theme.theme_keys(themes)), 0]
     assert [s.decode() for s in array(ctypes.c_char_p, 'h_strings', 6)] == [
-        build.ROCKBOX_FLAG, 'V1.32', f'{build.VERSION} Pod', build.VERSION, build.REPO, f'Q2Pod/{build.VERSION} (https://github.com/DiamondBond/q2-pod)']
+        build.ROCKBOX_FLAG, 'V1.36', f'{build.VERSION} Pod', build.VERSION, build.REPO, f'Q2Pod/{build.VERSION} (https://github.com/DiamondBond/q2-pod)']
     assert [s.decode() for s in array(ctypes.c_char_p, 'h_zones', zones)] == [zone for _, zone in build.TIMEZONES]
     # each row's city, its label after the offset
     cities = [s.decode() for s in array(ctypes.c_char_p, 'h_cities', cities)]
@@ -1004,3 +1127,20 @@ def test_build_refuses_a_zip_that_is_not_the_audited_one(tmp_path):
     zip_path.write_bytes(b'not the audited ZIP')
     with pytest.raises(ValueError, match='^Unsupported ZIP: SHA-256 differs from audited original$'):
         build.build(zip_path, tmp_path/'out', None)
+
+
+@pytest.mark.parametrize('version,beta', [('1.7.10', 0), ('1.7', 0), ('1.7.6.0', 0), ('10.7.6', 0), ('17.6', 0), ('1.76', 0),
+                                          ('1.x.6', 0), ('1-7-6', 0), ('1.8.0', 10), ('1.8.0', -1)])
+def test_build_refuses_a_version_not_of_three_single_digits(tmp_path, monkeypatch, version, beta):
+    # 17.6 and 1.76 pack to a 5-character tag too, so the tag's length alone let them through; refused before the ZIP is read
+    monkeypatch.setattr(build, 'VERSION', version)
+    monkeypatch.setattr(build, 'BETA', beta)
+    with pytest.raises(ValueError, match='^VERSION must be three single digits'):
+        build.build(tmp_path/'no such.zip', tmp_path/'out', None)
+    assert not (tmp_path/'out').exists()
+
+
+@pytest.mark.parametrize('version,beta,ok', [('1.8.0', 0, True), ('1.8.0', 2, True), ('0.0.1', 9, True), ('9.9.9', 0, True),
+                                             ('17.6', 0, False), ('1.8.0', 10, False)])
+def test_version_ok(version, beta, ok):
+    assert build.version_ok(version, beta) == ok

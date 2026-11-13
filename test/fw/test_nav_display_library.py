@@ -137,6 +137,7 @@ class Ui:
         fw.mock('widget_use_style', lambda w, s, *_: self.at[w].props.__setitem__('style', C.string_at(s).decode()) if w else None)
         fw.mock('image_base_set_image', lambda w, s, *_: self.at[w].props.__setitem__('image', C.string_at(s)) if w else None)
         fw.mock('widget_destroy_children', lambda w, *_: self.at[w].children.clear())
+        fw.mock('widget_destroy', lambda w, *_: self.at[w].parent.children.remove(self.at[w]) if w else None)
         fw.mock('widget_on', lambda w, evt, fn, ctx, *_: self.handlers.append((w, evt, fn, ctx)) or len(self.handlers))
         fw.mock('widget_restack', self.restack)
         fw.mock('widget_to_local', self.to_local)
@@ -254,8 +255,8 @@ def event(kind, key=0, x=None, y=None):
 # The Display settings.
 
 class Display:
-    """Settings' Display page as stock opens it: navigator_to builds the window and its three stock rows
-    (stock_display_trampoline) and runs ringnav_display, as systemset_display_page_init does; display_open's
+    """Settings' Display page as stock opens it: navigator_to builds the window and its four stock rows, Show
+    Navigation Bar last (stock_display_trampoline), and runs ringnav_display, as systemset_display_page_init does; display_open's
     sub-pages open the same way, over it."""
     def __init__(self, fw, ui):
         self.fw, self.ui, self.pages = fw, ui, []
@@ -265,7 +266,7 @@ class Display:
 
     def stock(self, win):
         view = self.ui.at[win].find('scroll_view_display')
-        for i in range(3):
+        for i in range(4):
             self.ui.add('list_item', view).name = f'stock_{i}'
         return 0
 
@@ -298,7 +299,8 @@ def test_display_adds_smart_awake_night_shift_and_its_two_pages_among_stocks_row
     ui = Ui(fw)
     page = display(fw, ui)
     view = page.view()
-    # stock's first two, then Smart Awake and Night Shift, stock's third, then Appearance and Cover Flow
+    # stock's first two, then Smart Awake and Night Shift, stock's third, then Appearance and Cover Flow; its fourth, Show
+    # Navigation Bar, is not offered
     assert titles(view) == ['stock_0', 'stock_1', 'Smart Awake', 'Night Shift', 'stock_2', 'Appearance', 'Cover Flow']
     # Night Shift and the two pages open a page, so they carry the chevron; Smart Awake changes in place
     into = [any(c.props.get('image') == b'list_into' for c in item.children[0].children) for item in view.children if not item.name]
@@ -388,9 +390,9 @@ def test_appearance_lists_theme_then_minimals_options_in_its_order(fw):
     read = readings(page.view())
     # the running theme's name, and Accent at Minimal's own default, under its own key
     assert read['Theme'] == t['name'] and read['Accent'] == accent_name(t, host.tools_theme.accent_default(t))
-    # nothing stored: the payload's own defaults (dark, square, Split, the clock in the title); no Rockbox: Favorites
+    # nothing stored: the payload's own defaults (dark, Minimal round, Split, the clock in the title); no Rockbox: Favorites
     assert (read['Light Mode'], read['Rounded Corners'], read['Home'], read['Shortcut'], read['Time in Title']) == \
-        ('Off', 'Off', 'Split', 'Favorites', 'On')
+        ('Off', 'On' if t['name'] == 'Minimal' else 'Off', 'Split', 'Favorites', 'On')
 
 
 def test_classic_appearance_rows_read_title_and_value_and_its_own_options(fw):
@@ -500,7 +502,7 @@ def test_corners_drop_the_art_cache_only_where_art_takes_them(fw, theme):
     ui = Ui(fw)
     page = appearance(fw, ui, THEME=b'%d' % theme)
     before = repaints(fw)
-    assert clicks_of(fw, ui, page, 'Rounded Corners', 1)[0][1] == [('ROUNDED', 1)]
+    assert clicks_of(fw, ui, page, 'Rounded Corners', 1)[0][1] == [('ROUNDED', int(theme != MINIMAL))]  # Minimal's starts round
     after = repaints(fw)
     # a theme drawing its art square bakes the corners into its thumbnails: those cached images go
     unload = 1 if theme_of(theme)['art_square'] else 0
@@ -680,33 +682,42 @@ def test_a_new_theme_moves_a_cached_settings_list_to_its_top(fw, st, geometry):
     assert cached.box[1] == tops[MODERN] and other.box[1] == tops[MINIMAL]
 
 
-def test_cover_flow_page_holds_artist_view_sort_and_refresh(fw):
+def test_cover_flow_page_holds_artist_view_playlists_sort_refresh_and_large_library_mode(fw):
     ui = Ui(fw)
     page = display(fw, ui)
     ui.click(button_of(page.view(), 'Cover Flow'))
     assert page.title() == 'Cover Flow'
     found = titles(page.view())
-    assert len(found) == 3 and found[0] == 'Artist View' and found[1].startswith('Cover Flow ') and found[2] == 'Refresh Cover Flow'
+    assert len(found) == 5 and found[:2] == ['Artist View', 'Playlist View'] and found[2].startswith('Cover Flow ')
+    assert found[3:] == ['Refresh Cover Flow', 'Large Library Mode']
 
 
 class Settings:
-    """Settings' System page: its stock rows (ids 0-11, About last) and what ringnav_systemset adds."""
+    """Settings' System page: its stock rows (0-8: Language, Wireless, Network, Display, Power, Wheel Function, In-Vehicle,
+    General, System) and what ringnav_systemset adds."""
     def __init__(self, fw, ui, keytone=0):
         self.win = ui.window('systemset_page')
         self.view = ui.add('scroll_view', self.win, name='scroll_view_sysset')
-        for i in range(12):
+        for i in range(9):
             ui.add('list_item', self.view, name=f'stock_{i}')
         fw.var('g_keytone_flag', C.c_ubyte).value = keytone
         fw.fn('ringnav_systemset', C.c_int, C.c_void_p, C.c_void_p)(self.win.addr, None)
 
 
-def test_system_settings_adds_app_store_and_controls_and_hides_three(fw):
+def test_system_settings_adds_its_rows_and_hides_four(fw):
     ui = Ui(fw)
     Config(fw)
     page = Settings(fw, ui)
-    assert titles(page.view) == ['stock_1', 'stock_2', 'stock_3', 'Controls', 'stock_4', 'stock_5', 'stock_0', 'App Store',
-                                 'stock_9', 'stock_10', 'stock_6', 'stock_7', 'stock_8', 'stock_11']
-    assert [item.name for item in page.view.children if not item.visible] == ['stock_6', 'stock_7', 'stock_8']
+    assert titles(page.view) == ['stock_1', 'stock_2', 'stock_3', 'Controls', 'stock_4', 'system_time', 'stock_0', 'App Store',
+                                 'system_update', 'system_reset', 'stock_5', 'stock_6', 'stock_7', 'stock_8', 'system_about']
+    # stock's Wheel Function, In-Vehicle, General and System
+    assert [item.name for item in page.view.children if not item.visible] == ['stock_5', 'stock_6', 'stock_7', 'stock_8']
+    # the rows stock moved to its System page open stock's pages from here
+    opened = []
+    fw.mock('navigator_to', lambda name, *_: opened.append(C.string_at(name).decode()))
+    for key in ('system_time', 'system_update', 'system_reset', 'system_about'):
+        ui.click(button_of(page.view, key))
+    assert opened == ['systemset/datetime_page', 'systemset/fwupdate_page', 'systemset/reset_page', 'systemset/about_page']
 
 
 @pytest.mark.parametrize('keytone', [0, 1])
@@ -1711,9 +1722,9 @@ def test_the_playing_rows_red_keeps_its_colour_under_a_repitched_set(fw, st, geo
     playing, other = (ui.add('hscroll_label', ui.window('playlist_page')) for _ in range(2))
     style = fw.fn('stock_row_style', C.c_int, C.c_void_p, C.c_char_p)
     playing.text, other.text = 'Song', 'Other'
-    style(playing.addr, b's_scrlabel_red20l')
-    style(other.addr, b's_scrlabel_white20l')
-    assert (playing.props['style'], other.props['style']) == ('s_scrlabel_red20l', 's_scrlabel_white20l')
+    style(playing.addr, b's_scrlabel_red24l')
+    style(other.addr, b's_scrlabel_white24l')
+    assert (playing.props['style'], other.props['style']) == ('s_scrlabel_red24l', 's_scrlabel_white24l')
     assert (playing.text, other.text) == ('▶ Song', 'Other')
     if geom == 'GEOM_IPOD':
         assert 'style:normal:text_color' not in playing.props
@@ -1723,7 +1734,7 @@ def test_the_playing_rows_red_keeps_its_colour_under_a_repitched_set(fw, st, geo
     assert playing.props[colour] == C.c_int(0xff000000 | (red & 255) << 16 | red & 0xff00 | red >> 16).value
     # every bind writes its colour: another row's is set too, not the red, and a reused row loses the red
     assert colour in other.props and other.props[colour] != playing.props[colour]
-    style(playing.addr, b's_scrlabel_white20l')
+    style(playing.addr, b's_scrlabel_white24l')
     assert playing.props[colour] == other.props[colour]
 
 
@@ -2001,23 +2012,15 @@ class Hold:
         return C.c_ubyte.from_address(LATCH).value
 
 
-def test_hold_return_opens_now_playing_over_the_page_and_drops_the_latch(fw, st, stand_in):
+def test_hold_return_opens_now_playing_over_the_page_and_leaves_the_latch_to_swallow_its_release(fw, st, stand_in):
     ui = Ui(fw)
     ui.window('home_page')
     songs = ui.window('localmusic_page')
     hold = Hold(fw, ui, stand_in)
     assert hold() == ['home_page', 'localmusic_page', 'playing_page']
     assert hold.opened == [('playing_page', (0, 0, 0xff, 2))]  # stock's car-mode context: the queue as it is
-    assert st('np_origin', C.c_void_p).value == songs.addr and hold.latch() == 0
-
-
-def test_a_switch_that_did_not_land_leaves_the_latch(fw, st, stand_in):
-    ui = Ui(fw)
-    ui.window('home_page')
-    hold = Hold(fw, ui, stand_in)
-    hold.lands = False
-    hold()
-    assert hold.latch() == 1
+    assert st('np_origin', C.c_void_p).value == songs.addr
+    assert hold.latch() == 1  # stock's filter swallows the hold's release; cleared, it went back from Now Playing
 
 
 def test_hold_return_on_now_playing_goes_back_to_the_page_it_opened_over(fw, st, stand_in):
@@ -2816,7 +2819,7 @@ class ArtistPage:
         self.nav = ui.add('view', self.win, (0, 0, 375, 40), 'view_navbar')
         self.nav.visible = nav_shown
         self.tab = ui.add('tab_control', self.win, (0, 0, 375, 290), 'tab_control')
-        self.pages = ui.add('pages', self.tab, (0, 50, 375, 240), 'pages')
+        self.pages = ui.add('pages', self.tab, (0, 50, 375, 240), 'pages_artistinfo')
         self.grid = ui.add('list_view', self.pages, (0, 0, 375, 240), 'list_view_album')
 
 

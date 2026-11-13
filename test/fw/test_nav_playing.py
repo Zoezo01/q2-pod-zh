@@ -156,6 +156,7 @@ class Ui:
         m('widget_get_text', lambda w, *_: C.addressof(self.texts[w]) if w in self.texts else 0)
         m('widget_set_text', lambda w, s, *_: self.set_text(w, read_wide(s)))
         m('widget_set_text_utf8', lambda w, s, *_: self.set_text(w, C.string_at(s).decode()))
+        m('widget_get_text_utf8', lambda w, out, n, *_: C.memmove(out, s := (self.text(w) or '').encode()[:n - 1] + b'\0', len(s)) and 0)
         m('widget_get_visible', lambda w, *_: self.shown.get(w, 1))
         m('widget_set_visible', lambda w, v, *_: self.shown.__setitem__(w, int(bool(v))))
         m('widget_move_resize', lambda w, x, y, ww, h, *_: self.place(w, x, y, ww, h))
@@ -402,20 +403,22 @@ def test_the_slot_is_its_modes_ink_wide_and_the_bars_height(fw, st, ui, mode, wi
     assert (ui.shown[bar.icon], ui.shown[bar.pct], ui.shown[bar.slot]) == (0, 0, 1)  # the slot paints it all
 
 
-def test_the_slot_repaints_only_for_a_new_level_or_charge(fw, st, ui):
+def test_only_a_new_level_or_charge_repaints_the_bar_after_the_frame(fw, st, ui):
     theme(fw, st, BATTERY=2)
     bar = Bar(fw, ui)
-    bar.sync()
-    first = len(ui.invalidated(bar.slot))
-    bar.sync()
-    assert len(ui.invalidated(bar.slot)) == first == 1
-    bar.level('87%')
-    bar.sync()
-    bar.level('87%', b'bar_charge')
-    bar.sync()
-    bar.level('87%', b'bar_lowcharge')
-    bar.sync()
-    assert len(ui.invalidated(bar.slot)) == 4
+    repaints = []
+    def sync(*level):
+        if level:
+            bar.level(*level)
+        bar.sync()  # mid-paint: an invalidate here is lost, so charging's colour reached one digit
+        repaints.append(len(ui.due('bar_repaint')))
+        ui.run_all('bar_repaint')
+    sync()
+    sync()
+    sync('87%')
+    sync('87%', b'bar_charge')
+    sync('87%', b'bar_lowcharge')
+    assert repaints == [1, 0, 1, 1, 1] and ui.invalidated(bar.bar) == [bar.bar] * 4
 
 
 def test_wifi_and_bluetooth_crowd_the_percentage_out_to_the_icon(fw, st, ui):
@@ -498,9 +501,9 @@ def test_a_crowded_row_turns_percent_inside_to_the_icon_but_classics_is_the_icon
     bar = Bar(fw, ui)
     ui.place(bar.wifi, 30, 6, 60, 18)
     ui.shown[bar.wifi] = ui.shown[bar.eq] = 1
-    fw.mock('mclGetPlayStatus', lambda *_: status)  # Classic's group: the play state while playing, else EQ
+    fw.mock('mclGetPlayStatus', lambda *_: status)  # Classic's group: the play state while playing
     canvas = Paint(fw, ui, bar)()
-    assert ui.shown[bar.state] == (status == 2) and ui.shown[bar.eq] == (t is MINIMAL or status != 2)
+    assert ui.shown[bar.state] == (status == 2) and ui.shown[bar.eq] == 1  # EQ is stock's to show
     assert [x[0] for x in canvas.texts] == digits  # Classic's twice: dark on the level, white past it
     g = SETS[GEOM[t['name']]]
     assert slot_width(ui, bar) == (g.batt_w + 1 if t is CLASSIC else BODY_W) + NUB_W
@@ -686,14 +689,15 @@ def test_the_battery_s_room_counts_the_row_the_theme_laid_out(fw, st, ui, t, mod
     assert st.batt_mode == mode
 
 
-@pytest.mark.parametrize('t, look, eq', [(CLASSIC, 1, 0), (MINIMAL, 3, 1)])
-def test_what_shares_the_row_is_the_theme_s_whatever_the_status_bar(fw, st, ui, t, look, eq):
+# EQ is stock's to show or hide: a bar without it keeps the label off-screen (tools/ipod.py), whatever the look.
+@pytest.mark.parametrize('t, look', [(CLASSIC, 1), (MINIMAL, 3)])
+def test_the_payload_leaves_eq_as_stock_set_it_whatever_the_status_bar(fw, st, ui, t, look):
     theme(fw, st, t, STATUSBAR=look)
     bar = Bar(fw, ui)
     ui.shown[bar.eq] = 1
     fw.mock('mclGetPlayStatus', lambda *_: 2)
     fw.fn('ringnav_showface', C.c_int, C.c_void_p)(bar.bar)
-    assert ui.shown[bar.eq] == eq
+    assert ui.shown[bar.eq] == 1
 
 
 def level_rows(canvas, x, y, ih):
@@ -879,13 +883,12 @@ def test_showface_shows_the_play_state_and_answers_as_stock(fw, st, ui, status, 
     assert ui.shown[bar.idle] == (not shown)  # neither state nor EQ: the idle label
 
 
-def test_classics_play_state_takes_eqs_place_in_its_own_art(fw, st, ui):
+def test_classics_play_state_is_its_own_art(fw, st, ui):
     theme(fw, st, CLASSIC, light=1)
     bar = Bar(fw, ui)
-    ui.shown[bar.eq] = 1
     fw.mock('mclGetPlayStatus', lambda *_: 2)
     fw.fn('ringnav_showface', C.c_int, C.c_void_p)(bar.bar)
-    assert ui.prop(bar.state, b'image') == b'classic_light_play_l' and ui.shown[bar.eq] == 0
+    assert ui.prop(bar.state, b'image') == b'classic_light_play_l'
 
 
 # Time in Title off: the bar's centre names the page in front.
@@ -1044,6 +1047,27 @@ def test_a_pooled_rows_labels_find_their_face_again_for_the_text_stock_bound(fw,
     assert label_font(ui, title)[0] == b'default' and ui.prop(plain, b'style:normal:font_name') is None
 
 
+@pytest.mark.parametrize('text', [LATIN, CYRILLIC, CJK])
+def test_the_playing_rows_mark_keeps_its_titles_face_under_classic(fw, st, ui, ranges, text):
+    """View Queue's playing row, bound as stock's on_load_data binds it: title, style, then the faces again."""
+    theme(fw, st, CLASSIC)
+    table = ui.widget(ui.wm, 'table')
+    row = ui.widget(table, 'row')
+    title = ui.widget(row, 'title', text='')
+    def load(ctx, index, w):
+        fw.fn('stock_row_text', C.c_int, C.c_void_p, C.c_char_p)(title, text.encode())
+        fw.fn('stock_row_style', C.c_int, C.c_void_p, C.c_char_p)(title, b's_scrlabel_red24l')
+        return 7
+    stock = C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_uint, C.c_void_p)(load)
+    C.c_void_p.from_address(table + O['TABLE_LOAD_DATA']).value = C.cast(stock, C.c_void_p).value
+    assert fw.fn('ringnav_table_load', C.c_int, C.c_void_p, C.c_uint, C.c_void_p)(0x55, 3, row) == 7
+    plain = ui.widget(ui.wm, 'label', text=text)  # the same title without the mark
+    fw.fn('theme_font', C.c_int, C.c_void_p, C.c_int, C.c_int)(plain, ROLE_TITLE, FONT_ROW)
+    face, px = label_font(ui, title)
+    assert ui.text(title).startswith('▶ ') and (face, px) == label_font(ui, plain)
+    assert face == first_face(ranges, text) and (px < TITLE_PX if face == b'bold' else px == TITLE_PX)
+
+
 # Now Playing (ringnav_playing): the iPod labels bound, the bar and its fill, the times, scrub.
 def clock(sec):
     """Seconds as stock's toolsTimeItoa writes them: 1:05."""
@@ -1166,6 +1190,15 @@ def test_no_window_binds_nothing(fw, ui, mcl, st):
     theme(fw, st, CLASSIC)
     Now(fw, ui, mcl, st, opened=False)
     assert fw.fn('ringnav_playing', C.c_int, C.c_void_p, C.c_void_p)(None, 0) == 41
+    assert st.np_win == 0 and ui.handlers == []
+
+
+def test_a_page_stock_refused_binds_nothing(fw, ui, mcl, st):
+    """Headphones required with none to play to: stock toasts, closes the window it was given and returns STOP (11)."""
+    theme(fw, st, CLASSIC)
+    now = Now(fw, ui, mcl, st, opened=False)
+    fw.mock('stock_playing_trampoline', lambda w, ctx, *_: 11)
+    assert now.open() == 11
     assert st.np_win == 0 and ui.handlers == []
 
 

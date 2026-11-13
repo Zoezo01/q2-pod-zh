@@ -41,6 +41,11 @@ enum {
     POD_KEYTONE, /* Key Tone and In-Vehicle Mode: stock's bytes and SYSSET keys, as its rows did */
     POD_CARMODE,
     POD_SMART_WIFI,
+    POD_COVERMODE, /* Enlarged Album Art and Folder Album Cover: stock's bytes and PLAYSET keys, as
+                      its rows do */
+    POD_FOLDERCOVER,
+    POD_BIG_LIB, /* Display's Large Library Mode: Cover Flow's letters (ringnav_big_library) */
+    POD_PL_CF,   /* Display's Playlist View: List or Cover Flow, as Artist View */
     POD_HEADSET_GUARD, /* 无耳机不播放: headset.c's guard, Q2POD HEADSETGUARD, on by default */
     POD_LIBRARY_FILL,  /* 补全封面与歌词, an action: onlinematch.c's library_fill_* over the card */
     POD_COUNT
@@ -56,6 +61,7 @@ typedef struct {
     unsigned edit_press, edit_at; /* a slider or time editor's pending Centre (edit_key) */
     int center_id, center_ctx, center_rows;
     unsigned cf_letter, cf_letter_at, cf_letter_timer;
+    int cf_letter_held; /* the thumb's letters: shown until it lifts */
     void *cf_letter_surface;
     unsigned last_home;
     int home_dir;
@@ -137,11 +143,12 @@ typedef struct {
      * last_input times the screen-on idle. year_old: Year order, oldest first. resume:
      * Bluetooth's Resume on connect on. hold_home: Hold Return goes Home. standby_limit: Standby
      * limit's choice.
-     * smart_wifi: Power's Smart Wi-Fi on (smart_poll). */
+     * smart_wifi: Power's Smart Wi-Fi on (smart_poll). big_library: Display's Large Library Mode
+     * on. playlist_cf: Playlists open as Cover Flow. */
     int pod_read, charge_limit, wake_double, wake_pass, wake_eat,
         wake_down, /* 1: the held Centre press passes; 2: it is dropped */
         charge_held, artist_cf, year_old, resume, lock_clock, artist_az, hold_home, standby_limit,
-        eq_output, smart_wifi;
+        eq_output, smart_wifi, big_library, playlist_cf;
     void *pod_label[POD_COUNT];
     void *art_cf_win, *art_cf_list; /* the artist page given its Coverflow, the albums pending */
     void *art_cf_veil;              /* the artist page unseen until they show, and its anim_hint */
@@ -281,14 +288,17 @@ typedef struct {
     void *setting_label[12 + THEME_KEYS]; /* SETTING_OWN + THEME_KEYS */
     unsigned tone_key;  /* the wheel key whose press ringnav_keydown silenced, 0 when none */
     unsigned tick_drop; /* tick_gate: the wheel keys whose press it dropped, bits */
+    unsigned tick_at;   /* tick_gate: the last tick it passed (ringnav_sleep's dark turn) */
     int greeted;        /* the first reachable list got its boot repaint */
     /* Queue menu: the hold's AWTK press time marks its release; the target is a track/list row
      * checked by count, record and browsing-state hashes; qm_cls is the class its list holds;
      * qm_forced is a shuffle Play next. */
     unsigned long long qm_press;
-    int qs_wheel; /* Quick Settings' wheel, 1 + Q2POD QSVOLUME once read (quick_volume) */
+    int qs_wheel;     /* Quick Settings' wheel, 1 + Q2POD QSVOLUME once read (quick_volume) */
+    unsigned qs_hold; /* Return's hold closed Quick Settings then, 0 once acted on (quick_poll) */
     unsigned qm_timer, qm_cls, qm_idx, qm_rows, qm_hash, qm_browse, qm_forced, qm_forced_hash;
     int qm_kind, qm_action, qm_choice;
+    char qm_name[96]; /* a playlist cover's name, the covers' own: the live list may be older */
     void *qm_dialog, *qm_queue, *qm_playlist;
     unsigned qm_queue_hash;
     unsigned char qm_classinfo[912]; /* g_local_classinfo_save before a Go to */
@@ -346,7 +356,7 @@ extern int stock_keyup_trampoline(void *, void *), stock_touch_trampoline(void *
     stock_btrows_trampoline(void *, void *), stock_playlist_trampoline(void *),
     stock_stream_trampoline(void *, void *), stock_start_player_trampoline(void),
     stock_standby_trampoline(void), stock_cardmount_trampoline(void),
-    stock_usbmode_trampoline(void *, void *, void *, void *), stock_usb_status_trampoline(void),
+    stock_usbmode_trampoline(void *, void *, void *, void *),
     stock_hscroll_start_trampoline(void *), stock_wifi_page_trampoline(void *, void *),
     stock_stream_row_trampoline(void *, void *), stock_netservice_row_trampoline(void *, void *),
     stock_online_match_trampoline(void *);
@@ -402,6 +412,9 @@ void slider_switch(void *w, void *canvas, void *sw);
 const char *style_key(char *key, const char *state, const char *name);
 unsigned wide_len(const unsigned *s);
 void *window_of(void *w);
+void cf_veil(void *win, int on);              /* win unseen (1) or seen again under Coverflow */
+int ringnav_playlist_coverflow(void);         /* Display's Playlist View is Cover Flow */
+int music_records(void *list, int discovery); /* list's songs less spoken (0) or hidden (1) ones */
 extern const stops_t confirm_dark;
 int search_key(unsigned key);
 int geom(int group);
@@ -432,6 +445,7 @@ int np_fit_due(const void *info);
 int np_sync(void *top);
 void bar_title(void *bar, void *top);
 void slider_fill(void *slider, unsigned color);
+void slider_knobless(void *slider);
 void np_theme(void);
 void paint_scrubber(void *w, void *canvas);
 /* One row of final colour, its alpha the row's. Inline: the round boxes' edges call it a pixel at a
@@ -507,7 +521,6 @@ int smart_config(const char *section, const char *key);
 void smart_poll(void);
 
 /* system.c */
-int card_mounted(void);
 void power_poll(void);
 
 /* library_lists.c */
@@ -565,11 +578,13 @@ void slider_scrub(void *w, void *canvas);
 #define PL_ROW "_pl_row"
 #define PL_MARKING "_pl_marks"
 #define PL_NONE "_pl_none"
+#define PL_ART "_pl_art"
 void qm_playlist_bind(void *w, int depth, int (*pick)(void *, void *));
 void qm_select(void);
 int qm_playlist_gone(void *ctx, void *event);
 int qm_playlist_pick(void *ctx, void *event);
 int ple_key(unsigned key, int phase);
+int ple_listing(void);
 int pl_first(menu_t *m, int cur);
 void pl_fit(void *button);
 

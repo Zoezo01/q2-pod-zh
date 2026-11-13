@@ -11,6 +11,8 @@ static struct {
     void *rate_fav, *rate_ctx, *rate_badge;
     int rate_shown;                     /* the badge's hearts plus 1, 0 for a new badge */
     int rate_pick, rate_was, rate_held; /* the hearts picked, those the picker opened on */
+    int rate_armed;                     /* a press came down on the picker: its release is a tap */
+    unsigned rate_at;                   /* when a hold opened the picker (never 0), else 0 */
     unsigned rate_hold, rate_tick, rate_album;
     void *rt_menu;
 } ra __attribute__((section(".scratch")));
@@ -24,7 +26,7 @@ static struct {
 #define ALBUM_RATINGS_FILE "/mnt/data/ringnav-album-ratings"
 /* Now Playing's heart click (playing_page_init binds it to img_fav with the window): stock's My
  * Fav toggled for the playing track (manage_myfav), and the heart's image with it. */
-#define FAV_CLICK ((int (*)(void *, void *))0x52b154)
+#define FAV_CLICK ((int (*)(void *, void *))0x53c968)
 
 /* The songs' table, or with album the albums'. */
 static int rate_io(int album, int write) {
@@ -138,6 +140,7 @@ static int rate_tick(const void *unused) {
 
 static int rate_tap(void *ctx, void *event);
 static int rate_out(void *ctx, void *event);
+static int rate_press(void *ctx, void *event);
 /* The picker goes down with its page or panel (Coverflow's load destroys the page's children). */
 static int rate_panel_gone(void *win, void *event) {
     if (win == st.rate_on) st.rate_on = (void *)0;
@@ -163,6 +166,7 @@ static void *rate_panel(void *win) {
         widget_set_name(out, "rate_out");
         widget_set_prop_str(out, "clickable", "true");
         widget_on(out, EVT_CLICK, rate_out, (void *)0);
+        widget_on(out, EVT_POINTER_DOWN, rate_press, (void *)0);
     }
     panel =
         text(win, (I(win, W_W) - w) / 2 - mx, (I(win, W_H) - h) / 2 - my, w + 2 * mx, h + 2 * mx);
@@ -188,6 +192,7 @@ static void *rate_panel(void *win) {
         image_set_draw_type(heart, IMAGE_DRAW_CENTER);
         widget_set_prop_str(heart, "clickable", "true");
         widget_on(heart, EVT_CLICK, rate_tap, (void *)(long)(i + 1));
+        widget_on(heart, EVT_POINTER_DOWN, rate_press, (void *)0);
     }
     widget_on(panel, EVT_DESTROY, rate_panel_gone, win);
     widget_on(win, EVT_DESTROY, rate_panel_gone, win);
@@ -253,24 +258,44 @@ static void rate_close(int save) {
     rate_badge();
 }
 
+/* A tap on the picker is a press that came down on it. The hold that opened it is still down
+ * where the picker now is, the last heart on the stock page and the first on the centred one, and
+ * its release chose that heart (#303): it never came down here, so it chooses nothing, and neither
+ * does a press within RATE_SETTLE_MS of the opening, the same finger settling. ponytail: why
+ * stock clicks a heart that saw no press is not traced (the abort in rate_long was meant to stop
+ * it); a finger that lifts and comes down again later than that is a tap. */
+#define RATE_SETTLE_MS 400
+static int rate_press(void *ctx, void *event) {
+    ra.rate_armed = !ra.rate_at || (unsigned)time_now_ms() - ra.rate_at >= RATE_SETTLE_MS;
+    return 0;
+}
+static int rate_tapped(void) {
+    int armed = ra.rate_armed;
+    ra.rate_armed = 0;
+    return armed;
+}
+/* The heart the picker opened on, tapped again, takes the rating away. */
 static int rate_tap(void *ctx, void *event) {
-    ra.rate_pick = (int)(long)ctx;
+    if (!rate_tapped()) return STOP;
+    int n = (int)(long)ctx;
+    ra.rate_pick = n == ra.rate_was ? 0 : n;
     rate_close(1);
     return STOP;
 }
 static int rate_out(void *ctx, void *event) {
-    rate_close(0);
+    if (rate_tapped()) rate_close(0);
     return STOP;
 }
 
 /* The picker over win on pick hearts, for the queue menu's album album or, with 0, the playing
  * track: the wheel moves the rating, Centre saves it and Return leaves it as it was; a tap on a
- * heart saves that many. */
+ * heart saves that many, or none on the one it opened on. */
 int rate_show(void *win, int pick, unsigned album) {
     if (!win || st.rate_on) return 0;
     st.rate_on = win;
     ra.rate_pick = ra.rate_was = pick;
     ra.rate_album = album;
+    ra.rate_armed = 0, ra.rate_at = 0;
     rate_paint();
     void *panel = rate_panel(win);
     widget_set_visible(panel, 1, 0);
@@ -304,6 +329,7 @@ int rate_key(void *top, unsigned key) {
 static int rate_long(const void *unused) {
     ra.rate_hold = 0;
     if (!pointer_down() || !(ra.rate_held = rate_open())) return 0;
+    ra.rate_at = (unsigned)time_now_ms() | 1;
     unsigned abort_event[12];
     pointer_event_init(abort_event, EVT_POINTER_ABORT, st.rate_win, 0, 0);
     widget_dispatch_event_to_target_recursive(st.rate_win, abort_event);
@@ -467,11 +493,11 @@ int ratings_menu(void *ctx, void *event) {
 
 /* The card's copy of the ratings (docs/internals.md#ratings): the tables hold only hashes, so a
  * pass reads the paths and tags back from the library, a page of rows each quiet poll on this
- * thread (demo has no busy timeout, so a worker's read lock could make stock's own My Fav writes
- * fail), and writes the card once at the end, only if the file would change; the longest copy so
- * far is kept as .1, the one way back from a lost table. ponytail: every row against every rated
- * one, as the Ratings lists do; a rating whose song or album has left the library has no name to
- * write, and stays out until it is back. */
+ * thread (stock's shared connection waits only 500 ms for a reader, so a worker's longer read lock
+ * could still make stock's own My Fav writes fail), and writes the card once at the end, only if
+ * the file would change; the longest copy so far is kept as .1, the one way back from a lost table.
+ * ponytail: every row against every rated one, as the Ratings lists do; a rating whose song or
+ * album has left the library has no name to write, and stays out until it is back. */
 #define RC_FILE "/mnt/mmc/.ratings.tsv"
 #define RC_HEADER "#song\thearts\tpath\tcue_start\n#album\thearts\tname\talbum_artist\tfolder\n"
 #define RC_PAGE 64

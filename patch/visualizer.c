@@ -247,7 +247,9 @@ static int tick(const void *unused) {
      * and the style's name has faded: one repaint puts the track's name under it, then none until it
      * plays again. */
     if (rate) vz.heard = now;
-    int still = settled() && !window_manager_get_pointer_pressed(window_manager()); /* a drag starting */
+    /* A finger resting on the page pauses nothing: under it the page drew only when something else
+     * repainted, a frame a second (#303). A drag is the page off its place, which settled() sees. */
+    int still = settled();
     halo_art(still);
     if (still && vz.quiet != (now - vz.heard > 1500 && now - vz.named > 1500 && mclGetPlayStatus() != 2)) {
         vz.quiet = !vz.quiet; /* at rest, the style's name gone: the track's name, or back */

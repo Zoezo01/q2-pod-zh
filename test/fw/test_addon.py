@@ -9,7 +9,8 @@ import pytest
 
 import host
 from conftest import O, Deques, Game, block, high_halves, libc, text
-from test_netupdate import JOB_INSTALL, Sh  # test_netupdate.py keeps netupdate.c's App Store mirror
+from test_coverflow import png  # an icon's header
+from test_netupdate import JOB_INSTALL, JOB_REMOVE, SH_CANCELLED, SH_CARD, SH_NET, SH_OK, Sh  # test_netupdate.py keeps netupdate.c's App Store mirror
 from test_radio import Rd  # test_radio.py keeps the mirror
 
 APPS_MAX = 8
@@ -280,7 +281,7 @@ def card(fw, **apps):
         names.append(b'.' + name.encode())
         files[f'/mnt/mmc/.{name}/q2app'.encode()] = manifest
         files[f'/mnt/mmc/.{name}/q2-{name}'.encode()] = b'ELF'
-        files.update({f'/mnt/mmc/.{name}/{e}'.encode(): b'' for e in extra})
+        files.update({f'/mnt/mmc/.{name}/{e}'.encode(): png(40, 40) if e.endswith('.png') else b'' for e in extra})
     return World(fw, files, {b'/mnt/mmc': names})
 
 
@@ -343,6 +344,23 @@ def test_the_longest_ids_icon_fits(fw):
     card(fw, **{i: (b'x=1\n', ['icon-40.png'])})
     scan(fw)
     assert ap(fw).a[0].icon == f'file:///mnt/mmc/.{i}/icon-40.png'.encode()
+
+
+@pytest.mark.parametrize('w,h,shown', [(40, 40, 1), (128, 128, 1), (129, 40, 0), (40, 129, 0), (4000, 4000, 0), (0, 0, 0)])
+def test_an_icon_over_art_max_is_the_shared_one(fw, w, h, shown):
+    world = card(fw, a=(b'x=1\n', ['icon-40.png']))
+    world.files[b'/mnt/mmc/.a/icon-40.png'] = png(w, h)
+    scan(fw)
+    assert ap(fw).a[0].icon == (b'file:///mnt/mmc/.a/icon-40.png' if shown else b'stream_app')
+
+
+def test_a_too_big_row_icon_falls_back_to_the_other_then_the_shared_one(fw):
+    world = card(fw, a=(b'x=1\n', ['icon-40.png', 'icon.png']), b=(b'x=1\n', ['icon.png']), c=(b'x=1\n', ['icon-40.png', 'icon.png']))
+    world.files[b'/mnt/mmc/.a/icon-40.png'] = png(4000, 4000)
+    world.files[b'/mnt/mmc/.b/icon.png'] = b'not a picture'
+    world.files[b'/mnt/mmc/.c/icon.png'] = png(4000, 4000)
+    scan(fw)
+    assert [ap(fw).a[i].icon for i in range(3)] == [b'file:///mnt/mmc/.a/icon.png', b'stream_app', b'file:///mnt/mmc/.c/icon-40.png']
 
 
 def test_a_slot_keeps_its_app_across_scans_and_an_app_gone_goes_from_the_list(fw):
@@ -438,7 +456,7 @@ def test_quit_gives_up_after_its_wait(fw):
     world = World(fw, {b'/tmp/q2-foo': b'1'})
     fw.mock('fw_usleep', lambda *_: setattr(world, 'now', world.now + 1))
     fw.fn('addon_quit', None, C.c_char_p)(b'.foo')
-    assert world.now == 1003
+    assert world.now == 1020  # QUIT_MS, 20 s
 
 
 @pytest.mark.parametrize('folder', [b'foo', b'.', b'..', b'.a;b', b".a'b", b'.' + b'a' * 16, b'', None])
@@ -1340,6 +1358,28 @@ def test_an_app_asking_to_hold_keeps_standby_and_power_off_away(fw):
     world.files[b'/tmp/q2-foo.state'] = b'hold=0\n'
     addon_poll(fw, world)
     assert a.hold == 0 and len(fw.calls('reset_poweroptions_timer')) == 1
+
+
+@pytest.mark.parametrize('job, result, kept', [(JOB_INSTALL, SH_NET, 1), (JOB_INSTALL, SH_CANCELLED, 1), (JOB_INSTALL, SH_OK, 0), (JOB_REMOVE, SH_OK, 0), (JOB_REMOVE, SH_CARD, 1)])
+def test_the_app_store_forgets_a_running_app_only_once_its_job_replaced_it(fw, job, result, kept):
+    # an update that fails or is cancelled leaves the app running: still tracked, its hold still honoured
+    world, a = running(fw, b'hold=1\n')
+    table = C.addressof(C.c_char.in_dll(fw.lib, 'shelf_apps'))
+    fw.var('shelf_n', C.c_int).value = fw.fn('shelf_sources', C.c_int, C.c_char_p, C.c_void_p, C.c_int)(b'me/foo', table, 1)
+    fw.mock('fw_pthread_create', lambda *_: 0)  # the worker not run: its end set below
+    fw.mock('timer_add', lambda *_: 1)
+    fw.fn('netupdate__sh_start', None, C.c_int, C.c_int)(job, 0)
+    addon_poll(fw, world)
+    assert a.launched == 1 and a.hold == 1  # the app runs on until the job stops it
+    a.relaunch = 1  # a remove cut off by USB storage: to start again once the card is back
+    sh = fw.var('netupdate__sh', Sh)
+    sh.running, sh.result = 0, result
+    assert fw.fn('netupdate__sh_wait', C.c_int, C.c_void_p)(None) == 0
+    assert (a.launched, a.hold, a.relaunch) == (kept, kept, kept)
+    a.relaunch = 0
+    holds = len(fw.calls('reset_poweroptions_timer'))
+    addon_poll(fw, world)
+    assert len(fw.calls('reset_poweroptions_timer')) == holds + kept
 
 
 def test_an_app_that_stopped_by_itself_is_let_go_once_its_start_is_over(fw):
@@ -3090,6 +3130,27 @@ def test_a_page_that_cant_open_leaves_nothing_behind(fw):
     assert p.pg.page == p.page and p.top.op == b'menu'
 
 
+@pytest.mark.parametrize('job,stage,running,opens', [
+    (JOB_REMOVE, 4, True, False),   # its folder being deleted
+    (JOB_INSTALL, 3, True, False),  # an update's files being moved into place
+    (JOB_INSTALL, 1, False, False),  # a download for a stopped app: launch() would be refused, a dead page
+    (JOB_INSTALL, 1, True, True),   # a download: the old app still runs, its page works
+])
+def test_a_page_the_app_store_is_replacing_waits_for_it(fw, job, stage, running, opens):
+    p = Page(fw, opens=False)
+    ap(fw).a[0].launched = int(running)
+    table = C.addressof(C.c_char.in_dll(fw.lib, 'shelf_apps'))
+    fw.var('shelf_n', C.c_int).value = fw.fn('shelf_sources', C.c_int, C.c_char_p, C.c_void_p, C.c_int)(b'me/foo', table, 1)
+    sh = fw.var('netupdate__sh', Sh)
+    sh.running, sh.job, sh.app, sh.stage = 1, job, 0, stage
+    fw.fn('addon_open', C.c_int, C.c_void_p, C.c_void_p)(0, None)
+    if opens:
+        assert p.pg.page == p.page and p.top.op == b'menu' and p.toasts == []
+    else:
+        assert not p.pg.page and not p.pg.lv and p.toasts == [b'Wait until the App Store finishes']
+    assert p.world.of('system') == []  # the app isn't started in its folder either way
+
+
 @pytest.mark.parametrize('manifest,path,logs', [
     (b'name=Foo\nscrobble=0\n', b'/mnt/mmc/.foo/a.flac', 0),
     (b'name=Foo\r\nscrobble=0\r\n', b'/mnt/mmc/.foo/a.flac', 0),  # a Windows editor's line ends
@@ -3133,6 +3194,17 @@ def test_go_to_opens_the_apps_page_at_the_song(fw):
     p = Page(fw, b'name=Foo\ngoto=1\n', opens=False)
     assert goto(fw, b'/mnt/mmc/.foo/a%b.flac') == 1
     assert p.top.op == b'goto' and p.top.args == b'\talbum\t/mnt/mmc/.foo/a%25b.flac' and p.top.title == b'T' and p.top.base == 31
+
+
+def test_go_to_during_the_apps_remove_waits_and_stock_s_go_to_doesnt_run(fw):
+    # Go to on a song of an app the App Store is removing toasts and returns 1, so stock's own Go to doesn't run
+    p = Page(fw, b'name=Foo\ngoto=1\n', opens=False)
+    table = C.addressof(C.c_char.in_dll(fw.lib, 'shelf_apps'))
+    fw.var('shelf_n', C.c_int).value = fw.fn('shelf_sources', C.c_int, C.c_char_p, C.c_void_p, C.c_int)(b'me/foo', table, 1)
+    sh = fw.var('netupdate__sh', Sh)
+    sh.running, sh.job, sh.app, sh.stage = 1, JOB_REMOVE, 0, 4
+    assert goto(fw, b'/mnt/mmc/.foo/a.flac') == 1
+    assert not p.pg.page and p.toasts == [b'Wait until the App Store finishes']
 
 
 def test_go_to_artist_with_no_title_is_titled_by_the_app(fw):
@@ -3237,6 +3309,16 @@ def test_no_code_says_why(fw, raw, say):
 def test_a_code_longer_than_its_buffer_is_cut_and_never_shown(fw):
     q = Qr(fw, qr_state(size=61, code=b'f' * (16 * 61)))
     assert not q.code and len(C.string_at(q.qp.hex)) < QR_HEX
+
+
+@pytest.mark.parametrize('state', [
+    qr_state(size=49, code=b'f' * (13 * 49)).replace(b'hold=1\n', b'') + b'hold=1\n',  # after the longest qr=
+    b'note=' + b'n' * 120 + b'\nhold=1\n',                                              # after a long note=
+])
+def test_hold_anywhere_in_the_status_file_holds(fw, state):
+    world, a = running(fw, state)
+    addon_poll(fw, world)
+    assert a.hold == 1 and [c[1][:3] for c in fw.calls('reset_poweroptions_timer')] == [(1, 1, 0)]
 
 
 def test_the_same_file_again_writes_nothing(fw):

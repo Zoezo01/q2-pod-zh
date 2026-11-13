@@ -664,6 +664,7 @@ static int show(const void *unused) {
     g->screen = g->target;
     g->picking = g->confirm = 0;
     widget_set_visible(g->list, g->screen == CHOOSER, 0);
+    widget_set_sensitive(g->list, g->screen == CHOOSER); /* hidden, its rows still took a game's taps */
     widget_set_visible(g->sheet, g->screen != CHOOSER, 0);
     if (g->screen == CHOOSER) {
         flush(1);
@@ -682,11 +683,11 @@ static void to(int screen) {
 }
 
 static int pick_game(void *ctx, void *event) {
-    to((int)(long)ctx + 1);
+    if (g->screen == CHOOSER) to((int)(long)ctx + 1);
     return 0;
 }
 static int pick_card_game(void *ctx, void *event) { /* the card's, over the whole screen */
-    addon_game_start((int)(long)ctx - 4);
+    if (g->screen == CHOOSER) addon_game_start((int)(long)ctx - 4);
     return 0;
 }
 

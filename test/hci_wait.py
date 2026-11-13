@@ -18,12 +18,12 @@ ps = symbols(out/'peq.elf')
 for (address, _), want in ((IDLE_WAIT, jal(ps['hci_idle_wait'])), (PAUSE_WAIT, jal(ps['hci_pause_wait'])),
                            (CMD_DONE, jal(ps['hci_command']))):
     assert struct.unpack_from('<I', raw, address-0x400000)[0] == want, hex(address)
-FLAG, STACK, DONE, HANDLER, MPCTX, GEN = 0xb10e34, 0x2008000, 0x2000000, 0x42be20, 0x2001000, ps['cmd_gen']
+FLAG, STACK, DONE, HANDLER, MPCTX, GEN = 0xb11e34, 0x2008000, 0x2000000, 0x42be80, 0x2001000, ps['cmd_gen']
 
 def machine_with(handler=lambda u: None):
     """The built player with a stand-in command handler, its context, and syscalls recorded."""
     u = machine(raw, DONE)
-    word(u, 0xaf9e30, MPCTX), word(u, MPCTX + 4, 2)  # paused
+    word(u, 0xafae30, MPCTX), word(u, MPCTX + 4, 2)  # paused
     seen = []
     def syscall(u, intno, unused):
         seen.append(tuple(u.reg_read(r) for r in (UC_MIPS_REG_V0, UC_MIPS_REG_A0, UC_MIPS_REG_A1, UC_MIPS_REG_A2)))
@@ -48,7 +48,7 @@ call(u, 'hci_command'); assert seen == [(4238, GEN, 129, 1), (4238, FLAG, 129, 1
 u, seen = machine_with(lambda u: word(u, MPCTX + 4, 1))
 call(u, 'hci_command'); assert seen == [(4238, GEN, 129, 1)], seen
 # Next and Stop while paused set only their flags: the paused loop is woken.
-for address in (0xb10e6c, 0xb10e70):
+for address in (0xb11e6c, 0xb11e70):
     u, seen = machine_with(lambda u: word(u, address, 1))
     call(u, 'hci_command'); assert seen == [(4238, GEN, 129, 1)], (hex(address), seen)
 # The command buffer reaches the handler.
@@ -66,7 +66,7 @@ word(u, GEN, 6); call(u, 'hci_pause_wait')  # a command while the loop checked: 
 assert seen == [(4238, GEN, 128, 5)], seen
 # A Pause undone with no PCM pause (the main thread never got there, on a double tap or inside a resume's write):
 # no resume will come, so demo's mute(2) is released here, once. After a real pause, or Pause alone, resume's to do.
-WAY, MUTED, DAC_FD, IOCTL = 0xb10e54, 0xb11584, 0xb1158c, 0xadbbb0
+WAY, MUTED, DAC_FD, IOCTL = 0xb11e54, 0xb12514, 0xb22524, 0xadc420
 def tap(state, muted=0, way=0, fd=5, then=2):
     u, seen = machine_with(lambda u: word(u, MPCTX + 4, then))
     word(u, MPCTX + 4, state), word(u, MUTED, muted), word(u, WAY, way), word(u, DAC_FD, fd)

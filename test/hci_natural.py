@@ -16,9 +16,9 @@ from hci_emu import Emu
 build = pathlib.Path(sys.argv[1]).resolve()
 player = pathlib.Path(sys.argv[2]).resolve() if len(sys.argv) > 2 else build/'peq'/'hciplayer'
 work, root, aud = build/'hci_natural', build/'hci_natural'/'root', build/'hci_natural'/'aud'
-AUTH, STOP, NEXT = 0x43084c, 0xb10e70, 0xb10de8  # the licence check; the stop flag; the preload's state
-TOUCH_NOTSUPPORT, COLD_PATH = 0x4234e8, 0x421a3c
-LAVF_CHECK, LAVF_PREFERRED, FREE_PRELOAD = 0x4ae664, 0x4af03c, 0x42a9ac  # lavf's check; from the preferred one, stock's first try; the thread's free of its context
+AUTH, STOP, NEXT = 0x430114, 0xb11e70, 0xb11de8  # the licence check; the stop flag; the preload's state
+TOUCH_NOTSUPPORT, COLD_PATH = 0x423548, 0x421a9c
+LAVF_CHECK, LAVF_PREFERRED, FREE_PRELOAD = 0x4aeb84, 0x4af55c, 0x42aa0c  # lavf's check; from the preferred one, stock's first try; the thread's free of its context
 SECONDS, RATE = 5, 44100
 N = SECONDS * RATE
 LONG_SECONDS = 10
@@ -197,11 +197,11 @@ def bad_next(name, site=None):
     """The next file opens and fails its probe: a plays to its last frame, then the player reports."""
     p = Player()
     tids, lavf, hit, forced = set(), [], [], []
-    p.e.watch_fn(0x4223c8, lambda e: tids.add(e.cur.tid))
+    p.e.watch_fn(0x422428, lambda e: tids.add(e.cur.tid))
     p.e.watch_fn(LAVF_CHECK, lambda e: lavf.append(e.cur.tid) if e.u.reg_read(UC_MIPS_REG_RA) != LAVF_PREFERRED else None)
     # either side of the thread's forced checks
-    p.e.watch_fn(0x485aec, lambda e: forced.append(e.u.reg_read(UC_MIPS_REG_S2)) if e.cur.tid != 1 else None)
-    p.e.watch_fn(0x485af4, lambda e: forced.append(e.u.reg_read(UC_MIPS_REG_S2)) if e.cur.tid != 1 else None)
+    p.e.watch_fn(0x48586c, lambda e: forced.append(e.u.reg_read(UC_MIPS_REG_S2)) if e.cur.tid != 1 else None)
+    p.e.watch_fn(0x485874, lambda e: forced.append(e.u.reg_read(UC_MIPS_REG_S2)) if e.cur.tid != 1 else None)
     if site: p.e.watch_fn(site, lambda e: hit.append(e.cur.tid))
     p.song('a.flac')
     p.run(1)
@@ -284,12 +284,12 @@ def metadata_cut():
 
 def music_info_no_stream():
     """get-music-info, on the command thread, while the main thread has no sh_audio: the no-stream reply, not a fault. The loads
-    are forced to NULL on that thread alone, since the race itself can't be timed here. Stock faults at 0x42c094, then 0x42c064."""
-    for name, load, length in ('sh_audio', 0x42c068, 1), ('mpctx after the length call', 0x42c588, 0):
+    are forced to NULL on that thread alone, since the race itself can't be timed here. Stock faults at 0x42c0f4, then 0x42c0c4."""
+    for name, load, length in ('sh_audio', 0x42c0c8, 1), ('mpctx after the length call', 0x42c5e8, 0):
         p = Player()
         p.song('a.flac')
         p.run(1)
-        if not length: p.e.w32(0xb10e84, 0)
+        if not length: p.e.w32(0xb11e84, 0)
         p.e.watch_fn(load, lambda e: e.u.reg_write(UC_MIPS_REG_V1, 0) if e.cur.tid != 1 else None)
         p.e.replies.clear()
         p.e.send_cmd('{media-info\\get-music-info}')
@@ -301,11 +301,11 @@ def music_info_no_stream():
 
 
 def eq_enable_no_stream():
-    """mcl-seteq's enable with nothing playing: no sh_audio to read. Stock faults at 0x42cec4 or 0x42cec8. A song then plays."""
+    """mcl-seteq's enable with nothing playing: no sh_audio to read. Stock faults at 0x42cf24 or 0x42cf28. A song then plays."""
     p = Player()
     p.eq()
     p.run(0.2)
-    check(p.e.r32(0xb10e08) == 2, f'EQ enable, no stream: state {p.e.r32(0xb10e08)}')
+    check(p.e.r32(0xb11e08) == 2, f'EQ enable, no stream: state {p.e.r32(0xb11e08)}')
     p.song('a.flac')
     p.run(1)
     check(p.frames() > 0, f'EQ enable, no stream: a song then plays, {p.frames()} frames')
@@ -486,17 +486,17 @@ def close_while_open(again):
 
 
 def iso_no_tracks():
-    """A SACD ISO with a good TOC and no tracks (0x478b40), next: the check's hooks return a TOC of our own, as making a real
+    """A SACD ISO with a good TOC and no tracks (0x4788c0), next: the check's hooks return a TOC of our own, as making a real
     one for this one branch isn't worth it. The stop stays clear, and it's reported at a's end."""
     p = Player()
     toc, area = 0x6fe00000, 0x6fe00800
     p.e.ensure(toc, 0x1000)
     p.e.w32(toc + 0x68, area)
     hit = []
-    p.e.watch_fn(0x478b40, lambda e: hit.append(e.cur.tid))
-    p.e.hook_fn(0x46a010, lambda e: toc)
-    p.e.hook_fn(0x46bd18, lambda e: 0)
-    p.e.hook_fn(0x469e90, lambda e: 0)
+    p.e.watch_fn(0x4788c0, lambda e: hit.append(e.cur.tid))
+    p.e.hook_fn(0x469d90, lambda e: toc)
+    p.e.hook_fn(0x46ba98, lambda e: 0)
+    p.e.hook_fn(0x469c10, lambda e: 0)
     p.song('a.flac')
     p.run(1)
     p.gapless('junk.iso')
@@ -662,7 +662,7 @@ def dsd():
     for name in 'whole.dsf', 'under.dsf':
         p = Player()
         muted = []
-        p.e.watch_fn(0x43b280, lambda e: muted.append((round(p.now(), 2), p.frames(), e.u.reg_read(UC_MIPS_REG_A0))))
+        p.e.watch_fn(0x43b004, lambda e: muted.append((round(p.now(), 2), p.frames(), e.u.reg_read(UC_MIPS_REG_A0))))
         p.song(name)
         p.settled(SECONDS + 3)
         print(f'     {name}: {p.frames()} frames at the end; mute helper calls (t, frames, arg) {muted[:6]}')
@@ -672,7 +672,7 @@ def dsd():
     p = Player()  # past its length, where stock mutes it: stock's store ends it, not the file's end with the clock running
     p.song('whole.dsf')
     p.run(1)
-    p.e.w32(0xb10e84, 2)
+    p.e.w32(0xb11e84, 2)
     p.settled(SECONDS + 3)
     print(f'     whole.dsf, a length of 2 s: {p.frames()} frames')
     check(p.frames() < whole * 5 // 8, f'DSD past its length ends, {p.frames()} of {whole}')
@@ -778,8 +778,8 @@ if __name__ == '__main__':
     bad_next('junk.dff')
     bad_next('junk.iso')
     bad_next('big.flac')
-    bad_next('big.aac', 0x480184)
-    bad_next('nostreams.wma', 0x4826a4)
+    bad_next('big.aac', 0x47ff04)
+    bad_next('nostreams.wma', 0x482424)
     iso_no_tracks()
     exit_apart()
     metadata_cut()

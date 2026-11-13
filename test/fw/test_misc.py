@@ -5,9 +5,12 @@ import io
 import math
 import random
 import struct
+import subprocess
 import zipfile
 
 import pytest
+from conftest import block
+from test_books import stored  # test_books.py keeps the stored-block maker
 
 CENTER, PREV, NEXT, PLAY, RETURN, BACK_BTN, FWD_BTN = 218, 172, 173, 171, 170, 222, 223
 FNV = 2166136261
@@ -164,7 +167,7 @@ def test_each_temperature_is_helland_s_black_body_fit(fw):
         green, blue = helland(k)
         assert abs((c >> 8 & 255) - green) <= 1, k
         assert abs((c & 255) - blue) <= 1, k
-        assert c >> 16 == 0xfeff, k  # red stays
+        assert c >> 16 == 0xf7ff, k  # red stays
 
 
 def test_cooler_keeps_more_of_green_and_blue(fw):
@@ -182,7 +185,7 @@ def test_each_channel_scales_rounded_and_red_is_kept(fw):
     out = warm(fw, lcd, 2000)
     gs, bs = 137, 14  # NS_WARM's
     for before, after in zip([0xff102030, 0xff000000, 0x00808080, 0x7fffffff], out):
-        assert after >> 24 == 0xfe and after >> 16 & 255 == before >> 16 & 255
+        assert after >> 24 == 0xf7 and after >> 16 & 255 == before >> 16 & 255
         assert after >> 8 & 255 == ((before >> 8 & 255) * gs + 127) // 255
         assert after & 255 == ((before & 255) * bs + 127) // 255
 
@@ -248,7 +251,7 @@ def test_night_end_warms_then_runs_stock_s(fw):
     s = ns(fw)
     s.end, s.kelvin = C.cast(stock, C.c_void_p).value, 3000
     assert fw.fn('nightshift__night_end', C.c_int, C.c_void_p)(lcd.p) == 42
-    assert seen == [(lcd.p, 0xfe)]
+    assert seen == [(lcd.p, 0xf7)]
 
 
 @pytest.mark.parametrize('on, dark, want', ((0, 0, 0), (0, 1, 0), (1, 0, 1), (1, 1, 1), (2, 0, 0), (2, 1, 1)))
@@ -438,18 +441,19 @@ def test_extensions_hostile_sweep(fw):
 CONTAINER = b'<container><rootfiles><rootfile full-path="%s" media-type="application/oebps-package+xml"/></rootfiles></container>'
 
 
-def epub(opf_path, chapters, compression=zipfile.ZIP_DEFLATED, extra=None, spine=None):
-    """chapters: (href, zip name, text). spine: the itemrefs, by default each chapter's in turn."""
+def epub(opf_path, chapters, compression=zipfile.ZIP_DEFLATED, extra=None, spine=None, container=None):
+    """chapters: (href, zip name, text). spine: the itemrefs, by default each chapter's in turn. container:
+    container.xml's bytes in place of the one naming opf_path."""
     buf = io.BytesIO()
     items = ''.join(f'<item id="c{i}" href="{href}" media-type="application/xhtml+xml"/>' for i, (href, _, _) in enumerate(chapters))
     refs = ''.join(f'<itemref idref="c{i}"/>' for i in range(len(chapters))) if spine is None else spine
     opf = f'<package><manifest>{items}</manifest><spine>{refs}</spine></package>'
     with zipfile.ZipFile(buf, 'w', compression) as z:
         z.writestr('mimetype', 'application/epub+zip')
-        z.writestr('META-INF/container.xml', CONTAINER % opf_path.encode())
+        z.writestr('META-INF/container.xml', container or CONTAINER % opf_path.encode())
         z.writestr(opf_path, opf)
         for _, name, text in chapters:
-            z.writestr(name, f'<html><body><p>{text}</p></body></html>')
+            z.writestr(name, text if isinstance(text, bytes) else f'<html><body><p>{text}</p></body></html>')
         for name, data in (extra or {}).items():
             z.writestr(name, data)
     return buf.getvalue()
@@ -548,6 +552,92 @@ def test_cancel_stops_with_nothing(fw):
 @pytest.mark.parametrize('data', (b'', b'PK', b'not a zip at all' * 20, b'PK\x05\x06' + bytes(18)))
 def test_what_is_no_zip_is_no_book(fw, data):
     assert convert(fw, data)[0] == 0
+
+
+CD_MAX, ITEM_MAX, META_MAX, BOOK_MAX = 2 << 20, 8 << 20, 1 << 20, 64 << 20  # books.c's
+ONE = [('a.xhtml', 'a.xhtml', 'One')]
+
+
+def end_record(data):
+    return data.rindex(b'PK\x05\x06')
+
+
+def central(data, name):
+    """name's central-directory record: its last occurrence is the record's name, 46 bytes in."""
+    return data.rindex(name) - 46
+
+
+def patch(data, at, raw):
+    return data[:at] + raw + data[at + len(raw):]
+
+
+def padded_cd(size):
+    """A one-chapter book whose central directory is size bytes: zeros after its last record, where zip_read stops."""
+    data = epub('c.opf', ONE)
+    end = end_record(data)
+    pad = size - struct.unpack_from('<I', data, end + 12)[0]
+    return patch(data[:end] + bytes(pad) + data[end:], end + pad + 12, struct.pack('<I', size))
+
+
+XML = CONTAINER % b'c.opf'
+
+
+CHAPTER = b'<html><body><p>One</p></body></html>'
+
+
+def packed_chapter(packed):
+    """A one-chapter book whose chapter is packed bytes of hand-made stored blocks: 128 of at most 65535 bytes, 5 bytes
+    over each, so its size, packed - 640, is under ITEM_MAX and only the packed size is at the limit."""
+    size = packed - 640
+    doc = CHAPTER.ljust(size)
+    data = epub('c.opf', [('a.xhtml', 'a.xhtml', b''.join(stored(doc[k:k + 65535], k + 65535 >= size)
+                                                          for k in range(0, size, 65535)))], zipfile.ZIP_STORED)
+    at = central(data, b'a.xhtml')  # zip_read takes the method and both sizes from this record only
+    return patch(patch(data, at + 10, b'\x08\x00'), at + 24, struct.pack('<I', size))
+
+
+def test_a_central_directory_of_2_mb_is_read_and_one_byte_more_refused(fw):
+    assert convert(fw, padded_cd(CD_MAX)) == (1, b'One')
+    assert convert(fw, padded_cd(CD_MAX + 1))[0] == 0
+
+
+def test_a_chapter_of_8_mb_is_read_and_one_byte_more_refused(fw):
+    assert convert(fw, epub('c.opf', [('a.xhtml', 'a.xhtml', CHAPTER.ljust(ITEM_MAX))])) == (1, b'One')
+    assert convert(fw, epub('c.opf', [('a.xhtml', 'a.xhtml', CHAPTER.ljust(ITEM_MAX + 1))]))[0] == 0  # packed far under
+
+
+def test_a_chapter_packed_to_8_mb_is_read_and_one_byte_more_refused(fw):
+    assert convert(fw, packed_chapter(ITEM_MAX)) == (1, b'One')
+    assert convert(fw, packed_chapter(ITEM_MAX + 1))[0] == 0
+
+
+def test_the_container_and_the_opf_stop_at_1_mb(fw):
+    """Both stay held while a chapter is unpacked, so each has a cap of its own (GHSA-65pf-59mx-4gmw)."""
+    assert convert(fw, epub('c.opf', ONE, container=XML.ljust(META_MAX))) == (1, b'One')
+    assert convert(fw, epub('c.opf', ONE, container=XML.ljust(META_MAX + 1)))[0] == 0
+    assert convert(fw, epub('c.opf', ONE, spine='<itemref idref="c0"/>'.ljust(META_MAX - 140))) == (1, b'One')
+    assert convert(fw, epub('c.opf', ONE, spine='<itemref idref="c0"/>'.ljust(META_MAX)))[0] == 0
+
+
+def test_a_spine_naming_one_chapter_over_and_over_stops_at_64_mb(fw):
+    """Each itemref unpacks its document again, so a few KB could write gigabytes to the card (GHSA-c4pm-qc4f-fmqx):
+    the book stops at BOOK_MAX unpacked, keeping what came before."""
+    book = epub('c.opf', [('a.xhtml', 'a.xhtml', CHAPTER.ljust(1 << 20))], spine='<itemref idref="c0"/>' * 1000)
+    assert convert(fw, book) == (1, b'\f\n'.join([b'One'] * (BOOK_MAX >> 20)))
+
+
+def test_an_encrypted_entry_is_refused(fw):
+    data = epub('c.opf', ONE)
+    at = central(data, b'META-INF/container.xml') + 8
+    assert convert(fw, data)[0] == 1
+    assert convert(fw, patch(data, at, bytes([data[at] | 1])))[0] == 0  # the flags' bit 0
+
+
+def test_zip64_sizes_are_refused(fw):
+    """ZIP64 marks a size it moved to an extra field 0xffffffff, which ITEM_MAX refuses: zip_read has no ZIP64 check of
+    its own."""
+    data = epub('c.opf', ONE)
+    assert convert(fw, patch(data, central(data, b'META-INF/container.xml') + 20, b'\xff' * 8))[0] == 0
 
 
 def test_no_container_or_no_full_path_is_no_book(fw):
@@ -1136,8 +1226,8 @@ def test_play_flips_the_pause_at_once(fw):
 
 class Xf(C.Structure):
     _fields_ = [*((k, C.c_int) for k in 'read on seconds done'.split()), ('key', C.c_int * 8),
-                *((k, C.c_int) for k in 'stops counted ctx sliding unsaved setting rs_read rs_min mono_read mono swap_read swap mqa_read mqa'.split()),
-                *((k, C.c_void_p) for k in 'flag mono_flag swap_flag press_file mute_file swap_label mqa_label mono_label page sw view slider dec add label'.split()),
+                *((k, C.c_int) for k in 'stops counted ctx sliding unsaved setting rs_read rs_min mono_read mono swap_read swap'.split()),
+                *((k, C.c_void_p) for k in 'flag mono_flag swap_flag press_file mute_file swap_label mono_label page sw view slider dec add label'.split()),
                 ('press', C.c_uint), ('press_at', C.c_uint)]
 
 
@@ -2241,7 +2331,7 @@ def test_a_touch_on_the_buttons_takes_the_nearest(fw, x, focus):
 # Up Next
 
 class Un(C.Structure):
-    _fields_ = [('page', C.c_void_p), ('idx', C.c_uint * 100), ('view', C.c_void_p), ('n', C.c_uint), ('hash', C.c_uint), ('row', C.c_uint)]
+    _fields_ = [('page', C.c_void_p), ('idx', C.c_uint * 500), ('view', C.c_void_p), ('n', C.c_uint), ('hash', C.c_uint), ('row', C.c_uint)]
 
 
 def un(fw):
@@ -2264,6 +2354,17 @@ def test_a_row_plays_its_track_only_while_the_queue_holds_it(fw, at, size, plays
     assert fw.fn('upnext__un_play', C.c_int, C.c_void_p, C.c_void_p)(3, None) == 0
     assert [c[1][0] for c in fw.calls('player_start_queue')] == ([at] if plays else [])
     assert fw.calls('navigator_back')
+
+
+def test_a_row_starts_nothing_while_headphones_are_required_and_absent(fw):
+    """As stock's queue row: its check (it toasts) comes before the start."""
+    u = un(fw)
+    u.idx[3] = 7
+    fw.var('fw_ctx_mcl_pdeqplaylist', C.c_uint).value = 0x5000
+    fw.mock('fw_deque_size', lambda *_: 8)
+    fw.mock('check_forbid_play_no_headset', lambda *_: 1)
+    fw.fn('upnext__un_play', C.c_int, C.c_void_p, C.c_void_p)(3, None)
+    assert not fw.calls('player_start_queue') and fw.calls('navigator_back')
 
 
 def test_a_row_with_no_queue_only_closes(fw):
@@ -2315,3 +2416,18 @@ def test_a_hold_that_can_t_arm_its_timer_is_stock_s(fw):
     u.page, u.row = 0x7000, 9
     fw.mock('widget_get_prop_int', lambda *_: 4)
     assert fw.fn('un_hold', C.c_int, C.c_void_p)(0x7000) == 0 and u.row == 9
+
+
+def test_a_folder_s_delete_removes_that_folder_alone_whatever_its_name(fw, tmp_path):
+    """ringnav_folder_rm as remove_file calls it, its command run by /bin/sh: $, backticks and ' stay the name's."""
+    rm = fw.fn('ringnav_folder_rm', C.c_int, C.c_void_p, C.c_uint, C.c_char_p, C.c_char_p)
+    for name in ('$NOT', "Guns N' Roses", 'x$(touch p)`touch q`'):
+        (tmp_path/'Music'/name/'CD1').mkdir(parents=True)
+        (tmp_path/'Music'/'kept').mkdir(exist_ok=True)
+        cmd = block(fw, size=0x61b)
+        rm(cmd, 0x61b, b'rm -rf "%s"', str(tmp_path/'Music'/name).encode())
+        subprocess.run(['sh', '-c', C.string_at(cmd).decode()], cwd=tmp_path, check=True)
+        assert sorted(p.name for p in tmp_path.rglob('*')) == ['Music', 'kept']
+    cmd = block(fw, size=25)  # exactly the command and its NUL
+    assert rm(cmd, 25, b'', b"/mnt/mmc/a'b") == 24 and C.string_at(cmd) == b"rm -rf '/mnt/mmc/a'\\''b'"
+    assert rm(cmd, 24, b'', b"/mnt/mmc/a'b") == 1 and C.string_at(cmd) == b':'  # a byte short: removes nothing

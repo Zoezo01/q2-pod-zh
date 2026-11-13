@@ -17,14 +17,14 @@
 - The original stock ZIP. Its SHA-256 is:
 
 ```text
-154c17822d09be001be35c03d2d3488424dee195221790bd70864480d55b0f00
+4e298cab6c12d86cfc55565645f7e3ae11d3fb44677a93ca13991e7184ecec4e
 ```
 
 ## Build
 
 ```sh
-python3 tools/build.py 'Q2 Firmware V1.32.zip' --out /tmp/q2-build                 # release build
-python3 tools/build.py 'Q2 Firmware V1.32.zip' --out /tmp/q2-dev --dev             # test build
+python3 tools/build.py 'Q2 Firmware V1.36.zip' --out /tmp/q2-build                 # release build
+python3 tools/build.py 'Q2 Firmware V1.36.zip' --out /tmp/q2-dev --dev             # test build
 ```
 
 Rebuilt firmware uses `assets/boot-logo.jpg` as the boot splash. Pass another 320x375 JPEG with `--logo` to use your own; see [boot.md](boot.md#custom-boot-logo).
@@ -39,20 +39,20 @@ buffer limits are unchanged. See
 [audio-notifier.md](audio-notifier.md) for the exact scope.
 
 ```sh
-python3 tools/build.py 'Q2 Firmware V1.32.zip' --out /tmp/q2-notifier --dev --aic-idle-wait
+python3 tools/build.py 'Q2 Firmware V1.36.zip' --out /tmp/q2-notifier --dev --aic-idle-wait
 ```
 
 ### FLAC fast paths
 
-On by default: `--flac-experiments sync,lpc,output` (all three). Pass a subset to build only some, or `--flac-experiments ""` for the stock decoder paths. Each is checked against the pinned V1.32 player.
+On by default: `--flac-experiments sync,lpc,output` (all three). Pass a subset to build only some, or `--flac-experiments ""` for the stock decoder paths. Each is checked against the pinned V1.36 player.
 
 ### Versioning
 
-The updater refuses only a firmware whose version literal is identical to the installed one (`update_firmware`, `0x4f8440`; the online check `check_otginfo`, `0x4f8968`). So each build carries a 5-character tag, `VERSION` (`x.y.z`, single digits) packed as `V<xyz>I`. For example, 1.0.0 is `V100I`. The mod installs over stock and over any other build, and stock V1.32 installs back over it.
+The updater refuses only a firmware whose version literal is identical to the installed one (`update_firmware`, `0x502bd0`; the online check `check_otginfo`, `0x5030f8`). So each build carries a 5-character tag, `VERSION` (`x.y.z`, single digits) and `BETA` (a pre-release's beta number, 0 for the release) packed as `V<xyz><beta>`; a release build stops unless both are single digits. For example, 1.8.0 beta 2 is `V1802` and 1.8.0 is `V1800`, so each beta and then the release installs over the one before. Releases up to 1.8.0 BETA were packed as `V<xyz>I` (1.0.0 was `V100I`). The mod installs over stock and over any other build, and stock V1.36 installs back over it.
 
-About's **FW. Version** row reads the same literal, so it shows the stock firmware's version (`STOCK_VERSION`, from the stock `firmware_v20.info`). A **CFW. Version** row below it shows `<version> Pod`, plus ` dev N` in `--dev` builds. Release tags use the plain version (`1.0.0`); releases up to 1.0 were `V`-prefixed. Each release carries `update.tar`.
+About's **FW. Version** row reads the same literal, so it shows the stock firmware's version (`STOCK_VERSION`, from the stock `firmware_v20.info`). A **CFW. Version** row below it shows `<version> Pod`, plus ` beta N` in a beta, or ` dev N` in `--dev` builds. Release tags use the plain version (`1.0.0`); releases up to 1.0 were `V`-prefixed. Each release carries `update.tar`.
 
-`--dev` numbers each test build from the untracked `.build-number` and tags it `V` plus that number in three base-36 digits, then `i` (`V001i`, `V002i` … `VZZZi`). No two test builds share a tag, and none equals a release's, so the updater installs each test build over the last and the release over any of them. `--dev` applies to that build only: the release procedure never passes it, and the manifest records the build number as `dev` (`false` otherwise).
+`--dev` numbers each test build one past the untracked `.build-number` and the `build-number` in the git directory that every worktree of the checkout shares, and tags it `V` plus that number in three base-36 digits, then `i` (`V001i`, `V002i` … `VZZZi`). No two test builds from one repository's worktrees share a tag (a separate clone counts on its own), and none equals a release's, so the updater installs each test build over the last and the release over any of them. `--dev` applies to that build only: the release procedure never passes it, and the manifest records the build number as `dev` (`false` otherwise).
 
 `--update-repo OWNER/NAME` points **Network Update** at another GitHub repo's latest release, so a fork's test builds update from the fork's own releases. It defaults to `DiamondBond/q2-pod`, so a build without it is unchanged. The manifest records it as `update_repo`, and `tools/release.py` refuses a build that points anywhere else.
 
@@ -77,15 +77,15 @@ python3 test/mp3.py                        # native Xing seek bounds, CRC and tr
 python3 test/mp3_gapless.py                # gapless parser/PCM and generated LAME/FFmpeg comparisons (cc, lame, ffmpeg, pkg-config, libavcodec/libavutil/libmad development files)
 python3 test/mp3_gapless_player.py BUILD   # the built gapless hooks, then stock's demuxer and libmad under Unicorn on generated files (lame, unsquashfs, readelf)
 python3 test/build.py                      # JPEG headers, dev tags, and the boot scripts (S90play's dual boot and crash log, S11logo's splash) under the host sh; no ZIP or emulator
-python3 test/build.py 'Q2 Firmware V1.32.zip'   # packaging checks (custom logo, quoted paths)
+python3 test/build.py 'Q2 Firmware V1.36.zip'   # packaging checks (custom logo, quoted paths)
 python3 test/build.py --build BUILD         # a finished build's payloads and packaging
 python3 test/aic.py STOCKFS               # stopped audio notifier: actual MIPS hooks and modeled wait races
 python3 test/aic_build.py STOCKFS BUILD    # notifier development guard, ABI, default/experimental packaging
 python3 test/remote.py                     # q2remote protocol, auth, event and framebuffer checks
 python3 test/rotator.py STOCK_MODULE        # actual MIPS rotator clock ownership and failure paths
 python3 test/rotator_build.py [BUILD...]    # dev-only guard (no build needed); given builds, packed/default module isolation
-python3 test/playback.py /tmp/q2-build     # grouped traversal, snapshots and the wheel's ticks
-python3 test/patch.py /tmp/q2-build        # the patched MIPS payload, wheel and UI scenarios
+python3 test/playback.py /tmp/q2-build     # grouped traversal, snapshots and the wheel's ticks (cc)
+python3 test/patch.py /tmp/q2-build        # the patched MIPS payload, wheel and UI scenarios (cc)
 python3 test/chapters.py                   # embedded chapter parsing, both MP4 formats and async extraction
 python3 test/m4b.py /tmp/q2-build          # native TagLib M4B/MP4 metadata dispatch
 python3 test/id3.py /tmp/q2-build          # the built player's MP3 ReplayGain on ID3v2.3/2.4 tags
@@ -97,7 +97,7 @@ python3 test/hci_natural.py /tmp/q2-build   # natural changes in the real player
 python3 test/player_seam.py /tmp/q2-build   # AAC, Opus and Vorbis gapless trims in the real player, each format's seam and each wrong tag against stock (ffmpeg, unsquashfs)
 python3 test/mp3_gapless_player.py /tmp/q2-build  # built MIPS gapless hooks, preload isolation, seeks and cleanup
 python3 test/ldac.py /tmp/q2-build         # shipped LDAC intermediate rates and native adaptive controller
-python3 test/headset_io.py /tmp/q2-build   # real MIPS headset worker with simulated kernel I/O
+python3 test/headset_io.py /tmp/q2-build   # real MIPS headset worker with simulated kernel I/O (cc)
 python3 test/bluealsa.py /tmp/q2-build     # the patched bluealsa's DROP paths against stock's, delayed encoder signal
 python3 test/alsa.py BUILD QEMU_MIPSEL     # ALSA startup lock regression (see internals.md)
 python3 test/ui_preview.py BEFORE AFTER OUT_DIR  # not a test: side-by-side iPod layout review sheets of two builds (or one build's two themes; --themes, ImageMagick)
@@ -106,6 +106,7 @@ python3 -m pytest test/fw --basetemp ~/.cache/q2-pytest/fw  # the firmware's C o
 ```
 
 - **MIPS suite:** `test/patch.py` executes the actual patched payload and the stock key and touch filters under Unicorn. UI services are mocked; the one other mocked boundary is the `system()` call that Key Tone uses to click the speaker. Case coverage lives in `test/patch.py`. Run the payload, headset worker, metadata dispatch and packaging checks for both Stock and iPod builds.
+- **Where a machine's hook runs:** `Machine.hook` (the mocks, and what a test's subclass adds) is Python, so Unicorn does not call it at every instruction: a small C filter, compiled as the suite starts (`cc`), calls it at each symbol's address, at each address a mock is set at and anywhere in the mocks' own region (`0x1000000` up). A hook that tests any other address itself (a place inside a stock function) names it first with `watch(address)`, or is never called there. `test/playback.py` and `test/headset_io.py` run the same machine.
 - **Draw-call trace:** `Q2_TRACE=FILE python3 test/patch.py BUILD` also writes every draw and widget-property call, each hook's return and each passed case to FILE, by value: payload addresses appear as symbol names (or `P`), stack ones as `S`. Two builds that draw the same give byte-identical files, so `cmp` checks a refactor that should change nothing on screen.
 - **Known gap:** the stock rounded vgcanvas branch can't run end to end under Unicorn 2.1.4. Stock is built `-mfp64`, and Unicorn's MIPS32 FPU only implements `FR=0`, so its 64-bit conversions trap. The test runs the branch up to that instruction and asserts the calls before it.
 - **Reproducibility:** two fresh builds must produce identical `update.tar` files. Packaging verifies MD5 entries, unchanged kernel and rootfs metadata, and a rootfs no larger than stock.
@@ -207,7 +208,7 @@ All 13,658 took 38 minutes one file after another, pinned with `CMUT_CPUS` to fo
 
 The order for the rest:
 
-1. The rest of `test/fw`'s files, by size: `navigation.c` and `playback.c` among them. `test/patch.py` takes about 6 minutes a run and needs a stock build, so it can't run per mutant in public CI.
+1. The rest of `test/fw`'s files, by size: `navigation.c` and `playback.c` among them. `test/patch.py` takes about 3.5 minutes a run and needs a stock build, so it can't run per mutant in public CI.
 2. `coverflow.c` and the `peq*` files, through `test/coverflow.py` and `test/peq.py`, which need the 32-bit libraries.
 
 ## Coverage

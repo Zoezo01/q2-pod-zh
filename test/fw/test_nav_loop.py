@@ -275,13 +275,23 @@ def test_jpeg_size_agrees_with_the_builders_check(fw):
 
 
 class Card(Files):
-    """The card and flash as files, access() too; ffmpeg as a child that writes rot (or fails)."""
+    """The card and flash as files, access() and stat() too (o32: size word 12, mtime word 16); ffmpeg as a child
+    that writes rot (or fails)."""
     def __init__(self, fw, files=None):
         super().__init__(fw, files)
-        self.rot, self.status, self.pid = None, 0, 4321
+        self.rot, self.status, self.pid, self.mtime = None, 0, 4321, {}
         fw.mock('fw_access', lambda path, *_: 0 if C.string_at(path).decode() in self.files else -1)
+        fw.mock('fw___xstat', self.stat)
         fw.mock('fw_fork', lambda *_: self.pid)
         fw.mock('fw_waitpid', self.wait)
+
+    def stat(self, version, path, info, *_):
+        path = C.string_at(path).decode()
+        if path not in self.files:
+            return -1
+        words = (C.c_uint * 36).from_address(info)
+        words[12], words[16] = len(self.files[path]), self.mtime.get(path, 1)
+        return 0
 
     def wait(self, pid, status, *_):
         if self.rot is not None:
@@ -472,6 +482,75 @@ def test_the_syncs_failure_is_toasted_once(fw, power):
     clock.now += 1
     logo_poll(fw)
     assert seen == [C.string_at(err)] and not power('logo_err', C.c_void_p).value
+
+
+LOGO_BAD = 'Boot logo must be a 320x375 JPEG'
+
+
+def power_on(fw, power, clock):
+    """A power-on's polls, lit with the card mounted: what was toasted. A toast's dialog runs the UI loop, which polls
+    again inside it, so a message still set would toast inside its own toast: three levels are run, not for ever."""
+    for field in ('logo_at', 'logo_mounted'):
+        power(field).value = 0  # a fresh boot's state (.scratch starts zeroed)
+    seen, depth = [], [0]
+    def toast(name, info, *_):
+        seen.append(C.string_at(info + 8).decode())
+        if depth[0] < 3:
+            depth[0] += 1
+            clock.now += O['CHARGE_POLL_MS']
+            logo_poll(fw)
+            depth[0] -= 1
+        return 0
+    fw.mock('navigator_to_with_context', toast)
+    for _ in range(4):
+        clock.now += O['CHARGE_POLL_MS']
+        logo_poll(fw)
+    return seen
+
+
+# an invalid card logo: its message once, boot goes on (a detached thread), the old logo kept; each later power-on
+# with the same file says nothing, and a changed file is reported again
+def test_an_invalid_card_logo_says_so_once_and_boot_goes_on(fw, power):
+    clock = Clock(fw)
+    old = jpeg(320, 375, tag=b'old')
+    card = Card(fw, {LOGO_SRC: jpeg(640, 480), LOGO_DST: old})
+    mounts = Mounts(fw, card)
+    fw.var('g_backlight_status', C.c_ubyte).value = 1
+    for boot in range(3):
+        assert power_on(fw, power, clock) == ([LOGO_BAD] if boot == 0 else []), boot  # once, not each power-on
+        assert card.files[LOGO_DST] == old and power('logo_busy').value == 0 and not power('logo_err', C.c_void_p).value
+    assert len(mounts.started) == 3 and len(fw.calls('fw_pthread_detach')) == 3  # one sync a power-on, detached
+    card.mtime[LOGO_SRC] = 2  # saved again: another file
+    assert power_on(fw, power, clock) == [LOGO_BAD] and power_on(fw, power, clock) == []
+
+
+# a stat that fails (the card pulled) records nothing: the file is reported at each power-on, never filed as {0, 0}
+def test_a_failed_stat_records_nothing(fw, power):
+    clock = Clock(fw)
+    card = Card(fw, {LOGO_SRC: jpeg(640, 480)})
+    Mounts(fw, card)
+    fw.mock('fw___xstat', lambda *_: -1)
+    fw.var('g_backlight_status', C.c_ubyte).value = 1
+    assert [power_on(fw, power, clock) for _ in range(2)] == [[LOGO_BAD]] * 2
+    assert '/mnt/data/boot-logo.bad' not in card.files
+
+
+# a good logo or none at a power-on between forgets the refused file: the same bad file put back is reported again
+@pytest.mark.parametrize('between', [jpeg(320, 375), None], ids=['good', 'none'])
+def test_a_good_logo_or_none_between_lets_the_bad_one_be_reported_again(fw, power, between):
+    clock = Clock(fw)
+    bad = jpeg(640, 480)
+    card = Card(fw, {LOGO_SRC: bad})
+    Mounts(fw, card)
+    fw.var('g_backlight_status', C.c_ubyte).value = 1
+    assert power_on(fw, power, clock) == [LOGO_BAD]
+    if between is None:
+        del card.files[LOGO_SRC]
+    else:
+        card.files[LOGO_SRC] = between
+    assert power_on(fw, power, clock) == []
+    card.files[LOGO_SRC] = bad
+    assert power_on(fw, power, clock) == [LOGO_BAD]
 
 
 @pytest.mark.parametrize('mounts, mounted', [(b'/dev/mmcblk0p1 /mnt/mmc vfat rw 0 0\n', 1), (b'/dev/sda1 /mnt/mmc2 vfat rw 0 0\n', 0),
@@ -980,7 +1059,7 @@ def test_the_headsets_level_is_read_at_its_pace(fw, lit, failed, limit, gap):
 
 @pytest.mark.parametrize('limit, want', [(100, reads_as(100)), (60, 60)])
 def test_the_headsets_own_keys_move_the_q2s_volume_to_the_limit(fw, stock_bytes, limit, want):
-    level = stock_bytes(0xa38c41, 1)  # stock responseSetVolume's level
+    level = stock_bytes(0xa4cbb5, 1)  # stock responseSetVolume's level
     vol = VolPoll(fw, limit=limit, volume=40)
     vol.headset.level = 100
     vol.poll()
@@ -990,7 +1069,7 @@ def test_the_headsets_own_keys_move_the_q2s_volume_to_the_limit(fw, stock_bytes,
 
 
 def test_the_volume_dialogs_slider_follows_the_headset(fw, stock_bytes):
-    stock_bytes(0xa38c41, 1)
+    stock_bytes(0xa4cbb5, 1)
     vol = VolPoll(fw, volume=40)
     name = C.create_string_buffer(b'volume_dialog')
     fw.mock('window_manager_get_top_window', lambda *_: 0x5100)
@@ -1166,9 +1245,10 @@ def test_no_window_manager_is_stocks_bad_params(fw):
 # Key Tone (buzzeer_switch).
 class Buzzer:
     """pthread_create runs the click's worker at once, or leaves it running, or fails."""
-    def __init__(self, fw, mode='run'):
+    def __init__(self, fw, mode='run', lit=True):
         self.mode = mode
         fw.var('g_keytone_flag', C.c_ubyte).value = 1
+        fw.var('g_backlight_status', C.c_ubyte).value = lit
         fw.mock('fw_pthread_create', self.create)
         self.click = fw.fn('ringnav_buzzer', C.c_int, C.c_int)
         self.fw = fw
@@ -1583,15 +1663,49 @@ def test_a_tick_while_a_page_slides_is_held_and_replayed(fw, keys):
     assert ui.fire(timer=timers[0]) == 0 and sv.ints[SEL] == 2 and not ui.due('navigation__replay_wheel')
 
 
-def test_a_reversal_cancels_held_ticks(fw, keys):
+def test_a_reversal_drops_the_held_ticks(fw, keys, st):
     ui = Ui(fw)
-    sv = list_page(ui)
+    sv = list_page(ui, rows=40)
     select(fw, sv, 2)
     ui.animating = 1
-    keys(KEY_NEXT), keys(KEY_PREV, 10)
+    for _ in range(O['HOLD_MAX']):
+        keys(KEY_NEXT, 5)
+    keys(KEY_PREV, 5)  # one tick back drops them all, not one of them, and is dropped itself
+    assert st('held').value == 0
     ui.animating = 0
-    ui.fire('navigation__replay_wheel')
+    keys.clock.now += 50
+    while ui.due('navigation__replay_wheel'):
+        ui.fire('navigation__replay_wheel')
     assert sv.ints[SEL] == 2
+
+
+def test_a_reversal_after_the_slide_drops_the_ticks_still_replaying(fw, keys):
+    ui = Ui(fw)
+    sv = list_page(ui, rows=40)
+    select(fw, sv, 5)
+    ui.animating = 1
+    for _ in range(3):
+        keys(KEY_NEXT, 5)
+    ui.animating = 0
+    keys(KEY_PREV, 5)  # the page is ready, its replay not yet run: the tick back drops the turn
+    keys.clock.now += 50
+    while ui.due('navigation__replay_wheel'):
+        ui.fire('navigation__replay_wheel')
+    assert sv.ints[SEL] == 5
+
+
+def test_hold_max_ticks_all_play_into_a_list_that_loads_late(fw, keys, st):
+    ui = Ui(fw)
+    ui.window('sysset_page')  # its list not built yet
+    for _ in range(O['HOLD_MAX']):
+        keys(KEY_NEXT, 5)
+    ui.fire('navigation__replay_wheel')  # a poll before the list is built holds its tick again
+    assert st('held').value == O['HOLD_MAX']
+    sv = list_page(ui, rows=40)
+    select(fw, sv, 0)
+    while ui.due('navigation__replay_wheel'):
+        ui.fire('navigation__replay_wheel')
+    assert sv.ints[SEL] == O['HOLD_MAX']
 
 
 def test_held_ticks_too_old_are_dropped(fw, keys):
@@ -2017,8 +2131,6 @@ def test_the_side_buttons_step_between_fields_and_ok(fw, keys):
     assert not fw.calls('stock_keyup_trampoline')  # not stock's track skip
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: field_key's cancel_center() stops a list row's pending Centre (st.center_timer), "
-                   "not the editor's (st.edit_press), so a Centre pressed just before a side button still steps the field")
 def test_a_side_button_drops_a_pending_centre(fw, keys):
     ui = Ui(fw)
     top = time_window(ui)
@@ -2052,6 +2164,22 @@ def test_the_sleep_timers_two_fields(fw, keys):
     centre(ui, keys)
     centre(ui, keys)
     assert ui.clicks == [(b'btn_enter', EVT_CLICK)]
+
+
+def test_a_side_button_onto_the_sleep_timers_ok_drops_a_pending_centre(fw, keys):
+    ui = Ui(fw)
+    top = time_window(ui, 'sleepshutdown_page')
+    top.find(b'time').add(W(ui, 'view', 'view_sleep'))
+    top.ints[b'_edit_field'] = 1  # the minute, its last field
+    keys(KEY_CENTER)
+    keys(KEY_FWD_BTN, 10)
+    assert field(top) == 2  # OK is next
+    keys.clock.now += O['DOUBLE_CLICK_MS']
+    for timer in ui.due('navigation__edit_single'):
+        ui.fire(timer=timer)
+    assert field(top) == 2 and ui.clicks == []  # the Centre from before the key doesn't press it
+    centre(ui, keys)
+    assert ui.clicks == [(b'btn_enter', EVT_CLICK)]  # a Centre of its own does
 
 
 def no_toolbar(fw, st):
@@ -2412,6 +2540,93 @@ def test_dark_but_busy_the_loop_idles_short(fw, stock_bytes, st, why):
     assert loop() == [O['SCREEN_OFF_SLEEP_MS']] and loop.dark_quiet() == 0
 
 
+def test_a_dark_wheel_turn_keeps_stocks_pace(fw, stock_bytes, st):
+    loop = Loop(fw, stock_bytes, lit=False)
+    st('tick_at', C.c_uint).value = loop.clock.now  # tick_gate's stamp, this very millisecond
+    assert loop() == [] and loop.dark_quiet() == 1
+    assert loop(O['DARK_TURN_MS'] - 1) == []
+    assert loop(1) == [O['DARK_IDLE_SLEEP_MS']]
+
+
+def test_dark_a_pass_clicks_once(fw, stock_bytes):
+    loop, buzzer = Loop(fw, stock_bytes, lit=False), Buzzer(fw, lit=False)
+    buzzer.click(1), buzzer.click(1)  # two ticks one idle slept through
+    assert buzzer.clicks() == [1]
+    loop()
+    buzzer.click(1)
+    assert buzzer.clicks() == [1, 1]
+
+
+def test_a_dark_click_that_cant_start_leaves_the_pass_its_click(fw, stock_bytes):
+    Loop(fw, stock_bytes, lit=False)
+    buzzer = Buzzer(fw, 'fail', lit=False)
+    buzzer.click(1)
+    buzzer.mode = 'run'
+    buzzer.click(1)
+    assert buzzer.clicks() == [1]
+
+
+class QuickHold:
+    """Return's hold (compact_now_playing) with Quick Settings pulled down over the loop's page."""
+    def __init__(self, fw, loop):
+        self.fw, self.loop, self.opened = fw, loop, []
+        Config(fw)
+        self.quick = loop.ui.window('statusbar_dialog', 'dialog')
+        fw.mock('navigator_switch_to_with_context', lambda name, *_: self.opened.append(C.string_at(name)) and 0)
+        assert fw.fn('compact_now_playing', C.c_int)() == 0
+        assert [c[1][0] for c in fw.calls('dialog_quit')] == [self.quick.p] and self.opened == []
+
+    def close(self):
+        self.loop.ui.top = self.loop.page  # the dialog's own idle closed it
+
+
+def test_a_held_return_over_quick_settings_closes_it_then_acts_on_the_page_under(fw, stock_bytes, st):
+    loop = Loop(fw, stock_bytes)
+    hold = QuickHold(fw, loop)
+    loop()  # the same millisecond, the dialog still up
+    assert hold.opened == []
+    hold.close()
+    loop.ui.animating = 1
+    loop(20)
+    assert hold.opened == []  # its close still sliding
+    loop.ui.animating = 0
+    loop(20)
+    assert hold.opened == [b'playing_page'] and st('np_origin', C.c_void_p).value == loop.page.p
+    loop(20)
+    assert hold.opened == [b'playing_page'] and len(fw.calls('dialog_quit')) == 1
+
+
+def test_a_quit_that_quick_settings_refuses_is_no_hold_to_wait_for(fw, stock_bytes, st):
+    loop = Loop(fw, stock_bytes)
+    Config(fw)
+    loop.ui.window('statusbar_dialog', 'dialog')
+    fw.mock('dialog_quit', lambda *_: 0x10)  # RET_BAD_PARAMS: already quit, or not open yet
+    assert fw.fn('compact_now_playing', C.c_int)() == 0 and not st('qs_hold', C.c_uint).value
+
+
+def test_a_held_return_over_shut_down_cancels_it_and_opens_nothing(fw, stock_bytes):
+    loop = Loop(fw, stock_bytes)
+    Config(fw)
+    fw.var('g_poweroff_state', C.c_ubyte).value = 1
+    prompt = loop.ui.window('confirminfo_dialog', 'dialog')
+    opened = []
+    fw.mock('navigator_switch_to_with_context', lambda name, *_: opened.append(C.string_at(name)) and 0)
+    fw.mock('navigator_back_to_home', lambda *_: opened.append(b'home') and 0)
+    assert fw.fn('compact_now_playing', C.c_int)() == 0
+    assert [c[1][:2] for c in fw.calls('dialog_quit')] == [(prompt.p, 4)] and opened == []
+
+
+def test_a_hold_whose_quick_settings_stayed_up_is_forgotten(fw, stock_bytes, st):
+    loop = Loop(fw, stock_bytes)
+    hold = QuickHold(fw, loop)
+    loop(O['QS_HOLD_MS'] - 1)
+    assert st('qs_hold', C.c_uint).value  # still waited for
+    loop(1)
+    hold.close()
+    loop(1)
+    assert hold.opened == [] and not st('qs_hold', C.c_uint).value
+
+
 def test_the_first_lit_pass_repaints_the_whole_screen_once(fw, stock_bytes, st):
     loop = Loop(fw, stock_bytes, lit=False)
     loop()
@@ -2517,6 +2732,7 @@ def test_a_wheel_tick_needs_a_finger_on_the_ring(fw, stock_bytes, st, age, passe
     keys(DOWN, KEY_NEXT), keys(UP, KEY_NEXT, 20)
     assert keys.stock == ([(DOWN, KEY_NEXT), (UP, KEY_NEXT)] if passes else [])
     assert (st('last_input', C.c_uint).value == keys.clock.now) == passes  # a dropped tick doesn't time the idle
+    assert (st('tick_at', C.c_uint).value == keys.clock.now - 20) == passes  # nor a dark turn's pace
 
 
 def test_a_dropped_ticks_release_goes_with_it_even_once_a_finger_is_back(fw, stock_bytes):
@@ -2627,6 +2843,43 @@ def test_ticks_queued_into_a_sliding_now_playing_are_volume(fw, stock_bytes, st,
     assert fw.var('g_volume', C.c_ubyte).value == want and np.keys.stock == [] and st('held').value == 0
     assert [c[1][:2] for c in fw.calls('device_set_volume')] == ([] if want == volume else [(want, 1)])
     assert len(fw.calls('write_int_config')) == (want != volume)
+
+
+@pytest.mark.parametrize('front, y, want', [('confirminfo_dialog', 5, O['QS_PULL_Y']), ('confirminfo_dialog', 200, 200),
+                                            ('home_page', 5, 5)])
+def test_a_touch_on_a_prompt_starts_below_the_pull_downs_band(fw, stock_bytes, front, y, want):
+    """Quick Settings over Shut Down?, then Return, left the prompt up with dead buttons (#303)."""
+    ui = Ui(fw)
+    ui.window(front)
+    keys = Input(fw, stock_bytes, ui)
+    start = C.c_int.from_address(C.addressof(fw.var('fw_ctx_g_pressdown_y', C.c_char)))
+    fw.mock('stock_input_trampoline', lambda wm, e, *_: setattr(start, 'value', C.c_int.from_address(e + O['EVENT_Y']).value) or 7)
+    assert keys(O['EVT_POINTER_FIRST'], 0, y=y) == 7 and start.value == want
+
+
+@pytest.mark.parametrize('lit', [0, 1])
+def test_a_tick_before_the_volume_dialog_takes_keys_steps_it_and_opens_no_other(fw, keys, lit):
+    """The dialog is in front from navigator_to on, the window manager's key target only from its open event (#303)."""
+    ui = Ui(fw)
+    ui.window('home_page')
+    vol = ui.window('volume_dialog')
+    slider = vol.add(W(ui, 'slider', 'slider_vol', value=31))
+    fw.var('g_volume', C.c_ubyte).value, fw.var('g_maxvolume', C.c_ubyte).value = 31, 100
+    fw.var('g_backlight_status', C.c_ubyte).value = lit
+    target = C.c_void_p.from_address(ui.wm.p + O['W_KEY_TARGET'])
+    assert keys(KEY_PREV) == STOP and keys(KEY_PREV, 20) == STOP and keys(KEY_NEXT, 20) == STOP  # one dark pass's ticks
+    assert fw.var('g_volume', C.c_ubyte).value == 30 == slider.ints[b'value']
+    assert [c[1][:2] for c in fw.calls('device_set_volume')] == [(30, 1), (29, 1), (30, 1)]
+    target.value = vol.p  # opened: the ticks are the dialog's own
+    assert keys(KEY_PREV, 20) != STOP and fw.var('g_volume', C.c_ubyte).value == 30
+
+
+def test_a_locked_wheels_tick_before_the_volume_dialog_takes_keys_stays_stocks(fw, keys):
+    ui = Ui(fw)
+    ui.window('volume_dialog')
+    fw.var('g_volume', C.c_ubyte).value = 31
+    fw.mock('stock_keyup_trampoline', lambda *_: STOP)  # stock's dark lock filter stops it
+    assert keys(KEY_NEXT) == STOP and fw.var('g_volume', C.c_ubyte).value == 31 and not fw.calls('device_set_volume')
 
 
 def test_a_settled_now_playing_gets_its_ticks(fw, stock_bytes):

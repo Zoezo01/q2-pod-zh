@@ -45,7 +45,8 @@ void scrobble_auto(void) {
         return;
     sa.check_at = now; /* Wi-Fi at most once a minute; the card's settings only on Wi-Fi */
     /* not while a computer has the card. ponytail: one already uploading when the cable goes in
-     * still rewrites the log at its end; join it in ringnav_usbmode if that ever bites. */
+     * still reads and rewrites the log, a window at a time, until it ends; join it in
+     * ringnav_usbmode if that ever bites. */
     if (navigator_window_is_exist("usbmode_page")) return;
     if (get_wifisignal() <= 0) {
         /* Smart Wi-Fi's radio off: woken for an upload that is on (the card read now), which the

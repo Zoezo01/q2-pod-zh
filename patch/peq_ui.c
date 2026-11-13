@@ -4,7 +4,7 @@
 extern int stock_eq_trampoline(int mode);
 int peq_chained __attribute__((section(".scratch"))); /* a peq_stock_eq since hciplayer connected: the filter is in */
 /* All calls, including restored playback, instantiate the replacement even in bypass.
- * Afterwards the flag only drives the status-bar EQ icon (systembar_showface @0x52f8b0): on
+ * Afterwards the flag only drives the status-bar EQ icon (systembar_showface @0x541a70): on
  * while 3EQ or PEQ is. */
 int peq_stock_eq(int mode) {
     peq_chained = 1;
@@ -412,7 +412,7 @@ static const char *deleting(void) { return ui.destination + sizeof(PEQ_SAVED); }
 
 /* ui.destination (a saved preset's path) renamed to the edit's text, kept if that starts with a
  * dot, holds a character the card's FAT cannot, names another preset or is too long to read back
- * (stock's conversion leaves it empty, 0x716bb0); an empty one, as Return's cancel leaves it
+ * (stock's conversion leaves it empty, 0x72a180); an empty one, as Return's cancel leaves it
  * (search_key), goes back to the list. The editor's and the active preset's names follow it. */
 static void rename_preset(void) {
     char text[256], to[600], old[256]; /* a whole name: list_files takes up to 255 bytes */
@@ -703,7 +703,7 @@ static int render(const void *unused) {
     ui.rendered = ui.screen;
     ui.edit = 0;
     widget_destroy_children(ui.page);
-    /* No item_height: stock's layout (0x5ea5f4) would give the graph a row's height; the rows are
+    /* No item_height: stock's layout (0x5fd484) would give the graph a row's height; the rows are
      * the theme's high themselves. */
     void *list = list_view_create(ui.page, 0, 48, 375, rows);
     /* The theme's default list_view is a light card; stock pages paint theirs black inline. */
@@ -861,8 +861,8 @@ static int render(const void *unused) {
         if (ui.screen == ADJUST) widget_on(ui.edit, EVT_FOCUS, focused, 0);
         else {
             /* The name opens with the keyboard up and the cursor where stock's text setter leaves
-             * it, at the end (0x614198). Stock's focus otherwise selects it all (an idle,
-             * 0x60f560), so a key replaced the name. Done confirms an unchanged name too. */
+             * it, at the end (0x627028). Stock's focus otherwise selects it all (an idle,
+             * 0x6223f0), so a key replaced the name. Done confirms an unchanged name too. */
             widget_set_prop_int(ui.edit, "select_none_when_focused", 1);
             widget_on(ui.edit, EVT_IM_ACTION, named, 0);
             widget_set_focused(ui.edit, 1);

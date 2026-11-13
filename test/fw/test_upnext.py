@@ -175,6 +175,14 @@ def test_up_next_lists_what_then_plays_each_title_over_its_artist(fw, up):
     assert page.captions == queue.played(len(NAMES) - 1)
 
 
+def test_up_next_stops_at_500_rows_of_a_longer_queue(fw, mcl):
+    low = Low(1 << 18)
+    queue, page = Queue(fw, mcl, low, names=[b'%03d Song.flac' % k for k in range(600)]), Page(fw)
+    page.open()
+    assert len(page.rows) == 500 and page.captions == queue.played(500)  # the next 500, in play order
+    low.close()
+
+
 def test_a_tapped_row_plays_its_own_track_and_the_page_closes(fw, up):
     queue, page = up
     page.open()

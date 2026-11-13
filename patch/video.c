@@ -34,7 +34,7 @@
 #define MONO_FILE "/tmp/q2mono" /* peq.h's: an int, 1 for Mono Audio */
 #define RADIO_STATE "/tmp/q2radio.state" /* key=value lines, as spotify.c reads librespot's */
 #define RADIO_TRIES 5                       /* starts in a row without sound, then state=error */
-#define RADIO_SILENT_MS 20000 /* a start without a sound written: the output is stuck, give up */
+#define RADIO_SILENT_MS 20000 /* a start without a sound heard: the output is stuck, give up */
 #define FFMPEG "/usr/bin/ffmpeg"
 #define DAC "/dev/shanling_dac"
 #define DAC_PCM 0xc0044d1bu  /* hciplayer sets it to 0 for each PCM track: undoes a DSD one */
@@ -65,7 +65,7 @@ void ffmpeg_argv(const char **a, char *ss, int at, const char *file, int audio) 
     if (!audio) a[17] = 0;
 }
 
-/* hciplayer's Bluetooth soft volume (its mixer_setvolume, 0x428744) for demo's volume v, 0-100,
+/* hciplayer's Bluetooth soft volume (its mixer_setvolume, 0x4287a4) for demo's volume v, 0-100,
  * in 1/65536: 0.002 v under 50, then 0.1 + 0.018 (v - 50), 1 at 100. */
 int bt_gain(int v) {
     v = v < 0 ? 0 : v > 100 ? 100 : v;
@@ -162,7 +162,8 @@ int snd_pcm_open(void **, const char *, int, int), snd_pcm_close(void *), snd_pc
 int snd_pcm_set_params(void *, int, int, unsigned, unsigned, int, unsigned), snd_pcm_prepare(void *);
 int snd_pcm_recover(void *, int, int), snd_pcm_delay(void *, long *), snd_pcm_drain(void *);
 const char *snd_strerror(int);
-long snd_pcm_writei(void *, const void *, unsigned long);
+long snd_pcm_writei(void *, const void *, unsigned long), snd_pcm_avail(void *);
+int snd_pcm_get_params(void *, unsigned long *, unsigned long *);
 
 #define O_RDWR 2
 #define O_WRONLY 1
@@ -188,6 +189,7 @@ static struct {
     volatile long played;  /* frames heard since this ffmpeg started */
     char error[64];        /* why sound_open found no device, or the writer stopped, for RADIO_STATE */
     int video;             /* a failed write is dropped: the picture needs ffmpeg's sound read on */
+    unsigned long buffer;  /* ALSA's ring, frames (sound_open) */
 } au;
 
 static void *writer(void *unused) {
@@ -241,8 +243,13 @@ static void *writer(void *unused) {
             written += r;
             recovered = 0;
         }
-        au.played = !snd_pcm_delay(au.pcm, &delay) && delay > 0 && delay < written ? written - delay
-                                                                                 : written;
+        long avail = snd_pcm_avail(au.pcm), ring = avail >= 0 ? (long)au.buffer - avail : 0;
+        if (snd_pcm_delay(au.pcm, &delay) || delay < 0) delay = 0; /* no answer: it ran dry */
+        /* nothing heard while ALSA still holds all that was written (its first fill; Bluetooth adds
+         * the link's own delay), nor what its ring still holds: after a seek's drop bluealsa
+         * answers the link's delay alone */
+        if (delay < ring) delay = ring;
+        au.played = delay < written ? written - delay : 0;
     }
     return au.done = 1, (void *)0; /* played stays behind the buffer, as the picture's clock wants */
 }
@@ -318,6 +325,8 @@ static int sound_open(const char *dev, const char *vol, unsigned rate) {
         if (au.pcm && err)
             snd_pcm_close(au.pcm), au.pcm = 0,
                 snprintf(au.error, sizeof au.error, "params: %s", snd_strerror(err));
+        unsigned long period;
+        if (au.pcm) snd_pcm_get_params(au.pcm, &au.buffer, &period);
         if (au.pcm && jack && (dac = open(DAC, O_RDWR | O_CLOEXEC)) >= 0)
             ioctl(dac, DAC_PCM, &off), ioctl(dac, DAC_MUTE, &off);
     }

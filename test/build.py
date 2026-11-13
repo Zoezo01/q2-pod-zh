@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """JPEG checks; optionally pass the stock ZIP to test packaging with a custom logo and quoted paths too."""
 import io, math, re, sys; sys.path.insert(0, sys.path[0] + '/../tools')  # tools/ first: test/build.py must import tools/build.py
-from build import jal, j, ICONS, LABELS, relabel, ROOT, STOCK_EQ, TAG, dev_tag, jpeg_size, FONT, TAG_C, patch_m4b_cover, WEB, patch_web, DEFAULT_CONFIG, default_config
+from build import jal, j, ICONS, LABELS, relabel, ROOT, STOCK_EQ, STOCK_PAGES, TAG, dev_tag, jpeg_size, FONT, TAG_C, patch_m4b_cover, WEB, patch_web, DEFAULT_CONFIG, default_config
 
 logo = (ROOT/'assets/boot-logo.jpg').read_bytes()
 assert jpeg_size(logo) == (320, 375)
@@ -32,6 +32,7 @@ tags = [dev_tag(n) for n in range(1, 36**3)]
 assert tags[:2] == ['V001i', 'V002i'] and tags[35] == 'V010i' and tags[-1] == 'VZZZi'
 assert len(set(tags)) == len(tags) and all(len(t) == 5 for t in tags) and TAG not in tags
 assert dev_tag(36**3) == 'V001i'
+assert re.fullmatch(r'V\d{4}', TAG), TAG  # a release's V1800, its beta 2's V1802
 print('Dev build tag checks passed.')
 
 def boot_check():
@@ -287,7 +288,7 @@ def validate_assets(directory):
     import functools, json, re, struct, subprocess
     from build import sha, run, fileoff, symbols, BLUEALSA, AAC_44K1, GRADIENT_LEAF, WM_PAINT_LEAF, QUEUE_LEAF, HELPER, HELPER_LIKE, BOOT, BOOT_HOOK, REMOTE, REMOTE_HOOK, LOG_HOOK, WHEEL_LOG_HOOK, S90PLAY, S11LOGO, LOGO_HOOK, LOGO_LIGHT, BLUEALSA2, BT_KEEPALIVE, RTC_WRITE, WIFI_LPS, HOOKS, LOCK_CLOCK_12H, WATCHDOG, WATCHDOG_SLEEP, DROP_CACHES, STREAM_POLL_CALLS, DARK_POLLS, WHEEL_TS_READ, PDR
     from ipod import (ART_PLACEHOLDERS, sized_art, AUDIT, TOOLBAR_SWITCHES, BOTTOM, CONFIRM, VOLUME, BIGCOVER, BC_ART, BC_TITLE_PAD, QUICK_SETTINGS, QS_TOP, QS_LABEL_GAP, QS_LABEL_H,
-                      QS_LABEL_W, QS_ROW_GAP, QS_PITCH, QS_BAR, QS_TOUCH, QS_EDGE, QS_SUN, HOME_LABEL_END, HOME_LIST_W, HOME_TEXT_X, HOME_TOP, PITCH, ARTIST_PAGE, HOME_PAGE, HOME_ROW, HOME_ROWS, NAVBAR_ONLY, PLAYING_PAGE, SET_ROW, SET_ROWS, SET_TOP, UI_ASSETS,
+                      QS_LABEL_W, QS_ROW_GAP, QS_PITCH, QS_BAR, QS_TOUCH, QS_EDGE, QS_SUN, HOME_LABEL_END, HOME_LIST_W, HOME_TEXT_X, HOME_TOP, PITCH, ARTIST_PAGE, HOME_OURS, HOME_PAGE, HOME_ROW, HOME_ROWS, NAVBAR_ONLY, PLAYING_PAGE, SET_ROW, SET_ROWS, SET_TOP, UI_ASSETS,
                       NP_BAR, NP_TOUCH, NP_MARGIN, NP_POS_X, NP_TOP, STATUS_BAR, STATUS_HIDDEN, STATUS_LEFT, STATUS_MARGIN, STATUS_RIGHT, CLOCK_MIN, CLOCK_TEXT, corner_inset, corner_x,
                       STATUS_ICONS, status_icon, QUIET_ICONS, quiet_icon, SET_ICON, SET_STOCK_ICON, SETTINGS_ICONS, SETTINGS_SLIDERS, decode, slider_plain, imagemagick, inc, png_header, settings_icon, walk,
                       patch_asset, patch_code, patch_style, style_props, SLIDE, SET0, status_metrics, CLASSIC_LIGHT_FONT_SRC, NP_IPOD_TIME_WS)
@@ -297,26 +298,26 @@ def validate_assets(directory):
     from build import patch_timezones, TIMEZONES, CJK, english_ui
     zones = bytearray(stock)
     patch_timezones(zones)
-    start = fileoff(stock, 0x76b5d0)
+    start = fileoff(stock, 0x77efb0)
     labels = [zones[start+i*32:start+(i+1)*32].split(b'\0')[0] for i in range(1+len(TIMEZONES))]
     assert labels == [b'timedate_auto'] + [label.encode() for label, _ in TIMEZONES]
     assert demo[start:start+28*64] == zones[start:start+28*64]
-    for address in (0x4bce34, 0x4bd090, 0x4bd4d0, 0x4fa5dc):
+    for address in (0x4c1bd8, 0x4c1ed8, 0x4c23f4, 0x504eec):
         off = fileoff(stock, address)
         assert demo[off:off+4] == zones[off:off+4]
     assert manifest['version'].encode()+b'\0' in demo
     # A widget's style, as stock's widget_update_style passes it to the style's notify: lw $4, W_ASTYLE($16).
     astyle = int(re.search(r'#define W_ASTYLE (0x[0-9a-f]+)', (ROOT/'patch/offsets.inc').read_text())[1], 16)
-    off = fileoff(stock, 0x65e268)
+    off = fileoff(stock, 0x6717d8)
     assert int.from_bytes(stock[off:off+4], 'little') == 0x8e040000 | astyle
     # .pdr (build.py PDR), past every LOAD segment, ships zeroed.
     assert demo[PDR[0]:PDR[0]+PDR[1]] == bytes(PDR[1]) and any(stock[PDR[0]:PDR[0]+PDR[1]])
     # The RTC is written in UTC: the one hwclock -w literal gains -u in its own padding.
     assert demo.index(RTC_WRITE[1]) == stock.index(RTC_WRITE[0])
     # Wi-Fi keeps its power save: network_checkstatus's lps=0 becomes lps=2, the one byte at file
-    # offset 0x37133d, and networkGetWifiSignal jumps to the payload, which reads rx_signal instead.
-    assert demo.index(WIFI_LPS[1]) == stock.index(WIFI_LPS[0]) == 0x37133d - 25 and WIFI_LPS[0] not in demo
-    assert [i for i in range(0x371300, 0x371360) if demo[i] != stock[i]] == [0x37133d] and demo[0x37133d:0x37133e] == b'2'
+    # offset 0x3852bd, and networkGetWifiSignal jumps to the payload, which reads rx_signal instead.
+    assert demo.index(WIFI_LPS[1]) == stock.index(WIFI_LPS[0]) == 0x3852bd - 25 and WIFI_LPS[0] not in demo
+    assert [i for i in range(0x385290, 0x3852f0) if demo[i] != stock[i]] == [0x3852bd] and demo[0x3852bd:0x3852be] == b'2'
     off = fileoff(stock, HOOKS['networkGetWifiSignal'][0])
     assert demo[off:off+8] == j(symbols(directory/'patch.elf')['ringnav_wifi_signal']).to_bytes(4, 'little') + bytes(4)
     # The lock window's 12-hour clock reads hour:minutes (H:mm), in stock HH:TT's slot after its 24-hour hh:mm.
@@ -324,9 +325,9 @@ def validate_assets(directory):
     # The slide hint names a stock animator and gives it a duration (a missing one means stock's 500 ms).
     assert re.fullmatch(r'htranslate\(duration=\d+\)', SLIDE) and b'\0htranslate\0' in stock
     # The animated lookup pages need synchronous unwind.
-    for address, slot in ((0x4a6250, 0x468), (0x4ad458, 0x468), (0x526e70, 0x420)):
+    for address, slot in ((0x4a7ed4, 0x468), (0x4af83c, 0x468), (0x537fbc, 0x420)):
         off = fileoff(stock, address)
-        want = struct.pack('<III', 0x8f99a8f8, 0x0320f809, 0x8fa40000 | slot)
+        want = struct.pack('<III', 0x8f99a914, 0x0320f809, 0x8fa40000 | slot)
         assert demo[off:off+12] == want
     # Every hook and leaf jumps to its payload function (build.py pins the leaves' words): the
     # leaves are window_manager_paint (Videos), style_get_gradient and main_loop_queue_event.
@@ -339,21 +340,23 @@ def validate_assets(directory):
         assert entry['address'] == hex(address)
         assert struct.unpack_from('<I', stock, off)[0] == int(entry['original'], 16)
         assert struct.unpack_from('<I', demo, off)[0] == int(entry['replacement'], 16)
-        assert stock[off-8:off-4] == struct.pack('<I', 0x8f99f950)
+        assert stock[off-8:off-4] == struct.pack('<I', 0x8f99fa14)
     changed = manifest['changed_assets']
     xx = 'release/assets/default/raw/images/xx/'
+    STOCK_NAMED_ICONS = ('menu_coverflow.png', 'menu_coverflowdown.png')
     def read(image, rel):
         return subprocess.check_output(['unsquashfs', '-cat', str(directory/image), rel])
     # Every stock UI asset with Chinese text is given in English (english_ui), the edited ones after their edit.
     ui = 'release/assets/default/raw/ui/'
     chinese = {l.removeprefix('squashfs-root/'+ui) for l in run('unsquashfs', '-l', directory/'stock.squashfs').splitlines()
-               if l.startswith('squashfs-root/'+ui) and l.endswith('.bin') and l.removeprefix('squashfs-root/') not in STOCK_EQ}
+               if l.startswith('squashfs-root/'+ui) and l.endswith('.bin') and l.removeprefix('squashfs-root/') not in STOCK_EQ + STOCK_PAGES}
     chinese = {rel for rel in chinese if CJK.search(read('stock.squashfs', ui+rel).decode('utf-8', 'replace'))}
     assert chinese and {'testmode/test_key.bin', 'kb_default_t9.bin', 'dialog/search_dialog.bin'} <= chinese
     patched_ui = set(UI_ASSETS)
     assert set(changed) == {ui+p for p in patched_ui | chinese} | {
         'release/assets/default/raw/styles/'+p for p in AUDIT['styles']} | {
-        xx+n for n in SETTINGS_ICONS | QUIET_ICONS | STATUS_ICONS | ART_PLACEHOLDERS} | {'release/assets/default/raw/strings/en_US.bin', FONT, TAG_C, *WEB}
+        xx+n for n in SETTINGS_ICONS | QUIET_ICONS | STATUS_ICONS | ART_PLACEHOLDERS} | {'release/assets/default/raw/strings/en_US.bin', FONT, TAG_C, *WEB} | {
+        xx+n for n in STOCK_NAMED_ICONS}
     master = (ROOT/'assets/icons/default_album_home.png').read_bytes()
     for name, size in ART_PLACEHOLDERS.items():
         old, new = read('stock.squashfs', xx+name), read('rootfs.squashfs', xx+name)
@@ -372,6 +375,8 @@ def validate_assets(directory):
     # Home: Carousel's cards in their own colours, stock's untouched, Coverflow's and the Shortcut's added.
     for name in ICONS:
         assert read('rootfs.squashfs', xx+name) == (ROOT/'assets/icons'/name).read_bytes(), name
+    for name in STOCK_NAMED_ICONS:  # stock V1.36's Album Wall card icons have Cover Flow's names: ours take their place
+        assert name in ICONS and changed[xx+name] == dict(original_sha256=sha(read('stock.squashfs', xx+name)), sha256=sha((ROOT/'assets/icons'/name).read_bytes()))
     tag_old, tag_new = read('stock.squashfs', TAG_C), read('rootfs.squashfs', TAG_C)
     assert tag_new == patch_m4b_cover(tag_old)
     assert changed[TAG_C] == dict(original_sha256=sha(tag_old), sha256=sha(tag_new))
@@ -507,17 +512,16 @@ def validate_assets(directory):
     assert struct.unpack_from('<I', stock, off)[0] == WHEEL_TS_READ[1]
     assert struct.unpack_from('<I', demo, off)[0] == jal(symbols(directory/'patch.elf')['ringnav_ts_read'])
     # hciplayer's code (.text) differs from stock only in the VBR scan branch, now a nop, the 48 kHz EQ gates,
-    # the ID3v2 walker calls, now id3_gain (MP3 ReplayGain), the MQA side chain's gate and probe length and
-    # the pause and idle loops' futex waits and their wakes, gapless MP3 allocation/pre-filter/last-frame
+    # the ID3v2 walker calls, now id3_gain (MP3 ReplayGain), the pause and idle loops' futex waits and their wakes, gapless MP3 allocation/pre-filter/last-frame
     # hooks, the USB DAC buffer's two stores, now nops, the wired unmute calls, now the DAC release wait,
     # the DSF, DFF and ISO checks' stop stores, now jumps to probe_stop, and the preload's publish, its failure
     # stores, moved to its exit, and the cold path's clear of the same word; the forced EOF's store, now a hook;
     # the stores of the stop on the thread's other paths, the close handlers, the preload's open;
     # the FLAC seek's gate exit, no-sync scan and near-the-end steps.
-    from peq import VBR_SCAN, EQ_RATE_GATES, ID3_CALLS, MQA_GATE, MQA_PROBE, PAUSE_WAIT, CMD_DONE, IDLE_WAIT, MP3_ALLOC, MP3_FILTER, MP3_CLOSE, MP3_READ, MP3_FILL, USB_BUFFER, DAC_RELEASE, PROBE_STOP, EXIT_HOLD, PRELOAD_PUBLISH, PRELOAD_FAILED, PRELOAD_FAIL_STORES, COLD_CLEAR, FORCED_EOF, STOP_SITES, STOP_NOPS, STOP_FILL, PRELOAD_CLOSE, FLAC_GATE, SEEK_NOSYNC, SEEK_WORDS, FLAC_META_EOF, MEDIA_INFO_NULL
+    from peq import VBR_SCAN, EQ_RATE_GATES, ID3_CALLS, PAUSE_WAIT, CMD_DONE, IDLE_WAIT, MP3_ALLOC, MP3_FILTER, MP3_CLOSE, MP3_READ, MP3_FILL, USB_BUFFER, DAC_RELEASE, PROBE_STOP, EXIT_HOLD, PRELOAD_PUBLISH, PRELOAD_FAILED, PRELOAD_FAIL_STORES, COLD_CLEAR, FORCED_EOF, STOP_SITES, STOP_NOPS, STOP_FILL, PRELOAD_CLOSE, FLAC_GATE, SEEK_NOSYNC, SEEK_WORDS, FLAC_META_EOF, MEDIA_INFO_NULL
     old, new = read('stock.squashfs', 'usr/bin/hciplayer'), read('rootfs.squashfs', 'usr/bin/hciplayer')
     off = fileoff(old, VBR_SCAN)
-    words = (*EQ_RATE_GATES, *MQA_GATE, *MQA_PROBE, *USB_BUFFER, *PRELOAD_FAIL_STORES, *STOP_NOPS, *SEEK_WORDS, *FLAC_META_EOF, *MEDIA_INFO_NULL)
+    words = (*EQ_RATE_GATES, *USB_BUFFER, *PRELOAD_FAIL_STORES, *STOP_NOPS, *SEEK_WORDS, *FLAC_META_EOF, *MEDIA_INFO_NULL)
     gates = [fileoff(old, a) for a in (*(a for a, _, _ in (*words, *DAC_RELEASE, *PROBE_STOP, *STOP_SITES, STOP_FILL, *PRELOAD_CLOSE, FORCED_EOF, EXIT_HOLD, PRELOAD_PUBLISH, PRELOAD_FAILED, COLD_CLEAR, FLAC_GATE, SEEK_NOSYNC)), *ID3_CALLS, MP3_ALLOC, MP3_FILTER, MP3_READ,
                                        IDLE_WAIT[0], PAUSE_WAIT[0], CMD_DONE[0])]
     # The FLAC fast paths (tools/flac.py, on by default) patch hciplayer's sync calls and LPC/output pointers.
@@ -548,11 +552,16 @@ def validate_assets(directory):
     paths = [l.removeprefix('squashfs-root/') for l in run('unsquashfs', '-l', directory/'stock.squashfs').splitlines()
              if ('/raw/ui/' in l or '/raw/styles/' in l) and l.endswith('.bin') or l.endswith('/config.ini')]
     names = set(run('unsquashfs', '-l', directory/'rootfs.squashfs').splitlines())
+    stock_names = set(run('unsquashfs', '-l', directory/'stock.squashfs').splitlines())
     # Light Mode's splash ships with the default logo only (build.py LOGO_HOOK)
     light = (ROOT/'assets/boot-logo-light.jpg').read_bytes()
     default = manifest['logo_sha256'] == sha((ROOT/'assets/boot-logo.jpg').read_bytes())
     assert ('squashfs-root/'+LOGO_LIGHT in names) == default and (not default or read('rootfs.squashfs', LOGO_LIGHT) == light)
     assert not {'squashfs-root/'+rel for rel in STOCK_EQ} & names, 'Stock EQ assets remain'
+    # Album Wall, the spectrum and the VU meter: their pages and images are gone, and no page that ships names what opened them
+    assert not {'squashfs-root/'+rel for rel in STOCK_PAGES} & names and {'squashfs-root/'+rel for rel in STOCK_PAGES} <= stock_names
+    for rel in (n.removeprefix('squashfs-root/') for n in names if '/raw/ui/' in n and n.endswith('.bin')):
+        assert not re.search(rb'img_spectrum|img_vu|img_coverflow|label_coverflow', read('rootfs.squashfs', rel)), rel
     # The Library's rows, stock's and list_row_core's alike, draw each local_* icon centred in one 52px
     # box (x 8): each disc's alpha-weighted centre must sit on its image's.
     for rel in sorted(n.removeprefix('squashfs-root/') for n in names if n.startswith('squashfs-root/'+xx+'local_')):
@@ -628,7 +637,7 @@ def validate_assets(directory):
                 cx += c[1][2] + gap
         for c in children: corners(short, c, x, y, window, slots.get(id(c)))
     for rel in paths:
-        if rel in STOCK_EQ: continue
+        if rel in STOCK_EQ + STOCK_PAGES: continue
         original, new = read('stock.squashfs', rel), read('rootfs.squashfs', rel)
         if '/raw/ui/' in rel and new[:4] == bytes.fromhex('12122211'):
             now = painted(decode(new), themes[1])
@@ -759,8 +768,9 @@ def validate_assets(directory):
             assert all(v == '#00000000' for k,v in root[3][1][2].items() if k.startswith('style:'))
             assert [r[2]['name'] for r in sv[3]] == ['btn_'+n for n in HOME_ROWS] and HOME_ROWS[2] == 'coverflow'
             for name, (_, _, _, (label, image)) in zip(HOME_ROWS, sv[3]):
-                assert label[2]['name'] == ('label_library' if name == 'localmusic' else 'label_'+name)
-                assert image[2] == {'name': 'img_'+name, 'clickable': 'true'}
+                ours = HOME_OURS.get(name, name)  # stock V1.36 binds img_coverflow and translates label_coverflow: ours are named apart
+                assert label[2]['name'] == ('label_library' if name == 'localmusic' else 'label_'+ours)
+                assert image[2] == {'name': 'img_'+ours, 'clickable': 'true'}
                 # Labels end before the chevron's glyph; longer ones scroll (only_focus) or end in an ellipsis.
                 assert label[1][0] + label[1][2] == image[1][2] - HOME_LABEL_END and label[1][2] >= 100
                 assert label[2]['only_focus'] == 'true' and label[2]['ellipses'] == 'true'
@@ -777,9 +787,9 @@ def validate_assets(directory):
             assert [c[2]['name'] for c in slide[3]] == ['btn_'+n for n in ('playing', 'localmusic', 'coverflow', 'folder', 'rockbox', 'stream', 'playset', 'sysset')]
             assert [c[3][1][2].get('text') for c in slide[3]] == [stock_root[3][0][3][0][3][1][2]['text'], 'Library', 'Cover Flow', None, 'Rockbox', None, None, None]
             for card in slide[3]:
-                image = card[3][0][2]
-                assert {v for k, v in image.items() if k.endswith(':bg_image')} == {'menu_' + image['name'][4:].replace('localmusic', 'music'),
-                                                                                  'menu_' + image['name'][4:].replace('localmusic', 'music') + 'down'}
+                image, icon = card[3][0][2], 'menu_' + card[2]['name'][4:].replace('localmusic', 'music')
+                assert image['name'] == 'img_' + HOME_OURS.get(card[2]['name'][4:], card[2]['name'][4:])
+                assert {v for k, v in image.items() if k.endswith(':bg_image')} == {icon, icon + 'down'}
             dot = inc('HOME_DOT_X'), inc('HOME_DOT')
             assert HOME_TEXT_X == sum(dot) + inc('HOME_DOT_GAP')
             # The dot and the labels clear the bottom row's corner.
@@ -817,7 +827,8 @@ def validate_assets(directory):
             continue
         if short == PLAYING_PAGE:  # see the sketch in docs/ipod.md
             named = {n[2].get('name'): n for n in walk(root)}
-            assert {n[2].get('name') for n in walk(decode(original))} < set(named)  # stock names kept
+            # stock names kept, but the two buttons that open its spectrum and VU pages, which Q2 Pod does not offer
+            assert {n[2].get('name') for n in walk(decode(original))} - set(named) == {'img_spectrum', 'img_vu'}
             assert [n[2].get('name') for n in root[3]] == ['view_buttons', 'label_playtime', 'label_playlen', 'label_ipod_remain',
                                                            'slide_view_view', 'slider_play', 'img_repeata', 'img_repeatb', 'image_wait']
             pos = named['label_ipod_pos'][1]
@@ -868,7 +879,7 @@ def validate_assets(directory):
             assert named['label_playlen'][2]['visible'] == 'false'
             assert {v for n in ('label_playtime', 'label_ipod_remain') for k, v in named[n][2].items() if k.endswith(':text_color')} == {'#AAAAAA'}
             # Stock places the A-B markers at y 250 and x = 50 + t * 290 / length; iPod's follow its bar.
-            assert [int.from_bytes(demo[fileoff(demo, a):fileoff(demo, a)+4], 'little') for a in (0x52a318, 0x52a330)] == [
+            assert [int.from_bytes(demo[fileoff(demo, a):fileoff(demo, a)+4], 'little') for a in (0x53ba88, 0x53baa0)] == [
                 0x24020000 | NP_BAR[2], 0x24420000 | NP_BAR[0]]
             continue
         if short == ARTIST_PAGE:
@@ -1040,7 +1051,7 @@ def validate_assets(directory):
                 assert min(n[1][0], 375 - value[1][0] - value[1][2]) >= corner_x(dy + n[1][1], n[1][3]), (g.name, table[key])
             assert len(info) == 18 and info[8][1][1] + info[8][1][3] <= page['slide_indicator1'][1][1], g.name
     payload_symbols = symbols(directory/'patch.elf')
-    for address in [AUDIT['immediates'][0]['sites'][0][0], '0x522410', '0x523de0', '0x4b3130', AUDIT['row_layout_calls']['sites'][0][0],
+    for address in [AUDIT['immediates'][0]['sites'][0][0], '0x532d3c', '0x534cf8', '0x4b5874', AUDIT['row_layout_calls']['sites'][0][0],
                     hex(inc('LIST_VIEW_LAYOUT_SLOT'))]:
         damaged = bytearray(stock)
         damaged[fileoff(stock, int(address, 16))] ^= 1

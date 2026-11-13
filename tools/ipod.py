@@ -282,9 +282,12 @@ def encode(root):
 # stock string table already has these keys. The Albums tab and page start active (see ARTIST_ALBUMS).
 ARTIST_PAGE = 'localmusic/artistinfo_page.bin'
 ARTIST_TABS = {'btn_track': ('单曲', 'local_allsongs'), 'btn_album': ('专辑', 'album')}
-# Stock init builds the Songs view (0x4adcbc); call the stock Albums tab click handler (0x4ac7ec)
+# Stock init builds the Songs view (0x4af8ac); call the stock Albums tab click handler (0x4aeb1c)
 # instead, which sets the tab state, queries the artist's albums and builds them. Songs stays a tap away.
-ARTIST_ALBUMS = [(0x4aebd0, 0x2739dcbc, 0x2739c7ec), (0x4aebd4, 0x0411fc39, 0x0411f705)]
+# The handler's address makes both patched words (the low half $t9 takes, the bal's distance), so a rebase carries them.
+ARTIST_ALBUMS_TAB = 0x4aeb1c
+ARTIST_ALBUMS = [(0x4b12bc, 0x2739f8ac, 0x27390000 | ARTIST_ALBUMS_TAB & 0xffff),
+                 (0x4b12c0, 0x0411f97a, 0x04110000 | (ARTIST_ALBUMS_TAB - 0x4b12c0 - 4 >> 2) & 0xffff)]
 
 
 def artist_tabs(root):
@@ -323,8 +326,8 @@ def home_card(menu, at, row, text):
     image, label = card[3]
     check(image[2].get('name') == 'img_localmusic' and label[2].get('name') == 'label_localmusic',
             'Unexpected Local Music card')
-    image[2]['name'] = 'img_' + row
-    label[2]['name'] = 'label_' + row
+    image[2]['name'] = 'img_' + HOME_OURS.get(row, row)
+    label[2]['name'] = 'label_' + HOME_OURS.get(row, row)
     label[2]['text'] = text
     for key, value in image[2].items():  # assets/icons/menu_<row>*.png, added to the rootfs by build.py
         if key.endswith(':bg_image'): image[2][key] = value.replace('menu_music', 'menu_' + row)
@@ -333,7 +336,7 @@ def home_card(menu, at, row, text):
 
 # Home becomes a list of the stock cards' names, in stock order with Coverflow third,
 # Rockbox before Streaming and one Settings row for Playback and System settings.
-# home_page_init (0x523c84) looks up no widget: its widget_foreach visitor (0x5239b4) binds img_*
+# home_page_init (0x534b6c) looks up no widget: its widget_foreach visitor (0x534750) binds img_*
 # clicks and translates label_* by name, and only img_left/img_right reach the slide_menu. Each row's transparent image covers the row, on top of its label, so it takes the
 # tap and is the row's click target for the wheel. The payload binds Coverflow, Rockbox (shown
 # only while the card has it) and Settings, which slides list_view_homeset, hidden until then and
@@ -345,6 +348,9 @@ HOME_LITERAL = {'coverflow': 'Cover Flow', 'rockbox': 'Rockbox', 'settings': '�
 # these shorter literals.
 HOME_RENAMED = {'localmusic': LIBRARY, 'playset': {'name': 'label_playback', 'text': '播放设置'},
                 'sysset': {'name': 'label_system', 'text': '系统设置'}}
+# Since stock V1.34 the visitor knows img_coverflow and label_coverflow too: its own Album Wall card's, which it
+# binds to that page and names so. Cover Flow's image and label are named apart, so stock binds and names neither.
+HOME_OURS = {'coverflow': 'cover_flow'}
 
 
 # The theme default list_view is a light rounded card; Home's lists clear it to transparent.
@@ -361,14 +367,14 @@ def home_list(name, rows, g, extra=None, view_name=None):
     views = []
     for i, row in enumerate(rows):
         # Long translations ellipsize and scroll inside the shared text margins.
-        label = {'name': 'label_' + row, 'style': 's_scrlabel_white20l', 'only_focus': 'true', 'ellipses': 'true'}
+        label = {'name': 'label_' + HOME_OURS.get(row, row), 'style': 's_scrlabel_white20l', 'only_focus': 'true', 'ellipses': 'true'}
         if row in HOME_LITERAL:
             label['text'] = HOME_LITERAL[row]
         label.update(HOME_RENAMED.get(row, {}))
         views.append(['view', [0, i * g.home_row, HOME_LIST_W, g.home_row], {'name': 'btn_' + row}, [
             ['hscroll_label', [HOME_TEXT_X, 0, HOME_LIST_W - HOME_TEXT_X - HOME_LABEL_END, g.home_row], label, []],
-            ['image', [0, 0, HOME_LIST_W, g.home_row], {'name': g.home_lib and HOME_LISTED.get(row) or 'img_' + row, 'clickable': 'true'}, []]]])
-    # The list_view's layout (0x5ea3a4) makes its scroll view vertical only for a mobile scroll bar,
+            ['image', [0, 0, HOME_LIST_W, g.home_row], {'name': g.home_lib and HOME_LISTED.get(row) or 'img_' + HOME_OURS.get(row, row), 'clickable': 'true'}, []]]])
+    # The list_view's layout (0x5fd234) makes its scroll view vertical only for a mobile scroll bar,
     # which Home has none of, and scroll_view_create leaves it off; the payload navigates only
     # vertical scroll views.
     h = g.home_row * len(views) or 320 - g.bar
@@ -382,8 +388,9 @@ def ipod_home(root, g=SET0):
     geo = with_geometry(g)
     check([n[0] for n in root[3]] == ['slide_menu', 'image', 'image'], 'Unexpected home carousel')
     check([n[2]['name'] for n in root[3][0][3]] == ['btn_' + r for r in
-            ('playing', 'localmusic', 'folder', 'stream', 'playset', 'sysset')], 'Unexpected home cards')
+            ('playing', 'localmusic', 'coverflow', 'folder', 'stream', 'playset', 'sysset')], 'Unexpected home cards')
     menu = root[3][0]
+    del menu[3][2]  # stock V1.36's Album Wall card: not offered, and Cover Flow's card has its place
     home_card(menu, 2, 'coverflow', 'Cover Flow')
     home_card(menu, 4, 'rockbox', 'Rockbox')
     menu[3][1][3][1][2].update(LIBRARY)
@@ -414,20 +421,22 @@ def style_props(data):
 
 
 def patch_style(data, audit):
-    """Replace each edit's old value, same size, in the n states of widget/style that hold it."""
+    """Replace each edit's old value, same size, in the n states of widget/style that hold it: after the edits
+    before it, and in the one state an edit names, if it names one."""
     check(sha(data) == audit['sha256'], 'Unaudited style file')
     out, props = bytearray(data), list(style_props(data))
-    for widget, style, prop, old, new, n in audit['edits']:
+    for widget, style, prop, old, new, n, *state in audit['edits']:
         old, new = bytes.fromhex(old), bytes.fromhex(new)
         check(len(old) == len(new), f'{style}.{prop}: edit changes size')
-        sites = [at for w, s, _, p, at, value in props if (w, s, p, value) == (widget, style, prop, old)]
+        sites = [at for w, s, st, p, at, value in props
+                 if (w, s, p) == (widget, style, prop) and out[at:at+len(value)] == old and state in ([], [st])]
         check(len(sites) == n, f'{style}.{prop}: expected {n} states with {old.hex()}, found {len(sites)}')
         for at in sites:
             out[at:at+len(new)] = new
     return bytes(out)
 
 
-# systembar_showface (0x52f610) finds every widget by name, recursively from the bar,
+# systembar_showface (0x5417d0) finds every widget by name, recursively from the bar,
 # and each second re-shows the volume, EQ, BT, synclink and Wi-Fi widgets and resets their text and
 # images, but never their geometry. So widgets iPod hides move off-screen instead of going invisible.
 # The volume number stays hidden: stock already opens dialog/volume_dialog on every wheel change.
@@ -447,12 +456,10 @@ STATUS_HIDDEN = ['img_vol', 'label_vol', 'img_synclink']
 BATT_MODES = STATUS_RIGHT[2:4]
 BATT_PCT_W, BATT_PCT_PX, BATT_ROOM, BT_REACH = (inc(n) for n in ('BATT_PCT_W', 'BATT_PCT_PX', 'BATT_ROOM', 'BT_REACH'))
 BATT_H_W = inc('BATT_BODY_W') + inc('BATT_NUB_W') + inc('BATT_GAP') + BATT_PCT_W  # the payload's battery with its nub
-# Classic's right group, left to right: EQ while it is on and nothing plays (never with the play state: navigation.c
-# bar_state_sync), Bluetooth, Wi-Fi, the play state and the battery.
-STATUS_RIGHT_CLASSIC_LIGHT = ['label_eq', *STATUS_RIGHT[:2], 'img_state', *STATUS_RIGHT[2:]]
+# Classic's right group, left to right: Bluetooth, Wi-Fi, the play state and the battery. It shows no EQ.
+STATUS_RIGHT_CLASSIC_LIGHT = [*STATUS_RIGHT[:2], 'img_state', *STATUS_RIGHT[2:]]
 CLOCK_GAP = 4
-CLASSIC_LIGHT_CLOCK_GAP = 2  # Classic's EQ, when the widest clock shows with it
-CLASSIC_LIGHT_EQ_W = 25  # Classic's EQ box: its 21 px of ink in the bar's face (test_ipod), narrower than stock's 28 so the group fits at bar_right
+CLASSIC_LIGHT_CLOCK_GAP = 2  # Classic's right group's room, from the widest clock
 CLASSIC_LIGHT_FONT_SRC = ROOT/'assets/fonts/texgyreheros-bold.otf'  # the Classic face's source, subset to CLASSIC_LIGHT_TTF
 CLASSIC_LIGHT_FONT_NAME = pathlib.Path(CLASSIC_LIGHT_TTF).stem
 
@@ -529,9 +536,8 @@ def status_bar(root, g=SET0):
         check('xm=50,s=5)' in layout, 'Unexpected status bar layout')
         view[2]['children_layout'] = layout.replace('xm=50,s=5', f'xm={x},s={inc("STATUS_GAP")}')
     room = int(375 - xm - (375 / 2 + (m['clock_text'] if m else CLOCK_TEXT) / 2 + (CLASSIC_LIGHT_CLOCK_GAP if m else CLOCK_GAP)))
-    if m:  # every icon, the battery with the column of soft edge left of it, and EQ 2 px short of Bluetooth's ink
-        gap, eq[1][2] = inc('STATUS_GAP'), CLASSIC_LIGHT_EQ_W
-        reach = BT_REACH + 2 * gap + widgets['img_wifi'][1][2] + 1 + g.batt_w + inc('BATT_NUB_W') + 2 + eq[1][2]
+    if m:  # every icon, and the battery with the column of soft edge left of it
+        reach = BT_REACH + 2 * inc('STATUS_GAP') + widgets['img_wifi'][1][2] + 1 + g.batt_w + inc('BATT_NUB_W')
         check(reach <= room, f'Status bar battery needs {reach}px of {room}px')
         # bar_sync's gate reads BATT_ROOM, the built-in bar's, past this room: a theme on this bar offers only the modes
         # the gate exempts (test_theme)
@@ -541,12 +547,11 @@ def status_bar(root, g=SET0):
             root[3].append(widgets[name])
         face = {f'style:{s}:{k}': v for s in ('normal', 'disable', 'focused')
                 for k, v in (('font_size', str(g.bar_px)), ('font_name', CLASSIC_LIGHT_FONT_NAME))}
-        # EQ floats at the room's left edge, not left of img_bt's whole canvas, whose last BT_REACH px alone hold ink:
-        # there it would reach the clock's text.
-        # ponytail: it stays here with Bluetooth or Wi-Fi off, and a codec badge's ink can reach it; a badge needs
-        # a track, and a track hides EQ. Move it with the group if a stopped player ever shows a badge.
-        eq[1][:] = [375 - xm - room - right[1][0], m['title'][1], eq[1][2], m['title'][3]]
-        eq[2].update({'floating': 'true', **face})
+        # Classic shows no EQ: stock still updates it, drawn above the bar, floating at the room's left edge, where
+        # bar_title reads how far the title may reach (np_bar.c).
+        eq[1][:2] = [375 - xm - room - right[1][0], -200]
+        eq[2]['floating'] = 'true'
+        right[3].append(eq)
         # The play state is in the row, between Wi-Fi and the battery, and the row closes up without it.
         widgets['img_state'][1][2] = STATE_W
         # Stock's 16 px icon canvases, centred, on the battery's middle row: the body's top, centred on the rows above the
@@ -590,8 +595,9 @@ PLAYING_PAGE = 'playing_page.bin'
 
 def plain_slider(props, track, fill, bar):
     """A slider's props drawn in plain colour (stock slider paint uses bg/fg_color without images). The
-    style has no theme entry, so no thumb icon either: stock then fills exactly to the value, and
-    slide_with_bar keeps tap and drag."""
+    style has no theme entry, but stock still reads its default slider style's thumb icon for it, so the
+    payload clears the icon in every state (np_bar.c slider_knobless): stock then fills exactly to the value,
+    and slide_with_bar keeps tap and drag."""
     props = {k: v for k, v in props.items() if not k.endswith((':bg_image', ':fg_image', ':icon', ':y_offset'))}
     for key in props:
         if key.endswith(':bg_color'): props[key] = track
@@ -605,12 +611,24 @@ def np_slider(slider, x, cy, w, h):
     the accent's fill and the Theme's height set at runtime (np_bar.c np_fill, np_theme)."""
     slider[1] = [x, cy - NP_TOUCH // 2, w, NP_TOUCH]
     slider[2] = plain_slider(slider[2], NP_TRACK, NP_FILL, h)
-    # No thumb: stock skips the dragger only when border_color is clear, else a touch shows its blue.
+    # No thumb: stock skips the dragger only when border_color is clear and there is no icon (slider_knobless).
     for state in ('normal', 'pressed', 'over', 'disable', 'focused'):
         slider[2][f'style:{state}:border_color'] = '#00000000'
     # Stock draws small radii square; the four-pixel line deliberately has square ends.
     for key in slider[2]:
         if key.endswith(':round_radius'): slider[2][key] = str(h // 2)  # a capsule, track and fill
+
+
+def np_buttons(named):
+    """Stock V1.36's Now Playing buttons without the two it added, for its spectrum and VU pages, which Q2 Pod doesn't
+    offer: playing_page_init's visitor (0x53c5dc) binds them by name, img_spectrum and img_vu, so with neither in the
+    page nothing opens those. Stock places Return and More by layout since; here their boxes are set."""
+    buttons = named['view_buttons']
+    check([n[2].get('name') for n in buttons[3]] == ['img_return', 'img_spectrum', 'img_fav', 'img_more', 'img_vu', 'img_playmode'],
+          'Unexpected Now Playing buttons')
+    buttons[3] = [n for n in buttons[3] if n[2]['name'] not in ('img_spectrum', 'img_vu')]
+    for name in ('img_return', 'img_more'):
+        named[name][2].pop('self_layout', None)
 
 
 def playing_page(root, g=SET0):
@@ -619,6 +637,7 @@ def playing_page(root, g=SET0):
     check([n[2].get('name') for n in root[3]] == [
         'view_buttons', 'scrlabel_title', 'scrlabel_artist', 'label_playtime', 'label_playlen',
         'slide_view_view', 'slider_play', 'img_repeata', 'img_repeatb', 'image_wait'], 'Unexpected Now Playing page')
+    np_buttons(named)
     buttons, title, artist = root[3][:3]
     buttons[1] = [0, 0, 375, NP_TOP]
     named['img_return'][1][0] = -200  # the hardware Return, as on the pages whose navbars are hidden
@@ -768,11 +787,26 @@ def playing_page(root, g=SET0):
 # It keeps stock's layout; the title and artist hold at their start as every scrolling label does, and the lyrics
 # span their column, as the iPod page's span the screen (patch/lyrics.c wraps at the rows' width).
 PLAYING_STOCK = 'playing_page_stock.bin'
+# Stock V1.36 re-laid its page around the two buttons np_buttons takes out. Centred Now Playing stays the page it has
+# been, so what moved goes back where V1.32 had it: name: (V1.36's box, V1.32's). The play mode's is the heart's, mirrored.
+PLAYING_STOCK_BOXES = {
+    'img_return': ([5, -5, 90, 60], [3, 0, 85, 60]), 'img_fav': ([0, 135, 90, 60], [2, 129, 86, 73]),
+    'img_more': ([285, -5, 90, 60], [295, 0, 70, 60]),
+    'label_playtime': ([44, 266, 48, 14], [52, 266, 48, 14]), 'label_playlen': ([280, 266, 48, 14], [288, 266, 48, 14]),
+    'slide_view_view': ([75, 0, 225, 290], [80, 0, 225, 290]), 'slider_play': ([42, 208, 290, 82], [50, 208, 290, 82]),
+    'img_repeata': ([42, 250, 3, 10], [50, 250, 3, 10]), 'img_repeatb': ([42, 250, 3, 10], [50, 250, 3, 10]),
+    'image_wait': ([160, 70, 54, 54], [165, 70, 54, 54])}
+
+
 def playing_stock(data):
     check(sha(data) == UI_ASSETS[PLAYING_PAGE], f'{PLAYING_PAGE}: unaudited UI asset')
     root = decode(data)
     named = {n[2].get('name'): n for n in walk(root)}
     check(root[2].get('name') == 'playing_page' and named['slide_view'][1][2] == 225, 'Unexpected stock Now Playing')
+    np_buttons(named)
+    for name, (stock, ours) in PLAYING_STOCK_BOXES.items():
+        check(named[name][1] == stock, f'Unexpected stock {name}')
+        named[name][1] = list(ours)
     lrc = named['scroll_lrc'][2]
     check(lrc['self_layout'].startswith('default(x=0,y=0,w=-10,'), 'Unexpected lyrics scroll view')
     lrc['self_layout'] = 'default(x=0,y=0,w=100%,h=100%)'
@@ -780,7 +814,7 @@ def playing_stock(data):
     # window's width: the lyrics end 20 px above the page's foot there too (178 of 198 px), and "No lyrics" stays
     # centred across (at its stock y, so high in full screen).
     view, msg = named['view_lrc'][2], named['label_lyricmsg']
-    check(named['slide_view_view'][1] == [80, 0, 225, 290] and named['slide_view'][1] == [0, 0, 225, 198] and
+    check(named['slide_view'][1] == [0, 0, 225, 198] and
           view['self_layout'] == 'default(x=0,y=0,w=100%,h=178)' and msg[1] == [0, 73, 225, 28] and
           'self_layout' not in msg[2], 'Unexpected stock lyrics page')
     view['self_layout'] = 'default(x=0,y=0,w=100%,h=-20)'
@@ -791,21 +825,19 @@ def playing_stock(data):
           'Unexpected stock cover')
     named['img_cover'][1] = [22, 8, 180, 180]
     named['img_playstate'][1] = [52, 38, 120, 120]
-    # The play mode mirrors the heart: its box, flipped to the right edge, the icon centred in it, not
-    # drawn from the corner 12 px right of the box.
+    # The play mode mirrors the heart: its box, flipped to the right edge, the icon centred in it as the heart's is
+    # (stock's own since V1.34).
     fav, mode = named['img_fav'], named['img_playmode']
-    check(fav[1] == [2, 129, 86, 73] and fav[2]['draw_type'] == 'center' and mode[2]['draw_type'] == 'default',
-          'Unexpected stock heart or play mode')
+    check(fav[2]['draw_type'] == 'center' and mode[2]['draw_type'] == 'center' and
+          not [k for k in mode[2] if k.endswith(('x_offset', 'y_offset'))], 'Unexpected stock heart or play mode')
     mode[1] = [375 - fav[1][0] - fav[1][2], *fav[1][1:]]
-    mode[2]['draw_type'] = 'center'
-    for key in [k for k in mode[2] if k.endswith(('x_offset', 'y_offset'))]: del mode[2][key]
     # The heart's ink sits high in its bitmap (weighted centre 11 px of 28, the play modes' 13-14), so
     # it drops 3 px to sit level with the play mode by eye.
     fav[1] = [fav[1][0], fav[1][1] + 3, *fav[1][2:]]
     # The progress bar is the iPod page's (np_slider), so it takes the accent and Theme, where stock's
     # images drew theirs: its 82 px box's middle, 6 px down.
     bar = named['slider_play']
-    check(bar[1] == [50, 208, 290, 82] and bar[2]['style:normal:y_offset'] == '6', 'Unexpected stock progress bar')
+    check(bar[2]['style:normal:y_offset'] == '6', 'Unexpected stock progress bar')
     np_slider(bar, 50, 208 + 82 // 2 + 6, 290, NP_BAR[3])
     return encode(root)
 
@@ -837,7 +869,7 @@ def bigcover_page(root):
 # two-line QS_LABEL_H area in the stock 16px style, top-aligned so single- and two-line labels start
 # on one line, QS_LABEL_GAP under its icon and QS_ROW_GAP above the next row. Brightness becomes a
 # slim QS_BAR track in a QS_TOUCH-high slider (tap or drag anywhere on it, as stock) between the
-# stock dim and bright suns, which keep their images. dialog_statusbar_dialog_init (0x4a0d88)
+# stock dim and bright suns, which keep their images. dialog_statusbar_dialog_init (0x4a2338)
 # finds these widgets by name and never moves or resizes them.
 QUICK_SETTINGS = 'dialog/statusbar_dialog.bin'
 QS_TOP, QS_ICON, QS_LABEL_GAP, QS_LABEL_H, QS_ROW_GAP, QS_LABEL_W = 20, 60, 6, 40, 12, 80
@@ -1016,6 +1048,36 @@ def row_icon(data, size=SET_ICON, sharp=False):
                        *(['-unsharp', '0x0.6+0.8+0'] if sharp else []), *PNG_OUT, data=data)
 
 
+def pane_icon(data, size):
+    """A flat 52px row icon (a disc in one colour, a glyph in another) at Home's pane's size, drawn again
+    rather than scaled: a plain resize to nearly twice its size was soft (#303). Its two colours are read from
+    it, the commonest opaque one and the one furthest from that; at 16 times the size each pixel becomes the
+    nearer of the two and the disc's edge its half-covered line, and the shrink to size smooths those edges.
+    ponytail: two colours only, and a line thinner than a source pixel comes out thinner still (GLYPH_CUT is
+    the knob); an icon with a third colour or a gradient needs real art at the pane's size."""
+    import re
+    listing = imagemagick('png:-', '-alpha', 'on', '-depth', '8', '-format', '%c', 'histogram:info:-', data=data).decode()
+    opaque = [(int(n), (int(r), int(g), int(b))) for n, r, g, b in
+              re.findall(r'(\d+): *\( *(\d+), *(\d+), *(\d+), *255\)', listing)]
+    check(opaque, 'A pane icon needs opaque pixels')
+    disc = max(opaque)[1]
+    glyph = max(opaque, key=lambda c: sum((a - b) ** 2 for a, b in zip(c[1], disc)))[1]
+    disc, glyph = ('rgb(%d,%d,%d)' % c for c in (disc, glyph))
+    flat = lambda colour: ['(', '-clone', '0', '-alpha', 'off', '-fill', colour, '-colorize', '100', ')']
+    return imagemagick(
+        'png:-', '-alpha', 'on', '-background', disc, '-alpha', 'background', '-filter', 'Mitchell', '-resize', '1600%',
+        '(', '-clone', '0', '-alpha', 'extract', '-blur', '0x8', '-threshold', '50%', ')',  # 1: the disc's shape
+        '(', '-clone', '0', '-alpha', 'off', *flat(disc), '-compose', 'Difference', '-composite',
+        '-colorspace', 'Gray', '-auto-level', '-threshold', f'{GLYPH_CUT}%', ')',  # 2: where the glyph is
+        *flat(disc), *flat(glyph),  # 3, 4
+        '-delete', '0', '(', '-clone', '2', '-clone', '3', '-clone', '1', '-compose', 'Over', '-composite', ')',
+        '-delete', '1-3', '+swap', '-compose', 'CopyOpacity', '-composite',
+        '-filter', 'Lanczos', '-resize', f'{size}x{size}!', *PNG_OUT, data=data)
+
+
+GLYPH_CUT = 45  # percent of the way from the disc's colour to the glyph's at which a pixel is the glyph's
+
+
 # Each stock placeholder's replacement size: stock's own, but Now Playing's and the full-screen art's at
 # the art they fill (stock's 188 scaled down there on the device, jagged), and the album grids' at
 # album_children's inset cover (110 less TILE_INSET + TILE_CLEARANCE a side), drawn 1:1 by its scale-down.
@@ -1088,7 +1150,7 @@ def branch(op, at, target):
 
 def patch_word(data, address, old, new, purpose, changes=None):
     off = fileoff(data, address)
-    check(struct.unpack_from('<I', data, off)[0] == old, f'{address:#x}: unexpected instruction')
+    check(struct.unpack_from('<I', data, off)[0] == old, f'{address:#x}: unexpected instruction ({purpose})')
     struct.pack_into('<I', data, off, new)
     if changes is not None:
         changes.append(dict(address=hex(address), original=hex(old), patched=hex(new), purpose=purpose))
@@ -1254,14 +1316,19 @@ def set_assets(cat, g):
     return out
 
 
+# The GOT loads patch_code writes, of stock's navigator_close and dummy_destroy. No stock word beside one names its slot,
+# and a slot moves with each stock build: tools/build.py checks that each still holds its function.
+CLOSE_LOAD, DUMMY_LOAD = 0x8f99a914, 0x8f99ea00
+
+
 def patch_code(data, symbols):
     changes = []
     word = functools.partial(patch_word, data, changes=changes)
 
     # Lookup song handlers loop until Now Playing is on top; animated Back cannot finish
     # until they return. Close each named page synchronously with stock navigator_close.
-    for address, name_slot in ((0x4a6250, 0x468), (0x4ad458, 0x468), (0x526e70, 0x420)):
-        word(address, 0x8f99aeb0, 0x8f99a8f8, 'lookup unwind uses navigator_close')
+    for address, name_slot in ((0x4a7ed4, 0x468), (0x4af83c, 0x468), (0x537fbc, 0x420)):
+        word(address, 0x8f99af04, CLOSE_LOAD, 'lookup unwind uses navigator_close')
         word(address + 4, 0x0320f809, 0x0320f809, 'lookup close call')
         word(address + 8, 0, 0x8fa40000 | name_slot, 'lookup close receives the top window name')
 
@@ -1278,24 +1345,29 @@ def patch_code(data, symbols):
     for name, call in (('stock_row_layout_calls', 'stock_set_row_layout'), ('stock_row_text_calls', 'stock_row_text'), ('stock_row_style_calls', 'stock_row_style')):
         for address, instruction in AUDIT[name]['sites']:
             word(int(address, 16), int(instruction, 16), jal(symbols[call]), AUDIT[name]['purpose'])
-    word(0x522410, 0x0320f809, 0, 'folder rebind retains the width owned by its row layouter')
+    word(0x532d3c, 0x0320f809, 0, 'folder rebind retains the width owned by its row layouter')
+    # Show Navigation Bar: each page moves its list for the switch, to the box its asset has anyway while the bar shows. The
+    # lists keep the boxes their assets give them, ours included: each call's GOT load takes stock's dummy_destroy (0x72bd8c,
+    # which returns 0) instead of widget_move_resize or widget_resize.
+    for address, instruction in AUDIT['navbar_resize_calls']['sites']:
+        word(int(address, 16), int(instruction, 16), DUMMY_LOAD, AUDIT['navbar_resize_calls']['purpose'])
     # Playlist page's Import/Export tiles: no icon (0 wide), the label spans the 164px tile in
-    # stock's centred s_scrlabel_white24c (0x769220) instead of 91px after the icon.
-    for icon, style in ((0x4b2fa0, 0x4b3028), (0x4b30a4, 0x4b3130)):
+    # stock's centred s_scrlabel_white24c (0x77c990) instead of 91px after the icon.
+    for icon, style in ((0x4b56c0, 0x4b5748), (0x4b57e8, 0x4b5874)):
         word(icon, 0x24070032, 0x24070000, 'playlist tile icon width 0')
         word(icon + 0x54, 0x2407005b, 0x240700a4, 'playlist tile label spans the tile')
         word(icon + 0x60, 0x2405003f, 0x24050000, 'playlist tile label at the tile edge')
-        word(style, 0x25058c04, 0x25059220, 'playlist tile label centred')
-    # iPod settings rows: the list_view layouter's layout slot (data, vtable 0x926928 + 8).
+        word(style, 0x2505c434, 0x25050000 | 0x77c990 & 0xffff, 'playlist tile label centred')
+    # iPod settings rows: the list_view layouter's layout slot (data, vtable 0x93a4bc + 8).
     word(inc('LIST_VIEW_LAYOUT_SLOT'), inc('LIST_VIEW_LAYOUT'), symbols['ipod_list_layout'],
          'settings lists stack SET_ROW rows and map their children')
     # toolsTimeItoa's formats, as an iPod writes times: 0:02 and 1:02:03, not 00:02 and 01:02:03.
-    for address, old, new in ((0x7778a0, 0x64323025, 0x253a6425), (0x7778a4, 0x3230253a, 0x3a643230),
-                              (0x7778a8, 0x30253a64, 0x64323025), (0x7778ac, 0x00006432, 0),
-                              (0x7778b0, 0x64323025, 0x253a6425), (0x7778b4, 0x3230253a, 0x00643230),
-                              (0x7778b8, 0x00000064, 0)):
+    for address, old, new in ((0x78bba0, 0x64323025, 0x253a6425), (0x78bba4, 0x3230253a, 0x3a643230),
+                              (0x78bba8, 0x30253a64, 0x64323025), (0x78bbac, 0x00006432, 0),
+                              (0x78bbb0, 0x64323025, 0x253a6425), (0x78bbb4, 0x3230253a, 0x00643230),
+                              (0x78bbb8, 0x00000064, 0)):
         word(address, old, new, 'times without a leading zero')
     # home_page_init's memory-play resume opens Now Playing; outside car mode it runs the page's player_start alone.
-    word(0x523de0, 0x0320f809, jal(symbols['ringnav_boot']),
+    word(0x534cf8, 0x0320f809, jal(symbols['ringnav_boot']),
          'boot resume restores the queue paused and stays on Home')
     return changes

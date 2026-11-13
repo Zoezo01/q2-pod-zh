@@ -8,10 +8,11 @@ import struct
 import pytest
 
 import host
-from conftest import text, Game
+from conftest import text, Game, c_enum
 from conftest import FNV_PRIME, O, Deques, Files, claim, fnv1a, in_fork  # noqa: F401
 
 STOCK_RED = O['STOCK_RED']
+POD = c_enum('POD_CHARGE')  # pod_rows' rows, by name
 PAPER, INK = O['LIGHT_PAPER'], O['LIGHT_INK']
 REC_NAME, REC_PATH, REC_CUE_START = O['REC_NAME'], O['REC_PATH'], O['REC_CUE_START']
 KEY_PLAY, KEY_RETURN, KEY_CENTER = O['KEY_PLAY'], O['KEY_RETURN'], O['KEY_CENTER']
@@ -346,7 +347,7 @@ def test_ivory_is_minimal_only(fw, clock):
 
 
 def test_ivory_on_minimal(fw, clock):
-    Config(fw)  # Minimal, its default accent Ivory
+    Config(fw, MINIMAL_ACCENT=b'7')  # Minimal's Ivory
     assert fw.fn('accent_tone', C.c_uint, C.c_int)(2) == O['MINIMAL_FILL']
 
 
@@ -382,7 +383,7 @@ def test_config_value_any_text(fw):
         assert value(b'S', b'K', n, default) == want
 
 
-@pytest.mark.parametrize('i, choices', [(0, 2), (1, 2), (2, 3), (3, 2), (4, 2), (10, 4), (11, 2), (12, 2), (15, 2)])
+@pytest.mark.parametrize('i, choices', [(0, 2), (1, 2), (2, 3), (3, 2), (4, 2), (10, 4), (11, 2), (12, 2), (15, 2), (POD['POD_BIG_LIB'], 2), (POD['POD_PL_CF'], 2)])
 def test_pod_rows_choices(fw, i, choices):
     assert fw.fn('navigation__pod_choices', C.c_int, C.c_uint)(i) == choices
 
@@ -391,12 +392,14 @@ def test_pod_settings_defaults(fw):
     Config(fw)
     assert fw.fn('ringnav_artist_view', C.c_int)() == 1  # Artist albums defaults to Coverflow
     assert [fw.fn(name, C.c_int)() for name in ('ringnav_year_old', 'ringnav_artist_az',
-                                                'ringnav_lock_clock', 'ringnav_bt_resume')] == [0] * 4
+                                                'ringnav_lock_clock', 'ringnav_bt_resume',
+                                                'ringnav_big_library', 'ringnav_playlist_coverflow')] == [0] * 6  # Large Library Mode off
 
 
 def test_pod_settings_read_their_keys_once(fw):
-    Config(fw, YEAROLD=b'1', ARTISTCF=b'2', ARTISTAZ=b'9', VOLGUARD=b'1')
-    assert fw.fn('ringnav_artist_view', C.c_int)() == 2
+    Config(fw, YEAROLD=b'1', ARTISTCF=b'2', PLAYLISTCF=b'1', ARTISTAZ=b'9', VOLGUARD=b'1', BIGLIBRARY=b'1')
+    assert fw.fn('ringnav_artist_view', C.c_int)() == 2 and fw.fn('ringnav_big_library', C.c_int)() == 1
+    assert fw.fn('ringnav_playlist_coverflow', C.c_int)() == 1
     assert fw.fn('ringnav_year_old', C.c_int)() == 1 and fw.fn('ringnav_artist_az', C.c_int)() == 0
     assert fw.var('wheel_guard', C.c_int).value == 1
     count = len(fw.calls('toolsReadConfig'))
@@ -881,7 +884,7 @@ def test_cue_text_any_field_in_its_512(fw, heap):
 @pytest.mark.parametrize('data', [b'\xb0\xa1', b'\xb0\xa1' * 170])
 def test_cue_text_gbk_goes_through_stocks_conversion(fw, heap, data):
     log = (C.c_long * 3)()
-    stock_stub(0x5bccac, 9, log)
+    stock_stub(0x5cf83c, 9, log)
     block = heap.string(data, 512)
     assert fw.fn('ringnav_cue_text', C.c_int, C.c_void_p, C.c_void_p, C.c_void_p)(block, 0x11, 0x22) == 9
     assert list(log) == [block, 0x11, 0x22]
@@ -952,11 +955,6 @@ def test_the_scan_any_folder_name(fw, heap):
         name = heap.string(data)
         assert bool(check(name, b'.')) == (data[:1] != b'.')
         heap.free(name)
-
-
-@pytest.mark.parametrize('songs', [0, 64999])
-def test_the_scan_goes_on_below_65000(fw, songs):
-    assert fw.fn('ringnav_scan_room', C.c_int, C.c_int)(songs) == 1
 
 
 @pytest.mark.parametrize('path, cue, m4b', [
@@ -1685,6 +1683,27 @@ def test_a_standby_wake_drops_the_card_toasts(fw, st, power):
     assert toast.value == 1  # the window is over
 
 
+def test_a_modal_dialogs_close_skips_a_dialog_already_freed(fw):
+    """dialog_modal's close (DIALOG_CLOSE) closes its dialog while the window manager still holds it,
+    and touches nothing once it is gone: stock's close read a freed dialog's parent (q2-crash.log)."""
+    wm, dialog, page = 0x1000, 0x2000, 0x3000
+    windows, queued = [page, dialog], []
+    fw.mock('window_manager', lambda *_: wm)
+    fw.mock('widget_count_children', lambda w, *_: len(windows) if w == wm else 0)
+    fw.mock('widget_get_child', lambda w, i, *_: windows[i])
+    fw.mock('idle_add', lambda f, ctx, *_: queued.append((f, ctx)) or 1)
+    close = fw.fn('system__dialog_close', C.c_int, C.c_void_p)
+    fw.fn('ringnav_dialog_close', C.c_int, C.c_void_p, C.c_void_p)(0x6521dc, dialog)
+    assert queued == [(C.cast(close, C.c_void_p).value, dialog)]
+    idle = (C.c_char * 0x28)()
+    C.c_void_p.from_buffer(idle, O['IDLE_CTX']).value = dialog
+    close(C.addressof(idle))
+    assert [args[0] for _, args in fw.calls('window_close')] == [dialog]
+    windows.remove(dialog)  # widget_destroy takes it out of the window manager before freeing it
+    close(C.addressof(idle))
+    assert len(fw.calls('window_close')) == 1
+
+
 @pytest.mark.parametrize('stop', ['standby', 'long pass', 'clean end'])
 def test_no_stall_record_while_the_watchdog_is_stopped_or_stretched(fw, st, stop, power):
     s = Stall(fw, power)
@@ -2204,6 +2223,29 @@ def test_a_playlist_goes_with_its_songs(fw):
     assert len(fw.calls('navigator_back')) == 1 and fw.var('g_delete_flag', C.c_ubyte).value == 1
 
 
+BUSY = b'PRAGMA busy_timeout=500'  # playlists.c's pl_db: a write waits out one playlist_art read
+
+
+def test_each_playlist_writer_waits_for_a_reader_before_its_write(fw):
+    """Create and Delete set a busy timeout on their connection before the write, so a commit that
+    meets the art worker's read waits for it instead of failing with SQLITE_BUSY."""
+    sql, _ = playlist_delete(fw)
+    assert sql.log[:2] == [BUSY, b'begin immediate']
+    made, sql = create(fw, b'Mine', (0, 1, 3))
+    assert made == 2 and sql.log[:2] == [BUSY, b'begin immediate']
+
+
+@pytest.mark.parametrize('opened', [0, 14])
+def test_stock_s_connection_waits_for_a_reader_once_open(fw, opened):
+    """tools/build.py's hook in stock's lazy open (0x5c8d64): the pragma on the connection it opened, none
+    when the open failed, and the open's result back to stock."""
+    sql = Sql(fw)
+    fw.mock('sqlite3_open', lambda path, db, *_: C.c_void_p.from_address(db).__setattr__('value', 0xdb) or opened)
+    db = C.c_void_p()
+    assert fw.fn('stock_db_open', C.c_int, C.c_char_p, C.c_void_p)(b'/mnt/data/database.db', C.byref(db)) == opened
+    assert sql.log == ([] if opened else [BUSY]) and [c[1][0] for c in fw.calls('sqlite3_exec')] == ([] if opened else [0xdb])
+
+
 def test_a_cancelled_delete_changes_nothing(fw):
     sql, seen = playlist_delete(fw, confirm=0)
     assert not sql.log and seen == [b'dialog/confirminfo_dialog']
@@ -2607,7 +2649,7 @@ def test_hold_info_gives_play_and_return_700_ms(fw):
 @in_fork
 def test_hold_info_of_any_other_key_is_stocks(fw):
     log = (C.c_long * 3)()
-    stock_stub(0x6a027c, 0x1234, log)
+    stock_stub(0x6b384c, 0x1234, log)
     assert fw.fn('ringnav_hold_info', C.c_void_p, C.c_void_p, C.c_int)(0x55, KEY_CENTER) == 0x1234
     assert list(log[:2]) == [0x55, KEY_CENTER]
 
@@ -2943,11 +2985,12 @@ def test_folder_videos(fw, path, videos):
     assert fw.fn('folder_videos', C.c_int)() == videos
 
 
-@pytest.mark.parametrize('table, exists, songs, want', [(None, 1, 0, 1), (b'playlist', 1, 0, 1), (b'songtable', 0, 64999, 0), (b'songtable', 0, 65000, 1)])
-def test_scan_refresh_early_answers(fw, table, exists, songs, want):
+@pytest.mark.parametrize('table, exists', [(None, 1), (b'playlist', 1), (b'songtable', 0), (b'playlist', 0)])
+def test_scan_refresh_early_answers(fw, table, exists):
+    """Another table's row, or a song the library doesn't have yet (stock adds it): stock's answer, nothing refreshed."""
     fw.mock('toolsCheckItemExist', lambda *_: exists)
-    fw.mock('toolsGetMusicNum', lambda *_: songs)
-    assert fw.fn('ringnav_scan_refresh', C.c_int, C.c_void_p, C.c_char_p, C.c_int)(None, table, 0) == want
+    assert fw.fn('ringnav_scan_refresh', C.c_int, C.c_void_p, C.c_char_p, C.c_int)(None, table, 0) == exists
+    assert not fw.calls('toolsUpdateDbTable')
 
 
 def test_scan_refresh_keeps_a_row_without_a_path(fw):

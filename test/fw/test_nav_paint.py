@@ -1055,6 +1055,8 @@ class Canvas:
         fw.mock('canvas_measure_text', lambda c, s, n, *_: 10.0 * n)  # 10 px a character
         fw.mock('widget_load_image', self.load)
         fw.mock('canvas_draw_image', lambda c, bm, src, dst, *_: self.arts.append((self.loaded.get(bm), rect(dst))))
+        self.clip = (0, 0, 375, 480)  # the whole screen
+        fw.mock('canvas_get_clip_rect', lambda c, r, *_: C.memmove(r, struct.pack('<4i', *self.clip), 16) and 0)
 
     @property
     def fill(self):
@@ -1152,7 +1154,7 @@ def test_a_pressed_tile_is_grey_inside_its_card(fw, world, rounded, radius):
 
 def test_a_row_its_own_target_draws_its_pill_as_its_background(fw, world):
     """A page row (its own touch target, no button over it): its clear background is the pill's."""
-    theme(fw, MINIMAL)
+    theme(fw, MINIMAL, ROUNDED='0')
     surface = world.add(world.window('list_page'), 'list', 'scroll_view')
     row = world.add(surface, 'row', 'list_item', box=(0, 0, 375, 52), style='s_listitem_black', state_for_style='pressed')
     world.add(row, 'title', 'label', box=(20, 0, 300, 52))
@@ -2052,6 +2054,67 @@ def test_over_classic_s_now_playing_speakers_take_the_times_places(fw, world, st
     starts = {x for x, y, w, h, c in canvas.fills if h == 1 and y >= top and x > 66}
     assert 66 + 243 * level // 100 in starts  # the track resumes where the volume ends
     assert canvas.texts == []
+
+
+def test_over_classic_s_now_playing_the_volume_s_percentage_takes_the_page_dots_place(fw, world, st, vd):
+    theme(fw, CLASSIC)
+    dialog, vol, _ = volume(fw, world, st, 20, maximum=80, under='playing_page', np=True, beside=True)
+    page = st('np_win', C.c_void_p).value
+    column = world.add(page, 'slide_view_view', box=(0, 8, 375, 200))
+    dots = world.add(column, 'slide_indicator1', 'slide_indicator', box=(0, 182, 375, 10))
+    canvas = Canvas(fw)
+    vol_paint(fw, dialog, canvas)
+    assert not world[dots].visible and canvas.texts == []  # hidden first: the number is the next paint's
+    assert world.fire(1) == RET_REPEAT and world.invalid == [(dialog, None)]
+    canvas = Canvas(fw)
+    vol_paint(fw, dialog, canvas)
+    px = O['VOL_PCT_PX']
+    assert px > O['NP_TIMES_PX']  # larger than the times it sits above
+    assert [(t, r, f[1]) for t, r, _, f in canvas.texts] == [('25%', (0, 8 + 182 + 5 - px // 2 - 2, 375, px + 4), px)]
+    world.invalid.clear()
+    assert world.fire(1) == RET_REPEAT and world.invalid == [] and not world[dots].visible
+    world.set(vol, 'value', 40)  # a repaint of the bar's rows alone draws the bar at 50%, the number clipped away
+    canvas = Canvas(fw)
+    canvas.clip = (0, 240, 375, 30)
+    vol_paint(fw, dialog, canvas)
+    assert world.fire(1) == RET_REPEAT and world.invalid == [(dialog, None)]  # so the poll repaints it whole
+    vol_paint(fw, dialog, Canvas(fw))
+    world.invalid.clear()
+    assert world.fire(1) == RET_REPEAT and world.invalid == []
+    world.window('home_page')  # the dialog gone: the dots are back and their page repainted
+    assert world.fire(1) == RET_OK and world[dots].visible and world.invalid == [(page, None)]
+    assert vd('vol_dots', C.c_void_p).value is None
+
+
+def test_dots_hidden_by_another_or_a_volume_without_its_poll_keep_the_dots(fw, world, st, vd):
+    theme(fw, CLASSIC)
+    dialog, *_ = volume(fw, world, st, 20, under='playing_page', np=True, beside=True)
+    dots = world.add(st('np_win', C.c_void_p).value, 'slide_indicator1', 'slide_indicator', box=(0, 182, 375, 10))
+    fw.mock('timer_add', lambda *_: 0)  # no poll to bring them back
+    for _ in range(2):
+        canvas = Canvas(fw)
+        vol_paint(fw, dialog, canvas)
+        assert world[dots].visible and canvas.texts == []
+    vd('vol_timer', C.c_uint).value = 1
+    world[dots].visible = 0
+    for _ in range(2):
+        canvas = Canvas(fw)
+        vol_paint(fw, dialog, canvas)
+        assert canvas.texts == [] and vd('vol_dots', C.c_void_p).value is None
+
+
+def test_the_volume_over_another_window_gives_the_dots_back(fw, world, st, vd):
+    theme(fw, CLASSIC)
+    dialog, *_ = volume(fw, world, st, 20, under='playing_page', np=True, beside=True)
+    page = st('np_win', C.c_void_p).value
+    dots = world.add(page, 'slide_indicator1', 'slide_indicator', box=(0, 182, 375, 10))
+    vol_paint(fw, dialog, Canvas(fw))
+    assert not world[dots].visible
+    world.window('home_page')
+    again = world.window('volume_dialog', 'dialog')  # reopened over Home before the poll saw the first close
+    world.add(again, 'slider_vol', 'slider', box=(0, 100, 375, 40), max=100, value=20)
+    vol_paint(fw, again, Canvas(fw))
+    assert world[dots].visible and vd('vol_dots', C.c_void_p).value is None
 
 
 def test_the_volume_polls_while_it_is_on_top(fw, world, st, vd):

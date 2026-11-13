@@ -125,7 +125,8 @@ STATUSBAR = own('STATUSBAR', 'Status Bar', ('Theme', 'Minimal', 'Modern', 'Class
 CLASSIC_THUMB = dict(thumb=1, ticks_turn=36, ticks_album=7, fast_at=23, fast_full=90, top_speed=20, track=30, snap=25, spin=130, far_left=250,
                      detent=80, hold_ms=5000, stop_ms=60, stop_left=60, rate_up=120, rate_down=50, back=50, dead=1, contact_ms=40, aim_snap=30,
                      lead_from=25, lead_full=100, lead_ms=45, row_shift=20, row_from=100, row_full=300, row_shrink=8, row_flat=200, row_out=33,
-                     row_edge=160, row_width=60, row_key=72, row_reach=22, jump_ms=700, jump_ticks=5, jump_at=32, jump_pace=140)
+                     row_edge=160, row_width=60, row_key=72, jump_ms=700, jump_ticks=5, jump_at=32, jump_pace=140,
+                     big_jump_at=75, big_jump_ms=240, enter_albums=8, slide_ms=160, fold_near=50)
 
 
 CF_TODAY = {'cf.top': 13, 'cf.x1': 112, 'cf.xs': 48, 'cf.z1': 90, 'cf.zs': 20, 'cf.eye': 300, 'cf.bright1': 192,
@@ -151,9 +152,9 @@ MINIMAL = {
     'home_pane': (), 'pane_shadow': 0, 'pane_shadow_w': 0, 'pane_shadow_a': (), 'pane_light_a': 0, 'pane_icon_x': 0, 'pane_icon_y': 0, 'pane_note_x': 0, 'pane_note_y': 0, 'pane_count_y': 0, 'pane_count_w': 0, 'pane_count_px': 0, 'pane_svc_x': 0, 'pane_svc_y': 0, 'pane_svc_px': 0,
     'set_top': 8, 'set_text': 0, 'painter[PAINT_SCRUB]': 0, 'painter[PAINT_VOLUME]': 0, 'painter[PAINT_CONFIRM]': 0, 'painter[PAINT_PAGES]': 0, 'np_rows[0]': (), 'np_rows[1]': (), 'np_rows[2]': (), 'np_rows[3]': (), 'np_bar': 4, 'np_scrub': 8, 'np_track': (), 'np_fill': (), 'font[ROLE_TITLE]': 0, 'font[ROLE_META]': 0, 'font_px[ROLE_TITLE]': 0, 'font_px[ROLE_META]': 0, 'font_px[ROLE_NP]': 0, 'font[ROLE_HOME]': 0, 'font_px[ROLE_HOME]': 0, 'font[ROLE_BAR]': 0, 'font_px[ROLE_BAR]': 0, 'art_square': 0, 'art_x': 0, 'art_text_x': 0, 'art_text_end': 0, 'art_placeholder': 0, 'row_text_end': 0, 'sep': (), 'font[ROLE_TALL]': 0, 'font_px[ROLE_TALL]': 0, 'chevron_x': 0, 'home_chevron_x': 0, 'letter_raw': 0, 'letter_px': 0, 'batt': (), 'batt_empty': (), 'batt_low': 0, 'batt_low_w': 0, 'batt_line': 0, 'batt_edge': 0, 'batt_corner_a': 0, 'batt_foot_a': 0, 'batt_shade_a': 0, 'batt_soft_a': 0, 'batt_soft_top_a': 0, 'batt_emboss_a': 0, 'batt_emboss_nub_a': 0, 'bar_bt_dy': 0, 'bar_wifi_dy': 0, 'sb_w': 0, 'sb_right': 0, 'sb_top': 0, 'sb_bottom': 0, 'sb_min': 0, 'sb_thumb': 0, 'bolt': 0, 'bolt_halo_a': 0, 'state_stops': (), 'state_edge': (), 'state_halo_light': 0, 'state_halo_dark': 0, 'station_stops': (), 'station_mast': (), 'station_band_a': 0, 'station_shadow_a': 0, 'light': {}, 'np_layout': 0, 'geom_set': 'ipod', 'geoms': {},
     'schemes': [{**MINIMAL_ROLES, 'raw_red': int(v == 1), 'card': int(v == 7)} for v in range(9)],
-    'opts': [opt('SETTING_LIGHT', preset=0, keep=2), opt('SETTING_ACCENT', default=7, preset=0),
+    'opts': [STATUSBAR, opt('SETTING_LIGHT', preset=0, keep=2), opt('SETTING_ACCENT', default=0, preset=0),
              opt('SETTING_ROUNDED', preset=1), opt('SETTING_HOME', preset=0), opt('SETTING_SHORTCUT'),
-             opt('SETTING_BATTERY'), STATUSBAR, opt('SETTING_TIMETITLE', preset=1), opt('SETTING_NPCENTRED')], 'undeclared': [], **CF_TODAY}
+             opt('SETTING_BATTERY'), opt('SETTING_TIMETITLE', preset=1), opt('SETTING_NPCENTRED')], 'undeclared': [], **CF_TODAY}
 # Modern: the hand-written table's Classic, before Classic took Classic Light's look.
 MODERN = {
     **MINIMAL, 'id': 'modern', 'index': 2, 'name': 'Modern', 'accents': 0x17f, 'accent_key': 'ACCENT',
@@ -162,9 +163,9 @@ MODERN = {
     'home_top': 0, 'home_full_row': 369, 'home_text_x': 33, 'home_label_end[0]': 33, 'home_label_end[1]': 33,
     'set_top': 0, 'np_bar': 8, 'np_scrub': 8, 'art_square': 1,
     'schemes': [ZERO if v == 7 else {**MODERN_ROLES, 'raw_red': int(v == 1)} for v in range(9)],
-    'opts': [opt('SETTING_LIGHT', preset=1, keep=2), opt('SETTING_ACCENT', default=0, preset=4, values=0x17f),
+    'opts': [STATUSBAR, opt('SETTING_LIGHT', preset=1, keep=2), opt('SETTING_ACCENT', default=0, preset=4, values=0x17f),
              opt('SETTING_ROUNDED', preset=0), opt('SETTING_HOME', preset=0), opt('SETTING_SHORTCUT'),
-             opt('SETTING_BATTERY'), STATUSBAR, opt('SETTING_TIMETITLE', preset=0), opt('SETTING_NPCENTRED')], 'undeclared': []}
+             opt('SETTING_BATTERY'), opt('SETTING_TIMETITLE', preset=0), opt('SETTING_NPCENTRED')], 'undeclared': []}
 
 
 def bare(t):
@@ -482,13 +483,13 @@ def test_emit(tmp_path):
         '};',
         '_Static_assert(sizeof minimal_schemes / sizeof *minimal_schemes >= ACCENT_N, "one scheme per ACCENTS row, then the theme\'s own");',
         'static const option_t minimal_opts[] = {',
+        '    { .setting = SETTING_OWN + 0, .def = 0, .preset = 0, .keep = -1, .values = 0x0 },',
         '    { .setting = SETTING_LIGHT, .def = -1, .preset = 0, .keep = 2, .values = 0x0 },',
-        '    { .setting = SETTING_ACCENT, .def = 7, .preset = 0, .keep = -1, .values = 0x0 },',
+        '    { .setting = SETTING_ACCENT, .def = 0, .preset = 0, .keep = -1, .values = 0x0 },',
         '    { .setting = SETTING_ROUNDED, .def = -1, .preset = 1, .keep = -1, .values = 0x0 },',
         '    { .setting = SETTING_HOME, .def = -1, .preset = 0, .keep = -1, .values = 0x0 },',
         '    { .setting = SETTING_SHORTCUT, .def = -1, .preset = -1, .keep = -1, .values = 0x0 },',
         '    { .setting = SETTING_BATTERY, .def = -1, .preset = -1, .keep = -1, .values = 0x0 },',
-        '    { .setting = SETTING_OWN + 0, .def = 0, .preset = 0, .keep = -1, .values = 0x0 },',
         '    { .setting = SETTING_TIMETITLE, .def = -1, .preset = 1, .keep = -1, .values = 0x0 },',
         '    { .setting = SETTING_NPCENTRED, .def = -1, .preset = -1, .keep = -1, .values = 0x0 },',
         '};',
@@ -555,7 +556,8 @@ def with_role(monkeypatch, **cf):
     ('bright2', 0), ('text_y', 209), ('name_px', 33), ('artist_px', 29), ('radius', 84), ('stride', 0),
     ('tilt', 29), ('tilt', 91), ('horizon', 0), ('horizon', 100), ('third', 2), ('swing', 2), ('lift', 41), ('eye_turn', 401), ('view_h', 209), ('view_h', 295),
     ('thumb', 2), ('detent', 101), ('hold_ms', 30001), ('dead', 21), ('row_width', 101), ('art_persp', 101),
-    ('jump_ms', 5001), ('jump_ticks', 201), ('jump_at', 1001), ('jump_pace', 2001)])
+    ('jump_ms', 5001), ('jump_ticks', 201), ('jump_at', 1001), ('jump_pace', 2001), ('big_jump_at', 1001), ('big_jump_ms', 5001),
+    ('enter_albums', 13), ('slide_ms', 1001), ('fold_near', 51)])
 def test_coverflow_range_rejects(monkeypatch, field, value):
     if field in theme.CF_THUMB:  # Minimal's theme.xml states the thumb, not offsets.inc
         with pytest.raises(theme.ThemeError, match=rf'coverflow\.shelf\.{field}: {value} outside'):
@@ -569,7 +571,8 @@ def test_coverflow_range_rejects(monkeypatch, field, value):
 @pytest.mark.parametrize('field,value,message', [
     ('cf.top', 15, 'top \\+ 160 \\+ reflect = 221 exceeds 220'), ('cf.reflect', 48, 'top \\+ 160 \\+ reflect = 221 exceeds 220'),
     ('cf.view_h', 291, 'view_h 291 exceeds the client height 290'),
-    ('cf.bright2', 193, 'bright2 193 exceeds bright1 192'), ('cf.text_y', 231, 'text_y \\+ 60 = 291 exceeds the client height 290')])
+    ('cf.bright2', 193, 'bright2 193 exceeds bright1 192'), ('cf.text_y', 231, 'text_y \\+ 60 = 291 exceeds the client height 290'),
+    ('cf.row_out', 29, 'row_out 29 puts 16 covers of the held row on the screen, past CF_WIDE 15')])
 def test_coverflow_cross_rejects(field, value, message):
     with pytest.raises(theme.ThemeError, match=message):
         theme.validate({**theme.builtins()[0], field: value}, 't.xml')
@@ -589,14 +592,15 @@ def test_coverflow_thumb_is_every_themes():  # the page's numbers, all retunable
         assert {a: t[f'cf.{a}'] for a in CLASSIC_THUMB} == CLASSIC_THUMB, t['id']
 
 
-@pytest.mark.parametrize('field', ['ticks_turn', 'ticks_album', 'track', 'snap', 'spin', 'far_left', 'rate_up', 'rate_down', 'lead_ms', 'row_edge', 'row_reach'])
+@pytest.mark.parametrize('field', ['ticks_turn', 'ticks_album', 'track', 'snap', 'spin', 'far_left', 'rate_up', 'rate_down', 'lead_ms', 'row_edge',
+                                   'enter_albums', 'slide_ms'])
 def test_coverflow_thumb_needs_its_divisors(field):
     c = next(t for t in theme.builtins() if t['id'] == 'classic-light')
     with pytest.raises(theme.ThemeError, match=f'coverflow.shelf: thumb needs {field}'):
         theme.validate({**c, f'cf.{field}': 0}, 't.xml')
 
 
-@pytest.mark.parametrize('lo,hi', [('fast_at', 'fast_full'), ('lead_from', 'lead_full'), ('row_from', 'row_full')])
+@pytest.mark.parametrize('lo,hi', [('fast_at', 'fast_full'), ('fast_at', 'big_jump_at'), ('lead_from', 'lead_full'), ('row_from', 'row_full')])
 def test_coverflow_thumb_ranges_run_upward(lo, hi):
     c = next(t for t in theme.builtins() if t['id'] == 'classic-light')
     with pytest.raises(theme.ThemeError, match=f'coverflow.shelf: {hi} {c[f"cf.{lo}"]} must pass {lo} {c[f"cf.{lo}"]}'):
@@ -607,11 +611,11 @@ def test_coverflow_thumb_ranges_run_upward(lo, hi):
 def test_coverflow_shelf_near_edge_clears_the_eye():
     with pytest.raises(theme.ThemeError, match="eye \\+ z1 = 69 doesn't clear 80 sin\\(tilt\\) = 69\\.3$"):
         theme.validate({**theme.builtins()[0], 'cf.eye': 39, 'cf.z1': 30}, 't.xml')
-    theme.validate({**theme.builtins()[0], 'cf.eye': 40, 'cf.z1': 30}, 't.xml')
+    theme.validate({**theme.builtins()[0], 'cf.eye': 40, 'cf.z1': 30, 'cf.thumb': 0}, 't.xml')  # no held row to fit
 
 
 def test_coverflow_swing_near_edge_clears_the_eye_mid_step():
-    tight = {**theme.builtins()[0], 'cf.eye': 41, 'cf.z1': 0, 'cf.tilt': 30}  # rest clears by 1, mid-step it doesn't
+    tight = {**theme.builtins()[0], 'cf.eye': 41, 'cf.z1': 0, 'cf.tilt': 30, 'cf.thumb': 0}  # rest clears by 1, mid-step it doesn't; no held row to fit
     theme.validate(tight, 't.xml')
     with pytest.raises(theme.ThemeError, match="lift / 4 = -39\\.0$"):
         theme.validate({**tight, 'cf.swing': 1}, 't.xml')
@@ -817,7 +821,7 @@ def test_scheme_mode_paper_ink():
     assert {(s['mode'], s['paper'], s['ink']) for s in classic['schemes'] if s['sel']} == {(0, 0xffffff, 0)}
     assert (minimal['undeclared'], set0_builtins()[1]['undeclared']) == ([], [])
     assert classic['undeclared'] == ['SETTING_ROUNDED', 'SETTING_NPCENTRED']
-    assert classic['opts'][0] == opt('SETTING_LIGHT', preset=1, keep=2)
+    assert classic['opts'][1] == opt('SETTING_LIGHT', preset=1, keep=2)
     assert not (theme.shared(classic) or not theme.shared(minimal) or not theme.shared(set0_builtins()[1]))
 
 
@@ -933,7 +937,7 @@ def test_classic_blue_own_scheme():
             dark, light = theme.scheme_half(s, False), theme.scheme_half(s, True)
             assert dark['sel_top'] == dark['sel_tall_top'] == s['sel'][0][1] and dark['sel_tall_line'] == dark['sel_tall_edge'], i
             assert light['sel_tall_top'] != s['sel'][0][1] and light['sel_tall_line'] != light['sel_tall_edge'], i
-    assert classic_light['accents'] == 0x37f and classic_light['opts'][1] == opt('SETTING_ACCENT', default=9, preset=9, values=0x37f)
+    assert classic_light['accents'] == 0x37f and classic_light['opts'][2] == opt('SETTING_ACCENT', default=9, preset=9, values=0x37f)
     # each offered band is the same in both halves (Graphite's grey gloss is designed, not flipped)
     assert all(theme.scheme_half(s, True)['sel'] == theme.scheme_half(s, False)['sel'] for s in classic_light['schemes'])
     assert classic_light['schemes'][4]['sel'] == tuple((p, int(h[1:], 16)) for p, h in theme.derive_gloss(theme.ACCENT_TONES[4]))
@@ -1142,10 +1146,10 @@ def test_emit_boot_tables(tmp_path):
     inc = boot_inc(tmp_path, set0_builtins())
     names = ipod.VALUE_NAMES
     sites = [(int(a, 16), g['value']) for g in ipod.AUDIT['immediates'] if isinstance(g['value'], str) for a, _ in g['sites']]
-    assert len(sites) == 90
+    assert len(sites) == 89
     assert 'enum { GEOM_IPOD, GEOM_N };' in (tmp_path/'themes.h').read_text() and 'GEOM_N };' not in (tmp_path/'themes.inc').read_text()
     assert 'enum { ' + ', '.join(f'G_{n.upper()}' for n in names) + ', G_N };' in inc
-    assert '#define BOOT_SITES 90' in inc and '#define CLIENT_H_MAX 290' in inc
+    assert '#define BOOT_SITES 89' in inc and '#define CLIENT_H_MAX 290' in inc
     assert 'const boot_site_t boot_sites[BOOT_SITES] = {' + ', '.join(f'{{{a:#x}, G_{v.upper()}}}' for a, v in sites) + '};' in inc
     row = ', '.join(str(ipod.immediate_values(SET0)[n]) for n in names)
     assert f'const volatile unsigned short boot_values[GEOM_N][G_N] = {{{{{row}}}}};' in inc
@@ -1192,8 +1196,8 @@ def test_emit_refuses_a_set0_redirect(tmp_path):
 def test_classic_light_builtin():
     m, n, c = theme.builtins()
     assert (n['id'], n['name'], n['index'], n['geom_set'], n['accent_key'], n['accents']) == ('classic-light', 'Classic', 1, 'classic-light', 'CLASSIC_LIGHT_ACCENT', 0x37f)
-    assert n['opts'] == [opt('SETTING_LIGHT', preset=1, keep=2), opt('SETTING_ACCENT', default=9, preset=9, values=0x37f),
-                         opt('SETTING_HOME', preset=0), opt('SETTING_SHORTCUT'), opt('SETTING_BATTERY', default=3, values=0b1001), STATUSBAR, opt('SETTING_TIMETITLE', preset=1),
+    assert n['opts'] == [STATUSBAR, opt('SETTING_LIGHT', preset=1, keep=2), opt('SETTING_ACCENT', default=9, preset=9, values=0x37f),
+                         opt('SETTING_HOME', preset=0), opt('SETTING_SHORTCUT'), opt('SETTING_BATTERY', default=3, values=0b1001), opt('SETTING_TIMETITLE', preset=1),
                          HOMELIB, ROWPREVIEW, own('ROWART', 'Row Art', ('Off', 'On'), ('classic-light-text', 'classic-light'), default=1, preset=1)]
     assert theme.geometry_sets([m, c, n]) == [SET0, CLASSIC_LIGHT, CLASSIC_LIGHT_TEXT]
 

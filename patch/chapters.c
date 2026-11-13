@@ -196,15 +196,19 @@ unsigned long long mp4_index_bytes(const char *path) {
     return n * MP4_SAMPLE_BYTES;
 }
 
-int mp4_fits(const char *path) {
-    unsigned long long need = mp4_index_bytes(path);
-    if (!need) return 1;
+unsigned mem_available_kb(void) {
     char buf[512];
     void *f = fopen("/proc/meminfo", "rb");
     unsigned n = f ? fread(buf, 1, sizeof buf - 1, f) : 0;
     if (f) fclose(f);
     buf[n] = 0;
     const char *p = strstr(buf, "MemAvailable:");
-    if (!p) return 1; /* no estimate: play as stock does */
-    return need / 1024 + MP4_SPARE_KB <= (unsigned long long)atoi(p + 13);
+    return p ? (unsigned)atoi(p + 13) : ~0u;
+}
+
+int mp4_fits(const char *path) {
+    unsigned long long need = mp4_index_bytes(path);
+    if (!need) return 1;
+    unsigned avail = mem_available_kb();
+    return avail == ~0u || need / 1024 + MP4_SPARE_KB <= avail; /* no estimate: play as stock does */
 }

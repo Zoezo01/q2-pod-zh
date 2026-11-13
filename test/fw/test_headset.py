@@ -13,7 +13,7 @@ from test_radio import Rd  # test_radio.py keeps the mirror
 KEY_PLAY, KEY_BACK_BTN, KEY_FWD_BTN = O['KEY_PLAY'], O['KEY_BACK_BTN'], O['KEY_FWD_BTN']
 NEXT, PLAYPAUSE, PREV, STOP, PAUSE, PLAYCD, PAUSECD, PLAYKEY = 163, 164, 165, 166, 119, 200, 201, 207
 PLAYING, PAUSED, STOPPED = 2, 3, 1
-PAIRS, LINK_MAC, STOCK_STATUS = 0xa38110, 0xa38168, 0x4f1a50  # pdeq_btpairlist, BTLINKMAC, stock's status callback
+PAIRS, LINK_MAC, STOCK_STATUS = 0xa4c080, 0xa4c0d8, 0x4fc180  # pdeq_btpairlist, BTLINKMAC, stock's status callback
 
 
 class Hs(C.Structure):
@@ -612,6 +612,26 @@ def test_spotify_playing_takes_the_keys(fw, key, command):
     players(fw, spotify=1)
     fw.fn('media_key', None, C.c_uint)(key)
     assert sent(fw) == [command] and player.toggles() == 0 and not fw.calls('player_next_music')
+
+
+@pytest.mark.parametrize('status, forbidden, runs', [(STOPPED, 1, 0), (PAUSED, 1, 0), (PLAYING, 1, 1), (STOPPED, 0, 1), (PAUSED, 0, 1)])
+def test_headphones_required_with_none_lets_play_pause_only_pause(fw, status, forbidden, runs):
+    """player_play_pause's hook: stock's check (it toasts) forbids a start, as stock's own Play key; a pause goes through."""
+    asked = []
+    fw.mock('mclGetPlayStatus', lambda *_: status)
+    fw.mock('check_forbid_play_no_headset', lambda quiet, *_: asked.append(quiet) or forbidden)
+    fw.mock('stock_pause_trampoline', lambda *_: 7)
+    assert fw.fn('ringnav_play_pause', C.c_int)() == (7 if runs else 0)
+    assert len(fw.calls('stock_pause_trampoline')) == runs and asked == ([] if status == PLAYING else [0])
+
+
+@pytest.mark.parametrize('key, skip', [(KEY_FWD_BTN, 'player_next_music'), (KEY_BACK_BTN, 'player_prev_music')])
+@pytest.mark.parametrize('forbidden', [0, 1])
+def test_headphones_required_with_none_skips_no_track(fw, key, skip, forbidden):
+    Player(fw)
+    fw.mock('check_forbid_play_no_headset', lambda *_: forbidden)
+    fw.fn('media_key', None, C.c_uint)(key)
+    assert len(fw.calls(skip)) == (not forbidden)
 
 
 def test_a_focused_spotify_page_takes_the_keys_from_a_video(fw):

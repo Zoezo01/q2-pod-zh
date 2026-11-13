@@ -4,15 +4,15 @@
   <colorSchemes accents="graphite crimson tidal champagne cobalt tangerine plum ivory green"/>
   <colorScheme name="crimson" raw_red="1"/>  <!-- stock's own reds: the identity -->
   <colorScheme name="ivory" card="1"/>       <!-- the off-white card with dark ink -->
+  <!-- The bar's look alone, in every theme: Theme follows the theme, the rest paint that theme's fill, battery and play
+       icon in this theme's row. The row itself is the set's, so it needs no restart. Choosing a theme goes back to Theme. -->
+  <option key="STATUSBAR" label="状态栏外观" default="跟随主题" preset="跟随主题"><value label="跟随主题"/><value label="简约"/><value label="现代"/><value label="经典"/></option>
   <option setting="light" preset="off" keep="auto"/>
-  <option setting="accent" key="MINIMAL_ACCENT" default="ivory" preset="graphite"/>
+  <option setting="accent" key="MINIMAL_ACCENT" default="graphite" preset="graphite"/>
   <option setting="corners" preset="round"/>
   <option setting="home" preset="split"/>
   <option setting="shortcut"/>
   <option setting="battery"/>
-  <!-- The bar's look alone, in every theme: Theme follows the theme, the rest paint that theme's fill, battery and play
-       icon in this theme's row. The row itself is the set's, so it needs no restart. Choosing a theme goes back to Theme. -->
-  <option key="STATUSBAR" label="状态栏外观" default="跟随主题" preset="跟随主题"><value label="跟随主题"/><value label="简约"/><value label="现代"/><value label="经典"/></option>
   <option setting="time_title" preset="on"/>
   <option setting="np_layout"/>
   <view name="bar"><element name="title" caps="1"/></view>
@@ -29,15 +29,17 @@
   </view>
   <!-- Cover Flow's shelf takes CF_* (ROLE_MACROS); the thumb is every theme's, Classic's and Modern's by extends:
        the wheel holds the covers (docs/internals.md#coverflow-thumb); these are its numbers, to retune on the wheel.
-       jump_ms at jump_at ticks/s or more (32: a steady turn a second at 50% Wheel Sensitivity clears it; time under it comes off the count),
-       a spin goes by letters, the covers flowing on as any fast turn's, one letter each jump_ticks of travel (jump_ticks 0:
-       never) and jump_pace ms apart at least, until a turn back, the rate under fast_at or no tick while a letter shows. -->
+       A spin goes by letters, one each jump_ticks of travel (0: never). With Large Library Mode off, after jump_ms at
+       jump_at ticks/s or more, they are named on the moving row, jump_pace apart, until the thumb slows or turns
+       back; on, after big_jump_ms at big_jump_at, a faster spin as a false start costs more, they last until the
+       thumb lifts: the row comes in over enter_albums, slides from letter to letter (slide_ms) and folds out once
+       within fold_near of the letter. -->
   <view name="coverflow">
     <element name="shelf" thumb="1" ticks_turn="36" ticks_album="7" fast_at="23" fast_full="90" top_speed="20" track="30"
              snap="25" spin="130" far_left="250" detent="80" hold_ms="5000" stop_ms="60" stop_left="60" rate_up="120"
              rate_down="50" back="50" dead="1" contact_ms="40" aim_snap="30" lead_from="25" lead_full="100" lead_ms="45"
              row_shift="20" row_from="100" row_full="300" row_shrink="8" row_flat="200" row_out="33" row_edge="160"
-             row_width="60" row_key="72" row_reach="22" jump_ms="700" jump_ticks="5"
-             jump_at="32" jump_pace="140"/>
+             row_width="60" row_key="72" jump_ms="700" jump_ticks="5" jump_at="32" jump_pace="140"
+             big_jump_at="75" big_jump_ms="240" enter_albums="8" slide_ms="160" fold_near="50"/>
   </view>
 </theme>

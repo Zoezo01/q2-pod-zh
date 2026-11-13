@@ -19,9 +19,9 @@ from unicorn import Uc, UC_ARCH_MIPS, UC_MODE_MIPS32, UC_MODE_LITTLE_ENDIAN
 from unicorn import UC_HOOK_CODE
 from unicorn.mips_const import UC_MIPS_REG_0, UC_MIPS_REG_PC
 
-SHA = "9c3f8c6d01f1ba62392622f6098b06a36b3e4f022a5468eaca6a5803e74f8e11"
-MODES = {"s16i": (0x5b7e80, 2, False), "s32i": (0x5b8d18, 4, False),
-         "s16p": (0x5b8ba0, 2, True), "s32p": (0x5ba83c, 4, True)}
+SHA = "f02ccc4579f0447ee5472dbfa13aab1929704ab154b4e6192e26a7082c780a3e"
+MODES = {"s16i": (0x5b83a0, 2, False), "s32i": (0x5b9238, 4, False),
+         "s16p": (0x5b90c0, 2, True), "s32p": (0x5bad5c, 4, True)}
 PTRS, INPUT, OUTPUT, STRIDE = 0x2000000, 0x2100000, 0x2500000, 0x50000
 STACK, SP, RETURN = 0x4000000, 0x4008000, 0x5000000
 GUARD = bytes([0xa5]) * 32

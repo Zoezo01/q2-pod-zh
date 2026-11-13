@@ -9,7 +9,7 @@
  *   q2-<id>  the app;
  *   icon-40.png, icon.png
  *            its Streaming row's icon, 40 px (SET_ICON), drawn 1:1, else 52 px, scaled to fit;
- *            without them, the shared stream_app.
+ *            one over ART_MAX px either way counts as none; without them, the shared stream_app.
  * Streaming lists those on the card (home.c ringnav_stream). A row starts its app and opens
  * addon_page, a list the app draws over Q2SPOT/1 (docs/librespot.md) on /tmp/q2-<id>.browse.sock:
  * each row's kind says what a press does (a local row plays a song or folder from the card,
@@ -72,10 +72,12 @@
 #define AWAY_MS 3000     /* USB storage waits at most this long for an app to let the card go */
 #define SLOW_MS 3000     /* a page loading or starting this long offers to stop the app */
 #define RESTART_MS 20000 /* Retry's restart starts the app by then, its old loop gone or not */
+#define QUIT_MS 20000    /* the Apps page's worker waits at most this long for an app to end */
 #define APP_ID 16        /* an id's bytes, its NUL included */
 #define QR_PX 186        /* the code's white plate: 5 px modules up to a 33-module code */
 #define QR_COL 214       /* the text beside it */
 #define QR_LIGHT_PX 166  /* Classic's plate: 5 px modules up to 29, 4 up to 37 */
+#define QR_RAW 1536      /* an app's status file as far as it is read (poll_one, qr_refresh) */
 #define CARD "/mnt/mmc"
 #define CAPS_FILE "/tmp/q2-addon.caps"
 /* This firmware's card-app features, space-separated; a feature adds its word. */
@@ -86,7 +88,7 @@
 #define SWIPE_PX 60       /* and this far at the lift, more than up or down, changes section */
 #define ART_ROW_H 78 /* a row with a cover: stock Tidal's list_view default_item_height */
 #define ART_PX 64    /* its cover, square, centred in the row's height */
-#define ART_MAX 128  /* the most a cover's file may be, either way; larger counts as none */
+#define ART_MAX 128  /* the most a cover's or an icon's file may be, either way; larger is none */
 #define ART_KEEP 24  /* the rows' covers kept decoded around the list's scroll position */
 #define ART_URL (APP_ID + 32) /* art_file's file:// URL, its NUL included */
 
@@ -149,12 +151,15 @@ int addon_scan(void) {
         a->audio = number(raw, "audio") == 1;
         a->present = !access(a->bin, 0);
         /* the row's size first, the other scaled to fit (navigation.c set_child), else stream_app
-         */
+         * (one over ART_MAX px either way, or whose size can't be read, counts as none: demo
+         * decodes it whole) */
         static const char *const icons[2] = { "icon-40.png", "icon.png" };
         tk_snprintf(a->icon, sizeof a->icon, "stream_app");
         for (int i = 1; i >= 0; --i) {
+            int w = 0, h = 0;
             tk_snprintf(path, sizeof path, CARD "/%s/%s", e->d_name, icons[i]);
-            if (!access(path, 0)) tk_snprintf(a->icon, sizeof a->icon, "file://%s", path);
+            if (picture_size(path, &w, &h) && w && h && w <= ART_MAX && h <= ART_MAX)
+                tk_snprintf(a->icon, sizeof a->icon, "file://%s", path);
         }
     }
     if (d) closedir(d);
@@ -187,7 +192,7 @@ int addon_is_icon(const char *name) {
     return 0;
 }
 
-/* A pid file whose loop is gone (crashed, or killed) is removed, so no wait spends AWAY_MS on it.
+/* A pid file whose loop is gone (crashed, or killed) is removed, so no wait spends its limit on it.
  * ponytail: trusts the pid in the file; a loop that died without removing it, its pid since reused,
  * would TERM that process. A flock in run would close this. */
 static void stop_cmd(const char *pid, char *cmd, unsigned n) {
@@ -623,8 +628,11 @@ static void poll_one(app_t *a) {
             a->relaunch = 0, launch(a);
         return;
     }
-    char raw[64 + 16];
-    state_read(a->state, raw, sizeof raw); /* addr= and hold= sort before the long qr= */
+    /* hold= may come anywhere, after the long qr= too. ponytail: only the first QR_RAW - 2 bytes
+     * (1,534) are read, so a hold= further on reads as 0; the largest code the QR page draws
+     * (49 modules, QR_HEX) takes about 640. A longer file needs a larger buffer here. */
+    char raw[QR_RAW];
+    state_read(a->state, raw, sizeof raw);
     a->hold = number(raw, "hold") == 1;
     if (a->hold) reset_poweroptions_timer(1, 1, 0); /* standby, auto power-off; not the screen's */
     stream_poll(a);
@@ -850,7 +858,9 @@ void addon_stop(void) {
 /* usbmode_page_init's hook (navigation.c), before stock unmounts the card for USB storage: every
  * app asked to end at once, then up to AWAY_MS in all for their loops to be gone (each removes its
  * pid file once the app has exited), so nothing of them holds the card; each starts again after
- * (addon_poll). On the UI thread; addon_quit is the Apps page's worker's. */
+ * (addon_poll). On the UI thread, so it must stay short; addon_quit is the Apps page's worker's.
+ * ponytail: an app still saving on its TERM after AWAY_MS can write to the card as USB takes it;
+ * the real fix defers stock's USB-mode call until the apps are gone, without sleeping. */
 void addon_card_away(void) {
     char cmd[96];
     int left = 0;
@@ -869,8 +879,10 @@ void addon_card_away(void) {
 }
 
 /* The Apps page (netupdate.c) replaces or removes the files in dir (".<id>"): the app there, if
- * one, forgotten on the UI thread, so its row starts the new one (or none); then, on the Apps
- * page's worker, asked to end and waited for, so its files are closed before they move. */
+ * one, asked to end and waited for on the Apps page's worker, so its files are closed before they
+ * move (up to QUIT_MS: an app still saving on its TERM after 3 s, a login, would write it back
+ * into a folder just removed); then, once they moved or went, forgotten on the UI thread, so its row starts the new one
+ * (or none). An update that failed or was cancelled before it stopped the app leaves it running and tracked. */
 void addon_forget(const char *dir) {
     for (int i = 0; dir && dir[0] == '.' && i < ap.n; ++i)
         if (!strcmp(ap.a[i].id, dir + 1))
@@ -883,7 +895,7 @@ void addon_quit(const char *dir) { /* addon_card_away's wait, libc's clock and s
     if (access(pid, 0)) return;
     stop_cmd(pid, cmd, sizeof cmd);
     system(cmd);
-    for (unsigned long long end = now_ms() + AWAY_MS; !access(pid, 0) && now_ms() < end;)
+    for (unsigned long long end = now_ms() + QUIT_MS; !access(pid, 0) && now_ms() < end;)
         usleep(50000);
 }
 
@@ -1308,7 +1320,7 @@ static void bar_icon(int x, int y, int h, const char *s, int code) {
  * bound to G_FIND or G_SORT if that is ever asked for. */
 #define FIND_X 302 /* the rows' list_into chevron's box (row_into), so the icon lines up with them */
 /* The sort icon's box: midway, by ink, between a centred 150 px title (a section's "Newly Added
- * 1/5" at 20 px, which ends at 262) and the glass. Stock's 50 px images (V1.32 images/xx, alpha
+ * 1/5" at 20 px, which ends at 262) and the glass. Stock's 50 px images (V1.36 images/xx, alpha
  * > 0): navbar_search's ink is columns 15 to 35, so 317 to 337 at FIND_X; song_order's
  * (s_img_order_navbar, the Sort of stock's Songs page) is columns 15 to 34, so 280 to 299 here:
  * 17 px after such a title's end and 17 px before the glass. */
@@ -1834,8 +1846,15 @@ static int closed(void *ctx, void *event) {
 
 /* Slot k's page, its first level op (args: "\t" and escaped each) titled title: the app started if
  * it isn't (its QR code shown at the first answer when qr); gone from the card, the page says so.
- * 1 when it opened. */
+ * 1 when it opened or said why not. */
 static int page_at(int k, const char *op, const char *args, const char *title, int qr) {
+    const char *busy = shelf_busy(); /* a job on this app's folder */
+    app_t *b = &ap.a[k];
+    /* A page is refused when the folder is being deleted or moved into, and while an update
+     * downloads for an app that is not running: launch() would be refused too, a dead page. */
+    if (busy && !strcmp(busy + 1, b->id) &&
+        (shelf_moving() || !b->launched || access(b->pid, 0)))
+        return toast("Wait until the App Store finishes"), 1;
     if (pg.page || !(pg.lv = calloc(ADDON_DEPTH, sizeof *pg.lv))) return 0;
     if (!(pg.f = calloc(4 + 6 * ADDON_ROWS * ADDON_PAGES, sizeof *pg.f)) ||
         !(pg.page = page_open("addon_page", closed, keyup)))
@@ -1940,7 +1959,6 @@ int addon_hold(void *w) {
 /* The QR code page (qrcode_page): an app's status file's qr (qrsize rows of hex, the leftmost
  * module the high bit), drawn on a white plate, beside its address (addr), PIN (pin) and note,
  * read again every second. Without an address (no Wi-Fi) or a file (not running), it says so. */
-#define QR_RAW 1536
 #define QR_HEX 640
 static struct {
     void *page, *qr, *col, *msg, *addr, *pin, *note, *say, *sub;

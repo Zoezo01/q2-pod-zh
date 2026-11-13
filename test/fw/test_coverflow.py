@@ -71,8 +71,8 @@ def api(fw):
            'coverflow__home_render': (None, ptr, i, i, i), 'coverflow__drift_at': (i, i, u), 'coverflow__pan_u': (i,),
            'coverflow__pan_v': (i,), 'coverflow__velocity': (i, u), 'coverflow__sample': (None, i, u),
            'coverflow__round_stride': (i, i, i), 'coverflow__floor_div': (i, i, i), 'covers_live': (i,),
-           'coverflow_hit': (i, i, i, i), 'coverflow_render': (None, ptr, i, i, ptr), 'coverflow__pose': (None, i, ptr),
-           'coverflow__project': (i, ptr, i), 'coverflow__unproject': (i, ptr, i, ptr, ptr), 'coverflow__slot': (i, i, i, i),
+           'coverflow_hit': (i, i, i, i), 'coverflow_render': (None, ptr, i, i, ptr), 'pose': (None, i, ptr),
+           'project': (i, ptr, i), 'unproject': (i, ptr, i, ptr, ptr), 'coverflow__slot': (i, i, i, i),
            'coverflow__lower': (u, ptr, u, ptr, ptr), 'coverflow__album_in': (i, ptr, u, ptr), 'coverflow__album_index': (i, ptr),
            'coverflow__name_cmp': (i, ptr, ptr), 'coverflow__tie': (i, i, ptr, ptr), 'coverflow__by_name': (i, ptr, ptr),
            'coverflow__by_album': (i, ptr, ptr), 'album_cmp': (i, ptr, ptr), 'album_id': (u, ptr), 'album_dir': (u, C.c_char_p, i),
@@ -83,13 +83,13 @@ def api(fw):
            'coverflow_sort_name': (C.c_char_p,), 'coverflow_sort_step': (None,), 'coverflow__sort_next': (i, i),
            'blob_io': (i, C.c_char_p, C.c_char_p, ptr, u, i), 'file_size': (C.c_long, C.c_char_p),
            'coverflow__ff_run': (i, C.c_char_p, C.c_char_p, i, i, ptr), 'coverflow__build_art': (None, ptr),
-           'coverflow__worker': (ptr, ptr), 'coverflow__strike': (None,), 'coverflow_clean_end': (None,),
+           'coverflow__worker': (ptr, ptr), 'art_strike': (None, C.c_char_p), 'coverflow_clean_end': (None,),
            'thumb': (i, C.c_char_p, C.c_char_p, i, i),
            'coverflow__grid_cover': (i, C.c_char_p, C.c_char_p, i, i, i), 'coverflow_album_cover': (i, C.c_char_p, C.c_char_p, i, i),
            'coverflow_grid_cover': (i, C.c_char_p, C.c_char_p, i, i), 'coverflow_folder_cover': (i, C.c_char_p, C.c_char_p, i, i),
            'coverflow_player_cover': (i, C.c_char_p, C.c_char_p, i, i), 'coverflow__marked_empty': (i, C.c_char_p),
            'now_cover': (C.c_ubyte, ptr, ptr), 'hash_bytes': (u, u, ptr, u), 'fnv': (u, u, C.c_char_p)}
-    fw.fn('coverflow__cf_restyle', None)()  # the theme's Cover Flow values, as the page's open copies them
+    fw.fn('cf_restyle', None)()  # the theme's Cover Flow values, as the page's open copies them
     return SimpleNamespace(**{k.replace('coverflow__', ''): fw.fn(k, v[0], *v[1:]) for k, v in fns.items()})
 
 
@@ -405,8 +405,8 @@ def test_a_side_cover_s_pose_by_its_distance(fw):
     p = pose(g, 2 * ONE)
     assert (p.xc, p.zc, p.bright) == (16 * (112 + 48), 16 * (90 + 20), 128)
     assert pose(g, 3 * ONE).bright == 128  # the third out stays (CF_THIRD)
-    assert pose(g, 13 * ONE // 4).bright == 64 and pose(g, 7 * ONE // 2).bright == 0  # gone half a step on
-    assert pose(g, 4 * ONE).bright == 0
+    # and every one past it, drawn whole for as long as any of it shows (a thumb theme's wide ring)
+    assert pose(g, 13 * ONE // 4).bright == pose(g, 7 * ONE // 2).bright == pose(g, 15 * ONE // 2).bright == 128
 
 
 def test_a_cover_s_pose_is_continuous_and_keeps_turning_in_step(fw):
@@ -448,11 +448,23 @@ def test_the_ring_slot_nearest_first_and_the_side_being_left_farther(fw):
     assert (g.slot(-100, 1, 0), g.slot(-100, 1, 1)) == (2, 4)
 
 
+class Ring:
+    """The seven covers round the centre, ring[j] the cover j - 3, in a thumb theme's wide ring of
+    fifteen (its shelf draws seven a side), the ends left out: .at is what coverflow_render takes."""
+    def __init__(self, *covers):
+        self.wide = (C.c_void_p * 15)(*([None] * 4 + list(covers)))
+        self.at = C.c_void_p(C.addressof(self.wide) + 4 * C.sizeof(C.c_void_p))
+
+    def __setitem__(self, j, cover):
+        self.wide[j + 4] = cover
+
+
 def corner_inset(fw):
     """coverflow_render fills cf_inset once."""
     g = api(fw)
     d = exact(C.c_uint, VIEW_W * VIEW_H)
-    g.coverflow_render(d, VIEW_W, 0, (C.c_void_p * 7)())
+    ring = Ring()  # kept alive: coverflow_render reads its array
+    g.coverflow_render(d, VIEW_W, 0, ring.at)
     libc.free(C.addressof(d))
     return g
 
@@ -498,18 +510,24 @@ def texture(j):
     return t
 
 
+def bgra(p):
+    """A texel (RGBA8888, red low) as the frame holds it: the screen's BGRA8888, red at bit 16."""
+    return p & 0xff00ff00 | (p & 255) << 16 | p >> 16 & 255
+
+
 def test_hit_names_the_cover_drawn_there(fw):
     g = api(fw)
     ring = [texture(j) for j in range(7)]
     d = exact(C.c_uint, VIEW_W * VIEW_H)
-    pointers = (C.c_void_p * 7)(*[C.addressof(t) for t in ring])
+    wide = Ring(*[C.addressof(t) for t in ring])
+    pointers = wide.at
     checked = 0
     for frac in (0, 8000, 16000, 32767, -8000, -32768):
         g.coverflow_render(d, VIEW_W, frac, pointers)
 
         def cover(x, y):
             c = d[y * VIEW_W + x]
-            red, green = c & 255, c >> 8 & 255
+            red, green = c >> 16 & 255, c >> 8 & 255  # BGRA8888
             if red < 8:
                 return None
             return round(((green / red * 240) - 30) / 30)
@@ -534,12 +552,12 @@ def test_the_centre_cover_comes_out_texel_for_texel(fw):
     tex = exact(C.c_uint, ART * ART)
     tex[:] = [0xff000000 | x | y << 8 | 0x55 << 16 for y in range(ART) for x in range(ART)]
     d = exact(C.c_uint, VIEW_W * VIEW_H)
-    ring = (C.c_void_p * 7)()
+    ring = Ring()
     ring[3] = C.addressof(tex)
-    g.coverflow_render(d, VIEW_W, 0, ring)
+    g.coverflow_render(d, VIEW_W, 0, ring.at)
     for y in range(12, ART - 12):
         for x in range(ART):
-            assert d[(TOP + y) * VIEW_W + CX - 80 + x] == tex[y * ART + x], (x, y)
+            assert d[(TOP + y) * VIEW_W + CX - 80 + x] == bgra(tex[y * ART + x]), (x, y)
     for t in (tex, d):
         libc.free(C.addressof(t))
 
@@ -549,12 +567,12 @@ def test_the_reflection_mirrors_the_cover_and_fades_out_in_46_px(fw):
     tex = exact(C.c_uint, ART * ART)
     tex[:] = [0xff000000 | (y + 60) for y in range(ART) for x in range(ART)]
     d = exact(C.c_uint, VIEW_W * VIEW_H)
-    ring = (C.c_void_p * 7)()
+    ring = Ring()
     ring[3] = C.addressof(tex)
-    g.coverflow_render(d, VIEW_W, 0, ring)
+    g.coverflow_render(d, VIEW_W, 0, ring.at)
     bottom = TOP + ART
     for k in range(46):
-        red = d[(bottom + k) * VIEW_W + CX] & 255
+        red = d[(bottom + k) * VIEW_W + CX] >> 16 & 255  # BGRA8888
         mirrored = ART - 1 - k + 60
         assert abs(red - mirrored * 90 / 256 * (1 - (k + .5) / 46)) <= 2, k
     assert all(d[y * VIEW_W + CX] == 0xff000000 for y in range(bottom + 46, VIEW_H))
@@ -566,7 +584,8 @@ def test_every_pixel_of_a_frame_is_opaque_and_stays_in_the_frame(fw):
     g = api(fw)
     ring = [texture(j) for j in range(7)]
     d = exact(C.c_uint, VIEW_W * VIEW_H)
-    pointers = (C.c_void_p * 7)(*[C.addressof(t) for t in ring])
+    wide = Ring(*[C.addressof(t) for t in ring])
+    pointers = wide.at
     for frac in range(-32768, 32768, 7001):
         g.coverflow_render(d, VIEW_W, frac, pointers)
         assert all(x >> 24 == 255 for x in d)
@@ -581,11 +600,11 @@ def test_covers_mirror_when_the_frame_does(fw):
     flip = exact(C.c_uint, ART * ART)
     flip[:] = [0xff000000 | (ART - 1 - x + 40) | (y + 40) << 8 for y in range(ART) for x in range(ART)]
     a, b = exact(C.c_uint, VIEW_W * VIEW_H), exact(C.c_uint, VIEW_W * VIEW_H)
-    ring = (C.c_void_p * 7)()
+    ring = Ring()
     ring[2] = C.addressof(tex)
-    g.coverflow_render(a, VIEW_W, 0, ring)
+    g.coverflow_render(a, VIEW_W, 0, ring.at)
     ring[2], ring[4] = None, C.addressof(flip)
-    g.coverflow_render(b, VIEW_W, 0, ring)
+    g.coverflow_render(b, VIEW_W, 0, ring.at)
     for y in range(0, VIEW_H, 11):
         for x in range(0, 2 * CX):
             assert a[y * VIEW_W + x] == b[y * VIEW_W + 2 * CX - 1 - x], (x, y)
@@ -615,7 +634,7 @@ def rgba(w, h, colour):
 
 def decoded(fw, unload=1):
     out = exact(C.c_uint, ART * ART)
-    ok = fw.fn('coverflow__decode', C.c_int, C.c_char_p, C.c_void_p, C.c_int)(b'x', out, unload)
+    ok = fw.fn('cf_decode', C.c_int, C.c_char_p, C.c_void_p, C.c_int)(b'x', out, unload)
     return ok, out
 
 
@@ -1576,29 +1595,29 @@ def test_the_worker_notes_each_album_before_its_build_and_drops_the_note_after_t
 def test_strike_marks_the_album_the_last_build_never_finished_and_drops_the_note(fw):
     g = api(fw)
     card = Card(fw, {BUILDING: struct.pack('<I', 0xabc) + b'/m/a.flac', CRASH_LOG: b'== date\n'})
-    g.strike()
+    g.art_strike(BUILDING.encode())
     assert card.files == {art(0xabc): b'', CRASH_LOG: b'== date\n== cover flow skipped\n/m/a.flac\n'}
 
 
 def test_strike_of_a_note_torn_before_its_key_marks_nothing(fw):
     g = api(fw)
     card = Card(fw, {BUILDING: b'\xbc\x0a'})
-    g.strike()
+    g.art_strike(BUILDING.encode())
     assert card.files == {}
 
 
 def test_strike_leaves_a_cover_that_was_made_and_no_note_marks_nothing(fw):
     g = api(fw)
     card = Card(fw, {BUILDING: struct.pack('<I', 0xabc), art(0xabc): b'art'})
-    g.strike()
+    g.art_strike(BUILDING.encode())
     assert card.files == {art(0xabc): b'art'}
-    g.strike()
+    g.art_strike(BUILDING.encode())
     assert card.files == {art(0xabc): b'art'}
 
 
 def test_a_clean_end_drops_the_note(fw):
     g = api(fw)
-    card = Card(fw, {BUILDING: struct.pack('<I', 0xabc)})
+    card = Card(fw, {BUILDING: struct.pack('<I', 0xabc), BUILDING.replace('building', 'pl-building'): struct.pack('<I', 0xdef)})
     g.coverflow_clean_end()
     assert card.files == {}
 
@@ -1647,14 +1666,17 @@ def jpeg(sof, w, h, *before):
     (jpeg(0xc6, 2000, 2000), 0), (jpeg(0xca, 2000, 2000), 0), (jpeg(0xce, 2000, 2000), 0),
     (png(4000, 4000).replace(b'IHDR', b'CgBI'), 0),
     (jpeg(0xc2, 1024, 1024, APP0), 0), (jpeg(0xc0, 4000, 4000, APP0, EXIF), 0), (jpeg(0xc1, 4000, 4000), 0),
-    (jpeg(0xc2, 3000, 3000, *[APP0] * 63), 1), (jpeg(0xc2, 3000, 3000, *[APP0] * 64), 0),
+    (jpeg(0xc2, 3000, 3000, *[APP0] * 63), 1), (jpeg(0xc2, 3000, 3000, *[APP0] * 64), 1),
+    (jpeg(0xc2, 3000, 3000, APP0, b'\xff'), 1), (jpeg(0xc0, 4000, 4000, b'\xff\xff', APP0, b'\xff'), 0),
+    (b'\xff\xd8' + bytes(64), 1),
     (b'RIFF\0\0\0\0WEBPVP8 ' + bytes(16), 0)))
 def test_thumb_sends_a_picture_stock_would_decode_whole_to_ffmpeg(fw, head, big):
     """Stock's PNG reader expands the whole image before its 1024 px test, and libjpeg holds a progressive JPEG's
     full-size coefficients at any scale, both in demo, the OOM killer's pick (#216): those go to ffmpeg alone, whose
     child the kernel kills first. A baseline JPEG decodes scaled, so it stays with stock, as does what thumb can't
-    size (a cut-short header, the frame header past the 64th segment, another type) or ffmpeg can't decode (an
-    arithmetic or hierarchical progressive JPEG)."""
+    size (a cut-short PNG header, another type) or ffmpeg can't decode (an arithmetic or hierarchical progressive JPEG).
+    Fill bytes before a marker are stepped over, and a JPEG whose frame header isn't found in its first 64 segments
+    goes to ffmpeg, as it may be a big progressive one (GHSA-w54x-mvfw-c7v3)."""
     g = api(fw)
     card = Card(fw, {'/p/a': head, '/d.ff': b'jpg'})
     builder(fw, card, thumb=True, ff=0)
@@ -2098,9 +2120,21 @@ def py_key(artist, album):
     return h
 
 
+FX_POOL = int(host.tools_build.need(re.search(r'^#define FX_POOL (\d+)', (ROOT/'patch/coverflow.h').read_text(), re.M), 'No FX_POOL')[1])
+LD_SLOTS = int(host.tools_build.need(re.search(r'^#define LD_SLOTS (\d+)', (ROOT/'patch/coverflow.h').read_text(), re.M), 'No LD_SLOTS')[1])
+
+
+class Ld(C.Structure):
+    _fields_ = [('key', C.c_uint), *((k, C.c_int) for k in 'album rank state ok'.split())]
+
+
 class Fx(C.Structure):
-    _fields_ = [('frame', C.c_void_p), ('tex', C.c_void_p), ('album', C.c_int * 15), ('art', C.c_void_p * 15),
-                *((k, C.c_int) for k in 'c frac drawn light lead todo'.split())]
+    _fields_ = [('frame', C.c_void_p), ('tex', C.c_void_p), ('album', C.c_int * FX_POOL), ('art', C.c_void_p * FX_POOL),
+                ('half', C.c_ubyte * FX_POOL),
+                *((k, C.c_int) for k in 'c frac drawn light lead todo mode letters_at next prev halves'.split()),
+                ('half_at', C.c_uint), ('half_ms', C.c_int), ('full_ms', C.c_int),
+                ('ld', Ld * LD_SLOTS), ('stage', C.c_void_p), ('gate', C.c_uint * 8), ('loader', C.c_ulong),
+                ('ld_on', C.c_int), ('ld_stop', C.c_int), ('paint_at', C.c_uint), ('more', C.c_void_p), ('no_more', C.c_int)]
 
 
 def deque_of(fw, recs):
@@ -2228,10 +2262,38 @@ def test_album_only_keeps_the_album_s_tracks_in_order_and_where_the_track_went(f
     assert len(q.lists) == 2
 
 
+def test_album_only_keeps_the_unknown_album_card_s_songs_and_the_resumed_one(fw):
+    """Stock's resume finds every untagged song (getMusicByAlbum(NULL), without MUSIC_WHERE): the card's are kept,
+    spoken and scoped-out ones are not, unless one is what was playing."""
+    Files(fw, {'/mnt/data/q2-library-scope': b'0/mnt/mmc/Hidden\n'})
+    fw.mock('tk_str_start_with', lambda s, prefix, *_: C.string_at(s).startswith(C.string_at(prefix)))
+    q = Deques(fw)
+    recs = [Rec(path='/mnt/mmc/Loose A/x.flac'), Rec(path='/mnt/mmc/Podcasts/Show/1.mp3'),
+            Rec(path='/mnt/mmc/Hidden/h.flac'), Rec(path='/mnt/mmc/Loose B/y.flac'), Rec(path='/mnt/mmc/Loose/b.m4b'),
+            Rec(path='/mnt/mmc/audiobooks/Book/1.mp3'), Rec('A', '/mnt/mmc/A/1.flac')]
+    only = fw.fn('album_only', C.c_int, C.c_void_p, C.c_void_p, C.c_int)
+    listed = q.new([r.p for r in recs])
+    assert only(listed, recs[3].p, 3) == 1 and q[listed] == [recs[0].p, recs[3].p]
+    for i, kept in ((1, [0, 1, 3]), (2, [0, 2, 3]), (4, [0, 3, 4])):  # what was playing stays, whatever the card shows
+        listed = q.new([r.p for r in recs])
+        assert only(listed, recs[i].p, i) == kept.index(i) and q[listed] == [recs[k].p for k in kept]
+
+
 @pytest.fixture(scope='module')
 def style(library):
     """cf_style_t's field offsets in this build."""
     return host.offsets(library.parent/'coverflow.o', 'cf_style_t')
+
+
+def test_a_far_cover_s_pose_holds_for_a_wide_spacing(fw, style):
+    """xs and zs as far as the theme's range takes them: a cover 22 out (entry_window's) stays exact, no wrap."""
+    g = api(fw)
+    cfs = C.addressof(fw.var('cfs', C.c_char))
+    x1, z1 = (C.c_short.from_address(cfs + style[f]).value for f in ('x1', 'z1'))
+    for f in ('xs', 'zs'):
+        C.c_short.from_address(cfs + style[f]).value = 799
+    p = pose(g, 22 * ONE)
+    assert (p.xc, p.zc) == (16 * (x1 + 21 * 799), 16 * (z1 + 21 * 799))
 
 
 def test_without_a_third_cover_the_second_fades_out_over_the_next_step(fw, style):
@@ -2260,7 +2322,7 @@ def test_an_artist_s_shelf_shows_no_cover_past_its_ends(fw, scoped):
     deque_of(fw, [Rec() for _ in range(n)])
     c = cf(fw)
     c.albums, c.slide, c.scoped = 0x5000, 0x6000, scoped
-    fw.fn('coverflow__cf_restyle', None)()
+    fw.fn('cf_restyle', None)()
     assert fw.fn('coverflow__fx_open', C.c_int)() == 1
     wide = (C.c_void_p * (2 * CF_WIDE_REACH + 1))()  # the callers' window, ring[0] CF_REACH slots left of its centre
     ring = C.addressof(wide) + (CF_WIDE_REACH - CF_REACH) * C.sizeof(C.c_void_p)
@@ -2482,7 +2544,7 @@ class Ui:
 class Homes:
     """A Home window as the asset lays it out: the art, the main list's rows, the Settings, Library and Streaming lists
     (hidden, two rows each: a button with its label and icon), and Carousel's slide_menu and arrows."""
-    ROWS = ('img_playing', 'img_library', 'img_coverflow', 'img_folder', 'img_rockbox', 'img_services', 'img_settings')
+    ROWS = ('img_playing', 'img_library', 'img_cover_flow', 'img_folder', 'img_rockbox', 'img_services', 'img_settings')
 
     def __init__(self, ui, carousel=False, rockbox=False):
         self.ui = ui
@@ -2509,7 +2571,7 @@ class Homes:
         if carousel:
             self.carousel = [ui.make(self.win, 'slide_menu', name='slide_menu'), ui.make(self.win, 'image', name='img_left'),
                              ui.make(self.win, 'image', name='img_right')]
-            for name in ('img_coverflow', 'img_rockbox', 'label_rockbox'):
+            for name in ('img_cover_flow', 'img_rockbox', 'label_rockbox'):
                 ui.make(self.carousel[0], 'image', name=name)
             for w in self.carousel:
                 ui[w].visible = 0
@@ -2537,12 +2599,12 @@ def test_home_binds_its_cards_and_lists_and_asks_the_pane_s_counts_after_boot(fw
     assert (home.win, home.art, home.list, home.sets, home.lib, home.stream) == (h.win, h.art, h.main, h.sets, h.lib, h.stream)
     assert list(home.carousel) == h.carousel
     assert not any(ui[w].sensitive for w in (h.art, h.sets, h.lib, h.stream))  # taps find the shown list's rows
-    want = {'img_coverflow': ('coverflow__coverflow_open', 0), 'img_rockbox': ('home_shortcut_open', 0),
+    want = {'img_cover_flow': ('coverflow__coverflow_open', 0), 'img_rockbox': ('home_shortcut_open', 0),
             'img_settings': ('coverflow__home_settings', 0), 'img_library': ('coverflow__home_library', h.win),
             'img_services': ('coverflow__home_streaming', h.win)}
     for row, (fn, ctx) in want.items():
         assert ui.handlers(h.rows[row]) == [(address(fw, fn), ctx)], row
-    on_card = [ui.handlers(ui.lookup(h.carousel[0], n)) for n in ('img_coverflow', 'img_rockbox')]
+    on_card = [ui.handlers(ui.lookup(h.carousel[0], n)) for n in ('img_cover_flow', 'img_rockbox')]
     assert on_card == [[(address(fw, 'coverflow__coverflow_open'), 0)], [(address(fw, 'home_shortcut_open'), 0)]]
     assert ui.handlers(h.win, EVT_WINDOW_FOREGROUND) == [(address(fw, 'coverflow__home_foreground'), 0)]
     assert ui.timer(address(fw, 'coverflow__home_counts'))[1] > 0  # not in boot's first paints: later
@@ -2721,7 +2783,7 @@ def pane_rect(fw, h):
     return h.win, (SPLIT_W, 0, HOME_PW, fw.fn('client_h', C.c_int)())
 
 
-@pytest.mark.parametrize('name, kind', (('img_library', PANE_LIBRARY), ('img_coverflow', PANE_COVERFLOW), ('img_folder', PANE_FOLDER),
+@pytest.mark.parametrize('name, kind', (('img_library', PANE_LIBRARY), ('img_cover_flow', PANE_COVERFLOW), ('img_folder', PANE_FOLDER),
                                         ('img_services', PANE_STREAM), ('img_stream', PANE_STREAM), ('img_settings', PANE_SETTINGS),
                                         ('img_unknown', PANE_LIBRARY)))
 def test_the_pane_follows_the_highlighted_row(fw, name, kind):
@@ -2745,7 +2807,7 @@ def test_the_shortcut_row_shows_what_its_shortcut_opens(fw, shortcut, kind):
 def test_a_paint_s_row_change_shows_in_the_next_frame(fw):
     _, ui, h, home = home_open(fw)
     ui.dirty.clear()
-    assert home_row(fw, h.view, h.rows['img_coverflow'], painting=1) == PANE_COVERFLOW
+    assert home_row(fw, h.view, h.rows['img_cover_flow'], painting=1) == PANE_COVERFLOW
     assert not ui.dirty  # a paint can't invalidate: AWTK drops it with the frame
     i, ms = ui.timer(address(fw, 'coverflow__pane_after'))
     assert ms == 0 and home.pane_timer == i
@@ -3272,7 +3334,9 @@ def test_a_level_slides_in_from_the_side_it_comes_from_where_the_theme_moves_lev
 class Th(C.Structure):
     _fields_ = [*((k, C.c_float) for k in 'pos vel goal lead lead_v rate tau ticks seen seen_lead stretch'.split()),
                 *((k, C.c_uint) for k in 'at tick_at edge_at letter_at'.split()),
-                *((k, C.c_int) for k in 'raw on finger held dir dead early clicked bounced capped jump jump_to'.split())]
+                *((k, C.c_int) for k in 'raw on finger held dir dead early clicked bounced capped jump beat jump_to lean fold'.split()),
+                ('fold_at', C.c_uint), *((k, C.c_float) for k in 'enter fold_off fold_vel hold_lead hold_run hold_xrun hold_xs'.split()),
+                ('hold_k', C.c_int)]
 
 
 def captions(fw, theme, scoped=0, albums=(('Abbey', 'Beatles'), ('Help', 'Beatles'))):

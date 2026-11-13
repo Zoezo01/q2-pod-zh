@@ -524,7 +524,7 @@ int widget_set_focused(void *x, int v) {
     if ((long)x == edit_widget && focused != v) {
         focused = v;
         input_method_request(input_method(), v ? x : 0);
-        if (v && !select_none) selected[0] = 0, selected[1] = strlen(w[edit_widget].text); /* stock's idle, 0x60f560 */
+        if (v && !select_none) selected[0] = 0, selected[1] = strlen(w[edit_widget].text); /* stock's idle, 0x6223f0 */
         if (v) snprintf(at_focus, sizeof at_focus, "%s", w[edit_widget].text);
         if (v && w[edit_widget].focus) w[edit_widget].focus(0, 0);
     }
@@ -2271,11 +2271,13 @@ void check_styles(void) {
 
 SCROBBLE = r"""
 #include <assert.h>
+#include <signal.h>
 #include <stdarg.h>
+#include <sys/resource.h>
 #include <sys/stat.h>
 #include "peq.h"
 int scrobble_ready(void), scrobble_start(void), scrobble_poll(int *), scrobble_flag(const char *);
-void scrobble_append(const char *, unsigned);
+int scrobble_append(const char *, unsigned);
 
 static const char *cfg[7]; /* TOKEN, USER, PASSWORD, API_KEY, API_SECRET, ALBUM_ARTIST, AUTO */
 int toolsReadConfig(const char *path, const char *section, const char *key, char *out, const char *def) {
@@ -2432,6 +2434,17 @@ int main(void) {
                  "Art \"1\" \\ &=+%\xc3\xa9\tAlb/um\tTitle 1\t1\t201\tL\t1700000001\t\n", f);
     fclose(f);
     assert(run(&sent) == 1 && sent == 1 && !strcmp(slurp(LOG), HEADER));
+    /* A full card on real stdio (a file size limit just past the log): fclose reports the write that
+     * stopped short, and the log is cut back to what it was, or is gone when the listen started it. */
+    struct rlimit was, full;
+    assert(!getrlimit(RLIMIT_FSIZE, &was));
+    full = was, full.rlim_cur = sizeof HEADER + 9;
+    signal(SIGXFSZ, SIG_IGN);
+    const char *listen = "Full\tB\tCard\t\t100\tL\t1700009999\t\n";
+    assert(!setrlimit(RLIMIT_FSIZE, &full) && !scrobble_append(listen, (unsigned)strlen(listen)) && !strcmp(slurp(LOG), HEADER));
+    unlink(LOG);
+    assert(!scrobble_append(listen, (unsigned)strlen(listen)) && access(LOG, 0));
+    assert(!setrlimit(RLIMIT_FSIZE, &was) && scrobble_append(listen, (unsigned)strlen(listen)) && !strcmp(slurp(LOG), HEADER "Full\tB\tCard\t\t100\tL\t1700009999\t\n"));
     fclose(dump);
     return 0;
 }
@@ -2886,6 +2899,7 @@ def audio_writer_check(tmp):
 #define snd_pcm_writei mock_write
 #define snd_pcm_recover mock_recover
 #define snd_pcm_delay mock_delay
+#define snd_pcm_avail mock_avail
 #define usleep mock_sleep
 #include "video.c"
 #undef main
@@ -2918,6 +2932,7 @@ int mock_recover(void *pcm, int err, int silent) {
     return err==-19 ? err : 0;
 }
 int mock_delay(void *pcm, long *delay) { *delay=mode==3 ? 100 : 0; return 0; }
+long mock_avail(void *pcm) { return 0; } /* au.buffer 0: nothing held in the ring */
 const char *snd_strerror(int err) { return "mock error"; }
 int mock_sleep(unsigned n) { CHECK(n==1000); ++sleeps; return 0; }
 int main(void) {

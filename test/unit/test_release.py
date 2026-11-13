@@ -6,6 +6,7 @@ import pathlib
 import re
 import subprocess
 import tarfile
+import types
 
 import pytest
 
@@ -51,10 +52,19 @@ def built(directory, manifest=None, **tar):
     return directory
 
 
+class Suites(list):
+    """Every suite release.suites started, as (args, kwargs). One named in failing exits 1."""
+    failing = ()
+
+    def start(self, args, **kwargs):
+        self.append((args, kwargs))
+        return types.SimpleNamespace(wait=lambda: int(pathlib.Path(args[1]).stem in self.failing))
+
+
 @pytest.fixture
 def scripts(monkeypatch):
-    calls = []
-    monkeypatch.setattr(subprocess, 'run', lambda args, **kwargs: calls.append((args, kwargs)))
+    calls = Suites()
+    monkeypatch.setattr(subprocess, 'Popen', calls.start)
     return calls
 
 
@@ -67,8 +77,15 @@ def test_validate_runs_every_suite(tmp_path, scripts):
                      ('ldac.py', [s]), ('id3.py', [s]), ('headset_io.py', [s]), ('bluealsa.py', [s]), ('coverflow.py', []),
                      ('mp3.py', []), ('mp3_gapless.py', []), ('mp3_gapless_player.py', [s]), ('player_seam.py', [s]), ('bt_resample.py', [s]),
                      ('xfade_player.py', [s]), ('hci_natural.py', [s]), ('hci_ao.py', [s]), ('hci_wait.py', [s]), ('remote.py', [])]
-    assert all(k == dict(check=True) for _, k in scripts)
+    assert all(k == {} for _, k in scripts)
     assert all(a[0] == release.sys.executable and a[1] == release.ROOT/'test'/n for (a, _), (n, _) in zip(scripts, names))
+
+
+def test_validate_names_the_suites_that_fail(tmp_path, scripts):
+    scripts.failing = ('patch', 'remote')
+    with pytest.raises(ValueError, match=r'^Failed: test/patch\.py, test/remote\.py$'):
+        release.validate(built(tmp_path/'b'))
+    assert len(scripts) == 20  # all were started, and waited for, before any failure was reported
 
 
 @pytest.mark.parametrize('field,value,message', [
@@ -162,11 +179,12 @@ def test_package(repo, monkeypatch, tmp_path, capsys):
     assert (out/release.ASSET).read_bytes() == b'tar'
     assert p.scripts == [([release.sys.executable, str(repo/'docs/manual/build.py'), str(out/release.GUIDE)], True)]
     assert (out/'SHA256SUMS').read_text() == f'{sha(b"tar")}  update.tar\n'
+    notes = f'**{release.VERSION}**\n- One.\n\nSHA-256:\n- update.tar ({release.TAG}): `{sha(b"tar")}`\n'
+    assert (out/'release-notes.md').read_text() == notes
     record = json.loads((out/'release.json').read_text())
     assert record == dict(tag=release.VERSION, revision='rev', source_sha256='source', assets={'update.tar': sha(b'tar')},
-                          guide_sha256=sha(b'%PDF'))
+                          guide_sha256=sha(b'%PDF'), notes_sha256=sha(notes.encode()))
     assert (out/'release.json').read_text().endswith('}\n') and '\n  "tag"' in (out/'release.json').read_text()
-    assert (out/'release-notes.md').read_text() == release.release_body(out, record)
     assert capsys.readouterr().out == f'Validated and reproducible: {out}\n'
 
 
@@ -177,9 +195,27 @@ def test_package_wants_a_fresh_directory(repo, monkeypatch, tmp_path):
     assert not p.calls
 
 
+def test_package_wants_three_single_digits(repo, monkeypatch, tmp_path):
+    # refused before the output folder is made, so a rerun with a fixed VERSION finds it fresh
+    p = Packaging(monkeypatch)
+    monkeypatch.setattr(release, 'VERSION', '1.76')
+    with pytest.raises(ValueError, match='^VERSION must be three single digits'):
+        release.package(pathlib.Path('stock.zip'), tmp_path/'out')
+    assert not (tmp_path/'out').exists() and not p.calls
+
+
 def test_package_wants_committed_inputs(repo, monkeypatch, tmp_path):
     p = Packaging(monkeypatch, status=' M tools/build.py\n')
     with pytest.raises(ValueError, match='^Commit the build inputs before packaging$'):
+        release.package(pathlib.Path('stock.zip'), tmp_path/'out')
+    assert not (tmp_path/'out').exists() and not p.builds
+
+
+def test_package_wants_the_newest_changelog_entry(repo, monkeypatch, tmp_path):
+    # A VERSION behind docs/changelog.md's newest entry is refused before anything is built or written.
+    (repo/'docs/changelog.md').write_text(f'# Changelog\n\n- **9.9.9**: Newer.\n- **{release.VERSION}**: One.\n')
+    p = Packaging(monkeypatch)
+    with pytest.raises(ValueError, match='^' + re.escape(f"{release.VERSION} is not docs/changelog.md's newest entry") + '$'):
         release.package(pathlib.Path('stock.zip'), tmp_path/'out')
     assert not (tmp_path/'out').exists() and not p.builds
 
@@ -212,21 +248,25 @@ def packaged(root):
     (out/release.ASSET).write_bytes(b'pod')
     (out/release.GUIDE).write_bytes(b'%PDF')
     (out/'SHA256SUMS').write_text(f'{sha(b"pod")}  {release.ASSET}\n')
+    (out/'release-notes.md').write_bytes(b'notes\n')
     (out/'release.json').write_text(json.dumps(dict(tag=release.VERSION, revision='rev', source_sha256='source',
-                                                    assets={release.ASSET: sha(b'pod')}, guide_sha256=sha(b'%PDF'))))
+                                                    assets={release.ASSET: sha(b'pod')}, guide_sha256=sha(b'%PDF'),
+                                                    notes_sha256=sha(b'notes\n'))))
     return out
 
 
 class Gh:
-    def __init__(self, monkeypatch, out, releases='[]', corrupt=None):
+    def __init__(self, monkeypatch, out, releases='[]', corrupt=None, tag=''):
         self.calls, self.out = [], out
-        self.releases, self.corrupt = releases, corrupt
+        self.releases, self.corrupt, self.tag = releases, corrupt, tag
         monkeypatch.setattr(release, 'run', self)
 
     def __call__(self, *args):
         self.calls.append(args)
         if args[3:5] == ('release', 'list') or args[4:5] == ('list',):
             return self.releases
+        if args[:2] == ('git', 'ls-remote'):
+            return self.tag
         if 'download' in args:
             target = pathlib.Path(args[-1])
             for name in (release.ASSET, release.GUIDE):
@@ -240,16 +280,32 @@ def test_upload_draft(repo, monkeypatch, capsys):
     release.upload(out)
     prefix = ('gh', '--repo', release.REPO, 'release')
     assert gh.calls[0] == (*prefix, 'list', '--limit', '1000', '--json', 'tagName,isDraft')
-    assert gh.calls[1] == (*prefix, 'create', release.VERSION, '--draft', '--target', 'rev', '--title', release.VERSION,
+    assert gh.calls[1] == ('git', 'ls-remote', f'https://github.com/{release.REPO}.git', f'refs/tags/{release.VERSION}',
+                           f'refs/tags/{release.VERSION}^{{}}')
+    assert gh.calls[2] == (*prefix, 'create', release.VERSION, '--draft', '--target', 'rev', '--title', release.VERSION,
                            '--notes-file', out/'release-notes.md')
-    assert gh.calls[2] == (*prefix, 'upload', release.VERSION, out/release.ASSET, out/release.GUIDE, '--clobber')
-    assert gh.calls[3][:6] == (*prefix, 'download', release.VERSION) and gh.calls[3][6] == '--dir' and len(gh.calls) == 4
-    record = json.loads((out/'release.json').read_text())
-    assert (out/'release-notes.md').read_text() == release.release_body(out, record)
+    assert gh.calls[3] == (*prefix, 'upload', release.VERSION, out/release.ASSET, out/release.GUIDE, '--clobber')
+    assert gh.calls[4][:6] == (*prefix, 'download', release.VERSION) and gh.calls[4][6] == '--dir' and len(gh.calls) == 5
+    assert (out/'release-notes.md').read_bytes() == b'notes\n'  # sent as packaged
     assert capsys.readouterr().out == f'Verified draft: https://github.com/{release.REPO}/releases/tag/{release.VERSION}\n'
 
 
+def test_upload_sends_the_packaged_notes(repo, monkeypatch, tmp_path):
+    # The notes are the changelog's at packaging: a newer entry, or an edit, before upload changes nothing sent.
+    Packaging(monkeypatch)
+    out = tmp_path/'out'
+    release.package(pathlib.Path('stock.zip'), out)
+    body = (out/'release-notes.md').read_text()
+    (repo/'docs/changelog.md').write_text(f'- **9.9.9**: Newer.\n- **{release.VERSION}**: Edited.\n')
+    monkeypatch.setattr(release, 'source_sha256', lambda: 'source')
+    gh = Gh(monkeypatch, out)
+    release.upload(out)
+    assert gh.calls[2][-2:] == ('--notes-file', out/'release-notes.md')
+    assert (out/'release-notes.md').read_text() == body and '- One.' in body
+
+
 def test_upload_publish(repo, monkeypatch, capsys):
+    monkeypatch.setattr(release, 'BETA', 0)
     out = packaged(repo)
     gh = Gh(monkeypatch, out)
     release.upload(out, publish=True)
@@ -257,11 +313,38 @@ def test_upload_publish(repo, monkeypatch, capsys):
     assert capsys.readouterr().out.startswith('Published: https://github.com/')
 
 
+def test_upload_never_publishes_a_beta(repo, monkeypatch):
+    monkeypatch.setattr(release, 'BETA', 2)
+    out = packaged(repo)
+    gh = Gh(monkeypatch, out)
+    with pytest.raises(ValueError, match='^A beta is a pre-release'):
+        release.upload(out, publish=True)
+    assert not gh.calls
+
+
 def test_upload_updates_a_draft(repo, monkeypatch):
     out = packaged(repo)
     gh = Gh(monkeypatch, out, json.dumps([{'tagName': 'old', 'isDraft': False}, {'tagName': release.VERSION, 'isDraft': True}]))
     release.upload(out)
-    assert gh.calls[1][4] == 'edit'
+    assert gh.calls[2][4] == 'edit'
+
+
+@pytest.mark.parametrize('tag', ['rev\trefs/tags/{v}\n', 'object\trefs/tags/{v}\nrev\trefs/tags/{v}^{{}}\n'])
+def test_upload_takes_a_tag_on_its_own_commit(repo, monkeypatch, tag):
+    out = packaged(repo)
+    gh = Gh(monkeypatch, out, tag=tag.format(v=release.VERSION))
+    release.upload(out)
+    assert gh.calls[2][4] == 'create'
+
+
+@pytest.mark.parametrize('tag', ['beta\trefs/tags/{v}\n', 'rev\trefs/tags/{v}\nbeta\trefs/tags/{v}^{{}}\n'])
+def test_upload_refuses_a_tag_left_on_another_commit(repo, monkeypatch, tag):
+    # GitHub would keep the tag, a deleted pre-release's, and ignore --target
+    out = packaged(repo)
+    gh = Gh(monkeypatch, out, tag=tag.format(v=release.VERSION))
+    with pytest.raises(ValueError, match=f'^Tag {release.VERSION} is on another commit: gh release delete'):
+        release.upload(out)
+    assert len(gh.calls) == 2
 
 
 def test_upload_never_overwrites_a_published_release(repo, monkeypatch):
@@ -274,6 +357,7 @@ def test_upload_never_overwrites_a_published_release(repo, monkeypatch):
 
 @pytest.mark.parametrize('name', [release.ASSET, release.GUIDE])
 def test_upload_checks_what_landed(repo, monkeypatch, name):
+    monkeypatch.setattr(release, 'BETA', 0)
     out = packaged(repo)
     gh = Gh(monkeypatch, out, corrupt=name)
     with pytest.raises(ValueError, match=f'^Remote asset mismatch: {name}$'):
@@ -287,6 +371,7 @@ def test_upload_checks_what_landed(repo, monkeypatch, name):
     (dict(assets={release.ASSET: 'x', 'extra.zip': 'y'}), '^The release is update.tar alone$'),
     (dict(assets={release.ASSET: 'x'}), '^Release update mismatch$'),
     (dict(guide_sha256='x'), '^User guide mismatch$'),
+    (dict(notes_sha256='x'), '^Release notes mismatch, '),
 ])
 def test_upload_checks_the_record_first(repo, monkeypatch, change, message):
     out = packaged(repo)
@@ -294,6 +379,17 @@ def test_upload_checks_the_record_first(repo, monkeypatch, change, message):
     (out/'release.json').write_text(json.dumps({**record, **change}))
     gh = Gh(monkeypatch, out)
     with pytest.raises(ValueError, match=message):
+        release.upload(out)
+    assert not gh.calls
+
+
+def test_upload_of_a_record_without_notes_hash_says_to_package_again(repo, monkeypatch):
+    out = packaged(repo)
+    record = json.loads((out/'release.json').read_text())
+    del record['notes_sha256']
+    (out/'release.json').write_text(json.dumps(record))
+    gh = Gh(monkeypatch, out)
+    with pytest.raises(ValueError, match='package again'):
         release.upload(out)
     assert not gh.calls
 
@@ -331,5 +427,5 @@ def test_notes_needs_this_versions_entry(repo):
 
 
 def test_release_body(repo):
-    assert release.release_body(pathlib.Path('.'), {'assets': {release.ASSET: 'abc'}}) == (
+    assert release.release_body(release.notes(), {release.ASSET: 'abc'}) == (
         f'**{release.VERSION}**\n- One.\n\nSHA-256:\n- update.tar ({release.TAG}): `abc`\n')

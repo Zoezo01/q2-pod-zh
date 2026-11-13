@@ -34,7 +34,7 @@ from build import fileoff, segments, symbols
 from peq import PLAYER_SHA
 from flac import patch_words, selection
 
-DECODE = 0x5b6950
+DECODE = 0x5b6e70
 CODEC, FRAME, PACKET, GOT, CTX = 0x2000000, 0x2001000, 0x2002000, 0x2003000, 0x2004000
 INPUT, OUTPUT, SAMPLE, STRIDE = 0x2010000, 0x2200000, 0x2300000, 0x80000
 SP, END = 0x2ff0000, 0x3000000
@@ -42,8 +42,8 @@ GUARD = b'FLAC-QA!' * 4
 FORMATS = {1: (2, False), 2: (4, False), 6: (2, True), 7: (4, True)}
 # mthc1 high word is zero for the bounded fixture timestamps; cvt.s.l -> cvt.s.w.
 TIME_BRIDGE = (
-    (0x5b7330, 0x44e30800, 0), (0x5b7334, 0x46a00860, 0x46800860),
-    (0x5b6a98, 0x44e70800, 0), (0x5b6a9c, 0x46a00860, 0x46800860),
+    (0x5b7850, 0x44e30800, 0), (0x5b7854, 0x46a00860, 0x46800860),
+    (0x5b6fb8, 0x44e70800, 0), (0x5b6fbc, 0x46a00860, 0x46800860),
 )
 
 
@@ -229,15 +229,15 @@ class Machine:
             self.write(address, new)
         self.count, self.calls, self.logs = 0, Counter(), []
         self.last = deque(maxlen=8)
-        self.stub(0xadb580, lambda: self.service('mutex_lock', 0))
-        self.stub(0xadb3f0, lambda: self.service('mutex_unlock', 0))
-        self.stub(0xadb1a0, self.memcmp)
-        self.stub(0xadb970, self.memset)
-        self.stub(0x6f0f4c, self.log)
-        self.stub(0x5f5c28, self.frame_buffer)
+        self.stub(0xadbdd0, lambda: self.service('mutex_lock', 0))
+        self.stub(0xadbc40, lambda: self.service('mutex_unlock', 0))
+        self.stub(0xadba00, self.memcmp)
+        self.stub(0xadc1e0, self.memset)
+        self.stub(0x6f146c, self.log)
+        self.stub(0x5f6148, self.frame_buffer)
         u.hook_add(UC_HOOK_BLOCK, self.block)
-        entries = {'decode_frame': DECODE, 'dsp_init': 0x40a17c, 'residual': 0x5b6334,
-                   'stock_lpc32': 0x5ba9bc, 'stock_lpc64': 0x5bab3c}
+        entries = {'decode_frame': DECODE, 'dsp_init': 0x40a1dc, 'residual': 0x5b6854,
+                   'stock_lpc32': 0x5baedc, 'stock_lpc64': 0x5bb05c}
         entries.update(names or {})
         for name, address in entries.items():
             u.hook_add(UC_HOOK_CODE, self.hit, name, begin=address, end=address)
@@ -312,9 +312,9 @@ class Machine:
             self.write(CTX + off, value)
         self.info, self.fmt = info, sample_format
         # Running player, consumer idle: heartbeat is not cleared asynchronously.
-        self.u.mem_write(0xb10e68, b'\0')
-        self.write(0xb10e70, 0)
-        self.write(0xb10e6c, 0)
+        self.u.mem_write(0xb11e68, b'\0')
+        self.write(0xb11e70, 0)
+        self.write(0xb11e6c, 0)
 
     def decode(self, packet, expected_count):
         self.count, self.calls, self.logs = 0, Counter(), []

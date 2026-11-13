@@ -32,6 +32,20 @@ int ringnav_cardmount(void) {
     return result;
 }
 
+/* Stock's dialog_modal queues its dialog's close (0x6521dc) on an idle holding the bare pointer
+ * (build.py DIALOG_CLOSE), and a dialog freed before that idle ran was read from freed memory
+ * (docs/internals.md#modal-dialog-close). The close goes ahead only while the dialog is still one
+ * of the window manager's windows: widget_destroy takes a window out of there before freeing it.
+ * ponytail: a window opened at a freed dialog's address before the idle runs is closed in its
+ * place; also ask that it is a quit dialog if that shows. */
+static int dialog_close(const void *idle) {
+    void *wm = window_manager(), *dialog = P(idle, IDLE_CTX);
+    for (unsigned i = widget_count_children(wm); i--;)
+        if (widget_get_child(wm, i) == dialog) return window_close(dialog);
+    return 0;
+}
+int ringnav_dialog_close(void *close, void *dialog) { return (int)idle_add(dialog_close, dialog); }
+
 /* Charge limit (docs/internals.md#charge-limit): get_battery_capacity keeps g_power_capacity and
  * g_power_chargestate (1 Charging, 2 Full, the AXP2101's battery status); switch_charge_enable
  * drives the charge enable, as stock's USB mode does with g_usbdac_chargeflag. At CHARGE_STOP
@@ -283,7 +297,7 @@ void ringnav_clean_end(void) {
 /* Reboot record (docs/internals.md#bluetooth-boot-reconnect): when its Bluetooth controller never
  * answers rtk_hciattach, stock's openBluetooth sets bt_rtk_error, checkBluetoothStatus makes that
  * bt_initstatus BT_ABNORMAL, and on_wm_idle_status, on its next pass, shows "Bluetooth abnormal"
- * and calls device_reboot (0x4e9d0c and 0x4e9f1c, its only direct callers). A Q2 whose radio
+ * and calls device_reboot (0x4f4288 and 0x4f449c, its only direct callers). A Q2 whose radio
  * module is dead reboots at every boot, and each was a clean end: nothing on the card said why.
  * So ringnav_reboot has this leave S90play's q2-crash.log first, as a crash would, whole then
  * renamed: the date, the reason with the status, the uptime and the caller, dmesg's tail and, when
@@ -368,6 +382,8 @@ static void standby_poll(void) {
 #define LOGO_DST "/mnt/data/boot-logo.jpg"
 #define LOGO_ROT "/tmp/boot-logo.jpg"
 #define LOGO_MAX (512 * 1024)
+#define LOGO_SEEN "/mnt/data/boot-logo.bad" /* the refused card file: size, mtime */
+static const char logo_refused[] = "Boot logo must be a 320x375 JPEG";
 /* tools/build.py's jpeg_size: w << 16 | h of a baseline 8-bit three-component JPEG, the only kind
  * stock display_logo draws right; 0 for anything else. */
 static unsigned jpeg_size(const unsigned char *b, unsigned n) {
@@ -395,7 +411,7 @@ static unsigned jpeg_size(const unsigned char *b, unsigned n) {
 static void *logo_sync(void *unused) {
     unsigned n = 0, old_n;
     unsigned char *b = 0, *old = 0;
-    const char *err = "开机图须为 320x375 JPEG";
+    const char *err = logo_refused;
     if (access(LOGO_SRC, 0))
         unlink(LOGO_DST), err = 0;
     else if ((b = read_all(LOGO_SRC, LOGO_MAX, &n)) && jpeg_size(b, n) == (375u << 16 | 320)) {
@@ -422,6 +438,19 @@ static void *logo_sync(void *unused) {
             unlink(LOGO_DST ".tmp"), err = "无法保存开机图";
     }
     free(b), free(old);
+    unsigned st[36], seen[2], key[2];
+    if (err == logo_refused &&
+        !__xstat(3, LOGO_SRC, st)) { /* LOGO_SEEN names the file last refused */
+        /* ponytail: the key is size + mtime (2 s on FAT), so another bad file of the same size and
+         * time stays silent; the record is written before the toast shows, so a power cut or a
+         * missed 2 s toast leaves the file recorded as told. A failed stat records nothing. */
+        key[0] = st[12], key[1] = st[16]; /* size, mtime */
+        if (BLOB_IO(LOGO_SEEN, seen, 0) && !memcmp(seen, key, sizeof key))
+            err = 0; /* said at an earlier mount: once a file, not each power-on */
+        else
+            BLOB_IO(LOGO_SEEN, key, 1);
+    } else if (err != logo_refused)
+        unlink(LOGO_SEEN); /* a good logo, or none: the same bad file put back is told again */
     pw.logo_err = err;
     pw.logo_busy = 0;
     return 0;

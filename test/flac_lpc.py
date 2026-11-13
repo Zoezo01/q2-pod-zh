@@ -27,7 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 from build import FLAGS, ROOT, run, segments, symbols
 from peq import PLAYER_SHA
 
-STOCK = {32: 0x5ba9bc, 64: 0x5bab3c}
+STOCK = {32: 0x5baedc, 64: 0x5bb05c}
 DATA, CO, SP, END = 0x2001000, 0x2043000, 0x210f000, 0x3000000
 SAVED = (
     UC_MIPS_REG_S0, UC_MIPS_REG_S1, UC_MIPS_REG_S2, UC_MIPS_REG_S3,
@@ -39,7 +39,7 @@ SAVED = (
 def compile_payload(out):
     obj, elf = out / 'flac-lpc.o', out / 'flac-lpc.elf'
     run('clang', *FLAGS, '-c', ROOT / 'patch/flac_lpc.c', '-o', obj)
-    run('ld.lld', '-m', 'elf32ltsmip', '-Ttext=0xe10000',
+    run('ld.lld', '-m', 'elf32ltsmip', '-Ttext=0xe20000',
         '--entry=flac_lpc32', obj, '-o', elf)
     return elf
 

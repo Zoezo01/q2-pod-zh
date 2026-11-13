@@ -1,11 +1,11 @@
-/* FLAC LPC reconstruction for the pinned V1.32 hciplayer (tools/peq.py PLAYER_SHA).
+/* FLAC LPC reconstruction for the pinned V1.36 hciplayer (tools/peq.py PLAYER_SHA).
  *
  * ABI: decoded samples/residuals, reversed coefficients (oldest history first),
  * order, nonnegative predictor shift, total block size; o32's fifth arg is on
  * the caller's stack. The warm-up samples [0, order) stay unchanged.
  *
- * Stock's callbacks are 0x5ba9bc (32-bit accumulator) and 0x5bab3c (64-bit).
- * Its DSP initializer at 0x40a17c installs them at context+0x8c and +0x90.
+ * Stock's callbacks are 0x5baedc (32-bit accumulator) and 0x5bb05c (64-bit).
+ * Its DSP initializer at 0x40a1dc installs them at context+0x8c and +0x90.
  * Replace the pointer initialization, never the original entries: uncommon
  * orders/shift values still call those unchanged implementations.
  *
@@ -44,7 +44,7 @@ void flac_lpc32(i32 *restrict data, const i32 *restrict co, int order, int sh, i
         CASE(7) CASE(8) CASE(9) CASE(10) CASE(11) CASE(12)
     }
 fallback:
-    ((void (*)(i32 *, const i32 *, int, int, int))0x5ba9bc)(data, co, order, sh, len);
+    ((void (*)(i32 *, const i32 *, int, int, int))0x5baedc)(data, co, order, sh, len);
 }
 #undef CASE
 
@@ -75,6 +75,6 @@ void flac_lpc64(i32 *restrict data, const i32 *restrict co, int order, int sh, i
         CASE(7) CASE(8) CASE(9) CASE(10) CASE(11) CASE(12)
     }
 fallback:
-    ((void (*)(i32 *, const i32 *, int, int, int))0x5bab3c)(data, co, order, sh, len);
+    ((void (*)(i32 *, const i32 *, int, int, int))0x5bb05c)(data, co, order, sh, len);
 }
 #undef CASE

@@ -16,7 +16,7 @@ import typing
 import pytest
 
 import host
-from conftest import NAVIGATION_SOURCE, O, Deques, Files, claim, high_halves, libc, ui_name
+from conftest import NAVIGATION_SOURCE, O, c_enum, Deques, Files, claim, high_halves, libc, ui_name
 
 STRINGS = dict(re.findall(r'^#define (\w+) "([^"]*)"', (host.ROOT/'patch/offsets.inc').read_text(), re.M))
 LIST_INTO_WHITE, BT_GLYPH = STRINGS['LIST_INTO_WHITE'], STRINGS['BT_GLYPH']
@@ -48,15 +48,6 @@ def wide(s):
 def bright(c):
     """A colour's channels summed, in either byte order: which of two is the darker."""
     return sum(c >> s & 255 for s in (0, 8, 16))
-
-
-def c_enum(first):
-    """navigation.h's enum that starts with `first` (NAVIGATION_SOURCE holds it), by name: each its place, as
-    none sets a value."""
-    source = re.sub(r'/\*.*?\*/', '', NAVIGATION_SOURCE, flags=re.S)
-    body = host.tools_build.need(re.search(rf'enum \{{\s*({first}\b[^}}]*)\}}', source), f'No enum {first}')[1]
-    assert '=' not in body
-    return {name.strip(): k for k, name in enumerate(body.split(',')) if name.strip()}
 
 
 POD = c_enum('POD_CHARGE')  # pod_rows' rows
@@ -94,7 +85,7 @@ class Node:
         return C.c_ubyte.from_address(self.addr + offset)
 
     def clickable(self, ctx=0):
-        """An EVT_CLICK on its emitter (V1.32: emitter @0x60, its first item, type @8, next @0x20)."""
+        """An EVT_CLICK on its emitter (V1.36: emitter @0x60, its first item, type @8, next @0x20)."""
         item = C.create_string_buffer(0x28)
         struct.pack_into('<Q', item, 0, ctx)
         struct.pack_into('<i', item, O['EMIT_TYPE'], EVT_CLICK)
@@ -690,17 +681,13 @@ def test_a_second_sync_with_nothing_new_sets_no_image(fw):
 
 @pytest.mark.parametrize('light', [0, 1])
 @pytest.mark.parametrize('status', [2, 3])
-def test_classic_draws_its_own_state_by_half_and_gives_eq_the_room_when_idle(fw, light, status):
+def test_classic_draws_its_own_state_by_half(fw, light, status):
     theme(fw, CLASSIC, LIGHT=str(light).encode())
     bar = Bar(fw, status)
     bar.sync()
     state = 'play' if status == 2 else 'pause'
     assert bar.w['img_state'].props['image'] == f'classic_light_{state}_{"dl"[light]}'
-    assert not bar.w['label_eq'].visible  # room for one: the play state
-    bar.status = 0
-    bar.w['label_eq'].visible = 1
-    bar.sync()
-    assert not bar.w['img_state'].visible and bar.w['label_eq'].visible and not bar.w['label_idle'].visible
+    assert bar.w['label_eq'].visible  # stock's, left alone: Classic's bar keeps it off-screen (tools/ipod.py)
 
 
 @pytest.mark.parametrize('status', [2, 3])
@@ -834,7 +821,7 @@ def test_rounded_corners_make_modern_a_pill_inset_from_the_glass(fw, layout):
 
 
 def test_minimal_ivory_lays_a_card_under_the_row(fw, st, layout):
-    page = Page(fw, MINIMAL)
+    page = Page(fw, MINIMAL, MINIMAL_ACCENT=b'7', ROUNDED=b'0')
     S = Scheme(fw, layout)
     page.paint()
     assert S.flags & 1  # Ivory: SCHEME_CARD
@@ -1257,6 +1244,21 @@ def test_a_line_too_long_scrolls_in_its_label_never_a_wider_box(fw, st):
     assert w == labels[0].box[2] and abs(2 * x + w - 375) <= 1
 
 
+def test_v134s_wrapping_label_gets_the_box_its_wrapped_lines_need(fw, st):
+    """V1.36's plain toast is one word-wrapping label: AWTK sizes it, the box follows its height."""
+    ui = classic(fw, st)
+    win = ui.window('msginfo_dialog', kind='dialog')
+    label = ui.add('label', win, (10, 100, 355, 120))
+    ui.set_text(label, 'Rockbox Themes are ready in Rockbox\'s Theme Settings')
+    fw.mock('label_resize_to_content', lambda w, lo, hi, lo_h, hi_h, *_: ui.nodes[w].move(*ui.nodes[w].box[:2], hi, 3 * lo_h))
+    canvas = Canvas(fw)
+    paint_bg(fw, win, canvas)
+    (x, y, w, h), _, _ = canvas.boxes[0]
+    lx, ly, lw, lh = label.box
+    assert lw == w and lh == 3 * 24 and y < ly and ly + lh < y + h  # three lines inside the box
+    assert label.props['style:normal:text_align_h'] == 'center' and label.props['_final_n']
+
+
 def test_a_toast_moves_its_lines_once(fw, st):
     win, labels, canvas = toast(fw, st, ['Done'])
     moves = len(fw.calls('widget_move_resize'))
@@ -1446,7 +1448,7 @@ def test_a_playlists_quiet_more_is_three_grey_dots_off_the_band(fw, st, layout, 
 def test_minimals_card_redraws_its_radio_in_the_cards_ink(fw, st, layout, image, dot):
     """Stock's white ring and dot would vanish on the off-white card: a ring of ink with the card's
     fill in it, and the dot when checked, one inside the other on the image's middle."""
-    mark = Mark(fw, st, MINIMAL, image)
+    mark = Mark(fw, st, MINIMAL, image, MINIMAL_ACCENT=b'7')
     S = Scheme(fw, layout)
     boxes = mark.paint().boxes
     assert len(boxes) == 2 + dot
@@ -1463,7 +1465,7 @@ def test_minimals_radio_off_the_card_is_stocks(fw, st):
 
 
 def test_minimals_card_redraws_more_dots_and_delete(fw, st, layout):
-    mark = Mark(fw, st, MINIMAL, 'unselect', 'img_more0')
+    mark = Mark(fw, st, MINIMAL, 'unselect', 'img_more0', MINIMAL_ACCENT=b'7')
     S = Scheme(fw, layout)
     (clear, fill, _), *dots = mark.paint().boxes
     assert fill == rgba(S.fill) and middle(clear) == MIDDLE  # stock's white dots wiped in the card's fill
@@ -1519,7 +1521,7 @@ def test_light_modes_chevron_on_a_coloured_bar_is_white(fw, st, layout, light):
 def test_ringnav_paint_returns_stocks_and_hands_the_paint_to_the_parent(fw, st):
     """Stock paints a widget's border after its children: once the card's row's title is done, the
     row is painting again and takes the card's ink; once the row is done, its item, off the card."""
-    page = Page(fw, MINIMAL)
+    page = Page(fw, MINIMAL, MINIMAL_ACCENT=b'7')
     page.paint()
     row = page.rows[1]
     card = text_ink(fw, st, row.children[0])
@@ -1761,7 +1763,8 @@ def test_device_volume_off_gives_stock_its_gain_back_at_once(fw, way, sent):
     assert [c[1][:2] for c in fw.calls('device_set_volume')] == [(37, 0)] * sent
 
 
-def playset(fw, ui, view, stock_rows=15):
+def playset(fw, ui, view, stock_rows=13):
+    """Stock's Playback rows, s0-s12: s8 Headphones required, s11 Volume and Album Display, s12 Folder skip."""
     def build(*_):
         for i in range(stock_rows):
             item = ui.add('list_item', view, (0, 0, 375, 70), f's{i}')
@@ -1780,14 +1783,41 @@ def test_playback_orders_its_rows_and_ends_on_library_and_folders(fw):
     fw.fn('ringnav_audioset', C.c_int, C.c_void_p, C.c_void_p)(win.addr, None)
     rows = view.children
     ids = [r.name for r in rows]
-    assert len(rows) == 19 and 's13' not in ids and 's14' not in ids  # Folder art and skip: Library & Folders'
+    # stock's Volume and Album Display is not offered; Folder skip is Library & Folders'
+    assert len(rows) == 19 and 's11' not in ids and 's12' not in ids
     at = {r.name or icon(r): k for k, r in enumerate(rows)}
     assert rows[-1] is row(ui, view, 'Library & Folders') and 'list_into' in [c.props.get('image') for c in rows[-1].walk()]
     assert (at['s3'], at['s2']) == (0, 1)  # Play Mode, then EQ
-    assert at['playset_gapless'] == at['s9'] + 1 and at['playset_memplay'] == at['s8'] + 1  # Crossfade, Resume Songs
+    assert at['playset_gapless'] == at['s7'] + 1 and at['playset_memplay'] == at['s6'] + 1  # Crossfade, Resume Songs
+    assert at['s8'] == at['playset_memplay'] + 1  # Headphones required, after Resume Songs
     balance = [k for k, r in enumerate(rows) if icon(r) == 'playset_balance']
-    assert balance == [at['s11'] + 1, at['s11'] + 2]  # Mono Audio and Swap L/R
-    assert at['playset_dsdoutput'] == at['s6'] + 1 and at['s7'] == 17  # MQA by DSD, USB Audio last but one
+    assert balance == [at['s10'] + 1, at['s10'] + 2]  # Mono Audio and Swap L/R
+    assert at['s5'] == at['s4'] + 1 == 17  # DSD Output, then USB Audio last but one
+    # that page's rows, where V1.32 had them: the two volumes before Balance, Enlarged Album Art after Swap L/R
+    assert [at['playset_maxvol'], at['playset_bootvol'], at['s10']] == list(range(at['s9'] + 1, at['s9'] + 4))
+    assert at['playset_covermode'] == balance[1] + 1
+
+
+def test_playback_s_volume_rows_open_stock_s_pages_and_enlarged_art_is_stock_s_switch(fw):
+    ui, win, view, settings, _ = settings_page(fw, MINIMAL, 'playset_page', 'scroll_view_playset')
+    playset(fw, ui, view)
+    g(fw, 'g_bigcovermode', 0)
+    fw.fn('ringnav_audioset', C.c_int, C.c_void_p, C.c_void_p)(win.addr, None)
+    ours = {icon(r): r for r in view.children if not r.name}
+    opened = []
+    fw.mock('navigator_to', lambda name, *_: opened.append(C.string_at(name).decode()))
+    for key in ('playset_maxvol', 'playset_bootvol'):
+        assert 'list_into' in [c.props.get('image') for c in ours[key].walk()]
+        click(ui, ours[key])
+    assert opened == ['playset/maxvol_page', 'playset/bootvol_page']
+    art = ours['playset_covermode']
+    assert switch(art) == 'switch_off' and ui.text(label_of(art)) == 'Enlarged Album Art'
+    # stock's rows, stock's translations
+    assert [C.string_at(c[1][1]) for c in fw.calls('widget_set_tr_text')] == [b'playset_maxvol', b'playset_bootvol', b'playset_covermode']
+    click(ui, art)
+    assert switch(art) == 'switch_on' and g(fw, 'g_bigcovermode') == 1 and settings.written == [('COVERMODE', 1)]
+    click(ui, art)
+    assert switch(art) == 'switch_off' and g(fw, 'g_bigcovermode') == 0 and settings.written[-1] == ('COVERMODE', 0)
 
 
 def test_library_and_folders_is_stocks_page_again_with_the_library_rows(fw, st):
@@ -1812,12 +1842,17 @@ def test_library_and_folders_is_stocks_page_again_with_the_library_rows(fw, st):
     opener = row(ui, view, 'Library & Folders')
     click(ui, opener)
     assert sub['name'] == b'playset/playset_page' and sub['title'] == ui.text(label_of(opener))  # titled as its row
-    ours, kept = sub['rows'][:4], sub['rows'][4:]
-    assert [r.name for r in kept] == ['s14', 's13']  # stock's Folder skip and Folder art, last
-    for r in ours:
+    ours = sub['rows'][:4]
+    skip, art = sub['rows'][4:]
+    # stock's Folder skip, then Folder Album Cover (a row of stock's Volume and Album Display), last
+    assert skip.name == 's12' and icon(art) == 'playset_foldercover' and ui.text(label_of(art)) == 'Folder Album Cover'
+    assert C.string_at(fw.calls('widget_set_tr_text')[-1][1][1]) == b'playset_foldercover'  # stock's row, stock's translation
+    was = g(fw, 'g_foldercover_flag')
+    for r in ours + [art]:
         click(ui, r)
-    # the library's rows, by the setting each saves: Artists, Artist album order, Year order, Folder Root
-    assert [key for key, _ in settings.written] == ['ARTISTTYPE', 'ARTISTAZ', 'YEAROLD', 'FOLDERROOT']
+    # the library's rows, by the setting each saves: Artists, Artist album order, Year order, Folder Root, Folder Album Cover
+    assert [key for key, _ in settings.written] == ['ARTISTTYPE', 'ARTISTAZ', 'YEAROLD', 'FOLDERROOT', 'FOLDERCOVER']
+    assert g(fw, 'g_foldercover_flag') == (not was) and switch(art) == ('switch_off' if was else 'switch_on')
     again = ui.add('scroll_view', ui.window('playset_page'), (0, 26, 375, 294), 'scroll_view_playset')
     playset(fw, ui, again)
     audioset(ui.top.addr, None)
@@ -2574,7 +2609,7 @@ def test_off_the_lyrics_page_the_follow_scrolls(fw, st):
     assert st('lyric_glide').value == 0 and fw.calls('scroll_view_scroll_to')
 
 
-LYRIC_ROWS = 0x529f0c  # stock's rebuild of scroll_lrc's rows, which ringnav_lyric_rows calls
+LYRIC_ROWS = 0x53b67c  # stock's rebuild of scroll_lrc's rows, which ringnav_lyric_rows calls
 
 
 def rows_rebuilt(fw, win, result=0):

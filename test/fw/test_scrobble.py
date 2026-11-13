@@ -11,7 +11,7 @@ import pytest
 LOG, INI, CA = '/mnt/mmc/.scrobbler.log', '/mnt/mmc/.scrobble.ini', '/etc/scrobble-ca.pem'
 HEADER = b'#AUDIOSCROBBLER/1.1\n#TZ/UTC\n#CLIENT/Q2 Pod\n'
 LB_URL, FM_URL = 'https://api.listenbrainz.org/1/submit-listens', 'https://ws.audioscrobbler.com/2.0/'
-BODY_MAX = 192 << 10
+BODY_MAX = 384 << 10
 ACCOUNT = {('LISTENBRAINZ', 'TOKEN'): 'tok', ('LASTFM', 'USER'): 'u', ('LASTFM', 'PASSWORD'): 'p&w',
            ('LASTFM', 'API_KEY'): 'key', ('LASTFM', 'API_SECRET'): 'sec'}
 LB_ONLY = {('LISTENBRAINZ', 'TOKEN'): 'tok'}
@@ -37,7 +37,8 @@ def config(fw, values):
 
 class Card:
     """The card's files as a dict: read, write and append, each fopen's mode; fail names what fails ('open:path',
-    'write:path', 'sync', 'close', 'rename', 'short' for a read that stops early)."""
+    'write:path', 'write+:path' for every write after the first, 'sync', 'close', 'rename', 'short' for a read that stops
+    early, 'readerr' for a read error)."""
     def __init__(self, fw, files=None):
         self.files, self.open, self.fail, self.opened = dict(files or {}), {}, set(), []
         fw.mock('fw_fopen', self.fopen)
@@ -49,7 +50,10 @@ class Card:
         fw.mock('fw_fileno', lambda f, *_: f)
         fw.mock('fw_fsync', lambda fd, *_: -1 if 'sync' in self.fail else 0)
         fw.mock('fw_fflush', lambda f, *_: 0)
+        fw.mock('fw_ferror', lambda f, *_: int('readerr' in self.fail))
+        fw.mock('fw_ftruncate', self.ftruncate)
         fw.mock('fw_rename', self.rename)
+        fw.mock('fw_unlink', lambda path, *_: self.files.pop(C.string_at(path).decode(), None) and 0)
         fw.mock('fw_access', lambda path, *_: 0 if C.string_at(path).decode() in self.files else -1)
 
     def fopen(self, path, mode, *_):
@@ -73,12 +77,18 @@ class Card:
 
     def fseek(self, f, offset, whence, *_):
         state = self.open[f]
-        state[1] = C.c_long(offset).value + {0: 0, 1: state[1], 2: len(self.files[state[0]])}[whence]
+        end = len(self.files[state[0]] if state[2] is None else state[2])  # an append's file may be new
+        state[1] = C.c_long(offset).value + {0: 0, 1: state[1], 2: end}[whence]
+        return 0
+
+    def ftruncate(self, fd, size, *_):
+        path = self.open[fd][0]
+        self.files[path] = self.files[path][:size]
         return 0
 
     def fwrite(self, data, size, count, f, *_):
         state = self.open[f]
-        if f'write:{state[0]}' in self.fail:
+        if f'write:{state[0]}' in self.fail or (f'write+:{state[0]}' in self.fail and state[2]):
             return 0
         state[2] += C.string_at(data, size * count)
         return count
@@ -235,7 +245,7 @@ def test_percent_is_its_number(fw):
 
 def test_a_listen_starts_the_log_with_its_header_once_under_the_lock(fw):
     card = Card(fw)
-    append = fw.fn('scrobble_append', None, C.c_char_p, C.c_uint)
+    append = fw.fn('scrobble_append', C.c_int, C.c_char_p, C.c_uint)
     first, second = line(title='One'), line(title='Two')
     append(first, len(first))
     append(second, len(second))
@@ -248,10 +258,32 @@ def test_a_listen_starts_the_log_with_its_header_once_under_the_lock(fw):
 def test_a_listen_the_card_can_t_take_still_lets_go_of_the_lock(fw):
     card = Card(fw)
     card.fail.add(f'open:{LOG}')
-    append = fw.fn('scrobble_append', None, C.c_char_p, C.c_uint)
-    append(line(), len(line()))
+    append = fw.fn('scrobble_append', C.c_int, C.c_char_p, C.c_uint)
+    assert append(line(), len(line())) == 0
     assert LOG not in card.files
     assert len(fw.calls('fw_pthread_mutex_lock')) == len(fw.calls('fw_pthread_mutex_unlock')) == 1
+
+
+@pytest.mark.parametrize('fail', (f'write:{LOG}', 'close'))
+def test_a_listen_the_card_takes_only_part_of_leaves_the_log_as_it_was(fw, fail):
+    first, second = line(title='One'), line(title='Two')
+    card = Card(fw, {LOG: HEADER + first})
+    card.fail.add(fail)
+    append = fw.fn('scrobble_append', C.c_int, C.c_char_p, C.c_uint)
+    assert append(second, len(second)) == 0
+    assert card.files[LOG] == HEADER + first  # no torn line for the next listen to join
+    card.fail.clear()
+    assert append(second, len(second)) == 1 and card.files[LOG] == HEADER + first + second
+    assert len(fw.calls('fw_pthread_mutex_lock')) == len(fw.calls('fw_pthread_mutex_unlock')) == 2
+
+
+def test_a_first_listen_the_card_can_t_take_leaves_no_log(fw):
+    card = Card(fw)
+    card.fail.add('close')
+    append = fw.fn('scrobble_append', C.c_int, C.c_char_p, C.c_uint)
+    assert append(line(), len(line())) == 0 and LOG not in card.files  # a headerless log would stay so
+    card.fail.clear()
+    assert append(line(), len(line())) == 1 and card.files[LOG] == HEADER + line()
 
 
 # read_all, which navigation.c shares.
@@ -342,6 +374,50 @@ def test_listens_go_in_batches_of_50_with_one_session(fw):
     assert [t for b in net.listens() for t, *_ in b] == list(range(1700000000, 1700000051))
 
 
+# A session key in the file (tools/lastfm_key.py puts it where the password was).
+
+KEYED = {('LASTFM', 'USER'): 'u', ('LASTFM', 'SESSION_KEY'): 'SK9', ('LASTFM', 'API_KEY'): 'key',
+         ('LASTFM', 'API_SECRET'): 'sec'}
+
+
+@pytest.mark.parametrize('values, want', (
+        (KEYED, 2), ({k: v for k, v in KEYED.items() if k[1] != 'USER'}, 2),  # the key needs no user
+        ({**ACCOUNT, **KEYED}, 3),
+        ({k: v for k, v in KEYED.items() if k[1] != 'API_KEY'}, 0),  # but both of the API pair, which sign each call
+        ({k: v for k, v in KEYED.items() if k[1] != 'API_SECRET'}, 0),
+        ({k: v for k, v in ACCOUNT.items() if k[0] == 'LASTFM' and k[1] != 'PASSWORD'}, 0)))  # neither: as before
+def test_last_fm_is_ready_with_a_session_key_in_the_password_s_place(fw, values, want):
+    config(fw, values)
+    assert fw.fn('scrobble_ready', C.c_int)() == want
+
+
+def test_a_session_key_in_the_file_sends_the_batches_and_asks_for_no_session(fw):
+    log = HEADER + b''.join(line(f'A{i}', time=str(1700000000 + i)) for i in range(51))
+    (_, result, sent), card, net = upload(fw, log, KEYED)
+    forms = net.forms()  # each call's signature checked too
+    assert result == 1 and sent == 51 and card.files[LOG] == HEADER
+    assert [f['method'] for f in forms] == ['track.scrobble', 'track.scrobble'] and all(f['sk'] == 'SK9' for f in forms)
+    assert not any('username' in f or 'password' in f for f in forms)
+
+
+def test_a_session_key_beside_a_password_is_the_one_used_and_the_password_stays_unsent(fw):
+    (_, result, sent), _, net = upload(fw, HEADER + line(), {**ACCOUNT, **KEYED})
+    assert result == 1 and sent == 1 and [f['method'] for f in net.forms()] == ['track.scrobble']
+    assert not any('p%26w' in body for _, _, body, _ in net.requests)
+
+
+def test_a_session_key_last_fm_refuses_fails_the_upload_and_the_password_is_not_tried_instead(fw):
+    """A key the user revoked in Last.fm's settings (its error 9): the listens wait in the log, as after any refusal."""
+    def revoked(url, body):
+        if 'listenbrainz' in url:
+            return 200, '{"status":"ok"}'
+        return 403, '{"error":9,"message":"Invalid session key - Please re-authenticate"}'
+    log = HEADER + line()
+    (_, result, sent), card, net = upload(fw, log, {**ACCOUNT, **KEYED}, reply=revoked)
+    assert result == -1 and sent == 0 and card.files[LOG] == log
+    assert [f['method'] for f in net.forms()] == ['track.scrobble']
+
+
 def test_a_line_still_being_written_stays_in_the_log(fw):
     partial = b'Art\tAl\tSo'
     (_, result, sent), card, _ = upload(fw, HEADER + line() + partial)
@@ -349,7 +425,8 @@ def test_a_line_still_being_written_stays_in_the_log(fw):
 
 
 def test_an_incomplete_last_fm_is_off(fw):
-    values = {**LB_ONLY, ('LASTFM', 'USER'): 'u'}
+    """The API pair without a password or session key: no sign-in is tried with an empty password."""
+    values = {**LB_ONLY, ('LASTFM', 'USER'): 'u', ('LASTFM', 'API_KEY'): 'k', ('LASTFM', 'API_SECRET'): 's'}
     (_, result, sent), _, net = upload(fw, HEADER + line(), values=values)
     assert result == 1 and sent == 1 and not net.to('audioscrobbler') and len(net.to('listenbrainz')) == 1
 
@@ -393,28 +470,90 @@ def test_the_second_batch_refused_keeps_it_and_retires_the_first(fw):
     assert card.files[LOG + '.sent'].count(b'\n') == 50
 
 
-def test_a_batch_too_big_for_its_body_is_never_sent(fw):
-    big = 'a' * (BODY_MAX // 50)  # each listen's artist: 50 overrun the JSON body
-    log = HEADER + b''.join(line(big, time=str(1700000000 + i)) for i in range(50))
-    (_, result, sent), card, net = upload(fw, log, values=LB_ONLY)
-    assert (result, sent) == (-1, 0) and not net.requests and card.files[LOG] == log
+def at_most(size):
+    """The artist's length that makes line()'s line size bytes, its newline aside."""
+    return size - len(line('')) + 1
 
 
-def test_a_form_too_big_for_its_body_is_never_sent(fw):
-    big = '&' * (BODY_MAX // 50 // 3)  # 3 bytes each escaped: the form overruns where the JSON would not
+@pytest.mark.parametrize('big, sent', (('"' * at_most(2560), 50),  # 2 bytes each escaped, at the 2560-byte cap
+                                       ('a' * (BODY_MAX // 50), 0)))  # over the cap: 50 would overrun the JSON body
+def test_a_batch_fits_its_json_body_and_a_line_too_big_for_it_is_retired_unsent(fw, big, sent):
     log = HEADER + b''.join(line(big, time=str(1700000000 + i)) for i in range(50))
+    (_, result, got), card, net = upload(fw, log, values=LB_ONLY)
+    assert (result, got) == (1, sent) and len(net.requests) == (1 if sent else 0)
+    assert card.files[LOG] == HEADER and card.files[LOG + '.sent'].count(b'\n') == 50  # gone, not blocking
+
+
+@pytest.mark.parametrize('one, sent', ((line('&' * 2547, album='&', title='&', length='1', time='1'), 50),  # all sent fields escaped, at the cap
+                                       (line('&' * (BODY_MAX // 50 // 3)), 0)))  # over the cap: the form would overrun
+def test_a_batch_fits_its_form_and_a_line_too_big_for_it_is_retired_unsent(fw, one, sent):
+    log = HEADER + one * 50
     values = {k: v for k, v in ACCOUNT.items() if k[0] == 'LASTFM'}
-    (_, result, sent), card, net = upload(fw, log, values=values)
-    assert (result, sent) == (-1, 0) and [f['method'] for f in net.forms()] == ['auth.getMobileSession']
-    assert card.files[LOG] == log
+    (_, result, got), card, net = upload(fw, log, values=values)
+    assert (result, got) == (1, sent)
+    assert [f['method'] for f in net.forms()] == (['auth.getMobileSession', 'track.scrobble'] if sent else [])
+    assert card.files[LOG] == HEADER and card.files[LOG + '.sent'].count(b'\n') == 50
 
 
-@pytest.mark.parametrize('fail', (f'open:{LOG}.tmp', f'write:{LOG}.tmp', 'sync', 'close', f'open:{LOG}.sent', f'write:{LOG}.sent',
-                                  'rename'))
+@pytest.mark.parametrize('size, sent', ((2560, 2), (2561, 1)))
+def test_a_line_over_2560_bytes_is_retired_unsent(fw, size, sent):
+    long = line('a' * at_most(size))
+    log = HEADER + long + line(time='1700000001')
+    (_, result, got), card, net = upload(fw, log, values=LB_ONLY)
+    assert len(long) == size + 1 and (result, got) == (1, sent) and [len(b) for b in net.listens()] == [sent]
+    assert card.files[LOG] == HEADER and long in card.files[LOG + '.sent']
+
+
+def long_lines(n):
+    """n listens of about 1 KB, each its own time."""
+    return [line('a' * 1000, time=str(1700000000 + i)) for i in range(n)]
+
+
+def test_one_upload_takes_a_log_of_several_megabytes_a_window_at_a_time(fw):
+    lines = long_lines(5 * (1 << 20) // 2 // len(line('a' * 1000)))  # two and a half windows
+    (_, result, sent), card, net = upload(fw, HEADER + b''.join(lines), values=LB_ONLY)
+    assert (result, sent) == (1, len(lines)) and sum(map(len, net.listens())) == len(lines)
+    assert card.files[LOG] == HEADER and card.files[LOG + '.sent'] == b''.join(lines)
+    assert [p for p, m in card.opened].count(LOG + '.tmp') == 3  # a rewrite a window
+
+
+def test_a_window_with_nothing_to_send_does_not_end_the_upload(fw):
+    skipped = line(rating='S') * ((1 << 20) // len(line(rating='S')) + 10)  # past the first window
+    (_, result, sent), card, _ = upload(fw, HEADER + skipped + line() * 3, values=LB_ONLY)
+    assert (result, sent) == (1, 3) and card.files[LOG] == HEADER
+
+
+def test_a_batch_refused_in_a_later_window_keeps_the_rest_and_the_earlier_windows_stay_sent(fw):
+    lines = long_lines(3 * (1 << 20) // 2 // len(line('a' * 1000)))  # a window and a half
+    last = lines[-1].split(b'\t')[6].decode()
+
+    def reply(url, body):
+        return (500, '') if last in body else Net.ok(url, body)
+    (_, result, sent), card, _ = upload(fw, HEADER + b''.join(lines), values=LB_ONLY, reply=reply)
+    assert result == -1 and (1 << 20) // len(lines[0]) < sent < len(lines)  # past the first window, short of the end
+    assert card.files[LOG] == HEADER + b''.join(lines[sent:]) and card.files[LOG + '.sent'] == b''.join(lines[:sent])
+
+
+def test_a_megabyte_with_no_newline_is_dropped_as_junk(fw):
+    log = HEADER + b'x' * (1 << 20) + b'\n' + line()
+    (_, result, sent), card, _ = upload(fw, log, values=LB_ONLY)
+    assert (result, sent) == (1, 1) and card.files[LOG] == HEADER  # the junk's rest skipped, line() sent
+
+
+@pytest.mark.parametrize('tail, sent', ((2560, 0), (2561, 1)))
+def test_a_full_window_s_cut_line_over_2560_bytes_is_junk(fw, tail, sent):
+    fill = (1 << 20) - len(HEADER) - tail
+    log = HEADER + b'#' * (fill - 1) + b'\n' + b'x' * tail + line()  # the window ends tail bytes into a line
+    (_, result, got), card, net = upload(fw, log, values=LB_ONLY)
+    assert (result, got) == (1, sent) and card.files[LOG] == HEADER  # waits, then too long; or its head dropped
+
+
+@pytest.mark.parametrize('fail', (f'open:{LOG}.tmp', f'write:{LOG}.tmp', f'write+:{LOG}.tmp', 'readerr', 'sync', 'close',
+                                  f'open:{LOG}.sent', f'write:{LOG}.sent', 'rename'))
 def test_a_log_rewrite_that_fails_keeps_the_listens(fw, fail):
-    log = HEADER + line()
+    log = HEADER + line() + b'Art\tAl'  # a line still being written, for the copy-through
     (_, result, sent), card, _ = upload(fw, log, fail=[fail])
-    assert (result, sent) == (-1, 1) and card.files[LOG] == log  # sent, but kept to send again
+    assert (result, sent) == (-1, 1) and card.files[LOG] == log and LOG + '.tmp' not in card.files  # sent, but kept to send again
 
 
 def test_the_rewrite_holds_the_lock_and_writes_the_new_log_before_sent(fw):

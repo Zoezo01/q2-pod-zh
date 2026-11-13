@@ -1,6 +1,6 @@
 # Cooperative PWM clock gating
 
-The build replaces the exact V1.32 PWM module, MCU module and MCU firmware as one
+The build replaces the exact V1.36 PWM module, MCU module and MCU firmware as one
 set (off by default; `--dev --pwm-idle-clock` replaces all three). The boot script loads PWM before MCU, as stock already does.
 
 This document describes the polling park protocol. The optional additional
@@ -9,7 +9,7 @@ This document describes the polling park protocol. The optional additional
 
 ```sh
 export PATH=/usr/lib/llvm-18/bin:$PATH
-python3 tools/build.py 'Q2 Firmware V1.32.zip' --out /tmp/q2-pwm --dev --pwm-idle-clock
+python3 tools/build.py 'Q2 Firmware V1.36.zip' --out /tmp/q2-pwm --dev --pwm-idle-clock
 python3 test/pwm.py /path/to/stockfs
 python3 test/pwm_mcu.py /path/to/stockfs
 python3 test/mcu_park.py /path/to/stockfs/usr/data/libmcu-bare.bin

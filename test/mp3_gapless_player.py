@@ -60,7 +60,7 @@ def alloc(n):
 
 
 def hook(u, address, size, _):
-    if address == 0x44d350:  # af_play: capture exactly what all filters see
+    if address == 0x44d0d0:  # af_play: capture exactly what all filters see
         data = a(1)
         filtered.append(bytes(u.mem_read(r(data), r(data+4))))
         result = data
@@ -136,7 +136,7 @@ def track(i, header=h):
     d, ds, sh, stream = [0x2001000 + i*0x3000 + x for x in (0, 0xd00, 0xe00, 0xf00)]
     p = call('mp3_private_alloc', 16)
     w(p, 1)
-    w(d, 0x89fd90)
+    w(d, 0x8a0360)
     w(d+0xc70, p)
     w(d+0x20, stream)
     w(d+0x10, 10, 0)
@@ -170,11 +170,11 @@ assert feed(preload, pcm[2048*8:4096*8]) == pcm[2257*8:(4096-671)*8]
 # Seek to zero: stock's check of the next frame is off, so the tag frame reaches the decoder whole (real_chain's
 # rewind). Any other seek keeps it.
 u.mem_write(t[2]+8, struct.pack('<d', 0))
-w(0xb152b4, 1)
+w(0xb26254, 1)
 call('mp3_gapless_seek', t[0], 0)
-assert r(0xb152b4) == 1
+assert r(0xb26254) == 1
 call('mp3_gapless_seek', t[0], 1)
-assert r(0xb152b4) == 0
+assert r(0xb26254) == 0
 assert feed(t, pcm) == pcm[2257*8:-671*8]
 # Mid-track seek drops held audio, preserving the new input apart from its tail.
 u.mem_write(t[2]+8, struct.pack('<d', 10))
@@ -240,7 +240,7 @@ call('mp3_gapless_seek', tr[0], 0)
 assert call('mp3_read', ds, buf, 100) == 8
 w(tr[0], 0)  # another demuxer's stream keeps stock's EOF
 assert call('mp3_read', ds, buf, 100) == 0
-w(tr[0], 0x89fd90)
+w(tr[0], 0x8a0360)
 call('mp3_close', tr[0])
 assert not allocations
 print('MIPS MP3 gapless: installed hooks, preloads, seek/reset, initial seek, fd restoration, untagged bypass, allocation failure, last-frame guard and cleanup: OK')
@@ -250,8 +250,8 @@ def real_chain():
     """The built player's own open_stream, demux_open, init_best_audio_codec (it picks libmad), init_audio_filters
     and decode_audio, with the firmware's libmad.so. libc is modelled, as above."""
     OPEN_STREAM, DEMUX_OPEN, CODEC_CFG, BEST_CODEC, INIT_FILTERS, DECODE_AUDIO, UNINIT, DEMUX_SEEK = (
-        0x4a4ed0, 0x4855b4, 0x72d9f0, 0x47f090, 0x47f444, 0x47f68c, 0x47eb40, 0x4868ac)
-    MSG, URL, MAD, HEAP, STUBS, DONE, STACK = 0x4460fc, 0xb10b90, 0x30000000, 0x20000000, 0x10000000, 0xf000000, 0xe000000
+        0x4a4c50, 0x485334, 0x72df10, 0x47ee10, 0x47f1c4, 0x47f40c, 0x47e8c0, 0x48662c)
+    MSG, URL, MAD, HEAP, STUBS, DONE, STACK = 0x445e7c, 0xb11b98, 0x30000000, 0x20000000, 0x10000000, 0xf000000, 0xe000000
     tmp = tempfile.TemporaryDirectory()
     work = Path(tmp.name)
     libmad = work/'libmad.so'

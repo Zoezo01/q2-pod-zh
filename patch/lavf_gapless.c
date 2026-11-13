@@ -10,17 +10,17 @@
  * plays as stock does, gap and all: its numbers can't be told from LC's before a packet decodes.
  * Matroska and WebM's Vorbis and Opus aren't read. ADTS .aac has no numbers to read and native ASF's WMA none. */
 #define AT(p, o, type) (*(type *)((char *)(p) + (o)))
-#define LAVF_PREF_DESC 0x8a496cu  /* demuxer_desc_lavf_preferred */
-#define LAVF_DESC 0x8a49a0u       /* demuxer_desc_lavf: same functions */
+#define LAVF_PREF_DESC 0x8a508cu  /* demuxer_desc_lavf_preferred */
+#define LAVF_DESC 0x8a50c0u       /* demuxer_desc_lavf: same functions */
 #define LAVF_PRIV_SIZE 0xc38      /* lavf_priv_t; tools/peq.py's LAVF_PRIV makes room for a window after it */
-#define MOV_FORMAT ((void *)0xafc030u) /* ff_mov_demuxer */
-#define OGG_FORMAT ((void *)0xafc250u) /* ff_ogg_demuxer */
+#define MOV_FORMAT ((void *)0xafd030u) /* ff_mov_demuxer */
+#define OGG_FORMAT ((void *)0xafd250u) /* ff_ogg_demuxer */
 #define CODEC_AAC 0x15002
 #define CODEC_VORBIS 0x15005
 #define CODEC_OPUS 0x1503d
-#define AV_DICT_GET ((char **(*)(void *, const char *, const void *, int))0x6ea608u)
+#define AV_DICT_GET ((char **(*)(void *, const char *, const void *, int))0x6eab28u)
 #define NOPTS (-0x7fffffffffffffffLL - 1)
-#define DS_GET_NEXT_PTS ((double (*)(void *))0x485ea8u) /* stock calls it at open; fills the queue, sets no EOF */
+#define DS_GET_NEXT_PTS ((double (*)(void *))0x485c28u) /* stock calls it at open; fills the queue, sets no EOF */
 #define NO_END 0x7fffffffffffffffLL
 #define AAC_FRAME 1024 /* padding is less; a tag or edit claiming more isn't this file's end, so try the next number */
 #define MAX_PRIMING 16383 /* lavf's own bound on iTunSMPB's */

@@ -13,7 +13,9 @@ import pytest
 
 import host
 from conftest import NAVIGATION_SOURCE, O, Deques, claim, ui_name
-from test_coverflow import Home  # coverflow.c's home struct
+from test_coverflow import COVERS, TRACKS, Home, Rec, cf, deque_of  # coverflow.c's home struct, its page and an album
+from test_nav_display_library import Ple  # playlists.c's editor state
+from test_navigation import Config
 
 W_PARENT, W_EMITTER = O['W_PARENT'], O['W_EMITTER']
 KEY_NEXT, KEY_PREV, KEY_CENTER = O['KEY_NEXT'], O['KEY_PREV'], O['KEY_CENTER']
@@ -769,6 +771,34 @@ def test_a_held_power_key_leaves_only_its_shutdown_prompt_the_wheel(fw, ui):
     win, _ = dialog(ui)
     key(fw, ui, KEY_NEXT, ui.now + SLOW)
     assert win.props[SEL] == 1
+
+
+@pytest.mark.parametrize('flag', ['g_power_longkey', 'g_ingore_bootkey_flag', 'guard'])
+def test_the_release_that_ends_the_hold_leaves_the_shutdown_prompt_its_centre(fw, ui, flag):
+    """V1.36's confirm keeps every Centre release from on_wm_keyup_fun, which cleared the hold's flags."""
+    def flags():
+        return (fw.var('g_power_longkey', C.c_ubyte).value, fw.var('g_ingore_bootkey_flag', C.c_ubyte).value,
+                C.string_at(O['BOOT_KEY_GUARD'], 1)[0])
+
+    def hold():
+        if flag == 'guard':
+            C.memset(O['BOOT_KEY_GUARD'], 1, 1)
+        else:
+            fw.var(flag, C.c_ubyte).value = 1
+
+    fw.var('g_poweroff_state', C.c_ubyte).value = 1
+    hold()
+    Page(ui, titles(10))
+    key(fw, ui, KEY_CENTER)
+    assert any(flags())  # under any other window the release reaches stock, which clears them
+    _, buttons = dialog(ui)
+    clicks = Clicks(fw)
+    key(fw, ui, KEY_CENTER, ui.now + SLOW)  # the hold's own release: no click
+    assert flags() == (0, 0, 0) and not ui.due('confirm_center')
+    key(fw, ui, KEY_NEXT, ui.now + SLOW)
+    key(fw, ui, KEY_CENTER, ui.now + SLOW)
+    ui.fire(ui.due('confirm_center')[0])
+    assert clicks.seen == [(buttons[1].at, EVT_CLICK)]
 
 
 @pytest.mark.parametrize('cable, moves', [(1, False), (0, True)])
@@ -1556,6 +1586,79 @@ def test_homes_library_pane_shows_no_letter(fw, ui):
     assert letter(fw, page, canvas) == []
 
 
+@pytest.mark.parametrize('big', [b'0', b'1'])  # Large Library Mode off or on: Cover Flow's own letters change, not this one
+def test_coverflows_album_tracks_show_no_letter(fw, ui, big):
+    Config(fw, BIGLIBRARY=big)
+    assert fw.fn('ringnav_big_library', C.c_int)() == int(big)
+    page = Page(ui, titles(200), name='coverflow_page')
+    album = [Rec('Abbey Road', artist='The Beatles')]  # the open album: its key is the track list's scope
+    deque_of(fw, album)
+    flow = cf(fw)
+    flow.page, flow.albums, flow.tracks, flow.album, flow.screen = page.win.at, 0x5000, 0x5100, 0, TRACKS
+    paint(fw, page)
+    key(fw, ui, KEY_NEXT, ui.now + SLOW)
+    spin(fw, ui, KEY_NEXT, 6, 100)
+    canvas = Canvas(fw)
+    assert letter(fw, page, canvas) == []  # its tracks are in album order (disc and track), not A to Z
+    flow.screen = COVERS
+    assert letter(fw, page, canvas) == ['S']  # the same spin with no album open keeps its letter
+
+
+@pytest.mark.parametrize('big', [b'0', b'1'])  # Large Library Mode off or on
+@pytest.mark.parametrize('name, cls', [('albuminfo_page', 0xff10), ('albuminfo_page', 0xff11),
+                                       ('playerjumpinfo_page', 0xff10)])
+def test_an_albums_songs_in_the_library_show_no_letter(fw, ui, name, cls, big):
+    Config(fw, BIGLIBRARY=big)
+    assert fw.fn('ringnav_big_library', C.c_int)() == int(big)
+    fw.var('fw_ctx_g_class_type', C.c_int).value = cls
+    page, canvas = spun(fw, ui, titles(200), name)
+    assert letter(fw, page, canvas) == []  # in disc and track order, not A to Z
+    Page(ui, titles(200), name='album_page')  # Return: the page behind is the top while the songs slide out
+    assert letter(fw, page, canvas) == []
+
+
+@pytest.mark.parametrize('name, cls', [
+    ('album_page', O['CLASS_ALBUMS']),  # the Albums list a Return brings back
+    ('artistinfo_page', 0xff11),  # Go to Artist from an album, one of its albums opened, Return: stock reloads nothing
+])
+def test_a_name_ordered_library_list_keeps_its_letter(fw, ui, name, cls):
+    fw.var('fw_ctx_g_class_type', C.c_int).value = cls
+    C.c_int.from_buffer(fw.var('fw_ctx_g_local_classinfo_save', C.c_ubyte * 912)).value = cls
+    page, canvas = spun(fw, ui, titles(200), name)
+    assert letter(fw, page, canvas) == ['S']
+
+
+@pytest.mark.parametrize('name, cls, sort, shown', [
+    ('upnext_page', 0xf001, 0, False),  # View Queue while a shuffle is on: the play order
+    ('chapters_page', 0xf001, 0, False),  # the file's
+    ('allmusic_page', 0xf009, 0, False),  # Recently Added: newest first
+    ('allmusic_page', 0xf008, 0, False),  # Frequent: most played first
+    ('allmusic_page', 0xf007, 0, False),  # Recent: last played first
+    ('allmusic_page', 0xf006, 0, True), ('allmusic_page', 0xf00a, 0, True),  # the classes either side
+    ('allmusic_page', 0xff13, 1, False),  # a playlist's songs by Time added (its Sort's 1): its own order
+    ('allmusic_page', 0xff13, 0, True),  # a playlist's songs sorted by name
+    ('allmusic_page', 0xf001, 3, False), ('allmusic_page', 0xf001, 4, False),  # Songs by Time added, either way
+    ('allmusic_page', 0xf001, 0, True), ('allmusic_page', 0xf001, 1, True),  # Songs A to Z, and by file name
+    ('allmusic_page', 0xf001, 2, True), ('allmusic_page', 0xf001, 5, True),  # the Sorts either side of Time added
+    ('allmusic_page', 0xf002, 3, True),  # Hi-Res is by name whatever Songs' Sort is
+    ('folder_page', 0xf009, 3, True),  # Folder after Recently Added: the class and Sort are the song list's alone
+])
+def test_the_other_lists_in_an_order_of_their_own_show_no_letter(fw, ui, name, cls, sort, shown):
+    fw.var('fw_ctx_g_class_type', C.c_int).value = cls
+    # a playlist's Sort is its own flag (0 by name, 1 Time added); the others read Songs'
+    fw.var('fw_ctx_g_playlistsort_flag' if cls == 0xff13 else 'fw_ctx_g_sort_flag', C.c_int).value = sort
+    page, canvas = spun(fw, ui, titles(200), name)
+    assert letter(fw, page, canvas) == (['S'] if shown else [])
+
+
+@pytest.mark.parametrize('mode, shown', [(0, False), (1, True)])  # its songs as added; the Add Songs picker, A to Z
+def test_edit_playlists_songs_show_no_letter_but_its_picker_does(fw, ui, mode, shown):
+    ple = fw.var('playlists__ple', Ple)
+    ple.page, ple.mode = 1, mode
+    page, canvas = spun(fw, ui, titles(200), 'playlistedit_page')
+    assert letter(fw, page, canvas) == (['S'] if shown else [])
+
+
 # The iPod `>` on rows that open another list.
 def chevrons(fw, page, canvas):
     fw.fn('navigation__paint_chevrons', None, C.c_void_p, C.c_void_p)(page.view.at, canvas.at)
@@ -1734,6 +1837,16 @@ def test_a_title_that_fits_or_scrolls_anyway_is_left_alone(fw, ui, st, text_w, o
     marquee = Marquee(fw, ui, st, text_w, only_focus=only_focus)
     marquee.moved(None)
     assert not fw.calls('hscroll_label_start')
+
+
+def test_albums_artist_line_and_grid_titles_take_stock_s_attributes_then_a_focus_flag(fw):
+    """tools/build.py ALBUM_LABELS: stock's helper first, then the flag V1.34's rows set outright, so the
+    label waits for a focus its parent never has under ringnav."""
+    label = C.create_string_buffer(0x100)
+    fw.fn('ringnav_album_label', None, C.c_void_p)(label)
+    here = C.addressof(label)
+    assert [(n, a[:2] if n.endswith('focus') else a[:1]) for n, a in fw.calls() if 'hscroll' in n] == [
+        ('set_hscroll_label_attribute', (here,)), ('hscroll_label_set_only_parent_focus', (here, 1))]
 
 
 def test_the_marquee_stops_once_the_selection_moves_on(fw, ui, st):

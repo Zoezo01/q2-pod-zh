@@ -419,27 +419,33 @@ static const char *era_name(char *buf, int decade) {
     return buf;
 }
 
-/* Album i's record: the album name's songs, the one at its path. *songs holds it, the caller's. */
+/* Album i's record: the album name's songs, the one at its path. *songs holds it, the caller's;
+ * *n is the query's count, -1 when it failed. */
 static int era_by_name(void *name) { return getMusicByAlbum(name); }
-static void *era_record(unsigned i, void **songs) {
-    int n;
-    *songs = staged_music(era_by_name, era.v[i].album, &n);
+static void *era_record(unsigned i, void **songs, int *n) {
+    *songs = staged_music(era_by_name, era.v[i].album, n);
     for (unsigned k = 0; k < deque_size(*songs); ++k)
         if (!strcmp(P(deque_at(*songs, k), REC_PATH), era.v[i].path)) return deque_at(*songs, k);
     return 0;
 }
-/* Every album's tracks, in the page's order, each in album order. ponytail: two queries an album,
- * as Coverflow's All albums; one decade query split back into albums if a large decade drags. */
+/* Every album's tracks, in the page's order, each in album order; an album whose query failed is
+ * skipped, and 0 if every album's did.
+ * ponytail: two queries an album, as Coverflow's All albums; one decade query split back into
+ * albums if a large decade drags. */
 static void *era_songs(void) {
     void *all = _create_deque("stSongInfo");
     deque_init(all);
+    unsigned failed = 0;
     for (unsigned i = 0; i < era.m; ++i) {
-        void *songs, *r = era_record(i, &songs);
-        void *t = r ? coverflow_album_tracks(r) : 0;
+        int n;
+        void *songs, *r = era_record(i, &songs, &n);
+        failed += n < 0;
+        void *t = r && n >= 0 ? coverflow_album_tracks(r) : 0;
         for (unsigned j = 0; t && j < deque_size(t); ++j) _deque_push_back(all, deque_at(t, j));
         if (t) deque_destroy(t);
         deque_destroy(songs);
     }
+    if (era.m && failed == era.m) return deque_destroy(all), (void *)0;
     return all;
 }
 /* Shuffle's songs: one query for the decade's files, then the library filtered by them; its
@@ -463,11 +469,9 @@ static int era_key_cmp(const void *a, const void *b) {
     unsigned x = *(const unsigned *)a, y = *(const unsigned *)b;
     return x < y ? -1 : x > y;
 }
-static void *era_shuffle_songs(void) {
+static void *era_shuffle_songs(void) { /* 0 if the query failed */
     char sql[2048];
     int from = era.m ? era.v[0].year / 10 * 10 : 0, n;
-    void *out = _create_deque("stSongInfo");
-    deque_init(out);
     /* The songs of ERA_ALBUMS' groups dated in the decade, matched on ALBUM_GROUP's keys. */
     tk_snprintf(
         sql, sizeof sql,
@@ -478,10 +482,13 @@ static void *era_shuffle_songs(void) {
         "(g.d is null or rtrim(s.fileurl,replace(s.fileurl,'/',''))=g.d)",
         "select distinct s.id", ALBUM_YEAR, MUSIC_WHERE, ALBUM_GROUP, from, from + 9);
     era_keys.n = 0;
-    if (era.m && era_sql(sql, era_key_row, 0) && era_keys.n) {
+    void *out = 0;
+    if (!era.m || era_sql(sql, era_key_row, 0)) out = _create_deque("stSongInfo"), deque_init(out);
+    if (out && era_keys.n) {
         qsort(era_keys.v, era_keys.n, sizeof *era_keys.v, era_key_cmp);
         void *all = staged(songs_unsorted, (void *)1, &n);
-        for (unsigned i = 0; i < deque_size(all); ++i) {
+        if (n < 0) deque_destroy(out), out = 0; /* the library load failed */
+        for (unsigned i = 0; out && i < deque_size(all); ++i) {
             unsigned key = (unsigned)I(deque_at(all, i), REC_ID), lo = 0, hi = era_keys.n;
             while (lo < hi) /* the first key not below this one */
                 if (era_keys.v[(lo + hi) / 2] < key)
@@ -502,6 +509,10 @@ static int era_pick(void *ctx, void *event) {
     int i = (int)(long)ctx;
     if (i < 2) {
         void *all = i ? era_shuffle_songs() : era_songs();
+        if (!all) {
+            toast("Era unavailable"); /* as a decade's albums: not a card that's away */
+            return 0;
+        }
         if (!deque_size(all) || access(P(deque_at(all, 0), REC_PATH), 0))
             toast("存储不可用");
         else if (i)
@@ -511,15 +522,18 @@ static int era_pick(void *ctx, void *event) {
         deque_destroy(all);
         return 0;
     }
-    void *songs, *r = (unsigned)(i - 2) < era.m ? era_record((unsigned)(i - 2), &songs) : 0;
-    if (!r || !coverflow_goto_album(r)) toast("找不到该专辑");
+    int n = 0;
+    void *songs, *r = (unsigned)(i - 2) < era.m ? era_record((unsigned)(i - 2), &songs, &n) : 0;
+    if (n < 0) /* partial rows then an error: not an album to open */
+        toast("年代不可用");
+    else if (!r || !coverflow_goto_album(r))
+        toast("找不到该专辑");
     if ((unsigned)(i - 2) < era.m) deque_destroy(songs);
     return 0;
 }
 static int era_open_decade(void *ctx, void *event) {
     int k = (int)(long)ctx, from = era.decade[k];
-    if (era.albums || !(era.albums = page_open("era_albums_page", era_closed, page_keyup)))
-        return 0;
+    if (era.albums) return 0;
     char sql[1024], name[16], detail[300];
     tk_snprintf(
         sql, sizeof sql, /* MUSIC_WHERE's like patterns hold '%': an argument, not the format */
@@ -528,7 +542,15 @@ static int era_open_decade(void *ctx, void *event) {
     era.v =
         calloc((unsigned)era.count[k] + 1, sizeof *era.v); /* the decade's count, from era_menu */
     era.cap = era.v ? (unsigned)era.count[k] : 0;
-    era_sql(sql, era_album_row, 0);
+    if (!era.v || !era_sql(sql, era_album_row, 0)) { /* as era_menu: not a decade of no albums */
+        era_free();
+        toast("Era unavailable");
+        return 0;
+    }
+    if (!(era.albums = page_open("era_albums_page", era_closed, page_keyup))) {
+        era_free();
+        return 0;
+    }
     void *view = page_list(era.albums, era.albums, 0, era_name(name, from), (int)era.m + 2, 64);
     tk_snprintf(detail, sizeof detail, "%u 张专辑", era.m);
     page_row_detail(view, 0, "全部播放", detail, era_pick);

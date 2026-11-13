@@ -142,7 +142,7 @@ int lrc_fold(char *out, unsigned n, const char *s) {
  * the .lrc beside the song, so a copy there hides ours (docs/internals.md#lyrics-search). */
 #define DOWNPIC "/mnt/mmc/.downpic/"
 
-/* stock's name there for a song's file name (modifystringtolrcsuffix @0x511df8): its last '.' on
+/* stock's name there for a song's file name (modifystringtolrcsuffix @0x51caa8): its last '.' on
  * made ".lrc", as it is without one; 0 if it does not fit in n. */
 int lrc_name(char *out, unsigned n, const char *name) {
     const char *dot = strrchr(name, '.');
@@ -405,19 +405,51 @@ static int lrc_copy(const char *tmp, const char *lrc) {
     return 0;
 }
 
-/* Download Cover & Lyrics' accept (0x524f20) builds cp -rf /tmp/oslyric_N "/mnt/mmc/.downpic/<name>"
+/* .downpic/<name> in out, 1 if it fits n; 0 too for a name with a '/', which no file name has, as
+ * it could reach out of .downpic. */
+static int downpic(char *out, unsigned n, const char *name) {
+    return !strrchr(name, '/') && snprintf(out, n, DOWNPIC "%s", name) < (int)n;
+}
+
+/* Download Cover & Lyrics' accept (0x535f24) builds cp -rf /tmp/oslyric_N "/mnt/mmc/.downpic/<name>"
  * for system() with snprintf, whose call (LYRIC_SAVE_CALL) jumps here: the lyrics (tmp) go beside the
  * song instead, as <path less extension>.lrc, as Download Album Lyrics saves them, and a .downpic copy
  * that would hide them goes; cmd becomes ":", which system() runs as nothing, and stock reloads the
- * lyrics as before. Stock's command when the song isn't in the queue (or is a CUE track) or the card
- * can't be written. */
+ * lyrics as before. When the song isn't in the queue (or is a CUE track) or the card can't be
+ * written there, the lyrics go to stock's .downpic/<name> instead, copied here too: stock's command
+ * would hand the song's name, a file name or a card app's title, to the shell as root
+ * (GHSA-qp92-mq7c-6r64), so fmt is never used. A name with a '/', which no file name has, saves
+ * nothing, as it could reach out of .downpic. */
 int ringnav_lyric_save(char *cmd, unsigned n, const char *fmt, const char *tmp, const char *name) {
-    char lrc[0x200 + 8], shadow[sizeof DOWNPIC + 0x200];
+    char lrc[0x200 + 8], shadow[sizeof lrc]; /* as long as lrc_copy's .part takes */
     void *r = lrc_song(name);
-    if (!r || !lrc_path(lrc, sizeof lrc, P(r, REC_PATH), ".lrc") || !lrc_copy(tmp, lrc))
-        return snprintf(cmd, n, fmt, tmp, name);
-    snprintf(shadow, sizeof shadow, DOWNPIC "%s", name);
-    unlink(shadow);
+    int named = downpic(shadow, sizeof shadow, name);
+    (void)fmt;
+    if (r && lrc_path(lrc, sizeof lrc, P(r, REC_PATH), ".lrc") && lrc_copy(tmp, lrc)) {
+        if (named) unlink(shadow);
+    } else if (named)
+        lrc_copy(tmp, shadow);
+    return snprintf(cmd, n, ":");
+}
+
+/* The same page's choice of no lyrics builds rm -rf "/mnt/mmc/.downpic/<name>" for the same
+ * system(), whose snprintf (LYRIC_DROP_CALL) jumps here: .downpic's copy is unlinked here and cmd
+ * is ":" again, so the name never reaches the shell (GHSA-qp92-mq7c-6r64). A name with a '/'
+ * removes nothing, as in ringnav_lyric_save. */
+int ringnav_lyric_drop(char *cmd, unsigned n, const char *fmt, const char *name) {
+    char shadow[sizeof DOWNPIC + 0x200];
+    (void)fmt;
+    if (downpic(shadow, sizeof shadow, name)) unlink(shadow);
+    return snprintf(cmd, n, ":");
+}
+
+/* Now Playing's cover thread shows the cover picked here, .downpic/<file name>.jpg, by snprintfing
+ * cp -f "<it>" '/tmp/externpic.jpg' for system(): the shell expanded a $ or backtick in the file name,
+ * as root, and a name with a $ never showed its pick. That snprintf (COVER_PICK_CALL) jumps here: the
+ * file is copied here and cmd is ":". */
+int ringnav_cover_copy(char *cmd, unsigned n, const char *fmt, const char *from, const char *to) {
+    (void)fmt;
+    lrc_copy(from, to);
     return snprintf(cmd, n, ":");
 }
 
@@ -554,20 +586,25 @@ static int al_gone(void *ctx, void *event) {
 }
 
 /* playermore_page_init: stock's PLAYMORE_COUNT rows (PLAYMORE_ROWS' kinds by position), then ours
- * under Download Cover & Lyrics, in stock's row widgets and 20 px label, and unnamed, so stock's
+ * under Download Cover & Lyrics, in stock's row widgets and 24 px label, and unnamed, so stock's
  * row click (an atoi of the name) never sees it. Only for a playing song on the card; a page
- * without stock's rows is left as it built it. */
+ * without stock's rows is left as it built it. Delete is hidden for a playlist's song played from
+ * its cover (coverflow_playlist_queue): there it would delete from the library. */
 extern int stock_playermore_trampoline(void *win, void *ctx);
 int ringnav_playermore(void *win, void *ctx) {
     int result = stock_playermore_trampoline(win, ctx);
     if (win) stock_more_speed(win), stock_more_into(win);
     void *view = win ? widget_lookup(win, "scroll_view_more", 1) : (void *)0;
     unsigned at = 0;
-    if (!view || widget_count_children(view) != PLAYMORE_COUNT || !al_playing()) return result;
+    if (!view || widget_count_children(view) != PLAYMORE_COUNT) return result;
+    for (unsigned i = 0; i < PLAYMORE_COUNT && coverflow_playlist_queue(); ++i)
+        if (((const int *)PLAYMORE_ROWS)[i] == PLAYMORE_DELETE)
+            widget_set_visible(widget_get_child(view, i), 0, 0);
+    if (!al_playing()) return result;
     while (at < PLAYMORE_COUNT && ((const int *)PLAYMORE_ROWS)[at] != PLAYMORE_SEARCH) ++at;
     if (at == PLAYMORE_COUNT) return result;
     void *label = list_row(view, "player_onlinesearch", al_click, 0);
-    widget_use_style(label, "s_scrlabel_white20l");
+    widget_use_style(label, "s_scrlabel_white24l");
     widget_resize(label, 253, I(label, W_H));
     widget_restack(P(P(label, W_PARENT), W_PARENT), at + 1);
     widget_on(label, EVT_DESTROY, al_gone, label);

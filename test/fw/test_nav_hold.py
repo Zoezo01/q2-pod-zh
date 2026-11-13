@@ -25,9 +25,9 @@ REC_TYPE, REC_TRACK, REC_DISC, REC_CUE_START, REC_CUE_END = (O[k] for k in ('REC
 TIMER_CTX, INPUT_KEYS, INPUT_KEY_SIZE, INPUT_KEY_TIME = O['TIMER_CTX'], O['INPUT_KEYS'], O['INPUT_KEY_SIZE'], O['INPUT_KEY_TIME']
 PLAYLIST_ADD_MODE, G_ALLSELECT_FLAG = O['PLAYLIST_ADD_MODE'], O['G_ALLSELECT_FLAG']
 STOP = 11
-PLAYLIST_PICK, PLAYLIST_KEYUP = 0x4b1d24, 0x4b1310  # playlists.c's stock handlers
+PLAYLIST_PICK, PLAYLIST_KEYUP = 0x4b4840, 0x4f2394  # playlists.c's stock handlers
 PL_SELECT_ALL, PL_NEW, PL_EDIT, PL_IMPORT, PL_EXPORT, PL_DELETE, PL_DONE = range(7)
-PL_STOCK = [0x4b1b88, 0x4b1a88, 0x4b19b8, 0x4b26d0, 0x4b2528, 0x4b23c0, 0x4b1ad0]  # pl_stock[]: stock's own handlers
+PL_STOCK = [0x4b46a4, 0x4b45a4, 0x4b44d4, 0x4b5e18, 0x4b5c70, 0x4b5b08, 0x4b45ec]  # pl_stock[]: stock's own handlers
 PL_MARK_X = 333
 SETS = host.tools_theme.geometry_sets(host.tools_theme.builtins())
 THEMES = host.tools_theme.builtins()
@@ -505,6 +505,7 @@ class Table:
         self.rows, self.log, self.fail, self.saved = {}, [], (), {}
         self.library = [recs(path=p, title=t, id_=i + 1) for i, (p, t) in enumerate(titles.items())]
         fw.mock('getMusicByPlayList', self.playlist)
+        fw.mock('sort_playlist_addtime', self.playlist)  # the editor's read
         fw.mock('getAllMusic', lambda *_: self.fill(self.library))
         fw.mock('checkPlayListExist', lambda r, dest, *_: (C.c_int(dest).value, field(r, REC_PATH)) in self.rows.values())
         fw.mock('batch_add_file', self.add)
@@ -545,7 +546,7 @@ class Table:
                 self.saved = dict(self.rows)
             elif s == 'rollback':
                 self.rows = self.saved
-            elif s == 'commit':
+            elif s in ('commit', 'PRAGMA busy_timeout=500'):  # pl_db's wait for a reader
                 pass
             elif m := re.fullmatch(r'select id,fileurl,time,time_end from playlist where cd_num=(-?\d+) and id in \((-?\d+),(-?\d+)\)', s):
                 dest, a, b = map(int, m.groups())
@@ -1092,7 +1093,7 @@ def test_classic_playlists_hide_stocks_tiles_and_bind_their_own_keys(classic, ui
     p.ring(p.win)
     assert not ui.nodes[ui.kids(p.view)[0]].visible  # Import and Export's tiles: the rows click them
     assert ui.handlers(p.win, EVT_KEY_UP) == [ui.fn('pl_keyup')] and ui.fn('pl_gone') in ui.handlers(p.win, EVT_DESTROY)
-    assert all(ui.handlers(p.playlist(i), EVT_CLICK) == [ui.fn('pl_pick'), ui.fn('pl_marked')] for i in range(3))
+    assert all(ui.handlers(p.playlist(i), EVT_CLICK) == [ui.fn('pl_pick')] for i in range(3))  # one: AWTK runs the newest first
 
 
 def test_an_empty_list_says_so_and_offers_import(classic, ui):
@@ -1118,6 +1119,22 @@ def test_each_page_keeps_the_add_mode_it_opened_with(classic, ui):
     C.c_int.from_address(PLAYLIST_ADD_MODE).value = 0  # a picker over it closed
     p.ring(p.win)
     assert C.c_int.from_address(PLAYLIST_ADD_MODE).value == 1 and p.shown()[0] == ('New Playlist…',)
+
+
+@pytest.mark.parametrize('left', [1, 2])
+def test_a_covers_centre_opens_its_playlist_whatever_mode_a_picker_left(classic, ui, fw, left):
+    """Cover Flow's Centre (playlist_open) runs stock's row click, which reads its one add mode global: an Add to
+    Playlist picker over the covers leaves it at 1 (a song's hold) or 2 (Now Playing's), which would add to the
+    playlist; the page's own mode, the list's 0, goes back first."""
+    p = classic()
+    p.ring(p.win)
+    for i in range(3):
+        ui.nodes[p.playlist(i)].name = str(i)  # stock names a row by its place in the live list
+    C.c_int.from_address(PLAYLIST_ADD_MODE).value = left
+    clicks = []
+    fw.mock('stock_dispatch_trampoline', lambda w, e, *_: clicks.append((w, C.c_int.from_address(PLAYLIST_ADD_MODE).value)) or 0)
+    fw.fn('playlist_open', None, C.c_void_p, C.c_int)(p.win, 2)  # Road Trip's cd_num
+    assert clicks == [(p.playlist(1), 0)]
 
 
 def test_a_row_click_runs_stocks_handler_next_pass(classic, ui):
@@ -1168,25 +1185,33 @@ def test_edit_playlists_shows_select_modes_rows(classic, ui, fw):
     assert ui.nodes[p.view].props['_ringnav_index'] == 1  # Select All's first playlist
 
 
+def recount(p, ui):
+    """A playlist row's click: stock's pick (a stub: the marks are p.marked), then the rows count them."""
+    stock_handler(PLAYLIST_PICK, 0)
+    ui.click(p.playlist(0), 0)
+
+
+@in_fork
 def test_marks_offer_export_and_delete_with_their_count(classic, ui, fw):
     p = classic()
     p.ring(p.win)
     select_mode(p, ui, fw)
     p.marked |= {0, 2}
-    fw.fn('playlists__pl_marked', C.c_int, C.c_void_p, C.c_void_p)(p.win, None)
+    recount(p, ui)
     assert p.shown()[-3:] == [('Export 2 Playlists',), ('Delete 2 Playlists…',), ('Done',)]
     assert p.title() == '2 Selected'
     p.marked = {1}
-    fw.fn('playlists__pl_marked', C.c_int, C.c_void_p, C.c_void_p)(p.win, None)
+    recount(p, ui)
     assert p.shown()[-3:] == [('Export 1 Playlist',), ('Delete 1 Playlist…',), ('Done',)] and p.title() == '1 Selected'
 
 
+@in_fork
 def test_select_all_reads_deselect_all_once_all_are(classic, ui, fw):
     p = classic()
     p.ring(p.win)
     select_mode(p, ui, fw)
     C.c_ubyte.from_address(G_ALLSELECT_FLAG).value = 1
-    fw.fn('playlists__pl_marked', C.c_int, C.c_void_p, C.c_void_p)(p.win, None)
+    recount(p, ui)
     assert p.shown()[0] == ('Deselect All',)
 
 
@@ -1200,12 +1225,13 @@ def test_done_leaves_select_mode_for_the_list_on_edit(classic, ui, fw):
     assert p.title() == 'Playlists'
 
 
+@in_fork
 def test_a_mark_outside_select_mode_changes_nothing(classic, ui, fw):
     p = classic()
     p.ring(p.win)
     rows = p.shown()
     p.marked = {0}
-    fw.fn('playlists__pl_marked', C.c_int, C.c_void_p, C.c_void_p)(p.win, None)
+    recount(p, ui)
     assert p.shown() == rows
 
 
@@ -1375,6 +1401,13 @@ class Card(Files):
         if handle and 'a' in cstr(mode):
             self.open[handle][2] = self.files.get(cstr(path), b'')
         return handle
+
+    def fseek(self, f, offset, whence, *_):
+        state = self.open[f]
+        if whence == 2 and state[2] is not None:  # an append's end is what it holds, a new file's too
+            state[1] = C.c_int(offset).value + len(state[2])
+            return 0
+        return super().fseek(f, offset, whence)
 
 
 class Hold:
@@ -2448,6 +2481,21 @@ def test_half_a_song_heard_counts_a_play_and_scrobbles_it(player, recs):
     log = player.card.files['/mnt/mmc/.scrobbler.log'].decode()
     assert log.startswith('#AUDIOSCROBBLER/1.1\n#TZ/UTC\n') and log.count('#AUDIOSCROBBLER') == 1
     assert log.splitlines()[-1] == f'The Beatles\tHelp!\tHelp!\t1\t200\tL\t{1700000000 - 100}\t'  # started: now less heard
+
+
+@pytest.mark.parametrize('takes', (True, False))
+def test_only_a_listen_the_card_takes_counts_for_an_upload(fw, player, recs, takes):
+    log = '/mnt/mmc/.scrobbler.log'
+
+    def fclose(f, *_):  # a full card: the log's close fails
+        refused = not takes and player.card.open[f][0] == log
+        return player.card.fclose(f) or -refused
+    fw.mock('fw_fclose', fclose)
+    player.play([recs(path='/mnt/mmc/Music/a.flac', artist='A')], total=200)
+    for s in range(0, 102):
+        player.poll(s)
+    assert PLAYS_FILE in player.card.files and (log in player.card.files) == takes
+    assert fw.var('scrobble_ui__sa', C.c_uint).value == takes  # pending, the struct's first field
 
 
 def test_a_seek_is_not_heard(player, recs):
