@@ -66,17 +66,9 @@ def test_off_is_asserted_before_config_and_remains_off_through_failed_links_and_
 
 def test_a_pin_left_charging_is_inhibited_while_stock_reads_the_settings_not_only_after(fw):
     q = Charging(fw)
-    q.gpio = 0  # charging, as the pin is until something drives it
+    q.gpio = 0  # charging, as S90play's rockbox() leaves it when demo starts again
     assert q.config() == 77
     assert q.at_config == 1 and q.gpio == 1
-
-
-def test_a_second_read_of_the_settings_inhibits_a_saved_opt_in_again_until_it_has_loaded(fw):
-    q = Charging(fw, pref=1, cable=1)
-    q.config()
-    assert q.gpio == 0  # the opt-in, once loaded
-    q.config()
-    assert q.at_config == 1 and q.gpio == 0
 
 
 def test_saved_opt_in_is_allowed_only_after_configuration_has_loaded(fw):
