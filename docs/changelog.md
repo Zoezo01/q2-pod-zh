@@ -12,6 +12,7 @@
   - Card apps: Now Playing's heart can make a card app's song a favourite in the app, such as Jellyfin: a song it streams, and a song it synced to the card, which stays one of your favourites on the Q2 too. The heart changes at once, and the app sends it on the next time it runs. It needs an app that supports it; on a streamed song the heart used to try Tidal.
   - Streaming: a card app that streams songs can see which of them is playing, paused or stopped and how far in, even when it starts later, so it can report your listening to its server as you play.
 - **1.8.0**:
+  - USB DAC: with charging Off, battery charging is inhibited before connection and through enumeration, instead of waiting for the DAC screen. USB Storage and explicit charging opt-in still allow charging.
   - System: Q2 Pod now runs on Shanling's stock firmware V1.36 instead of V1.32, with its newer kernel, drivers and player.
   - Playback: **Headphones Required**, new in stock V1.36, is under **Resume Songs**. On, nothing starts playing until headphones, Bluetooth or a USB DAC is connected, and the queue isn't restored at start-up. Off by default.
   - Playlists: a playlist's songs can be sorted by name, with stock V1.36's **Sort**. The order they were added in stays the default, and **Edit Playlist** always shows that order.

@@ -1325,6 +1325,39 @@ Stock has two artist settings. `artist_type` (`0xa4ca3c`, `PLAYSET ARTISTTYPE`, 
 
 ## Charge Limit
 
+### Early USB DAC charging guard
+
+`patch/usb_charge.c` applies the saved USB DAC charging choice before enumeration, for every host.
+The added `etc/init.d/S12usbcharge` (from `patch/usb_charge.sh`) drives the active-low charge-enable
+GPIO PE22 high after the GPIO driver loads and before the player starts. `ringnav_usb_config`
+keeps it inhibited while stock `config_init` reads settings, then reconciles those settings and
+the detected cable. This covers a running player waiting for insertion; it cannot control the
+PMIC before Linux and this startup script execute.
+
+The policy is `requested && ready && (g_usbdac_chargeflag == 1 || (cable == 1 && g_usbmode == 0))`:
+explicit DAC charging opt-in permits charging, as does a detected cable with USB Storage selected.
+An unknown setting, failed enumeration or a timeout never establishes a dedicated charger. With
+Audio and DAC selected and charging Off, an unidentified wall charger is therefore inhibited too:
+select USB Storage or opt in to DAC charging. No charger-type detector or PMIC register changes
+are added. Disabling battery charging does not establish zero USB current to the system.
+
+`switch_charge_enable` and direct `toolsGpioSetValue("PE22", ...)` calls are guarded; other GPIOs
+pass through their original function, including Wi-Fi and Bluetooth controls. A mutex serializes
+the policy and GPIO writes. A caller's disable request remains disabled through detection and
+mode reconciliation, so the existing charge-limit hold is not undone by these paths. Detection
+rechecks PE22 and corrects a mismatched readback. `ringnav_usb_status` reconciles immediately before
+stock gadget dispatch, covering a storage-to-DAC transition without waiting for the next poll.
+The stock USB audio descriptors, radio behavior and kernel remain unchanged.
+
+The five hooks use the pinned V1.36 build's symbol/address and PIC-prologue/GOT checks. Source
+changes are exercised by `test/fw/test_usb_charge.py`, including boot/configuration, opt-in/out,
+failed links/reconnects, pre-dispatch mode changes, charge-limit requests, GPIO readback and
+non-PE22 pass-through. A prior V1.34/Beta 2 binary-overlay implementation was user-tested with an
+S24 Ultra near full charge and at about 80%; those results are not physical validation of this
+V1.36 source port. The brief green battery-icon flash still occurred, so an electrical transient
+has not been ruled out. Optional SD diagnostic instrumentation used for that experiment is not
+part of this charging-only change.
+
 The charger is the AXP2101 PMIC's integrated one (the device tree's `x-powers,axp2101-power-supply`, driven by `drivers/power/supply/axp2101_charger.c`, which registers `battery` and `axp2101_charger`; there is no bq25890 driver in the kernel or rootfs), set to 1000 mA of charge current, the 2000 mA USB input limit (`pmu_usbpc_cur`), a 4.35 V target (`pmu_init_chgvol` 0x10fe) and 100 mA of termination (`pmu_iterm_limit` 0x64). The fuel gauge is the CW2015 on I2C-0 (`/sys/devices/i2c-0/0-0062/cw2015_capacity`, `module_driver/cw2015.sh`). `toolsGetChargeStatus` (`0x5cf5ec`) reads `/sys/class/power_supply/battery/status` (1 Charging, 2 Full, -1 Discharging or anything else, 0 unreadable); the `bq25890_1_status` paths it probes and the `echo %d > .../bq25890_1_otg_enable` helper are for the other Shanling players that share `demo`. `switch_charge_enable(on)` (`0x4fe42c`) sets the active-low charge enable on GPIO `PE22` through `toolsGpioSetValue` (libgpio, no shell); stock uses it only for USB mode's and AirPlay's charge choice (`g_usbdac_chargeflag`; `usbmode_page_init`, `usbmode_exit`, `airplay_page_init`). With it high, charging is off and the player runs from USB while the battery holds. `get_battery_capacity` (`0x4ff258`) keeps `g_power_capacity` (0-100) and `g_power_chargestate` (a negative status is not stored).
 
 **System settings → Power → Charge Limit** (`ringnav_powermanager`, after stock's rows in `scroll_view_powermanager`; `Q2POD CHARGELIMIT` in `config.ini`). Every `CHARGE_POLL_MS` (5 s) `charge_poll`, from `ringnav_sleep`, stops charging at `CHARGE_STOP` (80%), stops it again if anything turned it back on meanwhile (USB mode's exit, AirPlay) while the charger reports charging, and hands it back at `CHARGE_RESUME` (75%) or when the limit is turned off: on, or `g_usbdac_chargeflag` while `usbmode_page` or `airplay_page` is open. ponytail: only while demo runs; a powered-off Q2 charges as stock.

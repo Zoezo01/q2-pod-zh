@@ -524,6 +524,13 @@ void battery_paint(void *w, void *canvas);
 /* system.c */
 void power_poll(void);
 
+/* usb_charge.c: wrappers for charging, configuration loading and USB gadget dispatch. */
+int ringnav_usb_charge(int on), ringnav_usb_gpio(const char *name, int value);
+int ringnav_usb_config(void), ringnav_usb_detect(void), ringnav_usb_status(void);
+int stock_usb_gpio_trampoline(const char *name, int value);
+int stock_usb_config_trampoline(void), stock_usb_detect_trampoline(void);
+int stock_usb_status_trampoline(void);
+
 /* library_lists.c */
 int era_menu(void *ctx, void *event);
 int long_songs(void *ctx, void *event);

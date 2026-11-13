@@ -32,6 +32,12 @@ BASE = 0xb00000
 SCRATCH = 0xbc0000  # 768 KB of payload text below it
 RING_STEP = 48
 HOOKS = {
+    # USB charging is inhibited before insertion and guarded through enumeration/disconnect.
+    'switch_charge_enable': (0x4fe42c, 'ringnav_usb_charge', None),
+    'toolsGpioSetValue': (0x5d1170, 'ringnav_usb_gpio', 'usb_gpio'),
+    'config_init': (0x503d0c, 'ringnav_usb_config', 'usb_config'),
+    'usb_detect': (0x4ff220, 'ringnav_usb_detect', 'usb_detect'),
+    'check_usb_status': (0x4f3744, 'ringnav_usb_status', 'usb_status'),
     'createPlayListItem': (0x517fdc, 'ringnav_playlist_create', None),
     'playlist_delete_click': (0x4b62c8, 'ringnav_playlist_delete', None),
     'localmusic_playlistsmore_page_init': (0x4b6614, 'ringnav_playlistsmore', 'playlistsmore'),
@@ -1454,6 +1460,7 @@ FUNCTIONS = {
  'mclSetMute': ('int', 'int'),
  'toolsTrimLeft': ('void', 'char *'),
  'switch_charge_enable': ('int', 'int'),  # 1 charges: the active-low charge enable on GPIO PE22 (usbmode_page_init)
+ 'toolsGpioGetValue': ('int', 'const char *'),  # USB charge inhibit readback, not a current measurement
  # Coverflow's Sort: another ORDER BY over getAllAlbum's grouping, filled by its own row callback
  'toolsQueryDbTable': ('int', 'const char *, const char *, void *, int'),  # db, sql, row, name sort
  'album_row': ('int', 'void *, int, char **, char **'),
@@ -1583,7 +1590,7 @@ FLAGS = ['--target=mipsel-linux-gnu','-march=mips32r2','-mabi=32','-mfp64',
          '-fno-stack-protector','-fno-unwind-tables','-fno-asynchronous-unwind-tables',
          '-Oz','-Wall','-Wextra','-Werror','-Wno-unused-parameter']
 # navigation.c and the files split out of it (patch/navigation.h), each its own object, linked in this order.
-NAVIGATION = ['navigation.c', 'theme_engine.c', 'playlists.c', 'classic_pages.c', 'home.c', 'np_bar.c', 'volume.c', 'smart_wifi.c', 'system.c', 'tags.c', 'scrobble_ui.c', 'library_lists.c', 'ratings.c', 'scan_folders.c', 'folder_delete.c', 'battery.c']
+NAVIGATION = ['navigation.c', 'theme_engine.c', 'playlists.c', 'classic_pages.c', 'home.c', 'np_bar.c', 'volume.c', 'smart_wifi.c', 'system.c', 'usb_charge.c', 'tags.c', 'scrobble_ui.c', 'library_lists.c', 'ratings.c', 'scan_folders.c', 'folder_delete.c', 'battery.c']
 
 def compile_payload(out):  # pragma: no mutate block
     """Compile and link the payload."""
@@ -2170,6 +2177,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     from art import images as theme_images
     drawn = {xx+n+'.png': (xx+'list_tidal.png', d) for t in builtin_themes() for n, d in theme_images(t).items()}
     for path, (like, data) in {**{xx+n: (xx+l, d) for n, (l, d) in icons.items()}, **pages, **drawn,
+                               'etc/init.d/S12usbcharge': ('etc/init.d/S20urandom', (ROOT/'patch/usb_charge.sh').read_bytes()),
                                HELPER: (HELPER_LIKE, compile_helper(out, cat, 'video', 'q2video', HELPER_LIBS)),
                                SCROBBLE_CA: ('etc/hosts', (ROOT/'assets/scrobble-ca.pem').read_bytes()),
                                BOOT: (HELPER_LIKE, compile_helper(out, cat, 'boot', 'q2boot', HELPER_LIBS[:1])),
