@@ -2720,6 +2720,7 @@ int ringnav_paint(void *w, void *canvas) {
     if (st.pull_page && !pull_live()) pull_cancel();
     int result = search_del(w) ? 0 : stock_paint_trampoline(w, canvas);
     night_paint(canvas);
+    font_weight_paint(w, canvas);
     coverflow_paint(w, canvas);
     lockscreen_paint(w, canvas);
     if (w == st.cf_letter_surface && st.cf_letter &&
@@ -4218,6 +4219,7 @@ void clock_text(void *label, int negative, int t) {
 }
 
 void label_font(void *w, int bold) {
+    font_weight_mark(w, 0); /* the bar going back to its ordinary clock face */
     static const char *const font[] = { "style:normal:font_name", "style:focused:font_name",
                                         "style:disable:font_name" };
     for (unsigned i = 0; i < sizeof font / sizeof *font; ++i)
@@ -4263,8 +4265,12 @@ int theme_font(void *w, int role, int was) {
                                                 "style:disable:font_size" };
     const theme_t *T = theme();
     int face = w ? T->font[role] : FONT_DEFAULT, px = T->font_px[role], row = was == FONT_ROW;
+    int wanted_bold = face != FONT_DEFAULT;
     if (row) {
-        if (!face && !px) return 0;
+        if (!face && !px) {
+            font_weight_mark(w, 0);
+            return 0;
+        }
         was = widget_get_prop_int(w, "_font", -1);
     }
     const unsigned *text = face ? widget_get_text(w) : (void *)0, none[1] = { 0 };
@@ -4272,6 +4278,9 @@ int theme_font(void *w, int role, int was) {
     int fell = face == FONT_CLASSIC_LIGHT && !face_has(FONT_CLASSIC_LIGHT, text, -1);
     if (fell) face = FONT_BOLD, px = fallback_px(px); /* Cyrillic: still bold */
     if (face == FONT_BOLD && !face_has(FONT_BOLD, text, -1)) face = FONT_DEFAULT; /* CJK */
+    /* Keep weight separately from face/size: a cached answer or a reused row can change its
+     * bold intent even when its fallback face and size stay the same. */
+    font_weight_mark(w, wanted_bold && face == FONT_DEFAULT);
     int answer = face | px << 2, kept = row ? answer | role << 16 : answer;
     if (!w || kept == was) return answer;
     for (unsigned i = 0; i < sizeof names / sizeof *names; ++i) {
