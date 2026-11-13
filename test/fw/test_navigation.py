@@ -2499,42 +2499,7 @@ def test_qm_restore_puts_back_what_a_go_to_overwrote(fw, st, scratch):
     assert C.string_at(C.addressof(fw.var('fw_ctx_g_local_classinfo_save', C.c_char)), 912) == bytes(saved)
 
 
-class Ls(C.Structure):
-    _fields_ = [('tab', C.c_void_p), ('jobs', C.c_void_p), ('paths', C.c_void_p), ('n', C.c_uint), ('read', C.c_uint), ('timer', C.c_uint),
-                ('thread', C.c_ulong), ('total', C.c_int), ('running', C.c_int), ('done', C.c_int), ('cancel', C.c_int),
-                ('songs', C.c_void_p), ('title', C.c_void_p)]
-
-
-def test_ls_cancel_asks_the_poll_to_stop(fw):
-    ls = fw.var('library_lists__ls', Ls)
-    assert fw.fn('library_lists__ls_cancel', C.c_int, C.c_void_p, C.c_void_p)(None, None) == 0 and ls.cancel == 1
-
-
-def lengths(fw, data):
-    Files(fw, {} if data is None else {'/mnt/data/ringnav-lengths': data})
-    fw.fn('library_lists__lengths_read', None)()
-    return fw.var('library_lists__ls', Ls), fw.fn('library_lists__length_of', C.c_int, C.c_uint)
-
-
-def test_lengths_are_looked_up_sorted(fw):
-    ls, length_of = lengths(fw, struct.pack('<6I', 10, 100, 20, 200, 0xfffffff0, 300))
-    assert ls.n == 3 and ls.read == 1
-    assert [length_of(k) for k in (10, 20, 0xfffffff0, 5, 15, 25, 0xffffffff)] == [100, 200, 300, -1, -1, -1, -1]
-
-
-def test_a_partial_length_entry_is_dropped(fw):
-    ls, length_of = lengths(fw, struct.pack('<2I', 10, 100) + b'\1\2\3')
-    assert ls.n == 1 and length_of(10) == 100
-
-
-def test_no_lengths_file_is_empty(fw):
-    ls, length_of = lengths(fw, None)
-    assert ls.n == 0 and ls.read == 1 and length_of(10) == -1
-
-
-def test_an_empty_lengths_file_is_empty(fw):
-    ls, length_of = lengths(fw, b'')
-    assert ls.n == 0 and not ls.tab and length_of(10) == -1
+# Shared duration cache coverage lives in test_durations.py.
 
 
 # Scrobbling.
@@ -2624,20 +2589,6 @@ def test_not_while_a_computer_has_the_card(fw):
 @pytest.mark.parametrize('data, value', [(b'\x78\x56\x34\x12', 0x12345678), (b'\xff\xff\xff\xff', 0xffffffff), (b'\0\0\0\x80', 0x80000000), (b'\x01\0\0\0', 1)])
 def test_le32(fw, data, value):
     assert fw.fn('xiph__le32', C.c_uint, C.c_char_p)(data) == value
-
-
-def test_lengths_any_file(fw):
-    files = Files(fw)
-    ls = fw.var('library_lists__ls', Ls)
-    read = fw.fn('library_lists__lengths_read', None)
-    length_of = fw.fn('library_lists__length_of', C.c_int, C.c_uint)
-    rng = random.Random(0x1e4)
-    for _ in range(800):
-        files.files['/mnt/data/ringnav-lengths'] = rng.randbytes(rng.randrange(40))
-        ls.read, ls.tab, ls.n = 0, None, 0
-        read()
-        assert ls.n == len(files.files['/mnt/data/ringnav-lengths']) // 8
-        length_of(rng.getrandbits(32))
 
 
 # Keys.

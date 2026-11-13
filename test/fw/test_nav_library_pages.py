@@ -25,7 +25,7 @@ LONG_SONG_S, RATE_HOLD_MS = O['LONG_SONG_S'], O['RATE_HOLD_MS']
 LIBRARY, FOLDER = 0xf001, 1
 STOP, REPEAT = 11, 8  # a handler's RET_STOP; a timer's RET_REPEAT
 PLAYS_FILE, RESUME_FILE = '/mnt/data/ringnav-plays', '/mnt/data/ringnav-resume'
-RATINGS, ALBUM_RATINGS, LENGTHS = '/mnt/data/ringnav-ratings', '/mnt/data/ringnav-album-ratings', '/mnt/data/ringnav-lengths'
+RATINGS, ALBUM_RATINGS, LENGTHS = '/mnt/data/ringnav-ratings', '/mnt/data/ringnav-album-ratings', '/mnt/data/ringnav-durations-v1'
 FAV_CLICK = 0x53c968  # Now Playing's heart: stock's My Fav toggle
 TIDAL_DIR, SPOT_DIR = '/mnt/mmc/.tidal', '/mnt/mmc/.spotify'
 DOT = '·'
@@ -641,11 +641,24 @@ class Probe:
     the test says."""
     def __init__(self, fw, seconds):
         self.fw, self.seconds, self.opened, self.threads = fw, dict(seconds), [], []
-        self.keep, self.files = [], {}
+        self.keep, self.files, self.stamps = [], {}, {}
+        if seconds:
+            Config(fw, SCANDURATIONS=b'1')
+        fw.mock('fw___xstat', self.stat)
         self.length = C.CFUNCTYPE(C.c_int, C.c_void_p)(lambda p: self.seconds[self.files[p]])
         fw.mock('taglib_file_new', self.open)
         fw.mock('taglib_file_audioproperties', lambda f, *_: f)
         fw.mock('fw_pthread_create', lambda t, attr, fn, arg, *_: self.threads.append(fn) or 0)
+
+    def stat(self, version, path, out, *_):
+        path = C.string_at(path)
+        stamp = self.stamps.get(path, (1000, 2000, 0))
+        if stamp is None:
+            return -1
+        info = (C.c_uint * 36).from_address(out)
+        info[5] = 0o100644
+        info[12], info[16], info[17] = stamp
+        return 0
 
     def open(self, path, kind, *_):
         path = C.string_at(path)
@@ -663,8 +676,9 @@ class Probe:
 
 
 def lengths(*pairs):
-    """ringnav-lengths: (path, seconds) as {key, seconds} sorted by key."""
-    return b''.join(struct.pack('<2I', k, s) for k, s in sorted((file_key(p), s) for p, s in pairs))
+    """Versioned, exact-path cache, with the Probe's default stat signature."""
+    return b'Q2DUR1\0\0' + b''.join(struct.pack('<5I', len(p) + 1, 1000, 2000, 0, sec) + p + b'\0'
+                                       for p, sec in sorted(pairs))
 
 
 @pytest.fixture
@@ -704,7 +718,7 @@ def test_long_songs_measures_the_unknown_first_then_lists_them(fw, ui, song, clo
     page = ui.top()
     assert ui.rows(page) == [('Cancel', None)] and 'Measuring songs…' in ui.shown(page)
     assert [ms for _, ms in ui.pending('ls_poll')] == [250]
-    assert ui.fire('ls_poll') == REPEAT and 'Measuring songs… 0/2' in ui.shown(page)
+    assert ui.fire('ls_poll') == REPEAT and 'Measuring songs… 0/3' in ui.shown(page)
     probe.run()
     assert sorted(probe.opened) == [b'/m/b.flac', b'/m/c.flac']  # only the two never measured
     assert ui.fire('ls_poll') == 0 and not ui.pending('ls_poll')
@@ -717,9 +731,10 @@ def test_long_songs_cancel_lists_what_is_known(fw, ui, song, clock_text):
     a, b = song(b'/m/a.flac', b'A'), song(b'/m/b.flac', b'B')
     Library(fw, ui, [a, b])
     files = Files(fw, {LENGTHS: lengths((b'/m/a.flac', 900))})
-    Probe(fw, {b'/m/b.flac': 3600})
+    probe = Probe(fw, {b'/m/b.flac': 3600})
     call(fw, 'long_songs')
     ui.click(ui.top(), 0)  # Cancel, before the worker measured anything
+    probe.run()  # cancellation is cooperative; join only after the worker exits
     assert ui.fire('ls_poll') == 0
     assert len(fw.calls('fw_pthread_join')) == 1  # the worker stopped and joined
     assert ui.rows(ui.top()) == [('A', '15:00')] and files.files[LENGTHS] == lengths((b'/m/a.flac', 900))
@@ -735,8 +750,10 @@ def test_long_songs_closed_while_measuring_keeps_what_was_measured(fw, ui, song,
     ui.close(ui.top())
     assert not ui.pending('ls_poll') and files.files[LENGTHS] == lengths((b'/m/a.flac', 700), (b'/m/b.flac', 800))
     measured = len(probe.opened)
-    call(fw, 'long_songs')  # opened again: nothing left to measure
-    assert len(probe.opened) == measured and len(probe.threads) == 1 and ui.captions(ui.top()) == ['B', 'A']
+    call(fw, 'long_songs')  # opened again: stat validates, TagLib is not needed
+    probe.run()
+    ui.fire('ls_poll')
+    assert len(probe.opened) == measured and len(probe.threads) == 2 and ui.captions(ui.top()) == ['B', 'A']
 
 
 def test_a_lengths_file_that_cannot_be_read_is_not_written_over(fw, ui, song, clock_text):
@@ -776,11 +793,11 @@ def test_a_file_two_cue_tracks_run_to_the_end_of_is_kept_once(fw, ui, song, cloc
     files = Files(fw)
     probe = Probe(fw, {b'/m/book.flac': 1500})
     call(fw, 'long_songs')
-    assert ui.fire('ls_poll') == REPEAT and 'Measuring songs… 0/2' in ui.shown(ui.top())  # one job per track
+    assert ui.fire('ls_poll') == REPEAT and 'Measuring songs… 0/1' in ui.shown(ui.top())  # one job per unique file
     probe.run()
     ui.fire('ls_poll')
     assert ui.rows(ui.top()) == [('Early', '20:00'), ('Late', '11:40')]  # 1200 s and 700 s, longest first
-    assert files.files[LENGTHS] == lengths((b'/m/book.flac', 1500))  # one {key, seconds} pair
+    assert files.files[LENGTHS] == lengths((b'/m/book.flac', 1500))  # one exact-path entry
 
 
 # Upload Scrobbles.
