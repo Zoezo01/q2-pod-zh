@@ -2,8 +2,9 @@
  * settings' Apps from their own GitHub releases (netupdate.c) or unzipped to the card by hand, as
  * Spotify's librespot is. Q2 Pod knows none of them by name: each is a card folder .<id> holding
  *   q2app    its manifest, key=value lines: name (its Streaming row's), search (the search box's
- *            hint), qr (1: its row turns it on and shows its QR code once it answers) and scrobble
- *            (0: its songs stay out of the scrobble log, addon_scrobbles);
+ *            hint), qr (1: its row turns it on and shows its QR code once it answers), scrobble
+ *            (0: its songs stay out of the scrobble log, addon_scrobbles) and stop (0: its page has
+ *            no Stop row, and an error page's second row is Cancel);
  *   run      its launcher, which copies the app to /tmp and runs it there in a restart loop, so
  *            the card is never kept busy, leaving the loop's pid in /tmp/q2-<id>;
  *   q2-<id>  the app;
@@ -99,6 +100,7 @@
 typedef struct {
     char id[APP_ID], name[32], tips[32], bin[48], run[48], pid[32], state[40], browse[48], icon[56];
     int qr, game, audio, present, launched, hold, relaunch, restart;
+    int nostop; /* q2app's stop=0: no Stop row on its page */
     unsigned polled, launch_at, restart_at, play; /* play: its .play as read last, hashed */
 } app_t;
 
@@ -150,6 +152,9 @@ int addon_scan(void) {
         a->qr = number(raw, "qr") == 1;
         a->game = number(raw, "game") == 1;
         a->audio = number(raw, "audio") == 1;
+        char stop[4]; /* as text, as scrobble: number() is 0 for a missing key too */
+        field(raw, "stop", stop, sizeof stop);
+        a->nostop = !strcmp(stop, "0") || !strcmp(stop, "0\r");
         a->present = !access(a->bin, 0);
         /* the row's size first, the other scaled to fit (navigation.c set_child), else stream_app
          * (one over ART_MAX px either way, or whose size can't be read, counts as none: demo
@@ -1017,7 +1022,8 @@ enum { K_LOAD, K_READY, K_ERROR, K_WAIT }; /* K_WAIT: no socket yet, the app sta
 enum { G_ROW, G_SHOW, G_SEARCH, G_SECTION, G_FIND, G_SORT };
 
 /* A level's page that can't show the app's rows (an error, or a load or start taking SLOW_MS) has a
- * Stop row whenever the app may be running, so a frozen one can always be ended. */
+ * Stop row whenever the app may be running, so a frozen one can always be ended; unless its q2app
+ * says stop=0, when the error page's second row is Cancel (Return's) and a slow load has none. */
 typedef struct {
     int state, n, sel, live, retry;
     int nosock, slow;  /* nosock: the error is no socket; slow: the wait's Stop row shown */
@@ -1096,8 +1102,11 @@ static int opens(int i) {
            (!strcmp(kind, "local") && *uri && uri[strlen(uri) - 1] == '/');
 }
 
-/* Whether the app may be running, so a Stop row can end it. */
-static int stoppable(void) { return app()->launched || app()->restart || !access(app()->pid, 0); }
+/* Whether the app may be running, so a Stop row can end it; never for one whose q2app says stop=0,
+ * whose error page ends in Cancel instead. */
+static int stoppable(void) {
+    return !app()->nostop && (app()->launched || app()->restart || !access(app()->pid, 0));
+}
 
 static void stop_row(int i) {
     char t[48];
@@ -1452,11 +1461,15 @@ static void show(void) {
             page_list(pg.page, pg.page, 0, l->state == K_WAIT ? t : "Loading…", n = l->slow, 48);
         if (n) pg.view = v, stop_row(0);
     } else if (l->state == K_ERROR) {
-        pg.view = page_list(pg.page, pg.page, 0, l->note, n = 1 + stoppable(), 48);
+        n = 1 + (app()->nostop || stoppable());
+        pg.view = page_list(pg.page, pg.page, 0, l->note, n, 48);
         page_row_detail(pg.view, 0,
                         l->retry ? "Retry" : "Install it again in System settings → App Store", 0,
                         clicked);
-        if (n > 1) stop_row(1);
+        if (app()->nostop)
+            page_row_detail(pg.view, 1, "Cancel", 0, clicked);
+        else if (n > 1)
+            stop_row(1);
         page_push(pg.view, pg.moved), pg.moved = 0;
     } else {
         /* ponytail: the first page decides, as pages appended later (append) keep this drawing's
@@ -1783,6 +1796,11 @@ static int go(const void *unused) {
         if (l->state == K_READY && l->sort) open_list(pg.sort[1], pg.sort[4], pg.sort[2]);
     } else if (pg.next == G_SEARCH) {
         if (put(a, sizeof a, pg.term)) push("search", a, strlen(a), pg.term);
+    } else if (l->state == K_ERROR && i == 1 && app()->nostop) { /* Cancel, as Return */
+        if (pg.depth > 1)
+            pop();
+        else
+            navigator_back();
     } else if (l->state == K_ERROR ? i == 1 : l->state != K_READY && l->slow) { /* Stop <name> */
         char t[48];
         tk_snprintf(t, sizeof t, "%s stopped", app()->name);
