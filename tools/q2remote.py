@@ -400,6 +400,13 @@ def symbol_table(path):
     return keys, [table[k] for k in keys], bisect.bisect_right
 
 
+def cache_file(cache, base):
+    """cache/base when base is one file name, else None. base is the Q2's word, and on Windows a backslash
+    or a drive letter in it would name a file outside cache."""
+    local = cache / base
+    return local if local.name == base and base != ".." else None
+
+
 def profile(seconds, all_threads, build):
     """Sample demo's threads with q2remote --prof; the most frequent functions by thread state."""
     import collections
@@ -428,8 +435,7 @@ def profile(seconds, all_threads, build):
                 cands = []
                 if base == "demo" and build:
                     cands = [(pathlib.Path(build) / "patch.elf", 0), (pathlib.Path(build) / "demo", 0)]
-                else:
-                    local = cache / base
+                elif local := cache_file(cache, base):
                     if not local.exists(): pull(path, str(local))
                     cands = [(local, lo - off)]
                 for f, bias in cands:

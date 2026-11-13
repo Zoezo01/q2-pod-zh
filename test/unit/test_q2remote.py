@@ -1031,6 +1031,41 @@ def test_profile_far_symbol_is_not_used(prof, tmp_path, capsys):
     assert '     1  demo  <- near\n' in capsys.readouterr().out
 
 
+# A mapped file is cached under the name the Q2 gives it. The check on that name is path arithmetic
+# alone, so Windows's rules are tested with PureWindowsPath, whatever runs the tests.
+WIN_CACHE = pathlib.PureWindowsPath(r'C:\Users\dev\.cache\q2-prof')
+POSIX_CACHE = pathlib.PurePosixPath('/home/dev/.cache/q2-prof')
+
+
+@pytest.mark.parametrize('base', ['demo', 'libc.so', 'ld-uClibc.so.0', 'libstdc++.so.6.0.28', 'x.'])
+def test_cache_file_keeps_a_file_name(base):
+    assert q.cache_file(WIN_CACHE, base) == WIN_CACHE/base and q.cache_file(POSIX_CACHE, base) == POSIX_CACHE/base
+
+
+@pytest.mark.parametrize('base', [r'..\..\x', r'sub\x', r'C:\dir\x', r'\dir\x', r'\\server\share\x', 'D:x', 'C:x', '..', '.', ''])
+def test_cache_file_refuses_what_windows_reads_as_a_path(base):
+    assert q.cache_file(WIN_CACHE, base) is None
+
+
+@pytest.mark.parametrize('base', ['..', '.', ''])
+def test_cache_file_refuses_a_dot_name(base):
+    assert q.cache_file(POSIX_CACHE, base) is None
+
+
+def test_cache_file_keeps_a_backslash_where_it_is_no_separator():
+    assert q.cache_file(POSIX_CACHE, r'..\..\x') == POSIX_CACHE/r'..\..\x'
+
+
+def test_profile_pulls_nothing_under_a_name_that_is_no_file_of_the_cache(prof, monkeypatch, tmp_path, capsys):
+    # symbol_table isn't asked either: the fixture's has no table for the folder above the cache.
+    maps = '1234\n1234\n10000000-10001000 r-xp 00000000 08:01 2 /lib/..\n'
+    _, pulled = prof('')
+    replies = [(maps.encode(), 0), (b'1234 R 10000010 10000010\n', 0)]
+    monkeypatch.setattr(q, 'run', lambda *a, **k: replies.pop(0))
+    q.profile(1, False, None)
+    assert not pulled and '     1  ..\n' in capsys.readouterr().out and not list((tmp_path/'.cache/q2-prof').iterdir())
+
+
 class Input:
     """input_action()'s world: the event node and every script handed to `sh`."""
     def __init__(self, monkeypatch):
