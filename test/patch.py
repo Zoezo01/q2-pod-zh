@@ -11034,7 +11034,7 @@ index=tindex(m); assert m.dispatched()[-1][1]==m.nodes[m.slide]['children'][inde
 # Cover Flow's tracks under Classic: the panel at 40,35 over the covers; header 57 rows, title 31 px bold, artist 18 px regular, alpha c0; the theme's rows at 25 px with duration right at 23: AWTK's px are the face's whole height, not its em.
 PANEL_ROW=theme_builtins()[1]['page_row']; PANEL_SHOWN=(285-57)//PANEL_ROW; assert PANEL_SHOWN==7
 for light,white in (('0',0xffffff),('1',0)):
-    CONFIG['LIGHT']=light; m=classic_light_new(FlipMachine); del CONFIG['LIGHT']; m.open(); m.found=[m.song(f'T{i}') for i in range(9)]; m.tracks(0); m.advance(300)
+    CONFIG['LIGHT']=light; m=classic_light_new(FlipMachine); del CONFIG['LIGHT']; m.open(); m.found=[m.song(f'T{i}') for i in range(9)]; [m.word(r+O['REC_CUE_END'],225) for r in m.found]; m.tracks(0); m.advance(300)
     panel=m.panel(); kids=m.nodes[panel]['children']; sheet=kids[0]; lv=m.find('list_view',panel); view=m.find('scroll_view',panel); rows=m.nodes[view]['children']
     title,artist=[w for w in kids if m.nodes[w]['type']=='hscroll_label']
     assert cf_geometry(m,panel)==(40,9,294,285) and m.nodes[panel]['visible'] and cf_geometry(m,sheet)==(0,0,294,285)
@@ -11044,9 +11044,10 @@ for light,white in (('0',0xffffff),('1',0)):
     assert m.nodes[title]['style:normal:text_color']&0xffffffff==0xff000000|white and m.nodes[artist]['style:normal:text_color']&0xffffffff==0xc0000000|white
     assert m.boxes==[(0,57,294,228),(0,0,294,228)] and m.nodes[view]['yslidable']==1 and m.nodes[view]['virtual_h']==9*PANEL_ROW
     assert [cf_geometry(m,r) for r in rows]==[(0,i*PANEL_ROW,294,PANEL_ROW) for i in range(9)] and kids.index(lv)<kids.index(title)
-    t,=m.row_labels(0); gt=cf_geometry(m,t)  # the title alone: no length (fcae98cb)
-    assert gt[:2]==(12,0) and gt[0]+gt[2]==282 and gt[3]==PANEL_ROW and m.face(t)==('classic-light',25) and m.nodes[t]['text']=='T0'
-    for w,px in ((title,31),(artist,18),(t,25)): assert cf_geometry(m,w)[3]>=px  # boxes hold their fonts
+    t,dur=m.row_labels(0); gt,gd=cf_geometry(m,t),cf_geometry(m,dur)
+    assert gt[:2]==(12,0) and gt[0]+gt[2]<gd[0] and gd[0]+gd[2]==282 and gt[3]==gd[3]==PANEL_ROW and m.face(t)==('classic-light',25) and m.face(dur)==('default',20)
+    assert m.nodes[dur]['style:normal:text_align_h']==3 and m.nodes[dur]['style:normal:text_color']&0xffffffff==0xffaaaaaa and m.nodes[t]['text']=='T0'
+    for w,px in ((title,31),(artist,18),(t,25),(dur,20)): assert cf_geometry(m,w)[3]>=px  # boxes hold their fonts
     # No text crosses the glass: the last whole row's stays clear, and what shows of the row under it ends before its caps start, 6 px into a 25 px face's box.
     assert 40+12>=corner_inset(26+9+57+(PANEL_SHOWN-1)*PANEL_ROW+(PANEL_ROW+25)//2) and 285-57-PANEL_SHOWN*PANEL_ROW<(PANEL_ROW-25)//2+6
     assert m.nodes[m.slide]['visible']==0 and m.nodes[[w for w in m.nodes[m.covers()]['children'] if m.nodes[w]['type']=='hscroll_label'][0]]['visible']==0 and m.nodes[m.covers()]['sensitive']==0 and m.nodes[m.covers()]['visible']
@@ -11143,7 +11144,7 @@ assert m.plays[-1][0]=='playing_page' and m.plays[-1][2]==1 and m.plays[-1][3]==
 m=flip_open(); m.advance(300); m.missing=True; r=m.nodes[m.find('scroll_view')]['children'][0]; f,ctx=m.handler(r,O['EVT_CLICK']); m.call(address=f,args=(ctx,m.event,0,0),gap=0)
 assert not m.plays and m.nodes[[w for w in m.nodes[m.panel()]['children'] if m.nodes[w]['type']=='hscroll_label'][0]]['text']=='Storage unavailable'; passed()
 # The list scrolls by the wheel inside the panel, the header its sibling, so it stays; Go to Album's tracks alone have no covers to turn.
-m=classic_light_new(FlipMachine); m.open(); m.found=[m.song(f'T{i}') for i in range(9)]; m.tracks(0); m.advance(300); view=m.find('scroll_view')
+m=classic_light_new(FlipMachine); m.open(); m.found=[m.song(f'T{i}') for i in range(9)]; [m.word(r+O['REC_CUE_END'],225) for r in m.found]; m.tracks(0); m.advance(300); view=m.find('scroll_view')
 for _ in range(8): m.call()
 head=[w for w in m.nodes[m.panel()]['children'] if m.nodes[w]['type']=='hscroll_label']; assert m.selected(view)==8 and all(m.get(w+O['W_PARENT'])==m.panel() for w in head) and view not in m.nodes[m.panel()]['children']; passed()
 m=classic_light_new(FlipMachine); m.open(); assert m.call(address=payload_syms['coverflow_goto_album'],args=(m.albums[0],0,0,0),gap=0)==1; m.page=m.top; assert not m.panel() and not [c for c in m.calls if c[0]=='canvas_offline_create'] and m.nodes[m.find('scroll_view')]['children'] and cf_geometry(m,m.nodes[m.find('scroll_view')]['children'][0])[2]==375; passed()
@@ -11156,17 +11157,31 @@ m=classic_light_new(FlipMachine); m.open(); m.found=[m.song('T')]; m.word(m.foun
 assert m.face(m.row_labels(0)[0])==('bold',21); passed()
 # An unknown length is blank and what the cache has shows, m:ss, hours when long. The panel starts no worker and writes nothing;
 # Long Songs fills the cache, and the next panel has it.
+DUR_CACHE='/mnt/data/ringnav-durations-v1'
+def duration_cache(*pairs):
+    return b'Q2DUR1\0\0'+b''.join(struct.pack('<5I',len(p.encode())+1,1000,2000,0,v)+p.encode()+b'\0' for p,v in sorted(pairs))
+def duration_pairs(data):
+    assert data[:8]==b'Q2DUR1\0\0'
+    at=8; out={}
+    while at<len(data):
+        n,sz,mt,ns,sec=struct.unpack_from('<5I',data,at); at+=20
+        out[data[at:at+n-1].decode()]=sec; at+=n
+    return out
+def duration_stat(m,c):
+    m.word(c+20,0o100644); m.word(c+48,1000); m.word(c+64,2000); m.word(c+68,0)
+
 class FlipLengths(FileMocks,FlipMachine):
     def __init__(self,**kw):
         super().__init__(**kw); self.file_mocks('fl:'); self.lengths={}; self.probed=[]
         for n in ('fseek@GLIBC_2.0','ftell@GLIBC_2.0','taglib_file_new','taglib_file_audioproperties','taglib_file_free','getAllMusic'): self.handlers[syms[n]]='fl:'+n
-        self.handlers[0x1000030]='fl:length'
+        self.handlers[0x1000030]='fl:length'; self.handlers[syms['__xstat@GLIBC_2.0']]='fl:duration_stat'
     def hook(self,u,address,size,unused):
         name=self.handlers.get(address,'')
         if not name.startswith('fl:'): return super().hook(u,address,size,unused)
         name=name[3:].split('@')[0]; a,b,c,d=[u.reg_read(r) for r in REGS]; ret=0
         if name in ('fopen','fread','fwrite','fclose','rename'): ret=self.file_op(u,name,a,b,c,d)
         elif name=='ftell': ret=len(self.files[self.open_files[a][0]])
+        elif name=='duration_stat': duration_stat(self,c)
         elif name=='taglib_file_new':
             path=self.text(a); self.probed.append(path); ret=self.alloc(8); props=self.alloc(8); vt=self.alloc(16); self.word(props,vt); self.word(vt+12,0x1000030); self.word(ret,props); self.word(props+4,self.lengths[path])
         elif name=='taglib_file_audioproperties': ret=self.get(a)
@@ -11177,17 +11192,18 @@ def path_key(s):
     h=2166136261
     for c in s.encode()+b'\0': h=(h^c)*16777619&0xffffffff
     return h
-m=classic_light_new(FlipLengths); m.open(); paths=[m.text(m.get(r+O['REC_PATH'])) for r in m.found]; m.lengths=dict.fromkeys(paths,60); m.lengths[paths[0]]=3725
-cached=struct.pack('<2I',path_key(paths[1]),294); m.files['/mnt/data/ringnav-lengths']=cached
-m.threads=[]; flip_click(m); m.advance(300); assert m.nodes[m.panel()]['visible'] and all(len(m.row_labels(i))==1 for i in (0,1))  # no lengths shown (fcae98cb): nothing to probe
-assert not m.threads and not m.probed and m.files['/mnt/data/ringnav-lengths']==cached and [v[1] for v in m.timers.values()]==[payload_syms['home_counts']]; passed()
-assert m.key()==11; m.advance(0); m.advance(300); assert not m.panel() and not m.threads and not m.probed and m.files['/mnt/data/ringnav-lengths']==cached
+CONFIG['SCANDURATIONS']='1'; m=classic_light_new(FlipLengths); del CONFIG['SCANDURATIONS']; m.open(); paths=[m.text(m.get(r+O['REC_PATH'])) for r in m.found]; m.lengths=dict.fromkeys(paths,60); m.lengths[paths[0]]=3725
+cached=duration_cache((paths[1],294)); m.files[DUR_CACHE]=cached
+m.threads=[]; flip_click(m); text=lambda i: m.nodes[m.row_labels(i)[1]].get('text','') if len(m.row_labels(i))>1 else ''
+assert text(0)=='' and text(1)=='4:54'; m.advance(300); assert m.nodes[m.panel()]['visible'] and text(0)=='' and text(1)=='4:54'
+assert not m.threads and not m.probed and m.files[DUR_CACHE]==cached and [v[1] for v in m.timers.values()]==[payload_syms['home_counts']]; passed()
+assert m.key()==11; m.advance(0); m.advance(300); assert not m.panel() and not m.threads and not m.probed and m.files[DUR_CACHE]==cached
 shelf=m.page; m.top=m.node('window','localmusic_page'); view=m.node('scroll_view','scroll_view_localmusic',[m.node('list_item') for _ in range(11)])
 m.nodes[m.top]['children']=[view]; m.call(address=HOOKS['localmusic_page_init'][0],args=(m.top,5,0,0),gap=0)
 walk=lambda w:[w]+[x for c in m.nodes[w]['children'] for x in walk(c)]; row=next(c for c in m.nodes[view]['children'] if any(m.nodes[w].get('text')=='Long Songs' for w in walk(c)))
 f,ctx=m.handler(m.nodes[row]['children'][0],O['EVT_CLICK']); m.call(address=f,args=(ctx,m.event,0,0),gap=0)
-worker,arg=m.threads[0]; m.call(address=worker,args=(arg,0,0,0),gap=0); m.advance(250); assert path_key(paths[0]) in struct.unpack(f"<{len(m.files['/mnt/data/ringnav-lengths'])//4}I",m.files['/mnt/data/ringnav-lengths'])
-m.page=m.top=shelf; flip_click(m); assert all(len(m.row_labels(i))==1 for i in (0,1)); passed()  # Long Songs' lengths show nowhere on the panel
+worker,arg=m.threads[0]; m.call(address=worker,args=(arg,0,0,0),gap=0); m.advance(250); assert duration_pairs(m.files[DUR_CACHE])[paths[0]]==3725
+m.page=m.top=shelf; flip_click(m); assert text(0)=='1:02:05' and text(1)=='4:54'; passed()
 # Minimal: Centre opens the text list as today, no flip, no buffers.
 for theme in '0':
     CONFIG['THEME']=theme
@@ -11415,14 +11431,14 @@ begin(m,labels[0]); assert style_color(m,0xffffffff)[1]==0xffffffff
 end(m,labels[0]); begin(m,labels[1]); assert style_color(m,0xffffffff)[1]==0xffaaaaaa
 end(m,labels[1]); end(m,view); passed()
 
-# Cover Flow's panel: on the selected row the title is white over the band, in either half; on the others its ink.
-for light,ink in (('0',0xffffffff),('1',0xff000000)):
-    CONFIG['LIGHT']=light; m=classic_light_new(FlipMachine); del CONFIG['LIGHT']; m.open(); m.found=[m.song(f'T{i}') for i in range(3)]; m.tracks(0); m.advance(300)
+# Cover Flow's panel: on the selected row the title and the length are white over the band, in either half; on the others its ink and its muted.
+for light,ink,muted in (('0',0xffffffff,0xff949294),('1',0xff000000,0xff6b6d6b)):
+    CONFIG['LIGHT']=light; m=classic_light_new(FlipMachine); del CONFIG['LIGHT']; m.open(); m.found=[m.song(f'T{i}') for i in range(3)]; [m.word(r+O['REC_CUE_END'],225) for r in m.found]; m.tracks(0); m.advance(300)
     m.u.hook_add(UC_HOOK_CODE,m.hook,begin=tramp['color'],end=tramp['color'])  # FlipMachine runs fast: a payload address hooks on its own
     view=m.find('scroll_view'); m.word(view+O['W_W'],294); m.paint(view); m.call(); m.paint(view); assert m.selected(view)==1
-    for i,want in ((1,0xffffffff),(0,ink)):
-        row=m.nodes[view]['children'][i]; t,=m.row_labels(i); begin(m,view); begin(m,row); begin(m,t); got=style_color(m,0xffffffff)[1]; end(m,t)
-        assert got==want,(light,i); end(m,row); end(m,view)
+    for i,want in ((1,(0xffffffff,0xffffffff)),(0,(ink,muted))):
+        row=m.nodes[view]['children'][i]; t,dur=m.row_labels(i); begin(m,view); begin(m,row); begin(m,t); got=style_color(m,0xffffffff)[1]; end(m,t); begin(m,dur)
+        assert (got,style_color(m,m.nodes[dur]['style:normal:text_color']&0xffffffff)[1])==want,(light,i); end(m,dur); end(m,row); end(m,view)
     passed()
 # Decorative action labels may be disabled themselves; availability belongs to the button.
 for label_name in ('label_del','label_rename'):
@@ -11834,8 +11850,8 @@ f,ctx=m.handler(m.nodes[kids[5]]['children'][0],O['EVT_CLICK']); m.calls=[]
 assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and m.opened[-1]==('systemset/display_page',None) and m.get(payload_syms['display_sub'])==0; passed()
 # Cover Flow: Artist View, Playlist View, Cover Flow Sort, Refresh Cover Flow, Fast Navigation; Controls, System's
 # row: the wheel, the buttons and what they do.
-cfv=display_page(m,2); cf,cf_pl,cf_sort,cf_refresh,cf_big=m.nodes[cfv]['children']
-assert m.icons_set==['playset_covermode']*3+['system_update','playset_covermode','switch_off'],m.icons_set
+cfv=display_page(m,2); cf,cf_pl,cf_sort,cf_refresh,cf_big,cf_durations=m.nodes[cfv]['children']
+assert m.icons_set==['playset_covermode']*3+['system_update','playset_covermode','switch_off','playset_covermode','switch_off'],m.icons_set
 ctl=display_page(m,3); wheel,hold,scrub_one,tone,hp,lock,wake,guard=m.nodes[ctl]['children']
 assert [row_text(r) for r in (hold,scrub_one)]==['Hold Return: Recent','Single Press Scrub']; passed()
 view=display_page(m,1); rows=setting_rows(m,view)
@@ -14375,7 +14391,7 @@ class RateMachine(FileMocks,ShuffleMachine):
         self.file_mocks('r:',{'/mnt/data/ringnav-ratings':saved} if saved else {}); self.fav_songs=[]
         for n in ('getAllFav','fseek@GLIBC_2.0','ftell@GLIBC_2.0','taglib_file_new','taglib_file_audioproperties','taglib_file_free'):
             self.handlers[syms[n]]='r:'+n
-        self.lengths={}; self.probed=[]; self.handlers[0x1000030]='r:length'  # AudioProperties::length(), vtable +0xc
+        self.lengths={}; self.probed=[]; self.handlers[syms['__xstat@GLIBC_2.0']]='r:duration_stat'; self.handlers[0x1000030]='r:length'  # AudioProperties::length(), vtable +0xc
         self.handlers[FAV_CLICK]='r:fav_click'
         self.fav=self.node('image','img_fav'); self.word(self.fav+O['W_X'],303); self.word(self.fav+O['W_Y'],176)
         self.word(self.fav+O['W_W'],50); self.word(self.fav+O['W_H'],50); self.nodes[self.fav]['image']='play_unfav'
@@ -14394,6 +14410,7 @@ class RateMachine(FileMocks,ShuffleMachine):
         if name in ('fopen','fread','fwrite','fclose','rename'): ret=self.file_op(u,name,a,b,c,d)
         elif name=='fseek': ret=0
         elif name=='ftell': ret=len(self.files[self.open_files[a][0]])
+        elif name=='duration_stat': duration_stat(self,c)
         elif name=='taglib_file_new':
             assert b==1  # Long Songs requires audio properties.
             path=self.text(a); self.probed.append(path)
@@ -14511,9 +14528,9 @@ m.call(address=g,args=(c,m.event,0,0),gap=0); m.page=m.top
 assert m.texts()==['Top Rated','No songs yet','Hold the heart on Now Playing to rate']; passed()
 
 # Long Songs: over LONG_SONG_S, longest first. Files never probed are probed once by TagLib on a worker (a CUE track
-# with both ends needs none) and kept by path hash in /mnt/data/ringnav-lengths, sorted; 0 for an unreadable file.
-cached=struct.pack('<2I',fnv('/p/E'),1200)
-m=RateMachine(); m.files['/mnt/data/ringnav-lengths']=cached
+# with both ends needs none) and kept by exact path in the shared duration cache; 0 for an unreadable file.
+cached=duration_cache(('/p/E',1200))
+CONFIG['SCANDURATIONS']='1'; m=RateMachine(); del CONFIG['SCANDURATIONS']; m.files[DUR_CACHE]=cached
 m.found=[m.song(n) for n in 'ABCDE']; m.word(m.found[2]+O['REC_CUE_END'],900)
 m.lengths={'/p/A':700,'/p/B':300}
 m.top=m.node('window','localmusic_page'); view=m.node('scroll_view','scroll_view_localmusic',[m.node('list_item') for _ in range(11)])
@@ -14521,31 +14538,31 @@ m.nodes[m.top]['children']=[view]; m.call(address=HOOKS['localmusic_page_init'][
 f,ctx=m.handler(m.nodes[m.nodes[view]['children'][14]]['children'][0],O['EVT_CLICK'])
 assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0; m.page=m.top
 assert m.nodes[m.page]['name']=='longsongs_page' and m.texts()==['Measuring songs…','Cancel'] and len(m.threads)==1
-worker,arg=m.threads[0]; assert m.call(address=worker,args=(arg,0,0,0),gap=0)==0 and m.probed==['/p/A','/p/B','/p/D']
+worker,arg=m.threads[0]; assert m.call(address=worker,args=(arg,0,0,0),gap=0)==0 and m.probed==['/p/A','/p/B','/p/C','/p/D']
 m.advance(250)
 want=['Long Songs','E','Artist · 20:00','C','Artist · 15:00','A','Artist · 11:40']
 assert m.texts()==want,m.texts()
-saved=m.files['/mnt/data/ringnav-lengths']; pairs=sorted(struct.unpack(f'<{len(saved)//4}I',saved)[0::2])
-assert pairs==sorted(fnv('/p/'+n) for n in 'EABD') and dict(zip(*[iter(struct.unpack(f'<{len(saved)//4}I',saved))]*2))[fnv('/p/D')]==0
+saved=duration_pairs(m.files[DUR_CACHE]); assert saved=={'/p/A':700,'/p/B':300,'/p/C':0,'/p/D':0,'/p/E':1200}
 r=m.nodes[m.find('scroll_view')]['children'][2]; g,c=m.handler(r,O['EVT_CLICK'])
 assert m.call(address=g,args=(c,m.event,0,0),gap=0)==0 and m.queued==['E','C','A']; passed()
 # Again, nothing to probe: the list at once. Cancel keeps what was measured.
 m.close(); m.probed=[]; m.threads=[]; m.call(address=f,args=(ctx,m.event,0,0),gap=0); m.page=m.top
-assert not m.threads and not m.probed and m.texts()==want; m.close(); passed()
-m=RateMachine(); m.found=[m.song(n) for n in 'AB']; m.lengths={'/p/A':700,'/p/B':900}
+worker,arg=m.threads[0]; m.call(address=worker,args=(arg,0,0,0),gap=0); m.advance(250)
+assert not m.probed and m.texts()==want; m.close(); passed()
+CONFIG['SCANDURATIONS']='1'; m=RateMachine(); del CONFIG['SCANDURATIONS']; m.found=[m.song(n) for n in 'AB']; m.lengths={'/p/A':700,'/p/B':900}
 m.top=m.node('window','localmusic_page'); view=m.node('scroll_view','scroll_view_localmusic',[m.node('list_item') for _ in range(11)])
 m.nodes[m.top]['children']=[view]; m.call(address=HOOKS['localmusic_page_init'][0],args=(m.top,5,0,0),gap=0)
 f,ctx=m.handler(m.nodes[m.nodes[view]['children'][14]]['children'][0],O['EVT_CLICK']); m.call(address=f,args=(ctx,m.event,0,0),gap=0); m.page=m.top
 cancel=m.nodes[m.find('scroll_view')]['children'][0]; g,c=m.handler(cancel,O['EVT_CLICK']); m.call(address=g,args=(c,m.event,0,0),gap=0)
 worker,arg=m.threads[0]; m.call(address=worker,args=(arg,0,0,0),gap=0); assert m.probed==[]  # cancelled before the first
 m.advance(250); assert m.texts()==['Long Songs','No songs over 10 minutes'] and m.joins==[77]; passed()
-# Two CUE tracks to the end of one file probe it twice; the cache keeps it once.
-m=RateMachine(); m.found=[m.song('A'),m.song('A')]; m.lengths={'/p/A':1300}; m.word(m.found[1]+O['REC_CUE_START'],600)
+# Two CUE tracks to the end of one file probe it once and keep one cache entry.
+CONFIG['SCANDURATIONS']='1'; m=RateMachine(); del CONFIG['SCANDURATIONS']; m.found=[m.song('A'),m.song('A')]; m.lengths={'/p/A':1300}; m.word(m.found[1]+O['REC_CUE_START'],600)
 m.top=m.node('window','localmusic_page'); view=m.node('scroll_view','scroll_view_localmusic',[m.node('list_item') for _ in range(11)])
 m.nodes[m.top]['children']=[view]; m.call(address=HOOKS['localmusic_page_init'][0],args=(m.top,5,0,0),gap=0)
 f,ctx=m.handler(m.nodes[m.nodes[view]['children'][14]]['children'][0],O['EVT_CLICK']); m.call(address=f,args=(ctx,m.event,0,0),gap=0); m.page=m.top
 worker,arg=m.threads[0]; m.call(address=worker,args=(arg,0,0,0),gap=0); m.advance(250)
-assert m.files['/mnt/data/ringnav-lengths']==struct.pack('<2I',fnv('/p/A'),1300)
+assert duration_pairs(m.files[DUR_CACHE])=={'/p/A':1300} and m.probed==['/p/A']
 assert m.texts()==['Long Songs','A','Artist · 21:40','A','Artist · 11:40']; passed()
 
 # Upload Scrobbles: the second-last row, above Update Local Music, only with an account in the card's .scrobble.ini (a
@@ -18658,15 +18675,20 @@ assert click(7)==[(0,'Q2POD','VOLGUARD')] and texts()[7]=='Volume Guard' and gua
 # Fast Navigation (Display, Cover Flow's page, its last row): off by default; the row saves BIGLIBRARY, and Cover
 # Flow reads it at once (ringnav_big_library: letters, years and half copies); a stored value other than 1 is off.
 bm,brows,btexts,bicons,bclick=settings_page('display','scroll_view_display',stock_rows=3,sub=2)
-assert btexts()[-1]=='Fast Navigation' and bicons[-1]=='playset_covermode',(btexts(),bicons)
+assert btexts()[-2]=='Fast Navigation' and bicons[-2]=='playset_covermode',(btexts(),bicons)
 big=lambda bm: bm.call(address=payload_syms['ringnav_big_library'],args=(0,0,0,0),gap=0)
-k=len(brows)-1
+k=len(brows)-2
 assert big(bm)==0 and bclick(k)==[(1,'Q2POD','BIGLIBRARY')] and btexts()[k]=='Fast Navigation' and big(bm)==1
 assert bclick(k)==[(0,'Q2POD','BIGLIBRARY')] and btexts()[k]=='Fast Navigation' and big(bm)==0; passed()
 for v,on in (('1',1),('2',0),('0',0)):
     bm,*_=settings_page('display','scroll_view_display',{'BIGLIBRARY':v},stock_rows=3,sub=2)
     assert big(bm)==on,v
 passed()
+# The independent duration switch is off, persists on/off, and cancels on off.
+dm,drows,dtexts,dicons,dclick=settings_page('display','scroll_view_display',stock_rows=3,sub=2)
+assert dtexts()[-1]=='Scan Song Durations'
+assert dclick(len(drows)-1)==[(1,'Q2POD','SCANDURATIONS')]
+assert dclick(len(drows)-1)==[(0,'Q2POD','SCANDURATIONS')]; passed()
 # Buttons Lock opens stock's page, as its row on System did. Key Tone, System's stock row before
 # (0x4cc49c): its byte and key; Click With Headphones shows while it is on, and saves IPOD KEYTONEHP.
 assert click(5)==[] and m.opened[-1]==('systemset/keylock_page',None)

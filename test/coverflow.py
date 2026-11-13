@@ -129,6 +129,13 @@ TEST = r"""
 int coverflow_home(void *, void *), coverflow_player_cover(const char *, const char *, int, int);
 const char *track_name(char *, unsigned, void *);
 
+/* Cache boundary: the duration service has its own test/durations.py and test/fw tests. */
+int duration_seconds(void *song) { return -1; }
+const char *duration_text(char *text, unsigned size, void *song) {
+    if (size) text[0] = 0;
+    return text;
+}
+
 /* Widgets: raw memory first, so the payload's field reads (SLIDE_INDEX) land in it. */
 typedef struct { char raw[0x100]; int parent, visible, numb, kids[1024], nkids, bg, fg, right; char type[32], text[160], image[600];
                  handler click; void *ctx; } widget;

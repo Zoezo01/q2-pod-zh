@@ -46,6 +46,7 @@ enum {
     POD_FOLDERCOVER,
     POD_BIG_LIB, /* Display's Fast Navigation: Cover Flow's letters (ringnav_big_library) */
     POD_PL_CF,   /* Display's Playlist View: List or Cover Flow, as Artist View */
+    POD_SCAN_DURATIONS,
     POD_COUNT
 };
 
@@ -146,7 +147,7 @@ typedef struct {
     int pod_read, charge_limit, wake_double, wake_pass, wake_eat,
         wake_down, /* 1: the held Centre press passes; 2: it is dropped */
         charge_held, artist_cf, year_old, resume, lock_clock, artist_az, hold_home, standby_limit,
-        eq_output, smart_wifi, big_library, playlist_cf;
+        eq_output, smart_wifi, big_library, playlist_cf, scan_durations;
     void *pod_label[POD_COUNT];
     void *art_cf_win, *art_cf_list; /* the artist page given its Coverflow, the albums pending */
     void *art_cf_veil;              /* the artist page unseen until they show, and its anim_hint */
@@ -533,6 +534,11 @@ int stock_usb_status_trampoline(void);
 /* library_lists.c */
 int era_menu(void *ctx, void *event);
 int long_songs(void *ctx, void *event);
+/* durations.c: UI-thread API; the worker alone probes files, the UI publishes after join. */
+int duration_seconds(void *song);
+const char *duration_text(char *text, unsigned size, void *song);
+int durations_start(void *songs), durations_busy(int *done, int *total);
+void durations_cancel(void), durations_poll(void), durations_shutdown(void);
 void mp_counted(void *r, unsigned key, unsigned evicted);
 int most_played(void *ctx, void *event);
 int shuffle_menu(void *ctx, void *event);
