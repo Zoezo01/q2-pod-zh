@@ -2114,14 +2114,17 @@ int addon_open(void *ctx, void *event) {
     return 0;
 }
 
-/* The page of the app with this id, hidden or not, found on the card again first; 0 when it isn't
- * there. */
-int addon_open_id(const char *id) {
+/* The page of the app with this id, hidden or not, found on the card again first, over any app's
+ * page left open under Now Playing, as addon_more's. */
+void addon_open_id(const char *id) {
     addon_scan();
     for (int i = 0; i < ap.n; ++i)
-        if (ap.a[i].present && !strcmp(ap.a[i].id, id))
-            return page_at(i, "menu", "", ap.a[i].name, 1) || pg.page;
-    return 0;
+        if (ap.a[i].present && !strcmp(ap.a[i].id, id)) {
+            void *old = pg.page;
+            if (old) closed(old, 0), window_manager_close_window_force(window_manager(), old);
+            page_at(i, "menu", "", ap.a[i].name, 1);
+            return;
+        }
 }
 
 /* Whether path is in an app's folder, CARD/.<id>/, and id the app's. */

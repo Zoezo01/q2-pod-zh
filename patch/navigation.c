@@ -9827,7 +9827,8 @@ int ringnav_write_config(int value, const char *section, const char *key) {
 int ringnav_output(int way) {
     int old = mclGetOutputWay();
     int changed = (old == 1) != (way == 1);
-    if (changed) {
+    if (changed &&
+        !airplay_on()) { /* a speaker's level stays its own; airplay.c swaps back at its end */
         write_int_config(g_volume, "PLAYSET", "VOLUME");
         char s[256] = "";
         toolsReadConfig("/mnt/data/config.ini", "PLAYSET", way == 1 ? "BT_VOLUME" : "VOLUME", s,

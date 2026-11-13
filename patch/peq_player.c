@@ -471,7 +471,8 @@ static af_data *play(af_instance *af, af_data *data) {
         }
         /* AirPlay: the EQ is for the Q2's own output, so a speaker gets the song without it */
         cast_tap *cast = cast_live(data->rate, frames);
-        int mute = cast && cast->mute;
+        /* silent while the app mutes, and until demo has the earphones' volume back (volume -1) */
+        int mute = (cast && cast->mute) || (cs.t && cs.t->volume >= 0);
         if (cast) cast_jump(cast, s, frames, data->rate);
         if (mute != cs.muted && !(cs.muted = mute)) /* the EQ's filters start again from rest */
             peq_reset(&s->dsp, data->rate, data->nch, &s->preset);

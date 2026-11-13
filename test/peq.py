@@ -1807,6 +1807,10 @@ static void cast_check(void) {
     for (unsigned i = 0; i < 2 * k; ++i) assert(buf[i] == 0); /* muted */
     unsigned seq = t->seq;
     t->want = CAST_CLOCK(now_ns()) - CAST_STALE_PLAYER; /* the app stopped beating */
+    t->volume = 40; /* demo still at the speaker's level: silent */
+    k = block(&a, buf, 1024, &n, 0.25f, CAST_RATE);
+    assert(t->seq == seq && buf[1] == 0 && buf[2 * k - 1] == 0);
+    t->volume = -1; /* the earphones' level back */
     k = block(&a, buf, 1024, &n, 0.25f, CAST_RATE);
     assert(t->seq == seq && buf[1] == 0.25f && buf[2 * k - 1] == 0.25f);
     a.uninit(&a);
