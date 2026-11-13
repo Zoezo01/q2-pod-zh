@@ -401,10 +401,11 @@ def symbol_table(path):
 
 
 def cache_file(cache, base):
-    """cache/base when base is one file name, else None. base is the Q2's word, and on Windows a backslash
-    or a drive letter in it would name a file outside cache."""
-    local = cache / base
-    return local if local.name == base and base != ".." else None
+    """cache/base when base is one plain file name, else None: base is the Q2's word, and a separator or a
+    drive/stream colon in it would name a file outside cache on Windows."""
+    # ponytail: Windows device names (CON, NUL, COM1...) still pass; only a reply from something posing as the Q2 sends one
+    if base in ("", ".", "..") or set(base) & set(':/\\'): return None
+    return cache / base
 
 
 def profile(seconds, all_threads, build):
