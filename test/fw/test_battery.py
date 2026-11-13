@@ -198,16 +198,6 @@ def test_the_graph_spreads_rows_kept_while_the_clock_was_unset_once_it_is_set(fw
     assert xs(fw, q2) == [0, 150, 300, 300]
 
 
-def test_a_clock_set_mid_history_spaces_the_rows_evenly(fw, q2):
-    q2.now = 3600
-    q2.poll(90)
-    q2.poll(80, minutes=60)
-    q2.now = NOON
-    q2.poll(70)
-    q2.poll(60, minutes=60)
-    assert xs(fw, q2) == [0, 75, 150, 225, 300]
-
-
 def test_the_graph_runs_by_time_up_to_now(fw, q2):
     q2.poll(90)
     q2.poll(80, minutes=60)
@@ -308,11 +298,11 @@ def paint(fw, widget):
     return canvas
 
 
-def graph(fw, page, height=220):
-    """The open page's graph painted height px high, 20 of them its margins, so 220 is 2 px a percent: its three
+def graph(fw, page):
+    """The open page's graph painted 220 px high, 20 of them its margins, so 2 px a percent: its three
     guide lines top to bottom, each row's level line left to right and the steps between them, as (x, y, w, h),
     and the canvas."""
-    C.c_int.from_address(page.graph + O['W_H']).value = height
+    C.c_int.from_address(page.graph + O['W_H']).value = 220
     canvas = paint(fw, page.graph)
     guides = sorted((r[1:] for r in canvas.rects if r[4] == 1), key=lambda r: r[1])
     levels = sorted((r[1:] for r in canvas.rects if r[4] == 2), key=lambda r: r[0])
@@ -340,7 +330,7 @@ def test_the_graph_steps_down_through_each_level_from_the_start_to_now(fw, q2):
 
 @pytest.mark.parametrize('clock', [
     (3600, 7200, NOON, NOON + 3600),  # set mid-history
-    (NOON, NOON + 3600, NOON - 3600, NOON + 1800),  # put back an hour, and past where it began since
+    (NOON, NOON + 3600, NOON - 3600, NOON + 1800),  # put back to an hour before the start, then on past it
 ])
 def test_the_graph_spaces_the_rows_evenly_when_their_times_don_t_run_forward_on_one_clock(fw, q2, clock):
     for at, level in zip(clock, (90, 80, 70, 60)):
@@ -356,12 +346,12 @@ def test_only_the_open_page_s_graph_is_painted_on(fw, q2):
     q2.poll(90)
     page = Page(fw)
     page.open()
-    for widget in (page.view, None):  # ringnav_paint passes every widget
-        canvas = paint(fw, widget)
-        assert not canvas.rects and not canvas.texts
+    canvas = paint(fw, page.view)  # ringnav_paint passes every widget
+    assert not canvas.rects and not canvas.texts
     (fn, ctx), = [(a[2], a[3]) for _, a in fw.calls('widget_on') if a[0] == PAGE and a[1] == O['EVT_DESTROY']]
     C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_void_p)(fn)(ctx, None)
-    assert not paint(fw, page.graph).rects  # the page gone, its graph's widget may be another's by now
+    for widget in (page.graph, None):  # the page gone, its graph's widget may be another's by now
+        assert not paint(fw, widget).rects
 
 
 def test_no_history_says_to_unplug(fw, q2):
