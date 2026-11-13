@@ -15004,7 +15004,7 @@ class BooksMachine(DepthMachine):
                   'access@GLIBC_2.0','rename@GLIBC_2.0','unlink@GLIBC_2.0','mkdir@GLIBC_2.0','memcmp@GLIBC_2.0',
                   'strlen@GLIBC_2.0','strstr@GLIBC_2.0','canvas_measure_text','canvas_draw_text',
                   'fork@GLIBC_2.0','execl@GLIBC_2.0','exit@GLIBC_2.0','waitpid@GLIBC_2.0','socket@GLIBC_2.0',
-                  'sendto@GLIBC_2.0','close@GLIBC_2.0','open@GLIBC_2.0'):
+                  'sendto@GLIBC_2.0','close@GLIBC_2.0','open@GLIBC_2.0','setenv@GLIBC_2.0'):
             self.handlers[syms[n]]='b:'+n
         self.handlers[syms['mclGetOutputWay']]='b:mclGetOutputWay'
         self.handlers[payload_syms['child_exit']]='b:exit'
@@ -15063,6 +15063,7 @@ class BooksMachine(DepthMachine):
         elif name=='mclGetOutputWay': ret=self.way
         elif name=='open': ret=0xffffffff  # the child's oom_score_adj write: refused here, so nothing is written
         elif name=='fork': ret=self.forked
+        elif name=='setenv': self.env=(self.text(a),self.text(b),c); ret=0  # a card game's Q2_POPUP, in the child
         elif name=='execl':
             sp=u.reg_read(UC_MIPS_REG_SP); e=self.get(sp+16)  # a volume argv, then its terminator
             if not c: self.execs.append((self.text(a),self.text(b))); ret=-1  # no arguments: the terminator third
@@ -16737,6 +16738,7 @@ m=AppMachine(); card_app(m,'fidget','name=Buddy\ngame=1\n'); assert 'Buddy' not 
 def fn(name,*args): return m.call(address=payload_syms[name],args=(args+(0,0,0,0))[:4],gap=0,clear=False,count=5_000_000)
 assert fn('addon_games')==1 and m.text(fn('addon_game_name',0))=='Buddy' and fn('addon_game_on')==0
 m.forked=0; m.execs=[]; fn('addon_game_start',0); assert m.execs[-1][:2]==('/mnt/mmc/.fidget/q2-fidget',)*2  # the child
+assert m.env[0]=='Q2_POPUP' and m.env[1].split()[0] in ('minimal','modern','classic') and m.env[2]==1  # the theme's pop-up, set before its exec
 m.forked=4243; assert fn('addon_game_start',0)==1 and fn('addon_game_on')==4243 and m.get(payload_syms['wheel_raw'])==1
 inp=HOOKS['window_manager_dispatch_input_event'][0]; m.handlers[inp+12]='stock_input'; GS='/tmp/q2-fidget.input.sock'
 def game_event(kind,key=0,x=0,y=0,stock=False):
