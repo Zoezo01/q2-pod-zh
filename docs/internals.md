@@ -1725,7 +1725,7 @@ Every Spotify job starts and ends with `spot_stop` on the UI thread, so spotify.
 
 A 500 ms timer refreshes progress and holds standby and auto power-off during app jobs; `sh_wait` joins the worker and reports its result wherever the user is, including after leaving the page.
 
-ponytail: TLS and curl's length check are the only checks on the zip, and unzip's CRCs the only ones inside it; there is no signature. Cancel stops the download at once, otherwise it lands after the step it was pressed in (the API request, the listing or the unpack); once files move it is ignored. A power cut while files move leaves those moved so far beside the old ones, with the old tag and list; the next install starts over. Staging left by a power cut stays on the card until the next install. A release that drops a file leaves the old one on the card and off the new list. The card is FAT32 or exFAT, which hold no symlinks or special files: busybox fails on one, so nothing checks for them.
+ponytail: TLS and curl's length check are the only checks on the zip, and unzip's CRCs the only ones inside it; there is no signature. Cancel stops the download at once, otherwise it lands after the step it was pressed in (the list or API request, the listing or the unpack); once files move it is ignored. A power cut while files move leaves those moved so far beside the old ones, with the old tag and list; the next install starts over. Staging left by a power cut stays on the card until the next install. A release that drops a file leaves the old one on the card and off the new list. The card is FAT32 or exFAT, which hold no symlinks or special files: busybox fails on one, so nothing checks for them.
 
 ### Card apps
 

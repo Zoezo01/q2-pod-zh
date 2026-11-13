@@ -612,9 +612,10 @@ static int check(void) {
 }
 
 /* Whether the list as it is now, fetched for this install, still names app i's repo: SH_OK, SH_NET
- * with no list to be had, SH_MISSING once the repo is dropped or gone from it. The page's list may
- * be the card's of days ago (opened with no Wi-Fi, the opening check stopped by the press, or the
- * list out of reach while GitHub's API answered; GHSA-8wpr-pmqx-538x).
+ * with no list to be had, SH_MISSING once the repo is dropped or gone from it, SH_CANCELLED when
+ * cancelled meanwhile. The page's list may be the card's of days ago (opened with no Wi-Fi, the
+ * opening check stopped by a press, or the list out of reach while GitHub's API answered;
+ * GHSA-8wpr-pmqx-538x).
  * ponytail: an install needs raw.githubusercontent.com as well as the API; a network that blocks
  * only the list's host installs nothing. */
 static int listed(int i) {
