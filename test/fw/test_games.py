@@ -2319,6 +2319,8 @@ def test_vortex_paint_the_hud_shows_the_score_the_best_and_the_level_counted_fro
     (_, quiet, name), (_, loud, score), (_, _, best), (_, _, best_name), (_, _, level), _ = hud
     assert light(loud) and grey(quiet) and darker(quiet, loud)  # the names quiet, the numbers loud
     assert name[0] < score[0] and best_name[0] < best[0] and best[0] + best[2] > 375 - 40 and name[1] == best[1] < level[1]
+    x, y = level[0] + 1, 30 + level[1] + level[3] * 3 // 4  # its first letter's foot on screen, under a 30 px bar
+    assert (80 - x) ** 2 + (y - 240) ** 2 < 78 ** 2  # inside the glass's 80 px bottom corner
 
 
 def test_vortex_paint_without_a_vgcanvas_still_shows_the_hud(fw):
@@ -2370,8 +2372,9 @@ def test_arcade_paint_return_s_menu_marks_the_choice_with_home_s_dot_in_minimal(
     assert light(cb) and darker(ca, cb) and row[1] > first[1]
 
 
-def test_arcade_paint_return_s_menu_puts_the_choice_on_the_accent_s_bar_in_modern(fw):
-    p = themed(fw, MODERN, ACCENT=b'4')  # Cobalt
+@pytest.mark.parametrize('light_mode', (b'0', b'1'))
+def test_arcade_paint_return_s_menu_puts_the_choice_on_the_accent_s_bar_in_modern(fw, light_mode):
+    p = themed(fw, MODERN, ACCENT=b'4', LIGHT=light_mode)  # Cobalt
     p.go(VORTEX)
     p.key(RETURN)
     ops = popup_ops(paint(p))
@@ -2380,7 +2383,7 @@ def test_arcade_paint_return_s_menu_puts_the_choice_on_the_accent_s_bar_in_moder
     box, bar = [o for o in ops if o.kind == 'round']
     assert encloses(box.rect, bar.rect) and ra[1] <= bar.rect[1] and bar.rect[1] + bar.rect[3] <= ra[1] + ra[3] < rb[1] + rb[3]
     assert bar.color == ink(fw, rgba(fw.fn('accent_tone', C.c_uint, C.c_int)(0))) and not grey(bar.color)
-    assert light(ca) and grey(cb) and darker(cb, ca)
+    assert light(ca) and grey(cb) and light(box.color) == (light_mode == b'1')  # white on the bar in either mode
     p.key(NEXT)
     _, bar = [o for o in popup_ops(paint(p)) if o.kind == 'round']
     assert rb[1] <= bar.rect[1] and bar.rect[1] + bar.rect[3] <= rb[1] + rb[3]
@@ -2645,24 +2648,27 @@ def test_classic_s_solitaire_is_green_felt_white_cards_blue_backs_and_a_gold_cur
     assert len({o.rect[1] for o in wells}) >= stock.rect[3]
 
 
-def test_classic_s_snake_is_an_lcd_in_a_bezel_with_square_dots(fw):
-    p = themed(fw, CLASSIC)
+@pytest.mark.parametrize('light_mode', (b'0', b'1'))
+def test_classic_s_snake_is_an_lcd_in_a_bezel_with_square_dots(fw, light_mode):
+    p = themed(fw, CLASSIC, LIGHT=light_mode)
     p.go(SNAKE)
     s = p.s
     ops = paint(p)
     bezel, lcd = [o for o in ops if o.kind == 'round']
     assert encloses(bezel.rect, lcd.rect) and not [o for o in ops if o.kind in ('dot', 'frame')]
-    dots = [o for o in ops if o.kind == 'fill' and dark(o.color) and o.rect[2] == o.rect[3] < 12]
-    assert len(dots) == s.sn.len + 1 and all(encloses(lcd.rect, o.rect) for o in dots)  # the body and the apple
+    assert (rgb(bezel.color), rgb(lcd.color)) == ((0x8f, 0x96, 0x8a), (0xc3, 0xcd, 0xb4))  # final in either half
+    dots = [o for o in ops if o.kind == 'fill' and rgb(o.color) == (0x2a, 0x33, 0x24)]
+    assert {o.rect[2:] for o in dots} == {(9, 9)} and len(dots) == s.sn.len + 1 and all(encloses(lcd.rect, o.rect) for o in dots)  # the body and the apple
     apple = dots[-1].rect
     hole = [o for o in ops if o.kind == 'fill' and o.color == lcd.color and encloses(apple, o.rect) and o.rect != apple]
     assert len(hole) == 1
     score, = [c for t, c, _ in words(ops) if t == 'Score']
-    assert grey(score)  # the page's own ink, flipped as the page is
+    assert grey(score) and (max(rgb(score)) < 0x80) == (light_mode == b'1')  # the page's own ink, flipped as the page is
 
 
-def test_classic_s_vortex_is_a_night_sky_each_ring_its_colour_with_a_light_on_every_brick(fw):
-    p = themed(fw, CLASSIC)
+@pytest.mark.parametrize('light_mode', (b'0', b'1'))
+def test_classic_s_vortex_is_a_night_sky_each_ring_its_colour_with_a_light_on_every_brick(fw, light_mode):
+    p = themed(fw, CLASSIC, LIGHT=light_mode)
     p.go(VORTEX)
     ops = paint(p)
     sky = ops[:p.s.h]
@@ -2672,17 +2678,21 @@ def test_classic_s_vortex_is_a_night_sky_each_ring_its_colour_with_a_light_on_ev
     assert len(bricks) == 2 * 48 and len(set(bricks[::2])) == 3 and all(coloured(c) for c in bricks[::2])
     assert all(darker(base, shine) for base, shine in zip(bricks[::2], bricks[1::2]))
     glow, paddle = [o.color for o in ops[cap:] if o.kind == 'arc']
-    assert alpha(glow) < 128 and alpha(paddle) == 255 and light(paddle)
+    assert alpha(glow) < 128 and alpha(paddle) == 255 and rgb(paddle) == (255, 255, 255)  # final in either half
     halo, ball, *lives = [o.color for o in ops if o.kind == 'dot']
-    assert alpha(halo) < 128 and light(ball) and len(lives) == 3
-    assert [t for t, _, _ in words(ops)][:6] == ['Score', '0', '0', 'Best', 'Level', '1']
+    assert alpha(halo) < 128 and rgb(ball) == (255, 255, 255) and len(lives) == 3
+    hud = words(ops)[:6]
+    assert [t for t, _, _ in hud] == ['Score', '0', '0', 'Best', 'Level', '1'] and rgb(hud[1][1]) == (255, 255, 255)
 
 
-def test_classic_s_sudoku_puts_the_cursor_s_cell_on_the_band_and_frames_it_only_to_pick_a_digit(fw):
-    p = themed(fw, CLASSIC)
+@pytest.mark.parametrize('light_mode', (b'0', b'1'))
+def test_classic_s_sudoku_puts_the_cursor_s_cell_on_the_band_and_frames_it_only_to_pick_a_digit(fw, light_mode):
+    p = themed(fw, CLASSIC, LIGHT=light_mode)
     p.go(SUDOKU)
     s = p.s
     s.sud.cur = blank(s)
+    s.sud.cell[s.sud.cur] = 5
+    s.sud.cell[next(i for i in range(81) if not s.sud.cell[i])] = 5  # its like, in another cell
 
     def band(ops):
         return [o for o in ops if o.kind == 'fill' and o.rect[3] == 1 and o.rect[2] < 40 and coloured(o.color)]
@@ -2691,6 +2701,21 @@ def test_classic_s_sudoku_puts_the_cursor_s_cell_on_the_band_and_frames_it_only_
     assert len(rows) == rows[0].rect[2] and len({o.rect[0] for o in rows}) == 1  # a square of rows, a cell's inside
     edges = [o for o in ops if o.kind == 'fill' and 2 in o.rect[2:] and max(o.rect[2:]) == rows[0].rect[2] + 2]
     assert not edges  # no frame round it
+    digit, = [o for o in ops if o.kind == 'text' and encloses(o.rect, bounds(rows))]
+    assert rgb(digit.color) == (255, 255, 255)  # the band's own ink, final in either half
+    like = [o for o in ops if o.kind == 'fill' and o.rect[2:] == (rows[0].rect[2],) * 2 and not grey(o.color)]
+    assert like and len({o.color for o in like}) == 1 and (max(rgb(like[0].color)) > 0x80) == (light_mode == b'1')  # its like digits: the band's tint of the paper
     p.key(CENTER)
     ops = paint(p)
     assert not band(ops) and len([o for o in ops if o.kind == 'fill' and 2 in o.rect[2:] and max(o.rect[2:]) == rows[0].rect[2] + 2]) == 4
+
+
+@pytest.mark.parametrize('theme, names', ((CLASSIC, ['Solitaire', 'Games']), (MINIMAL, [])))
+def test_the_bar_names_the_game_where_the_theme_s_bar_holds_the_page_s_caption(fw, theme, names):
+    said = []
+    fw.mock('widget_lookup', lambda w, name, *_: 0x7777 if C.string_at(name) == b'_page_title' else 0)
+    p = themed(fw, theme)
+    fw.mock('widget_set_text_utf8', lambda w, text, *_: said.append(C.string_at(text).decode()) if w == 0x7777 else None)
+    p.go(SOLITAIRE)
+    p.go(CHOOSER)
+    assert said == names

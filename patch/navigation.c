@@ -5689,7 +5689,7 @@ static int pressed_pill(void *w, void *canvas) {
 
 /* A payload page's caption, 48 px or page_title's: a child of win, or the first in one of its
  * children (Games' list comes after its sheet). The one on show, else the first: a hidden caption
- * still names the page, and Games keeps its name over a game. */
+ * still names the page, and Games writes a game's name into its own (games.c show). */
 static void *page_caption(void *win) {
     void *first = 0;
     for (unsigned i = 0, n = widget_count_children(win); i < n; ++i) {

@@ -536,7 +536,6 @@ static struct game {
     struct best sn_best;
     struct snake sn;
     int rows; /* the chooser's: its own games, then the card's */
-    int raw;  /* a paint's colours are final now (final) */
     void *title; /* the caption the bar reads, where the theme's bar holds it */
 } *g __attribute__((section(".scratch")));
 
@@ -669,8 +668,7 @@ static int show(const void *unused) {
     widget_set_visible(g->list, g->screen == CHOOSER, 0);
     widget_set_sensitive(g->list, g->screen == CHOOSER); /* hidden, its rows still took a game's taps */
     widget_set_visible(g->sheet, g->screen != CHOOSER, 0);
-    if (g->title) /* the bar names the game */
-        widget_set_text_utf8(g->title, game_names[g->screen]), bar_title_sync(g->page);
+    if (g->title) page_retitle(g->page, g->title, game_names[g->screen]); /* the bar names the game */
     if (g->screen == CHOOSER) {
         flush(1);
         ringnav_select(g->view, from - 1, g->rows);
@@ -858,16 +856,13 @@ static void frame_rect(void *canvas, int x, int y, int w, int h, unsigned rgb, u
     box(canvas, x + w - 2, y, 2, h, rgb);
 }
 
-/* A theme with its own pages (Classic) has its own boards: felt, gloss and an LCD, in final
- * colours. Any other draws them in its accent on the page, flipped by Light Mode as the page is. */
-static int glossy(void) { return classic_pages(); }
+/* A theme with its own pages (classic_pages(), Classic) has its own boards: felt, gloss and an LCD,
+ * in final colours (ui_ink_raw). Any other draws them in its accent on the page, flipped by Light
+ * Mode as the page is. */
 
-/* What follows is drawn in final colours (1), or flipped by Light Mode again (0). */
-static void final(int on) { ui_ink_raw((unsigned)(g->raw = on)); }
-
-/* A grey v (0 to 255) that stays v on screen: Light Mode's flip (ui_ink) is undone unless the
- * colours are final. A card is paper-white in either mode, its black suits black. */
-static unsigned unflipped(unsigned v) { return (g->raw ? v : unflip(v)) * 0x010101u; }
+/* A grey v (0 to 255) that Light Mode's flip (ui_ink) leaves at v: a card is paper-white in either
+ * mode, its black suits black. */
+static unsigned unflipped(unsigned v) { return unflip(v) * 0x010101u; }
 
 enum { LEFT, MID, RIGHT };
 /* s (ASCII) in the theme's face at px, h rows from y: from x, centred on it or ending at it. A
@@ -919,19 +914,20 @@ static void hud(void *canvas, const char *name, unsigned v, int x, int y, int ri
  * the panel and no chevron on the band; paint_panel's shadow images are per size. */
 static void popup(void *canvas, const char *title, const char *a, const char *b, int choice) {
     const theme_t *T = theme();
-    int own = T->painter[PAINT_CONFIRM] != CONFIRM_STOCK;
+    const scheme_t *S = scheme();
+    /* its own panel needs the scheme's gloss and band: fewer than two stops are none */
+    int own = T->painter[PAINT_CONFIRM] != CONFIRM_STOCK && S->bar.n > 1 && S->sel.n > 1;
     int band = T->painter[PAINT_SELECTION] != SEL_CARD;
     int top = POP_ROW + (own ? 1 : 6), h = b ? top + 2 * POP_ROW + (own ? 0 : 8) : POP_ROW + 44;
     int x = (375 - POP_W) / 2, y = (g->h - h) / 2;
     stock_canvas_set_fill_color(canvas, 0x80000000u); /* black at half, final */
     canvas_fill_rect(canvas, 0, 0, 375, g->h);
     if (own) {
-        const scheme_t *S = scheme();
         unsigned paper = ipod_light() ? S->paper : 0, ink = ipod_light() ? S->ink : 0xffffff;
         rect_t r = { x, y, POP_W, h }, out = { x - 1, y - 1, POP_W + 2, h + 2 };
         stops_t ring = { 2, { 0, 100 }, { S->bar_line, S->bar_line } };
         int sel = b ? top + choice * POP_ROW : h;
-        final(1);
+        ui_ink_raw(1);
         paint_round_rows(canvas, &out, &ring, LETTER_RADIUS + 1);
         for (int i = 0; i < h; ++i) {
             unsigned c = i < POP_ROW    ? stops_row(&S->bar, i, POP_ROW)
@@ -950,7 +946,7 @@ static void popup(void *canvas, const char *title, const char *a, const char *b,
         for (int k = 0; b && k < 2; ++k)
             text_at(canvas, k ? b : a, x + 16, y + top + k * POP_ROW, POP_ROW, 23,
                   rgba(k != choice ? ink : S->sel_text ? S->sel_text : 0xffffff, 255), LEFT);
-        final(0);
+        ui_ink_raw(0);
         return;
     }
     round_box(canvas, x, y, POP_W, h, band ? 0x1c1c1c : 0, band ? 12 : 6);
@@ -982,12 +978,6 @@ static void paused_popup(void *canvas, int over) {
         popup(canvas, "Paused", "Play/Pause: resume", 0, 0);
 }
 
-/* A cell in a final colour, whatever Light Mode. */
-static void final_box(void *canvas, int x, int y, int w, int h, unsigned rgb) {
-    stock_canvas_set_fill_color(canvas, RGBA(rgb));
-    canvas_fill_rect(canvas, x, y, w, h);
-}
-
 /* Clues on grey, entries plain in the tone, a conflict red and underlined, the cursor framed, and
  * every cell holding the cursor's digit (the one being picked) dark on the tone. The theme's own
  * board: the cursor's cell is its selection band, framed only while a digit is picked, and the
@@ -996,7 +986,7 @@ static void sudoku_paint(void *canvas, unsigned tone) {
     const struct sudoku *s = &g->sud;
     const scheme_t *S = scheme();
     int x0 = (375 - 9 * CELL) / 2, y0 = (g->h - 9 * CELL) / 2;
-    int same = g->picking ? g->pick : s->cell[s->cur] & 15, own = glossy() && S->sel.n > 1;
+    int same = g->picking ? g->pick : s->cell[s->cur] & 15, own = classic_pages() && S->sel.n > 1;
     unsigned pale = mix(S->sel.rgb[S->sel.n / 2], ipod_light() ? S->paper : 0, 3, 4);
     char d[2] = { 0, 0 };
     box(canvas, x0, y0, 9 * CELL, 9 * CELL, 0x555555);
@@ -1012,11 +1002,13 @@ static void sudoku_paint(void *canvas, unsigned tone) {
                                 : 0);
         if (band)
             paint_stops(canvas, x + 1, y + 1, CELL - 2, CELL - 2, &S->sel);
-        else if (lit && own)
-            final_box(canvas, x + 1, y + 1, CELL - 2, CELL - 2, pale);
+        else if (lit && own) { /* final, whatever Light Mode */
+            stock_canvas_set_fill_color(canvas, RGBA(pale));
+            canvas_fill_rect(canvas, x + 1, y + 1, CELL - 2, CELL - 2);
+        }
         if (!v) continue;
         d[0] = (char)('0' + v);
-        if (band) final(1);
+        if (band) ui_ink_raw(1);
         caption(canvas, d, x, y, CELL, CELL, 20,
                 rgba(band                    ? S->sel_text ? S->sel_text : 0xffffff
                      : bad                   ? 0xff5050
@@ -1025,7 +1017,7 @@ static void sudoku_paint(void *canvas, unsigned tone) {
                      : s->cell[i] & CLUE     ? 0xffffff
                                              : tone,
                      255));
-        if (band) final(0);
+        if (band) ui_ink_raw(0);
         if (bad) box(canvas, x + 9, y + CELL - 6, CELL - 18, 2, 0xff5050);
     }
     for (int k = 0; k <= 9; k += 3) {
@@ -1071,10 +1063,10 @@ static void vortex_paint(void *canvas, unsigned tone) {
     void *vg = canvas_get_vgcanvas(canvas);
     float cx = 187.5f, cy = (float)g->h / 2;
     unsigned age = (unsigned)time_now_ms() - g->pop_at;
-    int own = glossy();
+    int own = classic_pages();
     unsigned ink = rgba(0xffffff, 255), dim = own ? rgba(0xa8b4cc, 255) : SPOT_GREY;
     if (own) {
-        final(1);
+        ui_ink_raw(1);
         paint_stops(canvas, 0, 0, 375, g->h, &sky);
         for (unsigned k = 0; k < STARS; ++k)
             scrub_row(canvas, (0x50u + k % 4 * 0x30) << 24 | 0xffffff, (int)(k * 97 % 375),
@@ -1113,9 +1105,9 @@ static void vortex_paint(void *canvas, unsigned tone) {
     }
     hud(canvas, "Score", (unsigned)v->score, HUD_X, 6, 0, ink, dim);
     hud(canvas, "Best", g->best.score, 375 - HUD_X, 6, 1, ink, dim);
-    hud(canvas, "Level", (unsigned)v->level + 1, HUD_X, g->h - 30, 0, ink, dim);
+    hud(canvas, "Level", (unsigned)v->level + 1, HUD_X + 24, g->h - 30, 0, ink, dim); /* in from the glass */
     if (!g->paused && v->state == AIM) text_at(canvas, "Centre", 187, (int)cy - 12, 24, 16, dim, MID);
-    final(0);
+    ui_ink_raw(0);
     paused_popup(canvas, v->state == OVER);
 }
 
@@ -1139,7 +1131,7 @@ static void card_paint(void *canvas, int x, int y, int c, int whole, int strip, 
     static const unsigned short suit[] = { 0x2660, 0x2665, 0x2666, 0x2663 }; /* ♠♥♦♣ */
     static const stops_t back = { 2, { 0, 100 }, { 0x3f7fe0, 0x1f4fb0 } };
     unsigned text[3], n = 0;
-    int own = g->raw;
+    int own = classic_pages();
     if (own && whole) {
         scrub_row(canvas, 0x50000000u, x + 3, y + CARD_H, CARD_W - 6);
         scrub_row(canvas, 0x24000000u, x + 5, y + CARD_H + 1, CARD_W - 10);
@@ -1165,7 +1157,7 @@ static void card_paint(void *canvas, int x, int y, int c, int whole, int strip, 
         return;
     }
     c &= ~UP;
-    unsigned ink = rgba(c / 13 % 3 ? 0xd01818 : unflipped(0x10), 255);
+    unsigned ink = rgba(c / 13 % 3 ? 0xd01818 : own ? 0x101010 : unflipped(0x10), 255);
     if (c % 13 == 9) text[n++] = '1';
     text[n++] = (unsigned char)"A234567890JQK"[c % 13];
     text[n++] = suit[c / 13];
@@ -1184,9 +1176,9 @@ static void card_paint(void *canvas, int x, int y, int c, int whole, int strip, 
 static void solitaire_paint(void *canvas, unsigned tone) {
     static const stops_t felt = { 2, { 0, 100 }, { 0x378c43, 0x1f5c2b } };
     const struct solitaire *s = &g->sol;
-    int own = glossy();
+    int own = classic_pages();
     if (own) {
-        final(1);
+        ui_ink_raw(1);
         paint_stops(canvas, 0, 0, 375, g->h, &felt);
         tone = SOL_HAND;
     }
@@ -1213,7 +1205,7 @@ static void solitaire_paint(void *canvas, unsigned tone) {
             frame_rect(canvas, x - 2, y - 2, CARD_W + 4, CARD_H + 4, g->picking ? 0xffffff : tone,
                        7);
     }
-    final(0);
+    ui_ink_raw(0);
     if (g->confirm)
         popup(canvas, "New game?", "Centre: yes   Return: no", 0, 0);
     else if (sol_won(s))
@@ -1228,10 +1220,10 @@ static void solitaire_paint(void *canvas, unsigned tone) {
 static void snake_paint(void *canvas, unsigned tone) {
     const struct snake *s = &g->sn;
     void *vg = canvas_get_vgcanvas(canvas);
-    int w = SN_N * SN_CELL, own = glossy();
+    int w = SN_N * SN_CELL, own = classic_pages();
     int fx = SN_X + s->food % SN_N * SN_CELL, fy = SN_Y + s->food / SN_N * SN_CELL;
     if (own) {
-        final(1);
+        ui_ink_raw(1);
         round_box(canvas, SN_X - 6, SN_Y - 6, w + 12, w + 12, 0x8f968a, 8);
         round_box(canvas, SN_X - 4, SN_Y - 4, w + 8, w + 8, SN_LCD, 6);
         box(canvas, SN_X, SN_Y, w, w, mix(SN_LCD, SN_DOT, 1, 16)); /* the unlit dots, then gaps */
@@ -1262,7 +1254,7 @@ static void snake_paint(void *canvas, unsigned tone) {
             rgba(0xe04848, 255));
         vgcanvas_restore(vg);
     }
-    final(0);
+    ui_ink_raw(0);
     hud(canvas, "Score", (unsigned)s->score, HUD_X, 6, 0, rgba(0xffffff, 255), SPOT_GREY);
     hud(canvas, "Best", g->sn_best.score, 375 - HUD_X, 6, 1, rgba(0xffffff, 255), SPOT_GREY);
     paused_popup(canvas, s->state == OVER);
@@ -1273,7 +1265,6 @@ void games_paint(void *w, void *canvas) {
     if (!g || w != g->sheet || g->screen == CHOOSER || !P(canvas, CANVAS_LCD)) return;
     unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR), tone = accent_tone(2);
     unsigned raw = ui_ink_raw(0);
-    g->raw = 0;
     if (g->screen == SUDOKU)
         sudoku_paint(canvas, tone);
     else if (g->screen == SOLITAIRE)
