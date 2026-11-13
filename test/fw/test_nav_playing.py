@@ -621,6 +621,18 @@ def test_the_percentage_says_charging_or_low_in_its_colour(fw, st, ui, icon, col
     assert canvas.texts[0][3] == rgba(color)
 
 
+def test_a_cable_in_with_charging_held_off_is_not_shown_charging(fw, st, ui):
+    """Stock's icon is bar_charge for any cable; USB DAC with charging Off, or Charge Limit, charges nothing."""
+    from test_usb_charge import Charging
+    theme(fw, st, BATTERY=1)
+    paint, q = Paint(fw, ui, Bar(fw, ui)), Charging(fw, pref=0, mode=1, cable=1)
+    q.config()  # Audio and DAC, charging Off: held
+    assert [paint(text, b'bar_charge').texts[0][3] for text in ('50%', '14%')] == [rgba(0xffffff), rgba(O['BATT_LOW_RGB'])]
+    q.pref = 1
+    q.config()  # charging On
+    assert paint('14%', b'bar_charge').texts[0][3] == rgba(O['BATT_CHARGE_RGB'])
+
+
 def test_the_first_paint_measures_the_digits_and_the_slot_fits_them(fw, st, ui):
     theme(fw, st, BATTERY=1)
     bar = Bar(fw, ui)
