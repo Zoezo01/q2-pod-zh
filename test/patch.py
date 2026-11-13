@@ -7530,7 +7530,7 @@ assert wbox(ba,label_balance)==(0,85,375,34) and ba.nodes[label_balance]['visibl
 assert wbox(ba,L)==(50,139,20,26) and wbox(ba,R)==(306,139,20,26) and ba.nodes[L]['style:normal:font_size']==24==ba.nodes[R]['style:normal:font_size'] and wbox(ba,bas)==(81,117,204,70)
 bare(ba); bg(ba,bawin); assert art_at(ba)==BAND_ART and not triangle(ba); passed()
 # ... the text stock writes after the load picks the number's face at the next paint, and a paint that changes nothing writes nothing.
-for bn_text,bn_face,bn_px in (('Баланс','bold',27),('平衡','default',32),('L 3','classic-light',32)):
+for bn_text,bn_face,bn_px in (('Баланс','bold',27),('平衡','default',27),('L 3','classic-light',32)):
     ba.nodes[label_balance]['text']=bn_text; bare(ba); bg(ba,bawin); assert (ba.nodes[label_balance]['style:normal:font_name'],ba.nodes[label_balance]['style:normal:font_size'])==(bn_face,bn_px),bn_text
     bare(ba); bg(ba,bawin); assert not [c for c in ba.calls if c[0]=='widget_set_prop_str' and c[1]==label_balance]
 passed()
@@ -7584,7 +7584,7 @@ assert db.nodes[dst]['image']=='classic_light_play_w' and wbox(db,dslot)==(285-2
 db.letters=[]; bg(db,dbar); assert not shadows(db); passed()
 dd,ddbar,*_,ddwin,_=dark_setup(light='0'); bg(dd,ddwin); bg(dd,ddbar); bg(dd,ddbar); dd.letters=[]; bg(dd,ddbar); assert not shadows(dd); passed()
 # ... a title the theme's face hasn't: the fallback faces at the flat bar's sizes; a font smaller than its box either way.
-for name,face,px in (('Баланс','bold',17),('平衡','default',21)):
+for name,face,px in (('Баланс','bold',17),('平衡','default',17)):
     df,dfbar,_,dftitle,*_,dfwin,_=dark_setup(name=name); bg(df,dfwin); bg(df,dfbar); bg(df,dfbar); df.letters=[]; bg(df,dfbar)
     assert df.nodes[dftitle]['style:normal:font_name']==face and df.nodes[dftitle]['style:normal:font_size']==px and df.nodes[dftitle]['text']==name
     assert not shadows(df) and wbox(df,dftitle)[3]>=px; passed()
@@ -11154,9 +11154,9 @@ head=[w for w in m.nodes[m.panel()]['children'] if m.nodes[w]['type']=='hscroll_
 m=classic_light_new(FlipMachine); m.open(); assert m.call(address=payload_syms['coverflow_goto_album'],args=(m.albums[0],0,0,0),gap=0)==1; m.page=m.top; assert not m.panel() and not [c for c in m.calls if c[0]=='canvas_offline_create'] and m.nodes[m.find('scroll_view')]['children'] and cf_geometry(m,m.nodes[m.find('scroll_view')]['children'][0])[2]==375; passed()
 # The selection on a row: the band across the list's 294, its labels white over it.
 m=flip_open(); m.advance(300); view=m.find('scroll_view'); m.word(view+O['W_W'],294); m.call(); m.paint(view); assert m.selected(view)==1 and m.sel()[0]==0 and m.sel()[2]==294 and m.sel()[3]==PANEL_ROW; passed()
-# ... a CJK title in the system font, a Cyrillic one in bold at the fallback's px: each box holds its font.
+# ... a CJK title in the system font, a Cyrillic one in bold, both at the fallback's px: each box holds its font.
 m=classic_light_new(FlipMachine); m.open(); m.found=[m.song('T')]; m.word(m.found[0]+O['REC_TITLE'],m.string('波')); m.tracks(0); m.advance(300)
-assert m.face(m.row_labels(0)[0])==('default',25)
+assert m.face(m.row_labels(0)[0])==('default',21)
 m=classic_light_new(FlipMachine); m.open(); m.found=[m.song('T')]; m.word(m.found[0]+O['REC_TITLE'],m.string('Выход')); m.tracks(0); m.advance(300)
 assert m.face(m.row_labels(0)[0])==('bold',21); passed()
 # An unknown length is blank and what the cache has shows, toolsTimeItoa's 4:54, hours when long. The panel starts no worker and
@@ -12052,9 +12052,9 @@ assert bt_titled(btwins['shuffle_page'])=='Genres'
 for bt_text,bt_face in (('Навстречу Ветру','bold'),('日本語','default'),('Songs','classic-light'),('Н'*60,'bold')):
     btm.nodes[btm.nodes[btnav]['children'][1]]['text']=bt_text; assert bt_titled(btwins['allmusic_page'])==bt_text
     assert [btm.nodes[bttl][f'style:{s}:font_name'] for s in ('normal','focused','disable')]==[bt_face]*3,bt_text
-    assert [btm.nodes[bttl][f'style:{s}:font_size'] for s in ('normal','focused','disable')]==[17 if bt_face=='bold' else 21]*3,bt_text
+    assert [btm.nodes[bttl][f'style:{s}:font_size'] for s in ('normal','focused','disable')]==[21 if bt_face=='classic-light' else 17]*3,bt_text
     btm.call(address=payload_syms['bar_title_fits'],args=(btm.nodes[btnav]['children'][1],0,0,0),gap=0)
-    assert btm.font==(bt_face,17 if bt_face=='bold' else 21),(bt_text,btm.font)  # measured as it is drawn
+    assert btm.font==(bt_face,21 if bt_face=='classic-light' else 17),(bt_text,btm.font)  # measured as it is drawn
 passed()
 # Classic battery (BATT_CLASSIC_LIGHT): body 26x13 on rows 5 to 17, its soft edge's column at x 0 of the slot (screen 286): a
 # #717070 outline with half-covered corners, #5b6c52 along the bottom, a hollow nub, the dark rows inside, the level's stops
@@ -13263,13 +13263,13 @@ assert [fk.nodes[ft][f'style:{s}:font_name'] for s in STATES]==['classic-light']
 fk.calls=[]; native_row_layout(fk,fb); assert not [c for c in fk.calls if c[0]=='widget_set_prop_str']
 fk,fb,ft=font_row(classic_light,'Навстречу ветру'); assert [(fk.nodes[ft][f'style:{s}:font_name'],fk.nodes[ft][f'style:{s}:font_size']) for s in STATES]==[('bold',22)]*3  # 0.83 of 27: as tall as the face's capitals
 fk,fb,ft=font_row(classic_light,'Moscow Москва'); assert fk.nodes[ft]['style:normal:font_name']=='bold' and fk.nodes[ft]['style:normal:font_size']==22  # one face a label: its Latin letters too
-fk,fb,ft=font_row(classic_light,'日本語 Title'); assert fk.nodes[ft]['style:normal:font_name']=='default' and fk.nodes[ft]['style:normal:font_size']==PX
+fk,fb,ft=font_row(classic_light,'日本語 Title'); assert fk.nodes[ft]['style:normal:font_name']=='default' and fk.nodes[ft]['style:normal:font_size']==22  # stock's face, its capitals as tall as bold's
 for setup in (None,lambda k: k.config.update(THEME='2')):  # Minimal and Modern
     ck,cb,ct=font_row(setup,'Title'); assert not [p for p in ck.nodes[ct] if p.endswith(':font_name') or p=='_font']
 # One label from Latin to Cyrillic and back: the answer changes with the text, so nothing stale stays. Minimal's
 # Cyrillic never takes the scale: its px is the style's, nothing written.
 fw=fk.node('hscroll_label',text='Songs'); fl=lambda t,want: (fk.nodes[fw].__setitem__('text',t),fk.call(address=payload_syms['theme_font'],args=(fw,0,-2,0),gap=0),[(fk.nodes[fw][f'style:{s}:font_name'],fk.nodes[fw][f'style:{s}:font_size']) for s in STATES]==[want]*3)[-1]
-assert fl('Songs',('classic-light',27)) and fl('Песни',('bold',22)) and fl('Songs',('classic-light',27)) and fl('歌',('default',27)); passed()
+assert fl('Songs',('classic-light',27)) and fl('Песни',('bold',22)) and fl('Songs',('classic-light',27)) and fl('歌',('default',22)); passed()
 # A virtual table binds a pooled row's text with no relayout (table_client's load loop, #217): ringnav_table_load runs stock's on_load_data (a PIC
 # call), then each label its layout gave a face finds it again for the new text, at its own role's size (a title 27, a tall title 28); a label never
 # themed stays as it was. Minimal's rows have no faces: the bind is stock's.
@@ -13295,7 +13295,7 @@ def table_load_faces(setup):
         return [(lk.nodes[w].get('style:normal:font_name'),lk.nodes[w].get('style:normal:font_size')) for w in (title,tall,plain)]
     if setup:
         assert load('WurtS','yama','x')==[('classic-light',27),('classic-light',28),(None,None)]
-        assert load('星野 源','須田景凪','原因は自分にある。')==[('default',27),('default',28),(None,None)]
+        assert load('星野 源','須田景凪','原因は自分にある。')==[('default',22),('default',23),(None,None)]
         assert load('YOASOBI','Навстречу','x')==[('classic-light',27),('bold',23),(None,None)]
     else: assert load('星野 源','須田景凪','x')==[(None,None)]*3 and not [p for w in (title,tall) for p in lk.nodes[w] if p=='_font']
 for setup in (classic_light,None): table_load_faces(setup)

@@ -1059,8 +1059,8 @@ def test_classics_title_face_falls_back_by_the_text(fw, st, ui, ranges, text, fa
     answer = fw.fn('theme_font', C.c_int, C.c_void_p, C.c_int, C.c_int)(label, ROLE_TITLE, -1)
     got, px = label_font(ui, label)
     assert got == face and answer == FACES.index(face) | px << 2
-    # bold's capitals stand taller: standing in for Classic's face it is smaller; stock's keeps the size
-    assert px < TITLE_PX if face == b'bold' else px == TITLE_PX
+    # bold's and stock's capitals stand taller: standing in for Classic's face either is smaller
+    assert px == TITLE_PX if face == b'classic-light' else px == round(TITLE_PX * .83)
 
 
 def test_a_face_already_written_is_not_written_again(fw, st, ui):
@@ -1130,7 +1130,7 @@ def test_the_playing_rows_mark_keeps_its_titles_face_under_classic(fw, st, ui, r
     fw.fn('theme_font', C.c_int, C.c_void_p, C.c_int, C.c_int)(plain, ROLE_TITLE, FONT_ROW)
     face, px = label_font(ui, title)
     assert ui.text(title).startswith('▶ ') and (face, px) == label_font(ui, plain)
-    assert face == first_face(ranges, text) and (px < TITLE_PX if face == b'bold' else px == TITLE_PX)
+    assert face == first_face(ranges, text) and (px == TITLE_PX if face == b'classic-light' else px < TITLE_PX)
 
 
 # Now Playing (ringnav_playing): the iPod labels bound, the bar and its fill, the times, scrub.
