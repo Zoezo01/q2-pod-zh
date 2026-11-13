@@ -287,6 +287,10 @@ extern volatile unsigned library_gen;
 /* durations.c: cache-only reads for Cover Flow; no file probes on the UI thread. */
 int duration_seconds(void *song);
 const char *duration_text(char *text, unsigned size, void *song);
+void durations_scanned(void); /* a library scan's end, on its thread */
+int thread_lower(int idle); /* coverflow_loader.c: a worker's nice 19 and its I/O class */
+/* coverflow.c: the o32 statx syscall, as demo imports none */
+int ringnav_statx(int dirfd, const char *path, int flags, unsigned mask, void *buf);
 void *coverflow_album_tracks(void *r);
 unsigned album_id(void *r), album_dir(const char *p, int disc);
 /* navigation.c: Cover Flow's glide and its letter */

@@ -534,9 +534,8 @@ int stock_usb_status_trampoline(void);
 /* library_lists.c */
 int era_menu(void *ctx, void *event);
 int long_songs(void *ctx, void *event);
-/* durations.c: UI-thread API; the worker alone probes files, the UI publishes after join. */
-int duration_seconds(void *song);
-const char *duration_text(char *text, unsigned size, void *song);
+/* durations.c: UI-thread API (duration_seconds and duration_text in peq.h); the worker alone
+ * probes files, the UI publishes after join. */
 int durations_start(void *songs), durations_busy(int *done, int *total);
 void durations_cancel(void), durations_poll(void), durations_shutdown(void);
 void mp_counted(void *r, unsigned key, unsigned evicted);

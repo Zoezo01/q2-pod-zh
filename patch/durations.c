@@ -1,93 +1,73 @@
-/* Shared song durations. Only the UI owns the cache; a worker reads an immutable snapshot and
- * writes its own jobs. Results are published only after pthread_join. No TagLib or stat in a
- * duration lookup. See docs/internals.md, "Song durations". */
+/* Shared song durations, measured when Long Songs opens or, with Scan Song Durations on, after
+ * Update Local Music. The UI reads the library's paths and seeds each job from the cache; the
+ * worker measures, builds the next cache from its jobs and saves it; the UI swaps it in after the
+ * join. No TagLib or stat in a duration lookup. See docs/internals.md, "Song durations". */
 #include "navigation.h"
 
 #define DUR_FILE "/mnt/data/ringnav-durations-v1"
-#define DUR_MAX (16u * 1024u * 1024u)
+#define DUR_MAGIC "Q2DUR2\0" /* and its NUL: 8 bytes, then the records */
 #define DUR_SONGS 100000u
+#define DUR_MAX (8u + DUR_SONGS * sizeof(rec_t))
+#define DUR_PAGE 256      /* library rows a UI pass reads */
+#define DUR_QUIET_MS 1000 /* no page this soon after input, as ratings.c's copy */
+#define DUR_WAIT_MS 5000  /* a clean end's wait for the current file */
+typedef struct {
+    unsigned long long key; /* the path's FNV-1a 64 */
+    unsigned size, mtime, ns;
+    int sec; /* 0: tried, no length; -1 (a job's alone): unknown */
+} rec_t;
 typedef struct {
     char *path;
-    unsigned size, mtime, ns;
-    int sec; /* -1: unavailable, 0: tried but no duration */
-} duration_t;
+    rec_t r;
+} job_t;
 static struct {
-    duration_t *tab, *jobs;
-    unsigned n, total, read, writable, timer_at, gen, seen;
+    /* the cache as read (magic, then n records sorted by key); the worker's next */
+    char *blob, *out;
+    job_t *jobs;
+    void *db; /* while the library's paths are read, a page a UI pass */
+    unsigned n, out_n, total, cap, read, writable;
+    unsigned pass, whole; /* library_gen + 1 of the jobs' library; of the last complete pass */
+    int last;             /* the read's last songtable id */
     unsigned long thread;
-    int running, done, cancel, exited, mounted;
+    int running, done, cancel, exited, due; /* due: a scan ended, set on its thread */
 } ds __attribute__((section(".scratch")));
 
-static int duration_order(const void *a, const void *b) {
-    return strcmp(((const duration_t *)a)->path, ((const duration_t *)b)->path);
+static unsigned long long duration_key(const char *path) {
+    unsigned long long h = 0xcbf29ce484222325ull;
+    while (*path) h = (h ^ (unsigned char)*path++) * 0x100000001b3ull;
+    return h;
 }
-static void duration_free(duration_t *tab, unsigned n) {
-    for (unsigned i = 0; i < n; ++i) free(tab[i].path);
-    free(tab);
-}
-static duration_t *duration_find(const char *path) {
+static rec_t *duration_find(unsigned long long key) {
+    rec_t *tab = (rec_t *)(ds.blob + 8);
     unsigned lo = 0, hi = ds.n;
-    if (!path) return 0;
     while (lo < hi) {
         unsigned mid = lo + (hi - lo) / 2;
-        if (strcmp(ds.tab[mid].path, path) < 0)
+        if (tab[mid].key < key)
             lo = mid + 1;
         else
             hi = mid;
     }
-    return lo < ds.n && !strcmp(ds.tab[lo].path, path) ? ds.tab + lo : 0;
+    return lo < ds.n && tab[lo].key == key ? tab + lo : 0;
 }
 
-/* Disk: magic, then {path bytes incl NUL, size, mtime, ns, seconds}, path, repeated. Unaligned
- * words use memcpy. The old hash-only ringnav-lengths stays untouched: it cannot be validated. */
+/* The file is the table: magic, then records ascending by key. Anything else is no cache. The old
+ * hash-only ringnav-lengths stays untouched: it has no stat signature to check. */
 static void duration_read(void) {
-    if (ds.read || ds.running || ds.tab) return;
-    unsigned size = 0, at = 8, n = 0;
+    if (ds.read || ds.blob || ds.running) return; /* the worker reads n and writable */
+    unsigned size = 0;
     char *data = read_all(DUR_FILE, DUR_MAX, &size);
     ds.writable = data || file_size(DUR_FILE) <= 0;
     ds.read = ds.writable;
     if (!data) return;
-    if (size < 8 || memcmp(data, "Q2DUR1\0", 8)) goto out;
-    /* Validate the entire file before accepting any entry. */
-    while (at < size) {
-        unsigned h[5];
-        if (size - at < sizeof h || n == DUR_SONGS) goto out;
-        memcpy(h, data + at, sizeof h);
-        at += sizeof h;
-        if (h[0] < 2 || h[0] > 4096 || h[0] > size - at || data[at] != '/' || data[at + h[0] - 1] ||
-            strlen(data + at) != h[0] - 1 || h[4] > 0x7fffffffu)
-            goto out;
-        at += h[0];
-        ++n;
-    }
-    duration_t *tab = calloc(n + 1, sizeof *tab);
-    if (!tab) {
-        ds.read = ds.writable = 0;
-        goto out;
-    }
-    at = 8;
-    for (unsigned i = 0; i < n; ++i) {
-        unsigned h[5];
-        memcpy(h, data + at, sizeof h);
-        at += sizeof h;
-        tab[i] = (duration_t){ strdup(data + at), h[1], h[2], h[3], (int)h[4] };
-        if (!tab[i].path) {
-            duration_free(tab, i);
-            ds.read = ds.writable = 0;
-            goto out;
-        }
-        at += h[0];
-    }
-    qsort(tab, n, sizeof *tab, duration_order);
-    for (unsigned i = 1; i < n; ++i)
-        if (!strcmp(tab[i - 1].path, tab[i].path)) {
-            duration_free(tab, n);
-            goto out;
-        }
-    ds.tab = tab;
-    ds.n = n;
-out:
-    free(data);
+    rec_t *tab = (rec_t *)(data + 8);
+    unsigned n = size >= 8 ? (size - 8) / sizeof *tab : 0;
+    int ok = size >= 8 && !memcmp(data, DUR_MAGIC, 8) && (size - 8) % sizeof *tab == 0;
+    for (unsigned i = 0; ok && i < n; ++i)
+        ok = tab[i].sec >= 0 && (!i || tab[i - 1].key < tab[i].key);
+    if (ok)
+        ds.blob = data, ds.n = n;
+    else
+        free(data);
 }
 
 int duration_seconds(void *song) {
@@ -95,122 +75,149 @@ int duration_seconds(void *song) {
     int start = I(song, REC_CUE_START), end = I(song, REC_CUE_END);
     if (start < 0) start = 0;
     if (end > start) return end - start;
+    const char *path = P(song, REC_PATH);
+    if (!path) return -1;
     duration_read();
-    duration_t *entry = duration_find(P(song, REC_PATH));
-    return !entry || entry->sec < 0 ? -1 : entry->sec > start ? entry->sec - start : 0;
+    rec_t *entry = duration_find(duration_key(path));
+    /* ponytail: two paths sharing a 64-bit key (~1e-10 at 47k songs) share the first's length */
+    return !entry ? -1 : entry->sec > start ? entry->sec - start : 0;
 }
-/* No fabricated 0:00 for unknown or unreadable files. Hours are kept for long recordings. */
+/* Stock's 03:45, 01:02:05 from an hour, as Now Playing's (size: at least 9); empty, not 00:00, for
+ * an unknown or unreadable file. */
 const char *duration_text(char *text, unsigned size, void *song) {
     int sec = duration_seconds(song);
-    if (sec <= 0) {
-        if (size) text[0] = 0;
-        return text;
-    }
-    if (sec >= 3600)
-        tk_snprintf(text, size, "%d:%02d:%02d", sec / 3600, sec / 60 % 60, sec % 60);
-    else
-        tk_snprintf(text, size, "%d:%02d", sec / 60, sec % 60);
+    if (size) text[0] = 0;
+    if (sec > 0) toolsTimeItoa(text, sec);
     return text;
 }
 
+/* ponytail: a signature, not a checksum: a file replaced by one of the same size (mod 4 GiB) and
+ * mtime keeps the old length, and a filesystem's coarse mtime hides a quick rewrite. */
 static int duration_stat(const char *path, unsigned *stamp) {
-    unsigned info[36]; /* audited o32 stat: size 12, mtime 16, nanoseconds 17 */
-    if (__xstat(3, path, info) || (info[5] & 0170000) != 0100000) return 0;
-    stamp[0] = info[12], stamp[1] = info[16], stamp[2] = info[17];
+    unsigned sx[64]; /* struct statx: stx_mode's half at byte 28, stx_size 40, stx_mtime 112 */
+    if (ringnav_statx(-100, path, 0, 0x241 /* TYPE, MTIME, SIZE */, sx) ||
+        (sx[7] & 0170000) != 0100000)
+        return 0;
+    stamp[0] = sx[10], stamp[1] = sx[28], stamp[2] = sx[30];
     return 1;
 }
+/* job measured again when its file's signature isn't its seed's; 1 when that changed it. A file
+ * that can't be statted, or changes while TagLib reads it, keeps its seed for the next pass. */
+static int duration_probe(job_t *job) {
+    unsigned before[3], after[3];
+    if (!duration_stat(job->path, before) ||
+        (job->r.sec >= 0 && !memcmp(before, &job->r.size, sizeof before)))
+        return 0;
+    /* ponytail: an oversized Ogg header (ogg_tags) would cost TagLib ~4 times it; no length */
+    void *f = ogg_tags(job->path, 0) ? 0 : taglib_file_new(job->path, 1);
+    void *p = f ? taglib_file_audioproperties(f) : (void *)0;
+    int sec = p ? ((int (*)(void *))(*(void ***)p)[3])(p) : 0; /* AudioProperties::length() */
+    if (f) taglib_file_free(f);
+    if (!duration_stat(job->path, after) || memcmp(before, after, sizeof before)) return 0;
+    memcpy(&job->r.size, before, sizeof before);
+    job->r.sec = sec > 0 ? sec : 0;
+    return 1;
+}
+static int job_order(const void *a, const void *b) {
+    const job_t *x = a, *y = b;
+    return x->r.key != y->r.key ? (x->r.key > y->r.key) - (x->r.key < y->r.key)
+                                : strcmp(x->path, y->path);
+}
+/* The jobs are the library: the next cache is every one with a length, a job not reached keeping
+ * its seed, so a cancelled pass loses nothing and a complete one drops deleted songs. Saved here,
+ * off the UI thread, when it differs. */
 static void *duration_worker(void *unused) {
-    for (unsigned i = 0; i < ds.total && !__atomic_load_n(&ds.cancel, __ATOMIC_ACQUIRE); ++i) {
-        duration_t *job = ds.jobs + i, *old = duration_find(job->path);
-        unsigned before[3], after[3];
-        if (duration_stat(job->path, before)) {
-            if (old && !memcmp(before, &old->size, sizeof before))
-                job->sec = old->sec;
-            else {
-                /* As Long Songs did: don't hand TagLib an oversized Ogg header. */
-                void *f = ogg_tags(job->path, 0) ? 0 : taglib_file_new(job->path, 1);
-                void *p = f ? taglib_file_audioproperties(f) : (void *)0;
-                int sec = p ? ((int (*)(void *))(*(void ***)p)[3])(p) : 0;
-                if (f) taglib_file_free(f);
-                job->sec = sec > 0 ? sec : 0;
-            }
-            if (duration_stat(job->path, after) && !memcmp(before, after, sizeof before))
-                memcpy(&job->size, before, sizeof before);
-            else
-                job->sec = -1; /* changed during probe: try again at the next scan */
-        }
+    thread_lower(1);
+    job_t *jobs = ds.jobs;
+    unsigned total = ds.total, n = 0;
+    int changed = 0;
+    qsort(jobs, total, sizeof *jobs, job_order);
+    for (unsigned i = 0; i < total && !__atomic_load_n(&ds.cancel, __ATOMIC_ACQUIRE); ++i) {
+        if (i && !strcmp(jobs[i - 1].path, jobs[i].path))
+            jobs[i].r = jobs[i - 1].r; /* CUE tracks of one file: measured once */
+        else
+            changed |= duration_probe(jobs + i);
         __atomic_store_n(&ds.done, (int)i + 1, __ATOMIC_RELEASE);
+    }
+    char *out = calloc(8 + total * sizeof(rec_t), 1);
+    if (out) {
+        rec_t *tab = (rec_t *)(out + 8);
+        memcpy(out, DUR_MAGIC, 8);
+        for (unsigned i = 0; i < total; ++i)
+            if (jobs[i].r.sec >= 0 && (!n || tab[n - 1].key != jobs[i].r.key)) tab[n++] = jobs[i].r;
+        if ((changed || n != ds.n) && ds.writable &&
+            !blob_io(DUR_FILE, DUR_FILE ".tmp", out, 8 + n * sizeof *tab, 1))
+            unlink(DUR_FILE ".tmp");
+        ds.out = out, ds.out_n = n;
     }
     __atomic_store_n(&ds.exited, 1, __ATOMIC_RELEASE);
     return 0;
 }
 
-static void duration_save(void) {
-    unsigned size = 8;
-    if (!ds.writable || ds.n > DUR_SONGS) return;
-    for (unsigned i = 0; i < ds.n; ++i) {
-        unsigned len = strlen(ds.tab[i].path) + 1;
-        if (len + 20 > DUR_MAX - size) return;
-        size += 20 + len;
+static void duration_jobs_free(void) {
+    for (unsigned i = 0; i < ds.total; ++i) free(ds.jobs[i].path);
+    free(ds.jobs);
+    ds.jobs = 0;
+    ds.total = ds.cap = 0;
+}
+/* A job for path, seeded with what the cache has; 0 when there is no room. UI thread. */
+static int duration_job(const char *path) {
+    if (!path || path[0] != '/' || strlen(path) >= 4096) return 1;
+    if (ds.total == ds.cap) {
+        unsigned cap = ds.cap ? ds.cap * 2 : 1024;
+        job_t *grown = ds.total < DUR_SONGS ? realloc(ds.jobs, cap * sizeof(job_t)) : 0;
+        if (!grown) return 0;
+        ds.jobs = grown, ds.cap = cap;
     }
-    char *data = calloc(size, 1);
-    if (!data) return;
-    memcpy(data, "Q2DUR1\0", 8);
-    unsigned at = 8;
-    for (unsigned i = 0; i < ds.n; ++i) {
-        duration_t *t = ds.tab + i;
-        unsigned h[] = { strlen(t->path) + 1, t->size, t->mtime, t->ns, (unsigned)t->sec };
-        memcpy(data + at, h, sizeof h);
-        at += sizeof h;
-        memcpy(data + at, t->path, h[0]);
-        at += h[0];
-    }
-    if (!blob_io(DUR_FILE, DUR_FILE ".tmp", data, size, 1)) unlink(DUR_FILE ".tmp");
-    free(data);
+    job_t *job = ds.jobs + ds.total;
+    unsigned long long key = duration_key(path);
+    rec_t *old = duration_find(key);
+    job->r = old ? *old : (rec_t){ key, 0, 0, 0, -1 };
+    if (!(job->path = strdup(path))) return 0;
+    ++ds.total;
+    return 1;
 }
 
-/* Join only an exited worker in ordinary UI passes. All ownership transfers happen here. */
+/* Join only an exited worker in ordinary UI passes; its table replaces the cache here. */
 static void duration_finish(void) {
     if (!ds.running || !__atomic_load_n(&ds.exited, __ATOMIC_ACQUIRE)) return;
     pthread_join(ds.thread, 0);
-    unsigned done = (unsigned)ds.done, n = 0, a = 0, b = 0;
-    int changed = 0;
-    duration_t *tab = calloc(ds.n + done + 1, sizeof *tab);
-    if (tab) {
-        while (a < ds.n || b < done) {
-            int cmp = a == ds.n ? 1 : b == done ? -1 : duration_order(ds.tab + a, ds.jobs + b);
-            if (cmp < 0) {
-                if (done == ds.total)
-                    free(ds.tab[a++].path), changed = 1; /* deleted song */
-                else
-                    tab[n++] = ds.tab[a++];
-            } else {
-                if (cmp || ds.jobs[b].sec < 0 ||
-                    memcmp(&ds.tab[a].size, &ds.jobs[b].size, 4 * sizeof(unsigned)))
-                    changed = 1;
-                if (!cmp) free(ds.tab[a++].path);
-                if (ds.jobs[b].sec >= 0) tab[n++] = ds.jobs[b], ds.jobs[b].path = 0;
-                ++b;
-            }
-        }
-        free(ds.tab);
-        ds.tab = tab, ds.n = n;
-        if (changed) duration_save();
-    } else
-        ds.seen = 0; /* retry after an allocation failure */
-    duration_free(ds.jobs, ds.total);
-    ds.jobs = 0;
-    ds.running = ds.done = ds.total = ds.exited = ds.cancel = 0;
+    /* ponytail: published once a pass ends; a long first pass shows its lengths only then */
+    if (ds.out) free(ds.blob), ds.blob = ds.out, ds.n = ds.out_n, ds.out = 0;
+    ds.whole = ds.done == (int)ds.total ? ds.pass : 0;
+    duration_jobs_free();
+    ds.running = ds.done = ds.exited = ds.cancel = 0;
+}
+/* The jobs handed to a worker; 0 when there are none or it can't start. */
+static int duration_run(void) {
+    ds.done = ds.exited = ds.cancel = 0;
+    if (!ds.total || pthread_create(&ds.thread, 0, duration_worker, 0)) {
+        duration_jobs_free();
+        return 0;
+    }
+    ds.running = 1;
+    ds.pass = library_gen + 1;
+    return 1;
+}
+/* A read of the library's paths ended, its jobs dropped. */
+static void duration_drop(void) {
+    if (ds.db) sqlite3_close(ds.db);
+    ds.db = 0;
+    if (!ds.running) duration_jobs_free();
 }
 
 void durations_cancel(void) {
+    duration_drop();
+    __atomic_store_n(&ds.due, 0, __ATOMIC_RELEASE);
     __atomic_store_n(&ds.cancel, 1, __ATOMIC_RELEASE);
-    ds.seen = 1;
-    ds.gen = library_gen; /* Cancel stays cancelled until another update, remount or toggle. */
 }
+/* ponytail: a clean end and USB storage wait out the current TagLib call, up to DUR_WAIT_MS; one
+ * still running past it is left to the kill, its pass unsaved. */
 void durations_shutdown(void) {
     durations_cancel();
-    while (ds.running && !__atomic_load_n(&ds.exited, __ATOMIC_ACQUIRE)) usleep(10000);
+    for (int i = 0;
+         i < DUR_WAIT_MS / 10 && ds.running && !__atomic_load_n(&ds.exited, __ATOMIC_ACQUIRE); ++i)
+        usleep(10000);
     duration_finish();
 }
 int durations_busy(int *done, int *total) {
@@ -220,81 +227,82 @@ int durations_busy(int *done, int *total) {
     return ds.running;
 }
 
-/* The caller's deque never crosses the thread boundary. Duplicate CUE paths are probed once. */
+/* Long Songs' pass over songs, its own copy of the library, whatever the switch: none when a whole
+ * pass already ran over this library. The caller's deque never crosses the thread boundary; a
+ * running pass is the one asked for. */
 int durations_start(void *songs) {
     duration_finish();
-    if (ds.running || !st.scan_durations) return ds.running;
-    if (library_scanning() || navigator_window_is_exist("usbmode_page")) return 0;
+    if (ds.running) return 1;
+    if (ds.whole == library_gen + 1 || library_scanning() ||
+        navigator_window_is_exist("usbmode_page"))
+        return 0;
+    duration_drop(); /* an update's read: these records are the library too */
     duration_read();
-    unsigned size = deque_size(songs), n = 0;
-    if (size > DUR_SONGS) return 0;
-    duration_t *jobs = calloc(size + 1, sizeof *jobs);
-    if (!jobs) return 0;
-    for (unsigned i = 0; i < size; ++i) {
-        void *r = deque_at(songs, i);
-        const char *path = P(r, REC_PATH);
-        if (!path || path[0] != '/' || strlen(path) >= 4096) continue;
-        jobs[n].path = strdup(path);
-        if (!jobs[n].path) {
-            duration_free(jobs, n);
+    unsigned size = deque_size(songs);
+    for (unsigned i = 0; i < size; ++i)
+        if (!duration_job(P(deque_at(songs, i), REC_PATH))) {
+            duration_jobs_free();
             return 0;
         }
-        jobs[n++].sec = -1;
-    }
-    qsort(jobs, n, sizeof *jobs, duration_order);
-    unsigned k = 0;
-    for (unsigned i = 0; i < n; ++i) {
-        if (k && !strcmp(jobs[k - 1].path, jobs[i].path))
-            free(jobs[i].path);
-        else
-            jobs[k++] = jobs[i];
-    }
-    if (!k) {
-        free(jobs);
-        return 0;
-    }
-    ds.jobs = jobs, ds.total = k;
-    ds.done = ds.exited = ds.cancel = 0;
-    if (pthread_create(&ds.thread, 0, duration_worker, 0)) {
-        duration_free(jobs, k);
-        ds.jobs = 0;
-        ds.total = 0;
-        return 0;
-    }
-    ds.running = 1;
-    ds.gen = library_gen;
-    ds.seen = ds.mounted = 1;
-    return 1;
+    return duration_run();
 }
 
-/* Boot, remount and library changes trigger one incremental pass. Never query a changing DB or
- * read the card while USB storage owns it. A disabled switch cancels without blocking the UI. */
+/* Update Local Music's or a folder scan's end, on stock's scan thread: with the switch on, the UI's
+ * next pass reads the library's paths and measures them. Not inline here: the update's dialog,
+ * and the stop on playback it began with, would stay up for the whole pass. */
+void durations_scanned(void) {
+    if (st.scan_durations) __atomic_store_n(&ds.due, 1, __ATOMIC_RELEASE);
+}
+
+static int duration_row(void *ctx, int n, char **v, char **c) {
+    ds.last = atoi(v[0]);
+    ++*(int *)ctx;
+    return !duration_job(v[1]); /* nonzero: sqlite3_exec stops */
+}
+/* A page of the library's paths, then the worker. A scan rewriting the library ends the read, and
+ * its own end asks again; another change (a song deleted) reads again from the start. */
+static void duration_page(void) {
+    char sql[512];
+    if (library_scanning() || ds.pass != library_gen + 1) {
+        if (!library_scanning()) __atomic_store_n(&ds.due, 1, __ATOMIC_RELEASE);
+        duration_drop();
+        return;
+    }
+    if (time_now_ms() - st.last_input < DUR_QUIET_MS) return;
+    tk_snprintf(sql, sizeof sql, /* MUSIC_WHERE's like patterns hold '%': an argument */
+                "select id,fileurl from songtable where id>%d and %s order by id limit %d", ds.last,
+                MUSIC_WHERE, DUR_PAGE);
+    char *expanded = library_scope_query(sql);
+    int rows = 0, bad = !expanded || sqlite3_exec(ds.db, expanded, duration_row, &rows, 0);
+    free(expanded);
+    if (bad)
+        duration_drop();
+    else if (rows < DUR_PAGE) {
+        sqlite3_close(ds.db);
+        ds.db = 0;
+        duration_run();
+    }
+}
+
+/* Every UI pass: a finished pass joined, Standby held off while one runs, the card's hand-over or a
+ * scan stopping it, and an update's read paged or begun. */
 void durations_poll(void) {
     duration_finish();
-    if (!st.scan_durations) {
-        if (ds.running) durations_cancel();
-        ds.seen = 0;
+    if (ds.running) {
+        reset_poweroptions_timer(1, 1, 0); /* Standby unmounts the card */
+        if (library_scanning() || navigator_window_is_exist("usbmode_page")) durations_cancel();
         return;
     }
-    unsigned now = time_now_ms();
-    if (ds.timer_at && now - ds.timer_at < 1000) return;
-    ds.timer_at = now | !now;
-    int mounted = !navigator_window_is_exist("usbmode_page") && card_mounted();
-    if (!mounted || library_scanning()) {
-        if (ds.running) durations_cancel();
-        ds.seen = 0;
-        ds.mounted = mounted;
+    if (ds.db) {
+        duration_page();
         return;
     }
-    if (!ds.mounted) ds.seen = 0;
-    ds.mounted = 1;
-    unsigned gen = library_gen;
-    if ((gen & 1) || ds.running || (ds.seen && ds.gen == gen)) return;
-    int n = 0;
-    void *songs = staged(songs_unsorted, (void *)1, &n);
-    if (songs && gen == library_gen && !library_scanning()) {
-        int ok = durations_start(songs);
-        if (ok || !deque_size(songs)) ds.gen = gen, ds.seen = 1;
-    }
-    if (songs) deque_destroy(songs);
+    if (!__atomic_load_n(&ds.due, __ATOMIC_ACQUIRE) || library_scanning()) return;
+    __atomic_store_n(&ds.due, 0, __ATOMIC_RELEASE);
+    if (ds.whole == library_gen + 1) return; /* Long Songs measured this library meanwhile */
+    if (sqlite3_open("/mnt/data/database.db", &ds.db) ||
+        sqlite3_exec(ds.db, "PRAGMA cache_size=64;PRAGMA temp_store=FILE", 0, 0, 0))
+        duration_drop();
+    else
+        ds.last = 0, ds.pass = library_gen + 1, duration_read();
 }

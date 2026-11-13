@@ -1481,62 +1481,21 @@ A song has 0 to 5 hearts. Five is stock's My Fav (the `myfav` table, `checkFavEx
 
 ## Song durations
 
-`durations.c` owns one duration cache and one worker shared by Cover Flow and Long Songs.
-**Display → Cover Flow → Scan Song Durations** is saved as `[Q2POD] SCANDURATIONS=0|1`,
-default 0. Turning it on schedules a library snapshot on the next idle poll; boot, a card remount,
-and `library_gen` changes schedule further passes. A library scan or USB storage prevents a new
-snapshot and cancels an active pass cooperatively. Turning the switch off stops new work and
-requests cancellation; existing cached values and bounded CUE track durations remain readable.
+`durations.c` owns one duration cache and one worker, shared by Cover Flow's song lists and Long Songs. The database keeps no length, so each file's is measured through stock's TagLib on the worker: `taglib_file_new` and `AudioProperties::length()`, vtable slot 3, as libtag_c's `taglib_audioproperties_length` calls it. An Ogg file whose header is oversized (`ogg_tags`) gets no length: TagLib would cost about four times the header. A pass starts two ways. Long Songs starts one at each open, whatever the switch, unless a complete pass already ran at this `library_gen`. **Display → Cover Flow → Scan Song Durations** (`[Q2POD] SCANDURATIONS`, 0 by default) adds the other: `library_scan`, the hook every Update Local Music and Scan Folders runs through on stock's scan thread, ends by calling `durations_scanned`, which, with the switch on and the scan not stopped (`toolsGetUserStop`: Back, or `/mnt/data` full), marks a pass due. Nothing else starts one: not the switch, not boot, not a remount. Turning the switch off cancels a running pass (`pod_click`).
 
-Only the UI thread queries the library and publishes the cache. It copies and sorts full paths
-before starting the worker and deduplicates CUE paths. The worker touches no widgets or database.
-Each file is statted on the worker (audited o32 `__xstat(3)`: size word 12, mtime 16, nanoseconds 17).
-Unchanged signatures reuse the old seconds, including 0 for an unmeasurable file. A changed or new
-file is parsed through the existing TagLib entry points and `AudioProperties::length()` vtable
-slot 3; oversized Ogg headers retain Long Songs' `ogg_tags` guard. A second stat rejects results
-if the file changed during probing. A failed stat stays unknown, allowing a later pass to retry.
-As with any stat signature, a replacement preserving both size and mtime cannot be detected;
-the filesystem's timestamp precision applies. Files the stock o32 stat cannot represent remain
-unknown. Arbitrary edits are checked after Update Local Music, not watched continuously.
+The pass doesn't run inline on the scan thread: `wait_scan` sets the done flag only when the hook returns, so Update Local Music's modal dialog, and the playback its init stopped, would stay up for the whole pass with nothing on it moving, minutes on a large library. So the UI's `durations_poll`, once `library_scanning()` is clear, opens its own connection with Era's pragmas (`cache_size=64`, `temp_store=FILE`) and reads `select id,fileurl from songtable where … MUSIC_WHERE … order by id limit 256` a page per UI pass, as `ratings_copy_poll` does: during input quiet (1 s), ended by a scan starting and read again from the start after another `library_gen` change (a song deleted). Only paths are read, strdup'd into the jobs, never a whole-library `staged()` copy. Each job is seeded from the cache on the UI thread (`duration_find`), then the worker starts, lowered as the cover loader is (`thread_lower(1)`: nice 19, idle I/O). Long Songs hands its own records instead, so its pass takes over a read in progress.
 
-The worker's cancel, progress and exit flags use atomic acquire/release operations. Ordinary UI
-polls join only an exited worker, then merge its completed prefix. A complete pass also removes
-paths no longer in the snapshot. Cancelling preserves entries not visited yet and does not
-restart the pass until the next library change, mount, switch cycle or explicit Long Songs open.
-Clean shutdown cancels, waits for the current file to return, then saves the completed prefix.
-This cannot interrupt a TagLib call already running. Closing Long Songs closes its UI only:
-another screen may still need the shared scan. Allocation/thread failures release their jobs;
-an automatic start failure is retried on the next poll.
+The worker sorts the jobs by key and statx's each file (`ringnav_statx`: 64-bit size, mtime with nanoseconds). A job whose signature matches its seed keeps the seed, statted once; a new or changed file is measured, then statted again, and kept only if it didn't change meanwhile. A file that can't be statted, or changed during the read, keeps its seed, so a card gone under the worker (pulled, or a hand-over missed) changes nothing. CUE tracks of one file share one measure. The worker then builds the next cache from its jobs, every one with a length (0: TagLib couldn't read it), so a cancelled pass loses nothing and a complete one drops songs no longer in the library, and saves it there, off the UI thread, only when it differs: a changed record, or a different count. The UI joins an exited worker in its next pass and swaps the table in; that is the only publish. ponytail: lengths show only when a pass ends, so a large library's first pass shows nothing new for as long as it runs; an open song list is a snapshot until reopened.
 
-`/mnt/data/ringnav-durations-v1` stores the 8-byte magic `Q2DUR1\0\0`, followed by records of five
-little-endian 32-bit words (NUL-terminated path byte count, size, mtime seconds, mtime nanoseconds,
-duration seconds) and the path bytes. Exact paths avoid the old cache's hash collisions.
-Reads are capped at 16 MiB, 100,000 entries and 4096 bytes per path; malformed, truncated and
-duplicate records reject the entire file. The old hash-only `ringnav-lengths` is left untouched
-and is not trusted as a source for the new service. A fresh scan is required after upgrading.
-Saves use `blob_io`'s temporary file, fsync and rename. Unchanged scans do not rewrite flash;
-an existing cache that could not be read is never overwritten in that session. A failed save
-leaves the previous disk cache intact and the new results available in RAM.
+While a pass runs, `durations_poll` calls `reset_poweroptions_timer(1, 1, 0)`, as playlist art does, so Standby's `umount /mnt/mmc` never meets an open file; the screen still sleeps. `ringnav_usbmode` stops it (`durations_shutdown`) before stock's USB storage page unmounts the card, and the poll cancels one while the USB page shows or a scan runs. ponytail: `durations_shutdown`, there and at a clean end (`ringnav_clean_end`), waits for the current TagLib call up to 5 s; one still running past it is left to the kill, its pass unsaved. Cancelling is cooperative: Long Songs' Cancel, the switch, USB storage and a clean end set a flag the worker reads before each file.
 
-`duration_seconds` and `duration_text` are UI-thread cache lookups, with no stat or TagLib call.
-A CUE track with both ends uses `end - start`; the last track uses the cached file duration less
-its start, clamped to zero. Unknown or unmeasurable durations have no time label. Cover Flow's
-Classic turned panel reserves a right column only when a duration exists (`m:ss`, or `h:mm:ss`),
-and other themes show it as the track's detail. An already open track panel is a snapshot:
-reopen it after a scan completes to see newly cached values.
+`/mnt/data/ringnav-durations-v1` is the table itself: the 8-byte magic `Q2DUR2\0\0`, then 24-byte records `{FNV-1a 64 of the path, size, mtime, mtime nanoseconds, seconds}`, little-endian, ascending by key. A file of another magic or size, keys out of order or repeated, or a negative length is no cache; up to 100,000 records are read. #347's first format (`Q2DUR1`) and Long Songs' old hash-only `ringnav-lengths` aren't read, so Long Songs measures every song once more after the update. Saves use `blob_io`'s temporary file, fsync and rename; a cache that exists but couldn't be read is never written over in that session, and a failed save keeps the new lengths in memory. ponytail: two paths sharing a 64-bit key (about 1e-10 across 47,000) share the first's length; the signature is size (mod 4 GiB) and mtime, so a file replaced by one of the same size and mtime keeps the old length, and the filesystem's mtime precision applies.
+
+`duration_seconds` and `duration_text` are UI-thread cache lookups, no stat or TagLib. A CUE track with both ends is `end - start`; the last track is the file's length less its start, at least 0. `duration_text` is stock's `toolsTimeItoa` (`03:45`, `01:02:05` from an hour, as Now Playing), empty for an unknown or unreadable length. Classic's turned panel narrows a title for a length right of it, 66 px wide (88 from an hour); Minimal's and Modern's track list gives every row the 64-pixel detail height once any track has a length, the unknown ones' detail empty, since stock's layouter forces one `item_height` on every row.
 
 ## Long Songs
 
-Long Songs uses the shared service above, retaining the longest-first list of tracks over
-`LONG_SONG_S` (600 seconds), artist and length details, and the same library queue/hold actions.
-With scanning on, opening it observes the current shared worker or starts a fresh incremental
-pass, and shows progress over a Cancel row on a 250 ms timer. With scanning off it lists only
-known durations. Cancellation becomes visible once the current file's probe returns; its poll
-then joins and lists the completed results. It has no private TagLib worker or duration cache.
-
-Regression checks: `python3 test/durations.py` (portable host),
-`python3 -m pytest test/fw/test_durations.py test/fw/test_nav_library_pages.py`, and the
-Cover Flow / MIPS suites in [Building](building.md#tests).
+Long Songs lists the library's tracks over `LONG_SONG_S` (600 seconds), longest first, with artist and length, and the same queue and hold actions as other library lists. Each open runs the shared pass above over its own `staged()` copy of the library, whatever Scan Song Durations is, unless a complete pass already covered this `library_gen`, and shows "Measuring songs… n/N" over a Cancel row on a 250 ms timer. A running pass, Long Songs' own or an update's, is observed, never doubled. Closing the page closes its UI only: the pass goes on. Cancel shows once the current file's read returns; the poll then joins and lists what is known.
 
 ## Scrobbling
 

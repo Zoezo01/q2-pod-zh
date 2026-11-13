@@ -173,7 +173,6 @@ int album_art(const char *track, const char *dst, int shared);
 void art_note(const char *note, unsigned key, const char *track);
 void art_strike(const char *note);
 int ff_wait(int pid, const char *tmp, const char *dst, int *exited);
-int thread_lower(int idle); /* coverflow_loader.c */
 int ff_thumb(const char *src, const char *dst, int w, int h);
 char *art_path(char *out, unsigned key, const char *suffix);
 int cf_decode(const char *url, unsigned *out, int unload);

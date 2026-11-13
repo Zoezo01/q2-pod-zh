@@ -129,8 +129,9 @@ TEST = r"""
 int coverflow_home(void *, void *), coverflow_player_cover(const char *, const char *, int, int);
 const char *track_name(char *, unsigned, void *);
 
-/* Cache boundary: the duration service has its own test/durations.py and test/fw tests. */
+/* Cache boundary: the duration service has its own tests, test/fw/test_durations.py. */
 int duration_seconds(void *song) { return -1; }
+void durations_scanned(void) {}
 const char *duration_text(char *text, unsigned size, void *song) {
     if (size) text[0] = 0;
     return text;

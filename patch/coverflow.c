@@ -62,6 +62,8 @@ static int library_scan(int (*stock)(void *, void *), void *a, void *b, int drop
                        "create index if not exists songtable_album on songtable(album collate nocase);"
                        "create index if not exists songtable_filename on songtable(filename);"
                        "create index if not exists songtable_time_create on songtable(time_create desc)");
+    /* Scan Song Durations' pass after a whole scan: a stopped one leaves part of the library */
+    if (!toolsGetUserStop()) durations_scanned();
     return result;
 }
 int coverflow_scan_all(void *a, void *b) { return library_scan(stock_scan_all_trampoline, a, b, 1); }
@@ -74,7 +76,6 @@ int coverflow_scan_all(void *a, void *b) { return library_scan(stock_scan_all_tr
  * before. */
 #ifndef PEQ_HOST
 __asm__(".globl ringnav_statx\nringnav_statx:\nli $v0, 4366\nsyscall\njr $ra\nnop\n");
-extern int ringnav_statx(int dirfd, const char *path, int flags, unsigned mask, void *buf);
 int ringnav_file_created(const char *path) {
     unsigned sx[64]; /* struct statx: stx_mask first, stx_btime.tv_sec at byte 80 */
     if (ringnav_statx(-100, path, 0, 0x800, sx) == 0 && (sx[0] & 0x800) && sx[20])
@@ -3239,13 +3240,13 @@ static int flip_open(void *r, int n) {
         widget_use_style(item, "s_listitem_black");
         char duration[24];
         duration_text(duration, sizeof duration, t);
-        int time_w = duration_seconds(t) >= 3600 ? 88 : 66;
+        int time_w = strlen(duration) > 5 ? 88 : 66; /* h:mm:ss */
         panel_label(item, 12, 0, *duration ? 260 - time_w : 270, pl ? 26 : row,
                     track_name(name, sizeof name, t), 25, 1);
         if (*duration) {
             void *label = panel_label(item, BACK_W - 12 - time_w, 0, time_w, pl ? 26 : row,
                                      duration, 20, 0);
-            widget_set_prop_int(label, "style:normal:text_align_h", 3); /* ALIGN_H_RIGHT */
+            widget_set_prop_str(label, "style:normal:text_align_h", "right");
             widget_set_prop_int(label, "style:normal:text_color", (int)PANEL_MUTED);
         }
         if (pl) {
@@ -3340,7 +3341,13 @@ static int to_tracks(const void *unused) {
         widget_set_visible(cf.covers, 0, 0);
         widget_set_sensitive(cf.covers, 0);
     }
-    void *view = list(P(r, cf.scoped == PLAYLISTS ? REC_TITLE : REC_ALBUM), n);
+    /* one row height a list, as stock's layouter forces item_height on every row: 64 px with a
+     * length's line under each title once any track has one, an unknown's left empty */
+    int timed = 0;
+    for (int i = 0; i < n && !timed; ++i)
+        timed = duration_seconds(deque_at(cf.tracks, (unsigned)i)) > 0;
+    const char *title = P(r, cf.scoped == PLAYLISTS ? REC_TITLE : REC_ALBUM);
+    void *view = timed ? page_list(cf.page, cf.body, &cf.title, title, n, 64) : list(title, n);
     /* the album over its tracks, all centred, but under a theme's own rows */
     int centred = theme()->page_title_h;
     if (centred) widget_set_prop_int(cf.title, "style:normal:font_size", cfs.name_px);
@@ -3348,8 +3355,8 @@ static int to_tracks(const void *unused) {
         char duration[24];
         void *song = deque_at(cf.tracks, (unsigned)i);
         duration_text(duration, sizeof duration, song);
-        void *row = page_row_detail(
-            view, i, track_name(name, sizeof name, song), *duration ? duration : 0, play);
+        void *row = page_row_detail(view, i, track_name(name, sizeof name, song),
+                                    timed ? duration : 0, play);
         if (centred) widget_use_style(widget_get_child(row, 0), "s_scrlabel_white20c");
     }
     page_push(view, cf.text_albums && cf.scoped == ARTIST_ALBUMS); /* from a list, not the covers */

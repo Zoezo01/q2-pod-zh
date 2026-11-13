@@ -588,7 +588,7 @@ int era_menu(void *ctx, void *event) {
 }
 
 /* Long Songs shares durations.c's cache and worker with Cover Flow. Closing the page drops
- * only its UI: a scan enabled in settings belongs to the shared service. */
+ * only its UI: the pass goes on, and Cover Flow shows what it measures. */
 typedef struct {
     unsigned key, sec;
 } length_t;
@@ -663,12 +663,12 @@ static int ls_poll(const void *unused) {
     return 8; /* RET_REPEAT */
 }
 
-/* Scan is opt-in. A shared in-flight pass is observed, never duplicated. */
+/* Long Songs' row: every song measured first, whatever Scan Song Durations is, unless a whole pass
+ * already covered this library; a pass running is observed, never duplicated. */
 int long_songs(void *ctx, void *event) {
     if (st.rt_page || !(st.rt_page = page_open("longsongs_page", ls_page_closed, page_keyup)))
         return 0;
     int n;
-    pod_settings();
     ls.songs = staged(songs_unsorted, (void *)1, &n);
     if (durations_start(ls.songs)) {
         page_row_detail(

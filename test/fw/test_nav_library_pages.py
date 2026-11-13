@@ -5,6 +5,7 @@ builds and the payload rearranges, Folder view's hooks, the queue menu's tracks 
 (playlists.c)."""
 import ctypes as C
 import re
+import sqlite3
 import struct
 
 import pytest
@@ -642,22 +643,21 @@ class Probe:
     def __init__(self, fw, seconds):
         self.fw, self.seconds, self.opened, self.threads = fw, dict(seconds), [], []
         self.keep, self.files, self.stamps = [], {}, {}
-        if seconds:
-            Config(fw, SCANDURATIONS=b'1')
-        fw.mock('fw___xstat', self.stat)
+        fw.mock('ringnav_statx', self.stat)
         self.length = C.CFUNCTYPE(C.c_int, C.c_void_p)(lambda p: self.seconds[self.files[p]])
         fw.mock('taglib_file_new', self.open)
         fw.mock('taglib_file_audioproperties', lambda f, *_: f)
         fw.mock('fw_pthread_create', lambda t, attr, fn, arg, *_: self.threads.append(fn) or 0)
 
-    def stat(self, version, path, out, *_):
+    def stat(self, dirfd, path, flags, mask, out, *_):
+        """statx: a regular file of stamps[path] (size, mtime, nanoseconds), or none for None."""
         path = C.string_at(path)
         stamp = self.stamps.get(path, (1000, 2000, 0))
         if stamp is None:
-            return -1
-        info = (C.c_uint * 36).from_address(out)
-        info[5] = 0o100644
-        info[12], info[16], info[17] = stamp
+            return 2  # ENOENT, as the raw syscall returns it
+        sx = (C.c_uint * 64).from_address(out)
+        sx[7] = 0o100644  # stx_mode, byte 28
+        sx[10], sx[28], sx[30] = stamp  # stx_size, stx_mtime's seconds and nanoseconds
         return 0
 
     def open(self, path, kind, *_):
@@ -675,10 +675,17 @@ class Probe:
         C.CFUNCTYPE(C.c_void_p, C.c_void_p)(self.threads[-1])(None)
 
 
-def lengths(*pairs):
-    """Versioned, exact-path cache, with the Probe's default stat signature."""
-    return b'Q2DUR1\0\0' + b''.join(struct.pack('<5I', len(p) + 1, 1000, 2000, 0, sec) + p + b'\0'
-                                       for p, sec in sorted(pairs))
+def path_key(path):
+    """durations.c's key: the path's FNV-1a 64."""
+    h = 0xcbf29ce484222325
+    for c in path:
+        h = (h ^ c) * 0x100000001b3 & (1 << 64) - 1
+    return h
+
+
+def lengths(*pairs, stamp=(1000, 2000, 0)):
+    """The duration cache: its magic, then (key, size, mtime, ns, seconds) by key, at the Probe's default stamp."""
+    return b'Q2DUR2\0\0' + b''.join(struct.pack('<Q3Ii', k, *stamp, s) for k, s in sorted((path_key(p), s) for p, s in pairs))
 
 
 @pytest.fixture
@@ -687,15 +694,35 @@ def clock_text(fw):
     fw.mock('toolsTimeItoa', lambda out, sec, *_: C.memmove(out, b'%d:%02d\0' % (sec // 60, sec % 60), 8) and 0)
 
 
-def test_long_songs_lists_those_over_ten_minutes_longest_first(fw, ui, song, clock_text):
+def update_pass(fw, tmp_path, probe, paths):
+    """Scan Song Durations on, Update Local Music's pass: a songtable of paths read, measured and joined."""
+    import test_playlist_art  # its real SQLite; imported here, as it imports this file
+    db = sqlite3.connect(tmp_path/'database.db')
+    db.execute('create table songtable(id integer primary key, fileurl text)')
+    db.executemany('insert into songtable(fileurl) values (?)', [(p.decode(),) for p in paths])
+    db.commit()
+    test_playlist_art.real_sqlite(fw, tmp_path/'database.db')
+    Config(fw, SCANDURATIONS=b'1')
+    fw.fn('pod_settings', None)()
+    fw.mock('time_now_ms', lambda *_: 5000)
+    fw.fn('durations_scanned', None)()  # the update's end
+    poll = fw.fn('durations_poll', None)
+    poll()  # the read opens
+    poll()  # its one page, then the worker
+    probe.run()
+    poll()  # joined
+
+
+def test_long_songs_lists_those_over_ten_minutes_longest_first(fw, ui, song, clock_text, tmp_path):
     a, b, c = song(b'/m/a.flac', b'A', b'X'), song(b'/m/b.flac', b'B'), song(b'/m/c.flac', b'C', b'Z')
     Library(fw, ui, [a, b, c])
     Files(fw, {LENGTHS: lengths((b'/m/a.flac', 700), (b'/m/b.flac', 1200), (b'/m/c.flac', LONG_SONG_S))})
     probe = Probe(fw, {})
+    update_pass(fw, tmp_path, probe, [b'/m/a.flac', b'/m/b.flac', b'/m/c.flac'])
     call(fw, 'long_songs')
     page = ui.top()
     assert ui.name[page] == 'longsongs_page' and ui.rows(page) == [('B', '20:00'), ('A', f'X {DOT} 11:40')]
-    assert not probe.threads  # every length known
+    assert len(probe.threads) == 1 and not probe.opened  # every length known: the update's pass alone
     ui.click(page, 1)
     assert ui.played == [([b, a], 1, LIBRARY)]
 
@@ -703,7 +730,10 @@ def test_long_songs_lists_those_over_ten_minutes_longest_first(fw, ui, song, clo
 def test_long_songs_with_none_says_so(fw, ui, song):
     Library(fw, ui, [song(b'/m/a.flac', b'A')])
     Files(fw, {LENGTHS: lengths((b'/m/a.flac', 60))})
+    probe = Probe(fw, {})
     call(fw, 'long_songs')
+    probe.run()
+    ui.fire('ls_poll')
     assert ui.rows(ui.top()) == [('No songs over 10 minutes', None)]
     call(fw, 'long_songs')  # pressed again while it is open
     assert len(ui.windows) == 1
@@ -750,10 +780,8 @@ def test_long_songs_closed_while_measuring_keeps_what_was_measured(fw, ui, song,
     ui.close(ui.top())
     assert not ui.pending('ls_poll') and files.files[LENGTHS] == lengths((b'/m/a.flac', 700), (b'/m/b.flac', 800))
     measured = len(probe.opened)
-    call(fw, 'long_songs')  # opened again: stat validates, TagLib is not needed
-    probe.run()
-    ui.fire('ls_poll')
-    assert len(probe.opened) == measured and len(probe.threads) == 2 and ui.captions(ui.top()) == ['B', 'A']
+    call(fw, 'long_songs')  # opened again: nothing left to measure
+    assert len(probe.opened) == measured and len(probe.threads) == 1 and ui.captions(ui.top()) == ['B', 'A']
 
 
 def test_a_lengths_file_that_cannot_be_read_is_not_written_over(fw, ui, song, clock_text):
@@ -793,7 +821,7 @@ def test_a_file_two_cue_tracks_run_to_the_end_of_is_kept_once(fw, ui, song, cloc
     files = Files(fw)
     probe = Probe(fw, {b'/m/book.flac': 1500})
     call(fw, 'long_songs')
-    assert ui.fire('ls_poll') == REPEAT and 'Measuring songs… 0/1' in ui.shown(ui.top())  # one job per unique file
+    assert ui.fire('ls_poll') == REPEAT and 'Measuring songs… 0/2' in ui.shown(ui.top())  # one job per track
     probe.run()
     ui.fire('ls_poll')
     assert ui.rows(ui.top()) == [('Early', '20:00'), ('Late', '11:40')]  # 1200 s and 700 s, longest first
