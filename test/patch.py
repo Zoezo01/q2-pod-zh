@@ -1223,7 +1223,7 @@ def battery_checks():
         paint(); paint(w['view_battery']); paint(); before=lcd(); bands,letters=slot()
         pct=10*len(str(value))+10
         assert b.get(w['view_battery']+O['W_W'])==pct and not bands
-        assert [(l['text'],l['rect'],l['color']) for l in letters]==[(f'{value}%',(0,0,pct,30),color_t(rgb))]
+        assert [(l['text'],l['rect'],l['color']) for l in letters]==[(f'{value}%',(0,-1,pct,30),color_t(rgb))]
 
     # Percent Inside: compact rounded body and dark digits, including 100, in every state.
     for theme in (0,2):
@@ -1234,7 +1234,7 @@ def battery_checks():
                 b.nodes[w['img_battery']]['image']=image
                 b.nodes[w['label_battery']]['text']=f'{value}%'
                 paint(); before=lcd(); bands,letters=slot()
-                bw,bh,nh=O['BATT_INSIDE_W'],O['BATT_INSIDE_H'],O['BATT_NUB_H']; y=(30+1-bh)//2
+                bw,bh,nh=O['BATT_INSIDE_W'],O['BATT_INSIDE_H'],O['BATT_NUB_H']; y=(30+1-bh)//2-1
                 assert b.get(w['view_battery']+O['W_W'])==bw+O['BATT_NUB_W']
                 assert [x[:5] for x in bands]==[(bw,y+(bh-nh)//2,O['BATT_NUB_W'],nh,color_t(rgb))]
                 assert [(r['kind'],r['rect'],r['color'],r['radius']) for r in b.rounded]==[('fill',(0,y,bw,bh),color_t(rgb),3)]
