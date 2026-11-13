@@ -1,5 +1,8 @@
 # Changelog
 
+- **1.8.2**:
+  - Playback: with **Headphones Required** on, the Q2 restores your queue at start-up again, paused, as **Memory Playback** has it. Since 1.8.0 nothing was restored with the switch on, even with headphones connected. **In-Vehicle Mode** still starts playing, or restores the queue paused when nothing is connected.
+  - Settings: the **Language** row is hidden until the other languages are translated. Q2 Pod's own pages are in English only, so every other language read half-blank.
 - **1.8.1**:
   - AirPlay: play what the Q2 plays on an AirPlay speaker, Sonos and HomePod included. Install **AirPlay** from System settings → App Store, then pick **AirPlay** at the top of Now Playing's ⋯ page and choose a speaker. The Q2 goes quiet and the speaker plays the same music about a second behind; pause, skip and seek follow, the wheel sets the speaker's volume (kept apart, so your earphones' level comes back afterwards), and the lyrics follow the speaker. The EQ is left out, as it's for your earphones. Pick **This Q2** to play on the Q2 again. Local music and Tidal only; DSD plays on the Q2. Thanks to group-a-study for the app.
   - Cover Flow: the covers stand and move as an iPod's do, in every theme, after spghetti's Cover Flow Parameter Lab ([#329](https://github.com/DiamondBond/q2-pod/issues/329)). Side covers are edge-on and closer together. Turn the wheel fast and the covers bend into an arch: the ones near the middle drop back and lean in gradually instead of one cover facing you between two walls, and they open out again as you slow down. Minimal and Modern keep their dimmed side covers and rounded corners. With **Fast Navigation** on, a fast turn still forms its narrower row.

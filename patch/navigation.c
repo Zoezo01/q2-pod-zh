@@ -7512,12 +7512,14 @@ int ipod_list_layout(void *layout, void *view) {
 
 /* Replaces home_page_init's boot resume, navigator_to_with_context("playing_page", ctx) with ctx
  * {queue, index, class, mode}. Car mode (mode 2, plays) keeps that call; otherwise this is the
- * paused start playing_page_init would make, without the page. */
+ * paused start playing_page_init would make, without the page. Headphones Required no longer skips
+ * the resume (ipod.py nops stock's test): a paused queue plays nothing, and car mode's start is
+ * asked here, as the page would (it would refuse and restore nothing), and comes back paused. */
 void ringnav_boot(const char *page, const int *ctx) {
-    if (ctx[3] == 2)
+    if (ctx[3] == 2 && !check_forbid_play_no_headset(0))
         navigator_to_with_context(page, ctx);
     else if (ctx[2] != 0xff)
-        player_start((void *)ctx[0], ctx[1], ctx[2], ctx[3]);
+        player_start((void *)ctx[0], ctx[1], ctx[2], 3);
 }
 
 /* Called by stock long Return and short Return on Home, after their gates.

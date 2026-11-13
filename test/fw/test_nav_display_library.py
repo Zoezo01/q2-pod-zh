@@ -2069,12 +2069,14 @@ def test_hold_return_does_nothing_dark_or_while_windows_move(fw, st, stand_in):
     assert hold() == ['home_page', 'localmusic_page'] and hold.opened == []
 
 
-@pytest.mark.parametrize('ctx, page, start', [
-    ((0x51000, 3, 0xf001, 2), 1, None),  # car mode plays: stock's page
-    ((0x51000, 3, 0xf001, 0), 0, (0x51000, 3, 0xf001, 0)),  # otherwise the paused start, without the page
-    ((0x51000, 3, 0xff, 0), 0, None)])  # no class: nothing to resume
-def test_the_boot_resume_starts_paused_without_opening_now_playing(fw, ctx, page, start):
+@pytest.mark.parametrize('ctx, forbidden, page, start', [
+    ((0x51000, 3, 0xf001, 2), 0, 1, None),  # car mode plays: stock's page
+    ((0x51000, 3, 0xf001, 2), 1, 0, (0x51000, 3, 0xf001, 3)),  # Headphones Required refuses it: paused, as below
+    ((0x51000, 3, 0xf001, 3), 1, 0, (0x51000, 3, 0xf001, 3)),  # otherwise the paused start, without the page, unasked
+    ((0x51000, 3, 0xff, 3), 0, 0, None)])  # no class: nothing to resume
+def test_the_boot_resume_starts_paused_without_opening_now_playing(fw, ctx, forbidden, page, start):
     context = (C.c_int * 4)(*ctx)
+    fw.mock('check_forbid_play_no_headset', lambda *_: forbidden)
     fw.fn('ringnav_boot', None, C.c_char_p, C.c_void_p)(b'playing_page', context)
     assert len(fw.calls('navigator_to_with_context')) == page
     assert [a[:4] for _, a in fw.calls('player_start')] == ([start] if start else [])

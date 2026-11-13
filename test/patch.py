@@ -5180,6 +5180,10 @@ for car,cls,want in ((0,1,[(0x5550,4,1,3)]),(0,0xff,[]),(1,0xf003,[])):
     m=Machine(); m.word(syms['g_memory_info'],cls); m.byte(syms['g_carmode'],car)
     m.u.reg_write(UC_MIPS_REG_GP,0xa3aae0); m.u.reg_write(UC_MIPS_REG_SP,0x7000f000)
     m.u.reg_write(UC_MIPS_REG_S0,0x5550); m.u.reg_write(UC_MIPS_REG_S1,4)
+    # Headphones Required on: stock's test ahead of the resume (0x534c44) skipped it, whatever was connected; it
+    # falls through to Memory Playback's own test now (0x534c54), and the context's build runs as with it off.
+    m.byte(syms['g_block_withoutphone_flag'],1); m.u.emu_start(0x534c44,0x534c58,count=10)
+    assert 0x534c50<=m.u.reg_read(UC_MIPS_REG_PC)<0x534c5c  # not 0x534d40, past the resume
     m.u.emu_start(0x534cc4,0x534d00,count=1000)
     nav=[c for c in m.calls if c[0]=='navigator_to_with_context']
     assert m.started==want

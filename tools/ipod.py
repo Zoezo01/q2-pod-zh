@@ -1354,4 +1354,6 @@ def patch_code(data, symbols):
     # home_page_init's memory-play resume opens Now Playing; outside car mode it runs the page's player_start alone.
     word(0x534cf8, 0x0320f809, jal(symbols['ringnav_boot']),
          'boot resume restores the queue paused and stays on Home')
+    # Stock skips that resume with Headphones Required on (bnez g_block_withoutphone_flag), whatever is connected.
+    word(0x534c4c, 0x1440003c, 0, 'boot resume with Headphones Required on')
     return changes
