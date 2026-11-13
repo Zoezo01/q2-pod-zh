@@ -53,9 +53,11 @@ class Tap:
         fw.mock('mclGetOutputWay', lambda *_: self.way)
         self.volume, self.limit = fw.var('g_volume', C.c_ubyte), fw.var('g_maxvolume', C.c_ubyte)
         self.volume.value, self.limit.value = 60, 80
+        self.save = fw.fn('ringnav_write_config', C.c_int, C.c_int, C.c_void_p, C.c_void_p)  # stock's write_int_config, hooked
+        fw.mock('write_int_config', lambda v, s, k, *_: self.save(C.c_int(v).value, s, k))  # as tools/build.py routes it
 
     def open(self, path, flags, *_):
-        self.opens += 1
+        self.opens += C.string_at(path) == TAP
         return 9 if self.there and (C.string_at(path), flags & 3) == (TAP, 2) else -1  # O_RDWR
 
     def mmap(self, at, size, prot, flags, *_):
@@ -73,8 +75,8 @@ class Tap:
         self.fw.fn('airplay_poll', None)()
 
     def saved(self):
-        """What write_int_config was given: (value, section, key)."""
-        return [(a[0], C.string_at(a[1]), C.string_at(a[2])) for _, a in self.fw.calls('write_int_config')]
+        """What reached config.ini through the hook: (value, section, key)."""
+        return [(a[0], C.string_at(a[1]), C.string_at(a[2])) for _, a in self.fw.calls('stock_write_config_trampoline')]
 
     def set(self):
         """The level device_set_volume gave the output."""
@@ -109,6 +111,7 @@ def test_a_file_of_another_layout_is_left_alone(fw, other):
     tap.app(state=CAST_ON, spk=20)
     tap.poll(), tap.poll()
     assert not fw.calls('fw_mmap') and tap.t.beat == 0 and tap.volume.value == 60
+    assert len(fw.calls('fw_close')) == tap.opens  # each refused open closed: it is retried every second
 
 
 def test_each_pass_tells_the_app_the_player_s_state_and_no_volume_without_a_speaker(fw):
@@ -123,9 +126,10 @@ def test_the_app_running_puts_the_filter_in_the_chain_with_the_eq_off_once_somet
     tap, chained = Tap(fw), fw.var('peq_chained', C.c_int)
     tap.poll()  # the app idle: no speaker asked for
     tap.status = STOPPED
-    tap.app(state=CAST_CONNECTING)
+    tap.app(state=CAST_CONNECTING, spk=45)
     tap.poll()  # nothing plays: an attach might not stick (crossfade.c peq_chain)
     assert chained.value == 0
+    assert tap.volume.value == 60 and not tap.saved()  # no speaker plays yet: the earphones' level stays
     tap.status = PLAYING
     tap.poll()
     assert chained.value == 1
@@ -133,7 +137,8 @@ def test_the_app_running_puts_the_filter_in_the_chain_with_the_eq_off_once_somet
 
 def test_the_playing_song_s_tags_go_to_the_app_once_a_song(fw, mcl, records):
     tap, files = Tap(fw), Files(fw)
-    Queue(fw, mcl, [records.song(b'/m/a.flac', title=b'One\nTwo', artist=b'Ar', album=b'Al'), records.song(b'/m/b.flac')])
+    Queue(fw, mcl, [records.song(b'/m/a.flac', title=b'One\nTwo', artist=b'Ar', album=b'Al'), records.song(b'/m/b.flac'),
+                    records.song(b'/m/b.flac', title=b'Three')])  # a track of the same file (a CUE sheet's)
     fw.mock('player_playtime_and_length', lambda sec, total, *_: C.memmove(total, struct.pack('<i', 200), 4) and 0)
     tap.poll()
     assert TRACK not in files.files  # the app idle
@@ -145,6 +150,9 @@ def test_the_playing_song_s_tags_go_to_the_app_once_a_song(fw, mcl, records):
     tap.poll()
     assert files.files[TRACK] == b'path=/m/b.flac\ntitle=b.flac\nartist=\nalbum=\nlength=200\n'  # untagged: its file's name
     assert tap.t.track == 2
+    mcl.pos = 2
+    tap.poll()
+    assert files.files[TRACK].startswith(b'path=/m/b.flac\ntitle=Three\n') and tap.t.track == 3
 
 
 # The volume: a speaker's is its own, the earphones' and their limit wait in RAM.
@@ -163,23 +171,25 @@ def test_a_speaker_takes_its_own_volume_and_the_earphones_level_and_limit_come_b
     else:
         tap.t.want = NOW - STALE  # no read for a second and a half: a crash
     tap.poll()
+    assert tap.t.volume == 20  # published before the swap: the filter stays muted this pass
     assert (tap.volume.value, tap.limit.value) == (60, 80) and tap.set() == [(60, 1)]
     assert tap.saved()[1:] == [(20, b'Q2POD', b'AIRVOL'), (60, b'PLAYSET', b'VOLUME')]  # the speaker's, for its next time
     tap.poll()
     assert tap.t.volume == -1
 
 
-def test_a_volume_saved_while_a_speaker_plays_is_the_speaker_s_never_the_earphones(fw):
-    tap, keys = Tap(fw), []
-    fw.mock('stock_write_config_trampoline', lambda v, section, key, *_: keys.append((v, C.string_at(section), C.string_at(key))) or 0)
-    save = fw.fn('ringnav_write_config', C.c_int, C.c_int, C.c_char_p, C.c_char_p)  # stock's write_int_config, hooked
+@pytest.mark.parametrize('way, key', [(0, b'VOLUME'), (1, b'BT_VOLUME')])  # the earphones, Bluetooth's
+def test_a_volume_saved_while_a_speaker_plays_is_the_speaker_s_never_the_earphones(fw, way, key):
+    tap = Tap(fw)
+    tap.way = way
     tap.app(state=CAST_ON, spk=20)
     tap.poll()
-    save(25, b'PLAYSET', b'VOLUME')  # the wheel
+    tap.save(25, b'PLAYSET', b'VOLUME')  # the wheel
     tap.app(state=CAST_OFF)
     tap.poll()
-    save(61, b'PLAYSET', b'VOLUME')
-    assert keys == [(25, b'Q2POD', b'AIRVOL'), (61, b'PLAYSET', b'VOLUME')]
+    tap.save(61, b'PLAYSET', b'VOLUME')
+    assert tap.saved() == [(60, b'PLAYSET', key), (25, b'Q2POD', b'AIRVOL'),  # the speaker's even on Bluetooth
+                           (20, b'Q2POD', b'AIRVOL'), (60, b'PLAYSET', key), (61, b'PLAYSET', key)]
 
 
 @pytest.mark.parametrize('began, became, key', [(0, 1, 'BT_VOLUME'), (1, 0, 'VOLUME')])
@@ -191,7 +201,7 @@ def test_an_output_changed_meanwhile_gets_its_own_saved_level_within_the_limit(f
     tap.poll()
     fw.fn('ringnav_output', C.c_int, C.c_int)(became)  # Bluetooth earphones come or go: stock's mclSetOutputWay, hooked
     tap.way = became
-    assert tap.volume.value == 20 and tap.saved() == [(60, b'PLAYSET', b'VOLUME')]  # the speaker's level is no earphones'
+    assert tap.volume.value == 20 and tap.saved() == [(60, b'PLAYSET', b'BT_VOLUME' if began else b'VOLUME')]  # the speaker's level is no earphones'
     tap.app(state=CAST_OFF)
     tap.poll()
     assert tap.volume.value == 80 and tap.set()[-1] == (80, 1)  # that output's 90, held to the limit
@@ -253,7 +263,10 @@ def test_the_row_names_the_speaker_while_one_plays(fw):
     more.open()  # a speaker with no name yet
     tap.app(speaker=b'Kitchen')
     more.open()
-    assert more.texts == ['AirPlay', 'AirPlay', 'AirPlay: Kitchen']
+    tap.app(state=CAST_OFF)
+    tap.poll()
+    more.open()  # stopped: the name stays in the file
+    assert more.texts == ['AirPlay', 'AirPlay', 'AirPlay: Kitchen', 'AirPlay']
 
 
 def test_the_row_pressed_without_the_app_on_the_card_says_where_to_install_it(fw):
@@ -267,7 +280,7 @@ def test_the_row_pressed_without_the_app_on_the_card_says_where_to_install_it(fw
 
 def test_the_row_opens_the_app_s_page_over_another_app_s(fw):
     page, shut = AppPage(fw), []  # app foo's page, open
-    page.world.files.update({b'/mnt/mmc/.airplay/q2app': b'name=AirPlay\nhidden=1\n', BIN: b'ELF', PID: b'1'})
+    page.world.files.update({b'/mnt/mmc/.airplay/q2app': b'name=AirPlay\nhidden=1\n', BIN: b'ELF'})
     page.world.dirs[b'/mnt/mmc'].append(b'.airplay')
     fw.mock('window_manager_close_window_force', lambda manager, window, *_: shut.append(window))
     assert page.ap.a[page.pg.a].id == b'foo' and press(fw) == 0
