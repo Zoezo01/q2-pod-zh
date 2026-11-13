@@ -200,7 +200,6 @@ static int duration_run(void) {
         return 0;
     }
     ds.running = 1;
-    ds.pass = library_gen + 1;
     return 1;
 }
 
@@ -228,8 +227,9 @@ int durations_busy(int *done, int *total) {
 }
 
 /* Long Songs' pass over songs, its own copy of the library, whatever the switch: none when a whole
- * pass already ran over this library or every song has a length, so a restart walks nothing. The
- * caller's deque never crosses the thread boundary; a running pass is the one asked for. */
+ * pass already ran over this library or every song has a length, so a restart walks nothing but
+ * songs gone unmeasured. The caller's deque never crosses the thread boundary; a running pass is
+ * the one asked for. */
 int durations_start(void *songs) {
     duration_finish();
     if (ds.running) return 1;
@@ -238,13 +238,17 @@ int durations_start(void *songs) {
         return 0;
     duration_jobs_free(); /* an update's waiting jobs: these records are the library too */
     duration_read();
+    ds.pass = library_gen + 1; /* the generation goes with the read, not the worker's start */
     unsigned size = deque_size(songs);
     for (unsigned i = 0; i < size; ++i)
         if (!duration_job(P(deque_at(songs, i), REC_PATH))) {
             duration_jobs_free();
             return 0;
         }
-    if (!duration_unknown()) { /* ponytail: edits in place wait for an update's pass */
+    /* ponytail: edits in place wait for an update's pass; a song whose file went before any pass
+     * measured it stays without a length until an update drops its row, so the first open after
+     * each power-on checks every song */
+    if (!duration_unknown()) {
         duration_jobs_free();
         return 0;
     }
@@ -264,18 +268,10 @@ static int duration_row(void *ctx, int n, char **v, char **c) {
 /* The library's paths, in one read inside the closing update dialog, so its new songs are known
  * as it goes; any failure drops them all. */
 static void duration_library(void) {
-    char sql[512];
-    void *db = 0;
-    tk_snprintf(sql, sizeof sql, /* MUSIC_WHERE's like patterns hold '%': an argument */
-                "select fileurl from songtable where %s", MUSIC_WHERE);
-    char *expanded = library_scope_query(sql);
+    ds.pass = library_gen + 1; /* a later scan meanwhile is due again */
     duration_read();
-    if (!expanded || sqlite3_open("/mnt/data/database.db", &db) ||
-        sqlite3_exec(db, "PRAGMA cache_size=64;PRAGMA temp_store=FILE", 0, 0, 0) ||
-        sqlite3_exec(db, expanded, duration_row, 0, 0))
+    if (!era_sql("select fileurl from songtable where " MUSIC_WHERE, duration_row, 0))
         duration_jobs_free();
-    if (db) sqlite3_close(db);
-    free(expanded);
 }
 
 /* Every UI pass: a finished pass joined, Standby held off while one runs, the card's hand-over or a
@@ -296,9 +292,10 @@ void durations_poll(void) {
             navigator_window_is_exist("usbmode_page"))
             return;
         int fresh = duration_unknown();
-        /* ponytail: once, as the dialog goes, or never: no late pop-up. A song whose file can't
-         * be statted is never cached, so it reads as new at every update; edits are measured
-         * without the message. The toast's loop polls again, finding the pass running. */
+        /* ponytail: once, as the dialog goes, or never: no late pop-up. A song whose file went
+         * before any pass measured it stays without a length until an update drops its row, so
+         * each update shows the message; edits are measured without it. duration_run() comes
+         * first: the toast's loop polls again, finding the pass running. */
         if (duration_run() && fresh && usable() && !g_poweroff_state && !st.toasts &&
             !pointer_down())
             toast("Measuring song lengths\xe2\x80\xa6");

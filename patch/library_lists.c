@@ -363,7 +363,7 @@ static struct {
     unsigned m, cap;
 } era __attribute__((section(".scratch")));
 
-static int era_sql(const char *sql, int (*row)(void *, int, char **, char **), void *ctx) {
+int era_sql(const char *sql, int (*row)(void *, int, char **, char **), void *ctx) {
     void *db = 0;
     /* Era uses SQLite directly rather than the stock library query wrappers. */
     char *expanded = library_scope_query(sql); /* none: the whole library, as library_query */
@@ -587,8 +587,9 @@ int era_menu(void *ctx, void *event) {
     return 0;
 }
 
-/* Long Songs shares durations.c's cache and worker with Cover Flow. Closing the page drops
- * only its UI: the pass goes on, and Cover Flow shows what it measures. */
+/* Long Songs shares durations.c's cache and worker with Cover Flow. With Scan Song Durations off,
+ * closing the page stops its pass as Cancel does, keeping what was measured; on, the pass goes on
+ * and Cover Flow shows what it measures. */
 typedef struct {
     unsigned key, sec;
 } length_t;
@@ -665,7 +666,8 @@ static int ls_poll(const void *unused) {
 }
 
 /* Long Songs' row: every song measured first, whatever Scan Song Durations is, unless a whole pass
- * already covered this library; a pass running is observed, never duplicated. */
+ * already covered this library or every song already has a length; a pass running is observed,
+ * never duplicated. */
 int long_songs(void *ctx, void *event) {
     if (st.rt_page || !(st.rt_page = page_open("longsongs_page", ls_page_closed, page_keyup)))
         return 0;

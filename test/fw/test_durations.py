@@ -347,6 +347,32 @@ def test_an_update_reads_paths_in_one_go_then_measures_once_its_dialog_is_gone(f
     assert len(up.probe.threads) == 1 and len(up.toasts) == 1  # one pass, one message an update
 
 
+def test_the_toast_s_own_poll_finds_the_pass_running(fw, tmp_path):
+    up = Update(fw, tmp_path, [b'/m/a'])
+    def toast(name, ctx, *_):
+        up.toasts.append(C.string_at(ctx + 8).decode())
+        fw.fn('durations_poll', None)()  # msginfo_dialog's loop, the worker not yet run
+        return 0
+    fw.mock('navigator_to_with_context', toast)
+    up.scanned(), up.poll(2)
+    up.probe.run(), up.poll()
+    assert len(up.toasts) == 1 and len(up.probe.threads) == 1 and len(fw.calls('fw_pthread_join')) == 1
+    assert up.state.total == 0
+
+
+def test_a_scan_while_the_dialog_waits_is_measured_after_the_first_pass(fw, tmp_path):
+    up = Update(fw, tmp_path, [b'/m/a'])
+    up.windows.add('updatemusic_dialog')
+    up.scanned(), up.poll()  # the read
+    fw.var('library_gen', C.c_uint).value += 2  # a card app's scan, opened as the dialog closes
+    up.scanned()
+    up.windows.clear()
+    up.poll()
+    up.probe.run()
+    up.poll(3)
+    assert len(up.reads()) == 2 and len(up.probe.threads) == 2
+
+
 def test_an_update_with_nothing_new_is_silent(fw, tmp_path):
     up = Update(fw, tmp_path, [b'/m/a', b'/m/b'], cache=lengths((b'/m/a', 225), (b'/m/b', 0)))
     up.scanned(), up.poll(2)

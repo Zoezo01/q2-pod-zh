@@ -5,7 +5,6 @@ builds and the payload rearranges, Folder view's hooks, the queue menu's tracks 
 (playlists.c)."""
 import ctypes as C
 import re
-import sqlite3
 import struct
 
 import pytest
@@ -694,35 +693,15 @@ def clock_text(fw):
     fw.mock('toolsTimeItoa', lambda out, sec, *_: C.memmove(out, b'%d:%02d\0' % (sec // 60, sec % 60), 8) and 0)
 
 
-def update_pass(fw, tmp_path, probe, paths):
-    """Scan Song Durations on, Update Local Music's pass: a songtable of paths read, measured and joined."""
-    import test_playlist_art  # its real SQLite; imported here, as it imports this file
-    db = sqlite3.connect(tmp_path/'database.db')
-    db.execute('create table songtable(id integer primary key, fileurl text)')
-    db.executemany('insert into songtable(fileurl) values (?)', [(p.decode(),) for p in paths])
-    db.commit()
-    test_playlist_art.real_sqlite(fw, tmp_path/'database.db')
-    Config(fw, SCANDURATIONS=b'1')
-    fw.fn('pod_settings', None)()
-    fw.mock('time_now_ms', lambda *_: 5000)
-    fw.fn('durations_scanned', None)()  # the update's end
-    poll = fw.fn('durations_poll', None)
-    poll()  # the paths read, inside the update's dialog
-    poll()  # the dialog gone: the worker
-    probe.run()
-    poll()  # joined
-
-
-def test_long_songs_lists_those_over_ten_minutes_longest_first(fw, ui, song, clock_text, tmp_path):
+def test_long_songs_lists_those_over_ten_minutes_longest_first(fw, ui, song, clock_text):
     a, b, c = song(b'/m/a.flac', b'A', b'X'), song(b'/m/b.flac', b'B'), song(b'/m/c.flac', b'C', b'Z')
     Library(fw, ui, [a, b, c])
     Files(fw, {LENGTHS: lengths((b'/m/a.flac', 700), (b'/m/b.flac', 1200), (b'/m/c.flac', LONG_SONG_S))})
     probe = Probe(fw, {})
-    update_pass(fw, tmp_path, probe, [b'/m/a.flac', b'/m/b.flac', b'/m/c.flac'])
     call(fw, 'long_songs')
     page = ui.top()
     assert ui.name[page] == 'longsongs_page' and ui.rows(page) == [('B', '20:00'), ('A', f'X {DOT} 11:40')]
-    assert len(probe.threads) == 1 and not probe.opened  # every length known: the update's pass alone
+    assert not probe.threads  # every length known
     ui.click(page, 1)
     assert ui.played == [([b, a], 1, LIBRARY)]
 
@@ -782,14 +761,17 @@ def test_long_songs_closed_while_measuring_keeps_what_was_measured(fw, ui, song,
 
 
 def test_long_songs_closed_with_the_switch_off_stops_its_pass(fw, ui, song, clock_text):
-    Library(fw, ui, [song(b'/m/a.flac', b'A'), song(b'/m/b.flac', b'B')])
+    Library(fw, ui, [song(b'/m/a.flac', b'A'), song(b'/m/b.flac', b'B'), song(b'/m/c.flac', b'C')])
     files = Files(fw, {LENGTHS: lengths((b'/m/a.flac', 700))})
-    probe = Probe(fw, {b'/m/b.flac': 800})
+    seconds = {b'/m/b.flac': 800, b'/m/c.flac': 900}
+    probe = Probe(fw, seconds)
     call(fw, 'long_songs')
-    ui.close(ui.top())
-    probe.run()  # it stops at its first check
-    assert probe.opened == [] and fw.fn('durations_busy', C.c_int, C.c_void_p, C.c_void_p)(None, None) == 0
-    assert files.files[LENGTHS] == lengths((b'/m/a.flac', 700))  # what was measured is kept
+    opened = probe.open
+    fw.mock('taglib_file_new', lambda *a: ui.close(ui.top()) or opened(*a))  # closed during the first file
+    probe.run()
+    first, = probe.opened  # it stops at the next check
+    assert fw.fn('durations_busy', C.c_int, C.c_void_p, C.c_void_p)(None, None) == 0
+    assert files.files[LENGTHS] == lengths((b'/m/a.flac', 700), (first, seconds[first]))  # what was measured is kept
 
 
 def test_long_songs_closed_with_the_switch_on_lets_its_pass_finish(fw, ui, song, clock_text):

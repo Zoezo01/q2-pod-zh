@@ -533,6 +533,7 @@ int stock_usb_status_trampoline(void);
 
 /* library_lists.c */
 int era_menu(void *ctx, void *event);
+int era_sql(const char *sql, int (*row)(void *, int, char **, char **), void *ctx);
 int long_songs(void *ctx, void *event);
 /* durations.c: UI-thread API (duration_seconds and duration_text in peq.h); the worker alone
  * probes files, the UI publishes after join. */
