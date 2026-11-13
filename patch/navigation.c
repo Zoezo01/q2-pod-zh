@@ -11079,9 +11079,13 @@ int ringnav(void *ctx, void *event) {
         return STOP;
     else if (key == KEY_CENTER || st.scrub)
         return np_key(st.np_win, key);
+    /* A keyboard (T9's, every text box's) on top takes Centre as a listed page does: a single press
+     * does nothing, a double turns the screen off; stock turned it off on each one (#365). Its
+     * wheel stays stock's volume. */
+    int kb = key == KEY_CENTER && top && !tk_strcmp(widget_get_type(top), "keyboard");
     if (!allowed_top(top) && !usb_prompt()) {
         drop_input();
-        return result;
+        if (!kb) return result;
     }
     /* A double Centre turns the screen off on every listed page, also where the page takes Centre
      * itself (the Books reader's caption), has no row selected or is still sliding in. A list's
@@ -11098,6 +11102,7 @@ int ringnav(void *ctx, void *event) {
         st.dc_top = top;
         st.dc_at = now;
     }
+    if (kb) return STOP;
     int dir = key == KEY_NEXT ? 1 : key == KEY_PREV ? -1 : 0;
     if (window_manager_is_animating(wm) || pointer_down()) {
         drop_input();

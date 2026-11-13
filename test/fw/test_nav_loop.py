@@ -1861,6 +1861,45 @@ def test_return_on_another_edit_goes_to_stock(fw, keys):
     assert not fw.calls('input_method_request') and fw.calls('stock_keyup_trampoline')
 
 
+def keyboard_up(fw, ui):
+    """Search with T9 up: the keyboard is the top window, the history list under it (#365)."""
+    sv = list_page(ui, 'search_dialog')
+    search_edit(fw, ui, 'search_edit')
+    ui.window('kb_default_t9', 'keyboard')
+    return sv
+
+
+def screen_offs(fw):
+    return [C.c_int.from_address(c[1][1] + EVENT_KEY).value for c in fw.calls('on_wm_keyup_fun')]
+
+
+@pytest.mark.parametrize('gap', [None, O['DOUBLE_CLICK_MS']])
+def test_one_centre_over_the_keyboard_does_nothing(fw, keys, gap):
+    """Stock's power key would turn the screen off on it; a second after the double press's window is one too."""
+    ui = Ui(fw)
+    keyboard_up(fw, ui)
+    presses = [keys(KEY_CENTER)] + ([keys(KEY_CENTER, gap)] if gap else [])
+    assert presses == [STOP] * len(presses)  # stock's on_wm_keyup_fun never sees it
+    assert not screen_offs(fw) and not ui.clicks and not ui.timers and not fw.calls('input_method_request')
+
+
+def test_a_double_centre_over_the_keyboard_turns_the_screen_off_once(fw, keys):
+    ui = Ui(fw)
+    keyboard_up(fw, ui)
+    keys(KEY_CENTER)
+    assert keys(KEY_CENTER, O['DOUBLE_CLICK_MS'] - 1) == STOP and screen_offs(fw) == [KEY_CENTER]
+    assert keys(KEY_CENTER, 1) == STOP and screen_offs(fw) == [KEY_CENTER]  # a third starts a new pair
+    assert not ui.clicks and not ui.timers
+
+
+def test_the_wheel_over_the_keyboard_and_centre_over_the_volume_stay_stocks(fw, keys):
+    ui = Ui(fw)
+    keyboard_up(fw, ui)
+    assert keys(KEY_NEXT) == 0  # the volume
+    ui.window('volume_dialog', 'dialog')
+    assert keys(KEY_CENTER, 1000) == 0  # stock's screen off
+
+
 def test_a_key_stock_takes_is_stocks_and_ends_the_run(fw, keys, st):
     ui = Ui(fw)
     sv = list_page(ui, rows=SHORT_LIST_MAX + 10)  # long enough to time a run
