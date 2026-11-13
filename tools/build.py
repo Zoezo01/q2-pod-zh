@@ -34,7 +34,6 @@ RING_STEP = 48
 HOOKS = {
     # USB charging is inhibited before insertion and guarded through enumeration/disconnect.
     'switch_charge_enable': (0x4fe42c, 'ringnav_usb_charge', None),
-    'toolsGpioSetValue': (0x5d1170, 'ringnav_usb_gpio', 'usb_gpio'),
     'config_init': (0x503d0c, 'ringnav_usb_config', 'usb_config'),
     'usb_detect': (0x4ff220, 'ringnav_usb_detect', 'usb_detect'),
     'check_usb_status': (0x4f3744, 'ringnav_usb_status', 'usb_status'),
@@ -1461,6 +1460,7 @@ FUNCTIONS = {
  'mclSetMute': ('int', 'int'),
  'toolsTrimLeft': ('void', 'char *'),
  'switch_charge_enable': ('int', 'int'),  # 1 charges: the active-low charge enable on GPIO PE22 (usbmode_page_init)
+ 'toolsGpioSetValue': ('int', 'const char *, int'),
  'toolsGpioGetValue': ('int', 'const char *'),  # USB charge inhibit readback, not a current measurement
  # Coverflow's Sort: another ORDER BY over getAllAlbum's grouping, filled by its own row callback
  'toolsQueryDbTable': ('int', 'const char *, const char *, void *, int'),  # db, sql, row, name sort

@@ -7,16 +7,15 @@ import pytest
 class Charging:
     def __init__(self, fw, pref=0, mode=1, cable=0):
         self.fw, self.pref, self.mode, self.cable = fw, pref, mode, cable
-        self.gpio, self.writes, self.other = 1, [], []
-        self.depth, self.expect_depth = 0, 1
+        self.gpio, self.writes = 1, []
+        self.depth = 0
         self.charge = fw.fn('ringnav_usb_charge', C.c_int, C.c_int)
-        self.gpio_write = fw.fn('ringnav_usb_gpio', C.c_int, C.c_char_p, C.c_int)
         self.config = fw.fn('ringnav_usb_config', C.c_int)
         self.detect = fw.fn('ringnav_usb_detect', C.c_int)
         self.status = fw.fn('ringnav_usb_status', C.c_int)
         self.flag = fw.var('g_usbdac_chargeflag', C.c_ubyte)
         self.usbmode = fw.var('g_usbmode', C.c_ubyte)
-        fw.mock('stock_usb_gpio_trampoline', self.write)
+        fw.mock('toolsGpioSetValue', self.write)
         fw.mock('stock_usb_config_trampoline', self.load)
         fw.mock('stock_usb_detect_trampoline', lambda *_: self.cable)
         fw.mock('stock_usb_status_trampoline', self.dispatch)
@@ -35,13 +34,9 @@ class Charging:
         return 0
 
     def write(self, name, value, *_):
-        name = C.string_at(name)
-        if name == b'PE22':
-            assert self.depth == self.expect_depth
-            self.gpio = value
-            self.writes.append(value)
-        else:
-            self.other.append((name, value))
+        assert C.string_at(name) == b'PE22' and self.depth == 1
+        self.gpio = value
+        self.writes.append(value)
         return 0
 
     def load(self, *_):
@@ -124,23 +119,6 @@ def test_a_charge_limit_disable_is_not_undone_by_detection_or_gadget_dispatch(fw
         assert q.gpio == 1
     q.charge(1)
     assert q.gpio == 0
-
-
-def test_direct_pe22_write_passes_through_and_radio_gpios_are_untouched(fw):
-    # stock's power-off, reboot, Standby and OTG writes release the charge pin: they must reach it
-    q = Charging(fw, cable=1)
-    q.config()
-    assert q.gpio == 1
-    q.expect_depth = 0
-    q.gpio_write(b'PE22', 0)
-    assert q.gpio == 0
-    q.gpio_write(b'PE22', 1)
-    assert q.gpio == 1
-    q.expect_depth = 1
-    for name in (b'PD01', b'PD20', b'OTHER'):
-        for value in (0, 1):
-            q.gpio_write(name, value)
-    assert q.other == [(name, value) for name in (b'PD01', b'PD20', b'OTHER') for value in (0, 1)]
 
 
 def test_readback_mismatch_is_reasserted_without_waiting_for_the_charge_limit_poll(fw):

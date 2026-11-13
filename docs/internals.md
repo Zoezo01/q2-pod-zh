@@ -1345,7 +1345,7 @@ Audio and DAC selected and charging Off, an unidentified wall charger is therefo
 select USB Storage or opt in to DAC charging. No charger-type detector or PMIC register changes
 are added. Disabling battery charging does not establish zero USB current to the system.
 
-`switch_charge_enable` is guarded. Stock's direct `toolsGpioSetValue("PE22", ...)` writes (`into_poweroff`,
+`switch_charge_enable` is guarded (`charge_apply` calls `toolsGpioSetValue` itself). Stock's direct `toolsGpioSetValue("PE22", ...)` writes (`into_poweroff`,
 `device_reboot`, `device_standby`, `check_otg_status`) and other GPIOs pass through, so power-off, reboot
 and Standby still release the pin for a charge with the Q2 off; the next `ringnav_usb_status` poll
 inhibits again. `S90play`'s `rockbox()` sets PE22 low before Rockbox starts, which never drives it. A mutex serializes
@@ -1355,7 +1355,7 @@ rechecks PE22 and corrects a mismatched readback. `ringnav_usb_status` reconcile
 stock gadget dispatch, covering a storage-to-DAC transition without waiting for the next poll.
 The stock USB audio descriptors, radio behavior and kernel remain unchanged.
 
-The five hooks use the pinned V1.36 build's symbol/address and PIC-prologue/GOT checks. Source
+The four hooks use the pinned V1.36 build's symbol/address and PIC-prologue/GOT checks. Source
 changes are exercised by `test/fw/test_usb_charge.py`.
 
 ## Battery History
