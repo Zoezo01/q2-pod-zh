@@ -3,6 +3,7 @@
 - **1.8.2**:
   - Playback: with **Headphones Required** on, the Q2 restores your queue at start-up again, paused, as **Memory Playback** has it. Since 1.8.0 nothing was restored with the switch on, even with headphones connected. **In-Vehicle Mode** still starts playing, or restores the queue paused when nothing is connected.
   - Controls: **Wheel Sensitivity** goes down to 10%, for a slower wheel: 20% takes a third of a turn per step and 10% most of a turn. 50% is still the default and nothing changes unless you lower it.
+  - Cover Flow: under **Theme: Classic**, an album's track list runs a long title right up to the song's length, a small gap before it. With **Scan Song Durations** on, the title was cut off well short of the length, leaving a wide empty gap.
   - Cover Flow: it opens on the album of the song that's playing or paused, so that artist's other albums are a turn away ([#350](https://github.com/DiamondBond/q2-pod/issues/350)). With nothing queued, or a song with no album tag, it opens on the album you last stopped at, as before.
   - Playlists: under **Theme: Classic**, **Edit Playlists…** is now **Select Playlists…**, since it marks playlists to import, export or delete. To change a playlist's songs, use its **More → Edit Playlist**.
   - Quick Settings: holding Play/Pause there shows **Wheel: Volume** or **Wheel: Brightness** as a pop-up in your theme's style, as other messages are. It was a thin black strip.

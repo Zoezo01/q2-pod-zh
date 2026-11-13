@@ -3154,6 +3154,21 @@ static void *panel_label(void *parent, int x, int y, int w, int h, const char *s
     return label;
 }
 
+/* A row's title runs to its length's own text, not to the box reserved for the widest length: the
+ * length is cut to its measured width, at the right margin, and the title ends PANEL_TIME_GAP before
+ * it. No canvas, or a text that doesn't measure: the reserve stands. ponytail: measured once at the
+ * build, in the default face at 20 px, which is the label's. */
+#define PANEL_TIME_GAP 8
+static void panel_fit(void *title, void *time, unsigned n) {
+    void *canvas = widget_get_canvas(time);
+    if (!canvas) return;
+    canvas_set_font(canvas, (const char *)0, 20);
+    int w = (int)(canvas_measure_text(canvas, widget_get_text(time), n) + 0.5f);
+    if (w <= 0 || w > I(time, W_W)) return;
+    widget_move_resize(time, BACK_W - 12 - w, 0, w, I(time, W_H));
+    widget_resize(title, BACK_W - 12 - w - PANEL_TIME_GAP - 12, I(title, W_H));
+}
+
 /* The panel as it stands into fl.back, hidden after: painted by stock on an offline canvas of the
  * screen's size and format, at its screen place, as stock's window snapshots are, so the paint
  * hooks' coordinates hold. The screen's lcd is BGRA8888, as the frame. No canvas, or a layout not
@@ -3252,13 +3267,14 @@ static int flip_open(void *r, int n) {
         char duration[24];
         duration_text(duration, sizeof duration, t);
         int time_w = strlen(duration) > 5 ? 88 : 66; /* h:mm:ss */
-        panel_label(item, 12, 0, *duration ? 260 - time_w : 270, pl ? 26 : row,
-                    track_name(name, sizeof name, t), 25, 1);
+        void *title = panel_label(item, 12, 0, *duration ? 260 - time_w : 270, pl ? 26 : row,
+                                  track_name(name, sizeof name, t), 25, 1);
         if (*duration) {
             void *label = panel_label(item, BACK_W - 12 - time_w, 0, time_w, pl ? 26 : row,
                                      duration, 20, 0);
             widget_set_prop_str(label, "style:normal:text_align_h", "right");
             widget_set_prop_int(label, "style:normal:text_color", (int)PANEL_MUTED);
+            panel_fit(title, label, (unsigned)strlen(duration));
         }
         if (pl) {
             const char *by = P(t, REC_ARTIST);
