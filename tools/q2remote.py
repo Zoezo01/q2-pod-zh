@@ -14,6 +14,7 @@ import secrets
 import shlex
 import socket
 import struct
+import subprocess
 import sys
 import tarfile
 import time
@@ -338,13 +339,26 @@ def install(tar):
         raise ValueError("update.tar reads back differently from the card; check the card")
 
 
+def local_addrs():
+    """This PC's IPv4 addresses: every interface's, by Linux's `ip` (a Q2 on a hotspot while the default
+    route is Ethernet's), else the default route's alone."""
+    try:
+        out = subprocess.run(["ip", "-4", "-o", "addr", "show", "scope", "global"], capture_output=True, text=True).stdout
+    except OSError:
+        out = ""
+    if addrs := re.findall(r"inet ([\d.]+)", out):
+        return addrs
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        s.connect(("8.8.8.8", 80))  # picks the route's local address; sends nothing
+        return [s.getsockname()[0]]
+
+
 def find(hosts=None):
-    """Addresses of this PC's /24 (by its default route) where q2remote answers. The probe sends no key:
-    a q2remote answers ERR to any wrong one."""
+    """Addresses of this PC's /24s (local_addrs) where q2remote answers. The probe sends no key: a
+    q2remote answers ERR to any wrong one."""
     if hosts is None:
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-            s.connect(("8.8.8.8", 80))  # picks the route's local address; sends nothing
-            hosts = [str(h) for h in ipaddress.ip_network(f"{s.getsockname()[0]}/24", strict=False).hosts()]
+        nets = {ipaddress.ip_network(f"{a}/24", strict=False) for a in local_addrs()}
+        hosts = [str(h) for net in sorted(nets) for h in net.hosts()]
     def probe(host):
         try:
             with socket.create_connection((host, PORT), 2) as s:

@@ -14,7 +14,7 @@ It listens on TCP port 2302 and sends the key and every command **unencrypted**.
    ```
 
 3. **Eject, then unplug the cable or restart the Q2.** While the card is shared over USB storage the Q2 unmounts it, so a new key is read only once the cable is out, or at the next boot, before USB storage takes the card. q2remote keeps a copy in `/mnt/data/q2remote.key` and uses it while the card is away, so a cable in, even from boot, doesn't lock you out.
-4. Find the Q2's address: `python3 tools/q2remote.py find` tries every address of the /24 your PC's default route uses, without sending the key, and lists those where q2remote answers, or use the hotspot's or router's client list.
+4. Find the Q2's address: `python3 tools/q2remote.py find` tries every address of each /24 your PC is on (on Linux every interface's, so a Q2 on a hotspot is found while Ethernet stays the default route; elsewhere the default route's), without sending the key, and lists those where q2remote answers, or use the hotspot's or router's client list.
 5. Load the key into the environment without echoing it:
 
    ```sh
