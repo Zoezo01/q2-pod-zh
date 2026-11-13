@@ -1927,6 +1927,16 @@ def test_rate_album_opens_the_picker_on_its_hearts_and_rates_that_album(hold, re
     assert 'Rate Album' in hold.menu() and hold.title() == 'Revolver'  # its own: none
 
 
+@pytest.mark.parametrize('sel, opened', ((1, [2]), (0, [])))  # 2: DISPLAY_COVERFLOW
+def test_a_hold_on_homes_cover_flow_row_opens_displays_cover_flow_page(hold, recs, ui, fw, sel, opened):
+    hold.songs_page('home_page', [recs(), recs()], sel=sel, showlist=False)
+    ui.nodes[ui.kids(ui.kids(hold.list)[1])[0]].name = 'img_cover_flow'
+    seen = []
+    ui.routes['systemset/display_page'] = lambda ctx: seen.append(fw.var('navigation__display_sub', C.c_int).value)
+    assert hold.hold() == (STOP if opened else 0)  # another row's hold stays stock's
+    assert seen == opened and hold.menu() is None
+
+
 @pytest.mark.parametrize('cls, field_', [(0xf004, 'artist'), (0xf005, 'composer'), (0xf006, 'genre')])
 def test_an_artist_composer_or_genre_row_is_titled_by_its_own_tag(hold, recs, ui, cls, field_):
     rows = [recs(kind=4, **{field_: f'{field_} {i}'}) for i in range(2)]

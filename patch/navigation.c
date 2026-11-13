@@ -9442,7 +9442,23 @@ static void quick_poll(void) {
         compact_now_playing();
     }
 }
-/* Stock long-key callback: everything except a taken Play/Pause hold runs the stock body. On an
+/* Home's Cover Flow row, or the Carousel's card, held: Display's Cover Flow page over Home. Here
+ * (not home.c) for the selection, which is this file's. */
+static int home_cf_hold(void *top) {
+    void *wm = window_manager();
+    if (!usable() || !home_menu(top) || window_manager_is_animating(wm) || pointer_down()) return 0;
+    void *w = surface_under(top, (void *)0, (void *)0, 0);
+    if (!w || !load(&g_menu, w, 1)) return 0;
+    int cur = reconcile(&g_menu, !moving(&g_menu));
+    void *row = cur >= 0 ? g_menu.at[cur] : 0;
+    if (!row || (tk_strcmp(widget_get_prop_str(row, "name", ""), "img_cover_flow") &&
+                 !widget_lookup(row, "img_cover_flow", 1)))
+        return 0;
+    display_open((void *)DISPLAY_COVERFLOW, 0);
+    return 1;
+}
+/* Stock long-key callback: everything except a taken Play/Pause hold runs the stock body. On
+ * Home's Cover Flow row it opens Cover Flow's settings, on an
  * Internet Radio station it is the favourite toggle, on a Spotify track Add to Queue (its reply
  * toasts), on a card app's row its hold op (addon_hold: a Deezer list downloaded whole), in Quick
  * Settings the wheel's brightness/volume switch, on View Queue's shuffle list
@@ -9452,7 +9468,8 @@ int ringnav_keylong(void *ctx, void *event) {
     if (!event || I(event, EVENT_KEY) != KEY_PLAY) return stock_keylong_trampoline(ctx, event);
     void *top = window_manager_get_top_window(window_manager());
     const char *fav = radio_hold(top);
-    int taken = fav || quick_wheel_toggle(top) || spot_hold(top) || addon_hold(top) || un_hold(top);
+    int taken = fav || quick_wheel_toggle(top) || spot_hold(top) || addon_hold(top) ||
+                un_hold(top) || home_cf_hold(top);
     if (!taken && qm_hold()) return STOP;
     /* Stock has no Play/Pause hold, so its release would play or pause: Classic's does nothing. */
     if (taken || (usable() && classic_pages())) {
