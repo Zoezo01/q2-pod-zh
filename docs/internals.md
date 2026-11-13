@@ -1368,11 +1368,36 @@ the detected cable. This covers a running player waiting for insertion; it canno
 PMIC before Linux and this startup script execute.
 
 The policy is `requested && ready && (g_usbdac_chargeflag == 1 || (cable == 1 && g_usbmode == 0))`:
-explicit DAC charging opt-in permits charging, as does a detected cable with USB Storage selected.
+USB DAC Charging On permits charging, as does a detected cable with USB Storage selected.
 An unknown setting, failed enumeration or a timeout never establishes a dedicated charger. With
 Audio and DAC selected and charging Off, an unidentified wall charger is therefore inhibited too:
-select USB Storage or opt in to DAC charging. No charger-type detector or PMIC register changes
+select USB Storage or turn USB DAC Charging On. No charger-type detector or PMIC register changes
 are added. Disabling battery charging does not establish zero USB current to the system.
+
+The choice is stock's `g_usbdac_chargeflag`, saved as `PLAYSET USBDAC_CHARGE`. Stock's `config_init`
+(`0x504234`) reads it with `toolsReadConfig`'s default `"1"`, keeps 0 or 1 and makes anything else 1,
+and only the DAC screen's switch writes it (`!flag`, then `switch_charge_enable(flag)`; the code at
+`0x52d454`, inside `airplay_page_init`'s range). A missing key is therefore On, but the
+`/release/assets/default/raw/config.ini` that `config_init` copies to `/mnt/data` when there is none
+(first boot, a reset) holds `USBDAC_CHARGE=0` in V1.32, V1.34 and V1.36, so a Q2 nobody asked reads
+Off, the same line the switch writes for a chosen Off. `ringnav_usb_config` (`dac_default`) settles
+it after stock's read: until `Q2POD DACCHARGEOWN` is 1 it sets the flag and the key to 1 and writes
+`DACCHARGEOWN=1`; from then on the key is the user's, so a saved Off is kept, and a reset (a new
+`config.ini` without the mark) starts On again. ponytail: an Off chosen under 1.8.1 or earlier is
+turned On once at the update, as nothing on the Q2 tells it from the factory line; the changelog
+says to turn it Off again. A per-device record of the switch would have had to exist before the
+update to do better.
+
+**System settings → Power → USB DAC Charging** (`usb_charge_row`, from `ringnav_powermanager` after
+Charge Limit, stock's `usb_chargeswitch` icon) is that same flag and key, usable with no cable in.
+A toggle flips `g_usbdac_chargeflag`, writes `PLAYSET USBDAC_CHARGE` and calls
+`ringnav_usb_charge(!st.charge_held)`: it asks for charging as `charge_poll` hands it back outside
+the USB and AirPlay pages (on, unless Charge Limit holds it off), so the policy above applies the
+new choice to PE22 at once, an earlier Off request from the DAC screen's switch is replaced, and
+Charge Limit's hold still wins. Off only matters with Audio and DAC: USB Storage with a cable in
+keeps charging. The DAC screen's switch reads the flag when it builds, and the row reads it again
+on the Power window's `EVT_WINDOW_FOREGROUND`, so a change on either shows on the other. AirPlay's
+page uses the same flag for its own charging choice, as in stock.
 
 `switch_charge_enable` is guarded (`charge_apply` calls `toolsGpioSetValue` itself). Stock's direct `toolsGpioSetValue("PE22", ...)` writes (`into_poweroff`,
 `device_reboot`, `device_standby`, `check_otg_status`) and other GPIOs pass through, so power-off, reboot

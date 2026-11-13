@@ -7,6 +7,7 @@
 static struct {
     int mutex[6]; /* MIPS glibc's zero-initialized pthread_mutex_t */
     int ready, cable, requested, have_request, applied, have_applied;
+    void *row; /* Power's USB DAC Charging label, while that page is built */
 } usb_charge __attribute__((section(".scratch")));
 
 static int charge_apply(int force) {
@@ -32,12 +33,27 @@ int ringnav_usb_charge(int on) {
     return result;
 }
 
+/* Stock's USB DAC charging choice is PLAYSET USBDAC_CHARGE (config_init: toolsReadConfig's default
+ * "1", 0 or 1 kept, anything else 1), written only by the DAC screen's switch. A missing key is On,
+ * but the config.ini stock copies in at first boot or a reset says USBDAC_CHARGE=0, so a Q2 nobody
+ * ever asked reads Off, the same line the switch writes. Q2POD DACCHARGEOWN 1 marks the key as the
+ * user's: until it is there, the choice starts On and the mark is written, so an Off saved after
+ * that is kept. ponytail: an Off chosen before this firmware is turned On once; the changelog says
+ * so, as no file tells the two apart. */
+static void dac_default(void) {
+    if (config_value("Q2POD", "DACCHARGEOWN", 2, 0)) return;
+    g_usbdac_chargeflag = 1;
+    write_int_config(1, "PLAYSET", "USBDAC_CHARGE");
+    write_int_config(1, "Q2POD", "DACCHARGEOWN");
+}
+
 int ringnav_usb_config(void) {
     pthread_mutex_lock(usb_charge.mutex);
     usb_charge.ready = 0;
     charge_apply(1);
     pthread_mutex_unlock(usb_charge.mutex);
     int result = stock_usb_config_trampoline();
+    dac_default();
     int cable = stock_usb_detect_trampoline();
     pthread_mutex_lock(usb_charge.mutex);
     usb_charge.cable = cable;
@@ -68,3 +84,29 @@ int ringnav_usb_status(void) {
  * in charges nothing then. ponytail: the pin's state, not the charger's; a cable too weak to
  * charge still reads as charging, read /sys/class/power_supply/battery/status if that matters. */
 int usb_charge_held(void) { return usb_charge.have_applied && !usb_charge.applied; }
+
+/* System settings → Power → USB DAC Charging: the DAC screen's own switch (g_usbdac_chargeflag,
+ * PLAYSET USBDAC_CHARGE), with no host needed. A toggle applies at once through the guard: it asks
+ * for charging as charge_poll would hand it back (on, unless Charge Limit holds it off), and the
+ * policy then allows it or not by the new choice. The DAC screen's switch shows here when Power
+ * comes back to the front. */
+static void dac_text(void) {
+    list_toggle(usb_charge.row, "USB DAC Charging", g_usbdac_chargeflag == 1);
+}
+static int dac_click(void *ctx, void *event) {
+    g_usbdac_chargeflag = g_usbdac_chargeflag != 1;
+    write_int_config(g_usbdac_chargeflag, "PLAYSET", "USBDAC_CHARGE");
+    ringnav_usb_charge(!st.charge_held);
+    dac_text();
+    return 0;
+}
+static int dac_shown(void *ctx, void *event) {
+    dac_text();
+    return 0;
+}
+void usb_charge_row(void *win, void *view) {
+    if (!view) return;
+    usb_charge.row = list_row(view, "usb_chargeswitch", dac_click, 0);
+    dac_text();
+    widget_on(win, EVT_WINDOW_FOREGROUND, dac_shown, 0);
+}
