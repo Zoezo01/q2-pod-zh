@@ -3945,10 +3945,21 @@ static void play_word_create(void *bar) {
      * plain label with the word's own style stayed white in either half — the style table has no
      * light value for it — and written inks fought the bar's own styling (V172Y..V172B). */
     widget_use_style(st.play_word, "s_scrlabel_white20l");
-    widget_set_prop_str(st.play_word, "style:normal:text_align_h", "left");
+    /* The bar takes no input, so its children read the disable state's style: the align and — on
+     * Minimal and Modern, whose themes give ROLE_BAR nothing and theme_font writes none — the
+     * size must be written for every state, or the style's own 20 px read where 16 was meant and
+     * the four hanzi outran their 66 px box (#V180A's clipped word). */
+    static const char *const states[] = { "normal", "focused", "disable" };
+    char prop[48];
+    for (unsigned i = 0; i < 3; ++i) {
+        snprintf(prop, sizeof prop, "style:%s:text_align_h", states[i]);
+        widget_set_prop_str(st.play_word, prop, "left");
+        if (!st.bar_title) {
+            snprintf(prop, sizeof prop, "style:%s:font_size", states[i]);
+            widget_set_prop_int(st.play_word, prop, PLAY_WORD_PX);
+        }
+    }
     widget_set_prop_int(st.play_word, "style:normal:bg_color", 0); /* the bar's own fill shows */
-    if (!st.bar_title)
-        widget_set_prop_int(st.play_word, "style:normal:font_size", PLAY_WORD_PX);
     widget_set_visible(st.play_word, 0, 0);
 }
 

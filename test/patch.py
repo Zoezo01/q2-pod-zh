@@ -3524,7 +3524,7 @@ for page_name in ('folder_page','localmusic_page','allmusic_page','radio_page'):
             enabled=page_name in ('radio_page','localmusic_page')
             assert bool(m.prompt(page)['visible'])==(enabled and distance>=8)
             if enabled and distance>=8:
-                assert m.prompt(page)['text']==('Release to search' if distance>=48 else 'Pull to search')
+                assert m.prompt(page)['text']==('松开搜索' if distance>=48 else '下拉搜索')
                 assert m.click(es[0])==11 if es else True
             # click() normally uses a one-second gap; gesture state still belongs to the page.
             m.emit(page,O['EVT_POINTER_UP_BEFORE'],y=60+distance)
