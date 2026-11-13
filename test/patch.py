@@ -15407,7 +15407,7 @@ key(O['KEY_NEXT']); assert cur()==1; key(O['KEY_FWD_BTN']); assert cur()==7; key
 key(O['KEY_PREV']); key(O['KEY_PREV']); assert cur()==12; key(O['KEY_BACK_BTN']); assert cur()==5; passed()
 put(6,[64|13+11]); put(7,[3,64|10]); m.byte(G+G_SOL+329,7)  # Q of hearts; a face-down 4 under the J of spades
 key(O['KEY_CENTER']); assert word(G_PICKING) and word(48)==7; paint()
-key(O['KEY_FWD_BTN']); key(O['KEY_CENTER']); assert word(G_PICKING)  # not onto the waste
+put(1,[]); key(O['KEY_FWD_BTN']); key(O['KEY_CENTER']); assert word(G_PICKING) and word(48)==7  # not onto the waste, empty: still held
 key(O['KEY_FWD_BTN']); key(O['KEY_PREV']); key(O['KEY_CENTER']); assert not word(G_PICKING); m.advance(2000)
 assert (n(6),n(7),byte(G_SOL+4+24*6+1),byte(G_SOL+4+24*7))==(2,1,64|10,64|3) and bytes(m.files['/mnt/data/ringnav-solitaire'])==sol()
 put(1,[64|26]); m.byte(G+G_SOL+329,1); key(O['KEY_CENTER']); key(O['KEY_CENTER'])  # the Ace of diamonds, home
