@@ -2803,7 +2803,9 @@ def field(p, i, typed=SECRET):
     p.fw.mock('widget_set_prop_str', lambda w, k, v, *_: C.string_at(k) == b'tips' and p.tips.append(C.string_at(v)))
     p.click(i)
     assert p.pg.edit == box and p.pg.field == i + 1
-    p.fw.mock('widget_get_text_utf8', lambda w, out, n, *_: C.memmove(out, typed[:n - 1] + b'\0', min(len(typed), n - 1) + 1) and 0)
+    # stock writes nothing when the text doesn't fit; Done sends EVT_IM_ACTION and EVT_VALUE_CHANGED, so twice
+    p.fw.mock('widget_get_text_utf8', lambda w, out, n, *_: 1 if len(typed) >= n else C.memmove(out, typed + b'\0', len(typed) + 1) and 0)
+    p.fw.fn('addon__searched', C.c_int, C.c_void_p, C.c_void_p)(None, None)
     p.fw.fn('addon__searched', C.c_int, C.c_void_p, C.c_void_p)(None, None)
     p.fw.fn('addon__go', C.c_int, C.c_void_p)(None)
 
@@ -2832,13 +2834,14 @@ def test_a_field_text_of_63_bytes_is_sent_whole(fw):
     assert p.request().endswith(b'\tuser\t' + b'a' * 63 + b'\n')
 
 
-def test_a_field_text_too_long_to_send_whole_is_dropped_and_says_so(fw):
+@pytest.mark.parametrize('n', [64, 100, 255])
+def test_a_field_text_too_long_to_send_whole_is_dropped_and_says_so(fw, n):
     p = Page(fw)
     p.answer(rows=[USER])
     calls = len(fw.calls('fw_pthread_create'))
-    field(p, 0, b'a' * 64)
-    assert len(fw.calls('fw_pthread_create')) == calls and p.toasts == [b'Too long']
-    assert p.pg.term == b'' and p.top.state == K_READY and p.pg.field == 0
+    field(p, 0, b'a' * n)  # searched runs twice, as stock's Done sends both events
+    assert len(fw.calls('fw_pthread_create')) == calls and p.toasts == [b'Too long'] * 2
+    assert p.pg.term == b'' and p.top.state == K_READY and p.pg.depth == 1 and p.top.title == b'Foo'
 
 
 def test_a_field_sent_while_the_app_restarts_is_its_levels_error_and_retry_asks_the_level(fw):

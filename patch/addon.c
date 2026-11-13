@@ -1704,14 +1704,16 @@ static int clicked(void *ctx, void *event) {
     return 0;
 }
 
-/* The box's text: a search's cut to pg.term; a field's that doesn't fit whole (it fills a buffer a
- * byte larger) is let go, cleared, and nothing is sent. */
+/* The box's text: a search's cut to pg.term; a field's that doesn't fit whole is let go, cleared, and
+ * nothing is sent. Done sends this twice (EVT_IM_ACTION, EVT_VALUE_CHANGED), so pg.field stays set here
+ * (field_sent and search_box clear it): the second call must not send the cut text as a search.
+ * ponytail: stock's widget_get_text_utf8 writes nothing for a text over 255 bytes, which closes silently. */
 static int searched(void *ctx, void *event) {
-    char t[sizeof pg.term + 1] = "";
+    char t[256] = "";
     (void)ctx, (void)event;
     if (widget_get_text_utf8(pg.edit, t, sizeof t)) t[0] = 0;
     if (pg.field && strlen(t) >= sizeof pg.term) /* none of it goes: the box closes, the level stays */
-        memset(t, 0, sizeof t), pg.field = 0, toast("Too long");
+        memset(t, 0, sizeof t), toast("Too long");
     tk_snprintf(pg.term, sizeof pg.term, "%s", t);
     memset(t, 0, sizeof t);
     later(!pg.term[0] ? G_SHOW : pg.field ? G_FIELD : G_SEARCH, 0);
