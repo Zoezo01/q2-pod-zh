@@ -358,6 +358,7 @@ def validate_assets(directory):
     assert set(changed) == {ui+p for p in patched_ui | chinese} | {
         'release/assets/default/raw/styles/'+p for p in AUDIT['styles']} | {
         xx+n for n in SETTINGS_ICONS | QUIET_ICONS | STATUS_ICONS | ART_PLACEHOLDERS} | {'release/assets/default/raw/strings/en_US.bin', FONT, TAG_C, *WEB} | {
+        'usr/share/web/cgi-bin/%s.cgi' % n for n in ('create', 'delete', 'list', 'download', 'upload')} | {
         xx+n for n in STOCK_NAMED_ICONS}
     master = (ROOT/'assets/icons/default_album_home.png').read_bytes()
     for name, size in ART_PLACEHOLDERS.items():
@@ -386,6 +387,12 @@ def validate_assets(directory):
         old, new = read('stock.squashfs', path), read('rootfs.squashfs', path)
         assert new == patch_web(path, old)
         assert changed[path] == dict(original_sha256=sha(old), sha256=sha(new))
+    q2cgi = (ROOT/'assets/web/q2cgi').read_bytes()  # the safe file-manager CGI replaces all five stock CGIs
+    for n in ('create', 'delete', 'list', 'download', 'upload'):
+        path = 'usr/share/web/cgi-bin/%s.cgi' % n
+        old, new = read('stock.squashfs', path), read('rootfs.squashfs', path)
+        assert new == q2cgi
+        assert changed[path] == dict(original_sha256=sha(old), sha256=sha(q2cgi))
     from build import segments
     tag_segment = segments(tag_new)[-1][1]
     assert tag_segment[0] == 1 and tag_segment[2] == 0x30000 and tag_segment[4:7] == (48, 48, 5)

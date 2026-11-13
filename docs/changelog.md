@@ -22,6 +22,7 @@
   - Streaming: under **Theme: Classic** with **Row Preview**, a card app's large icon beside the list, such as Soulseek's or Podcasts', is sharp. It was stretched from the app's small icon and looked blurry.
   - Cover Flow: under **Theme: Classic** an album's turned-over song list no longer shows song lengths. Only songs Library → Long Songs had measured had one, so most rows were blank; the titles now use the room.
   - Cover Flow: **Large Library Mode**, under System settings → Display → Cover Flow, is now called **Fast Navigation**. It does what it did, and stays on or off as you had it.
+  - Wi-Fi transfer: the web file manager keeps every name as typed and every action inside the card. A folder or file name holding `$(…)` or a backtick used to run as a command on the Q2 while Wi-Fi transfer was on, and a crafted request could read, list or delete files outside the card or hidden ones on it. Uploads still need only the file's own free space. Thanks to karanthakakr04 for the report and the first version of the fix.
 - **1.8.0**:
   - System: Q2 Pod now runs on Shanling's stock firmware V1.36 instead of V1.32, with its newer kernel, drivers and player.
   - Playback: **Headphones Required**, new in stock V1.36, is under **Resume Songs**. On, nothing starts playing until headphones, Bluetooth or a USB DAC is connected, and the queue isn't restored at start-up. Off by default.

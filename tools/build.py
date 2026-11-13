@@ -2211,6 +2211,18 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
         (out/name).write_bytes(data)
         p = swap_inode(p, path.encode(), out/name)
         changed_assets[path] = dict(original_sha256=sha(original), sha256=sha(data))
+    # Wi-Fi transfer file manager (docs/internals.md#wi-fi-transfer): the stock CGIs are CGIC programs
+    # that build shell commands from the request (mkdir "%s", rm -rf "%s", mv "%s" "%s") and pass the
+    # path/filename straight to system(), so a name with $(...) or a backtick runs as root, and they
+    # read paths outside the card. q2cgi replaces all five, doing each operation with argv (never a
+    # shell command built from input) and validating every path stays under /mnt/mmc. One script over
+    # every cgi-bin/*.cgi inode, so both /name and /cgi-bin/name.cgi resolve to it with no bypass.
+    q2cgi = (ROOT/'assets/web/q2cgi').read_bytes()
+    (out/'q2cgi').write_bytes(q2cgi)
+    for n in ('create', 'delete', 'list', 'download', 'upload'):
+        path = 'usr/share/web/cgi-bin/%s.cgi' % n
+        changed_assets[path] = dict(original_sha256=sha(cat(path)), sha256=sha(q2cgi))
+        p = swap_inode(p, path.encode(), out/'q2cgi')
     patched_ui = list(UI_ASSETS)
     check(chinese, 'No Chinese UI text found')
     assets = ['ui/'+rel for rel in patched_ui + sorted(chinese - set(patched_ui))] + ['strings/en_US.bin']
