@@ -388,7 +388,7 @@ def test_the_round_corners_cover_their_arcs():
     for r in art.CORNERS:
         cover = art.corner_cover(r)
         assert len(cover) == r * r and cover == bytes(cover[x * r + y] for y in range(r) for x in range(r))  # about its diagonal
-        assert cover[0] == (81 if r == 2 else 0) and cover[-1] == 255  # the small corner's outer pixel keeps some cover
+        assert cover[0] == {2: 81, 3: 6}.get(r, 0) and cover[-1] == 255  # the small corners' outer pixels keep some cover
         for y, x, drawn in ((y, x, v) for y in range(r) for x, v in enumerate(art.rounded(r, r, 0, 0, 2 * r, 2 * r, r)[y * r:(y + 1) * r])):
             assert abs(cover[y * r + x] - drawn * 255) <= 16, (r, x, y)  # the images' own corners, their sampling apart
     assert all(f'[{r}] = ' in art.corner_table() for r in art.CORNERS)
