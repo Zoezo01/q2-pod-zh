@@ -179,6 +179,15 @@ void bar_title(void *bar, void *top) {
     while (had && *had && *had == *want) ++had, ++want;
     int changed = !st.bar_titled || !had || *had != *want;
     if (changed) widget_set_text(label, title);
+    /* stock V1.36 writes its own page titles into this label at its own 21 px: keep the clock's
+     * label at the clock's size whatever stock writes under us, or the page's name read larger
+     * than the word beside it (V180B). The style's own 16 px is the size the bin states. */
+    if (widget_get_prop_int(label, "style:normal:font_size", 16) != 16)
+        for (unsigned i = 0; i < 3; ++i)
+            widget_set_prop_int(label,
+                                i ? (i == 1 ? "style:disable:font_size" : "style:focused:font_size")
+                                  : "style:normal:font_size",
+                                16);
     st.bar_titled = 1;
     int bold =
         theme_font(label, ROLE_NP, bar_bold); /* a new Theme can change it under the same title */

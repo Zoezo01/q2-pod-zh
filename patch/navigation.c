@@ -1893,9 +1893,11 @@ static void paint_caps(void *w, void *canvas) {
     if (!w || !P(canvas, CANVAS_LCD)) return;
     const theme_t *T = theme();
     if (w == st.bar_idle) {
-        if (T->caps_mark)
+        /* the 1.0.1 wordmark, in the half's own ink: the style's grey read as nothing on the
+         * light bar, and a written white never reaches Light Mode's style hook (text_ink's). */
+        if (*widget_get_text(w))
             draw_spaced(canvas, widget_get_text(w), 0, (I(w, W_H) - MARK_PX) / 2, MARK_PX,
-                        RGBA(0xaaaaaa), 375);
+                        RGBA(ipod_light() ? 0x171717u : 0xffffffffu), 375);
         return;
     }
     if (st.np_album && w == P(st.np_album, W_PARENT)) {
@@ -3800,6 +3802,14 @@ static void clock_show(void) {
         tk_snprintf(s, sizeof s, "%d:%02d %s", (tm[2] + 11) % 12 + 1, tm[1],
                     tm[2] < 12 ? "上午" : "下午");
     widget_set_text_utf8(label, s);
+    /* stock V1.36 writes its own page titles into this label at its own 21 px: the clock reads at
+     * the bin's size, whatever stock left behind (V180B's page name read larger than the word). */
+    if (!st.bar_title && widget_get_prop_int(label, "style:normal:font_size", 16) != 16)
+        for (unsigned i = 0; i < 3; ++i)
+            widget_set_prop_int(label,
+                                i ? (i == 1 ? "style:disable:font_size" : "style:focused:font_size")
+                                  : "style:normal:font_size",
+                                16);
 }
 static void clock_zone(void) {
     if (st.clock_timer) clock_show(); /* the bar runs; boot's call comes before it */
@@ -3877,10 +3887,22 @@ static int bar_state_sync(void *bar) {
             }
         }
     }
-    /* stock V1.36 shows the device's name here while nothing plays (label_idle, "Q2"): we keep
-     * the bar's left empty instead, as every release before read, and the word says playing or
-     * paused when something does (bar_word_sync). */
-    if (st.bar_idle && widget_get_visible(st.bar_idle)) widget_set_visible(st.bar_idle, 0, 0);
+    /* stock V1.36 shows the device's name here while nothing plays (label_idle, "Q2"): kept, and
+     * painted by paint_caps in the half's own ink — the style's white read grey through the
+     * disable state on the light bar (V176C..V180B), and a written white never reaches Light
+     * Mode's style hook (text_ink's lesson). Transparent here, so stock's own pass draws nothing
+     * under ours. */
+    if (st.bar_idle && st.bar_state && st.bar_eq)
+        widget_set_visible(st.bar_idle,
+                           !widget_get_visible(st.bar_state) && !widget_get_visible(st.bar_eq), 0);
+    if (st.bar_idle && widget_get_visible(st.bar_idle)) {
+        static const char *const states2[] = { "normal", "focused", "disable" };
+        char prop[48];
+        for (unsigned i = 0; i < 3; ++i) {
+            snprintf(prop, sizeof prop, "style:%s:text_color", states2[i]);
+            widget_set_prop_int(st.bar_idle, prop, 0x00000000u);
+        }
+    }
     return changed;
 }
 
