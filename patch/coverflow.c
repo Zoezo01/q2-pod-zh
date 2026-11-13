@@ -3159,16 +3159,18 @@ static void *panel_label(void *parent, int x, int y, int w, int h, const char *s
 }
 
 /* A row's title runs to its length's own text, not to the box reserved for the widest length: the
- * length is cut to its measured width, at the right margin, and the title ends PANEL_TIME_GAP before
- * it. No canvas, or a text that doesn't measure: the reserve stands. ponytail: measured once at the
- * build, in the default face at 20 px, which is the label's. */
+ * length is cut to its measured width plus hscroll_label's two 2 px margins (it scrolls a text wider
+ * than its width less those), at the right margin, and the title ends PANEL_TIME_GAP before it. No
+ * canvas, or a text that doesn't measure or fit the reserve: the reserve stands. ponytail: measured
+ * once at the build, in the default face at 20 px, which is the label's. */
 #define PANEL_TIME_GAP 8
 static void panel_fit(void *title, void *time, unsigned n) {
     void *canvas = widget_get_canvas(time);
     if (!canvas) return;
     canvas_set_font(canvas, (const char *)0, 20);
     int w = (int)(canvas_measure_text(canvas, widget_get_text(time), n) + 0.5f);
-    if (w <= 0 || w > I(time, W_W)) return;
+    if (w <= 0 || w + 4 > I(time, W_W)) return;
+    w += 4;
     widget_move_resize(time, BACK_W - 12 - w, 0, w, I(time, W_H));
     widget_resize(title, BACK_W - 12 - w - PANEL_TIME_GAP - 12, I(title, W_H));
 }

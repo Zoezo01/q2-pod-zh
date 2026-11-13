@@ -3485,9 +3485,16 @@ def panel_row(fw, text, canvas=1):
 @pytest.mark.parametrize('text,w', [('4:01', 40), ('14:57', 50), ('1:02:03', 70)])
 def test_a_panel_title_runs_to_its_length_s_own_text(fw, text, w):
     _, resize, move, title, time = panel_row(fw, text)
-    gap = 8
-    assert [a[1:3] for _, a in resize] == [(BACK_W - 12 - w - gap - 12, 45)]  # from x 12, ending gap before the text
-    assert [a[1:5] for _, a in move] == [(BACK_W - 12 - w, 0, w, 45)]  # the length stays at the right margin
+    gap, box = 8, w + 4  # hscroll_label paints in its width less two 2 px margins, and scrolls a text wider than that
+    assert [a[1:3] for _, a in resize] == [(BACK_W - 12 - box - gap - 12, 45)]  # from x 12, ending gap before the box
+    assert [a[1:5] for _, a in move] == [(BACK_W - 12 - box, 0, box, 45)]  # the length stays at the right margin
+
+
+def test_a_panel_length_too_wide_for_its_reserve_keeps_it(fw):
+    _, resize, move, *_ = panel_row(fw, '10:00:00')  # 80 px and its margins against the 88 px reserve: 84 fits
+    assert [a[3] for _, a in move] == [84]
+    _, resize, move, *_ = panel_row(fw, '100:00:00')  # 90 px: left alone
+    assert len(resize) == 1 and len(move) == 1
 
 
 def test_a_panel_row_keeps_its_reserve_with_no_canvas(fw):
