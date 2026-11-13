@@ -7,6 +7,7 @@
   - Card apps: a song an app streams by URL, such as from Jellyfin, shows its own album art in Now Playing, Enlarged Art and Home. It used to keep the first song's art for every later song in the queue.
   - Card apps: a row that asks the app to do something, such as **Add to Sync**, says **Working…** when the app takes a moment to answer, and until it answers a press of such a row does nothing. A second press used to be sent as well, so pressing **Add to Sync** twice could remove the album again, with no message.
   - Card apps: an app can leave out the **Stop** row on its pages: a page still loading shows only Loading…, and a failed page offers **Retry** and **Cancel**, which goes back as Return does and leaves the app running.
+  - Card apps: an app's page can ask you to type a value, such as a sign-in's user name and password, and stay on the same page, which shows what the app chooses (`***` for a password) and is never titled with what you typed.
 - **1.8.0**:
   - System: Q2 Pod now runs on Shanling's stock firmware V1.36 instead of V1.32, with its newer kernel, drivers and player.
   - Playback: **Headphones Required**, new in stock V1.36, is under **Resume Songs**. On, nothing starts playing until headphones, Bluetooth or a USB DAC is connected, and the queue isn't restored at start-up. Off by default.
