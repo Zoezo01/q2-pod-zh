@@ -292,6 +292,8 @@ class Files:
         if 'r' in mode and path not in self.files:
             return 0
         handle = 0x2000 + len(self.open)
+        while handle in self.open:  # one closed since leaves this count on a file still open
+            handle += 1
         self.open[handle] = [path, 0, b'' if 'w' in mode else self.files.get(path, b'') if 'a' in mode else None]
         return handle
 
