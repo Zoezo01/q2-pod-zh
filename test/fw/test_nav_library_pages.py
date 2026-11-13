@@ -1202,6 +1202,19 @@ def test_fewer_hearts_on_a_my_fav_take_it_out(fw, ui, song, mcl):
 
 
 @in_fork
+@pytest.mark.parametrize('fav, kept, key, told', [(False, 4, KEY_NEXT, b'1'), (True, 0, KEY_PREV, b'0')])
+def test_five_hearts_or_none_on_an_app_synced_song_are_told_to_the_app(fw, ui, song, mcl, fav, kept, key, told):
+    path = b'/mnt/mmc/Jellyfin/A/now.flac'
+    heart = Heart(fw, ui, song, mcl, fav=fav, path=path, table=ratings((listen_key(path), kept)) if kept else None)
+    stock_stub(FAV_CLICK, 0, (C.c_long * 3)())
+    favdir_card(fw, heart.files.files)
+    heart.hold()
+    heart.key(key)
+    heart.key(KEY_CENTER)
+    assert heart.files.files['/mnt/mmc/.jf/fav.log'] == b'\npath\t' + told + b'\t' + path + b'\n'
+
+
+@in_fork
 def test_a_tap_is_stock_s_toggle_and_forgets_the_kept_hearts(fw, ui, song, mcl):
     heart = Heart(fw, ui, song, mcl, kept=3)
     log = (C.c_long * 3)()
@@ -2683,12 +2696,20 @@ def album_songs(fw, ui, song, st):
     return files
 
 
-@pytest.mark.parametrize('on', [1, 0])
-def test_an_album_s_favourite_is_told_for_each_of_its_songs(fw, ui, song, st, on):
+def test_an_album_s_favourite_is_told_for_each_of_its_songs(fw, ui, song, st):
     files = album_songs(fw, ui, song, st)
-    fw.fn('rate_album_favs', None, C.c_void_p, C.c_int)(song(kind=4, disc=7), on)
-    assert files.files['/mnt/mmc/.jf/fav.log'] == b''.join(b'\npath\t%d\t/mnt/mmc/Jellyfin/A/%d.flac\n' % (on, i)
+    fw.fn('rate_album_favs', None, C.c_void_p, C.c_int)(song(kind=4, disc=7), 1)
+    assert files.files['/mnt/mmc/.jf/fav.log'] == b''.join(b'\npath\t1\t/mnt/mmc/Jellyfin/A/%d.flac\n' % i
                                                          for i in (1, 2))
+
+
+def test_an_album_s_unfavourite_is_told_only_for_songs_that_were_favourites(fw, ui, song, st):
+    """A song liked on the app's server and never hearted here isn't the Q2's to unlike."""
+    files = album_songs(fw, ui, song, st)
+    fw.mock('checkFavExist', lambda r, *_: field(r, 'path').endswith(b'/2.flac'))
+    fw.fn('rate_album_favs', None, C.c_void_p, C.c_int)(song(kind=4, disc=7), 0)
+    assert files.files['/mnt/mmc/.jf/fav.log'] == b'\npath\t0\t/mnt/mmc/Jellyfin/A/2.flac\n'
+    assert len(fw.calls('deleteMusicFromFav')) == 2  # My Fav is cleared of both as before
 
 
 def test_an_album_s_favourite_stops_telling_at_the_first_refusal(fw, ui, song, st):

@@ -97,8 +97,15 @@ void rate_album_favs(void *album, int on) {
         for (unsigned i = 0; i < n; i++) batch_set_selectitem((int)i);
         batch_add_file(0xf001, 0xf00a, t, P(p_vector_select_record, 0), 0);
     }
-    for (unsigned i = 0; !on && i < n; i++) deleteMusicFromFav(deque_at(t, i));
-    for (unsigned i = 0; i < n && fav_told(deque_at(t, i), on); i++) {}
+    /* Off tells the app only of songs that were in My Fav: a song liked on its server, never
+     * hearted here, is not the Q2's to unlike. The notices stop at the first the card refuses. */
+    int told = 1;
+    for (unsigned i = 0; i < n; i++) {
+        void *r = deque_at(t, i);
+        int was = on || checkFavExist(r) != 0;
+        if (!on) deleteMusicFromFav(r);
+        if (was && told) told = fav_told(r, on);
+    }
     deque_destroy(t);
     ratings_copy_due();
 }
@@ -361,7 +368,8 @@ static int rate_fav_click(void *ctx, void *event) {
     int app = app_fav();
     if (app >= 0) image_base_set_image(ra.rate_fav, app ? "tidal_fav_add" : "tidal_fav_rm");
     if (app == -2) toast("Favourite not saved");
-    if (app == -3) toast("This app has no favourites"); /* an app's song without an item: not Tidal's */
+    if (app == -3)
+        toast("This app has no favourites"); /* an app's song without an item: not Tidal's */
     if (app != -1) return 0;
     FAV_CLICK(ctx, event);
     ratings_copy_due();

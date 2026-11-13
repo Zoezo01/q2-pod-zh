@@ -430,6 +430,17 @@ def test_a_queue_loading_takes_an_app_song_s_heart_with_it(fw, queue, mcl):
     assert favourite(fw) == 1
 
 
+def test_a_load_through_ringnav_load_takes_an_app_song_s_heart_with_it(fw, queue, mcl):
+    """The clear is ringnav_load's own call: deleting it from there keeps the last app song's heart on."""
+    urls_play(fw, Files(fw), HEARTS)
+    queue.row('app:1:0')
+    fw.fn('ringnav_tidal_track', C.c_int, C.c_void_p, C.c_void_p, C.c_void_p, C.c_void_p)(0, 0, 0, 0)
+    assert favourite(fw) == 1
+    fw.mock('stock_load_trampoline', lambda *_: 0)
+    fw.fn('ringnav_load', C.c_int, C.c_void_p, C.c_int, C.c_int)(None, 0, 1)
+    assert favourite(fw) == 0
+
+
 def test_a_url_queue_takes_web_urls_and_card_paths_alone(fw):
     """A server's line reaches stock's player as a URL or as a card path, nothing else (the rule a Stream mode
     playlist's lines pass in addon.c); a cover is fetched by stock's curl thread, so it is a web URL or none."""
