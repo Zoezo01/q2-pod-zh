@@ -421,6 +421,71 @@ def test_only_a_new_level_or_charge_repaints_the_bar_after_the_frame(fw, st, ui)
     assert repaints == [1, 0, 1, 1, 1] and ui.invalidated(bar.bar) == [bar.bar] * 4
 
 
+# Stock's battery writes land on the hidden label_battery and img_battery, which repaint nothing: showface's tick
+# repaints the bar for a new level or charge, as the minute does for the clock, and only then.
+@pytest.mark.parametrize('t, mode', [(MODERN, 1), (CLASSIC, 2), (MINIMAL, 3)])
+def test_a_new_level_repaints_the_bar_with_nothing_else_painting(fw, st, ui, t, mode):
+    theme(fw, st, t, BATTERY=mode)
+    bar = Bar(fw, ui)
+    lit = fw.var('g_backlight_status', C.c_ubyte)
+    lit.value = 1
+    st.pct_digit, st.pct_sign = 10, 10  # as the first paint measured them
+    bar.sync()  # the first paint
+    ui.run_all('bar_repaint')
+    def tick(*level):
+        if level:
+            bar.level(*level)
+        before = len(ui.invalidated(bar.bar))
+        fw.fn('ringnav_showface', C.c_int, C.c_void_p)(bar.bar)
+        return len(ui.invalidated(bar.bar)) - before
+    def frame():  # the repaint's frame shows the new level and asks for no other, unless the slot resized
+        bar.sync()
+        asked = len(ui.due('bar_repaint'))
+        ui.run_all('bar_repaint')
+        return asked
+    assert [tick(), tick('87%'), frame(), tick(), tick('87%', b'bar_charge'), frame(), tick()] == [0, 1, 0, 0, 1, 0, 0]
+    grows = st.batt_mode in (1, 2)  # the digits shown beside or alone; Inside's body keeps its width
+    assert [tick('9%'), frame()] == [1, grows]  # a digit fewer
+    width = slot_width(ui, bar)
+    # a digit more: the slot widens and the row relays, after the frame
+    assert [tick('10%'), frame()] == [1, grows] and slot_width(ui, bar) == width + 10 * grows
+    lit.value = 0
+    assert tick('86%') == 0  # dark: the wake paints it
+
+
+def test_a_dark_bar_gets_one_repaint_for_a_new_level_and_its_sync_asks_for_no_more(fw, st, ui):
+    theme(fw, st, BATTERY=1)
+    bar = Bar(fw, ui)
+    fw.var('g_backlight_status', C.c_ubyte).value = 1
+    st.bar_dark = 1
+    bar.sync()
+    ui.run_all('bar_repaint')
+    bar.level('87%')
+    before = len(ui.invalidated(bar.bar))
+    fw.fn('ringnav_showface', C.c_int, C.c_void_p)(bar.bar)
+    assert len(ui.invalidated(bar.bar)) - before == 1
+    bar.sync()
+    assert not ui.due('bar_repaint')
+
+
+def test_classic_repaints_the_bar_when_only_the_cable_flips(fw, st, ui):
+    theme(fw, st, CLASSIC, BATTERY=2)
+    bar = Bar(fw, ui)
+    fw.var('g_backlight_status', C.c_ubyte).value = 1
+    fw.var('fw_ctx_g_power_chargestate', C.c_int).value = 2  # full
+    usb = fw.var('g_usbdet_value', C.c_ubyte)
+    usb.value = 0
+    st.pct_digit, st.pct_sign = 10, 10
+    bar.sync()
+    ui.run_all('bar_repaint')
+    def tick():
+        before = len(ui.invalidated(bar.bar))
+        fw.fn('ringnav_showface', C.c_int, C.c_void_p)(bar.bar)
+        return len(ui.invalidated(bar.bar)) - before
+    usb.value = 1  # full on power: Classic's plug, the label and the icon unchanged
+    assert [tick(), tick()] == [1, 0]
+
+
 def test_wifi_and_bluetooth_crowd_the_percentage_out_to_the_icon(fw, st, ui):
     theme(fw, st, BATTERY=2)
     bar = Bar(fw, ui)
