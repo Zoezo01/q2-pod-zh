@@ -2425,12 +2425,15 @@ def test_solitaire_paint_the_top_row_shows_each_pile_s_top_card_and_a_column_all
     p.go(SOLITAIRE)
     deal_table(p.s)
     cards, outlines = solitaire(paint(p))
-    assert [c.texts[0].text if c.texts else None for c in cards] == [None, '10♥', 'A♠', None, 'Q♦', 'J♣']
+    assert [''.join(t.text for t in c.texts[:2]) or None for c in cards] == [None, '10♥', 'A♠', None, 'Q♦', 'J♣']
     stock, ten, ace, back, queen, jack = cards
     assert stock.inner and not back.inner and stock.face == back.face and not light(back.face)  # covered: no border
     assert all(light(c.face) for c in (ten, ace, queen, jack))
-    assert [len(c.texts) for c in (ten, ace, queen, jack)] == [2, 2, 1, 2]  # the suit large only when uncovered
-    assert [t.text for t in jack.texts] == ['J♣', '♣'] and jack.texts[1].px > jack.texts[0].px
+    assert [len(c.texts) for c in (ten, ace, queen, jack)] == [3, 3, 2, 3]  # the suit large only when uncovered
+    assert [t.text for t in jack.texts] == ['J', '♣', '♣'] and jack.texts[2].px > jack.texts[1].px == jack.texts[0].px
+    rank, pip = jack.texts[:2]  # the rank on the left, the suit on the right, both inside the card
+    assert jack.rect[0] < rank.rect[0] and rank.rect[0] + rank.rect[2] <= pip.rect[0] + 1
+    assert pip.rect[0] + pip.rect[2] < jack.rect[0] + jack.rect[2]
     assert ten.texts[0].color == queen.texts[0].color and red(ten.texts[0].color)  # hearts and diamonds
     assert ace.texts[0].color == jack.texts[0].color and dark(ace.texts[0].color)  # spades and clubs
     top, column = {c.rect[1] for c in (stock, ten, ace)}, [c.rect for c in (back, queen, jack)]
@@ -2459,6 +2462,10 @@ def test_solitaire_paint_a_deep_column_closes_its_fan_up_the_outer_ones_shorter(
     assert steps['s'][1] > steps['i'][6] > steps['o'][6] > 0 and len(set(steps['i'][6:])) == 1 == len(set(steps['o'][6:]))
     bottom = {name: col[-1][1] + col[-1][3] for name, col in (('o', outer), ('i', inner))}
     assert bottom['o'] < bottom['i'] <= s.h and bottom['i'] > s.h - steps['i'][6]  # filled to the sheet's foot
+    px = {x: [c.texts[0].px for c in cards if c.rect[0] == x and c.texts] for x in sorted(columns)}
+    whole, (*closed, top), (*tight, _) = px[sorted(columns)[2]][0], px[sorted(columns)[1]], px[sorted(columns)[0]]
+    assert top == whole > closed[0] > tight[0]  # a closed-up strip's label is smaller, the uncovered card's as ever
+    assert closed[0] <= steps['i'][6] + 3 and tight[0] <= steps['o'][6] + 3  # and whole in what shows
 
 
 def test_solitaire_paint_the_cursor_frames_its_top_card_and_a_held_run_is_framed_in_the_tone(fw):

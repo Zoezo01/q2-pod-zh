@@ -975,14 +975,17 @@ static void vortex_paint(void *canvas, unsigned tone) {
 #define SOL_LOW 35 /* the outer columns end this far above the bottom, clear of the corners */
 #define FAN 20     /* a face-up card's label showing under the next */
 #define FAN_DOWN 6
+#define LABEL_PX 20 /* the rank and suit in a whole strip */
 
 /* A grey v (0 to 255) that Light Mode's flip (ui_ink) leaves at v: a card is paper-white in either
  * mode, its black suits black. */
 static unsigned unflipped(unsigned v) { return unflip(v) * 0x010101u; }
 
-/* A rounded card: face down in the tone, darker inside a border when nothing covers it, or rank and
- * suit at the top in red or black, its suit large below when nothing covers it. */
-static void card_paint(void *canvas, int x, int y, int c, int whole, unsigned tone) {
+/* A rounded card: face down in the tone, darker inside a border when nothing covers it, or its rank
+ * on the left and suit on the right of the top strip in red or black, its suit large below when
+ * nothing covers it. A strip under FAN (a closed-up column's) takes smaller text, whole in what
+ * shows. */
+static void card_paint(void *canvas, int x, int y, int c, int whole, int strip, unsigned tone) {
     static const unsigned short suit[] = { 0x2660, 0x2665, 0x2666, 0x2663 }; /* ♠♥♦♣ */
     unsigned text[3], n = 0;
     round_box(canvas, x, y, CARD_W, CARD_H, 0x777777, 5);
@@ -997,8 +1000,11 @@ static void card_paint(void *canvas, int x, int y, int c, int whole, unsigned to
     if (c % 13 == 9) text[n++] = '1';
     text[n++] = (unsigned char)"A234567890JQK"[c % 13];
     text[n++] = suit[c / 13];
-    int r[4] = { x, y + 1, CARD_W, FAN - 2 }, big[4] = { x, y + FAN - 2, CARD_W, CARD_H - FAN + 2 };
-    draw_centred(canvas, text, n, r, 16, ink);
+    int rank[4] = { x + 1, y + 1, 24, strip - 1 }, pip[4] = { x + 24, y + 1, 20, strip - 1 };
+    int big[4] = { x, y + FAN - 2, CARD_W, CARD_H - FAN + 2 };
+    unsigned px = strip < FAN ? (unsigned)strip + 3 : LABEL_PX;
+    draw_centred(canvas, text, n - 1, rank, px, ink);
+    draw_centred(canvas, &text[n - 1], 1, pip, px, ink);
     if (whole) draw_centred(canvas, &text[n - 1], 1, big, 26, ink);
 }
 
@@ -1017,7 +1023,7 @@ static void solitaire_paint(void *canvas, unsigned tone) {
         if (!n) frame_rect(canvas, x, y, CARD_W, CARD_H, 0x333333, 5);
         for (; i < n; y += s->card[p][i++] & UP ? fan : FAN_DOWN) {
             if (s->card[p][i] & UP && first < 0) first = y;
-            card_paint(canvas, x, y, s->card[p][i], i == n - 1, tone);
+            card_paint(canvas, x, y, s->card[p][i], i == n - 1, i == n - 1 ? FAN : fan, tone);
             if (i == n - 1) break;
         }
         if (g->picking && p == g->pick)
