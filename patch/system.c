@@ -67,6 +67,7 @@ static void charge_poll(void) {
                                  ? g_usbdac_chargeflag
                                  : 1);
     st.charge_held = hold;
+    battery_tick(level, g_usbdet_value != 0); /* Battery History's rows (battery.c) */
 }
 
 /* The Wi-Fi signal (docs/internals.md#battery), for networkGetWifiSignal's two pollers: the status

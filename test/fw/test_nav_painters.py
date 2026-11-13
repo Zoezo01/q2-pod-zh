@@ -1646,13 +1646,14 @@ def test_power_adds_standby_charge_and_in_vehicle_rows_after_stocks(fw):
     fw.mock('stock_power_trampoline', build)
     assert fw.fn('ringnav_powermanager', C.c_int, C.c_void_p, C.c_void_p)(win.addr, None) == 3
     stock, ours = view.children[:2], view.children[2:]
-    assert [s.name for s in stock] == ['s0', 's1'] and len(ours) == 4
+    assert [s.name for s in stock] == ['s0', 's1'] and len(ours) == 5
     icons = [next(c.props['image'] for c in r.walk() if c.kind == 'image') for r in ours]
-    # Standby, Charge, Smart Wi-Fi, In-Vehicle
-    assert icons == ['system_powermanager', 'usb_chargeswitch', 'wifiset_wifi', 'system_carmode']
-    standby, charge, *_ = (ui.text(label_of(r)) for r in ours)
+    # Standby, Charge, Smart Wi-Fi, In-Vehicle, Battery History
+    assert icons == ['system_powermanager', 'usb_chargeswitch', 'wifiset_wifi', 'system_carmode', 'system_powermanager']
+    standby, charge, *_, history = (ui.text(label_of(r)) for r in ours)
     assert standby.endswith('Off') and f'{O["CHARGE_STOP"]}%' in charge  # Standby off; where Charge stops
-    assert [switch(r) for r in ours] == [None, 'switch_off', 'switch_off', 'switch_off']
+    assert history == 'Battery History' and 'list_into' in [c.props.get('image') for c in ours[-1].walk()]  # opens a page
+    assert [switch(r) for r in ours] == [None, 'switch_off', 'switch_off', 'switch_off', None]
     for r in ours:  # stock's settings row: its button, the title clear of the icon, both the row's height
         button, label = r.children[0], label_of(r)
         icon = next(c for c in r.walk() if c.kind == 'image')
@@ -1692,7 +1693,7 @@ def test_in_vehicle_mode_is_stocks_byte_and_key(fw):
     ui, win, view, settings, build = settings_page(fw, MINIMAL, 'powermanager_page', 'scroll_view_powermanager')
     fw.fn('ringnav_powermanager', C.c_int, C.c_void_p, C.c_void_p)(win.addr, None)
     g(fw, 'g_carmode_state', 4)
-    standby, charge, smart, car = view.children
+    standby, charge, smart, car, history = view.children
     click(ui, car)
     assert (g(fw, 'g_carmode'), g(fw, 'g_carmode_state')) == (1, 0) and settings.written == [('CARMODE', 1)]
     assert switch(car) == 'switch_on'
@@ -1702,7 +1703,7 @@ def test_smart_wifi_switches_and_saves_its_own_key(fw, st):
     ui, win, view, settings, build = settings_page(fw, MINIMAL, 'powermanager_page', 'scroll_view_powermanager')
     fw.fn('ringnav_powermanager', C.c_int, C.c_void_p, C.c_void_p)(win.addr, None)
     car_mode = g(fw, 'g_carmode')
-    standby, charge, smart, car = view.children
+    standby, charge, smart, car, history = view.children
     click(ui, smart)
     assert switch(smart) == 'switch_on' and settings.written == [('SMARTWIFI', 1)] and st('smart_wifi').value == 1
     assert switch(charge) == switch(car) == 'switch_off' and g(fw, 'g_carmode') == car_mode  # the other rows as they were
@@ -1713,7 +1714,7 @@ def test_smart_wifi_switches_and_saves_its_own_key(fw, st):
 def test_classic_shows_a_switch_as_its_value(fw, st):
     ui, win, view, settings, build = settings_page(fw, CLASSIC, 'powermanager_page', 'scroll_view_powermanager', CHARGELIMIT=b'1')
     fw.fn('ringnav_powermanager', C.c_int, C.c_void_p, C.c_void_p)(win.addr, None)
-    standby, charge, smart, car = view.children
+    standby, charge, smart, car, history = view.children
     assert value(ui, charge) == 'On' and value(ui, smart) == value(ui, car) == 'Off' and switch(charge) is None
     assert f'{O["CHARGE_STOP"]}%' in ui.text(label_of(charge))
     v = next(c for c in charge.walk() if c.name == '_setting_value')

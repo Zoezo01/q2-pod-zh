@@ -504,6 +504,8 @@ static inline long long wall_time(void) {
     long t = time((void *)0);
     return t == -1 ? -1 : (long long)(unsigned long)t;
 }
+/* A wall time before this (2020-09-13) is a clock never set: scrobbling's test, Battery History's. */
+#define CLOCK_SET 1600000000u
 /* CURLOPT_SSL_CTX_FUNCTION: sets X509_V_FLAG_NO_CHECK_TIME on the SSL_CTX's X509_VERIFY_PARAM, so
  * chains still verify against the pinned roots after they expire (2035 on) and after the 32-bit
  * clock wraps. The rootfs's OpenSSL 1.1.1f exports these but demo does not import them, so this
