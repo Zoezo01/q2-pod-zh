@@ -328,7 +328,7 @@ int addon_games(void), addon_game_start(int k), addon_game_on(void);
 int addon_game_audio(void); /* a card game with audio=1 runs: the sound and the media keys are its */
 int addon_game_open(const char *id); /* Home's Shortcut: the card game with this id, -1 none */
 const char *addon_game_name(int k);
-/* games.c: the theme's pop-up for a card game (Q2_POPUP's value), 7 + 6 * 7 + 64 * 7 bytes at most */
+/* games.c: the theme's pop-up for a card game (Q2_POPUP's value), 7 + 6 * 7 + 64 * 7 + 1 bytes at most */
 #define POPUP_ENV 512
 void popup_env(char *out, unsigned size);
 int addon_game_input(void *e), addon_is_game(const char *id);

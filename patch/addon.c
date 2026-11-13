@@ -852,7 +852,10 @@ int addon_game_start(int k) {
     if (!pid) {
         child_oom_first();
         for (int fd = 3; fd < 1024; ++fd) close(fd); /* demo's: the watchdog, the screen, sockets */
-        setenv("Q2_POPUP", pop, 1); /* the child's alone: demo's environment stays as it was */
+        /* the child's alone: demo's environment stays as it was. ponytail: a fork while another thread
+         * holds libc's environment lock (stock's toolsSetTimeZone) hangs the child here; Return's hold
+         * ends it */
+        setenv("Q2_POPUP", pop, 1);
         if (a->audio) /* q2video's arguments: the device, then a soft output's volume */
             execl(a->bin, a->bin, dev ? dev : "plughw:0,0", dev ? vol : (char *)0, (char *)0);
         else

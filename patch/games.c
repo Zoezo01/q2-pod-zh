@@ -1001,8 +1001,7 @@ void popup_env(char *out, unsigned size) {
                         own    ? "classic"
                         : band ? "modern"
                                : "minimal",
-                        c[0] & 0xffffff, c[1] & 0xffffff, c[2] & 0xffffff, c[3] & 0xffffff, c[4] & 0xffffff,
-                        c[5] & 0xffffff);
+                        c[0], c[1], c[2], c[3], c[4], c[5]);
     for (int i = 0; own && i < 2 * POP_ROW && n > 0 && (unsigned)n + 8 <= size; ++i)
         n += tk_snprintf(out + n, size - n, " %06x",
                          i < POP_ROW ? stops_row(&S->bar, i, POP_ROW) : pop_band(S, i - POP_ROW));
