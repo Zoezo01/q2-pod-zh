@@ -145,16 +145,16 @@ with tempfile.TemporaryDirectory(prefix='q2-chapters-') as tmp:
         return lib.mp4_index_bytes(str(d/name).encode())
     ftyp = atom(b'ftyp', b'M4B \0\0\0\0')
     moov = atom(b'moov', trak(b'stsz', 5000000) + trak(b'stz2', 7))
-    assert index('big.m4b', ftyp + atom(b'mdat', b'\0'*64, large=True) + moov) == 5000007*28
-    assert index('first.M4A', ftyp + moov + atom(b'mdat', b'')) == 5000007*28
-    assert index('open.mp4', ftyp + moov + struct.pack('>I4s', 0, b'mdat') + b'\0'*8) == 5000007*28
-    assert index('cut.m4b', ftyp + moov[:-6]) == 5000000*28  # nothing past the cut
+    assert index('big.m4b', ftyp + atom(b'mdat', b'\0'*64, large=True) + moov) == 5000007*16
+    assert index('first.M4A', ftyp + moov + atom(b'mdat', b'')) == 5000007*16
+    assert index('open.mp4', ftyp + moov + struct.pack('>I4s', 0, b'mdat') + b'\0'*8) == 5000007*16
+    assert index('cut.m4b', ftyp + moov[:-6]) == 5000000*16  # nothing past the cut
     assert index('bad.m4b', struct.pack('>I4s', 4, b'ftyp') + moov) == 0
     assert index('song.mp3', ftyp + moov) == 0
     assert lib.mp4_index_bytes(str(d/'missing.m4b').encode()) == 0
-    assert lib.mp4_fits(str(d/'big.m4b').encode()) == (5000007*28//1024 + 16*1024 <= int(
+    assert lib.mp4_fits(str(d/'big.m4b').encode()) == (5000007*16//1024 + 16*1024 <= int(
         [l for l in open('/proc/meminfo') if l.startswith('MemAvailable:')][0].split()[1]))
-    assert lib.mp4_fits(str(bare).encode()) and 0 < lib.mp4_index_bytes(str(bare).encode()) < 100*28
+    assert lib.mp4_fits(str(bare).encode()) and 0 < lib.mp4_index_bytes(str(bare).encode()) < 100*16
     # strict() parses a buffer that ends at an unmapped page, so reading past the terminator crashes.
     ARENA = 1 << 16
     arena = mmap.mmap(-1, ARENA + 4096)
@@ -416,19 +416,19 @@ int run_child(const char *path) { if (setjmp(out)) return 1; chapters_start(path
     def box(*kinds, inner=stsz):
         for kind in reversed(kinds): inner = atom(kind, inner)
         return inner
-    assert index('pad.m4b', atom(b'free', b'') + moov) == 5000007*28
-    assert index('large.m4b', atom(b'moov', stsz, large=True) + atom(b'stsz', struct.pack('>4xII', 0, 2), large=True)) == 11*28
-    assert index('tail.m4b', ftyp + struct.pack('>I4s', 0, b'moov') + stsz) == 9*28
+    assert index('pad.m4b', atom(b'free', b'') + moov) == 5000007*16
+    assert index('large.m4b', atom(b'moov', stsz, large=True) + atom(b'stsz', struct.pack('>4xII', 0, 2), large=True)) == 11*16
+    assert index('tail.m4b', ftyp + struct.pack('>I4s', 0, b'moov') + stsz) == 9*16
     assert index('short.m4b', struct.pack('>I', 4) + moov) == 0
-    assert index('over.m4b', struct.pack('>I4s', 16, b'moov') + struct.pack('>I4s', 28, b'trak') + stsz) == 9*28
-    assert index('five.m4b', box(*[b'moov']*5)) == 9*28
+    assert index('over.m4b', struct.pack('>I4s', 16, b'moov') + struct.pack('>I4s', 28, b'trak') + stsz) == 9*16
+    assert index('five.m4b', box(*[b'moov']*5)) == 9*16
     assert index('six.m4b', box(*[b'moov']*6)) == 0
     for kind in (b'free', b'moox', b'trax', b'mdix', b'minx', b'stbx'):
         assert index('near.m4b', box(kind)) == 0, kind
     assert index('near.m4b', atom(b'stzx', stsz[8:]) + atom(b'stsx', stsz[8:])) == 0
     assert index('thin.m4b', atom(b'stsz', b'\0'*10 + b'\x09') + atom(b'free', b'')) == 0
-    assert index('same.m4b', box(b'stbl', inner=stsz + stsz)) == 18*28
-    assert index('after.m4b', moov + stsz) == (5000007 + 9)*28
+    assert index('same.m4b', box(b'stbl', inner=stsz + stsz)) == 18*16
+    assert index('after.m4b', moov + stsz) == (5000007 + 9)*16
     assert lib.mp4_index_bytes(b'noextension') == 0 and lib.mp4_index_bytes(None) == 0
     big = str(d/'big.m4b').encode()
     setup(fopen_errno=79)
@@ -436,12 +436,12 @@ int run_child(const char *path) { if (setjmp(out)) return 1; chapters_start(path
     setup(fopen_errno=2)
     assert fake.mp4_index_bytes(big) == 0
     far = d/'far.m4b'
-    for jump, want in ((0x7fffffff, 9*28), (0x80000000, 0)):
+    for jump, want in ((0x7fffffff, 9*16), (0x80000000, 0)):
         far.write_bytes(struct.pack('>I4sQ', 1, b'free', jump) + stsz)
         setup(seek_from=jump, seek_to=16)
         assert fake.mp4_index_bytes(str(far).encode()) == want, jump
     # What fits, against a meminfo of the test's own.
-    need = 5000007*28//1024 + 16*1024
+    need = 5000007*16//1024 + 16*1024
     lines = 'MemTotal:       99999999 kB\nMemFree:               1 kB\nMemAvailable:   {} kB\n'
     def fits(text, path=big, **flags):
         setup(**flags)

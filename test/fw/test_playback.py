@@ -2405,7 +2405,7 @@ def test_a_track_that_fits_is_not_refused(saved, fw):
 
 def test_another_book_starts_in_the_room_the_held_book_gives_back(saved, fw):
     saved.load([saved.song(b'/b/a.m4b'), saved.song(b'/b/b.m4b'), saved.song(b'http://x', kind=0)], 0)
-    saved.disk.files['/b/a.m4b'] = saved.disk.files['/b/b.m4b'] = mp4(1 << 20)  # 28 MB of index each
+    saved.disk.files['/b/a.m4b'] = saved.disk.files['/b/b.m4b'] = mp4(1 << 20)  # 16 MB of index each
     start = fw.fn('playback_start_fits', C.c_int)
     saved.disk.files['/proc/meminfo'] = b'MemAvailable: 40000 kB\n'
     assert start() == 1
