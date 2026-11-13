@@ -441,10 +441,13 @@ def patch_style(data, audit):
 # images, but never their geometry. So widgets iPod hides move off-screen instead of going invisible.
 # The volume number stays hidden: stock already opens dialog/volume_dialog on every wheel change.
 STATUS_BAR = 'system_bar.bin'
-STATUS_LEFT = ['img_state', 'label_eq']
+STATUS_LEFT = ['img_state']
+# EQ shows by the battery, not between the glyph and its word: in the left group's flow it pushed
+# the word into the clock's centred page name (V180C's overlap). Its own room is temporary, so the
+# clock's width still measures the group without it.
 STATE_W = 18  # Classic's play state's width: its ink's last column is 282 (tools/art.py STATE_BOX)
 BAR_PAD = 9  # Classic's bar: the title's ink this far clear of the glass (bar_right gives the battery's)
-STATUS_RIGHT = ['img_bt', 'img_wifi', 'label_battery', 'view_battery', 'img_battery']
+STATUS_RIGHT = ['label_eq', 'img_bt', 'img_wifi', 'label_battery', 'view_battery', 'img_battery']
 STATUS_HIDDEN = ['img_vol', 'label_vol', 'img_synclink']
 # The Battery setting (navigation.c bar_sync) shows one of the last three: the stock icon, stock's
 # "88%" (label_battery at BATT_PCT_PX, the icons' height, and right-aligned so its width grows away
@@ -453,11 +456,11 @@ STATUS_HIDDEN = ['img_vol', 'label_vol', 'img_synclink']
 # is how far the plain glyph's ink starts left of img_bt's right edge. With it, Wi-Fi and the wider
 # battery, the group's ink stays CLOCK_GAP clear of the widest clock text, CLOCK_TEXT ("12:59 PM"),
 # so every mode fits once a codec badge has faded; wider badges fall back to the icon (BATT_ROOM).
-BATT_MODES = STATUS_RIGHT[2:4]
+BATT_MODES = ['label_battery', 'view_battery']  # the modes bar_sync shows one of
 BATT_PCT_W, BATT_PCT_PX, BATT_ROOM, BT_REACH = (inc(n) for n in ('BATT_PCT_W', 'BATT_PCT_PX', 'BATT_ROOM', 'BT_REACH'))
 BATT_H_W = inc('BATT_BODY_W') + inc('BATT_NUB_W') + inc('BATT_GAP') + BATT_PCT_W  # the payload's battery with its nub
 # Classic's right group, left to right: Bluetooth, Wi-Fi, the play state and the battery. It shows no EQ.
-STATUS_RIGHT_CLASSIC_LIGHT = [*STATUS_RIGHT[:2], 'img_state', *STATUS_RIGHT[2:]]
+STATUS_RIGHT_CLASSIC_LIGHT = [*STATUS_RIGHT[1:3], 'img_state', *STATUS_RIGHT[3:]]  # Classic parks EQ above the bar
 CLOCK_GAP = 4
 CLASSIC_LIGHT_CLOCK_GAP = 2  # Classic's right group's room, from the widest clock
 CLASSIC_LIGHT_FONT_SRC = ROOT/'assets/fonts/texgyreheros-bold.otf'  # the Classic face's source, subset to CLASSIC_LIGHT_TTF
@@ -563,7 +566,10 @@ def status_bar(root, g=SET0):
             root[3].append(['hscroll_label', m[name], {'name': 'label_' + name, 'style': style, 'only_focus': 'true',
                                                        'ellipses': 'true', **face}, []])
         return
-    shown = [[n for n in v[3] if n[2]['name'] not in BATT_MODES] for v in (left, right)]
+    # EQ is a badge that comes and goes: it belongs to the right group but takes none of the
+    # clock's measured room (the group closes up around it when stock hides it).
+    shown = [[n for n in v[3] if n[2]['name'] not in BATT_MODES and n[2]['name'] != 'label_eq']
+             for v in (left, right)]
     # The left group starts at its own, padded margin; the clock stays centred on the screen between
     # the two groups' reaches.
     extent = max(x + sum(n[1][2] for n in v) + inc('STATUS_GAP') * (len(v) - 1)

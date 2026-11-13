@@ -3802,9 +3802,9 @@ static void clock_show(void) {
         tk_snprintf(s, sizeof s, "%d:%02d %s", (tm[2] + 11) % 12 + 1, tm[1],
                     tm[2] < 12 ? "上午" : "下午");
     widget_set_text_utf8(label, s);
-    /* stock V1.36 writes its own page titles into this label at its own 21 px: the clock reads at
-     * the bin's size, whatever stock left behind (V180B's page name read larger than the word). */
-    if (!st.bar_title && widget_get_prop_int(label, "style:normal:font_size", 16) != 16)
+    /* The clock's own 16 px, in every state the bar's children read (disable's style says 20),
+     * and against stock V1.36's 21 px page-title writes: the time reads like the word beside it. */
+    if (!st.bar_title)
         for (unsigned i = 0; i < 3; ++i)
             widget_set_prop_int(label,
                                 i ? (i == 1 ? "style:disable:font_size" : "style:focused:font_size")
