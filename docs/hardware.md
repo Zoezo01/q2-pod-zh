@@ -9,6 +9,7 @@ Shanling's figures, as retailers and the launch press list them ([Audiophonics](
 | | |
 |---|---|
 | SoC | Ingenic X2000 |
+| RAM | 128 MB, no swap (Linux reports about 120 MB as `MemTotal`) |
 | DAC | 4 × Cirrus Logic CS43131 |
 | Decoding | PCM to 768 kHz / 32-bit, DSD512 |
 | Screen | 2.09 in touchscreen, 320 × 375 |
