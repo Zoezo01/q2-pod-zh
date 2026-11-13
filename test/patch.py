@@ -383,6 +383,7 @@ class Machine:
             ret=0 if getattr(self,'fail_calloc',False) else self.alloc(a*b)
             self.sized[ret]=a*b
         elif name=='realloc@GLIBC_2.0' and getattr(self,'fail_realloc',False): ret=0
+        elif name=='realloc@GLIBC_2.0' and not a: ret=self.alloc(b); self.sized[ret]=b  # realloc(NULL): a malloc
         elif name=='realloc@GLIBC_2.0':  # moved, as glibc may, the old block spoilt
             kept=bytes(self.u.mem_read(a,b)); ret=self.alloc(b); self.u.mem_write(ret,kept); self.u.mem_write(a,b'\xff'*min(b,self.sized.get(a,b))); self.resized.append(kept); self.sized[ret]=b
         elif name=='strdup@GLIBC_2.0': ret=self.string(self.text(a))
