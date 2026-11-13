@@ -22,7 +22,8 @@
  * well (q2-deezer's Stream mode) names a card folder of songs in /tmp/q2-<id>.play, which
  * stream_poll plays as it fills, or an .m3u of card paths, which it plays in order, waiting for
  * each, or its Q2URLS/1 queue of stream URLs, /tmp/q2-<id>.urls, which stock's Tidal player plays
- * (tidal.c app_urls_play). It asks for Update Local Music and its playlists' import in
+ * (tidal.c app_urls_play), telling it in /tmp/q2-<id>.now which of them plays when the queue asks
+ * (now_poll). It asks for Update Local Music and its playlists' import in
  * /tmp/q2-<id>.library (addon_library.c), the result in .library.done. A list reply whose message
  * is "pages" and that has a cursor is followed by its next pages, appended to the same list
  * (page_next), up to ADDON_PAGES.
@@ -86,7 +87,7 @@
 #define CAPS_FILE "/tmp/q2-addon.caps"
 /* This firmware's card-app features, space-separated; a feature adds its word. */
 #define ADDON_CAPS                                                                                 \
-    "playlist progress pages library goto sleep game audio sections art window urls sort field more fav"
+    "playlist progress pages library goto sleep game audio sections art window urls sort field more fav now"
 #define ADDON_SECTIONS 8  /* sections an app's first page may have */
 #define SWIPE_CLAIM_PX 24 /* a sideways move this far, twice as far as up or down, is a swipe's */
 #define SWIPE_PX 60       /* and this far at the lift, more than up or down, changes section */
@@ -245,6 +246,7 @@ static struct {
     char first[512]; /* the session's first song */
     char want[512];  /* the entry waited for */
     unsigned loads;  /* playback_loads at its start, then once its queue was loaded */
+    char seq[24];    /* its .play's seq, as far as the first space (now_start) */
 } sm __attribute__((section(".scratch")));
 enum { S_WAIT, S_PLAY, S_DONE };
 /* The app whose .play started the queue playing, and playback_loads after that queue's load: the
@@ -394,15 +396,111 @@ static int stream_start(const void *unused) {
     return 0;
 }
 
+/* Now playing ("now" in the caps; docs/librespot.md): while the queue playing is a card app's
+ * latest URL queue and its header said now=1 (tidal.c app_urls_at), /tmp/q2-<id>.now says which
+ * of its songs plays and how: "<seq>\t<n>\t<playing|paused|stopped>\t<sec>\t<length>\n", seq its
+ * .play's, n the song's place among the songs kept (as start= counts it). Written whole (blob_io,
+ * tmpfs: cheap here on the UI thread) only when it changes: another song or state at once, the
+ * position at once while paused or after a seek back, else once it moved NOW_STEP_S on. Never
+ * the URL, which carries the app's token. Kept whether the app runs or not, so it reads the file
+ * when it next does. Marked stopped, once, when another queue or player takes over, the player
+ * stays stopped NOW_STOP_MS (not between tracks), another URL queue starts (any app's), or the apps
+ * are stopped (addon_stop: Rockbox, Stop Streaming Services); then nothing until the queue plays
+ * again. A restarted demo marks its last run's stopped (now_sweep). Nothing is written for a queue before it first plays. */
+#define NOW_STEP_S 5
+#define NOW_STOP_MS 3000
+static struct {
+    int owner;                /* the slot + 1 of the app whose URL queue started last; 0 none */
+    char seq[24];             /* that queue's seq */
+    int live;                 /* the file says playing or paused */
+    int n, state, sec, total; /* as written last: state mclGetPlayStatus's, 1 stopped */
+    unsigned stopped, polled; /* time_now_ms() the player was seen stopped since (0 not); paced */
+    int swept;                /* now_sweep has run: this demo's .now files are its own */
+} nw __attribute__((section(".scratch")));
+
+static void now_write(int state, int sec, int total) {
+    static const char *const names[] = { "stopped", "playing", "paused" }; /* status 1, 2, 3 */
+    char path[48], line[96];
+    int k = tk_snprintf(line, sizeof line, "%s\t%d\t%s\t%d\t%d\n", nw.seq, nw.n, names[state - 1],
+                        sec, total);
+    tk_snprintf(path, sizeof path, "/tmp/q2-%s.now", ap.a[nw.owner - 1].id);
+    blob_io(path, "/tmp/q2-now.tmp", line, (unsigned)k, 1);
+    nw.state = state, nw.sec = sec, nw.total = total, nw.live = state != 1;
+}
+
+/* a's URL queue started: the queue before it, if its file says it plays, stopped */
+static void now_start(app_t *a) {
+    if (nw.live) now_write(1, nw.sec, nw.total);
+    nw.owner = (int)(a - ap.a) + 1, nw.n = -1, nw.stopped = 0;
+    tk_snprintf(nw.seq, sizeof nw.seq, "%s", sm.seq);
+}
+
+/* demo started again with /tmp kept (a crash, the watchdog): a .now its last run left saying
+ * playing or paused says stopped, at its last place, so an app never sees a play that never ends.
+ * Once, at the first poll; the third field is the state. */
+static void now_sweep(void) {
+    nw.swept = 1;
+    void *d = opendir("/tmp");
+    for (struct dirent *e; d && (e = readdir(d));) {
+        unsigned k = strlen(e->d_name);
+        char id[APP_ID], path[48], raw[128], line[128];
+        if (k < 8 || k - 7 >= APP_ID || !tk_str_start_with(e->d_name, "q2-") ||
+            strcmp(e->d_name + k - 4, ".now"))
+            continue;
+        tk_snprintf(id, k - 6, "%s", e->d_name + 3); /* q2-<id>.now */
+        if (!valid_id(id)) continue;
+        tk_snprintf(path, sizeof path, "/tmp/%s", e->d_name);
+        state_read(path, raw, sizeof raw); /* raw[0] is its newline */
+        char *t = strstr(raw + 1, "\t"), *st = t ? strstr(t + 1, "\t") : 0;
+        if (!st) continue;
+        const char *rest = tk_str_start_with(st + 1, "playing\t")  ? st + 8
+                           : tk_str_start_with(st + 1, "paused\t") ? st + 7
+                                                                   : 0;
+        if (!rest) continue;
+        int n = tk_snprintf(line, sizeof line, "%.*sstopped%s", (int)(st - raw), raw + 1,
+                            rest);
+        if (n > 0 && n < (int)sizeof line) blob_io(path, "/tmp/q2-now.tmp", line, (unsigned)n, 1);
+    }
+    if (d) closedir(d);
+}
+
+/* addon_poll's, every ADDON_POLL_MS: what plays, as sleep_check reads it */
+static void now_poll(void) {
+    unsigned ms = time_now_ms();
+    if (!nw.owner || ms - nw.polled < ADDON_POLL_MS) return;
+    nw.polled = ms;
+    int n = media_owner() == 1 ? app_urls_at() : -1, status = n < 0 ? 1 : mclGetPlayStatus();
+    if (n < 0) { /* another queue or player */
+        nw.stopped = 0;
+        if (nw.live) now_write(1, nw.sec, nw.total);
+        return;
+    }
+    if (status == 1) { /* stopped, or between tracks for a moment */
+        if (!nw.stopped) nw.stopped = ms | 1;
+        if (nw.live && (int)(ms - nw.stopped) >= NOW_STOP_MS) now_write(1, nw.sec, nw.total);
+        return;
+    }
+    nw.stopped = 0;
+    int sec = -1, total = 0;
+    player_playtime_and_length(&sec, &total);
+    if ((status != 2 && status != 3) || sec < 0) return; /* between tracks: a later pass decides */
+    if (!nw.live || n != nw.n || status != nw.state || total != nw.total ||
+        (sec != nw.sec && (status == 3 || sec < nw.sec || sec >= nw.sec + NOW_STEP_S)))
+        nw.n = n, now_write(status, sec, total);
+}
+
 /* A URL queue's start, on a timer as stream_start's (a window opens); then the session is done:
- * the queue is stock's, and the app reads nothing back. */
+ * the queue is stock's, and the app hears back only through its .now (now_start). */
 static int urls_start(const void *unused) {
     (void)unused;
     sm.timer = 0;
     if (playback_loads != sm.loads) sm.state = S_DONE; /* the user played a queue since */
     if (sm.state != S_WAIT || scanning()) return 0;    /* looked at again after the scan */
     press_natural = 1;
-    if (app_urls_play(sm.dir)) qa.app = sm.app, qa.loads = playback_loads;
+    if (app_urls_play(sm.dir)) {
+        qa.app = sm.app, qa.loads = playback_loads;
+        now_start(sm.app);
+    }
     press_natural = 0;
     sm.state = S_DONE;
     return 0;
@@ -433,6 +531,10 @@ static void stream_poll(app_t *a) {
         for (char *c = dir; c && *c; ++c)
             if (*c == '\n' || *c == '\r') *c = 0;
         tk_snprintf(sm.dir, sizeof sm.dir, "%s", dir ? dir + 1 : "");
+        unsigned s = 0; /* raw[0] is state_read's newline; a seq is cut at 23 bytes or a control */
+        for (; s + 1 < sizeof sm.seq && (unsigned char)raw[1 + s] > ' '; ++s)
+            sm.seq[s] = raw[1 + s];
+        sm.seq[s] = 0;
         sm.last[0] = sm.playing[0] = 0;
         sm.seen = 0;
         unsigned k = strlen(sm.dir);
@@ -848,9 +950,11 @@ int addon_running(void) {
 }
 
 void addon_poll(void) {
+    if (!nw.swept) now_sweep();
     game_poll();
     for (int i = 0; i < ap.n; ++i) poll_one(&ap.a[i]);
     sleep_check();
+    now_poll();
     library_poll();
 }
 
@@ -872,6 +976,8 @@ void addon_stop(void) {
         if (a->launched || !access(a->pid, 0)) stop_cmd(a->pid, cmd, sizeof cmd), system(cmd);
         a->launched = a->hold = a->relaunch = a->restart = 0;
     }
+    /* Rockbox's row kills demo next, /tmp kept; Stop Streaming Services stops a URL queue too */
+    if (nw.live) now_write(1, nw.sec, nw.total);
 }
 
 /* usbmode_page_init's hook (navigation.c), before stock unmounts the card for USB storage: every

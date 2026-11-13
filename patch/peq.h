@@ -301,6 +301,7 @@ int app_urls_play(const char *path); /* tidal.c: a card app's Q2URLS/1 queue, pl
 int app_lyrics(const char *id, char *out, unsigned size); /* tidal.c: an app track's .lrc path */
 int app_fav(void); /* tidal.c: Now Playing's heart on an app's streamed song, -1 not one */
 void app_fav_load(void); /* tidal.c: a queue loading clears an app song's heart */
+int app_urls_at(void); /* tidal.c: the song playing's n in a now=1 URL queue playing; -1 none */
 int directory(void *path); /* playback.c: toolsLoadDirectory, for staged */
 #define TIDAL_DIR "/mnt/mmc/.tidal" /* tidal.c's cache, Tidal Downloads' list */
 void tidal_clear(void);

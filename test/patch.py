@@ -16597,7 +16597,7 @@ passed()
 CAPS='/tmp/q2-addon.caps'
 m=AppMachine(); stream_rows(m); caps=bytes(m.files[CAPS])
 assert caps.endswith(b'\n') and caps.count(b'\n')==1,caps
-assert set(caps.split())=={b'playlist',b'progress',b'pages',b'library',b'goto',b'sleep',b'game',b'audio',b'sections',b'art',b'window',b'urls',b'sort',b'field',b'more',b'fav'},caps
+assert set(caps.split())=={b'playlist',b'progress',b'pages',b'library',b'goto',b'sleep',b'game',b'audio',b'sections',b'art',b'window',b'urls',b'sort',b'field',b'more',b'fav',b'now'},caps
 m.files[CAPS]=bytearray(b'stale\n'); stream_rows(m); assert m.files[CAPS]==caps; passed()
 # Classic, Home's Split: the Streaming row slides Streaming's rows in, as the Library's: the page's own constructor fills the
 # list, what it sets on a window goes again, every row (stock's 70 px Tidal row and the added ones) takes Home's width and height,
@@ -17824,6 +17824,19 @@ assert track(3)==(0,['stock_tidaltrack','sem_post']) and not m.threads; passed()
 m.files[URLS]=bytearray(b'#Q2URLS/1\nhttps://jf/d.flac\tThree\n'); m.call(address=payload_syms['app_urls_play'],args=(m.string(URLS),0,0,0),gap=0)
 assert [p[2:4] for p in m.plays][-1]==(0,0xf1) and field(m.play_recs[0],'REC_TIDAL_ID')=='app:2:0'
 assert track(0)==(1,['one:net','tidal_playurl','mclStop']) and not m.threads; passed()
+# A queue whose header says now=1 tells its app which song plays (app_urls_at, for addon.c's .now): the n of the
+# record at MCL_POS in the latest such 0xf1 queue; none (-1) for an older queue's song, a Tidal track, another
+# queue class, or a queue that didn't ask.
+NONE=0xffffffff; mtype=m.get(O['MCL_TYPE'])
+m.files[URLS]=bytearray(b'#Q2URLS/1\tstart=0\tnow=1\nhttps://jf/d.flac\tThree\nhttps://jf/e.flac\tFour\n')
+assert m.call(address=payload_syms['app_urls_play'],args=(m.string(URLS),0,0,0),gap=0)==1
+m.word(syms['mcl_pdeqplaylist'],m.deque([*m.play_recs,urecs[0],tidal_rec])); m.word(O['MCL_TYPE'],0xf1)
+def now_at(pos): m.word(O['MCL_POS'],pos); return m.call(address=payload_syms['app_urls_at'],args=(0,0,0,0),gap=0)&NONE
+assert [now_at(p) for p in range(4)]==[0,1,NONE,NONE]
+m.word(O['MCL_TYPE'],0xf001); assert now_at(1)==NONE; m.word(O['MCL_TYPE'],0xf1)
+m.files[URLS]=bytearray(b'#Q2URLS/1\nhttps://jf/d.flac\tThree\n'); m.call(address=payload_syms['app_urls_play'],args=(m.string(URLS),0,0,0),gap=0)
+m.word(syms['mcl_pdeqplaylist'],m.deque(m.play_recs)); assert now_at(0)==NONE
+m.word(O['MCL_TYPE'],mtype); passed()
 # Not a queue (no #Q2URLS/1 first), or no song in it: nothing plays.
 n=len(m.plays)
 for body in (b'https://jf/d.flac\tThree\n',b'#Q2URLS/1\tstart=0\n',b''):
