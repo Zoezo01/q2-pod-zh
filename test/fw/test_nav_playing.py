@@ -574,7 +574,7 @@ def test_a_crowded_row_turns_percent_inside_to_the_icon_but_classics_is_the_icon
     assert slot_width(ui, bar) == (g.batt_w + 1 if t is CLASSIC else BODY_W) + NUB_W
 
 
-def test_classics_battery_values_are_icon_and_inside(fw, st, ui):
+def test_classics_battery_reads_icon_and_percent_as_inside(fw, st, ui):
     theme(fw, st, CLASSIC, BATTERY=2)  # Icon + Percent is no Classic value: its default, inside
     bar = Bar(fw, ui)
     assert [x[0] for x in Paint(fw, ui, bar)().texts] == ['88', '88']

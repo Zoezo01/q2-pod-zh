@@ -434,10 +434,12 @@ def test_a_shadow_past_its_alphas_is_an_error():
     theme.validate({**t, 'pane_shadow_a': (9, 8, 7)}, 't.xml')
 
 
-def test_classic_light_battery_offers_only_what_the_bar_gate_exempts():
-    # icon (0) never gates; Percent Inside (3) is exempt under BATT_CLASSIC_LIGHT: bar_sync's constant BATT_ROOM is the built-in bar's
+def test_classic_light_battery_offers_icon_percent_and_inside():
+    # icon (0) never gates; Percent Inside (3) is exempt under BATT_CLASSIC_LIGHT; Percent (1) at the bar's 21 px, 54 px
+    # for 100%, with Wi-Fi, the play state and Bluetooth still ends before Classic's centred clock, and BATT_ROOM drops
+    # it to the icon beside a wide codec badge
     n = theme.builtins()[1]
-    assert next(o['values'] for o in n['opts'] if o.get('setting') == 'SETTING_BATTERY') == 0b1001
+    assert next(o['values'] for o in n['opts'] if o.get('setting') == 'SETTING_BATTERY') == 0b1011
 
 
 def test_hyphen_in_an_id_is_a_c_name():
@@ -1197,7 +1199,7 @@ def test_classic_light_builtin():
     m, n, c = theme.builtins()
     assert (n['id'], n['name'], n['index'], n['geom_set'], n['accent_key'], n['accents']) == ('classic-light', 'Classic', 1, 'classic-light', 'CLASSIC_LIGHT_ACCENT', 0x37f)
     assert n['opts'] == [STATUSBAR, opt('SETTING_LIGHT', preset=1, keep=2), opt('SETTING_ACCENT', default=9, preset=9, values=0x37f),
-                         opt('SETTING_HOME', preset=0), opt('SETTING_SHORTCUT'), opt('SETTING_BATTERY', default=3, values=0b1001), opt('SETTING_TIMETITLE', preset=1),
+                         opt('SETTING_HOME', preset=0), opt('SETTING_SHORTCUT'), opt('SETTING_BATTERY', default=3, values=0b1011), opt('SETTING_TIMETITLE', preset=1),
                          HOMELIB, ROWPREVIEW, own('ROWART', 'Row Art', ('Off', 'On'), ('classic-light-text', 'classic-light'), default=1, preset=1)]
     assert theme.geometry_sets([m, c, n]) == [SET0, CLASSIC_LIGHT, CLASSIC_LIGHT_TEXT]
 

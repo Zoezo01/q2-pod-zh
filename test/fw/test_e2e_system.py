@@ -518,16 +518,16 @@ def test_a_set_the_boot_cant_write_runs_minimal_until_the_next_boot(fw, library,
 
 
 @pytest.mark.xfail(strict=True, reason='BUG: settings_read checks each option against the theme stored in THEME '
-                   'before theme_boot falls back to Minimal (st.theme = 0), so a stored Battery: Percent reads as '
-                   'Classic\'s default, Percent Inside, on a Minimal that takes Percent; the bar draws it and a press '
+                   'before theme_boot falls back to Minimal (st.theme = 0), so a stored Battery: Icon + Percent reads as '
+                   'Classic\'s default, Percent Inside, on a Minimal that takes Icon + Percent; the bar draws it and a press '
                    'saves it over')
 @in_fork
 def test_a_boot_fallen_back_to_minimal_reads_the_settings_as_minimal_does(fw, library, tmp_path):
-    q2 = Q2(fw, library, tmp_path, Flash(IPOD_THEME='1', IPOD_BATTERY='1'))
+    q2 = Q2(fw, library, tmp_path, Flash(IPOD_THEME='1', IPOD_BATTERY='2'))
     boot(q2, refuse=1)
     appearance(q2)
     assert q2.screen.row('Theme') == 'Theme: Minimal'
-    assert q2.screen.row('Battery') == 'Battery: Percent'  # Minimal takes every style; Classic only Icon and Inside
+    assert q2.screen.row('Battery') == 'Battery: Icon + Percent'  # Minimal takes every style; Classic not this one
     q2.close()
 
 

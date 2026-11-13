@@ -142,9 +142,9 @@
   <option setting="accent" key="CLASSIC_LIGHT_ACCENT" default="classic-blue" preset="classic-blue"/>
   <option setting="home" preset="split"/>
   <option setting="shortcut"/>
-  <!-- Battery: the plain icon, chosen with Classic, or Percent Inside, the percent on or off. default is what a stored
-       Percent or Icon + Percent reads as; the key itself stays as stored until the row is cycled. -->
-  <option setting="battery" values="icon inside" default="inside"/>
+  <!-- Battery: the plain icon, chosen with Classic, the percent alone, or Percent Inside. default is what a stored
+       Icon + Percent reads as; the key itself stays as stored until the row is cycled. -->
+  <option setting="battery" values="icon percent inside" default="inside"/>
   <option setting="time_title" preset="on"/>
   <!-- Row Art, Classic's own option: it decides album covers. On shows them in 52 px rows in Albums and the other
        art lists (the classic-light set), Off makes those lists 32 px text (classic-light-text). The Library is text either way.

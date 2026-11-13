@@ -464,10 +464,11 @@ def test_home_cycles_split_full_carousel(fw):
     assert clicks_of(fw, ui, page, 'Home', 3) == [('Full', [('HOME', 1)]), ('Carousel', [('HOME', 2)]), ('Split', [('HOME', 0)])]
 
 
-def test_classic_battery_takes_only_its_two_styles(fw):
+def test_classic_battery_takes_only_its_three_styles(fw):
     ui = Ui(fw)
     page = appearance(fw, ui, THEME=b'1')
-    assert clicks_of(fw, ui, page, 'Battery', 2) == [('Percent Inside', [('BATTERY', 3)]), ('Icon', [('BATTERY', 0)])]
+    assert clicks_of(fw, ui, page, 'Battery', 3) == [('Percent', [('BATTERY', 1)]), ('Percent Inside', [('BATTERY', 3)]),
+                                                     ('Icon', [('BATTERY', 0)])]
 
 
 @pytest.fixture

@@ -12099,7 +12099,9 @@ bm,bw_,bands=classic_light_battery_bar(3,'bar_charge','63%')  # Percent Inside: 
 assert not bm.image_draws; passed()
 bm,bw_,bands=classic_light_battery_bar(0,'bar_lowcharge','5%')
 assert bands[LEVEL:]==[(BX,y+1,3,11,color_t(0xd9402e))]+SHADE+EMBOSS; passed()
-for mode in (1,2,3):  # Percent Inside (digits in the body), and the stored values that read as it
+bm,bw_,bands=classic_light_battery_bar(1)  # Percent: the digits and sign alone, no body
+assert [l['text'] for l in bm.letters]==['50%'] and bands[:LEVEL]!=outline; passed()
+for mode in (2,3):  # Percent Inside (digits in the body), and the stored value that reads as it
     bm,bw_,bands=classic_light_battery_bar(mode); letters=[(l['text'],l['rect']) for l in bm.letters]
     assert letters==[('50',(BX,y+1,BW,11))]*2 and bands[:LEVEL]==outline and bm.get(bw_['view_battery']+O['W_W'])==29,(mode,letters); passed()
 # Percent Inside's digits read in both halves: dark on the level, whatever its colour (the gloss, full while
