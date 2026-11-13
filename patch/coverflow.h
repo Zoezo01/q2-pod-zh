@@ -225,4 +225,8 @@ void ld_take(int s, int i, int a);
 void ld_quit(void);
 void coverflow_halves(void);
 
+/* Optional browsing position. */
+int coverflow_position_enabled(void);
+void coverflow_position_paint(void *w, void *canvas);
+void coverflow_position_reset(void);
 #endif

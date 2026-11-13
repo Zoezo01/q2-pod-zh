@@ -2510,6 +2510,7 @@ static int touched(void);
  * for every widget: over Coverflow's slide_menu it draws the frame, rendered again only when the
  * position or a texture has changed. */
 void coverflow_paint(void *w, void *canvas) {
+    coverflow_position_paint(w, canvas);
     int c, frac, n;
     if (fl.panel && w && flip_paint(w, canvas)) return;
     if (!w || w != cf.slide || !fx.frame || cf.screen != COVERS ||
@@ -2839,6 +2840,7 @@ static void covers(int dir) {
     }
     widget_set_visible(cf.body, 0, 0);
     if (!cf.covers) {
+        coverflow_position_reset();
         void *f = widget_factory();
         int depth = fx_open();
         cf.covers = widget_factory_create_widget(f, "view", cf.page, 0, 0, 375, client_h());
@@ -2947,6 +2949,7 @@ static void load_albums(unsigned t0) {
         cf.albums = 0;
     }
     drop();
+    coverflow_position_reset();
     widget_destroy_children(cf.page);
     cf.covers = cf.slide = cf.name = cf.artist = 0; /* destroyed with the page's children */
     if (cf.scoped != PLAYLISTS) cf.album = 0;       /* the playlists' read again keep their place */
@@ -3519,6 +3522,7 @@ static void playlist_ready(int cd_num) {
 
 static int closed(void *ctx, void *event) {
     if (ctx != cf.page) return 0; /* a page scoped_open closed already */
+    coverflow_position_reset();
     stop_timer(&cf.title_timer);
     stop_timer(&pl_again);
     tc.down = 0;
