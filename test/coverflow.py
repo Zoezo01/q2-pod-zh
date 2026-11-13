@@ -1764,22 +1764,42 @@ static void depth(void) {
     close_page();
     assert(frames == 0 && loads == unloads);
     {   /* Reopened, the covers centre the queue's song's album (#350), not the one last centred; no
-           queue, or a song with no album tag (a folder play's), leaves the last one. */
+           queue, a song with no album tag (a folder play's) or one whose album the list lacks leaves
+           the last one. A compilation's track, with an artist of its own, still finds its album. */
         void *pos = mmap((void *)(MCL_POS & ~4095), 4096, PROT_READ | PROT_WRITE,
                          MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);
         assert(pos != MAP_FAILED);
         deque playing = {0};
-        char untagged[sizeof records[0]] = {0};
-        int at[3];
-        void *songs[3] = { 0, untagged, records[1] };
-        for (int k = 0; k < 3; ++k) {
+        char untagged[sizeof records[0]] = {0}, elsewhere[sizeof records[0]], guest[sizeof records[0]];
+        memcpy(elsewhere, records[1], sizeof elsewhere);
+        *(char **)(elsewhere + REC_ALBUM) = "An album the library lacks";
+        memcpy(guest, records[2], sizeof guest);
+        *(char **)(guest + REC_ARTIST) = "A guest";
+        int at[5];
+        void *songs[5] = { 0, untagged, elsewhere, guest, records[1] };
+        for (int k = 0; k < 5; ++k) {
             playing.n = 1; playing.at[0] = songs[k];
             shim_queue = songs[k] ? &playing : 0;
             open_page();
             at[k] = *(int *)(slide()->raw + SLIDE_INDEX);
             close_page();
         }
-        assert(at[0] == 6 && at[1] == 6 && at[2] == 1);
+        assert(at[0] == 6 && at[1] == 6 && at[2] == 6 && at[3] == 2 && at[4] == 1);
+        /* A scoped page (an artist's albums) opens where it does with nothing queued, whichever of
+           its albums plays. */
+        int coverflow_artist(void *albums);
+        for (int k = 0; k < 2; ++k) {
+            deque *theirs = _create_deque(0);
+            theirs->at[theirs->n++] = records[6], theirs->at[theirs->n++] = records[8];
+            playing.at[0] = records[8];
+            shim_queue = k ? &playing : 0;
+            page = &w[nw + 1];
+            assert(coverflow_artist(theirs));
+            run();
+            at[k] = *(int *)(slide()->raw + SLIDE_INDEX);
+            close_page();
+        }
+        assert(at[1] == at[0]);
         shim_queue = 0;
         munmap(pos, 4096);
     }
