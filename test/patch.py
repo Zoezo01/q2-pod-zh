@@ -11187,7 +11187,7 @@ m.nodes[m.top]['children']=[view]; m.call(address=HOOKS['localmusic_page_init'][
 walk=lambda w:[w]+[x for c in m.nodes[w]['children'] for x in walk(c)]; row=next(c for c in m.nodes[view]['children'] if any(m.nodes[w].get('text')=='Long Songs' for w in walk(c)))
 f,ctx=m.handler(m.nodes[row]['children'][0],O['EVT_CLICK']); m.call(address=f,args=(ctx,m.event,0,0),gap=0)
 worker,arg=m.threads[0]; m.call(address=worker,args=(arg,0,0,0),gap=0); m.advance(250); assert path_key(paths[0]) in struct.unpack(f"<{len(m.files['/mnt/data/ringnav-lengths'])//4}I",m.files['/mnt/data/ringnav-lengths'])
-m.page=m.top=shelf; flip_click(m); assert text(0)=='1:02:05' and text(1)=='4:54'; passed()
+m.page=m.top=shelf; flip_click(m); assert all(len(m.row_labels(i))==1 for i in (0,1)); passed()  # Long Songs' lengths show nowhere on the panel
 # Minimal: Centre opens the text list as today, no flip, no buffers.
 for theme in '0':
     CONFIG['THEME']=theme
@@ -13100,12 +13100,12 @@ def art_boot(config):  # the names a fresh Classic's first system_bar loaded, wi
 assert art_boot({})==art_boot({'ROWART':'1'})==art_boot({'ROWART':'2'})==['classic-light_system_bar']
 assert art_boot({'ROWART':'0'})==['classic-light-text_system_bar']
 passed()
-# Battery under Classic takes Icon or Percent Inside (theme.xml's values): the row cycles those two and writes the
-# key as usual. A stored Percent or Icon + Percent reads as Percent Inside and stays stored; a key that is not
+# Battery under Classic takes Icon, Percent or Percent Inside (theme.xml's values, 9db418f7): the row cycles those three
+# and writes the key as usual. A stored Icon + Percent reads as Percent Inside and stays stored; a key that is not
 # stored reads as Icon. Minimal and Classic on the same build keep all four, whatever Classic's values say.
 m,view,_=display({},setup=classic_light); row=m.nodes[view]['children'][6]; f,ctx=m.handler(m.nodes[row]['children'][0],O['EVT_CLICK'])
 assert row_text(row)=='Battery: Icon'
-for value,name in ((3,'Percent Inside'),(0,'Icon'),(3,'Percent Inside')):
+for value,name in ((1,'Percent'),(3,'Percent Inside'),(0,'Icon'),(1,'Percent')):
     m.calls=[]; assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0
     assert [(c[1],m.text(c[3])) for c in m.calls if c[0]=='write_int_config']==[(value,'BATTERY')] and row_text(row)=='Battery: '+name
 passed()
@@ -13120,14 +13120,14 @@ b=m.nodes[row]['children'][0]; title=m.nodes[b]['children'][1]; val=next(k for k
 vx,vw,bx=(m.get(val+O['W_X']),m.get(val+O['W_W']),m.get(b+O['W_X']))
 assert row_w('Percent Inside')<=vw-4 and bx+vx+vw==356
 assert m.get(title+O['W_X'])+m.get(title+O['W_W'])==vx-8; passed()
-for stored in ('1','2'):
+for stored in ('2',):
     m,view,_=display({'BATTERY':stored},setup=classic_light); row=m.nodes[view]['children'][6]; f,ctx=m.handler(m.nodes[row]['children'][0],O['EVT_CLICK'])
     assert row_text(row)=='Battery: Percent Inside' and not [c for c in m.calls if c[0]=='write_int_config'] and m.config['BATTERY']==stored
     assert m.call(address=payload_syms['ipod_battery'],args=(0,0,0,0),gap=0)==3
     m.calls=[]; m.call(address=f,args=(ctx,m.event,0,0),gap=0)  # from what it reads as: on to Icon
     assert [(c[1],m.text(c[3])) for c in m.calls if c[0]=='write_int_config']==[(0,'BATTERY')] and row_text(row)=='Battery: Icon'
 passed()
-for t in ('0','2'):  # Minimal and Modern: every value is its own (Classic's Percent and Icon + Percent read as Percent Inside, above)
+for t in ('0','2'):  # Minimal and Modern: every value is its own (Classic's Icon + Percent reads as Percent Inside, above)
     def on_t(k,t=t): classic_light(k); k.config['THEME']=t
     for stored,name in (('0','Icon'),('1','Percent'),('2','Icon + Percent'),('3','Percent Inside')):
         m,view,rows=display({'BATTERY':stored},setup=on_t)
@@ -16664,8 +16664,10 @@ for i,(icon,text) in enumerate(zip(want,['TIDAL','Spotify','A long name for a ca
         assert again[:2]==([],draws)  # the scaled copy alone: nothing loaded
         src=bytes(m.u.mem_read(m.pixels[icon],40*40*4)); out=bytes(m.u.mem_read(m.get(frames[0]+0x14),96*96*4))
         at=lambda x,y: src[(y*40+x)*4:(y*40+x)*4+4]
+        def sharp(f):  # pane_scaled's: the blend steepened by the 40 -> 96 stretch (191a3276), C's division towards 0
+            d=f-128; q=abs(d)*96//40; return min(max((q if d>=0 else -q)+128,0),256)
         for x,y in ((0,0),(95,95),(48,17),(13,70)):
-            sx,sy=max((2*x+1)*40*128//96-128,0),max((2*y+1)*40*128//96-128,0); x0,y0,fx,fy=sx>>8,sy>>8,sx&255,sy&255; x1,y1=min(x0+1,39),min(y0+1,39)
+            sx,sy=max((2*x+1)*40*128//96-128,0),max((2*y+1)*40*128//96-128,0); x0,y0,fx,fy=sx>>8,sy>>8,sharp(sx&255),sharp(sy&255); x1,y1=min(x0+1,39),min(y0+1,39)
             near=[(at(x0,y0),(256-fx)*(256-fy)),(at(x1,y0),fx*(256-fy)),(at(x0,y1),(256-fx)*fy),(at(x1,y1),fx*fy)]
             a=sum(p[3]*k for p,k in near); want_px=bytes(sum(p[c]*p[3]*k for p,k in near)//a if a else 0 for c in range(3))+bytes([a>>16])
             assert out[(y*96+x)*4:(y*96+x)*4+4]==want_px,(x,y,out[(y*96+x)*4:(y*96+x)*4+4],want_px)
