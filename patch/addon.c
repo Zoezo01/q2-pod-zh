@@ -1680,6 +1680,7 @@ static void got(void) {
 }
 
 static int go(const void *unused);
+static int leave(const void *unused);
 
 static void later(int next, int arg) {
     pg.next = next, pg.arg = arg;
@@ -1797,10 +1798,7 @@ static int go(const void *unused) {
     } else if (pg.next == G_SEARCH) {
         if (put(a, sizeof a, pg.term)) push("search", a, strlen(a), pg.term);
     } else if (l->state == K_ERROR && i == 1 && app()->nostop) { /* Cancel, as Return */
-        if (pg.depth > 1)
-            pop();
-        else
-            navigator_back();
+        leave(0);
     } else if (l->state == K_ERROR ? i == 1 : l->state != K_READY && l->slow) { /* Stop <name> */
         char t[48];
         tk_snprintf(t, sizeof t, "%s stopped", app()->name);

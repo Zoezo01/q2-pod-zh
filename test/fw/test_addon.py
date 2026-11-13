@@ -2080,6 +2080,24 @@ def test_stop_0_ends_an_error_page_in_cancel_which_leaves_the_page_the_app_runni
     assert not [c for c in p.world.of('system') if c[0].startswith(b'kill')]
 
 
+def test_stop_0_keeps_a_slow_start_to_its_waiting_page(fw):
+    p = Page(fw, NOSTOP)
+    p.world.ms += 500
+    p.answer(fail=REQ_NOSOCK, raw=b'')
+    assert p.top.state == K_WAIT
+    p.world.ms += 3001
+    p.tick()
+    assert p.top.slow == 0 and p.drawn == 0 and p.top.state == K_WAIT
+
+
+@pytest.mark.parametrize('leave', [lambda p: p.click(1), lambda p: p.back()], ids=['cancel', 'return'])
+def test_cancel_gives_the_same_result_as_return(fw, leave):
+    p = Page(fw, NOSTOP)
+    p.answer(status=b'error')
+    leave(p)
+    assert (p.backs, p.pg.depth, p.ap.a[0].launched, p.toasts) == (1, 1, 1, [])
+
+
 def test_cancel_on_a_deeper_levels_error_goes_back_to_the_level_below(fw):
     p = Page(fw, NOSTOP)
     p.answer(rows=[item(1, b'list')])
