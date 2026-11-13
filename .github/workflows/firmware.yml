@@ -26,7 +26,7 @@ jobs:
           python-version: '3.12'
       - run: >-
           sudo apt-get update && sudo apt-get install -y gcc-multilib clang lld llvm unzip ffmpeg lame
-          libavcodec-dev libavutil-dev libmad0-dev libssl-dev pkg-config
+          libavcodec-dev libavutil-dev libmad0-dev libssl-dev pkg-config busybox-static
       - run: pip install -r requirements.txt -r test/unit/requirements.txt gcovr==8.4
       - run: mkdir -p "$RUNNER_TEMP/c-coverage" && echo "Q2_COV=$RUNNER_TEMP/c-coverage" >> "$GITHUB_ENV"
       - name: Firmware tests  # test/unit runs in tests.yml
@@ -40,6 +40,11 @@ jobs:
         run: |
           export PATH="$PWD/test/coverage:$PATH"
           for t in library_scope mp3 peq coverflow chapters mp3_gapless remote build rotator_build; do python3 "test/$t.py"; done
+      - name: Wi-Fi transfer's file manager  # assets/web/q2cgi under busybox ash; root only mounts the tmpfs it runs on
+        run: |
+          sudo mkdir -p /mnt/mmc
+          sudo mount -t tmpfs -o "uid=$(id -u),gid=$(id -g)" tmpfs /mnt/mmc
+          bash test/wifi_transfer_cgi.sh
       - name: C coverage  # of the plain runs; navigation.c's UI is mostly test/patch.py's, which needs a stock build
         if: ${{ !cancelled() }}
         run: >-
