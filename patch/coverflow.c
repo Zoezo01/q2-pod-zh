@@ -3237,7 +3237,17 @@ static int flip_open(void *r, int n) {
         void *t = deque_at(cf.tracks, (unsigned)i);
         void *item = list_item_create(view, 0, i * row, BACK_W, row);
         widget_use_style(item, "s_listitem_black");
-        panel_label(item, 12, 0, 270, pl ? 26 : row, track_name(name, sizeof name, t), 25, 1);
+        char duration[24];
+        duration_text(duration, sizeof duration, t);
+        int time_w = duration_seconds(t) >= 3600 ? 88 : 66;
+        panel_label(item, 12, 0, *duration ? 260 - time_w : 270, pl ? 26 : row,
+                    track_name(name, sizeof name, t), 25, 1);
+        if (*duration) {
+            void *label = panel_label(item, BACK_W - 12 - time_w, 0, time_w, pl ? 26 : row,
+                                     duration, 20, 0);
+            widget_set_prop_int(label, "style:normal:text_align_h", 3); /* ALIGN_H_RIGHT */
+            widget_set_prop_int(label, "style:normal:text_color", (int)PANEL_MUTED);
+        }
         if (pl) {
             const char *by = P(t, REC_ARTIST);
             void *artist = panel_label(item, 12, 25, 270, 20, by ? by : "", 18, 0);
@@ -3335,8 +3345,11 @@ static int to_tracks(const void *unused) {
     int centred = theme()->page_title_h;
     if (centred) widget_set_prop_int(cf.title, "style:normal:font_size", cfs.name_px);
     for (int i = 0; i < n; ++i) {
+        char duration[24];
+        void *song = deque_at(cf.tracks, (unsigned)i);
+        duration_text(duration, sizeof duration, song);
         void *row = page_row_detail(
-            view, i, track_name(name, sizeof name, deque_at(cf.tracks, (unsigned)i)), 0, play);
+            view, i, track_name(name, sizeof name, song), *duration ? duration : 0, play);
         if (centred) widget_use_style(widget_get_child(row, 0), "s_scrlabel_white20c");
     }
     page_push(view, cf.text_albums && cf.scoped == ARTIST_ALBUMS); /* from a list, not the covers */

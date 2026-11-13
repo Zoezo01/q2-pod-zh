@@ -284,6 +284,9 @@ int library_counting(void); /* coverflow.c: a song count reads songtable */
 /* coverflow.c: the library's generation, one up each rewrite (Most Played's too); an album row's
  * tracks, its id and the length of a path's album folder */
 extern volatile unsigned library_gen;
+/* durations.c: cache-only reads for Cover Flow; no file probes on the UI thread. */
+int duration_seconds(void *song);
+const char *duration_text(char *text, unsigned size, void *song);
 void *coverflow_album_tracks(void *r);
 unsigned album_id(void *r), album_dir(const char *p, int disc);
 /* navigation.c: Cover Flow's glide and its letter */

@@ -3141,7 +3141,8 @@ static int *const pod_values[] = { &st.charge_limit,
                                    0,
                                    0,
                                    &st.big_library,
-                                   &st.playlist_cf };
+                                   &st.playlist_cf,
+                                   &st.scan_durations };
 _Static_assert(POD_LOCKCLOCK == 6, "lockscreen.c passes pod_rows 6");
 _Static_assert(sizeof pod_values / sizeof *pod_values == POD_COUNT, "a pod_values per row");
 static const char *const pod_keys[] = { "CHARGELIMIT",
@@ -3165,7 +3166,8 @@ static const char *const pod_keys[] = { "CHARGELIMIT",
                                         0,
                                         0,
                                         "BIGLIBRARY",
-                                        "PLAYLISTCF" };
+                                        "PLAYLISTCF",
+                                        "SCANDURATIONS" };
 _Static_assert(sizeof pod_keys / sizeof *pod_keys == POD_COUNT, "a pod_keys entry per row");
 /* a row's choices: Artist albums three, Standby limit four, every other row two */
 static int pod_choices(unsigned i) { return i == POD_ARTIST_CF ? 3 : i == POD_STANDBY ? 4 : 2; }
@@ -3265,6 +3267,7 @@ static void pod_text(int i) {
         { 0 }, /* Folder Album Cover: a switch */
         { 0 }, /* Fast Navigation: a switch */
         { "Playlist View: List", "Playlist View: Cover Flow" },
+        { 0 }, /* Scan Song Durations: a switch */
     };
     _Static_assert(sizeof names / sizeof *names == POD_COUNT, "a names entry per row");
     if (i == POD_CF_SORT) {
@@ -3280,17 +3283,18 @@ static void pod_text(int i) {
             : i == POD_FOLDERCOVER ? g_foldercover_flag != 0
             : pod_values[i]        ? *pod_values[i]
                                    : 0;
-    const char *toggle = i == POD_CHARGE        ? "Charge Limit (" STR(CHARGE_STOP) "%)"
-                         : i == POD_RESUME      ? "Resume on Connect"
-                         : i == POD_VOL_GUARD   ? "Volume Guard"
-                         : i == POD_BT_LINK     ? "Control Device Volume"
-                         : i == POD_KEYTONE     ? "Key Tone"
-                         : i == POD_CARMODE     ? "In-Vehicle Mode"
-                         : i == POD_SMART_WIFI  ? "Smart Wi-Fi"
-                         : i == POD_COVERMODE   ? "Enlarged Album Art"
-                         : i == POD_FOLDERCOVER ? "Folder Album Cover"
-                         : i == POD_BIG_LIB     ? "Fast Navigation"
-                                                : 0;
+    const char *toggle = i == POD_CHARGE           ? "Charge Limit (" STR(CHARGE_STOP) "%)"
+                         : i == POD_RESUME         ? "Resume on Connect"
+                         : i == POD_VOL_GUARD      ? "Volume Guard"
+                         : i == POD_BT_LINK        ? "Control Device Volume"
+                         : i == POD_KEYTONE        ? "Key Tone"
+                         : i == POD_CARMODE        ? "In-Vehicle Mode"
+                         : i == POD_SMART_WIFI     ? "Smart Wi-Fi"
+                         : i == POD_COVERMODE      ? "Enlarged Album Art"
+                         : i == POD_FOLDERCOVER    ? "Folder Album Cover"
+                         : i == POD_BIG_LIB        ? "Fast Navigation"
+                         : i == POD_SCAN_DURATIONS ? "Scan Song Durations"
+                                                   : 0;
     if (toggle)
         list_toggle(st.pod_label[i], toggle, v);
     else
@@ -3340,6 +3344,7 @@ static int pod_click(void *ctx, void *event) {
         int *value = pod_values[i];
         *value = (*value + 1) % pod_choices(i);
         write_int_config(*value, "Q2POD", pod_keys[i]);
+        if (i == POD_SCAN_DURATIONS && !*value) durations_cancel();
         st.charge_at = 0;
         /* Control Device Volume: off, stock's gain back at once; on, bt_volume_poll's next pass
          * sends the Q2's level to the device. */
@@ -6841,6 +6846,7 @@ int ringnav_display(void *win, void *ctx) {
         pod_rows(win, "scroll_view_display", POD_PL_CF, 1, cf_icons);
         pod_rows(win, "scroll_view_display", POD_CF_SORT, 2, cf_icons + 1);
         pod_rows(win, "scroll_view_display", POD_BIG_LIB, 1, cf_icons + 3);
+        pod_rows(win, "scroll_view_display", POD_SCAN_DURATIONS, 1, cf_icons + 3);
         return result;
     }
     if (sub == DISPLAY_APPEARANCE) {
