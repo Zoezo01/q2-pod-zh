@@ -204,6 +204,7 @@ The [user guide][guide] has the steps for each.
 Copy your music to the card over USB-C, then run **Library → Update Local Music** on the Q2.
 
 - **More than music:** these folders at the card's root each add their own Library entry: `Podcasts/`, `Audiobooks/`, `Photos/`, `Books/` and `Videos/`. `EQ/` holds EQ presets to import. See the [user guide][guide] for supported formats.
+- **Playlists:** M3U playlists import from the `_explaylist_data/` folder at the card's root, the same folder stock uses. Q2 Pod keeps it as it is, so your stock playlists carry over.
 - **Long audiobooks:** a book too long for the Q2's memory (around 40 hours in one file) needs splitting into parts.
 - **Hiding a folder:** to keep a folder out of Songs, Albums, Artists, Cover Flow and library shuffle, put an empty file named `database.ignore` in it and run **Update Local Music** again. Its songs still play from Folder view and from playlists, and an empty `database.unignore` in a subfolder lets that subfolder back in ([details](docs/discovery.md)).
 
