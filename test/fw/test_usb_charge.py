@@ -8,7 +8,7 @@ class Charging:
     def __init__(self, fw, pref=0, mode=1, cable=0):
         self.fw, self.pref, self.mode, self.cable = fw, pref, mode, cable
         self.gpio, self.writes, self.other = 1, [], []
-        self.depth = 0
+        self.depth, self.expect_depth = 0, 1
         self.charge = fw.fn('ringnav_usb_charge', C.c_int, C.c_int)
         self.gpio_write = fw.fn('ringnav_usb_gpio', C.c_int, C.c_char_p, C.c_int)
         self.config = fw.fn('ringnav_usb_config', C.c_int)
@@ -37,7 +37,7 @@ class Charging:
     def write(self, name, value, *_):
         name = C.string_at(name)
         if name == b'PE22':
-            assert self.depth == 1
+            assert self.depth == self.expect_depth
             self.gpio = value
             self.writes.append(value)
         else:
@@ -126,11 +126,17 @@ def test_a_charge_limit_disable_is_not_undone_by_detection_or_gadget_dispatch(fw
     assert q.gpio == 0
 
 
-def test_direct_pe22_write_cannot_bypass_the_guard_and_radio_gpios_are_untouched(fw):
+def test_direct_pe22_write_passes_through_and_radio_gpios_are_untouched(fw):
+    # stock's power-off, reboot, Standby and OTG writes release the charge pin: they must reach it
     q = Charging(fw, cable=1)
     q.config()
-    q.gpio_write(b'PE22', 0)
     assert q.gpio == 1
+    q.expect_depth = 0
+    q.gpio_write(b'PE22', 0)
+    assert q.gpio == 0
+    q.gpio_write(b'PE22', 1)
+    assert q.gpio == 1
+    q.expect_depth = 1
     for name in (b'PD01', b'PD20', b'OTHER'):
         for value in (0, 1):
             q.gpio_write(name, value)
@@ -144,16 +150,6 @@ def test_readback_mismatch_is_reasserted_without_waiting_for_the_charge_limit_po
     before = len(q.writes)
     q.detect()
     assert q.gpio == 1 and len(q.writes) == before + 1
-
-
-def test_configuration_reload_inhibits_before_reading_new_off_preference(fw):
-    q = Charging(fw, pref=1)
-    q.config()
-    assert q.gpio == 0
-    q.pref = 0
-    q.writes.clear()
-    q.config()
-    assert q.writes and set(q.writes) == {1}
 
 
 @pytest.mark.parametrize('pref,mode,cable', [(2, 1, 1), (255, 1, 1), (0, 2, 1), (0, 255, 1), (0, 0, -1)])

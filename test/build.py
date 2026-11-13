@@ -55,6 +55,8 @@ def boot_check():
         # not a Q2's. So they never run here: a log line stands in, and the text must be gone before anything starts.
             assert script.count(WIFI_OFF) == 2  # before Rockbox, and the hand-over's late pass
             script = script.replace(WIFI_OFF, f'echo wifi >> {r}/order')
+            assert script.count('/usr/bin/cmd_gpio set_func PE22 output0') == 1  # Rockbox starts with charging allowed (S12 inhibits it)
+            script = script.replace('/usr/bin/cmd_gpio', 'echo gpio >> ' + str(r) + '/order; : ')
             assert 'usleep 300000' in script  # Home's hand-over pauses before Rockbox: logged, its place is the point
             script = script.replace('usleep 300000', f'echo settle >> {r}/order')
             assert 'usleep 2000000' in script and '\n            rockbox\n            kill $! 2>/dev/null\n' in script  # called off once Rockbox is gone
@@ -108,7 +110,7 @@ def boot_check():
         assert boot(True, False, 81, 1) == (['demo', 'demo'], False)  # no Rockbox on the card: Q2 Pod again
         # Wi-Fi goes off before every start of Rockbox and at no other time; demo follows Rockbox whatever its status
         def order(*args): boot(*args); return (r/'order').read_text().split()
-        session = ['wifi', 'rockbox', 'demo']
+        session = ['gpio', 'wifi', 'rockbox', 'demo']  # charging is allowed before Rockbox starts
         for code in (0, 1, 81, 137, 255): assert order(False, True, code) == session
         handover = ['settle', 'late', 'wifi']
         assert order(True, True, 81, 1) == ['demo', *handover, *session]  # Home's Rockbox row waits for what demo launched

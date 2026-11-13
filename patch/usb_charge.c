@@ -1,5 +1,5 @@
 /* Apply the saved DAC charging choice before insertion, not only once usbmode_page opens.
- * All charge-enable and direct PE22 writes pass here; other GPIOs, including the radios', do not.
+ * Every switch_charge_enable call passes here; stock's direct PE22 writes and other GPIOs do not.
  * No enumeration timeout is evidence of a charger: a host rejecting the Q2 looks the same. */
 #include "navigation.h"
 
@@ -32,9 +32,10 @@ int ringnav_usb_charge(int on) {
 }
 
 int ringnav_usb_gpio(const char *name, int value) {
-    if (!name || strcmp(name, "PE22")) return stock_usb_gpio_trampoline(name, value);
-    /* toolsGpioSetValue chooses output1 for value == 1, output0 otherwise. */
-    return ringnav_usb_charge(value != 1);
+    /* Stock's own PE22 writes (power-off, reboot, Standby, OTG) pass: they release the pin for a
+     * charge with the Q2 off. switch_charge_enable is hooked separately, so every UI and Charge
+     * Limit write stays guarded. */
+    return stock_usb_gpio_trampoline(name, value);
 }
 
 int ringnav_usb_config(void) {
