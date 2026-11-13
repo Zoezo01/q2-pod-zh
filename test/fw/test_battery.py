@@ -158,9 +158,11 @@ def test_a_clock_never_set_logs_the_time_since_the_start(q2):
 
 def xs(fw, q2):
     """bh_x for each row and for now, over a plot from 0 to 300."""
-    x = fw.fn('battery__bh_x', C.c_int, C.c_uint, C.c_int, C.c_int, C.c_uint)
-    n = len(q2.rows())
-    return [x(i, 0, 300, q2.now) for i in range(n + 1)]
+    x = fw.fn('battery__bh_x', C.c_int, C.c_uint, C.c_int, C.c_int, C.c_uint, C.c_int)
+    rows = q2.rows()
+    sets = [a >= 1600000000 for a, _ in rows]  # CLOCK_SET's side
+    forward = int(all(b >= a for (a, _), (b, _) in zip(rows, rows[1:])) and len(set(sets)) == 1)
+    return [x(i, 0, 300, q2.now, forward) for i in range(len(rows) + 1)]
 
 
 def test_the_graph_spreads_rows_kept_while_the_clock_was_unset_once_it_is_set(fw, q2):
@@ -194,6 +196,8 @@ class Page:
         self.fw, self.texts, self.children, self.items, self.toasts, self.boxes = fw, {}, {}, [], [], {}
         self.buffers, self.lists = [], []
         fw.mock('window_create', lambda *_: PAGE)
+        self.top = PAGE  # the window on top: a toast's, while its modal loop runs
+        fw.mock('window_manager_get_top_window', lambda *_: self.top)
         fw.mock('list_view_create', lambda parent, x, y, w, h, *_: self.widget(x, y, w, h))
         fw.mock('scroll_view_create', self.scroll)
         fw.mock('list_item_create', lambda *_: self.items.append(self.widget()) or self.items[-1])
@@ -367,3 +371,26 @@ def test_a_closed_page_is_not_drawn(fw, q2):
     builds = len(page.lists)
     q2.poll(98, minutes=10)
     assert len(page.lists) == builds
+
+
+def test_a_row_while_the_export_toast_is_up_waits_for_the_toast(fw, q2):
+    """toast()'s modal loop polls the battery under Export Log's own click: the clicked row must not be freed."""
+    lit(fw, 1)
+    q2.poll(99)
+    page = Page(fw)
+    q2.files.files['/proc/mounts'] = MOUNTS
+    page.open()
+    builds = len(page.lists)
+
+    def toast(*_):
+        page.top = 0x9000  # the toast's window
+        q2.poll(98, minutes=10)  # a percent falls under it
+        assert len(page.lists) == builds  # the rows stay
+        page.top = PAGE
+        return 0
+    fw.mock('navigator_to_with_context', toast)
+    page.tap(0)
+    q2.poll(98, minutes=1)  # the first poll after the toast
+    assert len(page.lists) == builds + 1 and page.captions[-1] == '98% | 12:10 PM'
+    q2.poll(98, minutes=1)
+    assert len(page.lists) == builds + 1

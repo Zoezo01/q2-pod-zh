@@ -41,8 +41,15 @@ static void bh_load(void) {
 }
 
 static void bh_fill(void);
+/* The page is open, lit and on top: not while a toast's modal loop runs under Export Log's own
+ * click, where a rebuild would free the clicked row (bh.stale keeps it for the first poll after).
+ */
+static int bh_live(void) {
+    return bh.page && g_backlight_status &&
+           window_manager_get_top_window(window_manager()) == bh.page;
+}
 void battery_tick(int level, int cable) {
-    if (bh.stale && bh.page && g_backlight_status) bh_fill();
+    if (bh.stale && bh_live()) bh_fill();
     if (level <= 0 || level > 100) return; /* not read yet */
     bh_load();
     unsigned n = bh.rec.n;
@@ -60,7 +67,7 @@ void battery_tick(int level, int cable) {
     bh.rec.n = n + 1;
     BLOB_IO(BH_FILE, bh.rec, 1);
     bh.stale = 1;
-    if (bh.page && g_backlight_status) bh_fill();
+    if (bh_live()) bh_fill();
 }
 
 /* Row i's local time, or 0 for a clock never set. */
@@ -185,13 +192,10 @@ int battery_history(void *ctx, void *event) {
 /* Row i's x in the plot, from x0 to x0 + w: by its time from the start up to now (to the last row's
  * when now reads earlier, or on the other side of CLOCK_SET from the rows: the clock set or lost
  * since), or evenly by row when the times don't run forward on one clock (set or lost
- * mid-history). 32-bit: the payload has no 64-bit division. */
-static int bh_x(unsigned i, int x0, int w, unsigned now) {
+ * mid-history: forward = 0, from battery_paint). 32-bit: the payload has no 64-bit division. */
+static int bh_x(unsigned i, int x0, int w, unsigned now, int forward) {
     unsigned n = bh.rec.n, from = bh.rec.row[0].at, end = bh.rec.row[n - 1].at;
-    int set = from >= CLOCK_SET, forward = 1;
-    for (unsigned k = 1; k < n; ++k)
-        forward &=
-            bh.rec.row[k].at >= bh.rec.row[k - 1].at && (bh.rec.row[k].at >= CLOCK_SET) == set;
+    int set = from >= CLOCK_SET;
     if (!forward) return x0 + (int)i * w / (int)n;
     if ((now >= CLOCK_SET) != set || now < end) now = end;
     unsigned span = now - from, at = i < n ? bh.rec.row[i].at - from : span;
@@ -215,8 +219,13 @@ void battery_paint(void *w, void *canvas) {
         caption(canvas, labels[k], page_x(), y - 7, 36, 14, 12, CF_GREY);
     }
     unsigned now = wall == -1 ? 0 : (unsigned)wall;
+    int set = bh.rec.row[0].at >= CLOCK_SET, forward = 1;
+    for (unsigned k = 1; k < bh.rec.n; ++k)
+        forward &=
+            bh.rec.row[k].at >= bh.rec.row[k - 1].at && (bh.rec.row[k].at >= CLOCK_SET) == set;
+    int x = bh_x(0, x0, plot, now, forward);
     for (unsigned i = 0; i < bh.rec.n; ++i) {
-        int x = bh_x(i, x0, plot, now), next = bh_x(i + 1, x0, plot, now),
+        int next = bh_x(i + 1, x0, plot, now, forward),
             y = top + h - (int)bh.rec.row[i].pct * h / 100;
         canvas_set_fill_color(canvas, rgba(tone, 0x40));
         canvas_fill_rect(canvas, x, y, next - x, top + h - y);
@@ -225,6 +234,7 @@ void battery_paint(void *w, void *canvas) {
         if (i + 1 < bh.rec.n) /* the step down to the next row */
             canvas_fill_rect(canvas, next - 1, y - 1, 2,
                              top + h - (int)bh.rec.row[i + 1].pct * h / 100 - y + 2);
+        x = next;
     }
     stock_canvas_set_fill_color(canvas, fill);
 }
