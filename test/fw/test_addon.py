@@ -3616,6 +3616,24 @@ def test_a_stream_session_marks_its_queue_the_apps(fw, mcl, songs):
     assert qa.app == C.addressof(ap(fw).a[0]) and qa.loads == s.loaded.value
 
 
+def test_a_playlist_session_marks_its_queue_the_apps(fw, mcl, songs):
+    s = playlist(fw, mcl, songs, A)
+    s.land(A)
+    s.play(b'1 ' + PLAYLIST + b'\n')
+    s.step()
+    qa = fw.var('addon__qa', Qa)
+    assert s.loads and qa.app == C.addressof(ap(fw).a[0]) and qa.loads == s.loaded.value
+
+
+def test_a_url_queue_the_app_cannot_play_marks_nothing(fw, mcl, songs):
+    s = Stream(fw, mcl, songs)
+    s.world.files[b'/tmp/q2-foo.urls'] = b'#Q2URLS/1\tstart=0\n'  # no songs: app_urls_play plays nothing
+    s.play(b'1 /tmp/q2-foo.urls\n')
+    s.step()
+    s.step()
+    assert not fw.var('addon__qa', Qa).app
+
+
 def test_go_to_a_path_too_long_for_a_level_opens_nothing(fw):
     p = Page(fw, b'name=Foo\ngoto=1\n', opens=False)
     assert goto(fw, b'/mnt/mmc/.foo/' + b'a' * 400) == 0 and not p.pg.page

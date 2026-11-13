@@ -7090,15 +7090,14 @@ int ringnav_dispatch(void *target, void *event) {
         pull_cancel();
     }
     if (target && event && I(event, EVENT_TYPE) == EVT_CLICK) {
-        /* Now Playing's ⋯, an app's page instead of stock's while the app's queue plays */
-        if (target == np_more() && addon_more()) return STOP;
         hide_outline();
         cancel_center(); /* A native activation supersedes confirmation, even without touch. */
         drop_spin();
         fx_cancel();
         keep_selected(
             target); /* a tap owns its live row: recall could scroll/rebind it before delivery */
-        return time_click(target, event);
+        /* Now Playing's ⋯: an app's page instead of stock's while the app's queue plays */
+        return target == np_more() && addon_more() ? STOP : time_click(target, event);
     }
     return stock_dispatch_trampoline(target, event);
 }
