@@ -11045,10 +11045,9 @@ for light,white in (('0',0xffffff),('1',0)):
     assert m.nodes[title]['style:normal:text_color']&0xffffffff==0xff000000|white and m.nodes[artist]['style:normal:text_color']&0xffffffff==0xc0000000|white
     assert m.boxes==[(0,57,294,228),(0,0,294,228)] and m.nodes[view]['yslidable']==1 and m.nodes[view]['virtual_h']==9*PANEL_ROW
     assert [cf_geometry(m,r) for r in rows]==[(0,i*PANEL_ROW,294,PANEL_ROW) for i in range(9)] and kids.index(lv)<kids.index(title)
-    t,dur=m.row_labels(0); gt,gd=cf_geometry(m,t),cf_geometry(m,dur)
-    assert gt[:2]==(12,0) and gt[0]+gt[2]<gd[0] and gd[0]+gd[2]==282 and gt[3]==gd[3]==PANEL_ROW and m.face(t)==('classic-light',25) and m.face(dur)==('classic-light',23)
-    assert m.nodes[dur]['style:normal:text_align_h']=='right' and m.nodes[dur]['style:normal:text_color']&0xffffffff==0xffaaaaaa and m.nodes[t]['text']=='T0'
-    for w,px in ((title,31),(artist,18),(t,25),(dur,23)): assert cf_geometry(m,w)[3]>=px  # boxes hold their fonts
+    t,=m.row_labels(0); gt=cf_geometry(m,t)  # the title alone: no length (fcae98cb)
+    assert gt[:2]==(12,0) and gt[0]+gt[2]==282 and gt[3]==PANEL_ROW and m.face(t)==('classic-light',25) and m.nodes[t]['text']=='T0'
+    for w,px in ((title,31),(artist,18),(t,25)): assert cf_geometry(m,w)[3]>=px  # boxes hold their fonts
     # No text crosses the glass: the last whole row's stays clear, and what shows of the row under it ends before its caps start, 6 px into a 25 px face's box.
     assert 40+12>=corner_inset(26+9+57+(PANEL_SHOWN-1)*PANEL_ROW+(PANEL_ROW+25)//2) and 285-57-PANEL_SHOWN*PANEL_ROW<(PANEL_ROW-25)//2+6
     assert m.nodes[m.slide]['visible']==0 and m.nodes[[w for w in m.nodes[m.covers()]['children'] if m.nodes[w]['type']=='hscroll_label'][0]]['visible']==0 and m.nodes[m.covers()]['sensitive']==0 and m.nodes[m.covers()]['visible']
@@ -11181,8 +11180,7 @@ def path_key(s):
     return h
 m=classic_light_new(FlipLengths); m.open(); paths=[m.text(m.get(r+O['REC_PATH'])) for r in m.found]; m.lengths=dict.fromkeys(paths,60); m.lengths[paths[0]]=3725
 cached=struct.pack('<2I',path_key(paths[1]),294); m.files['/mnt/data/ringnav-lengths']=cached
-m.threads=[]; flip_click(m); text=lambda i: m.nodes[m.row_labels(i)[1]].get('text','')
-assert text(0)=='' and text(1)=='4:54'; m.advance(300); assert m.nodes[m.panel()]['visible'] and text(0)=='' and text(1)=='4:54'
+m.threads=[]; flip_click(m); m.advance(300); assert m.nodes[m.panel()]['visible'] and all(len(m.row_labels(i))==1 for i in (0,1))  # no lengths shown (fcae98cb): nothing to probe
 assert not m.threads and not m.probed and m.files['/mnt/data/ringnav-lengths']==cached and [v[1] for v in m.timers.values()]==[payload_syms['home_counts']]; passed()
 assert m.key()==11; m.advance(0); m.advance(300); assert not m.panel() and not m.threads and not m.probed and m.files['/mnt/data/ringnav-lengths']==cached
 shelf=m.page; m.top=m.node('window','localmusic_page'); view=m.node('scroll_view','scroll_view_localmusic',[m.node('list_item') for _ in range(11)])
@@ -11418,14 +11416,14 @@ begin(m,labels[0]); assert style_color(m,0xffffffff)[1]==0xffffffff
 end(m,labels[0]); begin(m,labels[1]); assert style_color(m,0xffffffff)[1]==0xffaaaaaa
 end(m,labels[1]); end(m,view); passed()
 
-# Cover Flow's panel: on the selected row the title and the length are white over the band, in either half; on the others its ink and its muted.
-for light,ink,muted in (('0',0xffffffff,0xff949294),('1',0xff000000,0xff6b6d6b)):
+# Cover Flow's panel: on the selected row the title is white over the band, in either half; on the others its ink.
+for light,ink in (('0',0xffffffff),('1',0xff000000)):
     CONFIG['LIGHT']=light; m=classic_light_new(FlipMachine); del CONFIG['LIGHT']; m.open(); m.found=[m.song(f'T{i}') for i in range(3)]; m.tracks(0); m.advance(300)
     m.u.hook_add(UC_HOOK_CODE,m.hook,begin=tramp['color'],end=tramp['color'])  # FlipMachine runs fast: a payload address hooks on its own
     view=m.find('scroll_view'); m.word(view+O['W_W'],294); m.paint(view); m.call(); m.paint(view); assert m.selected(view)==1
-    for i,want in ((1,(0xffffffff,0xffffffff)),(0,(ink,muted))):
-        row=m.nodes[view]['children'][i]; t,dur=m.row_labels(i); begin(m,view); begin(m,row); begin(m,t); got=style_color(m,0xffffffff)[1]; end(m,t); begin(m,dur)
-        assert (got,style_color(m,m.nodes[dur]['style:normal:text_color']&0xffffffff)[1])==want,(light,i); end(m,dur); end(m,row); end(m,view)
+    for i,want in ((1,0xffffffff),(0,ink)):
+        row=m.nodes[view]['children'][i]; t,=m.row_labels(i); begin(m,view); begin(m,row); begin(m,t); got=style_color(m,0xffffffff)[1]; end(m,t)
+        assert got==want,(light,i); end(m,row); end(m,view)
     passed()
 # Decorative action labels may be disabled themselves; availability belongs to the button.
 for label_name in ('label_del','label_rename'):
