@@ -156,6 +156,85 @@ int shelf_release(const char *json, char *tag, unsigned tn, char *url, unsigned 
     return 0;
 }
 
+/* GitHub's release JSON: the asset called name, its size and its SHA-256 as 64 hex digits in sha
+ * (65 bytes), from the asset's own "size" and "digest": "sha256:…", GitHub's record of the bytes
+ * uploaded. 0 when any is missing or not before the asset's last key, so never the next asset's:
+ * a release without digests (uploads before June 2025 have none) is not installed. */
+int netupdate_asset(const char *json, const char *name, unsigned *size, char *sha) {
+    char s[128];
+    for (const char *p = json_at(json, "\"assets\""); (p = json_at(p, "\"name\""));) {
+        if (!json_string(p, s, sizeof s) || strcmp(s, name)) continue;
+        const char *end = strstr(p, "\"browser_download_url\""), *z = json_at(p, "\"size\""),
+                   *d = json_at(p, "\"digest\"");
+        if (!end || !z || z > end || !d || d > end || !json_string(d, s, sizeof s)) return 0;
+        if (strlen(s) != 71 || memcmp(s, "sha256:", 7)) return 0;
+        for (int i = 7; i < 71; ++i)
+            if (!((s[i] >= '0' && s[i] <= '9') || (s[i] >= 'a' && s[i] <= 'f'))) return 0;
+        memcpy(sha, s + 7, 65);
+        *size = (unsigned)atoi(z);
+        return *size != 0;
+    }
+    return 0;
+}
+
+/* SHA-256 (FIPS 180-4), as demo imports libcrypto's MD5 alone: one 64-byte block into h. */
+static unsigned rotr(unsigned x, int n) { return x >> n | x << (32 - n); }
+static void sha_block(unsigned *h, const unsigned char *p) {
+    static const unsigned k[64] = {
+        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4,
+        0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe,
+        0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f,
+        0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
+        0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc,
+        0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
+        0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116,
+        0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7,
+        0xc67178f2,
+    };
+    unsigned w[64], a = h[0], b = h[1], c = h[2], d = h[3], e = h[4], f = h[5], g = h[6], q = h[7];
+    for (int i = 0; i < 64; ++i) {
+        if (i < 16)
+            w[i] = (unsigned)p[4 * i] << 24 | p[4 * i + 1] << 16 | p[4 * i + 2] << 8 | p[4 * i + 3];
+        else
+            w[i] = w[i - 16] + (rotr(w[i - 15], 7) ^ rotr(w[i - 15], 18) ^ w[i - 15] >> 3) +
+                   w[i - 7] + (rotr(w[i - 2], 17) ^ rotr(w[i - 2], 19) ^ w[i - 2] >> 10);
+        unsigned t = q + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g)) + k[i] + w[i],
+                 u = (rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c));
+        q = g, g = f, f = e, e = d + t, d = c, c = b, b = a, a = t + u;
+    }
+    h[0] += a, h[1] += b, h[2] += c, h[3] += d, h[4] += e, h[5] += f, h[6] += g, h[7] += q;
+}
+
+/* path's SHA-256 as 64 hex digits in hex (65 bytes) and its bytes in *size, read back in SHA_CHUNK
+ * pieces; 0 when it can't be read whole. */
+#define SHA_CHUNK (1u << 14)
+int netupdate_sha256(const char *path, char *hex, unsigned *size) {
+    unsigned h[8] = { 0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+                      0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19 };
+    unsigned char *buf = calloc(1, SHA_CHUNK + 128); /* the last piece's padding, 72 bytes at most */
+    void *f = buf ? fopen(path, "rb") : 0;
+    unsigned n = SHA_CHUNK, total = 0;
+    while (f && n == SHA_CHUNK) {
+        unsigned end = n = fread(buf, 1, SHA_CHUNK, f);
+        total += n;
+        if (n < SHA_CHUNK) { /* the end: 0x80, zeros to 56 mod 64, then the bit count, big-endian */
+            end = (n + 9 + 63) & ~63u;
+            memset(buf + n, 0, end - n);
+            buf[n] = 0x80;
+            unsigned bits[2] = { total >> 29, total << 3 }; /* no 64-bit shifts in the payload */
+            for (int i = 0; i < 8; ++i) buf[end - 8 + i] = (unsigned char)(bits[i / 4] >> (24 - 8 * (i % 4)));
+        }
+        for (unsigned at = 0; at < end; at += 64) sha_block(h, buf + at);
+    }
+    int ok = f && !ferror(f);
+    if (f) fclose(f);
+    free(buf);
+    for (int i = 0; i < 8; ++i) snprintf(hex + 8 * i, 9, "%08x", h[i]);
+    *size = total;
+    return ok;
+}
+
 /* unzip -l's listing of what an install unpacks (busybox's and Info-ZIP's columns: the size, then
  * the name 21 bytes after it): the entries, *total their bytes; -1 for an absolute path, a ".."
  * component, or over cap bytes in all. busybox strips a leading "/" and "../" itself before both
@@ -318,15 +397,23 @@ void shelf_remove(int i) {
 #include "stock.h"
 
 #define NU_REPO "https://github.com/" Q2POD_REPO "/releases/latest" /* tools/build.py --update-repo */
+#define NU_API "https://api.github.com/repos/" Q2POD_REPO "/releases/tags/"
+#define NU_GET "https://github.com/" Q2POD_REPO "/releases/download/"
 #define NU_ASSET "update.tar"
 #define NU_FILE "/mnt/mmc/update.tar"
+#define NU_JSON "/tmp/q2-update.json"
 #define NU_CA "/etc/scrobble-ca.pem" /* scrobble.c's; github.com's and its asset host's roots */
+#define NU_BATTERY 16 /* percent: under it, off a charger, stock's updater refuses to flash */
+#define SH_RESERVE (64ull << 20) /* left free on the card beyond a download or what it unpacks */
 
-enum { NU_IDLE, NU_RUNNING, NU_DONE, NU_LATEST, NU_NET, NU_MISSING, NU_CARD, NU_CANCELLED };
+enum { NU_IDLE, NU_RUNNING, NU_DONE, NU_LATEST, NU_NET, NU_MISSING, NU_CARD, NU_CANCELLED, NU_BUSY,
+       NU_SPACE, NU_BAD };
 
 static struct {
     unsigned long thread;
     volatile int state, cancel, percent; /* cancel, percent: progress()'s pair */
+    volatile int stage;    /* for the label: 1 the tar is coming, 2 it is read back */
+    unsigned need;         /* NU_SPACE's MB */
     void *label; /* the row's label while System Update is open, for the percentage */
 } nu __attribute__((section(".scratch")));
 
@@ -382,45 +469,84 @@ static int fetch(const char *url, void *file, char *tag, unsigned n, long *code,
     return err;
 }
 
-static void *worker(void *unused) {
-    char tag[64] = "";
+/* url's body (1 MB at most) through the file tmp, NUL-terminated; 0 unless a whole 200. */
+static char *get_by(const char *url, long *code, const char *tmp, volatile int *xfer) {
+    unsigned n = 0;
+    void *f = fopen(tmp, "wb");
+    int err = !f || fetch(url, f, 0, 0, code, xfer);
+    err = (f && fclose(f)) || err;
+    char *body = err || *code != 200 ? 0 : read_all(tmp, 1u << 20, &n);
+    unlink(tmp);
+    xfer[1] = 0;
+    return body;
+}
+
+/* SH_OK when the card has bytes and SH_RESERVE free; else SH_SPACE and *need the MB short. */
+static int room(unsigned long long bytes, unsigned *need) {
+    unsigned fs[32] = { 0 }; /* statfs, MIPS o32: f_bsize word 1, f_bavail word 7 */
+    if (statfs(CARD, fs)) return SH_CARD;
+    unsigned long long have = (unsigned long long)fs[7] * fs[1], want = bytes + SH_RESERVE;
+    if (have >= want) return SH_OK;
+    *need = (unsigned)((want - have + (1u << 20) - 1) >> 20);
+    return SH_SPACE;
+}
+
+/* A press's work, to the state it ends in. The old update.tar stays until the new one is whole:
+ * only a part of the release's size and SHA-256, as the card gives it back, is renamed over it. */
+static int update(void) {
+    char tag[64] = "", url[256], want[65], got[65];
+    unsigned size = 0, n = 0;
     long code = 0;
-    if (fetch(NU_REPO, 0, tag, sizeof tag, &code, &nu.cancel) || code != 302 || !*tag) {
-        nu.state = NU_NET;
-        return 0;
-    }
+    if (fetch(NU_REPO, 0, tag, sizeof tag, &code, &nu.cancel) || code != 302 || !*tag)
+        return NU_NET;
     /* Tags are single-digit x.y.z, so strcmp orders them: nothing older than this build, which
      * stock's updater would flash. Q2POD_TAG is empty in --dev builds, which take any tag.
      * ponytail: a beta (BETA in tools/build.py) refuses its own version's release too, so its testers
      * install that from the card; take an equal tag under a beta if they shouldn't have to. */
-    if (*Q2POD_TAG && strcmp(tag, Q2POD_TAG) <= 0) {
-        nu.state = NU_LATEST;
-        return 0;
-    }
-    /* The old update.tar stays until the new one is whole. ponytail: needs the tar's ~55 MB free
-     * beside it; TLS and curl's length check are the only integrity checks before stock's own MD5s. */
-    if (nu.cancel) { /* pressed while checking, or the page was left */
-        nu.state = NU_CANCELLED;
-        return 0;
-    }
+    if (*Q2POD_TAG && strcmp(tag, Q2POD_TAG) <= 0) return NU_LATEST;
+    if (nu.cancel) return NU_CANCELLED; /* pressed while checking, or the page was left */
+    /* That tag's release, for what GitHub recorded of its update.tar; then the tar by the same tag,
+     * so a release published meanwhile can't pair one's bytes with the other's digest. */
+    snprintf(url, sizeof url, NU_API "%s", tag);
+    char *json = get_by(url, &code, NU_JSON, &nu.cancel);
+    int found = json != 0, listed = netupdate_asset(json, NU_ASSET, &size, want);
+    free(json);
+    if (nu.cancel) return NU_CANCELLED;
+    if (!found) /* 60 unauthenticated API requests an hour */
+        return code == 403 || code == 429 ? NU_BUSY : code == 404 ? NU_MISSING : NU_NET;
+    if (!listed) return NU_MISSING;
+    /* Room for the tar and for stock's unpacking of it beside it. ponytail: an old update.tar the
+     * new one replaces isn't counted as room. */
+    int r = card_mounted() ? room(2ull * size, &nu.need) : SH_CARD;
+    if (r) return r == SH_SPACE ? NU_SPACE : NU_CARD;
     void *f = fopen(NU_FILE ".part", "wb");
-    int err = !f, state = NU_CARD;
-    if (f) {
-        err = fetch(NU_REPO "/download/" NU_ASSET, f, 0, 0, &code, &nu.cancel);
-        state = err ? (ferror(f) ? NU_CARD : NU_NET) : code != 200 ? NU_MISSING : NU_CARD;
-        err = err || code != 200 || fflush(f) || fsync(fileno(f)) || ferror(f);
-        err = fclose(f) || err;
+    if (!f) return NU_CARD;
+    snprintf(url, sizeof url, NU_GET "%s/" NU_ASSET, tag);
+    nu.stage = 1;
+    int err = fetch(url, f, 0, 0, &code, &nu.cancel);
+    int state = err ? (ferror(f) ? NU_CARD : NU_NET) : code != 200 ? NU_MISSING : NU_CARD;
+    err = err || code != 200 || fflush(f) || fsync(fileno(f)) || ferror(f);
+    err = fclose(f) || err;
+    if (!err) {
+        nu.stage = 2;
+        err = !netupdate_sha256(NU_FILE ".part", got, &n);
+        if (!err && (n != size || strcmp(got, want))) err = 1, state = NU_BAD;
     }
-    /* Read once, after the close: a press while the card took the last bytes (the fsync of the whole
-     * part, seconds on a slow card, the label at 100%) is a cancel too, not "Can't write". */
+    /* Read once, after the close and the check: a press while the card took the last bytes (the
+     * fsync of the whole part, seconds on a slow card, the label at 100%) or gave them back is a
+     * cancel too, not "Can't write". */
     if (nu.cancel) state = NU_CANCELLED;
     if (!err && state != NU_CANCELLED && !rename(NU_FILE ".part", NU_FILE)) { /* a late cancel still cancels */
         void *dir = fopen("/mnt/mmc", "r"); /* the rename's directory entry, before stock flashes */
         if (dir) fsync(fileno(dir)), fclose(dir);
-        state = NU_DONE;
-    } else
-        unlink(NU_FILE ".part");
-    nu.state = state;
+        return NU_DONE;
+    }
+    unlink(NU_FILE ".part");
+    return state;
+}
+
+static void *worker(void *unused) {
+    nu.state = update();
     return 0;
 }
 
@@ -432,20 +558,23 @@ static int wait_done(const void *unused) {
     static const char *const said[] = {
         [NU_LATEST] = "Latest firmware installed", [NU_NET] = "Can't reach GitHub",
         [NU_MISSING] = "No update for this build", [NU_CARD] = "Can't write to the card",
-        [NU_CANCELLED] = "Download cancelled",
+        [NU_CANCELLED] = "Download cancelled",     [NU_BUSY] = "GitHub is busy, try later",
+        [NU_BAD] = "The download was damaged, try again",
     };
     char s[32];
     if (nu.state == NU_RUNNING) {
         reset_poweroptions_timer(1, 1, 0); /* standby, auto power-off; not the screen's */
         tk_snprintf(s, sizeof s, "Downloading %d%%", nu.percent);
-        show(nu.cancel ? "Cancelling…" : nu.percent ? s : "Checking…");
+        show(nu.cancel ? "Cancelling…" : nu.stage == 2 ? "Verifying…" : nu.stage && nu.percent ? s : "Checking…");
         return 8; /* RET_REPEAT */
     }
     pthread_join(nu.thread, 0);
     int state = nu.state;
     nu.state = NU_IDLE;
     if (nu.label) widget_set_tr_text(nu.label, "update_online");
-    if (state != NU_DONE)
+    if (state == NU_SPACE)
+        tk_snprintf(s, sizeof s, "Needs %u MB more space", nu.need), toast(s);
+    else if (state != NU_DONE)
         toast(said[state]);
     else if (nu.label)
         fwupdate_tf(); /* stock's TF card update: its battery check and confirm */
@@ -461,10 +590,12 @@ static int online_click(void *ctx, void *event) {
         show("Cancelling…");
     } else if (nu.state != NU_IDLE) {
         /* ended, not yet joined by wait_done */
+    } else if (I(g_power_capacity, 0) < NU_BATTERY && !g_usbdet_value) {
+        toast("Charge the battery first"); /* before the download, as stock's updater after it */
     } else if (!need_link(online_click, ctx)) {
         /* held for Smart Wi-Fi's link (a press while it waits takes its place), or none */
     } else {
-        nu.cancel = nu.percent = 0;
+        nu.cancel = nu.percent = nu.stage = 0;
         nu.state = NU_RUNNING;
         if (pthread_create(&nu.thread, 0, worker, 0)) {
             nu.state = NU_IDLE;
@@ -508,7 +639,6 @@ int ringnav_fwupdate(void *win, void *ctx) {
 #define SH_JSON "/tmp/q2-shelf.json"
 #define SH_LIST SH_DIR "/sources.list" /* the last list fetched, for the page offline */
 #define SH_LIST_URL "https://raw.githubusercontent.com/DiamondBond/q2-pod/main/sources.list"
-#define SH_RESERVE (64ull << 20) /* left free on the card beyond a download or what it unpacks */
 #define SH_STALE_MS (10 * 60 * 1000ull)
 #define SH_RECHECK_MS (60 * 1000ull) /* Check for Updates' least gap: an API request per app */
 enum { JOB_CHECK = 1, JOB_INSTALL, JOB_REMOVE, JOB_ERASE };
@@ -549,17 +679,7 @@ static unsigned file_mode(const char *path) {
     return __xstat(3, path, info) ? 0 : info[5] & 0170000;
 }
 
-/* url's body (1 MB at most) through SH_JSON, NUL-terminated; 0 unless a whole 200. */
-static char *get(const char *url, long *code) {
-    unsigned n = 0;
-    void *f = fopen(SH_JSON, "wb");
-    int err = !f || fetch(url, f, 0, 0, code, &sh.cancel);
-    err = (f && fclose(f)) || err;
-    char *body = err || *code != 200 ? 0 : read_all(SH_JSON, 1u << 20, &n);
-    unlink(SH_JSON);
-    sh.percent = 0;
-    return body;
-}
+static char *get(const char *url, long *code) { return get_by(url, code, SH_JSON, &sh.cancel); }
 
 /* The release's tag (also a->latest), its zip's URL and size. */
 static int release(shelf_app *a, char *tag, char *url, unsigned *size) {
@@ -629,16 +749,6 @@ static int listed(int i) {
     return sh.cancel ? SH_CANCELLED : r;
 }
 
-/* SH_OK when the card has bytes and SH_RESERVE free; else SH_SPACE and sh.need the MB short. */
-static int room(unsigned bytes) {
-    unsigned fs[32] = { 0 }; /* statfs, MIPS o32: f_bsize word 1, f_bavail word 7 */
-    if (statfs(CARD, fs)) return SH_CARD;
-    unsigned long long have = (unsigned long long)fs[7] * fs[1], want = bytes + SH_RESERVE;
-    if (have >= want) return SH_OK;
-    sh.need = (unsigned)((want - have + (1u << 20) - 1) >> 20);
-    return SH_SPACE;
-}
-
 /* Cancel lands during the download, else after the step it was pressed in; never once moving
  * starts. ponytail: TLS and curl's length check are the only checks on the zip; unzip's CRCs the
  * only ones in it. */
@@ -651,7 +761,7 @@ static int install(int i) {
     if (r) return r;
     system("rm -rf " STAGING); /* an interrupted install's, too */
     mkdir(SH_DIR, 0755), mkdir(STAGING, 0755), mkdir(SH_DIR "/apps", 0755);
-    if ((r = room(size))) return r;
+    if ((r = room(size, &sh.need))) return r;
     staged(part, sizeof part, i, ".part");
     void *f = fopen(part, "wb");
     if (!f) return SH_CARD;
@@ -660,7 +770,7 @@ static int install(int i) {
     bad = fclose(f) || bad;
     r = sh.cancel ? SH_CANCELLED : bad ? SH_CARD : err ? SH_NET : code != 200 ? SH_MISSING : SH_OK;
     if (!r) sh.stage = 2, r = shelf_list(i, &total);
-    if (!r) r = room(total);
+    if (!r) r = room(total, &sh.need);
     if (!r) r = shelf_unpack(i);
     if (!r && sh.cancel) r = SH_CANCELLED;
     if (!r) {
