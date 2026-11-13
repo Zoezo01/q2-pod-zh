@@ -1,17 +1,24 @@
 #!/bin/bash
 # Exercise assets/web/q2cgi — the safe Wi-Fi transfer file manager (docs/internals.md#safe-file-
-# manager) — under the stock busybox ash with synthetic CGI requests. /mnt/mmc is a tmpfs, so the
-# mount check and the filesystem boundary are real. Needs root (to mount the tmpfs) and busybox;
-# run it in the q2pod-dev container, e.g. `q2dev.ps1 run bash /work/test/wifi_transfer_cgi.sh`.
+# manager) — under busybox ash with synthetic CGI requests. /mnt/mmc is a tmpfs, so the mount check
+# and the filesystem boundary are real. Needs busybox, and that mount:
+# - a mount already at /mnt/mmc is used as it is, and emptied, so the suite needs no root itself:
+#   `sudo mount -t tmpfs -o uid=$(id -u),gid=$(id -g) tmpfs /mnt/mmc` first, as
+#   .github/workflows/firmware.yml does, or a container's `--tmpfs /mnt/mmc`;
+# - run as root with none there, it mounts a tmpfs and takes it away again.
+# With neither it skips. Under CI (the CI variable, as GitHub sets it) a skip is a failure: a run
+# that tested nothing must not pass for one.
 # With --fat, /mnt/mmc is a throwaway FAT32 image instead, as a real card is: the whole suite runs
 # on it, and so do the 8.3 short-name cases, which only a FAT filesystem can show (a tmpfs has no
-# second names, so they are skipped there). The loop mount needs a privileged container:
-#   docker run --rm --privileged --network none -v <checkout>:/work:ro q2pod-dev bash /work/test/wifi_transfer_cgi.sh --fat
+# second names, so they are skipped there). The loop mount needs root; in a container, a privileged
+# one with bash and busybox:
+#   docker run --rm --privileged --network none -v "$PWD:/work:ro" IMAGE bash /work/test/wifi_transfer_cgi.sh --fat
 # No network. Every payload is benign (markers under /tmp or the card tmpfs; nothing destructive).
 set -u
 CGI="$(cd "$(dirname "$0")/.." && pwd)/assets/web/q2cgi"
 SH="busybox ash"
-command -v busybox >/dev/null || { echo "SKIP: busybox not found (run in the q2pod-dev container)"; exit 0; }
+skip() { echo "SKIP: $1"; [ -z "${CI:-}" ]; exit; }  # exit 0; 1 under CI
+command -v busybox >/dev/null || skip "busybox not found"
 if [ "${1:-}" = --fat ]; then
   grep -q ' /mnt/mmc ' /proc/mounts 2>/dev/null && { echo "ERROR: --fat mounts its own image, and /mnt/mmc is already a mount"; exit 2; }
   IMG=$(mktemp /tmp/q2fat.XXXXXX); truncate -s 96M "$IMG"; mkdir -p /mnt/mmc 2>/dev/null
@@ -20,7 +27,7 @@ if [ "${1:-}" = --fat ]; then
   trap 'umount /mnt/mmc 2>/dev/null; rm -f "$IMG"' EXIT
 elif ! grep -q ' /mnt/mmc ' /proc/mounts 2>/dev/null; then
   mkdir -p /mnt/mmc 2>/dev/null
-  mount -t tmpfs tmpfs /mnt/mmc 2>/dev/null || { echo "SKIP: cannot mount a tmpfs at /mnt/mmc (need root)"; exit 0; }
+  mount -t tmpfs tmpfs /mnt/mmc 2>/dev/null || skip "nothing is mounted at /mnt/mmc, and a tmpfs can't be (need root)"
   trap 'umount /mnt/mmc 2>/dev/null' EXIT
 fi
 FS=$(awk '$2=="/mnt/mmc"{t=$3} END{print t}' /proc/mounts)
