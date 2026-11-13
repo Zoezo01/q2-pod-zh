@@ -6487,7 +6487,8 @@ static void setting_text(int i) {
         if (i == 3)
             tk_snprintf(text, sizeof text, "Theme: %s", theme()->name);
         else if (i == 4)
-            tk_snprintf(text, sizeof text, "Shortcut: %s", ipod_home_shortcut());
+            tk_snprintf(text, sizeof text, "Shortcut: %s",
+                        shortcut() == SHORTCUT_NONE ? "None" : ipod_home_shortcut());
         else {
             const theme_key_t *K = &theme_keys[i - SETTING_OWN];
             if (theme()->set_text) { /* the label and the value's name, unsplit */
@@ -6557,8 +6558,10 @@ static int setting_click(void *ctx, void *event) {
     int *value = option_slot(T, i), was = *value;
     const char *key = option_key(T, i);
     /* Rockbox, Favorites, Shuffle, Rated Albums, Playlists, Artists, Albums, Games, Podcasts,
-     * Audiobooks, Groovebox (skipped unless the card has it; Rockbox is always offered) */
-    static const int shortcut_next[] = { 3, 2, 6, 5, 7, 4, 8, 1, 9, SHORTCUT_GROOVEBOX, 0 };
+     * Audiobooks, Groovebox (skipped unless the card has it; Rockbox is always offered), None */
+    static const int shortcut_next[] = {
+        3, 2, 6, 5, 7, 4, 8, 1, 9, SHORTCUT_GROOVEBOX, SHORTCUT_NONE, 0
+    };
     _Static_assert(sizeof shortcut_next / sizeof *shortcut_next == SETTING_N_SHORTCUT,
                    "one per shortcut");
     /* Graphite, ..., Plum, Green, then Ivory (masks skip it: Modern's to Graphite, Classic's to its

@@ -18,7 +18,7 @@ ALL_ACCENTS = (1 << len(ACCENT_NAMES)) - 1
 SETTINGS = {'light': ('SETTING_LIGHT', ('off', 'on', 'auto')), 'accent': ('SETTING_ACCENT', ACCENT_NAMES),
             'corners': ('SETTING_ROUNDED', ('square', 'round')), 'home': ('SETTING_HOME', ('split', 'full', 'carousel')),
             'battery': ('SETTING_BATTERY', ('icon', 'percent', 'both', 'inside')),
-            'shortcut': ('SETTING_SHORTCUT', ('rockbox', 'artists', 'albums', 'favorites', 'rated_albums', 'shuffle', 'games', 'playlists', 'podcasts', 'audiobooks', 'groovebox')),
+            'shortcut': ('SETTING_SHORTCUT', ('rockbox', 'artists', 'albums', 'favorites', 'rated_albums', 'shuffle', 'games', 'playlists', 'podcasts', 'audiobooks', 'groovebox', 'none')),
             'time_title': ('SETTING_TIMETITLE', ('off', 'on')),
             'np_layout': ('SETTING_NPCENTRED', ('ipod', 'centred'))}
 ACCENT_KEYS = {'ACCENT': '&st.accent', 'MINIMAL_ACCENT': '&st.minimal_accent'}

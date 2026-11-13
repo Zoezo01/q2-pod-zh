@@ -428,7 +428,8 @@ def test_display_settings(fw, clock, st, values, theme, home, light):
     (b'', 1, b'Rockbox'), (b'', 0, b'Favorites'), (b'0', 0, b'Rockbox'), (b'1', 0, b'Artists'), (b'2', 0, b'Albums'),
     (b'3', 0, b'Favorites'),
     (b'4', 0, b'Rated Albums'), (b'5', 0, b'Shuffle'), (b'6', 0, b'Games'), (b'7', 0, b'Playlists'), (b'8', 0, b'Podcasts'),
-    (b'9', 0, b'Audiobooks'), (b'10', 0, b'Groovebox'), (b'11', 1, b'Rockbox'), (b'11', 0, b'Favorites'), (b'1x', 0, b'Favorites'),
+    (b'9', 0, b'Audiobooks'), (b'10', 0, b'Groovebox'), (b'11', 1, b'Rockbox'), (b'11', 0, b'Favorites'),  # None: the carousel's card takes the default
+    (b'12', 1, b'Rockbox'), (b'12', 0, b'Favorites'), (b'1x', 0, b'Favorites'),
 ])
 def test_shortcut(fw, clock, value, rockbox, name):
     Config(fw, **({'SHORTCUT': value} if value else {}))
@@ -441,6 +442,7 @@ def test_shortcut(fw, clock, value, rockbox, name):
 
 @pytest.mark.parametrize('value, rockbox, groovebox, shown', [
     (b'10', 1, 0, 0), (b'10', 0, 1, 1), (b'0', 0, 1, 0), (b'0', 1, 0, 1), (b'3', 0, 0, 1),
+    (b'11', 1, 1, 0), (b'11', 0, 0, 0), (b'12', 1, 0, 1), (b'12', 0, 0, 1),  # None hides it, an unknown value is the default
 ])
 def test_the_shortcut_row_hides_without_its_launcher(fw, clock, value, rockbox, groovebox, shown):
     Config(fw, SHORTCUT=value)

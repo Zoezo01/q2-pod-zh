@@ -2965,6 +2965,18 @@ def test_homes_list_bumps_and_wraps_as_a_ring_list(fw, keys):
     assert sv.ints[SEL] == 0
 
 
+def test_homes_list_wraps_past_a_hidden_shortcut_row(fw, keys):
+    """Shortcut: None leaves Home's row hidden, last: the ring counts the shown rows."""
+    ui = Ui(fw)
+    sv = list_page(ui, 'home_page', rows=6)
+    select(fw, sv, 5)
+    sv.add(W(ui, 'list_item', 'row_none', y=240, h=40, text='Shortcut', click=True)).visible = 0
+    keys(KEY_NEXT)
+    assert sv.ints[SEL] == 5
+    keys(KEY_NEXT, O['EDGE_PAUSE_MS'])
+    assert sv.ints[SEL] == 0
+
+
 def test_play_follows_a_playing_video(fw, keys):
     ui = Ui(fw)
     list_page(ui)
