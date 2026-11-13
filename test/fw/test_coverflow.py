@@ -3100,6 +3100,15 @@ def test_pane_scaled_weighs_by_alpha_so_a_transparent_pixel_lends_no_colour(fw):
         assert row[-1] == 0
 
 
+def test_pane_scaled_stretches_an_edge_over_one_pixel_not_the_stretch(fw):
+    """#303: a card app's 52 px icon at 96 px was soft, plain bilinear blending every edge over two pixels."""
+    b = Bitmaps(fw)
+    out, _ = scaled(fw, b, 2, 1, lambda x, y: (0, 0, 0, 255) if x == 0 else (255, 255, 255, 255), 8)
+    for row in pixels_of(b, out):
+        reds = [p & 255 for p in row]
+        assert reds == sorted(reds) and len([r for r in reds if 0 < r < 255]) <= 1, reds
+
+
 def test_pane_scaled_scales_an_app_once(fw):
     b = Bitmaps(fw)
     out, _ = scaled(fw, b, 4, 4, lambda x, y: (9, 9, 9, 255), 6)

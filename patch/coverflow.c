@@ -4200,9 +4200,18 @@ static const char *service_icon(void *image, char *t, unsigned size) {
     return t;
 }
 
-/* bitmap, the icon named name, bilinear at the theme's px, once for a name, so the paints after it
- * only draw it: alpha-weighted, as its edge's transparent pixels hold no colour. bitmap itself when
- * that can't be done.
+/* f, a bilinear blend's 1/256 step between two source pixels, steepened when n source pixels grow to
+ * px: an edge then blends over one drawn pixel, not px/n of them. A card app's 52 px icon stretched
+ * to 96 px plain bilinear was soft (#303). */
+static unsigned sharp(unsigned f, unsigned px, unsigned n) {
+    if (px <= n) return f;
+    int s = ((int)f - 128) * (int)px / (int)n + 128;
+    return s < 0 ? 0u : s > 256 ? 256u : (unsigned)s;
+}
+
+/* bitmap, the icon named name, sharp bilinear at the theme's px (sharp()), once for a name, so the paints
+ * after it only draw it: alpha-weighted, as its edge's transparent pixels hold no colour. bitmap itself
+ * when that can't be done.
  * ponytail: one icon's frame, kept once made; the row's next app scales again. */
 static void *pane_scaled(void *bitmap, const char *name, unsigned px) {
     static const unsigned char at[4][4] = BITMAP_RGBA_AT;
@@ -4221,10 +4230,10 @@ static void *pane_scaled(void *bitmap, const char *name, unsigned px) {
     for (unsigned y = 0; y < px; ++y) {
         /* the pixels' centres, in 1/256 of a source pixel */
         unsigned sy = (2 * y + 1) * h * 128 / px, y0 = sy < 128 ? 0 : (sy - 128) >> 8;
-        unsigned fy = sy < 128 ? 0 : (sy - 128) & 255, y1 = y0 + 1 < h ? y0 + 1 : y0;
+        unsigned fy = sharp(sy < 128 ? 0 : (sy - 128) & 255, px, h), y1 = y0 + 1 < h ? y0 + 1 : y0;
         for (unsigned x = 0; x < px; ++x) {
             unsigned sx = (2 * x + 1) * w * 128 / px, x0 = sx < 128 ? 0 : (sx - 128) >> 8;
-            unsigned fx = sx < 128 ? 0 : (sx - 128) & 255, x1 = x0 + 1 < w ? x0 + 1 : x0;
+            unsigned fx = sharp(sx < 128 ? 0 : (sx - 128) & 255, px, w), x1 = x0 + 1 < w ? x0 + 1 : x0;
             const unsigned char *r0 = data + y0 * stride, *r1 = data + y1 * stride;
             const unsigned char *s[4] = { r0 + x0 * 4, r0 + x1 * 4, r1 + x0 * 4, r1 + x1 * 4 };
             unsigned k[4] = { (256 - fx) * (256 - fy), fx * (256 - fy), (256 - fx) * fy, fx * fy };
