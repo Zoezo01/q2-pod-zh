@@ -1612,7 +1612,7 @@ void pose(int t, pose_t *p) {
     p->eye = CF_EYE16;
     turn(other ? a * cfs.tilt / 90 : a, other, p);
     if (t < CF_ONE) {
-        /* xc = A t + B t^2: CF_X1 at t = 1, arriving at the stack's CF_XS slope, and quick at
+        /* xc = A t + B t^2: x1 at t = 1, arriving at the stack's xs slope, and quick at
          * first, so the covers turning in and out mid-step keep clear of each other. */
         int sq = (int)((unsigned)t * (unsigned)t >> 16);
         p->xc = (16 * (2 * cfs.x1 - cfs.xs) * t + 16 * (cfs.xs - cfs.x1) * sq) >> 16;

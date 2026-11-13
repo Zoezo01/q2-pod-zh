@@ -214,8 +214,7 @@ static void th_turn(void *s, int travel, unsigned now, int n, int ms) {
     }
 }
 
-/* The arch (arch_pose) in place of the row at speed, Fast Navigation off: its letters come in from
- * that row. */
+/* The arch (arch_pose) in place of the row at speed, Fast Navigation off. */
 static int th_arched(void) { return cfs.arch_span && !ringnav_big_library(); }
 
 /* How far the arch has formed, this pass of ms: fully with the covers at arch_full albums a second,
@@ -250,7 +249,9 @@ static void th_albums(void *s, int n, int since, int ms) {
      * and snap the row out at one speed */
     th.tau = th.tau < rest ? th.tau : rest;
     th.tau = th.tau > base ? th.tau : base;
-    if (th_arched()) th.tau = cfs.arch_tau; /* one spring, whatever the thumb does */
+    /* one spring, whatever the thumb does. ponytail: a slow step settles in about 0.6 s, not 0.3 s,
+     * and touch waits for it (th.on); arch_tau only while th_moving() or th.arch if that shows */
+    if (th_arched()) th.tau = cfs.arch_tau;
     /* its soft detent, slow and finger down: towards the albums, never against the thumb */
     int g0 = cf_floor(th.goal);
     float r0 = th.goal - (float)g0, k = th.finger ? (1 - f) * cfs.detent / 100 : 0;
