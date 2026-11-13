@@ -3143,7 +3143,8 @@ static int *const pod_values[] = { &st.charge_limit,
                                    0,
                                    &st.big_library,
                                    &st.playlist_cf,
-                                   &st.scan_durations };
+                                   &st.scan_durations,
+                                   &st.cf_position };
 _Static_assert(POD_LOCKCLOCK == 6, "lockscreen.c passes pod_rows 6");
 _Static_assert(sizeof pod_values / sizeof *pod_values == POD_COUNT, "a pod_values per row");
 static const char *const pod_keys[] = { "CHARGELIMIT",
@@ -3168,7 +3169,8 @@ static const char *const pod_keys[] = { "CHARGELIMIT",
                                         0,
                                         "BIGLIBRARY",
                                         "PLAYLISTCF",
-                                        "SCANDURATIONS" };
+                                        "SCANDURATIONS",
+                                        "CFPOSITION" };
 _Static_assert(sizeof pod_keys / sizeof *pod_keys == POD_COUNT, "a pod_keys entry per row");
 /* a row's choices: Artist albums three, Standby limit four, every other row two */
 static int pod_choices(unsigned i) { return i == POD_ARTIST_CF ? 3 : i == POD_STANDBY ? 4 : 2; }
@@ -3204,6 +3206,10 @@ int ringnav_lock_clock(void) {
 int ringnav_big_library(void) {
     pod_settings();
     return st.big_library;
+}
+int coverflow_position_enabled(void) {
+    pod_settings();
+    return st.cf_position;
 }
 int ringnav_eq_output(void) {
     pod_settings();
@@ -3269,6 +3275,7 @@ static void pod_text(int i) {
         { 0 }, /* Fast Navigation: a switch */
         { "Playlist View: List", "Playlist View: Cover Flow" },
         { 0 }, /* Scan Song Durations: a switch */
+        { 0 }, /* Position Bar: a switch */
     };
     _Static_assert(sizeof names / sizeof *names == POD_COUNT, "a names entry per row");
     if (i == POD_CF_SORT) {
@@ -3295,6 +3302,7 @@ static void pod_text(int i) {
                          : i == POD_FOLDERCOVER    ? "Folder Album Cover"
                          : i == POD_BIG_LIB        ? "Fast Navigation"
                          : i == POD_SCAN_DURATIONS ? "Scan Song Durations"
+                         : i == POD_CF_POSITION    ? "Position Bar"
                                                    : 0;
     if (toggle)
         list_toggle(st.pod_label[i], toggle, v);
@@ -3346,6 +3354,7 @@ static int pod_click(void *ctx, void *event) {
         *value = (*value + 1) % pod_choices(i);
         write_int_config(*value, "Q2POD", pod_keys[i]);
         if (i == POD_SCAN_DURATIONS && !*value) durations_cancel();
+        if (i == POD_CF_POSITION) coverflow_position_reset();
         st.charge_at = 0;
         /* Control Device Volume: off, stock's gain back at once; on, bt_volume_poll's next pass
          * sends the Q2's level to the device. */
@@ -6854,6 +6863,7 @@ int ringnav_display(void *win, void *ctx) {
         pod_rows(win, "scroll_view_display", POD_CF_SORT, 2, cf_icons + 1);
         pod_rows(win, "scroll_view_display", POD_BIG_LIB, 1, cf_icons + 3);
         pod_rows(win, "scroll_view_display", POD_SCAN_DURATIONS, 1, cf_icons + 3);
+        pod_rows(win, "scroll_view_display", POD_CF_POSITION, 1, cf_icons + 3);
         return result;
     }
     if (sub == DISPLAY_APPEARANCE) {

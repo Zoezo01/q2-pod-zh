@@ -47,6 +47,7 @@ enum {
     POD_BIG_LIB, /* Display's Fast Navigation: Cover Flow's letters (ringnav_big_library) */
     POD_PL_CF,   /* Display's Playlist View: List or Cover Flow, as Artist View */
     POD_SCAN_DURATIONS,
+    POD_CF_POSITION,
     POD_COUNT
 };
 
@@ -147,7 +148,7 @@ typedef struct {
     int pod_read, charge_limit, wake_double, wake_pass, wake_eat,
         wake_down, /* 1: the held Centre press passes; 2: it is dropped */
         charge_held, artist_cf, year_old, resume, lock_clock, artist_az, hold_home, standby_limit,
-        eq_output, smart_wifi, big_library, playlist_cf, scan_durations;
+        eq_output, smart_wifi, big_library, playlist_cf, scan_durations, cf_position;
     void *pod_label[POD_COUNT];
     void *art_cf_win, *art_cf_list; /* the artist page given its Coverflow, the albums pending */
     void *art_cf_veil;              /* the artist page unseen until they show, and its anim_hint */
@@ -436,6 +437,11 @@ char *scrobble_tag(char *o, char *end, const char *s);
 
 /* font_weight.c: a marked label's foreground painted again 1 px right */
 void font_weight_paint(void *w, void *canvas);
+
+/* coverflow_position.c */
+int coverflow_position_enabled(void); /* navigation.c: persisted setting */
+void coverflow_position_paint(void *w, void *canvas);
+void coverflow_position_reset(void);
 
 /* np_bar.c */
 int np_beside(void);
