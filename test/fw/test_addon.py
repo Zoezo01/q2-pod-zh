@@ -38,7 +38,7 @@ LIBRARY = 0xf001  # stock's library class, which a local queue plays under
 class App(C.Structure):
     _fields_ = [('id', C.c_char * 16), ('name', C.c_char * 32), ('tips', C.c_char * 32), ('bin', C.c_char * 48), ('run', C.c_char * 48),
                 ('pid', C.c_char * 32), ('state', C.c_char * 40), ('browse', C.c_char * 48), ('icon', C.c_char * 56), ('more', C.c_char * 48),
-                *((n, C.c_int) for n in ('qr', 'game', 'audio', 'present', 'launched', 'hold', 'relaunch', 'restart', 'nostop')),
+                *((n, C.c_int) for n in ('qr', 'game', 'audio', 'hidden', 'present', 'launched', 'hold', 'relaunch', 'restart', 'nostop')),
                 *((n, C.c_uint) for n in ('polled', 'launch_at', 'restart_at', 'play'))]
 
 
@@ -324,6 +324,12 @@ def test_a_manifest_can_drop_the_stop_row_and_take_now_playings_more(fw, manifes
     card(fw, one=manifest)
     scan(fw)
     assert (ap(fw).a[0].nostop, ap(fw).a[0].more) == (nostop, more)
+
+
+def test_a_hidden_app_has_no_streaming_row(fw):
+    card(fw, one=b'name=One\n', airplay=b'name=AirPlay\nhidden=1\n')  # opened by id instead (addon_open_id)
+    assert scan(fw) == 1 and names(fw, 'addon_id') == [None, b'one', None]
+    assert (ap(fw).a[1].id, ap(fw).a[1].hidden, ap(fw).a[1].present) == (b'airplay', 1, 1)
 
 
 def test_names_are_cut_at_a_whole_character(fw):

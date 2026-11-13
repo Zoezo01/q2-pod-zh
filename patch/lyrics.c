@@ -459,6 +459,8 @@ int lyrics_fit(void *lrc) {
  * second. */
 #define LYRIC_POLL_MS 250
 int lyrics_now(void) {
+    int air;
+    if (airplay_lyrics(&air)) return air; /* a speaker plays it, behind the Q2 */
     int sec = -1, total = 0, playing = mclGetPlayStatus() == 2;
     unsigned now = (unsigned)time_now_ms();
     player_playtime_and_length(&sec, &total);

@@ -8945,7 +8945,7 @@ m.tap(); assert m.full()[:6]==COLUMN[:5]+(None,),m.full(); passed()
 # card with an album. A press asks for Wi-Fi first, copies the album's tracks off stock's records (a CUE
 # track left out) and starts the worker; the row shows its progress, a press while it runs cancels, the
 # page's end leaves it running, and the timer joins it and toasts the summary. USB storage stops it quietly.
-# The job's own steps are test/peq.py's album_check.
+# The job's own steps are test/peq.py's album_check. AirPlay's row (airplay.c) goes over stock's, for any song.
 assert [m.get(O['PLAYMORE_ROWS']+4*i) for i in range(O['PLAYMORE_COUNT'])]==[2,3,4,5,6,7,0,1]  # Download Cover & Lyrics third
 class AlbumLyricsMachine(CoverflowMachine):
     def __init__(self,**queue):
@@ -8964,21 +8964,23 @@ class AlbumLyricsMachine(CoverflowMachine):
         assert self.call(address=HOOKS['playermore_page_init'][0],args=(self.top,0,0,0),gap=0)==0
         assert self.calls[0][:2]==('stock_playermore',self.top)
         return self.nodes[view]['children']
-m=AlbumLyricsMachine(); kids=m.more(); row=kids[3]
-assert len(kids)==9 and [k for k in kids if k!=row]==m.stock and m.nodes[row]['style']=='s_listitem_black'
+m=AlbumLyricsMachine(); kids=m.more(); row=kids[4]
+assert len(kids)==10 and [k for k in kids if k not in (row,kids[0])]==m.stock and m.nodes[row]['style']=='s_listitem_black'
+air=m.nodes[m.nodes[kids[0]]['children'][0]]['children']
+assert m.nodes[air[0]]['image']=='airplay' and m.nodes[air[1]]['text']=='AirPlay'
 button=m.nodes[row]['children'][0]; icon,label=m.nodes[button]['children']
 assert m.nodes[button]['style']=='s_btn_listitem' and not m.nodes[button].get('name')
 assert [m.get(button+O[k]) for k in ('W_X','W_Y','W_W','W_H')]==[20,0,335,70]
 assert m.nodes[icon]['image']=='player_onlinesearch' and [m.get(icon+O[k]) for k in ('W_X','W_W','W_H')]==[10,52,70]
 assert m.nodes[label]['style']=='s_scrlabel_white24l' and m.nodes[label]['text']=='Download Album Lyrics'
 assert [m.get(label+O[k]) for k in ('W_X','W_W','W_H')]==[72,253,70]; passed()
-m=AlbumLyricsMachine(cls=0xf1); assert len(m.more())==8; passed()  # an online queue
+m=AlbumLyricsMachine(cls=0xf1); assert len(m.more())==9; passed()  # an online queue: AirPlay's row alone
 for off,v in (('REC_TYPE',4),('REC_ALBUM',0),('REC_PATH',0)):  # a folder, no album tag, no path
-    m=AlbumLyricsMachine(); m.word(m.playing()+O[off],v); assert len(m.more())==8,off; passed()
-m=AlbumLyricsMachine(); m.word(m.playing()+O['REC_PATH'],m.string('http://x/y')); assert len(m.more())==8; passed()
+    m=AlbumLyricsMachine(); m.word(m.playing()+O[off],v); assert len(m.more())==9,off; passed()
+m=AlbumLyricsMachine(); m.word(m.playing()+O['REC_PATH'],m.string('http://x/y')); assert len(m.more())==9; passed()
 m=AlbumLyricsMachine(); assert len(m.more(7))==7; passed()  # not stock's rows: left as they are
 def album_lyrics_page(**queue):
-    m=AlbumLyricsMachine(**queue); button=m.nodes[m.more()[3]]['children'][0]; label=m.nodes[button]['children'][1]
+    m=AlbumLyricsMachine(**queue); button=m.nodes[m.more()[4]]['children'][0]; label=m.nodes[button]['children'][1]
     cue=m.song('Cue'); m.word(cue+O['REC_CUE_END'],90)
     m.found=[m.song('T1'),cue,m.song('T2')]
     def press():
@@ -20513,7 +20515,7 @@ deezer=(m.labels().index('Deezer')-1)//2; m.row(deezer); assert m.toasts[-1][3]=
 m.advance(500); m.link=1; m.row(deezer); assert m.toasts[-1][3]==SW_WAIT and not m.threads
 m.advance(500,clear=False); assert len(m.threads)==1 and m.labels()[2*deezer+2]=='Checking…'; passed()
 class SmartAlbumLyrics(SmartMixin,AlbumLyricsMachine): pass
-m=SmartAlbumLyrics(); button=m.nodes[m.more()[3]]['children'][0]; label=m.nodes[button]['children'][1]
+m=SmartAlbumLyrics(); button=m.nodes[m.more()[4]]['children'][0]; label=m.nodes[button]['children'][1]
 m.found=[m.song('T1'),m.song('T2')]
 for ms in (1,SW_IDLE):  # power_poll's: its settings, then Smart Wi-Fi's
     m.now+=ms; m.call(address=payload_syms['pod_settings'],args=(0,0,0,0),gap=0); m.call(address=payload_syms['smart_poll'],args=(0,0,0,0),gap=0)
