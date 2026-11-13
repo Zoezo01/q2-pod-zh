@@ -26,7 +26,8 @@ REPO = 'DiamondBond/q2-pod'  # whose releases Network Update fetches (--update-r
 # page name), and writes the clock's 16 px for every style state — the disable one says 20 px.
 # E brings Q2 back when EQ is on (the left's idle mark no longer watches the right group) and
 # raises the battery's three looks one pixel to the bar's text ink.
-TAG = 'V' + VERSION.replace('.', '') + 'E'
+# F lets stock draw Q2 again (white in every state), and drops the percent-alone's extra rise.
+TAG = 'V' + VERSION.replace('.', '') + 'F'
 
 def version_ok(version, beta):
     """VERSION is three single digits and BETA one, as TAG packs them; 17.6 or 1.76 would give a 5-character tag too."""

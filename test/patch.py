@@ -1223,7 +1223,7 @@ def battery_checks():
         paint(); paint(w['view_battery']); paint(); before=lcd(); bands,letters=slot()
         pct=10*len(str(value))+10
         assert b.get(w['view_battery']+O['W_W'])==pct and not bands
-        assert [(l['text'],l['rect'],l['color']) for l in letters]==[(f'{value}%',(0,-1,pct,30),color_t(rgb))]
+        assert [(l['text'],l['rect'],l['color']) for l in letters]==[(f'{value}%',(0,0,pct,30),color_t(rgb))]
 
     # Percent Inside: compact rounded body and dark digits, including 100, in every state.
     for theme in (0,2):

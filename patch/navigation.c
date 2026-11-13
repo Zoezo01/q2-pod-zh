@@ -1893,11 +1893,9 @@ static void paint_caps(void *w, void *canvas) {
     if (!w || !P(canvas, CANVAS_LCD)) return;
     const theme_t *T = theme();
     if (w == st.bar_idle) {
-        /* the 1.0.1 wordmark, in the half's own ink: the style's grey read as nothing on the
-         * light bar, and a written white never reaches Light Mode's style hook (text_ink's). */
-        if (*widget_get_text(w))
+        if (T->caps_mark)
             draw_spaced(canvas, widget_get_text(w), 0, (I(w, W_H) - MARK_PX) / 2, MARK_PX,
-                        RGBA(ipod_light() ? 0x171717u : 0xffffffffu), 375);
+                        RGBA(0xaaaaaa), 375);
         return;
     }
     if (st.np_album && w == P(st.np_album, W_PARENT)) {
@@ -3887,11 +3885,11 @@ static int bar_state_sync(void *bar) {
             }
         }
     }
-    /* stock V1.36 shows the device's name here while nothing plays (label_idle, "Q2"): kept, and
-     * painted by paint_caps in the half's own ink — the style's white read grey through the
-     * disable state on the light bar (V176C..V180B), and a written white never reaches Light
-     * Mode's style hook (text_ink's lesson). Transparent here, so stock's own pass draws nothing
-     * under ours. */
+    /* stock V1.36 shows the device's name here while nothing plays (label_idle, "Q2"). stock
+     * draws it; its white is written for every state — the bar's children read disable's, whose
+     * style grey read as nothing on the light bar. Light Mode's hook turns white dark. Painting it
+     * ourselves instead (V180C) needed a per-widget paint match that Modern's bar never gave, so
+     * Q2 vanished there while Minimal and Classic kept it. */
     /* EQ moved to the battery's group (V180D): gating the left's idle wordmark on it hid Q2
      * whenever EQ was on (V180D). Only the play state's glyph shares this side of the bar. */
     if (st.bar_idle && st.bar_state)
@@ -3901,7 +3899,7 @@ static int bar_state_sync(void *bar) {
         char prop[48];
         for (unsigned i = 0; i < 3; ++i) {
             snprintf(prop, sizeof prop, "style:%s:text_color", states2[i]);
-            widget_set_prop_int(st.bar_idle, prop, 0x00000000u);
+            widget_set_prop_int(st.bar_idle, prop, 0xffffffffu);
         }
     }
     return changed;
@@ -4326,7 +4324,7 @@ static void paint_battery(void *w, void *canvas) {
         st.pct_sign = (int)(canvas_measure_text(canvas, &c, 1) + 0.5f);
     }
     if (st.batt_mode == 1) {
-        rect_t r = { 0, -1, I(w, W_W), I(w, W_H) }; /* the bar's text's ink, not the box's middle */
+        rect_t r = { 0, 0, I(w, W_W), I(w, W_H) }; /* digits alone already ink with the bar's text */
         draw_centred(canvas, s, n, &r, px, color);
         return;
     }
