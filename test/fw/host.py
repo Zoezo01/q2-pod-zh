@@ -3,8 +3,8 @@
 tools/build.py's NAVIGATION and tools/peq.py's UI_SOURCES compile as they do for the Q2, without PEQ_HOST, against the
 stock.h and themes.inc tools/build.py writes and a peq_platform.h laid out as tools/peq.py's: each stock
 function a macro calling its address, here a stub's. A stock call or a libc call with effects outside the
-process (system, unlink, fork...) reaches a stub that records the call and returns 0, or what a test's
-mock returns; only PURE libc is real. So a test can't touch the card, the network or this machine.
+process (system, unlink, fork...) reaches a stub that records the call and returns 0 (errno's the address
+of fw_errno), or what a test's mock returns; only PURE libc is real. So a test can't touch the card, the network or this machine.
 
 The code runs 64-bit, so `long` and pointers are wider than on the Q2. Code that depends on those, or
 on a stock widget's layout, stays with test/patch.py, which runs the MIPS build under emulation."""
