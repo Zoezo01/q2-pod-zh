@@ -1384,6 +1384,8 @@ rechecks PE22 and corrects a mismatched readback. `ringnav_usb_status` reconcile
 stock gadget dispatch, covering a storage-to-DAC transition without waiting for the next poll.
 The stock USB audio descriptors, radio behavior and kernel remain unchanged.
 
+Stock's `systembar_showface` picks `bar_charge` from the cable flag alone (and the plain icon once a DAC link is up with charging off), so a cable held off by this guard or by Charge Limit showed as charging. `usb_charge_held` is 1 while the last PE22 write was the inhibit; `bar_charging` (navigation.c), which the status bar's battery and the dark bar's key read, is `bar_charge` and not held, and a held cable under 15% shows low. ponytail: the pin's state, not the charger's: a cable too weak to charge still shows charging; `/sys/class/power_supply/battery/status` would tell, but `get_battery_capacity` keeps only 0 to 2 in `g_power_chargestate`, so a Discharging read leaves the last value there.
+
 The four hooks use the pinned V1.36 build's symbol/address and PIC-prologue/GOT checks. Source
 changes are exercised by `test/fw/test_usb_charge.py`.
 

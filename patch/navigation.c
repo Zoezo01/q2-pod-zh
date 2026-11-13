@@ -3935,19 +3935,27 @@ static void bar_dark_sync(void *bar) {
     /* this paint may have drawn the bar already, and an invalidate mid-paint is lost */
     if (!st.bar_timer) st.bar_timer = timer_add(bar_repaint, (void *)0, 0);
 }
+/* Charging, as the bar says it: stock's icon is bar_charge whenever a cable is in, the charge
+ * enable held off or not (usb_charge.c's guard, Charge Limit), so a held one is not charging. */
+static int bar_charging(void) {
+    const char *icon = st.bar_icon ? widget_get_prop_str(st.bar_icon, "image", "") : "";
+    return icon && !tk_strcmp(icon, "bar_charge") && !usb_charge_held();
+}
 /* The battery view_battery shows: the level from label_battery's "88%" (stock zeroes
  * progress_battery while charging), then under Classic full on power (get_battery_capacity's
  * status 2 and stock's cable flag, memory both, as stock shows the plain icon then), charging
- * (bar_charge) and low (bar_lowcharge), as stock picks the icon. Reads stock's widgets, no I/O. */
+ * (bar_charging) and low (bar_lowcharge, or under 15% on a cable that charges nothing), as stock
+ * picks the icon. Reads stock's widgets, no I/O. */
 static unsigned battery_now(int classic_light) {
     const char *icon = widget_get_prop_str(st.bar_icon, "image", "");
     const unsigned *t = widget_get_text(st.bar_pct);
-    int level = 0;
+    int level = 0, charging = bar_charging();
     while (t && *t >= '0' && *t <= '9') level = level * 10 + (int)(*t++ - '0');
+    int held = !charging && icon && !tk_strcmp(icon, "bar_charge");
     return (unsigned)(level > 100 ? 100 : level) << 3 |
            (unsigned)(classic_light && I(g_power_chargestate, 0) == 2 && g_usbdet_value) << 2 |
-           (unsigned)(icon && !tk_strcmp(icon, "bar_charge")) << 1 |
-           (unsigned)(icon && !tk_strcmp(icon, "bar_lowcharge"));
+           (unsigned)charging << 1 |
+           (unsigned)((icon && !tk_strcmp(icon, "bar_lowcharge")) || (held && level < 15));
 }
 static void bar_sync(void *bar) {
     bar_dark_sync(bar);
@@ -5301,11 +5309,9 @@ void final_text(void *canvas, const char *face, const unsigned *s, const void *r
 }
 /* A key for paint_dark_bar: a battery label's "88%", charging as the status bar's icon says. */
 unsigned dark_bar_key(const unsigned *t) {
-    const char *icon = st.bar_icon ? widget_get_prop_str(st.bar_icon, "image", "") : "";
     unsigned level = 0;
     while (t && *t >= '0' && *t <= '9') level = level * 10 + (*t++ - '0');
-    return (level > 100 ? 100 : level) << 3 | (unsigned)(icon && !tk_strcmp(icon, "bar_charge"))
-                                                  << 1;
+    return (level > 100 ? 100 : level) << 3 | (unsigned)bar_charging() << 1;
 }
 /* The dark bar's rows and its line, the last of h rows from y: the scheme's dark half in either
  * half, over the bar's own line, with no second one; a flat Status Bar's plain black. Final

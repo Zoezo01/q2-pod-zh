@@ -63,3 +63,8 @@ int ringnav_usb_status(void) {
     pthread_mutex_unlock(usb_charge.mutex);
     return stock_usb_status_trampoline();
 }
+
+/* 1 while the charge enable is held off (this guard, or Charge Limit through it): a cable that is
+ * in charges nothing then. ponytail: the pin's state, not the charger's; a cable too weak to
+ * charge still reads as charging, read /sys/class/power_supply/battery/status if that matters. */
+int usb_charge_held(void) { return usb_charge.have_applied && !usb_charge.applied; }

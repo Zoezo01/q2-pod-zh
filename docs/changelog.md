@@ -3,6 +3,7 @@
 - **1.8.2**:
   - Themes: Chinese, Japanese and other text the theme's own face lacks is now drawn bold wherever **Classic** or **Modern** draws its text bold: Classic's lists, bar, info rows, Cover Flow, album panel and hold menu; Modern's bar title; and Now Playing's title in both. It used the regular system font.
   - Cover Flow: an optional **Position Bar** follows wheel and touch browsing, then fades after you stop. Turn it on in **Display → Cover Flow**.
+  - Status bar: the battery turns green only while it charges. With a cable in and charging held off, by **USB mode: Audio and DAC** with charging Off or by **Charge Limit** at 80%, it was green as if charging. It now stays white, or red under 15%.
   - Playback: with **Headphones Required** on, the Q2 restores your queue at start-up again, paused, as **Memory Playback** has it. Since 1.8.0 nothing was restored with the switch on, even with headphones connected. **In-Vehicle Mode** still starts playing, or restores the queue paused when nothing is connected.
   - Controls: **Wheel Sensitivity** goes down to 10%, for a slower wheel: 20% takes a third of a turn per step and 10% most of a turn. 50% is still the default and nothing changes unless you lower it.
   - Cover Flow: it opens on the album of the song that's playing or paused, so that artist's other albums are a turn away ([#350](https://github.com/DiamondBond/q2-pod/issues/350)). With nothing queued, or a song with no album tag, it opens on the album you last stopped at, as before.
