@@ -1,5 +1,5 @@
 """battery.c: Battery History's record on the flash (a fall appends, an unplug starts again, its bound, a reload,
-a damaged file), the log it exports to the card and the rows of its page."""
+a damaged file), the log it exports to the card, the rows of its page and the graph over them."""
 import calendar
 import ctypes as C
 import struct
@@ -8,6 +8,7 @@ import time
 import pytest
 
 from conftest import O, Files
+from test_peq_page import Canvas  # the EQ graph's canvas: the rectangles filled and the texts drawn
 
 RECORD, LOG = '/mnt/data/q2-battery', '/mnt/mmc/battery-log.txt'
 MAGIC, ROWS = 0x31484251, 100
@@ -90,6 +91,14 @@ def test_charging_keeps_the_history_and_the_unplug_starts_a_new_one(q2):
     assert q2.rows() == [(NOON + 9060, 95)]
 
 
+def test_a_charge_no_larger_than_a_rebound_still_starts_a_new_history_at_the_unplug(q2):
+    q2.poll(50)
+    q2.poll(40, minutes=60)
+    q2.poll(41, cable=1, minutes=5)  # on the charger for a moment
+    q2.poll(41, minutes=1)
+    assert q2.rows() == [(NOON + 3960, 41)]
+
+
 def test_a_boot_on_the_charger_starts_at_the_unplug(q2):
     q2.poll(70, cable=1)
     assert RECORD not in q2.files.files
@@ -149,11 +158,27 @@ def test_the_log_dates_each_day_over_its_rows(fw, q2):
     assert q2.log().split('\n')[1:3] == ['99% | 12:00 PM', '98% | 1:15 PM']
 
 
+def test_a_12_hour_clock_reads_midnight_as_12_am_and_the_morning_as_am(fw, q2):
+    q2.now = NOON - 12 * 3600
+    q2.poll(99)
+    q2.poll(98, minutes=9 * 60 + 5)
+    fw.var('g_time24h_flag', C.c_ubyte).value = 0
+    assert q2.log().split('\n')[1:3] == ['99% | 12:00 AM', '98% | 9:05 AM']
+
+
 def test_a_clock_never_set_logs_the_time_since_the_start(q2):
     q2.now = 3600
     q2.poll(99)
     q2.poll(98, minutes=75)
     assert q2.log() == 'Clock not set: times since the start\n99% | +0:00\n98% | +1:15\n'
+
+
+def test_a_clock_lost_after_the_start_logs_no_time_for_the_rows_since(fw, q2):
+    fw.var('g_time24h_flag', C.c_ubyte).value = 1
+    q2.poll(99)
+    q2.now = 3600  # back at 1970: neither a time of day nor a time since the start
+    q2.poll(98)
+    assert q2.log() == '11 Nov 2026\n99% | 12:00\n98% | --:--\n'
 
 
 def xs(fw, q2):
@@ -207,7 +232,7 @@ class Page:
         fw.mock('widget_get_prop_int', self.prop)
         fw.mock('widget_set_prop_int', lambda w, key, v, *_: self.props.__setitem__((w, C.string_at(key)), C.c_int(v).value))
         fw.mock('widget_move_resize', lambda w, x, y, width, h, *_: self.boxes.__setitem__(w, (x, y, width, h)))
-        fw.mock('widget_factory_create_widget', lambda f, kind, parent, x, y, *_: self.widget(x, y))  # h: a seventh argument
+        fw.mock('widget_factory_create_widget', self.made)
         fw.mock('navigator_to_with_context', lambda page, info, *_: self.toasts.append(C.string_at(info + 8).decode()))
         fw.mock('navigator_window_is_exist', lambda *_: 0)
         fw.mock('fw_statfs', self.statfs)
@@ -226,6 +251,11 @@ class Page:
         self.lists.append(p)
         C.c_void_p.from_address(p + O['W_PARENT']).value = parent
         return p
+
+    def made(self, factory, kind, parent, x, y, *_):
+        """The graph's view: its height is a seventh argument, which a stub doesn't pass on."""
+        self.graph = self.widget(x, y)
+        return self.graph
 
     def label(self, parent, *_):
         p = self.widget()
@@ -269,6 +299,69 @@ def test_the_page_lists_export_then_each_row_a_day_s_first_dated(fw, q2):
     gy = graph[0][4]
     (x, y, w, h), = [page.boxes[a[0]] for _, a in fw.calls('widget_move_resize') if a[0] in page.boxes]  # the list
     assert y > gy and y + h <= 290 and h >= 48  # under the graph, to the page's foot at most
+
+
+def paint(fw, widget):
+    """ringnav_paint's call for one widget, on a canvas of its own."""
+    canvas = Canvas(fw)
+    fw.fn('battery_paint', None, C.c_void_p, C.c_void_p)(widget, canvas.p)
+    return canvas
+
+
+def graph(fw, page, height=220):
+    """The open page's graph painted height px high, 20 of them its margins, so 220 is 2 px a percent: its three
+    guide lines top to bottom, each row's level line left to right and the steps between them, as (x, y, w, h),
+    and the canvas."""
+    C.c_int.from_address(page.graph + O['W_H']).value = height
+    canvas = paint(fw, page.graph)
+    guides = sorted((r[1:] for r in canvas.rects if r[4] == 1), key=lambda r: r[1])
+    levels = sorted((r[1:] for r in canvas.rects if r[4] == 2), key=lambda r: r[0])
+    steps = sorted(r[1:] for r in canvas.rects if r[3] == 2 and r[4] > 2)
+    return guides, levels, steps, canvas
+
+
+def test_the_graph_steps_down_through_each_level_from_the_start_to_now(fw, q2):
+    q2.poll(90)
+    q2.poll(60, minutes=60)
+    q2.now += 2 * 3600  # the second level has held twice as long as the first did
+    page = Page(fw)
+    page.open()
+    (top, half, bottom), (first, last), steps, canvas = graph(fw, page)
+    assert {text[0] for text in canvas.texts} == {'100%', '50%', '0%'}
+    assert top[1] + 200 == half[1] + 100 == bottom[1] and top[0] == half[0] == bottom[0]
+    left, width = top[0], top[2]
+    assert [bottom[1] - (y + 1) for _, y, _, _ in (first, last)] == [180, 120]  # each line's middle at its level
+    # from the plot's left edge to its right, the one step down a third of the way along
+    assert first[0] == left and first[0] + first[2] - 1 == last[0] == left + width // 3
+    assert last[0] + last[2] - 1 == left + width
+    assert [(x + 1, y, y + h - 2) for x, y, _, h in steps] == [(last[0], first[1], last[1])]
+    assert canvas.fill == canvas.lcd_fill  # the LCD's own fill back
+
+
+@pytest.mark.parametrize('clock', [
+    (3600, 7200, NOON, NOON + 3600),  # set mid-history
+    (NOON, NOON + 3600, NOON - 3600, NOON + 1800),  # put back an hour, and past where it began since
+])
+def test_the_graph_spaces_the_rows_evenly_when_their_times_don_t_run_forward_on_one_clock(fw, q2, clock):
+    for at, level in zip(clock, (90, 80, 70, 60)):
+        q2.now = at
+        q2.poll(level)
+    page = Page(fw)
+    page.open()
+    (top, _, _), levels, _, _ = graph(fw, page)
+    assert [x - top[0] for x, _, _, _ in levels] == [k * top[2] // 4 for k in range(4)]
+
+
+def test_only_the_open_page_s_graph_is_painted_on(fw, q2):
+    q2.poll(90)
+    page = Page(fw)
+    page.open()
+    for widget in (page.view, None):  # ringnav_paint passes every widget
+        canvas = paint(fw, widget)
+        assert not canvas.rects and not canvas.texts
+    (fn, ctx), = [(a[2], a[3]) for _, a in fw.calls('widget_on') if a[0] == PAGE and a[1] == O['EVT_DESTROY']]
+    C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_void_p)(fn)(ctx, None)
+    assert not paint(fw, page.graph).rects  # the page gone, its graph's widget may be another's by now
 
 
 def test_no_history_says_to_unplug(fw, q2):
