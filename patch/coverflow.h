@@ -103,6 +103,7 @@ typedef struct {
     const unsigned *art[FX_POOL];    /* its texture: the slot's own, or the placeholder */
     unsigned char half[FX_POOL];     /* it holds the album's half copy (half_read) */
     int c, frac, drawn, light, lead; /* the position and Light Mode the frame holds, once drawn */
+    int arch;                        /* and how far its arch had formed (16.16) */
     int todo;                        /* a cover wanted still waits for its load (FX_BUDGET_MS) */
     int mode;                        /* what the frame holds (FX_SHELF ...) */
     int letters_at, next, prev; /* the album + 1 the letters' windows are of, and those letters */
@@ -160,6 +161,7 @@ typedef struct {
                               left it (coverflow_hold): its facing point's lead and run (albums),
                               the shelf's shift and a cover's xc an album as a pose (1/16 px) */
     int hold_k; /* and the album at the screen's middle, from the row's frac centre (16.16) */
+    float arch, seen_arch; /* how far the arch has formed, 0 to 1 (th_arch) */
 } cf_thumb_t;
 extern cf_thumb_t th;
 
@@ -209,6 +211,7 @@ float coverflow_enter_v(void);
 float coverflow_hold(void);
 int coverflow_window(int frac);
 void draw_row(shelf_t *f, int frac, const unsigned *const *ring);
+void arch_pose(int t, pose_t *p);
 int fold_t16(void);
 void draw_fold(shelf_t *f, const unsigned *const *ring, int t16, int lean, int off16);
 

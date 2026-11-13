@@ -27,7 +27,11 @@
     <element name="album" caps="1" opacity="0"/>
     <element name="state" opacity="0"/>
   </view>
-  <!-- Cover Flow's shelf takes CF_* (ROLE_MACROS); the thumb is every theme's, Classic's and Modern's by extends:
+  <!-- Cover Flow's shelf: where the side covers stand is the iPod preset of #329's Cover Flow Parameter Lab, its
+       units times 0.16 (docs/internals.md#coverflow-depth), every theme's; the rest takes CF_* (ROLE_MACROS). At speed
+       (arch_at to arch_full albums/s, Fast Navigation off) the covers within arch_span of the middle bend into the
+       lab's arch, forming over arch_in ms and relaxing over arch_out, the covers following the wheel by arch_tau ms.
+       The thumb is every theme's, Classic's and Modern's by extends:
        the wheel holds the covers (docs/internals.md#coverflow-thumb); these are its numbers, to retune on the wheel.
        A spin goes by letters, one each jump_ticks of travel (0: never). With Fast Navigation off, after jump_ms at
        jump_at ticks/s or more, they are named on the moving row, jump_pace apart, until the thumb slows or turns
@@ -35,11 +39,13 @@
        thumb lifts: the row comes in over enter_albums, slides from letter to letter (slide_ms) and folds out once
        within fold_near of the letter. -->
   <view name="coverflow">
-    <element name="shelf" thumb="1" ticks_turn="36" ticks_album="7" fast_at="23" fast_full="90" top_speed="20" track="30"
+    <element name="shelf" eye="256" tilt="90" x1="128" xs="35" z1="77" zs="0" horizon="64" swing="2"
+             arch_at="8" arch_full="16" arch_span="500" arch_in="100" arch_out="62" arch_tau="56"
+             thumb="1" ticks_turn="36" ticks_album="7" fast_at="23" fast_full="90" top_speed="20" track="30"
              snap="25" spin="130" far_left="250" detent="80" hold_ms="5000" stop_ms="60" stop_left="60" rate_up="120"
              rate_down="50" back="50" dead="1" contact_ms="40" aim_snap="30" lead_from="25" lead_full="100" lead_ms="45"
              row_shift="20" row_from="100" row_full="300" row_shrink="8" row_flat="200" row_out="33" row_edge="160"
-             row_width="60" row_key="72" jump_ms="700" jump_ticks="5" jump_at="32" jump_pace="140"
+             row_width="40" row_key="72" jump_ms="700" jump_ticks="5" jump_at="32" jump_pace="140"
              big_jump_at="75" big_jump_ms="240" enter_albums="8" slide_ms="160" fold_near="50"/>
   </view>
 </theme>

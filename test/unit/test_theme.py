@@ -125,13 +125,14 @@ STATUSBAR = own('STATUSBAR', 'Status Bar', ('Theme', 'Minimal', 'Modern', 'Class
 CLASSIC_THUMB = dict(thumb=1, ticks_turn=36, ticks_album=7, fast_at=23, fast_full=90, top_speed=20, track=30, snap=25, spin=130, far_left=250,
                      detent=80, hold_ms=5000, stop_ms=60, stop_left=60, rate_up=120, rate_down=50, back=50, dead=1, contact_ms=40, aim_snap=30,
                      lead_from=25, lead_full=100, lead_ms=45, row_shift=20, row_from=100, row_full=300, row_shrink=8, row_flat=200, row_out=33,
-                     row_edge=160, row_width=60, row_key=72, jump_ms=700, jump_ticks=5, jump_at=32, jump_pace=140,
-                     big_jump_at=75, big_jump_ms=240, enter_albums=8, slide_ms=160, fold_near=50)
+                     row_edge=160, row_width=40, row_key=72, jump_ms=700, jump_ticks=5, jump_at=32, jump_pace=140,
+                     big_jump_at=75, big_jump_ms=240, enter_albums=8, slide_ms=160, fold_near=50,
+                     arch_at=8, arch_full=16, arch_span=500, arch_in=100, arch_out=62, arch_tau=56)
 
 
-CF_TODAY = {'cf.top': 13, 'cf.x1': 112, 'cf.xs': 48, 'cf.z1': 90, 'cf.zs': 20, 'cf.eye': 300, 'cf.bright1': 192,
+CF_TODAY = {'cf.top': 13, 'cf.x1': 128, 'cf.xs': 35, 'cf.z1': 77, 'cf.zs': 0, 'cf.eye': 256, 'cf.bright1': 192,
             'cf.bright2': 128, 'cf.reflect': 46, 'cf.reflect_top': 90, 'cf.stride': 110, 'cf.radius': 12,
-            'cf.tilt': 60, 'cf.horizon': 50, 'cf.third': 1, 'cf.swing': 0, 'cf.lift': 0, 'cf.eye_turn': 0, 'cf.view_h': 220, **{f'cf.{a}': v for a, v in CLASSIC_THUMB.items()}, 'cf.name_px': 24, 'cf.artist_px': 20, 'cf.text_y': 212, 'cf.artist_y': 32, 'cf.art_persp': 100}
+            'cf.tilt': 90, 'cf.horizon': 64, 'cf.third': 1, 'cf.swing': 2, 'cf.lift': 0, 'cf.eye_turn': 0, 'cf.view_h': 220, **{f'cf.{a}': v for a, v in CLASSIC_THUMB.items()}, 'cf.name_px': 24, 'cf.artist_px': 20, 'cf.text_y': 212, 'cf.artist_y': 32, 'cf.art_persp': 100}
 
 
 MOTION_TODAY = {**{f'motion.{k}.{a}': 0 for k in ('page', 'playing', 'coverflow') for a in ('ms', 'easing', 'anim')},
@@ -556,12 +557,12 @@ def with_role(monkeypatch, **cf):
 
 @pytest.mark.parametrize('field,value', [('eye', 2047), ('eye', 0), ('xs', 800), ('zs', 800), ('x1', 1024), ('reflect', 0),
     ('bright2', 0), ('text_y', 209), ('name_px', 33), ('artist_px', 29), ('radius', 84), ('stride', 0),
-    ('tilt', 29), ('tilt', 91), ('horizon', 0), ('horizon', 100), ('third', 2), ('swing', 2), ('lift', 41), ('eye_turn', 401), ('view_h', 209), ('view_h', 295),
+    ('tilt', 29), ('tilt', 91), ('horizon', 0), ('horizon', 100), ('third', 2), ('swing', 3), ('lift', 41), ('eye_turn', 401), ('view_h', 209), ('view_h', 295),
     ('thumb', 2), ('detent', 101), ('hold_ms', 30001), ('dead', 21), ('row_width', 101), ('art_persp', 101),
     ('jump_ms', 5001), ('jump_ticks', 201), ('jump_at', 1001), ('jump_pace', 2001), ('big_jump_at', 1001), ('big_jump_ms', 5001),
     ('enter_albums', 13), ('slide_ms', 1001), ('fold_near', 51)])
 def test_coverflow_range_rejects(monkeypatch, field, value):
-    if field in theme.CF_THUMB:  # Minimal's theme.xml states the thumb, not offsets.inc
+    if f'cf.{field}' not in theme.CF_ROLES:  # Minimal's theme.xml states the thumb and where the covers stand, not offsets.inc
         with pytest.raises(theme.ThemeError, match=rf'coverflow\.shelf\.{field}: {value} outside'):
             resolved(f'<view name="coverflow"><element name="shelf" {field}="{value}"/></view>')
         return
@@ -594,6 +595,14 @@ def test_coverflow_thumb_is_every_themes():  # the page's numbers, all retunable
         assert {a: t[f'cf.{a}'] for a in CLASSIC_THUMB} == CLASSIC_THUMB, t['id']
 
 
+def test_coverflow_arch_needs_its_numbers():  # th_arch's divisors, and a span of an album at least
+    c = theme.builtins()[0]
+    for bad in ({'cf.arch_tau': 0}, {'cf.arch_in': 0}, {'cf.arch_out': 0}, {'cf.arch_span': 99}, {'cf.arch_full': c['cf.arch_at']}):
+        with pytest.raises(theme.ThemeError, match='coverflow.shelf: arch_span'):
+            theme.validate({**c, **bad}, 't.xml')
+    theme.validate({**c, 'cf.arch_span': 0, 'cf.arch_tau': 0, 'cf.arch_full': 0}, 't.xml')  # no arch: the row at speed, none read
+
+
 @pytest.mark.parametrize('field', ['ticks_turn', 'ticks_album', 'track', 'snap', 'spin', 'far_left', 'rate_up', 'rate_down', 'lead_ms', 'row_edge',
                                    'enter_albums', 'slide_ms'])
 def test_coverflow_thumb_needs_its_divisors(field):
@@ -612,8 +621,8 @@ def test_coverflow_thumb_ranges_run_upward(lo, hi):
 
 def test_coverflow_shelf_near_edge_clears_the_eye():
     with pytest.raises(theme.ThemeError, match="eye \\+ z1 = 69 doesn't clear 80 sin\\(tilt\\) = 69\\.3$"):
-        theme.validate({**theme.builtins()[0], 'cf.eye': 39, 'cf.z1': 30}, 't.xml')
-    theme.validate({**theme.builtins()[0], 'cf.eye': 40, 'cf.z1': 30, 'cf.thumb': 0}, 't.xml')  # no held row to fit
+        theme.validate({**theme.builtins()[0], 'cf.eye': 39, 'cf.z1': 30, 'cf.tilt': 60}, 't.xml')
+    theme.validate({**theme.builtins()[0], 'cf.eye': 40, 'cf.z1': 30, 'cf.tilt': 60, 'cf.thumb': 0}, 't.xml')  # no held row to fit
 
 
 def test_coverflow_swing_near_edge_clears_the_eye_mid_step():
@@ -624,7 +633,7 @@ def test_coverflow_swing_near_edge_clears_the_eye_mid_step():
     theme.validate({**tight, 'cf.swing': 1, 'cf.eye': 86}, 't.xml')
     with pytest.raises(theme.ThemeError, match='lift / 4 = 0\\.0$'):
         theme.validate({**tight, 'cf.swing': 1, 'cf.eye': 85, 'cf.lift': 20}, 't.xml')
-    with pytest.raises(theme.ThemeError, match='rests 9072 px out, past 2048$'):
+    with pytest.raises(theme.ThemeError, match='rests 10368 px out, past 2048$'):
         theme.validate({**theme.builtins()[0], 'cf.swing': 1, 'cf.eye': 81, 'cf.z1': 0, 'cf.tilt': 90}, 't.xml')
 
 
@@ -639,8 +648,7 @@ def test_coverflow_caption_follows_the_bar(monkeypatch):
 def test_coverflow_edges_pass(monkeypatch):   # each limit itself is allowed
     for edge in ({'cf.top': 14}, {'cf.text_y': 230}, {'cf.bright2': 192}):
         theme.validate({**theme.builtins()[0], **edge}, 't.xml')
-    with_role(monkeypatch, eye=2046, x1=1023, xs=0)
-    theme.builtins()
+    theme.validate({**theme.builtins()[0], 'cf.eye': 2046, 'cf.x1': 1023, 'cf.xs': 0}, 't.xml')
 
 
 def test_classic_light_shelf():  # its side covers' geometry from its keys; the frame holds the reflection and fits the page
@@ -650,10 +658,10 @@ def test_classic_light_shelf():  # its side covers' geometry from its keys; the 
     def outer(n):
         z = eye + t['cf.z1'] + n * t['cf.zs'] - 80 * s
         return (t['cf.x1'] + n * t['cf.xs'] + 80 * c) * eye / z, 160 * eye / z
-    for n, (x, h) in enumerate(((121, 166), (154, 164), (187.5, None))):
+    for n, (x, h) in enumerate(((129.5, 162), (165, 162), (200.5, None))):
         assert abs(outer(n)[0] - x) <= 1 and (h is None or abs(outer(n)[1] - h) <= 1)
-    assert (t['cf.top'] + t['geoms'][t['geom_set']].bar, t['cf.horizon'], t['cf.third']) == (58, 63, 1)
-    assert (t['cf.swing'], t['cf.lift'], t['cf.eye_turn']) == (1, 20, 150)
+    assert (t['cf.top'] + t['geoms'][t['geom_set']].bar, t['cf.horizon'], t['cf.third']) == (58, 64, 1)
+    assert (t['cf.swing'], t['cf.lift'], t['cf.eye_turn']) == (2, 0, 0)  # straight out, as #329's lab
     assert (t['cf.reflect'], t['cf.bright1'], t['cf.bright2']) == (46, 256, 256) and abs(t['cf.reflect_top'] * 100 / 256 - 35) < 1
     assert t['cf.top'] + 160 + t['cf.reflect'] <= t['cf.view_h'] <= 320 - t['geoms'][t['geom_set']].bar
     foot = t['cf.top'] + 160 * t['cf.horizon'] // 100 + outer(0)[1] * (100 - t['cf.horizon']) / 100
@@ -663,7 +671,7 @@ def test_classic_light_shelf():  # its side covers' geometry from its keys; the 
 def test_emit_cf(tmp_path):
     theme.emit(theme.builtins()[:1], tmp_path)
     text = (tmp_path/'themes.inc').read_text()
-    assert text.count('.cf.eye = 300,') == 1 and text.count('.cf.text_y = 212,') == 1
+    assert text.count('.cf.eye = 256,') == 1 and text.count('.cf.text_y = 212,') == 1
 
 
 # page_list's rows, detail rows and in-page title: 48/64/48 unless a theme sets them (open class).

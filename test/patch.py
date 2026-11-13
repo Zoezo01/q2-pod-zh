@@ -10453,8 +10453,7 @@ def host_render(textures,cases,style=None,paper=None,windows=False,still=False):
     import subprocess, tempfile
     from coverflow import CF_SOURCES, SHIM_H
     from theme import ROLE_MACROS, builtins
-    style=style or {**{f:O[m] for f,m in ROLE_MACROS['minimal'].items() if f.startswith('cf.')},'cf.art_persp':100,
-                    'cf.thumb':builtins()[0]['cf.thumb']}  # Minimal's, a thumb theme: its shelf draws seven covers a side
+    style=style or {f:v for f,v in builtins()[0].items() if f.startswith('cf.')}  # Minimal's, as the payload has it: a thumb theme, its shelf draws seven covers a side
     if len(textures)==7:  # the seven round the centre, the wide ring's ends left out
         textures=[textures[0]]*4+list(textures)+[textures[0]]*4; cases=[(c[0],c[1]<<4,*c[2:]) for c in cases]
     cf=', '.join(f'.{f[3:]} = {v}' for f,v in style.items()); rows=style['cf.view_h']
@@ -10873,13 +10872,13 @@ m.u.mem_write(m.slide+O['SLIDE_OFFSET'],struct.pack('<i',-20)); tp(m,-10)
 assert m.get(m.slide+O['SLIDE_ANIMATOR'])==0 and did(m,'widget_animator_destroy') and -held//O['CF_STRIDE']>=0 and not m.slides
 off=toff(m); assert m.call(gap=0)==11 and m.get(m.slide+O['SLIDE_ANIMATOR'])==0 and toff(m)==off
 trest(m); assert toff(m)==0; passed()
-# The row's cost, in instructions: at a full lead, under a mid-turn frame's. What a frame costs on the device is measured
+# The arch's cost, in instructions: fully formed, within a mid-turn frame's ceiling. What a frame costs on the device is measured
 # with the --dev gaps; this keeps a change from quietly doubling it.
 m=thumb_page(); n=[0]; h=m.u.hook_add(UC_HOOK_BLOCK,lambda u,a,size,x: n.__setitem__(0,n[0]+size//4),begin=BASE,end=SCRATCH-1)
 tp(m); tpaint(m); assert m.draws; m.word(m.slide+O['SLIDE_OFFSET'],-O['CF_STRIDE']//4); n[0]=0
 m.word(m.slide+O['SLIDE_ANIMATOR'],1)  # a step's frame, the covers moving (no animator is ever called by a paint)
-tpaint(m); turn_cost=n[0]; m.word(m.slide+O['SLIDE_ANIMATOR'],0); m.word(m.slide+O['SLIDE_OFFSET'],0); thold(m); no_letters(m); tspin(m,600,-110); assert struct.unpack('<f',m.u.mem_read(ps['th']+12,4))[0]>4  # a full lead
-n[0]=0; draws=len(m.draws); tpaint(m); row_cost=n[0]; m.u.hook_del(h); assert len(m.draws)==draws+1 and turn_cost>1000000 and row_cost<turn_cost; passed()
+tpaint(m); turn_cost=n[0]; m.word(m.slide+O['SLIDE_ANIMATOR'],0); m.word(m.slide+O['SLIDE_OFFSET'],0); thold(m); no_letters(m); tspin(m,600,-110); assert struct.unpack('<f',m.u.mem_read(ps['th']+156,4))[0]>.9  # th.arch: formed (Fast Navigation off)
+n[0]=0; draws=len(m.draws); tpaint(m); row_cost=n[0]; m.u.hook_del(h); assert len(m.draws)==draws+1 and turn_cost>1000000 and row_cost<6_450_000,row_cost; passed()  # 6.02 million measured, the facing cover's 123 px columns over its neighbours': within the ceiling a turn's frame has below
 assert turn_cost<6_450_000,turn_cost  # a frame a quarter turn on, the covers moving, a little over the 6.38 million it measured: a dearer one fails
 # Going by letters, as MIPS, in Minimal and Classic, both leans: the held row, at rest and part through an album as it slides,
 # the fold half-way and the entry half-way (the facing point running) and 85% in (the row going on) draw byte for byte what
@@ -10897,7 +10896,7 @@ def th_set(m,kind=0,lean=0,a=0,b=0):  # host_render's (kind, lean, a, b)
     if kind in (1,2):  # the row held, as coverflow_hold leaves it from that entry
         put(pos=0,lean=lean,lead=(a if kind==1 else b)/1000); m.call(address=ps['coverflow_hold'],args=(0,0,0,0),gap=0)
     put(on=kind>0,jump=kind in (1,3),fold=kind==2,lean=lean,fold_at=m.now-a if kind==2 else 0,lead=a/1000 if kind==3 else 0,enter=b/1000 if kind==3 else 0)
-wide=[cover_pixels(200+j) for j in range(15)]; ALL=(1<<15)-1; FRAME_BOUND={0:5_600_000,1:4_300_000,2:4_350_000,3:4_300_000}
+wide=[cover_pixels(200+j) for j in range(15)]; ALL=(1<<15)-1; FRAME_BOUND={0:5_600_000,1:4_600_000,2:4_350_000,3:4_650_000}  # 1 and 3: #329's shelf, Minimal's held row 4.47 million and its entry 4.53
 for name,style in (('Minimal',{k:v for k,v in theme_builtins()[0].items() if k.startswith('cf.')}),('Classic',{**cl_style,'cf.radius':0})):
     cases=[(0,ALL),(16384,ALL)]+[c for lean in (1,-1) for c in ((0,ALL,1,lean,-3200*lean),(20000*lean,ALL,1,lean,-3200*lean),(0,ALL,2,lean,CF_DEFINES['CF_FOLD_MS']//2,-3200*lean),
                                                               (-8192*lean,ALL,3,lean,-2500*lean,style['cf.enter_albums']*500),

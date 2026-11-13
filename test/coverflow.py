@@ -14,6 +14,11 @@ from build import FUNCTIONS, ROOT
 from peq import LIBC
 
 PROTOTYPES = {**FUNCTIONS, **LIBC}  # the stock calls the host shims stand in for
+# The tick cases' shelf, 1.8.0's Minimal: side covers at coverflow.c's first sine table's 60 degrees (CF_ANGLE)
+SHELF_60 = {'cf.x1': 112, 'cf.xs': 48, 'cf.z1': 90, 'cf.zs': 20, 'cf.eye': 300, 'cf.tilt': 60, 'cf.horizon': 50, 'cf.swing': 0}
+# The thumb cases' shelf and follower, 1.8.0's Classic: the door's swing, the eye drawn back mid-turn, no arch
+SHELF_180 = {'cf.eye': 94, 'cf.tilt': 89, 'cf.x1': 116, 'cf.xs': 34, 'cf.z1': 77, 'cf.zs': 1, 'cf.horizon': 63, 'cf.swing': 1,
+             'cf.lift': 20, 'cf.eye_turn': 150, 'cf.art_persp': 13, 'cf.arch_span': 0}
 
 # coverflow.c, coverflow_thumb.c, coverflow_letters.c, coverflow_loader.c and playlist_art.c as one unit, so the shim's
 # stubs are defined once
@@ -2204,14 +2209,14 @@ static void player_cover(void) {
     memset(shim_id3, 0, sizeof(shim_id3));
 }
 
-/* ---- The thumb (Classic's covers here): the follower's numbers, as tuned. ---- */
+/* ---- The thumb (1.8.0's Classic's covers here): the follower's numbers, as tuned. ---- */
 volatile int wheel_raw, wheel_travel, wheel_held;
 static int test_wheel_pct = 50;
 int wheel_pct(void) { return test_wheel_pct; }
 int coverflow_wheel_live(void), coverflow_wheel_poll(int usable, int gated), coverflow_wheel_on(void *);
 void coverflow_wheel_land(void), cf_thumb(float *out), cf_thumb_lead(float lead);
-enum { T_POS, T_VEL, T_GOAL, T_LEAD, T_RATE, T_ON, T_JUMP, T_LEAN, T_FOLD, T_ENTER, T_FOLD_OFF, T_FOLD_VEL };
-static float th[12];
+enum { T_POS, T_VEL, T_GOAL, T_LEAD, T_RATE, T_ON, T_JUMP, T_LEAN, T_FOLD, T_ENTER, T_FOLD_OFF, T_FOLD_VEL, T_ARCH };
+static float th[13];
 static int th_pass(int travel, int ms) {
     clock_ms += ms;
     wheel_travel += travel;
@@ -3290,7 +3295,7 @@ static void enter_frames(void) {
 void cf_shelf_still(int still);
 static void rest_pinned(void) {
     static const cf_style_t shipped[3] = { CF_SHIPPED0, CF_SHIPPED, CF_SHIPPED2 };
-    static const unsigned pinned[3] = { 0xf879f642u, 0xa87fc212u, 0xf879f642u };
+    static const unsigned pinned[3] = { 0x09b59e69u, 0x40a22303u, 0x09b59e69u };
     static unsigned f[300 * PITCH], art[15][160 * 160];
     const cf_style_t fixture = shim_themes[1].cf;
     for (int i = 0; i < 15; ++i)
@@ -3749,7 +3754,7 @@ static void letters_176(void) {
        geometry moves at one: the goal goes on by this pass's share and the covers keep moving. Each
        letter in turn, however far the covers have gone since the last, one a jump_ticks of travel. */
     th_down();
-    int letters0 = letters, t = 0, spread = 0, letter_at = 0, canvas[16] = { 0 }, twos = 0, rounded = 0;
+    int letters0 = letters, t = 0, spread = 0, letter_at = 0, canvas[16] = { 0 }, twos = 0, arched = 0;
     while (letters == letters0 && t < 2000) th_spin(150, 17), t += 17;
     assert(t >= shipped.jump_ms && t <= shipped.jump_ms + 300);
     for (int i = 0; i < 30; ++i) {
@@ -3775,12 +3780,13 @@ static void letters_176(void) {
             twos += loads - l1 == 2;
         }
         decode_ms = 0;
-        /* and 1.7.6's window round the facing cover, as the row at speed draws it */
-        assert(!th[T_LEAD] || cf_frame_window(0) == (int)floorf(th[T_LEAD] + .5f));
-        rounded += th[T_LEAD] != 0;
+        /* and 1.7.6's window round the facing cover, the one in the middle: the arch has no facing
+           point ahead of the covers, and it stays formed through a letter */
+        assert(!th[T_LEAD] && !cf_frame_window(0));
+        arched += th[T_ARCH] > .9f;
         spread += loads - l0 > 2;
     }
-    assert(spread && twos && rounded);
+    assert(spread && twos && arched);
     assert(letters >= letters0 + 3);
     /* However hard the spin, a steady beat: jump_pace apart. */
     int beat = letters;
@@ -3933,6 +3939,84 @@ static void letters_176(void) {
     big_library = 1;
     #undef PLAIN
     #undef AT
+}
+
+/* ---- The arch (#329's), as shipped, Fast Navigation off: at speed the covers within arch_span of
+   the middle are at the side covers' depth, none nearer the eye, each turned more the farther out;
+   their places across and everything arch_span out are the shelf's; unformed, the shelf's own pose.
+   The follower: no arch at a turn a second or from a step of one album, formed at two turns a
+   second, gone by the landing, and none with Fast Navigation on, which keeps the row at speed. ---- */
+void cf_thumb_arch(float arch), cf_arch_pose(int t, float arch, int *out);
+static void arch(void) {
+    static const cf_style_t shipped[3] = { CF_SHIPPED0, CF_SHIPPED, CF_SHIPPED2 };
+    static unsigned f[300 * PITCH];
+    const cf_style_t fixture = shim_themes[1].cf;
+    const unsigned *wide[15], **ring = flat_ring(wide);
+    classic = 1, frame_fail = 0, square_art = 1, pressed = 0, big_library = 0;
+    for (int ti = 0; ti < 3; ++ti) {
+        const cf_style_t *cs = &shim_themes[1].cf;
+        shim_themes[1].cf = shipped[ti];
+        open_page();
+        int span = cs->arch_span * ONE / 100, sine = 0;
+        assert(span >= ONE && cs->arch_full > cs->arch_at && cs->arch_tau && cs->swing == 2);
+        for (int t = 0; t <= 7 * ONE; t += ONE / 16) {
+            int rest[5], half[5], full[5], side = 16 * cs->z1 + (t > ONE ? cs->zs * (t - ONE) >> 12 : 0);
+            cf_arch_pose(t, 0, rest), cf_arch_pose(t, .5f, half), cf_arch_pose(t, 1, full);
+            assert(rest[1] == cf_path_x(t, 80 * 16) && rest[2] == cf_path_x(t, -80 * 16));
+            assert(full[4] == rest[4] && half[4] == rest[4]); /* its place across */
+            if (t >= span) { /* out of the arch: the shelf's */
+                assert(!memcmp(full, rest, sizeof rest) && !memcmp(half, rest, sizeof rest));
+                continue;
+            }
+            assert(abs(full[0] - side) <= 1 && half[0] >= rest[0] && half[0] <= full[0]); /* back, none forward */
+            assert(full[3] >= sine && full[3] <= rest[3] && half[3] >= full[3] && half[3] <= rest[3]);
+            assert(t || !full[3]); /* the middle one still faces the eye */
+            sine = full[3];
+        }
+        assert(sine > 60000); /* turning on into the shelf's tilt */
+        /* The frame: the middle cover as tall as a side cover's plane makes it, on the horizon. */
+        cf_thumb_arch(1);
+        coverflow_render(f, PITCH, 0, ring);
+        cf_thumb_arch(0);
+        int h = 160 * cs->eye / (cs->eye + cs->z1), top = cs->top + (160 - h) * cs->horizon / 100;
+        assert(abs(col_top(f, CF_CX) - top) <= 1 && slot_of(f[(top + h / 2) * PITCH + CF_CX]) == 3);
+        close_page();
+    }
+    shim_themes[1].cf = shipped[1];
+    open_page();
+    widget *s = slide();
+    int *offset = (int *)(s->raw + SLIDE_OFFSET);
+    top_window = page;
+    th_pass(0, 17);
+    th_down();
+    for (int i = 0; i < 60; ++i) th_spin(36, 17), assert(!th[T_ARCH] && !th[T_LEAD]); /* a turn a second */
+    float peak = 0;
+    for (int i = 0; i < 60; ++i) { /* two: no facing point ahead of the covers, they bend where they are */
+        th_spin(72, 17);
+        assert(!th[T_LEAD] && !cf_frame_window(0));
+        peak = th[T_ARCH] > peak ? th[T_ARCH] : peak;
+    }
+    assert(peak > .8f && th[T_ARCH] > .8f && fabsf(th[T_VEL]) > .016f);
+    wheel_held = 0; /* the lift: it only relaxes, and is gone before the covers commit */
+    for (int i = 0; i < 400 && (i < 8 || th[T_ON]); ++i) {
+        float was = th[T_ARCH];
+        th_pass(0, 17);
+        assert(th[T_ARCH] <= was);
+    }
+    assert(!th[T_ON] && !th[T_ARCH] && !*offset);
+    th_down(); /* an album's travel in one pass: the goal an album on at most, so no arch */
+    th_pass(-39, 17);
+    for (int i = 0; i < 30; ++i) th_pass(0, 17), assert(!th[T_ARCH]);
+    th_rest();
+    big_library = 1; /* Fast Navigation: the row at speed, its facing point ahead, and no arch */
+    th_down();
+    for (int i = 0; i < 60; ++i) th_spin(72, 17), assert(!th[T_ARCH]);
+    assert(th[T_LEAD] > 1);
+    th_rest();
+    close_page();
+    top_window = 0;
+    th_pass(0, 17);
+    shim_themes[1].cf = fixture;
 }
 
 /* ---- Pages, the scoped pages' cards, Go to Album, the build's Cancel row. ---- */
@@ -7316,6 +7400,7 @@ int main(void) {
     thumb_wheel();
     thumb_shipped();
     letters_176();
+    arch();
     thumb_letters_held();
     letters_slide();
     lift_handoff();
@@ -7704,10 +7789,11 @@ def main():
         assert int(re.search(rf'\.{field}=(\w+)', tight)[1], 0) == classic_light[field], f'shim_themes drifted from Classic: {field}'
     # Each theme's .cf, as designated initialisers, so neither a CF_ROLES change nor a field reorder drifts.
     cf_style = [f'-DCF_STYLE{i}={{ ' + ', '.join(f'.{f[3:]} = {v}' for f, v in m.items() if f.startswith('cf.')) + ' }'
-                for i, m in enumerate(({**ROLE_MACROS['minimal'], 'cf.art_persp': builtins()[0]['cf.art_persp']},))]
+                for i, m in enumerate(({**ROLE_MACROS['minimal'], **SHELF_60, 'cf.art_persp': builtins()[0]['cf.art_persp']},))]
+    cf_style += [f'-DCF_{f[3:].upper()}={v}' for f, v in SHELF_60.items() if f not in ('cf.tilt', 'cf.swing')]  # CF_X1 ...: the fixture's own
     # The wheel's numbers are retuned on the device: these cases pin the model, with its own fixed ones.
     # (letters off: thumb_shipped has them on the shipped numbers)
-    fixture = {**classic_light, 'cf.ticks_album': 13, 'cf.fast_at': 25, 'cf.fast_full': 120, 'cf.jump_ticks': 0}
+    fixture = {**classic_light, **SHELF_180, 'cf.ticks_album': 13, 'cf.fast_at': 25, 'cf.fast_full': 120, 'cf.jump_ticks': 0}
     cf_style.append('-DCF_STYLE1={ ' + ', '.join(f'.{f[3:]} = {v}' for f, v in fixture.items() if f.startswith('cf.')) + ' }')
     cf_style.append('-DCF_SHIPPED={ ' + ', '.join(f'.{f[3:]} = {v}' for f, v in classic_light.items() if f.startswith('cf.')) + ' }')
     cf_style.append('-DCF_SHIPPED0={ ' + ', '.join(f'.{f[3:]} = {v}' for f, v in builtins()[0].items() if f.startswith('cf.')) + ' }')

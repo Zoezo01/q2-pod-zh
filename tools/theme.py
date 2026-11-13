@@ -48,7 +48,8 @@ CF_THUMB = {'thumb': 1, 'ticks_turn': 200, 'ticks_album': 200, 'fast_at': 1000, 
             'lead_full': 1000, 'lead_ms': 1000, 'row_shift': 200, 'row_from': 1000, 'row_full': 2000, 'row_shrink': 50, 'row_flat': 800,
             'row_out': 100, 'row_edge': 800, 'row_width': 100, 'row_key': 100,
             'jump_ms': 5000, 'jump_ticks': 200, 'jump_at': 1000, 'jump_pace': 2000, 'big_jump_at': 1000, 'big_jump_ms': 5000,
-            'enter_albums': 12, 'slide_ms': 1000, 'fold_near': 50}
+            'enter_albums': 12, 'slide_ms': 1000, 'fold_near': 50,
+            'arch_at': 100, 'arch_full': 100, 'arch_span': 700, 'arch_in': 1000, 'arch_out': 1000, 'arch_tau': 1000}
 CF_WIDE = 2 * int(need(re.search(r'#define CF_WIDE_REACH (\d+)', (ROOT/'patch/coverflow.h').read_text()),
                        'Missing CF_WIDE_REACH')[1]) + 1  # the row's window
 # AWTK's easing_type_t, in enum order: a value's index is its number
@@ -200,7 +201,7 @@ SCHEMA = {k.path: k for k in (
         ('shelf', 'zs', 0, 799), ('shelf', 'eye', 1, 2046), ('shelf', 'bright1', 1, 256), ('shelf', 'bright2', 1, 256),
         ('shelf', 'reflect', 1, 50), ('shelf', 'reflect_top', 0, 256), ('shelf', 'stride', 1, 375),
         ('shelf', 'radius', 0, 83), ('shelf', 'tilt', 30, 90), ('shelf', 'horizon', 1, 99), ('shelf', 'third', 0, 1),
-        ('shelf', 'swing', 0, 1), ('shelf', 'lift', 0, 40), ('shelf', 'eye_turn', 0, 400), ('shelf', 'view_h', O['CF_VIEW_H'], 294),
+        ('shelf', 'swing', 0, 2), ('shelf', 'lift', 0, 40), ('shelf', 'eye_turn', 0, 400), ('shelf', 'view_h', O['CF_VIEW_H'], 294),
         *(('shelf', a, 0, hi) for a, hi in CF_THUMB.items()), ('caption', 'name_px', 1, 32), ('caption', 'artist_px', 1, 28),
         ('caption', 'text_y', 210, 290), ('caption', 'artist_y', 20, 32))),
     # % of the plane's own spacing of a cover's art, from even (0); 100, the plane's, is Minimal's
@@ -245,10 +246,10 @@ VIEWS = {e.partition('.')[0] for e in ELEMENTS}
 CHILDREN = {'theme': {'colorSchemes', 'colorScheme', 'geometry', 'option', 'view'}, 'view': {'element'}, 'option': {'value'}}
 OPTION_ATTRS = {'setting', 'key', 'label', 'default', 'preset', 'keep', 'values'}
 # Per-theme numbers stay in offsets.inc: theme id -> {C field: expression over O}.
-CF_ROLES = {'cf.top': 'CF_TOP', 'cf.x1': 'CF_X1', 'cf.xs': 'CF_XS', 'cf.z1': 'CF_Z1', 'cf.zs': 'CF_ZS', 'cf.eye': 'CF_EYE',
+CF_ROLES = {'cf.top': 'CF_TOP',
             'cf.bright1': 'CF_BRIGHT1', 'cf.bright2': 'CF_BRIGHT2', 'cf.reflect': 'CF_REFLECT',
             'cf.reflect_top': 'CF_REFLECT_TOP', 'cf.stride': 'CF_STRIDE', 'cf.radius': 'NP_ART_RADIUS',
-            'cf.tilt': 'CF_ANGLE', 'cf.horizon': 'CF_HORIZON', 'cf.third': 'CF_THIRD', 'cf.view_h': 'CF_VIEW_H',
+            'cf.third': 'CF_THIRD', 'cf.view_h': 'CF_VIEW_H',
             'cf.name_px': 'CF_NAME_PX', 'cf.artist_px': 'CF_ARTIST_PX', 'cf.text_y': 'CF_TEXT_Y', 'cf.artist_y': 'CF_NAME_H'}
 MOTION_ROLES = {'motion.page.ms': 'PAGE_SLIDE_MS', 'motion.page.easing': 'EASE_CUBIC_OUT',
                 'motion.swap.ms': 'PAGE_SLIDE_MS', 'motion.swap.easing': 'SLIDE_EASING',
@@ -972,7 +973,7 @@ def validate(t, name):
     near = 80 * math.sin(math.radians(t['cf.tilt']))  # half a side cover's width turned toward the eye
     if t['cf.eye'] + t['cf.z1'] <= near:
         err(f"coverflow.shelf: eye + z1 = {t['cf.eye'] + t['cf.z1']} doesn't clear 80 sin(tilt) = {near:.1f}")
-    if t['cf.swing']:  # and all through a step: depth follows the turn, less lift at most a quarter's worth mid-way
+    if t['cf.swing'] == 1:  # and all through a step: depth follows the turn, less lift at most a quarter's worth mid-way
         clear = t['cf.eye'] - max(0, 80 - t['cf.z1'] / math.sin(math.radians(t['cf.tilt']))) - t['cf.lift'] / 4
         if clear <= 0:
             err(f"coverflow.shelf: swing's near edge reaches the eye mid-step: eye - max(0, 80 - z1 / sin(tilt)) - lift / 4 = {clear:.1f}")
@@ -986,6 +987,12 @@ def validate(t, name):
                   'enter_albums', 'slide_ms'):
             if not t[f'cf.{a}']:
                 err(f'coverflow.shelf: thumb needs {a}')
+        if t['cf.arch_span']:  # th_arch and arch_pose divide by these; a span under an album would break a step's turn
+            for a in ('arch_in', 'arch_out', 'arch_tau'):
+                if not t[f'cf.{a}']:
+                    err(f'coverflow.shelf: arch_span needs {a}')
+            if t['cf.arch_span'] < 100 or t['cf.arch_full'] <= t['cf.arch_at']:
+                err('coverflow.shelf: arch_span must be an album (100) or more, and arch_full must pass arch_at')
         for lo, hi in (('fast_at', 'fast_full'), ('fast_at', 'jump_at'), ('fast_at', 'big_jump_at'), ('lead_from', 'lead_full'), ('row_from', 'row_full')):
             if t[f'cf.{hi}'] <= t[f'cf.{lo}']:
                 err(f'coverflow.shelf: {hi} {t[f"cf.{hi}"]} must pass {lo} {t[f"cf.{lo}"]}')

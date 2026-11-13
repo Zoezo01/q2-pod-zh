@@ -1617,7 +1617,8 @@ void pose(int t, pose_t *p) {
         int sq = (int)((unsigned)t * (unsigned)t >> 16);
         p->xc = (16 * (2 * cfs.x1 - cfs.xs) * t + 16 * (cfs.xs - cfs.x1) * sq) >> 16;
         p->zc = 16 * cfs.z1 * t >> 16;
-        if (cfs.swing) {
+        if (cfs.swing == 2) p->xc = 16 * cfs.x1 * t >> 16; /* straight out, as it turns */
+        if (cfs.swing == 1) {
             /* Depth follows the turn, less a small swell of lift px mid-way. The near edge's screen
              * x is two parabolas meeting flat at 45% of the way, 3 px past its rest place, and xc
              * follows from it, so the far edge goes on swinging out with no corner in the path.
@@ -1663,8 +1664,11 @@ void cf_thumb(float *out) {
     out[0] = th.pos, out[1] = th.vel, out[2] = th.goal, out[3] = th.lead, out[4] = th.rate;
     out[5] = (float)th.on, out[6] = (float)th.jump, out[7] = (float)th.lean;
     out[8] = (float)th.fold, out[9] = th.enter, out[10] = th.fold_off, out[11] = th.fold_vel;
+    out[12] = th.arch;
 }
 void cf_thumb_lead(float lead) { th.on = lead >= 0, th.lead = lead >= 0 ? lead : 0; }
+/* For test/coverflow.py: the arch formed so far (0: none), to render at. */
+void cf_thumb_arch(float arch) { th.on = arch > 0, th.arch = arch; }
 /* For test/coverflow.py: going by letters, the row leaning lean (0: not). */
 void cf_thumb_lean(int lean) { th.on = th.jump = lean != 0, th.lean = lean; }
 /* For test/coverflow.py: folding out of a row leaning lean since at (0: not). */
@@ -1857,7 +1861,7 @@ void draw_posed(shelf_t *f, const pose_t *p, int side, const unsigned *tex) {
 static void draw_cover(shelf_t *f, int t, const unsigned *tex) {
     pose_t p;
     int side = t < 0 ? -1 : 1;
-    pose(t * side, &p);
+    arch_pose(t * side, &p);
     draw_posed(f, &p, side, tex);
 }
 
@@ -2510,7 +2514,7 @@ void coverflow_paint(void *w, void *canvas) {
     if (!w || w != cf.slide || !fx.frame || cf.screen != COVERS ||
         !visual(w, n = (int)widget_count_children(w), &c, &frac))
         return;
-    int lead = (int)(th.lead * CF_ONE), sh = 0,
+    int lead = (int)(th.lead * CF_ONE), arch = (int)(th.arch * CF_ONE), sh = 0,
         mode = !th.on || (!th.fold && !th.jump) ? FX_SHELF
                : th.fold                        ? FX_FOLD
                : th.enter > 0                   ? FX_ENTRY
@@ -2532,7 +2536,8 @@ void coverflow_paint(void *w, void *canvas) {
     unsigned gap_t1 = (unsigned)time_now_ms();
 #endif
     int still = !th.on && !P(w, SLIDE_ANIMATOR) && !touched();
-    if (!fx.drawn || c != fx.c || frac != fx.frac || lead != fx.lead || mode != fx.mode ||
+    if (!fx.drawn || c != fx.c || frac != fx.frac || lead != fx.lead || arch != fx.arch ||
+        mode != fx.mode ||
         still != fx_still || mode == FX_FOLD ||
         mode == FX_ENTRY) { /* the fold: the clock, the entry: passes */
         unsigned *d = (unsigned *)bitmap_lock_buffer_for_write(fx.frame);
@@ -2541,7 +2546,7 @@ void coverflow_paint(void *w, void *canvas) {
         coverflow_render(d, (int)(bitmap_get_line_length(fx.frame) / 4), frac, ring);
         cf_still = 0;
         bitmap_unlock_buffer(fx.frame);
-        fx.c = c, fx.frac = frac, fx.lead = lead, fx.mode = mode, fx.drawn = 1, fx_still = still;
+        fx.c = c, fx.frac = frac, fx.lead = lead, fx.arch = arch, fx.mode = mode, fx.drawn = 1, fx_still = still;
     }
 #if Q2POD_DEV
     gap_note(w, gap_t0, gap_t1, (unsigned)time_now_ms());

@@ -401,9 +401,9 @@ def test_a_side_cover_s_pose_by_its_distance(fw):
     p = pose(g, 0)
     assert (p.xc, p.zc, p.c, p.s, p.bright) == (0, 0, 65536, 0, 256)
     p = pose(g, ONE)
-    assert (p.xc, p.zc, p.c, p.s, p.bright) == (16 * 112, 16 * 90, 32768, 56756, 192)
+    assert (p.xc, p.zc, p.c, p.s, p.bright) == (16 * 128, 16 * 77, 0, 65536, 192)  # #329's shelf: edge-on
     p = pose(g, 2 * ONE)
-    assert (p.xc, p.zc, p.bright) == (16 * (112 + 48), 16 * (90 + 20), 128)
+    assert (p.xc, p.zc, p.bright) == (16 * (128 + 35), 16 * 77, 128)
     assert pose(g, 3 * ONE).bright == 128  # the third out stays (CF_THIRD)
     # and every one past it, drawn whole for as long as any of it shows (a thumb theme's wide ring)
     assert pose(g, 13 * ONE // 4).bright == pose(g, 7 * ONE // 2).bright == pose(g, 15 * ONE // 2).bright == 128
@@ -415,7 +415,7 @@ def test_a_cover_s_pose_is_continuous_and_keeps_turning_in_step(fw):
     for t in range(256, 3 * ONE, 257):
         p = pose(g, t)
         assert 0 <= p.xc - last.xc <= 16 and 0 <= p.zc - last.zc <= 16 and last.bright - 2 <= p.bright <= last.bright, t
-        assert abs(math.hypot(p.c, p.s) - 65536) < 80
+        assert abs(math.hypot(p.c, p.s) - 65536) < 90  # the 90 degree table's chords: 5.6 degrees a step
         last = p
 
 
@@ -537,8 +537,8 @@ def test_hit_names_the_cover_drawn_there(fw):
                     continue  # an edge's blend
                 j = cover(x, y)
                 got = g.coverflow_hit(frac, x, y)
-                if j is None:
-                    assert got == MISS, (frac, x, y)
+                if j is None:  # nothing drawn: no cover, or one past the seven this ring holds
+                    assert got == MISS or abs(got) > 3, (frac, x, y)
                 elif abs((j - 3) * ONE - frac) < 13 * ONE // 4:  # at least a quarter bright
                     assert got == j - 3, (frac, x, y)
                     checked += 1
@@ -2131,7 +2131,7 @@ class Ld(C.Structure):
 class Fx(C.Structure):
     _fields_ = [('frame', C.c_void_p), ('tex', C.c_void_p), ('album', C.c_int * FX_POOL), ('art', C.c_void_p * FX_POOL),
                 ('half', C.c_ubyte * FX_POOL),
-                *((k, C.c_int) for k in 'c frac drawn light lead todo mode letters_at next prev halves'.split()),
+                *((k, C.c_int) for k in 'c frac drawn light lead arch todo mode letters_at next prev halves'.split()),
                 ('half_at', C.c_uint), ('half_ms', C.c_int), ('full_ms', C.c_int),
                 ('ld', Ld * LD_SLOTS), ('stage', C.c_void_p), ('gate', C.c_uint * 8), ('loader', C.c_ulong),
                 ('ld_on', C.c_int), ('ld_stop', C.c_int), ('paint_at', C.c_uint), ('more', C.c_void_p), ('no_more', C.c_int)]
@@ -3380,7 +3380,7 @@ class Th(C.Structure):
                 *((k, C.c_uint) for k in 'at tick_at edge_at letter_at'.split()),
                 *((k, C.c_int) for k in 'raw on finger held dir dead early clicked bounced capped jump beat jump_to lean fold'.split()),
                 ('fold_at', C.c_uint), *((k, C.c_float) for k in 'enter fold_off fold_vel hold_lead hold_run hold_xrun hold_xs'.split()),
-                ('hold_k', C.c_int)]
+                ('hold_k', C.c_int), ('arch', C.c_float), ('seen_arch', C.c_float)]
 
 
 def captions(fw, theme, scoped=0, albums=(('Abbey', 'Beatles'), ('Help', 'Beatles'))):
