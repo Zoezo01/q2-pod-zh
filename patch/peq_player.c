@@ -854,7 +854,8 @@ void id3_gain(void *s, int size) {
             if (!memcmp(h, "TXXX", 4) && n <= sizeof f && read(fd, f, n) == (int)n &&
                 (k = id3_txxx(f, n, t, sizeof t)) > (key = strlen(t)) + 1)
                 AV_DICT_SET(&dict, t, t + key + 1, 0);
-            at += 10 + n;
+            at += 10LL + n; /* 32-bit, 0xfffffff6 + 10 = 0: the same frame for ever */
+            /* ponytail: stock's own walker (runs first, 2 KB of frames) still hangs on such a frame; only a hand-made file has one */
         }
         RG_EXPORT(0, dict);
         AV_DICT_FREE(&dict);
