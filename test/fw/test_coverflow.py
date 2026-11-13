@@ -3463,3 +3463,33 @@ def test_the_panel_s_paper_header_shadow_and_border(fw, light):
     assert [r[1:] for r in border] == [(39, 8, BACK_W + 2, 1), (39, 9 + 285, BACK_W + 2, 1), (39, 9, 1, 285), (40 + BACK_W, 9, 1, 285)]
     assert len({r[0] for r in border}) == 1 and border[0][0] >> 24 == 255  # one opaque colour all round
     assert (border[0][0] & 255 > 0x80) == bool(light)
+
+
+# The album panel's rows: the title runs to the length's text, not to the box reserved for it
+
+def panel_row(fw, text, canvas=1):
+    """panel_fit on two fake widgets, the length's box 66 wide (88 from an hour) and the title's 194; a character measures 10 px."""
+    wide = (C.c_uint * (len(text) + 1))(*map(ord, text))
+    title, time = bytearray(0x80), bytearray(0x80)
+    for w, (width, height) in ((title, (194, 45)), (time, (88 if len(text) > 5 else 66, 45))):
+        C.c_int.from_buffer(w, O['W_W']).value, C.c_int.from_buffer(w, O['W_H']).value = width, height
+    bufs = {C.addressof((C.c_char * 0x80).from_buffer(w)): w for w in (title, time)}
+    fw.mock('widget_get_canvas', lambda *a: 0x1000 * canvas)
+    fw.mock('widget_get_text', lambda *a: C.addressof(wide))
+    fw.mock('canvas_measure_text', lambda c, s, n, *a: 10.0 * n)
+    fit = fw.fn('coverflow__panel_fit', None, C.c_void_p, C.c_void_p, C.c_uint)
+    fit(C.addressof((C.c_char * 0x80).from_buffer(title)), C.addressof((C.c_char * 0x80).from_buffer(time)), len(text))
+    return list(bufs.values()), fw.calls('widget_resize'), fw.calls('widget_move_resize'), title, time
+
+
+@pytest.mark.parametrize('text,w', [('4:01', 40), ('14:57', 50), ('1:02:03', 70)])
+def test_a_panel_title_runs_to_its_length_s_own_text(fw, text, w):
+    _, resize, move, title, time = panel_row(fw, text)
+    gap = 8
+    assert [a[1:3] for _, a in resize] == [(BACK_W - 12 - w - gap - 12, 45)]  # from x 12, ending gap before the text
+    assert [a[1:5] for _, a in move] == [(BACK_W - 12 - w, 0, w, 45)]  # the length stays at the right margin
+
+
+def test_a_panel_row_keeps_its_reserve_with_no_canvas(fw):
+    _, resize, move, *_ = panel_row(fw, '4:01', canvas=0)
+    assert not resize and not move

@@ -71,7 +71,7 @@ slide_menu_set_value slide_menu_item_width list_view_create scroll_view_create l
 image_base_set_image widget_load_image widget_unload_image widget_set_name widget_use_style
 widget_set_text_utf8 widget_restack widget_animator_prop_create widget_animator_prop_set_params widget_animator_start widget_set_visible widget_get_prop_int widget_set_prop_int
 widget_get_prop_str widget_on widget_destroy_children widget_invalidate_force
-widget_count_children widget_get_child widget_lookup widget_move_resize widget_get_visible
+widget_count_children widget_get_child widget_lookup widget_move_resize widget_resize widget_get_canvas widget_get_visible
 canvas_get_clip_rect canvas_set_clip_rect widget_set_sensitive widget_get_type tk_strcmp widget_animator_destroy
 timer_add timer_remove navigator_back_to_home navigator_back navigator_window_is_exist window_manager_close_window_force navigator_to_with_context bitmap_create_ex bitmap_destroy bitmap_unlock_buffer
 bitmap_lock_buffer_for_read bitmap_lock_buffer_for_write bitmap_get_line_length
@@ -416,6 +416,8 @@ int widget_move_resize(void *x, int left, int top, int ww, int h) {
     r[0] = left; r[1] = top; r[2] = ww; r[3] = h;
     return 0;
 }
+int widget_resize(void *x, int ww, int h) { return widget_move_resize(x, ((int *)W(x)->raw)[0], ((int *)W(x)->raw)[1], ww, h); }
+void *widget_get_canvas(void *x) { return 0; } /* no canvas: the panel keeps its reserve */
 static int insensitive; /* the widget last made insensitive */
 int widget_set_sensitive(void *x, int v) { W(x)->numb = !v; if (!v) insensitive = W(x) - w; return 0; }
 static int clip_rect[4] = { 0, 0, 375, 320 }; /* the canvas clip, screen x, y, w, h */
