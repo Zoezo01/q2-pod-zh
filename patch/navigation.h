@@ -434,6 +434,10 @@ int pointer_down(void);
 unsigned qm_album_id(void *r);
 char *scrobble_tag(char *o, char *end, const char *s);
 
+/* font_weight.c: preserve the requested weight when a face lacks characters */
+void font_weight_mark(void *w, int bold);
+void font_weight_paint(void *w, void *canvas);
+
 /* np_bar.c */
 int np_beside(void);
 int remain_due(const void *info);

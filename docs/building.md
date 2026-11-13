@@ -71,6 +71,7 @@ All three kernel-module experiments were on by default from 1.5.0 to 1.6.1 and w
 ```sh
 python3 test/peq.py                        # PEQ parser, storage, DSP, EQ page (both tabs), 3EQ filters, player, visualizer FFT and scrobble upload (host cc; player needs -m32 libs, upload libcrypto)
 python3 test/peq.py --captures /tmp/eq --font BUILD/default.ttf  # the same, plus the EQ page's Simple tab in both iPod themes as PNGs
+python3 test/font_weight.py                # fallback weight, recycled labels and native painter boundary (host cc)
 python3 test/coverflow.py                  # Coverflow art cache and depth renderer (host cc -m32, pthreads)
 python3 test/coverflow.py --captures /tmp/cf  # the same, plus the renderer's frames as PNGs
 python3 test/mp3.py                        # native Xing seek bounds, CRC and truncated headers; TXXX encodings

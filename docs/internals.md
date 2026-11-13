@@ -1750,3 +1750,23 @@ The rootfs is glibc 2.28 on 32-bit MIPS, so stock's `time_t` is 32 bits, and the
 **TLS.** Every verified libcurl handle (Network Update, Q2 Shelf, Internet Radio, scrobbling, lyrics and covers) sets `CURLOPT_SSL_CTX_FUNCTION` to `tls_untimed` (`patch/peq.h`). It sets `X509_V_FLAG_NO_CHECK_TIME` in the `SSL_CTX`'s `X509_VERIFY_PARAM`, which each connection inherits, so chains still have to reach a pinned root, but no certificate's dates are checked. demo doesn't import `SSL_CTX_get0_param` or `X509_VERIFY_PARAM_set_flags`, so the callback writes OpenSSL 1.1.1f's fields itself (`SSL_CTX->param` at `0x100`, `->flags` at `0xc`). `tools/build.py` checks that both functions in the rootfs's `libssl`/`libcrypto` still load those offsets. ponytail: an expired or retired server certificate is accepted too, and there is no revocation check. That is the price of working with a firmware nobody can update. Tidal's downloads already run unverified, as its stream does.
 
 **Clock.** Linux 5.10 keeps 64-bit time, and glibc 2.28's `time()` truncates it to 32 bits. `wall_time` reads that unsigned, which is right until 2106. Scrobble timestamps use it. The iPod status bar takes it back in 28-year steps, a span over which dates and weekdays repeat, before stock's 32-bit `localtime`, which is right until 2100. ponytail: stock code stays 32-bit. Its clock screens and its network time sync (`ntpdate`, then `hwclock -wu`) will show or write wrong dates after January 2038, and NTP's 2036 era rollover depends on stock's `ntpdate`. Stock's own HTTPS calls skip verification. Card apps' folder poll (`addon.c`) compares a 32-bit `st_mtime` with `time()`; both wrap together, so only the second of the wrap misjudges a change. librespot carries its own fix (DiamondBond/q2-librespot).
+
+## Font fallback weight
+
+`font_weight.c` keeps a theme’s bold intent separately from its resolved font face. `theme_font`
+marks a label only when a requested bold face falls back to the stock regular font. The marker
+is updated even on font-cache hits, and cleared on ordinary text or when a reused widget changes
+back to a supported face. `panel_font` applies the same rule to Classic’s album heading and track
+rows, leaving artist and duration text at their original weight.
+
+The existing border hook repeats a marked label’s native self painter one logical pixel to the
+right, then restores the canvas origin even if painting fails. Calling the vtable self painter
+directly avoids redispatching border events. Native clipping, shaping and marquee remain in
+charge; this synthesizes weight rather than supplying a new typeface. Font coverage and fallback
+sizes are unchanged. Supported Latin/Cyrillic bold and regular roles incur no extra foreground
+pass. Marked fallback labels incur one extra native foreground pass and one widget property;
+CPU and battery impact have not been measured on a Q2. No font files or background jobs are added.
+
+`test/font_weight.py` exercises the production helper’s native boundary. `test/patch.py` checks
+real font selection, cache reuse, Cover Flow captions and album rows, and Now Playing title
+changes across the three themes. Toolkit rendering is mocked at its native ABI boundary.
