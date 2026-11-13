@@ -1,7 +1,5 @@
 # Changelog
 
-- **1.8.1**:
-  - Cover Flow: hold Play/Pause on a cover and choose **Cover Flow Options…** to open **Display → Cover Flow** without leaving the covers. Return goes back to them.
 - **1.8.0**:
   - System: Q2 Pod now runs on Shanling's stock firmware V1.36 instead of V1.32, with its newer kernel, drivers and player.
   - Playback: **Headphones Required**, new in stock V1.36, is under **Resume Songs**. On, nothing starts playing until headphones, Bluetooth or a USB DAC is connected, and the queue isn't restored at start-up. Off by default.

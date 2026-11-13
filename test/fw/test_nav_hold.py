@@ -10,7 +10,6 @@ import pytest
 
 import host
 from conftest import O, Deques, Files, Rows, claim, fnv1a, high_halves, in_fork, ui_name
-from test_coverflow import COVERS, cf  # test_coverflow.py keeps the mirror
 
 W_X, W_PARENT, W_EMITTER = O['W_X'], O['W_PARENT'], O['W_EMITTER']
 EMIT_TYPE, EMIT_PENDING_REMOVE, EMIT_NEXT = O['EMIT_TYPE'], O['EMIT_PENDING_REMOVE'], O['EMIT_NEXT']
@@ -1926,21 +1925,6 @@ def test_rate_album_opens_the_picker_on_its_hearts_and_rates_that_album(hold, re
     fw.fn('ringnav_select', None, C.c_void_p, C.c_int, C.c_int)(hold.list, 1, 2)
     hold.hold()
     assert 'Rate Album' in hold.menu() and hold.title() == 'Revolver'  # its own: none
-
-
-def test_a_covers_menu_ends_with_cover_flow_options_which_opens_displays_cover_flow_page(hold, recs, ui, fw):
-    albums = [recs(album=a, artist='The Beatles', kind=4, id_=i + 1) for i, a in enumerate(('Help!', 'Revolver'))]
-    page, slide = ui.window('coverflow_page'), C.create_string_buffer(0x200)
-    struct.pack_into('<i', slide, O['SLIDE_INDEX'], 1)
-    c = cf(fw)
-    c.page, c.slide, c.albums, c.screen, c.timer, c.scoped = page, C.addressof(slide), hold.deques.new(albums), COVERS, 0, 0
-    opened = []
-    ui.routes['systemset/display_page'] = lambda ctx: opened.append(fw.var('navigation__display_sub', C.c_int).value)
-    hold.hold()
-    assert hold.menu()[-1] == 'Cover Flow Options…' and hold.title() == 'Revolver'
-    hold.pick('Cover Flow Options…')
-    assert opened == [2]  # DISPLAY_COVERFLOW
-    c.page = c.slide = c.albums = None
 
 
 @pytest.mark.parametrize('cls, field_', [(0xf004, 'artist'), (0xf005, 'composer'), (0xf006, 'genre')])
