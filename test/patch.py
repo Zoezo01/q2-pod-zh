@@ -11156,7 +11156,7 @@ m=classic_light_new(FlipMachine); m.open(); m.found=[m.song('T')]; m.word(m.foun
 assert m.face(m.row_labels(0)[0])==('default',25)
 m=classic_light_new(FlipMachine); m.open(); m.found=[m.song('T')]; m.word(m.found[0]+O['REC_TITLE'],m.string('Выход')); m.tracks(0); m.advance(300)
 assert m.face(m.row_labels(0)[0])==('bold',21); passed()
-# An unknown length is blank and what the cache has shows, stock's 04:54, hours when long. The panel starts no worker and
+# An unknown length is blank and what the cache has shows, toolsTimeItoa's 4:54, hours when long. The panel starts no worker and
 # writes nothing; Long Songs fills the cache, and the next panel has it.
 DUR_CACHE='/mnt/data/ringnav-durations-v1'
 def dur_key(p):
@@ -11199,7 +11199,7 @@ class FlipLengths(FileMocks,FlipMachine):
 m=classic_light_new(FlipLengths); m.open(); paths=[m.text(m.get(r+O['REC_PATH'])) for r in m.found]; m.lengths=dict.fromkeys(paths,60); m.lengths[paths[0]]=3725
 cached=duration_cache((paths[1],294)); m.files[DUR_CACHE]=cached
 m.threads=[]; flip_click(m); text=lambda i: m.nodes[m.row_labels(i)[1]].get('text','') if len(m.row_labels(i))>1 else ''
-assert text(0)=='' and text(1)=='04:54'; m.advance(300); assert m.nodes[m.panel()]['visible'] and text(0)=='' and text(1)=='04:54'
+assert text(0)=='' and text(1)=='4:54'; m.advance(300); assert m.nodes[m.panel()]['visible'] and text(0)=='' and text(1)=='4:54'
 assert not m.threads and not m.probed and m.files[DUR_CACHE]==cached and [v[1] for v in m.timers.values()]==[payload_syms['home_counts']]; passed()
 assert m.key()==11; m.advance(0); m.advance(300); assert not m.panel() and not m.threads and not m.probed and m.files[DUR_CACHE]==cached
 shelf=m.page; m.top=m.node('window','localmusic_page'); view=m.node('scroll_view','scroll_view_localmusic',[m.node('list_item') for _ in range(11)])
@@ -11207,7 +11207,7 @@ m.nodes[m.top]['children']=[view]; m.call(address=HOOKS['localmusic_page_init'][
 walk=lambda w:[w]+[x for c in m.nodes[w]['children'] for x in walk(c)]; row=next(c for c in m.nodes[view]['children'] if any(m.nodes[w].get('text')=='Long Songs' for w in walk(c)))
 f,ctx=m.handler(m.nodes[row]['children'][0],O['EVT_CLICK']); m.call(address=f,args=(ctx,m.event,0,0),gap=0)
 worker,arg=m.threads[0]; m.call(address=worker,args=(arg,0,0,0),gap=0); m.advance(250); assert duration_pairs(m.files[DUR_CACHE],paths)[paths[0]]==3725
-m.page=m.top=shelf; flip_click(m); assert text(0)=='01:02:05' and text(1)=='04:54'; passed()
+m.page=m.top=shelf; flip_click(m); assert text(0)=='1:02:05' and text(1)=='4:54'; passed()
 # Minimal: Centre opens the text list as today, no flip, no buffers.
 for theme in '0':
     CONFIG['THEME']=theme

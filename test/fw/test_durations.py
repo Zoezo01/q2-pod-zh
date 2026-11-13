@@ -55,7 +55,7 @@ def test_cue_duration_is_relative_to_the_track(fw, song, cue, end, want):
 
 @pytest.fixture
 def stock_clock(fw):
-    """toolsTimeItoa as docs/internals.md has stock's: %02d:%02d, and %02d:%02d:%02d from an hour."""
+    """toolsTimeItoa with stock's own formats, %02d:%02d and %02d:%02d:%02d from an hour (the build rewrites them to %d:...)."""
     def itoa(out, sec, *_):
         text = b'%02d:%02d:%02d' % (sec // 3600, sec // 60 % 60, sec % 60) if sec >= 3600 else b'%02d:%02d' % (sec // 60, sec % 60)
         C.memmove(out, text + b'\0', len(text) + 1)

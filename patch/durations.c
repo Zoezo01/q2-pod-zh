@@ -79,8 +79,8 @@ int duration_seconds(void *song) {
     /* ponytail: two paths sharing a 64-bit key (~1e-10 at 47k songs) share the first's length */
     return !entry ? -1 : entry->sec > start ? entry->sec - start : 0;
 }
-/* Stock's 03:45, 01:02:05 from an hour, as Now Playing's (size: at least 9); empty, not 00:00, for
- * an unknown or unreadable file. */
+/* toolsTimeItoa's 3:45, 1:02:05 from an hour, as Now Playing's (tools/ipod.py rewrites stock's
+ * padded formats; size: at least 9); empty, not 0:00, for an unknown or unreadable file. */
 const char *duration_text(char *text, unsigned size, void *song) {
     int sec = duration_seconds(song);
     if (size) text[0] = 0;
