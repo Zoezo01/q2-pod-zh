@@ -15,6 +15,7 @@
   - Audiobooks: a `.m4b` book starts while another book is loaded, such as the one the Q2 resumed when it turned on. The memory check counted the loaded book as well as the new one, so every other book could be refused with "Too long to play on the Q2", even books a few hours long. The check also keeps 8 MB of memory spare at a start instead of 16 MB, so longer books play.
   - Status bar: under **Theme: Classic**, **Battery** offers **Percent**, the percentage alone, as well as Icon and Percent Inside.
   - Streaming: under **Theme: Classic** with **Row Preview**, a card app's large icon beside the list, such as Soulseek's or Podcasts', is sharp. It was stretched from the app's small icon and looked blurry.
+  - Cover Flow: under **Theme: Classic** an album's turned-over song list no longer shows song lengths. Only songs Library → Long Songs had measured had one, so most rows were blank; the titles now use the room.
 - **1.8.0**:
   - System: Q2 Pod now runs on Shanling's stock firmware V1.36 instead of V1.32, with its newer kernel, drivers and player.
   - Playback: **Headphones Required**, new in stock V1.36, is under **Resume Songs**. On, nothing starts playing until headphones, Bluetooth or a USB DAC is connected, and the queue isn't restored at start-up. Off by default.

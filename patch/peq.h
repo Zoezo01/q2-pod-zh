@@ -468,7 +468,6 @@ int title_gone(void *w, void *event); /* ... and looks for its source again at t
 int bar_title_fits(void *label);      /* label's text fits the bar's title box */
 int ipod_light(void);   /* theme_engine.c: Light Mode */
 unsigned unflip(unsigned v); /* theme_engine.c: the grey Light Mode's flip turns into v */
-int song_seconds(void *r);   /* library_lists.c, its lengths' cache, for Cover Flow's tracks panel */
 int ipod_square_art(void); /* navigation.c: Classic, and Modern under Square */
 #define SPOT_GREY 0xffaaaaaau
 void radio_search(void);       /* radio.c */

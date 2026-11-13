@@ -3137,15 +3137,6 @@ static void *panel_label(void *parent, int x, int y, int w, int h, const char *s
     return label;
 }
 
-/* A row's length as stock's clock writes it, blank until it's known (or a file nothing could read).
- */
-static void panel_length(void *label, void *track) {
-    int sec = song_seconds(track);
-    char t[16] = "";
-    if (sec > 0) toolsTimeItoa(t, sec);
-    widget_set_text_utf8(label, t);
-}
-
 /* The panel as it stands into fl.back, hidden after: painted by stock on an offline canvas of the
  * screen's size and format, at its screen place, as stock's window snapshots are, so the paint
  * hooks' coordinates hold. The screen's lcd is BGRA8888, as the frame. No canvas, or a layout not
@@ -3241,16 +3232,12 @@ static int flip_open(void *r, int n) {
         void *t = deque_at(cf.tracks, (unsigned)i);
         void *item = list_item_create(view, 0, i * row, BACK_W, row);
         widget_use_style(item, "s_listitem_black");
-        panel_label(item, 12, 0, 204, pl ? 26 : row, track_name(name, sizeof name, t), 25, 1);
+        panel_label(item, 12, 0, 270, pl ? 26 : row, track_name(name, sizeof name, t), 25, 1);
         if (pl) {
             const char *by = P(t, REC_ARTIST);
-            void *artist = panel_label(item, 12, 25, 204, 20, by ? by : "", 18, 0);
+            void *artist = panel_label(item, 12, 25, 270, 20, by ? by : "", 18, 0);
             widget_set_prop_int(artist, "style:normal:text_color", (int)PANEL_MUTED);
         }
-        void *length = panel_label(item, 222, 0, 60, row, "", 23, 1);
-        widget_set_prop_str(length, "style:normal:text_align_h", "right");
-        widget_set_prop_int(length, "style:normal:text_color", (int)PANEL_MUTED);
-        panel_length(length, t);
         widget_on(item, EVT_CLICK, play, (void *)(long)i);
     }
     /* cf.title: where a row's "Storage unavailable" goes */

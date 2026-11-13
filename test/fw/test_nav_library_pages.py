@@ -783,14 +783,6 @@ def test_a_file_two_cue_tracks_run_to_the_end_of_is_kept_once(fw, ui, song, cloc
     assert files.files[LENGTHS] == lengths((b'/m/book.flac', 1500))  # one {key, seconds} pair
 
 
-def test_song_seconds_from_the_cache(fw, song):
-    Files(fw, {LENGTHS: lengths((b'/m/a.flac', 300))})
-    seconds = fw.fn('song_seconds', C.c_int, C.c_void_p)
-    assert seconds(song(b'/m/a.flac')) == 300 and seconds(song(b'/m/a.flac', cue=100)) == 200
-    assert seconds(song(b'/m/a.flac', cue=400)) == 0 and seconds(song(b'/m/b.flac')) == -1
-    assert seconds(song(b'/m/b.flac', cue=10, end=70)) == 60
-
-
 # Upload Scrobbles.
 class Up(C.Structure):
     _fields_ = [('lock', C.c_uint * 16), ('thread', C.c_ulong), ('running', C.c_int), ('done', C.c_int), ('ok', C.c_int),

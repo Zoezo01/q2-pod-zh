@@ -73,7 +73,7 @@ bitmap_lock_buffer_for_read bitmap_lock_buffer_for_write bitmap_get_line_length
 canvas_draw_image slide_menu_set_spacer window_manager window_manager_get_top_window window_manager_is_animating time_now_ms
 widget_to_local widget_animator_pause window_manager_get_pointer_pressed image_manager image_manager_unload_bitmap_by_name image_manager_unload_all
 on_home_music_onclick on_home_stream_onclick widget_layout widget_destroy widget_paint canvas_translate widget_set_prop_str
-canvas_offline_create canvas_offline_begin_draw canvas_offline_end_draw canvas_offline_destroy toolsTimeItoa
+canvas_offline_create canvas_offline_begin_draw canvas_offline_end_draw canvas_offline_destroy
 sqlite3_open sqlite3_exec sqlite3_close reset_poweroptions_timer getMusicByPlayList getAllPlayList
 """.split() for r, a in [PROTOTYPES[n]]) + r"""
 int stock_canvas_set_fill_color(void *, unsigned);
@@ -338,9 +338,6 @@ void *canvas_offline_create(unsigned ww, unsigned h, unsigned f) {
 int canvas_offline_begin_draw(void *c) { return 0; }
 int canvas_offline_end_draw(void *c) { return 0; }
 int canvas_offline_destroy(void *c) { return 0; }
-static int track_secs = -1; /* every track's length; -1 unknown */
-int song_seconds(void *r) { return track_secs; }
-int toolsTimeItoa(char *s, int sec) { return sprintf(s, "%d:%02d", sec / 60, sec % 60); }
 unsigned unflip(unsigned v) { return v; }
 unsigned mix(unsigned a, unsigned b, int j, int n) { return a; }
 void bar_title_sync(void *win) {}
@@ -3970,7 +3967,7 @@ static widget *row_under(widget *a, int k) { /* the k-th list_item under a */
 static void flip_turn(void) {
     theme_t *t = &shim_themes[1];
     t->painter[PAINT_PAGES] = PAGES_CLASSIC_LIGHT, t->font[ROLE_TITLE] = FONT_CLASSIC_LIGHT;
-    classic = 1, frame_fail = 0, square_art = 1, offline_ok = 1, moves_ok = 1, track_secs = 245;
+    classic = 1, frame_fail = 0, square_art = 1, offline_ok = 1, moves_ok = 1;
     for (int i = 0; i < 320 * 375; ++i) offline[i] = 0xff302010u; /* the panel as stock paints it: BGRA 10 20 30 */
     open_page();
     widget *s = slide(), *cv = &w[s->parent];
@@ -3990,7 +3987,7 @@ static void flip_turn(void) {
     assert(tick && coverflow_turning() && frames == 2 && panel && !panel->visible && row && !row_under(panel, 1));
     assert(!s->visible && !label_in(cv, 0)->visible && !label_in(cv, 1)->visible && cv->numb); /* the shelf's surface goes */
     assert(!strcmp(label_in(panel, 0)->text, names[a]) && !strcmp(label_in(panel, 1)->text, "Artist"));
-    assert(!strcmp(label_in(row, 0)->text, "Opening") && !strcmp(label_in(row, 1)->text, "4:05"));
+    assert(!strcmp(label_in(row, 0)->text, "Opening") && !label_in(row, 1)); /* no length */
     /* The frames: the cover itself at first; half way edge on, the side covers parted (measured against the rest's
        parting below); at the end the panel as captured. */
     static unsigned zero[CF_VIEW_W], half[CF_VIEW_W];
@@ -4084,7 +4081,7 @@ static void flip_turn(void) {
     close_page();
     light = 0;
     t->painter[PAINT_PAGES] = PAGES_STOCK, t->font[ROLE_TITLE] = 0;
-    classic = 0, square_art = 0, offline_ok = 0, moves_ok = 0, track_secs = -1;
+    classic = 0, square_art = 0, offline_ok = 0, moves_ok = 0;
     *(const char **)(records[a] + REC_TITLE) = 0;
 }
 
@@ -6712,7 +6709,7 @@ static unsigned saved_key(void) { /* the album key kept on the card to reopen on
     return key;
 }
 /* Classic's Centre on a playlist turns it over: the header its name and its song count; each song
-   two lines of a 45 px row, its title over its artist in grey, its length at the right; five rows
+   two lines of a 45 px row, its title over its artist in grey; five rows
    show where an album's seven do. A pick plays the songs as a song list. */
 static widget *kid(widget *x, const char *type) {
     for (int i = 0; i < x->nkids; ++i)
@@ -6754,12 +6751,11 @@ static void flip_playlist(void) {
     assert(box(lv)[1] == 57 && box(lv)[3] == 228 && box(lv)[3] / 45 == 5 && view->nkids == 7);
     for (int i = 0; i < 7; ++i) {
         widget *row = &w[view->kids[i]];
-        assert(box(row)[1] == i * 45 && box(row)[3] == 45 && row->nkids == 3);
-        widget *t = &w[row->kids[0]], *a = &w[row->kids[1]], *len = &w[row->kids[2]];
+        assert(box(row)[1] == i * 45 && box(row)[3] == 45 && row->nkids == 2);
+        widget *t = &w[row->kids[0]], *a = &w[row->kids[1]];
         assert(!strcmp(t->text, names[3 + i]) && !strcmp(a->text, i == 1 ? "Other" : "Artist"));
         assert(box(t)[1] + box(t)[3] <= box(a)[1] + 1 && box(a)[1] + box(a)[3] <= 45 && box(t)[0] == box(a)[0]);
-        assert((unsigned)a->fg == 0xffaaaaaau && (unsigned)len->fg == 0xffaaaaaau && !t->fg);
-        assert(len->right && box(len)[0] + box(len)[2] == 282 && box(len)[3] == 45 && box(t)[0] + box(t)[2] < box(len)[0]);
+        assert((unsigned)a->fg == 0xffaaaaaau && !t->fg && box(t)[0] + box(t)[2] == 282);
     }
     played_cls = -1;
     ++playback_loads; /* a queue loaded since the covers' plays above */

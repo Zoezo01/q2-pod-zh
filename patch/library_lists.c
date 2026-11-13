@@ -752,12 +752,6 @@ static int ls_poll(const void *unused) {
     return 8; /* RET_REPEAT */
 }
 
-/* Cover Flow's tracks panel (coverflow.c): r's seconds from the cache, -1 when never probed. */
-int song_seconds(void *r) {
-    lengths_read();
-    return song_length(r);
-}
-
 /* Long Songs' row: the files never probed are probed first, with their count and Cancel, which
  * keeps what is done; the page closing does the same. */
 int long_songs(void *ctx, void *event) {
