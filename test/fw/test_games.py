@@ -2632,9 +2632,8 @@ def test_classic_s_solitaire_is_green_felt_white_cards_blue_backs_and_a_gold_cur
     deal_table(p.s)
     p.s.sol.cur = TABLEAU
     ops = paint(p)
-    felt = ops[:p.s.h]
-    assert [o.rect for o in felt] == [(0, y, 375, 1) for y in range(p.s.h)]  # a row at a time, down the sheet
-    assert all(rgb(o.color)[1] > max(rgb(o.color)[0], rgb(o.color)[2]) + 40 for o in felt)
+    felt = ops[0]
+    assert felt.rect == (0, 0, 375, p.s.h) and rgb(felt.color) == (0x2b, 0x74, 0x37)  # one green, no gradient
     cards, outlines = solitaire(ops)
     stock, ten, ace, back, queen, jack = cards
     assert {rgb(c.face) for c in cards} == {(255, 255, 255)}  # a back's border too
@@ -2644,7 +2643,7 @@ def test_classic_s_solitaire_is_green_felt_white_cards_blue_backs_and_a_gold_cur
     assert len(on['stock']) > 30 > len(on['back']) > 0 and len(on['stock']) + len(on['back']) == len(blue)  # covered: its top
     cursor, = outlines  # an empty pile is a well in the felt, not an outline
     assert encloses(cursor.rect, jack.rect) and rgb(cursor.color)[0] > 0xe0 > 0x80 > rgb(cursor.color)[2]
-    wells = [o for o in ops[p.s.h:] if o.kind == 'fill' and alpha(o.color) < 0x60 and not any(rgb(o.color))]
+    wells = [o for o in ops[1:] if o.kind == 'fill' and alpha(o.color) < 0x60 and not any(rgb(o.color))]
     assert len({o.rect[1] for o in wells}) >= stock.rect[3]
 
 

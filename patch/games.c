@@ -1121,6 +1121,7 @@ static void vortex_paint(void *canvas, unsigned tone) {
 #define FAN_DOWN 6
 #define LABEL_PX 20     /* the rank and suit in a whole strip */
 #define SOL_HAND 0xffd23c /* the theme's own table: the cursor's and a held run's frame */
+#define SOL_FELT 0x2b7437 /* its felt, one green */
 
 /* A rounded card: face down in the tone, darker inside a border when nothing covers it, or its rank
  * on the left and suit on the right of the top strip in red or black, its suit large below when
@@ -1171,15 +1172,14 @@ static void card_paint(void *canvas, int x, int y, int c, int whole, int strip, 
 
 /* The top row's piles show their top card, a column all of it, its face-up fan closed up to fit
  * the sheet. The cursor's pile is framed round its top card, white over a held run framed in the
- * tone. The theme's own table is green felt, an empty pile a darker well in it, and the frames
+ * tone. The theme's own table is solid green felt, an empty pile a darker well in it, and the frames
  * SOL_HAND. */
 static void solitaire_paint(void *canvas, unsigned tone) {
-    static const stops_t felt = { 2, { 0, 100 }, { 0x378c43, 0x1f5c2b } };
     const struct solitaire *s = &g->sol;
     int own = classic_pages();
     if (own) {
         ui_ink_raw(1);
-        paint_stops(canvas, 0, 0, 375, g->h, &felt);
+        box(canvas, 0, 0, 375, g->h, SOL_FELT);
         tone = SOL_HAND;
     }
     for (int p = 0; p < PILES; ++p) {
