@@ -568,6 +568,10 @@ def status_bar(root, g=SET0):
         return
     # EQ is a badge that comes and goes: it belongs to the right group but takes none of the
     # clock's measured room (the group closes up around it when stock hides it).
+    # The right group's row reads a pixel above the left's: EQ and every battery look bottom out
+    # one row early (measured on the device, V180E). Drop the whole group, so the badge, the icons
+    # and the digits keep their own spacing and share the left's baseline. Classic has its own row.
+    right[1][1] = 1
     shown = [[n for n in v[3] if n[2]['name'] not in BATT_MODES and n[2]['name'] != 'label_eq']
              for v in (left, right)]
     # The left group starts at its own, padded margin; the clock stays centred on the screen between
