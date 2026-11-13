@@ -10,8 +10,8 @@ Code: the two .text streams are aligned between exported symbols on words whose 
 a function the alignment lost is aligned again from where the calls to it went.
 Data: each aligned lui or GOT load and the low half after it vote for where the address they form went.
 The stock ZIPs are untrusted and Shanling's: run this with python3 -I. It extracts under a fresh directory
-outside the repo, and writes nothing of theirs into the repo but addresses, instruction words, hashes, and a
-ZIP's version and the folder its update.tar is in, which it refuses unless they are plainly those.
+outside the repo, and writes nothing of theirs into the repo but addresses, instruction words, hashes and
+(checked) names.
 """
 import argparse, bisect, collections, difflib, gzip, hashlib, io, pathlib, re, struct, subprocess, sys, tarfile, tempfile, zipfile
 
@@ -689,14 +689,6 @@ def places(mp, addresses):
             rows[(name, 'body' if body else 'statics after')].append((x, mp.code(x)))
     return rows
 
-def stock_names(zip_path, version, member):
-    """version and member, the two names of a stock ZIP's that apply writes into our files as they are (pins),
-    tools/build.py's string literals among them: refused unless they are a version and a folder's update.tar,
-    in characters that are only ever text there. A quote or a backslash in either came out as our code."""
-    check(re.fullmatch(r'V[0-9]+(?:\.[0-9]+)+', version), f'{zip_path}: {version!r} is no stock version (as V1.36 is)')
-    check(re.fullmatch(r'[A-Za-z0-9 ._-]+/update\.tar', member), f'{zip_path}: {member!r} is no update.tar in a plainly named folder')
-    return version, member
-
 class Stock:
     """A stock ZIP, opened: its hash, the version it names, and its files by rootfs path."""
     def __init__(self, zip_path, work):  # pragma: no mutate block
@@ -705,11 +697,15 @@ class Stock:
         with zipfile.ZipFile(io.BytesIO(raw)) as z:
             members = [n for n in z.namelist() if n.endswith('/update.tar')]
             check(len(members) == 1, f'{zip_path}: no single update.tar')
-            tar = z.read(members[0])
+            self.member = members[0]
+            tar = z.read(self.member)
         with tarfile.open(fileobj=io.BytesIO(tar)) as t:
             files = ((m.name, t.extractfile(m)) for m in t.getmembers())
             self.blobs = {name: f.read() for name, f in files if f}
-        self.version, self.member = stock_names(zip_path, self.blobs['firmware_v20.info'].decode().splitlines()[1], members[0])
+        self.version = self.blobs['firmware_v20.info'].decode().splitlines()[1]
+        # ponytail: a real stock ZIP named otherwise (a 'V1.36b' version, a '(final)' folder) is refused until these patterns are widened
+        check(re.fullmatch(r'V[0-9]+(?:\.[0-9]+)+', self.version), f'{zip_path}: version {self.version!r} is no stock version (as V1.36 is)')
+        check(re.fullmatch(r'[A-Za-z0-9 ._-]+/update\.tar', self.member), f'{zip_path}: folder {self.member!r} is no update.tar in a plainly named folder')
         self.dir = pathlib.Path(tempfile.mkdtemp(prefix=self.sha[:12] + '-', dir=work))
         self.squashfs = self.dir/'rootfs.squashfs'
         self.squashfs.write_bytes(self.blobs['recovery-update/rootfs.squashfs'])

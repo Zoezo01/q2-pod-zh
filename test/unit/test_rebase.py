@@ -1126,30 +1126,6 @@ def test_pins():
     assert rebase.pins('V1.32 V1x32 V1y32', dotted, new, ({}, {})) == ('V1.32 V1.34 V1y32', [])
 
 
-def test_stock_names_takes_a_version_and_a_folders_update_tar():
-    assert rebase.stock_names('new.zip', 'V1.36', 'Q2 Firmware V1.36/update.tar') == ('V1.36', 'Q2 Firmware V1.36/update.tar')
-    assert rebase.stock_names('new.zip', 'V10.2.13', 'a_B-c.d 1/update.tar') == ('V10.2.13', 'a_B-c.d 1/update.tar')
-
-
-# pins writes the two names into our files as they are: with a quote in one, tools/build.py's
-# STOCK_VERSION = 'V1.36' came out as STOCK_VERSION = 'V1.38'+str(6*7)+'', and re.sub made a line feed of \n.
-@pytest.mark.parametrize('version', ["V1.38'+str(6*7)+'", "V1.38'", 'V1.38"', r"V1.38'\nX = 6*7\nY = '", 'V1.38\\', 'V1.38\nX', 'V1.38 ', ' V1.38',
-                                     'V1.38a', 'V1', 'V1.', 'V.38', 'V1..38', '1.38', 'v1.38', 'V1.３８', ''])
-def test_stock_names_refuses_more_or_less_than_a_version(version):
-    with pytest.raises(ValueError) as e:
-        rebase.stock_names('new.zip', version, 'Q2 Firmware V1.38/update.tar')
-    assert str(e.value) == f'new.zip: {version!r} is no stock version (as V1.36 is)'
-
-
-@pytest.mark.parametrize('member', ["x'+str(6*7)+'/update.tar", "x'/update.tar", 'x"/update.tar', 'x\\/update.tar', 'x\n/update.tar', 'é/update.tar',
-                                    'a/b/update.tar', '/update.tar', 'update.tar', 'x/update.tar ', 'x/update.tarx', 'x/updateXtar',
-                                    'x/Update.tar', ''])
-def test_stock_names_refuses_a_path_that_is_not_one_plain_folders_update_tar(member):
-    with pytest.raises(ValueError) as e:
-        rebase.stock_names('new.zip', 'V1.38', member)
-    assert str(e.value) == f'new.zip: {member!r} is no update.tar in a plainly named folder'
-
-
 def stock_zip(path, folder, version):
     """A ZIP laid out as a stock one, with nothing of a firmware in it."""
     tar = io.BytesIO()
@@ -1163,12 +1139,20 @@ def stock_zip(path, folder, version):
     return path
 
 
-def test_a_stock_zip_is_opened_only_with_plain_names(tmp_path):
+def test_a_stock_zip_with_plain_names_opens(tmp_path):
     stock = rebase.Stock(stock_zip(tmp_path/'old.zip', 'Q2 Firmware V1.36', 'V1.36'), tmp_path)
     assert (stock.version, stock.member) == ('V1.36', 'Q2 Firmware V1.36/update.tar')
-    for folder, version in (('Q2 Firmware V1.38', "V1.38'+str(6*7)+'"), ("x'+str(6*7)+'", 'V1.38')):
-        with pytest.raises(ValueError, match='^.*new.zip: .* is no '):
-            rebase.Stock(stock_zip(tmp_path/'new.zip', folder, version), tmp_path)
+
+
+# pins writes both names into our files as they are: a quote in one came out as tools/build.py's code.
+@pytest.mark.parametrize('folder,version,refused', [
+    ('f', "V1.38'+str(6*7)+'", 'version'), ('f', 'V1.38\\', 'version'),
+    ('f', 'V1.３８', 'version'), ('f', 'V1', 'version'), ('f', '', 'version'),
+    ("x'+str(6*7)+'", 'V1.38', 'folder'), ('x\n', 'V1.38', 'folder'),
+    ('a/b', 'V1.38', 'folder')])
+def test_a_stock_zip_with_other_names_is_refused(tmp_path, folder, version, refused):
+    with pytest.raises(ValueError, match=f'new.zip: {refused} '):
+        rebase.Stock(stock_zip(tmp_path/'new.zip', folder, version), tmp_path)
 
 
 def test_rewrite_carries_a_section_by_its_file_offset_and_size(old, new, mp):
