@@ -49,7 +49,7 @@ class Sh(C.Structure):
 
 class Nu(C.Structure):
     _fields_ = [('thread', C.c_ulong), ('state', C.c_int), ('cancel', C.c_int), ('percent', C.c_int), ('stage', C.c_int),
-                ('need', C.c_uint), ('label', C.c_void_p)]
+                ('base', C.c_int), ('need', C.c_uint), ('label', C.c_void_p)]
 
 
 def hostile(seed, samples, count=2000, alphabet=b'"\\:/ \n{}[],\x00.'):
@@ -514,7 +514,9 @@ def test_leaving_the_page_cancels_its_own_download(fw):
     nu = fw.var('netupdate__nu', Nu)
     nu.label = 5
     assert gone(6, None) == 0 and nu.label == 5 and nu.cancel == 0
-    assert gone(5, None) == 0 and not nu.label and nu.cancel == 1
+    assert gone(5, None) == 0 and not nu.label and nu.cancel == 2  # not a press's cancel: the part stays
+    nu.label, nu.cancel = 5, 1
+    assert gone(5, None) == 0 and nu.cancel == 1  # a press cancelled first: its part goes
 
 
 def test_an_app_by_id(fw):
@@ -789,19 +791,28 @@ def test_a_failed_unpack_is_a_card_error(fw):
 
 
 class Net:
-    """libcurl: each transfer answered by the first of its URL's replies: (result, code, location[, body]). A body goes
+    """libcurl: each transfer answered by the first of its URL's replies: (result, code, location[, body]), or a list
+    of them, one a transfer and the last from then on. One carried on from a byte (RESUME_FROM) gets the body from
+    there as a 206, unless the reply's fifth is 'whole': a server that ignores the range. A body goes
     through the transfer's own write callback in CHUNKS pieces, its progress callback told after each and during(k)
     run then, as a UI timer might: a short write ends it as curl's CURLE_WRITE_ERROR (23), a progress callback's
     non-zero as CURLE_ABORTED_BY_CALLBACK (42). only: the URLs' start whose transfers run during."""
     def __init__(self, fw, replies, during=None, only=b''):
         self.replies, self.urls, self.opts, self.during, self.only = replies, [], {}, during, only
+        self.froms = []  # each transfer's RESUME_FROM, 0 without
         self.location = None
         def setopt(c, opt, value, *_):
             self.opts[opt] = value
         def perform(c, *_):
             url = C.string_at(self.opts[10002])
             self.urls.append(url)
-            self.result, self.code, location, *body = next(v for k, v in self.replies.items() if url.startswith(k))
+            reply = next(v for k, v in self.replies.items() if url.startswith(k))
+            if isinstance(reply, list):
+                reply = reply.pop(0) if len(reply) > 1 else reply[0]
+            self.result, self.code, location, *body = reply
+            self.froms.append(self.opts.get(21, 0))
+            if body and self.froms[-1] and body[1:] != ['whole']:
+                body, self.code = [body[0][self.froms[-1]:]], 206 if self.code == 200 else self.code
             self.location = C.create_string_buffer(location) if location else None
             return self.transfer(body[0]) if body and 20011 in self.opts else self.result
         def info(c, what, out, *_):
@@ -941,6 +952,73 @@ def test_room_for_the_tar_and_its_unpacking_or_nothing_is_downloaded(fw):
     assert update(fw, card=slot(fw, free=need))[0] == NU_DONE
 
 
+HALF = len(BODY) // 2
+
+
+def test_a_part_left_on_the_card_is_carried_on_from(fw):
+    """What a lost connection, a power cut or leaving the page left: only the rest is asked for."""
+    card = slot(fw, {TAR: b'old', PART: BODY[:70000]})
+    state, net, _ = update(fw, card=card)
+    assert state == NU_DONE and net.urls == [LATEST, API + NEWER, ASSET] and net.froms == [0, 0, 70000]
+    assert card.files[TAR] == BODY and PART not in card.files
+
+
+def test_a_part_already_whole_is_only_read_back(fw):
+    card = slot(fw, {PART: BODY})
+    state, net, _ = update(fw, card=card)
+    assert state == NU_DONE and net.urls == [LATEST, API + NEWER] and card.files[TAR] == BODY
+
+
+def test_a_part_longer_than_the_release_is_started_again(fw):
+    card = slot(fw, {PART: BODY + b'more'})
+    state, net, _ = update(fw, card=card)
+    assert state == NU_DONE and net.froms == [0, 0, 0] and card.files[TAR] == BODY
+
+
+def test_a_part_of_another_release_is_found_damaged_and_the_next_press_starts_again(fw):
+    card = slot(fw, {TAR: b'old', PART: b'x' * 70000})
+    state, net, _ = update(fw, card=card)
+    assert state == NU_BAD and net.froms[-1] == 70000 and card.files[TAR] == b'old' and PART not in card.files
+    state, net, _ = update(fw, card=card)
+    assert state == NU_DONE and net.froms[-1] == 0 and card.files[TAR] == BODY
+
+
+def test_a_connection_lost_twice_is_carried_on_each_time(fw):
+    slept = []
+    fw.mock('fw_usleep', lambda us, *_: slept.append(us))
+    asset = [(18, 200, None, BODY[:50000]), (28, 200, None, BODY[:120000]), (0, 200, None, BODY)]
+    state, net, card = update(fw, asset=asset)
+    assert state == NU_DONE and net.urls[2:] == [ASSET] * 3 and net.froms[2:] == [0, 50000, 120000]
+    assert card.files[TAR] == BODY and sum(slept) == 2 * 5_000_000  # 5 s before each new try
+    assert [e for e in card.log if e[0] == 'fsync'][:2] == [('fsync', PART)] * 2  # a part cut short is on the card too
+
+
+def test_tries_that_add_nothing_end_the_press_and_keep_the_part(fw):
+    card = slot(fw, {TAR: b'old'})
+    state, net, _ = update(fw, card=card, asset=[(18, 200, None, BODY[:50000]), (7, 0, None)])
+    assert state == NU_NET and net.urls[2:] == [ASSET] * 4  # the first added bytes, so three more
+    assert card.files[PART] == BODY[:50000] and card.files[TAR] == b'old' and not card.of('rename')
+
+
+@pytest.mark.parametrize('ignored', [(33, 200, None), (0, 200, None, BODY, 'whole'), (0, 416, None, b'')])
+def test_a_reply_that_isnt_the_range_asked_for_starts_the_part_again(fw, ignored):
+    """curl's own refusal (CURLE_RANGE_ERROR), or a reply that came without it and isn't a 206."""
+    state, net, card = update(fw, asset=[(18, 200, None, BODY[:50000]), ignored, (0, 200, None, BODY)])
+    assert state == NU_DONE and net.froms[2:] == [0, 50000, 0] and card.files[TAR] == BODY
+    assert (PART,) in card.of('unlink')
+
+
+@pytest.mark.parametrize('cancel, kept', [(1, False), (2, True)])
+def test_a_cancel_between_tries_ends_the_wait(fw, cancel, kept):
+    """A press's cancel deletes the part; leaving the page keeps it."""
+    nu = fw.var('netupdate__nu', Nu)
+    slept = []
+    fw.mock('fw_usleep', lambda us, *_: slept.append(us) or setattr(nu, 'cancel', cancel))
+    state, net, card = update(fw, asset=(18, 200, None, BODY[:50000]))
+    assert state == NU_CANCELLED and len(slept) == 1 and net.urls[2:] == [ASSET]
+    assert (PART in card.files) == kept
+
+
 def test_a_missing_asset_leaves_no_part(fw):
     state, _, card = update(fw, asset=(0, 404, None))
     assert state == NU_MISSING and card.of('unlink') == [(NU_JSON,), (PART,)] and not card.of('rename')
@@ -982,10 +1060,10 @@ def test_a_cancel_while_the_card_takes_the_last_bytes_is_a_cancel(fw):
 
 
 def read_back(fw, card, then):
-    """then() run as the part is opened to be read back; what it returned, each time."""
-    seen = []
+    """then() run as the part is opened to be read back (not to be sized, before a try); what it returned, each time."""
+    seen, nu = [], fw.var('netupdate__nu', Nu)
     def fopen(path, mode, *_):
-        if C.string_at(path) == PART and b'r' in C.string_at(mode):
+        if C.string_at(path) == PART and b'r' in C.string_at(mode) and nu.stage == 2:
             seen.append(then())
         return card.fopen(path, mode)
     fw.mock('fw_fopen', fopen)
@@ -1008,11 +1086,11 @@ def test_a_part_the_card_cant_give_back_is_a_card_error(fw):
     assert state == NU_CARD and card.files[TAR] == b'old' and PART not in card.files and not card.of('rename')
 
 
-def fetch(fw, url=b'https://x', tag_size=64, file=None):
+def fetch(fw, url=b'https://x', tag_size=64, file=None, start=0):
     tag, code = block(fw, size=tag_size), C.c_long(0)
     xfer = (C.c_int * 2)()
-    fn = fw.fn('netupdate__fetch', C.c_int, C.c_char_p, C.c_void_p, C.c_void_p, C.c_uint, C.POINTER(C.c_long), C.c_void_p)
-    err = fn(url, file, tag if not file else None, tag_size, C.byref(code), xfer)
+    fn = fw.fn('netupdate__fetch', C.c_int, C.c_char_p, C.c_void_p, C.c_void_p, C.c_uint, C.POINTER(C.c_long), C.c_void_p, C.c_long)
+    err = fn(url, file, tag if not file else None, tag_size, C.byref(code), xfer, start)
     return err, C.string_at(tag), code.value
 
 
@@ -1026,6 +1104,17 @@ def test_a_download_follows_redirects_to_its_file_and_verifies(fw):
     net = Net(fw, {b'https': (0, 200, None)})
     assert fetch(fw, file=7)[0] == 0
     assert net.opts[52] == 1 and net.opts[10001] == 7 and net.opts[64] == 1 and net.opts[81] == 2
+
+
+def test_a_download_carried_on_asks_from_its_byte_and_a_new_one_asks_for_no_range(fw):
+    net = Net(fw, {b'https': (0, 206, None)})
+    assert fetch(fw, file=7, start=70000) == (0, b'', 206) and net.opts[21] == 70000  # RESUME_FROM
+    assert fetch(fw, file=7)[0] == 0 and 21 not in net.opts
+
+
+def test_a_failed_transfer_is_curl_s_own_code(fw):
+    Net(fw, {b'https': (33, 0, None)})
+    assert fetch(fw, file=7, start=5)[0] == 33  # CURLE_RANGE_ERROR, which update() tells from a lost connection
 
 
 def test_no_curl_handle_is_an_error(fw):
@@ -1580,8 +1669,8 @@ class Disk(Card):
             return 0
         f = len(self.names) + 1
         self.names[f], self.at[f] = name, 0
-        if b'w' in how:
-            self.written[name] = b''
+        if b'w' in how or b'a' in how:
+            self.written[name] = b'' if b'w' in how else self.files.get(name, b'')
             self.writing.add(f)
         return f
 
@@ -1752,14 +1841,37 @@ def test_a_second_press_cancels_mid_download_and_keeps_the_old_tar(fw):
     assert card.files[TAR] == b'old' and PART not in card.files
 
 
-def test_leaving_the_page_mid_download_cancels_it(fw):
+def test_leaving_the_page_mid_download_cancels_it_and_keeps_the_part(fw):
     card = slot(fw, {TAR: b'old'})
     row = UpdateRow(fw)
     row.press()
     Net(fw, replies(), during=lambda k: k == 1 and row.leave(), only=GET)
     row.run()
     assert row.wait() == 0 and row.toasts == ['Download cancelled'] and row.tr == {} and not row.flashed
-    assert card.files[TAR] == b'old' and PART not in card.files
+    assert card.files[TAR] == b'old' and card.files[PART] == BODY[:3 * len(BODY) // CHUNKS]  # ended at the next progress call
+
+
+def test_a_press_carries_on_from_the_part_and_says_how_far_the_whole_is(fw):
+    card = slot(fw, {TAR: b'old', PART: BODY[:HALF]})
+    row = UpdateRow(fw)
+    row.press()
+    seen = []
+    net = Net(fw, replies(), during=lambda k: seen.append(row.wait() and row.label()), only=GET)
+    row.run()
+    base = (HALF >> 10) * 100 // ((len(BODY) >> 10) + 1)  # the half it began with
+    assert net.froms[-1] == HALF and seen == [f'Downloading {base + p * (100 - base) // 100}%' for p in (25, 50, 75, 100)]
+    assert 48 <= base <= 50 and row.wait() == 0 and row.flashed == 1 and card.files[TAR] == BODY
+
+
+def test_the_row_says_how_far_it_was_and_then_that_it_is_reconnecting(fw):
+    card = slot(fw, {PART: BODY[:HALF]})
+    row = UpdateRow(fw)
+    row.press()
+    seen = []
+    fw.mock('fw_usleep', lambda us, *_: seen.append(row.wait() and row.label()))
+    Net(fw, replies(asset=[(7, 0, None), (0, 200, None, BODY)]))
+    row.run()
+    assert set(seen) == {'Reconnecting…'} and len(seen) == 50 and card.files[TAR] == BODY
 
 
 @pytest.mark.parametrize('how', ['press', 'leave'])
@@ -1771,7 +1883,8 @@ def test_a_cancel_after_the_last_byte_still_keeps_the_old_tar(fw, how):
     row.run()
     assert card.written[PART] == BODY  # no progress call left to end it: the transfer itself came whole
     assert row.wait() == 0 and row.toasts == ['Download cancelled'] and not row.flashed
-    assert card.files[TAR] == b'old' and PART not in card.files and not card.of('rename')
+    assert card.files[TAR] == b'old' and not card.of('rename')
+    assert card.files.get(PART) == (BODY if how == 'leave' else None)  # left: there for the next press
 
 
 def test_a_part_the_card_can_t_sync_never_replaces_the_tar(fw):
@@ -1803,7 +1916,7 @@ def test_a_download_finished_off_the_page_waits_for_the_card_update(fw):
     (replies(api=(0, 403, None, b'{}')), 'GitHub is busy, try later'),  # its API's hourly limit
     (replies(api=(0, 200, None, github(NEWER.decode(), ('update.tar', len(BODY))))), 'No update for this build'),  # no digest
     (replies(asset=(0, 404, None, b'Not Found')), 'No update for this build'),
-    (replies(asset=(28, 200, None, BODY)), "Can't reach GitHub"),  # timed out
+    (replies(asset=(28, 0, None)), "Can't reach GitHub"),  # timed out, each try
     (replies(asset=(0, 200, None, BODY[:-1] + b'!')), 'The download was damaged, try again'),
 ])
 def test_each_ending_says_why_and_keeps_the_old_tar(fw, answers, said):
@@ -1813,7 +1926,7 @@ def test_each_ending_says_why_and_keeps_the_old_tar(fw, answers, said):
     Net(fw, answers)
     row.run()
     assert row.wait() == 0 and row.toasts == [said] and not row.flashed and row.tr == {row.LABEL: 'update_online'}
-    assert card.files[TAR] == b'old' and PART not in card.files
+    assert card.files[TAR] == b'old' and not card.files.get(PART)
 
 
 def test_a_card_without_the_room_says_how_much_more(fw):

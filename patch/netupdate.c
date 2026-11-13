@@ -404,6 +404,7 @@ void shelf_remove(int i) {
 #define NU_JSON "/tmp/q2-update.json"
 #define NU_CA "/etc/scrobble-ca.pem" /* scrobble.c's; github.com's and its asset host's roots */
 #define NU_BATTERY 16 /* percent: under it, off a charger, stock's updater refuses to flash */
+#define NU_TRIES 3    /* tries in a row that add nothing to the part, before a press gives up */
 #define SH_RESERVE (64ull << 20) /* left free on the card beyond a download or what it unpacks */
 
 enum { NU_IDLE, NU_RUNNING, NU_DONE, NU_LATEST, NU_NET, NU_MISSING, NU_CARD, NU_CANCELLED, NU_BUSY,
@@ -412,7 +413,8 @@ enum { NU_IDLE, NU_RUNNING, NU_DONE, NU_LATEST, NU_NET, NU_MISSING, NU_CARD, NU_
 static struct {
     unsigned long thread;
     volatile int state, cancel, percent; /* cancel, percent: progress()'s pair */
-    volatile int stage;    /* for the label: 1 the tar is coming, 2 it is read back */
+    volatile int stage;    /* for the label: 1 the tar is coming, 2 it is read back, 3 between tries */
+    volatile int base;     /* the percentage the part held when this try began */
     unsigned need;         /* NU_SPACE's MB */
     void *label; /* the row's label while System Update is open, for the percentage */
 } nu __attribute__((section(".scratch")));
@@ -431,9 +433,10 @@ static int progress(void *xfer, long long total, long long now, long long c, lon
     return x[0];
 }
 
-/* One transfer: the latest tag (url without asset, headers only, no redirect) or the asset to file. */
+/* One transfer: the latest tag (url without asset, headers only, no redirect) or the asset to file,
+ * from its byte `from` on (HTTP Range) when the file holds those before it. curl's own code. */
 static int fetch(const char *url, void *file, char *tag, unsigned n, long *code,
-                 volatile int *xfer) {
+                 volatile int *xfer, long from) {
     void *c = curl_easy_init();
     int err = 1;
     char *location = 0;
@@ -455,12 +458,14 @@ static int fetch(const char *url, void *file, char *tag, unsigned n, long *code,
         curl_easy_setopt(c, 20219, progress); /* XFERINFOFUNCTION */
         curl_easy_setopt(c, 10057, xfer);     /* XFERINFODATA */
         curl_easy_setopt(c, 43, 0L);          /* NOPROGRESS off, for it */
+        if (from) curl_easy_setopt(c, 21, from); /* RESUME_FROM: curl fails a reply that isn't the range */
     } else {
         curl_easy_setopt(c, 44, 1L);          /* NOBODY */
         curl_easy_setopt(c, 13, 30L);         /* TIMEOUT */
     }
     /* curl itself fails a body shorter than its Content-Length (PARTIAL_FILE). */
-    err = curl_easy_perform(c) || curl_easy_getinfo(c, 0x200002, code); /* RESPONSE_CODE */
+    err = curl_easy_perform(c);
+    if (!err) err = curl_easy_getinfo(c, 0x200002, code); /* RESPONSE_CODE */
     if (!err && tag && !curl_easy_getinfo(c, 0x10001f, &location)) {    /* REDIRECT_URL */
         const char *t = netupdate_tag(location);
         tk_snprintf(tag, n, "%s", t ? t : "");
@@ -473,7 +478,7 @@ static int fetch(const char *url, void *file, char *tag, unsigned n, long *code,
 static char *get_by(const char *url, long *code, const char *tmp, volatile int *xfer) {
     unsigned n = 0;
     void *f = fopen(tmp, "wb");
-    int err = !f || fetch(url, f, 0, 0, code, xfer);
+    int err = !f || fetch(url, f, 0, 0, code, xfer, 0);
     err = (f && fclose(f)) || err;
     char *body = err || *code != 200 ? 0 : read_all(tmp, 1u << 20, &n);
     unlink(tmp);
@@ -491,13 +496,21 @@ static int room(unsigned long long bytes, unsigned *need) {
     return SH_SPACE;
 }
 
+/* path's bytes; -1 when it can't be opened. */
+static long file_bytes(const char *path) {
+    void *f = fopen(path, "rb");
+    long n = f && !fseek(f, 0, 2) ? ftell(f) : -1;
+    if (f) fclose(f);
+    return n;
+}
+
 /* A press's work, to the state it ends in. The old update.tar stays until the new one is whole:
  * only a part of the release's size and SHA-256, as the card gives it back, is renamed over it. */
 static int update(void) {
     char tag[64] = "", url[256], want[65], got[65];
     unsigned size = 0, n = 0;
     long code = 0;
-    if (fetch(NU_REPO, 0, tag, sizeof tag, &code, &nu.cancel) || code != 302 || !*tag)
+    if (fetch(NU_REPO, 0, tag, sizeof tag, &code, &nu.cancel, 0) || code != 302 || !*tag)
         return NU_NET;
     /* Tags are single-digit x.y.z, so strcmp orders them: nothing older than this build, which
      * stock's updater would flash. Q2POD_TAG is empty in --dev builds, which take any tag.
@@ -519,29 +532,60 @@ static int update(void) {
      * new one replaces isn't counted as room. */
     int r = card_mounted() ? room(2ull * size, &nu.need) : SH_CARD;
     if (r) return r == SH_SPACE ? NU_SPACE : NU_CARD;
-    void *f = fopen(NU_FILE ".part", "wb");
-    if (!f) return NU_CARD;
     snprintf(url, sizeof url, NU_GET "%s/" NU_ASSET, tag);
-    nu.stage = 1;
-    int err = fetch(url, f, 0, 0, &code, &nu.cancel);
-    int state = err ? (ferror(f) ? NU_CARD : NU_NET) : code != 200 ? NU_MISSING : NU_CARD;
-    err = err || code != 200 || fflush(f) || fsync(fileno(f)) || ferror(f);
-    err = fclose(f) || err;
-    if (!err) {
+    /* The tar, each try carrying on from what the part holds: a try before it in this press, or what
+     * a lost connection, a power cut or leaving the page left on the card. A part already whole is
+     * only read back. Whatever a part holds (an older release's start, a card's stale blocks), the
+     * read-back alone decides. ponytail: a part of another release costs the rest of this one's
+     * download before it is found damaged and deleted. */
+    int state = NU_RUNNING, tries = 0;
+    while (state == NU_RUNNING) {
+        long have = file_bytes(NU_FILE ".part");
+        if (have < 0 || (unsigned long)have > size) have = 0; /* none, or not this release's */
+        if ((unsigned long)have == size) break;
+        void *f = fopen(NU_FILE ".part", have ? "ab" : "wb");
+        if (!f) return NU_CARD;
+        nu.base = (int)((unsigned)(have >> 10) * 100 / ((size >> 10) + 1)); /* KB: 32-bit math */
+        nu.percent = 0, nu.stage = 1;
+        int err = fetch(url, f, 0, 0, &code, &nu.cancel, have), bad = ferror(f);
+        bad = fflush(f) || fsync(fileno(f)) || bad; /* a part cut short too: it is carried on from */
+        bad = fclose(f) || bad;
+        if (nu.cancel)
+            state = NU_CANCELLED;
+        else if (bad)
+            state = NU_CARD;
+        else if (!err && code == (have ? 206 : 200))
+            break;
+        else if (!err && !have)
+            state = NU_MISSING;
+        else {
+            /* A reply that wasn't the range asked for (curl's RANGE_ERROR, or no 206) left the
+             * part unusable: the next try starts it again. */
+            if (!err || err == 33) unlink(NU_FILE ".part");
+            tries = file_bytes(NU_FILE ".part") > have ? 0 : tries + 1;
+            nu.stage = 3;
+            for (int i = 0; tries < NU_TRIES && i < 50 && !nu.cancel; ++i) usleep(100000); /* 5 s */
+            if (tries == NU_TRIES || nu.cancel) state = nu.cancel ? NU_CANCELLED : NU_NET;
+        }
+    }
+    if (state == NU_RUNNING) {
         nu.stage = 2;
-        err = !netupdate_sha256(NU_FILE ".part", got, &n);
-        if (!err && (n != size || strcmp(got, want))) err = 1, state = NU_BAD;
+        state = !netupdate_sha256(NU_FILE ".part", got, &n) ? NU_CARD
+                : n != size || strcmp(got, want)            ? NU_BAD
+                                                            : NU_DONE;
     }
     /* Read once, after the close and the check: a press while the card took the last bytes (the
      * fsync of the whole part, seconds on a slow card, the label at 100%) or gave them back is a
      * cancel too, not "Can't write". */
     if (nu.cancel) state = NU_CANCELLED;
-    if (!err && state != NU_CANCELLED && !rename(NU_FILE ".part", NU_FILE)) { /* a late cancel still cancels */
+    if (state == NU_DONE) {
+        if (rename(NU_FILE ".part", NU_FILE)) state = NU_CARD;
         void *dir = fopen("/mnt/mmc", "r"); /* the rename's directory entry, before stock flashes */
         if (dir) fsync(fileno(dir)), fclose(dir);
-        return NU_DONE;
     }
-    unlink(NU_FILE ".part");
+    /* Kept for the next press to carry on from: what the network left, and what leaving the page
+     * did (nu.cancel 2). A press's own cancel, a card error and a damaged part delete it. */
+    if (state != NU_DONE && state != NU_NET && nu.cancel != 2) unlink(NU_FILE ".part");
     return state;
 }
 
@@ -564,8 +608,13 @@ static int wait_done(const void *unused) {
     char s[32];
     if (nu.state == NU_RUNNING) {
         reset_poweroptions_timer(1, 1, 0); /* standby, auto power-off; not the screen's */
-        tk_snprintf(s, sizeof s, "Downloading %d%%", nu.percent);
-        show(nu.cancel ? "Cancelling…" : nu.stage == 2 ? "Verifying…" : nu.stage && nu.percent ? s : "Checking…");
+        int percent = nu.base + nu.percent * (100 - nu.base) / 100; /* of the whole tar */
+        tk_snprintf(s, sizeof s, "Downloading %d%%", percent);
+        show(nu.cancel       ? "Cancelling…"
+             : nu.stage == 3 ? "Reconnecting…"
+             : nu.stage == 2 ? "Verifying…"
+             : nu.stage && percent ? s
+                                   : "Checking…");
         return 8; /* RET_REPEAT */
     }
     pthread_join(nu.thread, 0);
@@ -595,7 +644,7 @@ static int online_click(void *ctx, void *event) {
     } else if (!need_link(online_click, ctx)) {
         /* held for Smart Wi-Fi's link (a press while it waits takes its place), or none */
     } else {
-        nu.cancel = nu.percent = nu.stage = 0;
+        nu.cancel = nu.percent = nu.stage = nu.base = 0;
         nu.state = NU_RUNNING;
         if (pthread_create(&nu.thread, 0, worker, 0)) {
             nu.state = NU_IDLE;
@@ -608,9 +657,10 @@ static int online_click(void *ctx, void *event) {
     return 0;
 }
 
-/* Leaving the page cancels: the card may be unmounted or shared over USB next. */
+/* Leaving the page cancels: the card may be unmounted or shared over USB next. As 2, unless a press
+ * cancelled already: the part, closed by then, stays for the next press to carry on from. */
 static int label_gone(void *ctx, void *event) {
-    if (nu.label == ctx) nu.label = 0, nu.cancel = 1;
+    if (nu.label == ctx) nu.label = 0, nu.cancel = nu.cancel ? nu.cancel : 2;
     return 0;
 }
 
@@ -766,7 +816,7 @@ static int install(int i) {
     void *f = fopen(part, "wb");
     if (!f) return SH_CARD;
     sh.stage = 1;
-    int err = fetch(url, f, 0, 0, &code, &sh.cancel), bad = ferror(f);
+    int err = fetch(url, f, 0, 0, &code, &sh.cancel, 0), bad = ferror(f);
     bad = fclose(f) || bad;
     r = sh.cancel ? SH_CANCELLED : bad ? SH_CARD : err ? SH_NET : code != 200 ? SH_MISSING : SH_OK;
     if (!r) sh.stage = 2, r = shelf_list(i, &total);

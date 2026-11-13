@@ -132,6 +132,7 @@ class Card:
                 self.room += len(self.files.get(p, b''))
             self.files[p] = b''
             self.log.append(('create', p))
+        self.files.setdefault(p, b'')  # 'a' on a file not there yet
         f, self.next = self.next, self.next + 1
         self.handles[f] = Handle(p, 'r' not in how)
         return f
@@ -331,8 +332,9 @@ class Shell:
 
 
 class Reply:
-    """One transfer's answer: its code, body (Content-Length), redirect; cut: the bytes after which the
-    connection drops; during(sent): called after each chunk and its progress call."""
+    """One transfer's answer: its code, body (Content-Length), redirect; cut: the byte of the body after which
+    the connection drops; during(sent): called after each chunk and its progress call. A transfer carried on
+    from a byte (RESUME_FROM) gets the body from there, as a 206."""
     def __init__(self, code=200, body=b'', location=None, cut=None, chunk=16384, during=None, fail=0):
         self.code, self.body, self.location, self.cut, self.chunk, self.during, self.fail = code, body, location, cut, chunk, during, fail
 
@@ -376,8 +378,11 @@ class Net:
             return reply.fail
         write = WRITE(h.opts[20011]) if 20011 in h.opts else None
         progress = XFER(h.opts[20219]) if h.opts.get(43, 1) == 0 and 20219 in h.opts else None
-        body, sent = reply.body, 0
-        end = len(body) if reply.cut is None else min(reply.cut, len(body))
+        start = h.opts.get(21, 0)  # RESUME_FROM
+        body, sent = reply.body[start:], 0
+        end = len(body) if reply.cut is None else max(0, min(reply.cut - start, len(body)))
+        if start and reply.code == 200:
+            h.code = 206
         if progress and progress(h.opts.get(10057), len(body), 0, 0, 0):
             return 42  # CURLE_ABORTED_BY_CALLBACK
         while sent < end:
@@ -818,7 +823,7 @@ def test_network_update_checks_downloads_and_hands_the_tar_to_stocks_tf_update(w
     steps = [e for e in w.log if e[0] in ('fsync', 'rename', 'fwupdate_tf')]
     assert steps == [('fsync', PART), ('rename', PART, TAR), ('fsync', '/mnt/mmc'), ('fwupdate_tf',)]
     assert w.net.asked == [LATEST, API + NEWER, ASSET]
-    assert w.card.reads[PART] == 1 and '/tmp/q2-update.json' not in w.card.files  # read back once, before the rename
+    assert w.card.reads[PART] == 2 and '/tmp/q2-update.json' not in w.card.files  # sized (none yet), then read back once
     held = w.calls('reset_poweroptions_timer')
     assert held and all(c[:3] == (1, 1, 0) for c in held)  # standby and auto power-off, not the screen
     w.ui.run(5000)
@@ -836,15 +841,24 @@ def test_network_update_on_the_latest_release_or_an_older_one_writes_nothing(w, 
     assert not w.card.tree() and page.text == 'tr:update_online' and not w.calls('fwupdate_tf')
 
 
-def test_network_update_cut_off_midway_keeps_the_old_tar(w):
+def test_network_update_cut_off_midway_keeps_the_old_tar_and_carries_on_at_the_next_press(w):
     w.ui.wifi = 3
     w.card.put(TAR, b'the release before', count=False)
     page = SystemUpdate(w)
-    releases(w, cut=len(UPDATE_TAR) // 2)
+    half = len(UPDATE_TAR) // 2
+    releases(w, cut=half)  # the connection drops there, at every try
     page.press()
     w.ui.run(500)
-    assert w.ui.toasts == ["Can't reach GitHub"] and w.card.tree() == {'update.tar': b'the release before'}
-    assert page.text == 'tr:update_online' and not w.calls('fwupdate_tf')
+    assert w.ui.toasts == ["Can't reach GitHub"] and page.text == 'tr:update_online' and not w.calls('fwupdate_tf')
+    assert w.card.tree() == {'update.tar': b'the release before', 'update.tar.part': UPDATE_TAR[:half]}
+    assert w.net.asked.count(ASSET) == 4 and w.clock.slept.count(100) == 3 * 50  # 5 s between tries, in 100 ms steps
+    # the network is back: the rest alone is fetched, and the whole is what the release names
+    seen = []
+    releases(w, during=lambda sent: (w.ui.run(500), seen.append(page.text)))
+    page.press()
+    w.ui.run(500)
+    assert seen[0] == 'Downloading 74%' and seen[-1] == 'Downloading 100%'  # of the whole tar, not of the rest
+    assert w.card.tree() == {'update.tar': UPDATE_TAR} and ('fwupdate_tf',) in w.log
 
 
 def test_network_update_with_no_network_asks_once(w):
@@ -918,13 +932,14 @@ def test_a_second_press_cancels_the_download_and_a_third_before_it_ends_does_not
     assert w.card.tree() == {'update.tar': b'the release before'} and page.text == 'tr:update_online'
 
 
-def test_leaving_system_update_cancels_its_download(w):
+def test_leaving_system_update_cancels_its_download_and_keeps_what_came(w):
     w.ui.wifi = 3
     page = SystemUpdate(w)
-    releases(w, during=lambda sent: sent == len(UPDATE_TAR) // 4 and w.ui.destroy(page.page))
+    quarter = len(UPDATE_TAR) // 4
+    releases(w, during=lambda sent: sent == quarter and w.ui.destroy(page.page))
     page.press()
     w.ui.run(500)
-    assert w.ui.toasts == ['Download cancelled'] and not w.card.tree()
+    assert w.ui.toasts == ['Download cancelled'] and w.card.tree() == {'update.tar.part': UPDATE_TAR[:2 * quarter]}  # ended at the next progress call
     assert len(w.net.asked) == 3 and not w.calls('fwupdate_tf')
 
 

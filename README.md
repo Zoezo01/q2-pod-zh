@@ -109,7 +109,7 @@ The [user guide][guide] covers every control, EQ, Cover Flow and more tips.
 
 ## Updating
 
-- **Over Wi-Fi:** **System settings → System Update → Network Update** downloads the newest release to the card, checks it against the release's SHA-256, and only then replaces the card's `update.tar` and opens the TF card update's confirmation. Press the row again to cancel the download.
+- **Over Wi-Fi:** **System settings → System Update → Network Update** downloads the newest release to the card, checks it against the release's SHA-256, and only then replaces the card's `update.tar` and opens the TF card update's confirmation. Press the row again to cancel the download. If the connection drops, it tries again by itself, and the next press carries on from where it stopped.
 - **By hand:** repeat the [install steps](#install) with the newest release.
 
 Your settings, ratings and play counts are kept. The updater skips a version that's already installed, so a newer release always goes on.
