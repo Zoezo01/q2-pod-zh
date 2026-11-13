@@ -1396,8 +1396,7 @@ the USB and AirPlay pages (on, unless Charge Limit holds it off), so the policy 
 new choice to PE22 at once, an earlier Off request from the DAC screen's switch is replaced, and
 Charge Limit's hold still wins. Off only matters with Audio and DAC: USB Storage with a cable in
 keeps charging. The DAC screen's switch reads the flag when it builds, and the row reads it again
-on the Power window's `EVT_WINDOW_FOREGROUND`, so a change on either shows on the other. AirPlay's
-page uses the same flag for its own charging choice, as in stock.
+on the Power window's `EVT_WINDOW_FOREGROUND`, so a change on either shows on the other.
 
 `switch_charge_enable` is guarded (`charge_apply` calls `toolsGpioSetValue` itself). Stock's direct `toolsGpioSetValue("PE22", ...)` writes (`into_poweroff`,
 `device_reboot`, `device_standby`, `check_otg_status`) and other GPIOs pass through, so power-off, reboot

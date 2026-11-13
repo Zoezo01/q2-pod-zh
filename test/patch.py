@@ -20860,7 +20860,7 @@ assert m.nodes[label]['text']=='Boot to: Rockbox' and '/mnt/data/boot-target' no
 # Wheel centre reaches Boot to through the existing selection/dispatch path.
 m,button,label=boot_row(); view=m.nodes[m.top]['children'][0]; view=m.nodes[view]['children'][0]
 m.paint(view)
-for _ in range(7): m.call()  # stock's two, our five, then Boot to
+for _ in range(8): m.call()  # stock's two, our six, then Boot to
 assert m.confirm()==11 and m.dispatched()[0][1]==button; passed()
 # System settings: stock V1.36's nine rows, its Language (English only for now), Wheel Function, In-Vehicle, General and System hidden, which the wheel
 # skips; App Store and Controls added, and the four rows stock moved to its System page, opening stock's pages, so the
