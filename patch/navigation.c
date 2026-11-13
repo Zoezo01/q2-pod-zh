@@ -3383,9 +3383,10 @@ int ringnav_powermanager(void *win, void *ctx) {
     pod_rows(win, "scroll_view_powermanager", POD_STANDBY, 1,
              icons + 1); /* beside stock's Standby */
     pod_rows(win, "scroll_view_powermanager", POD_CHARGE, 1, icons);
+    void *view = win ? widget_lookup(win, "scroll_view_powermanager", 1) : (void *)0;
+    usb_charge_row(win, view);
     pod_rows(win, "scroll_view_powermanager", POD_SMART_WIFI, 1, icons + 3);
     pod_rows(win, "scroll_view_powermanager", POD_CARMODE, 1, icons + 2);
-    void *view = win ? widget_lookup(win, "scroll_view_powermanager", 1) : (void *)0;
     if (view) /* battery.c's page */
         widget_set_text_utf8(list_row_into(view, "system_powermanager", battery_history, 0),
                              "Battery History");

@@ -5,9 +5,12 @@ import pytest
 
 
 class Charging:
-    def __init__(self, fw, pref=0, mode=1, cable=0):
+    """own: Q2POD DACCHARGEOWN, 1 once the saved choice (pref) is the user's; None, the key missing."""
+    def __init__(self, fw, pref=0, mode=1, cable=0, own=1):
         self.fw, self.pref, self.mode, self.cable = fw, pref, mode, cable
         self.gpio, self.writes = 1, []
+        self.ini = {} if own is None else {'DACCHARGEOWN': str(own)}
+        self.saved = []
         self.depth = 0
         self.charge = fw.fn('ringnav_usb_charge', C.c_int, C.c_int)
         self.config = fw.fn('ringnav_usb_config', C.c_int)
@@ -22,6 +25,16 @@ class Charging:
         fw.mock('toolsGpioGetValue', lambda *_: self.gpio)
         fw.mock('fw_pthread_mutex_lock', self.lock)
         fw.mock('fw_pthread_mutex_unlock', self.unlock)
+        fw.mock('toolsReadConfig', self.read)
+        fw.mock('write_int_config', self.save)
+
+    def read(self, path, section, key, out, default, *_):
+        v = self.ini.get(C.string_at(key).decode(), C.string_at(default).decode()).encode()
+        C.memmove(out, v + b'\0', len(v) + 1)
+
+    def save(self, value, section, key, *_):
+        self.saved.append((C.string_at(section).decode(), C.string_at(key).decode(), C.c_int(value).value))
+        self.ini[C.string_at(key).decode()] = str(C.c_int(value).value)
 
     def lock(self, *_):
         assert self.depth == 0
@@ -145,3 +158,26 @@ def test_unknown_settings_or_cable_state_do_not_grant_charging(fw, pref, mode, c
     q.charge(1)
     q.status()
     assert q.writes and set(q.writes) == {1}
+
+
+@pytest.mark.parametrize('pref', [0, 1])  # 0: stock's first-boot config.ini (USBDAC_CHARGE=0); 1: no key, stock's "1"
+def test_a_choice_never_made_here_starts_on_and_charges_in_dac_mode(fw, pref):
+    q = Charging(fw, pref=pref, cable=1, own=None)
+    q.config()
+    assert q.at_config == 1  # still inhibited while stock reads the settings
+    assert q.flag.value == 1 and q.gpio == 0
+    assert q.saved == [('PLAYSET', 'USBDAC_CHARGE', 1), ('Q2POD', 'DACCHARGEOWN', 1)]
+    q.pref = 0  # then turned Off, and a restart: kept
+    q.config()
+    assert q.flag.value == 0 and q.gpio == 1 and len(q.saved) == 2
+
+
+def test_a_saved_off_marked_the_users_stays_off_and_inhibits_before_config_and_insertion(fw):
+    q = Charging(fw, pref=0, own=1)
+    q.gpio = 0
+    q.config()
+    assert q.at_config == 1 and q.flag.value == 0 and q.gpio == 1 and q.saved == []
+    q.cable = 1
+    q.detect()
+    q.status()
+    assert q.at_dispatch == 1 and q.gpio == 1

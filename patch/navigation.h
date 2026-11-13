@@ -535,6 +535,7 @@ void power_poll(void);
 
 /* usb_charge.c: wrappers for charging, configuration loading and USB gadget dispatch. */
 int ringnav_usb_charge(int on), usb_charge_held(void);
+void usb_charge_row(void *win, void *view); /* Power's USB DAC Charging */
 int ringnav_usb_config(void), ringnav_usb_detect(void), ringnav_usb_status(void);
 int stock_usb_config_trampoline(void), stock_usb_detect_trampoline(void);
 int stock_usb_status_trampoline(void);
