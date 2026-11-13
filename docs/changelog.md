@@ -1,6 +1,7 @@
 # Changelog
 
 - **1.8.2**:
+  - Cover Flow: an optional **Position Bar** follows wheel and touch browsing, then fades after you stop. Turn it on in **Display → Cover Flow**.
   - Playback: with **Headphones Required** on, the Q2 restores your queue at start-up again, paused, as **Memory Playback** has it. Since 1.8.0 nothing was restored with the switch on, even with headphones connected. **In-Vehicle Mode** still starts playing, or restores the queue paused when nothing is connected.
   - Controls: **Wheel Sensitivity** goes down to 10%, for a slower wheel: 20% takes a third of a turn per step and 10% most of a turn. 50% is still the default and nothing changes unless you lower it.
   - Cover Flow: it opens on the album of the song that's playing or paused, so that artist's other albums are a turn away ([#350](https://github.com/DiamondBond/q2-pod/issues/350)). With nothing queued, or a song with no album tag, it opens on the album you last stopped at, as before.
