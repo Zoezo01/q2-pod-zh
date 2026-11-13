@@ -654,7 +654,7 @@ def playing_page(root, g=SET0):
     top = art_y + (icons_y - NP_ICON_PAD - art_y - (28 + 6 + 22 + 6 + 22 + g.np_ipod * (6 + 20))) // 2
     if g.np_ipod:  # the text starts under More, "3 of 12" under the album
         top = max(top, lift - 2)
-        pos[1] = [text_x, top + 90, text_w, 20]
+        pos[1] = [text_x + 2, top + 90, text_w - 2, 20]  # a label, drawn from its edge: the hscroll_labels above keep 2 px
     else:
         buttons[3].append(pos)
     title[1] = [text_x, top, text_w, 28]

@@ -1,6 +1,7 @@
 # Changelog
 
 - **1.8.1**:
+  - Now Playing: under **Theme: Classic** the song's place in the queue, such as "25 of 40", lines up with the title, artist and album above it. It sat 2 pixels to their left.
   - Home: hold Play/Pause on the **Cover Flow** row to open its settings, **Display → Cover Flow**. Return goes back to Home.
   - Status bar: the battery's level and charge show as soon as they change, as the clock does. They used to wait until something else on the screen changed, such as opening a page.
   - Power: **Battery History**, under System settings → Power, graphs and lists how the battery has fallen since the charger was last unplugged, a row a percent with its time, kept through Standby and power-off. A drop during Standby shows as one row at the wake. **Export Log** saves it to `battery-log.txt` on the card.
