@@ -340,6 +340,10 @@ int main(int argc, char **argv) {
     P(canvas, CANVAS_LCD) = NULL;
     coverflow_position_paint(covers, canvas);
     assert(!fills);
+    P(canvas, CANVAS_LCD) = lcd;
+    albums = cards = 2, centre = 0, fraction = CF_ONE / 4; /* a touch drag a quarter past the first */
+    coverflow_position_paint(slide, canvas);
+    assert(position.x == 38); /* .25 of the 151 px travel: a painter without the touch term gives 0 */
     puts("Cover Flow position: 400 albums, direction, fractional motion, wrap, extra cards, 100000 "
          "albums, cover-aligned track, 9x4 soft-grey thumb, 2px track, coincident centres, footer "
          "midpoint, no contrasting outline, paint bounds, light/dark, fill "

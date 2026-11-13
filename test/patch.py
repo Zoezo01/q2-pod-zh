@@ -6519,7 +6519,7 @@ for title in ('小城故事','もののけ姫','日本語 English','한국어','
 
 # Position bar against each real built-in theme's shelf geometry and each light/dark scheme.
 def position_checks():
-    for theme_id in ('1','2','3'):
+    for theme_id in ('0','1','2'):
         for light in ('0','1'):
             def position_setup(machine): machine.config.update(THEME=theme_id,LIGHT=light,CFPOSITION='1')
             SETUP[:]=[position_setup]

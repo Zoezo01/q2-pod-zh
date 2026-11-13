@@ -1,7 +1,7 @@
 # Changelog
 
 - **1.8.2**:
-  - Themes: Chinese, Japanese and other text the theme's own face lacks is now drawn bold wherever **Classic** or **Modern** draws its text bold: Classic's lists, bar, info rows, Cover Flow and album panel; Modern's bar title; and Now Playing's title in both. It used the regular system font.
+  - Themes: Chinese, Japanese and other text the theme's own face lacks is now drawn bold wherever **Classic** or **Modern** draws its text bold: Classic's lists, bar, info rows, Cover Flow, album panel and hold menu; Modern's bar title; and Now Playing's title in both. It used the regular system font.
   - Cover Flow: an optional **Position Bar** follows wheel and touch browsing, then fades after you stop. Turn it on in **Display → Cover Flow**.
   - Playback: with **Headphones Required** on, the Q2 restores your queue at start-up again, paused, as **Memory Playback** has it. Since 1.8.0 nothing was restored with the switch on, even with headphones connected. **In-Vehicle Mode** still starts playing, or restores the queue paused when nothing is connected.
   - Controls: **Wheel Sensitivity** goes down to 10%, for a slower wheel: 20% takes a third of a turn per step and 10% most of a turn. 50% is still the default and nothing changes unless you lower it.
