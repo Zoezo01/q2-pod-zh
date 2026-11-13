@@ -4,8 +4,9 @@
  *   q2app    its manifest, key=value lines: name (its Streaming row's), search (the search box's
  *            hint), qr (1: its row turns it on and shows its QR code once it answers), scrobble
  *            (0: its songs stay out of the scrobble log, addon_scrobbles), stop (0: its page has no
- *            Stop row, and an error page's second row is Cancel) and more (an op, then a space and
- *            a title: Now Playing's ⋯ opens its page there while its queue plays, addon_more);
+ *            Stop row, and an error page's second row is Cancel) more (an op, then a space and
+ *            a title: Now Playing's ⋯ opens its page there while its queue plays, addon_more) and
+ *            favdir (a card folder whose songs' hearts it is told of, addon_fav_path);
  *   run      its launcher, which copies the app to /tmp and runs it there in a restart loop, so
  *            the card is never kept busy, leaving the loop's pid in /tmp/q2-<id>;
  *   q2-<id>  the app;
@@ -85,7 +86,7 @@
 #define CAPS_FILE "/tmp/q2-addon.caps"
 /* This firmware's card-app features, space-separated; a feature adds its word. */
 #define ADDON_CAPS                                                                                 \
-    "playlist progress pages library goto sleep game audio sections art window urls sort field more"
+    "playlist progress pages library goto sleep game audio sections art window urls sort field more fav"
 #define ADDON_SECTIONS 8  /* sections an app's first page may have */
 #define SWIPE_CLAIM_PX 24 /* a sideways move this far, twice as far as up or down, is a swipe's */
 #define SWIPE_PX 60       /* and this far at the lift, more than up or down, changes section */
@@ -2035,6 +2036,48 @@ int addon_scrobbles(const char *path) {
     state_read(file, raw, sizeof raw);
     field(raw, "scrobble", v, sizeof v);
     return strcmp(v, "0") && strcmp(v, "0\r");
+}
+
+/* Hearts (docs/librespot.md): a press on an app's song goes to CARD/.<id>/fav.log as a line
+ * "\n<kind>\t<0|1>\t<key>\n" appended, which the app takes and sends to its server, whether it runs
+ * now or starts later: kind "item" for a streamed song (tidal.c app_fav, key its queue line's item),
+ * "path" for a song in its favdir (key its path). The LF before it ends a line a cut write left, so
+ * that never joins the next press; the app drops empty lines. One fwrite, no fsync, as
+ * scrobble_append's listen: on the UI thread, and only ever appended to. 1 when the card took it. */
+int addon_fav(const char *id, const char *kind, const char *key, int on) {
+    char path[64], line[600];
+    unsigned n = (unsigned)tk_snprintf(line, sizeof line, "\n%s\t%d\t%s\n", kind, on != 0, key);
+    if (!valid_id(id) || n >= sizeof line) return 0; /* cut, it would name another song */
+    tk_snprintf(path, sizeof path, CARD "/.%s/fav.log", id);
+    void *f = fopen(path, "ab");
+    int ok = f && fwrite(line, n, 1, f) == 1;
+    if (f && fclose(f)) ok = 0;
+    return ok;
+}
+
+/* A song's favourite changed (ratings.c): told to the card app whose q2app's favdir names the card
+ * folder path is in, CARD/<favdir>/…, such as q2-jellyfin's synced Jellyfin. favdir is one folder
+ * name, its line maybe ending in a Windows editor's \r. Every app's q2app is read at each change,
+ * so no scan is needed first: a press is rare. 0 when that app's card didn't take it. */
+int addon_fav_path(const char *path, int on) {
+    char raw[512], file[64], dir[64];
+    int ok = 1;
+    void *d = path && card_path(path) ? opendir(CARD) : 0;
+    for (struct dirent *e; d && (e = readdir(d));) {
+        if (e->d_name[0] != '.' || !valid_id(e->d_name + 1)) continue;
+        tk_snprintf(file, sizeof file, CARD "/%s/q2app", e->d_name);
+        if (!state_read(file, raw, sizeof raw)) continue;
+        field(raw, "favdir", dir, sizeof dir);
+        unsigned k = strlen(dir);
+        if (k && dir[k - 1] == '\r') dir[--k] = 0;
+        if (k && !strstr(dir, "/") && strcmp(dir, ".") && strcmp(dir, "..") &&
+            !strncmp(path + sizeof CARD, dir, k) && path[sizeof CARD + k] == '/') {
+            ok = addon_fav(e->d_name + 1, "path", path, on);
+            break;
+        }
+    }
+    if (d) closedir(d);
+    return ok;
 }
 
 /* Go to Album (album) or Go to Artist on a song in a card app's folder, /mnt/mmc/.<id>/…

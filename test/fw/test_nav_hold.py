@@ -9,7 +9,7 @@ import struct
 import pytest
 
 import host
-from conftest import O, Deques, Files, Rows, claim, fnv1a, high_halves, in_fork, ui_name
+from conftest import O, Deques, Files, Rows, claim, favdir_card, fnv1a, high_halves, in_fork, ui_name
 
 W_X, W_PARENT, W_EMITTER = O['W_X'], O['W_PARENT'], O['W_EMITTER']
 EMIT_TYPE, EMIT_PENDING_REMOVE, EMIT_NEXT = O['EMIT_TYPE'], O['EMIT_PENDING_REMOVE'], O['EMIT_NEXT']
@@ -1596,6 +1596,18 @@ def test_remove_from_favourites_untags_the_song(hold, recs, ui, fw):
     hold.menu()
     hold.pick('Remove from Favourites')
     assert [a[0] for _, a in fw.calls('deleteMusicFromFav')] == [songs[1]] and fw.var('g_delete_flag', C.c_ubyte).value == 0
+
+
+@pytest.mark.parametrize('row, state', [('Add to Favourites', b'1'), ('Remove from Favourites', b'0')])
+def test_a_favourite_from_the_menu_is_told_to_the_song_s_card_app(hold, recs, fw, row, state):
+    """A song in a card app's favdir (q2-jellyfin's synced Jellyfin): the row's My Fav change goes to its fav.log."""
+    hold.now_playing([recs(path=f'/mnt/mmc/Jellyfin/{i}.flac', title=f'Song {i}') for i in range(3)])
+    fw.mock('checkFavExist', lambda *_: row.startswith('Remove'))
+    favdir_card(fw, hold.card.files)
+    hold.hold()
+    hold.menu()
+    hold.pick(row)
+    assert hold.card.files['/mnt/mmc/.jf/fav.log'] == b'\npath\t' + state + b'\t/mnt/mmc/Jellyfin/1.flac\n'
 
 
 def test_view_queue_opens_stocks_queue_in_order(hold, recs, ui):

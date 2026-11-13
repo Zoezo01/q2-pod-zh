@@ -273,7 +273,7 @@ class Rows(Deques):
 
 
 class Files:
-    """The card's and flash's files as a dict: fopen and all, so blob_io and the snapshot's reader run whole."""
+    """The card's and flash's files as a dict: fopen and all, so blob_io and the snapshot's reader run whole; "a" appends."""
     def __init__(self, fw, files=None):
         self.files = files if files is not None else {}
         self.open = {}
@@ -292,7 +292,7 @@ class Files:
         if 'r' in mode and path not in self.files:
             return 0
         handle = 0x2000 + len(self.open)
-        self.open[handle] = [path, 0, b'' if 'w' in mode else None]
+        self.open[handle] = [path, 0, b'' if 'w' in mode else self.files.get(path, b'') if 'a' in mode else None]
         return handle
 
     def fread(self, out, size, count, f, *_):
@@ -327,6 +327,30 @@ class Files:
             return -1
         self.files[C.string_at(new).decode()] = self.files.pop(C.string_at(old).decode())
         return 0
+
+def favdir_card(fw, files, app='jf', folder='Jellyfin'):
+    """A card app .<app> whose q2app names favdir=<folder> (addon.c addon_fav_path): its q2app in files (a Files
+    dict, by str path) and the card's root listing it, as opendir and readdir (host.py's struct dirent: d_name at
+    11) give it; tk_str_start_with as libc's."""
+    files[f'/mnt/mmc/.{app}/q2app'] = f'name=Jellyfin\nfavdir={folder}\n'.encode()
+    names, keep = [], []
+
+    def opendir(path, *_):
+        names[:] = [f'.{app}'.encode(), folder.encode()] if C.string_at(path) == b'/mnt/mmc' else []
+        return 0x77 if names else 0
+
+    def readdir(d, *_):
+        if not names:
+            return 0
+        name = names.pop(0)
+        ent = C.create_string_buffer(268)
+        C.memmove(C.addressof(ent) + 11, name, len(name))
+        keep.append(ent)
+        return C.addressof(ent)
+    fw.mock('fw_opendir', opendir)
+    fw.mock('fw_readdir', readdir)
+    fw.mock('tk_str_start_with', lambda s, p, *_: C.string_at(s).startswith(C.string_at(p)))
+
 
 class Game(C.Structure):
     """addon.c's gm: the running card game."""

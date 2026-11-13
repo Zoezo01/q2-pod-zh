@@ -78,6 +78,14 @@ int rate_saved(int k) {
     return k > 0;
 }
 
+/* r's My Fav changed to on: the card app whose favdir holds it is told (addon_fav_path), as for
+ * Now Playing's heart and the queue menu's Favourites rows. 0 when it wasn't, said in a toast. */
+int fav_told(void *r, int on) {
+    if (!r || addon_fav_path(P(r, REC_PATH), on)) return 1;
+    toast("Favourite not sent to the app");
+    return 0;
+}
+
 /* Five hearts is a favourite, so an album's are its songs' too: the queue menu's album's tracks
  * into My Fav through batch-select's Add (0xf00a skips those already in it), or out.
  * ponytail: taking an album out takes every song; nothing records which were favourites first. */
@@ -90,6 +98,7 @@ void rate_album_favs(void *album, int on) {
         batch_add_file(0xf001, 0xf00a, t, P(p_vector_select_record, 0), 0);
     }
     for (unsigned i = 0; !on && i < n; i++) deleteMusicFromFav(deque_at(t, i));
+    for (unsigned i = 0; i < n && fav_told(deque_at(t, i), on); i++) {}
     deque_destroy(t);
     ratings_copy_due();
 }
@@ -254,7 +263,7 @@ static void rate_close(int save) {
     if (!r) return;
     int fav = checkFavExist(r) != 0;
     if (!rate_saved(rate_keep(0, listen_key(r), n))) return;
-    if ((n == 5) != fav) FAV_CLICK(ra.rate_ctx, (void *)0), ratings_copy_due();
+    if ((n == 5) != fav) FAV_CLICK(ra.rate_ctx, (void *)0), ratings_copy_due(), fav_told(r, n == 5);
     rate_badge();
 }
 
@@ -340,17 +349,24 @@ static int rate_down(void *ctx, void *event) {
     rearm(&ra.rate_hold, rate_long, RATE_HOLD_MS);
     return 0;
 }
-/* Returns 0 as stock's does: a STOP skips the slide_view's own release, and it keeps its grab. */
+/* Returns 0 as stock's does: a STOP skips the slide_view's own release, and it keeps its grab.
+ * A card app's streamed song with an item has the app's heart instead (tidal.c app_fav), flipped
+ * at once in stock's Tidal images, as stock's own click draws a 0xf1 track's. */
 static int rate_fav_click(void *ctx, void *event) {
     stop_timer(&ra.rate_hold);
     if (ra.rate_held || st.rate_on) {
         ra.rate_held = 0;
         return 0;
     }
+    int app = app_fav();
+    if (app >= 0) image_base_set_image(ra.rate_fav, app ? "tidal_fav_add" : "tidal_fav_rm");
+    if (app == -2) toast("Favourite not saved");
+    if (app == -3) toast("This app has no favourites"); /* an app's song without an item: not Tidal's */
+    if (app != -1) return 0;
     FAV_CLICK(ctx, event);
     ratings_copy_due();
     void *r = rate_track();
-    if (r) rate_keep(0, listen_key(r), 0);
+    if (r) rate_keep(0, listen_key(r), 0), fav_told(r, checkFavExist(r) != 0);
     rate_badge();
     return 0;
 }

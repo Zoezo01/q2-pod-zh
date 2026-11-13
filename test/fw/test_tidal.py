@@ -323,7 +323,111 @@ def test_a_thread_that_cant_start_leaves_nothing_waiting_and_the_next_track_star
 class Au(C.Structure):
     """tidal.c's au: a URL queue's URLs (0 for a card path) and generation."""
     _fields_ = [('lock', C.c_uint * 16), ('urls', C.POINTER(C.c_char_p)), ('n', C.c_uint), ('gen', C.c_uint),
-                ('play', C.c_uint), ('lyr', C.c_char * 64), ('start', C.c_uint * 16)]
+                ('play', C.c_uint), ('lyr', C.c_char * 64), ('start', C.c_uint * 16),
+                ('items', C.POINTER(C.c_char_p)), ('fav', C.POINTER(C.c_ubyte)), ('app', C.c_char * 16),
+                ('hearts', C.c_int)]
+
+
+def urls_play(fw, files, lines, path='/tmp/q2-a.urls'):
+    """app_urls_play over a Q2URLS/1 file of lines, put in files (conftest's Files, mocked): its result.
+    toolsFreeStSongInfo, called at its stock address, is a ret meanwhile, as below."""
+    files.files[path] = b'#Q2URLS/1\n' + b''.join(line + b'\n' for line in lines)
+    fw.mock('tk_str_start_with', lambda s, p, *_: C.string_at(s).startswith(C.string_at(p)))
+    free_rec = int(re.findall(r'toolsFreeStSongInfo \(\(void \(\*\)\(void \*\)\)(0x[0-9a-f]+)u\)',
+                              (host.ROOT/'patch/tidal.c').read_text())[0], 16)
+    claim(free_rec)
+    saved = C.string_at(free_rec, 1)
+    C.memmove(free_rec, b'\xc3', 1)
+    try:
+        return fw.fn('app_urls_play', C.c_int, C.c_char_p)(path.encode())
+    finally:
+        C.memmove(free_rec, saved, 1)
+
+
+# A card app's songs' hearts (docs/librespot.md): a line's 7th field is the song's item, the app's own id for it,
+# and its 8th its heart; Now Playing's heart on such a song is the app's.
+HEARTS = [b'https://x/a.flac\tA\tBroadcast\t\t\t200\tid-a\t1', b'https://x/b.flac\tB\t\t\t\t\tid-b\t0',
+          b'https://x/c.flac\tC\t\t\t\t200',  # an older app's line: no item, the heart stays stock's
+          b'/mnt/mmc/Jellyfin/d.flac\tD\t\t\t\t\tid-d\tyes',  # a synced song in the queue; only 1 is a favourite
+          b'https://x/e.flac\tE\t\t\t\t\t' + b'i' * 128 + b'\t1',  # an item too long to be one
+          b'https://x/f.flac\tF\t\t\t\t\tid-f\t1\r',  # a CRLF file's line: still a favourite
+          b'https://x/g.flac\tG\t\t\t\t\tid-g\t1\tlater',  # a field after it, as a later protocol may add
+          b'https://x/h.flac\tH\t\t\t\t\tid-h\t10']  # not 1
+
+
+def test_a_url_queue_keeps_each_song_s_item_and_heart(fw):
+    Deques(fw)
+    assert urls_play(fw, Files(fw), HEARTS) == 1
+    au = fw.var('tidal__au', Au)
+    assert [au.items[i] for i in range(8)] == [b'id-a', b'id-b', None, b'id-d', None, b'id-f', b'id-g', b'id-h']
+    assert [au.fav[i] for i in range(8)] == [1, 0, 0, 0, 0, 1, 1, 0] and au.app == b'a'
+
+
+def heart(fw):
+    return fw.fn('app_fav', C.c_int)()
+
+
+def favourite(fw):
+    return fw.var('isFav_playing', C.c_ubyte).value
+
+
+def test_the_heart_on_an_app_s_song_flips_and_goes_to_the_app(fw, queue, mcl):
+    files = Files(fw)
+    urls_play(fw, files, HEARTS)
+    queue.row('app:1:0')
+    mcl.type, mcl.pos = 0xf1, 0
+    assert heart(fw) == 0 and favourite(fw) == 0  # a favourite: taken away
+    assert heart(fw) == 1 and favourite(fw) == 1
+    assert files.files['/mnt/mmc/.a/fav.log'] == b'\nitem\t0\tid-a\n\nitem\t1\tid-a\n'  # each after an LF too
+    assert fw.var('tidal__au', Au).fav[0] == 1
+
+
+@pytest.mark.parametrize('kind, tidal_id, want', [(0xf1, '12345', -1),  # stock Tidal's own: stock's heart
+                                                  (0xf001, 'app:1:0', -1),  # not a stream's queue
+                                                  (0xf1, 'app:1:2', -3),  # its line named no item: no heart,
+                                                  (0xf1, 'app:1:4', -3),  # nor Tidal's for it
+                                                  (0xf1, 'app:0:0', -3)])  # an older queue's
+def test_any_other_song_s_heart_is_stock_s_and_an_app_s_never_tidal_s(fw, queue, mcl, kind, tidal_id, want):
+    files = Files(fw)
+    urls_play(fw, files, HEARTS)
+    queue.row(tidal_id)
+    mcl.type, mcl.pos = kind, 0
+    assert heart(fw) == want and '/mnt/mmc/.a/fav.log' not in files.files
+
+
+def test_a_press_the_card_wont_take_leaves_the_heart(fw, queue, mcl):
+    urls_play(fw, Files(fw), HEARTS)
+    queue.row('app:1:1')
+    mcl.type, mcl.pos = 0xf1, 0
+    fw.mock('fw_fopen', lambda *_: 0)
+    assert heart(fw) == -2 and favourite(fw) == 0 and fw.var('tidal__au', Au).fav[1] == 0
+
+
+def test_an_app_s_song_starting_shows_its_heart(fw, queue, mcl):
+    urls_play(fw, Files(fw), HEARTS)
+    for tidal_id in ('app:1:0', 'app:1:2', 'app:1:1'):
+        queue.row(tidal_id)
+    track = fw.fn('ringnav_tidal_track', C.c_int, C.c_void_p, C.c_void_p, C.c_void_p, C.c_void_p)
+    for pos, want in ((0, 1), (1, 0), (2, 0)):  # a song without an item has no heart
+        mcl.pos = pos
+        track(0, 0, 0, 0)
+        assert favourite(fw) == want, pos
+
+
+def test_a_queue_loading_takes_an_app_song_s_heart_with_it(fw, queue, mcl):
+    """Stock sets isFav_playing only when a Tidal page checks its favourites, not per track: a Tidal queue played
+    after an app's would show the last app song's heart. A load clears it (app_fav_load, from ringnav_load), and
+    leaves stock's own alone."""
+    urls_play(fw, Files(fw), HEARTS)
+    queue.row('app:1:0')
+    fw.fn('ringnav_tidal_track', C.c_int, C.c_void_p, C.c_void_p, C.c_void_p, C.c_void_p)(0, 0, 0, 0)
+    assert favourite(fw) == 1
+    load = fw.fn('app_fav_load', None)
+    load()
+    assert favourite(fw) == 0
+    fw.var('isFav_playing', C.c_ubyte).value = 1  # stock's, from a Tidal page's check
+    load()
+    assert favourite(fw) == 1
 
 
 def test_a_url_queue_takes_web_urls_and_card_paths_alone(fw):

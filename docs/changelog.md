@@ -9,6 +9,7 @@
   - Card apps: an app can leave out the **Stop** row on its pages: a page still loading shows only Loading…, and a failed page offers **Retry** and **Cancel**, which goes back as Return does and leaves the app running.
   - Card apps: an app's page can ask you to type a value, such as a sign-in's user name and password, and stay on the same page, which shows what the app chooses (`***` for a password) and is never titled with what you typed.
   - Card apps: an app can open its own page from Now Playing's ⋯ while its music plays, such as its playlists, instead of the stock rows that mean nothing for its songs.
+  - Card apps: Now Playing's heart can make a card app's song a favourite in the app, such as Jellyfin: a song it streams, and a song it synced to the card, which stays one of your favourites on the Q2 too. The heart changes at once, and the app sends it on the next time it runs. It needs an app that supports it; on a streamed song the heart used to try Tidal.
 - **1.8.0**:
   - System: Q2 Pod now runs on Shanling's stock firmware V1.36 instead of V1.32, with its newer kernel, drivers and player.
   - Playback: **Headphones Required**, new in stock V1.36, is under **Resume Songs**. On, nothing starts playing until headphones, Bluetooth or a USB DAC is connected, and the queue isn't restored at start-up. Off by default.

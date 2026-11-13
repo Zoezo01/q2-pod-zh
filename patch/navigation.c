@@ -8964,9 +8964,11 @@ static int qm_run(const void *unused) {
         qm_select();
         batch_add_file(cls, 0xf00a, qm_list(), P(p_vector_select_record, 0), 0);
         ratings_copy_due();
+        fav_told(r, 1);
     } else if (r && a == QA_UNFAV) {
         deleteMusicFromFav(r);
         ratings_copy_due();
+        fav_told(r, 0);
         if (cls == 0xf00a)
             g_delete_flag = 1;          /* My Fav reloads, as Now Playing's heart (0x53cafc) */
     } else if (r && a == QA_PLAYLIST) { /* the playlist page's add mode adds the selected row */

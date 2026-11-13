@@ -149,6 +149,8 @@ class World:
         self.names[f], self.at[f] = name, 0
         if b'w' in how:
             self.written[name] = b''
+        elif b'a' in how:
+            self.written.setdefault(name, self.files.get(name, b''))
         return f
 
     def fread(self, buf, size, n, f, *_):
@@ -393,7 +395,7 @@ def test_more_apps_than_slots(fw):
 def test_the_features_are_published_at_every_scan(fw):
     world = card(fw)
     scan(fw)
-    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections art window urls sort field more\n'
+    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections art window urls sort field more fav\n'
     assert world.of('rename') == [(b'/tmp/q2-addon.caps.tmp', b'/tmp/q2-addon.caps')]
 
 
@@ -3464,6 +3466,56 @@ def test_a_page_the_app_store_is_replacing_waits_for_it(fw, job, stage, running,
 def test_an_app_keeps_its_folders_songs_out_of_the_scrobble_log(fw, manifest, path, logs):
     card(fw, foo=manifest)
     assert fw.fn('addon_scrobbles', C.c_int, C.c_char_p)(path) == logs
+
+
+SYNCED = b'/mnt/mmc/Jellyfin/Broadcast/Tender Buttons/01 - Tears.flac'
+
+
+@pytest.mark.parametrize('manifest,path,told', [
+    (b'name=Foo\nfavdir=Jellyfin\n', SYNCED, True),
+    (b'name=Foo\r\nfavdir=Jellyfin\r\n', SYNCED, True),  # a Windows editor's line ends
+    (b'name=Foo\n', SYNCED, False),  # no favdir: the app hears of no hearts
+    (b'name=Foo\nfavdir=Jellyfin\n', b'/mnt/mmc/Music/a.flac', False),
+    (b'name=Foo\nfavdir=Jellyfin\n', b'/mnt/mmc/Jellyfin2/a.flac', False),  # a folder that only starts the same
+    (b'name=Foo\nfavdir=Jellyfin\n', b'/mnt/mmc/Jellyfin', False),
+    (b'name=Foo\nfavdir=Jellyfin\n', b'/mnt/mmc/Jellyfin/../Music/a.flac', False),
+    (b'name=Foo\nfavdir=Jellyfin\n', b'/tmp/Jellyfin/a.flac', False),
+    (b'name=Foo\nfavdir=Jelly/fin\n', b'/mnt/mmc/Jelly/fin/a.flac', False),  # one folder name, no deeper
+    (b'name=Foo\nfavdir=..\n', b'/mnt/mmc/../a.flac', False),
+])
+def test_a_heart_on_a_song_in_an_apps_favdir_is_told_to_it(fw, manifest, path, told):
+    world = card(fw, foo=manifest)
+    for on in (1, 0):
+        assert fw.fn('addon_fav_path', C.c_int, C.c_char_p, C.c_int)(path, on) == 1
+    want = b'\npath\t1\t%s\n\npath\t0\t%s\n' % (path, path)
+    assert world.written.get(b'/mnt/mmc/.foo/fav.log') == (want if told else None)
+
+
+def test_a_heart_is_appended_to_the_presses_the_app_hasnt_taken(fw):
+    world = card(fw, foo=b'favdir=Jellyfin\n')
+    world.files[b'/mnt/mmc/.foo/fav.log'] = b'item\t1\tabc\n'
+    assert fw.fn('addon_fav', C.c_int, C.c_char_p, C.c_char_p, C.c_char_p, C.c_int)(b'foo', b'item', b'def', 7) == 1
+    assert world.written[b'/mnt/mmc/.foo/fav.log'] == b'item\t1\tabc\n\nitem\t1\tdef\n'
+
+
+def test_a_press_after_a_cut_one_starts_a_line_of_its_own(fw):
+    world = card(fw, foo=b'favdir=Jellyfin\n')
+    world.files[b'/mnt/mmc/.foo/fav.log'] = b'\nitem\t1\tab'  # a write the card cut short
+    fw.fn('addon_fav', C.c_int, C.c_char_p, C.c_char_p, C.c_char_p, C.c_int)(b'foo', b'path', SYNCED, 0)
+    assert world.written[b'/mnt/mmc/.foo/fav.log'].split(b'\n') == [b'', b'item\t1\tab', b'path\t0\t' + SYNCED, b'']
+
+
+def test_a_heart_the_card_wont_take_says_so(fw):
+    world = card(fw, foo=b'favdir=Jellyfin\n')
+    world.fail_write = lambda name: True
+    assert fw.fn('addon_fav_path', C.c_int, C.c_char_p, C.c_int)(SYNCED, 1) == 0
+
+
+@pytest.mark.parametrize('app,key', [(b'../x', b'k'), (b'', b'k'), (b'foo', b'k' * 600)])
+def test_a_heart_for_no_app_or_a_key_too_long_is_never_written(fw, app, key):
+    world = card(fw, foo=b'favdir=Jellyfin\n')
+    assert fw.fn('addon_fav', C.c_int, C.c_char_p, C.c_char_p, C.c_char_p, C.c_int)(app, b'item', key, 1) == 0
+    assert not [n for n in world.written if n.endswith(b'fav.log')]
 
 
 def goes(fw, path):
