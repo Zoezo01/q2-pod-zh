@@ -24,7 +24,9 @@ REPO = 'DiamondBond/q2-pod'  # whose releases Network Update fetches (--update-r
 # 20 px（bar 的子件按禁用态取样式，字号得每个状态都写）、状态栏空闲时的灰色 Q2（不再显示）。
 # D moves the EQ badge to the battery's side (its left-group place pushed the word into the clock's
 # page name), and writes the clock's 16 px for every style state — the disable one says 20 px.
-TAG = 'V' + VERSION.replace('.', '') + 'D'
+# E brings Q2 back when EQ is on (the left's idle mark no longer watches the right group) and
+# raises the battery's three looks one pixel to the bar's text ink.
+TAG = 'V' + VERSION.replace('.', '') + 'E'
 
 def version_ok(version, beta):
     """VERSION is three single digits and BETA one, as TAG packs them; 17.6 or 1.76 would give a 5-character tag too."""

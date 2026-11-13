@@ -6070,7 +6070,7 @@ for status,equalizer,icon in ((0,0,''),(2,0,'bar_play'),(3,0,'bar_pause'),(3,0,'
     assert (('widget_invalidate_force',bar) in [c[:2] for c in m.calls])==changed, (status,icon)
     shown=now
     assert m.nodes[state]['visible']==playing and (not playing or m.nodes[state]['image']==icon)
-    assert m.nodes[idle]['visible']==0  # V1.36's Q2 idle name: we keep the bar's left empty
+    assert m.nodes[idle]['visible']==int(not playing)  # EQ is on the right now: it no longer hides Q2
     assert tuple(m.get(title+O[k]) for k in ('W_X','W_Y','W_W','W_H'))==clock_box
 passed()
 # Stock's 1 s tick (systembar_showface) hides img_state while its own player is stopped, as it

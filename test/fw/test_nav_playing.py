@@ -593,8 +593,8 @@ def test_the_stock_icons_level_fills_its_share_and_charging_fills_it(fw, st, ui,
     assert (ow, oh) == (BODY_W, BODY_H) and (nub[0], nub[2]) == (ox + ow, NUB_W)  # the nub on its right
     assert abs(2 * nub[1] + nub[3] - (2 * oy + oh)) <= 1  # centred on it
     h = ui.box(bar.slot)[3]
-    # icon alone, centred on the slot's rows; beside the percentage it rises BATT_PCT_DY to the digits' ink
-    assert abs(2 * (oy + O['BATT_PCT_DY'] * (mode == 2)) + oh - h) <= 1
+    # every mode rises one pixel to the bar's text ink, not just the one beside the percentage
+    assert abs(2 * (oy + O['BATT_PCT_DY']) + oh - h) <= 1
     assert [t[0] for t in c.texts] == (['100%'] if mode == 2 else [])
     if mode == 2:  # past the nub by the gap, to the slot's end, on its rows
         x = nub[0] + nub[2] + GAP

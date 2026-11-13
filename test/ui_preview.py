@@ -382,7 +382,7 @@ with tempfile.TemporaryDirectory(prefix='q2-ui-preview-') as tmp:
                 inside=effective==3
                 bw,bh,nh=(inc(n) for n in (('BATT_INSIDE_W','BATT_INSIDE_H','BATT_NUB_H') if inside else ('BATT_BODY_W','BATT_BODY_H','BATT_NUB_H')))
                 width=inc('BATT_PCT_W') if effective==1 else bw+inc('BATT_NUB_W')+(inc('BATT_GAP')+inc('BATT_PCT_W') if effective==2 else 0)
-                x=375-STATUS_MARGIN-width; y=(31-bh)//2-(inc('BATT_PCT_DY') if effective==2 else 0)
+                x=375-STATUS_MARGIN-width; y=(31-bh)//2-1  # every mode rises to the bar's text ink
                 if effective!=1:
                     if inside: a += ['-fill',color,'-draw',f'roundrectangle {x},{y} {x+bw-1},{y+bh-1} 3,3']
                     else:

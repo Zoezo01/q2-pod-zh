@@ -3892,9 +3892,10 @@ static int bar_state_sync(void *bar) {
      * disable state on the light bar (V176C..V180B), and a written white never reaches Light
      * Mode's style hook (text_ink's lesson). Transparent here, so stock's own pass draws nothing
      * under ours. */
-    if (st.bar_idle && st.bar_state && st.bar_eq)
-        widget_set_visible(st.bar_idle,
-                           !widget_get_visible(st.bar_state) && !widget_get_visible(st.bar_eq), 0);
+    /* EQ moved to the battery's group (V180D): gating the left's idle wordmark on it hid Q2
+     * whenever EQ was on (V180D). Only the play state's glyph shares this side of the bar. */
+    if (st.bar_idle && st.bar_state)
+        widget_set_visible(st.bar_idle, !widget_get_visible(st.bar_state), 0);
     if (st.bar_idle && widget_get_visible(st.bar_idle)) {
         static const char *const states2[] = { "normal", "focused", "disable" };
         char prop[48];
@@ -4292,9 +4293,10 @@ static void dark_battery(void *canvas, int x, int y, unsigned key) {
 }
 /* A battery body bh rows high, either look's: its top in the slot w. Centred on the row's height,
  * as the icons beside it are, not on w's, which is the bar's (Classic's row is shorter than its
- * bar). Beside the percentage it rises BATT_PCT_DY, to the digits' ink. */
+ * bar). The row's 16 px text inks to 14.4 while a centred body inks to 15.5, so every mode rises
+ * one pixel — what BATT_PCT_DY used to do only while the percentage stood beside the icon. */
 static int batt_top(void *w, int bh) {
-    return (I(P(w, W_PARENT), W_H) + 1 - bh) / 2 - BATT_PCT_DY * (st.batt_mode == 2);
+    return (I(P(w, W_PARENT), W_H) + 1 - bh) / 2 - 1;
 }
 /* Mode 1 is the percentage alone; mode 3 uses a compact solid battery with dark digits; mode 2
  * puts the percentage beside the charge-level icon. Under Classic the battery is
@@ -4324,7 +4326,7 @@ static void paint_battery(void *w, void *canvas) {
         st.pct_sign = (int)(canvas_measure_text(canvas, &c, 1) + 0.5f);
     }
     if (st.batt_mode == 1) {
-        rect_t r = { 0, 0, I(w, W_W), I(w, W_H) };
+        rect_t r = { 0, -1, I(w, W_W), I(w, W_H) }; /* the bar's text's ink, not the box's middle */
         draw_centred(canvas, s, n, &r, px, color);
         return;
     }
