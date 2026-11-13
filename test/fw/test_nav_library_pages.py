@@ -707,8 +707,8 @@ def update_pass(fw, tmp_path, probe, paths):
     fw.mock('time_now_ms', lambda *_: 5000)
     fw.fn('durations_scanned', None)()  # the update's end
     poll = fw.fn('durations_poll', None)
-    poll()  # the read opens
-    poll()  # its one page, then the worker
+    poll()  # the paths read, inside the update's dialog
+    poll()  # the dialog gone: the worker
     probe.run()
     poll()  # joined
 
@@ -730,10 +730,7 @@ def test_long_songs_lists_those_over_ten_minutes_longest_first(fw, ui, song, clo
 def test_long_songs_with_none_says_so(fw, ui, song):
     Library(fw, ui, [song(b'/m/a.flac', b'A')])
     Files(fw, {LENGTHS: lengths((b'/m/a.flac', 60))})
-    probe = Probe(fw, {})
     call(fw, 'long_songs')
-    probe.run()
-    ui.fire('ls_poll')
     assert ui.rows(ui.top()) == [('No songs over 10 minutes', None)]
     call(fw, 'long_songs')  # pressed again while it is open
     assert len(ui.windows) == 1
@@ -782,6 +779,38 @@ def test_long_songs_closed_while_measuring_keeps_what_was_measured(fw, ui, song,
     measured = len(probe.opened)
     call(fw, 'long_songs')  # opened again: nothing left to measure
     assert len(probe.opened) == measured and len(probe.threads) == 1 and ui.captions(ui.top()) == ['B', 'A']
+
+
+def test_long_songs_closed_with_the_switch_off_stops_its_pass(fw, ui, song, clock_text):
+    Library(fw, ui, [song(b'/m/a.flac', b'A'), song(b'/m/b.flac', b'B')])
+    files = Files(fw, {LENGTHS: lengths((b'/m/a.flac', 700))})
+    probe = Probe(fw, {b'/m/b.flac': 800})
+    call(fw, 'long_songs')
+    ui.close(ui.top())
+    probe.run()  # it stops at its first check
+    assert probe.opened == [] and fw.fn('durations_busy', C.c_int, C.c_void_p, C.c_void_p)(None, None) == 0
+    assert files.files[LENGTHS] == lengths((b'/m/a.flac', 700))  # what was measured is kept
+
+
+def test_long_songs_closed_with_the_switch_on_lets_its_pass_finish(fw, ui, song, clock_text):
+    Library(fw, ui, [song(b'/m/a.flac', b'A')])
+    Files(fw)
+    Config(fw, SCANDURATIONS=b'1')
+    fw.fn('pod_settings', None)()
+    probe = Probe(fw, {b'/m/a.flac': 700})
+    call(fw, 'long_songs')
+    ui.close(ui.top())
+    probe.run()
+    assert probe.opened == [b'/m/a.flac']
+
+
+def test_long_songs_after_a_restart_walks_nothing_when_every_song_has_a_length(fw, ui, song, clock_text):
+    """A fresh durations state (RAM, gone at power-off) over a full cache: listed at once."""
+    Library(fw, ui, [song(b'/m/a.flac', b'A')])
+    Files(fw, {LENGTHS: lengths((b'/m/a.flac', 700))})
+    probe = Probe(fw, {})
+    call(fw, 'long_songs')
+    assert not probe.threads and not fw.calls('ringnav_statx') and ui.rows(ui.top()) == [('A', '11:40')]
 
 
 def test_a_lengths_file_that_cannot_be_read_is_not_written_over(fw, ui, song, clock_text):

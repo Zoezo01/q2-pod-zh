@@ -3358,6 +3358,8 @@ static int to_tracks(const void *unused) {
         void *row = page_row_detail(view, i, track_name(name, sizeof name, song),
                                     timed ? duration : 0, play);
         if (centred) widget_use_style(widget_get_child(row, 0), "s_scrlabel_white20c");
+        if (centred && timed)
+            widget_set_prop_str(widget_get_child(row, 1), "style:normal:text_align_h", "center");
     }
     page_push(view, cf.text_albums && cf.scoped == ARTIST_ALBUMS); /* from a list, not the covers */
     return 0;

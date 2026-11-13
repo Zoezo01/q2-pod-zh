@@ -637,7 +637,8 @@ static void ls_show(void) {
 static int ls_page_closed(void *ctx, void *event) {
     rt_closed(ctx, event);
     stop_timer(&ls.timer);
-    durations_busy(0, 0); /* harvest if finished; a running shared scan keeps going */
+    if (!st.scan_durations) durations_cancel(); /* switch off: the pass is the page's own */
+    durations_busy(0, 0); /* harvest if finished; with the switch on a pass goes on */
     if (ls.songs) deque_destroy(ls.songs);
     ls.songs = 0;
     return 0;

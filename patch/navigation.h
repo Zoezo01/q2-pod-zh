@@ -537,7 +537,7 @@ int long_songs(void *ctx, void *event);
 /* durations.c: UI-thread API (duration_seconds and duration_text in peq.h); the worker alone
  * probes files, the UI publishes after join. */
 int durations_start(void *songs), durations_busy(int *done, int *total);
-void durations_cancel(void), durations_poll(void), durations_shutdown(void);
+void durations_cancel(void), durations_poll(void), durations_shutdown(int bounded);
 void mp_counted(void *r, unsigned key, unsigned evicted);
 int most_played(void *ctx, void *event);
 int shuffle_menu(void *ctx, void *event);

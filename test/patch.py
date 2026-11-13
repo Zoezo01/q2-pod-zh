@@ -14542,7 +14542,7 @@ m.nodes[m.top]['children']=[view]; m.call(address=HOOKS['localmusic_page_init'][
 f,ctx=m.handler(m.nodes[m.nodes[view]['children'][14]]['children'][0],O['EVT_CLICK'])
 assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0; m.page=m.top
 assert m.nodes[m.page]['name']=='longsongs_page' and m.texts()==['Measuring songs…','Cancel'] and len(m.threads)==1
-worker,arg=m.threads[0]; assert m.call(address=worker,args=(arg,0,0,0),gap=0)==0 and m.probed==['/p/A','/p/B','/p/C','/p/D']
+worker,arg=m.threads[0]; assert m.call(address=worker,args=(arg,0,0,0),gap=0)==0 and sorted(m.probed)==['/p/A','/p/B','/p/C','/p/D']
 m.advance(250)
 want=['Long Songs','E','Artist · 20:00','C','Artist · 15:00','A','Artist · 11:40']
 assert m.texts()==want,m.texts()

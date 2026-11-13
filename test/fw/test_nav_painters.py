@@ -1892,6 +1892,17 @@ def test_cover_flow_sort_steps_and_refresh_says_when(fw):
     assert len(toasts) == 1 and toasts[0]  # nothing in view changes: a toast says when
 
 
+
+def test_scan_song_durations_turned_off_cancels_a_pass(fw):
+    from test_durations import Ds
+    ui, win, view, settings, _ = settings_page(fw, MINIMAL, 'display_page', 'scroll_view_display', SCANDURATIONS=b'1')
+    pod_rows(fw, win, 'scroll_view_display', POD['POD_SCAN_DURATIONS'], 1)
+    state = fw.var('durations__ds', Ds)
+    state.due = 1  # an update's end, its paths not read yet
+    click(ui, view.children[0])
+    assert settings.written == [('SCANDURATIONS', 0)] and state.cancel and not state.due
+
+
 @pytest.mark.parametrize('was', [0, 1])
 def test_key_tone_shows_click_with_headphones_while_on(fw, st, scratch, was):
     ui, win, view, settings, _ = settings_page(fw, MINIMAL, 'controls_page', 'scroll_view_controls')

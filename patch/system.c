@@ -291,7 +291,7 @@ void ringnav_clean_end(void) {
     if (pw.ended) return;
     pw.ended = 1;
     wdt_set(0);
-    durations_shutdown();
+    durations_shutdown(1);
     unlink(STATE_FILE);
     unlink(STALL_FILE); /* one the thread hadn't removed yet: S90play's next demo never would */
     coverflow_clean_end();

@@ -8816,7 +8816,7 @@ int ringnav_usbmode(void *a, void *b, void *c, void *d) {
     addon_card_away();
     album_lyrics_stop();
     playlist_art_stop();
-    durations_shutdown();
+    durations_shutdown(0);
     return stock_usbmode_trampoline(a, b, c, d);
 }
 
