@@ -2043,6 +2043,21 @@ def test_the_themes_come_with_rockbox_and_go_before_it(fw):
     assert s.labels() == ['Install']  # and the themes' row with Rockbox
 
 
+def test_another_app_s_remove_leaves_rockbox_and_its_themes(fw):
+    rockbox = {b'/mnt/mmc/.rockbox/rockbox': b'bin', b'/mnt/mmc/.rockbox/wps/a.wps': b'wps',
+               b'/mnt/mmc/.q2/apps/rockbox.files': b'.rockbox/rockbox\n', b'/mnt/mmc/.q2/apps/rockbox.tag': b'2.0',
+               b'/mnt/mmc/.q2/apps/themes.files': b'.rockbox/wps/a.wps\n', b'/mnt/mmc/.q2/apps/themes.tag': b'2.0'}
+    card = Disk(fw, {SOURCES: b'x/q2-rockbox Rockbox\nx/q2-rockbox-themes Rockbox Themes\nme/q2-foo Foo\n', **rockbox,
+                     FOO_APP: b'bin', b'/mnt/mmc/.q2/apps/foo.files': b'.foo/q2-foo\n', b'/mnt/mmc/.q2/apps/foo.tag': b'2.0'})
+    s = Store(fw, card, wifi=0)
+    assert s.labels() == ['Installed', 'Installed', 'Installed']
+    s.click(3)
+    s.click(3)
+    assert s.run() == 0 and s.toasts[-1] == 'Foo removed' and FOO_APP not in card.files
+    assert {path: card.files.get(path) for path in rockbox} == rockbox  # the themes go with Rockbox alone
+    assert s.labels() == ['Installed', 'Installed', 'Install']
+
+
 def test_the_themes_pressed_once_rockbox_left_the_card_ask_for_it(fw):
     card = Disk(fw, {SOURCES: b'x/q2-rockbox Rockbox\nx/q2-rockbox-themes Rockbox Themes\n', b'/mnt/mmc/.rockbox/rockbox': b'bin'})
     s = Store(fw, card, wifi=0)
