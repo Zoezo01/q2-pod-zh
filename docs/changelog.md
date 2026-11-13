@@ -3,6 +3,7 @@
 - **1.8.2**:
   - Playback: with **Headphones Required** on, the Q2 restores your queue at start-up again, paused, as **Memory Playback** has it. Since 1.8.0 nothing was restored with the switch on, even with headphones connected. **In-Vehicle Mode** still starts playing, or restores the queue paused when nothing is connected.
   - Controls: **Wheel Sensitivity** goes down to 10%, for a slower wheel: 20% takes a third of a turn per step and 10% most of a turn. 50% is still the default and nothing changes unless you lower it.
+  - Playlists: under **Theme: Classic**, **Edit Playlists…** is now **Select Playlists…**, since it marks playlists to import, export or delete. To change a playlist's songs, use its **More → Edit Playlist**.
   - Quick Settings: holding Play/Pause there shows **Wheel: Volume** or **Wheel: Brightness** as a pop-up in your theme's style, as other messages are. It was a thin black strip.
   - Settings: the **Language** row is hidden until the other languages are translated. Q2 Pod's own pages are in English only, so every other language read half-blank.
 - **1.8.1**:

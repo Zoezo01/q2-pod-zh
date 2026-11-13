@@ -7001,7 +7001,7 @@ static void playlist_covers(void) {
     run();
     assert(!force_closes && list_win == under && list_cd == 41);
     assert(slide() == s && s->visible && !strcmp(album_caption(view), "List 1"));
-    /* The hold's New Playlist and Edit Playlists…: the covers close, unanimated, for the Playlists
+    /* The hold's New Playlist and Select Playlists…: the covers close, unanimated, for the Playlists
        page under them; with no covers up, nothing. */
     force_closes = 0;
     assert(coverflow_playlists_close() == under && force_closes == 1 && force_closed == page);

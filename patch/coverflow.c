@@ -3705,7 +3705,7 @@ int coverflow_playlists(void *lists) {
     return 1;
 }
 
-/* The playlists' covers closed, unanimated, for their hold's New Playlist and Edit Playlists…:
+/* The playlists' covers closed, unanimated, for their hold's New Playlist and Select Playlists…:
  * the Playlists page under them, or 0 when they aren't up. */
 void *coverflow_playlists_close(void) {
     void *under = cf.scoped == PLAYLISTS ? page_under() : 0;

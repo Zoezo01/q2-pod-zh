@@ -758,7 +758,7 @@ static void pl_rows(void *win) {
     /* the bar reads the toolbar's first label, which stock writes with the last list opened */
     tk_snprintf(words, sizeof words,
                 marks     ? "%d Selected"
-                : marking ? "Edit Playlists"
+                : marking ? "Select Playlists"
                           : "Playlists",
                 marks);
     if (nav && widget_count_children(nav)) widget_set_text_utf8(widget_get_child(nav, 0), words);
@@ -938,7 +938,7 @@ void playlist_open(void *win, int cd_num) {
     coverflow_playlists_close();
 }
 
-/* A playlist cover's hold: New Playlist (edit 0) or Edit Playlists… (Classic's alone: its select
+/* A playlist cover's hold: New Playlist (edit 0) or Select Playlists… (Classic's alone: its select
  * mode) on this page, the covers closed over it. New is the toolbar's or Classic's row's target. */
 void playlists_edit(int edit) {
     if (coverflow_playlists_close()) pl_click((void *)(long)(edit ? PL_EDIT : PL_NEW), 0);
@@ -981,7 +981,7 @@ static void pl_dress(void *win, int first) {
     } else {
         pl_action(view, "Select All", PL_SELECT_ALL, 0, 1);
         pl_action(view, "New Playlist\xe2\x80\xa6", PL_NEW, 1, 2);
-        pl_action(view, "Edit Playlists\xe2\x80\xa6", PL_EDIT, 1, 3);
+        pl_action(view, "Select Playlists\xe2\x80\xa6", PL_EDIT, 1, 3);
         pl_action(view, "Import Playlists", PL_IMPORT, 0, -1);
         pl_action(view, "Export", PL_EXPORT, 0, -1);
         pl_action(view, "Delete", PL_DELETE, 0, -1);

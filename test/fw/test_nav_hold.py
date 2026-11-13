@@ -1073,7 +1073,7 @@ def classic(fw, ui, recs, st, stock_globals):
 def test_classic_playlists_rows_are_new_edit_then_the_playlists_with_their_counts(classic, ui):
     p = classic()
     assert p.ring(p.win) == 0x31
-    assert p.shown() == [('New Playlist…',), ('Edit Playlists…',), ('Gym', '12 Songs'), ('Road Trip', '1 Song'),
+    assert p.shown() == [('New Playlist…',), ('Select Playlists…',), ('Gym', '12 Songs'), ('Road Trip', '1 Song'),
                          ('Sleep', '0 Songs')]
     assert p.title() == 'Playlists' and not ui.lookup(p.win, '_pl_none', 0)
 
@@ -1140,7 +1140,7 @@ def test_a_covers_centre_opens_its_playlist_whatever_mode_a_picker_left(classic,
 def test_a_row_click_runs_stocks_handler_next_pass(classic, ui):
     p = classic()
     p.ring(p.win)
-    ui.click(p.action('Edit Playlists…'))
+    ui.click(p.action('Select Playlists…'))
     assert not ui.dispatched
     ui.due('pl_due')
     target, kind = ui.dispatched[0]
@@ -1150,7 +1150,7 @@ def test_a_row_click_runs_stocks_handler_next_pass(classic, ui):
 def test_the_last_row_clicked_in_a_pass_runs(classic, ui):
     p = classic()
     p.ring(p.win)
-    ui.click(p.action('Edit Playlists…'))
+    ui.click(p.action('Select Playlists…'))
     ui.click(p.action('New Playlist…'))
     ui.due()
     assert [ui.handlers(t, EVT_CLICK) for t, _ in ui.dispatched] == [[PL_STOCK[PL_NEW]]]
@@ -1166,12 +1166,12 @@ def test_a_row_run_after_the_page_went_does_nothing(classic, ui):
 
 
 def select_mode(p, ui, fw):
-    """Edit Playlists… as stock's handler takes it: g_navbar_status 1, the rows rebuilt with their marks."""
+    """Select Playlists… as stock's handler takes it: g_navbar_status 1, the rows rebuilt with their marks."""
     def edit(w, e, *_):
         fw.var('g_navbar_status', C.c_ubyte).value = 1
         p.ring(p.win)
     fw.mock('stock_dispatch_trampoline', edit)
-    ui.click(p.action('Edit Playlists…'))
+    ui.click(p.action('Select Playlists…'))
     ui.due('pl_due')
 
 
@@ -1181,7 +1181,7 @@ def test_edit_playlists_shows_select_modes_rows(classic, ui, fw):
     select_mode(p, ui, fw)
     assert p.shown() == [('Select All',), ('Gym', '12 Songs'), ('Road Trip', '1 Song'), ('Sleep', '0 Songs'),
                          ('Import Playlists',), ('Done',)]
-    assert p.title() == 'Edit Playlists' and ui.nodes[p.win].props['_pl_marks'] == 1
+    assert p.title() == 'Select Playlists' and ui.nodes[p.win].props['_pl_marks'] == 1
     assert ui.nodes[p.view].props['_ringnav_index'] == 1  # Select All's first playlist
 
 
@@ -1221,7 +1221,7 @@ def test_done_leaves_select_mode_for_the_list_on_edit(classic, ui, fw):
     select_mode(p, ui, fw)
     fw.var('g_navbar_status', C.c_ubyte).value = 0  # stock's Done
     p.ring(p.win)
-    assert p.shown()[:2] == [('New Playlist…',), ('Edit Playlists…',)] and ui.nodes[p.win].props['_pl_marks'] == 0
+    assert p.shown()[:2] == [('New Playlist…',), ('Select Playlists…',)] and ui.nodes[p.win].props['_pl_marks'] == 0
     assert p.title() == 'Playlists'
 
 

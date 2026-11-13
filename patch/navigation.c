@@ -8911,9 +8911,9 @@ static void qm_goto(void *r, int album) {
 /* Deferred so the dialog is never closed under its own click dispatch. */
 static int qm_open(const void *unused);
 
-/* New Playlist (edit 0) and Edit Playlists… run once the dialog is destroyed, so the Playlists page
- * is on top however its close animates (playlists.c's click acts on the top page only), and from
- * the pass after, so the covers never close inside the dialog's destroy. */
+/* New Playlist (edit 0) and Select Playlists… run once the dialog is destroyed, so the Playlists
+ * page is on top however its close animates (playlists.c's click acts on the top page only), and
+ * from the pass after, so the covers never close inside the dialog's destroy. */
 static int qm_edit_run(const void *info) {
     playlists_edit((int)(long)P(info, TIMER_CTX));
     return 0;
@@ -9202,7 +9202,7 @@ static int qm_open(const void *unused) {
         if (np_more()) acts[n++] = QA_MORE; /* last: Now Playing's own menu */
     }
     if (st.qm_kind == QM_PLAYLIST) acts[n++] = QA_MORE; /* its dots' page */
-    /* the list's own rows, which its covers hide: Edit Playlists… is Classic's select mode; a
+    /* the list's own rows, which its covers hide: Select Playlists… is Classic's select mode; a
      * toolbar's page edits from its toolbar */
     if (st.qm_kind == QM_PLAYLIST && coverflow_playlist(page)) {
         acts[n++] = QA_NEW_PLAYLIST;
@@ -9228,7 +9228,7 @@ static int qm_open(const void *unused) {
                                         "Chapters",
                                         "More…",
                                         "New Playlist",
-                                        "Edit Playlists…" };
+                                        "Select Playlists…" };
     char rated[32];
     /* stock sortselect row styles */
     int painted = dialogs_painted(), pitch = painted ? theme()->page_row : QM_ROW;

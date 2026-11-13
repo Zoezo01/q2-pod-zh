@@ -4175,7 +4175,7 @@ def cpm_wheel(m,key,n=1):
     m.paint(m.view)
 def cpm_centre(m):  # Centre on the selected row, the row's click running as stock's dispatch does
     m.confirm(); m.advance(0,clear=False); m.stack_rows(); m.paint(m.view)
-NEW,EDIT='New Playlist…','Edit Playlists…'
+NEW,EDIT='New Playlist…','Select Playlists…'
 LISTS=['List 0','List 1','List 2']
 
 # The list: stock's rows two lines high, its tile row and toolbar hidden; New Playlist and Edit
@@ -4199,7 +4199,7 @@ assert m.get(action+O['W_H'])==32 and m.get(m.nodes[m.nodes[action]['children'][
 # ... the separators: every shown row but the list's last.
 assert [m.nodes[r]['name'] for r in kids if m.nodes[r]['visible']]==['_page_tall']*4+['']; passed()
 
-# New Playlist and Edit Playlists head the list; the page opens on its first playlist below them, as stock's and the
+# New Playlist and Select Playlists head the list; the page opens on its first playlist below them, as stock's and the
 # iPod's lists of playlists alone do. The wheel reaches them, and Centre reaches stock's own handlers.
 m=ClassicPlaylistMachine(); m.rebuild(); m.paint(m.view); assert m.selected(m.view)==2 and m.rows()[2]=='List 0'
 cpm_wheel(m,O['KEY_NEXT'],2); assert m.selected(m.view)==4
@@ -4210,11 +4210,11 @@ cpm_wheel(m,O['KEY_NEXT']); cpm_centre(m); assert m.navbar()==1 and m.dialogs==[
 # ... an empty list opens on New Playlist.
 m=ClassicPlaylistMachine(0); m.rebuild(); m.paint(m.view); assert m.selected(m.view)==0; passed()
 
-# Edit Playlists is stock's select mode with its toolbar hidden: Select All first, Import and Done last, the bar's own
+# Select Playlists is stock's select mode with its toolbar hidden: Select All first, Import and Done last, the bar's own
 # word; the selection goes on the first playlist. Return leaves the mode, not the page, and stock's rows come back.
 m=ClassicPlaylistMachine(); m.rebuild(); m.paint(m.view); cpm_wheel(m,O['KEY_PREV']); cpm_centre(m)
 assert m.navbar()==1 and m.marks==[0,0,0] and m.nodes[m.nav]['visible']==0
-assert m.rows()==['Select All']+LISTS+['Import Playlists','Done'] and m.bar()=='Edit Playlists' and m.selected(m.view)==1
+assert m.rows()==['Select All']+LISTS+['Import Playlists','Done'] and m.bar()=='Select Playlists' and m.selected(m.view)==1
 button=m.row_button('List 0'); choice=next(k for k in m.nodes[button]['children'] if m.nodes[k]['name'].startswith('img_choice'))
 info=next(k for k in m.nodes[button]['children'] if m.nodes[k]['name']=='view_info')
 assert m.nodes[choice]['visible']==1 and m.get(choice+O['W_X'])==333 and m.get(info+O['W_X'])==20 and m.get(info+O['W_W'])==309
@@ -4232,13 +4232,13 @@ cpm_centre(m); assert m.marks==[0,1,0] and m.bar()=='1 Selected' and m.selected(
 assert m.rows()==['Select All']+LISTS+['Import Playlists','Export 1 Playlist','Delete 1 Playlist…','Done']
 m.tap(m.row_button('List 0')); assert m.marks==[1,1,0] and m.bar()=='2 Selected' and m.rows()[-3:-1]==['Export 2 Playlists','Delete 2 Playlists…']
 # ... and a mark taken back takes its rows with it: none marked, no Export or Delete (the count ran before the mark).
-m.tap(m.row_button('List 0')); m.tap(m.row_button('List 1')); assert m.marks==[0,0,0] and m.bar()=='Edit Playlists'
+m.tap(m.row_button('List 0')); m.tap(m.row_button('List 1')); assert m.marks==[0,0,0] and m.bar()=='Select Playlists'
 assert m.rows()[-2:]==['Import Playlists','Done']
 m.tap(m.row_button('List 1')); m.tap(m.row_button('List 0')); assert m.marks==[1,1,0] and m.bar()=='2 Selected'
 m.tap(m.row_button('Select All')); assert m.marks==[1,1,1] and m.bar()=='3 Selected' and m.rows()[-2]=='Delete 3 Playlists…'
 # ... and then reads Deselect All, which clears them: stock's toggle on g_allselect_flag.
 assert m.rows()[0]=='Deselect All' and m.u.mem_read(O['G_ALLSELECT_FLAG'],1)==b'\1'
-m.tap(m.row_button('Deselect All')); assert m.marks==[0,0,0] and m.bar()=='Edit Playlists' and m.rows()[-2:]==['Import Playlists','Done']
+m.tap(m.row_button('Deselect All')); assert m.marks==[0,0,0] and m.bar()=='Select Playlists' and m.rows()[-2:]==['Import Playlists','Done']
 assert m.rows()[0]=='Select All'
 # ... every row marked by hand sets the flag too, so it reads Deselect All and clears them.
 for name in LISTS: m.tap(m.row_button(name))
@@ -4269,7 +4269,7 @@ cpm_centre(m); assert m.marks==[0,1,1] and not m.confirms and not m.deletes  # t
 m.answer=0; m.tap(m.row_button('Delete 2 Playlists…')); assert len(m.confirms)==1 and not m.deletes
 m.answer=10; m.tap(m.row_button('Delete 2 Playlists…')); assert len(m.confirms)==2 and m.deletes==[[0,1,1]]; passed()
 
-# Import is inside Edit Playlists, and on an empty list a row of its own beside New Playlist, over a label that holds its font.
+# Import is inside Select Playlists, and on an empty list a row of its own beside New Playlist, over a label that holds its font.
 m=ClassicPlaylistMachine(0); kids=m.rebuild()
 assert m.rows()==[NEW,'Import Playlists'] and m.nodes[m.row_button(NEW)]['visible']
 note=next(k for k in m.nodes[m.top]['children'] if m.nodes[k]['name']=='_pl_none')
@@ -9301,10 +9301,10 @@ assert m.call(O['KEY_PLAY'],address=syms['on_wm_keylong_fun'],event_type=O['EVT_
 m.close(); m.advance(0); assert not any(p[0]=='dialog/sortselect_dialog' for p in m.opened); passed()
 
 # Hold Play/Pause on a playlist's cover (navigation.c qm_hold): the list's own menu (playlist_hold), New Playlist and,
-# under Classic, Edit Playlists… last (a toolbar's page edits from its toolbar). The playlist is found in the live list by its cd_num, as New, Rename and Delete
+# under Classic, Select Playlists… last (a toolbar's page edits from its toolbar). The playlist is found in the live list by its cd_num, as New, Rename and Delete
 # read that list again under the covers after they copied it: More… opens the More page at its index there, and a
 # playlist gone from it holds nothing.
-PL_COVER_MENU=['Play Next','Add to Queue','Shuffle','More…','New Playlist','Edit Playlists…']
+PL_COVER_MENU=['Play Next','Add to Queue','Shuffle','More…','New Playlist','Select Playlists…']
 class PlaylistCoverMachine(CoverflowMachine):
     def __init__(self):
         super().__init__()
@@ -9384,8 +9384,8 @@ new_one=m.song('Renamed',4); m.word(new_one+O['REC_TITLE'],m.string('Renamed'));
 m.heads=[m.lists[0],new_one,m.lists[2]]; pl_front(m); assert cover_cd(m)==11
 m.press(100); assert m.hold()==11 and m.release()==0 and m.nodes[m.title]['text']=='Renamed',m.nodes[m.title]['text']
 m.pick(3); m.advance(0); assert m.opened[-1]==('localmusic/playlistsmore_page',1); passed()
-# New Playlist and Edit Playlists… (playlists.c playlists_edit): the covers close (coverflow_playlists_close) and New
-# runs as the page's own: Classic's row's target, Minimal's toolbar button, stock's dialog either way. Edit Playlists…
+# New Playlist and Select Playlists… (playlists.c playlists_edit): the covers close (coverflow_playlists_close) and New
+# runs as the page's own: Classic's row's target, Minimal's toolbar button, stock's dialog either way. Select Playlists…
 # (Classic's alone) is stock's select mode, Import in it. With no covers up, nothing.
 def pl_edit(edit,classic=True,covers=True,theme=None):
     class M(ClassicPlaylistMachine):
@@ -9406,7 +9406,7 @@ for classic in (True,False):
     m=pl_edit(0,classic); assert m.shut==1 and m.top==m.page and m.dialogs==['dialog/addplaylist_dialog'] and m.navbar()==0
     assert m.bar()==m.before or classic,(m.bar(),m.before); passed()  # Minimal's toolbar keeps its own words
 m=pl_edit(1); assert m.shut==1 and m.top==m.page and m.navbar()==1 and not m.dialogs
-assert m.rows()==['Select All']+LISTS+['Import Playlists','Done'] and m.bar()=='Edit Playlists'; passed()
+assert m.rows()==['Select All']+LISTS+['Import Playlists','Done'] and m.bar()=='Select Playlists'; passed()
 m=pl_edit(0,classic=False,theme='2'); assert m.shut==1 and m.top==m.page and m.dialogs==['dialog/addplaylist_dialog'] and m.navbar()==0 and m.bar()==m.before; passed()
 for edit in (0,1):
     m=pl_edit(edit,covers=False); assert m.shut==1 and m.top==m.page and not m.dialogs and m.navbar()==0; passed()
