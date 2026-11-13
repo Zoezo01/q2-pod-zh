@@ -562,9 +562,11 @@ static inline int arc_out(int r, int y) {
 #define WINDOW_STAGE_OPENED 3
 #define EMPTY_POLL_MS 50
 /* With the screen off (the wheel is the volume), WHEEL_DARK_GUARD units of one touch's travel one
- * way (100, half a turn, whatever the sensitivity) tick nothing; the wheel then ticks until it has
- * been still WHEEL_DARK_IDLE_MS, which also restarts an unfinished guard. Calibration knobs. */
-#define WHEEL_DARK_GUARD 100
+ * way (130, about two thirds of a turn, whatever the sensitivity) tick nothing; the wheel then ticks
+ * until it has been still WHEEL_DARK_IDLE_MS, which also restarts an unfinished guard. Calibration
+ * knobs. It was 100 until 1.8.1: since 1.8.0 every tick past the guard steps the volume, where
+ * 1.7's dark loop lost a turn's first ticks, so a brush just past half a turn moved it. */
+#define WHEEL_DARK_GUARD 130
 #define WHEEL_DARK_IDLE_MS 1500
 /* A tick needs a ring frame with pressure this recent (tick_gate, navigation.c), and the same gap in
  * frames ends Return's stop. Return's stop (ringnav_queue_event, playback.c): a second Return with

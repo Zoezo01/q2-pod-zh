@@ -1415,23 +1415,24 @@ def guard(fw):
 @in_fork
 def test_guard_holds_a_brush(fw):
     wheel = dark(fw)
-    assert wheel.touch(199) == 100 and wheel.ticks() == []  # 99 units
+    wheel.touch(190)
+    assert wheel.touch(29) == 100 and wheel.ticks() == []  # 129 units, the seam crossed
 
 
 @in_fork
 def test_guard_passes_one_tick_for_28_units_past_it(fw):
     wheel = dark(fw)
     wheel.touch(190)  # 90
-    wheel.touch(38)   # 48 more, the seam crossed: 138, 38 past
-    assert wheel.ticks() == ['prev'] and guard(fw) == 1600
+    wheel.touch(68)   # 78 more, the seam crossed: 168, 38 past
+    assert wheel.ticks() == ['prev'] and guard(fw) == 2080
 
 
 @in_fork
 def test_guard_open_ticks_as_lit_reversals_and_lifts_too(fw):
     wheel = dark(fw)
-    wheel.touch(190), wheel.touch(28)  # 128 units across the seam: 28 past
+    wheel.touch(190), wheel.touch(58)  # 158 units across the seam: 28 past
     assert wheel.ticks() == ['prev']
-    wheel.touch(190)  # back across it: a reversal, 38 units
+    wheel.touch(20)  # back: a reversal, 38 units
     assert wheel.ticks() == ['prev', 'next']
     wheel.lift()
     wheel.touch(100), wheel.touch(128)
@@ -1444,8 +1445,8 @@ def test_guard_reversal_arms_it_again(fw):
     wheel.touch(180)  # 80
     wheel.touch(170)  # back 10: starts again, the other way
     assert guard(fw) == -160
-    wheel.touch(110), wheel.touch(60)  # 110 down in all, 10 past
-    assert guard(fw) == 1600 and wheel.ticks() == []
+    wheel.touch(110), wheel.touch(30)  # 150 down in all, 20 past
+    assert guard(fw) == 2080 and wheel.ticks() == []
 
 
 @in_fork
@@ -1459,13 +1460,13 @@ def test_guard_lift_before_it_opens_arms_it_again(fw):
 @in_fork
 def test_guard_stillness_arms_it_again(fw):
     wheel = dark(fw)
-    wheel.touch(190), wheel.touch(18)
-    assert guard(fw) == 1600
+    wheel.touch(190), wheel.touch(48)
+    assert guard(fw) == 2080
     wheel.now += 1499
-    wheel.touch(18)
-    assert guard(fw) == 1600
+    wheel.touch(48)
+    assert guard(fw) == 2080
     wheel.now += 1500
-    wheel.touch(18)
+    wheel.touch(48)
     assert guard(fw) == 0
 
 
@@ -1502,12 +1503,12 @@ def wheel(fw):
 def test_the_screen_lighting_arms_the_guard_again(fw, wheel):
     fw.var('wheel_guard', C.c_int).value = 1
     lit = fw.var('g_backlight_status', C.c_ubyte)
-    wheel.touch(100), wheel.touch(190), wheel.touch(28)  # 128 units across the seam: 28 past the guard
+    wheel.touch(100), wheel.touch(190), wheel.touch(58)  # 158 units across the seam: 28 past the guard
     assert wheel.ticks() == ['prev']
     lit.value = 1
-    wheel.touch(28)
+    wheel.touch(58)
     lit.value = 0
-    wheel.touch(56)  # 28 units dark again: a brush, held
+    wheel.touch(86)  # 28 units dark again: a brush, held
     assert wheel.ticks() == ['prev']
 
 
@@ -1517,8 +1518,9 @@ def test_a_pockets_rubbing_back_and_forth_never_opens_the_guard(fw, wheel):
     x = 10
     wheel.touch(x)
     for stroke in [out, -10] * 4 + [out]:  # far past the guard one way in all; the clock still, so only
-        x = (x + stroke - 1) % 200 + 1     # each reversal arms it again
-        wheel.touch(x)
+        for part in (stroke // 2, stroke - stroke // 2):  # each reversal arms it again; a sample reads
+            x = (x + part - 1) % 200 + 1                  # at most half a turn, so a stroke is two
+            wheel.touch(x)
     assert wheel.ticks() == []
 
 

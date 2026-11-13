@@ -1112,7 +1112,7 @@ for _ in range(3): m.x=(m.x+U-1)%200+1; assert not m.read(m.x,1,gap=FRESH-1) and
 m=stopped(); ghost(m,100,5); assert m.mute(); m.press(O['KEY_CENTER']); assert m.loop_posts[-1][1]==O['KEY_CENTER'] and m.input(DOWN_,O['KEY_CENTER'])
 m.x=(m.x+4)%200+1; assert not m.read(m.x,1,gap=0) and m.mute()
 m.x=(m.x+4)%200+1; m.read(m.x,1,gap=3600*1000); assert not m.mute() and ghost(m,20,5)
-# Volume Guard: no shield from a ghost. Screen off, it holds the first half turn of any touch, then a
+# Volume Guard: no shield from a ghost. Screen off, it holds the first WHEEL_DARK_GUARD units of any touch, then a
 # ghost with no lift ticks on (docs/internals.md); the stop works dark too.
 m=EncoderMachine(); m.word(ps['wheel_guard'],1); m.byte(syms['g_backlight_status'],0)
 m.read(100,1); m.x=100; assert not m.read(100+U,1) and ghost(m,100,5); m.drain(); m.press(); since(m,STOP); m.press(); assert m.mute() and not ghost(m,20,5)
@@ -1178,14 +1178,14 @@ def dark(m,on=1):
 def later(ms): return lambda m: setattr(m,'now',m.now+ms)
 def turn(x,n,step=1): return [((x+step*k-1)%200+1,1) for k in range(1,n+1)]  # a unit per sample from x
 X=10+D-1  # where D-1 units up from 10 stop
-assert D==100 and wheel([dark,(10,1)]+turn(10,D-1))[0]==[]           # a brush under half a turn
+assert D==130 and wheel([dark,(10,1)]+turn(10,D-1))[0]==[]           # a brush under the guard
 assert wheel([dark,(10,1)]+turn(10,D-1),sensitivity('200')[0])[0]==[]  # at any sensitivity
 assert wheel([dark,(10,1)]+turn(10,D+2*U-1))[0]==[P]                  # past it: every U ticks
 assert wheel([dark,(10,1)]+turn(10,D+2*U))[0]==[P,P]
 assert wheel([dark,(150,1)]+turn(150,D+U,-1))[0]==[N]                 # either way, over the seam
 assert wheel([dark,(150,1),(90,1),(90,1)]+turn(90,D+U-60,-1))[0]==[N]  # still samples do not reverse
 for step,key in ((1,P),(-1,N)):
-    samples=[dark,(100,1),((100+90*step-1)%200+1,1),((100+140*step-1)%200+1,1)]
+    samples=[dark,(100,1),((100+90*step-1)%200+1,1),((100+170*step-1)%200+1,1)]
     assert wheel(samples)[0]==[key]                                  # crossing carries its excess
     assert wheel(samples+[((100+(D+2*U)*step-1)%200+1,1)])[0]==[key,key]
 assert wheel([(100,1),(100-U//2,1),(100-U//2,1),(100-U,1)])[0]==[N]  # lit carry survives still samples too
