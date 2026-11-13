@@ -775,8 +775,9 @@ static void snake_key(unsigned key) {
 /* A pile's column on screen: the stock, the waste, a gap and the foundations over the tableau. */
 static const unsigned char col[PILES] = { 0, 1, 3, 4, 5, 6, 0, 1, 2, 3, 4, 5, 6 };
 
-/* Centre picks a pile's cards up (the stock draws instead) and drops them where they fit; Centre
- * again on the same pile sends its top card home, or puts it back. */
+/* Centre picks a pile's cards up (the stock draws instead) and drops them where they fit; where
+ * they don't, that pile's are picked up instead (the stock draws), so a held pile never needs
+ * putting back first. Centre again on the same pile sends its top card home, or puts it back. */
 static void solitaire_key(unsigned key) {
     struct solitaire *s = &g->sol;
     int wheel = key == KEY_NEXT ? 1 : key == KEY_PREV ? -1 : 0, cur = s->cur, moved = 0;
@@ -793,7 +794,12 @@ static void solitaire_key(unsigned key) {
         moved = cur == g->pick
                     ? (cur < FOUND || cur >= TABLEAU) && sol_home(s, cur) /* a foundation's stays */
                     : sol_move(s, g->pick, cur);
-        if (moved || cur == g->pick) g->picking = 0;
+        if (moved || cur == g->pick)
+            g->picking = 0;
+        else if (cur == STOCK)
+            g->picking = 0, moved = sol_draw(s);
+        else if (s->len[cur])
+            g->pick = cur;
     } else if (key == KEY_CENTER && cur == STOCK)
         moved = sol_draw(s);
     else if (key == KEY_CENTER && s->len[cur] && !sol_won(s))

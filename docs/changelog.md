@@ -1,6 +1,7 @@
 # Changelog
 
 - **1.8.2**:
+  - Games: in Solitaire, Centre on a pile that can't take the cards you hold now picks that pile up instead. Before, nothing happened and the cards stayed held until you put them back or pressed Return, which looked like the game had stuck.
   - Themes: Chinese, Japanese and other text the theme's own face lacks is now drawn bold wherever **Classic** or **Modern** draws its text bold: Classic's lists, bar, info rows, Cover Flow, album panel and hold menu; Modern's bar title; and Now Playing's title in both. It used the regular system font.
   - Cover Flow: an optional **Position Bar** follows wheel and touch browsing, then fades after you stop. Turn it on in **Display → Cover Flow**.
   - Status bar: the battery turns green only while it charges. With a cable in and charging held off, by **USB mode: Audio and DAC** with charging Off or by **Charge Limit** at 80%, it was green as if charging. It now stays white, or red under 15%.

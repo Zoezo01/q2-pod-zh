@@ -1743,11 +1743,30 @@ def test_solitaire_centre_draws_picks_and_drops(fw):
     p.key(CENTER)  # picked up
     assert s.picking and s.pick == WASTE
     s.sol.cur = 6
-    p.key(CENTER)  # the Ace of hearts doesn't go on the 9: still held
-    assert s.picking and s.sol.len[WASTE] == 1
-    s.sol.cur = 2
+    s.sol.cur = 3
+    p.key(CENTER)  # onto a foundation
+    assert not s.picking and pile(s.sol, 3) == [13 | UP] and s.dirty & 2
+
+
+def test_solitaire_centre_where_the_held_cards_do_not_fit_picks_that_pile_up(fw):
+    p = Page(fw)
+    p.go(SOLITAIRE)
+    s = p.s
+    game_table(s)
+    put(s.sol, STOCK, [5])
+    put(s.sol, WASTE, [13 | UP])
+    put(s.sol, 6, [26 + 8 | UP])
+    s.sol.cur = WASTE
     p.key(CENTER)
-    assert not s.picking and pile(s.sol, 2) == [13 | UP] and s.dirty & 2
+    s.sol.cur = 6
+    p.key(CENTER)  # the Ace of hearts doesn't go on the 9: the 9's column is held instead
+    assert s.picking and s.pick == 6 and s.sol.len[WASTE] == 1 and s.sol.len[6] == 1
+    s.sol.cur = 7
+    p.key(CENTER)  # an empty column takes no 9 and has nothing to pick up: still held
+    assert s.picking and s.pick == 6
+    s.sol.cur = STOCK
+    p.key(CENTER)  # the stock draws, and nothing is held
+    assert not s.picking and pile(s.sol, WASTE) == [13 | UP, 5 | UP] and not s.sol.len[STOCK]
 
 
 def test_solitaire_centre_on_the_same_pile_sends_it_home_or_puts_it_back(fw):
