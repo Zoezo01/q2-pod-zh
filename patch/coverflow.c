@@ -2937,6 +2937,7 @@ static void load(void) {
     load_albums(t0);
     if (cf_traced) unlink(CF_TRACE);
 }
+void *queue_now(unsigned *pos, unsigned *n);
 static void load_albums(unsigned t0) {
     int on_sort = cf.on_sort; /* taken whatever this load shows */
     cf.on_sort = 0;
@@ -2998,6 +2999,13 @@ static void load_albums(unsigned t0) {
     }
     char path[512];
     if (!cf.saved_album) BLOB_IO(LAST_ALBUM, cf.saved_album, 0); /* outlives a reboot */
+    /* The covers open on the queue's song's album, playing or not, when the list has it (#350),
+     * else on the album they last centred. ponytail: a song with no album tag (a folder play's
+     * records carry none) is never looked for, so those open on the last centre. */
+    unsigned at, queued;
+    void *now = P(mcl_pdeqplaylist, 0) && !on_sort && !cf.scoped ? queue_now(&at, &queued) : 0;
+    if (now && !(P(now, REC_ALBUM) && *(const char *)P(now, REC_ALBUM))) now = 0;
+    int playing = 0;
     art_strike(BUILDING);
     cf.jobs = calloc(count, sizeof(job_t));
     unsigned char *shared = folders_shared(cf.albums, count);
@@ -3005,7 +3013,10 @@ static void load_albums(unsigned t0) {
         if (i && !(i % 1000)) cf_trace(t0, "jobs ", i, count);
         void *r = deque_at(cf.albums, i);
         unsigned key = album_key(r);
-        if (key == cf.saved_album && !on_sort && !cf.scoped) cf.album = (int)i;
+        if (now && !album_cmp(r, now))
+            cf.album = (int)i, playing = 1, now = 0;
+        else if (key == cf.saved_album && !on_sort && !cf.scoped && !playing)
+            cf.album = (int)i;
         job_t *j = cf.jobs ? &cf.jobs[cf.total] : 0;
         if (j && P(r, REC_PATH) && access(art_path(path, key, ""), 0) && (j->track = strdup(P(r, REC_PATH)))) {
             cf_cold(t0);

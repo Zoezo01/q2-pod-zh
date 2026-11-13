@@ -1763,6 +1763,26 @@ static void depth(void) {
     /* Refresh and close release the frame and every texture. */
     close_page();
     assert(frames == 0 && loads == unloads);
+    {   /* Reopened, the covers centre the queue's song's album (#350), not the one last centred; no
+           queue, or a song with no album tag (a folder play's), leaves the last one. */
+        void *pos = mmap((void *)(MCL_POS & ~4095), 4096, PROT_READ | PROT_WRITE,
+                         MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);
+        assert(pos != MAP_FAILED);
+        deque playing = {0};
+        char untagged[sizeof records[0]] = {0};
+        int at[3];
+        void *songs[3] = { 0, untagged, records[1] };
+        for (int k = 0; k < 3; ++k) {
+            playing.n = 1; playing.at[0] = songs[k];
+            shim_queue = songs[k] ? &playing : 0;
+            open_page();
+            at[k] = *(int *)(slide()->raw + SLIDE_INDEX);
+            close_page();
+        }
+        assert(at[0] == 6 && at[1] == 6 && at[2] == 1);
+        shim_queue = 0;
+        munmap(pos, 4096);
+    }
     /* Small libraries: two albums wrap round the ring (no Sort or Refresh card: Display settings' rows
        now), each album decoded once however often it repeats; missing art shows the placeholder. */
     int keep = albums;
