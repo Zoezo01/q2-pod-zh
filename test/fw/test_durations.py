@@ -543,6 +543,20 @@ def test_usb_storage_or_a_scan_cancels_a_running_pass(fw, tmp_path, scanning, aw
     assert not up.state.running
 
 
+@pytest.mark.parametrize('away', ['usb', 'scan'])
+def test_long_songs_starts_no_pass_under_usb_storage_or_a_scan_and_measures_once_it_is_over(fw, ui, song, scanning, away):
+    Files(fw)
+    probe = Probe(fw, {b'/m/a': 225})
+    windows = {'usbmode_page'} if away == 'usb' else set()
+    fw.mock('navigator_window_is_exist', lambda name, *_: C.string_at(name).decode() in windows)
+    scanning(away == 'scan')
+    assert not start(fw, ui, [song(b'/m/a')]) and not probe.threads and not fw.calls('ringnav_statx')
+    windows.clear(), scanning(0)
+    assert start(fw, ui, [song(b'/m/a')])
+    finish(fw, probe)
+    assert seconds(fw, song(b'/m/a')) == 225
+
+
 def test_a_scan_ending_while_an_older_pass_is_cancelled_keeps_its_due(fw, tmp_path, scanning):
     up = Update(fw, tmp_path, [b'/m/a'])
     up.scanned(), up.poll(2)
