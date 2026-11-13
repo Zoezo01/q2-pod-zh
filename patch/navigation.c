@@ -9810,7 +9810,9 @@ static int np_animating(void) {
  * toggles of the Wi-Fi switch save nothing (smart_config). */
 int ringnav_write_config(int value, const char *section, const char *key) {
     if (smart_config(section, key)) return 0;
-    if (!tk_strcmp(section, "PLAYSET") && !tk_strcmp(key, "VOLUME") && mclGetOutputWay() == 1)
+    if (!tk_strcmp(section, "PLAYSET") && !tk_strcmp(key, "VOLUME") && airplay_on())
+        section = "Q2POD", key = "AIRVOL"; /* an AirPlay speaker's, while it plays (airplay.c) */
+    else if (!tk_strcmp(section, "PLAYSET") && !tk_strcmp(key, "VOLUME") && mclGetOutputWay() == 1)
         key = "BT_VOLUME";
     return stock_write_config_trampoline(value, section, key);
 }
@@ -9997,6 +9999,7 @@ int ringnav_sleep(void *loop) {
     spot_poll();
     radio_poll();
     addon_poll();
+    airplay_poll();
     playback_poll();
     resume_poll();
     scrobble_auto();

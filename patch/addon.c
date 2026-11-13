@@ -5,8 +5,9 @@
  *            hint), qr (1: its row turns it on and shows its QR code once it answers), scrobble
  *            (0: its songs stay out of the scrobble log, addon_scrobbles), stop (0: its page has no
  *            Stop row, and an error page's second row is Cancel) more (an op, then a space and
- *            a title: Now Playing's ⋯ opens its page there while its queue plays, addon_more) and
- *            favdir (a card folder whose songs' hearts it is told of, addon_fav_path);
+ *            a title: Now Playing's ⋯ opens its page there while its queue plays, addon_more),
+ *            favdir (a card folder whose songs' hearts it is told of, addon_fav_path) and hidden
+ *            (1: no Streaming row, its page opened by id: addon_open_id, as AirPlay's is);
  *   run      its launcher, which copies the app to /tmp and runs it there in a restart loop, so
  *            the card is never kept busy, leaving the loop's pid in /tmp/q2-<id>;
  *   q2-<id>  the app;
@@ -103,7 +104,7 @@
 typedef struct {
     char id[APP_ID], name[32], tips[32], bin[48], run[48], pid[32], state[40], browse[48], icon[56];
     char more[48]; /* q2app's more: an op, a space and a title (addon_more) */
-    int qr, game, audio, present, launched, hold, relaunch, restart;
+    int qr, game, audio, hidden, present, launched, hold, relaunch, restart;
     int nostop; /* q2app's stop=0: no Stop row on its page */
     unsigned polled, launch_at, restart_at, play; /* play: its .play as read last, hashed */
 } app_t;
@@ -156,6 +157,7 @@ int addon_scan(void) {
         a->qr = number(raw, "qr") == 1;
         a->game = number(raw, "game") == 1;
         a->audio = number(raw, "audio") == 1;
+        a->hidden = number(raw, "hidden") == 1;
         char stop[4]; /* as text, as scrobble: number() is 0 for a missing key too */
         field(raw, "stop", stop, sizeof stop);
         a->nostop = !strcmp(stop, "0") || !strcmp(stop, "0\r");
@@ -178,7 +180,7 @@ int addon_scan(void) {
     if (d) closedir(d);
     ap.shown = ap.games = 0;
     for (int i = 0; i < ap.n; ++i) { /* by name: an insertion, eight at most */
-        if (!ap.a[i].present) continue;
+        if (!ap.a[i].present || ap.a[i].hidden) continue;
         int *order = ap.a[i].game ? ap.game : ap.order, k = ap.a[i].game ? ap.games++ : ap.shown++;
         for (; k && strcasecmp(ap.a[order[k - 1]].name, ap.a[i].name) > 0; --k)
             order[k] = order[k - 1];
@@ -2109,6 +2111,16 @@ int addon_open(void *ctx, void *event) {
     int k = (int)(long)ctx;
     if (smart_hold(addon_open, ctx, 0)) return 0; /* the app starts once Smart Wi-Fi's link is up */
     if (k >= 0 && k < ap.shown) page_at(ap.order[k], "menu", "", ap.a[ap.order[k]].name, 1);
+    return 0;
+}
+
+/* The page of the app with this id, hidden or not, found on the card again first; 0 when it isn't
+ * there. */
+int addon_open_id(const char *id) {
+    addon_scan();
+    for (int i = 0; i < ap.n; ++i)
+        if (ap.a[i].present && !strcmp(ap.a[i].id, id))
+            return page_at(i, "menu", "", ap.a[i].name, 1) || pg.page;
     return 0;
 }
 
