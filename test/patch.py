@@ -20706,7 +20706,7 @@ m,button,label=boot_row(); view=m.nodes[m.top]['children'][0]; view=m.nodes[view
 m.paint(view)
 for _ in range(7): m.call()  # stock's two, our five, then Boot to
 assert m.confirm()==11 and m.dispatched()[0][1]==button; passed()
-# System settings: stock V1.36's nine rows, its Wheel Function, In-Vehicle, General and System hidden, which the wheel
+# System settings: stock V1.36's nine rows, its Language (English only for now), Wheel Function, In-Vehicle, General and System hidden, which the wheel
 # skips; App Store and Controls added, and the four rows stock moved to its System page, opening stock's pages, so the
 # list reads as it did. Boot to is Power's now.
 for mode in (0o100755,0):
@@ -20717,8 +20717,8 @@ for mode in (0o100755,0):
     m.top=m.node('window','sysset_page',[m.node('list_view','list_view_sysset',[view])])
     assert m.call(address=HOOKS['systemset_sysset_page_init'][0],args=(m.top,5,0,0),gap=0)==0
     kids=m.nodes[view]['children']; assert len(kids)==15
-    assert [kids.index(e) for e in entries]==[6,0,1,2,4,10,11,12,13]  # Language after Date and Time; the hidden four before About
-    assert [m.nodes[e]['visible'] for e in entries]==[1,1,1,1,1,0,0,0,0]
+    assert [kids.index(e) for e in entries]==[6,0,1,2,4,10,11,12,13]  # Language, hidden, after Date and Time; the hidden four before About
+    assert [m.nodes[e]['visible'] for e in entries]==[0,1,1,1,1,0,0,0,0]
     controls,date,apps,update,reset,about=(m.nodes[kids[i]]['children'][0] for i in (3,5,7,8,9,14))
     assert m.nodes[m.nodes[apps]['children'][1]]['text']=='App Store' and m.handler(apps,O['EVT_CLICK'])[0]==payload_syms['shelf_open']
     assert m.nodes[m.nodes[controls]['children'][1]]['text']=='Controls'

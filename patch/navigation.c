@@ -3453,7 +3453,7 @@ static const unsigned char sysset_order[] = {
     10 /* Controls */,
     4 /* Power */,
     11 /* Date and time */,
-    0 /* Language */,
+    0 /* Language, hidden */,
     9 /* App Store */,
     12 /* Update */,
     13 /* Reset */,
@@ -6923,6 +6923,9 @@ int ringnav_systemset(void *win, void *ctx) {
             widget_set_tr_text(list_row_into(view, moved[i][0], to_page, (void *)moved[i][1]),
                                moved[i][0]);
         for (unsigned i = 5; i <= 8; ++i) widget_set_visible(widget_get_child(view, i), 0, 0);
+        /* Language: Q2 Pod's pages and labels are English only, so stock's other languages read
+         * half-blank; hidden until they are translated (docs/internals.md, English). */
+        widget_set_visible(widget_get_child(view, 0), 0, 0);
     }
     reorder(view, sysset_order, sizeof sysset_order);
     return result;

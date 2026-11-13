@@ -267,7 +267,7 @@ is no `CHOICE` context, opens on its mark under a `set_text` theme as a `CHOICE`
 under such a theme every picker does so when a tap opened it too. Another list whose `default_item_height` equals the set's
 `set_row` carries an explicit `item_height`, so only the settings pages are told apart by it.
 
-System Settings puts Wireless and Network first, then Display, Controls and Power, then Date & Time, Language and device
+System Settings puts Wireless and Network first, then Display, Controls and Power, then Date & Time and device
 maintenance, with About last; neither list has headings. Play Mode, EQ, Gapless and Crossfade come first; specialist output controls come next, and Library & Folders last, one reverse detent from the top on Playback's ring. Added binary settings
 use Shanling's `switch_on` / `switch_off` images with the whole row as the tap target. Settings
 that cycle between named choices retain their value labels. Crossfade, Resume Songs, Wheel
