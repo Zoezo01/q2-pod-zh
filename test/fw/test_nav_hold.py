@@ -1676,6 +1676,24 @@ def test_more_clicks_now_playings_own_more(hold, recs, ui, st):
     assert ui.dispatched == [(more, EVT_CLICK)]
 
 
+def test_more_opens_the_apps_page_while_its_queue_plays(hold, recs, ui, st):
+    # addon.c addon_more: an app's q2app said more=, and the queue playing is the one its .play started.
+    from test_addon import Ap, Qa
+    hold.now_playing([song(recs, i) for i in range(3)])
+    st('np_win', C.c_void_p).value = hold.page
+    ui.nodes[ui.child(hold.page, 'image')].name = 'img_more'
+    ap = hold.fw.var('addon__ap', Ap)
+    ap.n, a = 1, ap.a[0]
+    a.id, a.name, a.more, a.bin, a.pid, a.launched = b'foo', b'Foo', b'playlists', b'/mnt/mmc/.foo/q2-foo', b'/tmp/q2-foo', 1
+    hold.card.files.update({'/mnt/mmc/.foo/q2-foo': b'', '/tmp/q2-foo': b'1'})
+    qa = hold.fw.var('addon__qa', Qa)
+    qa.app, qa.loads = C.addressof(a), hold.fw.var('playback_loads', C.c_uint).value
+    hold.hold()
+    hold.menu()
+    hold.pick('More…')
+    assert ui.dispatched == [] and ui.nodes[ui.top()].name == 'addon_page'
+
+
 def test_now_playings_rate_opens_the_picker_over_it(hold, recs, ui, st, rates):
     hold.now_playing([song(recs, i) for i in range(3)])
     st('rate_win', C.c_void_p).value = hold.page

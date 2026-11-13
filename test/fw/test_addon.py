@@ -3,13 +3,14 @@ timers, card games, the page they draw over Q2SPOT/1, their QR codes, library re
 markers."""
 import ctypes as C
 import random
+import re
 import struct
 
 import pytest
 
 import host
-from conftest import O, Deques, Game, block, high_halves, libc, text
-from test_coverflow import png  # an icon's header
+from conftest import O, Deques, Game, block, claim, high_halves, libc, text
+from test_coverflow import png, scratch  # an icon's header; navigation.c's st by field
 from test_netupdate import JOB_INSTALL, JOB_REMOVE, SH_CANCELLED, SH_CARD, SH_NET, SH_OK, Sh  # test_netupdate.py keeps netupdate.c's App Store mirror
 from test_radio import Rd  # test_radio.py keeps the mirror
 
@@ -35,7 +36,7 @@ LIBRARY = 0xf001  # stock's library class, which a local queue plays under
 
 class App(C.Structure):
     _fields_ = [('id', C.c_char * 16), ('name', C.c_char * 32), ('tips', C.c_char * 32), ('bin', C.c_char * 48), ('run', C.c_char * 48),
-                ('pid', C.c_char * 32), ('state', C.c_char * 40), ('browse', C.c_char * 48), ('icon', C.c_char * 56),
+                ('pid', C.c_char * 32), ('state', C.c_char * 40), ('browse', C.c_char * 48), ('icon', C.c_char * 56), ('more', C.c_char * 48),
                 *((n, C.c_int) for n in ('qr', 'game', 'audio', 'present', 'launched', 'hold', 'relaunch', 'restart', 'nostop')),
                 *((n, C.c_uint) for n in ('polled', 'launch_at', 'restart_at', 'play'))]
 
@@ -307,19 +308,19 @@ def test_a_manifests_keys_and_defaults(fw):
     one, two = ap(fw).a[0], ap(fw).a[1]
     assert (one.name, one.tips, one.qr, one.game, one.audio) == (b'N', b'Find it', 1, 1, 1)
     assert (two.name, two.tips, two.qr, two.game, two.audio) == (b'two', b'Search', 0, 0, 0)
-    assert (one.nostop, two.nostop) == (0, 0)
+    assert (one.nostop, one.more, two.nostop, two.more) == (0, b'', 0, b'')
 
 
-@pytest.mark.parametrize('manifest,nostop', [
-    (b'name=N\nstop=0\n', 1),
-    (b'name=N\r\nstop=0\r\n', 1),  # a Windows editor's line ends
-    (b'name=N\nstop=1\n', 0),
-    (b'name=N\nstop=no\n', 0),  # as text: only 0 drops the Stop row
+@pytest.mark.parametrize('manifest,nostop,more', [
+    (b'name=N\nstop=0\nmore=playlists Playlists\n', 1, b'playlists Playlists'),
+    (b'name=N\r\nstop=0\r\nmore=playlists\r\n', 1, b'playlists'),  # a Windows editor's line ends
+    (b'name=N\nstop=1\n', 0, b''),
+    (b'name=N\nstop=no\n', 0, b''),  # as text: only 0 drops the Stop row
 ])
-def test_a_manifest_can_drop_the_stop_row(fw, manifest, nostop):
+def test_a_manifest_can_drop_the_stop_row_and_take_now_playings_more(fw, manifest, nostop, more):
     card(fw, one=manifest)
     scan(fw)
-    assert ap(fw).a[0].nostop == nostop
+    assert (ap(fw).a[0].nostop, ap(fw).a[0].more) == (nostop, more)
 
 
 def test_names_are_cut_at_a_whole_character(fw):
@@ -392,7 +393,7 @@ def test_more_apps_than_slots(fw):
 def test_the_features_are_published_at_every_scan(fw):
     world = card(fw)
     scan(fw)
-    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections art window urls sort field\n'
+    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections art window urls sort field more\n'
     assert world.of('rename') == [(b'/tmp/q2-addon.caps.tmp', b'/tmp/q2-addon.caps')]
 
 
@@ -3517,6 +3518,102 @@ def test_go_to_replaces_the_page_already_open(fw):
     p.answer(rows=[item(1)])
     assert goto(fw, b'/mnt/mmc/.foo/a.flac') == 1
     assert p.pg.depth == 1 and p.top.op == b'goto' and len(fw.calls('window_manager_close_window_force')) == 1
+
+
+class Qa(C.Structure):
+    _fields_ = [('app', C.c_void_p), ('loads', C.c_uint)]
+
+
+def more(fw, manifest, loads=0):
+    # An app's queue playing (its .play's start noted, loads queue loads since), and Now Playing's ⋯.
+    p = Page(fw, manifest, opens=False)
+    qa = fw.var('addon__qa', Qa)
+    qa.app, qa.loads = C.addressof(p.ap.a[0]), fw.var('playback_loads', C.c_uint).value
+    fw.var('playback_loads', C.c_uint).value += loads
+    return p, fw.fn('addon_more', C.c_int)()
+
+
+def test_now_playings_more_opens_the_apps_page_at_its_op(fw):
+    p, opened = more(fw, b'name=Foo\nmore=playlists My Playlists\n')
+    assert opened == 1 and p.pg.depth == 1 and p.top.op == b'playlists' and p.top.args == b'' and p.top.title == b'My Playlists'
+    assert p.request().endswith(b'\tplaylists\n')
+
+
+def test_more_with_no_title_is_titled_by_the_app(fw):
+    p, opened = more(fw, b'name=Foo\nmore=playlists\n')
+    assert opened == 1 and p.top.title == b'Foo'
+
+
+def test_more_is_stocks_once_the_apps_binary_is_gone(fw):
+    p = Page(fw, b'name=Foo\nmore=playlists\n', opens=False)
+    qa = fw.var('addon__qa', Qa)
+    qa.app, qa.loads = C.addressof(p.ap.a[0]), fw.var('playback_loads', C.c_uint).value
+    del p.world.files[b'/mnt/mmc/.foo/q2-foo']
+    assert fw.fn('addon_more', C.c_int)() == 0 and not p.pg.page
+
+
+@pytest.mark.parametrize('manifest,loads', [
+    (b'name=Foo\n', 0),                                 # no more=: stock's ⋯
+    (b'name=Foo\nmore=playlists\n', 1),                 # another queue loaded since
+    (b'name=Foo\nmore= Playlists\n', 0),                # no op
+    (b'name=Foo\nmore=' + b'p' * 16 + b' P\n', 0),       # an op too long for a level
+])
+def test_more_is_stocks_unless_the_app_says_and_its_queue_plays(fw, manifest, loads):
+    p, opened = more(fw, manifest, loads)
+    assert opened == 0 and not p.pg.page
+
+
+def test_more_with_no_app_queue_is_stocks(fw):
+    Page(fw, b'name=Foo\nmore=playlists\n', opens=False)
+    assert fw.fn('addon_more', C.c_int)() == 0
+
+
+def test_more_replaces_the_apps_page_already_open(fw):
+    p, _ = more(fw, b'name=Foo\nmore=playlists\n')
+    p.answer(rows=[item(1, b'list')])
+    p.click(0)
+    assert fw.fn('addon_more', C.c_int)() == 1
+    assert p.pg.depth == 1 and p.top.op == b'playlists' and len(fw.calls('window_manager_close_window_force')) == 1
+
+
+@pytest.mark.parametrize('manifest,stock', [(b'name=Foo\nmore=playlists\n', 0), (b'name=Foo\n', 1)])
+def test_now_playings_more_tapped_opens_the_apps_page_instead_of_stocks(fw, scratch, manifest, stock):
+    # navigation.c ringnav_dispatch: the click on Now Playing's img_more (Page's lookup finds it at the view).
+    p = Page(fw, manifest, opens=False)
+    qa = fw.var('addon__qa', Qa)
+    qa.app, qa.loads = C.addressof(p.ap.a[0]), fw.var('playback_loads', C.c_uint).value
+    C.c_void_p.from_address(C.addressof(fw.var('st', C.c_char)) + scratch['np_win']).value = block(fw, size=4096)
+    fw.mock('stock_dispatch_trampoline', lambda *_: 4)
+    event = C.create_string_buffer(0x40)
+    struct.pack_into('<i', event, O['EVENT_TYPE'], O['EVT_CLICK'])
+    fw.fn('ringnav_dispatch', C.c_int, C.c_void_p, C.c_void_p)(p.view, C.addressof(event))
+    assert (p.pg.page == p.page) == (not stock) and len(fw.calls('stock_dispatch_trampoline')) == stock
+
+
+def test_a_url_queue_marks_its_queue_the_apps(fw, mcl, songs):
+    s = Stream(fw, mcl, songs)
+    s.world.files[b'/tmp/q2-foo.urls'] = b'#Q2URLS/1\tstart=0\nhttps://x/a.flac\tA\n'
+    s.play(b'1 /tmp/q2-foo.urls\n')
+    loads = s.loaded.value
+    # toolsFreeStSongInfo at its stock address (tidal.c's define): a ret there for the test, put back after
+    free_rec = int(re.findall(r'toolsFreeStSongInfo \(\(void \(\*\)\(void \*\)\)(0x[0-9a-f]+)u\)',
+                              (host.ROOT/'patch/tidal.c').read_text())[0], 16)
+    claim(free_rec)
+    saved = C.string_at(free_rec, 1)
+    C.memmove(free_rec, b'\xc3', 1)
+    try:
+        s.step()
+        s.step()
+    finally:
+        C.memmove(free_rec, saved, 1)
+    qa = fw.var('addon__qa', Qa)
+    assert s.loaded.value == loads + 1 and qa.app == C.addressof(ap(fw).a[0]) and qa.loads == s.loaded.value
+
+
+def test_a_stream_session_marks_its_queue_the_apps(fw, mcl, songs):
+    s = started(fw, mcl, songs)
+    qa = fw.var('addon__qa', Qa)
+    assert qa.app == C.addressof(ap(fw).a[0]) and qa.loads == s.loaded.value
 
 
 def test_go_to_a_path_too_long_for_a_level_opens_nothing(fw):

@@ -3,8 +3,9 @@
  * Spotify's librespot is. Q2 Pod knows none of them by name: each is a card folder .<id> holding
  *   q2app    its manifest, key=value lines: name (its Streaming row's), search (the search box's
  *            hint), qr (1: its row turns it on and shows its QR code once it answers), scrobble
- *            (0: its songs stay out of the scrobble log, addon_scrobbles) and stop (0: its page has
- *            no Stop row, and an error page's second row is Cancel);
+ *            (0: its songs stay out of the scrobble log, addon_scrobbles), stop (0: its page has no
+ *            Stop row, and an error page's second row is Cancel) and more (an op, then a space and
+ *            a title: Now Playing's ⋯ opens its page there while its queue plays, addon_more);
  *   run      its launcher, which copies the app to /tmp and runs it there in a restart loop, so
  *            the card is never kept busy, leaving the loop's pid in /tmp/q2-<id>;
  *   q2-<id>  the app;
@@ -84,7 +85,7 @@
 #define CAPS_FILE "/tmp/q2-addon.caps"
 /* This firmware's card-app features, space-separated; a feature adds its word. */
 #define ADDON_CAPS                                                                                 \
-    "playlist progress pages library goto sleep game audio sections art window urls sort field"
+    "playlist progress pages library goto sleep game audio sections art window urls sort field more"
 #define ADDON_SECTIONS 8  /* sections an app's first page may have */
 #define SWIPE_CLAIM_PX 24 /* a sideways move this far, twice as far as up or down, is a swipe's */
 #define SWIPE_PX 60       /* and this far at the lift, more than up or down, changes section */
@@ -99,6 +100,7 @@
  * socket gone), to start again once its loop is gone. */
 typedef struct {
     char id[APP_ID], name[32], tips[32], bin[48], run[48], pid[32], state[40], browse[48], icon[56];
+    char more[48]; /* q2app's more: an op, a space and a title (addon_more) */
     int qr, game, audio, present, launched, hold, relaunch, restart;
     int nostop; /* q2app's stop=0: no Stop row on its page */
     unsigned polled, launch_at, restart_at, play; /* play: its .play as read last, hashed */
@@ -155,6 +157,9 @@ int addon_scan(void) {
         char stop[4]; /* as text, as scrobble: number() is 0 for a missing key too */
         field(raw, "stop", stop, sizeof stop);
         a->nostop = !strcmp(stop, "0") || !strcmp(stop, "0\r");
+        field(raw, "more", a->more, sizeof a->more);
+        unsigned k = strlen(a->more);
+        if (k && a->more[k - 1] == '\r') a->more[k - 1] = 0; /* a Windows editor's line end */
         a->present = !access(a->bin, 0);
         /* the row's size first, the other scaled to fit (navigation.c set_child), else stream_app
          * (one over ART_MAX px either way, or whose size can't be read, counts as none: demo
@@ -241,6 +246,12 @@ static struct {
     unsigned loads;  /* playback_loads at its start, then once its queue was loaded */
 } sm __attribute__((section(".scratch")));
 enum { S_WAIT, S_PLAY, S_DONE };
+/* The app whose .play started the queue playing, and playback_loads after that queue's load: the
+ * queue is still the app's while no other has loaded since (addon_more). */
+static struct {
+    app_t *app;
+    unsigned loads;
+} qa;
 
 /* Whether path changed since the last look that came well after its change.
  * ponytail: only once it changes (o32 stat, st_mtime word 16), not a scan every poll; a scan in the
@@ -376,6 +387,7 @@ static int stream_start(const void *unused) {
         play_folder(songs, 0, 0xf001); /* playing_page copies the queue at once */
         press_natural = 0;
         sm.loads = playback_loads;     /* its load, which play_folder has done (playback_groups) */
+        qa.app = sm.app, qa.loads = playback_loads;
     }
     deque_destroy(songs);
     return 0;
@@ -389,7 +401,7 @@ static int urls_start(const void *unused) {
     if (playback_loads != sm.loads) sm.state = S_DONE; /* the user played a queue since */
     if (sm.state != S_WAIT || scanning()) return 0;    /* looked at again after the scan */
     press_natural = 1;
-    app_urls_play(sm.dir);
+    if (app_urls_play(sm.dir)) qa.app = sm.app, qa.loads = playback_loads;
     press_natural = 0;
     sm.state = S_DONE;
     return 0;
@@ -2038,6 +2050,26 @@ int addon_goto(const char *path, const char *title, int album) {
     void *old = pg.page;
     if (old) closed(old, 0), window_manager_close_window_force(window_manager(), old);
     return page_at((int)(a - ap.a), "goto", args, title && *title ? title : a->name, 0);
+}
+
+/* Now Playing's ⋯ (navigation.c: its img_more's click, the hold menu's More… too) while the queue
+ * playing is the one an app's .play started (no queue loaded since) and its q2app says more=<op>
+ * <title>: the app's page opens at op, with no arguments, titled title (the app's name without
+ * one), instead of stock's ⋯ page, whose rows (Playlists, Quality Choice) mean nothing for an app's
+ * queue. Its page already open is closed first, as for Go to. 1 when it opened.
+ * ponytail: a stock reload of the same queue (a pick that loads it again) counts as another queue,
+ * so ⋯ is stock's until the app plays a queue again; it errs toward stock's page. */
+int addon_more(void) {
+    app_t *a = qa.app;
+    char op[sizeof pg.lv->op];
+    if (!a || playback_loads != qa.loads || !a->more[0] || access(a->bin, 0)) return 0;
+    const char *title = strstr(a->more, " ");
+    unsigned k = title ? (unsigned)(title - a->more) : strlen(a->more);
+    if (!k || k >= sizeof op) return 0; /* no op, or one too long for a level */
+    tk_snprintf(op, k + 1, "%s", a->more);
+    void *old = pg.page;
+    if (old) closed(old, 0), window_manager_close_window_force(window_manager(), old);
+    return page_at((int)(a - ap.a), op, "", title && title[1] ? title + 1 : a->name, 0);
 }
 
 /* ringnav_keylong: Play/Pause held on a row with a hold op (a list: all of it downloaded) sends it;
