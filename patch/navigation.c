@@ -3913,6 +3913,20 @@ static void bar_dark_sync(void *bar) {
     /* this paint may have drawn the bar already, and an invalidate mid-paint is lost */
     if (!st.bar_timer) st.bar_timer = timer_add(bar_repaint, (void *)0, 0);
 }
+/* The battery view_battery shows: the level from label_battery's "88%" (stock zeroes
+ * progress_battery while charging), then under Classic full on power (get_battery_capacity's
+ * status 2 and stock's cable flag, memory both, as stock shows the plain icon then), charging
+ * (bar_charge) and low (bar_lowcharge), as stock picks the icon. Reads stock's widgets, no I/O. */
+static unsigned battery_now(int classic_light) {
+    const char *icon = widget_get_prop_str(st.bar_icon, "image", "");
+    const unsigned *t = widget_get_text(st.bar_pct);
+    int level = 0;
+    while (t && *t >= '0' && *t <= '9') level = level * 10 + (int)(*t++ - '0');
+    return (unsigned)(level > 100 ? 100 : level) << 3 |
+           (unsigned)(classic_light && I(g_power_chargestate, 0) == 2 && g_usbdet_value) << 2 |
+           (unsigned)(icon && !tk_strcmp(icon, "bar_charge")) << 1 |
+           (unsigned)(icon && !tk_strcmp(icon, "bar_lowcharge"));
+}
 static void bar_sync(void *bar) {
     bar_dark_sync(bar);
     if (bar_state_sync(bar) && !st.bar_timer) st.bar_timer = timer_add(bar_repaint, (void *)0, 0);
@@ -3937,7 +3951,7 @@ static void bar_sync(void *bar) {
     /* Classic's battery: the set's body, which Percent Inside keeps */
     const theme_t *T = theme(), *B = bar_theme();
     /* The look's rows off the row layout's, y 0 in every set's row. A relayout puts them back
-     * there; the bar paints at least once a second. */
+     * there; this pass corrects them before the frame draws them. */
     if (I(st.bar_bt, W_Y) != B->bar_bt_dy)
         widget_move_resize(st.bar_bt, I(st.bar_bt, W_X), B->bar_bt_dy, I(st.bar_bt, W_W),
                            I(st.bar_bt, W_H));
@@ -3969,19 +3983,7 @@ static void bar_sync(void *bar) {
     widget_set_visible(st.bar_pct, 0, 0);
     widget_set_visible(st.bar_slot, 1, 0);
 
-    /* the level from label_battery's "88%" (stock zeroes progress_battery while charging), then
-     * under Classic full on power (get_battery_capacity's status 2 and stock's cable flag,
-     * memory both, as stock shows the plain icon then), charging (bar_charge) and low
-     * (bar_lowcharge), as stock picks the icon */
-    const char *icon = widget_get_prop_str(st.bar_icon, "image", "");
-    const unsigned *t = widget_get_text(st.bar_pct);
-    int level = 0;
-    while (t && *t >= '0' && *t <= '9') level = level * 10 + (int)(*t++ - '0');
-    unsigned key = (unsigned)(level > 100 ? 100 : level) << 3 |
-                   (unsigned)(classic_light && I(g_power_chargestate, 0) == 2 && g_usbdet_value)
-                       << 2 |
-                   (unsigned)(icon && !tk_strcmp(icon, "bar_charge")) << 1 |
-                   (unsigned)(icon && !tk_strcmp(icon, "bar_lowcharge"));
+    unsigned key = battery_now(classic_light);
     if (st.bar_dark) { /* each paint: a relayout puts them back */
         bar_off(st.bar_bt);
         bar_off(st.bar_wifi);
@@ -4015,10 +4017,20 @@ static void bar_sync(void *bar) {
 /* systembar_showface, each second: stock hides img_state whenever its own player is stopped, so
  * with Spotify, radio or a video playing it went off here and back on at the next paint, two
  * relayouts a second and a frame with EQ drawn in the play icon's place. Correct it before paint,
- * dark or not, so a wake never shows stock's hidden icon; the badge and battery wait for paint. */
+ * dark or not, so a wake never shows stock's hidden icon; the badge waits for paint. Stock writes
+ * the battery into label_battery and img_battery, which bar_sync hides, so their writes repaint
+ * nothing and a new level showed only when something else painted the bar: a new level or charge
+ * repaints the bar here, outside a paint, while lit (a wake paints it all). */
 int ringnav_showface(void *bar) {
     int result = stock_showface_trampoline(bar);
     bar_state_sync(bar); /* no I/O, and a relayout waits for a paint */
+    if (st.bar_pct && st.bar_icon && g_backlight_status) {
+        unsigned key = battery_now(bar_theme()->painter[PAINT_BATTERY] == BATT_CLASSIC_LIGHT);
+        if (key != st.batt_key) {
+            st.batt_key = key; /* what this repaint shows: bar_sync has nothing more to repaint */
+            widget_invalidate_force(bar, (void *)0);
+        }
+    }
     return result;
 }
 
@@ -5823,9 +5835,8 @@ int bar_title_fits(void *label) {
  * The selection work for the surface happens here, once per frame, instead of in the border hook;
  * a BUTTONS dialog is itself top-level. Home's art is clipped to its panel until the border hook.
  * Other top-level widgets are the status bar, which gets its solid fill, and the windows. Painting
- * the top window or the bar (at least each second, systembar_showface) keeps the bar's clock,
- * Home's art and Now Playing's labels current; Home's art is also checked when Home is painted
- * under another window. */
+ * the top window or the bar keeps the bar's clock, Home's art and Now Playing's labels current;
+ * Home's art is also checked when Home is painted under another window. */
 int ringnav_paint_bg(void *w, void *canvas) {
     st.paint_w = w;
     quick_fill(w);
