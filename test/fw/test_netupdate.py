@@ -1756,6 +1756,84 @@ def test_a_check_stopped_part_way_is_done_again_at_the_next_open(fw):
     assert s.sh.job == JOB_CHECK
 
 
+# An install goes by the list as it is now, fetched as the install starts. The page's rows may be the card's
+# list of days ago, and a repo dropped since then must not install (GHSA-8wpr-pmqx-538x): on that list its
+# release was fetched and unpacked onto the card in each of the three ways below.
+LIST_URL = b'https://raw.githubusercontent.com/DiamondBond/q2-pod/main/sources.list'
+FOO_APP = b'/mnt/mmc/.foo/q2-foo'
+
+
+def test_an_app_dropped_since_the_cards_list_is_not_installed_with_no_check_run(fw):
+    """Opened with no Wi-Fi: no check runs and the rows are the card's list. The link comes up and the row is pressed."""
+    card = Disk(fw, {SOURCES: b'me/q2-foo Foo\n'})
+    net = store_net(fw, listed=b'me/q2-bar Bar\n')
+    s = Store(fw, card, wifi=0)
+    assert s.sh.job == 0 and s.labels() == ['Install']
+    s.wifi = 1
+    s.click()
+    assert s.sh.job == JOB_INSTALL and s.check_label().strip() == '' and s.labels() == ['Checking…']
+    assert s.run() == 0 and s.toasts == ['No update for this build']
+    assert net.urls == [LIST_URL] and FOO_APP not in card.files and not card.of('mkdir')
+
+
+def test_an_app_dropped_since_the_cards_list_is_not_installed_after_the_check_is_stopped(fw):
+    """A row pressed while the opening check loads the list stops the check; the next press acts on the card's list."""
+    card = Disk(fw, {SOURCES: b'me/q2-foo Foo\n'})
+    net = store_net(fw, listed=b'me/q2-bar Bar\n')
+    s = Store(fw, card)
+    s.click()
+    assert s.run() == 0 and s.labels() == ['Install']
+    s.click()
+    assert s.sh.job == JOB_INSTALL and s.run() == 0 and s.toasts[-1] == 'No update for this build'
+    assert not [u for u in net.urls if not u.startswith(b'https://raw')] and FOO_APP not in card.files
+
+
+def test_no_app_installs_while_the_list_cant_be_fetched(fw):
+    """The list's host out of reach with the API answering: the check keeps the card's list and asks its releases."""
+    card = Disk(fw, {SOURCES: b'me/q2-foo Foo\n'})
+    net = store_net(fw)
+    net.replies[b'https://raw'] = (7, 0, None)
+    s = Store(fw, card)
+    assert s.run() == 0 and s.labels() == ['Install'] and s.sh.next[0].latest == b'2.0'
+    s.click()
+    assert s.run() == 0 and s.toasts[-1] == "Can't reach GitHub"
+    assert not [u for u in net.urls if u.startswith(b'https://h/')] and FOO_APP not in card.files
+
+
+@pytest.mark.parametrize('listed', [b'other/q2-foo Foo\n', b'-me/q2-foo Foo\n', b'# me/q2-foo Foo\nme/q2-bar Bar\n'])
+def test_an_app_installs_only_from_the_repo_the_list_names_now(fw, listed):
+    """Another owner's repo under the same name, the app marked dropped, and its line commented out."""
+    card = Disk(fw, {SOURCES: b'me/q2-foo Foo\n'})
+    net = store_net(fw, listed=listed)
+    s = Store(fw, card, wifi=0)
+    s.wifi = 1
+    s.click()
+    assert s.run() == 0 and s.toasts == ['No update for this build']
+    assert net.urls == [LIST_URL] and FOO_APP not in card.files
+
+
+def test_an_install_asks_for_the_list_then_the_release_and_its_zip(fw):
+    card = Disk(fw, {SOURCES: b'me/q2-foo Foo\n'})
+    net = store_net(fw, listed=b'# apps\nme/q2-bar Bar\nme/q2-foo Foo renamed\n')
+    s = Store(fw, card, wifi=0)
+    s.wifi = 1
+    s.click()
+    assert s.run() == 0 and s.toasts == ['Foo is ready in Streaming'] and card.files[FOO_APP] == FOO['.foo/q2-foo']
+    assert [u.split(b'/')[2] for u in net.urls] == [b'raw.githubusercontent.com', b'api.github.com', b'h']
+    assert card.files[SOURCES] == b'me/q2-foo Foo\n' and s.labels() == ['Installed']  # the page's list is the check's to change
+
+
+def test_an_install_cancelled_while_it_asks_for_the_list_installs_nothing(fw):
+    card = Disk(fw, {SOURCES: b'me/q2-foo Foo\n'})
+    net = store_net(fw)
+    s = Store(fw, card, wifi=0)
+    s.wifi = 1
+    s.click()
+    s.click()  # the same row again, before the list is in
+    assert s.sh.cancel == 1 and s.run() == 0 and s.toasts == ['Download cancelled']
+    assert net.urls == [LIST_URL] and FOO_APP not in card.files
+
+
 @pytest.mark.parametrize('q2app, where', [(b'name=Foo\n', 'Streaming'), (b'name=Foo\ngame=1\n', "Library's Games")])
 def test_an_app_installs_into_place_and_removes_without_a_trace(fw, q2app, where):
     card = Disk(fw)
@@ -1930,7 +2008,8 @@ def test_an_install_that_fails_says_why_and_leaves_the_card_alone(fw, case, said
 
 def test_rockbox_installs_on_a_second_press_keeping_its_config(fw):
     card = Disk(fw, {SOURCES: b'x/q2-rockbox Rockbox\n', b'/mnt/mmc/.rockbox/config.cfg': b'mine'})
-    store_net(fw, {'.rockbox/rockbox': b'bin', '.rockbox/config.cfg': b'defaults', '.rockbox/fonts/a.fnt': b'font'})
+    store_net(fw, {'.rockbox/rockbox': b'bin', '.rockbox/config.cfg': b'defaults', '.rockbox/fonts/a.fnt': b'font'},
+              listed=b'x/q2-rockbox Rockbox\n')
     s = Store(fw, card, wifi=0)
     s.wifi = 1
     s.click()
@@ -1947,7 +2026,7 @@ def test_the_themes_come_with_rockbox_and_go_before_it(fw):
                      b'/mnt/mmc/.rockbox/rockbox': b'bin', b'/mnt/mmc/.rockbox/fonts/a.fnt': b'font',
                      b'/mnt/mmc/.q2/apps/rockbox.files': b'.rockbox/rockbox\n.rockbox/fonts/a.fnt\n',
                      b'/mnt/mmc/.q2/apps/rockbox.tag': b'2.0'})
-    store_net(fw, {'.rockbox/wps/a.wps': b'wps', '.rockbox/fonts/a.fnt': b'font'})
+    store_net(fw, {'.rockbox/wps/a.wps': b'wps', '.rockbox/fonts/a.fnt': b'font'}, listed=card.files[SOURCES])
     s = Store(fw, card, wifi=0)
     assert s.labels() == ['Installed', 'Install']
     s.wifi = 1
@@ -1977,7 +2056,8 @@ def test_the_themes_pressed_once_rockbox_left_the_card_ask_for_it(fw):
 def test_spotify_installs_with_librespot_stopped_and_its_cache_kept(fw):
     kill = b'kill -9 $(cat /tmp/q2-librespot)'
     card = Disk(fw, {SOURCES: b'x/q2-librespot Spotify\n', b'/mnt/mmc/.spotify/cache/x': b'mine', b'/mnt/mmc/.spotify/.cache-size': b'2G'})
-    store_net(fw, {'.spotify/librespot': b'bin', '.spotify/run': b'sh', '.spotify/cache/x': b'theirs', '.spotify/.cache-size': b'0'})
+    store_net(fw, {'.spotify/librespot': b'bin', '.spotify/run': b'sh', '.spotify/cache/x': b'theirs', '.spotify/.cache-size': b'0'},
+              listed=b'x/q2-librespot Spotify\n')
     s = Store(fw, card, wifi=0)
     s.wifi = 1
     s.click()
