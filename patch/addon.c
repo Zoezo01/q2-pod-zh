@@ -1823,16 +1823,18 @@ static int clicked(void *ctx, void *event) {
     return 0;
 }
 
-/* The box's text: a search's cut to pg.term; a field's that doesn't fit whole is let go, cleared, and
- * nothing is sent. Done sends this twice (EVT_IM_ACTION, EVT_VALUE_CHANGED), so pg.field stays set here
- * (field_sent and search_box clear it): the second call must not send the cut text as a search.
+/* The box's text: one that doesn't fit pg.term whole is let go, cleared, and nothing is sent. Done sends
+ * this twice (EVT_IM_ACTION, EVT_VALUE_CHANGED), so pg.field stays set here (field_sent and search_box
+ * clear it) and the toast waits for no pending go: the second call must not toast again or send the cut text.
  * ponytail: stock's widget_get_text_utf8 writes nothing for a text over 255 bytes, which closes silently. */
 static int searched(void *ctx, void *event) {
     char t[256] = "";
     (void)ctx, (void)event;
     if (widget_get_text_utf8(pg.edit, t, sizeof t)) t[0] = 0;
-    if (pg.field && strlen(t) >= sizeof pg.term) /* none of it goes: the box closes, the level stays */
-        memset(t, 0, sizeof t), toast("Too long");
+    if (strlen(t) >= sizeof pg.term) { /* none of it goes: the box closes, the level stays */
+        memset(t, 0, sizeof t);
+        if (!pg.go) toast("Too long"); /* its loop would run the go the first call armed, under this handler */
+    }
     tk_snprintf(pg.term, sizeof pg.term, "%s", t);
     memset(t, 0, sizeof t);
     later(!pg.term[0] ? G_SHOW : pg.field ? G_FIELD : G_SEARCH, 0);
