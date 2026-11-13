@@ -568,8 +568,7 @@ key was the same for every song and the first one's art stayed. Stock's own requ
 them apart: the cover thread clears it before the download, and a cover asked for while the last
 one downloads lands after that one, both as type 2. Each write has its own time, as the thread
 waits 100 ms between covers. Home's art and Enlarged Art's shape take the file into their keys
-too, so a paint between the song change and the next download, still on the last song's file,
-isn't the last. When
+too; a paint after a song change, before its cover lands, still shows the previous file. When
 that key changes, it reloads the art the way stock does, dropping AWTK's cached bitmap of the name
 first, since the player writes every track's cover to the same file. While the cover is still
 being parsed, and for Tidal, it leaves stock's image. ponytail: one more decode per track change while the page is up, beside
