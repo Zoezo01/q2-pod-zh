@@ -548,6 +548,8 @@ takes the written set's `pitch` and `body` (`geom()`).
 
 **Modern.** THEME 2, `assets/themes/modern/theme.xml`: 1.6.5's Classic, kept on Minimal's set (SET0) with its own Home inset (`HOME_MODERN_*`), the accent's bar (`SEL_BAR`: `gradient()`, a pill under Rounded Corners) and its accent in `ACCENT`, 1.6.5's Classic's key.
 
+**Fallback weight.** A theme's face that lacks a text's characters gives way to `bold.ttf`, then to stock's regular `default` face for CJK (`theme_font`, at `FACE_FALLBACK_PCT` of the size). Where the theme asked for a bold face and the text fell to stock's, `font_weight_mark` (`patch/font_weight.c`) sets a `_q2_bold_fallback` prop on the label, and the border hook (`ringnav_paint`) calls `font_weight_paint`, which runs the label's own native self painter (`widget_vtable_on_paint_self`) once more 1 px to the right and translates the canvas back. That pass keeps stock's shaping, clip and marquee, dispatches no paint event and so cannot re-enter the hook. `theme_font` writes the mark on every call, cache hits and pooled rows included, so it follows the text; every themed role is marked, Classic's info text (`ROLE_INFO`, 14 px once it falls back) too. `panel_font` marks Classic's album-panel heading and track names, not artists or times. The other writers of a marked label's face clear or set the mark too: `dark_title` by the same rule, and `bar_title` when Modern's clock gets the bar back. A marked label costs one extra native text draw per paint; every painted widget pays one prop read.
+
 **Geometry sets.** Classic's two sets are `classic-light` (Row Art on: 52 px art rows) and `classic-light-text` (all 32). A built-in theme declares its sets in its theme.xml (`<geometry name="classic-light" bar="26" …/>`, each omitted field the built-in set's or its `extends=` set's), and `tools/theme.py` checks each field's range (`GEOM_RANGES`) and builds the asset copies and boot tables from them.
 
 - Values that follow the written set but are not immediates (the bar, the settings rows, the battery body, the text inset) are `geom_vals[st.geom][V_*]`, and `client_h()` is `320 - geom_val(V_BAR)`.
@@ -1750,23 +1752,3 @@ The rootfs is glibc 2.28 on 32-bit MIPS, so stock's `time_t` is 32 bits, and the
 **TLS.** Every verified libcurl handle (Network Update, Q2 Shelf, Internet Radio, scrobbling, lyrics and covers) sets `CURLOPT_SSL_CTX_FUNCTION` to `tls_untimed` (`patch/peq.h`). It sets `X509_V_FLAG_NO_CHECK_TIME` in the `SSL_CTX`'s `X509_VERIFY_PARAM`, which each connection inherits, so chains still have to reach a pinned root, but no certificate's dates are checked. demo doesn't import `SSL_CTX_get0_param` or `X509_VERIFY_PARAM_set_flags`, so the callback writes OpenSSL 1.1.1f's fields itself (`SSL_CTX->param` at `0x100`, `->flags` at `0xc`). `tools/build.py` checks that both functions in the rootfs's `libssl`/`libcrypto` still load those offsets. ponytail: an expired or retired server certificate is accepted too, and there is no revocation check. That is the price of working with a firmware nobody can update. Tidal's downloads already run unverified, as its stream does.
 
 **Clock.** Linux 5.10 keeps 64-bit time, and glibc 2.28's `time()` truncates it to 32 bits. `wall_time` reads that unsigned, which is right until 2106. Scrobble timestamps use it. The iPod status bar takes it back in 28-year steps, a span over which dates and weekdays repeat, before stock's 32-bit `localtime`, which is right until 2100. ponytail: stock code stays 32-bit. Its clock screens and its network time sync (`ntpdate`, then `hwclock -wu`) will show or write wrong dates after January 2038, and NTP's 2036 era rollover depends on stock's `ntpdate`. Stock's own HTTPS calls skip verification. Card apps' folder poll (`addon.c`) compares a 32-bit `st_mtime` with `time()`; both wrap together, so only the second of the wrap misjudges a change. librespot carries its own fix (DiamondBond/q2-librespot).
-
-## Font fallback weight
-
-`font_weight.c` keeps a theme’s bold intent separately from its resolved font face. `theme_font`
-marks a label only when a requested bold face falls back to the stock regular font. The marker
-is updated even on font-cache hits, and cleared on ordinary text or when a reused widget changes
-back to a supported face. `panel_font` applies the same rule to Classic’s album heading and track
-rows, leaving artist and duration text at their original weight.
-
-The existing border hook repeats a marked label’s native self painter one logical pixel to the
-right, then restores the canvas origin even if painting fails. Calling the vtable self painter
-directly avoids redispatching border events. Native clipping, shaping and marquee remain in
-charge; this synthesizes weight rather than supplying a new typeface. Font coverage and fallback
-sizes are unchanged. Supported Latin/Cyrillic bold and regular roles incur no extra foreground
-pass. Marked fallback labels incur one extra native foreground pass and one widget property;
-CPU and battery impact have not been measured on a Q2. No font files or background jobs are added.
-
-`test/font_weight.py` exercises the production helper’s native boundary. `test/patch.py` checks
-real font selection, cache reuse, Cover Flow captions and album rows, and Now Playing title
-changes across the three themes. Toolkit rendering is mocked at its native ABI boundary.

@@ -3885,6 +3885,7 @@ static void dark_title(void *t) {
     int px = theme()->font_px[ROLE_BAR];
     const char *face = theme_face(s, (int)wide_len(s), &px);
     slider_label(t, 0, dark_title_y(), 375, 25, px, face ? face : "default");
+    font_weight_mark(t, !face); /* theme_font's rule: only stock's face stands in for bold */
 }
 /* w at x, y on the screen, unless it's there. */
 void bar_place(void *w, int x, int y, int ww, int h) {
@@ -4219,7 +4220,6 @@ void clock_text(void *label, int negative, int t) {
 }
 
 void label_font(void *w, int bold) {
-    font_weight_mark(w, 0); /* the bar going back to its ordinary clock face */
     static const char *const font[] = { "style:normal:font_name", "style:focused:font_name",
                                         "style:disable:font_name" };
     for (unsigned i = 0; i < sizeof font / sizeof *font; ++i)

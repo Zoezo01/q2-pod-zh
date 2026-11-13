@@ -434,8 +434,7 @@ int pointer_down(void);
 unsigned qm_album_id(void *r);
 char *scrobble_tag(char *o, char *end, const char *s);
 
-/* font_weight.c: preserve the requested weight when a face lacks characters */
-void font_weight_mark(void *w, int bold);
+/* font_weight.c: a marked label's foreground painted again 1 px right */
 void font_weight_paint(void *w, void *canvas);
 
 /* np_bar.c */

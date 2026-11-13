@@ -1,7 +1,7 @@
 # Changelog
 
 - **1.8.2**:
-  - Text that falls back to the system font keeps its theme’s bold weight, including multilingual Cover Flow captions, album tracks and Now Playing titles.
+  - Themes: Chinese, Japanese and other text the theme's own face lacks is now drawn bold wherever **Classic** or **Modern** draws its text bold: Classic's lists, bar, info rows, Cover Flow and album panel; Modern's bar title; and Now Playing's title in both. It used the regular system font.
   - Playback: with **Headphones Required** on, the Q2 restores your queue at start-up again, paused, as **Memory Playback** has it. Since 1.8.0 nothing was restored with the switch on, even with headphones connected. **In-Vehicle Mode** still starts playing, or restores the queue paused when nothing is connected.
   - Controls: **Wheel Sensitivity** goes down to 10%, for a slower wheel: 20% takes a third of a turn per step and 10% most of a turn. 50% is still the default and nothing changes unless you lower it.
   - Cover Flow: it opens on the album of the song that's playing or paused, so that artist's other albums are a turn away ([#350](https://github.com/DiamondBond/q2-pod/issues/350)). With nothing queued, or a song with no album tag, it opens on the album you last stopped at, as before.

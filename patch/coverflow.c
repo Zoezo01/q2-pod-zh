@@ -3139,7 +3139,7 @@ void panel_font(void *label, int px, int bold) { /* shared with navigation.c */
                              *const sizes[] = { "style:normal:font_size", "style:focused:font_size",
                                                 "style:disable:font_size" };
     const char *face = bold ? theme_face(widget_get_text(label), -1, &px) : (const char *)0;
-    font_weight_mark(label, bold && !face && theme()->font[ROLE_TITLE] == FONT_CLASSIC_LIGHT);
+    font_weight_mark(label, bold && !face && caption_bold());
     for (unsigned i = 0; i < sizeof names / sizeof *names; ++i) {
         widget_set_prop_str(label, names[i], face ? face : "default");
         widget_set_prop_int(label, sizes[i], px);

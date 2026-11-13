@@ -1013,6 +1013,16 @@ def test_modern_names_the_page_in_its_bold_and_the_clock_goes_back_to_stocks_fac
     assert ui.prop(bar.clock, b'style:normal:font_name') == b'default' and len(ui.due('clock_due')) == 1
 
 
+def test_modern_clock_loses_a_cjk_titles_bold_mark_when_the_title_goes(fw, st, ui):
+    """A CJK page's name falls back to stock's face, kept bold by the mark; going Home the clock is plain."""
+    theme(fw, st, MODERN, TIMETITLE=0)
+    bar = Bar(fw, ui)
+    bar_title(fw, bar, window(ui, 'artist_page', '专辑'))
+    assert ui.prop(bar.clock, b'_q2_bold_fallback') == 1
+    bar_title(fw, bar, window(ui, 'home_page', 'Q2', navbar_shown=1))
+    assert ui.prop(bar.clock, b'_q2_bold_fallback') == 0
+
+
 def test_a_dialog_or_no_window_leaves_the_bar(fw, st, ui):
     theme(fw, st, TIMETITLE=0)
     bar = Bar(fw, ui)

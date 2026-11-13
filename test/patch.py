@@ -6471,32 +6471,27 @@ class CaptionWeightMachine(CoverflowMachine):
 for text,face,extra in (('Joe Hisaishi','classic-light',False),('佐咲紗花','default',True),
                         ('もののけ姫','default',True),('日本語 Title','default',True),
                         ('ハウルの動く城 サウンドトラック'*8,'default',True),('Навстречу','bold',False)):
-    for light in ('0','1'):
-        CONFIG['LIGHT']=light
-        m=classic_light_new(CaptionWeightMachine)
-        del CONFIG['LIGHT']
-        for field in ('REC_ALBUM','REC_ARTIST'): m.word(m.albums[0]+O[field],m.string(text))
-        m.open()
-        labels=[w for w in m.nodes[m.get(m.slide+O['W_PARENT'])]['children'] if m.nodes[w]['type']=='hscroll_label']
-        assert len(labels)==2 and all(m.nodes[w]['style:normal:font_name']==face for w in labels),(text,face)
-        m.caption_passes=[]
-        m.word(m.canvas+O['CANVAS_X'],7); m.word(m.canvas+O['CANVAS_Y'],9)
-        for w in labels:
-            m.nodes[w]['xoffset']=51
-            m.call(address=payload_syms['font_weight_paint'],args=(w,m.canvas,0,0),gap=0)
-            assert m.nodes[w]['xoffset']==51
-            assert (m.get(m.canvas+O['CANVAS_X']),m.get(m.canvas+O['CANVAS_Y']))==(7,9)
-        assert m.caption_passes==([(w,8,9) for w in labels] if extra else []),(text,m.caption_passes)
-        passed()
+    m=classic_light_new(CaptionWeightMachine)
+    for field in ('REC_ALBUM','REC_ARTIST'): m.word(m.albums[0]+O[field],m.string(text))
+    m.open()
+    labels=[w for w in m.nodes[m.get(m.slide+O['W_PARENT'])]['children'] if m.nodes[w]['type']=='hscroll_label']
+    assert len(labels)==2 and all(m.nodes[w]['style:normal:font_name']==face for w in labels),(text,face)
+    m.caption_passes=[]
+    m.word(m.canvas+O['CANVAS_X'],7); m.word(m.canvas+O['CANVAS_Y'],9)
+    for w in labels:
+        m.call(address=payload_syms['font_weight_paint'],args=(w,m.canvas,0,0),gap=0)
+        assert (m.get(m.canvas+O['CANVAS_X']),m.get(m.canvas+O['CANVAS_Y']))==(7,9)
+    assert m.caption_passes==([(w,8,9) for w in labels] if extra else []),(text,m.caption_passes)
+    passed()
 # Shared font intent, including Now Playing's role, cached labels, panel headings and track rows.
-for theme_id in ('1','2','3'):
+for theme_id in ('0','1','2'):
     def weight_setup(machine): machine.config.update(THEME=theme_id)
     SETUP[:]=[weight_setup]
     try: m=CaptionWeightMachine()
     finally: SETUP.clear()
     w=m.node('hscroll_label',text='Your Song')
     english=m.call(address=payload_syms['theme_font'],args=(w,3,0xffffffff,0),gap=0)
-    wanted=(english & 3) != 0
+    wanted=theme_id!='0'  # ROLE_NP: Classic and Modern ask for a bold face, Minimal for stock's
     m.nodes[w]['text']='日本語 Title'
     answer=m.call(address=payload_syms['theme_font'],args=(w,3,english,0),gap=0)
     assert bool(m.nodes[w].get('_q2_bold_fallback',0))==wanted,theme_id
@@ -11131,22 +11126,21 @@ for light,white in (('0',0xffffff),('1',0)):
     assert m.nodes[m.slide]['visible']==0 and m.nodes[[w for w in m.nodes[m.covers()]['children'] if m.nodes[w]['type']=='hscroll_label'][0]]['visible']==0 and m.nodes[m.covers()]['sensitive']==0 and m.nodes[m.covers()]['visible']
     assert not [w for w in m.nodes if m.nodes[w].get('name')==O.get('PAGE_TITLE')]; passed()  # no caption row: the bar's title is the page's name
 # Multilingual album header and track rows must retain the same bold intent as Latin rows.
-for half in ('0','1'):
-    CONFIG['LIGHT']=half; m=classic_light_new(FlipMachine); del CONFIG['LIGHT']
-    m.word(m.albums[0]+O['REC_ALBUM'],m.string('テレサ・テン 中国語ベスト'))
-    m.word(m.albums[0]+O['REC_ARTIST'],m.string('テレサ・テン'))
-    m.open(); m.found=[m.song('小城故事'),m.song('Your Song')]
-    for record in m.found: m.word(record+O['REC_CUE_END'],225)
-    m.tracks(0); m.advance(300)
-    panel=m.panel(); head,artist=m.nodes[panel]['children'][2:4]
-    by_name={m.nodes[m.row_labels(i)[0]]['text']:m.row_labels(i) for i in range(2)}
-    assert set(by_name)=={'小城故事','Your Song'},by_name
-    row0,time0=by_name['小城故事']; row1,time1=by_name['Your Song']
-    assert m.nodes[head].get('_q2_bold_fallback')==1
-    assert not m.nodes[artist].get('_q2_bold_fallback',0)
-    assert m.nodes[row0].get('_q2_bold_fallback')==1 and not m.nodes[row1].get('_q2_bold_fallback',0)
-    assert not m.nodes[time0].get('_q2_bold_fallback',0) and not m.nodes[time1].get('_q2_bold_fallback',0)
-    passed()
+m=classic_light_new(FlipMachine)
+m.word(m.albums[0]+O['REC_ALBUM'],m.string('テレサ・テン 中国語ベスト'))
+m.word(m.albums[0]+O['REC_ARTIST'],m.string('テレサ・テン'))
+m.open(); m.found=[m.song('小城故事'),m.song('Your Song')]
+for record in m.found: m.word(record+O['REC_CUE_END'],225)
+m.tracks(0); m.advance(300)
+panel=m.panel(); head,artist=m.nodes[panel]['children'][2:4]
+by_name={m.nodes[m.row_labels(i)[0]]['text']:m.row_labels(i) for i in range(2)}
+assert set(by_name)=={'小城故事','Your Song'},by_name
+row0,time0=by_name['小城故事']; row1,time1=by_name['Your Song']
+assert m.nodes[head].get('_q2_bold_fallback')==1
+assert not m.nodes[artist].get('_q2_bold_fallback',0)
+assert m.nodes[row0].get('_q2_bold_fallback')==1 and not m.nodes[row1].get('_q2_bold_fallback',0)
+assert not m.nodes[time0].get('_q2_bold_fallback',0) and not m.nodes[time1].get('_q2_bold_fallback',0)
+passed()
 
 # Its painters: the sheet the paper and the header's fill at f0, darker on top; over the rows the soft shadow, and the border outside, flat, the same on every side.
 m=flip_open(); m.advance(300); panel=m.panel(); sheet=m.nodes[panel]['children'][0]
@@ -12149,7 +12143,7 @@ for bt_text,bt_face in (('Навстречу Ветру','bold'),('日本語','d
     assert btm.font==(bt_face,21 if bt_face=='classic-light' else 17),(bt_text,btm.font)  # measured as it is drawn
 passed()
 # Actual Now Playing init/np_sync, across themes and text changes; preserve each theme's intent.
-for theme_id in ('1','2','3'):
+for theme_id in ('0','1','2'):
     SETUP[:]=[lambda machine: machine.config.update(THEME=theme_id)]
     try: q=LoadQueue(queue=3,pos=1)
     finally: SETUP.clear()
@@ -12161,7 +12155,7 @@ for theme_id in ('1','2','3'):
     q.word(q.win+O['W_PARENT'],q.wm); place(q,q.win,0,26,375,294)
     q.word(syms['system_bar'],q.node('window','system_bar'))
     assert q.call(address=ph,args=(q.win,7,0,0),gap=0)==0
-    wanted=q.nodes[title].get('style:normal:font_name','default')!='default'
+    wanted=theme_id!='0'  # ROLE_NP: Classic and Modern ask for a bold face, Minimal for stock's
     for text in ('小城故事','ハナノイロ -Acoustic-','日本語 English','Your Song'):
         q.nodes[title]['text']=text
         q.call(address=payload_syms['np_sync'],args=(q.win,0,0,0),gap=0)

@@ -1517,6 +1517,19 @@ def test_light_modes_chevron_on_a_coloured_bar_is_white(fw, st, layout, light):
     assert canvas.icons == [(art, MIDDLE[0] // 2, MIDDLE[1] // 2)]
 
 
+@pytest.mark.parametrize('marked', [1, 0])
+def test_a_bold_marked_label_paints_its_text_again_one_pixel_right(fw, marked):
+    """font_weight.c, through the border hook: stock's self painter once more, 1 px right and back."""
+    ui = Ui(fw)
+    label = ui.add('label', ui.window('songs_page'), (0, 0, 200, 30), _q2_bold_fallback=marked)
+    ui.set_text(label, '专辑')
+    log: list = []
+    fw.mock('canvas_translate', lambda c, x, y, *_: log.append(('translate', i32(x), i32(y))))
+    fw.mock('widget_vtable_on_paint_self', lambda w, c, *_: log.append(('self', w)))
+    fw.fn('ringnav_paint', C.c_int, C.c_void_p, C.c_void_p)(label.addr, Canvas(fw).addr)
+    assert log == ([('translate', 1, 0), ('self', label.addr), ('translate', -1, 0)] if marked else [])
+
+
 # ringnav_paint's own work around the painters.
 def test_ringnav_paint_returns_stocks_and_hands_the_paint_to_the_parent(fw, st):
     """Stock paints a widget's border after its children: once the card's row's title is done, the
@@ -2731,6 +2744,17 @@ def test_a_dark_page_takes_the_bars_title_across_in_white_and_hides_the_clock(fw
     assert bar.timers == [C.cast(fw.lib.bar_repaint, C.c_void_p).value]
     C.CFUNCTYPE(C.c_int, C.c_void_p)(bar.timers[0])(None)  # the repaint, after this paint
     assert fw.calls('widget_invalidate_force')[-1][1][0] == bar.bar.addr and st('bar_timer', C.c_uint).value == 0
+
+
+def test_the_dark_bars_latin_title_drops_a_cjk_pages_bold_mark(fw, st):
+    bar = DarkBar(fw, st)
+    title = bar.w['label_title']
+    bar.ui.set_text(title, '专辑')
+    fw.fn('theme_font', C.c_int, C.c_void_p, C.c_int, C.c_int)(title.addr, 2, -2)  # ROLE_BAR, FONT_ROW: the CJK page's
+    assert title.props['_q2_bold_fallback'] == 1
+    bar.to('usbmode_page')
+    fw.fn('bar_title_sync', None, C.c_void_p)(bar.ui.top.addr)
+    assert bar.ui.text(title) == 'Q2 Pod' and title.props['_q2_bold_fallback'] == 0
 
 
 def test_the_dark_bars_marks_take_its_places_and_stay(fw, st):

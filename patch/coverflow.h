@@ -224,7 +224,4 @@ void ld_ask(const int *want, int k);
 void ld_take(int s, int i, int a);
 void ld_quit(void);
 void coverflow_halves(void);
-
-/* Preserve requested weight when the themed face lacks a character. */
-void font_weight_mark(void *w, int bold);
 #endif
