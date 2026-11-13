@@ -38,3 +38,14 @@ def test_a_stub_records_and_a_mock_answers(fw):
     fw.mock('fw_system', lambda command, *rest: seen.append(C.string_at(command)) or 7)
     assert system(b'echo') == 7
     assert seen == [b'echo'] and [c[0] for c in fw.calls('fw_system')] == ['fw_system', 'fw_system']
+
+
+def test_errno_is_the_library_s_own_cell_until_a_mock_answers(fw):
+    """The firmware reads errno through libc's pointer after a failed call: a stub's 0 would be a NULL to read."""
+    where = fw.fn('fw___errno_location', C.POINTER(C.c_int))
+    assert where()[0] == 0
+    where()[0] = 4  # as a test sets EINTR, or the firmware writes it
+    assert fw.var('fw_errno', C.c_int).value == 4
+    mine = C.c_int(11)
+    fw.mock('fw___errno_location', lambda *_: C.addressof(mine))
+    assert where()[0] == 11 and fw.var('fw_errno', C.c_int).value == 4
