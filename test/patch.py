@@ -18316,9 +18316,35 @@ assert [am.nodes[l].get('style:normal:font_name') for l in am.nodes[abutton]['ch
 
 # Network Update (netupdate.c): System Update's second row, built by stock's own row builder
 # (0x4c8660), is renamed "2" so stock's click (atoi of the name: 0 TF card, 1 Shanling) skips it, and
-# fetches the latest GitHub release over verified TLS to the card's update.tar (a .part, renamed),
-# then runs stock's TF card update (0x4c7eb4). A failure keeps the old update.tar.
-m=RadioMachine(); resume=int(manifest['patch_symbols']['stock_fwupdate_trampoline'],16); m.handlers[resume]='stock_fwupdate'
+# fetches the latest GitHub release over verified TLS to the card's update.tar.part, carrying on from a
+# part already there. Only a part of the size and SHA-256 that GitHub's record of the release names
+# (the payload's own SHA-256, run here on the MIPS build) is renamed update.tar; then stock's TF card
+# update (0x4c7eb4) runs. A failure keeps the old update.tar.
+class UpdateMachine(RadioMachine):
+    """RadioMachine with the card in and GitHub's API: release answers the request for the tag's
+    release in reply's place; a transfer carried on from a byte (RESUME_FROM, froms) gets reply from
+    there; a file opened to append is written at its end."""
+    def __init__(self):
+        super().__init__({'/proc/mounts':bytearray(b'/dev/mmcblk0p1 /mnt/mmc vfat rw 0 0\n')}); self.release=b''; self.froms=[]
+        self.word(syms['g_power_capacity'],80)
+    def hook(self,u,address,size,unused):
+        name=self.handlers.get(address,'')
+        if name=='r:curl_easy_perform' and 20011 in self.opts:
+            start=self.opts.get(21,0); self.froms.append(start); reply=self.reply
+            self.reply=self.release if '/releases/tags/' in self.opts[10002] else reply[start:]
+            try: return super().hook(u,address,size,unused)
+            finally: self.reply=reply
+        if name=='b:fopen@GLIBC_2.2' and 'a' in self.text(u.reg_read(UC_MIPS_REG_A1)):
+            super().hook(u,address,size,unused); f=u.reg_read(UC_MIPS_REG_V0)
+            if f: self.handles[f][1]=len(self.files[self.handles[f][0]])
+            return
+        return super().hook(u,address,size,unused)
+def record(tar,size=None):
+    """GitHub's record of a release whose update.tar is tar: its size and digest, after another asset's."""
+    assets=[{'name':n,'label':'','size':len(d) if size is None or n!='update.tar' else size,'digest':'sha256:'+hashlib.sha256(d).hexdigest(),
+             'browser_download_url':'https://h/'+n} for n,d in (('Q2-Pod-User-Guide.pdf',b'guide'),('update.tar',tar))]
+    return json.dumps({'tag_name':'9.9.9','name':'9.9.9','assets':assets,'body':'notes'}).encode()
+m=UpdateMachine(); resume=int(manifest['patch_symbols']['stock_fwupdate_trampoline'],16); m.handlers[resume]='stock_fwupdate'
 m.u.hook_add(UC_HOOK_CODE,m.hook,begin=resume,end=resume)  # fast(): payload addresses hook one by one
 m.handlers[0x4c7eb4]='fwupdate_tf'; m.mock('strcpy@GLIBC_2.0','widget_set_tr_text')
 view=m.node('scroll_view','scroll_view_fwupdate'); m.top=m.node('window','fwupdate_page',[view])
@@ -18336,21 +18362,41 @@ UPDATE='/mnt/mmc/update.tar'; ASSET='update.tar'
 RELEASES=f"https://github.com/{manifest['update_repo']}/releases"  # build.py --update-repo
 m.files[UPDATE]=bytearray(b'old')
 m.wifi=-1; press(); assert m.toasts[-1][3]=='Connect to Wi-Fi first' and not m.threads; m.wifi=3
-def fetch(codes,tag,reply=b'',done=500):
+def fetch(codes,tag,reply=b'',done=500,release=None):
     press(); assert m.nodes[label]['text']=='Checking…'
-    m.codes=list(codes); m.location=f'{RELEASES}/tag/{tag}'; m.reply=reply
+    m.codes=list(codes); m.location=f'{RELEASES}/tag/{tag}'; m.reply=reply; m.release=record(reply) if release is None else release; m.froms=[]
     m.advance(500,clear=False)  # while it runs: the percentage, and standby and auto power-off wait
     assert m.nodes[label]['text']=='Checking…' and ('reset_poweroptions_timer',1,1,0) in [c[:4] for c in m.calls]
     worker,arg=m.threads[-1]; assert m.call(address=worker,args=(arg,0,0,0),gap=0,count=5_000_000)==0
     threads=len(m.threads); press(); assert len(m.threads)==threads  # ended, not yet joined: nothing
     m.advance(done,clear=False)
-    assert ('widget_set_tr_text',label) in [c[:2] for c in m.calls] and UPDATE+'.part' not in m.files
-fetch([302,200],'9.9.9',b'TAR'*100)
-assert m.opts[10002]==f'{RELEASES}/latest/download/{ASSET}' and m.opts[52]==1
+    assert ('widget_set_tr_text',label) in [c[:2] for c in m.calls]
+NEW=bytes(range(256))*70  # 17,920 bytes: more than one of the read-back's 16 KB pieces, and a padded last block
+fetch([302,200,200],'9.9.9',NEW)
+assert m.opts[10002]==f'{RELEASES}/download/9.9.9/{ASSET}' and m.opts[52]==1 and m.froms==[0,0] and 21 not in m.opts
 assert m.opts[10065]=='/etc/scrobble-ca.pem' and m.opts[64]==1 and m.opts[81]==2 and m.opts[99]==1 and m.opts[20108]
-assert bytes(m.files[UPDATE])==b'TAR'*100 and 'fwupdate_tf' in [c[0] for c in m.calls]
+assert bytes(m.files[UPDATE])==NEW and UPDATE+'.part' not in m.files and '/tmp/q2-update.json' not in m.files
+assert 'fwupdate_tf' in [c[0] for c in m.calls]
+# One byte off what the release's digest names, or another size: never update.tar, and the part goes.
 m.files[UPDATE]=bytearray(b'old')
-fetch([302,404],'9.9.9'); assert m.toasts[-1][3]=='No update for this build' and m.files[UPDATE]==b'old'
+fetch([302,200,200],'9.9.9',NEW[:-1]+b'!',release=record(NEW))
+assert m.toasts[-1][3]=='The download was damaged, try again' and m.files[UPDATE]==b'old' and UPDATE+'.part' not in m.files
+fetch([302,200,200],'9.9.9',NEW,release=record(NEW,len(NEW)+1))
+assert m.toasts[-1][3]=='The download was damaged, try again' and m.files[UPDATE]==b'old' and UPDATE+'.part' not in m.files
+assert 'fwupdate_tf' not in [c[0] for c in m.calls]
+# A release whose record lacks the tar's digest downloads nothing; a card without room neither.
+fetch([302,200],'9.9.9',NEW,release=record(NEW).replace(b'"digest"',b'"digest_"'))
+assert m.toasts[-1][3]=='No update for this build' and m.froms==[0] and m.files[UPDATE]==b'old'
+# A part left on the card (a lost connection, a power cut, the page left) is carried on from: the rest
+# alone is asked for, and the whole is checked as any other.
+m.files[UPDATE+'.part']=bytearray(NEW[:5000])
+fetch([302,200,206],'9.9.9',NEW)
+assert m.froms==[0,5000] and m.opts[21]==5000 and bytes(m.files[UPDATE])==NEW and UPDATE+'.part' not in m.files
+assert 'fwupdate_tf' in [c[0] for c in m.calls]
+m.files[UPDATE]=bytearray(b'old')
+fetch([302,200,404],'9.9.9'); assert m.toasts[-1][3]=='No update for this build' and m.files[UPDATE]==b'old' and UPDATE+'.part' not in m.files
+m.word(syms['g_power_capacity'],15); threads=len(m.threads); press()  # under stock's own gate before the flash: said first
+assert m.toasts[-1][3]=='Charge the battery first' and len(m.threads)==threads; m.word(syms['g_power_capacity'],80)
 fetch([200],'9.9.9'); assert m.toasts[-1][3]=="Can't reach GitHub"  # no redirect: no tag
 if not manifest['dev']:  # --dev builds have no release tag, so always fetch
     fetch([302],VERSION); assert m.toasts[-1][3]=='Latest firmware installed' and m.files[UPDATE]==b'old'
@@ -20662,6 +20708,7 @@ m.advance(500); assert len(m.threads)==1 and [x[3] for x in m.toasts].count('Upl
 # Download Album Lyrics each start once, not cancelled by the held press ("Cancelling…").
 m=SmartRadio(); resume=int(manifest['patch_symbols']['stock_fwupdate_trampoline'],16); m.handlers[resume]='stock_fwupdate'
 m.u.hook_add(UC_HOOK_CODE,m.hook,begin=resume,end=resume); m.mock('strcpy@GLIBC_2.0','widget_set_tr_text')
+m.word(syms['g_power_capacity'],80)  # Network Update's own battery check passes
 view=m.node('scroll_view','scroll_view_fwupdate'); m.top=m.node('window','fwupdate_page',[view])
 for i in range(2):
     row=m.node('list_item'); m.nodes[view]['children'].append(row); assert m.call(address=0x4c8660,args=(row,i,0,0),gap=0)==0

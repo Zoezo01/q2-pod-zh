@@ -230,7 +230,8 @@ int netupdate_sha256(const char *path, char *hex, unsigned *size) {
     int ok = f && !ferror(f);
     if (f) fclose(f);
     free(buf);
-    for (int i = 0; i < 8; ++i) snprintf(hex + 8 * i, 9, "%08x", h[i]);
+    for (int i = 0; i < 64; ++i) hex[i] = "0123456789abcdef"[h[i / 8] >> (28 - 4 * (i % 8)) & 15];
+    hex[64] = 0;
     *size = total;
     return ok;
 }
