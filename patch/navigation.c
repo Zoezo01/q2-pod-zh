@@ -3459,7 +3459,7 @@ static const unsigned char playset_order[] = {
     4 /* DSD Output */,
     5 /* USB Audio */,
     15 /* Library & Folders */,
-    20 /* 补全封面与歌词 */,
+    19 /* 补全封面与歌词, last built: stock's rows 0-10 then ours, one fewer than 1.7.2's page */,
 };
 /* Library & Folders: stock's Folder skip (0), then ours as built. */
 static const unsigned char library_order[] = {
@@ -3877,9 +3877,10 @@ static int bar_state_sync(void *bar) {
             }
         }
     }
-    if (st.bar_idle && st.bar_state && st.bar_eq)
-        widget_set_visible(st.bar_idle,
-                           !widget_get_visible(st.bar_state) && !widget_get_visible(st.bar_eq), 0);
+    /* stock V1.36 shows the device's name here while nothing plays (label_idle, "Q2"): we keep
+     * the bar's left empty instead, as every release before read, and the word says playing or
+     * paused when something does (bar_word_sync). */
+    if (st.bar_idle && widget_get_visible(st.bar_idle)) widget_set_visible(st.bar_idle, 0, 0);
     return changed;
 }
 
@@ -3896,8 +3897,10 @@ static int bar_state_sync(void *bar) {
  * (state_own_place): Home's list and Now Playing's page. */
 #define PLAY_WORD_W 66
 #define PLAY_WORD_PX 16
-/* Classic's word takes the page name's own box; theme_font reads its size from the bar's role. */
-#define PLAY_WORD_WIDE 84
+/* Classic's word takes the page name's own box. 96, not the 84 four hanzi at the role's 21 px
+ * would need: theme_font's CJK step-down keeps the word at BAR_CJK_PX, and the wide box rides out
+ * any pass that wrote the role's own size first. */ 
+#define PLAY_WORD_WIDE 96
 /* The bar's CJK text steps down to the clock's ink height: default.ttf draws a hanzi 248/256 em
  * tall but a digit's cap 183/256 (theme_font), so at the same px the hanzi read a third taller
  * than the stock clock's 20 px digits — the page names looked their own size on the bar. */

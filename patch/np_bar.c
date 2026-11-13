@@ -109,6 +109,17 @@ void bar_title(void *bar, void *top) {
         cover_flow[] = { 'C', 'o', 'v', 'e', 'r', ' ', 'F', 'l', 'o', 'w', 0 }, none = 0;
     if (st.bar_title) { /* this bar names the page in its own label: off, the clock makes way */
         const unsigned *own = widget_get_text(st.bar_title);
+        /* Now Playing's page names nothing (bar_title_of): V1.36's np page writes its own title
+         * under us ("▶ 正在播放", the bar's play state says it instead), so whatever lands in the
+         * label while that page is on top goes before the paint does. */
+        if (top && own && *own) {
+            const char *page = widget_get_prop_str(top, "name", "");
+            if (tk_str_start_with(page, "playing_page")) {
+                widget_set_text_utf8(st.bar_title, "");
+                own = widget_get_text(st.bar_title);
+                st.clock_key = 0;
+            }
+        }
         int titled = !st.time_title && own && *own;
         void *clock = titled != st.bar_titled ? widget_lookup(bar, "label_clock", 1) : (void *)0;
         if (!clock) return;
