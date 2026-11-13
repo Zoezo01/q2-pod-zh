@@ -9,12 +9,12 @@ Shanling's figures, as retailers and the launch press list them ([Audiophonics](
 | | |
 |---|---|
 | SoC | Ingenic X2000 |
-| RAM | 128 MB, no swap (Linux reports about 120 MB as `MemTotal`) |
+| RAM | 128 MB (`mem=128M`), no swap; Linux reports 117,864 kB as `MemTotal` |
 | DAC | 4 × Cirrus Logic CS43131 |
 | Decoding | PCM to 768 kHz / 32-bit, DSD512 |
 | Screen | 2.09 in touchscreen, 320 × 375 |
 | Controls | Touch wheel, Centre button, four side buttons |
-| Storage | microSD, up to 2 TB; no user storage inside |
+| Storage | microSD, up to 2 TB; the firmware sits on internal NAND (read-only squashfs), with no user storage |
 | Battery | 1850 mAh: 13.5 h on 3.5 mm, 12.5 h on 4.4 mm, 16.5 h on Bluetooth (LDAC) |
 | Bluetooth | 5.2, send and receive; LDAC, aptX HD, aptX, AAC, SBC |
 | Wi-Fi | Yes (AirPlay, DLNA in stock firmware) |
