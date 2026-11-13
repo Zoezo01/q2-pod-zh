@@ -22,7 +22,7 @@ SHELF_180 = {'cf.eye': 94, 'cf.tilt': 89, 'cf.x1': 116, 'cf.xs': 34, 'cf.z1': 77
 
 # coverflow.c, coverflow_thumb.c, coverflow_letters.c, coverflow_loader.c and playlist_art.c as one unit, so the shim's
 # stubs are defined once
-CF_SOURCES = '#include "coverflow.c"\n#include "coverflow_thumb.c"\n#include "coverflow_letters.c"\n#include "coverflow_loader.c"\n#include "playlist_art.c"\n'
+CF_SOURCES = '#include "coverflow.c"\n#include "coverflow_thumb.c"\n#include "coverflow_letters.c"\n#include "coverflow_loader.c"\n#include "playlist_art.c"\n#include "coverflow_position.c"\n'
 SHIM_H = r"""
 extern char system_bar[];
 #include <dirent.h>
@@ -317,6 +317,7 @@ const unsigned *widget_get_text(void *w) { return 0; }
 int canvas_set_font(void *c, const char *f, unsigned px) { return 0; }
 float canvas_measure_text(void *c, const unsigned *s, unsigned n) { return 0; }
 const char *theme_face(const unsigned *s, int n, int *px) { return 0; }
+int coverflow_position_enabled(void) { return 0; }
 void home_pane_read(int *services, int *games, int *free_tenths) { *services = 5; *games = 4; *free_tenths = 412; }
 extern volatile unsigned library_gen;
 static int count_calls, count_answer = 704;
