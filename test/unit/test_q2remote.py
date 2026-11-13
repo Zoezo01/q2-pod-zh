@@ -804,10 +804,19 @@ def test_find_scans_this_network(probes, monkeypatch):
         def getsockname(self):
             return ('192.168.7.9', 1234)
     monkeypatch.setattr(socket, 'socket', Udp)
+    def no_ip(*a, **k):
+        raise FileNotFoundError('ip')  # not Linux: the default route's address alone
+    monkeypatch.setattr(q.subprocess, 'run', no_ip)
     seen = probes({'192.168.7.1': b'ERR\n', '192.168.7.254': b'ERR\n'})
     assert q.find() == ['192.168.7.1', '192.168.7.254']
     assert udp == [(socket.AF_INET, socket.SOCK_DGRAM), ('8.8.8.8', 80)]
     assert len(seen) == 254
+
+
+def test_local_addrs_takes_every_interface_s_from_ip(monkeypatch):
+    out = '2: eth0    inet 10.1.2.3/24 brd 10.1.2.255 scope global eth0\n3: wlan0    inet 192.168.43.7/24 scope global wlan0\n'
+    monkeypatch.setattr(q.subprocess, 'run', lambda *a, **k: types.SimpleNamespace(stdout=out))
+    assert q.local_addrs() == ['10.1.2.3', '192.168.43.7']
 
 
 def test_reboot_without_waiting(shell):
