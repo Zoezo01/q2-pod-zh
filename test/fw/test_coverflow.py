@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 
 import host
-from conftest import O, Deques, Files, claim, high_halves
+from conftest import O, Deques, Externpic, Files, ask_cover, claim, high_halves, in_fork
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 CX, TOP, ART, ONE, MISS = 187, 13, 160, 65536, 99
@@ -2981,6 +2981,41 @@ def test_a_home_paint_arms_the_pan_once_while_it_shows(fw, mcl):
     home.tw = 300
     fw.fn('coverflow_home_art', None, C.c_void_p)(h.win)
     assert len([t for t in ui.timers.values() if t[0] == address(fw, 'coverflow__home_drift')]) == 1
+
+
+# A card app's URL queue: its songs have no path and a cover by URL leaves g_lastcover_url "", so a paint between the
+# song change and its cover's request shows the last song's file, still in place, under the new album. A quick skip
+# asks for the next cover while the last one downloads: that lands first, then the next one with no paint between
+# its type 0 and 2. Home keys the file written, so each download is shown.
+@in_fork
+def test_home_shows_each_cover_a_url_queue_downloads(fw, mcl):
+    _, ui, h, _ = home_open(fw)
+    fw.var('g_backlight_status', C.c_ubyte).value = 1
+    recs = [Rec(path='') for _ in range(2)]
+    fw.var('fw_ctx_mcl_pdeqplaylist', C.c_uint).value = Deques(fw).new([rec.p for rec in recs])
+    fw.var('fw_ctx_g_lastcover_url', C.c_char * 1024).value = b''
+    kind, pic = fw.var('g_playcover_type', C.c_ubyte), Externpic(fw)
+    def downloaded(size=20000):
+        pic.write(size)
+        kind.value = 2
+    def paint():
+        fw.fn('coverflow_home_art', None, C.c_void_p)(h.win)
+        return len(fw.calls('image_manager_unload_bitmap_by_name'))
+    mcl.pos = 0
+    player_rig(fw, id3_path=b'', album=b'One')
+    ask_cover(fw)
+    downloaded()
+    assert paint() == 1
+    mcl.pos = 1
+    player_rig(fw, id3_path=b'', album=b'Two')
+    assert paint() == 2  # the last song's file, under the new album
+    ask_cover(fw)
+    downloaded()  # the first song's cover again, still downloading at the skip
+    assert paint() == 3
+    kind.value = 0  # the thread takes the second song's request: no paint sees it
+    downloaded(31000)
+    assert paint() == 4
+    assert paint() == 4
 
 
 def test_a_dark_screen_arms_no_pan(fw, mcl):

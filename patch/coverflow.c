@@ -3768,6 +3768,20 @@ static const char *const player_covers[] = { 0, "file://" PEQ_ROOT "/tmp/coverpi
                                              "file://" PEQ_ROOT "/tmp/externpic.jpg", 0,
                                              "file://" PEQ_ROOT "/tmp/externpic.jpg" };
 
+/* The player's file (now_cover's) as last written: its size and modification time, 0 for none. The
+ * art's keys take it: a card app's URL queue has no path and a cover by URL leaves g_lastcover_url
+ * empty, so type and path are the same for every song, and stock clears its request before the
+ * download, so only the file tells one song's cover from the last, even one downloaded after the
+ * next song's request. The cover thread waits 100 ms between covers, so two writes never share a
+ * time. o32 stat: st_size word 12, st_mtime word 16, its nanoseconds 17.
+ * ponytail: a stat of tmpfs each time a key is made. */
+unsigned now_cover_written(const char *file) {
+    unsigned st[36];
+    if (!file || __xstat(3, file + 7, st)) return 0; /* past "file://" */
+    return hash_bytes(hash_bytes(FNV_SEED, (const unsigned char *)&st[12], 4),
+                      (const unsigned char *)&st[16], 8);
+}
+
 /* The player's cover of r: its type once the cover thread has parsed r (g_lastcover_url is its
  * path), else 0, and *file that type's file, or 0. */
 unsigned char now_cover(void *r, const char **file) {
@@ -4445,7 +4459,8 @@ void coverflow_home_art(void *top) {
     unsigned char type = now_cover(r, &cover);
     unsigned album = tags_key(now_tag(r, REC_ARTIST), now_tag(r, REC_ALBUM));
     unsigned key = hash_bytes(hash_bytes(fnv(FNV_SEED, (const unsigned char *)path), &type, 1),
-                              (const unsigned char *)&album, sizeof(album));
+                              (const unsigned char *)&album, sizeof(album)) ^
+                   now_cover_written(cover);
     if (key == home.key) return;
     home.key = key;
     home.pane = 0;

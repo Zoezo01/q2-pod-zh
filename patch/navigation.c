@@ -221,6 +221,7 @@ extern const char *radio_hold(void *top);
 extern void visualizer_paint(void *w, void *canvas), visualizer_attach(void *win);
 extern int visualizer_live(void), games_live(void);
 extern unsigned char now_cover(void *r, const char **file);
+extern unsigned now_cover_written(const char *file);
 extern int scrobble_append(const char *line, unsigned n);
 extern int staged_into(void *into, int (*query)(void *), void *arg);
 /* Scope music detail loads too: spoken tracks can share all their tags with music. */
@@ -4730,16 +4731,20 @@ static int np_gone(void *win, void *event) {
  * finish. Enlarged Art's timer clears all three while it is open (0x52dac0), so a change it took
  * left the page on the last track's art. Each lit pass, the playing track and the player's file it
  * can use (once g_lastcover_url is this track's: 1 embedded, 2 folder image, 4 downloaded, 3 none:
- * stock's placeholder) are compared with the last; a change reloads the art as stock does, the
- * cached bitmap dropped first (the player writes every track's cover to the same file). Anything
- * else (parsing, Tidal) keeps stock's image.
+ * stock's placeholder) are compared with the last, with that file's size and time
+ * (now_cover_written: a card app's URL queue's songs share both); a change reloads the art as stock
+ * does, the cached bitmap dropped first (the player writes every track's cover to the same file).
+ * Anything else (parsing, Tidal) keeps stock's image.
  * ponytail: one more decode per track change while the page is up, beside stock's own reload. */
 static unsigned np_art(const char **file) {
     unsigned at, n;
     void *r = queue_now(&at, &n);
     unsigned char type = now_cover(r, file);
+    unsigned written = now_cover_written(*file);
     if (type == 3) *file = "play_defaultcover"; /* none: stock's placeholder */
-    return *file ? fnv(hash_bytes(FNV_SEED, &type, 1), (const unsigned char *)P(r, REC_PATH)) : 0;
+    return *file ? fnv(hash_bytes(FNV_SEED, &type, 1), (const unsigned char *)P(r, REC_PATH)) ^
+                       written
+                 : 0;
 }
 static void np_art_poll(void) {
     const char *file;
@@ -4939,7 +4944,8 @@ static int bc_repaint(const void *info) {
  * kind by g_playcover_type (0x52d828), so one counts only once it is the type's and g_lastcover_url
  * is this track's, as Home's art; until then the art keeps the shape of g_lastcover_url's cover, or
  * the square once that changes. The file is decoded past the image manager's cached copy, which may
- * be the last track's. Stock's default_bigcover placeholder is the square. */
+ * be the last track's; the file's size and time count too (np_art). Stock's
+ * default_bigcover placeholder is the square. */
 static void bc_fit(void *win) {
     void *img = widget_lookup(win, "img_bigcover", 1), *shade = st.bc[1], *title = st.bc[0];
     const char *name = img ? widget_get_prop_str(img, "image", "") : "";
@@ -4947,7 +4953,7 @@ static void bc_fit(void *win) {
     const char *cover;
     unsigned type = now_cover(queue_now(&at, &n), &cover);
     unsigned box = img ? (unsigned)(I(img, W_W) << 16 | I(img, W_H)) : 0;
-    unsigned key = fnv(np_track() ^ type, (const unsigned char *)name);
+    unsigned key = fnv(np_track() ^ type, (const unsigned char *)name) ^ now_cover_written(cover);
     if (!img || !shade || !title || (key == st.bc_key && box == st.bc_box)) return;
     int player = tk_str_end_with(name, "/tmp/coverpic.jpg") ||
                  tk_str_end_with(name, "/tmp/externpic.jpg") ||

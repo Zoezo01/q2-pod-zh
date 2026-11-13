@@ -111,6 +111,42 @@ def claim(address):
     if libc.mmap(page, 0x2000, 7, 0x100022, -1, 0) != page:  # MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE
         assert not libc.mprotect(page, 0x2000, 7)
 
+def ask_cover(fw):
+    """A card app's song asks for its cover, as get_onlineid3info does (build.py COVERINFO_CALL, tidal.c
+    app_coverinfo): stock's player_set_coverinfo sets g_playcover_type to 0 for its cover thread, here before the
+    call, as its stand-in at tidal.c's own define only returns. The stand-in outlives the test: call it in_fork."""
+    at = int(re.findall(r'#define player_set_coverinfo \(\(.*\)(0x[0-9a-f]+)u\)', (ROOT/'patch/tidal.c').read_text())[0], 16)
+    claim(at)
+    C.memmove(at, b'\xc3', 1)  # ret
+    fw.mock('tk_str_start_with', lambda s, p, *_: C.string_at(s).startswith(C.string_at(p)))
+    rec, id_ = C.create_string_buffer(0x60), C.create_string_buffer(b'app:1:0')  # a card app's record
+    C.c_void_p.from_address(C.addressof(rec) + O['REC_TIDAL_ID']).value = C.addressof(id_)
+    fw.var('g_playcover_type', C.c_ubyte).value = 0
+    fw.fn('app_coverinfo', C.c_int, C.c_char_p, C.c_char_p, C.c_int, C.c_void_p)(b'https://srv/cover.jpg', b'Song', 4,
+                                                                                  C.addressof(rec))
+
+class Externpic:
+    """/tmp/externpic.jpg as stock's cover thread writes it, seen through __xstat (o32: st_size word 12, st_mtime
+    word 16, its nanoseconds 17): write() is the next download, 125 ms on, of size bytes, so most share their second
+    with the last; grow() is the same write read again with more of it there, in the same tick. Nothing else is
+    there."""
+    def __init__(self, fw):
+        self.n, self.size = 0, 0
+        fw.mock('fw___xstat', self.stat)
+
+    def write(self, size=20000):
+        self.n, self.size = self.n + 1, size
+
+    def grow(self, size):
+        self.size = size
+
+    def stat(self, version, path, info, *_):
+        if not C.string_at(path).endswith(b'/tmp/externpic.jpg'):
+            return -1
+        words = (C.c_uint * 36).from_address(info)
+        words[12], words[16], words[17] = self.size, 1800000000 + self.n // 8, self.n % 8 * 125000000
+        return 0
+
 def in_fork(test):
     """The test in a child: what it writes at stock's code addresses would outlive the test here. The child
     closes its firmware (dlclose) before it leaves: gcov writes a library's counts then, and _exit alone would
