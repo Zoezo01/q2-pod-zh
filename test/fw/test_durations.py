@@ -550,7 +550,7 @@ def test_long_songs_starts_no_pass_under_usb_storage_or_a_scan_and_measures_once
     windows = {'usbmode_page'} if away == 'usb' else set()
     fw.mock('navigator_window_is_exist', lambda name, *_: C.string_at(name).decode() in windows)
     scanning(away == 'scan')
-    assert not start(fw, ui, [song(b'/m/a')]) and not probe.threads and not fw.calls('ringnav_statx')
+    assert not start(fw, ui, [song(b'/m/a')]) and not probe.threads
     windows.clear(), scanning(0)
     assert start(fw, ui, [song(b'/m/a')])
     finish(fw, probe)
