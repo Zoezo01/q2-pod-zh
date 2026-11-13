@@ -208,6 +208,9 @@ int main(int argc, char **argv) {
     assert(coverflow_position_offset(800, 400, 400, 295) == 0);
     assert(coverflow_position_offset(400, 400, 401, 295) == 295); /* Sort card */
     assert(coverflow_position_offset(401, 400, 401, 295) == 0);
+    assert(coverflow_position_offset(-.2f, 400, 401, 295) == 0);     /* artist's albums: bounce at the first */
+    assert(coverflow_position_offset(-.4f, 400, 400, 295) == 0);     /* playlists: the rubber band's deepest */
+    assert(coverflow_position_offset(400.2f, 400, 401, 295) == 295); /* bounce past the All albums card */
     for (int i = 1; i < 100000; ++i)
         assert(coverflow_position_offset((float)i, 100000, 100000, 295) >=
                coverflow_position_offset((float)(i - 1), 100000, 100000, 295));
@@ -337,25 +340,6 @@ int main(int argc, char **argv) {
     P(canvas, CANVAS_LCD) = NULL;
     coverflow_position_paint(covers, canvas);
     assert(!fills);
-    /* Optional preview contains the actual painter's pixels, cropped to its strip. */
-    if (argc == 2) {
-        P(canvas, CANVAS_LCD) = lcd;
-        fraction = 0;
-        FILE *f = fopen(argv[1], "wb");
-        assert(f);
-        fprintf(f, "P6\n375 80\n255\n");
-        const int at[] = { 0, 199, 399, 0 };
-        for (unsigned k = 0; k < sizeof at / sizeof *at; ++k) {
-            paint(at[k]);
-            for (int y = 270; y < 290; ++y)
-                for (int x = 0; x < 375; ++x) {
-                    unsigned p = pixels[y * 375 + x];
-                    unsigned char rgb[] = { p >> 16, p >> 8, p };
-                    assert(fwrite(rgb, 1, 3, f) == 3);
-                }
-        }
-        assert(!fclose(f));
-    }
     puts("Cover Flow position: 400 albums, direction, fractional motion, wrap, extra cards, 100000 "
          "albums, cover-aligned track, 9x4 soft-grey thumb, 2px track, coincident centres, footer "
          "midpoint, no contrasting outline, paint bounds, light/dark, fill "

@@ -370,6 +370,14 @@ Wheel Sensitivity scales the travel (`wheel_pct`), as it does other lists' ticks
 
 The `--dev` frame gaps ([above](#coverflow-step)) go on working: `th.on` is a run, and its frames go to the log at the first paint after it.
 
+## Cover Flow browsing position
+
+`coverflow_position.c` draws an optional position bar, off by default. Display → Cover Flow's **Position Bar** persists `Q2POD/CFPOSITION`. The track matches the central cover's 160 px width, and its centre is halfway between the last caption's bottom and the page's bottom. The 2 px track and 9×4 px grey thumb share a centreline. Virtual Sort/All Albums cards hold at the last album; wrapping to the first album returns the thumb to the left, at the half cover where `visual()` wraps. A bounded list's bounce or rubber band past its first album holds the thumb at the left. Zero or one album hides it.
+
+The painter reads the wheel thumb's follower (`th`) while it holds the covers, otherwise the slide's live offset (touch and stock's step), so wheel and touch movement update it before settling. It stays opaque during movement, holds for 800 ms and fades over 300 ms. A temporary 33 ms UI timer invalidates only the 160×8 px footer strip; queuing that damage outside painting avoids the toolkit consuming it in paint cleanup. The timer stops after clearing, when disabled, or at page teardown. There is no worker, image cache, scan, or music-file access.
+
+`test/coverflow_position.py` executes the production painter against a native canvas boundary; it also models shelf-only invalidation and paint cleanup. `test/patch.py` checks the real MIPS painter's placement in all three themes and both schemes, plus the persisted setting.
+
 ## Slanted art
 
 Classic's Now Playing is an iPod classic's: the art turned in perspective with its reflection under it, and a glossy progress bar with the times beside it. The numbers are fitted to Apple's own 320 x 240 screen capture of a 7th-generation Now Playing: its far (right) edge is 118 of the near edge's 135 px (`SLANT_FAR` 224/256), the width the near edge's height, centred; texture across follows 1 / height (a true perspective, which matched the flat cover better than a linear stretch); the reflection starts at a third (`SLANT_REFLECT_A` 84/256) and fades out over 22% of each column's height (`SLANT_REFLECT_PCT`).
@@ -1752,22 +1760,3 @@ The rootfs is glibc 2.28 on 32-bit MIPS, so stock's `time_t` is 32 bits, and the
 **TLS.** Every verified libcurl handle (Network Update, Q2 Shelf, Internet Radio, scrobbling, lyrics and covers) sets `CURLOPT_SSL_CTX_FUNCTION` to `tls_untimed` (`patch/peq.h`). It sets `X509_V_FLAG_NO_CHECK_TIME` in the `SSL_CTX`'s `X509_VERIFY_PARAM`, which each connection inherits, so chains still have to reach a pinned root, but no certificate's dates are checked. demo doesn't import `SSL_CTX_get0_param` or `X509_VERIFY_PARAM_set_flags`, so the callback writes OpenSSL 1.1.1f's fields itself (`SSL_CTX->param` at `0x100`, `->flags` at `0xc`). `tools/build.py` checks that both functions in the rootfs's `libssl`/`libcrypto` still load those offsets. ponytail: an expired or retired server certificate is accepted too, and there is no revocation check. That is the price of working with a firmware nobody can update. Tidal's downloads already run unverified, as its stream does.
 
 **Clock.** Linux 5.10 keeps 64-bit time, and glibc 2.28's `time()` truncates it to 32 bits. `wall_time` reads that unsigned, which is right until 2106. Scrobble timestamps use it. The iPod status bar takes it back in 28-year steps, a span over which dates and weekdays repeat, before stock's 32-bit `localtime`, which is right until 2100. ponytail: stock code stays 32-bit. Its clock screens and its network time sync (`ntpdate`, then `hwclock -wu`) will show or write wrong dates after January 2038, and NTP's 2036 era rollover depends on stock's `ntpdate`. Stock's own HTTPS calls skip verification. Card apps' folder poll (`addon.c`) compares a 32-bit `st_mtime` with `time()`; both wrap together, so only the second of the wrap misjudges a change. librespot carries its own fix (DiamondBond/q2-librespot).
-
-## Cover Flow browsing position
-
-`coverflow_position.c` draws an optional position bar, off by default. Display → Cover Flow’s
-**Position Bar** persists `Q2POD/CFPOSITION`. The track matches the central cover’s 160 px width,
-and its centre is halfway between the last caption’s bottom and the page’s bottom. The 2 px
-track and 9×4 px grey thumb share a centreline. Virtual Sort/All Albums cards hold at the last
-album; wrapping to the first album returns the thumb to the left. Zero or one album hides it.
-
-The painter reads the slide’s live fractional position and the touch fling’s position, so wheel
-and touch movement update it before settling. It stays opaque during movement, holds for 800 ms
-and fades over 300 ms. A temporary 33 ms UI timer invalidates only the 160×8 px footer strip;
-queuing that damage outside painting avoids the toolkit consuming it in paint cleanup. The timer
-stops after clearing, when disabled, or at page teardown. There is no worker, image cache, scan,
-or music-file access. CPU and battery cost have not been measured on hardware.
-
-`test/coverflow_position.py` executes the production painter against a native canvas boundary;
-`--repaint` models shelf-only invalidation and paint cleanup. `test/patch.py` checks the real MIPS
-painter’s placement in all three themes and both schemes, plus the persisted setting.

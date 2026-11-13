@@ -6518,30 +6518,33 @@ for title in ('小城故事','もののけ姫','日本語 English','한국어','
     passed()
 
 # Position bar against each real built-in theme's shelf geometry and each light/dark scheme.
-for theme_id in ('1','2','3'):
-    for light in ('0','1'):
-        def position_setup(machine): machine.config.update(THEME=theme_id,LIGHT=light,CFPOSITION='1')
-        SETUP[:]=[position_setup]
-        try: m=CoverflowMachine()
-        finally: SETUP.clear()
-        m.open()
-        covers=m.get(m.slide+O['W_PARENT'])
-        paint_position=lambda w: m.call(address=payload_syms['coverflow_position_paint'],args=(w,m.canvas,0,0),gap=0)
-        paint_position(m.slide)
-        xs=[]
-        for index in (1,2,0):
-            m.word(m.slide+O['SLIDE_INDEX'],index); m.bands=[]
-            paint_position(m.slide); paint_position(covers)
-            assert len(m.bands)==5,(theme_id,light,m.bands)
-            track,*thumb=m.bands
-            labels=[w for w in m.nodes[covers]['children'] if m.nodes[w]['type']=='hscroll_label']
-            bottom=max(m.get(w+O['W_Y'])+m.get(w+O['W_H']) for w in labels)
-            assert track[:4]==(107,(bottom+m.get(covers+O['W_H']))//2-1,160,2),(theme_id,track,bottom)
-            xs.append(min(b[0] for b in thumb))
-            assert len(thumb)==4 and [b[2:4] for b in thumb]==[(7,1),(9,1),(9,1),(7,1)]
-            assert 2*track[1]+track[3] == thumb[0][1]+thumb[-1][1]+1
-        assert xs[1]>xs[0]>xs[2],(theme_id,light,xs)
-        passed()
+def position_checks():
+    for theme_id in ('1','2','3'):
+        for light in ('0','1'):
+            def position_setup(machine): machine.config.update(THEME=theme_id,LIGHT=light,CFPOSITION='1')
+            SETUP[:]=[position_setup]
+            try: m=CoverflowMachine()
+            finally: SETUP.clear()
+            m.open()
+            covers=m.get(m.slide+O['W_PARENT'])
+            paint_position=lambda w: m.call(address=payload_syms['coverflow_position_paint'],args=(w,m.canvas,0,0),gap=0)
+            paint_position(m.slide)
+            xs=[]
+            for index in (1,2,0):
+                m.word(m.slide+O['SLIDE_INDEX'],index); m.bands=[]
+                paint_position(m.slide); paint_position(covers)
+                assert len(m.bands)==5,(theme_id,light,m.bands)
+                track,*thumb=m.bands
+                labels=[w for w in m.nodes[covers]['children'] if m.nodes[w]['type']=='hscroll_label']
+                bottom=max(m.get(w+O['W_Y'])+m.get(w+O['W_H']) for w in labels)
+                assert track[:4]==(107,(bottom+m.get(covers+O['W_H']))//2-1,160,2),(theme_id,track,bottom)
+                xs.append(min(b[0] for b in thumb))
+                assert len(thumb)==4 and [b[2:4] for b in thumb]==[(7,1),(9,1),(9,1),(7,1)]
+                assert 2*track[1]+track[3] == thumb[0][1]+thumb[-1][1]+1
+            assert xs[1]>xs[0]>xs[2],(theme_id,light,xs)
+            passed()
+
+position_checks()
 
 
 # Local playlist editor: real MIPS UI/control code and real SQLite transactions at its ABI boundary.

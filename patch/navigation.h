@@ -440,7 +440,6 @@ void font_weight_paint(void *w, void *canvas);
 
 /* coverflow_position.c */
 int coverflow_position_enabled(void); /* navigation.c: persisted setting */
-void coverflow_position_paint(void *w, void *canvas);
 void coverflow_position_reset(void);
 
 /* np_bar.c */

@@ -47,7 +47,7 @@ static int position_tick(const void *unused) {
     }
     if (!alpha) {
         position.timer = 0;
-        return 0; /* RET_REMOVE */
+        return 0; /* RET_OK: any return but RET_REPEAT removes the timer */
     }
     return 8; /* RET_REPEAT */
 }
@@ -55,9 +55,10 @@ static int position_tick(const void *unused) {
 /* Pixel offset of the thumb's left edge. Wrap in the slide's order first, then hold the last
  * album's position on an extra Sort/All Albums card. Float arithmetic avoids a fixed-point
  * album count overflowing on a large library. */
-int coverflow_position_offset(float pos, int albums, int cards, int travel) {
+static int coverflow_position_offset(float pos, int albums, int cards, int travel) {
     if (albums <= 1 || cards < albums || travel < 0) return -1;
-    pos -= (float)cf_floor(pos / (float)cards) * (float)cards;
+    pos -= (float)cf_floor((pos + .5f) / (float)cards) * (float)cards; /* where visual() wraps */
+    if (pos < 0) pos = 0; /* a bounded list's bounce or rubber band past its first album */
     if (pos > (float)(albums - 1)) pos = (float)(albums - 1);
     return (int)(pos * (float)travel / (float)(albums - 1) + .5f);
 }

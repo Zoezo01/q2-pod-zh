@@ -39,7 +39,7 @@ jobs:
       - name: Host suites  # build and rotator_build: only their checks that need no ZIP or build
         run: |
           export PATH="$PWD/test/coverage:$PATH"
-          for t in library_scope mp3 peq coverflow chapters mp3_gapless remote build rotator_build; do python3 "test/$t.py"; done
+          for t in library_scope mp3 peq coverflow coverflow_position chapters mp3_gapless remote build rotator_build; do python3 "test/$t.py"; done
       - name: Wi-Fi transfer's file manager  # assets/web/q2cgi under the runner's busybox ash (the Q2's is 1.31.1); root only mounts the tmpfs it runs on
         run: |
           sudo mkdir -p /mnt/mmc
