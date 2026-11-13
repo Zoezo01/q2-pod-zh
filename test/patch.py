@@ -18221,12 +18221,17 @@ assert 'fwupdate_tf' not in [c[0] for c in m.calls]; passed()
 SPOT_TAG,SPOT_FILES='/mnt/mmc/.q2/apps/spotify.tag','/mnt/mmc/.q2/apps/spotify.files'
 class ShelfMachine(RadioMachine):
     """RadioMachine with busybox's side scripted: unzip -l prints listing, unzip -o stages staged
-    ((path, bytes), in find's order), find lists them; statfs has free bytes; renames kept in order."""
+    ((path, bytes), in find's order), find lists them; statfs has free bytes; renames kept in order;
+    listed, once set, answers every sources.list fetch (an install's first) in reply's place."""
     def __init__(self,files=None):
-        super().__init__(files); self.free=1<<32; self.moves=[]; self.listing=''; self.staged=[]
+        super().__init__(files); self.free=1<<32; self.moves=[]; self.listing=''; self.staged=[]; self.listed=None
         self.mock('rmdir@GLIBC_2.0')
     def hook(self,u,address,size,unused):
         name=self.handlers.get(address,'')
+        if name=='r:curl_easy_perform' and self.listed is not None and self.opts.get(10002,'').endswith('/sources.list'):
+            reply,self.reply=self.reply,self.listed
+            try: return super().hook(u,address,size,unused)
+            finally: self.reply=reply
         if name=='c:statfs@GLIBC_2.0':
             b=u.reg_read(UC_MIPS_REG_A1); self.word(b+4,4096); self.word(b+28,self.free>>12); self.returns(0,clobber=True); return
         if name=='b:rename@GLIBC_2.0': self.moves.append(self.text(u.reg_read(UC_MIPS_REG_A1)))
@@ -18261,10 +18266,11 @@ assert m.labels()[8]=='Update' and m.labels()[2]==BLANK and '/tmp/q2-shelf.json'
 assert m.toasts[-1][3]=='1 app can be updated'; passed()  # the opening check's end, the page on top
 m.row(0); assert m.toasts[-1][3]=='1 app can be updated' and len(m.threads)==1; passed()  # within SH_RECHECK_MS: no requests
 toasts=len(m.toasts); m.close(); m.now+=9*60*1000; apps_open(m); assert len(m.threads)==1 and m.labels()[8]=='Update' and len(m.toasts)==toasts; passed()  # still fresh: no requests
+m.listed=(ROOT/'sources.list').read_bytes()  # an install fetches the list first
 m.row(3); assert m.labels()[8]=='Checking…' and len(m.threads)==2 and KILL in m.systems[-1]; m.row(3); assert m.labels()[8]=='Cancelling…'
 shelf_job(m); assert m.toasts[-1][3]=='Download cancelled' and m.labels()[8]=='Update'; passed()
 m.wifi=-1; m.row(3); assert m.toasts[-1][3]=='Connect to Wi-Fi first' and len(m.threads)==2; m.wifi=3; passed()
-m.codes=[403]; m.row(3); shelf_job(m); assert m.toasts[-1][3]=='GitHub is busy, try later'; passed()  # the API's rate limit
+m.codes=[200,403]; m.row(3); shelf_job(m); assert m.toasts[-1][3]=='GitHub is busy, try later'; passed()  # the list, then the API's rate limit
 m.files[SPOT_TAG]=bytearray(b'q2-v1.9'); m.close(); m.wifi=-1; apps_open(m); assert m.labels()[8]=='Installed' and len(m.threads)==3
 m.row(3); assert m.labels()[8]=='Press again to remove' and len(m.threads)==3
 m.row(1); assert m.labels()[8]=='Installed' and m.toasts[-1][3]=='Connect to Wi-Fi first'  # another row's press drops it

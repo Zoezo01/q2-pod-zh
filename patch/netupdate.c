@@ -614,8 +614,9 @@ static int check(void) {
 /* Whether the list as it is now, fetched for this install, still names app i's repo: SH_OK, SH_NET
  * with no list to be had, SH_MISSING once the repo is dropped or gone from it. The page's list may
  * be the card's of days ago (opened with no Wi-Fi, the opening check stopped by the press, or the
- * list out of reach while GitHub's API answered), and the release of a repo dropped since was
- * installed from it all the same (GHSA-8wpr-pmqx-538x). */
+ * list out of reach while GitHub's API answered; GHSA-8wpr-pmqx-538x).
+ * ponytail: an install needs raw.githubusercontent.com as well as the API; a network that blocks
+ * only the list's host installs nothing. */
 static int listed(int i) {
     shelf_app now[SH_MAX];
     long code = 0;
@@ -930,7 +931,7 @@ int shelf_open(void *ctx, void *event) {
             sh_start(JOB_CHECK, 0), sh_refresh();
         else
             /* once Smart Wi-Fi's link is up; a row pressed while it waits takes its place and acts on
-             * the list shown, and the next open checks */
+             * the list shown (an install fetches the list first), and the next open checks */
             smart_hold(sh_check, 0, "apps_page");
     }
     return 0;
