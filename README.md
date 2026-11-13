@@ -1,9 +1,7 @@
 <h1 align="center">Q2 Pod</h1>
 
 <p align="center">
-  <img src="assets/screenshots/home-split.png" alt="Home: the menu beside the playing album's cover" width="42%">
-  &nbsp;
-  <img src="assets/screenshots/now-playing.png" alt="Now Playing: the cover beside the title, artist and album, with the progress bar below" width="42%">
+  <img src="assets/screenshots/screens.svg" alt="Home, the menu beside the playing album's cover, and Now Playing, the cover beside the title, artist and album over the progress bar: the Minimal theme fading to Classic and back" width="86%">
 </p>
 
 <p align="center">
