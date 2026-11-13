@@ -11577,8 +11577,8 @@ for label_name in ('label_del','label_rename'):
 passed()
 
 m=Machine(); style_color(m,red)
-# config_value passes its default in decimal: SHORTCUT's SETTING_N_SHORTCUT (11) is out of range, so no shortcut
-assert m.config_reads==[('/mnt/data/config.ini','IPOD',key,'0') for key in ('ACCENT','HOME','BATTERY','THEME')]+[('/mnt/data/config.ini','IPOD','SHORTCUT','11'),('/mnt/data/config.ini','IPOD','MINIMAL_ACCENT','0'),('/mnt/data/config.ini','IPOD','ROUNDED','1'),('/mnt/data/config.ini','IPOD','LIGHT','0'),('/mnt/data/config.ini','IPOD','KEEPLIT','0'),('/mnt/data/config.ini','IPOD','NPCENTRED','0'),('/mnt/data/config.ini','IPOD','KEYTONEHP','0'),('/mnt/data/config.ini','IPOD','SCRUBSINGLE','0'),('/mnt/data/config.ini','IPOD','TIMETITLE','1')]+[('/mnt/data/config.ini','IPOD',key,v) for key,v in (('STATUSBAR','0'),('CLASSIC_LIGHT_ACCENT','9'),('HOMELIB','1'),('ROWPREVIEW','1'),('ROWART','1'))]; passed()
+# config_value passes its default in decimal: SHORTCUT's SETTING_N_SHORTCUT (12) is out of range, so no shortcut
+assert m.config_reads==[('/mnt/data/config.ini','IPOD',key,'0') for key in ('ACCENT','HOME','BATTERY','THEME')]+[('/mnt/data/config.ini','IPOD','SHORTCUT','12'),('/mnt/data/config.ini','IPOD','MINIMAL_ACCENT','0'),('/mnt/data/config.ini','IPOD','ROUNDED','1'),('/mnt/data/config.ini','IPOD','LIGHT','0'),('/mnt/data/config.ini','IPOD','KEEPLIT','0'),('/mnt/data/config.ini','IPOD','NPCENTRED','0'),('/mnt/data/config.ini','IPOD','KEYTONEHP','0'),('/mnt/data/config.ini','IPOD','SCRUBSINGLE','0'),('/mnt/data/config.ini','IPOD','TIMETITLE','1')]+[('/mnt/data/config.ini','IPOD',key,v) for key,v in (('STATUSBAR','0'),('CLASSIC_LIGHT_ACCENT','9'),('HOMELIB','1'),('ROWPREVIEW','1'),('ROWART','1'))]; passed()
 # theme()/scheme(): the active built-in and its scheme, settings read on first use. THEME out of
 # range is Minimal; Classic's stored Ivory and an out-of-range CLASSIC_LIGHT_ACCENT are Classic Blue, on Cobalt's
 # tones; Modern's stored Ivory and an out-of-range ACCENT are Graphite's scheme; a missing MINIMAL_ACCENT is Graphite, a stored Ivory
@@ -12447,13 +12447,18 @@ def carousel(on):
     if on: assert not m.nodes[art]['visible']
 shortcut_button=m.nodes[shortcut]['children'][0]
 sf,sc=m.handler(shortcut_button,O['EVT_CLICK'])
-for label in ('Favorites','Shuffle','Rated Albums','Playlists','Artists','Albums','Games','Podcasts','Audiobooks','Rockbox'):
-    m.call(address=sf,args=(sc,m.event,0,0),gap=0)
-    assert m.nodes[named(m,home,'label_rockbox')]['text']==label
+# None ends the cycle: Home's row is hidden, the picker says so, and the carousel's card keeps the default's name.
+def shortcut_cycle(labels):
+    for label in labels:
+        m.call(address=sf,args=(sc,m.event,0,0),gap=0)
+        if label=='None':
+            assert m.nodes[m.nodes[shortcut_button]['children'][1]]['text']=='Shortcut: None'
+            assert m.nodes[named(m,home,'label_rockbox')]['text']==('Rockbox' if m.rockbox_mode else 'Favorites')
+            assert not m.nodes[named(m,home,'btn_rockbox')]['visible']
+        else: assert m.nodes[named(m,home,'label_rockbox')]['text']==label
+shortcut_cycle(('Favorites','Shuffle','Rated Albums','Playlists','Artists','Albums','Games','Podcasts','Audiobooks','None','Rockbox'))
 m.groovebox_mode=0o100755  # Groovebox on the card: the cycle offers it after Audiobooks
-for label in ('Favorites','Shuffle','Rated Albums','Playlists','Artists','Albums','Games','Podcasts','Audiobooks','Groovebox','Rockbox'):
-    m.call(address=sf,args=(sc,m.event,0,0),gap=0)
-    assert m.nodes[named(m,home,'label_rockbox')]['text']==label
+shortcut_cycle(('Favorites','Shuffle','Rated Albums','Playlists','Artists','Albums','Games','Podcasts','Audiobooks','Groovebox','None','Rockbox'))
 m.groovebox_mode=0
 home_bounds(False); carousel(False)
 writes=click(1); assert [(w[0],m.text(w[2])) for w in writes]==[(1,'HOME')] and texts()[1]=='Home: Full'

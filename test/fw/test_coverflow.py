@@ -2735,9 +2735,13 @@ def test_the_streaming_row_opens_the_page_in_full(fw, stock_bg):
     assert ui.click(h.rows['img_services']) == [9] and stock_bg[1] == 0
 
 
-@pytest.mark.parametrize('shortcut, shown, label', (('0', 0, 'Rockbox'), ('6', 1, 'Games')))
-def test_the_shortcut_row_sits_after_folder_unless_rockbox_is_missing(fw, shortcut, shown, label):
-    themed(fw, CLASSIC, SHORTCUT=shortcut)
+@pytest.mark.parametrize('home', ('0', '1', '2'))
+@pytest.mark.parametrize('theme', (MINIMAL, CLASSIC, MODERN))
+@pytest.mark.parametrize('shortcut, shown, label', (('0', 0, 'Rockbox'), ('6', 1, 'Games'), ('11', 0, 'Favorites'),
+                                                    ('12', 1, 'Favorites')))
+def test_the_shortcut_row_sits_after_folder_unless_rockbox_is_missing_or_none(fw, theme, home, shortcut, shown, label):
+    # None hides the row in every layout and theme; the carousel's card stays, naming the default as with no choice
+    themed(fw, theme, SHORTCUT=shortcut, HOME=home)
     ui = Ui(fw)
     h = Homes(ui, carousel=True, rockbox=True)
     rockbox = h.rows['img_rockbox']
@@ -2745,6 +2749,7 @@ def test_the_shortcut_row_sits_after_folder_unless_rockbox_is_missing(fw, shortc
     h.open(fw)
     rows = ui[h.view].kids
     assert rows.index(rockbox) == (rows.index(h.rows['img_folder']) + 1 if shown else len(rows) - 1)  # else last
+    assert [r for r in rows if r != rockbox] == [h.rows[n] for n in h.ROWS if n != 'img_rockbox']  # the others keep their order
     assert ui[rockbox].visible == shown and ui[rockbox].sensitive == shown
     assert ui[ui.named('label_rockbox')].text == label and ui[ui.lookup(h.carousel[0], 'label_rockbox')].text == label
 

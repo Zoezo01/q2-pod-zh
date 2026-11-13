@@ -248,11 +248,21 @@ const char *const np_pages[] = { "playing_page", "playing_page_stock" }; /* [NP_
 _Static_assert(sizeof np_pages / sizeof *np_pages == NP_N, "one page per NP_* layout");
 /* The Now Playing page: the theme's layout, which Centred Now Playing forces to NP_CENTRED. */
 int np_layout(void) { return setting(SETTING_NPCENTRED) ? NP_CENTRED : theme()->np_layout; }
-/* Shortcut with no key is Rockbox while the card has it, else Favorites: asked each time, as the
- * card may mount after the first read. */
+/* Shortcut with no key (or a value this build does not know, such as an old build's reading of a
+ * newer one) is Rockbox while the card has it, else Favorites: asked each time, as the card may
+ * mount after the first read. SHORTCUT_NONE is read as it is: the picker and Home's row ask for it
+ * (ipod_home_rockbox); the carousel's card, which cannot leave, takes the default
+ * (shortcut_target). */
 int shortcut(void) {
     accent();
     return st.shortcut < SETTING_N_SHORTCUT ? st.shortcut : rockbox_available() ? 0 : 3;
+}
+/* What the Shortcut opens and names: None's card, in Carousel, is the default's.
+ * ponytail: Carousel keeps the card (home_card clones in stock's slide_menu, which lays out hidden
+ * cards too); a card left out would need re-adding with the setting. */
+static int shortcut_target(void) {
+    int s = shortcut();
+    return s == SHORTCUT_NONE ? (rockbox_available() ? 0 : 3) : s;
 }
 int ipod_home(void) {
     accent();
@@ -287,13 +297,15 @@ int ipod_battery(void) {
     accent();
     return st.battery;
 } /* lockscreen.c's Large clock */
-/* 1 when Home shows its Shortcut row (coverflow_home_layout): any target but Rockbox and Groovebox,
- * and those while the card has them. */
+/* 1 when Home shows its Shortcut row (coverflow_home_layout): any target but None, Rockbox and
+ * Groovebox, and those while the card has them. */
 int ipod_home_rockbox(void) {
     st.home_rockbox = rockbox_available();
     st.home_groovebox = groovebox_available();
     int s = shortcut();
-    return s == SHORTCUT_GROOVEBOX ? st.home_groovebox : s || st.home_rockbox;
+    return s == SHORTCUT_NONE        ? 0
+           : s == SHORTCUT_GROOVEBOX ? st.home_groovebox
+                                     : s || st.home_rockbox;
 }
 const char *ipod_home_shortcut(void) {
     static const char *const names[] = { "Rockbox",
@@ -307,8 +319,9 @@ const char *ipod_home_shortcut(void) {
                                          "Podcasts",
                                          "Audiobooks",
                                          [SHORTCUT_GROOVEBOX] = "Groovebox" };
-    _Static_assert(sizeof names / sizeof *names == SETTING_N_SHORTCUT, "one per shortcut");
-    return names[shortcut()];
+    _Static_assert(sizeof names / sizeof *names == SHORTCUT_NONE, "one per shortcut but None");
+    _Static_assert(SHORTCUT_NONE + 1 == SETTING_N_SHORTCUT, "None is the last");
+    return names[shortcut_target()];
 }
 /* Podcasts, Audiobooks and Videos (docs/internals.md#podcasts-and-audiobooks): the card's top-level
  * folders of these names, case aside, browsed in folder_page from there; Photos opens photos.c,
@@ -317,7 +330,7 @@ const char *const MEDIA[] = { "Podcasts", "Audiobooks", "Photos", "Books", "Vide
 extern int rockbox_open(void *, void *);
 int rated_albums(void *, void *);
 int home_shortcut_open(void *ctx, void *event) {
-    int s = shortcut();
+    int s = shortcut_target();
     if (!s) return rockbox_open(ctx, event);
     if (s == SHORTCUT_GROOVEBOX) {            /* the card game by id, as its Games row starts it */
         if (addon_game_open("groovebox") < 0) /* no card game has the id: the folder, or a slot */
