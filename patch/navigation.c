@@ -3123,8 +3123,6 @@ int ringnav_quick_settings(void *win, void *ctx) {
  */
 /* Bluetooth's Control Device Volume on: the Q2's volume is the device's own (bt_audio_ready). */
 static int bt_vol_link __attribute__((section(".scratch")));
-/* 无耳机不播放 on: a start with nothing at the output is refused (headset.c). */
-static int headset_guard __attribute__((section(".scratch")));
 #define STR_(x) #x
 #define STR(x) STR_(x)
 static int *const pod_values[] = { &st.charge_limit,
@@ -3149,7 +3147,6 @@ static int *const pod_values[] = { &st.charge_limit,
                                    0,
                                    &st.big_library,
                                    &st.playlist_cf,
-                                   &headset_guard,
                                    0 };
 _Static_assert(POD_LOCKCLOCK == 6, "lockscreen.c passes pod_rows 6");
 _Static_assert(sizeof pod_values / sizeof *pod_values == POD_COUNT, "a pod_values per row");
@@ -3175,7 +3172,6 @@ static const char *const pod_keys[] = { "CHARGELIMIT",
                                         0,
                                         "BIGLIBRARY",
                                         "PLAYLISTCF",
-                                        "HEADSETGUARD",
                                         0 };
 _Static_assert(sizeof pod_keys / sizeof *pod_keys == POD_COUNT, "a pod_keys entry per row");
 /* a row's choices: Artist albums three, Standby limit four, every other row two */
@@ -3183,9 +3179,9 @@ static int pod_choices(unsigned i) { return i == POD_ARTIST_CF ? 3 : i == POD_ST
 void pod_settings(void) {
     if (st.pod_read) return;
     for (unsigned i = 0; i < sizeof pod_keys / sizeof *pod_keys; ++i)
-        if (pod_keys[i]) /* Artist albums defaults to Coverflow; 无耳机不播放 to on */
-            *pod_values[i] = config_value("Q2POD", pod_keys[i], pod_choices(i),
-                                          i == POD_ARTIST_CF || i == POD_HEADSET_GUARD);
+        if (pod_keys[i]) /* Artist albums defaults to Coverflow */
+            *pod_values[i] =
+                config_value("Q2POD", pod_keys[i], pod_choices(i), i == POD_ARTIST_CF);
     st.pod_read = 1;
 }
 int ringnav_year_old(void) {
@@ -3277,7 +3273,6 @@ static void pod_text(int i) {
         { 0 }, /* Folder Album Cover: a switch */
         { 0 }, /* Large Library Mode: a switch */
         { "播放列表视图：列表", "播放列表视图：Cover Flow" },
-        { 0 }, /* 无耳机不播放: a switch */
         { "补全封面与歌词" }, /* an action: the row says how far the job got */
     };
     _Static_assert(sizeof names / sizeof *names == POD_COUNT, "a names entry per row");
@@ -3305,7 +3300,6 @@ static void pod_text(int i) {
                          : i == POD_COVERMODE   ? "放大专辑封面"
                          : i == POD_FOLDERCOVER ? "文件夹专辑封面"
                          : i == POD_BIG_LIB     ? "大曲库模式"
-                         : i == POD_HEADSET_GUARD ? "无耳机不播放"
                                                 : 0;
     if (toggle)
         list_toggle(st.pod_label[i], toggle, v);
@@ -3465,7 +3459,6 @@ static const unsigned char playset_order[] = {
     4 /* DSD Output */,
     5 /* USB Audio */,
     15 /* Library & Folders */,
-    19 /* 无耳机不播放 */,
     20 /* 补全封面与歌词 */,
 };
 /* Library & Folders: stock's Folder skip (0), then ours as built. */
@@ -3602,9 +3595,7 @@ int ringnav_audioset(void *win, void *ctx) {
         "playset_bootvol");
     pod_rows(win, "scroll_view_playset", POD_COVERMODE, 1, cover_icons);
     /* Last built, so the rows above keep their child indices; playset_order puts them in place. */
-    static const char *const guard_icon[] = { "system_keylock" },
-                       *const fill_icon[] = { "player_onlinesearch" };
-    pod_rows(win, "scroll_view_playset", POD_HEADSET_GUARD, 1, guard_icon);
+    static const char *const fill_icon[] = { "player_onlinesearch" };
     pod_rows(win, "scroll_view_playset", POD_LIBRARY_FILL, 1, fill_icon);
     if (st.pod_label[POD_LIBRARY_FILL])
         widget_on(st.pod_label[POD_LIBRARY_FILL], EVT_DESTROY, fill_gone, 0);
@@ -8968,9 +8959,8 @@ int ringnav_usbmode(void *a, void *b, void *c, void *d) {
 int ringnav_start_player(void) {
     if (addon_game_audio()) return -1;
     if (!playback_start_fits()) return -1;
-    /* 无耳机不播放 covers every start, not just a pocket press: a row's click in a playlist is the
-     * same dead silence, so it fails like a track too long, and the queue keeps its position. */
-    if (headset_guard_start()) return -1;
+    /* Stock's Headphones Required gates its own starts; this one's callers (a row's click, a
+     * resumed queue) pass through playing_page_init and its like, which ask the same. */
     headset_manual();
     spot_yield();
     radio_stop();

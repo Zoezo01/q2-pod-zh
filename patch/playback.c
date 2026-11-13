@@ -1067,13 +1067,9 @@ static int restart_refused(int key, int restarts) {
  * Skip every branch calls mclNextSong(0)/mclPrevSong, so advanced order applies. MCL_MODE is
  * written directly: mclSetPlayMode would end advanced play. */
 static int change_music(int next) {
-    /* 无耳机不播放 (headset.c): a pocket press of Next or Previous must not start a stopped queue
-     * either — one never begun (no session of its own) has nothing to move within. A paused queue
-     * keeps its session: its skips go through, since a pocket press of Next after the jack came
-     * out must still be able to leave the page's track, and the Return key's own path passes here
-     * untouched. Refused whole, so the queue keeps the track it had; -1 and -5 stay the caller's
-     * failures (no storage). */
-    if (!media_playing() && !s.active && headset_guard_refuse()) return 0;
+    /* A pocket press of Next or Previous starts no queue that never played (no session of its
+     * own, nothing to move within). A paused queue keeps its session: its skips go through, since
+     * a pocket press of Next after the jack came out must still leave the page's track. */
     headset_manual();
     /* Stock's skip past a file it can't play is automatic, and never asks. */
     if (!press_natural && restart_refused(next, place_held() && change_restarts(next)))

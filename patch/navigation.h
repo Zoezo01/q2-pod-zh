@@ -46,7 +46,6 @@ enum {
     POD_FOLDERCOVER,
     POD_BIG_LIB, /* Display's Large Library Mode: Cover Flow's letters (ringnav_big_library) */
     POD_PL_CF,   /* Display's Playlist View: List or Cover Flow, as Artist View */
-    POD_HEADSET_GUARD, /* 无耳机不播放: headset.c's guard, Q2POD HEADSETGUARD, on by default */
     POD_LIBRARY_FILL,  /* 补全封面与歌词, an action: onlinematch.c's library_fill_* over the card */
     POD_COUNT
 };

@@ -401,8 +401,6 @@ extern const char *const MEDIA[], *const MEDIA_LABELS[]; /* theme_engine.c: the 
 void library_fill_tick(void), library_fill_cancel(void);
 int library_fill_active(void), library_fill_start(void);
 void library_fill_text(char *out, unsigned n);
-int headset_guard_refuse(void); /* 无耳机不播放: a start with nothing at the output (headset.c) */
-int headset_guard_start(void);  /* the same for a row's click and every other start (mclStartPlayer) */
 int media_owner(void), media_playing(void), media_focused(void);
 void media_set_playing(int playing), media_key(unsigned key);
 void video_key(unsigned key);

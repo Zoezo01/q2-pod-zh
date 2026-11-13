@@ -8,8 +8,8 @@ from typing import TypeVar
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 ZIP_SHA = '4e298cab6c12d86cfc55565645f7e3ae11d3fb44677a93ca13991e7184ecec4e'
 # 中文版也直接吃山灵官方的 update.tar，不必先解出那个 ZIP：同一个 V1.36 底座，用 tar 自身的 SHA-256
-# 钉住（重新打的 ZIP 永远对不上官方那个）。拿到官方 V1.36 的 update.tar 之后把这里填上。
-TAR_SHA = ''
+# 钉住（重新打的 ZIP 永远对不上官方那个）。
+TAR_SHA = '7f57884420e324ac3263571d96a35f04bbef79f35dac34162655c5822bdaa684'
 DEMO_SHA = 'e65d638d6e70332b4c3193af8ac2044941ec0157d20e41e40233aac5b0c2c59f'
 VERSION = '1.8.0'  # major.minor.patch, single digits, shown as is (About and release tag)
 BETA = 0  # a pre-release's beta number (1-9), 0 for the release itself
@@ -1537,6 +1537,7 @@ GLOBALS = ['tidal_albuminfo_thread_run', 'tidal_collection_thread_run',  # 2: a 
            'g_usbdac_chargeflag',  # USB mode's charge choice, which switch_charge_enable gets there
            'g_memory_play', 'g_carmode', 'g_carmode_state',  # In-Vehicle Mode (pod_click)
            'g_bigcovermode', 'g_foldercover_flag',  # Enlarged Album Art (1 on) and Folder Album Cover (pod_click)
+           'g_block_withoutphone_flag',  # Headphones Required (PLAYSET WITHOUTPHONE), the gate we keep
            'g_headset_output',  # the output config_outputchannel sets: 0, 1 the jacks, 2 Bluetooth
            'g_usbmode',  # USB mode: 1 Audio and DAC, else USB Storage (usbmode_page_init)
            'g_usbdet_value',  # 1 while a USB cable is in (USB mode's scan prompt outlives it)
