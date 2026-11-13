@@ -5,6 +5,7 @@
   - Status bar: the battery's level and charge show as soon as they change, as the clock does. They used to wait until something else on the screen changed, such as opening a page.
   - Power: **Battery History**, under System settings → Power, graphs and lists how the battery has fallen since the charger was last unplugged, a row a percent with its time, kept through Standby and power-off. A drop during Standby shows as one row at the wake. **Export Log** saves it to `battery-log.txt` on the card.
   - Card apps: a song an app streams by URL, such as from Jellyfin, shows its own album art in Now Playing, Enlarged Art and Home. It used to keep the first song's art for every later song in the queue.
+  - Card apps: a row that asks the app to do something, such as **Add to Sync**, says **Working…** when the app takes a moment to answer, and until it answers a press of such a row does nothing. A second press used to be sent as well, so pressing **Add to Sync** twice could remove the album again, with no message.
 - **1.8.0**:
   - System: Q2 Pod now runs on Shanling's stock firmware V1.36 instead of V1.32, with its newer kernel, drivers and player.
   - Playback: **Headphones Required**, new in stock V1.36, is under **Resume Songs**. On, nothing starts playing until headphones, Bluetooth or a USB DAC is connected, and the queue isn't restored at start-up. Off by default.
