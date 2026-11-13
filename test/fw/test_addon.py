@@ -4999,14 +4999,14 @@ def test_a_stop_between_songs_isnt_told_and_a_real_stop_is_told_once(fw, mcl):
     assert n.now() == b'4\t1\tplaying\t0\t200\n'
 
 
-# The next song loading: the player has no place in it yet, or is neither playing nor paused.
+# A load or a seek: the player has no place yet (-1); and a state outside 1-3, which stock never sets, must not index `names[]`.
 @pytest.mark.parametrize('status, sec', [(PLAYING, -1), (PAUSED, -1), (0, 30)])
 def test_a_pass_with_no_place_or_state_to_tell_writes_nothing_and_a_later_one_tells(fw, mcl, status, sec):
     n = Now(fw, mcl)
     n.start()
-    n.step(sec=10)
+    n.step()
     n.step(status=status, sec=sec, pos=1)
-    assert n.now() == b'4\t0\tplaying\t10\t200\n' and len(n.writes()) == 1
+    assert n.now() == b'4\t0\tplaying\t0\t200\n' and len(n.writes()) == 1
     n.step(status=PLAYING, sec=0)
     assert n.now() == b'4\t1\tplaying\t0\t200\n'
 
