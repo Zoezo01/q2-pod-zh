@@ -127,6 +127,7 @@ TEST = r"""
 #undef sem_post
 #undef memcpy
 int coverflow_home(void *, void *), coverflow_player_cover(const char *, const char *, int, int);
+int coverflow_artist(void *albums);
 const char *track_name(char *, unsigned, void *);
 
 /* Cache boundary: the duration service has its own tests, test/fw/test_durations.py. */
@@ -1764,15 +1765,15 @@ static void depth(void) {
     close_page();
     assert(frames == 0 && loads == unloads);
     {   /* Reopened, the covers centre the queue's song's album (#350), not the one last centred; no
-           queue, a song with no album tag (a folder play's) or one whose album the list lacks leaves
-           the last one. A compilation's track, with an artist of its own, still finds its album. */
+           queue, a song with no album tag (a folder play's) or one whose album the list lacks (a
+           same-named album in another folder) leaves the last one. A compilation's track, with an artist of its own, still finds its album. */
         void *pos = mmap((void *)(MCL_POS & ~4095), 4096, PROT_READ | PROT_WRITE,
                          MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);
         assert(pos != MAP_FAILED);
         deque playing = {0};
         char untagged[sizeof records[0]] = {0}, elsewhere[sizeof records[0]], guest[sizeof records[0]];
         memcpy(elsewhere, records[1], sizeof elsewhere);
-        *(char **)(elsewhere + REC_ALBUM) = "An album the library lacks";
+        *(char **)(elsewhere + REC_PATH) = "/mnt/mmc/audiobooks/Folder/01.m4b";
         memcpy(guest, records[2], sizeof guest);
         *(char **)(guest + REC_ARTIST) = "A guest";
         int at[5];
@@ -1787,7 +1788,6 @@ static void depth(void) {
         assert(at[0] == 6 && at[1] == 6 && at[2] == 6 && at[3] == 2 && at[4] == 1);
         /* A scoped page (an artist's albums) opens where it does with nothing queued, whichever of
            its albums plays. */
-        int coverflow_artist(void *albums);
         for (int k = 0; k < 2; ++k) {
             deque *theirs = _create_deque(0);
             theirs->at[theirs->n++] = records[6], theirs->at[theirs->n++] = records[8];
@@ -1799,7 +1799,7 @@ static void depth(void) {
             at[k] = *(int *)(slide()->raw + SLIDE_INDEX);
             close_page();
         }
-        assert(at[1] == at[0]);
+        assert(at[0] == 0 && at[1] == 0); /* B; Tight, the one playing, is 1 */
         shim_queue = 0;
         munmap(pos, 4096);
     }
@@ -1955,7 +1955,6 @@ static void sorting(void) {
 
 /* Artist albums: Coverflow (navigation.c): an artist's albums alone, in their order, then All
    albums, no Sort or Refresh card; the library's list is back once the page closes. */
-int coverflow_artist(void *albums);
 static void artist_only(void) {
     rescan();
     open_page();
