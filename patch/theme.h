@@ -96,7 +96,7 @@ typedef struct {
      * animator). Ticks are 200 / ticks_turn raw units at 50% Wheel Sensitivity, twice as many a
      * turn at 100%, and rates count those; far_left, stop_left, back, aim_snap, lead_*, row_from,
      * _full, _flat, _edge and fold_near are 1/100 album; enter_albums albums; others ms, ticks/s,
-     * albums/s, px or %. jump_at, jump_ms and jump_pace are read only with Large Library Mode off
+     * albums/s, px or %. jump_at, jump_ms and jump_pace are read only with Fast Navigation off
      * (1.7.6's letters; on, big_jump_at and big_jump_ms). */
     short thumb, ticks_turn, ticks_album, fast_at, fast_full, top_speed, track, snap, spin;
     short far_left, detent, hold_ms, stop_ms, stop_left, rate_up, rate_down, back, dead;

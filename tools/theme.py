@@ -40,7 +40,7 @@ CHOICES = {'list.selection.painter': {'card': 'SEL_CARD', 'stops': 'SEL_STOPS', 
            'playing.layout': {'ipod': 'NP_IPOD', 'centred': 'NP_CENTRED'},
            'scheme.mode': {'derive': 'SCHEME_DERIVE', 'light': 'SCHEME_LIGHT', 'dark': 'SCHEME_DARK'}}
 # coverflow.shelf's thumb: each value's top (docs/internals.md#coverflow-thumb); fold_near past 50 would
-# let the fold start with the caption still on the album before the letter's; jump_at, jump_ms and jump_pace are only Large Library Mode off's
+# let the fold start with the caption still on the album before the letter's; jump_at, jump_ms and jump_pace are only Fast Navigation off's
 # (1.7.6's letters), big_jump_at and big_jump_ms its own
 CF_THUMB = {'thumb': 1, 'ticks_turn': 200, 'ticks_album': 200, 'fast_at': 1000, 'fast_full': 1000, 'top_speed': 100, 'track': 1000,
             'snap': 1000, 'spin': 1000, 'far_left': 2000, 'detent': 100, 'hold_ms': 30000, 'stop_ms': 1000, 'stop_left': 500,

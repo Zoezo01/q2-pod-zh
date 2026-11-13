@@ -3113,7 +3113,7 @@ int ringnav_quick_settings(void *win, void *ctx) {
  * Standby limit (STANDBYLIMIT, ringnav_standby; docs/internals.md#standby-limit), and Bluetooth's
  * Control Device Volume (BTVOLLINK, bt_audio_ready; docs/internals.md#headset-controls-and-volume),
  * and Power's Smart Wi-Fi (SMARTWIFI, smart_poll; docs/internals.md#smart-wi-fi), and Display's
- * Large Library Mode (BIGLIBRARY, Cover Flow's letters; docs/internals.md#coverflow-thumb) and
+ * Fast Navigation (BIGLIBRARY, Cover Flow's letters; docs/internals.md#coverflow-thumb) and
  * Playlist View (PLAYLISTCF).
  */
 /* Bluetooth's Control Device Volume on: the Q2's volume is the device's own (bt_audio_ready). */
@@ -3196,7 +3196,7 @@ int ringnav_lock_clock(void) {
     pod_settings();
     return st.lock_clock;
 }
-/* Large Library Mode: Cover Flow's letters and their half copies (coverflow_thumb.c, lettered,
+/* Fast Navigation: Cover Flow's letters and their half copies (coverflow_thumb.c, lettered,
  * coverflow_halves); off unless the key is 1. */
 int ringnav_big_library(void) {
     pod_settings();
@@ -3263,7 +3263,7 @@ static void pod_text(int i) {
         { 0 }, /* Smart Wi-Fi: a switch */
         { 0 }, /* Enlarged Album Art: a switch */
         { 0 }, /* Folder Album Cover: a switch */
-        { 0 }, /* Large Library Mode: a switch */
+        { 0 }, /* Fast Navigation: a switch */
         { "Playlist View: List", "Playlist View: Cover Flow" },
     };
     _Static_assert(sizeof names / sizeof *names == POD_COUNT, "a names entry per row");
@@ -3289,7 +3289,7 @@ static void pod_text(int i) {
                          : i == POD_SMART_WIFI  ? "Smart Wi-Fi"
                          : i == POD_COVERMODE   ? "Enlarged Album Art"
                          : i == POD_FOLDERCOVER ? "Folder Album Cover"
-                         : i == POD_BIG_LIB     ? "Large Library Mode"
+                         : i == POD_BIG_LIB     ? "Fast Navigation"
                                                 : 0;
     if (toggle)
         list_toggle(st.pod_label[i], toggle, v);
@@ -3303,7 +3303,7 @@ static void pod_text(int i) {
 }
 /* Centre or tap toggles and saves. Charge limit takes effect on the next UI loop pass
  * (power_poll), Smart Wi-Fi within SMART_POLL_MS; Artists on the next load of an artist list, as
- * the artist page's switch does; Large Library Mode's letters at the next spin, its half copies at
+ * the artist page's switch does; Fast Navigation's letters at the next spin, its half copies at
  * Cover Flow's next idle pass; Standby limit at the next Standby; Coverflow Sort and Refresh
  * Coverflow at Coverflow's next open (coverflow.c), Refresh with a toast, as it changes nothing in
  * view. */

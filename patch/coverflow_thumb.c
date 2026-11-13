@@ -106,7 +106,7 @@ static void th_name(void *s, int album, int n) {
                          (int)th_album(album - (int)th_album(th_aim(), (unsigned)n), (unsigned)n));
 }
 
-/* Large Library Mode off, 1.7.6's letters: a letter on, Minimal's jump (coverflow_letter_next): the
+/* Fast Navigation off, 1.7.6's letters: a letter on, Minimal's jump (coverflow_letter_next): the
  * spin names the first album of the letter after the last one named, or the previous letter's
  * turning back, round the ends as the covers go, its letter shown over the covers for LETTER_MS.
  * From the last one named, not where the flow has got to: that passes over a letter the flow has
@@ -251,7 +251,7 @@ static void th_albums(void *s, int n, int since, int ms) {
         th.lead = l, th.lead_v = -th.vel;
 }
 
-/* Large Library Mode off, 1.7.6's letters, since ms after the last tick: time at jump_at or more
+/* Fast Navigation off, 1.7.6's letters, since ms after the last tick: time at jump_at or more
  * counts towards jump_ms, at most that, and time under it comes off, so a dip costs only its own
  * ms. Then the spin goes by letters, where the sort has them: the covers flow on as any fast turn's
  * do, and each jump_ticks of travel, the first at once and none sooner than jump_pace after the
@@ -371,7 +371,7 @@ int coverflow_wheel_poll(int usable, int gated) {
      * the row leaning against the way the spin went, as the covers the facing point left behind do.
      * Only a lift ends them (above): slowing, resting on the wheel or turning back is reading
      * them, so a false start costs more than 1.7.6's and takes a faster spin of its own. That is
-     * Large Library Mode's; off, 1.7.6's (th_beat), at jump_at for jump_ms. */
+     * Fast Navigation's; off, 1.7.6's (th_beat), at jump_at for jump_ms. */
     int since = (int)(now - th.tick_at), big = ringnav_big_library();
     /* big_jump_at counts towards big_jump_ms; a dip under it, still at fast_at (a thumb
      * re-gripping), drains the count rather than dropping it; a lift or under fast_at drops it. */

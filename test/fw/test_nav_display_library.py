@@ -690,7 +690,7 @@ def test_cover_flow_page_holds_artist_view_playlists_sort_refresh_and_large_libr
     assert page.title() == 'Cover Flow'
     found = titles(page.view())
     assert len(found) == 5 and found[:2] == ['Artist View', 'Playlist View'] and found[2].startswith('Cover Flow ')
-    assert found[3:] == ['Refresh Cover Flow', 'Large Library Mode']
+    assert found[3:] == ['Refresh Cover Flow', 'Fast Navigation']
 
 
 class Settings:

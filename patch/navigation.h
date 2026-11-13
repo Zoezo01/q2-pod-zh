@@ -44,7 +44,7 @@ enum {
     POD_COVERMODE, /* Enlarged Album Art and Folder Album Cover: stock's bytes and PLAYSET keys, as
                       its rows do */
     POD_FOLDERCOVER,
-    POD_BIG_LIB, /* Display's Large Library Mode: Cover Flow's letters (ringnav_big_library) */
+    POD_BIG_LIB, /* Display's Fast Navigation: Cover Flow's letters (ringnav_big_library) */
     POD_PL_CF,   /* Display's Playlist View: List or Cover Flow, as Artist View */
     POD_COUNT
 };
@@ -141,7 +141,7 @@ typedef struct {
      * last_input times the screen-on idle. year_old: Year order, oldest first. resume:
      * Bluetooth's Resume on connect on. hold_home: Hold Return goes Home. standby_limit: Standby
      * limit's choice.
-     * smart_wifi: Power's Smart Wi-Fi on (smart_poll). big_library: Display's Large Library Mode
+     * smart_wifi: Power's Smart Wi-Fi on (smart_poll). big_library: Display's Fast Navigation
      * on. playlist_cf: Playlists open as Cover Flow. */
     int pod_read, charge_limit, wake_double, wake_pass, wake_eat,
         wake_down, /* 1: the held Centre press passes; 2: it is dropped */

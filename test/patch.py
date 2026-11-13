@@ -10467,7 +10467,7 @@ void coverflow_render(unsigned *, int, int, const unsigned *const[7]);
 int ipod_light(void) { return %d; }
 int ipod_square_art(void) { return 0; }
 unsigned time_now_ms(void) { return 0; } /* the fold's clock: fold_at counts back from 0 */
-int ringnav_big_library(void) { return 0; } /* the MIPS machines' own: Large Library Mode off */
+int ringnav_big_library(void) { return 0; } /* the MIPS machines' own: Fast Navigation off */
 void cf_thumb_lead(float), cf_thumb_lean(int), cf_thumb_fold(int, unsigned), cf_thumb_enter(int, float, float);
 void cf_thumb_speed(float, float), cf_thumb_held(float, float, float, float, int);
 float cf_thumb_hold(int, float, int);
@@ -10673,7 +10673,7 @@ for theme in ('1','0','2'):
     finally: SETUP.clear()
     m.open(); m.handlers[sleep_hook+12]='stock_sleep'; m.fresh=1
     tp(m); assert traw(m)==2 and not m.slides,theme
-    assert (15+1)*160*160*4 in m.live.values(),theme  # CF_WIDE and the placeholder, whatever Large Library Mode says
+    assert (15+1)*160*160*4 in m.live.values(),theme  # CF_WIDE and the placeholder, whatever Fast Navigation says
     thold(m); tp(m,-30); assert toff(m)<0 and not m.slides and m.get(m.slide+O['SLIDE_ANIMATOR'])==0 and not m.get(ps['wheel_travel']),theme
     trest(m); assert toff(m)==0,theme; passed()
 # wheel_raw never stays set: each way off the covers gives the wheel back at the next pass, the travel gone, the
@@ -10734,11 +10734,11 @@ assert len(did(m,'reset_poweroptions_timer'))>=20*3-2 and len(did(m,'buzzeer_swi
 m.calls=[]
 for _ in range(10): tp(m)
 assert not did(m,'reset_poweroptions_timer') and not did(m,'buzzeer_switch'); passed()
-# At the cap for jump_ms a spin goes by letters, as Minimal's wheel does. Large Library Mode off, 1.7.6's: the covers
+# At the cap for jump_ms a spin goes by letters, as Minimal's wheel does. Fast Navigation off, 1.7.6's: the covers
 # flow on and each names the next letter's first album, its letter shown, jump_pace apart. Once in, a turn from
 # fast_at keeps them, one each jump_ticks; slowing under fast_at gives albums back under the thumb, and a lift lands
 # on the letter's first album. None of the held row, its entry or fold, nor the letters' slots or stage.
-# With Large Library Mode on: the first carries the covers on to the next
+# With Fast Navigation on: the first carries the covers on to the next
 # letter's first album, each after slides the row there through the albums between (slide_ms), its letter held (no
 # LETTER_MS timer) and a click at the step; past the last letter, round to the first, and back from the first to the
 # last, as the albums wrap.
@@ -10755,7 +10755,7 @@ def tarrive(m):  # the thumb still, the row there
     assert False
 FRUIT=('Apple','Avocado','Banana','Blueberry','Cherry','Date','Elder','Fig','Grape')
 def plain(m): return not m.get(ps['th']+TH_AT['jump']) and not m.get(ps['th']+TH_AT['fold']) and (64-15)*160*160*4 not in m.live.values()
-m=classic_light_new(DepthMachine,albums=9)  # Large Library Mode off
+m=classic_light_new(DepthMachine,albums=9)  # Fast Navigation off
 for r,name in zip(m.albums,FRUIT): m.word(r+O['REC_ALBUM'],m.string(name))
 m.open(); m.handlers[sleep_hook+12]='stock_sleep'; m.fresh=1
 tp(m); thold(m); tspin(m,300,-30); assert not letter_on(m)  # 318 ticks/s; at the cap, short of jump_ms
@@ -10768,7 +10768,7 @@ assert letter_on(m) and len({c[0] for c in seen})>=2 and plain(m)
 tspin(m,100,-1); index=tindex(m); tspin(m,500,-1)  # 11 ticks/s
 assert tindex(m)!=index or toff(m)!=0
 trest(m); assert toff(m)==0 and tcaption(m)==FRUIT[tindex(m)] and plain(m); passed()
-m=classic_light_new(DepthMachine,albums=9); m.config['BIGLIBRARY']='1'  # Large Library Mode
+m=classic_light_new(DepthMachine,albums=9); m.config['BIGLIBRARY']='1'  # Fast Navigation
 for r,name in zip(m.albums,FRUIT): m.word(r+O['REC_ALBUM'],m.string(name))
 m.open(); m.handlers[sleep_hook+12]='stock_sleep'; m.fresh=1
 m.word(m.slide+O['SLIDE_INDEX'],5)  # from Date: past big_jump_ms and the entry, round the nine to an early letter
@@ -10808,7 +10808,7 @@ for _ in range(17):  # 289 ms of CF_FOLD_MS
     m.calls=[]; tp(m); assert ('widget_invalidate_force',m.slide) in [c[:2] for c in m.calls] and tindex(m)==index and toff(m)==0
 trest(m); assert tindex(m)==index and toff(m)==0 and tcaption(m)==FRUIT[index]
 m.letters=[]; tpaint(m); assert not m.letters; passed()
-# Large Library Mode's letters last till the lift, so they start at a faster spin of their own: big_jump_at for big_jump_ms,
+# Fast Navigation's letters last till the lift, so they start at a faster spin of their own: big_jump_at for big_jump_ms,
 # where off keeps 1.7.6's jump_at for jump_ms. 42 and 64 ticks/s, held past jump_ms, stay albums with it on and go by
 # letters off; on, letters start big_jump_ms after the rate reaches big_jump_at.
 def fruit_page(big):
@@ -11835,7 +11835,7 @@ keep_lit=kids[2]
 assert m.icons_set==['system_display','switch_off','display_backlight','list_into','system_display','list_into','playset_covermode','list_into']
 f,ctx=m.handler(m.nodes[kids[5]]['children'][0],O['EVT_CLICK']); m.calls=[]
 assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and m.opened[-1]==('systemset/display_page',None) and m.get(payload_syms['display_sub'])==0; passed()
-# Cover Flow: Artist View, Playlist View, Cover Flow Sort, Refresh Cover Flow, Large Library Mode; Controls, System's
+# Cover Flow: Artist View, Playlist View, Cover Flow Sort, Refresh Cover Flow, Fast Navigation; Controls, System's
 # row: the wheel, the buttons and what they do.
 cfv=display_page(m,2); cf,cf_pl,cf_sort,cf_refresh,cf_big=m.nodes[cfv]['children']
 assert m.icons_set==['playset_covermode']*3+['system_update','playset_covermode','switch_off'],m.icons_set
@@ -18654,14 +18654,14 @@ assert icons==['system_display','playset_folderjump','playset_covermode','system
 guard=lambda: m.get(payload_syms['wheel_guard'])
 assert guard()==0 and click(7)==[(1,'Q2POD','VOLGUARD')] and texts()[7]=='Volume Guard' and guard()==1
 assert click(7)==[(0,'Q2POD','VOLGUARD')] and texts()[7]=='Volume Guard' and guard()==0; passed()
-# Large Library Mode (Display, Cover Flow's page, its last row): off by default; the row saves BIGLIBRARY, and Cover
+# Fast Navigation (Display, Cover Flow's page, its last row): off by default; the row saves BIGLIBRARY, and Cover
 # Flow reads it at once (ringnav_big_library: letters, years and half copies); a stored value other than 1 is off.
 bm,brows,btexts,bicons,bclick=settings_page('display','scroll_view_display',stock_rows=3,sub=2)
-assert btexts()[-1]=='Large Library Mode' and bicons[-1]=='playset_covermode',(btexts(),bicons)
+assert btexts()[-1]=='Fast Navigation' and bicons[-1]=='playset_covermode',(btexts(),bicons)
 big=lambda bm: bm.call(address=payload_syms['ringnav_big_library'],args=(0,0,0,0),gap=0)
 k=len(brows)-1
-assert big(bm)==0 and bclick(k)==[(1,'Q2POD','BIGLIBRARY')] and btexts()[k]=='Large Library Mode' and big(bm)==1
-assert bclick(k)==[(0,'Q2POD','BIGLIBRARY')] and btexts()[k]=='Large Library Mode' and big(bm)==0; passed()
+assert big(bm)==0 and bclick(k)==[(1,'Q2POD','BIGLIBRARY')] and btexts()[k]=='Fast Navigation' and big(bm)==1
+assert bclick(k)==[(0,'Q2POD','BIGLIBRARY')] and btexts()[k]=='Fast Navigation' and big(bm)==0; passed()
 for v,on in (('1',1),('2',0),('0',0)):
     bm,*_=settings_page('display','scroll_view_display',{'BIGLIBRARY':v},stock_rows=3,sub=2)
     assert big(bm)==on,v
