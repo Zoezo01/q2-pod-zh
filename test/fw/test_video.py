@@ -1330,7 +1330,15 @@ def test_a_run_of_seek_ticks_in_a_long_pause_restarts_ffmpeg_once_at_their_sum(q
     assert play(q2, seconds=30) == 0
     runs = q2.video_runs()
     assert len(runs) == 2 and runs[1].opt('-ss') == '20'
-    assert q2.t0 + 1500 + 400 - POLL_MS <= runs[1].start <= q2.t0 + 1500 + 400  # 400 ms after the last tick, not the wait's start
+    assert runs[1].start == q2.t0 + 1500 + 400  # 400 ms after the last tick, not the wait's start
+
+
+def test_a_silent_clip_s_clock_does_not_count_the_time_paused(q2):
+    q2.press(b'p', 500)
+    q2.press(b'p', 2500)
+    assert play(q2, sound=0) == 0
+    frames = q2.frames()
+    assert [s.frame for s in frames] == list(range(25)) and on_time(frames, 'wall')  # none dropped at the resume
 
 
 def test_a_volume_while_paused_shows_its_bar_and_takes_it_away(q2):

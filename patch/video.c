@@ -546,7 +546,9 @@ int main(int argc, char **argv) {
             poll(p, have < size ? 3 : 2, wait < cap ? wait : cap);
             char c[2] = { 0 };
             if (p[0].revents && recv(sock, c, 2, 0) > 0) {
-                t = now_ms(); /* the wait may have been a second: a seek's 400 ms and a bar's 1.5 s run from the key */
+                t = now_ms(); /* the wait may have been a second: the time to the key counts before the toggle, and a seek's 400 ms and a bar's 1.5 s run from the key */
+                if (!au.paused) wall += t - last;
+                last = t;
                 if (c[0] == 'p' || c[0] == 'a' || c[0] == 'r') { au.paused = video_pause(au.paused, c[0]);
                     video_state(au.paused);
                 }
