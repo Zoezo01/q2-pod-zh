@@ -1381,6 +1381,26 @@ def test_a_subfolder_past_1023_bytes_is_passed_over(fw):
     assert folder_tracks(fw, tree, b'/m') == [b'/m/' + fits + b'/a']
 
 
+def qm_folder_tracks(fw, st, tree, folder, name):
+    """qm_tracks for a Folder row named name while g_folder_path is folder: the paths it adds."""
+    st('qm_kind').value = 4  # QM_FOLDER
+    C.memmove(C.addressof(fw.var('fw_ctx_g_folder_path', C.c_char)), folder + b'\0', len(folder) + 1)
+    add = tree.deques.new()
+    fw.fn('navigation__qm_tracks', None, C.c_void_p, C.c_void_p)(record(tree.keep, name=name, kind=4), add)
+    return [C.string_at(struct.unpack_from('<Q', C.string_at(r, 0x60), REC_PATH)[0]) for r in tree.deques[add]]
+
+
+def test_a_queued_folder_whose_path_is_cut_adds_nothing(fw, st):
+    """qm_tracks joins g_folder_path and the row's name into 1024 bytes. A cut path is a prefix, here the
+    folder beside it, whose songs were queued for the wrong row: so, as folder_tracks passes such a subfolder
+    over, the row adds nothing."""
+    folder = b'/m/' + b'f' * 1000
+    fits, over = b'n' * 19, b'n' * 20  # 1003 + 1 + 19 bytes fit; one more is cut to the folder beside it
+    tree = Tree(fw, {folder + b'/' + fits: [(b'a', 8)], folder + b'/' + over: [(b'b', 8)]})
+    assert qm_folder_tracks(fw, st, tree, folder, fits) == [folder + b'/' + fits + b'/a']
+    assert qm_folder_tracks(fw, st, tree, folder, over) == []
+
+
 def song_folder(fw, heap, path, stat=0, mode=0o040755):
     keep = []
     def xstat(version, where, info, *_):
