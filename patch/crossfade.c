@@ -1,7 +1,7 @@
 /* Crossfade (docs/internals.md#crossfade): Playback's row, its page and the fade hciplayer's
  * filter applies (peq_player.c). The page is stock's Boot volume page re-dressed: its slider runs
  * Off (0) and XF_MIN..XF_MAX seconds, so it needs no switch; the switch and Centre still turn it on
- * and off. Display's Wheel sensitivity row opens the same page (xf.ctx 1): 50-200% in tens, no
+ * and off. Display's Wheel sensitivity row opens the same page (xf.ctx 1): 10-200% in tens, no
  * switch, the wheel a ten a tick and Centre back, as on Brightness (navigation.c edit_key). Audio
  * settings' Resume Songs row opens it too (xf.ctx 2): Off and RS_MIN..RS_MAX minutes in fives, the
  * same way, the length a music track needs to keep its place (navigation.c resume_poll). Display's
@@ -398,7 +398,7 @@ int xfade_open(void *ctx, void *event) {
     slider_number(xf.label);
     xf.ctx = mode;
     if (!switched()) widget_set_visible(xf.sw, 0, 0);
-    slider_set_min(xf.slider, mode == 2 ? RS_MIN - 5 : wheel ? 50 : 0);
+    slider_set_min(xf.slider, mode == 2 ? RS_MIN - 5 : wheel ? WHEEL_PCT_MIN : 0);
     slider_set_max(xf.slider, mode == 3   ? (NS_COOL - NS_WARM) / NS_STEP
                               : mode == 2 ? RS_MAX
                               : wheel     ? 200

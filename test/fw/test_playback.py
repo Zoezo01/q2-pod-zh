@@ -1338,11 +1338,13 @@ def test_wheel_raw_counts_travel_and_posts_nothing(fw):
 
 
 @in_fork
-@pytest.mark.parametrize('pct, travel', [(50, 28), (100, 14), (200, 7), (150, 10), (160, 9)])
+@pytest.mark.parametrize('pct, travel', [(50, 28), (100, 14), (200, 7), (150, 10), (160, 9), (20, 70), (10, 140)])
 def test_wheel_sensitivity_is_the_travel_per_tick(fw, pct, travel):
     wheel = Wheel(fw)
     fw.fn('wheel_set_pct', None, C.c_int)(pct)
-    wheel.touch(50), wheel.touch(50 + travel - 1)
+    for x in range(50, 50 + travel, 50):  # under half a turn a sample: more reads as the other way round
+        wheel.touch(x)
+    wheel.touch(50 + travel - 1)
     assert wheel.ticks() == []
     wheel.touch(50 + travel)
     assert wheel.ticks() == ['prev']
@@ -1362,7 +1364,7 @@ def test_wheel_sensitivity_changed_mid_turn_keeps_the_carrys_share(fw):
 
 
 @pytest.mark.parametrize('value, pct', [
-    (b'100', 100), (b'50', 50), (b'200', 200), (b'150', 150), (b'', 50), (b'40', 50), (b'210', 50), (b'105', 50),
+    (b'100', 100), (b'50', 50), (b'200', 200), (b'150', 150), (b'', 50), (b'40', 40), (b'10', 10), (b'0', 50), (b'210', 50), (b'105', 50),
     (b'0100', 50), (b' 100', 50), (b'100 ', 50), (b'+100', 50), (b'abc', 50), (b'-100', 50), (b'4294967396', 50),
 ])
 def test_wheel_sensitivity_config(fw, value, pct):
@@ -1385,11 +1387,11 @@ def test_wheel_sensitivity_any_text(fw):
     for value in names(rng, [b'100', b'200', b'50', b'150', b'040'], 1500):
         current['v'] = value
         read.value = 0
-        good = re.fullmatch(rb'[1-9]\d*', current['v']) and 50 <= int(current['v']) <= 200 and int(current['v']) % 10 == 0
+        good = re.fullmatch(rb'[1-9]\d*', current['v']) and 10 <= int(current['v']) <= 200 and int(current['v']) % 10 == 0
         assert pct() == (int(current['v']) if good else 50)
 
 
-@pytest.mark.parametrize('n, pct', [(0, 50), (49, 50), (54, 50), (55, 60), (104, 100), (105, 110), (199, 200), (200, 200), (999, 200), (-5, 50)])
+@pytest.mark.parametrize('n, pct', [(0, 10), (14, 10), (15, 20), (49, 50), (54, 50), (55, 60), (104, 100), (105, 110), (199, 200), (200, 200), (999, 200), (-5, 10)])
 def test_wheel_sensitivity_steps_in_tens(fw, n, pct):
     fw.fn('wheel_set_pct', None, C.c_int)(n)
     assert fw.fn('wheel_pct', C.c_int)() == pct

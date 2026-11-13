@@ -28,7 +28,8 @@ void playback_save(void);
 void playback_clear(void);
 /* mclLoadPlayList's loads so far: a queue loaded later is another one (addon.c stream_queue) */
 extern unsigned playback_loads;
-int wheel_pct(void); /* Wheel sensitivity, 50-200% */
+#define WHEEL_PCT_MIN 10 /* the slowest: 140 units a tick, 0.7 of a turn */
+int wheel_pct(void); /* Wheel sensitivity, WHEEL_PCT_MIN-200%, 50 unless set */
 void wheel_set_pct(int n);
 void wheel_guard_reset(void);
 extern int wheel_guard; /* Volume guard: the screen-off wheel's guard, 0 off */

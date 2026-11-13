@@ -290,7 +290,7 @@ def test_wheel_positions():
 @pytest.mark.parametrize('config,units', [
     ('WHEELSENSITIVITY=100\n', 14.0), ('A=1\nWHEELSENSITIVITY=200  \nB=2\n', 7.0), ('WHEELSENSITIVITY=70', 20.0),
     ('WHEELSENSITIVITY=50\n', 28.0), ('', 28.0), ('XWHEELSENSITIVITY=100\n', 28.0), ('WHEELSENSITIVITY=080\n', 28.0),
-    ('WHEELSENSITIVITY=40\n', 28.0), ('WHEELSENSITIVITY=300\n', 28.0), ('WHEELSENSITIVITY=55\n', 28.0),
+    ('WHEELSENSITIVITY=40\n', 35.0), ('WHEELSENSITIVITY=10\n', 140.0), ('WHEELSENSITIVITY=0\n', 28.0), ('WHEELSENSITIVITY=300\n', 28.0), ('WHEELSENSITIVITY=55\n', 28.0),
 ])
 def test_wheel_units(config, units):
     assert q.wheel_units(config) == units
@@ -1119,8 +1119,8 @@ WHEEL_SIXTEENTHS = {50: 448, 60: 373, 70: 320, 80: 280, 90: 249, 100: 224, 110: 
 
 @pytest.mark.parametrize('config,sixteenths', [(f'WHEELSENSITIVITY={p}\n', n) for p, n in WHEEL_SIXTEENTHS.items()] + [
     ('A=1\nWHEELSENSITIVITY=150  \nB=2', 149),
-    # Anything but a canonical ten in 50-200 is 50%, as wheel_pct reads it.
-    ('', 448), ('XWHEELSENSITIVITY=100\n', 448), ('WHEELSENSITIVITY=40\n', 448), ('WHEELSENSITIVITY=210\n', 448),
+    # Anything but a canonical ten in 10-200 is 50%, as wheel_pct reads it.
+    ('', 448), ('XWHEELSENSITIVITY=100\n', 448), ('WHEELSENSITIVITY=40\n', 560), ('WHEELSENSITIVITY=0\n', 448), ('WHEELSENSITIVITY=210\n', 448),
     ('WHEELSENSITIVITY=55\n', 448), ('WHEELSENSITIVITY=080\n', 448),
 ])
 def test_wheel_units_in_sixteenths(config, sixteenths):

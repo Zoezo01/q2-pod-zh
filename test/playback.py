@@ -792,13 +792,13 @@ if 'wheel_raw' in ps:  # iPod: while games.c's Vortex sets wheel_raw, nothing ti
         held=[]; h=lambda m: held.append(m.get(ps['wheel_held']))
         wheel([raw(on),(10,0),h,(10,1),h,(10+U,1),h,(10+U,0),h],m); assert held==[0,1,1,0],(on,held)
     checks+=1
-# Wheel sensitivity (Q2POD WHEELSENSITIVITY, 50-200% in tens, 1.0.6's key and scale): the travel
+# Wheel sensitivity (Q2POD WHEELSENSITIVITY, 10-200% in tens, 1.0.6's key and scale): the travel
 # per tick is 50/pct of U, in sixteenths of a unit, so 50% is exactly U (28), the wheel before the
 # setting, and every step differs. A fresh card, a sample before the first read and any value that
 # is not a canonical ten in range all get 50%.
-SIXTEENTHS={pct:(U*16*50+pct//2)//pct for pct in range(50,201,10)}
+SIXTEENTHS={pct:(U*16*50+pct//2)//pct for pct in range(10,201,10)}
 assert U==28 and SIXTEENTHS[50]==16*U and SIXTEENTHS[100]==8*U and SIXTEENTHS[200]==4*U
-assert len(set(SIXTEENTHS.values()))==16 and SIXTEENTHS[130]==172  # 10.75 units: 130% is 10 3/4
+assert len(set(SIXTEENTHS.values()))==20 and SIXTEENTHS[130]==172  # 10.75 units: 130% is 10 3/4
 def sensitivity(config=None,read=True):
     m=PlaybackMachine()
     if config is not None: m.config['WHEELSENSITIVITY']=config
@@ -809,7 +809,7 @@ def travel(m):  # the units of a turn's first tick, a unit per sample
 def spin(m,units=600):  # ticks in three turns, a unit per sample, over the 200 -> 1 seam
     return len(wheel([((9+k)%200+1,1) for k in range(units+1)],m)[0])
 assert travel(sensitivity(read=False)[0])==U  # not read yet: 50%
-for config,pct in ((None,50),('50',50),('130',130),('200',200),('0',50),('40',50),('210',50),('135',50),
+for config,pct in ((None,50),('50',50),('130',130),('200',200),('0',50),('40',40),('20',20),('210',50),('135',50),
                    ('-50',50),('050',50),(' 50',50),('50x',50),('abc',50),('',50)):
     m,got=sensitivity(config); assert got==pct and travel(m)==-(-SIXTEENTHS[pct]//16),(config,got)
 for pct in (50,100,130,150,160,200):  # the carry keeps the sixteenths: 150% and 160% differ
@@ -818,7 +818,7 @@ assert spin(sensitivity('150')[0])==64 and spin(sensitivity('160')[0])==68
 checks+=1
 # Setting it: the nearest ten, clamped, live on the next sample; the page saves it (crossfade.c's
 # refresh, test/patch.py), not wheel_set_pct.
-for n,pct in ((130,130),(74,70),(75,80),(20,50),(250,200),(50,50)):
+for n,pct in ((130,130),(74,70),(75,80),(20,20),(34,30),(250,200),(50,50)):
     m,_=sensitivity(); m.calls=[]; m.fn('wheel_set_pct',n)
     saved=[(c[1],m.text(c[2]),m.text(c[3])) for c in m.calls if c[0]=='write_int_config']
     assert m.fn('wheel_pct')==pct and travel(m)==-(-SIXTEENTHS[pct]//16) and saved==[],n

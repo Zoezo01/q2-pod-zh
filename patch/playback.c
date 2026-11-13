@@ -71,7 +71,7 @@ static int wh_acc __attribute__((section(".scratch")));
 static int wh_anchor __attribute__((section(".scratch"))); /* touch-down x (1-200); 0 lifted */
 static int wh_units __attribute__((section(".scratch")));  /* wh_acc's tick, both in 1/16 unit */
 
-/* Wheel sensitivity (System settings -> Display, crossfade.c's page): 50-200% in tens, Q2POD
+/* Wheel sensitivity (System settings -> Display, crossfade.c's page): 10-200% in tens, Q2POD
  * WHEELSENSITIVITY in config.ini, anything else 50%. The travel per tick is 50% / sensitivity of
  * WHEEL_TICK_UNITS: 50% is today's 28 (a seventh of a turn), 100% 14, 200% 7, 1.0.6's scale and
  * key, so a value saved then means what it did (within the half unit 1.0.6 rounded to). It is kept
@@ -93,14 +93,14 @@ int wheel_pct(void) {
         toolsReadConfig("/mnt/data/config.ini", "Q2POD", "WHEELSENSITIVITY", v, "");
         int n = atoi(v);
         tk_snprintf(canonical, sizeof canonical, "%d", n);
-        wheel_apply(n >= 50 && n <= 200 && !(n % 10) && !strcmp(v, canonical) ? n : 50);
+        wheel_apply(n >= WHEEL_PCT_MIN && n <= 200 && !(n % 10) && !strcmp(v, canonical) ? n : 50);
         wheel_read = 1;
     }
     return wheel_percent;
 }
-/* The nearest ten within 50-200%, live on the next sample; crossfade.c's refresh saves it. */
+/* The nearest ten within 10-200%, live on the next sample; crossfade.c's refresh saves it. */
 void wheel_set_pct(int n) {
-    n = n < 50 ? 50 : n > 200 ? 200 : (n + 5) / 10 * 10;
+    n = n < WHEEL_PCT_MIN ? WHEEL_PCT_MIN : n > 200 ? 200 : (n + 5) / 10 * 10;
     if (n != wheel_pct()) wheel_apply(n);
 }
 
