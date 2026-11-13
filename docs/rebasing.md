@@ -2,7 +2,7 @@
 
 Q2 Pod patches Shanling's `demo`, `hciplayer` and `bluealsa` at fixed addresses, each with the stock word it expects. A new stock release moves nearly all of them. `tools/rebase.py` carries what it can prove; this is the routine for the rest.
 
-The stock ZIPs are untrusted input and Shanling's copyright. Run everything that reads them with `python3 -I`, extract outside the repo, and commit nothing of theirs but addresses, instruction words and hashes. Decompiler output stays outside the repo too.
+The stock ZIPs are untrusted input and Shanling's copyright. Run everything that reads them with `python3 -I`, extract outside the repo, and commit nothing of theirs but addresses, instruction words and hashes. Decompiler output stays outside the repo too. `apply` also writes a ZIP's version and the folder its `update.tar` is in into our files as they are, `tools/build.py`'s string literals among them, so `rebase.py` refuses a ZIP in which either is more than a version (`V1.36`) and a plainly named folder.
 
 ## The tool
 
