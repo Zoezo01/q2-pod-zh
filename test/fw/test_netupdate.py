@@ -906,6 +906,7 @@ def test_a_long_redirect_is_held_to_the_tag_buffer(fw):
     assert state == NU_DONE and net.urls[1:] == [API + b'9' * 63, GET + b'9' * 63 + b'/update.tar']
 
 
+@pytest.mark.refusal('update:hash')
 def test_one_wrong_byte_is_never_named_update_tar(fw):
     """The tar as the card gives it back isn't the one the release's digest names: it goes, and the old one stays."""
     wrong = BODY[:1000] + b'\xff' + BODY[1001:]
@@ -915,6 +916,7 @@ def test_one_wrong_byte_is_never_named_update_tar(fw):
 
 
 @pytest.mark.parametrize('size', [len(BODY) - 1, len(BODY) + 1])
+@pytest.mark.refusal('update:changed')
 def test_a_tar_of_another_size_than_the_release_says_is_bad(fw, size):
     state, _, card = update(fw, api=(0, 200, None, tar_json(size=size)))
     assert state == NU_BAD and TAR not in card.files and PART not in card.files
@@ -2118,11 +2120,11 @@ def test_remind_daily_off_checks_nothing_tells_nothing_and_takes_back_the_tag(fw
     card = slot(fw)
     p = Poll(fw, card)
     net = Net(fw, {LATEST: (0, 302, TAG_URL + NEWER)})
-    p.nc.tag = NEWER  # found while it was On
+    p.nc.tag, p.nc.at = NEWER, 1  # found while it was On
     for _ in range(3):
         p.poll(DAY)
     assert p.workers == [] and net.urls == [] and p.toasts == [] and TOLD not in card.files
-    assert p.nc.tag == b'' and not p.nc.busy and not p.nc.polled
+    assert p.nc.tag == b'' and not p.nc.busy and not p.nc.polled and not p.nc.at  # On again: checks at once
     assert reads.count(b'REMINDDAILY') == 1  # read once, not at every poll
 
 

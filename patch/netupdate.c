@@ -177,28 +177,6 @@ int netupdate_asset(const char *json, const char *name, unsigned *size, char *sh
     return 0;
 }
 
-/* path's SHA-256 as 64 hex digits in hex (65 bytes) and its bytes in *size, read back in SHA_CHUNK
- * pieces; 0 when it can't be read whole. */
-#define SHA_CHUNK (1u << 14)
-int netupdate_sha256(const char *path, char *hex, unsigned *size) {
-    unsigned char *buf = calloc(1, SHA_CHUNK), digest[32] = { 0 };
-    void *ctx = calloc(1, 128), *f = buf && ctx ? fopen(path, "rb") : 0; /* stock's sha256_t, 0x68 bytes */
-    unsigned n = SHA_CHUNK, total = 0;
-    if (f) tk_sha256_init(ctx);
-    while (f && n == SHA_CHUNK) {
-        total += n = fread(buf, 1, SHA_CHUNK, f);
-        tk_sha256_hash(ctx, buf, n);
-    }
-    int ok = f && !ferror(f);
-    if (f) fclose(f), tk_sha256_done(ctx, digest);
-    free(buf);
-    free(ctx);
-    for (int i = 0; i < 64; ++i) hex[i] = "0123456789abcdef"[digest[i / 2] >> (i & 1 ? 0 : 4) & 15];
-    hex[64] = 0;
-    *size = total;
-    return ok;
-}
-
 /* unzip -l's listing of what an install unpacks (busybox's and Info-ZIP's columns: the size, then
  * the name 21 bytes after it): the entries, *total their bytes; -1 for an absolute path, a ".."
  * component, or over cap bytes in all. busybox strips a leading "/" and "../" itself before both
@@ -359,6 +337,28 @@ void shelf_remove(int i) {
 #ifndef PEQ_HOST
 #include "offsets.inc"
 #include "stock.h"
+
+/* path's SHA-256 as 64 hex digits in hex (65 bytes) and its bytes in *size, read back in SHA_CHUNK
+ * pieces; 0 when it can't be read whole. */
+#define SHA_CHUNK (1u << 14)
+int netupdate_sha256(const char *path, char *hex, unsigned *size) {
+    unsigned char *buf = calloc(1, SHA_CHUNK), digest[32] = { 0 };
+    void *ctx = calloc(1, 128), *f = buf && ctx ? fopen(path, "rb") : 0; /* stock's sha256_t, 0x68 bytes */
+    unsigned n = SHA_CHUNK, total = 0;
+    if (f) tk_sha256_init(ctx);
+    while (f && n == SHA_CHUNK) {
+        total += n = fread(buf, 1, SHA_CHUNK, f);
+        tk_sha256_hash(ctx, buf, n);
+    }
+    int ok = f && !ferror(f);
+    if (f) fclose(f), tk_sha256_done(ctx, digest);
+    free(buf);
+    free(ctx);
+    for (int i = 0; i < 64; ++i) hex[i] = "0123456789abcdef"[digest[i / 2] >> (i & 1 ? 0 : 4) & 15];
+    hex[64] = 0;
+    *size = total;
+    return ok;
+}
 
 #define NU_REPO "https://github.com/" Q2POD_REPO "/releases/latest" /* tools/build.py --update-repo */
 #define NU_API "https://api.github.com/repos/" Q2POD_REPO "/releases/tags/"
@@ -703,7 +703,7 @@ void netupdate_poll(void) {
     char s[80];
     if (!*Q2POD_TAG) return;
     if (!ringnav_remind_daily()) { /* not while a check thread owns the tag, as named() */
-        if (!nc.busy) *nc.tag = 0;
+        if (!nc.busy) *nc.tag = 0, nc.at = 0; /* back On: check at once */
         return;
     }
     if (nc.busy || (nc.polled && now - nc.polled < NU_POLL_MS)) return;
