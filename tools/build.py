@@ -29,7 +29,9 @@ REPO = 'Zoezo01/q2-pod-zh'  # whose releases Network Update fetches (--update-re
 # 同时把网络更新从 DiamondBond/q2-pod 切到 Zoezo01/q2-pod-zh，并按实机截图再修一轮顶栏：
 # 左右分组共用整行高度、EQ 紧跟蓝牙、Q2 与菜单名择一显示、图标+百分比在蓝牙开启时不再降级。
 # 设备升级只认「标记不同」，所以代码一变，末位字母必须跟着递进，否则已刷同标记的设备会拒绝这个包。
-TAG = 'V' + VERSION.replace('.', '') + 'A'
+# B 修 Remind Daily 行的显示（每日提醒：关闭/打开 带值纯文本，不再带开关件），
+# 并给顶栏行高归一补上空 parent 的保护（无界面变化，只让模拟器测试不再误触）。
+TAG = 'V' + VERSION.replace('.', '') + 'B'
 
 def version_ok(version, beta):
     """VERSION is three single digits and BETA one, as TAG packs them; 17.6 or 1.76 would give a 5-character tag too."""
