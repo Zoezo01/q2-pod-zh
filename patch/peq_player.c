@@ -297,6 +297,166 @@ static unsigned crossfade(player_state *s, float *a, unsigned frames, int nch, i
     return k;
 }
 
+/* AirPlay's tap (peq.h): what plays, at CAST_RATE, 16-bit, while the q2-airplay app reads. Another rate
+ * goes through a windowed sinc (Blackman, RS_ZEROS zero crossings a side at the lower rate's cutoff),
+ * its kernel tabled at RS_PHASES points an input frame, read between the nearest two. Dither (TPDF, 1 LSB)
+ * only where a sample isn't 16-bit already. */
+#define RS_PHASES 512
+#define RS_ZEROS 12
+#define CAST_SEEK_S 0.5 /* the song's place moving this much off its run: a seek */
+#define CAST_END_S 2.5  /* a song left this close to its end runs into the next: no skip */
+static struct {
+    cast_tap *t;
+    unsigned look;           /* frames since the file or, idle, its beat was last looked at */
+    int live;                /* the app beat at the last look: looked at every block */
+    int rate, half;          /* the kernel's input rate, its taps a side */
+    float *kernel;           /* half * RS_PHASES + 1 points, from the centre out */
+    float *buf;              /* stereo history, then the block */
+    unsigned cap, held;      /* buf's frames, those held from earlier blocks */
+    double pos;              /* the next output frame's place in buf */
+    unsigned noise, id;      /* the dither's LCG; the last block's filter instance */
+    double pts;              /* its end's place in its song, s */
+    int len, muted, in;      /* its song's length, s; the last block muted; its rate */
+} cs;
+
+static cast_tap *cast_live(int rate, unsigned frames) {
+    if (!cs.live && cs.look < (unsigned)rate) { /* idle: looked at once a second of audio, no clock read */
+        cs.look += frames;
+        return 0;
+    }
+    cs.look = 0;
+    if (!cs.t) {
+        unsigned head[2] = { 0, 0 };
+        int fd = open(CAST_FILE, 2); /* O_RDWR */
+        if (fd < 0) return 0;
+        if (read(fd, head, sizeof head) == sizeof head && head[0] == CAST_MAGIC &&
+            head[1] == sizeof(cast_tap)) {
+            void *p = mmap64(0, sizeof(cast_tap), 3, 1, fd, 0); /* PROT_READ | PROT_WRITE, MAP_SHARED */
+            if (p != (void *)-1) cs.t = p;
+        }
+        close(fd);
+        if (!cs.t) return 0;
+    }
+    cs.live = CAST_CLOCK(now_ns()) - cs.t->want < CAST_STALE_PLAYER;
+    return cs.live ? cs.t : 0;
+}
+
+static void rs_reset(void) {
+    cs.held = (unsigned)cs.half; /* a silent run-in, so the first output frame has its history */
+    cs.pos = cs.half;
+    if (cs.buf) memset(cs.buf, 0, 8 * cs.held);
+}
+
+static void rs_kernel(int rate) {
+    float ratio = rate > CAST_RATE ? (float)CAST_RATE / rate : 1.0f, fc = 0.46f * ratio,
+          pi = 3.14159265f;
+    cs.half = (int)(RS_ZEROS / (2 * fc)) + 1;
+    free(cs.kernel);
+    free(cs.buf);
+    cs.buf = 0, cs.cap = 0;
+    cs.kernel = calloc((unsigned)cs.half * RS_PHASES + 1, sizeof(float));
+    for (int j = 0; cs.kernel && j <= cs.half * RS_PHASES; ++j) {
+        float x = (float)j / RS_PHASES, a = 2 * pi * fc * x, w = x / cs.half;
+        cs.kernel[j] = 2 * fc * (j ? sinf(a) / a : 1.0f) *
+                       (0.42f + 0.5f * cosf(pi * w) + 0.08f * cosf(2 * pi * w));
+    }
+    cs.rate = cs.kernel ? rate : 0;
+}
+
+static short s16(float x) {
+    float v = x * 32768.0f;
+    if (v != (float)(int)v) { /* not a 16-bit sample: TPDF dither */
+        cs.noise = cs.noise * 1664525u + 1013904223u;
+        v += (float)((int)(cs.noise >> 16 & 255) - (int)(cs.noise >> 24)) * (1.0f / 256);
+    }
+    return v >= 32767.0f ? 32767 : v <= -32768.0f ? -32768 : (short)(v + (v >= 0 ? 0.5f : -0.5f));
+}
+
+static void cast_put(cast_tap *t, unsigned seq, float l, float r) {
+    short *o = t->ring[seq & (CAST_RING - 1)];
+    o[0] = s16(l), o[1] = s16(r);
+}
+
+/* frames of a (interleaved, nch) at rate into the ring; the new seq. */
+static unsigned cast_copy(cast_tap *t, const float *a, unsigned frames, int nch, int rate) {
+    unsigned seq = t->seq, r = nch > 1;
+    if (rate == CAST_RATE) {
+        for (unsigned i = 0; i < frames; ++i, a += nch) cast_put(t, seq++, a[0], a[r]);
+        cs.in = rate;
+        return seq;
+    }
+    if (rate != cs.in) { /* another rate: the resampler's history starts again */
+        if (rate != cs.rate) rs_kernel(rate);
+        rs_reset();
+    }
+    cs.in = rate;
+    if (!cs.kernel) return seq;
+    unsigned n = cs.held + frames;
+    if (n > cs.cap) { /* room for the block after the history */
+        float *b = calloc(2 * (n + 4096), sizeof(float));
+        if (!b) return seq;
+        if (cs.buf) memcpy(b, cs.buf, 8 * cs.held);
+        free(cs.buf);
+        cs.buf = b, cs.cap = n + 4096;
+    }
+    for (unsigned i = 0; i < frames; ++i, a += nch)
+        cs.buf[2 * (cs.held + i)] = a[0], cs.buf[2 * (cs.held + i) + 1] = a[r];
+    double step = (double)rate / CAST_RATE;
+    const float *k = cs.kernel;
+    int half = cs.half;
+    while (cs.pos + half < n) {
+        int i = (int)cs.pos;
+        float x = (float)(cs.pos - i) * RS_PHASES, ff = x - (int)x;
+        int jf = (int)x;
+        const float *p = cs.buf + 2 * (i - half + 1), *q;
+        float l = 0, rr = 0;
+        for (int d = half - 1; d >= 0; --d, p += 2) { /* frames at and before the point */
+            q = k + d * RS_PHASES + jf;
+            float c = q[0] + ff * (q[1] - q[0]);
+            l += p[0] * c, rr += p[1] * c;
+        }
+        for (int d = 1; d <= half; ++d, p += 2) { /* after it */
+            q = k + d * RS_PHASES - jf - 1;
+            float c = q[0] + (1 - ff) * (q[1] - q[0]);
+            l += p[0] * c, rr += p[1] * c;
+        }
+        cast_put(t, seq++, l, rr);
+        cs.pos += step;
+    }
+    unsigned drop = (unsigned)((int)cs.pos - half + 1); /* frames no output needs again */
+    if (drop > n) drop = n;
+    for (unsigned i = 0; i < 2 * (n - drop); ++i) cs.buf[i] = cs.buf[2 * drop + i];
+    cs.held = n - drop, cs.pos -= drop;
+    return seq;
+}
+
+/* A block about to play (frames in, before a fade holds any back): a seek, or a skip (a new song while
+ * the last wasn't near its end), marks jump_seq, and the resampler starts afresh there. */
+static void cast_jump(cast_tap *t, player_state *s, unsigned frames, int rate) {
+    double pts = decoded(), start = pts - (double)frames / rate;
+    int jump = cs.id && ((unsigned)s->id != cs.id ? !(cs.len > 0 && cs.pts >= cs.len - CAST_END_S)
+                                        : pts >= 0 && cs.pts >= 0 &&
+                                              __builtin_fabs(start - cs.pts) > CAST_SEEK_S);
+    if (jump) {
+        t->jump_seq = t->seq;
+        __asm__ volatile("" ::: "memory");
+        ++t->jumps;
+        if (cs.rate) rs_reset();
+    }
+    cs.id = (unsigned)s->id, cs.pts = pts, cs.len = LENGTH;
+}
+
+static void cast_tap_block(cast_tap *t, player_state *s, const float *a, unsigned frames, int nch, int rate) {
+    unsigned seq = cast_copy(t, a, frames, nch, rate);
+    double pts = decoded();
+    t->id = (unsigned)s->id;
+    t->pts_ms = pts >= 0 ? (int)(pts * 1000) : 0;
+    t->dsd = 0;
+    t->stamp = now_ns();
+    __asm__ volatile("" ::: "memory"); /* the frames before seq */
+    t->seq = seq;
+}
+
 static af_data *play(af_instance *af, af_data *data) {
     player_state *s = af->setup;
     if (data && data->len > 0 && data->format == 0x1d && data->bps == 4 &&
@@ -309,7 +469,14 @@ static af_data *play(af_instance *af, af_data *data) {
             s->ending = LENGTH > 0 && pts >= 0 && pts > LENGTH - XF_LEAD_S;
             if (s->ending) last_at = now_ns();
         }
-        peq_process(&s->dsp, data->audio, frames);
+        /* AirPlay: the EQ is for the Q2's own output, so a speaker gets the song without it */
+        cast_tap *cast = cast_live(data->rate, frames);
+        /* silent while the app mutes, and until demo has the earphones' volume back (volume -1) */
+        int mute = (cast && cast->mute) || (cs.t && cs.t->volume >= 0);
+        if (cast) cast_jump(cast, s, frames, data->rate);
+        if (mute != cs.muted && !(cs.muted = mute)) /* the EQ's filters start again from rest */
+            peq_reset(&s->dsp, data->rate, data->nch, &s->preset);
+        if (!mute) peq_process(&s->dsp, data->audio, frames);
         static watched mono = { 0, ~0u }; /* Mono Audio (crossfade.c mono_sync), after the EQ's sides */
         if (data->nch == 2 && watch(&mono, MONO_FILE, data->rate, frames))
             for (float *a = data->audio, *end = a + 2 * frames; a < end; a += 2)
@@ -321,9 +488,13 @@ static af_data *play(af_instance *af, af_data *data) {
             }
         frames = crossfade(s, data->audio, frames, data->nch, data->rate);
         data->len = (int)(frames * 4 * data->nch);
+        if (cast) cast_tap_block(cast, s, data->audio, frames, data->nch, data->rate);
         tap(data->audio, frames, data->nch, data->rate);
+        if (mute) memset(data->audio, 0, (unsigned)data->len);
     } else if (data && data->len > 0 && !s->dsp.channels) {
         xf.len = xf.total = 0; /* DSD or the like plays between: the tail has nothing to mix under */
+        cast_tap *cast = cast_live(data->rate, 4096);
+        if (cast) cast->dsd = 1; /* played untouched: the app says so */
     }
     if (data && data->len > 0) last_id = s->id;
     return data;
@@ -854,7 +1025,8 @@ void id3_gain(void *s, int size) {
             if (!memcmp(h, "TXXX", 4) && n <= sizeof f && read(fd, f, n) == (int)n &&
                 (k = id3_txxx(f, n, t, sizeof t)) > (key = strlen(t)) + 1)
                 AV_DICT_SET(&dict, t, t + key + 1, 0);
-            at += 10 + n;
+            at += 10LL + n; /* 32-bit, 0xfffffff6 + 10 = 0: the same frame for ever */
+            /* ponytail: stock's own walker (runs first, 2 KB of frames) still hangs on such a frame; only a hand-made file has one */
         }
         RG_EXPORT(0, dict);
         AV_DICT_FREE(&dict);

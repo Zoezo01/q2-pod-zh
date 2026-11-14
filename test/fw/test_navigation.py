@@ -393,7 +393,7 @@ def test_pod_settings_defaults(fw):
     assert fw.fn('ringnav_artist_view', C.c_int)() == 1  # Artist albums defaults to Coverflow
     assert [fw.fn(name, C.c_int)() for name in ('ringnav_year_old', 'ringnav_artist_az',
                                                 'ringnav_lock_clock', 'ringnav_bt_resume',
-                                                'ringnav_big_library', 'ringnav_playlist_coverflow')] == [0] * 6  # Large Library Mode off
+                                                'ringnav_big_library', 'ringnav_playlist_coverflow')] == [0] * 6  # Fast Navigation off
 
 
 def test_pod_settings_read_their_keys_once(fw):
@@ -428,7 +428,8 @@ def test_display_settings(fw, clock, st, values, theme, home, light):
     (b'', 1, b'Rockbox'), (b'', 0, b'Favorites'), (b'0', 0, b'Rockbox'), (b'1', 0, b'Artists'), (b'2', 0, b'Albums'),
     (b'3', 0, b'Favorites'),
     (b'4', 0, b'Rated Albums'), (b'5', 0, b'Shuffle'), (b'6', 0, b'Games'), (b'7', 0, b'Playlists'), (b'8', 0, b'Podcasts'),
-    (b'9', 0, b'Audiobooks'), (b'10', 0, b'Groovebox'), (b'11', 1, b'Rockbox'), (b'11', 0, b'Favorites'), (b'1x', 0, b'Favorites'),
+    (b'9', 0, b'Audiobooks'), (b'10', 0, b'Groovebox'), (b'11', 1, b'Rockbox'), (b'11', 0, b'Favorites'),  # None: the carousel's card takes the default
+    (b'12', 1, b'Rockbox'), (b'12', 0, b'Favorites'), (b'1x', 0, b'Favorites'),
 ])
 def test_shortcut(fw, clock, value, rockbox, name):
     Config(fw, **({'SHORTCUT': value} if value else {}))
@@ -441,6 +442,7 @@ def test_shortcut(fw, clock, value, rockbox, name):
 
 @pytest.mark.parametrize('value, rockbox, groovebox, shown', [
     (b'10', 1, 0, 0), (b'10', 0, 1, 1), (b'0', 0, 1, 0), (b'0', 1, 0, 1), (b'3', 0, 0, 1),
+    (b'11', 1, 1, 0), (b'11', 0, 0, 0), (b'12', 1, 0, 1), (b'12', 0, 0, 1),  # None hides it, an unknown value is the default
 ])
 def test_the_shortcut_row_hides_without_its_launcher(fw, clock, value, rockbox, groovebox, shown):
     Config(fw, SHORTCUT=value)
@@ -1379,6 +1381,26 @@ def test_a_subfolder_past_1023_bytes_is_passed_over(fw):
     fits, over = b'd' * 1020, b'd' * 1021
     tree = Tree(fw, {b'/m': [(fits, 4), (over, 4)], b'/m/' + fits: [(b'a', 8)], b'/m/' + over: [(b'b', 8)]})
     assert folder_tracks(fw, tree, b'/m') == [b'/m/' + fits + b'/a']
+
+
+def qm_folder_tracks(fw, st, tree, folder, name):
+    """qm_tracks for a Folder row named name while g_folder_path is folder: the paths it adds."""
+    st('qm_kind').value = 4  # QM_FOLDER
+    C.memmove(C.addressof(fw.var('fw_ctx_g_folder_path', C.c_char)), folder + b'\0', len(folder) + 1)
+    add = tree.deques.new()
+    fw.fn('navigation__qm_tracks', None, C.c_void_p, C.c_void_p)(record(tree.keep, name=name, kind=4), add)
+    return [C.string_at(struct.unpack_from('<Q', C.string_at(r, 0x60), REC_PATH)[0]) for r in tree.deques[add]]
+
+
+def test_a_queued_folder_whose_path_is_cut_adds_nothing(fw, st):
+    """qm_tracks joins g_folder_path and the row's name into 1024 bytes. A cut path is a prefix, here the
+    folder beside it, whose songs were queued for the wrong row: so, as folder_tracks passes such a subfolder
+    over, the row adds nothing."""
+    folder = b'/m/' + b'f' * 1000
+    fits, over = b'n' * 19, b'n' * 20  # 1003 + 1 + 19 bytes fit; one more is cut to the folder beside it
+    tree = Tree(fw, {folder + b'/' + fits: [(b'a', 8)], folder + b'/' + over: [(b'b', 8)]})
+    assert qm_folder_tracks(fw, st, tree, folder, fits) == [folder + b'/' + fits + b'/a']
+    assert qm_folder_tracks(fw, st, tree, folder, over) == []
 
 
 def song_folder(fw, heap, path, stat=0, mode=0o040755):
@@ -2499,42 +2521,7 @@ def test_qm_restore_puts_back_what_a_go_to_overwrote(fw, st, scratch):
     assert C.string_at(C.addressof(fw.var('fw_ctx_g_local_classinfo_save', C.c_char)), 912) == bytes(saved)
 
 
-class Ls(C.Structure):
-    _fields_ = [('tab', C.c_void_p), ('jobs', C.c_void_p), ('paths', C.c_void_p), ('n', C.c_uint), ('read', C.c_uint), ('timer', C.c_uint),
-                ('thread', C.c_ulong), ('total', C.c_int), ('running', C.c_int), ('done', C.c_int), ('cancel', C.c_int),
-                ('songs', C.c_void_p), ('title', C.c_void_p)]
-
-
-def test_ls_cancel_asks_the_poll_to_stop(fw):
-    ls = fw.var('library_lists__ls', Ls)
-    assert fw.fn('library_lists__ls_cancel', C.c_int, C.c_void_p, C.c_void_p)(None, None) == 0 and ls.cancel == 1
-
-
-def lengths(fw, data):
-    Files(fw, {} if data is None else {'/mnt/data/ringnav-lengths': data})
-    fw.fn('library_lists__lengths_read', None)()
-    return fw.var('library_lists__ls', Ls), fw.fn('library_lists__length_of', C.c_int, C.c_uint)
-
-
-def test_lengths_are_looked_up_sorted(fw):
-    ls, length_of = lengths(fw, struct.pack('<6I', 10, 100, 20, 200, 0xfffffff0, 300))
-    assert ls.n == 3 and ls.read == 1
-    assert [length_of(k) for k in (10, 20, 0xfffffff0, 5, 15, 25, 0xffffffff)] == [100, 200, 300, -1, -1, -1, -1]
-
-
-def test_a_partial_length_entry_is_dropped(fw):
-    ls, length_of = lengths(fw, struct.pack('<2I', 10, 100) + b'\1\2\3')
-    assert ls.n == 1 and length_of(10) == 100
-
-
-def test_no_lengths_file_is_empty(fw):
-    ls, length_of = lengths(fw, None)
-    assert ls.n == 0 and ls.read == 1 and length_of(10) == -1
-
-
-def test_an_empty_lengths_file_is_empty(fw):
-    ls, length_of = lengths(fw, b'')
-    assert ls.n == 0 and not ls.tab and length_of(10) == -1
+# Shared duration cache coverage lives in test_durations.py.
 
 
 # Scrobbling.
@@ -2624,20 +2611,6 @@ def test_not_while_a_computer_has_the_card(fw):
 @pytest.mark.parametrize('data, value', [(b'\x78\x56\x34\x12', 0x12345678), (b'\xff\xff\xff\xff', 0xffffffff), (b'\0\0\0\x80', 0x80000000), (b'\x01\0\0\0', 1)])
 def test_le32(fw, data, value):
     assert fw.fn('xiph__le32', C.c_uint, C.c_char_p)(data) == value
-
-
-def test_lengths_any_file(fw):
-    files = Files(fw)
-    ls = fw.var('library_lists__ls', Ls)
-    read = fw.fn('library_lists__lengths_read', None)
-    length_of = fw.fn('library_lists__length_of', C.c_int, C.c_uint)
-    rng = random.Random(0x1e4)
-    for _ in range(800):
-        files.files['/mnt/data/ringnav-lengths'] = rng.randbytes(rng.randrange(40))
-        ls.read, ls.tab, ls.n = 0, None, 0
-        read()
-        assert ls.n == len(files.files['/mnt/data/ringnav-lengths']) // 8
-        length_of(rng.getrandbits(32))
 
 
 # Keys.

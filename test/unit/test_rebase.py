@@ -2,7 +2,9 @@
 import collections
 import io
 import struct
+import tarfile
 import types
+import zipfile
 
 import pytest
 
@@ -1122,6 +1124,35 @@ def test_pins():
     assert rebase.pins(text, old, same, hashes)[0] == text.replace(A + '"', B + '"', 1).replace('x' + A, 'x' + B).replace(A + 'x', B + 'x')
     dotted = types.SimpleNamespace(version='V1x32', member='none')
     assert rebase.pins('V1.32 V1x32 V1y32', dotted, new, ({}, {})) == ('V1.32 V1.34 V1y32', [])
+
+
+def stock_zip(path, folder, version):
+    """A ZIP laid out as a stock one, with nothing of a firmware in it."""
+    tar = io.BytesIO()
+    with tarfile.open(fileobj=tar, mode='w') as t:
+        for name, data in (('firmware_v20.info', f'Shanling Q2\n{version}\n'.encode()), ('recovery-update/rootfs.squashfs', b'')):
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            t.addfile(info, io.BytesIO(data))
+    with zipfile.ZipFile(path, 'w') as z:
+        z.writestr(f'{folder}/update.tar', tar.getvalue())
+    return path
+
+
+def test_a_stock_zip_with_plain_names_opens(tmp_path):
+    stock = rebase.Stock(stock_zip(tmp_path/'old.zip', 'Q2 Firmware V1.36', 'V1.36'), tmp_path)
+    assert (stock.version, stock.member) == ('V1.36', 'Q2 Firmware V1.36/update.tar')
+
+
+# pins writes both names into our files as they are: a quote in one came out as tools/build.py's code.
+@pytest.mark.parametrize('folder,version,refused', [
+    ('f', "V1.38'+str(6*7)+'", 'version'), ('f', 'V1.38\\', 'version'),
+    ('f', 'V1.３８', 'version'), ('f', 'V1', 'version'), ('f', '', 'version'),
+    ("x'+str(6*7)+'", 'V1.38', 'folder'), ('x\n', 'V1.38', 'folder'),
+    ('a/b', 'V1.38', 'folder')])
+def test_a_stock_zip_with_other_names_is_refused(tmp_path, folder, version, refused):
+    with pytest.raises(ValueError, match=f'new.zip: {refused} '):
+        rebase.Stock(stock_zip(tmp_path/'new.zip', folder, version), tmp_path)
 
 
 def test_rewrite_carries_a_section_by_its_file_offset_and_size(old, new, mp):

@@ -1338,11 +1338,13 @@ def test_wheel_raw_counts_travel_and_posts_nothing(fw):
 
 
 @in_fork
-@pytest.mark.parametrize('pct, travel', [(50, 28), (100, 14), (200, 7), (150, 10), (160, 9)])
+@pytest.mark.parametrize('pct, travel', [(50, 28), (100, 14), (200, 7), (150, 10), (160, 9), (20, 70), (10, 140)])
 def test_wheel_sensitivity_is_the_travel_per_tick(fw, pct, travel):
     wheel = Wheel(fw)
     fw.fn('wheel_set_pct', None, C.c_int)(pct)
-    wheel.touch(50), wheel.touch(50 + travel - 1)
+    for x in range(50, 50 + travel, 50):  # under half a turn a sample: more reads as the other way round
+        wheel.touch(x)
+    wheel.touch(50 + travel - 1)
     assert wheel.ticks() == []
     wheel.touch(50 + travel)
     assert wheel.ticks() == ['prev']
@@ -1362,7 +1364,7 @@ def test_wheel_sensitivity_changed_mid_turn_keeps_the_carrys_share(fw):
 
 
 @pytest.mark.parametrize('value, pct', [
-    (b'100', 100), (b'50', 50), (b'200', 200), (b'150', 150), (b'', 50), (b'40', 50), (b'210', 50), (b'105', 50),
+    (b'100', 100), (b'50', 50), (b'200', 200), (b'150', 150), (b'', 50), (b'40', 40), (b'10', 10), (b'0', 50), (b'210', 50), (b'105', 50),
     (b'0100', 50), (b' 100', 50), (b'100 ', 50), (b'+100', 50), (b'abc', 50), (b'-100', 50), (b'4294967396', 50),
 ])
 def test_wheel_sensitivity_config(fw, value, pct):
@@ -1385,11 +1387,11 @@ def test_wheel_sensitivity_any_text(fw):
     for value in names(rng, [b'100', b'200', b'50', b'150', b'040'], 1500):
         current['v'] = value
         read.value = 0
-        good = re.fullmatch(rb'[1-9]\d*', current['v']) and 50 <= int(current['v']) <= 200 and int(current['v']) % 10 == 0
+        good = re.fullmatch(rb'[1-9]\d*', current['v']) and 10 <= int(current['v']) <= 200 and int(current['v']) % 10 == 0
         assert pct() == (int(current['v']) if good else 50)
 
 
-@pytest.mark.parametrize('n, pct', [(0, 50), (49, 50), (54, 50), (55, 60), (104, 100), (105, 110), (199, 200), (200, 200), (999, 200), (-5, 50)])
+@pytest.mark.parametrize('n, pct', [(0, 10), (14, 10), (15, 20), (49, 50), (54, 50), (55, 60), (104, 100), (105, 110), (199, 200), (200, 200), (999, 200), (-5, 10)])
 def test_wheel_sensitivity_steps_in_tens(fw, n, pct):
     fw.fn('wheel_set_pct', None, C.c_int)(n)
     assert fw.fn('wheel_pct', C.c_int)() == pct
@@ -1415,23 +1417,24 @@ def guard(fw):
 @in_fork
 def test_guard_holds_a_brush(fw):
     wheel = dark(fw)
-    assert wheel.touch(199) == 100 and wheel.ticks() == []  # 99 units
+    wheel.touch(190)
+    assert wheel.touch(29) == 100 and wheel.ticks() == []  # 129 units, the seam crossed
 
 
 @in_fork
 def test_guard_passes_one_tick_for_28_units_past_it(fw):
     wheel = dark(fw)
     wheel.touch(190)  # 90
-    wheel.touch(38)   # 48 more, the seam crossed: 138, 38 past
-    assert wheel.ticks() == ['prev'] and guard(fw) == 1600
+    wheel.touch(68)   # 78 more, the seam crossed: 168, 38 past
+    assert wheel.ticks() == ['prev'] and guard(fw) == 2080
 
 
 @in_fork
 def test_guard_open_ticks_as_lit_reversals_and_lifts_too(fw):
     wheel = dark(fw)
-    wheel.touch(190), wheel.touch(28)  # 128 units across the seam: 28 past
+    wheel.touch(190), wheel.touch(58)  # 158 units across the seam: 28 past
     assert wheel.ticks() == ['prev']
-    wheel.touch(190)  # back across it: a reversal, 38 units
+    wheel.touch(20)  # back: a reversal, 38 units
     assert wheel.ticks() == ['prev', 'next']
     wheel.lift()
     wheel.touch(100), wheel.touch(128)
@@ -1444,8 +1447,8 @@ def test_guard_reversal_arms_it_again(fw):
     wheel.touch(180)  # 80
     wheel.touch(170)  # back 10: starts again, the other way
     assert guard(fw) == -160
-    wheel.touch(110), wheel.touch(60)  # 110 down in all, 10 past
-    assert guard(fw) == 1600 and wheel.ticks() == []
+    wheel.touch(110), wheel.touch(30)  # 150 down in all, 20 past
+    assert guard(fw) == 2080 and wheel.ticks() == []
 
 
 @in_fork
@@ -1459,13 +1462,13 @@ def test_guard_lift_before_it_opens_arms_it_again(fw):
 @in_fork
 def test_guard_stillness_arms_it_again(fw):
     wheel = dark(fw)
-    wheel.touch(190), wheel.touch(18)
-    assert guard(fw) == 1600
+    wheel.touch(190), wheel.touch(48)
+    assert guard(fw) == 2080
     wheel.now += 1499
-    wheel.touch(18)
-    assert guard(fw) == 1600
+    wheel.touch(48)
+    assert guard(fw) == 2080
     wheel.now += 1500
-    wheel.touch(18)
+    wheel.touch(48)
     assert guard(fw) == 0
 
 
@@ -1502,12 +1505,12 @@ def wheel(fw):
 def test_the_screen_lighting_arms_the_guard_again(fw, wheel):
     fw.var('wheel_guard', C.c_int).value = 1
     lit = fw.var('g_backlight_status', C.c_ubyte)
-    wheel.touch(100), wheel.touch(190), wheel.touch(28)  # 128 units across the seam: 28 past the guard
+    wheel.touch(100), wheel.touch(190), wheel.touch(58)  # 158 units across the seam: 28 past the guard
     assert wheel.ticks() == ['prev']
     lit.value = 1
-    wheel.touch(28)
+    wheel.touch(58)
     lit.value = 0
-    wheel.touch(56)  # 28 units dark again: a brush, held
+    wheel.touch(86)  # 28 units dark again: a brush, held
     assert wheel.ticks() == ['prev']
 
 
@@ -1517,8 +1520,9 @@ def test_a_pockets_rubbing_back_and_forth_never_opens_the_guard(fw, wheel):
     x = 10
     wheel.touch(x)
     for stroke in [out, -10] * 4 + [out]:  # far past the guard one way in all; the clock still, so only
-        x = (x + stroke - 1) % 200 + 1     # each reversal arms it again
-        wheel.touch(x)
+        for part in (stroke // 2, stroke - stroke // 2):  # each reversal arms it again; a sample reads
+            x = (x + part - 1) % 200 + 1                  # at most half a turn, so a stroke is two
+            wheel.touch(x)
     assert wheel.ticks() == []
 
 
@@ -2401,6 +2405,21 @@ def test_a_track_that_fits_is_not_refused(saved, fw):
     saved.disk.files['/b/ok.m4b'] = mp4(100)
     saved.disk.files['/proc/meminfo'] = b'MemAvailable: 40000 kB\n'
     assert fw.fn('playback_start_fits', C.c_int)() == 1
+
+
+def test_another_book_starts_in_the_room_the_held_book_gives_back(saved, fw):
+    saved.load([saved.song(b'/b/a.m4b'), saved.song(b'/b/b.m4b'), saved.song(b'http://x', kind=0)], 0)
+    saved.disk.files['/b/a.m4b'] = saved.disk.files['/b/b.m4b'] = mp4(1 << 20)  # 16 MB of index each
+    start = fw.fn('playback_start_fits', C.c_int)
+    saved.disk.files['/proc/meminfo'] = b'MemAvailable: 40000 kB\n'
+    assert start() == 1
+    saved.disk.files['/proc/meminfo'] = b'MemAvailable: 12000 kB\n'  # a's index is in use
+    saved.mcl.pos = 1
+    assert start() == 1
+    saved.mcl.pos = 2  # a stream closes the book: nothing comes back for the next
+    assert start() == 1
+    saved.mcl.pos = 0
+    assert start() == 0
 
 
 def test_a_preload_too_long_is_not_opened(saved, fw, mcl):

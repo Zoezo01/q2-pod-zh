@@ -1517,6 +1517,19 @@ def test_light_modes_chevron_on_a_coloured_bar_is_white(fw, st, layout, light):
     assert canvas.icons == [(art, MIDDLE[0] // 2, MIDDLE[1] // 2)]
 
 
+@pytest.mark.parametrize('marked', [1, 0])
+def test_a_bold_marked_label_paints_its_text_again_one_pixel_right(fw, marked):
+    """font_weight.c, through the border hook: stock's self painter once more, 1 px right and back."""
+    ui = Ui(fw)
+    label = ui.add('label', ui.window('songs_page'), (0, 0, 200, 30), _q2_bold_fallback=marked)
+    ui.set_text(label, '专辑')
+    log: list = []
+    fw.mock('canvas_translate', lambda c, x, y, *_: log.append(('translate', i32(x), i32(y))))
+    fw.mock('widget_vtable_on_paint_self', lambda w, c, *_: log.append(('self', w)))
+    fw.fn('ringnav_paint', C.c_int, C.c_void_p, C.c_void_p)(label.addr, Canvas(fw).addr)
+    assert log == ([('translate', 1, 0), ('self', label.addr), ('translate', -1, 0)] if marked else [])
+
+
 # ringnav_paint's own work around the painters.
 def test_ringnav_paint_returns_stocks_and_hands_the_paint_to_the_parent(fw, st):
     """Stock paints a widget's border after its children: once the card's row's title is done, the
@@ -1646,13 +1659,15 @@ def test_power_adds_standby_charge_and_in_vehicle_rows_after_stocks(fw):
     fw.mock('stock_power_trampoline', build)
     assert fw.fn('ringnav_powermanager', C.c_int, C.c_void_p, C.c_void_p)(win.addr, None) == 3
     stock, ours = view.children[:2], view.children[2:]
-    assert [s.name for s in stock] == ['s0', 's1'] and len(ours) == 4
+    assert [s.name for s in stock] == ['s0', 's1'] and len(ours) == 6
     icons = [next(c.props['image'] for c in r.walk() if c.kind == 'image') for r in ours]
-    # Standby, Charge, Smart Wi-Fi, In-Vehicle
-    assert icons == ['system_powermanager', 'usb_chargeswitch', 'wifiset_wifi', 'system_carmode']
-    standby, charge, *_ = (ui.text(label_of(r)) for r in ours)
+    # Standby, Charge, USB DAC Charging, Smart Wi-Fi, In-Vehicle, Battery History
+    assert icons == ['system_powermanager', 'usb_chargeswitch', 'usb_chargeswitch', 'wifiset_wifi', 'system_carmode',
+                     'system_powermanager']
+    standby, charge, *_, history = (ui.text(label_of(r)) for r in ours)
     assert standby.endswith('Off') and f'{O["CHARGE_STOP"]}%' in charge  # Standby off; where Charge stops
-    assert [switch(r) for r in ours] == [None, 'switch_off', 'switch_off', 'switch_off']
+    assert history == 'Battery History' and 'list_into' in [c.props.get('image') for c in ours[-1].walk()]  # opens a page
+    assert [switch(r) for r in ours] == [None, 'switch_off', 'switch_off', 'switch_off', 'switch_off', None]
     for r in ours:  # stock's settings row: its button, the title clear of the icon, both the row's height
         button, label = r.children[0], label_of(r)
         icon = next(c for c in r.walk() if c.kind == 'image')
@@ -1688,11 +1703,63 @@ def test_charge_limit_switches_and_takes_effect_on_the_next_pass(fw, st):
     assert switch(charge) == 'switch_off' and settings.written[-1] == ('CHARGELIMIT', 0)
 
 
+def dac_power(fw, **charging):
+    """The Power page over usb_charge.c's guard, its settings loaded (test_usb_charge.Charging); its USB DAC
+    Charging row."""
+    from test_usb_charge import Charging
+    ui, win, view, settings, build = settings_page(fw, MINIMAL, 'powermanager_page', 'scroll_view_powermanager')
+    q = Charging(fw, **charging)
+    q.config()
+    fw.fn('ringnav_powermanager', C.c_int, C.c_void_p, C.c_void_p)(win.addr, None)
+    dac = view.children[2]
+    assert ui.text(label_of(dac)) == 'USB DAC Charging'
+    return ui, win, dac, q
+
+
+def test_usb_dac_charging_is_the_dac_screens_choice_and_drives_the_pin_at_once(fw):
+    ui, win, dac, q = dac_power(fw, pref=1, cable=1)  # Audio and DAC, a cable in
+    assert switch(dac) == 'switch_on' and q.gpio == 0
+    click(ui, dac)
+    assert q.flag.value == 0 and q.saved == [('PLAYSET', 'USBDAC_CHARGE', 0)] and switch(dac) == 'switch_off'
+    assert q.gpio == 1  # inhibited now, not at the next poll
+    click(ui, dac)
+    assert q.flag.value == 1 and q.saved[-1] == ('PLAYSET', 'USBDAC_CHARGE', 1) and switch(dac) == 'switch_on'
+    assert q.gpio == 0
+
+
+def test_usb_dac_charging_on_charges_after_the_dac_screens_off_and_off_leaves_usb_storage_charging(fw):
+    ui, win, dac, q = dac_power(fw, pref=0, cable=1)
+    q.charge(0)  # the DAC screen's switch turned Off: stock's switch_charge_enable(0)
+    click(ui, dac)
+    assert q.gpio == 0
+    q.usbmode.value = 0  # USB Storage: Off is for Audio and DAC only
+    click(ui, dac)
+    assert q.flag.value == 0 and q.gpio == 0
+
+
+def test_the_dac_screens_switch_shows_in_the_row_when_power_is_back(fw):
+    ui, win, dac, q = dac_power(fw, pref=1)
+    q.flag.value = 0  # the DAC screen's switch, over this page
+    ui.fire(win, O['EVT_WINDOW_FOREGROUND'])
+    assert switch(dac) == 'switch_off'
+
+
+def test_charge_limits_hold_wins_over_usb_dac_charging_on(fw, st):
+    ui, win, dac, q = dac_power(fw, pref=0, cable=1)
+    st('charge_held').value = 1
+    q.charge(0)  # charge_poll's hold
+    click(ui, dac)
+    assert q.flag.value == 1 and q.gpio == 1
+    st('charge_held').value = 0
+    q.charge(1)  # its hand-back at CHARGE_RESUME
+    assert q.gpio == 0
+
+
 def test_in_vehicle_mode_is_stocks_byte_and_key(fw):
     ui, win, view, settings, build = settings_page(fw, MINIMAL, 'powermanager_page', 'scroll_view_powermanager')
     fw.fn('ringnav_powermanager', C.c_int, C.c_void_p, C.c_void_p)(win.addr, None)
     g(fw, 'g_carmode_state', 4)
-    standby, charge, smart, car = view.children
+    standby, charge, dac, smart, car, history = view.children
     click(ui, car)
     assert (g(fw, 'g_carmode'), g(fw, 'g_carmode_state')) == (1, 0) and settings.written == [('CARMODE', 1)]
     assert switch(car) == 'switch_on'
@@ -1702,7 +1769,7 @@ def test_smart_wifi_switches_and_saves_its_own_key(fw, st):
     ui, win, view, settings, build = settings_page(fw, MINIMAL, 'powermanager_page', 'scroll_view_powermanager')
     fw.fn('ringnav_powermanager', C.c_int, C.c_void_p, C.c_void_p)(win.addr, None)
     car_mode = g(fw, 'g_carmode')
-    standby, charge, smart, car = view.children
+    standby, charge, dac, smart, car, history = view.children
     click(ui, smart)
     assert switch(smart) == 'switch_on' and settings.written == [('SMARTWIFI', 1)] and st('smart_wifi').value == 1
     assert switch(charge) == switch(car) == 'switch_off' and g(fw, 'g_carmode') == car_mode  # the other rows as they were
@@ -1713,7 +1780,7 @@ def test_smart_wifi_switches_and_saves_its_own_key(fw, st):
 def test_classic_shows_a_switch_as_its_value(fw, st):
     ui, win, view, settings, build = settings_page(fw, CLASSIC, 'powermanager_page', 'scroll_view_powermanager', CHARGELIMIT=b'1')
     fw.fn('ringnav_powermanager', C.c_int, C.c_void_p, C.c_void_p)(win.addr, None)
-    standby, charge, smart, car = view.children
+    standby, charge, dac, smart, car, history = view.children
     assert value(ui, charge) == 'On' and value(ui, smart) == value(ui, car) == 'Off' and switch(charge) is None
     assert f'{O["CHARGE_STOP"]}%' in ui.text(label_of(charge))
     v = next(c for c in charge.walk() if c.name == '_setting_value')
@@ -1889,6 +1956,17 @@ def test_cover_flow_sort_steps_and_refresh_says_when(fw):
     click(ui, refresh)
     assert ui.text(label_of(refresh)) == action and fw.calls('image_manager_unload_all')
     assert len(toasts) == 1 and toasts[0]  # nothing in view changes: a toast says when
+
+
+
+def test_scan_song_durations_turned_off_cancels_a_pass(fw):
+    from test_durations import Ds
+    ui, win, view, settings, _ = settings_page(fw, MINIMAL, 'display_page', 'scroll_view_display', SCANDURATIONS=b'1')
+    pod_rows(fw, win, 'scroll_view_display', POD['POD_SCAN_DURATIONS'], 1)
+    state = fw.var('durations__ds', Ds)
+    state.due = 1  # an update's end, its paths not read yet
+    click(ui, view.children[0])
+    assert settings.written == [('SCANDURATIONS', 0)] and state.cancel and not state.due
 
 
 @pytest.mark.parametrize('was', [0, 1])
@@ -2719,6 +2797,17 @@ def test_a_dark_page_takes_the_bars_title_across_in_white_and_hides_the_clock(fw
     assert bar.timers == [C.cast(fw.lib.bar_repaint, C.c_void_p).value]
     C.CFUNCTYPE(C.c_int, C.c_void_p)(bar.timers[0])(None)  # the repaint, after this paint
     assert fw.calls('widget_invalidate_force')[-1][1][0] == bar.bar.addr and st('bar_timer', C.c_uint).value == 0
+
+
+def test_the_dark_bars_latin_title_drops_a_cjk_pages_bold_mark(fw, st):
+    bar = DarkBar(fw, st)
+    title = bar.w['label_title']
+    bar.ui.set_text(title, '专辑')
+    fw.fn('theme_font', C.c_int, C.c_void_p, C.c_int, C.c_int)(title.addr, 2, -2)  # ROLE_BAR, FONT_ROW: the CJK page's
+    assert title.props['_q2_bold_fallback'] == 1
+    bar.to('usbmode_page')
+    fw.fn('bar_title_sync', None, C.c_void_p)(bar.ui.top.addr)
+    assert bar.ui.text(title) == 'Q2 Pod' and title.props['_q2_bold_fallback'] == 0
 
 
 def test_the_dark_bars_marks_take_its_places_and_stay(fw, st):

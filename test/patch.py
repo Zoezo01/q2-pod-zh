@@ -383,6 +383,7 @@ class Machine:
             ret=0 if getattr(self,'fail_calloc',False) else self.alloc(a*b)
             self.sized[ret]=a*b
         elif name=='realloc@GLIBC_2.0' and getattr(self,'fail_realloc',False): ret=0
+        elif name=='realloc@GLIBC_2.0' and not a: ret=self.alloc(b); self.sized[ret]=b  # realloc(NULL): a malloc
         elif name=='realloc@GLIBC_2.0':  # moved, as glibc may, the old block spoilt
             kept=bytes(self.u.mem_read(a,b)); ret=self.alloc(b); self.u.mem_write(ret,kept); self.u.mem_write(a,b'\xff'*min(b,self.sized.get(a,b))); self.resized.append(kept); self.sized[ret]=b
         elif name=='strdup@GLIBC_2.0': ret=self.string(self.text(a))
@@ -4174,7 +4175,7 @@ def cpm_wheel(m,key,n=1):
     m.paint(m.view)
 def cpm_centre(m):  # Centre on the selected row, the row's click running as stock's dispatch does
     m.confirm(); m.advance(0,clear=False); m.stack_rows(); m.paint(m.view)
-NEW,EDIT='New Playlist…','Edit Playlists…'
+NEW,EDIT='New Playlist…','Select Playlists…'
 LISTS=['List 0','List 1','List 2']
 
 # The list: stock's rows two lines high, its tile row and toolbar hidden; New Playlist and Edit
@@ -4198,7 +4199,7 @@ assert m.get(action+O['W_H'])==32 and m.get(m.nodes[m.nodes[action]['children'][
 # ... the separators: every shown row but the list's last.
 assert [m.nodes[r]['name'] for r in kids if m.nodes[r]['visible']]==['_page_tall']*4+['']; passed()
 
-# New Playlist and Edit Playlists head the list; the page opens on its first playlist below them, as stock's and the
+# New Playlist and Select Playlists head the list; the page opens on its first playlist below them, as stock's and the
 # iPod's lists of playlists alone do. The wheel reaches them, and Centre reaches stock's own handlers.
 m=ClassicPlaylistMachine(); m.rebuild(); m.paint(m.view); assert m.selected(m.view)==2 and m.rows()[2]=='List 0'
 cpm_wheel(m,O['KEY_NEXT'],2); assert m.selected(m.view)==4
@@ -4209,11 +4210,11 @@ cpm_wheel(m,O['KEY_NEXT']); cpm_centre(m); assert m.navbar()==1 and m.dialogs==[
 # ... an empty list opens on New Playlist.
 m=ClassicPlaylistMachine(0); m.rebuild(); m.paint(m.view); assert m.selected(m.view)==0; passed()
 
-# Edit Playlists is stock's select mode with its toolbar hidden: Select All first, Import and Done last, the bar's own
+# Select Playlists is stock's select mode with its toolbar hidden: Select All first, Import and Done last, the bar's own
 # word; the selection goes on the first playlist. Return leaves the mode, not the page, and stock's rows come back.
 m=ClassicPlaylistMachine(); m.rebuild(); m.paint(m.view); cpm_wheel(m,O['KEY_PREV']); cpm_centre(m)
 assert m.navbar()==1 and m.marks==[0,0,0] and m.nodes[m.nav]['visible']==0
-assert m.rows()==['Select All']+LISTS+['Import Playlists','Done'] and m.bar()=='Edit Playlists' and m.selected(m.view)==1
+assert m.rows()==['Select All']+LISTS+['Import Playlists','Done'] and m.bar()=='Select Playlists' and m.selected(m.view)==1
 button=m.row_button('List 0'); choice=next(k for k in m.nodes[button]['children'] if m.nodes[k]['name'].startswith('img_choice'))
 info=next(k for k in m.nodes[button]['children'] if m.nodes[k]['name']=='view_info')
 assert m.nodes[choice]['visible']==1 and m.get(choice+O['W_X'])==333 and m.get(info+O['W_X'])==20 and m.get(info+O['W_W'])==309
@@ -4231,13 +4232,13 @@ cpm_centre(m); assert m.marks==[0,1,0] and m.bar()=='1 Selected' and m.selected(
 assert m.rows()==['Select All']+LISTS+['Import Playlists','Export 1 Playlist','Delete 1 Playlist…','Done']
 m.tap(m.row_button('List 0')); assert m.marks==[1,1,0] and m.bar()=='2 Selected' and m.rows()[-3:-1]==['Export 2 Playlists','Delete 2 Playlists…']
 # ... and a mark taken back takes its rows with it: none marked, no Export or Delete (the count ran before the mark).
-m.tap(m.row_button('List 0')); m.tap(m.row_button('List 1')); assert m.marks==[0,0,0] and m.bar()=='Edit Playlists'
+m.tap(m.row_button('List 0')); m.tap(m.row_button('List 1')); assert m.marks==[0,0,0] and m.bar()=='Select Playlists'
 assert m.rows()[-2:]==['Import Playlists','Done']
 m.tap(m.row_button('List 1')); m.tap(m.row_button('List 0')); assert m.marks==[1,1,0] and m.bar()=='2 Selected'
 m.tap(m.row_button('Select All')); assert m.marks==[1,1,1] and m.bar()=='3 Selected' and m.rows()[-2]=='Delete 3 Playlists…'
 # ... and then reads Deselect All, which clears them: stock's toggle on g_allselect_flag.
 assert m.rows()[0]=='Deselect All' and m.u.mem_read(O['G_ALLSELECT_FLAG'],1)==b'\1'
-m.tap(m.row_button('Deselect All')); assert m.marks==[0,0,0] and m.bar()=='Edit Playlists' and m.rows()[-2:]==['Import Playlists','Done']
+m.tap(m.row_button('Deselect All')); assert m.marks==[0,0,0] and m.bar()=='Select Playlists' and m.rows()[-2:]==['Import Playlists','Done']
 assert m.rows()[0]=='Select All'
 # ... every row marked by hand sets the flag too, so it reads Deselect All and clears them.
 for name in LISTS: m.tap(m.row_button(name))
@@ -4268,7 +4269,7 @@ cpm_centre(m); assert m.marks==[0,1,1] and not m.confirms and not m.deletes  # t
 m.answer=0; m.tap(m.row_button('Delete 2 Playlists…')); assert len(m.confirms)==1 and not m.deletes
 m.answer=10; m.tap(m.row_button('Delete 2 Playlists…')); assert len(m.confirms)==2 and m.deletes==[[0,1,1]]; passed()
 
-# Import is inside Edit Playlists, and on an empty list a row of its own beside New Playlist, over a label that holds its font.
+# Import is inside Select Playlists, and on an empty list a row of its own beside New Playlist, over a label that holds its font.
 m=ClassicPlaylistMachine(0); kids=m.rebuild()
 assert m.rows()==[NEW,'Import Playlists'] and m.nodes[m.row_button(NEW)]['visible']
 note=next(k for k in m.nodes[m.top]['children'] if m.nodes[k]['name']=='_pl_none')
@@ -5179,6 +5180,10 @@ for car,cls,want in ((0,1,[(0x5550,4,1,3)]),(0,0xff,[]),(1,0xf003,[])):
     m=Machine(); m.word(syms['g_memory_info'],cls); m.byte(syms['g_carmode'],car)
     m.u.reg_write(UC_MIPS_REG_GP,0xa3aae0); m.u.reg_write(UC_MIPS_REG_SP,0x7000f000)
     m.u.reg_write(UC_MIPS_REG_S0,0x5550); m.u.reg_write(UC_MIPS_REG_S1,4)
+    # Headphones Required on: stock's test ahead of the resume (0x534c44) skipped it, whatever was connected; it
+    # falls through to Memory Playback's own test now (0x534c54), and the context's build runs as with it off.
+    m.byte(syms['g_block_withoutphone_flag'],1); m.u.emu_start(0x534c44,0x534c58,count=10)
+    assert 0x534c50<=m.u.reg_read(UC_MIPS_REG_PC)<0x534c5c  # not 0x534d40, past the resume
     m.u.emu_start(0x534cc4,0x534d00,count=1000)
     nav=[c for c in m.calls if c[0]=='navigator_to_with_context']
     assert m.started==want
@@ -6447,6 +6452,101 @@ class CoverflowMachine(QueueMachine):
         if run: self.advance(0)
         return ret
 
+# Cover Flow caption weight: execute the target helper after the real theme_font
+# chooses each caption's face. Mock only the native widget self painter, not font selection
+# or canvas translation. A failed native paint still restores the canvas for later widgets.
+class CaptionWeightMachine(CoverflowMachine):
+    def __init__(self):
+        self.caption_passes=[]
+        super().__init__()
+        self.mock('widget_vtable_on_paint_self')
+        self.handlers.pop(syms['canvas_translate'],None)  # execute stock canvas translation
+    def hook(self,u,address,size,unused):
+        if self.handlers.get(address)=='widget_vtable_on_paint_self':
+            a,b=[u.reg_read(r) for r in REGS[:2]]
+            self.caption_passes.append((a,signed(self.get(b+O['CANVAS_X'])),signed(self.get(b+O['CANVAS_Y']))))
+            self.returns(16,clobber=True)
+        else:
+            super().hook(u,address,size,unused)
+for text,face,extra in (('Joe Hisaishi','classic-light',False),('佐咲紗花','default',True),
+                        ('もののけ姫','default',True),('日本語 Title','default',True),
+                        ('ハウルの動く城 サウンドトラック'*8,'default',True),('Навстречу','bold',False)):
+    m=classic_light_new(CaptionWeightMachine)
+    for field in ('REC_ALBUM','REC_ARTIST'): m.word(m.albums[0]+O[field],m.string(text))
+    m.open()
+    labels=[w for w in m.nodes[m.get(m.slide+O['W_PARENT'])]['children'] if m.nodes[w]['type']=='hscroll_label']
+    assert len(labels)==2 and all(m.nodes[w]['style:normal:font_name']==face for w in labels),(text,face)
+    m.caption_passes=[]
+    m.word(m.canvas+O['CANVAS_X'],7); m.word(m.canvas+O['CANVAS_Y'],9)
+    for w in labels:
+        m.call(address=payload_syms['font_weight_paint'],args=(w,m.canvas,0,0),gap=0)
+        assert (m.get(m.canvas+O['CANVAS_X']),m.get(m.canvas+O['CANVAS_Y']))==(7,9)
+    assert m.caption_passes==([(w,8,9) for w in labels] if extra else []),(text,m.caption_passes)
+    passed()
+# Shared font intent, including Now Playing's role, cached labels, panel headings and track rows.
+for theme_id in ('0','1','2'):
+    def weight_setup(machine): machine.config.update(THEME=theme_id)
+    SETUP[:]=[weight_setup]
+    try: m=CaptionWeightMachine()
+    finally: SETUP.clear()
+    w=m.node('hscroll_label',text='Your Song')
+    english=m.call(address=payload_syms['theme_font'],args=(w,3,0xffffffff,0),gap=0)
+    wanted=theme_id!='0'  # ROLE_NP: Classic and Modern ask for a bold face, Minimal for stock's
+    m.nodes[w]['text']='日本語 Title'
+    answer=m.call(address=payload_syms['theme_font'],args=(w,3,english,0),gap=0)
+    assert bool(m.nodes[w].get('_q2_bold_fallback',0))==wanted,theme_id
+    m.caption_passes=[]
+    m.call(address=payload_syms['font_weight_paint'],args=(w,m.canvas,0,0),gap=0)
+    assert len(m.caption_passes)==int(wanted),theme_id
+    # The cache hit must repair a stale marker without restyling the font.
+    m.nodes[w]['_q2_bold_fallback']=0
+    m.call(address=payload_syms['theme_font'],args=(w,3,answer,0),gap=0)
+    assert bool(m.nodes[w].get('_q2_bold_fallback',0))==wanted
+    m.nodes[w]['text']='Your Song'
+    m.call(address=payload_syms['theme_font'],args=(w,3,answer,0),gap=0)
+    assert not m.nodes[w].get('_q2_bold_fallback',0)
+    passed()
+for title in ('小城故事','もののけ姫','日本語 English','한국어','العربية','देवनागरी'):
+    m=classic_light_new(CaptionWeightMachine); w=m.node('hscroll_label',text=title)
+    for bold in (1,0,1):
+        m.call(address=payload_syms['panel_font'],args=(w,25,bold,0),gap=0)
+        assert m.nodes[w].get('_q2_bold_fallback',0)==bold,title
+        assert m.nodes[w]['style:normal:font_name']=='default'
+        m.caption_passes=[]
+        m.call(address=payload_syms['font_weight_paint'],args=(w,m.canvas,0,0),gap=0)
+        assert len(m.caption_passes)==bold,title
+    passed()
+
+# Position bar against each real built-in theme's shelf geometry and each light/dark scheme.
+def position_checks():
+    for theme_id in ('0','1','2'):
+        for light in ('0','1'):
+            def position_setup(machine): machine.config.update(THEME=theme_id,LIGHT=light,CFPOSITION='1')
+            SETUP[:]=[position_setup]
+            try: m=CoverflowMachine()
+            finally: SETUP.clear()
+            m.open()
+            covers=m.get(m.slide+O['W_PARENT'])
+            paint_position=lambda w: m.call(address=payload_syms['coverflow_position_paint'],args=(w,m.canvas,0,0),gap=0)
+            paint_position(m.slide)
+            xs=[]
+            for index in (1,2,0):
+                m.word(m.slide+O['SLIDE_INDEX'],index); m.bands=[]
+                paint_position(m.slide); paint_position(covers)
+                assert len(m.bands)==5,(theme_id,light,m.bands)
+                track,*thumb=m.bands
+                labels=[w for w in m.nodes[covers]['children'] if m.nodes[w]['type']=='hscroll_label']
+                bottom=max(m.get(w+O['W_Y'])+m.get(w+O['W_H']) for w in labels)
+                assert track[:4]==(107,(bottom+m.get(covers+O['W_H']))//2-1,160,2),(theme_id,track,bottom)
+                xs.append(min(b[0] for b in thumb))
+                assert len(thumb)==4 and [b[2:4] for b in thumb]==[(7,1),(9,1),(9,1),(7,1)]
+                assert 2*track[1]+track[3] == thumb[0][1]+thumb[-1][1]+1
+            assert xs[1]>xs[0]>xs[2],(theme_id,light,xs)
+            passed()
+
+position_checks()
+
+
 # Local playlist editor: real MIPS UI/control code and real SQLite transactions at its ABI boundary.
 class PlaylistEditMachine(CoverflowMachine):
     def __init__(self,count=3):
@@ -7529,7 +7629,7 @@ assert wbox(ba,label_balance)==(0,85,375,34) and ba.nodes[label_balance]['visibl
 assert wbox(ba,L)==(50,139,20,26) and wbox(ba,R)==(306,139,20,26) and ba.nodes[L]['style:normal:font_size']==24==ba.nodes[R]['style:normal:font_size'] and wbox(ba,bas)==(81,117,204,70)
 bare(ba); bg(ba,bawin); assert art_at(ba)==BAND_ART and not triangle(ba); passed()
 # ... the text stock writes after the load picks the number's face at the next paint, and a paint that changes nothing writes nothing.
-for bn_text,bn_face,bn_px in (('Баланс','bold',27),('平衡','default',32),('L 3','classic-light',32)):
+for bn_text,bn_face,bn_px in (('Баланс','bold',27),('平衡','default',27),('L 3','classic-light',32)):
     ba.nodes[label_balance]['text']=bn_text; bare(ba); bg(ba,bawin); assert (ba.nodes[label_balance]['style:normal:font_name'],ba.nodes[label_balance]['style:normal:font_size'])==(bn_face,bn_px),bn_text
     bare(ba); bg(ba,bawin); assert not [c for c in ba.calls if c[0]=='widget_set_prop_str' and c[1]==label_balance]
 passed()
@@ -7583,7 +7683,7 @@ assert db.nodes[dst]['image']=='classic_light_play_w' and wbox(db,dslot)==(285-2
 db.letters=[]; bg(db,dbar); assert not shadows(db); passed()
 dd,ddbar,*_,ddwin,_=dark_setup(light='0'); bg(dd,ddwin); bg(dd,ddbar); bg(dd,ddbar); dd.letters=[]; bg(dd,ddbar); assert not shadows(dd); passed()
 # ... a title the theme's face hasn't: the fallback faces at the flat bar's sizes; a font smaller than its box either way.
-for name,face,px in (('Баланс','bold',17),('平衡','default',21)):
+for name,face,px in (('Баланс','bold',17),('平衡','default',17)):
     df,dfbar,_,dftitle,*_,dfwin,_=dark_setup(name=name); bg(df,dfwin); bg(df,dfbar); bg(df,dfbar); df.letters=[]; bg(df,dfbar)
     assert df.nodes[dftitle]['style:normal:font_name']==face and df.nodes[dftitle]['style:normal:font_size']==px and df.nodes[dftitle]['text']==name
     assert not shadows(df) and wbox(df,dftitle)[3]>=px; passed()
@@ -8944,7 +9044,7 @@ m.tap(); assert m.full()[:6]==COLUMN[:5]+(None,),m.full(); passed()
 # card with an album. A press asks for Wi-Fi first, copies the album's tracks off stock's records (a CUE
 # track left out) and starts the worker; the row shows its progress, a press while it runs cancels, the
 # page's end leaves it running, and the timer joins it and toasts the summary. USB storage stops it quietly.
-# The job's own steps are test/peq.py's album_check.
+# The job's own steps are test/peq.py's album_check. AirPlay's row (airplay.c) goes over stock's, for any song.
 assert [m.get(O['PLAYMORE_ROWS']+4*i) for i in range(O['PLAYMORE_COUNT'])]==[2,3,4,5,6,7,0,1]  # Download Cover & Lyrics third
 class AlbumLyricsMachine(CoverflowMachine):
     def __init__(self,**queue):
@@ -8963,21 +9063,23 @@ class AlbumLyricsMachine(CoverflowMachine):
         assert self.call(address=HOOKS['playermore_page_init'][0],args=(self.top,0,0,0),gap=0)==0
         assert self.calls[0][:2]==('stock_playermore',self.top)
         return self.nodes[view]['children']
-m=AlbumLyricsMachine(); kids=m.more(); row=kids[3]
-assert len(kids)==9 and [k for k in kids if k!=row]==m.stock and m.nodes[row]['style']=='s_listitem_black'
+m=AlbumLyricsMachine(); kids=m.more(); row=kids[4]
+assert len(kids)==10 and [k for k in kids if k not in (row,kids[0])]==m.stock and m.nodes[row]['style']=='s_listitem_black'
+air=m.nodes[m.nodes[kids[0]]['children'][0]]['children']
+assert m.nodes[air[0]]['image']=='airplay' and m.nodes[air[1]]['text']=='AirPlay'
 button=m.nodes[row]['children'][0]; icon,label=m.nodes[button]['children']
 assert m.nodes[button]['style']=='s_btn_listitem' and not m.nodes[button].get('name')
 assert [m.get(button+O[k]) for k in ('W_X','W_Y','W_W','W_H')]==[20,0,335,70]
 assert m.nodes[icon]['image']=='player_onlinesearch' and [m.get(icon+O[k]) for k in ('W_X','W_W','W_H')]==[10,52,70]
 assert m.nodes[label]['style']=='s_scrlabel_white24l' and m.nodes[label]['text']=='Download Album Lyrics'
 assert [m.get(label+O[k]) for k in ('W_X','W_W','W_H')]==[72,253,70]; passed()
-m=AlbumLyricsMachine(cls=0xf1); assert len(m.more())==8; passed()  # an online queue
+m=AlbumLyricsMachine(cls=0xf1); assert len(m.more())==9; passed()  # an online queue: AirPlay's row alone
 for off,v in (('REC_TYPE',4),('REC_ALBUM',0),('REC_PATH',0)):  # a folder, no album tag, no path
-    m=AlbumLyricsMachine(); m.word(m.playing()+O[off],v); assert len(m.more())==8,off; passed()
-m=AlbumLyricsMachine(); m.word(m.playing()+O['REC_PATH'],m.string('http://x/y')); assert len(m.more())==8; passed()
+    m=AlbumLyricsMachine(); m.word(m.playing()+O[off],v); assert len(m.more())==9,off; passed()
+m=AlbumLyricsMachine(); m.word(m.playing()+O['REC_PATH'],m.string('http://x/y')); assert len(m.more())==9; passed()
 m=AlbumLyricsMachine(); assert len(m.more(7))==7; passed()  # not stock's rows: left as they are
 def album_lyrics_page(**queue):
-    m=AlbumLyricsMachine(**queue); button=m.nodes[m.more()[3]]['children'][0]; label=m.nodes[button]['children'][1]
+    m=AlbumLyricsMachine(**queue); button=m.nodes[m.more()[4]]['children'][0]; label=m.nodes[button]['children'][1]
     cue=m.song('Cue'); m.word(cue+O['REC_CUE_END'],90)
     m.found=[m.song('T1'),cue,m.song('T2')]
     def press():
@@ -9294,10 +9396,10 @@ assert m.call(O['KEY_PLAY'],address=syms['on_wm_keylong_fun'],event_type=O['EVT_
 m.close(); m.advance(0); assert not any(p[0]=='dialog/sortselect_dialog' for p in m.opened); passed()
 
 # Hold Play/Pause on a playlist's cover (navigation.c qm_hold): the list's own menu (playlist_hold), New Playlist and,
-# under Classic, Edit Playlists… last (a toolbar's page edits from its toolbar). The playlist is found in the live list by its cd_num, as New, Rename and Delete
+# under Classic, Select Playlists… last (a toolbar's page edits from its toolbar). The playlist is found in the live list by its cd_num, as New, Rename and Delete
 # read that list again under the covers after they copied it: More… opens the More page at its index there, and a
 # playlist gone from it holds nothing.
-PL_COVER_MENU=['Play Next','Add to Queue','Shuffle','More…','New Playlist','Edit Playlists…']
+PL_COVER_MENU=['Play Next','Add to Queue','Shuffle','More…','New Playlist','Select Playlists…']
 class PlaylistCoverMachine(CoverflowMachine):
     def __init__(self):
         super().__init__()
@@ -9377,8 +9479,8 @@ new_one=m.song('Renamed',4); m.word(new_one+O['REC_TITLE'],m.string('Renamed'));
 m.heads=[m.lists[0],new_one,m.lists[2]]; pl_front(m); assert cover_cd(m)==11
 m.press(100); assert m.hold()==11 and m.release()==0 and m.nodes[m.title]['text']=='Renamed',m.nodes[m.title]['text']
 m.pick(3); m.advance(0); assert m.opened[-1]==('localmusic/playlistsmore_page',1); passed()
-# New Playlist and Edit Playlists… (playlists.c playlists_edit): the covers close (coverflow_playlists_close) and New
-# runs as the page's own: Classic's row's target, Minimal's toolbar button, stock's dialog either way. Edit Playlists…
+# New Playlist and Select Playlists… (playlists.c playlists_edit): the covers close (coverflow_playlists_close) and New
+# runs as the page's own: Classic's row's target, Minimal's toolbar button, stock's dialog either way. Select Playlists…
 # (Classic's alone) is stock's select mode, Import in it. With no covers up, nothing.
 def pl_edit(edit,classic=True,covers=True,theme=None):
     class M(ClassicPlaylistMachine):
@@ -9399,7 +9501,7 @@ for classic in (True,False):
     m=pl_edit(0,classic); assert m.shut==1 and m.top==m.page and m.dialogs==['dialog/addplaylist_dialog'] and m.navbar()==0
     assert m.bar()==m.before or classic,(m.bar(),m.before); passed()  # Minimal's toolbar keeps its own words
 m=pl_edit(1); assert m.shut==1 and m.top==m.page and m.navbar()==1 and not m.dialogs
-assert m.rows()==['Select All']+LISTS+['Import Playlists','Done'] and m.bar()=='Edit Playlists'; passed()
+assert m.rows()==['Select All']+LISTS+['Import Playlists','Done'] and m.bar()=='Select Playlists'; passed()
 m=pl_edit(0,classic=False,theme='2'); assert m.shut==1 and m.top==m.page and m.dialogs==['dialog/addplaylist_dialog'] and m.navbar()==0 and m.bar()==m.before; passed()
 for edit in (0,1):
     m=pl_edit(edit,covers=False); assert m.shut==1 and m.top==m.page and not m.dialogs and m.navbar()==0; passed()
@@ -10453,8 +10555,7 @@ def host_render(textures,cases,style=None,paper=None,windows=False,still=False):
     import subprocess, tempfile
     from coverflow import CF_SOURCES, SHIM_H
     from theme import ROLE_MACROS, builtins
-    style=style or {**{f:O[m] for f,m in ROLE_MACROS['minimal'].items() if f.startswith('cf.')},'cf.art_persp':100,
-                    'cf.thumb':builtins()[0]['cf.thumb']}  # Minimal's, a thumb theme: its shelf draws seven covers a side
+    style=style or {f:v for f,v in builtins()[0].items() if f.startswith('cf.')}  # Minimal's, as the payload has it: a thumb theme, its shelf draws seven covers a side
     if len(textures)==7:  # the seven round the centre, the wide ring's ends left out
         textures=[textures[0]]*4+list(textures)+[textures[0]]*4; cases=[(c[0],c[1]<<4,*c[2:]) for c in cases]
     cf=', '.join(f'.{f[3:]} = {v}' for f,v in style.items()); rows=style['cf.view_h']
@@ -10467,7 +10568,7 @@ void coverflow_render(unsigned *, int, int, const unsigned *const[7]);
 int ipod_light(void) { return %d; }
 int ipod_square_art(void) { return 0; }
 unsigned time_now_ms(void) { return 0; } /* the fold's clock: fold_at counts back from 0 */
-int ringnav_big_library(void) { return 0; } /* the MIPS machines' own: Large Library Mode off */
+int ringnav_big_library(void) { return 0; } /* the MIPS machines' own: Fast Navigation off */
 void cf_thumb_lead(float), cf_thumb_lean(int), cf_thumb_fold(int, unsigned), cf_thumb_enter(int, float, float);
 void cf_thumb_speed(float, float), cf_thumb_held(float, float, float, float, int);
 float cf_thumb_hold(int, float, int);
@@ -10673,7 +10774,7 @@ for theme in ('1','0','2'):
     finally: SETUP.clear()
     m.open(); m.handlers[sleep_hook+12]='stock_sleep'; m.fresh=1
     tp(m); assert traw(m)==2 and not m.slides,theme
-    assert (15+1)*160*160*4 in m.live.values(),theme  # CF_WIDE and the placeholder, whatever Large Library Mode says
+    assert (15+1)*160*160*4 in m.live.values(),theme  # CF_WIDE and the placeholder, whatever Fast Navigation says
     thold(m); tp(m,-30); assert toff(m)<0 and not m.slides and m.get(m.slide+O['SLIDE_ANIMATOR'])==0 and not m.get(ps['wheel_travel']),theme
     trest(m); assert toff(m)==0,theme; passed()
 # wheel_raw never stays set: each way off the covers gives the wheel back at the next pass, the travel gone, the
@@ -10734,11 +10835,11 @@ assert len(did(m,'reset_poweroptions_timer'))>=20*3-2 and len(did(m,'buzzeer_swi
 m.calls=[]
 for _ in range(10): tp(m)
 assert not did(m,'reset_poweroptions_timer') and not did(m,'buzzeer_switch'); passed()
-# At the cap for jump_ms a spin goes by letters, as Minimal's wheel does. Large Library Mode off, 1.7.6's: the covers
+# At the cap for jump_ms a spin goes by letters, as Minimal's wheel does. Fast Navigation off, 1.7.6's: the covers
 # flow on and each names the next letter's first album, its letter shown, jump_pace apart. Once in, a turn from
 # fast_at keeps them, one each jump_ticks; slowing under fast_at gives albums back under the thumb, and a lift lands
 # on the letter's first album. None of the held row, its entry or fold, nor the letters' slots or stage.
-# With Large Library Mode on: the first carries the covers on to the next
+# With Fast Navigation on: the first carries the covers on to the next
 # letter's first album, each after slides the row there through the albums between (slide_ms), its letter held (no
 # LETTER_MS timer) and a click at the step; past the last letter, round to the first, and back from the first to the
 # last, as the albums wrap.
@@ -10755,7 +10856,7 @@ def tarrive(m):  # the thumb still, the row there
     assert False
 FRUIT=('Apple','Avocado','Banana','Blueberry','Cherry','Date','Elder','Fig','Grape')
 def plain(m): return not m.get(ps['th']+TH_AT['jump']) and not m.get(ps['th']+TH_AT['fold']) and (64-15)*160*160*4 not in m.live.values()
-m=classic_light_new(DepthMachine,albums=9)  # Large Library Mode off
+m=classic_light_new(DepthMachine,albums=9)  # Fast Navigation off
 for r,name in zip(m.albums,FRUIT): m.word(r+O['REC_ALBUM'],m.string(name))
 m.open(); m.handlers[sleep_hook+12]='stock_sleep'; m.fresh=1
 tp(m); thold(m); tspin(m,300,-30); assert not letter_on(m)  # 318 ticks/s; at the cap, short of jump_ms
@@ -10768,7 +10869,7 @@ assert letter_on(m) and len({c[0] for c in seen})>=2 and plain(m)
 tspin(m,100,-1); index=tindex(m); tspin(m,500,-1)  # 11 ticks/s
 assert tindex(m)!=index or toff(m)!=0
 trest(m); assert toff(m)==0 and tcaption(m)==FRUIT[tindex(m)] and plain(m); passed()
-m=classic_light_new(DepthMachine,albums=9); m.config['BIGLIBRARY']='1'  # Large Library Mode
+m=classic_light_new(DepthMachine,albums=9); m.config['BIGLIBRARY']='1'  # Fast Navigation
 for r,name in zip(m.albums,FRUIT): m.word(r+O['REC_ALBUM'],m.string(name))
 m.open(); m.handlers[sleep_hook+12]='stock_sleep'; m.fresh=1
 m.word(m.slide+O['SLIDE_INDEX'],5)  # from Date: past big_jump_ms and the entry, round the nine to an early letter
@@ -10808,7 +10909,7 @@ for _ in range(17):  # 289 ms of CF_FOLD_MS
     m.calls=[]; tp(m); assert ('widget_invalidate_force',m.slide) in [c[:2] for c in m.calls] and tindex(m)==index and toff(m)==0
 trest(m); assert tindex(m)==index and toff(m)==0 and tcaption(m)==FRUIT[index]
 m.letters=[]; tpaint(m); assert not m.letters; passed()
-# Large Library Mode's letters last till the lift, so they start at a faster spin of their own: big_jump_at for big_jump_ms,
+# Fast Navigation's letters last till the lift, so they start at a faster spin of their own: big_jump_at for big_jump_ms,
 # where off keeps 1.7.6's jump_at for jump_ms. 42 and 64 ticks/s, held past jump_ms, stay albums with it on and go by
 # letters off; on, letters start big_jump_ms after the rate reaches big_jump_at.
 def fruit_page(big):
@@ -10873,13 +10974,13 @@ m.u.mem_write(m.slide+O['SLIDE_OFFSET'],struct.pack('<i',-20)); tp(m,-10)
 assert m.get(m.slide+O['SLIDE_ANIMATOR'])==0 and did(m,'widget_animator_destroy') and -held//O['CF_STRIDE']>=0 and not m.slides
 off=toff(m); assert m.call(gap=0)==11 and m.get(m.slide+O['SLIDE_ANIMATOR'])==0 and toff(m)==off
 trest(m); assert toff(m)==0; passed()
-# The row's cost, in instructions: at a full lead, under a mid-turn frame's. What a frame costs on the device is measured
+# The arch's cost, in instructions: fully formed, within a mid-turn frame's ceiling. What a frame costs on the device is measured
 # with the --dev gaps; this keeps a change from quietly doubling it.
 m=thumb_page(); n=[0]; h=m.u.hook_add(UC_HOOK_BLOCK,lambda u,a,size,x: n.__setitem__(0,n[0]+size//4),begin=BASE,end=SCRATCH-1)
 tp(m); tpaint(m); assert m.draws; m.word(m.slide+O['SLIDE_OFFSET'],-O['CF_STRIDE']//4); n[0]=0
 m.word(m.slide+O['SLIDE_ANIMATOR'],1)  # a step's frame, the covers moving (no animator is ever called by a paint)
-tpaint(m); turn_cost=n[0]; m.word(m.slide+O['SLIDE_ANIMATOR'],0); m.word(m.slide+O['SLIDE_OFFSET'],0); thold(m); no_letters(m); tspin(m,600,-110); assert struct.unpack('<f',m.u.mem_read(ps['th']+12,4))[0]>4  # a full lead
-n[0]=0; draws=len(m.draws); tpaint(m); row_cost=n[0]; m.u.hook_del(h); assert len(m.draws)==draws+1 and turn_cost>1000000 and row_cost<turn_cost; passed()
+tpaint(m); turn_cost=n[0]; m.word(m.slide+O['SLIDE_ANIMATOR'],0); m.word(m.slide+O['SLIDE_OFFSET'],0); thold(m); no_letters(m); tspin(m,600,-110); assert struct.unpack('<f',m.u.mem_read(ps['th']+156,4))[0]>.9  # th.arch: formed (Fast Navigation off)
+n[0]=0; draws=len(m.draws); tpaint(m); row_cost=n[0]; m.u.hook_del(h); assert len(m.draws)==draws+1 and turn_cost>1000000 and row_cost<6_450_000,row_cost; passed()  # 6.02 million measured, the facing cover's 123 px columns over its neighbours': within the ceiling a turn's frame has below
 assert turn_cost<6_450_000,turn_cost  # a frame a quarter turn on, the covers moving, a little over the 6.38 million it measured: a dearer one fails
 # Going by letters, as MIPS, in Minimal and Classic, both leans: the held row, at rest and part through an album as it slides,
 # the fold half-way and the entry half-way (the facing point running) and 85% in (the row going on) draw byte for byte what
@@ -10897,7 +10998,7 @@ def th_set(m,kind=0,lean=0,a=0,b=0):  # host_render's (kind, lean, a, b)
     if kind in (1,2):  # the row held, as coverflow_hold leaves it from that entry
         put(pos=0,lean=lean,lead=(a if kind==1 else b)/1000); m.call(address=ps['coverflow_hold'],args=(0,0,0,0),gap=0)
     put(on=kind>0,jump=kind in (1,3),fold=kind==2,lean=lean,fold_at=m.now-a if kind==2 else 0,lead=a/1000 if kind==3 else 0,enter=b/1000 if kind==3 else 0)
-wide=[cover_pixels(200+j) for j in range(15)]; ALL=(1<<15)-1; FRAME_BOUND={0:5_600_000,1:4_300_000,2:4_350_000,3:4_300_000}
+wide=[cover_pixels(200+j) for j in range(15)]; ALL=(1<<15)-1; FRAME_BOUND={0:5_600_000,1:4_600_000,2:4_350_000,3:4_650_000}  # 1 and 3: #329's shelf, Minimal's held row 4.47 million and its entry 4.53
 for name,style in (('Minimal',{k:v for k,v in theme_builtins()[0].items() if k.startswith('cf.')}),('Classic',{**cl_style,'cf.radius':0})):
     cases=[(0,ALL),(16384,ALL)]+[c for lean in (1,-1) for c in ((0,ALL,1,lean,-3200*lean),(20000*lean,ALL,1,lean,-3200*lean),(0,ALL,2,lean,CF_DEFINES['CF_FOLD_MS']//2,-3200*lean),
                                                               (-8192*lean,ALL,3,lean,-2500*lean,style['cf.enter_albums']*500),
@@ -11032,10 +11133,10 @@ m=thumb_page(); tp(m); thold(m); no_letters(m); tspin(m,600,-110); shown=tcaptio
 assert m.confirm()==11 and toff(m)==0 and tcaption(m)==shown
 index=tindex(m); assert m.dispatched()[-1][1]==m.nodes[m.slide]['children'][index] and shown==f'Album {index}'; passed()
 
-# Cover Flow's tracks under Classic: the panel at 40,35 over the covers; header 57 rows, title 31 px bold, artist 18 px regular, alpha c0; the theme's rows at 25 px with duration right at 23: AWTK's px are the face's whole height, not its em.
+# Cover Flow's tracks under Classic: the panel at 40,35 over the covers; header 57 rows, title 31 px bold, artist 18 px regular, alpha c0; the theme's rows at 25 px with a known length right at 20, an unknown's title full width: AWTK's px are the face's whole height, not its em.
 PANEL_ROW=theme_builtins()[1]['page_row']; PANEL_SHOWN=(285-57)//PANEL_ROW; assert PANEL_SHOWN==7
 for light,white in (('0',0xffffff),('1',0)):
-    CONFIG['LIGHT']=light; m=classic_light_new(FlipMachine); del CONFIG['LIGHT']; m.open(); m.found=[m.song(f'T{i}') for i in range(9)]; m.tracks(0); m.advance(300)
+    CONFIG['LIGHT']=light; m=classic_light_new(FlipMachine); del CONFIG['LIGHT']; m.open(); m.found=[m.song(f'T{i}') for i in range(9)]; [m.word(r+O['REC_CUE_END'],225) for r in m.found[:8]]; m.tracks(0); m.advance(300)
     panel=m.panel(); kids=m.nodes[panel]['children']; sheet=kids[0]; lv=m.find('list_view',panel); view=m.find('scroll_view',panel); rows=m.nodes[view]['children']
     title,artist=[w for w in kids if m.nodes[w]['type']=='hscroll_label']
     assert cf_geometry(m,panel)==(40,9,294,285) and m.nodes[panel]['visible'] and cf_geometry(m,sheet)==(0,0,294,285)
@@ -11046,13 +11147,31 @@ for light,white in (('0',0xffffff),('1',0)):
     assert m.boxes==[(0,57,294,228),(0,0,294,228)] and m.nodes[view]['yslidable']==1 and m.nodes[view]['virtual_h']==9*PANEL_ROW
     assert [cf_geometry(m,r) for r in rows]==[(0,i*PANEL_ROW,294,PANEL_ROW) for i in range(9)] and kids.index(lv)<kids.index(title)
     t,dur=m.row_labels(0); gt,gd=cf_geometry(m,t),cf_geometry(m,dur)
-    assert gt[:2]==(12,0) and gt[0]+gt[2]<gd[0] and gd[0]+gd[2]==282 and gt[3]==gd[3]==PANEL_ROW and m.face(t)==('classic-light',25) and m.face(dur)==('classic-light',23)
+    assert gt[:2]==(12,0) and gt[0]+gt[2]<gd[0] and gd[0]+gd[2]==282 and gt[3]==gd[3]==PANEL_ROW and m.face(t)==('classic-light',25) and m.face(dur)==('default',20)
     assert m.nodes[dur]['style:normal:text_align_h']=='right' and m.nodes[dur]['style:normal:text_color']&0xffffffff==0xffaaaaaa and m.nodes[t]['text']=='T0'
-    for w,px in ((title,31),(artist,18),(t,25),(dur,23)): assert cf_geometry(m,w)[3]>=px  # boxes hold their fonts
+    for w,px in ((title,31),(artist,18),(t,25),(dur,20)): assert cf_geometry(m,w)[3]>=px  # boxes hold their fonts
+    t8,=m.row_labels(8); g8=cf_geometry(m,t8); assert g8[:2]==(12,0) and g8[0]+g8[2]==282  # T8's length unknown: no time, the title to 282
     # No text crosses the glass: the last whole row's stays clear, and what shows of the row under it ends before its caps start, 6 px into a 25 px face's box.
     assert 40+12>=corner_inset(26+9+57+(PANEL_SHOWN-1)*PANEL_ROW+(PANEL_ROW+25)//2) and 285-57-PANEL_SHOWN*PANEL_ROW<(PANEL_ROW-25)//2+6
     assert m.nodes[m.slide]['visible']==0 and m.nodes[[w for w in m.nodes[m.covers()]['children'] if m.nodes[w]['type']=='hscroll_label'][0]]['visible']==0 and m.nodes[m.covers()]['sensitive']==0 and m.nodes[m.covers()]['visible']
     assert not [w for w in m.nodes if m.nodes[w].get('name')==O.get('PAGE_TITLE')]; passed()  # no caption row: the bar's title is the page's name
+# Multilingual album header and track rows must retain the same bold intent as Latin rows.
+m=classic_light_new(FlipMachine)
+m.word(m.albums[0]+O['REC_ALBUM'],m.string('テレサ・テン 中国語ベスト'))
+m.word(m.albums[0]+O['REC_ARTIST'],m.string('テレサ・テン'))
+m.open(); m.found=[m.song('小城故事'),m.song('Your Song')]
+for record in m.found: m.word(record+O['REC_CUE_END'],225)
+m.tracks(0); m.advance(300)
+panel=m.panel(); head,artist=m.nodes[panel]['children'][2:4]
+by_name={m.nodes[m.row_labels(i)[0]]['text']:m.row_labels(i) for i in range(2)}
+assert set(by_name)=={'小城故事','Your Song'},by_name
+row0,time0=by_name['小城故事']; row1,time1=by_name['Your Song']
+assert m.nodes[head].get('_q2_bold_fallback')==1
+assert not m.nodes[artist].get('_q2_bold_fallback',0)
+assert m.nodes[row0].get('_q2_bold_fallback')==1 and not m.nodes[row1].get('_q2_bold_fallback',0)
+assert not m.nodes[time0].get('_q2_bold_fallback',0) and not m.nodes[time1].get('_q2_bold_fallback',0)
+passed()
+
 # Its painters: the sheet the paper and the header's fill at f0, darker on top; over the rows the soft shadow, and the border outside, flat, the same on every side.
 m=flip_open(); m.advance(300); panel=m.panel(); sheet=m.nodes[panel]['children'][0]
 m.bands=[]; m.call(address=HOOKS['widget_on_paint_border'][0],args=(sheet,m.canvas,0,0),gap=0,clear=False); sheet_bands=m.bands[:]
@@ -11145,24 +11264,45 @@ assert m.plays[-1][0]=='playing_page' and m.plays[-1][2]==1 and m.plays[-1][3]==
 m=flip_open(); m.advance(300); m.missing=True; r=m.nodes[m.find('scroll_view')]['children'][0]; f,ctx=m.handler(r,O['EVT_CLICK']); m.call(address=f,args=(ctx,m.event,0,0),gap=0)
 assert not m.plays and m.nodes[[w for w in m.nodes[m.panel()]['children'] if m.nodes[w]['type']=='hscroll_label'][0]]['text']=='Storage unavailable'; passed()
 # The list scrolls by the wheel inside the panel, the header its sibling, so it stays; Go to Album's tracks alone have no covers to turn.
-m=classic_light_new(FlipMachine); m.open(); m.found=[m.song(f'T{i}') for i in range(9)]; m.tracks(0); m.advance(300); view=m.find('scroll_view')
+m=classic_light_new(FlipMachine); m.open(); m.found=[m.song(f'T{i}') for i in range(9)]; [m.word(r+O['REC_CUE_END'],225) for r in m.found]; m.tracks(0); m.advance(300); view=m.find('scroll_view')
 for _ in range(8): m.call()
 head=[w for w in m.nodes[m.panel()]['children'] if m.nodes[w]['type']=='hscroll_label']; assert m.selected(view)==8 and all(m.get(w+O['W_PARENT'])==m.panel() for w in head) and view not in m.nodes[m.panel()]['children']; passed()
 m=classic_light_new(FlipMachine); m.open(); assert m.call(address=payload_syms['coverflow_goto_album'],args=(m.albums[0],0,0,0),gap=0)==1; m.page=m.top; assert not m.panel() and not [c for c in m.calls if c[0]=='canvas_offline_create'] and m.nodes[m.find('scroll_view')]['children'] and cf_geometry(m,m.nodes[m.find('scroll_view')]['children'][0])[2]==375; passed()
 # The selection on a row: the band across the list's 294, its labels white over it.
 m=flip_open(); m.advance(300); view=m.find('scroll_view'); m.word(view+O['W_W'],294); m.call(); m.paint(view); assert m.selected(view)==1 and m.sel()[0]==0 and m.sel()[2]==294 and m.sel()[3]==PANEL_ROW; passed()
-# ... a CJK title in the system font, a Cyrillic one in bold at the fallback's px: each box holds its font.
+# ... a CJK title in the system font, a Cyrillic one in bold, both at the fallback's px: each box holds its font.
 m=classic_light_new(FlipMachine); m.open(); m.found=[m.song('T')]; m.word(m.found[0]+O['REC_TITLE'],m.string('波')); m.tracks(0); m.advance(300)
-assert m.face(m.row_labels(0)[0])==('default',25)
+assert m.face(m.row_labels(0)[0])==('default',21)
 m=classic_light_new(FlipMachine); m.open(); m.found=[m.song('T')]; m.word(m.found[0]+O['REC_TITLE'],m.string('Выход')); m.tracks(0); m.advance(300)
 assert m.face(m.row_labels(0)[0])==('bold',21); passed()
-# An unknown length is blank and what the cache has shows, m:ss, hours when long. The panel starts no worker and writes nothing;
-# Long Songs fills the cache, and the next panel has it.
+# An unknown length is blank and what the cache has shows, toolsTimeItoa's 4:54, hours when long. The panel starts no worker and
+# writes nothing; Long Songs fills the cache, and the next panel has it.
+DUR_CACHE='/mnt/data/ringnav-durations-v1'
+def dur_key(p):
+    h=0xcbf29ce484222325
+    for c in p.encode(): h=(h^c)*0x100000001b3&(1<<64)-1
+    return h
+def duration_cache(*pairs):
+    return b'Q2DUR2\0\0'+b''.join(struct.pack('<Q3Ii',k,1000,2000,0,v) for k,v in sorted((dur_key(p),v) for p,v in pairs))
+def duration_pairs(data,paths):
+    assert data[:8]==b'Q2DUR2\0\0'
+    keys={k:sec for k,_,_,_,sec in struct.iter_unpack('<Q3Ii',data[8:])}
+    return {p:keys[dur_key(p)] for p in paths if dur_key(p) in keys}
+def duration_syscalls(m):
+    """The duration worker's syscalls: thread_lower's, answered 0, and ringnav_statx's (4366), a regular file of
+    1000 bytes at mtime 2000 (struct statx: stx_mode at 28, stx_size 40, stx_mtime 112), its buffer the fifth argument."""
+    def syscall(u,intno,unused):
+        if u.reg_read(UC_MIPS_REG_V0)==4366:
+            buf=m.get(u.reg_read(UC_MIPS_REG_SP)+16); u.mem_write(buf,bytes(256))
+            m.word(buf+28,0o100644); m.word(buf+40,1000); m.word(buf+112,2000)
+        u.reg_write(UC_MIPS_REG_A3,0); u.reg_write(UC_MIPS_REG_V0,0)
+    m.u.hook_add(UC_HOOK_INTR,syscall)
+
 class FlipLengths(FileMocks,FlipMachine):
     def __init__(self,**kw):
         super().__init__(**kw); self.file_mocks('fl:'); self.lengths={}; self.probed=[]
         for n in ('fseek@GLIBC_2.0','ftell@GLIBC_2.0','taglib_file_new','taglib_file_audioproperties','taglib_file_free','getAllMusic'): self.handlers[syms[n]]='fl:'+n
-        self.handlers[0x1000030]='fl:length'
+        self.handlers[0x1000030]='fl:length'; duration_syscalls(self)
     def hook(self,u,address,size,unused):
         name=self.handlers.get(address,'')
         if not name.startswith('fl:'): return super().hook(u,address,size,unused)
@@ -11175,21 +11315,17 @@ class FlipLengths(FileMocks,FlipMachine):
         elif name=='length': ret=self.get(a+4)
         elif name=='getAllMusic': self.deqs[self.get(syms['tools_pdeq_directory'])][1]=[self.copy('stSongInfo',r) for r in self.found]; ret=len(self.found)
         self.returns(ret,clobber=True)
-def path_key(s):
-    h=2166136261
-    for c in s.encode()+b'\0': h=(h^c)*16777619&0xffffffff
-    return h
 m=classic_light_new(FlipLengths); m.open(); paths=[m.text(m.get(r+O['REC_PATH'])) for r in m.found]; m.lengths=dict.fromkeys(paths,60); m.lengths[paths[0]]=3725
-cached=struct.pack('<2I',path_key(paths[1]),294); m.files['/mnt/data/ringnav-lengths']=cached
-m.threads=[]; flip_click(m); text=lambda i: m.nodes[m.row_labels(i)[1]].get('text','')
+cached=duration_cache((paths[1],294)); m.files[DUR_CACHE]=cached
+m.threads=[]; flip_click(m); text=lambda i: m.nodes[m.row_labels(i)[1]].get('text','') if len(m.row_labels(i))>1 else ''
 assert text(0)=='' and text(1)=='4:54'; m.advance(300); assert m.nodes[m.panel()]['visible'] and text(0)=='' and text(1)=='4:54'
-assert not m.threads and not m.probed and m.files['/mnt/data/ringnav-lengths']==cached and [v[1] for v in m.timers.values()]==[payload_syms['home_counts']]; passed()
-assert m.key()==11; m.advance(0); m.advance(300); assert not m.panel() and not m.threads and not m.probed and m.files['/mnt/data/ringnav-lengths']==cached
+assert not m.threads and not m.probed and m.files[DUR_CACHE]==cached and [v[1] for v in m.timers.values()]==[payload_syms['home_counts']]; passed()
+assert m.key()==11; m.advance(0); m.advance(300); assert not m.panel() and not m.threads and not m.probed and m.files[DUR_CACHE]==cached
 shelf=m.page; m.top=m.node('window','localmusic_page'); view=m.node('scroll_view','scroll_view_localmusic',[m.node('list_item') for _ in range(11)])
 m.nodes[m.top]['children']=[view]; m.call(address=HOOKS['localmusic_page_init'][0],args=(m.top,5,0,0),gap=0)
 walk=lambda w:[w]+[x for c in m.nodes[w]['children'] for x in walk(c)]; row=next(c for c in m.nodes[view]['children'] if any(m.nodes[w].get('text')=='Long Songs' for w in walk(c)))
 f,ctx=m.handler(m.nodes[row]['children'][0],O['EVT_CLICK']); m.call(address=f,args=(ctx,m.event,0,0),gap=0)
-worker,arg=m.threads[0]; m.call(address=worker,args=(arg,0,0,0),gap=0); m.advance(250); assert path_key(paths[0]) in struct.unpack(f"<{len(m.files['/mnt/data/ringnav-lengths'])//4}I",m.files['/mnt/data/ringnav-lengths'])
+worker,arg=m.threads[0]; m.call(address=worker,args=(arg,0,0,0),gap=0); m.advance(250); assert duration_pairs(m.files[DUR_CACHE],paths)[paths[0]]==3725
 m.page=m.top=shelf; flip_click(m); assert text(0)=='1:02:05' and text(1)=='4:54'; passed()
 # Minimal: Centre opens the text list as today, no flip, no buffers.
 for theme in '0':
@@ -11420,7 +11556,7 @@ end(m,labels[1]); end(m,view); passed()
 
 # Cover Flow's panel: on the selected row the title and the length are white over the band, in either half; on the others its ink and its muted.
 for light,ink,muted in (('0',0xffffffff,0xff949294),('1',0xff000000,0xff6b6d6b)):
-    CONFIG['LIGHT']=light; m=classic_light_new(FlipMachine); del CONFIG['LIGHT']; m.open(); m.found=[m.song(f'T{i}') for i in range(3)]; m.tracks(0); m.advance(300)
+    CONFIG['LIGHT']=light; m=classic_light_new(FlipMachine); del CONFIG['LIGHT']; m.open(); m.found=[m.song(f'T{i}') for i in range(3)]; [m.word(r+O['REC_CUE_END'],225) for r in m.found]; m.tracks(0); m.advance(300)
     m.u.hook_add(UC_HOOK_CODE,m.hook,begin=tramp['color'],end=tramp['color'])  # FlipMachine runs fast: a payload address hooks on its own
     view=m.find('scroll_view'); m.word(view+O['W_W'],294); m.paint(view); m.call(); m.paint(view); assert m.selected(view)==1
     for i,want in ((1,(0xffffffff,0xffffffff)),(0,(ink,muted))):
@@ -11441,8 +11577,8 @@ for label_name in ('label_del','label_rename'):
 passed()
 
 m=Machine(); style_color(m,red)
-# config_value passes its default in decimal: SHORTCUT's SETTING_N_SHORTCUT (11) is out of range, so no shortcut
-assert m.config_reads==[('/mnt/data/config.ini','IPOD',key,'0') for key in ('ACCENT','HOME','BATTERY','THEME')]+[('/mnt/data/config.ini','IPOD','SHORTCUT','11'),('/mnt/data/config.ini','IPOD','MINIMAL_ACCENT','0'),('/mnt/data/config.ini','IPOD','ROUNDED','1'),('/mnt/data/config.ini','IPOD','LIGHT','0'),('/mnt/data/config.ini','IPOD','KEEPLIT','0'),('/mnt/data/config.ini','IPOD','NPCENTRED','0'),('/mnt/data/config.ini','IPOD','KEYTONEHP','0'),('/mnt/data/config.ini','IPOD','SCRUBSINGLE','0'),('/mnt/data/config.ini','IPOD','TIMETITLE','1')]+[('/mnt/data/config.ini','IPOD',key,v) for key,v in (('STATUSBAR','0'),('CLASSIC_LIGHT_ACCENT','9'),('HOMELIB','1'),('ROWPREVIEW','1'),('ROWART','1'))]; passed()
+# config_value passes its default in decimal: SHORTCUT's SETTING_N_SHORTCUT (12) is out of range, so no shortcut
+assert m.config_reads==[('/mnt/data/config.ini','IPOD',key,'0') for key in ('ACCENT','HOME','BATTERY','THEME')]+[('/mnt/data/config.ini','IPOD','SHORTCUT','12'),('/mnt/data/config.ini','IPOD','MINIMAL_ACCENT','0'),('/mnt/data/config.ini','IPOD','ROUNDED','1'),('/mnt/data/config.ini','IPOD','LIGHT','0'),('/mnt/data/config.ini','IPOD','KEEPLIT','0'),('/mnt/data/config.ini','IPOD','NPCENTRED','0'),('/mnt/data/config.ini','IPOD','KEYTONEHP','0'),('/mnt/data/config.ini','IPOD','SCRUBSINGLE','0'),('/mnt/data/config.ini','IPOD','TIMETITLE','1')]+[('/mnt/data/config.ini','IPOD',key,v) for key,v in (('STATUSBAR','0'),('CLASSIC_LIGHT_ACCENT','9'),('HOMELIB','1'),('ROWPREVIEW','1'),('ROWART','1'))]; passed()
 # theme()/scheme(): the active built-in and its scheme, settings read on first use. THEME out of
 # range is Minimal; Classic's stored Ivory and an out-of-range CLASSIC_LIGHT_ACCENT are Classic Blue, on Cobalt's
 # tones; Modern's stored Ivory and an out-of-range ACCENT are Graphite's scheme; a missing MINIMAL_ACCENT is Graphite, a stored Ivory
@@ -11835,10 +11971,10 @@ keep_lit=kids[2]
 assert m.icons_set==['system_display','switch_off','display_backlight','list_into','system_display','list_into','playset_covermode','list_into']
 f,ctx=m.handler(m.nodes[kids[5]]['children'][0],O['EVT_CLICK']); m.calls=[]
 assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and m.opened[-1]==('systemset/display_page',None) and m.get(payload_syms['display_sub'])==0; passed()
-# Cover Flow: Artist View, Playlist View, Cover Flow Sort, Refresh Cover Flow, Large Library Mode; Controls, System's
+# Cover Flow: Artist View, Playlist View, Cover Flow Sort, Refresh Cover Flow, Fast Navigation; Controls, System's
 # row: the wheel, the buttons and what they do.
-cfv=display_page(m,2); cf,cf_pl,cf_sort,cf_refresh,cf_big=m.nodes[cfv]['children']
-assert m.icons_set==['playset_covermode']*3+['system_update','playset_covermode','switch_off'],m.icons_set
+cfv=display_page(m,2); cf,cf_pl,cf_sort,cf_refresh,cf_big,cf_durations,cf_position=m.nodes[cfv]['children']
+assert m.icons_set==['playset_covermode']*3+['system_update','playset_covermode','switch_off','playset_covermode','switch_off','playset_covermode','switch_off'],m.icons_set
 ctl=display_page(m,3); wheel,hold,scrub_one,tone,hp,lock,wake,guard=m.nodes[ctl]['children']
 assert [row_text(r) for r in (hold,scrub_one)]==['Hold Return: Recent','Single Press Scrub']; passed()
 view=display_page(m,1); rows=setting_rows(m,view)
@@ -12032,10 +12168,34 @@ assert bt_titled(btwins['shuffle_page'])=='Genres'
 for bt_text,bt_face in (('Навстречу Ветру','bold'),('日本語','default'),('Songs','classic-light'),('Н'*60,'bold')):
     btm.nodes[btm.nodes[btnav]['children'][1]]['text']=bt_text; assert bt_titled(btwins['allmusic_page'])==bt_text
     assert [btm.nodes[bttl][f'style:{s}:font_name'] for s in ('normal','focused','disable')]==[bt_face]*3,bt_text
-    assert [btm.nodes[bttl][f'style:{s}:font_size'] for s in ('normal','focused','disable')]==[17 if bt_face=='bold' else 21]*3,bt_text
+    assert [btm.nodes[bttl][f'style:{s}:font_size'] for s in ('normal','focused','disable')]==[21 if bt_face=='classic-light' else 17]*3,bt_text
     btm.call(address=payload_syms['bar_title_fits'],args=(btm.nodes[btnav]['children'][1],0,0,0),gap=0)
-    assert btm.font==(bt_face,17 if bt_face=='bold' else 21),(bt_text,btm.font)  # measured as it is drawn
+    assert btm.font==(bt_face,21 if bt_face=='classic-light' else 17),(bt_text,btm.font)  # measured as it is drawn
 passed()
+# Actual Now Playing init/np_sync, across themes and text changes; preserve each theme's intent.
+for theme_id in ('0','1','2'):
+    SETUP[:]=[lambda machine: machine.config.update(THEME=theme_id)]
+    try: q=LoadQueue(queue=3,pos=1)
+    finally: SETUP.clear()
+    ph=HOOKS['playing_page_init'][0]; q.handlers[ph+12]='stock_playing'
+    title=q.node('hscroll_label','scrlabel_title',text='Your Song')
+    slider=q.node('slider','slider_play',max=225,value=1)
+    elapsed=q.node('label','label_playtime'); remain=q.node('label','label_ipod_remain')
+    q.win=q.top=q.node('window','playing_page',[title,slider,elapsed,remain]); parents(q,q.win)
+    q.word(q.win+O['W_PARENT'],q.wm); place(q,q.win,0,26,375,294)
+    q.word(syms['system_bar'],q.node('window','system_bar'))
+    assert q.call(address=ph,args=(q.win,7,0,0),gap=0)==0
+    wanted=theme_id!='0'  # ROLE_NP: Classic and Modern ask for a bold face, Minimal for stock's
+    for text in ('小城故事','ハナノイロ -Acoustic-','日本語 English','Your Song'):
+        q.nodes[title]['text']=text
+        q.call(address=payload_syms['np_sync'],args=(q.win,0,0,0),gap=0)
+        expected=wanted and text!='Your Song'
+        assert bool(q.nodes[title].get('_q2_bold_fallback',0))==expected,(theme_id,text,q.nodes[title])
+        q.calls=[]
+        q.call(address=payload_syms['font_weight_paint'],args=(title,q.canvas,0,0),gap=0)
+        assert len([c for c in q.calls if c[0]=='widget_vtable_on_paint_self'])==int(expected)
+    passed()
+
 # Classic battery (BATT_CLASSIC_LIGHT): body 26x13 on rows 5 to 17, its soft edge's column at x 0 of the slot (screen 286): a
 # #717070 outline with half-covered corners, #5b6c52 along the bottom, a hollow nub, the dark rows inside, the level's stops
 # over its 11 inner rows, the last column shaded. Light only: the soft edge and the emboss. Charging fills
@@ -12099,7 +12259,9 @@ bm,bw_,bands=classic_light_battery_bar(3,'bar_charge','63%')  # Percent Inside: 
 assert not bm.image_draws; passed()
 bm,bw_,bands=classic_light_battery_bar(0,'bar_lowcharge','5%')
 assert bands[LEVEL:]==[(BX,y+1,3,11,color_t(0xd9402e))]+SHADE+EMBOSS; passed()
-for mode in (1,2,3):  # Percent Inside (digits in the body), and the stored values that read as it
+bm,bw_,bands=classic_light_battery_bar(1)  # Percent: the digits and sign alone, no body
+assert [l['text'] for l in bm.letters]==['50%'] and bands[:LEVEL]!=outline; passed()
+for mode in (2,3):  # Percent Inside (digits in the body), and the stored value that reads as it
     bm,bw_,bands=classic_light_battery_bar(mode); letters=[(l['text'],l['rect']) for l in bm.letters]
     assert letters==[('50',(BX,y+1,BW,11))]*2 and bands[:LEVEL]==outline and bm.get(bw_['view_battery']+O['W_W'])==29,(mode,letters); passed()
 # Percent Inside's digits read in both halves: dark on the level, whatever its colour (the gloss, full while
@@ -12285,13 +12447,18 @@ def carousel(on):
     if on: assert not m.nodes[art]['visible']
 shortcut_button=m.nodes[shortcut]['children'][0]
 sf,sc=m.handler(shortcut_button,O['EVT_CLICK'])
-for label in ('Favorites','Shuffle','Rated Albums','Playlists','Artists','Albums','Games','Podcasts','Audiobooks','Rockbox'):
-    m.call(address=sf,args=(sc,m.event,0,0),gap=0)
-    assert m.nodes[named(m,home,'label_rockbox')]['text']==label
+# None ends the cycle: Home's row is hidden, the picker says so, and the carousel's card keeps the default's name.
+def shortcut_cycle(labels):
+    for label in labels:
+        m.call(address=sf,args=(sc,m.event,0,0),gap=0)
+        if label=='None':
+            assert m.nodes[m.nodes[shortcut_button]['children'][1]]['text']=='Shortcut: None'
+            assert m.nodes[named(m,home,'label_rockbox')]['text']==('Rockbox' if m.rockbox_mode else 'Favorites')
+            assert not m.nodes[named(m,home,'btn_rockbox')]['visible']
+        else: assert m.nodes[named(m,home,'label_rockbox')]['text']==label
+shortcut_cycle(('Favorites','Shuffle','Rated Albums','Playlists','Artists','Albums','Games','Podcasts','Audiobooks','None','Rockbox'))
 m.groovebox_mode=0o100755  # Groovebox on the card: the cycle offers it after Audiobooks
-for label in ('Favorites','Shuffle','Rated Albums','Playlists','Artists','Albums','Games','Podcasts','Audiobooks','Groovebox','Rockbox'):
-    m.call(address=sf,args=(sc,m.event,0,0),gap=0)
-    assert m.nodes[named(m,home,'label_rockbox')]['text']==label
+shortcut_cycle(('Favorites','Shuffle','Rated Albums','Playlists','Artists','Albums','Games','Podcasts','Audiobooks','Groovebox','None','Rockbox'))
 m.groovebox_mode=0
 home_bounds(False); carousel(False)
 writes=click(1); assert [(w[0],m.text(w[2])) for w in writes]==[(1,'HOME')] and texts()[1]=='Home: Full'
@@ -13101,12 +13268,12 @@ def art_boot(config):  # the names a fresh Classic's first system_bar loaded, wi
 assert art_boot({})==art_boot({'ROWART':'1'})==art_boot({'ROWART':'2'})==['classic-light_system_bar']
 assert art_boot({'ROWART':'0'})==['classic-light-text_system_bar']
 passed()
-# Battery under Classic takes Icon or Percent Inside (theme.xml's values): the row cycles those two and writes the
-# key as usual. A stored Percent or Icon + Percent reads as Percent Inside and stays stored; a key that is not
+# Battery under Classic takes Icon, Percent or Percent Inside (theme.xml's values, 9db418f7): the row cycles those three
+# and writes the key as usual. A stored Icon + Percent reads as Percent Inside and stays stored; a key that is not
 # stored reads as Icon. Minimal and Classic on the same build keep all four, whatever Classic's values say.
 m,view,_=display({},setup=classic_light); row=m.nodes[view]['children'][6]; f,ctx=m.handler(m.nodes[row]['children'][0],O['EVT_CLICK'])
 assert row_text(row)=='Battery: Icon'
-for value,name in ((3,'Percent Inside'),(0,'Icon'),(3,'Percent Inside')):
+for value,name in ((1,'Percent'),(3,'Percent Inside'),(0,'Icon'),(1,'Percent')):
     m.calls=[]; assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0
     assert [(c[1],m.text(c[3])) for c in m.calls if c[0]=='write_int_config']==[(value,'BATTERY')] and row_text(row)=='Battery: '+name
 passed()
@@ -13121,14 +13288,14 @@ b=m.nodes[row]['children'][0]; title=m.nodes[b]['children'][1]; val=next(k for k
 vx,vw,bx=(m.get(val+O['W_X']),m.get(val+O['W_W']),m.get(b+O['W_X']))
 assert row_w('Percent Inside')<=vw-4 and bx+vx+vw==356
 assert m.get(title+O['W_X'])+m.get(title+O['W_W'])==vx-8; passed()
-for stored in ('1','2'):
+for stored in ('2',):
     m,view,_=display({'BATTERY':stored},setup=classic_light); row=m.nodes[view]['children'][6]; f,ctx=m.handler(m.nodes[row]['children'][0],O['EVT_CLICK'])
     assert row_text(row)=='Battery: Percent Inside' and not [c for c in m.calls if c[0]=='write_int_config'] and m.config['BATTERY']==stored
     assert m.call(address=payload_syms['ipod_battery'],args=(0,0,0,0),gap=0)==3
     m.calls=[]; m.call(address=f,args=(ctx,m.event,0,0),gap=0)  # from what it reads as: on to Icon
     assert [(c[1],m.text(c[3])) for c in m.calls if c[0]=='write_int_config']==[(0,'BATTERY')] and row_text(row)=='Battery: Icon'
 passed()
-for t in ('0','2'):  # Minimal and Modern: every value is its own (Classic's Percent and Icon + Percent read as Percent Inside, above)
+for t in ('0','2'):  # Minimal and Modern: every value is its own (Classic's Icon + Percent reads as Percent Inside, above)
     def on_t(k,t=t): classic_light(k); k.config['THEME']=t
     for stored,name in (('0','Icon'),('1','Percent'),('2','Icon + Percent'),('3','Percent Inside')):
         m,view,rows=display({'BATTERY':stored},setup=on_t)
@@ -13241,13 +13408,13 @@ assert [fk.nodes[ft][f'style:{s}:font_name'] for s in STATES]==['classic-light']
 fk.calls=[]; native_row_layout(fk,fb); assert not [c for c in fk.calls if c[0]=='widget_set_prop_str']
 fk,fb,ft=font_row(classic_light,'Навстречу ветру'); assert [(fk.nodes[ft][f'style:{s}:font_name'],fk.nodes[ft][f'style:{s}:font_size']) for s in STATES]==[('bold',22)]*3  # 0.83 of 27: as tall as the face's capitals
 fk,fb,ft=font_row(classic_light,'Moscow Москва'); assert fk.nodes[ft]['style:normal:font_name']=='bold' and fk.nodes[ft]['style:normal:font_size']==22  # one face a label: its Latin letters too
-fk,fb,ft=font_row(classic_light,'日本語 Title'); assert fk.nodes[ft]['style:normal:font_name']=='default' and fk.nodes[ft]['style:normal:font_size']==PX
+fk,fb,ft=font_row(classic_light,'日本語 Title'); assert fk.nodes[ft]['style:normal:font_name']=='default' and fk.nodes[ft]['style:normal:font_size']==22  # stock's face, its capitals as tall as bold's
 for setup in (None,lambda k: k.config.update(THEME='2')):  # Minimal and Modern
     ck,cb,ct=font_row(setup,'Title'); assert not [p for p in ck.nodes[ct] if p.endswith(':font_name') or p=='_font']
 # One label from Latin to Cyrillic and back: the answer changes with the text, so nothing stale stays. Minimal's
 # Cyrillic never takes the scale: its px is the style's, nothing written.
 fw=fk.node('hscroll_label',text='Songs'); fl=lambda t,want: (fk.nodes[fw].__setitem__('text',t),fk.call(address=payload_syms['theme_font'],args=(fw,0,-2,0),gap=0),[(fk.nodes[fw][f'style:{s}:font_name'],fk.nodes[fw][f'style:{s}:font_size']) for s in STATES]==[want]*3)[-1]
-assert fl('Songs',('classic-light',27)) and fl('Песни',('bold',22)) and fl('Songs',('classic-light',27)) and fl('歌',('default',27)); passed()
+assert fl('Songs',('classic-light',27)) and fl('Песни',('bold',22)) and fl('Songs',('classic-light',27)) and fl('歌',('default',22)); passed()
 # A virtual table binds a pooled row's text with no relayout (table_client's load loop, #217): ringnav_table_load runs stock's on_load_data (a PIC
 # call), then each label its layout gave a face finds it again for the new text, at its own role's size (a title 27, a tall title 28); a label never
 # themed stays as it was. Minimal's rows have no faces: the bind is stock's.
@@ -13273,7 +13440,7 @@ def table_load_faces(setup):
         return [(lk.nodes[w].get('style:normal:font_name'),lk.nodes[w].get('style:normal:font_size')) for w in (title,tall,plain)]
     if setup:
         assert load('WurtS','yama','x')==[('classic-light',27),('classic-light',28),(None,None)]
-        assert load('星野 源','須田景凪','原因は自分にある。')==[('default',27),('default',28),(None,None)]
+        assert load('星野 源','須田景凪','原因は自分にある。')==[('default',22),('default',23),(None,None)]
         assert load('YOASOBI','Навстречу','x')==[('classic-light',27),('bold',23),(None,None)]
     else: assert load('星野 源','須田景凪','x')==[(None,None)]*3 and not [p for w in (title,tall) for p in lk.nodes[w] if p=='_font']
 for setup in (classic_light,None): table_load_faces(setup)
@@ -14376,7 +14543,7 @@ class RateMachine(FileMocks,ShuffleMachine):
         self.file_mocks('r:',{'/mnt/data/ringnav-ratings':saved} if saved else {}); self.fav_songs=[]
         for n in ('getAllFav','fseek@GLIBC_2.0','ftell@GLIBC_2.0','taglib_file_new','taglib_file_audioproperties','taglib_file_free'):
             self.handlers[syms[n]]='r:'+n
-        self.lengths={}; self.probed=[]; self.handlers[0x1000030]='r:length'  # AudioProperties::length(), vtable +0xc
+        self.lengths={}; self.probed=[]; duration_syscalls(self); self.handlers[0x1000030]='r:length'  # AudioProperties::length(), vtable +0xc
         self.handlers[FAV_CLICK]='r:fav_click'
         self.fav=self.node('image','img_fav'); self.word(self.fav+O['W_X'],303); self.word(self.fav+O['W_Y'],176)
         self.word(self.fav+O['W_W'],50); self.word(self.fav+O['W_H'],50); self.nodes[self.fav]['image']='play_unfav'
@@ -14511,10 +14678,11 @@ m.found=[m.song('Z')]; m.fav_songs=[]; m.calls=[]; row=m.nodes[m.find('scroll_vi
 m.call(address=g,args=(c,m.event,0,0),gap=0); m.page=m.top
 assert m.texts()==['Top Rated','No songs yet','Hold the heart on Now Playing to rate']; passed()
 
-# Long Songs: over LONG_SONG_S, longest first. Files never probed are probed once by TagLib on a worker (a CUE track
-# with both ends needs none) and kept by path hash in /mnt/data/ringnav-lengths, sorted; 0 for an unreadable file.
-cached=struct.pack('<2I',fnv('/p/E'),1200)
-m=RateMachine(); m.files['/mnt/data/ringnav-lengths']=cached
+# Long Songs: over LONG_SONG_S, longest first, whatever Scan Song Durations is. Each file is statted on a worker and
+# one whose signature the cache lacks probed once by TagLib (a CUE track with both ends among them: the file's length
+# serves its other tracks), kept by path key in the shared duration cache; 0 for an unreadable file.
+cached=duration_cache(('/p/E',1200))
+m=RateMachine(); m.files[DUR_CACHE]=cached
 m.found=[m.song(n) for n in 'ABCDE']; m.word(m.found[2]+O['REC_CUE_END'],900)
 m.lengths={'/p/A':700,'/p/B':300}
 m.top=m.node('window','localmusic_page'); view=m.node('scroll_view','scroll_view_localmusic',[m.node('list_item') for _ in range(11)])
@@ -14522,15 +14690,14 @@ m.nodes[m.top]['children']=[view]; m.call(address=HOOKS['localmusic_page_init'][
 f,ctx=m.handler(m.nodes[m.nodes[view]['children'][14]]['children'][0],O['EVT_CLICK'])
 assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0; m.page=m.top
 assert m.nodes[m.page]['name']=='longsongs_page' and m.texts()==['Measuring songs…','Cancel'] and len(m.threads)==1
-worker,arg=m.threads[0]; assert m.call(address=worker,args=(arg,0,0,0),gap=0)==0 and m.probed==['/p/A','/p/B','/p/D']
+worker,arg=m.threads[0]; assert m.call(address=worker,args=(arg,0,0,0),gap=0)==0 and sorted(m.probed)==['/p/A','/p/B','/p/C','/p/D']
 m.advance(250)
 want=['Long Songs','E','Artist · 20:00','C','Artist · 15:00','A','Artist · 11:40']
 assert m.texts()==want,m.texts()
-saved=m.files['/mnt/data/ringnav-lengths']; pairs=sorted(struct.unpack(f'<{len(saved)//4}I',saved)[0::2])
-assert pairs==sorted(fnv('/p/'+n) for n in 'EABD') and dict(zip(*[iter(struct.unpack(f'<{len(saved)//4}I',saved))]*2))[fnv('/p/D')]==0
+saved=duration_pairs(m.files[DUR_CACHE],['/p/'+n for n in 'ABCDE']); assert saved=={'/p/A':700,'/p/B':300,'/p/C':0,'/p/D':0,'/p/E':1200}
 r=m.nodes[m.find('scroll_view')]['children'][2]; g,c=m.handler(r,O['EVT_CLICK'])
 assert m.call(address=g,args=(c,m.event,0,0),gap=0)==0 and m.queued==['E','C','A']; passed()
-# Again, nothing to probe: the list at once. Cancel keeps what was measured.
+# Again: a whole pass covered this library, so no worker: the list at once. Cancel keeps what was measured.
 m.close(); m.probed=[]; m.threads=[]; m.call(address=f,args=(ctx,m.event,0,0),gap=0); m.page=m.top
 assert not m.threads and not m.probed and m.texts()==want; m.close(); passed()
 m=RateMachine(); m.found=[m.song(n) for n in 'AB']; m.lengths={'/p/A':700,'/p/B':900}
@@ -14540,13 +14707,13 @@ f,ctx=m.handler(m.nodes[m.nodes[view]['children'][14]]['children'][0],O['EVT_CLI
 cancel=m.nodes[m.find('scroll_view')]['children'][0]; g,c=m.handler(cancel,O['EVT_CLICK']); m.call(address=g,args=(c,m.event,0,0),gap=0)
 worker,arg=m.threads[0]; m.call(address=worker,args=(arg,0,0,0),gap=0); assert m.probed==[]  # cancelled before the first
 m.advance(250); assert m.texts()==['Long Songs','No songs over 10 minutes'] and m.joins==[77]; passed()
-# Two CUE tracks to the end of one file probe it twice; the cache keeps it once.
+# Two CUE tracks to the end of one file probe it once and keep one cache entry.
 m=RateMachine(); m.found=[m.song('A'),m.song('A')]; m.lengths={'/p/A':1300}; m.word(m.found[1]+O['REC_CUE_START'],600)
 m.top=m.node('window','localmusic_page'); view=m.node('scroll_view','scroll_view_localmusic',[m.node('list_item') for _ in range(11)])
 m.nodes[m.top]['children']=[view]; m.call(address=HOOKS['localmusic_page_init'][0],args=(m.top,5,0,0),gap=0)
 f,ctx=m.handler(m.nodes[m.nodes[view]['children'][14]]['children'][0],O['EVT_CLICK']); m.call(address=f,args=(ctx,m.event,0,0),gap=0); m.page=m.top
 worker,arg=m.threads[0]; m.call(address=worker,args=(arg,0,0,0),gap=0); m.advance(250)
-assert m.files['/mnt/data/ringnav-lengths']==struct.pack('<2I',fnv('/p/A'),1300)
+assert duration_pairs(m.files[DUR_CACHE],['/p/A'])=={'/p/A':1300} and len(m.files[DUR_CACHE])==8+24 and m.probed==['/p/A']
 assert m.texts()==['Long Songs','A','Artist · 21:40','A','Artist · 11:40']; passed()
 
 # Upload Scrobbles: the second-last row, above Update Local Music, only with an account in the card's .scrobble.ini (a
@@ -15005,7 +15172,7 @@ class BooksMachine(DepthMachine):
                   'access@GLIBC_2.0','rename@GLIBC_2.0','unlink@GLIBC_2.0','mkdir@GLIBC_2.0','memcmp@GLIBC_2.0',
                   'strlen@GLIBC_2.0','strstr@GLIBC_2.0','canvas_measure_text','canvas_draw_text',
                   'fork@GLIBC_2.0','execl@GLIBC_2.0','exit@GLIBC_2.0','waitpid@GLIBC_2.0','socket@GLIBC_2.0',
-                  'sendto@GLIBC_2.0','close@GLIBC_2.0','open@GLIBC_2.0'):
+                  'sendto@GLIBC_2.0','close@GLIBC_2.0','open@GLIBC_2.0','setenv@GLIBC_2.0'):
             self.handlers[syms[n]]='b:'+n
         self.handlers[syms['mclGetOutputWay']]='b:mclGetOutputWay'
         self.handlers[payload_syms['child_exit']]='b:exit'
@@ -15064,6 +15231,7 @@ class BooksMachine(DepthMachine):
         elif name=='mclGetOutputWay': ret=self.way
         elif name=='open': ret=0xffffffff  # the child's oom_score_adj write: refused here, so nothing is written
         elif name=='fork': ret=self.forked
+        elif name=='setenv': self.env=(self.text(a),self.text(b),c); ret=0  # a card game's Q2_POPUP, in the child
         elif name=='execl':
             sp=u.reg_read(UC_MIPS_REG_SP); e=self.get(sp+16)  # a volume argv, then its terminator
             if not c: self.execs.append((self.text(a),self.text(b))); ret=-1  # no arguments: the terminator third
@@ -15239,7 +15407,7 @@ key(O['KEY_NEXT']); assert cur()==1; key(O['KEY_FWD_BTN']); assert cur()==7; key
 key(O['KEY_PREV']); key(O['KEY_PREV']); assert cur()==12; key(O['KEY_BACK_BTN']); assert cur()==5; passed()
 put(6,[64|13+11]); put(7,[3,64|10]); m.byte(G+G_SOL+329,7)  # Q of hearts; a face-down 4 under the J of spades
 key(O['KEY_CENTER']); assert word(G_PICKING) and word(48)==7; paint()
-key(O['KEY_FWD_BTN']); key(O['KEY_CENTER']); assert word(G_PICKING)  # not onto the waste
+put(1,[]); key(O['KEY_FWD_BTN']); key(O['KEY_CENTER']); assert word(G_PICKING) and word(48)==7  # not onto the waste, empty: still held
 key(O['KEY_FWD_BTN']); key(O['KEY_PREV']); key(O['KEY_CENTER']); assert not word(G_PICKING); m.advance(2000)
 assert (n(6),n(7),byte(G_SOL+4+24*6+1),byte(G_SOL+4+24*7))==(2,1,64|10,64|3) and bytes(m.files['/mnt/data/ringnav-solitaire'])==sol()
 put(1,[64|26]); m.byte(G+G_SOL+329,1); key(O['KEY_CENTER']); key(O['KEY_CENTER'])  # the Ace of diamonds, home
@@ -16597,7 +16765,7 @@ passed()
 CAPS='/tmp/q2-addon.caps'
 m=AppMachine(); stream_rows(m); caps=bytes(m.files[CAPS])
 assert caps.endswith(b'\n') and caps.count(b'\n')==1,caps
-assert set(caps.split())=={b'playlist',b'progress',b'pages',b'library',b'goto',b'sleep',b'game',b'audio',b'sections',b'art',b'window',b'urls',b'sort'},caps
+assert set(caps.split())=={b'playlist',b'progress',b'pages',b'library',b'goto',b'sleep',b'game',b'audio',b'sections',b'art',b'window',b'urls',b'sort',b'field',b'more',b'fav',b'now'},caps
 m.files[CAPS]=bytearray(b'stale\n'); stream_rows(m); assert m.files[CAPS]==caps; passed()
 # Classic, Home's Split: the Streaming row slides Streaming's rows in, as the Library's: the page's own constructor fills the
 # list, what it sets on a window goes again, every row (stock's 70 px Tidal row and the added ones) takes Home's width and height,
@@ -16665,8 +16833,10 @@ for i,(icon,text) in enumerate(zip(want,['TIDAL','Spotify','A long name for a ca
         assert again[:2]==([],draws)  # the scaled copy alone: nothing loaded
         src=bytes(m.u.mem_read(m.pixels[icon],40*40*4)); out=bytes(m.u.mem_read(m.get(frames[0]+0x14),96*96*4))
         at=lambda x,y: src[(y*40+x)*4:(y*40+x)*4+4]
+        def sharp(f):  # pane_scaled's: the blend steepened by the 40 -> 96 stretch (191a3276), C's division towards 0
+            d=f-128; q=abs(d)*96//40; return min(max((q if d>=0 else -q)+128,0),256)
         for x,y in ((0,0),(95,95),(48,17),(13,70)):
-            sx,sy=max((2*x+1)*40*128//96-128,0),max((2*y+1)*40*128//96-128,0); x0,y0,fx,fy=sx>>8,sy>>8,sx&255,sy&255; x1,y1=min(x0+1,39),min(y0+1,39)
+            sx,sy=max((2*x+1)*40*128//96-128,0),max((2*y+1)*40*128//96-128,0); x0,y0,fx,fy=sx>>8,sy>>8,sharp(sx&255),sharp(sy&255); x1,y1=min(x0+1,39),min(y0+1,39)
             near=[(at(x0,y0),(256-fx)*(256-fy)),(at(x1,y0),fx*(256-fy)),(at(x0,y1),(256-fx)*fy),(at(x1,y1),fx*fy)]
             a=sum(p[3]*k for p,k in near); want_px=bytes(sum(p[c]*p[3]*k for p,k in near)//a if a else 0 for c in range(3))+bytes([a>>16])
             assert out[(y*96+x)*4:(y*96+x)*4+4]==want_px,(x,y,out[(y*96+x)*4:(y*96+x)*4+4],want_px)
@@ -16736,6 +16906,7 @@ m=AppMachine(); card_app(m,'fidget','name=Buddy\ngame=1\n'); assert 'Buddy' not 
 def fn(name,*args): return m.call(address=payload_syms[name],args=(args+(0,0,0,0))[:4],gap=0,clear=False,count=5_000_000)
 assert fn('addon_games')==1 and m.text(fn('addon_game_name',0))=='Buddy' and fn('addon_game_on')==0
 m.forked=0; m.execs=[]; fn('addon_game_start',0); assert m.execs[-1][:2]==('/mnt/mmc/.fidget/q2-fidget',)*2  # the child
+assert m.env[0]=='Q2_POPUP' and m.env[1].split()[0] in ('minimal','modern','classic') and m.env[2]==1  # the theme's pop-up, set before its exec
 m.forked=4243; assert fn('addon_game_start',0)==1 and fn('addon_game_on')==4243 and m.get(payload_syms['wheel_raw'])==1
 inp=HOOKS['window_manager_dispatch_input_event'][0]; m.handlers[inp+12]='stock_input'; GS='/tmp/q2-fidget.input.sock'
 def game_event(kind,key=0,x=0,y=0,stock=False):
@@ -17824,6 +17995,19 @@ assert track(3)==(0,['stock_tidaltrack','sem_post']) and not m.threads; passed()
 m.files[URLS]=bytearray(b'#Q2URLS/1\nhttps://jf/d.flac\tThree\n'); m.call(address=payload_syms['app_urls_play'],args=(m.string(URLS),0,0,0),gap=0)
 assert [p[2:4] for p in m.plays][-1]==(0,0xf1) and field(m.play_recs[0],'REC_TIDAL_ID')=='app:2:0'
 assert track(0)==(1,['one:net','tidal_playurl','mclStop']) and not m.threads; passed()
+# A queue whose header says now=1 tells its app which song plays (app_urls_at, for addon.c's .now): the n of the
+# record at MCL_POS in the latest such 0xf1 queue; none (-1) for an older queue's song, a Tidal track, another
+# queue class, or a queue that didn't ask.
+NONE=0xffffffff; mtype=m.get(O['MCL_TYPE'])
+m.files[URLS]=bytearray(b'#Q2URLS/1\tstart=0\tnow=1\nhttps://jf/d.flac\tThree\nhttps://jf/e.flac\tFour\n')
+assert m.call(address=payload_syms['app_urls_play'],args=(m.string(URLS),0,0,0),gap=0)==1
+m.word(syms['mcl_pdeqplaylist'],m.deque([*m.play_recs,urecs[0],tidal_rec])); m.word(O['MCL_TYPE'],0xf1)
+def now_at(pos): m.word(O['MCL_POS'],pos); return m.call(address=payload_syms['app_urls_at'],args=(0,0,0,0),gap=0)&NONE
+assert [now_at(p) for p in range(4)]==[0,1,NONE,NONE]
+m.word(O['MCL_TYPE'],0xf001); assert now_at(1)==NONE; m.word(O['MCL_TYPE'],0xf1)
+m.files[URLS]=bytearray(b'#Q2URLS/1\nhttps://jf/d.flac\tThree\n'); m.call(address=payload_syms['app_urls_play'],args=(m.string(URLS),0,0,0),gap=0)
+m.word(syms['mcl_pdeqplaylist'],m.deque(m.play_recs)); assert now_at(0)==NONE
+m.word(O['MCL_TYPE'],mtype); passed()
 # Not a queue (no #Q2URLS/1 first), or no song in it: nothing plays.
 n=len(m.plays)
 for body in (b'https://jf/d.flac\tThree\n',b'#Q2URLS/1\tstart=0\n',b''):
@@ -17840,6 +18024,16 @@ assert [p[2:4] for p in m.plays][n:]==[(1,0xf1)] and [field(e,'REC_TITLE') for e
 m.handlers[syms['player_set_coverinfo']]='player_set_coverinfo'
 def cover(r): m.calls=[]; m.call(address=payload_syms['app_coverinfo'],args=(m.string('c'),m.string('n'),4,r),gap=0,clear=False); return [c[3] for c in m.calls if c[0]=='player_set_coverinfo']
 assert cover(urecs[0])==[2] and cover(tidal_rec)==[4] and cover(0)==[4]; passed()
+# A line's item and heart (its 7th and 8th fields; tidal.c app_fav): the song's start sets stock's isFav_playing, which
+# Now Playing's update (0x53d178) draws for a 0xf1 track; a song whose line named no item has none (0). Stock sets
+# the flag only when a Tidal page checks its favourites, so a queue loading clears an app song's (app_fav_load).
+m.files[URLS]=bytearray(b'#Q2URLS/1\nhttps://jf/e.flac\tFive\t\t\t\t\tid-e\t1\nhttps://jf/f.flac\tSix\n')
+assert m.call(address=payload_syms['app_urls_play'],args=(m.string(URLS),0,0,0),gap=0)==1
+m.word(syms['mcl_pdeqplaylist'],m.deque(m.play_recs)); m.byte(syms['isFav_playing'],0)
+assert track(0)[0]==1 and m.u.mem_read(syms['isFav_playing'],1)[0]==1
+assert track(1)[0]==1 and m.u.mem_read(syms['isFav_playing'],1)[0]==0
+assert track(0)[0]==1 and m.u.mem_read(syms['isFav_playing'],1)[0]==1
+m.call(address=payload_syms['app_fav_load'],args=(0,0,0,0),gap=0); assert m.u.mem_read(syms['isFav_playing'],1)[0]==0; passed()
 # Library update (addon_library.c library_poll): the app's /tmp/q2-<id>.library, "<seq>" then scan and import lines,
 # runs stock's Update Local Music (its dialog, which stops the player: not while one plays, nor while one is paused
 # with the screen on), then stock's playlist import (which replaces a same-named playlist) for the listed files
@@ -18172,12 +18366,17 @@ assert 'fwupdate_tf' not in [c[0] for c in m.calls]; passed()
 SPOT_TAG,SPOT_FILES='/mnt/mmc/.q2/apps/spotify.tag','/mnt/mmc/.q2/apps/spotify.files'
 class ShelfMachine(RadioMachine):
     """RadioMachine with busybox's side scripted: unzip -l prints listing, unzip -o stages staged
-    ((path, bytes), in find's order), find lists them; statfs has free bytes; renames kept in order."""
+    ((path, bytes), in find's order), find lists them; statfs has free bytes; renames kept in order;
+    listed, once set, answers every sources.list fetch (an install's first) in reply's place."""
     def __init__(self,files=None):
-        super().__init__(files); self.free=1<<32; self.moves=[]; self.listing=''; self.staged=[]
+        super().__init__(files); self.free=1<<32; self.moves=[]; self.listing=''; self.staged=[]; self.listed=None
         self.mock('rmdir@GLIBC_2.0')
     def hook(self,u,address,size,unused):
         name=self.handlers.get(address,'')
+        if name=='r:curl_easy_perform' and self.listed is not None and self.opts.get(10002,'').endswith('/sources.list'):
+            reply,self.reply=self.reply,self.listed
+            try: return super().hook(u,address,size,unused)
+            finally: self.reply=reply
         if name=='c:statfs@GLIBC_2.0':
             b=u.reg_read(UC_MIPS_REG_A1); self.word(b+4,4096); self.word(b+28,self.free>>12); self.returns(0,clobber=True); return
         if name=='b:rename@GLIBC_2.0': self.moves.append(self.text(u.reg_read(UC_MIPS_REG_A1)))
@@ -18202,20 +18401,21 @@ m=ShelfMachine({LIST:bytearray((ROOT/'sources.list').read_bytes()),SPOT_TAG:byte
                 '/proc/mounts':bytearray(b'/dev/mmcblk0p1 /mnt/mmc vfat rw 0 0\n')})  # the card, for card_mounted before a remove
 m.rockbox_mode=0; m.wifi=-1; apps_open(m)
 BLANK=m.labels()[2]; assert BLANK in ('',' ')  # Check for Updates' blank detail: ' ' under a theme's separators
-assert m.labels()==['App Store','Check for Updates',BLANK,'Rockbox','Install','Spotify','Installed','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Podcasts','Install','Live Music Archive','Install','Buddy','Install','Groovebox','Install'] and not m.threads; passed()  # no themes without Rockbox; the card apps last
+assert m.labels()==['App Store','Check for Updates',BLANK,'Rockbox','Install','Spotify','Installed','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Podcasts','Install','Live Music Archive','Install','Buddy','Install','Groovebox','Install','AirPlay','Install'] and not m.threads; passed()  # no themes without Rockbox; the card apps last
 m.close(); m.wifi=3; m.rockbox_mode=0o100755; m.dirs['/mnt/mmc/.spotify']=[]; apps_open(m)
-assert m.labels()==['App Store','Check for Updates','Checking…','Rockbox','Update','Rockbox Themes','Install','Spotify','Installed','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Podcasts','Install','Live Music Archive','Install','Buddy','Install','Groovebox','Install']
+assert m.labels()==['App Store','Check for Updates','Checking…','Rockbox','Update','Rockbox Themes','Install','Spotify','Installed','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Podcasts','Install','Live Music Archive','Install','Buddy','Install','Groovebox','Install','AirPlay','Install']
 m.reply=(ROOT/'test/shelf/q2-librespot.json').read_bytes(); shelf_job(m)
-assert m.opts[10002]=='https://api.github.com/repos/DiamondBond/q2-groovebox/releases/latest' and m.opts[10018]=='Q2Pod'  # the last of eleven
+assert m.opts[10002]=='https://api.github.com/repos/group-a-study/q2-airplay/releases/latest' and m.opts[10018]=='Q2Pod'  # the last of twelve
 assert m.opts[10065]=='/etc/scrobble-ca.pem' and m.opts[64]==1 and m.opts[81]==2 and m.opts[20108]
 assert m.labels()[8]=='Update' and m.labels()[2]==BLANK and '/tmp/q2-shelf.json' not in m.files  # q2-v1.8 against the latest q2-v1.9
 assert m.toasts[-1][3]=='1 app can be updated'; passed()  # the opening check's end, the page on top
 m.row(0); assert m.toasts[-1][3]=='1 app can be updated' and len(m.threads)==1; passed()  # within SH_RECHECK_MS: no requests
 toasts=len(m.toasts); m.close(); m.now+=9*60*1000; apps_open(m); assert len(m.threads)==1 and m.labels()[8]=='Update' and len(m.toasts)==toasts; passed()  # still fresh: no requests
+m.listed=(ROOT/'sources.list').read_bytes()  # an install fetches the list first
 m.row(3); assert m.labels()[8]=='Checking…' and len(m.threads)==2 and KILL in m.systems[-1]; m.row(3); assert m.labels()[8]=='Cancelling…'
 shelf_job(m); assert m.toasts[-1][3]=='Download cancelled' and m.labels()[8]=='Update'; passed()
 m.wifi=-1; m.row(3); assert m.toasts[-1][3]=='Connect to Wi-Fi first' and len(m.threads)==2; m.wifi=3; passed()
-m.codes=[403]; m.row(3); shelf_job(m); assert m.toasts[-1][3]=='GitHub is busy, try later'; passed()  # the API's rate limit
+m.codes=[200,403]; m.row(3); shelf_job(m); assert m.toasts[-1][3]=='GitHub is busy, try later'; passed()  # the list, then the API's rate limit
 m.files[SPOT_TAG]=bytearray(b'q2-v1.9'); m.close(); m.wifi=-1; apps_open(m); assert m.labels()[8]=='Installed' and len(m.threads)==3
 m.row(3); assert m.labels()[8]=='Press again to remove' and len(m.threads)==3
 m.row(1); assert m.labels()[8]=='Installed' and m.toasts[-1][3]=='Connect to Wi-Fi first'  # another row's press drops it
@@ -18227,7 +18427,7 @@ m.close(); m.wifi=3; m.now+=11*60*1000; apps_open(m); assert len(m.threads)==5
 m.row(2); assert m.toasts[-1][3]=='Stopped checking for updates'; shelf_job(m); assert len(m.threads)==5 and m.toasts[-1][3]=='Stopped checking for updates'; passed()
 m.close(); m.rockbox_mode=0; m.dirs.pop('/mnt/mmc/.spotify'); m.reply=(ROOT/'test/shelf/q2-rockbox.json').read_bytes()
 toasts=len(m.toasts); apps_open(m); shelf_job(m); assert len(m.toasts)==toasts  # the opening check: nothing to update, nothing said
-assert m.labels()==['App Store','Check for Updates',BLANK,'Rockbox','Install','Spotify','Install','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Podcasts','Install','Live Music Archive','Install','Buddy','Install','Groovebox','Install']  # not stopped: checked again
+assert m.labels()==['App Store','Check for Updates',BLANK,'Rockbox','Install','Spotify','Install','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Podcasts','Install','Live Music Archive','Install','Buddy','Install','Groovebox','Install','AirPlay','Install']  # not stopped: checked again
 m.row(1); assert m.labels()[4]=='Starts at power-on; Boot to changes that. Press again to install' and len(m.threads)==6
 m.row(1); assert len(m.threads)==7 and m.labels()[4]=='Checking…'; m.row(1); shelf_job(m); assert m.toasts[-1][3]=='Download cancelled'
 m.free=10<<20; m.row(1); m.row(1); shelf_job(m)  # the zip (13018581 bytes) and 64 MB left over
@@ -18241,7 +18441,7 @@ assert m.moves[-2:]==['/mnt/mmc/.q2/apps/rockbox.files','/mnt/mmc/.q2/apps/rockb
 assert m.files['/mnt/mmc/.rockbox/rockbox']==b'ELF3.2' and m.files['/mnt/mmc/.rockbox/fonts/a b.fnt']==b'f'
 assert m.files['/mnt/mmc/.q2/apps/rockbox.files']==b'.rockbox/rockbox\n.rockbox/codecs/flac.codec\n.rockbox/fonts/a b.fnt\n'
 assert not [f for f in m.files if '.q2/staging' in f] and 'sync' in m.systems; passed()
-assert m.labels()==['App Store','Check for Updates',BLANK,'Rockbox','Installed','Rockbox Themes','Install','Spotify','Install','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Podcasts','Install','Live Music Archive','Install','Buddy','Install','Groovebox','Install']; passed()  # the rows built again
+assert m.labels()==['App Store','Check for Updates',BLANK,'Rockbox','Installed','Rockbox Themes','Install','Spotify','Install','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Podcasts','Install','Live Music Archive','Install','Buddy','Install','Groovebox','Install','AirPlay','Install']; passed()  # the rows built again
 m.listing='        1  10-06-2026 13:18   .rockbox/../../x\n'; m.files.pop('/mnt/mmc/.q2/apps/rockbox.tag'); m.row(1); shelf_job(m)
 assert m.toasts[-1][3]=='The download is not a usable app' and m.files['/mnt/mmc/.rockbox/rockbox']==b'ELF3.2'; passed()
 m.close(); passed()
@@ -18607,15 +18807,15 @@ def switch_image(m,row):
     images=[c for c in m.nodes[button]['children'] if m.nodes[c].get('name')=='_setting_switch']
     assert len(images)==1
     return m.nodes[images[0]]['image']
-assert all(switch_image(m,rows[i])=='switch_off' for i in (1,2,3))
-assert len(rows)==5 and icons==['system_powermanager','usb_chargeswitch','wifiset_wifi','system_carmode','system_powermanager'] and all(m.nodes[r]['style']=='s_listitem_black' for r in rows)
-assert texts()==['Standby Limit: Off','Charge Limit (80%)','Smart Wi-Fi','system_carmode','Boot to: Rockbox']
+assert all(switch_image(m,rows[i])=='switch_off' for i in (1,2,3,4))
+assert len(rows)==7 and icons==['system_powermanager','usb_chargeswitch','usb_chargeswitch','wifiset_wifi','system_carmode','system_powermanager','system_powermanager'] and all(m.nodes[r]['style']=='s_listitem_black' for r in rows)
+assert texts()==['Standby Limit: Off','Charge Limit (80%)','USB DAC Charging','Smart Wi-Fi','system_carmode','Battery History','Boot to: Rockbox']
 assert click(1)==[(1,'Q2POD','CHARGELIMIT')] and texts()[1]==f"Charge Limit ({O['CHARGE_STOP']}%)"
-assert click(1)==[(0,'Q2POD','CHARGELIMIT')] and texts()==['Standby Limit: Off','Charge Limit (80%)','Smart Wi-Fi','system_carmode','Boot to: Rockbox']; passed()
+assert click(1)==[(0,'Q2POD','CHARGELIMIT')] and texts()==['Standby Limit: Off','Charge Limit (80%)','USB DAC Charging','Smart Wi-Fi','system_carmode','Battery History','Boot to: Rockbox']; passed()
 # In-Vehicle Mode, System's stock row before (0x4d34c0): its byte, its key, and the state byte cleared.
 m.byte(syms['g_carmode_state'],1)
-assert click(3)==[(1,'SYSSET','CARMODE')] and m.u.mem_read(syms['g_carmode'],1)==b'\1' and m.u.mem_read(syms['g_carmode_state'],1)==b'\0' and switch_image(m,rows[3])=='switch_on'
-assert click(3)==[(0,'SYSSET','CARMODE')] and m.u.mem_read(syms['g_carmode'],1)==b'\0' and switch_image(m,rows[3])=='switch_off'; passed()
+assert click(4)==[(1,'SYSSET','CARMODE')] and m.u.mem_read(syms['g_carmode'],1)==b'\1' and m.u.mem_read(syms['g_carmode_state'],1)==b'\0' and switch_image(m,rows[4])=='switch_on'
+assert click(4)==[(0,'SYSSET','CARMODE')] and m.u.mem_read(syms['g_carmode'],1)==b'\0' and switch_image(m,rows[4])=='switch_off'; passed()
 # Standby limit (its alarm with the power poll's tests): each click steps to the next limit, then Off.
 limits=[f"Standby Limit: {O[f'STANDBY_LIMIT_{i}']} h" for i in (1,2,3)]
 for v,want in ((1,limits[0]),(2,limits[1]),(3,limits[2]),(0,'Standby Limit: Off')):
@@ -18629,17 +18829,32 @@ assert icons==['system_display','playset_folderjump','playset_covermode','system
 guard=lambda: m.get(payload_syms['wheel_guard'])
 assert guard()==0 and click(7)==[(1,'Q2POD','VOLGUARD')] and texts()[7]=='Volume Guard' and guard()==1
 assert click(7)==[(0,'Q2POD','VOLGUARD')] and texts()[7]=='Volume Guard' and guard()==0; passed()
-# Large Library Mode (Display, Cover Flow's page, its last row): off by default; the row saves BIGLIBRARY, and Cover
+# Fast Navigation (Display, Cover Flow's page, its last row): off by default; the row saves BIGLIBRARY, and Cover
 # Flow reads it at once (ringnav_big_library: letters, years and half copies); a stored value other than 1 is off.
 bm,brows,btexts,bicons,bclick=settings_page('display','scroll_view_display',stock_rows=3,sub=2)
-assert btexts()[-1]=='Large Library Mode' and bicons[-1]=='playset_covermode',(btexts(),bicons)
+assert btexts()[-3]=='Fast Navigation' and bicons[-3]=='playset_covermode',(btexts(),bicons)
 big=lambda bm: bm.call(address=payload_syms['ringnav_big_library'],args=(0,0,0,0),gap=0)
-k=len(brows)-1
-assert big(bm)==0 and bclick(k)==[(1,'Q2POD','BIGLIBRARY')] and btexts()[k]=='Large Library Mode' and big(bm)==1
-assert bclick(k)==[(0,'Q2POD','BIGLIBRARY')] and btexts()[k]=='Large Library Mode' and big(bm)==0; passed()
+k=len(brows)-3
+assert big(bm)==0 and bclick(k)==[(1,'Q2POD','BIGLIBRARY')] and btexts()[k]=='Fast Navigation' and big(bm)==1
+assert bclick(k)==[(0,'Q2POD','BIGLIBRARY')] and btexts()[k]=='Fast Navigation' and big(bm)==0; passed()
 for v,on in (('1',1),('2',0),('0',0)):
     bm,*_=settings_page('display','scroll_view_display',{'BIGLIBRARY':v},stock_rows=3,sub=2)
     assert big(bm)==on,v
+passed()
+# The independent duration switch is off, persists on/off, and cancels on off.
+dm,drows,dtexts,dicons,dclick=settings_page('display','scroll_view_display',stock_rows=3,sub=2)
+assert dtexts()[-2]=='Scan Song Durations'
+assert dclick(len(drows)-2)==[(1,'Q2POD','SCANDURATIONS')]
+assert dclick(len(drows)-2)==[(0,'Q2POD','SCANDURATIONS')]; passed()
+# The browsing-position indicator is optional, off by default, and persists independently.
+pm,prows,ptexts,picons,pclick=settings_page('display','scroll_view_display',stock_rows=3,sub=2)
+assert ptexts()[-1]=='Position Bar'
+position_on=lambda pm: pm.call(address=payload_syms['coverflow_position_enabled'],args=(0,0,0,0),gap=0)
+assert position_on(pm)==0 and pclick(len(prows)-1)==[(1,'Q2POD','CFPOSITION')] and position_on(pm)==1
+assert pclick(len(prows)-1)==[(0,'Q2POD','CFPOSITION')] and position_on(pm)==0
+for v,on in (('1',1),('2',0),('0',0)):
+    pm,*_=settings_page('display','scroll_view_display',{'CFPOSITION':v},stock_rows=3,sub=2)
+    assert position_on(pm)==on,v
 passed()
 # Buttons Lock opens stock's page, as its row on System did. Key Tone, System's stock row before
 # (0x4cc49c): its byte and key; Click With Headphones shows while it is on, and saves IPOD KEYTONEHP.
@@ -18978,7 +19193,7 @@ for double in ('0','1'):
     assert not press(DOWN,0) and not press(UP,50) and press(DOWN,O['WAKE_MS']) and press(UP,50),double
 passed()
 m,rows,texts,*_=settings_page('power','scroll_view_powermanager',{'CHARGELIMIT':'1','WAKEDOUBLE':'1','VOLGUARD':'1','STANDBYLIMIT':'2'})
-assert texts()==[limits[1],f"Charge Limit ({O['CHARGE_STOP']}%)",'Smart Wi-Fi','system_carmode','Boot to: Rockbox']
+assert texts()==[limits[1],f"Charge Limit ({O['CHARGE_STOP']}%)",'USB DAC Charging','Smart Wi-Fi','system_carmode','Battery History','Boot to: Rockbox']
 m,rows,texts,*_=settings_page('display','scroll_view_display',{'WAKEDOUBLE':'1','VOLGUARD':'1'},stock_rows=3,sub=3)
 assert texts()[6:]==['Wake: Double Press','Volume Guard']
 assert m.get(payload_syms['wheel_guard'])==1; passed()
@@ -19264,8 +19479,8 @@ for config,text in (({},'30 min'),({'RESUMEMIN':'0'},'Off'),({'RESUMEMIN':'120'}
     assert texts()[1]=='Resume Songs: '+text and m.nodes[m.nodes[m.nodes[rows[1]]['children'][0]]['children'][1]].get('name')=='label_resumemin',config
 passed()
 # Wheel sensitivity (playback.c wheel_pct, test/playback.py's travel): Display → Controls' last row in both
-# builds, Q2POD WHEELSENSITIVITY as 1.0.6 saved it, 50% unless a canonical ten in 50-200.
-for config,pct in (({},50),({'WHEELSENSITIVITY':'130'},130),({'WHEELSENSITIVITY':'200'},200),({'WHEELSENSITIVITY':'40'},50),
+# builds, Q2POD WHEELSENSITIVITY as 1.0.6 saved it, 50% unless a canonical ten in 10-200.
+for config,pct in (({},50),({'WHEELSENSITIVITY':'130'},130),({'WHEELSENSITIVITY':'200'},200),({'WHEELSENSITIVITY':'40'},40),({'WHEELSENSITIVITY':'0'},50),
                    ({'WHEELSENSITIVITY':'135'},50),({'WHEELSENSITIVITY':'210'},50),({'WHEELSENSITIVITY':'x'},50)):
     m,rows,texts,icons,click=settings_page('display','scroll_view_display',config,stock_rows=3,sub=3)
     label=m.nodes[m.nodes[rows[0]]['children'][0]]['children'][1]
@@ -19299,9 +19514,10 @@ def turn(key=O['KEY_NEXT']):
     assert m.call(key)==11; return [(c[1],m.text(c[2]),m.text(c[3])) for c in m.calls if c[0]=='write_int_config']
 W='Q2POD','WHEELSENSITIVITY'
 assert turn()==[(60,*W)] and m.nodes[m.vol]['text']=='60%' and texts()[0]=='Wheel Sensitivity: 60%'
-assert turn(O['KEY_PREV'])==[(50,*W)] and m.nodes[m.vol]['text']=='50%' and turn(O['KEY_PREV'])==[]  # 50% is the bottom
+assert turn(O['KEY_PREV'])==[(50,*W)] and m.nodes[m.vol]['text']=='50%' and turn(O['KEY_PREV'])==[(40,*W)] and turn()==[(50,*W)]  # 50% is the default, not the bottom
 assert press(m.add)==[(60,*W)] and m.nodes[m.vol]['text']=='60%' and texts()[0]=='Wheel Sensitivity: 60%'
-assert press(m.dec)==[(50,*W)] and press(m.dec)==[] and texts()[0]=='Wheel Sensitivity: 50%'
+assert press(m.dec)==[(50,*W)] and texts()[0]=='Wheel Sensitivity: 50%'
+m.nodes[m.slider]['value']=3; assert press(m.slider,O['EVT_VALUE_CHANGED'])==[(10,*W)] and m.nodes[m.vol]['text']=='10%' and press(m.dec)==[] and turn(O['KEY_PREV'])==[]  # 10% is the bottom
 m.nodes[m.slider]['value']=127; assert press(m.slider,O['EVT_VALUE_CHANGED'])==[(130,*W)] and m.nodes[m.vol]['text']=='130%'
 m.nodes[m.slider]['value']=300; assert press(m.slider,O['EVT_VALUE_CHANGING'])==[] and m.nodes[m.vol]['text']=='200%'
 assert press(m.slider,O['EVT_VALUE_CHANGED'])==[(200,*W)] and press(m.add)==[] and turn()==[]
@@ -20226,10 +20442,10 @@ assert [(c[1],m.text(c[2]),m.text(c[3])) for c in m.calls if c[0]=='write_int_co
 # The row, after Charge Limit: off by default and saved as SMARTWIFI. Turned off while Smart Wi-Fi has
 # the radio off, the user's Wi-Fi comes back, unsaved, and is left alone.
 m,rows,texts,icons,click=settings_page('power','scroll_view_powermanager',cls=SmartMachine,config={'SMARTWIFI':'0'})
-assert texts()==['Standby Limit: Off','Charge Limit (80%)','Smart Wi-Fi','system_carmode','Boot to: Rockbox'] and icons[2]=='wifiset_wifi'
-assert switch_image(m,rows[2])=='switch_off' and click(2)==[(1,'Q2POD','SMARTWIFI')] and switch_image(m,rows[2])=='switch_on'
+assert texts()==['Standby Limit: Off','Charge Limit (80%)','USB DAC Charging','Smart Wi-Fi','system_carmode','Battery History','Boot to: Rockbox'] and icons[3]=='wifiset_wifi'
+assert switch_image(m,rows[3])=='switch_off' and click(3)==[(1,'Q2POD','SMARTWIFI')] and switch_image(m,rows[3])=='switch_on'
 m.pass_(1); m.pass_(SW_IDLE); assert m.flag()==0
-assert click(2)==[(0,'Q2POD','SMARTWIFI')] and switch_image(m,rows[2])=='switch_off'
+assert click(3)==[(0,'Q2POD','SMARTWIFI')] and switch_image(m,rows[3])=='switch_off'
 m.pass_(SW_POLL); assert m.switch()==['networkStart'] and m.flag()==1
 m.pass_(SW_IDLE); m.pass_(SW_IDLE); assert not m.switch(); passed()
 # The user's own off: saved, and Smart Wi-Fi never brings it back.
@@ -20461,7 +20677,7 @@ deezer=(m.labels().index('Deezer')-1)//2; m.row(deezer); assert m.toasts[-1][3]=
 m.advance(500); m.link=1; m.row(deezer); assert m.toasts[-1][3]==SW_WAIT and not m.threads
 m.advance(500,clear=False); assert len(m.threads)==1 and m.labels()[2*deezer+2]=='Checking…'; passed()
 class SmartAlbumLyrics(SmartMixin,AlbumLyricsMachine): pass
-m=SmartAlbumLyrics(); button=m.nodes[m.more()[3]]['children'][0]; label=m.nodes[button]['children'][1]
+m=SmartAlbumLyrics(); button=m.nodes[m.more()[4]]['children'][0]; label=m.nodes[button]['children'][1]
 m.found=[m.song('T1'),m.song('T2')]
 for ms in (1,SW_IDLE):  # power_poll's: its settings, then Smart Wi-Fi's
     m.now+=ms; m.call(address=payload_syms['pod_settings'],args=(0,0,0,0),gap=0); m.call(address=payload_syms['smart_poll'],args=(0,0,0,0),gap=0)
@@ -20612,10 +20828,10 @@ def boot_row(value=None,mode=0o100755):
     assert m.calls[0][:3]==('stock_power',m.top,5)
     kids=m.nodes[view]['children']
     if mode!=0o100755:  # no Boot to
-        assert len(kids)==6
+        assert len(kids)==8  # stock's two, then Standby Limit, Charge Limit, USB DAC Charging, Smart Wi-Fi, In-Vehicle and Battery History
         return m,None,None
-    assert len(kids)==7
-    button=m.nodes[kids[6]]['children'][0]
+    assert len(kids)==9
+    button=m.nodes[kids[8]]['children'][0]
     label=m.nodes[button]['children'][1]
     return m,button,label
 def toggle_boot(m,button):
@@ -20644,9 +20860,9 @@ assert m.nodes[label]['text']=='Boot to: Rockbox' and '/mnt/data/boot-target' no
 # Wheel centre reaches Boot to through the existing selection/dispatch path.
 m,button,label=boot_row(); view=m.nodes[m.top]['children'][0]; view=m.nodes[view]['children'][0]
 m.paint(view)
-for _ in range(6): m.call()
+for _ in range(8): m.call()  # stock's two, our six, then Boot to
 assert m.confirm()==11 and m.dispatched()[0][1]==button; passed()
-# System settings: stock V1.36's nine rows, its Wheel Function, In-Vehicle, General and System hidden, which the wheel
+# System settings: stock V1.36's nine rows, its Language (English only for now), Wheel Function, In-Vehicle, General and System hidden, which the wheel
 # skips; App Store and Controls added, and the four rows stock moved to its System page, opening stock's pages, so the
 # list reads as it did. Boot to is Power's now.
 for mode in (0o100755,0):
@@ -20657,8 +20873,8 @@ for mode in (0o100755,0):
     m.top=m.node('window','sysset_page',[m.node('list_view','list_view_sysset',[view])])
     assert m.call(address=HOOKS['systemset_sysset_page_init'][0],args=(m.top,5,0,0),gap=0)==0
     kids=m.nodes[view]['children']; assert len(kids)==15
-    assert [kids.index(e) for e in entries]==[6,0,1,2,4,10,11,12,13]  # Language after Date and Time; the hidden four before About
-    assert [m.nodes[e]['visible'] for e in entries]==[1,1,1,1,1,0,0,0,0]
+    assert [kids.index(e) for e in entries]==[6,0,1,2,4,10,11,12,13]  # Language, hidden, after Date and Time; the hidden four before About
+    assert [m.nodes[e]['visible'] for e in entries]==[0,1,1,1,1,0,0,0,0]
     controls,date,apps,update,reset,about=(m.nodes[kids[i]]['children'][0] for i in (3,5,7,8,9,14))
     assert m.nodes[m.nodes[apps]['children'][1]]['text']=='App Store' and m.handler(apps,O['EVT_CLICK'])[0]==payload_syms['shelf_open']
     assert m.nodes[m.nodes[controls]['children'][1]]['text']=='Controls'

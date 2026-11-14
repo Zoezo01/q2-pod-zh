@@ -10,7 +10,8 @@ Code: the two .text streams are aligned between exported symbols on words whose 
 a function the alignment lost is aligned again from where the calls to it went.
 Data: each aligned lui or GOT load and the low half after it vote for where the address they form went.
 The stock ZIPs are untrusted and Shanling's: run this with python3 -I. It extracts under a fresh directory
-outside the repo, and writes nothing of theirs into the repo but addresses, instruction words and hashes.
+outside the repo, and writes nothing of theirs into the repo but addresses, instruction words, hashes and
+(checked) names.
 """
 import argparse, bisect, collections, difflib, gzip, hashlib, io, pathlib, re, struct, subprocess, sys, tarfile, tempfile, zipfile
 
@@ -702,6 +703,9 @@ class Stock:
             files = ((m.name, t.extractfile(m)) for m in t.getmembers())
             self.blobs = {name: f.read() for name, f in files if f}
         self.version = self.blobs['firmware_v20.info'].decode().splitlines()[1]
+        # ponytail: a real stock ZIP named otherwise (a 'V1.36b' version, a '(final)' folder) is refused until these patterns are widened
+        check(re.fullmatch(r'V[0-9]+(?:\.[0-9]+)+', self.version), f'{zip_path}: version {self.version!r} is no stock version (as V1.36 is)')
+        check(re.fullmatch(r'[A-Za-z0-9 ._-]+/update\.tar', self.member), f'{zip_path}: folder {self.member!r} is no update.tar in a plainly named folder')
         self.dir = pathlib.Path(tempfile.mkdtemp(prefix=self.sha[:12] + '-', dir=work))
         self.squashfs = self.dir/'rootfs.squashfs'
         self.squashfs.write_bytes(self.blobs['recovery-update/rootfs.squashfs'])

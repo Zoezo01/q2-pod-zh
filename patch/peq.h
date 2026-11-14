@@ -170,6 +170,51 @@ unsigned long long now_ms(void);
  * it read-only (video.c keeps its own copy of the path). */
 #define MONO_FILE PEQ_ROOT "/tmp/q2mono"
 #define SWAP_FILE PEQ_ROOT "/tmp/q2swap"
+/* AirPlay (docs/internals.md#airplay-sender): the q2-airplay card app makes CAST_FILE, a cast_tap, whole
+ * under another name and renames it, and keeps it. While the app reads (want, its CAST_CLOCK, less than
+ * CAST_STALE old) hciplayer's filter puts what plays into ring[seq % CAST_RING] at CAST_RATE, 16-bit,
+ * then sets id, pts_ms and stamp, then seq; mute set, it also skips the EQ and silences the Q2's own
+ * output. A seek or a skip (not a song running into the next) sets jump_seq, then bumps jumps. demo
+ * writes its part each pass and the playing song's tags to CAST_TRACK; it reads the app's state and the
+ * speaker's place in the song, for the lyrics. The app (q2-airplay's tap.go) mirrors this layout. */
+#define CAST_FILE PEQ_ROOT "/tmp/q2cast"
+#define CAST_TRACK PEQ_ROOT "/tmp/q2cast.track"
+#define CAST_MAGIC 0x31544351u /* "QCT1" */
+#define CAST_RATE 44100
+#define CAST_RING 262144 /* a power of two: 5.9 s at CAST_RATE */
+#define CAST_CLOCK(ns) ((unsigned)((unsigned long long)(ns) >> 20)) /* 1.048576 ms ticks: no division */
+#define CAST_STALE 1430  /* 1.5 s of ticks: demo lets go first */
+#define CAST_STALE_PLAYER 1900 /* 2 s: then the filter, its output 500 ms behind in ALSA's buffer */
+enum { CAST_OFF, CAST_CONNECTING, CAST_ON };
+typedef struct {
+    unsigned magic, size;
+    /* the app's */
+    unsigned want;   /* CAST_CLOCK while it reads */
+    int mute;        /* the Q2's own output silent, its EQ skipped */
+    int state;       /* CAST_*, for demo */
+    int pos_ms;      /* the speaker's place in the song of filter instance pos_id, at pos_at (CAST_CLOCK) */
+    unsigned pos_id, pos_at;
+    int pos_run;     /* 1 while it plays on from there */
+    char speaker[64];
+    /* the filter's */
+    unsigned seq;    /* frames written */
+    unsigned id;     /* the filter instance (one a song) of the frame before seq */
+    int pts_ms;      /* that frame's place in its song */
+    unsigned jumps, jump_seq;
+    int dsd;         /* the song plays through untouched (DSD, DoP): nothing to send */
+    int spk;         /* the app's: the speaker's volume (0-100), as it said or the Q2 last set it */
+    long long stamp; /* CLOCK_MONOTONIC ns of the last write */
+    /* demo's */
+    unsigned beat;   /* bumped each pass */
+    int status;      /* mclGetPlayStatus: 1 stopped, 2 playing, 3 paused */
+    int volume, maxvol; /* volume: the speaker's (0-100) while one plays, else -1 (also the filter's
+                         * mute until demo has the earphones' level back) */
+    unsigned track;  /* CAST_TRACK's writes */
+    unsigned spk_seq; /* the app's: bumped with each spk (0: an app that never says) */
+    short ring[CAST_RING][2];
+} cast_tap;
+_Static_assert(__builtin_offsetof(cast_tap, stamp) == 128 && __builtin_offsetof(cast_tap, ring) == 160,
+               "q2-airplay's cast_tap layout");
 /* The wired outputs' wait (docs/internals.md#wired-start): demo writes now_ms, never 0, at a press that starts
  * a track or seeks, and 0 at a natural change; hciplayer reads it at init's end and seek's unmute. */
 #define PRESS_FILE PEQ_ROOT "/tmp/q2press"
@@ -284,13 +329,20 @@ int library_counting(void); /* coverflow.c: a song count reads songtable */
 /* coverflow.c: the library's generation, one up each rewrite (Most Played's too); an album row's
  * tracks, its id and the length of a path's album folder */
 extern volatile unsigned library_gen;
+/* durations.c: cache-only reads for Cover Flow; no file probes on the UI thread. */
+int duration_seconds(void *song);
+const char *duration_text(char *text, unsigned size, void *song);
+void durations_scanned(void); /* a library scan's end, on its thread */
+int thread_lower(int idle); /* coverflow_loader.c: a worker's nice 19 and its I/O class */
+/* coverflow.c: the o32 statx syscall, as demo imports none */
+int ringnav_statx(int dirfd, const char *path, int flags, unsigned mask, void *buf);
 void *coverflow_album_tracks(void *r);
 unsigned album_id(void *r), album_dir(const char *p, int disc);
 /* navigation.c: Cover Flow's glide and its letter */
 int carousel_glide(void *w, int goal, unsigned ms, int easing);
 void coverflow_letter(void *w, unsigned letter, unsigned now);
 void coverflow_letter_hold(void *w, unsigned letter);
-int ringnav_big_library(void); /* Display's Large Library Mode: letters, years and half copies */
+int ringnav_big_library(void); /* Display's Fast Navigation: letters, years and half copies */
 /* A letter with this bit is the Year sort's year instead, in its low bits, 0 undated. */
 #define CF_YEAR 0x80000000u
 int blob_io(const char *path, const char *tmp, void *buf, unsigned size, int write);
@@ -299,6 +351,9 @@ int clip_within(void *canvas, int *old, int *clip, int x, int y, int w, int h);
 void play_folder(void *dq, int idx, int cls);
 int app_urls_play(const char *path); /* tidal.c: a card app's Q2URLS/1 queue, played */
 int app_lyrics(const char *id, char *out, unsigned size); /* tidal.c: an app track's .lrc path */
+int app_fav(void); /* tidal.c: Now Playing's heart on an app's streamed song, -1 not one */
+void app_fav_load(void); /* tidal.c: a queue loading clears an app song's heart */
+int app_urls_at(void); /* tidal.c: the song playing's n in a now=1 URL queue playing; -1 none */
 int directory(void *path); /* playback.c: toolsLoadDirectory, for staged */
 #define TIDAL_DIR "/mnt/mmc/.tidal" /* tidal.c's cache, Tidal Downloads' list */
 void tidal_clear(void);
@@ -325,6 +380,9 @@ int addon_games(void), addon_game_start(int k), addon_game_on(void);
 int addon_game_audio(void); /* a card game with audio=1 runs: the sound and the media keys are its */
 int addon_game_open(const char *id); /* Home's Shortcut: the card game with this id, -1 none */
 const char *addon_game_name(int k);
+/* games.c: the theme's pop-up for a card game (Q2_POPUP's value), 7 + 6 * 7 + 64 * 7 + 1 bytes at most */
+#define POPUP_ENV 512
+void popup_env(char *out, unsigned size);
 int addon_game_input(void *e), addon_is_game(const char *id);
 void ringnav_wdt_long(void); /* system.c: the watchdog's long count for a long pass */
 int ringnav_smart_awake(void); /* navigation.c: Smart Awake (IPOD KEEPLIT) is on */
@@ -341,6 +399,16 @@ void *app_album_songs(const char *dir); /* library_lists.c: a folder's songs by 
 int addon_goto(const char *path, const char *title, int album); /* Go to on a card app's song */
 int addon_goes(const char *path); /* addon.c: Go to on path opens a page */
 int addon_scrobbles(const char *path); /* addon.c: not when path's app says scrobble=0 */
+int addon_more(void); /* addon.c: Now Playing's ⋯ opens the playing queue's app's page */
+void addon_open_id(const char *id); /* a card app's page by its id, hidden or not */
+/* airplay.c: the q2-airplay app's side (docs/internals.md#airplay-sender) */
+void airplay_poll(void), airplay_more(void *view);
+int airplay_on(void), airplay_lyrics(int *ms);
+/* addon.c: a heart's press, appended to the app's fav.log for it to send (docs/librespot.md);
+ * addon_fav_path's for a song in a card folder an app's q2app names as favdir, else nothing to do.
+ * 0 when the card didn't take it. */
+int addon_fav(const char *id, const char *kind, const char *key, int on);
+int addon_fav_path(const char *path, int on);
 extern unsigned auto_nexts; /* playback.c ringnav_next: tracks that ended by themselves */
 int stream_cache(int spotify); /* navigation.c: Streaming's Configuration, a cap of 512 << it MB */
 void album_memory(void *r);
@@ -421,6 +489,8 @@ void dac_take(void);                          /* books.c */
  * font */
 int theme_font(void *w, int role, int was);
 #define FONT_ROW -2 /* was: cache the answer in w's own "_font" prop */
+/* font_weight.c: w keeps the theme's bold intent where its text fell back to stock's face */
+void font_weight_mark(void *w, int bold);
 void marq_restart(void *row); /* navigation.c: its title changed, its marquee re-armed */
 void list_stop_scroll(void *w); /* navigation.c: its scroll animation stopped */
 const char *theme_face(const unsigned *s, int n, int *px); /* *px, unless 0: the px to draw it at */
@@ -468,7 +538,6 @@ int title_gone(void *w, void *event); /* ... and looks for its source again at t
 int bar_title_fits(void *label);      /* label's text fits the bar's title box */
 int ipod_light(void);   /* theme_engine.c: Light Mode */
 unsigned unflip(unsigned v); /* theme_engine.c: the grey Light Mode's flip turns into v */
-int song_seconds(void *r);   /* library_lists.c, its lengths' cache, for Cover Flow's tracks panel */
 int ipod_square_art(void); /* navigation.c: Classic, and Modern under Square */
 #define SPOT_GREY 0xffaaaaaau
 void radio_search(void);       /* radio.c */
@@ -488,7 +557,7 @@ void coverflow_clean_end(void); /* coverflow.c: a clean end mid-build strikes no
 /* Playlists as Cover Flow: coverflow.c's covers of lists (p_deque_playlist), 0 when it has none,
  * its centred playlist (a cover's hold) and its close of the covers; playlists.c's open of playlist
  * cd_num from its row on the Playlists page win under them, its index in the live list, and New
- * Playlist (edit 0) or Edit Playlists… (1) on that page. */
+ * Playlist (edit 0) or Select Playlists… (1) on that page. */
 int coverflow_playlists(void *lists);
 int coverflow_playlist_queue(void); /* the queue a playlist's cover played, no load since */
 void *coverflow_playlist(void *page), *coverflow_playlists_close(void);
@@ -498,6 +567,7 @@ void playlists_edit(int edit);
 int rockbox_available(void);  /* theme_engine.c: a regular Rockbox binary on the card */
 int groovebox_available(void); /* theme_engine.c: the Groovebox card app's binary on the card */
 #define SHORTCUT_GROOVEBOX 10  /* IPOD SHORTCUT's Groovebox, after the ten stock-era values */
+#define SHORTCUT_NONE 11       /* IPOD SHORTCUT's None: Home has no Shortcut row */
 int page_keyup(void *ctx, void *event); /* navigation.c: Return leaves a payload page */
 int ringnav_localclass(int cls);        /* navigation.c: load_localclass_list's hook */
 int shelf_open(void *ctx, void *event); /* netupdate.c: System settings' Apps page */
@@ -513,6 +583,8 @@ static inline long long wall_time(void) {
     long t = time((void *)0);
     return t == -1 ? -1 : (long long)(unsigned long)t;
 }
+/* A wall time before this (2020-09-13) is a clock never set: scrobbling's test, Battery History's. */
+#define CLOCK_SET 1600000000u
 /* CURLOPT_SSL_CTX_FUNCTION: sets X509_V_FLAG_NO_CHECK_TIME on the SSL_CTX's X509_VERIFY_PARAM, so
  * chains still verify against the pinned roots after they expire (2035 on) and after the 32-bit
  * clock wraps. The rootfs's OpenSSL 1.1.1f exports these but demo does not import them, so this

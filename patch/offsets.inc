@@ -562,9 +562,11 @@ static inline int arc_out(int r, int y) {
 #define WINDOW_STAGE_OPENED 3
 #define EMPTY_POLL_MS 50
 /* With the screen off (the wheel is the volume), WHEEL_DARK_GUARD units of one touch's travel one
- * way (100, half a turn, whatever the sensitivity) tick nothing; the wheel then ticks until it has
- * been still WHEEL_DARK_IDLE_MS, which also restarts an unfinished guard. Calibration knobs. */
-#define WHEEL_DARK_GUARD 100
+ * way (130, about two thirds of a turn, whatever the sensitivity) tick nothing; the wheel then ticks
+ * until it has been still WHEEL_DARK_IDLE_MS, which also restarts an unfinished guard. Calibration
+ * knobs. It was 100 until 1.8.1: since 1.8.0 every tick past the guard steps the volume, where
+ * 1.7's dark loop lost a turn's first ticks, so a brush just past half a turn moved it. */
+#define WHEEL_DARK_GUARD 130
 #define WHEEL_DARK_IDLE_MS 1500
 /* A tick needs a ring frame with pressure this recent (tick_gate, navigation.c), and the same gap in
  * frames ends Return's stop. Return's stop (ringnav_queue_event, playback.c): a second Return with
@@ -727,9 +729,9 @@ static inline int arc_out(int r, int y) {
 #define CF_GREY_BOLD 0xff8a8a8a /* Classic Light's dark half */
 /* Coverflow depth (docs/internals.md#coverflow-depth): the covers are drawn in software into one
  * CF_VIEW_W x CF_VIEW_H frame, the top of the client area. The selected cover is ART_SIZE (160)
- * square with its top CF_TOP from the frame's; side covers turn CF_ANGLE (60) degrees inward (the
- * sine table in coverflow.c), sit CF_X1 px from the centre, then CF_XS apart, CF_Z1 px and then
- * CF_ZS more behind it, seen from CF_EYE px. Brightness (of 256) is 256 at the centre, CF_BRIGHT1
+ * square with its top CF_TOP from the frame's; where the side covers stand and how far they turn
+ * is the theme's (coverflow.shelf: Minimal's theme.xml, after #329's Parameter Lab). Brightness (of
+ * 256) is 256 at the centre, CF_BRIGHT1
  * one cover out and CF_BRIGHT2 two and three out, reaching 0 half a step past the third, as the row
  * draws it while the wheel holds the covers. Each cover's reflection is CF_REFLECT px high at native
  * size, from CF_REFLECT_TOP (of 256) of its brightness down to black: Classic's, so the frame runs
@@ -738,19 +740,13 @@ static inline int arc_out(int r, int y) {
 #define CF_VIEW_H 220 /* CF_TOP + 160 + CF_REFLECT, and a row to spare */
 #define CF_CX 187 /* the centre line lies between screen columns 186 and 187 */
 #define CF_TOP 13
-#define CF_EYE 300
-#define CF_X1 112
-#define CF_XS 48
-#define CF_Z1 90
-#define CF_ZS 20
 #define CF_BRIGHT1 192
 #define CF_BRIGHT2 128
 #define CF_REFLECT 46
 #define CF_REFLECT_TOP 90
 #define CF_STRIDE 110
 #define CF_BOUNCE 5 /* an artist's last album: a step past kicks it 1/5 of a stride, then back */
-#define CF_ANGLE 60   /* a side cover's turn, degrees */
-#define CF_HORIZON 50 /* % down the cover its centre sits on the shared horizon */
+#define CF_ANGLE 60 /* the tilt coverflow.c's first sine table turns to, degrees */
 #define CF_THIRD 1    /* 1: the third out stays, gone half a step past it */
 #define CF_TEXT_Y 212 /* the album caption's top, under the frame; the artist follows */
 /* Touch on the covers (coverflow.c, docs/internals.md#coverflow-touch) */

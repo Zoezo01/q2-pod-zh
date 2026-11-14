@@ -1177,13 +1177,14 @@ def test_download_album_lyrics_from_the_more_page_to_the_card(fw, mcl, records, 
     net = lrclib_answers(fw, One='[00:01.00] one\n', Three='[00:01.00] Mix : X\n[00:02.00] three\n')
     job, more = Run(fw), More(fw)
     assert more.open() == 0x55  # stock's
-    assert len(more.texts) == 1 and more.restacked == [(C.addressof(more.item), 3)]  # its title, under the third row
+    assert more.texts[0] == 'AirPlay' and len(more.texts) == 2  # AirPlay's row first (airplay.c), then its title
+    assert more.restacked == [(C.addressof(more.item), 0), (C.addressof(more.item), 4)]  # under stock's third row
     assert more.click() == 0 and job.timers[0][1] == 500
-    assert (job.al.job.done, job.al.job.total) == (0, 3) and more.texts[-1] != more.texts[0]  # its progress instead
+    assert (job.al.job.done, job.al.job.total) == (0, 3) and more.texts[-1] != more.texts[1]  # its progress instead
     assert len(fw.calls('fw_deque_destroy')) == 2  # the library's rows and the album's list, copied: both go
     assert job.tick() == 8 and fw.calls('reset_poweroptions_timer')[-1][1][:3] == (1, 1, 0)  # standby held off
     job.run()
-    assert job.tick() == 0 and more.texts[-1] == more.texts[0]  # its title again
+    assert job.tick() == 0 and more.texts[-1] == more.texts[1]  # its title again
     summed(fw, job, saved=2, none=1)
     assert titles(net) == ['One', 'Two', 'Three']  # its own songs in disc and track order, the CUE track left out
     assert {urllib.parse.parse_qs(urllib.parse.urlsplit(u).query)['artist_name'][0] for u in net.urls} == {'A'}
@@ -1202,7 +1203,7 @@ def test_a_press_while_it_runs_cancels_it(fw, mcl, records, more_rows):
     more.click()
     progress = more.texts[-1]
     more.click()
-    assert job.al.job.cancel == 1 and more.texts[-1] not in (more.texts[0], progress)  # it says it is cancelling
+    assert job.al.job.cancel == 1 and more.texts[-1] not in (more.texts[1], progress)  # it says it is cancelling
     job.run()
     assert job.tick() == 0 and not net.urls
     summed(fw, job, LJ_CANCELLED)
@@ -1231,7 +1232,7 @@ def test_a_second_job_counts_afresh(fw, mcl, records, more_rows):
     job.tick()
     more.click()
     j = job.al.job
-    assert (j.done, j.total, j.saved, j.none, j.had, j.failed) == (0, 3, 0, 0, 0, 0) and more.texts[-1] != more.texts[0]
+    assert (j.done, j.total, j.saved, j.none, j.had, j.failed) == (0, 3, 0, 0, 0, 0) and more.texts[-1] != more.texts[1]
     job.run()
     job.tick()
     assert (j.saved, j.none, j.had) == (0, 2, 1)  # One's lyrics, saved the first time, beside it now
@@ -1246,7 +1247,7 @@ def test_usb_storage_stops_the_job_quietly(fw, mcl, records, more_rows):
     more.click()
     fw.fn('album_lyrics_stop', None)()
     assert [c[1][0] for c in fw.calls('fw_pthread_join')] == [THREAD] and not net.urls  # cancelled before it asked
-    assert not job.al.thread and not job.al.tracks and more.texts[-1] == more.texts[0]  # its title again
+    assert not job.al.thread and not job.al.tracks and more.texts[-1] == more.texts[1]  # its title again
     assert job.tick() == 0 and job.toasts == []
 
 
@@ -1277,7 +1278,7 @@ def test_a_thread_that_wont_start_says_so(fw, mcl, records, more_rows):
     more.open()
     more.click()
     assert len(job.toasts) == 1 and fw.calls('fw_pthread_create') and not job.timers
-    assert (job.al.thread, job.al.tracks, job.al.running) == (0, None, 0) and len(more.texts) == 1  # still its title
+    assert (job.al.thread, job.al.tracks, job.al.running) == (0, None, 0) and len(more.texts) == 2  # still its title
 
 
 def test_only_the_albums_songs_files_on_the_card_are_fetched(fw, mcl, records, more_rows):
@@ -1327,4 +1328,7 @@ def test_the_row_only_for_a_playing_song_on_the_card_under_stocks_rows(fw, mcl, 
         C.memmove(O['PLAYMORE_ROWS'], struct.pack('<8i', 0, 1, 2, 3, 5, 6, 7, 8), 32)
     more = More(fw, rows=7 if case == 'not stock rows' else 8, view=case != 'no view')
     assert more.open(win=case != 'no window') == 0x55
-    assert not fw.calls('list_item_create') and not more.texts and not more.on
+    if case in ('no window', 'no view', 'not stock rows'):
+        assert not fw.calls('list_item_create') and not more.texts and not more.on
+    else:  # AirPlay's row alone (airplay.c), for any song
+        assert len(fw.calls('list_item_create')) == 1 and more.texts == ['AirPlay']

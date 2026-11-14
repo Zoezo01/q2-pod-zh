@@ -792,13 +792,13 @@ if 'wheel_raw' in ps:  # iPod: while games.c's Vortex sets wheel_raw, nothing ti
         held=[]; h=lambda m: held.append(m.get(ps['wheel_held']))
         wheel([raw(on),(10,0),h,(10,1),h,(10+U,1),h,(10+U,0),h],m); assert held==[0,1,1,0],(on,held)
     checks+=1
-# Wheel sensitivity (Q2POD WHEELSENSITIVITY, 50-200% in tens, 1.0.6's key and scale): the travel
+# Wheel sensitivity (Q2POD WHEELSENSITIVITY, 10-200% in tens, 1.0.6's key and scale): the travel
 # per tick is 50/pct of U, in sixteenths of a unit, so 50% is exactly U (28), the wheel before the
 # setting, and every step differs. A fresh card, a sample before the first read and any value that
 # is not a canonical ten in range all get 50%.
-SIXTEENTHS={pct:(U*16*50+pct//2)//pct for pct in range(50,201,10)}
+SIXTEENTHS={pct:(U*16*50+pct//2)//pct for pct in range(10,201,10)}
 assert U==28 and SIXTEENTHS[50]==16*U and SIXTEENTHS[100]==8*U and SIXTEENTHS[200]==4*U
-assert len(set(SIXTEENTHS.values()))==16 and SIXTEENTHS[130]==172  # 10.75 units: 130% is 10 3/4
+assert len(set(SIXTEENTHS.values()))==20 and SIXTEENTHS[130]==172  # 10.75 units: 130% is 10 3/4
 def sensitivity(config=None,read=True):
     m=PlaybackMachine()
     if config is not None: m.config['WHEELSENSITIVITY']=config
@@ -809,7 +809,7 @@ def travel(m):  # the units of a turn's first tick, a unit per sample
 def spin(m,units=600):  # ticks in three turns, a unit per sample, over the 200 -> 1 seam
     return len(wheel([((9+k)%200+1,1) for k in range(units+1)],m)[0])
 assert travel(sensitivity(read=False)[0])==U  # not read yet: 50%
-for config,pct in ((None,50),('50',50),('130',130),('200',200),('0',50),('40',50),('210',50),('135',50),
+for config,pct in ((None,50),('50',50),('130',130),('200',200),('0',50),('40',40),('20',20),('210',50),('135',50),
                    ('-50',50),('050',50),(' 50',50),('50x',50),('abc',50),('',50)):
     m,got=sensitivity(config); assert got==pct and travel(m)==-(-SIXTEENTHS[pct]//16),(config,got)
 for pct in (50,100,130,150,160,200):  # the carry keeps the sixteenths: 150% and 160% differ
@@ -818,7 +818,7 @@ assert spin(sensitivity('150')[0])==64 and spin(sensitivity('160')[0])==68
 checks+=1
 # Setting it: the nearest ten, clamped, live on the next sample; the page saves it (crossfade.c's
 # refresh, test/patch.py), not wheel_set_pct.
-for n,pct in ((130,130),(74,70),(75,80),(20,50),(250,200),(50,50)):
+for n,pct in ((130,130),(74,70),(75,80),(20,20),(34,30),(250,200),(50,50)):
     m,_=sensitivity(); m.calls=[]; m.fn('wheel_set_pct',n)
     saved=[(c[1],m.text(c[2]),m.text(c[3])) for c in m.calls if c[0]=='write_int_config']
     assert m.fn('wheel_pct')==pct and travel(m)==-(-SIXTEENTHS[pct]//16) and saved==[],n
@@ -1112,7 +1112,7 @@ for _ in range(3): m.x=(m.x+U-1)%200+1; assert not m.read(m.x,1,gap=FRESH-1) and
 m=stopped(); ghost(m,100,5); assert m.mute(); m.press(O['KEY_CENTER']); assert m.loop_posts[-1][1]==O['KEY_CENTER'] and m.input(DOWN_,O['KEY_CENTER'])
 m.x=(m.x+4)%200+1; assert not m.read(m.x,1,gap=0) and m.mute()
 m.x=(m.x+4)%200+1; m.read(m.x,1,gap=3600*1000); assert not m.mute() and ghost(m,20,5)
-# Volume Guard: no shield from a ghost. Screen off, it holds the first half turn of any touch, then a
+# Volume Guard: no shield from a ghost. Screen off, it holds the first WHEEL_DARK_GUARD units of any touch, then a
 # ghost with no lift ticks on (docs/internals.md); the stop works dark too.
 m=EncoderMachine(); m.word(ps['wheel_guard'],1); m.byte(syms['g_backlight_status'],0)
 m.read(100,1); m.x=100; assert not m.read(100+U,1) and ghost(m,100,5); m.drain(); m.press(); since(m,STOP); m.press(); assert m.mute() and not ghost(m,20,5)
@@ -1178,14 +1178,14 @@ def dark(m,on=1):
 def later(ms): return lambda m: setattr(m,'now',m.now+ms)
 def turn(x,n,step=1): return [((x+step*k-1)%200+1,1) for k in range(1,n+1)]  # a unit per sample from x
 X=10+D-1  # where D-1 units up from 10 stop
-assert D==100 and wheel([dark,(10,1)]+turn(10,D-1))[0]==[]           # a brush under half a turn
+assert D==130 and wheel([dark,(10,1)]+turn(10,D-1))[0]==[]           # a brush under the guard
 assert wheel([dark,(10,1)]+turn(10,D-1),sensitivity('200')[0])[0]==[]  # at any sensitivity
 assert wheel([dark,(10,1)]+turn(10,D+2*U-1))[0]==[P]                  # past it: every U ticks
 assert wheel([dark,(10,1)]+turn(10,D+2*U))[0]==[P,P]
 assert wheel([dark,(150,1)]+turn(150,D+U,-1))[0]==[N]                 # either way, over the seam
 assert wheel([dark,(150,1),(90,1),(90,1)]+turn(90,D+U-60,-1))[0]==[N]  # still samples do not reverse
 for step,key in ((1,P),(-1,N)):
-    samples=[dark,(100,1),((100+90*step-1)%200+1,1),((100+140*step-1)%200+1,1)]
+    samples=[dark,(100,1),((100+90*step-1)%200+1,1),((100+170*step-1)%200+1,1)]
     assert wheel(samples)[0]==[key]                                  # crossing carries its excess
     assert wheel(samples+[((100+(D+2*U)*step-1)%200+1,1)])[0]==[key,key]
 assert wheel([(100,1),(100-U//2,1),(100-U//2,1),(100-U,1)])[0]==[N]  # lit carry survives still samples too
@@ -1643,37 +1643,40 @@ assert r.fn('ringnav_memory',r.deque([]))>=0 and r.seek==37
 
 # MP4 admission uses the requested queue row; a refused start reports once, and a later
 # fitting track can start. Nonlocal records never inspect a local file.
-m=PlaybackMachine(); m.handlers[ps['mp4_fits']]='p:mp4_fits'; m.fits=0; m.mp4_checks=[]
+m=PlaybackMachine(); m.handlers[ps['mp4_fits']]=m.handlers[ps['mp4_start_fits']]='p:mp4_fits'; m.fits=0; m.mp4_checks=[]
 r=m.items(m.get(syms['mcl_pdeqplaylist']))[2]
 m.word(r+O['REC_PATH'],m.string('/A/book.m4b'))
 assert m.fn('ringnav_start_player')==-1 and m.mp4_checks==['/A/book.m4b']
 m.fn('playback_poll'); m.fn('playback_poll')
 assert m.toasts==['Too long to play on the Q2: split it into parts']
 m.fits=1; assert m.fn('playback_start_fits')==1
-m.word(r+O['REC_TYPE'],0)
-m.fits=0; m.mp4_checks=[]
-assert m.fn('playback_start_fits')==1 and not m.mp4_checks
-m.fn('playback_poll'); assert len(m.toasts)==1
 # The file last started, started again (a CUE book's next chapter), is not checked: its index is
 # freed first. Another file is, and so is a preload of the same file, which opens beside it.
-m.word(r+O['REC_TYPE'],8)
+m.fits=0; m.mp4_checks=[]
 assert m.fn('playback_start_fits')==1 and not m.mp4_checks
 m.word(r+O['REC_PATH'],m.string('/A/other.m4b'))
 assert m.fn('playback_start_fits')==0 and m.mp4_checks==['/A/other.m4b']
 m.fn('playback_poll'); m.word(r+O['REC_PATH'],m.string('/A/book.m4b'))
 m.word(O['MCL_PREPOS'],2); m.word(O['MCL_PRELOAD'],0)
 assert m.fn('ringnav_open_preload')==1 and m.mp4_checks[-1]=='/A/book.m4b' and m.mcl('MCL_PRELOAD')==-1
+# A nonlocal start closes the book, so the book after it is checked again.
+m.word(r+O['REC_TYPE'],0); m.mp4_checks=[]
+assert m.fn('playback_start_fits')==1 and not m.mp4_checks
+m.fn('playback_poll'); assert len(m.toasts)==2
+m.word(r+O['REC_TYPE'],8)
+assert m.fn('playback_start_fits')==0 and m.mp4_checks==['/A/book.m4b']
+m.fn('playback_poll')
 # Equal-speed gapless preloads inspect the successor, not the current track. Refusal
 # marks stock's failed-preload state; fitting successors still reach the stock opener.
 for fits,want in ((0,-1),(1,1)):
-    m=PlaybackMachine(); m.handlers[ps['mp4_fits']]='p:mp4_fits'; m.fits=fits; m.mp4_checks=[]
+    m=PlaybackMachine(); m.handlers[ps['mp4_fits']]=m.handlers[ps['mp4_start_fits']]='p:mp4_fits'; m.fits=fits; m.mp4_checks=[]
     m.word(O['MCL_PREPOS'],1); m.word(O['MCL_PRELOAD'],0)
     assert m.fn('ringnav_open_preload')==1
     assert m.mp4_checks==['/B/01.flac'] and m.mcl('MCL_PRELOAD')==want
     m.fn('playback_poll'); assert not m.toasts
 # Stock's final-five-seconds gate must not retry a refused successor on every player tick.
 m=PlaybackMachine(); m.options(0,5,0)
-m.handlers[ps['mp4_fits']]='p:mp4_fits'; m.fits=0; m.mp4_checks=[]
+m.handlers[ps['mp4_fits']]=m.handlers[ps['mp4_start_fits']]='p:mp4_fits'; m.fits=0; m.mp4_checks=[]
 m.handlers.pop(syms['mcl_open_preload'])
 m.byte(O['MCL_GAPLESS'],1); m.byte(0xa5002d,1); m.elapsed=296  # stock CUE end-time path
 rows=m.items(m.get(syms['mcl_pdeqplaylist']))

@@ -589,7 +589,8 @@ static int al_gone(void *ctx, void *event) {
  * under Download Cover & Lyrics, in stock's row widgets and 24 px label, and unnamed, so stock's
  * row click (an atoi of the name) never sees it. Only for a playing song on the card; a page
  * without stock's rows is left as it built it. Delete is hidden for a playlist's song played from
- * its cover (coverflow_playlist_queue): there it would delete from the library. */
+ * its cover (coverflow_playlist_queue): there it would delete from the library. AirPlay's row
+ * (airplay.c) goes over them all, for any song. */
 extern int stock_playermore_trampoline(void *win, void *ctx);
 int ringnav_playermore(void *win, void *ctx) {
     int result = stock_playermore_trampoline(win, ctx);
@@ -600,13 +601,14 @@ int ringnav_playermore(void *win, void *ctx) {
     for (unsigned i = 0; i < PLAYMORE_COUNT && coverflow_playlist_queue(); ++i)
         if (((const int *)PLAYMORE_ROWS)[i] == PLAYMORE_DELETE)
             widget_set_visible(widget_get_child(view, i), 0, 0);
+    airplay_more(view); /* first, over stock's rows */
     if (!al_playing()) return result;
     while (at < PLAYMORE_COUNT && ((const int *)PLAYMORE_ROWS)[at] != PLAYMORE_SEARCH) ++at;
     if (at == PLAYMORE_COUNT) return result;
     void *label = list_row(view, "player_onlinesearch", al_click, 0);
     widget_use_style(label, "s_scrlabel_white24l");
     widget_resize(label, 253, I(label, W_H));
-    widget_restack(P(P(label, W_PARENT), W_PARENT), at + 1);
+    widget_restack(P(P(label, W_PARENT), W_PARENT), at + 2); /* AirPlay's row first */
     widget_on(label, EVT_DESTROY, al_gone, label);
     al.label = label;
     al_show();

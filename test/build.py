@@ -55,6 +55,8 @@ def boot_check():
         # not a Q2's. So they never run here: a log line stands in, and the text must be gone before anything starts.
             assert script.count(WIFI_OFF) == 2  # before Rockbox, and the hand-over's late pass
             script = script.replace(WIFI_OFF, f'echo wifi >> {r}/order')
+            assert script.count('/usr/bin/cmd_gpio set_func PE22 output0') == 1  # Rockbox starts with charging allowed (S12 inhibits it)
+            script = script.replace('/usr/bin/cmd_gpio', 'echo gpio >> ' + str(r) + '/order; : ')
             assert 'usleep 300000' in script  # Home's hand-over pauses before Rockbox: logged, its place is the point
             script = script.replace('usleep 300000', f'echo settle >> {r}/order')
             assert 'usleep 2000000' in script and '\n            rockbox\n            kill $! 2>/dev/null\n' in script  # called off once Rockbox is gone
@@ -108,7 +110,7 @@ def boot_check():
         assert boot(True, False, 81, 1) == (['demo', 'demo'], False)  # no Rockbox on the card: Q2 Pod again
         # Wi-Fi goes off before every start of Rockbox and at no other time; demo follows Rockbox whatever its status
         def order(*args): boot(*args); return (r/'order').read_text().split()
-        session = ['wifi', 'rockbox', 'demo']
+        session = ['gpio', 'wifi', 'rockbox', 'demo']  # charging is allowed before Rockbox starts
         for code in (0, 1, 81, 137, 255): assert order(False, True, code) == session
         handover = ['settle', 'late', 'wifi']
         assert order(True, True, 81, 1) == ['demo', *handover, *session]  # Home's Rockbox row waits for what demo launched
@@ -356,6 +358,7 @@ def validate_assets(directory):
     assert set(changed) == {ui+p for p in patched_ui | chinese} | {
         'release/assets/default/raw/styles/'+p for p in AUDIT['styles']} | {
         xx+n for n in SETTINGS_ICONS | QUIET_ICONS | STATUS_ICONS | ART_PLACEHOLDERS} | {'release/assets/default/raw/strings/en_US.bin', FONT, TAG_C, *WEB} | {
+        'usr/share/web/cgi-bin/%s.cgi' % n for n in ('create', 'delete', 'list', 'download', 'upload')} | {
         xx+n for n in STOCK_NAMED_ICONS}
     master = (ROOT/'assets/icons/default_album_home.png').read_bytes()
     for name, size in ART_PLACEHOLDERS.items():
@@ -384,6 +387,12 @@ def validate_assets(directory):
         old, new = read('stock.squashfs', path), read('rootfs.squashfs', path)
         assert new == patch_web(path, old)
         assert changed[path] == dict(original_sha256=sha(old), sha256=sha(new))
+    q2cgi = (ROOT/'assets/web/q2cgi').read_bytes()  # the safe file-manager CGI replaces all five stock CGIs
+    for n in ('create', 'delete', 'list', 'download', 'upload'):
+        path = 'usr/share/web/cgi-bin/%s.cgi' % n
+        old, new = read('stock.squashfs', path), read('rootfs.squashfs', path)
+        assert new == q2cgi
+        assert changed[path] == dict(original_sha256=sha(old), sha256=sha(q2cgi))
     from build import segments
     tag_segment = segments(tag_new)[-1][1]
     assert tag_segment[0] == 1 and tag_segment[2] == 0x30000 and tag_segment[4:7] == (48, 48, 5)

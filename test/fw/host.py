@@ -3,8 +3,8 @@
 tools/build.py's NAVIGATION and tools/peq.py's UI_SOURCES compile as they do for the Q2, without PEQ_HOST, against the
 stock.h and themes.inc tools/build.py writes and a peq_platform.h laid out as tools/peq.py's: each stock
 function a macro calling its address, here a stub's. A stock call or a libc call with effects outside the
-process (system, unlink, fork...) reaches a stub that records the call and returns 0, or what a test's
-mock returns; only PURE libc is real. So a test can't touch the card, the network or this machine.
+process (system, unlink, fork...) reaches a stub that records the call and returns 0 (errno's the address
+of fw_errno), or what a test's mock returns; only PURE libc is real. So a test can't touch the card, the network or this machine.
 
 The code runs 64-bit, so `long` and pointers are wider than on the Q2. Code that depends on those, or
 on a stock widget's layout, stays with test/patch.py, which runs the MIPS build under emulation."""
@@ -95,14 +95,17 @@ def stubs_source(names, data):
             f'    long saved[] = {{ {call} }}; note("tk_strcmp", saved, fw_mock_tk_strcmp != 0);',
             f'    if (fw_mock_tk_strcmp) return fw_mock_tk_strcmp({call});',
             '    return a0 && a1 ? strcmp((const char *)a0, (const char *)a1) : a0 != a1;', '}']
+    # And libc's errno, which every caller reads through the pointer: unmocked it is fw_errno, 0 at each load, not NULL.
+    out += ['int fw_errno;']
     for name in names:
         if name in ('tk_snprintf', 'tk_strcmp'):
             continue
         ret = types.get(name, 'long')
         kind = ret if ret in FLOATS else 'long'
+        unmocked = '(long)&fw_errno' if name == 'fw___errno_location' else '0'
         out += [f'{kind} (*fw_mock_{name})({args});', f'{"void" if ret == "void" else kind} {name}({args}) {{',
                 f'    long saved[] = {{ {call} }}; note("{name}", saved, fw_mock_{name} != 0);',
-                f'    {"" if ret == "void" else "return "}fw_mock_{name} ? fw_mock_{name}({call}) : 0;', '}']
+                f'    {"" if ret == "void" else "return "}fw_mock_{name} ? fw_mock_{name}({call}) : {unmocked};', '}']
     out += [f'unsigned char {name}[{size}];' for name, size in data.items()]
     return '\n'.join(out) + '\n'
 

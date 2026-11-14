@@ -319,20 +319,22 @@ int ringnav_tidal_favs(void *offset) {
 
 /* Card apps' URL queues (docs/internals.md#card-apps, "urls" in addon.c's caps). The app names a
  * Q2URLS/1 file in its .play: "#Q2URLS/1\tstart=<i>", then a line a song,
- * "url-or-card-path\ttitle\tartist\talbum\tcover-url\tseconds". app_urls_play builds stock Tidal
- * records from it as load_titaltracks_ex (0x48670c) does (REC_TYPE 8, +0x38 0xf1), each
- * REC_TIDAL_ID "app:<gen>:<n>", and plays them as a Tidal page does (play_folder 0xf1).
+ * "url-or-card-path\ttitle\tartist\talbum\tcover-url\tseconds[\titem\tfav]". app_urls_play
+ * builds stock Tidal records from it as load_titaltracks_ex (0x48670c) does (REC_TYPE 8, +0x38
+ * 0xf1), each REC_TIDAL_ID "app:<gen>:<n>", and plays them as a Tidal page does (play_folder 0xf1).
  * mclStartPlayer asks get_tidal_trackurl for a 0xf1 record; ringnav_tidal_track answers an app's
  * itself (app_track) with the URL kept here, so Tidal's API and stock's stream thread never see the
  * id. A record whose REC_PATH is a card path plays as a local file: mclStartPlayer does that after
  * the call. The URLs are one queue's (au), by its generation, and so is its lyrics folder
- * (app_lyrics). */
+ * (app_lyrics). A song whose line names an item has its app's heart on Now Playing (app_fav). A queue
+ * whose header says now=1 has its song playing told to its app (app_urls_at, addon.c now_poll). */
 #define AU_MAX (256 << 10) /* the file read this far, as addon.c's M3U_MAX */
 #define AU_SONGS 5000      /* the songs a queue keeps, later lines passed over: records stay small */
 /* A line's URL or card path this long, each } counted as stock's %0x7d, is passed over: stock
  * strcpys it into a 0x600 stack buffer (mclStartPlayer, mcl_tidalStartPlayer) and then expands
  * the } in place, unbounded. */
 #define AU_PATH 1024
+#define AU_ITEM 128 /* an item this long or longer is none: the song's heart stays stock's */
 /* stock's, at build.py APP_URL_CALLS (checked against the demo's symbols) */
 #define mclSetPause ((int (*)(void))0x5bd7c4u)
 #define tidal_playurl ((int (*)(int))0x5bc914u)
@@ -345,6 +347,11 @@ static struct {
     unsigned n, gen, play; /* gen: the queue's; play: app_track's count, the latest start's */
     char lyr[64];          /* the queue's lyrics folder: its path with .lyrics for .urls */
     unsigned start[16];    /* app_start's mutex: one start at a time, as stock's one stream thread */
+    char **items;          /* each song's item, its app's own id for it; 0 for none (app_fav) */
+    unsigned char *fav;    /* each song's heart, 1 a favourite: its line's, then the presses since */
+    char app[16];          /* the queue's app, from its /tmp/q2-<id>.urls */
+    int hearts;            /* isFav_playing is an app song's (app_track), until a queue loads */
+    int now;               /* its header asked for now=1: addon.c tells the app what plays */
 } au;
 
 static int web(const char *s) {
@@ -363,14 +370,19 @@ int app_urls_play(const char *path) {
     line = strstr(raw, "\n");
     char *s = strstr(raw, "start=");
     int start = s && (!line || s < line) ? atoi(s + 6) : 0;
+    /* now=1, a header field of its own: a tab before it, a tab or the line's end after */
+    char *o = strstr(raw, "\tnow=1");
+    int now = o && (!line || o < line) && (!o[6] || o[6] == '\t' || o[6] == '\r' || o[6] == '\n');
     unsigned n = 0, gen = au.gen + 1;
-    char **urls = calloc(AU_SONGS, sizeof *urls);
+    char **urls = calloc(AU_SONGS, sizeof *urls), **items = calloc(AU_SONGS, sizeof *items);
+    unsigned char *fav = calloc(AU_SONGS, 1);
     void *q = _create_deque("stSongInfo");
     deque_init(q);
-    for (line = line ? line + 1 : 0; urls && line && *line && n < AU_SONGS; line = end) {
+    for (line = line ? line + 1 : 0; urls && items && fav && line && *line && n < AU_SONGS;
+         line = end) {
         if ((end = strstr(line, "\n"))) *end++ = 0;
-        char *fld[6], *c = line;
-        for (int k = 0; k < 6; ++k) { /* a field missing is empty */
+        char *fld[8], *c = line;
+        for (int k = 0; k < 8; ++k) { /* a field missing is empty */
             char *tab = strstr(c, "\t");
             fld[k] = c;
             if (tab)
@@ -397,21 +409,91 @@ int app_urls_play(const char *path) {
         I(rec, 0x38) = 0xf1;
         _deque_push_back(q, rec);
         toolsFreeStSongInfo(rec);
+        if (*fld[6] && strlen(fld[6]) < AU_ITEM) /* the app's heart: an item, and 1 a favourite */
+            items[n] = strdup(fld[6]), fav[n] = fld[7][0] == '1' && (!fld[7][1] || fld[7][1] == '\r');
         urls[n++] = web(fld[0]) ? strdup(fld[0]) : 0;
     }
     free(raw);
-    if (!n) return free(urls), deque_destroy(q), 0;
+    if (!n) return free(urls), free(items), free(fav), deque_destroy(q), 0;
     pthread_mutex_lock(au.lock);
-    char **old = au.urls;
+    char **old = au.urls, **old_items = au.items;
+    unsigned char *old_fav = au.fav;
     unsigned had = au.n;
-    au.urls = urls, au.n = n, au.gen = gen;
+    au.urls = urls, au.items = items, au.fav = fav, au.n = n, au.gen = gen, au.now = now;
     tk_snprintf(au.lyr, sizeof au.lyr, "%.*s.lyrics", (int)strlen(path) - 5, path);
+    /* /tmp/q2-<id>.urls, the one path addon.c takes */
+    tk_snprintf(au.app, sizeof au.app, "%.*s", (int)strlen(path) - 13, path + 8);
     pthread_mutex_unlock(au.lock);
-    for (unsigned i = 0; old && i < had; ++i) free(old[i]);
-    free(old);
+    for (unsigned i = 0; old && i < had; ++i) free(old[i]), free(old_items[i]);
+    free(old), free(old_items), free(old_fav);
     play_folder(q, start >= 0 && (unsigned)start < n ? start : 0, 0xf1); /* playing_page copies it */
     deque_destroy(q);
     return 1;
+}
+
+/* id's song in the latest queue (app:<gen>:<n>), its n; -1 for an older queue's or no app's.
+ * Under au.lock. */
+static int au_at(const char *id) {
+    if (!id || !tk_str_start_with(id, "app:")) return -1;
+    char *c;
+    unsigned gen = (unsigned)strtol(id + 4, &c, 10);
+    unsigned n = *c == ':' ? (unsigned)strtol(c + 1, 0, 10) : ~0u;
+    return gen == au.gen && n < au.n ? (int)n : -1;
+}
+
+/* Now Playing's heart on a card app's streamed song (ratings.c rate_fav_click): -1 when the song
+ * playing isn't an app's, and the heart is stock's; -3 for an app's whose line named no item (or a
+ * queue replaced since), which has no heart at all: stock's would call Tidal with no id. Else the
+ * press goes to the app's fav.log (addon_fav), the song's heart flips, and stock's own flag for
+ * the playing Tidal track (isFav_playing, which Now Playing's update draws for a 0xf1 queue) with
+ * it; its new state, or -2 when the card didn't take the press, the heart left as it was. */
+int app_fav(void) {
+    void *q = P(mcl_pdeqplaylist, 0);
+    int pos = I(MCL_POS, 0);
+    void *r = *(volatile int *)MCL_TYPE == 0xf1 && q && pos >= 0 && pos < (int)deque_size(q)
+                  ? deque_at(q, (unsigned)pos)
+                  : 0;
+    const char *id = r ? P(r, REC_TIDAL_ID) : 0;
+    char item[AU_ITEM] = "", app[sizeof au.app];
+    pthread_mutex_lock(au.lock);
+    int at = au_at(id), on = at >= 0 && au.items[at] && !au.fav[at];
+    if (at >= 0 && au.items[at])
+        tk_snprintf(item, sizeof item, "%s", au.items[at]),
+            tk_snprintf(app, sizeof app, "%s", au.app);
+    pthread_mutex_unlock(au.lock);
+    if (!*item) return id && tk_str_start_with(id, "app:") ? -3 : -1; /* never Tidal's API */
+    if (!addon_fav(app, "item", item, on)) return -2; /* a card write: outside the lock */
+    pthread_mutex_lock(au.lock);
+    if (au_at(id) == at) au.fav[at] = (unsigned char)on; /* the same queue still */
+    pthread_mutex_unlock(au.lock);
+    isFav_playing = (unsigned char)on;
+    return on;
+}
+
+/* A queue loading (playback.c ringnav_load): an app song's heart, left in stock's isFav_playing,
+ * goes with it. Stock sets the flag only when a Tidal page checks its favourites
+ * (get_tidal_fav_flag, from the Tidal page and More), not per track, so a Tidal queue played next
+ * would show the last app song's heart. Stock's own value is left alone. */
+void app_fav_load(void) {
+    pthread_mutex_lock(au.lock);
+    if (au.hearts) au.hearts = 0, isFav_playing = 0;
+    pthread_mutex_unlock(au.lock);
+}
+
+/* The song playing's place among the songs kept (its id's n, as start= counts) while the queue
+ * playing is the latest URL queue and its header said now=1 (addon.c now_poll); -1 otherwise: a
+ * Tidal or local queue, an older one, or one that didn't ask. The record is the 0xf1 queue's at
+ * MCL_POS, as get_tidal_trackurl finds it. */
+int app_urls_at(void) {
+    void *q = P(mcl_pdeqplaylist, 0);
+    int pos = I(MCL_POS, 0);
+    void *r = I(MCL_TYPE, 0) == 0xf1 && q && pos >= 0 && pos < (int)deque_size(q)
+                  ? deque_at(q, (unsigned)pos)
+                  : 0;
+    pthread_mutex_lock(au.lock);
+    int at = au.now ? au_at(r ? P(r, REC_TIDAL_ID) : 0) : -1;
+    pthread_mutex_unlock(au.lock);
+    return at;
 }
 
 /* The .lrc a card app leaves for a track of its latest queue (id app:<gen>:<n>), in out:
@@ -466,6 +548,9 @@ static void *app_start(void *arg) {
 static int app_track(void *r, const char *id) {
     pthread_mutex_lock(au.lock);
     unsigned play = ++au.play;
+    int at = au_at(id);
+    isFav_playing = at >= 0 && au.items[at] ? au.fav[at] : 0; /* Now Playing's heart (app_fav) */
+    au.hearts = 1;
     pthread_mutex_unlock(au.lock);
     if (tidalfurlstart) tidalfurlstart = 0, curl_stop_httpget();
     const char *path = P(r, REC_PATH);

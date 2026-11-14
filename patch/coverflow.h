@@ -103,6 +103,7 @@ typedef struct {
     const unsigned *art[FX_POOL];    /* its texture: the slot's own, or the placeholder */
     unsigned char half[FX_POOL];     /* it holds the album's half copy (half_read) */
     int c, frac, drawn, light, lead; /* the position and Light Mode the frame holds, once drawn */
+    int arch;                        /* and how far its arch had formed (16.16) */
     int todo;                        /* a cover wanted still waits for its load (FX_BUDGET_MS) */
     int mode;                        /* what the frame holds (FX_SHELF ...) */
     int letters_at, next, prev; /* the album + 1 the letters' windows are of, and those letters */
@@ -146,7 +147,7 @@ typedef struct {
     float pos, vel, goal, lead, lead_v, rate, tau, ticks, seen, seen_lead, stretch;
     unsigned at, tick_at, edge_at, letter_at;
     int raw, on, finger, held, dir, dead, early, clicked, bounced, capped, jump;
-    /* Large Library Mode off: 1.7.6's letters (th_beat), each named on the moving row from the last
+    /* Fast Navigation off: 1.7.6's letters (th_beat), each named on the moving row from the last
      * one named (jump_to), jump_pace apart (letter_at) */
     int beat, jump_to;
     int lean, fold;   /* the way the row leans (1: as right-hand covers; against th.dir as letters
@@ -160,6 +161,7 @@ typedef struct {
                               left it (coverflow_hold): its facing point's lead and run (albums),
                               the shelf's shift and a cover's xc an album as a pose (1/16 px) */
     int hold_k; /* and the album at the screen's middle, from the row's frac centre (16.16) */
+    float arch, seen_arch; /* how far the arch has formed, 0 to 1 (th_arch) */
 } cf_thumb_t;
 extern cf_thumb_t th;
 
@@ -171,7 +173,6 @@ int album_art(const char *track, const char *dst, int shared);
 void art_note(const char *note, unsigned key, const char *track);
 void art_strike(const char *note);
 int ff_wait(int pid, const char *tmp, const char *dst, int *exited);
-int thread_lower(int idle); /* coverflow_loader.c */
 int ff_thumb(const char *src, const char *dst, int w, int h);
 char *art_path(char *out, unsigned key, const char *suffix);
 int cf_decode(const char *url, unsigned *out, int unload);
@@ -209,6 +210,7 @@ float coverflow_enter_v(void);
 float coverflow_hold(void);
 int coverflow_window(int frac);
 void draw_row(shelf_t *f, int frac, const unsigned *const *ring);
+void arch_pose(int t, pose_t *p);
 int fold_t16(void);
 void draw_fold(shelf_t *f, const unsigned *const *ring, int t16, int lean, int off16);
 
@@ -223,4 +225,8 @@ void ld_take(int s, int i, int a);
 void ld_quit(void);
 void coverflow_halves(void);
 
+/* Optional browsing position. */
+int coverflow_position_enabled(void);
+void coverflow_position_paint(void *w, void *canvas);
+void coverflow_position_reset(void);
 #endif

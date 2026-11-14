@@ -1586,7 +1586,7 @@ def test_homes_library_pane_shows_no_letter(fw, ui):
     assert letter(fw, page, canvas) == []
 
 
-@pytest.mark.parametrize('big', [b'0', b'1'])  # Large Library Mode off or on: Cover Flow's own letters change, not this one
+@pytest.mark.parametrize('big', [b'0', b'1'])  # Fast Navigation off or on: Cover Flow's own letters change, not this one
 def test_coverflows_album_tracks_show_no_letter(fw, ui, big):
     Config(fw, BIGLIBRARY=big)
     assert fw.fn('ringnav_big_library', C.c_int)() == int(big)
@@ -1604,7 +1604,7 @@ def test_coverflows_album_tracks_show_no_letter(fw, ui, big):
     assert letter(fw, page, canvas) == ['S']  # the same spin with no album open keeps its letter
 
 
-@pytest.mark.parametrize('big', [b'0', b'1'])  # Large Library Mode off or on
+@pytest.mark.parametrize('big', [b'0', b'1'])  # Fast Navigation off or on
 @pytest.mark.parametrize('name, cls', [('albuminfo_page', 0xff10), ('albuminfo_page', 0xff11),
                                        ('playerjumpinfo_page', 0xff10)])
 def test_an_albums_songs_in_the_library_show_no_letter(fw, ui, name, cls, big):
@@ -1893,8 +1893,8 @@ def test_row_preview_is_classics_own_choice(fw, keys, on):
     assert fw.fn('row_preview_on', C.c_int)() == on
 
 
-@pytest.mark.parametrize('shortcut, card, row', [(None, 1, 1), (None, 0, 1), (0, 1, 1), (0, 0, 0), (2, 0, 1)])
-def test_home_shows_its_shortcut_row_unless_it_is_a_missing_rockbox(fw, shortcut, card, row):
+@pytest.mark.parametrize('shortcut, card, row', [(None, 1, 1), (None, 0, 1), (0, 1, 1), (0, 0, 0), (2, 0, 1), (11, 1, 0), (11, 0, 0), (12, 1, 1)])
+def test_home_shows_its_shortcut_row_unless_it_is_none_or_a_missing_rockbox(fw, shortcut, card, row):
     theme(fw, 0, **({} if shortcut is None else {'SHORTCUT': shortcut}))
     def stat(version, path, info, *_):
         C.c_uint.from_address(info + 20).value = 0o100755
@@ -1905,7 +1905,7 @@ def test_home_shows_its_shortcut_row_unless_it_is_a_missing_rockbox(fw, shortcut
 
 @pytest.mark.parametrize('shortcut, page, context', [
     (1, b'localmusic/localclass_page', 0xf004), (3, b'localmusic/allmusic_page', 0xf00a),
-    (7, b'localmusic/playlist_page', 0),
+    (7, b'localmusic/playlist_page', 0), (11, b'localmusic/allmusic_page', 0xf00a),  # None: the carousel's card opens Favorites
 ])
 def test_the_home_shortcut_opens_its_list(fw, shortcut, page, context):
     theme(fw, 0, SHORTCUT=shortcut)

@@ -521,7 +521,8 @@ int main(int argc, char **argv) {
             if (paced && au.done) paced = 0, wall = (long long)au.played * 1000 / RATE;
             clock = paced ? (long long)au.played * 1000 / RATE : wall;
             if (until && t >= until) until = 0, redraw = au.paused;
-            int wait = 100, fate = have == size ? frame_due(n, clock) : 0;
+            int cap = au.paused && !until && !seek ? 1000 : 100; /* paused and still: wait on a key */
+            int wait = cap, fate = have == size ? frame_due(n, clock) : 0;
             if (fate == 1 || (redraw && have == size)) { /* paused, the next frame shows the change */
                 for (unsigned y = 0; y < H; ++y)
                     memcpy(mem + (back + y) * line, frame + y * row, row);
@@ -542,10 +543,12 @@ int main(int argc, char **argv) {
             if (seek && wait <= 0) break;
             /* POLLIN; poll skips the probe's -1 once it is read */
             struct pollfd p[3] = { { sock, 1, 0 }, { pp[0], 1, 0 }, { vp[0], 1, 0 } };
-            int cap = au.paused && !until && !seek ? 1000 : 100; /* paused and still: wait on a key */
             poll(p, have < size ? 3 : 2, wait < cap ? wait : cap);
             char c[2] = { 0 };
             if (p[0].revents && recv(sock, c, 2, 0) > 0) {
+                t = now_ms(); /* the wait may have been a second: the time to the key counts before the toggle, and a seek's 400 ms and a bar's 1.5 s run from the key */
+                if (!au.paused) wall += t - last;
+                last = t;
                 if (c[0] == 'p' || c[0] == 'a' || c[0] == 'r') { au.paused = video_pause(au.paused, c[0]);
                     video_state(au.paused);
                 }

@@ -87,8 +87,9 @@ typedef struct {
 } theme_key_t;
 typedef struct {
     /* coverflow.shelf (px, brightness of 256; tilt: degrees, horizon: % down the cover, third: the
-     * third cover out stays, swing: a step's depth follows the turn and the near edge eases to just
-     * past its rest place, lift: px nearer mid-way, view_h: the frame's rows, art_persp: % of the
+     * third cover out stays, swing 1: a step's depth follows the turn and the near edge eases to
+     * just past its rest place, 2: a step goes straight out to the first slot, lift: px nearer
+     * mid-way, view_h: the frame's rows, art_persp: % of the
      * plane's own spacing of a cover's art, 0 even), coverflow.caption: offsets.inc's CF_* */
     short top, x1, xs, z1, zs, eye, bright1, bright2, reflect, reflect_top, stride, radius;
     short tilt, horizon, third, swing, lift, view_h, eye_turn, art_persp;
@@ -96,14 +97,19 @@ typedef struct {
      * animator). Ticks are 200 / ticks_turn raw units at 50% Wheel Sensitivity, twice as many a
      * turn at 100%, and rates count those; far_left, stop_left, back, aim_snap, lead_*, row_from,
      * _full, _flat, _edge and fold_near are 1/100 album; enter_albums albums; others ms, ticks/s,
-     * albums/s, px or %. jump_at, jump_ms and jump_pace are read only with Large Library Mode off
-     * (1.7.6's letters; on, big_jump_at and big_jump_ms). */
+     * albums/s, px or %. jump_at, jump_ms and jump_pace are read only with Fast Navigation off
+     * (1.7.6's letters; on, big_jump_at and big_jump_ms). The arch (Fast Navigation off; arch_span
+     * 0: the row at speed instead): from arch_at to arch_full albums/s the covers within arch_span
+     * (1/100 album) of the middle go back to the side covers' depth and turn by how far out they
+     * are, forming over arch_in ms and relaxing over arch_out, and the covers
+     * follow the wheel by one time constant, arch_tau ms, in place of track, snap and spin. */
     short thumb, ticks_turn, ticks_album, fast_at, fast_full, top_speed, track, snap, spin;
     short far_left, detent, hold_ms, stop_ms, stop_left, rate_up, rate_down, back, dead;
     short contact_ms, aim_snap, lead_from, lead_full, lead_ms, row_shift, row_from, row_full;
     short row_shrink, row_flat, row_out, row_edge, row_width, row_key;
     short jump_ms, jump_ticks, jump_at, jump_pace, big_jump_at, big_jump_ms, enter_albums, slide_ms;
     short fold_near;
+    short arch_at, arch_full, arch_span, arch_in, arch_out, arch_tau;
     short name_px, artist_px, text_y, artist_y;
 } cf_style_t;
 typedef struct {

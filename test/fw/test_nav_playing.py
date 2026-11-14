@@ -9,7 +9,7 @@ import pytest
 
 import host
 import art as tools_art  # tools/, on the path host.py set: the art's own sizes
-from conftest import NAVIGATION_SOURCE, O, Deques, ui_name
+from conftest import NAVIGATION_SOURCE, O, Deques, Externpic, ask_cover, in_fork, ui_name
 
 THEMES = host.tools_theme.builtins()
 SETS = host.tools_theme.geometry_sets(THEMES)
@@ -421,6 +421,71 @@ def test_only_a_new_level_or_charge_repaints_the_bar_after_the_frame(fw, st, ui)
     assert repaints == [1, 0, 1, 1, 1] and ui.invalidated(bar.bar) == [bar.bar] * 4
 
 
+# Stock's battery writes land on the hidden label_battery and img_battery, which repaint nothing: showface's tick
+# repaints the bar for a new level or charge, as the minute does for the clock, and only then.
+@pytest.mark.parametrize('t, mode', [(MODERN, 1), (CLASSIC, 2), (MINIMAL, 3)])
+def test_a_new_level_repaints_the_bar_with_nothing_else_painting(fw, st, ui, t, mode):
+    theme(fw, st, t, BATTERY=mode)
+    bar = Bar(fw, ui)
+    lit = fw.var('g_backlight_status', C.c_ubyte)
+    lit.value = 1
+    st.pct_digit, st.pct_sign = 10, 10  # as the first paint measured them
+    bar.sync()  # the first paint
+    ui.run_all('bar_repaint')
+    def tick(*level):
+        if level:
+            bar.level(*level)
+        before = len(ui.invalidated(bar.bar))
+        fw.fn('ringnav_showface', C.c_int, C.c_void_p)(bar.bar)
+        return len(ui.invalidated(bar.bar)) - before
+    def frame():  # the repaint's frame shows the new level and asks for no other, unless the slot resized
+        bar.sync()
+        asked = len(ui.due('bar_repaint'))
+        ui.run_all('bar_repaint')
+        return asked
+    assert [tick(), tick('87%'), frame(), tick(), tick('87%', b'bar_charge'), frame(), tick()] == [0, 1, 0, 0, 1, 0, 0]
+    grows = st.batt_mode in (1, 2)  # the digits shown beside or alone; Inside's body keeps its width
+    assert [tick('9%'), frame()] == [1, grows]  # a digit fewer
+    width = slot_width(ui, bar)
+    # a digit more: the slot widens and the row relays, after the frame
+    assert [tick('10%'), frame()] == [1, grows] and slot_width(ui, bar) == width + 10 * grows
+    lit.value = 0
+    assert tick('86%') == 0  # dark: the wake paints it
+
+
+def test_a_dark_bar_gets_one_repaint_for_a_new_level_and_its_sync_asks_for_no_more(fw, st, ui):
+    theme(fw, st, BATTERY=1)
+    bar = Bar(fw, ui)
+    fw.var('g_backlight_status', C.c_ubyte).value = 1
+    st.bar_dark = 1
+    bar.sync()
+    ui.run_all('bar_repaint')
+    bar.level('87%')
+    before = len(ui.invalidated(bar.bar))
+    fw.fn('ringnav_showface', C.c_int, C.c_void_p)(bar.bar)
+    assert len(ui.invalidated(bar.bar)) - before == 1
+    bar.sync()
+    assert not ui.due('bar_repaint')
+
+
+def test_classic_repaints_the_bar_when_only_the_cable_flips(fw, st, ui):
+    theme(fw, st, CLASSIC, BATTERY=2)
+    bar = Bar(fw, ui)
+    fw.var('g_backlight_status', C.c_ubyte).value = 1
+    fw.var('fw_ctx_g_power_chargestate', C.c_int).value = 2  # full
+    usb = fw.var('g_usbdet_value', C.c_ubyte)
+    usb.value = 0
+    st.pct_digit, st.pct_sign = 10, 10
+    bar.sync()
+    ui.run_all('bar_repaint')
+    def tick():
+        before = len(ui.invalidated(bar.bar))
+        fw.fn('ringnav_showface', C.c_int, C.c_void_p)(bar.bar)
+        return len(ui.invalidated(bar.bar)) - before
+    usb.value = 1  # full on power: Classic's plug, the label and the icon unchanged
+    assert [tick(), tick()] == [1, 0]
+
+
 def test_wifi_and_bluetooth_crowd_the_percentage_out_to_the_icon(fw, st, ui):
     theme(fw, st, BATTERY=2)
     bar = Bar(fw, ui)
@@ -509,7 +574,7 @@ def test_a_crowded_row_turns_percent_inside_to_the_icon_but_classics_is_the_icon
     assert slot_width(ui, bar) == (g.batt_w + 1 if t is CLASSIC else BODY_W) + NUB_W
 
 
-def test_classics_battery_values_are_icon_and_inside(fw, st, ui):
+def test_classics_battery_reads_icon_and_percent_as_inside(fw, st, ui):
     theme(fw, st, CLASSIC, BATTERY=2)  # Icon + Percent is no Classic value: its default, inside
     bar = Bar(fw, ui)
     assert [x[0] for x in Paint(fw, ui, bar)().texts] == ['88', '88']
@@ -554,6 +619,18 @@ def test_the_percentage_says_charging_or_low_in_its_colour(fw, st, ui, icon, col
     theme(fw, st, BATTERY=1)
     canvas = Paint(fw, ui, Bar(fw, ui))('15%', icon)
     assert canvas.texts[0][3] == rgba(color)
+
+
+def test_a_cable_in_with_charging_held_off_is_not_shown_charging(fw, st, ui):
+    """Stock's icon is bar_charge for any cable; USB DAC with charging Off, or Charge Limit, charges nothing."""
+    from test_usb_charge import Charging
+    theme(fw, st, BATTERY=1)
+    paint, q = Paint(fw, ui, Bar(fw, ui)), Charging(fw, pref=0, mode=1, cable=1)
+    q.config()  # Audio and DAC, charging Off: held
+    assert [paint(text, b'bar_charge').texts[0][3] for text in ('50%', '14%')] == [rgba(0xffffff), rgba(O['BATT_LOW_RGB'])]
+    q.pref = 1
+    q.config()  # charging On
+    assert paint('14%', b'bar_charge').texts[0][3] == rgba(O['BATT_CHARGE_RGB'])
 
 
 def test_the_first_paint_measures_the_digits_and_the_slot_fits_them(fw, st, ui):
@@ -948,6 +1025,16 @@ def test_modern_names_the_page_in_its_bold_and_the_clock_goes_back_to_stocks_fac
     assert ui.prop(bar.clock, b'style:normal:font_name') == b'default' and len(ui.due('clock_due')) == 1
 
 
+def test_modern_clock_loses_a_cjk_titles_bold_mark_when_the_title_goes(fw, st, ui):
+    """A CJK page's name falls back to stock's face, kept bold by the mark; going Home the clock is plain."""
+    theme(fw, st, MODERN, TIMETITLE=0)
+    bar = Bar(fw, ui)
+    bar_title(fw, bar, window(ui, 'artist_page', '专辑'))
+    assert ui.prop(bar.clock, b'_q2_bold_fallback') == 1
+    bar_title(fw, bar, window(ui, 'home_page', 'Q2', navbar_shown=1))
+    assert ui.prop(bar.clock, b'_q2_bold_fallback') == 0
+
+
 def test_a_dialog_or_no_window_leaves_the_bar(fw, st, ui):
     theme(fw, st, TIMETITLE=0)
     bar = Bar(fw, ui)
@@ -994,8 +1081,8 @@ def test_classics_title_face_falls_back_by_the_text(fw, st, ui, ranges, text, fa
     answer = fw.fn('theme_font', C.c_int, C.c_void_p, C.c_int, C.c_int)(label, ROLE_TITLE, -1)
     got, px = label_font(ui, label)
     assert got == face and answer == FACES.index(face) | px << 2
-    # bold's capitals stand taller: standing in for Classic's face it is smaller; stock's keeps the size
-    assert px < TITLE_PX if face == b'bold' else px == TITLE_PX
+    # bold's and stock's capitals stand taller: standing in for Classic's face either is smaller
+    assert px == TITLE_PX if face == b'classic-light' else px == round(TITLE_PX * .83)
 
 
 def test_a_face_already_written_is_not_written_again(fw, st, ui):
@@ -1065,7 +1152,7 @@ def test_the_playing_rows_mark_keeps_its_titles_face_under_classic(fw, st, ui, r
     fw.fn('theme_font', C.c_int, C.c_void_p, C.c_int, C.c_int)(plain, ROLE_TITLE, FONT_ROW)
     face, px = label_font(ui, title)
     assert ui.text(title).startswith('▶ ') and (face, px) == label_font(ui, plain)
-    assert face == first_face(ranges, text) and (px < TITLE_PX if face == b'bold' else px == TITLE_PX)
+    assert face == first_face(ranges, text) and (px == TITLE_PX if face == b'classic-light' else px < TITLE_PX)
 
 
 # Now Playing (ringnav_playing): the iPod labels bound, the bar and its fill, the times, scrub.
@@ -1466,6 +1553,64 @@ def test_the_art_reloads_when_the_players_cover_changes(fw, ui, now, st):
     fw.var('g_playcover_type', C.c_ubyte).value = 2
     poll()
     assert ui.prop(now.cover, b'image') == b'play_defaultcover'  # dark: the next lit pass
+
+
+# A card app's URL queue: every song's REC_PATH is "" and a cover by URL leaves g_lastcover_url "", so the type and the
+# track's path are the same for every song; only the file stock's cover thread wrote (its size and time) tells their
+# art apart. The thread clears its request before it downloads, and a cover asked for mid-download lands after it.
+@in_fork
+def test_each_cover_a_url_queue_downloads_reloads_the_art_dark_or_lit(fw, ui, now, st):
+    poll = fw.fn('navigation__np_art_poll', None)
+    def unloads():
+        return len(fw.calls('image_manager_unload_bitmap_by_name'))
+    for path in now.paths:
+        path.value = b''
+    fw.var('fw_ctx_g_lastcover_url', C.c_char * 1024).value = b''
+    kind, lit, pic = fw.var('g_playcover_type', C.c_ubyte), fw.var('g_backlight_status', C.c_ubyte), Externpic(fw)
+    def downloaded(size=20000):
+        pic.write(size)
+        kind.value = 2
+    ask_cover(fw)
+    downloaded()
+    poll()
+    assert unloads() == 1 and ui.prop(now.cover, b'image') == b'file:///tmp/externpic.jpg'
+    pic.write(8000)  # read mid-write: part of the file there
+    poll()
+    assert unloads() == 2
+    pic.grow(20000)  # the rest, in the same tick: only the size tells
+    poll()
+    poll()
+    assert unloads() == 3 and st.np_art == fw.fn('navigation__np_art', C.c_uint, C.c_void_p)(C.byref(C.c_char_p()))
+    lit.value = 0
+    now.mcl.pos = 3  # the next song while the screen is dark: no pass sees its cover asked for
+    ask_cover(fw)
+    downloaded()
+    poll()
+    assert unloads() == 3
+    lit.value = 1
+    poll()
+    assert unloads() == 4  # its own art at the first lit pass
+    poll()
+    now.mcl.pos = 4  # lit, and no pass while its cover downloads
+    poll()
+    assert unloads() == 4  # the last song's file still: nothing new to show yet
+    ask_cover(fw)
+    downloaded()
+    poll()
+    assert unloads() == 5
+    now.mcl.pos = 5  # a quick skip: asked while song 4's cover still downloads, which lands first (as large, the
+    # same second: only the nanoseconds tell)
+    ask_cover(fw)
+    downloaded()
+    poll()
+    assert unloads() == 6
+    kind.value = 0  # the thread takes song 5's request; no pass sees it
+    downloaded(31000)
+    poll()
+    assert unloads() == 7
+    now.mcl.pos = 12  # stopped past the queue's end: no track, nothing read from one
+    poll()
+    assert unloads() == 7
 
 
 # Classic's progress bar (ipod_bar, paint_scrubber) and the rows painter (paint_rows_bar).
@@ -2053,6 +2198,34 @@ def test_the_players_file_waits_until_it_is_this_tracks_cover(fw, ui, mcl, st):
     fw.var('g_playcover_type', C.c_ubyte).value = 1
     x, y, w, h = big.fit()
     assert big.canvas.loaded == [b'file:///tmp/coverpic.jpg'] and w > h
+
+
+# A card app's URL queue (np_art's test): a paint between the song change and its cover's request decodes the last
+# song's file, still in place; the next song's file, written after, is decoded once it is in.
+@in_fork
+def test_a_url_queues_next_cover_is_fitted_once_it_is_in(fw, ui, mcl, st):
+    theme(fw, st, CLASSIC)
+    ext = b'file:///tmp/externpic.jpg'
+    sizes = {ext: (400, 200)}
+    big = Big(fw, ui, mcl, st, image=ext, sizes=sizes)
+    for path in big.now.paths:
+        path.value = b''
+    fw.var('fw_ctx_g_lastcover_url', C.c_char * 1024).value = b''
+    kind, pic = fw.var('g_playcover_type', C.c_ubyte), Externpic(fw)
+    ask_cover(fw)
+    pic.write()
+    kind.value = 2
+    x, y, w, h = big.fit()
+    assert w > h
+    mcl.pos = 3
+    x, y, w, h = big.fit()
+    assert w > h and len(big.canvas.loaded) == 2  # the last song's file, the next one's not asked for yet
+    ask_cover(fw)
+    sizes[ext] = (200, 400)
+    pic.write()
+    kind.value = 2
+    x, y, w, h = big.fit()
+    assert h > w and len(big.canvas.loaded) == 3
 
 
 # The geometry sets' boot (theme_boot): tools/ipod.py bakes SET0 into stock's row immediates; another set

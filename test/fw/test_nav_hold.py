@@ -9,7 +9,7 @@ import struct
 import pytest
 
 import host
-from conftest import O, Deques, Files, Rows, claim, fnv1a, high_halves, in_fork, ui_name
+from conftest import O, Deques, Files, Rows, claim, favdir_card, fnv1a, high_halves, in_fork, ui_name
 
 W_X, W_PARENT, W_EMITTER = O['W_X'], O['W_PARENT'], O['W_EMITTER']
 EMIT_TYPE, EMIT_PENDING_REMOVE, EMIT_NEXT = O['EMIT_TYPE'], O['EMIT_PENDING_REMOVE'], O['EMIT_NEXT']
@@ -1073,7 +1073,7 @@ def classic(fw, ui, recs, st, stock_globals):
 def test_classic_playlists_rows_are_new_edit_then_the_playlists_with_their_counts(classic, ui):
     p = classic()
     assert p.ring(p.win) == 0x31
-    assert p.shown() == [('New Playlist…',), ('Edit Playlists…',), ('Gym', '12 Songs'), ('Road Trip', '1 Song'),
+    assert p.shown() == [('New Playlist…',), ('Select Playlists…',), ('Gym', '12 Songs'), ('Road Trip', '1 Song'),
                          ('Sleep', '0 Songs')]
     assert p.title() == 'Playlists' and not ui.lookup(p.win, '_pl_none', 0)
 
@@ -1140,7 +1140,7 @@ def test_a_covers_centre_opens_its_playlist_whatever_mode_a_picker_left(classic,
 def test_a_row_click_runs_stocks_handler_next_pass(classic, ui):
     p = classic()
     p.ring(p.win)
-    ui.click(p.action('Edit Playlists…'))
+    ui.click(p.action('Select Playlists…'))
     assert not ui.dispatched
     ui.due('pl_due')
     target, kind = ui.dispatched[0]
@@ -1150,7 +1150,7 @@ def test_a_row_click_runs_stocks_handler_next_pass(classic, ui):
 def test_the_last_row_clicked_in_a_pass_runs(classic, ui):
     p = classic()
     p.ring(p.win)
-    ui.click(p.action('Edit Playlists…'))
+    ui.click(p.action('Select Playlists…'))
     ui.click(p.action('New Playlist…'))
     ui.due()
     assert [ui.handlers(t, EVT_CLICK) for t, _ in ui.dispatched] == [[PL_STOCK[PL_NEW]]]
@@ -1166,12 +1166,12 @@ def test_a_row_run_after_the_page_went_does_nothing(classic, ui):
 
 
 def select_mode(p, ui, fw):
-    """Edit Playlists… as stock's handler takes it: g_navbar_status 1, the rows rebuilt with their marks."""
+    """Select Playlists… as stock's handler takes it: g_navbar_status 1, the rows rebuilt with their marks."""
     def edit(w, e, *_):
         fw.var('g_navbar_status', C.c_ubyte).value = 1
         p.ring(p.win)
     fw.mock('stock_dispatch_trampoline', edit)
-    ui.click(p.action('Edit Playlists…'))
+    ui.click(p.action('Select Playlists…'))
     ui.due('pl_due')
 
 
@@ -1181,7 +1181,7 @@ def test_edit_playlists_shows_select_modes_rows(classic, ui, fw):
     select_mode(p, ui, fw)
     assert p.shown() == [('Select All',), ('Gym', '12 Songs'), ('Road Trip', '1 Song'), ('Sleep', '0 Songs'),
                          ('Import Playlists',), ('Done',)]
-    assert p.title() == 'Edit Playlists' and ui.nodes[p.win].props['_pl_marks'] == 1
+    assert p.title() == 'Select Playlists' and ui.nodes[p.win].props['_pl_marks'] == 1
     assert ui.nodes[p.view].props['_ringnav_index'] == 1  # Select All's first playlist
 
 
@@ -1221,7 +1221,7 @@ def test_done_leaves_select_mode_for_the_list_on_edit(classic, ui, fw):
     select_mode(p, ui, fw)
     fw.var('g_navbar_status', C.c_ubyte).value = 0  # stock's Done
     p.ring(p.win)
-    assert p.shown()[:2] == [('New Playlist…',), ('Edit Playlists…',)] and ui.nodes[p.win].props['_pl_marks'] == 0
+    assert p.shown()[:2] == [('New Playlist…',), ('Select Playlists…',)] and ui.nodes[p.win].props['_pl_marks'] == 0
     assert p.title() == 'Playlists'
 
 
@@ -1598,6 +1598,18 @@ def test_remove_from_favourites_untags_the_song(hold, recs, ui, fw):
     assert [a[0] for _, a in fw.calls('deleteMusicFromFav')] == [songs[1]] and fw.var('g_delete_flag', C.c_ubyte).value == 0
 
 
+@pytest.mark.parametrize('row, state', [('Add to Favourites', b'1'), ('Remove from Favourites', b'0')])
+def test_a_favourite_from_the_menu_is_told_to_the_song_s_card_app(hold, recs, fw, row, state):
+    """A song in a card app's favdir (q2-jellyfin's synced Jellyfin): the row's My Fav change goes to its fav.log."""
+    hold.now_playing([recs(path=f'/mnt/mmc/Jellyfin/{i}.flac', title=f'Song {i}') for i in range(3)])
+    fw.mock('checkFavExist', lambda *_: row.startswith('Remove'))
+    favdir_card(fw, hold.card.files)
+    hold.hold()
+    hold.menu()
+    hold.pick(row)
+    assert hold.card.files['/mnt/mmc/.jf/fav.log'] == b'\npath\t' + state + b'\t/mnt/mmc/Jellyfin/1.flac\n'
+
+
 def test_view_queue_opens_stocks_queue_in_order(hold, recs, ui):
     hold.now_playing([song(recs, i) for i in range(3)])
     hold.hold()
@@ -1674,6 +1686,24 @@ def test_more_clicks_now_playings_own_more(hold, recs, ui, st):
     hold.menu()
     hold.pick('More…')
     assert ui.dispatched == [(more, EVT_CLICK)]
+
+
+def test_more_opens_the_apps_page_while_its_queue_plays(hold, recs, ui, st):
+    # addon.c addon_more: an app's q2app said more=, and the queue playing is the one its .play started.
+    from test_addon import Ap, Qa
+    hold.now_playing([song(recs, i) for i in range(3)])
+    st('np_win', C.c_void_p).value = hold.page
+    ui.nodes[ui.child(hold.page, 'image')].name = 'img_more'
+    ap = hold.fw.var('addon__ap', Ap)
+    ap.n, a = 1, ap.a[0]
+    a.id, a.name, a.more, a.bin, a.pid, a.launched = b'foo', b'Foo', b'playlists', b'/mnt/mmc/.foo/q2-foo', b'/tmp/q2-foo', 1
+    hold.card.files.update({'/mnt/mmc/.foo/q2-foo': b'', '/tmp/q2-foo': b'1'})
+    qa = hold.fw.var('addon__qa', Qa)
+    qa.app, qa.loads = C.addressof(a), hold.fw.var('playback_loads', C.c_uint).value
+    hold.hold()
+    hold.menu()
+    hold.pick('More…')
+    assert ui.dispatched == [] and ui.nodes[ui.top()].name == 'addon_page'
 
 
 def test_now_playings_rate_opens_the_picker_over_it(hold, recs, ui, st, rates):
@@ -1927,6 +1957,16 @@ def test_rate_album_opens_the_picker_on_its_hearts_and_rates_that_album(hold, re
     assert 'Rate Album' in hold.menu() and hold.title() == 'Revolver'  # its own: none
 
 
+@pytest.mark.parametrize('sel, opened', ((1, [2]), (0, [])))  # 2: DISPLAY_COVERFLOW
+def test_a_hold_on_homes_cover_flow_row_opens_displays_cover_flow_page(hold, recs, ui, fw, sel, opened):
+    hold.songs_page('home_page', [recs(), recs()], sel=sel, showlist=False)
+    ui.nodes[ui.kids(ui.kids(hold.list)[1])[0]].name = 'img_cover_flow'
+    seen = []
+    ui.routes['systemset/display_page'] = lambda ctx: seen.append(fw.var('navigation__display_sub', C.c_int).value)
+    assert hold.hold() == (STOP if opened else 0)  # another row's hold stays stock's
+    assert seen == opened and hold.menu() is None
+
+
 @pytest.mark.parametrize('cls, field_', [(0xf004, 'artist'), (0xf005, 'composer'), (0xf006, 'genre')])
 def test_an_artist_composer_or_genre_row_is_titled_by_its_own_tag(hold, recs, ui, cls, field_):
     rows = [recs(kind=4, **{field_: f'{field_} {i}'}) for i in range(2)]
@@ -2083,31 +2123,17 @@ def test_a_hold_in_quick_settings_switches_the_wheel(fw, ui, st):
     struct.pack_into('<i', event, EVENT_KEY, KEY_PLAY)
     assert keylong(None, event) == STOP and keylong(None, event) == STOP
     assert [(a[0], cstr(a[1]), cstr(a[2])) for _, a in fw.calls('write_int_config')] == [(1, 'Q2POD', 'QSVOLUME'), (0, 'Q2POD', 'QSVOLUME')]
-    assert not fw.calls('stock_keylong_trampoline') and not ui.toasts
+    assert not fw.calls('stock_keylong_trampoline')
 
 
-def test_a_hold_in_quick_settings_names_the_wheel_in_a_band_touches_pass_through(fw, ui):
-    win = ui.window('statusbar_dialog')
+def test_a_hold_in_quick_settings_names_the_wheel_in_a_toast(fw, ui):
+    ui.window('statusbar_dialog')
     keylong = fw.fn('ringnav_keylong', C.c_int, C.c_void_p, C.c_void_p)
     event = C.create_string_buffer(0x40)
     struct.pack_into('<i', event, EVENT_KEY, KEY_PLAY)
-    created, timers, destroyed = [], [], []
-    real = {'text': []}
-    fw.mock('label_create', lambda parent, x, y, w, h, *_: created.append((parent, C.c_int(y).value, C.c_int(h).value)) or 0x7000 + len(created))
-    fw.mock('widget_set_text_utf8', lambda w, s, *_: real['text'].append(cstr(s)))
-    fw.mock('widget_add_timer', lambda w, fn, ms, *_: timers.append((w, fn, C.c_int(ms).value)) or len(timers))
-    fw.mock('widget_lookup', lambda w, name, deep, *_: 0x7000 + len(created) if created and cstr(name) == 'ringnav_qs_hint' else 0)
-    fw.mock('widget_destroy', lambda w, *_: destroyed.append(w) or 0)
     keylong(None, event)
-    assert real['text'] == ['Wheel: Volume'] and created == [(win, 226, 28)] and not destroyed and not ui.toasts
     keylong(None, event)
-    assert real['text'][-1] == 'Wheel: Brightness' and destroyed == [0x7001] and [t[2] for t in timers] == [1500, 1500]
-    assert fw.calls('widget_set_sensitive')[-1][1][:2] == (0x7002, 0)
-    info = C.create_string_buffer(0x40)
-    struct.pack_into('<Q', info, TIMER_CTX, 0x7002)
-    hidden = []
-    fw.mock('widget_set_visible', lambda w, on, *_: hidden.append((w, C.c_int(on).value)) or 0)
-    assert C.cast(timers[-1][1], C.CFUNCTYPE(C.c_int, C.c_void_p))(C.addressof(info)) == 7 and hidden == [(0x7002, 0)]
+    assert ui.toasts == ['Wheel: Volume', 'Wheel: Brightness'] and not fw.calls('label_create')
 
 
 def test_quick_settings_wheel_starts_from_the_saved_choice(fw, ui):

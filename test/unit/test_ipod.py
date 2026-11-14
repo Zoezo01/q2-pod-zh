@@ -428,7 +428,7 @@ def test_playing_page_classic_ipod():
     after = [c[2].get('name') for c in root[3]][root[3].index(n['slide_view_view']) + 1:][:2]
     assert after == ['label_playtime', 'label_ipod_remain']  # over the art's reflection
     title, album, pos = n['scrlabel_title'][1], n['label_ipod_album'][1], n['label_ipod_pos'][1]
-    assert n['label_ipod_pos'] in n['view_album'][3] and pos[0] == album[0] == title[0] == cover[0] + cover[2] + 12
+    assert n['label_ipod_pos'] in n['view_album'][3] and pos[0] - 2 == album[0] == title[0] == cover[0] + cover[2] + 12  # its text under theirs
     assert view[1] + title[1] >= n['img_more'][1][3] - 2 and pos[1] == album[1] + 28
     assert pos[1] + pos[3] < n['img_fav'][1][1] + (ipod.NP_ICON - 28) // 2
     play, remain, bar = n['label_playtime'], n['label_ipod_remain'], ipod.inc('NP_BAR_IPOD')
@@ -1231,7 +1231,8 @@ def code_patches():
             *[(int(at, 16), int(old, 16), ipod.DUMMY_LOAD, ipod.AUDIT['navbar_resize_calls']['purpose']) for at, old in ipod.AUDIT['navbar_resize_calls']['sites']], *tiles,
             (ipod.inc('LIST_VIEW_LAYOUT_SLOT'), ipod.inc('LIST_VIEW_LAYOUT'), 0x40b000, 'settings lists stack SET_ROW rows and map their children'),
             *[(0x78bba0 + 4 * i, old, new, 'times without a leading zero') for i, (old, new) in enumerate(times)],
-            (0x534cf8, 0x0320f809, 0x0c103000, 'boot resume restores the queue paused and stays on Home')]
+            (0x534cf8, 0x0320f809, 0x0c103000, 'boot resume restores the queue paused and stays on Home'),
+            (0x534c4c, 0x1440003c, 0, 'boot resume with Headphones Required on')]
 
 
 def test_patch_code():

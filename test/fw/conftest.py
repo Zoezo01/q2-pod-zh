@@ -111,6 +111,42 @@ def claim(address):
     if libc.mmap(page, 0x2000, 7, 0x100022, -1, 0) != page:  # MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE
         assert not libc.mprotect(page, 0x2000, 7)
 
+def ask_cover(fw):
+    """A card app's song asks for its cover, as get_onlineid3info does (build.py COVERINFO_CALL, tidal.c
+    app_coverinfo): stock's player_set_coverinfo sets g_playcover_type to 0 for its cover thread, here before the
+    call, as its stand-in at tidal.c's own define only returns. The stand-in outlives the test: call it in_fork."""
+    at = int(re.findall(r'#define player_set_coverinfo \(\(.*\)(0x[0-9a-f]+)u\)', (ROOT/'patch/tidal.c').read_text())[0], 16)
+    claim(at)
+    C.memmove(at, b'\xc3', 1)  # ret
+    fw.mock('tk_str_start_with', lambda s, p, *_: C.string_at(s).startswith(C.string_at(p)))
+    rec, id_ = C.create_string_buffer(0x60), C.create_string_buffer(b'app:1:0')  # a card app's record
+    C.c_void_p.from_address(C.addressof(rec) + O['REC_TIDAL_ID']).value = C.addressof(id_)
+    fw.var('g_playcover_type', C.c_ubyte).value = 0
+    fw.fn('app_coverinfo', C.c_int, C.c_char_p, C.c_char_p, C.c_int, C.c_void_p)(b'https://srv/cover.jpg', b'Song', 4,
+                                                                                  C.addressof(rec))
+
+class Externpic:
+    """/tmp/externpic.jpg as stock's cover thread writes it, seen through __xstat (o32: st_size word 12, st_mtime
+    word 16, its nanoseconds 17): write() is the next download, 125 ms on, of size bytes, so most share their second
+    with the last; grow() is the same write read again with more of it there, in the same tick. Nothing else is
+    there."""
+    def __init__(self, fw):
+        self.n, self.size = 0, 0
+        fw.mock('fw___xstat', self.stat)
+
+    def write(self, size=20000):
+        self.n, self.size = self.n + 1, size
+
+    def grow(self, size):
+        self.size = size
+
+    def stat(self, version, path, info, *_):
+        if not C.string_at(path).endswith(b'/tmp/externpic.jpg'):
+            return -1
+        words = (C.c_uint * 36).from_address(info)
+        words[12], words[16], words[17] = self.size, 1800000000 + self.n // 8, self.n % 8 * 125000000
+        return 0
+
 def in_fork(test):
     """The test in a child: what it writes at stock's code addresses would outlive the test here. The child
     closes its firmware (dlclose) before it leaves: gcov writes a library's counts then, and _exit alone would
@@ -237,7 +273,7 @@ class Rows(Deques):
 
 
 class Files:
-    """The card's and flash's files as a dict: fopen and all, so blob_io and the snapshot's reader run whole."""
+    """The card's and flash's files as a dict: fopen and all, so blob_io and the snapshot's reader run whole; "a" appends."""
     def __init__(self, fw, files=None):
         self.files = files if files is not None else {}
         self.open = {}
@@ -256,7 +292,9 @@ class Files:
         if 'r' in mode and path not in self.files:
             return 0
         handle = 0x2000 + len(self.open)
-        self.open[handle] = [path, 0, b'' if 'w' in mode else None]
+        while handle in self.open:  # one closed since leaves this count on a file still open
+            handle += 1
+        self.open[handle] = [path, 0, b'' if 'w' in mode else self.files.get(path, b'') if 'a' in mode else None]
         return handle
 
     def fread(self, out, size, count, f, *_):
@@ -291,6 +329,30 @@ class Files:
             return -1
         self.files[C.string_at(new).decode()] = self.files.pop(C.string_at(old).decode())
         return 0
+
+def favdir_card(fw, files, app='jf', folder='Jellyfin'):
+    """A card app .<app> whose q2app names favdir=<folder> (addon.c addon_fav_path): its q2app in files (a Files
+    dict, by str path) and the card's root listing it, as opendir and readdir (host.py's struct dirent: d_name at
+    11) give it; tk_str_start_with as libc's."""
+    files[f'/mnt/mmc/.{app}/q2app'] = f'name=Jellyfin\nfavdir={folder}\n'.encode()
+    names, keep = [], []
+
+    def opendir(path, *_):
+        names[:] = [f'.{app}'.encode(), folder.encode()] if C.string_at(path) == b'/mnt/mmc' else []
+        return 0x77 if names else 0
+
+    def readdir(d, *_):
+        if not names:
+            return 0
+        name = names.pop(0)
+        ent = C.create_string_buffer(268)
+        C.memmove(C.addressof(ent) + 11, name, len(name))
+        keep.append(ent)
+        return C.addressof(ent)
+    fw.mock('fw_opendir', opendir)
+    fw.mock('fw_readdir', readdir)
+    fw.mock('tk_str_start_with', lambda s, p, *_: C.string_at(s).startswith(C.string_at(p)))
+
 
 class Game(C.Structure):
     """addon.c's gm: the running card game."""

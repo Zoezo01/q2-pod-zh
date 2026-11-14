@@ -611,6 +611,24 @@ static int check(void) {
     return ok;
 }
 
+/* Whether the list as it is now, fetched for this install, still names app i's repo: SH_OK, SH_NET
+ * with no list to be had, SH_MISSING once the repo is dropped or gone from it, SH_CANCELLED when
+ * cancelled meanwhile. The page's list may be the card's of days ago (opened with no Wi-Fi, the
+ * opening check stopped by a press, or the list out of reach while GitHub's API answered;
+ * GHSA-8wpr-pmqx-538x).
+ * ponytail: an install needs raw.githubusercontent.com as well as the API; a network that blocks
+ * only the list's host installs nothing. */
+static int listed(int i) {
+    shelf_app now[SH_MAX];
+    long code = 0;
+    char *list = get(SH_LIST_URL, &code);
+    int n = list ? shelf_sources(list, now, SH_MAX) : 0, r = n ? SH_MISSING : SH_NET;
+    free(list);
+    for (int k = 0; k < n; ++k)
+        if (!now[k].dropped && !strcmp(now[k].repo, apps[i].repo)) r = SH_OK;
+    return sh.cancel ? SH_CANCELLED : r;
+}
+
 /* SH_OK when the card has bytes and SH_RESERVE free; else SH_SPACE and sh.need the MB short. */
 static int room(unsigned bytes) {
     unsigned fs[32] = { 0 }; /* statfs, MIPS o32: f_bsize word 1, f_bavail word 7 */
@@ -664,9 +682,10 @@ static void *sh_worker(void *unused) {
     int i = sh.app, t = sh_find("themes");
     if (sh.job == JOB_CHECK) {
         if (check() && !sh.cancel) sh.checked = now_ms();
-    } else if (sh.job == JOB_INSTALL)
-        sh.result = install(i);
-    else {
+    } else if (sh.job == JOB_INSTALL) {
+        int r = listed(i);
+        sh.result = r ? r : install(i);
+    } else {
         /* Erase Spotify Data: the add-on's logs go too, as spot.log names the account and each
          * track played */
         if (sh.job == JOB_ERASE)
@@ -913,7 +932,7 @@ int shelf_open(void *ctx, void *event) {
             sh_start(JOB_CHECK, 0), sh_refresh();
         else
             /* once Smart Wi-Fi's link is up; a row pressed while it waits takes its place and acts on
-             * the list shown, and the next open checks */
+             * the list shown (an install fetches the list first), and the next open checks */
             smart_hold(sh_check, 0, "apps_page");
     }
     return 0;

@@ -1743,11 +1743,30 @@ def test_solitaire_centre_draws_picks_and_drops(fw):
     p.key(CENTER)  # picked up
     assert s.picking and s.pick == WASTE
     s.sol.cur = 6
-    p.key(CENTER)  # the Ace of hearts doesn't go on the 9: still held
-    assert s.picking and s.sol.len[WASTE] == 1
-    s.sol.cur = 2
+    s.sol.cur = 3
+    p.key(CENTER)  # onto a foundation
+    assert not s.picking and pile(s.sol, 3) == [13 | UP] and s.dirty & 2
+
+
+def test_solitaire_centre_where_the_held_cards_do_not_fit_picks_that_pile_up(fw):
+    p = Page(fw)
+    p.go(SOLITAIRE)
+    s = p.s
+    game_table(s)
+    put(s.sol, STOCK, [5])
+    put(s.sol, WASTE, [13 | UP])
+    put(s.sol, 6, [26 + 8 | UP])
+    s.sol.cur = WASTE
     p.key(CENTER)
-    assert not s.picking and pile(s.sol, 2) == [13 | UP] and s.dirty & 2
+    s.sol.cur = 6
+    p.key(CENTER)  # the Ace of hearts doesn't go on the 9: the 9's column is held instead
+    assert s.picking and s.pick == 6 and s.sol.len[WASTE] == 1 and s.sol.len[6] == 1
+    s.sol.cur = 7
+    p.key(CENTER)  # an empty column takes no 9 and has nothing to pick up: still held
+    assert s.picking and s.pick == 6
+    s.sol.cur = STOCK
+    p.key(CENTER)  # the stock draws, and nothing is held
+    assert not s.picking and pile(s.sol, WASTE) == [13 | UP, 5 | UP] and not s.sol.len[STOCK]
 
 
 def test_solitaire_centre_on_the_same_pile_sends_it_home_or_puts_it_back(fw):
@@ -2024,6 +2043,7 @@ class Canvas:
         fw.mock('canvas_fill_rounded_rect', lambda c, box, g, v, *_: add('round', word(v), rect(box)) or declined)
         fw.mock('canvas_stroke_rounded_rect', lambda c, box, g, v, *_: add('frame', word(v), rect(box)) or declined)
         fw.mock('canvas_set_font', lambda c, face, px, *_: setattr(self, 'px', px))
+        fw.mock('canvas_measure_text', lambda c, s, n, *_: 8.0 * n)
         fw.mock('canvas_set_text_color', lambda c, v, *_: setattr(self, 'ink', v))
         fw.mock('canvas_draw_text_in_rect', lambda c, s, n, box, *_: add(
             'text', self.ink, rect(box), text=''.join(map(chr, (C.c_uint * n).from_address(s))), px=self.px))
@@ -2049,8 +2069,23 @@ def paint(p, canvas=None):
     return canvas.ops
 
 
+def words(ops):
+    """The texts as (text, colour, rect), a run of letters drawn one by one (a theme's spaced capitals) as its word."""
+    out = []
+    for o in ops:
+        if o.kind != 'text':
+            continue
+        last = out[-1] if out else None
+        if last and len(o.text) == 1 and (last[1], last[2][1], last[2][3]) == (o.color, o.rect[1], o.rect[3]) and \
+                o.rect[0] == last[2][0] + last[2][2]:
+            out[-1] = (last[0] + o.text, o.color, (*last[2][:2], last[2][2] + o.rect[2], last[2][3]))
+        else:
+            out.append((o.text, o.color, o.rect))
+    return out
+
+
 def texts(ops):
-    return [o.text for o in ops if o.kind == 'text']
+    return [t for t, _, _ in words(ops)]
 
 
 def bounds(ops):
@@ -2063,14 +2098,17 @@ def encloses(outer, inner):
         outer[1] + outer[3] >= inner[1] + inner[3]
 
 
-def banner(ops):
-    """A banner's lines as (text, colour), [] for none: the last thing drawn, texts over a box framed by its own
-    outline (Snake's board is one too, under the rest)."""
-    for k in range(len(ops) - 2, -1, -1):
-        if ops[k].kind == 'round' and ops[k + 1].kind == 'frame' and ops[k + 1].rect == ops[k].rect:
-            rest = ops[k + 2:]
-            return [(o.text, o.color) for o in rest if o.kind == 'text'] if {o.kind for o in rest} <= {'frame', 'text'} else []
+def popup_ops(ops):
+    """What a pop-up draws: everything after the sheet's dimming, a translucent black over all of it; [] for none."""
+    for k in range(len(ops) - 1, -1, -1):
+        if ops[k].kind == 'fill' and ops[k].rect[:3] == (0, 0, 375) and ops[k].rect[3] > 200 and alpha(ops[k].color) < 255:
+            return ops[k + 1:]
     return []
+
+
+def banner(ops):
+    """A pop-up's lines as (text, colour), the title first; [] for none."""
+    return [(t, c) for t, c, _ in words(popup_ops(ops))]
 
 
 def test_games_paint_draws_only_a_game_on_its_own_sheet_and_puts_the_fill_back(fw):
@@ -2185,13 +2223,13 @@ def test_sudoku_paint_asks_over_the_board_and_says_when_it_is_solved(fw):
     s.sud.cell[blank(s)] = 1
     assert banner(paint(p)) == []
     p.key(PLAY)
-    (ask, white), (keys, _) = banner(paint(p))
-    assert ask == 'New game?' and 'Centre' in keys and 'Return' in keys and light(white)
+    (ask, white), (keys, quiet) = banner(paint(p))
+    assert ask == 'NEW GAME?' and 'CENTRE' in keys and 'RETURN' in keys and light(white) and darker(quiet, white)
     p.key(RETURN)
     assert banner(paint(p)) == []
     s.sud.cell[:] = SOLVED
     (said, color), _ = banner(paint(p))
-    assert said == 'Solved!' and color == tone(fw)
+    assert said == 'SOLVED!' and light(color)
 
 
 def test_a_canvas_that_won_t_round_gets_square_boxes_and_frames_in_their_place(fw):
@@ -2237,9 +2275,9 @@ def test_vortex_paint_waiting_to_launch_is_a_ball_and_the_lives_and_a_hint_to_pr
     ops = paint(p)
     ball, *lives = [o.color for o in ops if o.kind == 'dot']  # no trail
     assert light(ball) and len(lives) == 3 and len(set(lives)) == 1 and grey(lives[0]) and darker(lives[0], ball)
-    assert 'Centre' in texts(ops)
+    assert 'CENTRE' in texts(ops)
     p.key(CENTER)
-    assert 'Centre' not in texts(paint(p))
+    assert 'CENTRE' not in texts(paint(p))
 
 
 def test_vortex_paint_the_ball_trails_its_last_frames_in_the_tone_fading_behind_it(fw):
@@ -2295,15 +2333,20 @@ def test_vortex_paint_the_hud_shows_the_score_the_best_and_the_level_counted_fro
     p.go(VORTEX)
     s = p.s
     s.vx.score, s.best.score, s.vx.level = 1230, 4560, 2
-    numbers = sorted(int(n) for t in texts(paint(p)) for n in re.findall(r'\d+', t))
-    assert numbers == [3, 1230, 4560]
+    hud = words(paint(p))[:6]  # then the hint to press Centre
+    assert [t for t, _, _ in hud] == ['SCORE', '1230', '4560', 'BEST', 'LEVEL', '3']
+    (_, quiet, name), (_, loud, score), (_, _, best), (_, _, best_name), (_, _, level), _ = hud
+    assert light(loud) and grey(quiet) and darker(quiet, loud)  # the names quiet, the numbers loud
+    assert name[0] < score[0] and best_name[0] < best[0] and best[0] + best[2] > 375 - 40 and name[1] == best[1] < level[1]
+    x, y = level[0] + 1, 30 + level[1] + level[3] * 3 // 4  # its first letter's foot on screen, under a 30 px bar
+    assert (80 - x) ** 2 + (y - 240) ** 2 < 78 ** 2  # inside the glass's 80 px bottom corner
 
 
 def test_vortex_paint_without_a_vgcanvas_still_shows_the_hud(fw):
     p = Page(fw)
     p.go(VORTEX)
     ops = paint(p, Canvas(fw, vg=0))
-    assert not [o for o in ops if o.kind in ('arc', 'dot', 'cap')] and len(texts(ops)) == 4
+    assert not [o for o in ops if o.kind in ('arc', 'dot', 'cap')] and len(texts(ops)) == 7
     assert not fw.calls('vgcanvas_save') and not fw.calls('vgcanvas_begin_path')
 
 
@@ -2319,15 +2362,119 @@ def end(p, screen, score):
     assert p.g.frame(None) == 0 and not p.s.frame
 
 
+MINIMAL, CLASSIC, MODERN = b'0', b'1', b'2'
+
+
+def themed(fw, theme, **keys):
+    """The Games page under a theme: its settings are read once, before the page opens."""
+    config(fw, THEME=theme, **keys)
+    return Page(fw)
+
+
 @pytest.mark.parametrize('screen', (VORTEX, SNAKE))
-def test_arcade_paint_return_s_menu_shows_the_choice_in_the_tone(fw, screen):
-    p = Page(fw)
+def test_arcade_paint_return_s_menu_marks_the_choice_with_home_s_dot_in_minimal(fw, screen):
+    p = themed(fw, MINIMAL)
     p.go(screen)
     p.key(RETURN)
-    (a, ca), (b, cb) = banner(paint(p))
-    assert (a, b) == ('Continue', 'Quit') and ca == tone(fw) and cb != ca and grey(cb)
+
+    def menu():
+        ops = popup_ops(paint(p))
+        (title, _, _), (a, ca, ra), (b, cb, rb) = words(ops)
+        assert (title, a, b) == ('PAUSED', 'CONTINUE', 'QUIT') and ra[0] == rb[0] and ra[1] < rb[1]  # spaced capitals
+        dot, = [o for o in ops if o.kind == 'round' and max(o.rect[2:]) < 10]
+        return (ca, cb), (ra, rb)[[r[1] <= dot.rect[1] < r[1] + r[3] for r in (ra, rb)].index(True)], dot
+    (ca, cb), row, dot = menu()
+    assert light(ca) and grey(cb) and darker(cb, ca) and light(dot.color) and dot.rect[0] + dot.rect[2] < row[0]
+    first = row
     p.key(NEXT)
-    assert [c for _, c in banner(paint(p))] == [cb, ca]
+    (ca, cb), row, _ = menu()
+    assert light(cb) and darker(ca, cb) and row[1] > first[1]
+
+
+@pytest.mark.parametrize('light_mode', (b'0', b'1'))
+def test_arcade_paint_return_s_menu_puts_the_choice_on_the_accent_s_bar_in_modern(fw, light_mode):
+    p = themed(fw, MODERN, ACCENT=b'4', LIGHT=light_mode)  # Cobalt
+    p.go(VORTEX)
+    p.key(RETURN)
+    ops = popup_ops(paint(p))
+    (title, _, _), (a, ca, ra), (b, cb, rb) = words(ops)
+    assert (title, a, b) == ('Paused', 'Continue', 'Quit')  # as written: no capitals
+    box, bar = [o for o in ops if o.kind == 'round']
+    assert encloses(box.rect, bar.rect) and ra[1] <= bar.rect[1] and bar.rect[1] + bar.rect[3] <= ra[1] + ra[3] < rb[1] + rb[3]
+    assert bar.color == ink(fw, rgba(fw.fn('accent_tone', C.c_uint, C.c_int)(0))) and not grey(bar.color)
+    assert light(ca) and grey(cb) and light(box.color) == (light_mode == b'1')  # white on the bar in either mode
+    p.key(NEXT)
+    _, bar = [o for o in popup_ops(paint(p)) if o.kind == 'round']
+    assert rb[1] <= bar.rect[1] and bar.rect[1] + bar.rect[3] <= rb[1] + rb[3]
+
+
+@pytest.mark.parametrize('light_mode', (b'0', b'1'))
+def test_arcade_paint_return_s_menu_is_classic_s_panel_the_choice_on_its_band(fw, light_mode):
+    p = themed(fw, CLASSIC, LIGHT=light_mode)
+    p.go(VORTEX)
+    p.key(RETURN)
+    ops = popup_ops(paint(p))
+    (title, ct, rt), (a, ca, ra), (b, cb, rb) = words(ops)
+    assert (title, a, b) == ('Paused', 'Continue', 'Quit') and not [o for o in ops if o.kind in ('round', 'frame')]
+    def panel_rows(ops):
+        """The panel a row at a time, between its rounded corners: the rows as wide as the widest but the ring's."""
+        fills = [o for o in ops if o.kind == 'fill' and o.rect[3] == 1 and o.rect[2] > 200]
+        wide = sorted({o.rect[2] for o in fills})[-2]  # the ring is a pixel wider each side
+        return {o.rect[1]: o for o in fills if o.rect[2] == wide}
+
+    def coloured(o):
+        return max(rgb(o.color)) - min(rgb(o.color)) > 60
+    rows = panel_rows(ops)
+    panel = bounds([o for o in ops if o.kind == 'fill' and o.rect[3] == 1 and o.rect[2] > 200])
+    assert all(encloses(panel, r) for r in (rt, ra, rb)) and panel[2] < 375 and panel[3] < p.s.h
+    band = [y for y, o in rows.items() if coloured(o)]  # the scheme's blue band
+    assert band and min(band) <= ra[1] + 1 and max(band) >= ra[1] + ra[3] - 2 and max(band) < rb[1] + 2
+    paper = rows[rb[1] + rb[3] // 2].color
+    assert grey(paper) and light(paper) == (light_mode == b'1') and light(ca)  # white on the band in either half
+    assert light(ct) == light(cb) == (light_mode == b'0')  # the half's ink, final
+    p.key(NEXT)
+    band = [y for y, o in panel_rows(popup_ops(paint(p))).items() if coloured(o)]
+    assert min(band) > ra[1] + ra[3] - 2 and max(band) >= rb[1] + rb[3] // 2  # its last rows are the rounded ones
+
+
+def popup_env(fw):
+    """games.c's Q2_POPUP: the style and its colours as (r, g, b)."""
+    out = C.create_string_buffer(512)
+    fw.fn('popup_env', None, C.c_char_p, C.c_uint)(out, 512)
+    style, *hexes = out.value.decode().split()
+    assert all(len(h) == 6 for h in hexes)
+    return style, [(int(h, 16) >> 16, int(h, 16) >> 8 & 255, int(h, 16) & 255) for h in hexes]
+
+
+@pytest.mark.parametrize('light_mode', (b'0', b'1'))
+@pytest.mark.parametrize('theme, accent', ((MINIMAL, b'0'), (MODERN, b'4'), (CLASSIC, b'0')))
+def test_a_card_game_s_q2_popup_is_the_pop_up_as_it_is_drawn(fw, theme, accent, light_mode):
+    p = themed(fw, theme, ACCENT=accent, LIGHT=light_mode)
+    p.go(VORTEX)
+    p.key(RETURN)
+    ops = popup_ops(paint(p))
+    (_, ct, _), (_, ca, _), (_, cb, _) = words(ops)
+    style, c = popup_env(fw)
+    box, frame, title, text, pick, pick_text = c[:6]
+    assert (title, text, pick_text) == (rgb(ct), rgb(cb), rgb(ca))
+    if theme == CLASSIC:
+        assert style == 'classic' and len(c) == 6 + 2 * 32
+        head, band = c[6:38], c[38:]
+        fills = [o for o in ops if o.kind == 'fill' and o.rect[3] == 1 and o.rect[2] > 200]
+        wide = sorted({o.rect[2] for o in fills})[-2]
+        top = bounds(fills)[1] + 1  # inside the ring
+        sel = 33  # Continue: under the title strip and its line
+        want = [head[i] if i < 32 else frame if i == 32 else band[i - sel] if i < sel + 32 else box for i in range(200)]
+        last = {o.rect[1]: o for o in fills}  # each row's panel, over the ring's
+        rows = {y: o for y, o in last.items() if o.rect[2] == wide}  # but the rounded ones
+        assert len(rows) > 70 and all(rgb(o.color) == want[y - top] for y, o in rows.items())
+        assert pick == band[16]
+    else:
+        assert style == ('modern' if theme == MODERN else 'minimal')
+        rounds = sorted((o for o in ops if o.kind == 'round'), key=lambda o: o.rect[2])
+        assert rgb(rounds[-1].color) == box and rgb(rounds[0].color) == pick  # the box, then the bar or the dot
+        assert {rgb(o.color) for o in ops if o.kind == 'frame'} == {frame}
+        assert light(rgba(box[0] << 16 | box[1] << 8 | box[2])) == (light_mode == b'1')
 
 
 @pytest.mark.parametrize('screen', (VORTEX, SNAKE))
@@ -2336,14 +2483,15 @@ def test_arcade_paint_pause_and_the_game_over_banners(fw, screen):
     p.go(screen)
     assert banner(paint(p)) == []
     p.key(PLAY)
-    assert banner(paint(p))[0][0] == 'Paused'
+    (title, _), (hint, _) = banner(paint(p))
+    assert title == 'PAUSED' and 'PLAY/PAUSE' in hint
     p.key(PLAY)
     assert banner(paint(p)) == []
     end(p, screen, 40)
-    assert banner(paint(p))[0][0] == 'New best!'  # it raised Best
+    assert banner(paint(p))[0][0] == 'NEW BEST!'  # it raised Best
     p.key(CENTER)
     end(p, screen, 0)
-    assert banner(paint(p))[0][0] == 'Game over'
+    assert banner(paint(p))[0][0] == 'GAME OVER'
 
 
 # Snake.
@@ -2425,12 +2573,15 @@ def test_solitaire_paint_the_top_row_shows_each_pile_s_top_card_and_a_column_all
     p.go(SOLITAIRE)
     deal_table(p.s)
     cards, outlines = solitaire(paint(p))
-    assert [c.texts[0].text if c.texts else None for c in cards] == [None, '10♥', 'A♠', None, 'Q♦', 'J♣']
+    assert [''.join(t.text for t in c.texts[:2]) or None for c in cards] == [None, '10♥', 'A♠', None, 'Q♦', 'J♣']
     stock, ten, ace, back, queen, jack = cards
     assert stock.inner and not back.inner and stock.face == back.face and not light(back.face)  # covered: no border
     assert all(light(c.face) for c in (ten, ace, queen, jack))
-    assert [len(c.texts) for c in (ten, ace, queen, jack)] == [2, 2, 1, 2]  # the suit large only when uncovered
-    assert [t.text for t in jack.texts] == ['J♣', '♣'] and jack.texts[1].px > jack.texts[0].px
+    assert [len(c.texts) for c in (ten, ace, queen, jack)] == [3, 3, 2, 3]  # the suit large only when uncovered
+    assert [t.text for t in jack.texts] == ['J', '♣', '♣'] and jack.texts[2].px > jack.texts[1].px == jack.texts[0].px
+    rank, pip = jack.texts[:2]  # the rank on the left, the suit on the right, both inside the card
+    assert jack.rect[0] < rank.rect[0] and rank.rect[0] + rank.rect[2] <= pip.rect[0] + 1
+    assert pip.rect[0] + pip.rect[2] < jack.rect[0] + jack.rect[2]
     assert ten.texts[0].color == queen.texts[0].color and red(ten.texts[0].color)  # hearts and diamonds
     assert ace.texts[0].color == jack.texts[0].color and dark(ace.texts[0].color)  # spades and clubs
     top, column = {c.rect[1] for c in (stock, ten, ace)}, [c.rect for c in (back, queen, jack)]
@@ -2459,6 +2610,10 @@ def test_solitaire_paint_a_deep_column_closes_its_fan_up_the_outer_ones_shorter(
     assert steps['s'][1] > steps['i'][6] > steps['o'][6] > 0 and len(set(steps['i'][6:])) == 1 == len(set(steps['o'][6:]))
     bottom = {name: col[-1][1] + col[-1][3] for name, col in (('o', outer), ('i', inner))}
     assert bottom['o'] < bottom['i'] <= s.h and bottom['i'] > s.h - steps['i'][6]  # filled to the sheet's foot
+    px = {x: [c.texts[0].px for c in cards if c.rect[0] == x and c.texts] for x in sorted(columns)}
+    whole, (*closed, top), (*tight, _) = px[sorted(columns)[2]][0], px[sorted(columns)[1]], px[sorted(columns)[0]]
+    assert top == whole > closed[0] > tight[0]  # a closed-up strip's label is smaller, the uncovered card's as ever
+    assert closed[0] <= steps['i'][6] + 3 and tight[0] <= steps['o'][6] + 3  # and whole in what shows
 
 
 def test_solitaire_paint_the_cursor_frames_its_top_card_and_a_held_run_is_framed_in_the_tone(fw):
@@ -2489,14 +2644,14 @@ def test_solitaire_paint_asks_before_a_new_deal_and_says_when_it_is_won(fw):
     p.go(SOLITAIRE)
     s = p.s
     p.key(PLAY)
-    assert banner(paint(p))[0][0] == 'New game?'
+    assert banner(paint(p))[0][0] == 'NEW GAME?'
     p.key(RETURN)
     assert banner(paint(p)) == []
     game_table(s)
     for f in range(FOUND, TABLEAU):
         put(s.sol, f, [(f - FOUND) * 13 + k | UP for k in range(13)])
     (said, color), _ = banner(paint(p))
-    assert said == 'You win!' and color == tone(fw)
+    assert said == 'YOU WIN!' and light(color)
 
 
 def config(fw, **values):
@@ -2521,3 +2676,104 @@ def test_solitaire_paint_a_card_is_paper_white_with_black_suits_in_either_mode(f
     slot = next(o for o in outlines if o.rect[2:] == cards[0].rect[2:]).color  # an empty pile's: flipped as any other
 
     assert (max(rgb(slot)) > 0x80) == (mode == b'1')
+
+
+# The theme's own boards (Classic): final colours, the same in both halves.
+
+def coloured(color):
+    return max(rgb(color)) - min(rgb(color)) > 60
+
+
+@pytest.mark.parametrize('light_mode', (b'0', b'1'))
+def test_classic_s_solitaire_is_green_felt_white_cards_blue_backs_and_a_gold_cursor(fw, light_mode):
+    p = themed(fw, CLASSIC, LIGHT=light_mode)
+    p.go(SOLITAIRE)
+    deal_table(p.s)
+    p.s.sol.cur = TABLEAU
+    ops = paint(p)
+    felt = ops[0]
+    assert felt.rect == (0, 0, 375, p.s.h) and rgb(felt.color) == (0x2b, 0x74, 0x37)  # one green, no gradient
+    cards, outlines = solitaire(ops)
+    stock, ten, ace, back, queen, jack = cards
+    assert {rgb(c.face) for c in cards} == {(255, 255, 255)}  # a back's border too
+    assert dark(ace.texts[0].color) and red(ten.texts[0].color)
+    blue = [o for o in ops if o.kind == 'fill' and rgb(o.color)[2] > 2 * rgb(o.color)[0] and rgb(o.color)[2] > 0xa0]
+    on = {name: [o for o in blue if encloses(c.rect, o.rect)] for name, c in (('stock', stock), ('back', back))}
+    assert len(on['stock']) > 30 > len(on['back']) > 0 and len(on['stock']) + len(on['back']) == len(blue)  # covered: its top
+    cursor, = outlines  # an empty pile is a well in the felt, not an outline
+    assert encloses(cursor.rect, jack.rect) and rgb(cursor.color)[0] > 0xe0 > 0x80 > rgb(cursor.color)[2]
+    wells = [o for o in ops[1:] if o.kind == 'fill' and alpha(o.color) < 0x60 and not any(rgb(o.color))]
+    assert len({o.rect[1] for o in wells}) >= stock.rect[3]
+
+
+@pytest.mark.parametrize('light_mode', (b'0', b'1'))
+def test_classic_s_snake_is_an_lcd_in_a_bezel_with_square_dots(fw, light_mode):
+    p = themed(fw, CLASSIC, LIGHT=light_mode)
+    p.go(SNAKE)
+    s = p.s
+    ops = paint(p)
+    bezel, lcd = [o for o in ops if o.kind == 'round']
+    assert encloses(bezel.rect, lcd.rect) and not [o for o in ops if o.kind in ('dot', 'frame')]
+    assert (rgb(bezel.color), rgb(lcd.color)) == ((0x8f, 0x96, 0x8a), (0xc3, 0xcd, 0xb4))  # final in either half
+    dots = [o for o in ops if o.kind == 'fill' and rgb(o.color) == (0x2a, 0x33, 0x24)]
+    assert {o.rect[2:] for o in dots} == {(9, 9)} and len(dots) == s.sn.len + 1 and all(encloses(lcd.rect, o.rect) for o in dots)  # the body and the apple
+    apple = dots[-1].rect
+    hole = [o for o in ops if o.kind == 'fill' and o.color == lcd.color and encloses(apple, o.rect) and o.rect != apple]
+    assert len(hole) == 1
+    score, = [c for t, c, _ in words(ops) if t == 'Score']
+    assert grey(score) and (max(rgb(score)) < 0x80) == (light_mode == b'1')  # the page's own ink, flipped as the page is
+
+
+@pytest.mark.parametrize('light_mode', (b'0', b'1'))
+def test_classic_s_vortex_is_a_night_sky_each_ring_its_colour_with_a_light_on_every_brick(fw, light_mode):
+    p = themed(fw, CLASSIC, LIGHT=light_mode)
+    p.go(VORTEX)
+    ops = paint(p)
+    sky = ops[:p.s.h]
+    assert [o.rect for o in sky] == [(0, y, 375, 1) for y in range(p.s.h)] and all(not light(o.color) for o in sky)
+    cap = next(i for i, o in enumerate(ops) if o.kind == 'cap')
+    track, *bricks = [o.color for o in ops[:cap] if o.kind == 'arc']
+    assert len(bricks) == 2 * 48 and len(set(bricks[::2])) == 3 and all(coloured(c) for c in bricks[::2])
+    assert all(darker(base, shine) for base, shine in zip(bricks[::2], bricks[1::2]))
+    glow, paddle = [o.color for o in ops[cap:] if o.kind == 'arc']
+    assert alpha(glow) < 128 and alpha(paddle) == 255 and rgb(paddle) == (255, 255, 255)  # final in either half
+    halo, ball, *lives = [o.color for o in ops if o.kind == 'dot']
+    assert alpha(halo) < 128 and rgb(ball) == (255, 255, 255) and len(lives) == 3
+    hud = words(ops)[:6]
+    assert [t for t, _, _ in hud] == ['Score', '0', '0', 'Best', 'Level', '1'] and rgb(hud[1][1]) == (255, 255, 255)
+
+
+@pytest.mark.parametrize('light_mode', (b'0', b'1'))
+def test_classic_s_sudoku_puts_the_cursor_s_cell_on_the_band_and_frames_it_only_to_pick_a_digit(fw, light_mode):
+    p = themed(fw, CLASSIC, LIGHT=light_mode)
+    p.go(SUDOKU)
+    s = p.s
+    s.sud.cur = blank(s)
+    s.sud.cell[s.sud.cur] = 5
+    s.sud.cell[next(i for i in range(81) if not s.sud.cell[i])] = 5  # its like, in another cell
+
+    def band(ops):
+        return [o for o in ops if o.kind == 'fill' and o.rect[3] == 1 and o.rect[2] < 40 and coloured(o.color)]
+    ops = paint(p)
+    rows = band(ops)
+    assert len(rows) == rows[0].rect[2] and len({o.rect[0] for o in rows}) == 1  # a square of rows, a cell's inside
+    edges = [o for o in ops if o.kind == 'fill' and 2 in o.rect[2:] and max(o.rect[2:]) == rows[0].rect[2] + 2]
+    assert not edges  # no frame round it
+    digit, = [o for o in ops if o.kind == 'text' and encloses(o.rect, bounds(rows))]
+    assert rgb(digit.color) == (255, 255, 255)  # the band's own ink, final in either half
+    like = [o for o in ops if o.kind == 'fill' and o.rect[2:] == (rows[0].rect[2],) * 2 and not grey(o.color)]
+    assert like and len({o.color for o in like}) == 1 and (max(rgb(like[0].color)) > 0x80) == (light_mode == b'1')  # its like digits: the band's tint of the paper
+    p.key(CENTER)
+    ops = paint(p)
+    assert not band(ops) and len([o for o in ops if o.kind == 'fill' and 2 in o.rect[2:] and max(o.rect[2:]) == rows[0].rect[2] + 2]) == 4
+
+
+@pytest.mark.parametrize('theme, names', ((CLASSIC, ['Solitaire', 'Games']), (MINIMAL, [])))
+def test_the_bar_names_the_game_where_the_theme_s_bar_holds_the_page_s_caption(fw, theme, names):
+    said = []
+    fw.mock('widget_lookup', lambda w, name, *_: 0x7777 if C.string_at(name) == b'_page_title' else 0)
+    p = themed(fw, theme)
+    fw.mock('widget_set_text_utf8', lambda w, text, *_: said.append(C.string_at(text).decode()) if w == 0x7777 else None)
+    p.go(SOLITAIRE)
+    p.go(CHOOSER)
+    assert said == names

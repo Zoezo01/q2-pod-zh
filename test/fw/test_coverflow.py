@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 
 import host
-from conftest import O, Deques, Files, claim, high_halves
+from conftest import O, Deques, Externpic, Files, ask_cover, claim, high_halves, in_fork
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 CX, TOP, ART, ONE, MISS = 187, 13, 160, 65536, 99
@@ -401,9 +401,9 @@ def test_a_side_cover_s_pose_by_its_distance(fw):
     p = pose(g, 0)
     assert (p.xc, p.zc, p.c, p.s, p.bright) == (0, 0, 65536, 0, 256)
     p = pose(g, ONE)
-    assert (p.xc, p.zc, p.c, p.s, p.bright) == (16 * 112, 16 * 90, 32768, 56756, 192)
+    assert (p.xc, p.zc, p.c, p.s, p.bright) == (16 * 128, 16 * 77, 0, 65536, 192)  # #329's shelf: edge-on
     p = pose(g, 2 * ONE)
-    assert (p.xc, p.zc, p.bright) == (16 * (112 + 48), 16 * (90 + 20), 128)
+    assert (p.xc, p.zc, p.bright) == (16 * (128 + 35), 16 * 77, 128)
     assert pose(g, 3 * ONE).bright == 128  # the third out stays (CF_THIRD)
     # and every one past it, drawn whole for as long as any of it shows (a thumb theme's wide ring)
     assert pose(g, 13 * ONE // 4).bright == pose(g, 7 * ONE // 2).bright == pose(g, 15 * ONE // 2).bright == 128
@@ -415,7 +415,7 @@ def test_a_cover_s_pose_is_continuous_and_keeps_turning_in_step(fw):
     for t in range(256, 3 * ONE, 257):
         p = pose(g, t)
         assert 0 <= p.xc - last.xc <= 16 and 0 <= p.zc - last.zc <= 16 and last.bright - 2 <= p.bright <= last.bright, t
-        assert abs(math.hypot(p.c, p.s) - 65536) < 80
+        assert abs(math.hypot(p.c, p.s) - 65536) < 90  # the 90 degree table's chords: 5.6 degrees a step
         last = p
 
 
@@ -537,8 +537,8 @@ def test_hit_names_the_cover_drawn_there(fw):
                     continue  # an edge's blend
                 j = cover(x, y)
                 got = g.coverflow_hit(frac, x, y)
-                if j is None:
-                    assert got == MISS, (frac, x, y)
+                if j is None:  # nothing drawn: no cover, or one past the seven this ring holds
+                    assert got == MISS or abs(got) > 3, (frac, x, y)
                 elif abs((j - 3) * ONE - frac) < 13 * ONE // 4:  # at least a quarter bright
                     assert got == j - 3, (frac, x, y)
                     checked += 1
@@ -2131,7 +2131,7 @@ class Ld(C.Structure):
 class Fx(C.Structure):
     _fields_ = [('frame', C.c_void_p), ('tex', C.c_void_p), ('album', C.c_int * FX_POOL), ('art', C.c_void_p * FX_POOL),
                 ('half', C.c_ubyte * FX_POOL),
-                *((k, C.c_int) for k in 'c frac drawn light lead todo mode letters_at next prev halves'.split()),
+                *((k, C.c_int) for k in 'c frac drawn light lead arch todo mode letters_at next prev halves'.split()),
                 ('half_at', C.c_uint), ('half_ms', C.c_int), ('full_ms', C.c_int),
                 ('ld', Ld * LD_SLOTS), ('stage', C.c_void_p), ('gate', C.c_uint * 8), ('loader', C.c_ulong),
                 ('ld_on', C.c_int), ('ld_stop', C.c_int), ('paint_at', C.c_uint), ('more', C.c_void_p), ('no_more', C.c_int)]
@@ -2735,9 +2735,13 @@ def test_the_streaming_row_opens_the_page_in_full(fw, stock_bg):
     assert ui.click(h.rows['img_services']) == [9] and stock_bg[1] == 0
 
 
-@pytest.mark.parametrize('shortcut, shown, label', (('0', 0, 'Rockbox'), ('6', 1, 'Games')))
-def test_the_shortcut_row_sits_after_folder_unless_rockbox_is_missing(fw, shortcut, shown, label):
-    themed(fw, CLASSIC, SHORTCUT=shortcut)
+@pytest.mark.parametrize('home', ('0', '1', '2'))
+@pytest.mark.parametrize('theme', (MINIMAL, CLASSIC, MODERN))
+@pytest.mark.parametrize('shortcut, shown, label', (('0', 0, 'Rockbox'), ('6', 1, 'Games'), ('11', 0, 'Favorites'),
+                                                    ('12', 1, 'Favorites')))
+def test_the_shortcut_row_sits_after_folder_unless_rockbox_is_missing_or_none(fw, theme, home, shortcut, shown, label):
+    # None hides the row in every layout and theme; the carousel's card stays, naming the default as with no choice
+    themed(fw, theme, SHORTCUT=shortcut, HOME=home)
     ui = Ui(fw)
     h = Homes(ui, carousel=True, rockbox=True)
     rockbox = h.rows['img_rockbox']
@@ -2745,6 +2749,7 @@ def test_the_shortcut_row_sits_after_folder_unless_rockbox_is_missing(fw, shortc
     h.open(fw)
     rows = ui[h.view].kids
     assert rows.index(rockbox) == (rows.index(h.rows['img_folder']) + 1 if shown else len(rows) - 1)  # else last
+    assert [r for r in rows if r != rockbox] == [h.rows[n] for n in h.ROWS if n != 'img_rockbox']  # the others keep their order
     assert ui[rockbox].visible == shown and ui[rockbox].sensitive == shown
     assert ui[ui.named('label_rockbox')].text == label and ui[ui.lookup(h.carousel[0], 'label_rockbox')].text == label
 
@@ -2983,6 +2988,41 @@ def test_a_home_paint_arms_the_pan_once_while_it_shows(fw, mcl):
     assert len([t for t in ui.timers.values() if t[0] == address(fw, 'coverflow__home_drift')]) == 1
 
 
+# A card app's URL queue: its songs have no path and a cover by URL leaves g_lastcover_url "", so a paint between the
+# song change and its cover's request shows the last song's file, still in place, under the new album. A quick skip
+# asks for the next cover while the last one downloads: that lands first, then the next one with no paint between
+# its type 0 and 2. Home keys the file written, so each download is shown.
+@in_fork
+def test_home_shows_each_cover_a_url_queue_downloads(fw, mcl):
+    _, ui, h, _ = home_open(fw)
+    fw.var('g_backlight_status', C.c_ubyte).value = 1
+    recs = [Rec(path='') for _ in range(2)]
+    fw.var('fw_ctx_mcl_pdeqplaylist', C.c_uint).value = Deques(fw).new([rec.p for rec in recs])
+    fw.var('fw_ctx_g_lastcover_url', C.c_char * 1024).value = b''
+    kind, pic = fw.var('g_playcover_type', C.c_ubyte), Externpic(fw)
+    def downloaded(size=20000):
+        pic.write(size)
+        kind.value = 2
+    def paint():
+        fw.fn('coverflow_home_art', None, C.c_void_p)(h.win)
+        return len(fw.calls('image_manager_unload_bitmap_by_name'))
+    mcl.pos = 0
+    player_rig(fw, id3_path=b'', album=b'One')
+    ask_cover(fw)
+    downloaded()
+    assert paint() == 1
+    mcl.pos = 1
+    player_rig(fw, id3_path=b'', album=b'Two')
+    assert paint() == 2  # the last song's file, under the new album
+    ask_cover(fw)
+    downloaded()  # the first song's cover again, still downloading at the skip
+    assert paint() == 3
+    kind.value = 0  # the thread takes the second song's request: no paint sees it
+    downloaded(31000)
+    assert paint() == 4
+    assert paint() == 4
+
+
 def test_a_dark_screen_arms_no_pan(fw, mcl):
     _, ui, h, _ = home_open(fw)
     drifting(fw, light=0)
@@ -3063,6 +3103,15 @@ def test_pane_scaled_weighs_by_alpha_so_a_transparent_pixel_lends_no_colour(fw):
         assert alphas[0] == 255 and alphas[-1] == 0 and alphas == sorted(alphas, reverse=True)
         assert all(p >> 16 & 255 == 255 for p in row if p >> 24)  # what shows is the opaque pixel's blue, whole
         assert row[-1] == 0
+
+
+def test_pane_scaled_stretches_an_edge_over_one_pixel_not_the_stretch(fw):
+    """#303: a card app's 52 px icon at 96 px was soft, plain bilinear blending every edge over two pixels."""
+    b = Bitmaps(fw)
+    out, _ = scaled(fw, b, 2, 1, lambda x, y: (0, 0, 0, 255) if x == 0 else (255, 255, 255, 255), 8)
+    for row in pixels_of(b, out):
+        reds = [p & 255 for p in row]
+        assert reds == sorted(reds) and len([r for r in reds if 0 < r < 255]) <= 1, reds
 
 
 def test_pane_scaled_scales_an_app_once(fw):
@@ -3336,7 +3385,7 @@ class Th(C.Structure):
                 *((k, C.c_uint) for k in 'at tick_at edge_at letter_at'.split()),
                 *((k, C.c_int) for k in 'raw on finger held dir dead early clicked bounced capped jump beat jump_to lean fold'.split()),
                 ('fold_at', C.c_uint), *((k, C.c_float) for k in 'enter fold_off fold_vel hold_lead hold_run hold_xrun hold_xs'.split()),
-                ('hold_k', C.c_int)]
+                ('hold_k', C.c_int), ('arch', C.c_float), ('seen_arch', C.c_float)]
 
 
 def captions(fw, theme, scoped=0, albums=(('Abbey', 'Beatles'), ('Help', 'Beatles'))):
@@ -3419,3 +3468,40 @@ def test_the_panel_s_paper_header_shadow_and_border(fw, light):
     assert [r[1:] for r in border] == [(39, 8, BACK_W + 2, 1), (39, 9 + 285, BACK_W + 2, 1), (39, 9, 1, 285), (40 + BACK_W, 9, 1, 285)]
     assert len({r[0] for r in border}) == 1 and border[0][0] >> 24 == 255  # one opaque colour all round
     assert (border[0][0] & 255 > 0x80) == bool(light)
+
+
+# The album panel's rows: the title runs to the length's text, not to the box reserved for it
+
+def panel_row(fw, text, canvas=1):
+    """panel_fit on two fake widgets, the length's box 66 wide (88 from an hour) and the title's 194; a character measures 10 px."""
+    wide = (C.c_uint * (len(text) + 1))(*map(ord, text))
+    title, time = bytearray(0x80), bytearray(0x80)
+    for w, (width, height) in ((title, (194, 45)), (time, (88 if len(text) > 5 else 66, 45))):
+        C.c_int.from_buffer(w, O['W_W']).value, C.c_int.from_buffer(w, O['W_H']).value = width, height
+    bufs = {C.addressof((C.c_char * 0x80).from_buffer(w)): w for w in (title, time)}
+    fw.mock('widget_get_canvas', lambda *a: 0x1000 * canvas)
+    fw.mock('widget_get_text', lambda *a: C.addressof(wide))
+    fw.mock('canvas_measure_text', lambda c, s, n, *a: 10.0 * n)
+    fit = fw.fn('coverflow__panel_fit', None, C.c_void_p, C.c_void_p, C.c_uint)
+    fit(C.addressof((C.c_char * 0x80).from_buffer(title)), C.addressof((C.c_char * 0x80).from_buffer(time)), len(text))
+    return list(bufs.values()), fw.calls('widget_resize'), fw.calls('widget_move_resize'), title, time
+
+
+@pytest.mark.parametrize('text,w', [('4:01', 40), ('14:57', 50), ('1:02:03', 70)])
+def test_a_panel_title_runs_to_its_length_s_own_text(fw, text, w):
+    _, resize, move, title, time = panel_row(fw, text)
+    gap, box = 8, w + 4  # hscroll_label paints in its width less two 2 px margins, and scrolls a text wider than that
+    assert [a[1:3] for _, a in resize] == [(BACK_W - 12 - box - gap - 12, 45)]  # from x 12, ending gap before the box
+    assert [a[1:5] for _, a in move] == [(BACK_W - 12 - box, 0, box, 45)]  # the length stays at the right margin
+
+
+def test_a_panel_length_too_wide_for_its_reserve_keeps_it(fw):
+    _, resize, move, *_ = panel_row(fw, '10:00:00')  # 80 px and its margins against the 88 px reserve: 84 fits
+    assert [a[3] for _, a in move] == [84]
+    _, resize, move, *_ = panel_row(fw, '100:00:00')  # 90 px: left alone
+    assert len(resize) == 1 and len(move) == 1
+
+
+def test_a_panel_row_keeps_its_reserve_with_no_canvas(fw):
+    _, resize, move, *_ = panel_row(fw, '4:01', canvas=0)
+    assert not resize and not move

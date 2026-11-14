@@ -44,9 +44,11 @@ enum {
     POD_COVERMODE, /* Enlarged Album Art and Folder Album Cover: stock's bytes and PLAYSET keys, as
                       its rows do */
     POD_FOLDERCOVER,
-    POD_BIG_LIB, /* Display's Large Library Mode: Cover Flow's letters (ringnav_big_library) */
+    POD_BIG_LIB, /* Display's Fast Navigation: Cover Flow's letters (ringnav_big_library) */
     POD_PL_CF,   /* Display's Playlist View: List or Cover Flow, as Artist View */
     POD_LIBRARY_FILL,  /* 补全封面与歌词, an action: onlinematch.c's library_fill_* over the card */
+    POD_SCAN_DURATIONS, /* Display's Cover Flow: Scan Song Durations, a switch (durations.c) */
+    POD_CF_POSITION,    /* and Position Bar, a switch (coverflow_position.c) */
     POD_COUNT
 };
 
@@ -142,12 +144,12 @@ typedef struct {
      * last_input times the screen-on idle. year_old: Year order, oldest first. resume:
      * Bluetooth's Resume on connect on. hold_home: Hold Return goes Home. standby_limit: Standby
      * limit's choice.
-     * smart_wifi: Power's Smart Wi-Fi on (smart_poll). big_library: Display's Large Library Mode
+     * smart_wifi: Power's Smart Wi-Fi on (smart_poll). big_library: Display's Fast Navigation
      * on. playlist_cf: Playlists open as Cover Flow. */
     int pod_read, charge_limit, wake_double, wake_pass, wake_eat,
         wake_down, /* 1: the held Centre press passes; 2: it is dropped */
         charge_held, artist_cf, year_old, resume, lock_clock, artist_az, hold_home, standby_limit,
-        eq_output, smart_wifi, big_library, playlist_cf;
+        eq_output, smart_wifi, big_library, playlist_cf, scan_durations, cf_position;
     void *pod_label[POD_COUNT];
     void *art_cf_win, *art_cf_list; /* the artist page given its Coverflow, the albums pending */
     void *art_cf_veil;              /* the artist page unseen until they show, and its anim_hint */
@@ -437,6 +439,13 @@ int pointer_down(void);
 unsigned qm_album_id(void *r);
 char *scrobble_tag(char *o, char *end, const char *s);
 
+/* font_weight.c: a marked label's foreground painted again 1 px right */
+void font_weight_paint(void *w, void *canvas);
+
+/* coverflow_position.c */
+int coverflow_position_enabled(void); /* navigation.c: persisted setting */
+void coverflow_position_reset(void);
+
 /* np_bar.c */
 int np_beside(void);
 int remain_due(const void *info);
@@ -519,12 +528,30 @@ void smart_wake(void); /* Smart Wi-Fi's radio back now, if it had it off */
 int smart_config(const char *section, const char *key);
 void smart_poll(void);
 
+/* battery.c */
+void battery_tick(int level, int cable);
+unsigned battery_log(char *out, unsigned size);
+int battery_history(void *ctx, void *event);
+void battery_paint(void *w, void *canvas);
+
 /* system.c */
 void power_poll(void);
 
+/* usb_charge.c: wrappers for charging, configuration loading and USB gadget dispatch. */
+int ringnav_usb_charge(int on), usb_charge_held(void);
+void usb_charge_row(void *win, void *view); /* Power's USB DAC Charging */
+int ringnav_usb_config(void), ringnav_usb_detect(void), ringnav_usb_status(void);
+int stock_usb_config_trampoline(void), stock_usb_detect_trampoline(void);
+int stock_usb_status_trampoline(void);
+
 /* library_lists.c */
 int era_menu(void *ctx, void *event);
+int era_sql(const char *sql, int (*row)(void *, int, char **, char **), void *ctx);
 int long_songs(void *ctx, void *event);
+/* durations.c: UI-thread API (duration_seconds and duration_text in peq.h); the worker alone
+ * probes files, the UI publishes after join. */
+int durations_start(void *songs), durations_busy(int *done, int *total);
+void durations_cancel(void), durations_poll(void), durations_shutdown(int bounded);
 void mp_counted(void *r, unsigned key, unsigned evicted);
 int most_played(void *ctx, void *event);
 int shuffle_menu(void *ctx, void *event);
@@ -539,6 +566,7 @@ int rate_key(void *top, unsigned key);
 int rate_open(void);
 int rate_saved(int k);
 void rate_album_favs(void *album, int on);
+int fav_told(void *r, int on); /* ratings: a My Fav change told to the song's card app */
 int rate_show(void *win, int pick, unsigned album);
 void rate_bind(void *win); /* ratings: Now Playing's heart */
 int rated_albums(void *ctx, void *event);

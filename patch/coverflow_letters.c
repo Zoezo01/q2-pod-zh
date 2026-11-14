@@ -14,6 +14,35 @@ static void pose_at(int xc, int zc, int deg16, int eye, int bright, pose_t *p) {
     if (deg16 < 0) p->s = -p->s;
 }
 
+/* The shelf's cover t (16.16) albums out, in the arch as far as it has formed (th.arch; after
+ * #329's Parameter Lab): at speed every cover within arch_span albums of the middle is back at the
+ * side covers' depth, the facing one too, so none swings towards the eye, and turned by smoothstep
+ * of its share of the span, so the row bends in to the middle. Its place across and its brightness
+ * stay the shelf's; unformed, or arch_span out, it is pose()'s to the byte. */
+void arch_pose(int t, pose_t *p) {
+    float f = th.on ? th.arch : 0, a = (float)t / CF_ONE, span = cfs.arch_span / 100.f;
+    pose(t, p);
+    if (f <= 0 || a >= span) return;
+    float u = a < 1 ? a : 1, deg = cfs.tilt * (u + (cf_smooth(a / span) - u) * f);
+    int side = 16 * cfs.z1 + (a > 1 ? (int)(16 * cfs.zs * (a - 1)) : 0);
+    pose_at(p->xc, p->zc + (int)((float)(side - p->zc) * f), (int)(deg * CF_ONE), p->eye, p->bright,
+            p);
+}
+
+#ifdef PEQ_HOST
+/* For test/coverflow.py: cover t's pose in the arch formed arch: its depth, its near and far edges'
+ * screen x, its sine and its place across. */
+void cf_arch_pose(int t, float arch, int *out) {
+    pose_t p;
+    cf_thumb_t was = th;
+    th.on = 1, th.arch = arch;
+    arch_pose(t, &p);
+    th = was;
+    out[0] = p.zc, out[1] = project(&p, CF_HALF16), out[2] = project(&p, -CF_HALF16);
+    out[3] = p.s, out[4] = p.xc;
+}
+#endif
+
 /* smoothstep of x (16.16, clamped to 0..CF_ONE), and a to b over e of it: both exact at the ends */
 static int ease16(int x) { return (int)(cf_smooth((float)x / CF_ONE) * CF_ONE); }
 static int glide(int a, int b, int e) { return a + (int)((float)(b - a) * (float)e / CF_ONE); }
@@ -157,7 +186,7 @@ static int entry_window(const entry_t *n) {
     while ((n->focus - a) * dir > 0 && !entry_shows(n, a)) a += dir;
     return a + dir * CF_WIDE_REACH;
 }
-/* The row's window: entry_window's into letters, held, and at speed with Large Library Mode on; at
+/* The row's window: entry_window's into letters, held, and at speed with Fast Navigation on; at
  * speed with it off, 1.7.6's, round the facing cover */
 static int row_window(const entry_t *n) {
     return th.jump || ringnav_big_library() ? entry_window(n) : cf_round(n->lead);

@@ -210,7 +210,7 @@ void ld_take(int s, int i, int a) {
  * lacks, made one a pass from the cover, no sooner than HALF_GAP_MS after the last (a decode is 6
  * to 9 ms of the UI thread), HALF_LOOK albums looked at a pass at most, none with the card's free
  * space under the larger of HALF_KEEP_MB and HALF_KEEP_PCT of its size (they stop short of filling
- * it and stay until Refresh Cover Flow), and none outside Large Library Mode or for playlists; from
+ * it and stay until Refresh Cover Flow), and none outside Fast Navigation or for playlists; from
  * the first album each time the page opens, done at the last. Each is decoded into a texture's
  * worth of heap of its own, freed once written. The only place they are written: never in a frame.
  */

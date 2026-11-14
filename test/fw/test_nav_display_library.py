@@ -451,11 +451,17 @@ def test_classic_accent_takes_classic_blue_after_green_and_skips_ivory(fw):
 def test_shortcut_cycles_in_its_menu_order(fw):
     ui = Ui(fw)
     page = appearance(fw, ui, SHORTCUT=b'0')
-    seen = clicks_of(fw, ui, page, 'Shortcut', 10)
-    # Rockbox, Favorites, Shuffle, Rated Albums, Playlists, Artists, Albums, Games, Podcasts, Audiobooks, Rockbox
+    seen = clicks_of(fw, ui, page, 'Shortcut', 11)
+    # Rockbox, Favorites, Shuffle, Rated Albums, Playlists, Artists, Albums, Games, Podcasts, Audiobooks, None, Rockbox
     assert [v for v, _ in seen] == ['Favorites', 'Shuffle', 'Rated Albums', 'Playlists', 'Artists', 'Albums', 'Games',
-                                    'Podcasts', 'Audiobooks', 'Rockbox']
-    assert [w for _, w in seen] == [[('SHORTCUT', v)] for v in (3, 5, 4, 7, 1, 2, 6, 8, 9, 0)]
+                                    'Podcasts', 'Audiobooks', 'None', 'Rockbox']
+    assert [w for _, w in seen] == [[('SHORTCUT', v)] for v in (3, 5, 4, 7, 1, 2, 6, 8, 9, 11, 0)]
+
+
+def test_shortcut_none_reads_as_none_and_goes_on_to_rockbox(fw):
+    ui = Ui(fw)
+    page = appearance(fw, ui, SHORTCUT=b'11')
+    assert [(v, w) for v, w in clicks_of(fw, ui, page, 'Shortcut', 1)] == [('Rockbox', [('SHORTCUT', 0)])]
 
 
 def test_home_cycles_split_full_carousel(fw):
@@ -464,10 +470,11 @@ def test_home_cycles_split_full_carousel(fw):
     assert clicks_of(fw, ui, page, 'Home', 3) == [('Full', [('HOME', 1)]), ('Carousel', [('HOME', 2)]), ('Split', [('HOME', 0)])]
 
 
-def test_classic_battery_takes_only_its_two_styles(fw):
+def test_classic_battery_takes_only_its_three_styles(fw):
     ui = Ui(fw)
     page = appearance(fw, ui, THEME=b'1')
-    assert clicks_of(fw, ui, page, 'Battery', 2) == [('Percent Inside', [('BATTERY', 3)]), ('Icon', [('BATTERY', 0)])]
+    assert clicks_of(fw, ui, page, 'Battery', 3) == [('Percent', [('BATTERY', 1)]), ('Percent Inside', [('BATTERY', 3)]),
+                                                     ('Icon', [('BATTERY', 0)])]
 
 
 @pytest.fixture
@@ -688,8 +695,8 @@ def test_cover_flow_page_holds_artist_view_playlists_sort_refresh_and_large_libr
     ui.click(button_of(page.view(), 'Cover Flow'))
     assert page.title() == 'Cover Flow'
     found = titles(page.view())
-    assert len(found) == 5 and found[:2] == ['Artist View', 'Playlist View'] and found[2].startswith('Cover Flow ')
-    assert found[3:] == ['Refresh Cover Flow', 'Large Library Mode']
+    assert len(found) == 7 and found[:2] == ['Artist View', 'Playlist View'] and found[2].startswith('Cover Flow ')
+    assert found[3:] == ['Refresh Cover Flow', 'Fast Navigation', 'Scan Song Durations', 'Position Bar']
 
 
 class Settings:
@@ -704,14 +711,14 @@ class Settings:
         fw.fn('ringnav_systemset', C.c_int, C.c_void_p, C.c_void_p)(self.win.addr, None)
 
 
-def test_system_settings_adds_its_rows_and_hides_four(fw):
+def test_system_settings_adds_its_rows_and_hides_five(fw):
     ui = Ui(fw)
     Config(fw)
     page = Settings(fw, ui)
     assert titles(page.view) == ['stock_1', 'stock_2', 'stock_3', 'Controls', 'stock_4', 'system_time', 'stock_0', 'App Store',
                                  'system_update', 'system_reset', 'stock_5', 'stock_6', 'stock_7', 'stock_8', 'system_about']
-    # stock's Wheel Function, In-Vehicle, General and System
-    assert [item.name for item in page.view.children if not item.visible] == ['stock_5', 'stock_6', 'stock_7', 'stock_8']
+    # stock's Language (English only for now), Wheel Function, In-Vehicle, General and System
+    assert [item.name for item in page.view.children if not item.visible] == ['stock_0', 'stock_5', 'stock_6', 'stock_7', 'stock_8']
     # the rows stock moved to its System page open stock's pages from here
     opened = []
     fw.mock('navigator_to', lambda name, *_: opened.append(C.string_at(name).decode()))
@@ -2068,12 +2075,14 @@ def test_hold_return_does_nothing_dark_or_while_windows_move(fw, st, stand_in):
     assert hold() == ['home_page', 'localmusic_page'] and hold.opened == []
 
 
-@pytest.mark.parametrize('ctx, page, start', [
-    ((0x51000, 3, 0xf001, 2), 1, None),  # car mode plays: stock's page
-    ((0x51000, 3, 0xf001, 0), 0, (0x51000, 3, 0xf001, 0)),  # otherwise the paused start, without the page
-    ((0x51000, 3, 0xff, 0), 0, None)])  # no class: nothing to resume
-def test_the_boot_resume_starts_paused_without_opening_now_playing(fw, ctx, page, start):
+@pytest.mark.parametrize('ctx, forbidden, page, start', [
+    ((0x51000, 3, 0xf001, 2), 0, 1, None),  # car mode plays: stock's page
+    ((0x51000, 3, 0xf001, 2), 1, 0, (0x51000, 3, 0xf001, 3)),  # Headphones Required refuses it: paused, as below
+    ((0x51000, 3, 0xf001, 3), 1, 0, (0x51000, 3, 0xf001, 3)),  # otherwise the paused start, without the page, unasked
+    ((0x51000, 3, 0xff, 3), 0, 0, None)])  # no class: nothing to resume
+def test_the_boot_resume_starts_paused_without_opening_now_playing(fw, ctx, forbidden, page, start):
     context = (C.c_int * 4)(*ctx)
+    fw.mock('check_forbid_play_no_headset', lambda *_: forbidden)
     fw.fn('ringnav_boot', None, C.c_char_p, C.c_void_p)(b'playing_page', context)
     assert len(fw.calls('navigator_to_with_context')) == page
     assert [a[:4] for _, a in fw.calls('player_start')] == ([start] if start else [])

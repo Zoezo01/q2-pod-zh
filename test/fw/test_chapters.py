@@ -390,16 +390,16 @@ def index(fw, files, path=b'a.m4b', errno=2):
 
 
 def test_samples_are_counted_through_the_box_tree(fw):
-    assert index(fw, {b'a.m4b': book(table(1000))}) == 1000 * 28
+    assert index(fw, {b'a.m4b': book(table(1000))}) == 1000 * 16
 
 
 def test_every_track_counts(fw):
-    assert index(fw, {b'a.m4b': book(table(1000), table(500), table(7, b'stz2'))}) == 1507 * 28
+    assert index(fw, {b'a.m4b': book(table(1000), table(500), table(7, b'stz2'))}) == 1507 * 16
 
 
 @pytest.mark.parametrize('name', [b'a.m4b', b'a.M4A', b'a.b.Mp4', b'/x.y/z.m4a'])
 def test_the_mp4_family_by_extension(fw, name):
-    assert index(fw, {name: book(table(1))}, name) == 28
+    assert index(fw, {name: book(table(1))}, name) == 16
 
 
 @pytest.mark.parametrize('name', [b'a.mp3', b'a', b'.m4bx', b'a.m4b.flac', b''])
@@ -422,12 +422,12 @@ def test_a_missing_file_is_no_mp4(fw):
 def test_a_box_with_a_64_bit_size(fw):
     stbl = table(5)
     moov = struct.pack('>I', 1) + b'moov' + struct.pack('>Q', 16 + 8 + len(stbl)) + box(b'stbl', stbl)
-    assert index(fw, {b'a.m4b': moov}) == 5 * 28
+    assert index(fw, {b'a.m4b': moov}) == 5 * 16
 
 
 def test_a_box_of_size_zero_runs_to_the_end(fw):
     body = box(b'stbl', table(5))
-    assert index(fw, {b'a.m4b': struct.pack('>I', 0) + b'moov' + body}) == 5 * 28
+    assert index(fw, {b'a.m4b': struct.pack('>I', 0) + b'moov' + body}) == 5 * 16
 
 
 def test_tables_only_count_inside_the_walked_boxes(fw):
@@ -438,27 +438,27 @@ def test_the_walk_stops_at_its_depth(fw):
     inside = table(1)
     for _ in range(5):
         inside = box(b'moov', inside)
-    assert index(fw, {b'a.m4b': inside}) == 28  # five boxes down, stsz is still read
+    assert index(fw, {b'a.m4b': inside}) == 16  # five boxes down, stsz is still read
     assert index(fw, {b'a.m4b': box(b'moov', inside)}) == 0
 
 
 def test_a_table_too_short_for_its_count_is_passed_over(fw):
-    assert index(fw, {b'a.m4b': box(b'stsz', b'\0' * 11) + table(3)}) == 3 * 28
+    assert index(fw, {b'a.m4b': box(b'stsz', b'\0' * 11) + table(3)}) == 3 * 16
 
 
 @pytest.mark.parametrize('size', [2, 7])
 def test_a_box_smaller_than_its_header_ends_the_walk(fw, size):
-    assert index(fw, {b'a.m4b': table(3) + struct.pack('>I', size) + b'moov' + table(4)}) == 3 * 28
+    assert index(fw, {b'a.m4b': table(3) + struct.pack('>I', size) + b'moov' + table(4)}) == 3 * 16
 
 
 @pytest.mark.parametrize('size', [21, 1000, 0x7fffffff])
 def test_a_box_past_its_parents_end_ends_the_parents_walk(fw, size):
     lie = struct.pack('>I', size) + b'stsz' + struct.pack('>III', 0, 0, 9)
-    assert index(fw, {b'a.m4b': box(b'moov', table(3) + lie) + table(4)}) == 7 * 28
+    assert index(fw, {b'a.m4b': box(b'moov', table(3) + lie) + table(4)}) == 7 * 16
 
 
 def test_a_box_that_just_fits_its_parent_is_read(fw):
-    assert index(fw, {b'a.m4b': box(b'moov', table(3) + struct.pack('>I', 20) + b'stsz' + struct.pack('>III', 0, 0, 9))}) == 12 * 28
+    assert index(fw, {b'a.m4b': box(b'moov', table(3) + struct.pack('>I', 20) + b'stsz' + struct.pack('>III', 0, 0, 9))}) == 12 * 16
 
 
 def test_a_box_past_2gb_ends_the_walk(fw):
@@ -486,9 +486,29 @@ def info(kb):
 
 
 def test_the_index_must_fit_memavailable_less_the_spare(fw):
-    samples = 1024 * 10  # 280 KB of index
-    assert fits(fw, samples, info(280 + 16384)) == 1
-    assert fits(fw, samples, info(280 + 16384 - 1)) == 0
+    samples = 1024 * 10  # 160 KB of index
+    assert fits(fw, samples, info(160 + 16384)) == 1
+    assert fits(fw, samples, info(160 + 16384 - 1)) == 0
+
+
+def start_fits(fw, kb, held=b'held.m4b', **card):
+    files = {b'a.m4b': book(table(1024 * 10)), b'/proc/meminfo': info(kb)}  # 160 KB of index
+    if not card:
+        files[b'held.m4b'] = book(table(1024 * 20))  # 320 KB
+    Card(fw, files, **card)
+    return fw.fn('mp4_start_fits', C.c_int, C.c_char_p, C.c_char_p)(b'a.m4b', held)
+
+
+def test_a_start_gets_back_the_held_files_index_and_keeps_a_smaller_spare(fw):
+    assert start_fits(fw, 160 + 8192 - 320) == 1
+    assert start_fits(fw, 160 + 8192 - 320 - 1) == 0
+
+
+@pytest.mark.parametrize('held, card', [(b'', {'errno': 2}), (b'gone.m4b', {'errno': 2}),
+                                        (b'huge.m4b', {'errno': EOVERFLOW})])
+def test_a_start_with_nothing_held_gets_nothing_back(fw, held, card):
+    assert start_fits(fw, 160 + 8192, held, **card) == 1
+    assert start_fits(fw, 160 + 8192 - 1, held, **card) == 0
 
 
 def test_no_estimate_plays_as_stock(fw):
@@ -514,5 +534,5 @@ def test_hostile_mp4(fw):
         card.files[b'a.m4b'] = data
         card.open.clear()
         card.reads = 0
-        assert bytes_of(b'a.m4b') % 28 == 0
+        assert bytes_of(b'a.m4b') % 16 == 0
         assert card.reads <= len(data) + 2  # a walk always moves on

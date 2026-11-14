@@ -28,10 +28,11 @@ void playback_save(void);
 void playback_clear(void);
 /* mclLoadPlayList's loads so far: a queue loaded later is another one (addon.c stream_queue) */
 extern unsigned playback_loads;
-int wheel_pct(void); /* Wheel sensitivity, 50-200% */
+#define WHEEL_PCT_MIN 10 /* the slowest: 140 units a tick, 0.7 of a turn */
+int wheel_pct(void); /* Wheel sensitivity, WHEEL_PCT_MIN-200%, 50 unless set */
 void wheel_set_pct(int n);
 void wheel_guard_reset(void);
-extern int wheel_guard; /* Volume guard: the screen-off wheel's half-turn guard, 0 off */
+extern int wheel_guard; /* Volume guard: the screen-off wheel's guard, 0 off */
 /* iPod: while wheel_raw is set the wheel posts no ticks and adds its raw travel to wheel_travel,
  * 200 units a turn, rising anticlockwise (games.c's Vortex, Now Playing's lyrics, 2: Cover Flow's
  * thumb, whose travel still counts towards Return's stop and which reads wheel_mute); wheel_held is

@@ -1,0 +1,294 @@
+#!/bin/sh
+# Q2 Pod — safe replacement for the stock Wi-Fi transfer file-manager CGIs (create/delete/
+# list/download/upload). One script installed over all five cgi-bin/*.cgi inodes; it dispatches on
+# SCRIPT_NAME, so it answers both /name and /cgi-bin/name.cgi — no bypass route.
+#
+# Why this is safe: every filesystem operation is done with argv (mkdir/rm/cat and head
+# redirection), never by building a /bin/sh command string from request data. The stock CGIs' bug
+# was system("mkdir \"$path\"") — a shell command built from input. Here shell command injection is
+# structurally impossible, not merely filtered. validate() keeps every path under /mnt/mmc and
+# rejects any dot-component (".." traversal, "." self, and hidden files such as .scrobble.ini);
+# confine() then resolves symlinks so a non-FAT card cannot redirect an op off the card or to a
+# hidden entry, and hidden() refuses a hidden entry asked for by its other name (a FAT 8.3 short
+# name). Runs under the stock busybox ash as root, like the stock CGIs.
+#
+# Shell: the busybox ash the Q2 ships (POSIX plus `local`). No bashisms. Tested with busybox ash.
+
+CARD=/mnt/mmc
+# thttpd gives a CGI PATH=/usr/local/bin:/usr/ucb:/bin:/usr/bin, so /bin and /usr/bin (busybox and
+# its applet symlinks) are present. The device busybox (v1.31.1) has NO `stat` applet (verified on the
+# stock binary under qemu — only `netstat`), so a file's size comes from `ls -ln` field 5, which the
+# ls applet fills from stat(2) WITHOUT reading the file (listing a folder of large media stays cheap),
+# and its mtime from `date -r`. `realpath` (confine's resolver) is called through busybox so the one
+# security-critical applet never depends on a PATH symlink being present.
+realpath() { busybox realpath "$@"; }
+fsize() { s=$(ls -lnd "$1" 2>/dev/null | awk 'NR==1{print $5; exit}'); printf '%s' "${s:-0}"; }
+fmtime() { date -r "$1" +%s 2>/dev/null || printf '0'; }
+
+emit() { printf '%s\r\n' "$1"; }
+crlf() { printf '\r\n'; }
+fail() { emit "Status: $1 $2"; emit 'Content-type: application/json; charset=utf-8'; crlf; printf '{}'; exit 0; }
+
+# URL-decode: '+' -> space, %XX -> byte. Literal backslashes are escaped first so printf %b cannot
+# misread them. Call reject_nul on the raw string first.
+urldecode() {
+  dec=$(printf '%s' "$1" | sed 's/\\/\\\\/g; s/+/ /g; s/%\([0-9A-Fa-f][0-9A-Fa-f]\)/\\x\1/g')
+  printf '%b' "$dec"
+}
+# Refuse a NUL, encoded or raw (a raw NUL cannot survive in a shell variable, but be explicit).
+has_nul() { case $1 in *%00*|*%0[0-9A-Fa-f]0*) return 0;; esac; return 1; }
+
+# Validate an ALREADY-DECODED path. Echo it on success; return 1 (no output) on anything unsafe.
+# Shell metacharacters ($ ` " \ & ; etc.) are NOT rejected — they are legal filename bytes, safe
+# because we never hand them to a shell.
+validate() {
+  p=$1
+  [ -n "$p" ] || return 1
+  case $p in *[[:cntrl:]]*) return 1;; esac          # control chars incl. CR/LF (header-injection)
+  [ "${#p}" -le 4096 ] || return 1                   # cap length (> PATH_MAX); also bounds the strip below
+  t=${p##*[!/]}; p=${p%"$t"}                          # strip ALL trailing slashes in one step (not an O(n^2) loop)
+  [ -n "$p" ] || return 1                            # the path was nothing but slashes
+  case $p in "$CARD"|"$CARD"/*) : ;; *) return 1;; esac
+  # Reject any path component that begins with a dot. This is one rule covering several hazards:
+  #   "/../"  traversal out of the card;
+  #   "/./"   a "." component — a trailing "/." would make rm/mkdir target the card root itself;
+  #   "/.x"   a hidden file the web UI never shows (.scrobble.ini holds the Last.fm key, .spotify,
+  #           and our own .q2upload) — blocked for direct download/delete/list, not only in listings.
+  #           (This reads the name asked for; hidden() catches the same entry under another name.)
+  # "/$p/" frames both ends so the first and last components are covered. A dot INSIDE a name
+  # (song.mp3, "The B-52's") is untouched — the pattern only matches a slash immediately before a dot.
+  case "/$p/" in *"/."*) return 1;; esac
+  printf '%s' "$p"
+}
+
+# Pull a urlencoded field's value (first occurrence) from a source string; refuse duplicate fields.
+field() { # name source
+  n=$(printf '%s' "$2" | tr '&' '\n' | grep -c "^$1=")
+  [ "$n" -le 1 ] || return 2                          # duplicate field: ambiguous, refuse
+  printf '%s' "$2" | tr '&' '\n' | sed -n "s/^$1=//p" | head -1
+}
+
+# Decode-and-validate a path from a urlencoded source (GET query or POST body).
+path_from() { # source
+  raw=$(field path "$1") || return 1
+  has_nul "$raw" && return 1
+  validate "$(urldecode "$raw")"
+}
+
+json_escape() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr -d '\000-\037'; }
+card_mounted() { grep -q " $CARD " /proc/mounts 2>/dev/null; }
+
+# Defence in depth past validate()'s purely lexical check. Resolve the deepest EXISTING ancestor of
+# the target with realpath (which follows symlinks) and require the real location to still be under
+# the card. A shipped FAT/exFAT card has no symlinks, but the SD card may be NTFS (the stock mdev
+# script mounts it with ntfs-3g) or reformatted, so a planted symlink could otherwise redirect an
+# op off-card; validate() cannot see that. For a leaf that does not exist yet (a create/upload target)
+# we resolve the deepest EXISTING ancestor; a dangling symlink leaf is then handled by the operation
+# itself (mkdir fails EEXIST, mv/rm act on the link not its target, cat and -f/-d fail). Fails closed.
+confine() { # absolute path already returned by validate()
+  a=$1
+  while [ ! -e "$a" ]; do
+    b=${a%/*}
+    [ "$b" = "$a" ] && break
+    [ -n "$b" ] || b=/
+    a=$b
+  done
+  rp=$(realpath "$a" 2>/dev/null) || return 1
+  case $rp in "$CARD"|"$CARD"/*) ;; *) return 1;; esac
+  hidden "$1" && return 1
+  # A symlink can also lead to a hidden entry elsewhere on the card (Music/peek -> /mnt/mmc/.spotify).
+  # hidden "$1" does not see that: it holds each component against the dot-entries of that
+  # component's own folder. So the place reached, as realpath spells it, gets the same test. With no
+  # symlink on the way (always, on FAT and exFAT) the two spellings are one and the walk is not repeated.
+  [ "$rp" = "$a" ] || ! hidden "$rp"
+}
+
+# validate()'s dot rule reads the name asked for, but the card may know the same entry by a second
+# name that has no dot. On FAT32 every long name also has an 8.3 short name and the kernel resolves
+# either (seen on a vfat mount): .scrobble.ini is also SCROBB~1.INI, .spotify is SPOTIF~1, in any
+# case. The dot rule alone lets a hidden file be read, replaced and deleted by that name, and a file
+# be put in a hidden folder. So walk the path's existing components and refuse one that IS a dot-entry of its folder: the same
+# device and inode ([ -ef ]). Names are never compared, so whatever spelling reaches the entry is
+# caught, and an ordinary name in another case (FAT ignores case) or an ordinary file's own short
+# name works as before. vfat numbers an inode when it is first looked up and may give it another
+# once it has left the cache, so the component is held open (fd 3) across the comparison: while it
+# is open, any other name for it finds the same inode. A component that does not exist is a new
+# name and ends the walk. Fails closed: an entry that is neither a file nor a folder (never opened:
+# a FIFO would block) or that cannot be opened counts as hidden.
+hidden() { # absolute path already returned by validate(); true when it reaches a hidden entry
+  cur=$CARD; rest=${1#"$CARD"}
+  while [ -n "$rest" ]; do
+    rest=${rest#/}; c=${rest%%/*}; rest=${rest#"$c"}
+    [ -n "$c" ] || continue
+    [ -e "$cur/$c" ] || return 1
+    [ -f "$cur/$c" ] || [ -d "$cur/$c" ] || return 0
+    same=1                                             # stays 1 when the open fails
+    { same=0
+      for h in "$cur"/.*; do
+        case ${h##*/} in .|..) continue;; esac
+        [ "$cur/$c" -ef "$h" ] && { same=1; break; }
+      done
+    } 2>/dev/null 3< "$cur/$c"
+    [ "$same" = 0 ] || return 0
+    cur=$cur/$c
+  done
+  return 1
+}
+
+# The urlencoded body of a create or delete: exactly CONTENT_LENGTH bytes, 64 KB at most (it is just
+# "path=<urlencoded path>", and the cap keeps a huge POST out of a shell variable on the 128 MB
+# device). Never read to end-of-file: unless thttpd already holds part of the body, a CGI's stdin is
+# the client's socket, which stays open until the answer, so a read past the body waits for a close
+# that does not come (seen with the stock thttpd binary: a POST whose body followed its headers in
+# a second segment, and every GET, went unanswered). No CONTENT_LENGTH, as on a GET, reads nothing.
+form_body() {
+  n=${CONTENT_LENGTH:-0}
+  case $n in ''|*[!0-9]*) n=0;; esac
+  [ "$n" -le 65536 ] 2>/dev/null || n=65536           # also a number too long for the shell to compare
+  [ "$n" -gt 0 ] || return 0
+  head -c "$n"
+}
+
+name=${SCRIPT_NAME##*/}; name=${name%.cgi}
+
+case $name in
+  list)
+    dir=$(path_from "$QUERY_STRING") || fail 400 Bad
+    confine "$dir" || fail 400 Bad
+    [ -d "$dir" ] || fail 404 NotFound
+    emit 'Content-type: application/json; charset=utf-8'; crlf
+    printf '['
+    first=1
+    # Plain "$dir"/* only — the glob skips dot-entries, so hidden files (.scrobble.ini, .spotify,
+    # our .q2upload work dir) stay out of the listing, as stock's list.cgi does.
+    for e in "$dir"/*; do
+      [ -e "$e" ] || [ -L "$e" ] || continue
+      bn=${e##*/}
+      [ "$bn" = "System Volume Information" ] && continue   # stock hides this Windows system dir too
+      [ "$first" = 1 ] || printf ','; first=0
+      jn=$(json_escape "$bn"); jp=$(json_escape "$e")
+      ct=$(fmtime "$e")
+      # A directory's path carries a trailing slash: the client builds "<path><newname>" for create
+      # and splits the path on "/" for the breadcrumb, both of which need it (stock emits it too).
+      if [ -d "$e" ]; then printf '{"path":"%s/","name":"%s","ctime":"%s"}' "$jp" "$jn" "$ct"
+      else sz=$(fsize "$e"); printf '{"path":"%s","name":"%s","ctime":"%s","size":"%s"}' "$jp" "$jn" "$ct" "$sz"; fi
+    done
+    printf ']'
+    ;;
+
+  download)
+    f=$(path_from "$QUERY_STRING") || fail 400 Bad
+    confine "$f" || fail 400 Bad
+    [ -f "$f" ] || fail 404 NotFound
+    hdrname=$(printf '%s' "${f##*/}" | tr -d '"\000-\037')
+    emit "Content-Disposition:attachment;filename=\"$hdrname\""
+    emit "Content-Length:$(fsize "$f")"
+    emit 'Content-Type:application/octet-stream'; crlf
+    cat -- "$f"
+    ;;
+
+  create)
+    BODY=$(form_body)
+    d=$(path_from "$BODY") || d=$(path_from "$QUERY_STRING") || fail 400 Bad
+    confine "$d" || fail 400 Bad
+    card_mounted || fail 507 NoCard
+    mkdir -p -- "$d" 2>/dev/null || fail 500 Fail
+    emit 'Content-type: application/json; charset=utf-8'; crlf; printf '{}'
+    ;;
+
+  delete)
+    BODY=$(form_body)
+    d=$(path_from "$BODY") || d=$(path_from "$QUERY_STRING") || fail 400 Bad
+    confine "$d" || fail 400 Bad
+    card_mounted || fail 507 NoCard
+    [ "$d" = "$CARD" ] && fail 400 Bad               # never delete the card root (validate strips any trailing /)
+    rm -rf -- "$d" 2>/dev/null || fail 500 Fail
+    emit 'Content-type: application/json; charset=utf-8'; crlf; printf '{}'
+    ;;
+
+  upload)
+    card_mounted || fail 507 NoCard
+    bnd=${CONTENT_TYPE#*boundary=}; bnd=${bnd%%;*}; bnd=${bnd#\"}; bnd=${bnd%\"}
+    [ -n "$bnd" ] && [ "$bnd" != "$CONTENT_TYPE" ] || fail 400 Bad
+    # CONTENT_LENGTH must be a plain positive integer. A missing, non-numeric or negative value must
+    # never reach `head -c`: busybox `head -c -1` reads all-but-the-last byte (i.e. unbounded), which
+    # a client could use to fill the card. There is deliberately no upper cap — large music files
+    # must still upload; the card's own free space is the limit, handled at the write below.
+    case ${CONTENT_LENGTH:-} in ''|*[!0-9]*) fail 400 Bad;; esac
+    [ "$CONTENT_LENGTH" -gt 0 ] || fail 400 Bad
+    # The upload is streamed: the file's bytes go from the request to the card once, as stock's did,
+    # so an upload needs free space of its own size. The page sends the "path" field and then the one
+    # file (sequentialUploads), so everything before the file's bytes is a few short text lines, read
+    # here with ash's `read`, which takes one byte at a time and so leaves the file's bytes in stdin.
+    # `read -n` bounds a line (one without an LF would otherwise grow the shell without end). The
+    # bytes taken are counted with wc: ash's ${#} counts UTF-8 characters, in any locale. A field is a
+    # line of its own, so an LF in a value can't pass for a line of the request's framing: it ends the
+    # line early, and the next line is then not the boundary.
+    bb="--$bnd"; cr=$(printf '\r'); used=0
+    next() { # the request's next line, its CR taken off, into $l; counts the bytes it took
+      IFS= read -r -n 8192 l || fail 400 Bad
+      [ "${#l}" -lt 8192 ] || fail 400 Bad
+      used=$((used + $(printf '%s\n' "$l" | wc -c)))
+      [ "$used" -le 65536 ] || fail 400 Bad
+      case $l in *"$cr") l=${l%"$cr"};; *) fail 400 Bad;; esac
+    }
+    next; [ "$l" = "$bb" ] || fail 400 Bad
+    destdir=; havepath=
+    while :; do
+      disp=
+      while next; [ -n "$l" ]; do                      # a part's headers, up to the blank line
+        case $l in [Cc][Oo][Nn][Tt][Ee][Nn][Tt]-[Dd][Ii][Ss][Pp][Oo][Ss][Ii][Tt][Ii][Oo][Nn]:*) disp=$l;; esac
+      done
+      case $disp in *' filename="'*) break;; esac      # the file: its bytes come next
+      case $disp in *' name="path"'*) ;; *) fail 400 Bad;; esac  # the page sends nothing else
+      [ -z "$havepath" ] || fail 400 Bad               # one path only, never a choice of two
+      next; destdir=$l; havepath=1
+      next; [ "$l" = "$bb" ] || fail 400 Bad
+    done
+    [ -n "$havepath" ] || fail 400 Bad                 # the path comes before the file, or not at all
+    fname=${disp#*' filename="'}; fname=${fname%%\"*}
+    # Validate the destination folder (a raw multipart field) and the file name — argv, so a name
+    # holding shell metacharacters is safe; only traversal / a path separator / control chars are refused.
+    dir=$(validate "$destdir") || fail 400 Bad         # validate strips any trailing slash from the path
+    confine "$dir" || fail 400 Bad
+    case $fname in ""|.*|*/*) fail 400 Bad;; esac       # ".*" subsumes "."/".."; no leading-dot (hidden) file via upload
+    case $fname in *[[:cntrl:]]*) fail 400 Bad;; esac
+    case "/$dir/$fname/" in *"/."*) fail 400 Bad;; esac  # the same dot-component rule validate() applies to reads
+    dest=$dir/$fname
+    hidden "$dest" && fail 400 Bad                     # a file name that is a hidden file's other name would replace it
+    [ -d "$dest" ] && fail 400 Bad                     # a directory of that name exists: never drop the temp inside it
+    # What is left of the request is the file's bytes and then "\r\n--bnd--\r\n".
+    rest=$((CONTENT_LENGTH - used)); slen=$((${#bb} + 6))
+    [ "$rest" -ge "$slen" ] || fail 400 Bad
+    mkdir -p -- "$dir" 2>/dev/null
+    up=$CARD/.q2upload; mkdir -p "$up" 2>/dev/null     # on the card (hidden dotdir), so the rename below is one filesystem's
+    # Reap work files an earlier upload left behind when it was killed before its trap ran (client
+    # abort / timeout / power loss): a dead owner has no /proc/<pid>. .q2upload is a permanent hidden
+    # scratch dir — the trap does NOT rmdir it (that would race a concurrent upload's setup → spurious 507).
+    for leftover in "$up"/*.*; do
+      [ -e "$leftover" ] || continue
+      pid=${leftover##*.}
+      [ -d "/proc/$pid" ] || rm -f "$leftover"
+    done
+    out=$up/out.$$
+    trap 'rm -f "$out" 2>/dev/null' EXIT
+    # The one write. The closing boundary goes to the card with the file and is held against what it
+    # must be (CR, LF and NUL made visible, as $() drops trailing LFs); a short or wrong ending is a
+    # refused upload, never a file with bytes missing or added. dd with no count, from /dev/null,
+    # then cuts it off: a truncate to the seek, no copy. A rename within the card puts the file in
+    # place, so a reader never sees a half-written file, and a failed write leaves none under its name.
+    head -c "$rest" > "$out" || fail 507 Full          # a write error here means the card filled
+    [ "$(fsize "$out")" = "$rest" ] || fail 400 Bad    # the client stopped short
+    vis() { tr '\r\n\0' '\1\2\3'; }
+    eol=$(printf '\1\2')
+    [ "$(tail -c "$slen" "$out" | vis)" = "$eol$bb--$eol" ] || fail 400 Bad
+    dd if=/dev/null of="$out" bs=1 seek="$((rest - slen))" 2>/dev/null || fail 500 Fail
+    [ "$(fsize "$out")" = "$((rest - slen))" ] || fail 500 Fail
+    mv -f -- "$out" "$dest" 2>/dev/null || fail 500 Fail
+    emit 'Content-type: application/json; charset=utf-8'; crlf
+    printf '{"files":[{"name":"%s"}]}' "$(json_escape "$fname")"
+    ;;
+
+  *) fail 404 NotFound ;;
+esac
+exit 0

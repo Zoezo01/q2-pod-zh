@@ -1225,9 +1225,6 @@ def test_the_ears_pause_and_resume_whatever_it_was(q2):
     assert [s.frame for s in q2.frames()] == list(range(50))
 
 
-@pytest.mark.xfail(strict=True, reason='BUG: a paused, still picture should wait on its keys up to 1 s (cap 1000, '
-                   '"paused and still: wait on a key"), but wait starts at 100 and the poll takes the smaller, so it '
-                   'wakes ten times a second for its whole pause')
 def test_a_paused_still_picture_waits_on_its_keys(q2):
     q2.press(b'p', 500)
     q2.press(b'q', 5500)
@@ -1323,6 +1320,25 @@ def test_a_seek_while_paused_stays_paused_on_its_first_frame(q2):
     assert held[0].frame == 250 and all(s.heard == 0 for s in held)  # its first frame, nothing heard
     assert [s for s in q2.frames() if s.time > q2.t0 + 3000]  # and on after the resume
     assert q2.states() == [0, 1, 0] and 'drain' not in q2.events('drain')
+
+
+def test_a_run_of_seek_ticks_in_a_long_pause_restarts_ffmpeg_once_at_their_sum(q2):
+    q2.press(b'p', 500)
+    for at in (1300, 1500):  # the first ends a wait that began at the pause
+        q2.press(b'f', at)
+    q2.press(b'q', 3000)
+    assert play(q2, seconds=30) == 0
+    runs = q2.video_runs()
+    assert len(runs) == 2 and runs[1].opt('-ss') == '20'
+    assert runs[1].start == q2.t0 + 1500 + 400  # 400 ms after the last tick, not the wait's start
+
+
+def test_a_silent_clip_s_clock_does_not_count_the_time_paused(q2):
+    q2.press(b'p', 500)
+    q2.press(b'p', 2500)
+    assert play(q2, sound=0) == 0
+    frames = q2.frames()
+    assert [s.frame for s in frames] == list(range(25)) and on_time(frames, 'wall')  # none dropped at the resume
 
 
 def test_a_volume_while_paused_shows_its_bar_and_takes_it_away(q2):

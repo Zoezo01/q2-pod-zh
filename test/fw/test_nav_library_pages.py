@@ -10,9 +10,10 @@ import struct
 import pytest
 
 import host
-from conftest import FNV_PRIME, O, Deques, Files, claim, fnv1a, high_halves, in_fork, libc, ui_name
+from conftest import FNV_PRIME, O, Deques, Files, claim, favdir_card, fnv1a, high_halves, in_fork, libc, ui_name
 from conftest import Rows as HeldRows  # Rows here is Folder view's list
 from test_navigation import Sa  # test_navigation.py keeps the mirror
+from test_tidal import HEARTS, urls_play
 
 KEY_RETURN, KEY_CENTER, KEY_PREV, KEY_NEXT, KEY_PLAY = (O[k] for k in ('KEY_RETURN', 'KEY_CENTER', 'KEY_PREV', 'KEY_NEXT', 'KEY_PLAY'))
 EVT_CLICK, EVT_DESTROY, EVT_KEY_UP, EVT_POINTER_DOWN, EVT_POINTER_ABORT = (
@@ -24,7 +25,7 @@ LONG_SONG_S, RATE_HOLD_MS = O['LONG_SONG_S'], O['RATE_HOLD_MS']
 LIBRARY, FOLDER = 0xf001, 1
 STOP, REPEAT = 11, 8  # a handler's RET_STOP; a timer's RET_REPEAT
 PLAYS_FILE, RESUME_FILE = '/mnt/data/ringnav-plays', '/mnt/data/ringnav-resume'
-RATINGS, ALBUM_RATINGS, LENGTHS = '/mnt/data/ringnav-ratings', '/mnt/data/ringnav-album-ratings', '/mnt/data/ringnav-lengths'
+RATINGS, ALBUM_RATINGS, LENGTHS = '/mnt/data/ringnav-ratings', '/mnt/data/ringnav-album-ratings', '/mnt/data/ringnav-durations-v1'
 FAV_CLICK = 0x53c968  # Now Playing's heart: stock's My Fav toggle
 TIDAL_DIR, SPOT_DIR = '/mnt/mmc/.tidal', '/mnt/mmc/.spotify'
 DOT = '·'
@@ -640,11 +641,23 @@ class Probe:
     the test says."""
     def __init__(self, fw, seconds):
         self.fw, self.seconds, self.opened, self.threads = fw, dict(seconds), [], []
-        self.keep, self.files = [], {}
+        self.keep, self.files, self.stamps = [], {}, {}
+        fw.mock('ringnav_statx', self.stat)
         self.length = C.CFUNCTYPE(C.c_int, C.c_void_p)(lambda p: self.seconds[self.files[p]])
         fw.mock('taglib_file_new', self.open)
         fw.mock('taglib_file_audioproperties', lambda f, *_: f)
         fw.mock('fw_pthread_create', lambda t, attr, fn, arg, *_: self.threads.append(fn) or 0)
+
+    def stat(self, dirfd, path, flags, mask, out, *_):
+        """statx: a regular file of stamps[path] (size, mtime, nanoseconds), or none for None."""
+        path = C.string_at(path)
+        stamp = self.stamps.get(path, (1000, 2000, 0))
+        if stamp is None:
+            return 2  # ENOENT, as the raw syscall returns it
+        sx = (C.c_uint * 64).from_address(out)
+        sx[7] = 0o100644  # stx_mode, byte 28
+        sx[10], sx[28], sx[30] = stamp  # stx_size, stx_mtime's seconds and nanoseconds
+        return 0
 
     def open(self, path, kind, *_):
         path = C.string_at(path)
@@ -661,9 +674,17 @@ class Probe:
         C.CFUNCTYPE(C.c_void_p, C.c_void_p)(self.threads[-1])(None)
 
 
-def lengths(*pairs):
-    """ringnav-lengths: (path, seconds) as {key, seconds} sorted by key."""
-    return b''.join(struct.pack('<2I', k, s) for k, s in sorted((file_key(p), s) for p, s in pairs))
+def path_key(path):
+    """durations.c's key: the path's FNV-1a 64."""
+    h = 0xcbf29ce484222325
+    for c in path:
+        h = (h ^ c) * 0x100000001b3 & (1 << 64) - 1
+    return h
+
+
+def lengths(*pairs, stamp=(1000, 2000, 0)):
+    """The duration cache: its magic, then (key, size, mtime, ns, seconds) by key, at the Probe's default stamp."""
+    return b'Q2DUR2\0\0' + b''.join(struct.pack('<Q3Ii', k, *stamp, s) for k, s in sorted((path_key(p), s) for p, s in pairs))
 
 
 @pytest.fixture
@@ -703,7 +724,7 @@ def test_long_songs_measures_the_unknown_first_then_lists_them(fw, ui, song, clo
     page = ui.top()
     assert ui.rows(page) == [('Cancel', None)] and 'Measuring songs…' in ui.shown(page)
     assert [ms for _, ms in ui.pending('ls_poll')] == [250]
-    assert ui.fire('ls_poll') == REPEAT and 'Measuring songs… 0/2' in ui.shown(page)
+    assert ui.fire('ls_poll') == REPEAT and 'Measuring songs… 0/3' in ui.shown(page)
     probe.run()
     assert sorted(probe.opened) == [b'/m/b.flac', b'/m/c.flac']  # only the two never measured
     assert ui.fire('ls_poll') == 0 and not ui.pending('ls_poll')
@@ -716,9 +737,10 @@ def test_long_songs_cancel_lists_what_is_known(fw, ui, song, clock_text):
     a, b = song(b'/m/a.flac', b'A'), song(b'/m/b.flac', b'B')
     Library(fw, ui, [a, b])
     files = Files(fw, {LENGTHS: lengths((b'/m/a.flac', 900))})
-    Probe(fw, {b'/m/b.flac': 3600})
+    probe = Probe(fw, {b'/m/b.flac': 3600})
     call(fw, 'long_songs')
     ui.click(ui.top(), 0)  # Cancel, before the worker measured anything
+    probe.run()  # cancellation is cooperative; join only after the worker exits
     assert ui.fire('ls_poll') == 0
     assert len(fw.calls('fw_pthread_join')) == 1  # the worker stopped and joined
     assert ui.rows(ui.top()) == [('A', '15:00')] and files.files[LENGTHS] == lengths((b'/m/a.flac', 900))
@@ -736,6 +758,41 @@ def test_long_songs_closed_while_measuring_keeps_what_was_measured(fw, ui, song,
     measured = len(probe.opened)
     call(fw, 'long_songs')  # opened again: nothing left to measure
     assert len(probe.opened) == measured and len(probe.threads) == 1 and ui.captions(ui.top()) == ['B', 'A']
+
+
+def test_long_songs_closed_with_the_switch_off_stops_its_pass(fw, ui, song, clock_text):
+    Library(fw, ui, [song(b'/m/a.flac', b'A'), song(b'/m/b.flac', b'B'), song(b'/m/c.flac', b'C')])
+    files = Files(fw, {LENGTHS: lengths((b'/m/a.flac', 700))})
+    seconds = {b'/m/b.flac': 800, b'/m/c.flac': 900}
+    probe = Probe(fw, seconds)
+    call(fw, 'long_songs')
+    opened = probe.open
+    fw.mock('taglib_file_new', lambda *a: ui.close(ui.top()) or opened(*a))  # closed during the first file
+    probe.run()
+    first, = probe.opened  # it stops at the next check
+    assert fw.fn('durations_busy', C.c_int, C.c_void_p, C.c_void_p)(None, None) == 0
+    assert files.files[LENGTHS] == lengths((b'/m/a.flac', 700), (first, seconds[first]))  # what was measured is kept
+
+
+def test_long_songs_closed_with_the_switch_on_lets_its_pass_finish(fw, ui, song, clock_text):
+    Library(fw, ui, [song(b'/m/a.flac', b'A')])
+    Files(fw)
+    Config(fw, SCANDURATIONS=b'1')
+    fw.fn('pod_settings', None)()
+    probe = Probe(fw, {b'/m/a.flac': 700})
+    call(fw, 'long_songs')
+    ui.close(ui.top())
+    probe.run()
+    assert probe.opened == [b'/m/a.flac']
+
+
+def test_long_songs_after_a_restart_walks_nothing_when_every_song_has_a_length(fw, ui, song, clock_text):
+    """A fresh durations state (RAM, gone at power-off) over a full cache: listed at once."""
+    Library(fw, ui, [song(b'/m/a.flac', b'A')])
+    Files(fw, {LENGTHS: lengths((b'/m/a.flac', 700))})
+    probe = Probe(fw, {})
+    call(fw, 'long_songs')
+    assert not probe.threads and not fw.calls('ringnav_statx') and ui.rows(ui.top()) == [('A', '11:40')]
 
 
 def test_a_lengths_file_that_cannot_be_read_is_not_written_over(fw, ui, song, clock_text):
@@ -779,15 +836,7 @@ def test_a_file_two_cue_tracks_run_to_the_end_of_is_kept_once(fw, ui, song, cloc
     probe.run()
     ui.fire('ls_poll')
     assert ui.rows(ui.top()) == [('Early', '20:00'), ('Late', '11:40')]  # 1200 s and 700 s, longest first
-    assert files.files[LENGTHS] == lengths((b'/m/book.flac', 1500))  # one {key, seconds} pair
-
-
-def test_song_seconds_from_the_cache(fw, song):
-    Files(fw, {LENGTHS: lengths((b'/m/a.flac', 300))})
-    seconds = fw.fn('song_seconds', C.c_int, C.c_void_p)
-    assert seconds(song(b'/m/a.flac')) == 300 and seconds(song(b'/m/a.flac', cue=100)) == 200
-    assert seconds(song(b'/m/a.flac', cue=400)) == 0 and seconds(song(b'/m/b.flac')) == -1
-    assert seconds(song(b'/m/b.flac', cue=10, end=70)) == 60
+    assert files.files[LENGTHS] == lengths((b'/m/book.flac', 1500))  # one exact-path entry
 
 
 # Upload Scrobbles.
@@ -914,9 +963,10 @@ class Heart:
     track, rated or not; rate_bind as playing_page_init runs it."""
     CTX = 0x5eed
 
-    def __init__(self, fw, ui, song, mcl, kept=0, fav=False, bind=True, handler=FAV_CLICK, removing=0, table=None):
+    def __init__(self, fw, ui, song, mcl, kept=0, fav=False, bind=True, handler=FAV_CLICK, removing=0, table=None,
+                 path=b'/m/now.flac'):
         self.fw, self.ui = fw, ui
-        self.track = song(b'/m/now.flac', b'Now')
+        self.track = song(path, b'Now')
         queue = ui.deques.new([self.track])
         fw.var('fw_ctx_mcl_pdeqplaylist', C.c_uint).value = queue
         mcl.type, mcl.pos = LIBRARY, 0
@@ -1200,6 +1250,19 @@ def test_fewer_hearts_on_a_my_fav_take_it_out(fw, ui, song, mcl):
 
 
 @in_fork
+@pytest.mark.parametrize('fav, kept, key, told', [(False, 4, KEY_NEXT, b'1'), (True, 0, KEY_PREV, b'0')])
+def test_five_hearts_or_none_on_an_app_synced_song_are_told_to_the_app(fw, ui, song, mcl, fav, kept, key, told):
+    path = b'/mnt/mmc/Jellyfin/A/now.flac'
+    heart = Heart(fw, ui, song, mcl, fav=fav, path=path, table=ratings((listen_key(path), kept)) if kept else None)
+    stock_stub(FAV_CLICK, 0, (C.c_long * 3)())
+    favdir_card(fw, heart.files.files)
+    heart.hold()
+    heart.key(key)
+    heart.key(KEY_CENTER)
+    assert heart.files.files['/mnt/mmc/.jf/fav.log'] == b'\npath\t' + told + b'\t' + path + b'\n'
+
+
+@in_fork
 def test_a_tap_is_stock_s_toggle_and_forgets_the_kept_hearts(fw, ui, song, mcl):
     heart = Heart(fw, ui, song, mcl, kept=3)
     log = (C.c_long * 3)()
@@ -1208,6 +1271,65 @@ def test_a_tap_is_stock_s_toggle_and_forgets_the_kept_hearts(fw, ui, song, mcl):
     ui.handler(heart.heart, EVT_CLICK)(C.addressof(event))
     assert list(log[:2]) == [Heart.CTX, C.addressof(event)]
     assert heart.kept() == 0 and heart.copy_due() and heart.badge() is None
+
+
+@in_fork
+def test_the_heart_on_a_card_app_s_streamed_song_is_the_app_s(fw, ui, song, mcl):
+    """A song of an app's URL queue whose line named an item (tidal.c app_fav): the press goes to the app's
+    fav.log and the heart flips at once in stock's Tidal images, stock's click (Tidal's API) never run."""
+    heart = Heart(fw, ui, song, mcl)
+    log = (C.c_long * 3)()
+    stock_stub(FAV_CLICK, 0, log)
+    assert urls_play(fw, heart.files, HEARTS) == 1
+    tidal_id = C.create_string_buffer(b'app:1:0')  # its line said a favourite
+    C.c_void_p.from_address(heart.track + O['REC_TIDAL_ID']).value = C.addressof(tidal_id)
+    mcl.type = 0xf1
+    assert ui.handler(heart.heart, EVT_CLICK)() == 0 and ui.image[heart.heart] == 'tidal_fav_rm'
+    assert ui.handler(heart.heart, EVT_CLICK)() == 0 and ui.image[heart.heart] == 'tidal_fav_add'
+    assert heart.files.files['/mnt/mmc/.a/fav.log'] == b'\nitem\t0\tid-a\n\nitem\t1\tid-a\n'
+    assert not log[0] and not ui.toasts
+
+
+@in_fork
+def test_an_app_s_streamed_song_without_an_item_has_no_heart(fw, ui, song, mcl):
+    """Its line named no item: the press says so and never reaches stock's click, which would call Tidal."""
+    heart = Heart(fw, ui, song, mcl)
+    log = (C.c_long * 3)()
+    stock_stub(FAV_CLICK, 0, log)
+    urls_play(fw, heart.files, HEARTS)
+    tidal_id = C.create_string_buffer(b'app:1:2')
+    C.c_void_p.from_address(heart.track + O['REC_TIDAL_ID']).value = C.addressof(tidal_id)
+    mcl.type = 0xf1
+    assert ui.handler(heart.heart, EVT_CLICK)() == 0
+    assert not log[0] and ui.toasts == ['This app has no favourites'] and ui.image[heart.heart] == 'play_unfav'
+    assert '/mnt/mmc/.a/fav.log' not in heart.files.files
+
+
+@in_fork
+def test_a_streamed_song_s_press_the_card_wont_take_says_so(fw, ui, song, mcl):
+    heart = Heart(fw, ui, song, mcl)
+    urls_play(fw, heart.files, HEARTS)
+    tidal_id = C.create_string_buffer(b'app:1:1')
+    C.c_void_p.from_address(heart.track + O['REC_TIDAL_ID']).value = C.addressof(tidal_id)
+    mcl.type = 0xf1
+    fw.mock('fw_fopen', lambda *_: 0)
+    assert ui.handler(heart.heart, EVT_CLICK)() == 0
+    assert ui.image[heart.heart] == 'play_unfav' and ui.toasts == ['Favourite not saved']
+
+
+@in_fork
+@pytest.mark.parametrize('fav, told', [(True, b'1'), (False, b'0')])
+def test_the_heart_on_a_song_an_app_synced_is_stock_s_and_told_to_the_app(fw, ui, song, mcl, fav, told):
+    """A song in a card app's favdir (q2-jellyfin's Jellyfin): stock's My Fav toggle as ever, then the
+    favourite as it now is goes to the app's fav.log."""
+    path = b'/mnt/mmc/Jellyfin/A/now.flac'
+    heart = Heart(fw, ui, song, mcl, path=path)
+    log = (C.c_long * 3)()
+    stock_stub(FAV_CLICK, 0, log)
+    favdir_card(fw, heart.files.files)
+    heart.fav = fav  # stock's toggle has made it so
+    assert ui.handler(heart.heart, EVT_CLICK)() == 0 and log[0] == Heart.CTX
+    assert heart.files.files['/mnt/mmc/.jf/fav.log'] == b'\npath\t' + told + b'\t' + path + b'\n'
 
 
 def test_a_full_ratings_table_says_so(fw, ui, song, mcl):
@@ -2609,6 +2731,42 @@ def test_a_playlist_row_s_tracks_leave_out_spoken_ones(fw, ui, song, st):
     fw.mock('tk_str_start_with', lambda s, prefix, *_: C.string_at(s).startswith(C.string_at(prefix)))
     playlist = song(kind=4, disc=7)  # a playlist row: its cd_num
     assert collect(fw, ui, st, QM_PLAYLIST_, playlist) == [b'/mnt/mmc/Music/a.flac', b'/mnt/mmc/Music/b.flac'] and asked == [7]
+
+
+def album_songs(fw, ui, song, st):
+    """A row whose tracks are two songs in a card app's favdir (a playlist row's, the simplest to give): its files."""
+    rows = [song(b'/mnt/mmc/Jellyfin/A/1.flac'), song(b'/mnt/mmc/Jellyfin/A/2.flac')]
+    fw.mock('getMusicByPlayList', lambda n, *_: ui.deques[fw.var('fw_ctx_tools_pdeq_directory', C.c_uint).value]
+            .extend(rows) or 0)
+    files = Files(fw)
+    favdir_card(fw, files.files)
+    st('qm_kind').value = QM_PLAYLIST_
+    return files
+
+
+def test_an_album_s_favourite_is_told_for_each_of_its_songs(fw, ui, song, st):
+    files = album_songs(fw, ui, song, st)
+    fw.fn('rate_album_favs', None, C.c_void_p, C.c_int)(song(kind=4, disc=7), 1)
+    assert files.files['/mnt/mmc/.jf/fav.log'] == b''.join(b'\npath\t1\t/mnt/mmc/Jellyfin/A/%d.flac\n' % i
+                                                         for i in (1, 2))
+
+
+def test_an_album_s_unfavourite_is_told_only_for_songs_that_were_favourites(fw, ui, song, st):
+    """A song liked on the app's server and never hearted here isn't the Q2's to unlike."""
+    files = album_songs(fw, ui, song, st)
+    fw.mock('checkFavExist', lambda r, *_: field(r, 'path').endswith(b'/2.flac'))
+    fw.fn('rate_album_favs', None, C.c_void_p, C.c_int)(song(kind=4, disc=7), 0)
+    assert files.files['/mnt/mmc/.jf/fav.log'] == b'\npath\t0\t/mnt/mmc/Jellyfin/A/2.flac\n'
+    assert len(fw.calls('deleteMusicFromFav')) == 2  # My Fav is cleared of both as before
+
+
+def test_an_album_s_favourite_stops_telling_at_the_first_refusal(fw, ui, song, st):
+    files = album_songs(fw, ui, song, st)
+    tried = []
+    fw.mock('fw_fopen', lambda path, mode, *_: tried.append(C.string_at(path)) or 0 if C.string_at(path).endswith(b'fav.log')
+            else files.fopen(path, mode))
+    fw.fn('rate_album_favs', None, C.c_void_p, C.c_int)(song(kind=4, disc=7), 1)
+    assert tried == [b'/mnt/mmc/.jf/fav.log'] and ui.toasts == ['Favourite not sent to the app']
 
 
 def test_a_cover_s_tracks_are_its_album_in_order(fw, ui, song, st):

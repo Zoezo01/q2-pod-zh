@@ -11,7 +11,7 @@ ZIP_SHA = '4e298cab6c12d86cfc55565645f7e3ae11d3fb44677a93ca13991e7184ecec4e'
 # 钉住（重新打的 ZIP 永远对不上官方那个）。
 TAR_SHA = '7f57884420e324ac3263571d96a35f04bbef79f35dac34162655c5822bdaa684'
 DEMO_SHA = 'e65d638d6e70332b4c3193af8ac2044941ec0157d20e41e40233aac5b0c2c59f'
-VERSION = '1.8.0'  # major.minor.patch, single digits, shown as is (About and release tag)
+VERSION = '1.8.2'  # major.minor.patch, single digits, shown as is (About and release tag)
 BETA = 0  # a pre-release's beta number (1-9), 0 for the release itself
 REPO = 'DiamondBond/q2-pod'  # whose releases Network Update fetches (--update-repo) and release.py publishes
 # The updater's identity (firmware_v20.info and demo's version literal) must be 5 characters and
@@ -43,6 +43,11 @@ BASE = 0xb00000
 SCRATCH = 0xc00000  # 1 MB of payload text below it
 RING_STEP = 48
 HOOKS = {
+    # USB charging is inhibited before insertion and guarded through enumeration/disconnect.
+    'switch_charge_enable': (0x4fe42c, 'ringnav_usb_charge', None),
+    'config_init': (0x503d0c, 'ringnav_usb_config', 'usb_config'),
+    'usb_detect': (0x4ff220, 'ringnav_usb_detect', 'usb_detect'),
+    'check_usb_status': (0x4f3744, 'ringnav_usb_status', 'usb_status'),
     'createPlayListItem': (0x517fdc, 'ringnav_playlist_create', None),
     'playlist_delete_click': (0x4b62c8, 'ringnav_playlist_delete', None),
     'localmusic_playlistsmore_page_init': (0x4b6614, 'ringnav_playlistsmore', 'playlistsmore'),
@@ -279,6 +284,7 @@ BOOT_HOOK = (b'    /release/bin/demo &\n', f'''    (
         rb=/mnt/mmc/.rockbox
         rockbox() {{
             [ -f $rb/rockbox ] || return
+            /usr/bin/cmd_gpio set_func PE22 output0  # Rockbox never drives the charge pin, so the S12 inhibit would stay on
             # Rockbox only starts here, so power-on and Home's hand-over both lose Wi-Fi (build.py WIFI_OFF)
             {WIFI_OFF}
             (cd $rb && exec ./rockbox) > $rb/rockbox.log 2>&1
@@ -1423,6 +1429,7 @@ FUNCTIONS = {
  'canvas_offline_end_draw': ('int', 'void *'),
  'canvas_offline_destroy': ('int', 'void *'),
  'canvas_translate': ('int', 'void *, int, int'),
+ 'widget_vtable_on_paint_self': ('int', 'void *, void *'),  # native foreground for fallback weight
  'widget_on_paint_children': ('int', 'void *, void *'),  # a wallpaper thumbnail's check badge (lockscreen.c)
  'slide_menu_set_spacer': ('int', 'void *, int'),
  'playing_timer_start': ('int', 'void *'),
@@ -1476,6 +1483,8 @@ FUNCTIONS = {
  'mclSetMute': ('int', 'int'),
  'toolsTrimLeft': ('void', 'char *'),
  'switch_charge_enable': ('int', 'int'),  # 1 charges: the active-low charge enable on GPIO PE22 (usbmode_page_init)
+ 'toolsGpioSetValue': ('int', 'const char *, int'),
+ 'toolsGpioGetValue': ('int', 'const char *'),  # USB charge inhibit readback, not a current measurement
  # Coverflow's Sort: another ORDER BY over getAllAlbum's grouping, filled by its own row callback
  'toolsQueryDbTable': ('int', 'const char *, const char *, void *, int'),  # db, sql, row, name sort
  'album_row': ('int', 'void *, int, char **, char **'),
@@ -1534,6 +1543,7 @@ PRIVATE_FUNCTIONS = {
 }
 GLOBALS = ['tidal_albuminfo_thread_run', 'tidal_collection_thread_run',  # 2: a Tidal list loaded
            'savestartbt', 'transposition', 'tidalfurlstart',  # a stream to start paused; 1 arms Now Playing's online tick (tidal.c app_start)
+           'isFav_playing',  # Now Playing's heart on a 0xf1 track: 1 a favourite (tidal.c app_fav)
            'g_time_zone','g_playspeed_mode', 'g_time24h_flag', 'g_backlight_status', 'g_lockscreen_pageflag', 'g_testmode_flag',
            'g_keylock_flag', 'g_keylock_mode',
            'g_bluetoothflag', 'bt_linkstatus', 'g_guideflag', 'g_poweroff_state', 'g_usblink_status', 'bt__recv_pageflag',
@@ -1578,7 +1588,7 @@ CONTEXT_DATA = {'bt_showcoding': 4, 'g_memory_info': 3476, 'g_folder_path': 1024
 # Windows the payload creates at runtime (window_create), so no rootfs asset names them.
 PAYLOAD_WINDOWS = {'playlistedit_page', 'chapters_page', 'coverflow_page', 'photos_page', 'books_page', 'games_page', 'mostplayed_page', 'shuffle_page', 'upnext_page', 'ratings_page', 'era_page', 'era_albums_page', 'rated_page', 'longsongs_page', 'spotify_page',
                    'spotbrowse_page', 'radio_page', 'radionp_page', 'streamconf_page', 'tidal_downloads', 'apps_page',
-                   'addon_page', 'app_songs', 'qrcode_page'}
+                   'addon_page', 'app_songs', 'qrcode_page', 'battery_page'}
 ICONS = [f'menu_{c}{s}.png' for c in ('coverflow', 'rockbox') for s in ('', 'down')]
 # The stock EQ preset page and the images only it and the stock equalizer page show: the PEQ
 # editor clears that page's widgets on init and never binds the preset button, so none can load.
@@ -1605,7 +1615,7 @@ FLAGS = ['--target=mipsel-linux-gnu','-march=mips32r2','-mabi=32','-mfp64',
          '-fno-stack-protector','-fno-unwind-tables','-fno-asynchronous-unwind-tables',
          '-Oz','-Wall','-Wextra','-Werror','-Wno-unused-parameter']
 # navigation.c and the files split out of it (patch/navigation.h), each its own object, linked in this order.
-NAVIGATION = ['navigation.c', 'theme_engine.c', 'playlists.c', 'classic_pages.c', 'home.c', 'np_bar.c', 'volume.c', 'smart_wifi.c', 'system.c', 'tags.c', 'scrobble_ui.c', 'library_lists.c', 'ratings.c', 'scan_folders.c', 'folder_delete.c']
+NAVIGATION = ['navigation.c', 'theme_engine.c', 'playlists.c', 'classic_pages.c', 'home.c', 'np_bar.c', 'volume.c', 'smart_wifi.c', 'system.c', 'usb_charge.c', 'tags.c', 'scrobble_ui.c', 'library_lists.c', 'durations.c', 'font_weight.c', 'coverflow_position.c', 'ratings.c', 'scan_folders.c', 'folder_delete.c', 'battery.c']
 
 def compile_payload(out):  # pragma: no mutate block
     """Compile and link the payload."""
@@ -2199,6 +2209,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     from art import images as theme_images
     drawn = {xx+n+'.png': (xx+'list_tidal.png', d) for t in builtin_themes() for n, d in theme_images(t).items()}
     for path, (like, data) in {**{xx+n: (xx+l, d) for n, (l, d) in icons.items()}, **pages, **drawn,
+                               'etc/init.d/S12usbcharge': ('etc/init.d/S20urandom', (ROOT/'patch/usb_charge.sh').read_bytes()),
                                HELPER: (HELPER_LIKE, compile_helper(out, cat, 'video', 'q2video', HELPER_LIBS)),
                                SCROBBLE_CA: ('etc/hosts', (ROOT/'assets/scrobble-ca.pem').read_bytes()),
                                BOOT: (HELPER_LIKE, compile_helper(out, cat, 'boot', 'q2boot', HELPER_LIBS[:1])),
@@ -2231,6 +2242,18 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
         (out/name).write_bytes(data)
         p = swap_inode(p, path.encode(), out/name)
         changed_assets[path] = dict(original_sha256=sha(original), sha256=sha(data))
+    # Wi-Fi transfer file manager (docs/internals.md#wi-fi-transfer): the stock CGIs are CGIC programs
+    # that build shell commands from the request (mkdir "%s", rm -rf "%s", mv "%s" "%s") and pass the
+    # path/filename straight to system(), so a name with $(...) or a backtick runs as root, and they
+    # read paths outside the card. q2cgi replaces all five, doing each operation with argv (never a
+    # shell command built from input) and validating every path stays under /mnt/mmc. One script over
+    # every cgi-bin/*.cgi inode, so both /name and /cgi-bin/name.cgi resolve to it with no bypass.
+    q2cgi = (ROOT/'assets/web/q2cgi').read_bytes()
+    (out/'q2cgi').write_bytes(q2cgi)
+    for n in ('create', 'delete', 'list', 'download', 'upload'):
+        path = 'usr/share/web/cgi-bin/%s.cgi' % n
+        changed_assets[path] = dict(original_sha256=sha(cat(path)), sha256=sha(q2cgi))
+        p = swap_inode(p, path.encode(), out/'q2cgi')
     patched_ui = list(UI_ASSETS)
     check(chinese, 'No Chinese UI text found')
     assets = ['ui/'+rel for rel in patched_ui + sorted(chinese - set(patched_ui))] + ['strings/en_US.bin']

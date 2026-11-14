@@ -71,7 +71,7 @@ static int wh_acc __attribute__((section(".scratch")));
 static int wh_anchor __attribute__((section(".scratch"))); /* touch-down x (1-200); 0 lifted */
 static int wh_units __attribute__((section(".scratch")));  /* wh_acc's tick, both in 1/16 unit */
 
-/* Wheel sensitivity (System settings -> Display, crossfade.c's page): 50-200% in tens, Q2POD
+/* Wheel sensitivity (System settings -> Display, crossfade.c's page): 10-200% in tens, Q2POD
  * WHEELSENSITIVITY in config.ini, anything else 50%. The travel per tick is 50% / sensitivity of
  * WHEEL_TICK_UNITS: 50% is today's 28 (a seventh of a turn), 100% 14, 200% 7, 1.0.6's scale and
  * key, so a value saved then means what it did (within the half unit 1.0.6 rounded to). It is kept
@@ -93,14 +93,14 @@ int wheel_pct(void) {
         toolsReadConfig("/mnt/data/config.ini", "Q2POD", "WHEELSENSITIVITY", v, "");
         int n = atoi(v);
         tk_snprintf(canonical, sizeof canonical, "%d", n);
-        wheel_apply(n >= 50 && n <= 200 && !(n % 10) && !strcmp(v, canonical) ? n : 50);
+        wheel_apply(n >= WHEEL_PCT_MIN && n <= 200 && !(n % 10) && !strcmp(v, canonical) ? n : 50);
         wheel_read = 1;
     }
     return wheel_percent;
 }
-/* The nearest ten within 50-200%, live on the next sample; crossfade.c's refresh saves it. */
+/* The nearest ten within 10-200%, live on the next sample; crossfade.c's refresh saves it. */
 void wheel_set_pct(int n) {
-    n = n < 50 ? 50 : n > 200 ? 200 : (n + 5) / 10 * 10;
+    n = n < WHEEL_PCT_MIN ? WHEEL_PCT_MIN : n > 200 ? 200 : (n + 5) / 10 * 10;
     if (n != wheel_pct()) wheel_apply(n);
 }
 
@@ -436,18 +436,19 @@ static const char *track_path(int at) {
     return r && I(r, REC_TYPE) == 8 ? P(r, REC_PATH) : 0;
 }
 static int too_long; /* set where mclStartPlayer runs, maybe off the UI thread; toasted by the poll */
-/* The file last started. A start drops the decoder's index before it opens the next file, yet
- * MemAvailable still counts it here, so the same file again (a CUE book's next chapter) would need
- * room for two: it starts unchecked. A preload, which opens beside the playing file, is checked.
+/* The file the player holds: the last one started. A start closes it before it opens the next, yet
+ * MemAvailable still counts its index here. The same file again (a CUE book's next chapter) would
+ * need room for two, so it starts unchecked; another book is checked with that index given back
+ * (mp4_start_fits). A preload, which opens beside the playing file, is checked in full.
  * ponytail: RAM taken since that file's start is not counted; a boot's first start always checks. */
 static char started[1024];
 int playback_start_fits(void) {
     const char *path = track_path(M(MCL_POS));
-    if (path && strcmp(path, started) && !mp4_fits(path)) {
+    if (path && strcmp(path, started) && !mp4_start_fits(path, started)) {
         too_long = 1;
         return 0;
     }
-    if (path) tk_snprintf(started, sizeof started, "%s", path);
+    tk_snprintf(started, sizeof started, "%s", path ? path : ""); /* a stream: the book is closed */
     return 1;
 }
 
@@ -897,6 +898,7 @@ static void *no_videos(void *q, int *at) {
 }
 int ringnav_load(void *q, int at, int type) {
     ++playback_loads;
+    app_fav_load(); /* tidal.c: an app song's heart isn't the new queue's */
     if (s.restoring == 2) type = M(MCL_TYPE);
     close_preload();
     /* After Shuffle Songs, before stock loads; ringnav_mode's playback_clear ends its shuffle. */

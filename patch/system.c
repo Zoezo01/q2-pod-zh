@@ -67,6 +67,7 @@ static void charge_poll(void) {
                                  ? g_usbdac_chargeflag
                                  : 1);
     st.charge_held = hold;
+    battery_tick(level, g_usbdet_value != 0); /* Battery History's rows (battery.c) */
 }
 
 /* The Wi-Fi signal (docs/internals.md#battery), for networkGetWifiSignal's two pollers: the status
@@ -290,6 +291,7 @@ void ringnav_clean_end(void) {
     if (pw.ended) return;
     pw.ended = 1;
     wdt_set(0);
+    durations_shutdown(1);
     unlink(STATE_FILE);
     unlink(STALL_FILE); /* one the thread hadn't removed yet: S90play's next demo never would */
     coverflow_clean_end();
@@ -490,6 +492,7 @@ static void logo_poll(void) {
 /* Every UI loop pass (navigation.c's main loop): Power's settings, then each poll. */
 void power_poll(void) {
     pod_settings();
+    durations_poll();
     charge_poll();
     standby_poll();
     logo_poll();

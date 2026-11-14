@@ -1,5 +1,9 @@
 # Q2 Pod 简体中文版（山灵 Q2）
 
+<p align="center">
+  <img src="assets/screenshots/screens.svg" alt="主菜单（正在播放的专辑封面旁是它的菜单）与正在播放页（封面旁是标题、表演者、专辑，下面是进度条）：Minimal 主题淡出到 Classic 再淡回来" width="86%">
+</p>
+
 把山灵 Q2 刷成 iPod classic 的样子，界面全中文。
 
 这不是山灵官方固件，也不是上游的官方中文版，是自己用的一个分支：在上游的固件补丁之上做中文界面，另外加了三个自己需要的功能。

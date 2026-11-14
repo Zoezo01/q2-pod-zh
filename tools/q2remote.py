@@ -14,6 +14,7 @@ import secrets
 import shlex
 import socket
 import struct
+import subprocess
 import sys
 import tarfile
 import time
@@ -186,7 +187,7 @@ def wheel_units(config):
     of a unit, rounded as its wheel_apply rounds them, so `wheel N` gives N ticks at every setting."""
     m = re.search(r"^WHEELSENSITIVITY=(\d+)\s*$", config, re.M)
     pct = int(m.group(1)) if m and m.group(1) == str(int(m.group(1))) else 50
-    pct = pct if 50 <= pct <= 200 and pct % 10 == 0 else 50
+    pct = pct if 10 <= pct <= 200 and pct % 10 == 0 else 50
     return (WHEEL_UNITS * 16 * 50 + pct // 2) // pct / 16
 
 
@@ -338,13 +339,26 @@ def install(tar):
         raise ValueError("update.tar reads back differently from the card; check the card")
 
 
+def local_addrs():
+    """This PC's IPv4 addresses: every interface's, by Linux's `ip` (a Q2 on a hotspot while the default
+    route is Ethernet's), else the default route's alone."""
+    try:
+        out = subprocess.run(["ip", "-4", "-o", "addr", "show", "scope", "global"], capture_output=True, text=True).stdout
+    except OSError:
+        out = ""
+    if addrs := re.findall(r"inet ([\d.]+)", out):
+        return addrs
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        s.connect(("8.8.8.8", 80))  # picks the route's local address; sends nothing
+        return [s.getsockname()[0]]
+
+
 def find(hosts=None):
-    """Addresses of this PC's /24 (by its default route) where q2remote answers. The probe sends no key:
-    a q2remote answers ERR to any wrong one."""
+    """Addresses of this PC's /24s (local_addrs) where q2remote answers. The probe sends no key: a
+    q2remote answers ERR to any wrong one."""
     if hosts is None:
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-            s.connect(("8.8.8.8", 80))  # picks the route's local address; sends nothing
-            hosts = [str(h) for h in ipaddress.ip_network(f"{s.getsockname()[0]}/24", strict=False).hosts()]
+        nets = {ipaddress.ip_network(f"{a}/24", strict=False) for a in local_addrs()}
+        hosts = [str(h) for net in sorted(nets) for h in net.hosts()]
     def probe(host):
         try:
             with socket.create_connection((host, PORT), 2) as s:
@@ -386,6 +400,14 @@ def symbol_table(path):
     return keys, [table[k] for k in keys], bisect.bisect_right
 
 
+def cache_file(cache, base):
+    """cache/base when base is one plain file name, else None: base is the Q2's word, and a separator or a
+    drive/stream colon in it would name a file outside cache on Windows."""
+    # ponytail: Windows device names (CON, NUL, COM1...) still pass; only a reply from something posing as the Q2 sends one
+    if base in ("", ".", "..") or set(base) & set(':/\\'): return None
+    return cache / base
+
+
 def profile(seconds, all_threads, build):
     """Sample demo's threads with q2remote --prof; the most frequent functions by thread state."""
     import collections
@@ -414,8 +436,7 @@ def profile(seconds, all_threads, build):
                 cands = []
                 if base == "demo" and build:
                     cands = [(pathlib.Path(build) / "patch.elf", 0), (pathlib.Path(build) / "demo", 0)]
-                else:
-                    local = cache / base
+                elif local := cache_file(cache, base):
                     if not local.exists(): pull(path, str(local))
                     cands = [(local, lo - off)]
                 for f, bias in cands:

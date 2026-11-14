@@ -71,6 +71,7 @@ All three kernel-module experiments were on by default from 1.5.0 to 1.6.1 and w
 ```sh
 python3 test/peq.py                        # PEQ parser, storage, DSP, EQ page (both tabs), 3EQ filters, player, visualizer FFT and scrobble upload (host cc; player needs -m32 libs, upload libcrypto)
 python3 test/peq.py --captures /tmp/eq --font BUILD/default.ttf  # the same, plus the EQ page's Simple tab in both iPod themes as PNGs
+python3 test/coverflow_position.py          # position pixels, wheel/touch redraw and fade (host cc)
 python3 test/coverflow.py                  # Coverflow art cache and depth renderer (host cc -m32, pthreads)
 python3 test/coverflow.py --captures /tmp/cf  # the same, plus the renderer's frames as PNGs
 python3 test/mp3.py                        # native Xing seek bounds, CRC and truncated headers; TXXX encodings
@@ -82,6 +83,7 @@ python3 test/build.py --build BUILD         # a finished build's payloads and pa
 python3 test/aic.py STOCKFS               # stopped audio notifier: actual MIPS hooks and modeled wait races
 python3 test/aic_build.py STOCKFS BUILD    # notifier development guard, ABI, default/experimental packaging
 python3 test/remote.py                     # q2remote protocol, auth, event and framebuffer checks
+bash test/wifi_transfer_cgi.sh             # Wi-Fi transfer's file manager (assets/web/q2cgi) under the host's busybox ash (the Q2's is 1.31.1): no ZIP or build; on a tmpfs at /mnt/mmc (one already there, or its own as root); --fat for a FAT32 image and its short-name cases (root). GitHub runs it on every pull request
 python3 test/rotator.py STOCK_MODULE        # actual MIPS rotator clock ownership and failure paths
 python3 test/rotator_build.py [BUILD...]    # dev-only guard (no build needed); given builds, packed/default module isolation
 python3 test/playback.py /tmp/q2-build     # grouped traversal, snapshots and the wheel's ticks (cc)
@@ -119,7 +121,7 @@ python3 -m pytest test/fw --basetemp ~/.cache/q2-pytest/fw  # the firmware's C o
 
 `test/patch.py` runs the real MIPS payload, but it needs a build, so a stock ZIP. `test/fw` runs the firmware's C without one, on every pull request and push to `main` (`.github/workflows/firmware.yml`, with the host suites above that need no build).
 
-`test/fw/host.py` compiles `navigation.c` and `tools/peq.py`'s `UI_SOURCES`, the payload's own files, as they are for the Q2, not through `PEQ_HOST`, and links them into one library the tests load with ctypes. Their `stock.h` is `tools/build.py`'s own (`stock_header`) and `themes.inc` `tools/theme.py`'s, and `peq_platform.h` lays stock's functions out as `tools/peq.py` does, so the colour path through `peq.h` is the device's. A stock call, or a libc call with effects outside the process, is a stub: it records the call and returns 0 of its declared type (a float in the float register), or what the test's `fw.mock` returns; `tk_snprintf` and `tk_strcmp` answer as `vsnprintf` and `strcmp` unless mocked. So a test can't touch the card, the network or this machine.
+`test/fw/host.py` compiles `navigation.c` and `tools/peq.py`'s `UI_SOURCES`, the payload's own files, as they are for the Q2, not through `PEQ_HOST`, and links them into one library the tests load with ctypes. Their `stock.h` is `tools/build.py`'s own (`stock_header`) and `themes.inc` `tools/theme.py`'s, and `peq_platform.h` lays stock's functions out as `tools/peq.py` does, so the colour path through `peq.h` is the device's. A stock call, or a libc call with effects outside the process, is a stub: it records the call and returns 0 of its declared type (a float in the float register), or what the test's `fw.mock` returns; `tk_snprintf` and `tk_strcmp` answer as `vsnprintf` and `strcmp` unless mocked, and `__errno_location` answers the address of the library's own `fw_errno`, 0 at each load. So a test can't touch the card, the network or this machine.
 
 ```sh
 python3 -m pytest test/fw --basetemp ~/.cache/q2-pytest/fw
@@ -135,6 +137,7 @@ Q2_FW_STRICT=1 python3 -m pytest test/fw    # fail a test that reaches a stub to
 - **q2video:** `patch/video.c` is a program of its own on the Q2, so `test/fw/video_host.py` builds it into a library of its own, the same way: the glibc and alsa-lib calls it declares are stubs, and `fw_video_run` runs `main` to its return or its `_exit`. There is no second process: when `fork` answers a pid, the harness first runs `ffmpeg()`'s child's half in place, with that call's own arguments read off its frame where the debug info puts them, so the child's `dup2`s and `execv` reach the stubs too. Reading that frame takes x86-64's layout, so the harness builds nowhere else. `test/fw/test_video.py` answers the stubs as a simulated Q2.
 
 - **Writing one:** `fw.fn('lyrics__lrc_time', restype, *argtypes)` reaches a static as `<file>__<name>`, and `fw.mock` and `fw.calls` take stub names: a stock function's, or `fw_<name>` for libc (`fw_fopen`). Work out the expected answer from what the function is for before running it.
+- **Song durations:** `python3 -m pytest test/fw/test_durations.py test/fw/test_nav_library_pages.py -k 'durations or long_songs or lengths or cue'` covers the shared cache, Long Songs and Update Local Music's pass; Classic's turned panel and the MIPS worker are `test/patch.py`'s.
 - **A known bug** stays as `@pytest.mark.xfail(strict=True, reason='BUG: ...')`: the test fails the job as soon as the bug is fixed, until the mark goes.
 - **Limits:** the code runs 64-bit, so `long` and pointers are wider than on the Q2, and stock widgets' layouts don't hold. Code that depends on those stays with `test/patch.py`. `peq_player.c`, `mp3_gapless.c` and the FLAC paths are the player's, tested by `test/peq.py`, `test/mp3_gapless.py` and the `test/flac_*.py` scripts.
 

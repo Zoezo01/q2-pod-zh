@@ -678,7 +678,7 @@ def playing_page(root, g=SET0):
     top = art_y + (icons_y - NP_ICON_PAD - art_y - (28 + 6 + 22 + 6 + 22 + g.np_ipod * (6 + 20))) // 2
     if g.np_ipod:  # the text starts under More, "3 of 12" under the album
         top = max(top, lift - 2)
-        pos[1] = [text_x, top + 90, text_w, 20]
+        pos[1] = [text_x + 2, top + 90, text_w - 2, 20]  # a label, drawn from its edge: the hscroll_labels above keep 2 px
     else:
         buttons[3].append(pos)
     title[1] = [text_x, top, text_w, 28]
@@ -1380,4 +1380,6 @@ def patch_code(data, symbols):
     # home_page_init's memory-play resume opens Now Playing; outside car mode it runs the page's player_start alone.
     word(0x534cf8, 0x0320f809, jal(symbols['ringnav_boot']),
          'boot resume restores the queue paused and stays on Home')
+    # Stock skips that resume with Headphones Required on (bnez g_block_withoutphone_flag), whatever is connected.
+    word(0x534c4c, 0x1440003c, 0, 'boot resume with Headphones Required on')
     return changes

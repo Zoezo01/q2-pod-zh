@@ -290,7 +290,7 @@ def test_wheel_positions():
 @pytest.mark.parametrize('config,units', [
     ('WHEELSENSITIVITY=100\n', 14.0), ('A=1\nWHEELSENSITIVITY=200  \nB=2\n', 7.0), ('WHEELSENSITIVITY=70', 20.0),
     ('WHEELSENSITIVITY=50\n', 28.0), ('', 28.0), ('XWHEELSENSITIVITY=100\n', 28.0), ('WHEELSENSITIVITY=080\n', 28.0),
-    ('WHEELSENSITIVITY=40\n', 28.0), ('WHEELSENSITIVITY=300\n', 28.0), ('WHEELSENSITIVITY=55\n', 28.0),
+    ('WHEELSENSITIVITY=40\n', 35.0), ('WHEELSENSITIVITY=10\n', 140.0), ('WHEELSENSITIVITY=0\n', 28.0), ('WHEELSENSITIVITY=300\n', 28.0), ('WHEELSENSITIVITY=55\n', 28.0),
 ])
 def test_wheel_units(config, units):
     assert q.wheel_units(config) == units
@@ -804,10 +804,19 @@ def test_find_scans_this_network(probes, monkeypatch):
         def getsockname(self):
             return ('192.168.7.9', 1234)
     monkeypatch.setattr(socket, 'socket', Udp)
+    def no_ip(*a, **k):
+        raise FileNotFoundError('ip')  # not Linux: the default route's address alone
+    monkeypatch.setattr(q.subprocess, 'run', no_ip)
     seen = probes({'192.168.7.1': b'ERR\n', '192.168.7.254': b'ERR\n'})
     assert q.find() == ['192.168.7.1', '192.168.7.254']
     assert udp == [(socket.AF_INET, socket.SOCK_DGRAM), ('8.8.8.8', 80)]
     assert len(seen) == 254
+
+
+def test_local_addrs_takes_every_interface_s_from_ip(monkeypatch):
+    out = '2: eth0    inet 10.1.2.3/24 brd 10.1.2.255 scope global eth0\n3: wlan0    inet 192.168.43.7/24 scope global wlan0\n'
+    monkeypatch.setattr(q.subprocess, 'run', lambda *a, **k: types.SimpleNamespace(stdout=out))
+    assert q.local_addrs() == ['10.1.2.3', '192.168.43.7']
 
 
 def test_reboot_without_waiting(shell):
@@ -869,7 +878,7 @@ def prof(monkeypatch, tmp_path):
     tables = {'demo': ([0x400100, 0x400200], ['stock_a', 'stock_b'], bisect.bisect_right),
               'patch.elf': ([0x400000], ['patch_entry'], bisect.bisect_right),
               'libc.so': ([0x1000, 0xb011], ['libc_f', 'libc_g'], bisect.bisect_right)}
-    monkeypatch.setattr(q, 'symbol_table', lambda path: tables[pathlib.Path(path).name])
+    monkeypatch.setattr(q, 'symbol_table', lambda path: tables.get(pathlib.Path(path).name, ([], [], bisect.bisect_right)))
     pulled = []
     def pull(path, local):
         pulled.append((path, local))
@@ -1022,6 +1031,22 @@ def test_profile_far_symbol_is_not_used(prof, tmp_path, capsys):
     assert '     1  demo  <- near\n' in capsys.readouterr().out
 
 
+@pytest.mark.parametrize('base,kept', [('demo', 1), ('libc.so', 1), ('libstdc++.so.6.0.28', 1), ('', 0), ('.', 0), ('..', 0),
+                                        (r'..\..\x', 0), (r'C:\dir\x', 0), ('D:x', 0), ('ab:x', 0), ('a/b', 0)])
+def test_cache_file_keeps_one_plain_name(base, kept):
+    cache = pathlib.Path('/c')
+    assert q.cache_file(cache, base) == (cache/base if kept else None)
+
+
+def test_profile_pulls_nothing_under_a_name_that_is_no_file_of_the_cache(prof, monkeypatch, tmp_path, capsys):
+    maps = '1234\n1234\n10000000-10001000 r-xp 00000000 08:01 2 /lib/a:x\n'
+    _, pulled = prof('')
+    replies = [(maps.encode(), 0), (b'1234 R 10000010 10000010\n', 0)]
+    monkeypatch.setattr(q, 'run', lambda *a, **k: replies.pop(0))
+    q.profile(1, False, None)
+    assert not pulled and '     1  a:x\n' in capsys.readouterr().out and not list((tmp_path/'.cache/q2-prof').iterdir())
+
+
 class Input:
     """input_action()'s world: the event node and every script handed to `sh`."""
     def __init__(self, monkeypatch):
@@ -1094,8 +1119,8 @@ WHEEL_SIXTEENTHS = {50: 448, 60: 373, 70: 320, 80: 280, 90: 249, 100: 224, 110: 
 
 @pytest.mark.parametrize('config,sixteenths', [(f'WHEELSENSITIVITY={p}\n', n) for p, n in WHEEL_SIXTEENTHS.items()] + [
     ('A=1\nWHEELSENSITIVITY=150  \nB=2', 149),
-    # Anything but a canonical ten in 50-200 is 50%, as wheel_pct reads it.
-    ('', 448), ('XWHEELSENSITIVITY=100\n', 448), ('WHEELSENSITIVITY=40\n', 448), ('WHEELSENSITIVITY=210\n', 448),
+    # Anything but a canonical ten in 10-200 is 50%, as wheel_pct reads it.
+    ('', 448), ('XWHEELSENSITIVITY=100\n', 448), ('WHEELSENSITIVITY=40\n', 560), ('WHEELSENSITIVITY=0\n', 448), ('WHEELSENSITIVITY=210\n', 448),
     ('WHEELSENSITIVITY=55\n', 448), ('WHEELSENSITIVITY=080\n', 448),
 ])
 def test_wheel_units_in_sixteenths(config, sixteenths):

@@ -1787,6 +1787,52 @@ static void mono_check(void) {
     peq_pts = -1;
 }
 
+/* AirPlay's tap (peq_player.c cast_live, cast_copy): CAST_FILE found within a second of audio; while the
+ * app beats, what plays goes to the ring at CAST_RATE, 16-bit, and mute silences the Q2's own output;
+ * a stale beat gives the sound back and writes nothing; another rate is resampled at unity gain. */
+static void cast_check(void) {
+    static float buf[2 * 1024];
+    af_instance a;
+    int fd = open(CAST_FILE, O_RDWR | O_CREAT, 0644);
+    assert(fd >= 0 && !ftruncate(fd, sizeof(cast_tap)));
+    cast_tap *t = mmap(0, sizeof *t, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    assert(t != MAP_FAILED && !close(fd));
+    t->magic = CAST_MAGIC, t->size = sizeof *t, t->mute = 1, t->want = CAST_CLOCK(now_ns());
+    unlink(PEQ_ACTIVE); /* bypass */
+    track(&a, CAST_RATE);
+    unsigned n = 0, k = 0;
+    for (int i = 0; i < 60; ++i) k = block(&a, buf, 1024, &n, 0.25f, CAST_RATE); /* found within a second */
+    assert(t->seq && t->seq % 1024 == 0 && t->seq < n);
+    for (unsigned i = 1; i <= 1024; ++i) assert(t->ring[(t->seq - i) & (CAST_RING - 1)][1] == 8192);
+    for (unsigned i = 0; i < 2 * k; ++i) assert(buf[i] == 0); /* muted */
+    unsigned seq = t->seq;
+    t->want = CAST_CLOCK(now_ns()) - CAST_STALE_PLAYER; /* the app stopped beating */
+    t->volume = 40; /* demo still at the speaker's level: silent */
+    k = block(&a, buf, 1024, &n, 0.25f, CAST_RATE);
+    assert(t->seq == seq && buf[1] == 0 && buf[2 * k - 1] == 0);
+    t->volume = -1; /* the earphones' level back */
+    k = block(&a, buf, 1024, &n, 0.25f, CAST_RATE);
+    assert(t->seq == seq && buf[1] == 0.25f && buf[2 * k - 1] == 0.25f);
+    a.uninit(&a);
+    t->want = CAST_CLOCK(now_ns());
+    track(&a, 48000);
+    n = 0;
+    for (int i = 0; i < 60 && t->seq == seq; ++i) block(&a, buf, 1024, &n, 0.25f, 48000); /* idle: a second */
+    assert(t->seq != seq);
+    unsigned from = n;
+    seq = t->seq;
+    for (int i = 0; i < 47; ++i) block(&a, buf, 1024, &n, 0.25f, 48000); /* 1 s */
+    unsigned got = t->seq - seq, want = (n - from) * 441u / 480; /* at CAST_RATE */
+    assert(got + 2 >= want && got <= want + 2);
+    short last = t->ring[(t->seq - 1) & (CAST_RING - 1)][1];
+    assert(last >= 8192 - 2 && last <= 8192 + 2);
+    a.uninit(&a);
+    t->want = CAST_CLOCK(now_ns()) - CAST_STALE_PLAYER; /* the filter keeps its map: the app gone */
+    munmap(t, sizeof *t);
+    unlink(CAST_FILE);
+    peq_pts = -1;
+}
+
 /* A gapless change (#137): the next instance, or this one renegotiated, carries on the last one's filter
  * memory, so a continuous signal comes out as one uninterrupted DSP puts it; another preset, a skip
  * mid-track, a pause and a passed-through track start from zero. */
@@ -2161,6 +2207,7 @@ int main(void) {
     crossfade_check();
     midmix_check();
     mono_check();
+    cast_check();
     carry_check();
 
     /* Exact VBR seeking: a 44.1 kHz stereo MPEG-1 Layer III Xing frame, 3600 s long, whose table
@@ -3045,7 +3092,7 @@ static int thumb(const char *s, const char *d, int w, int h) { return 0; }
 #define REC_PATH 0
 #define REC_TYPE 0
 #define tk_str_start_with(s, p) (!strncmp(s, p, strlen(p)))
-static unsigned char savestartbt, transposition, tidalfurlstart;
+static unsigned char savestartbt, transposition, tidalfurlstart, isFav_playing;
 static unsigned playback_loads;
 static int networkGetConnectStatus(void) { return 0; }
 static int mclStop(void) { return 0; }
@@ -3061,6 +3108,9 @@ static int quality = 27; static void *queue;
 #define mcl_pdeqplaylist (&queue)
 static int play_pos;
 #define MCL_POS (&play_pos)
+static int play_type;
+#define MCL_TYPE (&play_type)
+static int addon_fav(const char *id, const char *kind, const char *key, int on) { return 0; }
 static _Atomic int status = 1, gate, performing, performs, ended;
 static _Atomic unsigned long long clk = 1000;
 static char last[64];

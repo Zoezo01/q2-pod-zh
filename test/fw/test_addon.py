@@ -3,15 +3,17 @@ timers, card games, the page they draw over Q2SPOT/1, their QR codes, library re
 markers."""
 import ctypes as C
 import random
+import re
 import struct
 
 import pytest
 
 import host
-from conftest import O, Deques, Game, block, high_halves, libc, text
-from test_coverflow import png  # an icon's header
+from conftest import O, Deques, Game, block, claim, high_halves, libc, text
+from test_coverflow import png, scratch  # an icon's header; navigation.c's st by field
 from test_netupdate import JOB_INSTALL, JOB_REMOVE, SH_CANCELLED, SH_CARD, SH_NET, SH_OK, Sh  # test_netupdate.py keeps netupdate.c's App Store mirror
 from test_radio import Rd  # test_radio.py keeps the mirror
+from test_tidal import Au, Queue, free_stubbed  # test_tidal.py keeps tidal.c's au mirror
 
 APPS_MAX = 8
 REPLY_MAX = 64 << 10
@@ -35,8 +37,8 @@ LIBRARY = 0xf001  # stock's library class, which a local queue plays under
 
 class App(C.Structure):
     _fields_ = [('id', C.c_char * 16), ('name', C.c_char * 32), ('tips', C.c_char * 32), ('bin', C.c_char * 48), ('run', C.c_char * 48),
-                ('pid', C.c_char * 32), ('state', C.c_char * 40), ('browse', C.c_char * 48), ('icon', C.c_char * 56),
-                *((n, C.c_int) for n in ('qr', 'game', 'audio', 'present', 'launched', 'hold', 'relaunch', 'restart')),
+                ('pid', C.c_char * 32), ('state', C.c_char * 40), ('browse', C.c_char * 48), ('icon', C.c_char * 56), ('more', C.c_char * 48),
+                *((n, C.c_int) for n in ('qr', 'game', 'audio', 'hidden', 'present', 'launched', 'hold', 'relaunch', 'restart', 'nostop')),
                 *((n, C.c_uint) for n in ('polled', 'launch_at', 'restart_at', 'play'))]
 
 
@@ -48,7 +50,7 @@ class Ap(C.Structure):
 class Sm(C.Structure):
     _fields_ = [('app', C.c_void_p), ('dir', C.c_char * 160), ('last', C.c_char * 192), ('playing', C.c_char * 512), ('state', C.c_int),
                 ('timer', C.c_uint), ('seen', C.c_long), ('m3u', C.c_int), ('urls', C.c_int), ('next', C.c_int), ('more', C.c_int), ('first', C.c_char * 512),
-                ('want', C.c_char * 512), ('loads', C.c_uint)]
+                ('want', C.c_char * 512), ('loads', C.c_uint), ('seq', C.c_char * 24)]
 
 
 class Sl(C.Structure):
@@ -58,7 +60,7 @@ class Sl(C.Structure):
 
 class Req(C.Structure):
     _fields_ = [('thread', C.c_ulong), ('running', C.c_int), ('fail', C.c_int), ('cancel', C.c_int), ('done', C.c_int), ('id', C.c_uint),
-                ('n', C.c_uint), ('len', C.c_uint), ('buf', C.c_void_p), ('path', C.c_void_p)]
+                ('n', C.c_uint), ('len', C.c_uint), ('buf', C.c_void_p), ('path', C.c_void_p), ('field', C.c_int)]
 
 
 class Lv(C.Structure):
@@ -69,12 +71,12 @@ class Lv(C.Structure):
 
 class Pg(C.Structure):
     _fields_ = [*((n, C.c_void_p) for n in ('page', 'view', 'edit')), *((n, C.c_uint) for n in ('timer', 'go', 'leave', 'again')),
-                *((n, C.c_int) for n in ('depth', 'act', 'next', 'arg', 'a', 'code')),
+                *((n, C.c_int) for n in ('depth', 'act', 'next', 'arg', 'a', 'code', 'arow', 'busy')), ('acted', C.c_uint),
                 ('term', C.c_char * 64), ('aop', C.c_char * 16), ('lv', C.POINTER(Lv)), ('buf', C.c_void_p * ADDON_PAGES),
                 ('f', C.POINTER(C.c_char_p)), ('pages', C.c_int), ('paging', C.c_int), ('moved', C.c_byte),
                 ('sec', C.c_void_p), ('nsec', C.c_byte), ('cur', C.c_byte), ('sx', C.c_int), ('sy', C.c_int),
                 *((n, C.c_byte) for n in ('sdown', 'sclaim')), ('art_lo', C.c_int), ('art_hi', C.c_int),
-                ('sort', C.c_char_p * 6)]
+                ('sort', C.c_char_p * 6), ('field', C.c_int)]
 
 
 class Qp(C.Structure):
@@ -148,6 +150,8 @@ class World:
         self.names[f], self.at[f] = name, 0
         if b'w' in how:
             self.written[name] = b''
+        elif b'a' in how:
+            self.written.setdefault(name, self.files.get(name, b''))
         return f
 
     def fread(self, buf, size, n, f, *_):
@@ -307,6 +311,25 @@ def test_a_manifests_keys_and_defaults(fw):
     one, two = ap(fw).a[0], ap(fw).a[1]
     assert (one.name, one.tips, one.qr, one.game, one.audio) == (b'N', b'Find it', 1, 1, 1)
     assert (two.name, two.tips, two.qr, two.game, two.audio) == (b'two', b'Search', 0, 0, 0)
+    assert (one.nostop, one.more, two.nostop, two.more) == (0, b'', 0, b'')
+
+
+@pytest.mark.parametrize('manifest,nostop,more', [
+    (b'name=N\nstop=0\nmore=playlists Playlists\n', 1, b'playlists Playlists'),
+    (b'name=N\r\nstop=0\r\nmore=playlists\r\n', 1, b'playlists'),  # a Windows editor's line ends
+    (b'name=N\nstop=1\n', 0, b''),
+    (b'name=N\nstop=no\n', 0, b''),  # as text: only 0 drops the Stop row
+])
+def test_a_manifest_can_drop_the_stop_row_and_take_now_playings_more(fw, manifest, nostop, more):
+    card(fw, one=manifest)
+    scan(fw)
+    assert (ap(fw).a[0].nostop, ap(fw).a[0].more) == (nostop, more)
+
+
+def test_a_hidden_app_has_no_streaming_row(fw):
+    card(fw, one=b'name=One\n', airplay=b'name=AirPlay\nhidden=1\n')  # opened by id instead (addon_open_id)
+    assert scan(fw) == 1 and names(fw, 'addon_id') == [None, b'one', None]
+    assert (ap(fw).a[1].id, ap(fw).a[1].hidden, ap(fw).a[1].present) == (b'airplay', 1, 1)
 
 
 def test_names_are_cut_at_a_whole_character(fw):
@@ -379,7 +402,7 @@ def test_more_apps_than_slots(fw):
 def test_the_features_are_published_at_every_scan(fw):
     world = card(fw)
     scan(fw)
-    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections art window urls sort\n'
+    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections art window urls sort field more fav now\n'
     assert world.of('rename') == [(b'/tmp/q2-addon.caps.tmp', b'/tmp/q2-addon.caps')]
 
 
@@ -1534,6 +1557,8 @@ def test_the_child_runs_the_game_first_for_the_oom_killer_and_with_none_of_demos
     g = CardGame(fw)
     fw.mock('fw_fork', lambda *_: 0)
     fw.mock('fw_open', lambda *_: 5)
+    env = []
+    fw.mock('fw_setenv', lambda name, value, over, *_: env.append((C.string_at(name), C.string_at(value), over)) or 0)
     g.start()
     calls = fw.calls()
     order = [n for n, _ in calls]
@@ -1545,6 +1570,9 @@ def test_the_child_runs_the_game_first_for_the_oom_killer_and_with_none_of_demos
     binary = b'/mnt/mmc/.snake/q2-snake'
     assert [C.string_at(p) if p else p for p in calls[execl][1][:3]] == [binary, binary, 0]
     assert order[execl + 1] == 'child_exit' and calls[execl + 1][1][0] == 127  # its exec failed
+    (name, value, over), = env  # the child's own, after demo's files: the theme's pop-up (test_games)
+    assert order.index('fw_setenv') == execl - 1 and name == b'Q2_POPUP' and over == 1
+    assert value.split()[0] in (b'minimal', b'modern', b'classic') and len(value.split()) in (7, 71)
 
 
 def test_a_game_off_the_card_says_so(fw):
@@ -1723,6 +1751,7 @@ class Page:
     def __init__(self, fw, manifest=b'name=Foo\n', opens=True):
         self.fw, self.sel, self.y, self.timers, self.drawn, self.toasts, self.backs = fw, 0, 0, 0, 0, [], 0
         self.aborts: list = []  # sections()' swipe aborts
+        self.tips: list = []  # field()'s box hints
         self.world = card(fw, foo=manifest)
         self.world.files[b'/tmp/q2-foo'] = b'1'
         self.page, self.view = block(fw, size=4096), block(fw, size=4096)  # widgets' bytes, all zero
@@ -1843,6 +1872,112 @@ def test_an_action_refused_toasts_why(fw):
     assert p.toasts == [b"Foo didn't answer"]
 
 
+def test_a_second_action_press_while_one_is_in_flight_sends_nothing(fw):
+    """A toggle pressed twice: the app has usually done the first, so a second would undo it and drop the first's
+    reply. Only another action row's press waits for the reply."""
+    p = Page(fw)
+    p.answer(rows=[item(1), item(2)])
+    p.click(0)
+    sent, req = len(fw.calls('fw_pthread_create')), p.req.id
+    p.click(0)
+    p.click(1)
+    assert len(fw.calls('fw_pthread_create')) == sent and p.req.id == req and p.pg.act == 1
+    p.answer(msg=b'Added')
+    assert p.toasts == [b'Added'] and p.request().endswith(b'\tmenu\n')  # one reply, one toast, asked again
+    p.answer(rows=[item(1), item(2)])
+    p.click(1)
+    assert p.request().endswith(b'\top2\n')  # answered: the next press is sent
+
+
+def test_a_list_row_while_an_action_is_in_flight_opens_as_before(fw):
+    """Only action rows wait: a list row opens its level at once, its request in the action's place."""
+    p = Page(fw)
+    p.answer(rows=[item(1), item(2, b'list')])
+    p.click(0)
+    p.click(1)
+    assert p.pg.depth == 2 and p.pg.act == 0 and p.request().endswith(b'\top2\n')
+
+
+def test_a_held_play_pause_while_an_action_is_in_flight_sends_its_op_as_before(fw):
+    p = Page(fw)
+    p.answer(rows=[item(1), item(2, hold=b'h')])
+    p.click(0)
+    p.sel = 1
+    assert fw.fn('addon_hold', C.c_int, C.c_void_p)(p.page) == 1 and p.request().endswith(b'\th\n')
+
+
+def test_return_while_an_action_is_in_flight_still_leaves(fw):
+    p = Page(fw)
+    p.answer(rows=[item(1, b'list')])
+    p.click(0)
+    p.answer(rows=[item(2)])
+    p.click(0)
+    p.back()
+    assert p.pg.depth == 1 and p.pg.act == 0 and p.request().endswith(b'\tmenu\n')
+    p.back()
+    assert p.backs == 1  # and leaves the page from the first level
+
+
+@pytest.mark.parametrize('detail,label', [(b'sub', 1), (b'', 0)])
+def test_an_unanswered_action_says_working_on_its_row_until_the_reply(fw, detail, label):
+    """As the App Store's rows say Installing…: after BUSY_MS the pressed row's detail, or its title when it has
+    none, says Working…; the reply puts its text back before its toast."""
+    rows = [row_of(b'a', b'One', b'one'), row_of(b'b', b'Add to Sync', detail)]
+    p = Page(fw)
+    p.answer(msg=b'refresh', rows=rows)
+    items, kids, written, _ = row_walk(p, rows)
+    p.click(1)
+    p.world.ms += 399
+    p.tick()
+    assert written == []
+    p.world.ms += 1
+    p.tick()
+    p.tick()
+    assert written == [(kids[items[1]][label], 'Working…'.encode())]
+    p.answer(msg=b'Added')
+    assert written[1:] == [(kids[items[1]][label], rows[1][3 - (not detail)])] and p.toasts == [b'Added']
+
+
+def test_working_comes_back_on_a_list_drawn_again_while_the_action_waits(fw):
+    """The search box opened and closed over it draws the list anew, its own texts: the tick says Working… again."""
+    rows = [row_of(b'a', b'One', b'one')]
+    p = Page(fw)
+    p.answer(msg=b'refresh', rows=rows)
+    items, kids, written, _ = row_walk(p, rows)
+    p.click(0)
+    p.world.ms += 400
+    p.tick()
+    p.pg.next = 1  # G_SHOW: the search box's blur
+    fw.fn('addon__go', C.c_int, C.c_void_p)(None)
+    del written[:]
+    p.tick()
+    assert written == [(kids[items[0]][1], 'Working…'.encode())] and p.pg.busy == 1
+
+
+def test_an_action_that_fails_puts_its_row_back_with_the_toast(fw):
+    rows = [row_of(b'a', b'One', b'one')]
+    p = Page(fw)
+    p.answer(msg=b'refresh', rows=rows)
+    items, kids, written, _ = row_walk(p, rows)
+    p.click(0)
+    p.world.ms += 400
+    p.tick()
+    p.answer(fail=REQ_FAIL)
+    assert written[:2] == [(kids[items[0]][1], 'Working…'.encode()), (kids[items[0]][1], b'one')]  # then Loading…, as before
+    assert p.toasts == [b"Foo didn't answer"] and p.pg.busy == 0
+
+
+def test_an_action_answered_at_once_says_nothing_on_its_row(fw):
+    rows = [row_of(b'a', b'One', b'one')]
+    p = Page(fw)
+    p.answer(msg=b'refresh', rows=rows)
+    _, _, written, _ = row_walk(p, rows)
+    p.click(0)
+    p.world.ms += 100
+    p.answer()
+    assert written == [] and p.pg.busy == 0
+
+
 def test_the_stop_action_leaves_the_page(fw):
     p = Page(fw)
     p.answer(rows=[(b'action', b'stop', b'Stop', b'', b'', b'')])
@@ -1937,6 +2072,63 @@ def test_a_stop_on_an_error_page_is_its_second_row(fw):
     p.answer(status=b'error')
     p.click(1)
     assert p.backs == 1 and p.ap.a[0].launched == 0
+
+
+NOSTOP = b'name=Foo\nstop=0\n'
+
+
+def test_stop_0_keeps_a_slow_load_to_its_loading_page(fw):
+    p = Page(fw, NOSTOP)
+    p.world.ms += 3001
+    p.tick()
+    assert p.top.slow == 0 and p.drawn == 0 and p.top.state == K_LOAD
+
+
+def test_stop_0_ends_an_error_page_in_cancel_which_leaves_the_page_the_app_running(fw):
+    p = Page(fw, NOSTOP)
+    texts: list = []
+    fw.mock('widget_set_text_utf8', lambda w, t, *_: texts.append(C.string_at(t)))
+    p.answer(status=b'error', msg=b'Nope')
+    assert p.top.state == K_ERROR and p.drawn == 2
+    assert texts[-2:] == [b'Retry', b'Cancel'] and b'Stop Foo' not in texts
+    p.click(1)
+    assert p.backs == 1 and p.ap.a[0].launched == 1 and p.toasts == []
+    assert not [c for c in p.world.of('system') if c[0].startswith(b'kill')]
+
+
+def test_stop_0_keeps_a_slow_start_to_its_waiting_page(fw):
+    p = Page(fw, NOSTOP)
+    p.world.ms += 500
+    p.answer(fail=REQ_NOSOCK, raw=b'')
+    assert p.top.state == K_WAIT
+    p.world.ms += 3001
+    p.tick()
+    assert p.top.slow == 0 and p.drawn == 0 and p.top.state == K_WAIT
+
+
+@pytest.mark.parametrize('leave', [lambda p: p.click(1), lambda p: p.back()], ids=['cancel', 'return'])
+def test_cancel_gives_the_same_result_as_return(fw, leave):
+    p = Page(fw, NOSTOP)
+    p.answer(status=b'error')
+    leave(p)
+    assert (p.backs, p.pg.depth, p.ap.a[0].launched, p.toasts) == (1, 1, 1, [])
+
+
+def test_cancel_on_a_deeper_levels_error_goes_back_to_the_level_below(fw):
+    p = Page(fw, NOSTOP)
+    p.answer(rows=[item(1, b'list')])
+    p.click(0)
+    p.answer(status=b'error')
+    p.click(1)
+    assert p.pg.depth == 1 and p.backs == 0 and p.request().endswith(b'\tmenu\n')
+
+
+def test_stop_0_still_offers_cancel_on_an_app_that_isnt_running(fw):
+    p = Page(fw, NOSTOP)
+    p.ap.a[0].launched = 0
+    del p.world.files[b'/tmp/q2-foo']
+    p.answer(status=b'error')
+    assert p.drawn == 2
 
 
 def art_path(uri, ctx):
@@ -2614,6 +2806,142 @@ def test_an_empty_search_goes_back_to_the_menu(fw):
     assert p.pg.depth == 1
 
 
+SECRET = b's3cr%t'
+USER = (b'field', b'user', b'Username:', b'alice', b'', b'')
+PASSWORD = (b'field', b'login', b'Password:', b'***', b'pw', b'')
+
+
+def field(p, i, typed=SECRET):
+    # A field row pressed, its box's hint its title (read as it is set: edit_create's names are its stack's), and
+    # typed's OK.
+    box, p.tips = edit_box(p.fw), []
+    p.fw.mock('widget_set_prop_str', lambda w, k, v, *_: C.string_at(k) == b'tips' and p.tips.append(C.string_at(v)))
+    p.click(i)
+    assert p.pg.edit == box and p.pg.field == i + 1
+    # stock writes nothing when the text doesn't fit; Done sends EVT_IM_ACTION and EVT_VALUE_CHANGED, so twice
+    p.fw.mock('widget_get_text_utf8', lambda w, out, n, *_: 1 if len(typed) >= n else C.memmove(out, typed + b'\0', len(typed) + 1) and 0)
+    p.fw.fn('addon__searched', C.c_int, C.c_void_p, C.c_void_p)(None, None)
+    p.fw.fn('addon__searched', C.c_int, C.c_void_p, C.c_void_p)(None, None)
+    p.fw.fn('addon__go', C.c_int, C.c_void_p)(None)
+
+
+def test_a_field_row_sends_its_text_and_takes_the_reply_in_the_levels_place(fw):
+    p = Page(fw)
+    texts: list = []  # read as they are set: a caption points into a reply let go since
+    fw.mock('widget_set_text_utf8', lambda w, t, *_: texts.append(C.string_at(t)))
+    p.answer(rows=[item(0, b'info'), USER, PASSWORD])
+    p.sel = 2
+    field(p, 2)
+    assert p.tips == [b'Password:']
+    assert p.request().endswith(b'\tlogin\tpw\ts3cr%25t\n') and p.pg.act == 0
+    assert p.pg.depth == 1 and p.top.op == b'menu' and p.top.args == b'' and p.top.title == b'Foo'
+    assert p.top.state == K_LOAD and p.top.id == p.req.id and p.top.sel == 2
+    assert p.pg.term == b'' and p.pg.field == 0
+    p.answer(rows=[item(0, b'info'), USER, (b'field', b'login', b'Password:', b'*****', b'pw', b'')])
+    assert p.top.state == K_READY and p.top.n == 3 and p.cell(2, 3) == b'*****' and p.pg.depth == 1
+    assert b'Username:' in texts and not [t for t in texts if SECRET in t]  # nothing on screen holds it
+
+
+def test_a_field_text_of_63_bytes_is_sent_whole(fw):
+    p = Page(fw)
+    p.answer(rows=[USER])
+    field(p, 0, b'a' * 63)
+    assert p.request().endswith(b'\tuser\t' + b'a' * 63 + b'\n')
+
+
+@pytest.mark.parametrize('n', [64, 100, 255])
+def test_a_field_text_too_long_to_send_whole_is_dropped_and_says_so(fw, n):
+    p = Page(fw)
+    p.answer(rows=[USER])
+    calls = len(fw.calls('fw_pthread_create'))
+    field(p, 0, b'a' * n)  # searched runs twice, as stock's Done sends both events
+    assert len(fw.calls('fw_pthread_create')) == calls and p.toasts == [b'Too long']
+    assert p.pg.term == b'' and p.top.state == K_READY and p.pg.depth == 1 and p.top.title == b'Foo'
+
+
+def test_a_search_text_too_long_to_send_whole_is_dropped_and_says_so(fw):
+    p = Page(fw)
+    p.answer(rows=[SEARCH, item(0, b'list')])
+    tap_find(p)
+    calls = len(fw.calls('fw_pthread_create'))
+    text = b'a' * 99 + b'\xc3\xa9'
+    fw.mock('widget_get_text_utf8', lambda w, out, n, *_: 1 if len(text) >= n else C.memmove(out, text + b'\0', len(text) + 1) and 0)
+    for _ in range(2):
+        fw.fn('addon__searched', C.c_int, C.c_void_p, C.c_void_p)(None, None)
+    fw.fn('addon__go', C.c_int, C.c_void_p)(None)
+    assert len(fw.calls('fw_pthread_create')) == calls and p.toasts == [b'Too long']
+    assert p.pg.depth == 1 and p.top.op != b'search' and text[:63] not in p.top.title
+
+
+def test_a_field_sent_while_the_app_restarts_is_its_levels_error_and_retry_asks_the_level(fw):
+    p = Page(fw, NOSTOP)
+    p.answer(rows=[USER, PASSWORD])
+    field(p, 1)
+    p.ap.a[0].restart = 1
+    p.answer(fail=REQ_NOSOCK, raw=b'')
+    assert p.top.state == K_ERROR and p.top.note == b"Foo isn't running" and p.drawn == 2
+    p.click(0)
+    assert SECRET not in p.request() and p.request().endswith(b'\tmenu\n')
+
+
+def test_a_level_asked_while_the_app_restarts_still_waits(fw):
+    p = Page(fw)
+    p.ap.a[0].restart = 1
+    p.answer(fail=REQ_NOSOCK, raw=b'')
+    assert p.top.state == K_WAIT
+
+
+def test_a_request_with_no_worker_is_wiped_before_it_is_let_go(fw):
+    p = Page(fw)
+    fw.mock('fw_pthread_create', lambda *_: 11)  # EAGAIN: no worker
+    fw.fn('addon__req_send', None, C.c_char_p, C.c_char_p, C.c_char_p)(b'/s', b'login', b'\ts3cret')
+    assert p.req.done == 1 and p.req.running == 0 and C.string_at(p.req.buf, 64) == b'\0' * 64
+
+
+def test_a_field_row_with_no_context_sends_the_text_alone(fw):
+    p = Page(fw)
+    p.answer(rows=[USER])
+    field(p, 0, b'alice')
+    assert p.request().endswith(b'\tuser\talice\n')
+
+
+def test_a_fields_failure_is_its_levels_error_and_retry_never_sends_the_text_again(fw):
+    p = Page(fw, NOSTOP)
+    p.answer(rows=[USER, PASSWORD])
+    field(p, 1)
+    p.answer(status=b'refused', msg=b'Wrong password')
+    assert p.top.state == K_ERROR and p.top.note == b'Wrong password' and p.top.title == b'Foo'
+    p.click(0)
+    assert p.request().endswith(b'\tmenu\n') and SECRET not in p.request()
+
+
+def test_an_empty_fields_box_sends_nothing(fw):
+    p = Page(fw)
+    p.answer(rows=[USER])
+    calls = len(fw.calls('fw_pthread_create'))
+    field(p, 0, b'')
+    assert len(fw.calls('fw_pthread_create')) == calls and p.top.state == K_READY
+
+
+def test_a_field_whose_row_changed_under_the_box_sends_nothing(fw):
+    p = Page(fw)
+    p.answer(rows=[USER])
+    box = edit_box(fw)
+    p.click(0)
+    p.fw.fn('addon__fetch', None, C.POINTER(Lv))(p.pg.lv)
+    p.answer(rows=[item(0)])  # a reply landed while the box was open
+    calls = len(fw.calls('fw_pthread_create'))
+    fw.mock('widget_get_text_utf8', lambda w, out, n, *_: C.memmove(out, b'x\0', 2) and 0)
+    fw.fn('addon__searched', C.c_int, C.c_void_p, C.c_void_p)(None, None)
+    fw.fn('addon__go', C.c_int, C.c_void_p)(None)
+    assert len(fw.calls('fw_pthread_create')) == calls and p.pg.term == b''
+
+
+def test_the_worker_keeps_none_of_a_requests_bytes_past_its_reply(fw):
+    req = worker(fw, [b'Q2SPOT/1\n1\tok\n'])
+    assert C.string_at(req.buf, 17) == b'Q2SPOT/1\n1\tok\n\0\0\0'
+
+
 def test_a_sole_search_row_stays_a_row(fw):
     p = Page(fw)
     p.answer(rows=[SEARCH])
@@ -3166,6 +3494,56 @@ def test_an_app_keeps_its_folders_songs_out_of_the_scrobble_log(fw, manifest, pa
     assert fw.fn('addon_scrobbles', C.c_int, C.c_char_p)(path) == logs
 
 
+SYNCED = b'/mnt/mmc/Jellyfin/Broadcast/Tender Buttons/01 - Tears.flac'
+
+
+@pytest.mark.parametrize('manifest,path,told', [
+    (b'name=Foo\nfavdir=Jellyfin\n', SYNCED, True),
+    (b'name=Foo\r\nfavdir=Jellyfin\r\n', SYNCED, True),  # a Windows editor's line ends
+    (b'name=Foo\n', SYNCED, False),  # no favdir: the app hears of no hearts
+    (b'name=Foo\nfavdir=Jellyfin\n', b'/mnt/mmc/Music/a.flac', False),
+    (b'name=Foo\nfavdir=Jellyfin\n', b'/mnt/mmc/Jellyfin2/a.flac', False),  # a folder that only starts the same
+    (b'name=Foo\nfavdir=Jellyfin\n', b'/mnt/mmc/Jellyfin', False),
+    (b'name=Foo\nfavdir=Jellyfin\n', b'/mnt/mmc/Jellyfin/../Music/a.flac', False),
+    (b'name=Foo\nfavdir=Jellyfin\n', b'/tmp/Jellyfin/a.flac', False),
+    (b'name=Foo\nfavdir=Jelly/fin\n', b'/mnt/mmc/Jelly/fin/a.flac', False),  # one folder name, no deeper
+    (b'name=Foo\nfavdir=..\n', b'/mnt/mmc/../a.flac', False),
+])
+def test_a_heart_on_a_song_in_an_apps_favdir_is_told_to_it(fw, manifest, path, told):
+    world = card(fw, foo=manifest)
+    for on in (1, 0):
+        assert fw.fn('addon_fav_path', C.c_int, C.c_char_p, C.c_int)(path, on) == 1
+    want = b'\npath\t1\t%s\n\npath\t0\t%s\n' % (path, path)
+    assert world.written.get(b'/mnt/mmc/.foo/fav.log') == (want if told else None)
+
+
+def test_a_heart_is_appended_to_the_presses_the_app_hasnt_taken(fw):
+    world = card(fw, foo=b'favdir=Jellyfin\n')
+    world.files[b'/mnt/mmc/.foo/fav.log'] = b'item\t1\tabc\n'
+    assert fw.fn('addon_fav', C.c_int, C.c_char_p, C.c_char_p, C.c_char_p, C.c_int)(b'foo', b'item', b'def', 7) == 1
+    assert world.written[b'/mnt/mmc/.foo/fav.log'] == b'item\t1\tabc\n\nitem\t1\tdef\n'
+
+
+def test_a_press_after_a_cut_one_starts_a_line_of_its_own(fw):
+    world = card(fw, foo=b'favdir=Jellyfin\n')
+    world.files[b'/mnt/mmc/.foo/fav.log'] = b'\nitem\t1\tab'  # a write the card cut short
+    fw.fn('addon_fav', C.c_int, C.c_char_p, C.c_char_p, C.c_char_p, C.c_int)(b'foo', b'path', SYNCED, 0)
+    assert world.written[b'/mnt/mmc/.foo/fav.log'].split(b'\n') == [b'', b'item\t1\tab', b'path\t0\t' + SYNCED, b'']
+
+
+def test_a_heart_the_card_wont_take_says_so(fw):
+    world = card(fw, foo=b'favdir=Jellyfin\n')
+    world.fail_write = lambda name: True
+    assert fw.fn('addon_fav_path', C.c_int, C.c_char_p, C.c_int)(SYNCED, 1) == 0
+
+
+@pytest.mark.parametrize('app,key', [(b'../x', b'k'), (b'', b'k'), (b'foo', b'k' * 600)])
+def test_a_heart_for_no_app_or_a_key_too_long_is_never_written(fw, app, key):
+    world = card(fw, foo=b'favdir=Jellyfin\n')
+    assert fw.fn('addon_fav', C.c_int, C.c_char_p, C.c_char_p, C.c_char_p, C.c_int)(app, b'item', key, 1) == 0
+    assert not [n for n in world.written if n.endswith(b'fav.log')]
+
+
 def goes(fw, path):
     return fw.fn('addon_goes', C.c_int, C.c_char_p)(path)
 
@@ -3218,6 +3596,120 @@ def test_go_to_replaces_the_page_already_open(fw):
     p.answer(rows=[item(1)])
     assert goto(fw, b'/mnt/mmc/.foo/a.flac') == 1
     assert p.pg.depth == 1 and p.top.op == b'goto' and len(fw.calls('window_manager_close_window_force')) == 1
+
+
+class Qa(C.Structure):
+    _fields_ = [('app', C.c_void_p), ('loads', C.c_uint)]
+
+
+def more(fw, manifest, loads=0):
+    # An app's queue playing (its .play's start noted, loads queue loads since), and Now Playing's ⋯.
+    p = Page(fw, manifest, opens=False)
+    qa = fw.var('addon__qa', Qa)
+    qa.app, qa.loads = C.addressof(p.ap.a[0]), fw.var('playback_loads', C.c_uint).value
+    fw.var('playback_loads', C.c_uint).value += loads
+    return p, fw.fn('addon_more', C.c_int)()
+
+
+def test_now_playings_more_opens_the_apps_page_at_its_op(fw):
+    p, opened = more(fw, b'name=Foo\nmore=playlists My Playlists\n')
+    assert opened == 1 and p.pg.depth == 1 and p.top.op == b'playlists' and p.top.args == b'' and p.top.title == b'My Playlists'
+    assert p.request().endswith(b'\tplaylists\n')
+
+
+def test_more_with_no_title_is_titled_by_the_app(fw):
+    p, opened = more(fw, b'name=Foo\nmore=playlists\n')
+    assert opened == 1 and p.top.title == b'Foo'
+
+
+def test_more_is_stocks_once_the_apps_binary_is_gone(fw):
+    p = Page(fw, b'name=Foo\nmore=playlists\n', opens=False)
+    qa = fw.var('addon__qa', Qa)
+    qa.app, qa.loads = C.addressof(p.ap.a[0]), fw.var('playback_loads', C.c_uint).value
+    del p.world.files[b'/mnt/mmc/.foo/q2-foo']
+    assert fw.fn('addon_more', C.c_int)() == 0 and not p.pg.page
+
+
+@pytest.mark.parametrize('manifest,loads', [
+    (b'name=Foo\n', 0),                                 # no more=: stock's ⋯
+    (b'name=Foo\nmore=playlists\n', 1),                 # another queue loaded since
+    (b'name=Foo\nmore= Playlists\n', 0),                # no op
+    (b'name=Foo\nmore=' + b'p' * 16 + b' P\n', 0),       # an op too long for a level
+])
+def test_more_is_stocks_unless_the_app_says_and_its_queue_plays(fw, manifest, loads):
+    p, opened = more(fw, manifest, loads)
+    assert opened == 0 and not p.pg.page
+
+
+def test_more_with_no_app_queue_is_stocks(fw):
+    Page(fw, b'name=Foo\nmore=playlists\n', opens=False)
+    assert fw.fn('addon_more', C.c_int)() == 0
+
+
+def test_more_replaces_the_apps_page_already_open(fw):
+    p, _ = more(fw, b'name=Foo\nmore=playlists\n')
+    p.answer(rows=[item(1, b'list')])
+    p.click(0)
+    assert fw.fn('addon_more', C.c_int)() == 1
+    assert p.pg.depth == 1 and p.top.op == b'playlists' and len(fw.calls('window_manager_close_window_force')) == 1
+
+
+@pytest.mark.parametrize('manifest,stock', [(b'name=Foo\nmore=playlists\n', 0), (b'name=Foo\n', 1)])
+def test_now_playings_more_tapped_opens_the_apps_page_instead_of_stocks(fw, scratch, manifest, stock):
+    # navigation.c ringnav_dispatch: the click on Now Playing's img_more (Page's lookup finds it at the view).
+    p = Page(fw, manifest, opens=False)
+    qa = fw.var('addon__qa', Qa)
+    qa.app, qa.loads = C.addressof(p.ap.a[0]), fw.var('playback_loads', C.c_uint).value
+    C.c_void_p.from_address(C.addressof(fw.var('st', C.c_char)) + scratch['np_win']).value = block(fw, size=4096)
+    fw.mock('stock_dispatch_trampoline', lambda *_: 4)
+    event = C.create_string_buffer(0x40)
+    struct.pack_into('<i', event, O['EVENT_TYPE'], O['EVT_CLICK'])
+    fw.fn('ringnav_dispatch', C.c_int, C.c_void_p, C.c_void_p)(p.view, C.addressof(event))
+    assert (p.pg.page == p.page) == (not stock) and len(fw.calls('stock_dispatch_trampoline')) == stock
+
+
+def test_a_url_queue_marks_its_queue_the_apps(fw, mcl, songs):
+    s = Stream(fw, mcl, songs)
+    s.world.files[b'/tmp/q2-foo.urls'] = b'#Q2URLS/1\tstart=0\nhttps://x/a.flac\tA\n'
+    s.play(b'1 /tmp/q2-foo.urls\n')
+    loads = s.loaded.value
+    # toolsFreeStSongInfo at its stock address (tidal.c's define): a ret there for the test, put back after
+    free_rec = int(re.findall(r'toolsFreeStSongInfo \(\(void \(\*\)\(void \*\)\)(0x[0-9a-f]+)u\)',
+                              (host.ROOT/'patch/tidal.c').read_text())[0], 16)
+    claim(free_rec)
+    saved = C.string_at(free_rec, 1)
+    C.memmove(free_rec, b'\xc3', 1)
+    try:
+        s.step()
+        s.step()
+    finally:
+        C.memmove(free_rec, saved, 1)
+    qa = fw.var('addon__qa', Qa)
+    assert s.loaded.value == loads + 1 and qa.app == C.addressof(ap(fw).a[0]) and qa.loads == s.loaded.value
+
+
+def test_a_stream_session_marks_its_queue_the_apps(fw, mcl, songs):
+    s = started(fw, mcl, songs)
+    qa = fw.var('addon__qa', Qa)
+    assert qa.app == C.addressof(ap(fw).a[0]) and qa.loads == s.loaded.value
+
+
+def test_a_playlist_session_marks_its_queue_the_apps(fw, mcl, songs):
+    s = playlist(fw, mcl, songs, A)
+    s.land(A)
+    s.play(b'1 ' + PLAYLIST + b'\n')
+    s.step()
+    qa = fw.var('addon__qa', Qa)
+    assert s.loads and qa.app == C.addressof(ap(fw).a[0]) and qa.loads == s.loaded.value
+
+
+def test_a_url_queue_the_app_cannot_play_marks_nothing(fw, mcl, songs):
+    s = Stream(fw, mcl, songs)
+    s.world.files[b'/tmp/q2-foo.urls'] = b'#Q2URLS/1\tstart=0\n'  # no songs: app_urls_play plays nothing
+    s.play(b'1 /tmp/q2-foo.urls\n')
+    s.step()
+    s.step()
+    assert not fw.var('addon__qa', Qa).app
 
 
 def test_go_to_a_path_too_long_for_a_level_opens_nothing(fw):
@@ -4409,6 +4901,221 @@ def test_a_url_queue_waiting_leaves_a_queue_loaded_since(fw, how):
     else:
         fw.fn('addon__urls_start', C.c_int, C.c_void_p)(None)
     assert s.state == S_DONE and b'/tmp/q2-a.urls' not in world.names.values()
+
+
+# Now playing (.now) for a URL queue that asks.
+
+class Nw(C.Structure):
+    _fields_ = [('owner', C.c_int), ('seq', C.c_char * 24), *((n, C.c_int) for n in ('live', 'n', 'state', 'sec', 'total')),
+                ('stopped', C.c_uint), ('polled', C.c_uint), ('swept', C.c_int)]
+
+
+PLAYING, PAUSED, STOPPED = 2, 3, 1  # mclGetPlayStatus
+
+
+class Now:
+    """A card app's URL queue playing: tidal.c's au (its generation and now=1) and stock's queue of its app:<gen>:<n>
+    rows (MCL_TYPE 0xf1, MCL_POS), the player's state and position, and addon_poll's passes, the apps not running."""
+    def __init__(self, fw, mcl, rows=('app:7:0', 'app:7:1', 'app:7:2')):
+        self.fw, self.mcl, self.world = fw, mcl, World(fw)
+        for i, name in enumerate((b'foo', b'bar')):
+            ap(fw).a[i].id = name
+        ap(fw).n = 2
+        self.queue = Queue(fw)
+        for r in rows:
+            self.queue.row(r)
+        self.au = fw.var('tidal__au', Au)
+        self.au.gen, self.au.n, self.au.now = 7, len(rows), 1
+        mcl.type, mcl.pos = 0xf1, 0
+        self.status, self.sec, self.total = PLAYING, 0, 200
+        fw.mock('mclGetPlayStatus', lambda *_: self.status)
+        fw.mock('player_playtime_and_length', self.times)
+
+    def times(self, sec, total, *_):
+        C.c_int.from_address(sec).value, C.c_int.from_address(total).value = self.sec, self.total
+
+    def start(self, slot=0, seq=b'4'):
+        """urls_start's: the app's queue started, its .play's seq."""
+        sm(self.fw).seq = seq
+        self.fw.fn('addon__now_start', None, C.POINTER(App))(C.pointer(ap(self.fw).a[slot]))
+
+    def step(self, sec=None, status=None, pos=None):
+        """A UI pass ADDON_POLL_MS on."""
+        self.sec = self.sec if sec is None else sec
+        self.status = self.status if status is None else status
+        self.mcl.pos = self.mcl.pos if pos is None else pos
+        self.world.ms += 500
+        self.fw.fn('addon_poll', None)()
+
+    def now(self, app=b'foo'):
+        return self.world.files.get(b'/tmp/q2-%s.now' % app)
+
+    def writes(self):
+        return [b for a, b in self.world.of('rename') if b.endswith(b'.now')]
+
+
+def test_a_url_queue_tells_its_app_which_song_plays_and_how_far_in(fw, mcl):
+    n = Now(fw, mcl)
+    n.start()
+    n.step(sec=10, pos=1)
+    assert n.now() == b'4\t1\tplaying\t10\t200\n' and (b'/tmp/q2-now.tmp', b'/tmp/q2-foo.now') in n.world.of('rename')
+    n.step(sec=14)
+    assert n.now() == b'4\t1\tplaying\t10\t200\n' and len(n.writes()) == 1  # under NOW_STEP_S on: not written
+    n.step(sec=15)
+    assert n.now() == b'4\t1\tplaying\t15\t200\n'
+    n.step(status=PAUSED)
+    assert n.now() == b'4\t1\tpaused\t15\t200\n'  # at once
+    n.step()
+    assert len(n.writes()) == 3  # nothing changed: nothing written
+    n.step(sec=40)
+    assert n.now() == b'4\t1\tpaused\t40\t200\n'  # a seek while paused, at once
+    n.step(status=PLAYING, sec=41)
+    n.step(sec=20)
+    assert n.now() == b'4\t1\tplaying\t20\t200\n'  # a seek back, at once
+    n.step(sec=0, pos=2)
+    assert n.now() == b'4\t2\tplaying\t0\t200\n'  # the next song, at once
+    assert n.now(b'bar') is None
+
+
+def test_a_stop_between_songs_isnt_told_and_a_real_stop_is_told_once(fw, mcl):
+    n = Now(fw, mcl)
+    n.start()
+    n.step(sec=180)
+    for _ in range(5):  # 2.5 s stopped: the next song still starting
+        n.step(status=STOPPED, pos=1)
+    assert n.now() == b'4\t0\tplaying\t180\t200\n'
+    n.step(status=PLAYING, sec=0)
+    assert n.now() == b'4\t1\tplaying\t0\t200\n'
+    for _ in range(7):  # 3 s on from the first pass that saw it, less the stamp's | 1
+        n.step(status=STOPPED)
+    assert n.now() == b'4\t1\tplaying\t0\t200\n'
+    n.step()  # NOW_STOP_MS stopped
+    assert n.now() == b'4\t1\tstopped\t0\t200\n'
+    writes = len(n.writes())
+    for _ in range(20):
+        n.step()
+    assert len(n.writes()) == writes
+    n.step(status=PLAYING, sec=0)  # played again
+    assert n.now() == b'4\t1\tplaying\t0\t200\n'
+
+
+# A load or a seek: the player has no place yet (-1); and a state outside 1-3, which stock never sets, must not index `names[]`.
+@pytest.mark.parametrize('status, sec', [(PLAYING, -1), (PAUSED, -1), (0, 30)])
+def test_a_pass_with_no_place_or_state_to_tell_writes_nothing_and_a_later_one_tells(fw, mcl, status, sec):
+    n = Now(fw, mcl)
+    n.start()
+    n.step()
+    n.step(status=status, sec=sec, pos=1)
+    assert n.now() == b'4\t0\tplaying\t0\t200\n' and len(n.writes()) == 1
+    n.step(status=PLAYING, sec=0)
+    assert n.now() == b'4\t1\tplaying\t0\t200\n'
+
+
+@pytest.mark.parametrize('other', ['local', 'tidal', 'older'])
+def test_another_queue_playing_is_told_as_a_stop_at_once(fw, mcl, other):
+    n = Now(fw, mcl, rows=('app:7:0', '12345', 'app:6:0'))
+    n.start()
+    n.step(sec=30)
+    if other == 'local':
+        mcl.type = 0xf001
+    else:
+        mcl.pos = 1 if other == 'tidal' else 2
+    n.step()
+    assert n.now() == b'4\t0\tstopped\t30\t200\n'
+    writes = len(n.writes())
+    n.step(sec=60)
+    n.step()
+    assert len(n.writes()) == writes
+
+
+def test_a_queue_that_didnt_ask_tells_nothing(fw, mcl):
+    n = Now(fw, mcl)
+    n.au.now = 0
+    n.start()
+    for sec in (0, 10, 20):
+        n.step(sec=sec)
+    n.step(status=STOPPED)
+    assert n.writes() == []
+
+
+def test_another_apps_url_queue_stops_the_one_before(fw, mcl):
+    n = Now(fw, mcl, rows=('app:7:0', 'app:8:0'))
+    n.start()
+    n.step(sec=30)
+    n.au.gen = 8
+    n.start(slot=1, seq=b'9')
+    assert n.now() == b'4\t0\tstopped\t30\t200\n'
+    n.step(sec=0, pos=1)
+    assert n.now(b'bar') == b'9\t0\tplaying\t0\t200\n' and n.now() == b'4\t0\tstopped\t30\t200\n'
+
+
+def test_the_same_apps_next_queue_stops_the_one_before(fw, mcl):
+    n = Now(fw, mcl, rows=('app:7:0', 'app:8:0'))
+    n.start()
+    n.step(sec=30)
+    n.au.gen = 8
+    n.start(seq=b'9')
+    assert n.now() == b'4\t0\tstopped\t30\t200\n'
+    n.step(sec=0, pos=1)
+    assert n.now() == b'9\t0\tplaying\t0\t200\n'
+
+
+def test_stopping_the_apps_tells_a_stop_at_once(fw, mcl):
+    """addon_stop: Stop Streaming Services, which stops a URL queue too, and Home's Rockbox row, after which demo is
+    killed with /tmp left as it is: the file says stopped before then."""
+    n = Now(fw, mcl)
+    n.start()
+    n.step(sec=30)
+    fw.fn('addon_stop', None)()
+    assert n.now() == b'4\t0\tstopped\t30\t200\n'
+    writes = len(n.writes())
+    n.step(status=STOPPED)
+    fw.fn('addon_stop', None)()
+    assert len(n.writes()) == writes
+
+
+def test_a_restart_tells_a_stop_for_every_song_left_playing(fw):
+    """demo restarted (a crash, the watchdog) with /tmp kept: at its first poll, every /tmp/q2-<id>.now that says
+    playing or paused says stopped at its last place, its seq and n kept; anything else is left alone, and so is
+    every file after that first poll."""
+    files = {b'/tmp/q2-foo.now': b'4\t2\tplaying\t77\t200\n', b'/tmp/q2-bar.now': b'x9\t0\tpaused\t5\t0\n',
+             b'/tmp/q2-baz.now': b'3\t1\tstopped\t8\t90\n', b'/tmp/q2-foo.playing': b'4\t2\tplaying\t77\t200\n',
+             b'/tmp/q2-Bad!.now': b'4\t2\tplaying\t77\t200\n', b'/tmp/q2-odd.now': b'playing\t1\tplaying\t1\t1\n',
+             b'/tmp/q2-.now': b'1\t1\tplaying\t1\t1\n'}
+    world = World(fw, dict(files), {b'/tmp': [p[5:] for p in files]})
+    fw.fn('addon_poll', None)()
+    assert world.files[b'/tmp/q2-foo.now'] == b'4\t2\tstopped\t77\t200\n'
+    assert world.files[b'/tmp/q2-bar.now'] == b'x9\t0\tstopped\t5\t0\n'
+    assert world.files[b'/tmp/q2-odd.now'] == b'playing\t1\tstopped\t1\t1\n'  # the third field is the state
+    assert {p: world.files[p] for p in files if p not in (b'/tmp/q2-foo.now', b'/tmp/q2-bar.now', b'/tmp/q2-odd.now')} == \
+        {p: files[p] for p in files if p not in (b'/tmp/q2-foo.now', b'/tmp/q2-bar.now', b'/tmp/q2-odd.now')}
+    renames = len(world.of('rename'))
+    world.files[b'/tmp/q2-foo.now'] = b'5\t0\tplaying\t1\t200\n'  # this demo's own, from now on
+    world.ms += 500
+    fw.fn('addon_poll', None)()
+    assert len(world.of('rename')) == renames and world.files[b'/tmp/q2-foo.now'] == b'5\t0\tplaying\t1\t200\n'
+
+
+@pytest.mark.parametrize('play,seq', [(b'42 ', b'42'), (b'1' * 30 + b' ', b'1' * 23), (b'4\t2 ', b'4')])
+def test_a_url_queue_started_is_told_under_its_play_seq(fw, play, seq):
+    """urls_start hands the session's app and its .play's seq (up to a space or a control, at most 23 bytes) to
+    now_start once app_urls_play has played the queue; a queue that didn't play starts nothing."""
+    world = World(fw, {b'/tmp/q2-a.play': play + b'/tmp/q2-a.urls\n',
+                       b'/tmp/q2-a.urls': b'#Q2URLS/1\tnow=1\nhttps://x/a.flac\tA\n'}, now=500)
+    fw.mock('timer_add', lambda *_: 5)
+    Deques(fw)
+    ap(fw).a[0].id, ap(fw).n = b'a', 1
+    fw.fn('addon__stream_poll', None, C.POINTER(App))(C.pointer(ap(fw).a[0]))
+    assert sm(fw).seq == seq and sm(fw).state == S_WAIT
+    free_stubbed(fw, lambda: fw.fn('addon__urls_start', C.c_int, C.c_void_p)(None))
+    nw = fw.var('addon__nw', Nw)
+    assert nw.owner == 1 and nw.seq == seq and nw.live == 0 and fw.var('tidal__au', Au).now == 1
+    nw.owner = 0
+    world.files[b'/tmp/q2-a.urls'] = b'#Q2URLS/1\tnow=1\n'  # no song: nothing plays
+    world.files[b'/tmp/q2-a.play'] = b'43 /tmp/q2-a.urls\n'
+    fw.fn('addon__stream_poll', None, C.POINTER(App))(C.pointer(ap(fw).a[0]))
+    free_stubbed(fw, lambda: fw.fn('addon__urls_start', C.c_int, C.c_void_p)(None))
+    assert nw.owner == 0
 
 
 @pytest.mark.parametrize('audio, timers', [(1, 0), (0, 1)])
