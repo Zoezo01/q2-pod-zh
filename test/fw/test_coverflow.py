@@ -2204,12 +2204,13 @@ class Query:
     ROW = C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_int, C.c_void_p, C.c_void_p)
 
     def __init__(self, fw, q, rows):
-        self.made, self.sql = [], []
+        self.made, self.sql, self.listed = [], [], None  # listed: the caller's list, which must be empty by the SQL
         staging = fw.var('fw_ctx_tools_pdeq_directory', C.c_void_p)
 
         def query(db, sql, cb, sort, *_):
             assert C.string_at(db) == b'/mnt/data/database.db' and not sort
             self.sql.append(C.string_at(sql).decode())
+            assert self.listed is None or not q[self.listed]  # emptied once copied: four lists never held at once
             for row in rows:
                 v = (C.c_char_p * 5)(*[None if x is None else str(x).encode() for x in row])
                 assert Query.ROW(cb)(0, 5, C.addressof(v), 0) == 0
@@ -2240,6 +2241,7 @@ def test_split_makes_a_name_s_row_one_card_per_album_in_its_place(fw):
     query = Query(fw, q, [(1, 'Hits', 'A', '/m/H1/1.flac', 'Various'), (2, 'hits', 'A', '/m/H2/1.flac', 'Other'),
                           (4, 'Hits', 'A', '/m/H3/1.flac', 'various'), (3, 'Abbey', 'B', '/m/A/1.flac', ''),
                           (5, 'Zed', 'Z', '/m/Z/1.flac', None)])
+    query.listed = listed
     assert fw.fn('coverflow_split', C.c_int, C.c_void_p)(listed) == 5
     got = [(field(p, 0x14), field(p, 0x24)) for p in q[listed]]
     assert got == [('Hits', 'Various'), ('hits', 'Other'), ('Abbey', ''), ('Lost', None), ('Unknown Album', None)]
