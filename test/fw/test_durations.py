@@ -256,6 +256,20 @@ def test_a_failed_save_keeps_the_lengths_in_memory(fw, ui, song):
     assert seconds(fw, song(b'/m/a')) == 700 and LENGTHS not in files.files
 
 
+@pytest.mark.parametrize('over, kept', [(1, False), (0, True)])
+def test_a_cache_over_the_cap_is_replaced_and_one_that_failed_to_read_is_kept(fw, ui, song, over, kept):
+    """#347's first format held every path in this file, up to 16 MB: over the cap nothing reads it, so the next
+    pass writes over it. One within the cap whose read failed may read another time, and is left."""
+    old = b'Q2DUR1\0\0' + bytes(DUR_SONGS * len(record(A, 1)) + over)
+    files = Files(fw, {LENGTHS: old})
+    if not over:
+        fw.mock('fw_fread', lambda *_: 0)  # a read error
+    probe = Probe(fw, {b'/m/a': 225})
+    assert start(fw, ui, [song(b'/m/a')])
+    finish(fw, probe)
+    assert seconds(fw, song(b'/m/a')) == 225 and files.files[LENGTHS] == (old if kept else lengths((b'/m/a', 225)))
+
+
 def test_a_thread_that_cannot_start_releases_its_jobs(fw, ui, song):
     Files(fw)
     fw.mock('fw_pthread_create', lambda *_: 11)

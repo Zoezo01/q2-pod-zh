@@ -49,12 +49,15 @@ static rec_t *duration_find(unsigned long long key) {
 }
 
 /* The file is the table: magic, then records ascending by key. Anything else is no cache. The old
- * hash-only ringnav-lengths stays untouched: it has no stat signature to check. */
+ * hash-only ringnav-lengths stays untouched: it has no stat signature to check. A file that failed
+ * to read is kept for a later try; one over DUR_MAX never reads (#347's first format held every
+ * path, up to 16 MB), so it is no cache either and the next pass writes over it. */
 static void duration_read(void) {
     if (ds.writable || ds.blob || ds.running) return; /* the worker reads n and writable */
     unsigned size = 0;
     char *data = read_all(DUR_FILE, DUR_MAX, &size);
-    ds.writable = data || file_size(DUR_FILE) <= 0;
+    long unread = data ? 0 : file_size(DUR_FILE);
+    ds.writable = unread <= 0 || unread > (long)DUR_MAX;
     if (!data) return;
     rec_t *tab = (rec_t *)(data + 8);
     unsigned n = size >= 8 ? (size - 8) / sizeof *tab : 0;
