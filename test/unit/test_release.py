@@ -256,9 +256,9 @@ def packaged(root):
 
 
 class Gh:
-    def __init__(self, monkeypatch, out, releases='[]', corrupt=None, tag=''):
+    def __init__(self, monkeypatch, out, releases='[]', corrupt=None, tag='', record=None):
         self.calls, self.out = [], out
-        self.releases, self.corrupt, self.tag = releases, corrupt, tag
+        self.releases, self.corrupt, self.tag, self.record = releases, corrupt, tag, record
         monkeypatch.setattr(release, 'run', self)
 
     def __call__(self, *args):
@@ -267,6 +267,10 @@ class Gh:
             return self.releases
         if args[:2] == ('git', 'ls-remote'):
             return self.tag
+        if 'view' in args:  # GitHub's record of the upload, unless a test changes it
+            data = (self.out/release.ASSET).read_bytes()
+            return json.dumps({'assets': [{'name': release.GUIDE, 'size': 4, 'digest': 'sha256:' + sha(b'%PDF')},
+                                          {'name': release.ASSET, 'size': len(data), 'digest': 'sha256:' + sha(data), **(self.record or {})}]})
         if 'download' in args:
             target = pathlib.Path(args[-1])
             for name in (release.ASSET, release.GUIDE):
@@ -285,7 +289,8 @@ def test_upload_draft(repo, monkeypatch, capsys):
     assert gh.calls[2] == (*prefix, 'create', release.VERSION, '--draft', '--target', 'rev', '--title', release.VERSION,
                            '--notes-file', out/'release-notes.md')
     assert gh.calls[3] == (*prefix, 'upload', release.VERSION, out/release.ASSET, out/release.GUIDE, '--clobber')
-    assert gh.calls[4][:6] == (*prefix, 'download', release.VERSION) and gh.calls[4][6] == '--dir' and len(gh.calls) == 5
+    assert gh.calls[4] == (*prefix, 'view', release.VERSION, '--json', 'assets')
+    assert gh.calls[5][:6] == (*prefix, 'download', release.VERSION) and gh.calls[5][6] == '--dir' and len(gh.calls) == 6
     assert (out/'release-notes.md').read_bytes() == b'notes\n'  # sent as packaged
     assert capsys.readouterr().out == f'Verified draft: https://github.com/{release.REPO}/releases/tag/{release.VERSION}\n'
 
@@ -353,6 +358,17 @@ def test_upload_never_overwrites_a_published_release(repo, monkeypatch):
     with pytest.raises(ValueError, match='^Refusing to overwrite a published release$'):
         release.upload(out)
     assert len(gh.calls) == 1
+
+
+@pytest.mark.parametrize('record', [dict(size=2), dict(digest='sha256:' + 'a' * 64), dict(digest=None), dict(name='other.tar')])
+def test_upload_checks_githubs_record_of_the_tar(repo, monkeypatch, record):
+    # Network Update reads that size and digest: a release without them is never published.
+    monkeypatch.setattr(release, 'BETA', 0)
+    out = packaged(repo)
+    gh = Gh(monkeypatch, out, record=record)
+    with pytest.raises(ValueError, match="^GitHub's record of update.tar has no matching size and digest"):
+        release.upload(out, publish=True)
+    assert not any('--draft=false' in c for c in gh.calls)
 
 
 @pytest.mark.parametrize('name', [release.ASSET, release.GUIDE])

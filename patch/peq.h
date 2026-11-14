@@ -343,6 +343,7 @@ int carousel_glide(void *w, int goal, unsigned ms, int easing);
 void coverflow_letter(void *w, unsigned letter, unsigned now);
 void coverflow_letter_hold(void *w, unsigned letter);
 int ringnav_big_library(void); /* Display's Fast Navigation: letters, years and half copies */
+int ringnav_remind_daily(void); /* System Update's Remind Daily (netupdate_poll) */
 int ringnav_hide_stream(void), ringnav_hide_folder(void); /* Appearance's Hide ... on Home */
 /* A letter with this bit is the Year sort's year instead, in its low bits, 0 undated. */
 #define CF_YEAR 0x80000000u

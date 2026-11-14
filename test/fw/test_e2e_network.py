@@ -823,7 +823,7 @@ def test_network_update_checks_downloads_and_hands_the_tar_to_stocks_tf_update(w
     steps = [e for e in w.log if e[0] in ('fsync', 'rename', 'fwupdate_tf')]
     assert steps == [('fsync', PART), ('rename', PART, TAR), ('fsync', '/mnt/mmc'), ('fwupdate_tf',)]
     assert w.net.asked == [LATEST, API + NEWER, ASSET]
-    assert w.card.reads[PART] == 2 and '/tmp/q2-update.json' not in w.card.files  # sized (none yet), then read back once
+    assert w.card.reads[PART] == 3 and '/tmp/q2-update.json' not in w.card.files  # sized for the room, sized to carry on (none yet), then read back once
     held = w.calls('reset_poweroptions_timer')
     assert held and all(c[:3] == (1, 1, 0) for c in held)  # standby and auto power-off, not the screen
     w.ui.run(5000)

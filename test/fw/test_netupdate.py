@@ -952,6 +952,18 @@ def test_room_for_the_tar_and_its_unpacking_or_nothing_is_downloaded(fw):
     assert update(fw, card=slot(fw, free=need))[0] == NU_DONE
 
 
+def test_a_resumed_press_needs_room_for_the_rest_only(fw):
+    """The part's bytes are already out of the card's free room: asking 2 x size again refused a press on cards the first one fit."""
+    have = 16 * 4096
+    need = 2 * len(BODY) - have + RESERVE
+    state, net, _ = update(fw, card=slot(fw, {PART: BODY[:have]}, free=need - 4096))
+    assert state == NU_SPACE and fw.var('netupdate__nu', Nu).need == 1 and net.urls == [LATEST, API + NEWER]
+    card = slot(fw, {PART: BODY[:have]}, free=need)
+    assert update(fw, card=card)[0] == NU_DONE and card.files[TAR] == BODY
+    # a part that isn't this release's (longer than the tar) counts for nothing
+    assert update(fw, card=slot(fw, {PART: BODY + b'x'}, free=need))[0] == NU_SPACE
+
+
 HALF = len(BODY) // 2
 
 
@@ -998,6 +1010,14 @@ def test_tries_that_add_nothing_end_the_press_and_keep_the_part(fw):
     state, net, _ = update(fw, card=card, asset=[(18, 200, None, BODY[:50000]), (7, 0, None)])
     assert state == NU_NET and net.urls[2:] == [ASSET] * 4  # the first added bytes, so three more
     assert card.files[PART] == BODY[:50000] and card.files[TAR] == b'old' and not card.of('rename')
+
+
+def test_an_http_error_on_a_resumed_try_keeps_the_part(fw):
+    """curl's 22 (FAILONERROR) writes no body: the part is carried on from after the pause."""
+    asset = [(18, 200, None, BODY[:50000]), (22, 503, None), (0, 200, None, BODY)]
+    state, net, card = update(fw, asset=asset)
+    assert state == NU_DONE and net.froms[2:] == [0, 50000, 50000] and card.files[TAR] == BODY
+    assert (PART,) not in card.of('unlink')
 
 
 @pytest.mark.parametrize('ignored', [(33, 200, None), (0, 200, None, BODY, 'whole'), (0, 416, None, b'')])
@@ -1110,6 +1130,14 @@ def test_a_download_carried_on_asks_from_its_byte_and_a_new_one_asks_for_no_rang
     net = Net(fw, {b'https': (0, 206, None)})
     assert fetch(fw, file=7, start=70000) == (0, b'', 206) and net.opts[21] == 70000  # RESUME_FROM
     assert fetch(fw, file=7)[0] == 0 and 21 not in net.opts
+
+
+def test_a_resumed_transfer_fails_on_an_http_error_and_a_new_one_does_not(fw):
+    net = Net(fw, {b'https': (0, 206, None)})
+    fetch(fw, file=7, start=70000)
+    assert net.opts[45] == 1  # FAILONERROR: a 403/429/5xx is curl's 22, not an error page in the part
+    fetch(fw, file=7)
+    assert 45 not in net.opts  # a first try's 404 must stay "No update for this build"
 
 
 def test_a_failed_transfer_is_curl_s_own_code(fw):
@@ -2036,7 +2064,7 @@ class Poll:
         self.lit.value = lit
         fw.mock('time_now_ms', lambda *_: self.ms)
         fw.mock('window_manager_get_top_window', lambda *_: C.addressof(self.name) if self.name else 0)
-        fw.mock('widget_get_prop_str', lambda w, key, default, *_: w)  # a window here is its name
+        fw.mock('widget_get_prop_str', lambda w, key, default, *_: w if self.name and w == C.addressof(self.name) else default)  # the top window here is its name
         fw.mock('get_wifisignal', lambda *_: self.wifi)
         fw.mock('fw_pthread_create', lambda t, a, fn, arg, *_: self.workers.append(fn) or 0)
         fw.mock('fw_pthread_detach', lambda *_: 0)
@@ -2071,6 +2099,41 @@ def test_a_newer_release_is_told_once_on_home(fw):
     for _ in range(3):
         p.poll()
     assert p.toasts == [NOTICE] and not p.workers  # once, and no new check within the day
+
+
+def remind_daily_off(fw):
+    """[Q2POD] REMINDDAILY=0 in config.ini; every read of it counted."""
+    reads = []
+    def read(path, section, key, out, default, *_):
+        reads.append(C.string_at(key))
+        if C.string_at(key) == b'REMINDDAILY':
+            C.memmove(out, b'0\0', 2)
+    fw.mock('toolsReadConfig', read)
+    return reads
+
+
+def test_remind_daily_off_checks_nothing_tells_nothing_and_takes_back_the_tag(fw):
+    reads = remind_daily_off(fw)
+    card = slot(fw)
+    p = Poll(fw, card)
+    net = Net(fw, {LATEST: (0, 302, TAG_URL + NEWER)})
+    p.nc.tag = NEWER  # found while it was On
+    for _ in range(3):
+        p.poll(DAY)
+    assert p.workers == [] and net.urls == [] and p.toasts == [] and TOLD not in card.files
+    assert p.nc.tag == b'' and not p.nc.busy and not p.nc.polled
+    assert reads.count(b'REMINDDAILY') == 1  # read once, not at every poll
+
+
+def test_remind_daily_off_leaves_the_tag_to_a_check_thread_that_owns_it(fw):
+    remind_daily_off(fw)
+    p = Poll(fw, slot(fw))
+    p.nc.tag, p.nc.busy = NEWER, 1
+    p.poll()
+    assert p.nc.tag == NEWER and p.workers == []
+    p.nc.busy = 0
+    p.poll()
+    assert p.nc.tag == b''
 
 
 def test_a_release_told_before_a_restart_isn_t_told_again(fw):

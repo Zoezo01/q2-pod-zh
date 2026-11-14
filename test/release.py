@@ -64,12 +64,14 @@ with tempfile.TemporaryDirectory() as tmp:
     assert release.notes() == f'**{release.VERSION}**\n- A.\n  - B.'
     changelog.write_text(single)
     (out/'SHA256SUMS').write_text(''.join(f'{v}  {k}\n' for k, v in assets.items()))
-    for failure in ('upload', 'download', 'corrupt', None):
+    for failure in ('upload', 'view', 'download', 'corrupt', None):
         calls = []
         def gh(*args):
             calls.append(args)
             command = args[4]
             if command == 'list': return '[]'
+            if command == 'view' and failure != 'view':  # GitHub's record of the upload
+                return json.dumps({'assets': [{'name': 'update.tar', 'size': 3, 'digest': 'sha256:' + release.sha(b'pod')}]})
             if command == failure:
                 raise subprocess.CalledProcessError(1, args)
             if command == 'download':

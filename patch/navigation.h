@@ -50,6 +50,8 @@ enum {
     POD_CF_POSITION,
     POD_HIDE_STREAM, /* Appearance's Hide Streaming / Folder on Home (coverflow_home_layout) */
     POD_HIDE_FOLDER,
+    POD_REMIND_DAILY, /* System Update's Remind Daily (netupdate_poll); netupdate.c passes pod_rows
+                         26 */
     POD_COUNT
 };
 
@@ -151,7 +153,7 @@ typedef struct {
         wake_down, /* 1: the held Centre press passes; 2: it is dropped */
         charge_held, artist_cf, year_old, resume, lock_clock, artist_az, hold_home, standby_limit,
         eq_output, smart_wifi, big_library, playlist_cf, scan_durations, cf_position, hide_stream,
-        hide_folder;
+        hide_folder, remind_daily;
     void *pod_label[POD_COUNT];
     void *art_cf_win, *art_cf_list; /* the artist page given its Coverflow, the albums pending */
     void *art_cf_veil;              /* the artist page unseen until they show, and its anim_hint */

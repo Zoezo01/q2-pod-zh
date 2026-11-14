@@ -164,7 +164,8 @@ class Machine:
         # canvas_get_vgcanvas runs stock, down to the mocked lcd_get_vgcanvas, as the rounded wrappers need
         for name in ('slide_menu_item_width','slide_menu_on_scroll_done','canvas_get_vgcanvas',
                      'widget_animator_scroll_set_params','slide_menu_set_value','toolsTimeItoa','on_wm_keyup_fun','table_client_get_virtual_h',
-                     'mclGetPlayType','networkGetConnectStatus','wifi_switch'):  # Smart Wi-Fi's: stock's, as before it named them
+                     'mclGetPlayType','networkGetConnectStatus','wifi_switch',  # Smart Wi-Fi's: stock's, as before it named them
+                     'tk_sha256_init','tk_sha256_hash','tk_sha256_done'):  # Network Update's read-back: stock's own SHA-256
             self.handlers.pop(syms[name],None)
         self.mock('widget_is_instance_of','widget_animator_scroll_create','widget_animator_on',
                   'widget_set_focused','widget_layout_children','event_init','value_set_int')
@@ -18319,7 +18320,7 @@ assert [am.nodes[l].get('style:normal:font_name') for l in am.nodes[abutton]['ch
 # (0x4c8660), is renamed "2" so stock's click (atoi of the name: 0 TF card, 1 Shanling) skips it, and
 # fetches the latest GitHub release over verified TLS to the card's update.tar.part, carrying on from a
 # part already there. Only a part of the size and SHA-256 that GitHub's record of the release names
-# (the payload's own SHA-256, run here on the MIPS build) is renamed update.tar; then stock's TF card
+# (stock's own SHA-256, run here on the MIPS build) is renamed update.tar; then stock's TF card
 # update (0x4c7eb4) runs. A failure keeps the old update.tar.
 class UpdateMachine(RadioMachine):
     """RadioMachine with the card in and GitHub's API: release answers the request for the tag's
@@ -18355,6 +18356,7 @@ for i in range(2):
 tf,online=(m.nodes[r]['children'][0] for r in m.nodes[view]['children'])
 assert m.call(address=HOOKS['systemset_fwupdate_page_init'][0],args=(m.top,5,0,0),gap=0,count=5_000_000)==0
 assert m.calls[0][:3]==('stock_fwupdate',m.top,5) and m.nodes[tf]['name']=='0' and m.nodes[online]['name']=='2'
+assert len(m.nodes[view]['children'])==3 and row_text(m.nodes[view]['children'][2])=='Remind Daily: On'  # Remind Daily, under Network Update, On when config.ini has no key
 label=m.nodes[online]['children'][0]; assert m.nodes[label]['type']=='hscroll_label'
 def press():
     f,ctx=[(f,c) for t,f,c in m.nodes[online]['handlers'] if t==O['EVT_CLICK']][-1]

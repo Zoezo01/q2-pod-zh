@@ -6,6 +6,7 @@ Q2_FW_STRICT=1 fails a test that reached a stub tools/ doesn't declare, unmocked
 its 0 is a guess at what stock would answer."""
 import ctypes as C
 import functools
+import hashlib
 import os
 import pathlib
 import re
@@ -85,6 +86,11 @@ def fw(library, tmp_path):
     # page_list sizes its rows by its title label's fields (I(t, W_H)): a zeroed widget to read
     label = C.create_string_buffer(0x400)
     loaded.mock('hscroll_label_create', lambda *_: C.addressof(label))
+    # stock's tk_sha256_* (the Q2's own code, not here), as hashlib: one hash per context address
+    sums = {}
+    loaded.mock('tk_sha256_init', lambda ctx, *_: sums.__setitem__(ctx, hashlib.sha256()))
+    loaded.mock('tk_sha256_hash', lambda ctx, data, n, *_: sums[ctx].update(C.string_at(data, n)))
+    loaded.mock('tk_sha256_done', lambda ctx, out, *_: C.memmove(out, sums.pop(ctx).digest(), 32) and 0)
     yield loaded
     unknown = loaded.unknown()
     loaded.close()

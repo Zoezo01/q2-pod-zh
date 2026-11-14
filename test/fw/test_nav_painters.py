@@ -1678,6 +1678,30 @@ def test_power_adds_standby_charge_and_in_vehicle_rows_after_stocks(fw):
     assert tr == [b'system_carmode']  # stock's row, stock's translation
 
 
+def test_system_update_adds_remind_daily_under_network_update_on_by_default(fw):
+    ui, win, view, settings, build = settings_page(fw, MINIMAL, 'fwupdate_page', 'scroll_view_fwupdate', 2)
+
+    def stock(*_):
+        build()
+        for item in view.children:
+            ui.add('hscroll_label', item.children[0], (0, 0, 200, 70), 'label')
+        return 3
+    fw.mock('stock_fwupdate_trampoline', stock)
+    assert fw.fn('ringnav_fwupdate', C.c_int, C.c_void_p, C.c_void_p)(win.addr, None) == 3
+    assert len(view.children) == 3
+    remind = view.children[2]
+    assert ui.text(label_of(remind)) == 'Remind Daily: On' and switch(remind) is None  # a missing key reads On
+    click(ui, remind)
+    assert ui.text(label_of(remind)) == 'Remind Daily: Off' and settings.written == [('REMINDDAILY', 0)]
+    click(ui, remind)
+    assert ui.text(label_of(remind)) == 'Remind Daily: On' and settings.written[-1] == ('REMINDDAILY', 1)
+
+
+def test_remind_daily_off_in_config_reads_off(fw):
+    fw.mock('toolsReadConfig', lambda p, s, key, out, d, *_: C.memmove(out, b'0\0', 2) if C.string_at(key) == b'REMINDDAILY' else 0)
+    assert fw.fn('ringnav_remind_daily', C.c_int)() == 0
+
+
 def test_standby_limit_cycles_its_four_choices_and_saves_each(fw):
     ui, win, view, settings, build = settings_page(fw, MINIMAL, 'powermanager_page', 'scroll_view_powermanager')
     fw.fn('ringnav_powermanager', C.c_int, C.c_void_p, C.c_void_p)(win.addr, None)

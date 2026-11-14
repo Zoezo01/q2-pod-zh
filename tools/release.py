@@ -134,6 +134,11 @@ def upload(out, publish=False):
         '--notes-file', out/'release-notes.md')
     files = [ASSET, GUIDE]
     run(*gh, 'upload', VERSION, *(out/name for name in files), '--clobber')
+    # Network Update installs from GitHub's own record of update.tar: its size and its digest.
+    assets = json.loads(run(*gh, 'view', VERSION, '--json', 'assets'))['assets']
+    tar = next((a for a in assets if a['name'] == ASSET), {})
+    check(tar.get('size') == len(data) and tar.get('digest') == f'sha256:{sha(data)}',
+          f"GitHub's record of {ASSET} has no matching size and digest: Network Update would refuse it")
     with tempfile.TemporaryDirectory(prefix='q2-release-verify-') as tmp:
         run(*gh, 'download', VERSION, '--dir', tmp)
         for name in files:
