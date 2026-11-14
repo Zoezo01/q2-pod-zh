@@ -250,17 +250,25 @@ class Run:
 class Media:
     """A video file to the stand-in ffmpeg: seconds long at 30 fps, its sound stream sound seconds (0: none).
     late (k, ms): the k-th frame on are decoded ms after ffmpeg starts; piece: the most a pipe read gets; stall
-    (from, to): ms after its sound starts that the output stops taking it; length: whether its report says it."""
-    def __init__(self, seconds, sound=None, late=None, piece=0, stall=None, length=True):
+    (from, to): ms after its sound starts that the output stops taking it; length: whether its report says it;
+    size: its picture's; chapters: that many listed in its report, before its streams; probe: ms ffmpeg -i takes
+    to report."""
+    def __init__(self, seconds, sound=None, late=None, piece=0, stall=None, length=True, size=(1280, 720), chapters=0,
+                 probe=0):
         self.seconds, self.sound = seconds, seconds if sound is None else sound
         self.late, self.piece, self.stall, self.length = late, piece, stall, length
+        self.size, self.chapters, self.probe = size, chapters, probe
 
     def report(self, url):
         s = self.seconds
         length = f'{s // 3600:02}:{s // 60 % 60:02}:{s % 60:02}.00' if self.length else 'N/A'
         lines = [f"Input #0, mov,mp4,m4a,3gp,3g2,mj2, from '{url}':", '  Metadata:', '    major_brand     : isom',
-                 f'  Duration: {length}, start: 0.000000, bitrate: 1200 kb/s',
-                 '    Stream #0:0(und): Video: h264 (High) (avc1 / 0x31637661), yuv420p, 1280x720, 1070 kb/s, 30 fps']
+                 f'  Duration: {length}, start: 0.000000, bitrate: 1200 kb/s']
+        for k in range(self.chapters):
+            lines += [f'    Chapter #0:{k}: start {k * 300}.000000, end {k * 300 + 300}.000000', '    Metadata:',
+                      f'      title           : Chapter {k + 1} of a long film, 3840x2160']
+        lines.append('    Stream #0:0(und): Video: h264 (High) (avc1 / 0x31637661), yuv420p(tv, bt709), '
+                     f'{self.size[0]}x{self.size[1]} [SAR 1:1 DAR 16:9], 1070 kb/s, 30 fps')
         if self.sound:
             lines.append('    Stream #0:1(und): Audio: aac (LC) (mp4a / 0x6134706D), 48000 Hz, stereo, fltp, 128 kb/s')
         return lines + ['At least one output file must be specified']
@@ -964,7 +972,8 @@ class Q2:
         elif url not in self.media:
             lines.append((0, f'{url}: No such file or directory'))
         elif not outputs(run.argv):
-            lines += [(0, x) for x in self.media[url].report(url)]
+            lines += [(self.media[url].probe, x) for x in self.media[url].report(url)]
+            run.end = run.start + self.media[url].probe
         else:
             self.decode(run, self.media[url])
         if report is not None and run.opt('-loglevel') != 'quiet':
@@ -1142,6 +1151,47 @@ def test_the_picture_waits_while_the_sound_stalls(q2):
     frames = q2.frames()
     assert [s.frame for s in frames] == list(range(50)) and on_time(frames, 'heard')
     assert frames[11].time - frames[10].time >= 500  # the wall clock went on; the picture held
+
+
+def meminfo(available):
+    return f'MemTotal:         122480 kB\nMemFree:            9000 kB\nMemAvailable:   {available:7} kB\n'.encode()
+
+
+def test_a_picture_too_large_for_the_ram_is_refused_before_any_decode(q2):
+    q2.files['/proc/meminfo'] = meminfo(52000)
+    assert play(q2, JACK, None, seconds=600, at=100, size=(3840, 2160)) == 3  # books.c VIDEO_TOO_LARGE
+    (probe,) = q2.runs  # ffmpeg -i alone: no decode was started
+    assert probe.killed is not None and probe.reaped is not None and not q2.threads and not q2.frames()
+    assert q2.place() == 100 and SOCK not in q2.files and STATE not in q2.files  # its place stays
+    assert q2.events('open', 'close') == ['open', 'close'] and [(r, v) for _, r, v in q2.dac][-1] == (DAC_MUTE, 1)
+    assert not q2.shots  # demo's page never left the panel
+
+
+@pytest.mark.parametrize('size, available, status', [
+    ((1280, 720), 52000, 0), ((1920, 1080), 52000, 0), ((2560, 1440), 52000, 3),
+    ((1920, 1080), 30375, 0), ((1920, 1080), 30374, 3),  # ten frames of 12 bits a pixel: 30375 kB exactly
+    ((3840, 2160), None, 0), ((3840, 2160), 0, 0)])  # no MemAvailable to go by: played, as before
+def test_a_picture_plays_when_ten_of_its_frames_fit_the_memory_free(q2, size, available, status):
+    if available is not None:
+        q2.files['/proc/meminfo'] = meminfo(available) if available else b'MemTotal: 122480 kB\nMemFree: 9000 kB\n'
+    assert play(q2, size=size) == status
+    assert [s.frame for s in q2.frames()] == ([] if status else list(range(25)))
+
+
+@pytest.mark.parametrize('size, status', [((3840, 2160), 3), ((640, 360), 0)])
+def test_a_long_chapter_list_before_the_streams_does_not_hide_or_fake_the_size(q2, size, status):
+    q2.files['/proc/meminfo'] = meminfo(52000)
+    assert len('\n'.join(Media(1, chapters=60).report(CLIP))) > 4096  # each chapter's title names a 4K size
+    assert play(q2, size=size, chapters=60) == status
+
+
+def test_a_report_that_does_not_come_is_waited_for_3_s_then_done_without(q2):
+    q2.files['/proc/meminfo'] = meminfo(52000)
+    q2.press(b'f', 3500)
+    assert play(q2, size=(3840, 2160), probe=5000) == 0  # its size unknown: played
+    probe, video, _ = q2.runs
+    assert probe.killed == q2.t0 + 3000 and video.start == q2.t0 + 3000
+    assert [s.frame for s in q2.frames()[:3]] == [0, 1, 2] and not any(s.bar for s in q2.frames())  # no length: no bar
 
 
 @pytest.mark.parametrize('device', [JACK, BT])

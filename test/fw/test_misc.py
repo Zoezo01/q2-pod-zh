@@ -1160,6 +1160,23 @@ def test_a_video_never_resumed_takes_no_slot(fw):
     assert MARKS_FILE not in card.files
 
 
+@pytest.mark.parametrize('status, said', [
+    (3 << 8, [b'Too large to play on the Q2: convert it to a smaller size']),  # video.c TOO_LARGE, its exit status
+    (0, []), (1 << 8, []), (3, []), (3 << 8 | 9, [])])  # an end, another failure, and signals that only look like it
+def test_a_video_refused_as_too_large_says_so_once_it_is_over(fw, status, said):
+    Card(fw)
+    v, seen = video(fw), []
+    def gone(pid, out, *_):
+        C.c_int.from_address(out).value = status
+        return 1234
+    fw.mock('fw_waitpid', gone)
+    # toast's dialog runs the UI's polls again: by then the video is over, so this poll is not entered twice
+    fw.mock('navigator_to_with_context', lambda page, info, *_: seen.append((v.pid, C.string_at(info + 8))))
+    v.pid = 1234
+    fw.fn('video_poll', None)()
+    assert seen == [(0, text) for text in said] and v.pid == 0
+
+
 def test_a_resumed_video_stopped_near_its_start_forgets_its_place(fw):
     card = Card(fw, {'/tmp/q2video.place': struct.pack('<I', 0)})
     fw.mock('fw_waitpid', lambda *_: 1234)
