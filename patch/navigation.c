@@ -3144,7 +3144,9 @@ static int *const pod_values[] = { &st.charge_limit,
                                    &st.big_library,
                                    &st.playlist_cf,
                                    &st.scan_durations,
-                                   &st.cf_position };
+                                   &st.cf_position,
+                                   &st.hide_stream,
+                                   &st.hide_folder };
 _Static_assert(POD_LOCKCLOCK == 6, "lockscreen.c passes pod_rows 6");
 _Static_assert(sizeof pod_values / sizeof *pod_values == POD_COUNT, "a pod_values per row");
 static const char *const pod_keys[] = { "CHARGELIMIT",
@@ -3170,7 +3172,9 @@ static const char *const pod_keys[] = { "CHARGELIMIT",
                                         "BIGLIBRARY",
                                         "PLAYLISTCF",
                                         "SCANDURATIONS",
-                                        "CFPOSITION" };
+                                        "CFPOSITION",
+                                        "HIDESTREAM",
+                                        "HIDEFOLDER" };
 _Static_assert(sizeof pod_keys / sizeof *pod_keys == POD_COUNT, "a pod_keys entry per row");
 /* a row's choices: Artist albums three, Standby limit four, every other row two */
 static int pod_choices(unsigned i) { return i == POD_ARTIST_CF ? 3 : i == POD_STANDBY ? 4 : 2; }
@@ -3210,6 +3214,14 @@ int ringnav_big_library(void) {
 int coverflow_position_enabled(void) {
     pod_settings();
     return st.cf_position;
+}
+int ringnav_hide_stream(void) {
+    pod_settings();
+    return st.hide_stream;
+}
+int ringnav_hide_folder(void) {
+    pod_settings();
+    return st.hide_folder;
 }
 int ringnav_eq_output(void) {
     pod_settings();
@@ -3276,6 +3288,8 @@ static void pod_text(int i) {
         { "Playlist View: List", "Playlist View: Cover Flow" },
         { 0 }, /* Scan Song Durations: a switch */
         { 0 }, /* Position Bar: a switch */
+        { 0 }, /* Hide Streaming on Home: a switch */
+        { 0 }, /* Hide Folder on Home: a switch */
     };
     _Static_assert(sizeof names / sizeof *names == POD_COUNT, "a names entry per row");
     if (i == POD_CF_SORT) {
@@ -3303,6 +3317,8 @@ static void pod_text(int i) {
                          : i == POD_BIG_LIB        ? "Fast Navigation"
                          : i == POD_SCAN_DURATIONS ? "Scan Song Durations"
                          : i == POD_CF_POSITION    ? "Position Bar"
+                         : i == POD_HIDE_STREAM    ? "Hide Streaming on Home"
+                         : i == POD_HIDE_FOLDER    ? "Hide Folder on Home"
                                                    : 0;
     if (toggle)
         list_toggle(st.pod_label[i], toggle, v);
@@ -3355,6 +3371,7 @@ static int pod_click(void *ctx, void *event) {
         write_int_config(*value, "Q2POD", pod_keys[i]);
         if (i == POD_SCAN_DURATIONS && !*value) durations_cancel();
         if (i == POD_CF_POSITION) coverflow_position_reset();
+        if (i == POD_HIDE_STREAM || i == POD_HIDE_FOLDER) coverflow_home_layout();
         st.charge_at = 0;
         /* Control Device Volume: off, stock's gain back at once; on, bt_volume_poll's next pass
          * sends the Q2's level to the device. */
@@ -6838,7 +6855,8 @@ int ringnav_display(void *win, void *ctx) {
                                             "system_update", "playset_covermode" };
     static const char *const hold_icon[] = { "playset_folderjump" },
                              *const tone_icon[] = { "system_keytone" },
-                             *const lock_icon[] = { "system_keylock" };
+                             *const lock_icon[] = { "system_keylock" },
+                             *const home_icons[] = { "system_display", "system_display" };
     static const unsigned char main_order[] = { 0, 1, 3, 4, 2, 5, 6 };
     int sub = display_sub, result = stock_display_trampoline(win, ctx);
     void *view = win ? widget_lookup(win, "scroll_view_display", 1) : (void *)0;
@@ -6881,6 +6899,7 @@ int ringnav_display(void *win, void *ctx) {
         const theme_t *T = theme();
         setting_row(view, SETTING_THEME);
         for (int k = 0; k < T->n_opts; ++k) setting_row(view, T->opts[k].setting);
+        pod_rows(win, "scroll_view_display", POD_HIDE_STREAM, 2, home_icons);
         return result;
     }
     wheel_row(list_row_into(view, "system_display", xfade_open, (void *)1));

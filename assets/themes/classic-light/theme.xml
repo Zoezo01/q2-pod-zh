@@ -130,6 +130,8 @@
        screens, the lock info screen, Cover Flow's flip -->
   <view name="pages"><element name="own" painter="classic-light" art_final="1"/></view>
   <option key="STATUSBAR" label="Status Bar" default="Theme" preset="Theme"><value label="Theme"/><value label="Minimal"/><value label="Modern"/><value label="Classic"/></option>
+  <option setting="time_title" preset="on"/>
+  <option key="SHOWQ2POD" label="Show Q2 Pod" default="On"><value label="Off"/><value label="On"/></option>
   <!-- Light Mode: On is the look as drawn, Off its dark half, Auto both by the clock -->
   <option setting="light" preset="on" keep="auto"/>
   <option setting="accent" key="CLASSIC_LIGHT_ACCENT" default="classic-blue" preset="classic-blue"/>
@@ -138,7 +140,6 @@
   <!-- Battery: the plain icon, chosen with Classic, the percent alone, or Percent Inside. default is what a stored
        Icon + Percent reads as; the key itself stays as stored until the row is cycled. -->
   <option setting="battery" values="icon percent inside" default="inside"/>
-  <option setting="time_title" preset="on"/>
   <!-- Row Art, Classic's own option: it decides album covers. On shows them in 52 px rows in Albums and the other
        art lists (the classic-light set), Off makes those lists 32 px text (classic-light-text). The Library is text either way.
        A change restarts the Q2. Choosing Classic presets On. -->

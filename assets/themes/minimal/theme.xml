@@ -7,13 +7,14 @@
   <!-- The bar's look alone, in every theme: Theme follows the theme, the rest paint that theme's fill, battery and play
        icon in this theme's row. The row itself is the set's, so it needs no restart. Choosing a theme goes back to Theme. -->
   <option key="STATUSBAR" label="Status Bar" default="Theme" preset="Theme"><value label="Theme"/><value label="Minimal"/><value label="Modern"/><value label="Classic"/></option>
+  <option setting="time_title" preset="on"/>
+  <option key="SHOWQ2POD" label="Show Q2 Pod" default="On"><value label="Off"/><value label="On"/></option>
   <option setting="light" preset="off" keep="auto"/>
   <option setting="accent" key="MINIMAL_ACCENT" default="graphite" preset="graphite"/>
   <option setting="corners" preset="round"/>
   <option setting="home" preset="split"/>
   <option setting="shortcut"/>
   <option setting="battery"/>
-  <option setting="time_title" preset="on"/>
   <option setting="np_layout"/>
   <view name="bar"><element name="title" caps="1"/></view>
   <view name="list">

@@ -672,7 +672,7 @@ def offered(c, o, names, what):
     return sum(1 << names.index(n) for n in set(listed))
 
 
-PLAIN_KEYS = {'HOMELIB', 'ROWPREVIEW', 'STATUSBAR'}  # the plain own keys the payload reads (theme_engine.c home_lib_on, row_preview_on, bar_theme)
+PLAIN_KEYS = {'HOMELIB', 'ROWPREVIEW', 'STATUSBAR', 'SHOWQ2POD'}  # the plain own keys the payload reads (theme_engine.c home_lib_on, row_preview_on, bar_theme, show_q2pod)
 
 
 def own_option(c, known):

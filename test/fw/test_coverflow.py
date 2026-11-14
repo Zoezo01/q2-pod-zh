@@ -2776,6 +2776,28 @@ def test_the_shortcut_row_sits_after_folder_unless_rockbox_is_missing_or_none(fw
     assert ui[ui.named('label_rockbox')].text == label and ui[ui.lookup(h.carousel[0], 'label_rockbox')].text == label
 
 
+# Appearance's Hide Streaming / Hide Folder on Home: the row goes last, as Rockbox's does, and takes no taps; the
+# others keep their order, Rockbox after Folder's place.
+@pytest.mark.parametrize('folder, stream', ((0, 0), (1, 0), (0, 1), (1, 1)))
+def test_hidden_folder_and_streaming_rows_go_last_and_take_no_taps(fw, folder, stream):
+    themed(fw, CLASSIC, HOME='1', HIDEFOLDER=str(folder), HIDESTREAM=str(stream))
+    ui = Ui(fw)
+    h = Homes(ui, rockbox=True)
+    ui[h.rows['img_folder']].name, ui[h.rows['img_services']].name = 'btn_folder', 'btn_stream'
+    ui.restack(h.rows['img_folder'], 6)  # from anywhere: a row shown again goes back to its place
+    h.open(fw)
+    hidden = [h.rows[n] for n, off in (('img_folder', folder), ('img_services', stream)) if off]
+    assert ui[h.view].kids == [h.rows[n] for n in h.ROWS if h.rows[n] not in hidden] + hidden
+    for n in ('img_folder', 'img_services'):
+        assert ui[h.rows[n]].visible == ui[h.rows[n]].sensitive == (h.rows[n] not in hidden)
+
+
+@pytest.mark.parametrize('show, want', (('1', b'Q2 Pod'), ('0', b'')))
+def test_show_q2_pod_off_leaves_home_s_title_empty(fw, show, want):
+    home_open(fw, SHOWQ2POD=show)
+    assert fw.fn('coverflow_home_title', C.c_char_p)() == want
+
+
 @pytest.mark.parametrize('mode', (1, 2))
 def test_full_and_carousel_close_an_open_list_and_carousel_shows_its_cards(fw, mode):
     themed(fw, CLASSIC, HOME=str(mode))

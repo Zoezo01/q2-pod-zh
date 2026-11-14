@@ -1,6 +1,8 @@
 # Changelog
 
 - **1.8.3**:
+  - Home: **Hide Streaming on Home** and **Hide Folder on Home**, at the bottom of **Display → Appearance**, take those rows off Home's list. Both are Off, so Home is unchanged until you turn one on. **Home: Carousel** still shows their cards.
+  - Appearance: **Time in Title** now sits right under **Status Bar**, and a new **Show Q2 Pod** switch under it sets whether Classic's status bar names Home "Q2 Pod". It's On, as before.
   - Cover Flow: when the song changes to another album, by Next, Previous or the end of a track, Cover Flow turns to that album, so you no longer have to leave and come back. It only follows while it's resting on the album that was playing; if you've turned to another album, it stays there.
   - Cover Flow: with **Scan Song Durations** off, an album's song list shows no song lengths. Lengths Long Songs had measured showed there anyway. They're kept, so Long Songs still lists them and turning the switch on shows them again with nothing to measure.
 

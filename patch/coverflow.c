@@ -3832,7 +3832,7 @@ static struct {
     int clipped;
 } home __attribute__((section(".scratch")));
 extern int ipod_home(void), ipod_home_rockbox(void), home_shortcut_open(void *, void *),
-    home_lib_on(void), row_preview_on(void), library_search(void);
+    home_lib_on(void), row_preview_on(void), show_q2pod(void), library_search(void);
 extern void library_rows(void *list), stream_rows(void *list);
 extern void home_pane_read(int *services, int *games, int *free_tenths);
 extern int library_count(const char *sql), msg_counting(void);
@@ -4646,19 +4646,30 @@ static void home_show(void *w, int on) {
 /* Stored HOME=0/1/2 is Split/Full/Carousel in every theme: Split halves the screen, the art in the
  * right panel; Full hides the art and widens the list, its rows to the theme's home_full_row;
  * Carousel hides the art and shows stock's cards (tools/ipod.py ipod_home) in the
- * lists' place, and leaving it, the main list. Hidden Rockbox is restacked last because the native
- * layout includes hidden rows, and made insensitive, as hidden rows keep their taps. */
+ * lists' place, and leaving it, the main list. Rockbox without the card's, and Folder and
+ * Streaming hidden in Appearance, are restacked last, as the native layout includes hidden rows,
+ * and made insensitive, as hidden rows keep their taps. */
 void coverflow_home_layout(void) {
     int mode = ipod_home(), full = mode == 1, carousel = mode == 2;
     const theme_t *T = theme();
     /* The art goes back to the panel; Split's next paint resumes the pan. */
     stop_timer(&home.drift);
     if (!home.list) return;
+    /* Folder, Rockbox and Streaming in their places (HOME_ROWS), then the hidden ones last, as the
+     * native layout includes hidden rows; hidden, they take no taps (Rockbox would take
+     * Streaming's). ponytail: Carousel keeps Folder's and Streaming's cards, as it keeps the
+     * Shortcut's (below). */
+    static const char *const rows[] = { "btn_folder", "btn_rockbox", "btn_stream" };
+    int shown[] = { !ringnav_hide_folder(), ipod_home_rockbox(), !ringnav_hide_stream() };
+    for (int pass = 0; pass < 2; ++pass)
+        for (int i = 0; i < 3; ++i) {
+            void *row = widget_lookup(home.list, rows[i], 1); /* not the carousel's cards */
+            if (!row || (pass && shown[i])) continue;
+            widget_restack(row, pass ? 6 : 3 + i);
+            home_show(row, shown[i]);
+        }
     void *rockbox = widget_lookup(home.win, "btn_rockbox", 1);
     if (rockbox) {
-        int shown = ipod_home_rockbox();
-        widget_restack(rockbox, shown ? 4 : 6); /* after Folder, else last */
-        home_show(rockbox, shown); /* hidden, it would still take Streaming's taps */
         widget_set_text_utf8(widget_lookup(home.win, "label_rockbox", 1), ipod_home_shortcut());
         /* ponytail: the Shortcut card stays when the row hides (Shortcut: Rockbox, no Rockbox on
          * the card; its tap says so), as the slide_menu lays out hidden cards too; removing it
@@ -4820,7 +4831,7 @@ void coverflow_home_top(void) {
 /* Classic's bar title on Home (navigation.c bar_title_sync). */
 const char *coverflow_home_title(void) {
     void *open = home_open();
-    return !open                 ? "Q2 Pod"
+    return !open                 ? show_q2pod() ? "Q2 Pod" : ""
            : open == home.lib    ? "Library"
            : open == home.stream ? "Streaming"
                                  : "Settings";
