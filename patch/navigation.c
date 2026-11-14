@@ -3307,7 +3307,7 @@ static void pod_text(int i) {
         { 0 }, /* Position Bar: a switch */
         { 0 }, /* Hide Streaming on Home: a switch */
         { 0 }, /* Hide Folder on Home: a switch */
-        { "每日提醒：关", "每日提醒：开" },
+        { "每日提醒：关闭", "每日提醒：打开" },
         { "补全封面与歌词" }, /* 中文分支自有 action：行上会显示补全过程 */
     };
     _Static_assert(sizeof names / sizeof *names == POD_COUNT, "a names entry per row");
@@ -3339,7 +3339,6 @@ static void pod_text(int i) {
                          : i == POD_CF_POSITION    ? "位置条"
                          : i == POD_HIDE_STREAM    ? "主页隐藏流媒体"
                          : i == POD_HIDE_FOLDER    ? "主页隐藏文件夹"
-                         : i == POD_REMIND_DAILY   ? "每日提醒"
                                                    : 0;
     if (toggle)
         list_toggle(st.pod_label[i], toggle, v);
@@ -4225,11 +4224,14 @@ static void bar_sync(void *bar) {
      * original zero-height box, which centres their art above the 30 px clock, EQ and
      * play word (V183A device photos). Restore the row's height before the frame draws. */
     if (!st.bar_title && !st.bar_dark) {
-        int row_h = I(P(st.bar_bt, W_PARENT), W_H);
-        void *const boxes[] = { st.bar_bt, st.bar_wifi, st.bar_eq, st.bar_state };
-        for (unsigned i = 0; i < sizeof boxes / sizeof *boxes; ++i)
-            if (boxes[i] && I(boxes[i], W_H) != row_h)
-                widget_resize(boxes[i], I(boxes[i], W_W), row_h);
+        void *row = P(st.bar_bt, W_PARENT);
+        if (row) { /* the machine tests park img_bt without a parent: no row to match */
+            int row_h = I(row, W_H);
+            void *const boxes[] = { st.bar_bt, st.bar_wifi, st.bar_eq, st.bar_state };
+            for (unsigned i = 0; i < sizeof boxes / sizeof *boxes; ++i)
+                if (boxes[i] && I(boxes[i], W_H) != row_h)
+                    widget_resize(boxes[i], I(boxes[i], W_W), row_h);
+        }
     }
     int classic_row = T->painter[PAINT_BATTERY] == BATT_CLASSIC_LIGHT, /* the row's layout */
         classic_light = B->painter[PAINT_BATTERY] == BATT_CLASSIC_LIGHT,

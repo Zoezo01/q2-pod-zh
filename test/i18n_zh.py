@@ -195,6 +195,7 @@ ZH_GENERATED = {
     'Enabled': '启用',
     'Enabled: Off': '启用：关闭',
     'Enabled: On': '启用：打开',
+    'Enlarged Album Art': '放大专辑封面',
     'Era': '年代',
     'Era unavailable': '年代不可用',
     'Erase Spotify Data': '清除 Spotify 数据',
@@ -203,6 +204,7 @@ ZH_GENERATED = {
     'Everything': '全部锁定',
     'Export': '导出',
     'Export Log': '导出日志',
+    'Fast Navigation': '快速导航',
     'Favorites': '收藏',
     'Favourite not saved': '收藏未保存',
     'Favourite not sent to the app': '收藏未发送到应用',
@@ -210,6 +212,7 @@ ZH_GENERATED = {
     'Featured': '精选',
     'Feb': '2月',
     'Folder': '文件夹',
+    'Folder Album Cover': '文件夹专辑封面',
     'Folder Root: %s': '文件夹起点：%s',
     'Folder missing or unavailable': '文件夹不存在或不可用',
     'Folder not found': '找不到文件夹',
@@ -232,6 +235,8 @@ ZH_GENERATED = {
     'Group by: Album': '分组：专辑',
     'Group by: Folder': '分组：文件夹',
     'Halo': '光环',
+    'Hide Folder on Home': '主页隐藏文件夹',
+    'Hide Streaming on Home': '主页隐藏流媒体',
     'High': '高频',
     'High shelf': '高架滤波',
     'Hold Return: Home': '长按返回：主菜单',
@@ -374,6 +379,7 @@ ZH_GENERATED = {
     'Playlists updated': '歌单已更新',
     'Podcasts': '播客',
     'Pop': '流行',
+    'Position Bar': '位置条',
     'Preamp': '前级增益',
     'Preparing artwork… %d/%d': '正在准备封面… %d/%d',
     'Preparing…': '准备中…',
@@ -452,6 +458,7 @@ ZH_GENERATED = {
     'Save failed; EQ unchanged': '保存失败，均衡器未变',
     'Save failed; settings unchanged': '保存失败，设置未变',
     'Saved to battery-log.txt': '已保存到 battery-log.txt',
+    'Scan Song Durations': '检测歌曲时长',
     'Score': '得分',
     'Scrobbles sent: %d': '已上传 %d 条听歌记录',
     'Search': '搜索',
@@ -640,6 +647,10 @@ ZH_OVERRIDES = {
     # release.py's refusal message names REPO, which is now this fork.
     "^Network Update fetches someone/fork's releases, not DiamondBond/q2-pod's$":
         "^Network Update fetches someone/fork's releases, not Zoezo01/q2-pod-zh's$",
+    # Remind Daily: the generator never paired it (our names entry moved under
+    # POD_LIBRARY_FILL's insertion), but the fw System Update test reads the row.
+    'Remind Daily: On': '每日提醒：打开',
+    'Remind Daily: Off': '每日提醒：关闭',
 }
 
 # Literals that are inputs to the code under test, or that the Chinese build
