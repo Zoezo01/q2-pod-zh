@@ -936,6 +936,7 @@ def test_no_release_stops_it(fw):
     assert install(fw, card, net)[0] == SH_MISSING and not card.of('system')
 
 
+@pytest.mark.refusal('addon:traversal')
 def test_a_bad_zip_changes_nothing(fw):
     card = Card(fw, {f'{STAGING}/foo.list'.encode(): row(5, '../x')})
     assert install(fw, card)[0] == SH_BAD
@@ -1801,6 +1802,7 @@ def test_no_app_installs_while_the_list_cant_be_fetched(fw):
 
 
 @pytest.mark.parametrize('listed', [b'other/q2-foo Foo\n', b'-me/q2-foo Foo\n', b'# me/q2-foo Foo\nme/q2-bar Bar\n'])
+@pytest.mark.refusal('addon:changed')
 def test_an_app_installs_only_from_the_repo_the_list_names_now(fw, listed):
     """Another owner's repo under the same name, the app marked dropped, and its line commented out."""
     card = Disk(fw, {SOURCES: b'me/q2-foo Foo\n'})

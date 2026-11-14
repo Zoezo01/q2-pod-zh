@@ -820,6 +820,7 @@ def test_network_update_on_the_latest_release_or_an_older_one_writes_nothing(w, 
     assert not w.card.tree() and page.text == 'tr:update_online' and not w.calls('fwupdate_tf')
 
 
+@pytest.mark.refusal('update:truncated')
 def test_network_update_cut_off_midway_keeps_the_old_tar(w):
     w.ui.wifi = 3
     w.card.put(TAR, b'the release before', count=False)
@@ -840,6 +841,7 @@ def test_network_update_with_no_network_asks_once(w):
     assert w.ui.toasts == ["Can't reach GitHub"] and w.net.asked == [LATEST] and not w.card.tree()
 
 
+@pytest.mark.refusal('update:oversize')
 def test_network_update_on_a_full_card_says_so_and_gives_the_room_back(w):
     w.ui.wifi = 3
     w.card.room = len(UPDATE_TAR) // 3
@@ -1091,6 +1093,7 @@ def test_a_job_whose_thread_cant_start_says_so_and_the_next_press_starts_it(w):
     assert w.ui.toasts[2:] == ['Latest firmware installed', 'Foo removed']
 
 
+@pytest.mark.refusal('addon:oversize')
 def test_an_install_without_room_says_how_much_more_and_downloads_nothing(w):
     w.ui.wifi = 3
     hub = GitHub(w, 'me/q2-foo Foo\n')
@@ -1106,6 +1109,7 @@ def test_an_install_without_room_says_how_much_more_and_downloads_nothing(w):
     assert set(w.card.tree()) == {'.q2/sources.list'} and store.rows() == [('Foo', 'Install')]
 
 
+@pytest.mark.refusal('addon:truncated')
 def test_an_install_cut_off_midway_leaves_the_card_as_it_was(w):
     w.ui.wifi = 3
     hub = GitHub(w, 'me/q2-foo Foo\n')
