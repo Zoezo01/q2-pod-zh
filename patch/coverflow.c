@@ -19,6 +19,7 @@ extern int stock_home_trampoline(void *win, void *ctx), stock_scan_all_trampolin
     stock_album_cover_trampoline(const char *, const char *, int, int);
 
 enum { PREPARING, COVERS, TRACKS };
+#define TAIL_GLIDE 4 /* albums coverflow_tail glides to; farther, it moves at once */
 cf_page_t cf __attribute__((section(".scratch")));
 
 static int pick(void *ctx, void *event);
@@ -2940,6 +2941,11 @@ static void load(void) {
     if (cf_traced) unlink(CF_TRACE);
 }
 void *queue_now(unsigned *pos, unsigned *n);
+/* The queue's song coverflow_tail last saw, and its album's index in albums, or -1. */
+static struct {
+    void *song;
+    int at;
+} tail __attribute__((section(".scratch")));
 static void load_albums(unsigned t0) {
     int on_sort = cf.on_sort; /* taken whatever this load shows */
     cf.on_sort = 0;
@@ -3007,6 +3013,7 @@ static void load_albums(unsigned t0) {
      * records carry none) is never looked for, so those open on the last centre. */
     unsigned at, queued;
     void *now = P(mcl_pdeqplaylist, 0) && !on_sort && !cf.scoped ? queue_now(&at, &queued) : 0;
+    tail.song = now, tail.at = -1;
     if (now && !(P(now, REC_ALBUM) && *(const char *)P(now, REC_ALBUM))) now = 0;
     int playing = 0;
     art_strike(BUILDING);
@@ -3030,6 +3037,7 @@ static void load_albums(unsigned t0) {
     }
     free(shared);
     cf_trace(t0, "done jobs=", cf.total, count);
+    if (playing) tail.at = cf.album;
     if (on_sort) cf.album = (int)count; /* the Sort card, pressed again and again */
     mkdir(ART_DIR, 0755);
     cf.done = cf.cancel = 0;
@@ -3040,6 +3048,28 @@ static void load_albums(unsigned t0) {
         poll(0);
     } else
         to_covers(0);
+}
+
+/* Every UI pass: the queue's song moved to another album (Next, Previous, a track's end) while
+ * the covers rest on its last one, so the covers follow it, a few albums at a tap's glide, farther
+ * at once. Covers moved, held or showing another album are left alone, and so are the scoped
+ * lists, the panel and the tracks; a song with no album tag is never looked for, as at open. */
+void coverflow_tail(void) {
+    if (!covers_live() || cf.scoped || fl.panel || th.on || touched() || !cf.albums) return;
+    unsigned at, n;
+    void *now = P(mcl_pdeqplaylist, 0) ? queue_now(&at, &n) : 0;
+    if (now == tail.song) return;
+    int was = tail.at, c = I(cf.slide, SLIDE_INDEX);
+    tail.song = now, tail.at = -1;
+    if (!now || !P(now, REC_ALBUM) || !*(const char *)P(now, REC_ALBUM)) return;
+    for (unsigned i = 0, k = deque_size(cf.albums); i < k && tail.at < 0; ++i)
+        if (!album_cmp(deque_at(cf.albums, i), now)) tail.at = (int)i;
+    if (was < 0 || tail.at < 0 || tail.at == was || c != was || I(cf.slide, SLIDE_OFFSET) ||
+        P(cf.slide, SLIDE_ANIMATOR))
+        return;
+    int d = tail.at - c, near = ABS(d) <= TAIL_GLIDE;
+    carousel_glide(cf.slide, -d * stride_of(cf.slide), near ? CF_TAP_MS : 0, SLIDE_EASING);
+    if (!near) widget_invalidate_force(cf.slide, 0);
 }
 
 /* Album queues use stock's album class (0xff10), never folder class 1: Folder Skip only acts on

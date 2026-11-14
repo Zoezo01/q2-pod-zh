@@ -2334,6 +2334,28 @@ def test_an_artist_s_shelf_shows_no_cover_past_its_ends(fw, scoped):
     fw.fn('coverflow__fx_close', None)()
 
 
+# Next or a track's end moves the queue to another album: covers resting on its last one follow it, a few albums at a
+# tap's glide, farther at once (TAIL_GLIDE 4); covers turned to another album, or moving, are left alone.
+@pytest.mark.parametrize('centre, offset, to, want', [(0, 0, 2, [-220]), (0, 0, 5, []), (1, 0, 2, []), (0, 20, 2, [])])
+def test_the_covers_follow_the_queue_s_album_from_its_last_alone(fw, mcl, centre, offset, to, want):
+    q = Deques(fw)
+    albums = [Rec(a, path=f'/m/{a}/1.flac') for a in 'ABCDEF']
+    s = Shelf(fw, n=len(albums) + 1, index=centre, offset=offset, scoped=0)
+    c = cf(fw)
+    c.albums = q.new([r.p for r in albums])
+    fw.var('fw_ctx_mcl_pdeqplaylist', C.c_void_p).value = q.new([albums[0].p, albums[to].p])
+    tail = fw.fn('coverflow_tail', None)
+    tail()  # first sight: album A, nothing to follow from
+    assert not s.goals and not fw.calls('slide_menu_set_value')
+    mcl.pos = 1
+    tail()
+    assert s.goals == want
+    moved = [a[1] for _, a in fw.calls('slide_menu_set_value')]
+    assert moved == ([to] if to > 4 and not centre and not offset else [])
+    tail()  # the same song: nothing again
+    assert s.goals == want and len(fw.calls('slide_menu_set_value')) == len(moved)
+
+
 def test_a_tap_in_the_flat_fallback_opens_the_centre_cover_alone(fw):
     s = Shelf(fw, n=4, index=1, scoped=0)
     deque_of(fw, [Rec(), Rec(), Rec()])

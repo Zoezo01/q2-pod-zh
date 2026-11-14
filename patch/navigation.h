@@ -441,6 +441,7 @@ void font_weight_paint(void *w, void *canvas);
 /* coverflow_position.c */
 int coverflow_position_enabled(void); /* navigation.c: persisted setting */
 void coverflow_position_reset(void);
+void coverflow_tail(void); /* coverflow.c: the covers follow the queue's album */
 
 /* np_bar.c */
 int np_beside(void);
