@@ -32,16 +32,18 @@ REPO = 'Zoezo01/q2-pod-zh'  # whose releases Network Update fetches (--update-re
 # 设备升级只认「标记不同」，所以代码一变，末位字母必须跟着递进，否则已刷同标记的设备会拒绝这个包。
 # B 修 Remind Daily 行的显示（每日提醒：关闭/打开 带值纯文本，不再带开关件），
 # 并给顶栏行高归一补上空 parent 的保护（无界面变化，只让模拟器测试不再误触）。
-# C 修关于页 MAC 地址被省略号截断（上游的值框 149px 装不下 17 个字符）、Minimal/Modern 顶栏
+# C 修 Minimal/Modern 顶栏
 # 左上角不再给隐藏的播放图标留空位、待机角标从 Q2 改成 Q2 Pod 并与菜单名同列；
-# 网络更新支持同一条上游版本线内的多个小版本（见 RELEASE_TAG）；应用商店的卡应用列表改回上游。
+# 网络更新支持同一条上游版本线内的多个小版本（见 RELEASE_TAG）。
 # 同一条上游版本线上的多个小版本（183A、183B…）靠 RELEASE_TAG 区分：A 用裸 VERSION（1.8.3），
 # 之后每个字母追加点位（B→1.8.3.2、C→1.8.3.3…）。设备的 Q2POD_TAG 烤的就是它，与 releases/latest
 # 的 tag 做 strcmp，后一个点位总比前一个大，设备才会在同一条线内提示升级。Release 的 tag 必须
 # 正好等于 RELEASE_TAG（tools/release_zh.py 会核对）。点位只有一位数字，字母用到 I 为止；
 # 真用到 J 就说明这条线该收了。刷机标记 TAG 与它相互独立：TAG 管设备肯不肯重刷，
 # RELEASE_TAG 管网络更新要不要提示，两边都要随每次发布推进。
-LETTER = 'C'
+# D 修经典主题关于页的 MAC 地址截断：经典行字体更宽，17 个字符约 156px 放不进原厂
+# 149px 值框，值框在经典主题下向左扩 10px（右缘不动）；现代/简约主题的行不变。
+LETTER = 'D'
 TAG = 'V' + VERSION.replace('.', '') + LETTER
 RELEASE_TAG = VERSION if LETTER == 'A' else f'{VERSION}.{ord(LETTER) - 64}'  # 1.8.3, 1.8.3.2, 1.8.3.3…
 
