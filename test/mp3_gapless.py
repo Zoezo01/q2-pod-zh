@@ -80,11 +80,12 @@ int main(void) {
     run('cc', '-Wall', '-Wextra', '-Werror', str(decoder), '-o', str(tmp/'decode'),
         *run('pkg-config', '--cflags', '--libs', 'libavcodec', 'libavutil').decode().split())
 
+    rates = (44100, 48000, 32000)
+    bitrates = ((0,32,40,48,56,64,80,96,112,128,160,192,224,256,320),
+                (0,8,16,24,32,40,48,56,64,80,96,112,128,144,160))
+
     def raw_decode(raw):
         packets, at = [], 0
-        rates = (44100, 48000, 32000)
-        bitrates = ((0,32,40,48,56,64,80,96,112,128,160,192,224,256,320),
-                    (0,8,16,24,32,40,48,56,64,80,96,112,128,144,160))
         while at + 4 <= len(raw) and raw[at] == 255:
             h = raw[at:at+4]
             version = h[1] >> 3 & 3
@@ -274,6 +275,31 @@ int main(int argc, char **argv) {
     h = bytearray(header())
     h[2] = 0  # free-format: no trustworthy first-frame boundary
     assert parse(bytes(h)) is None
+    # Every Layer III bitrate and sampling rate: the first frame is whole at the format's size, 144 (MPEG1) or 72
+    # bytes a kbit/s over the rate in kHz, one more with the padding bit, and not a byte short. Mono, whose tag still
+    # fits the smallest of them, 24 bytes.
+    for version in (3, 2, 0):
+        for br in range(1, 15):
+            for r in range(3):
+                for padded in (0, 1):
+                    rate = rates[r] >> (0 if version == 3 else 1 if version == 2 else 2)
+                    h = bytearray((144000 if version == 3 else 72000) * bitrates[version != 3][br] // rate + padded)
+                    h[:4] = bytes([255, 0xe3 | version << 3, br << 4 | r << 2 | padded << 1, 192])
+                    at = 21 if version == 3 else 13
+                    h[at:at+4] = b'Info'
+                    assert parse(bytes(h)) == (1152 if version == 3 else 576, 0, rate, 1), (version, br, r, padded)
+                    assert parse(bytes(h[:-1])) is None, (version, br, r, padded)
+    # The mode is the fourth byte's top two bits: mode extension, copyright, original and emphasis are no channel.
+    h = bytearray(header(mono=True))
+    h[3] |= 63
+    assert parse(bytes(h)) == parse(header(mono=True))
+    # Not a Layer III frame: a broken sync in either byte, the reserved version, the reserved layer, Layers II and I,
+    # the reserved sampling rate and the forbidden bitrate. Neither a tag nor an iTunSMPB is read off one.
+    for at, value in ((0, 254), (1, 0x1b), (1, 0xeb), (1, 0xf9), (1, 0xfd), (1, 0xff), (2, 0x9c), (2, 0xf0)):
+        h, a = bytearray(header()), bytearray(audio) + bytes(2048 - len(audio))  # the 2048 bytes mp3_filter reads
+        assert parse(bytes(h)) and smpb(bytes(a), itunes())
+        h[at] = a[at] = value
+        assert parse(bytes(h)) is None and smpb(bytes(a), itunes()) is None, (at, value)
 
     def trim(h, pcm, bps, chunks):
         p = lib.create(h, len(h))
