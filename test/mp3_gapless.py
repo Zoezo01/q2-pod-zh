@@ -140,6 +140,9 @@ int main(int argc, char **argv) {
         fields = [C.c_uint() for _ in range(4)]
         return tuple(x.value for x in fields) if lib.mp3_gapless(h, len(h), *map(C.byref, fields)) else None
 
+    def found(h):  # 1: the extension's trim. 2: the tag frame's samples only, and mp3_filter looks for an iTunSMPB.
+        return lib.mp3_gapless(h, len(h), *(C.byref(C.c_uint()) for _ in range(4)))
+
     def header(version=3, mono=False, flags=15, crc=False, shifted=False, encoder=b'LAME3.100', delay=576, pad=1200):
         # 128 kbit/s MPEG1 or 64 kbit/s MPEG2/2.5, sampling frequency index 0.
         rate = 44100 >> (0 if version == 3 else 1 if version == 2 else 2)
@@ -289,10 +292,12 @@ int main(int argc, char **argv) {
                     h[at:at+4] = b'Info'
                     assert parse(bytes(h)) == (1152 if version == 3 else 576, 0, rate, 1), (version, br, r, padded)
                     assert parse(bytes(h[:-1])) is None, (version, br, r, padded)
-    # The mode is the fourth byte's top two bits: mode extension, copyright, original and emphasis are no channel.
-    h = bytearray(header(mono=True))
-    h[3] |= 63
-    assert parse(bytes(h)) == parse(header(mono=True))
+    # The mode is the fourth byte's top two bits, and only 3 is one channel: stereo, joint stereo and dual channel
+    # (lame -m s, j and d) are two. Mode extension, copyright, original and emphasis are no channel.
+    for mode, channels in ((0, 2), (64, 2), (128, 2), (192, 1)):
+        h = bytearray(header(mono=channels == 1))
+        h[3] = mode | 63
+        assert parse(bytes(h)) == (2257, 671, 44100, channels), mode
     # Not a Layer III frame: a broken sync in either byte, the reserved version, the reserved layer, Layers II and I,
     # the reserved sampling rate and the forbidden bitrate. Neither a tag nor an iTunSMPB is read off one.
     for at, value in ((0, 254), (1, 0x1b), (1, 0xeb), (1, 0xf9), (1, 0xfd), (1, 0xff), (2, 0x9c), (2, 0xf0)):
@@ -329,14 +334,17 @@ int main(int argc, char **argv) {
                     assert trim(h, pcm, bps, chunks) == pcm[start*unit:len(pcm)-tail*unit]
 
     cases = 0
-    for rate, channels in ((44100, 1), (44100, 2), (22050, 2), (11025, 1)):
+    # 48 kHz stereo: FFmpeg's -q:a 2 puts its tag in a 64 kbit/s frame, 192 bytes, which the extension fills to the
+    # last byte. lame -m d: dual channel, where the input has two.
+    for rate, channels in ((44100, 1), (44100, 2), (22050, 2), (11025, 1), (48000, 2)):
         wav = tmp/'input.wav'
         with wave.open(str(wav), 'wb') as f:
             f.setparams((channels, 2, rate, 0, 'NONE', 'not compressed'))
             f.writeframes(b''.join(struct.pack('<h', rng.randrange(-12000, 12000))
                                    for _ in range((rate + 317) * channels)))
         for encoder, options in (('lame', ['-V', '2']), ('lame', ['-b', '128', '-p']),
-                                 ('ffmpeg', ['-q:a', '2']), ('ffmpeg', ['-b:a', '128k'])):
+                                 ('ffmpeg', ['-q:a', '2']), ('ffmpeg', ['-b:a', '128k']),
+                                 ('lame', ['-b', '128', '-m', 'd'])):
             mp3 = tmp/'encoded.mp3'
             if encoder == 'lame':
                 run('lame', '--silent', *options, str(wav), str(mp3))
@@ -345,7 +353,7 @@ int main(int argc, char **argv) {
             raw = mp3.read_bytes()
             at = 10 + sum((raw[6+i] & 127) << (21-7*i) for i in range(4)) if raw[:3] == b'ID3' else 0
             h = raw[at:at+2048]
-            assert parse(h), (encoder, options, rate, channels)
+            assert found(h) == 1, (encoder, options, rate, channels)
             def decode(path):
                 return run('ffmpeg', '-v', 'error', '-i', str(path), '-f', 'f32le', '-acodec', 'pcm_f32le', '-')
             expected = decode(mp3)
@@ -362,4 +370,18 @@ int main(int argc, char **argv) {
                                                        struct.iter_unpack('<f', expected))) / (len(expected)//4)
             assert error < 1e-8, ('libmad sample alignment', encoder, options, rate, error)
             cases += 1
+            if encoder == 'lame':
+                # No extension to read: iTunes writes no tag frame, and the trim in an iTunSMPB. lame -t writes the
+                # same audio that way, its first frame audio with side info; LAME's 576 samples of delay and its
+                # padding are that file's priming and remainder. ffmpeg -c copy of it puts an Info or Xing frame in
+                # front, with a count and no delays: the iTunSMPB is still to be looked for, its sum has to come
+                # to the count, and the frame's own samples go too.
+                start, padding = parse(h)[:2]
+                text = itunes(576, padding + 529, rate + 317)
+                run('lame', '--silent', '-t', *options, str(wav), str(bare))
+                h = bare.read_bytes()[:2048]
+                assert parse(h) is None and smpb(h, text) == (576 + 529, padding, rate, channels), (options, rate, channels)
+                run('ffmpeg', '-v', 'error', '-y', '-i', str(bare), '-c', 'copy', '-id3v2_version', '0', str(mp3))
+                h = mp3.read_bytes()[:2048]
+                assert found(h) == 2 and smpb(h, text) == (start, padding, rate, channels), (options, rate, channels)
     print(f'MP3 gapless: MPEG1/2/2.5, optional fields, CRC, malformed/truncated tags, PCM boundaries; {cases} real LAME/FFmpeg files match FFmpeg sample for sample, libmad lengths/alignment agree: OK')
