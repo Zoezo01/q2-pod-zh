@@ -13,8 +13,8 @@ import tarfile
 import tempfile
 from build import ROOT, REPO, VERSION, BETA, TAG, ZIP_SHA, DEMO_SHA, build, check, need, run, sha, source_sha256, version_ok
 
-# Network Update (patch/netupdate.c) fetches releases/latest/download/<ASSET>, so the name can't
-# carry the version.
+# Network Update (patch/netupdate.c) finds the asset of this name in the release, for its size and
+# digest, and fetches releases/download/<tag>/<ASSET>, so the name can't carry the version.
 ASSET = 'update.tar'
 # Rebuilt from docs/manual every release; the README links releases/latest/download/<GUIDE>.
 GUIDE = 'Q2-Pod-User-Guide.pdf'
