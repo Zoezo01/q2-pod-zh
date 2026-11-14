@@ -63,11 +63,19 @@ def stock_clock(fw):
 
 
 @pytest.mark.parametrize('sec,want', [(0, b''), (225, b'03:45'), (3599, b'59:59'), (3600, b'01:00:00'), (36001, b'10:00:01')])
-def test_duration_labels_are_stock_s(fw, song, stock_clock, sec, want):
+def test_duration_labels_are_stock_s(fw, song, stock_clock, st, sec, want):
     Files(fw, {LENGTHS: lengths((b'/m/a', sec))})
+    st('scan_durations').value = 1
     out = C.create_string_buffer(b'junk', 24)
     fw.fn('duration_text', C.c_char_p, C.c_char_p, C.c_uint, C.c_void_p)(out, len(out), song(b'/m/a'))
     assert out.value == want and len(fw.calls('toolsTimeItoa')) == (sec > 0)
+
+
+def test_no_label_with_the_switch_off_though_long_songs_measured(fw, song, stock_clock):
+    Files(fw, {LENGTHS: lengths((b'/m/a', 225))})
+    out = C.create_string_buffer(b'junk', 24)
+    fw.fn('duration_text', C.c_char_p, C.c_char_p, C.c_uint, C.c_void_p)(out, len(out), song(b'/m/a'))
+    assert out.value == b'' and seconds(fw, song(b'/m/a')) == 225
 
 
 A = path_key(b'/m/a')
@@ -595,10 +603,13 @@ def test_a_clean_end_waits_about_five_seconds_for_a_wedged_file(fw):
 
 
 # Minimal's and Modern's text track list: one row height a list, as stock's layouter forces item_height on each row.
-@pytest.mark.parametrize('end,want', [(200, [('One', '03:20'), ('Two', '')]), (0, [('One', None), ('Two', None)])])
-def test_a_track_list_with_any_length_gives_every_row_the_detail_height(fw, ui, song, stock_clock, end, want):
+# Scan Song Durations off: none, though Long Songs measured them.
+@pytest.mark.parametrize('end,switch,want', [(200, 1, [('One', '03:20'), ('Two', '')]), (0, 1, [('One', None), ('Two', None)]),
+                                             (200, 0, [('One', None), ('Two', None)])])
+def test_a_track_list_with_any_length_gives_every_row_the_detail_height(fw, ui, song, stock_clock, st, end, switch, want):
     from test_coverflow import Cf
     Files(fw)
+    st('scan_durations').value = switch
     tracks = [song(b'/m/a.flac', b'One', track=1, end=end), song(b'/m/a.flac', b'Two', track=2, cue=end)]
     directory = fw.var('fw_ctx_tools_pdeq_directory', C.c_uint)
     fw.mock('getMusicByAlbum', lambda *_: ui.deques[directory.value].extend(tracks) or 2)
@@ -611,9 +622,9 @@ def test_a_track_list_with_any_length_gives_every_row_the_detail_height(fw, ui, 
     items = ui.kids[ui.view(page)]
     boxes = [struct.unpack_from('<4i', ui.blocks[w]) for w in items]
     h = boxes[0][3]
-    assert h == (fw.fn('page_h', C.c_int, C.c_int)(64 if end else 48)) and [b[1] for b in boxes] == [0, h]
+    assert h == (fw.fn('page_h', C.c_int, C.c_int)(64 if want[0][1] else 48)) and [b[1] for b in boxes] == [0, h]
     assert all(b[3] == h for b in boxes)
     centre = {a[0] for _, a in fw.calls('widget_set_prop_str')
               if C.string_at(a[1]) == b'style:normal:text_align_h' and C.string_at(a[2]) == b'center'}
     details = [ui.kids[w][1] for w in items if len(ui.kids[w]) > 1]
-    assert len(details) == (2 if end else 0) and all(d in centre for d in details)  # under its centred title
+    assert len(details) == (2 if want[0][1] else 0) and all(d in centre for d in details)  # under its centred title

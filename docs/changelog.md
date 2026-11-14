@@ -1,5 +1,8 @@
 # Changelog
 
+- **1.8.3**:
+  - Cover Flow: with **Scan Song Durations** off, an album's song list shows no song lengths. Lengths Long Songs had measured showed there anyway. They're kept, so Long Songs still lists them and turning the switch on shows them again with nothing to measure.
+
 - **1.8.2**:
   - Games: in Solitaire, Centre on a pile that can't take the cards you hold now picks that pile up instead. Before, nothing happened and the cards stayed held until you put them back or pressed Return, which looked like the game had stuck.
   - Themes: Chinese, Japanese and other text the theme's own face lacks is now drawn bold wherever **Classic** or **Modern** draws its text bold: Classic's lists, bar, info rows, Cover Flow, album panel and hold menu; Modern's bar title; and Now Playing's title in both. It used the regular system font.

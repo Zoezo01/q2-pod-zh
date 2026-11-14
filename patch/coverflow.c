@@ -3378,7 +3378,7 @@ static int to_tracks(const void *unused) {
      * length's line under each title once any track has one, an unknown's left empty */
     int timed = 0;
     for (int i = 0; i < n && !timed; ++i)
-        timed = duration_seconds(deque_at(cf.tracks, (unsigned)i)) > 0;
+        timed = *duration_text(name, sizeof name, deque_at(cf.tracks, (unsigned)i));
     const char *title = P(r, cf.scoped == PLAYLISTS ? REC_TITLE : REC_ALBUM);
     void *view = timed ? page_list(cf.page, cf.body, &cf.title, title, n, 64) : list(title, n);
     /* the album over its tracks, all centred, but under a theme's own rows */
