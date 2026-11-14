@@ -86,6 +86,30 @@ uv python install 3.12 && uv venv --python 3.12 .venv && \
 
 C 侧还做了括号/字面量配平检查，`tools/*.py`、`test/*.py` 均通过 `py_compile`。
 
+## 上游测试的中文适配
+
+上游测试把界面文案写死成英文，本分支是固定简体中文。历史上是逐条改测试断言（`test/patch.py` 等），每次合并上游都要重做，还容易冲突。现在改成一张集中的映射表，测试文件本身不再动：
+
+- `test/i18n_zh.py` — 唯一需要维护的地方：`ZH_GENERATED`（生成器写出）、手工的 `ZH_OVERRIDES` / `ZH_SKIP` / `ZH_SKIP_MODULES` / `ZH_SKIP_TESTS`。
+- `test/zh_expect.py` — 测试模块导入时做 AST 常量替换，把英文期望值换成中文（`str` 与 `bytes` 都支持）；`Q2_ZH_EXPECT=0` 可临时关闭，看上游原始断言。
+- `test/conftest.py` — `test/unit`、`test/fw` 自动生效，运行命令不变；断言重写照常保留，失败仍有完整 diff。
+- 独立脚本用 `python3 test/zh_expect.py playback.py BUILD`（参数与原命令相同）。`test/patch.py` 的断言历史上已逐条改成中文，列入 `ZH_SKIP_MODULES`：它剩下的英文串是页面名、时钟等输入，译掉会改变 CJK 字体分支而不是修正期望。
+
+合并上游后重刷表的自动部分（手工段原样保留），`--check` 可用于 CI 校验是否过期：
+
+```bash
+python3 test/gen_zh_expect.py --upstream 1.9.0     # 或省略参数，自动取最新的数字 tag
+python3 test/gen_zh_expect.py --check
+```
+
+验证效果（同一台 Debian 13 服务器、同一套环境，`192.168.31.20`）：`test/unit` 由 **24 failed / 1412 passed** 变为 **19 failed / 1417 passed**，`test/fw` 由 **741 failed / 6776 passed** 变为 **335 failed / 7182 passed**。fw 的 error 数（1183）不变，那是 clang 19 的 DWARF 与 `offsets()` 的兼容问题，与文案无关。
+
+剩余失败不属于文案，映射表刻意不覆盖：
+
+- 中文版自有功能造成的布局/数值差异：状态栏 `STATUS_MARGIN` 54↔58、EQ 标记移到电池一侧、modern 主题电池 `batt_w=20 / batt_h=13`；
+- 同一英文词在不同界面译成不同中文（`On`/`Off`/`Resume`/`Theme`），或英文只是长断言里的一段（时钟 `'6:14 PM'`、生成的 C 代码 `.label = "Classic Blue"`）——精确整串匹配处理不了，这类放在 `ZH_SKIP` 或单独维护；
+- 工具链与第三方行为：ImageMagick 7 的 Lanczos 透明角、ffmpeg 7 的 elst、缺 `flac` 等。
+
 ## 安装和回滚
 
 先备份卡内资料，设备充足电。将安装包中的 `update.tar` 放入存储卡根目录，安全弹出后通过系统设置的 TF 卡升级安装。不要在刷机期间断电或拔卡。
