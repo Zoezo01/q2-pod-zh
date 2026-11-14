@@ -6335,7 +6335,7 @@ class CoverflowMachine(QueueMachine):
     FREE=0x1000010  # stock free's GOT slot is 0 until lazy binding; give it a stub
     def __init__(self,albums=3,cached=True,**queue):
         super().__init__(rows=4,**queue)
-        self.cached=cached; self.missing=False; self.joins=[]; self.threads=[]; self.plays=[]; self.homes=0; self.freed=0; self.live={}
+        self.cached=cached; self.missing=False; self.joins=[]; self.threads=[]; self.checks=[]; self.plays=[]; self.homes=0; self.freed=0; self.live={}
         for n in ('window_create','widget_factory_create_widget','image_base_set_image','getAllAlbum','list_view_create',
                   'scroll_view_create','navigator_back_to_home','navigator_to_with_context','access@GLIBC_2.0',
                   'calloc@GLIBC_2.0','strdup@GLIBC_2.0','mkdir@GLIBC_2.0','statfs@GLIBC_2.0','pthread_create@GLIBC_2.2',
@@ -6400,7 +6400,8 @@ class CoverflowMachine(QueueMachine):
             self.freed+=a!=0; self.live.pop(a,0)
             if a in getattr(self,'poison',{}): self.u.mem_write(a,b'\0'*self.poison.pop(a))
         elif name=='statfs': self.word(b+4,4096); self.word(b+28,1<<20)
-        elif name=='pthread_create': self.word(a,77); self.threads.append((c,d))
+        elif name=='pthread_create':  # the release notice's daily check (netupdate_poll) apart: tests count a page's threads
+            self.word(a,77); (self.checks if c==payload_syms.get('nc_worker') else self.threads).append((c,d))
         elif name=='pthread_join': self.joins.append(a)
         self.returns(ret,clobber=True)
     def open(self):
@@ -18407,6 +18408,25 @@ f,ctx=m.handler(label,O['EVT_DESTROY']); m.call(address=f,args=(ctx,m.event,0,0)
 worker,arg=m.threads[-1]; assert m.call(address=worker,args=(arg,0,0,0),gap=0,count=5_000_000)==0
 m.advance(500,clear=False); assert m.toasts[-1][3]=='Download cancelled' and m.files[UPDATE]==b'old'
 assert 'fwupdate_tf' not in [c[0] for c in m.calls]; passed()
+# The notice (netupdate_poll, power_poll's, each pass of ringnav_sleep): with Wi-Fi on, a release build asks for
+# the latest tag (Network Update's header-only request, no API) and tells of a newer one on Home, once, its tag
+# kept in /mnt/data first. A --dev build has no tag to compare and checks nothing. The card is out meanwhile,
+# so the boot logo's poll starts no thread of its own.
+m.handlers[HOOKS['main_loop_sleep_default'][0]+12]='stock_sleep'
+TOLD='/mnt/data/q2-update.told'; mounts=m.files['/proc/mounts']; m.files['/proc/mounts']=bytearray()
+m.top=m.node('window','home_page'); m.byte(syms['g_backlight_status'],1); toasts=len(m.toasts); checks=len(m.checks)
+def loop(): m.call(address=HOOKS['main_loop_sleep_default'][0],args=(0x1234,0,0,0),gap=2000,clear=False)
+m.codes=[302]; m.location=f'{RELEASES}/tag/9.9.9'; loop()
+if manifest['dev']:
+    loop(); assert len(m.checks)==checks and TOLD not in m.files and len(m.toasts)==toasts
+else:
+    assert len(m.checks)==checks+1; worker,arg=m.checks[-1]
+    assert m.call(address=worker,args=(arg,0,0,0),gap=0,count=5_000_000)==0
+    assert m.opts[10002]==f'{RELEASES}/latest' and m.opts[44]==1 and 20011 not in m.opts
+    loop(); assert m.toasts[-1][3]=='Q2 Pod 9.9.9 is out: System Update → Network Update' and len(m.toasts)==toasts+1
+    assert bytes(m.files[TOLD][:6])==b'9.9.9\0'
+    loop(); loop(); assert len(m.toasts)==toasts+1 and len(m.checks)==checks+1  # once; the next check is a day off
+m.files['/proc/mounts']=mounts; passed()
 
 # Q2 Shelf (netupdate.c, docs/internals.md#q2-shelf): System settings' Apps page, Check for Updates
 # then a row per app with its state from .q2/apps/<id>.tag, a manual install's binary and, with Wi-Fi,

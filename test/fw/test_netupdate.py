@@ -2015,6 +2015,187 @@ def store_net(fw, files=FOO, listed=b'me/q2-foo Foo\n', size=None, **replies):
                     b'https://h/': replies.get('zip', (0, 200, None, data))})
 
 
+class Nc(C.Structure):
+    _fields_ = [('at', C.c_uint), ('polled', C.c_uint), ('busy', C.c_int), ('ok', C.c_int), ('read', C.c_int),
+                ('tag', C.c_char * 16), ('told', C.c_char * 16)]
+
+
+TOLD = b'/mnt/data/q2-update.told'
+NOTICE = f'Q2 Pod {NEWER.decode()} is out: System Update → Network Update'
+HOUR, DAY = 60 * 60 * 1000, 24 * 60 * 60 * 1000
+NU_POLL = 2000  # netupdate.c's NU_POLL_MS
+
+
+class Poll:
+    """power_poll's netupdate_poll at self.ms: the top window (by name, None for none), the screen, Wi-Fi, the
+    check's thread (run by run()) and the toasts stubbed; the told tag on card."""
+    def __init__(self, fw, card, top=b'home_page', lit=1, wifi=1):
+        self.fw, self.card, self.wifi, self.ms, self.workers, self.toasts = fw, card, wifi, 1000, [], []
+        self.top(top)
+        self.lit = fw.var('g_backlight_status', C.c_ubyte)
+        self.lit.value = lit
+        fw.mock('time_now_ms', lambda *_: self.ms)
+        fw.mock('window_manager_get_top_window', lambda *_: C.addressof(self.name) if self.name else 0)
+        fw.mock('widget_get_prop_str', lambda w, key, default, *_: w)  # a window here is its name
+        fw.mock('get_wifisignal', lambda *_: self.wifi)
+        fw.mock('fw_pthread_create', lambda t, a, fn, arg, *_: self.workers.append(fn) or 0)
+        fw.mock('fw_pthread_detach', lambda *_: 0)
+        fw.mock('navigator_to_with_context', lambda path, info, *_: self.toasts.append(C.string_at(info + 8).decode()))
+        self.nc = fw.var('netupdate__nc', Nc)
+
+    def top(self, name):
+        self.name = C.create_string_buffer(name) if name else None
+
+    def poll(self, after=NU_POLL):
+        self.ms += after
+        self.fw.fn('netupdate_poll', None)()
+
+    def run(self):
+        assert C.CFUNCTYPE(C.c_void_p, C.c_void_p)(self.workers.pop())(None) is None
+
+
+
+def test_a_newer_release_is_told_once_on_home(fw):
+    card = slot(fw)
+    p = Poll(fw, card)
+    net = Net(fw, {LATEST: (0, 302, TAG_URL + NEWER)})
+    p.poll()
+    assert len(p.workers) == 1 and p.nc.busy and p.toasts == []
+    p.poll()  # while it checks: nothing more
+    assert len(p.workers) == 1
+    p.run()
+    assert net.urls == [LATEST] and net.opts[44] == 1 and 52 not in net.opts  # one header-only request, no API
+    assert p.nc.tag == NEWER and p.nc.ok and not p.nc.busy
+    p.poll()
+    assert p.toasts == [NOTICE] and card.files[TOLD][:len(NEWER) + 1] == NEWER + b'\0'
+    for _ in range(3):
+        p.poll()
+    assert p.toasts == [NOTICE] and not p.workers  # once, and no new check within the day
+
+
+def test_a_release_told_before_a_restart_isn_t_told_again(fw):
+    card = slot(fw, {TOLD: NEWER.ljust(16, b'\0')})
+    p = Poll(fw, card)
+    Net(fw, {LATEST: (0, 302, TAG_URL + NEWER)})
+    p.poll()
+    p.run()
+    p.poll()
+    p.poll()
+    assert p.toasts == [] and p.nc.tag == NEWER  # still the row's
+    # the next release is told
+    _n = int(NEWER.replace(b'.', b'')) + 1
+    later = b'%d.%d.%d' % (_n // 100, _n // 10 % 10, _n % 10)
+    Net(fw, {LATEST: (0, 302, TAG_URL + later)})
+    p.poll(DAY)
+    p.run()
+    p.poll()
+    assert p.toasts == [NOTICE.replace(NEWER.decode(), later.decode())] and card.files[TOLD][:len(later)] == later
+
+
+@pytest.mark.parametrize('tag', [TAG, OLDER])
+def test_this_build_s_release_or_an_older_one_is_no_notice(fw, tag):
+    p = Poll(fw, slot(fw))
+    Net(fw, {LATEST: (0, 302, TAG_URL + tag)})
+    p.poll()
+    p.run()
+    p.poll()
+    assert p.nc.tag == b'' and p.nc.ok and p.toasts == []
+
+
+def test_it_waits_for_home_with_the_screen_on(fw):
+    card = slot(fw)
+    p = Poll(fw, card, top=b'playing_page')
+    Net(fw, {LATEST: (0, 302, TAG_URL + NEWER)})
+    p.poll()
+    p.run()
+    p.poll()
+    p.top(None)
+    p.poll()
+    p.top(b'home_page')
+    p.lit.value = 0
+    p.poll()
+    assert p.toasts == [] and TOLD not in card.files
+    p.lit.value = 1
+    p.poll()
+    assert p.toasts == [NOTICE]
+
+
+def test_no_check_without_wi_fi_or_while_a_press_downloads(fw):
+    p = Poll(fw, slot(fw), wifi=-1)
+    p.poll()
+    assert not p.workers and p.nc.at == 0  # Smart Wi-Fi's radio isn't woken: checked once Wi-Fi is on
+    p.wifi = 2
+    nu = fw.var('netupdate__nu', Nu)
+    nu.state = NU_RUNNING
+    p.poll()
+    assert not p.workers
+    nu.state = NU_IDLE
+    p.poll()
+    assert len(p.workers) == 1
+
+
+def test_polls_are_two_seconds_apart(fw):
+    p = Poll(fw, slot(fw), wifi=-1)
+    p.poll()
+    calls = len(fw.calls('get_wifisignal'))
+    p.poll(NU_POLL - 1)
+    assert len(fw.calls('get_wifisignal')) == calls
+    p.wifi = 1
+    p.poll(1)
+    assert len(fw.calls('get_wifisignal')) == calls + 1 and len(p.workers) == 1
+
+
+@pytest.mark.parametrize('reply', [(6, 0, None), (0, 200, None), (0, 302, None), (0, 404, None)])
+def test_a_check_that_fails_is_tried_an_hour_later_one_that_worked_a_day(fw, reply):
+    p = Poll(fw, slot(fw), top=b'playing_page')
+    net = Net(fw, {LATEST: reply})
+    p.poll()
+    p.run()
+    assert not p.nc.ok and p.nc.tag == b''
+    p.poll(HOUR - NU_POLL - 1)
+    assert not p.workers
+    p.poll(NU_POLL + 1)
+    assert len(p.workers) == 1
+    net.replies[LATEST] = (0, 302, TAG_URL + NEWER)
+    p.run()
+    assert p.nc.ok and p.nc.tag == NEWER
+    p.poll(DAY - NU_POLL)  # a day from the check's start
+    assert not p.workers
+    p.poll(NU_POLL)
+    assert len(p.workers) == 1
+
+
+def test_a_failed_check_keeps_the_release_found_before(fw):
+    p = Poll(fw, slot(fw), top=b'playing_page')
+    net = Net(fw, {LATEST: (0, 302, TAG_URL + NEWER)})
+    p.poll()
+    p.run()
+    net.replies[LATEST] = (6, 0, None)
+    p.poll(DAY)
+    p.run()
+    assert not p.nc.ok and p.nc.tag == NEWER
+
+
+def test_system_update_s_row_names_the_newer_release_until_a_press_finds_none(fw):
+    p = Poll(fw, slot(fw), top=b'playing_page')
+    Net(fw, {LATEST: (0, 302, TAG_URL + NEWER)})
+    p.poll()
+    p.run()
+    row = UpdateRow(fw)
+    assert row.label() == f'Update to {NEWER.decode()}'
+    Net(fw, {LATEST: (0, 302, TAG_URL + TAG)})
+    row.press()
+    row.run()
+    assert row.wait() == 0 and row.toasts == ['Latest firmware installed']
+    assert p.nc.tag == b'' and row.tr[row.LABEL] == 'update_online'
+
+
+def test_without_a_newer_release_the_row_keeps_its_name(fw):
+    row = UpdateRow(fw)
+    assert row.label() is None and row.tr == {}  # stock's own, untouched
+
+
+
 class Store:
     """The App Store opened for real on a Disk, on top while open: each row's detail, the toasts, the wait timer, the
     worker, the standby holds, the clock (now_ms), the card's free bytes (statfs) and the card mounted (/proc/mounts,

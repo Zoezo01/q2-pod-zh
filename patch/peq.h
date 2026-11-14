@@ -543,6 +543,7 @@ int need_link(int (*fn)(void *, void *), void *ctx); /* smart_hold, else "Connec
  * netupdate.c's and onlinematch.c's */
 int spot_running(void), scrobble_busy(void), tidal_busy(void), addon_running(void),
     netupdate_busy(void), album_lyrics_busy(void);
+void netupdate_poll(void); /* power_poll: a newer release told on Home (netupdate.c) */
 const char *coverflow_sort_name(void); /* coverflow.c */
 void coverflow_sort_step(void), coverflow_refresh_art(void);
 void coverflow_clean_end(void); /* coverflow.c: a clean end mid-build strikes no album */

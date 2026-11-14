@@ -422,6 +422,20 @@ static struct {
 
 extern int stock_fwupdate_trampoline(void *win, void *ctx);
 
+/* The notice (netupdate_poll): with Wi-Fi on, now and then the latest release's tag, kept when it is
+ * newer than this build; Home tells of it once a release and System Update's row names it. */
+#define NU_TOLD "/mnt/data/q2-update.told" /* the tag Home last told of */
+#define NU_POLL_MS 2000u
+#define NU_EVERY_MS (24u * 60 * 60 * 1000) /* between checks that reached GitHub */
+#define NU_AGAIN_MS (60u * 60 * 1000)      /* after one that didn't */
+
+static struct {
+    unsigned at, polled; /* time_now_ms of the last check and the last poll; 0 none */
+    volatile int busy;   /* the check's thread runs: tag is its */
+    int ok, read;        /* the last check reached GitHub; told is NU_TOLD's */
+    char tag[16], told[16];
+} nc __attribute__((section(".scratch")));
+
 static unsigned save(const void *data, unsigned size, unsigned n, void *file) {
     return fwrite(data, size, n, file) * size;
 }
@@ -599,6 +613,15 @@ static void show(const char *text) {
     if (nu.label) widget_set_text_utf8(nu.label, text);
 }
 
+/* The row at rest: the newer release a check found, else its own name. */
+static void named(void) {
+    char s[32];
+    if (!nc.busy && *nc.tag)
+        tk_snprintf(s, sizeof s, "Update to %s", nc.tag), show(s);
+    else if (nu.label)
+        widget_set_tr_text(nu.label, "update_online");
+}
+
 static int wait_done(const void *unused) {
     static const char *const said[] = {
         [NU_LATEST] = "Latest firmware installed", [NU_NET] = "Can't reach GitHub",
@@ -621,7 +644,8 @@ static int wait_done(const void *unused) {
     pthread_join(nu.thread, 0);
     int state = nu.state;
     nu.state = NU_IDLE;
-    if (nu.label) widget_set_tr_text(nu.label, "update_online");
+    if (state == NU_LATEST && !nc.busy) *nc.tag = 0; /* a press's answer is the newer */
+    named();
     if (state == NU_SPACE)
         tk_snprintf(s, sizeof s, "Needs %u MB more space", nu.need), toast(s);
     else if (state != NU_DONE)
@@ -677,9 +701,56 @@ int ringnav_fwupdate(void *win, void *ctx) {
         widget_on(button, EVT_CLICK, online_click, 0);
         nu.label = widget_get_child(button, 0);
         widget_on(nu.label, EVT_DESTROY, label_gone, nu.label);
-        if (nu.state == NU_RUNNING) show("Downloading…");
+        if (nu.state == NU_RUNNING)
+            show("Downloading…");
+        else if (*nc.tag)
+            named(); /* else stock's name, as it built the row */
     }
     return result;
+}
+
+static void *nc_worker(void *unused) {
+    char tag[64] = "";
+    long code = 0;
+    int ok = !fetch(NU_REPO, 0, tag, sizeof tag, &code, 0, 0) && code == 302 && *tag;
+    if (ok) tk_snprintf(nc.tag, sizeof nc.tag, "%s", strcmp(tag, Q2POD_TAG) > 0 ? tag : "");
+    nc.ok = ok;
+    nc.busy = 0;
+    return 0;
+}
+
+/* power_poll: a release newer than this build told without a press. Only while Wi-Fi is on anyway
+ * (Smart Wi-Fi's radio isn't woken for it), Network Update's header-only request for the latest tag
+ * (no API request), a day apart, an hour after one that failed. Once a release, on Home with the
+ * screen on; the tag is recorded first, so a toast missed isn't shown again. --dev builds have no
+ * tag to compare and check nothing.
+ * ponytail: no switch turns the check off; it is the App Store's opening check's kind of request. */
+void netupdate_poll(void) {
+    unsigned now = time_now_ms();
+    unsigned long tid;
+    char s[80];
+    if (!*Q2POD_TAG || nc.busy || (nc.polled && now - nc.polled < NU_POLL_MS)) return;
+    nc.polled = now | !now;
+    void *top = window_manager_get_top_window(window_manager());
+    if (*nc.tag && g_backlight_status && top &&
+        !tk_strcmp(widget_get_prop_str(top, "name", ""), "home_page")) {
+        if (!nc.read) nc.read = 1, BLOB_IO(NU_TOLD, nc.told, 0);
+        if (strncmp(nc.told, nc.tag, sizeof nc.tag)) {
+            memcpy(nc.told, nc.tag, sizeof nc.told);
+            BLOB_IO(NU_TOLD, nc.told, 1);
+            tk_snprintf(s, sizeof s, "Q2 Pod %s is out: System Update → Network Update", nc.tag);
+            toast(s);
+            return;
+        }
+    }
+    if ((nc.at && now - nc.at < (nc.ok ? NU_EVERY_MS : NU_AGAIN_MS)) || nu.state == NU_RUNNING ||
+        get_wifisignal() <= 0)
+        return;
+    nc.at = now | !now, nc.busy = 1;
+    if (pthread_create(&tid, 0, nc_worker, 0))
+        nc.busy = 0;
+    else
+        pthread_detach(tid);
 }
 
 /* The Apps page (System settings): Check for Updates, then a row per app in sources.list, its state
