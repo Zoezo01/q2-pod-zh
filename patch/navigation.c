@@ -4554,7 +4554,8 @@ static void lyric_poll(void) {
     if (st.np_full && !page) np_full(0); /* full-screen lyrics end off their page */
     int touch = lrc && window_manager_get_top_window(wm) == st.np_win && pointer_down();
     int shown = page && lyrics_shown(),
-        on = shown && widget_count_children(lrc) && mclGetLyricSize() > 0;
+        /* not during a scrub: its ticks are np_key's, the lyrics' again once it ends */
+        on = shown && !st.scrub && widget_count_children(lrc) && mclGetLyricSize() > 0;
     if (touch && !st.lyric_touch) {
         st.lyric_touch = page ? 1 : 2;
         st.lyric_drag_y = page ? I(lrc, SCROLL_Y) : 0;
@@ -4635,10 +4636,11 @@ static void lyric_poll(void) {
 }
 
 /* A tick on the lyrics page while the track has lyrics, which comes only before lyric_poll takes
- * the wheel raw, glides them to the next or previous row's top, ahead of scrub and the volume. */
+ * the wheel raw, glides them to the next or previous row's top, ahead of the volume; never during
+ * a scrub, whose ticks move its target. */
 static int np_lyrics(unsigned key) {
     void *lrc = st.np_lrc;
-    if (!st.np_slide || !lrc || widget_get_prop_int(st.np_slide, "value", 0) != 1 ||
+    if (st.scrub || !st.np_slide || !lrc || widget_get_prop_int(st.np_slide, "value", 0) != 1 ||
         !widget_count_children(lrc) || mclGetLyricSize() <= 0)
         return 0;
     lyric_hold();
