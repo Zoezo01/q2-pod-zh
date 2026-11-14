@@ -2903,6 +2903,23 @@ def video_check(tmp):
     # The length from ffmpeg -i's report, for the position bar.
     assert lib.duration(b'Input #0, mov\n  Duration: 01:02:03.45, start: 0.0\n') == 3723
     assert lib.duration(b'  Duration: N/A, bitrate: N/A') == 0 and lib.duration(b'') == 0
+    # The picture's size from the same report's first video stream, and whether ten of its frames fit the memory free.
+    w, h = C.c_int(), C.c_int()
+    def size(report):
+        return (w.value, h.value) if lib.picture(report, C.byref(w), C.byref(h)) else None
+    assert size(b'  Duration: 00:01:00.00\n    Stream #0:0(und): Video: h264 (High) (avc1 / 0x31637661), '
+                b'yuv420p(tv, bt709), 1920x1080 [SAR 1:1 DAR 16:9], 30 fps\n') == (1920, 1080)
+    assert size(b'    Stream #0:0: Video: hevc (Main 10) (hvc1 / 0x31637668), '
+                b'yuv420p10le(tv, bt2020nc/bt2020/arib-std-b67), 3840x2160, 45000 kb/s') == (3840, 2160)
+    assert size(b'    title : a film, 640x480\n    Stream #0:0: Audio: aac, 48000 Hz, stereo') is None
+    assert size(b'    Stream #0:0: Video: h264, none, 0x0\n    Stream #0:1: Video: mjpeg, yuvj420p, 500x500') is None
+    assert size(b'') is None
+    lib.too_large.argtypes = [C.c_int, C.c_int, C.c_uint]
+    assert [lib.too_large(*s, 40000) for s in ((640, 360), (1280, 720), (1920, 1080), (2560, 1440), (3840, 2160))] == \
+        [0, 0, 0, 1, 1]
+    assert lib.too_large(1920, 1080, 30375) == 0 and lib.too_large(1920, 1080, 30374) == 1
+    assert lib.too_large(3840, 2160, 0) == 0 and lib.too_large(0, 2160, 1) == 0 and lib.too_large(3840, -1, 1) == 0
+    assert lib.too_large(2**31 - 1, 2**31 - 1, 2**32 - 1) == 1  # no overflow on a size no picture has
     # A quit's place, kept for next time, but 0 within 30 s of either end; an unknown length keeps it.
     assert [lib.resume_at(p, 600) for p in (0, 29, 30, 300, 570, 571, 600)] == [0, 0, 30, 300, 570, 0, 0]
     assert lib.resume_at(5000, 0) == 5000
@@ -2935,7 +2952,7 @@ def video_check(tmp):
     assert meta(b'    StreamTitle     : ', b'StreamTitle') == '' and meta(b'StreamTitle=x', b'StreamTitle') == 0
     assert meta(b'  Stream #0:0: Audio: mp3 (mp3float), 44100 Hz', b'Audio') == 'mp3 (mp3float),'
     assert meta(b'StreamTitle: a long title past the buffer', b'StreamTitle', 8) == 'a long '
-    print('Videos: ffmpeg argv, frame pacing, Bluetooth volume, length and bar passed; radio tags passed.')
+    print('Videos: ffmpeg argv, frame pacing, Bluetooth volume, length, picture size and bar passed; radio tags passed.')
 
 
 def audio_writer_check(tmp):

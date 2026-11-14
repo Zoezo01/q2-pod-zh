@@ -749,6 +749,7 @@ void books_paint(void *w, void *canvas) {
 #define VIDEO_SOCK "/tmp/q2video.sock" /* video.c Q2VIDEO_SOCK */
 #define VIDEO_PLACE "/tmp/q2video.place" /* video.c Q2VIDEO_PLACE: the second to start at, then left */
 #define VIDEO_PAUSE_QUIT_MS 30000 /* paused this long, no key: quit as Return, so it sleeps */
+#define VIDEO_TOO_LARGE 3 /* video.c TOO_LARGE, its exit status: the picture's decode would not fit the RAM */
 static struct {
     int paused, volume, gain, pid, sock, seek; /* seek: the wheel seeks, since seek_at (time_now_ms) */
     unsigned polled, control_at, seek_at, key, at; /* key: the video's in BOOK_MARKS, at its second there */
@@ -852,7 +853,7 @@ static void video_sync(void) {
  * ponytail: input goes to the helper, so the pause can't just let the screen time out under it;
  * a hold that lets a paused video go dark needs the wake path to reach stock while q2video runs. */
 void video_poll(void) {
-    int status;
+    int status = 0;
     if (!vid.pid) return;
     if (!waitpid(vid.pid, &status, 1)) { /* WNOHANG: still playing */
         int paused;
@@ -882,6 +883,9 @@ void video_poll(void) {
         mark(vid.key, at);
     }
     widget_invalidate_force(window_manager(), 0);
+    /* last: the toast's loop polls here again */
+    if (!(status & 0x7f) && (status >> 8 & 0xff) == VIDEO_TOO_LARGE)
+        toast("Too large to play on the Q2: convert it to a smaller size");
 }
 
 /* Return quits, Play/Pause pauses, the side buttons seek. The wheel is the volume, as on Now
