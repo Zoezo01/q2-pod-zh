@@ -43,7 +43,9 @@ def check(directory):
             yield from walk(child)
 
     labels = {node[2].get('name'): node[2].get('text') for node in walk(home)}
-    for name, text in [('label_library', '音乐'), ('label_coverflow', 'Cover Flow'),
+    # Cover Flow's card is named apart from stock's (label_cover_flow, HOME_OURS): stock's own
+    # Album Wall card (label_coverflow) is deleted, so the old name has no widget any more.
+    for name, text in [('label_library', '音乐'), ('label_cover_flow', 'Cover Flow'),
                        ('label_settings', '设置'), ('label_playback', '播放设置'),
                        ('label_system', '系统设置')]:
         assert labels.get(name) == text, (name, labels.get(name))
