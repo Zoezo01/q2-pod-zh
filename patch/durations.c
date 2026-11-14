@@ -83,6 +83,7 @@ int duration_seconds(void *song) {
  * padded formats; size: at least 9); empty, not 0:00, for an unknown or unreadable file, or with
  * Scan Song Durations off: Long Songs' own measures stay its own. */
 const char *duration_text(char *text, unsigned size, void *song) {
+    pod_settings(); /* the switch, before power_poll's first pass reads it */
     int sec = st.scan_durations ? duration_seconds(song) : 0;
     if (size) text[0] = 0;
     if (sec > 0) toolsTimeItoa(text, sec);

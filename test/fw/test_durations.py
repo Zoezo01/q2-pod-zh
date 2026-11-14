@@ -65,7 +65,7 @@ def stock_clock(fw):
 @pytest.mark.parametrize('sec,want', [(0, b''), (225, b'03:45'), (3599, b'59:59'), (3600, b'01:00:00'), (36001, b'10:00:01')])
 def test_duration_labels_are_stock_s(fw, song, stock_clock, st, sec, want):
     Files(fw, {LENGTHS: lengths((b'/m/a', sec))})
-    st('scan_durations').value = 1
+    st('scan_durations').value = st('pod_read').value = 1
     out = C.create_string_buffer(b'junk', 24)
     fw.fn('duration_text', C.c_char_p, C.c_char_p, C.c_uint, C.c_void_p)(out, len(out), song(b'/m/a'))
     assert out.value == want and len(fw.calls('toolsTimeItoa')) == (sec > 0)
@@ -609,7 +609,7 @@ def test_a_clean_end_waits_about_five_seconds_for_a_wedged_file(fw):
 def test_a_track_list_with_any_length_gives_every_row_the_detail_height(fw, ui, song, stock_clock, st, end, switch, want):
     from test_coverflow import Cf
     Files(fw)
-    st('scan_durations').value = switch
+    st('scan_durations').value, st('pod_read').value = switch, 1
     tracks = [song(b'/m/a.flac', b'One', track=1, end=end), song(b'/m/a.flac', b'Two', track=2, cue=end)]
     directory = fw.var('fw_ctx_tools_pdeq_directory', C.c_uint)
     fw.mock('getMusicByAlbum', lambda *_: ui.deques[directory.value].extend(tracks) or 2)

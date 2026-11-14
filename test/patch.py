@@ -31,7 +31,7 @@ assert ACCENTS[O['MINIMAL_ACCENT']]==ACCENTS[0]
 CLASSIC=[p for p in range(len(ACCENTS)) if p!=O['MINIMAL_ACCENT']]  # the values Classic's Accent row takes
 def color_t(rgb): return 0xff000000|(rgb&255)<<16|(rgb>>8&255)<<8|rgb>>16
 O_GLYPH=re.search(r'#define BT_GLYPH "(\w+)"',INC)[1]  # the plain Bluetooth glyph a codec badge fades into
-CONFIG={}  # config.ini [IPOD] keys a new Machine starts with; the payload reads them on first use
+CONFIG={'SCANDURATIONS':'1'}  # config.ini [IPOD] keys a new Machine starts with; the payload reads them on first use. Song lengths show only with Scan Song Durations on
 # Minimal's look the pixel checks were drawn under, read for a missing key: Ivory, square (the defaults are its
 # preset's, Graphite and round)
 SEED={'MINIMAL_ACCENT':'7','ROUNDED':'0'}
@@ -18842,7 +18842,7 @@ for v,on in (('1',1),('2',0),('0',0)):
     assert big(bm)==on,v
 passed()
 # The independent duration switch is off, persists on/off, and cancels on off.
-dm,drows,dtexts,dicons,dclick=settings_page('display','scroll_view_display',stock_rows=3,sub=2)
+dm,drows,dtexts,dicons,dclick=settings_page('display','scroll_view_display',{'SCANDURATIONS':'0'},stock_rows=3,sub=2)
 assert dtexts()[-2]=='Scan Song Durations'
 assert dclick(len(drows)-2)==[(1,'Q2POD','SCANDURATIONS')]
 assert dclick(len(drows)-2)==[(0,'Q2POD','SCANDURATIONS')]; passed()
