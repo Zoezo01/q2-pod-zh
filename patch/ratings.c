@@ -82,7 +82,7 @@ int rate_saved(int k) {
  * Now Playing's heart and the queue menu's Favourites rows. 0 when it wasn't, said in a toast. */
 int fav_told(void *r, int on) {
     if (!r || addon_fav_path(P(r, REC_PATH), on)) return 1;
-    toast("Favourite not sent to the app");
+    toast("收藏未发送到应用");
     return 0;
 }
 
@@ -367,9 +367,9 @@ static int rate_fav_click(void *ctx, void *event) {
     }
     int app = app_fav();
     if (app >= 0) image_base_set_image(ra.rate_fav, app ? "tidal_fav_add" : "tidal_fav_rm");
-    if (app == -2) toast("Favourite not saved");
+    if (app == -2) toast("收藏未保存");
     if (app == -3)
-        toast("This app has no favourites"); /* an app's song without an item: not Tidal's */
+        toast("此应用不支持收藏"); /* an app's song without an item: not Tidal's */
     if (app != -1) return 0;
     FAV_CLICK(ctx, event);
     ratings_copy_due();

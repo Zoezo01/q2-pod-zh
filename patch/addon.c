@@ -1572,7 +1572,7 @@ static void busy_row(int on) {
     int k = 2 + !!cell(i, 3)[0];
     void *item = widget_get_child(pg.view, (unsigned)i);
     retext(item, widget_get_child(item, (unsigned)k - 2), (unsigned)k,
-           on ? "Working…" : cell(i, k));
+           on ? "处理中…" : cell(i, k));
     pg.busy = on;
 }
 
@@ -1602,7 +1602,7 @@ static void show(void) {
                         l->retry ? "重试" : "请前往系统设置 → 应用商店重新安装", 0,
                         clicked);
         if (app()->nostop)
-            page_row_detail(pg.view, 1, "Cancel", 0, clicked);
+            page_row_detail(pg.view, 1, "取消", 0, clicked);
         else if (n > 1)
             stop_row(1);
         page_push(pg.view, pg.moved), pg.moved = 0;
@@ -1840,7 +1840,7 @@ static int searched(void *ctx, void *event) {
     if (widget_get_text_utf8(pg.edit, t, sizeof t)) t[0] = 0;
     if (strlen(t) >= sizeof pg.term) { /* none of it goes: the box closes, the level stays */
         memset(t, 0, sizeof t);
-        if (!pg.go) toast("Too long"); /* its loop would run the go the first call armed, under this handler */
+        if (!pg.go) toast("搜索词太长"); /* its loop would run the go the first call armed, under this handler */
     }
     tk_snprintf(pg.term, sizeof pg.term, "%s", t);
     memset(t, 0, sizeof t);

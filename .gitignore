@@ -22,3 +22,6 @@ graphify-out/
 .claude/skills/
 .codex/skills/
 .agents/skills/
+
+# This workspace's own notes (assistant memory), not the project
+.workbuddy/

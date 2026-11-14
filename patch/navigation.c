@@ -3424,7 +3424,7 @@ int ringnav_powermanager(void *win, void *ctx) {
     pod_rows(win, "scroll_view_powermanager", POD_CARMODE, 1, icons + 2);
     if (view) /* battery.c's page */
         widget_set_text_utf8(list_row_into(view, "system_powermanager", battery_history, 0),
-                             "Battery History");
+                             "电池历史");
     boot_row(view);
     return result;
 }
@@ -10790,7 +10790,7 @@ static void time_open(void *win) {
     if (ok) { /* Save, past the page's stock height: painted, its box the touch */
         widget_move_resize(P(ok, W_PARENT), 0, 0, 375, 294);
         widget_move_resize(ok, 0, 244, 375, 26);
-        widget_set_text_utf8(ok, "Save");
+        widget_set_text_utf8(ok, "保存");
         widget_set_opacity(ok, 0);
     }
     st.slider_win = win;

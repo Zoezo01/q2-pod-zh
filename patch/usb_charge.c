@@ -91,7 +91,7 @@ int usb_charge_held(void) { return usb_charge.have_applied && !usb_charge.applie
  * policy then allows it or not by the new choice. The DAC screen's switch shows here when Power
  * comes back to the front. */
 static void dac_text(void) {
-    list_toggle(usb_charge.row, "USB DAC Charging", g_usbdac_chargeflag == 1);
+    list_toggle(usb_charge.row, "USB DAC 充电", g_usbdac_chargeflag == 1);
 }
 static int dac_click(void *ctx, void *event) {
     g_usbdac_chargeflag = g_usbdac_chargeflag != 1;

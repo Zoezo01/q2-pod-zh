@@ -636,8 +636,7 @@ void msg_open(void *win) {
 }
 /* Under the window's children. */
 void msg_paint(void *w, void *canvas) {
-    static const unsigned update[] = { 'U', 'p', 'd', 'a', 't', 'e', ' ', 'L',
-                                       'i', 'b', 'r', 'a', 'r', 'y', 0 },
+    static const unsigned update[] = { 0x66f4, 0x65b0, 0x66f2, 0x5e93, 0 }, /* 更新曲库 */
                           q2pod[] = { 'Q', '2', ' ', 'P', 'o', 'd', 0 };
     void *lcd = P(canvas, CANVAS_LCD);
     if (!lcd) return;

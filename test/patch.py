@@ -8106,7 +8106,7 @@ for light in '10':
     assert um.nodes[uhead]['style:normal:text_color']&0xffffffff==white and um.nodes[uline]['style:normal:text_color']&0xffffffff==white and um.nodes[uhead]['style:normal:text_align_h']=='center'
     for state in ('normal','pressed','over','disable','focused'):
         assert um.nodes[ubtn][f'style:{state}:bg_color']==0 and um.nodes[ubtn][f'style:{state}:font_size']==23 and um.nodes[ubtn][f'style:{state}:font_name']=='classic-light' and um.nodes[ubtn][f'style:{state}:text_color']&0xffffffff==white
-    assert [(t['text'],t['rect'],t['font'][1]) for t in um.letters]==[('Update Library',(0,0,375,25),21),('Updating Local Music',(16,160,343,32),29),('0 of 704 songs',(16,189,343,20),18)]
+    assert [(t['text'],t['rect'],t['font'][1]) for t in um.letters]==[('更新曲库',(0,0,375,25),15),('Updating Local Music',(16,160,343,32),29),('0 of 704 songs',(16,189,343,20),18)]
     assert [b[:5] for b in um.bands if b[1]<=7 and b[0]>=294 and b[2]==26]==[(294,7,26,13,color_t(0xf5f5f5))]  # the battery, on the screen
     cancel,rest=round_box([b for b in um.bands if 248<=b[1]<283],127,248,121,34,7)
     assert cancel[0]==color_t(0x232c33) and cancel[33]==color_t(0x333c43)
@@ -8197,11 +8197,11 @@ dh.top=dhhome; dh.nodes[dh.wm]={'children':[dhbar,dhhome]}; bg(dh,dhhome); bg(dh
 from ipod import corner_inset
 for x,y,w,h in ((127,248,121,35),(16,159,343,32),(16,188,343,20),(72,218,229,15),(129,38,116,116),(122,67,130,130),(16,228,343,32),(16,255,343,20),(278,7,10,11),(294,7,26,13),(320,11,2,5)):
     assert corner_inset(y)<=x and corner_inset(y+h-1)<=x and x+w<=375-max(corner_inset(y),corner_inset(y+h-1)),(x,y,w,h)
-for h,px in ((32,29),(20,18),(34,23),(25,22)): assert h>px
+for h,px in ((32,29),(20,18),(34,23),(25,15)): assert h>px
 from fontTools.ttLib import TTFont
 df=TTFont(B/'default.ttf',lazy=True); ds=lambda px: px/(df['hhea'].ascent-df['hhea'].descent)
 ink=lambda t,px: sum(df['hmtx'][df.getBestCmap()[ord(c)]][0] for c in t)*ds(px)
-assert ink('Update Library',22)<=375-2*corner_inset(0) and ink('Eject before disconnecting',18)<=375-2*corner_inset(275) and ink('65000 of 65000 songs',18)<=343; passed()
+assert ink('更新曲库',15)<=375-2*corner_inset(0) and ink('Eject before disconnecting',18)<=375-2*corner_inset(275) and ink('65000 of 65000 songs',18)<=343; passed()
 for theme_ in '0':
     m,win,anim,msg,scan,btn=msg_dialog(theme_=theme_); bare(m); m.paint(win); kids=len(m.nodes[win]['children'])
     assert not m.image_draws and wbox(m,btn)==(44,266,287,40) and m.nodes[anim]['visible'] and m.nodes[msg]['visible'] and kids==4 and not m.sqls and not m.timers and 'style:normal:bg_color' not in m.nodes[btn] and not m.letters

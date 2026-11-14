@@ -176,7 +176,7 @@ int airplay_lyrics(int *ms) {
 static int air_open(void *ctx, void *event) {
     (void)event;
     if (access("/mnt/mmc/." AIR_ID "/q2-" AIR_ID, 0))
-        toast("Install AirPlay in System settings → App Store");
+        toast("请在 系统设置 → 应用商店 里安装 AirPlay");
     else if (!smart_hold(air_open, ctx, 0)) /* the app starts once Smart Wi-Fi's link is up */
         air.asked = 1, addon_open_id(AIR_ID);
     return 0;
@@ -187,7 +187,7 @@ void airplay_more(void *view) {
     char text[80] = "AirPlay";
     void *label = list_row(view, "airplay", air_open, 0);
     widget_resize(label, 253, I(label, W_H));
-    if (air.on && air.t->speaker[0]) snprintf(text, sizeof text, "AirPlay: %.60s", air.t->speaker);
+    if (air.on && air.t->speaker[0]) snprintf(text, sizeof text, "AirPlay：%.60s", air.t->speaker);
     widget_set_text_utf8(label, text);
     widget_restack(P(P(label, W_PARENT), W_PARENT), 0);
 }

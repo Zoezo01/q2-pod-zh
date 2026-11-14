@@ -19,15 +19,10 @@ REPO = 'DiamondBond/q2-pod'  # whose releases Network Update fetches (--update-r
 # 1.8.0 itself V1800, so each installs over the betas before it. Releases up to 1.8.0 BETA ended in I
 # (1.0.1 was V101I). About shows the stock firmware version and a CFW. Version row with VERSION and
 # the edition instead (ringnav_about).
-# 中文版：1.8.0 这条版本线，末位字母从 A 起（上游英文版是 V1800，两边标记不同才能互相刷）。
-# A 是 1.8.0 的第一版；B 修它的三处：播放设置的死机（reorder 的越界索引）、现代/简约四字的
-# 20 px（bar 的子件按禁用态取样式，字号得每个状态都写）、状态栏空闲时的灰色 Q2（不再显示）。
-# D moves the EQ badge to the battery's side (its left-group place pushed the word into the clock's
-# page name), and writes the clock's 16 px for every style state — the disable one says 20 px.
-# E brings Q2 back when EQ is on (the left's idle mark no longer watches the right group) and
-# raises the battery's three looks one pixel to the bar's text ink.
-# F lets stock draw Q2 again (white in every state), and drops the percent-alone's extra rise.
-TAG = 'V' + VERSION.replace('.', '') + 'F'
+# 中文版：1.8.2 这条版本线，末位字母从 A 起（上游英文版是 V1820，两边标记不同才能互相刷）。
+# A 并入上游 1.8.1 与 1.8.2：AirPlay、电池历史、USB DAC 充电、Cover Flow 的位置条与歌曲时长、
+# 大曲库模式改名快速导航，新出现的界面文字一并译成中文。1.8.0 那条线收在 F（V180F）。
+TAG = 'V' + VERSION.replace('.', '') + 'A'
 
 def version_ok(version, beta):
     """VERSION is three single digits and BETA one, as TAG packs them; 17.6 or 1.76 would give a 5-character tag too."""
