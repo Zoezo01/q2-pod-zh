@@ -604,8 +604,8 @@ def status_bar(root, g=SET0):
         box = widgets[name][1]
         box[0], box[3] = -200, g.bar  # still updated by stock, drawn off-screen
         root[3].append(widgets[name])
-    root[3].append(['label', [STATUS_LEFT_PAD, 0, 28, g.bar], {
-        'name': 'label_idle', 'text': 'Q2', 'visible': 'false',
+    root[3].append(['label', [STATUS_LEFT_PAD, 0, 64, g.bar], {
+        'name': 'label_idle', 'text': 'Q2 Pod', 'visible': 'false',
         'style:normal:font_size': '18', 'style:normal:text_color': '#FFFFFF',
         'style:normal:text_align_h': 'left'}, []])
     # The payload writes the local time here (ringnav_paint_bg).

@@ -172,8 +172,8 @@ def test_status_bar_clock_and_idle_labels():
     root = bar()
     ipod.status_bar(root)
     idle, clock = root[3][-2:]
-    assert idle == ['label', [ipod.STATUS_LEFT_PAD, 0, 28, 30], {
-        'name': 'label_idle', 'text': 'Q2', 'visible': 'false', 'style:normal:font_size': '18',
+    assert idle == ['label', [ipod.STATUS_LEFT_PAD, 0, 64, 30], {
+        'name': 'label_idle', 'text': 'Q2 Pod', 'visible': 'false', 'style:normal:font_size': '18',
         'style:normal:text_color': '#FFFFFF', 'style:normal:text_align_h': 'left'}, []]
     gap = ipod.inc('STATUS_GAP')
     left = ipod.STATUS_MARGIN + 20 + 28 + gap
@@ -788,7 +788,8 @@ def test_classic_light_home_rows_are_32():
 def test_status_bar_takes_the_bar_height():
     root = bar(); ipod.status_bar(root, g=T26); n = named(root)
     assert [root[1][3], n['view_left'][1][3], n['view_right'][1][3]] == [26, 26, 26]
-    assert n['label_idle'][1] == [ipod.STATUS_MARGIN, 0, 28, 26] and n['label_clock'][1][3] == 26
+    # the idle wordmark sits at the left group's pad (as the fork aligned it), 64 px for "Q2 Pod"
+    assert n['label_idle'][1] == [ipod.STATUS_LEFT_PAD, 0, 64, 26] and n['label_clock'][1][3] == 26
     assert [n[x][1][3] for x in ipod.STATUS_HIDDEN] == [26, 26, 26]
 
 

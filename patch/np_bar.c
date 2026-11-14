@@ -201,7 +201,16 @@ void bar_title(void *bar, void *top) {
     /* The name's box ends before the clock's first ink column, or before the right
      * group's first widget when the clock has made way. hscroll_label keeps the
      * rest of a long name inside its box instead of letting it run into EQ. */
-    int x = I(word, W_X), limit;
+    /* The glyph's slot is only reserved while it shows: with it hidden the name
+     * stands at the group's own left, level with stock's idle wordmark and with
+     * the page's own rows (V183B photos: an empty box before 播放设置). */
+    void *left = st.bar_state ? P(st.bar_state, W_PARENT) : (void *)0;
+    int x = left ? I(left, W_X) + I(st.bar_state, W_X) : I(st.bar_state, W_X);
+    if (st.bar_state && widget_get_visible(st.bar_state))
+        x += I(st.bar_state, W_W) + STATUS_GAP;
+    if (I(word, W_X) != x)
+        widget_move_resize(word, x, I(word, W_Y), I(word, W_W), I(word, W_H));
+    int limit;
     if (titled) {
         void *first = st.bar_eq && widget_get_visible(st.bar_eq) ? st.bar_eq : st.bar_wifi,
              *parent = first ? P(first, W_PARENT) : (void *)0;

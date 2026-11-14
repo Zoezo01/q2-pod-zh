@@ -1050,8 +1050,8 @@ def stock_h(dev=0, repo=build.REPO):
     return build.stock_header(context, RANGES, builtins(), dev, repo)
 
 
-@pytest.mark.parametrize('dev,beta,repo,version,tag,flag', [(0, 0, build.REPO, f'{build.VERSION} Pod', build.VERSION, '0'),
-                                                            (0, 2, build.REPO, f'{build.VERSION} Pod beta 2', build.VERSION, '0'),
+@pytest.mark.parametrize('dev,beta,repo,version,tag,flag', [(0, 0, build.REPO, f'{build.VERSION} Pod', build.RELEASE_TAG, '0'),
+                                                            (0, 2, build.REPO, f'{build.VERSION} Pod beta 2', build.RELEASE_TAG, '0'),
                                                             (7, 2, 'someone/q2-fork', f'{build.VERSION} Pod dev 7', '', '1')])
 def test_stock_header_versions(dev, beta, repo, version, tag, flag, monkeypatch):
     monkeypatch.setattr(build, 'BETA', beta)

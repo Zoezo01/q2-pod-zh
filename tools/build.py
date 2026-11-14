@@ -13,9 +13,10 @@ TAR_SHA = '7f57884420e324ac3263571d96a35f04bbef79f35dac34162655c5822bdaa684'
 DEMO_SHA = 'e65d638d6e70332b4c3193af8ac2044941ec0157d20e41e40233aac5b0c2c59f'
 VERSION = '1.8.3'  # major.minor.patch, single digits, shown as is (About and release tag)
 BETA = 0  # a pre-release's beta number (1-9), 0 for the release itself
-# 本分支的 Release 由自己发：网络更新读这个仓库的 releases/latest，release.py 也往这里传。
-# 所以 tag 必须就是 VERSION（x.y.z），asset 必须叫 update.tar，且设为 latest，否则 Q2POD_TAG
-# 的 strcmp 比较和 NU_ASSET 都对不上。--update-repo 只用于临时指向别的仓库做测试。
+# 本分支的 Release 由自己发：网络更新读这个仓库的 releases/latest，release_zh.py 也往这里传。
+# 所以 Release 的 tag 必须正好等于 RELEASE_TAG（A 线是裸 VERSION，之后是 VERSION 点位），
+# asset 必须叫 update.tar，且设为 latest，否则 Q2POD_TAG 的 strcmp 比较和 NU_ASSET 都对不上。
+# --update-repo 只用于临时指向别的仓库做测试。
 REPO = 'Zoezo01/q2-pod-zh'  # whose releases Network Update fetches (--update-repo) and release.py publishes
 # The updater's identity (firmware_v20.info and demo's version literal) must be 5 characters and
 # differ from the installed one, so it packs the digits and the beta number: 1.8.0 beta 2 is V1802,
@@ -26,12 +27,23 @@ REPO = 'Zoezo01/q2-pod-zh'  # whose releases Network Update fetches (--update-re
 # 1.8.0 那条线收在 F（V180F）；1.8.2 那条线收在 C（V182C）。
 # A 并入上游 1.8.3：Cover Flow 跟随换歌、主页隐藏流媒体/文件夹、状态栏显示 Q2 Pod、
 # 视频过大与无声的兜底、网络更新的每日提醒/断点续传/校验；新出现的界面文字一并译成中文。
-# 同时把网络更新从 DiamondBond/q2-pod 切到 Zoezo01/q2-pod-zh，并按实机截图再修一轮顶栏：
+# 同时把网络更新从 DiamondBond/q2-pod 切到 Zoezo01/q2-pod-zh，并按实机验证再修一轮顶栏：
 # 左右分组共用整行高度、EQ 紧跟蓝牙、Q2 与菜单名择一显示、图标+百分比在蓝牙开启时不再降级。
 # 设备升级只认「标记不同」，所以代码一变，末位字母必须跟着递进，否则已刷同标记的设备会拒绝这个包。
 # B 修 Remind Daily 行的显示（每日提醒：关闭/打开 带值纯文本，不再带开关件），
 # 并给顶栏行高归一补上空 parent 的保护（无界面变化，只让模拟器测试不再误触）。
-TAG = 'V' + VERSION.replace('.', '') + 'B'
+# C 修关于页 MAC 地址被省略号截断（上游的值框 149px 装不下 17 个字符）、Minimal/Modern 顶栏
+# 左上角不再给隐藏的播放图标留空位、待机角标从 Q2 改成 Q2 Pod 并与菜单名同列；
+# 网络更新支持同一条上游版本线内的多个小版本（见 RELEASE_TAG）；应用商店的卡应用列表改回上游。
+# 同一条上游版本线上的多个小版本（183A、183B…）靠 RELEASE_TAG 区分：A 用裸 VERSION（1.8.3），
+# 之后每个字母追加点位（B→1.8.3.2、C→1.8.3.3…）。设备的 Q2POD_TAG 烤的就是它，与 releases/latest
+# 的 tag 做 strcmp，后一个点位总比前一个大，设备才会在同一条线内提示升级。Release 的 tag 必须
+# 正好等于 RELEASE_TAG（tools/release_zh.py 会核对）。点位只有一位数字，字母用到 I 为止；
+# 真用到 J 就说明这条线该收了。刷机标记 TAG 与它相互独立：TAG 管设备肯不肯重刷，
+# RELEASE_TAG 管网络更新要不要提示，两边都要随每次发布推进。
+LETTER = 'C'
+TAG = 'V' + VERSION.replace('.', '') + LETTER
+RELEASE_TAG = VERSION if LETTER == 'A' else f'{VERSION}.{ord(LETTER) - 64}'  # 1.8.3, 1.8.3.2, 1.8.3.3…
 
 def version_ok(version, beta):
     """VERSION is three single digits and BETA one, as TAG packs them; 17.6 or 1.76 would give a 5-character tag too."""
@@ -1778,7 +1790,7 @@ def stock_header(context, ranges, themes, dev=0, repo=REPO):
     header.append(f'#define ROCKBOX_FLAG "{ROCKBOX_FLAG}"')  # Home's Rockbox row, for S90play
     # About: the stock firmware's version on its own row, and this build's on the CFW. Version row.
     header += [f'#define STOCK_VERSION "{STOCK_VERSION}"', f'#define Q2POD_VERSION "{VERSION} Pod{f" dev {dev}" if dev else f" beta {BETA}" if BETA else ""}"',
-               f'#define Q2POD_TAG "{"" if dev else VERSION}"',  # netupdate.c: the release tag, none when --dev
+               f'#define Q2POD_TAG "{"" if dev else RELEASE_TAG}"',  # netupdate.c: the release tag, none when --dev
                f'#define Q2POD_DEV {1 if dev else 0}',  # navigation.c stale_note
                f'#define Q2POD_REPO "{repo}"',  # netupdate.c: the repo whose latest release it fetches
                f'#define Q2POD_UA "Q2Pod/{VERSION} (https://github.com/DiamondBond/q2-pod)"']  # onlinematch.c, as MusicBrainz asks

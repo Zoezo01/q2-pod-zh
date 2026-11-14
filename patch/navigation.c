@@ -9171,6 +9171,19 @@ int ringnav_about(void *win, void *ctx) {
         about_label(button, 10, 166, "s_scrlabel_white24l", "自制固件版本");
         about_label(button, 176, 149, "s_scrlabel_white20r", Q2POD_VERSION);
         widget_restack(P(button, W_PARENT), 2);
+        /* stock's value column (149 px) ellipsizes the one value longer than it: the MAC
+         * address, 17 characters at 175 px (V183B photos). Its 20 px style drops to the
+         * rows' 16 px, 140 px of ink, which the column fits with room on both sides of
+         * the title's ink; every other value is shorter and keeps stock's size. */
+        static const char *const sizes[] = { "style:normal:font_size", "style:focused:font_size",
+                                             "style:disable:font_size" };
+        for (int i = 0; i < 8; ++i) {
+            void *value = widget_get_child(widget_get_child(widget_get_child(view, i), 0), 1);
+            const unsigned *t = value ? widget_get_text(value) : (void *)0, *s = t;
+            while (s && *s) ++s;
+            if (t && s - t >= 16) /* the IP address tops out at 15, the serial at 14 */
+                for (unsigned j = 0; j < 3; ++j) widget_set_prop_int(value, sizes[j], 16);
+        }
     }
     return result;
 }

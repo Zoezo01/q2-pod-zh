@@ -5,13 +5,14 @@ Upstream's tools/release.py is its ZIP-input, English-changelog pipeline: it
 runs twenty test suites and builds a PDF guide, none of which this fork ships.
 This one only does what patch/netupdate.c actually needs --
 
-  * a latest, non-draft release whose tag is exactly VERSION (x.y.z),
+  * a latest, non-draft release whose tag is exactly RELEASE_TAG (the bare
+    VERSION for a line's first build, then VERSION point releases, 1.8.3.2 …),
   * one asset named update.tar, with GitHub's own size and sha256 digest,
   * release notes taken from docs/changelog-zh.md's newest VERSION entry.
 
 Usage:
-    GITHUB_TOKEN=... python3 tools/release_zh.py ~/q2-build-v183a
-    python3 tools/release_zh.py ~/q2-build-v183a --dry-run   # verify + show notes only
+    GITHUB_TOKEN=... python3 tools/release_zh.py ~/q2-build-v183c
+    python3 tools/release_zh.py ~/q2-build-v183c --dry-run   # verify + show notes only
 
 The token is read from the environment, never from a file, argument or URL.
 """
@@ -26,7 +27,7 @@ import urllib.error
 import urllib.request
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from build import ROOT, REPO, VERSION, TAG, ZIP_SHA, TAR_SHA, DEMO_SHA, sha  # noqa: E402
+from build import ROOT, REPO, VERSION, TAG, RELEASE_TAG, ZIP_SHA, TAR_SHA, DEMO_SHA, sha  # noqa: E402
 
 ASSET = 'update.tar'
 API = 'https://api.github.com'
@@ -102,13 +103,13 @@ def api(method, path, payload=None, raw=None, host=API):
 
 
 def publish(directory, data, text):
-    existing = api('GET', f'/repos/{REPO}/releases/tags/{VERSION}')
-    need(not existing, f'Tag {VERSION} already has a release: delete or edit it by hand first')
+    existing = api('GET', f'/repos/{REPO}/releases/tags/{RELEASE_TAG}')
+    need(not existing, f'Tag {RELEASE_TAG} already has a release: delete or edit it by hand first')
     release = api('POST', f'/repos/{REPO}/releases',
-                  dict(tag_name=VERSION, name=VERSION, body=text, draft=True,
+                  dict(tag_name=RELEASE_TAG, name=RELEASE_TAG, body=text, draft=True,
                        prerelease=False, make_latest='false'))
     rid = release['id']
-    print(f'Draft {VERSION} created: {release["html_url"]}')
+    print(f'Draft {RELEASE_TAG} created: {release["html_url"]}')
     asset = api('POST', f'/repos/{REPO}/releases/{rid}/assets?name={ASSET}',
                 raw=data, host=UPLOADS)
     need(asset.get('name') == ASSET, 'Upload did not return update.tar')
@@ -117,7 +118,7 @@ def publish(directory, data, text):
     need(found.get('size') == len(data) and found.get('digest') == 'sha256:' + sha(data),
          "GitHub's record of update.tar has no matching size and digest: Network Update would refuse it")
     api('PATCH', f'/repos/{REPO}/releases/{rid}', dict(draft=False, make_latest='true'))
-    print(f'Published {VERSION}: https://github.com/{REPO}/releases/tag/{VERSION}')
+    print(f'Published {RELEASE_TAG}: https://github.com/{REPO}/releases/tag/{RELEASE_TAG}')
     print(f'  {ASSET}: {len(data)} bytes, sha256 {sha(data)}')
 
 

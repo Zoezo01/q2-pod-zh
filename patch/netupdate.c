@@ -737,10 +737,10 @@ void netupdate_poll(void) {
  * page opens again. */
 #define SH_JSON "/tmp/q2-shelf.json"
 #define SH_LIST SH_DIR "/sources.list" /* the last list fetched, for the page offline */
-/* This fork's App Shelf list, not upstream's: the fork carries its own copy of sources.list,
- * so a merged upstream release can never silently change which card apps the Chinese build
- * offers. Firmware updates come from Q2POD_REPO (tools/build.py REPO) below. */
-#define SH_LIST_URL "https://raw.githubusercontent.com/Zoezo01/q2-pod-zh/main/sources.list"
+/* Upstream's App Shelf list, not ours: the card apps are the same ones the English
+ * build offers, and their authors' releases are upstream's to curate. Firmware updates
+ * come from this fork (Q2POD_REPO, tools/build.py REPO) below. */
+#define SH_LIST_URL "https://raw.githubusercontent.com/DiamondBond/q2-pod/main/sources.list"
 #define SH_STALE_MS (10 * 60 * 1000ull)
 #define SH_RECHECK_MS (60 * 1000ull) /* Check for Updates' least gap: an API request per app */
 enum { JOB_CHECK = 1, JOB_INSTALL, JOB_REMOVE, JOB_ERASE };
