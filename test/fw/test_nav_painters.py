@@ -26,7 +26,7 @@ EVT_CLICK, EVT_DESTROY = O['EVT_CLICK'], O['EVT_DESTROY']
 CANVAS_X, CANVAS_Y, CANVAS_LCD = O['CANVAS_X'], O['CANVAS_Y'], O['CANVAS_LCD']
 LCD_FILL, LCD_STROKE = O['LCD_FILL_COLOR'], O['LCD_STROKE_COLOR']
 THEMES = host.tools_theme.builtins()
-MINIMAL, CLASSIC, MODERN = (next(i for i, t in enumerate(THEMES) if t['name'] == name) for name in ('Minimal', 'Classic', 'Modern'))
+MINIMAL, CLASSIC, MODERN = (next(i for i, t in enumerate(THEMES) if t['id'] == tid) for tid in ('minimal', 'classic-light', 'modern'))  # id 不随界面语言变
 SETS = host.tools_theme.geometry_sets(THEMES)  # boot_values' rows: st.geom indexes them
 SET0 = SETS[0]  # the set st.geom 0 reads: theme_boot's before it writes one
 CLASSIC_SET = next(i for i, s in enumerate(SETS) if s.name == 'classic-light')

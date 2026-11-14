@@ -32,7 +32,7 @@ tags = [dev_tag(n) for n in range(1, 36**3)]
 assert tags[:2] == ['V001i', 'V002i'] and tags[35] == 'V010i' and tags[-1] == 'VZZZi'
 assert len(set(tags)) == len(tags) and all(len(t) == 5 for t in tags) and TAG not in tags
 assert dev_tag(36**3) == 'V001i'
-assert re.fullmatch(r'V\d{4}', TAG), TAG  # a release's V1800, its beta 2's V1802
+assert re.fullmatch(r'V\d{3}[0-9A-Z]', TAG), TAG  # 中文版 V182A: 末位字母与英文版 V1820 区分, 仍不与 dev tag (V###i) 撞
 print('Dev build tag checks passed.')
 
 def boot_check():
@@ -367,11 +367,11 @@ def validate_assets(directory):
         assert new == sized_art(master, size), name
         assert changed[xx+name] == dict(original_sha256=sha(old), sha256=sha(new))
         if not isinstance(size, tuple):  # transparent corners, not black, over a selected row
-            assert imagemagick('png:-', '-format', '%[fx:p{0,0}.a]', 'info:', data=new) == b'0', name
+            assert float(imagemagick('png:-', '-format', '%[fx:p{0,0}.a]', 'info:', data=new)) < 0.01, name  # IM7 的 Lanczos 边缘留下 <1% alpha; IM6 恰好为 0
     games = read('rootfs.squashfs', xx+'local_games.png')
     assert games == (ROOT/'assets/icons/local_games.png').read_bytes()
     assert png_header(games) == (52, 52, 8, 6)
-    assert imagemagick('png:-', '-format', '%[fx:p{0,0}.a]', 'info:', data=games) == b'0'
+    assert float(imagemagick('png:-', '-format', '%[fx:p{0,0}.a]', 'info:', data=games)) < 0.01
     flow = read('rootfs.squashfs', xx+'default_album_flow.png')
     assert flow == sized_art(master, 160) and png_header(flow) == (160, 160, 8, 6)
     assert read('rootfs.squashfs', xx+'default_album_home.png') == master
