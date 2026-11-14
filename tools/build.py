@@ -22,10 +22,10 @@ REPO = 'DiamondBond/q2-pod'  # whose releases Network Update fetches (--update-r
 # 中文版：1.8.2 这条版本线，末位字母从 A 起（上游英文版是 V1820，两边标记不同才能互相刷）。
 # A 并入上游 1.8.1 与 1.8.2：AirPlay、电池历史、USB DAC 充电、Cover Flow 的位置条与歌曲时长、
 # 大曲库模式改名快速导航，新出现的界面文字一并译成中文。1.8.0 那条线收在 F（V180F）。
-# B 是同一条线上第二次发布：按实机截图修了状态栏图标行、深色顶栏、简约/现代顶栏的菜单名，
-# 补齐歌单页汉化，并给上游测试加了集中中文映射表。设备升级只认「标记不同」，所以代码一变，
-# 末位字母必须跟着递进，否则已刷 A 的设备会直接拒绝这个包。
-TAG = 'V' + VERSION.replace('.', '') + 'B'
+# C 是同一条线上第三次发布：按实机截图把简约/现代与经典主题的顶栏元素归到同一条垂直中线
+# （右侧分组不再整体下沉、播放图标不再上提、百分比槽位改跟随分组行高）。设备升级只认「标记不同」，
+# 所以代码一变，末位字母必须跟着递进，否则已刷 A/B 的设备会直接拒绝这个包。
+TAG = 'V' + VERSION.replace('.', '') + 'C'
 
 def version_ok(version, beta):
     """VERSION is three single digits and BETA one, as TAG packs them; 17.6 or 1.76 would give a 5-character tag too."""

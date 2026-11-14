@@ -4233,7 +4233,10 @@ static void bar_sync(void *bar) {
                     ? pct
                     : (mode == 3 ? inside : body) + BATT_NUB_W + (mode == 2 ? BATT_GAP + pct : 0);
     int resized = I(st.bar_slot, W_W) != width;
-    widget_resize(st.bar_slot, width, geom_val(V_BAR));
+    /* The percentage is drawn centred in the slot, so the slot must be as tall as the ROW it sits
+     * in, not as tall as the bar: Classic's right group is 22 px in a 26 px bar, and a 26 px slot
+     * put its digits two rows below Wi-Fi, the play glyph and the battery body (V182B photos). */
+    widget_resize(st.bar_slot, width, I(P(st.bar_slot, W_PARENT), W_H));
     /* Resize only relayouts the slot's own children; the right-aligned row must
      * position it again even when Icon + Percent -> Icon keeps it visible. */
     if (resized) widget_layout_children(P(st.bar_slot, W_PARENT));
@@ -4380,8 +4383,11 @@ static void paint_battery(void *w, void *canvas) {
         c = '%';
         st.pct_sign = (int)(canvas_measure_text(canvas, &c, 1) + 0.5f);
     }
+    /* A 16 px label's digits ink a row above a centred icon's ink. Under Minimal/Modern give the
+     * drawn percentage that row back; Classic's own face and shorter row already share the middle. */
+    int pct_dy = classic_light ? 0 : BATT_PCT_DY;
     if (st.batt_mode == 1) {
-        rect_t r = { 0, 0, I(w, W_W), I(w, W_H) }; /* digits alone already ink with the bar's text */
+        rect_t r = { 0, pct_dy, I(w, W_W), I(w, W_H) };
         draw_centred(canvas, s, n, &r, px, color);
         return;
     }
@@ -4427,7 +4433,7 @@ static void paint_battery(void *w, void *canvas) {
     canvas_fill_rect(canvas, 2, y + 2, (bw - 4) * (key & 2 ? 100 : level) / 100, bh - 4);
     if (st.batt_mode == 2) {
         int x = bw + BATT_NUB_W + BATT_GAP;
-        rect_t r = { x, 0, I(w, W_W) - x, I(w, W_H) };
+        rect_t r = { x, pct_dy, I(w, W_W) - x, I(w, W_H) };
         draw_centred(canvas, s, n, &r, BATT_PX, color);
     }
     stock_canvas_set_fill_color(canvas, fill);

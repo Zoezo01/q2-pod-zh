@@ -530,13 +530,10 @@ def status_bar(root, g=SET0):
     widgets['view_battery'] = ['view', [0, 0, BATT_H_W, 0], {'name': 'view_battery', 'visible': 'false'}, []]
     # Classic's set (bar_px): the title on the left in the Classic face, the clock centred, the icons right of it.
     m = g.bar_px and status_metrics(g, CLASSIC_LIGHT_FONT_SRC)
-    if not m:  # Minimal's and Modern's play state sits in the left group's 30 px row, its 16 px art
-        # centred in it: y 7 to 23, its middle at 15, while the row's text inks lower — a 16 px
-        # clock's digits from 9.5 to 19.4, the state's own hanzi with them — so the triangle read as
-        # a pixel low against the word and the clock. Stock nudged its battery for the same reason
-        # (style y_offset -1 on img_battery): the state gets the same shove, in every state it takes.
-        for s in ('normal', 'disable', 'pressed', 'selected', 'focused'):
-            widgets['img_state'][2][f'style:{s}:y_offset'] = '-1'
+    # Minimal/Modern: both groups keep y 0 and the row's full height. V180E dropped the right
+    # group a row and lifted the state glyph one to compensate for EQ's old 28 px / 20 px box;
+    # EQ now takes img_bt's row and height (above), so those two offsets only left the glyph,
+    # its word and the clock a row high beside the right group (device photos, V182B). No nudge.
     left[3] = [] if m else [widgets[n] for n in STATUS_LEFT]
     right[3] = [widgets[n] for n in (STATUS_RIGHT_CLASSIC_LIGHT if m else STATUS_RIGHT)]
     xm = g.bar_right if m else STATUS_MARGIN
@@ -574,10 +571,11 @@ def status_bar(root, g=SET0):
         return
     # EQ is a badge that comes and goes: it belongs to the right group but takes none of the
     # clock's measured room (the group closes up around it when stock hides it).
-    # The right group's row reads a pixel above the left's: EQ and every battery look bottom out
-    # one row early (measured on the device, V180E). Drop the whole group, so the badge, the icons
-    # and the digits keep their own spacing and share the left's baseline. Classic has its own row.
-    right[1][1] = 1
+    # Both groups start at y 0 with the row's full height, so glyphs, words and the clock share
+    # one middle. V180E's "drop the right group one row" was measured against EQ's old 28 px /
+    # 20 px box; EQ now sits on img_bt's row and height, so that compensation only made the whole
+    # right group read low (device photos, V182B). Classic sizes its own, shorter row above.
+    right[1][1] = 0
     shown = [[n for n in v[3] if n[2]['name'] not in BATT_MODES and n[2]['name'] != 'label_eq']
              for v in (left, right)]
     # The left group starts at its own, padded margin; the clock stays centred on the screen between

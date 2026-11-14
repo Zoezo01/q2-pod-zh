@@ -1213,7 +1213,7 @@ def battery_checks():
                   (bw-1,y+1,1,bh-2,color_t(rgb)),(bw,y+(bh-O['BATT_NUB_H'])//2,O['BATT_NUB_W'],O['BATT_NUB_H'],color_t(rgb)),
                   (2,y+2,fill,bh-4,color_t(rgb))]
         assert [x[:5] for x in bands]==expected
-        assert [(l['text'],l['rect'],l['color'],l['font'],l['align']) for l in letters]==[(text+'%',(bw+O['BATT_NUB_W']+O['BATT_GAP'],0,pct,30),color_t(rgb),('default',O['BATT_PX']),(1,1))]
+        assert [(l['text'],l['rect'],l['color'],l['font'],l['align']) for l in letters]==[(text+'%',(bw+O['BATT_NUB_W']+O['BATT_GAP'],O['BATT_PCT_DY'],pct,30),color_t(rgb),('default',O['BATT_PX']),(1,1))]
     # Modern, as Minimal: the level white, green only while charging (full), red when low.
     b,bar,w,paint=battery_bar(0,THEME='2'); b.nodes[w['img_bt']]['visible']=0
     for image,fill in (('bar_battery',0xffffff),('bar_lowcharge',O['BATT_LOW_RGB'])):
@@ -1228,7 +1228,7 @@ def battery_checks():
         paint(); paint(w['view_battery']); paint(); before=lcd(); bands,letters=slot()
         pct=10*len(str(value))+10
         assert b.get(w['view_battery']+O['W_W'])==pct and not bands
-        assert [(l['text'],l['rect'],l['color']) for l in letters]==[(f'{value}%',(0,0,pct,30),color_t(rgb))]
+        assert [(l['text'],l['rect'],l['color']) for l in letters]==[(f'{value}%',(0,O['BATT_PCT_DY'],pct,30),color_t(rgb))]
 
     # Percent Inside: compact rounded body and dark digits, including 100, in every state.
     for theme in (0,2):
@@ -1272,14 +1272,15 @@ def battery_checks():
                 assert shown(b,w)==['view_battery']
                 assert b.get(w['view_battery']+O['W_W'])==(O['BATT_PCT_W'] if mode==1 else (O['BATT_INSIDE_W'] if mode==3 else O['BATT_BODY_W'])+O['BATT_NUB_W']+(O['BATT_GAP']+O['BATT_PCT_W'] if mode==2 else 0))
     passed()
-    # The slot takes the bar's height in the set theme_boot wrote (geom_vals[st.geom][V_BAR], 30 under SET0): 26 poked into SET0's row sizes it 26, then 30 again.
-    b,bar,w,paint=battery_bar(1); assert b.u.mem_read(payload_syms['geom_vals'],2)==struct.pack('<h',30)
-    for bar_h in (26,30):
-        b.u.mem_write(payload_syms['geom_vals'],struct.pack('<h',bar_h)); b.word(w['view_battery']+O['W_H'],0); paint()
-        assert b.get(w['view_battery']+O['W_H'])==bar_h
+    # The slot takes the right group's ROW height, not the bar's: Classic's 26 px bar has a 22 px
+    # row, and a slot that followed geom_val(V_BAR) put its digits below the icons (V182B photos).
+    b,bar,w,paint=battery_bar(1); row=b.get(w['view_battery']+O['W_PARENT'])
+    for row_h in (22,26,30):
+        b.word(w['view_battery']+O['W_H'],0); b.word(row+O['W_H'],row_h); paint()
+        assert b.get(w['view_battery']+O['W_H'])==row_h
     passed()
-    # Classic before its set is written (no boot here, or a failed one, or a switch pending its restart) keeps
-    # SET0's 30 px slot: the slot follows the written set, never theme().
+    # A Classic theme before its set is written still has SET0's 30 px row: the slot follows the
+    # row, never theme() or a bar height that no layout applied.
     b,bar,w,paint=battery_bar(1); classic_light(b); b.word(w['view_battery']+O['W_H'],0); paint()
     assert b.get(w['view_battery']+O['W_H'])==30; passed()
 battery_checks()
@@ -12237,7 +12238,7 @@ EMBOSS=[(1,19,25,1,a_(0xffffff,179)),(27,14,2,2,a_(0xffffff,153))]
 ROWS=(0x90b27d,0xc9eeb1,0xd5f5bd,0xb8e896,0xa7e27d,0x92ce68,0x61a43a,0x4e972c,0x539c32,0x57a336,0x539933)
 outline=SOFT+body_bands(LINE); LEVEL=len(outline)
 bm,bw_,bands=classic_light_battery_bar(0)
-assert bm.get(bw_['view_battery']+O['W_W'])==29 and bm.get(bw_['view_battery']+O['W_H'])==26
+assert bm.get(bw_['view_battery']+O['W_W'])==29 and bm.get(bw_['view_battery']+O['W_H'])==22
 assert bm.get(bw_['img_bt']+O['W_Y'])==1 and bm.get(bw_['img_wifi']+O['W_Y'])&0xffffffff==0xffffffff  # a row down, a row up
 assert bands[:LEVEL]==outline
 SHADE=[(25,y+1,1,11,a_(0,64))]
