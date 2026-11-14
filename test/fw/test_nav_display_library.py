@@ -332,8 +332,10 @@ STATE = {'THEME': 'theme', 'LIGHT': 'light', 'ACCENT': 'accent', 'ROUNDED': 'rou
 
 
 def appearance_titles(t):
-    """Appearance's rows under theme t: Theme, then t's options in its theme.xml's order."""
-    return ['Theme'] + [o['label'] if o['setting'] == 'SETTING_OWN' else PAYLOAD[o['setting']][0] for o in t['opts']]
+    """Appearance's rows under theme t: Theme, t's options in its theme.xml's order, then the Home switches every
+    theme has."""
+    return ['Theme'] + [o['label'] if o['setting'] == 'SETTING_OWN' else PAYLOAD[o['setting']][0] for o in t['opts']] + \
+        ['Hide Streaming on Home', 'Hide Folder on Home']
 
 
 def stored_key(t, o):
@@ -385,7 +387,8 @@ def test_appearance_lists_theme_then_minimals_options_in_its_order(fw):
     assert len(page.pages) == 2 and page.title() == 'Appearance'
     assert titles(page.view()) == appearance_titles(t)
     # no set_text: a row reads "Title: value", a switch its On or Off
-    switches = [PAYLOAD[o['setting']][0] for o in t['opts'] if o['setting'] in PAYLOAD and PAYLOAD[o['setting']][2]]
+    switches = [PAYLOAD[o['setting']][0] for o in t['opts'] if o['setting'] in PAYLOAD and PAYLOAD[o['setting']][2]] + \
+        ['Hide Streaming on Home', 'Hide Folder on Home']
     assert switches and [row[0] for row in rows(page.view()) if row[1] is not None] == switches
     read = readings(page.view())
     # the running theme's name, and Accent at Minimal's own default, under its own key
@@ -393,6 +396,7 @@ def test_appearance_lists_theme_then_minimals_options_in_its_order(fw):
     # nothing stored: the payload's own defaults (dark, Minimal round, Split, the clock in the title); no Rockbox: Favorites
     assert (read['Light Mode'], read['Rounded Corners'], read['Home'], read['Shortcut'], read['Time in Title']) == \
         ('Off', 'On' if t['name'] == 'Minimal' else 'Off', 'Split', 'Favorites', 'On')
+    assert (read['Show Q2 Pod'], read['Hide Streaming on Home'], read['Hide Folder on Home']) == ('On', 'Off', 'Off')
 
 
 def test_classic_appearance_rows_read_title_and_value_and_its_own_options(fw):

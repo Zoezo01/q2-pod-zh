@@ -343,6 +343,8 @@ int carousel_glide(void *w, int goal, unsigned ms, int easing);
 void coverflow_letter(void *w, unsigned letter, unsigned now);
 void coverflow_letter_hold(void *w, unsigned letter);
 int ringnav_big_library(void); /* Display's Fast Navigation: letters, years and half copies */
+int ringnav_remind_daily(void); /* System Update's Remind Daily (netupdate_poll) */
+int ringnav_hide_stream(void), ringnav_hide_folder(void); /* Appearance's Hide ... on Home */
 /* A letter with this bit is the Year sort's year instead, in its low bits, 0 undated. */
 #define CF_YEAR 0x80000000u
 int blob_io(const char *path, const char *tmp, void *buf, unsigned size, int write);
@@ -551,6 +553,7 @@ int need_link(int (*fn)(void *, void *), void *ctx); /* smart_hold, else "请先
  * netupdate.c's and onlinematch.c's */
 int spot_running(void), scrobble_busy(void), tidal_busy(void), addon_running(void),
     netupdate_busy(void), album_lyrics_busy(void);
+void netupdate_poll(void); /* power_poll: a newer release told on Home (netupdate.c) */
 const char *coverflow_sort_name(void); /* coverflow.c */
 void coverflow_sort_step(void), coverflow_refresh_art(void);
 void coverflow_clean_end(void); /* coverflow.c: a clean end mid-build strikes no album */

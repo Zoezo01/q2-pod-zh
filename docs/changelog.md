@@ -1,5 +1,17 @@
 # Changelog
 
+- **1.8.3**:
+  - Now Playing: on the lyrics page, Centre's scrub now takes the wheel, as on the other pages. The first turn used to scroll the lyrics instead and end the scrub. The lyrics take the wheel back once the scrub ends.
+  - Home: **Hide Streaming on Home** and **Hide Folder on Home**, at the bottom of **Display → Appearance**, take those rows off Home's list. Both are Off, so Home is unchanged until you turn one on. **Home: Carousel** still shows their cards.
+  - Appearance: **Time in Title** now sits right under **Status Bar**, and a new **Show Q2 Pod** switch under it sets whether Classic's status bar names Home "Q2 Pod". It's On, as before.
+  - Cover Flow: when the song changes to another album, by Next, Previous or the end of a track, Cover Flow turns to that album, so you no longer have to leave and come back. It only follows while it's resting on the album that was playing; if you've turned to another album, it stays there.
+  - Cover Flow: with **Scan Song Durations** off, an album's song list shows no song lengths. Lengths Long Songs had measured showed there anyway. They're kept, so Long Songs still lists them and turning the switch on shows them again with nothing to measure.
+  - Videos: a video too large for the Q2's memory, as most 4K ones are, is no longer started. A message says to convert it to a smaller size, and the Q2 stays on the list. One that large could stall the Q2, with no button working, for as long as it took to run out of memory.
+  - Videos: when the output never takes a video's sound, the video now plays on without sound after 3 seconds, and Return always ends it. The picture used to stay on its first frame, and every button stopped working until the Q2 was restarted.
+  - Network Update: the Q2 now tells you when a new Q2 Pod release is out. While Wi-Fi is on, it checks once a day, and Home shows **Q2 Pod 1.8.3 is out: System Update → Network Update** (with that release's number), once per release. **System Update**'s row reads **Update to 1.8.3** until you install it. It never turns Wi-Fi on just to check. **Remind Daily**, under Network Update on the same page, turns the check and the notice Off; it's On.
+  - Network Update: a download cut off by a lost connection carries on from where it stopped. It tries again by itself (**Reconnecting…**), and if that fails too, the next press picks up the part already on the card instead of starting over. Leaving the page keeps the part as well; pressing the row to cancel deletes it.
+  - Network Update: the download is checked against the size and SHA-256 that GitHub records for the release before it replaces the card's `update.tar`, so a damaged download is never handed to the updater: it says **The download was damaged, try again** and keeps the old file. It also says before downloading, not after, when the battery is under 16% with no charger (**Charge the battery first**) or the card is short of room.
+
 - **1.8.2**:
   - Games: in Solitaire, Centre on a pile that can't take the cards you hold now picks that pile up instead. Before, nothing happened and the cards stayed held until you put them back or pressed Return, which looked like the game had stuck.
   - Themes: Chinese, Japanese and other text the theme's own face lacks is now drawn bold wherever **Classic** or **Modern** draws its text bold: Classic's lists, bar, info rows, Cover Flow, album panel and hold menu; Modern's bar title; and Now Playing's title in both. It used the regular system font.

@@ -444,23 +444,26 @@ STATUS_BAR = 'system_bar.bin'
 STATUS_LEFT = ['img_state']
 # EQ shows by the battery, not between the glyph and its word: in the left group's flow it pushed
 # the word into the clock's centred page name (V180C's overlap). Its own room is temporary, so the
-# clock's width still measures the group without it.
+# clock's width still measures the group without it. It follows img_bt, not leads it: Bluetooth's
+# 43 px canvas inks only its last BT_REACH columns, so EQ in front of it left ~33 blank columns
+# between the badge and the glyph as soon as Bluetooth turned on (V183A device photos).
 STATE_W = 18  # Classic's play state's width: its ink's last column is 282 (tools/art.py STATE_BOX)
 BAR_PAD = 9  # Classic's bar: the title's ink this far clear of the glass (bar_right gives the battery's)
-STATUS_RIGHT = ['label_eq', 'img_bt', 'img_wifi', 'label_battery', 'view_battery', 'img_battery']
+STATUS_RIGHT = ['img_bt', 'label_eq', 'img_wifi', 'label_battery', 'view_battery', 'img_battery']
 STATUS_HIDDEN = ['img_vol', 'label_vol', 'img_synclink']
 # The Battery setting (navigation.c bar_sync) shows one of the last three: the stock icon, stock's
 # "88%" (label_battery at BATT_PCT_PX, the icons' height, and right-aligned so its width grows away
-# from the corner; "100%" is BATT_PCT_W) or the payload's charge-level battery with the percentage beside it (view_battery). The layout
-# skips hidden children. The Bluetooth images are 42px canvases whose ink ends at column 41: BT_REACH
-# is how far the plain glyph's ink starts left of img_bt's right edge. With it, Wi-Fi and the wider
-# battery, the group's ink stays CLOCK_GAP clear of the widest clock text, CLOCK_TEXT ("12:59 PM"),
-# so every mode fits once a codec badge has faded; wider badges fall back to the icon (BATT_ROOM).
+# from the corner; "100%" is BATT_PCT_W) or the payload's charge-level battery with the percentage
+# beside it (view_battery). The layout skips hidden children. The Bluetooth images are 43 px
+# canvases whose ink ends at column 42: BT_REACH is how far the plain glyph's ink starts left of
+# img_bt's right edge. With it, Wi-Fi and the wider battery, the group's ink stays CLOCK_GAP clear
+# of the widest clock text, CLOCK_TEXT ("12:59 PM"), so every mode fits once a codec badge has
+# faded; wider badges fall back to the icon (BATT_ROOM).
 BATT_MODES = ['label_battery', 'view_battery']  # the modes bar_sync shows one of
 BATT_PCT_W, BATT_PCT_PX, BATT_ROOM, BT_REACH = (inc(n) for n in ('BATT_PCT_W', 'BATT_PCT_PX', 'BATT_ROOM', 'BT_REACH'))
 BATT_H_W = inc('BATT_BODY_W') + inc('BATT_NUB_W') + inc('BATT_GAP') + BATT_PCT_W  # the payload's battery with its nub
 # Classic's right group, left to right: Bluetooth, Wi-Fi, the play state and the battery. It shows no EQ.
-STATUS_RIGHT_CLASSIC_LIGHT = [*STATUS_RIGHT[1:3], 'img_state', *STATUS_RIGHT[3:]]  # Classic parks EQ above the bar
+STATUS_RIGHT_CLASSIC_LIGHT = ['img_bt', 'img_wifi', 'img_state', *STATUS_RIGHT[3:]]  # Classic parks EQ above the bar
 CLOCK_GAP = 4
 CLASSIC_LIGHT_CLOCK_GAP = 2  # Classic's right group's room, from the widest clock
 CLASSIC_LIGHT_FONT_SRC = ROOT/'assets/fonts/texgyreheros-bold.otf'  # the Classic face's source, subset to CLASSIC_LIGHT_TTF
@@ -576,6 +579,17 @@ def status_bar(root, g=SET0):
     # 20 px box; EQ now sits on img_bt's row and height, so that compensation only made the whole
     # right group read low (device photos, V182B). Classic sizes its own, shorter row above.
     right[1][1] = 0
+    # Stock leaves every child of the two groups with HEIGHT 0 and lets its row layout fill it.
+    # On the device it doesn't: the icons then centre on their own 16 px art while the 30 px
+    # clock, EQ and play word centre on the bar, so EQ, the time and the state word read a few
+    # rows above Wi-Fi and the battery (V183A device photos). Give every child the row's own
+    # box -- one y, one height, one middle -- instead of trusting the layout to do it.
+    # view_battery is the exception: bar_sync sizes that slot to its parent each frame.
+    for view in (left, right):
+        for child in view[3]:
+            if child[2]['name'] == 'view_battery':
+                continue
+            child[1][1], child[1][3] = 0, g.bar
     shown = [[n for n in v[3] if n[2]['name'] not in BATT_MODES and n[2]['name'] != 'label_eq']
              for v in (left, right)]
     # The left group starts at its own, padded margin; the clock stays centred on the screen between

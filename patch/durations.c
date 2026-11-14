@@ -49,12 +49,15 @@ static rec_t *duration_find(unsigned long long key) {
 }
 
 /* The file is the table: magic, then records ascending by key. Anything else is no cache. The old
- * hash-only ringnav-lengths stays untouched: it has no stat signature to check. */
+ * hash-only ringnav-lengths stays untouched: it has no stat signature to check. A file that failed
+ * to read is kept for a later try; one over DUR_MAX never reads (#347's first format held every
+ * path, up to 16 MB), so it is no cache either and the next pass writes over it. */
 static void duration_read(void) {
     if (ds.writable || ds.blob || ds.running) return; /* the worker reads n and writable */
     unsigned size = 0;
     char *data = read_all(DUR_FILE, DUR_MAX, &size);
-    ds.writable = data || file_size(DUR_FILE) <= 0;
+    long unread = data ? 0 : file_size(DUR_FILE);
+    ds.writable = unread <= 0 || unread > (long)DUR_MAX;
     if (!data) return;
     rec_t *tab = (rec_t *)(data + 8);
     unsigned n = size >= 8 ? (size - 8) / sizeof *tab : 0;
@@ -80,9 +83,11 @@ int duration_seconds(void *song) {
     return !entry ? -1 : entry->sec > start ? entry->sec - start : 0;
 }
 /* toolsTimeItoa's 3:45, 1:02:05 from an hour, as Now Playing's (tools/ipod.py rewrites stock's
- * padded formats; size: at least 9); empty, not 0:00, for an unknown or unreadable file. */
+ * padded formats; size: at least 9); empty, not 0:00, for an unknown or unreadable file, or with
+ * Scan Song Durations off: Long Songs' own measures stay its own. */
 const char *duration_text(char *text, unsigned size, void *song) {
-    int sec = duration_seconds(song);
+    pod_settings(); /* the switch, before power_poll's first pass reads it */
+    int sec = st.scan_durations ? duration_seconds(song) : 0;
     if (size) text[0] = 0;
     if (sec > 0) toolsTimeItoa(text, sec);
     return text;

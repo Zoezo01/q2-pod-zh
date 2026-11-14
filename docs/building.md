@@ -54,7 +54,7 @@ About's **FW. Version** row reads the same literal, so it shows the stock firmwa
 
 `--dev` numbers each test build one past the untracked `.build-number` and the `build-number` in the git directory that every worktree of the checkout shares, and tags it `V` plus that number in three base-36 digits, then `i` (`V001i`, `V002i` … `VZZZi`). No two test builds from one repository's worktrees share a tag (a separate clone counts on its own), and none equals a release's, so the updater installs each test build over the last and the release over any of them. `--dev` applies to that build only: the release procedure never passes it, and the manifest records the build number as `dev` (`false` otherwise).
 
-`--update-repo OWNER/NAME` points **Network Update** at another GitHub repo's latest release, so a fork's test builds update from the fork's own releases. It defaults to `DiamondBond/q2-pod`, so a build without it is unchanged. The manifest records it as `update_repo`, and `tools/release.py` refuses a build that points anywhere else.
+`--update-repo OWNER/NAME` points **Network Update** at another GitHub repo's latest release, so a fork's test builds update from the fork's own releases. In this Chinese fork it defaults to `Zoezo01/q2-pod-zh` (`REPO` in `tools/build.py`), so a build without it updates from this fork's own Chinese releases. The manifest records it as `update_repo`; `tools/release_zh.py` refuses to publish a build that points anywhere else.
 
 Development builds also start `q2remote`, a key-gated root shell with screenshots and input over Wi-Fi, for developers and agents; see [remote.md](remote.md).
 
@@ -200,7 +200,7 @@ python3 test/cmut/report.py patch/radio.c /tmp/cmut/radio-left /tmp/cmut/radio-l
 | ----------------- | ---------------------------- | ------: | -----: | -----: | ----: | -----------: |
 | `library_scope.c` | `test/library_scope.py`      |     612 |    427 |  89.0% |   87% |         58 s |
 | `chapters.c`      | `test/chapters.py`           |   1,050 |    773 |  92.2% |   90% |   3 min 58 s |
-| `mp3_gapless.c`   | `test/mp3_gapless.py`        |   2,069 |  1,106 |  70.8% |   68% |   6 min 44 s |
+| `mp3_gapless.c`   | `test/mp3_gapless.py`        |   2,069 |  1,101 |  81.1% |   79% |   6 min 44 s |
 | `lockscreen.c`    | `test/fw/test_lockscreen.py` |   2,161 |  1,740 |  79.2% |   77% |   4 min 45 s |
 | `photos.c`        | `test/fw/test_photos.py`     |   1,707 |  1,449 |  88.8% |   86% |   4 min 53 s |
 | `headset.c`       | `test/fw/test_headset.py`    |   1,701 |  1,429 |  94.0% |   92% |   5 min 30 s |
@@ -220,7 +220,7 @@ Both workflows count what their stock-free runs reach and fail under a floor, an
 
 - **`tools/`:** `tests.yml` runs `test/unit` under [coverage.py](https://coverage.readthedocs.io), every branch counted, and fails under `fail_under` in `pyproject.toml`. The functions with `# pragma: no mutate block` on their def line and the command lines are left out, so the floor is all of the rest.
 - **C:** `firmware.yml` runs `test/fw` and the host suites with `test/coverage/cc` first on `PATH`: `cc` with gcov counters, which keeps each compile's counts under `$Q2_COV` when a suite deletes its build folder. [gcovr](https://gcovr.com) reads them, fails under the line and branch floors in the workflow, and uploads the per-line pages as `c-coverage`. The ASan run isn't counted. Most of `navigation.c` is `test/patch.py`'s, which needs a stock build, so it stays low here.
-- **Floors:** they catch a collapse (a suite or the wrapper that stopped counting), not each change, so they sit a little under the measured figures. Raise one by hand when the measured figure is well clear of it. The host suites run only counted in CI; `test/fw` also runs plain under ASan.
+- **Floors:** they catch a collapse (a suite or the wrapper that stopped counting), not each change, so they sit a little under the measured figures: the C's are 96% of lines and 85% of branches, under the 98.4% and 87.2% a run on GitHub counts. Raise one by hand when the measured figure is well clear of it. The host suites run only counted in CI; `test/fw` also runs plain under ASan.
 
 ```sh
 pip install -r requirements.txt -r test/unit/requirements.txt gcovr==8.4

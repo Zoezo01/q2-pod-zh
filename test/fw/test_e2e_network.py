@@ -11,6 +11,7 @@ runs, which is where cancels and skips land."""
 import ctypes as C
 import fnmatch
 import json
+import hashlib
 import re
 import shlex
 import struct
@@ -131,6 +132,7 @@ class Card:
                 self.room += len(self.files.get(p, b''))
             self.files[p] = b''
             self.log.append(('create', p))
+        self.files.setdefault(p, b'')  # 'a' on a file not there yet
         f, self.next = self.next, self.next + 1
         self.handles[f] = Handle(p, 'r' not in how)
         return f
@@ -330,8 +332,9 @@ class Shell:
 
 
 class Reply:
-    """One transfer's answer: its code, body (Content-Length), redirect; cut: the bytes after which the
-    connection drops; during(sent): called after each chunk and its progress call."""
+    """One transfer's answer: its code, body (Content-Length), redirect; cut: the byte of the body after which
+    the connection drops; during(sent): called after each chunk and its progress call. A transfer carried on
+    from a byte (RESUME_FROM) gets the body from there, as a 206."""
     def __init__(self, code=200, body=b'', location=None, cut=None, chunk=16384, during=None, fail=0):
         self.code, self.body, self.location, self.cut, self.chunk, self.during, self.fail = code, body, location, cut, chunk, during, fail
 
@@ -375,8 +378,11 @@ class Net:
             return reply.fail
         write = WRITE(h.opts[20011]) if 20011 in h.opts else None
         progress = XFER(h.opts[20219]) if h.opts.get(43, 1) == 0 and 20219 in h.opts else None
-        body, sent = reply.body, 0
-        end = len(body) if reply.cut is None else min(reply.cut, len(body))
+        start = h.opts.get(21, 0)  # RESUME_FROM
+        body, sent = reply.body[start:], 0
+        end = len(body) if reply.cut is None else max(0, min(reply.cut - start, len(body)))
+        if start and reply.code == 200:
+            h.code = 206
         if progress and progress(h.opts.get(10057), len(body), 0, 0, 0):
             return 42  # CURLE_ABORTED_BY_CALLBACK
         while sent < end:
@@ -749,7 +755,8 @@ def w(fw, mcl):
 # Network Update (System Update's second row)
 
 LATEST = 'https://github.com/owner/repo/releases/latest'  # host.py builds with --update-repo's owner/repo
-ASSET = LATEST + '/download/update.tar'
+API = 'https://api.github.com/repos/owner/repo/releases/tags/'
+ASSET = f'https://github.com/owner/repo/releases/download/{NEWER}/update.tar'
 TAR = '/mnt/mmc/update.tar'
 PART = TAR + '.part'
 UPDATE_TAR = bytes(range(256)) * 2048  # 512 KB
@@ -762,8 +769,9 @@ def tag_url(tag):
 class SystemUpdate:
     """Stock's System Update page as its builder leaves it, two rows of a button (named by its index) over
     its label, with ringnav_fwupdate run on it: the second row is Network Update's."""
-    def __init__(self, w):
+    def __init__(self, w, battery=80):
         self.w, ui = w, w.ui
+        w.fw.var('fw_ctx_g_power_capacity', C.c_int).value = battery
         self.page = ui.new(0, 'window', 'systemset_fwupdate_page')
         view = ui.new(self.page, 'view', 'scroll_view_fwupdate')
         self.buttons, self.labels = [], []
@@ -782,9 +790,21 @@ class SystemUpdate:
         return self.w.ui.get(self.labels[1]).text
 
 
-def releases(w, tag=NEWER, tar=UPDATE_TAR, **asset):
+def tar_release(tag, tar):
+    """GitHub's record of a release, trimmed: its guide, then update.tar with its size and digest."""
+    rows = ','.join('{"url":"u","id":1,"name":"%s","label":"","uploader":{"login":"x","id":2},"content_type":"z","state":"uploaded",'
+                    '"size":%d,"digest":"sha256:%s","download_count":3,"browser_download_url":"https://h/%s"}'
+                    % (name, len(data), hashlib.sha256(data).hexdigest(), name) for name, data in (('Q2-Pod-User-Guide.pdf', b'guide'), ('update.tar', tar)))
+    return ('{"url":"x","assets_url":"y","tag_name":"%s","name":"%s","assets":[%s],"body":"notes"}' % (tag, tag, rows)).encode()
+
+
+def releases(w, tag=NEWER, tar=UPDATE_TAR, sent=None, **asset):
+    """The latest release: the redirect naming its tag, GitHub's record of it and its update.tar (sent: the
+    bytes that arrive, when not the ones the record names)."""
     w.net.route(LATEST, Reply(302, location=tag_url(tag)))
-    w.net.route(ASSET, Reply(200, tar, chunk=len(tar) // 4, **asset))
+    w.net.route(API + tag, Reply(200, tar_release(tag, tar)))
+    sent = tar if sent is None else sent
+    w.net.route(f'https://github.com/owner/repo/releases/download/{tag}/update.tar', Reply(200, sent, chunk=len(sent) // 4, **asset))
 
 
 def test_network_update_checks_downloads_and_hands_the_tar_to_stocks_tf_update(w):
@@ -802,7 +822,8 @@ def test_network_update_checks_downloads_and_hands_the_tar_to_stocks_tf_update(w
     # the part whole on the card, renamed, and the rename's entry on the card, before stock flashes it
     steps = [e for e in w.log if e[0] in ('fsync', 'rename', 'fwupdate_tf')]
     assert steps == [('fsync', PART), ('rename', PART, TAR), ('fsync', '/mnt/mmc'), ('fwupdate_tf',)]
-    assert w.net.asked == [LATEST, ASSET]
+    assert w.net.asked == [LATEST, API + NEWER, ASSET]
+    assert w.card.reads[PART] == 3 and '/tmp/q2-update.json' not in w.card.files  # sized for the room, sized to carry on (none yet), then read back once
     held = w.calls('reset_poweroptions_timer')
     assert held and all(c[:3] == (1, 1, 0) for c in held)  # standby and auto power-off, not the screen
     w.ui.run(5000)
@@ -820,15 +841,25 @@ def test_network_update_on_the_latest_release_or_an_older_one_writes_nothing(w, 
     assert not w.card.tree() and page.text == 'tr:update_online' and not w.calls('fwupdate_tf')
 
 
-def test_network_update_cut_off_midway_keeps_the_old_tar(w):
+@pytest.mark.refusal('update:truncated')
+def test_network_update_cut_off_midway_keeps_the_old_tar_and_carries_on_at_the_next_press(w):
     w.ui.wifi = 3
     w.card.put(TAR, b'the release before', count=False)
     page = SystemUpdate(w)
-    releases(w, cut=len(UPDATE_TAR) // 2)
+    half = len(UPDATE_TAR) // 2
+    releases(w, cut=half)  # the connection drops there, at every try
     page.press()
     w.ui.run(500)
-    assert w.ui.toasts == ["Can't reach GitHub"] and w.card.tree() == {'update.tar': b'the release before'}
-    assert page.text == 'tr:update_online' and not w.calls('fwupdate_tf')
+    assert w.ui.toasts == ["Can't reach GitHub"] and page.text == 'tr:update_online' and not w.calls('fwupdate_tf')
+    assert w.card.tree() == {'update.tar': b'the release before', 'update.tar.part': UPDATE_TAR[:half]}
+    assert w.net.asked.count(ASSET) == 4 and w.clock.slept.count(100) == 3 * 50  # 5 s between tries, in 100 ms steps
+    # the network is back: the rest alone is fetched, and the whole is what the release names
+    seen = []
+    releases(w, during=lambda sent: (w.ui.run(500), seen.append(page.text)))
+    page.press()
+    w.ui.run(500)
+    assert seen[0] == 'Downloading 74%' and seen[-1] == 'Downloading 100%'  # of the whole tar, not of the rest
+    assert w.card.tree() == {'update.tar': UPDATE_TAR} and ('fwupdate_tf',) in w.log
 
 
 def test_network_update_with_no_network_asks_once(w):
@@ -840,14 +871,48 @@ def test_network_update_with_no_network_asks_once(w):
     assert w.ui.toasts == ["Can't reach GitHub"] and w.net.asked == [LATEST] and not w.card.tree()
 
 
-def test_network_update_on_a_full_card_says_so_and_gives_the_room_back(w):
+@pytest.mark.refusal('update:oversize')
+def test_network_update_on_a_card_without_the_room_says_how_much_and_downloads_nothing(w):
     w.ui.wifi = 3
     w.card.room = len(UPDATE_TAR) // 3
     page = SystemUpdate(w)
     releases(w)
     page.press()
     w.ui.run(500)
-    assert w.ui.toasts == ["Can't write to the card"] and not w.card.tree() and w.card.room == len(UPDATE_TAR) // 3
+    assert w.ui.toasts == ['Needs 65 MB more space'] and w.net.asked == [LATEST, API + NEWER]  # the tar twice over, and 64 MB
+    assert not w.card.tree() and w.card.room == len(UPDATE_TAR) // 3
+
+
+def test_network_update_on_a_card_that_fills_meanwhile_says_so_and_gives_the_room_back(w):
+    w.ui.wifi = 3
+    page = SystemUpdate(w)
+    releases(w, during=lambda sent: setattr(w.card, 'room', 0))
+    page.press()
+    w.ui.run(500)
+    assert w.ui.toasts == ["Can't write to the card"] and not w.card.tree() and w.card.room == len(UPDATE_TAR) // 4
+
+
+def test_network_update_never_names_a_damaged_download_update_tar(w):
+    """What arrived isn't what GitHub recorded for the release, by one byte: it goes, the old tar stays and
+    stock's updater is never started."""
+    w.ui.wifi = 3
+    w.card.put(TAR, b'the release before', count=False)
+    page = SystemUpdate(w)
+    seen = []
+    releases(w, sent=UPDATE_TAR[:-1] + b'!', during=lambda sent: sent == len(UPDATE_TAR) and seen.append(w.card.files[PART]))
+    page.press()
+    w.ui.run(500)
+    assert seen == [UPDATE_TAR[:-1] + b'!'] and w.ui.toasts == ['The download was damaged, try again']
+    assert w.card.tree() == {'update.tar': b'the release before'} and not w.calls('fwupdate_tf')
+
+
+def test_network_update_on_a_low_battery_asks_nothing_of_the_network(w):
+    w.ui.wifi = 3
+    page = SystemUpdate(w, battery=15)
+    releases(w)
+    page.press()
+    w.ui.run(500)
+    assert w.ui.toasts == ['Charge the battery first'] and not w.net.asked and not w.card.tree() and not w.ui.started
 
 
 def test_a_second_press_cancels_the_download_and_a_third_before_it_ends_does_nothing(w):
@@ -862,21 +927,22 @@ def test_a_second_press_cancels_the_download_and_a_third_before_it_ends_does_not
     releases(w, during=during)
     page.press()
     w.ui.work()
-    assert seen == ['Cancelling…'] and w.net.asked == [LATEST, ASSET]
+    assert seen == ['Cancelling…'] and w.net.asked == [LATEST, API + NEWER, ASSET]
     page.press()  # the thread has ended, not yet joined
     w.ui.run(500)
     assert w.ui.started == 1 and w.ui.toasts == ['Download cancelled']
     assert w.card.tree() == {'update.tar': b'the release before'} and page.text == 'tr:update_online'
 
 
-def test_leaving_system_update_cancels_its_download(w):
+def test_leaving_system_update_cancels_its_download_and_keeps_what_came(w):
     w.ui.wifi = 3
     page = SystemUpdate(w)
-    releases(w, during=lambda sent: sent == len(UPDATE_TAR) // 4 and w.ui.destroy(page.page))
+    quarter = len(UPDATE_TAR) // 4
+    releases(w, during=lambda sent: sent == quarter and w.ui.destroy(page.page))
     page.press()
     w.ui.run(500)
-    assert w.ui.toasts == ['Download cancelled'] and not w.card.tree()
-    assert len(w.net.asked) == 2 and not w.calls('fwupdate_tf')
+    assert w.ui.toasts == ['Download cancelled'] and w.card.tree() == {'update.tar.part': UPDATE_TAR[:2 * quarter]}  # ended at the next progress call
+    assert len(w.net.asked) == 3 and not w.calls('fwupdate_tf')
 
 
 def test_a_download_that_ends_as_the_page_closes_says_where_it_is(w):
@@ -1091,6 +1157,7 @@ def test_a_job_whose_thread_cant_start_says_so_and_the_next_press_starts_it(w):
     assert w.ui.toasts[2:] == ['Latest firmware installed', 'Foo removed']
 
 
+@pytest.mark.refusal('addon:oversize')
 def test_an_install_without_room_says_how_much_more_and_downloads_nothing(w):
     w.ui.wifi = 3
     hub = GitHub(w, 'me/q2-foo Foo\n')
@@ -1106,6 +1173,7 @@ def test_an_install_without_room_says_how_much_more_and_downloads_nothing(w):
     assert set(w.card.tree()) == {'.q2/sources.list'} and store.rows() == [('Foo', 'Install')]
 
 
+@pytest.mark.refusal('addon:truncated')
 def test_an_install_cut_off_midway_leaves_the_card_as_it_was(w):
     w.ui.wifi = 3
     hub = GitHub(w, 'me/q2-foo Foo\n')

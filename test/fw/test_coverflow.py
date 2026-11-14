@@ -2204,12 +2204,13 @@ class Query:
     ROW = C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_int, C.c_void_p, C.c_void_p)
 
     def __init__(self, fw, q, rows):
-        self.made, self.sql = [], []
+        self.made, self.sql, self.listed = [], [], None  # listed: the caller's list, which must be empty by the SQL
         staging = fw.var('fw_ctx_tools_pdeq_directory', C.c_void_p)
 
         def query(db, sql, cb, sort, *_):
             assert C.string_at(db) == b'/mnt/data/database.db' and not sort
             self.sql.append(C.string_at(sql).decode())
+            assert self.listed is None or not q[self.listed]  # emptied once copied: four lists never held at once
             for row in rows:
                 v = (C.c_char_p * 5)(*[None if x is None else str(x).encode() for x in row])
                 assert Query.ROW(cb)(0, 5, C.addressof(v), 0) == 0
@@ -2240,6 +2241,7 @@ def test_split_makes_a_name_s_row_one_card_per_album_in_its_place(fw):
     query = Query(fw, q, [(1, 'Hits', 'A', '/m/H1/1.flac', 'Various'), (2, 'hits', 'A', '/m/H2/1.flac', 'Other'),
                           (4, 'Hits', 'A', '/m/H3/1.flac', 'various'), (3, 'Abbey', 'B', '/m/A/1.flac', ''),
                           (5, 'Zed', 'Z', '/m/Z/1.flac', None)])
+    query.listed = listed
     assert fw.fn('coverflow_split', C.c_int, C.c_void_p)(listed) == 5
     got = [(field(p, 0x14), field(p, 0x24)) for p in q[listed]]
     assert got == [('Hits', 'Various'), ('hits', 'Other'), ('Abbey', ''), ('Lost', None), ('Unknown Album', None)]
@@ -2332,6 +2334,28 @@ def test_an_artist_s_shelf_shows_no_cover_past_its_ends(fw, scoped):
     # an artist's shelf: its three albums alone; the library's small shelf repeats round its wrap
     assert [int(bool(p)) for p in wide] == [int(abs(j) <= reach and (not scoped or 0 <= j < n)) for j in js]
     fw.fn('coverflow__fx_close', None)()
+
+
+# Next or a track's end moves the queue to another album: covers resting on its last one follow it, a few albums at a
+# tap's glide, farther at once (TAIL_GLIDE 4); covers turned to another album, or moving, are left alone.
+@pytest.mark.parametrize('centre, offset, to, want', [(0, 0, 2, [-220]), (0, 0, 5, []), (1, 0, 2, []), (0, 20, 2, [])])
+def test_the_covers_follow_the_queue_s_album_from_its_last_alone(fw, mcl, centre, offset, to, want):
+    q = Deques(fw)
+    albums = [Rec(a, path=f'/m/{a}/1.flac') for a in 'ABCDEF']
+    s = Shelf(fw, n=len(albums) + 1, index=centre, offset=offset, scoped=0)
+    c = cf(fw)
+    c.albums = q.new([r.p for r in albums])
+    fw.var('fw_ctx_mcl_pdeqplaylist', C.c_void_p).value = q.new([albums[0].p, albums[to].p])
+    tail = fw.fn('coverflow_tail', None)
+    tail()  # first sight: album A, nothing to follow from
+    assert not s.goals and not fw.calls('slide_menu_set_value')
+    mcl.pos = 1
+    tail()
+    assert s.goals == want
+    moved = [a[1] for _, a in fw.calls('slide_menu_set_value')]
+    assert moved == ([to] if to > 4 and not centre and not offset else [])
+    tail()  # the same song: nothing again
+    assert s.goals == want and len(fw.calls('slide_menu_set_value')) == len(moved)
 
 
 def test_a_tap_in_the_flat_fallback_opens_the_centre_cover_alone(fw):
@@ -2752,6 +2776,28 @@ def test_the_shortcut_row_sits_after_folder_unless_rockbox_is_missing_or_none(fw
     assert [r for r in rows if r != rockbox] == [h.rows[n] for n in h.ROWS if n != 'img_rockbox']  # the others keep their order
     assert ui[rockbox].visible == shown and ui[rockbox].sensitive == shown
     assert ui[ui.named('label_rockbox')].text == label and ui[ui.lookup(h.carousel[0], 'label_rockbox')].text == label
+
+
+# Appearance's Hide Streaming / Hide Folder on Home: the row goes last, as Rockbox's does, and takes no taps; the
+# others keep their order, Rockbox after Folder's place.
+@pytest.mark.parametrize('folder, stream', ((0, 0), (1, 0), (0, 1), (1, 1)))
+def test_hidden_folder_and_streaming_rows_go_last_and_take_no_taps(fw, folder, stream):
+    themed(fw, CLASSIC, HOME='1', HIDEFOLDER=str(folder), HIDESTREAM=str(stream))
+    ui = Ui(fw)
+    h = Homes(ui, rockbox=True)
+    ui[h.rows['img_folder']].name, ui[h.rows['img_services']].name = 'btn_folder', 'btn_stream'
+    ui.restack(h.rows['img_folder'], 6)  # from anywhere: a row shown again goes back to its place
+    h.open(fw)
+    hidden = [h.rows[n] for n, off in (('img_folder', folder), ('img_services', stream)) if off]
+    assert ui[h.view].kids == [h.rows[n] for n in h.ROWS if h.rows[n] not in hidden] + hidden
+    for n in ('img_folder', 'img_services'):
+        assert ui[h.rows[n]].visible == ui[h.rows[n]].sensitive == (h.rows[n] not in hidden)
+
+
+@pytest.mark.parametrize('show, want', (('1', b'Q2 Pod'), ('0', b'')))
+def test_show_q2_pod_off_leaves_home_s_title_empty(fw, show, want):
+    home_open(fw, SHOWQ2POD=show)
+    assert fw.fn('coverflow_home_title', C.c_char_p)() == want
 
 
 @pytest.mark.parametrize('mode', (1, 2))

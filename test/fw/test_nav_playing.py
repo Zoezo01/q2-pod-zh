@@ -1819,6 +1819,25 @@ def test_a_turn_takes_the_lyrics_a_line_a_ticks_worth_and_holds_them(fw, ui, mcl
     assert lyr.settle() == taken - (detents + 1) * SLOT
 
 
+# A scrub (Centre) on the lyrics page takes the wheel as ticks: the lyrics give it up, unmoved, and take it back when
+# the scrub ends. They held it raw before, and their first turn ended the scrub.
+def test_a_scrub_on_the_lyrics_page_has_the_wheel_until_it_ends(fw, ui, mcl, st, wheel):
+    theme(fw, st, CLASSIC)
+    lyr = Lyrics(fw, ui, mcl, st, sec=35)
+    home = lyr.settle()
+    raw, (travel, held) = fw.var('wheel_raw', C.c_int), wheel
+    assert raw.value == 1
+    st.scrub = 1
+    lyr.poll(1)
+    assert raw.value == 0
+    travel.value = -O['LYRIC_PUSH_DETENTS'] * O['WHEEL_TICK_UNITS']
+    lyr.poll(1)
+    assert st.scrub == 1 and st.lyric_held == 0 and lyr.settle() == home
+    st.scrub = 0
+    lyr.poll(1)
+    assert raw.value == 1
+
+
 def test_a_small_turn_only_nudges_and_springs_back_still_following(fw, ui, mcl, st, wheel):
     theme(fw, st, CLASSIC)
     lyr = Lyrics(fw, ui, mcl, st, sec=35)

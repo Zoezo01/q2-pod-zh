@@ -19,6 +19,7 @@ extern int stock_home_trampoline(void *win, void *ctx), stock_scan_all_trampolin
     stock_album_cover_trampoline(const char *, const char *, int, int);
 
 enum { PREPARING, COVERS, TRACKS };
+#define TAIL_GLIDE 4 /* albums coverflow_tail glides to; farther, it moves at once */
 cf_page_t cf __attribute__((section(".scratch")));
 
 static int pick(void *ctx, void *event);
@@ -1221,12 +1222,14 @@ static void *split(void *stock) {
     deque_destroy(stock);
     return out;
 }
-/* navigation.c's Albums list (load_localclass_list 0xf003), split in place as Coverflow's: its size. */
+/* navigation.c's Albums list (load_localclass_list 0xf003), split in place as Coverflow's: its size.
+ * The list empties once copied, not after the split: its rows, the copy's, the query's and the
+ * split's were four album lists held at once. Out of memory the copy comes back, unsplit. */
 int coverflow_split(void *list) {
     void *copy = _create_deque("stSongInfo"), *out;
     deque_init_copy(copy, list);
-    out = split(copy);
     deque_clear(list);
+    out = split(copy);
     deque_assign(list, out);
     deque_destroy(out);
     return (int)deque_size(list);
@@ -2940,6 +2943,11 @@ static void load(void) {
     if (cf_traced) unlink(CF_TRACE);
 }
 void *queue_now(unsigned *pos, unsigned *n);
+/* The queue's song coverflow_tail last saw, and its album's index in albums, or -1. */
+static struct {
+    void *song;
+    int at;
+} tail __attribute__((section(".scratch")));
 static void load_albums(unsigned t0) {
     int on_sort = cf.on_sort; /* taken whatever this load shows */
     cf.on_sort = 0;
@@ -3007,6 +3015,7 @@ static void load_albums(unsigned t0) {
      * records carry none) is never looked for, so those open on the last centre. */
     unsigned at, queued;
     void *now = P(mcl_pdeqplaylist, 0) && !on_sort && !cf.scoped ? queue_now(&at, &queued) : 0;
+    tail.song = now, tail.at = -1;
     if (now && !(P(now, REC_ALBUM) && *(const char *)P(now, REC_ALBUM))) now = 0;
     int playing = 0;
     art_strike(BUILDING);
@@ -3030,6 +3039,7 @@ static void load_albums(unsigned t0) {
     }
     free(shared);
     cf_trace(t0, "done jobs=", cf.total, count);
+    if (playing) tail.at = cf.album;
     if (on_sort) cf.album = (int)count; /* the Sort card, pressed again and again */
     mkdir(ART_DIR, 0755);
     cf.done = cf.cancel = 0;
@@ -3040,6 +3050,28 @@ static void load_albums(unsigned t0) {
         poll(0);
     } else
         to_covers(0);
+}
+
+/* Every UI pass: the queue's song moved to another album (Next, Previous, a track's end) while
+ * the covers rest on its last one, so the covers follow it, a few albums at a tap's glide, farther
+ * at once. Covers moved, held or showing another album are left alone, and so are the scoped
+ * lists, the panel and the tracks; a song with no album tag is never looked for, as at open. */
+void coverflow_tail(void) {
+    if (!covers_live() || cf.scoped || fl.panel || th.on || touched() || !cf.albums) return;
+    unsigned at, n;
+    void *now = P(mcl_pdeqplaylist, 0) ? queue_now(&at, &n) : 0;
+    if (now == tail.song) return;
+    int was = tail.at, c = I(cf.slide, SLIDE_INDEX);
+    tail.song = now, tail.at = -1;
+    if (!now || !P(now, REC_ALBUM) || !*(const char *)P(now, REC_ALBUM)) return;
+    for (unsigned i = 0, k = deque_size(cf.albums); i < k && tail.at < 0; ++i)
+        if (!album_cmp(deque_at(cf.albums, i), now)) tail.at = (int)i;
+    if (was < 0 || tail.at < 0 || tail.at == was || c != was || I(cf.slide, SLIDE_OFFSET) ||
+        P(cf.slide, SLIDE_ANIMATOR))
+        return;
+    int d = tail.at - c, near = ABS(d) <= TAIL_GLIDE;
+    carousel_glide(cf.slide, -d * stride_of(cf.slide), near ? CF_TAP_MS : 0, SLIDE_EASING);
+    if (!near) widget_invalidate_force(cf.slide, 0);
 }
 
 /* Album queues use stock's album class (0xff10), never folder class 1: Folder Skip only acts on
@@ -3378,7 +3410,7 @@ static int to_tracks(const void *unused) {
      * length's line under each title once any track has one, an unknown's left empty */
     int timed = 0;
     for (int i = 0; i < n && !timed; ++i)
-        timed = duration_seconds(deque_at(cf.tracks, (unsigned)i)) > 0;
+        timed = *duration_text(name, sizeof name, deque_at(cf.tracks, (unsigned)i));
     const char *title = P(r, cf.scoped == PLAYLISTS ? REC_TITLE : REC_ALBUM);
     void *view = timed ? page_list(cf.page, cf.body, &cf.title, title, n, 64) : list(title, n);
     /* the album over its tracks, all centred, but under a theme's own rows */
@@ -3802,7 +3834,7 @@ static struct {
     int clipped;
 } home __attribute__((section(".scratch")));
 extern int ipod_home(void), ipod_home_rockbox(void), home_shortcut_open(void *, void *),
-    home_lib_on(void), row_preview_on(void), library_search(void);
+    home_lib_on(void), row_preview_on(void), show_q2pod(void), library_search(void);
 extern void library_rows(void *list), stream_rows(void *list);
 extern void home_pane_read(int *services, int *games, int *free_tenths);
 extern int library_count(const char *sql), msg_counting(void);
@@ -3924,6 +3956,13 @@ static void home_fit(unsigned w, unsigned h, int *fw, int *fh) {
     }
 }
 
+/* home_sharpen's kernel on one channel, the low byte of each texel given: inlined a channel, as a
+ * loop over the three would shift by a variable and branch for every one. */
+HOT unsigned sharpened(unsigned prev, unsigned c, unsigned next) {
+    int v = (6 * (int)(c & 255) - (int)(prev & 255) - (int)(next & 255) + 2) >> 2;
+    return (unsigned)(v < 0 ? 0 : v > 255 ? 255 : v);
+}
+
 /* [-1,6,-1]/4 along n opaque texels step apart, in place, rounded and clamped a channel; the ends
  * are their own neighbours. Bilinear kept a whole-pixel frame's texels and mixed a half-pixel
  * one's 50/50, so the pan's sharpness pulsed as its phase turned. home_render's cubic B-spline
@@ -3935,14 +3974,11 @@ static void home_fit(unsigned w, unsigned h, int *fw, int *fh) {
 void home_sharpen(unsigned *t, int n, int step) { /* test/coverflow.py */
     unsigned prev = t[0];
     for (int i = 0; i < n; ++i) {
-        unsigned c = t[i * step], next = i + 1 < n ? t[(i + 1) * step] : c, o = 0xff000000u;
-        for (int s = 0; s < 24; s += 8) {
-            int v = 6 * (int)(c >> s & 255) - (int)(prev >> s & 255) - (int)(next >> s & 255);
-            v = (v + 2) >> 2;
-            o |= (unsigned)(v < 0 ? 0 : v > 255 ? 255 : v) << s;
-        }
+        unsigned c = t[i * step], next = i + 1 < n ? t[(i + 1) * step] : c;
+        t[i * step] = 0xff000000u | sharpened(prev, c, next) |
+                      sharpened(prev >> 8, c >> 8, next >> 8) << 8 |
+                      sharpened(prev >> 16, c >> 16, next >> 16) << 16;
         prev = c;
-        t[i * step] = o;
     }
 }
 
@@ -4612,19 +4648,30 @@ static void home_show(void *w, int on) {
 /* Stored HOME=0/1/2 is Split/Full/Carousel in every theme: Split halves the screen, the art in the
  * right panel; Full hides the art and widens the list, its rows to the theme's home_full_row;
  * Carousel hides the art and shows stock's cards (tools/ipod.py ipod_home) in the
- * lists' place, and leaving it, the main list. Hidden Rockbox is restacked last because the native
- * layout includes hidden rows, and made insensitive, as hidden rows keep their taps. */
+ * lists' place, and leaving it, the main list. Rockbox without the card's, and Folder and
+ * Streaming hidden in Appearance, are restacked last, as the native layout includes hidden rows,
+ * and made insensitive, as hidden rows keep their taps. */
 void coverflow_home_layout(void) {
     int mode = ipod_home(), full = mode == 1, carousel = mode == 2;
     const theme_t *T = theme();
     /* The art goes back to the panel; Split's next paint resumes the pan. */
     stop_timer(&home.drift);
     if (!home.list) return;
+    /* Folder, Rockbox and Streaming in their places (HOME_ROWS), then the hidden ones last, as the
+     * native layout includes hidden rows; hidden, they take no taps (Rockbox would take
+     * Streaming's). ponytail: Carousel keeps Folder's and Streaming's cards, as it keeps the
+     * Shortcut's (below). */
+    static const char *const rows[] = { "btn_folder", "btn_rockbox", "btn_stream" };
+    int shown[] = { !ringnav_hide_folder(), ipod_home_rockbox(), !ringnav_hide_stream() };
+    for (int pass = 0; pass < 2; ++pass)
+        for (int i = 0; i < 3; ++i) {
+            void *row = widget_lookup(home.list, rows[i], 1); /* not the carousel's cards */
+            if (!row || (pass && shown[i])) continue;
+            widget_restack(row, pass ? 6 : 3 + i);
+            home_show(row, shown[i]);
+        }
     void *rockbox = widget_lookup(home.win, "btn_rockbox", 1);
     if (rockbox) {
-        int shown = ipod_home_rockbox();
-        widget_restack(rockbox, shown ? 4 : 6); /* after Folder, else last */
-        home_show(rockbox, shown); /* hidden, it would still take Streaming's taps */
         widget_set_text_utf8(widget_lookup(home.win, "label_rockbox", 1), ipod_home_shortcut());
         /* ponytail: the Shortcut card stays when the row hides (Shortcut: Rockbox, no Rockbox on
          * the card; its tap says so), as the slide_menu lays out hidden cards too; removing it
@@ -4786,7 +4833,7 @@ void coverflow_home_top(void) {
 /* Classic's bar title on Home (navigation.c bar_title_sync). */
 const char *coverflow_home_title(void) {
     void *open = home_open();
-    return !open                 ? "Q2 Pod"
+    return !open                 ? show_q2pod() ? "Q2 Pod" : ""
            : open == home.lib    ? "音乐"
            : open == home.stream ? "流媒体"
                                  : "设置";

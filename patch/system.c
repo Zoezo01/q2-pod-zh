@@ -493,6 +493,7 @@ static void logo_poll(void) {
 void power_poll(void) {
     pod_settings();
     durations_poll();
+    coverflow_tail();
     charge_poll();
     standby_poll();
     logo_poll();
@@ -500,4 +501,5 @@ void power_poll(void) {
     wdt_poll();
     state_poll();
     smart_poll();
+    netupdate_poll();
 }

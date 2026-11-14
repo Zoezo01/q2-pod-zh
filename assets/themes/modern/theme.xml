@@ -7,13 +7,14 @@
   <geometry set="modern"/>
   <colorSchemes accents="graphite crimson tidal champagne cobalt tangerine plum green"/>
   <option key="STATUSBAR" label="状态栏外观" default="跟随主题" preset="跟随主题"><value label="跟随主题"/><value label="简约"/><value label="现代"/><value label="经典"/></option>
+  <option setting="time_title" preset="off"/>
+  <option key="SHOWQ2POD" label="显示 Q2 Pod" default="开"><value label="关"/><value label="开"/></option>
   <option setting="light" preset="on" keep="auto"/>
   <option setting="accent" key="ACCENT" default="graphite" preset="cobalt"/>
   <option setting="corners" preset="square"/>
   <option setting="home" preset="split"/>
   <option setting="shortcut"/>
   <option setting="battery"/>
-  <option setting="time_title" preset="off"/>
   <option setting="np_layout"/>
   <view name="bar"><element name="title" caps="0"/></view>
   <view name="list">

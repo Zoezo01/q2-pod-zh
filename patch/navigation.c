@@ -3150,10 +3150,14 @@ static int *const pod_values[] = { &st.charge_limit,
                                    0,
                                    &st.big_library,
                                    &st.playlist_cf,
-                                   0, /* POD_LIBRARY_FILL: an action, no value */
                                    &st.scan_durations,
-                                   &st.cf_position };
+                                   &st.cf_position,
+                                   &st.hide_stream,
+                                   &st.hide_folder,
+                                   &st.remind_daily,
+                                   0 }; /* POD_LIBRARY_FILL: 中文分支自有 action，排在末尾，无值 */
 _Static_assert(POD_LOCKCLOCK == 6, "lockscreen.c passes pod_rows 6");
+_Static_assert(POD_REMIND_DAILY == 26, "netupdate.c passes pod_rows 26");
 _Static_assert(sizeof pod_values / sizeof *pod_values == POD_COUNT, "a pod_values per row");
 static const char *const pod_keys[] = { "CHARGELIMIT",
                                         "WAKEDOUBLE",
@@ -3177,19 +3181,26 @@ static const char *const pod_keys[] = { "CHARGELIMIT",
                                         0,
                                         "BIGLIBRARY",
                                         "PLAYLISTCF",
-                                        0, /* POD_LIBRARY_FILL's: an action, no key */
                                         "SCANDURATIONS",
-                                        "CFPOSITION" };
+                                        "CFPOSITION",
+                                        "HIDESTREAM",
+                                        "HIDEFOLDER",
+                                        "REMINDDAILY",
+                                        0 }; /* POD_LIBRARY_FILL: 中文分支自有 action，无 key */
 _Static_assert(sizeof pod_keys / sizeof *pod_keys == POD_COUNT, "a pod_keys entry per row");
 /* a row's choices: Artist albums three, Standby limit four, every other row two */
 static int pod_choices(unsigned i) { return i == POD_ARTIST_CF ? 3 : i == POD_STANDBY ? 4 : 2; }
 void pod_settings(void) {
     if (st.pod_read) return;
     for (unsigned i = 0; i < sizeof pod_keys / sizeof *pod_keys; ++i)
-        if (pod_keys[i]) /* Artist albums defaults to Coverflow */
-            *pod_values[i] =
-                config_value("Q2POD", pod_keys[i], pod_choices(i), i == POD_ARTIST_CF);
+        if (pod_keys[i]) /* 表演者专辑默认 Cover Flow，每日提醒默认开 */
+            *pod_values[i] = config_value("Q2POD", pod_keys[i], pod_choices(i),
+                                          i == POD_ARTIST_CF || i == POD_REMIND_DAILY);
     st.pod_read = 1;
+}
+int ringnav_remind_daily(void) {
+    pod_settings();
+    return st.remind_daily;
 }
 int ringnav_year_old(void) {
     pod_settings();
@@ -3220,6 +3231,14 @@ int ringnav_big_library(void) {
 int coverflow_position_enabled(void) {
     pod_settings();
     return st.cf_position;
+}
+int ringnav_hide_stream(void) {
+    pod_settings();
+    return st.hide_stream;
+}
+int ringnav_hide_folder(void) {
+    pod_settings();
+    return st.hide_folder;
 }
 int ringnav_eq_output(void) {
     pod_settings();
@@ -3284,9 +3303,12 @@ static void pod_text(int i) {
         { 0 }, /* Folder Album Cover: a switch */
         { 0 }, /* Fast Navigation: a switch */
         { "播放列表视图：列表", "播放列表视图：Cover Flow" },
-        { "补全封面与歌词" }, /* an action: the row says how far the job got */
         { 0 }, /* Scan Song Durations: a switch */
         { 0 }, /* Position Bar: a switch */
+        { 0 }, /* Hide Streaming on Home: a switch */
+        { 0 }, /* Hide Folder on Home: a switch */
+        { "每日提醒：关", "每日提醒：开" },
+        { "补全封面与歌词" }, /* 中文分支自有 action：行上会显示补全过程 */
     };
     _Static_assert(sizeof names / sizeof *names == POD_COUNT, "a names entry per row");
     if (i == POD_CF_SORT) {
@@ -3315,6 +3337,9 @@ static void pod_text(int i) {
                          : i == POD_BIG_LIB        ? "快速导航"
                          : i == POD_SCAN_DURATIONS ? "检测歌曲时长"
                          : i == POD_CF_POSITION    ? "位置条"
+                         : i == POD_HIDE_STREAM    ? "主页隐藏流媒体"
+                         : i == POD_HIDE_FOLDER    ? "主页隐藏文件夹"
+                         : i == POD_REMIND_DAILY   ? "每日提醒"
                                                    : 0;
     if (toggle)
         list_toggle(st.pod_label[i], toggle, v);
@@ -3384,6 +3409,7 @@ static int pod_click(void *ctx, void *event) {
         write_int_config(*value, "Q2POD", pod_keys[i]);
         if (i == POD_SCAN_DURATIONS && !*value) durations_cancel();
         if (i == POD_CF_POSITION) coverflow_position_reset();
+        if (i == POD_HIDE_STREAM || i == POD_HIDE_FOLDER) coverflow_home_layout();
         st.charge_at = 0;
         /* Control Device Volume: off, stock's gain back at once; on, bt_volume_poll's next pass
          * sends the Q2's level to the device. */
@@ -3913,9 +3939,15 @@ static int bar_state_sync(void *bar) {
      * ourselves instead (V180C) needed a per-widget paint match that Modern's bar never gave, so
      * Q2 vanished there while Minimal and Classic kept it. */
     /* EQ moved to the battery's group (V180D): gating the left's idle wordmark on it hid Q2
-     * whenever EQ was on (V180D). Only the play state's glyph shares this side of the bar. */
-    if (st.bar_idle && st.bar_state)
-        widget_set_visible(st.bar_idle, !widget_get_visible(st.bar_state), 0);
+     * whenever EQ was on (V180D). Only the play state's glyph shares this side of the bar.
+     * Minimal/Modern put a page name in that very label too (np_bar.c bar_title): with no
+     * player running, stock's "Q2" and the name then inked on top of each other --
+     * "Q2系统设置" in V183A device photos. Exactly one of the three may show. */
+    if (st.bar_idle && st.bar_state) {
+        int named = !st.bar_title && st.bar_named,
+            word = !st.bar_title && st.play_word && widget_get_visible(st.play_word);
+        widget_set_visible(st.bar_idle, !widget_get_visible(st.bar_state) && !named && !word, 0);
+    }
     if (st.bar_idle && widget_get_visible(st.bar_idle)) {
         static const char *const states2[] = { "normal", "focused", "disable" };
         char prop[48];
@@ -4188,6 +4220,17 @@ static void bar_sync(void *bar) {
     if (I(st.bar_wifi, W_Y) != B->bar_wifi_dy)
         widget_move_resize(st.bar_wifi, I(st.bar_wifi, W_X), B->bar_wifi_dy, I(st.bar_wifi, W_W),
                            I(st.bar_wifi, W_H));
+    /* Minimal/Modern's light bar: one row for every element. tools/ipod.py gives them all
+     * the group's full height, but a stock relayout can put the icons back on their
+     * original zero-height box, which centres their art above the 30 px clock, EQ and
+     * play word (V183A device photos). Restore the row's height before the frame draws. */
+    if (!st.bar_title && !st.bar_dark) {
+        int row_h = I(P(st.bar_bt, W_PARENT), W_H);
+        void *const boxes[] = { st.bar_bt, st.bar_wifi, st.bar_eq, st.bar_state };
+        for (unsigned i = 0; i < sizeof boxes / sizeof *boxes; ++i)
+            if (boxes[i] && I(boxes[i], W_H) != row_h)
+                widget_resize(boxes[i], I(boxes[i], W_W), row_h);
+    }
     int classic_row = T->painter[PAINT_BATTERY] == BATT_CLASSIC_LIGHT, /* the row's layout */
         classic_light = B->painter[PAINT_BATTERY] == BATT_CLASSIC_LIGHT,
         /* its soft edge's column; a set without batt_w keeps the built-in body */
@@ -4208,7 +4251,12 @@ static void bar_sync(void *bar) {
         if (classic_row && st.bar_state && widget_get_visible(st.bar_state))
             reach += I(st.bar_state, W_W) + STATUS_GAP;
         /* Classic's Percent Inside is the icon's own width: the icon would win no room */
-        if (reach > BATT_ROOM && !(classic_light && mode == 3)) mode = 0;
+        /* BATT_ROOM was measured against the stock BATT_BODY_W body. A theme's wider
+         * body (Modern's 20 px) owns those extra columns too: with Bluetooth on, Icon +
+         * Percent reached 98 of 94 and silently fell back to the bare icon (V183A
+         * device photos). Classic's own, shorter row keeps the built-in allowance. */
+        int room = BATT_ROOM + (classic_light ? 0 : body - BATT_BODY_W);
+        if (reach > room && !(classic_light && mode == 3)) mode = 0;
     }
     widget_set_visible(st.bar_icon, 0, 0);
     widget_set_visible(st.bar_pct, 0, 0);
@@ -4750,7 +4798,8 @@ static void lyric_poll(void) {
     if (st.np_full && !page) np_full(0); /* full-screen lyrics end off their page */
     int touch = lrc && window_manager_get_top_window(wm) == st.np_win && pointer_down();
     int shown = page && lyrics_shown(),
-        on = shown && widget_count_children(lrc) && mclGetLyricSize() > 0;
+        /* not during a scrub: its ticks are np_key's, the lyrics' again once it ends */
+        on = shown && !st.scrub && widget_count_children(lrc) && mclGetLyricSize() > 0;
     if (touch && !st.lyric_touch) {
         st.lyric_touch = page ? 1 : 2;
         st.lyric_drag_y = page ? I(lrc, SCROLL_Y) : 0;
@@ -4831,10 +4880,11 @@ static void lyric_poll(void) {
 }
 
 /* A tick on the lyrics page while the track has lyrics, which comes only before lyric_poll takes
- * the wheel raw, glides them to the next or previous row's top, ahead of scrub and the volume. */
+ * the wheel raw, glides them to the next or previous row's top, ahead of the volume; never during
+ * a scrub, whose ticks move its target. */
 static int np_lyrics(unsigned key) {
     void *lrc = st.np_lrc;
-    if (!st.np_slide || !lrc || widget_get_prop_int(st.np_slide, "value", 0) != 1 ||
+    if (st.scrub || !st.np_slide || !lrc || widget_get_prop_int(st.np_slide, "value", 0) != 1 ||
         !widget_count_children(lrc) || mclGetLyricSize() <= 0)
         return 0;
     lyric_hold();
@@ -7059,7 +7109,8 @@ int ringnav_display(void *win, void *ctx) {
                                             "system_update", "playset_covermode" };
     static const char *const hold_icon[] = { "playset_folderjump" },
                              *const tone_icon[] = { "system_keytone" },
-                             *const lock_icon[] = { "system_keylock" };
+                             *const lock_icon[] = { "system_keylock" },
+                             *const home_icons[] = { "system_display", "system_display" };
     static const unsigned char main_order[] = { 0, 1, 3, 4, 2, 5, 6 };
     int sub = display_sub, result = stock_display_trampoline(win, ctx);
     void *view = win ? widget_lookup(win, "scroll_view_display", 1) : (void *)0;
@@ -7102,6 +7153,7 @@ int ringnav_display(void *win, void *ctx) {
         const theme_t *T = theme();
         setting_row(view, SETTING_THEME);
         for (int k = 0; k < T->n_opts; ++k) setting_row(view, T->opts[k].setting);
+        pod_rows(win, "scroll_view_display", POD_HIDE_STREAM, 2, home_icons);
         return result;
     }
     wheel_row(list_row_into(view, "system_display", xfade_open, (void *)1));

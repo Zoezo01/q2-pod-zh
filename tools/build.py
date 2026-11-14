@@ -11,21 +11,25 @@ ZIP_SHA = '4e298cab6c12d86cfc55565645f7e3ae11d3fb44677a93ca13991e7184ecec4e'
 # 钉住（重新打的 ZIP 永远对不上官方那个）。
 TAR_SHA = '7f57884420e324ac3263571d96a35f04bbef79f35dac34162655c5822bdaa684'
 DEMO_SHA = 'e65d638d6e70332b4c3193af8ac2044941ec0157d20e41e40233aac5b0c2c59f'
-VERSION = '1.8.2'  # major.minor.patch, single digits, shown as is (About and release tag)
+VERSION = '1.8.3'  # major.minor.patch, single digits, shown as is (About and release tag)
 BETA = 0  # a pre-release's beta number (1-9), 0 for the release itself
-REPO = 'DiamondBond/q2-pod'  # whose releases Network Update fetches (--update-repo) and release.py publishes
+# 本分支的 Release 由自己发：网络更新读这个仓库的 releases/latest，release.py 也往这里传。
+# 所以 tag 必须就是 VERSION（x.y.z），asset 必须叫 update.tar，且设为 latest，否则 Q2POD_TAG
+# 的 strcmp 比较和 NU_ASSET 都对不上。--update-repo 只用于临时指向别的仓库做测试。
+REPO = 'Zoezo01/q2-pod-zh'  # whose releases Network Update fetches (--update-repo) and release.py publishes
 # The updater's identity (firmware_v20.info and demo's version literal) must be 5 characters and
 # differ from the installed one, so it packs the digits and the beta number: 1.8.0 beta 2 is V1802,
 # 1.8.0 itself V1800, so each installs over the betas before it. Releases up to 1.8.0 BETA ended in I
 # (1.0.1 was V101I). About shows the stock firmware version and a CFW. Version row with VERSION and
 # the edition instead (ringnav_about).
-# 中文版：1.8.2 这条版本线，末位字母从 A 起（上游英文版是 V1820，两边标记不同才能互相刷）。
-# A 并入上游 1.8.1 与 1.8.2：AirPlay、电池历史、USB DAC 充电、Cover Flow 的位置条与歌曲时长、
-# 大曲库模式改名快速导航，新出现的界面文字一并译成中文。1.8.0 那条线收在 F（V180F）。
-# C 是同一条线上第三次发布：按实机截图把简约/现代与经典主题的顶栏元素归到同一条垂直中线
-# （右侧分组不再整体下沉、播放图标不再上提、百分比槽位改跟随分组行高）。设备升级只认「标记不同」，
-# 所以代码一变，末位字母必须跟着递进，否则已刷 A/B 的设备会直接拒绝这个包。
-TAG = 'V' + VERSION.replace('.', '') + 'C'
+# 中文版：换一条上游版本线，末位字母就从 A 重新起（上游英文版是 V1830，两边标记不同才能互相刷）。
+# 1.8.0 那条线收在 F（V180F）；1.8.2 那条线收在 C（V182C）。
+# A 并入上游 1.8.3：Cover Flow 跟随换歌、主页隐藏流媒体/文件夹、状态栏显示 Q2 Pod、
+# 视频过大与无声的兜底、网络更新的每日提醒/断点续传/校验；新出现的界面文字一并译成中文。
+# 同时把网络更新从 DiamondBond/q2-pod 切到 Zoezo01/q2-pod-zh，并按实机截图再修一轮顶栏：
+# 左右分组共用整行高度、EQ 紧跟蓝牙、Q2 与菜单名择一显示、图标+百分比在蓝牙开启时不再降级。
+# 设备升级只认「标记不同」，所以代码一变，末位字母必须跟着递进，否则已刷同标记的设备会拒绝这个包。
+TAG = 'V' + VERSION.replace('.', '') + 'A'
 
 def version_ok(version, beta):
     """VERSION is three single digits and BETA one, as TAG packs them; 17.6 or 1.76 would give a 5-character tag too."""
@@ -1298,6 +1302,9 @@ FUNCTIONS = {
  'idle_add': ('unsigned', 'int (*)(const void *), void *'),
  'timer_remove': ('int', 'unsigned'),
  'tk_strcmp': ('int', 'const char *, const char *'),
+ 'tk_sha256_init': ('int', 'void *'),
+ 'tk_sha256_hash': ('int', 'void *, const void *, unsigned'),
+ 'tk_sha256_done': ('int', 'void *, unsigned char *'),
  'slide_menu_scroll_to_next': ('int', 'void *'),
  'slide_menu_scroll_to_prev': ('int', 'void *'),
  'table_client_stop_animator_scroll': ('int', 'void *'),
@@ -2302,6 +2309,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
             if data is not None: m.size=len(data)
             t.addfile(m,io.BytesIO(data) if data is not None else None)
     manifest = dict(input_zip_sha256=ZIP_SHA, stock_demo_sha256=DEMO_SHA, source_sha256=source,
+        input_kind=input_kind, input_sha256=input_sha,  # this build's real stock input (tar or ZIP)
         demo_sha256=sha(patched), patch_sha256=sha(payload), update_sha256=sha((out/'update.tar').read_bytes()),
         rootfs_sha256=sha(newsq.read_bytes()), kernel_sha256=sha(blobs['recovery-update/xImage']),
         **({'aic_notifier': aic_notifier} if aic_notifier else {}),

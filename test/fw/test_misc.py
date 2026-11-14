@@ -1160,6 +1160,23 @@ def test_a_video_never_resumed_takes_no_slot(fw):
     assert MARKS_FILE not in card.files
 
 
+@pytest.mark.parametrize('status, said', [
+    (3 << 8, [b'Too large to play on the Q2: convert it to a smaller size']),  # video.c TOO_LARGE, its exit status
+    (0, []), (1 << 8, []), (3, []), (3 << 8 | 9, [])])  # an end, another failure, and signals that only look like it
+def test_a_video_refused_as_too_large_says_so_once_it_is_over(fw, status, said):
+    Card(fw)
+    v, seen = video(fw), []
+    def gone(pid, out, *_):
+        C.c_int.from_address(out).value = status
+        return 1234
+    fw.mock('fw_waitpid', gone)
+    # toast's dialog runs the UI's polls again: by then the video is over, so this poll is not entered twice
+    fw.mock('navigator_to_with_context', lambda page, info, *_: seen.append((v.pid, C.string_at(info + 8))))
+    v.pid = 1234
+    fw.fn('video_poll', None)()
+    assert seen == [(0, text) for text in said] and v.pid == 0
+
+
 def test_a_resumed_video_stopped_near_its_start_forgets_its_place(fw):
     card = Card(fw, {'/tmp/q2video.place': struct.pack('<I', 0)})
     fw.mock('fw_waitpid', lambda *_: 1234)
@@ -2418,6 +2435,7 @@ def test_a_hold_that_can_t_arm_its_timer_is_stock_s(fw):
     assert fw.fn('un_hold', C.c_int, C.c_void_p)(0x7000) == 0 and u.row == 9
 
 
+@pytest.mark.hostile('folder_delete.c:ringnav_folder_rm')
 def test_a_folder_s_delete_removes_that_folder_alone_whatever_its_name(fw, tmp_path):
     """ringnav_folder_rm as remove_file calls it, its command run by /bin/sh: $, backticks and ' stay the name's."""
     rm = fw.fn('ringnav_folder_rm', C.c_int, C.c_void_p, C.c_uint, C.c_char_p, C.c_char_p)

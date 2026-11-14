@@ -34,6 +34,11 @@ testpaths = ["test/unit", "test/fw"]
 # A passing test's tmp_path goes at once: test/fw's run otherwise leaves gigabytes (docs/building.md).
 tmp_path_retention_policy = "failed"
 timeout = 60
+# test/score.py's S1 and S2 read these off the source and count the tests that pass.
+markers = [
+    "hostile(site): feeds the shell-out in patch/<file>:<function> a value that would do harm unquoted",
+    "refusal(case): drives an install path's refusal: update or addon, then hash, truncated, oversize, traversal or changed",
+]
 # A mock that raises inside a ctypes callback is only a warning: make it a failure.
 filterwarnings = ["error::pytest.PytestUnraisableExceptionWarning"]
 

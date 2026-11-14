@@ -181,6 +181,10 @@ void bar_title(void *bar, void *top) {
             int status = bar_status(); /* Minimal/Modern: state_own_place is always true */
             widget_set_text_utf8(word, status == 2 ? "正在播放" : status == 3 ? "播放暂停" : "");
             widget_set_visible(word, status == 2 || status == 3, 0);
+            /* The name is gone: stock's "Q2" may take the left back, but only when
+             * the play state's glyph has not (bar_state_sync decides each frame). */
+            void *idle = widget_lookup(bar, "label_idle", 1);
+            if (idle) widget_set_visible(idle, !(status == 2 || status == 3), 0);
             rearm(&st.clock_timer, clock_due, 0);
             if (!st.bar_timer) st.bar_timer = timer_add(bar_repaint, (void *)0, 0);
         }
@@ -226,6 +230,10 @@ void bar_title(void *bar, void *top) {
     if (!widget_get_visible(word)) widget_set_visible(word, 1, 0);
     if (!st.bar_named) st.word_key = -1;
     st.bar_named = 1;
+    /* One label on the left: the page name has it now, so stock's idle "Q2"
+     * wordmark must not ink over it (V183A device photos: "Q2系统设置"). */
+    void *idle = widget_lookup(bar, "label_idle", 1);
+    if (idle) widget_set_visible(idle, 0, 0);
     if (changed && !st.bar_timer) st.bar_timer = timer_add(bar_repaint, (void *)0, 0);
 }
 

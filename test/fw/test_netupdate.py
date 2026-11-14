@@ -3,6 +3,7 @@ removing and checking apps, with the card and the network stubbed; then System U
 Store's jobs end to end, a press to the toast, on a card whose busybox runs on its files."""
 import ctypes as C
 import fnmatch
+import hashlib
 import io
 import pathlib
 import random
@@ -25,13 +26,14 @@ OLDER = b'0.9.9'
 SH_MAX = 16
 SH_CAP = 1 << 30
 SH_OK, SH_NET, SH_SPACE, SH_CARD, SH_MISSING, SH_BAD, SH_CANCELLED, SH_BUSY = range(8)
-NU_IDLE, NU_RUNNING, NU_DONE, NU_LATEST, NU_NET, NU_MISSING, NU_CARD, NU_CANCELLED = range(8)
+NU_IDLE, NU_RUNNING, NU_DONE, NU_LATEST, NU_NET, NU_MISSING, NU_CARD, NU_CANCELLED, NU_BUSY, NU_SPACE, NU_BAD = range(11)
 JOB_CHECK, JOB_INSTALL, JOB_REMOVE, JOB_ERASE = 1, 2, 3, 4
 ST_INSTALL, ST_UPDATE, ST_INSTALLED = range(3)
 ROW_CHECK = SH_MAX
 STAGING = '/mnt/mmc/.q2/staging'
 JSON_PATH = b'/tmp/q2-shelf.json'
 SHELF = pathlib.Path(__file__).resolve().parents[1]/'shelf'
+RELEASE = pathlib.Path(__file__).resolve().parents[1]/'fixtures/q2-pod-release.json'  # GitHub's JSON for 1.8.1, its notes cut
 
 
 class App(C.Structure):
@@ -46,7 +48,8 @@ class Sh(C.Structure):
 
 
 class Nu(C.Structure):
-    _fields_ = [('thread', C.c_ulong), ('state', C.c_int), ('cancel', C.c_int), ('percent', C.c_int), ('label', C.c_void_p)]
+    _fields_ = [('thread', C.c_ulong), ('state', C.c_int), ('cancel', C.c_int), ('percent', C.c_int), ('stage', C.c_int),
+                ('base', C.c_int), ('need', C.c_uint), ('label', C.c_void_p)]
 
 
 def hostile(seed, samples, count=2000, alphabet=b'"\\:/ \n{}[],\x00.'):
@@ -230,8 +233,10 @@ def release(fw, json, tn=32, un=256):
 
 
 def github(tag='1.0', *assets):
-    rows = ','.join('{"url":"u","id":1,"name":"%s","label":"","uploader":{"login":"x","id":2},"content_type":"z","size":%s,'
-                    '"browser_download_url":"https://h/%s"}' % (n, s, n) for n, s in assets)
+    """GitHub's release JSON, trimmed: each asset (name, size[, digest]), the digest as its JSON value."""
+    rows = ','.join('{"url":"u","id":1,"name":"%s","label":"","uploader":{"login":"x","id":2},"content_type":"z","size":%s,%s'
+                    '"browser_download_url":"https://h/%s"}' % (n, s, ''.join('"digest":%s,' % d for d in digest), n)
+                    for n, s, *digest in assets)
     return ('{"url":"x","assets_url":"y","tag_name":"%s","name":"Release","assets":[%s],"body":"notes"}' % (tag, rows)).encode()
 
 
@@ -283,6 +288,94 @@ def test_each_real_release_truncated(fw):
         data = path.read_bytes()
         for k in range(0, len(data), max(1, len(data) // 200)):
             release(fw, data[:k])
+
+
+def sha(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def digest(data):
+    return '"sha256:%s"' % sha(data)
+
+
+def asset(fw, json, name=b'update.tar'):
+    size, out = C.c_uint(0), block(fw, size=65)
+    fn = fw.fn('netupdate_asset', C.c_int, C.c_void_p, C.c_char_p, C.POINTER(C.c_uint), C.c_void_p)
+    return (size.value, C.string_at(out).decode()) if fn(block(fw, json), name, C.byref(size), out) else None
+
+
+def test_the_tar_s_size_and_digest_by_its_name(fw):
+    json = github('1.0', ('Q2-Pod-User-Guide.pdf', 9, digest(b'guide')), ('update.tar', 5, digest(b'tar')), ('z', 7, digest(b'z')))
+    assert asset(fw, json) == (5, sha(b'tar'))
+    assert asset(fw, json, b'z') == (7, sha(b'z')) and asset(fw, json, b'update') is None
+
+
+def test_github_s_own_json_for_a_release(fw):
+    assert asset(fw, RELEASE.read_bytes()) == (53964800, 'a58ac483393a733aa3070d5959d888f3eec918dc2daa8571c57585a066d82ac3')
+
+
+@pytest.mark.parametrize('value', [
+    'null', '""', '"sha256:"', '"sha512:%s"' % ('a' * 64), '"sha256:%s"' % ('a' * 63), '"sha256:%s"' % ('a' * 65),
+    '"sha256:%s"' % ('A' * 64), '"sha256:%sg"' % ('a' * 63), '"SHA256:%s"' % ('a' * 64), '"%s"' % ('a' * 71), '7',
+])
+def test_a_digest_that_is_not_64_hex_of_sha256_is_none(fw, value):
+    assert asset(fw, github('1.0', ('update.tar', 5, value))) is None
+
+
+def test_an_asset_without_its_own_digest_or_size_never_takes_the_next_one_s(fw):
+    """The first asset's keys end at its browser_download_url: what follows is another file's."""
+    other = ('other.bin', 9, digest(b'other'))
+    assert asset(fw, github('1.0', ('update.tar', 5), other)) is None
+    assert asset(fw, github('1.0', ('update.tar', 5, 'null'), other)) is None
+    assert asset(fw, github('1.0', ('update.tar', 5, digest(b'tar')), other).replace(b'"size":5,', b'')) is None
+
+
+@pytest.mark.parametrize('json', [
+    b'', b'{}', b'{"assets":[]}', github('1.0'), github('1.0', ('update.tar', 0, digest(b''))),
+    github('1.0', ('update.tar', 'x', digest(b''))), github('1.0', ('Update.tar', 5, digest(b''))),
+    github('1.0', ('update.tar.sig', 5, digest(b''))), b'{"name":"update.tar","size":5,"digest":%s}' % digest(b'').encode(),
+    b'{"assets":[{"name":"update.tar","size":5,"digest":%s}]}' % digest(b'').encode(),  # cut before its last key
+])
+def test_a_release_without_the_tar_whole_is_none(fw, json):
+    assert asset(fw, json) is None
+
+
+def test_a_cut_or_hostile_release_is_none_or_the_same_answer(fw):
+    whole = RELEASE.read_bytes()
+    right = asset(fw, whole)
+    for k in range(0, len(whole), 7):
+        assert asset(fw, whole[:k]) in (None, right)
+    for json in hostile(33, [whole[:3000], github('1.0', ('update.tar', 5, digest(b'tar')))], count=500):
+        asset(fw, json.split(b'\0')[0])
+
+
+SHA_CHUNK = 1 << 14
+
+
+def sha256(fw, card, path=b'/mnt/mmc/x'):
+    out, size = block(fw, size=65), C.c_uint(7)
+    ok = fw.fn('netupdate_sha256', C.c_int, C.c_char_p, C.c_void_p, C.POINTER(C.c_uint))(path, out, C.byref(size))
+    return ok, C.string_at(out).decode(), size.value
+
+
+@pytest.mark.parametrize('n', [0, 1, 3, 55, 56, 57, 63, 64, 65, 119, 120, 128, SHA_CHUNK - 64, SHA_CHUNK - 9, SHA_CHUNK - 8, SHA_CHUNK - 1,
+                               SHA_CHUNK, SHA_CHUNK + 1, 2 * SHA_CHUNK, 3 * SHA_CHUNK + 55, 100003])
+def test_a_file_s_sha256_at_every_edge_of_its_padding(fw, n):
+    data = random.Random(n).randbytes(n)
+    assert sha256(fw, Card(fw, {b'/mnt/mmc/x': data})) == (1, sha(data), n)
+
+
+def test_the_known_answers(fw):
+    card = Card(fw, {b'/mnt/mmc/x': b'abc', b'/mnt/mmc/y': b'abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq'})
+    assert sha256(fw, card)[1] == 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'  # FIPS 180-4's examples
+    assert sha256(fw, card, b'/mnt/mmc/y')[1] == '248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1'
+
+
+def test_a_file_that_is_missing_or_fails_to_read_has_no_sha256(fw):
+    card = Card(fw, {b'/mnt/mmc/x': b'abc'})
+    assert sha256(fw, card, b'/mnt/mmc/none')[0] == 0
+    fw.mock('fw_ferror', lambda *_: 1)
+    assert sha256(fw, card)[0] == 0
 
 
 def row(size, name):
@@ -421,7 +514,9 @@ def test_leaving_the_page_cancels_its_own_download(fw):
     nu = fw.var('netupdate__nu', Nu)
     nu.label = 5
     assert gone(6, None) == 0 and nu.label == 5 and nu.cancel == 0
-    assert gone(5, None) == 0 and not nu.label and nu.cancel == 1
+    assert gone(5, None) == 0 and not nu.label and nu.cancel == 2  # not a press's cancel: the part stays
+    nu.label, nu.cancel = 5, 1
+    assert gone(5, None) == 0 and nu.cancel == 1  # a press cancelled first: its part goes
 
 
 def test_an_app_by_id(fw):
@@ -696,19 +791,28 @@ def test_a_failed_unpack_is_a_card_error(fw):
 
 
 class Net:
-    """libcurl: each transfer answered by the first of its URL's replies: (result, code, location[, body]). A body goes
+    """libcurl: each transfer answered by the first of its URL's replies: (result, code, location[, body]), or a list
+    of them, one a transfer and the last from then on. One carried on from a byte (RESUME_FROM) gets the body from
+    there as a 206, unless the reply's fifth is 'whole': a server that ignores the range. A body goes
     through the transfer's own write callback in CHUNKS pieces, its progress callback told after each and during(k)
     run then, as a UI timer might: a short write ends it as curl's CURLE_WRITE_ERROR (23), a progress callback's
-    non-zero as CURLE_ABORTED_BY_CALLBACK (42)."""
-    def __init__(self, fw, replies, during=None):
-        self.replies, self.urls, self.opts, self.during = replies, [], {}, during
+    non-zero as CURLE_ABORTED_BY_CALLBACK (42). only: the URLs' start whose transfers run during."""
+    def __init__(self, fw, replies, during=None, only=b''):
+        self.replies, self.urls, self.opts, self.during, self.only = replies, [], {}, during, only
+        self.froms = []  # each transfer's RESUME_FROM, 0 without
         self.location = None
         def setopt(c, opt, value, *_):
             self.opts[opt] = value
         def perform(c, *_):
             url = C.string_at(self.opts[10002])
             self.urls.append(url)
-            self.result, self.code, location, *body = next(v for k, v in self.replies.items() if url.startswith(k))
+            reply = next(v for k, v in self.replies.items() if url.startswith(k))
+            if isinstance(reply, list):
+                reply = reply.pop(0) if len(reply) > 1 else reply[0]
+            self.result, self.code, location, *body = reply
+            self.froms.append(self.opts.get(21, 0))
+            if body and self.froms[-1] and body[1:] != ['whole']:
+                body, self.code = [body[0][self.froms[-1]:]], 206 if self.code == 200 else self.code
             self.location = C.create_string_buffer(location) if location else None
             return self.transfer(body[0]) if body and 20011 in self.opts else self.result
         def info(c, what, out, *_):
@@ -731,7 +835,7 @@ class Net:
                 return 23
             if progress and progress(self.opts[10057], len(body), at + len(piece), 0, 0):
                 return 42
-            if self.during:
+            if self.during and self.urls[-1].startswith(self.only):
                 self.during(k)
         return self.result
 
@@ -740,43 +844,206 @@ CHUNKS = 4
 
 
 LATEST = b'https://github.com/owner/repo/releases/latest'
-ASSET = LATEST + b'/download/update.tar'
-PART = b'/mnt/mmc/update.tar.part'
+API = b'https://api.github.com/repos/owner/repo/releases/tags/'
+GET = b'https://github.com/owner/repo/releases/download/'
+ASSET = GET + NEWER + b'/update.tar'
+TAG_URL = b'https://github.com/owner/repo/releases/tag/'
+TAR = b'/mnt/mmc/update.tar'
+PART = TAR + b'.part'
+NU_JSON = b'/tmp/q2-update.json'
+BODY = bytes(range(256)) * 1024  # 256 KB: CHUNKS pieces of 64 KB, KB-exact so progress reads 25/50/75/100
+RESERVE = 64 << 20
 
 
-def update(fw, code=302, location=b'https://github.com/owner/repo/releases/tag/' + NEWER, asset=(0, 200, None), card=None):
-    net = Net(fw, {ASSET: asset, LATEST: (0, code, location)})
-    card = card or Card(fw)
+def tar_json(tar=BODY, tag=NEWER, size=None):
+    """GitHub's record of a release: the guide, then update.tar with its size and digest."""
+    return github(tag.decode(), ('Q2-Pod-User-Guide.pdf', 9, digest(b'guide')), ('update.tar', len(tar) if size is None else size, digest(tar)))
+
+
+def replies(tar=BODY, tag=NEWER, latest=None, api=None, asset=None):
+    """An update's three transfers: the redirect that names the tag, that tag's release and its update.tar."""
+    return {GET + tag + b'/update.tar': asset or (0, 200, None, tar), API + tag: api or (0, 200, None, tar_json(tar, tag)),
+            LATEST: latest or (0, 302, TAG_URL + tag)}
+
+
+def slot(fw, files=None, free=1 << 30, mounted=True):
+    """A Disk as the Q2's card slot: in (card_mounted reads /proc/mounts) unless not mounted, with free bytes on it."""
+    card = Disk(fw, {**({b'/proc/mounts': b'/dev/mmcblk0p1 /mnt/mmc vfat rw 0 0\n'} if mounted else {}), **(files or {})})
+    def statfs(path, buf, *_):
+        words = C.cast(buf, C.POINTER(C.c_uint))
+        words[1], words[7] = 4096, free // 4096
+    fw.mock('fw_statfs', statfs)
+    return card
+
+
+def update(fw, card=None, during=None, only=GET, **kind):
+    net = Net(fw, replies(**kind), during=during, only=only)
+    card = card or slot(fw)
     nu = fw.var('netupdate__nu', Nu)
     fw.fn('netupdate__worker', C.c_void_p, C.c_void_p)(None)
     return nu.state, net, card
 
 
-def test_a_newer_tag_downloads_and_renames_once_whole(fw):
-    state, net, card = update(fw)
-    assert state == NU_DONE and net.urls == [LATEST, ASSET]
-    assert card.of('rename') == [(PART, b'/mnt/mmc/update.tar')]
+def test_a_newer_tag_is_checked_against_its_release_and_renamed_once_whole(fw):
+    state, net, card = update(fw, card=slot(fw, {TAR: b'old'}))
+    assert state == NU_DONE and net.urls == [LATEST, API + NEWER, ASSET]
+    assert card.of('rename') == [(PART, TAR)] and card.files[TAR] == BODY and NU_JSON not in card.files
 
 
 @pytest.mark.parametrize('tag', [TAG, OLDER])
 def test_nothing_older_or_equal_is_ever_flashed(fw, tag):
-    state, net, _ = update(fw, location=b'https://github.com/owner/repo/releases/tag/' + tag)
+    state, net, _ = update(fw, tag=tag)
     assert state == NU_LATEST and net.urls == [LATEST]
 
 
 @pytest.mark.parametrize('code,location', [(200, None), (302, b'https://github.com/owner/repo/releases'), (302, b''), (404, None)])
 def test_no_tag_is_no_network(fw, code, location):
-    assert update(fw, code, location)[0] == NU_NET
+    assert update(fw, latest=(0, code, location))[0] == NU_NET
 
 
 def test_a_long_redirect_is_held_to_the_tag_buffer(fw):
-    state, net, card = update(fw, location=b'https://x/releases/tag/9' + b'9' * 200)
-    assert state == NU_DONE
+    state, net, _ = update(fw, tag=b'9' * 63, latest=(0, 302, TAG_URL + b'9' * 201))
+    assert state == NU_DONE and net.urls[1:] == [API + b'9' * 63, GET + b'9' * 63 + b'/update.tar']
+
+
+@pytest.mark.refusal('update:hash')
+def test_one_wrong_byte_is_never_named_update_tar(fw):
+    """The tar as the card gives it back isn't the one the release's digest names: it goes, and the old one stays."""
+    wrong = BODY[:1000] + b'\xff' + BODY[1001:]
+    state, _, card = update(fw, card=slot(fw, {TAR: b'old'}), asset=(0, 200, None, wrong))
+    assert state == NU_BAD and card.written[PART] == wrong
+    assert card.files[TAR] == b'old' and PART not in card.files and not card.of('rename')
+
+
+@pytest.mark.parametrize('size', [len(BODY) - 1, len(BODY) + 1])
+@pytest.mark.refusal('update:changed')
+def test_a_tar_of_another_size_than_the_release_says_is_bad(fw, size):
+    state, _, card = update(fw, api=(0, 200, None, tar_json(size=size)))
+    assert state == NU_BAD and TAR not in card.files and PART not in card.files
+
+
+@pytest.mark.parametrize('json', [
+    github(NEWER.decode()), github(NEWER.decode(), ('update.tar', len(BODY))), github(NEWER.decode(), ('update.tar', len(BODY), 'null')),
+    github(NEWER.decode(), ('update.zip', len(BODY), digest(BODY))), b'{}',
+])
+def test_a_release_that_doesnt_say_what_its_tar_is_downloads_nothing(fw, json):
+    state, net, card = update(fw, api=(0, 200, None, json))
+    assert state == NU_MISSING and net.urls == [LATEST, API + NEWER] and PART not in card.written
+
+
+@pytest.mark.parametrize('reply,state', [
+    ((0, 403, None, b'{}'), NU_BUSY), ((0, 429, None, b'{}'), NU_BUSY), ((0, 404, None, b'{}'), NU_MISSING),
+    ((0, 500, None, b'{}'), NU_NET), ((7, 0, None), NU_NET),
+])
+def test_githubs_refusals_of_the_release(fw, reply, state):
+    got, net, card = update(fw, api=reply)
+    assert got == state and net.urls == [LATEST, API + NEWER] and PART not in card.written
+    assert card.of('unlink') == [(NU_JSON,)]  # its own temp file, not the App Store's
+
+
+def test_no_card_downloads_nothing(fw):
+    state, net, card = update(fw, card=slot(fw, mounted=False))
+    assert state == NU_CARD and net.urls == [LATEST, API + NEWER] and PART not in card.written
+
+
+def test_room_for_the_tar_and_its_unpacking_or_nothing_is_downloaded(fw):
+    need = 2 * len(BODY) + RESERVE
+    state, net, card = update(fw, card=slot(fw, free=need - 4096))
+    assert state == NU_SPACE and fw.var('netupdate__nu', Nu).need == 1
+    assert net.urls == [LATEST, API + NEWER] and PART not in card.written
+    assert update(fw, card=slot(fw, free=need))[0] == NU_DONE
+
+
+def test_a_resumed_press_needs_room_for_the_rest_only(fw):
+    """The part's bytes are already out of the card's free room: asking 2 x size again refused a press on cards the first one fit."""
+    have = 16 * 4096
+    need = 2 * len(BODY) - have + RESERVE
+    state, net, _ = update(fw, card=slot(fw, {PART: BODY[:have]}, free=need - 4096))
+    assert state == NU_SPACE and fw.var('netupdate__nu', Nu).need == 1 and net.urls == [LATEST, API + NEWER]
+    card = slot(fw, {PART: BODY[:have]}, free=need)
+    assert update(fw, card=card)[0] == NU_DONE and card.files[TAR] == BODY
+    # a part that isn't this release's (longer than the tar) counts for nothing
+    assert update(fw, card=slot(fw, {PART: BODY + b'x'}, free=need))[0] == NU_SPACE
+
+
+HALF = len(BODY) // 2
+
+
+def test_a_part_left_on_the_card_is_carried_on_from(fw):
+    """What a lost connection, a power cut or leaving the page left: only the rest is asked for."""
+    card = slot(fw, {TAR: b'old', PART: BODY[:70000]})
+    state, net, _ = update(fw, card=card)
+    assert state == NU_DONE and net.urls == [LATEST, API + NEWER, ASSET] and net.froms == [0, 0, 70000]
+    assert card.files[TAR] == BODY and PART not in card.files
+
+
+def test_a_part_already_whole_is_only_read_back(fw):
+    card = slot(fw, {PART: BODY})
+    state, net, _ = update(fw, card=card)
+    assert state == NU_DONE and net.urls == [LATEST, API + NEWER] and card.files[TAR] == BODY
+
+
+def test_a_part_longer_than_the_release_is_started_again(fw):
+    card = slot(fw, {PART: BODY + b'more'})
+    state, net, _ = update(fw, card=card)
+    assert state == NU_DONE and net.froms == [0, 0, 0] and card.files[TAR] == BODY
+
+
+def test_a_part_of_another_release_is_found_damaged_and_the_next_press_starts_again(fw):
+    card = slot(fw, {TAR: b'old', PART: b'x' * 70000})
+    state, net, _ = update(fw, card=card)
+    assert state == NU_BAD and net.froms[-1] == 70000 and card.files[TAR] == b'old' and PART not in card.files
+    state, net, _ = update(fw, card=card)
+    assert state == NU_DONE and net.froms[-1] == 0 and card.files[TAR] == BODY
+
+
+def test_a_connection_lost_twice_is_carried_on_each_time(fw):
+    slept = []
+    fw.mock('fw_usleep', lambda us, *_: slept.append(us))
+    asset = [(18, 200, None, BODY[:50000]), (28, 200, None, BODY[:120000]), (0, 200, None, BODY)]
+    state, net, card = update(fw, asset=asset)
+    assert state == NU_DONE and net.urls[2:] == [ASSET] * 3 and net.froms[2:] == [0, 50000, 120000]
+    assert card.files[TAR] == BODY and sum(slept) == 2 * 5_000_000  # 5 s before each new try
+    assert [e for e in card.log if e[0] == 'fsync'][:2] == [('fsync', PART)] * 2  # a part cut short is on the card too
+
+
+def test_tries_that_add_nothing_end_the_press_and_keep_the_part(fw):
+    card = slot(fw, {TAR: b'old'})
+    state, net, _ = update(fw, card=card, asset=[(18, 200, None, BODY[:50000]), (7, 0, None)])
+    assert state == NU_NET and net.urls[2:] == [ASSET] * 4  # the first added bytes, so three more
+    assert card.files[PART] == BODY[:50000] and card.files[TAR] == b'old' and not card.of('rename')
+
+
+def test_an_http_error_on_a_resumed_try_keeps_the_part(fw):
+    """curl's 22 (FAILONERROR) writes no body: the part is carried on from after the pause."""
+    asset = [(18, 200, None, BODY[:50000]), (22, 503, None), (0, 200, None, BODY)]
+    state, net, card = update(fw, asset=asset)
+    assert state == NU_DONE and net.froms[2:] == [0, 50000, 50000] and card.files[TAR] == BODY
+    assert (PART,) not in card.of('unlink')
+
+
+@pytest.mark.parametrize('ignored', [(33, 200, None), (0, 200, None, BODY, 'whole'), (0, 416, None, b'')])
+def test_a_reply_that_isnt_the_range_asked_for_starts_the_part_again(fw, ignored):
+    """curl's own refusal (CURLE_RANGE_ERROR), or a reply that came without it and isn't a 206."""
+    state, net, card = update(fw, asset=[(18, 200, None, BODY[:50000]), ignored, (0, 200, None, BODY)])
+    assert state == NU_DONE and net.froms[2:] == [0, 50000, 0] and card.files[TAR] == BODY
+    assert (PART,) in card.of('unlink')
+
+
+@pytest.mark.parametrize('cancel, kept', [(1, False), (2, True)])
+def test_a_cancel_between_tries_ends_the_wait(fw, cancel, kept):
+    """A press's cancel deletes the part; leaving the page keeps it."""
+    nu = fw.var('netupdate__nu', Nu)
+    slept = []
+    fw.mock('fw_usleep', lambda us, *_: slept.append(us) or setattr(nu, 'cancel', cancel))
+    state, net, card = update(fw, asset=(18, 200, None, BODY[:50000]))
+    assert state == NU_CANCELLED and len(slept) == 1 and net.urls[2:] == [ASSET]
+    assert (PART in card.files) == kept
 
 
 def test_a_missing_asset_leaves_no_part(fw):
     state, _, card = update(fw, asset=(0, 404, None))
-    assert state == NU_MISSING and card.of('unlink') == [(PART,)] and not card.of('rename')
+    assert state == NU_MISSING and card.of('unlink') == [(NU_JSON,), (PART,)] and not card.of('rename')
 
 
 def test_a_failed_transfer_says_network_a_write_error_card(fw):
@@ -786,9 +1053,10 @@ def test_a_failed_transfer_says_network_a_write_error_card(fw):
 
 
 def test_a_card_that_cant_open_the_part(fw):
-    card = Card(fw)
-    fw.mock('fw_fopen', lambda *_: 0)
-    assert update(fw, card=card)[0] == NU_CARD
+    card = slot(fw)
+    fw.mock('fw_fopen', lambda path, mode, *_: 0 if C.string_at(path) == PART else card.fopen(path, mode))
+    state, net, _ = update(fw, card=card)
+    assert state == NU_CARD and net.urls == [LATEST, API + NEWER]
 
 
 def test_a_cancel_during_the_check_downloads_nothing(fw):
@@ -797,21 +1065,54 @@ def test_a_cancel_during_the_check_downloads_nothing(fw):
     assert state == NU_CANCELLED and net.urls == [LATEST]
 
 
+def test_a_cancel_while_the_release_is_read_downloads_nothing(fw):
+    nu = fw.var('netupdate__nu', Nu)
+    state, net, card = update(fw, during=lambda k: setattr(nu, 'cancel', 1), only=API)
+    assert state == NU_CANCELLED and net.urls == [LATEST, API + NEWER] and PART not in card.written
+
+
 def test_a_cancel_while_the_card_takes_the_last_bytes_is_a_cancel(fw):
     """The press lands during the fsync of the whole part, seconds on a slow card with the label at 100%: the part
     goes and the old tar stays, as for any cancel, and the word is Download cancelled."""
-    card = Disk(fw, {TAR: b'old'})
+    card = slot(fw, {TAR: b'old'})
     nu = fw.var('netupdate__nu', Nu)
     fw.mock('fw_fsync', lambda fd, *_: setattr(nu, 'cancel', 1) or 0)
     state, _, card = update(fw, card=card)
     assert state == NU_CANCELLED and card.files[TAR] == b'old' and PART not in card.files and not card.of('rename')
 
 
-def fetch(fw, url=b'https://x', tag_size=64, file=None):
+def read_back(fw, card, then):
+    """then() run as the part is opened to be read back (not to be sized, before a try); what it returned, each time."""
+    seen, nu = [], fw.var('netupdate__nu', Nu)
+    def fopen(path, mode, *_):
+        if C.string_at(path) == PART and b'r' in C.string_at(mode) and nu.stage == 2:
+            seen.append(then())
+        return card.fopen(path, mode)
+    fw.mock('fw_fopen', fopen)
+    return seen
+
+
+def test_a_cancel_while_the_part_is_read_back_is_a_cancel(fw):
+    card = slot(fw, {TAR: b'old'})
+    nu = fw.var('netupdate__nu', Nu)
+    seen = read_back(fw, card, lambda: setattr(nu, 'cancel', 1) or nu.stage)
+    state, _, card = update(fw, card=card)
+    assert state == NU_CANCELLED and seen == [2]
+    assert card.files[TAR] == b'old' and PART not in card.files and not card.of('rename')
+
+
+def test_a_part_the_card_cant_give_back_is_a_card_error(fw):
+    card = slot(fw, {TAR: b'old'})
+    fw.mock('fw_fopen', lambda path, mode, *_: 0 if C.string_at(path) == PART and b'r' in C.string_at(mode) else card.fopen(path, mode))
+    state, _, _ = update(fw, card=card)
+    assert state == NU_CARD and card.files[TAR] == b'old' and PART not in card.files and not card.of('rename')
+
+
+def fetch(fw, url=b'https://x', tag_size=64, file=None, start=0):
     tag, code = block(fw, size=tag_size), C.c_long(0)
     xfer = (C.c_int * 2)()
-    fn = fw.fn('netupdate__fetch', C.c_int, C.c_char_p, C.c_void_p, C.c_void_p, C.c_uint, C.POINTER(C.c_long), C.c_void_p)
-    err = fn(url, file, tag if not file else None, tag_size, C.byref(code), xfer)
+    fn = fw.fn('netupdate__fetch', C.c_int, C.c_char_p, C.c_void_p, C.c_void_p, C.c_uint, C.POINTER(C.c_long), C.c_void_p, C.c_long)
+    err = fn(url, file, tag if not file else None, tag_size, C.byref(code), xfer, start)
     return err, C.string_at(tag), code.value
 
 
@@ -825,6 +1126,25 @@ def test_a_download_follows_redirects_to_its_file_and_verifies(fw):
     net = Net(fw, {b'https': (0, 200, None)})
     assert fetch(fw, file=7)[0] == 0
     assert net.opts[52] == 1 and net.opts[10001] == 7 and net.opts[64] == 1 and net.opts[81] == 2
+
+
+def test_a_download_carried_on_asks_from_its_byte_and_a_new_one_asks_for_no_range(fw):
+    net = Net(fw, {b'https': (0, 206, None)})
+    assert fetch(fw, file=7, start=70000) == (0, b'', 206) and net.opts[21] == 70000  # RESUME_FROM
+    assert fetch(fw, file=7)[0] == 0 and 21 not in net.opts
+
+
+def test_a_resumed_transfer_fails_on_an_http_error_and_a_new_one_does_not(fw):
+    net = Net(fw, {b'https': (0, 206, None)})
+    fetch(fw, file=7, start=70000)
+    assert net.opts[45] == 1  # FAILONERROR: a 403/429/5xx is curl's 22, not an error page in the part
+    fetch(fw, file=7)
+    assert 45 not in net.opts  # a first try's 404 must stay "No update for this build"
+
+
+def test_a_failed_transfer_is_curl_s_own_code(fw):
+    Net(fw, {b'https': (33, 0, None)})
+    assert fetch(fw, file=7, start=5)[0] == 33  # CURLE_RANGE_ERROR, which update() tells from a lost connection
 
 
 def test_no_curl_handle_is_an_error(fw):
@@ -874,10 +1194,8 @@ def room(fw, bytes_, blocks, size=4096, ok=0):
         words[1], words[7] = size, blocks
         return ok
     fw.mock('fw_statfs', statfs)
-    return fw.fn('netupdate__room', C.c_int, C.c_uint)(bytes_), fw.var('netupdate__sh', Sh).need
-
-
-RESERVE = 64 << 20
+    need = C.c_uint(0)
+    return fw.fn('netupdate__room', C.c_int, C.c_ulonglong, C.POINTER(C.c_uint))(bytes_, C.byref(need)), need.value
 
 
 def test_room_for_the_bytes_and_the_reserve(fw):
@@ -895,6 +1213,10 @@ def test_a_huge_card_doesnt_overflow(fw):
 
 def test_no_statfs_is_a_card_error(fw):
     assert room(fw, 1, 1 << 20, ok=-1)[0] == SH_CARD
+
+
+def test_more_than_4gb_is_asked_for_whole(fw):
+    assert room(fw, 5 << 30, (4 << 30) // 4096) == (SH_SPACE, 1024 + 64)
 
 
 def install(fw, card, net=None, size=5, blocks=1 << 24):
@@ -936,6 +1258,7 @@ def test_no_release_stops_it(fw):
     assert install(fw, card, net)[0] == SH_MISSING and not card.of('system')
 
 
+@pytest.mark.refusal('addon:traversal')
 def test_a_bad_zip_changes_nothing(fw):
     card = Card(fw, {f'{STAGING}/foo.list'.encode(): row(5, '../x')})
     assert install(fw, card)[0] == SH_BAD
@@ -1348,9 +1671,6 @@ def test_a_hostile_list_on_the_card_opens_the_page_safely(fw):
 
 EVT_CLICK, EVT_DESTROY = O['EVT_CLICK'], O['EVT_DESTROY']
 RET_REPEAT = 8
-TAR = b'/mnt/mmc/update.tar'
-TAG_URL = b'https://github.com/owner/repo/releases/tag/'
-BODY = bytes(range(256)) * 1024  # 256 KB: CHUNKS pieces of 64 KB, KB-exact so progress reads 25/50/75/100
 SOURCES = b'/mnt/mmc/.q2/sources.list'
 MOUNTS = b'/proc/mounts'
 
@@ -1380,8 +1700,8 @@ class Disk(Card):
             return 0
         f = len(self.names) + 1
         self.names[f], self.at[f] = name, 0
-        if b'w' in how:
-            self.written[name] = b''
+        if b'w' in how or b'a' in how:
+            self.written[name] = b'' if b'w' in how else self.files.get(name, b'')
             self.writing.add(f)
         return f
 
@@ -1449,8 +1769,9 @@ class UpdateRow:
     and label, what they show, the toasts, the wait timer, the worker and stock's card update."""
     VIEW, ROW, BUTTON, LABEL = 0x7100, 0x7200, 0x7300, 0x7400
 
-    def __init__(self, fw, wifi=1, children=2, thread=0, win=0x7000):
+    def __init__(self, fw, wifi=1, children=2, thread=0, win=0x7000, battery=80, cable=0):
         self.fw, self.wifi, self.flashed = fw, wifi, 0
+        fw.var('fw_ctx_g_power_capacity', C.c_int).value, fw.var('g_usbdet_value', C.c_ubyte).value = battery, cable
         self.names, self.text, self.tr, self.handlers, self.toasts, self.timers, self.workers = {}, {}, {}, [], [], [], []
         tree = {(self.VIEW, 1): self.ROW, (self.ROW, 0): self.BUTTON, (self.BUTTON, 0): self.LABEL}
         fw.mock('stock_fwupdate_trampoline', lambda *_: 7)
@@ -1506,14 +1827,16 @@ def test_a_page_laid_out_otherwise_stays_stock_s(fw, children, win):
 
 
 def test_a_press_downloads_a_newer_release_and_hands_it_to_stock_s_card_update(fw):
-    card = Disk(fw, {TAR: b'old'})
+    card = slot(fw, {TAR: b'old'})
     row = UpdateRow(fw)
     row.press()
     assert row.nu.state == NU_RUNNING and row.label() == 'Checking…' and row.wait() == RET_REPEAT
     seen = []
-    Net(fw, {ASSET: (0, 200, None, BODY), LATEST: (0, 302, TAG_URL + NEWER)}, during=lambda k: seen.append((row.wait(), row.label())))
+    Net(fw, replies(), during=lambda k: seen.append((row.wait(), row.label())), only=GET)
+    checked = read_back(fw, card, lambda: (row.wait(), row.label()))
     row.run()
     assert seen == [(RET_REPEAT, f'Downloading {p}%') for p in (25, 50, 75, 100)]
+    assert checked == [(RET_REPEAT, 'Verifying…')]
     assert {args[:3] for _, args in fw.calls('reset_poweroptions_timer')} == {(1, 1, 0)}  # standby held, not the screen
     assert card.files[TAR] == BODY and PART not in card.files
     # the part on the card before it replaces the old tar, then the rename's own entry before stock flashes it
@@ -1522,8 +1845,18 @@ def test_a_press_downloads_a_newer_release_and_hands_it_to_stock_s_card_update(f
     assert row.nu.state == NU_IDLE
 
 
+def test_the_release_is_read_under_checking_not_a_percentage(fw):
+    slot(fw)
+    row = UpdateRow(fw)
+    row.press()
+    seen = []
+    Net(fw, replies(api=(0, 200, None, tar_json() + b' ' * 4096)), during=lambda k: seen.append(row.wait() and row.label()), only=API)
+    row.run()
+    assert seen == ['Checking…'] * CHUNKS and row.nu.percent == 100  # the tar's, the release's own dropped
+
+
 def test_a_second_press_cancels_mid_download_and_keeps_the_old_tar(fw):
-    card = Disk(fw, {TAR: b'old'})
+    card = slot(fw, {TAR: b'old'})
     row = UpdateRow(fw)
     row.press()
     seen = []
@@ -1532,84 +1865,135 @@ def test_a_second_press_cancels_mid_download_and_keeps_the_old_tar(fw):
         if k == 1:
             row.press()
             seen.append((row.wait(), row.label()))  # the timer says so too, not the percentage
-    Net(fw, {ASSET: (0, 200, None, BODY), LATEST: (0, 302, TAG_URL + NEWER)}, during=during)
+    Net(fw, replies(), during=during, only=GET)
     row.run()
     assert seen == [(RET_REPEAT, 'Cancelling…')] and len(card.written[PART]) < len(BODY)  # ended at the next progress call
     assert row.wait() == 0 and row.toasts == ['Download cancelled'] and not row.flashed
     assert card.files[TAR] == b'old' and PART not in card.files
 
 
-def test_leaving_the_page_mid_download_cancels_it(fw):
-    card = Disk(fw, {TAR: b'old'})
+def test_leaving_the_page_mid_download_cancels_it_and_keeps_the_part(fw):
+    card = slot(fw, {TAR: b'old'})
     row = UpdateRow(fw)
     row.press()
-    Net(fw, {ASSET: (0, 200, None, BODY), LATEST: (0, 302, TAG_URL + NEWER)}, during=lambda k: k == 1 and row.leave())
+    Net(fw, replies(), during=lambda k: k == 1 and row.leave(), only=GET)
     row.run()
     assert row.wait() == 0 and row.toasts == ['Download cancelled'] and row.tr == {} and not row.flashed
-    assert card.files[TAR] == b'old' and PART not in card.files
+    assert card.files[TAR] == b'old' and card.files[PART] == BODY[:3 * len(BODY) // CHUNKS]  # ended at the next progress call
+
+
+def test_a_press_carries_on_from_the_part_and_says_how_far_the_whole_is(fw):
+    card = slot(fw, {TAR: b'old', PART: BODY[:HALF]})
+    row = UpdateRow(fw)
+    row.press()
+    seen = []
+    net = Net(fw, replies(), during=lambda k: seen.append(row.wait() and row.label()), only=GET)
+    row.run()
+    base = (HALF >> 10) * 100 // ((len(BODY) >> 10) + 1)  # the half it began with
+    assert net.froms[-1] == HALF and seen == [f'Downloading {base + p * (100 - base) // 100}%' for p in (25, 50, 75, 100)]
+    assert 48 <= base <= 50 and row.wait() == 0 and row.flashed == 1 and card.files[TAR] == BODY
+
+
+def test_the_row_says_how_far_it_was_and_then_that_it_is_reconnecting(fw):
+    card = slot(fw, {PART: BODY[:HALF]})
+    row = UpdateRow(fw)
+    row.press()
+    seen = []
+    fw.mock('fw_usleep', lambda us, *_: seen.append(row.wait() and row.label()))
+    Net(fw, replies(asset=[(7, 0, None), (0, 200, None, BODY)]))
+    row.run()
+    assert set(seen) == {'Reconnecting…'} and len(seen) == 50 and card.files[TAR] == BODY
 
 
 @pytest.mark.parametrize('how', ['press', 'leave'])
 def test_a_cancel_after_the_last_byte_still_keeps_the_old_tar(fw, how):
-    card = Disk(fw, {TAR: b'old'})
+    card = slot(fw, {TAR: b'old'})
     row = UpdateRow(fw)
     row.press()
-    Net(fw, {ASSET: (0, 200, None, BODY), LATEST: (0, 302, TAG_URL + NEWER)}, during=lambda k: k == CHUNKS - 1 and getattr(row, how)())
+    Net(fw, replies(), during=lambda k: k == CHUNKS - 1 and getattr(row, how)(), only=GET)
     row.run()
     assert card.written[PART] == BODY  # no progress call left to end it: the transfer itself came whole
     assert row.wait() == 0 and row.toasts == ['Download cancelled'] and not row.flashed
-    assert card.files[TAR] == b'old' and PART not in card.files and not card.of('rename')
+    assert card.files[TAR] == b'old' and not card.of('rename')
+    assert card.files.get(PART) == (BODY if how == 'leave' else None)  # left: there for the next press
 
 
 def test_a_part_the_card_can_t_sync_never_replaces_the_tar(fw):
-    card = Disk(fw, {TAR: b'old'})
+    card = slot(fw, {TAR: b'old'})
     fw.mock('fw_fsync', lambda fd, *_: -1 if card.names[fd - 100] == PART else 0)
     row = UpdateRow(fw)
     row.press()
-    Net(fw, {ASSET: (0, 200, None, BODY), LATEST: (0, 302, TAG_URL + NEWER)})
+    Net(fw, replies())
     row.run()
     assert row.wait() == 0 and row.toasts == ["Can't write to the card"] and not row.flashed
     assert card.files[TAR] == b'old' and PART not in card.files and not card.of('rename')
 
 
 def test_a_download_finished_off_the_page_waits_for_the_card_update(fw):
-    card = Disk(fw)
+    card = slot(fw)
     row = UpdateRow(fw)
     row.press()
-    Net(fw, {ASSET: (0, 200, None, BODY), LATEST: (0, 302, TAG_URL + NEWER)})
+    Net(fw, replies())
     row.run()
     row.leave()
     assert row.wait() == 0 and row.toasts == ['Update downloaded: use TF card update'] and not row.flashed
     assert card.files[TAR] == BODY
 
 
-@pytest.mark.parametrize('replies, said', [
+@pytest.mark.parametrize('answers, said', [
     ({LATEST: (0, 302, TAG_URL + TAG)}, 'Latest firmware installed'),
     ({LATEST: (6, 0, None)}, "Can't reach GitHub"),  # CURLE_COULDNT_RESOLVE_HOST
     ({LATEST: (0, 200, None)}, "Can't reach GitHub"),  # no redirect
-    ({ASSET: (0, 404, None, b'Not Found'), LATEST: (0, 302, TAG_URL + NEWER)}, 'No update for this build'),
-    ({ASSET: (28, 200, None, BODY), LATEST: (0, 302, TAG_URL + NEWER)}, "Can't reach GitHub"),  # timed out
+    (replies(api=(0, 403, None, b'{}')), 'GitHub is busy, try later'),  # its API's hourly limit
+    (replies(api=(0, 200, None, github(NEWER.decode(), ('update.tar', len(BODY))))), 'No update for this build'),  # no digest
+    (replies(asset=(0, 404, None, b'Not Found')), 'No update for this build'),
+    (replies(asset=(28, 0, None)), "Can't reach GitHub"),  # timed out, each try
+    (replies(asset=(0, 200, None, BODY[:-1] + b'!')), 'The download was damaged, try again'),
 ])
-def test_each_ending_says_why_and_keeps_the_old_tar(fw, replies, said):
-    card = Disk(fw, {TAR: b'old'})
+def test_each_ending_says_why_and_keeps_the_old_tar(fw, answers, said):
+    card = slot(fw, {TAR: b'old'})
     row = UpdateRow(fw)
     row.press()
-    Net(fw, replies)
+    Net(fw, answers)
     row.run()
     assert row.wait() == 0 and row.toasts == [said] and not row.flashed and row.tr == {row.LABEL: 'update_online'}
-    assert card.files[TAR] == b'old' and PART not in card.files
+    assert card.files[TAR] == b'old' and not card.files.get(PART)
+
+
+def test_a_card_without_the_room_says_how_much_more(fw):
+    card = slot(fw, {TAR: b'old'}, free=RESERVE)
+    row = UpdateRow(fw)
+    row.press()
+    net = Net(fw, replies())
+    row.run()
+    assert row.wait() == 0 and row.toasts == ['Needs 1 MB more space'] and ASSET not in net.urls  # 2 x 256 KB short
+    assert card.files[TAR] == b'old' and PART not in card.written
 
 
 def test_a_full_card_fails_the_write_and_says_so(fw):
-    card = Disk(fw, {TAR: b'old'})
-    fw.mock('fw_fwrite', lambda *_: 0)
-    fw.mock('fw_ferror', lambda *_: 1)
+    card = slot(fw, {TAR: b'old'})
+    def fwrite(buf, size, n, f, *_):
+        if card.names[f] == PART:
+            return 0
+        card.written[card.names[f]] += C.string_at(buf, size * n)
+        return n
+    fw.mock('fw_fwrite', fwrite)
+    fw.mock('fw_ferror', lambda f, *_: card.names[f] == PART)
     row = UpdateRow(fw)
     row.press()
-    net = Net(fw, {ASSET: (0, 200, None, BODY), LATEST: (0, 302, TAG_URL + NEWER)})
+    net = Net(fw, replies())
     row.run()
-    assert net.urls == [LATEST, ASSET] and row.wait() == 0 and row.toasts == ["Can't write to the card"]
+    assert net.urls == [LATEST, API + NEWER, ASSET] and row.wait() == 0 and row.toasts == ["Can't write to the card"]
     assert card.files[TAR] == b'old' and PART not in card.files
+
+
+@pytest.mark.parametrize('battery, cable, starts', [(15, 0, 0), (16, 0, 1), (0, 1, 1), (100, 0, 1)])
+def test_a_battery_stock_s_updater_would_refuse_downloads_nothing(fw, battery, cable, starts):
+    """Under 16% off a charger stock's own check ends the card update: said before the download, not after it."""
+    row = UpdateRow(fw, battery=battery, cable=cable)
+    row.press()
+    assert len(row.workers) == starts and row.toasts == ([] if starts else ['Charge the battery first'])
+    assert row.nu.state == (NU_RUNNING if starts else NU_IDLE)
 
 
 def test_a_press_without_wifi_or_a_thread_starts_nothing(fw):
@@ -1660,6 +2044,222 @@ def store_net(fw, files=FOO, listed=b'me/q2-foo Foo\n', size=None, **replies):
     return Net(fw, {b'https://raw': (0, 200, None, listed),
                     b'https://api': replies.get('api', (0, 200, None, github('2.0', ('app.zip', size or len(data))))),
                     b'https://h/': replies.get('zip', (0, 200, None, data))})
+
+
+class Nc(C.Structure):
+    _fields_ = [('at', C.c_uint), ('polled', C.c_uint), ('busy', C.c_int), ('ok', C.c_int), ('read', C.c_int),
+                ('tag', C.c_char * 16), ('told', C.c_char * 16)]
+
+
+TOLD = b'/mnt/data/q2-update.told'
+NOTICE = f'Q2 Pod {NEWER.decode()} is out: System Update → Network Update'
+HOUR, DAY = 60 * 60 * 1000, 24 * 60 * 60 * 1000
+NU_POLL = 2000  # netupdate.c's NU_POLL_MS
+
+
+class Poll:
+    """power_poll's netupdate_poll at self.ms: the top window (by name, None for none), the screen, Wi-Fi, the
+    check's thread (run by run()) and the toasts stubbed; the told tag on card."""
+    def __init__(self, fw, card, top=b'home_page', lit=1, wifi=1):
+        self.fw, self.card, self.wifi, self.ms, self.workers, self.toasts = fw, card, wifi, 1000, [], []
+        self.top(top)
+        self.lit = fw.var('g_backlight_status', C.c_ubyte)
+        self.lit.value = lit
+        fw.mock('time_now_ms', lambda *_: self.ms)
+        fw.mock('window_manager_get_top_window', lambda *_: C.addressof(self.name) if self.name else 0)
+        fw.mock('widget_get_prop_str', lambda w, key, default, *_: w if self.name and w == C.addressof(self.name) else default)  # the top window here is its name
+        fw.mock('get_wifisignal', lambda *_: self.wifi)
+        fw.mock('fw_pthread_create', lambda t, a, fn, arg, *_: self.workers.append(fn) or 0)
+        fw.mock('fw_pthread_detach', lambda *_: 0)
+        fw.mock('navigator_to_with_context', lambda path, info, *_: self.toasts.append(C.string_at(info + 8).decode()))
+        self.nc = fw.var('netupdate__nc', Nc)
+
+    def top(self, name):
+        self.name = C.create_string_buffer(name) if name else None
+
+    def poll(self, after=NU_POLL):
+        self.ms += after
+        self.fw.fn('netupdate_poll', None)()
+
+    def run(self):
+        assert C.CFUNCTYPE(C.c_void_p, C.c_void_p)(self.workers.pop())(None) is None
+
+
+
+def test_a_newer_release_is_told_once_on_home(fw):
+    card = slot(fw)
+    p = Poll(fw, card)
+    net = Net(fw, {LATEST: (0, 302, TAG_URL + NEWER)})
+    p.poll()
+    assert len(p.workers) == 1 and p.nc.busy and p.toasts == []
+    p.poll()  # while it checks: nothing more
+    assert len(p.workers) == 1
+    p.run()
+    assert net.urls == [LATEST] and net.opts[44] == 1 and 52 not in net.opts  # one header-only request, no API
+    assert p.nc.tag == NEWER and p.nc.ok and not p.nc.busy
+    p.poll()
+    assert p.toasts == [NOTICE] and card.files[TOLD][:len(NEWER) + 1] == NEWER + b'\0'
+    for _ in range(3):
+        p.poll()
+    assert p.toasts == [NOTICE] and not p.workers  # once, and no new check within the day
+
+
+def remind_daily_off(fw):
+    """[Q2POD] REMINDDAILY=0 in config.ini; every read of it counted."""
+    reads = []
+    def read(path, section, key, out, default, *_):
+        reads.append(C.string_at(key))
+        if C.string_at(key) == b'REMINDDAILY':
+            C.memmove(out, b'0\0', 2)
+    fw.mock('toolsReadConfig', read)
+    return reads
+
+
+def test_remind_daily_off_checks_nothing_tells_nothing_and_takes_back_the_tag(fw):
+    reads = remind_daily_off(fw)
+    card = slot(fw)
+    p = Poll(fw, card)
+    net = Net(fw, {LATEST: (0, 302, TAG_URL + NEWER)})
+    p.nc.tag, p.nc.at = NEWER, 1  # found while it was On
+    for _ in range(3):
+        p.poll(DAY)
+    assert p.workers == [] and net.urls == [] and p.toasts == [] and TOLD not in card.files
+    assert p.nc.tag == b'' and not p.nc.busy and not p.nc.polled and not p.nc.at  # On again: checks at once
+    assert reads.count(b'REMINDDAILY') == 1  # read once, not at every poll
+
+
+def test_remind_daily_off_leaves_the_tag_to_a_check_thread_that_owns_it(fw):
+    remind_daily_off(fw)
+    p = Poll(fw, slot(fw))
+    p.nc.tag, p.nc.busy = NEWER, 1
+    p.poll()
+    assert p.nc.tag == NEWER and p.workers == []
+    p.nc.busy = 0
+    p.poll()
+    assert p.nc.tag == b''
+
+
+def test_a_release_told_before_a_restart_isn_t_told_again(fw):
+    card = slot(fw, {TOLD: NEWER.ljust(16, b'\0')})
+    p = Poll(fw, card)
+    Net(fw, {LATEST: (0, 302, TAG_URL + NEWER)})
+    p.poll()
+    p.run()
+    p.poll()
+    p.poll()
+    assert p.toasts == [] and p.nc.tag == NEWER  # still the row's
+    # the next release is told
+    _n = int(NEWER.replace(b'.', b'')) + 1
+    later = b'%d.%d.%d' % (_n // 100, _n // 10 % 10, _n % 10)
+    Net(fw, {LATEST: (0, 302, TAG_URL + later)})
+    p.poll(DAY)
+    p.run()
+    p.poll()
+    assert p.toasts == [NOTICE.replace(NEWER.decode(), later.decode())] and card.files[TOLD][:len(later)] == later
+
+
+@pytest.mark.parametrize('tag', [TAG, OLDER])
+def test_this_build_s_release_or_an_older_one_is_no_notice(fw, tag):
+    p = Poll(fw, slot(fw))
+    Net(fw, {LATEST: (0, 302, TAG_URL + tag)})
+    p.poll()
+    p.run()
+    p.poll()
+    assert p.nc.tag == b'' and p.nc.ok and p.toasts == []
+
+
+def test_it_waits_for_home_with_the_screen_on(fw):
+    card = slot(fw)
+    p = Poll(fw, card, top=b'playing_page')
+    Net(fw, {LATEST: (0, 302, TAG_URL + NEWER)})
+    p.poll()
+    p.run()
+    p.poll()
+    p.top(None)
+    p.poll()
+    p.top(b'home_page')
+    p.lit.value = 0
+    p.poll()
+    assert p.toasts == [] and TOLD not in card.files
+    p.lit.value = 1
+    p.poll()
+    assert p.toasts == [NOTICE]
+
+
+def test_no_check_without_wi_fi_or_while_a_press_downloads(fw):
+    p = Poll(fw, slot(fw), wifi=-1)
+    p.poll()
+    assert not p.workers and p.nc.at == 0  # Smart Wi-Fi's radio isn't woken: checked once Wi-Fi is on
+    p.wifi = 2
+    nu = fw.var('netupdate__nu', Nu)
+    nu.state = NU_RUNNING
+    p.poll()
+    assert not p.workers
+    nu.state = NU_IDLE
+    p.poll()
+    assert len(p.workers) == 1
+
+
+def test_polls_are_two_seconds_apart(fw):
+    p = Poll(fw, slot(fw), wifi=-1)
+    p.poll()
+    calls = len(fw.calls('get_wifisignal'))
+    p.poll(NU_POLL - 1)
+    assert len(fw.calls('get_wifisignal')) == calls
+    p.wifi = 1
+    p.poll(1)
+    assert len(fw.calls('get_wifisignal')) == calls + 1 and len(p.workers) == 1
+
+
+@pytest.mark.parametrize('reply', [(6, 0, None), (0, 200, None), (0, 302, None), (0, 404, None)])
+def test_a_check_that_fails_is_tried_an_hour_later_one_that_worked_a_day(fw, reply):
+    p = Poll(fw, slot(fw), top=b'playing_page')
+    net = Net(fw, {LATEST: reply})
+    p.poll()
+    p.run()
+    assert not p.nc.ok and p.nc.tag == b''
+    p.poll(HOUR - NU_POLL - 1)
+    assert not p.workers
+    p.poll(NU_POLL + 1)
+    assert len(p.workers) == 1
+    net.replies[LATEST] = (0, 302, TAG_URL + NEWER)
+    p.run()
+    assert p.nc.ok and p.nc.tag == NEWER
+    p.poll(DAY - NU_POLL)  # a day from the check's start
+    assert not p.workers
+    p.poll(NU_POLL)
+    assert len(p.workers) == 1
+
+
+def test_a_failed_check_keeps_the_release_found_before(fw):
+    p = Poll(fw, slot(fw), top=b'playing_page')
+    net = Net(fw, {LATEST: (0, 302, TAG_URL + NEWER)})
+    p.poll()
+    p.run()
+    net.replies[LATEST] = (6, 0, None)
+    p.poll(DAY)
+    p.run()
+    assert not p.nc.ok and p.nc.tag == NEWER
+
+
+def test_system_update_s_row_names_the_newer_release_until_a_press_finds_none(fw):
+    p = Poll(fw, slot(fw), top=b'playing_page')
+    Net(fw, {LATEST: (0, 302, TAG_URL + NEWER)})
+    p.poll()
+    p.run()
+    row = UpdateRow(fw)
+    assert row.label() == f'Update to {NEWER.decode()}'
+    Net(fw, {LATEST: (0, 302, TAG_URL + TAG)})
+    row.press()
+    row.run()
+    assert row.wait() == 0 and row.toasts == ['Latest firmware installed']
+    assert p.nc.tag == b'' and row.tr[row.LABEL] == 'update_online'
+
+
+def test_without_a_newer_release_the_row_keeps_its_name(fw):
+    row = UpdateRow(fw)
+    assert row.label() is None and row.tr == {}  # stock's own, untouched
+
 
 
 class Store:
@@ -1801,6 +2401,7 @@ def test_no_app_installs_while_the_list_cant_be_fetched(fw):
 
 
 @pytest.mark.parametrize('listed', [b'other/q2-foo Foo\n', b'-me/q2-foo Foo\n', b'# me/q2-foo Foo\nme/q2-bar Bar\n'])
+@pytest.mark.refusal('addon:changed')
 def test_an_app_installs_only_from_the_repo_the_list_names_now(fw, listed):
     """Another owner's repo under the same name, the app marked dropped, and its line commented out."""
     card = Disk(fw, {SOURCES: b'me/q2-foo Foo\n'})
@@ -2144,3 +2745,49 @@ def test_a_job_that_can_t_start_says_so_and_the_row_stays(fw):
     s.wifi = 1
     s.click()
     assert s.toasts == ["Can't start the download"] and s.sh.job == 0 and not s.sh.running and s.labels() == ['Install']
+
+
+# No byte a peer chooses is the shell's. Of a list's line only the id reaches a command (1 to 15 of a-z0-9-, there after
+# a "/" or its folder's ".", so a leading "-" starts no word); the names in a zip reach none: find's lines are renamed
+# and unlinked, never run. Each value as an app's id, its repo's whole name, its owner, the name shown and a file in
+# Foo's zip; then each ASCII byte an id may not hold, inside one, a line each.
+@pytest.mark.parametrize('put', [
+    *(where % value for where in ('me/q2-%s Evil', 'me/%s Evil', '%s/q2-evil Evil', 'me/q2-evil %s', '.foo/%s')
+      for value in ("'; reboot #", '$(reboot)', '`reboot`', '.', '..', '../x', '-rf', 'a\nreboot', 'a reboot', 'a"reboot', "a'reboot")),
+    '\n'.join(f'me/q2-a{chr(c)}z Evil' for c in range(1, 128) if not re.match('[a-z0-9-]', chr(c)))],
+    ids=lambda put: None if len(put) < 40 else 'every other byte')
+@pytest.mark.hostile('netupdate.c:unzip', 'netupdate.c:shelf_place', 'netupdate.c:shelf_remove')
+def test_only_a_checked_id_reaches_the_shell_from_a_list_or_a_zip(fw, put):
+    """The list and the zip as fetched, each app the page then lists installed and removed, and every command read as
+    system() got it."""
+    entry = put.startswith('.foo/')
+    files = {f'.{app}/q2-{app}': b'bin' for app in ('foo', 'evil', 'a', '-rf')}  # a folder for each id a line here comes to
+    if entry:
+        files[put] = b'x'
+    card = Disk(fw)
+    store_net(fw, files, listed=(b'' if entry else put.encode() + b'\n') + b'me/q2-foo Foo\n')
+    s = Store(fw, card)
+    s.run()
+    for r in range(1, s.sh.rows):
+        s.click(r)
+        s.run()
+        if s.labels()[r - 1] == 'Installed':
+            s.click(r)
+            s.click(r)
+            s.run()
+    shell = [re.escape(c).replace('ID', '([a-z0-9-]{1,15})', 1).replace('ID', r'\1') for c in (
+        f'rm -rf {STAGING}', 'sync',
+        f"busybox unzip -l -qq {STAGING}/ID.part '.ID/*' -x '*/._*'  > {STAGING}/ID.list",
+        f"busybox unzip -o -qq -d {STAGING}/ID {STAGING}/ID.part '.ID/*' -x '*/._*' ",
+        f'cd {STAGING}/ID && find .ID -type f > {STAGING}/ID.files', "rm -rf '/mnt/mmc/.ID'")]
+    ran = [c.decode() for c in card.commands()]
+    assert not [c for c in ran if not any(re.fullmatch(form, c) for form in shell)]
+    if entry and '..' in put.split('/'):  # a ".." entry refuses the whole zip (shelf_unpacked): listed, nothing unpacked
+        assert s.toasts == ['The download is not a usable app'] and len(ran) == 3 and ran[1].startswith('busybox unzip -l ')
+    elif not (entry and '\n' in put):  # a zip's name with a newline (no FAT card holds one) is held to the forms alone; else
+        # Foo went in and out, so each call was made; a zip's file with it, moved by its name
+        assert s.toasts[-2:] == ['Foo is ready in Streaming', 'Foo removed']
+        assert all(any(re.fullmatch(form, c) for c in ran) for form in shell)
+        assert not entry or (b'/mnt/mmc/' + put.encode()) in card.moves(b'/mnt/mmc/.foo/')
+    # -rf, the one value that is an id, goes the whole way too
+    assert ("rm -rf '/mnt/mmc/.-rf'" in ran) == (put in ('me/q2--rf Evil', 'me/-rf Evil'))

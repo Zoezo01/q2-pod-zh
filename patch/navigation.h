@@ -46,9 +46,14 @@ enum {
     POD_FOLDERCOVER,
     POD_BIG_LIB, /* Display's Fast Navigation: Cover Flow's letters (ringnav_big_library) */
     POD_PL_CF,   /* Display's Playlist View: List or Cover Flow, as Artist View */
-    POD_LIBRARY_FILL,  /* 补全封面与歌词, an action: onlinematch.c's library_fill_* over the card */
     POD_SCAN_DURATIONS, /* Display's Cover Flow: Scan Song Durations, a switch (durations.c) */
     POD_CF_POSITION,    /* and Position Bar, a switch (coverflow_position.c) */
+    POD_HIDE_STREAM, /* Appearance's Hide Streaming / Folder on Home (coverflow_home_layout) */
+    POD_HIDE_FOLDER,
+    POD_REMIND_DAILY, /* System Update's Remind Daily (netupdate_poll); netupdate.c passes pod_rows 26 */
+    /* 中文分支自有的行一律排在 upstream 成员之后：上游的 POD_* 索引、它的 _Static_assert 和
+     * netupdate.c 里 pod_rows 的硬编码就不用每次合并都跟着挪。pod_keys 按名字读写，顺序无关。 */
+    POD_LIBRARY_FILL, /* 补全封面与歌词, an action: onlinematch.c's library_fill_* over the card */
     POD_COUNT
 };
 
@@ -149,7 +154,8 @@ typedef struct {
     int pod_read, charge_limit, wake_double, wake_pass, wake_eat,
         wake_down, /* 1: the held Centre press passes; 2: it is dropped */
         charge_held, artist_cf, year_old, resume, lock_clock, artist_az, hold_home, standby_limit,
-        eq_output, smart_wifi, big_library, playlist_cf, scan_durations, cf_position;
+        eq_output, smart_wifi, big_library, playlist_cf, scan_durations, cf_position, hide_stream,
+        hide_folder, remind_daily;
     void *pod_label[POD_COUNT];
     void *art_cf_win, *art_cf_list; /* the artist page given its Coverflow, the albums pending */
     void *art_cf_veil;              /* the artist page unseen until they show, and its anim_hint */
@@ -447,6 +453,7 @@ void font_weight_paint(void *w, void *canvas);
 /* coverflow_position.c */
 int coverflow_position_enabled(void); /* navigation.c: persisted setting */
 void coverflow_position_reset(void);
+void coverflow_tail(void); /* coverflow.c: the covers follow the queue's album */
 
 /* np_bar.c */
 int np_beside(void);

@@ -156,8 +156,8 @@ def test_status_bar_widgets():
     assert n['view_battery'][:3] == ['view', [0, 0, ipod.BATT_H_W, 0], {'name': 'view_battery', 'visible': 'false'}]
     left, right = root[3][:2]
     assert [c[2]['name'] for c in left[3]] == ipod.STATUS_LEFT and [c[2]['name'] for c in right[3]] == ipod.STATUS_RIGHT
-    for view in (left, right):
-        assert view[2]['children_layout'] == f'default(c=3,xm={ipod.STATUS_MARGIN},s={ipod.inc("STATUS_GAP")})'
+    for view, margin in ((left, ipod.STATUS_LEFT_PAD), (right, ipod.STATUS_MARGIN)):
+        assert view[2]['children_layout'] == f'default(c=3,xm={margin},s={ipod.inc("STATUS_GAP")})'
 
 
 def test_status_bar_hidden_stay_off_screen():
@@ -172,7 +172,7 @@ def test_status_bar_clock_and_idle_labels():
     root = bar()
     ipod.status_bar(root)
     idle, clock = root[3][-2:]
-    assert idle == ['label', [ipod.STATUS_MARGIN, 0, 28, 30], {
+    assert idle == ['label', [ipod.STATUS_LEFT_PAD, 0, 28, 30], {
         'name': 'label_idle', 'text': 'Q2', 'visible': 'false', 'style:normal:font_size': '18',
         'style:normal:text_color': '#FFFFFF', 'style:normal:text_align_h': 'left'}, []]
     gap = ipod.inc('STATUS_GAP')
@@ -847,7 +847,9 @@ def test_classic_light_status_bar_has_a_title_and_no_idle_mark():
 # ending where the glass does at its top row, on every page, Home's own list too: no second play state. No EQ.
 def test_classic_light_status_bar_battery_and_play_state_right():
     root = bar(); ipod.status_bar(root, g=CLASSIC_LIGHT); n = named(root)
-    assert [c[2]['name'] for c in n['view_right'][3]] == ['img_bt', 'img_wifi', 'img_state', *ipod.STATUS_RIGHT[2:], 'label_eq']
+    # This fork keeps EQ in the Minimal/Modern row, so Classic's explicit list
+    # starts at STATUS_RIGHT[3:] (the battery widgets), not [2:] (which is Wi-Fi).
+    assert [c[2]['name'] for c in n['view_right'][3]] == ['img_bt', 'img_wifi', 'img_state', *ipod.STATUS_RIGHT[3:], 'label_eq']
     assert 'img_home_state' not in n
     assert n['view_right'][2]['children_layout'].endswith(f'xm=60,s={ipod.inc("STATUS_GAP")})')  # the nub ends at x 314
     assert 375 - ipod.corner_inset(5) - 1 - (314 - ipod.inc('BATT_NUB_W')) == ipod.BAR_PAD  # the body's top-right pixel, row 5, clear of the glass; the nub's rows lower still
