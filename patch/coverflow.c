@@ -1221,12 +1221,14 @@ static void *split(void *stock) {
     deque_destroy(stock);
     return out;
 }
-/* navigation.c's Albums list (load_localclass_list 0xf003), split in place as Coverflow's: its size. */
+/* navigation.c's Albums list (load_localclass_list 0xf003), split in place as Coverflow's: its size.
+ * The list empties once copied, not after the split: its rows, the copy's, the query's and the
+ * split's were four album lists held at once. Out of memory the copy comes back, unsplit. */
 int coverflow_split(void *list) {
     void *copy = _create_deque("stSongInfo"), *out;
     deque_init_copy(copy, list);
-    out = split(copy);
     deque_clear(list);
+    out = split(copy);
     deque_assign(list, out);
     deque_destroy(out);
     return (int)deque_size(list);
