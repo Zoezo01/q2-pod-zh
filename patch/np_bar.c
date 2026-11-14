@@ -203,11 +203,14 @@ void bar_title(void *bar, void *top) {
      * rest of a long name inside its box instead of letting it run into EQ. */
     /* The glyph's slot is only reserved while it shows: with it hidden the name
      * stands at the group's own left, level with stock's idle wordmark and with
-     * the page's own rows (V183B photos: an empty box before 播放设置). */
-    void *left = st.bar_state ? P(st.bar_state, W_PARENT) : (void *)0;
-    int x = left ? I(left, W_X) + I(st.bar_state, W_X) : I(st.bar_state, W_X);
-    if (st.bar_state && widget_get_visible(st.bar_state))
-        x += I(st.bar_state, W_W) + STATUS_GAP;
+     * the page's own rows (V183B photos: an empty box before 播放设置). Bars
+     * without the glyph (the machine tests' bare ones) keep the word where it is. */
+    int x = I(word, W_X);
+    if (st.bar_state) {
+        void *left = P(st.bar_state, W_PARENT);
+        x = left ? I(left, W_X) + I(st.bar_state, W_X) : I(st.bar_state, W_X);
+        if (widget_get_visible(st.bar_state)) x += I(st.bar_state, W_W) + STATUS_GAP;
+    }
     if (I(word, W_X) != x)
         widget_move_resize(word, x, I(word, W_Y), I(word, W_W), I(word, W_H));
     int limit;
