@@ -1,11 +1,13 @@
 """What the network answers, fuzzed (fuzz.py; test/score.py's R2): radio-browser's replies to the directory's fetch
-(radio.c). They go in the way the fetch hands them over, and what parses them reads and fills heap blocks of the
-exact size."""
+(radio.c) and Last.fm's to an upload's calls (scrobble.c). They go in the way the fetch hands them over, and what
+parses them reads and fills heap blocks of the exact size, or the upload thread's own arrays."""
 import ctypes as C
+import urllib.parse
 
 import fuzz
 from conftest import block
 from test_radio import CURLE_WRITE_ERROR, CURLINFO_RESPONSE_CODE, CURLOPT_WRITEFUNCTION, FETCH_MAX, STATIONS, List, fx, m3u, pls
+from test_scrobble import ACCOUNT, HEADER, LOG, Card, Net, Upload, config, line
 
 RADIO_MAX = 200  # the stations, countries or genres a list holds
 CURL_MAX_WRITE_SIZE = 16384  # curl.h: the most its write callback is handed at once
@@ -97,3 +99,70 @@ def test_fuzz_radio_response(fw):
         fw.fn('radio__list_free', None, C.c_void_p)(p)
         free(p)
 
+
+REPLY_MAX = 1023  # what a reply keeps of an answer (scrobble.c's reply_t, less its NUL)
+KEY_MAX = 63  # a session key's bytes: the upload's got[64]
+KEY = b'd580d57f32848f5dcf574d1ce18d78b2'  # one as Last.fm gives it
+
+
+def session(key):
+    """Last.fm's answer to auth.getMobileSession."""
+    return b'{"session":{"subscriber":0,"name":"u","key":"%s"}}' % key
+
+
+SCROBBLE_SEEDS = [
+    session(KEY),
+    b'{"error":4,"message":"Authentication Failed - You do not have permissions to access the service"}',
+    b'{"scrobbles":{"@attr":{"accepted":1,"ignored":0}}}',
+    session(b''),
+    session(KEY[:31] + KEY), session(KEY + KEY),  # a key of 63 bytes, and one of 64
+    # an answer one under what a reply keeps, that to the byte and one over, and one whose key the cut runs through
+    *(session(KEY).rjust(n) for n in (REPLY_MAX - 1, REPLY_MAX, REPLY_MAX + 1, REPLY_MAX + 20)),
+    # "error" kept to its last byte, and cut one short: what the cut takes the upload can't read
+    session(KEY).rjust(REPLY_MAX - 7) + b'"error"', session(KEY).rjust(REPLY_MAX - 6) + b'"error"',
+]
+
+
+def answered(data):
+    """The session key an answer gives (scrobble.c's session): what follows "key":" up to its quote in the bytes a
+    reply keeps, a C string, and no more of it than the upload holds; none in a refusal (an "error" member)."""
+    kept = data[:REPLY_MAX].split(b'\0')[0]
+    at = kept.find(b'"key":"')
+    return b'' if b'"error":' in kept or at < 0 else kept[at + 7:].split(b'"')[0][:KEY_MAX]
+
+
+def test_fuzz_scrobble_response(fw):
+    """Last.fm's answer to each call of an upload, the thread's worker run whole: its write callback is handed the
+    answer in curl's pieces, each a block of its bytes alone, into the reply on the worker's stack, and the session
+    key read out of it goes into the batch's form. A refusal or no key leaves the listen in the log."""
+    config(fw, {k: v for k, v in ACCOUNT.items() if k[0] == 'LASTFM'})
+    card, net, up = Card(fw), Net(fw), Upload(fw)
+    free = fw.fn('free', None, C.c_void_p)
+    forms: list = []
+
+    def perform(c, *_):
+        forms.append(net.opts[10015])  # POSTFIELDS
+        write = C.CFUNCTYPE(C.c_uint, C.c_void_p, C.c_uint, C.c_uint, C.c_void_p)(net.opts[CURLOPT_WRITEFUNCTION])
+        at, size = 0, 1000  # a first piece that ends short of what a reply keeps
+        while at < len(data):
+            piece = data[at:at + size]
+            p = block(fw, piece, len(piece))
+            took = write(p, 1, len(piece), net.opts[10001])  # WRITEDATA
+            free(p)
+            if took != len(piece):
+                return CURLE_WRITE_ERROR
+            at, size = at + len(piece), CURL_MAX_WRITE_SIZE
+        return 0
+    fw.mock('fw_curl_easy_perform', perform)
+    net.code, log = 200, HEADER + line()
+    for data in fuzz.cases('scrobble_response', SCROBBLE_SEEDS):
+        card.files, key = {LOG: log}, answered(data)
+        del forms[:]
+        _, result, sent = up.run()
+        # scrobble.c's lastfm reads "error" anywhere as a refusal, a name Last.fm echoes back too: either holds here
+        if not key or result < 0 and b'"error"' in data[:REPLY_MAX].split(b'\0')[0]:  # the listen waits, and no batch went without a key
+            assert (result, sent, card.files[LOG], len(forms)) == (-1, 0, log, 1)
+            continue
+        assert (result, sent, card.files[LOG], len(forms)) == (1, 1, HEADER, 2)
+        # the key's bytes in the batch's form, all but the unreserved percent-encoded: none can end its field
+        assert [f for f in forms[1].split('&') if f.startswith('sk=')] == ['sk=' + urllib.parse.quote_from_bytes(key, safe='')]
