@@ -1,6 +1,8 @@
 /* Smart Wi-Fi: the radio off while nothing uses the network, back for what needs it. */
 #include "navigation.h"
 
+#define CAP_PX 14 /* the Wi-Fi status captions' stepped-down size: stock's own clips the CJK ink */
+
 /* Smart Wi-Fi (docs/internals.md#smart-wi-fi): with Power's row on and the user's Wi-Fi switch on,
  * the radio goes off once nothing has needed the network for SMART_IDLE_MS, and comes back as soon
  * as something does. Both go through stock's own switch, wifi_switch, as Quick Settings and the
@@ -16,7 +18,8 @@ static struct {
     unsigned at, busy_at, woke_at, hold_timer;
     int off, quiet, armed, up, held;
     int (*hold_fn)(void *, void *);
-    void *hold_ctx, *hold_win;
+    void *hold_ctx, *hold_win, *cap_win;
+    unsigned cap_timer;
     char hold_name[32];
 } sw __attribute__((section(".scratch")));
 
@@ -58,11 +61,68 @@ int smart_config(const char *section, const char *key) {
     return 0;
 }
 
+/* Stock's network rows caption 已连接/已保存 in a box sized for the English "Connected":
+ * the CJK ink runs a couple of pixels past its bottom and the row clips it (V183D photos).
+ * Stock rebuilds the rows per scan, so while the page is open a timer walks it and steps
+ * each status caption's face down a size, once per label (_capfit). The caption is the
+ * row's lower label saying 连接/保存 — an SSID at the row's top keeps its own face. */
+static int cap_text(const unsigned *t) {
+    for (unsigned j = 0; t && t[j]; ++j)
+        if (t[j] == 0x8fde /* 连 */ || t[j] == 0x5b58 /* 存 */) return 1;
+    return 0;
+}
+
+static void cap_row(void *row) {
+    void *cap = 0;
+    int y = -1;
+    for (unsigned i = 0, n = widget_count_children(row); i < n; ++i) {
+        void *item = widget_get_child(row, i);
+        for (unsigned j = 0, m = widget_count_children(item) + 1; j < m; ++j) {
+            void *label = j < m - 1 ? widget_get_child(item, j) : item;
+            if (cap_text(widget_get_text(label)) && I(label, W_Y) > y) {
+                y = I(label, W_Y);
+                cap = label;
+            }
+        }
+    }
+    if (cap && !widget_get_prop_int(cap, "_capfit", 0)) {
+        static const char *const sizes[] = { "style:normal:font_size", "style:focused:font_size",
+                                             "style:disable:font_size" };
+        for (unsigned i = 0; i < sizeof sizes / sizeof *sizes; ++i)
+            widget_set_prop_int(cap, sizes[i], CAP_PX);
+        widget_set_prop_int(cap, "_capfit", 1);
+    }
+}
+
+static void cap_fit(void *win) {
+    for (unsigned i = 0, n = widget_count_children(win); i < n; ++i)
+        cap_row(widget_get_child(win, i));
+}
+
+static int cap_poll(const void *info) {
+    (void)info;
+    if (sw.cap_win) cap_fit(sw.cap_win);
+    return sw.cap_win ? 8 : 0; /* RET_REPEAT */
+}
+
+static int cap_gone(void *win, void *event) {
+    (void)event;
+    if (sw.cap_win == win) {
+        stop_timer(&sw.cap_timer);
+        sw.cap_win = 0;
+    }
+    return 0;
+}
+
 /* systemset_wifi_page_init: the Wi-Fi page builds its switch from g_wififlag, so the radio comes
  * back first and the page shows the user's setting. */
 int ringnav_wifi_page(void *win, void *ctx) {
     smart_wake();
-    return stock_wifi_page_trampoline(win, ctx);
+    int ret = stock_wifi_page_trampoline(win, ctx);
+    sw.cap_win = win;
+    if (!sw.cap_timer) sw.cap_timer = timer_add(cap_poll, (void *)0, 500);
+    widget_on(win, EVT_DESTROY, cap_gone, win);
+    return ret;
 }
 
 /* A page that uses the network, open anywhere in the window stack: Streaming and its services'

@@ -43,7 +43,9 @@ REPO = 'Zoezo01/q2-pod-zh'  # whose releases Network Update fetches (--update-re
 # RELEASE_TAG 管网络更新要不要提示，两边都要随每次发布推进。
 # D 修经典主题关于页的 MAC 地址截断：经典行字体更宽，17 个字符约 156px 放不进原厂
 # 149px 值框，值框在经典主题下向左扩 10px（右缘不动）；现代/简约主题的行不变。
-LETTER = 'D'
+# E 修 Wi-Fi 网络列表的状态小字（已连接/已保存）底部被裁：原厂的框按英文 Connected 的高度定，
+# 中文墨宽更高；状态文字字号降一档，扫描重建行自动套用（简约/现代主题同样受益）。
+LETTER = 'E'
 TAG = 'V' + VERSION.replace('.', '') + LETTER
 RELEASE_TAG = VERSION if LETTER == 'A' else f'{VERSION}.{ord(LETTER) - 64}'  # 1.8.3, 1.8.3.2, 1.8.3.3…
 
