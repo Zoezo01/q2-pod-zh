@@ -534,6 +534,7 @@ void vol_paint(void *top, void *canvas);
 
 /* smart_wifi.c */
 void smart_wake(void); /* Smart Wi-Fi's radio back now, if it had it off */
+void wifi_cap_paint(void *w); /* the Wi-Fi page's status captions in their small face */
 int smart_config(const char *section, const char *key);
 void smart_poll(void);
 

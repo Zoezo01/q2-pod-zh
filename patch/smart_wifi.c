@@ -19,7 +19,6 @@ static struct {
     int off, quiet, armed, up, held;
     int (*hold_fn)(void *, void *);
     void *hold_ctx, *hold_win, *cap_win;
-    unsigned cap_timer;
     char hold_name[32];
 } sw __attribute__((section(".scratch")));
 
@@ -72,45 +71,20 @@ static int cap_text(const unsigned *t) {
     return 0;
 }
 
-static void cap_row(void *row) {
-    void *cap = 0;
-    int y = -1;
-    for (unsigned i = 0, n = widget_count_children(row); i < n; ++i) {
-        void *item = widget_get_child(row, i);
-        for (unsigned j = 0, m = widget_count_children(item) + 1; j < m; ++j) {
-            void *label = j < m - 1 ? widget_get_child(item, j) : item;
-            if (cap_text(widget_get_text(label)) && I(label, W_Y) > y) {
-                y = I(label, W_Y);
-                cap = label;
-            }
-        }
-    }
-    if (cap && !widget_get_prop_int(cap, "_capfit", 0)) {
-        static const char *const sizes[] = { "style:normal:font_size", "style:focused:font_size",
-                                             "style:disable:font_size" };
-        for (unsigned i = 0; i < sizeof sizes / sizeof *sizes; ++i)
-            widget_set_prop_int(cap, sizes[i], CAP_PX);
-        widget_set_prop_int(cap, "_capfit", 1);
-    }
-}
-
-static void cap_fit(void *win) {
-    for (unsigned i = 0, n = widget_count_children(win); i < n; ++i)
-        cap_row(widget_get_child(win, i));
-}
-
-static int cap_poll(const void *info) {
-    (void)info;
-    if (sw.cap_win) cap_fit(sw.cap_win);
-    return sw.cap_win ? 8 : 0; /* RET_REPEAT */
+/* Painted per frame from the paint leaf, before the label's own draw: stock rebinds the
+ * rows (widget_use_style clears per-widget overrides), so a set-and-forget size flickers
+ * back to stock's between binds — pinned here, it never does. */
+void wifi_cap_paint(void *w) {
+    static const char *const sizes[] = { "style:normal:font_size", "style:focused:font_size",
+                                         "style:disable:font_size" };
+    if (!sw.cap_win || !cap_text(widget_get_text(w))) return;
+    for (unsigned i = 0; i < sizeof sizes / sizeof *sizes; ++i)
+        widget_set_prop_int(w, sizes[i], CAP_PX);
 }
 
 static int cap_gone(void *win, void *event) {
     (void)event;
-    if (sw.cap_win == win) {
-        stop_timer(&sw.cap_timer);
-        sw.cap_win = 0;
-    }
+    if (sw.cap_win == win) sw.cap_win = (void *)0;
     return 0;
 }
 
@@ -120,7 +94,6 @@ int ringnav_wifi_page(void *win, void *ctx) {
     smart_wake();
     int ret = stock_wifi_page_trampoline(win, ctx);
     sw.cap_win = win;
-    if (!sw.cap_timer) sw.cap_timer = timer_add(cap_poll, (void *)0, 500);
     widget_on(win, EVT_DESTROY, cap_gone, win);
     return ret;
 }

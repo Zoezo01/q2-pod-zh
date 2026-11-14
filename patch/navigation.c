@@ -4100,6 +4100,24 @@ int bar_repaint(const void *info) {
  * state and relayouts the view for a new one. */
 static int slider_page(void *top);
 static int time_form(void *top);
+static void text_ink_fixed(void *w, unsigned color, int n);
+/* A label's final ink, 0xAARRGGBB in its first n states, stored as what Light Mode's style hook
+ * turns into it, so stored for this half. text_inks writes it again when the half changes. */
+static const char *const ink_state[] = { "normal",
+                                         "pressed",
+                                         "over",
+                                         "disable",
+                                         "focused",
+                                         "normal_of_active",
+                                         "pressed_of_active",
+                                         "over_of_active",
+                                         "disable_of_active",
+                                         "focused_of_active",
+                                         "error",
+                                         "empty",
+                                         "empty_focus",
+                                         "empty_over",
+                                         "changed" };
 /* The pages under Classic's dark bar. */
 static int dark_bar(void *top) {
     return slider_page(top) || time_form(top) ||
@@ -4124,6 +4142,9 @@ static void dark_title(void *t) {
     slider_label(t, DARK_TITLE_X, dark_title_y(), DARK_TITLE_W, 25, px, face ? face : "default");
     widget_set_prop_str(t, "style:normal:text_align_h", "left"); /* slider_label centres a page's own caption */
     font_weight_mark(t, !face); /* theme_font's rule: only stock's face stands in for bold */
+    /* slider_label's white flips dark under Light Mode; the dark bar does not, so the
+     * title's ink is pinned white across the half changes (V183F photos: black on black) */
+    text_ink_fixed(t, 0xffffffffu, (int)(sizeof ink_state / sizeof *ink_state));
 }
 /* w at x, y on the screen, unless it's there. */
 void bar_place(void *w, int x, int y, int ww, int h) {
@@ -5413,23 +5434,6 @@ static int slider_switch_hit(void *win, void *event) {
     widget_invalidate_force(win, (void *)0); /* stock may have hidden the band's view */
     return 0;
 }
-/* A label's final ink, 0xAARRGGBB in its first n states, stored as what Light Mode's style hook
- * turns into it, so stored for this half. text_inks writes it again when the half changes. */
-static const char *const ink_state[] = { "normal",
-                                         "pressed",
-                                         "over",
-                                         "disable",
-                                         "focused",
-                                         "normal_of_active",
-                                         "pressed_of_active",
-                                         "over_of_active",
-                                         "disable_of_active",
-                                         "focused_of_active",
-                                         "error",
-                                         "empty",
-                                         "empty_focus",
-                                         "empty_over",
-                                         "changed" };
 void text_ink(void *w, unsigned color, int n) {
     char key[STYLE_KEY];
     unsigned ink = RGBA(flip_if(ipod_light(), color & 0xffffffu)) & 0xffffffu;
@@ -5439,9 +5443,25 @@ void text_ink(void *w, unsigned color, int n) {
     for (int i = 0; i < n; ++i)
         widget_set_prop_int(w, style_key(key, ink_state[i], "text_color"), (int)ink);
 }
+/* The same ink without the Light Mode flip: the dark pages' bar is dark glass in either
+ * half, so its title reads white there too (_final_fix marks it for text_inks' re-apply). */
+static void text_ink_fixed(void *w, unsigned color, int n) {
+    char key[STYLE_KEY];
+    widget_set_prop_int(w, "_final", (int)color);
+    widget_set_prop_int(w, "_final_n", n);
+    widget_set_prop_int(w, "_final_fix", 1);
+    for (int i = 0; i < n; ++i)
+        widget_set_prop_int(w, style_key(key, ink_state[i], "text_color"), (int)color);
+}
 void text_inks(void *w) {
     int n = widget_get_prop_int(w, "_final_n", 0);
-    if (n) text_ink(w, (unsigned)widget_get_prop_int(w, "_final", 0), n);
+    if (n) {
+        unsigned color = (unsigned)widget_get_prop_int(w, "_final", 0);
+        if (widget_get_prop_int(w, "_final_fix", 0))
+            text_ink_fixed(w, color, n);
+        else
+            text_ink(w, color, n);
+    }
     for (int i = widget_count_children(w) - 1; i >= 0; --i) text_inks(widget_get_child(w, i));
 }
 /* A page's label: box, face and white, in either half (Light Mode's style hook flips it back). */
@@ -6169,6 +6189,7 @@ int ringnav_paint_bg(void *w, void *canvas) {
         confirm_check(w, canvas);
     }
     hold_paint(w, canvas, 0);
+    wifi_cap_paint(w); /* the Wi-Fi page's status captions, pinned small before they draw */
     if (w && w == st.search_tabs) search_tabs_paint(w, canvas);
     paint_selection(w, canvas);
     if (form) confirm_labels(w, canvas);

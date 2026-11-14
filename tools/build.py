@@ -45,7 +45,9 @@ REPO = 'Zoezo01/q2-pod-zh'  # whose releases Network Update fetches (--update-re
 # 149px 值框，值框在经典主题下向左扩 10px（右缘不动）；现代/简约主题的行不变。
 # E 修 Wi-Fi 网络列表的状态小字（已连接/已保存）底部被裁：原厂的框按英文 Connected 的高度定，
 # 中文墨宽更高；状态文字字号降一档，扫描重建行自动套用（简约/现代主题同样受益）。
-LETTER = 'E'
+# F 首次修复没生效：Wi-Fi 页的行嵌套比预想深（窗口→列表→滚动视图→行→按钮→标签），
+# 改为全树递归找状态小字。仍按用户建议把字号降到 14。
+LETTER = 'F'
 TAG = 'V' + VERSION.replace('.', '') + LETTER
 RELEASE_TAG = VERSION if LETTER == 'A' else f'{VERSION}.{ord(LETTER) - 64}'  # 1.8.3, 1.8.3.2, 1.8.3.3…
 
