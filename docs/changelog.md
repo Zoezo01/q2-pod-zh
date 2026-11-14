@@ -6,6 +6,7 @@
   - Appearance: **Time in Title** now sits right under **Status Bar**, and a new **Show Q2 Pod** switch under it sets whether Classic's status bar names Home "Q2 Pod". It's On, as before.
   - Cover Flow: when the song changes to another album, by Next, Previous or the end of a track, Cover Flow turns to that album, so you no longer have to leave and come back. It only follows while it's resting on the album that was playing; if you've turned to another album, it stays there.
   - Cover Flow: with **Scan Song Durations** off, an album's song list shows no song lengths. Lengths Long Songs had measured showed there anyway. They're kept, so Long Songs still lists them and turning the switch on shows them again with nothing to measure.
+  - Videos: when the output never takes a video's sound, the video now plays on without sound after 3 seconds, and Return always ends it. The picture used to stay on its first frame, and every button stopped working until the Q2 was restarted.
 
 - **1.8.2**:
   - Games: in Solitaire, Centre on a pile that can't take the cards you hold now picks that pile up instead. Before, nothing happened and the cards stayed held until you put them back or pressed Return, which looked like the game had stuck.

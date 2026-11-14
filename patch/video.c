@@ -21,6 +21,7 @@
 #define LATENCY 200000 /* ALSA buffer, us */
 #define SEEK_S 10
 #define SEEK_WAIT_MS 400 /* a run of wheel ticks restarts ffmpeg once */
+#define STALL_MS 3000    /* one ALSA write this long: the output takes no sound, the video goes on silent */
 #define OVERLAY_MS 1500
 #define EDGE_S 30 /* a stop this near either end restarts at 0, as navigation.c's RESUME_EDGE_S */
 #define BAR_X 40 /* the bar's ends from the picture's sides, clear of the 80 px glass corners */
@@ -158,6 +159,7 @@ int setenv(const char *, const char *, int);
 void *mmap(void *, unsigned, int, int, int, long), *malloc(unsigned), (*signal(int, void (*)(int)))(int);
 void _exit(int) __attribute__((noreturn));
 int pthread_create(unsigned long *, const void *, void *(*)(void *), void *), pthread_join(unsigned long, void **);
+int pthread_timedjoin_np(unsigned long, void **, const struct timespec *);
 int snd_pcm_open(void **, const char *, int, int), snd_pcm_close(void *), snd_pcm_drop(void *);
 int snd_pcm_set_params(void *, int, int, unsigned, unsigned, int, unsigned), snd_pcm_prepare(void *);
 int snd_pcm_recover(void *, int, int), snd_pcm_delay(void *, long *), snd_pcm_drain(void *);
@@ -190,7 +192,14 @@ static struct {
     char error[64];        /* why sound_open found no device, or the writer stopped, for RADIO_STATE */
     int video;             /* a failed write is dropped: the picture needs ffmpeg's sound read on */
     unsigned long buffer;  /* ALSA's ring, frames (sound_open) */
+    volatile unsigned write_at; /* now_ms when the writer went into snd_pcm_writei, 0 out of it */
 } au;
+
+static long long now_ms(void) {
+    struct timespec t;
+    clock_gettime(1, &t); /* CLOCK_MONOTONIC */
+    return (long long)t.sec * 1000 + t.nsec / 1000000;
+}
 
 static void *writer(void *unused) {
     short buf[2 * CHUNK];
@@ -229,7 +238,9 @@ static void *writer(void *unused) {
         if (swap_on && *swap_on > 0) swap(buf, frames);
         int recovered = 0;
         for (unsigned sent = 0; sent < frames;) {
+            au.write_at = (unsigned)now_ms() | 1;
             long r = snd_pcm_writei(au.pcm, buf + 2 * sent, frames - sent);
+            au.write_at = 0;
             if (r < 0) {
                 int err = recovered ? (int)r : snd_pcm_recover(au.pcm, (int)r, 1);
                 if (!err) { recovered = 1; continue; }
@@ -281,12 +292,6 @@ static int dgram_listen(const char *path) {
     unlink(path);
     bind(sock, &addr, sizeof addr);
     return sock;
-}
-
-static long long now_ms(void) {
-    struct timespec t;
-    clock_gettime(1, &t); /* CLOCK_MONOTONIC */
-    return (long long)t.sec * 1000 + t.nsec / 1000000;
 }
 
 /* "usb", the USB DAC, as plughw:N,0: its card is the one /proc/asound/cards lists as "N [id]:
@@ -485,7 +490,7 @@ int main(int argc, char **argv) {
     int soft = argc > 3 && argv[3][0] != 'h', dac = sound_open(argv[1], argc > 3 ? argv[3] : 0, RATE), on = 1;
     /* ffmpeg -i alone, meanwhile, for the length the position bar needs */
     char info[4096];
-    int at = 0, audio = au.pcm != 0, first = 1, quit = 0, held = 0, pp[2] = { -1, -1 }, got = 0;
+    int at = 0, audio = au.pcm != 0, first = 1, quit = 0, held = 0, pp[2] = { -1, -1 }, got = 0, stuck = 0;
     const char *pa[] = { FFMPEG, "-nostdin", "-hide_banner", "-i", argv[2], 0 };
     int len = 0, vol = 0, pos_bar = 0, redraw = 0, probe = pipe2(pp, O_CLOEXEC) ? -1 : ffmpeg(pa, pp[1], 2, -1, 0);
     long long until = 0;
@@ -516,6 +521,13 @@ int main(int argc, char **argv) {
         long long wall = 0, last = now_ms(), seek_at = 0;
         while (!ended && !quit) {
             long long t = now_ms(), clock;
+            unsigned in = au.write_at;
+            /* the picture's clock is the sound's: an output that takes none would hold the first
+             * frame for ever, and the writer with it (stuck: never joined, the PCM never touched) */
+            if (thread && in && (int)((unsigned)t - in) >= STALL_MS) { /* in may be after t */
+                stuck = 1;
+                break;
+            }
             if (!au.paused) wall += t - last;
             last = t;
             if (paced && au.done) paced = 0, wall = (long long)au.played * 1000 / RATE;
@@ -577,12 +589,16 @@ int main(int argc, char **argv) {
         if (pid > 0) kill(pid, SIGKILL), waitpid(pid, 0, 0);
         held = au.paused && !quit; /* a seek keeps the pause, showing its first frame */
         au.paused = 0;             /* so the writer reads to the end and stops */
-        if (thread) pthread_join(thread, 0);
+        struct timespec by;        /* CLOCK_REALTIME, as pthread_timedjoin_np takes it */
+        clock_gettime(0, &by), by.sec += 2;
+        if (thread && !stuck && pthread_timedjoin_np(thread, 0, &by)) stuck = 1; /* still in ALSA */
         close(vp[0]);
-        if (thread && !quit && !seek && !held) snd_pcm_drain(au.pcm); /* an end: the buffer plays out */
-        if (audio) close(ap[0]), snd_pcm_drop(au.pcm), snd_pcm_prepare(au.pcm);
+        if (thread && !stuck && !quit && !seek && !held) snd_pcm_drain(au.pcm); /* an end: the buffer plays out */
+        if (audio && !stuck) close(ap[0]), snd_pcm_drop(au.pcm), snd_pcm_prepare(au.pcm);
         place = quit ? resume_at(at + seek + n / FPS, len) : 0; /* a pending seek too */
-        if (seek) {
+        int lost = stuck && audio; /* the sound stalled in this run: on from here, silent */
+        if (stuck) audio = 0;
+        if (seek || lost) {
             at += n / FPS + seek;
             at = at < 0 ? 0 : at;
         } else if (!n && first && audio)
@@ -591,13 +607,14 @@ int main(int argc, char **argv) {
             break;
         first = 0;
     }
-    if (au.pcm) snd_pcm_close(au.pcm);
+    if (au.pcm && !stuck) snd_pcm_close(au.pcm);
     if (dac >= 0) ioctl(dac, DAC_MUTE, &on); /* as hciplayer leaves it stopped */
     if (var[5] != y0) var[5] = y0, ioctl(fb, FBIOPAN_DISPLAY, var);
     fd = open(Q2VIDEO_PLACE, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
     if (fd >= 0) write(fd, &place, sizeof place), close(fd);
     unlink(Q2VIDEO_SOCK);
     unlink("/tmp/q2video.state");
+    if (stuck) _exit(0); /* the writer is still in ALSA: no library teardown under it */
     return 0;
 }
 #endif

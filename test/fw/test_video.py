@@ -36,7 +36,8 @@ DEMO_FDS = (3, 5, 9)  # descriptors q2video inherits from demo, the first one pa
 O_WRONLY, O_CREAT, O_TRUNC, O_CLOEXEC = 1, 0x100, 0x200, 0x80000
 F_SETFD, F_SETPIPE_SZ, FD_CLOEXEC = 2, 1031, 1
 SIGKILL, SIGCHLD = 9, 18
-EBUSY, ENODEV, EPIPE = 16, 19, 32
+EBUSY, ENODEV, EPIPE, ETIMEDOUT = 16, 19, 32, 145
+REALTIME = 1_763_100_000  # CLOCK_REALTIME's seconds: a date that never moves here, so only a join's deadline uses it
 FBIOGET_VSCREENINFO, FBIOGET_FSCREENINFO, FBIOPAN_DISPLAY = 0x4600, 0x4602, 0x4606
 DAC_PCM, DAC_MUTE = 0xc0044d1b, 0xc0044d1f  # /dev/shanling_dac's, as hciplayer sets them
 POLLIN, POLLHUP = 1, 0x10
@@ -71,7 +72,8 @@ class FixInfo(C.Structure):
 class Au(C.Structure):
     """video.c's au: the sound thread's state, shared with the main loop."""
     _fields_ = [('pcm', C.c_void_p), ('fd', C.c_int), ('gain', C.c_int), ('paused', C.c_int), ('done', C.c_int),
-                ('played', C.c_long), ('error', C.c_char * 64), ('video', C.c_int), ('buffer', C.c_ulong)]
+                ('played', C.c_long), ('error', C.c_char * 64), ('video', C.c_int), ('buffer', C.c_ulong),
+                ('write_at', C.c_uint)]
 
 
 class PollFd(C.Structure):
@@ -407,6 +409,8 @@ class Q2:
         self.threads: list[tuple] = []
         self.thread_pipes: list[Pipe | None] = []
         self.joins: list[int] = []
+        self.stuck = False  # the sound thread's first write never comes back: ALSA's output takes nothing
+        self.timeouts: list[int] = []  # each join that gave up on a sound thread still in ALSA
         self.sound: dict | None = None
         self.keys: list[tuple] = []
         self.listening = False
@@ -418,7 +422,7 @@ class Q2:
                  'rename': self.rename, 'pipe2': self.pipe2, 'fcntl': self.fcntl, 'fork': self.fork, 'dup2': self.dup2,
                  'execv': self.execv, '_exit': self.exit, 'kill': self.kill, 'waitpid': self.waitpid, 'poll': self.poll,
                  'usleep': self.usleep, 'clock_gettime': self.clock, 'pthread_create': self.thread,
-                 'pthread_join': self.join, 'fopen': self.fopen, 'fwrite': self.fwrite, 'fclose': self.fclose,
+                 'pthread_join': self.join, 'pthread_timedjoin_np': self.timedjoin, 'fopen': self.fopen, 'fwrite': self.fwrite, 'fclose': self.fclose,
                  'snd_pcm_open': self.pcm_open, 'snd_pcm_set_params': self.pcm_params, 'snd_pcm_close': self.pcm('close'),
                  'snd_pcm_drop': self.pcm('drop'), 'snd_pcm_prepare': self.pcm('prepare'),
                  'snd_pcm_drain': self.pcm('drain'), 'snd_pcm_writei': self.writei, 'snd_pcm_recover': self.recover,
@@ -853,9 +857,12 @@ class Q2:
         return 0
 
     def clock(self, which, ts, *_):
+        pair = (C.c_long * 2).from_address(ts)
+        if i32(which) == 0:
+            pair[0], pair[1] = REALTIME, 0
+            return 0
         if i32(which) != 1:
             self.errors.append('a clock that is not CLOCK_MONOTONIC')
-        pair = (C.c_long * 2).from_address(ts)
         pair[0], pair[1] = self.now // 1000, self.now % 1000 * 1_000_000
         return 0
 
@@ -874,6 +881,8 @@ class Q2:
             return 0
         self.sound = {'plan': pipe.plan if pipe else None, 'heard': 0}
         self.hear(self.now)
+        if self.stuck:
+            self.au.write_at = self.now | 1
         return 0
 
     def join(self, thread, ret, *_):
@@ -882,6 +891,15 @@ class Q2:
             self.au.done = 1  # it reads to the end of a pipe no ffmpeg writes now
         self.sound = None
         return 0
+
+    def timedjoin(self, thread, ret, by, *_):
+        if tuple((C.c_long * 2).from_address(by)) != (REALTIME + 2, 0):
+            self.errors.append('a join that does not give up 2 s on')
+        if not self.stuck:
+            return self.join(thread, ret)
+        self.advance(self.now + 2000)
+        self.timeouts.append(self.now)
+        return ETIMEDOUT
 
     # ALSA
     def pcm_open(self, out, name, stream, mode, *_):
@@ -1124,6 +1142,28 @@ def test_the_picture_waits_while_the_sound_stalls(q2):
     frames = q2.frames()
     assert [s.frame for s in frames] == list(range(50)) and on_time(frames, 'heard')
     assert frames[11].time - frames[10].time >= 500  # the wall clock went on; the picture held
+
+
+@pytest.mark.parametrize('device', [JACK, BT])
+def test_an_output_that_never_takes_the_sound_plays_on_silent(q2, device):
+    q2.stuck = True
+    assert play(q2, device, seconds=4, stall=(0, 10**6)) == 0
+    first, second = q2.video_runs()
+    assert q2.t0 + 3000 <= first.killed < q2.t0 + 3000 + POLL_MS and second.start == first.reaped
+    assert [n for n, _ in outputs(second.argv)] == [3] and second.opt('-ss') == '0'
+    assert [s.frame for s in q2.frames()] == [0, *range(100)] and on_time(q2.frames()[1:], 'wall')
+    assert not q2.joins and not q2.timeouts and not q2.events('drain', 'drop', 'prepare', 'close')  # left in ALSA
+    assert q2.exits == [0] and q2.place() == 0 and SOCK not in q2.files and STATE not in q2.files
+    assert [r for _, r, v in q2.dac if v == 1] == ([DAC_MUTE] if device == JACK else [])
+
+
+def test_return_ends_a_video_whose_sound_is_stuck_in_alsa(q2):
+    q2.stuck = True
+    q2.press(b'q', 1000)
+    assert play(q2, seconds=600, stall=(0, 10**6), at=100) == 0
+    assert len(q2.video_runs()) == 1 and len(q2.timeouts) == 1 and q2.timeouts[0] - q2.t0 <= 1000 + POLL_MS + 2000
+    assert not q2.joins and not q2.events('drain', 'drop', 'prepare', 'close') and q2.exits == [0]
+    assert q2.place() == 100 and SOCK not in q2.files and q2.shots[-1].restore
 
 
 @pytest.mark.parametrize('arrival', [700, 720])  # mid-frame, and a frame's end exactly
