@@ -814,6 +814,7 @@ class Machine:
     def dispatched(self): return [x for x in self.calls if x[0]=='stock_dispatch']
 
 checks=0
+def cost_line(name,n): print(f'COST\t{name}\t{n}')  # an instruction count, for test/score.py's P1
 def passed():
     global checks
     checks+=1
@@ -1970,6 +1971,7 @@ for occupancy in (1,64):
     m.call(); costs.append((paint_cost,instructions[0]))
     m.u.hook_del(hook)
 assert costs[0]==costs[1],costs
+cost_line('folder list paint',costs[0][0]); cost_line('folder list poll',costs[0][1])
 passed()
 
 # Returning after another scope still applies text matching and stale-index rejection.
@@ -10692,6 +10694,7 @@ for size in ((200,100),(60,150)):
 # A repaint in place draws again without rendering; a quarter turn renders from the live offset.
 instructions[0]=0; paint(m); assert len(m.draws)==2 and instructions[0]<rest_cost//20
 m.word(s+O['SLIDE_OFFSET'],-O['CF_STRIDE']//4); instructions[0]=0; paint(m); turn_cost=instructions[0]
+cost_line('coverflow first paint',rest_cost); cost_line('coverflow turn frame',turn_cost)
 assert m.draws[-1][5]!=m.draws[0][5] and len(m.loads)==4 and turn_cost>rest_cost//2; passed()
 m.u.hook_del(counter)
 m.word(s+O['SLIDE_OFFSET'],0); paint(m)
@@ -10986,6 +10989,7 @@ m.word(m.slide+O['SLIDE_ANIMATOR'],1)  # a step's frame, the covers moving (no a
 tpaint(m); turn_cost=n[0]; m.word(m.slide+O['SLIDE_ANIMATOR'],0); m.word(m.slide+O['SLIDE_OFFSET'],0); thold(m); no_letters(m); tspin(m,600,-110); assert struct.unpack('<f',m.u.mem_read(ps['th']+156,4))[0]>.9  # th.arch: formed (Fast Navigation off)
 n[0]=0; draws=len(m.draws); tpaint(m); row_cost=n[0]; m.u.hook_del(h); assert len(m.draws)==draws+1 and turn_cost>1000000 and row_cost<6_450_000,row_cost; passed()  # 6.02 million measured, the facing cover's 123 px columns over its neighbours': within the ceiling a turn's frame has below
 assert turn_cost<6_450_000,turn_cost  # a frame a quarter turn on, the covers moving, a little over the 6.38 million it measured: a dearer one fails
+cost_line('coverflow arch turn frame',turn_cost); cost_line('coverflow arch row frame',row_cost)
 # Going by letters, as MIPS, in Minimal and Classic, both leans: the held row, at rest and part through an album as it slides,
 # the fold half-way and the entry half-way (the facing point running) and 85% in (the row going on) draw byte for byte what
 # the host draws. Each is under its FRAME_BOUND (the renderer's own instructions), set a little over what it measured: the
@@ -11019,6 +11023,7 @@ for name,style in (('Minimal',{k:v for k,v in theme_builtins()[0].items() if k.s
         m.call(address=ps['coverflow_render'],args=(frame,O['CF_VIEW_W'],c[0],ring+16),gap=0,count=50_000_000)
         assert bytes(m.u.mem_read(frame,len(host)))==host,(name,c)
         assert n[0]<FRAME_BOUND.get(c[2] if len(c)>2 else 0,1<<30),(name,c,n[0])
+        cost_line(f'coverflow render {name} {cases.index(c)}',n[0])
     m.u.hook_del(h); th_set(m); passed()
 # Going by letters, as MIPS, the held row from half copies: each album's <key>.jpg.half read whole (80 x 80 texels, raw)
 # by the loader (its thread's body run at each wake-up, as the emulator runs no threads), LD_SLOTS a paint, nearest the
@@ -11073,6 +11078,7 @@ for cut in (False,True):
     # swap into the screen's BGRA8888 with the paper.
     tp(m); assert tfloat(m,'pos')!=tfloat(m,'goal'); draws=len(m.draws); n[0]=0
     tpaint(m); m.u.hook_del(h); assert len(m.draws)==draws+1 and n[0]<PAINT_BOUND,n[0]
+    cost_line(f'coverflow letters paint cut={int(cut)}',n[0])
     trest(m); tpaint(m); assert LETTERS_HEAP[0] not in m.live.values() and LETTERS_HEAP[1] in m.live.values()  # landed: the slots freed, the stage kept
     m.close(); assert not any(b in m.live.values() for b in LETTERS_HEAP); passed()  # the page closed: the stage too
 
@@ -11444,6 +11450,7 @@ instructions[0]=0; paint_home(); big_cost=instructions[0]; m.u.hook_del(pan_coun
 # could pan; neither arms the timer.
 m.art_sizes={'externpic.jpg':(4000,100)}; m.byte(syms['g_playcover_type'],2); m.advance(TICK); paint_home(); m.advance(TICK); paint_home()
 assert not drifts() and m.nodes[m.art]['image'].endswith('externpic.jpg') and m.get(m.art+O['W_W'])==290*40; passed()
+cost_line('home pan frame',frame_cost); cost_line('home filter 638',filter_cost); cost_line('home filter 1914',big_cost)
 print(f'Home pan on MIPS: {frame_cost} instructions a frame (every DRIFT_TICK_MS), {filter_cost} and {big_cost} to filter a 638 and a 1914 px cover once (payload only)')
 
 # Accent (docs/internals.md#accent). The mapping: stock red blended with a neutral becomes the same
@@ -13028,6 +13035,7 @@ for b in sk.bands: sk_rows[b[1]-y0]=b[4]
 assert [sk_rows[j] for j in range(52)]==[color_t(NB_TOP),color_t(0x27ade5)]+[color_t(stops_row(NB,j,52)) for j in range(2,50)]+[color_t(0x004aa3),color_t(0x688db3)]
 assert sorted(sk_rows)==list(range(52)) and {(b[0],b[2],b[3]) for b in sk.bands}=={(0,sk.get(sw+O['W_W']),1)}
 assert count[0]<100000,count[0]
+cost_line('classic selection row',count[0])
 print(f'Classic selection on a 52 px row: {count[0]} instructions'); passed()
 # Songs' action bar under Classic: what stock builds in it (it does again on a refresh) takes the plain row's shape: the label at
 # the list's text x in the row's font, Play All's image a hit area over the left with no icon, Sort's the three bars right. Both
@@ -13075,6 +13083,7 @@ for light in ('1','0'):
     count=[0]; counter=m.u.hook_add(UC_HOOK_CODE,lambda *a: count.__setitem__(0,count[0]+1))
     m.call(address=HOOKS['widget_on_paint_background'][0],args=(w,m.canvas,0,0),gap=0); m.u.hook_del(counter)
     assert count[0]<100000,count[0]
+    cost_line(f'classic songs band light={light}',count[0])
 print(f'Classic Songs band and separators: {count[0]} instructions')
 assert not sep_bands(song_list(classic_light_on,address=0x4a6910)[0]),'Albums'
 assert not sep_bands(song_list(lambda k:k.config.update(THEME='1'))[0]),'Classic'
@@ -14074,6 +14083,7 @@ def pane_cases():
         assert pane_shows(m)==want[row],(row,pane_shows(m))
     cost=[0]; hook=m.u.hook_add(UC_HOOK_CODE,lambda *a: cost.__setitem__(0,cost[0]+1),begin=BASE,end=SCRATCH-1)
     pane_shows(m); m.u.hook_del(hook); assert cost[0]<100000,cost
+    cost_line('classic pane settings',cost[0])
     print(f'Classic pane on Settings: {cost[0]} instructions'); passed()
     # Library on Home off (HOMELIB 0), and a set without home_lib, whose Streaming row keeps stock's img_stream: Streaming's pane either way.
     for homelib,stock_name in (('0',0),('1',1)):
@@ -14295,6 +14305,7 @@ def long_view(h,name='',top=100):
     count=[0]; hook=lm.u.hook_add(UC_HOOK_CODE,lambda *a: count.__setitem__(0,count[0]+1))
     lm.call(address=paint,args=(lw,lm.canvas,0,0),gap=0); lm.u.hook_del(hook); assert count[0]<100000,count[0]
     rows=set(les); read=[c[1] for c in lm.calls if c[0]=='widget_get_prop_str' and c[1] in rows and lm.text(c[2])=='name']
+    cost_line(f'classic scroll view {h}px {name or "unnamed"} top={top}',count[0])
     print(f'Classic scroll view of 500 {h} px rows: {count[0]} instructions, {len(read)} names read'); return lm,read
 assert not long_view(28)[1]; assert not sep_bands(long_view(52)[0]) and len(long_view(52)[1])<=6
 lm,read=long_view(52,'_page_tall'); assert len(read)==5 and [b[1] for b in sep_bands(lm)]==[52*i+49+j for i in range(1,6) for j in range(3)]
@@ -16851,6 +16862,7 @@ for i,(icon,text) in enumerate(zip(want,['TIDAL','Spotify','A long name for a ca
     else: assert caption==[text],(i,caption)
 cost=[0]; hook=m.u.hook_add(UC_HOOK_CODE,lambda *a: cost.__setitem__(0,cost[0]+1),begin=BASE,end=SCRATCH-1)
 stream_shows(m); m.u.hook_del(hook); assert cost[0]<100000,cost
+cost_line('classic pane streaming',cost[0])
 print(f'Classic pane on Streaming: {cost[0]} instructions'); passed()
 # Row Art off and the dark half: the same rows and pane, the caption white on the pane in either half.
 for rowart,light in (('0','1'),('1','0'),('0','0')):

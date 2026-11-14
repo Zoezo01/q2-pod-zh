@@ -50,7 +50,7 @@ jobs:
         run: >-
           mkdir -p c-coverage && gcovr --root . --filter patch/ --gcov-ignore-errors=source_not_found
           --markdown "$GITHUB_STEP_SUMMARY" --html-details c-coverage/index.html --txt-summary
-          --fail-under-line 40 --fail-under-branch 38 "$Q2_COV"
+          --fail-under-line 96 --fail-under-branch 85 "$Q2_COV"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         if: ${{ !cancelled() }}
         with:

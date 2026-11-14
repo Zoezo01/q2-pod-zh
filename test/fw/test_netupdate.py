@@ -1256,6 +1256,7 @@ def test_no_release_stops_it(fw):
     assert install(fw, card, net)[0] == SH_MISSING and not card.of('system')
 
 
+@pytest.mark.refusal('addon:traversal')
 def test_a_bad_zip_changes_nothing(fw):
     card = Card(fw, {f'{STAGING}/foo.list'.encode(): row(5, '../x')})
     assert install(fw, card)[0] == SH_BAD
@@ -2398,6 +2399,7 @@ def test_no_app_installs_while_the_list_cant_be_fetched(fw):
 
 
 @pytest.mark.parametrize('listed', [b'other/q2-foo Foo\n', b'-me/q2-foo Foo\n', b'# me/q2-foo Foo\nme/q2-bar Bar\n'])
+@pytest.mark.refusal('addon:changed')
 def test_an_app_installs_only_from_the_repo_the_list_names_now(fw, listed):
     """Another owner's repo under the same name, the app marked dropped, and its line commented out."""
     card = Disk(fw, {SOURCES: b'me/q2-foo Foo\n'})
@@ -2741,3 +2743,49 @@ def test_a_job_that_can_t_start_says_so_and_the_row_stays(fw):
     s.wifi = 1
     s.click()
     assert s.toasts == ["Can't start the download"] and s.sh.job == 0 and not s.sh.running and s.labels() == ['Install']
+
+
+# No byte a peer chooses is the shell's. Of a list's line only the id reaches a command (1 to 15 of a-z0-9-, there after
+# a "/" or its folder's ".", so a leading "-" starts no word); the names in a zip reach none: find's lines are renamed
+# and unlinked, never run. Each value as an app's id, its repo's whole name, its owner, the name shown and a file in
+# Foo's zip; then each ASCII byte an id may not hold, inside one, a line each.
+@pytest.mark.parametrize('put', [
+    *(where % value for where in ('me/q2-%s Evil', 'me/%s Evil', '%s/q2-evil Evil', 'me/q2-evil %s', '.foo/%s')
+      for value in ("'; reboot #", '$(reboot)', '`reboot`', '.', '..', '../x', '-rf', 'a\nreboot', 'a reboot', 'a"reboot', "a'reboot")),
+    '\n'.join(f'me/q2-a{chr(c)}z Evil' for c in range(1, 128) if not re.match('[a-z0-9-]', chr(c)))],
+    ids=lambda put: None if len(put) < 40 else 'every other byte')
+@pytest.mark.hostile('netupdate.c:unzip', 'netupdate.c:shelf_place', 'netupdate.c:shelf_remove')
+def test_only_a_checked_id_reaches_the_shell_from_a_list_or_a_zip(fw, put):
+    """The list and the zip as fetched, each app the page then lists installed and removed, and every command read as
+    system() got it."""
+    entry = put.startswith('.foo/')
+    files = {f'.{app}/q2-{app}': b'bin' for app in ('foo', 'evil', 'a', '-rf')}  # a folder for each id a line here comes to
+    if entry:
+        files[put] = b'x'
+    card = Disk(fw)
+    store_net(fw, files, listed=(b'' if entry else put.encode() + b'\n') + b'me/q2-foo Foo\n')
+    s = Store(fw, card)
+    s.run()
+    for r in range(1, s.sh.rows):
+        s.click(r)
+        s.run()
+        if s.labels()[r - 1] == 'Installed':
+            s.click(r)
+            s.click(r)
+            s.run()
+    shell = [re.escape(c).replace('ID', '([a-z0-9-]{1,15})', 1).replace('ID', r'\1') for c in (
+        f'rm -rf {STAGING}', 'sync',
+        f"busybox unzip -l -qq {STAGING}/ID.part '.ID/*' -x '*/._*'  > {STAGING}/ID.list",
+        f"busybox unzip -o -qq -d {STAGING}/ID {STAGING}/ID.part '.ID/*' -x '*/._*' ",
+        f'cd {STAGING}/ID && find .ID -type f > {STAGING}/ID.files', "rm -rf '/mnt/mmc/.ID'")]
+    ran = [c.decode() for c in card.commands()]
+    assert not [c for c in ran if not any(re.fullmatch(form, c) for form in shell)]
+    if entry and '..' in put.split('/'):  # a ".." entry refuses the whole zip (shelf_unpacked): listed, nothing unpacked
+        assert s.toasts == ['The download is not a usable app'] and len(ran) == 3 and ran[1].startswith('busybox unzip -l ')
+    elif not (entry and '\n' in put):  # a zip's name with a newline (no FAT card holds one) is held to the forms alone; else
+        # Foo went in and out, so each call was made; a zip's file with it, moved by its name
+        assert s.toasts[-2:] == ['Foo is ready in Streaming', 'Foo removed']
+        assert all(any(re.fullmatch(form, c) for c in ran) for form in shell)
+        assert not entry or (b'/mnt/mmc/' + put.encode()) in card.moves(b'/mnt/mmc/.foo/')
+    # -rf, the one value that is an id, goes the whole way too
+    assert ("rm -rf '/mnt/mmc/.-rf'" in ran) == (put in ('me/q2--rf Evil', 'me/-rf Evil'))

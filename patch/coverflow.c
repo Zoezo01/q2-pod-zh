@@ -1222,12 +1222,14 @@ static void *split(void *stock) {
     deque_destroy(stock);
     return out;
 }
-/* navigation.c's Albums list (load_localclass_list 0xf003), split in place as Coverflow's: its size. */
+/* navigation.c's Albums list (load_localclass_list 0xf003), split in place as Coverflow's: its size.
+ * The list empties once copied, not after the split: its rows, the copy's, the query's and the
+ * split's were four album lists held at once. Out of memory the copy comes back, unsplit. */
 int coverflow_split(void *list) {
     void *copy = _create_deque("stSongInfo"), *out;
     deque_init_copy(copy, list);
-    out = split(copy);
     deque_clear(list);
+    out = split(copy);
     deque_assign(list, out);
     deque_destroy(out);
     return (int)deque_size(list);
@@ -3954,6 +3956,13 @@ static void home_fit(unsigned w, unsigned h, int *fw, int *fh) {
     }
 }
 
+/* home_sharpen's kernel on one channel, the low byte of each texel given: inlined a channel, as a
+ * loop over the three would shift by a variable and branch for every one. */
+HOT unsigned sharpened(unsigned prev, unsigned c, unsigned next) {
+    int v = (6 * (int)(c & 255) - (int)(prev & 255) - (int)(next & 255) + 2) >> 2;
+    return (unsigned)(v < 0 ? 0 : v > 255 ? 255 : v);
+}
+
 /* [-1,6,-1]/4 along n opaque texels step apart, in place, rounded and clamped a channel; the ends
  * are their own neighbours. Bilinear kept a whole-pixel frame's texels and mixed a half-pixel
  * one's 50/50, so the pan's sharpness pulsed as its phase turned. home_render's cubic B-spline
@@ -3965,14 +3974,11 @@ static void home_fit(unsigned w, unsigned h, int *fw, int *fh) {
 void home_sharpen(unsigned *t, int n, int step) { /* test/coverflow.py */
     unsigned prev = t[0];
     for (int i = 0; i < n; ++i) {
-        unsigned c = t[i * step], next = i + 1 < n ? t[(i + 1) * step] : c, o = 0xff000000u;
-        for (int s = 0; s < 24; s += 8) {
-            int v = 6 * (int)(c >> s & 255) - (int)(prev >> s & 255) - (int)(next >> s & 255);
-            v = (v + 2) >> 2;
-            o |= (unsigned)(v < 0 ? 0 : v > 255 ? 255 : v) << s;
-        }
+        unsigned c = t[i * step], next = i + 1 < n ? t[(i + 1) * step] : c;
+        t[i * step] = 0xff000000u | sharpened(prev, c, next) |
+                      sharpened(prev >> 8, c >> 8, next >> 8) << 8 |
+                      sharpened(prev >> 16, c >> 16, next >> 16) << 16;
         prev = c;
-        t[i * step] = o;
     }
 }
 

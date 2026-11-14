@@ -957,6 +957,7 @@ def save(fw, name, tmp=b'/tmp/oslyric_1'):
     return n, C.string_at(cmd).decode()
 
 
+@pytest.mark.hostile('onlinematch.c:ringnav_lyric_drop')
 def test_no_lyrics_chosen_unlinks_the_downpic_copy_and_leaves_the_shell_nothing(fw):
     """ringnav_lyric_drop as stock's other command calls it: rm -rf "<.downpic>/<name>" never reaches system()."""
     hostile = 'x$(touch p)`id`".lrc'
@@ -970,6 +971,7 @@ def test_no_lyrics_chosen_unlinks_the_downpic_copy_and_leaves_the_shell_nothing(
     assert disk.files == kept
 
 
+@pytest.mark.hostile('onlinematch.c:ringnav_cover_copy')
 def test_now_playing_copies_a_picked_cover_and_leaves_the_shell_nothing(fw):
     """ringnav_cover_copy as player_parsecover_thd calls it: cp -f "<.downpic>/<file name>.jpg" '<to>' never reaches system()."""
     src = '/mnt/mmc/.downpic/A$AP `id` $(touch p).flac.jpg'
@@ -1006,6 +1008,7 @@ def test_what_isnt_a_queued_song_of_its_own_goes_where_stock_puts_it(fw, mcl, re
     assert disk.files == {'/tmp/oslyric_1': b'lyrics', '/mnt/mmc/.downpic/song.lrc': b'lyrics'}
 
 
+@pytest.mark.hostile('onlinematch.c:ringnav_lyric_save')
 def test_a_name_never_reaches_the_shell(fw, mcl, records):
     """Stock's command ran the name through system() as root (GHSA-qp92-mq7c-6r64)."""
     Queue(fw, mcl, [records.song(b'/m/song.flac')])

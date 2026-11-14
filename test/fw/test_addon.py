@@ -483,6 +483,7 @@ def test_quit_gives_up_after_its_wait(fw):
 
 
 @pytest.mark.parametrize('folder', [b'foo', b'.', b'..', b'.a;b', b".a'b", b'.' + b'a' * 16, b'', None])
+@pytest.mark.hostile('addon.c:addon_quit')
 def test_quit_never_builds_a_command_from_a_bad_folder(fw, folder):
     world = World(fw)
     fw.fn('addon_quit', None, C.c_char_p)(folder)
