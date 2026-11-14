@@ -1080,31 +1080,35 @@ def writes(): return [c for c in s.calls if c[0]=='widget_set_text_utf8']
 def reads(): return [c for c in s.calls if c[0] in ('time@GLIBC_2.0','localtime_r')]
 def minute(ms=1000): s.advance(ms)
 s.advance(0); assert clock()=='6:14 下午'; passed()  # the gradient check's paint above started it
-# Time in Title off: the bar names the page in front (Now Playing, or stock's title in its hidden
-# navbar, a settings page's unnamed first child); a pop-up leaves it; Home, a shown navbar or no title is the clock.
+# Time in Title off: the page name goes on the LEFT, in label_playword, exclusive with the
+# play-state word (the name wins while a page has one). The clock makes way when Time in Title
+# is off and keeps its time when on; a pop-up leaves the name; Home, a shown navbar or no title
+# hands the label back to the play-state word.
 def title_machine(**config):
     CONFIG.update(config); t=Machine(); CONFIG.clear(); t.clock_minutes=True
-    label=t.node('hscroll_label','label_clock'); bar=t.node('system_bar','system_bar',[label])
+    label=t.node('hscroll_label','label_clock'); word=t.node('hscroll_label','label_playword')
+    bar=t.node('system_bar','system_bar',[label,word])
     t.word(bar+O['W_PARENT'],t.wm); t.word(syms['system_bar'],bar)
     def show(top):
         t.top=top; t.call(address=HOOKS['widget_on_paint_background'][0],args=(bar,t.canvas,0,0),gap=0)
         t.wrote=any(c[0]=='widget_set_text' for c in t.calls); t.advance(1)
-        return t.nodes[label].get('text')
+        return t.nodes[word].get('text','')
     def page(title,shown=0,name='scrlabel_title'):
         kids=[t.node('hscroll_label',name,text=title)] if title is not None else []
         w=t.node('window','some_page',[t.node('view','view_navbar',kids,visible=shown)]); t.word(w+O['W_PARENT'],t.wm); return w
-    return t,label,show,page
-t,label,show,page=title_machine(TIMETITLE='0'); time=show(t.node('window','home_page'))
-assert time=='6:14 下午' and show(page('Albums'))=='Albums' and t.nodes[label].get('style:normal:font_name','default')=='default'
+    return t,label,word,show,page
+t,label,word,show,page=title_machine(TIMETITLE='0'); time='6:14 下午'
+assert show(t.node('window','home_page'))=='' and t.nodes[label].get('text')==time
+assert show(page('Albums'))=='Albums' and t.nodes[label].get('text','')=='' and t.nodes[word].get('style:normal:font_name','default')=='default'
 assert show(page('Display',name=''))=='Display' and show(t.node('dialog','volume_dialog'))=='Display' and show(t.node('keyboard','kb_default'))=='Display'
 assert show(t.node('window','coverflow_page'))=='Cover Flow'
-assert show(page('Bootvol',shown=1))==time and show(page('Empty'))=='Empty' and show(page(''))==time and show(page(None))==time; passed()
+assert show(page('Bootvol',shown=1))=='' and show(page('Empty'))=='Empty' and show(page(''))=='' and show(page(None))==''; passed()
 show(page('Albums')); assert t.wrote; show(t.top); assert not t.wrote; passed()  # only a new title is written
-t.clock=(6,15); t.advance(61000); assert t.nodes[label]['text']=='Albums'  # the clock's minute leaves a title alone
-assert show(t.node('window','home_page'))!=time; passed()
-t,label,show,page=title_machine(TIMETITLE='0',THEME='2'); assert show(page('Albums'))=='Albums' and t.nodes[label]['style:normal:font_name']=='bold'
-assert show(page(None))=='6:14 下午' and t.nodes[label]['style:normal:font_name']=='default'; passed()
-t,label,show,page=title_machine(); assert show(page('Albums'))=='6:14 下午'; passed()  # the clock unless chosen
+t.clock=(6,15); t.advance(61000); assert t.nodes[word]['text']=='Albums'  # the clock's minute leaves a title alone
+assert show(t.node('window','home_page'))=='' and t.nodes[label].get('text')!=time; passed()
+t,label,word,show,page=title_machine(TIMETITLE='0',THEME='2'); assert show(page('Albums'))=='Albums' and t.nodes[word]['style:normal:font_name']=='default'
+assert show(page(None))=='' and t.nodes[label].get('text')=='6:14 下午'; passed()  # Modern's name is never bold
+t,label,word,show,page=title_machine(); assert show(page('Albums'))=='Albums' and t.nodes[label].get('text')=='6:14 下午'; passed()  # Time in Title on: the clock stays
 for h,mi,want in ((0,0,'12:00 上午'),(0,5,'12:05 上午'),(9,7,'9:07 上午'),(11,59,'11:59 上午'),(12,0,'12:00 下午'),
                   (12,59,'12:59 下午'),(13,0,'1:00 下午'),(23,59,'11:59 下午')):
     s.clock=(h,mi); minute(); assert clock()==want,(h,mi,clock())
@@ -4175,7 +4179,7 @@ def cpm_wheel(m,key,n=1):
     m.paint(m.view)
 def cpm_centre(m):  # Centre on the selected row, the row's click running as stock's dispatch does
     m.confirm(); m.advance(0,clear=False); m.stack_rows(); m.paint(m.view)
-NEW,EDIT='New Playlist…','Select Playlists…'
+NEW,EDIT='新建播放列表…','选择播放列表…'
 LISTS=['List 0','List 1','List 2']
 
 # The list: stock's rows two lines high, its tile row and toolbar hidden; New Playlist and Edit
@@ -4183,14 +4187,14 @@ LISTS=['List 0','List 1','List 2']
 m=ClassicPlaylistMachine(); kids=m.rebuild()
 assert m.rows()==[NEW,EDIT]+LISTS and m.bar()=='Playlists'
 assert m.nodes[kids[0]]['visible']==0 and m.nodes[m.nav]['visible']==0
-assert [m.row_text(r) for r in kids[1:4]]==['Select All',NEW,EDIT]
+assert [m.row_text(r) for r in kids[1:4]]==['全选',NEW,EDIT]
 for row,text in zip(kids[4:7],LISTS):
     button=m.nodes[row]['children'][0]; info=next(k for k in m.nodes[button]['children'] if m.nodes[k]['name']=='view_info')
     title,second=m.nodes[info]['children']
     assert m.get(row+O['W_H'])==52 and m.get(button+O['W_H'])==52 and m.get(button+O['W_W'])==375
     assert m.nodes[row]['name']==('' if text==LISTS[-1] else '_page_tall')
     # A label draws nothing in a box shorter than its font: 28 and 17 px under Classic.
-    assert m.nodes[second]['text']=='3 Songs' and m.get(title+O['W_H'])==28 and m.get(second+O['W_H'])==18
+    assert m.nodes[second]['text']=='3 首' and m.get(title+O['W_H'])==28 and m.get(second+O['W_H'])==18
     assert signed(m.get(title+O['W_Y']))==-1 and m.get(second+O['W_Y'])==28 and m.get(info+O['W_X'])==20 and m.get(info+O['W_W'])==289
     more=next(k for k in m.nodes[button]['children'] if m.nodes[k]['name'].startswith('img_more'))
     assert m.nodes[more]['visible']==1 and m.get(more+O['W_X'])==321 and m.nodes[more]['image']=='unselect'
@@ -7668,16 +7672,16 @@ ck,ckbar,_,_,ckclock,*_,ckhome=dark_setup(); ck.clock_minutes=True; ck.top=ckhom
 ck_show(); assert ck.nodes[ckclock]['text']=='6:14 下午',ck.nodes[ckclock]['text']; bg(ck,ckbar); ck_show(); assert ck.nodes[ckclock]['text']=='6:14',ck.nodes[ckclock]['text']; passed()
 # Set Time and Set Date are under it too.
 tdb,tbar,_,ttitle,tclock,*_,thome=dark_setup(); tdb.top=thome; bg(tdb,tbar); assert tdb.nodes[tclock]['visible']==1 and wbox(tdb,ttitle)[0]==20
-tdb.top=tdb.node('window','manualtime_page'); tdb.word(tdb.top+O['W_PARENT'],tdb.wm); bg(tdb,tbar); assert wbox(tdb,ttitle)==(0,-1,375,25) and tdb.nodes[tclock]['visible']==0; passed()
+tdb.top=tdb.node('window','manualtime_page'); tdb.word(tdb.top+O['W_PARENT'],tdb.wm); bg(tdb,tbar); assert wbox(tdb,ttitle)==(57,-1,201,25) and tdb.nodes[tclock]['visible']==0; passed()
 db,dbar,dright,dtitle,dclock,dbt,dwifi,dpct,dslot,dst,dwin,dhome=dark_setup(state=2)
 assert db.nodes[dpct]['visible']==1
 db.style_ints.update({(db.style,'text_align_h'):3,(db.style,'text_color'):signed(0xff112233)})  # what the title's style says, neither left nor white
 for _ in range(2): bg(db,dwin); bg(db,dbar)
 db.bands=[]; cost=[0]; chook=db.u.hook_add(UC_HOOK_CODE,lambda *a: cost.__setitem__(0,cost[0]+1),begin=BASE,end=SCRATCH-1); bg(db,dbar); db.u.hook_del(chook); darkrows=[b for b in db.bands if b[2]==375]; assert cost[0]<100000,cost
-assert [b[:4] for b in darkrows]==[(0,j,375,1) for j in range(26)] and darkrows[0][4]==color_t(0x1c1c1c) and darkrows[24][4]==color_t(0x1c1c1c) and darkrows[25][4]==color_t(0x333333) and wbox(db,dtitle)==(0,-1,375,25)
-assert db.nodes[dtitle]['style:normal:font_size']==21 and db.nodes[dtitle]['style:normal:font_name']=='classic-light' and db.nodes[dtitle]['style:normal:text_align_h']=='center' and db.nodes[dtitle]['style:normal:text_color']&0xffffffff==color_t(0)
+assert [b[:4] for b in darkrows]==[(0,j,375,1) for j in range(26)] and darkrows[0][4]==color_t(0x1c1c1c) and darkrows[24][4]==color_t(0x1c1c1c) and darkrows[25][4]==color_t(0x333333) and wbox(db,dtitle)==(57,-1,201,25)
+assert db.nodes[dtitle]['style:normal:font_size']==21 and db.nodes[dtitle]['style:normal:font_name']=='classic-light' and db.nodes[dtitle]['style:normal:text_align_h']=='left' and db.nodes[dtitle]['style:normal:text_color']&0xffffffff==color_t(0)
 assert db.nodes[dclock]['visible']==0 and wbox(db,dbt)[0]==-400 and wbox(db,dwifi)[0]==-400 and db.nodes[dpct]['visible']==0
-sx,sy,sw_,sh=wbox(db,dst); assert (200+sx+(sw_-10)//2,2+sy+(sh-11)//2)==(278,7) and (sw_,sh)==(18,22)  # its box keeps its size: centred, the 10 x 11 glyph lands here
+sx,sy,sw_,sh=wbox(db,dst); assert (200+sx,2+sy)==(266,2) and (sw_,sh)==(18,22)  # the white glyph's own 18 x 22 canvas, centred on the battery's row
 assert db.nodes[dst]['image']=='classic_light_play_w' and wbox(db,dslot)==(285-200,1-2,37,21); passed()
 # ... the title has no shadow, as the flat bar's has none; in the dark half too.
 db.letters=[]; bg(db,dbar); assert not shadows(db); passed()
@@ -7836,7 +7840,7 @@ passed()
 # A label's box holds its font, and nothing crosses the glass: every rect above.
 from ipod import corner_inset
 RECTS=[(44,247,12,14),(318,247,22,14),(63,245,248,31),(68,271,243,17),(52,273,12,14),(317,273,22,14),(28,155,322,46),(36,201,306,1),(81,168,204,8),(81,174,204,8),(50,165,12,14),(311,165,22,14),(50,171,12,14),(311,171,22,14),(48,170,16,16),(311,167,22,22),(50,166,20,26),(306,166,20,26),
-       (125,54,125,44),(138,63,100,26),(278,7,10,11),(294,7,26,13),(320,11,2,5),(76,181,10,6),(280,181,10,6)]
+       (125,54,125,44),(138,63,100,26),(266,2,18,22),(294,7,26,13),(320,11,2,5),(76,181,10,6),(280,181,10,6)]
 for x,y,w,h in RECTS: assert corner_inset(y)<=x and corner_inset(y+h-1)<=x and x+w<=375-max(corner_inset(y),corner_inset(y+h-1)),(x,y,w,h)
 for m_,w_ in ((bk,cap),(ba,label_balance),(ba,L),(ba,R),(xf0,xf0.vol)): assert wbox(m_,w_)[3]>=m_.nodes[w_]['style:normal:font_size']  # a label draws nothing in a shorter box
 assert all(t['rect'][3]>=t['font'][1] for m_ in (bk,dv,wheel) for t in m_.letters)
@@ -8167,7 +8171,7 @@ for mode,line in ((0,'Eject before disconnecting'),(2,'Eject before disconnectin
 db,dbar,dright,dtitle,dclock,dbt,dwifi,dpct,dslot,dst,dwin,dhome=dark_setup()
 uw=db.node('window','usbmode_page'); db.word(uw+O['W_PARENT'],db.wm); place(db,uw,0,26,375,294); ui_loaded(db,'usbmode_page',uw); db.top=uw; db.nodes[db.wm]={'children':[uw]}
 for _ in range(2): bg(db,uw); bg(db,dbar)
-assert db.nodes[dtitle]['text']=='Q2 Pod' and wbox(db,dtitle)==(0,-1,375,25) and db.nodes[dclock]['visible']==0; db.bands=[]; bg(db,dbar); assert [b for b in db.bands if b[2]==375][0][4]==color_t(0x1c1c1c); passed()
+assert db.nodes[dtitle]['text']=='Q2 Pod' and wbox(db,dtitle)==(57,-1,201,25) and db.nodes[dclock]['visible']==0; db.bands=[]; bg(db,dbar); assert [b for b in db.bands if b[2]==375][0][4]==color_t(0x1c1c1c); passed()
 db.word(uw+O['W_Y'],0); db.letters=[]; bg(db,uw); assert db.letters[0]['text']=='Q2 Pod' and db.letters[0]['rect']==(0,-1,375,25); passed()  # a window over the bar paints the title on the bar title's rows
 uc,cwin,*_=usb_page(0,y=0); bare(uc); bg(uc,cwin)
 assert page_fill(uc,26) and uc.image_draws[0][1][:2]==(122,67) and [b for b in uc.bands if b[2]==375 and b[1]==0][0][4]==color_t(0x1c1c1c) and uc.letters[0]['text']=='Q2 Pod' and wbox(uc,named(uc,cwin,'msg_heading'))==(16,228,343,32); passed()
@@ -8195,7 +8199,7 @@ assert dh.nodes[dhtitle]['style:normal:text_color']&0xffffffff==color_t(0); half
 dh.top=dhhome; dh.nodes[dh.wm]={'children':[dhbar,dhhome]}; bg(dh,dhhome); bg(dh,dhbar); back=dh.nodes[dhtitle]['style:normal:text_color']; half_turn(dh,7); assert dh.nodes[dhtitle]['style:normal:text_color']==back; passed()
 # Nothing here crosses the glass, and Minimal keeps stock's dialogs: no images, no moved widgets, stock's labels shown.
 from ipod import corner_inset
-for x,y,w,h in ((127,248,121,35),(16,159,343,32),(16,188,343,20),(72,218,229,15),(129,38,116,116),(122,67,130,130),(16,228,343,32),(16,255,343,20),(278,7,10,11),(294,7,26,13),(320,11,2,5)):
+for x,y,w,h in ((127,248,121,35),(16,159,343,32),(16,188,343,20),(72,218,229,15),(129,38,116,116),(122,67,130,130),(16,228,343,32),(16,255,343,20),(266,2,18,22),(294,7,26,13),(320,11,2,5)):
     assert corner_inset(y)<=x and corner_inset(y+h-1)<=x and x+w<=375-max(corner_inset(y),corner_inset(y+h-1)),(x,y,w,h)
 for h,px in ((32,29),(20,18),(34,23),(25,15)): assert h>px
 from fontTools.ttLib import TTFont
@@ -19933,7 +19937,7 @@ for mode in range(4):
 passed()
 # ... the play state's glyph on the bar, playing or paused; a hidden card has no tray.
 for status,glyph in ((2,'classic_light_play_w'),(3,'classic_light_pause_w')):
-    lk,w=lock_cl(status=status); draws=lock_paint(lk,w); assert glyph in [lk.text(c[2]) for c in lk.calls if c[0]=='widget_load_image'] and (278,7) in [d[1][:2] for d in draws]
+    lk,w=lock_cl(status=status); draws=lock_paint(lk,w); assert glyph in [lk.text(c[2]) for c in lk.calls if c[0]=='widget_load_image'] and (266,2) in [d[1][:2] for d in draws]
 lk,w=lock_cl(); lk.nodes[w['view_playinfo']]['visible']=0; lock_paint(lk,w); assert not [b for b in lk.bands if b[1]==186 and b[2]>300]; passed()
 # ... charging, as the status bar's icon says, fills the battery.
 lk,w=lock_cl(); icon=lk.node('image','img_battery',image='bar_charge'); sbar=lk.node('system_bar','system_bar',[icon]); parents(lk,sbar); lk.word(sbar+O['W_PARENT'],lk.wm); lk.word(syms['system_bar'],sbar)
@@ -20125,7 +20129,7 @@ assert sr_w-sr_end()==40,(sr_w,sr_end()); passed()
 k=search_rows(lambda k: k.config.update(THEME='0')); button,=[n_ for n_,v in k.nodes.items() if v['type']=='button']; items=[n_ for n_,v in k.nodes.items() if v['type']=='list_item']
 assert [signed(k.get(i+O['W_H'])) for i in items]==[78] and signed(k.get(button+O['W_H']))==70; passed()
 # Boxes hold their fonts and nothing crosses the glass: every rect above, at y 280 for the hint.
-RECTS=[(226,0,48,26),(278,7,10,11),(294,7,26,13),(16,44,343,128),(16,186,343,84),(29,54,96,96),(134,44,219,116),(28,198,60,60),(100,202,245,28),(100,229,245,22),(172,281,30,16),
+RECTS=[(226,0,48,26),(266,2,18,22),(294,7,26,13),(16,44,343,128),(16,186,343,84),(29,54,96,96),(134,44,219,116),(28,198,60,60),(100,202,245,28),(100,229,245,22),(172,281,30,16),
        (42,18,13,24),(72,15,244,30),(5,104,68,50),(302,212,68,50),(55,266,68,50),(24,33,327,30),(24,71,327,30),(0,108,375,1)]
 def clear_glass(x,y,w,h):
     return x==0 and w==375 or (corner_inset(y)<=x and corner_inset(y+h-1)<=x and x+w<=375-max(corner_inset(y),corner_inset(y+h-1)))

@@ -91,7 +91,7 @@ def test_the_bolt_and_the_plug_fill_the_batterys_inside():
 
 def test_the_volume_and_slider_page_images():
     got = classic()
-    size = {'spk_quiet': (12, 14), 'spk_loud': (22, 14), 'sun_small': (16, 16), 'sun_big': (22, 22), 'play_w': (10, 11), 'pause_w': (10, 11), 'orb_note': (116, 116), 'orb_usb': (130, 130)}
+    size = {'spk_quiet': (12, 14), 'spk_loud': (22, 14), 'sun_small': (16, 16), 'sun_big': (22, 22), 'play_w': (18, 22), 'pause_w': (18, 22), 'orb_note': (116, 116), 'orb_usb': (130, 130)}
     for name, wh in size.items():
         for n in ([f'{name}_{h}' for h in 'ldw'] if name.startswith('spk') else [name]):
             w, h, at = pixels(got[f'classic_light_{n}'])
@@ -111,7 +111,10 @@ def test_the_volume_and_slider_page_images():
         w, h, at = pixels(got[f'classic_light_{n}'])
         inked = [(x, y) for x in range(w) for y in range(h) if at(x, y)[3] >= 64]
         assert max(p[0] for p in inked) - min(p[0] for p in inked) + 1 == side and max(p[1] for p in inked) - min(p[1] for p in inked) + 1 == side, n
-    assert pixels(got['classic_light_play_w'])[2](3, 5)[3] == 255 and pixels(got['classic_light_pause_w'])[2](5, 5)[3] < 64
+    # The dark bar's white state is Classic's own 12 x 14 glyph in the 18 x 22 canvas; play has
+    # ink at (7, 11), pause's two bars leave the column at (10, 11) clear.
+    assert pixels(got['classic_light_play_w'])[:2] == (18, 22)
+    assert pixels(got['classic_light_play_w'])[2](7, 11)[3] == 255 and pixels(got['classic_light_pause_w'])[2](10, 11)[3] < 64
 
 
 def test_the_confirm_shadow_falls_soft_and_black_under_the_tray():

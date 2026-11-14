@@ -4026,10 +4026,15 @@ static int bar_word_sync(void *bar) {
     int status = bar_status();
     play_word_create(bar);
     if (!st.play_word) return 0;
+    /* Minimal/Modern: np_bar.c's bar_title put a page name in this very label.
+     * It owns the text, the width and the visibility from then on; the play
+     * state's word must not write over the name or hide it while stopped. */
+    if (!st.bar_title && st.bar_named) return 0;
     int show = (status == 2 || status == 3) && state_own_place();
-    if (!st.bar_title) { /* the word keeps the glyph's side whatever the bar's own relayouts do */
+    if (!st.bar_title) { /* the word keeps the glyph's side whatever the bar's own relayouts do,
+                          * and takes its 66 px back after a page name widened it (bar_title) */
         int x = word_x();
-        if (I(st.play_word, W_X) != x)
+        if (I(st.play_word, W_X) != x || I(st.play_word, W_W) != PLAY_WORD_W)
             widget_move_resize(st.play_word, x, 0, PLAY_WORD_W, I(st.play_word, W_H));
     }
     /* What the bar shows: the glyph's state, the word's room (bit 3), the ink's half (bit 4). */
@@ -4071,6 +4076,13 @@ static int dark_bar(void *top) {
 }
 /* The real bar's title's row, set for bar_px, so a dark bar's title sits on the same rows. */
 int dark_title_y(void) { return st.bar_title ? I(st.bar_title, W_Y) : 0; }
+/* A dark page keeps the page name on the LEFT, as the light bar does: status_metrics' title box
+ * starts at 57 (its two px of hscroll_label margin put the ink at 59, clear of the glass). A
+ * full-width centred box put the name under the round corner on a third-level page — the menu
+ * name looked clipped — and took the room of the play state and battery beside it. End before
+ * the state's 266, leaving a gap. */
+#define DARK_TITLE_X 57
+#define DARK_TITLE_W 201
 /* Their title at the bar's size, in the face its text has (none: the system's). A CJK title reads
  * stock's face, a third taller than the clock's digits at the same px: step down, as theme_font's. */
 static void dark_title(void *t) {
@@ -4078,7 +4090,8 @@ static void dark_title(void *t) {
     int px = theme()->font_px[ROLE_BAR];
     const char *face = theme_face(s, (int)wide_len(s), &px);
     if (!face) px = BAR_CJK_PX;
-    slider_label(t, 0, dark_title_y(), 375, 25, px, face ? face : "default");
+    slider_label(t, DARK_TITLE_X, dark_title_y(), DARK_TITLE_W, 25, px, face ? face : "default");
+    widget_set_prop_str(t, "style:normal:text_align_h", "left"); /* slider_label centres a page's own caption */
     font_weight_mark(t, !face); /* theme_font's rule: only stock's face stands in for bold */
 }
 /* w at x, y on the screen, unless it's there. */
@@ -4205,9 +4218,10 @@ static void bar_sync(void *bar) {
     if (st.bar_dark) { /* each paint: a relayout puts them back */
         bar_off(st.bar_bt);
         bar_off(st.bar_wifi);
-        /* draw_type center, in the box it keeps: the 10 x 11 glyph lands at 278, 7 */
-        bar_place(st.bar_state, 278 - (I(st.bar_state, W_W) - 10) / 2,
-                  7 - (I(st.bar_state, W_H) - 11) / 2, I(st.bar_state, W_W), I(st.bar_state, W_H));
+        /* The white play state is Classic's own 12 x 14 glyph in its 18 x 22 canvas, the same
+         * size as the light bar's. At 266, 2 its ink centres on the battery's middle row and
+         * ends at 282.5, clear of the body's 294; a 10 x 11 art read a size smaller. */
+        bar_place(st.bar_state, 266, 2, I(st.bar_state, W_W), I(st.bar_state, W_H));
         bar_place(st.bar_slot, 285, 1, 37, 21);
         if (key != st.batt_key && !st.bar_timer)
             st.bar_timer = timer_add(bar_repaint, (void *)0, 0);
@@ -5538,8 +5552,8 @@ void paint_dark_bar(void *w, void *canvas, const unsigned *title, unsigned key) 
     }
     dark_battery(canvas, 285, 1, key);
     if (status == 2 || status == 3)
-        paint_art(w, canvas, status == 2 ? "classic_light_play_w" : "classic_light_pause_w", 278,
-                  7);
+        paint_art(w, canvas, status == 2 ? "classic_light_play_w" : "classic_light_pause_w", 266,
+                  2); /* the dark bar's counterpart, on the battery's middle row */
     stock_canvas_set_fill_color(canvas, fill);
 }
 /* The info screen's dark tray: its rows, top light, ring and the light row under the ring. */

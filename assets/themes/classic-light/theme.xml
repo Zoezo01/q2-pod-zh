@@ -70,7 +70,12 @@
              stops="#90b27d 0, #c4ebac 8, #dcf9c5 17, #cbefb1 25, #ade586 33, #a6e27b 42, #92ce68 50, #67a83f 58, #4e972c 67, #4e972d 75, #56a035 83, #58a437 92, #539933 100"
              empty="#56585d 0, #595a61 8, #5f6168 17, #63656c 25, #6b6d73 33, #76787e 42, #85878d 50, #898b92 58, #8d8f96 67, #94969c 75, #9ea0a5 83, #a0a3a6 92, #797b7c 100"
              low="#d9402e" low_w="3" corner_a="191" foot_a="128" shade_a="64" soft_a="51" soft_top_a="28" emboss_a="179" emboss_nub_a="153" bolt="#3c4a34" bolt_halo_a="102"/>
-    <element name="icons" bt_dy="1" wifi_dy="-1"/>
+    <!-- One row for the whole right group. Upstream's bt_dy=1 / wifi_dy=-1 are rows off the
+         row layout's y 0, so they lifted Wi-Fi and dropped Bluetooth away from the battery's
+         digits: the three read high, middle, low on the device. The Chinese build keeps them
+         on the common row; a Status Bar set to Classic while Minimal/Modern is the theme uses
+         this look's rows too, so it inherits the same alignment. -->
+    <element name="icons" bt_dy="0" wifi_dy="0"/>
     <!-- The play state's fill and 1 px edge, top to bottom, with no halo (an iPod's has none); tools/art.py draws
          the triangle and the bars. -->
     <element name="state" stops="#0f4f93 0, #1a76b3 20, #2ea8e1 33, #39c7f8 47, #38c7f5 53, #32b1e9 60, #2699d7 67, #2085c3 73, #1c73b1 80, #1666a5 87, #135999 100"

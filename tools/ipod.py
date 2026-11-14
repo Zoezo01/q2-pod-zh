@@ -512,9 +512,15 @@ def status_bar(root, g=SET0):
     check(sorted([*widgets, 'view_battery']) == sorted(STATUS_LEFT + STATUS_RIGHT + STATUS_HIDDEN), 'Unexpected status bar widgets')
     widgets['img_wifi'][1][2] = 14
     eq = widgets['label_eq']
-    eq[1][2] = 28
+    # "EQ" at 16 px fills about 20 px of stock's face. Stock's 28 px box left four clear columns
+    # on either side of a centred badge, which read as twice the row's own STATUS_GAP before
+    # Wi-Fi (and pushed the whole group left whenever EQ showed). Keep just the two bearings;
+    # the badge then sits with the icons, on their row and at their height.
+    eq[1][2] = 22
+    eq[1][1], eq[1][3] = widgets['img_bt'][1][1], widgets['img_bt'][1][3]
     for s in ('normal', 'disable', 'focused'):
         eq[2][f'style:{s}:font_size'] = '16'
+        eq[2][f'style:{s}:text_align_h'] = 'center'
     pct = widgets['label_battery']
     pct[1][2] = BATT_PCT_W
     for s in ('normal', 'disable', 'focused'):

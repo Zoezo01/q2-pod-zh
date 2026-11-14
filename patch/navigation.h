@@ -248,11 +248,13 @@ typedef struct {
     void *genre_label;
     int genre_off;
     unsigned genre_timer;
-    /* The selected row's marquee (marq_moved); Time in Title off (bar_title). */
+    /* The selected row's marquee (marq_moved); Time in Title off (bar_title).
+     * bar_named: Minimal/Modern have a page name in label_playword, which then
+     * belongs to bar_title rather than to bar_word_sync's play-state word. */
     void *marq_row, *marq_label;
     unsigned marq_timer;
     int marq_id, marq_passes;
-    int time_title, bar_titled;
+    int time_title, bar_titled, bar_named;
     /* Scrub: a centre press at np_press_at waits DOUBLE_CLICK_MS in np_press for a second one;
      * scrub_to is the target second, scrub_moved set once the wheel changed it. */
     unsigned np_press, np_press_at, scrub_timer, scrub_track, settle_timer;

@@ -80,8 +80,14 @@ def git(*args):
 def upstream_ref(want):
     if want:
         return want
+    # This repo also carries 9.x tags from an older, unrelated numbering scheme
+    # (stock milestones). Sorting every numeric tag would pick 9.8 instead of
+    # upstream's current 1.x release line and align almost nothing. A future
+    # major line is an explicit --upstream.
     tags = (git('tag', '-l', '[0-9]*') or '').split()
-    numeric = [t for t in tags if re.fullmatch(r'\d+\.\d+(\.\d+)?', t)]
+    numeric = [t for t in tags if re.fullmatch(r'1\.\d+(\.\d+)?', t)]
+    if not numeric:
+        numeric = [t for t in tags if re.fullmatch(r'\d+\.\d+(\.\d+)?', t)]
     if not numeric:
         sys.exit('No numeric upstream tag here: pass --upstream (e.g. 1.8.2)')
     return sorted(numeric, key=lambda t: tuple(map(int, t.split('.'))))[-1]

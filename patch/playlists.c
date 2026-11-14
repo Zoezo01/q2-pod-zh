@@ -446,7 +446,7 @@ int ringnav_playlist_delete(void *win, void *event) {
         int kind, ms;
         char text[0x400];
     } prompt = { 1, 0, "删除播放列表？" };
-    if (confirm_over(&prompt, "Delete") != 10) return 0;
+    if (confirm_over(&prompt, "删除") != 10) return 0;
     char sql[256];
     if (pl_db(&db)) goto done;
     if (sqlite3_exec(db, "begin immediate", 0, 0, 0)) goto done;
@@ -612,7 +612,7 @@ void pl_fit(void *button) {
 }
 
 /* Stock's row, as the list's other two-line rows: its art stays under Row Art (not in the
- * picker), its count reads "N Songs". */
+ * picker), its count reads "N 首", as Cover Flow's panes do (coverflow.c pane_count). */
 static void *pl_art_image(void *button);
 static void pl_row(void *item) {
     const theme_t *T = theme();
@@ -642,7 +642,7 @@ static void pl_row(void *item) {
     unsigned songs = 0;
     while (s && *s && (*s < '0' || *s > '9')) ++s;
     while (s && *s >= '0' && *s <= '9') songs = songs * 10 + (*s++ - '0');
-    tk_snprintf(count, sizeof count, "%u %s", songs, songs == 1 ? "Song" : "Songs");
+    tk_snprintf(count, sizeof count, "%u 首", songs);
     widget_set_text_utf8(second, count);
     hscroll_label_set_only_focus(title, 1);
     theme_font(title, ROLE_TALL, FONT_ROW);
@@ -977,14 +977,14 @@ static void pl_dress(void *win, int first) {
     /* New and Edit head the list, after the hidden tile row (a picker has none); Select All, select
      * mode's first row, sits with them, as the two modes never show both */
     if (add) {
-        pl_action(view, "New Playlist\xe2\x80\xa6", PL_NEW, 1, 0);
+        pl_action(view, "新建播放列表\xe2\x80\xa6", PL_NEW, 1, 0);
     } else {
-        pl_action(view, "Select All", PL_SELECT_ALL, 0, 1);
-        pl_action(view, "New Playlist\xe2\x80\xa6", PL_NEW, 1, 2);
+        pl_action(view, "全选", PL_SELECT_ALL, 0, 1);
+        pl_action(view, "新建播放列表\xe2\x80\xa6", PL_NEW, 1, 2);
         pl_action(view, "选择播放列表\xe2\x80\xa6", PL_EDIT, 1, 3);
         pl_action(view, "导入歌单", PL_IMPORT, 0, -1);
-        pl_action(view, "Export", PL_EXPORT, 0, -1);
-        pl_action(view, "Delete", PL_DELETE, 0, -1);
+        pl_action(view, "导出", PL_EXPORT, 0, -1);
+        pl_action(view, "删除", PL_DELETE, 0, -1);
         pl_action(view, "完成", PL_DONE, 0, -1);
     }
     pl_rows(win);

@@ -299,6 +299,7 @@ ZH_GENERATED = {
     'Name taken; preset kept': '名称已存在，预设未改',
     'Needs %u MB more space': '还需 %u MB 空间',
     'New Playlist': '新建播放列表',
+    'New Playlist…': '新建播放列表…',
     'New best!': '新纪录！',
     'New game?': '开始新游戏？',
     'Next Album': '下一张专辑',

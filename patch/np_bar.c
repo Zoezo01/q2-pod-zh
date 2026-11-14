@@ -140,60 +140,93 @@ void bar_title(void *bar, void *top) {
         if (!st.bar_timer) st.bar_timer = timer_add(bar_repaint, (void *)0, 0);
         return;
     }
-    if (st.time_title && !st.bar_titled) return; /* the clock, every paint */
-    if (!top || tk_strcmp(widget_get_type(top), "window")) return;
-    void *label = widget_lookup(bar, "label_clock", 1);
-    if (!label) return;
-    const unsigned *title = (void *)0;
-    if (!st.time_title) {
-        void *nav = widget_lookup(top, "view_navbar", 0), *t = (void *)0;
-        if (nav && !widget_get_visible(nav)) {
-            t = widget_lookup(nav, "scrlabel_title", 0);
-            if (!t && widget_count_children(nav)) t = widget_get_child(nav, 0);
-            if (t && tk_strcmp(widget_get_type(t), "hscroll_label")) t = (void *)0;
-        }
-        /* Now Playing's page names nothing, not even a caption out of its navbar: the bar's play
-         * state says playing or paused instead (navigation.c bar_word_sync). A page name here
-         * would read "正在播放" while paused too, and repeat the word beside the glyph. */
-        const char *page = widget_get_prop_str(top, "name", "");
-        title = tk_str_start_with(page, "playing_page") ? (void *)0
-                : !tk_strcmp(page, "coverflow_page")    ? cover_flow
-                : t ? widget_get_text(t)
-                    : (void *)0;
-        if (title && !*title) title = (void *)0;
-        static const unsigned null_name[] = { '(', 'n', 'u', 'l', 'l', ')', 0 };
-        const unsigned *a = title, *b = null_name; /* stock's "%s" of a NULL name: no title */
-        while (a && *a && *a == *b) ++a, ++b;
-        if (a && !*a && !*b) title = (void *)0;
+    /* Minimal/Modern: the page name goes on the LEFT, beside the play-state glyph, in
+     * label_playword -- the very label the 正在播放/播放暂停 word uses when there is no
+     * name. The two are mutually exclusive, as under Classic, so a long name never
+     * reaches the EQ badge or the battery, and the glyph stays where it was. The
+     * clock keeps its time; with Time in Title off it makes way instead of being
+     * overwritten by the name, which may then use the middle of the bar. */
+    if (!top || tk_strcmp(widget_get_type(top), "window")) return; /* a dialog keeps the bar */
+    /* bar_word_sync normally created this label before bar_title runs; a paint that reaches here
+     * first (or a bar built without a sync) still finds it by name. */
+    void *word = st.play_word ? st.play_word : widget_lookup(bar, "label_playword", 1);
+    void *clock = widget_lookup(bar, "label_clock", 1);
+    if (!word || !clock) return;
+    void *nav = widget_lookup(top, "view_navbar", 0), *t = (void *)0;
+    if (nav && !widget_get_visible(nav)) {
+        t = widget_lookup(nav, "scrlabel_title", 0);
+        if (!t && widget_count_children(nav)) t = widget_get_child(nav, 0);
+        if (t && tk_strcmp(widget_get_type(t), "hscroll_label")) t = (void *)0;
     }
+    /* Now Playing names nothing: the word beside the glyph says playing or paused,
+     * as it does under Classic (bar_title_of). */
+    const char *page = widget_get_prop_str(top, "name", "");
+    const unsigned *title = tk_str_start_with(page, "playing_page") ? (void *)0
+                            : !tk_strcmp(page, "coverflow_page")    ? cover_flow
+                            : t ? widget_get_text(t)
+                                : (void *)0;
+    if (title && !*title) title = (void *)0;
+    static const unsigned null_name[] = { '(', 'n', 'u', 'l', 'l', ')', 0 };
+    const unsigned *a = title, *b = null_name; /* stock's "%s" of a NULL name: no title */
+    while (a && *a && *a == *b) ++a, ++b;
+    if (a && !*a && !*b) title = (void *)0;
     if (!title) {
-        if (!st.bar_titled) return;
-        st.bar_titled = 0;
-        st.clock_key = 0; /* clock_show writes it again */
-        if (bar_bold) label_font(label, 0);
-        font_weight_mark(label, 0); /* a CJK title's mark, under bar_bold 0 too */
+        /* No name: hand the label back to bar_word_sync's play-state word. bar_sync already ran
+         * before us in this frame, so write the word here too — otherwise the previous page's
+         * name would linger until bar_repaint reaches bar_word_sync on the next one. */
+        if (st.bar_named || st.bar_titled) {
+            st.bar_named = st.bar_titled = 0;
+            st.word_key = -1; /* its text is written again on the next pass */
+            st.clock_key = 0;
+            int status = bar_status(); /* Minimal/Modern: state_own_place is always true */
+            widget_set_text_utf8(word, status == 2 ? "正在播放" : status == 3 ? "播放暂停" : "");
+            widget_set_visible(word, status == 2 || status == 3, 0);
+            rearm(&st.clock_timer, clock_due, 0);
+            if (!st.bar_timer) st.bar_timer = timer_add(bar_repaint, (void *)0, 0);
+        }
         bar_bold = 0;
-        rearm(&st.clock_timer, clock_due, 0);
         return;
     }
-    const unsigned *had = widget_get_text(label), *want = title;
+    int titled = !st.time_title;
+    if (titled != st.bar_titled) {
+        st.bar_titled = titled;
+        st.clock_key = 0;
+        if (titled) widget_set_text(clock, &none);
+        else rearm(&st.clock_timer, clock_due, 0); /* clock_show writes it again */
+    }
+    /* The name's box ends before the clock's first ink column, or before the right
+     * group's first widget when the clock has made way. hscroll_label keeps the
+     * rest of a long name inside its box instead of letting it run into EQ. */
+    int x = I(word, W_X), limit;
+    if (titled) {
+        void *first = st.bar_eq && widget_get_visible(st.bar_eq) ? st.bar_eq : st.bar_wifi,
+             *parent = first ? P(first, W_PARENT) : (void *)0;
+        limit = parent ? I(parent, W_X) + I(first, W_X) - STATUS_GAP : 375 - 40;
+    } else {
+        int ink = 80; /* the 16 px clock's widest "12:59 下午", centred in its box */
+        limit = I(clock, W_X) + (I(clock, W_W) - ink) / 2 - STATUS_GAP;
+    }
+    int w = limit - x;
+    if (w < 40) w = 40;
+    if (w > 375 - x - 8) w = 375 - x - 8;
+    if (I(word, W_W) != w) widget_resize(word, w, I(word, W_H));
+    const unsigned *had = widget_get_text(word), *want = title;
     while (had && *had && *had == *want) ++had, ++want;
-    int changed = !st.bar_titled || !had || *had != *want;
-    if (changed) widget_set_text(label, title);
-    /* The bar's children read the disable state's style, whose s_scrlabel_white20c size is 20 px:
-     * every state says the clock's 16 px, unconditionally (checking normal's own 16 found nothing
-     * to fix, V180C). Stock V1.36 also writes page titles here at its 21 px. */
-    for (unsigned i = 0; i < 3; ++i)
-        widget_set_prop_int(label,
-                            i ? (i == 1 ? "style:disable:font_size" : "style:focused:font_size")
-                              : "style:normal:font_size",
-                            16);
-    st.bar_titled = 1;
-    int bold =
-        theme_font(label, ROLE_NP, bar_bold); /* a new Theme can change it under the same title */
-    if ((changed || bold != bar_bold) && !st.bar_timer)
-        st.bar_timer = timer_add(bar_repaint, (void *)0, 0);
-    bar_bold = bold;
+    int changed = !st.bar_named || !had || *had != *want;
+    if (changed) widget_set_text(word, title);
+    /* The bar's own face at the clock's 16 px, never ROLE_NP's bold: the name reads
+     * like the time beside it. label_font writes "default", the face with hanzi,
+     * and the weight mark clears anything a theme or a previous page left behind. */
+    static const char *const sizes[] = { "style:normal:font_size", "style:focused:font_size",
+                                         "style:disable:font_size" };
+    for (unsigned i = 0; i < 3; ++i) widget_set_prop_int(word, sizes[i], 16);
+    bar_bold = theme_font(word, ROLE_BAR, bar_bold);
+    label_font(word, 0);
+    font_weight_mark(word, 0);
+    if (!widget_get_visible(word)) widget_set_visible(word, 1, 0);
+    if (!st.bar_named) st.word_key = -1;
+    st.bar_named = 1;
+    if (changed && !st.bar_timer) st.bar_timer = timer_add(bar_repaint, (void *)0, 0);
 }
 
 /* No knob in any state on a plain slider (tools/ipod.py plain_slider): Now Playing's, Quick

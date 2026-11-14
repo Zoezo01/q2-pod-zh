@@ -146,9 +146,10 @@ def test_status_bar_widgets():
     root = bar()
     ipod.status_bar(root)
     n = named(root)
-    assert n['img_wifi'][1][2] == 14 and n['label_eq'][1][2] == 28
+    assert n['img_wifi'][1][2] == 14 and n['label_eq'][1][2] == 22
     for s in STATES:
         assert n['label_eq'][2][f'style:{s}:font_size'] == '16'
+        assert n['label_eq'][2][f'style:{s}:text_align_h'] == 'center'
         assert n['label_battery'][2][f'style:{s}:font_size'] == str(ipod.BATT_PCT_PX)
         assert n['label_battery'][2][f'style:{s}:text_align_h'] == 'right'
     assert n['label_battery'][1][2] == ipod.BATT_PCT_W and n['label_battery'][2]['visible'] == 'false'

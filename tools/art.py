@@ -314,7 +314,10 @@ SPEAKER = 'M0 4.5h3.5L9 .5v13L3.5 9.5H0Z'
 SPEAKER_ARCS = ('M12 4.5a3.5 3.5 0 0 1 0 5', 'M14.5 2.5a7 7 0 0 1 0 9', 'M17 .8a10 10 0 0 1 0 12.4')
 SPEAKER_INKS = {'l': 0x393c39, 'd': 0xc6c3c6, 'w': 0xffffff}
 SUNS = {'small': (16, 3.5, 5.5, 7.5), 'big': (22, 4.5, 7, 10)}  # box, then in a 22 unit square scaled to it: disc's radius, a ray's first and last radius
-DARK_STATE = {'play': 'M1.53 1.45 8.47 5.5 1.53 9.55Z', 'pause': 'M1.53 1.45H4.13V9.55H1.53ZM5.87 1.45H8.47V9.55H5.87Z'}  # 10 x 11
+# The dark bar's play state is the Classic glyph itself (STATE's 12 x 14 ink in the 18 x 22
+# state canvas), solid white with no gradient or halo. A separate 10 x 11 drawing used to sit
+# there: a size smaller than the 26 x 13 battery beside it, and a row above its middle.
+DARK_STATE = STATE
 def sun(box, disc, r0, r1):
     """A white disc and its 8 rays at 45 degrees, stroked 1.6 with round caps, in 22 units scaled to a box px square."""
     c, k = box / 2, box / 22
@@ -843,7 +846,7 @@ def images(t):
             out |= {f'{prefix}_spk_quiet_{half}': speaker(False, rgb), f'{prefix}_spk_loud_{half}': speaker(True, rgb)}
     if t['painter[PAINT_PAGES]']:
         out |= {f'{prefix}_sun_{name}': sun(*a) for name, a in SUNS.items()}
-        out |= {f'{prefix}_{name}_w': png(10, 11, compose((0, 0, 10, 11), [(path(d), lambda x, y: (0xffffff, 1))])) for name, d in DARK_STATE.items()}
+        out |= {f'{prefix}_{name}_w': png(*STATE_BOX[2:], compose(STATE_BOX, [(path(d), lambda x, y: (0xffffff, 1))])) for name, d in DARK_STATE.items()}
         out |= {f'{prefix}_orb_note': png(116, 116, orb(100, False)), f'{prefix}_orb_usb': png(130, 130, orb(114, True))}
         out |= {f'{prefix}_{name}': shadow(*a) for name, a in SHADOWS.items()}
         out |= {f'{prefix}_track_inset': track_inset(), f'{prefix}_lit_edge': lit_edge()}

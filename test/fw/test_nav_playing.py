@@ -373,6 +373,7 @@ class Bar:
         self.eq = ui.widget(self.row, 'label_eq', eq_x, 4, 30, 20)
         self.idle = ui.widget(self.row, 'label_idle', 0, 4, 30, 20)
         self.clock = ui.widget(self.bar, 'label_clock', 150, 0, 75, 30, text='12:00')
+        self.word = ui.widget(self.bar, 'label_playword', 20, 0, 66, 30, kind='hscroll_label', text='')
         self.title = ui.widget(self.bar, 'label_title', 20, 2, 91, 25, text='') if title else 0
         ui.shown.update({self.wifi: 0, self.state: 0, self.eq: 0})
         ui.set_str(self.icon, b'image', b'bar_battery')
@@ -968,7 +969,8 @@ def test_classics_play_state_is_its_own_art(fw, st, ui):
     assert ui.prop(bar.state, b'image') == b'classic_light_play_l'
 
 
-# Time in Title off: the bar's centre names the page in front.
+# Time in Title off: the page name sits on the LEFT in label_playword, exclusive with the
+# play-state word, while the clock makes way. A long name is clipped to that label's box.
 def window(ui, name, navbar_title=None, navbar_shown=0):
     win = ui.widget(ui.wm, name, 0, 0, 375, 320, kind='window')
     ui.set_str(win, b'name', name.encode())
@@ -990,49 +992,54 @@ def test_with_time_in_title_on_the_clock_stays(fw, st, ui):
     assert ui.text(bar.clock) == '12:00'
 
 
-@pytest.mark.parametrize('name, navbar, want', [('playing_page', None, 'Now Playing'), ('coverflow_page', None, 'Cover Flow'),
+@pytest.mark.parametrize('name, navbar, want', [('playing_page', None, ''), ('coverflow_page', None, 'Cover Flow'),
                                                 ('display_page', 'Display', 'Display')])
-def test_the_bar_names_the_page_in_front(fw, st, ui, name, navbar, want):
+def test_the_bar_names_the_page_on_the_left(fw, st, ui, name, navbar, want):
     theme(fw, st, TIMETITLE=0)
     bar = Bar(fw, ui)
     top = window(ui, name, navbar)
     if name == 'playing_page':
         st.np_win = top
     bar_title(fw, bar, top)
-    assert ui.text(bar.clock) == want and len(ui.due('bar_repaint')) == 1
-    sets = len(fw.calls('widget_set_text'))
-    bar_title(fw, bar, top)
-    assert len(fw.calls('widget_set_text')) == sets  # the same title is written once
+    # Now Playing has no page name: the label stays empty, for bar_word_sync's play-state word.
+    assert ui.text(bar.word) == want and st.bar_named == bool(want)
+    if want:
+        assert len(ui.due('bar_repaint')) == 1
+        sets = len(fw.calls('widget_set_text'))
+        bar_title(fw, bar, top)
+        assert len(fw.calls('widget_set_text')) == sets  # the same title is written once
 
 
 @pytest.mark.parametrize('title, shown', [('Display', 1), ('', 0), ('(null)', 0)])
-def test_a_page_without_a_hidden_title_gives_the_clock_back(fw, st, ui, title, shown):
+def test_a_page_without_a_hidden_title_gives_the_word_back(fw, st, ui, title, shown):
     theme(fw, st, TIMETITLE=0)
     bar = Bar(fw, ui)
     bar_title(fw, bar, window(ui, 'display_page', 'Display'))
-    assert ui.text(bar.clock) == 'Display'
+    assert ui.text(bar.word) == 'Display'
     bar_title(fw, bar, window(ui, 'other_page', title, navbar_shown=shown))
-    assert st.bar_titled == 0 and st.clock_key == 0 and len(ui.due('clock_due')) == 1
+    assert st.bar_named == 0 and st.bar_titled == 0 and st.clock_key == 0 and len(ui.due('clock_due')) == 1
 
 
-def test_modern_names_the_page_in_its_bold_and_the_clock_goes_back_to_stocks_face(fw, st, ui):
+def test_modern_names_the_page_in_the_bars_plain_face(fw, st, ui):
+    """No ROLE_NP bold on a page name: it reads like the clock beside it."""
     theme(fw, st, MODERN, TIMETITLE=0)
     bar = Bar(fw, ui)
-    st.np_win = top = window(ui, 'playing_page')
-    bar_title(fw, bar, top)
-    assert ui.prop(bar.clock, b'style:normal:font_name') == b'bold'
+    bar_title(fw, bar, window(ui, 'display_page', 'Display'))
+    assert ui.text(bar.word) == 'Display'
+    assert ui.prop(bar.word, b'style:normal:font_name') == b'default'
+    assert ui.prop(bar.word, b'_q2_bold_fallback') == 0
     bar_title(fw, bar, window(ui, 'home_page', 'Q2', navbar_shown=1))
-    assert ui.prop(bar.clock, b'style:normal:font_name') == b'default' and len(ui.due('clock_due')) == 1
+    assert st.bar_named == 0 and len(ui.due('clock_due')) == 1
 
 
-def test_modern_clock_loses_a_cjk_titles_bold_mark_when_the_title_goes(fw, st, ui):
-    """A CJK page's name falls back to stock's face, kept bold by the mark; going Home the clock is plain."""
+def test_modern_cjk_name_keeps_no_bold_mark_either(fw, st, ui):
     theme(fw, st, MODERN, TIMETITLE=0)
     bar = Bar(fw, ui)
     bar_title(fw, bar, window(ui, 'artist_page', '专辑'))
-    assert ui.prop(bar.clock, b'_q2_bold_fallback') == 1
+    assert ui.text(bar.word) == '专辑' and ui.prop(bar.word, b'_q2_bold_fallback') == 0
+    assert ui.prop(bar.word, b'style:normal:font_name') == b'default'
     bar_title(fw, bar, window(ui, 'home_page', 'Q2', navbar_shown=1))
-    assert ui.prop(bar.clock, b'_q2_bold_fallback') == 0
+    assert st.bar_named == 0
 
 
 def test_a_dialog_or_no_window_leaves_the_bar(fw, st, ui):
