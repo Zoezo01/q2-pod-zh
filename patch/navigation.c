@@ -4091,7 +4091,11 @@ static int bar_word_sync(void *bar) {
      * It owns the text, the width and the visibility from then on; the play
      * state's word must not write over the name or hide it while stopped. */
     if (!st.bar_title && st.bar_named) return 0;
-    int show = (status == 2 || status == 3) && state_own_place();
+    /* Classic: this word is created in the page name's own box (play_word_create). A dialog
+     * keeps the page under it (state_own_place), but Search and the playlist dialogs name
+     * themselves in that very label (bar_title_sync, pl_box_due): never ink 播放暂停 over 搜索. */
+    const unsigned *name = st.bar_title ? widget_get_text(st.bar_title) : (void *)0;
+    int show = (status == 2 || status == 3) && state_own_place() && !(name && *name);
     if (!st.bar_title) { /* the word keeps the glyph's side whatever the bar's own relayouts do,
                           * and takes its 66 px back after a page name widened it (bar_title) */
         int x = word_x();

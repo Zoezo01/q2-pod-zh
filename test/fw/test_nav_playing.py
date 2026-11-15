@@ -1064,6 +1064,28 @@ def test_classics_own_title_takes_the_clocks_room_up_to_eq(fw, st, ui):
     assert ui.box(bar.title)[2] == 91 and len(ui.due('clock_due')) == 1
 
 
+@pytest.mark.parametrize('status, word', [(2, '正在播放'), (3, '播放暂停')])
+def test_a_dialog_that_names_itself_keeps_the_play_word_off_its_title(fw, st, ui, status, word):
+    """Classic: Search (and the playlist dialogs) write 搜索 into the bar's title label, the box
+    the play state's word is created in. A dialog keeps Home's bar_own, so 播放暂停 was inked over
+    搜索 while music played or paused (V184A device photo)."""
+    theme(fw, st, CLASSIC)
+    bar = Bar(fw, ui, title=True)
+    fw.mock('mclGetPlayStatus', lambda *_: status)
+    home = window(ui, 'home_page')
+    ui.top = home
+    bar.sync()  # Home in front, no name: the state's word takes the left
+    # Bar already has stock's label_playword; play_word_create adds the payload's own beside it.
+    label = [w for w in ui.kids[bar.bar] if ui.names.get(w) == 'label_playword'][-1]
+    assert ui.shown[label] == 1 and ui.text(label) == word
+    ui.set_text(bar.title, '搜索')
+    search = window(ui, 'search_dialog')
+    ui.types[search] = b'dialog'
+    ui.top = search
+    bar.sync()  # the dialog named itself: the word must not ink over it
+    assert ui.shown[label] == 0
+
+
 # The theme's faces (theme_font, theme_face): its own face where it has the text's characters, else bold.ttf,
 # else stock's, which has CJK.
 LATIN, CYRILLIC, CJK = 'Albums', 'Альбом', '专辑'
