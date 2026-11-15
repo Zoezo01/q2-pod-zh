@@ -2910,6 +2910,26 @@ def test_home_is_named_as_classics_and_shows_no_clock(fw, st, ui, wordmark, want
     assert len(fw.calls('widget_set_text')) == sets  # written once, an empty title too
 
 
+@pytest.mark.parametrize('slot, want', [(3, '设置'), (4, '音乐'), (5, '流媒体')])
+def test_home_lists_name_the_bar_in_chinese(fw, st, ui, slot, want):
+    """An open Home list names the bar with coverflow_home_title()'s Chinese, which is UTF-8:
+    widening each byte instead of each code point painted 设置 as è®¾ç½® on Minimal (V184A)."""
+    theme(fw, st, MINIMAL, TIMETITLE=0)
+    bar = Bar(fw, ui)
+    home = window(ui, 'home_page')
+    lists = [ui.widget(ui.wm, name, 0, 0, 375, 290)
+             for name in ('list_view_homeset', 'list_view_homelib', 'list_view_homestream')]
+    for w in lists:
+        ui.shown[w] = 0
+    ui.shown[lists[slot - 3]] = 1
+    state = fw.var('coverflow__home', C.c_void_p * 6)
+    for i, w in enumerate(lists):
+        state[i + 3] = w
+    bar_title(fw, bar, home)
+    assert ui.text(bar.word) == want and ui.text(bar.clock) == '' and st.bar_titled == 1
+    assert len(ui.text(bar.word)) == len(want)  # one wchar per code point, not one per UTF-8 byte
+
+
 def test_home_keeps_the_clock_with_time_in_title_on(fw, st, ui):
     theme(fw, st)
     bar = Bar(fw, ui)

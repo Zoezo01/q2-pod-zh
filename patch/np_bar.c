@@ -99,6 +99,27 @@ int np_sync(void *top) {
     return 1;
 }
 
+/* coverflow_home_title() is UTF-8 (Q2 Pod / 音乐 / 流媒体 / 设置), while bar_title writes
+ * wchar_t text. Decode each code point: widening each byte instead painted 设置 as "è®¾ç½®"
+ * on Minimal/Modern with Home's Settings list open (V184A device photo). */
+static const unsigned *wide_home_title(const char *s) {
+    static const unsigned char lead[] = { 0xff, 0x1f, 0x0f, 0x07 };
+    static unsigned name[16];
+    unsigned i = 0;
+    while (*s && i < sizeof name / sizeof *name - 1) {
+        unsigned char c = (unsigned char)*s++;
+        int more = c >= 0xf0 && c < 0xf8 ? 3
+                 : c >= 0xe0 && c < 0xf0 ? 2
+                 : c >= 0xc0 && c < 0xe0 ? 1 : 0;
+        unsigned cp = c & lead[more];
+        while (more-- > 0 && ((unsigned char)*s & 0xc0) == 0x80)
+            cp = (cp << 6) | ((unsigned char)*s++ & 0x3f);
+        name[i++] = cp;
+    }
+    name[i] = 0;
+    return name;
+}
+
 /* Time in Title off: the bar's centre names the page in front, as an iPod's, in Modern's bold:
  * Now Playing or Cover Flow, Home by coverflow_home_title (Q2 Pod; nothing with Show Wordmark off,
  * and no clock either way), else stock's title in the page's hidden navbar (scrlabel_title, or a
@@ -174,16 +195,10 @@ void bar_title(void *bar, void *top) {
     while (a && *a && *a == *b) ++a, ++b;
     if (a && !*a && !*b) title = (void *)0;
     /* 1.8.4: Home names itself too — the wordmark (coverflow_home_title) takes the bar,
-     * so "the clock makes way on Home" holds here as under Classic. Empty (Show Q2 Pod
-     * off) falls through to the idle branch as before. */
-    if (!title && home_menu(top)) {
-        static unsigned name[16];
-        const char *h = coverflow_home_title();
-        unsigned i = 0;
-        for (; h[i] && i < sizeof name / sizeof *name - 1; ++i) name[i] = (unsigned char)h[i];
-        name[i] = 0;
-        title = name; /* an empty wordmark still titles Home: the clock stays off */
-    }
+     * so "the clock makes way on Home" holds here as under Classic. Its Chinese list
+     * names are UTF-8: widen code points, not bytes. An empty wordmark (Show Q2 Pod
+     * off) still titles Home, so the clock stays off. */
+    if (!title && home_menu(top)) title = wide_home_title(coverflow_home_title());
     if (!title) {
         /* No name: hand the label back to bar_word_sync's play-state word. bar_sync already ran
          * before us in this frame, so write the word here too — otherwise the previous page's
