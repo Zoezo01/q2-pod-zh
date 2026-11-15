@@ -1343,6 +1343,25 @@ def test_the_playing_line_is_lit_as_far_as_it_is_sung(fw):
     assert restore == (page.base, TEXT)
 
 
+@pytest.mark.parametrize('lyric, face, passes', [
+    ('Tìm nơi ẩn náu trong hoảng loạn', b'bold', 1),
+    ('Tiếng Việt ả', b'bold', 1),
+    ('普通の歌詞', None, 3),
+    ('Ả 日本', None, 3),
+    ('Plain lyrics', None, 3),
+])
+def test_vietnamese_lyrics_use_the_same_face_for_measurement_and_paint(fw, lyric, face, passes):
+    page = Page(fw, [(1, lyric)], advance=4)
+    fonts = []
+    fw.mock('canvas_set_font', lambda c, name, px, *_: fonts.append(C.string_at(name) if name else None))
+    assert page.rows() == 1
+    assert fonts == [face]
+    page.line(1000)
+    inks, _ = page.paint(0)
+    assert fonts == [face, face]
+    assert [text for _, _, draws in inks for text, _, _ in draws] == [lyric] * passes
+
+
 def test_other_lines_are_at_rest(fw):
     page = lit_page(fw, b'[00:01.00]<00:01.00>one <00:02.00>two\n[00:04.00]three\n', [(1, 'one two'), (4, 'three')])
     page.line(1500)

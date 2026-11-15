@@ -4339,6 +4339,13 @@ static const char *const font_faces[] = { "default", "bold", "classic-light" }; 
  * takes it: Classic's bold stays at its px. */
 #define FACE_FALLBACK_PCT 83
 static int fallback_px(int px) { return (px * FACE_FALLBACK_PCT + 50) / 100; }
+/* Folder view binds the display name separately from the file's actual path. */
+extern const unsigned *folder_vietnamese_text(void *label, const unsigned *text);
+static int folder_name_label(void *label) {
+    return label && !tk_strcmp(widget_get_prop_str(label, "name", ""), "scrlabel_name") &&
+           !tk_strcmp(widget_get_prop_str(window_of(label), "name", ""), "folder_page");
+}
+
 int theme_font(void *w, int role, int was) {
     static const char *const names[] = { "style:normal:font_name", "style:focused:font_name",
                                          "style:disable:font_name" },
@@ -4346,15 +4353,24 @@ int theme_font(void *w, int role, int was) {
                                                 "style:disable:font_size" };
     const theme_t *T = theme();
     int face = w ? T->font[role] : FONT_DEFAULT, px = T->font_px[role], row = was == FONT_ROW;
-    int wanted_bold = face != FONT_DEFAULT;
+    int folder = row && folder_name_label(w), wanted_bold = face != FONT_DEFAULT;
     if (row) {
-        if (!face && !px) {
+        if (!face && !px && !folder) {
             font_weight_mark(w, 0);
             return 0;
         }
         was = widget_get_prop_int(w, "_font", -1);
     }
-    const unsigned *text = face ? widget_get_text(w) : (void *)0, none[1] = { 0 };
+    const unsigned *text = face || folder ? widget_get_text(w) : (void *)0, none[1] = { 0 };
+    if (folder) {
+        text = folder_vietnamese_text(w, text);
+        for (const unsigned *c = text; !face && c && *c; ++c) {
+            if ((*c >= 0x1ea0 && *c <= 0x1ef9) || *c == 0x102 || *c == 0x103 ||
+                *c == 0x110 || *c == 0x111 || *c == 0x1a0 || *c == 0x1a1 ||
+                *c == 0x1af || *c == 0x1b0)
+                face = FONT_BOLD;
+        }
+    }
     if (face && !text) text = none; /* no text yet: keeps the face, as bold_label did */
     int fell = face == FONT_CLASSIC_LIGHT && !face_has(FONT_CLASSIC_LIGHT, text, -1);
     if (fell) face = FONT_BOLD, px = fallback_px(px); /* Cyrillic: still bold */
@@ -4376,6 +4392,7 @@ int theme_font(void *w, int role, int was) {
 static void row_faces(void *w) {
     int kept = widget_get_prop_int(w, "_font", -1);
     if (kept >= 0) theme_font(w, kept >> 16, FONT_ROW);
+    else if (folder_name_label(w)) theme_font(w, ROLE_TITLE, FONT_ROW);
     for (unsigned i = 0, n = widget_count_children(w); i < n; ++i)
         row_faces(widget_get_child(w, i));
 }

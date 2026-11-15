@@ -1220,6 +1220,33 @@ def test_a_theme_without_a_face_draws_the_system_font(fw, st):
     assert fw.fn('theme_face', C.c_char_p, C.c_void_p, C.c_int, C.c_void_p)(C.addressof(s), -1, None) is None
 
 
+def test_folder_row_normalizes_display_text_and_resets_font_on_reuse(fw, st, ui):
+    theme(fw, st, MINIMAL)
+    page = window(ui, 'folder_page')
+    table = ui.widget(page, 'table')
+    row = ui.widget(table, 'row')
+    label = ui.widget(row, 'scrlabel_name')
+    cases = [
+        ('1. a\u0309.flac', '1. ả.flac', b'bold'),
+        ('Mo\u0323\u0302t nga\u0300y.flac', 'Một ngày.flac', b'bold'),
+        ('Một ngày.flac', 'Một ngày.flac', b'bold'),
+        ('plain.flac', 'plain.flac', b'default'),
+        ('Ả 日本.flac', 'Ả 日本.flac', b'default'),
+    ]
+
+    def load(ctx, index, target):
+        ui.set_text(label, cases[index][0])
+        return 7
+
+    stock = C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_uint, C.c_void_p)(load)
+    C.c_void_p.from_address(table + O['TABLE_LOAD_DATA']).value = C.cast(stock, C.c_void_p).value
+    bind = fw.fn('ringnav_table_load', C.c_int, C.c_void_p, C.c_uint, C.c_void_p)
+    for index, (_, display, face) in enumerate(cases):
+        assert bind(0, index, row) == 7
+        assert ui.text(label) == display
+        assert label_font(ui, label)[0] == face
+
+
 def test_a_pooled_rows_labels_find_their_face_again_for_the_text_stock_bound(fw, st, ui):
     """#217: a table reuses a row, stock's on_load_data writes the new text with no relayout."""
     theme(fw, st, CLASSIC)

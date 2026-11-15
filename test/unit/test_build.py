@@ -430,7 +430,7 @@ def test_bold_font():
     font_bytes, ranges = build.bold_font()
     font = TTFont(io.BytesIO(font_bytes))
     source = TTFont(build.ROOT/'assets/fonts/LiberationSans-Bold.ttf')
-    have = sorted(u for u in source.getBestCmap() if 0x20 <= u < 0x530 or 0x2000 <= u < 0x2200) + [build.PLAY_MARK]
+    have = sorted(u for u in source.getBestCmap() if 0x20 <= u < 0x530 or 0x1ea0 <= u <= 0x1ef9 or 0x2000 <= u < 0x2200) + [build.PLAY_MARK]
     assert sorted(font.getBestCmap()) == have and 0x41 in have and 0x2013 in have and 0x4e2d not in have
     for rec in font['name'].names:
         if rec.nameID in (1, 3, 4, 6, 16, 17, 18, 21, 22):
@@ -473,7 +473,7 @@ def test_classic_light_font():
     from fontTools.ttLib import TTFont
     font_bytes, ranges = build.classic_light_font()
     font, source = TTFont(io.BytesIO(font_bytes)), TTFont(build.ROOT/'assets/fonts/texgyreheros-bold.otf')
-    have = sorted(u for u in source.getBestCmap() if 0x20 <= u < 0x530 or 0x2000 <= u < 0x2200) + [build.PLAY_MARK]
+    have = sorted(u for u in source.getBestCmap() if 0x20 <= u < 0x530 or 0x1ea0 <= u <= 0x1ef9 or 0x2000 <= u < 0x2200) + [build.PLAY_MARK]
     assert sorted(font.getBestCmap()) == have and 0x41 in have and 0xe9 in have
     names = {rec.nameID: str(rec) for rec in font['name'].names}
     assert names[1].replace(' ', '').startswith('Q2PodClassicLight') and names[6].startswith('Q2PodClassicLight')  # the Windows record is TeXGyreHeros, unspaced
@@ -489,6 +489,24 @@ def test_classic_light_font():
         assert 'TeXGyre' not in str(font['CFF '].cff.fontNames) + font['CFF '].cff.topDictIndex[0].FullName + font['CFF '].cff.topDictIndex[0].FamilyName
     assert re.fullmatch(r'#define CLASSIC_LIGHT_RANGES \{0x20,0x7e,[0-9a-fx,]+\}', ranges)
     assert 'CFF ' in font and 'glyf' not in font  # the chosen outline form
+
+
+@pytest.mark.parametrize('face', ['bold_font', 'classic_light_font'])
+def test_vietnamese_letters_survive_the_font_subset(face):
+    from unicodedata import normalize
+    from fontTools.ttLib import TTFont
+
+    vowels = 'aăâeêioôơuưyAĂÂEÊIOÔƠUƯY'
+    tones = '\u0300\u0301\u0303\u0309\u0323'
+    letters = set(vowels + 'đĐ')
+    letters.update(normalize('NFC', vowel + tone) for vowel in vowels for tone in tones)
+
+    font_bytes, ranges = getattr(build, face)()
+    cmap = TTFont(io.BytesIO(font_bytes)).getBestCmap()
+    bounds = [int(value, 16) for value in ranges.split('{')[1].rstrip('}').split(',')]
+    assert all(ord(letter) in cmap for letter in letters)
+    assert all(any(lo <= ord(letter) <= hi for lo, hi in zip(bounds[::2], bounds[1::2]))
+               for letter in letters)
 
 
 @pytest.mark.parametrize('face', ['bold_font', 'classic_light_font'])

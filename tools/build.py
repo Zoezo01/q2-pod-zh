@@ -948,7 +948,8 @@ def subset_font(src, family, ranges_macro, notice=None):
     font = TTFont(src, recalcTimestamp=False)
     old = font['name'].getDebugName(1)
     label = ranges_macro.split('_')[0].title()
-    have = sorted(u for u in font.getBestCmap() if 0x20 <= u < 0x530 or 0x2000 <= u < 0x2200)
+    have = sorted(u for u in font.getBestCmap() if 0x20 <= u < 0x530 or 0x1ea0 <= u <= 0x1ef9 or 0x2000 <= u < 0x2200)
+    # Vietnamese tone-marked vowels U+1EA0–U+1EF9 live outside the first Latin ranges.
     play_mark(font)
     have.append(PLAY_MARK)
     options = subset.Options()
@@ -993,7 +994,7 @@ def bold_font():
 CLASSIC_LIGHT_TTF = 'release/assets/default/raw/fonts/classic-light.ttf'
 # OFL 2 asks each copy to hold its licence, and the subsets' name tables don't: these ship beside the fonts
 FONT_NOTICES = ('LiberationSans-OFL.txt', 'GUST-FONT-LICENSE.txt', 'README-classic-light.txt')
-CLASSIC_LIGHT_NOTICE = ('Modified version of TeX Gyre Heros Bold 2.004: cut to part of its Latin and Greek and its punctuation, its layout features to frac, liga and locl, a play mark added at U+25B6, and renamed. '
+CLASSIC_LIGHT_NOTICE = ('Modified version of TeX Gyre Heros Bold 2.004: cut to part of its Latin and Greek and its punctuation (including Vietnamese U+1EA0-U+1EF9), its layout features to frac, liga and locl, a play mark added at U+25B6, and renamed. '
                'The original: https://www.gust.org.pl/projects/e-foundry/tex-gyre/heros')
 
 def classic_light_font():
