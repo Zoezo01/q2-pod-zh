@@ -1227,9 +1227,9 @@ def test_folder_row_normalizes_display_text_and_resets_font_on_reuse(fw, st, ui)
     row = ui.widget(table, 'row')
     label = ui.widget(row, 'scrlabel_name')
     cases = [
-        ('1. a\u0309.flac', '1. ả.flac', b'bold'),
-        ('Mo\u0323\u0302t nga\u0300y.flac', 'Một ngày.flac', b'bold'),
-        ('Một ngày.flac', 'Một ngày.flac', b'bold'),
+        ('1. a\u0309.flac', '1. ả.flac', b'folder-regular'),
+        ('Mo\u0323\u0302t nga\u0300y.flac', 'Một ngày.flac', b'folder-regular'),
+        ('Một ngày.flac', 'Một ngày.flac', b'folder-regular'),
         ('plain.flac', 'plain.flac', b'default'),
         ('Ả 日本.flac', 'Ả 日本.flac', b'default'),
     ]
