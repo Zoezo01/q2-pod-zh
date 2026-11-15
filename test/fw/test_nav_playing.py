@@ -99,7 +99,7 @@ def has(runs, text):
 
 
 PTRS = set('''bar_bt bar_wifi bar_pct bar_slot bar_icon bar_idle bar_state bar_eq bar_title np_win np_pos
-    np_album np_slider np_remain np_elapsed np_cover np_title np_slide np_lrc slider_win slider_w slider_sw slider_hint
+    np_album np_slider np_remain np_elapsed np_cover np_title np_artist np_slide np_lrc slider_win slider_w slider_sw slider_hint
     t9_page t9_back kb_win search_win search_tabs pl_box stream_art stream_bar genre_label number_face'''.split())
 BYTES = {'title_align', 'slider_kind', 'bar_dark'}
 SHORTS = {'title_x', 'title_y', 'title_w'}
@@ -1323,6 +1323,7 @@ class Now:
         self.win = win = ui.widget(ui.wm, 'playing_page', 0, 0, 375, 320, kind='window')
         ui.set_str(win, b'name', b'playing_page')
         self.title = ui.widget(win, 'scrlabel_title', 206, 38, 160, 28, text='Moment\'s Notice')
+        self.artist = ui.widget(win, 'scrlabel_artist', 206, 72, 160, 22, text='John Coltrane')
         self.pos = ui.widget(win, 'label_ipod_pos', 206, 128, 160, 20)
         self.album = ui.widget(win, 'label_ipod_album', 206, 100, 160, 22)
         self.cover = ui.widget(win, 'img_cover', 16, 22, 178, 178)
@@ -1376,6 +1377,20 @@ def test_the_page_shows_its_tracks_place_album_and_time_left(fw, ui, now):
     sets = [(w, key) for w, key, _ in ui.int_log if w == now.slider]
     assert sets.index((now.slider, b'max')) < sets.index((now.slider, b'value'))  # the max first, or it clamps
     assert now.value() == 50 and ui.ints[now.slider, b'max'] == 200
+
+
+def test_now_playing_artist_uses_regular_vietnamese_font_and_resets_on_track_change(fw, ui, now):
+    sync = fw.fn('np_sync', C.c_int, C.c_void_p)
+    for artist, shown, face in (
+        ('Đức Tuấn', 'Đức Tuấn', b'folder-regular'),
+        ('Đu\u031b\u0301c Tua\u0302\u0301n', 'Đức Tuấn', b'folder-regular'),
+        ('John Coltrane', 'John Coltrane', b'default'),
+        ('日本', '日本', b'default'),
+    ):
+        ui.set_text(now.artist, artist)
+        sync(now.win)
+        assert ui.text(now.artist) == shown
+        assert label_font(ui, now.artist) == (face, None)
 
 
 def test_the_labels_are_written_only_when_their_source_changes(fw, ui, mcl, now, st):

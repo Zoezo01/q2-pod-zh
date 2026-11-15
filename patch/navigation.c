@@ -4306,7 +4306,7 @@ void label_font(void *w, int bold) {
     for (unsigned i = 0; i < sizeof font / sizeof *font; ++i)
         widget_set_prop_str(w, font[i], bold ? "bold" : "default");
 }
-/* A face used only by Folder view. Cached row fonts have two bits for the face. */
+/* A regular Vietnamese fallback. Cached row fonts have two bits for the face. */
 enum { FONT_FOLDER_REGULAR = 3 };
 static const unsigned short bold_ranges[] = BOLD_RANGES,
                             classic_light_ranges[] = CLASSIC_LIGHT_RANGES,
@@ -4344,7 +4344,7 @@ static const char *const font_faces[] = { "default", "bold", "classic-light", "f
 #define FACE_FALLBACK_PCT 83
 static int fallback_px(int px) { return (px * FACE_FALLBACK_PCT + 50) / 100; }
 /* Folder view binds the display name separately from the file's actual path. */
-extern const unsigned *folder_vietnamese_text(void *label, const unsigned *text);
+extern const unsigned *normalize_vietnamese_label(void *label, const unsigned *text);
 static int folder_name_label(void *label) {
     return label && !tk_strcmp(widget_get_prop_str(label, "name", ""), "scrlabel_name") &&
            !tk_strcmp(widget_get_prop_str(window_of(label), "name", ""), "folder_page");
@@ -4357,7 +4357,9 @@ int theme_font(void *w, int role, int was) {
                                                 "style:disable:font_size" };
     const theme_t *T = theme();
     int face = w ? T->font[role] : FONT_DEFAULT, px = T->font_px[role], row = was == FONT_ROW;
-    int folder = row && folder_name_label(w), wanted_bold = face != FONT_DEFAULT;
+    int folder = row && folder_name_label(w), artist = w && w == st.np_artist;
+    if (artist) face = FONT_DEFAULT, px = 0; /* keep the artist label's own size and weight */
+    int wanted_bold = face != FONT_DEFAULT;
     if (row) {
         if (!face && !px && !folder) {
             font_weight_mark(w, 0);
@@ -4365,9 +4367,9 @@ int theme_font(void *w, int role, int was) {
         }
         was = widget_get_prop_int(w, "_font", -1);
     }
-    const unsigned *text = face || folder ? widget_get_text(w) : (void *)0, none[1] = { 0 };
-    if (folder) {
-        text = folder_vietnamese_text(w, text);
+    const unsigned *text = face || folder || artist ? widget_get_text(w) : (void *)0, none[1] = { 0 };
+    if (folder || artist) {
+        text = normalize_vietnamese_label(w, text);
         for (const unsigned *c = text; !face && c && *c; ++c) {
             if ((*c >= 0x1ea0 && *c <= 0x1ef9) || *c == 0x102 || *c == 0x103 ||
                 *c == 0x110 || *c == 0x111 || *c == 0x1a0 || *c == 0x1a1 ||
@@ -4378,7 +4380,8 @@ int theme_font(void *w, int role, int was) {
     if (face && !text) text = none; /* no text yet: keeps the face, as bold_label did */
     int fell = face == FONT_CLASSIC_LIGHT && !face_has(FONT_CLASSIC_LIGHT, text, -1);
     if (fell) face = FONT_BOLD, px = fallback_px(px); /* Cyrillic: still bold */
-    if (face == FONT_FOLDER_REGULAR && !face_has(face, text, -1)) face = FONT_BOLD;
+    if (face == FONT_FOLDER_REGULAR && !face_has(face, text, -1))
+        face = artist ? FONT_DEFAULT : FONT_BOLD;
     if (face == FONT_BOLD && !face_has(FONT_BOLD, text, -1)) face = FONT_DEFAULT; /* CJK */
     /* Keep weight separately from face/size: a cached answer or a reused row can change its
      * bold intent even when its fallback face and size stay the same. */
@@ -4828,7 +4831,7 @@ static int np_gone(void *win, void *event) {
         st.np_win = (void *)0;
         st.np_hash = 0;
         st.np_pos = st.np_album = st.np_remain = st.np_slider = st.np_elapsed = st.np_cover =
-            st.np_slide = st.np_lrc = st.np_title = (void *)0;
+            st.np_slide = st.np_lrc = st.np_title = st.np_artist = (void *)0;
         st.scrub_moved = 0; /* the page is going: no seek */
         st.np_off = st.np_full = st.lyric_held = 0;
         stop_timer(&st.np_marquee);
@@ -4973,6 +4976,8 @@ int ringnav_playing(void *win, void *ctx) {
     st.np_elapsed = widget_lookup(win, "label_playtime", 1);
     st.np_cover = widget_lookup(win, "img_cover", 1);
     st.np_title = widget_lookup(win, "scrlabel_title", 1);
+    st.np_artist = widget_lookup(win, "scrlabel_artist", 1);
+    st.np_artist_face = FONT_DEFAULT;
     st.np_bold = -1;
     st.np_slide = widget_lookup(win, "slide_view", 1);
     st.np_lrc = widget_lookup(win, "scroll_lrc", 1);

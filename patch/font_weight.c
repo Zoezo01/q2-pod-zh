@@ -24,7 +24,7 @@ void font_weight_paint(void *w, void *canvas) {
 
 
 /* Vietnamese vowels in NFC, indexed by shape and then tone (none, grave,
- * acute, tilde, hook above, dot below). Stock's filename stays untouched. */
+ * acute, tilde, hook above, dot below). The source filename or tag stays untouched. */
 static const struct {
     unsigned short base, shape, vowel[6];
 } vietnamese_vowels[] = {
@@ -54,9 +54,9 @@ static const struct {
     { 'Y', 0, { 0x0059, 0x1ef2, 0x00dd, 0x1ef8, 0x1ef6, 0x1ef4 } },
 };
 
-const unsigned *folder_vietnamese_text(void *label, const unsigned *text) {
+const unsigned *normalize_vietnamese_label(void *label, const unsigned *text) {
     if (!text) return text;
-    /* The stock display buffer holds at most 511 UTF-8 bytes. */
+    /* Folder view and local artist tags fit within 511 UTF-8 bytes. */
     unsigned display[512], n = 0;
     int changed = 0;
     static const unsigned short tones[] = { 0, 0x300, 0x301, 0x303, 0x309, 0x323 };
