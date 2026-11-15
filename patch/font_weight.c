@@ -22,7 +22,6 @@ void font_weight_paint(void *w, void *canvas) {
     canvas_translate(canvas, -1, 0); /* restore even when the native painter returns an error */
 }
 
-
 /* Vietnamese vowels in NFC, indexed by shape and then tone (none, grave,
  * acute, tilde, hook above, dot below). The source filename or tag stays untouched. */
 static const struct {

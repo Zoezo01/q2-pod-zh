@@ -255,7 +255,7 @@ typedef struct {
     unsigned mark, marks;   /* its word stamps, mark[mark..mark + marks) */
     unsigned char px, rows; /* its layout (px 0 until then): rows of ly.w */
     unsigned short start[LYRIC_ROWS], len[LYRIC_ROWS], w[LYRIC_ROWS];
-    unsigned char use_bold;       /* bundled face when stock lacks Vietnamese glyphs */
+    unsigned char use_bold; /* bundled face when stock lacks Vietnamese glyphs */
 } ly_line;
 typedef struct {
     int ms;
@@ -359,8 +359,7 @@ static int ly_vietnamese_font(const unsigned *s, unsigned n) {
     int vietnamese = 0;
     for (unsigned i = 0; i < n; ++i) {
         unsigned c = s[i], j = 0;
-        while (j < sizeof ranges / sizeof *ranges && (c < ranges[j] || c > ranges[j + 1]))
-            j += 2;
+        while (j < sizeof ranges / sizeof *ranges && (c < ranges[j] || c > ranges[j + 1])) j += 2;
         if (j == sizeof ranges / sizeof *ranges) return 0;
         vietnamese |= (c >= 0x1ea0 && c <= 0x1ef9) || (c >= 0x102 && c <= 0x103) ||
                       (c >= 0x110 && c <= 0x111) || (c >= 0x1a0 && c <= 0x1a1) ||
@@ -390,7 +389,9 @@ static int ly_wrap(ly_line *l, const unsigned *s, const unsigned short *adv) {
                 brk = i, wbrk = x, resume = i + 1;
             else if (i > start && (ly_cjk(s[i]) || ly_cjk(s[i - 1])))
                 brk = i, wbrk = x, resume = i;
-            if (i > start && x + adv[i] + (l->use_bold ? 0 : LYRIC_BOLD) > (ly.w ? ly.w : 375 - 2 * LYRIC_X)) break;
+            if (i > start &&
+                x + adv[i] + (l->use_bold ? 0 : LYRIC_BOLD) > (ly.w ? ly.w : 375 - 2 * LYRIC_X))
+                break;
         }
         unsigned end = i;
         if (i < l->n && brk > start) end = brk, x = wbrk, i = resume;
@@ -653,7 +654,8 @@ void lyrics_paint(void *row, void *canvas) {
         const unsigned *s = ly.tab->text + l->text + l->start[r];
         int cut = lit <= 0 ? LYRIC_X : lit >= l->w[r] ? w : LYRIC_X + lit;
         if (cut < w)
-            ly_ink(canvas, base, s, l->len[r], y, cut, w, rgba(on ? LYRIC_DIM : LYRIC_REST, alpha), weight);
+            ly_ink(canvas, base, s, l->len[r], y, cut, w, rgba(on ? LYRIC_DIM : LYRIC_REST, alpha),
+                   weight);
         if (cut > LYRIC_X)
             ly_ink(canvas, base, s, l->len[r], y, 0, cut, rgba(LYRIC_LIT, alpha), weight);
     }
