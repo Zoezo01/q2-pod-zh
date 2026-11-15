@@ -11,6 +11,7 @@ import pytest
 
 import host
 from conftest import O, Files, block, in_fork
+from test_nav_loop import LIBC, Clock, Flip, Land  # coverflow.c's cf_flip_t, fl; coverflow_land.c's land
 
 W_X, W_Y, W_W, W_H, W_PARENT = O['W_X'], O['W_Y'], O['W_W'], O['W_H'], O['W_PARENT']
 CANVAS_LCD, LCD_FILL_COLOR = O['CANVAS_LCD'], O['LCD_FILL_COLOR']
@@ -1527,6 +1528,65 @@ def test_a_page_known_by_name_titles_the_bar(fw, world, st, name, title):
     assert ms == 0 and world.fire(1) == RET_OK and world.invalid == [(label, None)]  # after the paint
 
 
+def test_cover_flow_s_landing_keeps_the_bar_s_title_until_it_lands(fw, world, st):
+    """Now Playing comes up under Cover Flow's landing (coverflow_turning): the bar names it once the art lands,
+    the next paint after the turn."""
+    label = bar_title(fw, world, st)
+    win = world.window('playing_page')
+    flip = fw.var('fl', Flip)
+    flip.dir = 1
+    sync(fw, win)
+    assert world[label].text in ('', None) and not world.timers
+    flip.dir = 0
+    sync(fw, win)
+    assert world[label].text == 'Now Playing'
+
+
+@pytest.mark.parametrize('key, taken, stop', [('KEY_NEXT', 0, 0), ('KEY_RETURN', 1, 0), ('KEY_RETURN', 0, 1)])
+def test_the_wheel_or_return_ends_cover_flow_s_landing_and_the_bar_names_now_playing(fw, world, st, key, taken, stop):
+    """land_key: the bar names Now Playing at once, not after a volume pop-up the tick opens; a Return before Now
+    Playing is the window manager's key target (its open event) is dropped, as Cover Flow's page under it would
+    take it."""
+    label = bar_title(fw, world, st)
+    win = world.window('playing_page')
+    C.c_void_p.from_address(world.wm + O['W_KEY_TARGET']).value = win if taken else world.window('coverflow_page', top=False)
+    land = fw.var('coverflow_land__land', Land)
+    land.front, land.ms = LIBC.calloc(4, 1), -1  # clicked, not painted yet
+    assert fw.fn('land_key', C.c_int, C.c_uint)(O[key]) == stop
+    assert not land.front and world[label].text == 'Now Playing'
+
+
+@pytest.mark.parametrize('name, kind, title', [('msginfo_dialog', 'dialog', 'Now Playing'),
+                                              ('playerjumpinfo_page', 'window', 'Cover Flow')])
+def test_a_dialog_that_ends_cover_flow_s_landing_leaves_the_bar_naming_now_playing(fw, world, st, name, kind, title):
+    """land_tick: a pop-up over Now Playing during the motion ends the landing. A dialog keeps the bar's title, which
+    the landing had left on Cover Flow's: it is Now Playing's now. A page names its own as it paints."""
+    label = bar_title(fw, world, st)
+    sync(fw, world.window('coverflow_page'))
+    win = world.window('playing_page')
+    land = fw.var('coverflow_land__land', Land)
+    land.front, land.win, land.ms, land.len = LIBC.calloc(4, 1), win, 100, 400
+    world.window(name, kind)
+    assert world[label].text == 'Cover Flow'
+    assert fw.fn('coverflow_land__land_tick', C.c_int, C.c_void_p)(None) == 0 and not land.front
+    assert world[label].text == title
+
+
+def test_a_wheel_tick_after_the_landing_s_clock_but_before_its_last_frame_still_names_now_playing(fw, world, st):
+    """coverflow_turning's clock runs out a tick (or a stall) before the motion's last frame, which names the bar:
+    land_key goes by the frame drawn."""
+    label = bar_title(fw, world, st)
+    world.window('playing_page')
+    Clock(fw, 5000)
+    land = fw.var('coverflow_land__land', Land)
+    land.front, land.ms, land.t0, land.len = LIBC.calloc(4, 1), 384, 4000, 400  # a stall: the clock 1000 on
+    assert not fw.fn('coverflow_turning', C.c_int)() and fw.fn('land_key', C.c_int, C.c_uint)(O['KEY_NEXT']) == 0
+    assert not land.front and world[label].text == 'Now Playing'
+    land.front, land.ms = LIBC.calloc(4, 1), 400  # the last frame drawn: the hold's, the key Now Playing's
+    assert fw.fn('land_key', C.c_int, C.c_uint)(O['KEY_NEXT']) == 0 and land.front
+    fw.fn('coverflow_land__land_end', None)()
+
+
 def test_search_is_titled_though_a_dialog(fw, world, st):
     label = bar_title(fw, world, st)
     win = world.window('search_dialog', 'dialog')
@@ -2892,6 +2952,14 @@ def test_classic_s_usb_page_says_connected_and_to_eject(fw, world, st):
     for gone in world.on(win, EVT_DESTROY):
         gone()
     assert st('usb_win', C.c_void_p).value is None
+
+
+@pytest.mark.parametrize('name, dark', [('usbmode_page', 0), ('manualtime_page', 1)])
+def test_usb_mode_s_page_has_classic_s_own_bar(fw, world, name, dark):
+    """dark_bar: the slider pages and the time form keep Classic's dark bar; USB mode's page has Classic's own, as the
+    rest of Classic."""
+    theme(fw, CLASSIC)
+    assert fw.fn('navigation__dark_bar', C.c_int, C.c_void_p)(world.window(name)) == dark
 
 
 def test_usb_audio_mode_has_nothing_to_eject(fw, world, st):

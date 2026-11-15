@@ -819,6 +819,7 @@ def test_a_page_the_card_no_longer_fills_is_its_last(fw):
     p.click('Presets')
     p.click('Next page')
     del p.card.files[f'{SAVED}/128.peq'], p.card.files[f'{SAVED}/129.peq']  # gone from the card meanwhile
+    p.props[(p.ui.view, '_ringnav_index')] = 7  # the wheel's row: 129.peq
     p.click('128.peq')
     assert p.ui.file_page == 0 and p.title() == 'Cannot read preset; settings unchanged' and p.captions()[5] == '000.peq'
     assert p.props[(p.ui.view, 'offset')] == 0 and p.props[(p.ui.view, '_ringnav_index')] == 0

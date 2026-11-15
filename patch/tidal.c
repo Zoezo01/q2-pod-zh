@@ -21,10 +21,13 @@ char *tidal_name(char *out, unsigned n, const char *key, const char *artist, con
     char label[512] = "";
     if (k + e >= n) return 0;
     if (title && *title)
-        snprintf(label, sizeof label, artist && *artist ? " %s - %s" : " %s%s", artist && *artist ? artist : "", title);
+        snprintf(label, sizeof label, artist && *artist ? " %s - %s" : " %s%s",
+                 artist && *artist ? artist : "", title);
     for (; label[i] && k + i + e + 1 < n; ++i)
-        out[k + i] = (unsigned char)label[i] < 32 || strrchr("/\\:*?\"<>|", label[i]) ? '_' : label[i];
+        out[k + i] =
+            (unsigned char)label[i] < 32 || strrchr("/\\:*?\"<>|", label[i]) ? '_' : label[i];
     while (i && ((unsigned char)label[i] & 0xc0) == 0x80) --i; /* cut before a split character */
+    /* NOLINTNEXTLINE(bugprone-not-null-terminated-result): the ext memcpy copies its NUL */
     memcpy(out, key, k);
     memcpy(out + k + i, ext, e + 1);
     return out;
@@ -45,7 +48,8 @@ extern int stock_tidal_trampoline(const char *url);
 static struct {
     unsigned lock[16]; /* a zeroed pthread mutex, 24 bytes on MIPS glibc */
     int busy, job;     /* a download thread runs; tidal_play's job waits in id, url and path */
-    volatile unsigned gen, want, job_gen; /* tidal_play's count; the download's and the job's, from it */
+    volatile unsigned gen, want,
+        job_gen;      /* tidal_play's count; the download's and the job's, from it */
     unsigned cleared; /* tidal_clear's count, under lock */
     unsigned long thread;
     char id[48], url[2048], path[296];
@@ -57,7 +61,7 @@ static struct {
      * song has had its answer; misses: songs in a row that weren't saved. */
     void *all;
     unsigned at, saved, idle, polled, told, of;
-    int job_all;                            /* the waiting job is Download All's */
+    int job_all; /* the waiting job is Download All's */
     /* fav: the playing song's heart; starting: stock is asking for a song to play; dropped: one
      * was asked for after asked */
     unsigned char tried, misses, fav, starting, dropped;
@@ -81,21 +85,23 @@ __asm__("lw $ra, 20($sp)\nbeqz $v0, 1f\naddiu $sp, $sp, 24\n");
 __asm__("lw $gp, 0x20($sp)\nli $ra, " STR(TIDAL_ALL_RET) "\n");
 __asm__("1: jr $ra\nnop\n.set pop\n");
 
-/* path is one of Download All's songs, saved or passed: trim keeps every file as new as the oldest */
+/* path is one of Download All's songs, saved or passed: trim keeps every file as new as the oldest
+ */
 static void run_song(const char *path) {
     unsigned st[36];
     if (!__xstat(3, path, st) && (!td.since || st[16] < td.since)) td.since = st[16];
 }
 
-/* Deletes the oldest finished downloads until the rest fit Streaming's Configuration cap (stream_cache,
- * 2 GB unless changed). stat is o32's: st_size word 12, st_mtime word 16. ponytail: a directory pass per
- * deletion, fine for a few hundred files. Download All's own songs, saved or passed so far (none older
- * than td.since, the oldest of them: a FAT mtime against FAT mtimes), never go: the run ends instead
- * (td.full). ponytail: every file saved since the run's oldest song is kept, the list's or not, before
- * the press or during it, so a run can stop full while other songs could have made room; a song further
- * down the list already on the card but older than that can go for the run's own downloads, and is saved
- * again when the run reaches it; and each press over a full cache goes one more song over the cap, which
- * the next played song's trim takes back. */
+/* Deletes the oldest finished downloads until the rest fit Streaming's Configuration cap
+ * (stream_cache, 2 GB unless changed). stat is o32's: st_size word 12, st_mtime word 16. ponytail:
+ * a directory pass per deletion, fine for a few hundred files. Download All's own songs, saved or
+ * passed so far (none older than td.since, the oldest of them: a FAT mtime against FAT mtimes),
+ * never go: the run ends instead (td.full). ponytail: every file saved since the run's oldest song
+ * is kept, the list's or not, before the press or during it, so a run can stop full while other
+ * songs could have made room; a song further down the list already on the card but older than that
+ * can go for the run's own downloads, and is saved again when the run reaches it; and each press
+ * over a full cache goes one more song over the cap, which the next played song's trim takes back.
+ */
 static void trim(void) {
     unsigned long long cap = (unsigned long long)(512u << stream_cache(0)) << 20;
     for (;;) {
@@ -109,7 +115,8 @@ static void trim(void) {
             tk_snprintf(path, sizeof path, TIDAL_DIR "/%s", e->d_name);
             if (__xstat(3, path, st)) continue;
             total += st[12];
-            if (!*victim || (long)st[16] < oldest) oldest = (long)st[16], tk_snprintf(victim, sizeof victim, "%s", path);
+            if (!*victim || (long)st[16] < oldest)
+                oldest = (long)st[16], tk_snprintf(victim, sizeof victim, "%s", path);
         }
         if (d) closedir(d);
         if (total <= cap || !*victim) return;
@@ -126,12 +133,14 @@ static unsigned save(const void *data, unsigned size, unsigned n, void *file) {
 }
 
 /* Stops the transfer once another track starts (tidal_play counts each) or the player has stayed
- * stopped for TIDAL_STOP_MS: a skip drops the copy within a second, a Stop within a few, as radio.c's
- * fetch_progress. ponytail: Stop is inferred from stock's play status, not signalled, so a stream that
- * sits stopped longer than that before it plays drops its copy too. Hook stock's stop if that bites. */
+ * stopped for TIDAL_STOP_MS: a skip drops the copy within a second, a Stop within a few, as
+ * radio.c's fetch_progress. ponytail: Stop is inferred from stock's play status, not signalled, so
+ * a stream that sits stopped longer than that before it plays drops its copy too. Hook stock's stop
+ * if that bites. */
 static int progress(void *stopped_at, long long a, long long b, long long c, long long d) {
-    unsigned *at = stopped_at, now = now_ms(); /* low 32 bits: the difference below wraps safely */
-    if (at[1]) return !td.all; /* Download All's: nothing played stops it, only its own end */
+    unsigned *at = stopped_at,
+             now = (unsigned)now_ms(); /* low 32 bits: the difference below wraps safely */
+    if (at[1]) return !td.all;   /* Download All's: nothing played stops it, only its own end */
     if (mclGetPlayStatus() != 1) /* 1 stopped */
         *at = 0;
     else if (!*at)
@@ -178,7 +187,9 @@ static void *download(void *unused) {
         int all = td.job_all, job = td.job && (all || td.job_gen == td.gen);
         unsigned cleared = td.cleared;
         td.busy = job, td.job = 0;
-        if (job) memcpy(url, td.url, sizeof url), memcpy(path, td.path, sizeof path), td.want = td.job_gen;
+        if (job)
+            memcpy(url, td.url, sizeof url), memcpy(path, td.path, sizeof path),
+                td.want = td.job_gen;
         if (job) memcpy(tags, td.tags, sizeof tags), memcpy(cover, td.cover, sizeof cover);
         pthread_mutex_unlock(td.lock);
         if (!job) return 0;
@@ -190,22 +201,24 @@ static void *download(void *unused) {
         int ok = 0;
         void *f = fopen(tmp, "wb"), *c = f ? curl_easy_init() : 0;
         if (c) {
-            curl_easy_setopt(c, 10002, url);         /* CURLOPT_URL */
-            curl_easy_setopt(c, 20011, save);        /* WRITEFUNCTION */
-            curl_easy_setopt(c, 10001, f);           /* WRITEDATA */
-            curl_easy_setopt(c, 99, 1L);             /* NOSIGNAL: off the UI thread */
-            curl_easy_setopt(c, 52, 1L);             /* FOLLOWLOCATION */
-            curl_easy_setopt(c, 78, 15L);            /* CONNECTTIMEOUT */
-            curl_easy_setopt(c, 19, 1024L);          /* LOW_SPEED_LIMIT: a stalled transfer ends, */
-            curl_easy_setopt(c, 20, 30L);            /* LOW_SPEED_TIME   so busy always clears */
-            curl_easy_setopt(c, 20219, progress);    /* XFERINFOFUNCTION */
-            curl_easy_setopt(c, 10057, stopped_at);  /* XFERINFODATA */
-            curl_easy_setopt(c, 43, 0L);             /* NOPROGRESS off, for it */
+            curl_easy_setopt(c, 10002, url);        /* CURLOPT_URL */
+            curl_easy_setopt(c, 20011, save);       /* WRITEFUNCTION */
+            curl_easy_setopt(c, 10001, f);          /* WRITEDATA */
+            curl_easy_setopt(c, 99, 1L);            /* NOSIGNAL: off the UI thread */
+            curl_easy_setopt(c, 52, 1L);            /* FOLLOWLOCATION */
+            curl_easy_setopt(c, 78, 15L);           /* CONNECTTIMEOUT */
+            curl_easy_setopt(c, 19, 1024L);         /* LOW_SPEED_LIMIT: a stalled transfer ends, */
+            curl_easy_setopt(c, 20, 30L);           /* LOW_SPEED_TIME   so busy always clears */
+            curl_easy_setopt(c, 20219, progress);   /* XFERINFOFUNCTION */
+            curl_easy_setopt(c, 10057, stopped_at); /* XFERINFODATA */
+            curl_easy_setopt(c, 43, 0L);            /* NOPROGRESS off, for it */
             /* Tidal's CDN roots are not in the firmware's bundle; hciplayer streams the same URL
-             * unverified (ffmpeg's tls_verify=0), so the copy is trusted exactly as the stream is. */
+             * unverified (ffmpeg's tls_verify=0), so the copy is trusted exactly as the stream is.
+             */
             curl_easy_setopt(c, 64, 0L); /* SSL_VERIFYPEER */
             curl_easy_setopt(c, 81, 0L); /* SSL_VERIFYHOST */
-            ok = !curl_easy_perform(c) && !curl_easy_getinfo(c, 0x200002, &code) && code == 200; /* RESPONSE_CODE */
+            ok = !curl_easy_perform(c) && !curl_easy_getinfo(c, 0x200002, &code) &&
+                 code == 200; /* RESPONSE_CODE */
             curl_easy_cleanup(c);
         }
         if (f) {
@@ -213,7 +226,7 @@ static void *download(void *unused) {
             ok = !fclose(f) && ok;
         }
         if (ok && tags[0][6]) tag(tmp, tags, pic); /* a title past "title=": a queue row named it */
-        pthread_mutex_lock(td.lock); /* a Clear All since the job began drops it */
+        pthread_mutex_lock(td.lock);               /* a Clear All since the job began drops it */
         ok = ok && cleared == td.cleared && !rename(tmp, path);
         if (ok && all && td.all) run_song(path);
         pthread_mutex_unlock(td.lock);
@@ -261,7 +274,8 @@ void tidal_clear(void) {
     all_drop();
     void *d = opendir(TIDAL_DIR);
     for (struct dirent *e; d && (e = readdir(d));)
-        if (e->d_name[0] != '.') tk_snprintf(path, sizeof path, TIDAL_DIR "/%s", e->d_name), unlink(path);
+        if (e->d_name[0] != '.')
+            tk_snprintf(path, sizeof path, TIDAL_DIR "/%s", e->d_name), unlink(path);
     if (d) closedir(d);
     pthread_mutex_unlock(td.lock);
 }
@@ -305,13 +319,14 @@ int tidal_play(const char *url, const char *id, const char *reply) {
         if (all) td.tried = 1;
         return started(url, all);
     }
-    /* AAC comes in an .mp4, which stock's file lists skip: kept as .m4a, so Tidal Downloads lists it. */
+    /* AAC comes in an .mp4, which stock's file lists skip: kept as .m4a, so Tidal Downloads lists
+     * it. */
     if (!strcmp(ext, ".mp4")) memcpy(ext, ".m4a", 5);
     /* Keyed by quality too, so a higher Streaming quality never gets a lower one's copy. */
     tk_snprintf(key, sizeof key, "%s-%d", id, level);
     if (cached(key, ext, path, sizeof path)) return started(path, all);
-    /* One download at a time: while a skipped track's is still ending, this one waits as the job its
-     * loop takes next; while this track's own runs (a re-fetch of its URL), nothing changes.
+    /* One download at a time: while a skipped track's is still ending, this one waits as the job
+     * its loop takes next; while this track's own runs (a re-fetch of its URL), nothing changes.
      * Download All's song waits for no other: tidal_poll asks for it again once none runs. */
     pthread_mutex_lock(td.lock);
     void *q = all ? td.all : P(mcl_pdeqplaylist, 0);
@@ -349,18 +364,18 @@ int tidal_play(const char *url, const char *id, const char *reply) {
 
 /* Stock's stream thread (docs/internals.md#tidal-cache) and Baidu's both polled a flag every 10 ms
  * from power-on. Now each parks on a semaphore with no timer: only get_tidal_trackurl sets Tidal's
- * flag, and ringnav_tidal_track posts once it has, so the thread wakes per track asked for and parks
- * again after it. A post never gets lost (it counts), so one made mid-fetch only adds a pass.
+ * flag, and ringnav_tidal_track posts once it has, so the thread wakes per track asked for and
+ * parks again after it. A post never gets lost (it counts), so one made mid-fetch only adds a pass.
  * Baidu's is never posted, so it parks for good. A zeroed sem_t is a semaphore at 0. */
 static unsigned stream_gate[8], baidu_gate[8];
 
 int ringnav_tidal_poll(unsigned us) { return sem_wait(stream_gate); }
 int ringnav_baidu_poll(unsigned us) { return sem_wait(baidu_gate); }
 
-/* Tidal track lists (docs/internals.md#tidal-track-lists): stock's playlist, album and favourite-tracks
- * threads each fetch one page of stTidalTracks (total, limit 50, offset, deque) into
- * /tmp/tidal_<thread>, which the page parses once the done flag is 2; the build drops their done
- * store, so each runs here once per page, parsed here, until the list is whole. The page then
+/* Tidal track lists (docs/internals.md#tidal-track-lists): stock's playlist, album and
+ * favourite-tracks threads each fetch one page of stTidalTracks (total, limit 50, offset, deque)
+ * into /tmp/tidal_<thread>, which the page parses once the done flag is 2; the build drops their
+ * done store, so each runs here once per page, parsed here, until the list is whole. The page then
  * parses an empty reply, so the last page isn't added twice. A page that adds nothing (a failed
  * request) or an offset moved under it (the page opened again, which resets it) ends the run; a
  * failed first page is left for the page's own parse, as stock. ponytail: TIDAL_MAX_TRACKS caps a
@@ -370,7 +385,8 @@ extern int stock_tidalplaylist_trampoline(void *id);
 extern int stock_tidalalbum_trampoline(void *id);
 extern int stock_tidalfavs_trampoline(void *offset);
 
-static void tidal_pages(int (*page)(void *), int (*parse)(const char *), void *arg, int offset, int by_offset) {
+static void tidal_pages(int (*page)(void *), int (*parse)(const char *), void *arg, int offset,
+                        int by_offset) {
     int *t = (int *)stTidalTracks;
     char path[32];
     snprintf(path, sizeof path, "/tmp/tidal_%u", (unsigned)pthread_self());
@@ -380,7 +396,8 @@ static void tidal_pages(int (*page)(void *), int (*parse)(const char *), void *a
         page(by_offset ? (void *)(long)offset : arg);
         unsigned n = parse(path) > 0 && P(t, 12) ? deque_size(P(t, 12)) : 0;
         if (n <= had && had == first) return;
-        if (n <= had || t[1] <= 0 || offset + t[1] >= t[0] || n >= TIDAL_MAX_TRACKS || t[2] != offset) {
+        if (n <= had || t[1] <= 0 || offset + t[1] >= t[0] || n >= TIDAL_MAX_TRACKS ||
+            t[2] != offset) {
             void *f = fopen(path, "w");
             if (f) fputs("{\"items\":[]}", f), fclose(f);
             return;
@@ -390,7 +407,8 @@ static void tidal_pages(int (*page)(void *), int (*parse)(const char *), void *a
 }
 
 int ringnav_tidal_playlist(void *id) {
-    tidal_pages(stock_tidalplaylist_trampoline, parseTidalPlaylistDetailJson, id, I(stTidalTracks, 8), 0);
+    tidal_pages(stock_tidalplaylist_trampoline, parseTidalPlaylistDetailJson, id,
+                I(stTidalTracks, 8), 0);
     tidal_albuminfo_thread_run = 2;
     return 0;
 }
@@ -400,7 +418,8 @@ int ringnav_tidal_album(void *id) {
     return 0;
 }
 /* My Collection's Tracks: stock pages these on a touch scroll to the list's end, which the wheel
- * evidently doesn't reach (inferred from #101, not traced); after the whole list stTidalTracks' offset is the last page's, so that check finds no more. */
+ * evidently doesn't reach (inferred from #101, not traced); after the whole list stTidalTracks'
+ * offset is the last page's, so that check finds no more. */
 int ringnav_tidal_favs(void *offset) {
     tidal_pages(stock_tidalfavs_trampoline, parseTidalColTracksJson, 0, (int)(long)offset, 1);
     tidal_collection_thread_run = 2;
@@ -416,10 +435,11 @@ int ringnav_tidal_favs(void *offset) {
  * itself (app_track) with the URL kept here, so Tidal's API and stock's stream thread never see the
  * id. A record whose REC_PATH is a card path plays as a local file: mclStartPlayer does that after
  * the call. The URLs are one queue's (au), by its generation, and so is its lyrics folder
- * (app_lyrics). A song whose line names an item has its app's heart on Now Playing (app_fav). A queue
- * whose header says now=1 has its song playing told to its app (app_urls_at, addon.c now_poll). */
+ * (app_lyrics). A song whose line names an item has its app's heart on Now Playing (app_fav). A
+ * queue whose header says now=1 has its song playing told to its app (app_urls_at, addon.c
+ * now_poll). */
 #define AU_MAX (256 << 10) /* the file read this far, as addon.c's M3U_MAX */
-#define AU_SONGS 5000      /* the songs a queue keeps, later lines passed over: records stay small */
+#define AU_SONGS 5000 /* the songs a queue keeps, later lines passed over: records stay small */
 /* A line's URL or card path this long, each } counted as stock's %0x7d, is passed over: stock
  * strcpys it into a 0x600 stack buffer (mclStartPlayer, mcl_tidalStartPlayer) and then expands
  * the } in place, unbounded. */
@@ -436,12 +456,12 @@ static struct {
     char **urls;           /* the queue's URLs, 0 for a card path; n of them */
     unsigned n, gen, play; /* gen: the queue's; play: app_track's count, the latest start's */
     char lyr[64];          /* the queue's lyrics folder: its path with .lyrics for .urls */
-    unsigned start[16];    /* app_start's mutex: one start at a time, as stock's one stream thread */
-    char **items;          /* each song's item, its app's own id for it; 0 for none (app_fav) */
-    unsigned char *fav;    /* each song's heart, 1 a favourite: its line's, then the presses since */
-    char app[16];          /* the queue's app, from its /tmp/q2-<id>.urls */
-    int hearts;            /* isFav_playing is an app song's (app_track), until a queue loads */
-    int now;               /* its header asked for now=1: addon.c tells the app what plays */
+    unsigned start[16]; /* app_start's mutex: one start at a time, as stock's one stream thread */
+    char **items;       /* each song's item, its app's own id for it; 0 for none (app_fav) */
+    unsigned char *fav; /* each song's heart, 1 a favourite: its line's, then the presses since */
+    char app[16];       /* the queue's app, from its /tmp/q2-<id>.urls */
+    int hearts;         /* isFav_playing is an app song's (app_track), until a queue loads */
+    int now;            /* its header asked for now=1: addon.c tells the app what plays */
 } au;
 
 static int web(const char *s) {
@@ -500,7 +520,8 @@ int app_urls_play(const char *path) {
         _deque_push_back(q, rec);
         toolsFreeStSongInfo(rec);
         if (*fld[6] && strlen(fld[6]) < AU_ITEM) /* the app's heart: an item, and 1 a favourite */
-            items[n] = strdup(fld[6]), fav[n] = fld[7][0] == '1' && (!fld[7][1] || fld[7][1] == '\r');
+            items[n] = strdup(fld[6]),
+            fav[n] = fld[7][0] == '1' && (!fld[7][1] || fld[7][1] == '\r');
         urls[n++] = web(fld[0]) ? strdup(fld[0]) : 0;
     }
     free(raw);
@@ -516,7 +537,8 @@ int app_urls_play(const char *path) {
     pthread_mutex_unlock(au.lock);
     for (unsigned i = 0; old && i < had; ++i) free(old[i]), free(old_items[i]);
     free(old), free(old_items), free(old_fav);
-    play_folder(q, start >= 0 && (unsigned)start < n ? start : 0, 0xf1); /* playing_page copies it */
+    play_folder(q, start >= 0 && (unsigned)start < n ? start : 0,
+                0xf1); /* playing_page copies it */
     deque_destroy(q);
     return 1;
 }
@@ -627,25 +649,28 @@ static void *app_start(void *arg) {
 }
 
 /* get_tidal_trackurl for an app's record r (id "app:<gen>:<n>"): as stock does around it (0x483f54,
- * 0x483ff8), offline gives up, and the player stops before the URL. A queue replaced since (gen) has
- * no URL: the player stays stopped. Any start here drops an earlier URL still waiting and, as stock
- * (0x483f5c), clears the stream thread's flag, so it fetches nothing more. ponytail: stock's
+ * 0x483ff8), offline gives up, and the player stops before the URL. A queue replaced since (gen)
+ * has no URL: the player stays stopped. Any start here drops an earlier URL still waiting and, as
+ * stock (0x483f5c), clears the stream thread's flag, so it fetches nothing more. ponytail: stock's
  * curl_stop_httpget (0x506168) only sets a flag httpRequest never reads, so a Tidal fetch in
  * flight runs on, at most httpRequest's 7 s timeout a request, and its answer can start over this
  * one. A card file arms mclAutoChange's flag itself (-0x426c > 0, which the stream thread's
- * transposition sets for a URL, so a queue of card files advances): only the idle tick reads it, on the thread that runs nearly
- * every start, so it can't pass a start before stock has it running. ponytail: a start on another
- * thread (player_save_start's jack and Bluetooth restarts) could be passed by that tick while the
- * player is stopped; arm after ringnav_start_player's start if a double skip is ever seen there. */
+ * transposition sets for a URL, so a queue of card files advances): only the idle tick reads it, on
+ * the thread that runs nearly every start, so it can't pass a start before stock has it running.
+ * ponytail: a start on another thread (player_save_start's jack and Bluetooth restarts) could be
+ * passed by that tick while the player is stopped; arm after ringnav_start_player's start if a
+ * double skip is ever seen there. */
 static int app_track(void *r, const char *id) {
     pthread_mutex_lock(au.lock);
     unsigned play = ++au.play;
     int at = au_at(id);
-    /* Now Playing's heart (app_fav), and the one a dropped Download All answer puts back (tidal_play) */
+    /* Now Playing's heart (app_fav), and the one a dropped Download All answer puts back
+     * (tidal_play) */
     td.fav = isFav_playing = at >= 0 && au.items[at] ? au.fav[at] : 0;
     au.hearts = 1;
     pthread_mutex_unlock(au.lock);
     if (tidalfurlstart) tidalfurlstart = 0, curl_stop_httpget();
+    /* NOLINTNEXTLINE(clang-analyzer-core.NullPointerArithm): only called for an app: id */
     const char *path = P(r, REC_PATH);
     if (path && *path) { /* mclStartPlayer plays it after this */
         tidal_playurl(1);
@@ -660,14 +685,16 @@ static int app_track(void *r, const char *id) {
     tidal_playurl(0);
     mclStop();
     char *c;
+    /* NOLINTNEXTLINE(clang-analyzer-core.NullPointerArithm): only called for an app: id */
     unsigned gen = (unsigned)strtol(id + 4, &c, 10);
     unsigned n = *c == ':' ? (unsigned)strtol(c + 1, 0, 10) : ~0u;
     pthread_mutex_lock(au.lock);
     const char *url = gen == au.gen && n < au.n ? au.urls[n] : 0;
     au_job *j = url ? calloc(1, sizeof *j + strlen(url) + 1) : 0;
+    /* NOLINTNEXTLINE(bugprone-not-null-terminated-result): calloc'd a byte more: a NUL ends it */
     if (j) memcpy(j->url, url, strlen(url)), j->play = play, j->loads = playback_loads;
     pthread_mutex_unlock(au.lock);
-    unsigned long t;
+    unsigned long t = 0;
     if (j && pthread_create(&t, 0, app_start, j))
         free(j);
     else if (j)
@@ -758,7 +785,8 @@ void tidal_all(int press, char *out, unsigned size) {
         }
         pthread_mutex_lock(td.lock);
         if (deque_size(all))
-            td.all = all, td.at = td.saved = td.idle = td.told = td.since = 0, td.tried = td.misses = td.full = 0;
+            td.all = all, td.at = td.saved = td.idle = td.told = td.since = 0,
+            td.tried = td.misses = td.full = 0;
         pthread_mutex_unlock(td.lock);
         if (!td.all) deque_destroy(all), toast("Play a Tidal album or playlist first");
     }
@@ -788,7 +816,9 @@ void tidal_poll(void) {
         char s[64];
         if (!g_backlight_status) return;
         /* td.full: the run's next song would have deleted one of its own (trim) */
-        tk_snprintf(s, sizeof s, td.full ? "Tidal Cache full: %u of %u song%s saved" : "Downloaded %u of %u song%s",
+        tk_snprintf(s, sizeof s,
+                    td.full ? "Tidal Cache full: %u of %u song%s saved"
+                            : "Downloaded %u of %u song%s",
                     td.told - 1, td.of, td.of == 1 ? "" : "s");
         td.told = 0;
         toast(s);
@@ -820,7 +850,8 @@ void tidal_poll(void) {
             break;
         ++td.at, td.tried = tried = 0, td.idle = 0;
     }
-    if (td.at >= n || td.misses >= 3 || (td.full && id) || ++td.idle > TIDAL_ALL_IDLE || !card_space(TIDAL_DIR))
+    if (td.at >= n || td.misses >= 3 || (td.full && id) || ++td.idle > TIDAL_ALL_IDLE ||
+        !card_space(TIDAL_DIR))
         all_end();
     if (!td.all || td.at != was) tidal_all_show();
     if (!td.all || *td.asked || !id) return;

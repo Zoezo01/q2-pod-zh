@@ -421,7 +421,7 @@ void *window_of(void *w);
 void cf_veil(void *win, int on);              /* win unseen (1) or seen again under Coverflow */
 int ringnav_playlist_coverflow(void);         /* Display's Playlist View is Cover Flow */
 int music_records(void *list, int discovery); /* list's songs less spoken (0) or hidden (1) ones */
-extern const stops_t confirm_dark;
+extern const stops_t confirm_dark, confirm_tray, confirm_well;
 int search_key(unsigned key);
 int geom(int group);
 int load_rows(menu_t *m, void *w);

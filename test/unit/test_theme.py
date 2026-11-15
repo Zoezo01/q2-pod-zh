@@ -133,7 +133,8 @@ CLASSIC_THUMB = dict(thumb=1, ticks_turn=36, ticks_album=7, fast_at=23, fast_ful
 
 CF_TODAY = {'cf.top': 13, 'cf.x1': 128, 'cf.xs': 35, 'cf.z1': 77, 'cf.zs': 0, 'cf.eye': 256, 'cf.bright1': 192,
             'cf.bright2': 128, 'cf.reflect': 46, 'cf.reflect_top': 90, 'cf.stride': 110, 'cf.radius': 12,
-            'cf.tilt': 90, 'cf.horizon': 64, 'cf.third': 1, 'cf.swing': 2, 'cf.lift': 0, 'cf.eye_turn': 0, 'cf.view_h': 220, **{f'cf.{a}': v for a, v in CLASSIC_THUMB.items()}, 'cf.name_px': 24, 'cf.artist_px': 20, 'cf.text_y': 212, 'cf.artist_y': 32, 'cf.art_persp': 100}
+            'cf.tilt': 90, 'cf.horizon': 64, 'cf.third': 1, 'cf.swing': 2, 'cf.lift': 0, 'cf.eye_turn': 0, 'cf.view_h': 220, **{f'cf.{a}': v for a, v in CLASSIC_THUMB.items()}, 'cf.name_px': 24, 'cf.artist_px': 20, 'cf.text_y': 212, 'cf.artist_y': 32, 'cf.art_persp': 100,
+            **{f'cf.land_{a}': 0 for a in ('press', 'ms', 'travel', 'out_at', 'out_ms', 'np_at', 'np_ms', 'hold')}}
 
 
 MOTION_TODAY = {**{f'motion.{k}.{a}': 0 for k in ('page', 'playing', 'coverflow') for a in ('ms', 'easing', 'anim')},
@@ -604,6 +605,26 @@ def test_coverflow_arch_needs_its_numbers():  # th_arch's divisors, and a span o
         with pytest.raises(theme.ThemeError, match='coverflow.shelf: arch_span'):
             theme.validate({**c, **bad}, 't.xml')
     theme.validate({**c, 'cf.arch_span': 0, 'cf.arch_tau': 0, 'cf.arch_full': 0}, 't.xml')  # no arch: the row at speed, none read
+
+
+def test_coverflow_land_is_classics():  # the landing's numbers: Classic's, off (0) in Minimal and Modern
+    ts = theme.builtins()
+    assert {a: ts[1][f'cf.land_{a}'] for a in ('press', 'ms', 'travel', 'out_at', 'out_ms', 'np_at', 'np_ms', 'hold')} == dict(
+        press=0, ms=400, travel=55, out_at=0, out_ms=110, np_at=90, np_ms=100, hold=2000)
+    for t in (ts[0], ts[2]):
+        assert t['cf.land_ms'] == 0 and t['cf.land_travel'] == 0
+        theme.validate(t, 't.xml')
+
+
+@pytest.mark.parametrize('bad,message', [
+    ({'cf.land_travel': 0}, r'^t\.xml:\d+: coverflow\.land: ms needs travel$'),
+    ({'cf.land_np_at': 301}, r'^t\.xml:\d+: coverflow\.land: np_at \+ np_ms = 401 exceeds ms 400$'),
+    ({'cf.land_out_at': 291}, r'^t\.xml:\d+: coverflow\.land: out_at \+ out_ms = 401 exceeds ms 400$'),
+    ({'cf.land_ms': 2001}, r'^t\.xml:\d+: coverflow\.land\.ms: 2001 outside 0\.\.2000$')])
+def test_coverflow_land_refuses(bad, message):
+    with pytest.raises(theme.ThemeError, match=message):
+        theme.validate({**theme.builtins()[1], **bad}, 't.xml')
+    theme.validate({**theme.builtins()[1], 'cf.land_np_at': 300, 'cf.land_out_at': 290}, 't.xml')  # ends at ms exactly
 
 
 @pytest.mark.parametrize('field', ['ticks_turn', 'ticks_album', 'track', 'snap', 'spin', 'far_left', 'rate_up', 'rate_down', 'lead_ms', 'row_edge',

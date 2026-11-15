@@ -1537,6 +1537,92 @@ def test_the_wheel_moves_the_selection_a_row_a_tick(fw, keys):
     assert keys(KEY_PREV, 200) == STOP and sv.ints[SEL] == 1
 
 
+class Land(C.Structure):  # coverflow_land.c's land, the landing's state
+    _fields_ = [('from_', C.c_int * 4), ('to', C.c_int * 3), ('len', C.c_int), ('travel', C.c_int), ('out_at', C.c_int),
+                ('out_ms', C.c_int), ('np_at', C.c_int), ('np_ms', C.c_int), ('shelf', C.c_void_p), ('l_back', C.c_void_p),
+                ('l_front', C.c_void_p), ('paper', C.c_uint), ('win', C.c_void_p), ('art', C.c_void_p),
+                ('frame', C.c_void_p), ('top', C.c_void_p), ('back', C.c_void_p), ('front', C.c_void_p),
+                ('timer', C.c_uint), ('at', C.c_uint), ('t0', C.c_uint), ('path', C.c_uint), ('row', C.c_int),
+                ('ms', C.c_int), ('got', C.c_int), ('veil', C.c_int), ('box', C.c_int * 4)]
+
+
+LIBC = C.CDLL(None)
+LIBC.calloc.restype, LIBC.calloc.argtypes = C.c_void_p, [C.c_size_t, C.c_size_t]
+
+
+class Flip(C.Structure):  # coverflow.c's cf_flip_t, fl
+    _fields_ = [('frame', C.c_void_p), ('back', C.c_void_p), ('front', C.c_void_p), ('panel', C.c_void_p),
+                ('sheet', C.c_void_p), ('title', C.c_void_p), ('artist', C.c_void_p), ('timer', C.c_uint),
+                ('t0', C.c_uint), ('dir', C.c_int), ('drawn', C.c_int), ('light', C.c_int)]
+
+
+def test_cover_flow_s_landing_takes_centre_and_ends_on_the_wheel_or_return(fw, keys):
+    """From the click until its motion ends (coverflow_turning, land_key): Centre does nothing; a turn of the wheel
+    or Return ends the landing and goes on as with no landing, once Now Playing takes keys."""
+    ui = Ui(fw)
+    sv = list_page(ui)
+    select(fw, sv, 1)
+    assert ui.top
+    C.c_void_p.from_address(ui.wm.p + O['W_KEY_TARGET']).value = ui.top.p  # opened: its keys' target
+    land = fw.var('coverflow_land__land', Land)
+    for key in (KEY_NEXT, KEY_RETURN):
+        land.front, land.ms = LIBC.calloc(4, 1), -1  # clicked, not painted yet
+        stock = len(fw.calls('stock_keyup_trampoline'))
+        assert keys(KEY_CENTER) == STOP and land.front and len(fw.calls('stock_keyup_trampoline')) == stock
+        keys(key, 400)
+        assert not land.front and len(fw.calls('stock_keyup_trampoline')) == stock + 1  # on, as with no landing
+    assert sv.ints[SEL] == 2  # the wheel's tick moved the row
+    C.c_void_p.from_address(ui.wm.p + O['W_KEY_TARGET']).value = None  # Now Playing's open event not yet run
+    latch = C.c_ubyte.from_address(O['RETURN_RELEASE_LATCH'])
+    for held in (0, 1):
+        latch.value, stock = held, len(fw.calls('stock_keyup_trampoline'))
+        land.front, land.ms = LIBC.calloc(4, 1), -1
+        assert (keys(KEY_RETURN, 400) == STOP) == (not held) and not land.front  # ended; dropped, not Cover Flow's
+        assert len(fw.calls('stock_keyup_trampoline')) == stock + held  # a held Return's release: stock consumes its latch
+    latch.value = 0
+
+
+def test_cover_flow_s_flip_takes_centre_and_return_but_not_the_wheel(fw, keys):
+    ui = Ui(fw)
+    sv = list_page(ui)
+    select(fw, sv, 1)
+    fw.var('fl', Flip).dir = 1
+    assert keys(KEY_CENTER) == STOP and keys(KEY_RETURN, 200) == STOP and not fw.calls('stock_keyup_trampoline')
+    keys(KEY_NEXT, 200)
+    assert sv.ints[SEL] == 2  # the wheel goes on as it did
+    latch = C.c_ubyte.from_address(O['RETURN_RELEASE_LATCH'])
+    latch.value, stock = 1, len(fw.calls('stock_keyup_trampoline'))
+    keys(KEY_RETURN, 200)
+    assert len(fw.calls('stock_keyup_trampoline')) == stock + 1  # a held Return's release: stock's filter consumes its latch
+    latch.value = 0
+
+
+def test_a_row_lit_as_its_page_goes_stays_where_it_is(fw):
+    """ringnav_light: a tap on the panel's last row, 4 px of it shown, lights it with no scroll, or the landing's
+    capture would turn from a row off."""
+    ui = Ui(fw)
+    sv = list_page(ui, rows=8, height=284)  # row 7 at 280: its top 4 px
+    select(fw, sv, 0)
+    scrolls = len(fw.calls('scroll_view_set_offset'))
+    glide = C.c_void_p.from_address(sv.p + O['VIEW_ANIMATOR'])
+    glide.value = 0x1234  # a glide still running: stopped where it is
+    fw.fn('ringnav_light', None, C.c_void_p, C.c_int)(sv.p, 7)
+    assert sv.ints[SEL] == 7 and len(fw.calls('scroll_view_set_offset')) == scrolls
+    assert fw.calls('widget_animator_destroy')[-1][1][0] == 0x1234 and not glide.value
+    fw.fn('ringnav_select', None, C.c_void_p, C.c_int, C.c_int)(sv.p, 7, 8)
+    assert len(fw.calls('scroll_view_set_offset')) == scrolls + 1  # a page's own row is still shown whole
+
+
+def test_a_row_lit_as_its_page_goes_ends_touch_mode(fw, st):
+    """coverflow_land.c's landing lights the picked row, though a tap's touch mode hid the selection."""
+    ui = Ui(fw)
+    sv = list_page(ui)
+    st('touch_mode').value, st('untouch_timer', C.c_uint).value = 1, 5
+    fw.fn('ringnav_light', None, C.c_void_p, C.c_int)(sv.p, 3)
+    assert sv.ints[SEL] == 3 and st('touch_mode').value == 0 and st('untouch_timer', C.c_uint).value == 0
+    assert [c[1][0] for c in fw.calls('timer_remove')] == [5]
+
+
 def test_a_ring_list_bumps_at_its_end_then_carries_over_after_a_pause(fw, keys):
     ui = Ui(fw)
     sv = list_page(ui)
@@ -1661,6 +1747,25 @@ def test_a_tick_while_a_page_slides_is_held_and_replayed(fw, keys):
     keys.clock.now += 50
     assert ui.fire(timer=timers[0]) == 8 and sv.ints[SEL] == 1
     assert ui.fire(timer=timers[0]) == 0 and sv.ints[SEL] == 2 and not ui.due('navigation__replay_wheel')
+
+
+def test_a_landing_drops_the_held_ticks(fw, keys, st):
+    """drop_held, from land_start: ticks held before a tap's pick on Cover Flow's panel are not replayed into the
+    landing, where land_key would read one as a fresh turn and end it."""
+    ui = Ui(fw)
+    sv = list_page(ui)
+    select(fw, sv, 0)
+    ui.animating = 1
+    keys(KEY_NEXT, 5)
+    keys(KEY_NEXT, 5)
+    land = fw.var('coverflow_land__land', Land)
+    land.front, land.ms, land.len = LIBC.calloc(4, 1), -1, 400  # the pick: its press under way
+    fw.fn('drop_held', None)()
+    ui.animating = 0
+    keys.clock.now += 50
+    assert ui.fire('navigation__replay_wheel') == 0 and not ui.due('navigation__replay_wheel')
+    assert land.front and sv.ints[SEL] == 0  # the landing stays; the list didn't move
+    fw.fn('coverflow_land__land_end', None)()
 
 
 def test_a_reversal_drops_the_held_ticks(fw, keys, st):
@@ -1805,10 +1910,12 @@ def test_no_event_drops_the_pending_press(fw, keys, st):
     assert not ui.due('navigation__confirm_center') and st('center_timer', C.c_uint).value == 0
 
 
+@pytest.mark.parametrize('flip', [0, 1])  # 1: pulled down over Cover Flow's 270 ms flip, which drops Centre and Return
 @pytest.mark.parametrize('key', [KEY_CENTER, KEY_RETURN])
-def test_centre_or_return_closes_quick_settings(fw, keys, key):
+def test_centre_or_return_closes_quick_settings(fw, keys, key, flip):
     ui = Ui(fw)
     top = ui.window('statusbar_dialog', 'dialog')
+    fw.var('fl', Flip).dir = flip
     assert keys(key) == STOP
     assert [c[1][0] for c in fw.calls('dialog_quit')] == [top.p]
 

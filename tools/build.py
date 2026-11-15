@@ -445,6 +445,11 @@ STANDBY_WAKE = (0x5024b4, 0x0411ff26, 0x24020001)
 # key is written, and stock's two rows are not offered (navigation.c ringnav_display, ringnav_systemset).
 NAV_SHOWN = (0x504b5c, 0xa0620000, 0xa0600000)
 WHEEL_MODE = (0x504ba4, 0x0003100a, 0x24020001)
+# config_init reads SYSSET LANGUAGE (0 when missing, Simplified Chinese) with atoi into g_language, which awtk_configinit
+# hands switch_language at boot. Q2 Pod is English only (its Language row hidden, only en_US.bin rebuilt), so the atoi
+# call becomes li $v0, 2, en_US's index, whatever an older version saved; the key is never written. ponytail: stock's
+# first-boot guide (no LANGUAGE key: a new unit or a reset) still lists languages, and a pick there lasts until the next boot.
+LANGUAGE_EN = (0x50482c, 0x0320f809, 0x24020002)
 # V1.36's home_page_init binds a key-up of its own on Home (0x534a74: Return opens Now Playing and stops there; its wheel and
 # Centre act only outside Volume Mode). Home's keys are ringnav's and on_wm_keyup_fun's, as they were: the widget_on call goes.
 HOME_KEYUP = (0x534c28, 0x0320f809, 0)
@@ -1618,7 +1623,11 @@ OBSOLETE = ['usr/lib/libdbus-1.so.3.19.8', *(f'usr/lib/lib{n}-2.0.so.0.5400.3' f
 FLAGS = ['--target=mipsel-linux-gnu','-march=mips32r2','-mabi=32','-mfp64',
          '-mno-abicalls','-fno-pic','-G0','-ffreestanding','-fno-builtin',
          '-fno-stack-protector','-fno-unwind-tables','-fno-asynchronous-unwind-tables',
-         '-Oz','-Wall','-Wextra','-Werror','-Wno-unused-parameter']
+         '-Oz','-Wall','-Wextra','-Werror','-Wno-unused-parameter',
+         # Every payload unit and helper builds clean with these. Left out: -Wcast-align (P() on stock's structs),
+         # -Wsign-conversion, -Wcomma, -Wmissing-prototypes (the hooks are entry points stock's code calls).
+         '-Wshadow','-Wimplicit-int-conversion','-Wconditional-uninitialized','-Wmissing-variable-declarations',
+         '-Wvla','-Wundef']
 # navigation.c and the files split out of it (patch/navigation.h), each its own object, linked in this order.
 NAVIGATION = ['navigation.c', 'theme_engine.c', 'playlists.c', 'classic_pages.c', 'home.c', 'np_bar.c', 'volume.c', 'smart_wifi.c', 'system.c', 'usb_charge.c', 'tags.c', 'scrobble_ui.c', 'library_lists.c', 'durations.c', 'font_weight.c', 'coverflow_position.c', 'ratings.c', 'scan_folders.c', 'folder_delete.c', 'battery.c']
 
@@ -1943,6 +1952,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     patch_word(patched, *STANDBY_WAKE, 'Standby resume stays dark')
     patch_word(patched, *NAV_SHOWN, "stock's navigation bar stays shown")
     patch_word(patched, *WHEEL_MODE, "stock's wheel stays in Volume Mode")
+    patch_word(patched, *LANGUAGE_EN, 'every unit boots in English')
     patch_word(patched, *HOME_KEYUP, 'Home binds no key-up of its own')
     patch_word(patched, *NP_CENTRE, "Now Playing leaves Centre to stock's power-key handling")
     patch_word(patched, *KEYLOCK_LIT, 'Buttons lock acts only with the screen off')

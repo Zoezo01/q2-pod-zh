@@ -2848,14 +2848,16 @@ class DarkBar(Bar):
         fw.mock('timer_add', lambda fn, ctx, ms, *_: self.timers.append(fn) or 5)
         self.sync()  # stock's showface: finds the bar's widgets
 
-    def to(self, name):
-        self.ui.window(name)
+    def to(self, name, title=None):
+        win = self.ui.window(name)
+        if title:  # stock's navbar label, which the bar's title reads
+            self.ui.set_text(self.ui.add('label', self.ui.add('view', win, name='view_navbar'), name='label_name'), title)
         self.fw.fn('navigation__bar_sync', None, C.c_void_p)(self.bar.addr)
 
 
 def test_a_dark_page_takes_the_bars_title_across_in_white_and_hides_the_clock(fw, st):
     bar = DarkBar(fw, st)
-    bar.to('usbmode_page')
+    bar.to('backlight_page')
     title = bar.w['label_title']
     assert title.box[:3] == (0, 3, 375) and title.props['style:normal:text_align_h'] == 'center'
     assert title.props['_final_n'] and not bar.w['label_clock'].visible
@@ -2870,14 +2872,15 @@ def test_the_dark_bars_latin_title_drops_a_cjk_pages_bold_mark(fw, st):
     bar.ui.set_text(title, '专辑')
     fw.fn('theme_font', C.c_int, C.c_void_p, C.c_int, C.c_int)(title.addr, 2, -2)  # ROLE_BAR, FONT_ROW: the CJK page's
     assert title.props['_q2_bold_fallback'] == 1
-    bar.to('usbmode_page')
+    fw.mock('widget_get_text_utf8', lambda w, out, size, *_: C.memmove(out, (t := bar.ui.text(bar.ui.nodes[w]).encode() + b'\0'), len(t)) and 0)
+    bar.to('backlight_page', 'Backlight')
     fw.fn('bar_title_sync', None, C.c_void_p)(bar.ui.top.addr)
-    assert bar.ui.text(title) == 'Q2 Pod' and title.props['_q2_bold_fallback'] == 0
+    assert bar.ui.text(title) == 'Backlight' and title.props['_q2_bold_fallback'] == 0
 
 
 def test_the_dark_bars_marks_take_its_places_and_stay(fw, st):
     bar = DarkBar(fw, st)
-    bar.to('usbmode_page')
+    bar.to('backlight_page')
     w = bar.w
     assert all(w[n].box[0] + w[n].box[2] <= 0 for n in ('img_bt', 'img_wifi'))  # off screen, where a relayout finds them
     (sx, sy, sw, sh), (bx, by, bw, bh) = state, slot = w['img_state'].box, w['view_battery'].box
@@ -2890,7 +2893,7 @@ def test_the_dark_bars_marks_take_its_places_and_stay(fw, st):
 
 def test_leaving_a_dark_page_puts_the_title_back_as_it_was(fw, st):
     bar = DarkBar(fw, st)
-    bar.to('usbmode_page')
+    bar.to('backlight_page')
     bar.to('about_page')
     title = bar.w['label_title']
     assert title.box[:3] == (60, 3, 200) and bar.w['label_clock'].visible
@@ -2902,7 +2905,7 @@ def test_leaving_a_dark_page_puts_the_title_back_as_it_was(fw, st):
 def test_the_bar_stays_light_off_classic(fw, st):
     bar = DarkBar(fw, st)
     st('theme').value = MINIMAL
-    bar.to('usbmode_page')
+    bar.to('backlight_page')
     assert bar.w['label_clock'].visible and bar.w['img_bt'].box[0] != -400
 
 

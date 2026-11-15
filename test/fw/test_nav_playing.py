@@ -395,11 +395,11 @@ def slot_width(ui, bar):
 
 @pytest.mark.parametrize('mode, width', [(0, BODY_W + NUB_W), (1, PCT_W), (2, BODY_W + NUB_W + GAP + PCT_W),
                                          (3, INSIDE_W + NUB_W)])
-def test_the_slot_is_its_modes_ink_wide_and_the_bars_height(fw, st, ui, mode, width):
+def test_the_slot_is_its_modes_ink_wide_and_its_rows_height(fw, st, ui, mode, width):
     theme(fw, st, BATTERY=mode)
     bar = Bar(fw, ui)
     bar.sync()
-    assert ui.box(bar.slot)[2:] == (width, SETS[0].bar)
+    assert ui.box(bar.slot)[2:] == (width, ui.box(bar.row)[3])
     assert (ui.shown[bar.icon], ui.shown[bar.pct], ui.shown[bar.slot]) == (0, 0, 1)  # the slot paints it all
 
 
@@ -668,6 +668,18 @@ def test_classics_percent_shows_beside_bluetooth_wifi_and_the_play_state(fw, st,
     assert slot_width(ui, bar) == 2 * 8 + 13
 
 
+@pytest.mark.parametrize('look', [0, 1])  # Classic's own bar, and a flat one on Classic's row
+def test_classics_percent_is_centred_on_the_icons_row_not_the_bar(fw, st, ui, look):
+    """Classic's icon row is 22 px of its 26 px bar: digits centred on the bar's height sat 2 px under the icons."""
+    theme(fw, st, CLASSIC, BATTERY=1, STATUSBAR=look)
+    bar = Bar(fw, ui)
+    ui.place(bar.row, 240, 0, 135, row_h(CLASSIC))
+    st.pct_digit, st.pct_sign = 8, 13
+    (text, rect, *_), = Paint(fw, ui, bar)().texts
+    assert row_h(CLASSIC) < SETS[GEOM['Classic']].bar
+    assert text == '88%' and rect == (0, 0, slot_width(ui, bar), row_h(CLASSIC))
+
+
 def test_the_first_measure_asks_for_the_bar_again_and_percent_takes_its_room(fw, st, ui):
     """Until a paint has measured the face the check stands on BATT_PCT_W, which is the icon in a crowded Classic
     row: the measuring paint asks for the bar again, and that pass fits Percent."""
@@ -927,9 +939,9 @@ def dark_level(rects):
     return max((r[2] for r in dark_parts(rects)[1]), default=0)
 
 
-def usb_page(ui):
-    page = ui.widget(ui.wm, 'usbmode_page', 0, 0, 375, 320, kind='window')
-    ui.set_str(page, b'name', b'usbmode_page')
+def dark_page(ui):  # a slider page: under Classic's dark bar
+    page = ui.widget(ui.wm, 'backlight_page', 0, 0, 375, 320, kind='window')
+    ui.set_str(page, b'name', b'backlight_page')
     return page
 
 
@@ -938,7 +950,7 @@ def test_the_dark_bar_moves_the_icons_off_and_paints_its_own_battery(fw, st, ui)
     bar = Bar(fw, ui, title=True)
     bar.sync()  # the bar's first paint finds its widgets
     title = ui.box(bar.title)
-    ui.top = usb_page(ui)
+    ui.top = dark_page(ui)
     bar.sync()
     for w in (bar.bt, bar.wifi):
         x, _, ww, _ = ui.screen(w)
@@ -1703,6 +1715,22 @@ def test_the_art_reloads_when_the_players_cover_changes(fw, ui, now, st):
     fw.var('g_playcover_type', C.c_ubyte).value = 2
     poll()
     assert ui.prop(now.cover, b'image') == b'play_defaultcover'  # dark: the next lit pass
+
+
+# Cover Flow's landing hands over to Now Playing's own art once that is this song's (np_art_ready): np_art_poll loaded
+# it, not before.
+def test_the_art_is_ready_once_the_poll_took_this_song_s_cover(fw, ui, now, st):
+    poll, ready = fw.fn('navigation__np_art_poll', None), fw.fn('np_art_ready', C.c_int)
+    poll()
+    assert not ready()  # the player's cover is another song's still
+    fw.var('fw_ctx_g_lastcover_url', C.c_char * 1024).value = now.paths[2].value
+    fw.var('g_playcover_type', C.c_ubyte).value = 1
+    assert not ready()  # this song's written: not loaded yet
+    poll()
+    assert ready()
+    fw.var('g_playcover_type', C.c_ubyte).value = 3
+    poll()
+    assert ready()  # none: stock's placeholder is the answer
 
 
 # A card app's URL queue: every song's REC_PATH is "" and a cover by URL leaves g_lastcover_url "", so the type and the

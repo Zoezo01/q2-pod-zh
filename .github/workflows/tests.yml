@@ -32,3 +32,6 @@ jobs:
       - name: Coverage of tools/  # fails under pyproject.toml's fail_under
         if: ${{ !cancelled() }}
         run: coverage report --format=markdown | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: C formatting  # tools/format.sh, at the clang-format CONTRIBUTING.md names
+        if: ${{ !cancelled() }}
+        run: pip install clang-format==23.1.5 && tools/format.sh --check

@@ -36,7 +36,8 @@ int headset_bt_autolink(char *address) {
 }
 /* The control thread can discover a boot reconnect before openBluetooth powers the radio. */
 int headset_bt_init(void *thread) {
-    initBluetoothParam(); /* Lists must exist before callbacks; the later reset would erase links. */
+    initBluetoothParam(); /* Lists must exist before callbacks; the later reset would erase links.
+                           */
     btctl_set_prompt_callback((void *)0x4f9d20, 0);
     headset_status_register();
     btctl_set_a2dp_callback((void *)btrecvA2dpFunc, (void *)0x01020304);
@@ -45,8 +46,8 @@ int headset_bt_init(void *thread) {
 static struct {
     volatile unsigned generation, running, head, tail, report;
     volatile int keys[16];
-    unsigned worker_generation, checked, epoch, paused_epoch, paused_at, recent_at,
-        recent_owner, recent_session;
+    unsigned worker_generation, checked, epoch, paused_epoch, paused_at, recent_at, recent_owner,
+        recent_session;
     unsigned last_at, session, linked_at, eq_checked;
     int linked, known, ears, want, paused, owner, automatic, last_key;
     unsigned char address[14];
@@ -85,8 +86,9 @@ static unsigned media_session(void) {
            *(volatile unsigned *)mcl_pdeqplaylist;
 }
 void media_set_playing(int playing) {
-    if (playing && addon_game_audio()) return; /* a card game with the sound: nothing of stock's
-                                                  starts over its PCM; media_key too */
+    if (playing && addon_game_audio())
+        return; /* a card game with the sound: nothing of stock's
+                   starts over its PCM; media_key too */
     hs.automatic = 1;
     int owner = media_owner();
     if (owner == 4)
@@ -104,9 +106,9 @@ static int focus(void) {
     void *top = window_manager_get_top_window(window_manager());
     const char *name = top ? widget_get_prop_str(top, "name", "") : "";
     return !tk_strcmp(name, "spotify_page") || !tk_strcmp(name, "spotbrowse_page") ? 1
-           : !tk_strcmp(name, "radio_page") || !tk_strcmp(name, "radionp_page") ? 2
-           : tk_str_start_with(name, "tidal_")                                  ? 3
-                                                                                : 0;
+           : !tk_strcmp(name, "radio_page") || !tk_strcmp(name, "radionp_page")    ? 2
+           : tk_str_start_with(name, "tidal_")                                     ? 3
+                                                                                   : 0;
 }
 int media_focused(void) { return focus() != 0; }
 void media_key(unsigned key) {
@@ -117,8 +119,7 @@ void media_key(unsigned key) {
         return;
     }
     int f = focus(); /* a focused Spotify or radio that isn't running leaves them to the owner */
-    if ((f == 1 && spot_media(key)) || (f == 2 && radio_media(key)))
-        return;
+    if ((f == 1 && spot_media(key)) || (f == 2 && radio_media(key))) return;
     if (f != 3 && video_status())
         video_key(key);
     else if (f != 3 && radio_status())
@@ -365,9 +366,9 @@ void headset_command(int code) {
         if (!hs.known || hs.ears) media_set_playing(1);
     }
 }
-/* EQ per Output's name for what plays (stock's config_bal_output and config_po_output: the jack last
- * plugged in; unplugging 4.4 mm leaves output 0, so a jack must be in to count). None, nothing to
- * hear: the EQ stays with its output until another takes over. */
+/* EQ per Output's name for what plays (stock's config_bal_output and config_po_output: the jack
+ * last plugged in; unplugging 4.4 mm leaves output 0, so a jack must be in to count). None, nothing
+ * to hear: the EQ stays with its output until another takes over. */
 static const char *eq_output_key(char *mac) {
     int way = mclGetOutputWay();
     if (way == 2) return "usb";

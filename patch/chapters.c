@@ -40,7 +40,7 @@ int chapters_parse(char *raw, chapter *rows) {
     unsigned long long num = 0, den = 0, start = 0;
     if (strncmp(raw, ";FFMETADATA1", 12) || (raw[12] != '\n' && raw[12] != '\r')) return -1;
     char title[256] = "";
-    for (char *p = raw; ; ) {
+    for (char *p = raw;;) {
         char *line = p, *out = p;
         while (*p && *p != '\n') {
             if (*p == '\\' && p[1]) ++p;
@@ -53,7 +53,8 @@ int chapters_parse(char *raw, chapter *rows) {
         if ((end && !*line) || line[0] == '[') {
             if (active) {
                 if (have != 3 || !num || !den || num > 0x7fffffff || den > 0x7fffffff ||
-                    start / den > 0x7fffffff / num) return -1;
+                    start / den > 0x7fffffff / num)
+                    return -1;
                 unsigned long long sec = start / den * num + start % den * num / den;
                 if (sec > 0x7fffffff || n == CHAPTER_MAX) return -1;
                 /* Kept in start order: ID3 CHAP frames, for one, may come in any order. */
@@ -99,14 +100,19 @@ chapters *chapters_start(const char *path, unsigned long long now) {
     c->fd = -1;
     c->at = now;
     int p[2];
-    if (pipe2(p, CH_CLOEXEC)) { c->failed = c->done = 1; return c; }
+    if (pipe2(p, CH_CLOEXEC)) {
+        c->failed = c->done = 1;
+        return c;
+    }
     c->pid = fork();
     if (!c->pid) {
         child_oom_first();
-        char *const args[] = { "/usr/bin/ffmpeg", "-nostdin", "-v", "error", "-i", (char *)path,
-                              "-f", "ffmetadata", "pipe:1", 0 };
-        if (p[1] == 1) fcntl(1, 2, 0); /* F_SETFD: clear CLOEXEC */
-        else if (dup2(p[1], 1) < 0) child_exit(127);
+        char *const args[] = { "/usr/bin/ffmpeg", "-nostdin", "-v",         "error",  "-i",
+                               (char *)path,      "-f",       "ffmetadata", "pipe:1", 0 };
+        if (p[1] == 1)
+            fcntl(1, 2, 0); /* F_SETFD: clear CLOEXEC */
+        else if (dup2(p[1], 1) < 0)
+            child_exit(127);
         int err = open("/dev/null", 1);
         if (err >= 0) dup2(err, 2);
         execv(args[0], args);
@@ -127,11 +133,17 @@ int chapters_poll(chapters *c, unsigned long long now) {
     /* Bound each UI tick too, even if the producer keeps the pipe full. */
     for (int i = 0; c->fd >= 0 && i < 16; ++i) {
         int room = CHAPTER_BYTES - c->used;
-        if (!room) { chapters_cancel(c); break; }
+        if (!room) {
+            chapters_cancel(c);
+            break;
+        }
         int n = read(c->fd, c->raw + c->used, (unsigned)(room > 4096 ? 4096 : room));
-        if (n > 0) c->used += n;
-        else if (!n) { close(c->fd); c->fd = -1; }
-        else {
+        if (n > 0)
+            c->used += n;
+        else if (!n) {
+            close(c->fd);
+            c->fd = -1;
+        } else {
             int e = *__errno_location();
             if (e != 4 && e != 11) chapters_cancel(c);
             break;
@@ -159,7 +171,8 @@ static unsigned long long be(const unsigned char *p, int n) {
 }
 
 /* Samples in the stsz/stz2 tables under [at, end): moov, trak, mdia, minf and stbl are walked. */
-static unsigned long long mp4_samples(void *f, unsigned long long at, unsigned long long end, int depth) {
+static unsigned long long mp4_samples(void *f, unsigned long long at, unsigned long long end,
+                                      int depth) {
     unsigned long long n = 0;
     while (end - at >= 8) {
         unsigned char h[16];
@@ -173,9 +186,9 @@ static unsigned long long mp4_samples(void *f, unsigned long long at, unsigned l
         } else if (!size)
             size = end - at;
         if (size < head || size > end - at) break;
-        if (depth < 5 && (!memcmp(h + 4, "moov", 4) || !memcmp(h + 4, "trak", 4) ||
-                          !memcmp(h + 4, "mdia", 4) || !memcmp(h + 4, "minf", 4) ||
-                          !memcmp(h + 4, "stbl", 4)))
+        if (depth < 5 &&
+            (!memcmp(h + 4, "moov", 4) || !memcmp(h + 4, "trak", 4) || !memcmp(h + 4, "mdia", 4) ||
+             !memcmp(h + 4, "minf", 4) || !memcmp(h + 4, "stbl", 4)))
             n += mp4_samples(f, at + head, at + size, depth + 1);
         else if ((!memcmp(h + 4, "stsz", 4) || !memcmp(h + 4, "stz2", 4)) && size >= head + 12 &&
                  fread(h, 1, 12, f) == 12)

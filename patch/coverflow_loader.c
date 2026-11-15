@@ -232,7 +232,7 @@ void coverflow_halves(void) {
             continue; /* made, or no art */
         fx.half_at = now ? now : 1;
         unsigned *tex = calloc(CF_TEXELS, 4);
-        if (tex && cf_decode(url, tex, 1)) half_make(key, tex);
+        if (tex && cf_decode(url, tex, 1, 0)) half_make(key, tex);
         free(tex);
         return;
     }

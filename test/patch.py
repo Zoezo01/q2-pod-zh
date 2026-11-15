@@ -204,7 +204,7 @@ class Machine:
         self.handlers[syms['memcpy@GLIBC_2.0']]='memcpy'
         self.handlers[syms['memset@GLIBC_2.0']]='memset'
         self.mock('canvas_set_global_alpha')
-        self.mock('sqrtf@GLIBC_2.0','sinf@GLIBC_2.0','acosf@GLIBC_2.0',prefix='float:')
+        self.mock('sqrtf@GLIBC_2.0','sinf@GLIBC_2.0','cosf@GLIBC_2.0','acosf@GLIBC_2.0',prefix='float:')
         self.mock(*VG_MOCKS,prefix='vg:')
         self.handlers[payload_syms['peq_lib_localtime_r']]='localtime_r'
         self.code_hook=self.hooked()
@@ -664,7 +664,7 @@ class Machine:
             ret=1 if name[3:]=='vgcanvas_save' else 0
         elif name.startswith('float:'):
             x=struct.unpack('<f',struct.pack('<I',u.reg_read(UC_MIPS_REG_F12)))[0]
-            fn={'sqrtf@GLIBC_2.0':math.sqrt,'sinf@GLIBC_2.0':math.sin,'acosf@GLIBC_2.0':math.acos}[name[6:]]
+            fn={'sqrtf@GLIBC_2.0':math.sqrt,'sinf@GLIBC_2.0':math.sin,'cosf@GLIBC_2.0':math.cos,'acosf@GLIBC_2.0':math.acos}[name[6:]]
             ret=struct.unpack('<I',struct.pack('<f',fn(x)))[0]
             u.reg_write(UC_MIPS_REG_F0,ret)
         elif name in ('alloc:tk_calloc','alloc:tk_free'):
@@ -682,7 +682,8 @@ class Machine:
         for r,v in ((UC_MIPS_REG_SP,self.u.reg_read(UC_MIPS_REG_SP)-0x400),(UC_MIPS_REG_RA,0x1000000),(UC_MIPS_REG_T9,f),*zip(REGS,args)):
             self.u.reg_write(r,v)
         # unicorn's count is one per engine: a nested run's limit stands for the rest of the caller's call too
-        self.u.emu_start(f,0x1000000,count=self.count); ret=signed(self.u.reg_read(UC_MIPS_REG_V0))
+        self.u.emu_start(f,0x1000000,count=self.count); assert self.u.reg_read(UC_MIPS_REG_PC)==0x1000000, 'Instruction limit reached'
+        ret=signed(self.u.reg_read(UC_MIPS_REG_V0))
         for r,v in zip(regs,saved): self.u.reg_write(r,v)
         return ret
     def qsort(self,base,n,size,compare):
@@ -1277,16 +1278,13 @@ def battery_checks():
                 assert shown(b,w)==['view_battery']
                 assert b.get(w['view_battery']+O['W_W'])==(O['BATT_PCT_W'] if mode==1 else (O['BATT_INSIDE_W'] if mode==3 else O['BATT_BODY_W'])+O['BATT_NUB_W']+(O['BATT_GAP']+O['BATT_PCT_W'] if mode==2 else 0))
     passed()
-    # The slot takes the bar's height in the set theme_boot wrote (geom_vals[st.geom][V_BAR], 30 under SET0): 26 poked into SET0's row sizes it 26, then 30 again.
-    b,bar,w,paint=battery_bar(1); assert b.u.mem_read(payload_syms['geom_vals'],2)==struct.pack('<h',30)
-    for bar_h in (26,30):
-        b.u.mem_write(payload_syms['geom_vals'],struct.pack('<h',bar_h)); b.word(w['view_battery']+O['W_H'],0); paint()
-        assert b.get(w['view_battery']+O['W_H'])==bar_h
+    # The slot takes its row's height, which the icons centre on (Classic's 22 px row under its 26 px bar), not the
+    # bar's: 22, then 30 again.
+    b,bar,w,paint=battery_bar(1); row=b.get(w['view_battery']+O['W_PARENT'])
+    for row_h in (22,30):
+        b.word(row+O['W_H'],row_h); b.word(w['view_battery']+O['W_H'],0); paint()
+        assert b.get(w['view_battery']+O['W_H'])==row_h
     passed()
-    # Classic before its set is written (no boot here, or a failed one, or a switch pending its restart) keeps
-    # SET0's 30 px slot: the slot follows the written set, never theme().
-    b,bar,w,paint=battery_bar(1); classic_light(b); b.word(w['view_battery']+O['W_H'],0); paint()
-    assert b.get(w['view_battery']+O['W_H'])==30; passed()
 battery_checks()
 assert m.confirm()==11 and m.dispatched()[0][1]==entries[0]; passed()
 assert m.call()==11 and m.selected(w)==1 and m.get(w+O['SCROLL_Y'])==12
@@ -8038,6 +8036,7 @@ assert wbox(fa,fp)==(24,61,327,30) and wbox(fa,rest[0])==(24,91,327,30) and fa.n
 fb,fbd,*_,fbp=cl_confirm(); fb.paint(fbd); assert fb.nodes[fbp]['text']=='Shut Down?' and len(fb.nodes[fbd]['children'])==3; passed()
 # Form B: a row action's confirm, the flag set at its call: the tray at 254, its shadow image, the track in it; the second cell says Delete, Centre on it is stock's OK.
 class TrayMachine(PlaylistLifecycleMachine):
+    budget=200000  # the tray's paint, its rows and corners a pixel at a time: about 105k instructions
     def hook(self,u,address,size,unused):
         if self.handlers.get(address,'')=='c:navigator_to_with_context' and self.text(u.reg_read(REGS[0]))=='dialog/confirminfo_dialog':
             page=self.top; d=self.tray=self.node('dialog','confirminfo_dialog'); self.word(d+O['W_PARENT'],self.wm); place(self,d,0,0,375,320); self.top=d
@@ -8268,11 +8267,12 @@ for mode,line in ((0,'Eject before disconnecting'),(2,'Eject before disconnectin
     assert [ub.nodes[w]['visible'] for w in (bimg,binfo,bret,bcharge,bdac)]==[0,0,1,1,1] and wbox(ub,bret)==(20,0,80,60) and wbox(ub,bcharge)==(247,0,50,50) and wbox(ub,bdac)==(305,0,50,50)
     assert not [b for b in ub.bands if b[2]==375 and b[4]==color_t(0x1c1c1c)] and not msg_track(ub) and not ub.timers  # the real bar's above it; no count
     assert [(t['text'],t['rect']) for t in ub.letters]==[('Connected',(16,229-26,343,32))]+([(line,(16,256-26,343,20))] if line else []) and ub.lcd_colors()==LCD_COLORS; passed()
-# ... under the real bar it's a dark page, titled; a window that covers the bar paints its own.
+# ... under the real bar it has Classic's own bar, titled by name with the clock shown, as every other Classic page; a window
+# that covers the bar paints its own.
 db,dbar,dright,dtitle,dclock,dbt,dwifi,dpct,dslot,dst,dwin,dhome=dark_setup()
 uw=db.node('window','usbmode_page'); db.word(uw+O['W_PARENT'],db.wm); place(db,uw,0,26,375,294); ui_loaded(db,'usbmode_page',uw); db.top=uw; db.nodes[db.wm]={'children':[uw]}
 for _ in range(2): bg(db,uw); bg(db,dbar)
-assert db.nodes[dtitle]['text']=='Q2 Pod' and wbox(db,dtitle)==(0,-1,375,25) and db.nodes[dclock]['visible']==0; db.bands=[]; bg(db,dbar); assert [b for b in db.bands if b[2]==375][0][4]==color_t(0x1c1c1c); passed()
+assert db.nodes[dtitle]['text']=='Q2 Pod' and wbox(db,dtitle)==(20,-1,104,25) and db.nodes[dclock]['visible']==1; db.bands=[]; bg(db,dbar); assert [b for b in db.bands if b[2]==375][0][4]==color_t(0xffffff); passed()
 db.word(uw+O['W_Y'],0); db.letters=[]; bg(db,uw); assert db.letters[0]['text']=='Q2 Pod' and db.letters[0]['rect']==(0,-1,375,25); passed()  # a window over the bar paints the title on the bar title's rows
 uc,cwin,*_=usb_page(0,y=0); bare(uc); bg(uc,cwin)
 assert page_fill(uc,26) and uc.image_draws[0][1][:2]==(122,67) and [b for b in uc.bands if b[2]==375 and b[1]==0][0][4]==color_t(0x1c1c1c) and uc.letters[0]['text']=='Q2 Pod' and wbox(uc,named(uc,cwin,'msg_heading'))==(16,228,343,32); passed()
@@ -11396,7 +11396,46 @@ for armed,gap in ((1,0),(0,0),(0,100)):
     assert not m.panel() and flip_held(m)==held and m.nodes[m.slide]['visible']; passed()
 # Centre plays the row, Return as today; a missing card says so in the header.
 m=flip_open(); m.advance(300); view=m.find('scroll_view'); r=m.nodes[view]['children'][1]; f,ctx=m.handler(r,O['EVT_CLICK']); m.call(address=f,args=(ctx,m.event,0,0),gap=0)
+assert not m.plays; m.advance(1)  # Classic's landing: the row lit, it plays at the next loop (cf.land_press 0)
 assert m.plays[-1][0]=='playing_page' and m.plays[-1][2]==1 and m.plays[-1][3]==0xff10 and m.play_names==['T1','T2'] and m.nodes[m.panel()]['visible']; passed()
+# The landing: the press opens Now Playing (here a window with Classic's leaning art), and until its motion ends Centre, through
+# ringnav, does nothing; a turn of the wheel or Return ends it and goes on, the song played at once if the press has not run.
+# A Return before Now Playing is the key target (its open event) only ends it: Cover Flow's page under it would take it.
+class LandMachine(FlipMachine):
+    def hook(self,u,address,size,unused):
+        opening=self.handlers.get(address,'')=='c:navigator_to_with_context' and self.text(u.reg_read(REGS[0]))=='playing_page'
+        ret=super().hook(u,address,size,unused)
+        if opening:
+            art=self.node('image','img_cover'); self.np=self.node('window','playing_page',[art]); self.word(art+O['W_PARENT'],self.np)
+            for off,v in (('W_X',O['SPOT_ART_X']),('W_Y',O['NP_IPOD_ART_Y']),('W_W',O['NP_IPOD_ART']),('W_H',O['NP_IPOD_ART']+40)): self.word(art+O[off],v)
+            self.top=self.np; self.stack.append(self.np); self.np_art=art
+        return ret
+def land_click():
+    m=classic_light_new(LandMachine); m.stock_load=1; m.open(); flip_click(m); m.advance(300); view=m.find('scroll_view'); r=m.nodes[view]['children'][1]
+    f,ctx=m.handler(r,O['EVT_CLICK']); m.call(address=f,args=(ctx,m.event,0,0),gap=0); assert not m.plays
+    return m
+def landing(m): return m.call(address=payload_syms['coverflow_landing'],args=(0,0,0,0),gap=0)
+def land_paint(m):
+    m.draws=[]; m.call(address=payload_syms['coverflow_paint'],args=(m.np,m.canvas,0,0),gap=0); assert len(m.draws)==1 and m.draws[0][3]==(0,0,375,294)  # its first paint: ms 0, opaque
+m=land_click(); assert m.call(O['KEY_CENTER'],gap=0)==11 and m.top==m.page and not m.plays and m.nodes[m.panel()]['visible']
+m.advance(1); assert m.plays and m.top==m.np; land_paint(m)
+assert m.call(O['KEY_CENTER'],gap=0)==11 and m.top==m.np and landing(m)==1
+m.advance(400); assert m.top==m.np and len(m.plays)==1 and landing(m)==1; passed()  # held over the art
+for k in (O['KEY_NEXT'],O['KEY_RETURN']):
+    m=land_click(); m.advance(1); land_paint(m); m.word(m.wm+O['W_KEY_TARGET'],m.np); m.advance(100)
+    assert m.call(k,gap=0)!=11 and not landing(m) and len(m.plays)==1; passed()  # cut short, the key on to Now Playing
+for k,stop in ((O['KEY_NEXT'],0),(O['KEY_RETURN'],1)):
+    m=land_click(); m.word(m.wm+O['W_KEY_TARGET'],m.page); ret=m.call(k,gap=0)  # Cover Flow's page has the keys
+    assert (ret==11)==stop, ret
+    assert m.plays and not landing(m) and m.top==m.np
+    m.advance(400); assert len(m.plays)==1; passed()  # the press: plays now, the early Return kept from Cover Flow's page
+# Cover Flow's page keeps the keys until a page opened over it has its open event (Now Playing from a pick, a landing's second
+# Return): its keyup drops a Return then, not turning the panel back unseen. Under a dialog (a toast) the Return is its own.
+for kind,name,turns in (('window','playing_page',0),('dialog','msginfo_dialog',1)):
+    m=flip_open(); m.advance(300); m.top=m.node(kind,name); m.stack.append(m.top)
+    f,ctx=m.handler(m.page,O['EVT_KEY_UP']); ev=m.alloc(0x40); m.word(ev,O['EVT_KEY_UP']); m.word(ev+O['EVENT_KEY'],O['KEY_RETURN'])
+    assert m.call(address=f,args=(ctx,ev,0,0),gap=0)==11
+    assert len([t for t in m.timers.values() if t[1]==payload_syms['flip_close']])==turns,kind; passed()
 m=flip_open(); m.advance(300); m.missing=True; r=m.nodes[m.find('scroll_view')]['children'][0]; f,ctx=m.handler(r,O['EVT_CLICK']); m.call(address=f,args=(ctx,m.event,0,0),gap=0)
 assert not m.plays and m.nodes[[w for w in m.nodes[m.panel()]['children'] if m.nodes[w]['type']=='hscroll_label'][0]]['text']=='Storage unavailable'; passed()
 # The list scrolls by the wheel inside the panel, the header its sibling, so it stays; Go to Album's tracks alone have no covers to turn.
@@ -12372,7 +12411,7 @@ EMBOSS=[(1,19,25,1,a_(0xffffff,179)),(27,14,2,2,a_(0xffffff,153))]
 ROWS=(0x90b27d,0xc9eeb1,0xd5f5bd,0xb8e896,0xa7e27d,0x92ce68,0x61a43a,0x4e972c,0x539c32,0x57a336,0x539933)
 outline=SOFT+body_bands(LINE); LEVEL=len(outline)
 bm,bw_,bands=classic_light_battery_bar(0)
-assert bm.get(bw_['view_battery']+O['W_W'])==29 and bm.get(bw_['view_battery']+O['W_H'])==26
+assert bm.get(bw_['view_battery']+O['W_W'])==29 and bm.get(bw_['view_battery']+O['W_H'])==22  # the row's height, not the bar's 26
 assert bm.get(bw_['img_bt']+O['W_Y'])==1 and bm.get(bw_['img_wifi']+O['W_Y'])&0xffffffff==0xffffffff  # a row down, a row up
 assert bands[:LEVEL]==outline
 SHADE=[(25,y+1,1,11,a_(0,64))]
@@ -18515,7 +18554,7 @@ item=kids[2]; button=m.nodes[item]['children'][0]; title,value=m.nodes[button]['
 # Stock's row, title and value widgets alike.
 want=tree(m.nodes[rows[1]]['children'][0])
 assert m.nodes[item]['style']=='s_listitem_black' and tree(button)==want
-assert m.nodes[title]['text']=='CFW. Version' and m.nodes[value]['text']==f"{VERSION} Pod{f" dev {manifest['dev']}" if manifest['dev'] else f' beta {BETA}' if BETA else ''}"
+assert m.nodes[title]['text']=='CFW. Version' and m.nodes[value]['text']==f"{VERSION}{f" dev {manifest['dev']}" if manifest['dev'] else f' beta {BETA}' if BETA else ''}"
 assert not m.nodes[button].get('handlers') and not m.nodes[button].get('name'); passed()
 m.nodes[view]['children']=rows[:7]; assert m.call(address=HOOKS['systemset_about_page_init'][0],args=(m.top,5,0,0),gap=0)==0 and m.nodes[view]['children']==rows[:7]; passed()
 # Under Classic the CFW. Version row's title takes the Classic font (about_label), its value a second line's: stock's regular.
@@ -19320,6 +19359,19 @@ for held in ({},{'WHEELMODE':'0','NAVHIDE':'1'},{'WHEELMODE':'1','NAVHIDE':'0'},
         stock=tuple(int(v) if v in ('0','1') else 0 for v in (held.get('NAVHIDE','0'),held.get('WHEELMODE','0')))
         assert (c.u.mem_read(syms['g_navhide_flag'],1)[0],c.u.mem_read(syms['g_wheelmode'],1)[0])==((0,1) if patched else stock),(held,patched)
         assert c.config==before
+passed()
+# Every unit boots in English (build.py LANGUAGE_EN): config_init's own code, from its LANGUAGE read to its g_language
+# store, gives en_US's index, 2, whatever an older version saved, missing included (stock's 0, Simplified Chinese). The
+# key is not written; a missing one still starts stock's first-boot guide (g_guideflag).
+for held in ({},{'LANGUAGE':'0'},{'LANGUAGE':'2'},{'LANGUAGE':'6'}):
+    for patched in (True,False):
+        c=Machine(patched); c.mock('puts@GLIBC_2.0'); c.config.update(held); before=dict(c.config); c.byte(syms['g_language'],9); c.byte(syms['g_guideflag'],0)  # puts: stock's note of a missing key
+        for r,v in ((UC_MIPS_REG_SP,0x7000f000),(UC_MIPS_REG_S0,c.alloc(0x100)),(UC_MIPS_REG_S1,0x780000),(UC_MIPS_REG_S4,0x780000),(UC_MIPS_REG_S2,c.string('0')),(UC_MIPS_REG_S6,1)):
+            c.u.reg_write(r,v)
+        c.word(0x7000f000+0x18,GP); c.u.emu_start(0x5047dc,0x504854,count=100000)
+        assert c.u.reg_read(UC_MIPS_REG_PC)==0x504854 and [r[:3] for r in c.config_reads]==[('/mnt/data/config.ini','SYSSET','LANGUAGE')]
+        assert c.u.mem_read(syms['g_language'],1)[0]==(2 if patched else int(held.get('LANGUAGE','0'))),(held,patched)
+        assert c.u.mem_read(syms['g_guideflag'],1)[0]==(not held) and c.config==before,(held,patched)
 passed()
 # Home binds no key-up of its own (build.py HOME_KEYUP): stock V1.36's home_page_init gives the page one, whose Return
 # opens Now Playing, where Home's keys are ringnav's. The word that goes is a `jalr $25`, which tens of thousands of

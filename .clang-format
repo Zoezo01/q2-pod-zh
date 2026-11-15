@@ -10,6 +10,7 @@ IndentWidth: 4
 ColumnLimit: 100
 PointerAlignment: Right
 BreakBeforeBraces: Attach
+SortIncludes: Never # order matters: a generated header can need the one before it
 Cpp11BracedListStyle: false
 AllowShortIfStatementsOnASingleLine: WithoutElse
 AllowShortLoopsOnASingleLine: true

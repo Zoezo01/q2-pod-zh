@@ -1,10 +1,11 @@
 #!/bin/sh
-# Format patch/navigation.c, the files split out of it and the Markdown docs. patch/link.ld and
-# patch/contexts.inc have no usable formatter and are deliberately absent.
+# Format every tracked C file and the Markdown docs. --check only reports C that isn't formatted (tests.yml,
+# tools/check.sh). The .inc tables, patch/link.ld and the .S files have no usable formatter and stay out.
 set -eu
 cd "$(dirname "$0")/.."
-
-# tools/build.py's NAVIGATION, so a file split out is formatted once it builds
-nav=$(python3 -c 'import sys; sys.path.insert(0, "tools"); import build; print(" ".join("patch/" + f for f in build.NAVIGATION))')
-clang-format -i $nav patch/navigation.h patch/theme.h patch/coverflow.h patch/coverflow_thumb.c patch/coverflow_loader.c patch/coverflow_letters.c
+c=$(git ls-files 'patch/*.[ch]' 'tools/*.[ch]' 'test/*.c')
+# shellcheck disable=SC2086 # a file list
+if [ "${1:-}" = --check ]; then exec "${CLANG_FORMAT:-clang-format}" --dry-run --Werror $c; fi
+# shellcheck disable=SC2086
+clang-format -i $c
 prettier --write "*.md" "docs/*.md"

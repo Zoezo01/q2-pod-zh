@@ -486,6 +486,7 @@ static int rated_open(void *ctx, void *event) {
         void *t = deque_at(list, (unsigned)i);
         const char *artist = P(t, REC_ARTIST);
         tk_snprintf(detail, sizeof detail, artist && *artist ? "%s · %s" : "%s%s",
+                    /* NOLINTNEXTLINE(clang-analyzer-core.NullDereference): rows only with of */
                     hearts_text(hs, of[i]), artist && *artist ? artist : "");
         page_row_detail(view, i, track_name(name, sizeof name, t), detail, rt_play);
     }

@@ -9,7 +9,9 @@
  * glyph blends copy a source pixel, alpha and all, only above 0xf8, and blend any fainter one over
  * an opaque pixel (>= 0xf5) to alpha 0xff (fill_bgra8888_rect @0x6df4f4, the image pixel @0x6c8520
  * and @0x6c5140, the glyph's @0x6a5c34), so a pixel drawn again is warmed once more and one left
- * alone is never warmed twice. It was 0xfe, which the round icons' rims have, left as bright specks.
+ * alone is never warmed twice. It was 0xfe, which the round icons' rims have, left as bright
+ * specks.
+ *
  * ponytail: vgcanvas keeps a coverage above 0xf4 as the alpha (agge pixel_blend @0x73b0f4) and
  * clear_rect its colour's, so an edge pixel or a cleared colour at exactly NS_DONE stays unwarmed,
  * and vgcanvas blending over a pixel not drawn again leaves the mix unwarmed; 0xf7 is the rarest

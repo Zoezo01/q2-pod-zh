@@ -330,7 +330,7 @@ static void ple_show(void) {
         tk_snprintf(search, sizeof search, "%s%s", *ple.query ? "Search: " : "Search", ple.query);
         page_row_detail(ple.view, 0, search, 0, ple_pick);
         /* a tick on a song the playlist already holds: same path and CUE segment */
-        unsigned mask, *in = ple.nmatch ? rec_index(ple.songs, &mask) : 0;
+        unsigned mask = 0, *in = ple.nmatch ? rec_index(ple.songs, &mask) : 0;
         if (!ple.nmatch)
             page_row_detail(ple.view, 1, "No songs match", 0, 0);
         else

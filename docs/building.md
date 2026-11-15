@@ -155,6 +155,19 @@ mypy test/fw  # its own run: test/unit has a conftest module too
 - **Off on purpose:** `func-returns-value` (the tests' mocks return `list.append`'s `None`) and `var-annotated` (an empty list or dict). A name may take a new type (`allow_redefinition_new`), as in `d = pathlib.Path(d)`.
 - **ctypes `_fields_`** is one list, `[*((k, C.c_int) for k in ...), ('x', C.c_void_p)]`: mypy reads lists added together as a list of `object`, which `Structure` refuses.
 
+## clang-tidy
+
+`tools/tidy.sh` runs [clang-tidy](https://clang.llvm.org/extra/clang-tidy/) 23 with the root `.clang-tidy` over the C that `test/fw` builds (`NAVIGATION` and `UI_SOURCES`), with the Q2's flags, against the headers `test/fw/host.py` writes, so it needs no stock ZIP. `firmware.yml` and `tools/check.sh` run it; it fails on any hit. Name files to check only those.
+
+```sh
+pip install clang-tidy==23.1.4  # or your distribution's clang-tidy 23
+tools/tidy.sh
+tools/tidy.sh patch/navigation.c
+```
+
+- **Checks:** `bugprone-*` and the clang static analyzer, less what the codebase does on purpose (listed in `.clang-tidy`), and caps on a function's lines and cognitive complexity just above today's largest, so none grows past them.
+- **A hit the analyzer can't see past** (a caller's bound, a table sized by its count) gets `/* NOLINTNEXTLINE(check): the invariant */` above it, naming why it can't happen. A hit that can happen gets a fix.
+
 ## Mutation tests
 
 `.github/workflows/tests.yml` runs `test/unit` on every pull request and push to `main`. `.github/workflows/mutation.yml` runs [mutmut](https://github.com/boxed/mutmut) on every function in `tools/`, and on Sundays `test/cmut` over the C ([below](#c)). mutmut breaks a copy of each function in one small way at a time and checks that `test/unit` notices. It uploads every surviving mutant and mutmut's log as `surviving-mutants`.

@@ -10,12 +10,12 @@
 
 #define BOOK_DIR PEQ_ROOT "/mnt/mmc/.books"
 #define BOOK_MARKS "/mnt/data/ringnav-books"
-#define CD_MAX (2 << 20)   /* a zip's central directory, at most */
-#define ITEM_MAX (8 << 20) /* one zip entry, packed or not, at most */
-#define META_MAX (1 << 20) /* container.xml, encryption.xml or the OPF, at most */
+#define CD_MAX (2 << 20)    /* a zip's central directory, at most */
+#define ITEM_MAX (8 << 20)  /* one zip entry, packed or not, at most */
+#define META_MAX (1 << 20)  /* container.xml, encryption.xml or the OPF, at most */
 #define BOOK_MAX (64 << 20) /* the spine's documents unpacked, in all, at most */
-#define BOOK_LINE 128      /* characters on one line, at most */
-#define BOOK_BACK 3072     /* bytes laid out again to find the previous page */
+#define BOOK_LINE 128       /* characters on one line, at most */
+#define BOOK_BACK 3072      /* bytes laid out again to find the previous page */
 
 static unsigned le(const unsigned char *p, int n) {
     unsigned v = 0;
@@ -63,7 +63,7 @@ static int build(huff_t *h, const unsigned char *length, int n) {
     offs[1] = 0;
     for (int len = 1; len < 15; ++len) offs[len + 1] = offs[len] + h->count[len];
     for (int i = 0; i < n; ++i)
-        if (length[i]) h->symbol[offs[length[i]]++] = i;
+        if (length[i]) h->symbol[offs[length[i]]++] = (short)i;
     return 0;
 }
 
@@ -140,13 +140,13 @@ int book_inflate(const unsigned char *in, unsigned n, unsigned char *out, unsign
             int ncode = bits(&s, 4) + 4;
             if (nlen > 286 || ndist > 30) return -1;
             memset(length, 0, 19);
-            for (int i = 0; i < ncode; ++i) length[order[i]] = bits(&s, 3);
+            for (int i = 0; i < ncode; ++i) length[order[i]] = (unsigned char)bits(&s, 3);
             if (build(&lit, length, 19)) return -1;
             for (int i = 0; i < nlen + ndist;) {
                 int sym = decode(&s, &lit), len = 0, repeat;
                 if (s.err || sym < 0) return -1;
                 if (sym < 16) {
-                    length[i++] = sym;
+                    length[i++] = (unsigned char)sym;
                     continue;
                 }
                 if (sym == 16) {
@@ -155,7 +155,7 @@ int book_inflate(const unsigned char *in, unsigned n, unsigned char *out, unsign
                 } else
                     repeat = sym == 17 ? 3 + bits(&s, 3) : 11 + bits(&s, 7);
                 if (i + repeat > nlen + ndist) return -1;
-                while (repeat--) length[i++] = len;
+                while (repeat--) length[i++] = (unsigned char)len;
             }
             dl = length + nlen;
         }
@@ -205,11 +205,10 @@ static char *zip_read(zip_t *z, const char *name, unsigned max, unsigned *n) {
         }
         unsigned method = le(p + 10, 2), packed = le(p + 20, 4), size = le(p + 24, 4);
         unsigned char head[30], *in = 0, *out = 0;
-        if ((le(p + 8, 2) & 1) || (method != 8 && (method || packed != size)) ||
-            packed > max || size > max || fseek(z->f, le(p + 42, 4), 0) ||
-            fread(head, 1, 30, z->f) != 30 || le(head, 4) != 0x04034b50 ||
-            fseek(z->f, le(head + 26, 2) + le(head + 28, 2), 1) || !(in = calloc(packed + 1, 1)) ||
-            fread(in, 1, packed, z->f) != packed) {
+        if ((le(p + 8, 2) & 1) || (method != 8 && (method || packed != size)) || packed > max ||
+            size > max || fseek(z->f, le(p + 42, 4), 0) || fread(head, 1, 30, z->f) != 30 ||
+            le(head, 4) != 0x04034b50 || fseek(z->f, le(head + 26, 2) + le(head + 28, 2), 1) ||
+            !(in = calloc(packed + 1, 1)) || fread(in, 1, packed, z->f) != packed) {
             free(in);
             return 0;
         }
@@ -346,8 +345,8 @@ int book_convert(const char *src, const char *out, volatile int *cancel) {
         goto end; /* DRM; fonts alone may be obfuscated */
     free(xml);
     if (!(xml = zip_read(&z, "META-INF/container.xml", META_MAX, &n)) ||
-        !(p = tag(xml, "rootfile", &e)) ||
-        !(v = attr(p, e, "full-path", &len)) || len >= sizeof path / 2)
+        !(p = tag(xml, "rootfile", &e)) || !(v = attr(p, e, "full-path", &len)) ||
+        len >= sizeof path / 2)
         goto end;
     memcpy(path, v, len), path[len] = 0;
     free(xml), xml = 0;
@@ -569,7 +568,8 @@ static void info(void) {
         tk_snprintf(caption, sizeof caption, "%u%%  %s", pct, title(bk.path[bk.current], name));
     if (text_differs(bk.info, caption)) {
         widget_set_text_utf8(bk.info, caption);
-        widget_set_prop_int(bk.info, "xoffset", 0); /* a long caption's scroll would shift this one left */
+        widget_set_prop_int(bk.info, "xoffset",
+                            0); /* a long caption's scroll would shift this one left */
     }
     widget_set_visible(bk.info, bk.info_on || bk.state, 0);
 }
@@ -676,9 +676,7 @@ static int leave(const void *unused) {
 }
 
 /* Return: reader -> books -> Local Music. */
-static int keyup(void *ctx, void *event) {
-    return return_key(event, &bk.timer, leave);
-}
+static int keyup(void *ctx, void *event) { return return_key(event, &bk.timer, leave); }
 
 /* ringnav(): the reader takes the wheel (a page either way) and Centre (the caption). */
 int books_key(void *top, unsigned key) {
@@ -747,12 +745,16 @@ void books_paint(void *w, void *canvas) {
  * reaches it as a datagram on its socket. */
 #define VIDEO_BIN "/usr/bin/q2video"
 #define VIDEO_SOCK "/tmp/q2video.sock" /* video.c Q2VIDEO_SOCK */
-#define VIDEO_PLACE "/tmp/q2video.place" /* video.c Q2VIDEO_PLACE: the second to start at, then left */
+#define VIDEO_PLACE                                                                                \
+    "/tmp/q2video.place"          /* video.c Q2VIDEO_PLACE: the second to start at, then left */
 #define VIDEO_PAUSE_QUIT_MS 30000 /* paused this long, no key: quit as Return, so it sleeps */
-#define VIDEO_TOO_LARGE 3 /* video.c TOO_LARGE, its exit status: the picture's decode would not fit the RAM */
+#define VIDEO_TOO_LARGE                                                                            \
+    3 /* video.c TOO_LARGE, its exit status: the picture's decode would not fit the RAM */
 static struct {
-    int paused, volume, gain, pid, sock, seek; /* seek: the wheel seeks, since seek_at (time_now_ms) */
-    unsigned polled, control_at, seek_at, key, at; /* key: the video's in BOOK_MARKS, at its second there */
+    int paused, volume, gain, pid, sock,
+        seek; /* seek: the wheel seeks, since seek_at (time_now_ms) */
+    unsigned polled, control_at, seek_at, key,
+        at;             /* key: the video's in BOOK_MARKS, at its second there */
     unsigned paused_at; /* time_now_ms when the pause began, 0 playing */
 } vid __attribute__((section(".scratch")));
 
@@ -760,7 +762,8 @@ int video_on(void) { return vid.pid; }
 
 /* A USB DAC's volume is in software, hciplayer's as Bluetooth's, only when the USB volume is
  * variable (g_usbvol_mode) and the DAC has no volume control of its own: mclUsbAudioSetVol then
- * finds none (USB_MIXER -2) and tells hciplayer {mcl-softvolflag\1}. Otherwise the DAC applies it. */
+ * finds none (USB_MIXER -2) and tells hciplayer {mcl-softvolflag\1}. Otherwise the DAC applies it.
+ */
 static int usb_soft(void) { return g_usbvol_mode && I(USB_MIXER, 0) == -2; }
 
 /* The output in use for q2video (here, radio.c) and librespot's sink (spotify.c): 0 for the
@@ -777,7 +780,8 @@ const char *output_device(char *vol) {
 }
 
 /* The headphone output readied as stock's player_start readies it before each track (headset mode,
- * DAC powered, PCM mode, unmuted, the volume); Bluetooth's way left alone. Shared with spotify.c. */
+ * DAC powered, PCM mode, unmuted, the volume); Bluetooth's way left alone. Shared with spotify.c.
+ */
 void dac_take(void) {
     if (g_headset_output < 2)
         config_outputchannel(g_headset_output, 2);
@@ -793,7 +797,7 @@ void dac_take(void) {
 int video_start(const char *file, int radio) {
     char vol[5];
     const char *out = output_device(vol);
-    player_stop(); /* hciplayer holds the PCM even paused */
+    player_stop();        /* hciplayer holds the PCM even paused */
     if (!out) dac_take(); /* without it the PCM takes the sound and the jack stays silent */
     int pid = fork();
     if (!pid) {
@@ -863,8 +867,10 @@ void video_poll(void) {
                 BLOB_IO("/tmp/q2video.state", paused, 0) && (paused == 0 || paused == 1))
                 vid.paused = paused;
             if (vid.volume != g_volume || vid.gain != headset_gain()) video_sync();
-            if (!vid.paused) vid.paused_at = 0;
-            else if (!vid.paused_at) vid.paused_at = vid.polled ?: 1;
+            if (!vid.paused)
+                vid.paused_at = 0;
+            else if (!vid.paused_at)
+                vid.paused_at = vid.polled ?: 1;
             else if (vid.polled - vid.paused_at >= VIDEO_PAUSE_QUIT_MS)
                 dgram_send(&vid.sock, VIDEO_SOCK, "q", 1); /* again each poll until it ends */
         }
@@ -912,8 +918,10 @@ void video_key(unsigned key) {
              : key == KEY_CENTER && vid.seek                        ? 's'
              : wheel || key == KEY_CENTER                           ? 'v'
                                                                     : 0;
-    if (c == 'v') video_sync();
-    else if (c) dgram_send(&vid.sock, VIDEO_SOCK, &c, 1);
+    if (c == 'v')
+        video_sync();
+    else if (c)
+        dgram_send(&vid.sock, VIDEO_SOCK, &c, 1);
     if (c == 'p') {
         vid.paused = !vid.paused;
         vid.control_at = time_now_ms();

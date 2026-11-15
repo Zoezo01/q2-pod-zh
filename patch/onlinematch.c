@@ -1,17 +1,18 @@
 /* Online match (docs/internals.md#lyrics-search, #cover-search): Now Playing's ⋯ lyrics match asks
- * LRCLIB alone (no Kugou or NetEase), and its cover match MusicBrainz's Cover Art Archive and iTunes
- * before stock's Kugou search. */
+ * LRCLIB alone (no Kugou or NetEase), and its cover match MusicBrainz's Cover Art Archive and
+ * iTunes before stock's Kugou search. */
 #include "peq.h"
 
-/* part joined into out, the odd ones percent-encoded and, with lucene, a backslash before each " and \
- * (MusicBrainz's query syntax); 0 if it does not fit in n. */
+/* part joined into out, the odd ones percent-encoded and, with lucene, a backslash before each "
+ * and \ (MusicBrainz's query syntax); 0 if it does not fit in n. */
 static int url_join(char *out, unsigned n, const char *const *part, int count, int lucene) {
     static const char hex[] = "0123456789ABCDEF";
     unsigned at = 0;
     for (int i = 0; i < count; ++i)
         for (const unsigned char *s = (const unsigned char *)part[i]; *s; ++s) {
-            int keep = !(i & 1) || (*s >= '0' && *s <= '9') || ((*s | 32) >= 'a' && (*s | 32) <= 'z') ||
-                       *s == '-' || *s == '.' || *s == '_' || *s == '~';
+            int keep = !(i & 1) || (*s >= '0' && *s <= '9') ||
+                       ((*s | 32) >= 'a' && (*s | 32) <= 'z') || *s == '-' || *s == '.' ||
+                       *s == '_' || *s == '~';
             int esc = (i & 1) && lucene && (*s == '"' || *s == '\\');
             if (at + (keep ? 1 : 3) + 3 * esc >= n) return 0;
             if (esc) out[at++] = '%', out[at++] = '5', out[at++] = 'C';
@@ -26,20 +27,25 @@ static int url_join(char *out, unsigned n, const char *const *part, int count, i
 
 /* LRCLIB's search URL for title and artist; 0 if it does not fit in n. */
 int lrclib_url(char *out, unsigned n, const char *title, const char *artist) {
-    const char *part[] = { "https://lrclib.net/api/search?track_name=", title, "&artist_name=", artist };
+    const char *part[] = { "https://lrclib.net/api/search?track_name=", title,
+                           "&artist_name=", artist };
     return url_join(out, n, part, 4, 0);
 }
 
-/* MusicBrainz's release search, release:"ALBUM" AND artist:"ARTIST" (no artist clause without one). */
+/* MusicBrainz's release search, release:"ALBUM" AND artist:"ARTIST" (no artist clause without one).
+ */
 int mb_url(char *out, unsigned n, const char *album, const char *artist) {
-    const char *part[] = { "https://musicbrainz.org/ws/2/release/?fmt=json&limit=10&query=release%3A%22", album,
-                           *artist ? "%22%20AND%20artist%3A%22" : "%22", artist, "%22" };
+    const char *part[] = {
+        "https://musicbrainz.org/ws/2/release/?fmt=json&limit=10&query=release%3A%22", album,
+        *artist ? "%22%20AND%20artist%3A%22" : "%22", artist, "%22"
+    };
     return url_join(out, n, part, *artist ? 5 : 3, 1);
 }
 
 /* iTunes Search's albums for "ARTIST ALBUM". */
 int itunes_url(char *out, unsigned n, const char *album, const char *artist) {
-    const char *part[] = { "https://itunes.apple.com/search?entity=album&limit=5&term=", artist, "%20", album };
+    const char *part[] = { "https://itunes.apple.com/search?entity=album&limit=5&term=", artist,
+                           "%20", album };
     return url_join(out, n, part, 4, 0);
 }
 
@@ -53,8 +59,8 @@ int itunes_art(char *url) {
 
 /* t past its opening credit lines ("[00:01.00] Mix Engineer : Name", NetEase's style, which LRCLIB
  * keeps): each line, up to the first sung one, whose text holds " : ", and any blank line before
- * one. A tag line such as [offset:...] ends the search, so it stays; lyrics with no sung line at all
- * come back empty. */
+ * one. A tag line such as [offset:...] ends the search, so it stays; lyrics with no sung line at
+ * all come back empty. */
 const char *lrc_body(const char *t) {
     const char *line = t;
     while (*line) {
@@ -88,26 +94,30 @@ int lrc_path(char *out, unsigned n, const char *path, const char *ext) {
     const char *name = strrchr(path, '/'), *dot;
     name = name ? name + 1 : path;
     dot = strrchr(name, '.');
-    unsigned keep = (unsigned)(dot && dot > name ? dot - path : (long)strlen(path)), e = strlen(ext);
+    unsigned keep = (unsigned)(dot && dot > name ? dot - path : (long)strlen(path)),
+             e = strlen(ext);
     if (keep + e >= n) return 0;
+    /* NOLINTNEXTLINE(bugprone-not-null-terminated-result): the ext memcpy copies its NUL */
     memcpy(out, path, keep);
     memcpy(out + keep, ext, e + 1);
     return 1;
 }
 
 /* s without accents, to out: each Latin letter of U+00C0-U+017F and U+1E00-U+1EFF (Vietnamese's
- * among them) and Vietnamese's ơ and ư as its plain letter, a stroke or ligature too (ł l, ø o, đ d,
- * æ ae, ß ss, þ th), and combining marks dropped; other text as it is. LRCLIB's search folds é but
- * not ł or ø, so "Hataałii" misses its "Hataalii" entries. Never longer than s; 0 if it does not
- * fit in n. */
+ * among them) and Vietnamese's ơ and ư as its plain letter, a stroke or ligature too (ł l, ø o, đ
+ * d, æ ae, ß ss, þ th), and combining marks dropped; other text as it is. LRCLIB's search folds é
+ * but not ł or ø, so "Hataałii" misses its "Hataalii" entries. Never longer than s; 0 if it does
+ * not fit in n. */
 int lrc_fold(char *out, unsigned n, const char *s) {
     /* A letter for each code point; '.' kept, a digit a wide[] pair (tools: Python's NFD bases). */
+    /* clang-format off */
     static const char latin[] = "AAAAAA0CEEEEIIIIDNOOOOO.OUUUUY24aaaaaa1ceeeeiiiidnooooo.ouuuuy3y"
                                 "AaAaAaCcCcCcCcDdDdEeEeEeEeEeGgGgGgGgHhHhIiIiIiIiIi56JjKkkLlLlLlLlLlNnNnNnnNnOoOoOo78"
                                 "RrRrRrSsSsSsSsTtTtTtUuUuUuUuUuUuWwYyYZzZzZzs"; /* U+00C0-U+017F */
     static const char ext[] = "AaBbBbBbCcDdDdDdDdDdEeEeEeEeEeFfGgHhHhHhHhHhIiIiKkKkKkLlLlLlLlMmMmMmNnNnNnNnOoOoOoOo"
                               "PpPpRrRrRrRrSsSsSsSsSsTtTtTtTtUuUuUuUuUuVvVvWwWwWwWwWwXxXxYyZzZzZzhtwy......AaAaAaAa"
                               "AaAaAaAaAaAaAaAaEeEeEeEeEeEeEeEeIiIiOoOoOoOoOoOoOoOoOoOoOoOoUuUuUuUuUuUuUuYyYyYyYy......"; /* U+1E00-U+1EFF */
+    /* clang-format on */
     static const char wide[][3] = { "AE", "ae", "TH", "th", "ss", "IJ", "ij", "OE", "oe" };
     unsigned at = 0;
     for (const unsigned char *p = (const unsigned char *)s; *p;) {
@@ -116,13 +126,13 @@ int lrc_fold(char *out, unsigned n, const char *s) {
             c = (c & 0x1f) << 6 | (p[1] & 0x3f), len = 2;
         else if (c >= 0xe0 && c < 0xf0 && (p[1] & 0xc0) == 0x80 && (p[2] & 0xc0) == 0x80)
             c = (c & 0x0f) << 12 | (p[1] & 0x3f) << 6 | (p[2] & 0x3f), len = 3;
-        char k = len == 1                      ? '.' /* ASCII, or a byte not decoded here */
-                 : c >= 0xc0 && c < 0x180      ? latin[c - 0xc0]
-                 : c >= 0x1e00 && c < 0x1f00   ? ext[c - 0x1e00]
-                 : c == 0x1a0 || c == 0x1af    ? (c == 0x1a0 ? 'O' : 'U')
-                 : c == 0x1a1 || c == 0x1b0    ? (c == 0x1a1 ? 'o' : 'u')
-                 : c >= 0x300 && c < 0x370     ? 0 /* combining marks */
-                                               : '.';
+        char k = len == 1                    ? '.' /* ASCII, or a byte not decoded here */
+                 : c >= 0xc0 && c < 0x180    ? latin[c - 0xc0]
+                 : c >= 0x1e00 && c < 0x1f00 ? ext[c - 0x1e00]
+                 : c == 0x1a0 || c == 0x1af  ? (c == 0x1a0 ? 'O' : 'U')
+                 : c == 0x1a1 || c == 0x1b0  ? (c == 0x1a1 ? 'o' : 'u')
+                 : c >= 0x300 && c < 0x370   ? 0 /* combining marks */
+                                             : '.';
         const char *to = k >= '0' && k <= '8' ? wide[k - '0'] : 0;
         unsigned w = k == '.' ? len : to ? 2 : k != 0;
         if (at + w >= n) return 0;
@@ -138,8 +148,8 @@ int lrc_fold(char *out, unsigned n, const char *s) {
     return 1;
 }
 
-/* Where stock's Download Cover & Lyrics saved lyrics: .downpic/<name>, which its loader tries before
- * the .lrc beside the song, so a copy there hides ours (docs/internals.md#lyrics-search). */
+/* Where stock's Download Cover & Lyrics saved lyrics: .downpic/<name>, which its loader tries
+ * before the .lrc beside the song, so a copy there hides ours (docs/internals.md#lyrics-search). */
 #define DOWNPIC "/mnt/mmc/.downpic/"
 
 /* stock's name there for a song's file name (modifystringtolrcsuffix @0x51caa8): its last '.' on
@@ -158,30 +168,32 @@ int lrc_name(char *out, unsigned n, const char *name) {
  * and its job, which the row's timer reads while the worker runs. */
 typedef struct {
     char path[0x200], title[0x200], artist[0x100]; /* keyinfo's sizes */
-    char shadow[sizeof DOWNPIC + 0x200];          /* stock's .downpic copy of its lyrics, if any */
+    char shadow[sizeof DOWNPIC + 0x200];           /* stock's .downpic copy of its lyrics, if any */
 } lyr_track;
 typedef struct {
     volatile int cancel, done; /* done: tracks finished */
     int total, saved, had, none, failed, state;
 } lyr_job;
 enum { LJ_DONE, LJ_OFFLINE, LJ_CARD, LJ_CANCELLED };
+/* clang-format off */
 #define LJ_OFFLINE_RUN 2 /* tracks in a row LRCLIB never answered for: likely offline, so it ends */
 #define LJ_BUSY_TRIES 3  /* requests for a track while LRCLIB answers busy */
+/* clang-format on */
 #ifdef PEQ_HOST
 #define LJ_RETRY_US 1000 /* test/peq.py: no real wait */
 #else
 #define LJ_RETRY_US 2000000 /* before a retry: twice the moment LRCLIB's busy reply asks for */
 #endif
 
-/* Each of n tracks' lyrics beside it, each on its own, as Download Cover & Lyrics would find them: a
- * file gone from the card since the library's scan is passed over; one with a .lrc (or .LRC) is left
- * as it is; one LRCLIB has none for, or never answered for, is counted and the next tried. fetch
- * writes to <name>.lrc.part, renamed once whole, and then the track's shadow, a .downpic copy that
- * would hide it, goes (one LRCLIB lacks keeps its copy). A busy reply is asked again after a pause, up to
- * LJ_BUSY_TRIES in all; an unanswered request is retried once after LRCLIB has answered in this job
- * (before, a failure likely means offline). LJ_OFFLINE_RUN tracks unanswered (or still busy) in a
- * row end the job, as does a card that can't be written. job->cancel ends it between requests
- * (fetch's transfer stops at it too). Returns job->state. */
+/* Each of n tracks' lyrics beside it, each on its own, as Download Cover & Lyrics would find them:
+ * a file gone from the card since the library's scan is passed over; one with a .lrc (or .LRC) is
+ * left as it is; one LRCLIB has none for, or never answered for, is counted and the next tried.
+ * fetch writes to <name>.lrc.part, renamed once whole, and then the track's shadow, a .downpic copy
+ * that would hide it, goes (one LRCLIB lacks keeps its copy). A busy reply is asked again after a
+ * pause, up to LJ_BUSY_TRIES in all; an unanswered request is retried once after LRCLIB has
+ * answered in this job (before, a failure likely means offline). LJ_OFFLINE_RUN tracks unanswered
+ * (or still busy) in a row end the job, as does a card that can't be written. job->cancel ends it
+ * between requests (fetch's transfer stops at it too). Returns job->state. */
 int album_lyrics(lyr_job *job, const lyr_track *t, int n,
                  int (*fetch)(const lyr_track *, const char *, volatile int *)) {
     char lrc[sizeof t->path + 8], upper[sizeof t->path + 8], part[sizeof t->path + 16];
@@ -190,7 +202,8 @@ int album_lyrics(lyr_job *job, const lyr_track *t, int n,
     job->state = LJ_DONE;
     for (int i = 0; i < n && !job->cancel; job->done = ++i) {
         int got = LRC_OFFLINE, busy = 0, lost = 0;
-        if (!lrc_path(lrc, sizeof lrc, t[i].path, ".lrc") || !lrc_path(upper, sizeof upper, t[i].path, ".LRC")) {
+        if (!lrc_path(lrc, sizeof lrc, t[i].path, ".lrc") ||
+            !lrc_path(upper, sizeof upper, t[i].path, ".LRC")) {
             ++job->failed;
             continue;
         }
@@ -203,7 +216,8 @@ int album_lyrics(lyr_job *job, const lyr_track *t, int n,
         while (!job->cancel) {
             got = fetch(&t[i], part, &job->cancel);
             if (got == LRC_BUSY) answered = 1; /* there, just busy */
-            int again = got == LRC_BUSY ? ++busy < LJ_BUSY_TRIES : got == LRC_OFFLINE && answered && !lost++;
+            int again = got == LRC_BUSY ? ++busy < LJ_BUSY_TRIES
+                                        : got == LRC_OFFLINE && answered && !lost++;
             if (!again) break;
             /* in steps, so USB storage's stop does not wait out the whole pause */
             for (unsigned us = 0; us < LJ_RETRY_US && !job->cancel; us += 100000) usleep(100000);
@@ -233,29 +247,39 @@ int album_lyrics(lyr_job *job, const lyr_track *t, int n,
 
 /* The toast that sums up job, into out. */
 void album_note(char *out, unsigned n, const lyr_job *job) {
-    static const char *const head[] = { "Album lyrics", "LRCLIB stopped answering", "Can't write to the card",
-                                        "Cancelled" };
+    static const char *const head[] = { "Album lyrics", "LRCLIB stopped answering",
+                                        "Can't write to the card", "Cancelled" };
     static const char *const what[] = { "saved", "not found", "already had lyrics", "failed" };
     const int count[] = { job->saved, job->none, job->had, job->failed };
     int answered = job->saved || job->none, any = answered || job->had || job->failed;
-    unsigned at = (unsigned)snprintf(out, n, "%s", job->state == LJ_OFFLINE && !answered ? "Can't reach LRCLIB"
-                                                                                         : head[job->state]);
+    unsigned at = (unsigned)snprintf(out, n, "%s",
+                                     job->state == LJ_OFFLINE && !answered ? "Can't reach LRCLIB"
+                                                                           : head[job->state]);
     for (int i = 0, first = 1; i < 4 && at < n && (job->state != LJ_OFFLINE || answered); ++i)
-        if (count[i]) at += (unsigned)snprintf(out + at, n - at, "%s%d %s", first ? ": " : ", ", count[i], what[i]), first = 0;
-    if (!any && job->state == LJ_DONE && at < n) snprintf(out + at, n - at, ": no songs on the card");
+        if (count[i])
+            at += (unsigned)snprintf(out + at, n - at, "%s%d %s", first ? ": " : ", ", count[i],
+                                     what[i]),
+                first = 0;
+    if (!any && job->state == LJ_DONE && at < n)
+        snprintf(out + at, n - at, ": no songs on the card");
 }
 
 #ifndef PEQ_HOST
 #include "offsets.inc"
 #include "stock.h"
 
+/* clang-format off */
 #define OM_CA "/etc/scrobble-ca.pem" /* scrobble.c's: GTS Root R4 signs LRCLIB, ISRG the Cover Art Archive,
                                        * DigiCert G2 MusicBrainz and iTunes */
 #define LRCLIB_MAX (512 << 10)       /* up to 20 results, each with plain and synced text */
 #define COVER_MAX (256 << 10)        /* 10 MusicBrainz releases or 5 iTunes albums: ~15 KB in all */
 #define COVER_FILL 10                /* our candidates stop at this list size; stock's sources fill to 12 */
+/* clang-format on */
 
-typedef struct { char *buf; unsigned len, max; } body_t;
+typedef struct {
+    char *buf;
+    unsigned len, max;
+} body_t;
 
 static unsigned got(const char *data, unsigned size, unsigned n, void *ctx) {
     body_t *b = ctx;
@@ -271,12 +295,12 @@ static unsigned got(const char *data, unsigned size, unsigned n, void *ctx) {
 static void *easy(const char *url) {
     void *c = curl_easy_init();
     if (!c) return 0;
-    curl_easy_setopt(c, 10002, url);      /* CURLOPT_URL */
-    curl_easy_setopt(c, 10018, Q2POD_UA); /* USERAGENT, as LRCLIB and MusicBrainz ask */
-    curl_easy_setopt(c, 99, 1L);          /* NOSIGNAL: stock's match threads */
-    curl_easy_setopt(c, 78, 10L);         /* CONNECTTIMEOUT */
-    curl_easy_setopt(c, 13, 20L);         /* TIMEOUT */
-    curl_easy_setopt(c, 10065, OM_CA);    /* CAINFO */
+    curl_easy_setopt(c, 10002, url);         /* CURLOPT_URL */
+    curl_easy_setopt(c, 10018, Q2POD_UA);    /* USERAGENT, as LRCLIB and MusicBrainz ask */
+    curl_easy_setopt(c, 99, 1L);             /* NOSIGNAL: stock's match threads */
+    curl_easy_setopt(c, 78, 10L);            /* CONNECTTIMEOUT */
+    curl_easy_setopt(c, 13, 20L);            /* TIMEOUT */
+    curl_easy_setopt(c, 10065, OM_CA);       /* CAINFO */
     curl_easy_setopt(c, 20108, tls_untimed); /* SSL_CTX_FUNCTION: no date checks */
     return c;
 }
@@ -296,9 +320,9 @@ static char *get(const char *url, unsigned max, volatile int *cancel) {
         curl_easy_setopt(c, 20011, got); /* WRITEFUNCTION */
         curl_easy_setopt(c, 10001, &b);  /* WRITEDATA */
         if (cancel) {
-            curl_easy_setopt(c, 20219, stopped);       /* XFERINFOFUNCTION */
+            curl_easy_setopt(c, 20219, stopped);        /* XFERINFOFUNCTION */
             curl_easy_setopt(c, 10057, (void *)cancel); /* XFERINFODATA */
-            curl_easy_setopt(c, 43, 0L);               /* NOPROGRESS off, for it */
+            curl_easy_setopt(c, 43, 0L);                /* NOPROGRESS off, for it */
         }
         bad = curl_easy_perform(c) != 0; /* an error reply parses to nothing we use */
         curl_easy_cleanup(c);
@@ -317,12 +341,14 @@ static const char *str(void *json, const char *name) {
  * with a BOM as Kugou's: LRC_SAVED, LRC_NONE, LRC_OFFLINE if LRCLIB never answered, LRC_BUSY if it
  * answered with no results array (an error object), LRC_CARD if out could not be written, or
  * LRC_CANCELLED once *cancel (when given) stopped the transfer. */
-static int lrclib_search(const char *title, const char *artist, const char *out, volatile int *cancel) {
+static int lrclib_search(const char *title, const char *artist, const char *out,
+                         volatile int *cancel) {
     char url[3 * 0x300 + 64]; /* keyinfo's title and artist; a byte encodes to at most 3 */
     char *body;
     int found = LRC_NONE;
     if (!*title || !lrclib_url(url, sizeof url, title, artist)) return LRC_NONE;
-    if (!(body = get(url, LRCLIB_MAX, cancel))) return cancel && *cancel ? LRC_CANCELLED : LRC_OFFLINE;
+    if (!(body = get(url, LRCLIB_MAX, cancel)))
+        return cancel && *cancel ? LRC_CANCELLED : LRC_OFFLINE;
     if (*body != '[') { /* the search's results are an array, even when empty */
         free(body);
         return LRC_BUSY;
@@ -343,7 +369,8 @@ static int lrclib_search(const char *title, const char *artist, const char *out,
 }
 
 /* LRCLIB's lyrics for title and artist (lrclib_search), else, when that finds none and taking their
- * accents off changes them, for those (lrc_fold): LRCLIB has some songs only under the plain names. */
+ * accents off changes them, for those (lrc_fold): LRCLIB has some songs only under the plain names.
+ */
 static int lrclib(const char *title, const char *artist, const char *out, volatile int *cancel) {
     char t[0x200], a[0x100]; /* keyinfo's sizes; folding never lengthens */
     int found = lrclib_search(title, artist, out, cancel);
@@ -355,9 +382,9 @@ static int lrclib(const char *title, const char *artist, const char *out, volati
 
 /* kugou_obtainlyric(keyword, out), online_lyricthd's first source, in its place: LRCLIB alone, as
  * Kugou's often came back for another song, asked again while busy as Download Album Lyrics does.
- * Nonzero ends the thread's search, so NetEase, its next source, is skipped too (its search asks for
- * a phone-bound account and finds nothing); the page shows whatever out holds. ponytail: LRCLIB's
- * first synced result by title and artist, no duration check. */
+ * Nonzero ends the thread's search, so NetEase, its next source, is skipped too (its search asks
+ * for a phone-bound account and finds nothing); the page shows whatever out holds. ponytail:
+ * LRCLIB's first synced result by title and artist, no duration check. */
 int ringnav_lyric_search(const char *keyword, const char *out) {
     /* stock's keyinfo, copied under its lock: file name, title (+0x200), album, artist (+0x500) */
     char key[0x600];
@@ -372,11 +399,13 @@ int ringnav_lyric_search(const char *keyword, const char *out) {
 static void *lrc_song(const char *name) {
     char own[0x200];
     void *q = P(mcl_pdeqplaylist, 0);
-    unsigned n = q && (unsigned)(I(MCL_TYPE, 0) - 0xf1) >= 2 ? deque_size(q) : 0, pos = (unsigned)I(MCL_POS, 0);
+    unsigned n = q && (unsigned)(I(MCL_TYPE, 0) - 0xf1) >= 2 ? deque_size(q) : 0,
+             pos = (unsigned)I(MCL_POS, 0);
     for (unsigned k = 0; k <= n; ++k) {
         unsigned i = k ? k - 1 : pos; /* 0xf1/0xf2 above: an online queue */
         void *r = i < n ? deque_at(q, i) : 0;
-        const char *path = r && I(r, REC_TYPE) == 8 ? P(r, REC_PATH) : 0, *file = r ? P(r, REC_NAME) : 0;
+        const char *path = r && I(r, REC_TYPE) == 8 ? P(r, REC_PATH) : 0,
+                   *file = r ? P(r, REC_NAME) : 0;
         if (path && *path == '/' && file && !I(r, REC_CUE_START) && !I(r, REC_CUE_END) &&
             lrc_name(own, sizeof own, file) && !strcmp(own, name))
             return r;
@@ -405,15 +434,15 @@ static int downpic(char *out, unsigned n, const char *name) {
     return !strrchr(name, '/') && snprintf(out, n, DOWNPIC "%s", name) < (int)n;
 }
 
-/* Download Cover & Lyrics' accept (0x535f24) builds cp -rf /tmp/oslyric_N "/mnt/mmc/.downpic/<name>"
- * for system() with snprintf, whose call (LYRIC_SAVE_CALL) jumps here: the lyrics (tmp) go beside the
- * song instead, as <path less extension>.lrc, as Download Album Lyrics saves them, and a .downpic copy
- * that would hide them goes; cmd becomes ":", which system() runs as nothing, and stock reloads the
- * lyrics as before. When the song isn't in the queue (or is a CUE track) or the card can't be
- * written there, the lyrics go to stock's .downpic/<name> instead, copied here too: stock's command
- * would hand the song's name, a file name or a card app's title, to the shell as root
- * (GHSA-qp92-mq7c-6r64), so fmt is never used. A name with a '/', which no file name has, saves
- * nothing, as it could reach out of .downpic. */
+/* Download Cover & Lyrics' accept (0x535f24) builds cp -rf /tmp/oslyric_N
+ * "/mnt/mmc/.downpic/<name>" for system() with snprintf, whose call (LYRIC_SAVE_CALL) jumps here:
+ * the lyrics (tmp) go beside the song instead, as <path less extension>.lrc, as Download Album
+ * Lyrics saves them, and a .downpic copy that would hide them goes; cmd becomes ":", which system()
+ * runs as nothing, and stock reloads the lyrics as before. When the song isn't in the queue (or is
+ * a CUE track) or the card can't be written there, the lyrics go to stock's .downpic/<name>
+ * instead, copied here too: stock's command would hand the song's name, a file name or a card app's
+ * title, to the shell as root (GHSA-qp92-mq7c-6r64), so fmt is never used. A name with a '/', which
+ * no file name has, saves nothing, as it could reach out of .downpic. */
 int ringnav_lyric_save(char *cmd, unsigned n, const char *fmt, const char *tmp, const char *name) {
     char lrc[0x200 + 8], shadow[sizeof lrc]; /* as long as lrc_copy's .part takes */
     void *r = lrc_song(name);
@@ -438,9 +467,9 @@ int ringnav_lyric_drop(char *cmd, unsigned n, const char *fmt, const char *name)
 }
 
 /* Now Playing's cover thread shows the cover picked here, .downpic/<file name>.jpg, by snprintfing
- * cp -f "<it>" '/tmp/externpic.jpg' for system(): the shell expanded a $ or backtick in the file name,
- * as root, and a name with a $ never showed its pick. That snprintf (COVER_PICK_CALL) jumps here: the
- * file is copied here and cmd is ":". */
+ * cp -f "<it>" '/tmp/externpic.jpg' for system(): the shell expanded a $ or backtick in the file
+ * name, as root, and a name with a $ never showed its pick. That snprintf (COVER_PICK_CALL) jumps
+ * here: the file is copied here and cmd is ":". */
 int ringnav_cover_copy(char *cmd, unsigned n, const char *fmt, const char *from, const char *to) {
     (void)fmt;
     lrc_copy(from, to);
@@ -474,8 +503,8 @@ static void *al_worker(void *unused) {
 static void *al_playing(void) {
     void *q = P(mcl_pdeqplaylist, 0), *r;
     unsigned pos = (unsigned)I(MCL_POS, 0);
-    if (!q || (unsigned)(I(MCL_TYPE, 0) - 0xf1) < 2 || pos >= deque_size(q) || !(r = deque_at(q, pos)) ||
-        I(r, REC_TYPE) != 8)
+    if (!q || (unsigned)(I(MCL_TYPE, 0) - 0xf1) < 2 || pos >= deque_size(q) ||
+        !(r = deque_at(q, pos)) || I(r, REC_TYPE) != 8)
         return 0; /* 0xf1/0xf2: an online queue */
     const char *path = P(r, REC_PATH), *album = P(r, REC_ALBUM);
     return path && *path == '/' && album && *album ? r : 0;
@@ -492,7 +521,8 @@ static void al_show(void) {
     if (al.job.cancel)
         snprintf(s, sizeof s, "Cancelling…");
     else
-        snprintf(s, sizeof s, "Downloading %d of %d", al.job.done + (al.job.done < al.job.total), al.job.total);
+        snprintf(s, sizeof s, "Downloading %d of %d", al.job.done + (al.job.done < al.job.total),
+                 al.job.total);
     widget_set_text_utf8(al.label, s);
 }
 
@@ -545,11 +575,13 @@ static int al_click(void *ctx, void *event) {
     for (unsigned i = 0; t && i < n; ++i) {
         void *s = deque_at(list, i);
         const char *path = I(s, REC_TYPE) == 8 ? P(s, REC_PATH) : 0;
-        if (!path || *path != '/' || strlen(path) >= sizeof t->path || I(s, REC_CUE_START) || I(s, REC_CUE_END))
+        if (!path || *path != '/' || strlen(path) >= sizeof t->path || I(s, REC_CUE_START) ||
+            I(s, REC_CUE_END))
             continue;
         char name[0x200];
         const char *file = P(s, REC_NAME);
-        if (file && lrc_name(name, sizeof name, file)) snprintf(t[k].shadow, sizeof t->shadow, DOWNPIC "%s", name);
+        if (file && lrc_name(name, sizeof name, file))
+            snprintf(t[k].shadow, sizeof t->shadow, DOWNPIC "%s", name);
         al_put(t[k].path, sizeof t->path, path);
         al_put(t[k].title, sizeof t->title, P(s, REC_TITLE));
         al_put(t[k++].artist, sizeof t->artist, P(s, REC_ARTIST));
@@ -608,8 +640,8 @@ int ringnav_playermore(void *win, void *ctx) {
     return result;
 }
 
-/* The Cover Art Archive's 500 px front (a JPEG thumbnail) of release group id, as the archive.org URL
- * its 307 names, to out (0x200, online_addcoverlist's size); 0 without one (404). */
+/* The Cover Art Archive's 500 px front (a JPEG thumbnail) of release group id, as the archive.org
+ * URL its 307 names, to out (0x200, online_addcoverlist's size); 0 without one (404). */
 static int caa(const char *id, char *out) {
     char url[128], *to = 0;
     long code = 0;
@@ -619,8 +651,9 @@ static int caa(const char *id, char *out) {
     if (!(c = easy(url))) return 0;
     curl_easy_setopt(c, 44, 1L); /* NOBODY: the redirect alone; stock's download follows it */
     curl_easy_setopt(c, 13, 5L); /* TIMEOUT: four of these at most, so a slow search stays short */
-    if (!curl_easy_perform(c) && !curl_easy_getinfo(c, 0x200002, &code) && code / 100 == 3 && /* RESPONSE_CODE */
-        !curl_easy_getinfo(c, 0x10001f, &to) && to && strlen(to) < 0x200)            /* REDIRECT_URL */
+    if (!curl_easy_perform(c) && !curl_easy_getinfo(c, 0x200002, &code) &&
+        code / 100 == 3 &&                                                /* RESPONSE_CODE */
+        !curl_easy_getinfo(c, 0x10001f, &to) && to && strlen(to) < 0x200) /* REDIRECT_URL */
         memcpy(out, to, strlen(to) + 1), ok = 1;
     curl_easy_cleanup(c);
     return ok;
@@ -642,7 +675,8 @@ static void covers(void) {
     n = list ? cJSON_GetArraySize(list) : 0;
     /* a release group's chosen front once; at most 4 groups asked */
     for (int i = 0; i < n && groups < 4 && online_getsize_coverlist() < COVER_FILL; ++i) {
-        const char *id = str(cJSON_GetObjectItem(cJSON_GetArrayItem(list, i), "release-group"), "id");
+        const char *id =
+            str(cJSON_GetObjectItem(cJSON_GetArrayItem(list, i), "release-group"), "id");
         int j = 0;
         if (!id || strlen(id) != 36) continue;
         while (j < groups && strcmp(seen[j], id)) ++j;
@@ -670,7 +704,8 @@ static void covers(void) {
 int album_lyrics_busy(void) { return al.running; }
 
 /* kugou_obtaincover(keyword), online_coverthd's first source, then com163's and Baidu's: each adds
- * image URLs to stock's list (online_addcoverlist), which the page downloads and shows. ours go first. */
+ * image URLs to stock's list (online_addcoverlist), which the page downloads and shows. ours go
+ * first. */
 extern void stock_kugoucover_trampoline(const char *keyword);
 void ringnav_cover_search(const char *keyword) {
     covers();

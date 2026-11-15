@@ -31,6 +31,9 @@ jobs:
       - run: mkdir -p "$RUNNER_TEMP/c-coverage" && echo "Q2_COV=$RUNNER_TEMP/c-coverage" >> "$GITHUB_ENV"
       - name: Firmware tests  # test/unit runs in tests.yml
         run: PATH="$PWD/test/coverage:$PATH" python3 -m pytest test/fw -q
+      - name: clang-tidy  # docs/building.md#clang-tidy
+        if: ${{ !cancelled() }}
+        run: pip install clang-tidy==23.1.4 && tools/tidy.sh
       - name: Firmware under AddressSanitizer and UBSan
         env:
           Q2_FW_SANITIZE: '1'

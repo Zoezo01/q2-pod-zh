@@ -116,7 +116,8 @@ void night_row(void *label) {
 
 /* An int shared with hciplayer's filter (and q2video): made whole under tmp and renamed, as the
  * visualizer's tap is, then mapped; 0 if it cannot be made yet, so the caller tries next pass.
- * Written, not ftruncate'd: that allocates no page, so a full tmpfs would SIGBUS the first store. */
+ * Written, not ftruncate'd: that allocates no page, so a full tmpfs would SIGBUS the first store.
+ */
 static volatile int *shared_int(const char *tmp, const char *path) {
     void *p = (void *)-1;
     int zero = 0, fd = open(tmp, 0x302, 0644); /* O_RDWR | O_CREAT | O_TRUNC (MIPS) */
@@ -132,9 +133,10 @@ static volatile int *shared_int(const char *tmp, const char *path) {
     return p != (void *)-1 ? p : 0;
 }
 
-/* What waits for the DAC (docs/internals.md#wired-start) is opt in: a site missed keeps the old cut, a
- * stamp on a change nobody pressed for would lengthen its gap. Only a local queue's: DLNA and online
- * queues (0xf1, 0xf2) start tracks by themselves through the same calls. One int write per press. */
+/* What waits for the DAC (docs/internals.md#wired-start) is opt in: a site missed keeps the old
+ * cut, a stamp on a change nobody pressed for would lengthen its gap. Only a local queue's: DLNA
+ * and online queues (0xf1, 0xf2) start tracks by themselves through the same calls. One int write
+ * per press. */
 int press_natural __attribute__((section(".scratch")));
 static int press_word(void) {
     unsigned type = *(volatile unsigned *)MCL_TYPE;
@@ -145,15 +147,16 @@ static int press_word(void) {
 void press_stamp(void) {
     if (!press_natural && press_word()) *xf.press_file = (int)now_ms() | 1; /* odd: never 0 */
 }
-/* mclStartPlayer's wired mute and sleep on a start from the idle player (0x5bf8c4, 0x5bf8dc). A natural start
- * skips both, so the old track is heard to its end, and leaves an even mark for ao_init, whose reopen mutes
- * after the drain, or which keeps the PCM open. Only ringnav_next(1) sets press_natural to 2: anything else,
- * or no word to leave the mark in, keeps stock's. */
+/* mclStartPlayer's wired mute and sleep on a start from the idle player (0x5bf8c4, 0x5bf8dc). A
+ * natural start skips both, so the old track is heard to its end, and leaves an even mark for
+ * ao_init, whose reopen mutes after the drain, or which keeps the PCM open. Only ringnav_next(1)
+ * sets press_natural to 2: anything else, or no word to leave the mark in, keeps stock's. */
 static int start_quiet __attribute__((section(".scratch")));
 int start_mute(int value) {
     start_quiet = press_natural == 2 && press_word();
     if (!start_quiet) {
-        if (xf.press_file && !(*xf.press_file & 1)) *xf.press_file = 0; /* muted: an unspent mark isn't for this start */
+        if (xf.press_file && !(*xf.press_file & 1))
+            *xf.press_file = 0; /* muted: an unspent mark isn't for this start */
         return mclSetMute(value);
     }
     int at = (int)now_ms() & ~1; /* even, and never 0 */
@@ -302,7 +305,7 @@ static void take(int n) {
     }
     if (xf.ctx) {
         int was = wheel_pct();
-        wheel_set_pct(n); /* rounds and clamps */
+        wheel_set_pct(n);            /* rounds and clamps */
         refresh(wheel_pct() != was); /* and snaps the slider to the ten */
         return;
     }
@@ -456,7 +459,8 @@ void xfade_poll(int next, int shuffled) {
     unsigned pos = (unsigned)I(MCL_POS, 0), n = q ? deque_size(q) : 0;
     if (!xf.flag && (next == -1 || pos >= n)) return; /* nothing playing on: no config read yet */
     settings();
-    if (xf.flag && *xf.flag & XF_MS) peq_chain(); /* the fade runs in the filter, once something plays */
+    if (xf.flag && *xf.flag & XF_MS)
+        peq_chain(); /* the fade runs in the filter, once something plays */
     int in = next >= 0 && pos < n && (unsigned)next < n; /* records, not positions: a new queue */
     if (mclGetPlayStatus() != 1)
         xf.counted = 0;
@@ -464,9 +468,12 @@ void xfade_poll(int next, int shuffled) {
              !navigator_window_is_exist("msginfo_dialog"))
         xf.counted = 1, ++xf.stops;
     /* the rows' paths too: Play Next moves rows' bytes, so a row's address can hold another song */
-    int key[8] = { xf.on ? xf.seconds : 0, *(volatile unsigned char *)MCL_GAPLESS,
-                   in ? (int)deque_at(q, pos) : 0, in ? (int)deque_at(q, (unsigned)next) : 0,
-                   shuffled && next != -1 && pos < n, xf.stops,
+    int key[8] = { xf.on ? xf.seconds : 0,
+                   *(volatile unsigned char *)MCL_GAPLESS,
+                   in ? (int)deque_at(q, pos) : 0,
+                   in ? (int)deque_at(q, (unsigned)next) : 0,
+                   shuffled && next != -1 && pos < n,
+                   xf.stops,
                    in ? (int)P(deque_at(q, pos), REC_PATH) : 0,
                    in ? (int)P(deque_at(q, (unsigned)next), REC_PATH) : 0 };
     if (xf.done && !memcmp(key, xf.key, sizeof key)) return;

@@ -206,6 +206,10 @@ SCHEMA = {k.path: k for k in (
         ('caption', 'text_y', 210, 290), ('caption', 'artist_y', 20, 32))),
     # % of the plane's own spacing of a cover's art, from even (0); 100, the plane's, is Minimal's
     Key('coverflow.shelf.art_persp', 'cf.art_persp', 'int', 0, 100, 100, 'open'),
+    # the landing (a song picked on the flip panel flies its cover to Now Playing); ms 0: none, the panel's click as before
+    *(Key(f'coverflow.land.{a}', f'cf.land_{a}', 'int', lo, hi, 0, 'open') for a, lo, hi in (
+        ('press', 0, 500), ('ms', 0, 2000), ('travel', 0, 100), ('out_at', 0, 2000), ('out_ms', 0, 2000), ('np_at', 0, 2000),
+        ('np_ms', 0, 2000), ('hold', 0, 5000))),
     Key('page.rows.height', 'page_row', 'int', 20, 64, 48, 'open'),
     Key('page.rows.detail_height', 'page_detail', 'int', 20, 80, 64, 'open'),
     Key('page.title.height', 'page_title_h', 'int', 0, 48, 48, 'open'),
@@ -1006,6 +1010,12 @@ def validate(t, name):
         n = math.ceil((O['CF_VIEW_W'] + w) / (t['cf.row_out'] * sh)) if t['cf.row_out'] else math.inf
         if n > CF_WIDE:
             err(f"coverflow.shelf: row_out {t['cf.row_out']} puts {n} covers of the held row on the screen, past CF_WIDE {CF_WIDE}")
+    if t['cf.land_ms']:  # the landing's two fades end with it, and its travel is what it flies
+        if not t['cf.land_travel']:
+            err('coverflow.land: ms needs travel')
+        for a in ('out', 'np'):
+            if t[f'cf.land_{a}_at'] + t[f'cf.land_{a}_ms'] > t['cf.land_ms']:
+                err(f"coverflow.land: {a}_at + {a}_ms = {t[f'cf.land_{a}_at'] + t[f'cf.land_{a}_ms']} exceeds ms {t['cf.land_ms']}")
     for k in (*MOTION_WINDOW, *MOTION_WIDGET):
         if not k.startswith('coverflow_step') and EASINGS[t[f'motion.{k}.easing']] == 'follow':
             err(f'motion.{k}.easing: follow is only for coverflow_step and coverflow_step_fast')

@@ -458,6 +458,7 @@ static int era_album_row(void *ctx, int n, char **v, char **c) {
 }
 static void era_free(void) {
     for (unsigned i = 0; i < era.m; ++i)
+        /* NOLINTNEXTLINE(clang-analyzer-core.NullDereference): m <= cap, which is 0 with no v */
         free(era.v[i].album), free(era.v[i].artist), free(era.v[i].path);
     free(era.v);
     era.v = 0, era.m = era.cap = 0;
@@ -568,7 +569,7 @@ static int era_pick(void *ctx, void *event) {
         return 0;
     }
     int n = 0;
-    void *songs, *r = (unsigned)(i - 2) < era.m ? era_record((unsigned)(i - 2), &songs, &n) : 0;
+    void *songs = 0, *r = (unsigned)(i - 2) < era.m ? era_record((unsigned)(i - 2), &songs, &n) : 0;
     if (n < 0) /* partial rows then an error: not an album to open */
         toast("Era unavailable");
     else if (!r || !coverflow_goto_album(r))

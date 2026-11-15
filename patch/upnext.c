@@ -1,6 +1,6 @@
 /* Up Next (docs/internals.md#queue-menu): View Queue's list while a shuffle is on, the tracks
- * after the playing one in play order. navigation.c's qm_run opens it (up_next), and ringnav_keylong
- * hands a Play/Pause hold on a row to un_hold. */
+ * after the playing one in play order. navigation.c's qm_run opens it (up_next), and
+ * ringnav_keylong hands a Play/Pause hold on a row to un_hold. */
 #include "offsets.inc"
 #include "peq.h"
 #include "playback.h"

@@ -805,5 +805,5 @@ static inline int arc_out(int r, int y) {
 #define VIS_HOLD_MS 400
 #define VIS_GRAVITY 3.0f
 #define VIS_FLOOR_DB 60
-#define VIS_VU_REF_DB -14
-#define VIS_LED_DB -1
+#define VIS_VU_REF_DB (-14)
+#define VIS_LED_DB (-1)

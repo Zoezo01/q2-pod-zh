@@ -265,12 +265,14 @@ void draw_row(shelf_t *f, int frac, const unsigned *const *ring) {
 static int quad_pose(const cf_quad_t *q, pose_t *p) {
     float k = ART_SIZE * 256.f, al = (float)q->xl * k / (float)q->hl,
           ar = (float)q->xr * k / (float)q->hr;
+    /* NOLINTNEXTLINE(bugprone-integer-division): CF_HALF16, 16 * ART_SIZE / 2, is whole */
     float dh = 1.f / (float)q->hl - 1.f / (float)q->hr, c = (ar - al) / (2 * CF_HALF16);
     int ci = c <= 0 ? 0 : c >= 1 ? CF_ONE : (int)(c * CF_ONE), i = 0;
     while (i < 15 && cf_cos90[i + 1] > ci) ++i; /* turn()'s table backwards */
     int x = (i << 12) + (cf_cos90[i] - ci) * 4096 / (cf_cos90[i] - cf_cos90[i + 1]);
     int deg = (dh < 0 ? -90 : 90) * x;
     pose_at(0, 0, deg, 0, q->bright > 0 ? q->bright : 0, p);
+    /* NOLINTNEXTLINE(bugprone-integer-division): CF_HALF16, 16 * ART_SIZE / 2, is whole */
     float e = 2.f * CF_HALF16 * (float)p->s / CF_ONE / (k * dh);
     e = !(e > (float)CF_EYE16) ? (float)CF_EYE16 : e > (float)CF_EYE_FAR ? (float)CF_EYE_FAR : e;
     float dl = k * e / (float)q->hl, dr = k * e / (float)q->hr; /* the edges' depths, eye's too */
@@ -280,6 +282,7 @@ static int quad_pose(const cf_quad_t *q, pose_t *p) {
 /* p's quad, as draw_quad draws it: project's edges and their heights, in float (a held cover's eye
  * is far past what project's sums hold); unlit if an edge reaches the eye. */
 static void pose_quad(const pose_t *p, cf_quad_t *q) {
+    /* NOLINTNEXTLINE(bugprone-integer-division): CF_HALF16, 16 * ART_SIZE / 2, is whole */
     float c = (float)p->c * CF_HALF16 / CF_ONE, s = (float)p->s * CF_HALF16 / CF_ONE,
           e = (float)p->eye, dl = e + (float)p->zc + s, dr = e + (float)p->zc - s;
     q->bright = dl > 0 && dr > 0 ? p->bright : 0;
@@ -341,6 +344,7 @@ static void fold_pose(int o, int at16, int t16, int lean, pose_t *p) {
     if (o * lean < 0) {
         turn(2 * (t16 < CF_ONE / 2 ? t16 : CF_ONE - t16), 1, &arc); /* arc.s: sin(pi t) */
         float sn = (float)arc.s / CF_ONE, out = (float)(FOLD_OUT + (n - 1) * FOLD_STEP);
+        /* NOLINTNEXTLINE(bugprone-integer-division): CF_HALF16, 16 * ART_SIZE / 2, is whole */
         xc += side * (int)(sn * sn * out * (2 * CF_HALF16) / 100);
         turn_e = ease16((t16 * 100 - FOLD_FROM * CF_ONE) / (FOLD_TO - FOLD_FROM));
     }
@@ -392,7 +396,8 @@ static int fold_order(int t16, int lean, int off16, signed char *order, pose_t *
     }
     for (int i = 0; i < n; ++i)
         for (int j = 0; j < i; ++j) {
-            int col = lo[i] > lo[j] ? lo[i] : lo[j], to = hi[i] < hi[j] ? hi[i] : hi[j], ti, tj;
+            int col = lo[i] > lo[j] ? lo[i] : lo[j], to = hi[i] < hi[j] ? hi[i] : hi[j], ti = 0,
+                tj = 0;
             while (col <= to &&
                    !(fold_h(&ps[i], &q[i], col, &ti) && fold_h(&ps[j], &q[j], col, &tj)))
                 ++col;

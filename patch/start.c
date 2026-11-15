@@ -10,4 +10,5 @@ __asm__(".set noreorder\n.globl __start\n__start:\n"
 
 /* crt1.o's marker: without it glibc takes the program for a libc5-era one and gives it old-layout
  * stdio FILEs, which crash exit() */
+extern const int _IO_stdin_used;
 const int _IO_stdin_used = 0x20001;

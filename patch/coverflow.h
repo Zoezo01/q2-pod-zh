@@ -1,9 +1,9 @@
 #ifndef Q2_COVERFLOW_H
 #define Q2_COVERFLOW_H
-/* What coverflow.c shares with coverflow_thumb.c, coverflow_letters.c and coverflow_loader.c: the
- * page's state, the depth renderer's and the flip's, which the thumb reads, the thumb's follower,
- * which the renderer reads, the poses and columns the letters draw with, and the texture pool the
- * loader fills. */
+/* What coverflow.c shares with coverflow_thumb.c, coverflow_letters.c, coverflow_loader.c and
+ * coverflow_land.c: the page's state, the depth renderer's and the flip's, which the thumb reads,
+ * the thumb's follower, which the renderer reads, the poses and columns the letters draw with, the
+ * texture pool the loader fills, and the flip's geometry, buffers and pixels the landing turns. */
 #include "offsets.inc"
 #include "peq.h"
 #ifndef PEQ_HOST
@@ -128,7 +128,26 @@ typedef struct {
                        letters end */
 } cf_depth_t;
 extern cf_depth_t fx;
+
+#define HOT static inline __attribute__((always_inline)) /* -Oz would call these per pixel */
+/* p scaled by b (of 256), per 8-bit channel; alpha is left 0. */
+HOT unsigned shade(unsigned p, unsigned b) {
+    return ((p & 0xff00ffu) * b >> 8 & 0xff00ffu) | ((p & 0xff00u) * b >> 8 & 0xff00u);
+}
+/* A texel (RGBA8888, red low) as the screen's BGRA8888, opaque; both ways, but for the alpha. */
+HOT unsigned bgra(unsigned p) { /* R and B from p turned half way round (one rotr) */
+    return 0xff000000u | (p & 0xff00u) | ((p >> 16 | p << 16) & 0xff00ffu);
+}
+HOT unsigned tilt_mix(unsigned a, unsigned b, unsigned w) { /* a to b, w of 256 */
+    return shade(a, 256 - w) + shade(b, w);
+}
+
 /* Classic's flip to the tracks panel (flip_open): its frame, the panel as painted and the turn. */
+#define FLIP_TICK_MS 16
+#define FLIP_H 294   /* the frame's rows, the client area's */
+#define FLIP_EYE 700 /* px; the shelf's eye can be nearer than the panel's half width */
+#define FLIP_PART 24 /* px each way */
+#define BACK_H 285
 typedef struct {
     void *frame;    /* bitmap_t *, CF_VIEW_W x FLIP_H */
     unsigned *back; /* BACK_W x BACK_H, the panel as painted */
@@ -166,6 +185,12 @@ typedef struct {
 extern cf_thumb_t th;
 
 /* coverflow.c */
+void coverflow_play(int row);
+void *queue_now(unsigned *pos, unsigned *n);
+int flip_alloc(void);
+int flip_capture(void);
+void slant_render(unsigned *d, int pitch, int side, int rows, const unsigned *tex, int t,
+                  unsigned paper);
 unsigned album_key(void *r);
 unsigned tags_key(const char *artist, const char *album);
 unsigned album_ident(const char *album, const char *album_artist, const char *path);
@@ -175,7 +200,7 @@ void art_strike(const char *note);
 int ff_wait(int pid, const char *tmp, const char *dst, int *exited);
 int ff_thumb(const char *src, const char *dst, int w, int h);
 char *art_path(char *out, unsigned key, const char *suffix);
-int cf_decode(const char *url, unsigned *out, int unload);
+int cf_decode(const char *url, unsigned *out, int unload, unsigned bar);
 /* the texture pool (fx_window): the shelf's slots, then the placeholder */
 int fx_base(void);
 #define FX_PLACEHOLDER (fx.tex + fx_base() * CF_TEXELS)
@@ -224,6 +249,15 @@ void ld_ask(const int *want, int k);
 void ld_take(int s, int i, int a);
 void ld_quit(void);
 void coverflow_halves(void);
+
+/* coverflow_land.c: Classic's landing */
+int coverflow_landing(void);
+int land_turning(void);
+int land_start(void *t, int row, unsigned t0);
+void land_paint(void *w, void *canvas);
+void land_art(void *w, void *canvas);
+void land_drop(void);
+int land_key(unsigned key);
 
 /* Optional browsing position. */
 int coverflow_position_enabled(void);

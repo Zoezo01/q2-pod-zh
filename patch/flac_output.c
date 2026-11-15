@@ -16,36 +16,35 @@ typedef unsigned short u16;
 typedef int s32;
 typedef void (*output_fn)(void **, s32 **, int, int, int);
 
-#define OUTPUT(NAME, TYPE, PLANAR, STOCK)                                  \
-void NAME(void **output, s32 **input, int channels, int length, int shift) \
-{                                                                        \
-    if (channels != 1 && channels != 2) {                                  \
-        ((output_fn)(STOCK))(output, input, channels, length, shift);        \
-        return;                                                          \
-    }                                                                    \
-    if (length <= 0) return;                                              \
-    /* sllv in the vendor code masks the shift count to five bits. */      \
-    unsigned int bits = (unsigned int)shift & 31;                          \
-    const u32 *left = (const u32 *)input[0];                               \
-    TYPE *dst = (TYPE *)output[0];                                        \
-    if (channels == 1) {                                                 \
-        do { *dst++ = (TYPE)(*left++ << bits); } while (--length);         \
-    } else {                                                             \
-        const u32 *right = (const u32 *)input[1];                          \
-        if (PLANAR) {                                                    \
-            TYPE *other = (TYPE *)output[1];                              \
-            do {                                                         \
-                *dst++ = (TYPE)(*left++ << bits);                         \
-                *other++ = (TYPE)(*right++ << bits);                      \
-            } while (--length);                                          \
-        } else {                                                         \
-            do {                                                         \
-                *dst++ = (TYPE)(*left++ << bits);                         \
-                *dst++ = (TYPE)(*right++ << bits);                        \
-            } while (--length);                                          \
-        }                                                                \
-    }                                                                    \
-}
+#define OUTPUT(NAME, TYPE, PLANAR, STOCK)                                                          \
+    void NAME(void **output, s32 **input, int channels, int length, int shift) {                   \
+        if (channels != 1 && channels != 2) {                                                      \
+            ((output_fn)(STOCK))(output, input, channels, length, shift);                          \
+            return;                                                                                \
+        }                                                                                          \
+        if (length <= 0) return;                                                                   \
+        /* sllv in the vendor code masks the shift count to five bits. */                          \
+        unsigned int bits = (unsigned int)shift & 31;                                              \
+        const u32 *left = (const u32 *)input[0];                                                   \
+        TYPE *dst = (TYPE *)output[0];                                                             \
+        if (channels == 1) {                                                                       \
+            do { *dst++ = (TYPE)(*left++ << bits); } while (--length);                             \
+        } else {                                                                                   \
+            const u32 *right = (const u32 *)input[1];                                              \
+            if (PLANAR) {                                                                          \
+                TYPE *other = (TYPE *)output[1];                                                   \
+                do {                                                                               \
+                    *dst++ = (TYPE)(*left++ << bits);                                              \
+                    *other++ = (TYPE)(*right++ << bits);                                           \
+                } while (--length);                                                                \
+            } else {                                                                               \
+                do {                                                                               \
+                    *dst++ = (TYPE)(*left++ << bits);                                              \
+                    *dst++ = (TYPE)(*right++ << bits);                                             \
+                } while (--length);                                                                \
+            }                                                                                      \
+        }                                                                                          \
+    }
 
 OUTPUT(flac_output_s16i, u16, 0, 0x5b83a0u)
 OUTPUT(flac_output_s32i, u32, 0, 0x5b9238u)
