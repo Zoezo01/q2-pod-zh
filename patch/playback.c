@@ -24,6 +24,7 @@ extern int stock_load_trampoline(void *, int, int), stock_next_trampoline(int),
     stock_speed_trampoline(int), stock_open_preload_trampoline(void), stock_start_queue_trampoline(int),
     stock_player_start_trampoline(void *, int, int, int);
 extern void *staged(int (*)(void *), void *, int *);
+extern void *songs_by_path(const char *const *, unsigned); /* library_lists.c */
 extern int album_before(const void *, const void *), folder_cmp(void *, void *),
     album_only(void *, void *, int);
 extern unsigned queue_hash(void *); /* navigation.c */
@@ -71,7 +72,7 @@ static int wh_acc __attribute__((section(".scratch")));
 static int wh_anchor __attribute__((section(".scratch"))); /* touch-down x (1-200); 0 lifted */
 static int wh_units __attribute__((section(".scratch")));  /* wh_acc's tick, both in 1/16 unit */
 
-/* Wheel sensitivity (System settings -> Display, crossfade.c's page): 10-200% in tens, Q2POD
+/* Wheel sensitivity (System settings -> Controls, crossfade.c's page): 10-200% in tens, Q2POD
  * WHEELSENSITIVITY in config.ini, anything else 50%. The travel per tick is 50% / sensitivity of
  * WHEEL_TICK_UNITS: 50% is today's 28 (a seventh of a turn), 100% 14, 200% 7, 1.0.6's scale and
  * key, so a value saved then means what it did (within the half unit 1.0.6 rounded to). It is kept
@@ -1418,10 +1419,6 @@ void playback_save(void) {
         s.save_failed = !save_elapsed(sec);
     }
 }
-static int library(void *unused) {
-    /* Snapshot order wins; avoid stock's expensive pinyin title sort. */
-    return getAllMusic(3);
-}
 typedef struct {
     void *record;
     unsigned ordinal;
@@ -1492,7 +1489,8 @@ int ringnav_memory(void *out) {
     unsigned *indices = (unsigned *)(buf ? buf + header_size : 0);
     unsigned char *p = buf ? buf + header_size + (h.n * 3 + h.hn + h.npend) * 4 : 0;
     unsigned *map = ok ? calloc(h.n, sizeof *map) : 0;
-    if (!map) ok = 0;
+    const char **paths = ok ? calloc(h.n, sizeof *paths) : 0; /* the saved paths, in buf */
+    if (!map || !paths) ok = 0;
     for (unsigned i = 0; ok && i < h.n * 3 + h.hn + h.npend; ++i)
         if (i >= h.n * 2 && i < h.n * 3 ? indices[i] > 1 : indices[i] >= h.n) ok = 0;
     for (unsigned cycle = 0; ok && cycle < 2; ++cycle) {
@@ -1516,6 +1514,7 @@ int ringnav_memory(void *out) {
             ok = 0;
             break;
         }
+        paths[i] = (const char *)p;
         p += len;
     }
     if (ok && p != buf + h.size) ok = 0;
@@ -1523,11 +1522,11 @@ int ringnav_memory(void *out) {
     if (ok) {
         q = _create_deque("stSongInfo");
         deque_init(q);
-        int count;
-        all = staged(library, 0, &count);
+        /* the library's rows for the snapshot's paths alone */
+        all = songs_by_path(paths, h.n);
         unsigned n = 0;
-        resume_row *lookup = calloc(deque_size(all), sizeof *lookup);
-        if (!lookup && deque_size(all)) ok = 0;
+        resume_row *lookup = all ? calloc(deque_size(all), sizeof *lookup) : 0;
+        if (!lookup && (!all || deque_size(all))) ok = 0;
         for (unsigned i = 0; ok && i < deque_size(all); ++i) {
             void *r = deque_at(all, i);
             if (I(r, REC_TYPE) == 8 && P(r, REC_PATH)) lookup[n++] = (resume_row){ r, i };
@@ -1580,7 +1579,7 @@ int ringnav_memory(void *out) {
         }
         if (rows) deque_destroy(rows);
         free(lookup);
-        deque_destroy(all);
+        if (all) deque_destroy(all);
         ok = deque_size(q) != 0;
     }
     int result = -1;
@@ -1641,6 +1640,7 @@ int ringnav_memory(void *out) {
         s.restoring = result >= 0 ? 2 : 0;
     }
     if (q) deque_destroy(q);
+    free(paths);
     free(map);
     free(buf);
     return result >= 0 ? result : stock_memory(out);

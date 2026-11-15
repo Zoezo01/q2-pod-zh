@@ -3122,6 +3122,15 @@ static int card_path(const char *s) { return 1; }
 static long file_size(const char *p) { return -1; }
 static int quality = 27; static void *queue;
 #define tidalStreamingLevelNow (&quality)
+#define tidalStreamingLevelNext (&quality)
+/* Download All's (tidal_all, tidal_poll; test/fw/test_tidal.py runs them): what they reach, here only so tidal.c builds */
+static unsigned char g_backlight_status, tidal_id_mutex[24];
+static char tidal_song_id[0x400];
+#define tidalmutex tidal_id_mutex
+#define tidalsongid tidal_song_id
+static void toast(const char *text) {}
+static void reset_poweroptions_timer(int standby, int off, int screen) {}
+static void tidal_all_show(void) {}
 #define mcl_pdeqplaylist (&queue)
 static int play_pos;
 #define MCL_POS (&play_pos)
@@ -3133,6 +3142,8 @@ static _Atomic unsigned long long clk = 1000;
 static char last[64];
 static int mclGetPlayStatus(void) { return status; }
 static unsigned long long now_ms(void) { return clk; }
+static unsigned time_now_ms(void) { return (unsigned)clk; }
+static void sleep_ms(unsigned ms) { usleep(ms * 1000); }
 /* stTidalTracks as on MIPS: total, limit, offset and the deque at byte 12, here rows' address. */
 static unsigned char tracks[24], tidal_albuminfo_thread_run, tidal_collection_thread_run;
 static int rows, runs, fail_at, reopen_at;
@@ -3205,7 +3216,7 @@ static int unlinked(const char *p) { int r = unlink(p); ++ended; return r; }
 TIDAL_SOURCE
 static void wait_for(_Atomic int *v, int want) { for (int i = 0; i < 3000 && *v != want; i++) usleep(1000); assert(*v == want); }
 static int has(const char *id) { char p[300]; snprintf(p, sizeof p, TIDAL_DIR "/%s-27.flac", id); return !access(p, 0); }
-static void play(const char *id) { char u[64]; snprintf(u, sizeof u, "https://x/%s.flac", id); tidal_play(u, id); }
+static void play(const char *id) { char u[64]; snprintf(u, sizeof u, "https://x/%s.flac", id); tidal_play(u, id, 0); }
 static void finish(int n) { usleep(20000); gate = 0; wait_for(&ended, n); usleep(20000); }
 int main(void) {
     gate = 1; play("A"); wait_for(&performing, 1); /* stopped 2 s between tracks, then playing: kept */
@@ -3602,6 +3613,7 @@ static int __xstat(int v, const char *p, unsigned *s) {
     s[12]=1200u<<20; s[16]=1; return 0;
 }
 static int unlink(const char *p) { ++attempts; if (fail) return -1; --left; return 0; }
+static struct { void *all; unsigned since; unsigned char full; } td; /* no Download All here */
 static void trim(void) {''' + trim + r'''
 int main(void) {
     left=3; trim(); assert(left==1 && attempts==2);

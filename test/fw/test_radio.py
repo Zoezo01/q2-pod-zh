@@ -4,12 +4,13 @@ playlists and the directory's replies."""
 import ctypes as C
 import gc
 import struct
+import time
 import urllib.parse
 
 import pytest
 
 import ipod
-from conftest import O, Files
+from conftest import O, Files, block
 
 RADIO = '/mnt/mmc/Radio'
 FAVS, LAST, STATE = f'{RADIO}/favourites.m3u', f'{RADIO}/.last', '/tmp/q2radio.state'
@@ -964,6 +965,22 @@ def test_favourites_read_pls_files_by_their_titles(fw):
     assert stations == [(names.get(i, f'Station {i}'), f'http://p.example/{i}') for i in range(1, 12)]
 
 
+def test_a_pls_s_titles_go_by_the_whole_key(fw):
+    """The last TitleN= names every FileN= of its key, in any case, before or after it; an empty key names nothing,
+    and a line that only starts like a key (Filmx=, Titlo2=, #EXTINFX, a URL holding an =) is a station whole, or
+    nothing, as any other line."""
+    lines = [b'Title9=Nine early', b'File9=http://9.example/', b'file2=http://2a.example/', b'FILE2=http://2b.example/',
+             b'File=http://e.example/', b'Title=Empty', b'Filmx=http://f.example/', b'Titlex=Wrong',
+             b'http://p.example/?id=7', b'Title://p.example/?id=Wrong', b'Files://s.example/', b'Titled://t.example/',
+             b'Titlo=http://o.example/', b'#EXTINFX,Wrong', b'http://x.example/', b'Title2=Two', b'Titlo2=Wrong',
+             b'title9=Nine']
+    _, stations = favourites(fw, {f'{RADIO}/stations.pls': b'\n'.join(lines) + b'\n'})
+    whole = ['http://e.example/', 'Filmx=http://f.example/', 'http://p.example/?id=7', 'Files://s.example/',
+             'Titled://t.example/', 'Titlo=http://o.example/', 'http://x.example/']
+    assert stations == [('Nine', 'http://9.example/'), ('Two', 'http://2a.example/'), ('Two', 'http://2b.example/'),
+                        *((u, u) for u in whole)]
+
+
 def favourites(fw, files):
     p = page(fw, files)
     p.menu('Favourites')
@@ -993,6 +1010,26 @@ def test_a_pls_past_200_stations_lists_the_first_200_by_their_titles(fw, header)
     many = [(f'S{i}', f'http://{i}.example/') for i in range(250)]
     _, stations = favourites(fw, {f'{RADIO}/stations.pls': pls(*many, header=header)})
     assert stations == many[:200]
+
+
+def test_a_pls_s_titles_are_looked_up_not_walked(fw):
+    """FETCH_MAX of 201 FileN= lines 600 spaces in, then TitleN= lines (each walking back to every station's line
+    start took over 2,500 times as long): its titles cost a few times the same lines as another key. The best of
+    five each, so a slow runner scales both and a loaded one has to stretch every run. The clock's, not CPU time:
+    test/cmut's runs read that as 0 for the lines as another key, under a millisecond."""
+    fn = fw.fn('playlist', C.c_int, C.c_void_p, C.c_void_p, C.c_void_p, C.c_int)
+
+    def took(key):
+        text = b''.join(b' ' * 600 + b'File%d=a://\n' % i for i in range(201))
+        text = (text + b''.join(key + b'%d=x\n' % (i % 201) for i in range(15000)))[:FETCH_MAX]
+        best = []
+        for _ in range(5):
+            buf, name, url = block(fw, text), block(fw, size=201 * 4), block(fw, size=201 * 4)
+            start = time.perf_counter()
+            assert fn(buf, name, url, 201) == 201
+            best.append(time.perf_counter() - start)
+        return min(best)
+    assert took(b'Title') < 20 * took(b'Genre')
 
 
 def test_a_favourites_file_past_200_gives_none_up_either(fw):

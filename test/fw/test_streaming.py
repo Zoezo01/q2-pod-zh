@@ -50,7 +50,12 @@ class Wk(C.Structure):
 class Td(C.Structure):
     _fields_ = [('lock', C.c_uint * 16), ('busy', C.c_int), ('job', C.c_int), ('gen', C.c_uint), ('want', C.c_uint), ('job_gen', C.c_uint),
                 ('cleared', C.c_uint), ('thread', C.c_ulong), ('id', C.c_char * 48), ('url', C.c_char * 2048), ('path', C.c_char * 296),
-                ('tags', (C.c_char * 200) * 3), ('cover', C.c_char * 128)]
+                ('tags', (C.c_char * 200) * 3), ('cover', C.c_char * 128),
+                # Download All: its songs, the one reached, those saved, its idle seconds, tidal_poll's clock, its count to tell
+                ('all', C.c_void_p), ('at', C.c_uint), ('saved', C.c_uint), ('idle', C.c_uint), ('polled', C.c_uint), ('told', C.c_uint),
+                ('of', C.c_uint), ('job_all', C.c_int), ('tried', C.c_ubyte), ('misses', C.c_ubyte), ('fav', C.c_ubyte),
+                ('starting', C.c_ubyte), ('dropped', C.c_ubyte), ('asked', C.c_char * 48),
+                ('since', C.c_uint), ('full', C.c_ubyte)]  # the oldest st_mtime of Download All's songs, saved or passed; 0 before; trim kept its songs
 
 
 class Fx(C.Structure):
@@ -1101,6 +1106,19 @@ def test_finding_a_cached_track(fw, names, found):
     assert cached(fw, names) == found
 
 
+@pytest.mark.parametrize('names,found', [
+    ([b'12-5.flac'], b'/mnt/mmc/.tidal/12-5.flac'),
+    ([b'12-5 A - T.m4a'], b'/mnt/mmc/.tidal/12-5 A - T.m4a'),
+    ([b'12-5.flac.tmp', b'12-5 A - T.flac.tmp', b'12-50.flac', b'112-5.flac', b'12-5x.flac'], None),
+    ([b'12-5 A - T.flac.tmp', b'12-5 A - T.flac'], b'/mnt/mmc/.tidal/12-5 A - T.flac'),
+    ([], None),
+])
+def test_finding_a_cached_track_of_either_kind(fw, names, found):
+    """No extension asked for (tidal_poll, before Tidal has said which the song is): a finished copy of either
+    kind, never one still downloading."""
+    assert cached(fw, names, ext=b'') == found
+
+
 def test_a_name_too_long_for_the_path_is_not_found(fw):
     assert cached(fw, [b'12-5.flac'], n=len(b'/mnt/mmc/.tidal/12-5.flac')) is None
     assert cached(fw, [b'12-5.flac'], n=len(b'/mnt/mmc/.tidal/12-5.flac') + 1) == b'/mnt/mmc/.tidal/12-5.flac'
@@ -1114,7 +1132,7 @@ def test_save_counts_bytes_for_curl(fw):
 class Stream:
     """tidal_progress's clock and the player's status."""
     def __init__(self, fw):
-        self.ms, self.status, self.at = 1000, 2, C.c_uint(0)
+        self.ms, self.status, self.at = 1000, 2, (C.c_uint * 2)()  # when it stopped; 1 for Download All's
         def clock(which, ts, *_):
             t = C.cast(ts, C.POINTER(C.c_long))  # struct { long s, ns; }
             t[0], t[1] = self.ms // 1000, self.ms % 1000 * 1000000
@@ -1125,12 +1143,12 @@ class Stream:
 
     def poll(self, ms=0):
         self.ms += ms
-        return self.fn(C.byref(self.at), 0, 0, 0, 0)
+        return self.fn(self.at, 0, 0, 0, 0)
 
 
 def test_a_playing_transfer_goes_on(fw):
     s = Stream(fw)
-    assert s.poll() == 0 and s.at.value == 0
+    assert s.poll() == 0 and s.at[0] == 0
 
 
 def test_another_track_stops_the_transfer(fw):
@@ -1143,7 +1161,7 @@ def test_a_stop_ends_it_after_three_seconds_only(fw):
     s = Stream(fw)
     s.status = 1
     assert s.poll() == 0
-    assert s.at.value & 1  # 0 means not stopped
+    assert s.at[0] & 1  # 0 means not stopped
     assert s.poll(2998) == 0
     assert s.poll(10) == 1
 
@@ -1153,9 +1171,17 @@ def test_playing_again_forgets_the_stop(fw):
     s.status = 1
     s.poll()
     s.status = 2
-    assert s.poll(1000) == 0 and s.at.value == 0
+    assert s.poll(1000) == 0 and s.at[0] == 0
     s.status = 1
     assert s.poll(4000) == 0
+
+
+def test_download_all_s_transfer_goes_on_through_a_skip_and_a_stop_until_it_ends(fw):
+    s = Stream(fw)
+    s.at[1], s.td.all, s.td.gen, s.status = 1, 0x1000, 5, 1
+    assert s.poll() == 0 and s.poll(60000) == 0 and s.at[0] == 0
+    s.td.all = None
+    assert s.poll() == 1
 
 
 def test_the_clock_wrapping_32_bits_still_measures_the_stop(fw):
@@ -1217,12 +1243,21 @@ def test_an_mp4_is_kept_as_m4a(fw):
 
 
 @pytest.mark.parametrize('url,track_id', [
-    (None, b'1'), (URL, None), (URL, b''), (URL, b'a/b'), (URL, b'x' * 41), (b'https://cdn/a', b'1'),
+    (URL, None), (URL, b''), (URL, b'a/b'), (URL, b'x' * 41), (b'https://cdn/a', b'1'),
 ])
 def test_what_cant_be_cached_just_plays(fw, url, track_id):
     p = Play(fw)
     p.fn(url, track_id)
     assert p.played == [url] and not fw.calls('fw_pthread_create')
+
+
+@pytest.mark.parametrize('url', [None, b''])
+def test_an_answer_with_no_url_starts_nothing_as_stock(fw, url):
+    """The build has the stream thread call here even when Tidal gave no URL (TIDAL_NO_URL), where stock skipped
+    the call: the player isn't started, no download counts as cancelled, and the thread ends as for any song."""
+    p = Play(fw)
+    gen = p.td.gen
+    assert p.fn(url, b'1') == 0 and p.played == [] and p.td.gen == gen and not fw.calls('fw_pthread_create')
 
 
 def test_the_longest_id_fits(fw):

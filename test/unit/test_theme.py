@@ -120,7 +120,7 @@ def own(key, label, names, sets, default=-1, preset=-1, keep=-1):  # a theme's o
     return {**opt('SETTING_OWN', default, preset, keep), 'key': key, 'label': label, 'names': list(names), 'sets': sets and list(sets)}
 HOMELIB, ROWPREVIEW = (own(k, label, ('Off', 'On'), None, default=1, preset=1) for k, label in (('HOMELIB', 'Library on Home'), ('ROWPREVIEW', 'Row Preview')))
 STATUSBAR = own('STATUSBAR', 'Status Bar', ('Theme', 'Minimal', 'Modern', 'Classic'), None, default=0, preset=0)
-SHOWQ2POD = own('SHOWQ2POD', 'Show Q2 Pod', ('Off', 'On'), None, default=1)
+SHOWQ2POD = own('SHOWQ2POD', 'Show Wordmark', ('Off', 'On'), None, default=1)
 
 
 CLASSIC_THUMB = dict(thumb=1, ticks_turn=36, ticks_album=7, fast_at=23, fast_full=90, top_speed=20, track=30, snap=25, spin=130, far_left=250,
@@ -437,9 +437,10 @@ def test_a_shadow_past_its_alphas_is_an_error():
 
 
 def test_classic_light_battery_offers_icon_percent_and_inside():
-    # icon (0) never gates; Percent Inside (3) is exempt under BATT_CLASSIC_LIGHT; Percent (1) at the bar's 21 px, 54 px
-    # for 100%, with Wi-Fi, the play state and Bluetooth still ends before Classic's centred clock, and BATT_ROOM drops
-    # it to the icon beside a wide codec badge
+    # icon (0) never gates; Percent Inside (3) is exempt under BATT_CLASSIC_LIGHT; Percent (1) at the bar's 21 px, 37 px
+    # for 100%, with Wi-Fi, the play state and Bluetooth still ends before Classic's centred clock (91 px of 93), and
+    # bar_sync's gate, which takes the width the face draws, drops it to the icon only beside a wide codec badge
+    # (test_nav_playing.py test_classics_percent_shows_beside_bluetooth_wifi_and_the_play_state)
     n = theme.builtins()[1]
     assert next(o['values'] for o in n['opts'] if o.get('setting') == 'SETTING_BATTERY') == 0b1011
 
@@ -1071,7 +1072,7 @@ def test_emit_own_options(tmp_path):
     assert inc.count('.accent_slot = &st.own[2],') == 1 and 'classic_light_accent' not in inc
     assert ('const theme_key_t theme_keys[THEME_KEYS] = {\n'
             '    { .key = "STATUSBAR", .label = "Status Bar", .names = (const char *const[]){"Theme", "Minimal", "Modern", "Classic"}, .sets = 0, .n = 4, .def = 0 },\n'
-            '    { .key = "SHOWQ2POD", .label = "Show Q2 Pod", .names = (const char *const[]){"Off", "On"}, .sets = 0, .n = 2, .def = 1 },\n'
+            '    { .key = "SHOWQ2POD", .label = "Show Wordmark", .names = (const char *const[]){"Off", "On"}, .sets = 0, .n = 2, .def = 1 },\n'
             '    { .key = "CLASSIC_LIGHT_ACCENT", .label = 0, .names = 0, .sets = 0, .n = 10, .def = 9 },\n'
             '    { .key = "HOMELIB", .label = "Library on Home", .names = (const char *const[]){"Off", "On"}, .sets = 0, .n = 2, .def = 1 },\n'
             '    { .key = "ROWPREVIEW", .label = "Row Preview", .names = (const char *const[]){"Off", "On"}, .sets = 0, .n = 2, .def = 1 },\n'

@@ -262,7 +262,11 @@ static int lastfm(param_t *p, int n, buf_t *b, reply_t *r) {
     put(b, "api_sig=", 0);
     put(b, sig, 0);
     put(b, "&format=json", 0);
-    return b->n < b->cap && post(FM_URL, b->p, 0, r) == 200 && !strstr(r->s, "\"error\"");
+    /* A refusal is {"message":...,"error":9}. Only the key counts: track.scrobble's reply echoes
+     * each listen's names, and a name is JSON-escaped (a quote is \"), so none reads as "error":.
+     * ponytail: rests on Last.fm's compact JSON (no space before the colon); parse the reply if
+     * that changes. */
+    return b->n < b->cap && post(FM_URL, b->p, 0, r) == 200 && !strstr(r->s, "\"error\":");
 }
 
 /* auth.getMobileSession: the session key for the batches, once per upload, when the file has

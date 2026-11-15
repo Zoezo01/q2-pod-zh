@@ -28,6 +28,8 @@ class Net:
 
     def __call__(self, request, timeout=None):
         self.calls.append((request.full_url, urllib.parse.parse_qsl(request.data.decode(), strict_parsing=True), timeout))
+        if isinstance(self.reply, urllib.error.HTTPError):
+            self.reply.fp.seek(0)  # a parametrized refusal is one object, read again in each of mutmut's sessions and forks
         if isinstance(self.reply, Exception):
             raise self.reply
         return io.BytesIO(self.reply)

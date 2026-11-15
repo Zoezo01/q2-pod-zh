@@ -9,7 +9,7 @@ For a brand new Q2. You need the Q2, its microSD card, a USB-C cable and a compu
 3. Put the card in the Q2 and turn it on.
 4. On the Q2: **System settings → System Update → TF card update**. Leave the card in until the Q2 restarts. Do not unplug it while it updates.
 
-After the restart the Q2 opens on Q2 Pod's Home. Then follow **Start here: play your first song** in the [user guide](https://github.com/DiamondBond/q2-pod/releases/latest/download/Q2-Pod-User-Guide.pdf): plug in headphones, copy your music, then choose **Library → Update Local Music**.
+After the restart the Q2 opens on Q2 Pod's Home. Then follow **Start here: play your first song** in the [user guide](https://github.com/DiamondBond/q2-pod/releases/latest/download/Q2-Pod-User-Guide.pdf): plug in headphones, copy your music, then choose **Library → Update Library**.
 
 ## 2. Optional: Spotify
 
@@ -44,4 +44,4 @@ Or, with Q2 Pod on Wi-Fi: **System settings → App Store → Rockbox** installs
 - **Rockbox is stuck:** hold Play/Pause while turning the Q2 on. It goes to Q2 Pod.
 - **Rockbox does not start:** the card must be exFAT or FAT32, and the `.rockbox` folder must be in the card's main folder.
 - **Want the normal Shanling player back:** flash Shanling's stock V1.36 file the same way as step 1.
-- **Anything else:** see **Troubleshooting by symptom** and the **bug-report checklist** in Chapter 10 of the [user guide](https://github.com/DiamondBond/q2-pod/releases/latest/download/Q2-Pod-User-Guide.pdf).
+- **Anything else:** see **Troubleshooting the Q2 and your library**, **Troubleshooting Cover Flow, sound and streaming** and **Getting help** in Chapter 11 of the [user guide](https://github.com/DiamondBond/q2-pod/releases/latest/download/Q2-Pod-User-Guide.pdf).

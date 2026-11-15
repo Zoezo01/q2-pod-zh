@@ -2778,7 +2778,7 @@ def test_the_shortcut_row_sits_after_folder_unless_rockbox_is_missing_or_none(fw
     assert ui[ui.named('label_rockbox')].text == label and ui[ui.lookup(h.carousel[0], 'label_rockbox')].text == label
 
 
-# Appearance's Hide Streaming / Hide Folder on Home: the row goes last, as Rockbox's does, and takes no taps; the
+# Appearance's Hide Streaming / Hide Folder: the row goes last, as Rockbox's does, and takes no taps; the
 # others keep their order, Rockbox after Folder's place.
 @pytest.mark.parametrize('folder, stream', ((0, 0), (1, 0), (0, 1), (1, 1)))
 def test_hidden_folder_and_streaming_rows_go_last_and_take_no_taps(fw, folder, stream):

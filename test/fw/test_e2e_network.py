@@ -1237,7 +1237,7 @@ class Foo:
 
 
 class Library:
-    """Stock's library: Update Local Music's dialog (modal: its own loop polls, as stock's does, until its
+    """Stock's library: Update Library's dialog (modal: its own loop polls, as stock's does, until its
     scan ends), Import Playlists (its folder's listing through M3U_DIR_CALL, a playlist made of each file
     left) and Playlists' list (p_deque_playlist), each record its name."""
     def __init__(self, w):

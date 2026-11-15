@@ -895,7 +895,7 @@ def test_cue_text_gbk_goes_through_stocks_conversion(fw, heap, data):
 # SQL quoting.
 def scan_quote(fw, heap, value, cap, n=0, prefix=b''):
     sql, at = heap.string(prefix, cap), C.c_uint(n)
-    ok = fw.fn('tags__scan_quote', C.c_int, C.c_void_p, C.c_uint, C.POINTER(C.c_uint), C.c_char_p)(sql, cap, C.byref(at), value)
+    ok = fw.fn('scan_quote', C.c_int, C.c_void_p, C.c_uint, C.POINTER(C.c_uint), C.c_char_p)(sql, cap, C.byref(at), value)
     return ok, at.value, sql
 
 
@@ -2214,7 +2214,7 @@ def test_era_keys_ignore_a_bad_row(fw, n, values):
 
 @pytest.mark.parametrize('a, b, order', [(1, 2, -1), (2, 1, 1), (7, 7, 0), (0xffffffff, 1, 1), (1, 0x80000000, -1)])
 def test_era_key_cmp_is_unsigned(fw, a, b, order):
-    assert fw.fn('library_lists__era_key_cmp', C.c_int, C.POINTER(C.c_uint), C.POINTER(C.c_uint))(C.c_uint(a), C.c_uint(b)) == order
+    assert fw.fn('key_cmp', C.c_int, C.POINTER(C.c_uint), C.POINTER(C.c_uint))(C.c_uint(a), C.c_uint(b)) == order
 
 
 @pytest.mark.parametrize('decade, name', [(1960, b'60s'), (1990, b'90s'), (1900, b'00s'), (2000, b'2000s'), (2010, b'2010s')])

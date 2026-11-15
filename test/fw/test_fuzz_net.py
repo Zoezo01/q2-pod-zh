@@ -118,8 +118,8 @@ SCROBBLE_SEEDS = [
     session(KEY[:31] + KEY), session(KEY + KEY),  # a key of 63 bytes, and one of 64
     # an answer one under what a reply keeps, that to the byte and one over, and one whose key the cut runs through
     *(session(KEY).rjust(n) for n in (REPLY_MAX - 1, REPLY_MAX, REPLY_MAX + 1, REPLY_MAX + 20)),
-    # "error" kept to its last byte, and cut one short: what the cut takes the upload can't read
-    session(KEY).rjust(REPLY_MAX - 7) + b'"error"', session(KEY).rjust(REPLY_MAX - 6) + b'"error"',
+    # "error": kept to its last byte, and cut one short: what the cut takes the upload can't read
+    session(KEY).rjust(REPLY_MAX - 8) + b'"error":', session(KEY).rjust(REPLY_MAX - 7) + b'"error":',
 ]
 
 
@@ -159,8 +159,7 @@ def test_fuzz_scrobble_response(fw):
         card.files, key = {LOG: log}, answered(data)
         del forms[:]
         _, result, sent = up.run()
-        # scrobble.c's lastfm reads "error" anywhere as a refusal, a name Last.fm echoes back too: either holds here
-        if not key or result < 0 and b'"error"' in data[:REPLY_MAX].split(b'\0')[0]:  # the listen waits, and no batch went without a key
+        if not key:  # the listen waits, and no batch went without a key
             assert (result, sent, card.files[LOG], len(forms)) == (-1, 0, log, 1)
             continue
         assert (result, sent, card.files[LOG], len(forms)) == (1, 1, HEADER, 2)

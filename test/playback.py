@@ -16,7 +16,7 @@ class PlaybackMachine(QueueMachine):
         self.files = dict(files or {}); self.handles = {}; self.fd = 100
         self.fail = ''; self.elapsed = 37; self.random_calls = 0; self.rng = 71
         self.allocations = 0; self.write_opens = 0; self.time_reads = 0; self.eq_boots = 0
-        self.path_comparisons = 0; self.library_modes = []
+        self.path_comparisons = 0; self.library_modes = []; self.fetched = 0  # library rows the queries staged
         self.missing = set(); self.starts = []; self.stops = 0; self.seek = None; self.stock_resume = None
         self.handlers.pop(syms['mclLoadPlayList'], None)
         # EQ storage uses FP64 odd registers Unicorn cannot execute; test/peq.py checks the real reset.
@@ -26,6 +26,7 @@ class PlaybackMachine(QueueMachine):
         self.handlers[ps['stock_speed_trampoline']] = 'p:speed'
         self.handlers[ps['stock_open_preload_trampoline']] = 'p:mcl_open_preload'
         self.handlers[ps['stock_start_queue_trampoline']] = 'p:start_queue'
+        self.handlers[ps['stock_dbquery_trampoline']] = 'p:dbquery'
         self.handlers[ps['toast']] = 'p:toast'
         self.sent_speed = None; self.toasts = []
         for name in ('calloc@GLIBC_2.0','qsort@GLIBC_2.0','memcmp@GLIBC_2.0','strcmp@GLIBC_2.0',
@@ -58,9 +59,10 @@ class PlaybackMachine(QueueMachine):
         if not name.startswith('p:'): return super().hook(u,address,size,unused)
         name=name[2:]; a,b,c,d=[u.reg_read(r) for r in REGS]; ret=0
         if name=='eq_boot': self.eq_boots+=1
-        elif name=='calloc':
+        elif name=='calloc':  # 'sql' fails songs_by_path's: any byte buffer but the snapshot's own
             self.allocations+=1
-            ret=0 if self.fail=='alloc' or (self.fail=='lookup' and a==len(self.library_rows) and b==8) else self.alloc((a*b+7)&~3)
+            ret=0 if (self.fail=='alloc' or (self.fail=='lookup' and a==len(self.library_rows) and b==8) or
+                      (self.fail=='sql' and b==1 and a!=len(self.files['/mnt/data/ringnav-queue']))) else self.alloc((a*b+7)&~3)
         elif name=='memcmp':
             x,y=bytes(u.mem_read(a,c)),bytes(u.mem_read(b,c)); ret=(x>y)-(x<y)
         elif name=='strcmp':
@@ -99,8 +101,13 @@ class PlaybackMachine(QueueMachine):
         elif name=='toolsRandnum':
             self.random_calls+=1; self.rng=(self.rng*1103515245+12345)&0x7fffffff; ret=self.rng%a
         elif name=='getAllMusic':
-            self.library_modes.append(a)
+            self.library_modes.append(a); self.fetched+=len(self.library_rows)
             self.deqs[self.get(syms['tools_pdeq_directory'])][1]=[self.copy('stSongInfo',e) for e in self.library_rows]; ret=len(self.library_rows)
+        elif name=='dbquery':  # songs_by_path's SQL on stock's toolsQueryDbTable: select * rows (0x506428), unsorted
+            assert self.text(a)=='/mnt/data/database.db' and (c,d)==(0x506428,0)
+            assert self.text(b).startswith('select * from songtable not indexed where fileurl in (')
+            found=self.songtable(self.text(b),self.library_rows); self.fetched+=len(found)
+            self.deqs[self.get(syms['tools_pdeq_directory'])][1]+=[self.copy('stSongInfo',e) for e in found]; ret=len(found)
         elif name=='folder_skip': self.folder_skips+=1
         elif name=='fallback':  # stock resume: stock_resume's (class, rows, index) into out, else none
             cls,rows,ret=self.stock_resume or (0,[],-1)
@@ -412,20 +419,30 @@ for corrupt in (b'',files['/mnt/data/ringnav-queue'][:-1],b'bad'+files['/mnt/dat
 r=PlaybackMachine(files); r.byte(syms['g_memory_play'],1)
 assert r.fn('ringnav_memory',r.deque([]))>=0 and r.seek==0
 r=PlaybackMachine(files); assert r.fn('ringnav_memory',r.deque([]))==-1
-# A failed index allocation must leave the snapshot and existing queue intact.
-r=PlaybackMachine(files); r.byte(syms['g_memory_play'],2); r.fail='lookup'
-before=r.names(); assert r.fn('ringnav_memory',r.deque([]))==-1 and r.names()==before and r.files==files
+# A failed index or SQL allocation must leave the snapshot and existing queue intact; the SQL's
+# fails before any query.
+for fail in ('lookup','sql'):
+    r=PlaybackMachine(files); r.byte(syms['g_memory_play'],2); r.fail=fail
+    before=r.names(); assert r.fn('ringnav_memory',r.deque([]))==-1 and r.names()==before and r.files==files
+    assert (r.fetched==0)==(fail=='sql'), (fail,r.fetched)
 # An empty library still restores files found by the stock directory fallback.
 r=PlaybackMachine(files); r.byte(syms['g_memory_play'],2)
 r.found=list(r.library_rows); r.library_rows=[]
 assert r.fn('ringnav_memory',r.deque([]))==want and len(r.names())==7
-# Larger restored queues must not compare every saved path with the whole library.
+# Larger restored queues must not compare every saved path with the whole library, nor read the
+# library: only its rows of the saved paths.
 tracks=[(str(i),f'/perf/{i:04}.flac','Album',1,i,0,0) for i in range(256)]
 m=PlaybackMachine(); m.budget=10000000; m.install(tracks,191); m.options(1,5,0); m.fn('playback_save')
-r=PlaybackMachine(m.files); r.budget=10000000; r.install(tracks,191); r.library_rows.reverse(); r.byte(syms['g_memory_play'],2)
+r=PlaybackMachine(m.files); r.budget=10000000; r.install(tracks,191); r.library_rows+=[r.song(f'other{i}') for i in range(256)]
+r.library_rows.reverse(); r.byte(syms['g_memory_play'],2)
 assert r.fn('ringnav_memory',r.deque([]))==191 and r.names()==[str(i) for i in range(256)]
-assert r.library_modes==[3] and r.path_comparisons < 256*32, r.path_comparisons
+assert r.fetched==256 and r.path_comparisons < 256*32, (r.fetched,r.path_comparisons)
 print('256-track restore path comparisons:',r.path_comparisons)
+# A saved path with a quote in it comes back from the library too, not only from its folder.
+tracks=[('quote',"/Q/Don't.flac",'Q',1,1,0,0),('plain','/Q/02.flac','Q',1,2,0,0)]
+m=PlaybackMachine(); m.install(tracks,1); m.options(1,5,0); m.fn('playback_save')
+r=PlaybackMachine(m.files); r.install(tracks,0); r.found=[]; r.byte(syms['g_memory_play'],2)
+assert r.fn('ringnav_memory',r.deque([]))==1 and r.names()==['quote','plain'] and r.fetched==2
 # Without a snapshot, stock rebuilds an album queue (0xff10) from every album of its name: only
 # the resumed track's album stays, at its index there. Other classes stay as stock built them.
 for cls,want in ((0xff10,(1,['a2','a1'])),(0xf001,(2,['a2','b1','a1']))):

@@ -100,15 +100,18 @@ int np_sync(void *top) {
 }
 
 /* Time in Title off: the bar's centre names the page in front, as an iPod's, in Modern's bold:
- * Now Playing or Cover Flow, else stock's title in the page's hidden navbar (scrlabel_title, or a
- * settings page's unnamed first child). Home, a page showing its navbar and an untitled page keep
- * the clock; a pop-up or keyboard leaves the bar as it is. This runs in a paint, which drops the
+ * Now Playing or Cover Flow, Home by coverflow_home_title (Q2 Pod; nothing with Show Wordmark off,
+ * and no clock either way), else stock's title in the page's hidden navbar (scrlabel_title, or a
+ * settings page's unnamed first child). A page showing its navbar and an untitled page keep the
+ * clock; a pop-up or keyboard leaves the bar as it is. This runs in a paint, which drops the
  * label's invalidate, so bar_repaint follows; the clock waits for its timer. */
 void bar_title(void *bar, void *top) {
     static const unsigned
         cover_flow[] = { 'C', 'o', 'v', 'e', 'r', ' ', 'F', 'l', 'o', 'w', 0 }, none = 0;
     if (st.bar_title) { /* this bar names the page in its own label: off, the clock makes way */
         const unsigned *own = widget_get_text(st.bar_title);
+        static int home; /* Home in front: no clock under its title though it is empty */
+        if (top && !tk_strcmp(widget_get_type(top), "window")) home = home_menu(top);
         /* Now Playing's page names nothing (bar_title_of): V1.36's np page writes its own title
          * under us ("▶ 正在播放", the bar's play state says it instead), so whatever lands in the
          * label while that page is on top goes before the paint does. */
@@ -121,6 +124,7 @@ void bar_title(void *bar, void *top) {
             }
         }
         int titled = !st.time_title && own && *own;
+        int titled = !st.time_title && (home || (own && *own));
         void *clock = titled != st.bar_titled ? widget_lookup(bar, "label_clock", 1) : (void *)0;
         if (!clock) return;
         st.bar_titled = titled;
@@ -170,6 +174,16 @@ void bar_title(void *bar, void *top) {
     const unsigned *a = title, *b = null_name; /* stock's "%s" of a NULL name: no title */
     while (a && *a && *a == *b) ++a, ++b;
     if (a && !*a && !*b) title = (void *)0;
+    /* 1.8.4: Home names itself too — the wordmark (coverflow_home_title) takes the bar,
+     * so "the clock makes way on Home" holds here as under Classic. Empty (Show Q2 Pod
+     * off) falls through to the idle branch as before. */
+    if (!title && home_menu(top)) {
+        static unsigned name[16];
+        const char *h = coverflow_home_title();
+        unsigned i = 0;
+        for (; h[i] && i < sizeof name / sizeof *name - 1; ++i) name[i] = (unsigned char)h[i];
+        if (h[0]) { name[i] = 0; title = name; }
+    }
     if (!title) {
         /* No name: hand the label back to bar_word_sync's play-state word. bar_sync already ran
          * before us in this frame, so write the word here too — otherwise the previous page's

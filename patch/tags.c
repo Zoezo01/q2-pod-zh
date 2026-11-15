@@ -223,7 +223,7 @@ int ringnav_cue_text(char *s, const char *to, const char *from) {
 }
 
 /* Quote bounded scanner paths/tags into one UPDATE; never execute a truncated statement. */
-static int scan_quote(char *sql, unsigned cap, unsigned *n, const char *s) {
+int scan_quote(char *sql, unsigned cap, unsigned *n, const char *s) {
     if (*n + 3 >= cap) return 0;
     sql[(*n)++] = '\'';
     for (; s && *s; ++s) {

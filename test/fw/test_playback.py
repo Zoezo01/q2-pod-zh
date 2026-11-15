@@ -3,6 +3,7 @@ import ctypes as C
 import os
 import random
 import re
+import sqlite3
 import struct
 import subprocess
 
@@ -1671,9 +1672,26 @@ class Saved(Player):
         fw.mock('stock_memory_trampoline', lambda *_: -7)
         fw.mock('mclLoadPlayList', self.stock_load)
         fw.var('g_memory_play', C.c_ubyte).value = 2
-        self.library = self.deques.new()  # the library's rows, which getAllMusic fills staged()'s deque with
+        self.library = self.deques.new()  # the library's rows, getAllMusic(3)'s order
         fw.mock('getAllMusic', lambda *_: self.fill(self.library))
+        fw.mock('stock_dbquery_trampoline', self.by_path)
         self.out = self.deques.new()
+
+    def by_path(self, db, sql, row, sort, *_):
+        """songs_by_path's SQL on stock's toolsQueryDbTable (select * rows, db_song_row_callback, unsorted), run by
+        SQLite over the library: the rows it picks, in library order."""
+        assert C.string_at(db) == b'/mnt/data/database.db' and (row, sort) == (C.cast(self.fw.lib.db_song_row_callback, C.c_void_p).value, 0)
+        text = C.string_at(sql).decode('latin-1')
+        assert text.startswith('select * from songtable not indexed where fileurl in (')  # never the time_create index walk
+        rows, table = self.deques[self.library], sqlite3.connect(':memory:')
+        table.execute('create table songtable(id, fileurl, time, time_end, time_create)')
+        table.execute('create index songtable_time_create on songtable(time_create desc)')  # as every scan leaves it
+        for i, r in enumerate(rows):
+            record = C.string_at(r, 0x60)
+            path = C.string_at(struct.unpack_from('<Q', record, O['REC_PATH'])[0]).decode('latin-1')
+            cue = struct.unpack_from('<i', record, O['REC_CUE_START'])[0], struct.unpack_from('<i', record, O['REC_CUE_END'])[0]
+            table.execute('insert into songtable values(?, ?, ?, ?, ?)', (i, path, *cue, -i))
+        return self.fill(self.deques.new([rows[i] for i, *_ in table.execute(text)]))
 
     def fill(self, rows):
         """A stock query's rows into the deque staged() left in tools_pdeq_directory."""

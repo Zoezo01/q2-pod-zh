@@ -39,12 +39,30 @@ static char *line(char *s) {
     return s;
 }
 
-/* An .m3u's or .pls's stations in buf, at most max: #EXTINF names the next URL, a .pls's FileN= is
- * a URL and TitleN= names FileN regardless of their order. A line without "://" is no station. */
+/* A station's .pls key: N of its line's FileN=, len bytes before the '='; title, the last TitleN='s
+ * offset, set on the first of the sorted keys equal to it. */
+typedef struct {
+    const char *key;
+    unsigned len, title;
+    int i;
+} pls_key_t;
+
+/* Two keys' order, case-insensitive, through a's '=': b's ends at an '=' too, so they differ there
+ * at the latest. */
+static int key_order(const void *a, const void *b) {
+    const pls_key_t *x = a, *y = b;
+    return strncasecmp(x->key, y->key, x->len + 1);
+}
+
+/* An .m3u's or .pls's stations in buf, at most max (RADIO_MAX + 1 at most): #EXTINF names the next
+ * URL, a .pls's FileN= is a URL and TitleN= names FileN regardless of their order. A line without
+ * "://" is no station. The stations' keys are sorted and each TitleN= looked up in them, so a list
+ * costs its length times log2 of its stations, not its TitleN= lines times its stations' lines. */
 int playlist(char *buf, unsigned *name, unsigned *url, int max) {
-    int n = 0;
+    int n = 0, nk = 0;
     char *end = buf + strlen(buf);
     unsigned named = 0; /* 1 + the pending #EXTINF name's offset */
+    pls_key_t keys[RADIO_MAX + 1];
     for (char *s = buf, *next; *s; s = next) {
         next = line(s);
         while (*s == ' ' || *s == '\t') ++s;
@@ -56,20 +74,31 @@ int playlist(char *buf, unsigned *name, unsigned *url, int max) {
                  strstr(file ? v : s, "://")) {
             url[n] = (unsigned)((file ? v + 1 : s) - buf);
             name[n] = named ? named - 1 : url[n];
+            if (v && !strncasecmp(s, "File", 4)) /* a URL line File:x= too: key :x */
+                keys[nk++] = (pls_key_t){ s + 4, (unsigned)(v - s - 4), 0, n };
             named = 0, ++n;
         }
     }
+    qsort(keys, (unsigned)nk, sizeof *keys, key_order);
     for (char *s = buf; s < end; s += strlen(s) + 1) {
         while (*s == ' ' || *s == '\t') ++s;
         char *v = strstr(s, "=");
         if (!v || strncasecmp(s, "Title", 5) || v <= s + 5 || !v[1]) continue;
-        for (int i = 0; i < n; ++i) {
-            char *f = buf + url[i];
-            while (f > buf && f[-1]) --f;
-            while (*f == ' ' || *f == '\t') ++f;
-            if (!strncasecmp(f, "File", 4) && !strncasecmp(f + 4, s + 5, (unsigned)(v - s - 4)))
-                name[i] = (unsigned)(v + 1 - buf); /* through the '=': FileN= for TitleN= */
+        pls_key_t want = { .key = s + 5 };
+        int lo = 0, hi = nk; /* the first key not before want's */
+        while (lo < hi) {
+            int mid = (lo + hi) / 2;
+            if (key_order(keys + mid, &want) < 0)
+                lo = mid + 1;
+            else
+                hi = mid;
         }
+        if (lo < nk && !key_order(keys + lo, &want))
+            keys[lo].title = (unsigned)(v + 1 - buf); /* a later TitleN= replaces it */
+    }
+    for (int k = 0; k < nk; ++k) { /* equal keys take their first's title */
+        if (k && !key_order(keys + k - 1, keys + k)) keys[k].title = keys[k - 1].title;
+        if (keys[k].title) name[keys[k].i] = keys[k].title;
     }
     return n;
 }

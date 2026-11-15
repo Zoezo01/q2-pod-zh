@@ -1,5 +1,5 @@
 /* Shared song durations, measured when Long Songs opens or, with Scan Song Durations on, after
- * Update Local Music. The UI reads the library's paths and seeds each job from the cache; the
+ * Update Library. The UI reads the library's paths and seeds each job from the cache; the
  * worker measures, builds the next cache from its jobs and saves it; the UI swaps it in after the
  * join. No TagLib or stat in a duration lookup. See docs/internals.md, "Song durations". */
 #include "navigation.h"
@@ -260,7 +260,7 @@ int durations_start(void *songs) {
     return duration_run();
 }
 
-/* Update Local Music's or a folder scan's end, on stock's scan thread: with the switch on, the UI's
+/* Update Library's or a folder scan's end, on stock's scan thread: with the switch on, the UI's
  * next pass reads the library's paths and measures them. Not inline here: the update's dialog,
  * and the stop on playback it began with, would stay up for the whole pass. */
 void durations_scanned(void) {

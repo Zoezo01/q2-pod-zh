@@ -2,6 +2,7 @@
 over sub-rows, written as 8-bit RGBA PNGs. No Apple assets or reference pixels; every shape is drawn here."""
 import functools
 import math
+import operator
 import re
 import struct
 import zlib
@@ -114,13 +115,15 @@ def coverage(polys, box):
     """Each pixel's covered fraction of box (x, y, w, h), the polygons' union, each polygon even-odd."""
     x0, y0, w, h = box
     cov = [0.0] * (w * h)
+    # each polygon's rows and edges, once: a sub-row reads only the polygons it crosses (a stroke is hundreds of small ones)
+    edged = [(min(y for _, y in poly), max(y for _, y in poly), list(zip(poly, poly[1:] + poly[:1]))) for poly in polys]
     for sub in range(h * SUB):
         y = y0 + (sub + 0.5) / SUB
         spans = []
-        for poly in polys:
-            xs = sorted(ax + (y - ay) * (bx - ax) / (by - ay)
-                        for (ax, ay), (bx, by) in zip(poly, poly[1:] + poly[:1]) if (ay <= y) != (by <= y))
-            spans += zip(xs[::2], xs[1::2])
+        for top, foot, edges in edged:
+            if top <= y < foot:
+                xs = sorted(ax + (y - ay) * (bx - ax) / (by - ay) for (ax, ay), (bx, by) in edges if (ay <= y) != (by <= y))
+                spans += zip(xs[::2], xs[1::2])
         spans.sort()
         row, end = sub // SUB * w, None
         for a, b in spans:
@@ -131,8 +134,11 @@ def coverage(polys, box):
             a, b = max(a - x0, 0), min(b - x0, w)
             if a >= b:  # inside the union so far
                 continue
-            for px in range(int(a), math.ceil(b)):
-                cov[row + px] += (min(b, px + 1) - max(a, px)) / SUB
+            first, last = int(a), math.ceil(b) - 1  # the span's end pixels, in part; each pixel between takes 1 / SUB
+            cov[row + first] += (min(b, first + 1) - a) / SUB
+            if last > first:
+                cov[row + last] += (b - last) / SUB
+                cov[row + first + 1:row + last] = [c + 1 / SUB for c in cov[row + first + 1:row + last]]
     return cov
 
 
@@ -408,8 +414,12 @@ def blurred(cov, w, h, sigma):
     r = math.ceil(3 * sigma)
     k = [math.exp(-i * i / (2 * sigma * sigma)) for i in range(-r, r + 1)]
     k = [v / sum(k) for v in k]
-    across = [sum(v * cov[y * w + min(max(x + i - r, 0), w - 1)] for i, v in enumerate(k)) for y in range(h) for x in range(w)]
-    return [sum(v * across[min(max(y + i - r, 0), h - 1) * w + x] for i, v in enumerate(k)) for y in range(h) for x in range(w)]
+    def line(px):  # a row or a column, its end values carried on r past it: no tap's index is clamped
+        px = [px[0]] * r + px + [px[-1]] * r
+        return [sum(map(operator.mul, k, px[i:i + len(k)])) for i in range(len(px) - 2 * r)]
+    across = [v for y in range(h) for v in line(cov[y * w:(y + 1) * w])]
+    down = [line(across[x::w]) for x in range(w)]
+    return [down[x][y] for y in range(h) for x in range(w)]
 def inked(w, h, layers):
     """RGBA bytes of layers (coverage, alpha 0 to 255, grey), the first on top."""
     out = bytearray()

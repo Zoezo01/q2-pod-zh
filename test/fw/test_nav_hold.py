@@ -1320,7 +1320,7 @@ def test_the_lit_rows_tap_opens_even_on_the_dots(classic, ui, st):
 
 class Menu(C.Structure):
     _fields_ = [('w', C.c_void_p), ('at', C.c_void_p * 512), ('id', C.c_int * 512), *((k, C.c_int) for k in
-                'n kind rows row height ctx'.split()), ('scope', C.c_uint)]
+                'n kind rows row height ctx cols'.split()), ('scope', C.c_uint)]
 
 
 def menu(fw, rows):

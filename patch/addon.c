@@ -24,7 +24,7 @@
  * stream_poll plays as it fills, or an .m3u of card paths, which it plays in order, waiting for
  * each, or its Q2URLS/1 queue of stream URLs, /tmp/q2-<id>.urls, which stock's Tidal player plays
  * (tidal.c app_urls_play), telling it in /tmp/q2-<id>.now which of them plays when the queue asks
- * (now_poll). It asks for Update Local Music and its playlists' import in
+ * (now_poll). It asks for Update Library and its playlists' import in
  * /tmp/q2-<id>.library (addon_library.c), the result in .library.done. A list reply whose message
  * is "pages" and that has a cursor is followed by its next pages, appended to the same list
  * (page_next), up to ADDON_PAGES.
@@ -361,7 +361,7 @@ static int m3u_ready(void) {
     return sm.more || changed(sm.dir) || (sm.want[0] && !access(sm.want, 0));
 }
 
-/* A scan running, or its window still open: the user's own Update Local Music page
+/* A scan running, or its window still open: the user's own Update Library page
  * (updatemusic_page), whose OK starts one, or its dialog (updatemusic_dialog), which a library
  * request opens without the page and which stays up after the scan is done. */
 static int scanning(void) {

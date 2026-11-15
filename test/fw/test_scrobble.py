@@ -456,6 +456,37 @@ def test_a_batch_a_service_refuses_stays_in_the_log(fw, why, reply):
     assert (result, sent) == (-1, 0) and card.files[LOG] == log and LOG + '.sent' not in card.files
 
 
+def echoed(url, body):
+    """Last.fm's replies, which echo names: auth.getMobileSession's the account's, track.scrobble's each listen's (a
+    one-listen batch's is an object, not a list)."""
+    form = dict(urllib.parse.parse_qsl(body))
+    if 'auth.getMobileSession' in body:
+        return 200, json.dumps({'session': {'name': form['username'], 'key': 'SK123', 'subscriber': 0}}, separators=(',', ':'))
+    if 'track.scrobble' not in body:
+        return Net.ok(url, body)
+    names = [{k: {'corrected': '0', '#text': form.get(f'{k}[{i}]', '')} for k in ('artist', 'album', 'track')} |
+             {'ignoredMessage': {'code': '0', '#text': ''}, 'timestamp': form[f'timestamp[{i}]']}
+             for i in range(sum(k.startswith('timestamp[') for k in form))]
+    reply = {'scrobble': names[0] if len(names) == 1 else names, '@attr': {'accepted': len(names), 'ignored': 0}}
+    return 200, json.dumps({'scrobbles': reply}, ensure_ascii=False, separators=(',', ':'))
+
+
+@pytest.mark.parametrize('names', (('error', 'Song', 'Album'), ('Art', 'error', 'Album'), ('Art', 'Song', 'error'),
+                                   ('Say "error": 9', 'Song', 'Album')))  # escaped in the echo, no key
+def test_a_listen_named_error_is_sent_and_retired(fw, names):
+    """Only Last.fm's "error" key is a refusal: a name it echoes once held every later upload back behind it."""
+    artist, title, album = names
+    log = HEADER + line(artist, title, album) + line(time='1700000001')
+    (_, result, sent), card, net = upload(fw, log, reply=echoed)
+    assert (result, sent) == (1, 2) and card.files[LOG] == HEADER and card.files[LOG + '.sent'] == log[len(HEADER):]
+    assert net.forms()[1]['artist[0]'] == artist
+
+
+def test_an_account_named_error_gets_its_session(fw):
+    (_, result, sent), _, net = upload(fw, HEADER + line(), {**ACCOUNT, ('LASTFM', 'USER'): 'error'}, reply=echoed)
+    assert (result, sent) == (1, 1) and net.forms()[1]['sk'] == 'SK123'
+
+
 def test_the_second_batch_refused_keeps_it_and_retires_the_first(fw):
     log = HEADER + b''.join(line(f'A{i}', time=str(1700000000 + i)) for i in range(60))
     batches = []

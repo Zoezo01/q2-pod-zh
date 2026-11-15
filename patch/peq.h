@@ -1,6 +1,9 @@
 #ifndef Q2_PEQ_H
 #define Q2_PEQ_H
 
+#define STR_(x) #x
+#define STR(x) STR_(x) /* a macro's value as a string literal */
+
 #ifdef PEQ_HOST
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE /* mmap64 */
@@ -337,13 +340,16 @@ int thread_lower(int idle); /* coverflow_loader.c: a worker's nice 19 and its I/
 /* coverflow.c: the o32 statx syscall, as demo imports none */
 int ringnav_statx(int dirfd, const char *path, int flags, unsigned mask, void *buf);
 void *coverflow_album_tracks(void *r);
+/* coverflow.c: qsort's order of unsigned keys; whether key is in keys[0..n), sorted so */
+int key_cmp(const void *a, const void *b);
+int has_key(const unsigned *keys, unsigned n, unsigned key);
 unsigned album_id(void *r), album_dir(const char *p, int disc);
 /* navigation.c: Cover Flow's glide and its letter */
 int carousel_glide(void *w, int goal, unsigned ms, int easing);
 void coverflow_letter(void *w, unsigned letter, unsigned now);
 void coverflow_letter_hold(void *w, unsigned letter);
 int ringnav_big_library(void); /* Display's Fast Navigation: letters, years and half copies */
-int ringnav_remind_daily(void); /* System Update's Remind Daily (netupdate_poll) */
+int ringnav_remind_daily(void); /* System Update's Update Notifications (netupdate_poll) */
 int ringnav_hide_stream(void), ringnav_hide_folder(void); /* Appearance's Hide ... on Home */
 /* A letter with this bit is the Year sort's year instead, in its low bits, 0 undated. */
 #define CF_YEAR 0x80000000u
@@ -359,6 +365,11 @@ int app_urls_at(void); /* tidal.c: the song playing's n in a now=1 URL queue pla
 int directory(void *path); /* playback.c: toolsLoadDirectory, for staged */
 #define TIDAL_DIR "/mnt/mmc/.tidal" /* tidal.c's cache, Tidal Downloads' list */
 void tidal_clear(void);
+/* Download All (tidal.c): Tidal Downloads' first row's caption, a press starting or ending it; its
+ * once-a-second step (ringnav_sleep); its end (Stop Streaming Services); the row written again
+ * (library_lists.c); every transfer ended for USB Storage (ringnav_usbmode) */
+void tidal_all(int press, char *out, unsigned size), tidal_poll(void), tidal_all_stop(void),
+    tidal_all_show(void), tidal_card_away(void);
 #define SPOT_DIR "/mnt/mmc/.spotify" /* librespot and its launcher, spotify.c's */
 /* addon.c: card apps, each a card folder .<id> holding its manifest q2app, its
  * launcher run, its binary q2-<id> and its icons. addon_scan finds them again (how many slots: a

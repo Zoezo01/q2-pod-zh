@@ -217,7 +217,7 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3, .lead { b
     <li><a class="t" href="#power">Power and battery</a><span class="n">{{p:power}}</span></li>
     <li><a class="t" href="#libset">Library &amp; Folders</a><span class="n">{{p:libset}}</span></li>
 
-    <li><a class="t" href="#lock">Lock screen</a><span class="n">{{p:lock}}</span></li>
+    <li><a class="t" href="#lock">Lock Screen</a><span class="n">{{p:lock}}</span></li>
     <li class="chap" data-n="10"><a class="t" href="#c10">Updates, Apps and Rockbox</a><span class="n">{{p:c10}}</span></li>
     <li><a class="t" href="#update">Updating Q2 Pod</a><span class="n">{{p:update}}</span></li>
     <li><a class="t" href="#apps">Installing apps over Wi-Fi</a><span class="n">{{p:apps}}</span></li>
@@ -261,7 +261,7 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3, .lead { b
     <thead><tr><th>To</th><th>Do this</th></tr></thead>
     <tbody>
       <tr><td>Turn on</td><td>Press Centre.</td></tr>
-      <tr><td>Turn off</td><td>Hold Centre, then confirm <b>Confirm Shutdown</b>.</td></tr>
+      <tr><td>Turn off</td><td>Hold Centre, then confirm <b>Shut Down?</b></td></tr>
       <tr><td>Turn the screen off (sleep)</td><td>Double-press Centre. On Now Playing, press once. Music keeps playing.</td></tr>
       <tr><td>Wake the screen</td><td>Press Centre.</td></tr>
       <tr><td>Scroll a list</td><td>Turn the wheel: one row per tick. Spin faster to speed up.</td></tr>
@@ -300,7 +300,7 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3, .lead { b
     <thead><tr><th>To</th><th>Do this</th></tr></thead>
     <tbody>
       <tr><td>Go back from Now Playing to where you were</td><td>After a hold of Return, press Return or hold it again. With <b>Hold Return: Home</b>, a hold goes Home instead, from anywhere but Home.</td></tr>
-      <tr><td>Song options</td><td>Hold Play/Pause on a song, or on Now Playing: rate, queue, favourite, add to a playlist, or go to its album, artist or folder.</td></tr>
+      <tr><td>Song options</td><td>Hold Play/Pause on a song: queue, favourite, add to a playlist, or go to its album, artist or folder; on Now Playing, rate it too.</td></tr>
       <tr><td>Album, artist, genre or folder options</td><td>Hold Play/Pause on it: queue, shuffle or add to a playlist. Albums can also be favourited and rated.</td></tr>
       <tr><td>Search your songs</td><td>In Library, pull the list down until “Release to search” appears, then type. In the Classic theme, choose <b>Search</b>, the first row.</td></tr>
       <tr><td>Skip to a point in a song</td><td>On Now Playing, double-press Centre, then turn: 5 s a tick (<a href="#np">Now Playing</a>).</td></tr>
@@ -320,11 +320,11 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3, .lead { b
   </div>
   <p><b>Home</b> lists Now Playing, Library, Cover Flow, Folder, a shortcut, Streaming and Settings, beside the playing song’s cover. The list wraps at either end. A short Return on Home selects Now Playing; a second one opens it without changing playback.</p>
   <ul>
-    <li><b>Library:</b> your music by Artists, Albums, Songs, Genre, Era and more, plus Playlists, Ratings, Shuffle and Games (<a href="#browse">Browsing your library</a>).</li>
+    <li><b>Library:</b> your music by Artists, Albums, Songs, Genres, Era and more, plus Playlists, Ratings, Shuffle and Games (<a href="#browse">Browsing your library</a>).</li>
     <li><b>Cover Flow:</b> your albums as covers (<a href="#cf">Cover Flow</a>).</li>
     <li><b>Folder:</b> the card’s folders, as they are on the card. With an OTG drive connected, choose SD or OTG first.</li>
     <li><b>Shortcut:</b> Rockbox when it’s on the card, otherwise Favorites. <b>Shortcut</b> in <a href="#appearance">Appearance</a> changes it, or <b>None</b> removes the row.</li>
-    <li><b>Streaming:</b> Spotify, Internet Radio, AirPlay and your card apps (<a href="#c6">Chapter 6</a>).</li>
+    <li><b>Streaming:</b> TIDAL, Spotify, your card apps, Tidal Downloads, Internet Radio, AirPlay and Configuration (<a href="#c6">Chapter 6</a>).</li>
     <li><b>Settings:</b> slides <b>Playback</b> and <b>System</b> into the list’s place, as an iPod’s submenu does.</li>
   </ul>
   <div class="sub">
@@ -347,7 +347,7 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3, .lead { b
     <li>Spinning a long list shows the letter it sorts under, such as C for The Cure.</li>
     <li>Library lists and settings stop at the end; pause, then turn again to wrap around.</li>
     <li>Recent folders, albums, searches and menus reopen where you were, until power-off.</li>
-    <li>Sliders and fields such as brightness, volume limits, balance, date and time and the sleep timer take the wheel: turn to change, then press Centre to go back or move to the next field, and choose OK. Next and Previous also move between fields.</li>
+    <li>Sliders and fields such as brightness, Max Volume, balance, date and time and the sleep timer take the wheel: turn to change, then press Centre to go back or move to the next field, and choose OK. Next and Previous also move between fields.</li>
     <li>In a pop-up, turn the wheel to move between OK and Cancel.</li>
   </ul>
   </div>
@@ -388,7 +388,7 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3, .lead { b
     <li><b>Plug in your headphones.</b> Any 3.5 or 4.4 mm headphones will do. For Bluetooth, see <a href="#bt">Chapter 8</a>.</li>
     <li><b>Copy your music</b> to the card over USB-C (<a href="#addmusic">Adding music</a>).</li>
     <li><b>Eject the card</b> on your computer before you unplug the Q2, so the copy finishes.</li>
-    <li><b>Scan your library:</b> on the Q2, choose <b>Library → Update Local Music</b>. When it’s done, Albums, Artists and Songs fill in.</li>
+    <li><b>Scan your library:</b> on the Q2, choose <b>Library → Update Library → Scan music now</b>. When it’s done, Albums, Artists and Songs fill in.</li>
     <li><b>Play an album:</b> choose <b>Library → Albums</b> and press Centre on one. It plays and Now Playing opens.</li>
   </ol>
   <p>That’s it. The rest of this guide is there when you want it.</p>
@@ -405,7 +405,7 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3, .lead { b
     <li>Copy <code>update.tar</code> to the <b>root</b> of the card (not inside a folder), then eject and unplug.</li>
     <li>On the Q2, choose <b>System settings → System Update → TF card update</b>. Leave the card in until the Q2 restarts.</li>
   </ol>
-  <div class="note"><p><span class="label">Tip:</span> On the old Legacy build? Network Update can’t move you to this one. Install <code>update.tar</code> by hand once, as above.</p></div>
+  <div class="note"><p><span class="label">Tip:</span> On the old Legacy build? Network update can’t move you to this one. Install <code>update.tar</code> by hand once, as above.</p></div>
   </div>
 
   <div class="sec">
@@ -413,12 +413,13 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3, .lead { b
   <p class="task">To add music:</p>
   <ol class="steps">
     <li>Copy your music to the card over USB-C, in any folders you like.</li>
-    <li>On the Q2, choose <b>Library → Update Local Music</b>.</li>
+    <li>On the Q2, choose <b>Library → Update Library → Scan music now</b>.</li>
   </ol>
+  <p>To copy over Wi-Fi instead, choose <b>System settings → Network → Wi-Fi File Transfer</b> and open the address it shows in a browser; <b>Upload Folder</b> keeps your folders.</p>
   <p>The Library lists every song the scan finds. Settings, ratings, play counts and resume points are kept on the Q2 itself, so they stay when you swap cards.</p>
   <div class="sub">
   <h3>Adding a few albums later</h3>
-  <p>Choose <b>System settings → Update Library → Scan Folders</b>, tick the folders you copied to, and press <b>Scan</b>. Open a folder, such as <code>Music</code>, to tick the folders inside it. Ticking a whole folder rereads every song in it, as long as a full update.</p>
+  <p>Choose <b>Library → Update Library → Scan specified folders</b>, tick the folders you copied to, and press <b>Scan</b>. Open a folder, such as <code>Music</code>, to tick the folders inside it. Ticking a whole folder rereads every song in it, as long as a full update.</p>
   </div>
   <div class="sub">
   <h3>A large library</h3>
@@ -426,18 +427,18 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3, .lead { b
   </div>
   <div class="sub">
   <h3>Hiding a folder</h3>
-  <p>To keep a folder out of Songs, Albums, Artists, Cover Flow and library shuffle, put an empty file named <code>database.ignore</code> in it and run Update Local Music. Its songs still play from Folder and playlists. An empty <code>database.unignore</code> lets a subfolder back in. Either name can start with a dot, to hide it from other players.</p>
+  <p>To keep a folder out of Songs, Albums, Artists, Cover Flow and library shuffle, put an empty file named <code>database.ignore</code> in it and run Update Library. Its songs still play from Folder and playlists. An empty <code>database.unignore</code> lets a subfolder back in. Either name can start with a dot, to hide it from other players.</p>
   </div>
   </div>
 
   <div class="sec">
   <h2 id="tagging">Tagging your music</h2>
-  <p>The library is built from your files’ tags. Fix tags on a computer (Mp3tag, MusicBrainz Picard or foobar2000), then run <b>Update Local Music</b> and <b>Refresh Cover Flow</b> (<a href="#cfset">Cover Flow settings</a>).</p>
+  <p>The library is built from your files’ tags. Fix tags on a computer (Mp3tag, MusicBrainz Picard or foobar2000), then run <b>Update Library</b> and <b>Refresh Cover Flow</b> (<a href="#cfset">Cover Flow settings</a>).</p>
   <ul>
     <li><b>An album is its name plus its Album Artist.</b> Give every track on an album the same Album Artist: a track with a different one (“Artist; Guest”), or none, becomes an album of its own. Put guests in the track’s Artist or Title, and use one Album Artist such as “Various Artists” for a compilation.</li>
     <li><b>No Album Artist on any track:</b> the album’s folder tells it apart, and disc folders (<code>CD1</code>, <code>Disc 2</code>) count as one album. Two albums with the same name in one folder then merge, so give each its own folder or an Album Artist.</li>
     <li><b>The Artists list</b> groups by Album Artist (the default) or Artist (<a href="#libset">Library &amp; Folders</a>). That changes only which artist rows you see, never how albums are split.</li>
-        <li><b>A song showing its genres as its title:</b> run Update Local Music once. A song already in a playlist keeps the old title until you add it again.</li>
+        <li><b>A song showing its genres as its title:</b> run Update Library once. A song already in a playlist keeps the old title until you add it again.</li>
   </ul>
   </div>
 
@@ -463,7 +464,7 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3, .lead { b
       <tr><td><code>.photos/</code>, <code>.books/</code></td><td>Photo thumbnails, and EPUBs converted to text</td><td>Q2 Pod</td></tr>
       <tr><td><code>.sldp/</code></td><td>Shanling’s own cover cache</td><td>Stock</td></tr>
       <tr><td><code>.spotify/</code></td><td>The Spotify add-on; <code>cache/</code> holds your login and downloads</td><td>You</td></tr>
-      <tr><td><code>.tidal/</code></td><td>Tidal songs you’ve played, to replay offline</td><td>Q2 Pod</td></tr>
+      <tr><td><code>.tidal/</code></td><td>Tidal songs you’ve downloaded or played, to replay offline</td><td>Q2 Pod</td></tr>
     </tbody>
   </table>
   <p>You can delete <code>.coverflow/</code>, <code>.photos/</code> and <code>.books/</code> to free space; Q2 Pod rebuilds them as needed. Cover Flow and Photos need 16 MB free. Don’t delete <code>.spotify/cache/</code> or <code>.tidal/</code>: that signs you out or removes offline songs. Their size is set in <a href="#stream-config">Streaming Configuration</a>.</p>
@@ -483,19 +484,20 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3, .lead { b
     <thead><tr><th>Library row</th><th>What it lists</th></tr></thead>
     <tbody>
       <tr><td>Artists</td><td>Each artist opens on their albums, with Songs one tap away</td></tr>
-      <tr><td>Albums, Songs, Genre</td><td>Your whole library, alphabetically</td></tr>
+      <tr><td>Albums, Songs, Genres</td><td>Your whole library, alphabetically</td></tr>
       <tr><td>Era</td><td>Each decade with dated albums, oldest first (below)</td></tr>
       <tr><td>Long Songs</td><td>Songs over 10 minutes, longest first (below)</td></tr>
       <tr><td>Playlists, Ratings</td><td>See <a href="#c4">Chapter 4</a></td></tr>
+      <tr><td>Recently Added, Recent, Most Played, Hi-Res</td><td>Your newest songs, what you played lately, your 100 most played, and hi-res files</td></tr>
       <tr><td>Shuffle</td><td>Shuffle the whole library (<a href="#shuffle">Shuffling your library</a>)</td></tr>
       <tr><td>Podcasts, Audiobooks, Photos, Books, Videos</td><td>Shown when the card has those folders (<a href="#c7">Chapter 7</a>)</td></tr>
       <tr><td>Games</td><td>Sudoku, Vortex, Solitaire, Snake and your installed games</td></tr>
-      <tr><td>Upload Scrobbles, Update Local Music</td><td>See <a href="#scrobble">Scrobbling</a> and <a href="#addmusic">Adding music</a></td></tr>
+      <tr><td>Upload Scrobbles, Update Library</td><td>See <a href="#scrobble">Scrobbling</a> and <a href="#addmusic">Adding music</a></td></tr>
     </tbody>
   </table>
   <div class="sub">
   <h3>Searching</h3>
-  <p>Pull the Library list down from the top until “Release to search” appears, then type. In the Classic theme, choose <b>Search</b>, the first row. It searches your local songs. In Cover Flow, turn fast to jump an initial at a time.</p>
+  <p>Pull the Library list down from the top until “Release to search” appears, then type. In the Classic theme, choose <b>Search</b>, the first row. It finds songs, artists, albums and genres. In Cover Flow, turn fast to jump an initial at a time.</p>
   </div>
   </div>
 
@@ -517,7 +519,7 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3, .lead { b
 
   <div class="sec">
   <h2 id="cf"><img class="hicon" src="../../assets/icons/menu_coverflow.png" alt="">Cover Flow</h2>
-  <p>Cover Flow shows your albums as covers to flip through. Run <b>Update Local Music</b> first. The first time it opens it prepares the artwork; <b>Cancel</b> keeps what’s done, and later opens add only new albums and retry any they couldn’t finish.</p>
+  <p>Cover Flow shows your albums as covers to flip through. Run <b>Update Library</b> first. The first time it opens it prepares the artwork; <b>Cancel</b> keeps what’s done, and later opens add only new albums and retry any they couldn’t finish.</p>
   <table>
     <thead><tr><th>To</th><th>Do this</th></tr></thead>
     <tbody>
@@ -530,7 +532,7 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3, .lead { b
   </table>
   <ul>
     <li><b>Where it opens:</b> on the playing song’s album; with nothing queued, on the album you last stopped at.</li>
-    <li><b>Order:</b> by album title, ignoring a leading “The”, “A” or “An”; <b>Cover Flow Sort</b> changes it (<a href="#cfset">Cover Flow settings</a>).</li>
+    <li><b>Order:</b> by album title, ignoring a leading “The”, “A” or “An”; <b>Sort</b> changes it (<a href="#cfset">Cover Flow settings</a>).</li>
     <li><b>Artwork:</b> embedded art first, then a <code>cover</code> or <code>folder</code> image (<code>.jpg</code>, <code>.png</code> or <code>.webp</code>) in the album’s folder, otherwise a grey disc. A folder holding several albums doesn’t lend its image to any of them.</li>
     <li><b>Audiobooks</b> stay out: an album of <code>.m4b</code> files, or one under <code>Audiobooks/</code>.</li>
     <li><b>Go to Album</b> in a song’s options opens its album in Cover Flow.</li>
@@ -584,7 +586,7 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3, .lead { b
   <table>
     <thead><tr><th>To</th><th>Do this</th></tr></thead>
     <tbody>
-      <tr><td>Rate a song</td><td>Hold the heart on Now Playing, or hold Play/Pause on the song and choose <b>Rate</b>. Turn the wheel, then press Centre to save or Return to leave it. Tap a heart to save that many; tap the rating it already has to clear it.</td></tr>
+      <tr><td>Rate a song</td><td>Hold the heart on Now Playing, or hold Play/Pause on Now Playing and choose <b>Rate</b>. Turn the wheel, then press Centre to save or Return to leave it. Tap a heart to save that many; tap the rating it already has to clear it.</td></tr>
       <tr><td>Favourite a song, or undo it</td><td>Tap the heart on Now Playing. A song rated 1 to 4 shows its number on the empty heart.</td></tr>
       <tr><td>Rate an album</td><td>Hold Play/Pause on it in Cover Flow, Albums or an artist’s albums, then choose <b>Rate Album</b>. <b>Add to Favourites</b> gives it five hearts and makes all its songs favourites; <b>Remove from Favourites</b> undoes both.</td></tr>
     </tbody>
@@ -592,7 +594,7 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3, .lead { b
   <ul>
     <li><b>Library → Ratings</b> lists <b>Top Rated</b> (4 and 5 hearts), <b>Loved</b> (5), <b>All Rated</b> and <b>Disliked</b> (1). A row plays the list from that song. Home’s <b>Favorites</b> shortcut lists the Loved songs.</li>
     <li><b>Library → Ratings → Albums</b> shows your rated albums in Cover Flow. Its <b>Sort</b> card cycles Rating, Album, Artist, Year and Most Played.</li>
-    <li>Ratings survive Update Local Music, but not moving, renaming or retagging the file or album.</li>
+    <li>Ratings survive Update Library, but not moving, renaming or retagging the file or album.</li>
     <li>The card keeps a copy as <code>.ratings.tsv</code>, to read on a computer. Editing it changes nothing on the Q2.</li>
     <li>With a card app that supports it, such as Jellyfin, the heart also favourites the song in the app.</li>
   </ul>
@@ -726,7 +728,7 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3, .lead { b
       <tr><td>Bands</td><td>Peaking, Low shelf or High shelf, with frequency, gain (−24 to +24 dB), Q, on/off and channel (both, L or R). Tap a frequency or Q to type it, or step with <b>Raise</b> and <b>Lower</b>.</td></tr>
       <tr><td>Preamp</td><td><b>Auto</b> cuts just enough for the boosts at the playing sample rate, shown as e.g. <b>Auto (44.1: -9.2 / 48: -8.8)</b>. It isn’t a limiter. Or pick +12 to −24 dB, which plays the same at every rate and can clip with large boosts.</td></tr>
       <tr><td>Balance</td><td>L 12.0 dB to R 12.0 dB in 0.5 dB steps; <b>R 1.0 dB</b> plays the left 1 dB quieter.</td></tr>
-      <tr><td>Presets</td><td><b>Stock presets</b> loads Shanling’s curves into the ten bands. <b>Import from SD /EQ</b> loads AutoEQ files (below). <b>Rename a preset</b> edits a saved preset’s name; Return keeps the old one.</td></tr>
+      <tr><td>Presets</td><td><b>Stock presets</b> loads Shanling’s curves into the ten bands. <b>Import from SD /EQ</b> loads AutoEQ files (below). <b>Rename a preset</b> edits a saved preset’s name; Return keeps the old one. <b>Save editor preset</b> saves the bands as Manual 01–10; <b>Delete a preset</b> removes one.</td></tr>
       <tr><td>Apply changes</td><td>Edits and presets play only once you choose this.</td></tr>
       <tr><td>Enabled</td><td>Turns Advanced on or off at once. On turns Simple off.</td></tr>
       <tr><td>Reset to defaults</td><td>Flattens the bands, preamp and balance; choose Apply changes to hear it. Enabled and saved presets stay.</td></tr>
@@ -765,10 +767,13 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3, .lead { b
     <tbody>
       <tr><td>Gapless</td><td>Plays albums without gaps. Encoder padding is removed from MP3 (with a gapless tag), AAC in M4A, Opus and Vorbis; intentional silence stays. Keep it on.</td></tr>
       <tr><td>Crossfade</td><td>Fades one song into the next, 1–15 s (5 s by default). Turn all the way down for Off; Centre turns it on or off. Only between different albums, so albums stay gapless. Needs Gapless. Off by default.</td></tr>
+      <tr><td>Resume Songs</td><td>Songs this long or longer pick up where you stopped, as podcasts do: 20 to 120 minutes, 30 by default, or Off.</td></tr>
+      <tr><td>Max Volume</td><td>Limits how loud the Q2 goes: turn the wheel to set the limit, then press Centre.</td></tr>
       <tr><td>Mono Audio</td><td>Mixes both channels into each ear. DSD and AirPlay stay stereo.</td></tr>
       <tr><td>Swap L/R</td><td>Swaps the left and right channels. DSD and AirPlay are unchanged; for Spotify on the jack, pause and play after switching.</td></tr>
       <tr><td>Headphones Required</td><td>Nothing starts playing until headphones, Bluetooth or a USB DAC is connected. Off by default.</td></tr>
       <tr><td>Digital Filters</td><td>Shanling’s DAC filter.</td></tr>
+      <tr><td>Gain, ReplayGain, Default Volume, Channel Balance, Enlarged Album Art, DSD Output Mode, USB Audio Output</td><td>Shanling’s own settings, as in the Q2’s manual.</td></tr>
     </tbody>
   </table>
   <p>Library &amp; Folders, also in Playback, is in <a href="#libset">Chapter 9</a>.</p>
@@ -781,11 +786,12 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3, .lead { b
   <div class="opener"><h1 id="c6">Streaming</h1><div class="num">6</div></div>
   <p class="lead">Play Spotify, Internet Radio and AirPlay over Wi-Fi, and send your listens to Last.fm.</p>
   <p>All of these are in <b>Streaming</b> on Home. Streams play on the headphone jack, Bluetooth or a USB DAC, whichever is in use when they start, and carry on with the screen off. Until you play local music again, the playback buttons control the stream from any page.</p>
+  <p><b>TIDAL</b> is Shanling’s own. In <b>Tidal Downloads</b>, <b>Download Playing Songs</b> saves the album or playlist that’s playing to the card, in the background, skipping songs already saved; press it again to stop. Saved songs play without Wi-Fi and share the <b>Tidal Cache</b> size in <a href="#stream-config">Streaming Configuration</a>; <b>Clear All Downloads…</b> at the end removes them.</p>
 
   <div class="sec">
   <h2 id="spinstall"><img class="hicon" src="../../assets/icons/stream_spotify.png" alt="">Setting up Spotify</h2>
   <p>Browse and play Spotify on the Q2: Liked Songs, your playlists, saved albums and artists, Search and downloads. It needs Spotify Premium and an add-on on the card. The Q2 is also a Spotify Connect speaker your phone can control.</p>
-  <div class="note important"><p><span class="label">If playback won’t start on your account,</span> see <a class="web" href="https://github.com/DiamondBond/q2-pod/issues/98">issue #98</a> (github.com/DiamondBond/q2-pod/issues/98).</p></div>
+  <div class="note important"><p><span class="label">If playback won’t start on your account</span> (<b>Spotify refused this account</b>), see <a class="web" href="https://github.com/DiamondBond/q2-pod/issues/98">issue #98</a> (github.com/DiamondBond/q2-pod/issues/98).</p></div>
   <p class="task">To install Spotify:</p>
   <ol class="steps">
     <li>On Wi-Fi, choose <b>System settings → App Store → Spotify</b> (<a href="#apps">Installing apps</a>).</li>
@@ -796,7 +802,7 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3, .lead { b
     <li>Put your phone on the same Wi-Fi as the Q2, and open <b>Streaming → Spotify</b> on the Q2.</li>
     <li>In the Spotify app’s device list, pick <b>Q2</b>. The page becomes the menu, and the login is saved on the card. From then on the Q2 needs no phone.</li>
   </ol>
-  <p>To update, unzip a newer release over it; your login is kept. Browsing needs q2-librespot 1.3 or later, and downloaded playlists 1.6. To remove Spotify, delete the <code>.spotify</code> folder.</p>
+  <p>To update, unzip a newer release over it; your login is kept. Browsing needs q2-librespot 1.3 or later, and Downloaded Playlists 1.10. To remove Spotify, delete the <code>.spotify</code> folder.</p>
   </div>
 
   <div class="sec">
@@ -804,7 +810,7 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3, .lead { b
   <ul>
     <li><b>Play:</b> pick a song to play it in its playlist or album. Now Playing opens; Return goes back to the list.</li>
     <li><b>More…</b> at the end of a list loads more. <b>Search</b> asks for the words first, then Tracks, Albums, Artists or Playlists.</li>
-    <li><b>Queue a song:</b> hold Play/Pause on it. Queue and Playback Settings appear while something plays.</li>
+    <li><b>Queue a song:</b> hold Play/Pause on it. <b>Now Playing</b>, <b>Queue</b> and <b>Playback Settings</b> (Shuffle and Repeat) appear while something plays.</li>
     <li><b>Account</b> shows who is signed in, and signs out.</li>
     <li><b>Loading…</b> shows while a song starts. If nothing arrives in 15 seconds, it says “Playback didn’t start”: go back and try again.</li>
     <li><b>Controls:</b> Play/Pause, Next, Previous and the wheel work as for your own music. Centre works as on Now Playing.</li>
@@ -816,9 +822,9 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3, .lead { b
 
   <div class="sec">
   <h2 id="spdl">Spotify downloads</h2>
-  <p><b>Download Playlist</b> (or hold Play/Pause on a playlist) and <b>Download Liked Songs</b> save a collection, in order, to play without Wi-Fi. Find them in <b>Downloads</b>, which also has <b>Download Progress</b> and <b>Storage Management</b>.</p>
+  <p><b>Download Playlist</b> (or hold Play/Pause on a playlist) and <b>Download Liked Songs</b> save a collection, in order, to play without Wi-Fi. Find them in <b>Downloads</b>: <b>Downloaded Playlists</b>, <b>Downloaded Tracks</b>, <b>Download Progress</b> and <b>Storage Management</b>.</p>
   <ul>
-    <li><b>Download Controls:</b> <b>Update Download</b>, <b>Retry Failed</b>, <b>Pause</b>, <b>Resume</b> and <b>Cancel Download</b>. Collections download one at a time; after a restart, choose Resume. Cancel keeps finished songs.</li>
+    <li><b>Download Controls</b>, a downloaded playlist’s last row: <b>Update Download</b>, <b>Retry Failed</b>, <b>Pause</b>, <b>Resume</b> and <b>Cancel Download</b>. Collections download one at a time; after a restart, choose Resume. Cancel keeps finished songs.</li>
     <li><b>Partly downloaded</b> collections can be browsed; offline, missing songs are skipped.</li>
     <li><b>Downloads stay</b> until you remove them. <b>Spotify Cache</b> only limits songs streamed along the way.</li>
     <li><b>Storage Management:</b> select playlists or tracks, then <b>Remove Selected…</b>, or <b>Clear All Downloads…</b>. Removing a playlist keeps songs other playlists share. Clear All keeps your login; signing out removes the login and the downloads.</li>
@@ -856,7 +862,8 @@ http://stream.radioparadise.com/mp3-128</pre>
 
   <div class="sec">
   <h2 id="airplay">AirPlay</h2>
-  <p><b>Streaming → AirPlay</b> opens <b>Network service</b>; turn the AirPlay receiver on there, then pick the Q2 from your iPhone’s AirPlay menu. It’s AirPlay 1: audio from one device, Apple Music included, but not AirPlay 2 multiroom.</p>
+  <p><b>Streaming → AirPlay</b> opens <b>Network</b>; turn the AirPlay receiver on there, then pick the Q2 from your iPhone’s AirPlay menu. It’s AirPlay 1: audio from one device, Apple Music included, but not AirPlay 2 multiroom.</p>
+  <p>To play the Q2’s music on AirPlay speakers, install <b>AirPlay</b> from the App Store, then choose <b>AirPlay</b> at the top of Now Playing’s <b>⋯</b>.</p>
   </div>
 
   <div class="sec">
@@ -867,8 +874,8 @@ http://stream.radioparadise.com/mp3-128</pre>
     <tbody>
       <tr><td>Tidal Cache, Spotify Cache</td><td>How much of the card each service may use: 512 MB to 8 GB, 2 GB by default. Press to step. Tidal deletes its oldest songs after the next download; Spotify’s applies the next time Spotify starts.</td></tr>
       <tr><td>Erase Spotify Data</td><td>Press twice to delete Spotify’s login, cache and logs (they name your account and songs). Spotify Cache goes back to 2 GB.</td></tr>
-      <tr><td>Stop Streaming Services</td><td>Stops Spotify, Internet Radio, Tidal and card apps at once. Use it when your own music misbehaves after streaming. Open Spotify again to restart it.</td></tr>
-      <tr><td>The services</td><td>One ticked row per service. Press to hide one from Streaming, again to bring it back.</td></tr>
+      <tr><td>Stop Streaming Services</td><td>Stops Spotify, Internet Radio, Tidal (a download of its songs too) and card apps at once. Use it when your own music misbehaves after streaming. Open Spotify again to restart it.</td></tr>
+      <tr><td>The services</td><td>A switch per service: Off hides it from Streaming, On brings it back.</td></tr>
     </tbody>
   </table>
   </div>
@@ -976,7 +983,7 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
 
   <div class="sec">
   <h2 id="games">Games</h2>
-  <p><b>Library → Games</b> has Sudoku, Vortex, Solitaire and Snake. Music keeps playing. Games in progress and Vortex’s best score are kept, even through power-off.</p>
+  <p><b>Library → Games</b> has Sudoku, Vortex, Solitaire and Snake. Music keeps playing. Games in progress and Vortex’s and Snake’s best scores are kept, even through power-off.</p>
   <table class="three">
     <thead><tr><th>Game</th><th>Wheel</th><th>Centre</th><th>Other keys</th></tr></thead>
     <tbody>
@@ -1009,12 +1016,12 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
   <table>
     <thead><tr><th>LDAC quality</th><th>Bitrate</th></tr></thead>
     <tbody>
-      <tr><td>HQ</td><td>990 kbps (909 for 44.1 kHz music): the best sound, but the most likely to break up</td></tr>
-      <tr><td>Standard</td><td>660 kbps (606)</td></tr>
-      <tr><td>Connection (auto)</td><td>Adapts to the connection, down to 492 and 396 kbps at 48/96 kHz. Try it when HQ breaks up</td></tr>
+      <tr><td>LDAC HQ</td><td>990 kbps (909 for 44.1 kHz music): the best sound, but the most likely to break up</td></tr>
+      <tr><td>LDAC Standard</td><td>660 kbps (606)</td></tr>
+      <tr><td>LDAC Connection (auto)</td><td>Adapts to the connection, down to 492 and 396 kbps at 48/96 kHz. Try it when LDAC HQ breaks up</td></tr>
     </tbody>
   </table>
-  <p>Rockbox uses the last quality chosen here. These two settings appear while Bluetooth is on:</p>
+  <p><b>Quality</b> sets LDAC; Rockbox uses the last one chosen. These two settings appear while Bluetooth is on:</p>
   <table>
     <thead><tr><th>Setting</th><th>What it does</th></tr></thead>
     <tbody>
@@ -1037,7 +1044,7 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
   </table>
   <ul>
     <li><b>Ear detection</b> resumes only what it paused. Pressing a control, changing song or player, or disconnecting cancels that. With both buds out, it stays paused. Internet Radio resumes by restarting the station.</li>
-    <li><b>Volume</b> stays as set on the Q2 when they connect; after that, the AirPods’ volume and the Q2’s move together, within your volume limit. Headphones that can’t take the volume get the Q2’s own instead.</li>
+    <li><b>Volume:</b> with <b>Control Device Volume</b> on (<a href="#bt">Bluetooth headphones</a>), it stays as set on the Q2 when they connect; after that, the AirPods’ volume and the Q2’s move together, within <b>Max Volume</b>. Headphones that can’t take the volume get the Q2’s own instead.</li>
   </ul>
   </div>
 
@@ -1047,7 +1054,7 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
 <section class="chapter" style="page: ch9">
   <div class="opener"><h1 id="c9">Settings</h1><div class="num">9</div></div>
   <p class="lead">Choose how Q2 Pod looks, how its controls feel, and how long the battery lasts.</p>
-  <p>Settings are in <b>Settings → System</b> (System settings) and <b>Settings → Playback</b>. Each table lists defaults first.</p>
+  <p>Settings are in <b>Settings → System</b> (System settings) and <b>Settings → Playback</b>. Each table lists defaults first. Set the clock in <b>System settings → Date &amp; Time</b>: <b>Automatic Time Set</b> takes it from Wi-Fi, or choose <b>Set Time Manually</b> and <b>Time Zone Selection</b>.</p>
 
   <div class="sec">
   <h2 id="settings-controls">Controls</h2>
@@ -1061,7 +1068,7 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
       <tr><td>Key Tone</td><td>The Q2’s speaker clicks once a row as you move through a list, while no headphones, Bluetooth or USB DAC are connected.</td></tr>
       <tr><td>Click With Headphones</td><td>Shown with Key Tone on: the speaker keeps clicking with headphones connected.</td></tr>
       <tr><td>Wake</td><td>Single Press (default), or Double Press so a pocket bump doesn’t wake the screen. Play/Pause and the volume work without waking it.</td></tr>
-      <tr><td>Volume Guard</td><td>Off by default. On: with the screen off, the wheel ignores the first two thirds of a turn, so a brush doesn’t change the volume. Keep turning and it moves as usual until the wheel rests for a second and a half.</td></tr>
+      <tr><td>Volume Guard</td><td>Off by default. On: with the screen off, the wheel ignores the first two thirds of a turn, so a brush doesn’t change the volume. Keep turning and it moves as usual until the wheel rests for a second and a half. It doesn’t limit the volume: for that, set <b>Max Volume</b> (<a href="#audio">Playback settings</a>).</td></tr>
       <tr><td>Buttons Lock</td><td>With the screen off, locks <b>Everything</b>, <b>Buttons only</b> or <b>Volume only</b>. The lock tile in quick settings cycles the same choices.</td></tr>
     </tbody>
   </table>
@@ -1073,19 +1080,21 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
   <table>
     <thead><tr><th>Setting</th><th>What it does</th></tr></thead>
     <tbody>
-      <tr><td>Theme</td><td><b>Minimal</b> (default); <b>Modern</b>, Minimal with full-width bars in the accent colour; or <b>Classic</b>, the iPod look: a glossy title bar, smaller rows and a light screen. Minimal and Modern switch at once; choosing or leaving Classic restarts the Q2. Classic doesn’t restyle Cover Flow, pop-ups or quick settings.</td></tr>
+      <tr><td>Theme</td><td><b>Minimal</b> (default); <b>Modern</b>, Minimal with full-width bars in the accent colour; or <b>Classic</b>, the iPod look: a glossy title bar, smaller rows and a light screen. Minimal and Modern switch at once; choosing or leaving Classic restarts the Q2. Tidal’s pages, games and photos keep Minimal’s layout.</td></tr>
       <tr><td>Light Mode</td><td>Off (dark), On (light), or Auto: light from 7:00 to 19:00. Choosing Classic or Modern turns it on, unless it’s Auto.</td></tr>
-      <tr><td>Accent</td><td>Graphite (default), Ivory, Crimson, Tidal, Champagne, Cobalt, Tangerine, Plum or Green. Classic starts on Classic Blue, Modern on Cobalt; neither has Ivory. Each theme keeps its own.</td></tr>
+      <tr><td>Accent</td><td>Graphite (default), Crimson, Tidal, Champagne, Cobalt, Tangerine, Plum, Green or Ivory. Classic starts on Classic Blue, Modern on Cobalt; neither has Ivory. Each theme keeps its own.</td></tr>
       <tr><td>Status Bar</td><td>Theme (default) matches your theme; or Minimal, Modern or Classic’s bar under any theme.</td></tr>
-      <tr><td>Corners</td><td>Minimal and Modern. Square: full-width bars and square tiles. Rounded: pill-shaped bars and rounded tiles.</td></tr>
+      <tr><td>Rounded Corners</td><td>Minimal and Modern. On: pill-shaped bars and rounded tiles. Off: full-width bars and square tiles.</td></tr>
       <tr><td>Home</td><td>Split (default): the menu beside the cover. Full: the menu alone. Carousel: Shanling’s home carousel of eight cards; the wheel moves between them and Centre opens one.</td></tr>
-      <tr><td>Shortcut</td><td>Home’s shortcut row: Rockbox, Artists, Albums, Favorites, Rated Albums, Playlists, Shuffle, Games, Podcasts, Audiobooks, Groovebox (once installed) or None.</td></tr>
-      <tr><td>Battery</td><td>Icon (default), Percent, Icon + Percent or Percent Inside.</td></tr>
-      <tr><td>Time in Title</td><td>On: the title bar shows the time. Off: it names the page. In Classic it always names the page; On adds the time.</td></tr>
+      <tr><td>Shortcut</td><td>Home’s shortcut row: Rockbox, Favorites, Shuffle, Rated Albums, Playlists, Artists, Albums, Games, Podcasts, Audiobooks, Groovebox (once installed) or None.</td></tr>
+      <tr><td>Battery</td><td>Icon (default), Percent, Icon + Percent (not in Classic) or Percent Inside.</td></tr>
+      <tr><td>Time in Title</td><td>On: the title bar shows the time. Off: it names the page instead, and Home reads Q2 Pod. In Classic it always names the page; On adds the time.</td></tr>
+      <tr><td>Show Wordmark</td><td>On (default): Home’s title reads Q2 Pod, where an iPod reads iPod. Off: it stays empty.</td></tr>
       <tr><td>Centred Now Playing</td><td>Minimal and Modern. On: Shanling’s layout, the art large and centred.</td></tr>
       <tr><td>Library on Home</td><td>Classic, Home: Split. On (default): Library slides in on Home, beside the pane. Off: it opens its own page.</td></tr>
       <tr><td>Row Preview</td><td>Classic, Home: Split. On (default): the pane shows the highlighted row. Off: it shows what’s playing.</td></tr>
       <tr><td>Row Art</td><td>Classic. On (default): album covers in taller rows. Off: one-line rows. Changing it restarts the Q2.</td></tr>
+      <tr><td>Hide Streaming, Hide Folder</td><td>On: takes that row off Home’s list. Home: Carousel keeps its card.</td></tr>
     </tbody>
   </table>
   </div>
@@ -1099,7 +1108,7 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
       <tr><td>Brightness, Screen Off Time</td><td>How bright the screen is, and how long it stays lit. Music keeps playing after it goes dark.</td></tr>
       <tr><td>Smart Awake</td><td>Off by default. On: while a song plays, the screen stays lit on the lyrics, info and visualizer pages and on full-screen art, so you can read along. An App Store game also stays open and lit. Elsewhere, Screen Off Time applies.</td></tr>
       <tr><td>Night Shift</td><td>Off, On or Auto (19:00 to 7:00): warmer colours, easier on the eyes at night. Turn the wheel or drag for 5000K to 2000K, 3400K by default. Videos stay untinted.</td></tr>
-      <tr><td>Lock screen</td><td>See <a href="#lock">Lock screen</a>, at the end of this chapter.</td></tr>
+      <tr><td>Lock Screen</td><td>See <a href="#lock">Lock Screen</a>, at the end of this chapter.</td></tr>
       <tr><td>Appearance, Cover Flow</td><td>Menus: see <a href="#appearance">Appearance</a> and <a href="#cfset">Cover Flow settings</a>.</td></tr>
     </tbody>
   </table>
@@ -1113,12 +1122,12 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
   <table>
     <thead><tr><th>Setting</th><th>What it does</th></tr></thead>
     <tbody>
-      <tr><td>Cover Flow Sort</td><td>Album (default), Artist (then year), Year, Recently Added, Most Played or Random. Random reshuffles each time you pick it.</td></tr>
-      <tr><td>Artist View</td><td>An artist’s albums as a Grid (default), Cover Flow or a List of names. As Cover Flow, an <b>All albums</b> card plays them all, and Return goes back to Artists.</td></tr>
+      <tr><td>Sort</td><td>Album (default), Artist (then year), Year, Recently Added, Most Played or Random. Random reshuffles each time you pick it.</td></tr>
+      <tr><td>Artist View</td><td>An artist’s albums as Cover Flow (default), a Grid or a List of names. As Cover Flow, an <b>All albums</b> card plays them all, and Return goes back to Artists.</td></tr>
       <tr><td>Playlist View</td><td>List (default), or Cover Flow: playlists as covers (<a href="#playlists">Playlists</a>).</td></tr>
       <tr><td>Fast Navigation</td><td>Off by default. On: turning fast goes by years in the Year sort too, and the large letter stays until you lift your thumb. It keeps small copies of the covers on the card.</td></tr>
       <tr><td>Position Bar</td><td>Off by default. On: a thin bar shows where you are.</td></tr>
-      <tr><td>Scan Song Durations</td><td>Off by default. On: each Update Local Music or Scan Folders measures new and changed songs’ lengths in the background, and Cover Flow’s song lists show them. Run Update Local Music once after turning it on. A large library takes a while, and stays out of Standby meanwhile.</td></tr>
+      <tr><td>Scan Song Durations</td><td>Off by default. On: each <b>Scan music now</b> or <b>Scan specified folders</b> measures new and changed songs’ lengths in the background, and Cover Flow’s song lists show them. Run Scan music now once after turning it on. A large library takes a while, and stays out of Standby meanwhile.</td></tr>
       <tr><td>Refresh Cover Flow</td><td>Makes all the artwork again the next time Cover Flow opens, Library’s album covers and playlist pictures too: use it after changing covers or tags.</td></tr>
     </tbody>
   </table>
@@ -1141,9 +1150,9 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
     <tbody>
       <tr><td>Standby Limit</td><td>Off by default. 1, 8 or 24 h: a Q2 left in Standby that long powers off, so one forgotten in a bag doesn’t go flat.</td></tr>
       <tr><td>Sleep Timer</td><td>Turns the Q2 off after a set time, playing or not. Turn it On, set the hours and minutes, then choose OK: it counts from OK, and without OK nothing happens. It works once; turning it Off cancels it.</td></tr>
-      <tr><td>Charge Limit</td><td>Off by default. 80%: stops charging at 80% and starts again at 75%, so a Q2 kept plugged in, as a USB DAC too, isn’t held full. It doesn’t change how long a charge lasts. It applies while the Q2 is on; charging while it’s off is Shanling’s.</td></tr>
-      <tr><td>USB DAC Charging</td><td>On by default: the Q2 charges while it’s a USB DAC. Turn it off if your phone rejects the DAC. Off also stops a wall adapter charging it while <b>USB mode</b> is <b>Audio and DAC</b>. It’s the same switch as the USB DAC screen’s.</td></tr>
-      <tr><td>Smart Wi-Fi</td><td>Off by default. On: Wi-Fi turns itself off after 5 minutes unused, and comes back when you open Streaming or the Wi-Fi settings; anything that needs it waits a few seconds for it. It stays on while a stream, a card app, a download, AirPlay, DLNA, SyncLink or Wi-Fi transfer needs it, and while a USB cable is in. Quick Settings shows Wi-Fi off meanwhile; your Wi-Fi setting never changes.</td></tr>
+      <tr><td>Charge Limit</td><td>Off by default. On: stops charging at 80% and starts again at 75%, so a Q2 kept plugged in, as a USB DAC too, isn’t held full. It doesn’t change how long a charge lasts. It applies while the Q2 is on; charging while it’s off is Shanling’s.</td></tr>
+      <tr><td>USB DAC Charging</td><td>On by default: the Q2 charges while it’s a USB DAC. Turn it off if your phone rejects the DAC. Off also stops a wall adapter charging it, unless USB mode is <b>USB Storage</b>. It’s the same switch as the USB DAC screen’s.</td></tr>
+      <tr><td>Smart Wi-Fi</td><td>Off by default. On: Wi-Fi turns itself off after 5 minutes unused, and comes back when you open Streaming or the Wi-Fi settings; anything that needs it waits a few seconds for it. It stays on while a stream, a card app, a download, AirPlay, DLNA, SyncLink or Wi-Fi File Transfer needs it, and while a USB cable is in. Quick Settings shows Wi-Fi off meanwhile; your Wi-Fi setting never changes.</td></tr>
       <tr><td>In-Vehicle Mode</td><td>On: plays when the Q2 starts.</td></tr>
       <tr><td>Battery History</td><td>The battery since you last unplugged: a graph, then the time of each percent, such as <b>99% | 12:00</b> (<b>+1:15</b> without the clock set). It’s kept through Standby and power-off. <b>Export Log</b> saves <code>battery-log.txt</code> to the card.</td></tr>
       <tr><td>Boot to</td><td>With Rockbox on the card: start Rockbox or Q2 Pod.</td></tr>
@@ -1159,6 +1168,7 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
     <thead><tr><th>Setting</th><th>What it does</th></tr></thead>
     <tbody>
       <tr><td>Artists</td><td>Album Artist (default) or Artist: what the Artists list groups by.</td></tr>
+      <tr><td>Album View</td><td>List (default) or Grid: Albums as rows or as a grid of covers.</td></tr>
       <tr><td>Artist Album Order</td><td>Year (default) or A–Z: the order of an artist’s albums.</td></tr>
       <tr><td>Year Order</td><td>Newest First (default) or Oldest First, for every year view; undated albums go last.</td></tr>
       <tr><td>Folder Root</td><td>Where Folder opens: Card (default) or one of the card’s top-level folders, such as <code>Music</code>, even with an OTG drive in; press to step through them. Return climbs to the card, then Home. A renamed or removed folder falls back to Card.</td></tr>
@@ -1170,8 +1180,8 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
 
 
   <div class="sec">
-  <h2 id="lock">Lock screen</h2>
-  <p><b>System settings → Display → Lock screen</b> chooses what the lock screen shows. Turn it on with the switch, then pick a picture: Shanling’s own, six built-in wallpapers (Aurora, Sunrise, Graphite, Tide, Ember and Black), or up to 5 of your own PNG or JPG files (375 × 320 fits) in a <code>lockscreenimage</code> folder at the card’s root. <b>Clock: Large</b> shows the time in large type, with the date and battery; <b>Clock: Standard</b> is Shanling’s layout.</p>
+  <h2 id="lock">Lock Screen</h2>
+  <p><b>System settings → Display → Lock Screen</b> chooses what the lock screen shows. Turn it on with the switch, then pick a picture: Shanling’s own, six built-in wallpapers (Aurora, Sunrise, Graphite, Tide, Ember and Black), or up to 5 of your own PNG or JPG files (375 × 320 fits) in a <code>lockscreenimage</code> folder at the card’s root. <b>Clock: Large</b> shows the time in large type, with the date and battery; <b>Clock: Standard</b> is Shanling’s layout. <b>Show Time</b> shows the time on it.</p>
   </div>
 </section>
 
@@ -1182,13 +1192,13 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
 
   <div class="sec">
   <h2 id="update">Updating Q2 Pod</h2>
-  <p>On Wi-Fi, choose <b>System settings → System Update → Network Update</b>. It downloads and checks the newest release, then asks to install it. Press the row again to cancel. While Wi-Fi is on, Home tells you once when a release is out (<b>Remind Daily</b>).</p>
+  <p>On Wi-Fi, choose <b>System settings → System Update → Network update</b>. It downloads and checks the newest release, then asks to install it. Press the row again to cancel. While Wi-Fi is on, Home tells you once when a release is out (<b>Update Notifications</b>), and the row reads <b>Update to</b> and its number.</p>
   <p>Or repeat the <a href="#install">install steps</a> with the newest <code>update.tar</code>. Your settings, ratings and play counts are kept. A version that’s already installed is skipped.</p>
   </div>
 
   <div class="sec">
   <h2 id="apps">Installing apps over Wi-Fi</h2>
-  <p><b>System settings → App Store</b> installs and updates Rockbox, its themes, Spotify and card apps. The first time, press <b>Check for Updates</b> to load the list. Each app shows <b>Install</b>, <b>Update</b> or <b>Installed</b>.</p>
+  <p><b>System settings → App Store</b> installs and updates Rockbox, its themes, Spotify and card apps. Each app shows <b>Install</b>, <b>Update</b> or <b>Installed</b>.</p>
   <div class="note important"><p><span class="label">Install only apps you trust:</span> a card app can read anything on the card, including your other logins.</p></div>
   <table>
     <thead><tr><th>To</th><th>Do this</th></tr></thead>
@@ -1201,7 +1211,7 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
   <ul>
     <li><b>Rockbox</b> becomes what the Q2 starts, so the first press says so; press again to install. Its themes appear once it’s on, and go with it.</li>
     <li><b>Removing Spotify</b> keeps its login; <b>Erase Spotify Data</b> (<a href="#stream-config">Configuration</a>) deletes it.</li>
-    <li><b>Card apps</b> appear in Streaming, and games in Library → Games. Plugging in USB storage stops them until after; close a game first. An app that syncs music can update your library once nothing is playing.</li>
+    <li><b>Card apps</b> appear in Streaming, and games in Library → Games. Plugging in USB storage stops them until after; close a game first. An app that syncs music can update your library once nothing is playing. If one won’t start, choose <b>Stop</b> and its name, then open it again.</li>
     <li><b>Space:</b> the card needs room for the download, what it unpacks to, and 64 MB more.</li>
   </ul>
   </div>
@@ -1254,11 +1264,12 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
     <li><b>Hold Play/Pause</b> on almost anything for its options.</li>
     <li><b>Hold Return</b> from anywhere to jump to Now Playing, and again to go back.</li>
     <li><b>Search</b> is above the top of Library: pull the list down.</li>
-    <li><b>Cover Flow sorted your way:</b> Cover Flow Sort: Artist keeps an artist’s albums together.</li>
+    <li><b>Cover Flow sorted your way:</b> Sort: Artist keeps an artist’s albums together.</li>
     <li><b>Wheel too fast or slow?</b> Change Wheel Sensitivity in Controls.</li>
+    <li><b>Want to limit how loud the Q2 goes?</b> Choose <b>Playback → Max Volume</b>. Volume Guard doesn’t limit it.</li>
     <li><b>Screen waking in your pocket?</b> Choose Wake: Double Press, or turn on Volume Guard.</li>
     <li><b>Stock EQ presets</b> are in Advanced EQ → Presets → Stock presets.</li>
-    <li><b>Added a few albums?</b> Scan Folders scans just those (<a href="#addmusic">Adding music</a>).</li>
+    <li><b>Added a few albums?</b> Scan specified folders scans just those (<a href="#addmusic">Adding music</a>).</li>
     <li><b>Wi-Fi left on</b> naps between transfers, so there’s no need to turn it off between uses.</li>
     <li><b>Keeping the Q2 plugged in?</b> Charge Limit holds the battery at 80%.</li>
   </ul>
@@ -1267,8 +1278,8 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
   <div class="sec">
   <h2 id="trouble">Troubleshooting the Q2 and your library</h2>
     <p><b>The Q2 won’t turn on, won’t charge, or is frozen.</b> Plug it into the charger. Hold Centre for 15 seconds, through the shutdown prompt, until it restarts. In Rockbox, hold Play/Pause instead. A Q2 that stops responding restarts itself within a minute; then <code>q2-crash.log</code> on the card says what happened.</p>
-  <p><b>A song is missing.</b> Check its format (<a href="#card">What goes on the microSD card</a>), then run Update Local Music. DRM-protected files don’t appear. Still missing? Check its tags (<a href="#tagging">Tagging your music</a>).</p>
-  <p><b>An album is split in two.</b> Give every track the same Album Artist, then run Update Local Music.</p>
+  <p><b>A song is missing.</b> Check its format (<a href="#card">What goes on the microSD card</a>), then run Update Library. DRM-protected files don’t appear. Still missing? Check its tags (<a href="#tagging">Tagging your music</a>).</p>
+  <p><b>An album is split in two.</b> Give every track the same Album Artist, then run Update Library.</p>
   <p><b>Artwork is missing (a grey disc).</b> Embed the cover in the songs, or add a <code>cover</code> or <code>folder</code> image beside them. A folder image is skipped when the folder holds more than one album. Then choose <b>Refresh Cover Flow</b>.</p>
   <p><b>The screen turns off when you choose a row.</b> Two quick Centre presses turn the screen off. Press once and wait a moment.</p>
   <p><b>An update won’t install.</b> <code>update.tar</code> must be at the card’s root, not in a folder. Leave the card in until the Q2 restarts. If it won’t start at all, see <a href="#restore">Restoring stock firmware</a>.</p>
@@ -1277,10 +1288,10 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
   <div class="sec">
   <h2 id="trouble-sound">Troubleshooting Cover Flow, sound and streaming</h2>
   <p><b>Cover Flow restarts the Q2 while preparing artwork.</b> Open it again: the album it was reading is skipped, and named in <code>q2-crash.log</code> under <b>cover flow skipped</b>. Shrink that album’s embedded covers to about 500 × 500 pixels, then Refresh Cover Flow.</p>
-  <p><b>Cover Flow prepares artwork every time.</b> The library probably lists songs that were moved or deleted: run Update Local Music. If the count stays, some covers are too big to read; shrink them as above.</p>
+  <p><b>Cover Flow prepares artwork every time.</b> The library probably lists songs that were moved or deleted: run Update Library. If the count stays, some covers are too big to read; shrink them as above.</p>
   <p><b>No sound, or sound from the wrong place.</b> Reconnect the headphones, and check the volume. Playback uses the output active when it starts; for Spotify, pause and play after switching. If your music stays silent after streaming, choose <b>Stop Streaming Services</b> (<a href="#stream-config">Configuration</a>).</p>
   <p><b>A computer doesn’t see the Q2 as a USB DAC.</b> Windows needs Shanling’s USB driver (V5.20, for the MTouch players) from en.shanling.com/download/69. Install it, then plug the Q2 in again.</p>
-  <p><b>Bluetooth drops out.</b> Set LDAC to <b>Connection (auto)</b> (<a href="#bt">Bluetooth headphones</a>).</p>
+  <p><b>Bluetooth drops out.</b> Set <b>Quality</b> to <b>LDAC Connection (auto)</b> (<a href="#bt">Bluetooth headphones</a>).</p>
   <p><b>Spotify won’t pair or download.</b> The phone and the Q2 must be on the same Wi-Fi, and the app’s device list must show Q2. Check your add-on version (<a href="#spinstall">Setting up Spotify</a>).</p>
   </div>
 
@@ -1293,7 +1304,7 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
   </ul>
   <p class="task">When you report a bug, include:</p>
   <ol class="steps">
-    <li>The Q2 Pod version (and q2-librespot’s, for Spotify).</li>
+    <li>The Q2 Pod version (<b>System settings → About → CFW. Version</b>), and q2-librespot’s for Spotify.</li>
     <li>What you did, in order, from the last restart; what you expected, and what happened.</li>
     <li>The output: headphone jack, Bluetooth (with the headphones’ name) or USB DAC.</li>
     <li>Any error message, word for word.</li>

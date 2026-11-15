@@ -200,7 +200,6 @@ extern void coverflow_home_clip(void *w, void *canvas, int begin);
 extern void coverflow_slant(void *w, void *canvas, unsigned paper), coverflow_slant_close(void);
 extern int coverflow_home_back(void *top), coverflow_home_owns(void *w);
 extern void coverflow_home_top(void);
-extern const char *coverflow_home_title(void);
 extern void coverflow_home_row(void *surface, void *row, int id, int painting);
 extern void lockscreen_paint(void *w, void *canvas);
 extern void coverflow_paint(void *w, void *canvas), photos_paint(void *w, void *canvas),
@@ -467,7 +466,7 @@ static int is_home(void *top, void *w) { return w && kind(w) == 3 && carousel_pa
 
 /* iPod Home's lists (the main menu and its Settings list): their ends wrap at once, and Return
  * goes back to the first row. */
-static int home_menu(void *top) {
+int home_menu(void *top) {
     return top && !tk_strcmp(widget_get_prop_str(top, "name", ""), "home_page");
 }
 
@@ -654,7 +653,7 @@ int usable(void) {
         return 0;
     void *top = window_manager_get_top_window(window_manager());
     int confirm = top && !tk_strcmp(widget_get_prop_str(top, "name", ""), "confirminfo_dialog");
-    /* A held power key sets g_poweroff_state to 1 while its Confirm Shutdown prompt is up
+    /* A held power key sets g_poweroff_state to 1 while its Shut Down? prompt is up
      * (on_wm_keylong_fun); 2 is the power-off page itself. */
     if (g_poweroff_state) return confirm;
     if (g_usblink_status != 2) return 1;
@@ -886,6 +885,7 @@ static void select(menu_t *m, int id) {
 int load_rows(menu_t *m, void *w) {
     m->w = w;
     m->n = 0;
+    m->cols = 1;
     m->kind = kind(w);
     m->height = I(w, W_H);
     if (!m->kind || m->height <= 0) return 0;
@@ -903,14 +903,31 @@ int load_rows(menu_t *m, void *w) {
         for (int i = 0; i < m->n; ++i) m->id[i] = i;
     } else {
         if (m->kind == 3) m->rows = (int)n;
+        /* The album grid's ids are its albums, as stock's own (row * ALBUM_GRID + cell), so the
+         * wheel steps tile by tile and Centre opens the tile it shows; the count is the showlist's,
+         * which a reload changes before the table catches up. ponytail: by the page and mode, as
+         * stock builds it; another table of tiles would still take one entry a row. */
+        void *win = m->kind == 2 && I(album_modetype, 0) ? window_of(w) : (void *)0;
+        if (win && !tk_strcmp(widget_get_prop_str(win, "name", ""), "album_page")) {
+            void *list = P(p_deque_showlist, 0);
+            int albums = list ? (int)deque_size(list) : 0;
+            /* Under another page the showlist is that page's (an album's songs, as it slides in
+             * and until its Return reloads the albums): the count this one last had. */
+            if (win != window_manager_get_top_window(window_manager()))
+                albums = widget_get_prop_int(w, COUNT, albums);
+            m->cols = ALBUM_GRID;
+            m->rows = albums / ALBUM_GRID < m->rows ? albums : m->rows * ALBUM_GRID;
+        }
         for (unsigned i = 0; i < n && m->n < MAX_ENTRIES; ++i) {
-            void *r = widget_get_child(w, i), *e = (void *)0;
-            entries_t s = { &e, 0, 1, 256 };
+            void *r = widget_get_child(w, i), *e[ALBUM_GRID];
+            entries_t s = { e, 0, m->cols, 256 };
             collect(r, &s, 0);
             int id = m->kind == 2 ? I(r, ROW_INDEX) : (int)i;
-            if (e && id >= 0 && id < m->rows) {
-                m->at[m->n] = e;
-                m->id[m->n++] = id;
+            if (id < 0 || id > (m->rows - 1) / m->cols) continue;
+            /* A last row's missing albums are hidden, so a row's cells are its first entries. */
+            for (int j = 0; j < s.n && id * m->cols + j < m->rows && m->n < MAX_ENTRIES; ++j) {
+                m->at[m->n] = e[j];
+                m->id[m->n++] = id * m->cols + j;
             }
         }
     }
@@ -1022,7 +1039,7 @@ static int sel_height(menu_t *m) {
 
 /* Largest viewport top that still shows content; the clamp bound for every glide. */
 static int scroll_end(menu_t *m, int height) {
-    if (m->kind == 2) return m->rows * m->row - height;
+    if (m->kind == 2) return (m->rows + m->cols - 1) / m->cols * m->row - height;
     return m->kind == 1 ? I(m->w, VIEW_CONTENT_H) - height : 0;
 }
 static int max_top(menu_t *m) { return scroll_end(m, sel_height(m)); }
@@ -1099,7 +1116,7 @@ void reveal(menu_t *m, int id, int immediate) {
     int top = view_top(m);
     int y, h;
     if (m->kind == 2) {
-        y = id * m->row;
+        y = id / m->cols * m->row;
         h = m->row;
     } else {
         int i = index_of(m, id);
@@ -2651,10 +2668,12 @@ static void paint_into(void *w, void *canvas) {
         (sel_only && !tk_strcmp(widget_get_prop_str(window_of(w), "name", ""), "folder_page")) ||
         widget_load_image(w, box ? "classic_light_chevron" : LIST_INTO_WHITE, bitmap))
         return;
-    /* Only the middle half is cleared, where the glyph's ink is (rows 16-33 of 50): the whole
-     * 50 px image would cross a 48 px row's top, over the bar's highlight and the row above. */
+    /* Only the middle half is cleared, each way, where the glyph's ink is (columns 20-30, rows
+     * 16-33 of 50): the whole 50 px image would cross a 48 px row's top, over the bar's highlight
+     * and the row above, and its left columns the end of a settings row's text, which runs to
+     * 8 px inside the image (list_row_into). */
     int x = box ? box + (int)bitmap[0] / 2 - I(canvas, CANVAS_X) : I(w, W_W) / 2, y = I(w, W_H) / 2;
-    rect_t clear = { x - (int)bitmap[0] / 2, y - (int)bitmap[1] / 4, (int)bitmap[0],
+    rect_t clear = { x - (int)bitmap[0] / 4, y - (int)bitmap[1] / 4, (int)bitmap[0] / 2,
                      (int)bitmap[1] / 2 };
     unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
     if (!sel_only) fill_box(canvas, &clear, RGBA(tones()[0]), 0);
@@ -2808,15 +2827,18 @@ void *list_row(void *view, const char *icon, int (*click)(void *, void *), void 
 
 /* A settings row that opens a page, its label clear of the chevron. */
 static void *list_row_into(void *view, const char *icon, int (*click)(void *, void *), void *ctx) {
-    return list_row_core(view, icon, click, ctx, 202, 1);
+    return list_row_core(view, icon, click, ctx, 220, 1); /* laid out, to 10 px before its ink */
 }
 
+static void value_row(void *label, const char *title, const char *value, int w);
+/* Classic's On or Off at 27 px, laid out 42 wide: a switch's title takes the rest */
+#define TOGGLE_VALUE_W 48
 /* Use the same trailing switch images and hit target as Shanling's settings rows: at screen x 302
  * whether the label sits in a settings button (x 20) or a full-width page row (page_row_detail,
  * peq_ui.c's). */
 void list_toggle(void *label, const char *title, int on) {
     if (theme()->set_text) {
-        list_value(label, title, on ? "打开" : "关闭");
+        value_row(label, title, on ? "打开" : "关闭", TOGGLE_VALUE_W);
         return;
     }
     void *button = P(label, W_PARENT);
@@ -2833,22 +2855,27 @@ void list_toggle(void *label, const char *title, int on) {
 }
 
 /* Classic's settings rows (set_text): the title left and the value right-aligned in the
- * trailing column, the title ending short of it. Switches read On or Off as values. */
-void list_value(void *label, const char *title, const char *value) {
+ * trailing column, w wide to screen x 356, the title's box ending where it starts. set_row moves
+ * both 5 px right and stops the value at 355, so a value has 136 px, a switch's 42. Switches read
+ * On or Off as values. */
+static void value_row(void *label, const char *title, const char *value, int w) {
     void *button = P(label, W_PARENT);
     void *text = widget_lookup(button, "_setting_value", 0);
     if (!text) {
-        int x = 302 - I(button, W_X) - 80;
-        text = hscroll_label_create(button, x, 0, 134, I(button, W_H));
+        int x = 356 - I(button, W_X) - w;
+        text = hscroll_label_create(button, x, 0, w, I(button, W_H));
         widget_set_name(text, "_setting_value");
         widget_use_style(text, "s_scrlabel_white20r");
         hscroll_label_set_only_focus(text, 1);
         hscroll_label_set_ellipses(text, 1);
-        widget_move_resize(label, I(label, W_X), 0, x - 8 - I(label, W_X), I(button, W_H));
+        widget_move_resize(label, I(label, W_X), 0, x - I(label, W_X), I(button, W_H));
     }
     widget_set_text_utf8(label, title);
     widget_set_text_utf8(text, value);
     theme_font(text, ROLE_TITLE, FONT_ROW);
+}
+void list_value(void *label, const char *title, const char *value) {
+    value_row(label, title, value, 142);
 }
 
 /* Under a set without stock's toolbars (toolbar 0) a page's switch is a row: stock's img_switch
@@ -3126,8 +3153,6 @@ int ringnav_quick_settings(void *win, void *ctx) {
  */
 /* Bluetooth's Control Device Volume on: the Q2's volume is the device's own (bt_audio_ready). */
 static int bt_vol_link __attribute__((section(".scratch")));
-#define STR_(x) #x
-#define STR(x) STR_(x)
 static int *const pod_values[] = { &st.charge_limit,
                                    &st.wake_double,
                                    &st.artist_cf,
@@ -3307,17 +3332,17 @@ static void pod_text(int i) {
         { 0 }, /* Position Bar: a switch */
         { 0 }, /* Hide Streaming on Home: a switch */
         { 0 }, /* Hide Folder on Home: a switch */
-        { "每日提醒：关闭", "每日提醒：打开" },
+        { "更新通知：关闭", "更新通知：打开" },
+        { "专辑视图：列表", "专辑视图：网格" },
         { "补全封面与歌词" }, /* 中文分支自有 action：行上会显示补全过程 */
     };
     _Static_assert(sizeof names / sizeof *names == POD_COUNT, "a names entry per row");
-    if (i == POD_CF_SORT) {
-        char sort[48];
-        tk_snprintf(sort, sizeof sort, "Cover Flow %s", coverflow_sort_name());
-        widget_set_text_utf8(st.pod_label[i], sort);
+    if (i == POD_CF_SORT) { /* the Sort card's words, as Cover Flow's page holds the row */
+        widget_set_text_utf8(st.pod_label[i], coverflow_sort_name());
         return;
     }
     int v = i == POD_ARTISTS       ? I(artist_type, 0) == 1
+            : i == POD_ALBUM_GRID  ? I(album_modetype, 0) == 1
             : i == POD_KEYTONE     ? g_keytone_flag != 0
             : i == POD_CARMODE     ? g_carmode != 0
             : i == POD_COVERMODE   ? g_bigcovermode == 1
@@ -3363,10 +3388,10 @@ static int fill_go(void *ctx, void *unused) {
 }
 /* Centre or tap toggles and saves. Charge limit takes effect on the next UI loop pass
  * (power_poll), Smart Wi-Fi within SMART_POLL_MS; Artists on the next load of an artist list, as
- * the artist page's switch does; Fast Navigation's letters at the next spin, its half copies at
- * Cover Flow's next idle pass; Standby limit at the next Standby; Coverflow Sort and Refresh
- * Coverflow at Coverflow's next open (coverflow.c), Refresh with a toast, as it changes nothing in
- * view. */
+ * the artist page's switch does; Album View at Albums' next open, or at once on one that is open;
+ * Fast Navigation's letters at the next spin, its half copies at Cover Flow's next idle pass;
+ * Standby limit at the next Standby; Sort and Refresh Coverflow at Coverflow's next open
+ * (coverflow.c), Refresh with a toast, as it changes nothing in view. */
 static int pod_click(void *ctx, void *event) {
     int i = (int)(long)ctx;
     pod_settings();
@@ -3385,6 +3410,8 @@ static int pod_click(void *ctx, void *event) {
         int v = I(artist_type, 0) != 1;
         I(artist_type, 0) = v;
         write_int_config(v, "PLAYSET", "ARTISTTYPE");
+    } else if (i == POD_ALBUM_GRID) {
+        album_view_toggle();
     } else if (i == POD_KEYTONE) {
         g_keytone_flag = !g_keytone_flag;
         write_int_config(g_keytone_flag, "SYSSET", "KEYTONE");
@@ -3510,8 +3537,8 @@ static const unsigned char playset_order[] = {
 };
 /* Library & Folders: stock's Folder skip (0), then ours as built. */
 static const unsigned char library_order[] = {
-    2 /* Artists */,     3 /* Artist album order */, 1 /* Year order */,
-    4 /* Folder Root */, 0 /* Folder skip */,        5 /* Folder art */,
+    2 /* Artists */,     6 /* Album View */,  3 /* Artist album order */, 1 /* Year order */,
+    4 /* Folder Root */, 0 /* Folder skip */, 5 /* Folder art */,
 };
 /* Connections, personalisation and daily controls, then device maintenance; About stays last.
  * Stock's Wheel Function, In-Vehicle, General and System stay hidden, its page left whole: the
@@ -3625,6 +3652,7 @@ int ringnav_audioset(void *win, void *ctx) {
         st.root_label = list_row(view, "playset_folderjump", root_click, 0);
         root_text(name);
         pod_rows(win, "scroll_view_playset", POD_FOLDERCOVER, 1, cover_icons + 1);
+        pod_rows(win, "scroll_view_playset", POD_ALBUM_GRID, 1, icons); /* under Artists */
         reorder(view, library_order, sizeof library_order);
         return result;
     }
@@ -4262,9 +4290,12 @@ static void bar_sync(void *bar) {
         inside = classic_light ? body : BATT_INSIDE_W;
     int mode = st.battery;
     if (mode) {
-        int reach = mode == 1   ? BATT_PCT_W
+        /* the widest the face in use draws it: Classic's 100% is 37 px, which fits beside
+         * Bluetooth, Wi-Fi and the play state where BATT_PCT_W, the stand-in, did not */
+        int pct = pct_width(100);
+        int reach = mode == 1   ? pct
                     : mode == 3 ? inside + BATT_NUB_W
-                                : body + BATT_NUB_W + BATT_GAP + BATT_PCT_W;
+                                : body + BATT_NUB_W + BATT_GAP + pct;
         if (widget_get_visible(st.bar_wifi)) reach += I(st.bar_wifi, W_W) + STATUS_GAP;
         if (shown)
             reach +=
@@ -4279,7 +4310,8 @@ static void bar_sync(void *bar) {
          * Percent reached 98 of 94 and silently fell back to the bare icon (V183A
          * device photos). Classic's own, shorter row keeps the built-in allowance. */
         int room = BATT_ROOM + (classic_light ? 0 : body - BATT_BODY_W);
-        if (reach > room && !(classic_light && mode == 3)) mode = 0;
+        if (reach > room && !(classic_light && mode == 3))
+            mode = classic_light && mode == 2 ? 3 : 0;
     }
     widget_set_visible(st.bar_icon, 0, 0);
     widget_set_visible(st.bar_pct, 0, 0);
@@ -4453,6 +4485,8 @@ static void paint_battery(void *w, void *canvas) {
         st.pct_digit = (int)(canvas_measure_text(canvas, &c, 1) + 0.5f);
         c = '%';
         st.pct_sign = (int)(canvas_measure_text(canvas, &c, 1) + 0.5f);
+        /* bar_sync fitted the mode to BATT_PCT_W: again, with these */
+        if (!st.bar_timer) st.bar_timer = timer_add(bar_repaint, (void *)0, 0);
     }
     /* A 16 px label's digits ink a row above a centred icon's ink. Under Minimal/Modern give the
      * drawn percentage that row back; Classic's own face and shorter row already share the middle. */
@@ -7120,7 +7154,7 @@ static void setting_row(void *view, int i) {
  * opening its slider page, crossfade.c) join them, then Appearance and Coverflow, each opening
  * stock's page again (display_open) with its stock rows dropped and its own instead: Theme, Light
  * Mode, Accent, Corners, Home, Shortcut, Battery, Time in Title, Centred Now Playing; Artist View,
- * Coverflow Sort and Refresh Coverflow. Controls is System settings' row (ringnav_systemset) on the
+ * Sort and Refresh Cover Flow. Controls is System settings' row (ringnav_systemset) on the
  * same page: the wheel, the buttons and what the buttons do. The value rows show it in the label
  * and have no chevron, since they change in place. ponytail: stock's page opened over itself; its
  * own rows' state is never touched on a sub-page. */
@@ -8460,19 +8494,27 @@ void *rec_find(void *songs, const unsigned *slot, unsigned mask, void *r) {
 /* My Fav's, Frequent's and Recent's rows are stock's copies of the songs as added or played, some
  * with an empty title though the library has the tag (a song played from Folder): an empty one
  * takes the library's, by path, so it reads as every other list's instead of falling back to its
- * file name and track number.
- * ponytail: the library is staged and indexed once per list load (O(library)) when any row is
- * untitled; keep an index across loads if that shows. */
+ * file name and track number. Only the untitled rows' songs are read (songs_by_path).
+ * ponytail: still a table scan (O(library)) per list load when any row is untitled; keep the titles
+ * across loads if that shows. */
+static int untitled(void *r) {
+    const char *title = P(r, REC_TITLE);
+    return I(r, REC_TYPE) == 8 && !(title && *title) && P(r, REC_PATH);
+}
 static void fav_titles(void *list, int n) {
-    void *songs = 0;
-    unsigned mask = 0, *slot = 0;
-    for (int i = 0; i < n; ++i) {
+    const char **paths = calloc((unsigned)n, sizeof *paths);
+    unsigned k = 0, mask = 0, *slot = 0;
+    for (int i = 0; paths && i < n; ++i) {
+        void *r = deque_at(list, (unsigned)i);
+        if (untitled(r)) paths[k++] = P(r, REC_PATH);
+    }
+    void *songs = k ? songs_by_path(paths, k) : 0;
+    free(paths);
+    if (songs) slot = rec_index(songs, &mask);
+    for (int i = 0; slot && i < n; ++i) {
         void *r = deque_at(list, (unsigned)i), *s;
         char **title = (char **)((char *)r + REC_TITLE), *t;
-        if (I(r, REC_TYPE) != 8 || (*title && **title) || !P(r, REC_PATH)) continue;
-        int k;
-        if (!songs && (songs = staged(songs_unsorted, 0, &k))) slot = rec_index(songs, &mask);
-        if (!slot || !(s = rec_find(songs, slot, mask, r))) continue;
+        if (!untitled(r) || !(s = rec_find(songs, slot, mask, r))) continue;
         const char *lib = P(s, REC_TITLE);
         if (lib && *lib && (t = strdup(lib))) free(*title), *title = t;
     }
@@ -8927,6 +8969,7 @@ static int sc_click(void *ctx, void *event) {
         spot_stop();
         radio_stop();
         addon_stop();
+        tidal_all_stop();
         if (type != 1 && (type & 0xf000) != 0xf000 && mclGetPlayStatus() != 1) player_stop();
         toast("已停止流媒体服务");
         return 0;
@@ -9138,9 +9181,10 @@ int ringnav_folder_click(void *ctx, void *event) {
 
 /* usbmode_page_init, as a cable to a computer opens USB mode, before stock unmounts the card for
  * USB storage: the card apps, which write to it (downloads, uploads), end first, so nothing of
- * theirs keeps it busy (they run from /tmp: addon.c), as do Download Album Lyrics' job, playlist
- * art's worker and the song durations' (durations.c). */
+ * theirs keeps it busy (they run from /tmp: addon.c), as do Tidal's downloads (tidal.c), Download
+ * Album Lyrics' job, playlist art's worker and the song durations' (durations.c). */
 int ringnav_usbmode(void *a, void *b, void *c, void *d) {
+    tidal_card_away();
     addon_card_away();
     album_lyrics_stop();
     playlist_art_stop();
@@ -10337,6 +10381,7 @@ int ringnav_sleep(void *loop) {
     video_poll();
     spot_poll();
     radio_poll();
+    tidal_poll();
     addon_poll();
     airplay_poll();
     playback_poll();

@@ -3,10 +3,11 @@
 #include "navigation.h"
 
 /* Tidal Downloads' (or a card app's) songs page and its songs, its timer, and whether it shows
- * Clear All Downloads' confirmation; the library generation Most Played's kept tracks are of
- * (~library_gen once stale); the Library Shuffle menu's page, kept across picks. */
+ * Clear All Downloads' confirmation; Tidal Downloads' first row's caption while its list shows;
+ * the library generation Most Played's kept tracks are of (~library_gen once stale); the Library
+ * Shuffle menu's page, kept across picks. */
 static struct {
-    void *td_page, *td_list;
+    void *td_page, *td_list, *td_all;
     unsigned td_timer;
     int td_asking;
     unsigned mp_gen;
@@ -14,6 +15,38 @@ static struct {
 } ll __attribute__((section(".scratch")));
 
 extern int coverflow_goto_album(void *r);
+extern int stock_dbquery_trampoline(const char *, const char *, void *, int);
+
+/* songs_unsorted(0)'s rows whose path is one of paths, in its order, in a deque of their own; 0
+ * without memory for the SQL. One IN list: one table scan (`not indexed`: songtable_time_create's
+ * order would cost a row seek per song) for any n. A snapshot's 999 paths make at most about 2 MB
+ * of SQL, which stock's SQLite 3.19.3 runs. Straight to stock's query, as library_query's rewrites
+ * fit 2 KB. */
+static int path_query(void *sql) {
+    return stock_dbquery_trampoline("/mnt/data/database.db", sql, (void *)db_song_row_callback, 0);
+}
+void *songs_by_path(const char *const *paths, unsigned n) {
+    static const char head[] = "select * from songtable not indexed where fileurl in (";
+    static const char tail[] = ") order by time_create desc"; /* getAllMusic(3)'s order */
+    unsigned size = sizeof head + sizeof tail;
+    for (unsigned i = 0; i < n; ++i) {
+        size += 3; /* the quotes and a comma */
+        for (const char *c = paths[i]; *c; ++c) size += 1 + (*c == '\'');
+    }
+    char *sql = calloc(size, 1);
+    if (!sql) return 0;
+    memcpy(sql, head, sizeof head - 1);
+    unsigned at = sizeof head - 1;
+    for (unsigned i = 0; i < n; ++i) {
+        if (i) sql[at++] = ',';
+        scan_quote(sql, size, &at, paths[i]); /* fits: tail's room follows, past its 3-byte guard */
+    }
+    memcpy(sql + at, tail, sizeof tail);
+    int count;
+    void *out = staged(path_query, sql, &count);
+    free(sql);
+    return out;
+}
 
 /* Collection Shuffle is Shuffle Songs over the collection. */
 int shuffle_play(void *all) {
@@ -204,11 +237,26 @@ static int td_named(const void *a, const void *b) {
     const char *x = P(((const td_row *)a)->r, REC_NAME), *y = P(((const td_row *)b)->r, REC_NAME);
     return strcmp(x ? x : "", y ? y : "");
 }
+/* A song's row: on Tidal Downloads the songs follow Download All's row. */
 static int td_play(void *ctx, void *event) {
-    void *t = deque_at(ll.td_list, (unsigned)(long)ctx);
-    if (t && !access(P(t, REC_PATH), 0)) play_folder(ll.td_list, (int)(long)ctx, 0xf001);
+    int i = (int)(long)ctx - (ll.td_all != 0);
+    void *t = deque_at(ll.td_list, (unsigned)i);
+    if (t && !access(P(t, REC_PATH), 0)) play_folder(ll.td_list, i, 0xf001);
     return 0;
 }
+/* Tidal Downloads' first row, Download All (docs/internals.md#tidal-download-all): its caption is
+ * tidal.c's, written again after a press, which starts or ends it, and as it moves on
+ * (tidal_poll). The press may toast, and the page close under that. */
+static void td_all_text(int press) {
+    char s[64];
+    tidal_all(press, s, sizeof s);
+    if (ll.td_all) widget_set_text_utf8(ll.td_all, s);
+}
+static int td_all(void *ctx, void *event) {
+    td_all_text(1);
+    return 0;
+}
+void tidal_all_show(void) { td_all_text(0); }
 /* dir's songs, newest first (or, album, by name), a deque the caller destroys. */
 static void *card_songs(const char *dir, int album) {
     int n = 0;
@@ -253,20 +301,23 @@ static int td_clear(void *ctx, void *event) {
     rearm(&ll.td_timer, td_show, 0);
     return 0;
 }
-/* The page's songs, read again; Tidal's end with Clear All Downloads…, as Spotify's Storage
- * Management does. Returns the list. */
+/* The page's songs, read again; Tidal's (tidal 1) start with Download All's row and end with Clear
+ * All Downloads…, as Spotify's Storage Management does. Returns the list. */
 static void *songs_rows(const char *dir, const char *title, int tidal, int album) {
     if (ll.td_list) deque_destroy(ll.td_list);
     ll.td_list = card_songs(dir, album);
     int n = (int)deque_size(ll.td_list);
-    void *view =
-        page_list_or(ll.td_page, ll.td_page, title, "暂无下载", n + (tidal && n), 48);
+    void *view = page_list_or(ll.td_page, ll.td_page, title, "暂无下载", n + tidal + (tidal && n), 48);
     char name[256];
+    if (tidal) {
+        ll.td_all = widget_get_child(page_row_detail(view, 0, "", 0, td_all), 0);
+        tidal_all_show();
+    }
     for (int i = 0; i < n; i++) {
         song_label(P(deque_at(ll.td_list, (unsigned)i), REC_NAME), tidal, name, sizeof name);
-        page_row_detail(view, i, name, 0, td_play);
+        page_row_detail(view, i + tidal, name, 0, td_play);
     }
-    if (tidal && n) page_row_detail(view, n, "清除全部下载…", 0, td_clear);
+    if (tidal && n) page_row_detail(view, n + 1, "清除全部下载…", 0, td_clear);
     return view;
 }
 /* Clear All Downloads' confirmation in the list's place, as Spotify's Remove Downloads?, on Cancel;
@@ -276,11 +327,12 @@ static int td_show(const void *unused) {
     if (!ll.td_page) return 0;
     unsigned n = deque_size(ll.td_list);
     if (!ll.td_asking) {
-        void *view = songs_rows(TIDAL_DIR, "Tidal 下载", 1, 0);
-        if ((n = deque_size(ll.td_list))) ringnav_select(view, (int)n, (int)n + 1);
+    void *view = songs_rows(TIDAL_DIR, "Tidal 下载", 1, 0);
+        if ((n = deque_size(ll.td_list))) ringnav_select(view, (int)n + 1, (int)n + 2);
         return 0;
     }
     char note[32];
+    ll.td_all = 0; /* its row goes with the list */
     tk_snprintf(note, sizeof note, n == 1 ? "%u track" : "%u tracks", n);
     void *view = page_list(ll.td_page, ll.td_page, 0, "移除下载？", 3, 64);
     page_row_detail(view, 0, note, "保留设置", 0);
@@ -291,6 +343,7 @@ static int td_show(const void *unused) {
 }
 static int td_closed(void *ctx, void *event) {
     ll.td_page = 0;
+    ll.td_all = 0;
     ll.td_asking = 0;
     stop_timer(&ll.td_timer);
     if (ll.td_list) deque_destroy(ll.td_list);
@@ -465,10 +518,6 @@ static int era_key_row(void *ctx, int n, char **v, char **c) {
     era_keys.v[era_keys.n++] = (unsigned)atoi(v[0]);
     return 0;
 }
-static int era_key_cmp(const void *a, const void *b) {
-    unsigned x = *(const unsigned *)a, y = *(const unsigned *)b;
-    return x < y ? -1 : x > y;
-}
 static void *era_shuffle_songs(void) { /* 0 if the query failed */
     char sql[2048];
     int from = era.m ? era.v[0].year / 10 * 10 : 0, n;
@@ -485,17 +534,12 @@ static void *era_shuffle_songs(void) { /* 0 if the query failed */
     void *out = 0;
     if (!era.m || era_sql(sql, era_key_row, 0)) out = _create_deque("stSongInfo"), deque_init(out);
     if (out && era_keys.n) {
-        qsort(era_keys.v, era_keys.n, sizeof *era_keys.v, era_key_cmp);
+        qsort(era_keys.v, era_keys.n, sizeof *era_keys.v, key_cmp);
         void *all = staged(songs_unsorted, (void *)1, &n);
         if (n < 0) deque_destroy(out), out = 0; /* the library load failed */
         for (unsigned i = 0; out && i < deque_size(all); ++i) {
-            unsigned key = (unsigned)I(deque_at(all, i), REC_ID), lo = 0, hi = era_keys.n;
-            while (lo < hi) /* the first key not below this one */
-                if (era_keys.v[(lo + hi) / 2] < key)
-                    lo = (lo + hi) / 2 + 1;
-                else
-                    hi = (lo + hi) / 2;
-            if (lo < era_keys.n && era_keys.v[lo] == key) _deque_push_back(out, deque_at(all, i));
+            if (has_key(era_keys.v, era_keys.n, (unsigned)I(deque_at(all, i), REC_ID)))
+                _deque_push_back(out, deque_at(all, i));
         }
         deque_destroy(all);
     }
@@ -719,4 +763,20 @@ int ringnav_fill_songs(int (*row)(void *, const char *, const char *, const char
                      fill_song_row, 0);
     fill_song_take = 0, fill_song_ctx = 0;
     return ok;
+}
+
+/* Library & Folders' Album View (navigation.c pod_click): Albums as stock's list or its grid of
+ * covers. Stock's switch is on Albums' toolbar, which the themes hide, so a grid chosen on stock
+ * firmware had no way back. On an Albums page that is open (under the settings, when Quick
+ * Settings opened them over it) the switch's own click runs: it flips album_modetype, saves
+ * PLAYSET ALBUMTYPE and rebuilds the table at the other row height from its top. It does nothing
+ * without its button (the toolbar's batch-select state), and with no page open there is none to
+ * rebuild: the value and the key alone, which Albums' next open builds from. */
+void album_view_toggle(void) {
+    int was = I(album_modetype, 0);
+    void *page = widget_lookup(window_manager(), "album_page", 0);
+    if (page) album_covermode(page, (void *)0);
+    if (I(album_modetype, 0) != was) return;
+    I(album_modetype, 0) = !was;
+    write_int_config(!was, "PLAYSET", "ALBUMTYPE");
 }

@@ -397,7 +397,7 @@ demo	0x540b24	0x38	spectrum_on_timer	50 ms timer of the spectrum page; runs spec
 demo	0x540b5c	0x70	spectrum_on_keyup	Key-up of the spectrum page: Return goes back, Centre goes back when power_keyup_detect allows; only with the backlight on.
 demo	0x540d30	0xdc	stream_page_on_background	Streaming page background handler: removes the page's timer stored in timer_idex.
 demo	0x540f7c	0x150	stream_row	Streaming's row click: atoi of the button's name picks the service.
-demo	0x542010	0x318	updatemusic_page_bind_widget	Update Local Music page's per-widget visitor: sets the three rows' texts and clicks (scan_automatic, scan_now, scan_spec) and sizes list_view.
+demo	0x542010	0x318	updatemusic_page_bind_widget	Update Library page's per-widget visitor: sets the three rows' texts and clicks (scan_automatic, scan_now, scan_spec) and sizes list_view.
 demo	0x542d44	0x124	usbmode_page_on_timer	USB mode page timer: shows the USB face, tracks link and mode changes, updates the DAC rate display.
 demo	0x5ba478	0x5c	mcl_reply_clear	Empties the hciplayer reply deque under its mutex.
 demo	0x5ba4d4	0x64	mcl_start_hciplayer	Starts the hciplayer process through toolsSystemd with the command 'nice -n -5 hciplayer -ao alsa &'.

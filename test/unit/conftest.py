@@ -18,13 +18,16 @@ import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 # A mutant can loop forever, growing a list (art's path() with `i = 1` for `i += 1` took 500 MB a second),
-# and fill the machine long before mutmut's timeout. Over 4 GB a process raises MemoryError: killed.
+# and fill the machine long before mutmut's timeout. Over 4 GB of data a process raises MemoryError: killed.
 # mutmut sets MUTANT_UNDER_TEST before any test session; elsewhere ASan's shadow memory is over 4 GB already.
-# A thread reserves its stack in that 4 GB, RLIMIT_STACK's 8 MB: q2remote.find's 64 probe threads took
-# 512 MB, past the cap in mutmut's stats run on CI ("can't start new thread"); at 1 MB they take 64.
+# The data (the heap and every private writable mapping), not the address space: RLIMIT_AS also counts what is
+# only reserved, such as the 64 MB of each thread's malloc arena, and q2remote.find's 64 probe threads reserved
+# 1.3 GB at once, past the cap in mutmut's stats run ("can't start new thread"). The process is at 2.5 GB of
+# data there, half what mutmut left of the mutants it made and 1 GB a Unicorn machine's code buffer.
+# A thread's stack is data, RLIMIT_STACK's 8 MB: those 64 would take 512 MB; at 1 MB they take 64.
 if 'MUTANT_UNDER_TEST' in os.environ:
-    _, HARD = resource.getrlimit(resource.RLIMIT_AS)
-    resource.setrlimit(resource.RLIMIT_AS, (4 << 30 if HARD == resource.RLIM_INFINITY else min(4 << 30, HARD), HARD))
+    _, HARD = resource.getrlimit(resource.RLIMIT_DATA)
+    resource.setrlimit(resource.RLIMIT_DATA, (4 << 30 if HARD == resource.RLIM_INFINITY else min(4 << 30, HARD), HARD))
     threading.stack_size(1 << 20)
 sys.path.insert(0, str(ROOT))
 # build first: the others import it, or each other in this order, while they load.

@@ -278,7 +278,7 @@ def test_a_thread_that_cannot_start_releases_its_jobs(fw, ui, song):
     assert not state.jobs and not state.running and not state.total
 
 
-# Update Local Music's pass: Scan Song Durations on.
+# Update Library's pass: Scan Song Durations on.
 class Update:
     """A songtable of paths in a real SQLite file over the given cache, the switch as given, the screen lit and
     the windows that exist (the update's dialog, USB mode's page) settable; scanned() is a library scan's end on

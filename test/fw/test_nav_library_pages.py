@@ -410,7 +410,7 @@ def test_shuffle_songs_with_no_library_says_to_update_it(fw, ui, mcl):
     Library(fw, ui)
     call(fw, 'shuffle_menu')
     ui.click(ui.top(), 0)
-    assert ui.toasts == ['Update Local Music first'] and not ui.played
+    assert ui.toasts == ['Update Library first'] and not ui.played
 
 
 def test_shuffle_songs_plays_the_library_from_a_random_song(fw, ui, mcl, song):
@@ -429,7 +429,7 @@ def test_shuffle_albums_and_folders_with_no_library(fw, ui, mcl, row, folders):
     Library(fw, ui)
     call(fw, 'shuffle_menu')
     ui.click(ui.top(), row)
-    assert ui.toasts == ['Update Local Music first'] and not ui.played
+    assert ui.toasts == ['Update Library first'] and not ui.played
 
 
 @pytest.mark.parametrize('row, folders', [(1, 0), (2, 1)])
@@ -1254,7 +1254,8 @@ def test_fewer_hearts_on_a_my_fav_take_it_out(fw, ui, song, mcl):
 def test_five_hearts_or_none_on_an_app_synced_song_are_told_to_the_app(fw, ui, song, mcl, fav, kept, key, told):
     path = b'/mnt/mmc/Jellyfin/A/now.flac'
     heart = Heart(fw, ui, song, mcl, fav=fav, path=path, table=ratings((listen_key(path), kept)) if kept else None)
-    stock_stub(FAV_CLICK, 0, (C.c_long * 3)())
+    log = (C.c_long * 3)()  # kept: the stand-in writes to it at the press
+    stock_stub(FAV_CLICK, 0, log)
     favdir_card(fw, heart.files.files)
     heart.hold()
     heart.key(key)
@@ -1647,6 +1648,7 @@ class Card(Files):
         return [field(r, 'path') for r in queue]
 
 
+DOWNLOAD_ALL = 'Download Playing Songs'  # Tidal Downloads' first row, while Download All isn't running
 TIDAL_SONGS = {b'/mnt/mmc/.tidal/111-LOSSLESS Old One.flac': 100, b'/mnt/mmc/.tidal/222-HI_RES New One.flac': 300,
                b'/mnt/mmc/.tidal/333-HIGH Middle.m4a': 200}
 
@@ -1656,8 +1658,8 @@ def test_tidal_downloads_lists_newest_first_then_clear(fw, ui, song):
     call(fw, 'tidal_downloads')
     page = ui.top()
     assert ui.name[page] == 'tidal_downloads'
-    assert ui.captions(page) == ['New One', 'Middle', 'Old One', 'Clear All Downloads…']  # no folder
-    ui.click(page, 1)
+    assert ui.captions(page) == [DOWNLOAD_ALL, 'New One', 'Middle', 'Old One', 'Clear All Downloads…']  # no folder
+    ui.click(page, 2)
     (queue, at, cls), = ui.played
     assert card.paths(queue) == sorted(TIDAL_SONGS, key=lambda p: -TIDAL_SONGS[p]) and at == 1 and cls == LIBRARY
 
@@ -1666,39 +1668,92 @@ def test_a_download_gone_from_the_card_does_not_play(fw, ui, song):
     card = Card(fw, ui, song, TIDAL_SONGS)
     call(fw, 'tidal_downloads')
     del card.files['/mnt/mmc/.tidal/333-HIGH Middle.m4a']
-    ui.click(ui.top(), 1)
+    ui.click(ui.top(), 2)
     assert not ui.played
 
 
-def test_no_downloads_says_so(fw, ui, song):
+def test_no_downloads_leaves_download_all_s_row(fw, ui, song):
     Card(fw, ui, song, {})
     call(fw, 'tidal_downloads')
-    assert 'No downloads yet' in ui.shown(ui.top()) and ui.rows(ui.top()) == []
+    assert ui.captions(ui.top()) == [DOWNLOAD_ALL] and 'Tidal Downloads' in ui.shown(ui.top())
+
+
+def tidal_queue(fw, ui, song, mcl, ids):
+    """The queue playing as a Tidal page loads it (0xf1): a row an id."""
+    rows, keep = [], []
+    for tidal_id in ids:
+        rows.append(song())
+        keep.append(C.create_string_buffer(tidal_id))
+        C.c_void_p.from_address(rows[-1] + O['REC_TIDAL_ID']).value = C.addressof(keep[-1])
+    fw.var('fw_ctx_mcl_pdeqplaylist', C.c_uint).value = ui.deques.new(rows)
+    fw.mock('tk_str_start_with', lambda s, p, *_: C.string_at(s).startswith(C.string_at(p)))  # AWTK's
+    mcl.type = 0xf1
+    return keep
+
+
+def test_download_all_s_row_starts_on_the_tidal_songs_playing_and_a_second_press_ends_it(fw, ui, song, mcl):
+    Card(fw, ui, song, TIDAL_SONGS)
+    keep = tidal_queue(fw, ui, song, mcl, [b'11', b'app:1:0', b'22', b''])  # a card app's song and a row with no id aren't Tidal's
+    call(fw, 'tidal_downloads')
+    page = ui.top()
+    ui.click(page, 0)
+    assert ui.captions(page)[0] == 'Downloading 1 of 2. Press to stop' and not ui.toasts
+    assert fw.fn('tidal_busy', C.c_int)() == 1  # Smart Wi-Fi keeps the radio on between two songs
+    ui.click(page, 0)
+    assert ui.captions(page)[0] == DOWNLOAD_ALL and fw.fn('tidal_busy', C.c_int)() == 0
+
+
+@pytest.mark.parametrize('kind, ids', [(0xf1, [b'app:1:0']), (0xf1, []), (LIBRARY, [b'11']), (1, [b'11'])])
+def test_download_all_with_no_tidal_song_playing_says_what_to_do(fw, ui, song, mcl, kind, ids):
+    Card(fw, ui, song, {})
+    keep = tidal_queue(fw, ui, song, mcl, ids)
+    mcl.type = kind
+    call(fw, 'tidal_downloads')
+    ui.click(ui.top(), 0)
+    assert ui.toasts == ['Play a Tidal album or playlist first'] and ui.captions(ui.top()) == [DOWNLOAD_ALL]
+    assert fw.fn('tidal_busy', C.c_int)() == 0
+
+
+def test_download_all_s_row_goes_with_the_question_and_the_page(fw, ui, song, mcl, lists):
+    Card(fw, ui, song, TIDAL_SONGS)
+    call(fw, 'tidal_downloads')
+    page = ui.top()
+    assert lists('td_all', C.c_void_p).value
+    ui.click(page, 4)
+    ui.fire('td_show')
+    assert not lists('td_all', C.c_void_p).value
+    fw.fn('tidal_all_show', None)()  # Download All moving on meanwhile writes no row
+    assert ui.rows(page)[0] == ('3 tracks', 'Keeps settings')
+    ui.click(page, 1)
+    ui.fire('td_show')
+    assert ui.captions(page)[0] == DOWNLOAD_ALL and lists('td_all', C.c_void_p).value
+    ui.close(page)
+    assert not lists('td_all', C.c_void_p).value
 
 
 def test_clear_all_asks_first_and_cancel_keeps_them(fw, ui, song):
     card = Card(fw, ui, song, TIDAL_SONGS)
     call(fw, 'tidal_downloads')
     page = ui.top()
-    ui.click(page, 3)
+    ui.click(page, 4)
     ui.fire('td_show')  # from a timer: the click's own list isn't rebuilt under it
     assert ui.rows(page) == [('3 tracks', 'Keeps settings'), ('Cancel', ''), ('Remove', '')]
     assert ui.props[(ui.view(page), '_ringnav_index')] == 1  # on Cancel
     ui.click(page, 1)
     ui.fire('td_show')
     assert ui.captions(page)[-1] == 'Clear All Downloads…' and len(card.files) == 3
-    assert ui.props[(ui.view(page), '_ringnav_index')] == 3  # back on Clear
+    assert ui.props[(ui.view(page), '_ringnav_index')] == 4  # back on Clear
 
 
 def test_return_on_the_question_is_cancel(fw, ui, song):
     Card(fw, ui, song, TIDAL_SONGS)
     call(fw, 'tidal_downloads')
     page = ui.top()
-    ui.click(page, 3)
+    ui.click(page, 4)
     ui.fire('td_show')
     assert ui.key(page, KEY_RETURN) == STOP and ui.backs == 0
     ui.fire('td_show')
-    assert len(ui.rows(page)) == 4
+    assert len(ui.rows(page)) == 5
     assert ui.key(page, KEY_RETURN) == STOP and ui.backs == 1  # on the list it leaves
 
 
@@ -1706,18 +1761,18 @@ def test_remove_clears_every_download(fw, ui, song):
     card = Card(fw, ui, song, {**TIDAL_SONGS, b'/mnt/mmc/.tidal/.cache-size': 1})
     call(fw, 'tidal_downloads')
     page = ui.top()
-    ui.click(page, 3)
+    ui.click(page, 4)
     ui.fire('td_show')
     ui.click(page, 2)
     ui.fire('td_show')
     assert list(card.files) == ['/mnt/mmc/.tidal/.cache-size']  # Keeps settings
-    assert 'No downloads yet' in ui.shown(page)
+    assert ui.captions(page) == [DOWNLOAD_ALL]
 
 
 def test_one_download_is_a_track(fw, ui, song):
     Card(fw, ui, song, {b'/mnt/mmc/.tidal/1-HIGH A.flac': 5})
     call(fw, 'tidal_downloads')
-    ui.click(ui.top(), 1)
+    ui.click(ui.top(), 2)
     ui.fire('td_show')
     assert ui.rows(ui.top())[0] == ('1 track', 'Keeps settings')
 
@@ -1726,7 +1781,7 @@ def test_leaving_the_page_drops_the_question(fw, ui, lists, song):
     Card(fw, ui, song, TIDAL_SONGS)
     call(fw, 'tidal_downloads')
     page = ui.top()
-    ui.click(page, 3)
+    ui.click(page, 4)
     ui.close(page)
     assert not ui.pending('td_show') and not lists('td_asking').value and not lists('td_list', C.c_void_p).value
     call(fw, 'tidal_downloads')
@@ -1883,7 +1938,7 @@ def test_erase_wants_a_second_press(fw, ui):
     erasing(fw)
     page, *_ = configuration(fw, ui)
     ui.click(page, 2)
-    assert ui.captions(page)[2] == 'Press again to erase the login and cache' and not fw.calls('fw_system')
+    assert ui.captions(page)[2] == 'Press again to erase login and cache' and not fw.calls('fw_system')
     ui.click(page, 2)
     assert ui.captions(page)[2] == 'Erasing…' and fw.calls('fw_system')  # librespot stopped first
 
@@ -1894,7 +1949,7 @@ def test_another_row_drops_the_first_press(fw, ui):
     ui.click(page, 0)
     assert ui.captions(page)[2] == 'Erase Spotify Data'
     ui.click(page, 2)
-    assert ui.captions(page)[2] == 'Press again to erase the login and cache'
+    assert ui.captions(page)[2] == 'Press again to erase login and cache'
 
 
 def test_leaving_drops_the_first_press(fw, ui, st):
@@ -1921,7 +1976,7 @@ def test_an_erase_s_end_shows_on_the_page(fw, ui):
     ui.click(page, 2)
     del disk.files[f'{SPOT_DIR}/.cache-size']  # netupdate.c's erase took it, and calls back
     fw.fn('stream_erased', None)()
-    assert ui.captions(page)[1:3] == ['Spotify Cache: 2 GB', 'Press again to erase the login and cache']
+    assert ui.captions(page)[1:3] == ['Spotify Cache: 2 GB', 'Press again to erase login and cache']
 
 
 def test_an_erase_s_end_with_the_page_gone_writes_nothing(fw, ui):
@@ -2097,7 +2152,7 @@ def test_home_shows_the_card_s_free_space_in_tenths_of_a_gb(fw, device, bsize, b
     assert home_pane(fw)[2] == tenths
 
 
-LIBRARY_STOCK = ['Update Local Music', 'All Songs', 'Album', 'Artist', 'Genre', 'Hi-Res', 'My Fav', 'Frequent', 'Recent',
+LIBRARY_STOCK = ['Update Library', 'All Songs', 'Album', 'Artist', 'Genre', 'Hi-Res', 'My Fav', 'Frequent', 'Recent',
                  'Recently Added', 'Playlist']
 
 
@@ -2129,14 +2184,14 @@ def test_the_library_s_rows_in_their_order(fw, ui, st, theme, lead):
     # My Fav and Frequent hidden, kept in the page for stock's index: Ratings and Most Played list theirs
     assert page_rows(ui, view) == [(c, c not in ('My Fav', 'Frequent')) for c in lead + [
         'Shuffle', 'Artist', 'Album', 'All Songs', 'Genre', 'Era', 'Playlist', 'Ratings', 'My Fav', 'Recently Added', 'Recent',
-        'Most Played', 'Frequent', 'Hi-Res', 'Long Songs', 'Games', 'Update Local Music']]
+        'Most Played', 'Frequent', 'Hi-Res', 'Long Songs', 'Games', 'Update Library']]
 
 
 def test_the_library_adds_the_card_s_media_folders_and_upload(fw, ui):
     win, view = library(fw, ui, folders=['/mnt/mmc/podcasts', '/mnt/mmc/VIDEOS', '/mnt/mmc/Music'], token=b'x')
     rows = [c for c, _ in page_rows(ui, view)]
     assert rows[rows.index('Long Songs'):] == ['Long Songs', 'Podcasts', 'Videos', 'Games', 'Upload Scrobbles',
-                                               'Update Local Music']
+                                               'Update Library']
 
 
 def test_the_library_s_added_rows_have_no_name_for_stock_s_click(fw, ui):

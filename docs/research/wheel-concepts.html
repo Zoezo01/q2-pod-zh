@@ -1,0 +1,183 @@
+<style>
+#q2-wheel-study .q2-stage {display:flex;justify-content:center;padding:20px 8px;min-height:548px;box-sizing:border-box}
+#q2-wheel-study .q2-player {--q-paper:light-dark(#f5f4f0,#191b1b);--q-ink:light-dark(#222827,#eef0e9);--q-muted:light-dark(#58625e,#b2bcb5);--q-line:light-dark(#c9cfca,#49514d);--q-active:light-dark(#24483d,#d2e6da);--q-on:light-dark(#ffffff,#16362a);width:300px;max-width:100%;padding:12px;box-sizing:border-box;background:var(--q-paper);color:var(--q-ink);border:1px solid var(--q-line);border-radius:24px;font-family:system-ui,sans-serif;font-size:14px;line-height:1.4}
+#q2-wheel-study .q2-screen {height:286px;display:flex;flex-direction:column;gap:10px;padding:12px;border:1px solid var(--q-line);border-radius:13px;box-sizing:border-box;overflow:hidden}
+#q2-wheel-study .q2-title {display:flex;justify-content:space-between;align-items:center;font-weight:600;gap:6px}
+#q2-wheel-study .q2-caption {font-size:12px;color:var(--q-muted)}
+#q2-wheel-study .q2-value {font-size:32px;font-weight:600;letter-spacing:-1px;font-variant-numeric:tabular-nums}
+#q2-wheel-study .q2-content {flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center;gap:6px}
+#q2-wheel-study .q2-row {display:flex;justify-content:space-between;align-items:center;gap:8px;padding:7px 9px;min-height:30px;box-sizing:border-box;border-radius:6px}
+#q2-wheel-study .q2-row.selected {background:var(--q-active);color:var(--q-on)}
+#q2-wheel-study .q2-row small {font-size:12px;white-space:nowrap}
+#q2-wheel-study .q2-seam {color:var(--q-ink);border-top:2px solid var(--q-active);padding:3px 0;font-size:12px}
+#q2-wheel-study .q2-footer {font-size:12px;color:var(--q-muted);min-height:34px}
+#q2-wheel-study .q2-controls {display:flex;align-items:center;justify-content:center;gap:10px;margin-top:12px}
+#q2-wheel-study .q2-player button {font:inherit;background:transparent;color:var(--q-ink);border:1px solid var(--q-line);border-radius:9px;padding:8px;min-height:44px;min-width:44px;cursor:pointer}
+#q2-wheel-study .q2-player button:disabled {opacity:.45;cursor:default}
+#q2-wheel-study .q2-dial {position:relative;width:126px;height:126px;border:1px solid var(--q-line);border-radius:50%;display:grid;place-items:center;background:conic-gradient(var(--q-line) var(--q-angle,0deg),transparent 0);touch-action:none}
+#q2-wheel-study .q2-dial button {width:70px;height:70px;border-radius:50%;background:var(--q-paper);padding:4px;font-size:12px;position:relative;z-index:1}
+#q2-wheel-study .q2-actions {display:flex;justify-content:center;gap:8px;margin-top:10px}
+#q2-wheel-study .q2-progress {height:8px;background:var(--q-line);border-radius:4px;overflow:hidden}
+#q2-wheel-study .q2-progress span {display:block;height:100%;background:var(--q-active)}
+#q2-wheel-study .q2-sample {text-align:center;font-size:12px;color:var(--q-muted);margin-top:10px}
+</style>
+<div id="q2-wheel-study">
+  <div class="viz-carousel viz-dotted-background" aria-label="Q2 wheel interaction concepts">
+    <section data-variant="Wind a Session" aria-label="Wind a Session concept">
+      <div class="q2-stage"><div class="q2-player" data-mode="session">
+        <div class="q2-screen"><div class="q2-title">Wind a Session <span class="q2-caption">Playlist</span></div><div class="q2-content"></div><div class="q2-footer" aria-live="polite"></div></div>
+        <div class="q2-controls"><button type="button" data-action="left" aria-label="Wind five minutes less">↶</button><div class="q2-dial" role="group" aria-label="Wheel: drag around its rim, or use the turn buttons"><button type="button" data-action="confirm">Start</button></div><button type="button" data-action="right" aria-label="Wind five minutes more">↷</button></div>
+        <div class="q2-actions"><button type="button" data-action="back">Return</button></div><div class="q2-sample">Concept · fictional tracks · no audio</div>
+      </div></div>
+    </section>
+    <section data-variant="Queue Splice" aria-label="Queue Splice concept" hidden>
+      <div class="q2-stage"><div class="q2-player" data-mode="splice">
+        <div class="q2-screen"><div class="q2-title">Place in Queue <span class="q2-caption">Ordered</span></div><div class="q2-content"></div><div class="q2-footer" aria-live="polite"></div></div>
+        <div class="q2-controls"><button type="button" data-action="left" aria-label="Place earlier in the queue">↶</button><div class="q2-dial" role="group" aria-label="Wheel: drag around its rim, or use the turn buttons"><button type="button" data-action="confirm">Insert</button></div><button type="button" data-action="right" aria-label="Place later in the queue">↷</button></div>
+        <div class="q2-actions"><button type="button" data-action="back">Return</button></div><div class="q2-sample">Concept · fictional tracks · no audio</div>
+      </div></div>
+    </section>
+    <section data-variant="Library Atlas" aria-label="Library Atlas concept" hidden>
+      <div class="q2-stage"><div class="q2-player" data-mode="atlas">
+        <div class="q2-screen"><div class="q2-title">Library Atlas <span class="q2-caption">Artist sort</span></div><div class="q2-content"></div><div class="q2-footer" aria-live="polite"></div></div>
+        <div class="q2-controls"><button type="button" data-action="left" aria-label="Previous album or artist">↶</button><div class="q2-dial" role="group" aria-label="Wheel: drag around its rim, or use the turn buttons"><button type="button" data-action="confirm">Open</button></div><button type="button" data-action="right" aria-label="Next album or artist">↷</button></div>
+        <div class="q2-actions"><button type="button" data-action="back">Return</button><button type="button" data-action="fast">Fast turn</button></div><div class="q2-sample">Concept · sample library · simulated scale change</div>
+      </div></div>
+    </section>
+  </div>
+</div>
+<script>
+(() => {
+  const root = document.getElementById('q2-wheel-study');
+  const tracks = [
+    ['Night Bus',232],['Still Water',198],['Tideglass',271],['Blue Hour',223],
+    ['Low Sun',262],['Homeward',240],['Paper Lanterns',201],['Afterglow',267],
+    ['Signal',226],['Open Window',285],['Loom',212],['Daybreak',224]
+  ];
+  const artists = [
+    ['Aster',['Still Water','Tideglass','Open Window']],
+    ['Blue Harbour',['Night Bus','Blue Hour','Signal']],
+    ['Cedar',['Paper Lanterns','Low Sun','Loom']],
+    ['Delta Fields',['Homeward','Afterglow','Daybreak']]
+  ];
+  const state = {target:1800,sessionSet:false,gap:1,inserted:false,artist:1,album:1,overview:false,albumOpen:false};
+  const status = {session:'Turn to choose a duration. Centre starts the session.',splice:'Carrying: Paper Lanterns · 3:21',atlas:'Slow turn: albums. Fast turn: artist overview.'};
+  const clamp = (n,min,max) => Math.max(min,Math.min(max,n));
+  const time = seconds => `${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`;
+  function sessionFor(target) {
+    let seconds=0,count=0;
+    for (const [,length] of tracks) {if(seconds+length>target) break;seconds+=length;count++;}
+    return {seconds,count};
+  }
+  function queueFor(gap, inserted) {
+    const queue = tracks.slice(2,5);
+    if(inserted) queue.splice(gap,0,tracks[6]);
+    return queue;
+  }
+  function selfCheck() {
+    const fit=sessionFor(1800);
+    if(fit.seconds!==1627 || fit.count!==7) throw Error('Session duration mismatch');
+    for(let target=300;target<=2700;target+=300){
+      const fit=sessionFor(target);
+      if(fit.seconds>target || (fit.count<tracks.length && fit.seconds+tracks[fit.count][1]<=target)) throw Error('Session boundary mismatch');
+    }
+    for(let gap=0;gap<=3;gap++){
+      const q=queueFor(gap,true);
+      if(q.length!==4 || q[gap][0]!==tracks[6][0] || queueFor(gap,false).length!==3) throw Error('Insertion mismatch');
+    }
+  }
+  selfCheck();
+  function restore(saved) {
+    const s=saved?.privateContent;
+    if(s?.version!==1) return;
+    for(const [key,min,max] of [['target',300,2700],['gap',0,3],['artist',0,3],['album',0,2]]) {
+      if(Number.isInteger(s[key])) state[key]=clamp(s[key],min,max);
+    }
+    for(const key of ['sessionSet','inserted','overview','albumOpen']) if(typeof s[key]==='boolean') state[key]=s[key];
+  }
+  restore(window.openai?.widgetState);
+  function save() {
+    window.openai?.setWidgetState?.({modelContent:{concepts:['Wind a Session','Queue Splice','Library Atlas'],targetMinutes:state.target/60,insertionGap:state.gap},privateContent:{version:1,...state}})?.catch(()=>{});
+  }
+  const row=(title,detail,selected=false) => `<div class="q2-row${selected?' selected':''}"><span>${title}</span><small>${detail}</small></div>`;
+  function render() {
+    for(const player of root.querySelectorAll('[data-mode]')) {
+      const mode=player.dataset.mode, content=player.querySelector('.q2-content');
+      let angle=0;
+      if(mode==='session') {
+        const fit=sessionFor(state.target);
+        content.innerHTML=`<div class="q2-caption">${state.sessionSet?'Session ready':'Time available'}</div><div class="q2-value">${state.target/60} min</div><div class="q2-progress"><span style="width:${fit.seconds/state.target*100}%"></span></div><div>${time(fit.seconds)} of music · ${fit.count} tracks</div><div class="q2-caption">Last song</div>${row(tracks[fit.count-1][0],time(tracks[fit.count-1][1]),true)}`;
+        angle=state.target/2700*360;
+      } else if(mode==='splice') {
+        const queue=queueFor(state.gap,state.inserted);
+        let html='<div class="q2-caption">Playing: Night Bus · 1:12 left</div>';
+        const wait=72+tracks.slice(2,2+state.gap).reduce((sum,t)=>sum+t[1],0);
+        for(let i=0;i<=queue.length;i++) {
+          if(!state.inserted && i===state.gap) html+=`<div class="q2-seam">＋ Paper Lanterns · in ${time(wait)}</div>`;
+          if(i<queue.length) html+=row(queue[i][0],time(queue[i][1]),state.inserted && i===state.gap);
+        }
+        content.innerHTML=html; angle=state.gap/3*300;
+      } else {
+        if(state.albumOpen) {
+          content.innerHTML=`<div class="q2-caption">Album opened</div><div class="q2-value" style="font-size:24px">${artists[state.artist][1][state.album]}</div><div>${artists[state.artist][0]}</div><div class="q2-caption">Browsing leaves playback untouched.</div>`;
+        } else if(state.overview) {
+          content.innerHTML='<div class="q2-caption">Scale: artists</div>'+artists.map((a,i)=>row(a[0],'3 albums',i===state.artist)).join('');
+        } else {
+          content.innerHTML=`<div class="q2-caption">Scale: albums · ${artists[state.artist][0]}</div>`+artists[state.artist][1].map((a,i)=>row(a,`${i+1} / 3`,i===state.album)).join('');
+        }
+        angle=(state.artist*3+state.album)/12*360;
+      }
+      player.querySelector('.q2-dial').style.setProperty('--q-angle',`${angle}deg`);
+      player.querySelector('.q2-footer').textContent=status[mode];
+      const done=mode==='splice'?state.inserted:mode==='session'?state.sessionSet:state.albumOpen;
+      for(const button of player.querySelectorAll('[data-action="left"],[data-action="right"],[data-action="confirm"]')) button.disabled=done;
+      player.querySelector('[data-action="back"]').textContent=mode==='splice'&&state.inserted?'Undo':'Return';
+      const fast=player.querySelector('[data-action="fast"]'); if(fast) fast.disabled=state.albumOpen;
+    }
+  }
+  function act(mode,action) {
+    const step=action==='left'?-1:action==='right'?1:0;
+    if(mode==='session') {
+      if(step && !state.sessionSet){state.target=clamp(state.target+step*300,300,2700);status.session='Complete tracks only. The same draft grows or shrinks.';}
+      if(action==='confirm'){state.sessionSet=true;status.session='Session selected. Playback is simulated.';}
+      if(action==='back'){state.sessionSet=false;status.session='Returned to the draft. No actual playback changed.';}
+    } else if(mode==='splice') {
+      if(step && !state.inserted){state.gap=clamp(state.gap+step,0,3);status.splice='Carrying: Paper Lanterns · 3:21';}
+      if(action==='confirm'){state.inserted=true;status.splice='Added at this gap. The current song keeps playing.';}
+      if(action==='back'){state.inserted=false;status.splice='Original upcoming queue restored.';}
+    } else {
+      if(step && !state.albumOpen){
+        if(state.overview) state.artist=clamp(state.artist+step,0,3);
+        else state.album=clamp(state.album+step,0,2);
+      }
+      if(action==='fast' && !state.albumOpen){state.overview=true;status.atlas='The artist stays anchored as the view expands.';}
+      if(action==='confirm') {
+        if(state.overview){state.overview=false;state.album=0;status.atlas='Artist opened. Each turn now selects an album.';}
+        else {state.albumOpen=true;status.atlas='Return restores this album’s place in the browser.';}
+      }
+      if(action==='back') {
+        if(state.albumOpen){state.albumOpen=false;status.atlas='Back at the same album.';}
+        else {state.overview=true;status.atlas='Artist overview. Centre opens the selected artist.';}
+      }
+    }
+    render();save();
+  }
+  root.addEventListener('click',event=>{
+    const button=event.target.closest('button[data-action]');
+    if(button && !button.disabled) act(button.closest('[data-mode]').dataset.mode,button.dataset.action);
+  });
+  for(const dial of root.querySelectorAll('.q2-dial')) {
+    let previous=null,travel=0;
+    const angle=event=>{const r=dial.getBoundingClientRect();return Math.atan2(event.clientY-r.top-r.height/2,event.clientX-r.left-r.width/2)*180/Math.PI;};
+    dial.addEventListener('pointerdown',event=>{if(event.target.closest('button'))return;previous=angle(event);travel=0;dial.setPointerCapture(event.pointerId);});
+    dial.addEventListener('pointermove',event=>{
+      if(previous===null)return;
+      const current=angle(event);let delta=(current-previous+540)%360-180;previous=current;travel+=delta;
+      while(Math.abs(travel)>=30){const step=Math.sign(travel);act(dial.closest('[data-mode]').dataset.mode,step>0?'right':'left');travel-=step*30;}
+    });
+    for(const name of ['pointerup','pointercancel','lostpointercapture']) dial.addEventListener(name,()=>{previous=null;travel=0;});
+  }
+  window.addEventListener('openai:set_globals',event=>{if(event.detail?.globals?.widgetState){restore(event.detail.globals.widgetState);render();}});
+  render();
+})();
+</script>

@@ -2684,7 +2684,7 @@ def test_another_slider_is_stock_s(fw, world, st):
     assert slider_scrub(fw, other).fills == []
 
 
-# Classic's message screens: Update Local Music's dialog and USB mode's page.
+# Classic's message screens: Update Library's dialog and USB mode's page.
 
 SCAN_WHOLE = O['SCAN_WHOLE']
 

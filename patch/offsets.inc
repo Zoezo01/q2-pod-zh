@@ -628,6 +628,9 @@ static inline int arc_out(int r, int y) {
 #define MUSIC_INFO_ALBUM_ARTIST 0x580 /* toolsGetMusicInfo's info (ID3_ALBUM's base): abmartist, the scan's albumsonger */
 #define ID3_ALBUM_ARTIST (ID3_ALBUM + MUSIC_INFO_ALBUM_ARTIST) /* a CUE track's, from its file (ringnav_id3_path) */
 #define CLASS_ALBUMS 0xf003     /* all albums: rows open getMusicByAlbum (load_localclass_list 0xff10) */
+/* album_page's grid (album_modetype 1, PLAYSET ALBUMTYPE): its table rows hold this many albums,
+ * album row * ALBUM_GRID + cell of p_deque_showlist; a last row's missing cells are hidden (on_load_data 0x4a5658). */
+#define ALBUM_GRID 3
 /* localmusic/playlist_page's add mode (g_play_info + 0x7894): non-zero while it is Add to Playlist;
  * 0 when browsing the Playlists list, whose rows' trailing dots open playlistsmore_page. */
 #define PLAYLIST_ADD_MODE 0xa3b7d4
@@ -690,6 +693,7 @@ static inline int arc_out(int r, int y) {
 #define MCL_GAPLESS 0xa5002c    /* byte: stock's Gapless setting (mclGetGaplessMode); mclAutoChange preloads only with it */
 #define MCL_FD 0xa5008c         /* player socket, -1 none */
 #define INITCONFIG_MODE_RET 0x51e0d0 /* player_initconfig's mclSetPlayMode call (jalr 0x51e0c8) returns here */
+#define TIDAL_ALL_RET 0x487b7c /* the Tidal stream thread's id free and loop, past its ending for a song started (tidal.c tidal_start) */
 /* mclUsbAudioSetVol (0x5bec64): the USB DAC's volume control, -1 before the first set, -2 when it
  * has none and hciplayer's soft volume (mcl-softvolflag) applies instead (0x5bab48 opens hw:1). */
 #define USB_MIXER 0xa50044

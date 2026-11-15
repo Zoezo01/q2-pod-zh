@@ -35,8 +35,8 @@ enum {
     POD_HOLD_HOME,
     POD_STANDBY,
     POD_BT_LINK,
-    POD_CF_SORT,    /* Display's Coverflow Sort: coverflow.c's SORT_FILE, not config.ini */
-    POD_CF_REFRESH, /* and Refresh Coverflow, an action */
+    POD_CF_SORT,    /* Cover Flow's Sort: coverflow.c's SORT_FILE, not config.ini */
+    POD_CF_REFRESH, /* and Refresh Cover Flow, an action */
     POD_EQ_OUTPUT,  /* EQ per Output: the value and key; its row is Advanced EQ's (peq_ui.c) */
     POD_KEYTONE, /* Key Tone and In-Vehicle Mode: stock's bytes and SYSSET keys, as its rows did */
     POD_CARMODE,
@@ -50,7 +50,10 @@ enum {
     POD_CF_POSITION,    /* and Position Bar, a switch (coverflow_position.c) */
     POD_HIDE_STREAM, /* Appearance's Hide Streaming / Folder on Home (coverflow_home_layout) */
     POD_HIDE_FOLDER,
-    POD_REMIND_DAILY, /* System Update's Remind Daily (netupdate_poll); netupdate.c passes pod_rows 26 */
+    POD_REMIND_DAILY, /* System Update's Update Notifications (netupdate_poll); netupdate.c passes
+                         pod_rows 26 */
+    POD_ALBUM_GRID,   /* Library & Folders' Album View: stock's value and PLAYSET key
+                         (album_view_toggle) */
     /* 中文分支自有的行一律排在 upstream 成员之后：上游的 POD_* 索引、它的 _Static_assert 和
      * netupdate.c 里 pod_rows 的硬编码就不用每次合并都跟着挪。pod_keys 按名字读写，顺序无关。 */
     POD_LIBRARY_FILL, /* 补全封面与歌词, an action: onlinematch.c's library_fill_* over the card */
@@ -333,6 +336,7 @@ typedef struct {
 typedef struct {
     void *w, *at[MAX_ENTRIES];
     int id[MAX_ENTRIES], n, kind, rows, row, height, ctx;
+    int cols; /* a table row's entries: ALBUM_GRID in the album grid, else 1 */
     unsigned scope;
 } menu_t;
 
@@ -461,6 +465,8 @@ int remain_due(const void *info);
 int np_fit_due(const void *info);
 int np_sync(void *top);
 void bar_title(void *bar, void *top);
+int home_menu(void *top);               /* Home's page in front (navigation.c) */
+const char *coverflow_home_title(void); /* Home's title (coverflow.c) */
 void slider_fill(void *slider, unsigned color);
 void slider_knobless(void *slider);
 void np_theme(void);
@@ -555,9 +561,11 @@ int stock_usb_config_trampoline(void), stock_usb_detect_trampoline(void);
 int stock_usb_status_trampoline(void);
 
 /* library_lists.c */
+void album_view_toggle(void);
 int era_menu(void *ctx, void *event);
 int era_sql(const char *sql, int (*row)(void *, int, char **, char **), void *ctx);
 int long_songs(void *ctx, void *event);
+void *songs_by_path(const char *const *paths, unsigned n);
 /* durations.c: UI-thread API (duration_seconds and duration_text in peq.h); the worker alone
  * probes files, the UI publishes after join. */
 int durations_start(void *songs), durations_busy(int *done, int *total);
@@ -567,6 +575,9 @@ int most_played(void *ctx, void *event);
 int shuffle_menu(void *ctx, void *event);
 int shuffle_play(void *all);
 int tidal_downloads(void *ctx, void *event);
+
+/* tags.c */
+int scan_quote(char *sql, unsigned cap, unsigned *n, const char *s);
 
 /* ratings.c */
 const char *hearts_text(char *s, int n);

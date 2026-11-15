@@ -2052,7 +2052,7 @@ class Nc(C.Structure):
 
 
 TOLD = b'/mnt/data/q2-update.told'
-NOTICE = f'Q2 Pod {NEWER.decode()} is out: System Update → Network Update'
+NOTICE = f'Q2 Pod {NEWER.decode()} is out: System Update → Network update'
 HOUR, DAY = 60 * 60 * 1000, 24 * 60 * 60 * 1000
 NU_POLL = 2000  # netupdate.c's NU_POLL_MS
 

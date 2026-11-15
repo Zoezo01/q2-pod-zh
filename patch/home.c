@@ -11,7 +11,7 @@ static void *library_row(void *view, const char *icon, int (*click)(void *, void
 }
 
 /* localmusic_page_init: stock's 11 category rows (0x535508), by index (get_localmusic_showinfo
- * 0x50bf30): Update Local Music, All Songs, Album, Artist, Genre, Hi-Res, My Fav, Frequent,
+ * 0x50bf30): Update Library, All Songs, Album, Artist, Genre, Hi-Res, My Fav, Frequent,
  * Recent, Recently Added, Playlist. */
 enum {
     L_UPDATE,
@@ -68,7 +68,7 @@ int ringnav_localmusic(void *win, void *ctx) {
     if (!view || widget_count_children(view) != L_STOCK) return result;
     void *stock[L_STOCK];
     for (int i = 0; i < L_STOCK; i++) stock[i] = widget_get_child(view, i);
-    unsigned n = 0; /* each row moves to n as it comes, so Update Local Music, left, ends last */
+    unsigned n = 0; /* each row moves to n as it comes, so Update Library, left, ends last */
     if (library_search())
         widget_restack(library_row(view, (void *)0, stock_search, 0, "搜索", 1), n++);
     widget_restack(library_row(view, "local_shuffle", shuffle_menu, 0, "随机播放", 1), n++);

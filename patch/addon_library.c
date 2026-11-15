@@ -1,6 +1,6 @@
-/* Card apps' library update (addon.c's apps): after a sync an app asks for Update Local Music and
+/* Card apps' library update (addon.c's apps): after a sync an app asks for Update Library and
  * the import of its own playlists in /tmp/q2-<id>.library, written whole (temp + rename): "<seq>"
- * on its first line (23 bytes at most), then "scan" (Update Local Music), "import <path>" and
+ * on its first line (23 bytes at most), then "scan" (Update Library), "import <path>" and
  * "add <path>" lines, LF or CRLF, each path a playlist directly in LIB_DIR whose name is
  * LIB_NAME - 1 bytes at most, LIB_MAX bytes in all. library_poll, once per addon_poll pass, takes a
  * seq new for its app, any app on the card, running or not, from one read of the file. A new seq is
@@ -168,7 +168,7 @@ static const char *library_missing(char *why, unsigned size) {
  * own pages. Any other waits, a dialog's (this poll runs inside its own loop, a toast's too: no
  * request starts there), a Library page's (the import reloads p_deque_playlist and
  * p_deque_showlist under it; Q2 Pod's own keep records read from the database the scan rebuilds),
- * the user's own Update Local Music, and a page this list doesn't know. */
+ * the user's own Update Library, and a page this list doesn't know. */
 static int library_safe(void) {
     static const char *const safe[] = {
         "home_page",      "stream_page",       "streamconf_page",    "addon_page",
@@ -307,7 +307,7 @@ static void library_step(void) {
     toast(bad ? bad : "歌单已更新");
 }
 
-/* addon_poll's, once a pass, every LIB_POLL_MS. A stock dialog it opens (Update Local Music, a
+/* addon_poll's, once a pass, every LIB_POLL_MS. A stock dialog it opens (Update Library, a
  * toast) runs a loop of its own, which polls again: that nested poll runs nothing, so no request
  * runs twice; it only notes the scan it sees (the scan dialog's call returns once it is over). */
 void library_poll(void) {

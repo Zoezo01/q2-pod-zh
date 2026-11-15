@@ -118,14 +118,14 @@ class Tidal:
         fw.mock('mclGetPlayStatus', lambda *_: self.status)
         fw.mock('fw_clock_gettime', self.clock)
         fw.var('fw_ctx_tidalStreamingLevelNow', C.c_int).value = level
-        self.play_fn = fw.fn('tidal_play', C.c_int, C.c_char_p, C.c_char_p)
+        self.play_fn = fw.fn('tidal_play', C.c_int, C.c_char_p, C.c_char_p, C.c_char_p)
 
     def clock(self, which, ts, *_):
         t = C.cast(ts, C.POINTER(C.c_long))  # struct { long s, ns; }
         t[0], t[1] = self.ms // 1000, self.ms % 1000 * 1000000
 
     def play(self, url, track_id):
-        self.play_fn(url.encode(), track_id.encode())
+        self.play_fn(url.encode(), track_id.encode(), None)  # the thread's reply file: Download All's alone
 
     def run(self):
         """The newest download thread, to its end."""
@@ -687,6 +687,579 @@ def test_a_card_that_refuses_the_delete_ends_the_trim(fw):
     fw.mock('fw_unlink', lambda *_: -1)
     assert trim(fw, card) == ['a', 'b'] and len(fw.calls('fw_unlink')) == 1  # once: the worker isn't trapped
 
+
+# Download All.
+
+REPLY = '/tmp/tidalplayurl_77'
+ALL_ROW = 'Download Playing Songs'
+
+
+class All:
+    """Download All on the queue playing, a Tidal page's (0xf1): its row's presses (tidal_all), tidal_poll a second
+    apart, and stock's stream thread, which answers the song asked for through tidal_play (tidal_start passes its
+    first reply's file) and, after a 0, ends as for a song started: its flag cleared."""
+    def __init__(self, fw, queue, mcl, card, ids, level=0):
+        self.fw, self.card, self.t = fw, card, Tidal(fw, card, level)
+        for tidal_id in ids:
+            queue.row(tidal_id)
+        mcl.type = 0xf1
+        fw.var('fw_ctx_tidalStreamingLevelNext', C.c_int).value = level
+        self.toasts, self.posts, self.net = [], [], 1
+        self.ask_id, self.on_ask = '900', lambda: None  # the song to play stock asks for; a step inside stock's call
+        fw.mock('navigator_to_with_context', lambda path, info, *_: self.toasts.append(C.string_at(info + 8).decode()))
+        fw.mock('fw_sem_post', lambda gate, *_: self.posts.append(gate))
+        fw.mock('networkGetConnectStatus', lambda *_: self.net)
+        fw.mock('time_now_ms', lambda *_: self.t.ms)  # the UI loop's clock, as radio_poll's
+        fw.mock('tk_str_start_with', lambda s, p, *_: C.string_at(s).startswith(C.string_at(p)))  # AWTK's
+        fw.mock('stock_tidaltrack_trampoline', lambda *_: self.stock_asks())
+        fw.var('g_backlight_status', C.c_ubyte).value = 1
+        self.flag, self.heart = fw.var('tidalfurlstart', C.c_ubyte), fw.var('isFav_playing', C.c_ubyte)
+        self.songid = fw.var('fw_ctx_tidalsongid', C.c_char * 1024)
+        self.caption = C.create_string_buffer(64)
+        self.all = fw.fn('tidal_all', None, C.c_int, C.c_char_p, C.c_uint)
+
+    def row(self, press=0):
+        self.all(press, self.caption, 64)
+        return self.caption.value.decode()
+
+    def poll(self, seconds=1):
+        for _ in range(seconds):
+            self.t.ms += 1000
+            self.fw.fn('tidal_poll', None)()
+
+    def asked(self):
+        """The song stock's thread has been asked for, as it finds it: its flag up, the id where it copies it from."""
+        return self.songid.value.decode() if self.flag.value and self.t.td.asked else None
+
+    def answer(self, url, tidal_id):
+        self.card.files[REPLY] = b'{}'
+        result = self.t.play_fn(url if url is None else url.encode(), tidal_id.encode(), REPLY.encode())
+        if not result:
+            self.flag.value = 0  # the thread's own ending
+        return result
+
+    def stock_asks(self):
+        """get_tidal_trackurl (0x483f5c on): a fetch in flight is dropped, the id set, the flag raised."""
+        self.on_ask()
+        self.flag.value = 0
+        self.songid.value = self.ask_id.encode()
+        self.flag.value = 1
+
+    def play_asked(self):
+        """A song to play asked for, as mclStartPlayer does."""
+        self.fw.fn('ringnav_tidal_track', C.c_int, C.c_void_p, C.c_void_p, C.c_void_p, C.c_void_p)(0, 0, 0, 0)
+
+    def busy(self):
+        return self.fw.fn('tidal_busy', C.c_int)()
+
+
+def test_download_all_saves_the_queue_s_tidal_songs_one_after_another_without_playing_them(fw, queue, mcl):
+    card, cdn = Card(fw), Cdn(fw, {URL: b'fLaC-1', NEXT: b'fLaC-2'})
+    a = All(fw, queue, mcl, card, ['11', 'app:1:0', '', '22'])  # a card app's song and a row with no id aren't Tidal's
+    assert a.row() == ALL_ROW and not a.busy()
+    assert a.row(press=1) == 'Downloading 1 of 2. Press to stop' and a.busy()  # Smart Wi-Fi keeps the radio on
+    a.heart.value = 1  # the playing song's
+    a.poll()
+    assert a.asked() == '11' and len(a.posts) == 1  # the thread woken once
+    assert fw.calls('reset_poweroptions_timer')[-1][1][:3] == (1, 1, 0)  # standby and auto power-off held, not the screen's
+    a.poll(5)
+    assert len(a.posts) == 1  # the thread has it: nothing more is asked
+    a.heart.value = 0  # the thread's favourites check was of song 11
+    assert a.answer(URL, '11') == 1 and a.t.played == []  # 1: tidal_start passes the thread's ending over
+    assert a.heart.value == 1 and a.flag.value == 0 and REPLY not in card.files  # what that ending would have left
+    a.poll()
+    assert a.asked() is None  # its download runs: the next waits
+    a.t.run()
+    assert card.listing() == ['11-0.flac'] and card.files[cached('11-0.flac')] == b'fLaC-1'
+    a.poll()
+    assert a.asked() == '22' and a.row() == 'Downloading 2 of 2. Press to stop'
+    assert a.answer(NEXT, '22') == 1
+    a.t.run()
+    a.poll()
+    assert not a.busy() and a.row() == ALL_ROW and a.toasts == []  # ended: said at the next pass
+    a.poll()
+    assert a.toasts == ['Downloaded 2 of 2 songs'] and a.t.played == [] and cdn.fetched == [URL, NEXT]
+    a.poll(3)
+    assert len(a.toasts) == 1 and len(a.posts) == 2
+
+
+def test_download_all_names_and_tags_a_song_from_its_own_copy_of_the_queue(fw, queue, mcl):
+    card = Card(fw)
+    Cdn(fw, {URL: b'fLaC'})
+    queue.row('123', 'Song', 'Artist', 'Album', '')
+    Ffmpeg(fw, card)
+    a = All(fw, queue, mcl, card, [])
+    a.row(press=1)
+    queue.deques[queue.handle].clear()  # another queue plays meanwhile
+    a.poll()
+    assert a.answer(URL, '123') == 1
+    assert [tag.value for tag in a.t.td.tags] == [b'title=Song', b'artist=Artist', b'album=Album']
+    a.t.run()
+    assert card.listing() == ['123-0 Artist - Song.flac']
+
+
+def test_download_all_passes_the_songs_already_on_the_card_at_the_streaming_quality(fw, queue, mcl):
+    card = Card(fw, {cached('11-3 A - One.flac'): b'', cached('22-3.m4a'): b'', cached('33-3 C.flac.tmp'): b'', cached('33-1 C.flac'): b''})
+    a = All(fw, queue, mcl, card, ['11', '22', '33'], level=5)  # HiRes and above is asked for as 3, as stock's thread does
+    a.row(press=1)
+    a.poll()
+    assert a.asked() == '33' and a.row() == 'Downloading 3 of 3. Press to stop' and a.t.td.saved == 2
+    assert not fw.calls('fw_curl_easy_init')
+
+
+def test_download_all_of_songs_all_on_the_card_ends_at_once(fw, queue, mcl):
+    card = Card(fw, {cached('11-0.flac'): b'', cached('22-0 B.flac'): b''})
+    a = All(fw, queue, mcl, card, ['11', '22'])
+    a.row(press=1)
+    a.poll(2)
+    assert a.toasts == ['Downloaded 2 of 2 songs'] and a.posts == [] and a.asked() is None
+
+
+@pytest.mark.parametrize('url', [None, '', 'https://cdn.example/a/noext'])
+def test_a_song_tidal_gives_no_url_for_is_passed_and_three_in_a_row_end_it(fw, queue, mcl, url):
+    card = Card(fw, {cached('11-0.flac'): b''})
+    Cdn(fw, {})
+    a = All(fw, queue, mcl, card, ['11', '22', '33', '44', '55'])
+    a.row(press=1)
+    for tidal_id in '22', '33', '44':
+        a.poll()
+        assert a.asked() == tidal_id
+        assert a.answer(url, tidal_id) == 1 and a.t.played == [] and a.t.threads == []
+    a.poll()
+    assert not a.busy() and a.asked() is None  # the Wi-Fi or the sign-in gone: 55 isn't asked for
+    a.poll()
+    assert a.toasts == ['Downloaded 1 of 5 songs']
+
+
+def test_a_saved_song_between_two_that_werent_keeps_download_all_going(fw, queue, mcl):
+    card = Card(fw)
+    Cdn(fw, {URL: b'fLaC'})
+    a = All(fw, queue, mcl, card, ['1', '2', '3', '4', '5', '6'])
+    a.row(press=1)
+    for tidal_id, url in ('1', ''), ('2', ''), ('3', URL), ('4', ''), ('5', ''):
+        a.poll()
+        assert a.asked() == tidal_id
+        a.answer(url, tidal_id)
+        if url:
+            a.t.run()
+    a.poll()
+    assert a.asked() == '6'
+
+
+def test_a_transfer_that_fails_is_a_song_passed(fw, queue, mcl):
+    card = Card(fw)
+    Cdn(fw, {URL: b'<html>', NEXT: b'fLaC'}, code=403)
+    a = All(fw, queue, mcl, card, ['1', '2'])
+    a.row(press=1)
+    a.poll()
+    a.answer(URL, '1')
+    a.t.run()
+    a.poll()
+    assert a.asked() == '2' and a.t.td.saved == 0 and a.t.td.misses == 1 and card.listing() == []
+
+
+def test_a_song_to_play_comes_before_download_all_s_and_its_dropped_answer_starts_nothing(fw, queue, mcl):
+    """A song to play is asked for while the thread fetches Download All's: stock drops that fetch, whose answer,
+    with a URL or without, starts nothing and leaves the flag stock raised for the song to play; that song then
+    starts as ever, and Download All's is asked for again after."""
+    card = Card(fw)
+    Cdn(fw, {URL: b'fLaC', NEXT: b'fLaC-played'})
+    a = All(fw, queue, mcl, card, ['11'])
+    a.row(press=1)
+    a.poll()
+    assert a.asked() == '11'
+    a.play_asked()
+    assert a.songid.value == b'900' and a.flag.value == 1 and len(a.posts) == 2
+    a.poll()
+    assert a.songid.value == b'900'  # nothing asked over the song to play
+    assert a.answer(URL, '11') == 1 and a.t.played == [] and a.t.threads == [] and a.flag.value == 1
+    assert a.answer(NEXT, '900') == 0 and a.t.played == [NEXT]
+    a.t.run()  # the played song's own copy
+    a.poll()
+    assert a.asked() == '11' and a.t.td.misses == 0
+    assert a.answer(URL, '11') == 1
+    a.t.run()
+    assert card.listing() == ['11-0.flac', '900-0.flac']
+
+
+def test_an_ask_the_thread_never_took_is_over_at_the_played_song_s_answer(fw, queue, mcl):
+    card = Card(fw)
+    Cdn(fw, {URL: b'fLaC', NEXT: b'fLaC-played'})
+    a = All(fw, queue, mcl, card, ['11'])
+    a.row(press=1)
+    a.poll()
+    a.play_asked()  # before the thread woke: it copies the song to play's id, never 11
+    assert a.answer(NEXT, '900') == 0 and a.t.played == [NEXT] and a.t.td.asked == b''
+    a.t.run()
+    a.poll()
+    assert a.asked() == '11'
+
+
+def test_the_song_download_all_asked_for_played_meanwhile_plays(fw, queue, mcl):
+    card = Card(fw)
+    Cdn(fw, {URL: b'fLaC'})
+    a = All(fw, queue, mcl, card, ['11'])
+    a.row(press=1)
+    a.poll()
+    a.ask_id = '11'
+    a.play_asked()
+    assert a.answer(URL, '11') == 1 and a.t.played == []  # the dropped fetch's
+    assert a.answer(URL, '11') == 0 and a.t.played == [URL]  # the one stock asked for
+    a.t.run()
+    a.poll(2)
+    assert a.toasts == ['Downloaded 1 of 1 song']
+
+
+def test_nothing_is_asked_while_stock_sets_up_a_song_to_play(fw, queue, mcl):
+    card = Card(fw)
+    a = All(fw, queue, mcl, card, ['11'])
+    a.row(press=1)
+    polled = []
+    def step():  # tidal_poll's pass falls inside stock's call
+        a.poll()
+        polled.append((a.t.td.asked, a.t.td.starting))
+    a.on_ask = step
+    a.play_asked()
+    assert polled == [(b'', 1)] and a.t.td.starting == 0 and len(a.posts) == 1  # the one for the song to play
+    a.poll()
+    assert a.t.td.asked == b''  # that song's flag is still up
+    a.flag.value = 0  # the thread took it
+    a.poll()
+    assert a.asked() == '11'
+
+
+def test_a_card_app_s_song_starting_drops_download_all_s_fetch_too(fw, queue, mcl):
+    """A card app's song clears Download All's flag as a stock song's does, so its fetch's answer is dropped
+    (curl_stop_httpget, at its stock address, tidal.c's own define, a ret meanwhile should it be called: the byte put
+    back after, as conftest's map outlives a load)."""
+    card = Card(fw)
+    a = All(fw, queue, mcl, card, ['11'])
+    a.row(press=1)
+    a.poll()
+    queue.deques[queue.handle][:] = []
+    queue.row('app:1:0')
+    mcl.pos, a.net = 0, 0  # offline: app_track gives up once the fetch is dropped
+    stop = int(re.findall(r'curl_stop_httpget \(\(int \(\*\)\(void\)\)(0x[0-9a-f]+)u\)', (host.ROOT/'patch/tidal.c').read_text())[0], 16)
+    claim(stop)
+    saved = C.string_at(stop, 1)
+    C.memmove(stop, b'\xc3', 1)
+    try:
+        a.play_asked()
+    finally:
+        C.memmove(stop, saved, 1)
+    assert a.flag.value == 0 and a.t.td.dropped == 1 and a.t.td.starting == 0
+    assert a.answer('', '11') == 1 and a.t.td.asked == b'' and a.t.td.tried == 0  # its answer: not a song passed
+    a.net = 1
+    a.poll()
+    assert a.asked() == '11'
+
+
+def test_a_played_song_s_download_and_download_all_s_take_turns(fw, queue, mcl):
+    """One download at a time: while a played song's runs Download All asks for nothing, and an answer that finds one
+    running is asked for again; a song played while Download All's transfer runs waits as the thread's next job."""
+    card, cdn = Card(fw), Cdn(fw, {URL: b'fLaC-all', NEXT: b'fLaC-played'})
+    a = All(fw, queue, mcl, card, ['11'])
+    a.row(press=1)
+    a.poll()
+    a.t.play(NEXT, '900')  # a song starts, the thread's answer for 11 still to come
+    assert a.answer(URL, '11') == 1 and len(a.t.threads) == 1 and a.t.td.tried == 0
+    a.poll()
+    assert a.asked() is None  # busy
+    a.t.run()
+    a.poll()
+    assert a.asked() == '11'
+    assert a.answer(URL, '11') == 1 and len(a.t.threads) == 2
+    cdn.on_chunk = lambda i: a.t.play(NEXT.replace('/b/', '/c/'), '901') if cdn.fetched[-1] == URL and i == 0 else None
+    cdn.bodies[NEXT.replace('/b/', '/c/')] = b'fLaC-next'
+    a.t.status = STOPPED  # and the player stopped a while: neither ends Download All's transfer
+    a.t.ms += 10000
+    a.t.run()
+    assert card.listing() == ['11-0.flac', '900-0.flac', '901-0.flac'] and len(a.t.threads) == 2
+
+
+def test_a_second_press_ends_download_all_and_its_transfer(fw, queue, mcl):
+    card, cdn = Card(fw), Cdn(fw, {URL: b'a' * 4000})
+    a = All(fw, queue, mcl, card, ['11', '22'])
+    a.row(press=1)
+    a.poll()
+    a.answer(URL, '11')
+    cdn.on_chunk = lambda i: a.row(press=1) if i == 0 else None
+    a.t.run()
+    assert card.listing() == [] and not a.busy() and a.row() == ALL_ROW
+    a.poll()
+    assert a.toasts == ['Downloaded 0 of 2 songs'] and a.asked() is None
+
+
+def test_an_answer_after_download_all_ended_starts_nothing_and_a_new_one_goes_on(fw, queue, mcl):
+    card = Card(fw)
+    Cdn(fw, {URL: b'fLaC', NEXT: b'fLaC-2'})
+    a = All(fw, queue, mcl, card, ['11', '22'])
+    a.row(press=1)
+    a.poll()
+    a.row(press=1)  # ended, the thread still fetching 11
+    assert a.row(press=1) == 'Downloading 1 of 2. Press to stop'  # and started again
+    a.poll()
+    assert len(a.posts) == 1  # the answer still to come: asked once
+    assert a.answer(URL, '11') == 1 and a.t.played == []  # the new one's first song as well: saved
+    a.t.run()
+    a.poll()
+    assert a.asked() == '22' and card.listing() == ['11-0.flac']
+
+
+def test_stop_streaming_services_ends_download_all(fw, queue, mcl):
+    card = Card(fw)
+    a = All(fw, queue, mcl, card, ['11'])
+    stop = fw.fn('tidal_all_stop', None)
+    stop()
+    a.poll(2)
+    assert a.toasts == []  # none running: nothing to say
+    a.row(press=1)
+    stop()
+    assert not a.busy()
+    a.poll()
+    assert a.toasts == ['Downloaded 0 of 1 song']
+
+
+def test_clear_all_downloads_ends_download_all_and_says_nothing(fw, queue, mcl):
+    card = Card(fw, {cached('11-0.flac'): b''})
+    a = All(fw, queue, mcl, card, ['11', '22'])
+    a.row(press=1)
+    a.poll()
+    fw.fn('tidal_clear', None)()
+    assert not a.busy() and a.row() == ALL_ROW and card.listing() == []
+    a.poll(3)
+    assert a.toasts == [] and len(a.posts) == 1
+
+
+def test_download_all_ends_when_nothing_moves_for_two_minutes(fw, queue, mcl):
+    card = Card(fw)
+    a = All(fw, queue, mcl, card, ['11'])
+    a.net = 0  # no Wi-Fi: nothing is asked
+    a.row(press=1)
+    a.poll(120)
+    assert a.busy() and a.posts == []
+    a.poll(2)
+    assert not a.busy() and a.toasts == ['Downloaded 0 of 1 song']
+
+
+def test_download_all_ends_on_a_full_card(fw, queue, mcl):
+    card = Card(fw, free_mb=8)
+    a = All(fw, queue, mcl, card, ['11'])
+    a.row(press=1)
+    a.poll(2)
+    assert a.toasts == ['Downloaded 0 of 1 song'] and a.posts == []
+
+
+def test_the_count_is_told_once_the_screen_is_on(fw, queue, mcl):
+    card = Card(fw, {cached('11-0.flac'): b''})
+    a = All(fw, queue, mcl, card, ['11'])
+    fw.var('g_backlight_status', C.c_ubyte).value = 0
+    a.row(press=1)
+    a.poll(30)
+    assert a.toasts == [] and not a.busy()
+    assert fw.calls('reset_poweroptions_timer') == fw.calls('reset_poweroptions_timer')[:1]  # nothing held once it ended
+    fw.var('g_backlight_status', C.c_ubyte).value = 1
+    a.poll()
+    assert a.toasts == ['Downloaded 1 of 1 song']
+
+
+@pytest.mark.parametrize('kind, ids', [(0xf1, ['app:1:0', '']), (0xf1, []), (0xf001, ['11']), (1, ['11'])])
+def test_download_all_needs_a_tidal_song_in_the_queue_playing(fw, queue, mcl, kind, ids):
+    card = Card(fw)
+    a = All(fw, queue, mcl, card, ids)
+    mcl.type = kind
+    assert a.row(press=1) == ALL_ROW and a.toasts == ['Play a Tidal album or playlist first'] and not a.busy()
+    a.poll(2)
+    assert a.posts == [] and len(a.toasts) == 1
+
+
+def test_tidal_poll_does_nothing_until_download_all_runs(fw, queue, mcl):
+    card = Card(fw)
+    a = All(fw, queue, mcl, card, ['11'])
+    a.poll(5)
+    assert not fw.calls('reset_poweroptions_timer') and not fw.calls('fw_opendir') and a.posts == [] and a.toasts == []
+    assert not fw.calls('time_now_ms')  # every UI loop pass: not even the clock is read
+
+
+def test_tidal_poll_steps_once_a_second(fw, queue, mcl):
+    card = Card(fw)
+    a = All(fw, queue, mcl, card, ['11'])
+    a.net = 0
+    a.row(press=1)
+    poll = fw.fn('tidal_poll', None)
+    for _ in range(10):  # every UI loop pass
+        a.t.ms += 100
+        poll()
+    assert a.t.td.idle == 1
+    a.t.ms += 900
+    poll()
+    assert a.t.td.idle == 2
+
+
+
+def usb_storage(fw, a, stock):
+    """ringnav_usbmode, a computer's cable: stock's page (stock) runs once the card's writers are stopped."""
+    fw.mock('stock_usbmode_trampoline', lambda *_: stock.append((a.t.td.all, a.t.td.busy, a.t.ms)) or 3)
+    return fw.fn('ringnav_usbmode', C.c_int, C.c_void_p, C.c_void_p, C.c_void_p, C.c_void_p)(None, None, None, None)
+
+
+def test_usb_storage_drops_download_all_s_waiting_song_and_waits_for_its_worker(fw, queue, mcl):
+    card = Card(fw)
+    Cdn(fw, {URL: b'fLaC'})
+    a = All(fw, queue, mcl, card, ['11', '22'])
+    a.row(press=1)
+    a.poll()
+    a.answer(URL, '11')  # its worker not yet at the job
+    sleeps, stock = [], []
+    fw.mock('sleep_ms', lambda *_: sleeps.append(a.t.run()) and 0)  # the worker runs meanwhile
+    assert usb_storage(fw, a, stock) == 3
+    assert stock == [(None, 0, a.t.ms)] and len(sleeps) == 1 and card.listing() == [] and not fw.calls('fw_curl_easy_init')
+    a.poll()
+    assert a.toasts == ['Downloaded 0 of 2 songs'] and a.asked() is None
+
+
+@pytest.mark.parametrize('all_run', [True, False])
+def test_usb_storage_ends_a_running_transfer_and_waits_three_seconds_at_most(fw, queue, mcl, all_run):
+    """Download All's transfer or a played song's: either ends, its .tmp gone, though the worker outlasts the wait."""
+    card, cdn = Card(fw), Cdn(fw, {URL: b'a' * 4000})
+    a = All(fw, queue, mcl, card, ['11'])
+    if all_run:
+        a.row(press=1)
+        a.poll()
+        a.answer(URL, '11')
+    else:
+        a.t.play(URL, '11')
+    sleeps, stock, start = [], [], a.t.ms
+    def sleep(ms, *_):
+        sleeps.append(ms)
+        a.t.ms += ms
+    fw.mock('sleep_ms', sleep)
+    cdn.on_chunk = lambda i: usb_storage(fw, a, stock) if i == 0 else None
+    a.t.run()
+    assert stock == [(None, 1, start + 3000)] and sum(sleeps) == 3000  # the transfer still inside its chunk: 3 s
+    assert card.listing() == [] and a.t.td.busy == 0 and a.t.played == ([] if all_run else [URL])
+
+
+def test_download_all_never_evicts_its_own_songs_it_ends_with_the_cache_full(fw, queue, mcl):
+    """A cap of two songs and a little: an older file still goes first, then the run ends rather than delete its first
+    song, over the cap by the one song it just saved, and its count is true."""
+    card = Card(fw, {CACHE_SIZE: b'512', cached('old.flac'): b''})
+    card.sizes[cached('old.flac')], card.ages[cached('old.flac')] = 200 * MB, 10
+    for k, tidal_id in enumerate(['11', '22', '33']):
+        card.sizes[cached(f'{tidal_id}-0.flac')], card.ages[cached(f'{tidal_id}-0.flac')] = 200 * MB, 100 + k
+    Cdn(fw, {URL: b'fLaC'})
+    a = All(fw, queue, mcl, card, ['11', '22', '33', '44'])
+    a.row(press=1)
+    for tidal_id in '11', '22', '33':
+        a.poll()
+        assert a.asked() == tidal_id
+        a.answer(URL, tidal_id)
+        a.t.run()
+    assert card.listing() == ['11-0.flac', '22-0.flac', '33-0.flac'] and a.t.td.full == 1
+    a.poll(2)
+    assert a.toasts == ['Tidal Cache full: 3 of 4 songs saved'] and len(a.posts) == 3  # 44 never asked for
+    a.row(press=1)
+    assert a.t.td.full == 0 and a.t.td.since == 0  # a new run starts afresh
+
+
+
+def test_download_all_keeps_the_songs_it_passes_as_saved_and_counts_them_true(fw, queue, mcl):
+    """Songs already on the card are the run's own too: an older file goes, then the run ends rather than delete
+    one it passed, and its count is what the card holds."""
+    card = Card(fw, {CACHE_SIZE: b'512', cached('old.flac'): b'', cached('11-0.flac'): b'', cached('22-0.flac'): b''})
+    card.sizes[cached('old.flac')], card.ages[cached('old.flac')] = 100 * MB, 10
+    for tidal_id, age in ('11', 50), ('22', 51), ('33', 100):
+        card.sizes[cached(f'{tidal_id}-0.flac')], card.ages[cached(f'{tidal_id}-0.flac')] = 200 * MB, age
+    Cdn(fw, {URL: b'fLaC'})
+    a = All(fw, queue, mcl, card, ['11', '22', '33', '44'])
+    a.row(press=1)
+    a.poll()
+    assert a.asked() == '33'  # 11 and 22 passed
+    a.answer(URL, '33')
+    a.t.run()
+    assert card.listing() == ['11-0.flac', '22-0.flac', '33-0.flac'] and a.t.td.full == 1
+    a.poll(2)
+    assert a.toasts == ['Tidal Cache full: 3 of 4 songs saved']
+
+
+def test_a_run_whose_last_song_fills_the_cache_says_downloaded(fw, queue, mcl):
+    """It reached the end of its list, so it wasn't stopped: no "Tidal Cache full"."""
+    card = Card(fw, {CACHE_SIZE: b'512'})
+    for tidal_id, age in ('11', 100), ('22', 101):
+        card.sizes[cached(f'{tidal_id}-0.flac')], card.ages[cached(f'{tidal_id}-0.flac')] = 300 * MB, age
+    Cdn(fw, {URL: b'fLaC'})
+    a = All(fw, queue, mcl, card, ['11', '22'])
+    a.row(press=1)
+    for tidal_id in '11', '22':
+        a.poll()
+        assert a.asked() == tidal_id
+        a.answer(URL, tidal_id)
+        a.t.run()
+    assert card.listing() == ['11-0.flac', '22-0.flac'] and a.t.td.full == 1
+    a.poll(2)
+    assert a.toasts == ['Downloaded 2 of 2 songs']
+
+
+def test_a_run_the_cache_fills_passes_the_rest_already_saved_and_says_downloaded(fw, queue, mcl):
+    """Full once 2 is saved, but 3-11 are on the card already: no song needs room, so the run passes them all."""
+    ids = [str(k) for k in range(1, 12)]
+    card = Card(fw, {CACHE_SIZE: b'512', **{cached(f'{i}-0.flac'): b'' for i in ids if i != '2'}})
+    for k, i in enumerate(ids):
+        card.sizes[cached(f'{i}-0.flac')], card.ages[cached(f'{i}-0.flac')] = 50 * MB, 100 if i == '2' else 50 + k
+    Cdn(fw, {URL: b'fLaC'})
+    a = All(fw, queue, mcl, card, ids)
+    a.row(press=1)
+    a.poll()
+    assert a.asked() == '2'
+    a.answer(URL, '2')
+    a.t.run()
+    assert a.t.td.full == 1 and len(card.listing()) == 11
+    a.poll(3)  # 2-9, then 10-11 and the end, then the toast
+    assert a.toasts == ['Downloaded 11 of 11 songs']
+
+
+def test_tidal_poll_passes_at_most_8_saved_songs_a_second(fw, queue, mcl):
+    ids = [str(k) for k in range(1, 22)]
+    card = Card(fw, {cached(f'{tidal_id}-0.flac'): b'' for tidal_id in ids[:20]})
+    a = All(fw, queue, mcl, card, ids)
+    a.row(press=1)
+    for at in 8, 16:
+        a.poll()
+        assert a.t.td.at == at and a.t.td.saved == at and a.asked() is None and a.posts == []
+    a.poll()
+    assert a.asked() == '21' and a.t.td.saved == 20 and len(a.posts) == 1
+
+
+def test_an_offline_press_leaves_download_all_s_dropped_fetch_nothing_to_start(fw, queue, mcl):
+    """Offline, stock's get_tidal_trackurl gives up before it sets the id or the flag (0x483f54): the flag Download
+    All raised comes down at the press, so the dropped fetch's thread doesn't fetch that song again to play it."""
+    card = Card(fw)
+    Cdn(fw, {URL: b'fLaC'})
+    a = All(fw, queue, mcl, card, ['11'])
+    a.row(press=1)
+    a.poll()
+    assert a.asked() == '11'
+    a.net = 0
+    fw.mock('stock_tidaltrack_trampoline', lambda *_: 0)
+    a.play_asked()
+    assert a.flag.value == 0 and a.t.td.dropped == 1
+    assert a.answer(URL, '11') == 1 and a.flag.value == 0 and a.t.played == [] and a.t.threads == []
+
+
+def test_a_card_app_s_song_keeps_its_heart_after_download_all_s_dropped_answer(fw, queue, mcl):
+    card = Card(fw)
+    a = All(fw, queue, mcl, card, ['11'])
+    a.row(press=1)
+    a.heart.value = 0
+    a.poll()
+    urls_play(fw, card, HEARTS)
+    queue.deques[queue.handle][:] = []
+    queue.row('app:1:0')  # a favourite
+    mcl.pos, a.net = 0, 0
+    a.play_asked()
+    assert a.heart.value == 1
+    a.answer('', '11')
+    assert a.heart.value == 1
 
 # The stream threads' gates.
 

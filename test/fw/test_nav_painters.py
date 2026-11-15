@@ -1508,10 +1508,11 @@ def test_light_modes_chevron_on_a_coloured_bar_is_white(fw, st, layout, light):
     if not light:
         assert not canvas.icons and not canvas.boxes
         return
-    # the glyph's middle half cleared in the bar's tone, then the white glyph, on the image's middle
+    # the glyph's middle half each way cleared in the bar's tone (a row's text runs under the image's left columns),
+    # then the white glyph, on the image's middle
     (box, color, _), = canvas.boxes
     mx, my = middle(box)
-    assert box[2:] == (art[0], art[1] // 2) and mx == MIDDLE[0] and abs(my - MIDDLE[1]) <= 1
+    assert box[2:] == (art[0] // 2, art[1] // 2) and abs(mx - MIDDLE[0]) <= 1 and abs(my - MIDDLE[1]) <= 1
     tone = Scheme(fw, layout).tones[0]
     assert not neutral(tone) and color == rgba(tone)  # a coloured bar's own tone
     assert canvas.icons == [(art, MIDDLE[0] // 2, MIDDLE[1] // 2)]
@@ -1690,11 +1691,11 @@ def test_system_update_adds_remind_daily_under_network_update_on_by_default(fw):
     assert fw.fn('ringnav_fwupdate', C.c_int, C.c_void_p, C.c_void_p)(win.addr, None) == 3
     assert len(view.children) == 3
     remind = view.children[2]
-    assert ui.text(label_of(remind)) == 'Remind Daily: On' and switch(remind) is None  # a missing key reads On
+    assert ui.text(label_of(remind)) == 'Update Notifications: On' and switch(remind) is None  # a missing key reads On
     click(ui, remind)
-    assert ui.text(label_of(remind)) == 'Remind Daily: Off' and settings.written == [('REMINDDAILY', 0)]
+    assert ui.text(label_of(remind)) == 'Update Notifications: Off' and settings.written == [('REMINDDAILY', 0)]
     click(ui, remind)
-    assert ui.text(label_of(remind)) == 'Remind Daily: On' and settings.written[-1] == ('REMINDDAILY', 1)
+    assert ui.text(label_of(remind)) == 'Update Notifications: On' and settings.written[-1] == ('REMINDDAILY', 1)
 
 
 def test_remind_daily_off_in_config_reads_off(fw):
@@ -1809,8 +1810,8 @@ def test_classic_shows_a_switch_as_its_value(fw, st):
     assert f'{O["CHARGE_STOP"]}%' in ui.text(label_of(charge))
     v = next(c for c in charge.walk() if c.name == '_setting_value')
     title, width = label_of(charge), charge.children[0].box[2]
-    # the value in the trailing column to the row's end, the title ending short of it
-    assert title.box[0] + title.box[2] < v.box[0] and width // 2 < v.box[0] and v.box[0] + v.box[2] >= width
+    # the value in the trailing column to the row's end, the title's box ending where it starts
+    assert title.box[0] + title.box[2] == v.box[0] and width // 2 < v.box[0] and v.box[0] + v.box[2] >= width
     assert ui.text(label_of(standby)).endswith('Off') and value(ui, standby) is None  # not a switch: its text whole
     click(ui, charge)
     assert value(ui, charge) == 'Off' and len([c for c in charge.walk() if c.name == '_setting_value']) == 1
@@ -1933,16 +1934,17 @@ def test_library_and_folders_is_stocks_page_again_with_the_library_rows(fw, st):
     opener = row(ui, view, 'Library & Folders')
     click(ui, opener)
     assert sub['name'] == b'playset/playset_page' and sub['title'] == ui.text(label_of(opener))  # titled as its row
-    ours = sub['rows'][:4]
-    skip, art = sub['rows'][4:]
+    ours = sub['rows'][:5]
+    skip, art = sub['rows'][5:]
     # stock's Folder skip, then Folder Album Cover (a row of stock's Volume and Album Display), last
     assert skip.name == 's12' and icon(art) == 'playset_foldercover' and ui.text(label_of(art)) == 'Folder Album Cover'
     assert C.string_at(fw.calls('widget_set_tr_text')[-1][1][1]) == b'playset_foldercover'  # stock's row, stock's translation
     was = g(fw, 'g_foldercover_flag')
     for r in ours + [art]:
         click(ui, r)
-    # the library's rows, by the setting each saves: Artists, Artist album order, Year order, Folder Root, Folder Album Cover
-    assert [key for key, _ in settings.written] == ['ARTISTTYPE', 'ARTISTAZ', 'YEAROLD', 'FOLDERROOT', 'FOLDERCOVER']
+    # the library's rows, by the setting each saves: Artists, Album View under it, Artist album order, Year order, Folder
+    # Root, Folder Album Cover
+    assert [key for key, _ in settings.written] == ['ARTISTTYPE', 'ALBUMTYPE', 'ARTISTAZ', 'YEAROLD', 'FOLDERROOT', 'FOLDERCOVER']
     assert g(fw, 'g_foldercover_flag') == (not was) and switch(art) == ('switch_off' if was else 'switch_on')
     again = ui.add('scroll_view', ui.window('playset_page'), (0, 26, 375, 294), 'scroll_view_playset')
     playset(fw, ui, again)
@@ -1959,6 +1961,45 @@ def test_artists_toggles_stocks_artist_type(fw):
     click(ui, artists)
     assert fw.var('fw_ctx_artist_type', C.c_int).value == 0 and ui.text(label_of(artists)) == 'Artists: Artist'
     assert settings.written == [('ARTISTTYPE', 0)]
+
+
+POD_ALBUM_GRID = 27  # navigation.h
+
+
+def album_view(fw, grid):
+    """Library & Folders' Album View row alone, stock's Albums mode at grid."""
+    ui, win, view, settings, _ = settings_page(fw, MINIMAL, 'playset_page', 'scroll_view_playset')
+    mode = fw.var('fw_ctx_album_modetype', C.c_int)
+    mode.value = grid
+    fw.fn('pod_rows', None, C.c_void_p, C.c_char_p, C.c_int, C.c_int, C.c_void_p)(win.addr, b'scroll_view_playset', POD_ALBUM_GRID, 1, (C.c_char_p * 1)(b'x'))
+    return ui, view.children[0], settings, mode
+
+
+@pytest.mark.parametrize('grid', [0, 1])
+def test_album_view_reads_and_flips_stocks_albums_mode(fw, grid):
+    """Albums' list or grid is stock's album_modetype and PLAYSET ALBUMTYPE; its switch is on the toolbar the themes hide."""
+    ui, row_, settings, mode = album_view(fw, grid)
+    words = ['List', 'Grid']
+    assert ui.text(label_of(row_)) == f'Album View: {words[grid]}'
+    click(ui, row_)
+    assert mode.value == 1 - grid and ui.text(label_of(row_)) == f'Album View: {words[1 - grid]}'
+    assert settings.written == [('ALBUMTYPE', 1 - grid)] and not fw.calls('album_covermode')  # no Albums page open: none to rebuild
+
+
+@pytest.mark.parametrize('acts', [1, 0])
+def test_album_view_runs_stocks_switch_on_an_open_albums_page(fw, acts):
+    """Quick Settings opens the settings over Albums. Stock's own click then flips the mode, saves it and rebuilds that page's
+    table; where it does nothing (no switch in the toolbar: its batch-select state) the row still flips and saves."""
+    ui, row_, settings, mode = album_view(fw, 0)
+    albums = ui.window('album_page', top=False)
+
+    def switch(win, event, *_):
+        mode.value ^= acts
+        return 0
+    fw.mock('album_covermode', switch)
+    click(ui, row_)
+    assert [a[0] for _, a in fw.calls('album_covermode')] == [albums.addr] and mode.value == 1
+    assert ui.text(label_of(row_)) == 'Album View: Grid' and settings.written == ([] if acts else [('ALBUMTYPE', 1)])
 
 
 def pod_rows(fw, win, view_name, first, n):
@@ -2037,7 +2078,7 @@ def test_a_set_text_rows_title_and_value(fw, text, title, val):
     assert (ui.text(label), ui.text(v)) == (title, val)
     (lx, ly, lw, lh), (vx, vy, vw, vh), width = label.box, v.box, button.box[2]
     assert (lx, ly, lh) == (72, 0, 70) and (vy, vh) == (0, 70)  # the title where it was, both the row's height
-    assert lx + lw < vx and width // 2 < vx and vx + vw >= width  # the value trailing to the row's end, clear of the title
+    assert lx + lw == vx and width // 2 < vx and vx + vw >= width  # the value trailing to the row's end, the title's box up to it
     assert [c[1][:2] for c in fw.calls('hscroll_label_set_only_focus')] == [(v.addr, 1)]  # scrolls only focused
     assert [c[1][:2] for c in fw.calls('hscroll_label_set_ellipses')] == [(v.addr, 1)]
 
