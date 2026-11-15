@@ -1691,11 +1691,11 @@ def test_system_update_adds_remind_daily_under_network_update_on_by_default(fw):
     assert fw.fn('ringnav_fwupdate', C.c_int, C.c_void_p, C.c_void_p)(win.addr, None) == 3
     assert len(view.children) == 3
     remind = view.children[2]
-    assert ui.text(label_of(remind)) == 'Update Notifications: On' and switch(remind) is None  # a missing key reads On
+    assert ui.text(label_of(remind)) == '更新通知：打开' and switch(remind) is None  # a missing key reads On
     click(ui, remind)
-    assert ui.text(label_of(remind)) == 'Update Notifications: Off' and settings.written == [('REMINDDAILY', 0)]
+    assert ui.text(label_of(remind)) == '更新通知：关闭' and settings.written == [('REMINDDAILY', 0)]
     click(ui, remind)
-    assert ui.text(label_of(remind)) == 'Update Notifications: On' and settings.written[-1] == ('REMINDDAILY', 1)
+    assert ui.text(label_of(remind)) == '更新通知：打开' and settings.written[-1] == ('REMINDDAILY', 1)
 
 
 def test_remind_daily_off_in_config_reads_off(fw):
@@ -1979,10 +1979,10 @@ def album_view(fw, grid):
 def test_album_view_reads_and_flips_stocks_albums_mode(fw, grid):
     """Albums' list or grid is stock's album_modetype and PLAYSET ALBUMTYPE; its switch is on the toolbar the themes hide."""
     ui, row_, settings, mode = album_view(fw, grid)
-    words = ['List', 'Grid']
-    assert ui.text(label_of(row_)) == f'Album View: {words[grid]}'
+    words = ['列表', '网格']
+    assert ui.text(label_of(row_)) == f'专辑视图：{words[grid]}'
     click(ui, row_)
-    assert mode.value == 1 - grid and ui.text(label_of(row_)) == f'Album View: {words[1 - grid]}'
+    assert mode.value == 1 - grid and ui.text(label_of(row_)) == f'专辑视图：{words[1 - grid]}'
     assert settings.written == [('ALBUMTYPE', 1 - grid)] and not fw.calls('album_covermode')  # no Albums page open: none to rebuild
 
 
@@ -1999,7 +1999,7 @@ def test_album_view_runs_stocks_switch_on_an_open_albums_page(fw, acts):
     fw.mock('album_covermode', switch)
     click(ui, row_)
     assert [a[0] for _, a in fw.calls('album_covermode')] == [albums.addr] and mode.value == 1
-    assert ui.text(label_of(row_)) == 'Album View: Grid' and settings.written == ([] if acts else [('ALBUMTYPE', 1)])
+    assert ui.text(label_of(row_)) == '专辑视图：网格' and settings.written == ([] if acts else [('ALBUMTYPE', 1)])
 
 
 def pod_rows(fw, win, view_name, first, n):

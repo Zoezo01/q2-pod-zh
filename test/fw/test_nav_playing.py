@@ -2897,3 +2897,21 @@ def test_a_playlist_dialog_missing_a_part_stays_stocks(fw, st, ui):
     ui.widget(win, 'ssedit', 0, 0, 300, 40)
     load(fw, ui, win)
     assert st.pl_box == 0 and ui.due('pl_box_due') == []
+@pytest.mark.parametrize('wordmark, want', [(1, 'Q2 Pod'), (0, '')])
+def test_home_is_named_as_classics_and_shows_no_clock(fw, st, ui, wordmark, want):
+    """Off takes the clock off Home too: its title is Q2 Pod, or nothing with Show Wordmark off."""
+    theme(fw, st, TIMETITLE=0, SHOWQ2POD=wordmark)
+    bar = Bar(fw, ui)
+    home = window(ui, 'home_page')
+    bar_title(fw, bar, home)
+    assert ui.text(bar.word) == want and ui.text(bar.clock) == '' and st.bar_titled == 1 and len(ui.due('bar_repaint')) == 1
+    sets = len(fw.calls('widget_set_text'))
+    bar_title(fw, bar, home)
+    assert len(fw.calls('widget_set_text')) == sets  # written once, an empty title too
+
+
+def test_home_keeps_the_clock_with_time_in_title_on(fw, st, ui):
+    theme(fw, st)
+    bar = Bar(fw, ui)
+    bar_title(fw, bar, window(ui, 'home_page'))
+    assert ui.text(bar.clock) == '12:00' and st.bar_titled == 0

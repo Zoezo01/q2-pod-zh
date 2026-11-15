@@ -123,7 +123,6 @@ void bar_title(void *bar, void *top) {
                 st.clock_key = 0;
             }
         }
-        int titled = !st.time_title && own && *own;
         int titled = !st.time_title && (home || (own && *own));
         void *clock = titled != st.bar_titled ? widget_lookup(bar, "label_clock", 1) : (void *)0;
         if (!clock) return;
@@ -182,7 +181,8 @@ void bar_title(void *bar, void *top) {
         const char *h = coverflow_home_title();
         unsigned i = 0;
         for (; h[i] && i < sizeof name / sizeof *name - 1; ++i) name[i] = (unsigned char)h[i];
-        if (h[0]) { name[i] = 0; title = name; }
+        name[i] = 0;
+        title = name; /* an empty wordmark still titles Home: the clock stays off */
     }
     if (!title) {
         /* No name: hand the label back to bar_word_sync's play-state word. bar_sync already ran

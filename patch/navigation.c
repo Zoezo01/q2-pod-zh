@@ -3180,6 +3180,7 @@ static int *const pod_values[] = { &st.charge_limit,
                                    &st.hide_stream,
                                    &st.hide_folder,
                                    &st.remind_daily,
+                                   0, /* POD_ALBUM_GRID: 读 stock 自己的 album_modetype，无 pod 值 */
                                    0 }; /* POD_LIBRARY_FILL: 中文分支自有 action，排在末尾，无值 */
 _Static_assert(POD_LOCKCLOCK == 6, "lockscreen.c passes pod_rows 6");
 _Static_assert(POD_REMIND_DAILY == 26, "netupdate.c passes pod_rows 26");
@@ -3211,6 +3212,7 @@ static const char *const pod_keys[] = { "CHARGELIMIT",
                                         "HIDESTREAM",
                                         "HIDEFOLDER",
                                         "REMINDDAILY",
+                                        0, /* POD_ALBUM_GRID: stock 的 PLAYSET ALBUMTYPE */
                                         0 }; /* POD_LIBRARY_FILL: 中文分支自有 action，无 key */
 _Static_assert(sizeof pod_keys / sizeof *pod_keys == POD_COUNT, "a pod_keys entry per row");
 /* a row's choices: Artist albums three, Standby limit four, every other row two */

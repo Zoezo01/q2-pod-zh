@@ -1112,7 +1112,7 @@ t.clock=(6,15); t.advance(61000); assert t.nodes[word]['text']=='Albums'  # the 
 assert show(t.node('window','home_page'))=='Q2 Pod' and t.nodes[label].get('text','')==''
 t,label,word,show,page=title_machine(TIMETITLE='0',SHOWQ2POD='0'); home=t.node('window','home_page')
 assert show(page('Albums'))=='Albums' and show(home)=='' and t.nodes[word].get('text','')==''
-t.clock=(6,15); t.advance(61000); assert t.nodes[label].get('text','')=='' and show(page(None))==''; passed()  # no clock under Home either way
+t.clock=(6,15); t.advance(61000); assert t.nodes[label].get('text','')=='' and show(page(None))==''; passed()  # none under Home; the clock back off it
 t,label,word,show,page=title_machine(SHOWQ2POD='0'); assert show(t.node('window','home_page'))=='' and t.nodes[label].get('text','')=='6:14 下午'; passed()  # on, Home's clock
 t,label,word,show,page=title_machine(TIMETITLE='0',THEME='2'); assert show(page('Albums'))=='Albums' and t.nodes[word]['style:normal:font_name']=='default'
 assert show(page(None))=='' and t.nodes[label].get('text')=='6:14 下午'; passed()  # Modern's name is never bold

@@ -153,7 +153,8 @@ def build(out, extra=()):
 def offsets(obj, type_name):
     """A struct typedef's field offsets as this build lays it out (its pointers move them), from obj's
     debug info: {field: offset}."""
-    dump = subprocess.run(['readelf', '--debug-dump=info', str(obj)], capture_output=True, text=True, check=True).stdout
+    dump = subprocess.run(['readelf', '--debug-dump=info', str(obj)], capture_output=True, text=True, check=True,
+                          env={**os.environ, 'LC_ALL': 'C'}).stdout  # the regexes read English readelf
     kind = tools_build.need(re.search(rf': {type_name}\n(?:.*\n)*?\s+<\w+>\s+DW_AT_type\s*: <0x(\w+)>', dump), f'No {type_name} in {obj}')[1]
     body = dump[dump.index(f' <1><{kind}>:'):]
     body = body[:body.index('\n <1>')]
