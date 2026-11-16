@@ -2577,7 +2577,8 @@ def test_a_decade_lists_its_albums_by_year(fw, ui):
 
 def test_a_decade_query_groups_only_the_names_dated_in_it(fw, ui):
     """The decade's query groups the songs of the names with a song dated in it, and gives the rows that grouping every
-    song gives: a name two artists share across decades, one album dated in two, a full date and an undated album."""
+    song gives: a name two artists share across decades, one album dated in two (also spelled in two cases), a full date and an
+    undated album, with and without songtable_album."""
     db, _ = era_decade(fw, ui)
     sent = db.asked[-1]
     every = re.sub(r' and album collate nocase in \(select album from songtable where .*? between 1990 and 1999\)', '', sent)
@@ -2588,10 +2589,13 @@ def test_a_decade_query_groups_only_the_names_dated_in_it(fw, ui):
         (1, '/m/queen/1.flac', 'Hits', 'Queen', 'Queen', 1981, 1, 1), (2, '/m/abba/1.flac', 'HITS', 'ABBA', 'ABBA', 1992, 1, 1),
         (3, '/m/mixed/1.flac', 'Mixed', 'Band', 'Band', 1989, 1, 1), (4, '/m/mixed/2.flac', 'Mixed', 'Band', 'Band', 1991, 2, 1),
         (5, '/m/new/1.flac', 'New', 'Band', '', 20220510, 1, 1), (6, '/m/dated/1.flac', 'Dated', 'Band', '', 19950510, 1, 1),
-        (7, '/m/none/1.flac', 'Undated', 'Band', '', None, 1, 1), (8, '/m/old/1.flac', 'Old', 'Band', '', 1975, 1, 1)])
+        (7, '/m/none/1.flac', 'Undated', 'Band', '', None, 1, 1), (8, '/m/old/1.flac', 'Old', 'Band', '', 1975, 1, 1),
+        (9, '/m/wall/1.flac', 'The Wall', 'Floyd', 'Floyd', 1989, 1, 1), (10, '/m/wall/2.flac', 'THE WALL', 'Floyd', 'Floyd', 1991, 2, 1)])
     rows = lib.execute(sent).fetchall()
     assert rows == lib.execute(every).fetchall()
-    assert [(album, year) for album, _, year, _ in rows] == [('Mixed', 1991), ('HITS', 1992), ('Dated', 1995)]
+    assert [(album, year) for album, _, year, _ in rows] == [('Mixed', 1991), ('The Wall', 1991), ('HITS', 1992), ('Dated', 1995)]
+    lib.execute('create index songtable_album on songtable(album collate nocase)')  # as a library has after any scan
+    assert lib.execute(sent).fetchall() == rows
 
 
 def test_a_decade_s_albums_stop_at_its_count(fw, ui):

@@ -601,7 +601,7 @@ static void *era_songs(void) {
 static void *era_shuffle_songs(void) { /* 0 if the query failed */
     char sql[2048];
     int from = era.m ? era.v[0].year / 10 * 10 : 0, n;
-    /* The songs of ERA_ALBUMS' groups dated in the decade, matched on ALBUM_GROUP's keys. */
+    /* The songs of the decade's ALBUM_GROUP groups, matched on ALBUM_GROUP's keys. */
     tk_snprintf(
         sql, sizeof sql,
         "%s from songtable s join (select album a,ifnull(albumsonger,'') b,case "
@@ -658,7 +658,7 @@ static int era_pick(void *ctx, void *event) {
 static int era_open_decade(void *ctx, void *event) {
     int k = (int)(long)ctx, from = era.decade[k];
     if (era.albums) return 0;
-    char sql[1024], name[16], detail[300];
+    char sql[2048], name[16], detail[300];
     /* Only a name with a song dated in the decade can make one of its groups, so only those names'
      * songs are grouped, as of_names does (coverflow.c). MUSIC_WHERE's like patterns hold '%': an
      * argument, not the format. */
