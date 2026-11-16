@@ -2,7 +2,7 @@
 """Exercise the shipped LDAC encoder's intermediate rates and bluealsa's Auto dispatch."""
 import pathlib, subprocess, sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'tools'))
-from build import machine, read, word
+from mips import machine, read, word
 from unicorn import UC_HOOK_CODE
 from unicorn.mips_const import *
 

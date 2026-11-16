@@ -16,7 +16,8 @@ import sys
 import tempfile
 import wave
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'tools'))
-from build import fileoff, jal, machine, symbols
+from build import fileoff, jal, symbols
+from mips import load_elf, machine, stubs
 from peq import MP3_ALLOC, MP3_FILTER, MP3_CLOSE, MP3_READ, DEMUX_READ, MP3_FILL
 from unicorn import Uc, UC_ARCH_MIPS, UC_MODE_MIPS32, UC_MODE_LITTLE_ENDIAN, UC_HOOK_CODE
 from unicorn.mips_const import *
@@ -33,13 +34,7 @@ u = machine(raw, 0x2000000)
 u.mem_map(0x3000000, 0x200000)
 u.mem_map(0x2800000, 0x1000)
 u.mem_map(0x3300000, 0x20000)
-imports = {}
-for line in subprocess.check_output(['readelf', '-rW', out/'hciplayer'], text=True).splitlines():
-    s = line.split()
-    if len(s) >= 5 and s[2] == 'R_MIPS_JUMP_SLOT':
-        address = 0x2800000 + 4 * len(imports)
-        imports[address] = s[4].split('@')[0]
-        u.mem_write(int(s[0], 16), struct.pack('<I', address))
+imports = stubs(u, out/'hciplayer', 0x2800000)
 heap, allocations, files, positions, filtered, descriptors = 0x3000000, {}, {}, {}, [], {}
 fail = None
 demux_left = 0
@@ -260,17 +255,8 @@ def real_chain():
     u.ctl_set_cpu_model(UC_CPU_MIPS32_24KF)
     u.ctl_set_tcg_buffer_size(96 << 20)
     regs = (UC_MIPS_REG_A0, UC_MIPS_REG_A1, UC_MIPS_REG_A2, UC_MIPS_REG_A3)
-    def segments(image, base):
-        end = 0
-        for i in range(struct.unpack_from('<H', image, 44)[0]):
-            t, o, v, _, f, m, _, _ = struct.unpack_from('<8I', image, struct.unpack_from('<I', image, 28)[0] + i*32)
-            if t == 1:
-                a, e = max((base+v) & ~0xfff, end), (base+v+m+0xfff) & ~0xfff
-                u.mem_map(a, e-a)
-                end = e
-                u.mem_write(base+v, image[o:o+f])
-    segments(raw, 0)
-    segments(libmad.read_bytes(), MAD)
+    load_elf(u, raw)
+    load_elf(u, libmad.read_bytes(), load=MAD)
     for base, size in ((DONE, 0x10000), (STUBS, 0x20000), (HEAP, 0x4000000), (STACK-0x400000, 0x410000)):
         u.mem_map(base, size)
     u.reg_write(UC_MIPS_REG_CP0_STATUS, u.reg_read(UC_MIPS_REG_CP0_STATUS) | 1 << 29 | 1 << 26)

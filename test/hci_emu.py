@@ -3,6 +3,8 @@ demuxers and decoders. libasound is a model (hooked exports), threads are green 
 real-time quantum), the clock is virtual, and a test drives the player through its command socket as demo does.
 libmad's long straight-line synth overflows Unicorn's translator, so its blocks are split where it's mapped."""
 import errno, os, pathlib, re, struct, subprocess, sys
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]/'tools'))
+from build import segments
 from unicorn import *
 from unicorn.mips_const import *
 
@@ -12,17 +14,11 @@ TP_SLOT = 0x7000
 STUB_RET = 0x7ffe0000
 
 
-def elf_segments(b):
-    phoff, = struct.unpack_from('<I', b, 28)
-    es, n = struct.unpack_from('<HH', b, 42)
-    return [struct.unpack_from('<8I', b, phoff + i * es) for i in range(n)]
-
-
 def dynsyms(path):
     """name -> value, size for defined FUNC dynsyms of a library file (st_value relative to its link base)."""
     b = pathlib.Path(path).read_bytes()
     dyn = None
-    segs = elf_segments(b)
+    segs = [s for _, s in segments(b)]
     for s in segs:
         if s[0] == 2: dyn = s
     def off(v):
@@ -206,7 +202,7 @@ class Emu:
 
     def load_elf(self, b, base=0):
         top = 0
-        for s in elf_segments(b):
+        for _, s in segments(b):
             if s[0] != 1: continue
             t, o, v, _, f, m, fl, al = s
             self.ensure(base + v, m)

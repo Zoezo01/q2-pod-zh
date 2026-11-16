@@ -30,7 +30,8 @@ from unicorn import Uc, UC_ARCH_MIPS, UC_MODE_MIPS32, UC_MODE_LITTLE_ENDIAN, UC_
 from unicorn.mips_const import UC_MIPS_REG_0, UC_MIPS_REG_PC
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
-from build import fileoff, segments, symbols
+from build import fileoff, symbols
+from mips import load_elf
 from peq import PLAYER_SHA
 from flac import EXPERIMENTS, patch_words
 
@@ -201,24 +202,10 @@ def parse_fixture(path):
     return info, frames, reference, coverage
 
 
-def map_images(u, images):
-    pages = set()
-    for image in images:
-        for _, (kind, off, addr, physical, filesz, memsz, flags, align) in segments(image):
-            if kind == 1 and memsz:
-                pages.update(range(addr & ~4095, (addr + memsz + 4095) & ~4095, 4096))
-    for page in sorted(pages):
-        u.mem_map(page, 4096)
-    for image in images:
-        for _, (kind, off, addr, physical, filesz, memsz, flags, align) in segments(image):
-            if kind == 1 and filesz:
-                u.mem_write(addr, image[off:off + filesz])
-
-
 class Machine:
     def __init__(self, image, payload=None, hooks=(), names=None):
         u = self.u = Uc(UC_ARCH_MIPS, UC_MODE_MIPS32 | UC_MODE_LITTLE_ENDIAN)
-        map_images(u, [image] + ([payload] if payload else []))
+        load_elf(u, image, *([payload] if payload else []))
         u.mem_map(0x2000000, 0x1000000)
         u.mem_map(END, 0x10000)
         for address, old, new in hooks:

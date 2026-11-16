@@ -5,6 +5,7 @@ import hashlib
 import io
 import pathlib
 import re
+import runpy
 import shutil
 import struct
 import subprocess
@@ -83,32 +84,12 @@ def test_jumps():
     assert build.j(0x7) == 0x08000001 and build.jal(0x7) == 0x0c000001
 
 
-class Memory:
-    def __init__(self):
-        self.store = {}
-
-    def mem_write(self, address, data):
-        self.store[address] = data
-
-    def mem_read(self, address, size):
-        assert size == 4
-        return self.store[address]
-
-
 def test_need():
     assert build.need(0, 'unused') == 0 and build.need(b'', 'unused') == b''  # only None fails
     with pytest.raises(ValueError, match=r'^Missing x$'):
         build.need(None, 'Missing x')
     with pytest.raises(ValueError, match=r'^Unexpected time zone UTC$'):
         build.timezone_offset('UTC')
-
-
-def test_word_and_read():
-    u = Memory()
-    build.word(u, 8, -1)
-    assert u.store[8] == b'\xff\xff\xff\xff' and build.read(u, 8) == 0xffffffff
-    build.word(u, 12, 0x1234567890)
-    assert u.store[12] == struct.pack('<I', 0x34567890) and build.read(u, 12) == 0x34567890
 
 
 def test_segments():
@@ -141,45 +122,6 @@ def test_fileoff():
 def test_fileoff_refuses_what_the_file_does_not_hold(address):
     with pytest.raises(ValueError, match=f'^Unmapped address {address:x}$'):
         build.fileoff(two_loads(), address)
-
-
-class Mapper:
-    def __init__(self):
-        self.calls = []
-
-    def mem_map(self, address, size):
-        self.calls.append(('map', address, size))
-
-    def mem_write(self, address, data):
-        self.calls.append(('write', address, bytes(data)))
-
-
-def loads():
-    """A PHDR first, a LOAD ending on a page, and a LOAD from mid-page with bss past its file bytes."""
-    data = program((6, 52, 0x400034, 0x400034, 0x80, 0x80, 4, 4), (1, 0, 0x400000, 0x400000, 0x200, 0x1000, 5, 0x1000),
-                   (1, 0x1123, 0x411123, 0x411123, 0x10, 0x2000, 6, 0x1000), NULL, size=0x1200)
-    data[0x1123:0x1133] = bytes(range(1, 17))
-    return bytes(data)
-
-
-def test_load_elf():
-    data, u = loads(), Mapper()
-    build.load_elf(u, data, 0x10000)
-    assert u.calls == [('map', 0x410000, 0x1000), ('write', 0x410000, data[:0x200]),
-                       ('map', 0x421000, 0x3000), ('write', 0x421123, bytes(range(1, 17)))]
-
-
-def test_load_elf_at_the_link_address_by_default():
-    data, u = loads(), Mapper()
-    build.load_elf(u, data)
-    assert [c[:2] for c in u.calls] == [('map', 0x400000), ('write', 0x400000), ('map', 0x411000), ('write', 0x411123)]
-
-
-def test_machine_at_the_link_address_by_default():
-    raw = image(0x2000)
-    raw[0x1000] = 0x5a
-    u = build.machine(bytes(raw), 0x800000)
-    assert sorted(u.mem_regions())[0] == (0x400000, 0x401fff, 7) and u.mem_read(0x400000, 1) == b'\x5a'
 
 
 def appendable(size=0x10001):
@@ -920,24 +862,6 @@ def elf(*headers, size=0x3000):
     return data
 
 
-@pytest.mark.parametrize('load', [0, 0x100000])
-def test_machine(load):
-    from unicorn.mips_const import UC_MIPS_REG_A0
-    b = elf((1, 0x1000, 0x400123, 0x10, 0x2000), (4, 0x1000, 0x800000, 0x10, 0x10), (1, 0x2000, 0x410000, 8, 0x100))
-    b[0x1000:] = b'\xee' * (len(b) - 0x1000)  # bytes past a segment's filesz aren't its own
-    struct.pack_into('<2I', b, 0x2000, 0x2402002a, 0xac820000)  # addiu v0, zero, 42; sw v0, 0(a0)
-    u = build.machine(bytes(b), 0x2000000, load)
-    # whole pages around each LOAD's memsz; nothing for the PT_NOTE
-    assert sorted(r[:2] for r in u.mem_regions()) == [(load + 0x400000, load + 0x402fff), (load + 0x410000, load + 0x410fff),
-                                                      (0x2000000, 0x200ffff)]
-    assert all(r[2] == 7 for r in u.mem_regions())
-    assert u.mem_read(load + 0x400000, 0x3000) == bytes(0x123) + b'\xee' * 0x10 + bytes(0x3000 - 0x133)
-    assert u.mem_read(load + 0x410000, 0x1000)[8:] == bytes(0xff8)
-    u.reg_write(UC_MIPS_REG_A0, 0x2000000)
-    u.emu_start(load + 0x410000, load + 0x410008)
-    assert u.mem_read(0x2000000, 4) == b'\x2a\0\0\0'  # little-endian, into the scratch
-
-
 # The TagLib cover library's layout (test/m4b.py): the M4A test's beq at SITE to the MP4 extractor
 # (0x1040004a, to SITE + 4 + 0x4a * 4), the next format's test after its delay slot, gp and strcasecmp's GOT slot.
 SITE, MP4, NEXT, GP, STRCASECMP = 0x125ac, 0x126d8, 0x125b4, 0x327e0, 0x327e0 - 0x7e90
@@ -964,10 +888,11 @@ def dispatch(lib, ext, load):
                                     UC_MIPS_REG_S0, UC_MIPS_REG_SP, UC_MIPS_REG_V0)
     scratch = 0x2000000
     gc.collect()  # a hooked Unicorn is in a cycle, and holds 1 GB of address space until it's collected
-    u = build.machine(lib, scratch, load)
+    mips = runpy.run_path(str(pathlib.Path(__file__).resolve().parents[1]/'mips.py'))  # test/'s harness
+    u = mips['machine'](lib, scratch, load)
     strcasecmp, name, sp = scratch, scratch + 0x100, scratch + 0x8000
-    build.word(u, load + STRCASECMP, strcasecmp)  # as the loader fills the GOT
-    build.word(u, sp + 16, load + GP)  # o32: the caller's gp, saved
+    mips['word'](u, load + STRCASECMP, strcasecmp)  # as the loader fills the GOT
+    mips['word'](u, sp + 16, load + GP)  # o32: the caller's gp, saved
     u.mem_write(name, ext.encode() + b'\0')
     for reg, value in ((UC_MIPS_REG_S0, name), (UC_MIPS_REG_GP, load + GP), (UC_MIPS_REG_SP, sp),
                        (UC_MIPS_REG_V0, int(ext.lower() != 'm4a'))):

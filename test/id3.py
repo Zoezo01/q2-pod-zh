@@ -3,9 +3,10 @@
 
 Stock code runs: the vendor's frame walker, FFmpeg's dictionary and ff_replaygain_export. Only libc,
 the stream's buffer refill and the fd are modelled. Usage: test/id3.py BUILD_DIR"""
-import pathlib, struct, subprocess, sys
+import pathlib, struct, sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]/'tools'))
-from build import jal, machine, symbols
+from build import jal, symbols
+from mips import machine, stubs
 from peq import ID3_CALLS, STOCK_ID3
 from unicorn import UC_HOOK_CODE
 from unicorn.mips_const import *
@@ -15,11 +16,6 @@ path = out/'hciplayer'
 raw = path.read_bytes()
 id3_gain = symbols(out/'peq.elf')['id3_gain']
 IMPORTS = 0x2800000  # each .got.plt slot gets IMPORTS + 4i, the way the loader binds it to libc
-slots = {}
-for line in subprocess.check_output(['readelf', '-rW', path], text=True).splitlines():
-    s = line.split()
-    if len(s) >= 5 and s[2] == 'R_MIPS_JUMP_SLOT': slots[int(s[0], 16)] = s[4].split('@')[0]
-plt = {IMPORTS + 4*i: name for i, name in enumerate(slots.values())}
 PENDING, UNKNOWN = 0xafd790, -0x80000000
 for site in ID3_CALLS:
     assert struct.unpack_from('<I', raw, site-0x400000)[0] == jal(id3_gain), hex(site)
@@ -42,7 +38,7 @@ def run(data, entry):
     u = machine(raw, 0x2000000)
     u.mem_map(0x3000000, 0x100000)
     u.mem_map(IMPORTS, 0x1000)
-    for i, slot in enumerate(slots): u.mem_write(slot, struct.pack('<I', IMPORTS + 4*i))
+    plt = stubs(u, path, IMPORTS)
     u.mem_write(PENDING, struct.pack('<iIiI', UNKNOWN, 0, UNKNOWN, 0))
     heap = [0x3000000]
     fd = {'at': 1234}

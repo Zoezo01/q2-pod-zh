@@ -6,31 +6,26 @@ A track's last seconds are held back (half of each block put out once the hold w
 mixed, equal power, under the next instance's first frames, at that track's rate; no fade asked
 plays every block whole. Last, the EQ's cost: a settled 10-band block's instructions (peq_process).
 Usage: test/xfade_player.py BUILD_DIR"""
-import math, pathlib, re, struct, sys
+import math, pathlib, struct, sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]/'tools'))
-from build import fileoff, load_elf, symbols
+from build import fileoff, symbols
+from mips import STUBS, HEAP, peq_lib, player, call as run
 from peq import EQ_OPEN_SLOT, PLAYER_BASE
-from unicorn import Uc, UC_ARCH_MIPS, UC_MODE_MIPS32, UC_MODE_LITTLE_ENDIAN, UC_HOOK_CODE
+from unicorn import UC_HOOK_CODE
 from unicorn.mips_const import *
 
 out = pathlib.Path(sys.argv[1])/'peq'
 raw = (out/'hciplayer').read_bytes()
 ps = symbols(out/'peq.elf')
 assert struct.unpack_from('<I', raw, fileoff(raw, EQ_OPEN_SLOT))[0] == ps['peq_open']
-DONE, STUBS, HEAP, STACK = 0x2000000, 0x2800000, 0x3000000, 0x40f0000
 WRITTEN_PTS, LENGTH, MPCTX = 0x44619c, 0xb11e84, 0xafae30  # peq_player.c decoded(), LENGTH, MPCTX
 NEXT_FLAG = 0xb11e6c  # up at a skip's uninit, not at a file's end
 
-u = Uc(UC_ARCH_MIPS, UC_MODE_MIPS32 | UC_MODE_LITTLE_ENDIAN)
-u.ctl_set_cpu_model(UC_CPU_MIPS32_24KF)
-load_elf(u, raw)
-for base, size in ((DONE, 0x10000), (STUBS, 0x1000), (HEAP, 0x1000000), (STACK - 0xf0000, 0x100000)):
-    u.mem_map(base, size)
-u.reg_write(UC_MIPS_REG_CP0_STATUS, u.reg_read(UC_MIPS_REG_CP0_STATUS) | 1 << 29 | 1 << 26)  # CU1, FR
+u = player(raw)
 imports = {}  # each peq_lib_* stub's GOT word (peq_imports.S) points at a stub of our own
-for name, hi, lo in re.findall(r'peq_lib_(\w+):\nlui \$gp.*\nori \$gp.*\nlui \$t8, (\d+)\nori \$t8, \$t8, (\d+)', (out/'peq_imports.S').read_text()):
+for name, slot in peq_lib((out/'peq_imports.S').read_text()).items():
     imports[STUBS + 4*len(imports)] = name
-    u.mem_write(int(hi) << 16 | int(lo), struct.pack('<I', STUBS + 4*(len(imports)-1)))
+    u.mem_write(slot, struct.pack('<I', STUBS + 4*(len(imports)-1)))
 assert len(imports) > 60, 'no peq_lib_* stubs found in peq_imports.S'
 heap, clock, pts, spare, sizes = [HEAP], [10**9], [-1.0], {}, {}
 
@@ -87,11 +82,7 @@ def written_pts(u, address, size, _):
     u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA))
 u.hook_add(UC_HOOK_CODE, written_pts, begin=WRITTEN_PTS, end=WRITTEN_PTS)
 
-def call(fn, *args):
-    for i, value in enumerate(args): u.reg_write((UC_MIPS_REG_A0, UC_MIPS_REG_A1, UC_MIPS_REG_A2, UC_MIPS_REG_A3)[i], value)
-    u.reg_write(UC_MIPS_REG_SP, STACK), u.reg_write(UC_MIPS_REG_RA, DONE)
-    u.emu_start(fn, DONE, count=100_000_000)
-    return u.reg_read(UC_MIPS_REG_V0)
+def call(fn, *args): return run(u, fn, *args)
 
 def track(rate, nch=2):
     """A filter instance negotiated for float nch channels at rate, as the player adds one per file."""

@@ -1102,23 +1102,6 @@ def segments(b):
     size, num = struct.unpack_from('<HH', b, 42)
     check(size == 32, 'Unexpected ELF program header size')
     return [(phoff+i*size, struct.unpack_from('<8I', b, phoff+i*size)) for i in range(num)]
-def load_elf(u, b, load=0):
-    """Map an ELF's LOAD segments into a Unicorn instance, shifted by load."""
-    for _, (t, o, v, _, f, m, _, _) in segments(b):
-        if t != 1: continue
-        v += load
-        start = v & ~4095
-        u.mem_map(start, ((v+m+4095) & ~4095) - start)
-        u.mem_write(v, b[o:o+f])
-def machine(raw, scratch, load=0):
-    """A little-endian MIPS Unicorn with raw's LOAD segments (at +load) and 64 KB of scratch at scratch."""
-    from unicorn import Uc, UC_ARCH_MIPS, UC_MODE_MIPS32, UC_MODE_LITTLE_ENDIAN
-    u = Uc(UC_ARCH_MIPS, UC_MODE_MIPS32 | UC_MODE_LITTLE_ENDIAN)
-    load_elf(u, raw, load)
-    u.mem_map(scratch, 0x10000)
-    return u
-def word(u, address, value): u.mem_write(address, struct.pack('<I', value & 0xffffffff))
-def read(u, address): return struct.unpack('<I', u.mem_read(address, 4))[0]
 def fileoff(b, a):
     for _, (t, o, v, _, f, _, _, _) in segments(b):
         if t == 1 and v <= a < v+f: return o+a-v
