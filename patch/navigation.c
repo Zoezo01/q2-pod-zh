@@ -8615,24 +8615,18 @@ void toast(const char *text) {
     --st.toasts;
 }
 
-int all_songs(void *music) {
+/* getAllMusic(mode); non-zero music leaves audiobooks and podcasts out, as the Library's Artists
+ * and Albums (MUSIC_WHERE). */
+static int all_music(void *music, int mode) {
     int saved = library_music;
     library_music = music != 0;
-    int n = getAllMusic(0);
+    int n = getAllMusic(mode);
     library_music = saved;
     return n;
 }
-
-/* Shuffle does not need the expensive pinyin title sort; groups order their tracks themselves.
- * Non-zero music leaves audiobooks and podcasts out, as the Library's Artists and Albums
- * (MUSIC_WHERE). */
-int songs_unsorted(void *music) {
-    int saved = library_music;
-    library_music = music != 0;
-    int n = getAllMusic(3);
-    library_music = saved;
-    return n;
-}
+int all_songs(void *music) { return all_music(music, 0); }
+/* Shuffle does not need the expensive pinyin title sort; groups order their tracks themselves. */
+int songs_unsorted(void *music) { return all_music(music, 3); }
 
 /* Return for the payload's own pages; each passes page_open its own close. */
 int page_keyup(void *ctx, void *event) {
