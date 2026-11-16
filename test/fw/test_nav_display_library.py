@@ -1085,7 +1085,7 @@ class Ple(C.Structure):
     """navigation.c's ple: the playlist editor's page and keys."""
     _fields_ = [('page', C.c_void_p), ('view', C.c_void_p), ('songs', C.c_void_p), ('picker', C.c_void_p), ('edit', C.c_void_p),
                 ('match', C.c_void_p), ('dest', C.c_int), ('mode', C.c_int), ('selected', C.c_int), ('pending', C.c_int),
-                ('nmatch', C.c_int), ('key', C.c_uint), ('timer', C.c_uint), ('name', C.c_char * 128), ('query', C.c_char * 128)]
+                ('nmatch', C.c_int), ('key', C.c_uint), ('timer', C.c_uint), ('gen', C.c_uint), ('name', C.c_char * 128), ('query', C.c_char * 128)]
 
 
 class Stock:

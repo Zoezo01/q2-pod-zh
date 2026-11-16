@@ -488,7 +488,7 @@ CLASSIC, MINIMAL = 'classic-light', 'ipod'
 class Ple(C.Structure):
     _fields_ = [*((k, C.c_void_p) for k in 'page view songs picker edit match'.split()),
                 *((k, C.c_int) for k in 'dest mode selected pending nmatch'.split()),
-                ('key', C.c_uint), ('timer', C.c_uint), ('name', C.c_char * 128), ('query', C.c_char * 128)]
+                ('key', C.c_uint), ('timer', C.c_uint), ('gen', C.c_uint), ('name', C.c_char * 128), ('query', C.c_char * 128)]
 
 
 def directory(fw):
@@ -720,6 +720,18 @@ def test_add_songs_lists_the_library_with_the_playlists_ticked(editor, ui):
     editor.pick('Add Songs')
     assert editor.rows() == ['Search', 'One', 'Two', 'Three', 'Twenty', 'Five']
     assert editor.title() == 'Add Songs: Road Trip' and editor.ticked() == ['One', 'Two', 'Three']
+
+
+def test_add_songs_reads_the_library_again_only_after_it_changes(editor, ui, fw):
+    """Return from the picker keeps it, so the next Add Songs asks stock for the library only when it has changed."""
+    reads = lambda: len(fw.calls('getAllMusic'))
+    editor.pick('Add Songs')
+    assert reads() == 1 and ui.key(editor.ple.page, KEY_RETURN) == STOP and editor.ple.mode == 0
+    editor.pick('Add Songs')
+    assert reads() == 1 and editor.rows()[0] == 'Search' and ui.key(editor.ple.page, KEY_RETURN) == STOP
+    fw.var('library_gen', C.c_uint).value += 2  # an update rewrote songtable
+    editor.pick('Add Songs')
+    assert reads() == 2 and editor.ticked() == ['One', 'Two', 'Three']
 
 
 def test_a_picked_song_is_added_and_ticked(editor, ui):
