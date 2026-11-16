@@ -2735,17 +2735,21 @@ def test_shuffle_plays_the_decade_s_songs_shuffled(fw, ui, song, mcl):
 
 def test_shuffle_s_query_groups_only_the_names_dated_in_the_decade(fw, ui):
     """Shuffle's song query narrows its grouping as the decade's page does, finds the songs grouping every song finds,
-    and has the folder markers' scope at both its grouping and its rows."""
+    and keeps to the Library's music, its scope token expanded, in both its grouping and its rows: an audiobook and an
+    .m4b of a decade's album stay out, and an audiobook dated later leaves its album in the decade."""
     db, page = era_decade(fw, ui)
     ui.click(page, 1)
     sent = db.asked[-1]
     every = every_song(sent)
     assert every != sent and sent.startswith('select * from songtable where ') and '/*q2-library-scope*/' not in sent
     lib = era_library()
+    lib.executemany('insert into songtable(id, fileurl, album, songer, albumsonger, year, track, cd_num) values (?, ?, ?, ?, ?, ?, ?, ?)', [
+        (13, '/mnt/mmc/audiobooks/wall/3.mp3', 'The Wall', 'Floyd', 'Floyd', 1991, 3, 1), (14, '/m/wall/4.m4b', 'the wall', 'Floyd', 'Floyd', 1990, 4, 1),
+        (15, '/m/x/1.flac', 'X', 'Y', 'Y', 1995, 1, 1), (16, '/mnt/mmc/audiobooks/x/2.mp3', 'X', 'Y', 'Y', 2005, 2, 1)])
     ids = lambda sql: sorted(lib.execute(f'select id from ({sql})').fetchall())
-    assert ids(sent) == ids(every) == [(2,), (3,), (4,), (6,), (9,), (10,)]
+    assert ids(sent) == ids(every) == [(2,), (3,), (4,), (6,), (9,), (10,), (15,)]
     lib.execute('create index songtable_album on songtable(album collate nocase)')
-    assert ids(sent) == [(2,), (3,), (4,), (6,), (9,), (10,)]
+    assert ids(sent) == [(2,), (3,), (4,), (6,), (9,), (10,), (15,)]
 
 
 def test_an_album_row_that_is_gone_says_so(fw, ui, song):
