@@ -5,7 +5,7 @@
   - Library: **Shuffle Songs**, and **Play Next** or **Add to Queue** while it plays, work faster on a big library.
   - Wi-Fi transfer: a folder with many files lists much faster.
   - Crossfade: the player gives back the memory a fade uses, up to 6 MB, once the fade is over. It used to keep it until the Q2 restarted.
-  - Era: a decade opens sooner on a big library. It grouped every album in the library for each decade opened; it now groups only the albums with a song dated in that decade.
+  - Era: a decade opens, and its **Shuffle** starts, sooner on a big library. Each grouped every album in the library; they now group only the albums with a song dated in that decade.
   - Cover Flow: the first open after the Q2 starts, or after the library changes, is quicker when some songs have no album tag.
 - **1.8.6**:
   - Tidal Downloads: **Download Playing Songs** works on a card that has no Tidal folder yet, such as a new or reformatted card, or one whose `.tidal` folder was deleted on a computer. It stopped at once with "Downloaded 0 of N songs" until a Tidal song had played with that card in.
