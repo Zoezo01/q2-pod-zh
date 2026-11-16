@@ -388,8 +388,9 @@ def test_groups_are_albums_named_alike_and_their_smallest_index(player):
 
 @pytest.mark.parametrize('repeat', [ONE_GROUP, REPEAT_GROUP])
 def test_a_track_shuffle_groups_nothing_unless_repeat_is_a_group_repeat(player, repeat):
-    """Shuffle All reads no group outside a category repeat, so rebuild leaves each entry its own and doesn't sort
-    the queue into albums; choosing a group repeat rebuilds, and the albums are there."""
+    """Under Shuffle Songs only a group repeat reads groups (the hold menu offers Next/Previous Album only under
+    shuffle >= 3), so rebuild leaves each entry its own and doesn't sort the queue into albums; choosing a group
+    repeat rebuilds, and the albums are there."""
     player.load(player.albums(3, 2, 1))
     assert player.set(0, 1) == 1 and player.set(1, REPEAT_ALL) == 1
     assert [player.s.groups[i] for i in range(6)] == list(range(6))

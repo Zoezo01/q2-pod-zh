@@ -140,6 +140,7 @@ body | python3 -c "import json,sys; d=json.load(sys.stdin); assert isinstance(d,
 run download GET 'path=/mnt/mmc/hello world.txt' '' -
 [ "$(body)" = "SYNTHETIC-DATA" ] && ok "download returns content" || bad "download content"
 printf '%s' "$OUT" | grep -qi 'filename="hello world.txt"' && ok "download Content-Disposition" || bad "download header"
+[ "$(printf '%s' "$OUT" | sed -n 's/^Content-Length:\([0-9]*\).*/\1/p')" = "$(stat -c %s '/mnt/mmc/hello world.txt')" ] && ok "download Content-Length is the file's size" || bad "download Content-Length"
 
 printf 'path=/mnt/mmc/My Folder' > /tmp/bdel; run delete POST '' 'application/x-www-form-urlencoded' /tmp/bdel
 [ -d "/mnt/mmc/My Folder" ] && bad "delete left folder" || ok "delete removed folder"

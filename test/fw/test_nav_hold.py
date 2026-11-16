@@ -723,7 +723,7 @@ def test_add_songs_lists_the_library_with_the_playlists_ticked(editor, ui):
 
 
 def test_add_songs_reads_the_library_again_only_after_it_changes(editor, ui, fw):
-    """Return from the picker keeps it, so the next Add Songs asks stock for the library only when it has changed."""
+    """A later Add Songs in this edit reuses the picker, so stock is asked for the library again only when it has changed."""
     reads = lambda: len(fw.calls('getAllMusic'))
     editor.pick('Add Songs')
     assert reads() == 1 and ui.key(editor.ple.page, KEY_RETURN) == STOP and editor.ple.mode == 0
