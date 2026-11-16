@@ -23,7 +23,6 @@ CARD=/mnt/mmc
 # security-critical applet never depends on a PATH symlink being present.
 realpath() { busybox realpath "$@"; }
 fsize() { s=$(ls -lnd "$1" 2>/dev/null | awk 'NR==1{print $5; exit}'); printf '%s' "${s:-0}"; }
-fmtime() { date -r "$1" +%s 2>/dev/null || printf '0'; }
 
 emit() { printf '%s\r\n' "$1"; }
 crlf() { printf '\r\n'; }
@@ -166,12 +165,14 @@ case $name in
       bn=${e##*/}
       [ "$bn" = "System Volume Information" ] && continue   # stock hides this Windows system dir too
       [ "$first" = 1 ] || printf ','; first=0
-      jn=$(json_escape "$bn"); jp=$(json_escape "$e")
-      ct=$(fmtime "$e")
+      # A name with nothing to escape takes no fork (always on FAT and exFAT, which refuse \ " and control characters)
+      case $e in *'\'*|*'"'*|*[[:cntrl:]]*) jn=$(json_escape "$bn"); jp=$(json_escape "$e");; *) jn=$bn; jp=$e;; esac
+      ct=$(date -r "$e" +%s 2>/dev/null) || ct=0
       # A directory's path carries a trailing slash: the client builds "<path><newname>" for create
       # and splits the path on "/" for the breadcrumb, both of which need it (stock emits it too).
       if [ -d "$e" ]; then printf '{"path":"%s/","name":"%s","ctime":"%s"}' "$jp" "$jn" "$ct"
-      else sz=$(fsize "$e"); printf '{"path":"%s","name":"%s","ctime":"%s","size":"%s"}' "$jp" "$jn" "$ct" "$sz"; fi
+      else set -f; set -- $(ls -lnd "$e" 2>/dev/null); set +f   # fsize's field 5, without its two subshells and awk
+        printf '{"path":"%s","name":"%s","ctime":"%s","size":"%s"}' "$jp" "$jn" "$ct" "${5:-0}"; fi
     done
     printf ']'
     ;;
