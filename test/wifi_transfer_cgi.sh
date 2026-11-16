@@ -176,6 +176,25 @@ print('dir path ok:', e['path'])" && ok "list dir path has one clean trailing sl
 run create GET 'path=/mnt/mmc/SubDir/Child' '' -
 { [ -d "/mnt/mmc/SubDir/Child" ] && [ ! -e "/mnt/mmc/SubDirChild" ]; } && ok "create inside a subfolder lands there (no mangled top-level sibling)" || bad "subfolder create mangled"
 
+echo; echo "############ LIST VALUES: escaping, and each file's size and time as the file has them"
+rm -rf /mnt/mmc/esc; mkdir -p /mnt/mmc/esc/sub
+printf 'x' > '/mnt/mmc/esc/a "quoted" name'; printf 'xy' > '/mnt/mmc/esc/back\slash'; printf 'xyz' > "/mnt/mmc/esc/tab$(printf '\t')name"
+printf '%04000d' 0 > /mnt/mmc/esc/plain.flac; touch -d '2024-01-02 03:04:05' /mnt/mmc/esc/plain.flac
+run list GET 'path=/mnt/mmc/esc/' '' -
+body | python3 -c "import json, os, sys
+d = json.load(sys.stdin)
+ns = sorted(e['name'] for e in d)
+assert ns == ['a \"quoted\" name', 'back\\\\slash', 'plain.flac', 'sub', 'tabname'], ns
+for e in d:
+    p = e['path'].rstrip('/')
+    if e['name'] == 'tabname': p = p.replace('tabname', 'tab\tname')
+    st = os.stat(p)
+    assert e['ctime'] == str(int(st.st_mtime)), (e, st.st_mtime)
+    assert ('size' in e) == (not os.path.isdir(p)), e
+    assert 'size' not in e or e['size'] == str(st.st_size), (e, st.st_size)
+print('list values ok')" && ok "list escapes a quote and a backslash, drops a control character, gives each file's size and time" || bad "list values ($(body | head -c 300))"
+rm -rf /mnt/mmc/esc
+
 echo; echo "############ SECURITY: a card-root delete (trailing slash / dot / double slash) must NOT wipe the card"
 printf keep > /mnt/mmc/keepme
 post delete '/mnt/mmc/'
