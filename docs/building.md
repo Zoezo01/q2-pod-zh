@@ -143,7 +143,7 @@ Q2_FW_STRICT=1 python3 -m pytest test/fw    # fail a test that reaches a stub to
 
 ## Type check
 
-`.github/workflows/types.yml` runs [mypy](https://mypy-lang.org) over `tools/`, `test/unit` and `test/fw` on every pull request and push to `main`. Few functions carry annotations, so mypy checks the bodies of unannotated ones too (`check_untyped_defs` in `pyproject.toml`): a misspelt name, a wrong argument count, a `None` used as a value, bytes for a str.
+`.github/workflows/tests.yml` runs [mypy](https://mypy-lang.org) over `tools/`, `test/unit` and `test/fw` on every pull request and push to `main`. Few functions carry annotations, so mypy checks the bodies of unannotated ones too (`check_untyped_defs` in `pyproject.toml`): a misspelt name, a wrong argument count, a `None` used as a value, bytes for a str.
 
 ```sh
 pip install -r requirements.txt -r test/unit/requirements.txt mypy==2.4.1

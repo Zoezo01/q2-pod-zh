@@ -1,5 +1,5 @@
 #!/bin/sh
-# Before a push: what CI runs that needs no stock ZIP (types.yml, tests.yml and its format check,
+# Before a push: what CI runs that needs no stock ZIP (tests.yml with its mypy and format check,
 # firmware.yml's test/fw and tidy).
 # --full adds a --dev build and every suite that reads one (tools/release.py suites), the host suites
 # and test/fw under ASan. PY names a Python with test/unit's requirements and mypy (docs/building.md#type-check).

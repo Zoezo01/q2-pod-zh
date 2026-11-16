@@ -1,6 +1,7 @@
 # The stock-free unit tests of tools/ (test/unit, docs/building.md#mutation-tests) on every pull
 # request and push to main, so a regression shows before a merge. Needs no stock firmware or Q2.
 # The run counts its coverage of tools/ and fails under the floor (docs/building.md#coverage).
+# mypy runs here too (docs/building.md#type-check), so a misspelt name or a None used as a value shows.
 name: Unit tests
 
 on:
@@ -27,8 +28,12 @@ jobs:
         with:
           python-version: '3.12'
       - run: sudo apt-get update && sudo apt-get install -y clang lld llvm
-      - run: pip install -r requirements.txt -r test/unit/requirements.txt
+      - run: pip install -r requirements.txt -r test/unit/requirements.txt mypy==2.4.1
       - run: coverage run -m pytest test/unit -q
+      - run: mypy tools test/unit
+        if: ${{ !cancelled() }}
+      - run: mypy test/fw  # its own run: test/unit has a conftest module too
+        if: ${{ !cancelled() }}
       - name: Coverage of tools/  # fails under pyproject.toml's fail_under
         if: ${{ !cancelled() }}
         run: coverage report --format=markdown | tee -a "$GITHUB_STEP_SUMMARY"
