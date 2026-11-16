@@ -1279,15 +1279,16 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
   <div class="sec">
   <h2 id="trouble">Troubleshooting the Q2 and your library</h2>
     <p><b>The Q2 won’t turn on, won’t charge, or is frozen.</b> Plug it into the charger. Hold Centre for 15 seconds, through the shutdown prompt, until it restarts. In Rockbox, hold Play/Pause instead. A Q2 that stops responding restarts itself within a minute; then <code>q2-crash.log</code> on the card says what happened.</p>
+  <p><b>The charging sign shows, but the battery level goes down.</b> Hold Centre while you plug the Q2 in. This resets its power controller.</p>
   <p><b>A song is missing.</b> Check its format (<a href="#card">What goes on the microSD card</a>), then run Update Library. DRM-protected files don’t appear. Still missing? Check its tags (<a href="#tagging">Tagging your music</a>).</p>
   <p><b>An album is split in two.</b> Give every track the same Album Artist, then run Update Library.</p>
-  <p><b>Artwork is missing (a grey disc).</b> Embed the cover in the songs, or add a <code>cover</code> or <code>folder</code> image beside them. A folder image is skipped when the folder holds more than one album. Then choose <b>Refresh Cover Flow</b>.</p>
   <p><b>The screen turns off when you choose a row.</b> Two quick Centre presses turn the screen off. Press once and wait a moment.</p>
   <p><b>An update won’t install.</b> <code>update.tar</code> must be at the card’s root, not in a folder. Leave the card in until the Q2 restarts. If it won’t start at all, see <a href="#restore">Restoring stock firmware</a>.</p>
   </div>
 
   <div class="sec">
   <h2 id="trouble-sound">Troubleshooting Cover Flow, sound and streaming</h2>
+  <p><b>Artwork is missing (a grey disc).</b> Embed the cover in the songs, or add a <code>cover</code> or <code>folder</code> image beside them. A folder image is skipped when the folder holds more than one album. Then choose <b>Refresh Cover Flow</b>.</p>
   <p><b>Cover Flow restarts the Q2 while preparing artwork.</b> Open it again: the album it was reading is skipped, and named in <code>q2-crash.log</code> under <b>cover flow skipped</b>. Shrink that album’s embedded covers to about 500 × 500 pixels, then Refresh Cover Flow.</p>
   <p><b>Cover Flow prepares artwork every time.</b> The library probably lists songs that were moved or deleted: run Update Library. If the count stays, some covers are too big to read; shrink them as above.</p>
   <p><b>No sound, or sound from the wrong place.</b> Reconnect the headphones, and check the volume. Playback uses the output active when it starts; for Spotify, pause and play after switching. If your music stays silent after streaming, choose <b>Stop Streaming Services</b> (<a href="#stream-config">Configuration</a>).</p>
