@@ -109,10 +109,8 @@ The [user guide][guide] covers every control, EQ, Cover Flow and more tips.
 
 ## Updating
 
-- **Over Wi-Fi:** **System settings → System Update → Network update**. With Wi-Fi on, Home tells you when there's a new release.
+- **Over Wi-Fi:** **System settings → System Update → Network update**.
 - **By hand:** repeat the [install steps](#install) with the newest release.
-
-Your settings, ratings and play counts are kept.
 
 ## Apps
 
