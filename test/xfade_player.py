@@ -32,7 +32,7 @@ for name, hi, lo in re.findall(r'peq_lib_(\w+):\nlui \$gp.*\nori \$gp.*\nlui \$t
     imports[STUBS + 4*len(imports)] = name
     u.mem_write(int(hi) << 16 | int(lo), struct.pack('<I', STUBS + 4*(len(imports)-1)))
 assert len(imports) > 60, 'no peq_lib_* stubs found in peq_imports.S'
-heap, clock, pts = [HEAP], [10**9], [-1.0]
+heap, clock, pts, spare, sizes = [HEAP], [10**9], [-1.0], {}, {}
 
 def w(p, *v): u.mem_write(p, struct.pack('<' + 'I'*len(v), *v))
 def r(p): return struct.unpack('<I', u.mem_read(p, 4))[0]
@@ -45,6 +45,7 @@ def alloc(n, align=16):
     p = (heap[0] + align - 1) & ~(align - 1)
     heap[0] = p + n
     u.mem_write(p, bytes(n))
+    sizes[p] = n
     return p
 def cstr(p): return bytes(u.mem_read(p, 256)).split(b'\0')[0]
 flag = alloc(4)  # /tmp/q2xfade, demo's int
@@ -57,8 +58,11 @@ w(MPCTX, mp)
 def libc(u, address, size, _):
     """What the filter calls: allocation, strings, libm, the clock and demo's shared ints."""
     n, result = imports[address], 0
-    if n in ('malloc', 'calloc'): result = alloc(a(0) * (a(1) if n == 'calloc' else 1))
-    elif n == 'free': pass
+    if n in ('malloc', 'calloc'):
+        m = a(0) * (a(1) if n == 'calloc' else 1)
+        result = spare.pop(m) if m in spare else alloc(m)
+        u.mem_write(result, bytes(m))
+    elif n == 'free': spare[sizes.get(a(0))] = a(0)  # back for the next of its size: the ring, at every fade
     elif n in ('memcpy', 'memmove'): u.mem_write(a(0), bytes(u.mem_read(a(1), a(2)))); result = a(0)
     elif n == 'memset': u.mem_write(a(0), bytes([a(1) & 255]) * a(2)); result = a(0)
     elif n == 'memcmp':
@@ -164,6 +168,7 @@ def mix(rate, held, out, seconds=2, block_frames=1024, step=1.0):
 out, held = hold(48000, 10, 1000, 0)
 assert held == 48000, held
 mix(48000, held, out)
+assert not r(ps['xf']), 'the ring goes back once nothing is held'  # xf.ring, the struct's first word
 # A real song: 5 s at 44.1 kHz, the hold starting 12 s before the end of 4 minutes.
 out, held = hold(44100, 240, 5000, 225)
 assert held == 5 * 44100, held
