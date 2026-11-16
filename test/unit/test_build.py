@@ -691,7 +691,7 @@ def test_jpeg_size_refuses(data, message):
 
 def test_source_sha256_hashes_every_input_by_path(tmp_path, monkeypatch):
     monkeypatch.setattr(build, 'ROOT', tmp_path)
-    files = ['assets/icons/a.png', 'assets/b.jpg', 'patch/c.c', 'tools/d.py', 'tools/e.c', 'tools/f.h', 'tools/g.S',
+    files = ['assets/icons/a.png', 'assets/b.jpg', 'patch/c.c', 'tools/d.py', 'tools/g.S',
              'docs/manual/build.py', 'docs/manual/guide.html']
     for name in files:
         (tmp_path/name).parent.mkdir(parents=True, exist_ok=True)

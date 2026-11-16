@@ -8,11 +8,10 @@ import struct
 import pytest
 
 import host
-from conftest import text, Game, c_enum, opus, stock_stub
+from conftest import POD, text, Game, opus, pod_value, stock_stub
 from conftest import FNV_PRIME, O, Deques, Files, claim, fnv1a, in_fork  # noqa: F401
 
 STOCK_RED = O['STOCK_RED']
-POD = c_enum('POD_CHARGE')  # pod_rows' rows, by name
 PAPER, INK = O['LIGHT_PAPER'], O['LIGHT_INK']
 REC_NAME, REC_PATH, REC_CUE_START = O['REC_NAME'], O['REC_PATH'], O['REC_CUE_START']
 KEY_PLAY, KEY_RETURN, KEY_CENTER = O['KEY_PLAY'], O['KEY_RETURN'], O['KEY_CENTER']
@@ -354,10 +353,6 @@ def test_config_value_any_text(fw):
 @pytest.mark.parametrize('i, choices', [(0, 2), (1, 2), (2, 3), (3, 2), (4, 2), (10, 4), (11, 2), (12, 2), (15, 2), (POD['POD_BIG_LIB'], 2), (POD['POD_PL_CF'], 2)])
 def test_pod_rows_choices(fw, i, choices):
     assert fw.fn('navigation__pod_choices', C.c_int, C.c_uint)(i) == choices
-
-
-def pod_value(fw, name):
-    return fw.fn('pod_value', C.c_int, C.c_int)(POD[name])
 
 
 def test_pod_settings_defaults(fw):

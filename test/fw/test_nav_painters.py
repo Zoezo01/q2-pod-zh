@@ -16,7 +16,7 @@ import typing
 import pytest
 
 import host
-from conftest import NAVIGATION_SOURCE, O, c_enum, Deques, Files, claim, high_halves, libc, ui_name, opus
+from conftest import NAVIGATION_SOURCE, O, POD, c_enum, pod_value, Deques, Files, claim, high_halves, libc, ui_name, opus
 
 STRINGS = dict(re.findall(r'^#define (\w+) "([^"]*)"', (host.ROOT/'patch/offsets.inc').read_text(), re.M))
 LIST_INTO_WHITE, BT_GLYPH = STRINGS['LIST_INTO_WHITE'], STRINGS['BT_GLYPH']
@@ -50,7 +50,6 @@ def bright(c):
     return sum(c >> s & 255 for s in (0, 8, 16))
 
 
-POD = c_enum('POD_CHARGE')  # pod_rows' rows
 SETTING = c_enum('SETTING_ACCENT')  # Display's rows, st.setting_label's slots
 
 
@@ -1689,7 +1688,7 @@ def test_system_update_adds_remind_daily_under_network_update_on_by_default(fw):
 
 def test_remind_daily_off_in_config_reads_off(fw):
     fw.mock('toolsReadConfig', lambda p, s, key, out, d, *_: C.memmove(out, b'0\0', 2) if C.string_at(key) == b'REMINDDAILY' else 0)
-    assert fw.fn('pod_value', C.c_int, C.c_int)(POD['POD_REMIND_DAILY']) == 0
+    assert pod_value(fw, 'POD_REMIND_DAILY') == 0
 
 
 def test_standby_limit_cycles_its_four_choices_and_saves_each(fw):
@@ -1848,7 +1847,7 @@ def test_device_volume_off_gives_stock_its_gain_back_at_once(fw, way, sent):
     fw.mock('mclGetOutputWay', lambda *_: way)
     fw.fn('ringnav_btrows', C.c_int, C.c_void_p, C.c_void_p)(win.addr, None)
     link = row(ui, view, 'Control Device Volume')
-    bt_link = lambda: fw.fn('pod_value', C.c_int, C.c_int)(POD['POD_BT_LINK'])
+    bt_link = lambda: pod_value(fw, 'POD_BT_LINK')
     assert switch(link) == 'switch_on' and bt_link() == 1
     click(ui, link)
     assert switch(link) == 'switch_off' and settings.written == [('BTVOLLINK', 0)] and bt_link() == 0
@@ -2054,9 +2053,9 @@ def test_key_tone_shows_click_with_headphones_while_on(fw, st, scratch, was):
 @pytest.mark.parametrize('on', [1, 0])
 def test_eq_per_output_turned_off_forgets_the_outputs_eq(fw, on):
     config = Settings(fw, EQOUTPUT=str(on).encode())
-    assert fw.fn('pod_value', C.c_int, C.c_int)(POD['POD_EQ_OUTPUT']) == on
+    assert pod_value(fw, 'POD_EQ_OUTPUT') == on
     fw.fn('ringnav_eq_output_toggle', None)()
-    assert fw.fn('pod_value', C.c_int, C.c_int)(POD['POD_EQ_OUTPUT']) == (not on) and config.written == [('EQOUTPUT', int(not on))]
+    assert pod_value(fw, 'POD_EQ_OUTPUT') == (not on) and config.written == [('EQOUTPUT', int(not on))]
     assert bool(fw.calls('fw_unlink')) == bool(on)  # off: what plays stays, the owner's file goes
 
 

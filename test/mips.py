@@ -39,7 +39,7 @@ def load_elf(u, *images, load=0):
             u.mem_map(start, end + 4096 - start)
             start = page
         end = page
-    for base, memsz, data in loads:
+    for base, _, data in loads:
         u.mem_write(base, data)  # Fresh mappings already zero each segment's BSS.
 
 

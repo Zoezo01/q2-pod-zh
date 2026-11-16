@@ -1030,8 +1030,7 @@ def source_sha256():
     h = hashlib.sha256()
     manual = [ROOT/'docs/manual'/f for f in ('build.py', 'guide.html')]
     for path in sorted([*(p for p in ROOT.glob('assets/**/*') if p.is_file()), *ROOT.glob('patch/*'),
-                        *ROOT.glob('tools/*.py'), *ROOT.glob('tools/*.c'),
-                        *ROOT.glob('tools/*.h'), *ROOT.glob('tools/*.S'), *manual]):
+                        *ROOT.glob('tools/*.py'), *ROOT.glob('tools/*.S'), *manual]):
         h.update(str(path.relative_to(ROOT)).encode() + b'\0')
         h.update(path.read_bytes())
     return h.hexdigest()

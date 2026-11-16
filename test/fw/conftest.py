@@ -42,6 +42,14 @@ def c_enum(first):
     return {name.strip(): k for k, name in enumerate(body.split(',')) if name.strip()}
 
 
+SPOT_OK, SPOT_NOSOCK, SPOT_FAIL = c_enum('SPOT_OK').values()  # spot_exchange's results
+POD = c_enum('POD_CHARGE')  # pod_rows' rows, by name
+
+
+def pod_value(fw, name):
+    return fw.fn('pod_value', C.c_int, C.c_int)(POD[name])
+
+
 FNV_SEED, FNV_PRIME = 2166136261, 16777619
 
 # The C uses stock's fixed addresses as they are: zeroed pages here. A non-PIE python (Debian's and
