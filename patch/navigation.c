@@ -10997,13 +10997,9 @@ static const clock_part_t time_clock[] = {
 };
 
 /* Text in final colours, as Light Mode's text setter flips what it's given. */
-static void time_text(void *canvas, int light, const char *face, const unsigned *s, unsigned n,
-                      const rect_t *r, unsigned px, unsigned rgb, unsigned alpha) {
-    unsigned color = alpha << 24 | (RGBA(flip_if(light, rgb)) & 0xffffff);
-    if (face)
-        draw_in_face(canvas, face, s, n, r, px, color);
-    else
-        draw_centred(canvas, s, n, r, px, color);
+static void time_text(void *canvas, const unsigned *s, unsigned n, const rect_t *r, unsigned px,
+                      unsigned rgb, unsigned alpha) {
+    draw_centred(canvas, s, n, r, px, alpha << 24 | (RGBA(flip_if(ipod_light(), rgb)) & 0xffffff));
 }
 /* A cell's or the tile's number: its text, widened. */
 static unsigned time_chars(unsigned *to, const char *s) {
@@ -11023,7 +11019,7 @@ static void time_paint(void *w, void *canvas) {
     unsigned fill = (unsigned)I(lcd, LCD_FILL_COLOR), s[5], n;
     int time = tf.slide && widget_get_prop_int(tf.slide, "value", 0) == 1;
     int at = field_on_page(widget_get_prop_int(w, "_edit_field", 0), time);
-    int hour = time_value(3), minute = time_value(4), L = ipod_light();
+    int hour = time_value(3), minute = time_value(4);
     const time_row_t *row = time_row(time);
     char b[6];
     paint_page(w, canvas, 0);
@@ -11038,10 +11034,10 @@ static void time_paint(void *w, void *canvas) {
         paint_art(w, canvas, "classic_light_tile", TIME_TILE_X - TIME_TILE_PAD,
                   TIME_TILE_Y - TIME_TILE_PAD);
         n = time_chars(s, time_month());
-        time_text(canvas, L, (const char *)0, s, n, &head, 28, 0xffffff, 255);
+        time_text(canvas, s, n, &head, 28, 0xffffff, 255);
         tk_snprintf(b, sizeof b, "%02d", time_value(2));
         n = time_chars(s, b);
-        time_text(canvas, L, (const char *)0, s, n, &day, 79, 0x1b2030, 255);
+        time_text(canvas, s, n, &day, 79, 0x1b2030, 255);
     }
     paint_art(w, canvas, row->tray, row->tray_x - TIME_TRAY_PAD, TIME_TRAY_Y - TIME_TRAY_PAD);
     for (int i = 0; i < row->n; ++i) {
@@ -11055,15 +11051,15 @@ static void time_paint(void *w, void *canvas) {
         else
             tk_snprintf(b, sizeof b, f ? "%02d" : "%d", time_value(f));
         n = time_chars(s, b);
-        time_text(canvas, L, (const char *)0, s, n, &r, f == TIME_AMPM ? 30 : 35, 0xffffff, 255);
+        time_text(canvas, s, n, &r, f == TIME_AMPM ? 30 : 35, 0xffffff, 255);
     }
     if (row->sep_x) {
         rect_t r = { row->sep_x, TIME_CELL_Y, 12, TIME_CELL_H };
-        time_text(canvas, L, (const char *)0, &colon, 1, &r, 32, 0xffffff, 255);
+        time_text(canvas, &colon, 1, &r, 32, 0xffffff, 255);
     }
     rect_t label = { 0, 244, 375, 26 }, under = { 0, 245, 375, 26 };
-    time_text(canvas, L, (const char *)0, save, 4, &under, 24, 0, 0x59);
-    time_text(canvas, L, (const char *)0, save, 4, &label, 24, 0xffffff, 0xb8);
+    time_text(canvas, save, 4, &under, 24, 0, 0x59);
+    time_text(canvas, save, 4, &label, 24, 0xffffff, 0xb8);
     stock_canvas_set_fill_color(canvas, fill);
 }
 
