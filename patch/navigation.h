@@ -172,10 +172,7 @@ typedef struct {
     void *np_win, *np_pos, *np_album, *np_slider, *np_remain, *np_elapsed, *np_cover, *np_title;
     int np_bold;             /* the title's font: theme_font's face | px << 2, -1 not set yet */
     void *np_slide, *np_lrc; /* the art/lyrics/info pages and the lyric lines' scroll_view */
-    /* Now Playing's full-screen lyrics (np_full) and where the last touch on them came down
-     * (np_lyric_touch) */
-    int np_full, np_tap_x, np_tap_y;
-    int np_was[9]; /* the column before full screen (np_full) */
+    int np_full; /* Now Playing's full-screen lyrics (np_lyrics.c np_full): 2 the iPod page's */
     /* The full-screen art's song name, its shade and its window, the fade's step and timer
      * (ringnav_bigcover) */
     void *bc[3];
@@ -226,17 +223,11 @@ typedef struct {
     int scrub, scrub_to, scrub_moved, settle_played;
     int held_sec; /* a paused seek to scrub_to on scrub_track: the player's second then, +1; 0 none
                    */
-    /* The lyrics (lyric_poll), of the song lyric_song, their rows built for lyric_rows_song:
-     * lyric_raw while their page holds the wheel's raw travel; lyric_held once the wheel or a drag
-     * moved them; lyric_spun once the wheel moved them since it was let go (2: only nudged them,
-     * still following); lyric_touch while a
-     * finger is on Now Playing, 1 if it came down on the lyrics, lyric_drag_y the offset then; the
-     * glide's target lyric_to (1/16 px), its last step lyric_at, and lyric_glide while it moves;
-     * lyric_follow_at the last follow. */
-    int lyric_raw, lyric_held, lyric_spun, lyric_touch, lyric_drag_y, lyric_glide, lyric_to;
-    int lyric_push, lyric_home; /* travel short of LYRIC_PUSH_DETENTS, and where it nudged from */
-    unsigned lyric_push_at;
-    unsigned lyric_at, lyric_follow_at, lyric_song, lyric_rows_song;
+    /* The lyrics (np_lyrics.c keeps the rest), of the song lyric_song, their rows built for
+     * lyric_rows_song: lyric_held once the wheel or a drag moved them; lyric_glide while the glide
+     * moves them. */
+    int lyric_held, lyric_glide;
+    unsigned lyric_song, lyric_rows_song;
     /* The Display settings, read from config.ini on first use, and the display page's value labels.
      */
     int settings_read, accent, minimal_accent, home, battery, home_rockbox, home_groovebox, theme,
@@ -401,6 +392,16 @@ void drop_input(void);
 int pointer_down(void);
 unsigned qm_album_id(void *r);
 char *scrobble_tag(char *o, char *end, const char *s);
+unsigned np_track(void);
+void scrub_end(void);
+void view_still(void *w);
+
+/* np_lyrics.c */
+void lyric_init(void);
+void lyric_poll(void);
+void np_full(int on);
+int np_lyrics(unsigned key);
+int np_lyric_touch(void *ctx, void *event);
 
 /* font_weight.c: a marked label's foreground painted again 1 px right */
 void font_weight_paint(void *w, void *canvas);

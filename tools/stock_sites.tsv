@@ -328,7 +328,7 @@ demo	0x53aeac	0x4	playerqueue_row_on_load_data	the only call to widget_use_style
 demo	0x53b0fc	0x4	playerqueue_table_on_prepare_row	`addiu $2, $zero, 0x4e`, before the only call to table_row_create, after "s_scrlabel_white24l"; patch/ipod.json immediates stock_row (stock's own table rows (Go to, Queue, special folders): creation, Go to's scroll divisor, special folders' row height)
 demo	0x53b128	0x4	playerqueue_table_on_prepare_row	`addiu $fp, $zero, 0x46`, before 1st of 3 calls to widget_use_style, after "s_scrlabel_white24l"; patch/ipod.json immediates stock_body (stock's own table rows: the button and its full-height children)
 demo	0x53b308	0x4	playerqueue_page_init	the load of $25 for the only call to widget_move_resize, after "table_view"; patch/ipod.json navbar_resize_calls (a page's list keeps its asset's box: stock's resize for its navigation bar switch does nothing)
-demo	0x53b838	0x4	playing_page_lyrics_rebuild_rows	`addiu $2, $zero, 0x14`, before 1st of 2 calls to label_create, after "lrc_time"; patch/navigation.c lyric_centre
+demo	0x53b838	0x4	playing_page_lyrics_rebuild_rows	`addiu $2, $zero, 0x14`, before 1st of 2 calls to label_create, after "lrc_time"; patch/np_lyrics.c lyric_centre
 demo	0x53ba88	0x4	ab_x	`addiu $2, $zero, 0x122`; patch/ipod.json immediates np_bar_w (Now Playing A-B markers span the iPod progress bar (x = start + t * width / length))
 demo	0x53baa0	0x4	ab_x	`addiu $2, $2, 0x32`; patch/ipod.json immediates np_bar_x (Now Playing A-B markers start at the iPod progress bar's left end)
 demo	0x53bb78	0x4	playing_page_update_ab_markers	1st of 3 calls to ab_x, after "img_repeatb"; tools/build.py AB_X_CALLS
