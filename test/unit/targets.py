@@ -58,8 +58,7 @@ def targets(since=None):
 if __name__ == '__main__':
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--since', metavar='REV', help='only the functions added or changed since REV')
-    ap.add_argument('--names', action='store_true', help='print module.function, not mutant globs')
     args = ap.parse_args()
     for module, names in targets(args.since).items():
         for name in names:
-            print(f'{module}.{name}' if args.names else mutant_glob(module, name))
+            print(mutant_glob(module, name))
