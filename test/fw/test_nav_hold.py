@@ -982,6 +982,9 @@ def test_a_long_press_of_a_side_button_is_the_editors(editor, ui, fw):
 
 
 # Stock code at a fixed address, for a handler the C calls there. Only ever in a fork.
+STAND_IN_LOGS = []  # each stand-in's log: its code writes there at every call, until the child exits
+
+
 def stock_handler(address, result=0):
     """x86-64 at address: its first two arguments and the event's x (rsi + EVENT_X) logged, result returned."""
     log = (C.c_long * 3)()
@@ -989,6 +992,7 @@ def stock_handler(address, result=0):
     code = (b'\x48\xb8' + struct.pack('<Q', C.addressof(log)) + bytes.fromhex('488938 48897008') +
             b'\x8b\x4e' + bytes([EVENT_X]) + bytes.fromhex('48894810') + b'\xb8' + struct.pack('<I', result) + b'\xc3')
     C.memmove(address, code, len(code))
+    STAND_IN_LOGS.append(log)
     return log
 
 
@@ -1264,7 +1268,7 @@ def test_edit_playlists_shows_select_modes_rows(classic, ui, fw):
 
 def recount(p, ui):
     """A playlist row's click: stock's pick (a stub: the marks are p.marked), then the rows count them."""
-    p.pick_log = stock_handler(PLAYLIST_PICK, 0)  # kept: the stand-in writes there at every call
+    stock_handler(PLAYLIST_PICK, 0)
     ui.click(p.playlist(0), 0)
 
 
