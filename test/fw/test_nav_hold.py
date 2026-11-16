@@ -1264,7 +1264,7 @@ def test_edit_playlists_shows_select_modes_rows(classic, ui, fw):
 
 def recount(p, ui):
     """A playlist row's click: stock's pick (a stub: the marks are p.marked), then the rows count them."""
-    stock_handler(PLAYLIST_PICK, 0)
+    p.pick_log = stock_handler(PLAYLIST_PICK, 0)  # kept: the stand-in writes there at every call
     ui.click(p.playlist(0), 0)
 
 
