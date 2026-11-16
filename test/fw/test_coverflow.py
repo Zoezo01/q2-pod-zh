@@ -88,7 +88,8 @@ def api(fw):
            'coverflow__grid_cover': (i, C.c_char_p, C.c_char_p, i, i, i), 'coverflow_album_cover': (i, C.c_char_p, C.c_char_p, i, i),
            'coverflow_grid_cover': (i, C.c_char_p, C.c_char_p, i, i), 'coverflow_folder_cover': (i, C.c_char_p, C.c_char_p, i, i),
            'coverflow_player_cover': (i, C.c_char_p, C.c_char_p, i, i), 'coverflow__marked_empty': (i, C.c_char_p),
-           'now_cover': (C.c_ubyte, ptr, ptr), 'hash_bytes': (u, u, ptr, u), 'fnv': (u, u, C.c_char_p)}
+           'now_cover': (C.c_ubyte, ptr, ptr), 'hash_bytes': (u, u, ptr, u), 'fnv': (u, u, C.c_char_p),
+           'album_ident': (u, C.c_char_p, C.c_char_p, C.c_char_p)}
     fw.fn('cf_restyle', None)()  # the theme's Cover Flow values, as the page's open copies them
     return SimpleNamespace(**{k.replace('coverflow__', ''): fw.fn(k, v[0], *v[1:]) for k, v in fns.items()})
 
@@ -1147,6 +1148,18 @@ def test_fnv_is_fnv1a_and_its_separator_for_every_byte(fw):
     for _ in range(500):
         h, data = rng.getrandbits(32), bytes(rng.randrange(1, 256) for _ in range(rng.randrange(64)))
         assert g.fnv(h, data) == fnv1a(data, h) * 16777619 % 2**32
+
+
+def test_album_ident_is_fnv1a_of_the_ascii_lowered_names_for_every_byte(fw):
+    # saved album ratings are keyed on it, so no byte, 0x80 to 0xff included, may hash differently
+    g, rng = api(fw), random.Random(8)
+    low = lambda s: bytes(b + 32 if 65 <= b <= 90 else b for b in s)
+    pairs = [(bytes([b]), bytes([256 - b])) for b in range(1, 256)]
+    name = lambda: bytes(rng.randrange(1, 256) for _ in range(rng.randrange(1, 32)))
+    pairs += [(name(), name()) for _ in range(300)]
+    for x, y in pairs:
+        h = fnv1a(low(y), fnv1a(low(x)) * 16777619 % 2**32) * 16777619 % 2**32
+        assert g.album_ident(x, y, b'/a/b.flac') == h | (h == 0), (x, y)
 
 
 def rows(*recs, order=None):
