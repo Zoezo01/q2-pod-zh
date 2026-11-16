@@ -2107,13 +2107,15 @@ def test_each_song_s_hearts_are_those_every_rated_key_gave_it(fw, seed):
 
 
 # Era's Shuffle.
-def test_era_shuffle_is_the_decades_songs_in_library_order(fw, heap):
+def test_era_shuffle_is_its_query_s_records_alone(fw, heap):
+    """Shuffle's songs are the records stock's select * fill makes of its one query's rows, in the query's order; the
+    library itself is never read."""
     keep, deques = [], Deques(fw)
     state = fw.var('library_lists__era', Era)
     state.v, state.m, state.cap = C.cast(heap.calloc(2, C.sizeof(EraRow)), C.POINTER(EraRow)), 1, 1
     state.v[0].year = 1975
-    songs = [record(keep, id_=i) for i in (5, 9, 1, 7, 3)]
-    fw.mock('getAllMusic', lambda *_: deques[directory(fw)].extend(songs) or len(songs))
+    songs = {i: record(keep, id_=i) for i in (5, 9, 1, 7, 3)}
+    fw.mock('db_song_row_callback', lambda ctx, n, v, c, *_: deques[directory(fw)].append(songs[int(C.cast(v, C.POINTER(C.c_char_p))[0])]) or 0)
     def run(db, sql, callback, *_):
         if callback:
             call = C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_int, C.POINTER(C.c_char_p), C.c_void_p)(callback)
@@ -2121,8 +2123,8 @@ def test_era_shuffle_is_the_decades_songs_in_library_order(fw, heap):
                 call(None, 1, row(key), None)
     fw.mock('sqlite3_exec', run)
     out = fw.fn('library_lists__era_shuffle_songs', C.c_long)()
-    assert [struct.unpack_from('<i', C.string_at(r, 8), O['REC_ID'])[0] for r in deques[out]] == [9, 1, 7]
-    assert not fw.var('library_lists__ids', Ids).v
+    assert [struct.unpack_from('<i', C.string_at(r, 8), O['REC_ID'])[0] for r in deques[out]] == [7, 1, 9]
+    assert not fw.calls('getAllMusic')
 
 
 def test_era_shuffle_of_nothing(fw):
@@ -2241,16 +2243,10 @@ def test_era_closed(fw, era):
 
 def test_ids_grow_and_keep_their_values(fw):
     keys = fw.var('library_lists__ids', Ids)
-    add = fw.fn('library_lists__id_row', *ROW)
+    add = fw.fn('library_lists__ids_add', C.c_int, C.c_uint)
     for i in range(3000):
-        assert add(None, 1, row(b'%d' % i), None) == 0
+        assert add(i) == 0
     assert keys.n == 3000 and keys.cap == 4096 and list(keys.v[:3000]) == list(range(3000))
-
-
-@pytest.mark.parametrize('n, values', [(0, ()), (2, (b'1', b'2')), (1, (None,))])
-def test_id_row_ignores_a_bad_row(fw, n, values):
-    keys = fw.var('library_lists__ids', Ids)
-    assert fw.fn('library_lists__id_row', *ROW)(None, n, row(*values) if values else None, None) == 0 and keys.n == 0
 
 
 @pytest.mark.parametrize('a, b, order', [(1, 2, -1), (2, 1, 1), (7, 7, 0), (0xffffffff, 1, 1), (1, 0x80000000, -1)])

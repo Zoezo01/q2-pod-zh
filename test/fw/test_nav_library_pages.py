@@ -2647,17 +2647,19 @@ def test_a_failing_decade_query_says_era_unavailable(fw, ui):
 def test_a_failing_song_query_says_era_unavailable(fw, ui, row):
     db, page = era_decade(fw, ui)
     run = db.run
-    fw.mock('sqlite3_exec', lambda d, sql, *a: 1 if b'select distinct s.id' in C.string_at(sql) else run(d, sql, *a))
+    fw.mock('sqlite3_exec', lambda d, sql, *a: 1 if b'id in (select s.id' in C.string_at(sql) else run(d, sql, *a))
     fw.mock('getMusicByAlbum', lambda *_: -1)  # stock's count when its query fails (toolsQueryDbTable: no database, or sqlite3_exec fails)
     ui.click(page, row)
     assert ui.toasts == ['Era unavailable'] and not ui.played
 
 
-# Shuffle's key query worked but loading the library failed: still 'Era unavailable', not 'Storage unavailable'
-def test_shuffle_with_the_library_failing_says_era_unavailable(fw, ui, mcl):
-    fw.mock('getAllMusic', lambda *_: -1)
+# Shuffle's query gave a song and then failed: still 'Era unavailable', not that one song shuffled
+def test_shuffle_with_its_query_failing_after_a_row_says_era_unavailable(fw, ui, song, mcl):
+    Library(fw, ui, [song(b'/m/1.flac', id_=1)])
     db, page = era_decade(fw, ui)
-    db.albums = [(b'9',)]
+    run = db.run
+    fw.mock('sqlite3_exec', lambda d, sql, *a: run(d, sql, *a) or 1 if b'id in (select s.id' in C.string_at(sql) else run(d, sql, *a))
+    db.albums = [(b'1',)]
     ui.click(page, 1)
     assert ui.toasts == ['Era unavailable'] and not ui.played
 
@@ -2725,24 +2727,25 @@ def test_shuffle_plays_the_decade_s_songs_shuffled(fw, ui, song, mcl):
     library = Library(fw, ui, songs)
     fw.mock('fw_access', lambda *_: 0)
     db, page = era_decade(fw, ui)
-    db.albums = [(b'9',), (b'1',)]  # the decade's song ids
+    db.albums = [(b'2',), (b'3',)]  # the decade's rows, which stock's select * fill makes records of
     ui.click(page, 1)
     (queue, at, cls), = ui.played
-    assert queue == songs[1:] and cls == LIBRARY and library.asked == [3]
+    assert queue == songs[1:] and cls == LIBRARY and library.asked == []  # the library itself is never read
 
 
 def test_shuffle_s_query_groups_only_the_names_dated_in_the_decade(fw, ui):
-    """Shuffle's song query narrows its grouping as the decade's page does, and finds the songs grouping every song finds."""
+    """Shuffle's song query narrows its grouping as the decade's page does, finds the songs grouping every song finds,
+    and has the folder markers' scope at both its grouping and its rows."""
     db, page = era_decade(fw, ui)
     ui.click(page, 1)
     sent = db.asked[-1]
     every = every_song(sent)
-    assert every != sent and 'select distinct s.id' in sent
+    assert every != sent and sent.startswith('select * from songtable where ') and '/*q2-library-scope*/' not in sent
     lib = era_library()
-    ids = sorted(lib.execute(sent).fetchall())
-    assert ids == sorted(lib.execute(every).fetchall()) == [(2,), (3,), (4,), (6,), (9,), (10,)]
+    ids = lambda sql: sorted(lib.execute(f'select id from ({sql})').fetchall())
+    assert ids(sent) == ids(every) == [(2,), (3,), (4,), (6,), (9,), (10,)]
     lib.execute('create index songtable_album on songtable(album collate nocase)')
-    assert sorted(lib.execute(sent).fetchall()) == ids
+    assert ids(sent) == [(2,), (3,), (4,), (6,), (9,), (10,)]
 
 
 def test_an_album_row_that_is_gone_says_so(fw, ui, song):

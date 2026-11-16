@@ -169,7 +169,7 @@ static int mp_rank(void *songs, int *idx, unsigned *score) {
     return top;
 }
 
-/* A query's ids: Era Shuffle's decade, Most Played's counted songs. */
+/* Most Played's counted songs' ids. */
 static struct {
     unsigned *v, n, cap;
 } ids __attribute__((section(".scratch")));
@@ -184,10 +184,6 @@ static int ids_add(unsigned id) {
     }
     ids.v[ids.n++] = id;
     return 0;
-}
-/* A query row of one id, added to ids. */
-static int id_row(void *ctx, int n, char **v, char **c) {
-    return n == 1 && v[0] ? ids_add((unsigned)atoi(v[0])) : 0;
 }
 
 /* The counted songs' ids, from one pass over every song's id, path and CUE start on stock's shared
@@ -605,36 +601,26 @@ static void *era_songs(void) {
     if (era.m && failed == era.m) return deque_destroy(all), (void *)0;
     return all;
 }
-/* Shuffle's songs: one query for the decade's files, then the library filtered by them; its
- * order is about to be shuffled, so era_songs' two queries an album would only cost time. */
+/* Shuffle's songs: the Library's music in the decade's ALBUM_GROUP groups, matched on ALBUM_GROUP's
+ * keys, in one query filled as stock's select * fill makes records, so only the decade's records
+ * are made, not the library's. Its order is about to be shuffled, so era_songs' two queries an
+ * album would only cost time. None without albums: no decade to ask for. */
+static int era_song_rows(void *sql) {
+    return !sql || era_sql(sql, db_song_row_callback, 0) ? 0 : -1;
+}
 static void *era_shuffle_songs(void) { /* 0 if the query failed */
     char sql[2048];
     int from = era.m ? era.v[0].year / 10 * 10 : 0, n;
-    /* The songs of the decade's ALBUM_GROUP groups, matched on ALBUM_GROUP's keys. */
     tk_snprintf(sql, sizeof sql,
-                "%s from songtable s join (select album a,ifnull(albumsonger,'') b,case "
-                "ifnull(albumsonger,'') when '' then rtrim(fileurl,replace(fileurl,'/','')) end d,"
-                "%s as y from songtable where %s and ifnull(album,'')<>''" ERA_NAMES
-                "%s having y between %d and %d) g "
+                "select * from songtable where %s and id in (select s.id from songtable s join "
+                "(select album a,ifnull(albumsonger,'') b,case ifnull(albumsonger,'') when '' then "
+                "rtrim(fileurl,replace(fileurl,'/','')) end d,%s as y from songtable where %s and "
+                "ifnull(album,'')<>''" ERA_NAMES "%s having y between %d and %d) g "
                 "on s.album=g.a COLLATE NOCASE and ifnull(s.albumsonger,'')=g.b COLLATE NOCASE and "
-                "(g.d is null or rtrim(s.fileurl,replace(s.fileurl,'/',''))=g.d)",
-                "select distinct s.id", ALBUM_YEAR, MUSIC_WHERE, from, from + 9, ALBUM_GROUP, from,
-                from + 9);
-    ids.n = 0;
-    void *out = 0;
-    if (!era.m || era_sql(sql, id_row, 0)) out = _create_deque("stSongInfo"), deque_init(out);
-    if (out && ids.n) {
-        qsort(ids.v, ids.n, sizeof *ids.v, key_cmp);
-        void *all = staged(songs_unsorted, (void *)1, &n);
-        if (n < 0) deque_destroy(out), out = 0; /* the library load failed */
-        for (unsigned i = 0; out && i < deque_size(all); ++i) {
-            if (has_key(ids.v, ids.n, (unsigned)I(deque_at(all, i), REC_ID)))
-                _deque_push_back(out, deque_at(all, i));
-        }
-        deque_destroy(all);
-    }
-    free(ids.v);
-    ids.v = 0, ids.n = ids.cap = 0;
+                "(g.d is null or rtrim(s.fileurl,replace(s.fileurl,'/',''))=g.d))",
+                MUSIC_WHERE, ALBUM_YEAR, MUSIC_WHERE, from, from + 9, ALBUM_GROUP, from, from + 9);
+    void *out = staged(era_song_rows, era.m ? sql : 0, &n);
+    if (n < 0) deque_destroy(out), out = 0; /* rows then an error: not the decade's songs */
     return out;
 }
 /* Play All from the first song as a library queue, as Coverflow's All albums; Shuffle is Shuffle

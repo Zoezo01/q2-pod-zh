@@ -4692,6 +4692,12 @@ def test_a_query_is_expanded_where_its_token_is(fw):
     assert query(fw, b'select * from t where ' + TOKEN + b' and x') == b'select * from t where 1 and x'
 
 
+def test_every_token_in_a_query_is_expanded(fw):
+    World(fw, {RULES: b'0/mnt/mmc/A\n'})
+    rule = predicate(fw)
+    assert query(fw, TOKEN + b' and (' + TOKEN + b')') == rule + b' and (' + rule + b')'
+
+
 def test_no_query_no_copy(fw):
     assert fw.fn('library_scope_query', C.c_void_p, C.c_char_p)(None) is None
 
