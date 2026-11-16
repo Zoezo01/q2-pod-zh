@@ -1391,47 +1391,60 @@ Stock has two artist settings. `artist_type` (`0xa4ca3c`, `PLAYSET ARTISTTYPE`, 
 
 The charger is the AXP2101 PMIC's integrated one (the device tree's `x-powers,axp2101-power-supply`, driven by `drivers/power/supply/axp2101_charger.c`, which registers `battery` and `axp2101_charger`; there is no bq25890 driver in the kernel or rootfs), set to 1000 mA of charge current, the 2000 mA USB input limit (`pmu_usbpc_cur`), a 4.35 V target (`pmu_init_chgvol` 0x10fe) and 100 mA of termination (`pmu_iterm_limit` 0x64). The fuel gauge is the CW2015 on I2C-0 (`/sys/devices/i2c-0/0-0062/cw2015_capacity`, `module_driver/cw2015.sh`). `toolsGetChargeStatus` (`0x5cf5ec`) reads `/sys/class/power_supply/battery/status` (1 Charging, 2 Full, -1 Discharging or anything else, 0 unreadable); the `bq25890_1_status` paths it probes and the `echo %d > .../bq25890_1_otg_enable` helper are for the other Shanling players that share `demo`. `switch_charge_enable(on)` (`0x4fe42c`) sets the active-low charge enable on GPIO `PE22` through `toolsGpioSetValue` (libgpio, no shell); stock uses it only for USB mode's and AirPlay's charge choice (`g_usbdac_chargeflag`; `usbmode_page_init`, `usbmode_exit`, `airplay_page_init`). With it high, charging is off and the player runs from USB while the battery holds. `get_battery_capacity` (`0x4ff258`) keeps `g_power_capacity` (0-100) and `g_power_chargestate` (a negative status is not stored).
 
-**System settings → Power → Charge Limit** (`ringnav_powermanager`, after stock's rows in `scroll_view_powermanager`; `Q2POD CHARGELIMIT` in `config.ini`). Every `CHARGE_POLL_MS` (5 s) `charge_poll`, from `ringnav_sleep`, stops charging at `CHARGE_STOP` (80%), stops it again if anything turned it back on meanwhile (USB mode's exit, AirPlay) while the charger reports charging, and hands it back at `CHARGE_RESUME` (75%) or when the limit is turned off, on, or `g_usbdac_chargeflag` while `usbmode_page` or `airplay_page` is open. The hand-back goes through `switch_charge_enable`, so the early guard below can keep it off (Audio and DAC with charging Off, or no cable). ponytail: only while demo runs; a powered-off Q2 charges as stock.
+**System settings → Power → Charge Limit** (`ringnav_powermanager`, after stock's rows in `scroll_view_powermanager`; `Q2POD CHARGELIMIT` in `config.ini`). Every `CHARGE_POLL_MS` (5 s) `charge_poll`, from `ringnav_sleep`, stops charging at `CHARGE_STOP` (80%), stops it again if anything turned it back on meanwhile (USB mode's exit, AirPlay) while the charger reports charging, and hands it back at `CHARGE_RESUME` (75%) or when the limit is turned off, on, or `g_usbdac_chargeflag` while `usbmode_page` or `airplay_page` is open. The hand-back is `usb_charge_wanted()` and goes through `switch_charge_enable`, so the guard below can keep it off (Never under Audio and DAC, or a USB device the Q2 powers). ponytail: only while demo runs; a powered-off Q2 charges as stock.
 
 ### Early USB DAC charging guard
 
-`patch/usb_charge.c` applies the saved USB DAC charging choice before enumeration, for every host.
-The added `etc/init.d/S12usbcharge` (from `patch/usb_charge.sh`) drives the active-low charge-enable
-GPIO PE22 high after the GPIO driver loads and before the player starts. `ringnav_usb_config`
-keeps it inhibited while stock `config_init` reads settings, then reconciles those settings and
-the detected cable. This covers a running player waiting for insertion; it cannot control the
-PMIC before Linux and this startup script execute.
+`patch/usb_charge.c` guards every `switch_charge_enable` call with the saved USB DAC charging choice:
+Off, On or Never. The added `etc/init.d/S12usbcharge` (from `patch/usb_charge.sh`) drives the
+active-low charge-enable GPIO PE22 high after the GPIO driver loads and before the player starts.
+`ringnav_usb_config` keeps it inhibited while stock `config_init` reads settings, then reconciles
+those settings and the detected cable. It cannot control the PMIC before Linux and this startup
+script run.
 
-The policy is `requested && ready && (g_usbdac_chargeflag == 1 || (cable == 1 && g_usbmode == 0))`:
-USB DAC Charging On permits charging, as does a detected cable with USB Storage selected.
-An unknown setting, failed enumeration or a timeout never establishes a dedicated charger. With
-Audio and DAC selected and charging Off, an unidentified wall charger is therefore inhibited too:
-select USB Storage or turn USB DAC Charging On. No charger-type detector or PMIC register changes
-are added. Disabling battery charging does not establish zero USB current to the system.
+The policy is `requested && ready && !g_last_otgid && (g_usbdac_chargeflag == 1 || !never || (cable == 1 && g_usbmode == 0))`.
+Off (`g_usbdac_chargeflag` 0, `never` 0) allows whatever stock asks, which is stock's own Off:
+`usbmode_page_init` (`0x542e68`) calls `switch_charge_enable(g_usbdac_chargeflag)` once a host has
+linked the DAC, and `usbmode_exit` (`0x542af8`) `switch_charge_enable(1)`, so a wall adapter, which
+never opens that page, charges, and a phone or computer the Q2 plays for doesn't. A host charges
+the Q2 only from its connection until that page opens. On permits charging from anything.
+Never (`Q2POD DACCHARGENEVER` 1) is for a host that rejects a DAC drawing charge while it
+connects (PR #339, an S24 Ultra): under Audio and DAC it holds charging off from the cable's first
+moment, through enumeration, whatever stock asks; USB Storage with a cable in still charges. No
+enumeration timeout is evidence of a charger, as a host rejecting the Q2 looks the same, so Never
+inhibits a wall adapter too. No charger-type detector or PMIC register changes are added.
+Disabling battery charging does not establish zero USB current to the system.
+
+**A USB device the Q2 powers.** With USB-C headphones, a USB DAC or a drive plugged in, stock's
+`check_otg_status` (`0x4f3408`) sees the ID pin PD18 low, turns the 5 V output on (`PC20` 1),
+writes PE22 1 (charging off) and sets `g_last_otgid`; on removal it writes `PC20` 0 and PE22 0.
+`get_battery_capacity` clears `g_usbdet_value` meanwhile, as the Q2's own 5 V reads as a cable on
+PD17. The guard never allows charging while `g_last_otgid` is set: before it did, its readback
+check put PE22 back to charging once a second whenever the policy allowed it, and the charger
+took the Q2's own boosted 5 V back into the battery, which made it hot and drained it.
 
 The choice is stock's `g_usbdac_chargeflag`, saved as `PLAYSET USBDAC_CHARGE`. Stock's `config_init`
 (`0x504234`) reads it with `toolsReadConfig`'s default `"1"`, keeps 0 or 1 and makes anything else 1,
-and only the DAC screen's switch writes it (`!flag`, then `switch_charge_enable(flag)`; the code at
-`0x52d454`, inside `airplay_page_init`'s range). A missing key is therefore On, but the
-`/release/assets/default/raw/config.ini` that `config_init` copies to `/mnt/data` when there is none
-(first boot, a reset) holds `USBDAC_CHARGE=0` in V1.32, V1.34 and V1.36, so a Q2 nobody asked reads
-Off, the same line the switch writes for a chosen Off. `ringnav_usb_config` (`dac_default`) settles
-it after stock's read: until `Q2POD DACCHARGEOWN` is 1 it sets the flag and the key to 1 and writes
-`DACCHARGEOWN=1`; from then on the key is the user's, so a saved Off is kept, and a reset (a new
-`config.ini` without the mark) starts On again. ponytail: an Off chosen under 1.8.1 or earlier is
-turned On once at the update, as nothing on the Q2 tells it from the factory line; the changelog
-says to turn it Off again. A per-device record of the switch would have had to exist before the
-update to do better.
+and the DAC screen's switch writes it (`!flag`, then `switch_charge_enable(flag)`; the code at
+`0x52d454`, inside `airplay_page_init`'s range). The `/release/assets/default/raw/config.ini` that
+`config_init` copies to `/mnt/data` when there is none (first boot, a reset) holds
+`USBDAC_CHARGE=0` in V1.32, V1.34 and V1.36: Off. `ringnav_usb_config` (`dac_default`) reads
+`Q2POD DACCHARGENEVER` and settles the flag after stock's read: 1.8.2 to 1.8.6 set every Q2 On once
+and marked `Q2POD DACCHARGEOWN` 1, so until the mark is 2 it sets the flag and the key to 0 and
+writes `DACCHARGEOWN=2`; from then on the key is the user's. ponytail: an On chosen since 1.8.2 is
+turned Off once at the update, as nothing on the Q2 tells it from the one 1.8.2 set; the changelog
+says to turn it On again.
 
 **System settings → Power → USB DAC Charging** (`usb_charge_row`, from `ringnav_powermanager` after
-Charge Limit, stock's `usb_chargeswitch` icon) is that same flag and key, usable with no cable in.
-A toggle flips `g_usbdac_chargeflag`, writes `PLAYSET USBDAC_CHARGE` and calls
-`ringnav_usb_charge(!st.charge_held)`: it asks for charging as `charge_poll` hands it back outside
-the USB and AirPlay pages (on, unless Charge Limit holds it off), so the policy above applies the
-new choice to PE22 at once, an earlier Off request from the DAC screen's switch is replaced, and
-Charge Limit's hold still wins. Off only matters with Audio and DAC: USB Storage with a cable in
-keeps charging. The DAC screen's switch reads the flag when it builds, and the row reads it again
-on the Power window's `EVT_WINDOW_FOREGROUND`, so a change on either shows on the other.
+Charge Limit, stock's `usb_chargeswitch` icon) is a value row, **Off**, **On** or **Never**
+(`row_label`), usable with no cable in. A click steps to the next, writes `PLAYSET USBDAC_CHARGE`
+(1 only for On) and `Q2POD DACCHARGENEVER` (1 only for Never), and calls
+`ringnav_usb_charge(!st.charge_held && usb_charge_wanted())`: it asks for charging as `charge_poll`
+hands it back (the USB DAC or AirPlay page's choice while one is open, else on), so the policy
+applies the new choice to PE22 at once and Charge Limit's hold still wins. The DAC screen's switch
+sets On or Off; Off there shows as Never while `DACCHARGENEVER` is 1. The DAC screen reads the flag
+when it builds, and the row reads it again on the Power window's `EVT_WINDOW_FOREGROUND`, so a
+change on either shows on the other.
 
 `switch_charge_enable` is guarded (`charge_apply` calls `toolsGpioSetValue` itself). Stock's direct `toolsGpioSetValue("PE22", ...)` writes (`into_poweroff`,
 `device_reboot`, `device_standby`, `check_otg_status`) and other GPIOs pass through, so power-off, reboot

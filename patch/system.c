@@ -62,10 +62,7 @@ static void charge_poll(void) {
     if (hold && (!st.charge_held || charging))
         switch_charge_enable(0);
     else if (!hold && st.charge_held)
-        switch_charge_enable(navigator_window_is_exist("usbmode_page") ||
-                                     navigator_window_is_exist("airplay_page")
-                                 ? g_usbdac_chargeflag
-                                 : 1);
+        switch_charge_enable(usb_charge_wanted());
     st.charge_held = hold;
     battery_tick(level, g_usbdet_value != 0); /* Battery History's rows (battery.c) */
 }

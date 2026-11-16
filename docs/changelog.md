@@ -7,6 +7,8 @@
   - Crossfade: the player gives back the memory a fade uses, up to 6 MB, once the fade is over. It used to keep it until the Q2 restarted.
   - Era: a decade opens sooner on a big library. It grouped every album in the library for each decade opened; it now groups only the albums with a song dated in that decade.
   - Cover Flow: the first open after the Q2 starts, or after the library changes, is quicker when some songs have no album tag.
+  - USB: a Q2 powering USB-C headphones, a USB DAC or a USB drive no longer gets hot and drains its battery. With **USB DAC Charging** On, it tried to charge itself from the power it was giving the device.
+  - USB DAC: **System settings → Power → USB DAC Charging** is Off by default again, as on Shanling's firmware: a wall adapter charges the Q2, and a phone or computer it's a USB DAC for doesn't. This update sets it Off once; turn it On if you want them to charge it. The new **Never** stops all charging under **USB mode: Audio and DAC** from the moment a cable goes in, a wall adapter included: choose it if your phone rejects the Q2 as a USB DAC otherwise.
 - **1.8.6**:
   - Tidal Downloads: **Download Playing Songs** works on a card that has no Tidal folder yet, such as a new or reformatted card, or one whose `.tidal` folder was deleted on a computer. It stopped at once with "Downloaded 0 of N songs" until a Tidal song had played with that card in.
   - Tidal Downloads: a song with a very long artist and title is saved to the card, and tagged, like any other. One past about 230 characters streamed at every play and **Download Playing Songs** counted it as not saved; one a little shorter was saved without its tags. A copy saved that way stays untagged until **Clear All Downloads**.
