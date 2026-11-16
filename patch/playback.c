@@ -861,11 +861,15 @@ int playback_successor(int automatic) {
     }
     return s.next_value;
 }
+/* The first order entry from i on that plays queue index x; s.n when none does. */
+static unsigned order_find(unsigned i, unsigned x) {
+    while (i < s.n && s.order[i].index != x) ++i;
+    return i;
+}
 /* A Play Next pick plays now: its order entry moves immediately after the cursor, leaving other
  * order intact, even when the order sorted it before the cursor (already marked seen). */
 static void play_now(unsigned next) {
-    unsigned i = 0;
-    while (i < s.n && s.order[i].index != next) ++i;
+    unsigned i = order_find(0, next);
     if (i < s.cursor) {
         entry t = s.order[i];
         for (; i < s.cursor; ++i) s.order[i] = s.order[i + 1];
@@ -881,13 +885,12 @@ static void play_now(unsigned next) {
 static void commit(unsigned next) {
     s.resume_key = s.resume_pending = 0;
     if (pend_take(next)) play_now(next);
-    unsigned i = s.cursor + 1;
-    while (i < s.n && s.order[i].index != next) ++i;
+    unsigned i = order_find(s.cursor + 1, next);
     if ((i == s.n || s.seen[next]) && !(s.repeat == 3 && next == (unsigned)M(MCL_POS))) {
         memcpy(s.order, s.cycle, s.n * sizeof *s.order);
         memset(s.seen, 0, s.n * sizeof *s.seen);
         make_order(s.cycle);
-        for (i = 0; i < s.n && s.order[i].index != next; ++i) {}
+        i = order_find(0, next);
     }
     if (i < s.n) s.cursor = i;
     s.seen[next] = 1;
