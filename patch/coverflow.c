@@ -1716,7 +1716,6 @@ int image_show(void *img, const char *url, unsigned *size) {
  * of the visual position is projected column by column into one frame bitmap, farthest first, with
  * its reflection, then the frame is drawn over the slide_menu, whose own children stay empty. All
  * integer: 16.16 turns and rotations, geometry in 1/16 px, row spans in 1/256 px. */
-#define CF_RING (2 * CF_REACH + 1)
 /* the active theme's Cover Flow values, copied at page open (cf_restyle) */
 cf_style_t cfs __attribute__((section(".scratch")));
 /* with them, cf_restyle's: a side cover's sine, and its near edge's screen x (1/16 px), at t = 1;
