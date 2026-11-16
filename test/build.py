@@ -534,8 +534,8 @@ def validate_assets(directory):
     gates = [fileoff(old, a) for a in (*(a for a, _, _ in (*words, *DAC_RELEASE, *PROBE_STOP, *STOP_SITES, STOP_FILL, *PRELOAD_CLOSE, FORCED_EOF, EXIT_HOLD, PRELOAD_PUBLISH, PRELOAD_FAILED, COLD_CLEAR, FLAC_GATE, SEEK_NOSYNC)), *ID3_CALLS, MP3_ALLOC, MP3_FILTER, MP3_READ,
                                        IDLE_WAIT[0], PAUSE_WAIT[0], CMD_DONE[0])]
     # The FLAC fast paths (tools/flac.py, on by default) patch hciplayer's sync calls and LPC/output pointers.
-    from flac import patch_words as flac_words
-    flac = flac_words('sync,lpc,output', symbols(directory/'peq'/'peq.elf'))
+    from flac import EXPERIMENTS, patch_words as flac_words
+    flac = flac_words(EXPERIMENTS, symbols(directory/'peq'/'peq.elf'))
     gates += [fileoff(old, a) for a, _, _ in flac]
     # Lossy gapless: the window's room and the kept edit list.
     from peq import LAVF_PRIV, MOV_EDITS

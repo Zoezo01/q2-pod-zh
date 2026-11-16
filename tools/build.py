@@ -1789,9 +1789,9 @@ def stock_header(context, ranges, themes, dev=0, repo=REPO):
     header.append(f'#define QS_LIT "{qs_lit()}"')  # navigation.c quick_page: Classic's buttons that are on
     return '\n'.join(header)+'\n'
 
-def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotator_lazy_clock=False, pwm_idle_clock=False, mcu_idle_sleep=False, flac_experiments='sync,lpc,output'):  # pragma: no mutate block
-    from flac import selection
-    flac_experiments = selection(flac_experiments)
+def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotator_lazy_clock=False, pwm_idle_clock=False, mcu_idle_sleep=False, stock_flac=False):  # pragma: no mutate block
+    from flac import EXPERIMENTS
+    flac_experiments = () if stock_flac else EXPERIMENTS
     # Kernel-module experiments: no measured saving (docs/clock-gating.md, pwm-clock-gating.md,
     # audio-notifier.md), none handles suspend/resume, and stock Standby suspends by default; dev only.
     check(not aic_idle_wait or dev, '--aic-idle-wait requires --dev')
@@ -2333,8 +2333,7 @@ if __name__ == '__main__':
                     help='development build: tag from the next build number (V001i, V002i...); never a release input')
     ap.add_argument('--mcu-idle-sleep', action='store_true',
                     help='experimental: sleep parked MCU with explicit IRQ wake (requires --dev --pwm-idle-clock)')
-    ap.add_argument('--flac-experiments', default='sync,lpc,output', metavar='sync,lpc,output',
-                    help='FLAC fast paths (comma-separated subset; empty for stock FLAC)')
+    ap.add_argument('--stock-flac', action='store_true', help="stock FLAC decoder paths, not the fast paths")
     ap.add_argument('--update-repo', default=REPO, metavar='OWNER/NAME',
                     help="GitHub repo whose latest release Network Update fetches (default: %(default)s), for a fork's test builds")
     ap.add_argument('--aic-idle-wait', action='store_true',
@@ -2345,6 +2344,6 @@ if __name__ == '__main__':
                     help='experimental: cooperative Linux/MCU PWM clock gating (requires --dev)')
     a=ap.parse_args()
     try:
-        build(a.zip,a.out.resolve(),a.logo,a.dev,a.update_repo,a.aic_idle_wait,a.rotator_lazy_clock,a.pwm_idle_clock,a.mcu_idle_sleep,a.flac_experiments)
+        build(a.zip,a.out.resolve(),a.logo,a.dev,a.update_repo,a.aic_idle_wait,a.rotator_lazy_clock,a.pwm_idle_clock,a.mcu_idle_sleep,a.stock_flac)
     except (OSError, ValueError, zipfile.BadZipFile, subprocess.CalledProcessError) as exc:
         ap.error(str(exc))

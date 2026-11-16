@@ -44,7 +44,7 @@ python3 tools/build.py 'Q2 Firmware V1.36.zip' --out /tmp/q2-notifier --dev --ai
 
 ### FLAC fast paths
 
-On by default: `--flac-experiments sync,lpc,output` (all three). Pass a subset to build only some, or `--flac-experiments ""` for the stock decoder paths. Each is checked against the pinned V1.36 player.
+On by default: all three (sync, LPC and output, `tools/flac.py`). `--stock-flac` builds the stock decoder paths instead. Each is checked against the pinned V1.36 player.
 
 ### Versioning
 

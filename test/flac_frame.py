@@ -32,7 +32,7 @@ from unicorn.mips_const import UC_MIPS_REG_0, UC_MIPS_REG_PC
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 from build import fileoff, segments, symbols
 from peq import PLAYER_SHA
-from flac import patch_words, selection
+from flac import EXPERIMENTS, patch_words
 
 DECODE = 0x5b6e70
 CODEC, FRAME, PACKET, GOT, CTX = 0x2000000, 0x2001000, 0x2002000, 0x2003000, 0x2004000
@@ -366,7 +366,6 @@ def main():
     p.add_argument('stock', type=Path)
     p.add_argument('--player', type=Path)
     p.add_argument('--elf', type=Path)
-    p.add_argument('--experiments', default='sync,lpc,output')
     p.add_argument('--fixtures', required=True, type=Path)
     p.add_argument('--out', required=True, type=Path)
     p.add_argument('--limit', type=int, help='first N frames per file/format, for harness debugging')
@@ -375,7 +374,7 @@ def main():
     stock = a.stock.read_bytes()
     assert hashlib.sha256(stock).hexdigest() == PLAYER_SHA, 'unexpected stock player'
     syms = symbols(a.elf) if a.elf else {}
-    hooks = patch_words(selection(a.experiments), syms) if syms else ()
+    hooks = patch_words(EXPERIMENTS, syms) if syms else ()
     names = {name: address for name, address in syms.items() if name.startswith('flac_')}
     if a.player:
         candidate = a.player.read_bytes()
@@ -388,7 +387,7 @@ def main():
         new = Machine(stock, candidate, hooks, names)
     old = Machine(stock)
     report = dict(stock_sha256=PLAYER_SHA, candidate_sha256=hashlib.sha256(candidate).hexdigest(),
-                  experiments=selection(a.experiments), frames=0, samples=0, cases=[],
+                  experiments=EXPERIMENTS, frames=0, samples=0, cases=[],
                   limitation='Unicorn instruction counts with cheap libc/allocator stubs; '
                              'timestamp-only FR=0 bridge; no hardware-cycle or power claim.')
     totals = {'stock': Counter(), 'candidate': Counter()}
