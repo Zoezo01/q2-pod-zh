@@ -191,11 +191,11 @@ static int library_query(int content, const char *db, const char *sql, void *row
     if (from) { /* library_first: the Unknown row's check, which one song answers */
         const char *rest = from + 15;
         /* Stock's check is a bare where: a flattened subquery's where comes ahead of stock's, and
-         * SQLite tests the terms in order, so the music filter's three LIKEs, four times a row
-         * what the tag test costs, go after the tag test, not before it. ponytail: the speed-up
-         * needs stock's where to be one term with no space (the five NULL queries are, internals.md
-         * Unknown rows); any other shape is wrapped as before. With every song tagged this still
-         * reads the whole table, which only an index the tag's ="" can use would end. */
+         * SQLite tests the terms in order, so the music filter's three LIKEs, dearer a row than the
+         * tag test, go after it, not before it. ponytail: the speed-up needs stock's where (Album
+         * Artist's after its rewrite) to be one term with no space (the five NULL queries are,
+         * internals.md Unknown rows); any other shape is wrapped as before. With every song tagged
+         * this still reads the whole table, which only an index the tag's ="" can use would end. */
         int n =
             library_first && strstr(rest, " where ") == rest && !strstr(rest + 7, " ")
                 ? tk_snprintf(filtered, sizeof filtered, "%s and (%s) limit 1", sql, MUSIC_WHERE)

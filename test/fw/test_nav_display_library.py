@@ -3210,6 +3210,9 @@ def test_the_unknown_check_tests_the_tag_before_the_music_filter(fw, records):
     assert tag_first.startswith('select * from songtable where album="" and (fileurl not like') and tag_first.endswith(') limit 1')
     assert wrapped.startswith('select * from (select * from songtable where fileurl not like') and wrapped.endswith('order by id limit 1')
     assert spaced.startswith('select * from (select * from songtable where fileurl not like') and spaced.endswith(' or 1 limit 1')
+    query(None, b'select * from songtable where albumsonger=""', none, 0)  # Album Artist's, after its rewrite
+    assert db.sent[-1].startswith("select * from songtable where ifnull(nullif(albumsonger,''),songer)=\"\" and (fileurl not like")
+    assert db.sent[-1].endswith(') limit 1')
     first.value = 0
     query(None, b'select * from songtable where album=""', none, 0)
     assert 'from (select * from songtable where' in db.sent[-1] and 'limit' not in db.sent[-1]
