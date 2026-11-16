@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 
 import host
-from conftest import O, Deques, Externpic, Files, ask_cover, claim, high_halves, in_fork
+from conftest import O, Deques, Externpic, Files, ask_cover, claim, fnv1a, high_halves, in_fork
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 CX, TOP, ART, ONE, MISS = 187, 13, 160, 65536, 99
@@ -1138,6 +1138,15 @@ def test_fnv_separates_its_fields(fw):
     g = api(fw)
     assert g.fnv(g.fnv(FNV, b'ab'), b'c') != g.fnv(g.fnv(FNV, b'a'), b'bc')
     assert g.fnv(FNV, None) == FNV * 16777619 % 2**32
+
+
+def test_fnv_is_fnv1a_and_its_separator_for_every_byte(fw):
+    g, rng = api(fw), random.Random(7)
+    for b in range(1, 256):
+        assert g.fnv(FNV, bytes([b])) == fnv1a(bytes([b])) * 16777619 % 2**32
+    for _ in range(500):
+        h, data = rng.getrandbits(32), bytes(rng.randrange(1, 256) for _ in range(rng.randrange(64)))
+        assert g.fnv(h, data) == fnv1a(data, h) * 16777619 % 2**32
 
 
 def rows(*recs, order=None):

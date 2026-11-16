@@ -1085,7 +1085,7 @@ class Ple(C.Structure):
     """navigation.c's ple: the playlist editor's page and keys."""
     _fields_ = [('page', C.c_void_p), ('view', C.c_void_p), ('songs', C.c_void_p), ('picker', C.c_void_p), ('edit', C.c_void_p),
                 ('match', C.c_void_p), ('dest', C.c_int), ('mode', C.c_int), ('selected', C.c_int), ('pending', C.c_int),
-                ('nmatch', C.c_int), ('key', C.c_uint), ('timer', C.c_uint), ('name', C.c_char * 128), ('query', C.c_char * 128)]
+                ('nmatch', C.c_int), ('key', C.c_uint), ('timer', C.c_uint), ('gen', C.c_uint), ('name', C.c_char * 128), ('query', C.c_char * 128)]
 
 
 class Stock:
@@ -3191,3 +3191,31 @@ def test_the_albums_list_and_rated_albums_still_group_the_whole_library(fw, reco
     assert len(db.sent) == 3 and not any(NAMED.search(sql) for sql in db.sent)
     assert 'from (select * from songtable where' in db.sent[0]  # the Albums list's, music alone
     assert {b'album 00', b'album 19', b'greatest hits'} <= {n.lower() for n in db.named}
+
+
+def test_the_unknown_check_tests_the_tag_before_the_music_filter(fw, records):
+    """The Unknown row's check (library_first) asks stock's bare where first and the music filter after it, which SQLite
+    tests in that order, and finds what the wrapped query finds; a where with a space in it is wrapped as before."""
+    db = Songtable(fw, Library(fw), records)
+    query = fw.fn('ringnav_library_query', C.c_int, C.c_void_p, C.c_char_p, C.c_void_p, C.c_int)
+    music, first = fw.var('navigation__library_music', C.c_int), fw.var('navigation__library_first', C.c_int)
+    none = C.cast(ROW(lambda *_: 0), C.c_void_p)
+    db.db.executemany("insert into songtable(id, fileurl, album) values (?, ?, '')",  # untagged, not music, ahead of 9
+                      [(-2, '/mnt/mmc/Audiobooks/Book/01.mp3'), (-1, '/mnt/mmc/Hidden/loose.flac')])
+    music.value = first.value = 1
+    query(None, b'select * from songtable where album=""', none, 0)
+    query(None, b'select * from songtable where album="" order by id', none, 0)
+    query(None, b'select * from songtable where album="" or 1', none, 0)
+    tag_first, wrapped, spaced = db.sent[-3:]
+    assert tag_first.startswith('select * from songtable where album="" and (fileurl not like') and tag_first.endswith(') limit 1')
+    assert wrapped.startswith('select * from (select * from songtable where fileurl not like') and wrapped.endswith('order by id limit 1')
+    assert spaced.startswith('select * from (select * from songtable where fileurl not like') and spaced.endswith(' or 1 limit 1')
+    query(None, b'select * from songtable where albumsonger=""', none, 0)  # Album Artist's, after its rewrite
+    assert db.sent[-1].startswith("select * from songtable where ifnull(nullif(albumsonger,''),songer)=\"\" and (fileurl not like")
+    assert db.sent[-1].endswith(') limit 1')
+    first.value = 0
+    query(None, b'select * from songtable where album=""', none, 0)
+    assert 'from (select * from songtable where' in db.sent[-1] and 'limit' not in db.sent[-1]
+    assert [r[0] for r in db.rows(tag_first)] == [r[0] for r in db.rows(db.sent[-1])][:1] == [b'9']  # the loose song
+    db.db.execute("update songtable set album = 'Loose' where id = 9")
+    assert db.rows(tag_first) == []  # no untagged music song: the audiobook and the hidden one aren't found

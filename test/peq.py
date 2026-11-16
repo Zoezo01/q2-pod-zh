@@ -1506,10 +1506,17 @@ int __wrap_clock_gettime(clockid_t clock, struct timespec *t) {
     return result;
 }
 static int left = -1; /* calloc calls before one fails; -1: never */
+static void *xf_ring;  /* crossfade's 6 MB ring while the filter holds it */
 void *test_calloc(size_t n, size_t size) {
     if (!left--) return 0;
     void *p = malloc(n * size);
+    if (p && n * size == 6u << 20) xf_ring = p;
     return p ? memset(p, 0, n * size) : p;
+}
+void __real_free(void *p);
+void __wrap_free(void *p) {
+    if (p && p == xf_ring) xf_ring = 0;
+    __real_free(p);
 }
 
 static peq_preset active(double preamp, double gain) {
@@ -1751,8 +1758,23 @@ static void crossfade_check(void) {
         for (unsigned i = 0; i < k && mixed < held; ++i, ++mixed)
             assert(fabsf(buf[2 * i + 1] - cosf((mixed + 0.5f) / held * 1.5707963f)) < 1e-5f);
     }
+    block(&b, buf, 1024, &m, 0, 48000);
+    assert(!xf_ring); /* the mix done: the ring goes back */
     b.uninit(&b);
     peq_length = 10;
+    /* DSD (or a format the filter leaves alone) after a hold drops the tail and gives the ring back. */
+    xfade_view(1000);
+    track(&a, 48000);
+    for (n = 0; n < 10 * 48000;) block(&a, buf, 1024, &n, 1, 48000);
+    a.uninit(&a);
+    assert(xf_ring);
+    memset(&b, 0, sizeof b);
+    assert(peq_open(&b) == 1);
+    af_data raw = {0, 0, 48000, 2, 64, 4};
+    assert(negotiate(&b, &raw) == 1 && !((player_state *)b.setup)->dsp.channels);
+    af_data d = {buf, 1024 * 8, 48000, 2, 64, 4};
+    assert(b.play(&b, &d) == &d && !xf_ring);
+    b.uninit(&b);
     xfade_view(0);
     peq_pts = -1;
 }
@@ -2250,7 +2272,7 @@ def player_check(tmp):
     sources = [ROOT/'patch/peq_player.c', ROOT/'patch/peq.c', tmp/'player_test.c']
     subprocess.run(['cc', '-m32', '-DPEQ_HOST', f'-DPEQ_ROOT="{root}"', '-Dcalloc=test_calloc',
                     '-O2', '-Wall', '-Wextra', '-Werror', '-Wno-unused-parameter', '-I', str(ROOT/'patch'),
-                    *map(str, sources), '-Wl,--wrap=clock_gettime', '-lm', '-o', str(binary)], check=True)
+                    *map(str, sources), '-Wl,--wrap=clock_gettime', '-Wl,--wrap=free', '-lm', '-o', str(binary)], check=True)
     subprocess.run([str(binary)], check=True)
     print('PEQ player: negotiation, pass-through, the visualizer tap and its wait, live updates, track changes, carried filter memory, cleanup, crossfade and its mid-mix stop, wait and rate change, mono, the Xing seek table and TXXX bodies passed.')
 

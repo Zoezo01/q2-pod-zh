@@ -143,7 +143,8 @@ static void tap(const float *a, unsigned frames, int nch, int rate) {
  * back, putting out half of what comes in until the hold is full, so the decoder runs ahead at
  * twice real time and no gap opens. The next track's filter (a new instance: the player re-adds it
  * at each file) then mixes the held tail under its own start, equal power, at its own rate. The
- * ring outlives both instances. */
+ * ring outlives both instances: calloc'ed at a hold's first block, freed at the first block that
+ * finds nothing held. */
 /* clang-format off */
 #define XF_FLOATS (6u << 18) /* ponytail: 6 MB; 15 s at 48 kHz stereo, 7.5 s at 96, 3.75 s at 192 */
 #define XF_SLACK (1u << 17)  /* room for one block past the held tail */
@@ -522,6 +523,12 @@ static af_data *play(af_instance *af, af_data *data) {
         cast_tap *cast = cast_live(data->rate, 4096);
         if (cast) cast->dsd = 1; /* played untouched: the app says so */
     }
+    /* Nothing held (a mix done, a tail dropped, DSD between): the ring goes back, and the next hold
+     * callocs it again. ponytail: freed at the first block that finds nothing held, so a tail no
+     * block drops (a stop in the hold with nothing played after it, a hold whose next track was
+     * taken away) keeps the ring until the next track plays; each fade faults its pages in again.
+     * Keeping the ring would lift the second at the cost of 4-6 MB between fades. */
+    if (!xf.len && xf.ring) free(xf.ring), xf.ring = 0;
     if (data && data->len > 0) last_id = s->id;
     return data;
 }

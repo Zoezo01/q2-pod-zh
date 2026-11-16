@@ -8,7 +8,7 @@ static struct {
     void *page, *view, *songs, *picker, *edit;
     void **match;
     int dest, mode, selected, pending, nmatch;
-    unsigned key, timer;
+    unsigned key, timer, gen; /* gen: library_gen when picker was read */
     char name[128], query[128];
 } ple __attribute__((section(".scratch")));
 
@@ -210,9 +210,17 @@ static int ple_run(const void *unused) {
             return 0;
         }
         if (!action) {
-            int n;
-            if (ple.picker) deque_destroy(ple.picker);
-            ple.picker = staged_music(all_songs, (void *)1, &n);
+            /* A later Add Songs in this edit reuses the picker: the whole-library read and name
+             * sort run again only when songtable changed since. The generation is taken before the
+             * read, so one a scan moves meanwhile is never current (as cf.albums_gen), and a failed
+             * read is retried. */
+            unsigned gen = library_gen;
+            if (!ple.picker || ple.gen != gen) {
+                int n;
+                if (ple.picker) deque_destroy(ple.picker);
+                ple.picker = staged_music(all_songs, (void *)1, &n);
+                ple.gen = n < 0 ? ~gen : gen;
+            }
             ple_filter();
             ple.mode = 1;
         } else {
@@ -287,7 +295,8 @@ static int ple_pick(void *ctx, void *event) {
 /* ponytail: Add Songs builds every row it lists at once, a list_item and an hscroll_label each, so
  * it lists the first PLE_ROWS matches, under ringnav's MAX_ENTRIES (512) as Books', Photos' and Up
  * Next's 500, then a row that opens Search for the rest. A table_client page would list every song.
- * The library is still read and held whole on each entry, as Songs' is. */
+ * An edit's first Add Songs, and the first after library_gen moves, still reads and name-sorts the
+ * whole library on the UI thread, and the list is held until the editor closes. */
 #define PLE_ROWS 500
 /* That row opens the Search box, as row 0 does; picked by its own index, as a song's row is, it
  * would add the first match not listed. */

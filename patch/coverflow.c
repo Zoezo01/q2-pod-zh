@@ -121,7 +121,7 @@ unsigned hash_bytes(unsigned h, const unsigned char *s, unsigned n) {
 }
 
 unsigned fnv(unsigned h, const unsigned char *s) {
-    while (s && *s) h = hash_bytes(h, s++, 1);
+    for (; s && *s; ++s) h = (h ^ *s) * 16777619u; /* hash_bytes' step, with no call a byte */
     return h * 16777619u; /* a separator, so "ab"+"c" and "a"+"bc" differ */
 }
 
@@ -747,19 +747,6 @@ unsigned album_id(void *r) {
     return album_ident(P(r, REC_ALBUM), P(r, REC_ALBUM_ARTIST), P(r, REC_PATH));
 }
 
-/* getAllAlbum ends with an "Unknown Album" row (id -1) whenever any album exists, even when every
- * song has an album tag. It goes when the query its card opens, getMusicByAlbum(NULL), finds no
- * song, as navigation.c's ringnav_localclass drops it from the Albums list. */
-static void drop_unknown(void) {
-    unsigned n = deque_size(cf.stock);
-    void *last = n ? deque_at(cf.stock, n - 1) : 0;
-    if (!last || I(last, REC_ID) != -1) return;
-    int found;
-    void *songs = staged(albums, last, &found);
-    if (!deque_size(songs)) deque_pop_back(cf.stock);
-    deque_destroy(songs);
-}
-
 /* Sort, Cover Flow settings' Sort and the rated albums' card
  * (docs/internals.md#coverflow-sort): Album is the stock order;
  * Artist sorts by artist without a leading article, as every library list does (ringnav_sort_key),
@@ -1315,9 +1302,11 @@ static void *of_names(const char *sql, void *list, int *count) {
 }
 
 /* list's albums with music, in a new deque (list goes), using a music track for their art even when
- * tags are shared with an audiobook; with artist, of list's names alone (of_names), and its Unknown
- * row kept as given: artist_albums keeps it only for an untagged music song of the artist's. The
- * card's files stay untouched. Out of memory, audiobooks stay. */
+ * tags are shared with an audiobook. getAllAlbum's Unknown row (id -1), which stock appends
+ * whenever any album exists, stays only when the grouping has an untagged music song (a -1 row of
+ * its own, which album_rows leaves out of m); with artist, of list's names alone (of_names), and
+ * its Unknown row kept as given: artist_albums keeps it only for an untagged music song of the
+ * artist's. The card's files stay untouched. Out of memory, audiobooks and the Unknown row stay. */
 static void *music_albums(void *list, int artist) {
     int n;
     void *rows = artist ? of_names(MUSIC_ALBUM_SQL, list, &n) : 0, *out;
@@ -3136,8 +3125,6 @@ static void load_albums(unsigned t0) {
             cf_trace(t0, "music_albums albums=", deque_size(cf.stock), 0);
         }
         cf.albums_gen = gen;
-        drop_unknown();
-        cf_trace(t0, "drop_unknown albums=", deque_size(cf.stock), 0);
         n = (int)deque_size(cf.stock);
     }
     if (cf.albums && !cf.scoped && (cf.sort == SORT_YEAR || cf.sort == SORT_ARTIST) &&

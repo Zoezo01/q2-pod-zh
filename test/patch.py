@@ -3809,12 +3809,13 @@ class QueueMachine(Machine):
     def mcl(self,k): return signed(self.get(O[k]))
     def songtable(self,sql,rows,values=False):
         """The rows songs_by_path's or songs_by_id's SQL picks (with values, the statement's own rows), run by SQLite
-        over rows as songtable's (path, CUE start and end, album and album artist), each its index as id, whose order
-        stands for getAllMusic(3)'s time order."""
+        over rows as songtable's (path, CUE start and end, album, album artist, and the artist, track and disc an artist
+        page's album groupings read; no year), each its index as id, whose order stands for getAllMusic(3)'s time order."""
         text=lambda r,k: self.text(self.get(r+O[k])) if self.get(r+O[k]) else None
-        db=sqlite3.connect(':memory:'); db.execute('create table songtable(id,fileurl,time,time_end,time_create,album,albumsonger)')
-        db.executemany('insert into songtable values(?,?,?,?,?,?,?)',[(i,text(r,'REC_PATH'),self.get(r+O['REC_CUE_START']),
-                                                                      self.get(r+O['REC_CUE_END']),-i,text(r,'REC_ALBUM'),text(r,'REC_ALBUM_ARTIST')) for i,r in enumerate(rows)])
+        db=sqlite3.connect(':memory:'); db.execute('create table songtable(id,fileurl,time,time_end,time_create,album,albumsonger,songer,track,cd_num,year)')
+        db.executemany('insert into songtable values(?,?,?,?,?,?,?,?,?,?,null)',[(i,text(r,'REC_PATH'),self.get(r+O['REC_CUE_START']),
+                                                                      self.get(r+O['REC_CUE_END']),-i,text(r,'REC_ALBUM'),text(r,'REC_ALBUM_ARTIST'),
+                                                                      text(r,'REC_ARTIST'),self.get(r+O['REC_TRACK']),self.get(r+O['REC_DISC'])) for i,r in enumerate(rows)])
         return db.execute(sql).fetchall() if values else [rows[i] for i,*_ in db.execute(sql)]
     def dialog(self):
         self.view=self.node('scroll_view','scroll_view',[self.node('list_item') for _ in range(5)])
@@ -6444,6 +6445,8 @@ class CoverflowMachine(QueueMachine):
                   'calloc@GLIBC_2.0','strdup@GLIBC_2.0','mkdir@GLIBC_2.0','statfs@GLIBC_2.0','pthread_create@GLIBC_2.2',
                   'pthread_join@GLIBC_2.0','qsort@GLIBC_2.0','toolsQueryDbTable'): self.handlers[syms[n]]='c:'+n
         self.word(0xa3a270,self.FREE); self.handlers[self.FREE]='c:free'
+        # an artist's groupings' SQL (coverflow.c of_names), straight to stock's query by the payload's jal: no t9
+        self.handlers[int(manifest['patch_symbols']['stock_dbquery_trampoline'],16)]='c:dbquery'
         self.handlers[home_hook[0]+12]='stock_home'
         for n,stub in WRITERS.items(): self.handlers[HOOKS[n][0]+12]=stub  # the writers' stock bodies
         self.albums=[self.song('T0') for _ in range(albums)]
@@ -6456,7 +6459,7 @@ class CoverflowMachine(QueueMachine):
         name=self.handlers.get(address,'')
         if name=='opendir@GLIBC_2.0' and self.cover_files is not False and self.text(u.reg_read(REGS[0]))=='/mnt/mmc/.coverflow': self.scope_tree['/mnt/mmc/.coverflow']=self.art_names()
         if not name.startswith('c:'): return super().hook(u,address,size,unused)
-        assert u.reg_read(UC_MIPS_REG_T9)==address, name
+        assert name=='c:dbquery' or u.reg_read(UC_MIPS_REG_T9)==address, name
         name=name[2:].split('@')[0]; a,b,c,d=[u.reg_read(r) for r in REGS]; sp=u.reg_read(UC_MIPS_REG_SP); ret=0
         self.calls.append((name,a,b,c))
         if name in ('window_create','widget_factory_create_widget','list_view_create','scroll_view_create'):
@@ -6496,7 +6499,7 @@ class CoverflowMachine(QueueMachine):
                 self.opened.append((self.text(a),self.get(b),self.get(b+4))); self.top=self.node('window',self.text(a)); self.stack.append(self.top)
                 if self.on_open: self.on_open(self.text(a))
         elif name=='access': path=self.text(a); ret=0 if (self.cached if '/mnt/mmc/.coverflow/' in path else not self.missing) else -1
-        elif name=='toolsQueryDbTable':
+        elif name in ('toolsQueryDbTable','dbquery'):
             rows=self.albums if 'fileurl not like' in self.text(b) else []
             self.deqs[self.get(syms['tools_pdeq_directory'])][1]=[self.copy('stSongInfo',e) for e in rows]
             ret=len(rows)
@@ -19150,8 +19153,9 @@ for radio,page in (('wifiswitch','systemset/wifi_page'),('btswitch','systemset/b
     assert dispatch(O['EVT_CLICK'])==11 and not any(c[0]=='stock_dispatch' for c in m.calls)
     # A later touch can tap the same icon normally.
     m.top=win; down(); dispatch(O['EVT_POINTER_UP_BEFORE']); assert dispatch(O['EVT_CLICK'])==0; passed()
-    if radio=='playset':  # pulled down over the EQ page: the hold only closes the panel, no second EQ page
-        m,icon,win,down,dispatch=quick_page(); m.open_pages.add('equalizer_page'); down(); m.advance(O['RATE_HOLD_MS'])
+    if radio=='playset':  # pulled down over the EQ page, the top window: the hold only closes the panel, no second EQ page
+        m,icon,win,down,dispatch=quick_page(); m.nodes[m.wm]=dict(type='window_manager',name='',children=[m.node('window','equalizer_page'),win],visible=1)
+        down(); m.advance(O['RATE_HOLD_MS'])
         assert not m.opened and [c[1:3] for c in m.calls if c[0]=='dialog_quit']==[(win,0)]; passed()
     for kind in (O['EVT_POINTER_MOVE_BEFORE'],O['EVT_POINTER_ABORT'],O['EVT_KEY_DOWN_BEFORE']):
         m,icon,win,down,dispatch=quick_page(); down(); dispatch(kind,x=50)

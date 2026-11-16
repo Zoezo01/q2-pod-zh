@@ -569,6 +569,8 @@ static unsigned rec_id(unsigned i) {
     void *r = deque_at(queue(), i);
     return hash_bytes(fnv(FNV_SEED, P(r, REC_PATH)), (const unsigned char *)r + REC_CUE_START, 4);
 }
+/* Group repeat plays one album or folder, the only repeat that reads groups (upcoming). */
+static int category_repeat(void) { return s.repeat == 1 || s.repeat == 4; }
 static int rebuild(int keep) {
     s.next_valid = 0;
     unsigned n = queue() ? deque_size(queue()) : 0;
@@ -610,14 +612,22 @@ static int rebuild(int keep) {
     }
     if (oldseen) free(oldseen);
     if (oldhistory) free(oldhistory);
-    /* Sort by group_cmp; each run's group is its smallest index. cycle is scratch here. */
-    for (unsigned i = 0; i < n; ++i) cycle[i].index = i;
-    qsort(cycle, n, sizeof *cycle, group_before);
-    for (unsigned i = 0, first = 0; i < n; ++i) {
-        if (!i ||
-            group_cmp(deque_at(queue(), cycle[i - 1].index), deque_at(queue(), cycle[i].index)))
-            first = cycle[i].index;
-        groups[cycle[i].index] = first;
+    /* Each run of the group_cmp sort is a group, named by its smallest index. Under Shuffle Songs
+     * groups are read only by a group repeat (upcoming) and by Next/Previous Album
+     * (playback_group_skip), which the hold menu offers only under shuffle >= 3 (navigation.c
+     * group_first); every change of shuffle or repeat rebuilds. So outside a group repeat each
+     * entry is its own group and the sort, two deque_at a comparison, is skipped. */
+    if (s.shuffle == 1 && !category_repeat())
+        for (unsigned i = 0; i < n; ++i) groups[i] = i;
+    else {
+        for (unsigned i = 0; i < n; ++i) cycle[i].index = i; /* cycle is the sort's scratch */
+        qsort(cycle, n, sizeof *cycle, group_before);
+        for (unsigned i = 0, first = 0; i < n; ++i) {
+            if (!i ||
+                group_cmp(deque_at(queue(), cycle[i - 1].index), deque_at(queue(), cycle[i].index)))
+                first = cycle[i].index;
+            groups[cycle[i].index] = first;
+        }
     }
     make_order(order);
     unsigned at = (unsigned)M(MCL_POS), k = 0;
@@ -813,7 +823,7 @@ static int pend_take(unsigned x) {
 static unsigned upcoming(unsigned *out, unsigned max) {
     unsigned at = (unsigned)M(MCL_POS), k = 0;
     if (!s.active || at >= s.n) return 0;
-    int category = s.repeat == 1 || s.repeat == 4;
+    int category = category_repeat();
     /* Play Next's list first, in order; the order walk below skips its members */
     for (unsigned j = 0; j < s.npend && k < max; ++j) {
         unsigned x = s.pend[j];
