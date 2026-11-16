@@ -1499,23 +1499,23 @@ def test_a_rating_that_cannot_be_written_says_so(fw, ui, song, mcl):
 QM_ALBUM, CLASS_ARTIST_ALBUMS = 2, O['CLASS_ARTIST_ALBUMS']
 
 
-def album_menu(fw, ui, song, st, album_id=0xa1b0):
+def album_menu(fw, ui, song, st, qm, album_id=0xa1b0):
     """The queue menu on row 1 of an artist's albums tab, that row's album_id album_id."""
     rows = [song(b'/m/x.flac', album=b'X'), song(b'/m/y.flac', album=b'Y')]
     fw.var('fw_ctx_p_deque_showlist', C.c_uint).value = ui.deques.new(rows)
     ids = (C.c_uint * 2)(0x77, album_id)
-    st('qm_kind').value, st('qm_cls', C.c_uint).value = QM_ALBUM, CLASS_ARTIST_ALBUMS
+    qm('qm_kind').value, qm('qm_cls', C.c_uint).value = QM_ALBUM, CLASS_ARTIST_ALBUMS
     st('qm_rows', C.c_uint).value, st('qm_idx', C.c_uint).value = 2, 1
-    st('qm_hash', C.c_uint).value = fw.fn('navigation__rec_hash', C.c_uint, C.c_void_p)(rows[1])
-    st('qm_browse', C.c_uint).value = fw.fn('navigation__browse_hash', C.c_uint)()
+    qm('qm_hash', C.c_uint).value = fw.fn('rec_hash', C.c_uint, C.c_void_p)(rows[1])
+    qm('qm_browse', C.c_uint).value = fw.fn('queue_menu__browse_hash', C.c_uint)()
     st('art_ids', C.c_void_p).value, st('art_n', C.c_uint).value = C.addressof(ids), 2
     win = ui.new('window_create', 0, 0, 0, 0, 0)
     return win, ids  # the caller holds ids while st.art_ids points into it
 
 
-def test_an_album_s_rating_is_kept_apart_from_its_songs(fw, ui, song, st):
+def test_an_album_s_rating_is_kept_apart_from_its_songs(fw, ui, song, st, qm):
     files = Files(fw)
-    win, ids = album_menu(fw, ui, song, st)
+    win, ids = album_menu(fw, ui, song, st, qm)
     show = fw.fn('rate_show', C.c_int, C.c_void_p, C.c_int, C.c_uint)
     assert show(win, 4, 0xa1b0) == 1 and show(win, 2, 0xa1b0) == 0  # one picker at a time
     key = fw.fn('rate_key', C.c_int, C.c_void_p, C.c_uint)
@@ -1526,18 +1526,18 @@ def test_an_album_s_rating_is_kept_apart_from_its_songs(fw, ui, song, st):
     assert ALBUM_RATINGS in files.files
 
 
-def test_an_album_no_longer_under_the_picker_is_not_rated(fw, ui, song, st):
+def test_an_album_no_longer_under_the_picker_is_not_rated(fw, ui, song, st, qm):
     files = Files(fw)
-    win, ids = album_menu(fw, ui, song, st)
+    win, ids = album_menu(fw, ui, song, st, qm)
     fw.fn('rate_show', C.c_int, C.c_void_p, C.c_int, C.c_uint)(win, 4, 0xa1b0)
     ui.new('window_create', 0, 0, 0, 0, 0)  # another page over it
     fw.fn('rate_key', C.c_int, C.c_void_p, C.c_uint)(win, KEY_CENTER)
     assert ui.toasts == ['Album changed'] and not files.files
 
 
-def test_an_album_whose_row_changed_is_not_rated(fw, ui, song, st):
+def test_an_album_whose_row_changed_is_not_rated(fw, ui, song, st, qm):
     files = Files(fw)
-    win, ids = album_menu(fw, ui, song, st, album_id=0xb2c0)  # the row now holds another album
+    win, ids = album_menu(fw, ui, song, st, qm, album_id=0xb2c0)  # the row now holds another album
     fw.fn('rate_show', C.c_int, C.c_void_p, C.c_int, C.c_uint)(win, 4, 0xa1b0)
     fw.fn('rate_key', C.c_int, C.c_void_p, C.c_uint)(win, KEY_CENTER)
     assert ui.toasts == ['Album changed'] and not files.files
@@ -1588,7 +1588,7 @@ class Book:
         fw.mock('mclGetPlayStatus', lambda *_: self.state)
 
     def open(self):
-        self.fw.fn('navigation__chapters_open', None, C.c_void_p)(self.track)
+        self.fw.fn('chapters_open', None, C.c_void_p)(self.track)
         return self.ui.top() if self.ui.windows else None
 
     def selected(self, page):
@@ -2903,7 +2903,7 @@ def book_place(fw, song, files, path=b'/mnt/mmc/Audiobooks/b.flac'):
     folder = song(b'/mnt/mmc/Audiobooks/x', kind=4)
     listing = deques.new([folder, tracks[0], other, tracks[1], tracks[2]])
     at, off = C.c_int(-1), C.c_int(-1)
-    place = fw.fn('navigation__book_place', C.c_void_p, C.c_void_p, C.c_void_p, C.POINTER(C.c_int), C.POINTER(C.c_int))
+    place = fw.fn('book_place', C.c_void_p, C.c_void_p, C.c_void_p, C.POINTER(C.c_int), C.POINTER(C.c_int))
     best = place(listing, tracks[1], C.byref(at), C.byref(off))
     return (field(best, 'title') if best else None), at.value, off.value
 
@@ -2958,17 +2958,17 @@ def test_shuffle_songs_starts_anywhere_but_the_song_holding_its_place(fw, ui, so
 QM_SONG_, QM_FOLDER_, QM_COVERALBUM_, QM_PLAYLIST_ = 1, 4, 6, 8
 
 
-def collect(fw, ui, st, kind, r, cls=0):
-    st('qm_kind').value, st('qm_cls', C.c_uint).value = kind, cls
+def collect(fw, ui, qm, kind, r, cls=0):
+    qm('qm_kind').value, qm('qm_cls', C.c_uint).value = kind, cls
     return [field(t, 'path') for t in ui.deques[fw.fn('qm_collect', C.c_long, C.c_void_p)(r)]]
 
 
-def test_a_song_row_s_tracks_are_the_song_but_a_video(fw, ui, song, st):
-    assert collect(fw, ui, st, QM_SONG_, song(b'/m/a.flac')) == [b'/m/a.flac']
-    assert collect(fw, ui, st, QM_SONG_, song(b'/m/clip.mp4')) == []
+def test_a_song_row_s_tracks_are_the_song_but_a_video(fw, ui, song, qm):
+    assert collect(fw, ui, qm, QM_SONG_, song(b'/m/a.flac')) == [b'/m/a.flac']
+    assert collect(fw, ui, qm, QM_SONG_, song(b'/m/clip.mp4')) == []
 
 
-def test_a_folder_row_s_tracks_take_in_its_subfolders(fw, ui, song, st):
+def test_a_folder_row_s_tracks_take_in_its_subfolders(fw, ui, song, qm):
     tree = {b'/mnt/mmc/Music/Album': [song(b'/mnt/mmc/Music/Album/1.flac'), song(name=b'CD2', kind=4),
                                      song(name=b'.hidden', kind=4), song(b'/mnt/mmc/Music/Album/v.mp4')],
             b'/mnt/mmc/Music/Album/CD2': [song(b'/mnt/mmc/Music/Album/CD2/2.flac')],
@@ -2976,11 +2976,11 @@ def test_a_folder_row_s_tracks_take_in_its_subfolders(fw, ui, song, st):
     fw.mock('toolsLoadDirectory', lambda path, *_: ui.deques[fw.var('fw_ctx_tools_pdeq_directory', C.c_uint).value]
             .extend(tree.get(C.string_at(path), [])) or 0)
     fw.var('fw_ctx_g_folder_path', C.c_char * 1024).value = b'/mnt/mmc/Music'
-    assert collect(fw, ui, st, QM_FOLDER_, song(name=b'Album', kind=4)) == [b'/mnt/mmc/Music/Album/1.flac',
+    assert collect(fw, ui, qm, QM_FOLDER_, song(name=b'Album', kind=4)) == [b'/mnt/mmc/Music/Album/1.flac',
                                                                               b'/mnt/mmc/Music/Album/CD2/2.flac']
 
 
-def test_a_playlist_row_s_tracks_leave_out_spoken_ones(fw, ui, song, st):
+def test_a_playlist_row_s_tracks_leave_out_spoken_ones(fw, ui, song, qm):
     rows = [song(b'/mnt/mmc/Music/a.flac'), song(b'/mnt/mmc/Podcasts/ep.mp3'), song(b'/mnt/mmc/Music/x', kind=4),
             song(b'/mnt/mmc/Music/b.flac')]
     asked = []
@@ -2988,38 +2988,38 @@ def test_a_playlist_row_s_tracks_leave_out_spoken_ones(fw, ui, song, st):
             .extend(rows) or 0)
     fw.mock('tk_str_start_with', lambda s, prefix, *_: C.string_at(s).startswith(C.string_at(prefix)))
     playlist = song(kind=4, disc=7)  # a playlist row: its cd_num
-    assert collect(fw, ui, st, QM_PLAYLIST_, playlist) == [b'/mnt/mmc/Music/a.flac', b'/mnt/mmc/Music/b.flac'] and asked == [7]
+    assert collect(fw, ui, qm, QM_PLAYLIST_, playlist) == [b'/mnt/mmc/Music/a.flac', b'/mnt/mmc/Music/b.flac'] and asked == [7]
 
 
-def album_songs(fw, ui, song, st):
+def album_songs(fw, ui, song, qm):
     """A row whose tracks are two songs in a card app's favdir (a playlist row's, the simplest to give): its files."""
     rows = [song(b'/mnt/mmc/Jellyfin/A/1.flac'), song(b'/mnt/mmc/Jellyfin/A/2.flac')]
     fw.mock('getMusicByPlayList', lambda n, *_: ui.deques[fw.var('fw_ctx_tools_pdeq_directory', C.c_uint).value]
             .extend(rows) or 0)
     files = Files(fw)
     favdir_card(fw, files.files)
-    st('qm_kind').value = QM_PLAYLIST_
+    qm('qm_kind').value = QM_PLAYLIST_
     return files
 
 
-def test_an_album_s_favourite_is_told_for_each_of_its_songs(fw, ui, song, st):
-    files = album_songs(fw, ui, song, st)
+def test_an_album_s_favourite_is_told_for_each_of_its_songs(fw, ui, song, qm):
+    files = album_songs(fw, ui, song, qm)
     fw.fn('rate_album_favs', None, C.c_void_p, C.c_int)(song(kind=4, disc=7), 1)
     assert files.files['/mnt/mmc/.jf/fav.log'] == b''.join(b'\npath\t1\t/mnt/mmc/Jellyfin/A/%d.flac\n' % i
                                                          for i in (1, 2))
 
 
-def test_an_album_s_unfavourite_is_told_only_for_songs_that_were_favourites(fw, ui, song, st):
+def test_an_album_s_unfavourite_is_told_only_for_songs_that_were_favourites(fw, ui, song, qm):
     """A song liked on the app's server and never hearted here isn't the Q2's to unlike."""
-    files = album_songs(fw, ui, song, st)
+    files = album_songs(fw, ui, song, qm)
     fw.mock('checkFavExist', lambda r, *_: field(r, 'path').endswith(b'/2.flac'))
     fw.fn('rate_album_favs', None, C.c_void_p, C.c_int)(song(kind=4, disc=7), 0)
     assert files.files['/mnt/mmc/.jf/fav.log'] == b'\npath\t0\t/mnt/mmc/Jellyfin/A/2.flac\n'
     assert len(fw.calls('deleteMusicFromFav')) == 2  # My Fav is cleared of both as before
 
 
-def test_an_album_s_favourite_stops_telling_at_the_first_refusal(fw, ui, song, st):
-    files = album_songs(fw, ui, song, st)
+def test_an_album_s_favourite_stops_telling_at_the_first_refusal(fw, ui, song, qm):
+    files = album_songs(fw, ui, song, qm)
     tried = []
     fw.mock('fw_fopen', lambda path, mode, *_: tried.append(C.string_at(path)) or 0 if C.string_at(path).endswith(b'fav.log')
             else files.fopen(path, mode))
@@ -3027,24 +3027,24 @@ def test_an_album_s_favourite_stops_telling_at_the_first_refusal(fw, ui, song, s
     assert tried == [b'/mnt/mmc/.jf/fav.log'] and ui.toasts == ['Favourite not sent to the app']
 
 
-def test_a_cover_s_tracks_are_its_album_in_order(fw, ui, song, st):
+def test_a_cover_s_tracks_are_its_album_in_order(fw, ui, song, qm):
     albums = Albums(fw, ui, song)
-    assert collect(fw, ui, st, QM_COVERALBUM_, albums.songs[b'Blue'][0]) == [b'/m/blue/1.flac', b'/m/blue/x.flac']
+    assert collect(fw, ui, qm, QM_COVERALBUM_, albums.songs[b'Blue'][0]) == [b'/m/blue/1.flac', b'/m/blue/x.flac']
 
 
 @pytest.mark.parametrize('mode, forced', [(2, 2), (0, 0)])
-def test_play_next_in_stock_shuffle_forces_the_track_next(fw, ui, song, st, mcl, mode, forced):
+def test_play_next_in_stock_shuffle_forces_the_track_next(fw, ui, song, st, qm, mcl, mode, forced):
     a, b, c = song(b'/m/a.flac'), song(b'/m/b.flac'), song(b'/m/c.flac')
     held = HeldRows(fw)  # the queue holds its own copies, as libcstl's: Play Next turns them into place by their bytes
     queue = held.rows([a, b])
     fw.var('fw_ctx_mcl_pdeqplaylist', C.c_uint).value = queue
     C.c_uint64.from_address(O['MCL_POOL']).value = held.new()
     mcl.type, mcl.pos, mcl.mode, mcl.lastpos = LIBRARY, 0, mode, -1
-    st('qm_kind').value = QM_SONG_
-    assert fw.fn('navigation__qm_apply', C.c_int, C.c_void_p, C.c_int)(held.new([c]), 1) == 1
+    qm('qm_kind').value = QM_SONG_
+    assert fw.fn('queue_menu__qm_apply', C.c_int, C.c_void_p, C.c_int)(held.new([c]), 1) == 1
     assert [field(r, 'path') for r in held[queue]] == [field(r, 'path') for r in (a, c, b)]
     assert st('qm_forced', C.c_uint).value == forced
-    assert st('qm_forced_hash', C.c_uint).value == fw.fn('navigation__rec_hash', C.c_uint, C.c_void_p)(c)
+    assert st('qm_forced_hash', C.c_uint).value == fw.fn('rec_hash', C.c_uint, C.c_void_p)(c)
 
 
 # Rated albums.

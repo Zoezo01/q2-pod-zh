@@ -318,7 +318,7 @@ demo	0x538e04	0x4	playerjumpinfo_table_on_prepare_row	1st of 2 calls to widget_s
 demo	0x538e0c	0x4	playerjumpinfo_table_on_prepare_row	`addiu $3, $zero, 0x46` (2nd of 2 such), before 1st of 2 calls to image_create, after "img_icon"; patch/ipod.json immediates stock_body (stock's own table rows: the button and its full-height children)
 demo	0x538eb4	0x4	playerjumpinfo_table_on_prepare_row	`addiu $2, $zero, 0x14`, before 1st of 2 calls to hscroll_label_create, after "view_info"; patch/ipod.json immediates stock_title_h (Go to's title box, which holds the row's font)
 demo	0x538ec0	0x4	playerjumpinfo_table_on_prepare_row	`addiu $6, $zero, 0xb`, before 1st of 2 calls to hscroll_label_create, after "view_info"; patch/ipod.json immediates stock_title_y (Go to's title y in its row)
-demo	0x5397cc	0x4	playermore_album_info_on_click	`sw $18, 0x428($sp)`; patch/navigation.c qm_goto
+demo	0x5397cc	0x4	playermore_album_info_on_click	`sw $18, 0x428($sp)`; patch/queue_menu.c qm_goto
 demo	0x5399d4	0x4	playermore_artist_info	`addiu $4, $17, -0x3308, forming "localmusic/artistinfo_page"`, the delay slot of 1st of 2 calls to navigator_close, after "artistinfo_page"; tools/build.py MORE_ARTIST_CLOSE
 demo	0x539a00	0x4	playermore_artist_info	`addiu $4, $4, -0x3324, forming "localmusic/albuminfo_page"`, the delay slot of 2nd of 2 calls to navigator_close, after "albuminfo_page"; tools/build.py MORE_ARTIST_CLOSE
 demo	0x53a01c	0x4	playermore_page_init	the load of $25 for the only call to widget_move_resize, after "list_view_more"; patch/ipod.json navbar_resize_calls (a page's list keeps its asset's box: stock's resize for its navigation bar switch does nothing)
@@ -334,7 +334,7 @@ demo	0x53baa0	0x4	ab_x	`addiu $2, $2, 0x32`; patch/ipod.json immediates np_bar_x
 demo	0x53bb78	0x4	playing_page_update_ab_markers	1st of 3 calls to ab_x, after "img_repeatb"; tools/build.py AB_X_CALLS
 demo	0x53bbf4	0x4	playing_page_update_ab_markers	2nd of 3 calls to ab_x, after "img_repeatb"; tools/build.py AB_X_CALLS
 demo	0x53bc04	0x4	playing_page_update_ab_markers	3rd of 3 calls to ab_x, after "img_repeatb"; tools/build.py AB_X_CALLS
-demo	0x53cafc	0x4	playing_page_fav_on_click	`lw $2, GOT[a page]` (3rd of 3 such), before the only call to manage_myfav, after "play_fav"; patch/navigation.c qm_run
+demo	0x53cafc	0x4	playing_page_fav_on_click	`lw $2, GOT[a page]` (3rd of 3 such), before the only call to manage_myfav, after "play_fav"; patch/queue_menu.c qm_run
 demo	0x53d0e8	0x4	playing_page_update	`lw $5, -0x30($2)`, the delay slot of 2nd of 2 calls to hscroll_label_set_speed, after "scrlabel_artist"; patch/offsets.inc HSCROLL_PACE
 demo	0x53d10c	0x4	playing_page_update	the only call to playing_page_lyrics_rebuild_rows, after "scrlabel_artist"; tools/build.py LYRIC_ROWS
 demo	0x53d308	0x4	playing_page_update	the only call to np_info, after "play_unfav"; tools/build.py NP_INFO_CALL

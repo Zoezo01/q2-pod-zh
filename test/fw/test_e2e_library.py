@@ -275,8 +275,8 @@ class Q2:
     A stock entry point the build hooks goes to its hook (HOOKED); the hook's trampoline, stock's own body, is the
     model's. What the user would notice is kept: the files the player was told to open (opened), the seconds it was
     told to seek to (seeks), the toasts, the pages opened and each widget's text."""
-    def __init__(self, fw, mcl, scratch, memory, files, tags=None, config=None, library=None):
-        self.fw, self.mcl, self.scratch, self.memory = fw, mcl, scratch, memory
+    def __init__(self, fw, mcl, scratch, qm_fields, memory, files, tags=None, config=None, library=None):
+        self.fw, self.mcl, self.scratch, self.qm_fields, self.memory = fw, mcl, scratch, qm_fields, memory
         self.disk = Disk(fw, files)
         self.library = library or Library(tags or {})
         self.config = dict(config or {})
@@ -349,6 +349,10 @@ class Q2:
         """navigation.c's state (scratch_t st), by field."""
         return ctype.from_address(C.addressof(self.fw.var('st', C.c_char)) + self.scratch[name])
 
+    def qm(self, name, ctype=C.c_int):
+        """queue_menu.c's state (qm), by field."""
+        return ctype.from_address(C.addressof(self.fw.var('queue_menu__qm', C.c_char)) + self.qm_fields[name])
+
     # Pages: AWTK's widgets as zeroed blocks that keep their parent, children, text and handlers.
     def widget(self, parent, kind='widget'):
         self.blocks.append(C.create_string_buffer(0x400))
@@ -403,13 +407,13 @@ class Q2:
     # The queue menu: a Play/Pause hold on a row, as ringnav_keylong takes it, then a pick in its menu, which runs
     # once the dialog has closed (qm_run) and finds its row again before it acts.
     def menu(self, kind, cls, at, rows, r, action):
-        st = self.st
-        st('qm_kind').value, st('qm_cls', C.c_uint).value, st('qm_action').value = kind, cls, action
+        st, qm = self.st, self.qm
+        qm('qm_kind').value, qm('qm_cls', C.c_uint).value, qm('qm_action').value = kind, cls, action
         st('qm_idx', C.c_uint).value, st('qm_rows', C.c_uint).value = at, rows
-        st('qm_hash', C.c_uint).value = self.fw.fn('navigation__rec_hash', C.c_uint, C.c_void_p)(r)
-        st('qm_browse', C.c_uint).value = self.fw.fn('navigation__browse_hash', C.c_uint)()
+        qm('qm_hash', C.c_uint).value = self.fw.fn('rec_hash', C.c_uint, C.c_void_p)(r)
+        qm('qm_browse', C.c_uint).value = self.fw.fn('queue_menu__browse_hash', C.c_uint)()
         st('qm_dialog', C.c_void_p).value = self.widget(0, 'dialog')
-        self.fw.fn('navigation__qm_run', C.c_int, C.c_void_p)(None)
+        self.fw.fn('queue_menu__qm_run', C.c_int, C.c_void_p)(None)
 
     def hold(self, title, action):
         """A hold on the list's song row showing title."""
@@ -420,8 +424,8 @@ class Q2:
     def hold_playing(self, action):
         """A hold on Now Playing: the track playing."""
         q = self.deques[self.queue]
-        self.st('qm_queue', C.c_void_p).value = self.queue
-        self.st('qm_queue_hash', C.c_uint).value = self.fw.fn('queue_hash', C.c_uint, C.c_void_p)(self.queue)
+        self.qm('qm_queue', C.c_void_p).value = self.queue
+        self.qm('qm_queue_hash', C.c_uint).value = self.fw.fn('queue_hash', C.c_uint, C.c_void_p)(self.queue)
         self.menu(QM['PLAYING'], SONGS, self.mcl.pos, len(q), q[self.mcl.pos], action)
 
     # Calls, as stock's code makes them.
@@ -797,11 +801,11 @@ class Q2:
 
 
 @pytest.fixture
-def q2(fw, mcl, scratch):
+def q2(fw, mcl, scratch, qm_fields):
     """A Q2 for the test's firmware (or a restart's), its records in the test's Memory."""
     memory = Memory()
     yield lambda files, tags=None, config=None, firmware=None, library=None: Q2(
-        firmware or fw, mcl, scratch, memory, files, tags, config, library)
+        firmware or fw, mcl, scratch, qm_fields, memory, files, tags, config, library)
     memory.close()
 
 

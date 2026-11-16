@@ -2183,14 +2183,14 @@ def ctx_ptr(fw, name):
 
 class Menu:
     """The hold menu as its opener leaves it: on row idx of a list, by its count, record and browsing hashes."""
-    def __init__(self, fw, st, kind, rows, idx, cls=0):
+    def __init__(self, fw, st, qm, kind, rows, idx, cls=0):
         self.fw, self.st = fw, st
         self.record = fw.fn('qm_record', C.c_void_p)
-        rec_hash = fw.fn('navigation__rec_hash', C.c_uint, C.c_void_p)
-        st('qm_kind').value, st('qm_idx', C.c_uint).value, st('qm_rows', C.c_uint).value = kind, idx, len(rows)
-        st('qm_cls', C.c_uint).value = cls
-        st('qm_hash', C.c_uint).value = rec_hash(rows[idx])
-        st('qm_browse', C.c_uint).value = fw.fn('navigation__browse_hash', C.c_uint)()
+        rec_hash = fw.fn('rec_hash', C.c_uint, C.c_void_p)
+        qm('qm_kind').value, st('qm_idx', C.c_uint).value, st('qm_rows', C.c_uint).value = kind, idx, len(rows)
+        qm('qm_cls', C.c_uint).value = cls
+        qm('qm_hash', C.c_uint).value = rec_hash(rows[idx])
+        qm('qm_browse', C.c_uint).value = fw.fn('queue_menu__browse_hash', C.c_uint)()
 
 
 def song_list(fw, records, n=3):
@@ -2201,16 +2201,16 @@ def song_list(fw, records, n=3):
     return deques, handle, rows
 
 
-def test_the_menus_row_is_found_while_the_list_stands(fw, st, records):
+def test_the_menus_row_is_found_while_the_list_stands(fw, st, qm, records):
     deques, handle, rows = song_list(fw, records)
-    menu = Menu(fw, st, QM_SONG, rows, 1)
+    menu = Menu(fw, st, qm, QM_SONG, rows, 1)
     assert menu.record() == rows[1]
 
 
 @pytest.mark.parametrize('change', ['row', 'count', 'browsing', 'index'])
-def test_the_menus_row_is_gone_once_the_list_changes(fw, st, records, change):
+def test_the_menus_row_is_gone_once_the_list_changes(fw, st, qm, records, change):
     deques, handle, rows = song_list(fw, records)
-    menu = Menu(fw, st, QM_SONG, rows, 1)
+    menu = Menu(fw, st, qm, QM_SONG, rows, 1)
     if change == 'row':
         deques[handle][1] = records.song(name=b'other.flac')
     elif change == 'count':
@@ -2222,21 +2222,21 @@ def test_the_menus_row_is_gone_once_the_list_changes(fw, st, records, change):
     assert not menu.record()
 
 
-def test_the_menus_list_by_its_kind(fw, st, records):
+def test_the_menus_list_by_its_kind(fw, qm, records):
     deques = Deques(fw)
     lists = {name: deques.new([records.song(name=name.encode())]) for name in ('p_deque_showlist', 'p_deque_playlist',
                                                                               'mcl_pdeqplaylist')}
     for name, handle in lists.items():
         ctx_ptr(fw, name).value = handle
-    qm_list = fw.fn('navigation__qm_list', C.c_void_p)
+    qm_list = fw.fn('queue_menu__qm_list', C.c_void_p)
     for kind, name in ((QM_SONG, 'p_deque_showlist'), (QM_ALBUM, 'p_deque_showlist'), (QM_PLAYLIST, 'p_deque_playlist'),
                        (QM_PLAYING, 'mcl_pdeqplaylist')):
-        st('qm_kind').value = kind
+        qm('qm_kind').value = kind
         assert qm_list() == lists[name]
 
 
 @pytest.mark.parametrize('page', ['mp', 'rt', 'other'])
-def test_a_coverflow_kind_menu_takes_the_pages_own_tracks(fw, st, records, page):
+def test_a_coverflow_kind_menu_takes_the_pages_own_tracks(fw, st, qm, records, page):
     ui = Ui(fw)
     deques = Deques(fw)
     rows = [records.song(name=b'%d.flac' % i) for i in range(2)]
@@ -2245,21 +2245,21 @@ def test_a_coverflow_kind_menu_takes_the_pages_own_tracks(fw, st, records, page)
     if page != 'other':
         st(f'{page}_page', C.c_void_p).value, st(f'{page}_list', C.c_void_p).value = top.addr, tracks
     ctx_ptr(fw, 'p_deque_showlist').value = deques.new(rows)  # Coverflow's kinds never read the browse list
-    menu = Menu(fw, st, QM_COVERFLOW, rows, 1)
+    menu = Menu(fw, st, qm, QM_COVERFLOW, rows, 1)
     assert menu.record() == (rows[1] if page != 'other' else None)
     ui.wm.children.pop()
     assert not menu.record()  # its page gone
 
 
-def test_now_playings_menu_holds_while_the_track_and_queue_stand(fw, st, records, mcl):
+def test_now_playings_menu_holds_while_the_track_and_queue_stand(fw, st, qm, records, mcl):
     deques = Deques(fw)
     rows = [records.song(name=b'%d.flac' % i) for i in range(3)]
     queue = deques.new(rows)
     ctx_ptr(fw, 'mcl_pdeqplaylist').value = queue
     mcl.pos, mcl.type = 1, 0xf001
-    menu = Menu(fw, st, QM_PLAYING, rows, 1)
-    st('qm_queue', C.c_void_p).value = queue
-    st('qm_queue_hash', C.c_uint).value = fw.fn('queue_hash', C.c_uint, C.c_void_p)(queue)
+    menu = Menu(fw, st, qm, QM_PLAYING, rows, 1)
+    qm('qm_queue', C.c_void_p).value = queue
+    qm('qm_queue_hash', C.c_uint).value = fw.fn('queue_hash', C.c_uint, C.c_void_p)(queue)
     assert menu.record() == rows[1]
     mcl.pos = 2  # the next track
     assert not menu.record()
@@ -2295,7 +2295,7 @@ def test_now_playings_more_while_it_is_open(fw, st):
     ui = Ui(fw)
     win = ui.window('playing_page')
     more = ui.add('image', ui.add('view', win), name='img_more')
-    np_more = fw.fn('navigation__np_more', C.c_void_p)
+    np_more = fw.fn('np_more', C.c_void_p)
     assert not np_more()
     st('np_win', C.c_void_p).value = win.addr
     assert np_more() == more.addr
@@ -2305,20 +2305,20 @@ def test_the_menu_closes_on_return_or_its_arrow_and_forgets_a_closed_dialog(fw, 
     ui = Ui(fw)
     dialog = ui.window('sortselect_dialog')
     st('qm_dialog', C.c_void_p).value = dialog.addr
-    back = fw.fn('navigation__qm_back', C.c_int, C.c_void_p, C.c_void_p)
+    back = fw.fn('queue_menu__qm_back', C.c_int, C.c_void_p, C.c_void_p)
     assert back(dialog.addr, event(O['EVT_KEY_UP'], O['KEY_CENTER'])) == 0 and st('qm_dialog', C.c_void_p).value
     assert back(dialog.addr, event(O['EVT_KEY_UP'], O['KEY_RETURN'])) == STOP
     assert not st('qm_dialog', C.c_void_p).value and [a[0] for _, a in fw.calls('window_close')] == [dialog.addr]
     st('qm_dialog', C.c_void_p).value = dialog.addr
     assert back(dialog.addr, event(EVT_CLICK)) == STOP  # the title bar's arrow
-    gone = fw.fn('navigation__qm_gone', C.c_int, C.c_void_p, C.c_void_p)
+    gone = fw.fn('queue_menu__qm_gone', C.c_int, C.c_void_p, C.c_void_p)
     other = ui.window('msginfo_dialog')
     st('qm_dialog', C.c_void_p).value = dialog.addr
     gone(other.addr, None)
     assert st('qm_dialog', C.c_void_p).value == dialog.addr
     gone(dialog.addr, None)
     assert not st('qm_dialog', C.c_void_p).value
-    fw.fn('navigation__qm_close', None)()
+    fw.fn('queue_menu__qm_close', None)()
     assert len(fw.calls('window_close')) == 2  # nothing more to close
 
 
@@ -2339,23 +2339,23 @@ def put(records, r, offset, value):
 @pytest.mark.parametrize('cls, artist_type, query', [
     (0xf004, 0, ('getMusicBySonger', b'Miles Davis')), (0xf004, 1, ('getMusicByAlbumArtist', b'Miles Davis')),
     (0xf005, 0, ('getMusicByComposer', b'Gil Evans')), (0xf006, 0, ('getMusicByGenre', b'Jazz'))])
-def test_a_group_rows_menu_runs_the_query_its_row_opens(fw, st, records, cls, artist_type, query):
+def test_a_group_rows_menu_runs_the_query_its_row_opens(fw, qm, records, cls, artist_type, query):
     fw.var('fw_ctx_g_artist_type', C.c_int).value = artist_type
     r = records.song(artist=b'Miles Davis') if cls == 0xf004 else records.song()
     if cls != 0xf004:
         put(records, r, {0xf005: 0x20, 0xf006: 0x1c}[cls], {0xf005: b'Gil Evans', 0xf006: b'Jazz'}[cls])
-    st('qm_kind').value, st('qm_cls', C.c_uint).value = QM_GROUP, cls
-    fw.fn('navigation__qm_query', C.c_int, C.c_void_p)(r)
+    qm('qm_kind').value, qm('qm_cls', C.c_uint).value = QM_GROUP, cls
+    fw.fn('queue_menu__qm_query', C.c_int, C.c_void_p)(r)
     assert queried(fw) == [query]
 
 
-def test_an_unknown_rows_menu_asks_for_the_untagged(fw, st, records):
+def test_an_unknown_rows_menu_asks_for_the_untagged(fw, qm, records):
     r = records.song(id_=-1, artist=b'ignored')
-    st('qm_kind').value, st('qm_cls', C.c_uint).value = QM_GROUP, 0xf004
-    fw.fn('navigation__qm_query', C.c_int, C.c_void_p)(r)
-    st('qm_kind').value, st('qm_cls', C.c_uint).value = QM_ALBUM, O['CLASS_ALBUMS']
-    fw.fn('navigation__qm_query', C.c_int, C.c_void_p)(records.song(id_=-1, album=b'ignored'))
-    fw.fn('navigation__qm_query', C.c_int, C.c_void_p)(records.song(album=b'Blue'))
+    qm('qm_kind').value, qm('qm_cls', C.c_uint).value = QM_GROUP, 0xf004
+    fw.fn('queue_menu__qm_query', C.c_int, C.c_void_p)(r)
+    qm('qm_kind').value, qm('qm_cls', C.c_uint).value = QM_ALBUM, O['CLASS_ALBUMS']
+    fw.fn('queue_menu__qm_query', C.c_int, C.c_void_p)(records.song(id_=-1, album=b'ignored'))
+    fw.fn('queue_menu__qm_query', C.c_int, C.c_void_p)(records.song(album=b'Blue'))
     assert queried(fw) == [('getMusicBySonger', None), ('getMusicByAlbum', None), ('getMusicByAlbum', b'Blue')]
 
 
@@ -2364,7 +2364,7 @@ def test_an_unknown_rows_menu_asks_for_the_untagged(fw, st, records):
     (0xff01, 1, 0, ('getMusicByAlbumAndAlbumSonger', b'Blue', b'Miles Davis')),
     (0xff01, 0, 1, ('getMusicByAlbumAndSonger', b'Blue', None)),  # an Unknown artist's album
     (0xff03, 0, 0, ('getMusicByAlbumAndGenre', b'Blue', b'Jazz'))])
-def test_an_albums_menu_under_a_group_keeps_the_group(fw, st, records, cls, artist_type, unknown, query):
+def test_an_albums_menu_under_a_group_keeps_the_group(fw, qm, records, cls, artist_type, unknown, query):
     fw.var('fw_ctx_g_artist_type', C.c_int).value = artist_type
     info = fw.var('fw_ctx_g_local_classinfo_save', C.c_char * 912)
     info[0xa + (cls & 0xf) - 1] = bytes([unknown])
@@ -2373,43 +2373,43 @@ def test_an_albums_menu_under_a_group_keeps_the_group(fw, st, records, cls, arti
         put(records, r, 0x1c, b'Jazz')
     else:
         r = records.song(album=b'Blue', artist=b'Miles Davis')
-    st('qm_kind').value, st('qm_cls', C.c_uint).value = QM_ALBUM, cls
-    fw.fn('navigation__qm_query', C.c_int, C.c_void_p)(r)
+    qm('qm_kind').value, qm('qm_cls', C.c_uint).value = QM_ALBUM, cls
+    fw.fn('queue_menu__qm_query', C.c_int, C.c_void_p)(r)
     assert queried(fw) == [query]
     assert fw.calls(query[0])[0][1][2] == 0  # not the Unknown Album row (id -2)
 
 
 @pytest.mark.parametrize('id_, unknown_album', [(-2, 1), (0, 0), (-1, 0)])
-def test_an_artists_unknown_album_rows_menu_asks_for_its_untagged_albums_songs(fw, st, records, id_, unknown_album):
+def test_an_artists_unknown_album_rows_menu_asks_for_its_untagged_albums_songs(fw, qm, records, id_, unknown_album):
     r = records.song(id_=id_, artist=b'Miles Davis')
-    st('qm_kind').value, st('qm_cls', C.c_uint).value = QM_ALBUM, O['CLASS_ARTIST_ALBUMS']
-    fw.fn('navigation__qm_query', C.c_int, C.c_void_p)(r)
+    qm('qm_kind').value, qm('qm_cls', C.c_uint).value = QM_ALBUM, O['CLASS_ARTIST_ALBUMS']
+    fw.fn('queue_menu__qm_query', C.c_int, C.c_void_p)(r)
     # the artist's songs with no album tag: the query's own flag, as the row opens them (id -2, REC_ID's unknown album)
     ((name, args),) = [(n, a) for n, a in fw.calls() if n.startswith('getMusicByAlbumAnd')]
     assert (name, C.string_at(args[1]), args[2]) == ('getMusicByAlbumAndSonger', b'Miles Davis', unknown_album)
 
 
-def test_a_playlists_menu_runs_its_playlist(fw, st, records):
+def test_a_playlists_menu_runs_its_playlist(fw, qm, records):
     r = records.song(disc=7)
-    st('qm_kind').value = QM_PLAYLIST
-    fw.fn('navigation__qm_query', C.c_int, C.c_void_p)(r)
+    qm('qm_kind').value = QM_PLAYLIST
+    fw.fn('queue_menu__qm_query', C.c_int, C.c_void_p)(r)
     assert queried(fw) == [('getMusicByPlayList', 7)]
 
 
-def test_the_menus_album_id(fw, st, records):
+def test_the_menus_album_id(fw, st, qm, records):
     r = records.song(album=b'Blue', album_artist=b'Miles Davis', path=b'/m/Blue/1.flac')
     album_id = fw.fn('album_id', C.c_uint, C.c_void_p)(r)
     qm_album_id = fw.fn('qm_album_id', C.c_uint, C.c_void_p)
-    st('qm_kind').value, st('qm_cls', C.c_uint).value = QM_ALBUM, O['CLASS_ALBUMS']
+    qm('qm_kind').value, qm('qm_cls', C.c_uint).value = QM_ALBUM, O['CLASS_ALBUMS']
     assert qm_album_id(r) == album_id  # a Library Albums row: the album Coverflow rates
-    st('qm_kind').value = QM_COVERALBUM
+    qm('qm_kind').value = QM_COVERALBUM
     assert qm_album_id(r) == album_id
-    st('qm_kind').value, st('qm_cls', C.c_uint).value = QM_GROUP, 0xf004
+    qm('qm_kind').value, qm('qm_cls', C.c_uint).value = QM_GROUP, 0xf004
     assert qm_album_id(r) == 0  # an artist's row rates no album
     # an artist's albums tab: the id ringnav_artist_list found for the row, while the tab is the one it read
     ids = (C.c_uint * 3)(11, 22, 33)
-    st('qm_kind').value = QM_ALBUM  # its rows are albums
-    st('qm_cls', C.c_uint).value, st('art_ids', C.c_void_p).value, st('art_n', C.c_uint).value = O['CLASS_ARTIST_ALBUMS'], C.addressof(ids), 3
+    qm('qm_kind').value = QM_ALBUM  # its rows are albums
+    qm('qm_cls', C.c_uint).value, st('art_ids', C.c_void_p).value, st('art_n', C.c_uint).value = O['CLASS_ARTIST_ALBUMS'], C.addressof(ids), 3
     st('qm_rows', C.c_uint).value, st('qm_idx', C.c_uint).value = 3, 1
     assert qm_album_id(r) == 22
     st('qm_rows', C.c_uint).value = 4

@@ -1402,7 +1402,7 @@ def test_go_to_album_opens_its_songs_and_puts_the_browsing_back_after(fw, ui, st
     before = bytes(info)
     ui.routes['playerjumpinfo_page'] = lambda ctx: ui.window('playerjumpinfo_page')
     r = recs(album='Abbey Road', path='/mnt/mmc/a.flac', id_=4)
-    fw.fn('navigation__qm_goto', None, C.c_void_p, C.c_int)(r, 1)
+    fw.fn('queue_menu__qm_goto', None, C.c_void_p, C.c_int)(r, 1)
     assert struct.unpack_from('<I', info)[0] == 0xff10 and info[9] == b'\0'
     assert C.string_at(C.addressof(info) + 0xd) == b'Abbey Road' and ui.went == ['playerjumpinfo_page']
     page = ui.top()
@@ -1413,23 +1413,23 @@ def test_go_to_album_opens_its_songs_and_puts_the_browsing_back_after(fw, ui, st
 
 def test_go_to_album_writes_the_artist_too(fw, ui, st, recs):
     r = recs(artist='The Beatles', path='/mnt/mmc/a.flac')
-    fw.fn('navigation__qm_goto', None, C.c_void_p, C.c_int)(r, 1)
+    fw.fn('queue_menu__qm_goto', None, C.c_void_p, C.c_int)(r, 1)
     assert C.string_at(C.addressof(classinfo(fw)) + 0x10d) == b'The Beatles'
 
 
-def test_go_to_artist_opens_artistinfo_with_the_class_and_record(fw, ui, st, recs):
+def test_go_to_artist_opens_artistinfo_with_the_class_and_record(fw, ui, qm, recs):
     seen = []
     ui.routes['localmusic/artistinfo_page'] = lambda ctx: seen.append((C.c_int.from_address(ctx).value,
                                                                          C.c_void_p.from_address(ctx + 8).value)) or ui.window('artistinfo_page')
-    st('qm_cls', C.c_uint).value = 0xf004
+    qm('qm_cls', C.c_uint).value = 0xf004
     r = recs(artist='Nina Simone', path='/mnt/mmc/n.flac')
-    fw.fn('navigation__qm_goto', None, C.c_void_p, C.c_int)(r, 0)
+    fw.fn('queue_menu__qm_goto', None, C.c_void_p, C.c_int)(r, 0)
     assert seen == [(0xf004, r)] and ui.handlers(ui.top(), EVT_WINDOW_CLOSE) == [ui.fn('qm_restore')]
 
 
 def test_a_go_to_that_opened_nothing_keeps_no_restore(fw, ui, st, recs):
     under = ui.window('playing_page')
-    fw.fn('navigation__qm_goto', None, C.c_void_p, C.c_int)(recs(album='A'), 1)
+    fw.fn('queue_menu__qm_goto', None, C.c_void_p, C.c_int)(recs(album='A'), 1)
     assert ui.top() == under and not ui.handlers(under, EVT_WINDOW_CLOSE)
 
 
@@ -2077,7 +2077,7 @@ def test_most_playeds_tracks_hold_as_its_songs(hold, recs, ui, st, fw):
 # What a hold leaves stock.
 @pytest.mark.parametrize('how', ['dialog', 'timer', 'picker', 'dark', 'animating', 'touch', 'airplay', 'select mode',
                                  'not a list', 'stream', 'no key', 'video', 'rows changed'])
-def test_a_hold_that_isnt_the_menus_is_stocks(hold, recs, ui, st, fw, mcl, how):
+def test_a_hold_that_isnt_the_menus_is_stocks(hold, recs, ui, st, qm, fw, mcl, how):
     songs = [song(recs, i) for i in range(3)]
     if how in ('not a list', 'video', 'rows changed'):
         rows = songs if how != 'video' else [recs(path=f'/mnt/mmc/{i}.mp4', kind=8) for i in range(3)]
@@ -2087,7 +2087,7 @@ def test_a_hold_that_isnt_the_menus_is_stocks(hold, recs, ui, st, fw, mcl, how):
     else:
         hold.now_playing(songs)
     {'dialog': lambda: setattr(st('qm_dialog', C.c_void_p), 'value', 1),
-     'timer': lambda: setattr(st('qm_timer', C.c_uint), 'value', 5),
+     'timer': lambda: setattr(qm('qm_timer', C.c_uint), 'value', 5),
      'picker': lambda: setattr(st('qm_playlist', C.c_void_p), 'value', 1),
      'dark': lambda: setattr(fw.var('g_backlight_status', C.c_ubyte), 'value', 0),
      'animating': lambda: fw.mock('window_manager_is_animating', lambda *_: 1),
@@ -2688,7 +2688,7 @@ def test_a_played_song_moving_out_of_the_table_marks_most_played_stale(player, r
 
 # Stock Shuffle's pick and a pending Play next (ringnav_shuffle, shuffle_forced).
 def rec_hash(fw, r):
-    return fw.fn('navigation__rec_hash', C.c_uint, C.c_void_p)(r)
+    return fw.fn('rec_hash', C.c_uint, C.c_void_p)(r)
 
 
 def shuffle_queue(fw, recs, mcl, n=4):
