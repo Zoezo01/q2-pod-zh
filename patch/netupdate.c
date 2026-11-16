@@ -496,14 +496,6 @@ static int room(unsigned long long bytes, unsigned *need) {
     return SH_SPACE;
 }
 
-/* path's bytes; -1 when it can't be opened. */
-static long file_bytes(const char *path) {
-    void *f = fopen(path, "rb");
-    long n = f && !fseek(f, 0, 2) ? ftell(f) : -1;
-    if (f) fclose(f);
-    return n;
-}
-
 /* A press's work, to the state it ends in. The old update.tar stays until the new one is whole:
  * only a part of the release's size and SHA-256, as the card gives it back, is renamed over it. */
 static int update(void) {
@@ -531,7 +523,7 @@ static int update(void) {
     if (!listed) return NU_MISSING;
     /* Room for the tar and for stock's unpacking of it beside it. ponytail: an old update.tar the
      * new one replaces isn't counted as room. */
-    long held = file_bytes(NU_FILE ".part"); /* its bytes are already out of the free room */
+    long held = file_size(NU_FILE ".part"); /* its bytes are already out of the free room */
     unsigned long long left = 2ull * size - (held < 0 || (unsigned long)held > size ? 0 : held);
     int r = card_mounted() ? room(left, &nu.need) : SH_CARD;
     if (r) return r == SH_SPACE ? NU_SPACE : NU_CARD;
@@ -543,7 +535,7 @@ static int update(void) {
      * this one's download before it is found damaged and deleted. */
     int state = NU_RUNNING, tries = 0;
     while (state == NU_RUNNING) {
-        long have = file_bytes(NU_FILE ".part");
+        long have = file_size(NU_FILE ".part");
         if (have < 0 || (unsigned long)have > size) have = 0; /* none, or not this release's */
         if ((unsigned long)have == size) break;
         void *f = fopen(NU_FILE ".part", have ? "ab" : "wb");
@@ -566,7 +558,7 @@ static int update(void) {
             /* A reply that wasn't the range asked for (curl's RANGE_ERROR, or no 206) left the
              * part unusable: the next try starts it again. */
             if (!err || err == 33) unlink(NU_FILE ".part");
-            tries = file_bytes(NU_FILE ".part") > have ? 0 : tries + 1;
+            tries = file_size(NU_FILE ".part") > have ? 0 : tries + 1;
             nu.stage = 3;
             for (int i = 0; tries < NU_TRIES && i < 50 && !nu.cancel; ++i) usleep(100000); /* 5 s */
             if (tries == NU_TRIES || nu.cancel) state = nu.cancel ? NU_CANCELLED : NU_NET;
