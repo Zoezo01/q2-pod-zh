@@ -2591,13 +2591,18 @@ def era_library():
     return lib
 
 
+def every_song(sent):
+    """The query with the decade's names filter taken out: it groups every song."""
+    return re.sub(r' and album collate nocase in \(select album from songtable where .*? between 1990 and 1999\)', '', sent)
+
+
 def test_a_decade_query_groups_only_the_names_dated_in_it(fw, ui):
     """The decade's query groups the songs of the names with a song dated in it, and gives the rows that grouping every
     song gives: a name two artists share across decades, one album dated in two (also spelled in two cases), a full date and an
     undated album, with and without songtable_album."""
     db, _ = era_decade(fw, ui)
     sent = db.asked[-1]
-    every = re.sub(r' and album collate nocase in \(select album from songtable where .*? between 1990 and 1999\)', '', sent)
+    every = every_song(sent)
     assert every != sent
     lib = era_library()
     rows = lib.execute(sent).fetchall()
@@ -2726,14 +2731,12 @@ def test_shuffle_plays_the_decade_s_songs_shuffled(fw, ui, song, mcl):
     assert queue == songs[1:] and cls == LIBRARY and library.asked == [3]
 
 
-def test_shuffle_s_query_groups_only_the_names_dated_in_the_decade(fw, ui, song, mcl):
+def test_shuffle_s_query_groups_only_the_names_dated_in_the_decade(fw, ui):
     """Shuffle's song query narrows its grouping as the decade's page does, and finds the songs grouping every song finds."""
-    Library(fw, ui, [song(b'/m/1.flac', id_=1)])
-    fw.mock('fw_access', lambda *_: 0)
     db, page = era_decade(fw, ui)
     ui.click(page, 1)
     sent = db.asked[-1]
-    every = re.sub(r' and album collate nocase in \(select album from songtable where .*? between 1990 and 1999\)', '', sent)
+    every = every_song(sent)
     assert every != sent and 'select distinct s.id' in sent
     lib = era_library()
     ids = sorted(lib.execute(sent).fetchall())

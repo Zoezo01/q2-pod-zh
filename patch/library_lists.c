@@ -499,6 +499,15 @@ int songs_open(const char *path, const char *title, int album) {
     "select album,ifnull(nullif(albumsonger,''),songer)," ALBUM_YEAR                               \
     " as release_year," ALBUM_TRACK " from songtable "                                             \
     "where " MUSIC_WHERE " and ifnull(album,'')<>''"
+/* Only a name with a song dated in the decade can make one of its groups, so era_open_decade and
+ * era_shuffle_songs group only those names' songs, as of_names does (coverflow.c). SONG_YEAR holds
+ * no '%', so it sits in the format; MUSIC_WHERE's like patterns do, so it stays an argument.
+ * ponytail: the names' subquery reads the table once more, so a decade holding most of the library
+ * groups nearly every song anyway and takes a little longer than with no filter; skip the filter
+ * when era.count shows the decade holds most of the albums. */
+#define ERA_NAMES                                                                                  \
+    " and album collate nocase in (select album from songtable where " SONG_YEAR                   \
+    " between %d and %d)"
 typedef struct {
     char *album, *artist, *path;
     int year;
@@ -601,18 +610,16 @@ static void *era_songs(void) {
 static void *era_shuffle_songs(void) { /* 0 if the query failed */
     char sql[2048];
     int from = era.m ? era.v[0].year / 10 * 10 : 0, n;
-    /* The songs of the decade's ALBUM_GROUP groups, matched on ALBUM_GROUP's keys; only names with
-     * a song dated in the decade are grouped, as era_open_decade. */
-    tk_snprintf(
-        sql, sizeof sql,
-        "%s from songtable s join (select album a,ifnull(albumsonger,'') b,case "
-        "ifnull(albumsonger,'') when '' then rtrim(fileurl,replace(fileurl,'/','')) end d,"
-        "%s as y from songtable where %s and ifnull(album,'')<>'' and album collate nocase in "
-        "(select album from songtable where %s between %d and %d)%s having y between %d and %d) g "
-        "on s.album=g.a COLLATE NOCASE and ifnull(s.albumsonger,'')=g.b COLLATE NOCASE and "
-        "(g.d is null or rtrim(s.fileurl,replace(s.fileurl,'/',''))=g.d)",
-        "select distinct s.id", ALBUM_YEAR, MUSIC_WHERE, SONG_YEAR, from, from + 9, ALBUM_GROUP,
-        from, from + 9);
+    /* The songs of the decade's ALBUM_GROUP groups, matched on ALBUM_GROUP's keys. */
+    tk_snprintf(sql, sizeof sql,
+                "%s from songtable s join (select album a,ifnull(albumsonger,'') b,case "
+                "ifnull(albumsonger,'') when '' then rtrim(fileurl,replace(fileurl,'/','')) end d,"
+                "%s as y from songtable where %s and ifnull(album,'')<>''" ERA_NAMES
+                "%s having y between %d and %d) g "
+                "on s.album=g.a COLLATE NOCASE and ifnull(s.albumsonger,'')=g.b COLLATE NOCASE and "
+                "(g.d is null or rtrim(s.fileurl,replace(s.fileurl,'/',''))=g.d)",
+                "select distinct s.id", ALBUM_YEAR, MUSIC_WHERE, from, from + 9, ALBUM_GROUP, from,
+                from + 9);
     ids.n = 0;
     void *out = 0;
     if (!era.m || era_sql(sql, id_row, 0)) out = _create_deque("stSongInfo"), deque_init(out);
@@ -662,14 +669,11 @@ static int era_open_decade(void *ctx, void *event) {
     int k = (int)(long)ctx, from = era.decade[k];
     if (era.albums) return 0;
     char sql[2048], name[16], detail[300];
-    /* Only a name with a song dated in the decade can make one of its groups, so only those names'
-     * songs are grouped, as of_names does (coverflow.c). MUSIC_WHERE's like patterns hold '%': an
-     * argument, not the format. */
     tk_snprintf(sql, sizeof sql,
-                "%s and album collate nocase in (select album from songtable where %s between %d "
-                "and %d)%s having release_year between %d and %d order by release_year,album "
+                "%s" ERA_NAMES
+                "%s having release_year between %d and %d order by release_year,album "
                 "COLLATE NOCASE",
-                ERA_ALBUMS, SONG_YEAR, from, from + 9, ALBUM_GROUP, from, from + 9);
+                ERA_ALBUMS, from, from + 9, ALBUM_GROUP, from, from + 9);
     era.v =
         calloc((unsigned)era.count[k] + 1, sizeof *era.v); /* the decade's count, from era_menu */
     era.cap = era.v ? (unsigned)era.count[k] : 0;
