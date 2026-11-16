@@ -847,9 +847,7 @@ static void box(void *canvas, int x, int y, int w, int h, unsigned rgb) {
 
 /* A box with its corners rounded r, square when the canvas declines to round it. */
 static void round_box(void *canvas, int x, int y, int w, int h, unsigned rgb, unsigned r) {
-    int rect[4] = { x, y, w, h };
-    unsigned c = rgba(rgb, 255);
-    if (canvas_fill_rounded_rect(canvas, rect, (void *)0, &c, r)) box(canvas, x, y, w, h, rgb);
+    fill_box(canvas, &(rect_t){ x, y, w, h }, rgba(rgb, 255), r);
 }
 
 /* A two-pixel frame, its corners rounded r (4 or more) or, at 0 or when the canvas declines,

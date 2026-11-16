@@ -561,6 +561,11 @@ void lyrics_paint(void *row, void *canvas), lyrics_gone(void);
 unsigned
 accent_tone(int tone); /* iPod: the Accent's ACCENTS column (Minimal's own: MINIMAL_FILL) */
 unsigned rgba(unsigned rgb, unsigned alpha);
+typedef struct {
+    int x, y, w, h;
+} rect_t;
+/* navigation.c: a rounded box in color, or a square one when the canvas declines to round it */
+void fill_box(void *canvas, rect_t *r, unsigned color, unsigned radius);
 /* const and pure below: each one's result rests on its arguments (and pure's, memory) alone, so
  * clang can keep one call for several (theme_engine.c and navigation.c define these). */
 unsigned mix(unsigned from, unsigned to, int j, int n) __attribute__((const));

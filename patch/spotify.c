@@ -510,14 +510,6 @@ static int tick(const void *unused) {
     return 8; /* RET_REPEAT */
 }
 
-static void box(void *canvas, int x, int y, int w, int h, unsigned color, unsigned radius) {
-    int r[4] = { x, y, w, h };
-    if (canvas_fill_rounded_rect(canvas, r, (void *)0, &color, radius)) {
-        canvas_set_fill_color(canvas, color);
-        canvas_fill_rect(canvas, x, y, w, h);
-    }
-}
-
 /* ringnav_paint, every widget after stock painted it: the bar, as Now Playing's capsule (the
  * accent's light tone), and the play state in the top row. */
 void spot_paint(void *w, void *canvas) {
@@ -534,8 +526,10 @@ void spot_paint(void *w, void *canvas) {
         int x = (int)((ms >> 4) * SPOT_BAR_W / ((sp.duration >> 4) | 1)); /* 32-bit to 57 h */
         /* Minimal's 4 px line, Modern's 8 px capsule: the view's height at most */
         int h = theme()->np_bar < SPOT_BAR_H ? theme()->np_bar : SPOT_BAR_H;
-        box(canvas, 0, 0, SPOT_BAR_W, h, rgba(TRACK_COLOR, 255), h / 2);
-        if (x) box(canvas, 0, 0, x < h ? h : x, h, ui.scrub ? 0xffffffffu : tone, h / 2);
+        fill_box(canvas, &(rect_t){ 0, 0, SPOT_BAR_W, h }, rgba(TRACK_COLOR, 255), h / 2);
+        if (x)
+            fill_box(canvas, &(rect_t){ 0, 0, x < h ? h : x, h }, ui.scrub ? 0xffffffffu : tone,
+                     h / 2);
     } else { /* a triangle playing, two bars otherwise */
         canvas_set_fill_color(canvas, 0xffffffffu);
         if (sp.playing)

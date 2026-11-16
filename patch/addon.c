@@ -2395,14 +2395,6 @@ static void qr_open(const char *state, const char *title) {
     qp.timer = timer_add(qr_tick, 0, 1000);
 }
 
-static void plate(void *canvas, int x, int y, int w, int h, unsigned color, unsigned radius) {
-    int r[4] = { x, y, w, h };
-    if (canvas_fill_rounded_rect(canvas, r, (void *)0, &color, radius)) {
-        canvas_set_fill_color(canvas, color);
-        canvas_fill_rect(canvas, x, y, w, h);
-    }
-}
-
 /* ringnav_paint, every widget after stock painted it: a progress row's bar, a flat rectangle filled
  * position/1000 of its width from the left, square, with no knob (the accent's light tone, as
  * Spotify's bar, over a dim track; the scrubber's rows under a theme that has them); and the code,
@@ -2432,8 +2424,8 @@ void addon_paint(void *w, void *canvas) {
     int side = qr_light() ? QR_LIGHT_PX : QR_PX;
     int n = qp.size, m = side / (n + 4), o = (side - m * n) / 2, digits = (n + 3) / 4;
     unsigned raw = ui_ink_raw(qr_light()); /* Classic's code reads dark on white in either half */
-    if (qr_light()) plate(canvas, -1, -1, side + 2, side + 2, 0x22000000u, 9);
-    plate(canvas, 0, 0, side, side, 0xffffffffu, qr_light() ? 8 : 10);
+    if (qr_light()) fill_box(canvas, &(rect_t){ -1, -1, side + 2, side + 2 }, 0x22000000u, 9);
+    fill_box(canvas, &(rect_t){ 0, 0, side, side }, 0xffffffffu, qr_light() ? 8 : 10);
     canvas_set_fill_color(canvas, rgba(0x000000, 255));
     for (int y = 0; y < n; ++y)
         for (int x = 0; x < n;) {
