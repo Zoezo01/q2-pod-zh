@@ -2246,8 +2246,9 @@ static void artist_only(void) {
     artist_view = 0;
 }
 
-/* The Unknown Album card shows only when its press would find a song: getAllAlbum appends it even
-   when every song carries an album tag. It stays last whatever the Sort. */
+/* The Unknown Album card shows only when Cover Flow's grouping finds an untagged music song:
+   getAllAlbum appends it even when every song carries an album tag, and the open runs no query of
+   its own for it. It stays last whatever the Sort. */
 static void unknown_card(void) {
     unknown_row = 1;
     rescan();
@@ -2258,7 +2259,7 @@ static void unknown_card(void) {
     rescan();
     open_page();
     widget *s = slide();
-    assert(s->nkids == albums + 1 && !strcmp(album_at(albums), "Unknown Album"));
+    assert(s->nkids == albums + 1 && unknown_queries == 0 && !strcmp(album_at(albums), "Unknown Album"));
     ranked[0] = "Unknown Album", ranked[1] = "None", ranked[2] = 0; /* Artist, then year */
     press_sort();
     assert(!strcmp(album_at(albums), "Unknown Album") && !strcmp(album_at(0), "None"));

@@ -1302,9 +1302,11 @@ static void *of_names(const char *sql, void *list, int *count) {
 }
 
 /* list's albums with music, in a new deque (list goes), using a music track for their art even when
- * tags are shared with an audiobook; with artist, of list's names alone (of_names), and its Unknown
- * row kept as given: artist_albums keeps it only for an untagged music song of the artist's. The
- * card's files stay untouched. Out of memory, audiobooks stay. */
+ * tags are shared with an audiobook. getAllAlbum's Unknown row (id -1), which stock appends
+ * whenever any album exists, stays only when the grouping has an untagged music song (a -1 row of
+ * its own, which album_rows leaves out of m); with artist, of list's names alone (of_names), and
+ * its Unknown row kept as given: artist_albums keeps it only for an untagged music song of the
+ * artist's. The card's files stay untouched. Out of memory, audiobooks and the Unknown row stay. */
 static void *music_albums(void *list, int artist) {
     int n;
     void *rows = artist ? of_names(MUSIC_ALBUM_SQL, list, &n) : 0, *out;
