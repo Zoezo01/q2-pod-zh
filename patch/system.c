@@ -248,39 +248,25 @@ static void wdt_poll(void) {
  * battery, playback and its output. A clean end removes it; one still there at boot means a
  * forced restart (or the battery), and S90play puts it in q2-crash.log (docs/boot.md). */
 #define STATE_FILE "/mnt/data/q2-state"
-static char *put(char *p, const char *s) {
-    while (*s) *p++ = *s++;
-    return p;
-}
 static void state_poll(void) {
     static const char *const play[] = { "?", "stopped", "playing", "paused" };
     static const char *const out[] = { "jack", "bluetooth", "usb" };
     if (pw.ended) return;
     unsigned ps = (unsigned)mclGetPlayStatus(), ow = (unsigned)mclGetOutputWay();
-    unsigned pct = (unsigned)I(g_power_capacity, 0), n = 0;
-    char s[sizeof pw.state], d[4], *p = s;
-    p = put(p, g_backlight_status ? "screen:on" : "screen:off");
-    p = put(p, pw.suspended ? " power:suspending" : " power:running");
-    p = put(p, g_usbdet_value ? " cable:in" : " cable:out");
-    p = put(p, " battery:");
-    if (pct > 100) pct = 100;
-    do d[n++] = '0' + pct % 10;
-    while (pct /= 10);
-    while (n) *p++ = d[--n];
-    p = put(p, " play:");
-    p = put(p, play[ps < 4 ? ps : 0]);
-    p = put(p, " out:");
-    p = put(p, out[ow < 3 ? ow : 0]);
-    p = put(p, "\n");
-    *p = 0;
+    unsigned pct = (unsigned)I(g_power_capacity, 0);
+    char s[sizeof pw.state];
+    int n = snprintf(s, sizeof s, "screen:%s power:%s cable:%s battery:%u play:%s out:%s\n",
+                     g_backlight_status ? "on" : "off", pw.suspended ? "suspending" : "running",
+                     g_usbdet_value ? "in" : "out", pct > 100 ? 100 : pct, play[ps < 4 ? ps : 0],
+                     out[ow < 3 ? ow : 0]);
     if (!tk_strcmp(s, pw.state)) return;
     void *f = fopen(STATE_FILE, "w");
     if (!f) return;
-    fwrite(s, 1, p - s, f);
+    fwrite(s, 1, n, f);
     fflush(f);
     fsync(fileno(f));
     fclose(f);
-    memcpy(pw.state, s, p - s + 1);
+    memcpy(pw.state, s, n + 1);
 }
 /* A clean end: power-off, Restart, a firmware update, Rockbox. Nothing to report at the next boot.
  */
