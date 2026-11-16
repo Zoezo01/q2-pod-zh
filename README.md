@@ -109,10 +109,8 @@ The [user guide][guide] covers every control, EQ, Cover Flow and more tips.
 
 ## Updating
 
-- **Over Wi-Fi:** **System settings → System Update → Network update** downloads the newest release to the card, checks it against the release's SHA-256, and only then replaces the card's `update.tar` and opens the TF card update's confirmation. Press the row again to cancel the download. If the connection drops, it tries again by itself, and the next press carries on from where it stopped. While Wi-Fi is on, the Q2 checks for a new release once a day and says so on Home, once per release; the row then reads **Update to** and the version. **Update Notifications**, under Network update, turns that check off.
+- **Over Wi-Fi:** **System settings → System Update → Network update**.
 - **By hand:** repeat the [install steps](#install) with the newest release.
-
-Your settings, ratings and play counts are kept. The updater skips a version that's already installed, so a newer release always goes on.
 
 ## Apps
 

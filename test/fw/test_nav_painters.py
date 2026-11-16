@@ -1668,7 +1668,7 @@ def test_power_adds_standby_charge_and_in_vehicle_rows_after_stocks(fw):
     standby, charge, *_, history = (ui.text(label_of(r)) for r in ours)
     assert standby.endswith('Off') and f'{O["CHARGE_STOP"]}%' in charge  # Standby off; where Charge stops
     assert history == 'Battery History' and 'list_into' in [c.props.get('image') for c in ours[-1].walk()]  # opens a page
-    assert [switch(r) for r in ours] == [None, 'switch_off', 'switch_off', 'switch_off', 'switch_off', None]
+    assert [switch(r) for r in ours] == [None, 'switch_off', None, 'switch_off', 'switch_off', None]  # USB DAC Charging: a value
     for r in ours:  # stock's settings row: its button, the title clear of the icon, both the row's height
         button, label = r.children[0], label_of(r)
         icon = next(c for c in r.walk() if c.kind == 'image')
@@ -1737,40 +1737,51 @@ def dac_power(fw, **charging):
     q.config()
     fw.fn('ringnav_powermanager', C.c_int, C.c_void_p, C.c_void_p)(win.addr, None)
     dac = view.children[2]
-    assert ui.text(label_of(dac)) == 'USB DAC Charging'
+    assert ui.text(label_of(dac)).startswith('USB DAC Charging: ')
     return ui, win, dac, q
 
 
-def test_usb_dac_charging_is_the_dac_screens_choice_and_drives_the_pin_at_once(fw):
-    ui, win, dac, q = dac_power(fw, pref=1, cable=1)  # Audio and DAC, a cable in
-    assert switch(dac) == 'switch_on' and q.gpio == 0
+def test_usb_dac_charging_cycles_off_on_never_and_drives_the_pin_at_once(fw):
+    ui, win, dac, q = dac_power(fw, cable=1, never=0)  # Audio and DAC, a wall adapter: no host, no DAC screen
+    assert ui.text(label_of(dac)) == 'USB DAC Charging: Off' and q.gpio == 0
     click(ui, dac)
-    assert q.flag.value == 0 and q.saved == [('PLAYSET', 'USBDAC_CHARGE', 0)] and switch(dac) == 'switch_off'
+    assert ui.text(label_of(dac)) == 'USB DAC Charging: On' and q.flag.value == 1 and q.gpio == 0
+    assert q.saved == [('PLAYSET', 'USBDAC_CHARGE', 1), ('Q2POD', 'DACCHARGENEVER', 0)]
+    click(ui, dac)
+    assert ui.text(label_of(dac)) == 'USB DAC Charging: Never' and q.flag.value == 0
+    assert q.saved[2:] == [('PLAYSET', 'USBDAC_CHARGE', 0), ('Q2POD', 'DACCHARGENEVER', 1)]
     assert q.gpio == 1  # inhibited now, not at the next poll
     click(ui, dac)
-    assert q.flag.value == 1 and q.saved[-1] == ('PLAYSET', 'USBDAC_CHARGE', 1) and switch(dac) == 'switch_on'
+    assert ui.text(label_of(dac)) == 'USB DAC Charging: Off' and q.saved[4:] == [
+        ('PLAYSET', 'USBDAC_CHARGE', 0), ('Q2POD', 'DACCHARGENEVER', 0)]
     assert q.gpio == 0
 
 
-def test_usb_dac_charging_on_charges_after_the_dac_screens_off_and_off_leaves_usb_storage_charging(fw):
-    ui, win, dac, q = dac_power(fw, pref=0, cable=1)
-    q.charge(0)  # the DAC screen's switch turned Off: stock's switch_charge_enable(0)
-    click(ui, dac)
+def test_off_chosen_with_a_host_linked_stops_charging_as_the_dac_screen_does(fw):
+    ui, win, dac, q = dac_power(fw, pref=1, cable=1, never=0)
+    fw.mock('navigator_window_is_exist', lambda name, *_: C.string_at(name) == b'usbmode_page')
     assert q.gpio == 0
-    q.usbmode.value = 0  # USB Storage: Off is for Audio and DAC only
-    click(ui, dac)
-    assert q.flag.value == 0 and q.gpio == 0
+    click(ui, dac)  # Never
+    click(ui, dac)  # Off
+    assert ui.text(label_of(dac)) == 'USB DAC Charging: Off' and q.gpio == 1
+    click(ui, dac)  # On
+    assert q.gpio == 0
+
+
+def test_never_leaves_usb_storage_charging(fw):
+    ui, win, dac, q = dac_power(fw, cable=1, never=1, mode=0)
+    assert ui.text(label_of(dac)) == 'USB DAC Charging: Never' and q.gpio == 0
 
 
 def test_the_dac_screens_switch_shows_in_the_row_when_power_is_back(fw):
     ui, win, dac, q = dac_power(fw, pref=1)
     q.flag.value = 0  # the DAC screen's switch, over this page
     ui.fire(win, O['EVT_WINDOW_FOREGROUND'])
-    assert switch(dac) == 'switch_off'
+    assert ui.text(label_of(dac)) == 'USB DAC Charging: Never'  # the fixture's saved Never
 
 
 def test_charge_limits_hold_wins_over_usb_dac_charging_on(fw, st):
-    ui, win, dac, q = dac_power(fw, pref=0, cable=1)
+    ui, win, dac, q = dac_power(fw, pref=0, cable=1, never=0)  # Off, then clicked On
     st('charge_held').value = 1
     q.charge(0)  # charge_poll's hold
     click(ui, dac)
@@ -2067,7 +2078,7 @@ def set_text_row(fw, text):
     ui = Ui(fw)
     button = ui.add('button', ui.add('list_item', ui.window('display_page')), (20, 0, 335, 70))
     label = ui.add('hscroll_label', button, (72, 0, 260, 70))
-    fw.fn('navigation__row_label', None, C.c_void_p, C.c_char_p)(label.addr, text.encode())
+    fw.fn('row_label', None, C.c_void_p, C.c_char_p)(label.addr, text.encode())
     return ui, button, label, button.child('_setting_value')
 
 
@@ -2093,7 +2104,7 @@ def test_a_rows_label_elsewhere_is_its_text(fw):
     theme(fw, MINIMAL)
     ui = Ui(fw)
     label = ui.add('hscroll_label', ui.add('button', ui.window('display_page')), (72, 0, 260, 70))
-    fw.fn('navigation__row_label', None, C.c_void_p, C.c_char_p)(label.addr, b'Theme: Minimal')
+    fw.fn('row_label', None, C.c_void_p, C.c_char_p)(label.addr, b'Theme: Minimal')
     assert ui.text(label) == 'Theme: Minimal' and not label.parent.children[1:]
 
 

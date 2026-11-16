@@ -5,11 +5,12 @@ import pytest
 
 
 class Charging:
-    """own: Q2POD DACCHARGEOWN, 1 once the saved choice (pref) is the user's; None, the key missing."""
-    def __init__(self, fw, pref=0, mode=1, cable=0, own=1):
+    """own: Q2POD DACCHARGEOWN, 2 once the saved choice (pref) is the user's; None, the key missing. never:
+    Q2POD DACCHARGENEVER, the guard from the cable's first moment, which most of these tests model."""
+    def __init__(self, fw, pref=0, mode=1, cable=0, own=2, never=1):
         self.fw, self.pref, self.mode, self.cable = fw, pref, mode, cable
         self.gpio, self.writes = 1, []
-        self.ini = {} if own is None else {'DACCHARGEOWN': str(own)}
+        self.ini = {'DACCHARGENEVER': str(never)} | ({} if own is None else {'DACCHARGEOWN': str(own)})
         self.saved = []
         self.depth = 0
         self.charge = fw.fn('ringnav_usb_charge', C.c_int, C.c_int)
@@ -18,6 +19,7 @@ class Charging:
         self.status = fw.fn('ringnav_usb_status', C.c_int)
         self.flag = fw.var('g_usbdac_chargeflag', C.c_ubyte)
         self.usbmode = fw.var('g_usbmode', C.c_ubyte)
+        self.otg = fw.var('g_last_otgid', C.c_ubyte)
         fw.mock('toolsGpioSetValue', self.write)
         fw.mock('stock_usb_config_trampoline', self.load)
         fw.mock('stock_usb_detect_trampoline', lambda *_: self.cable)
@@ -160,20 +162,20 @@ def test_unknown_settings_or_cable_state_do_not_grant_charging(fw, pref, mode, c
     assert q.writes and set(q.writes) == {1}
 
 
-@pytest.mark.parametrize('pref', [0, 1])  # 0: stock's first-boot config.ini (USBDAC_CHARGE=0); 1: no key, stock's "1"
-def test_a_choice_never_made_here_starts_on_and_charges_in_dac_mode(fw, pref):
-    q = Charging(fw, pref=pref, cable=1, own=None)
+@pytest.mark.parametrize('pref,own', [(0, None), (1, None), (1, 1), (0, 1)])  # stock's first boot, no key, 1.8.2's On
+def test_a_choice_not_made_since_1_8_6_starts_off_once_then_is_the_users(fw, pref, own):
+    q = Charging(fw, pref=pref, cable=1, own=own, never=0)
     q.config()
     assert q.at_config == 1  # still inhibited while stock reads the settings
-    assert q.flag.value == 1 and q.gpio == 0
-    assert q.saved == [('PLAYSET', 'USBDAC_CHARGE', 1), ('Q2POD', 'DACCHARGEOWN', 1)]
-    q.pref = 0  # then turned Off, and a restart: kept
+    assert q.flag.value == 0 and q.gpio == 0  # Off: a charger charges until a host links
+    assert q.saved == [('PLAYSET', 'USBDAC_CHARGE', 0), ('Q2POD', 'DACCHARGEOWN', 2)]
+    q.pref = 1  # then turned On, and a restart: kept
     q.config()
-    assert q.flag.value == 0 and q.gpio == 1 and len(q.saved) == 2
+    assert q.flag.value == 1 and len(q.saved) == 2
 
 
-def test_a_saved_off_marked_the_users_stays_off_and_inhibits_before_config_and_insertion(fw):
-    q = Charging(fw, pref=0, own=1)
+def test_a_saved_never_stays_and_inhibits_before_config_and_insertion(fw):
+    q = Charging(fw, pref=0)
     q.gpio = 0
     q.config()
     assert q.at_config == 1 and q.flag.value == 0 and q.gpio == 1 and q.saved == []
@@ -181,3 +183,36 @@ def test_a_saved_off_marked_the_users_stays_off_and_inhibits_before_config_and_i
     q.detect()
     q.status()
     assert q.at_dispatch == 1 and q.gpio == 1
+
+
+def test_off_charges_from_a_charger_stops_once_a_host_links_and_charges_after_it_leaves(fw):
+    q = Charging(fw, cable=1, never=0)
+    q.config()
+    q.detect()
+    q.status()
+    assert q.gpio == 0  # a wall adapter: no DAC page, nothing asks it off
+    q.charge(q.flag.value)  # usbmode_page_init: switch_charge_enable(g_usbdac_chargeflag)
+    for _ in range(3):
+        q.detect()
+        q.status()
+        assert q.gpio == 1
+    q.charge(1)  # usbmode_exit
+    assert q.gpio == 0
+
+
+@pytest.mark.parametrize('pref,never,mode', [(1, 0, 1), (0, 0, 1), (0, 0, 0), (0, 1, 0)])
+def test_nothing_charges_while_the_q2_powers_a_usb_device(fw, pref, never, mode):
+    q = Charging(fw, pref=pref, never=never, mode=mode, cable=1)
+    q.config()
+    assert q.gpio == 0
+    q.otg.value, q.gpio = 1, 1  # check_otg_status: 5 V out on, PE22 off
+    before = len(q.writes)
+    for _ in range(3):
+        q.detect()  # the Q2's own 5 V reads as a cable
+        q.status()
+        q.charge(1)  # Charge Limit's hand-back
+        assert q.gpio == 1
+    assert set(q.writes[before:]) <= {1}
+    q.otg.value, q.gpio = 0, 0  # the device out: stock releases PE22
+    q.status()
+    assert q.gpio == 0

@@ -200,14 +200,17 @@ char *library_scope_query(const char *sql) {
     /* ponytail: a card too deep or with too many markers to walk, or no memory, ignores the
      * markers: the whole library shows rather than none of it. */
     const char *predicate = scope.sql ? scope.sql : "1";
-    unsigned prefix = (unsigned)(token - sql), n = strlen(predicate);
-    const char *tail = token + sizeof(LIBRARY_SCOPE_TOKEN) - 1;
-    char *expanded = calloc(1, prefix + n + strlen(tail) + 1);
-    if (expanded) {
-        memcpy(expanded, sql, prefix);
-        /* NOLINTNEXTLINE(bugprone-not-null-terminated-result): the tail's memcpy copies the NUL */
-        memcpy(expanded + prefix, predicate, n);
-        memcpy(expanded + prefix + n, tail, strlen(tail) + 1);
+    unsigned t = sizeof(LIBRARY_SCOPE_TOKEN) - 1, n = strlen(predicate), k = 0;
+    for (const char *p = token; p; p = strstr(p + t, LIBRARY_SCOPE_TOKEN)) ++k;
+    /* Every token: Era's Shuffle scopes both its grouping and its rows. */
+    char *expanded = calloc(1, strlen(sql) + k * n + 1), *at = expanded;
+    for (const char *p = sql; at; p = token + t) {
+        token = strstr(p, LIBRARY_SCOPE_TOKEN);
+        unsigned m =
+            token ? (unsigned)(token - p) : strlen(p) + 1; /* the last copy takes the NUL */
+        memcpy(at, p, m), at += m;
+        if (!token) break;
+        memcpy(at, predicate, n), at += n;
     }
     pthread_mutex_unlock(&scope_lock);
     return expanded;

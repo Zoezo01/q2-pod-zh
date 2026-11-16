@@ -32,8 +32,7 @@ PURE = host.PURE | {'sscanf'}
 # The calls the harness answers first: each goes on to its stub, fw_<name>.
 HARNESS = {'_exit': 'fw_video_exit', 'poll': 'fw_video_poll', 'usleep': 'fw_video_usleep', 'fork': 'fw_video_fork'}
 # video.c's ffmpeg(), whose child's half the harness runs: its parameters and their types, in order.
-CHILD = ('ffmpeg', [('args', 'const char **'), ('a', 'int'), ('at_a', 'int'), ('b', 'int'), ('at_b', 'int'),
-                    ('c', 'int'), ('at_c', 'int')])
+CHILD = ('ffmpeg', [('args', 'const char **'), ('a', 'int'), ('at_a', 'int'), ('b', 'int'), ('at_b', 'int')])
 HARNESS_SOURCE = r'''
 #ifndef __x86_64__
 #error "fw_video_fork finds ffmpeg() arguments by x86-64 frame layout (CFA = frame pointer + 16): port it first"
@@ -42,7 +41,7 @@ HARNESS_SOURCE = r'''
 #include <stdlib.h>
 int video_main(int, char **);
 void *video__writer(void *);
-int video__ffmpeg(const char **, int, int, int, int, int, int);
+int video__ffmpeg(const char **, int, int, int, int);
 static jmp_buf end_at, child_done;
 static int running, status, child;
 volatile int fw_video_stop;

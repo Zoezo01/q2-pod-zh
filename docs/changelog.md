@@ -3,10 +3,14 @@
 - **1.8.7**:
   - Edit Playlist: **Add Songs** opens at once the second time and later in one edit, on a big library. It read and sorted the whole library again each time.
   - Library: **Shuffle Songs**, and **Play Next** or **Add to Queue** while it plays, work faster on a big library.
+  - Library: **Albums**, **Artists**, **Composers** and **Genres** open faster on a big library.
   - Wi-Fi transfer: a folder with many files lists much faster.
   - Crossfade: the player gives back the memory a fade uses, up to 6 MB, once the fade is over. It used to keep it until the Q2 restarted.
-  - Era: a decade opens sooner on a big library. It grouped every album in the library for each decade opened; it now groups only the albums with a song dated in that decade.
+  - Era: a decade opens, and its **Shuffle** starts, sooner on a big library. Both grouped every album in the library; they now group only the albums with a song dated in that decade. **Shuffle** also no longer loads every song in the library, so it needs much less memory.
   - Cover Flow: the first open after the Q2 starts, or after the library changes, is quicker when some songs have no album tag.
+  - Internet Radio: an Ogg Vorbis or Opus station shows the song its stream names when you tune in. The Q2 no longer reads every station's sound a second time looking for the next song's name, which no station tried sent.
+  - USB: a Q2 powering USB-C headphones, a USB DAC or a USB drive no longer gets hot and drains its battery. With **USB DAC Charging** On, it tried to charge itself from the power it was giving the device.
+  - USB DAC: **System settings → Power → USB DAC Charging** is Off by default again, as on Shanling's firmware: a wall adapter charges the Q2, and a phone or computer it's a USB DAC for doesn't. This update sets it Off once; turn it On if you want them to charge it. The new **Never** stops all charging under **USB mode: Audio and DAC** from the moment a cable goes in, a wall adapter included: choose it if your phone rejects the Q2 as a USB DAC otherwise.
 - **1.8.6**:
   - Tidal Downloads: **Download Playing Songs** works on a card that has no Tidal folder yet, such as a new or reformatted card, or one whose `.tidal` folder was deleted on a computer. It stopped at once with "Downloaded 0 of N songs" until a Tidal song had played with that card in.
   - Tidal Downloads: a song with a very long artist and title is saved to the card, and tagged, like any other. One past about 230 characters streamed at every play and **Download Playing Songs** counted it as not saved; one a little shorter was saved without its tags. A copy saved that way stays untagged until **Clear All Downloads**.
@@ -17,7 +21,7 @@
   - Edit Playlist: **Add Songs** opens much sooner and needs far less memory on a big library: it lists the first 500 songs, A to Z, and when more songs or search results match, its last row, **Search for more songs**, opens the search as its **Search** row does. Search to add a song past the 500th.
   - Now Playing: under **Theme: Classic** with **Light Mode** on, changing the volume shows its percentage where the page dots are, in dark text. It was drawn white on the white page, so it only showed with Light Mode off.
   - Now Playing: it opens on the playing song's album art. After using AirPlay, Now Playing could open with no art, which stayed away until the next song.
-  - Internet Radio: stations that stream Ogg Vorbis or Opus, such as LISTEN.moe's, show the song and artist playing, and follow each new song. Only MP3 and AAC stations showed them; these sent theirs in a way the Q2 didn't read.
+  - Internet Radio: stations that stream Ogg Vorbis or Opus show the song and artist playing, and follow each new song, when the stream names them. Only MP3 and AAC stations showed them; these sent theirs in a way the Q2 didn't read.
   - AirPlay: with **Headphones Required** on, music plays to an AirPlay speaker with no headphones connected ([#388](https://github.com/DiamondBond/q2-pod/issues/388)). The switch is for the Q2's own outputs, and comes back when you pick **This Q2**; with nothing connected then, the music pauses.
   - Quick Settings: holding **Playback** opens the EQ over Now Playing after Return's hold took you there from the EQ ([#397](https://github.com/DiamondBond/q2-pod/issues/397)), and Return goes back to Now Playing. The hold did nothing there, as the EQ was still open underneath; that one now closes first.
   - Library: a shuffle that **Headphones Required** refuses leaves your queue and play mode as they were. With nothing connected, **Shuffle Songs** (and a decade's or the hold menu's **Shuffle**) used to set Play Mode to Shuffle and shuffle the queue you had, and **Shuffle Albums** and **Shuffle Folders** replaced it with the whole library.

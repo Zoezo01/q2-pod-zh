@@ -1566,6 +1566,7 @@ GLOBALS = ['tidal_albuminfo_thread_run', 'tidal_collection_thread_run',  # 2: a 
            'g_headset_output',  # the output config_outputchannel sets: 0, 1 the jacks, 2 Bluetooth
            'g_usbmode',  # USB mode: 1 Audio and DAC, else USB Storage (usbmode_page_init)
            'g_usbdet_value',  # 1 while a USB cable is in (USB mode's scan prompt outlives it)
+           'g_last_otgid',  # 1 while check_otg_status powers a USB device (PE22 off, PC20's 5 V out on)
            # Smart Wi-Fi (smart_wifi.c smart_poll): the Wi-Fi switch's state and stock's own gates on
            # toggling it (wifi_initstatus 0, wifi_connectstatus not 1, connecting), Network service's
            # AirPlay and DLNA, SyncLink (2: over Wi-Fi) and its session, Wi-Fi transfer and a pending time sync

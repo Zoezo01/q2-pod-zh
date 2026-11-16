@@ -3045,7 +3045,7 @@ int ringnav_sleeptimer(void *win, void *ctx) {
 
 /* A settings row's "Title: value" text; a set_text theme shows it as list_value, its bare text
  * (Accent's name) under Accent. */
-static void row_label(void *label, const char *text) {
+void row_label(void *label, const char *text) {
     if (!theme()->set_text) {
         widget_set_text_utf8(label, text);
         return;
