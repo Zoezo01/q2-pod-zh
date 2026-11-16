@@ -30,7 +30,6 @@ out=dist/dev-$("$PY" -c 'import sys; sys.path.insert(0, "tools"); import build; 
 [ -e "$out/update.tar" ] || "$PY" tools/build.py "$zip" --dev --out "$out"
 "$PY" -c 'import pathlib, sys; sys.path.insert(0, "tools"); import release; release.suites(pathlib.Path(sys.argv[1]).resolve())' "$out"
 for t in library_scope coverflow_position chapters; do "$PY" "test/$t.py"; done
-"$PY" test/rotator_build.py "$out"
 Q2_FW_SANITIZE=1 ASAN_OPTIONS=detect_leaks=0:allocator_may_return_null=1 \
 	LD_PRELOAD="$(cc -print-file-name=libasan.so)" "$PY" -m pytest test/fw -q
 echo "check.sh --full: all passed ($out)"

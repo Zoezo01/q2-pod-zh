@@ -31,17 +31,6 @@ Rebuilt firmware uses `assets/boot-logo.jpg` as the boot splash. Pass another 32
 
 The build replaces the stock equalizer page with a 30-band PEQ editor (bands, shelves, preamp, on/off, presets, stock's built-in genre presets, `/EQ` import) and patch `hciplayer`'s equalizer filter with the matching DSP. Both also clear the 44.1 kHz AAC capability bit in `bluealsa` (see [internals.md](internals.md#bluetooth-aac)).
 
-### Stopped-audio notifier wait
-
-Off by default, `--dev --aic-idle-wait` (on by default from 1.5.0 to 1.6.1). The audited audio driver's stopped-state 10 ms polling is replaced by an
-event wait, woken by start/resume and teardown. Active PCM notification timing, period and
-buffer limits are unchanged. See
-[audio-notifier.md](audio-notifier.md) for the exact scope.
-
-```sh
-python3 tools/build.py 'Q2 Firmware V1.36.zip' --out /tmp/q2-notifier --dev --aic-idle-wait
-```
-
 ### FLAC fast paths
 
 On by default: all three (sync, LPC and output, `tools/flac.py`). `--stock-flac` builds the stock decoder paths instead. Each is checked against the pinned V1.36 player.
@@ -58,14 +47,6 @@ About's **Version** row reads the same literal, so it shows the stock firmware's
 
 Development builds also start `q2remote`, a key-gated root shell with screenshots and input over Wi-Fi, for developers and agents; see [remote.md](remote.md).
 
-Off by default, `--dev --rotator-lazy-clock`: the rotator clock is held only from its first conversion. See [clock gating](clock-gating.md) for the exact module guard and tests.
-
-Off by default, `--dev --pwm-idle-clock`: the paired PWM/MCU clock gating. It needs all three matching files and a reboot. See [PWM clock gating](pwm-clock-gating.md) for its ownership protocol and fallbacks.
-
-All three kernel-module experiments were on by default from 1.5.0 to 1.6.1 and went back to `--dev` in 1.6.2: no battery saving was measured for any of them, and none handles suspend/resume, which stock Standby does by default.
-
-`--dev --mcu-idle-sleep` is off in release builds. It adds an interruptible MCU sleep with an explicit wake handshake. See [MCU sleep](mcu-sleep.md).
-
 ## Tests
 
 ```sh
@@ -80,12 +61,8 @@ python3 test/mp3_gapless_player.py BUILD   # the built gapless hooks, then stock
 python3 test/build.py                      # JPEG headers, dev tags, and the boot scripts (S90play's dual boot and crash log, S11logo's splash) under the host sh; no ZIP or emulator
 python3 test/build.py 'Q2 Firmware V1.36.zip'   # packaging checks (custom logo, quoted paths)
 python3 test/build.py --build BUILD         # a finished build's payloads and packaging
-python3 test/aic.py STOCKFS               # stopped audio notifier: actual MIPS hooks and modeled wait races
-python3 test/aic_build.py STOCKFS BUILD    # notifier development guard, ABI, default/experimental packaging
 python3 test/remote.py                     # q2remote protocol, auth, event and framebuffer checks
 bash test/wifi_transfer_cgi.sh             # Wi-Fi transfer's file manager (assets/web/q2cgi) under the host's busybox ash (the Q2's is 1.31.1): no ZIP or build; on a tmpfs at /mnt/mmc (one already there, or its own as root); --fat for a FAT32 image and its short-name cases (root). GitHub runs it on every pull request
-python3 test/rotator.py STOCK_MODULE        # actual MIPS rotator clock ownership and failure paths
-python3 test/rotator_build.py [BUILD...]    # dev-only guard (no build needed); given builds, packed/default module isolation
 python3 test/playback.py /tmp/q2-build     # grouped traversal, snapshots and the wheel's ticks (cc)
 python3 test/patch.py /tmp/q2-build        # the patched MIPS payload, wheel and UI scenarios (cc)
 python3 test/chapters.py                   # embedded chapter parsing, both MP4 formats and async extraction
@@ -183,7 +160,7 @@ mutmut run $(python3 test/unit/targets.py --since main)     # or only what a bra
 python3 test/unit/report.py --survivors /tmp/survivors.txt  # score, table, each survivor's diff (--since as above)
 ```
 
-- **Needs no stock firmware:** the fixtures in `test/unit` are synthetic, and the stock ZIP is neither fetched nor kept. A function that pins a Shanling file's hash or links against one carries `# pragma: no mutate block` on its `def` line, so it has no mutants: `compile_payload`, `patch_asset`, `compile_common`, `patch_player`, the audio module's `validate_stock` and `patch_module`, the rotator's `patch_module`, and PWM's `link`, `patch_pwm`, `patch_mcu` and `patch_bundle`. They stay with the scripts above, which need a build. A new one gets the same pragma.
+- **Needs no stock firmware:** the fixtures in `test/unit` are synthetic, and the stock ZIP is neither fetched nor kept. A function that pins a Shanling file's hash or links against one carries `# pragma: no mutate block` on its `def` line, so it has no mutants: `compile_payload`, `patch_asset`, `compile_common` and `patch_player`. They stay with the scripts above, which need a build. A new one gets the same pragma.
 - **Keep tests behind the fence:** a mutant changes a command before it runs, and `q2remote`'s commands are shell scripts for a live Q2. `test/unit/conftest.py` refuses every process but the compilers, along with sockets and signals, and hides `Q2_HOST`. `test/remote.py` runs real commands through a real shell, so it stays out of `test/unit`.
 - **`build()`** carries `# pragma: no mutate block`. mutmut writes out a whole copy of a function per mutant, so its 440 lines alone made a 96 MB file that never finished generating. The pragma is on art.py's `wave()` too: only `WAVES` calls it, at import, before mutmut can switch a mutant on, so all 21 of its mutants survived.
 - **Survivors are not all gaps.** Most left are equivalent (`<I` as `<i` on a word under 2^31) or machine code in `patch_bluealsa`, which only `test/bluealsa.py` can judge against a build.

@@ -10684,8 +10684,8 @@ int ringnav_wm_paint(void *wm) {
  * hciplayer holds their PCM, so the click has no other way out. Playback alone leaves it clicking.
  * Click With Headphones (IPOD KEYTONEHP, off) keeps the buzzer clicking there too, as stock does;
  * Key Tone off is still silent.
- * The command waits out the buzzer and the MCU's park (tools/mcu_pwm_clock.c), so it runs on a
- * worker, not the UI thread; a click while one sounds is dropped, as the buzzer is busy anyway.
+ * The command waits out the buzzer, so it runs on a worker, not the UI thread; a click while one
+ * sounds is dropped, as the buzzer is busy anyway.
  * With the screen off a pass clicks once (tone_dark; ringnav_sleep).
  */
 static volatile int tone_busy;

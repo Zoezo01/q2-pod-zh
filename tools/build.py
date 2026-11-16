@@ -1772,15 +1772,9 @@ def stock_header(context, ranges, themes, dev=0, repo=REPO):
     header.append(f'#define QS_LIT "{qs_lit()}"')  # navigation.c quick_page: Classic's buttons that are on
     return '\n'.join(header)+'\n'
 
-def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotator_lazy_clock=False, pwm_idle_clock=False, mcu_idle_sleep=False, stock_flac=False):  # pragma: no mutate block
+def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragma: no mutate block
     from flac import EXPERIMENTS
     flac_experiments = () if stock_flac else EXPERIMENTS
-    # Kernel-module experiments: no measured saving (docs/clock-gating.md, pwm-clock-gating.md,
-    # audio-notifier.md), none handles suspend/resume, and stock Standby suspends by default; dev only.
-    check(not aic_idle_wait or dev, '--aic-idle-wait requires --dev')
-    check(not rotator_lazy_clock or dev, '--rotator-lazy-clock requires --dev')
-    check(not pwm_idle_clock or dev, '--pwm-idle-clock requires --dev')
-    check(not mcu_idle_sleep or (dev and pwm_idle_clock), '--mcu-idle-sleep requires --dev --pwm-idle-clock')
     check(dev or version_ok(VERSION, BETA), f'VERSION must be three single digits (x.y.z) and BETA 0-9: {VERSION}, {BETA}')
     version = TAG
     check(re.fullmatch(r'[A-Za-z0-9-]+/[A-Za-z0-9._-]+', repo), f'{repo}: not a GitHub owner/name')  # a C string
@@ -2141,30 +2135,6 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
                       (BLUEALSA2.encode(), out/'bluealsa2'), (DEFAULT_CONFIG.encode(), out/'config.ini'),
                       (LOGO.encode(), logo)):
         p = swap_inode(p, path, src)
-    aic_notifier = None
-    if aic_idle_wait:
-        from aic import MODULE_PATH, PATCH_POLICY, STOCK_SHA256, patch_module
-        module = patch_module(cat(MODULE_PATH))
-        (out/'soc_aic.ko').write_bytes(module)
-        p = swap_inode(p, MODULE_PATH.encode(), out/'soc_aic.ko')
-        aic_notifier = dict(policy=PATCH_POLICY, path=MODULE_PATH,
-                            original_sha256=STOCK_SHA256, sha256=sha(module))
-    rotator = None
-    if rotator_lazy_clock:
-        from rotator import MODULE_PATH, STOCK_SHA256, patch_module
-        module = patch_module(cat(MODULE_PATH))
-        (out/'soc_rotator.ko').write_bytes(module)
-        p = swap_inode(p, MODULE_PATH.encode(), out/'soc_rotator.ko')
-        rotator = dict(policy='lazy-first-use-v1', path=MODULE_PATH,
-                       original_sha256=STOCK_SHA256, sha256=sha(module))
-    pwm = None
-    if pwm_idle_clock:
-        from pwm import patch_bundle
-        files, pwm = patch_bundle(cat, sleep=mcu_idle_sleep)
-        for path, data in files.items():
-            src = out/pathlib.Path(path).name
-            src.write_bytes(data)
-            p = swap_inode(p, path.encode(), src)
     # New inodes, each with its stock image's metadata: Home's Coverflow and Shortcut card icons (menu_music's,
     # in their own colours like stock's cards), the Local Music and Spotify rows' icons, drawn in assets/icons/ (stock's
     # 52px style) or else a copy of the stock image named (not the copies iPod pre-sizes for Settings), and q2video.
@@ -2294,12 +2264,9 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     manifest = dict(input_zip_sha256=ZIP_SHA, stock_demo_sha256=DEMO_SHA, source_sha256=source,
         demo_sha256=sha(patched), patch_sha256=sha(payload), update_sha256=sha((out/'update.tar').read_bytes()),
         rootfs_sha256=sha(newsq.read_bytes()), kernel_sha256=sha(blobs['recovery-update/xImage']),
-        **({'aic_notifier': aic_notifier} if aic_notifier else {}),
         patch_bytes=len(payload), ring_step_pixels=RING_STEP,
         audio_extension_calls=[dict(address=hex(a), original='0x0320f809', replacement=hex(jal(ps['ringnav_audio_extension']))) for a in AUDIO_EXTENSION_CALLS],
         version=version, dev=dev, update_repo=repo, peq=audio, bluealsa_sha256=sha(bluealsa), q2video_sha256=sha((out/'q2video').read_bytes()), q2boot_sha256=sha((out/'q2boot').read_bytes()), **({'q2remote_sha256': sha((out/'q2remote').read_bytes())} if dev else {}), compact_code=code_changes, changed_assets=changed_assets, logo_sha256=sha(logo_data),
-        **({'rotator_clock': rotator} if rotator else {}),
-        **({'pwm_clock': pwm} if pwm else {}),
         patch_symbols={n:hex(v) for n,v in ps.items() if n.startswith('stock_')},
         tools={t:run(t,'--version').splitlines()[0] for t in ['clang','ld.lld','llvm-objcopy']} |
               {'imagemagick': imagemagick('-version', data=b'').decode().splitlines()[0]})
@@ -2314,19 +2281,11 @@ if __name__ == '__main__':
                     help='320x375 JPEG boot splash (default: assets/boot-logo.jpg)')
     ap.add_argument('--dev', action='store_true',
                     help='development build: tag from the next build number (V001i, V002i...); never a release input')
-    ap.add_argument('--mcu-idle-sleep', action='store_true',
-                    help='experimental: sleep parked MCU with explicit IRQ wake (requires --dev --pwm-idle-clock)')
     ap.add_argument('--stock-flac', action='store_true', help="stock FLAC decoder paths, not the fast paths")
     ap.add_argument('--update-repo', default=REPO, metavar='OWNER/NAME',
                     help="GitHub repo whose latest release Network Update fetches (default: %(default)s), for a fork's test builds")
-    ap.add_argument('--aic-idle-wait', action='store_true',
-                    help='experimental: sleep the stopped PCM notifier until start or teardown (requires --dev)')
-    ap.add_argument('--rotator-lazy-clock', action='store_true',
-                    help='experimental: defer the rotator clock until its first conversion (requires --dev)')
-    ap.add_argument('--pwm-idle-clock', action='store_true',
-                    help='experimental: cooperative Linux/MCU PWM clock gating (requires --dev)')
     a=ap.parse_args()
     try:
-        build(a.zip,a.out.resolve(),a.logo,a.dev,a.update_repo,a.aic_idle_wait,a.rotator_lazy_clock,a.pwm_idle_clock,a.mcu_idle_sleep,a.stock_flac)
+        build(a.zip,a.out.resolve(),a.logo,a.dev,a.update_repo,a.stock_flac)
     except (OSError, ValueError, zipfile.BadZipFile, subprocess.CalledProcessError) as exc:
         ap.error(str(exc))
