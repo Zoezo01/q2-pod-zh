@@ -100,10 +100,6 @@ def rejected(stderr):
     if not error or environmental(stderr): raise Broken(f'cc failed, not for the mutant: {stderr.strip()[-300:]}')
     return error[0][:200]
 
-def free_space():
-    tmp = os.statvfs('/tmp')
-    return tmp.f_bavail * tmp.f_frsize
-
 class Worker:
     def __init__(self, index, args):
         self.args, self.index = args, index
@@ -236,7 +232,7 @@ class FwWorker(Worker):
         subprocess.run(['objcopy', '--strip-debug', str(obj), str(stripped)], check=True)
         digest = hashlib.sha256(stripped.read_bytes()).hexdigest()
         stripped.unlink()
-        if obj.parent.name != 'original' and free_space() < SPARE: shutil.rmtree(obj.parent)
+        if obj.parent.name != 'original' and shutil.disk_usage('/tmp').free < SPARE: shutil.rmtree(obj.parent)
         return digest, ''
 
     def link(self, obj):
