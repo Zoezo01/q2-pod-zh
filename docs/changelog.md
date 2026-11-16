@@ -8,6 +8,7 @@
   - Crossfade: the player gives back the memory a fade uses, up to 6 MB, once the fade is over. It used to keep it until the Q2 restarted.
   - Era: a decade opens, and its **Shuffle** starts, sooner on a big library. Both grouped every album in the library; they now group only the albums with a song dated in that decade.
   - Cover Flow: the first open after the Q2 starts, or after the library changes, is quicker when some songs have no album tag.
+  - Internet Radio: an Ogg Vorbis or Opus station shows the song its stream names when you tune in. The Q2 no longer reads every station's sound a second time looking for the next song's name, which no station tried sent.
   - USB: a Q2 powering USB-C headphones, a USB DAC or a USB drive no longer gets hot and drains its battery. With **USB DAC Charging** On, it tried to charge itself from the power it was giving the device.
   - USB DAC: **System settings → Power → USB DAC Charging** is Off by default again, as on Shanling's firmware: a wall adapter charges the Q2, and a phone or computer it's a USB DAC for doesn't. This update sets it Off once; turn it On if you want them to charge it. The new **Never** stops all charging under **USB mode: Audio and DAC** from the moment a cable goes in, a wall adapter included: choose it if your phone rejects the Q2 as a USB DAC otherwise.
 - **1.8.6**:
