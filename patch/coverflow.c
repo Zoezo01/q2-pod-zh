@@ -729,7 +729,7 @@ static unsigned fnv_lower(unsigned h, const char *s) {
     for (; s && *s; ++s) {
         unsigned char c = (unsigned char)*s;
         c += (unsigned char)((unsigned)(c - 'A') < 26u) * 32;
-        h = hash_bytes(h, &c, 1);
+        h = (h ^ c) * 16777619u; /* fnv's step */
     }
     return h * 16777619u;
 }

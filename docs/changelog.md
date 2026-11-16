@@ -3,9 +3,10 @@
 - **1.8.7**:
   - Edit Playlist: **Add Songs** opens at once the second time and later in one edit, on a big library. It read and sorted the whole library again each time.
   - Library: **Shuffle Songs**, and **Play Next** or **Add to Queue** while it plays, work faster on a big library.
+  - Library: **Artist**, **Album** and **Genre** open faster on a big library.
   - Wi-Fi transfer: a folder with many files lists much faster.
   - Crossfade: the player gives back the memory a fade uses, up to 6 MB, once the fade is over. It used to keep it until the Q2 restarted.
-  - Era: a decade opens sooner on a big library. It grouped every album in the library for each decade opened; it now groups only the albums with a song dated in that decade.
+  - Era: a decade opens, and its **Shuffle** starts, sooner on a big library. Each grouped every album in the library; they now group only the albums with a song dated in that decade.
   - Cover Flow: the first open after the Q2 starts, or after the library changes, is quicker when some songs have no album tag.
   - USB: a Q2 powering USB-C headphones, a USB DAC or a USB drive no longer gets hot and drains its battery. With **USB DAC Charging** On, it tried to charge itself from the power it was giving the device.
   - USB DAC: **System settings → Power → USB DAC Charging** is Off by default again, as on Shanling's firmware: a wall adapter charges the Q2, and a phone or computer it's a USB DAC for doesn't. This update sets it Off once; turn it On if you want them to charge it. The new **Never** stops all charging under **USB mode: Audio and DAC** from the moment a cable goes in, a wall adapter included: choose it if your phone rejects the Q2 as a USB DAC otherwise.

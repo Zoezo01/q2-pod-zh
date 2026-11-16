@@ -2575,6 +2575,22 @@ def test_a_decade_lists_its_albums_by_year(fw, ui):
     assert 'having release_year between 1990 and 1999' in db.asked[-1]
 
 
+def era_library():
+    """A real songtable: a name two artists share across decades, one album dated in two (also spelled in two cases), one
+    dated in the 1990s and 2000s in two cases (only a NOCASE filter keeps it out of the 1990s), a full date and an undated
+    album."""
+    lib = sqlite3.connect(':memory:')
+    lib.execute(SONGTABLE)
+    lib.executemany('insert into songtable(id, fileurl, album, songer, albumsonger, year, track, cd_num) values (?, ?, ?, ?, ?, ?, ?, ?)', [
+        (1, '/m/queen/1.flac', 'Hits', 'Queen', 'Queen', 1981, 1, 1), (2, '/m/abba/1.flac', 'HITS', 'ABBA', 'ABBA', 1992, 1, 1),
+        (3, '/m/mixed/1.flac', 'Mixed', 'Band', 'Band', 1989, 1, 1), (4, '/m/mixed/2.flac', 'Mixed', 'Band', 'Band', 1991, 2, 1),
+        (5, '/m/new/1.flac', 'New', 'Band', '', 20220510, 1, 1), (6, '/m/dated/1.flac', 'Dated', 'Band', '', 19950510, 1, 1),
+        (7, '/m/none/1.flac', 'Undated', 'Band', '', None, 1, 1), (8, '/m/old/1.flac', 'Old', 'Band', '', 1975, 1, 1),
+        (9, '/m/wall/1.flac', 'The Wall', 'Floyd', 'Floyd', 1989, 1, 1), (10, '/m/wall/2.flac', 'THE WALL', 'Floyd', 'Floyd', 1991, 2, 1),
+        (11, '/m/late/1.flac', 'Late', 'Band', 'Band', 1995, 1, 1), (12, '/m/late/2.flac', 'LATE', 'Band', 'Band', 2003, 2, 1)])
+    return lib
+
+
 def test_a_decade_query_groups_only_the_names_dated_in_it(fw, ui):
     """The decade's query groups the songs of the names with a song dated in it, and gives the rows that grouping every
     song gives: a name two artists share across decades, one album dated in two (also spelled in two cases), a full date and an
@@ -2583,14 +2599,7 @@ def test_a_decade_query_groups_only_the_names_dated_in_it(fw, ui):
     sent = db.asked[-1]
     every = re.sub(r' and album collate nocase in \(select album from songtable where .*? between 1990 and 1999\)', '', sent)
     assert every != sent
-    lib = sqlite3.connect(':memory:')
-    lib.execute(SONGTABLE)
-    lib.executemany('insert into songtable(id, fileurl, album, songer, albumsonger, year, track, cd_num) values (?, ?, ?, ?, ?, ?, ?, ?)', [
-        (1, '/m/queen/1.flac', 'Hits', 'Queen', 'Queen', 1981, 1, 1), (2, '/m/abba/1.flac', 'HITS', 'ABBA', 'ABBA', 1992, 1, 1),
-        (3, '/m/mixed/1.flac', 'Mixed', 'Band', 'Band', 1989, 1, 1), (4, '/m/mixed/2.flac', 'Mixed', 'Band', 'Band', 1991, 2, 1),
-        (5, '/m/new/1.flac', 'New', 'Band', '', 20220510, 1, 1), (6, '/m/dated/1.flac', 'Dated', 'Band', '', 19950510, 1, 1),
-        (7, '/m/none/1.flac', 'Undated', 'Band', '', None, 1, 1), (8, '/m/old/1.flac', 'Old', 'Band', '', 1975, 1, 1),
-        (9, '/m/wall/1.flac', 'The Wall', 'Floyd', 'Floyd', 1989, 1, 1), (10, '/m/wall/2.flac', 'THE WALL', 'Floyd', 'Floyd', 1991, 2, 1)])
+    lib = era_library()
     rows = lib.execute(sent).fetchall()
     assert rows == lib.execute(every).fetchall()
     assert [(album, year) for album, _, year, _ in rows] == [('Mixed', 1991), ('The Wall', 1991), ('HITS', 1992), ('Dated', 1995)]
@@ -2715,6 +2724,22 @@ def test_shuffle_plays_the_decade_s_songs_shuffled(fw, ui, song, mcl):
     ui.click(page, 1)
     (queue, at, cls), = ui.played
     assert queue == songs[1:] and cls == LIBRARY and library.asked == [3]
+
+
+def test_shuffle_s_query_groups_only_the_names_dated_in_the_decade(fw, ui, song, mcl):
+    """Shuffle's song query narrows its grouping as the decade's page does, and finds the songs grouping every song finds."""
+    Library(fw, ui, [song(b'/m/1.flac', id_=1)])
+    fw.mock('fw_access', lambda *_: 0)
+    db, page = era_decade(fw, ui)
+    ui.click(page, 1)
+    sent = db.asked[-1]
+    every = re.sub(r' and album collate nocase in \(select album from songtable where .*? between 1990 and 1999\)', '', sent)
+    assert every != sent and 'select distinct s.id' in sent
+    lib = era_library()
+    ids = sorted(lib.execute(sent).fetchall())
+    assert ids == sorted(lib.execute(every).fetchall()) == [(2,), (3,), (4,), (6,), (9,), (10,)]
+    lib.execute('create index songtable_album on songtable(album collate nocase)')
+    assert sorted(lib.execute(sent).fetchall()) == ids
 
 
 def test_an_album_row_that_is_gone_says_so(fw, ui, song):

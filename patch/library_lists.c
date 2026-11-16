@@ -601,15 +601,18 @@ static void *era_songs(void) {
 static void *era_shuffle_songs(void) { /* 0 if the query failed */
     char sql[2048];
     int from = era.m ? era.v[0].year / 10 * 10 : 0, n;
-    /* The songs of the decade's ALBUM_GROUP groups, matched on ALBUM_GROUP's keys. */
+    /* The songs of the decade's ALBUM_GROUP groups, matched on ALBUM_GROUP's keys; only names with
+     * a song dated in the decade are grouped, as era_open_decade. */
     tk_snprintf(
         sql, sizeof sql,
         "%s from songtable s join (select album a,ifnull(albumsonger,'') b,case "
         "ifnull(albumsonger,'') when '' then rtrim(fileurl,replace(fileurl,'/','')) end d,"
-        "%s as y from songtable where %s and ifnull(album,'')<>''%s having y between %d and %d) g "
+        "%s as y from songtable where %s and ifnull(album,'')<>'' and album collate nocase in "
+        "(select album from songtable where %s between %d and %d)%s having y between %d and %d) g "
         "on s.album=g.a COLLATE NOCASE and ifnull(s.albumsonger,'')=g.b COLLATE NOCASE and "
         "(g.d is null or rtrim(s.fileurl,replace(s.fileurl,'/',''))=g.d)",
-        "select distinct s.id", ALBUM_YEAR, MUSIC_WHERE, ALBUM_GROUP, from, from + 9);
+        "select distinct s.id", ALBUM_YEAR, MUSIC_WHERE, SONG_YEAR, from, from + 9, ALBUM_GROUP,
+        from, from + 9);
     ids.n = 0;
     void *out = 0;
     if (!era.m || era_sql(sql, id_row, 0)) out = _create_deque("stSongInfo"), deque_init(out);
