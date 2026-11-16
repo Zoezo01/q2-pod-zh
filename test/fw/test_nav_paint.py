@@ -1517,9 +1517,10 @@ def sync(fw, win):
 @pytest.mark.parametrize('name, title', [('playing_page', 'Now Playing'), ('playing_page_stock', 'Now Playing'),
                                          ('coverflow_page', 'Cover Flow'), ('equalizer_page', 'EQ'),
                                          ('spotify_page', 'Spotify'), ('radionp_page', 'Internet Radio'),
-                                         ('usbmode_page', 'Q2 Pod')])
+                                         ('usbmode_page', '')])  # USB mode's: no wordmark
 def test_a_page_known_by_name_titles_the_bar(fw, world, st, name, title):
     label = bar_title(fw, world, st)
+    world[label].text = 'Albums'  # the page before
     win = world.window(name)
     world.add(world.add(win, 'view_navbar'), 'label_name', 'hscroll_label', text='Its own label')
     sync(fw, win)
@@ -2938,15 +2939,13 @@ def usb_page(fw, world, st, number=CLASSIC, mode=0):
 
 
 def test_classic_s_usb_page_says_connected_and_to_eject(fw, world, st):
-    """A heading and a line, under the dark bar titled as the bar titles the page; no bar, no Cancel."""
+    """A heading and a line, under the dark bar with no title (no wordmark); no bar, no Cancel."""
     win = usb_page(fw, world, st)
     heading, line = world[named(world, win, 'msg_heading')].text, world[named(world, win, 'msg_line')].text
     assert heading and line and heading != line
     assert world[named(world, win, 'scrlabel_info')].visible == 0 and st('usb_win', C.c_void_p).value == win
-    title = bar_title(fw, world, st)
-    sync(fw, win)
     canvas = msg_paint(fw, win)
-    assert [t for t, *_ in canvas.texts] == [world[title].text, heading, line]
+    assert [t for t, *_ in canvas.texts] == [heading, line]
     below = world.at(named(world, win, 'msg_line'))[1]
     assert [f for f in canvas.fills if f[1] >= below] == [] and canvas.art('classic_light_orb_usb')
     for gone in world.on(win, EVT_DESTROY):

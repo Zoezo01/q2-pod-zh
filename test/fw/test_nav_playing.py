@@ -1169,6 +1169,25 @@ def test_classics_clock_makes_way_on_home_with_no_wordmark(fw, st, ui):
     assert st.bar_titled == 0 and len(ui.due('clock_due')) == 1
 
 
+@pytest.mark.parametrize('t, look', [(MINIMAL, 0), (MODERN, 0), (CLASSIC, 0), (CLASSIC, 1), (CLASSIC, 2), (MINIMAL, 3)])
+@pytest.mark.parametrize('timetitle', [1, 0])
+def test_usb_mode_shows_no_clock_in_any_theme_or_look(fw, st, ui, t, look, timetitle):
+    """USB mode's page: no clock with Time in Title on or off, in every theme and Status Bar look (Classic's set has
+    its own title label whatever the look); a pop-up over it keeps that, and the next page gets the clock back."""
+    theme(fw, st, t, TIMETITLE=timetitle, STATUSBAR=look)
+    bar = Bar(fw, ui, title=t is CLASSIC)
+    if t is CLASSIC:
+        st.bar_title = bar.title
+    bar_title(fw, bar, window(ui, 'usbmode_page'))
+    assert ui.text(bar.clock) == '' and st.bar_titled == 1
+    dialog = window(ui, 'confirminfo_dialog')
+    ui.types[dialog] = b'dialog'
+    bar_title(fw, bar, dialog)
+    assert ui.text(bar.clock) == '' and st.bar_titled == 1 and not ui.due('clock_due')
+    bar_title(fw, bar, window(ui, 'bare_page'))
+    assert st.bar_titled == 0 and len(ui.due('clock_due')) == 1
+
+
 def test_classics_home_keeps_the_clock_with_time_in_title_on(fw, st, ui):
     theme(fw, st, CLASSIC)
     bar = Bar(fw, ui, title=True)

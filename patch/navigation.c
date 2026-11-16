@@ -5988,7 +5988,7 @@ static const char *bar_title_of(void *win, void **label) {
     if (!tk_strcmp(name, "equalizer_page")) return "EQ"; /* its 48 px row is the tabs' own label */
     if (!tk_strcmp(name, "spotify_page")) return "Spotify"; /* they hide their own name's label */
     if (!tk_strcmp(name, "radionp_page")) return "Internet Radio";
-    if (!tk_strcmp(name, "usbmode_page")) return "Q2 Pod";
+    if (!tk_strcmp(name, "usbmode_page")) return "";        /* no wordmark (bar_title: no clock) */
     if (!tk_strcmp(name, "search_dialog")) return "Search"; /* stock's toolbar has no label */
     void *nav = widget_lookup(win, "view_navbar", 1);
     if (nav) {

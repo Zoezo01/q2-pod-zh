@@ -104,17 +104,21 @@ int np_sync(void *top) {
  * Now Playing or Cover Flow, Home by coverflow_home_title (Q2 Pod; nothing with Show Wordmark off,
  * and no clock either way), else stock's title in the page's hidden navbar (scrlabel_title, or a
  * settings page's unnamed first child). A page showing its navbar and an untitled page keep the
- * clock; a pop-up or keyboard leaves the bar as it is. This runs in a paint, which drops the
- * label's invalidate, so bar_repaint follows; the clock waits for its timer. */
+ * clock; a pop-up or keyboard leaves the bar as it is. USB mode's page has neither title nor
+ * clock, with Time in Title on or off, in every theme and Status Bar look. This runs in a paint,
+ * which drops the label's invalidate, so bar_repaint follows; the clock waits for its timer. */
 void bar_title(void *bar, void *top) {
     static const unsigned
         now_playing[] = { 'N', 'o', 'w', ' ', 'P', 'l', 'a', 'y', 'i', 'n', 'g', 0 },
         cover_flow[] = { 'C', 'o', 'v', 'e', 'r', ' ', 'F', 'l', 'o', 'w', 0 }, none = 0;
+    static int usb; /* USB mode's page in front, under any pop-up over it */
+    if (top && !tk_strcmp(widget_get_type(top), "window"))
+        usb = !tk_strcmp(widget_get_prop_str(top, "name", ""), "usbmode_page");
     if (st.bar_title) { /* this bar names the page in its own label: off, the clock makes way */
         const unsigned *own = widget_get_text(st.bar_title);
         static int home; /* Home in front: no clock under its title though it is empty */
         if (top && !tk_strcmp(widget_get_type(top), "window")) home = home_menu(top);
-        int titled = !st.time_title && (home || (own && *own));
+        int titled = usb || (!st.time_title && (home || (own && *own)));
         void *clock = titled != st.bar_titled ? widget_lookup(bar, "label_clock", 1) : (void *)0;
         if (!clock) return;
         st.bar_titled = titled;
@@ -134,12 +138,12 @@ void bar_title(void *bar, void *top) {
         if (!st.bar_timer) st.bar_timer = timer_add(bar_repaint, (void *)0, 0);
         return;
     }
-    if (st.time_title && !st.bar_titled) return; /* the clock, every paint */
+    if (st.time_title && !st.bar_titled && !usb) return; /* the clock, every paint */
     if (!top || tk_strcmp(widget_get_type(top), "window")) return;
     void *label = widget_lookup(bar, "label_clock", 1);
     if (!label) return;
-    const unsigned *title = (void *)0;
-    if (!st.time_title) {
+    const unsigned *title = usb ? &none : (void *)0; /* USB's: an empty title, so no clock */
+    if (!st.time_title && !usb) {
         void *nav = widget_lookup(top, "view_navbar", 0), *t = (void *)0;
         if (nav && !widget_get_visible(nav)) {
             t = widget_lookup(nav, "scrlabel_title", 0);

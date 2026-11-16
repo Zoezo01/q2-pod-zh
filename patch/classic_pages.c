@@ -637,8 +637,7 @@ void msg_open(void *win) {
 /* Under the window's children. */
 void msg_paint(void *w, void *canvas) {
     static const unsigned update[] = { 'U', 'p', 'd', 'a', 't', 'e', ' ', 'L',
-                                       'i', 'b', 'r', 'a', 'r', 'y', 0 },
-                          q2pod[] = { 'Q', '2', ' ', 'P', 'o', 'd', 0 };
+                                       'i', 'b', 'r', 'a', 'r', 'y', 0 };
     void *lcd = P(canvas, CANVAS_LCD);
     if (!lcd) return;
     unsigned fill = (unsigned)I(lcd, LCD_FILL_COLOR);
@@ -648,7 +647,7 @@ void msg_paint(void *w, void *canvas) {
     bar_place(heading, 16, head, 343, MSG_HEAD_H);
     bar_place(below, 16, line, 343, 20);
     paint_page(w, canvas, 26 - dy);
-    if (dy < 26) paint_dark_bar(w, canvas, scan ? update : q2pod, st.batt_key);
+    if (dy < 26) paint_dark_bar(w, canvas, scan ? update : 0, st.batt_key); /* USB's: no title */
     paint_art(w, canvas, scan ? "classic_light_orb_note" : "classic_light_orb_usb",
               scan ? 129 : 122, (scan ? 38 : 67) - dy);
     text_shadow(canvas, "classic-light", widget_get_text(heading),
