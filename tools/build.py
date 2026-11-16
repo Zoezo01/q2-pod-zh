@@ -1666,19 +1666,12 @@ TAG_C = 'usr/lib/libtag_c.so.2.0.1'
 TAG_C_SHA = 'b00f06c20b33b1238d095fcbcd9e9e04594e715b44e8a9e1a0aa9e3962e8b2b1'
 
 def patch_m4b_cover(raw):
-    """Extend the pinned TagLib cover dispatcher with its existing MP4 extractor."""
+    """Extend the pinned TagLib cover dispatcher with its existing MP4 extractor: tools/m4b_cover.S."""
     from ipod import branch
     check(sha(raw) == TAG_C_SHA, 'Unexpected TagLib cover library')
     image = bytearray(raw)
-    base, site, mp4, next_format, gp = 0x30000, 0x125ac, 0x126d8, 0x125b4, 0x327e0
-    # Keep M4A's successful comparison, then compare M4B before the original MP4 check.
-    # GP-relative data and PC-relative branches work at any shared-library load address.
-    words = [branch(0x10400000, base, mp4), 0,
-             0x8f998170, 0x02002025, 0x27850000 | ((base + 44 - gp) & 0xffff),
-             0x0320f809, 0,
-             branch(0x10400000, base + 28, mp4), 0x8fbc0010,
-             branch(0x10000000, base + 36, next_format), 0]
-    payload = struct.pack('<11I', *words) + b'm4b\0'
+    base, site = 0x30000, 0x125ac
+    payload = assemble('m4b_cover', base, f'-DBASE={base:#x}')[0]
     append_payload(image, payload, base, len(payload), 'TagLib cover')
     struct.pack_into('<I', image, segments(image)[-1][0] + 24, 5)  # immutable code/data
     check(struct.unpack_from('<I', raw, fileoff(raw, site))[0] == 0x1040004a,
@@ -1686,55 +1679,40 @@ def patch_m4b_cover(raw):
     struct.pack_into('<I', image, fileoff(raw, site), branch(0x10000000, site, base))
     return bytes(image)
 
-def bt_silence():
-    """tools/bt_silence.S linked at BT_SILENCE: its bytes and symbols."""
+def assemble(src, base, *defines):
+    """tools/{src}.S linked at base, with clang's defines (-DNAME=value): its bytes and symbols."""
     import tempfile
     with tempfile.TemporaryDirectory() as d:
         d = pathlib.Path(d)
         run('clang', '--target=mipsel-linux-gnu', '-march=mips32r2', '-mno-abicalls', '-fno-pic',
-            f'-DBUDGET={BT_SILENCE_SAMPLES}', '-c', ROOT/'tools/bt_silence.S', '-o', d/'s.o')
-        run('ld.lld', '-m', 'elf32ltsmip', f'-Ttext={BT_SILENCE:#x}', '-e', 'timeout', d/'s.o', '-o', d/'s.elf')
+            *defines, '-c', ROOT/f'tools/{src}.S', '-o', d/'s.o')
+        run('ld.lld', '-m', 'elf32ltsmip', f'-Ttext={base:#x}', '-e', f'{base:#x}', d/'s.o', '-o', d/'s.elf')
         run('llvm-objcopy', '-O', 'binary', '-j', '.text', d/'s.elf', d/'s.bin')
         return (d/'s.bin').read_bytes(), symbols(d/'s.elf')
+
+def bt_silence():
+    """tools/bt_silence.S linked at BT_SILENCE: its bytes and symbols."""
+    return assemble('bt_silence', BT_SILENCE, f'-DBUDGET={BT_SILENCE_SAMPLES}')
 
 def patch_bluealsa(raw):
     """Offer AAC at 48 kHz only. A headset that opens the stream itself (AirPods out of the case)
     picks 44.1 kHz, and bluealsa, still fed 48 kHz, drops about 8% of the AAC frames."""
     image = bytearray(raw)
     image[AAC_44K1] = 0
-    # o32: preserve PCM and ra; hold its fd mutex while flushing the nonblocking
-    # FIFO in 32 KiB batches, then send DROP. No encoder restart or codec change.
-    words = [0x27bdffe0, 0xafbf001c, 0xafb00018, 0x00808025,
-             0x0c10c1a4, 0x2604000c,
-             0x0c10502e, 0x02002025, 0x1c40fffd, 0,
-             0x0c10c0e8, 0x2604000c,
-             0x8e040000, 0x24050006, 0x0c102dce, 0x24840050,
-             0x8fb00018, 0x8fbf001c, 0x00001025, 0x03e00008, 0x27bd0020]
-    reset = BT_DROP_PAYLOAD + len(words) * 4
-    # The shared read helper receives a raw tail pointer, not the ffb_t. Rewind
-    # each audited caller's partial PCM and update the helper's pointer/capacity
-    # before it repolls; otherwise old and new tracks share one encoder frame.
-    words += [0x8fa80054]  # saved return address
-    for caller, offset in BT_PCM_CALLERS:
+    # tools/bt_drop.S: DROP's flush in the control thread, and the rewind for each audited caller.
+    for caller, _ in BT_PCM_CALLERS:
         check(struct.unpack_from('<I', raw, fileoff(raw, caller-8))[0] == 0x0c105174,
               'Bluetooth PCM caller mismatch')
-        body = ([0x264b0000 | offset, 0x8d760000, 0xad760004, 0x8d750008]
-                if offset is not None else
-                [0x8fab004c, 0x8fac0040, 0x02cbb023, 0x02ccb021,
-                 0xafac004c, 0x24150100, 0xafb50048])
-        body += [0x081051e4, 0]  # existing OPEN/RESUME pacing reset and repoll
-        words += [0x3c0a0000 | caller >> 16, 0x354a0000 | caller & 0xffff,
-                  0x150a0000 | len(body)+1, 0, *body]
-    words += [0x081051e4, 0]  # unknown caller: reset pacing without touching its buffer
-    check(len(words)*4 <= BT_SILENCE - BT_DROP_PAYLOAD, 'Bluetooth DROP payload too long')
-    words += [0] * ((BT_SILENCE - BT_DROP_PAYLOAD) // 4 - len(words))
+    callers = ';'.join(f'caller {caller:#x}' + (f', {offset:#x}' if offset is not None else '')
+                       for caller, offset in BT_PCM_CALLERS)
+    drop, dsym = assemble('bt_drop', BT_DROP_PAYLOAD, f'-DCALLERS={callers}')
+    check(len(drop) <= BT_SILENCE - BT_DROP_PAYLOAD, 'Bluetooth DROP payload too long')
     code, sym = bt_silence()
-    payload = struct.pack(f'<{len(words)}I', *words) + code
+    payload = drop.ljust(BT_SILENCE - BT_DROP_PAYLOAD, b'\0') + code
     append_payload(image, payload, BT_DROP_PAYLOAD, len(payload), 'bluealsa')
-    struct.pack_into('<2I', image, fileoff(raw, BT_DROP),
-                     j(BT_DROP_PAYLOAD), 0)
+    struct.pack_into('<2I', image, fileoff(raw, BT_DROP), j(dsym['drop']), 0)
     # Never flush the new track's FIFO from this asynchronously handled signal.
-    struct.pack_into('<2I', image, fileoff(raw, BT_DROP_HANDLER), j(reset), 0)
+    struct.pack_into('<2I', image, fileoff(raw, BT_DROP_HANDLER), j(dsym['reset']), 0)
     for address, old, op, target in BT_SILENCE_SITES:
         check(struct.unpack_from('<I', raw, fileoff(raw, address))[0] == old, 'Bluetooth silence site mismatch')
         new = {'j': j, 'jal': jal}[op](sym[target]) if op else target

@@ -725,7 +725,7 @@ def test_compile_helper(tmp_path, monkeypatch):
                            *objs, tmp_path/'libc.so', tmp_path/'libz.so', '-o', tmp_path/'helper')
 
 
-def test_bt_silence_commands(monkeypatch):
+def test_assemble_commands(monkeypatch):
     commands = []
     def run(*args):
         commands.append(args)
@@ -740,7 +740,7 @@ def test_bt_silence_commands(monkeypatch):
     assert (obj.name, elf.name, binary.name) == ('s.o', 's.elf', 's.bin') and obj.parent == elf.parent == binary.parent
     assert cc == ('clang', '--target=mipsel-linux-gnu', '-march=mips32r2', '-mno-abicalls', '-fno-pic', '-DBUDGET=192000', '-c',
                   build.ROOT/'tools/bt_silence.S', '-o', obj)
-    assert ld == ('ld.lld', '-m', 'elf32ltsmip', '-Ttext=0x450400', '-e', 'timeout', obj, '-o', elf)
+    assert ld == ('ld.lld', '-m', 'elf32ltsmip', '-Ttext=0x450400', '-e', '0x450400', obj, '-o', elf)
     assert objcopy == ('llvm-objcopy', '-O', 'binary', '-j', '.text', elf, binary)
 
 
@@ -788,19 +788,8 @@ def test_patch_bluealsa_payload(silence):
     data, header = payload(out)
     assert header[3] == build.BT_DROP_PAYLOAD and header[6] == 7
     assert len(data) == build.BT_SILENCE - build.BT_DROP_PAYLOAD + 24 and data[-24:] == b'\x11' * 24
-    words = struct.unpack(f'<{(len(data) - 24) // 4}I', data[:-24])
-    assert words[:4] == (0x27bdffe0, 0xafbf001c, 0xafb00018, 0x00808025)
-    reset = 21
-    assert words[reset] == 0x8fa80054
-    at = reset + 1
-    for caller, offset in build.BT_PCM_CALLERS:
-        size = 6 if offset is not None else 9
-        assert words[at:at + 4] == (0x3c0a0000 | caller >> 16, 0x354a0000 | caller & 0xffff, 0x150a0000 | size + 1, 0)
-        if offset is not None:
-            assert words[at + 4] == 0x264b0000 | offset
-        assert words[at + 4 + size - 2:at + 4 + size] == (0x081051e4, 0)
-        at += 4 + size
-    assert words[at:at + 2] == (0x081051e4, 0) and set(words[at + 2:]) <= {0}
+    # tools/bt_drop.S, zero-padded to BT_SILENCE: the words patch_bluealsa listed before it
+    assert build.sha(data[:-24]) == 'daf76a14bcb97be5515fb0e93d947536428e6e6791eb4060fdff8c1f7a523d7d'
 
 
 def test_patch_bluealsa_hooks(silence):
@@ -937,8 +926,7 @@ def test_patch_m4b_cover_segment(tag_c):
     assert header == (1, offset, 0x30000, 0x30000, 48, 48, 5, 0x10000)  # read and execute: nothing in it changes
     assert offset % 0x10000 == 0 and offset >= len(tag_c) and len(out) == offset + 48
     assert out[len(tag_c):offset] == bytes(offset - len(tag_c)) and isinstance(out, bytes)
-    words = (0x104089b5, 0, 0x8f998170, 0x02002025, 0x2785d84c, 0x0320f809, 0, 0x104089ae, 0x8fbc0010, 0x10008963, 0)
-    assert out[offset:] == struct.pack('<11I', *words) + b'm4b\0'
+    assert build.sha(out[offset:]) == 'a9f3205b7b2a2d884d56614bb7f293cc25259b4b138eba82d27740d73d61d457'  # tools/m4b_cover.S
     # in the library itself, only the M4A branch and the PT_NULL slot change
     site = build.fileoff(tag_c, SITE)
     rest = bytearray(out[:len(tag_c)])
