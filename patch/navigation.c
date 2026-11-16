@@ -233,7 +233,7 @@ static int library_query(int content, const char *db, const char *sql, void *row
     int result = content == 2 ? stock_sorted_query_trampoline(db, query, row, (int)arg)
                  : content    ? stock_content_query_trampoline(db, query, row, arg, sort)
                               : stock_dbquery_trampoline(db, query, row, (int)arg);
-    if (expanded) free(expanded);
+    free(expanded);
     return result;
 }
 int ringnav_library_query(const char *db, const char *sql, void *row, int sort) {
@@ -1152,16 +1152,21 @@ static int moving(menu_t *m) {
                           : 0;
 }
 
+/* Stock's scroll animator on view w stops, a drag's fling among them (stock
+ * table_client_stop_animator_scroll's pause/destroy/null sequence); the lyrics' too. */
+static void view_still(void *w) {
+    void *a = P(w, VIEW_ANIMATOR);
+    if (!a) return;
+    widget_animator_pause(a);
+    widget_animator_destroy(a);
+    P(w, VIEW_ANIMATOR) = (void *)0;
+}
+
 static void stop_scroll(menu_t *m) {
     if (m->kind == 2)
         table_client_stop_animator_scroll(m->w);
-    else if (m->kind == 1 && P(m->w, VIEW_ANIMATOR)) {
-        /* Same pause/destroy/null sequence as stock table_client_stop_animator_scroll. */
-        void *a = P(m->w, VIEW_ANIMATOR);
-        widget_animator_pause(a);
-        widget_animator_destroy(a);
-        P(m->w, VIEW_ANIMATOR) = (void *)0;
-    }
+    else if (m->kind == 1)
+        view_still(m->w);
 }
 
 /* View w's scroll animation stopped, for a touch claimed sideways (addon.c swipe, as pull_event).
@@ -3349,51 +3354,10 @@ void pod_settings(void) {
                                           i == POD_ARTIST_CF || i == POD_REMIND_DAILY);
     st.pod_read = 1;
 }
-int ringnav_remind_daily(void) {
+/* A pod_rows row's value (POD_*, one with a pod_values entry), read once from config.ini. */
+int pod_value(int i) {
     pod_settings();
-    return st.remind_daily;
-}
-int ringnav_year_old(void) {
-    pod_settings();
-    return st.year_old;
-}
-int ringnav_artist_az(void) {
-    pod_settings();
-    return st.artist_az;
-}
-int ringnav_artist_view(void) {
-    pod_settings();
-    return st.artist_cf;
-}
-int ringnav_playlist_coverflow(void) {
-    pod_settings();
-    return st.playlist_cf;
-}
-int ringnav_lock_clock(void) {
-    pod_settings();
-    return st.lock_clock;
-}
-/* Fast Navigation: Cover Flow's letters and their half copies (coverflow_thumb.c, lettered,
- * coverflow_halves); off unless the key is 1. */
-int ringnav_big_library(void) {
-    pod_settings();
-    return st.big_library;
-}
-int coverflow_position_enabled(void) {
-    pod_settings();
-    return st.cf_position;
-}
-int ringnav_hide_stream(void) {
-    pod_settings();
-    return st.hide_stream;
-}
-int ringnav_hide_folder(void) {
-    pod_settings();
-    return st.hide_folder;
-}
-int ringnav_eq_output(void) {
-    pod_settings();
-    return st.eq_output;
+    return *pod_values[i];
 }
 /* Advanced EQ's row. Turned off, what plays stays. */
 void ringnav_eq_output_toggle(void) {
@@ -3401,14 +3365,6 @@ void ringnav_eq_output_toggle(void) {
     st.eq_output = !st.eq_output;
     write_int_config(st.eq_output, "Q2POD", "EQOUTPUT");
     if (!st.eq_output) eq_output_forget();
-}
-int ringnav_bt_resume(void) {
-    pod_settings();
-    return st.resume;
-}
-static int bt_link(void) {
-    pod_settings();
-    return bt_vol_link;
 }
 /* read_artistype_value (a Library list's or artist page's init) and boot (playback.c
  * ringnav_bootmode): Artists as stock reads it, PLAYSET ARTISTTYPE, but Album Artist when no choice
@@ -3424,7 +3380,7 @@ void ringnav_read_artistype(void) {
  * card game with the sound (addon.c) keeps it either way. */
 int ringnav_bt_connect_start(int pause) {
     if (addon_game_audio()) return 0;
-    if (ringnav_bt_resume()) return player_save_start(pause);
+    if (pod_value(POD_RESUME)) return player_save_start(pause);
     int saved = media_owner() == 1 ? mclGetSavePlayStatus() : 0; /* 2 playing, 3 paused */
     return saved == 2 || saved == 3 ? player_save_start(saved == 3) : 0;
 }
@@ -3848,27 +3804,17 @@ static int lyrics_shown(void) {
            widget_get_prop_int(st.np_slide, "value", 0) == 1;
 }
 
-/* Stock's scroll animator on the lyrics stops, a drag's fling among them (stock
- * table_client_stop_animator_scroll's sequence, as stop_scroll). */
-static void lyric_still(void *lrc) {
-    void *a = P(lrc, VIEW_ANIMATOR);
-    if (!a) return;
-    widget_animator_pause(a);
-    widget_animator_destroy(a);
-    P(lrc, VIEW_ANIMATOR) = (void *)0;
-}
-
 /* Another song: its lyrics at the top, nothing held or gliding, and stock's animator, which would
  * carry them on to where the last song's follow sent them, stopped. */
 static void lyric_top(void *lrc) {
     st.lyric_held = st.lyric_spun = st.lyric_glide = st.lyric_to = st.lyric_push = 0;
-    lyric_still(lrc);
+    view_still(lrc);
     scroll_view_set_offset(lrc, I(lrc, SCROLL_X), 0);
 }
 
 /* The lyrics glide to `to` (1/16 px) within their content; lyric_step moves them, every UI pass. */
 static void lyric_glide(void *lrc, int to) {
-    lyric_still(lrc);
+    view_still(lrc);
     st.lyric_to = clamp_step(to, (I(lrc, VIEW_CONTENT_H) - I(lrc, W_H)) * 16, 0);
     if (!st.lyric_glide) st.lyric_at = (unsigned)time_now_ms();
     st.lyric_glide = 1;
@@ -4698,7 +4644,7 @@ static void lyric_follow(void *lrc, int ms, int front, int shown) {
         if (to * 16 != st.lyric_to || (!st.lyric_glide && I(lrc, SCROLL_Y) != to))
             lyric_glide(lrc, to * 16);
     } else if (I(lrc, SCROLL_Y) != to) {
-        lyric_still(lrc);
+        view_still(lrc);
         scroll_view_set_offset(lrc, I(lrc, SCROLL_X), to);
     }
 }
@@ -4785,7 +4731,7 @@ static void lyric_poll(void) {
     if (touch && !st.lyric_touch) {
         st.lyric_touch = page ? 1 : 2;
         st.lyric_drag_y = page ? I(lrc, SCROLL_Y) : 0;
-        if (page) lyric_still(lrc);
+        if (page) view_still(lrc);
     } else if (!touch && st.lyric_touch) {
         if (st.lyric_touch == 1 && page && I(lrc, SCROLL_Y) != st.lyric_drag_y) lyric_hold();
         st.lyric_touch = 0;
@@ -8125,8 +8071,7 @@ static void album_open(void *r) {
     if (st.album) deque_destroy(st.album);
     st.album = 0;
     if (!r || I(r, REC_ID) < 0) return;
-    st.album = _create_deque("stSongInfo");
-    deque_init(st.album);
+    st.album = song_list();
     _deque_push_back(st.album, r);
 }
 int ringnav_album_detail(int cls, void *r) {
@@ -8257,8 +8202,7 @@ static int artist_songs(void *unused) {
  * this artist's albums. */
 static void *artist_albums(void *all) {
     int n;
-    void *songs = staged_music(artist_songs, 0, &n), *out = _create_deque("stSongInfo");
-    deque_init(out);
+    void *songs = staged_music(artist_songs, 0, &n), *out = song_list();
     for (unsigned i = 0; i < deque_size(all); ++i) {
         void *a = deque_at(all, i);
         for (unsigned j = 0; j < deque_size(songs); ++j) {
@@ -8280,8 +8224,7 @@ static void artist_order(void *list, void *mine) {
     int *at = calloc(n + 1, sizeof *at);
     if (!at) return;
     for (unsigned i = 0; i < n; ++i) at[i] = artist_album(mine, deque_at(list, i));
-    void *out = _create_deque("stSongInfo");
-    deque_init(out);
+    void *out = song_list();
     for (unsigned k = 0; k <= m; ++k) /* k == m: the unmatched */
         for (unsigned i = 0; i < n; ++i)
             if (k < m ? at[i] == (int)k : at[i] < 0) _deque_push_back(out, deque_at(list, i));
@@ -8530,8 +8473,7 @@ static void fav_titles(void *list, int n) {
 /* Playlists bypass songtable; filter their displayed copies, never their stored rows (Cover
  * Flow's turned playlist too). */
 int music_records(void *list, int discovery) {
-    void *music = _create_deque("stSongInfo");
-    deque_init(music);
+    void *music = song_list();
     for (unsigned i = 0; i < deque_size(list); ++i) {
         void *r = deque_at(list, i);
         const char *path = P(r, REC_PATH);
@@ -8651,8 +8593,7 @@ static void qm_tracks(void *r, void *add) {
 void *qm_collect(void *r) {
     if (st.qm_kind == QM_COVERALBUM || (st.qm_kind == QM_ALBUM && st.qm_cls == CLASS_ALBUMS))
         return coverflow_album_tracks(r);
-    void *add = _create_deque("stSongInfo");
-    deque_init(add);
+    void *add = song_list();
     if (st.qm_kind == QM_SONG || st.qm_kind == QM_COVERFLOW || st.qm_kind == QM_PLAYING) {
         if (!playback_video(r)) _deque_push_back(add, r);
     } else
@@ -8699,24 +8640,18 @@ void toast(const char *text) {
     --st.toasts;
 }
 
-int all_songs(void *music) {
+/* getAllMusic(mode); non-zero music leaves audiobooks and podcasts out, as the Library's Artists
+ * and Albums (MUSIC_WHERE). */
+static int all_music(void *music, int mode) {
     int saved = library_music;
     library_music = music != 0;
-    int n = getAllMusic(0);
+    int n = getAllMusic(mode);
     library_music = saved;
     return n;
 }
-
-/* Shuffle does not need the expensive pinyin title sort; groups order their tracks themselves.
- * Non-zero music leaves audiobooks and podcasts out, as the Library's Artists and Albums
- * (MUSIC_WHERE). */
-int songs_unsorted(void *music) {
-    int saved = library_music;
-    library_music = music != 0;
-    int n = getAllMusic(3);
-    library_music = saved;
-    return n;
-}
+int all_songs(void *music) { return all_music(music, 0); }
+/* Shuffle does not need the expensive pinyin title sort; groups order their tracks themselves. */
+int songs_unsorted(void *music) { return all_music(music, 3); }
 
 /* Return for the payload's own pages; each passes page_open its own close. */
 int page_keyup(void *ctx, void *event) {
@@ -9278,7 +9213,7 @@ static void qm_goto(void *r, int album) {
     void *wm = window_manager(), *page = window_manager_get_top_window(wm);
     /* a card app's song (Qobuz's): the app's own page for its album or artist, when it says so */
     if (addon_goto(P(r, REC_PATH), P(r, album ? REC_ALBUM : REC_ARTIST), album)) return;
-    if (album && (navigator_window_is_exist("coverflow_page") || ringnav_artist_view()) &&
+    if (album && (navigator_window_is_exist("coverflow_page") || pod_value(POD_ARTIST_CF)) &&
         coverflow_goto_album(r))
         return;
     memcpy(st.qm_classinfo, info, sizeof st.qm_classinfo);
@@ -10179,7 +10114,7 @@ int rockbox_open(void *ctx, void *event) {
     /* Rockbox's volume is pcm-alsa's software mixer alone, so the headset's absolute volume, left
      * at the Q2's, would cap it: open it to the maximum volume limit. Demo syncs it back on return.
      */
-    if (bt_link() && g_bluetoothflag && bt_linkstatus &&
+    if (pod_value(POD_BT_LINK) && g_bluetoothflag && bt_linkstatus &&
         (unsigned)btctl_transport_get_volume() <= 127)
         btctl_transport_set_volume(((g_maxvolume < 100 ? g_maxvolume : 100) * 127 + 50) / 100);
     ringnav_clean_end(); /* the watchdog would outlive demo's kill; nothing to report */
@@ -10224,13 +10159,7 @@ int ringnav_output(int way) {
     if (changed &&
         !airplay_on()) { /* a speaker's level stays its own; airplay.c swaps back at its end */
         write_int_config(g_volume, "PLAYSET", "VOLUME");
-        char s[256] = "";
-        toolsReadConfig("/mnt/data/config.ini", "PLAYSET", way == 1 ? "BT_VOLUME" : "VOLUME", s,
-                        "");
-        int v = 0;
-        unsigned i;
-        for (i = 0; i < 3 && s[i] >= '0' && s[i] <= '9'; ++i) v = v * 10 + s[i] - '0';
-        if (!i || s[i] || v > 100) v = g_volume;
+        int v = config_value("PLAYSET", way == 1 ? "BT_VOLUME" : "VOLUME", 101, g_volume);
         if (v > g_maxvolume) v = g_maxvolume;
         g_volume = (unsigned char)v;
         headset_volume_reset();
@@ -10243,7 +10172,7 @@ int ringnav_output(int way) {
 /* AVRCP absolute volume, as in PR #3. libbtctl returns 0 on a successful write.
  * Keep stock software gain unless the headset accepted the requested level. */
 static int bt_audio_ready(void) {
-    return bt_link() && g_bluetoothflag && bt_linkstatus &&
+    return pod_value(POD_BT_LINK) && g_bluetoothflag && bt_linkstatus &&
            *(const volatile int *)bt_showcoding > 0 && !bt__recv_pageflag && mclGetOutputWay() == 1;
 }
 
@@ -10716,8 +10645,8 @@ int ringnav_wm_paint(void *wm) {
  * hciplayer holds their PCM, so the click has no other way out. Playback alone leaves it clicking.
  * Click With Headphones (IPOD KEYTONEHP, off) keeps the buzzer clicking there too, as stock does;
  * Key Tone off is still silent.
- * The command waits out the buzzer and the MCU's park (tools/mcu_pwm_clock.c), so it runs on a
- * worker, not the UI thread; a click while one sounds is dropped, as the buzzer is busy anyway.
+ * system() forks a shell and cmd_mcu for every click, so it runs on a worker, not the UI thread; a
+ * click is dropped while the last one's worker runs.
  * With the screen off a pass clicks once (tone_dark; ringnav_sleep).
  */
 static volatile int tone_busy;
@@ -11093,13 +11022,9 @@ static const clock_part_t time_clock[] = {
 };
 
 /* Text in final colours, as Light Mode's text setter flips what it's given. */
-static void time_text(void *canvas, int light, const char *face, const unsigned *s, unsigned n,
-                      const rect_t *r, unsigned px, unsigned rgb, unsigned alpha) {
-    unsigned color = alpha << 24 | (RGBA(flip_if(light, rgb)) & 0xffffff);
-    if (face)
-        draw_in_face(canvas, face, s, n, r, px, color);
-    else
-        draw_centred(canvas, s, n, r, px, color);
+static void time_text(void *canvas, const unsigned *s, unsigned n, const rect_t *r, unsigned px,
+                      unsigned rgb, unsigned alpha) {
+    draw_centred(canvas, s, n, r, px, alpha << 24 | (RGBA(flip_if(ipod_light(), rgb)) & 0xffffff));
 }
 /* A cell's or the tile's number: its text, widened. */
 static unsigned time_chars(unsigned *to, const char *s) {
@@ -11119,7 +11044,7 @@ static void time_paint(void *w, void *canvas) {
     unsigned fill = (unsigned)I(lcd, LCD_FILL_COLOR), s[5], n;
     int time = tf.slide && widget_get_prop_int(tf.slide, "value", 0) == 1;
     int at = field_on_page(widget_get_prop_int(w, "_edit_field", 0), time);
-    int hour = time_value(3), minute = time_value(4), L = ipod_light();
+    int hour = time_value(3), minute = time_value(4);
     const time_row_t *row = time_row(time);
     char b[6];
     paint_page(w, canvas, 0);
@@ -11134,10 +11059,10 @@ static void time_paint(void *w, void *canvas) {
         paint_art(w, canvas, "classic_light_tile", TIME_TILE_X - TIME_TILE_PAD,
                   TIME_TILE_Y - TIME_TILE_PAD);
         n = time_chars(s, time_month());
-        time_text(canvas, L, (const char *)0, s, n, &head, 28, 0xffffff, 255);
+        time_text(canvas, s, n, &head, 28, 0xffffff, 255);
         tk_snprintf(b, sizeof b, "%02d", time_value(2));
         n = time_chars(s, b);
-        time_text(canvas, L, (const char *)0, s, n, &day, 79, 0x1b2030, 255);
+        time_text(canvas, s, n, &day, 79, 0x1b2030, 255);
     }
     paint_art(w, canvas, row->tray, row->tray_x - TIME_TRAY_PAD, TIME_TRAY_Y - TIME_TRAY_PAD);
     for (int i = 0; i < row->n; ++i) {
@@ -11151,15 +11076,15 @@ static void time_paint(void *w, void *canvas) {
         else
             tk_snprintf(b, sizeof b, f ? "%02d" : "%d", time_value(f));
         n = time_chars(s, b);
-        time_text(canvas, L, (const char *)0, s, n, &r, f == TIME_AMPM ? 30 : 35, 0xffffff, 255);
+        time_text(canvas, s, n, &r, f == TIME_AMPM ? 30 : 35, 0xffffff, 255);
     }
     if (row->sep_x) {
         rect_t r = { row->sep_x, TIME_CELL_Y, 12, TIME_CELL_H };
-        time_text(canvas, L, (const char *)0, &colon, 1, &r, 32, 0xffffff, 255);
+        time_text(canvas, &colon, 1, &r, 32, 0xffffff, 255);
     }
     rect_t label = { 0, 244, 375, 26 }, under = { 0, 245, 375, 26 };
-    time_text(canvas, L, (const char *)0, save, 4, &under, 24, 0, 0x59);
-    time_text(canvas, L, (const char *)0, save, 4, &label, 24, 0xffffff, 0xb8);
+    time_text(canvas, save, 4, &under, 24, 0, 0x59);
+    time_text(canvas, save, 4, &label, 24, 0xffffff, 0xb8);
     stock_canvas_set_fill_color(canvas, fill);
 }
 

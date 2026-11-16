@@ -30,6 +30,12 @@ int spot_escape(const char *s, char *out, unsigned size) {
     return (int)k;
 }
 
+/* "\t" and s escaped appended to out (size bytes); 0 when it doesn't fit. */
+int spot_put(char *out, unsigned size, const char *s) {
+    unsigned k = strlen(out);
+    return k + 1 < size && (out[k] = '\t', spot_escape(s, out + k + 1, size - k - 1) >= 0);
+}
+
 int hex(char c) {
     return c >= '0' && c <= '9'                 ? c - '0'
            : (c | 32) >= 'a' && (c | 32) <= 'f' ? (c | 32) - 'a' + 10
@@ -504,14 +510,6 @@ static int tick(const void *unused) {
     return 8; /* RET_REPEAT */
 }
 
-static void box(void *canvas, int x, int y, int w, int h, unsigned color, unsigned radius) {
-    int r[4] = { x, y, w, h };
-    if (canvas_fill_rounded_rect(canvas, r, (void *)0, &color, radius)) {
-        canvas_set_fill_color(canvas, color);
-        canvas_fill_rect(canvas, x, y, w, h);
-    }
-}
-
 /* ringnav_paint, every widget after stock painted it: the bar, as Now Playing's capsule (the
  * accent's light tone), and the play state in the top row. */
 void spot_paint(void *w, void *canvas) {
@@ -528,8 +526,10 @@ void spot_paint(void *w, void *canvas) {
         int x = (int)((ms >> 4) * SPOT_BAR_W / ((sp.duration >> 4) | 1)); /* 32-bit to 57 h */
         /* Minimal's 4 px line, Modern's 8 px capsule: the view's height at most */
         int h = theme()->np_bar < SPOT_BAR_H ? theme()->np_bar : SPOT_BAR_H;
-        box(canvas, 0, 0, SPOT_BAR_W, h, rgba(TRACK_COLOR, 255), h / 2);
-        if (x) box(canvas, 0, 0, x < h ? h : x, h, ui.scrub ? 0xffffffffu : tone, h / 2);
+        fill_box(canvas, &(rect_t){ 0, 0, SPOT_BAR_W, h }, rgba(TRACK_COLOR, 255), h / 2);
+        if (x)
+            fill_box(canvas, &(rect_t){ 0, 0, x < h ? h : x, h }, ui.scrub ? 0xffffffffu : tone,
+                     h / 2);
     } else { /* a triangle playing, two bars otherwise */
         canvas_set_fill_color(canvas, 0xffffffffu);
         if (sp.playing)
@@ -648,12 +648,11 @@ typedef struct {
 /* The request in flight, on its pthread: written from buf, the reply then read into it. */
 static struct {
     unsigned long thread;
-    int running, fail; /* fail: W_* */
+    int running, fail; /* fail: SPOT_* */
     volatile int cancel, done;
     unsigned id, n, len; /* id: the latest request's, never reused */
     char *buf;
 } wk __attribute__((section(".scratch")));
-enum { W_OK, W_NOSOCK, W_FAIL };
 
 /* The page, while open. act: what the request in flight is for (A_*). */
 static struct {
@@ -680,18 +679,12 @@ static const char *const MENU[] = {
 };
 static const char *const CATS[] = { "Tracks", "Albums", "Artists", "Playlists" };
 
-/* "\t" and s escaped appended to out (size bytes); 0 when it doesn't fit. */
-static int put(char *out, unsigned size, const char *s) {
-    unsigned k = strlen(out);
-    return k + 1 < size && (out[k] = '\t', spot_escape(s, out + k + 1, size - k - 1) >= 0);
-}
-
 static void request(const char *op, const char *tail, int act);
 
 static void remove_request(int confirm) {
     char tail[7000] = "";
-    if (put(tail, sizeof tail, br.remove_kind) && put(tail, sizeof tail, br.selected) &&
-        (!confirm || put(tail, sizeof tail, "confirm")))
+    if (spot_put(tail, sizeof tail, br.remove_kind) && spot_put(tail, sizeof tail, br.selected) &&
+        (!confirm || spot_put(tail, sizeof tail, "confirm")))
         request("remove", tail, confirm ? A_REMOVE : A_PREVIEW);
 }
 
@@ -707,40 +700,49 @@ static void fetch_cancel(void) {
 __asm__(".globl spot_shut\nspot_shut:\nli $a1, 1\nli $v0, 4182\nsyscall\njr $ra\n");
 void spot_shut(int fd);
 
-/* One connection a request: written, shut for writing, and read to EOF within SPOT_WAIT_MS, 100 ms
- * at a time so a cancel is joined at once. */
-static void *worker(void *unused) {
-    struct unix_addr to = { 1, SPOT_BROWSE };
-    unsigned long long end = now_ms() + SPOT_WAIT_MS;
+/* One Q2SPOT/1 connection to the socket at path, the card apps' too (addon.c's worker): buf's len
+ * bytes written, shut for writing, and the reply read into buf from *n to EOF, failing past max
+ * bytes, within wait_ms, 100 ms at a time so a cancel is joined at once. 0 (SPOT_OK) at EOF,
+ * SPOT_NOSOCK with no connection, else SPOT_FAIL. */
+int spot_exchange(const char *path, unsigned wait_ms, unsigned max, char *buf, unsigned len,
+                  unsigned *n, volatile int *cancel) {
+    struct unix_addr to = { 1, { 0 } };
+    tk_snprintf(to.path, sizeof to.path, "%s", path);
+    unsigned long long end = now_ms() + wait_ms;
     unsigned sent = 0;
-    int fd = socket(1, 2, 0), k = 1; /* AF_UNIX, SOCK_STREAM (MIPS numbering) */
-    wk.fail = W_NOSOCK;
+    int fd = socket(1, 2, 0), k = 1, fail = SPOT_NOSOCK; /* AF_UNIX, SOCK_STREAM (MIPS numbering) */
     if (fd >= 0 && fd < 1024 && !fcntl(fd, 4, 0x80) &&
         !connect(fd, &to, sizeof to)) { /* F_SETFL, O_NONBLOCK (MIPS) */
-        wk.fail = W_FAIL;
-        while (!wk.cancel && now_ms() < end) {
+        fail = SPOT_FAIL;
+        while (!*cancel && now_ms() < end) {
             unsigned set[32] = { 0 }; /* fd_set */
             int tv[2] = { 0, 100000 };
             set[fd / 32] = 1u << fd % 32;
-            int writing = sent < wk.len;
+            int writing = sent < len;
             if ((k = select(fd + 1, writing ? 0 : set, writing ? set : 0, 0, tv)) <= 0) {
                 if (k) break; /* not a timeout */
                 continue;
             }
             if (writing) {
-                k = send(fd, wk.buf + sent, wk.len - sent, 0x4000); /* MSG_NOSIGNAL */
+                k = send(fd, buf + sent, len - sent, 0x4000); /* MSG_NOSIGNAL */
                 if (k <= 0) break;
-                if ((sent += (unsigned)k) == wk.len) spot_shut(fd);
+                if ((sent += (unsigned)k) == len) spot_shut(fd);
                 continue;
             }
-            if ((k = recv(fd, wk.buf + wk.n, SPOT_REPLY_MAX + 1 - wk.n, 0)) <= 0 ||
-                (wk.n += (unsigned)k) > SPOT_REPLY_MAX) {
-                wk.fail = k ? W_FAIL : W_OK;
+            if ((k = recv(fd, buf + *n, max + 1 - *n, 0)) <= 0 || (*n += (unsigned)k) > max) {
+                fail = k ? SPOT_FAIL : SPOT_OK;
                 break;
             }
         }
     }
     if (fd >= 0) close(fd);
+    return fail;
+}
+
+/* One connection a request (spot_exchange) to librespot's browse socket. */
+static void *worker(void *unused) {
+    wk.fail =
+        spot_exchange(SPOT_BROWSE, SPOT_WAIT_MS, SPOT_REPLY_MAX, wk.buf, wk.len, &wk.n, &wk.cancel);
     if (wk.n <= SPOT_REPLY_MAX) wk.buf[wk.n] = 0; /* past the reply, the request's bytes */
     wk.done = 1;
     return 0;
@@ -762,7 +764,7 @@ static void request(const char *op, const char *tail, int act) {
     if (act == A_FETCH) top()->id = wk.id;
     wk.cancel = 0;
     wk.n = 0;
-    wk.fail = W_FAIL;
+    wk.fail = SPOT_FAIL;
     int n = (wk.buf = calloc(SPOT_REPLY_MAX + 2, 1))
                 ? tk_snprintf(wk.buf, SPOT_REQ_MAX, "Q2SPOT/1\n%u\t%s%s\n", wk.id, op, tail)
                 : 0;
@@ -961,15 +963,16 @@ static void got(void) {
      * fields on the reply it shows. */
     char id[12], *head[4 + 6 * SPOT_ROWS], **f = br.act || l->state == S_READY ? head : l->f,
                                            *reply = wk.buf; /* ours: a request below takes wk */
-    int act = br.act,
-        n = wk.fail == W_OK ? spot_reply(reply, wk.n, f, act && act != A_CAPS ? 0 : SPOT_ROWS) : -1;
+    int act = br.act, n = wk.fail == SPOT_OK
+                              ? spot_reply(reply, wk.n, f, act && act != A_CAPS ? 0 : SPOT_ROWS)
+                              : -1;
     wk.buf = 0;
     tk_snprintf(id, sizeof id, "%u", wk.id);
     if (n >= 0 && strcmp(f[0], id)) n = -1;
     const char *status = n < 0 ? "error" : f[1];
-    const char *msg = wk.fail == W_NOSOCK ? "Spotify isn't running"
-                      : n >= 0 && f[2][0] ? f[2]
-                                          : "Spotify didn't answer";
+    const char *msg = wk.fail == SPOT_NOSOCK ? "Spotify isn't running"
+                      : n >= 0 && f[2][0]    ? f[2]
+                                             : "Spotify didn't answer";
     int ok = !strcmp(status, "ok"), login = !strcmp(status, "login");
     if (login || (ok && act == A_SIGNOUT)) {
         sp.auth = -1;
@@ -1027,10 +1030,10 @@ static void got(void) {
         } else if (!ok || act == A_DOWNLOAD)
             toast(msg);
     } else if (l->id != wk.id) {
-    } else if (wk.fail == W_NOSOCK && (int)(br.until - time_now_ms()) > 0) {
+    } else if (wk.fail == SPOT_NOSOCK && (int)(br.until - time_now_ms()) > 0) {
         if (l->state != S_PAIR) l->state = S_WAIT, show(); /* librespot starting */
         br.poll_at = time_now_ms() + 500;
-    } else if (wk.fail == W_NOSOCK && !access(SPOT_STATE, 0))
+    } else if (wk.fail == SPOT_NOSOCK && !access(SPOT_STATE, 0))
         sp.old = 1, base(S_OLD);
     else if (login)
         base(S_PAIR);
@@ -1121,7 +1124,7 @@ static int go(const void *unused) {
             widget_set_focused(br.edit, 1);
         }
     } else if (l->kind == L_CATS) {
-        if (put(a, sizeof a, cats[i]) && put(a, sizeof a, br.term))
+        if (spot_put(a, sizeof a, cats[i]) && spot_put(a, sizeof a, br.term))
             push(L_LIST, "search", a, "", CATS[i]);
     } else if (l->kind == L_DOWNLOADS) {
         if (!br.downloads) {
@@ -1159,7 +1162,7 @@ static int go(const void *unused) {
     } else if (l->kind == L_JOB) {
         static const char *const actions[] = { "pause", "resume", "cancel", "retry", "update" };
         tk_snprintf(a, sizeof a, "%s", l->args);
-        if (put(a, sizeof a, actions[i])) request("job", a, A_DOWNLOAD);
+        if (spot_put(a, sizeof a, actions[i])) request("job", a, A_DOWNLOAD);
     } else if (l->kind == L_SELECT && i == l->n + more(l)) {
         if (br.selected[0])
             remove_request(0);
@@ -1185,7 +1188,7 @@ static int go(const void *unused) {
         char c[sizeof l->cursor] = "";
         if (!l->f[3][0])
             push(L_CONFIRM, "", "", "", "");
-        else if (put(c, sizeof c, l->f[3]))
+        else if (spot_put(c, sizeof c, l->f[3]))
             push(l->kind, l->op, l->args, c, l->title);
     } else {
         const char *kind = cell(l, i, 0), *uri = cell(l, i, 1), *v = cell(l, i, 2),
@@ -1195,10 +1198,10 @@ static int go(const void *unused) {
         if (opens(
                 kind)) { /* a job its controls; an album, playlist, artist or collection its list */
             int job = !strcmp(kind, "job");
-            if (put(a, sizeof a, uri))
+            if (spot_put(a, sizeof a, uri))
                 push(job ? L_JOB : L_LIST, job ? "" : kind, a, "", job ? ctx : v);
         } else if (!strcmp(kind, "track") && !strcmp(l->op, "collection")) {
-            if (put(a, sizeof a, ctx) && put(a, sizeof a, cell(l, i, 5))) {
+            if (spot_put(a, sizeof a, ctx) && spot_put(a, sizeof a, cell(l, i, 5))) {
                 request("playcollection", a, A_PLAY);
                 tk_snprintf(sp.wanted, sizeof sp.wanted, "%s",
                             strstr(uri, "spotify:track:") == uri ? uri + 14 : "");
@@ -1207,10 +1210,10 @@ static int go(const void *unused) {
             toast(cell(l, i, 3));
         } else if (!strcmp(kind, "track")) { /* in its context, or alone; a queue row by its place;
                                                 a download has no context */
-            if (queue    ? put(a, sizeof a, cell(l, i, 5)) && put(a, sizeof a, uri)
-                : ctx[0] ? put(a, sizeof a, ctx) && put(a, sizeof a, cell(l, i, 5)) &&
-                               put(a, sizeof a, uri)
-                         : put(a, sizeof a, uri))
+            if (queue    ? spot_put(a, sizeof a, cell(l, i, 5)) && spot_put(a, sizeof a, uri)
+                : ctx[0] ? spot_put(a, sizeof a, ctx) && spot_put(a, sizeof a, cell(l, i, 5)) &&
+                               spot_put(a, sizeof a, uri)
+                         : spot_put(a, sizeof a, uri))
                 request(dl      ? "playdownload"
                         : queue ? "skip"
                                 : "play",
@@ -1309,7 +1312,7 @@ int spot_hold(void *w) {
     char a[sizeof l->args] = "";
     const char *kind = i >= 0 && i < l->n ? cell(l, i, 0) : "";
     int track = !strcmp(kind, "track");
-    if ((!track && strcmp(kind, "playlist")) || !put(a, sizeof a, cell(l, i, 1))) return 0;
+    if ((!track && strcmp(kind, "playlist")) || !spot_put(a, sizeof a, cell(l, i, 1))) return 0;
     /* a playlist downloads, as its own Download Playlist row; its reply is toasted */
     request(track ? "enqueue" : "download", a, track ? A_ENQUEUE : A_DOWNLOAD);
     return 1;

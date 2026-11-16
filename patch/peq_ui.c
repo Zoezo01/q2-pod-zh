@@ -157,7 +157,7 @@ static int eq_devices(void) {
 }
 /* The bar's message as the EQ page opens: which output's EQ this is. */
 static const char *eq_output_caption(void) {
-    if (!ringnav_eq_output()) return 0;
+    if (!pod_value(POD_EQ_OUTPUT)) return 0;
     if (!eq_owner[0]) owner_read();
     return !eq_owner[0]                 ? 0
            : !strcmp(eq_owner, "3.5mm") ? "EQ for 3.5 mm"
@@ -833,7 +833,7 @@ static int render(const void *unused) {
         row(view, n++, ui.dirty ? "Apply changes" : "Nothing to apply", ui.dirty ? APPLY : -1);
         row(view, n++, "Reset to defaults", RESET);
         list_toggle(row(view, n++, "", BYPASS), "Enabled", !ui.draft.bypass);
-        list_toggle(row(view, n++, "", PER_OUTPUT), "EQ per Output", ringnav_eq_output());
+        list_toggle(row(view, n++, "", PER_OUTPUT), "EQ per Output", pod_value(POD_EQ_OUTPUT));
         /* Balance turns one side down: R 1.0 dB is the left 1 dB quieter. */
         snprintf(value, sizeof(value),
                  __builtin_fabs(ui.draft.balance) >= 0.05 ? "%s %.1f dB" : "Centre",

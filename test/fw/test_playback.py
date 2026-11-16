@@ -9,7 +9,6 @@ import subprocess
 
 import pytest
 
-import host
 from conftest import FNV_PRIME, O, Deques, Files, Rows, claim, fnv1a, high_halves, in_fork, libc  # noqa: F401
 
 MAGIC = 0x5132524e
@@ -2719,12 +2718,6 @@ def test_a_snapshot_whose_last_entry_is_cut_short_is_refused(saved):
 
 
 # A press that would start a track holding its place over (navigation.c resume_held) only asks first.
-@pytest.fixture(scope='module')
-def scratch(library):
-    """navigation.c's scratch_t offsets as this build lays it out."""
-    return host.offsets(library.parent/'navigation.o', 'scratch_t')
-
-
 class Held:
     """A long track holding its place, sec into an hour, on a library queue of rows; the clock and the toasts."""
     def __init__(self, fw, mcl, scratch, rows=(), sec=600, total=3600):

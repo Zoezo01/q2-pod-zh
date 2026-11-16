@@ -107,6 +107,7 @@ def exact(ctype, n):
     return (ctype * n).from_address(libc.calloc(n, C.sizeof(ctype)))
 
 
+# Not in conftest: it needs this file's libc, whose malloc returns a whole pointer.
 class Exact:
     def __init__(self, data):
         self.p = libc.malloc(len(data) or 1)
@@ -3291,12 +3292,6 @@ def test_no_service_row_or_name_draws_no_service(fw):
 
 
 # The pages' pieces, shared with photos.c, books.c and navigation.c
-
-@pytest.fixture(scope='module')
-def scratch(library):
-    """scratch_t's field offsets in this build: navigation.c's st."""
-    return host.offsets(library.parent/'navigation.o', 'scratch_t')
-
 
 def bar_title(fw, ui, scratch, width):
     """Classic's bar title, width px: a caption of n characters measures 10 n px."""

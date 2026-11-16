@@ -72,6 +72,7 @@ libc.malloc.restype, libc.malloc.argtypes = C.c_void_p, [C.c_size_t]
 libc.free.argtypes = [C.c_void_p]
 
 
+# Not in conftest: it needs this file's libc, whose malloc returns a whole pointer.
 class Exact:
     """data in a malloc of exactly its size, so the sanitizer sees a read past it."""
     def __init__(self, data):

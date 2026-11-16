@@ -326,8 +326,6 @@ int ipod_home(void) { return home_mode; }
 int home_lib_on(void) { return 1; }
 int row_preview_on(void) { return 1; }
 int show_q2pod(void) { return 1; }
-int ringnav_hide_folder(void) { return 0; }
-int ringnav_hide_stream(void) { return 0; }
 int library_search(void) { return 1; }
 void library_rows(void *list) {}
 void stream_rows(void *list) {}
@@ -337,7 +335,6 @@ int canvas_set_font(void *c, const char *f, unsigned px) { return 0; }
 float canvas_measure_text(void *c, const unsigned *s, unsigned n) { return 0; }
 const char *theme_face(const unsigned *s, int n, int *px) { return 0; }
 void font_weight_mark(void *w, int bold) {}
-int coverflow_position_enabled(void) { return 0; }
 void home_pane_read(int *services, int *games, int *free_tenths) { *services = 5; *games = 4; *free_tenths = 412; }
 extern volatile unsigned library_gen;
 static int count_calls, count_answer = 704;
@@ -741,13 +738,14 @@ static char rank_rows[16][0x60];
 static int rank_year[16]; /* the Year query's year column, each ranked row's (split_row's REC_YEAR) */
 /* navigation.c's Year order: newest first (0) or oldest. */
 static int year_old;
-int ringnav_year_old(void) { return year_old; }
 /* navigation.c's Fast Navigation: letters, years and half copies; main turns it on for their tests */
 static int big_library;
-int ringnav_big_library(void) { return big_library; }
 static int artist_view;
-int ringnav_artist_view(void) { return artist_view; }
-int ringnav_artist_az(void) { return 0; }
+/* navigation.c's settings: those above, the rest (Artist Album Order, Cover Flow's position, Hide ...
+   on Home) off */
+int pod_value(int i) {
+    return i == POD_YEAR_OLD ? year_old : i == POD_BIG_LIB ? big_library : i == POD_ARTIST_CF ? artist_view : 0;
+}
 /* Stock's row maker for a ranking query (split_row's first four columns): the album named by v[1]
    as a row of its own, added to the staged deque. */
 static int rank_n;

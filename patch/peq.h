@@ -344,6 +344,7 @@ char *csv_find(char *list, const char *item); /* navigation.c: comma lists */
 int csv_toggle(char *list, unsigned size, const char *item);
 void *bottom_caption(void *parent, int h);
 int text_differs(void *w, const char *s);
+void *song_list(void);                              /* coverflow.c: an empty stSongInfo deque */
 long file_size(const char *path);                   /* coverflow.c: -1 when it can't be opened */
 int picture_size(const char *path, int *w, int *h); /* coverflow.c */
 void *read_all(const char *path, unsigned max, unsigned *size); /* scrobble.c */
@@ -366,11 +367,49 @@ int album_cmp(void *a, void *b);
 int spoken(const char *path);     /* navigation.c: under Podcasts or Audiobooks, or an M4B */
 void peq_attach(void);            /* peq_ui.c */
 void peq_page_replace(void *old); /* peq_ui.c: the open EQ page closed for a new one */
+/* navigation.c: the settings rows pod_rows builds (pod_values and its Q2POD keys); pod_value(i) is
+ * one's value (only rows with a pod_values entry), read once from config.ini. */
+enum {
+    POD_CHARGE,
+    POD_WAKE,
+    POD_ARTIST_CF,
+    POD_YEAR_OLD,
+    POD_ARTISTS,
+    POD_RESUME,
+    POD_LOCKCLOCK, /* 1 Large, else Standard */
+    POD_ARTIST_AZ,
+    POD_VOL_GUARD,
+    POD_HOLD_HOME,
+    POD_STANDBY,
+    POD_BT_LINK,
+    POD_CF_SORT,    /* Cover Flow's Sort: coverflow.c's SORT_FILE, not config.ini */
+    POD_CF_REFRESH, /* and Refresh Cover Flow, an action */
+    POD_EQ_OUTPUT,  /* EQ per Output: the value and key; its row is Advanced EQ's (peq_ui.c) */
+    POD_KEYTONE, /* Key Tone and In-Vehicle Mode: stock's bytes and SYSSET keys, as its rows did */
+    POD_CARMODE,
+    POD_SMART_WIFI,
+    POD_COVERMODE, /* Enlarged Album Art and Folder Album Cover: stock's bytes and PLAYSET keys, as
+                      its rows do */
+    POD_FOLDERCOVER,
+    POD_BIG_LIB, /* Display's Fast Navigation: Cover Flow's letters and their half copies
+                    (coverflow_thumb.c, lettered, coverflow_halves); off unless the key is 1 */
+    POD_PL_CF,   /* Display's Playlist View: List or Cover Flow, as Artist View */
+    POD_SCAN_DURATIONS,
+    POD_CF_POSITION,
+    POD_HIDE_STREAM, /* Appearance's Hide Streaming / Hide Folder (coverflow_home_layout) */
+    POD_HIDE_FOLDER,
+    POD_REMIND_DAILY, /* System Update's Update Notifications (netupdate_poll); netupdate.c passes
+                         pod_rows 26 */
+    POD_ALBUM_GRID,   /* Library & Folders' Album View: stock's value and PLAYSET key
+                         (album_view_toggle) */
+    POD_COUNT
+};
+int pod_value(int i);
+
 /* EQ per Output (docs/internals.md#eq-per-output): peq_ui.c swaps the EQ when the output named key
  * ("3.5mm", "4.4mm", "usb", a Bluetooth MAC) takes over; forgetting whose it is ends the following.
  */
 void eq_output(const char *key), eq_output_forget(void);
-int ringnav_eq_output(void);         /* navigation.c: the setting */
 void ringnav_eq_output_toggle(void); /* and its row's click */
 void peq_boot(void); /* clear a previous session's Simple EQ comparison before restoring playback */
 extern int peq_chained; /* peq_ui.c: peq_stock_eq ran this boot */
@@ -410,9 +449,6 @@ unsigned album_id(void *r), album_dir(const char *p, int disc);
 int carousel_glide(void *w, int goal, unsigned ms, int easing);
 void coverflow_letter(void *w, unsigned letter, unsigned now);
 void coverflow_letter_hold(void *w, unsigned letter);
-int ringnav_big_library(void);  /* Display's Fast Navigation: letters, years and half copies */
-int ringnav_remind_daily(void); /* System Update's Update Notifications (netupdate_poll) */
-int ringnav_hide_stream(void), ringnav_hide_folder(void); /* Appearance's Hide ... on Home */
 /* A letter with this bit is the Year sort's year instead, in its low bits, 0 undated. */
 #define CF_YEAR 0x80000000u
 int blob_io(const char *path, const char *tmp, void *buf, unsigned size, int write);
@@ -467,8 +503,14 @@ int ringnav_smart_awake(void); /* navigation.c: Smart Awake (IPOD KEEPLIT) is on
 void library_poll(void); /* addon_library.c: an app's library update request, once per addon_poll */
 /* spotify.c's Q2SPOT/1 framing (docs/librespot.md), which the card apps speak too */
 int spot_escape(const char *s, char *out, unsigned size);
+int spot_put(char *out, unsigned size, const char *s); /* "\t" and s escaped appended */
 int spot_reply(char *buf, unsigned len, char **f, int max);
-void spot_shut(int fd);
+int spot_exchange(const char *path, unsigned wait_ms, unsigned max, char *buf, unsigned len,
+                  unsigned *n, volatile int *cancel);
+enum { SPOT_OK, SPOT_NOSOCK, SPOT_FAIL }; /* spot_exchange's results */
+unsigned curl_save(const void *data, unsigned size, unsigned n, void *file); /* netupdate.c */
+/* scrobble.c: a libcurl handle for url, verified with the firmware's CA file */
+void *tls_easy(const char *url, long connect_s, long timeout_s);
 /* library_lists.c: a card folder's songs played from the card (a card app's local row): a
  * folder opens its list, a file plays its folder from it; album, in track order (by name), else
  * newest first. */
@@ -521,6 +563,11 @@ void lyrics_paint(void *row, void *canvas), lyrics_gone(void);
 unsigned
 accent_tone(int tone); /* iPod: the Accent's ACCENTS column (Minimal's own: MINIMAL_FILL) */
 unsigned rgba(unsigned rgb, unsigned alpha);
+typedef struct {
+    int x, y, w, h;
+} rect_t;
+/* navigation.c: a rounded box in color, or a square one when the canvas declines to round it */
+void fill_box(void *canvas, rect_t *r, unsigned color, unsigned radius);
 /* const and pure below: each one's result rests on its arguments (and pure's, memory) alone, so
  * clang can keep one call for several (theme_engine.c and navigation.c define these). */
 unsigned mix(unsigned from, unsigned to, int j, int n) __attribute__((const));

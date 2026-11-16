@@ -481,12 +481,12 @@ int ringnav_open_preload(void) {
 }
 static void release(void) {
     s.next_valid = 0;
-    if (s.order) free(s.order);
-    if (s.cycle) free(s.cycle);
-    if (s.groups) free(s.groups);
-    if (s.seen) free(s.seen);
-    if (s.history) free(s.history);
-    if (ids) free(ids);
+    free(s.order);
+    free(s.cycle);
+    free(s.groups);
+    free(s.seen);
+    free(s.history);
+    free(ids);
     ids = 0;
     s.order = s.cycle = 0;
     s.groups = s.seen = s.history = 0;
@@ -593,10 +593,10 @@ static int rebuild(int keep) {
         playback_clear(); /* every caller ends advanced play: no older queue's snapshot stays */
         return 0;
     }
-    if (s.order) free(s.order);
-    if (s.cycle) free(s.cycle);
-    if (s.groups) free(s.groups);
-    if (ids) free(ids);
+    free(s.order);
+    free(s.cycle);
+    if (s.groups) free(s.groups); /* the guard keeps clang-tidy's analyzer from losing s.n */
+    free(ids);
     for (unsigned i = 0; i < n; ++i) id[i] = rec_id(i);
     ids = id;
     s.order = order;
@@ -610,8 +610,8 @@ static int rebuild(int keep) {
         memcpy(hist, oldhistory, oldhn * sizeof *hist);
         memcpy(seen, oldseen, (oldn < n ? oldn : n) * sizeof *seen);
     }
-    if (oldseen) free(oldseen);
-    if (oldhistory) free(oldhistory);
+    free(oldseen);
+    free(oldhistory);
     /* Each run of the group_cmp sort is a group, named by its smallest index. Under Shuffle Songs
      * groups are read only by a group repeat (upcoming) and by Next/Previous Album
      * (playback_group_skip), which the hold menu offers only under shuffle >= 3 (navigation.c
@@ -861,11 +861,15 @@ int playback_successor(int automatic) {
     }
     return s.next_value;
 }
+/* The first order entry from i on that plays queue index x; s.n when none does. */
+static unsigned order_find(unsigned i, unsigned x) {
+    while (i < s.n && s.order[i].index != x) ++i;
+    return i;
+}
 /* A Play Next pick plays now: its order entry moves immediately after the cursor, leaving other
  * order intact, even when the order sorted it before the cursor (already marked seen). */
 static void play_now(unsigned next) {
-    unsigned i = 0;
-    while (i < s.n && s.order[i].index != next) ++i;
+    unsigned i = order_find(0, next);
     if (i < s.cursor) {
         entry t = s.order[i];
         for (; i < s.cursor; ++i) s.order[i] = s.order[i + 1];
@@ -881,13 +885,12 @@ static void play_now(unsigned next) {
 static void commit(unsigned next) {
     s.resume_key = s.resume_pending = 0;
     if (pend_take(next)) play_now(next);
-    unsigned i = s.cursor + 1;
-    while (i < s.n && s.order[i].index != next) ++i;
+    unsigned i = order_find(s.cursor + 1, next);
     if ((i == s.n || s.seen[next]) && !(s.repeat == 3 && next == (unsigned)M(MCL_POS))) {
         memcpy(s.order, s.cycle, s.n * sizeof *s.order);
         memset(s.seen, 0, s.n * sizeof *s.seen);
         make_order(s.cycle);
-        for (i = 0; i < s.n && s.order[i].index != next; ++i) {}
+        i = order_find(0, next);
     }
     if (i < s.n) s.cursor = i;
     s.seen[next] = 1;
@@ -929,8 +932,7 @@ static void *no_videos(void *q, int *at) {
     for (unsigned i = 0; i < n; ++i)
         if (!playback_video(deque_at(q, i))) keep++, before += (int)i < *at;
     if (keep == n) return 0;
-    void *out = _create_deque("stSongInfo");
-    deque_init(out);
+    void *out = song_list();
     for (unsigned i = 0; i < n; ++i)
         if (!playback_video(deque_at(q, i))) _deque_push_back(out, deque_at(q, i));
     if (!keep)
@@ -1084,11 +1086,8 @@ int ringnav_prev(void) {
     /* The track left is unplayed again, so Next comes back to it rather than skipping it. */
     if ((unsigned)M(MCL_POS) < s.n) s.seen[M(MCL_POS)] = 0;
     M(MCL_POS) = (int)at;
-    for (unsigned i = 0; i < s.n; ++i)
-        if (s.order[i].index == at) {
-            s.cursor = i;
-            break;
-        }
+    unsigned i = order_find(0, at);
+    if (i < s.n) s.cursor = i;
     s.next_valid = 0;
     s.dirty = 1;
     return mclStartPlayer();
@@ -1593,8 +1592,7 @@ int ringnav_memory(void *out) {
     if (ok && p != buf + h.size) ok = 0;
     void *rows = 0, *q = 0, *all = 0;
     if (ok) {
-        q = _create_deque("stSongInfo");
-        deque_init(q);
+        q = song_list();
         /* the library's rows for the snapshot's paths alone */
         all = songs_by_path(paths, h.n);
         unsigned n = 0;
@@ -1684,11 +1682,8 @@ int ringnav_memory(void *out) {
             for (unsigned i = 0; i < h.n; ++i)
                 if (map[i] != ~0u) s.seen[map[i]] = indices[h.n * 2 + i];
             s.seen[pos] = 1;
-            for (unsigned i = 0; i < s.n; ++i)
-                if (s.order[i].index == pos) {
-                    s.cursor = i;
-                    break;
-                }
+            unsigned found = order_find(0, pos);
+            if (found < s.n) s.cursor = found;
             s.npend = 0;
             if (h.version == 2) {
                 /* the run [forced-1, force_end), in order */

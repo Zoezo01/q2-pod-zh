@@ -269,8 +269,6 @@ void album_note(char *out, unsigned n, const lyr_job *job) {
 #include "stock.h"
 
 /* clang-format off */
-#define OM_CA "/etc/scrobble-ca.pem" /* scrobble.c's: GTS Root R4 signs LRCLIB, ISRG the Cover Art Archive,
-                                       * DigiCert G2 MusicBrainz and iTunes */
 #define LRCLIB_MAX (512 << 10)       /* up to 20 results, each with plain and synced text */
 #define COVER_MAX (256 << 10)        /* 10 MusicBrainz releases or 5 iTunes albums: ~15 KB in all */
 #define COVER_FILL 10                /* our candidates stop at this list size; stock's sources fill to 12 */
@@ -293,15 +291,8 @@ static unsigned got(const char *data, unsigned size, unsigned n, void *ctx) {
 /* A libcurl handle for url, verified with the bundled CA file (stock's curl_http_request turns
  * checks off), timed to keep stock's worker thread from hanging. */
 static void *easy(const char *url) {
-    void *c = curl_easy_init();
-    if (!c) return 0;
-    curl_easy_setopt(c, 10002, url);         /* CURLOPT_URL */
-    curl_easy_setopt(c, 10018, Q2POD_UA);    /* USERAGENT, as LRCLIB and MusicBrainz ask */
-    curl_easy_setopt(c, 99, 1L);             /* NOSIGNAL: stock's match threads */
-    curl_easy_setopt(c, 78, 10L);            /* CONNECTTIMEOUT */
-    curl_easy_setopt(c, 13, 20L);            /* TIMEOUT */
-    curl_easy_setopt(c, 10065, OM_CA);       /* CAINFO */
-    curl_easy_setopt(c, 20108, tls_untimed); /* SSL_CTX_FUNCTION: no date checks */
+    void *c = tls_easy(url, 10, 20);             /* tls_easy's NOSIGNAL: stock's match threads */
+    if (c) curl_easy_setopt(c, 10018, Q2POD_UA); /* USERAGENT, as LRCLIB and MusicBrainz ask */
     return c;
 }
 

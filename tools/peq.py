@@ -257,8 +257,7 @@ def compile_common(out, binary, player=False, flac_experiments=()):  # pragma: n
     return [*objects, obj]
 
 def patch_player(raw, out, flac_experiments=()):  # pragma: no mutate block
-    from flac import selection, EXPORTS, patch_words
-    flac_experiments = selection(flac_experiments)
+    from flac import EXPORTS, patch_words
     check(sha(raw) == PLAYER_SHA, 'Unexpected hciplayer')
     out.mkdir(exist_ok=True)
     binary = out/'stock-hciplayer'

@@ -36,7 +36,7 @@ WORK = Path.home()/'.cache/q2-hillclimb/score'/ROOT.name  # main() adds a folder
 WAY = {'T1': 'up', 'T2': 'up', 'R1': 'down', 'R2': 'up', 'P1': 'down', 'P2': 'down', 'P3': 'gate', 'S1': 'down', 'S2': 'up'}
 GATE = 0.005
 FLAKY = {'T1.branch_missed': 1}  # one branch of playlist_art.c is taken on some runs and not on others
-HOST_SUITES = 'library_scope mp3 peq coverflow coverflow_position chapters mp3_gapless remote build rotator_build'.split()  # firmware.yml's
+HOST_SUITES = 'library_scope mp3 peq coverflow coverflow_position chapters mp3_gapless remote build'.split()  # firmware.yml's
 PARSERS = ('id3', 'mp4_chapters', 'lrc', 'cue', 'm3u', 'flac_frame', 'mp3_gapless', 'ogg_tags', 'config_ini', 'ratings_tsv',
     'durations_cache', 'lyrics_response', 'scrobble_response', 'radio_response', 'release_list')
 FUZZ_SECONDS = 10

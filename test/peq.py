@@ -689,7 +689,7 @@ int shim_removed(void) { return removed; }
 unsigned char shim_flag(void) { return g_equalizer_flag; }
 static int eq_following;
 void shim_following(int on) { eq_following = on; }
-int ringnav_eq_output(void) { return eq_following; }
+int pod_value(int i) { return i == POD_EQ_OUTPUT ? eq_following : 0; } /* EQ per Output's, navigation.c's */
 void ringnav_eq_output_toggle(void) { eq_following = !eq_following; }
 void shim_run(void) { int (*f)(const void *) = timer_fn; timer_fn = 0; if (f) f(0); }
 /* Click the row whose labels, caption and value joined by a space, start with text; optionally let
@@ -3143,8 +3143,7 @@ static unsigned char savestartbt, transposition, tidalfurlstart, isFav_playing;
 static unsigned playback_loads;
 static int networkGetConnectStatus(void) { return 0; }
 static int mclStop(void) { return 0; }
-static void *_create_deque(const char *kind) { return 0; }
-static void deque_init(void *q) {}
+static void *song_list(void) { return 0; }
 static void _deque_push_back(void *q, void *r) {}
 static void deque_destroy(void *q) {}
 static void play_folder(void *q, int i, int cls) {}
@@ -3239,6 +3238,7 @@ static int curl_easy_perform(void *c) {
 }
 static int curl_easy_getinfo(void *c, int i, long *code) { *code = 200; return 0; }
 static void curl_easy_cleanup(void *c) { }
+static unsigned curl_save(const void *d, unsigned size, unsigned n, void *f) { return fwrite(d, size, n, f) * size; } /* netupdate.c's */
 static int renamed(const char *a, const char *b) { int r = rename(a, b); ++ended; return r; }
 static int unlinked(const char *p) { int r = unlink(p); ++ended; return r; }
 #define rename renamed
@@ -3622,7 +3622,7 @@ def tidal_check(tmp):
     assert name(16, b'', '\u00e9\u00e9\u00e9'.encode()) == '42-3 \u00e9\u00e9.flac'.encode()  # never mid-character
     assert name(9, b'A', b'T') is None
     # Run the actual eviction loop with a synthetic directory, including a failed unlink.
-    trim = (ROOT/'patch/tidal.c').read_text().split('static void trim(void) {', 1)[1].split('static unsigned save', 1)[0]
+    trim = (ROOT/'patch/tidal.c').read_text().split('static void trim(void) {', 1)[1].split('/* Stops the transfer once', 1)[0]
     source = tmp/'tidal_trim.c'
     source.write_text(r'''#include <assert.h>
 #include <stdio.h>

@@ -6,7 +6,7 @@ import struct
 
 import pytest
 
-from conftest import O, Deques, Files, block, libc, text
+from conftest import O, Deques, Files, block, libc, text, opus
 
 FAR = 0x7fffffff
 TAG_MAX = 65536
@@ -1095,19 +1095,6 @@ def test_stocks_own_lyrics_leave_the_tags_unread(fw, mcl, taglib):
     loader.playing(b'/mnt/mmc/a.flac')
     tags = taglib({'LYRICS': b'[00:01.00]tag'})
     assert loader.load() == 1 and loader.list == [(1, b'lrc')] and tags.calls == []
-
-
-def opus(tags):
-    """An Ogg Opus file: OpusHead, then tags as packet 1 on pages of its own (no CRC: xiph.c reads none)."""
-    pages, seq = [], 0
-    for packet in (b'OpusHead' + bytes([1, 2]) + struct.pack('<HIhB', 312, 48000, 0, 0), tags):
-        lacing = [255] * (len(packet) // 255) + [len(packet) % 255]
-        for at in range(0, len(lacing), 255):
-            part = lacing[at:at + 255]
-            pages.append(b'OggS\0' + bytes([at > 0]) + bytes(8) + struct.pack('<III', 1, seq, 0) + bytes([len(part)]) +
-                         bytes(part) + packet[at * 255:at * 255 + sum(part)])
-            seq += 1
-    return b''.join(pages)
 
 
 @pytest.mark.parametrize('size,read', [(1000, 1), ((4 << 20) + 1, 0)])

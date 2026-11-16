@@ -8,7 +8,8 @@ from unicorn import Uc, UcError, UC_ARCH_MIPS, UC_MODE_MIPS32, UC_MODE_LITTLE_EN
 from unicorn.unicorn_py3.unicorn import uclib, uccallback, uc_hook_h, HOOK_CODE_CFUNC  # 2.1.4's own: Machine.hooked registers a C hook
 from unicorn.mips_const import *
 sys.path.insert(0, sys.path[0] + '/../tools')  # tools/ first
-from build import jal, j, segments, load_elf, symbols, BASE, SCRATCH, HOOKS, WM_PAINT_LEAF, FUNCTIONS, GLOBALS, CONTEXT_DATA, ROOT, source_sha256, sha, PRIVATE_FUNCTIONS, TAG, VERSION, BETA, dev_tag
+from mips import load_elf
+from build import jal, j, segments, symbols, BASE, SCRATCH, HOOKS, WM_PAINT_LEAF, FUNCTIONS, GLOBALS, CONTEXT_DATA, ROOT, source_sha256, sha, PRIVATE_FUNCTIONS, TAG, VERSION, BETA, dev_tag
 B=pathlib.Path(sys.argv[1] if len(sys.argv)>1 else 'build')
 payload_syms=symbols(B/'patch.elf')
 manifest=json.loads((B/'manifest.json').read_text())
@@ -89,6 +90,8 @@ for a in ENTRIES: watch(a)
 def signed(x): return x if x<0x80000000 else x-0x100000000
 SCOPE_RULES='/mnt/data/q2-library-scope'  # library_scope.c's folder marker rules, written by a library update
 LIBRARY_SCOPE=re.search(r'#define LIBRARY_SCOPE_TOKEN "(.*)"',(ROOT/'patch/library_scope.h').read_text())[1]
+# peq.h's pod_rows rows, pod_value's argument, by name
+POD={n:i for i,n in enumerate(re.findall(r'^\s*(POD_\w+)',re.search(r'enum \{\s*(POD_CHARGE\b.*?)\}',re.sub(r'/\*.*?\*/','',(ROOT/'patch/peq.h').read_text(),flags=re.S),re.S)[1],re.M))}
 MUSIC_WHERE=re.search(r'#define MUSIC_WHERE "(.*)" LIBRARY_SCOPE_TOKEN',INC)[1]+LIBRARY_SCOPE  # the Library's music
 
 # Q2_TRACE=FILE logs every draw and widget-property call, each hook's return and each passed case, by value.
@@ -175,7 +178,7 @@ class Machine:
             for name in ('paint','dispatch','paint_bg'):
                 self.handlers[int(manifest['patch_symbols']['stock_'+name+'_trampoline'],16)]='stock_'+name
         self.mock('pthread_create@GLIBC_2.2','pthread_detach@GLIBC_2.0','pthread_self@GLIBC_2.0')  # pthread_self: playback_poll's UI thread
-        self.mock('reset_poweroptions_timer','screen_action','enable_fb','usleep@GLIBC_2.0','sprintf@GLIBC_2.0',
+        self.mock('reset_poweroptions_timer','screen_action','enable_fb','usleep@GLIBC_2.0','sprintf@GLIBC_2.0','snprintf@GLIBC_2.0',
                   'airplayGetFlag','playpause_quick_click','time@GLIBC_2.0','localtime@GLIBC_2.0','tzset@GLIBC_2.0',
                   'strlen@GLIBC_2.0','strncpy@GLIBC_2.0','strrchr@GLIBC_2.0','strcasecmp@GLIBC_2.0','strncasecmp@GLIBC_2.0','strncmp@GLIBC_2.0',
                   'strcasestr@GLIBC_2.2',
@@ -10726,7 +10729,7 @@ void coverflow_render(unsigned *, int, int, const unsigned *const[7]);
 int ipod_light(void) { return %d; }
 int ipod_square_art(void) { return 0; }
 unsigned time_now_ms(void) { return 0; } /* the fold's clock: fold_at counts back from 0 */
-int ringnav_big_library(void) { return 0; } /* the MIPS machines' own: Fast Navigation off */
+int pod_value(int i) { return 0; } /* the MIPS machines' own: Fast Navigation off */
 void cf_thumb_lead(float), cf_thumb_lean(int), cf_thumb_fold(int, unsigned), cf_thumb_enter(int, float, float);
 void cf_thumb_speed(float, float), cf_thumb_held(float, float, float, float, int);
 float cf_thumb_hold(int, float, int);
@@ -19235,10 +19238,10 @@ guard=lambda: m.get(payload_syms['wheel_guard'])
 assert guard()==0 and click(7)==[(1,'Q2POD','VOLGUARD')] and texts()[7]=='Volume Guard' and guard()==1
 assert click(7)==[(0,'Q2POD','VOLGUARD')] and texts()[7]=='Volume Guard' and guard()==0; passed()
 # Fast Navigation (Display, Cover Flow's page, its last row): off by default; the row saves BIGLIBRARY, and Cover
-# Flow reads it at once (ringnav_big_library: letters, years and half copies); a stored value other than 1 is off.
+# Flow reads it at once (pod_value(POD_BIG_LIB): letters, years and half copies); a stored value other than 1 is off.
 bm,brows,btexts,bicons,bclick=settings_page('display','scroll_view_display',stock_rows=3,sub=2)
 assert btexts()[-3]=='Fast Navigation' and bicons[-3]=='playset_covermode',(btexts(),bicons)
-big=lambda bm: bm.call(address=payload_syms['ringnav_big_library'],args=(0,0,0,0),gap=0)
+big=lambda bm: bm.call(address=payload_syms['pod_value'],args=(POD['POD_BIG_LIB'],0,0,0),gap=0)
 k=len(brows)-3
 assert big(bm)==0 and bclick(k)==[(1,'Q2POD','BIGLIBRARY')] and btexts()[k]=='Fast Navigation' and big(bm)==1
 assert bclick(k)==[(0,'Q2POD','BIGLIBRARY')] and btexts()[k]=='Fast Navigation' and big(bm)==0; passed()
@@ -19254,7 +19257,7 @@ assert dclick(len(drows)-2)==[(0,'Q2POD','SCANDURATIONS')]; passed()
 # The browsing-position indicator is optional, off by default, and persists independently.
 pm,prows,ptexts,picons,pclick=settings_page('display','scroll_view_display',stock_rows=3,sub=2)
 assert ptexts()[-1]=='Position Bar'
-position_on=lambda pm: pm.call(address=payload_syms['coverflow_position_enabled'],args=(0,0,0,0),gap=0)
+position_on=lambda pm: pm.call(address=payload_syms['pod_value'],args=(POD['POD_CF_POSITION'],0,0,0),gap=0)
 assert position_on(pm)==0 and pclick(len(prows)-1)==[(1,'Q2POD','CFPOSITION')] and position_on(pm)==1
 assert pclick(len(prows)-1)==[(0,'Q2POD','CFPOSITION')] and position_on(pm)==0
 for v,on in (('1',1),('2',0),('0',0)):
@@ -21881,12 +21884,13 @@ passed()
 class EqOutputMachine(BtLinkMachine):
     def __init__(self,links=(),way=0,headset=0,po=0,bal=0,on=1):
         super().__init__(links); self.way=way; self.on=on; self.keys=[]
-        self.handlers.update({syms['mclGetOutputWay']:'eo:way',payload_syms['ringnav_eq_output']:'eo:on',payload_syms['eq_output']:'eo:key'})
+        self.handlers.update({syms['mclGetOutputWay']:'eo:way',payload_syms['pod_value']:'eo:on',payload_syms['eq_output']:'eo:key'})
         self.byte(syms['g_headset_output'],headset); self.byte(syms['g_po_status'],po); self.byte(syms['g_bal_status'],bal)
     def hook(self,u,addr,size,_):
         name=self.handlers.get(addr,'')
         if not name.startswith('eo:'): return super().hook(u,addr,size,_)
         if name=='eo:key': self.keys.append(self.text(u.reg_read(REGS[0])))
+        if name=='eo:on': assert u.reg_read(REGS[0])==POD['POD_EQ_OUTPUT']
         self.returns({'eo:way':self.way,'eo:on':self.on}.get(name,0))
     def poll(self): self.call(address=payload_syms['headset_eq_poll'],args=(0,0,0,0),gap=1000); return self.keys
 for kw,want in ((dict(headset=0,po=1),['3.5mm']),(dict(headset=1,bal=1),['4.4mm']),(dict(headset=1,po=1,bal=1),['4.4mm']),
@@ -21905,10 +21909,10 @@ class EqRowMachine(QueueMachine):  # a payload call has no t9 for Machine's hand
         self.forgets+=1; self.returns(0)
 for config,on in (({},0),({'EQOUTPUT':'1'},1)):
     m=EqRowMachine(); m.config.update(config); m.handlers[payload_syms['eq_output_forget']]='eq_output_forget'
-    assert m.call(address=payload_syms['ringnav_eq_output'],args=(0,0,0,0),gap=0)==on,config
+    assert m.call(address=payload_syms['pod_value'],args=(POD['POD_EQ_OUTPUT'],0,0,0),gap=0)==on,config
     m.calls=[]; m.call(address=payload_syms['ringnav_eq_output_toggle'],args=(0,0,0,0),gap=0)
     assert [(c[1],m.text(c[2]),m.text(c[3])) for c in m.calls if c[0]=='write_int_config']==[(1-on,'Q2POD','EQOUTPUT')],config
-    assert m.forgets==on and m.call(address=payload_syms['ringnav_eq_output'],args=(0,0,0,0),gap=0)==1-on,config
+    assert m.forgets==on and m.call(address=payload_syms['pod_value'],args=(POD['POD_EQ_OUTPUT'],0,0,0),gap=0)==1-on,config
 passed()
 
 # Light Mode's inverse flip (games.c's card faces) follows the scheme's paper and ink, clamped as tools/theme.py's;

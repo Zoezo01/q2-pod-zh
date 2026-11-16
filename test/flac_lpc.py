@@ -24,7 +24,8 @@ from unicorn.mips_const import (
 )
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
-from build import FLAGS, ROOT, run, segments, symbols
+from build import FLAGS, ROOT, run, symbols
+from mips import load_elf
 from peq import PLAYER_SHA
 
 STOCK = {32: 0x5baedc, 64: 0x5bb05c}
@@ -44,38 +45,10 @@ def compile_payload(out):
     return elf
 
 
-def load_images(u, *images):
-    """Map shared LOAD pages once, then copy each segment's exact file bytes.
-
-    The integrated linker script places text, rodata and data in separate LOAD
-    segments sharing their boundary page. Mapping every segment independently
-    rejects that valid ELF; skipping its mem_write would silently lose content.
-    """
-    pages, loads = set(), []
-    for image in images:
-        for _, (kind, off, base, _, filesz, memsz, _, _) in segments(image):
-            if kind != 1 or not memsz:
-                continue
-            assert filesz <= memsz and off + filesz <= len(image)
-            assert all(base + memsz <= a or a + n <= base for a, n, _ in loads), 'overlapping LOAD data'
-            pages.update(range(base & ~4095, (base + memsz + 4095) & ~4095, 4096))
-            loads.append((base, memsz, image[off:off + filesz]))
-    ordered = sorted(pages)
-    start = end = ordered[0]
-    for page in ordered[1:] + [ordered[-1] + 8192]:
-        if page != end + 4096:
-            u.mem_map(start, end + 4096 - start)
-            start = page
-        end = page
-    for base, memsz, data in loads:
-        u.mem_write(base, data)  # Fresh mappings already zero each segment's BSS.
-        assert bytes(u.mem_read(base, len(data))) == data
-
-
 class Machine:
     def __init__(self, stock, payload):
         self.u = Uc(UC_ARCH_MIPS, UC_MODE_MIPS32 | UC_MODE_LITTLE_ENDIAN)
-        load_images(self.u, stock, payload)
+        load_elf(self.u, stock, payload)
         self.u.mem_map(0x2000000, 0x200000)
         self.u.mem_map(END, 0x10000)
         self.count = 0

@@ -1031,7 +1031,7 @@ int ringnav_playlist(void *win) {
     /* Playlist View: Cover Flow, once, as the page opens (from Library, Home's list or its
      * shortcut): coming back to it shows the list; with no playlists the list, New Playlist its way
      * on. The covers are the playlists' art, so they build it in every theme, Row Art or not. */
-    int covers = first && list && lists && deque_size(lists) && ringnav_playlist_coverflow();
+    int covers = first && list && lists && deque_size(lists) && pod_value(POD_PL_CF);
     if (toolbar && !covers) return result; /* Minimal, Modern: stock's rows, no art built */
     if (toolbar) { /* the rows stay stock's; the covers' builds stop with the page */
         widget_on(win, EVT_DESTROY, pl_gone, win);

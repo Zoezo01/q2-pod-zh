@@ -5,7 +5,7 @@ import random
 
 import pytest
 
-from conftest import block, text
+from conftest import SPOT_FAIL, SPOT_NOSOCK, SPOT_OK, block, text
 
 REPLY_MAX = 64 << 10
 RADIO_MAX = 200
@@ -13,7 +13,6 @@ FETCH_MAX = 256 << 10
 SPOT_DEPTH, SPOT_ROWS = 8, 50
 L_BASE, L_LIST, L_CATS, L_CONFIRM, L_DOWNLOADS, L_JOB, L_STORAGE, L_SELECT, L_REMOVE = range(9)
 S_LOAD, S_READY, S_ERROR, S_PAIR, S_OLD, S_WAIT = range(6)
-W_OK, W_NOSOCK, W_FAIL = range(3)
 A_FETCH, A_PLAY, A_ENQUEUE, A_SET, A_SIGNOUT, A_DOWNLOAD, A_CAPS, A_REMOVE, A_PREVIEW = range(9)
 KEY_PLAY, KEY_BACK_BTN, KEY_FWD_BTN = 171, 222, 223
 
@@ -529,28 +528,28 @@ def worker(fw, script, connect=0, clock=None):
 
 def test_a_reply_read_to_eof(fw):
     wk = worker(fw, [b'Q2SPOT/1\n', b'1\tok\t\t\n'])
-    assert wk.done == 1 and wk.fail == W_OK and wk.n == 16 and C.string_at(wk.buf) == b'Q2SPOT/1\n1\tok\t\t\n'
+    assert wk.done == 1 and wk.fail == SPOT_OK and wk.n == 16 and C.string_at(wk.buf) == b'Q2SPOT/1\n1\tok\t\t\n'
     assert len(fw.calls('spot_shut')) == 1 and len(fw.calls('fw_close')) == 1
 
 
 def test_no_socket_is_its_own_failure(fw):
     wk = worker(fw, [], connect=-1)
-    assert wk.fail == W_NOSOCK and wk.done == 1
+    assert wk.fail == SPOT_NOSOCK and wk.done == 1
 
 
 def test_a_reply_of_exactly_the_limit_is_whole(fw):
     wk = worker(fw, [b'x' * 32768, b'x' * 32768])
-    assert wk.fail == W_OK and wk.n == REPLY_MAX and C.string_at(wk.buf + REPLY_MAX) == b''
+    assert wk.fail == SPOT_OK and wk.n == REPLY_MAX and C.string_at(wk.buf + REPLY_MAX) == b''
 
 
 def test_a_reply_past_the_limit_fails_and_stays_in_its_buffer(fw):
     wk = worker(fw, [b'x' * 32768, b'x' * 32768, b'y'])
-    assert wk.fail == W_FAIL and wk.n == REPLY_MAX + 1
+    assert wk.fail == SPOT_FAIL and wk.n == REPLY_MAX + 1
 
 
 def test_a_read_error_fails(fw):
     wk = worker(fw, [b'abc', b'FAIL'])
-    assert wk.fail == W_FAIL
+    assert wk.fail == SPOT_FAIL
 
 
 class Browser:
@@ -595,7 +594,7 @@ class Browser:
     def tick(self):
         self.fw.fn('spotify__br_tick', C.c_int, C.c_void_p)(None)
 
-    def answer(self, status=b'ok', msg=b'', cursor=b'', rows=(), id=None, fail=W_OK, raw=None):
+    def answer(self, status=b'ok', msg=b'', cursor=b'', rows=(), id=None, fail=SPOT_OK, raw=None):
         """The reply to the request in flight (a Q2SPOT/1 line for each of rows), and the tick that takes it."""
         data = raw if raw is not None else b'Q2SPOT/1\n%d\t%s\t%s\t%s\n' % (self.wk.id if id is None else id, status, msg, cursor) + \
             b''.join(b'\t'.join(r) + b'\n' for r in rows)
@@ -748,7 +747,7 @@ def test_login_goes_back_to_the_pairing_prompt(fw):
 def test_no_socket_while_starting_keeps_waiting(fw):
     b = Browser(fw)
     b.br.until = b.now + 5000
-    b.answer(fail=W_NOSOCK, raw=b'')
+    b.answer(fail=SPOT_NOSOCK, raw=b'')
     assert b.top.state == S_WAIT and b.br.poll_at == b.now + 500
 
 
@@ -757,7 +756,7 @@ def test_an_old_add_on_has_a_state_file_but_no_socket(fw):
     b.br.until = 0
     b.now = 100000
     fw.mock('fw_access', lambda *_: 0)
-    b.answer(fail=W_NOSOCK, raw=b'')
+    b.answer(fail=SPOT_NOSOCK, raw=b'')
     assert b.top.state == S_OLD and b.sp.old == 1
 
 
@@ -891,14 +890,14 @@ def test_a_held_play_queues_a_track_and_downloads_a_playlist(fw):
 
 
 def test_put_appends_a_tab_and_the_escaped_field(fw):
-    put = fw.fn('spotify__put', C.c_int, C.c_void_p, C.c_uint, C.c_char_p)
+    put = fw.fn('spot_put', C.c_int, C.c_void_p, C.c_uint, C.c_char_p)
     out = block(fw, size=16)
     assert put(out, 16, b'a') == 1 and put(out, 16, b'b%') == 1 and C.string_at(out) == b'\ta\tb%25'
     assert put(out, 16, b'') == 1 and C.string_at(out) == b'\ta\tb%25\t'
 
 
 def test_put_fits_to_the_byte(fw):
-    put = fw.fn('spotify__put', C.c_int, C.c_void_p, C.c_uint, C.c_char_p)
+    put = fw.fn('spot_put', C.c_int, C.c_void_p, C.c_uint, C.c_char_p)
     assert put(block(fw, size=5), 5, b'abc') == 1
     assert put(block(fw, size=4), 4, b'abc') == 0
     assert put(block(fw, size=1), 1, b'') == 0
@@ -986,7 +985,7 @@ def test_hostile_replies_through_the_browser(fw):
             if kind < 0.1:
                 b.answer(raw=bytes(r.choice(b'Q2SPOT/1\n\t%0a') for _ in range(40)))
             elif kind < 0.15:
-                b.answer(fail=r.choice((W_FAIL, W_NOSOCK)), raw=b'')
+                b.answer(fail=r.choice((SPOT_FAIL, SPOT_NOSOCK)), raw=b'')
             elif kind < 0.2:
                 b.answer(id=b.wk.id + 1, rows=[hostile_row(r)])
             elif b.br.act and b.br.act != A_CAPS:
@@ -1126,7 +1125,7 @@ def test_a_name_too_long_for_the_path_is_not_found(fw):
 
 def test_save_counts_bytes_for_curl(fw):
     fw.mock('fw_fwrite', lambda data, size, n, f, *_: n)
-    assert fw.fn('tidal__save', C.c_uint, C.c_char_p, C.c_uint, C.c_uint, C.c_void_p)(b'abcdef', 2, 3, None) == 6
+    assert fw.fn('curl_save', C.c_uint, C.c_char_p, C.c_uint, C.c_uint, C.c_void_p)(b'abcdef', 2, 3, None) == 6
 
 
 class Stream:

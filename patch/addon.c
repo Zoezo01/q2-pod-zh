@@ -588,8 +588,7 @@ static void stream_poll(app_t *a) {
             deque_destroy(add);
         }
     } else if (!scan && stream_newer(sm.dir, sm.last)) {
-        void *songs = app_album_songs(sm.dir), *add = _create_deque("stSongInfo");
-        deque_init(add);
+        void *songs = app_album_songs(sm.dir), *add = song_list();
         for (unsigned i = 0, n = deque_size(songs); i < n; ++i) {
             void *r = deque_at(songs, i);
             if (strcmp(P(r, REC_NAME), sm.last) > 0) _deque_push_back(add, r);
@@ -1038,50 +1037,18 @@ void addon_quit(const char *dir) { /* addon_card_away's wait, libc's clock and s
  * buf, the reply then read into it, one connection a request. */
 static struct {
     unsigned long thread;
-    int running, fail; /* fail: REQ_* */
+    int running, fail; /* fail: SPOT_* */
     volatile int cancel, done;
     unsigned id, n, len; /* id: the latest request's, never reused */
     char *buf;
     const char *path; /* the app's browse socket */
     int field; /* it sends a field row's text (field_sent): no answer is an error, not a wait */
 } req __attribute__((section(".scratch")));
-enum { REQ_OK, REQ_NOSOCK, REQ_FAIL };
 
-/* Written, shut for writing, and read to EOF within ADDON_WAIT_MS, 100 ms at a time so a cancel is
- * joined at once. */
+/* spotify.c's spot_exchange to the app's socket, within ADDON_WAIT_MS. */
 static void *worker(void *unused) {
-    struct unix_addr to = { 1, { 0 } };
-    tk_snprintf(to.path, sizeof to.path, "%s", req.path);
-    unsigned long long end = now_ms() + ADDON_WAIT_MS;
-    unsigned sent = 0;
-    int fd = socket(1, 2, 0), k = 1; /* AF_UNIX, SOCK_STREAM (MIPS numbering) */
-    req.fail = REQ_NOSOCK;
-    if (fd >= 0 && fd < 1024 && !fcntl(fd, 4, 0x80) &&
-        !connect(fd, &to, sizeof to)) { /* F_SETFL, O_NONBLOCK (MIPS) */
-        req.fail = REQ_FAIL;
-        while (!req.cancel && now_ms() < end) {
-            unsigned set[32] = { 0 }; /* fd_set */
-            int tv[2] = { 0, 100000 };
-            set[fd / 32] = 1u << fd % 32;
-            int writing = sent < req.len;
-            if ((k = select(fd + 1, writing ? 0 : set, writing ? set : 0, 0, tv)) <= 0) {
-                if (k) break; /* not a timeout */
-                continue;
-            }
-            if (writing) {
-                k = send(fd, req.buf + sent, req.len - sent, 0x4000); /* MSG_NOSIGNAL */
-                if (k <= 0) break;
-                if ((sent += (unsigned)k) == req.len) spot_shut(fd);
-                continue;
-            }
-            if ((k = recv(fd, req.buf + req.n, REPLY_MAX + 1 - req.n, 0)) <= 0 ||
-                (req.n += (unsigned)k) > REPLY_MAX) {
-                req.fail = k ? REQ_FAIL : REQ_OK;
-                break;
-            }
-        }
-    }
-    if (fd >= 0) close(fd);
+    req.fail =
+        spot_exchange(req.path, ADDON_WAIT_MS, REPLY_MAX, req.buf, req.len, &req.n, &req.cancel);
     /* the request's bytes past the reply: none kept, a field row's text being one (field_sent) */
     if (req.n < req.len) memset(req.buf + req.n, 0, req.len - req.n);
     if (req.n <= REPLY_MAX) req.buf[req.n] = 0;
@@ -1106,7 +1073,7 @@ static void req_send(const char *path, const char *op, const char *tail) {
     ++req.id;
     req.cancel = 0;
     req.n = 0;
-    req.fail = REQ_FAIL;
+    req.fail = SPOT_FAIL;
     req.path = path;
     int n = (req.buf = calloc(REPLY_MAX + 2, 1))
                 ? tk_snprintf(req.buf, REQ_MAX, "Q2SPOT/1\n%u\t%s%s\n", req.id, op, tail)
@@ -1204,12 +1171,6 @@ static app_t *app(void) { return &ap.a[pg.a]; }
 static lv_t *top(void) { return &pg.lv[pg.depth - 1]; }
 static const char *cell(int i, int k) { return pg.f[4 + 6 * i + k]; }
 
-/* "\t" and s escaped appended to out (size bytes); 0 when it doesn't fit. */
-static int put(char *out, unsigned size, const char *s) {
-    unsigned k = strlen(out);
-    return k + 1 < size && (out[k] = '\t', spot_escape(s, out + k + 1, size - k - 1) >= 0);
-}
-
 static void fetch(lv_t *l) {
     pg.act = 0;
     pg.paging = 0;
@@ -1223,7 +1184,7 @@ static void fetch(lv_t *l) {
 static void busy_row(int on);
 static void action(int i, const char *op, const char *ctx) {
     char a[sizeof top()->args] = "";
-    if (ctx[0] && !put(a, sizeof a, ctx)) return;
+    if (ctx[0] && !spot_put(a, sizeof a, ctx)) return;
     busy_row(0);
     tk_snprintf(pg.aop, sizeof pg.aop, "%s", op);
     req_send(app()->browse, op, a);
@@ -1330,7 +1291,7 @@ static void drop(void) {
  * page row's for the list's start); 0 when they don't fit. */
 static int cursor_args(const lv_t *l, char *a, unsigned n, const char *c) {
     tk_snprintf(a, n, "%.*s", (int)l->base, l->args);
-    return !c[0] || put(a, n, c);
+    return !c[0] || spot_put(a, n, c);
 }
 
 /* The level's next page asked for, as More… would, its reply appended by got(). */
@@ -1713,7 +1674,7 @@ static int sec_take(char **g, int n) {
         tk_snprintf(s->op, sizeof s->op, "%s", c[1]);
         tk_snprintf(s->title, sizeof s->title, "%s", c[2]);
         s->args[0] = 0;
-        if (c[4][0] && !put(s->args, sizeof s->args, c[4])) continue; /* too long: left out */
+        if (c[4][0] && !spot_put(s->args, sizeof s->args, c[4])) continue; /* too long: left out */
         s->base = strlen(s->args);
         ++k;
     }
@@ -1728,14 +1689,14 @@ static void got(void) {
     lv_t *l = top();
     char id[12], *head[4], *g[4 + 6 * ADDON_ROWS], *reply = req.buf, *fit;
     /* its own size, before spot_reply points into it: a full list keeps ADDON_PAGES of them */
-    if (req.fail == REQ_OK && (fit = realloc(reply, req.n + 1))) reply = fit;
+    if (req.fail == SPOT_OK && (fit = realloc(reply, req.n + 1))) reply = fit;
     /* The reply's bytes past its id, before spot_reply cuts them: the same as shown, nothing
      * redrawn. */
     unsigned skip = 9, hash = 0;
-    while (req.fail == REQ_OK && skip < req.n && reply[skip] != '\t') ++skip;
-    if (req.fail == REQ_OK && skip < req.n)
+    while (req.fail == SPOT_OK && skip < req.n && reply[skip] != '\t') ++skip;
+    if (req.fail == SPOT_OK && skip < req.n)
         hash = hash_bytes(FNV_SEED, (const unsigned char *)reply + skip, req.n - skip);
-    int act = pg.act, n = req.fail == REQ_OK
+    int act = pg.act, n = req.fail == SPOT_OK
                               ? spot_reply(reply, req.n, act ? head : g, act ? 0 : ADDON_ROWS)
                               : -1;
     char **f = act ? head : g;
@@ -1745,7 +1706,7 @@ static void got(void) {
     int ok = n >= 0 && !strcmp(f[1], "ok");
     unsigned now = time_now_ms();
     char why[48];
-    tk_snprintf(why, sizeof why, req.fail == REQ_NOSOCK ? "%s isn't running" : "%s didn't answer",
+    tk_snprintf(why, sizeof why, req.fail == SPOT_NOSOCK ? "%s isn't running" : "%s didn't answer",
                 app()->name);
     if (act) busy_row(0); /* before the toast, whose loop can pop the level */
     pg.act = 0;
@@ -1773,7 +1734,8 @@ static void got(void) {
             if (!strcmp(g[2], "pages") && g[3][0] && pg.pages < ADDON_PAGES) page_next(l);
         }
         append(l, from);
-    } else if (req.fail == REQ_NOSOCK && !req.field && /* a field's text: its error, never resent */
+    } else if (req.fail == SPOT_NOSOCK &&
+               !req.field && /* a field's text: its error, never resent */
                (app()->restart || now - app()->launch_at < ADDON_START_MS)) {
         if (l->state != K_WAIT && l->state != K_READY) l->state = K_WAIT, show();
         pg.again = now + 500;
@@ -1783,10 +1745,10 @@ static void got(void) {
     } else if (!ok) {
         l->state = K_ERROR;
         l->retry = 1;
-        l->nosock = req.fail == REQ_NOSOCK;
+        l->nosock = req.fail == SPOT_NOSOCK;
         l->since = l->slow = 0;
         tk_snprintf(l->note, sizeof l->note, "%s",
-                    req.fail != REQ_NOSOCK && n >= 0 && f[2][0] ? f[2] : why);
+                    req.fail != SPOT_NOSOCK && n >= 0 && f[2][0] ? f[2] : why);
         show();
     } else {
         l->since = l->slow = 0;
@@ -1938,7 +1900,7 @@ static int bar_tapped(void *ctx, void *event) {
  * argument, titled title. */
 static void open_list(const char *uri, const char *ctx, const char *title) {
     char a[sizeof top()->args] = "";
-    if (!ctx[0] || put(a, sizeof a, ctx)) push(uri, a, strlen(a), title);
+    if (!ctx[0] || spot_put(a, sizeof a, ctx)) push(uri, a, strlen(a), title);
 }
 
 /* A field row's text, typed in its box: sent to the row's uri after its context, and the reply
@@ -1952,8 +1914,8 @@ static void field_sent(lv_t *l) {
     int i = pg.field - 1;
     pg.field = 0;
     if (l->state == K_READY && i >= 0 && i < l->n && !strcmp(cell(i, 0), "field") &&
-        cell(i, 1)[0] && (!cell(i, 4)[0] || put(a, sizeof a, cell(i, 4))) &&
-        put(a, sizeof a, pg.term)) {
+        cell(i, 1)[0] && (!cell(i, 4)[0] || spot_put(a, sizeof a, cell(i, 4))) &&
+        spot_put(a, sizeof a, pg.term)) {
         req_send(app()->browse, cell(i, 1), a);
         req.field = 1;
         pg.act = 0;
@@ -1983,7 +1945,7 @@ static int go(const void *unused) {
     } else if (pg.next == G_SORT) { /* the sort icon, opening as its row would */
         if (l->state == K_READY && l->sort) open_list(pg.sort[1], pg.sort[4], pg.sort[2]);
     } else if (pg.next == G_SEARCH) {
-        if (put(a, sizeof a, pg.term)) push("search", a, strlen(a), pg.term);
+        if (spot_put(a, sizeof a, pg.term)) push("search", a, strlen(a), pg.term);
     } else if (pg.next == G_FIELD)
         field_sent(l);
     else if (l->state == K_ERROR && i == 1 && app()->nostop) { /* Cancel, as Return */
@@ -2229,7 +2191,8 @@ int addon_fav_path(const char *path, int on) {
 int addon_goto(const char *path, const char *title, int album) {
     char args[sizeof pg.lv->args] = "";
     app_t *a = goto_app(path);
-    if (!a || !put(args, sizeof args, album ? "album" : "artist") || !put(args, sizeof args, path))
+    if (!a || !spot_put(args, sizeof args, album ? "album" : "artist") ||
+        !spot_put(args, sizeof args, path))
         return 0;
     void *old = pg.page;
     if (old) closed(old, 0), window_manager_close_window_force(window_manager(), old);
@@ -2432,14 +2395,6 @@ static void qr_open(const char *state, const char *title) {
     qp.timer = timer_add(qr_tick, 0, 1000);
 }
 
-static void plate(void *canvas, int x, int y, int w, int h, unsigned color, unsigned radius) {
-    int r[4] = { x, y, w, h };
-    if (canvas_fill_rounded_rect(canvas, r, (void *)0, &color, radius)) {
-        canvas_set_fill_color(canvas, color);
-        canvas_fill_rect(canvas, x, y, w, h);
-    }
-}
-
 /* ringnav_paint, every widget after stock painted it: a progress row's bar, a flat rectangle filled
  * position/1000 of its width from the left, square, with no knob (the accent's light tone, as
  * Spotify's bar, over a dim track; the scrubber's rows under a theme that has them); and the code,
@@ -2469,8 +2424,8 @@ void addon_paint(void *w, void *canvas) {
     int side = qr_light() ? QR_LIGHT_PX : QR_PX;
     int n = qp.size, m = side / (n + 4), o = (side - m * n) / 2, digits = (n + 3) / 4;
     unsigned raw = ui_ink_raw(qr_light()); /* Classic's code reads dark on white in either half */
-    if (qr_light()) plate(canvas, -1, -1, side + 2, side + 2, 0x22000000u, 9);
-    plate(canvas, 0, 0, side, side, 0xffffffffu, qr_light() ? 8 : 10);
+    if (qr_light()) fill_box(canvas, &(rect_t){ -1, -1, side + 2, side + 2 }, 0x22000000u, 9);
+    fill_box(canvas, &(rect_t){ 0, 0, side, side }, 0xffffffffu, qr_light() ? 8 : 10);
     canvas_set_fill_color(canvas, rgba(0x000000, 255));
     for (int y = 0; y < n; ++y)
         for (int x = 0; x < n;) {

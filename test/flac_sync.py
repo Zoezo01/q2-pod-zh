@@ -14,7 +14,11 @@ import os
 from pathlib import Path
 import struct
 import subprocess
+import sys
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
+from build import FLAGS, fileoff, symbols
+from mips import load_elf
 from unicorn import Uc, UC_ARCH_MIPS, UC_MODE_MIPS32, UC_MODE_LITTLE_ENDIAN, UC_HOOK_CODE, UC_HOOK_MEM_READ
 from unicorn.mips_const import (UC_MIPS_REG_A0, UC_MIPS_REG_A1, UC_MIPS_REG_A2, UC_MIPS_REG_A3,
     UC_MIPS_REG_SP, UC_MIPS_REG_RA, UC_MIPS_REG_V0, UC_MIPS_REG_PC,
@@ -32,78 +36,33 @@ SAVED = (UC_MIPS_REG_S0, UC_MIPS_REG_S1, UC_MIPS_REG_S2, UC_MIPS_REG_S3,
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def elf(raw):
-    assert raw[:7] == b'\x7fELF\x01\x01\x01', 'little-endian ELF32 required'
-    phoff, shoff = struct.unpack_from('<II', raw, 28)
-    phsize, phnum, shsize, shnum = struct.unpack_from('<HHHH', raw, 42)
-    segments = [struct.unpack_from('<8I', raw, phoff + i * phsize) for i in range(phnum)]
-    sections = [struct.unpack_from('<10I', raw, shoff + i * shsize) for i in range(shnum)]
-    names = {}
-    for section in sections:
-        _, kind, _, _, off, size, link, _, _, entsize = section
-        if kind != 2:
-            continue
-        strings = sections[link]
-        table = raw[strings[4]:strings[4]+strings[5]]
-        for pos in range(off, off + size, entsize):
-            name, value, _, _, _, _ = struct.unpack_from('<IIIBBH', raw, pos)
-            label = table[name:].split(b'\0', 1)[0].decode()
-            if label:
-                names[label] = value
-    return segments, names
-
-
-def at(raw, address, size):
-    for kind, off, base, _, filesz, _, _, _ in elf(raw)[0]:
-        if kind == 1 and base <= address and address + size <= base + filesz:
-            return raw[off + address - base:off + address - base + size]
-    raise AssertionError(hex(address))
-
-
 def compile_payload(out):
     cc = os.environ.get('CC', 'clang')
-    flags = ['--target=mipsel-linux-gnu', '-march=mips32r2', '-mabi=32', '-mfp64',
-             '-mnan=2008', '-mno-abicalls', '-fno-pic', '-G0', '-ffreestanding',
-             '-fno-builtin', '-fno-stack-protector', '-fno-unwind-tables',
-             '-fno-asynchronous-unwind-tables', '-Oz', '-Wall', '-Wextra', '-Werror']
     obj, linked = out / 'flac_sync.o', out / 'flac_sync.elf'
     linker = out / 'flac_sync.ld'
     linker.write_text('SECTIONS { . = 0xe20000; .text : { *(.text*) } '
                       '.rodata : { *(.rodata*) } .data : { *(.data*) *(.sdata*) } '
                       '.bss : { *(.bss*) *(.sbss*) } /DISCARD/ : { *(.comment) '
                       '*(.note*) *(.pdr) *(.mdebug*) *(.MIPS.abiflags) *(.reginfo) } }\n')
-    subprocess.run([cc, *flags, '-c', str(ROOT / 'patch/flac_sync.c'), '-o', str(obj)], check=True)
+    subprocess.run([cc, *FLAGS, '-mnan=2008', '-c', str(ROOT / 'patch/flac_sync.c'), '-o', str(obj)], check=True)
     subprocess.run(['ld.lld', '-m', 'elf32ltsmip', '-T', str(linker), '-e', 'flac_sync_check',
                     str(obj), '-o', str(linked)], check=True)
-    return linked.read_bytes()
+    return linked
 
 
 class Machine:
-    def __init__(self, stock, payload, patched=False):
+    def __init__(self, stock, payload, target=None):
+        """Stock's check, or with target (flac_sync_check) the payload's, called from stock's sites."""
         self.uc = Uc(UC_ARCH_MIPS, UC_MODE_MIPS32 | UC_MODE_LITTLE_ENDIAN)
-        self.target = elf(payload)[1]['flac_sync_check'] if patched else CHECK
-        pages = set()
-        for raw in (stock, payload):
-            for kind, _, base, _, _, memsz, _, _ in elf(raw)[0]:
-                if kind == 1 and memsz:
-                    pages.update(range(base & ~4095, (base + memsz + 4095) & ~4095, 4096))
+        self.target = target or CHECK
+        load_elf(self.uc, stock, payload)
         for base, size in ((STACK, 0x10000), (DATA, 0x20000), (RETURN, 0x1000)):
-            pages.update(range(base, base + size, 4096))
-        ordered = sorted(pages)
-        start = end = ordered[0]
-        for page in ordered[1:] + [ordered[-1] + 8192]:
-            if page != end + 4096:
-                self.uc.mem_map(start, end + 4096 - start)
-                start = page
-            end = page
-        for raw in (stock, payload):
-            for kind, off, base, _, filesz, _, _, _ in elf(raw)[0]:
-                if kind == 1 and filesz:
-                    self.uc.mem_write(base, raw[off:off + filesz])
-        if patched:
+            self.uc.mem_map(base, size)
+        if target:
             word = 0x0c000000 | ((self.target >> 2) & 0x03ffffff)
             for site in CALLS:
-                assert at(stock, site, 4) == struct.pack('<I', 0x0c10adc4)
+                at = fileoff(stock, site)
+                assert stock[at:at + 4] == struct.pack('<I', 0x0c10adc4)
                 self.uc.mem_write(site, struct.pack('<I', word))
         self.uc.hook_add(UC_HOOK_CODE, self.code)
         self.uc.hook_add(UC_HOOK_MEM_READ, self.read)
@@ -238,8 +197,9 @@ def main():
     args.out.mkdir(parents=True, exist_ok=True)
     stock = args.stock.read_bytes()
     assert hashlib.sha256(stock).hexdigest() == STOCK_SHA, 'unexpected stock hciplayer'
-    payload = args.payload.read_bytes() if args.payload else compile_payload(args.out)
-    original, patched, reader = (Machine(stock, payload, flag) for flag in (False, True, False))
+    path = args.payload or compile_payload(args.out)
+    payload, target = path.read_bytes(), symbols(path)['flac_sync_check']
+    original, patched, reader = (Machine(stock, payload, t) for t in (None, target, None))
     checks = 0
 
     # Exact stock truth table, including non-boolean states, heartbeat normalization,

@@ -180,7 +180,7 @@ static void th_turn(void *s, int travel, unsigned now, int n, int ms) {
             th.goal = th.pos + (l > m ? m : l < -m ? -m : l);
         th.rate = 0;
         th.stretch = 0;
-        if (!ringnav_big_library()) th.beat = th.capped = 0; /* 1.7.6's: the covers move back */
+        if (!pod_value(POD_BIG_LIB)) th.beat = th.capped = 0; /* 1.7.6's: the covers move back */
     }
     th.dir = dir;
     /* Wheel Sensitivity scales the travel, 50% as the theme has it */
@@ -215,7 +215,7 @@ static void th_turn(void *s, int travel, unsigned now, int n, int ms) {
 }
 
 /* The arch (arch_pose) in place of the row at speed, Fast Navigation off. */
-static int th_arched(void) { return cfs.arch_span && !ringnav_big_library(); }
+static int th_arched(void) { return cfs.arch_span && !pod_value(POD_BIG_LIB); }
 
 /* How far the arch has formed, this pass of ms: fully with the covers at arch_full albums a second,
  * not at all under arch_at, and only with more than an album left to go, so a step of one never
@@ -396,7 +396,7 @@ int coverflow_wheel_poll(int usable, int gated) {
      * Only a lift ends them (above): slowing, resting on the wheel or turning back is reading
      * them, so a false start costs more than 1.7.6's and takes a faster spin of its own. That is
      * Fast Navigation's; off, 1.7.6's (th_beat), at jump_at for jump_ms. */
-    int since = (int)(now - th.tick_at), big = ringnav_big_library();
+    int since = (int)(now - th.tick_at), big = pod_value(POD_BIG_LIB);
     /* big_jump_at counts towards big_jump_ms; a dip under it, still at fast_at (a thumb
      * re-gripping), drains the count rather than dropping it; a lift or under fast_at drops it. */
     if (big)

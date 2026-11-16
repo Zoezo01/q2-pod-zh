@@ -30,30 +30,6 @@ WDT_START, WDT_STOP, WDT_FEED = (define(k) for k in ('WDT_START', 'WDT_STOP', 'W
 SHORT_LIST_MAX, LIST_FIRST_MS = define('SHORT_LIST_MAX'), define('LIST_FIRST_MS')
 
 
-@pytest.fixture(scope='module')
-def scratch(library):
-    """scratch_t's field offsets as this build lays it out: its pointers move them."""
-    return host.offsets(library.parent/'navigation.o', 'scratch_t')
-
-
-@pytest.fixture
-def st(fw, scratch):
-    base = C.addressof(fw.var('st', C.c_char))
-    return lambda name, ctype=C.c_int: ctype.from_address(base + scratch[name])
-
-
-@pytest.fixture(scope='module')
-def power_fields(library):
-    """system.c's own state, pw: its field offsets as this build lays it out."""
-    return host.offsets(library.parent/'system.o', 'pw')
-
-
-@pytest.fixture
-def power(fw, power_fields):
-    base = C.addressof(fw.var('system__pw', C.c_char))
-    return lambda name, ctype=C.c_int: ctype.from_address(base + power_fields[name])
-
-
 class Config:
     """config.ini: a key's value, or the default stock passes."""
     def __init__(self, fw, **values):

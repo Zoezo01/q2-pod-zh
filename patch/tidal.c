@@ -128,10 +128,6 @@ static void trim(void) {
     }
 }
 
-static unsigned save(const void *data, unsigned size, unsigned n, void *file) {
-    return fwrite(data, size, n, file) * size;
-}
-
 /* Stops the transfer once another track starts (tidal_play counts each) or the player has stayed
  * stopped for TIDAL_STOP_MS: a skip drops the copy within a second, a Stop within a few, as
  * radio.c's fetch_progress. ponytail: Stop is inferred from stock's play status, not signalled, so
@@ -202,7 +198,7 @@ static void *download(void *unused) {
         void *f = fopen(tmp, "wb"), *c = f ? curl_easy_init() : 0;
         if (c) {
             curl_easy_setopt(c, 10002, url);        /* CURLOPT_URL */
-            curl_easy_setopt(c, 20011, save);       /* WRITEFUNCTION */
+            curl_easy_setopt(c, 20011, curl_save);  /* WRITEFUNCTION */
             curl_easy_setopt(c, 10001, f);          /* WRITEDATA */
             curl_easy_setopt(c, 99, 1L);            /* NOSIGNAL: off the UI thread */
             curl_easy_setopt(c, 52, 1L);            /* FOLLOWLOCATION */
@@ -492,8 +488,7 @@ int app_urls_play(const char *path) {
     unsigned n = 0, gen = au.gen + 1;
     char **urls = calloc(AU_SONGS, sizeof *urls), **items = calloc(AU_SONGS, sizeof *items);
     unsigned char *fav = calloc(AU_SONGS, 1);
-    void *q = _create_deque("stSongInfo");
-    deque_init(q);
+    void *q = song_list();
     for (line = line ? line + 1 : 0; urls && items && fav && line && *line && n < AU_SONGS;
          line = end) {
         if ((end = strstr(line, "\n"))) *end++ = 0;
@@ -690,12 +685,9 @@ static int app_track(void *r, const char *id) {
     if (net <= 0) return net;
     tidal_playurl(0);
     mclStop();
-    char *c;
-    /* NOLINTNEXTLINE(clang-analyzer-core.NullPointerArithm): only called for an app: id */
-    unsigned gen = (unsigned)strtol(id + 4, &c, 10);
-    unsigned n = *c == ':' ? (unsigned)strtol(c + 1, 0, 10) : ~0u;
     pthread_mutex_lock(au.lock);
-    const char *url = gen == au.gen && n < au.n ? au.urls[n] : 0;
+    int k = au_at(id);
+    const char *url = k >= 0 ? au.urls[k] : 0;
     au_job *j = url ? calloc(1, sizeof *j + strlen(url) + 1) : 0;
     /* NOLINTNEXTLINE(bugprone-not-null-terminated-result): calloc'd a byte more: a NUL ends it */
     if (j) memcpy(j->url, url, strlen(url)), j->play = play, j->loads = playback_loads;
@@ -781,8 +773,7 @@ void tidal_all(int press, char *out, unsigned size) {
     if (press && td.all)
         all_end();
     else if (press) {
-        void *all = _create_deque("stSongInfo");
-        deque_init(all);
+        void *all = song_list();
         for (unsigned i = 0, n = q ? deque_size(q) : 0; i < n; ++i) {
             void *r = deque_at(q, i);
             const char *id = P(r, REC_TIDAL_ID);

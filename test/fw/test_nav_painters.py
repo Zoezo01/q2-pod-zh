@@ -16,7 +16,7 @@ import typing
 import pytest
 
 import host
-from conftest import NAVIGATION_SOURCE, O, c_enum, Deques, Files, claim, high_halves, libc, ui_name
+from conftest import NAVIGATION_SOURCE, O, POD, c_enum, pod_value, Deques, Files, claim, high_halves, libc, ui_name, opus
 
 STRINGS = dict(re.findall(r'^#define (\w+) "([^"]*)"', (host.ROOT/'patch/offsets.inc').read_text(), re.M))
 LIST_INTO_WHITE, BT_GLYPH = STRINGS['LIST_INTO_WHITE'], STRINGS['BT_GLYPH']
@@ -50,7 +50,6 @@ def bright(c):
     return sum(c >> s & 255 for s in (0, 8, 16))
 
 
-POD = c_enum('POD_CHARGE')  # pod_rows' rows
 SETTING = c_enum('SETTING_ACCENT')  # Display's rows, st.setting_label's slots
 
 
@@ -338,17 +337,6 @@ class Settings:
         value = self.values.get(C.string_at(key), C.string_at(default))
         if value or C.string_at(key) in self.values:
             C.memmove(out, value + b'\0', len(value) + 1)
-
-
-@pytest.fixture(scope='module')
-def scratch(library):
-    return host.offsets(library.parent/'navigation.o', 'scratch_t')
-
-
-@pytest.fixture
-def st(fw, scratch):
-    base = C.addressof(fw.var('st', C.c_char))
-    return lambda name, ctype=C.c_int: ctype.from_address(base + scratch[name])
 
 
 def strings(fw):
@@ -1700,7 +1688,7 @@ def test_system_update_adds_remind_daily_under_network_update_on_by_default(fw):
 
 def test_remind_daily_off_in_config_reads_off(fw):
     fw.mock('toolsReadConfig', lambda p, s, key, out, d, *_: C.memmove(out, b'0\0', 2) if C.string_at(key) == b'REMINDDAILY' else 0)
-    assert fw.fn('ringnav_remind_daily', C.c_int)() == 0
+    assert pod_value(fw, 'POD_REMIND_DAILY') == 0
 
 
 def test_standby_limit_cycles_its_four_choices_and_saves_each(fw):
@@ -1859,7 +1847,7 @@ def test_device_volume_off_gives_stock_its_gain_back_at_once(fw, way, sent):
     fw.mock('mclGetOutputWay', lambda *_: way)
     fw.fn('ringnav_btrows', C.c_int, C.c_void_p, C.c_void_p)(win.addr, None)
     link = row(ui, view, 'Control Device Volume')
-    bt_link = fw.fn('navigation__bt_link', C.c_int)
+    bt_link = lambda: pod_value(fw, 'POD_BT_LINK')
     assert switch(link) == 'switch_on' and bt_link() == 1
     click(ui, link)
     assert switch(link) == 'switch_off' and settings.written == [('BTVOLLINK', 0)] and bt_link() == 0
@@ -2065,9 +2053,9 @@ def test_key_tone_shows_click_with_headphones_while_on(fw, st, scratch, was):
 @pytest.mark.parametrize('on', [1, 0])
 def test_eq_per_output_turned_off_forgets_the_outputs_eq(fw, on):
     config = Settings(fw, EQOUTPUT=str(on).encode())
-    assert fw.fn('ringnav_eq_output', C.c_int)() == on
+    assert pod_value(fw, 'POD_EQ_OUTPUT') == on
     fw.fn('ringnav_eq_output_toggle', None)()
-    assert fw.fn('ringnav_eq_output', C.c_int)() == (not on) and config.written == [('EQOUTPUT', int(not on))]
+    assert pod_value(fw, 'POD_EQ_OUTPUT') == (not on) and config.written == [('EQOUTPUT', int(not on))]
     assert bool(fw.calls('fw_unlink')) == bool(on)  # off: what plays stays, the owner's file goes
 
 
@@ -2560,19 +2548,6 @@ def test_the_library_scan_notes_each_file_it_reads(fw):
 # An Ogg file whose comment header is over OGG_TAGS_MAX: xiph.c reads it, not TagLib.
 def comments(*items, vendor=b'libopus'):
     return struct.pack('<I', len(vendor)) + vendor + struct.pack('<I', len(items)) + b''.join(struct.pack('<I', len(c)) + c for c in items)
-
-
-def opus(tags):
-    """An Ogg Opus file: OpusHead, then tags as packet 1 on pages of its own (no CRC: xiph.c reads none)."""
-    pages, seq = [], 0
-    for packet in (b'OpusHead' + bytes([1, 2]) + struct.pack('<HIhB', 312, 48000, 0, 0), tags):
-        lacing = [255] * (len(packet) // 255) + [len(packet) % 255]
-        for at in range(0, len(lacing), 255):
-            part = lacing[at:at + 255]
-            pages.append(b'OggS\0' + bytes([at > 0]) + bytes(8) + struct.pack('<III', 1, seq, 0) + bytes([len(part)]) +
-                         bytes(part) + packet[at * 255:at * 255 + sum(part)])
-            seq += 1
-    return b''.join(pages)
 
 
 BIG = b'P=' + b'v' * (4 << 20)

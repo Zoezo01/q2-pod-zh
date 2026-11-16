@@ -372,7 +372,6 @@ int netupdate_sha256(const char *path, char *hex, unsigned *size) {
 #define NU_ASSET "update.tar"
 #define NU_FILE "/mnt/mmc/update.tar"
 #define NU_JSON "/tmp/q2-update.json"
-#define NU_CA "/etc/scrobble-ca.pem" /* scrobble.c's; github.com's and its asset host's roots */
 #define NU_BATTERY 16 /* percent: under it, off a charger, stock's updater refuses to flash */
 #define NU_TRIES 3    /* tries in a row that add nothing to the part, before a press gives up */
 #define SH_RESERVE (64ull << 20) /* left free on the card beyond a download or what it unpacks */
@@ -416,7 +415,8 @@ static struct {
     char tag[16], told[16];
 } nc __attribute__((section(".scratch")));
 
-static unsigned save(const void *data, unsigned size, unsigned n, void *file) {
+/* curl's WRITEFUNCTION into a FILE; tidal.c's too */
+unsigned curl_save(const void *data, unsigned size, unsigned n, void *file) {
     return fwrite(data, size, n, file) * size;
 }
 
@@ -432,35 +432,27 @@ static int progress(void *xfer, long long total, long long now, long long c, lon
  * from its byte `from` on (HTTP Range) when the file holds those before it. curl's own code. */
 static int fetch(const char *url, void *file, char *tag, unsigned n, long *code, volatile int *xfer,
                  long from) {
-    void *c = curl_easy_init();
+    void *c = tls_easy(url, 15, file ? 0 : 30); /* a header-only check times out at 30 s */
     int err = 1;
     char *location = 0;
     if (!c) return 1;
-    curl_easy_setopt(c, 10002, url);         /* CURLOPT_URL */
-    curl_easy_setopt(c, 10018, "Q2Pod");     /* USERAGENT */
-    curl_easy_setopt(c, 99, 1L);             /* NOSIGNAL: off the UI thread */
-    curl_easy_setopt(c, 78, 15L);            /* CONNECTTIMEOUT */
-    curl_easy_setopt(c, 10065, NU_CA);       /* CAINFO */
-    curl_easy_setopt(c, 64, 1L);             /* SSL_VERIFYPEER */
-    curl_easy_setopt(c, 81, 2L);             /* SSL_VERIFYHOST */
-    curl_easy_setopt(c, 20108, tls_untimed); /* SSL_CTX_FUNCTION: no date checks */
+    curl_easy_setopt(c, 10018, "Q2Pod"); /* USERAGENT */
     if (file) {
-        curl_easy_setopt(c, 52, 1L);          /* FOLLOWLOCATION: to the asset host */
-        curl_easy_setopt(c, 20011, save);     /* WRITEFUNCTION */
-        curl_easy_setopt(c, 10001, file);     /* WRITEDATA */
-        curl_easy_setopt(c, 19, 1024L);       /* LOW_SPEED_LIMIT: a stalled transfer ends */
-        curl_easy_setopt(c, 20, 30L);         /* LOW_SPEED_TIME */
-        curl_easy_setopt(c, 20219, progress); /* XFERINFOFUNCTION */
-        curl_easy_setopt(c, 10057, xfer);     /* XFERINFODATA */
-        curl_easy_setopt(c, 43, 0L);          /* NOPROGRESS off, for it */
+        curl_easy_setopt(c, 52, 1L);           /* FOLLOWLOCATION: to the asset host */
+        curl_easy_setopt(c, 20011, curl_save); /* WRITEFUNCTION */
+        curl_easy_setopt(c, 10001, file);      /* WRITEDATA */
+        curl_easy_setopt(c, 19, 1024L);        /* LOW_SPEED_LIMIT: a stalled transfer ends */
+        curl_easy_setopt(c, 20, 30L);          /* LOW_SPEED_TIME */
+        curl_easy_setopt(c, 20219, progress);  /* XFERINFOFUNCTION */
+        curl_easy_setopt(c, 10057, xfer);      /* XFERINFODATA */
+        curl_easy_setopt(c, 43, 0L);           /* NOPROGRESS off, for it */
         if (from) { /* RESUME_FROM: curl fails a reply that isn't the range */
             curl_easy_setopt(c, 21, from);
             curl_easy_setopt(
                 c, 45, 1L); /* FAILONERROR: a 403/429/5xx keeps the part, not its error page */
         }
     } else {
-        curl_easy_setopt(c, 44, 1L);  /* NOBODY */
-        curl_easy_setopt(c, 13, 30L); /* TIMEOUT */
+        curl_easy_setopt(c, 44, 1L); /* NOBODY */
     }
     /* curl itself fails a body shorter than its Content-Length (PARTIAL_FILE). */
     err = curl_easy_perform(c);
@@ -496,14 +488,6 @@ static int room(unsigned long long bytes, unsigned *need) {
     return SH_SPACE;
 }
 
-/* path's bytes; -1 when it can't be opened. */
-static long file_bytes(const char *path) {
-    void *f = fopen(path, "rb");
-    long n = f && !fseek(f, 0, 2) ? ftell(f) : -1;
-    if (f) fclose(f);
-    return n;
-}
-
 /* A press's work, to the state it ends in. The old update.tar stays until the new one is whole:
  * only a part of the release's size and SHA-256, as the card gives it back, is renamed over it. */
 static int update(void) {
@@ -531,7 +515,7 @@ static int update(void) {
     if (!listed) return NU_MISSING;
     /* Room for the tar and for stock's unpacking of it beside it. ponytail: an old update.tar the
      * new one replaces isn't counted as room. */
-    long held = file_bytes(NU_FILE ".part"); /* its bytes are already out of the free room */
+    long held = file_size(NU_FILE ".part"); /* its bytes are already out of the free room */
     unsigned long long left = 2ull * size - (held < 0 || (unsigned long)held > size ? 0 : held);
     int r = card_mounted() ? room(left, &nu.need) : SH_CARD;
     if (r) return r == SH_SPACE ? NU_SPACE : NU_CARD;
@@ -543,7 +527,7 @@ static int update(void) {
      * this one's download before it is found damaged and deleted. */
     int state = NU_RUNNING, tries = 0;
     while (state == NU_RUNNING) {
-        long have = file_bytes(NU_FILE ".part");
+        long have = file_size(NU_FILE ".part");
         if (have < 0 || (unsigned long)have > size) have = 0; /* none, or not this release's */
         if ((unsigned long)have == size) break;
         void *f = fopen(NU_FILE ".part", have ? "ab" : "wb");
@@ -566,7 +550,7 @@ static int update(void) {
             /* A reply that wasn't the range asked for (curl's RANGE_ERROR, or no 206) left the
              * part unusable: the next try starts it again. */
             if (!err || err == 33) unlink(NU_FILE ".part");
-            tries = file_bytes(NU_FILE ".part") > have ? 0 : tries + 1;
+            tries = file_size(NU_FILE ".part") > have ? 0 : tries + 1;
             nu.stage = 3;
             for (int i = 0; tries < NU_TRIES && i < 50 && !nu.cancel; ++i) usleep(100000); /* 5 s */
             if (tries == NU_TRIES || nu.cancel) state = nu.cancel ? NU_CANCELLED : NU_NET;
@@ -729,7 +713,7 @@ void netupdate_poll(void) {
     unsigned long tid;
     char s[80];
     if (!*Q2POD_TAG) return;
-    if (!ringnav_remind_daily()) { /* not while a check thread owns the tag, as named() */
+    if (!pod_value(POD_REMIND_DAILY)) { /* not while a check thread owns the tag, as named() */
         if (!nc.busy) *nc.tag = 0, nc.at = 0; /* back On: check at once */
         return;
     }

@@ -414,42 +414,6 @@ def ui(fw):
 
 
 @pytest.fixture(scope='module')
-def scratch(library):
-    """scratch_t's field offsets as this build lays it out: its pointers move them."""
-    return host.offsets(library.parent/'navigation.o', 'scratch_t')
-
-
-@pytest.fixture
-def st(fw, scratch):
-    base = C.addressof(fw.var('st', C.c_char))
-    return lambda name, ctype=C.c_int: ctype.from_address(base + scratch[name])
-
-
-@pytest.fixture(scope='module')
-def power_fields(library):
-    """system.c's own state, pw: its field offsets as this build lays it out."""
-    return host.offsets(library.parent/'system.o', 'pw')
-
-
-@pytest.fixture
-def power(fw, power_fields):
-    base = C.addressof(fw.var('system__pw', C.c_char))
-    return lambda name, ctype=C.c_int: ctype.from_address(base + power_fields[name])
-
-
-@pytest.fixture(scope='module')
-def lists_fields(library):
-    """library_lists.c's own state, ll: its field offsets as this build lays it out."""
-    return host.offsets(library.parent/'library_lists.o', 'll')
-
-
-@pytest.fixture
-def lists(fw, lists_fields):
-    base = C.addressof(fw.var('library_lists__ll', C.c_char))
-    return lambda name, ctype=C.c_int: ctype.from_address(base + lists_fields[name])
-
-
-@pytest.fixture(scope='module')
 def rates_fields(library):
     """ratings.c's own state, ra: its field offsets as this build lays it out."""
     return host.offsets(library.parent/'ratings.o', 'ra')

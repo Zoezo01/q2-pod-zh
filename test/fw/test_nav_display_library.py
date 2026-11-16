@@ -37,11 +37,6 @@ def tables(library):
 
 
 @pytest.fixture(scope='module')
-def scratch(library):
-    return host.offsets(library.parent/'navigation.o', 'scratch_t')
-
-
-@pytest.fixture(scope='module')
 def geometry(library):
     return tables(library)
 

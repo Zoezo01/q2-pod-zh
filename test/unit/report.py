@@ -62,13 +62,9 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--floor', type=float, help='fail under this score, percent')
     ap.add_argument('--survivors', type=pathlib.Path, help='write each survivor and its diff here')
-    ap.add_argument('--pending', action='store_true', help='print only the mutants not run yet, for mutmut run')
     ap.add_argument('--since', metavar='REV', help='only the functions added or changed since REV, as targets.py')
     args = ap.parse_args()
     found = results(args.since)
-    if args.pending:
-        print('\n'.join(k for mutants in found.values() for k, status in mutants.items() if status == 'not run'))
-        return 0
     rows = []
     totals = collections.Counter()
     for (module, name), mutants in found.items():

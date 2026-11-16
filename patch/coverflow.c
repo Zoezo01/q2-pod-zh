@@ -672,10 +672,16 @@ int staged_into(void *into, int (*query)(void *), void *arg) {
     return n;
 }
 
+/* An empty song list: stock's stSongInfo deque, made and initialised. */
+void *song_list(void) {
+    void *d = _create_deque("stSongInfo");
+    deque_init(d);
+    return d;
+}
+
 /* Its rows (*count its result) in a deque of their own; shared with navigation.c's queue menu. */
 void *staged(int (*query)(void *), void *arg, int *count) {
-    void *out = _create_deque("stSongInfo");
-    deque_init(out);
+    void *out = song_list();
     *count = staged_into(out, query, arg);
     return out;
 }
@@ -770,7 +776,6 @@ static const unsigned char all_sorts[] = { SORT_ALBUM, SORT_ARTIST, SORT_YEAR,
     "case when ifnull(album,'')='' then 'Unknown Album' else album end,"                           \
     "songer," ALBUM_TRACK ",albumsonger from songtable where " MUSIC_WHERE ALBUM_GROUP
 #define SORT_SQL ALBUM_SQL " order by "
-extern int ringnav_year_old(void);
 /* ALBUM_SQL with each album's year after (split_row's REC_YEAR), by year, undated last. */
 #define YEAR_SQL                                                                                   \
     "select id,album,songer," ALBUM_TRACK ",albumsonger," ALBUM_YEAR " from songtable" ALBUM_GROUP \
@@ -778,8 +783,8 @@ extern int ringnav_year_old(void);
 /* Albums by year, Playback settings' Year order (navigation.c): newest or oldest first, undated
  * last. */
 static const char *year_sql(void) {
-    return ringnav_year_old() ? YEAR_SQL ",album COLLATE NOCASE"
-                              : YEAR_SQL " desc,album COLLATE NOCASE";
+    return pod_value(POD_YEAR_OLD) ? YEAR_SQL ",album COLLATE NOCASE"
+                                   : YEAR_SQL " desc,album COLLATE NOCASE";
 }
 static const char *const sort_names[] = {
     "Sort: Album",  "Sort: Artist", "Sort: Recently Added", "Sort: Most Played", "Sort: Random",
@@ -1137,7 +1142,7 @@ static unsigned group(int i) {
  * year, with Fast Navigation on. */
 int lettered(void *w) {
     return w && w == cf.slide && cf.screen == COVERS &&
-           (cf.sort <= SORT_ARTIST || (cf.sort == SORT_YEAR && ringnav_big_library())) &&
+           (cf.sort <= SORT_ARTIST || (cf.sort == SORT_YEAR && pod_value(POD_BIG_LIB))) &&
            !cf.scoped;
 }
 
@@ -1314,8 +1319,7 @@ static void *music_albums(void *list, int artist) {
     unsigned m;
     row_t *v = album_rows(rows, &m, by_album, 0);
     if (!v) return deque_destroy(rows), list;
-    out = _create_deque("stSongInfo");
-    deque_init(out);
+    out = song_list();
     for (unsigned i = 0; i < deque_size(list); ++i) {
         void *r = deque_at(list, i);
         int k = I(r, REC_ID) == -1 ? -1 : album_in(v, m, r);
@@ -1342,8 +1346,7 @@ static void *split(void *stock, int artist) {
     unsigned m;
     row_t *v = album_rows(rows, &m, by_name, 1);
     if (!v) return deque_destroy(rows), stock;
-    out = _create_deque("stSongInfo");
-    deque_init(out);
+    out = song_list();
     for (unsigned i = 0; i < deque_size(stock); ++i) {
         void *r = deque_at(stock, i);
         unsigned from = deque_size(out), k;
@@ -1382,10 +1385,9 @@ int coverflow_split_artist(void *list) { return split_in_place(list, 1); }
 /* ponytail: keeps the list's (stock's) order, not the card's album_before order; sort here if
  * Next/Previous after a restart shows it. */
 int album_only(void *list, void *r, int at) {
-    void *out = _create_deque("stSongInfo");
+    void *out = song_list();
     const char *name = P(r, REC_ALBUM);
     int k = at, unknown = !name || !*name;
-    deque_init(out);
     for (unsigned i = 0; i < deque_size(list); ++i) {
         void *x = deque_at(list, i);
         const char *a = P(x, REC_ALBUM), *path = P(x, REC_PATH);
@@ -1430,7 +1432,7 @@ static void *sorted(void) {
     int artist = cf.sort == SORT_ARTIST, played = cf.sort == SORT_PLAYED;
     order_t *v = cf.sort == SORT_ALBUM ? 0 : calloc(n + 1, sizeof *v);
     if (!cf.scoped) /* the rated page's sort is its own */
-        cf.year_old = ringnav_year_old(), cf.artists = I(artist_type, 0);
+        cf.year_old = pod_value(POD_YEAR_OLD), cf.artists = I(artist_type, 0);
     unsigned *sum = v && played ? calloc(n + 1, sizeof *sum) : 0;
     char *keys = v && artist ? calloc(n + 1, ARTIST_KEY) : 0;
     int ranked = cf.sort != SORT_RATING && cf.sort != SORT_RANDOM; /* uses album_index */
@@ -1461,8 +1463,7 @@ static void *sorted(void) {
     else
         rank_by(v, cf.sort == SORT_ADDED ? SORT_SQL "max(time_create) desc" : year_sql());
     qsort(v, n, sizeof *v, artist ? by_artist : by_rank);
-    void *out = _create_deque("stSongInfo");
-    deque_init(out);
+    void *out = song_list();
     for (unsigned i = 0; i < n; ++i) _deque_push_back(out, v[i].r);
     if (!cf.scoped && cf.sort == SORT_YEAR) {
         free(years);
@@ -1473,7 +1474,6 @@ static void *sorted(void) {
     free(v), free(sum), free(keys), free(stock_rows), stock_rows = 0;
     return out;
 }
-extern int ringnav_artist_az(void);
 /* albums (split's rows) in place by year, as year_sql, or by name (Playback's Artist album order
  * A-Z), ranked over their names alone (of_names): the query's order, then the albums it missed,
  * then the Unknown album. navigation.c's artist pages. Out of memory they keep their order. */
@@ -1486,11 +1486,10 @@ void coverflow_by_year(void *albums) {
         free(taken);
         return;
     }
-    const char *sql = ringnav_artist_az() ? SORT_SQL "album COLLATE NOCASE" : year_sql();
+    const char *sql = pod_value(POD_ARTIST_AZ) ? SORT_SQL "album COLLATE NOCASE" : year_sql();
     void *rows = of_names(sql, albums, &found), *out;
     if (!rows) rows = staged(rank_query, (void *)sql, &found);
-    out = _create_deque("stSongInfo");
-    deque_init(out);
+    out = song_list();
     for (unsigned j = 0; j < deque_size(rows); ++j) {
         int i = album_in(v, m, deque_at(rows, j));
         if (i >= 0 && !taken[i]) taken[i] = 1, _deque_push_back(out, deque_at(albums, (unsigned)i));
@@ -1716,7 +1715,6 @@ int image_show(void *img, const char *url, unsigned *size) {
  * of the visual position is projected column by column into one frame bitmap, farthest first, with
  * its reflection, then the frame is drawn over the slide_menu, whose own children stay empty. All
  * integer: 16.16 turns and rotations, geometry in 1/16 px, row spans in 1/256 px. */
-#define CF_RING (2 * CF_REACH + 1)
 /* the active theme's Cover Flow values, copied at page open (cf_restyle) */
 cf_style_t cfs __attribute__((section(".scratch")));
 /* with them, cf_restyle's: a side cover's sine, and its near edge's screen x (1/16 px), at t = 1;
@@ -2327,7 +2325,7 @@ static void fx_window(int c, int n, const unsigned **ring) {
     int budget = !lean  ? th.on && th.jump ? FX_ENTER_MS : FX_BUDGET_MS
                  : late ? FX_SLACK_MS
                         : FX_LETTERS_MS;
-    int big = ringnav_big_library(), decodes = FX_DECODES;
+    int big = pod_value(POD_BIG_LIB), decodes = FX_DECODES;
     fx.todo = 0;
     if (half || fx.ld_on > 0) ld_ask(want, half ? k : 0);
     if (!half) fx_unletter(c);
@@ -3128,7 +3126,8 @@ static void load_albums(unsigned t0) {
         n = (int)deque_size(cf.stock);
     }
     if (cf.albums && !cf.scoped && (cf.sort == SORT_YEAR || cf.sort == SORT_ARTIST) &&
-        (cf.year_old != ringnav_year_old() || /* Year order changed, or Artists for its names */
+        (cf.year_old !=
+             pod_value(POD_YEAR_OLD) || /* Year order changed, or Artists for its names */
          (cf.sort == SORT_ARTIST && cf.artists != I(artist_type, 0)))) {
         if (cf.albums != cf.stock) deque_destroy(cf.albums);
         cf.albums = 0;
@@ -3289,8 +3288,7 @@ static void *in_order(void *tracks, void *album) {
         if (I(album, REC_ID) == -1 || !album_cmp(deque_at(tracks, i), album))
             v[n++] = deque_at(tracks, i);
     qsort(v, n, sizeof *v, album_before);
-    void *out = _create_deque("stSongInfo");
-    deque_init(out);
+    void *out = song_list();
     for (unsigned i = 0; i < n; ++i) _deque_push_back(out, v[i]);
     free(v);
     deque_destroy(tracks);
@@ -3594,8 +3592,7 @@ static int to_tracks(const void *unused) {
  * query per album; one artist query split back into albums if a large artist drags. */
 static int play_all(const void *unused) {
     cf.timer = 0;
-    void *all = _create_deque("stSongInfo");
-    deque_init(all);
+    void *all = song_list();
     for (unsigned i = 0; i < deque_size(cf.albums); ++i) {
         void *t = coverflow_album_tracks(deque_at(cf.albums, i));
         for (unsigned j = 0; j < deque_size(t); ++j) _deque_push_back(all, deque_at(t, j));
@@ -3814,8 +3811,7 @@ int coverflow_artist(void *albums) {
     cf.all_albums = cf.albums;
     cf.albums = albums;
     cf.scoped = ARTIST_ALBUMS;
-    extern int ringnav_artist_view(void);
-    cf.text_albums = ringnav_artist_view() == 2;
+    cf.text_albums = pod_value(POD_ARTIST_CF) == 2;
     load();
     return 1;
 }
@@ -4855,7 +4851,7 @@ void coverflow_home_layout(void) {
      * Streaming's). ponytail: Carousel keeps Folder's and Streaming's cards, as it keeps the
      * Shortcut's (below). */
     static const char *const rows[] = { "btn_folder", "btn_rockbox", "btn_stream" };
-    int shown[] = { !ringnav_hide_folder(), ipod_home_rockbox(), !ringnav_hide_stream() };
+    int shown[] = { !pod_value(POD_HIDE_FOLDER), ipod_home_rockbox(), !pod_value(POD_HIDE_STREAM) };
     for (int pass = 0; pass < 2; ++pass)
         for (int i = 0; i < 3; ++i) {
             void *row = widget_lookup(home.list, rows[i], 1); /* not the carousel's cards */

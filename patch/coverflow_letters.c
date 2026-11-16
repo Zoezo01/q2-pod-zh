@@ -189,7 +189,7 @@ static int entry_window(const entry_t *n) {
 /* The row's window: entry_window's into letters, held, and at speed with Fast Navigation on; at
  * speed with it off, 1.7.6's, round the facing cover */
 static int row_window(const entry_t *n) {
-    return th.jump || ringnav_big_library() ? entry_window(n) : cf_round(n->lead);
+    return th.jump || pod_value(POD_BIG_LIB) ? entry_window(n) : cf_round(n->lead);
 }
 
 /* The entry's covers, nearest the facing point first as the row at speed draws them, into q, with

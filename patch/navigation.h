@@ -21,42 +21,6 @@ typedef struct {
     unsigned scope, hash, hash2;
 } position_t;
 
-/* The settings rows pod_rows builds (pod_values and the Q2POD keys below). */
-enum {
-    POD_CHARGE,
-    POD_WAKE,
-    POD_ARTIST_CF,
-    POD_YEAR_OLD,
-    POD_ARTISTS,
-    POD_RESUME,
-    POD_LOCKCLOCK,
-    POD_ARTIST_AZ,
-    POD_VOL_GUARD,
-    POD_HOLD_HOME,
-    POD_STANDBY,
-    POD_BT_LINK,
-    POD_CF_SORT,    /* Cover Flow's Sort: coverflow.c's SORT_FILE, not config.ini */
-    POD_CF_REFRESH, /* and Refresh Cover Flow, an action */
-    POD_EQ_OUTPUT,  /* EQ per Output: the value and key; its row is Advanced EQ's (peq_ui.c) */
-    POD_KEYTONE, /* Key Tone and In-Vehicle Mode: stock's bytes and SYSSET keys, as its rows did */
-    POD_CARMODE,
-    POD_SMART_WIFI,
-    POD_COVERMODE, /* Enlarged Album Art and Folder Album Cover: stock's bytes and PLAYSET keys, as
-                      its rows do */
-    POD_FOLDERCOVER,
-    POD_BIG_LIB, /* Display's Fast Navigation: Cover Flow's letters (ringnav_big_library) */
-    POD_PL_CF,   /* Display's Playlist View: List or Cover Flow, as Artist View */
-    POD_SCAN_DURATIONS,
-    POD_CF_POSITION,
-    POD_HIDE_STREAM, /* Appearance's Hide Streaming / Hide Folder (coverflow_home_layout) */
-    POD_HIDE_FOLDER,
-    POD_REMIND_DAILY, /* System Update's Update Notifications (netupdate_poll); netupdate.c passes
-                         pod_rows 26 */
-    POD_ALBUM_GRID,   /* Library & Folders' Album View: stock's value and PLAYSET key
-                         (album_view_toggle) */
-    POD_COUNT
-};
-
 /* Writable state lives in the zero-filled page the builder maps past the payload text.
  * center_timer defers confirmation; wheel_* scale repeated fast detents; pos_* remember
  * the selected row per audited context across page recreation; reveal_* pin the recall glide so
@@ -325,9 +289,6 @@ typedef struct {
 } scratch_t;
 
 typedef struct {
-    int x, y, w, h;
-} rect_t;
-typedef struct {
     void *w, *at[MAX_ENTRIES];
     int id[MAX_ENTRIES], n, kind, rows, row, height, ctx;
     int cols; /* a table row's entries: ALBUM_GRID in the album grid, else 1 */
@@ -383,7 +344,6 @@ enum { SLIDER_LIGHT, SLIDER_MAX, SLIDER_BALANCE, SLIDER_BOOT }; /* st.slider_kin
 #define CONFIRM_CELL_PX 23
 #define MCL(a) (*(volatile int *)(a))
 int clamp_step(int offset, int maximum, int delta);
-void fill_box(void *canvas, rect_t *r, unsigned color, unsigned radius);
 unsigned put_num(unsigned *s, unsigned v);
 void paint_panel(void *w, void *canvas, const rect_t *r, const char *shadow, int flat);
 #define PANEL_PAD 8
@@ -420,7 +380,6 @@ const char *style_key(char *key, const char *state, const char *name);
 unsigned wide_len(const unsigned *s);
 void *window_of(void *w);
 void cf_veil(void *win, int on);              /* win unseen (1) or seen again under Coverflow */
-int ringnav_playlist_coverflow(void);         /* Display's Playlist View is Cover Flow */
 int music_records(void *list, int discovery); /* list's songs less spoken (0) or hidden (1) ones */
 extern const stops_t confirm_dark, confirm_tray, confirm_well;
 int search_key(unsigned key);
@@ -449,7 +408,6 @@ char *scrobble_tag(char *o, char *end, const char *s);
 void font_weight_paint(void *w, void *canvas);
 
 /* coverflow_position.c */
-int coverflow_position_enabled(void); /* navigation.c: persisted setting */
 void coverflow_position_reset(void);
 void coverflow_tail(void); /* coverflow.c: the covers follow the queue's album */
 

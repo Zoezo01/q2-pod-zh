@@ -8,7 +8,7 @@ import pytest
 from conftest import O
 from test_addon import Ap  # each file keeps its own state's mirror
 from test_nav_library_pages import Up
-from test_nav_painters import Ui, scratch, st, strings  # noqa: F401  the window stack; navigation.c's st by field
+from test_nav_painters import Ui, strings  # noqa: F401  the window stack
 from test_netupdate import JOB_INSTALL, NU_RUNNING, Nu, Sh
 from test_onlinematch import Al
 from test_radio import Rd
