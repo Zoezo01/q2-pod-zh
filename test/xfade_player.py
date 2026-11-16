@@ -4,12 +4,12 @@ the filter, as test/peq.py's crossfade_check drives the host build.
 
 A track's last seconds are held back (half of each block put out once the hold window opens) and
 mixed, equal power, under the next instance's first frames, at that track's rate; no fade asked
-plays every block whole.
+plays every block whole. Last, the EQ's cost: a settled 10-band block's instructions (peq_process).
 Usage: test/xfade_player.py BUILD_DIR"""
 import math, pathlib, re, struct, sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]/'tools'))
 from build import fileoff, load_elf, symbols
-from peq import EQ_OPEN_SLOT
+from peq import EQ_OPEN_SLOT, PLAYER_BASE
 from unicorn import Uc, UC_ARCH_MIPS, UC_MODE_MIPS32, UC_MODE_LITTLE_ENDIAN, UC_HOOK_CODE
 from unicorn.mips_const import *
 
@@ -392,7 +392,24 @@ for n in range(0, 10 * 48000, 1024):
     k, got = block(af, 1024, n, 1.0, 48000)
     assert k == 1024 and got[0] == (float(n), 1.0)
 uninit(af)
+# The EQ: a 10-band PEQ's 1,024 stereo frames, its memory settled, run each channel's bands over the block
+# (patch/peq.c steady) rather than sample()'s tests at every sample and band.
+preset, eq = alloc(992), alloc(15720)  # a peq_preset, a peq_dsp
+u.mem_write(preset, struct.pack('<iid', 10, 0, -6.0))
+for i, (f, gain) in enumerate(zip((31, 63, 125, 250, 500, 1000, 2000, 4000, 8000, 16000), (3, 2.5, -1, -2, 1.5, -3, 2, 4, -2.5, 3.5))):
+    u.mem_write(preset + 16 + 32 * i, struct.pack('<iiddd', 1, 0, f, gain, 1.41))
+w(preset + 984, 2)  # automatic: the picked preamp
+call(ps['peq_reset'], eq, 44100, 2, preset)
+pcm = struct.pack('<2048f', *(0.5 * math.sin(0.031 * k) for k in range(2048)))
+for _ in range(3):
+    u.mem_write(BUF, pcm), call(ps['peq_process'], eq, BUF, 1024)
+steps = [0]
+hook = u.hook_add(UC_HOOK_CODE, lambda *_: steps.__setitem__(0, steps[0] + 1), begin=PLAYER_BASE, end=ps['__end'] - 1)
+u.mem_write(BUF, pcm), call(ps['peq_process'], eq, BUF, 1024)
+u.hook_del(hook)
+assert bytes(u.mem_read(BUF, len(pcm))) != pcm  # the EQ ran: a bypassed block would pass the budget too
+assert steps[0] < 750_000, steps[0]  # 605,226 measured (clang 17), 949,647 with sample() at every sample: losing the fast path fails
 print('Player crossfade (MIPS build): the hold window, half-rate emission in order, the equal-power '
       'mix at the same and another rate and between mono and stereo, after a cold start, through a pause and a skip, '
       'a hold finished after the flag clears, the ring cap, a short track, DSD out, the stop, stale and mid-mix '
-      'drops and whole blocks with no fade passed.')
+      'drops and whole blocks with no fade, and the EQ\'s settled block within its instruction budget passed.')

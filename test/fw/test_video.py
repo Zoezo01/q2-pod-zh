@@ -290,9 +290,10 @@ class Media:
 
 class Station:
     """One ffmpeg start on a station: its report's lines (ms after the start, line), the ms its sound comes, the
-    stream ends and the output is lost (None: never)."""
-    def __init__(self, lines=(), sound=None, end=None, lost=None):
-        self.lines, self.sound, self.end, self.lost = list(lines), sound, end, lost
+    stream ends and the output is lost (None: never), and the stream's packets ffmpeg copies to a data output (ms
+    after the start, bytes)."""
+    def __init__(self, lines=(), sound=None, end=None, lost=None, packets=()):
+        self.lines, self.sound, self.end, self.lost, self.packets = list(lines), sound, end, lost, list(packets)
 
 
 def icy(title='Artist - Song', bitrate='128'):
@@ -309,6 +310,30 @@ def icy(title='Artist - Song', bitrate='128'):
 def update(at, title):
     """A StreamTitle change, which libavformat's http logs at verbose."""
     return at, f'[http @ 0x6e4a20] Metadata update for StreamTitle: {title}'
+
+
+def ogg(artist='Artist 1', title='Song 1', codec='vorbis'):
+    """Stock ffmpeg 4.2's report on an Ogg station (Icecast's, with no ICY tags), its first song's Vorbis comments under
+    its stream with their keys in capitals, and again under the sound's output."""
+    tags = [f'      {k:<16}: {v}' for k, v in (('ARTIST', artist), ('TITLE', title)) if v]
+    lines = [f"Input #0, ogg, from '{URL}':", '  Duration: N/A, start: 0.000000, bitrate: N/A',
+             f'    Stream #0:0: Audio: {codec}, 48000 Hz, stereo, fltp, 128 kb/s', '    Metadata:', *tags,
+             '      SUBTITLE        : Live', 'Stream mapping:',
+             f'  Stream #0:0 -> #0:0 ({codec} (native) -> pcm_s16le (native))', '  Stream #0:0 -> #1:0 (copy)',
+             "Output #0, s16le, to 'pipe:4':", '  Metadata:', '    encoder         : Lavf58.29.100',
+             '    Stream #0:0: Audio: pcm_s16le, 48000 Hz, stereo, s16, 1536 kb/s', '    Metadata:', *tags,
+             "Output #1, data, to 'pipe:5':"]
+    return [(300 + i, x) for i, x in enumerate(lines)]  # in order: the stand-in sorts a millisecond's lines
+
+
+def header(*comments, opus=False, vendor=b'Lavf58.29.100'):
+    """A song's comment header as a chained Ogg stream's packet, Vorbis's (its framing bit after) or Opus's: the magic,
+    the vendor and each comment, each string after its 32-bit little-endian length."""
+    def string(x):
+        return struct.pack('<I', len(x)) + x
+    body = string(vendor) + struct.pack('<I', len(comments)) + b''.join(
+        string(c.encode() if isinstance(c, str) else c) for c in comments)
+    return b'OpusTags' + body if opus else b'\x03vorbis' + body + b'\x01'
 
 
 REFUSED = [(0, '[tcp @ 0x6e4a20] Connection to tcp://radio.example:80 failed: Connection refused'),
@@ -1012,6 +1037,10 @@ class Q2:
         sound.feed(run, ())
         sound.plan = plan(None if st.sound is None else run.start + st.sound, end=run.end,
                           lost=None if st.lost is None else run.start + st.lost)
+        for n, opts in outs[1:]:
+            copy = run.writes(n)
+            if copy is not None and opts.get('-f') == 'data' and opts.get('-c') == 'copy':
+                copy.feed(run, [(run.start + t, data) for t, data in st.packets])
         return lines
 
 
@@ -1544,6 +1573,46 @@ def test_a_station_connects_plays_and_follows_its_titles(q2):
     assert [(r, v) for _, r, v in q2.dac] == [(DAC_PCM, 0), (DAC_MUTE, 0), (DAC_MUTE, 1)]
 
 
+def songs(q2):
+    """The titles demo read while the station played, each once, in order."""
+    titles = [s['title'] for s in q2.radio_states() if s['state'] == 'playing']
+    return [t for i, t in enumerate(titles) if not i or titles[i - 1] != t]
+
+
+def test_an_ogg_station_shows_its_first_song_from_the_report_and_each_later_one_from_its_header(q2):
+    later = header('ARTIST=ケイ', 'TITLE=夜の歌', 'ALBUM=Night')
+    audio = bytes(range(256)) * 8
+    q2.stations[URL] = [Station(ogg(), sound=500, packets=[
+        (1000, audio), (3000, audio[:100] + later[:9]), (3000, later[9:20]), (3200, later[20:] + audio),  # split up
+        (6000, header('title=Third'))])]
+    q2.press(b'q', 8000)
+    assert radio(q2) == 0
+    assert songs(q2) == ['Artist 1 - Song 1', 'ケイ - 夜の歌', 'Third']  # not SUBTITLE's, and an artist only if named
+    assert {s['codec'] for s in q2.radio_states() if s['state'] == 'playing'} == {'VORBIS'}
+    (run,) = q2.runs
+    assert outputs(run.argv)[1] == (5, {'-map': '0:a:0', '-c': 'copy', '-f': 'data'})
+    assert run.writes(5) in q2.read_pipes and not run.writes(5).unread()  # read as it came: ffmpeg never waits on it
+
+
+def test_an_opus_header_s_tags_in_any_case_past_a_picture_the_first_of_each_in_whole_characters(q2):
+    picture = 'METADATA_BLOCK_PICTURE=' + 'A' * 20000  # longer than a read: skipped whole
+    q2.stations[URL] = [Station(ogg(codec='opus'), sound=500, packets=[
+        (2000, header(picture, 'artist=First', 'Artist=Second', 'Title=Line\nBreak', opus=True)),
+        (4000, header('TITLE=' + 'あ' * 60, opus=True))])]  # 180 bytes, past the 149 a song keeps
+    q2.press(b'q', 6000)
+    assert radio(q2) == 0
+    assert songs(q2) == ['Artist 1 - Song 1', 'First - Line Break', 'あ' * 49]  # never half a character
+
+
+def test_an_mp3_station_s_packets_pass_through_and_its_icy_titles_stand(q2):
+    lookalikes = (b'\xff\xfb\x90' + b'\x03vorbis' + b'\xff' * 8  # a vendor past its bound
+                  + b'OpusTag' + b'OpusTags' + struct.pack('<II', 0, 0))  # a match after a near one: no comments
+    q2.stations[URL] = [Station(icy() + [update(5000, 'Next - Song')], sound=800, packets=[(1000, lookalikes * 50)])]
+    q2.press(b'q', 7000)
+    assert radio(q2) == 0
+    assert songs(q2) == ['Artist - Song', 'Next - Song']
+
+
 def test_a_dropped_stream_starts_again_at_once_then_a_second_later_each_silent_start(q2):
     q2.stations[URL] = [Station(icy(), sound=500, end=3000), Station(REFUSED, end=0)]
     assert radio(q2) == 0
@@ -1604,7 +1673,7 @@ def test_a_pipe_already_on_ffmpeg_s_number_still_reaches_ffmpeg(q2):
     q2.press(b'q', 2000)
     assert radio(q2, BT, '60') == 0
     (run,) = q2.runs
-    assert run.origins[4] == 4 and run.writes(4) is not None
+    assert run.origins[4] == 4 and run.writes(4) is not None and run.writes(5) is not None
     assert 'playing' in [s['state'] for s in q2.radio_states()]
 
 

@@ -1106,8 +1106,11 @@ static int keyup(void *ctx, void *event) {
 }
 
 static int e3_flush(void);
-/* Leaving saves what Simple has unsaved and lets go of its Off comparison's held preamp. */
+/* Leaving saves what Simple has unsaved and lets go of its Off comparison's held preamp; ctx is the
+ * page. Another page's destroy (one peq_page_replace let go, coming after its successor's init)
+ * leaves the open page's state alone. */
 static int closed(void *ctx, void *event) {
+    if (ctx != ui.page) return 0;
     stop_timer(&e3.press);
     e3_flush();
     eq_state s;
@@ -1220,12 +1223,21 @@ int peq_page_init(void *page, void *context) {
     page_load();
     e3.focus = E3_LOW;
     e3.h = widget_get_prop_int(page, "h", client_h());
-    widget_on(page, EVT_DESTROY, closed, 0);
+    widget_on(page, EVT_DESTROY, closed, page);
     widget_on(page, EVT_KEY_UP, keyup, 0);
     widget_on(page, EVT_POINTER_MOVE_BEFORE, e3_touch, 0); /* a slider's drag */
     widget_on(page, EVT_POINTER_UP_BEFORE, e3_touch, 0);
     render(0);
     return 0;
+}
+
+/* The open EQ page closed so another opens in its place (navigation.c quick_long, over a page that
+ * Return's hold opened above it, #397): its state let go now, as its Return would, since its
+ * window's destroy may come after the new page's init, and a second page would share this one
+ * state. */
+void peq_page_replace(void *old) {
+    closed(old, 0);
+    window_manager_close_window_force(window_manager(), old);
 }
 
 /* The sliders' travel, under their names and over their values, which stay clear of the iPod

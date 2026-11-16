@@ -1720,7 +1720,7 @@ def test_the_art_reloads_when_the_players_cover_changes(fw, ui, now, st):
     def unloads():
         return [C.string_at(a[1]) for _, a in fw.calls('image_manager_unload_bitmap_by_name')]
     poll()
-    assert unloads() == []  # stock's init loaded this one
+    assert unloads() == []  # no cover of this song's yet: stock's image stays
     fw.var('fw_ctx_g_lastcover_url', C.c_char * 1024).value = now.paths[2].value
     fw.var('g_playcover_type', C.c_ubyte).value = 1
     poll()
@@ -1734,6 +1734,36 @@ def test_the_art_reloads_when_the_players_cover_changes(fw, ui, now, st):
     fw.var('g_playcover_type', C.c_ubyte).value = 2
     poll()
     assert ui.prop(now.cover, b'image') == b'play_defaultcover'  # dark: the next lit pass
+
+
+# The page opens on the player's cover of its song whatever stock's init showed: after AirPlay, stock's init left no
+# art, and with the key already this song's no pass loaded it until the next song.
+@pytest.mark.parametrize('kind, file', [(1, b'file:///tmp/coverpic.jpg'), (2, b'file:///tmp/externpic.jpg'),
+                                        (3, b'play_defaultcover')])
+def test_the_page_opens_on_its_song_s_cover_whatever_stock_s_init_showed(fw, ui, mcl, st, kind, file):
+    theme(fw, st, CLASSIC)
+    now = Now(fw, ui, mcl, st, opened=False)
+    fw.var('fw_ctx_g_lastcover_url', C.c_char * 1024).value = now.paths[2].value
+    fw.var('g_playcover_type', C.c_ubyte).value = kind
+    ui.set_str(now.cover, b'image', b'' if kind == 3 else b'play_defaultcover')  # none, or not this song's
+    now.open()
+    def unloads():
+        return [C.string_at(a[1]) for _, a in fw.calls('image_manager_unload_bitmap_by_name')]
+    assert unloads() == [file] and ui.prop(now.cover, b'image') == file  # its cached bitmap dropped first
+    assert fw.fn('np_art_ready', C.c_int)()
+    fw.fn('navigation__np_art_poll', None)()
+    assert unloads() == [file]  # loaded once
+
+
+def test_a_page_opening_before_its_song_s_cover_keeps_stock_s_image(fw, ui, mcl, st):
+    theme(fw, st, CLASSIC)
+    now = Now(fw, ui, mcl, st, opened=False)
+    fw.var('fw_ctx_g_lastcover_url', C.c_char * 1024).value = now.paths[1].value  # the last song's, still
+    fw.var('g_playcover_type', C.c_ubyte).value = 1
+    ui.set_str(now.cover, b'image', b'play_defaultcover')
+    now.open()
+    assert fw.calls('image_manager_unload_bitmap_by_name') == []
+    assert ui.prop(now.cover, b'image') == b'play_defaultcover' and not fw.fn('np_art_ready', C.c_int)()
 
 
 # Cover Flow's landing hands over to Now Playing's own art once that is this song's (np_art_ready): np_art_poll loaded

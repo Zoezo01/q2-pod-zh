@@ -47,6 +47,26 @@ void *songs_by_path(const char *const *paths, unsigned n) {
     free(sql);
     return out;
 }
+/* The same for the rows of n ids that are the Library's music (MUSIC_WHERE, its scope token
+ * expanded here as library_query would, and without memory for that the whole library), a rowid
+ * lookup each, in getAllMusic(3)'s order: its walk of songtable_time_create, equal stamps by id. */
+static void *songs_by_id(const unsigned *ids, unsigned n) {
+    static const char head[] = "select * from songtable not indexed where id in (";
+    static const char tail[] = ") and " MUSIC_WHERE " order by time_create desc,id";
+    unsigned size = sizeof head + sizeof tail + 11 * n, at = sizeof head - 1;
+    char *sql = calloc(size, 1);
+    if (!sql) return 0;
+    memcpy(sql, head, at);
+    for (unsigned i = 0; i < n; ++i) /* 10 digits and a comma at most */
+        at += (unsigned)tk_snprintf(sql + at, size - at, i ? ",%u" : "%u", ids[i]);
+    memcpy(sql + at, tail, sizeof tail);
+    char *expanded = library_scope_query(sql);
+    int count;
+    void *out = staged(path_query, expanded ? expanded : sql, &count);
+    free(expanded);
+    free(sql);
+    return out;
+}
 
 /* Collection Shuffle is Shuffle Songs over the collection. */
 int shuffle_play(void *all) {
@@ -60,6 +80,13 @@ int shuffle_play(void *all) {
             }
             at = (at + 1 + (int)rand_below((unsigned)size - 1)) % size;
         }
+        /* Headphones Required: refused with stock's message before the mode or advanced play
+         * changes, where Now Playing would refuse only after both. ponytail: an output lost between
+         * this check and Now Playing's is still refused after Shuffle is saved and advanced play
+         * ended, and the old queue becomes Shuffle Songs, as before; seeing play_folder load
+         * nothing (playback_loads unchanged), then skipping playback_shuffle and restoring mode,
+         * would lift most of it. */
+        if (check_forbid_play_no_headset(0)) return size;
         int mode = playback_unshuffle();
         playback_clear(); /* stock Shuffle keeps Shuffle Albums/Folders otherwise */
         config_playmode(2, 1);
@@ -142,11 +169,75 @@ static int mp_rank(void *songs, int *idx, unsigned *score) {
     return top;
 }
 
+/* A query's ids: Era Shuffle's decade, Most Played's counted songs. */
+static struct {
+    unsigned *v, n, cap;
+} ids __attribute__((section(".scratch")));
+/* id added to ids; 1 (and nothing added) out of memory. */
+static int ids_add(unsigned id) {
+    if (ids.n == ids.cap) {
+        unsigned cap = ids.cap ? ids.cap * 2 : 1024, *p = calloc(cap, sizeof *p);
+        if (!p) return 1;
+        if (ids.n) memcpy(p, ids.v, ids.n * sizeof *p);
+        free(ids.v);
+        ids.v = p, ids.cap = cap;
+    }
+    ids.v[ids.n++] = id;
+    return 0;
+}
+/* A query row of one id, added to ids. */
+static int id_row(void *ctx, int n, char **v, char **c) {
+    return n == 1 && v[0] ? ids_add((unsigned)atoi(v[0])) : 0;
+}
+
+/* The counted songs' ids, from one pass over every song's id, path and CUE start on stock's shared
+ * connection (rank_query's toolsQueryDbTable), each row keyed as listen_key keys a record
+ * (ratings.c's rc_row) and looked up among the table's keys (out of memory, the ids so far). */
+static struct {
+    const unsigned *keys;
+    unsigned n;
+} cs __attribute__((section(".scratch")));
+static int counted_row(void *ctx, int n, char **v, char **c) {
+    int rec[REC_CUE_END / 4 + 1] = { 0 };
+    if (n != 3 || !v[0] || !v[1]) return 0;
+    P(rec, REC_PATH) = v[1];
+    I(rec, REC_CUE_START) = v[2] ? atoi(v[2]) : 0;
+    return has_key(cs.keys, cs.n, listen_key(rec)) ? ids_add((unsigned)atoi(v[0])) : 0;
+}
+static int counted_query(void *unused) {
+    return toolsQueryDbTable("/mnt/data/database.db", "select id,fileurl,time from songtable",
+                             (void *)counted_row, 0);
+}
+/* The counted songs that are music in the Library's scope, the rows getAllMusic(3) gives for them
+ * in its order, in a deque of their own; 0 without memory for the fetch's SQL. */
+static void *counted_songs(void) {
+    unsigned keys[PLAYS_SLOTS], n = 0;
+    int count;
+    plays_load();
+    for (int j = 0; j < PLAYS_SLOTS; j++)
+        if (st.plays[j].key) keys[n++] = st.plays[j].key;
+    ids.n = 0;
+    if (n) {
+        qsort(keys, n, sizeof *keys, key_cmp);
+        cs.keys = keys, cs.n = n;
+        deque_destroy(staged(counted_query, 0, &count));
+        cs.keys = 0;
+    }
+    void *out = songs_by_id(ids.v, ids.n);
+    free(ids.v);
+    ids.v = 0, ids.n = ids.cap = 0;
+    return out;
+}
+
 /* Coverflow's Most Played order: every counted song's listens added to sum[album_of(song)], the
- * album's index in Coverflow's list (-1 none). One pass over the library. */
+ * album's index in Coverflow's list (-1 none). One pass over the counted songs' rows (without
+ * memory for their fetch, the library's).
+ * ponytail: each sort by Most Played still hashes every song's path on the UI thread
+ * (counted_songs' pass), as Most Played's first open does. */
 void album_plays(int (*album_of)(void *), unsigned *sum) {
     int n;
-    void *songs = staged(songs_unsorted, (void *)1, &n);
+    void *songs = counted_songs();
+    if (!songs) songs = staged(songs_unsorted, (void *)1, &n);
     plays_load();
     for (unsigned i = 0; i < deque_size(songs); i++) {
         void *r = deque_at(songs, i);
@@ -169,7 +260,7 @@ static int mp_find(unsigned key) {
 /* navigation.c's play_count: r's play counted (key), taking evicted's slot (0 for none). Most
  * Played's kept tracks take a newly counted song, unless its page shows them (its rows and song
  * menu match the deque); one that loses its count may have hidden the next best, which only the
- * whole library knows. */
+ * library's counted songs show. */
 void mp_counted(void *r, unsigned key, unsigned evicted) {
     if (evicted && mp_find(evicted) >= 0)
         ll.mp_gen = ~library_gen;
@@ -186,17 +277,19 @@ static int mp_closed(void *ctx, void *event) {
     return 0;
 }
 
-/* Most Played: a page of the PLAYS_TOP most played songs of the library. The whole library is read
- * only when nothing is kept; otherwise the kept tracks are ranked again.
- * ponytail: the first open after boot or a library change still reads every song, and a song first
- * counted from stock's folder browser shows without its artist until then (no library tags). */
+/* Most Played: a page of the PLAYS_TOP most played songs of the library. The library's counted
+ * songs are read only when nothing is kept; otherwise the kept tracks are ranked again. Without
+ * memory for that read, the whole library is.
+ * ponytail: the first open after boot or a library change still hashes every song's path, and a
+ * song first counted from stock's folder browser shows without its artist until then (no library
+ * tags). */
 int most_played(void *ctx, void *event) {
     if (st.mp_page || !(st.mp_page = page_open("mostplayed_page", mp_closed, page_keyup))) return 0;
     int n, idx[PLAYS_TOP];
     unsigned score[PLAYS_TOP], gen = library_gen;
     void *from = st.mp_list;
     if (!from || ll.mp_gen != gen) {
-        from = staged(songs_unsorted, (void *)1, &n);
+        if (!(from = counted_songs())) from = staged(songs_unsorted, (void *)1, &n);
         ll.mp_gen = gen;
     }
     int top = mp_rank(from, idx, score);
@@ -505,21 +598,6 @@ static void *era_songs(void) {
 }
 /* Shuffle's songs: one query for the decade's files, then the library filtered by them; its
  * order is about to be shuffled, so era_songs' two queries an album would only cost time. */
-static struct {
-    unsigned *v, n, cap;
-} era_keys __attribute__((section(".scratch")));
-static int era_key_row(void *ctx, int n, char **v, char **c) {
-    if (n != 1 || !v[0]) return 0;
-    if (era_keys.n == era_keys.cap) {
-        unsigned cap = era_keys.cap ? era_keys.cap * 2 : 1024, *p = calloc(cap, sizeof *p);
-        if (!p) return 1;
-        if (era_keys.n) memcpy(p, era_keys.v, era_keys.n * sizeof *p);
-        free(era_keys.v);
-        era_keys.v = p, era_keys.cap = cap;
-    }
-    era_keys.v[era_keys.n++] = (unsigned)atoi(v[0]);
-    return 0;
-}
 static void *era_shuffle_songs(void) { /* 0 if the query failed */
     char sql[2048];
     int from = era.m ? era.v[0].year / 10 * 10 : 0, n;
@@ -532,21 +610,21 @@ static void *era_shuffle_songs(void) { /* 0 if the query failed */
         "on s.album=g.a COLLATE NOCASE and ifnull(s.albumsonger,'')=g.b COLLATE NOCASE and "
         "(g.d is null or rtrim(s.fileurl,replace(s.fileurl,'/',''))=g.d)",
         "select distinct s.id", ALBUM_YEAR, MUSIC_WHERE, ALBUM_GROUP, from, from + 9);
-    era_keys.n = 0;
+    ids.n = 0;
     void *out = 0;
-    if (!era.m || era_sql(sql, era_key_row, 0)) out = _create_deque("stSongInfo"), deque_init(out);
-    if (out && era_keys.n) {
-        qsort(era_keys.v, era_keys.n, sizeof *era_keys.v, key_cmp);
+    if (!era.m || era_sql(sql, id_row, 0)) out = _create_deque("stSongInfo"), deque_init(out);
+    if (out && ids.n) {
+        qsort(ids.v, ids.n, sizeof *ids.v, key_cmp);
         void *all = staged(songs_unsorted, (void *)1, &n);
         if (n < 0) deque_destroy(out), out = 0; /* the library load failed */
         for (unsigned i = 0; out && i < deque_size(all); ++i) {
-            if (has_key(era_keys.v, era_keys.n, (unsigned)I(deque_at(all, i), REC_ID)))
+            if (has_key(ids.v, ids.n, (unsigned)I(deque_at(all, i), REC_ID)))
                 _deque_push_back(out, deque_at(all, i));
         }
         deque_destroy(all);
     }
-    free(era_keys.v);
-    era_keys.v = 0, era_keys.n = era_keys.cap = 0;
+    free(ids.v);
+    ids.v = 0, ids.n = ids.cap = 0;
     return out;
 }
 /* Play All from the first song as a library queue, as Coverflow's All albums; Shuffle is Shuffle

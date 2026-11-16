@@ -237,7 +237,7 @@ class Library:
     row a CUE track, and toolsQueryDbTable, which runs a query and calls its row callback with each row's text, as
     sqlite3_exec does."""
     COLUMNS = ('id integer primary key, fileurl, filename, title, album, songer, albumsonger, genre, composer, track, '
-               'cd_num, year, cue_start, cue_end, time_create')
+               'cd_num, year, time, time_end, time_create')
 
     def __init__(self, tags):
         self.tags = tags
@@ -252,7 +252,7 @@ class Library:
             t = self.tags.get(path, {})
             for start, end, title in t.get('cue', [(0, 0, t.get('title', ''))]):
                 self.db.execute('insert into songtable (fileurl, filename, title, album, songer, albumsonger, genre, '
-                                'composer, track, cd_num, year, cue_start, cue_end, time_create) values '
+                                'composer, track, cd_num, year, time, time_end, time_create) values '
                                 '(?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
                                 (path, path.rsplit('/', 1)[1], title, t.get('album', ''), t.get('artist', ''),
                                  t.get('album_artist', ''), '', '', t.get('track', 0), t.get('disc', 0), t.get('year', ''),
@@ -466,7 +466,7 @@ class Q2:
         r = self.memory.record(
             id_=int(row['id']), name=row['filename'], path=row['fileurl'], title=row['title'], album=row['album'],
             artist=row['songer'], album_artist=row['albumsonger'], track=int(row['track'] or 0),
-            disc=int(row['cd_num'] or 0), cue=(int(row['cue_start'] or 0), int(row['cue_end'] or 0)))
+            disc=int(row['cd_num'] or 0), cue=(int(row['time'] or 0), int(row['time_end'] or 0)))
         self.deques[self.directory()].append(r)
         return 0
 
@@ -861,6 +861,49 @@ def test_a_marked_folder_stays_out_of_the_songs_and_albums_until_its_marker_goes
     albums = q.albums()
     assert albums[-1] is None and sorted(albums[:-1]) == [('Demos', 'Alpha'), ('First', 'Alpha'), ('First', 'Beta'),
                                                          ('Kept', 'Gamma'), ('Second', 'Beta')]
+
+
+def test_cover_flow_s_most_played_sums_each_album_as_the_whole_library_did(q2):
+    """Cover Flow's Most Played order (library_lists.c album_plays) sums each album's listens over the counted songs'
+    rows alone, fetched by id, as it summed them over every record getAllMusic(3) gave through the query hook: the two
+    Firsts apart by album artist, a song whose album artist is NULL by its own, and a counted audiobook, podcast and
+    song of a database.ignore'd folder left out, one of a database.unignore'd folder kept."""
+    files, tags = music_card()
+    dark = '/mnt/mmc/Music/Beta/Second/03 Dark.flac'
+    tags[dark] = dict(title='Dark', album='Second', artist='Beta', track=3, seconds=SONG)
+    files[dark] = b'\0' * 64
+    q = q2(files, tags)
+    q.update()
+    q.library.db.execute("update songtable set albumsonger=null where fileurl=?", (dark,))
+    plays = {'Alpha/First/01 Dawn.flac': 3, 'Beta/First/01 Other.flac': 4, 'Beta/Second/01 Rise.flac': 1,
+             'Beta/Second/03 Dark.flac': 2, 'Junk/Demos/Demo.flac': 5, 'Junk/Keep/Gem.flac': 6, 'Gone.flac': 9}
+    table = [(key('/mnt/mmc/Music/' + path), n) for path, n in plays.items()]
+    table += [(key('/mnt/mmc/Audiobooks/Novel/Novel.m4b'), 7), (key('/mnt/mmc/Podcasts/Show/Episode 1.mp3'), 8)]
+    slots = b''.join(struct.pack('<2I', *t) for t in table)
+    files['/mnt/data/ringnav-plays'] = slots.ljust(8 * O['PLAYS_SLOTS'], b'\0')
+    albums = [('First', 'Alpha'), ('First', 'Beta'), ('Kept', 'Gamma'), ('Second', 'Beta'), ('Second', ''),
+              ('Demos', 'Alpha'), ('Novel', ''), ('Show', '')]  # the last three's songs are left out
+
+    def album_of(r):
+        album = text_of(r, 'album'), text_of(r, 'album_artist')
+        return albums.index(album) if album in albums else -1
+    of = C.CFUNCTYPE(C.c_int, C.c_void_p)(album_of)
+    album_plays = q.fw.fn('album_plays', None, C.c_void_p, C.c_void_p)
+    sql, query = [], q.library.query
+    q.library.query = lambda text, row, ctx: sql.append(text) or query(text, row, ctx)
+    sums = (C.c_uint * len(albums))()
+    album_plays(C.cast(of, C.c_void_p), sums)
+    assert list(sums) == [3, 4, 6, 1, 2, 0, 0, 0]
+    assert not q.fw.calls('getAllMusic') and sql[0] == 'select id,fileurl,time from songtable'
+    assert len(sql) == 2 and sql[1].startswith('select * from songtable not indexed where id in (')
+    count = dict(table)  # main: every record getAllMusic(3) gives, scoped to music, through the query hook
+    staged = q.fw.fn('staged', C.c_void_p, C.c_void_p, C.c_void_p, C.POINTER(C.c_int))
+    whole = q.deques[staged(C.cast(q.fw.lib.songs_unsorted, C.c_void_p), 1, C.byref(C.c_int()))]
+    want = [0] * len(albums)
+    for r in whole:
+        if count.get(key(text_of(r, 'path'))):
+            want[of(r)] += count[key(text_of(r, 'path'))]
+    assert len(whole) == 8 and list(sums) == want
 
 
 # A list played: an album to its end, gapless, a folder's speed, and the queue menu's Play Next and Add to Queue.

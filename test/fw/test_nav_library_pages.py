@@ -4,7 +4,9 @@ Configuration, scrobble_ui.c's Upload Scrobbles, the Library and Streaming pages
 builds and the payload rearranges, Folder view's hooks, the queue menu's tracks and the playlist editor's records
 (playlists.c)."""
 import ctypes as C
+import random
 import re
+import sqlite3
 import struct
 
 import pytest
@@ -12,6 +14,7 @@ import pytest
 import host
 from conftest import FNV_PRIME, O, Deques, Files, claim, favdir_card, fnv1a, high_halves, in_fork, libc, ui_name
 from conftest import Rows as HeldRows  # Rows here is Folder view's list
+from test_coverflow import SONGTABLE
 from test_navigation import Sa  # test_navigation.py keeps the mirror
 from test_tidal import HEARTS, urls_play
 
@@ -31,6 +34,7 @@ TIDAL_DIR, SPOT_DIR = '/mnt/mmc/.tidal', '/mnt/mmc/.spotify'
 DOT = '·'
 HEART, NO_HEART = '♥', '♡'
 CLICK = C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_void_p)
+ROW = C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_int, C.POINTER(C.c_char_p), C.POINTER(C.c_char_p))  # sqlite3_exec's
 TICK = C.CFUNCTYPE(C.c_int, C.c_void_p)
 TYPES = {'window_create': 'window', 'list_item_create': 'list_item', 'hscroll_label_create': 'hscroll_label',
          'image_create': 'image', 'button_create': 'button', 'scroll_view_create': 'scroll_view',
@@ -369,15 +373,67 @@ def file_key(path):
 
 
 class Library:
-    """Stock's library queries over a list of records: getAllMusic fills staged's deque with every song."""
-    def __init__(self, fw, ui, songs=()):
-        self.fw, self.deques, self.songs, self.asked = fw, ui.deques, list(songs), []
+    """Stock's library over a list of records. getAllMusic fills staged's deque with every song in getAllMusic(3)'s
+    order (time_create descending, a second's songs by id). songtable (SONGTABLE) holds a row a record, ids from 1: a
+    toolsQueryDbTable goes through its hook (library_query) to stock's body, which runs the SQL and hands the row
+    callback each row's text, as sqlite3_exec does; stock's select * fill (db_song_row_callback) stages the record of
+    the row's id. stamps: each song's time_create; by default the list's order, newest first. music: whether each song
+    is one the Library's lists show, for getAllMusic's rows (MUSIC_WHERE and the folder markers); by default all."""
+    def __init__(self, fw, ui, songs=(), stamps=None, music=None):
+        self.fw, self.deques, self.songs, self.stamps, self.asked, self.sql = fw, ui.deques, list(songs), stamps, [], []
+        self.music = music
         fw.mock('getAllMusic', self.all)
+        hook = fw.fn('ringnav_library_query', C.c_int, C.c_void_p, C.c_void_p, C.c_void_p, C.c_int)
+        fw.mock('toolsQueryDbTable', lambda db, sql, row, sort, *_: hook(db, sql, row, sort))
+        fw.mock('stock_dbquery_trampoline', self.query)
+        fw.mock('db_song_row_callback', self.fill)
+
+    def stamp(self, i):
+        return self.stamps[i] if self.stamps else len(self.songs) - i
+
+    def ordered(self):
+        shown = [i for i in range(len(self.songs)) if self.music is None or self.music[i]]
+        return [self.songs[i] for i in sorted(shown, key=lambda i: -self.stamp(i))]
 
     def all(self, sort, *_):
         self.asked.append(sort)
-        self.deques[self.directory()].extend(self.songs)
+        self.deques[self.directory()].extend(self.ordered())
         return len(self.songs)
+
+    def table(self):
+        db = sqlite3.connect(':memory:')
+        db.execute(SONGTABLE)
+        db.executemany('insert into songtable(id, filename, fileurl, name, album, songer, time, time_end, time_create) '
+                       'values (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                       [(i + 1, *(field(r, f).decode() for f in ('name', 'path', 'title', 'album', 'artist')),
+                         *(C.c_int.from_address(r + O[k]).value for k in ('REC_CUE_START', 'REC_CUE_END')), self.stamp(i))
+                        for i, r in enumerate(self.songs)])
+        return db
+
+    def query(self, db, sql, row, ctx, *_):
+        self.sql.append(C.string_at(sql).decode())
+        rows = self.table().execute(self.sql[-1])
+        names = [d[0].encode() for d in rows.description]
+        n = 0
+        for values in rows.fetchall():
+            argv = (C.c_char_p * len(names))(*[None if v is None else str(v).encode() for v in values])
+            if ROW(row)(ctx, len(names), argv, (C.c_char_p * len(names))(*names)):
+                return -1  # the callback stopped it
+            n += 1
+        return n
+
+    def fill(self, ctx, n, values, columns, *_):
+        self.deques[self.directory()].append(self.songs[int(C.cast(values, C.POINTER(C.c_char_p))[0]) - 1])
+        return 0
+
+    def passes(self):
+        """The counted songs' passes over songtable (library_lists.c counted_query): every song's id, path and CUE
+        start, unscoped, the hook leaving it as it is."""
+        return [sql for sql in self.sql if sql == 'select id,fileurl,time from songtable']
+
+    def fetches(self):
+        """The counted songs' fetches by id (songs_by_id), scoped to the Library's music there."""
+        return [sql for sql in self.sql if sql.startswith('select * from songtable not indexed where id in (')]
 
     def directory(self):
         return self.fw.var('fw_ctx_tools_pdeq_directory', C.c_uint).value
@@ -422,6 +478,25 @@ def test_shuffle_songs_plays_the_library_from_a_random_song(fw, ui, mcl, song):
     assert queue == songs and 0 <= at < 4 and cls == LIBRARY
     assert library.asked == [3]  # unsorted: Shuffle has no use for the title sort
     assert ui.windows  # the page stays, as Most Played's rows leave it
+
+
+def test_shuffle_songs_headphones_required_forbids_changes_nothing(fw, ui, mcl, song):
+    """Headphones Required with no output: Shuffle Songs asks stock's gate (0: it shows its message) before it
+    takes the mode to restore, ends advanced play, saves Shuffle or opens Now Playing, and its refusal does none
+    of them, with no toast of ours. Here the queue is an earlier Shuffle Songs, holding mode 3 to restore. Now
+    Playing refused only after Shuffle was saved, and the old queue then became Shuffle Songs anew."""
+    Library(fw, ui, [song(b'/m/%d.flac' % i) for i in range(4)])
+    fw.var('fw_ctx_mcl_pdeqplaylist', C.c_uint).value = ui.deques.new([song(b'/q/%d.flac' % i) for i in range(3)])
+    mcl.type, mcl.pos = LIBRARY, 0
+    assert fw.fn('playback_shuffle', C.c_int, C.c_int)(3) == 1  # advanced Shuffle Songs, mode 3 to restore
+    asked = []
+    fw.mock('check_forbid_play_no_headset', lambda quiet, *_: asked.append(quiet) or 1)
+    call(fw, 'shuffle_menu')
+    fw.var('fw_log_n', C.c_int).value = 0
+    ui.click(ui.top(), 0)
+    assert asked == [0] and not ui.played and not ui.toasts and not fw.calls('config_playmode')
+    assert not fw.calls('fw_unlink') and fw.fn('playback_option', C.c_int, C.c_int)(0) == 1  # still advanced
+    assert fw.fn('playback_unshuffle', C.c_int)() == 3
 
 
 @pytest.mark.parametrize('row, folders', [(1, 0), (2, 1)])
@@ -497,7 +572,7 @@ def test_most_played_ranks_its_kept_songs_again_without_the_library(fw, ui, song
     ui.close(ui.top())
     st('plays', C.c_uint * 4)[:] = [listen_key(b'/m/b.flac'), 3, listen_key(b'/m/a.flac'), 2]  # b heard twice since
     call(fw, 'most_played')
-    assert ui.captions(ui.top()) == ['B', 'A'] and library.asked == [3]
+    assert ui.captions(ui.top()) == ['B', 'A'] and len(library.passes()) == 1 and not library.asked
 
 
 def test_most_played_reads_the_library_again_after_it_changed(fw, ui, song):
@@ -509,7 +584,7 @@ def test_most_played_reads_the_library_again_after_it_changed(fw, ui, song):
     library.songs.append(b)
     fw.var('library_gen', C.c_uint).value += 1  # a scan or an update since
     call(fw, 'most_played')
-    assert ui.captions(ui.top()) == ['A', 'B'] and library.asked == [3, 3]
+    assert ui.captions(ui.top()) == ['A', 'B'] and len(library.passes()) == 2
 
 
 def test_most_played_opens_once(fw, ui, song):
@@ -539,6 +614,97 @@ def test_album_plays_sums_each_album_s_listens(fw, ui, song):
     sums = (C.c_uint * 2)()
     fw.fn('album_plays', None, C.c_void_p, C.c_void_p)(C.cast(of, C.c_void_p), sums)
     assert list(sums) == [7, 2]
+
+
+SCOPE_RULES = '/mnt/data/q2-library-scope'  # library_scope.c's marker rules: a database.ignore'd folder
+
+
+def counted_library(fw, ui, song):
+    """A library the first open reads part of: albums of ten, a CUE image's four tracks, a song in songtable twice
+    (another scan's stamp), an audiobook, a podcast, an .m4b and a hidden folder's two songs, the stamps shared by a
+    few songs each and in no id order; 39 counted, slot by slot: 29 of the music, the image's last three tracks (not its
+    first, so only a pass that keys each track by its CUE start finds them), the twice-listed song, each spoken and
+    hidden one and a file that has gone, one count 0. Returns the library, the table's (key, count) slots, and each
+    row's path, CUE start, album and whether the Library's lists show it (MUSIC_WHERE, scoped)."""
+    rng = random.Random(7)
+    rows = [(b'/mnt/mmc/M/A%02d/%03d.flac' % (i // 10, i), 0, b'S%03d' % i, b'Al%02d' % (i // 10)) for i in range(180)]
+    rows += [(b'/mnt/mmc/M/cue/image.flac', 300 * k, b'C%d' % k, b'Live') for k in range(4)]
+    rows += [rows[5], (b'/mnt/mmc/Audiobooks/B/01.mp3', 0, b'Book', b''), (b'/mnt/mmc/Podcasts/P/01.mp3', 0, b'Pod', b''),
+             (b'/mnt/mmc/M/Tale.M4B', 0, b'Tale', b''), (b'/mnt/mmc/Hidden/h1.flac', 0, b'H1', b''),
+             (b'/mnt/mmc/Hidden/h2.flac', 0, b'H2', b'')]
+    songs = [song(path, title, b'Ar', album, cue=cue, end=cue and cue + 300) for path, cue, title, album in rows]
+    shown = [not re.search(rb'^/mnt/mmc/(audiobooks|podcasts|hidden)/|\.m4b$', path.lower()) for path, *_ in rows]
+    library = Library(fw, ui, songs, stamps=[rng.randrange(40) for _ in songs], music=shown)
+    counted = [*rng.sample(range(6, 180), 29), 5, *range(181, 184), *range(185, 190)]
+    table = [(listen_key(rows[i][0], rows[i][1]), rng.choice((1, 2, 3, 5, 8))) for i in counted]
+    table += [(listen_key(b'/mnt/mmc/M/gone.flac'), 4)]
+    table[3] = (table[3][0], 0)
+    Files(fw, {PLAYS_FILE: b''.join(struct.pack('<2I', *t) for t in table).ljust(PLAYS_SLOTS * 8, b'\0'),
+               SCOPE_RULES: b'0/mnt/mmc/Hidden\n'})
+    return library, table, [(*row, ok) for row, ok in zip(rows, shown)]
+
+
+def test_most_played_reads_only_the_counted_songs_as_the_library_gives_them(fw, ui, song):
+    """Most Played's first open: one pass over every song in songtable for the counted keys, then those rows alone by
+    id, scoped to the Library's music there, in getAllMusic(3)'s order (newest first, a second's songs by id), ranked
+    as the whole library was: a CUE image's tracks apart, a song in songtable twice listed twice, counted spoken and
+    hidden songs found by the pass and left out by the fetch."""
+    library, table, rows = counted_library(fw, ui, song)
+    call(fw, 'most_played')
+    slot = {key: j for j, (key, _) in reversed(list(enumerate(table)))}  # a key's first slot, as the C's scan
+    order = sorted((i for i, row in enumerate(rows) if row[-1]), key=lambda i: -library.stamp(i))
+    counted = [i for i in order if listen_key(*rows[i][:2]) in slot]
+    score = {i: table[slot[listen_key(*rows[i][:2])]][1] * PLAYS_SLOTS + PLAYS_SLOTS - slot[listen_key(*rows[i][:2])]
+             for i in counted}
+    ranked = sorted(counted, key=lambda i: -score[i])[:O['PLAYS_TOP']]  # stable: ties in the library's order
+    plays = [table[slot[listen_key(*rows[i][:2])]][1] for i in ranked]
+    assert ui.rows(ui.top()) == [(rows[i][2].decode(), f'Ar {DOT} {n} play' + 's' * (n != 1)) for i, n in zip(ranked, plays)]
+    ui.click(ui.top(), 0)
+    assert ui.played[0][0] == [library.songs[i] for i in ranked]
+    (fetch,) = library.fetches()
+    ids = host.tools_build.need(re.search(r'in \(([\d,]*)\)', fetch), 'no id list')[1]
+    assert sorted(map(int, ids.split(','))) == [i + 1 for i in range(len(rows)) if listen_key(*rows[i][:2]) in slot]
+    assert "fileurl not like '%.m4b'" in fetch  # MUSIC_WHERE, and the scope's marker expanded:
+    assert "when substr(fileurl,1,16)='/mnt/mmc/Hidden/' collate nocase then 0" in fetch
+    assert len(library.passes()) == 1 and not fw.calls('getAllMusic')
+
+
+def test_album_plays_sums_the_counted_songs_as_the_whole_library_did(fw, ui, song):
+    """Cover Flow's Most Played order: each album's listens, as main summed them over every record getAllMusic(3)
+    gave, now over the counted songs' rows alone: one pass over songtable's ids and paths, then those rows by id,
+    scoped to music there (a CUE image's tracks and a song in songtable twice as before, spoken and hidden songs left
+    out), and the whole library never read. album_of sees the library's own records, each counted one once."""
+    library, table, rows = counted_library(fw, ui, song)
+    albums = sorted({row[3] for row in rows if row[3]})
+    seen = []
+
+    def album_of(r):
+        seen.append(r)
+        return albums.index(field(r, 'album')) if field(r, 'album') in albums else -1
+    of = C.CFUNCTYPE(C.c_int, C.c_void_p)(album_of)
+    sums = (C.c_uint * len(albums))()
+    fw.fn('album_plays', None, C.c_void_p, C.c_void_p)(C.cast(of, C.c_void_p), sums)
+    count = {key: n for key, n in reversed(table)}  # a key's first slot, as the C's scan
+    want, heard = [0] * len(albums), []
+    for r in library.ordered():  # main: getAllMusic(3)'s records, every one
+        c = count.get(listen_key(field(r, 'path'), C.c_int.from_address(r + REC_CUE_START).value))
+        if c:
+            want[albums.index(field(r, 'album'))] += c
+            heard.append(r)
+    assert list(sums) == want and sorted(seen) == sorted(heard) and any(want)
+    assert len(library.passes()) == 1 and len(library.fetches()) == 1 and not fw.calls('getAllMusic')
+
+
+def test_most_played_lists_a_song_twice_in_the_library_s_order_at_its_last_row(fw, ui, song):
+    """A song in songtable twice ranks as one: at the 100th row, the row getAllMusic(3) gives first (the newer
+    stamp) is listed, not the one with the lower id, as the whole library ranked them."""
+    songs = [song(b'/m/%03d.flac' % i, b'S%03d' % i) for i in range(99)]
+    songs += [song(b'/m/twice.flac', b'Older'), song(b'/m/twice.flac', b'Newer')]
+    Library(fw, ui, songs, stamps=[100] * 99 + [1, 2])
+    table = [(listen_key(b'/m/%03d.flac' % i), 5) for i in range(99)] + [(listen_key(b'/m/twice.flac'), 1)]
+    Files(fw, {PLAYS_FILE: b''.join(struct.pack('<2I', *t) for t in table).ljust(PLAYS_SLOTS * 8, b'\0')})
+    call(fw, 'most_played')
+    assert ui.captions(ui.top()) == ['S%03d' % i for i in range(99)] + ['Newer']
 
 
 # Ratings' lists.
@@ -590,6 +756,18 @@ def test_a_ratings_list_plays_from_its_row(fw, ui, song):
     call(fw, 'rated_open', 3)
     ui.click(ui.top(), 2)
     assert ui.played == [([rated.fav, rated.four, rated.three, rated.one], 2, LIBRARY)]
+
+
+def test_a_favourite_outranks_its_kept_hearts(fw, ui, song):
+    """A song in My Fav has 5 hearts whatever is kept for it: an album's five hearts put its songs in My Fav and
+    leave their kept 1-4 (rate_album_favs)."""
+    a, b = song(b'/m/a.flac', b'A'), song(b'/m/b.flac', b'B')
+    library = Library(fw, ui, [a, b])
+    Files(fw, {RATINGS: ratings((listen_key(b'/m/a.flac'), 2), (listen_key(b'/m/b.flac'), 3))})
+    stock_fav = song(b'/m/a.flac')
+    fw.mock('getAllFav', lambda *_: library.deques[library.directory()].append(stock_fav) or 1)
+    call(fw, 'rated_open', 3)
+    assert ui.rows(ui.top()) == [('A', HEART * 5), ('B', HEART * 3 + NO_HEART * 2)]
 
 
 def test_a_ratings_list_in_library_order_among_equal_hearts(fw, ui, song):

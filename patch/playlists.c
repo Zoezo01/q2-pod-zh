@@ -284,6 +284,14 @@ static int ple_pick(void *ctx, void *event) {
     }
     return 0;
 }
+/* ponytail: Add Songs builds every row it lists at once, a list_item and an hscroll_label each, so
+ * it lists the first PLE_ROWS matches, under ringnav's MAX_ENTRIES (512) as Books', Photos' and Up
+ * Next's 500, then a row that opens Search for the rest. A table_client page would list every song.
+ * The library is still read and held whole on each entry, as Songs' is. */
+#define PLE_ROWS 500
+/* That row opens the Search box, as row 0 does; picked by its own index, as a song's row is, it
+ * would add the first match not listed. */
+static int ple_more(void *ctx, void *event) { return ple_pick(0, event); }
 /* The T9 box over the title, as Internet Radio's pull-down: page children go so the keyboard has
  * room. Its widget is named search_edit, so navigation.c's search_key closes the keyboard before
  * Return can destroy the edit under it. */
@@ -310,8 +318,9 @@ static void ple_show(void) {
         return;
     }
     ple.edit = 0;
+    int shown = ple.nmatch < PLE_ROWS ? ple.nmatch : PLE_ROWS, rest = ple.nmatch > shown;
     int n = mode == 0   ? (int)deque_size(ple.songs) + 2
-            : mode == 1 ? (ple.nmatch ? ple.nmatch + 1 : 2)
+            : mode == 1 ? (ple.nmatch ? shown + 1 + rest : 2)
             : mode == 2 ? 3
                         : 2;
     char title[180], name[512];
@@ -334,11 +343,12 @@ static void ple_show(void) {
         if (!ple.nmatch)
             page_row_detail(ple.view, 1, "No songs match", 0, 0);
         else
-            for (int i = 0; i < ple.nmatch; i++) {
+            for (int i = 0; i < shown; i++) {
                 void *row = page_row_detail(
                     ple.view, i + 1, track_name(name, sizeof name, ple.match[i]), 0, ple_pick);
                 if (in && rec_find(ple.songs, in, mask, ple.match[i])) ple_tick(row);
             }
+        if (rest) page_row_detail(ple.view, shown + 1, "Search for more songs", 0, ple_more);
         free(in);
     } else
         for (int i = 0; i < n; i++) {

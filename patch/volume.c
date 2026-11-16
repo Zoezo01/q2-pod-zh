@@ -156,7 +156,9 @@ void vol_paint(void *top, void *canvas) {
                clip;
         k = put_num(s, max > 0 ? (unsigned)(100 * clamp_step(0, max, level) / max) : 0);
         s[k++] = '%';
-        draw_centred(canvas, s, k, &pct, VOL_PCT_PX, RGBA(flip_if(ipod_light(), 0xffffff)));
+        /* White, which the text setter (ui_ink) flips to the ink on Light Mode's paper, as the
+         * image hook flips the speakers: flipped here too, it came back white on white. */
+        draw_centred(canvas, s, k, &pct, VOL_PCT_PX, RGBA(0xffffff));
         /* A repaint of the bar's rows alone (stock's, or the page's of its times) leaves the old
          * number above them: vol_poll then repaints it whole, so the number follows the bar. */
         canvas_get_clip_rect(canvas, &clip);

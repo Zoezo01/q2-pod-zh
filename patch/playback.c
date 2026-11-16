@@ -731,8 +731,17 @@ int playback_set(int kind, int value) {
     playback_save();
     return s.active;
 }
+/* Shuffle Albums (folder 0) or Folders over all: 0 when it is empty, past QUEUE_LIMIT or more than
+ * rebuild has memory for; 1 when it starts, or when Headphones Required refuses it with stock's
+ * message. The limit and that gate come before the load replaces the queue, where rebuild and Now
+ * Playing would refuse only after it. ponytail: an output lost during the load and grouping is
+ * still refused by Now Playing after it, as before; drawing the order over all before any load, so
+ * Now Playing's own load is the only one, would lift it. */
 int playback_groups(void *all, int folder) {
-    if (!deque_size(all)) return 0;
+    if (!deque_size(all) || deque_size(all) > QUEUE_LIMIT) return 0;
+    if (check_forbid_play_no_headset(0)) return 1;
+    /* After the gates, so a refusal keeps advanced play; before the load, so it groups nothing. */
+    playback_clear();
     mclLoadPlayList(all, 0, 0xf001);
     s.folder = folder;
     s.shuffle = 3;
@@ -920,6 +929,23 @@ static void *no_videos(void *q, int *at) {
         *at = (int)(before < keep ? before : keep - 1);
     return out;
 }
+/* playback_groups' own start (s.grouping): Now Playing's load of the queue it has just grouped and
+ * ordered, at the order's first track. Its tables stand, started as rebuild(0) would start them
+ * there (that track leads its group, which comes first), so the library is not grouped again. Any
+ * other queue (an entry's path or CUE start, its id, differs), size or position rebuilds. */
+static int keep_drawn(void) {
+    unsigned at = (unsigned)M(MCL_POS);
+    if (!queue() || deque_size(queue()) != s.n || s.order[0].index != at) return 0;
+    for (unsigned i = 0; i < s.n; ++i)
+        if (rec_id(i) != ids[i]) return 0;
+    memset(s.seen, 0, s.n * sizeof *s.seen); /* the first rebuild's marks were for position 0 */
+    s.seen[at] = 1;
+    s.cursor = s.hn = 0;
+    history(at);
+    s.next_valid = 0;
+    s.dirty = 1;
+    return 1;
+}
 int ringnav_load(void *q, int at, int type) {
     ++playback_loads;
     app_fav_load(); /* tidal.c: an app song's heart isn't the new queue's */
@@ -940,7 +966,7 @@ int ringnav_load(void *q, int at, int type) {
         /* Shuffle Albums/Folders end with any other queue; a repeat or Shuffle track mode carries
          * on */
         if (s.active && (type == 1 || (type & 0xf000) == 0xf000) && (s.shuffle < 3 || s.grouping))
-            s.active = rebuild(0);
+            s.active = (s.grouping && keep_drawn()) || rebuild(0);
         else {
             s.active = 0;
             release();

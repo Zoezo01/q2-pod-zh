@@ -2117,6 +2117,24 @@ def test_over_classic_s_now_playing_speakers_take_the_times_places(fw, world, st
     assert canvas.texts == []
 
 
+@pytest.mark.parametrize('light', ['0', '1'])
+def test_classic_s_volume_percentage_is_the_speakers_ink_in_either_half(fw, world, st, light):
+    """White on the dark half's black paper; in the light half the ink on its white paper, as the speakers beside
+    the bar are (white art, which Light Mode flips). Flipped before the setter's own flip, it read white on white."""
+    theme(fw, CLASSIC, LIGHT=light)
+    dialog, *_ = volume(fw, world, st, 40, under='playing_page', np=True, beside=True)
+    page = st('np_win', C.c_void_p).value
+    world.add(world.add(page, 'slide_view_view', box=(0, 8, 375, 200)), 'slide_indicator1', 'slide_indicator',
+              box=(0, 182, 375, 10))
+    vol_paint(fw, dialog, Canvas(fw))  # hides the dots; the number is the next paint's
+    canvas = Canvas(fw)
+    vol_paint(fw, dialog, canvas)
+    ((text, _, color, _),) = canvas.texts
+    ink = fw.fn('ui_ink', C.c_uint, C.c_uint)(rgba(0xffffff))  # white, as the setter shows it in this half
+    assert text == '40%' and color == ink
+    assert color == (rgba(0xffffff) if light == '0' else fw.fn('flip', C.c_uint, C.c_uint)(rgba(0xffffff)))
+
+
 def test_over_classic_s_now_playing_the_volume_s_percentage_takes_the_page_dots_place(fw, world, st, vd):
     theme(fw, CLASSIC)
     dialog, vol, _ = volume(fw, world, st, 20, maximum=80, under='playing_page', np=True, beside=True)

@@ -437,21 +437,25 @@ static int rt_menu_closed(void *ctx, void *event) {
     return 0;
 }
 
-/* Each of songs' hearts into h: 5 for My Fav's, else the kept 1-4.
- * ponytail: every song against every rated one, fine for thousands rated; a sorted table if not. */
+/* Each of songs' hearts into h: 5 for My Fav's, else the kept 1-4. My Fav's keys and the kept are
+ * sorted apart, so a song looks itself up in each, not in every rated one; the low three bits,
+ * where the kept hold their hearts, are left out of the match, as rate_slot leaves them. */
 static void rate_all(void *songs, unsigned char *h) {
-    int nf, kept = 0;
+    int nf;
     void *favs = staged(fav_songs, 0, &nf);
-    unsigned nfav = deque_size(favs), n = deque_size(songs), *t = rates(0);
+    unsigned nfav = deque_size(favs), n = deque_size(songs), *t = rates(0), kept = 0;
     unsigned *keys = calloc(nfav + RATE_SLOTS + 1, sizeof *keys);
     for (unsigned i = 0; keys && i < nfav; i++) keys[i] = listen_key(deque_at(favs, i)) | 7;
     for (int i = 0; keys && t && i < RATE_SLOTS; i++)
         if (t[i]) keys[nfav + kept++] = t[i];
+    if (keys)
+        qsort(keys, nfav, sizeof *keys, key_cmp), qsort(keys + nfav, kept, sizeof *keys, key_cmp);
     for (unsigned i = 0; keys && i < n; i++) {
-        unsigned key = listen_key(deque_at(songs, i));
-        h[i] = 0;
-        for (unsigned j = 0; j < nfav + (unsigned)kept && h[i] < 5; j++)
-            if ((keys[j] ^ key) < 8) h[i] = j < nfav ? 5 : (unsigned char)(keys[j] & 7);
+        unsigned key = listen_key(deque_at(songs, i)) | 7, *rated = keys + nfav,
+                 j = key_at(rated, kept, key & ~7u); /* its kept word, if there is one */
+        h[i] = has_key(keys, nfav, key)            ? 5
+               : j < kept && (rated[j] | 7) == key ? (unsigned char)(rated[j] & 7)
+                                                   : 0;
     }
     free(keys);
     deque_destroy(favs);
@@ -465,6 +469,9 @@ static int rated_open(void *ctx, void *event) {
     static const unsigned char lo[] = { 4, 5, 1, 1 }, hi[] = { 5, 5, 5, 1 };
     int k = (int)(long)ctx - ((int)(long)ctx > RT_ALBUMS), n;
     if (st.rt_page || !(st.rt_page = page_open("rated_page", rt_closed, page_keyup))) return 0;
+    /* ponytail: each open still reads the whole library (getAllMusic(0)), now most of its time; the
+     * tables hold only hashes, so reading only the rated songs needs a pass keying the library's
+     * rows as listen_key does, as Most Played's counted_query does (library_lists.c). */
     void *songs = staged(all_songs, 0, &n), *list = _create_deque("stSongInfo");
     unsigned size = deque_size(songs);
     unsigned char *h = calloc(size + 1, 1), *of = calloc(size + 1, 1);
@@ -521,8 +528,8 @@ int ratings_menu(void *ctx, void *event) {
  * thread (stock's shared connection waits only 500 ms for a reader, so a worker's longer read lock
  * could still make stock's own My Fav writes fail), and writes the card once at the end, only if
  * the file would change; the longest copy so far is kept as .1, the one way back from a lost table.
- * ponytail: every row against every rated one, as the Ratings lists do; a rating whose song or
- * album has left the library has no name to write, and stays out until it is back. */
+ * ponytail: every row against every rated one still to find; a rating whose song or album has left
+ * the library has no name to write, and stays out until it is back. */
 #define RC_FILE "/mnt/mmc/.ratings.tsv"
 #define RC_HEADER "#song\thearts\tpath\tcue_start\n#album\thearts\tname\talbum_artist\tfolder\n"
 #define RC_PAGE 64

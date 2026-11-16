@@ -342,7 +342,13 @@ int tidal_play(const char *url, const char *id, const char *reply) {
                 title = P(r, REC_TITLE) ? P(r, REC_TITLE) : "", artist = P(r, REC_ARTIST),
                 album = P(r, REC_ALBUM), cover = P(r, REC_COVER);
         }
-        tidal_name(name, sizeof name, key, artist, title, ext);
+        /* The download writes it as .tmp and the remux as .tmp.tag.tmp beside it, so all three fit
+         * the 255 a name on the card may have (FAT's and exFAT's limit). ponytail: a copy an older
+         * version saved untagged under a longer name (no room for the remux's) is still found by
+         * its <id>-<quality> prefix and stays untagged, and a .tmp it left at a power-off under a
+         * longer name is no longer overwritten (the new name differs; trim skips .tmp names), both
+         * until Clear All Downloads. */
+        tidal_name(name, sizeof name - (sizeof ".tmp.tag.tmp" - 1), key, artist, title, ext);
         tk_snprintf(td.tags[0], TIDAL_TAG, "title=%s", title ? title : "");
         tk_snprintf(td.tags[1], TIDAL_TAG, "artist=%s", artist ? artist : "");
         tk_snprintf(td.tags[2], TIDAL_TAG, "album=%s", album ? album : "");
@@ -789,6 +795,10 @@ void tidal_all(int press, char *out, unsigned size) {
             td.tried = td.misses = td.full = 0;
         pthread_mutex_unlock(td.lock);
         if (!td.all) deque_destroy(all), toast("Play a Tidal album or playlist first");
+        /* The folder, as tidal_play makes it before its card_space: tidal_poll's statfs of a
+         * missing one fails, which reads as a full card and ends the run at once. */
+        else
+            mkdir(TIDAL_DIR, 0755);
     }
     unsigned n = td.all ? deque_size(td.all) : 0;
     if (n)

@@ -178,6 +178,61 @@ def test_a_speaker_takes_its_own_volume_and_the_earphones_level_and_limit_come_b
     assert tap.t.volume == -1
 
 
+# Headphones Required (#388) is the earphones' too: a speaker plays with none connected.
+def required(fw, on, jack=0):
+    """The switch, and a 3.5 mm jack plugged or not, as stock keeps them; the toggles of stock's player the payload
+    makes (media_set_playing's, a pause while it plays)."""
+    switch = fw.var('g_block_withoutphone_flag', C.c_ubyte)
+    switch.value, fw.var('g_po_status', C.c_ubyte).value, fw.var('g_bal_status', C.c_ubyte).value = on, jack, 0
+    return switch, lambda: len(fw.calls('player_play_pause'))
+
+
+@pytest.mark.parametrize('end', ['stopped', 'the app gone'])
+def test_a_speaker_plays_with_headphones_required_and_none_connected_then_the_switch_comes_back(fw, end):
+    tap = Tap(fw)
+    switch, pauses = required(fw, 1)
+    tap.app(state=CAST_ON, spk=20)
+    tap.poll()
+    assert switch.value == 0  # every start stock's check refuses with none connected goes through
+    tap.poll()
+    assert switch.value == 0
+    if end == 'stopped':
+        tap.app(state=CAST_OFF)
+    else:
+        tap.t.want = NOW - STALE
+    tap.poll()
+    assert switch.value == 1 and pauses() == 1  # none to play to: what plays pauses, as the switch turned on does
+
+
+@pytest.mark.parametrize('on, jack, way, status', [
+    (1, 1, 0, PLAYING),  # earphones on the jack: it plays on
+    (1, 0, 1, PLAYING),  # Bluetooth
+    (1, 0, 0, PAUSED),  # nothing playing
+    (0, 0, 0, PLAYING),  # the switch off, as before
+])
+def test_a_speaker_stopping_pauses_only_with_the_switch_on_none_connected_and_playing(fw, on, jack, way, status):
+    tap = Tap(fw)
+    switch, pauses = required(fw, on, jack)
+    tap.way = way
+    tap.app(state=CAST_ON, spk=20)
+    tap.poll()
+    tap.status = status
+    tap.app(state=CAST_OFF)
+    tap.poll()
+    assert switch.value == on and pauses() == 0
+
+
+def test_the_switch_turned_on_while_a_speaker_plays_stays_on(fw):
+    tap = Tap(fw)
+    switch, _ = required(fw, 0, jack=1)
+    tap.app(state=CAST_ON, spk=20)
+    tap.poll()
+    switch.value = 1  # Playback's row
+    tap.app(state=CAST_OFF)
+    tap.poll()
+    assert switch.value == 1
+
+
 @pytest.mark.parametrize('way, key', [(0, b'VOLUME'), (1, b'BT_VOLUME')])  # the earphones, Bluetooth's
 def test_a_volume_saved_while_a_speaker_plays_is_the_speaker_s_never_the_earphones(fw, way, key):
     tap = Tap(fw)

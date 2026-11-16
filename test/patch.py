@@ -88,6 +88,8 @@ for a in ENTRIES: watch(a)
 
 def signed(x): return x if x<0x80000000 else x-0x100000000
 SCOPE_RULES='/mnt/data/q2-library-scope'  # library_scope.c's folder marker rules, written by a library update
+LIBRARY_SCOPE=re.search(r'#define LIBRARY_SCOPE_TOKEN "(.*)"',(ROOT/'patch/library_scope.h').read_text())[1]
+MUSIC_WHERE=re.search(r'#define MUSIC_WHERE "(.*)" LIBRARY_SCOPE_TOKEN',INC)[1]+LIBRARY_SCOPE  # the Library's music
 
 # Q2_TRACE=FILE logs every draw and widget-property call, each hook's return and each passed case, by value.
 TRACE=open(os.environ['Q2_TRACE'],'w') if os.environ.get('Q2_TRACE') else None
@@ -3778,7 +3780,8 @@ class QueueMachine(Machine):
                   'importPlayList','toolsGetDirectoryM3u8'): self.handlers[syms[n]]='q:'+n
         self.favs=set(); self.open_pages=set(); self.opened=[]
         self.handlers.pop(syms['mclLoadPlayList'])
-        self.mock('strlen@GLIBC_2.0','snprintf@GLIBC_2.0'); self.handlers[syms['strcmp@GLIBC_2.0']]='tk_strcmp'
+        # strstr: an artist page's groupings find ALBUM_GROUP in their SQL (coverflow.c of_names)
+        self.mock('strlen@GLIBC_2.0','snprintf@GLIBC_2.0','strstr@GLIBC_2.0'); self.handlers[syms['strcmp@GLIBC_2.0']]='tk_strcmp'
         self.mock('mclStartPlayer','mclStop','mclSetPause','mclSetResume','mclSetSeek')
         self.status=self.alloc(0x200); self.word(syms['g_class_type'],cls)
         self.surface,_,_=self.table_page(4,page,rebind=True); self.word(self.surface+O['TABLE_ROWS'],rows)
@@ -3804,13 +3807,15 @@ class QueueMachine(Machine):
     def names(self,h=None): return [self.text(self.get(e+O['REC_NAME'])) for e in self.items(h or self.get(syms['mcl_pdeqplaylist']))]
     def pool(self): return [signed(self.get(e)) for e in self.items(self.get(O['MCL_POOL']))]
     def mcl(self,k): return signed(self.get(O[k]))
-    def songtable(self,sql,rows):
-        """The rows songs_by_path's SQL picks, run by SQLite over rows as songtable's (path, CUE start
-        and end), whose order stands for getAllMusic(3)'s time order."""
-        db=sqlite3.connect(':memory:'); db.execute('create table songtable(id,fileurl,time,time_end,time_create)')
-        db.executemany('insert into songtable values(?,?,?,?,?)',[(i,self.text(self.get(r+O['REC_PATH'])),self.get(r+O['REC_CUE_START']),
-                                                                  self.get(r+O['REC_CUE_END']),-i) for i,r in enumerate(rows)])
-        return [rows[i] for i,*_ in db.execute(sql)]
+    def songtable(self,sql,rows,values=False):
+        """The rows songs_by_path's or songs_by_id's SQL picks (with values, the statement's own rows), run by SQLite
+        over rows as songtable's (path, CUE start and end, album and album artist), each its index as id, whose order
+        stands for getAllMusic(3)'s time order."""
+        text=lambda r,k: self.text(self.get(r+O[k])) if self.get(r+O[k]) else None
+        db=sqlite3.connect(':memory:'); db.execute('create table songtable(id,fileurl,time,time_end,time_create,album,albumsonger)')
+        db.executemany('insert into songtable values(?,?,?,?,?,?,?)',[(i,text(r,'REC_PATH'),self.get(r+O['REC_CUE_START']),
+                                                                      self.get(r+O['REC_CUE_END']),-i,text(r,'REC_ALBUM'),text(r,'REC_ALBUM_ARTIST')) for i,r in enumerate(rows)])
+        return db.execute(sql).fetchall() if values else [rows[i] for i,*_ in db.execute(sql)]
     def dialog(self):
         self.view=self.node('scroll_view','scroll_view',[self.node('list_item') for _ in range(5)])
         self.title=self.node('hscroll_label','scrlabel_title'); self.back=self.node('image','img_return')
@@ -6829,6 +6834,12 @@ ple_search(m,'zzz'); assert m.showlabels()==['Search: zzz','No songs match']
 # Return from the box applies its text, and a filtered pick can close the page cleanly.
 m.choose(0); m.nodes[m.find('edit')]['text']='t1'; assert m.key()==11
 assert m.showlabels()==['Search: t1','T1']; m.close(); passed()
+# Add Songs lists the first 500 songs, under ringnav's MAX_ENTRIES (512), then a row that opens the Search box.
+m=PlaylistEditMachine(); m.found=[m.song(f'S{i:03}') for i in range(600)]; m.budget=1500000; m.open_editor()
+cost=[0]; hook=m.u.hook_add(UC_HOOK_CODE,lambda *a: cost.__setitem__(0,cost[0]+1),begin=BASE,end=SCRATCH-1)
+m.choose(0); m.u.hook_del(hook); cost_line('add songs 600',cost[0])
+labels=m.showlabels(); assert labels==['Search',*(f'S{i:03}' for i in range(500)),'Search for more songs'],(len(labels),labels[-2:])
+m.choose(501); edit=m.find('edit'); assert edit and m.nodes[edit]['name']=='search_edit' and m.order()==['A','B','C']; passed()
 # Header creation uses the database IDs even when the displayed list is alphabetized.
 class PlaylistLifecycleMachine(PlaylistEditMachine):
     def __init__(self):
@@ -7121,8 +7132,9 @@ f,ctx=m.handler(win,O['EVT_DESTROY']); m.call(address=f,args=(ctx,m.event,0,0),g
 assert repaint()==[] and shown()[0]==''; passed()
 # Now Playing's art follows the player's cover each lit pass (np_art_poll), whatever stock's
 # one-shot flags did: the playing track's file once g_lastcover_url is its path, its cached
-# bitmap dropped first, or stock's placeholder for a track with none; nothing for the cover init
-# loaded, the same one again, one not yet this track's, or the screen off.
+# bitmap dropped first, or stock's placeholder for a track with none; nothing for the same one
+# again, one not yet this track's, or the screen off. The page's opening loads this track's itself,
+# whatever stock's init showed (here, still the placeholder).
 m=QueueMachine(queue=3,pos=1); m.handlers[playing+12]='stock_playing'; m.handlers[sleep_hook+12]='stock_sleep'
 cover=m.node('image','img_cover',image='play_defaultcover'); win=m.node('window','playing_page',[cover])
 m.word(win+O['W_PARENT'],m.wm); m.top=win
@@ -7131,8 +7143,9 @@ def art_pass():
     m.call(address=sleep_hook,args=(0x1234,0,0,0),gap=0)
     return [c[0] for c in m.calls if c[0] in ('image_manager_unload_bitmap_by_name','image_base_set_image')],m.nodes[cover].get('image')
 reload=['image_manager_unload_bitmap_by_name','image_base_set_image']
-cover_is(b'/p/B',1); m.call(address=playing,args=(win,7,0,0),gap=0); assert art_pass()==([],'play_defaultcover')
-m.word(O['MCL_POS'],2); cover_is(b'/p/B',0); assert art_pass()==([],'play_defaultcover')
+cover_is(b'/p/B',1); m.call(address=playing,args=(win,7,0,0),gap=0)
+assert [c[0] for c in m.calls if c[0] in reload]==reload and art_pass()==([],'file:///tmp/coverpic.jpg')
+m.word(O['MCL_POS'],2); cover_is(b'/p/B',0); assert art_pass()==([],'file:///tmp/coverpic.jpg')
 cover_is(b'/p/C',2); assert art_pass()==(reload,'file:///tmp/externpic.jpg') and art_pass()[0]==[]
 m.word(O['MCL_POS'],1); cover_is(b'/p/B',1); assert art_pass()==(reload,'file:///tmp/coverpic.jpg')
 m.word(O['MCL_POS'],2); cover_is(b'/p/C',3); assert art_pass()==(reload,'play_defaultcover')
@@ -13989,6 +14002,7 @@ def fnv(s,h=2166136261):
 # as it was. Picks leave the page open; an empty library only says so. Most Played plays the
 # counted songs, most played first, and leaves the play mode alone.
 class ShuffleMachine(CoverflowMachine):
+    dbquery=int(manifest['patch_symbols']['stock_dbquery_trampoline'],16)
     def __init__(self):
         super().__init__()
         self.counts=b''; self.queued=None; self.wifi=-1
@@ -14001,6 +14015,7 @@ class ShuffleMachine(CoverflowMachine):
         name=self.handlers.get(address,'')
         if address==syms['navigator_to_with_context'] and self.text(u.reg_read(REGS[0]))=='playing_page':
             self.queued=self.names(self.get(u.reg_read(REGS[1])))
+        if address in (syms['toolsQueryDbTable'],self.dbquery) and self.counted(u,address): return
         if not name.startswith('s:'): return super().hook(u,address,size,unused)
         name=name[2:].split('@')[0]; a,b=u.reg_read(REGS[0]),u.reg_read(REGS[1]); ret=0; self.calls.append((name,a,b))
         if name=='fopen': ret=1 if self.text(a)=='/mnt/data/ringnav-plays' and self.counts else 0
@@ -14018,6 +14033,24 @@ class ShuffleMachine(CoverflowMachine):
         elif name=='widget_restack':
             kids=next(n['children'] for n in self.nodes.values() if a in n['children']); kids.remove(a); kids.insert(b,a)
         self.returns(ret,clobber=True)
+    def counted(self,u,address):
+        """Most Played's reads over found as songtable's rows: its pass over every song's id, path and CUE start
+        (library_lists.c counted_query, on toolsQueryDbTable) hands each row to the payload's own callback, as
+        sqlite3_exec does, and the fetch of those rows by id, scoped to music (path_query, on stock's query), stages
+        the records it picks."""
+        a,b,c,d=[u.reg_read(r) for r in REGS]; sql=self.text(b)
+        if sql=='select id,fileurl,time from songtable':
+            rows=self.songtable(sql,self.found,values=True)
+            for row in rows:
+                values=self.alloc(4*len(row)); names=self.alloc(4*len(row))
+                for i,v in enumerate(row): self.word(values+4*i,0 if v is None else self.string(str(v)))
+                if self.nested(c,d,len(row),values,names): break
+        elif sql.startswith('select * from songtable not indexed where id in ('):
+            rows=self.songtable(sql,self.found)
+            self.deqs[self.get(syms['tools_pdeq_directory'])][1]+=[self.copy('stSongInfo',e) for e in rows]
+        else: return False
+        self.calls.append(('toolsQueryDbTable' if address==syms['toolsQueryDbTable'] else 'dbquery',a,b,c))
+        self.returns(len(rows),clobber=True); return True
 m=ShuffleMachine(); stock=[m.node('list_item') for _ in range(11)]
 view=m.node('scroll_view','scroll_view_localmusic',stock); m.top=m.node('window','localmusic_page',[view])
 assert m.call(address=HOOKS['localmusic_page_init'][0],args=(m.top,5,0,0),gap=0)==0
@@ -14705,8 +14738,13 @@ slots=[(fnv('/p/T3'),5),(fnv('/p/T1'),2),(fnv('/p/T7'),5)]+[(fnv(f'/p/T{i}'),1) 
 m.counts=b''.join(struct.pack('<2I',*e) for e in slots).ljust(8*O['PLAYS_SLOTS'],b'\0')
 m.calls=[]
 assert m.call(address=f,args=(ctx,m.event,0,0),gap=0,count=50_000_000)==0; m.page=m.top
-# The library is read once, unsorted and uncopied: a copy OOM-killed demo on a 47,000-song library.
-assert [c[1] for c in m.calls if c[0]=='getAllMusic']==[3]
+# Only the counted songs' rows are read, uncopied: a pass over songtable's ids and paths, then those rows by id, scoped
+# to music there. A copy of the whole library OOM-killed demo on a 47,000-song library.
+reads=[m.text(c[2]) for c in m.calls if c[0] in ('toolsQueryDbTable','dbquery')]
+assert not called('getAllMusic') and len(reads)==2 and reads[0]=='select id,fileurl,time from songtable'
+assert reads[1].startswith('select * from songtable not indexed where id in (')
+assert reads[1].endswith(f") and {MUSIC_WHERE.replace(LIBRARY_SCOPE,'1')} order by time_create desc,id")  # no scope rules
+assert sorted(map(int,re.search(r'in \(([\d,]*)\)',reads[1])[1].split(',')))==[1,3,7]+list(range(8,130))
 assert not [c for c in m.calls if c[0] in ('deque_init_copy','deque_assign')]
 assert m.names(m.get(syms['tools_pdeq_directory']))==['staged']
 ranked=['T3','T7','T1']+[f'T{i}' for i in range(8,130)][:O['PLAYS_TOP']-3]
@@ -14728,11 +14766,25 @@ m.press(100); assert m.hold()==11 and m.nodes[m.title]['text']=='T7' and m.relea
 assert m.labels()==['Play Next','Add to Queue','Add to Favourites','Go to Artist']; passed()
 # Opened again, the kept tracks are ranked again without reading the library; a library change reads it again.
 m.close(); m.found=m.found[:8]; m.calls=[]
-assert m.call(address=f,args=(ctx,m.event,0,0),gap=0,count=50_000_000)==0 and not called('getAllMusic')
+assert m.call(address=f,args=(ctx,m.event,0,0),gap=0,count=50_000_000)==0 and not called('toolsQueryDbTable')
 m.page=m.top; assert m.texts()==['Most Played']+[x for p in zip(ranked,details) for x in p]
 m.close(); m.calls=[]; m.rescan(); m.calls=[]
-assert m.call(address=f,args=(ctx,m.event,0,0),gap=0,count=50_000_000)==0 and called('getAllMusic')
+assert m.call(address=f,args=(ctx,m.event,0,0),gap=0,count=50_000_000)==0 and called('toolsQueryDbTable')
 m.page=m.top; assert m.texts()==['Most Played']+[x for p in zip(ranked[:3],details[:3]) for x in p]; passed()
+# Without memory for the fetch's SQL (songs_by_id's calloc refused, as test/playback.py refuses songs_by_path's), the
+# whole library is read once, as getAllMusic(3) gives it, and ranked the same.
+class FetchRefused(ShuffleMachine):
+    fetch=len('select * from songtable not indexed where id in (')+len(f') and {MUSIC_WHERE} order by time_create desc,id')+2+11*125
+    refused=0
+    def hook(self,u,address,size,unused):
+        if address==syms['calloc@GLIBC_2.0'] and (u.reg_read(REGS[0]),u.reg_read(REGS[1]))==(self.fetch,1):
+            self.refused+=1; self.returns(0,clobber=True); return
+        return super().hook(u,address,size,unused)
+m=FetchRefused(); m.found=[m.song(f'T{i}') for i in range(130)]; m.word(m.found[1]+O['REC_ARTIST'],0)
+m.counts=b''.join(struct.pack('<2I',*e) for e in slots).ljust(8*O['PLAYS_SLOTS'],b'\0'); m.calls=[]
+assert m.call(address=f,args=(ctx,m.event,0,0),gap=0,count=50_000_000)==0; m.page=m.top
+assert m.refused==1 and [c[0] for c in called('getAllMusic')]==[3]
+assert m.texts()==['Most Played']+[x for p in zip(ranked,details) for x in p]; passed()
 
 # View Queue on a shuffle (Now Playing's hold menu, Up Next's list): a Play/Pause hold on a row plays its track
 # next, a move, not Play Next's copy, the queue as it was; the rows are taken again with the pick at row 0, the
@@ -14904,6 +14956,19 @@ for i,names in want.items():
 m.found=[m.song('Z')]; m.fav_songs=[]; m.calls=[]; row=m.nodes[m.find('scroll_view',menu)]['children'][0]; g,c=m.handler(row,O['EVT_CLICK'])
 m.call(address=g,args=(c,m.event,0,0),gap=0); m.page=m.top
 assert m.texts()==['Top Rated','No songs yet','Hold the heart on Now Playing to rate']; passed()
+# A Ratings list's cost, in payload instructions: each song looks itself up in My Fav's keys and in the kept, each
+# sorted, not in every rated one. 1,000 songs, 250 My Fav rows and 250 kept, 12 of each in the library (so few rows
+# are built), All Rated: 626,420 measured, where walking every rated key took 6,265,139 (12 a song and key).
+names=[f'S{i}' for i in range(1000)]; kept=[*names[500:512],*(f'K{i}' for i in range(238))]
+m=RateMachine(b''.join(struct.pack('<I',(key_of(n)&~7)|1+i%4) for i,n in enumerate(kept)).ljust(4*O['RATE_SLOTS'],b'\0'))
+m.found=[m.song(n) for n in names]; m.fav_songs=[m.song(n) for n in [*names[:12],*(f'F{i}' for i in range(238))]]
+m.call(address=payload_syms['ratings_menu'],args=(0,m.event,0,0),gap=0); menu=m.top
+g,c=m.handler(m.nodes[m.find('scroll_view',menu)]['children'][3],O['EVT_CLICK'])
+cost=[0]; hook=m.u.hook_add(UC_HOOK_CODE,lambda *a: cost.__setitem__(0,cost[0]+1),begin=BASE,end=SCRATCH-1)
+assert m.call(address=g,args=(c,m.event,0,0),gap=0,count=50_000_000)==0; m.u.hook_del(hook); m.page=m.top
+assert m.texts()[:3]==['All Rated','S0','♥♥♥♥♥ · Artist'] and len(m.texts())==1+2*24,m.texts()
+assert cost[0]<1_000_000,cost
+cost_line('ratings list 1000 songs 500 rated',cost[0]); passed()
 
 # Long Songs: over LONG_SONG_S, longest first, whatever Scan Song Durations is. Each file is statted on a worker and
 # one whose signature the cache lacks probed once by TagLib (a CUE track with both ends among them: the file's length

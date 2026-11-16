@@ -58,6 +58,7 @@ int snprintf(char *, unsigned, const char *, ...), sscanf(const char *, const ch
 void *memcpy(void *, const void *, unsigned), *memset(void *, int, unsigned);
 char *strstr(const char *, const char *);
 unsigned strlen(const char *);
+int strncmp(const char *, const char *, unsigned);
 #endif
 
 /* ffmpeg's argv into a (27 slots) for frames from second at; ss holds the start. The picture is
@@ -172,6 +173,118 @@ int meta(const char *s, const char *key, char *out, unsigned n) {
     out[len] = 0;
     return 1;
 }
+
+static void tag_text(char *out, unsigned size, const char *s, unsigned n);
+
+/* A report line that is key's own ("      TITLE           : Song": ffmpeg prints an Ogg stream's
+ * Vorbis comments with their keys in capitals) into out, n bytes, short of a UTF-8 sequence cut at
+ * the end; 0 for any other line, such as SUBTITLE's or an MP3's "title". */
+int tag_line(const char *s, const char *key, char *out, unsigned n) {
+    unsigned k = strlen(key);
+    while (*s == ' ') ++s;
+    if (strncmp(s, key, k) || (s[k] != ' ' && s[k] != ':') || !meta(s, key, out, n)) return 0;
+    tag_text(out, n, out, strlen(out));
+    return 1;
+}
+
+/* The songs after an Ogg station's first (radio). ffmpeg reports the first one's tags, but a
+ * chained stream starts each later song with a new comment header, which ffmpeg passes on as a
+ * packet and never reports. So the raw packets are copied to pipe:5 (tags_feed), where a header
+ * is Vorbis's ("\3vorbis") or Opus's ("OpusTags") magic, a vendor string, then a count of
+ * comments, each KEY=value: every string after its 32-bit little-endian length. Any other
+ * station's packets (an MP3's) pass through unmatched; lengths past these bounds end a match. */
+#define TAG_VENDOR_MAX 4096
+#define TAG_COUNT_MAX 1024
+#define TAG_COMMENT_MAX (16u << 20) /* a cover picture's, base64, is skipped whole */
+enum { T_SCAN, T_VENDOR_LEN, T_VENDOR, T_COUNT, T_LEN, T_COMMENT };
+static struct {
+    int step;                   /* T_*: what the next byte is part of */
+    unsigned at, len, left;     /* bytes of it read, its length, comments still to come */
+    unsigned vorbis, opus;      /* bytes of each magic matched */
+    char kept[192];             /* a comment's first bytes: KEY=value */
+    char artist[96], song[150]; /* the header's, either may be "" */
+} tg;
+
+/* n bytes of s into out (size bytes), line breaks as spaces, short of a UTF-8 sequence cut at the
+ * end. */
+static void tag_text(char *out, unsigned size, const char *s, unsigned n) {
+    if (n > size - 1) n = size - 1;
+    unsigned k = n;
+    while (k && ((unsigned char)s[k - 1] & 0xc0) == 0x80) --k; /* its last sequence's lead */
+    if (k && (unsigned char)s[k - 1] >= 0xc0) {
+        unsigned lead = (unsigned char)s[k - 1], whole = lead >= 0xf0 ? 4 : lead >= 0xe0 ? 3 : 2;
+        if (n - (k - 1) < whole) n = k - 1;
+    }
+    for (unsigned i = 0; i < n; ++i) out[i] = s[i] == '\n' || s[i] == '\r' ? ' ' : s[i];
+    out[n] = 0;
+}
+
+/* The comment just read, n of its bytes kept: ARTIST's or TITLE's value (its key in any case),
+ * the first of each. */
+static void tag_take(unsigned n) {
+    static const char *const keys[] = { "ARTIST=", "TITLE=" };
+    for (unsigned k = 0; k < 2; ++k) {
+        char *out = k ? tg.song : tg.artist;
+        unsigned i = 0, kl = strlen(keys[k]);
+        while (i < kl && i < n &&
+               (tg.kept[i] >= 'a' && tg.kept[i] <= 'z' ? tg.kept[i] - 32 : tg.kept[i]) ==
+                   keys[k][i])
+            ++i;
+        if (i == kl && !*out)
+            tag_text(out, k ? sizeof tg.song : sizeof tg.artist, tg.kept + kl, n - kl);
+    }
+}
+
+/* A string's end (the vendor's, or a comment's): 1 when it was the header's last comment and
+ * named an artist or a song. */
+static int tag_end(void) {
+    if (tg.step == T_COMMENT) {
+        tag_take(tg.len < sizeof tg.kept ? tg.len : sizeof tg.kept);
+        if (--tg.left) return tg.step = T_LEN, tg.at = tg.len = 0, 0;
+        return tg.step = T_SCAN, tg.artist[0] || tg.song[0];
+    }
+    return tg.step = T_COUNT, tg.at = tg.len = 0, 0;
+}
+
+/* One byte of pipe:5. */
+static int tag_byte(unsigned char c) {
+    static const char vorbis[] = "\3vorbis", opus[] = "OpusTags";
+    switch (tg.step) {
+    case T_SCAN:
+        tg.vorbis = c == (unsigned char)vorbis[tg.vorbis] ? tg.vorbis + 1 : c == 3;
+        tg.opus = c == (unsigned char)opus[tg.opus] ? tg.opus + 1 : c == 'O';
+        if (tg.vorbis == 7 || tg.opus == 8) {
+            tg.step = T_VENDOR_LEN, tg.at = tg.len = tg.vorbis = tg.opus = 0;
+            tg.artist[0] = tg.song[0] = 0;
+        }
+        return 0;
+    case T_VENDOR_LEN:
+    case T_COUNT:
+    case T_LEN:
+        tg.len |= (unsigned)c << 8 * tg.at;
+        if (++tg.at < 4) return 0;
+        tg.at = 0;
+        if (tg.step == T_COUNT) {
+            if (tg.len > TAG_COUNT_MAX || !tg.len) return tg.step = T_SCAN, 0; /* none: no song */
+            return tg.left = tg.len, tg.len = 0, tg.step = T_LEN, 0;
+        }
+        if (tg.len > (tg.step == T_LEN ? TAG_COMMENT_MAX : TAG_VENDOR_MAX))
+            return tg.step = T_SCAN, 0;
+        tg.step = tg.step == T_LEN ? T_COMMENT : T_VENDOR;
+        return tg.len ? 0 : tag_end();
+    default: /* T_VENDOR, T_COMMENT */
+        if (tg.step == T_COMMENT && tg.at < sizeof tg.kept) tg.kept[tg.at] = (char)c;
+        return ++tg.at < tg.len ? 0 : tag_end();
+    }
+}
+
+/* n bytes of pipe:5: 1 when they end a comment header that names an artist or a song (tg's). */
+int tags_feed(const unsigned char *b, int n) {
+    int got = 0;
+    for (int i = 0; i < n; ++i) got |= tag_byte(b[i]);
+    return got;
+}
+void tags_reset(void) { memset(&tg, 0, sizeof tg); }
 
 #ifndef PEQ_HOST
 struct timespec {
@@ -328,12 +441,15 @@ static void move_fd(int fd, int at) {
     fcntl(at, F_SETFD, 0);
 }
 
-/* ffmpeg with args, a onto fd at_a and b (unless -1) onto at_b; its pid, -1 when fork failed. */
-static int ffmpeg(const char **args, int a, int at_a, int b, int at_b) {
+/* ffmpeg with args, a onto fd at_a, b and c (each unless -1) onto at_b and at_c; its pid, -1 when
+ * fork failed. c, the radio's pipe:5, is made last, so it is past 4 and 2 and no move lands on
+ * it before its own. */
+static int ffmpeg(const char **args, int a, int at_a, int b, int at_b, int c, int at_c) {
     int pid = fork();
     if (!pid) {
         move_fd(a, at_a);
         if (b >= 0) move_fd(b, at_b);
+        if (c >= 0) move_fd(c, at_c);
         execv(FFMPEG, args);
         _exit(127);
     }
@@ -407,6 +523,7 @@ static int sound_open(const char *dev, const char *vol, unsigned rate) {
 
 static struct {
     char title[256], codec[16], bitrate[16];
+    char artist[sizeof tg.artist], song[sizeof tg.song]; /* an Ogg station's, title's parts */
     long long at; /* CLOCK_MONOTONIC ms the sound started, 0 before */
 } rs;
 
@@ -430,10 +547,19 @@ static void radio_key(int sock, int soft, int *quit) {
     *quit |= k[0] == 'q';
 }
 
+/* An Ogg station's song as title, "ARTIST - TITLE" as an ICY StreamTitle reads (radio.c splits it),
+ * or the one of them it has. */
+static void ogg_title(void) {
+    snprintf(rs.title, sizeof rs.title, "%s%s%s", rs.artist,
+             rs.artist[0] && rs.song[0] ? " - " : "", rs.song);
+    radio_state(rs.at ? "playing" : "connecting");
+}
+
 /* -r: ffmpeg reads URL (argv[2]) with its ICY tags and reconnects as it can; when it ends anyway
  * it starts again, after a second more each time, until RADIO_TRIES starts in a row bring no
- * sound. Its report (stderr) gives the codec, bitrate and each StreamTitle. q quits, unlinking
- * the state; giving up leaves state=error. */
+ * sound. Its report (stderr) gives the codec, bitrate and each StreamTitle, or an Ogg station's
+ * first song's ARTIST and TITLE; the raw packets on pipe:5 give its later songs' (tags_feed). q
+ * quits, unlinking the state; giving up leaves state=error. */
 static int radio(int argc, char **argv) {
     radio_state("connecting");
     int soft = argc > 3 && argv[3][0] != 'h',
@@ -441,9 +567,10 @@ static int radio(int argc, char **argv) {
     int on = 1, quit = 0, tries = 0;
     int sock = dgram_listen(RADIO_SOCK);
     while (au.pcm && !quit && tries++ < RADIO_TRIES) {
-        int ap[2], ep[2] = { -1, -1 }, len = 0;
-        if (pipe2(ap, O_CLOEXEC) || pipe2(ep, O_CLOEXEC)) break;
-        /* verbose: libavformat's http logs each StreamTitle there, not at info */
+        int ap[2], ep[2] = { -1, -1 }, mp[2] = { -1, -1 }, len = 0;
+        if (pipe2(ap, O_CLOEXEC) || pipe2(ep, O_CLOEXEC) || pipe2(mp, O_CLOEXEC)) break;
+        /* verbose: libavformat's http logs each StreamTitle there, not at info; pipe:5, the
+         * stream's packets as they come, for an Ogg station's tags */
         const char *args[] = { FFMPEG,
                                "-nostdin",
                                "-hide_banner",
@@ -468,11 +595,20 @@ static int radio(int argc, char **argv) {
                                "-f",
                                "s16le",
                                "pipe:4",
+                               "-map",
+                               "0:a:0",
+                               "-c",
+                               "copy",
+                               "-f",
+                               "data",
+                               "pipe:5",
                                0 };
         rs.at = 0;
+        rs.artist[0] = rs.song[0] = 0;
+        tags_reset();
         radio_state("connecting");
-        int pid = ffmpeg(args, ap[1], 4, ep[1], 2);
-        close(ap[1]), close(ep[1]);
+        int pid = ffmpeg(args, ap[1], 4, ep[1], 2, mp[1], 5), tags = mp[0];
+        close(ap[1]), close(ep[1]), close(mp[1]);
         unsigned long thread = 0;
         au.fd = ap[0];
         au.played = au.done = 0;
@@ -480,9 +616,20 @@ static int radio(int argc, char **argv) {
         char line[512], c;
         long long started = now_ms();
         while (thread && !quit && !au.done) {
-            struct pollfd p[2] = { { sock, 1, 0 }, { ep[0], 1, 0 } };
-            poll(p, 2, 500);
+            struct pollfd p[3] = { { sock, 1, 0 }, { ep[0], 1, 0 }, { tags, 1, 0 } };
+            poll(p, 3, 500);
             if (p[0].revents) radio_key(sock, soft, &quit);
+            if (p[2].revents) { /* read on, or ffmpeg blocks on it, the sound too */
+                unsigned char b[2048];
+                int n = read(tags, b, sizeof b);
+                if (n <= 0)
+                    close(tags), tags = -1; /* ffmpeg ending */
+                else if (tags_feed(b, n)) {
+                    memcpy(rs.artist, tg.artist, sizeof rs.artist);
+                    memcpy(rs.song, tg.song, sizeof rs.song);
+                    ogg_title();
+                }
+            }
             if (!rs.at && au.played > 0) rs.at = now_ms(), tries = 0, radio_state("playing");
             if (!rs.at && now_ms() - started > RADIO_SILENT_MS && !au.played) {
                 /* the writer may be blocked in ALSA, past joining: say so and end here */
@@ -508,10 +655,14 @@ static int radio(int argc, char **argv) {
             if (meta(line, "StreamTitle", rs.title, sizeof rs.title) ||
                 meta(line, "icy-br", rs.bitrate, sizeof rs.bitrate))
                 radio_state(rs.at ? "playing" : "connecting");
+            else if (tag_line(line, "ARTIST", rs.artist, sizeof rs.artist) ||
+                     tag_line(line, "TITLE", rs.song, sizeof rs.song))
+                ogg_title();
         }
         if (pid > 0) kill(pid, SIGKILL), waitpid(pid, 0, 0);
         if (thread) pthread_join(thread, 0);
         close(ap[0]), close(ep[0]);
+        if (tags >= 0) close(tags);
         snd_pcm_drop(au.pcm), snd_pcm_prepare(au.pcm);
         /* the wait before the next start, a key at a time */
         for (long long until = now_ms() + 1000 * tries;
@@ -583,7 +734,7 @@ int main(int argc, char **argv) {
     char info[PROBE_MAX];
     int pp[2] = { -1, -1 }, got = 0, w = 0, h = 0;
     const char *pa[] = { FFMPEG, "-nostdin", "-hide_banner", "-i", argv[2], 0 };
-    int probe = pipe2(pp, O_CLOEXEC) ? -1 : ffmpeg(pa, pp[1], 2, -1, 0);
+    int probe = pipe2(pp, O_CLOEXEC) ? -1 : ffmpeg(pa, pp[1], 2, -1, 0, -1, 0);
     close(pp[1]);
     int soft = argc > 3 && argv[3][0] != 'h',
         dac = sound_open(argv[1], argc > 3 ? argv[3] : 0, RATE), on = 1;
@@ -615,7 +766,7 @@ int main(int argc, char **argv) {
         const char *args[27];
         char ss[16];
         ffmpeg_argv(args, ss, at, argv[2], audio);
-        int pid = ffmpeg(args, vp[1], 3, audio ? ap[1] : -1, 4);
+        int pid = ffmpeg(args, vp[1], 3, audio ? ap[1] : -1, 4, -1, 0);
         close(vp[1]);
         unsigned long thread = 0;
         au.paused = held; /* before the writer starts, so a paused seek plays nothing */

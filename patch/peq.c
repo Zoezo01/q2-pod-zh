@@ -473,6 +473,16 @@ static inline __attribute__((always_inline)) int identity(const peq_coeff *c) {
     return c->b0 == 1 && !c->b1 && !c->b2 && !c->a1 && !c->a2;
 }
 
+/* One band's step, transposed direct form II. Flush |y| < ~2e-34 to zero: decaying tails would
+ * otherwise reach denormals, which MIPS FPUs trap on. */
+static inline __attribute__((always_inline)) double biquad(const peq_coeff *c, double *z,
+                                                           double x) {
+    double y = c->b0 * x + z[0] + 1e-18 - 1e-18;
+    z[0] = c->b1 * x - c->a1 * y + z[1];
+    z[1] = c->b2 * x - c->a2 * y;
+    return y;
+}
+
 /* The bands sample can act on, in order: identity bands with zero memory stay so until an update.
  */
 static int live(const peq_engine *e, int *list) {
@@ -498,14 +508,40 @@ static double sample(peq_engine *e, const int *list, int n, double x, int ch) {
         }
         /* Still checked per sample: a band can drain to idle mid-block. */
         if (identity(c) && !z[0] && !z[1]) continue;
-        /* Flush |y| < ~2e-34 to zero: decaying tails would otherwise reach denormals, which MIPS
-         * FPUs trap on. */
-        double y = c->b0 * x + z[0] + 1e-18 - 1e-18;
-        z[0] = c->b1 * x - c->a1 * y + z[1];
-        z[1] = c->b2 * x - c->a2 * y;
-        x = y;
+        x = biquad(c, z, x);
     }
     return x * e->gain[ch]; /* after the cascade, so filter memory is independent of preamp */
+}
+
+/* A steady block (no ramp, no update waiting): unless a listed band is at identity (draining to
+ * rest, or a one-channel band past Nyquist), sample()'s tests answer the same all block, so each
+ * channel runs its own bands over the block instead. 0: sample() runs it.
+ * ponytail: a one-channel band at or above half the rate (a stream at 40 kHz or less) stays listed
+ * at identity, so its preset takes sample() every block; skipping an identity band with no memory
+ * here, as sample() does, would lift it. */
+static int steady(peq_engine *e, const int *list, int n, float *audio, unsigned frames,
+                  int channels) {
+    for (int k = 0; k < n; ++k)
+        if (identity(&e->c[list[k]])) return 0;
+    for (int ch = 0; ch < channels; ++ch) {
+        const peq_coeff *c[PEQ_BANDS];
+        double *z[PEQ_BANDS];
+        int m = 0;
+        for (int k = 0; k < n; ++k) {
+            int i = list[k];
+            if (e->only[i] && e->only[i] != ch + 1)
+                e->z[ch][i][0] = e->z[ch][i][1] = 0; /* as sample() does at each sample */
+            else
+                c[m] = &e->c[i], z[m++] = e->z[ch][i];
+        }
+        for (float *a = audio + ch, *end = audio + frames * channels; a < end; a += channels) {
+            double x = *a;
+            if (!__builtin_isfinite(x)) x = 0;
+            for (int k = 0; k < m; ++k) x = biquad(c[k], z[k], x);
+            *a = (float)(x * e->gain[ch]);
+        }
+    }
+    return 1;
 }
 
 void peq_process(peq_dsp *d, float *audio, unsigned frames) {
@@ -514,6 +550,9 @@ void peq_process(peq_dsp *d, float *audio, unsigned frames) {
         return; /* steady bypass leaves the whole block untouched */
     int cur[PEQ_BANDS], nxt[PEQ_BANDS], nc = live(&d->current, cur),
                                         nn = d->ramp ? live(&d->next, nxt) : 0;
+    if (!d->ramp && !d->waiting && frames &&
+        steady(&d->current, cur, nc, audio, frames, d->channels))
+        return;
     for (unsigned i = 0; i < frames; ++i) {
         if (!d->ramp && d->waiting) {
             d->next = d->pending;

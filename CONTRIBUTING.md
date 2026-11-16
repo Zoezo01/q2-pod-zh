@@ -19,7 +19,7 @@ Apps live in their own repos. To list one on the App Store page, open a pull req
 
 ## Changing the firmware
 
-1. Build and test as in [building.md](docs/building.md). `python3 -m pytest test/unit` and the [type check](docs/building.md#type-check) run on every pull request; run the scripts in `test/` that cover what you changed too. `tools/check.sh` runs what CI does that needs no stock ZIP; `tools/check.sh --full` adds a `--dev` build and every suite that reads one.
+1. Build and test as in [building.md](docs/building.md). `python3 -m pytest test/unit` and the [type check](docs/building.md#type-check) run on every pull request; run the scripts in `test/` that cover what you changed too. `tools/check.sh` runs what CI does that needs no stock ZIP; `tools/check.sh --full` adds a `--dev` build and every suite that reads one, in `dist/dev-<hash>`: a folder per state of the build's sources, reused while they're unchanged whatever the commit, which you delete by hand.
 2. Try it on a Q2 if you can. A `--dev` build installs over any other and starts [`q2remote`](docs/remote.md) for screenshots and input over Wi-Fi.
 3. Run `./tools/format.sh`. It formats every tracked C file; CI fails a pull request whose C it would change (`tools/format.sh --check`), with clang-format 23 (`pip install clang-format==23.1.5`).
 4. Add a line for anything a user would notice under the top version in [changelog.md](docs/changelog.md), in plain words: what changed, not how. Don't change `VERSION`.

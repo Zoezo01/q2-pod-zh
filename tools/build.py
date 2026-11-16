@@ -1561,6 +1561,7 @@ GLOBALS = ['tidal_albuminfo_thread_run', 'tidal_collection_thread_run',  # 2: a 
            'g_usbvol_mode',  # USB DAC volume: 0 fixed, else the volume (config_usbvolmode, device_set_volume)
            'g_usbdac_chargeflag',  # USB mode's charge choice, which switch_charge_enable gets there
            'g_memory_play', 'g_carmode', 'g_carmode_state',  # In-Vehicle Mode (pod_click)
+           'g_block_withoutphone_flag',  # Headphones Required (check_forbid_play_no_headset's switch)
            'g_bigcovermode', 'g_foldercover_flag',  # Enlarged Album Art (1 on) and Folder Album Cover (pod_click)
            'g_headset_output',  # the output config_outputchannel sets: 0, 1 the jacks, 2 Bluetooth
            'g_usbmode',  # USB mode: 1 Audio and DAC, else USB Storage (usbmode_page_init)

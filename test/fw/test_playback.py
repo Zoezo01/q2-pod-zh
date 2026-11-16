@@ -2448,6 +2448,104 @@ def test_a_preload_too_long_is_not_opened(saved, fw, mcl):
     assert fw.fn('ringnav_open_preload', C.c_int)() == 1 and mcl.preload == -1
 
 
+def tables(saved):
+    """Where advanced play's order, groups and ids are: a rebuild takes new ones while the old are held."""
+    return (C.cast(saved.s.order, C.c_void_p).value, C.cast(saved.s.groups, C.c_void_p).value,
+            saved.fw.var('playback__ids', C.c_void_p).value)
+
+
+def shuffle_pick(saved, rows, folder, own=None):
+    """playback_groups as the Q2 runs it: its own load, then the one Now Playing's player_start makes (play_folder's
+    playing_page, at the order's first track), both through ringnav_load. Returns the tables that second load found;
+    own, if given, gets the tables the pick's own load left."""
+    fw, found = saved.fw, []
+    load = fw.fn('ringnav_load', C.c_int, C.c_void_p, C.c_int, C.c_int)
+    fw.mock('stock_load_trampoline', saved.stock_load)
+
+    def pick_load(q, at, kind, *_):
+        load(q, at, kind)
+        if own is not None:
+            own.append(tables(saved))
+    fw.mock('mclLoadPlayList', pick_load)
+
+    def now_playing(name, context, *_):
+        q, at = struct.unpack_from('<Qi', C.string_at(context, 12))
+        found.append(tables(saved))
+        load(q, at, 0xf001)
+    fw.mock('navigator_to_with_context', now_playing)
+    assert fw.fn('playback_groups', C.c_int, C.c_void_p, C.c_int)(saved.deques.new(rows), folder) == 1
+    return found
+
+
+def folders(saved, *sizes):
+    """Songs of folders /m/A, /m/B... of these sizes whose album tags, X and Y, cross the folders, shuffled together."""
+    rows = [saved.song(b'/m/%c/%02d.flac' % (65 + a, t), b'%c' % (88 + t % 2), track=t + 1)
+            for a, size in enumerate(sizes) for t in range(size)]
+    random.Random(len(rows)).shuffle(rows)
+    return rows
+
+
+def folder_of(saved, i):
+    path = struct.unpack_from('<Q', C.string_at(saved.deques[saved.handle][i], 0x60), O['REC_PATH'])[0]
+    return C.string_at(path).rsplit(b'/', 1)[0]
+
+
+@pytest.mark.parametrize('folder', [0, 1])
+def test_now_playing_s_load_keeps_the_pick_s_tables(saved, folder):
+    """Now Playing's load of the pick's own queue, at the order's first track, keeps the order, groups and ids the
+    pick has just drawn, started there as rebuild(0) would start them: the library is not grouped a second time.
+    Folders are tested over rows whose album tags cross them, so grouping by album would show."""
+    rows = folders(saved, 3, 1, 4, 2) if folder else saved.albums(3, 1, 4, 2)
+    found, at = shuffle_pick(saved, rows, folder), saved.mcl.pos
+    assert found == [tables(saved)] and saved.s.active == 1 and saved.s.shuffle == 3 and saved.s.grouping == 0
+    assert saved.order()[0] == at and saved.s.cursor == 0 and saved.seen() == {at} and saved.history() == [at]
+    check_order(saved, 3, at)
+    nexts = saved.up_next()
+    played = saved.run(len(rows))
+    assert played == nexts and sorted([at, *played]) == list(range(len(rows)))  # Up Next plays, each track once
+    key = (lambda i: folder_of(saved, i)) if folder else saved.album
+    groups = [key(i) for i in [at, *played]]
+    assert len([g for i, g in enumerate(groups) if not i or groups[i - 1] != g]) == 4  # each album or folder whole
+
+
+@pytest.mark.parametrize('shuffle', [0, 1, 2])
+def test_a_pick_over_advanced_play_groups_once(saved, shuffle):
+    """A pick made while advanced play has no group shuffle (a Repeat, All Songs, Songs in Album) ends it before its
+    own load, as shuffle_play does, so that load groups nothing, and ends as a pick from plain play does."""
+    rows = saved.load(saved.albums(3, 1, 4, 2))
+    assert saved.set(1, REPEAT_ALL) == 1 and saved.set(0, shuffle) == 1 and saved.s.active == 1
+    own = []
+    found, at = shuffle_pick(saved, rows, 0, own), saved.mcl.pos
+    assert own == [(None, None, None)]  # the pick's own load left no tables: it grouped nothing
+    assert found == [tables(saved)] and saved.s.active == 1 and saved.s.shuffle == 3 and saved.s.repeat == 2
+    assert saved.s.cursor == 0 and saved.seen() == {at} and saved.history() == [at]
+
+
+@pytest.mark.parametrize('other', ['song', 'track', 'size'])
+def test_another_queue_loaded_while_grouping_is_grouped_anew(saved, other):
+    """Only the pick's own queue, entry for entry, at the order's first track, keeps its tables. Loaded while
+    s.grouping is set (another start landing during the pick), each of these is grouped anew and started where it
+    is loaded, as rebuild(0) starts it: the rows with one song changed (an album of its own then), the same rows
+    at another track, and the rows with one more song."""
+    rows = saved.albums(3, 3)
+    shuffle_pick(saved, rows, 0)
+    before, at, groups = tables(saved), saved.mcl.pos, [saved.s.groups[i] for i in range(6)]
+    j = max(i for i in range(6) if i != at and groups[i] != i)  # in an album an earlier entry starts
+    queue, start = list(rows), at
+    if other == 'song':
+        queue[j] = saved.song(b'/o/C/01.flac', b'C', track=1)
+    elif other == 'track':
+        start = j
+    else:
+        queue.append(saved.song(b'/o/C/01.flac', b'C', track=1))
+    saved.s.grouping = 1
+    saved.fw.fn('ringnav_load', C.c_int, C.c_void_p, C.c_int, C.c_int)(saved.deques.new(queue), start, 0xf001)
+    saved.s.grouping = 0
+    assert tables(saved) != before and saved.s.active == 1 and saved.s.n == len(queue)
+    assert saved.order()[saved.s.cursor] == start and saved.history() == [start]
+    assert other != 'song' or saved.s.groups[j] == j != groups[j]
+
+
 def test_shuffle_groups_starts_at_an_albums_first_track(saved, fw):
     rows = saved.albums(3, 3)
     saved.deques[saved.handle][:] = rows
@@ -2464,6 +2562,41 @@ def test_shuffle_groups_starts_at_an_albums_first_track(saved, fw):
 
 def test_an_empty_list_has_no_groups(fw, player):
     assert fw.fn('playback_groups', C.c_int, C.c_void_p, C.c_int)(player.deques.new(), 0) == 0 and not fw.calls('mclLoadPlayList')
+
+
+def test_more_songs_than_a_queue_takes_leave_the_queue_as_it_was(saved, fw):
+    """A library past QUEUE_LIMIT is refused before the load ("Too many songs to shuffle"): the queue, its position,
+    its order and its snapshot stay. The load used to replace the queue, and rebuild's refusal unlinked the snapshot."""
+    rows = full_queue(saved)
+    saved.save()
+    pos, order, snapshot, asked = saved.mcl.pos, saved.order(), saved.queue_file(), []
+    fw.mock('check_forbid_play_no_headset', lambda quiet, *_: asked.append(quiet) or 1)
+    assert fw.fn('playback_groups', C.c_int, C.c_void_p, C.c_int)(saved.deques.new([0] * 65537), 0) == 0
+    assert not asked  # the size first: no message for a pick that could never start
+    assert not fw.calls('mclLoadPlayList') and list(saved.deques[saved.handle]) == rows and saved.mcl.pos == pos
+    assert saved.s.active == 1 and saved.order() == order and saved.queue_file() == snapshot
+
+
+def test_a_library_of_exactly_the_queue_limit_still_shuffles(saved, fw):
+    """QUEUE_LIMIT songs are not too many, as rebuild takes them: the pick goes on to its load (the list's size
+    reported as the limit, its six rows loaded and grouped)."""
+    all_ = saved.deques.new(saved.albums(3, 3))
+    fw.mock('fw_deque_size', lambda q, *_: 65536 if (q & 0xffffffff) == all_ else len(saved.deques[q]))
+    assert fw.fn('playback_groups', C.c_int, C.c_void_p, C.c_int)(all_, 0) == 1 and fw.calls('mclLoadPlayList')
+
+
+def test_a_start_headphones_required_forbids_leaves_the_queue_as_it_was(saved, fw):
+    """Headphones Required with no output: stock's gate is asked (0: it shows its message) before the load, and its
+    refusal loads, groups and opens nothing, with no toast of ours (1). Now Playing refused only after that load had
+    replaced the queue with the whole library."""
+    rows = full_queue(saved)
+    saved.save()
+    pos, order, snapshot, asked = saved.mcl.pos, saved.order(), saved.queue_file(), []
+    fw.mock('check_forbid_play_no_headset', lambda quiet, *_: asked.append(quiet) or 1)
+    assert fw.fn('playback_groups', C.c_int, C.c_void_p, C.c_int)(saved.deques.new(saved.albums(3, 3)), 0) == 1
+    assert asked == [0] and not fw.calls('mclLoadPlayList') and not fw.calls('navigator_to_with_context')
+    assert list(saved.deques[saved.handle]) == rows and saved.mcl.pos == pos and saved.s.active == 1
+    assert saved.s.shuffle == 1 and saved.order() == order and saved.queue_file() == snapshot
 
 
 def test_back_shifts_with_an_insert_before_it(fw, player, mcl):

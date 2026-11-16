@@ -363,8 +363,9 @@ int config_value(const char *section, const char *key, int n,
                  int def); /* theme_engine.c: a config.ini decimal */
 int image_show(void *img, const char *url, unsigned *size);
 int album_cmp(void *a, void *b);
-int spoken(const char *path); /* navigation.c: under Podcasts or Audiobooks, or an M4B */
-void peq_attach(void);        /* peq_ui.c */
+int spoken(const char *path);     /* navigation.c: under Podcasts or Audiobooks, or an M4B */
+void peq_attach(void);            /* peq_ui.c */
+void peq_page_replace(void *old); /* peq_ui.c: the open EQ page closed for a new one */
 /* EQ per Output (docs/internals.md#eq-per-output): peq_ui.c swaps the EQ when the output named key
  * ("3.5mm", "4.4mm", "usb", a Bluetooth MAC) takes over; forgetting whose it is ends the following.
  */
@@ -399,9 +400,11 @@ int thread_lower(int idle);   /* coverflow_loader.c: a worker's nice 19 and its 
 /* coverflow.c: the o32 statx syscall, as demo imports none */
 int ringnav_statx(int dirfd, const char *path, int flags, unsigned mask, void *buf);
 void *coverflow_album_tracks(void *r);
-/* coverflow.c: qsort's order of unsigned keys; whether key is in keys[0..n), sorted so */
+/* coverflow.c: qsort's order of unsigned keys; whether key is in keys[0..n), sorted so, and the
+ * first there not below it (n for none) */
 int key_cmp(const void *a, const void *b);
 int has_key(const unsigned *keys, unsigned n, unsigned key);
+unsigned key_at(const unsigned *keys, unsigned n, unsigned key);
 unsigned album_id(void *r), album_dir(const char *p, int disc);
 /* navigation.c: Cover Flow's glide and its letter */
 int carousel_glide(void *w, int goal, unsigned ms, int easing);

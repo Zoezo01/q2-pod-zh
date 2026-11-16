@@ -1,5 +1,21 @@
 # Changelog
 
+- **1.8.6**:
+  - Tidal Downloads: **Download Playing Songs** works on a card that has no Tidal folder yet, such as a new or reformatted card, or one whose `.tidal` folder was deleted on a computer. It stopped at once with "Downloaded 0 of N songs" until a Tidal song had played with that card in.
+  - Tidal Downloads: a song with a very long artist and title is saved to the card, and tagged, like any other. One past about 230 characters streamed at every play and **Download Playing Songs** counted it as not saved; one a little shorter was saved without its tags. A copy saved that way stays untagged until **Clear All Downloads**.
+  - Library: an artist's page opens much faster on a big library: it looks up only that artist's album names instead of going through every album in the library two or three times.
+  - Library: **Ratings**' **Top Rated**, **Loved**, **All Rated** and **Disliked** open faster on a big library with many songs rated.
+  - EQ: **Simple** and **Advanced** use less of the processor while music plays, with exactly the same sound.
+  - Library: **Most Played** reads only the songs you've played from the library, not the whole library, when it first opens after the Q2 starts or the library changes, so it opens quicker and needs far less memory on a big library. Cover Flow's **Sort: Most Played** does the same.
+  - Edit Playlist: **Add Songs** opens much sooner and needs far less memory on a big library: it lists the first 500 songs, A to Z, and when more songs or search results match, its last row, **Search for more songs**, opens the search as its **Search** row does. Search to add a song past the 500th.
+  - Now Playing: under **Theme: Classic** with **Light Mode** on, changing the volume shows its percentage where the page dots are, in dark text. It was drawn white on the white page, so it only showed with Light Mode off.
+  - Now Playing: it opens on the playing song's album art. After using AirPlay, Now Playing could open with no art, which stayed away until the next song.
+  - Internet Radio: stations that stream Ogg Vorbis or Opus, such as LISTEN.moe's, show the song and artist playing, and follow each new song. Only MP3 and AAC stations showed them; these sent theirs in a way the Q2 didn't read.
+  - AirPlay: with **Headphones Required** on, music plays to an AirPlay speaker with no headphones connected ([#388](https://github.com/DiamondBond/q2-pod/issues/388)). The switch is for the Q2's own outputs, and comes back when you pick **This Q2**; with nothing connected then, the music pauses.
+  - Quick Settings: holding **Playback** opens the EQ over Now Playing after Return's hold took you there from the EQ ([#397](https://github.com/DiamondBond/q2-pod/issues/397)), and Return goes back to Now Playing. The hold did nothing there, as the EQ was still open underneath; that one now closes first.
+  - Library: a shuffle that **Headphones Required** refuses leaves your queue and play mode as they were. With nothing connected, **Shuffle Songs** (and a decade's or the hold menu's **Shuffle**) used to set Play Mode to Shuffle and shuffle the queue you had, and **Shuffle Albums** and **Shuffle Folders** replaced it with the whole library.
+  - Library: **Shuffle Albums** and **Shuffle Folders** over more than 65,536 songs say there are too many songs to shuffle and leave your queue and play mode as they were. They used to replace your queue with the whole library first.
+  - Library: **Shuffle Albums** and **Shuffle Folders** start sooner on a big library: Now Playing no longer sorts the whole library into albums or folders a second time.
 - **1.8.5**:
   - About: **CFW. Version** shows just the version number, such as 1.8.5, without "Pod" after it.
   - Games: under **Theme: Classic**, Vortex's night sky is one flat colour, with no gradient.

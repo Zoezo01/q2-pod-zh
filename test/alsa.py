@@ -52,6 +52,8 @@ int _snd_pcm_mock_open(void **out, const char *name, void *root, void *conf, int
         (r=snd_pcm_ioplug_set_param_minmax(p,3,PCM_RATE,PCM_RATE))<0) return r;
     *out=p->pcm; return 0;
 }
+/* ALSA's dlsym check looks for this name, so it stays global, declared first for -Wmissing-variable-declarations. */
+extern char __snd_pcm_mock_open_dlsym_pcm_001;
 char __snd_pcm_mock_open_dlsym_pcm_001;
 '''
 

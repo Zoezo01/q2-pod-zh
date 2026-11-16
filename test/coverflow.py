@@ -684,6 +684,25 @@ void *staged_music(int (*query)(void *), void *arg, int *count) {
     music_only = 0;
     return out;
 }
+/* an artist's groupings (of_names) go straight to stock's query, the scope token expanded
+   (library_scope.c's, no markers here); and tags.c's quoting */
+int toolsQueryDbTable(const char *db, const char *sql, void *row, int sort);
+int stock_dbquery_trampoline(const char *db, const char *sql, void *row, int sort) {
+    return toolsQueryDbTable(db, sql, row, sort);
+}
+char *library_scope_query(const char *sql) { return sql ? strdup(sql) : 0; }
+int scan_quote(char *sql, unsigned cap, unsigned *n, const char *s) {
+    if (*n + 3 >= cap) return 0;
+    sql[(*n)++] = '\'';
+    for (; s && *s; ++s) {
+        if (*n + 3 >= cap) return 0;
+        if (*s == '\'') sql[(*n)++] = '\'';
+        sql[(*n)++] = *s;
+    }
+    sql[(*n)++] = '\'';
+    sql[*n] = 0;
+    return 1;
+}
 static int spoken_path(const char *path) {
     return !strncasecmp(path, "/mnt/mmc/audiobooks/", 20) ||
            !strncasecmp(path, "/mnt/mmc/podcasts/", 18) ||

@@ -1,8 +1,10 @@
 #!/usr/bin/env python
-"""Peak bytes the firmware's own code holds while Songs, Albums and Cover Flow open on a 50,000-song library,
-on this machine: test/score.py's P2. Not a test: `python3 test/fw/peak.py [songs]`.
+"""Peak bytes the firmware's own code holds while Songs, Albums, Cover Flow and Most Played open on a 50,000-song
+library, on this machine: test/score.py's P2. Not a test: `python3 test/fw/peak.py [songs]`.
 
-Prints `Songs\t<peak bytes>\t<songs on the card>`, then Albums and CoverFlow. Counted, as one running total:
+Prints `Songs\t<peak bytes>\t<songs on the card>`, then Albums, CoverFlow, MostPlayed (its first open, 512 songs
+counted), SongsMostPlayed (the same with Songs' rows still held) and CoverFlowMostPlayed (Sort: Most Played). Counted,
+as one running total:
   * the firmware's calloc/realloc/strdup/free (peak_shim.c, linked in with ld --wrap: only fw.so's calls), as the
     bytes asked for;
   * each stSongInfo row a libcstl deque holds (stock's deques are Python lists here): REC_SIZE and its strings, as
@@ -165,6 +167,33 @@ def coverflow(q, n):
     assert 'window_create' in [kind for kind, _ in q.made]
 
 
+def counted(q, n):
+    """A full play-count table (ringnav-plays): 512 songs spread over the card, 1 to 7 plays each."""
+    paths = [path for path in q.disk.files if path.startswith('/mnt/mmc/Music/')]  # card()'s order
+    q.disk.files['/mnt/data/ringnav-plays'] = b''.join(
+        struct.pack('<2I', e2e.key(paths[i * len(paths) // 512]), i % 7 + 1) for i in range(512))
+
+
+def most_played(q, n):
+    """Most Played's first open after a boot."""
+    counted(q, n)
+    q.fw.fn('most_played', C.c_int, C.c_void_p, C.c_void_p)(None, None)
+    assert 'window_create' in [kind for kind, _ in q.made]
+
+
+def songs_most_played(q, n):
+    """Most Played's first open with Songs' rows still in the showlist, as stock keeps them (025cfcd3's OOM)."""
+    songs(q, n)
+    most_played(q, n)
+
+
+def coverflow_most_played(q, n):
+    """Cover Flow's first open with Sort: Most Played (ringnav-coversort's SORT_PLAYED, 3)."""
+    counted(q, n)
+    q.disk.files['/mnt/data/ringnav-coversort'] = struct.pack('<i', 3)
+    coverflow(q, n)
+
+
 def measure(name, action, library, scratch, arena, files, db, n):
     """One screen in a child: a fresh firmware, and nothing it leaves at stock's addresses reaches the next."""
     global add
@@ -200,7 +229,8 @@ def main():
     db = e2e.Library(tags)
     db.scan(files)
     arena = Arena()
-    for name, action in (('Songs', songs), ('Albums', albums), ('CoverFlow', coverflow)):
+    for name, action in (('Songs', songs), ('Albums', albums), ('CoverFlow', coverflow), ('MostPlayed', most_played),
+                         ('SongsMostPlayed', songs_most_played), ('CoverFlowMostPlayed', coverflow_most_played)):
         measure(name, action, library, scratch, arena, files, db, n)
     shutil.rmtree(out)
 

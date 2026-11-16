@@ -572,7 +572,10 @@ one downloads lands after that one, both as type 2. Each write has its own time,
 waits 100 ms between covers. Home's art and Enlarged Art's shape take the file into their keys
 too; a paint after a song change, before its cover lands, still shows the previous file. When
 that key changes, it reloads the art the way stock does, dropping AWTK's cached bitmap of the name
-first, since the player writes every track's cover to the same file. While the cover is still
+first, since the player writes every track's cover to the same file. The page's opening
+(`ringnav_playing`) loads the track's cover the same way, rather than trusting what stock's init
+showed: after AirPlay, stock's init could open the page with no art, and as the key was already
+this track's, nothing loaded it until the next song. While the cover is still
 being parsed, and for Tidal, it leaves stock's image. ponytail: one more decode per track change while the page is up, beside
 stock's own reload.
 
