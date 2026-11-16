@@ -471,6 +471,8 @@ int spot_put(char *out, unsigned size, const char *s); /* "\t" and s escaped app
 int spot_reply(char *buf, unsigned len, char **f, int max);
 void spot_shut(int fd);
 unsigned curl_save(const void *data, unsigned size, unsigned n, void *file); /* netupdate.c */
+/* scrobble.c: a libcurl handle for url, verified with the firmware's CA file */
+void *tls_easy(const char *url, long connect_s, long timeout_s);
 /* library_lists.c: a card folder's songs played from the card (a card app's local row): a
  * folder opens its list, a file plays its folder from it; album, in track order (by name), else
  * newest first. */

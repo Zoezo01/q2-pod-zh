@@ -372,7 +372,6 @@ int netupdate_sha256(const char *path, char *hex, unsigned *size) {
 #define NU_ASSET "update.tar"
 #define NU_FILE "/mnt/mmc/update.tar"
 #define NU_JSON "/tmp/q2-update.json"
-#define NU_CA "/etc/scrobble-ca.pem" /* scrobble.c's; github.com's and its asset host's roots */
 #define NU_BATTERY 16 /* percent: under it, off a charger, stock's updater refuses to flash */
 #define NU_TRIES 3    /* tries in a row that add nothing to the part, before a press gives up */
 #define SH_RESERVE (64ull << 20) /* left free on the card beyond a download or what it unpacks */
@@ -433,18 +432,11 @@ static int progress(void *xfer, long long total, long long now, long long c, lon
  * from its byte `from` on (HTTP Range) when the file holds those before it. curl's own code. */
 static int fetch(const char *url, void *file, char *tag, unsigned n, long *code, volatile int *xfer,
                  long from) {
-    void *c = curl_easy_init();
+    void *c = tls_easy(url, 15, file ? 0 : 30); /* a header-only check times out at 30 s */
     int err = 1;
     char *location = 0;
     if (!c) return 1;
-    curl_easy_setopt(c, 10002, url);         /* CURLOPT_URL */
-    curl_easy_setopt(c, 10018, "Q2Pod");     /* USERAGENT */
-    curl_easy_setopt(c, 99, 1L);             /* NOSIGNAL: off the UI thread */
-    curl_easy_setopt(c, 78, 15L);            /* CONNECTTIMEOUT */
-    curl_easy_setopt(c, 10065, NU_CA);       /* CAINFO */
-    curl_easy_setopt(c, 64, 1L);             /* SSL_VERIFYPEER */
-    curl_easy_setopt(c, 81, 2L);             /* SSL_VERIFYHOST */
-    curl_easy_setopt(c, 20108, tls_untimed); /* SSL_CTX_FUNCTION: no date checks */
+    curl_easy_setopt(c, 10018, "Q2Pod"); /* USERAGENT */
     if (file) {
         curl_easy_setopt(c, 52, 1L);           /* FOLLOWLOCATION: to the asset host */
         curl_easy_setopt(c, 20011, curl_save); /* WRITEFUNCTION */
@@ -460,8 +452,7 @@ static int fetch(const char *url, void *file, char *tag, unsigned n, long *code,
                 c, 45, 1L); /* FAILONERROR: a 403/429/5xx keeps the part, not its error page */
         }
     } else {
-        curl_easy_setopt(c, 44, 1L);  /* NOBODY */
-        curl_easy_setopt(c, 13, 30L); /* TIMEOUT */
+        curl_easy_setopt(c, 44, 1L); /* NOBODY */
     }
     /* curl itself fails a body shorter than its Content-Length (PARTIAL_FILE). */
     err = curl_easy_perform(c);

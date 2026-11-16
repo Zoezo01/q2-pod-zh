@@ -17,8 +17,7 @@
 #define RADIO_SOCK "/tmp/q2radio.sock"
 #define RADIO_API "https://all.api.radio-browser.info" /* the directory's round-robin name */
 #define RADIO_QUERY "?order=votes&reverse=true&limit=100&hidebroken=true"
-#define RADIO_CA "/etc/scrobble-ca.pem" /* scrobble.c's; ISRG Root X1 signs the directory */
-#define RADIO_MAX 200                   /* stations, countries or genres a list holds */
+#define RADIO_MAX 200 /* stations, countries or genres a list holds */
 #define FETCH_MAX (256 << 10)
 #define RADIO_POLL_MS 500
 #define RADIO_QUIT_MS 1500 /* q2video's own exit, before it is killed */
@@ -661,21 +660,13 @@ static int fetch_progress(void *u, long long a, long long b, long long c, long l
 }
 
 static void *fetch_worker(void *unused) {
-    void *c = curl_easy_init();
+    void *c = tls_easy(fx.url, 10, 30);
     if (c) {
-        curl_easy_setopt(c, 10002, fx.url);         /* CURLOPT_URL */
         curl_easy_setopt(c, 20011, fetch_got);      /* WRITEFUNCTION */
         curl_easy_setopt(c, 20219, fetch_progress); /* XFERINFOFUNCTION */
         curl_easy_setopt(c, 43, 0L);                /* NOPROGRESS off, for it */
-        curl_easy_setopt(c, 99, 1L);                /* NOSIGNAL: off the UI thread */
         curl_easy_setopt(c, 52, 1L);                /* FOLLOWLOCATION */
-        curl_easy_setopt(c, 78, 10L);               /* CONNECTTIMEOUT */
-        curl_easy_setopt(c, 13, 30L);               /* TIMEOUT */
         curl_easy_setopt(c, 10018, "Q2Pod");        /* USERAGENT, as the directory asks */
-        curl_easy_setopt(c, 10065, RADIO_CA);       /* CAINFO */
-        curl_easy_setopt(c, 64, 1L);                /* SSL_VERIFYPEER */
-        curl_easy_setopt(c, 81, 2L);                /* SSL_VERIFYHOST */
-        curl_easy_setopt(c, 20108, tls_untimed);    /* SSL_CTX_FUNCTION: no date checks */
         if (!curl_easy_perform(c)) curl_easy_getinfo(c, 0x200002, &fx.code); /* RESPONSE_CODE */
         curl_easy_cleanup(c);
     }
