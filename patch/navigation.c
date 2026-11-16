@@ -10140,13 +10140,7 @@ int ringnav_output(int way) {
     if (changed &&
         !airplay_on()) { /* a speaker's level stays its own; airplay.c swaps back at its end */
         write_int_config(g_volume, "PLAYSET", "VOLUME");
-        char s[256] = "";
-        toolsReadConfig("/mnt/data/config.ini", "PLAYSET", way == 1 ? "BT_VOLUME" : "VOLUME", s,
-                        "");
-        int v = 0;
-        unsigned i;
-        for (i = 0; i < 3 && s[i] >= '0' && s[i] <= '9'; ++i) v = v * 10 + s[i] - '0';
-        if (!i || s[i] || v > 100) v = g_volume;
+        int v = config_value("PLAYSET", way == 1 ? "BT_VOLUME" : "VOLUME", 101, g_volume);
         if (v > g_maxvolume) v = g_maxvolume;
         g_volume = (unsigned char)v;
         headset_volume_reset();
