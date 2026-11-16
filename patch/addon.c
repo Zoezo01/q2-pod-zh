@@ -1037,19 +1037,18 @@ void addon_quit(const char *dir) { /* addon_card_away's wait, libc's clock and s
  * buf, the reply then read into it, one connection a request. */
 static struct {
     unsigned long thread;
-    int running, fail; /* fail: REQ_* */
+    int running, fail; /* fail: SPOT_* */
     volatile int cancel, done;
     unsigned id, n, len; /* id: the latest request's, never reused */
     char *buf;
     const char *path; /* the app's browse socket */
     int field; /* it sends a field row's text (field_sent): no answer is an error, not a wait */
 } req __attribute__((section(".scratch")));
-enum { REQ_OK, REQ_NOSOCK, REQ_FAIL };
 
 /* spotify.c's spot_exchange to the app's socket, within ADDON_WAIT_MS. */
 static void *worker(void *unused) {
-    req.fail = spot_exchange(req.path, ADDON_WAIT_MS, REPLY_MAX, req.buf, req.len, &req.n,
-                             &req.cancel); /* REQ_*: W_OK, W_NOSOCK, W_FAIL */
+    req.fail =
+        spot_exchange(req.path, ADDON_WAIT_MS, REPLY_MAX, req.buf, req.len, &req.n, &req.cancel);
     /* the request's bytes past the reply: none kept, a field row's text being one (field_sent) */
     if (req.n < req.len) memset(req.buf + req.n, 0, req.len - req.n);
     if (req.n <= REPLY_MAX) req.buf[req.n] = 0;
@@ -1074,7 +1073,7 @@ static void req_send(const char *path, const char *op, const char *tail) {
     ++req.id;
     req.cancel = 0;
     req.n = 0;
-    req.fail = REQ_FAIL;
+    req.fail = SPOT_FAIL;
     req.path = path;
     int n = (req.buf = calloc(REPLY_MAX + 2, 1))
                 ? tk_snprintf(req.buf, REQ_MAX, "Q2SPOT/1\n%u\t%s%s\n", req.id, op, tail)
@@ -1690,14 +1689,14 @@ static void got(void) {
     lv_t *l = top();
     char id[12], *head[4], *g[4 + 6 * ADDON_ROWS], *reply = req.buf, *fit;
     /* its own size, before spot_reply points into it: a full list keeps ADDON_PAGES of them */
-    if (req.fail == REQ_OK && (fit = realloc(reply, req.n + 1))) reply = fit;
+    if (req.fail == SPOT_OK && (fit = realloc(reply, req.n + 1))) reply = fit;
     /* The reply's bytes past its id, before spot_reply cuts them: the same as shown, nothing
      * redrawn. */
     unsigned skip = 9, hash = 0;
-    while (req.fail == REQ_OK && skip < req.n && reply[skip] != '\t') ++skip;
-    if (req.fail == REQ_OK && skip < req.n)
+    while (req.fail == SPOT_OK && skip < req.n && reply[skip] != '\t') ++skip;
+    if (req.fail == SPOT_OK && skip < req.n)
         hash = hash_bytes(FNV_SEED, (const unsigned char *)reply + skip, req.n - skip);
-    int act = pg.act, n = req.fail == REQ_OK
+    int act = pg.act, n = req.fail == SPOT_OK
                               ? spot_reply(reply, req.n, act ? head : g, act ? 0 : ADDON_ROWS)
                               : -1;
     char **f = act ? head : g;
@@ -1707,7 +1706,7 @@ static void got(void) {
     int ok = n >= 0 && !strcmp(f[1], "ok");
     unsigned now = time_now_ms();
     char why[48];
-    tk_snprintf(why, sizeof why, req.fail == REQ_NOSOCK ? "%s isn't running" : "%s didn't answer",
+    tk_snprintf(why, sizeof why, req.fail == SPOT_NOSOCK ? "%s isn't running" : "%s didn't answer",
                 app()->name);
     if (act) busy_row(0); /* before the toast, whose loop can pop the level */
     pg.act = 0;
@@ -1735,7 +1734,8 @@ static void got(void) {
             if (!strcmp(g[2], "pages") && g[3][0] && pg.pages < ADDON_PAGES) page_next(l);
         }
         append(l, from);
-    } else if (req.fail == REQ_NOSOCK && !req.field && /* a field's text: its error, never resent */
+    } else if (req.fail == SPOT_NOSOCK &&
+               !req.field && /* a field's text: its error, never resent */
                (app()->restart || now - app()->launch_at < ADDON_START_MS)) {
         if (l->state != K_WAIT && l->state != K_READY) l->state = K_WAIT, show();
         pg.again = now + 500;
@@ -1745,10 +1745,10 @@ static void got(void) {
     } else if (!ok) {
         l->state = K_ERROR;
         l->retry = 1;
-        l->nosock = req.fail == REQ_NOSOCK;
+        l->nosock = req.fail == SPOT_NOSOCK;
         l->since = l->slow = 0;
         tk_snprintf(l->note, sizeof l->note, "%s",
-                    req.fail != REQ_NOSOCK && n >= 0 && f[2][0] ? f[2] : why);
+                    req.fail != SPOT_NOSOCK && n >= 0 && f[2][0] ? f[2] : why);
         show();
     } else {
         l->since = l->slow = 0;

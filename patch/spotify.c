@@ -648,12 +648,11 @@ typedef struct {
 /* The request in flight, on its pthread: written from buf, the reply then read into it. */
 static struct {
     unsigned long thread;
-    int running, fail; /* fail: W_* */
+    int running, fail; /* fail: SPOT_* */
     volatile int cancel, done;
     unsigned id, n, len; /* id: the latest request's, never reused */
     char *buf;
 } wk __attribute__((section(".scratch")));
-enum { W_OK, W_NOSOCK, W_FAIL };
 
 /* The page, while open. act: what the request in flight is for (A_*). */
 static struct {
@@ -703,18 +702,18 @@ void spot_shut(int fd);
 
 /* One Q2SPOT/1 connection to the socket at path, the card apps' too (addon.c's worker): buf's len
  * bytes written, shut for writing, and the reply read into buf from *n to EOF, failing past max
- * bytes, within wait_ms, 100 ms at a time so a cancel is joined at once. 0 (W_OK) at EOF, W_NOSOCK
- * with no connection, else W_FAIL. */
+ * bytes, within wait_ms, 100 ms at a time so a cancel is joined at once. 0 (SPOT_OK) at EOF,
+ * SPOT_NOSOCK with no connection, else SPOT_FAIL. */
 int spot_exchange(const char *path, unsigned wait_ms, unsigned max, char *buf, unsigned len,
                   unsigned *n, volatile int *cancel) {
     struct unix_addr to = { 1, { 0 } };
     tk_snprintf(to.path, sizeof to.path, "%s", path);
     unsigned long long end = now_ms() + wait_ms;
     unsigned sent = 0;
-    int fd = socket(1, 2, 0), k = 1, fail = W_NOSOCK; /* AF_UNIX, SOCK_STREAM (MIPS numbering) */
+    int fd = socket(1, 2, 0), k = 1, fail = SPOT_NOSOCK; /* AF_UNIX, SOCK_STREAM (MIPS numbering) */
     if (fd >= 0 && fd < 1024 && !fcntl(fd, 4, 0x80) &&
         !connect(fd, &to, sizeof to)) { /* F_SETFL, O_NONBLOCK (MIPS) */
-        fail = W_FAIL;
+        fail = SPOT_FAIL;
         while (!*cancel && now_ms() < end) {
             unsigned set[32] = { 0 }; /* fd_set */
             int tv[2] = { 0, 100000 };
@@ -731,7 +730,7 @@ int spot_exchange(const char *path, unsigned wait_ms, unsigned max, char *buf, u
                 continue;
             }
             if ((k = recv(fd, buf + *n, max + 1 - *n, 0)) <= 0 || (*n += (unsigned)k) > max) {
-                fail = k ? W_FAIL : W_OK;
+                fail = k ? SPOT_FAIL : SPOT_OK;
                 break;
             }
         }
@@ -765,7 +764,7 @@ static void request(const char *op, const char *tail, int act) {
     if (act == A_FETCH) top()->id = wk.id;
     wk.cancel = 0;
     wk.n = 0;
-    wk.fail = W_FAIL;
+    wk.fail = SPOT_FAIL;
     int n = (wk.buf = calloc(SPOT_REPLY_MAX + 2, 1))
                 ? tk_snprintf(wk.buf, SPOT_REQ_MAX, "Q2SPOT/1\n%u\t%s%s\n", wk.id, op, tail)
                 : 0;
@@ -964,15 +963,16 @@ static void got(void) {
      * fields on the reply it shows. */
     char id[12], *head[4 + 6 * SPOT_ROWS], **f = br.act || l->state == S_READY ? head : l->f,
                                            *reply = wk.buf; /* ours: a request below takes wk */
-    int act = br.act,
-        n = wk.fail == W_OK ? spot_reply(reply, wk.n, f, act && act != A_CAPS ? 0 : SPOT_ROWS) : -1;
+    int act = br.act, n = wk.fail == SPOT_OK
+                              ? spot_reply(reply, wk.n, f, act && act != A_CAPS ? 0 : SPOT_ROWS)
+                              : -1;
     wk.buf = 0;
     tk_snprintf(id, sizeof id, "%u", wk.id);
     if (n >= 0 && strcmp(f[0], id)) n = -1;
     const char *status = n < 0 ? "error" : f[1];
-    const char *msg = wk.fail == W_NOSOCK ? "Spotify isn't running"
-                      : n >= 0 && f[2][0] ? f[2]
-                                          : "Spotify didn't answer";
+    const char *msg = wk.fail == SPOT_NOSOCK ? "Spotify isn't running"
+                      : n >= 0 && f[2][0]    ? f[2]
+                                             : "Spotify didn't answer";
     int ok = !strcmp(status, "ok"), login = !strcmp(status, "login");
     if (login || (ok && act == A_SIGNOUT)) {
         sp.auth = -1;
@@ -1030,10 +1030,10 @@ static void got(void) {
         } else if (!ok || act == A_DOWNLOAD)
             toast(msg);
     } else if (l->id != wk.id) {
-    } else if (wk.fail == W_NOSOCK && (int)(br.until - time_now_ms()) > 0) {
+    } else if (wk.fail == SPOT_NOSOCK && (int)(br.until - time_now_ms()) > 0) {
         if (l->state != S_PAIR) l->state = S_WAIT, show(); /* librespot starting */
         br.poll_at = time_now_ms() + 500;
-    } else if (wk.fail == W_NOSOCK && !access(SPOT_STATE, 0))
+    } else if (wk.fail == SPOT_NOSOCK && !access(SPOT_STATE, 0))
         sp.old = 1, base(S_OLD);
     else if (login)
         base(S_PAIR);

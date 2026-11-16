@@ -3354,9 +3354,7 @@ void pod_settings(void) {
                                           i == POD_ARTIST_CF || i == POD_REMIND_DAILY);
     st.pod_read = 1;
 }
-/* A pod_rows row's value (POD_*, one with a pod_values entry), read once from config.ini. Display's
- * Fast Navigation (POD_BIG_LIB) is Cover Flow's letters and their half copies (coverflow_thumb.c,
- * lettered, coverflow_halves); off unless the key is 1. */
+/* A pod_rows row's value (POD_*, one with a pod_values entry), read once from config.ini. */
 int pod_value(int i) {
     pod_settings();
     return *pod_values[i];

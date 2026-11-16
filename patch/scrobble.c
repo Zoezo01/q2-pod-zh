@@ -182,8 +182,6 @@ static unsigned got(const char *data, unsigned size, unsigned n, void *ctx) {
     return size * n;
 }
 
-/* POST body; the HTTP status, 0 when no reply. Credentials are sent only over verified TLS;
- * the firmware's CA bundle supplies roots missing from the stock image. */
 /* A libcurl handle for url, verified against CA_FILE without date checks (tls_untimed), with no
  * signals (off the UI thread) and these timeouts in seconds; timeout_s 0 sets none. 0 when curl
  * can't make one. */
@@ -201,6 +199,8 @@ void *tls_easy(const char *url, long connect_s, long timeout_s) {
     return c;
 }
 
+/* POST body; the HTTP status, 0 when no reply. Credentials are sent only over verified TLS;
+ * the firmware's CA bundle supplies roots missing from the stock image. */
 static long post(const char *url, const char *body, const char *auth, reply_t *r) {
     void *c = tls_easy(url, 15, 60), *h = 0;
     long code = 0;

@@ -291,7 +291,7 @@ static unsigned got(const char *data, unsigned size, unsigned n, void *ctx) {
 /* A libcurl handle for url, verified with the bundled CA file (stock's curl_http_request turns
  * checks off), timed to keep stock's worker thread from hanging. */
 static void *easy(const char *url) {
-    void *c = tls_easy(url, 10, 20);             /* NOSIGNAL: stock's match threads */
+    void *c = tls_easy(url, 10, 20);             /* tls_easy's NOSIGNAL: stock's match threads */
     if (c) curl_easy_setopt(c, 10018, Q2POD_UA); /* USERAGENT, as LRCLIB and MusicBrainz ask */
     return c;
 }

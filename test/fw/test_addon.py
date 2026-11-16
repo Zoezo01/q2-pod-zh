@@ -4038,9 +4038,9 @@ class SpotWk(C.Structure):  # spotify.c's wk
     ([None] * 40, 16, 0),  # nothing ever ready: the deadline
 ])
 def test_spotify_and_the_apps_make_the_same_exchange(fw, replies, sent, connect):
-    """spotify.c's and addon.c's workers are one spot_exchange: the same calls and bytes on the socket and the same
-    outcome, over the same script."""
-    path = text(b'/tmp/q2-librespot.browse.sock')  # spotify.c's SPOT_BROWSE
+    """spotify.c's and addon.c's workers are one spot_exchange: the same calls and bytes on the socket, each
+    connecting to its own path, and the same outcome, over the same script."""
+    path = text(b'/tmp/q2-foo.browse.sock')  # the app's, not SPOT_BROWSE: each worker's own path reaches connect
     def run(worker, var, kind):
         log: list[tuple] = []
         script, clock = list(replies), [0]
@@ -4076,9 +4076,14 @@ def test_spotify_and_the_apps_make_the_same_exchange(fw, replies, sent, connect)
         fw.mock('fw_close', lambda fd, *_: log.append(('close', fd)))
         fw.fn(worker, C.c_void_p, C.c_void_p)(None)
         return log, r.fail, r.n, r.done, C.string_at(r.buf, min(r.n, REPLY_MAX) + 1)
-    spotify = run('spotify__worker', 'spotify__wk', SpotWk)
-    assert spotify == run('addon__worker', 'addon__req', Req)
-    assert ('connect', b'\x01\x00' + b'/tmp/q2-librespot.browse.sock'.ljust(108, b'\0')) in spotify[0] or connect
+    def sockaddr(name):
+        return ('connect', b'\x01\x00' + name.ljust(108, b'\0'))
+    spotify, app = run('spotify__worker', 'spotify__wk', SpotWk), run('addon__worker', 'addon__req', Req)
+    assert sockaddr(b'/tmp/q2-librespot.browse.sock') in spotify[0]  # spotify.c's SPOT_BROWSE
+    assert sockaddr(b'/tmp/q2-foo.browse.sock') in app[0]
+    def unaddressed(run):
+        return [e for e in run[0] if e[0] != 'connect'], *run[1:]
+    assert unaddressed(spotify) == unaddressed(app)
 
 
 def line_end(fw, s):

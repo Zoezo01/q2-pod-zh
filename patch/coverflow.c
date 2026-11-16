@@ -1385,10 +1385,9 @@ int coverflow_split_artist(void *list) { return split_in_place(list, 1); }
 /* ponytail: keeps the list's (stock's) order, not the card's album_before order; sort here if
  * Next/Previous after a restart shows it. */
 int album_only(void *list, void *r, int at) {
-    void *out = _create_deque("stSongInfo");
+    void *out = song_list();
     const char *name = P(r, REC_ALBUM);
     int k = at, unknown = !name || !*name;
-    deque_init(out);
     for (unsigned i = 0; i < deque_size(list); ++i) {
         void *x = deque_at(list, i);
         const char *a = P(x, REC_ALBUM), *path = P(x, REC_PATH);

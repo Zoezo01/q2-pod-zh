@@ -1086,11 +1086,8 @@ int ringnav_prev(void) {
     /* The track left is unplayed again, so Next comes back to it rather than skipping it. */
     if ((unsigned)M(MCL_POS) < s.n) s.seen[M(MCL_POS)] = 0;
     M(MCL_POS) = (int)at;
-    for (unsigned i = 0; i < s.n; ++i)
-        if (s.order[i].index == at) {
-            s.cursor = i;
-            break;
-        }
+    unsigned i = order_find(0, at);
+    if (i < s.n) s.cursor = i;
     s.next_valid = 0;
     s.dirty = 1;
     return mclStartPlayer();
@@ -1685,11 +1682,8 @@ int ringnav_memory(void *out) {
             for (unsigned i = 0; i < h.n; ++i)
                 if (map[i] != ~0u) s.seen[map[i]] = indices[h.n * 2 + i];
             s.seen[pos] = 1;
-            for (unsigned i = 0; i < s.n; ++i)
-                if (s.order[i].index == pos) {
-                    s.cursor = i;
-                    break;
-                }
+            unsigned found = order_find(0, pos);
+            if (found < s.n) s.cursor = found;
             s.npend = 0;
             if (h.version == 2) {
                 /* the run [forced-1, force_end), in order */

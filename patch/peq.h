@@ -368,7 +368,7 @@ int spoken(const char *path);     /* navigation.c: under Podcasts or Audiobooks,
 void peq_attach(void);            /* peq_ui.c */
 void peq_page_replace(void *old); /* peq_ui.c: the open EQ page closed for a new one */
 /* navigation.c: the settings rows pod_rows builds (pod_values and its Q2POD keys); pod_value(i) is
- * one's value, read once from config.ini. */
+ * one's value (only rows with a pod_values entry), read once from config.ini. */
 enum {
     POD_CHARGE,
     POD_WAKE,
@@ -376,7 +376,7 @@ enum {
     POD_YEAR_OLD,
     POD_ARTISTS,
     POD_RESUME,
-    POD_LOCKCLOCK,
+    POD_LOCKCLOCK, /* 1 Large, else Standard */
     POD_ARTIST_AZ,
     POD_VOL_GUARD,
     POD_HOLD_HOME,
@@ -391,7 +391,8 @@ enum {
     POD_COVERMODE, /* Enlarged Album Art and Folder Album Cover: stock's bytes and PLAYSET keys, as
                       its rows do */
     POD_FOLDERCOVER,
-    POD_BIG_LIB, /* Display's Fast Navigation: Cover Flow's letters */
+    POD_BIG_LIB, /* Display's Fast Navigation: Cover Flow's letters and their half copies
+                    (coverflow_thumb.c, lettered, coverflow_halves); off unless the key is 1 */
     POD_PL_CF,   /* Display's Playlist View: List or Cover Flow, as Artist View */
     POD_SCAN_DURATIONS,
     POD_CF_POSITION,
@@ -506,6 +507,7 @@ int spot_put(char *out, unsigned size, const char *s); /* "\t" and s escaped app
 int spot_reply(char *buf, unsigned len, char **f, int max);
 int spot_exchange(const char *path, unsigned wait_ms, unsigned max, char *buf, unsigned len,
                   unsigned *n, volatile int *cancel);
+enum { SPOT_OK, SPOT_NOSOCK, SPOT_FAIL }; /* spot_exchange's results */
 unsigned curl_save(const void *data, unsigned size, unsigned n, void *file); /* netupdate.c */
 /* scrobble.c: a libcurl handle for url, verified with the firmware's CA file */
 void *tls_easy(const char *url, long connect_s, long timeout_s);
