@@ -21,10 +21,10 @@ import host  # noqa: E402
 
 ROOT = host.ROOT
 O = {k: int(v, 0) for k, v in re.findall(r'^#define (\w+) +(0x[0-9a-f]+|\d+)\b', (ROOT/'patch/offsets.inc').read_text(), re.M)}
-# navigation.c's source with navigation.h and the units split out of it (each includes navigation.h), for
-# tests that read a #define or enum the UI's code shares
+# navigation.c's source with peq.h (pod_rows' POD_ enum), navigation.h and the units split out of it (each
+# includes navigation.h), for tests that read a #define or enum the UI's code shares
 NAVIGATION_UNITS = sorted(p.stem for p in (ROOT/'patch').glob('*.c') if '#include "navigation.h"' in p.read_text())
-NAVIGATION_SOURCE = ''.join((ROOT/'patch'/n).read_text() for n in ['navigation.h', *(f'{u}.c' for u in NAVIGATION_UNITS)])
+NAVIGATION_SOURCE = ''.join((ROOT/'patch'/n).read_text() for n in ['peq.h', 'navigation.h', *(f'{u}.c' for u in NAVIGATION_UNITS)])
 
 
 def ui_name(lib, name):
@@ -34,7 +34,7 @@ def ui_name(lib, name):
 
 
 def c_enum(first):
-    """navigation.h's enum that starts with `first` (NAVIGATION_SOURCE holds it), by name: each its place, as
+    """peq.h's or navigation.h's enum that starts with `first` (NAVIGATION_SOURCE holds it), by name: each its place, as
     none sets a value."""
     source = re.sub(r'/\*.*?\*/', '', NAVIGATION_SOURCE, flags=re.S)
     body = host.tools_build.need(re.search(rf'enum \{{\s*({first}\b[^}}]*)\}}', source), f'No enum {first}')[1]

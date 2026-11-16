@@ -143,7 +143,6 @@ int wall_render(unsigned *dst, int stride, int w, int h, int id) {
 extern int stock_saver_trampoline(void *, void *), stock_saverrows_trampoline(void *),
     stock_saverlist_trampoline(void), stock_savercover_trampoline(void *);
 extern void pod_rows(void *win, const char *view_name, int first, int n, const char *const *icons);
-extern int ringnav_lock_clock(void);   /* navigation.c: Q2POD LOCKCLOCK, 1 Large, else Standard */
 extern int ringnav_wm_paint(void *wm); /* navigation.c: window_manager_paint's leaf */
 
 /* The built-ins' names in the picture list and SYSSET SCREENSAVERPATH, by id. None is a file:
@@ -308,7 +307,7 @@ static void info_label(void *w, int x, int y, int ww, int h, int px, const char 
  * the date, a tray with the clock, a tray with the song. A digit_clock formats itself each second,
  * so the date's format is all there is to set; both clocks keep stock's format otherwise. */
 static void info_screen(void *win, void *img, int id) {
-    int large = ringnav_lock_clock();
+    int large = pod_value(POD_LOCKCLOCK);
     void *info = widget_lookup(win, "view_timeinfo", 1),
          *time = widget_lookup(win, "clock_time", 1), *date = widget_lookup(win, "clock_date", 1),
          *pct = widget_lookup(win, "label_battery", 1),
@@ -423,7 +422,7 @@ int lockscreen_init(void *win, void *ctx) {
     }
     if (info)
         info_screen(win, img, id);
-    else if (ringnav_lock_clock())
+    else if (pod_value(POD_LOCKCLOCK))
         big_clock(win);
     return result;
 }

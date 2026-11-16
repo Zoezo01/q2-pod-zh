@@ -4,7 +4,6 @@
 #include "stock.h"
 
 extern int stock_pause_trampoline(void);
-extern int ringnav_bt_resume(void);
 /* Stock drops an unlisted device's Connected (3) while a link thread waits; adopt it when the wait
  * is for BTLINKMAC (0xa4c0d8), its Connect running (5); checkBluetoothStatus then judges it last.
  * ponytail: the target's Connect still runs; powered on within its page timeout, both may link. */
@@ -338,7 +337,7 @@ void headset_ears(unsigned report) {
  * CONNECT_HOLD_MS of the link is dropped; a deliberate press after that plays. */
 #define CONNECT_HOLD_MS 5000
 static int connect_hold(unsigned now) {
-    return hs.linked && now - hs.linked_at < CONNECT_HOLD_MS && !ringnav_bt_resume();
+    return hs.linked && now - hs.linked_at < CONNECT_HOLD_MS && !pod_value(POD_RESUME);
 }
 void headset_command(int code) {
     unsigned now = time_now_ms();
@@ -381,7 +380,7 @@ void headset_eq_poll(void) {
     unsigned now = time_now_ms();
     if (now - hs.eq_checked < 500) return;
     hs.eq_checked = now;
-    if (!ringnav_eq_output()) return;
+    if (!pod_value(POD_EQ_OUTPUT)) return;
     char mac[32] = { 0 };
     const char *key = eq_output_key(mac);
     if (key) eq_output(key);

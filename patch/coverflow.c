@@ -776,7 +776,6 @@ static const unsigned char all_sorts[] = { SORT_ALBUM, SORT_ARTIST, SORT_YEAR,
     "case when ifnull(album,'')='' then 'Unknown Album' else album end,"                           \
     "songer," ALBUM_TRACK ",albumsonger from songtable where " MUSIC_WHERE ALBUM_GROUP
 #define SORT_SQL ALBUM_SQL " order by "
-extern int ringnav_year_old(void);
 /* ALBUM_SQL with each album's year after (split_row's REC_YEAR), by year, undated last. */
 #define YEAR_SQL                                                                                   \
     "select id,album,songer," ALBUM_TRACK ",albumsonger," ALBUM_YEAR " from songtable" ALBUM_GROUP \
@@ -784,8 +783,8 @@ extern int ringnav_year_old(void);
 /* Albums by year, Playback settings' Year order (navigation.c): newest or oldest first, undated
  * last. */
 static const char *year_sql(void) {
-    return ringnav_year_old() ? YEAR_SQL ",album COLLATE NOCASE"
-                              : YEAR_SQL " desc,album COLLATE NOCASE";
+    return pod_value(POD_YEAR_OLD) ? YEAR_SQL ",album COLLATE NOCASE"
+                                   : YEAR_SQL " desc,album COLLATE NOCASE";
 }
 static const char *const sort_names[] = {
     "Sort: Album",  "Sort: Artist", "Sort: Recently Added", "Sort: Most Played", "Sort: Random",
@@ -1143,7 +1142,7 @@ static unsigned group(int i) {
  * year, with Fast Navigation on. */
 int lettered(void *w) {
     return w && w == cf.slide && cf.screen == COVERS &&
-           (cf.sort <= SORT_ARTIST || (cf.sort == SORT_YEAR && ringnav_big_library())) &&
+           (cf.sort <= SORT_ARTIST || (cf.sort == SORT_YEAR && pod_value(POD_BIG_LIB))) &&
            !cf.scoped;
 }
 
@@ -1434,7 +1433,7 @@ static void *sorted(void) {
     int artist = cf.sort == SORT_ARTIST, played = cf.sort == SORT_PLAYED;
     order_t *v = cf.sort == SORT_ALBUM ? 0 : calloc(n + 1, sizeof *v);
     if (!cf.scoped) /* the rated page's sort is its own */
-        cf.year_old = ringnav_year_old(), cf.artists = I(artist_type, 0);
+        cf.year_old = pod_value(POD_YEAR_OLD), cf.artists = I(artist_type, 0);
     unsigned *sum = v && played ? calloc(n + 1, sizeof *sum) : 0;
     char *keys = v && artist ? calloc(n + 1, ARTIST_KEY) : 0;
     int ranked = cf.sort != SORT_RATING && cf.sort != SORT_RANDOM; /* uses album_index */
@@ -1476,7 +1475,6 @@ static void *sorted(void) {
     free(v), free(sum), free(keys), free(stock_rows), stock_rows = 0;
     return out;
 }
-extern int ringnav_artist_az(void);
 /* albums (split's rows) in place by year, as year_sql, or by name (Playback's Artist album order
  * A-Z), ranked over their names alone (of_names): the query's order, then the albums it missed,
  * then the Unknown album. navigation.c's artist pages. Out of memory they keep their order. */
@@ -1489,7 +1487,7 @@ void coverflow_by_year(void *albums) {
         free(taken);
         return;
     }
-    const char *sql = ringnav_artist_az() ? SORT_SQL "album COLLATE NOCASE" : year_sql();
+    const char *sql = pod_value(POD_ARTIST_AZ) ? SORT_SQL "album COLLATE NOCASE" : year_sql();
     void *rows = of_names(sql, albums, &found), *out;
     if (!rows) rows = staged(rank_query, (void *)sql, &found);
     out = song_list();
@@ -2328,7 +2326,7 @@ static void fx_window(int c, int n, const unsigned **ring) {
     int budget = !lean  ? th.on && th.jump ? FX_ENTER_MS : FX_BUDGET_MS
                  : late ? FX_SLACK_MS
                         : FX_LETTERS_MS;
-    int big = ringnav_big_library(), decodes = FX_DECODES;
+    int big = pod_value(POD_BIG_LIB), decodes = FX_DECODES;
     fx.todo = 0;
     if (half || fx.ld_on > 0) ld_ask(want, half ? k : 0);
     if (!half) fx_unletter(c);
@@ -3129,7 +3127,8 @@ static void load_albums(unsigned t0) {
         n = (int)deque_size(cf.stock);
     }
     if (cf.albums && !cf.scoped && (cf.sort == SORT_YEAR || cf.sort == SORT_ARTIST) &&
-        (cf.year_old != ringnav_year_old() || /* Year order changed, or Artists for its names */
+        (cf.year_old !=
+             pod_value(POD_YEAR_OLD) || /* Year order changed, or Artists for its names */
          (cf.sort == SORT_ARTIST && cf.artists != I(artist_type, 0)))) {
         if (cf.albums != cf.stock) deque_destroy(cf.albums);
         cf.albums = 0;
@@ -3813,8 +3812,7 @@ int coverflow_artist(void *albums) {
     cf.all_albums = cf.albums;
     cf.albums = albums;
     cf.scoped = ARTIST_ALBUMS;
-    extern int ringnav_artist_view(void);
-    cf.text_albums = ringnav_artist_view() == 2;
+    cf.text_albums = pod_value(POD_ARTIST_CF) == 2;
     load();
     return 1;
 }
@@ -4854,7 +4852,7 @@ void coverflow_home_layout(void) {
      * Streaming's). ponytail: Carousel keeps Folder's and Streaming's cards, as it keeps the
      * Shortcut's (below). */
     static const char *const rows[] = { "btn_folder", "btn_rockbox", "btn_stream" };
-    int shown[] = { !ringnav_hide_folder(), ipod_home_rockbox(), !ringnav_hide_stream() };
+    int shown[] = { !pod_value(POD_HIDE_FOLDER), ipod_home_rockbox(), !pod_value(POD_HIDE_STREAM) };
     for (int pass = 0; pass < 2; ++pass)
         for (int i = 0; i < 3; ++i) {
             void *row = widget_lookup(home.list, rows[i], 1); /* not the carousel's cards */

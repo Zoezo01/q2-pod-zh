@@ -713,7 +713,7 @@ void netupdate_poll(void) {
     unsigned long tid;
     char s[80];
     if (!*Q2POD_TAG) return;
-    if (!ringnav_remind_daily()) { /* not while a check thread owns the tag, as named() */
+    if (!pod_value(POD_REMIND_DAILY)) { /* not while a check thread owns the tag, as named() */
         if (!nc.busy) *nc.tag = 0, nc.at = 0; /* back On: check at once */
         return;
     }

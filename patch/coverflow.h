@@ -260,7 +260,6 @@ void land_drop(void);
 int land_key(unsigned key);
 
 /* Optional browsing position. */
-int coverflow_position_enabled(void);
 void coverflow_position_paint(void *w, void *canvas);
 void coverflow_position_reset(void);
 #endif

@@ -356,22 +356,25 @@ def test_pod_rows_choices(fw, i, choices):
     assert fw.fn('navigation__pod_choices', C.c_int, C.c_uint)(i) == choices
 
 
+def pod_value(fw, name):
+    return fw.fn('pod_value', C.c_int, C.c_int)(POD[name])
+
+
 def test_pod_settings_defaults(fw):
     Config(fw)
-    assert fw.fn('ringnav_artist_view', C.c_int)() == 1  # Artist albums defaults to Coverflow
-    assert [fw.fn(name, C.c_int)() for name in ('ringnav_year_old', 'ringnav_artist_az',
-                                                'ringnav_lock_clock', 'ringnav_bt_resume',
-                                                'ringnav_big_library', 'ringnav_playlist_coverflow')] == [0] * 6  # Fast Navigation off
+    assert pod_value(fw, 'POD_ARTIST_CF') == 1  # Artist albums defaults to Coverflow
+    assert [pod_value(fw, name) for name in ('POD_YEAR_OLD', 'POD_ARTIST_AZ', 'POD_LOCKCLOCK', 'POD_RESUME',
+                                             'POD_BIG_LIB', 'POD_PL_CF')] == [0] * 6  # Fast Navigation off
 
 
 def test_pod_settings_read_their_keys_once(fw):
     Config(fw, YEAROLD=b'1', ARTISTCF=b'2', PLAYLISTCF=b'1', ARTISTAZ=b'9', VOLGUARD=b'1', BIGLIBRARY=b'1')
-    assert fw.fn('ringnav_artist_view', C.c_int)() == 2 and fw.fn('ringnav_big_library', C.c_int)() == 1
-    assert fw.fn('ringnav_playlist_coverflow', C.c_int)() == 1
-    assert fw.fn('ringnav_year_old', C.c_int)() == 1 and fw.fn('ringnav_artist_az', C.c_int)() == 0
+    assert pod_value(fw, 'POD_ARTIST_CF') == 2 and pod_value(fw, 'POD_BIG_LIB') == 1
+    assert pod_value(fw, 'POD_PL_CF') == 1
+    assert pod_value(fw, 'POD_YEAR_OLD') == 1 and pod_value(fw, 'POD_ARTIST_AZ') == 0
     assert fw.var('wheel_guard', C.c_int).value == 1
     count = len(fw.calls('toolsReadConfig'))
-    fw.fn('ringnav_year_old', C.c_int)()
+    pod_value(fw, 'POD_YEAR_OLD')
     assert len(fw.calls('toolsReadConfig')) == count
 
 

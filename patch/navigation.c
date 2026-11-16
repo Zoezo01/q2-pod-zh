@@ -3349,51 +3349,12 @@ void pod_settings(void) {
                                           i == POD_ARTIST_CF || i == POD_REMIND_DAILY);
     st.pod_read = 1;
 }
-int ringnav_remind_daily(void) {
+/* A pod_rows row's value (POD_*, one with a pod_values entry), read once from config.ini. Display's
+ * Fast Navigation (POD_BIG_LIB) is Cover Flow's letters and their half copies (coverflow_thumb.c,
+ * lettered, coverflow_halves); off unless the key is 1. */
+int pod_value(int i) {
     pod_settings();
-    return st.remind_daily;
-}
-int ringnav_year_old(void) {
-    pod_settings();
-    return st.year_old;
-}
-int ringnav_artist_az(void) {
-    pod_settings();
-    return st.artist_az;
-}
-int ringnav_artist_view(void) {
-    pod_settings();
-    return st.artist_cf;
-}
-int ringnav_playlist_coverflow(void) {
-    pod_settings();
-    return st.playlist_cf;
-}
-int ringnav_lock_clock(void) {
-    pod_settings();
-    return st.lock_clock;
-}
-/* Fast Navigation: Cover Flow's letters and their half copies (coverflow_thumb.c, lettered,
- * coverflow_halves); off unless the key is 1. */
-int ringnav_big_library(void) {
-    pod_settings();
-    return st.big_library;
-}
-int coverflow_position_enabled(void) {
-    pod_settings();
-    return st.cf_position;
-}
-int ringnav_hide_stream(void) {
-    pod_settings();
-    return st.hide_stream;
-}
-int ringnav_hide_folder(void) {
-    pod_settings();
-    return st.hide_folder;
-}
-int ringnav_eq_output(void) {
-    pod_settings();
-    return st.eq_output;
+    return *pod_values[i];
 }
 /* Advanced EQ's row. Turned off, what plays stays. */
 void ringnav_eq_output_toggle(void) {
@@ -3401,14 +3362,6 @@ void ringnav_eq_output_toggle(void) {
     st.eq_output = !st.eq_output;
     write_int_config(st.eq_output, "Q2POD", "EQOUTPUT");
     if (!st.eq_output) eq_output_forget();
-}
-int ringnav_bt_resume(void) {
-    pod_settings();
-    return st.resume;
-}
-static int bt_link(void) {
-    pod_settings();
-    return bt_vol_link;
 }
 /* read_artistype_value (a Library list's or artist page's init) and boot (playback.c
  * ringnav_bootmode): Artists as stock reads it, PLAYSET ARTISTTYPE, but Album Artist when no choice
@@ -3424,7 +3377,7 @@ void ringnav_read_artistype(void) {
  * card game with the sound (addon.c) keeps it either way. */
 int ringnav_bt_connect_start(int pause) {
     if (addon_game_audio()) return 0;
-    if (ringnav_bt_resume()) return player_save_start(pause);
+    if (pod_value(POD_RESUME)) return player_save_start(pause);
     int saved = media_owner() == 1 ? mclGetSavePlayStatus() : 0; /* 2 playing, 3 paused */
     return saved == 2 || saved == 3 ? player_save_start(saved == 3) : 0;
 }
@@ -9241,7 +9194,7 @@ static void qm_goto(void *r, int album) {
     void *wm = window_manager(), *page = window_manager_get_top_window(wm);
     /* a card app's song (Qobuz's): the app's own page for its album or artist, when it says so */
     if (addon_goto(P(r, REC_PATH), P(r, album ? REC_ALBUM : REC_ARTIST), album)) return;
-    if (album && (navigator_window_is_exist("coverflow_page") || ringnav_artist_view()) &&
+    if (album && (navigator_window_is_exist("coverflow_page") || pod_value(POD_ARTIST_CF)) &&
         coverflow_goto_album(r))
         return;
     memcpy(st.qm_classinfo, info, sizeof st.qm_classinfo);
@@ -10142,7 +10095,7 @@ int rockbox_open(void *ctx, void *event) {
     /* Rockbox's volume is pcm-alsa's software mixer alone, so the headset's absolute volume, left
      * at the Q2's, would cap it: open it to the maximum volume limit. Demo syncs it back on return.
      */
-    if (bt_link() && g_bluetoothflag && bt_linkstatus &&
+    if (pod_value(POD_BT_LINK) && g_bluetoothflag && bt_linkstatus &&
         (unsigned)btctl_transport_get_volume() <= 127)
         btctl_transport_set_volume(((g_maxvolume < 100 ? g_maxvolume : 100) * 127 + 50) / 100);
     ringnav_clean_end(); /* the watchdog would outlive demo's kill; nothing to report */
@@ -10206,7 +10159,7 @@ int ringnav_output(int way) {
 /* AVRCP absolute volume, as in PR #3. libbtctl returns 0 on a successful write.
  * Keep stock software gain unless the headset accepted the requested level. */
 static int bt_audio_ready(void) {
-    return bt_link() && g_bluetoothflag && bt_linkstatus &&
+    return pod_value(POD_BT_LINK) && g_bluetoothflag && bt_linkstatus &&
            *(const volatile int *)bt_showcoding > 0 && !bt__recv_pageflag && mclGetOutputWay() == 1;
 }
 

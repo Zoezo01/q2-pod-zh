@@ -25,7 +25,7 @@ void coverflow_position_reset(void) { position_reset(1); }
 
 static int position_live(void) {
     return cf.covers && cf.slide && covers_live() && !cf.text_albums && !fl.panel &&
-           coverflow_position_enabled();
+           pod_value(POD_CF_POSITION);
 }
 
 /* A single temporary UI timer finishes the fade even when nothing else repaints the shelf.

@@ -12,7 +12,7 @@ from collections import Counter
 import pytest
 
 import host
-from conftest import NAVIGATION_SOURCE, O, Deques, claim, ui_name
+from conftest import NAVIGATION_SOURCE, O, Deques, c_enum, claim, ui_name
 from test_coverflow import COVERS, TRACKS, Home, Rec, cf, deque_of  # coverflow.c's home struct, its page and an album
 from test_nav_display_library import Ple  # playlists.c's editor state
 from test_navigation import Config
@@ -24,6 +24,7 @@ SCROLL_X, SCROLL_Y = O['SCROLL_X'], O['SCROLL_Y']
 # navigation.c's own tuning, read from its source so a retune moves the tests with it
 NAV = {k: int(v) for k, v in re.findall(r'^#define (\w+) (\d+)\b', NAVIGATION_SOURCE, re.M)}
 SEL, COUNT = b'_ringnav_index', b'_ringnav_count'
+BIG_LIB = c_enum('POD_CHARGE')['POD_BIG_LIB']  # Display's Fast Navigation, pod_value's
 
 
 class Widget:
@@ -1577,7 +1578,7 @@ def test_homes_library_pane_shows_no_letter(fw, ui):
 @pytest.mark.parametrize('big', [b'0', b'1'])  # Fast Navigation off or on: Cover Flow's own letters change, not this one
 def test_coverflows_album_tracks_show_no_letter(fw, ui, big):
     Config(fw, BIGLIBRARY=big)
-    assert fw.fn('ringnav_big_library', C.c_int)() == int(big)
+    assert fw.fn('pod_value', C.c_int, C.c_int)(BIG_LIB) == int(big)
     page = Page(ui, titles(200), name='coverflow_page')
     album = [Rec('Abbey Road', artist='The Beatles')]  # the open album: its key is the track list's scope
     deque_of(fw, album)
@@ -1597,7 +1598,7 @@ def test_coverflows_album_tracks_show_no_letter(fw, ui, big):
                                        ('playerjumpinfo_page', 0xff10)])
 def test_an_albums_songs_in_the_library_show_no_letter(fw, ui, name, cls, big):
     Config(fw, BIGLIBRARY=big)
-    assert fw.fn('ringnav_big_library', C.c_int)() == int(big)
+    assert fw.fn('pod_value', C.c_int, C.c_int)(BIG_LIB) == int(big)
     fw.var('fw_ctx_g_class_type', C.c_int).value = cls
     page, canvas = spun(fw, ui, titles(200), name)
     assert letter(fw, page, canvas) == []  # in disc and track order, not A to Z

@@ -35,7 +35,8 @@ static unsigned pixels[375 * 320];
 static int cf_floor(float f) { return (int)floorf(f); }
 static int covers_live(void) { return live; }
 static int enabled = 1;
-static int coverflow_position_enabled(void) { return enabled; }
+enum { POD_CF_POSITION }; /* peq.h's pod_rows rows: here only Cover Flow's position is read */
+static int pod_value(int i) { return i == POD_CF_POSITION && enabled; }
 static unsigned time_now_ms(void) { return clock_ms; }
 static unsigned timer_add(int (*fn)(const void *), void *ctx, unsigned ms) {
     assert(ms == 33 && !timer_id);

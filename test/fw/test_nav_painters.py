@@ -1689,7 +1689,7 @@ def test_system_update_adds_remind_daily_under_network_update_on_by_default(fw):
 
 def test_remind_daily_off_in_config_reads_off(fw):
     fw.mock('toolsReadConfig', lambda p, s, key, out, d, *_: C.memmove(out, b'0\0', 2) if C.string_at(key) == b'REMINDDAILY' else 0)
-    assert fw.fn('ringnav_remind_daily', C.c_int)() == 0
+    assert fw.fn('pod_value', C.c_int, C.c_int)(POD['POD_REMIND_DAILY']) == 0
 
 
 def test_standby_limit_cycles_its_four_choices_and_saves_each(fw):
@@ -1848,7 +1848,7 @@ def test_device_volume_off_gives_stock_its_gain_back_at_once(fw, way, sent):
     fw.mock('mclGetOutputWay', lambda *_: way)
     fw.fn('ringnav_btrows', C.c_int, C.c_void_p, C.c_void_p)(win.addr, None)
     link = row(ui, view, 'Control Device Volume')
-    bt_link = fw.fn('navigation__bt_link', C.c_int)
+    bt_link = lambda: fw.fn('pod_value', C.c_int, C.c_int)(POD['POD_BT_LINK'])
     assert switch(link) == 'switch_on' and bt_link() == 1
     click(ui, link)
     assert switch(link) == 'switch_off' and settings.written == [('BTVOLLINK', 0)] and bt_link() == 0
@@ -2054,9 +2054,9 @@ def test_key_tone_shows_click_with_headphones_while_on(fw, st, scratch, was):
 @pytest.mark.parametrize('on', [1, 0])
 def test_eq_per_output_turned_off_forgets_the_outputs_eq(fw, on):
     config = Settings(fw, EQOUTPUT=str(on).encode())
-    assert fw.fn('ringnav_eq_output', C.c_int)() == on
+    assert fw.fn('pod_value', C.c_int, C.c_int)(POD['POD_EQ_OUTPUT']) == on
     fw.fn('ringnav_eq_output_toggle', None)()
-    assert fw.fn('ringnav_eq_output', C.c_int)() == (not on) and config.written == [('EQOUTPUT', int(not on))]
+    assert fw.fn('pod_value', C.c_int, C.c_int)(POD['POD_EQ_OUTPUT']) == (not on) and config.written == [('EQOUTPUT', int(not on))]
     assert bool(fw.calls('fw_unlink')) == bool(on)  # off: what plays stays, the owner's file goes
 
 
