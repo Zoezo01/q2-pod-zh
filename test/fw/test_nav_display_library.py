@@ -3191,3 +3191,22 @@ def test_the_albums_list_and_rated_albums_still_group_the_whole_library(fw, reco
     assert len(db.sent) == 3 and not any(NAMED.search(sql) for sql in db.sent)
     assert 'from (select * from songtable where' in db.sent[0]  # the Albums list's, music alone
     assert {b'album 00', b'album 19', b'greatest hits'} <= {n.lower() for n in db.named}
+
+
+def test_the_unknown_check_tests_the_tag_before_the_music_filter(fw, records):
+    """The Unknown row's check (library_first) asks stock's bare where first and the music filter after it, which SQLite
+    tests in that order, and finds what the wrapped query finds; one with a clause of its own is wrapped as before."""
+    db = Songtable(fw, Library(fw), records)
+    query = fw.fn('ringnav_library_query', C.c_int, C.c_void_p, C.c_char_p, C.c_void_p, C.c_int)
+    music, first = fw.var('navigation__library_music', C.c_int), fw.var('navigation__library_first', C.c_int)
+    none = C.cast(ROW(lambda *_: 0), C.c_void_p)
+    music.value = first.value = 1
+    query(None, b'select * from songtable where album=""', none, 0)
+    query(None, b'select * from songtable where album="" order by id', none, 0)
+    tag_first, wrapped = db.sent[-2:]
+    assert tag_first.startswith('select * from songtable where album="" and (fileurl not like') and tag_first.endswith(') limit 1')
+    assert wrapped.startswith('select * from (select * from songtable where fileurl not like') and wrapped.endswith('order by id limit 1')
+    assert db.rows(tag_first) == db.rows(wrapped) and [r[0] for r in db.rows(tag_first)] == [b'9']  # the loose song
+    first.value = 0
+    query(None, b'select * from songtable where album=""', none, 0)
+    assert 'from (select * from songtable where' in db.sent[-1] and 'limit' not in db.sent[-1]

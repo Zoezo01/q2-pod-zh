@@ -189,9 +189,17 @@ static int library_query(int content, const char *db, const char *sql, void *row
     }
     const char *from = library_music && sql ? strstr(sql, " from songtable") : 0;
     if (from) { /* library_first: the Unknown row's check, which one song answers */
-        int n = tk_snprintf(filtered, sizeof filtered,
-                            "%.*s from (select * from songtable where %s)%s%s", (int)(from - sql),
-                            sql, MUSIC_WHERE, from + 15, library_first ? " limit 1" : "");
+        const char *rest = from + 15;
+        /* Stock's check is a bare where: SQLite tests a flattened subquery's terms in order, and
+         * the music filter's three LIKEs cost four times a row what the tag test does, so it goes
+         * after the tag test, not before it. */
+        int n =
+            library_first && strstr(rest, " where ") == rest && !strstr(rest, " order by") &&
+                    !strstr(rest, " group by") && !strstr(rest, " limit")
+                ? tk_snprintf(filtered, sizeof filtered, "%s and (%s) limit 1", sql, MUSIC_WHERE)
+                : tk_snprintf(filtered, sizeof filtered,
+                              "%.*s from (select * from songtable where %s)%s%s", (int)(from - sql),
+                              sql, MUSIC_WHERE, rest, library_first ? " limit 1" : "");
         if (n < 0 || (unsigned)n >= sizeof filtered) return -1;
         sql = filtered;
     }
