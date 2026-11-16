@@ -467,8 +467,10 @@ int ringnav_smart_awake(void); /* navigation.c: Smart Awake (IPOD KEEPLIT) is on
 void library_poll(void); /* addon_library.c: an app's library update request, once per addon_poll */
 /* spotify.c's Q2SPOT/1 framing (docs/librespot.md), which the card apps speak too */
 int spot_escape(const char *s, char *out, unsigned size);
+int spot_put(char *out, unsigned size, const char *s); /* "\t" and s escaped appended */
 int spot_reply(char *buf, unsigned len, char **f, int max);
 void spot_shut(int fd);
+unsigned curl_save(const void *data, unsigned size, unsigned n, void *file); /* netupdate.c */
 /* library_lists.c: a card folder's songs played from the card (a card app's local row): a
  * folder opens its list, a file plays its folder from it; album, in track order (by name), else
  * newest first. */

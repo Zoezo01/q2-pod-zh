@@ -3239,6 +3239,7 @@ static int curl_easy_perform(void *c) {
 }
 static int curl_easy_getinfo(void *c, int i, long *code) { *code = 200; return 0; }
 static void curl_easy_cleanup(void *c) { }
+static unsigned curl_save(const void *d, unsigned size, unsigned n, void *f) { return fwrite(d, size, n, f) * size; } /* netupdate.c's */
 static int renamed(const char *a, const char *b) { int r = rename(a, b); ++ended; return r; }
 static int unlinked(const char *p) { int r = unlink(p); ++ended; return r; }
 #define rename renamed
@@ -3622,7 +3623,7 @@ def tidal_check(tmp):
     assert name(16, b'', '\u00e9\u00e9\u00e9'.encode()) == '42-3 \u00e9\u00e9.flac'.encode()  # never mid-character
     assert name(9, b'A', b'T') is None
     # Run the actual eviction loop with a synthetic directory, including a failed unlink.
-    trim = (ROOT/'patch/tidal.c').read_text().split('static void trim(void) {', 1)[1].split('static unsigned save', 1)[0]
+    trim = (ROOT/'patch/tidal.c').read_text().split('static void trim(void) {', 1)[1].split('/* Stops the transfer once', 1)[0]
     source = tmp/'tidal_trim.c'
     source.write_text(r'''#include <assert.h>
 #include <stdio.h>

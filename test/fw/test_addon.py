@@ -3109,16 +3109,12 @@ def test_a_cursor_too_long_for_its_level_opens_nothing(fw):
     assert p.pg.depth == 2                # doesn't
 
 
-def test_top_app_cell_and_put(fw):
+def test_top_app_and_cell(fw):
     p = Page(fw)
     p.answer(rows=[item(1)])
     assert fw.fn('addon__top', C.POINTER(Lv))().contents.op == b'menu'
     assert fw.fn('addon__app', C.POINTER(App))().contents.id == b'foo'
     assert p.cell(0, 2) == b'Row 1' and p.cell(0, 3) == b'sub'
-    put = fw.fn('addon__put', C.c_int, C.c_void_p, C.c_uint, C.c_char_p)
-    out = block(fw, size=8)
-    assert put(out, 8, b'a%') == 1 and C.string_at(out) == b'\ta%25'
-    assert put(block(fw, size=5), 5, b'abc') == 1 and put(block(fw, size=4), 4, b'abc') == 0 and put(block(fw, size=1), 1, b'') == 0
 
 
 @pytest.mark.parametrize('kind,uri,yes', [

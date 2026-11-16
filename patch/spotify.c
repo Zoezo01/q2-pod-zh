@@ -30,6 +30,12 @@ int spot_escape(const char *s, char *out, unsigned size) {
     return (int)k;
 }
 
+/* "\t" and s escaped appended to out (size bytes); 0 when it doesn't fit. */
+int spot_put(char *out, unsigned size, const char *s) {
+    unsigned k = strlen(out);
+    return k + 1 < size && (out[k] = '\t', spot_escape(s, out + k + 1, size - k - 1) >= 0);
+}
+
 int hex(char c) {
     return c >= '0' && c <= '9'                 ? c - '0'
            : (c | 32) >= 'a' && (c | 32) <= 'f' ? (c | 32) - 'a' + 10
@@ -680,18 +686,12 @@ static const char *const MENU[] = {
 };
 static const char *const CATS[] = { "Tracks", "Albums", "Artists", "Playlists" };
 
-/* "\t" and s escaped appended to out (size bytes); 0 when it doesn't fit. */
-static int put(char *out, unsigned size, const char *s) {
-    unsigned k = strlen(out);
-    return k + 1 < size && (out[k] = '\t', spot_escape(s, out + k + 1, size - k - 1) >= 0);
-}
-
 static void request(const char *op, const char *tail, int act);
 
 static void remove_request(int confirm) {
     char tail[7000] = "";
-    if (put(tail, sizeof tail, br.remove_kind) && put(tail, sizeof tail, br.selected) &&
-        (!confirm || put(tail, sizeof tail, "confirm")))
+    if (spot_put(tail, sizeof tail, br.remove_kind) && spot_put(tail, sizeof tail, br.selected) &&
+        (!confirm || spot_put(tail, sizeof tail, "confirm")))
         request("remove", tail, confirm ? A_REMOVE : A_PREVIEW);
 }
 
@@ -1121,7 +1121,7 @@ static int go(const void *unused) {
             widget_set_focused(br.edit, 1);
         }
     } else if (l->kind == L_CATS) {
-        if (put(a, sizeof a, cats[i]) && put(a, sizeof a, br.term))
+        if (spot_put(a, sizeof a, cats[i]) && spot_put(a, sizeof a, br.term))
             push(L_LIST, "search", a, "", CATS[i]);
     } else if (l->kind == L_DOWNLOADS) {
         if (!br.downloads) {
@@ -1159,7 +1159,7 @@ static int go(const void *unused) {
     } else if (l->kind == L_JOB) {
         static const char *const actions[] = { "pause", "resume", "cancel", "retry", "update" };
         tk_snprintf(a, sizeof a, "%s", l->args);
-        if (put(a, sizeof a, actions[i])) request("job", a, A_DOWNLOAD);
+        if (spot_put(a, sizeof a, actions[i])) request("job", a, A_DOWNLOAD);
     } else if (l->kind == L_SELECT && i == l->n + more(l)) {
         if (br.selected[0])
             remove_request(0);
@@ -1185,7 +1185,7 @@ static int go(const void *unused) {
         char c[sizeof l->cursor] = "";
         if (!l->f[3][0])
             push(L_CONFIRM, "", "", "", "");
-        else if (put(c, sizeof c, l->f[3]))
+        else if (spot_put(c, sizeof c, l->f[3]))
             push(l->kind, l->op, l->args, c, l->title);
     } else {
         const char *kind = cell(l, i, 0), *uri = cell(l, i, 1), *v = cell(l, i, 2),
@@ -1195,10 +1195,10 @@ static int go(const void *unused) {
         if (opens(
                 kind)) { /* a job its controls; an album, playlist, artist or collection its list */
             int job = !strcmp(kind, "job");
-            if (put(a, sizeof a, uri))
+            if (spot_put(a, sizeof a, uri))
                 push(job ? L_JOB : L_LIST, job ? "" : kind, a, "", job ? ctx : v);
         } else if (!strcmp(kind, "track") && !strcmp(l->op, "collection")) {
-            if (put(a, sizeof a, ctx) && put(a, sizeof a, cell(l, i, 5))) {
+            if (spot_put(a, sizeof a, ctx) && spot_put(a, sizeof a, cell(l, i, 5))) {
                 request("playcollection", a, A_PLAY);
                 tk_snprintf(sp.wanted, sizeof sp.wanted, "%s",
                             strstr(uri, "spotify:track:") == uri ? uri + 14 : "");
@@ -1207,10 +1207,10 @@ static int go(const void *unused) {
             toast(cell(l, i, 3));
         } else if (!strcmp(kind, "track")) { /* in its context, or alone; a queue row by its place;
                                                 a download has no context */
-            if (queue    ? put(a, sizeof a, cell(l, i, 5)) && put(a, sizeof a, uri)
-                : ctx[0] ? put(a, sizeof a, ctx) && put(a, sizeof a, cell(l, i, 5)) &&
-                               put(a, sizeof a, uri)
-                         : put(a, sizeof a, uri))
+            if (queue    ? spot_put(a, sizeof a, cell(l, i, 5)) && spot_put(a, sizeof a, uri)
+                : ctx[0] ? spot_put(a, sizeof a, ctx) && spot_put(a, sizeof a, cell(l, i, 5)) &&
+                               spot_put(a, sizeof a, uri)
+                         : spot_put(a, sizeof a, uri))
                 request(dl      ? "playdownload"
                         : queue ? "skip"
                                 : "play",
@@ -1309,7 +1309,7 @@ int spot_hold(void *w) {
     char a[sizeof l->args] = "";
     const char *kind = i >= 0 && i < l->n ? cell(l, i, 0) : "";
     int track = !strcmp(kind, "track");
-    if ((!track && strcmp(kind, "playlist")) || !put(a, sizeof a, cell(l, i, 1))) return 0;
+    if ((!track && strcmp(kind, "playlist")) || !spot_put(a, sizeof a, cell(l, i, 1))) return 0;
     /* a playlist downloads, as its own Download Playlist row; its reply is toasted */
     request(track ? "enqueue" : "download", a, track ? A_ENQUEUE : A_DOWNLOAD);
     return 1;

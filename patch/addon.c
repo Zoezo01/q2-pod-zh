@@ -1204,12 +1204,6 @@ static app_t *app(void) { return &ap.a[pg.a]; }
 static lv_t *top(void) { return &pg.lv[pg.depth - 1]; }
 static const char *cell(int i, int k) { return pg.f[4 + 6 * i + k]; }
 
-/* "\t" and s escaped appended to out (size bytes); 0 when it doesn't fit. */
-static int put(char *out, unsigned size, const char *s) {
-    unsigned k = strlen(out);
-    return k + 1 < size && (out[k] = '\t', spot_escape(s, out + k + 1, size - k - 1) >= 0);
-}
-
 static void fetch(lv_t *l) {
     pg.act = 0;
     pg.paging = 0;
@@ -1223,7 +1217,7 @@ static void fetch(lv_t *l) {
 static void busy_row(int on);
 static void action(int i, const char *op, const char *ctx) {
     char a[sizeof top()->args] = "";
-    if (ctx[0] && !put(a, sizeof a, ctx)) return;
+    if (ctx[0] && !spot_put(a, sizeof a, ctx)) return;
     busy_row(0);
     tk_snprintf(pg.aop, sizeof pg.aop, "%s", op);
     req_send(app()->browse, op, a);
@@ -1330,7 +1324,7 @@ static void drop(void) {
  * page row's for the list's start); 0 when they don't fit. */
 static int cursor_args(const lv_t *l, char *a, unsigned n, const char *c) {
     tk_snprintf(a, n, "%.*s", (int)l->base, l->args);
-    return !c[0] || put(a, n, c);
+    return !c[0] || spot_put(a, n, c);
 }
 
 /* The level's next page asked for, as More… would, its reply appended by got(). */
@@ -1713,7 +1707,7 @@ static int sec_take(char **g, int n) {
         tk_snprintf(s->op, sizeof s->op, "%s", c[1]);
         tk_snprintf(s->title, sizeof s->title, "%s", c[2]);
         s->args[0] = 0;
-        if (c[4][0] && !put(s->args, sizeof s->args, c[4])) continue; /* too long: left out */
+        if (c[4][0] && !spot_put(s->args, sizeof s->args, c[4])) continue; /* too long: left out */
         s->base = strlen(s->args);
         ++k;
     }
@@ -1938,7 +1932,7 @@ static int bar_tapped(void *ctx, void *event) {
  * argument, titled title. */
 static void open_list(const char *uri, const char *ctx, const char *title) {
     char a[sizeof top()->args] = "";
-    if (!ctx[0] || put(a, sizeof a, ctx)) push(uri, a, strlen(a), title);
+    if (!ctx[0] || spot_put(a, sizeof a, ctx)) push(uri, a, strlen(a), title);
 }
 
 /* A field row's text, typed in its box: sent to the row's uri after its context, and the reply
@@ -1952,8 +1946,8 @@ static void field_sent(lv_t *l) {
     int i = pg.field - 1;
     pg.field = 0;
     if (l->state == K_READY && i >= 0 && i < l->n && !strcmp(cell(i, 0), "field") &&
-        cell(i, 1)[0] && (!cell(i, 4)[0] || put(a, sizeof a, cell(i, 4))) &&
-        put(a, sizeof a, pg.term)) {
+        cell(i, 1)[0] && (!cell(i, 4)[0] || spot_put(a, sizeof a, cell(i, 4))) &&
+        spot_put(a, sizeof a, pg.term)) {
         req_send(app()->browse, cell(i, 1), a);
         req.field = 1;
         pg.act = 0;
@@ -1983,7 +1977,7 @@ static int go(const void *unused) {
     } else if (pg.next == G_SORT) { /* the sort icon, opening as its row would */
         if (l->state == K_READY && l->sort) open_list(pg.sort[1], pg.sort[4], pg.sort[2]);
     } else if (pg.next == G_SEARCH) {
-        if (put(a, sizeof a, pg.term)) push("search", a, strlen(a), pg.term);
+        if (spot_put(a, sizeof a, pg.term)) push("search", a, strlen(a), pg.term);
     } else if (pg.next == G_FIELD)
         field_sent(l);
     else if (l->state == K_ERROR && i == 1 && app()->nostop) { /* Cancel, as Return */
@@ -2229,7 +2223,8 @@ int addon_fav_path(const char *path, int on) {
 int addon_goto(const char *path, const char *title, int album) {
     char args[sizeof pg.lv->args] = "";
     app_t *a = goto_app(path);
-    if (!a || !put(args, sizeof args, album ? "album" : "artist") || !put(args, sizeof args, path))
+    if (!a || !spot_put(args, sizeof args, album ? "album" : "artist") ||
+        !spot_put(args, sizeof args, path))
         return 0;
     void *old = pg.page;
     if (old) closed(old, 0), window_manager_close_window_force(window_manager(), old);

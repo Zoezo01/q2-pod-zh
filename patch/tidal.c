@@ -128,10 +128,6 @@ static void trim(void) {
     }
 }
 
-static unsigned save(const void *data, unsigned size, unsigned n, void *file) {
-    return fwrite(data, size, n, file) * size;
-}
-
 /* Stops the transfer once another track starts (tidal_play counts each) or the player has stayed
  * stopped for TIDAL_STOP_MS: a skip drops the copy within a second, a Stop within a few, as
  * radio.c's fetch_progress. ponytail: Stop is inferred from stock's play status, not signalled, so
@@ -202,7 +198,7 @@ static void *download(void *unused) {
         void *f = fopen(tmp, "wb"), *c = f ? curl_easy_init() : 0;
         if (c) {
             curl_easy_setopt(c, 10002, url);        /* CURLOPT_URL */
-            curl_easy_setopt(c, 20011, save);       /* WRITEFUNCTION */
+            curl_easy_setopt(c, 20011, curl_save);  /* WRITEFUNCTION */
             curl_easy_setopt(c, 10001, f);          /* WRITEDATA */
             curl_easy_setopt(c, 99, 1L);            /* NOSIGNAL: off the UI thread */
             curl_easy_setopt(c, 52, 1L);            /* FOLLOWLOCATION */

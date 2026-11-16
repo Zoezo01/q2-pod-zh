@@ -416,7 +416,8 @@ static struct {
     char tag[16], told[16];
 } nc __attribute__((section(".scratch")));
 
-static unsigned save(const void *data, unsigned size, unsigned n, void *file) {
+/* curl's WRITEFUNCTION into a FILE; tidal.c's too */
+unsigned curl_save(const void *data, unsigned size, unsigned n, void *file) {
     return fwrite(data, size, n, file) * size;
 }
 
@@ -445,14 +446,14 @@ static int fetch(const char *url, void *file, char *tag, unsigned n, long *code,
     curl_easy_setopt(c, 81, 2L);             /* SSL_VERIFYHOST */
     curl_easy_setopt(c, 20108, tls_untimed); /* SSL_CTX_FUNCTION: no date checks */
     if (file) {
-        curl_easy_setopt(c, 52, 1L);          /* FOLLOWLOCATION: to the asset host */
-        curl_easy_setopt(c, 20011, save);     /* WRITEFUNCTION */
-        curl_easy_setopt(c, 10001, file);     /* WRITEDATA */
-        curl_easy_setopt(c, 19, 1024L);       /* LOW_SPEED_LIMIT: a stalled transfer ends */
-        curl_easy_setopt(c, 20, 30L);         /* LOW_SPEED_TIME */
-        curl_easy_setopt(c, 20219, progress); /* XFERINFOFUNCTION */
-        curl_easy_setopt(c, 10057, xfer);     /* XFERINFODATA */
-        curl_easy_setopt(c, 43, 0L);          /* NOPROGRESS off, for it */
+        curl_easy_setopt(c, 52, 1L);           /* FOLLOWLOCATION: to the asset host */
+        curl_easy_setopt(c, 20011, curl_save); /* WRITEFUNCTION */
+        curl_easy_setopt(c, 10001, file);      /* WRITEDATA */
+        curl_easy_setopt(c, 19, 1024L);        /* LOW_SPEED_LIMIT: a stalled transfer ends */
+        curl_easy_setopt(c, 20, 30L);          /* LOW_SPEED_TIME */
+        curl_easy_setopt(c, 20219, progress);  /* XFERINFOFUNCTION */
+        curl_easy_setopt(c, 10057, xfer);      /* XFERINFODATA */
+        curl_easy_setopt(c, 43, 0L);           /* NOPROGRESS off, for it */
         if (from) { /* RESUME_FROM: curl fails a reply that isn't the range */
             curl_easy_setopt(c, 21, from);
             curl_easy_setopt(

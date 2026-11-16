@@ -891,14 +891,14 @@ def test_a_held_play_queues_a_track_and_downloads_a_playlist(fw):
 
 
 def test_put_appends_a_tab_and_the_escaped_field(fw):
-    put = fw.fn('spotify__put', C.c_int, C.c_void_p, C.c_uint, C.c_char_p)
+    put = fw.fn('spot_put', C.c_int, C.c_void_p, C.c_uint, C.c_char_p)
     out = block(fw, size=16)
     assert put(out, 16, b'a') == 1 and put(out, 16, b'b%') == 1 and C.string_at(out) == b'\ta\tb%25'
     assert put(out, 16, b'') == 1 and C.string_at(out) == b'\ta\tb%25\t'
 
 
 def test_put_fits_to_the_byte(fw):
-    put = fw.fn('spotify__put', C.c_int, C.c_void_p, C.c_uint, C.c_char_p)
+    put = fw.fn('spot_put', C.c_int, C.c_void_p, C.c_uint, C.c_char_p)
     assert put(block(fw, size=5), 5, b'abc') == 1
     assert put(block(fw, size=4), 4, b'abc') == 0
     assert put(block(fw, size=1), 1, b'') == 0
@@ -1126,7 +1126,7 @@ def test_a_name_too_long_for_the_path_is_not_found(fw):
 
 def test_save_counts_bytes_for_curl(fw):
     fw.mock('fw_fwrite', lambda data, size, n, f, *_: n)
-    assert fw.fn('tidal__save', C.c_uint, C.c_char_p, C.c_uint, C.c_uint, C.c_void_p)(b'abcdef', 2, 3, None) == 6
+    assert fw.fn('curl_save', C.c_uint, C.c_char_p, C.c_uint, C.c_uint, C.c_void_p)(b'abcdef', 2, 3, None) == 6
 
 
 class Stream:
