@@ -233,7 +233,7 @@ static int library_query(int content, const char *db, const char *sql, void *row
     int result = content == 2 ? stock_sorted_query_trampoline(db, query, row, (int)arg)
                  : content    ? stock_content_query_trampoline(db, query, row, arg, sort)
                               : stock_dbquery_trampoline(db, query, row, (int)arg);
-    if (expanded) free(expanded);
+    free(expanded);
     return result;
 }
 int ringnav_library_query(const char *db, const char *sql, void *row, int sort) {

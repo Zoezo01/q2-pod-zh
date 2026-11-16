@@ -481,12 +481,12 @@ int ringnav_open_preload(void) {
 }
 static void release(void) {
     s.next_valid = 0;
-    if (s.order) free(s.order);
-    if (s.cycle) free(s.cycle);
-    if (s.groups) free(s.groups);
-    if (s.seen) free(s.seen);
-    if (s.history) free(s.history);
-    if (ids) free(ids);
+    free(s.order);
+    free(s.cycle);
+    free(s.groups);
+    free(s.seen);
+    free(s.history);
+    free(ids);
     ids = 0;
     s.order = s.cycle = 0;
     s.groups = s.seen = s.history = 0;
@@ -593,10 +593,10 @@ static int rebuild(int keep) {
         playback_clear(); /* every caller ends advanced play: no older queue's snapshot stays */
         return 0;
     }
-    if (s.order) free(s.order);
-    if (s.cycle) free(s.cycle);
-    if (s.groups) free(s.groups);
-    if (ids) free(ids);
+    free(s.order);
+    free(s.cycle);
+    if (s.groups) free(s.groups); /* the guard keeps clang-tidy's analyzer from losing s.n */
+    free(ids);
     for (unsigned i = 0; i < n; ++i) id[i] = rec_id(i);
     ids = id;
     s.order = order;
@@ -610,8 +610,8 @@ static int rebuild(int keep) {
         memcpy(hist, oldhistory, oldhn * sizeof *hist);
         memcpy(seen, oldseen, (oldn < n ? oldn : n) * sizeof *seen);
     }
-    if (oldseen) free(oldseen);
-    if (oldhistory) free(oldhistory);
+    free(oldseen);
+    free(oldhistory);
     /* Each run of the group_cmp sort is a group, named by its smallest index. Under Shuffle Songs
      * groups are read only by a group repeat (upcoming) and by Next/Previous Album
      * (playback_group_skip), which the hold menu offers only under shuffle >= 3 (navigation.c
