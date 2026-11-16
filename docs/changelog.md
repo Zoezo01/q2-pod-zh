@@ -3,6 +3,7 @@
 - **1.8.7**:
   - Edit Playlist: **Add Songs** opens at once the second time and later in one edit, on a big library. It read and sorted the whole library again each time.
   - Library: **Shuffle Songs**, and **Play Next** or **Add to Queue** while it plays, work faster on a big library.
+  - Library: **Artist**, **Album** and **Genre** open faster on a big library.
   - Wi-Fi transfer: a folder with many files lists much faster.
   - Crossfade: the player gives back the memory a fade uses, up to 6 MB, once the fade is over. It used to keep it until the Q2 restarted.
   - Era: a decade opens, and its **Shuffle** starts, sooner on a big library. Each grouped every album in the library; they now group only the albums with a song dated in that decade.
