@@ -747,19 +747,6 @@ unsigned album_id(void *r) {
     return album_ident(P(r, REC_ALBUM), P(r, REC_ALBUM_ARTIST), P(r, REC_PATH));
 }
 
-/* getAllAlbum ends with an "Unknown Album" row (id -1) whenever any album exists, even when every
- * song has an album tag. It goes when the query its card opens, getMusicByAlbum(NULL), finds no
- * song, as navigation.c's ringnav_localclass drops it from the Albums list. */
-static void drop_unknown(void) {
-    unsigned n = deque_size(cf.stock);
-    void *last = n ? deque_at(cf.stock, n - 1) : 0;
-    if (!last || I(last, REC_ID) != -1) return;
-    int found;
-    void *songs = staged(albums, last, &found);
-    if (!deque_size(songs)) deque_pop_back(cf.stock);
-    deque_destroy(songs);
-}
-
 /* Sort, Cover Flow settings' Sort and the rated albums' card
  * (docs/internals.md#coverflow-sort): Album is the stock order;
  * Artist sorts by artist without a leading article, as every library list does (ringnav_sort_key),
@@ -3136,8 +3123,6 @@ static void load_albums(unsigned t0) {
             cf_trace(t0, "music_albums albums=", deque_size(cf.stock), 0);
         }
         cf.albums_gen = gen;
-        drop_unknown();
-        cf_trace(t0, "drop_unknown albums=", deque_size(cf.stock), 0);
         n = (int)deque_size(cf.stock);
     }
     if (cf.albums && !cf.scoped && (cf.sort == SORT_YEAR || cf.sort == SORT_ARTIST) &&
