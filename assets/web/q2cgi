@@ -22,7 +22,7 @@ CARD=/mnt/mmc
 # and its mtime from `date -r`. `realpath` (confine's resolver) is called through busybox so the one
 # security-critical applet never depends on a PATH symlink being present.
 realpath() { busybox realpath "$@"; }
-fsize() { s=$(ls -lnd "$1" 2>/dev/null | awk 'NR==1{print $5; exit}'); printf '%s' "${s:-0}"; }
+fsize() { set -f; set -- $(ls -lnd "$1" 2>/dev/null); set +f; sz=${5:-0}; }   # sets $sz: ls -ln field 5, split by the shell (-f: not globbed)
 
 emit() { printf '%s\r\n' "$1"; }
 crlf() { printf '\r\n'; }
@@ -171,8 +171,7 @@ case $name in
       # A directory's path carries a trailing slash: the client builds "<path><newname>" for create
       # and splits the path on "/" for the breadcrumb, both of which need it (stock emits it too).
       if [ -d "$e" ]; then printf '{"path":"%s/","name":"%s","ctime":"%s"}' "$jp" "$jn" "$ct"
-      else set -f; set -- $(ls -lnd "$e" 2>/dev/null); set +f   # fsize's field 5, without its two subshells and awk
-        printf '{"path":"%s","name":"%s","ctime":"%s","size":"%s"}' "$jp" "$jn" "$ct" "${5:-0}"; fi
+      else fsize "$e"; printf '{"path":"%s","name":"%s","ctime":"%s","size":"%s"}' "$jp" "$jn" "$ct" "$sz"; fi
     done
     printf ']'
     ;;
@@ -183,7 +182,7 @@ case $name in
     [ -f "$f" ] || fail 404 NotFound
     hdrname=$(printf '%s' "${f##*/}" | tr -d '"\000-\037')
     emit "Content-Disposition:attachment;filename=\"$hdrname\""
-    emit "Content-Length:$(fsize "$f")"
+    fsize "$f"; emit "Content-Length:$sz"
     emit 'Content-Type:application/octet-stream'; crlf
     cat -- "$f"
     ;;
@@ -279,12 +278,12 @@ case $name in
     # then cuts it off: a truncate to the seek, no copy. A rename within the card puts the file in
     # place, so a reader never sees a half-written file, and a failed write leaves none under its name.
     head -c "$rest" > "$out" || fail 507 Full          # a write error here means the card filled
-    [ "$(fsize "$out")" = "$rest" ] || fail 400 Bad    # the client stopped short
+    fsize "$out"; [ "$sz" = "$rest" ] || fail 400 Bad  # the client stopped short
     vis() { tr '\r\n\0' '\1\2\3'; }
     eol=$(printf '\1\2')
     [ "$(tail -c "$slen" "$out" | vis)" = "$eol$bb--$eol" ] || fail 400 Bad
     dd if=/dev/null of="$out" bs=1 seek="$((rest - slen))" 2>/dev/null || fail 500 Fail
-    [ "$(fsize "$out")" = "$((rest - slen))" ] || fail 500 Fail
+    fsize "$out"; [ "$sz" = "$((rest - slen))" ] || fail 500 Fail
     mv -f -- "$out" "$dest" 2>/dev/null || fail 500 Fail
     emit 'Content-type: application/json; charset=utf-8'; crlf
     printf '{"files":[{"name":"%s"}]}' "$(json_escape "$fname")"
