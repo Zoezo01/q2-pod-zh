@@ -469,7 +469,8 @@ void library_poll(void); /* addon_library.c: an app's library update request, on
 int spot_escape(const char *s, char *out, unsigned size);
 int spot_put(char *out, unsigned size, const char *s); /* "\t" and s escaped appended */
 int spot_reply(char *buf, unsigned len, char **f, int max);
-void spot_shut(int fd);
+int spot_exchange(const char *path, unsigned wait_ms, unsigned max, char *buf, unsigned len,
+                  unsigned *n, volatile int *cancel);
 unsigned curl_save(const void *data, unsigned size, unsigned n, void *file); /* netupdate.c */
 /* scrobble.c: a libcurl handle for url, verified with the firmware's CA file */
 void *tls_easy(const char *url, long connect_s, long timeout_s);

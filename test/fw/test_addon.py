@@ -4025,6 +4025,62 @@ def test_a_reply_past_the_limit_fails_and_stays_in_its_buffer(fw):
     assert req.fail == REQ_FAIL and req.n == REPLY_MAX + 1
 
 
+class SpotWk(C.Structure):  # spotify.c's wk
+    _fields_ = Req._fields_[:9]
+
+
+@pytest.mark.parametrize('replies,sent,connect', [
+    ([b'Q2SPOT/1\n', b'1\tok\t\t\n'], 16, 0),  # read to EOF
+    ([b'Q2SPOT/1\n1\tok\n'], 5, 0),  # the request goes out in pieces
+    ([], 16, -1),  # no socket
+    ([b'x' * 32768, b'x' * 32768, b'y'], 16, 0),  # past the limit
+    ([b'abc', -1], 16, 0),  # a read error
+    ([None] * 40, 16, 0),  # nothing ever ready: the deadline
+])
+def test_spotify_and_the_apps_make_the_same_exchange(fw, replies, sent, connect):
+    """spotify.c's and addon.c's workers are one spot_exchange: the same calls and bytes on the socket and the same
+    outcome, over the same script."""
+    path = text(b'/tmp/q2-librespot.browse.sock')  # spotify.c's SPOT_BROWSE
+    def run(worker, var, kind):
+        log: list[tuple] = []
+        script, clock = list(replies), [0]
+        r = fw.var(var, kind)
+        r.buf, r.n, r.len, r.cancel = block(fw, b'Q2SPOT/1\n1\tmenu\n', REPLY_MAX + 2), 0, 16, 0
+        if kind is Req:
+            r.path = C.addressof(path)
+        def tick(which, ts, *_):
+            clock[0] += 1
+            t = C.cast(ts, C.POINTER(C.c_long))
+            t[0], t[1] = clock[0], 0
+        def select(n, rd, wr, ex, tv, *_):
+            log.append(('select', n, bool(rd), bool(wr), C.string_at(tv, 2 * C.sizeof(C.c_int))))
+            return 0 if script and script[0] is None and not wr and script.pop(0) is None else 1
+        def send(fd, buf, n, flags, *_):
+            log.append(('send', C.string_at(buf, min(n, sent)), flags))
+            return min(n, sent)
+        def recv(fd, buf, n, flags, *_):
+            piece = script.pop(0) if script else b''
+            log.append(('recv', n))
+            if piece == -1:
+                return -1
+            C.memmove(buf, piece, len(piece))
+            return len(piece)
+        fw.mock('fw_clock_gettime', tick)
+        fw.mock('fw_socket', lambda *a: log.append(('socket', a[:3])) or 5)
+        fw.mock('fw_fcntl', lambda *a: log.append(('fcntl', a[:3])) or 0)
+        fw.mock('fw_connect', lambda fd, to, n, *_: log.append(('connect', C.string_at(to, n))) or connect)
+        fw.mock('fw_select', select)
+        fw.mock('fw_send', send)
+        fw.mock('fw_recv', recv)
+        fw.mock('spot_shut', lambda fd, *_: log.append(('shut', fd)))
+        fw.mock('fw_close', lambda fd, *_: log.append(('close', fd)))
+        fw.fn(worker, C.c_void_p, C.c_void_p)(None)
+        return log, r.fail, r.n, r.done, C.string_at(r.buf, min(r.n, REPLY_MAX) + 1)
+    spotify = run('spotify__worker', 'spotify__wk', SpotWk)
+    assert spotify == run('addon__worker', 'addon__req', Req)
+    assert ('connect', b'\x01\x00' + b'/tmp/q2-librespot.browse.sock'.ljust(108, b'\0')) in spotify[0] or connect
+
+
 def line_end(fw, s):
     buf = block(fw, s)
     next_ = fw.fn('addon_library__line_end', C.c_void_p, C.c_void_p)(buf)

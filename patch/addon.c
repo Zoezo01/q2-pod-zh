@@ -1047,41 +1047,10 @@ static struct {
 } req __attribute__((section(".scratch")));
 enum { REQ_OK, REQ_NOSOCK, REQ_FAIL };
 
-/* Written, shut for writing, and read to EOF within ADDON_WAIT_MS, 100 ms at a time so a cancel is
- * joined at once. */
+/* spotify.c's spot_exchange to the app's socket, within ADDON_WAIT_MS. */
 static void *worker(void *unused) {
-    struct unix_addr to = { 1, { 0 } };
-    tk_snprintf(to.path, sizeof to.path, "%s", req.path);
-    unsigned long long end = now_ms() + ADDON_WAIT_MS;
-    unsigned sent = 0;
-    int fd = socket(1, 2, 0), k = 1; /* AF_UNIX, SOCK_STREAM (MIPS numbering) */
-    req.fail = REQ_NOSOCK;
-    if (fd >= 0 && fd < 1024 && !fcntl(fd, 4, 0x80) &&
-        !connect(fd, &to, sizeof to)) { /* F_SETFL, O_NONBLOCK (MIPS) */
-        req.fail = REQ_FAIL;
-        while (!req.cancel && now_ms() < end) {
-            unsigned set[32] = { 0 }; /* fd_set */
-            int tv[2] = { 0, 100000 };
-            set[fd / 32] = 1u << fd % 32;
-            int writing = sent < req.len;
-            if ((k = select(fd + 1, writing ? 0 : set, writing ? set : 0, 0, tv)) <= 0) {
-                if (k) break; /* not a timeout */
-                continue;
-            }
-            if (writing) {
-                k = send(fd, req.buf + sent, req.len - sent, 0x4000); /* MSG_NOSIGNAL */
-                if (k <= 0) break;
-                if ((sent += (unsigned)k) == req.len) spot_shut(fd);
-                continue;
-            }
-            if ((k = recv(fd, req.buf + req.n, REPLY_MAX + 1 - req.n, 0)) <= 0 ||
-                (req.n += (unsigned)k) > REPLY_MAX) {
-                req.fail = k ? REQ_FAIL : REQ_OK;
-                break;
-            }
-        }
-    }
-    if (fd >= 0) close(fd);
+    req.fail = spot_exchange(req.path, ADDON_WAIT_MS, REPLY_MAX, req.buf, req.len, &req.n,
+                             &req.cancel); /* REQ_*: W_OK, W_NOSOCK, W_FAIL */
     /* the request's bytes past the reply: none kept, a field row's text being one (field_sent) */
     if (req.n < req.len) memset(req.buf + req.n, 0, req.len - req.n);
     if (req.n <= REPLY_MAX) req.buf[req.n] = 0;

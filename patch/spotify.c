@@ -707,40 +707,49 @@ static void fetch_cancel(void) {
 __asm__(".globl spot_shut\nspot_shut:\nli $a1, 1\nli $v0, 4182\nsyscall\njr $ra\n");
 void spot_shut(int fd);
 
-/* One connection a request: written, shut for writing, and read to EOF within SPOT_WAIT_MS, 100 ms
- * at a time so a cancel is joined at once. */
-static void *worker(void *unused) {
-    struct unix_addr to = { 1, SPOT_BROWSE };
-    unsigned long long end = now_ms() + SPOT_WAIT_MS;
+/* One Q2SPOT/1 connection to the socket at path, the card apps' too (addon.c's worker): buf's len
+ * bytes written, shut for writing, and the reply read into buf from *n to EOF, failing past max
+ * bytes, within wait_ms, 100 ms at a time so a cancel is joined at once. 0 (W_OK) at EOF, W_NOSOCK
+ * with no connection, else W_FAIL. */
+int spot_exchange(const char *path, unsigned wait_ms, unsigned max, char *buf, unsigned len,
+                  unsigned *n, volatile int *cancel) {
+    struct unix_addr to = { 1, { 0 } };
+    tk_snprintf(to.path, sizeof to.path, "%s", path);
+    unsigned long long end = now_ms() + wait_ms;
     unsigned sent = 0;
-    int fd = socket(1, 2, 0), k = 1; /* AF_UNIX, SOCK_STREAM (MIPS numbering) */
-    wk.fail = W_NOSOCK;
+    int fd = socket(1, 2, 0), k = 1, fail = W_NOSOCK; /* AF_UNIX, SOCK_STREAM (MIPS numbering) */
     if (fd >= 0 && fd < 1024 && !fcntl(fd, 4, 0x80) &&
         !connect(fd, &to, sizeof to)) { /* F_SETFL, O_NONBLOCK (MIPS) */
-        wk.fail = W_FAIL;
-        while (!wk.cancel && now_ms() < end) {
+        fail = W_FAIL;
+        while (!*cancel && now_ms() < end) {
             unsigned set[32] = { 0 }; /* fd_set */
             int tv[2] = { 0, 100000 };
             set[fd / 32] = 1u << fd % 32;
-            int writing = sent < wk.len;
+            int writing = sent < len;
             if ((k = select(fd + 1, writing ? 0 : set, writing ? set : 0, 0, tv)) <= 0) {
                 if (k) break; /* not a timeout */
                 continue;
             }
             if (writing) {
-                k = send(fd, wk.buf + sent, wk.len - sent, 0x4000); /* MSG_NOSIGNAL */
+                k = send(fd, buf + sent, len - sent, 0x4000); /* MSG_NOSIGNAL */
                 if (k <= 0) break;
-                if ((sent += (unsigned)k) == wk.len) spot_shut(fd);
+                if ((sent += (unsigned)k) == len) spot_shut(fd);
                 continue;
             }
-            if ((k = recv(fd, wk.buf + wk.n, SPOT_REPLY_MAX + 1 - wk.n, 0)) <= 0 ||
-                (wk.n += (unsigned)k) > SPOT_REPLY_MAX) {
-                wk.fail = k ? W_FAIL : W_OK;
+            if ((k = recv(fd, buf + *n, max + 1 - *n, 0)) <= 0 || (*n += (unsigned)k) > max) {
+                fail = k ? W_FAIL : W_OK;
                 break;
             }
         }
     }
     if (fd >= 0) close(fd);
+    return fail;
+}
+
+/* One connection a request (spot_exchange) to librespot's browse socket. */
+static void *worker(void *unused) {
+    wk.fail =
+        spot_exchange(SPOT_BROWSE, SPOT_WAIT_MS, SPOT_REPLY_MAX, wk.buf, wk.len, &wk.n, &wk.cancel);
     if (wk.n <= SPOT_REPLY_MAX) wk.buf[wk.n] = 0; /* past the reply, the request's bytes */
     wk.done = 1;
     return 0;
