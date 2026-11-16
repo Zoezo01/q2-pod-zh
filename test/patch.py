@@ -10148,9 +10148,18 @@ f,ctx=row(0); m.call(address=f,args=(ctx,m.event,0,0),gap=0)
 assert m.plays[-1][2:]==(0,0xf001,2) and m.play_names==['a1','b1','b2']; passed()
 f,ctx=row(3); m.call(address=f,args=(ctx,m.event,0,0),gap=0); m.page=m.top
 assert m.nodes[m.top]['name']=='coverflow_page' and m.texts()[:3]==['Beta','b1','b2']; passed()
-# Two valid paths collide under the old FNV32 membership check: only the dated song belongs.
+# Shuffle plays the decade's songs alone: the records stock's select * fill makes of its one query's rows (the fill
+# stands in here, each row's id naming its record), the library itself never loaded.
+class EraFill(EraMachine):
+    def __init__(self,songs):
+        super().__init__(songs); self.handlers[syms['db_song_row_callback']]='era:fill'
+    def hook(self,u,address,size,unused):
+        if self.handlers.get(address)!='era:fill': return super().hook(u,address,size,unused)
+        ident=int(self.text(self.get(u.reg_read(REGS[2]))))
+        self.deqs[self.get(syms['tools_pdeq_directory'])][1].append(self.copy('stSongInfo',self.found[ident-1]))
+        self.returns(0,clobber=True)
 paths=('/mnt/mmc/Music/z4dmr4cvs8lw.flac','/mnt/mmc/Music/mhf1gqxzbiuf.flac')
-m=EraMachine([('Old','Artist','Artist',paths[0],1990),('New','Artist','Artist',paths[1],2020)])
+m=EraFill([('Old','Artist','Artist',paths[0],1990),('New','Artist','Artist',paths[1],2020)])
 m.found=[m.song('old'),m.song('new')]
 for ident,(r,path) in enumerate(zip(m.found,paths),1):
     m.word(r+O['REC_ID'],ident); m.word(r+O['REC_PATH'],m.string(path))

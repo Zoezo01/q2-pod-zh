@@ -601,14 +601,16 @@ static void *era_songs(void) {
     if (era.m && failed == era.m) return deque_destroy(all), (void *)0;
     return all;
 }
-/* Shuffle's songs: the Library's music in the decade's ALBUM_GROUP groups, matched on ALBUM_GROUP's
- * keys, in one query filled as stock's select * fill makes records, so only the decade's records
- * are made, not the library's. Its order is about to be shuffled, so era_songs' two queries an
- * album would only cost time. None without albums: no decade to ask for. */
+/* sql's rows as stock's select * fill makes records of them: 0, or -1 if it failed; none without
+ * sql. */
 static int era_song_rows(void *sql) {
     return !sql || era_sql(sql, db_song_row_callback, 0) ? 0 : -1;
 }
-static void *era_shuffle_songs(void) { /* 0 if the query failed */
+/* Shuffle's songs: the Library's music in the decade's ALBUM_GROUP groups, matched on ALBUM_GROUP's
+ * keys, in one query, so only the decade's records are made, not the library's. Its order is about
+ * to be shuffled, so era_songs' two queries an album would only cost time. An empty list without
+ * albums (no decade to ask for); 0 if the query failed. */
+static void *era_shuffle_songs(void) {
     char sql[2048];
     int from = era.m ? era.v[0].year / 10 * 10 : 0, n;
     tk_snprintf(sql, sizeof sql,

@@ -981,10 +981,10 @@ def test_a_long_press_of_a_side_button_is_the_editors(editor, ui, fw):
     assert not fw.calls('stock_keylong_trampoline') and not editor.table.log
 
 
-# Stock code at a fixed address, for a handler the C calls there. Only ever in a fork.
 STAND_IN_LOGS = []  # each stand-in's log: its code writes there at every call, until the child exits
 
 
+# Stock code at a fixed address, for a handler the C calls there. Only ever in a fork.
 def stock_handler(address, result=0):
     """x86-64 at address: its first two arguments and the event's x (rsi + EVENT_X) logged, result returned."""
     log = (C.c_long * 3)()
