@@ -1152,16 +1152,21 @@ static int moving(menu_t *m) {
                           : 0;
 }
 
+/* Stock's scroll animator on view w stops, a drag's fling among them (stock
+ * table_client_stop_animator_scroll's pause/destroy/null sequence); the lyrics' too. */
+static void view_still(void *w) {
+    void *a = P(w, VIEW_ANIMATOR);
+    if (!a) return;
+    widget_animator_pause(a);
+    widget_animator_destroy(a);
+    P(w, VIEW_ANIMATOR) = (void *)0;
+}
+
 static void stop_scroll(menu_t *m) {
     if (m->kind == 2)
         table_client_stop_animator_scroll(m->w);
-    else if (m->kind == 1 && P(m->w, VIEW_ANIMATOR)) {
-        /* Same pause/destroy/null sequence as stock table_client_stop_animator_scroll. */
-        void *a = P(m->w, VIEW_ANIMATOR);
-        widget_animator_pause(a);
-        widget_animator_destroy(a);
-        P(m->w, VIEW_ANIMATOR) = (void *)0;
-    }
+    else if (m->kind == 1)
+        view_still(m->w);
 }
 
 /* View w's scroll animation stopped, for a touch claimed sideways (addon.c swipe, as pull_event).
@@ -3801,27 +3806,17 @@ static int lyrics_shown(void) {
            widget_get_prop_int(st.np_slide, "value", 0) == 1;
 }
 
-/* Stock's scroll animator on the lyrics stops, a drag's fling among them (stock
- * table_client_stop_animator_scroll's sequence, as stop_scroll). */
-static void lyric_still(void *lrc) {
-    void *a = P(lrc, VIEW_ANIMATOR);
-    if (!a) return;
-    widget_animator_pause(a);
-    widget_animator_destroy(a);
-    P(lrc, VIEW_ANIMATOR) = (void *)0;
-}
-
 /* Another song: its lyrics at the top, nothing held or gliding, and stock's animator, which would
  * carry them on to where the last song's follow sent them, stopped. */
 static void lyric_top(void *lrc) {
     st.lyric_held = st.lyric_spun = st.lyric_glide = st.lyric_to = st.lyric_push = 0;
-    lyric_still(lrc);
+    view_still(lrc);
     scroll_view_set_offset(lrc, I(lrc, SCROLL_X), 0);
 }
 
 /* The lyrics glide to `to` (1/16 px) within their content; lyric_step moves them, every UI pass. */
 static void lyric_glide(void *lrc, int to) {
-    lyric_still(lrc);
+    view_still(lrc);
     st.lyric_to = clamp_step(to, (I(lrc, VIEW_CONTENT_H) - I(lrc, W_H)) * 16, 0);
     if (!st.lyric_glide) st.lyric_at = (unsigned)time_now_ms();
     st.lyric_glide = 1;
@@ -4621,7 +4616,7 @@ static void lyric_follow(void *lrc, int ms, int front, int shown) {
         if (to * 16 != st.lyric_to || (!st.lyric_glide && I(lrc, SCROLL_Y) != to))
             lyric_glide(lrc, to * 16);
     } else if (I(lrc, SCROLL_Y) != to) {
-        lyric_still(lrc);
+        view_still(lrc);
         scroll_view_set_offset(lrc, I(lrc, SCROLL_X), to);
     }
 }
@@ -4708,7 +4703,7 @@ static void lyric_poll(void) {
     if (touch && !st.lyric_touch) {
         st.lyric_touch = page ? 1 : 2;
         st.lyric_drag_y = page ? I(lrc, SCROLL_Y) : 0;
-        if (page) lyric_still(lrc);
+        if (page) view_still(lrc);
     } else if (!touch && st.lyric_touch) {
         if (st.lyric_touch == 1 && page && I(lrc, SCROLL_Y) != st.lyric_drag_y) lyric_hold();
         st.lyric_touch = 0;
