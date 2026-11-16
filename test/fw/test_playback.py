@@ -386,6 +386,17 @@ def test_groups_are_albums_named_alike_and_their_smallest_index(player):
         assert player.s.groups[i] == min(same)
 
 
+def test_a_track_shuffle_groups_nothing_unless_repeat_is_a_group_repeat(player):
+    """Shuffle All reads no group outside a category repeat, so rebuild leaves each entry its own and doesn't sort
+    the queue into albums; choosing Group repeat rebuilds, and the albums are there."""
+    player.load(player.albums(3, 2, 1))
+    assert player.set(0, 1) == 1 and player.set(1, REPEAT_ALL) == 1
+    assert [player.s.groups[i] for i in range(6)] == list(range(6))
+    assert player.set(1, REPEAT_GROUP) == 1
+    for i in range(6):
+        assert player.s.groups[i] == min(j for j in range(6) if player.album(j) == player.album(i))
+
+
 def test_an_album_is_its_name_case_aside_and_its_folder(player):
     rows = [player.song(b'/m/z/1.flac', b'Same'), player.song(b'/m/z/2.flac', b'SAME'), player.song(b'/m/y/3.flac', b'Same')]
     player.load(rows)

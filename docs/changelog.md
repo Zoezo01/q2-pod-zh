@@ -1,5 +1,7 @@
 # Changelog
 
+- **1.8.7**:
+  - Shuffle: **Shuffle Songs**, and **Play Next** or **Add to Queue** while it plays, work faster on a big library.
 - **1.8.6**:
   - Tidal Downloads: **Download Playing Songs** works on a card that has no Tidal folder yet, such as a new or reformatted card, or one whose `.tidal` folder was deleted on a computer. It stopped at once with "Downloaded 0 of N songs" until a Tidal song had played with that card in.
   - Tidal Downloads: a song with a very long artist and title is saved to the card, and tagged, like any other. One past about 230 characters streamed at every play and **Download Playing Songs** counted it as not saved; one a little shorter was saved without its tags. A copy saved that way stays untagged until **Clear All Downloads**.
