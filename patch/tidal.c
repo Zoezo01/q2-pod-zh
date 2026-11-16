@@ -685,12 +685,9 @@ static int app_track(void *r, const char *id) {
     if (net <= 0) return net;
     tidal_playurl(0);
     mclStop();
-    char *c;
-    /* NOLINTNEXTLINE(clang-analyzer-core.NullPointerArithm): only called for an app: id */
-    unsigned gen = (unsigned)strtol(id + 4, &c, 10);
-    unsigned n = *c == ':' ? (unsigned)strtol(c + 1, 0, 10) : ~0u;
     pthread_mutex_lock(au.lock);
-    const char *url = gen == au.gen && n < au.n ? au.urls[n] : 0;
+    int k = au_at(id);
+    const char *url = k >= 0 ? au.urls[k] : 0;
     au_job *j = url ? calloc(1, sizeof *j + strlen(url) + 1) : 0;
     /* NOLINTNEXTLINE(bugprone-not-null-terminated-result): calloc'd a byte more: a NUL ends it */
     if (j) memcpy(j->url, url, strlen(url)), j->play = play, j->loads = playback_loads;
