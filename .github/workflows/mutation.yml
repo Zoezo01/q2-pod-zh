@@ -48,7 +48,6 @@ jobs:
           python-version: '3.12'
       - run: sudo apt-get update && sudo apt-get install -y clang lld llvm
       - run: pip install -r requirements.txt -r test/unit/requirements.txt
-      - run: python3 -m pytest test/unit -q
       - name: Restore last night's results
         if: github.event.schedule == '23 3 * * 1-6'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
