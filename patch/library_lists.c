@@ -498,7 +498,7 @@ int songs_open(const char *path, const char *title, int album) {
 #define ERA_ALBUMS                                                                                 \
     "select album,ifnull(nullif(albumsonger,''),songer)," ALBUM_YEAR                               \
     " as release_year," ALBUM_TRACK " from songtable "                                             \
-    "where " MUSIC_WHERE " and ifnull(album,'')<>''" ALBUM_GROUP
+    "where " MUSIC_WHERE " and ifnull(album,'')<>''"
 typedef struct {
     char *album, *artist, *path;
     int year;
@@ -659,10 +659,14 @@ static int era_open_decade(void *ctx, void *event) {
     int k = (int)(long)ctx, from = era.decade[k];
     if (era.albums) return 0;
     char sql[1024], name[16], detail[300];
-    tk_snprintf(
-        sql, sizeof sql, /* MUSIC_WHERE's like patterns hold '%': an argument, not the format */
-        "%s having release_year between %d and %d order by release_year,album COLLATE NOCASE",
-        ERA_ALBUMS, from, from + 9);
+    /* Only a name with a song dated in the decade can make one of its groups, so only those names'
+     * songs are grouped, as of_names does (coverflow.c). MUSIC_WHERE's like patterns hold '%': an
+     * argument, not the format. */
+    tk_snprintf(sql, sizeof sql,
+                "%s and album collate nocase in (select album from songtable where %s between %d "
+                "and %d)%s having release_year between %d and %d order by release_year,album "
+                "COLLATE NOCASE",
+                ERA_ALBUMS, SONG_YEAR, from, from + 9, ALBUM_GROUP, from, from + 9);
     era.v =
         calloc((unsigned)era.count[k] + 1, sizeof *era.v); /* the decade's count, from era_menu */
     era.cap = era.v ? (unsigned)era.count[k] : 0;
