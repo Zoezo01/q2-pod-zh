@@ -7,7 +7,7 @@ import struct
 import pytest
 
 from conftest import O, Files, claim
-from test_nav_library_pages import Config, LENGTHS, Probe, lengths, path_key, song, st, scratch, ui  # noqa: F401
+from test_nav_library_pages import Config, LENGTHS, Probe, lengths, path_key, song, ui  # noqa: F401
 from test_playlist_art import real_sqlite
 
 DUR_SONGS = 100000

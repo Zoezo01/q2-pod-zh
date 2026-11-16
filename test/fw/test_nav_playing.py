@@ -80,11 +80,6 @@ class Config:
 
 
 @pytest.fixture(scope='module')
-def scratch(library):
-    return host.offsets(library.parent/'navigation.o', 'scratch_t')
-
-
-@pytest.fixture(scope='module')
 def ranges(library):
     """The two faces' cmaps as the build cut them (tools/build.py subset_font): BOLD_RANGES, CLASSIC_LIGHT_RANGES."""
     header = (library.parent/'stock.h').read_text()

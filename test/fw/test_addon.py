@@ -10,7 +10,7 @@ import pytest
 
 import host
 from conftest import O, Deques, Game, block, claim, high_halves, libc, text
-from test_coverflow import png, scratch  # an icon's header; navigation.c's st by field
+from test_coverflow import png  # an icon's header
 from test_netupdate import JOB_INSTALL, JOB_REMOVE, SH_CANCELLED, SH_CARD, SH_NET, SH_OK, Sh  # test_netupdate.py keeps netupdate.c's App Store mirror
 from test_radio import Rd  # test_radio.py keeps the mirror
 from test_tidal import Au, Queue, free_stubbed  # test_tidal.py keeps tidal.c's au mirror

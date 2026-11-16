@@ -10,6 +10,7 @@ import hashlib
 import os
 import pathlib
 import re
+import struct
 import sys
 import traceback
 
@@ -364,3 +365,81 @@ class Game(C.Structure):
     """addon.c's gm: the running card game."""
     _fields_ = [*((k, C.c_int) for k in 'pid sock eat audio'.split()), *((k, C.c_uint) for k in 'seen held term'.split()),
                 ('path', C.c_char * 48)]
+
+
+# Fixtures and fakes the navigation, playback and player tests share.
+@pytest.fixture(scope='module')
+def scratch(library):
+    """scratch_t's field offsets as this build lays it out: its pointers move them."""
+    return host.offsets(library.parent/'navigation.o', 'scratch_t')
+
+
+
+@pytest.fixture
+def st(fw, scratch):
+    """navigation.c's state by field: st('rt_page', C.c_void_p).value."""
+    base = C.addressof(fw.var('st', C.c_char))
+    return lambda name, ctype=C.c_int: ctype.from_address(base + scratch[name])
+
+
+
+@pytest.fixture(scope='module')
+def power_fields(library):
+    """system.c's own state, pw: its field offsets as this build lays it out."""
+    return host.offsets(library.parent/'system.o', 'pw')
+
+
+
+@pytest.fixture
+def power(fw, power_fields):
+    base = C.addressof(fw.var('system__pw', C.c_char))
+    return lambda name, ctype=C.c_int: ctype.from_address(base + power_fields[name])
+
+
+
+@pytest.fixture(scope='module')
+def lists_fields(library):
+    """library_lists.c's own state, ll: its field offsets as this build lays it out."""
+    return host.offsets(library.parent/'library_lists.o', 'll')
+
+
+
+@pytest.fixture
+def lists(fw, lists_fields):
+    base = C.addressof(fw.var('library_lists__ll', C.c_char))
+    return lambda name, ctype=C.c_int: ctype.from_address(base + lists_fields[name])
+
+
+
+def opus(tags):
+    """An Ogg Opus file: OpusHead, then tags as packet 1 on pages of its own (no CRC: xiph.c reads none)."""
+    pages, seq = [], 0
+    for packet in (b'OpusHead' + bytes([1, 2]) + struct.pack('<HIhB', 312, 48000, 0, 0), tags):
+        lacing = [255] * (len(packet) // 255) + [len(packet) % 255]
+        for at in range(0, len(lacing), 255):
+            part = lacing[at:at + 255]
+            pages.append(b'OggS\0' + bytes([at > 0]) + bytes(8) + struct.pack('<III', 1, seq, 0) + bytes([len(part)]) +
+                         bytes(part) + packet[at * 255:at * 255 + sum(part)])
+            seq += 1
+    return b''.join(pages)
+
+
+
+def stock_stub(address, result, log):
+    """x86-64 at a fixed stock address: its first three arguments logged, result returned. Only ever in a fork."""
+    claim(address)
+    code = (b'\x48\xb8' + struct.pack('<Q', C.addressof(log)) + bytes.fromhex('488938 48897008 48895010') +
+            b'\xb8' + struct.pack('<I', result) + b'\xc3')
+    C.memmove(address, code, len(code))
+
+
+
+class Config:
+    """config.ini, its value or the default."""
+    def __init__(self, fw, **values):
+        self.values = {k.encode(): v.encode() for k, v in values.items()}
+        fw.mock('toolsReadConfig', self.read)
+
+    def read(self, path, section, key, out, default, *_):
+        value = self.values.get(C.string_at(key), C.string_at(default))
+        C.memmove(out, value + b'\0', len(value) + 1)

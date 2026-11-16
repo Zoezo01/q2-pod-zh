@@ -9,10 +9,10 @@ import struct
 
 import pytest
 
-import host
+import host  # noqa: F401  # puts tools/ on the path
 import art as tools_art  # tools/, which host puts on the path
 import ipod as tools_ipod
-from conftest import O, block
+from conftest import O, block, Config
 
 WALLS = [b'q2pod:' + n for n in (b'aurora', b'sunrise', b'graphite', b'tide', b'ember', b'black')]
 AURORA, SUNRISE, GRAPHITE, TIDE, EMBER, BLACK = range(6)
@@ -527,17 +527,6 @@ def test_a_built_in_stock_reset_is_put_back_beside_five_card_images(fw, picture)
 
 
 # The lock window and the picker.
-
-class Config:
-    """config.ini, its value or the default."""
-    def __init__(self, fw, **values):
-        self.values = {k.encode(): v.encode() for k, v in values.items()}
-        fw.mock('toolsReadConfig', self.read)
-
-    def read(self, path, section, key, out, default, *_):
-        value = self.values.get(C.string_at(key), C.string_at(default))
-        C.memmove(out, value + b'\0', len(value) + 1)
-
 
 class Window:
     """Widgets by name, each a zeroed block with its box's width and height; widget_lookup finds them. The
@@ -1558,18 +1547,6 @@ def test_the_info_screen_s_labels_load_in_the_theme_s_face(fw, clock, large):
     face = fw.fn('theme_face', C.c_char_p, C.c_void_p, C.c_int, C.c_void_p)(latin, -1, None).decode()
     for name in ('clock_date', 'clock_time', 'scrlabel_title', 'scrlabel_artist'):
         assert [v for kind, at, k, v in win.set if at == win[name] and k == 'style:normal:font_name'][0] == face
-
-
-@pytest.fixture(scope='module')
-def scratch(library):
-    """navigation.c's scratch_t's field offsets as this build lays it out."""
-    return host.offsets(library.parent/'navigation.o', 'scratch_t')
-
-
-@pytest.fixture
-def st(fw, scratch):
-    base = C.addressof(fw.var('st', C.c_char))
-    return lambda name, ctype=C.c_int: ctype.from_address(base + scratch[name])
 
 
 class Playing:

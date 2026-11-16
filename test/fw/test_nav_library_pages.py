@@ -12,7 +12,7 @@ import struct
 import pytest
 
 import host
-from conftest import FNV_PRIME, O, Deques, Files, claim, favdir_card, fnv1a, high_halves, in_fork, libc, ui_name
+from conftest import FNV_PRIME, O, Deques, Files, favdir_card, fnv1a, high_halves, in_fork, libc, ui_name, stock_stub
 from conftest import Rows as HeldRows  # Rows here is Folder view's list
 from test_coverflow import SONGTABLE
 from test_navigation import Sa  # test_navigation.py keeps the mirror
@@ -261,31 +261,6 @@ class Config:
         self.values[C.string_at(key)] = C.string_at(value)
         self.written.append(C.string_at(value))
         return 0
-
-
-@pytest.fixture(scope='module')
-def scratch(library):
-    """scratch_t's field offsets as this build lays it out: its pointers move them."""
-    return host.offsets(library.parent/'navigation.o', 'scratch_t')
-
-
-@pytest.fixture
-def st(fw, scratch):
-    """navigation.c's state by field: st('rt_page', C.c_void_p).value."""
-    base = C.addressof(fw.var('st', C.c_char))
-    return lambda name, ctype=C.c_int: ctype.from_address(base + scratch[name])
-
-
-@pytest.fixture(scope='module')
-def lists_fields(library):
-    """library_lists.c's own state, ll: its field offsets as this build lays it out."""
-    return host.offsets(library.parent/'library_lists.o', 'll')
-
-
-@pytest.fixture
-def lists(fw, lists_fields):
-    base = C.addressof(fw.var('library_lists__ll', C.c_char))
-    return lambda name, ctype=C.c_int: ctype.from_address(base + lists_fields[name])
 
 
 # Song records. The Q2's hold 4-byte pointers 4 bytes apart (REC_NAME, REC_PATH, REC_TITLE, REC_ALBUM, REC_ARTIST),
@@ -1394,14 +1369,6 @@ def test_another_window_s_end_leaves_the_heart(fw, ui, song, mcl, st):
     heart = Heart(fw, ui, song, mcl, kept=1)
     assert fw.fn('ratings__rate_gone', C.c_int, C.c_void_p, C.c_void_p)(0x1234, None) == 0
     assert st('rate_win', C.c_void_p).value == heart.win and ui.pending('rate_tick')
-
-
-def stock_stub(address, result, log):
-    """x86-64 at a fixed stock address: its first three arguments logged, result returned. Only ever in a fork."""
-    claim(address)
-    code = (b'\x48\xb8' + struct.pack('<Q', C.addressof(log)) + bytes.fromhex('488938 48897008 48895010') +
-            b'\xb8' + struct.pack('<I', result) + b'\xc3')
-    C.memmove(address, code, len(code))
 
 
 @in_fork

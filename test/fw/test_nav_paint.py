@@ -10,7 +10,7 @@ import struct
 import pytest
 
 import host
-from conftest import O, Files, block, in_fork
+from conftest import O, Files, block, in_fork, Config
 from test_nav_loop import LIBC, Clock, Flip, Land  # coverflow.c's cf_flip_t, fl; coverflow_land.c's land
 
 W_X, W_Y, W_W, W_H, W_PARENT = O['W_X'], O['W_Y'], O['W_W'], O['W_H'], O['W_PARENT']
@@ -55,17 +55,6 @@ def channels(c):
 def luma(c):
     r, g, b = channels(c)
     return (r * 299 + g * 587 + b * 114) // 1000
-
-
-class Config:
-    """config.ini, its value or the default."""
-    def __init__(self, fw, **values):
-        self.values = {k.encode(): v.encode() for k, v in values.items()}
-        fw.mock('toolsReadConfig', self.read)
-
-    def read(self, path, section, key, out, default, *_):
-        value = self.values.get(C.string_at(key), C.string_at(default))
-        C.memmove(out, value + b'\0', len(value) + 1)
 
 
 def strings(fw):

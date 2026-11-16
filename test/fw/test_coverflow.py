@@ -3292,12 +3292,6 @@ def test_no_service_row_or_name_draws_no_service(fw):
 
 # The pages' pieces, shared with photos.c, books.c and navigation.c
 
-@pytest.fixture(scope='module')
-def scratch(library):
-    """scratch_t's field offsets in this build: navigation.c's st."""
-    return host.offsets(library.parent/'navigation.o', 'scratch_t')
-
-
 def bar_title(fw, ui, scratch, width):
     """Classic's bar title, width px: a caption of n characters measures 10 n px."""
     bar = ui.make(0, 'hscroll_label', 0, 0, width, 30)

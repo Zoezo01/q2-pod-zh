@@ -8,7 +8,7 @@ import struct
 import pytest
 
 import host
-from conftest import text, Game, c_enum
+from conftest import text, Game, c_enum, opus, stock_stub
 from conftest import FNV_PRIME, O, Deques, Files, claim, fnv1a, in_fork  # noqa: F401
 
 STOCK_RED = O['STOCK_RED']
@@ -59,38 +59,6 @@ class Config:
 def strings(fw):
     """Stock's AWTK string helpers, which the C leans on."""
     fw.mock('tk_str_start_with', lambda s, prefix, *_: C.string_at(s).startswith(C.string_at(prefix)))
-
-
-@pytest.fixture(scope='module')
-def scratch(library):
-    """scratch_t's field offsets as this build lays it out: its pointers move them."""
-    return host.offsets(library.parent/'navigation.o', 'scratch_t')
-
-
-@pytest.fixture
-def st(fw, scratch):
-    base = C.addressof(fw.var('st', C.c_char))
-    return lambda name, ctype=C.c_int: ctype.from_address(base + scratch[name])
-
-
-@pytest.fixture(scope='module')
-def power_fields(library):
-    """system.c's own state, pw: its field offsets as this build lays it out."""
-    return host.offsets(library.parent/'system.o', 'pw')
-
-
-@pytest.fixture
-def power(fw, power_fields):
-    base = C.addressof(fw.var('system__pw', C.c_char))
-    return lambda name, ctype=C.c_int: ctype.from_address(base + power_fields[name])
-
-
-def stock_stub(address, result, log):
-    """x86-64 at a fixed stock address: its first three arguments logged, result returned. Only ever in a fork."""
-    claim(address)
-    code = (b'\x48\xb8' + struct.pack('<Q', C.addressof(log)) + bytes.fromhex('488938 48897008 48895010') +
-            b'\xb8' + struct.pack('<I', result) + b'\xc3')
-    C.memmove(address, code, len(code))
 
 
 def rgba(c, a=0xff):
@@ -1181,19 +1149,6 @@ def test_flac_any_file(fw, heap):
         assert len(C.string_at(out, 0x100).split(b'\0')[0]) < 0x100
         heap.free(out)
     assert not files.open  # every file closed
-
-
-def opus(tags):
-    """An Ogg Opus file: OpusHead, then tags as packet 1 on pages of its own (no CRC: xiph.c reads none)."""
-    pages, seq = [], 0
-    for packet in (b'OpusHead' + bytes([1, 2]) + struct.pack('<HIhB', 312, 48000, 0, 0), tags):
-        lacing = [255] * (len(packet) // 255) + [len(packet) % 255]
-        for at in range(0, len(lacing), 255):
-            part = lacing[at:at + 255]
-            pages.append(b'OggS\0' + bytes([at > 0]) + bytes(8) + struct.pack('<III', 1, seq, 0) + bytes([len(part)]) +
-                         bytes(part) + packet[at * 255:at * 255 + sum(part)])
-            seq += 1
-    return b''.join(pages)
 
 
 @pytest.mark.parametrize('size, big', [(1000, 0), ((4 << 20) + 1, 1)])

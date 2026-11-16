@@ -16,7 +16,7 @@ import typing
 import pytest
 
 import host
-from conftest import NAVIGATION_SOURCE, O, c_enum, Deques, Files, claim, high_halves, libc, ui_name
+from conftest import NAVIGATION_SOURCE, O, c_enum, Deques, Files, claim, high_halves, libc, ui_name, opus
 
 STRINGS = dict(re.findall(r'^#define (\w+) "([^"]*)"', (host.ROOT/'patch/offsets.inc').read_text(), re.M))
 LIST_INTO_WHITE, BT_GLYPH = STRINGS['LIST_INTO_WHITE'], STRINGS['BT_GLYPH']
@@ -338,17 +338,6 @@ class Settings:
         value = self.values.get(C.string_at(key), C.string_at(default))
         if value or C.string_at(key) in self.values:
             C.memmove(out, value + b'\0', len(value) + 1)
-
-
-@pytest.fixture(scope='module')
-def scratch(library):
-    return host.offsets(library.parent/'navigation.o', 'scratch_t')
-
-
-@pytest.fixture
-def st(fw, scratch):
-    base = C.addressof(fw.var('st', C.c_char))
-    return lambda name, ctype=C.c_int: ctype.from_address(base + scratch[name])
 
 
 def strings(fw):
@@ -2560,19 +2549,6 @@ def test_the_library_scan_notes_each_file_it_reads(fw):
 # An Ogg file whose comment header is over OGG_TAGS_MAX: xiph.c reads it, not TagLib.
 def comments(*items, vendor=b'libopus'):
     return struct.pack('<I', len(vendor)) + vendor + struct.pack('<I', len(items)) + b''.join(struct.pack('<I', len(c)) + c for c in items)
-
-
-def opus(tags):
-    """An Ogg Opus file: OpusHead, then tags as packet 1 on pages of its own (no CRC: xiph.c reads none)."""
-    pages, seq = [], 0
-    for packet in (b'OpusHead' + bytes([1, 2]) + struct.pack('<HIhB', 312, 48000, 0, 0), tags):
-        lacing = [255] * (len(packet) // 255) + [len(packet) % 255]
-        for at in range(0, len(lacing), 255):
-            part = lacing[at:at + 255]
-            pages.append(b'OggS\0' + bytes([at > 0]) + bytes(8) + struct.pack('<III', 1, seq, 0) + bytes([len(part)]) +
-                         bytes(part) + packet[at * 255:at * 255 + sum(part)])
-            seq += 1
-    return b''.join(pages)
 
 
 BIG = b'P=' + b'v' * (4 << 20)

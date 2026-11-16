@@ -796,12 +796,6 @@ class Q2:
             self.ui_pass()
 
 
-@pytest.fixture(scope='module')
-def scratch(library):
-    """scratch_t's field offsets as this build lays it out: its pointers move them."""
-    return host.offsets(library.parent/'navigation.o', 'scratch_t')
-
-
 @pytest.fixture
 def q2(fw, mcl, scratch):
     """A Q2 for the test's firmware (or a restart's), its records in the test's Memory."""

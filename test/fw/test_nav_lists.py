@@ -1359,18 +1359,6 @@ def test_a_music_load_too_long_to_filter_runs_nothing(fw):
 
 
 # What is painted over a list.
-@pytest.fixture(scope='module')
-def scratch(library):
-    """scratch_t's field offsets as this build lays it out: its pointers move them."""
-    return host.offsets(library.parent/'navigation.o', 'scratch_t')
-
-
-@pytest.fixture
-def st(fw, scratch):
-    base = C.addressof(fw.var('st', C.c_char))
-    return lambda name, ctype=C.c_int: ctype.from_address(base + scratch[name])
-
-
 LCD_FILL = 0x12345678
 
 
