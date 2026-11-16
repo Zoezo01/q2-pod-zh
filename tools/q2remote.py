@@ -478,7 +478,8 @@ def input_action(kind, a):
         shell("sh", event_writer(input_path(kind), touch_batches([(a.x, a.y)])).encode())
     elif kind == "swipe":
         if not 20 <= a.ms <= 10000: raise ValueError("swipe duration must be 20..10000 ms")
-        shell("sh", event_writer(input_path("tap"), touch_batches(swipe_points(*a.points, a.ms))).encode())
+        x1, y1, x2, y2 = a.points
+        shell("sh", event_writer(input_path("tap"), touch_batches(swipe_points(x1, y1, x2, y2, a.ms))).encode())
     elif kind == "wheel":
         if not 0 <= a.step_ms <= 1000: raise ValueError("--step-ms must be 0..1000")
         if not -1000 <= a.ticks <= 1000: raise ValueError("wheel travel must be -1000..1000 ticks")
