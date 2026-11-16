@@ -3143,8 +3143,7 @@ static unsigned char savestartbt, transposition, tidalfurlstart, isFav_playing;
 static unsigned playback_loads;
 static int networkGetConnectStatus(void) { return 0; }
 static int mclStop(void) { return 0; }
-static void *_create_deque(const char *kind) { return 0; }
-static void deque_init(void *q) {}
+static void *song_list(void) { return 0; }
 static void _deque_push_back(void *q, void *r) {}
 static void deque_destroy(void *q) {}
 static void play_folder(void *q, int i, int cls) {}

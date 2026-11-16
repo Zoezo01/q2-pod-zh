@@ -338,8 +338,7 @@ int addon_m3u_dir(const char *dir, void *dq) {
     ringnav_wdt_long(); /* the import reads every listed song's tags next, on this thread */
     int n = toolsGetDirectoryM3u8(dir, dq);
     if (!libup.only) return n;
-    void *kept = _create_deque("stSongInfo");
-    deque_init(kept);
+    void *kept = song_list();
     for (unsigned i = 0; i < deque_size(dq); ++i) {
         void *r = deque_at(dq, i);
         const char *p = P(r, REC_PATH);

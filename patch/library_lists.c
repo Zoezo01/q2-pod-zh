@@ -289,8 +289,7 @@ int most_played(void *ctx, void *event) {
         ll.mp_gen = gen;
     }
     int top = mp_rank(from, idx, score);
-    void *ranked = _create_deque("stSongInfo");
-    deque_init(ranked);
+    void *ranked = song_list();
     for (int i = 0; i < top; i++) _deque_push_back(ranked, deque_at(from, idx[i]));
     if (st.mp_list && st.mp_list != from) deque_destroy(st.mp_list);
     deque_destroy(from);
@@ -359,8 +358,7 @@ static void *card_songs(const char *dir, int album) {
             v[n++] = (td_row){ (long)info[16], r };
     }
     if (n) qsort(v, (unsigned)n, sizeof *v, album ? td_named : td_newer);
-    void *songs = _create_deque("stSongInfo");
-    deque_init(songs);
+    void *songs = song_list();
     for (int i = 0; i < n; i++) _deque_push_back(songs, v[i].r);
     free(v);
     deque_destroy(rows);

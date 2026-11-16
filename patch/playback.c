@@ -929,8 +929,7 @@ static void *no_videos(void *q, int *at) {
     for (unsigned i = 0; i < n; ++i)
         if (!playback_video(deque_at(q, i))) keep++, before += (int)i < *at;
     if (keep == n) return 0;
-    void *out = _create_deque("stSongInfo");
-    deque_init(out);
+    void *out = song_list();
     for (unsigned i = 0; i < n; ++i)
         if (!playback_video(deque_at(q, i))) _deque_push_back(out, deque_at(q, i));
     if (!keep)
@@ -1593,8 +1592,7 @@ int ringnav_memory(void *out) {
     if (ok && p != buf + h.size) ok = 0;
     void *rows = 0, *q = 0, *all = 0;
     if (ok) {
-        q = _create_deque("stSongInfo");
-        deque_init(q);
+        q = song_list();
         /* the library's rows for the snapshot's paths alone */
         all = songs_by_path(paths, h.n);
         unsigned n = 0;

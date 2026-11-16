@@ -588,8 +588,7 @@ static void stream_poll(app_t *a) {
             deque_destroy(add);
         }
     } else if (!scan && stream_newer(sm.dir, sm.last)) {
-        void *songs = app_album_songs(sm.dir), *add = _create_deque("stSongInfo");
-        deque_init(add);
+        void *songs = app_album_songs(sm.dir), *add = song_list();
         for (unsigned i = 0, n = deque_size(songs); i < n; ++i) {
             void *r = deque_at(songs, i);
             if (strcmp(P(r, REC_NAME), sm.last) > 0) _deque_push_back(add, r);

@@ -344,6 +344,7 @@ char *csv_find(char *list, const char *item); /* navigation.c: comma lists */
 int csv_toggle(char *list, unsigned size, const char *item);
 void *bottom_caption(void *parent, int h);
 int text_differs(void *w, const char *s);
+void *song_list(void);                              /* coverflow.c: an empty stSongInfo deque */
 long file_size(const char *path);                   /* coverflow.c: -1 when it can't be opened */
 int picture_size(const char *path, int *w, int *h); /* coverflow.c */
 void *read_all(const char *path, unsigned max, unsigned *size); /* scrobble.c */

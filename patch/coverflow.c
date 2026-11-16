@@ -672,10 +672,16 @@ int staged_into(void *into, int (*query)(void *), void *arg) {
     return n;
 }
 
+/* An empty song list: stock's stSongInfo deque, made and initialised. */
+void *song_list(void) {
+    void *d = _create_deque("stSongInfo");
+    deque_init(d);
+    return d;
+}
+
 /* Its rows (*count its result) in a deque of their own; shared with navigation.c's queue menu. */
 void *staged(int (*query)(void *), void *arg, int *count) {
-    void *out = _create_deque("stSongInfo");
-    deque_init(out);
+    void *out = song_list();
     *count = staged_into(out, query, arg);
     return out;
 }
@@ -1314,8 +1320,7 @@ static void *music_albums(void *list, int artist) {
     unsigned m;
     row_t *v = album_rows(rows, &m, by_album, 0);
     if (!v) return deque_destroy(rows), list;
-    out = _create_deque("stSongInfo");
-    deque_init(out);
+    out = song_list();
     for (unsigned i = 0; i < deque_size(list); ++i) {
         void *r = deque_at(list, i);
         int k = I(r, REC_ID) == -1 ? -1 : album_in(v, m, r);
@@ -1342,8 +1347,7 @@ static void *split(void *stock, int artist) {
     unsigned m;
     row_t *v = album_rows(rows, &m, by_name, 1);
     if (!v) return deque_destroy(rows), stock;
-    out = _create_deque("stSongInfo");
-    deque_init(out);
+    out = song_list();
     for (unsigned i = 0; i < deque_size(stock); ++i) {
         void *r = deque_at(stock, i);
         unsigned from = deque_size(out), k;
@@ -1461,8 +1465,7 @@ static void *sorted(void) {
     else
         rank_by(v, cf.sort == SORT_ADDED ? SORT_SQL "max(time_create) desc" : year_sql());
     qsort(v, n, sizeof *v, artist ? by_artist : by_rank);
-    void *out = _create_deque("stSongInfo");
-    deque_init(out);
+    void *out = song_list();
     for (unsigned i = 0; i < n; ++i) _deque_push_back(out, v[i].r);
     if (!cf.scoped && cf.sort == SORT_YEAR) {
         free(years);
@@ -1489,8 +1492,7 @@ void coverflow_by_year(void *albums) {
     const char *sql = ringnav_artist_az() ? SORT_SQL "album COLLATE NOCASE" : year_sql();
     void *rows = of_names(sql, albums, &found), *out;
     if (!rows) rows = staged(rank_query, (void *)sql, &found);
-    out = _create_deque("stSongInfo");
-    deque_init(out);
+    out = song_list();
     for (unsigned j = 0; j < deque_size(rows); ++j) {
         int i = album_in(v, m, deque_at(rows, j));
         if (i >= 0 && !taken[i]) taken[i] = 1, _deque_push_back(out, deque_at(albums, (unsigned)i));
@@ -3288,8 +3290,7 @@ static void *in_order(void *tracks, void *album) {
         if (I(album, REC_ID) == -1 || !album_cmp(deque_at(tracks, i), album))
             v[n++] = deque_at(tracks, i);
     qsort(v, n, sizeof *v, album_before);
-    void *out = _create_deque("stSongInfo");
-    deque_init(out);
+    void *out = song_list();
     for (unsigned i = 0; i < n; ++i) _deque_push_back(out, v[i]);
     free(v);
     deque_destroy(tracks);
@@ -3593,8 +3594,7 @@ static int to_tracks(const void *unused) {
  * query per album; one artist query split back into albums if a large artist drags. */
 static int play_all(const void *unused) {
     cf.timer = 0;
-    void *all = _create_deque("stSongInfo");
-    deque_init(all);
+    void *all = song_list();
     for (unsigned i = 0; i < deque_size(cf.albums); ++i) {
         void *t = coverflow_album_tracks(deque_at(cf.albums, i));
         for (unsigned j = 0; j < deque_size(t); ++j) _deque_push_back(all, deque_at(t, j));

@@ -488,8 +488,7 @@ int app_urls_play(const char *path) {
     unsigned n = 0, gen = au.gen + 1;
     char **urls = calloc(AU_SONGS, sizeof *urls), **items = calloc(AU_SONGS, sizeof *items);
     unsigned char *fav = calloc(AU_SONGS, 1);
-    void *q = _create_deque("stSongInfo");
-    deque_init(q);
+    void *q = song_list();
     for (line = line ? line + 1 : 0; urls && items && fav && line && *line && n < AU_SONGS;
          line = end) {
         if ((end = strstr(line, "\n"))) *end++ = 0;
@@ -777,8 +776,7 @@ void tidal_all(int press, char *out, unsigned size) {
     if (press && td.all)
         all_end();
     else if (press) {
-        void *all = _create_deque("stSongInfo");
-        deque_init(all);
+        void *all = song_list();
         for (unsigned i = 0, n = q ? deque_size(q) : 0; i < n; ++i) {
             void *r = deque_at(q, i);
             const char *id = P(r, REC_TIDAL_ID);

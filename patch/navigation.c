@@ -8093,8 +8093,7 @@ static void album_open(void *r) {
     if (st.album) deque_destroy(st.album);
     st.album = 0;
     if (!r || I(r, REC_ID) < 0) return;
-    st.album = _create_deque("stSongInfo");
-    deque_init(st.album);
+    st.album = song_list();
     _deque_push_back(st.album, r);
 }
 int ringnav_album_detail(int cls, void *r) {
@@ -8225,8 +8224,7 @@ static int artist_songs(void *unused) {
  * this artist's albums. */
 static void *artist_albums(void *all) {
     int n;
-    void *songs = staged_music(artist_songs, 0, &n), *out = _create_deque("stSongInfo");
-    deque_init(out);
+    void *songs = staged_music(artist_songs, 0, &n), *out = song_list();
     for (unsigned i = 0; i < deque_size(all); ++i) {
         void *a = deque_at(all, i);
         for (unsigned j = 0; j < deque_size(songs); ++j) {
@@ -8248,8 +8246,7 @@ static void artist_order(void *list, void *mine) {
     int *at = calloc(n + 1, sizeof *at);
     if (!at) return;
     for (unsigned i = 0; i < n; ++i) at[i] = artist_album(mine, deque_at(list, i));
-    void *out = _create_deque("stSongInfo");
-    deque_init(out);
+    void *out = song_list();
     for (unsigned k = 0; k <= m; ++k) /* k == m: the unmatched */
         for (unsigned i = 0; i < n; ++i)
             if (k < m ? at[i] == (int)k : at[i] < 0) _deque_push_back(out, deque_at(list, i));
@@ -8498,8 +8495,7 @@ static void fav_titles(void *list, int n) {
 /* Playlists bypass songtable; filter their displayed copies, never their stored rows (Cover
  * Flow's turned playlist too). */
 int music_records(void *list, int discovery) {
-    void *music = _create_deque("stSongInfo");
-    deque_init(music);
+    void *music = song_list();
     for (unsigned i = 0; i < deque_size(list); ++i) {
         void *r = deque_at(list, i);
         const char *path = P(r, REC_PATH);
@@ -8619,8 +8615,7 @@ static void qm_tracks(void *r, void *add) {
 void *qm_collect(void *r) {
     if (st.qm_kind == QM_COVERALBUM || (st.qm_kind == QM_ALBUM && st.qm_cls == CLASS_ALBUMS))
         return coverflow_album_tracks(r);
-    void *add = _create_deque("stSongInfo");
-    deque_init(add);
+    void *add = song_list();
     if (st.qm_kind == QM_SONG || st.qm_kind == QM_COVERFLOW || st.qm_kind == QM_PLAYING) {
         if (!playback_video(r)) _deque_push_back(add, r);
     } else
