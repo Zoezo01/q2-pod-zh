@@ -1,6 +1,5 @@
 """q2remote's commands as they leave for the Q2, with no Q2: a fake shell() or socket answers them."""
 import bisect
-import contextlib
 import hashlib
 import io
 import pathlib
@@ -1048,7 +1047,7 @@ def test_profile_pulls_nothing_under_a_name_that_is_no_file_of_the_cache(prof, m
 
 
 class Input:
-    """input_action()'s world: the event node and every script handed to `sh`."""
+    """key, tap, swipe and wheel's world: the event node and every script handed to `sh`."""
     def __init__(self, monkeypatch):
         self.scripts, self.kinds = [], []
         monkeypatch.setattr(q, 'input_path', lambda kind: self.kinds.append(kind) or '/dev/in')
@@ -1062,53 +1061,46 @@ def inputs(monkeypatch):
 
 
 def test_input_key(inputs):
-    q.input_action('key', ['PLAY'])
+    assert q.main(['key', 'PLAY']) == 0
     assert inputs.scripts == [('sh', q.event_writer('/dev/in', q.key_events(108), 80000).encode())] and inputs.kinds == ['key']
-    q.input_action('key', ['next', '1'])
-    q.input_action('key', ['prev', '60000'])
+    q.main(['key', 'next', '1'])
+    q.main(['key', 'prev', '60000'])
     assert inputs.scripts[1:] == [('sh', q.event_writer('/dev/in', q.key_events(163), 1000).encode()),
                                   ('sh', q.event_writer('/dev/in', q.key_events(165), 60000000).encode())]
 
 
 @pytest.mark.parametrize('args,message', [
-    (['volume'], r'^key must be one of centre, center, return, play, next, prev$'),
-    (['play', 'x'], r'^key duration must be an integer number of milliseconds$'),
     (['play', '0'], r'^key duration must be 1..60000 ms$'),
     (['play', '60001'], r'^key duration must be 1..60000 ms$'),
 ])
 def test_input_key_errors(inputs, args, message):
     with pytest.raises(ValueError, match=message):
-        q.input_action('key', args)
+        q.main(['key', *args])
     assert not inputs.scripts
 
 
 def test_input_tap(inputs):
-    q.input_action('tap', ['10', '20'])
+    assert q.main(['tap', '10', '20']) == 0
     assert inputs.scripts == [('sh', q.event_writer('/dev/in', q.touch_batches([(10, 20)])).encode())] and inputs.kinds == ['tap']
 
 
-def test_input_tap_errors(inputs):
-    with pytest.raises(ValueError, match=r'^tap coordinates must be integers$'):
-        q.input_action('tap', ['x', '2'])
-
-
 def test_input_swipe(inputs):
-    q.input_action('swipe', ['1', '2', '3', '4'])
-    q.input_action('swipe', ['1', '2', '3', '4', '20'])
-    q.input_action('swipe', ['1', '2', '3', '4', '10000'])
+    q.main(['swipe', '1', '2', '3', '4'])
+    q.main(['swipe', '1', '2', '3', '4', '20'])
+    q.main(['swipe', '1', '2', '3', '4', '10000'])
     for script, ms in zip(inputs.scripts, (300, 20, 10000)):
         assert script == ('sh', q.event_writer('/dev/in', q.touch_batches(q.swipe_points(1, 2, 3, 4, ms))).encode())
     assert inputs.kinds == ['tap'] * 3
 
 
 @pytest.mark.parametrize('args,message', [
-    (['a', '2', '3', '4'], r'^swipe coordinates and duration must be integers$'),
     (['1', '2', '3', '4', '19'], r'^swipe duration must be 20..10000 ms$'),
     (['1', '2', '3', '4', '10001'], r'^swipe duration must be 20..10000 ms$'),
 ])
 def test_input_swipe_errors(inputs, args, message):
     with pytest.raises(ValueError, match=message):
-        q.input_action('swipe', args)
+        q.main(['swipe', *args])
+    assert not inputs.scripts
 
 
 # playback.c's wheel_apply in sixteenths of a unit, (WHEEL_TICK_UNITS * WHEEL_FINE * 50 + pct / 2) / pct.
@@ -1128,7 +1120,7 @@ def test_wheel_units_in_sixteenths(config, sixteenths):
 
 
 def test_input_wheel(inputs):
-    q.input_action('wheel', ['1'])
+    assert q.main(['wheel', '1']) == 0
     (cmd, data), = inputs.scripts
     xs = q.wheel_positions(1, 14.0)
     batches = [events((q.EV_ABS, q.ABS_X, 100), (q.EV_ABS, q.ABS_Y, 100), (q.EV_ABS, q.ABS_PRESSURE, 1),
@@ -1139,20 +1131,17 @@ def test_input_wheel(inputs):
 
 
 def test_input_wheel_step(inputs):
-    q.input_action('wheel', ['-1000', '--step-ms', '0'])
-    q.input_action('wheel', ['1000', '--step-ms', '1000'])
+    q.main(['wheel', '-1000', '--step-ms', '0'])
+    q.main(['wheel', '1000', '--step-ms', '1000'])
     assert inputs.scripts[0][1].count(b'usleep') == 0 and b'usleep 1000000' in inputs.scripts[1][1]
 
 
 def test_input_wheel_zero_is_nothing(inputs):
-    q.input_action('wheel', ['0'])
+    assert q.main(['wheel', '0']) == 0
     assert not inputs.scripts and not inputs.kinds
 
 
 @pytest.mark.parametrize('args,message', [
-    (['1', '--fast', '2'], r'^usage: wheel N \[--step-ms MS\]$'),
-    (['x'], r'^wheel travel and --step-ms must be integers$'),
-    (['1', '--step-ms', 'x'], r'^wheel travel and --step-ms must be integers$'),
     (['1', '--step-ms', '-1'], r'^--step-ms must be 0..1000$'),
     (['1', '--step-ms', '1001'], r'^--step-ms must be 0..1000$'),
     (['1001'], r'^wheel travel must be -1000..1000 ticks$'),
@@ -1160,14 +1149,18 @@ def test_input_wheel_zero_is_nothing(inputs):
 ])
 def test_input_wheel_errors(inputs, args, message):
     with pytest.raises(ValueError, match=message):
-        q.input_action('wheel', args)
+        q.main(['wheel', *args])
     assert not inputs.scripts
 
 
-def test_input_unknown_kind_writes_nothing(inputs):
-    with contextlib.suppress(ValueError):  # refused or ignored, but never written to an event node
-        q.input_action('pinch', ['1', '2'])
-    assert not inputs.scripts and not inputs.kinds
+@pytest.mark.parametrize('argv', [
+    ['key', 'volume'], ['key', 'play', 'x'], ['tap', 'x', '2'], ['swipe', 'a', '2', '3', '4'], ['wheel', 'x'],
+    ['wheel', '1', '--step-ms', 'x'], ['wheel', '1', '--fast', '2'], ['pinch', '1', '2'],
+])
+def test_input_refused_writes_nothing(inputs, argv):
+    with pytest.raises(SystemExit) as e:  # argparse's usage error, never written to an event node
+        q.main(argv)
+    assert e.value.code == 2 and not inputs.scripts and not inputs.kinds
 
 
 class Main:
@@ -1194,10 +1187,14 @@ def world(monkeypatch):
     return Main(monkeypatch)
 
 
-@pytest.mark.parametrize('argv', [[], ['-h'], ['--help']])
-def test_main_help(world, argv, capsys):
-    assert q.main(argv) == 0
-    assert capsys.readouterr().out == q.__doc__ + '\n' and not world.calls
+def test_main_help(world, capsys):
+    assert q.main([]) == 0
+    assert capsys.readouterr().out == q.parser().format_help() and not world.calls
+    for argv in (['-h'], ['--help']):
+        with pytest.raises(SystemExit) as e:
+            q.main(argv)
+        assert e.value.code == 0 and capsys.readouterr().out == q.parser().format_help()
+    assert not world.calls
 
 
 def test_main_sh(world, capsys):
@@ -1225,13 +1222,6 @@ def test_main_sh_empty(world):
 @pytest.mark.parametrize('argv,expected', [
     (['shot', 'a.png'], ('screenshot', ('a.png', False), {})),
     (['shot', '--settle', 'a.png'], ('screenshot', ('a.png', True), {})),
-    (['tap', '1', '2'], ('input_action', ('tap', ['1', '2']), {})),
-    (['key', 'play'], ('input_action', ('key', ['play']), {})),
-    (['key', 'play', '5'], ('input_action', ('key', ['play', '5']), {})),
-    (['swipe', '1', '2', '3', '4'], ('input_action', ('swipe', ['1', '2', '3', '4']), {})),
-    (['swipe', '1', '2', '3', '4', '5'], ('input_action', ('swipe', ['1', '2', '3', '4', '5']), {})),
-    (['wheel', '1'], ('input_action', ('wheel', ['1']), {})),
-    (['wheel', '1', '--step-ms', '2'], ('input_action', ('wheel', ['1', '--step-ms', '2']), {})),
     (['pull', 'a', 'b'], ('pull', ('a', 'b'), {})),
     (['reboot'], ('reboot', (False,), {})),
     (['reboot', '--wait'], ('reboot', (True,), {})),
@@ -1244,21 +1234,17 @@ def test_main_dispatch(world, argv, expected, capsys):
 
 @pytest.mark.parametrize('argv', [
     ['shot'], ['shot', '--fast', 'a.png'], ['shot', 'a', 'b', 'c'], ['state', 'x'], ['wake', 'x'], ['devices', 'x'],
-    ['push', 'a'], ['pull', 'a'], ['install'], ['install', 'a', 'b'], ['log', 'a', 'b'], ['find', 'x'],
-    ['reboot', '--now'], ['prof'], ['prof', 'x'], ['events'], ['events', '1', '2', '3'], ['nothing'], ['sh'],
+    ['push', 'a'], ['pull', 'a'], ['install'], ['install', 'a', 'b'], ['log', 'a', 'b'], ['log', 'x'], ['log', '-f', '--clear'],
+    ['log', '5', '-f'], ['find', 'x'], ['reboot', '--now'], ['prof'], ['prof', 'x'], ['prof', '1.2.3'], ['prof', '5', '--bogus'],
+    ['events'], ['events', '1', '2', '3'], ['events', 'x'], ['events', '1', 'x'], ['nothing'], ['sh'],
     ['sh', '--timeout', '5'], ['sh', 'a', 'b'],
+    ['key'], ['key', 'a', 'b', 'c'], ['tap', '1'], ['tap', '1', '2', '3'], ['swipe', '1', '2', '3'],
+    ['swipe', '1', '2', '3', '4', '5', '6'], ['wheel'], ['wheel', '1', '2'],
 ])
-def test_main_usage(world, argv):
-    with pytest.raises(ValueError, match=r'^usage: q2remote.py \{sh '):
+def test_main_usage(world, argv, capsys):
+    with pytest.raises(SystemExit) as e:
         q.main(argv)
-    assert not world.calls
-
-
-@pytest.mark.parametrize('argv', [['key'], ['key', 'a', 'b', 'c'], ['tap', '1'], ['tap', '1', '2', '3'], ['swipe', '1', '2', '3'],
-                                  ['swipe', '1', '2', '3', '4', '5', '6'], ['wheel'], ['wheel', '1', '2']])
-def test_main_input_argument_count(world, argv):
-    with pytest.raises(ValueError, match=f'^invalid arguments for {argv[0]}$'):
-        q.main(argv)
+    assert e.value.code == 2 and 'usage: q2remote.py' in capsys.readouterr().err and not world.calls
 
 
 def test_main_state(world, capsys):
@@ -1305,7 +1291,8 @@ def test_main_log_follow(world):
 
 def test_main_log_junk(world):
     with pytest.raises(ValueError, match=r'^usage: log \[LINES\|-f\|--clear\]$'):
-        q.main(['log', 'x'])
+        q.main(['log', '-1'])
+    assert not world.calls
 
 
 def test_main_find(world, capsys):
@@ -1318,16 +1305,19 @@ def test_main_prof(world, monkeypatch):
     assert q.main(['prof', '2', '--all']) == 0
     assert q.main(['prof', '3', '--build', 'B']) == 0
     assert q.main(['prof', '4', '--build', 'B', '--all']) == 0
-    assert q.main(['prof', '5', '--bogus']) == 0
+    assert q.main(['prof', '0']) == 0
     monkeypatch.setenv('Q2_BUILD', 'ENV')
     assert q.main(['prof', '6']) == 0
+    assert q.main(['prof', '7', '--build', 'B']) == 0
     assert [c[1] for c in world.calls] == [(1.5, False, None), (2.0, True, None), (3.0, False, 'B'), (4.0, True, 'B'),
-                                           (5.0, False, None), (6.0, False, 'ENV')]
+                                           (0.0, False, None), (6.0, False, 'ENV'), (7.0, False, 'B')]
 
 
-def test_main_prof_one_point_only(world):
-    with pytest.raises(ValueError, match='^usage:'):
-        q.main(['prof', '1.2.3'])
+@pytest.mark.parametrize('seconds', ['-1', 'inf', 'nan'])
+def test_main_prof_seconds(world, seconds):
+    with pytest.raises(ValueError, match=r'^prof requires S>=0$'):
+        q.main(['prof', seconds])
+    assert not world.calls
 
 
 def test_main_events(world, monkeypatch, capsys):
@@ -1343,8 +1333,6 @@ def test_main_events(world, monkeypatch, capsys):
 
 
 @pytest.mark.parametrize('args,message', [
-    (['x'], r'^events requires an integer event number and seconds$'),
-    (['1', 'x'], r'^events requires an integer event number and seconds$'),
     (['-1'], r'^events requires EVENT>=0 and 0<S<=3600$'),
     (['1', '0'], r'^events requires EVENT>=0 and 0<S<=3600$'),
     (['1', '3601'], r'^events requires EVENT>=0 and 0<S<=3600$'),
