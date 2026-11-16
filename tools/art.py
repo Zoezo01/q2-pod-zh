@@ -612,7 +612,7 @@ def orb(side, usb):
                          (shape, lambda x, y: (fill(y), 1)),
                          (stroke(disc(0, 0, ORB_RING_R), ORB_RING_W * k), lambda x, y: (ORB_RING, ORB_RING_A)),
                          (ink, lambda x, y: (ORB_INK, 1))])
-# The info screen's dark face, on a -50..50 box at CLOCK_DARK_PX: its numerals in the theme's own outlines. The hands are the payload's (navigation.c paint_clock).
+# The info screen's dark face, on a -50..50 box at CLOCK_DARK_PX: its numerals in the theme's own outlines. The hands are the payload's (clock.c paint_clock).
 CLOCK_DARK_PX = 96
 def outlines(text, size, cx, baseline):
     """text's glyphs centred on cx, in the theme's face at size, as one even-odd polygon per glyph."""

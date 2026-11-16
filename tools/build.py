@@ -130,7 +130,7 @@ HOOKS = {
     'dialog_search_dialog_init': (0x49ff6c, 'ringnav_search_init', 'search_init'),
     # The sleep timer's switch as a row, under a set that hides its toolbar (navigation.c)
     'systemset_sleepshutdown_page_init': (0x4d1224, 'ringnav_sleeptimer', 'sleeptimer'),
-    # Classic's Set Date and Set Time: the title and the selectors' changes, after stock's init (navigation.c)
+    # Classic's Set Date and Set Time: the title and the selectors' changes, after stock's init (clock.c)
     'systemset_manualtime_page_init': (0x4cc83c, 'ringnav_manualtime', 'manualtime'),
     # any Tidal track asked for, from a queue or Now Playing, wakes its stream thread (tidal.c)
     'get_tidal_trackurl': (0x483f28, 'ringnav_tidal_track', 'tidaltrack'),
@@ -1604,7 +1604,7 @@ FLAGS = ['--target=mipsel-linux-gnu','-march=mips32r2','-mabi=32','-mfp64',
          '-Wshadow','-Wimplicit-int-conversion','-Wconditional-uninitialized','-Wmissing-variable-declarations',
          '-Wvla','-Wundef']
 # navigation.c and the files split out of it (patch/navigation.h), each its own object, linked in this order.
-NAVIGATION = ['navigation.c', 'theme_engine.c', 'playlists.c', 'classic_pages.c', 'home.c', 'np_bar.c', 'volume.c', 'smart_wifi.c', 'system.c', 'usb_charge.c', 'tags.c', 'scrobble_ui.c', 'library_lists.c', 'durations.c', 'font_weight.c', 'coverflow_position.c', 'ratings.c', 'scan_folders.c', 'folder_delete.c', 'battery.c', 'np_lyrics.c', 'quick_settings.c']
+NAVIGATION = ['navigation.c', 'theme_engine.c', 'playlists.c', 'classic_pages.c', 'home.c', 'np_bar.c', 'volume.c', 'smart_wifi.c', 'system.c', 'usb_charge.c', 'tags.c', 'scrobble_ui.c', 'library_lists.c', 'durations.c', 'font_weight.c', 'coverflow_position.c', 'ratings.c', 'scan_folders.c', 'folder_delete.c', 'battery.c', 'np_lyrics.c', 'quick_settings.c', 'clock.c']
 
 def compile_payload(out):  # pragma: no mutate block
     """Compile and link the payload."""

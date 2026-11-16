@@ -337,7 +337,6 @@ void paint_panel(void *w, void *canvas, const rect_t *r, const char *shadow, int
 #define PANEL_PAD 8
 #define PANEL_DROP 2
 unsigned stops_row(const stops_t *s, int j, int h) __attribute__((pure));
-int clock_due(const void *info);
 int bar_repaint(const void *info);
 void clock_text(void *label, int negative, int t);
 void label_font(void *w, int bold);
@@ -382,7 +381,6 @@ void row_meta(void *w);
 void *staged_music(int (*query)(void *), void *arg, int *count);
 int usable(void);
 int all_songs(void *music);
-long clock_back(long long wall);
 void text_inks(void *w);
 unsigned listen_key(void *r) __attribute__((pure));
 void plays_load(void);
@@ -401,6 +399,13 @@ int named_in(const char *names, const char *name);
 int bright_tone(unsigned tone);
 int ringnav_dispatch(void *target, void *event);
 int compact_now_playing(void);
+int fields(void *top);
+void *field_widget(void *top, int f);
+void field_set(void *top, int f);
+/* A swipe between the date and time pages moves the field to that page's first. */
+static inline int field_on_page(int f, int time) { return time != (f >= 3) ? (time ? 3 : 0) : f; }
+int slider_gone(void *win, void *event);
+const char *bar_title_of(void *win, void **label);
 
 /* np_lyrics.c */
 void lyric_init(void);
@@ -417,6 +422,16 @@ void quick_scrub(void *w, void *canvas);
 void quick_poll(void);
 int quick_volume(void);
 const char *quick_wheel_toggle(void *top);
+
+/* clock.c */
+long clock_back(long long wall);
+int clock_due(const void *info);
+void clock_show(void);
+int time_click(void *target, void *event);
+int time_form(void *top);
+void time_open(void *win);
+void time_paint(void *w, void *canvas);
+void time_wheel(void *top, int f, int dir);
 
 /* font_weight.c: a marked label's foreground painted again 1 px right */
 void font_weight_paint(void *w, void *canvas);

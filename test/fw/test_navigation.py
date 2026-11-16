@@ -126,7 +126,7 @@ def test_time_zones_list_west_to_east_ties_in_their_order(fw):
         return out
     fw.mock('fw_localtime_r', local)
     rows = (C.c_ubyte * len(zones))()
-    fw.fn('navigation__tz_now', None, C.c_void_p)(rows)
+    fw.fn('clock__tz_now', None, C.c_void_p)(rows)
     assert list(rows) == sorted(order, key=lambda z: offset[names[z]])
     assert now['zone'] == names[fw.var('g_time_zone', C.c_ubyte).value]  # the saved zone is set again
 
@@ -1747,7 +1747,7 @@ class Clock:
         fw.mock('widget_set_text_utf8', lambda label, chars, *_: self.labels.append(C.string_at(chars)) and 0)
         fw.mock('timer_add', lambda fn, ctx, ms, *_: self.timers.append(ms) or 9)
         fw.var('fw_ctx_system_bar', C.c_uint).value = 0x30
-        self.show = fw.fn('navigation__clock_show', None)
+        self.show = fw.fn('clock_show', None)
 
 
 @pytest.mark.parametrize('hour, minute, twelve, full', [
