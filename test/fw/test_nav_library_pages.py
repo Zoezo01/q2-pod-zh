@@ -3059,7 +3059,7 @@ def test_a_card_app_s_album_songs_are_in_track_order(fw, ui, song):
 class Ple(C.Structure):
     _fields_ = [*((k, C.c_void_p) for k in 'page view songs picker edit match'.split()),
                 *((k, C.c_int) for k in 'dest mode selected pending nmatch'.split()),
-                ('key', C.c_uint), ('timer', C.c_uint), ('name', C.c_char * 128), ('query', C.c_char * 128)]
+                ('key', C.c_uint), ('timer', C.c_uint), ('gen', C.c_uint), ('name', C.c_char * 128), ('query', C.c_char * 128)]
 
 
 @pytest.mark.parametrize('query, titles', [(b'moon', [b'Blue Moon']), (b'ELVIS', [b'Blue Moon', b'02 Untitled']),
