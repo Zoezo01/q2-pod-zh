@@ -4433,11 +4433,13 @@ static const unsigned short bold_ranges[] = BOLD_RANGES,
 
 /* 1 iff every character of c (n < 0: up to the NUL; NULL has none) is in face's cmap. */
 static int face_has(int face, const unsigned *c, int n) {
-    const unsigned short *r = face == FONT_FOLDER_REGULAR ? folder_regular_ranges
-                              : face == FONT_CLASSIC_LIGHT ? classic_light_ranges : bold_ranges;
-    unsigned k = face == FONT_FOLDER_REGULAR ? sizeof folder_regular_ranges / sizeof *folder_regular_ranges
-                 : face == FONT_CLASSIC_LIGHT ? sizeof classic_light_ranges / sizeof *classic_light_ranges
-                                              : sizeof bold_ranges / sizeof *bold_ranges;
+    const unsigned short *r = face == FONT_FOLDER_REGULAR  ? folder_regular_ranges
+                              : face == FONT_CLASSIC_LIGHT ? classic_light_ranges
+                                                           : bold_ranges;
+    unsigned k =
+        face == FONT_FOLDER_REGULAR  ? sizeof folder_regular_ranges / sizeof *folder_regular_ranges
+        : face == FONT_CLASSIC_LIGHT ? sizeof classic_light_ranges / sizeof *classic_light_ranges
+                                     : sizeof bold_ranges / sizeof *bold_ranges;
     if (face == FONT_DEFAULT) return 1;
     if (!c) return 0;
     for (; n < 0 ? *c : n; ++c, --n) {
@@ -4455,7 +4457,8 @@ static int face_has(int face, const unsigned *c, int n) {
  * style, only when the answer (face | px << 2) differs from was; returns it. A code-built row
  * passes FONT_ROW: the answer lives in its own "_font" prop with the role above it (row_faces reads
  * it), and a role the theme leaves to the style writes nothing. */
-static const char *const font_faces[] = { "default", "bold", "classic-light", "folder-regular" }; /* [FONT_*] */
+static const char *const font_faces[] = { "default", "bold", "classic-light",
+                                          "folder-regular" }; /* [FONT_*] */
 /* bold.ttf or stock's default.ttf standing in for classic-light.ttf: that much of the px gives the
  * same capitals, their cap heights' ratio (test_ipod; stock's face, cap 183 of 299, comes to 83
  * too), so a CJK name sits a little over the capitals beside it, not a third. Only the fallback
@@ -4486,13 +4489,13 @@ int theme_font(void *w, int role, int was) {
         }
         was = widget_get_prop_int(w, "_font", -1);
     }
-    const unsigned *text = face || folder || artist ? widget_get_text(w) : (void *)0, none[1] = { 0 };
+    const unsigned *text = face || folder || artist ? widget_get_text(w) : (void *)0,
+                   none[1] = { 0 };
     if (folder || artist) {
         text = normalize_vietnamese_label(w, text);
         for (const unsigned *c = text; !face && c && *c; ++c) {
-            if ((*c >= 0x1ea0 && *c <= 0x1ef9) || *c == 0x102 || *c == 0x103 ||
-                *c == 0x110 || *c == 0x111 || *c == 0x1a0 || *c == 0x1a1 ||
-                *c == 0x1af || *c == 0x1b0)
+            if ((*c >= 0x1ea0 && *c <= 0x1ef9) || *c == 0x102 || *c == 0x103 || *c == 0x110 ||
+                *c == 0x111 || *c == 0x1a0 || *c == 0x1a1 || *c == 0x1af || *c == 0x1b0)
                 face = FONT_FOLDER_REGULAR;
         }
     }
@@ -4519,8 +4522,10 @@ int theme_font(void *w, int role, int was) {
 /* Each label under w that theme_font gave a face finds it again for its text, in its own role. */
 static void row_faces(void *w) {
     int kept = widget_get_prop_int(w, "_font", -1);
-    if (kept >= 0) theme_font(w, kept >> 16, FONT_ROW);
-    else if (folder_name_label(w)) theme_font(w, ROLE_TITLE, FONT_ROW);
+    if (kept >= 0)
+        theme_font(w, kept >> 16, FONT_ROW);
+    else if (folder_name_label(w))
+        theme_font(w, ROLE_TITLE, FONT_ROW);
     for (unsigned i = 0, n = widget_count_children(w); i < n; ++i)
         row_faces(widget_get_child(w, i));
 }
