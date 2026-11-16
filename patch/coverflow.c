@@ -121,7 +121,7 @@ unsigned hash_bytes(unsigned h, const unsigned char *s, unsigned n) {
 }
 
 unsigned fnv(unsigned h, const unsigned char *s) {
-    while (s && *s) h = hash_bytes(h, s++, 1);
+    for (; s && *s; ++s) h = (h ^ *s) * 16777619u; /* hash_bytes' step, with no call a byte */
     return h * 16777619u; /* a separator, so "ab"+"c" and "a"+"bc" differ */
 }
 
