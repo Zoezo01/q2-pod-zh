@@ -3,8 +3,8 @@
 # - A pull request mutates only the functions it adds or changes, and reports without failing.
 # - Each night mutates only what changed since the last run: mutmut keeps each function's hash and
 #   results in mutants/, cached here, and reruns the mutants of a function whose code changed.
-#   A change to test/unit, test/release.py, the requirements, or a .S, .c or .h file in tools/ starts
-#   the cache afresh.
+#   A change to test/unit, test/release.py, test/mips.py, the requirements, or a .S, .c or .h file in
+#   tools/ starts the cache afresh.
 # - Sundays, and by hand, mutate everything from scratch: a cached result can't see a change outside
 #   its own function, such as a module's constant or a function it calls. The C files test/cmut
 #   wires up are mutated then too, each whole, on a runner of its own.
@@ -42,7 +42,7 @@ jobs:
       - name: Cache key
         id: key
         # mutmut regenerates the .py files of a restored mutants/ but keeps its old copies of these, which tests read.
-        run: echo "prefix=mutmut-${{ hashFiles('test/unit/*.py', 'test/release.py', 'test/unit/requirements.txt', 'pyproject.toml', 'requirements.txt', 'tools/*.S', 'tools/*.c', 'tools/*.h') }}-" >> "$GITHUB_OUTPUT"
+        run: echo "prefix=mutmut-${{ hashFiles('test/unit/*.py', 'test/release.py', 'test/mips.py', 'test/unit/requirements.txt', 'pyproject.toml', 'requirements.txt', 'tools/*.S', 'tools/*.c', 'tools/*.h') }}-" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
           python-version: '3.12'

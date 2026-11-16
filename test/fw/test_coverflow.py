@@ -107,6 +107,7 @@ def exact(ctype, n):
     return (ctype * n).from_address(libc.calloc(n, C.sizeof(ctype)))
 
 
+# Not in conftest: it needs this file's libc, whose malloc returns a whole pointer.
 class Exact:
     def __init__(self, data):
         self.p = libc.malloc(len(data) or 1)

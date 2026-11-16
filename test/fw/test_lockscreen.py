@@ -9,7 +9,6 @@ import struct
 
 import pytest
 
-import host  # noqa: F401  # puts tools/ on the path
 import art as tools_art  # tools/, which host puts on the path
 import ipod as tools_ipod
 from conftest import O, block, Config

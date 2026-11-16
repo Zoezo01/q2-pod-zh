@@ -61,7 +61,8 @@ class Machine:
         if target:
             word = 0x0c000000 | ((self.target >> 2) & 0x03ffffff)
             for site in CALLS:
-                assert stock[fileoff(stock, site):][:4] == struct.pack('<I', 0x0c10adc4)
+                at = fileoff(stock, site)
+                assert stock[at:at + 4] == struct.pack('<I', 0x0c10adc4)
                 self.uc.mem_write(site, struct.pack('<I', word))
         self.uc.hook_add(UC_HOOK_CODE, self.code)
         self.uc.hook_add(UC_HOOK_MEM_READ, self.read)

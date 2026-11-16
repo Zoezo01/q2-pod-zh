@@ -1239,7 +1239,7 @@ def test_main_dispatch(world, argv, expected, capsys):
     ['events'], ['events', '1', '2', '3'], ['events', 'x'], ['events', '1', 'x'], ['nothing'], ['sh'],
     ['sh', '--timeout', '5'], ['sh', 'a', 'b'],
     ['key'], ['key', 'a', 'b', 'c'], ['tap', '1'], ['tap', '1', '2', '3'], ['swipe', '1', '2', '3'],
-    ['swipe', '1', '2', '3', '4', '5', '6'], ['wheel'], ['wheel', '1', '2'],
+    ['swipe', '1', '2', '3', '4', '5', '6'], ['wheel'], ['wheel', '1', '2'], ['log', '--cl'], ['reboot', '--w'],
 ])
 def test_main_usage(world, argv, capsys):
     with pytest.raises(SystemExit) as e:

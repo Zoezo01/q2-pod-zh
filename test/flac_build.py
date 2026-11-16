@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compile the player with the FLAC fast paths and with --stock-flac's stock paths, and check hook isolation."""
+"""Compile the player with the FLAC fast paths and with --stock-flac's stock paths, and check each build."""
 import argparse
 import pathlib
 import struct

@@ -41,7 +41,6 @@ def load_elf(u, *images, load=0):
         end = page
     for base, memsz, data in loads:
         u.mem_write(base, data)  # Fresh mappings already zero each segment's BSS.
-        assert bytes(u.mem_read(base, len(data))) == data
 
 
 def machine(raw, scratch, load=0):

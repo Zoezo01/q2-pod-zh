@@ -880,6 +880,9 @@ def tag_c(monkeypatch):
     return lib
 
 
+mips = runpy.run_path(str(pathlib.Path(__file__).resolve().parents[1]/'mips.py'))  # test/'s harness
+
+
 def dispatch(lib, ext, load):
     """Where lib's cover dispatch goes for ext, entered at SITE with strcasecmp's answer for m4a in v0,
     loaded at load; and what else strcasecmp was asked to compare ext with."""
@@ -888,7 +891,6 @@ def dispatch(lib, ext, load):
                                     UC_MIPS_REG_S0, UC_MIPS_REG_SP, UC_MIPS_REG_V0)
     scratch = 0x2000000
     gc.collect()  # a hooked Unicorn is in a cycle, and holds 1 GB of address space until it's collected
-    mips = runpy.run_path(str(pathlib.Path(__file__).resolve().parents[1]/'mips.py'))  # test/'s harness
     u = mips['machine'](lib, scratch, load)
     strcasecmp, name, sp = scratch, scratch + 0x100, scratch + 0x8000
     mips['word'](u, load + STRCASECMP, strcasecmp)  # as the loader fills the GOT
