@@ -612,14 +612,15 @@ static int rebuild(int keep) {
     }
     if (oldseen) free(oldseen);
     if (oldhistory) free(oldhistory);
-    /* Sort by group_cmp; each run's group is its smallest index. cycle is scratch here. Shuffle All
-     * reads no group unless Repeat is a category one, and playback_set rebuilds when either
-     * changes: its entries are then their own groups, and the sort (two deque_at a comparison)
-     * is skipped. */
+    /* Each run of the group_cmp sort is a group, named by its smallest index. Under Shuffle Songs
+     * groups are read only by a group repeat (upcoming) and by Next/Previous Album
+     * (playback_group_skip), which the hold menu offers only under shuffle >= 3 (navigation.c
+     * group_first); every change of shuffle or repeat rebuilds. So outside a group repeat each
+     * entry is its own group and the sort, two deque_at a comparison, is skipped. */
     if (s.shuffle == 1 && !category_repeat())
         for (unsigned i = 0; i < n; ++i) groups[i] = i;
     else {
-        for (unsigned i = 0; i < n; ++i) cycle[i].index = i;
+        for (unsigned i = 0; i < n; ++i) cycle[i].index = i; /* cycle is the sort's scratch */
         qsort(cycle, n, sizeof *cycle, group_before);
         for (unsigned i = 0, first = 0; i < n; ++i) {
             if (!i ||

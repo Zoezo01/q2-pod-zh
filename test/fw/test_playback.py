@@ -386,13 +386,14 @@ def test_groups_are_albums_named_alike_and_their_smallest_index(player):
         assert player.s.groups[i] == min(same)
 
 
-def test_a_track_shuffle_groups_nothing_unless_repeat_is_a_group_repeat(player):
+@pytest.mark.parametrize('repeat', [ONE_GROUP, REPEAT_GROUP])
+def test_a_track_shuffle_groups_nothing_unless_repeat_is_a_group_repeat(player, repeat):
     """Shuffle All reads no group outside a category repeat, so rebuild leaves each entry its own and doesn't sort
-    the queue into albums; choosing Group repeat rebuilds, and the albums are there."""
+    the queue into albums; choosing a group repeat rebuilds, and the albums are there."""
     player.load(player.albums(3, 2, 1))
     assert player.set(0, 1) == 1 and player.set(1, REPEAT_ALL) == 1
     assert [player.s.groups[i] for i in range(6)] == list(range(6))
-    assert player.set(1, REPEAT_GROUP) == 1
+    assert player.set(1, repeat) == 1
     for i in range(6):
         assert player.s.groups[i] == min(j for j in range(6) if player.album(j) == player.album(i))
 
@@ -499,11 +500,11 @@ def test_repeat_all_plays_whole_passes_for_ever(player, shuffle):
 def test_repeat_group_stays_in_the_album(player, shuffle):
     player.load(player.albums(3, 4, 2), 2)
     assert player.set(0, shuffle) == 1 and player.set(1, REPEAT_GROUP) == 1
-    group = player.s.groups[2]
-    size = sum(player.s.groups[i] == group for i in range(9))
+    album = player.album(2)
+    size = sum(player.album(i) == album for i in range(9))
     played = player.run(size * 3)
-    assert len(played) == size * 3 and all(player.s.groups[i] == group for i in played)
-    assert sorted(set(played)) == [i for i in range(9) if player.s.groups[i] == group]
+    assert len(played) == size * 3 and all(player.album(i) == album for i in played)
+    assert sorted(set(played)) == [i for i in range(9) if player.album(i) == album]
 
 
 def test_repeat_song_repeats_automatically_and_next_moves_on(player):
