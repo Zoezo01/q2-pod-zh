@@ -253,7 +253,6 @@ typedef struct {
      * checked by count, record and browsing-state hashes; qm_cls is the class its list holds;
      * qm_forced is a shuffle Play next. */
     unsigned long long qm_press;
-    int qs_wheel;     /* Quick Settings' wheel, 1 + Q2POD QSVOLUME once read (quick_volume) */
     unsigned qs_hold; /* Return's hold closed Quick Settings then, 0 once acted on (quick_poll) */
     unsigned qm_timer, qm_cls, qm_idx, qm_rows, qm_hash, qm_browse, qm_forced, qm_forced_hash;
     int qm_kind, qm_action, qm_choice;
@@ -395,6 +394,13 @@ char *scrobble_tag(char *o, char *end, const char *s);
 unsigned np_track(void);
 void scrub_end(void);
 void view_still(void *w);
+extern const char *const lock_names[4];
+int lock_choice(void);
+void lock_set(int choice);
+int named_in(const char *names, const char *name);
+int bright_tone(unsigned tone);
+int ringnav_dispatch(void *target, void *event);
+int compact_now_playing(void);
 
 /* np_lyrics.c */
 void lyric_init(void);
@@ -402,6 +408,15 @@ void lyric_poll(void);
 void np_full(int on);
 int np_lyrics(unsigned key);
 int np_lyric_touch(void *ctx, void *event);
+
+/* quick_settings.c */
+int quick_dispatch(void *target, void *event);
+void quick_fill(void *w);
+void quick_page(void *win, void *canvas);
+void quick_scrub(void *w, void *canvas);
+void quick_poll(void);
+int quick_volume(void);
+const char *quick_wheel_toggle(void *top);
 
 /* font_weight.c: a marked label's foreground painted again 1 px right */
 void font_weight_paint(void *w, void *canvas);

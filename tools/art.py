@@ -346,7 +346,7 @@ BLACK, WHITE = 0, 255
 def classic_light_font():
     """The theme face's source, opened once a build."""
     return TTFont(CLASSIC_LIGHT_FONT_SRC, lazy=True)
-# Quick Settings' page under Classic: navigation.c quick_page paints each 60 px button (qs_tile), and these are the glyphs
+# Quick Settings' page under Classic: quick_settings.c quick_page paints each 60 px button (qs_tile), and these are the glyphs
 # over it in the tile's ink: QS_INK, white on (_l on a bright accent, Graphite's silver), _l and _d off in the light and dark half. Own drawings; stock's image names (the demo's own
 # strings) decide which button, and QS_LIT (stock.h, qs_lit) which are on.
 def circle(cx, cy, r):

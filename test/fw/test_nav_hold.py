@@ -2250,7 +2250,7 @@ def quick(fw, ui, state, idex=-1, pressed=0):
     ui.nodes[top].props['timer_idex'] = idex
     fw.var('fw_ctx_g_dropdown_menu_state', C.c_int).value = state
     ui.pressed = pressed
-    fw.fn('navigation__quick_poll', None)()
+    fw.fn('quick_poll', None)()
     return top
 
 

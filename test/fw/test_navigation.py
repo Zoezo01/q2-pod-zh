@@ -435,20 +435,20 @@ def test_rockbox_is_a_file_on_the_card(fw, fn, path, result, mode, available):
 @pytest.mark.parametrize('flag, mode, choice', [(0, 1, 0), (1, 3, 1), (1, 2, 2), (1, 1, 3)])
 def test_lock_choice_names_stocks_modes(fw, flag, mode, choice):
     fw.var('g_keylock_flag', C.c_ubyte).value, fw.var('g_keylock_mode', C.c_ubyte).value = flag, mode
-    assert fw.fn('navigation__lock_choice', C.c_int)() == choice and not fw.calls('write_int_config')
+    assert fw.fn('lock_choice', C.c_int)() == choice and not fw.calls('write_int_config')
 
 
 @pytest.mark.parametrize('mode', [0, 4, 200])
 def test_an_unknown_lock_mode_locks_everything(fw, mode):
     fw.var('g_keylock_flag', C.c_ubyte).value, fw.var('g_keylock_mode', C.c_ubyte).value = 1, mode
-    assert fw.fn('navigation__lock_choice', C.c_int)() == 1
+    assert fw.fn('lock_choice', C.c_int)() == 1
     assert fw.var('g_keylock_mode', C.c_ubyte).value == 3 and len(fw.calls('write_int_config')) == 1
 
 
 @pytest.mark.parametrize('choice', range(4))
 def test_a_lock_choice_comes_back(fw, choice):
-    fw.fn('navigation__lock_set', None, C.c_int)(choice)
-    assert fw.fn('navigation__lock_choice', C.c_int)() == choice
+    fw.fn('lock_set', None, C.c_int)(choice)
+    assert fw.fn('lock_choice', C.c_int)() == choice
     assert [c[1][0] for c in fw.calls('write_int_config')] == [fw.var('g_keylock_mode', C.c_ubyte).value, int(choice > 0)]
 
 

@@ -1071,9 +1071,9 @@ SLIDE_PX = nav_define('SLIDE_PX')
 
 
 class Quick(C.Structure):
-    """navigation.c's quick: Quick Settings' press, hold and slider state."""
+    """quick_settings.c's quick: Quick Settings' press, hold, slider and wheel state."""
     _fields_ = [('win', C.c_void_p), ('icon', C.c_void_p), ('slider', C.c_void_p), ('pressed', C.c_void_p), ('timer', C.c_uint),
-                ('x', C.c_int), ('y', C.c_int), ('sx', C.c_int), ('sy', C.c_int), ('slide', C.c_int)]
+                ('x', C.c_int), ('y', C.c_int), ('sx', C.c_int), ('sy', C.c_int), ('slide', C.c_int), ('wheel', C.c_int)]
 
 
 class Ple(C.Structure):
@@ -1211,7 +1211,7 @@ class QuickPage:
         self.slider = ui.add('slider', ui.add('view', self.dialog), (40, 200, 300, 30), 'slider_backlight')
         self.state = C.c_int.from_address(C.addressof(fw.var('fw_ctx_g_dropdown_menu_state', C.c_char)))
         self.state.value = state
-        self.quick = fw.var('navigation__quick', Quick)
+        self.quick = fw.var('quick_settings__quick', Quick)
 
 
 def test_the_brightness_slider_takes_a_sideways_drag(fw, st):
@@ -1270,7 +1270,7 @@ def test_settings_brightness_slider_is_stocks_alone(fw, st):
     slider = ui.add('slider', ui.window('backlight_page'), name='slider_backlight')
     stock = Stock(fw, ui)
     stock.send(slider, POINTER_DOWN, x=100, y=210)
-    assert stock.seen == [(slider.addr, POINTER_DOWN, 100, 210)] and not fw.var('navigation__quick', Quick).slider
+    assert stock.seen == [(slider.addr, POINTER_DOWN, 100, 210)] and not fw.var('quick_settings__quick', Quick).slider
 
 
 def pressdown(fw):

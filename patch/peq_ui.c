@@ -1231,8 +1231,8 @@ int peq_page_init(void *page, void *context) {
     return 0;
 }
 
-/* The open EQ page closed so another opens in its place (navigation.c quick_long, over a page that
- * Return's hold opened above it, #397): its state let go now, as its Return would, since its
+/* The open EQ page closed so another opens in its place (quick_settings.c quick_long, over a page
+ * that Return's hold opened above it, #397): its state let go now, as its Return would, since its
  * window's destroy may come after the new page's init, and a second page would share this one
  * state. */
 void peq_page_replace(void *old) {

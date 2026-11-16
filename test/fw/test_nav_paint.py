@@ -1235,7 +1235,7 @@ def test_another_dialog_s_labels_stay(fw, world):
 # Quick Settings.
 
 def test_named_in_a_nul_separated_list(fw):
-    named = fw.fn('navigation__named_in', C.c_int, C.c_char_p, C.c_char_p)
+    named = fw.fn('named_in', C.c_int, C.c_char_p, C.c_char_p)
     names = b'drop_wifi\0drop_bt\0drop_lo\0'
     assert [named(names, n) for n in (b'drop_wifi', b'drop_bt', b'drop_lo', b'drop', b'drop_btx', b'')] == [1, 1, 1, 0, 0, 0]
     assert named(b'', b'drop_wifi') == 0
@@ -1248,7 +1248,7 @@ SILVER = O['GLYPH_LIGHT_MAX']
                                           *((a[RED], int(luma(a[RED]) > SILVER)) for a in ACCENTS)])
 def test_a_bright_tone_is_one_over_graphite_s_silver_line(fw, tone, bright):
     """Perceived brightness over GLYPH_LIGHT_MAX: a grey's is its own level, so the line falls between two greys."""
-    assert fw.fn('navigation__bright_tone', C.c_int, C.c_uint)(tone) == bright
+    assert fw.fn('bright_tone', C.c_int, C.c_uint)(tone) == bright
 
 
 def quick_window(world, **icons):
@@ -1300,7 +1300,7 @@ def test_a_quick_label_wraps_at_the_last_space_that_fits(fw, world, text, lines)
     label = world.add(win, 'label_wifi', 'label', text=text)
     canvas = Canvas(fw)
     x, y = 100, 200  # its first line's box
-    fw.fn('navigation__quick_label', None, C.c_void_p, C.c_void_p, C.c_int, C.c_int)(canvas.p, label, x, y)
+    fw.fn('quick_settings__quick_label', None, C.c_void_p, C.c_void_p, C.c_int, C.c_int)(canvas.p, label, x, y)
     assert [t for t, *_ in canvas.texts] == lines
     boxes = [r for _, r, *_ in canvas.texts]
     box = world.at(label)
@@ -1311,7 +1311,7 @@ def test_a_quick_label_wraps_at_the_last_space_that_fits(fw, world, text, lines)
     assert {c for _, _, c, _ in canvas.texts} == {0xffffffff}  # white in the light half too: final
     assert world[label].props['style:normal:text_color'] == 0  # its own ink clear
     sets = len(fw.calls('widget_set_prop_int'))
-    fw.fn('navigation__quick_label', None, C.c_void_p, C.c_void_p, C.c_int, C.c_int)(canvas.p, label, x, y)
+    fw.fn('quick_settings__quick_label', None, C.c_void_p, C.c_void_p, C.c_int, C.c_int)(canvas.p, label, x, y)
     assert len(fw.calls('widget_set_prop_int')) == sets  # the box once
 
 
@@ -1319,13 +1319,13 @@ def test_an_empty_quick_label_draws_nothing(fw, world):
     theme(fw, CLASSIC)
     label = world.add(world.window('statusbar_dialog', 'dialog'), 'label_wifi', 'label', text='')
     canvas = Canvas(fw)
-    fw.fn('navigation__quick_label', None, C.c_void_p, C.c_void_p, C.c_int, C.c_int)(canvas.p, label, 100, 200)
+    fw.fn('quick_settings__quick_label', None, C.c_void_p, C.c_void_p, C.c_int, C.c_int)(canvas.p, label, 100, 200)
     assert canvas.texts == [] and fw.calls('widget_move_resize') == []
 
 
 class Quick(C.Structure):
     _fields_ = [*((n, C.c_void_p) for n in ('win', 'icon', 'slider', 'pressed')), ('timer', C.c_uint),
-                *((n, C.c_int) for n in ('x', 'y', 'sx', 'sy', 'slide'))]
+                *((n, C.c_int) for n in ('x', 'y', 'sx', 'sy', 'slide', 'wheel'))]
 
 
 ICONS = ['img_wifiswitch', 'img_btswitch', 'img_lock', 'img_gain', 'img_usbmode', 'img_po', 'img_playset', 'img_sysset']
@@ -1341,7 +1341,7 @@ def quick_page(fw, world, images, light='0', pressed=None, **config):
         icons[name] = world.add(win, name, 'image', box=(30 + 80 * (i % 4), 40 + 100 * (i // 4), 60, 60), image=image)
         world.add(win, LABELS[name], 'label', box=(0, 0, 80, 18), text='Label')
     if pressed:
-        fw.var('navigation__quick', Quick).pressed = icons[pressed]
+        fw.var('quick_settings__quick', Quick).pressed = icons[pressed]
     canvas = Canvas(fw)
     paint_bg(fw, win, canvas)
     return win, icons, canvas
@@ -1426,7 +1426,7 @@ def scrub(fw, world, slider, value):
     """Quick Settings' brightness slider at value, painted after stock's: the canvas."""
     world.set(slider, 'value', value)
     canvas = Canvas(fw)
-    fw.fn('navigation__quick_scrub', None, C.c_void_p, C.c_void_p)(slider, canvas.p)
+    fw.fn('quick_scrub', None, C.c_void_p, C.c_void_p)(slider, canvas.p)
     return canvas
 
 
@@ -1485,7 +1485,7 @@ def test_the_brightness_track_is_classic_s_alone(fw, world):
     theme(fw, MINIMAL)
     _, _, slider = quick_window(world)
     canvas = Canvas(fw)
-    fw.fn('navigation__quick_scrub', None, C.c_void_p, C.c_void_p)(slider, canvas.p)
+    fw.fn('quick_scrub', None, C.c_void_p, C.c_void_p)(slider, canvas.p)
     assert canvas.fills == [] and canvas.arts == []
 
 
