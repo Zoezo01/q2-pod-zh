@@ -185,7 +185,8 @@ void bar_title(void *bar, void *top) {
     if (usb) {
         widget_set_text_utf8(word, "");
         widget_set_visible(word, 0, 0);
-        st.bar_named = st.bar_titled = 0;
+        st.bar_named = 0;
+        st.bar_titled = 1; /* the clock makes way, as under a title */
         st.clock_key = 0;
         widget_set_text(clock, &none);
         return;
