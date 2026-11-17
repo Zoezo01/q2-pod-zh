@@ -2855,8 +2855,8 @@ def test_a_check_keeps_the_games_section_in_the_cards_list(fw):
 
 
 @pytest.mark.parametrize('theme', (b'0', b'1', b'2'))  # Minimal, Classic, Modern
-def test_app_store_paints_a_rows_tile_and_state_and_the_tabs_badges(fw, theme):
-    from test_games import Canvas, config, words
+def test_app_store_paints_a_rows_state_as_a_word_and_the_tabs_badges(fw, theme):
+    from test_games import Canvas, config, grey, tone, words
     config(fw, THEME=theme)
     props, strs = {}, {}
     fw.mock('widget_set_prop_int', lambda w, k, v, *_: props.__setitem__((w, C.string_at(k)), C.c_int(v).value) or 0)
@@ -2876,13 +2876,17 @@ def test_app_store_paints_a_rows_tile_and_state_and_the_tabs_badges(fw, theme):
         fw.fn('store_paint', None, C.c_void_p, C.c_void_p)(w, canvas.p)
         return canvas.ops, [t.upper() for t, _, _ in words(canvas.ops)]
     row = widget(fw.fn('page_h', C.c_int, C.c_int)(64))
-    fw.fn('store_row', None, C.c_void_p, C.c_char_p, C.c_char_p)(row, b'foo', b'Foo')
     fw.fn('store_state', None, C.c_void_p, C.c_int)(row, ST_UPDATE)
     ops, texts = painted(row)
-    assert 'F' in texts and 'UPDATE' in texts  # the tile's letter, the state
-    assert (theme == b'0') != any(o.rect and o.rect[0] == 375 - 16 - 84 and o.rect[2] == 84 for o in ops)  # a button but in Minimal
+    assert texts == ['UPDATE'] and {o.kind for o in ops} == {'text'}  # the state, a word alone: no tile, no box
+    # Classic's face draws smaller at a px than stock's: its sizes take its rows' step, 27 to 20
+    assert {o.px for o in ops} == {16 if theme == b'1' else 12}
+    assert words(ops)[0][1] == (0xffffffff if theme == b'0' else tone(fw, 0))  # in the accent, Minimal's in white
+    fw.fn('store_state', None, C.c_void_p, C.c_int)(row, ST_INSTALL)
+    ops, texts = painted(row)
+    assert texts == ['INSTALL'] and grey(words(ops)[0][1])  # the others muted
     fw.fn('store_state', None, C.c_void_p, C.c_int)(row, -1)
-    assert painted(row)[1] == ['F']  # busy: the second line says it
+    assert painted(row)[0] == []  # busy: the second line says it
     strip = widget(48 if theme != b'1' else 44)
     fw.fn('store_tabs_set', None, C.c_void_p, C.c_int, C.POINTER(C.c_int))(strip, 1, (C.c_int * 2)(0, 2))
     ops, texts = painted(strip)
@@ -2890,6 +2894,7 @@ def test_app_store_paints_a_rows_tile_and_state_and_the_tabs_badges(fw, theme):
     assert 'APPS' in texts and 'GAMES' in texts and '2' in texts
     # the disc ends 10 px inside its half (14 + 2 * 173), clear of the name beside it; Minimal has none
     assert (theme == b'0') != any(o.rect and (o.rect[0], o.rect[2]) == (350 - 16, 16) for o in ops)
+    assert {o.px for o in ops if o.kind == 'text'} == {b'0': {17, 12}, b'1': {23, 15}, b'2': {16, 11}}[theme]  # names, count
     fw.var('app_store__on_page', C.c_char).value = b'\x00'
     assert painted(row)[0] == []  # the page closed: nothing
 
@@ -2901,8 +2906,6 @@ def test_a_selected_rows_state_takes_the_rows_ink_as_stocks_labels_do(fw, st):
     props = {}
     fw.mock('widget_set_prop_int', lambda w, k, v, *_: props.__setitem__((w, C.string_at(k)), C.c_int(v).value) or 0)
     fw.mock('widget_get_prop_int', lambda w, k, d, *_: props.get((w, C.string_at(k)), d))
-    tile = C.create_string_buffer(b'F')
-    fw.mock('widget_get_prop_str', lambda w, k, d, *_: C.addressof(tile) if C.string_at(k) == b'_tile' else d)
     fw.var('app_store__on_page', C.c_char).value = b'\x01'
     h = fw.fn('page_h', C.c_int, C.c_int)(64)
     row, view = block(fw, size=0x200), block(fw, size=0x200)
@@ -2956,19 +2959,18 @@ def test_a_checks_age_counts_the_time_slept_in_standby(fw):
 
 
 def test_rockbox_s_armed_line_runs_to_the_rows_end_with_no_state_beside_it(fw):
-    """\"Starts at power-on. Press again to install" (258 px in Classic) needs the room the state's box leaves."""
+    """\"Starts at power-on. Press again to install" (258 px in Classic) needs the room the state's word leaves."""
     moved = {}
     props = {}
     fw.mock('widget_get_child', lambda item, i, *_: 500 + i)
     fw.mock('widget_move_resize', lambda w, x, y, wd, h, *_: moved.__setitem__(w, (x, wd)) or 0)
     fw.mock('widget_set_prop_int', lambda w, k, v, *_: props.__setitem__((w, C.string_at(k)), C.c_int(v).value) or 0)
     fw.mock('widget_get_prop_int', lambda w, k, d, *_: props.get((w, C.string_at(k)), d))
-    fw.fn('store_row', None, C.c_void_p, C.c_char_p, C.c_char_p)(9, b'rockbox', b'Rockbox')
-    state = fw.fn('store_state', None, C.c_void_p, C.c_int)
-    state(9, -1)  # armed: no box
-    assert moved[501] == (72, 375 - 16 - 72)
+    state, x = fw.fn('store_state', None, C.c_void_p, C.c_int), fw.fn('page_x', C.c_int)()
+    state(9, -1)  # armed: no state
+    assert moved[501] == (x, 375 - 16 - x)
     state(9, ST_INSTALL)
-    assert moved[501] == (72, 375 - 16 - 84 - 8 - 72) and moved[500] == moved[501]  # clear of the box, as the name
+    assert moved[501] == (x, 375 - 16 - 84 - 8 - x) and moved[500] == moved[501]  # clear of the state, as the name
 
 
 def test_a_press_held_for_wifi_through_a_real_click_follows_its_app(fw):

@@ -1,5 +1,5 @@
-/* The App Store's look (docs/internals.md#q2-shelf): its Apps and Games tabs over the list, and on
- * each app's row a tile and its state, drawn flat in every theme (no gloss). Classic and Modern
+/* The App Store's look (docs/internals.md#q2-shelf): its Apps and Games tabs over the list, and at
+ * each app's row's end its state, a word, drawn flat in every theme (no gloss). Classic and Modern
  * have a two-part switch, the open half in the accent, Classic's on a strip under its bar and
  * Modern's in the page's title row; Minimal names the tabs in its title row, the open one by a dot.
  * A tab with apps that can be updated has a badge with their count, red, or on the open
@@ -9,26 +9,27 @@
 #include "navigation.h" /* st: the selected row; theme(), scheme() */
 
 #define STRIP_H 44 /* Classic's strip, its bar holding the title */
-#define TILE 40    /* the tile's side, from x 20 */
-#define TEXT_X 72  /* a row's text, past the tile */
-#define PILL_W 84  /* the state's box, 16 px in from the right */
-#define PILL_H 22
-#define PILL_X (375 - 16 - PILL_W)
+/* The state's room at a row's end: the row's labels end 8 px before it. */
+#define STATE_X (375 - 16 - 84)
 #define SEG_X 14 /* the switch's box, SEG_H high, centred in the strip */
 #define SEG_H 30
 #define RIM 0x717171 /* Classic's rims: #8E8E8E on its paper, Light Mode's flip */
 #define BADGE 0xe0261b
 #define GAMES_X 120 /* Minimal's Games name, Apps' from 36 */
 
-/* The tiles' flat colours, by the app's id: stand-ins for icons the list can't show. */
-static const unsigned hues[] = { 0x5a6b7d, 0x8d6bd6, 0x2fb85a, 0xe8962a, 0xb05ad8,
-                                 0xe05a4a, 0x3f8fe0, 0xd9a400, 0xe8557e, 0x2a9d8f };
-
 static char on_page __attribute__((section(".scratch"))); /* the App Store's page is open */
 static unsigned tab_timer __attribute__((section(".scratch")));
 static int tab_want __attribute__((section(".scratch")));
 
 static int strip_h(void) { return theme()->page_title_h ? theme()->page_title_h : STRIP_H; }
+
+/* A size given for stock's face, in the theme's: Classic's draws 0.70 of its px where stock's
+ * draws 0.86 (AWTK scales a face by its ascent to descent, not its em), so its rows are 27 px to
+ * the others' 20 and a size takes the same step. At the plain px its words were unreadably small.
+ */
+static unsigned face_px(unsigned px) {
+    return theme()->font[ROLE_TITLE] == FONT_CLASSIC_LIGHT ? (px * 27 + 10) / 20 : px;
+}
 
 static int tab_go(const void *unused) {
     tab_timer = 0;
@@ -77,31 +78,16 @@ void store_tabs_set(void *strip, int tab, const int *updates) {
     widget_invalidate_force(strip, 0);
 }
 
-/* page_row_detail's item for the app with id and name: its name moved past the tile and clear of
- * the state's box (its second line by store_state), the tile's colour and letters kept for
- * store_paint. */
-void store_row(void *item, const char *id, const char *name) {
-    const theme_t *T = theme(); /* page_row_detail's boxes for a row with a detail */
-    widget_move_resize(widget_get_child(item, 0), TEXT_X, T->page_cap_y, PILL_X - 8 - TEXT_X,
-                       T->page_cap_h);
-    char letters[8];
-    /* the first character, or two digits ("20" for 2048) */
-    unsigned n = 1;
-    while (name[n] && ((unsigned char)name[n] & 0xc0) == 0x80 && n < 4) ++n;
-    if (name[0] >= '0' && name[0] <= '9' && name[1] >= '0' && name[1] <= '9') n = 2;
-    snprintf(letters, sizeof letters, "%.*s", (int)n, name);
-    widget_set_prop_str(item, "_tile", letters);
-    widget_set_prop_int(item, "_hue",
-                        (int)(hash_bytes(FNV_SEED, (const unsigned char *)id, strlen(id)) %
-                              (sizeof hues / sizeof *hues)));
-}
-
-/* The row's state for its box: 0 Install, 1 Update, 2 Installed, -1 none (its second line says
- * what is happening, and runs to the row's end). */
+/* An app's row (page_row_detail's item) and its state for the row's end: 0 Install, 1 Update,
+ * 2 Installed, -1 none (its second line says what is happening, and runs to the row's end). Its
+ * name stays clear of the state's word. */
 void store_state(void *item, int state) {
-    if (widget_get_prop_int(item, "_state", -2) == state) return; /* -2: store_row's, none yet */
-    widget_move_resize(widget_get_child(item, 1), TEXT_X, theme()->page_det_y,
-                       (state < 0 ? 375 - 16 : PILL_X - 8) - TEXT_X, theme()->page_det_h);
+    if (widget_get_prop_int(item, "_state", -2) == state) return; /* -2: none yet */
+    const theme_t *T = theme(); /* page_row_detail's boxes for a row with a detail */
+    int x = T->page_x, w = STATE_X - 8 - x;
+    widget_move_resize(widget_get_child(item, 0), x, T->page_cap_y, w, T->page_cap_h);
+    widget_move_resize(widget_get_child(item, 1), x, T->page_det_y, state < 0 ? 375 - 16 - x : w,
+                       T->page_det_h);
     widget_set_prop_int(item, "_state", state);
     widget_invalidate_force(item, 0);
 }
@@ -120,13 +106,6 @@ static unsigned lit_ink(int *raw) {
     return *raw ? on_accent() : scheme()->flags & SCHEME_CARD ? 0x171717 : 0xffffff;
 }
 
-static void raw_text(void *canvas, const char *s, int x, int y, int h, unsigned px, unsigned c,
-                     int align, int raw) {
-    if (raw) ui_ink_raw(1);
-    text_at(canvas, s, x, y, h, px, rgba(c, 255), align);
-    if (raw) ui_ink_raw(0);
-}
-
 /* A tab's count, ending at right: its half's far end, as beside the name it ran into "Games". */
 static void badge(void *canvas, int right, int cy, int n, int open) {
     char d[12];
@@ -135,7 +114,8 @@ static void badge(void *canvas, int right, int cy, int n, int open) {
     rect_t r = { right - w, cy - 8, w, 16 };
     ui_ink_raw(1);
     fill_box(canvas, &r, rgba(open ? on_accent() : BADGE, 255), 8);
-    caption(canvas, d, r.x, r.y, r.w, r.h, 11, rgba(open ? accent_tone(0) : 0xffffff, 255));
+    caption(canvas, d, r.x, r.y, r.w, r.h, face_px(11),
+            rgba(open ? accent_tone(0) : 0xffffff, 255));
     ui_ink_raw(0);
 }
 
@@ -190,64 +170,24 @@ static void paint_strip(void *w, void *canvas) {
         unsigned c = i == tab ? on_accent() : classic ? 0xffffff : accent;
         if (i == tab || !classic) ui_ink_raw(1);
         rect_t r = { cx - half / 2, y, half, SEG_H };
-        caption(canvas, names[i], r.x, r.y, r.w, r.h, classic ? 17 : 16, rgba(c, 255));
+        caption(canvas, names[i], r.x, r.y, r.w, r.h, face_px(classic ? 17 : 16), rgba(c, 255));
         ui_ink_raw(0);
         if (n[i]) badge(canvas, SEG_X + half * (i + 1) - 10, y + SEG_H / 2, n[i], i == tab);
     }
 }
 
-/* An app's row: the tile and the state, after stock drew its labels. On the selected row the
- * state takes the row's ink (lit_ink), and Modern's box the band's colours. */
-static void paint_row(void *w, void *canvas, const char *letters) {
-    const theme_t *T = theme();
-    int h = I(w, W_H), state = widget_get_prop_int(w, "_state", -1),
-        sel = T->painter[PAINT_SELECTION],
-        lit = st.sel_w == P(w, W_PARENT) && st.sel_row == I(w, W_Y) / h, raw = 0;
-    rect_t tile = { 20, (h - TILE) / 2, TILE, TILE };
-    if (T->icons_mono) { /* Minimal's grey tiles */
-        fill_box(canvas, &tile, rgba(0x2a2a2a, 255), 9);
-        caption(canvas, letters, tile.x, tile.y, TILE, TILE, 21, rgba(0xd8d8d8, 255));
-    } else {
-        ui_ink_raw(1);
-        fill_box(canvas, &tile, rgba(hues[widget_get_prop_int(w, "_hue", 0)], 255), 9);
-        caption(canvas, letters, tile.x, tile.y, TILE, TILE, 21, rgba(0xffffff, 255));
-        ui_ink_raw(0);
-    }
-    if (state < 0) return;
+/* An app's row: its state, a word at the row's end, after stock drew its labels. Update is in the
+ * accent (Minimal: white) and the others muted; on the selected row, the row's ink (lit_ink). The
+ * accent goes through Light Mode's flip, which keeps a colour and turns a neutral accent dark. */
+static void paint_row(void *w, void *canvas, int state) {
     static const char *const words[3] = { "INSTALL", "UPDATE", "INSTALLED" };
-    unsigned accent = accent_tone(0), ink = lit ? lit_ink(&raw) : 0xffffff;
-    rect_t box = { PILL_X, (h - PILL_H) / 2, PILL_W, PILL_H },
-           in = { box.x + 1, box.y + 1, PILL_W - 2, PILL_H - 2 };
-    int mid = box.x + PILL_W / 2;
-    if (sel == SEL_CARD || state == 2) { /* Minimal's word alone, and Installed in every theme */
-        raw_text(canvas, words[state], sel == SEL_CARD ? 375 - 16 : 375 - 20, 0, h, 12,
-                 lit                             ? ink
-                 : state == 1 && sel == SEL_CARD ? 0xffffff
-                                                 : SUDO_MUTED,
-                 RIGHT, raw);
-        return;
-    }
-    if (sel == SEL_STOPS) { /* Classic: a grey rim, white on the band */
-        ui_ink_raw(raw);
-        fill_box(canvas, &box, rgba(lit ? ink : RIM, 255), 5);
-        ui_ink_raw(0);
-        if (!lit) fill_box(canvas, &in, rgba(0, 255), 4);
-        raw_text(canvas, words[state], mid, 0, h, 12, lit ? accent : 0xffffff, MID, raw);
-        return;
-    }
-    /* Modern: the accent's rim round the paper, Update filled with the band's ink on it; on the
-     * band, the row's ink round the band's colour, the band's own when Light Mode flips it */
-    int rim_raw = !lit || raw;
-    unsigned rim = lit ? ink : accent;
-    ui_ink_raw(rim_raw);
-    fill_box(canvas, &box, rgba(rim, 255), PILL_H / 2);
-    ui_ink_raw(raw);
-    if (state == 0) fill_box(canvas, &in, rgba(lit ? accent : 0, 255), PILL_H / 2 - 1);
-    ui_ink_raw(0);
-    if (state == 0)
-        raw_text(canvas, words[state], mid, 0, h, 12, rim, MID, rim_raw);
-    else
-        raw_text(canvas, words[state], mid, 0, h, 12, lit ? accent : on_accent(), MID, !lit || raw);
+    int h = I(w, W_H), card = theme()->painter[PAINT_SELECTION] == SEL_CARD,
+        lit = st.sel_w == P(w, W_PARENT) && st.sel_row == I(w, W_Y) / h, raw = 0;
+    unsigned ink = lit ? lit_ink(&raw) : state != 1 ? SUDO_MUTED : card ? 0xffffff : accent_tone(0);
+    if (raw) ui_ink_raw(1);
+    text_at(canvas, words[state], card ? 375 - 16 : 375 - 20, 0, h, face_px(12), rgba(ink, 255),
+            RIGHT);
+    if (raw) ui_ink_raw(0);
 }
 
 /* ringnav_paint, every widget after stock painted it: the App Store's strip and its apps' rows. */
@@ -256,9 +196,9 @@ void store_paint(void *w, void *canvas) {
     int h = I(w, W_H);
     if (h != strip_h() && h != page_h(64)) return; /* no prop lookups for other widgets */
     unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
-    const char *letters = widget_get_prop_str(w, "_tile", 0);
-    if (letters)
-        paint_row(w, canvas, letters);
+    int state = widget_get_prop_int(w, "_state", -1);
+    if (state >= 0)
+        paint_row(w, canvas, state);
     else if (widget_get_prop_int(w, "_tab", -1) >= 0)
         paint_strip(w, canvas);
     stock_canvas_set_fill_color(canvas, fill);

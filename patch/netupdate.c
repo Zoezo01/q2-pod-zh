@@ -1165,7 +1165,6 @@ static void sh_rows(void) {
             sh.row[r] =
                 page_row_detail(view, r, i == ROW_CHECK ? "Check for Updates" : apps[i].name,
                                 theme()->sep[0].n ? " " : "", sh_click);
-            if (i != ROW_CHECK) store_row(sh.row[r], apps[i].id, apps[i].name);
         }
         sh.rows = n;
     }

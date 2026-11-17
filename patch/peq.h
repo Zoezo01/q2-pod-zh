@@ -699,7 +699,6 @@ int shelf_key(void *top, unsigned key); /* netupdate.c: Previous and Next switch
 /* app_store.c: the App Store's tabs and rows, drawn in ringnav_paint (store_paint) */
 void *store_tabs(void *page, void *view);
 void store_tabs_set(void *strip, int tab, const int *updates);
-void store_row(void *item, const char *id, const char *name);
 void store_state(void *item, int state);
 void store_paint(void *w, void *canvas);
 /* games.c: s in the theme's face at px, h rows from y: align 0 from x, 1 centred on it, 2 ending at
