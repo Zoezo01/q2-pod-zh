@@ -2,7 +2,7 @@
  * then Now Playing's lyrics page (docs/ipod.md#lyrics,
  * docs/internals.md#word-timed-lyrics): large lines, the playing one in the middle, lit word by
  * word as it is sung. Stock's rows stay, one blank label a line as high as it, so its scroll view,
- * the wheel and the follow move them as before (navigation.c); each row's line is painted over it
+ * the wheel and the follow move them as before (np_lyrics.c); each row's line is painted over it
  * here. */
 #include "offsets.inc"
 #include "peq.h"
@@ -415,7 +415,7 @@ static void ly_layout(void *canvas, ly_line *l) {
     l->px = LYRIC_PX, l->rows = (unsigned char)(rows < LYRIC_ROWS ? rows : LYRIC_ROWS);
 }
 
-/* Stock built lrc's rows (navigation.c ringnav_lyric_rows), a label a line: their table is the
+/* Stock built lrc's rows (np_lyrics.c ringnav_lyric_rows), a label a line: their table is the
  * loader's for those lines, else the last one, else one made from the labels (stock's text and
  * whole seconds, without word stamps). Each becomes a blank row as high as its line's rows plus
  * LYRIC_GAP, laid out with the canvas's font, which the list layout puts after a blank LYRIC_SLOT.
@@ -448,7 +448,7 @@ int lyrics_rows(void *lrc) {
 }
 
 /* The page's rows laid out at lrc's width, again when it changes: the iPod page's span the
- * screen, the centred (stock) page's its 225 px column, or the screen in full screen (navigation.c
+ * screen, the centred (stock) page's its 225 px column, or the screen in full screen (np_lyrics.c
  * np_full). */
 int lyrics_fit(void *lrc) {
     if (!lyrics_on(lrc)) return 0; /* none, or out of memory: stock's rows stay */
@@ -591,7 +591,7 @@ static void ly_dirty(void *lrc, int k) {
         widget_invalidate_force(widget_get_child(lrc, k), (void *)0);
 }
 
-/* Every UI pass on Now Playing (navigation.c lyric_poll), at ms: the loader's table if it came
+/* Every UI pass on Now Playing (np_lyrics.c lyric_poll), at ms: the loader's table if it came
  * after the rows, and the playing line, which the follow centres. While the lyrics page shows
  * (page) the playing rows repaint as their lit width moves, at most every LYRIC_PAINT_MS, and
  * the last ones as it moves on: a word-timed line's width moves nearly every pass, and the idle

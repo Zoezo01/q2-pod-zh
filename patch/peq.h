@@ -624,7 +624,8 @@ int stream_ipod(void *art, void *const text[4], void *elapsed, void *remain, voi
  * they moved. Not in a paint. */
 int ipod_times(void *elapsed, void *remain, void *bar, int sec);
 int ipod_bar(void *canvas, int x, int y, int bw, int on, int mark);
-/* navigation.c's painters for Classic's info screen (lockscreen.c); colours are final. */
+/* navigation.c's and clock.c's painters for Classic's info screen (lockscreen.c); colours are
+ * final. */
 typedef struct {
     unsigned rgb;       /* 0xRRGGBB */
     short r;            /* a disc's radius in tenths of the -50..50 box; 0: pts */

@@ -2704,11 +2704,18 @@ def test_the_lyrics_end_on_a_whole_row(fw, st):
     assert [c[1][:4] for c in fw.calls('scroll_view_scroll_to')] == [(lrc.addr, 0, 60, 300)]
 
 
+@pytest.fixture
+def ly(fw, library):
+    """np_lyrics.c's own state, ly, by field."""
+    base, at = C.addressof(fw.var('np_lyrics__nl', C.c_char)), host.offsets(library.parent/'np_lyrics.o', 'nl')
+    return lambda name, ctype=C.c_int: ctype.from_address(base + at[name])
+
+
 @pytest.mark.parametrize('held, spun, pressed', [(1, 0, 0), (0, 2, 0), (0, 0, 1)])
-def test_lyrics_the_wheel_or_a_finger_moved_stay(fw, st, held, spun, pressed):
+def test_lyrics_the_wheel_or_a_finger_moved_stay(fw, st, ly, held, spun, pressed):
     ui = Ui(fw)
     lrc = lyrics(fw, st, ui, np=True)
-    st('lyric_held').value, st('lyric_spun').value = held, spun
+    st('lyric_held').value, ly('lyric_spun').value = held, spun
     ui.pressed = pressed
     assert follow(fw, lrc, 60) == 0 and not fw.calls('scroll_view_scroll_to')
 
@@ -2724,7 +2731,7 @@ def glided(fw, lrc, now, passes=60, ms=16):
     """The offsets the glide's steps (lyric_step, each UI pass, ms apart on the clock now) move the
     lyrics through, the view taking each one as stock's setter does."""
     fw.mock('scroll_view_set_offset', lambda w, x, y, *_: struct.pack_into('<i', lrc.block, O['SCROLL_Y'], i32(y)))
-    step = fw.fn('navigation__lyric_step', None, C.c_void_p)
+    step = fw.fn('np_lyrics__lyric_step', None, C.c_void_p)
     seen = []
     for _ in range(passes):
         now[0] += ms
@@ -2800,7 +2807,7 @@ def test_rows_for_another_song_start_at_the_top(fw, st):
     assert offsets() == [(lrc.addr, 0, 0)]
     # held no more: the page's follow (off the page, a jump) takes them to the playing line, none yet
     lrc.int_at(O['SCROLL_Y']).value = 50
-    fw.fn('navigation__lyric_follow', None, C.c_void_p, C.c_int, C.c_int, C.c_int)(lrc.addr, 0, 0, 0)
+    fw.fn('np_lyrics__lyric_follow', None, C.c_void_p, C.c_int, C.c_int, C.c_int)(lrc.addr, 0, 0, 0)
     assert offsets() == [(lrc.addr, 0, 0)] * 2
     rows_rebuilt(fw, ui.top)
     assert offsets()[2:] == [(lrc.addr, 0, 50)]

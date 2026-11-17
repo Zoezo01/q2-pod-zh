@@ -129,7 +129,7 @@ LIBC = {
     'opendir': ('void *', 'const char *'), 'closedir': ('int', 'void *'),
     'readdir': ('struct dirent *', 'void *'),
     'qsort': ('void', 'void *, unsigned, unsigned, int (*)(const void *, const void *)'),
-    # libcstl and socket imports for the Play/Pause queue menu in navigation.c
+    # libcstl and socket imports for the Play/Pause queue menu (queue_menu.c)
     '_create_deque': ('void *', 'const char *'), 'deque_init': ('void', 'void *'),
     'deque_init_copy': ('void', 'void *, const void *'), 'deque_size': ('unsigned', 'const void *'),
     'deque_at': ('void *', 'const void *, unsigned'), '_deque_push_back': ('void', 'void *, ...'),
@@ -147,7 +147,7 @@ LIBC = {
     'strcasestr': ('char *', 'const char *, const char *'),
     'strncmp': ('int', 'const char *, const char *, unsigned'),
     'strncasecmp': ('int', 'const char *, const char *, unsigned'),
-    # iPod status bar clock (navigation.c)
+    # iPod status bar clock (clock.c)
     'time': ('long', 'long *'),
     'localtime_r': ('const int *', 'const long *, int *'), 'tzset': ('void', 'void'),
     # Scrobble upload (scrobble.c): demo's libcurl and libcrypto

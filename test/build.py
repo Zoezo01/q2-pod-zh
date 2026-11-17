@@ -485,7 +485,7 @@ def validate_assets(directory):
     from ipod import PLAYING_STOCK
     stock_page = decode(read('rootfs.squashfs', 'release/assets/default/raw/ui/' + PLAYING_STOCK))
     assert not any(CJK.search(n[2].get('text', '')) for n in walk(stock_page))
-    # its lyrics page follows the page's size, for full-screen lyrics (navigation.c np_full)
+    # its lyrics page follows the page's size, for full-screen lyrics (np_lyrics.c np_full)
     named = {n[2].get('name'): n[2] for n in walk(stock_page)}
     assert named['view_lrc']['self_layout'] == 'default(x=0,y=0,w=100%,h=-20)'
     assert named['label_lyricmsg']['self_layout'] == 'default(x=0,y=73,w=100%,h=28)'
