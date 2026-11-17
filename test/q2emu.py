@@ -438,7 +438,7 @@ class Machine:
             if a and ret!=-1: self.word(a,ret)
         elif name in ('localtime@GLIBC_2.0','localtime_r'):  # struct tm: sec, min, hour, ...
             ret=0
-            if hasattr(self,'epoch'): # ResumeMachine's time(): navigation.c's clock_back of it
+            if hasattr(self,'epoch'): # ResumeMachine's time(): clock.c's clock_back of it
                 back=self.epoch
                 while back>0x7fffffff: back-=883612800
                 self.wall=(self.epoch,back)
