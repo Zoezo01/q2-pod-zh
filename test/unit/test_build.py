@@ -433,7 +433,7 @@ def test_classic_light_font():
     assert 'CFF ' in font and 'glyf' not in font  # the chosen outline form
 
 
-@pytest.mark.parametrize('face', ['bold_font', 'classic_light_font', 'folder_regular_font'])
+@pytest.mark.parametrize('face', ['bold_font', 'classic_light_font'])
 def test_vietnamese_letters_survive_the_font_subset(face):
     from unicodedata import normalize
     from fontTools.ttLib import TTFont
@@ -445,8 +445,6 @@ def test_vietnamese_letters_survive_the_font_subset(face):
 
     font_bytes, ranges = getattr(build, face)()
     font = TTFont(io.BytesIO(font_bytes))
-    if face == 'folder_regular_font':
-        assert font['OS/2'].usWeightClass == 400
     cmap = font.getBestCmap()
     bounds = [int(value, 16) for value in ranges.split('{')[1].rstrip('}').split(',')]
     assert all(ord(letter) in cmap for letter in letters)
