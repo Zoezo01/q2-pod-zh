@@ -995,13 +995,6 @@ BOLD_TTF = 'release/assets/default/raw/fonts/bold.ttf'
 def bold_font():
     return subset_font(ROOT/'assets/fonts/LiberationSans-Bold.ttf', 'Q2 Pod Sans', 'BOLD_RANGES')
 
-# Folder view's regular-weight face for Vietnamese names.
-FOLDER_REGULAR_TTF = 'release/assets/default/raw/fonts/folder-regular.ttf'
-
-def folder_regular_font():
-    return subset_font(ROOT/'assets/fonts/LiberationSans-Regular.ttf', 'Q2 Pod Folder Sans',
-                       'FOLDER_REGULAR_RANGES', add_play_mark=False, hinting=False)
-
 # Classic's font (navigation.c theme_font): TeX Gyre Heros Bold (GUST Font License, assets/fonts), the same cut.
 # The LPPL asks a modified font to say so itself, and where the original is: assets/fonts/README-classic-light.txt
 CLASSIC_LIGHT_TTF = 'release/assets/default/raw/fonts/classic-light.ttf'
@@ -1825,7 +1818,6 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
         check(syms.get(name) == address, f'{name}: not at {address:#x} in the stock demo')
     syms.update(PRIVATE_FUNCTIONS)
     bold, bold_ranges = bold_font()
-    folder_regular, folder_regular_ranges = folder_regular_font()
     classic_light, classic_light_ranges = classic_light_font()
     for name in GLOBALS:
         check(re.search(rf'\b1\s+OBJECT\s+GLOBAL\s+DEFAULT\s+\d+\s+{name}$',
@@ -1836,7 +1828,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
     from theme import builtins, emit, geometry_sets
     themes = builtins()
     (out/'stock.h').write_text(stock_header({name: f'0x{syms[name]:x}u' for name in CONTEXT_DATA},
-                                            [bold_ranges, classic_light_ranges, folder_regular_ranges], themes, dev, repo))
+                                            [bold_ranges, classic_light_ranges], themes, dev, repo))
     set_pages, redirects = {}, {}
     ui = 'release/assets/default/raw/ui/'
     for i, g in enumerate(geometry_sets(themes)[1:], 1):
@@ -2163,7 +2155,6 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
                                BOOT: (HELPER_LIKE, compile_helper(out, cat, 'boot', 'q2boot', HELPER_LIBS[:1])),
                                **({LOGO_LIGHT: (xx+'list_tidal.png', light)} if light else {}),  # the swapped logo.jpg has no stock inode left
                                BOLD_TTF: (FONT, bold),
-                               FOLDER_REGULAR_TTF: (FONT, folder_regular),
                                CLASSIC_LIGHT_TTF: (FONT, classic_light),
                                **{'release/assets/default/raw/fonts/' + n: ('etc/hosts', (ROOT/'assets/fonts'/n).read_bytes()) for n in FONT_NOTICES},
                                **({REMOTE: (HELPER_LIKE, compile_helper(out, cat, 'remote', 'q2remote', HELPER_LIBS[:1]))} if dev else {})}.items():
