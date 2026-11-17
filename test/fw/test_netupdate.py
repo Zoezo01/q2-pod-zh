@@ -1465,15 +1465,15 @@ def test_check_for_updates_while_checking_or_busy(fw):
     assert p.sh.job == 0 and p.toasts[-1] == 'Connect to Wi-Fi first'
 
 
-def test_a_check_says_how_many_apps_have_a_newer_release(fw):
+def test_a_check_says_how_many_rows_offer_update(fw):
     p = Page(fw, b'me/a', b'me/b', b'me/c', b'me/d')
     for app in b'abc':
         p.card.files[b'/mnt/mmc/.q2/apps/%c.tag' % app] = b'1.0'
-    p.card.files[b'/mnt/mmc/.d/q2-d'] = b''  # a manual install: Update, not counted
-    assert p.checked(b'2.0', b'2.0', b'2.0') == ['3 apps can be updated']
+    p.card.files[b'/mnt/mmc/.d/q2-d'] = b''  # a manual install: its row says Update, so it counts
+    assert p.checked(b'2.0', b'2.0', b'2.0') == ['4 apps can be updated']
     assert p.label(4) == 'Update'
     p.toasts.clear()
-    assert p.checked(b'2.0', b'1.0', b'1.0') == ['1 app can be updated']
+    assert p.checked(b'2.0', b'1.0', b'1.0') == ['2 apps can be updated']
 
 
 def test_none_to_update_is_said_only_after_check_for_updates(fw):
@@ -2844,6 +2844,9 @@ def test_a_tabs_badge_counts_its_own_updates(fw):
     fw.var('shelf_apps', App * SH_MAX)[1].latest = b'2.0'
     fw.fn('netupdate__sh_rows', None)()
     assert (s.props[(88, '_b0')], s.props[(88, '_b1')]) == (0, 1)
+    card.files[b'/mnt/mmc/.foo/q2-foo'] = b''  # installed by hand: no tag, its row says Update
+    fw.fn('netupdate__sh_rows', None)()
+    assert (s.props[(88, '_b0')], s.props[(88, '_b1')]) == (1, 1)  # the count is the rows'
 
 
 def test_a_check_keeps_the_games_section_in_the_cards_list(fw):
