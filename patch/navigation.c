@@ -2770,6 +2770,7 @@ int ringnav_paint(void *w, void *canvas) {
         if (bar) paint_scrollbar(canvas, bar, table);
     }
     addon_paint(w, canvas);
+    store_paint(w, canvas);
     peq_paint(w, canvas);
     battery_paint(w, canvas);
     visualizer_paint(w, canvas);
@@ -9331,6 +9332,7 @@ int ringnav(void *ctx, void *event) {
     }
     void *front = window_manager_get_top_window(window_manager());
     if (usable() && field_key(front, key)) return STOP; /* before stock's track skip */
+    if (usable() && shelf_key(front, key)) return STOP; /* the App Store's tabs */
     /* The restart toast's msginfo_dialog stops Previous and Next itself (0x49b7c8), for its 2 s of
      * the 3 s: the same key goes on. ponytail: the toast stays up its time; another key is still
      * stopped. */

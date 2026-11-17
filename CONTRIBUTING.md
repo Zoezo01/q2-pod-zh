@@ -15,7 +15,7 @@ Ideas go in a feature request issue or on Discord. Security problems go through 
 
 ## Adding an app
 
-Apps live in their own repos. To list one on the App Store page, open a pull request adding a line to [`sources.list`](sources.list): `owner/repo Name`. The repo needs a release with a zip; see [internals.md](docs/internals.md#q2-shelf).
+Apps live in their own repos. To list one on the App Store page, open a pull request adding a line to [`sources.list`](sources.list): `owner/repo Name`. A game goes under `[Games]`, any other app above it. The repo needs a release with a zip; see [internals.md](docs/internals.md#q2-shelf).
 
 ## Changing the firmware
 

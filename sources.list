@@ -1,5 +1,8 @@
 # The App Store page's list (System settings → App Store): one GitHub repo with a release zip per line,
-# "owner/repo Name", the name optional. The device fetches this file; see docs/internals.md#q2-shelf.
+# "owner/repo Name", the name optional. Lines under [Games] are on its Games tab, the rest on Apps;
+# older firmware skips the [Games] line and lists them all. The device fetches this file; see
+# docs/internals.md#q2-shelf.
+# Firmware before the tabs (1.8.7 and older) reads only the first 16 apps, so the games, last, are the first left out.
 DiamondBond/q2-rockbox Rockbox
 DiamondBond/q2-rockbox-themes Rockbox Themes
 DiamondBond/q2-librespot Spotify
@@ -9,8 +12,10 @@ group-a-study/q2-filebrowser File Browser
 andsuor/q2-subsonic Subsonic
 m-d-e-v/q2-podcasts Podcasts
 harpmudd/q2-lma Live Music Archive
+# group-a-study/q2-applemusic Apple Music
+group-a-study/q2-airplay AirPlay
+[Games]
 DiamondBond/q2-fidget Buddy
 DiamondBond/q2-groovebox Groovebox
 lampsonlnguyen/q2-2048 2048
-# group-a-study/q2-applemusic Apple Music
-group-a-study/q2-airplay AirPlay
+lampsonlnguyen/q2-dino-runner Dino Runner

@@ -4271,8 +4271,11 @@ class RadioMachine(SpotMachine):
                 if parent not in self.nodes or x not in self.nodes[parent]['children']: return False
                 x=parent
             return True
+        def shown(x,n):  # an App Store row's state, app_store.c draws it at the row's end, over its detail
+            row=self.nodes.get(self.get(x+O['W_PARENT']),{}); state=row.get('_state',-1)
+            return ('Install','Update','Installed')[state] if state>=0 and row['children'][1:2]==[x] else n.get('text','')
         w=w or self.page
-        return [n.get('text','') for x,n in self.nodes.items() if n['type']=='hscroll_label' and linked(x,w)]  # a new label's text is ''
+        return [shown(x,n) for x,n in self.nodes.items() if n['type']=='hscroll_label' and linked(x,w)]  # a new label's text is ''
     def back(self,w=None):
         """Return on page w (the radio list by default), and its timers."""
         w=w or self.page; f,ctx=self.handler(w,O['EVT_KEY_UP']); ev=self.alloc(0x40)

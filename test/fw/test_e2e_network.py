@@ -477,7 +477,7 @@ class Ui:
         self.widgets, self.keep, self.handlers, self.stale = {}, [], [], []
         self.timers, self.tid = {}, 0
         self.threads, self.started, self.eager = [], 0, False
-        self.toasts, self.loop, self.wifi, self.selected, self.dialogs, self.names = [], [], -1, {}, {}, {}
+        self.toasts, self.loop, self.wifi, self.selected, self.dialogs, self.names, self.props = [], [], -1, {}, {}, {}, {}
         self.root = self.new(0, 'window_manager')  # the windows' parent: window_manager()
         w.mock('window_manager', lambda *_: self.root)
         w.mock('widget_get_prop_str', self.prop_str)
@@ -499,7 +499,9 @@ class Ui:
         w.mock('widget_set_tr_text', lambda p, t, *_: self.write(p, 'tr:' + s(t)))
         w.mock('widget_get_text_utf8', self.read)
         w.mock('widget_set_visible', lambda p, v, *_: setattr(self.get(p), 'visible', bool(v)) if p in self.widgets else 0)
-        w.mock('widget_get_prop_int', lambda p, name, default, *_: self.selected.get(p, 0) if s(name) == '_ringnav_index' else default)
+        w.mock('widget_get_prop_int', lambda p, name, default, *_: self.selected.get(p, 0) if s(name) == '_ringnav_index'
+               else self.props.get((p, s(name)), default))
+        w.mock('widget_set_prop_int', lambda p, name, v, *_: self.props.__setitem__((p, s(name)), C.c_int(v).value) or 0)
         w.mock('timer_add', self.timer_add)
         w.mock('timer_remove', lambda i, *_: self.timers.pop(i, None) and 0)
         w.mock('navigator_to_with_context', self.navigate)
@@ -1014,14 +1016,26 @@ class AppStore:
         assert w.fn('shelf_open', C.c_int, C.c_void_p, C.c_void_p)(None, None) == 0
         self.page = w.ui.top()
 
+    STATES = ('Install', 'Update', 'Installed')
+
+    def all_rows(self):
+        """Each row's caption and its state (app_store.c draws it at the row's end) or, with none, its second line."""
+        ui, out = self.w.ui, []
+        for c in ui.under(self.page):
+            if ui.get(c).kind == 'list_item':
+                caption, detail = [ui.get(x).text for x in ui.get(c).children if ui.get(x).kind == 'hscroll_label']
+                state = ui.props.get((c, '_state'), -1)
+                out.append((caption, self.STATES[state] if state >= 0 else detail))
+        return out
+
     def rows(self):
-        """The apps' rows, under Check for Updates."""
-        first, *apps = self.w.ui.rows(self.page)
+        """The open tab's apps' rows, under Check for Updates."""
+        first, *apps = self.all_rows()
         assert first[0] == self.CHECK
         return apps
 
     def detail(self, name):
-        return dict(self.w.ui.rows(self.page))[name]
+        return dict(self.all_rows())[name]
 
     def press(self, name):
         self.w.ui.press(self.page, name)
