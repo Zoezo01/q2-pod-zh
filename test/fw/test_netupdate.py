@@ -2885,8 +2885,11 @@ def test_app_store_paints_a_rows_tile_and_state_and_the_tabs_badges(fw, theme):
     assert painted(row)[1] == ['F']  # busy: the second line says it
     strip = widget(48 if theme != b'1' else 44)
     fw.fn('store_tabs_set', None, C.c_void_p, C.c_int, C.POINTER(C.c_int))(strip, 1, (C.c_int * 2)(0, 2))
-    texts = ' '.join(painted(strip)[1])
+    ops, texts = painted(strip)
+    texts = ' '.join(texts)
     assert 'APPS' in texts and 'GAMES' in texts and '2' in texts
+    # the disc ends 10 px inside its half (14 + 2 * 173), clear of the name beside it; Minimal has none
+    assert (theme == b'0') != any(o.rect and (o.rect[0], o.rect[2]) == (350 - 16, 16) for o in ops)
     fw.var('app_store__on_page', C.c_char).value = b'\x00'
     assert painted(row)[0] == []  # the page closed: nothing
 

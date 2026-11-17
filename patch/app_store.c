@@ -127,10 +127,12 @@ static void raw_text(void *canvas, const char *s, int x, int y, int h, unsigned 
     if (raw) ui_ink_raw(0);
 }
 
-static void badge(void *canvas, int x, int cy, int n, int open) {
+/* A tab's count, ending at right: its half's far end, as beside the name it ran into "Games". */
+static void badge(void *canvas, int right, int cy, int n, int open) {
     char d[12];
     snprintf(d, sizeof d, "%d", n);
-    rect_t r = { x, cy - 8, n > 9 ? 22 : 16, 16 };
+    int w = n > 9 ? 22 : 16;
+    rect_t r = { right - w, cy - 8, w, 16 };
     ui_ink_raw(1);
     fill_box(canvas, &r, rgba(open ? on_accent() : BADGE, 255), 8);
     caption(canvas, d, r.x, r.y, r.w, r.h, 11, rgba(open ? accent_tone(0) : 0xffffff, 255));
@@ -190,7 +192,7 @@ static void paint_strip(void *w, void *canvas) {
         rect_t r = { cx - half / 2, y, half, SEG_H };
         caption(canvas, names[i], r.x, r.y, r.w, r.h, classic ? 17 : 16, rgba(c, 255));
         ui_ink_raw(0);
-        if (n[i]) badge(canvas, cx + 26, y + SEG_H / 2, n[i], i == tab);
+        if (n[i]) badge(canvas, SEG_X + half * (i + 1) - 10, y + SEG_H / 2, n[i], i == tab);
     }
 }
 
