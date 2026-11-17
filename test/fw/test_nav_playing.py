@@ -1253,9 +1253,9 @@ def test_folder_row_normalizes_display_text_and_resets_font_on_reuse(fw, st, ui)
     row = ui.widget(table, 'row')
     label = ui.widget(row, 'scrlabel_name')
     cases = [
-        ('1. a\u0309.flac', '1. ả.flac', b'folder-regular'),
-        ('Mo\u0323\u0302t nga\u0300y.flac', 'Một ngày.flac', b'folder-regular'),
-        ('Một ngày.flac', 'Một ngày.flac', b'folder-regular'),
+        ('1. a\u0309.flac', '1. ả.flac', b'default'),
+        ('Mo\u0323\u0302t nga\u0300y.flac', 'Một ngày.flac', b'default'),
+        ('Một ngày.flac', 'Một ngày.flac', b'default'),
         ('plain.flac', 'plain.flac', b'default'),
         ('Ả 日本.flac', 'Ả 日本.flac', b'default'),
     ]
@@ -1405,11 +1405,11 @@ def test_the_page_shows_its_tracks_place_album_and_time_left(fw, ui, now):
     assert now.value() == 50 and ui.ints[now.slider, b'max'] == 200
 
 
-def test_now_playing_artist_uses_regular_vietnamese_font_and_resets_on_track_change(fw, ui, now):
+def test_now_playing_artist_uses_stock_font_and_resets_on_track_change(fw, ui, now):
     sync = fw.fn('np_sync', C.c_int, C.c_void_p)
     for artist, shown, face in (
-        ('Đức Tuấn', 'Đức Tuấn', b'folder-regular'),
-        ('Đu\u031b\u0301c Tua\u0302\u0301n', 'Đức Tuấn', b'folder-regular'),
+        ('Đức Tuấn', 'Đức Tuấn', b'default'),
+        ('Đu\u031b\u0301c Tua\u0302\u0301n', 'Đức Tuấn', b'default'),
         ('John Coltrane', 'John Coltrane', b'default'),
         ('日本', '日本', b'default'),
     ):
