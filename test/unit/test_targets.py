@@ -76,10 +76,10 @@ def jal(x):
 
 def build(zip_path):  # pragma: no mutate block
     return zip_path + 1
-''', 'aic.py': '''
-def validate_stock(elf):  # pragma: no mutate block
+''', 'peq.py': '''
+def compile_common(elf):  # pragma: no mutate block
     return elf + 1
-''', 'rotator.py': '''
+''', 'rebase.py': '''
 class Elf:
     def pack(self):
         return 4
@@ -92,7 +92,7 @@ def test_targets_are_all_of_tools_but_the_skipped(tmp_path, monkeypatch):
     for name, text in TOOLS.items():
         (tmp_path/'tools'/name).write_text(text)
     monkeypatch.setattr(targets, 'ROOT', tmp_path)
-    assert targets.targets() == {'aic': [], 'build': ['jal'], 'rotator': ['Elf.pack']}
+    assert targets.targets() == {'build': ['jal'], 'peq': [], 'rebase': ['Elf.pack']}
 
 
 # Under mutmut, ROOT is mutants/, whose copy of tools/ holds every mutant: too big to read in a test.
@@ -100,17 +100,15 @@ def test_targets_are_all_of_tools_but_the_skipped(tmp_path, monkeypatch):
 def test_targets_skip_the_stock_bound_and_import_only_functions():
     """A few seconds, most of them on build.py and ipod.py. Without build()'s pragma, mutmut writes a
     96 MB file that never finishes. Only the skipped are named, so a rename elsewhere doesn't fail here."""
-    aic, art, build, ipod, peq, pwm, rotator = (targets.functions((targets.ROOT/f'tools/{m}.py').read_text())
-                                                for m in ('aic', 'art', 'build', 'ipod', 'peq', 'pwm', 'rotator'))
-    assert all((aic, art, build, ipod, peq, pwm, rotator))  # each still has functions to mutate
+    art, build, ipod, peq = (targets.functions((targets.ROOT/f'tools/{m}.py').read_text())
+                             for m in ('art', 'build', 'ipod', 'peq'))
+    assert all((art, build, ipod, peq))  # each still has functions to mutate
     assert not {'build', 'compile_payload'} & set(build)
     assert 'patch_asset' not in ipod and 'patch_code' in ipod  # patch_code pins no stock hash: test_patch_code
     assert not {'compile_common', 'patch_player'} & set(peq)
-    assert 'validate_stock' not in aic and 'patch_module' not in aic and 'patch_module' not in rotator
-    assert not {'link', 'patch_pwm', 'patch_mcu', 'patch_bundle'} & set(pwm)
     assert 'wave' not in art
 
 
 def test_mutant_glob():
     assert targets.mutant_glob('build', 'jal') == 'tools.build.x_jal__mutmut_*'
-    assert targets.mutant_glob('rotator', 'Elf.pack') == 'tools.rotator.xǁElfǁpack__mutmut_*'
+    assert targets.mutant_glob('rebase', 'Elf.pack') == 'tools.rebase.xǁElfǁpack__mutmut_*'

@@ -1,7 +1,7 @@
 /* Night Shift (docs/internals.md#night-shift): Display's row (crossfade.c's page, xf.ctx 3) warms
  * the screen as f.lux does, red kept and green and blue scaled to a colour temperature, Q2POD
  * NIGHTSHIFT (0 Off, 1 On, 2 Auto) and NIGHTK (NS_WARM..NS_COOL in NS_STEPs) in config.ini. Auto is
- * on from 19:00 to 7:00 by the clock, the hours Light Mode's Auto is dark (navigation.c
+ * on from 19:00 to 7:00 by the clock, the hours Light Mode's Auto is dark (theme_engine.c
  * clock_night), and off while the clock cannot be read; clock_show applies it each minute
  * (night_clock). While it is on, the screen's lcd end_frame is night_end: before stock shows a
  * frame, the pixels drawn in it, those whose alpha is not NS_DONE, are warmed and given NS_DONE.
@@ -9,7 +9,9 @@
  * glyph blends copy a source pixel, alpha and all, only above 0xf8, and blend any fainter one over
  * an opaque pixel (>= 0xf5) to alpha 0xff (fill_bgra8888_rect @0x6df4f4, the image pixel @0x6c8520
  * and @0x6c5140, the glyph's @0x6a5c34), so a pixel drawn again is warmed once more and one left
- * alone is never warmed twice. It was 0xfe, which the round icons' rims have, left as bright specks.
+ * alone is never warmed twice. It was 0xfe, which the round icons' rims have, left as bright
+ * specks.
+ *
  * ponytail: vgcanvas keeps a coverage above 0xf4 as the alpha (agge pixel_blend @0x73b0f4) and
  * clear_rect its colour's, so an edge pixel or a cleared colour at exactly NS_DONE stays unwarmed,
  * and vgcanvas blending over a pixel not drawn again leaves the mix unwarmed; 0xf7 is the rarest

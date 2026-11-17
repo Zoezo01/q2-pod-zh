@@ -640,6 +640,8 @@ def test_the_url_names_the_song(fw):
     Written(fw)
     assert search(fw, b'A B', b'C') == LRC_NONE
     assert net.urls == [LRCLIB + 'A%20B&artist_name=C']
+    # CONNECTTIMEOUT, TIMEOUT, SSL_VERIFYPEER, SSL_VERIFYHOST
+    assert (net.opts[78], net.opts[13], net.opts[64], net.opts[81]) == (10, 20, 1, 2)
 
 
 def test_no_title_asks_nothing(fw):

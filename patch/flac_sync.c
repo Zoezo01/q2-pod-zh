@@ -29,8 +29,7 @@
  * including consumer interleavings, before this experiment is used on device.
  */
 int flac_sync_check(void) {
-    if (*(volatile unsigned char *)0xb11e68u != 1)
-        return ((int (*)(void))0x42b710u)();
+    if (*(volatile unsigned char *)0xb11e68u != 1) return ((int (*)(void))0x42b710u)();
     __asm__ volatile("sync" ::: "memory");
     if (*(volatile unsigned *)0xb11e70u == 1) return 1;
     return *(volatile unsigned *)0xb11e6cu == 1;

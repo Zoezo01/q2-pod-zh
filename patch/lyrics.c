@@ -2,7 +2,7 @@
  * then Now Playing's lyrics page (docs/ipod.md#lyrics,
  * docs/internals.md#word-timed-lyrics): large lines, the playing one in the middle, lit word by
  * word as it is sung. Stock's rows stay, one blank label a line as high as it, so its scroll view,
- * the wheel and the follow move them as before (navigation.c); each row's line is painted over it
+ * the wheel and the follow move them as before (np_lyrics.c); each row's line is painted over it
  * here. */
 #include "offsets.inc"
 #include "peq.h"
@@ -192,7 +192,7 @@ int ringnav_lyric(void) {
     lrc_mark *m = 0;
     char *file = lrc_file, **v = 0;
     unsigned lib = 0;
-    void *q = P(mcl_pdeqplaylist, 0), *r, *f = 0;
+    void *q = P(mcl_pdeqplaylist, 0), *r = 0, *f = 0;
     lrc_file = 0;
     if (file && mclGetLyricSize() > 0) { /* a .lrc's synced lines replace stock's */
         n = lrc_parse(file + 3 * !memcmp(file, "\xef\xbb\xbf", 3), &l, &m);
@@ -241,7 +241,6 @@ int ringnav_lyric(void) {
     return ret;
 }
 
-
 /* Every line LYRIC_PX, as large as reads well in the page's width, as many rows as it takes up to
  * LYRIC_ROWS (the rest cut; so many still fit the page), LY_PITCH apart; its row on the page is
  * those rows plus LYRIC_GAP, LYRIC_SLOT for one. */
@@ -251,10 +250,10 @@ int ringnav_lyric(void) {
 #define LYRIC_GAP (LYRIC_SLOT - LY_PITCH(LYRIC_PX))
 
 typedef struct {
-    int ms;                       /* its start, LRC_FAR when unsynced */
-    unsigned text, n;             /* its characters, text[text..text + n) */
-    unsigned mark, marks;         /* its word stamps, mark[mark..mark + marks) */
-    unsigned char px, rows;       /* its layout (px 0 until then): rows of ly.w */
+    int ms;                 /* its start, LRC_FAR when unsynced */
+    unsigned text, n;       /* its characters, text[text..text + n) */
+    unsigned mark, marks;   /* its word stamps, mark[mark..mark + marks) */
+    unsigned char px, rows; /* its layout (px 0 until then): rows of ly.w */
     unsigned short start[LYRIC_ROWS], len[LYRIC_ROWS], w[LYRIC_ROWS];
 } ly_line;
 typedef struct {
@@ -378,7 +377,9 @@ static int ly_wrap(ly_line *l, const unsigned *s, const unsigned short *adv) {
         unsigned end = i;
         if (i < l->n && brk > start) end = brk, x = wbrk, i = resume;
         while (end > start && s[end - 1] == ' ') x -= adv[--end];
-        if (rows < LYRIC_ROWS) l->start[rows] = start, l->len[rows] = end - start, l->w[rows] = x;
+        if (rows < LYRIC_ROWS)
+            l->start[rows] = (unsigned short)start, l->len[rows] = (unsigned short)(end - start),
+            l->w[rows] = (unsigned short)x;
         ++rows;
     }
     return rows;
@@ -391,10 +392,10 @@ static void ly_layout(void *canvas, ly_line *l) {
     for (unsigned k = 0; k < l->n; ++k)
         adv[k] = (unsigned short)(canvas_measure_text(canvas, s + k, 1) + 0.5f);
     int rows = ly_wrap(l, s, adv);
-    l->px = LYRIC_PX, l->rows = rows < LYRIC_ROWS ? rows : LYRIC_ROWS;
+    l->px = LYRIC_PX, l->rows = (unsigned char)(rows < LYRIC_ROWS ? rows : LYRIC_ROWS);
 }
 
-/* Stock built lrc's rows (navigation.c ringnav_lyric_rows), a label a line: their table is the
+/* Stock built lrc's rows (np_lyrics.c ringnav_lyric_rows), a label a line: their table is the
  * loader's for those lines, else the last one, else one made from the labels (stock's text and
  * whole seconds, without word stamps). Each becomes a blank row as high as its line's rows plus
  * LYRIC_GAP, laid out with the canvas's font, which the list layout puts after a blank LYRIC_SLOT.
@@ -427,7 +428,7 @@ int lyrics_rows(void *lrc) {
 }
 
 /* The page's rows laid out at lrc's width, again when it changes: the iPod page's span the
- * screen, the centred (stock) page's its 225 px column, or the screen in full screen (navigation.c
+ * screen, the centred (stock) page's its 225 px column, or the screen in full screen (np_lyrics.c
  * np_full). */
 int lyrics_fit(void *lrc) {
     if (!lyrics_on(lrc)) return 0; /* none, or out of memory: stock's rows stay */
@@ -570,7 +571,7 @@ static void ly_dirty(void *lrc, int k) {
         widget_invalidate_force(widget_get_child(lrc, k), (void *)0);
 }
 
-/* Every UI pass on Now Playing (navigation.c lyric_poll), at ms: the loader's table if it came
+/* Every UI pass on Now Playing (np_lyrics.c lyric_poll), at ms: the loader's table if it came
  * after the rows, and the playing line, which the follow centres. While the lyrics page shows
  * (page) the playing rows repaint as their lit width moves, at most every LYRIC_PAINT_MS, and
  * the last ones as it moves on: a word-timed line's width moves nearly every pass, and the idle
@@ -583,8 +584,7 @@ int lyrics_line(void *lrc, int ms, int page) {
     unsigned now = (unsigned)time_now_ms();
     int cur = ly_line_at(ms),
         fill = cur >= 0 && ly.tab->line[cur].px ? ly_lit((unsigned)cur, ms) : -1;
-    if (page &&
-        (cur != ly.cur || (fill != ly.fill && now - ly.lit_at >= LYRIC_PAINT_MS))) {
+    if (page && (cur != ly.cur || (fill != ly.fill && now - ly.lit_at >= LYRIC_PAINT_MS))) {
         if (cur != ly.cur) ly_dirty(lrc, ly.cur);
         ly_dirty(lrc, cur);
         ly.fill = fill, ly.lit_at = now;
@@ -634,8 +634,7 @@ void lyrics_paint(void *row, void *canvas) {
         int cut = lit <= 0 ? LYRIC_X : lit >= l->w[r] ? w : LYRIC_X + lit;
         if (cut < w)
             ly_ink(canvas, base, s, l->len[r], y, cut, w, rgba(on ? LYRIC_DIM : LYRIC_REST, alpha));
-        if (cut > LYRIC_X)
-            ly_ink(canvas, base, s, l->len[r], y, 0, cut, rgba(LYRIC_LIT, alpha));
+        if (cut > LYRIC_X) ly_ink(canvas, base, s, l->len[r], y, 0, cut, rgba(LYRIC_LIT, alpha));
     }
     canvas_set_clip_rect(canvas, base);
     stock_canvas_set_text_color(canvas, text);

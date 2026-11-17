@@ -349,7 +349,7 @@ BLACK, WHITE = 0, 255
 def classic_light_font():
     """The theme face's source, opened once a build."""
     return TTFont(CLASSIC_LIGHT_FONT_SRC, lazy=True)
-# Quick Settings' page under Classic: navigation.c quick_page paints each 60 px button (qs_tile), and these are the glyphs
+# Quick Settings' page under Classic: quick_settings.c quick_page paints each 60 px button (qs_tile), and these are the glyphs
 # over it in the tile's ink: QS_INK, white on (_l on a bright accent, Graphite's silver), _l and _d off in the light and dark half. Own drawings; stock's image names (the demo's own
 # strings) decide which button, and QS_LIT (stock.h, qs_lit) which are on.
 def circle(cx, cy, r):
@@ -615,7 +615,7 @@ def orb(side, usb):
                          (shape, lambda x, y: (fill(y), 1)),
                          (stroke(disc(0, 0, ORB_RING_R), ORB_RING_W * k), lambda x, y: (ORB_RING, ORB_RING_A)),
                          (ink, lambda x, y: (ORB_INK, 1))])
-# The info screen's dark face, on a -50..50 box at CLOCK_DARK_PX: its numerals in the theme's own outlines. The hands are the payload's (navigation.c paint_clock).
+# The info screen's dark face, on a -50..50 box at CLOCK_DARK_PX: its numerals in the theme's own outlines. The hands are the payload's (clock.c paint_clock).
 CLOCK_DARK_PX = 96
 def outlines(text, size, cx, baseline):
     """text's glyphs centred on cx, in the theme's face at size, as one even-odd polygon per glyph."""

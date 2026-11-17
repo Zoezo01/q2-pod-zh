@@ -12,38 +12,27 @@ one demo left unmuted at the same format keeps the PCM open; a skip stays mute-f
 Last an unpause (ao_write, dac_resume): the frames go back into a prepared PCM from where the fade began. The DMA
 itself isn't modelled: the PCM here is its status words and what reaches it.
 Usage: test/bt_resample.py BUILD_DIR"""
-import math, pathlib, re, struct, subprocess, sys
+import math, pathlib, re, struct, sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]/'tools'))
-from build import fileoff, jal, load_elf, symbols
+from build import fileoff, jal, symbols
+from mips import DONE, STUBS, HEAP, STACK, peq_lib, player, stubs, call as run
 from peq import RS_OPEN_SLOT, RS_OPEN, AO_INIT_SLOT, AO_INIT, AO_UNINIT_SLOT, DAC_RELEASE
-from unicorn import Uc, UC_ARCH_MIPS, UC_MODE_MIPS32, UC_MODE_LITTLE_ENDIAN, UC_HOOK_CODE, UC_HOOK_INTR
+from unicorn import UC_HOOK_CODE, UC_HOOK_INTR
 from unicorn.mips_const import *
 
 out = pathlib.Path(sys.argv[1])/'peq'
 raw = (out/'hciplayer').read_bytes()
 ps = symbols(out/'peq.elf')
 assert struct.unpack_from('<I', raw, fileoff(raw, RS_OPEN_SLOT))[0] == ps['rs_open']
-DONE, STUBS, HEAP, STACK, INFO = 0x2000000, 0x2800000, 0x3000000, 0x40f0000, RS_OPEN_SLOT - 20
+INFO = RS_OPEN_SLOT - 20
 
-u = Uc(UC_ARCH_MIPS, UC_MODE_MIPS32 | UC_MODE_LITTLE_ENDIAN)
-u.ctl_set_cpu_model(UC_CPU_MIPS32_24KF)
-load_elf(u, raw)
-for base, size in ((DONE, 0x10000), (STUBS, 0x1000), (HEAP, 0x1000000), (STACK - 0xf0000, 0x100000)):
-    u.mem_map(base, size)
-u.reg_write(UC_MIPS_REG_CP0_STATUS, u.reg_read(UC_MIPS_REG_CP0_STATUS) | 1 << 29 | 1 << 26)  # CU1, FR
-imports = {}
-for line in subprocess.check_output(['readelf', '-rW', out/'hciplayer'], text=True).splitlines():
-    s = line.split()
-    if len(s) >= 5 and s[2] == 'R_MIPS_JUMP_SLOT':
-        imports[STUBS + 4*len(imports)] = s[4].split('@')[0]
-        u.mem_write(int(s[0], 16), struct.pack('<I', STUBS + 4*(len(imports)-1)))
-# open isn't a jump slot here: its peq_lib_ stub's GOT word (peq_imports.S), as in xfade_player.py.
-hi, lo = re.search(r'peq_lib_open:\nlui \$gp.*\nori \$gp.*\nlui \$t8, (\d+)\nori \$t8, \$t8, (\d+)', (out/'peq_imports.S').read_text()).groups()
-imports[STUBS + 4*len(imports)] = 'open'
-u.mem_write(int(hi) << 16 | int(lo), struct.pack('<I', STUBS + 4*(len(imports)-1)))
-hi, lo = re.search(r'peq_lib_dlsym:\nlui \$gp.*\nori \$gp.*\nlui \$t8, (\d+)\nori \$t8, \$t8, (\d+)', (out/'peq_imports.S').read_text()).groups()
-imports[STUBS + 4*len(imports)] = 'dlsym'
-u.mem_write(int(hi) << 16 | int(lo), struct.pack('<I', STUBS + 4*(len(imports)-1)))
+u = player(raw)
+imports = stubs(u, out/'hciplayer', STUBS)
+# open and dlsym aren't jump slots here: their peq_lib_ stubs' GOT words (peq_imports.S), as in xfade_player.py.
+lib_got = peq_lib((out/'peq_imports.S').read_text())
+for name in ('open', 'dlsym'):
+    imports[STUBS + 4*len(imports)] = name
+    u.mem_write(lib_got[name], struct.pack('<I', STUBS + 4*(len(imports)-1)))
 class dev:  # what the stubs below see of the PCM (mute: MUTE_FILE's word, None for no file)
     state, trigger, appl, hw, status_rc, mute, most, calls, got, errors = 2, 0, 0, 0, 0, None, 1 << 30, 0, b'', []
     before = None  # the log at the first frame written since pause_at
@@ -118,11 +107,7 @@ def libc(u, address, size, _):
     u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA))
 u.hook_add(UC_HOOK_CODE, libc, begin=STUBS, end=STUBS + 0xfff)
 
-def call(fn, *args):
-    for i, value in enumerate(args): u.reg_write((UC_MIPS_REG_A0, UC_MIPS_REG_A1, UC_MIPS_REG_A2, UC_MIPS_REG_A3)[i], value)
-    u.reg_write(UC_MIPS_REG_SP, STACK), u.reg_write(UC_MIPS_REG_RA, DONE)
-    u.emu_start(fn, DONE, count=100_000_000)
-    return u.reg_read(UC_MIPS_REG_V0)
+def call(fn, *args): return run(u, fn, *args)
 
 def instance(rate, output_rate, open_fn):
     """lavcresample uses S16 stereo; LDAC's following format filter converts that to S32."""

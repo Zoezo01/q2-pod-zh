@@ -17,10 +17,10 @@
  * Streaming lists those on the card (home.c ringnav_stream). A row starts its app and opens
  * addon_page, a list the app draws over Q2SPOT/1 (docs/librespot.md) on /tmp/q2-<id>.browse.sock:
  * each row's kind says what a press does (a local row plays a song or folder from the card,
- * library_lists.c's songs_open). Its status file /tmp/q2-<id>.state says whether to hold standby off
- * (hold=1: files moving, a phone using its page) and carries its web page's QR code, address and
- * PIN, which qr_open's page draws. A TERM to the loop's pid asks it to end. An app that plays as
- * well (q2-deezer's Stream mode) names a card folder of songs in /tmp/q2-<id>.play, which
+ * library_lists.c's songs_open). Its status file /tmp/q2-<id>.state says whether to hold standby
+ * off (hold=1: files moving, a phone using its page) and carries its web page's QR code, address
+ * and PIN, which qr_open's page draws. A TERM to the loop's pid asks it to end. An app that plays
+ * as well (q2-deezer's Stream mode) names a card folder of songs in /tmp/q2-<id>.play, which
  * stream_poll plays as it fills, or an .m3u of card paths, which it plays in order, waiting for
  * each, or its Q2URLS/1 queue of stream URLs, /tmp/q2-<id>.urls, which stock's Tidal player plays
  * (tidal.c app_urls_play), telling it in /tmp/q2-<id>.now which of them plays when the queue asks
@@ -50,7 +50,8 @@
  * as 8 lowercase hex digits. A list with a cover for any of its rows is drawn as stock Tidal's
  * lists are (art_row): ART_ROW_H rows, the cover at the left, the title and subtitle beside it; a
  * row without one keeps the cover's room empty. The app sizes the covers: one over ART_MAX px
- * either way counts as none. The protocol is unchanged, so an app without covers, or firmware without "art", shows the plain rows.
+ * either way counts as none. The protocol is unchanged, so an app without covers, or firmware
+ * without "art", shows the plain rows.
  *
  * The card-app features this firmware has are words in /tmp/q2-addon.caps (ADDON_CAPS), written at
  * every Streaming scan. */
@@ -88,14 +89,15 @@
 #define CAPS_FILE "/tmp/q2-addon.caps"
 /* This firmware's card-app features, space-separated; a feature adds its word. */
 #define ADDON_CAPS                                                                                 \
-    "playlist progress pages library goto sleep game audio sections art window urls sort field more fav now"
+    "playlist progress pages library goto sleep game audio sections art window urls sort field "   \
+    "more fav now"
 #define ADDON_SECTIONS 8  /* sections an app's first page may have */
 #define SWIPE_CLAIM_PX 24 /* a sideways move this far, twice as far as up or down, is a swipe's */
 #define SWIPE_PX 60       /* and this far at the lift, more than up or down, changes section */
-#define ART_ROW_H 78 /* a row with a cover: stock Tidal's list_view default_item_height */
-#define ART_PX 64    /* its cover, square, centred in the row's height */
-#define ART_MAX 128  /* the most a cover's or an icon's file may be, either way; larger is none */
-#define ART_KEEP 24  /* the rows' covers kept decoded around the list's scroll position */
+#define ART_ROW_H 78      /* a row with a cover: stock Tidal's list_view default_item_height */
+#define ART_PX 64         /* its cover, square, centred in the row's height */
+#define ART_MAX 128 /* the most a cover's or an icon's file may be, either way; larger is none */
+#define ART_KEEP 24 /* the rows' covers kept decoded around the list's scroll position */
 #define ART_URL (APP_ID + 32) /* art_file's file:// URL, its NUL included */
 
 /* An app found on the card, kept for the life of demo in its slot. present: on the card at the
@@ -105,7 +107,7 @@ typedef struct {
     char id[APP_ID], name[32], tips[32], bin[48], run[48], pid[32], state[40], browse[48], icon[56];
     char more[48]; /* q2app's more: an op, a space and a title (addon_more) */
     int qr, game, audio, hidden, present, launched, hold, relaunch, restart;
-    int nostop; /* q2app's stop=0: no Stop row on its page */
+    int nostop;                                   /* q2app's stop=0: no Stop row on its page */
     unsigned polled, launch_at, restart_at, play; /* play: its .play as read last, hashed */
 } app_t;
 
@@ -391,7 +393,7 @@ static int stream_start(const void *unused) {
         press_natural = 1;             /* the app's .play, from its poll: nobody here pressed */
         play_folder(songs, 0, 0xf001); /* playing_page copies the queue at once */
         press_natural = 0;
-        sm.loads = playback_loads;     /* its load, which play_folder has done (playback_groups) */
+        sm.loads = playback_loads; /* its load, which play_folder has done (playback_groups) */
         qa.app = sm.app, qa.loads = playback_loads;
     }
     deque_destroy(songs);
@@ -408,7 +410,8 @@ static int stream_start(const void *unused) {
  * when it next does. Marked stopped, once, when another queue or player takes over, the player
  * stays stopped NOW_STOP_MS (not between tracks), another URL queue starts (any app's), or the apps
  * are stopped (addon_stop: Rockbox, Stop Streaming Services); then nothing until the queue plays
- * again. A restarted demo marks its last run's stopped (now_sweep). Nothing is written for a queue before it first plays. */
+ * again. A restarted demo marks its last run's stopped (now_sweep). Nothing is written for a queue
+ * before it first plays. */
 #define NOW_STEP_S 5
 #define NOW_STOP_MS 3000
 static struct {
@@ -459,8 +462,7 @@ static void now_sweep(void) {
                            : tk_str_start_with(st + 1, "paused\t") ? st + 7
                                                                    : 0;
         if (!rest) continue;
-        int n = tk_snprintf(line, sizeof line, "%.*sstopped%s", (int)(st - raw), raw + 1,
-                            rest);
+        int n = tk_snprintf(line, sizeof line, "%.*sstopped%s", (int)(st - raw), raw + 1, rest);
         if (n > 0 && n < (int)sizeof line) blob_io(path, "/tmp/q2-now.tmp", line, (unsigned)n, 1);
     }
     if (d) closedir(d);
@@ -586,8 +588,7 @@ static void stream_poll(app_t *a) {
             deque_destroy(add);
         }
     } else if (!scan && stream_newer(sm.dir, sm.last)) {
-        void *songs = app_album_songs(sm.dir), *add = _create_deque("stSongInfo");
-        deque_init(add);
+        void *songs = app_album_songs(sm.dir), *add = song_list();
         for (unsigned i = 0, n = deque_size(songs); i < n; ++i) {
             void *r = deque_at(songs, i);
             if (strcmp(P(r, REC_NAME), sm.last) > 0) _deque_push_back(add, r);
@@ -854,9 +855,9 @@ int addon_game_start(int k) {
     if (!pid) {
         child_oom_first();
         for (int fd = 3; fd < 1024; ++fd) close(fd); /* demo's: the watchdog, the screen, sockets */
-        /* the child's alone: demo's environment stays as it was. ponytail: a fork while another thread
-         * holds libc's environment lock (stock's toolsSetTimeZone) hangs the child here; Return's hold
-         * ends it */
+        /* the child's alone: demo's environment stays as it was. ponytail: a fork while another
+         * thread holds libc's environment lock (stock's toolsSetTimeZone) hangs the child here;
+         * Return's hold ends it */
         setenv("Q2_POPUP", pop, 1);
         if (a->audio) /* q2video's arguments: the device, then a soft output's volume */
             execl(a->bin, a->bin, dev ? dev : "plughw:0,0", dev ? vol : (char *)0, (char *)0);
@@ -946,10 +947,10 @@ static void game_poll(void) {
     gm.seen = time_now_ms(); /* Smart Awake: asked again GAME_IDLE_MS on */
 }
 
-/* Smart Wi-Fi (smart_wifi.c smart_needed): an app started, or restarting after Retry, keeps the radio
- * on until it stops (by itself, Stop Streaming Services or Rockbox). One stopped for USB storage
- * counts once it starts again: the cable holds the radio meanwhile, and an app deleted from the
- * computer, which never starts again, holds nothing. */
+/* Smart Wi-Fi (smart_wifi.c smart_needed): an app started, or restarting after Retry, keeps the
+ * radio on until it stops (by itself, Stop Streaming Services or Rockbox). One stopped for USB
+ * storage counts once it starts again: the cable holds the radio meanwhile, and an app deleted from
+ * the computer, which never starts again, holds nothing. */
 int addon_running(void) {
     for (int i = 0; i < ap.n; ++i)
         if (ap.a[i].launched || ap.a[i].restart) return 1;
@@ -1013,8 +1014,9 @@ void addon_card_away(void) {
 /* The Apps page (netupdate.c) replaces or removes the files in dir (".<id>"): the app there, if
  * one, asked to end and waited for on the Apps page's worker, so its files are closed before they
  * move (up to QUIT_MS: an app still saving on its TERM after 3 s, a login, would write it back
- * into a folder just removed); then, once they moved or went, forgotten on the UI thread, so its row starts the new one
- * (or none). An update that failed or was cancelled before it stopped the app leaves it running and tracked. */
+ * into a folder just removed); then, once they moved or went, forgotten on the UI thread, so its
+ * row starts the new one (or none). An update that failed or was cancelled before it stopped the
+ * app leaves it running and tracked. */
 void addon_forget(const char *dir) {
     for (int i = 0; dir && dir[0] == '.' && i < ap.n; ++i)
         if (!strcmp(ap.a[i].id, dir + 1))
@@ -1035,50 +1037,18 @@ void addon_quit(const char *dir) { /* addon_card_away's wait, libc's clock and s
  * buf, the reply then read into it, one connection a request. */
 static struct {
     unsigned long thread;
-    int running, fail; /* fail: REQ_* */
+    int running, fail; /* fail: SPOT_* */
     volatile int cancel, done;
     unsigned id, n, len; /* id: the latest request's, never reused */
     char *buf;
     const char *path; /* the app's browse socket */
-    int field;        /* it sends a field row's text (field_sent): no answer is an error, not a wait */
+    int field; /* it sends a field row's text (field_sent): no answer is an error, not a wait */
 } req __attribute__((section(".scratch")));
-enum { REQ_OK, REQ_NOSOCK, REQ_FAIL };
 
-/* Written, shut for writing, and read to EOF within ADDON_WAIT_MS, 100 ms at a time so a cancel is
- * joined at once. */
+/* spotify.c's spot_exchange to the app's socket, within ADDON_WAIT_MS. */
 static void *worker(void *unused) {
-    struct unix_addr to = { 1, { 0 } };
-    tk_snprintf(to.path, sizeof to.path, "%s", req.path);
-    unsigned long long end = now_ms() + ADDON_WAIT_MS;
-    unsigned sent = 0;
-    int fd = socket(1, 2, 0), k = 1; /* AF_UNIX, SOCK_STREAM (MIPS numbering) */
-    req.fail = REQ_NOSOCK;
-    if (fd >= 0 && fd < 1024 && !fcntl(fd, 4, 0x80) &&
-        !connect(fd, &to, sizeof to)) { /* F_SETFL, O_NONBLOCK (MIPS) */
-        req.fail = REQ_FAIL;
-        while (!req.cancel && now_ms() < end) {
-            unsigned set[32] = { 0 }; /* fd_set */
-            int tv[2] = { 0, 100000 };
-            set[fd / 32] = 1u << fd % 32;
-            int writing = sent < req.len;
-            if ((k = select(fd + 1, writing ? 0 : set, writing ? set : 0, 0, tv)) <= 0) {
-                if (k) break; /* not a timeout */
-                continue;
-            }
-            if (writing) {
-                k = send(fd, req.buf + sent, req.len - sent, 0x4000); /* MSG_NOSIGNAL */
-                if (k <= 0) break;
-                if ((sent += (unsigned)k) == req.len) spot_shut(fd);
-                continue;
-            }
-            if ((k = recv(fd, req.buf + req.n, REPLY_MAX + 1 - req.n, 0)) <= 0 ||
-                (req.n += (unsigned)k) > REPLY_MAX) {
-                req.fail = k ? REQ_FAIL : REQ_OK;
-                break;
-            }
-        }
-    }
-    if (fd >= 0) close(fd);
+    req.fail =
+        spot_exchange(req.path, ADDON_WAIT_MS, REPLY_MAX, req.buf, req.len, &req.n, &req.cancel);
     /* the request's bytes past the reply: none kept, a field row's text being one (field_sent) */
     if (req.n < req.len) memset(req.buf + req.n, 0, req.len - req.n);
     if (req.n <= REPLY_MAX) req.buf[req.n] = 0;
@@ -1103,7 +1073,7 @@ static void req_send(const char *path, const char *op, const char *tail) {
     ++req.id;
     req.cancel = 0;
     req.n = 0;
-    req.fail = REQ_FAIL;
+    req.fail = SPOT_FAIL;
     req.path = path;
     int n = (req.buf = calloc(REPLY_MAX + 2, 1))
                 ? tk_snprintf(req.buf, REQ_MAX, "Q2SPOT/1\n%u\t%s%s\n", req.id, op, tail)
@@ -1201,12 +1171,6 @@ static app_t *app(void) { return &ap.a[pg.a]; }
 static lv_t *top(void) { return &pg.lv[pg.depth - 1]; }
 static const char *cell(int i, int k) { return pg.f[4 + 6 * i + k]; }
 
-/* "\t" and s escaped appended to out (size bytes); 0 when it doesn't fit. */
-static int put(char *out, unsigned size, const char *s) {
-    unsigned k = strlen(out);
-    return k + 1 < size && (out[k] = '\t', spot_escape(s, out + k + 1, size - k - 1) >= 0);
-}
-
 static void fetch(lv_t *l) {
     pg.act = 0;
     pg.paging = 0;
@@ -1220,7 +1184,7 @@ static void fetch(lv_t *l) {
 static void busy_row(int on);
 static void action(int i, const char *op, const char *ctx) {
     char a[sizeof top()->args] = "";
-    if (ctx[0] && !put(a, sizeof a, ctx)) return;
+    if (ctx[0] && !spot_put(a, sizeof a, ctx)) return;
     busy_row(0);
     tk_snprintf(pg.aop, sizeof pg.aop, "%s", op);
     req_send(app()->browse, op, a);
@@ -1327,7 +1291,7 @@ static void drop(void) {
  * page row's for the list's start); 0 when they don't fit. */
 static int cursor_args(const lv_t *l, char *a, unsigned n, const char *c) {
     tk_snprintf(a, n, "%.*s", (int)l->base, l->args);
-    return !c[0] || put(a, n, c);
+    return !c[0] || spot_put(a, n, c);
 }
 
 /* The level's next page asked for, as More… would, its reply appended by got(). */
@@ -1398,10 +1362,10 @@ static void row(lv_t *l, int i) {
 /* Stock never lets a row's decoded cover go (nothing calls image_manager_unload_unused), so one a
  * user scrolled past would stay until the list closes: at most ART_KEEP rows' stay decoded around
  * the list's real scroll position (its yoffset, so wheel, touch and fling alike), others unloaded
- * here, from show(), drop() and the tick; [pg.art_lo, pg.art_hi) names the rows that may be decoded,
- * first widened to all a move crossed since the last tick, so none is left behind, and the cost is
- * the rows crossing, not the list's length. An image draws by name and keeps no bitmap between
- * paints (internals.md Covers), so a row scrolled back loads again and nothing dangles.
+ * here, from show(), drop() and the tick; [pg.art_lo, pg.art_hi) names the rows that may be
+ * decoded, first widened to all a move crossed since the last tick, so none is left behind, and the
+ * cost is the rows crossing, not the list's length. An image draws by name and keeps no bitmap
+ * between paints (internals.md Covers), so a row scrolled back loads again and nothing dangles.
  * ponytail: at most ART_KEEP covers (about 1.5 MB at ART_MAX px) plus what a fling paints in one
  * 250 ms tick; a cover scrolled back decodes again on the UI thread, a decode thread if a long
  * fling ever shows its fill-in. */
@@ -1409,7 +1373,8 @@ static void art_window(void) {
     const lv_t *l = top();
     if (!pg.view || !l->art || l->state != K_READY) return;
     int rh = row_h(l), y = widget_get_prop_int(pg.view, "yoffset", 0);
-    if (y < 0) y = 0; /* a drag past the top: stock's rubber band reads to minus the view's height */
+    if (y < 0)
+        y = 0; /* a drag past the top: stock's rubber band reads to minus the view's height */
     /* a row either side of the view, which stock paints when it's within 4 px of the edge */
     int first = y / rh ? y / rh - 1 : 0, last = (y + I(pg.view, W_H) + rh - 1) / rh + 1;
     if (last > l->n) last = l->n;
@@ -1428,7 +1393,8 @@ static void art_window(void) {
 
 static void show(void);
 
-/* The first of reply f's *n rows out, the rest up one, if it is of this kind and not the sole row. */
+/* The first of reply f's *n rows out, the rest up one, if it is of this kind and not the sole row.
+ */
 static int take_row(char **f, int *n, const char *kind) {
     if (*n < 2 || strcmp(f[4], kind)) return 0;
     for (int i = 4; i < 4 + 6 * (*n - 1); ++i) f[i] = f[i + 6];
@@ -1441,9 +1407,7 @@ static int take_row(char **f, int *n, const char *kind) {
  * in the status bar) the row stays, as does a sole row, which would leave an empty list. The row's
  * title and subtitle aren't shown: the box's tips are the app's. Whether it did, from reply f's *n
  * rows. */
-static int take_find(char **f, int *n) {
-    return theme()->page_title_h && take_row(f, n, "search");
-}
+static int take_find(char **f, int *n) { return theme()->page_title_h && take_row(f, n, "search"); }
 
 /* After a taken search, a first row of kind sort leaves the list too, for a sort icon left of the
  * search icon, its fields kept (pg.sort) for the tap, which opens it as a list row's press does.
@@ -1470,7 +1434,8 @@ static void bar_icon(int x, int y, int h, const char *s, int code) {
  * one scrolls clear of them.
  * ponytail: taps only, so the wheel and buttons don't reach search or sort on such a list; a key
  * bound to G_FIND or G_SORT if that is ever asked for. */
-#define FIND_X 302 /* the rows' list_into chevron's box (row_into), so the icon lines up with them */
+#define FIND_X                                                                                     \
+    302 /* the rows' list_into chevron's box (row_into), so the icon lines up with them */
 /* The sort icon's box: midway, by ink, between a centred 150 px title (a section's "Newly Added
  * 1/5" at 20 px, which ends at 262) and the glass. Stock's 50 px images (V1.36 images/xx, alpha
  * > 0): navbar_search's ink is columns 15 to 35, so 317 to 337 at FIND_X; song_order's
@@ -1481,11 +1446,12 @@ static void bar_icon(int x, int y, int h, const char *s, int code) {
 static void find_icon(int sort) {
     void *title = widget_get_child(pg.page, 0);
     int h = I(title, W_H), end = sort ? TITLE_END : FIND_X;
-    widget_move_resize(title, 375 - end, 0, 2 * end - 375, h); /* centred: 95 to 280, or 73 to 302 */
+    widget_move_resize(title, 375 - end, 0, 2 * end - 375,
+                       h); /* centred: 95 to 280, or 73 to 302 */
     /* stock's sort style draws its image from the box's top left (draw type 0), where the glass's
-     * centres it: a 50 px box centred on the title puts both at the same height. Made first: its box
-     * overlaps the glass's (302 to 315), and a tap goes to the last child made, so the glass keeps
-     * all of its own */
+     * centres it: a 50 px box centred on the title puts both at the same height. Made first: its
+     * box overlaps the glass's (302 to 315), and a tap goes to the last child made, so the glass
+     * keeps all of its own */
     if (sort) bar_icon(SORT_X, (h - 50) / 2, 50, "s_img_order_navbar", G_SORT);
     bar_icon(FIND_X, 0, h, "s_img_search", G_FIND);
 }
@@ -1545,7 +1511,8 @@ static void retext(void *item, void *w, unsigned k, const char *s) {
  * row()'s roles however it was dressed; one is set only when its text changed, read as UTF-8 (its
  * "text" prop is a wide string, which widget_get_prop_str doesn't return). A changed text starts
  * from its left, in the face it needs, and the selected row's new title has its marquee again at
- * the next paint (paint_selection), for its own width; a changed detail leaves the title's alone. */
+ * the next paint (paint_selection), for its own width; a changed detail leaves the title's alone.
+ */
 static void relabel(const lv_t *l) {
     for (int i = 0; i < l->n; ++i) {
         void *item = widget_get_child(pg.view, (unsigned)i);
@@ -1707,7 +1674,7 @@ static int sec_take(char **g, int n) {
         tk_snprintf(s->op, sizeof s->op, "%s", c[1]);
         tk_snprintf(s->title, sizeof s->title, "%s", c[2]);
         s->args[0] = 0;
-        if (c[4][0] && !put(s->args, sizeof s->args, c[4])) continue; /* too long: left out */
+        if (c[4][0] && !spot_put(s->args, sizeof s->args, c[4])) continue; /* too long: left out */
         s->base = strlen(s->args);
         ++k;
     }
@@ -1722,14 +1689,14 @@ static void got(void) {
     lv_t *l = top();
     char id[12], *head[4], *g[4 + 6 * ADDON_ROWS], *reply = req.buf, *fit;
     /* its own size, before spot_reply points into it: a full list keeps ADDON_PAGES of them */
-    if (req.fail == REQ_OK && (fit = realloc(reply, req.n + 1))) reply = fit;
+    if (req.fail == SPOT_OK && (fit = realloc(reply, req.n + 1))) reply = fit;
     /* The reply's bytes past its id, before spot_reply cuts them: the same as shown, nothing
      * redrawn. */
     unsigned skip = 9, hash = 0;
-    while (req.fail == REQ_OK && skip < req.n && reply[skip] != '\t') ++skip;
-    if (req.fail == REQ_OK && skip < req.n)
+    while (req.fail == SPOT_OK && skip < req.n && reply[skip] != '\t') ++skip;
+    if (req.fail == SPOT_OK && skip < req.n)
         hash = hash_bytes(FNV_SEED, (const unsigned char *)reply + skip, req.n - skip);
-    int act = pg.act, n = req.fail == REQ_OK
+    int act = pg.act, n = req.fail == SPOT_OK
                               ? spot_reply(reply, req.n, act ? head : g, act ? 0 : ADDON_ROWS)
                               : -1;
     char **f = act ? head : g;
@@ -1755,6 +1722,7 @@ static void got(void) {
             keep_sel(), fetch(l); /* a live level stays shown, asked again now: no Loading… page */
         else
             keep_sel(), l->state = K_LOAD, show(); /* the level as the action left it */
+        /* NOLINTNEXTLINE(bugprone-branch-clone): empty as sections' is: a stale reply is dropped */
     } else if (l->id != req.id) {
     } else if (pg.paging) { /* a next page appended, or the list ends at More… (rows kept) */
         int from = l->n;
@@ -1766,7 +1734,8 @@ static void got(void) {
             if (!strcmp(g[2], "pages") && g[3][0] && pg.pages < ADDON_PAGES) page_next(l);
         }
         append(l, from);
-    } else if (req.fail == REQ_NOSOCK && !req.field && /* a field's text: its error, never resent */
+    } else if (req.fail == SPOT_NOSOCK &&
+               !req.field && /* a field's text: its error, never resent */
                (app()->restart || now - app()->launch_at < ADDON_START_MS)) {
         if (l->state != K_WAIT && l->state != K_READY) l->state = K_WAIT, show();
         pg.again = now + 500;
@@ -1776,10 +1745,10 @@ static void got(void) {
     } else if (!ok) {
         l->state = K_ERROR;
         l->retry = 1;
-        l->nosock = req.fail == REQ_NOSOCK;
+        l->nosock = req.fail == SPOT_NOSOCK;
         l->since = l->slow = 0;
         tk_snprintf(l->note, sizeof l->note, "%s",
-                    req.fail != REQ_NOSOCK && n >= 0 && f[2][0] ? f[2] : why);
+                    req.fail != SPOT_NOSOCK && n >= 0 && f[2][0] ? f[2] : why);
         show();
     } else {
         l->since = l->slow = 0;
@@ -1830,10 +1799,13 @@ static int clicked(void *ctx, void *event) {
     return 0;
 }
 
-/* The box's text: one that doesn't fit pg.term whole is let go, cleared, and nothing is sent. Done sends
- * this twice (EVT_IM_ACTION, EVT_VALUE_CHANGED), so pg.field stays set here (field_sent and search_box
- * clear it) and the toast waits for no pending go: the second call must not toast again or send the cut text.
- * ponytail: stock's widget_get_text_utf8 writes nothing for a text over 255 bytes, which closes silently. */
+/* The box's text: one that doesn't fit pg.term whole is let go, cleared, and nothing is sent. Done
+ * sends this twice (EVT_IM_ACTION, EVT_VALUE_CHANGED), so pg.field stays set here (field_sent and
+ * search_box clear it) and the toast waits for no pending go: the second call must not toast again
+ * or send the cut text.
+ *
+ * ponytail: stock's widget_get_text_utf8 writes nothing for a text over 255 bytes, which closes
+ * silently. */
 static int searched(void *ctx, void *event) {
     char t[256] = "";
     (void)ctx, (void)event;
@@ -1876,11 +1848,13 @@ static int swipe(void *ctx, void *event) {
     if (!pg.sdown) return 0;
     int dx = x - pg.sx, dy = y - pg.sy, ax = dx < 0 ? -dx : dx, ay = dy < 0 ? -dy : dy;
     if (type == EVT_POINTER_UP_BEFORE) {
+        /* NOLINTNEXTLINE(bugprone-signed-char-misuse): sclaim is a 0/1 flag */
         int claimed = pg.sclaim;
         pg.sdown = pg.sclaim = 0;
         if (!claimed) return 0;
-        if (ax >= SWIPE_PX && ax > ay) later(G_SECTION, dx < 0 ? 1 : -1); /* a swipe to the left: the next */
-        return 11; /* RET_STOP */
+        if (ax >= SWIPE_PX && ax > ay)
+            later(G_SECTION, dx < 0 ? 1 : -1); /* a swipe to the left: the next */
+        return 11;                             /* RET_STOP */
     }
     if (type != EVT_POINTER_MOVE_BEFORE) return 0;
     if (!pg.sclaim) {
@@ -1924,7 +1898,7 @@ static int bar_tapped(void *ctx, void *event) {
  * argument, titled title. */
 static void open_list(const char *uri, const char *ctx, const char *title) {
     char a[sizeof top()->args] = "";
-    if (!ctx[0] || put(a, sizeof a, ctx)) push(uri, a, strlen(a), title);
+    if (!ctx[0] || spot_put(a, sizeof a, ctx)) push(uri, a, strlen(a), title);
 }
 
 /* A field row's text, typed in its box: sent to the row's uri after its context, and the reply
@@ -1938,8 +1912,8 @@ static void field_sent(lv_t *l) {
     int i = pg.field - 1;
     pg.field = 0;
     if (l->state == K_READY && i >= 0 && i < l->n && !strcmp(cell(i, 0), "field") &&
-        cell(i, 1)[0] && (!cell(i, 4)[0] || put(a, sizeof a, cell(i, 4))) &&
-        put(a, sizeof a, pg.term)) {
+        cell(i, 1)[0] && (!cell(i, 4)[0] || spot_put(a, sizeof a, cell(i, 4))) &&
+        spot_put(a, sizeof a, pg.term)) {
         req_send(app()->browse, cell(i, 1), a);
         req.field = 1;
         pg.act = 0;
@@ -1969,7 +1943,7 @@ static int go(const void *unused) {
     } else if (pg.next == G_SORT) { /* the sort icon, opening as its row would */
         if (l->state == K_READY && l->sort) open_list(pg.sort[1], pg.sort[4], pg.sort[2]);
     } else if (pg.next == G_SEARCH) {
-        if (put(a, sizeof a, pg.term)) push("search", a, strlen(a), pg.term);
+        if (spot_put(a, sizeof a, pg.term)) push("search", a, strlen(a), pg.term);
     } else if (pg.next == G_FIELD)
         field_sent(l);
     else if (l->state == K_ERROR && i == 1 && app()->nostop) { /* Cancel, as Return */
@@ -2003,8 +1977,7 @@ static int go(const void *unused) {
         else if (!strcmp(kind, "remote"))
             qr_open(app()->state, app()->name);
         else if (!strcmp(kind, "local")) { /* a song, or a folder of them, on the card alone */
-            if (card_path(uri))
-                songs_open(uri, cell(i, 2), !strcmp(ctx, "album"));
+            if (card_path(uri)) songs_open(uri, cell(i, 2), !strcmp(ctx, "album"));
         } else if (!strcmp(kind, "search"))
             search_box(0);
         else if (!strcmp(kind, "field"))
@@ -2075,8 +2048,7 @@ static int page_at(int k, const char *op, const char *args, const char *title, i
     app_t *b = &ap.a[k];
     /* A page is refused when the folder is being deleted or moved into, and while an update
      * downloads for an app that is not running: launch() would be refused too, a dead page. */
-    if (busy && !strcmp(busy + 1, b->id) &&
-        (shelf_moving() || !b->launched || access(b->pid, 0)))
+    if (busy && !strcmp(busy + 1, b->id) && (shelf_moving() || !b->launched || access(b->pid, 0)))
         return toast("Wait until the App Store finishes"), 1;
     if (pg.page || !(pg.lv = calloc(ADDON_DEPTH, sizeof *pg.lv))) return 0;
     if (!(pg.f = calloc(4 + 6 * ADDON_ROWS * ADDON_PAGES, sizeof *pg.f)) ||
@@ -2168,10 +2140,11 @@ int addon_scrobbles(const char *path) {
 
 /* Hearts (docs/librespot.md): a press on an app's song goes to CARD/.<id>/fav.log as a line
  * "\n<kind>\t<0|1>\t<key>\n" appended, which the app takes and sends to its server, whether it runs
- * now or starts later: kind "item" for a streamed song (tidal.c app_fav, key its queue line's item),
- * "path" for a song in its favdir (key its path). The LF before it ends a line a cut write left, so
- * that never joins the next press; the app drops empty lines. One fwrite, no fsync, as
- * scrobble_append's listen: on the UI thread, and only ever appended to. 1 when the card took it. */
+ * now or starts later: kind "item" for a streamed song (tidal.c app_fav, key its queue line's
+ * item), "path" for a song in its favdir (key its path). The LF before it ends a line a cut write
+ * left, so that never joins the next press; the app drops empty lines. One fwrite, no fsync, as
+ * scrobble_append's listen: on the UI thread, and only ever appended to. 1 when the card took it.
+ */
 int addon_fav(const char *id, const char *kind, const char *key, int on) {
     char path[64], line[600];
     unsigned n = (unsigned)tk_snprintf(line, sizeof line, "\n%s\t%d\t%s\n", kind, on != 0, key);
@@ -2209,27 +2182,28 @@ int addon_fav_path(const char *path, int on) {
 }
 
 /* Go to Album (album) or Go to Artist on a song in a card app's folder, /mnt/mmc/.<id>/…
- * (navigation.c qm_goto): when its manifest says goto=1, its page opens at op "goto" ("album" or
+ * (queue_menu.c qm_goto): when its manifest says goto=1, its page opens at op "goto" ("album" or
  * "artist", then the song's path), the level the app answers with, titled title; Back leaves it
  * for the page under it. Its page already open (the song played from it) is closed first, as
  * Coverflow's scoped page is: one page's state. 1 when it opened. */
 int addon_goto(const char *path, const char *title, int album) {
     char args[sizeof pg.lv->args] = "";
     app_t *a = goto_app(path);
-    if (!a || !put(args, sizeof args, album ? "album" : "artist") || !put(args, sizeof args, path))
+    if (!a || !spot_put(args, sizeof args, album ? "album" : "artist") ||
+        !spot_put(args, sizeof args, path))
         return 0;
     void *old = pg.page;
     if (old) closed(old, 0), window_manager_close_window_force(window_manager(), old);
     return page_at((int)(a - ap.a), "goto", args, title && *title ? title : a->name, 0);
 }
 
-/* Now Playing's ⋯ (navigation.c: its img_more's click, the hold menu's More… too) while the queue
- * playing is the one an app's .play started (no queue loaded since) and its q2app says more=<op>
- * <title>: the app's page opens at op, with no arguments, titled title (the app's name without
- * one), instead of stock's ⋯ page, whose rows (Playlists, Quality Choice) mean nothing for an app's
- * queue. Its page already open is closed first, as for Go to. 1 when it opened.
- * ponytail: a stock reload of the same queue (a pick that loads it again) counts as another queue,
- * so ⋯ is stock's until the app plays a queue again; it errs toward stock's page. */
+/* Now Playing's ⋯ (navigation.c's img_more click, and queue_menu.c's More… in the hold menu) while
+ * the queue playing is the one an app's .play started (no queue loaded since) and its q2app says
+ * more=<op> <title>: the app's page opens at op, with no arguments, titled title (the app's name
+ * without one), instead of stock's ⋯ page, whose rows (Playlists, Quality Choice) mean nothing for
+ * an app's queue. Its page already open is closed first, as for Go to. 1 when it opened. ponytail:
+ * a stock reload of the same queue (a pick that loads it again) counts as another queue, so ⋯ is
+ * stock's until the app plays a queue again; it errs toward stock's page. */
 int addon_more(void) {
     app_t *a = qa.app;
     char op[sizeof pg.lv->op];
@@ -2419,14 +2393,6 @@ static void qr_open(const char *state, const char *title) {
     qp.timer = timer_add(qr_tick, 0, 1000);
 }
 
-static void plate(void *canvas, int x, int y, int w, int h, unsigned color, unsigned radius) {
-    int r[4] = { x, y, w, h };
-    if (canvas_fill_rounded_rect(canvas, r, (void *)0, &color, radius)) {
-        canvas_set_fill_color(canvas, color);
-        canvas_fill_rect(canvas, x, y, w, h);
-    }
-}
-
 /* ringnav_paint, every widget after stock painted it: a progress row's bar, a flat rectangle filled
  * position/1000 of its width from the left, square, with no knob (the accent's light tone, as
  * Spotify's bar, over a dim track; the scrubber's rows under a theme that has them); and the code,
@@ -2456,8 +2422,8 @@ void addon_paint(void *w, void *canvas) {
     int side = qr_light() ? QR_LIGHT_PX : QR_PX;
     int n = qp.size, m = side / (n + 4), o = (side - m * n) / 2, digits = (n + 3) / 4;
     unsigned raw = ui_ink_raw(qr_light()); /* Classic's code reads dark on white in either half */
-    if (qr_light()) plate(canvas, -1, -1, side + 2, side + 2, 0x22000000u, 9);
-    plate(canvas, 0, 0, side, side, 0xffffffffu, qr_light() ? 8 : 10);
+    if (qr_light()) fill_box(canvas, &(rect_t){ -1, -1, side + 2, side + 2 }, 0x22000000u, 9);
+    fill_box(canvas, &(rect_t){ 0, 0, side, side }, 0xffffffffu, qr_light() ? 8 : 10);
     canvas_set_fill_color(canvas, rgba(0x000000, 255));
     for (int y = 0; y < n; ++y)
         for (int x = 0; x < n;) {

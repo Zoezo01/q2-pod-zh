@@ -80,11 +80,6 @@ class Config:
 
 
 @pytest.fixture(scope='module')
-def scratch(library):
-    return host.offsets(library.parent/'navigation.o', 'scratch_t')
-
-
-@pytest.fixture(scope='module')
 def ranges(library):
     """The two faces' cmaps as the build cut them (tools/build.py subset_font): BOLD_RANGES, CLASSIC_LIGHT_RANGES."""
     header = (library.parent/'stock.h').read_text()
@@ -104,7 +99,7 @@ PTRS = set('''bar_bt bar_wifi bar_pct bar_slot bar_icon bar_idle bar_state bar_e
 BYTES = {'title_align', 'slider_kind', 'bar_dark'}
 SHORTS = {'title_x', 'title_y', 'title_w'}
 UNSIGNED = set('''codec_timer batt_key bar_timer np_hash np_art np_marquee np_remain_timer np_fit_timer np_press
-    np_press_at scrub_timer scrub_track settle_timer lyric_push_at lyric_at lyric_follow_at lyric_song lyric_rows_song
+    np_press_at scrub_timer scrub_track settle_timer lyric_song lyric_rows_song
     bc_timer bc_track bc_repaint bc_key bc_box bc_shape bc_url clock_key clock_timer keep_lit_at genre_timer
     last_input'''.split())
 
@@ -396,11 +391,11 @@ def slot_width(ui, bar):
 
 @pytest.mark.parametrize('mode, width', [(0, BODY_W + NUB_W), (1, PCT_W), (2, BODY_W + NUB_W + GAP + PCT_W),
                                          (3, INSIDE_W + NUB_W)])
-def test_the_slot_is_its_modes_ink_wide_and_the_bars_height(fw, st, ui, mode, width):
+def test_the_slot_is_its_modes_ink_wide_and_its_rows_height(fw, st, ui, mode, width):
     theme(fw, st, BATTERY=mode)
     bar = Bar(fw, ui)
     bar.sync()
-    assert ui.box(bar.slot)[2:] == (width, SETS[0].bar)
+    assert ui.box(bar.slot)[2:] == (width, ui.box(bar.row)[3])
     assert (ui.shown[bar.icon], ui.shown[bar.pct], ui.shown[bar.slot]) == (0, 0, 1)  # the slot paints it all
 
 
@@ -647,6 +642,63 @@ def test_the_first_paint_measures_the_digits_and_the_slot_fits_them(fw, st, ui):
     assert widths == {'5%': digit + sign, '88%': 2 * digit + sign, '100%': 3 * digit + sign}
 
 
+def crowded(fw, ui, bar):
+    """The device's row with everything showing: Bluetooth's 43 px canvas with the plain glyph, Wi-Fi's 14, the play
+    state's 18 (tools/ipod.py STATE_W), which Classic's group holds."""
+    ui.place(bar.bt, 0, 0, 43, 22)
+    ui.place(bar.wifi, 0, 0, 14, 22)
+    ui.place(bar.state, 0, 0, 18, 22)
+    ui.shown[bar.wifi] = 1
+    fw.mock('mclGetPlayStatus', lambda *_: 2)
+
+
+def test_classics_percent_shows_beside_bluetooth_wifi_and_the_play_state(fw, st, ui):
+    """Classic's 100% is 37 px (8 a digit, 13 the sign, at the bar's 21 px), and with every icon it ends inside the
+    room. The room check took BATT_PCT_W, 42, the built-in bar's stand-in, and turned Percent to the icon."""
+    theme(fw, st, CLASSIC, BATTERY=1)
+    bar = Bar(fw, ui)
+    crowded(fw, ui, bar)
+    st.pct_digit, st.pct_sign = 8, 13  # as the first paint measures them
+    canvas = Paint(fw, ui, bar)()
+    assert ui.shown[bar.state] and st.batt_mode == 1 and [x[0] for x in canvas.texts] == ['88%']
+    assert slot_width(ui, bar) == 2 * 8 + 13
+
+
+@pytest.mark.parametrize('look', [0, 1])  # Classic's own bar, and a flat one on Classic's row
+def test_classics_percent_is_centred_on_the_icons_row_not_the_bar(fw, st, ui, look):
+    """Classic's icon row is 22 px of its 26 px bar: digits centred on the bar's height sat 2 px under the icons."""
+    theme(fw, st, CLASSIC, BATTERY=1, STATUSBAR=look)
+    bar = Bar(fw, ui)
+    ui.place(bar.row, 240, 0, 135, row_h(CLASSIC))
+    st.pct_digit, st.pct_sign = 8, 13
+    (text, rect, *_), = Paint(fw, ui, bar)().texts
+    assert row_h(CLASSIC) < SETS[GEOM['Classic']].bar
+    assert text == '88%' and rect == (0, 0, slot_width(ui, bar), row_h(CLASSIC))
+
+
+def test_the_first_measure_asks_for_the_bar_again_and_percent_takes_its_room(fw, st, ui):
+    """Until a paint has measured the face the check stands on BATT_PCT_W, which is the icon in a crowded Classic
+    row: the measuring paint asks for the bar again, and that pass fits Percent."""
+    theme(fw, st, CLASSIC, BATTERY=1)
+    bar = Bar(fw, ui)
+    crowded(fw, ui, bar)
+    paint = Paint(fw, ui, bar)
+    paint()  # Canvas measures '0' 9.4 px and '%' 12.6: 100% is 40, and 94 with the icons, the room to the pixel
+    assert st.batt_mode == 0 and (st.pct_digit, st.pct_sign) == (9, 13) and len(ui.due('bar_repaint')) == 1
+    ui.run_all('bar_repaint')
+    assert [x[0] for x in paint().texts] == ['88%'] and st.batt_mode == 1
+
+
+def test_a_wide_codec_badge_still_turns_classics_percent_to_the_icon(fw, st, ui):
+    theme(fw, st, CLASSIC, BATTERY=1)
+    bar = Bar(fw, ui)
+    crowded(fw, ui, bar)
+    ui.set_str(bar.bt, b'image', b'bar_ldac')
+    st.pct_digit, st.pct_sign = 8, 13
+    canvas = Paint(fw, ui, bar)()
+    assert st.batt_mode == 0 and canvas.texts == []
+
+
 def icon_parts(canvas, level_h):
     """The stock icon's rects: its level (the one level_h high), its nub (rightmost) and its outline's box."""
     level = [r for r in canvas.rects if r[3] == level_h]
@@ -865,9 +917,9 @@ def dark_level(rects):
     return max((r[2] for r in dark_parts(rects)[1]), default=0)
 
 
-def usb_page(ui):
-    page = ui.widget(ui.wm, 'usbmode_page', 0, 0, 375, 320, kind='window')
-    ui.set_str(page, b'name', b'usbmode_page')
+def dark_page(ui):  # a slider page: under Classic's dark bar
+    page = ui.widget(ui.wm, 'backlight_page', 0, 0, 375, 320, kind='window')
+    ui.set_str(page, b'name', b'backlight_page')
     return page
 
 
@@ -876,7 +928,7 @@ def test_the_dark_bar_moves_the_icons_off_and_paints_its_own_battery(fw, st, ui)
     bar = Bar(fw, ui, title=True)
     bar.sync()  # the bar's first paint finds its widgets
     title = ui.box(bar.title)
-    ui.top = usb_page(ui)
+    ui.top = dark_page(ui)
     bar.sync()
     for w in (bar.bt, bar.wifi):
         x, _, ww, _ = ui.screen(w)
@@ -1084,6 +1136,44 @@ def test_a_dialog_that_names_itself_keeps_the_play_word_off_its_title(fw, st, ui
     ui.top = search
     bar.sync()  # the dialog named itself: the word must not ink over it
     assert ui.shown[label] == 0
+
+def test_classics_clock_makes_way_on_home_with_no_wordmark(fw, st, ui):
+    """Show Wordmark off leaves Home's title empty, and off still takes the clock off Home: a pop-up over Home keeps
+    that, and an untitled page gets the clock back."""
+    theme(fw, st, CLASSIC, TIMETITLE=0)
+    bar = Bar(fw, ui, title=True)
+    st.bar_title = bar.title
+    bar_title(fw, bar, window(ui, 'home_page'))
+    assert ui.text(bar.clock) == '' and st.bar_titled == 1
+    dialog = window(ui, 'confirminfo_dialog')
+    ui.types[dialog] = b'dialog'
+    bar_title(fw, bar, dialog)
+    assert st.bar_titled == 1 and not ui.due('clock_due')
+    bar_title(fw, bar, window(ui, 'bare_page'))
+    assert st.bar_titled == 0 and len(ui.due('clock_due')) == 1
+
+
+def test_usb_mode_shows_no_clock_in_any_theme_or_look(fw, st, ui, t, look, timetitle):
+    """USB mode's page: no clock with Time in Title on or off, in every theme and Status Bar look (Classic's set has
+    its own title label whatever the look); a pop-up over it keeps that, and the next page gets the clock back."""
+    theme(fw, st, t, TIMETITLE=timetitle, STATUSBAR=look)
+    bar = Bar(fw, ui, title=t is CLASSIC)
+    if t is CLASSIC:
+        st.bar_title = bar.title
+    bar_title(fw, bar, window(ui, 'usbmode_page'))
+    assert ui.text(bar.clock) == '' and st.bar_titled == 1
+    dialog = window(ui, 'confirminfo_dialog')
+    ui.types[dialog] = b'dialog'
+    bar_title(fw, bar, dialog)
+    assert ui.text(bar.clock) == '' and st.bar_titled == 1 and not ui.due('clock_due')
+    bar_title(fw, bar, window(ui, 'bare_page'))
+    assert st.bar_titled == 0 and len(ui.due('clock_due')) == 1
+def test_classics_home_keeps_the_clock_with_time_in_title_on(fw, st, ui):
+    theme(fw, st, CLASSIC)
+    bar = Bar(fw, ui, title=True)
+    st.bar_title = bar.title
+    bar_title(fw, bar, window(ui, 'home_page'))
+    assert ui.text(bar.clock) == '12:00' and st.bar_titled == 0
 
 
 # The theme's faces (theme_font, theme_face): its own face where it has the text's characters, else bold.ttf,
@@ -1568,7 +1658,7 @@ def test_the_art_reloads_when_the_players_cover_changes(fw, ui, now, st):
     def unloads():
         return [C.string_at(a[1]) for _, a in fw.calls('image_manager_unload_bitmap_by_name')]
     poll()
-    assert unloads() == []  # stock's init loaded this one
+    assert unloads() == []  # no cover of this song's yet: stock's image stays
     fw.var('fw_ctx_g_lastcover_url', C.c_char * 1024).value = now.paths[2].value
     fw.var('g_playcover_type', C.c_ubyte).value = 1
     poll()
@@ -1582,6 +1672,52 @@ def test_the_art_reloads_when_the_players_cover_changes(fw, ui, now, st):
     fw.var('g_playcover_type', C.c_ubyte).value = 2
     poll()
     assert ui.prop(now.cover, b'image') == b'play_defaultcover'  # dark: the next lit pass
+
+
+# The page opens on the player's cover of its song whatever stock's init showed: after AirPlay, stock's init left no
+# art, and with the key already this song's no pass loaded it until the next song.
+@pytest.mark.parametrize('kind, file', [(1, b'file:///tmp/coverpic.jpg'), (2, b'file:///tmp/externpic.jpg'),
+                                        (3, b'play_defaultcover')])
+def test_the_page_opens_on_its_song_s_cover_whatever_stock_s_init_showed(fw, ui, mcl, st, kind, file):
+    theme(fw, st, CLASSIC)
+    now = Now(fw, ui, mcl, st, opened=False)
+    fw.var('fw_ctx_g_lastcover_url', C.c_char * 1024).value = now.paths[2].value
+    fw.var('g_playcover_type', C.c_ubyte).value = kind
+    ui.set_str(now.cover, b'image', b'' if kind == 3 else b'play_defaultcover')  # none, or not this song's
+    now.open()
+    def unloads():
+        return [C.string_at(a[1]) for _, a in fw.calls('image_manager_unload_bitmap_by_name')]
+    assert unloads() == [file] and ui.prop(now.cover, b'image') == file  # its cached bitmap dropped first
+    assert fw.fn('np_art_ready', C.c_int)()
+    fw.fn('navigation__np_art_poll', None)()
+    assert unloads() == [file]  # loaded once
+
+
+def test_a_page_opening_before_its_song_s_cover_keeps_stock_s_image(fw, ui, mcl, st):
+    theme(fw, st, CLASSIC)
+    now = Now(fw, ui, mcl, st, opened=False)
+    fw.var('fw_ctx_g_lastcover_url', C.c_char * 1024).value = now.paths[1].value  # the last song's, still
+    fw.var('g_playcover_type', C.c_ubyte).value = 1
+    ui.set_str(now.cover, b'image', b'play_defaultcover')
+    now.open()
+    assert fw.calls('image_manager_unload_bitmap_by_name') == []
+    assert ui.prop(now.cover, b'image') == b'play_defaultcover' and not fw.fn('np_art_ready', C.c_int)()
+
+
+# Cover Flow's landing hands over to Now Playing's own art once that is this song's (np_art_ready): np_art_poll loaded
+# it, not before.
+def test_the_art_is_ready_once_the_poll_took_this_song_s_cover(fw, ui, now, st):
+    poll, ready = fw.fn('navigation__np_art_poll', None), fw.fn('np_art_ready', C.c_int)
+    poll()
+    assert not ready()  # the player's cover is another song's still
+    fw.var('fw_ctx_g_lastcover_url', C.c_char * 1024).value = now.paths[2].value
+    fw.var('g_playcover_type', C.c_ubyte).value = 1
+    assert not ready()  # this song's written: not loaded yet
+    poll()
+    assert ready()
+    fw.var('g_playcover_type', C.c_ubyte).value = 3
+    poll()
+    assert ready()  # none: stock's placeholder is the answer
 
 
 # A card app's URL queue: every song's REC_PATH is "" and a cover by URL leaves g_lastcover_url "", so the type and the
@@ -1748,7 +1884,7 @@ class Lyrics(Now):
         fw.mock('mclGetLyricSize', lambda *_: len(LINES))
         super().__init__(fw, ui, mcl, st, lyrics=kwargs.pop('lyrics', LINES), **kwargs)
         ui.ints[self.slide, b'value'] = page
-        self.poll_fn = fw.fn('navigation__lyric_poll', None)
+        self.poll_fn = fw.fn('lyric_poll', None)
         fw.mock('widget_to_local', self.to_local)
 
     def to_local(self, w, xy, *_):
@@ -1948,7 +2084,7 @@ def test_a_tick_before_the_wheel_goes_raw_glides_to_the_next_rows_top(fw, ui, mc
     theme(fw, st, CLASSIC)
     lyr = Lyrics(fw, ui, mcl, st, sec=35)
     at = lyr.settle()
-    lyrics = fw.fn('navigation__np_lyrics', C.c_int, C.c_uint)
+    lyrics = fw.fn('np_lyrics', C.c_int, C.c_uint)
     tops = sorted(ui.box(r)[1] for r in lyr.rows)
     assert lyrics(KEY_NEXT) == 1 and st.lyric_held == 1
     assert lyr.settle() == min(t for t in tops if t > at)

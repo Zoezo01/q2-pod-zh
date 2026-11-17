@@ -29,16 +29,18 @@ static inline void crash_note(const char *path, const char *file, const char *lo
 #include "peq_platform.h"
 #define PEQ_ROOT "" /* host tests pass a scratch directory */
 void child_exit(int status) __attribute__((noreturn));
-void child_oom_first(void); /* between fork and exec: the OOM killer takes this child, not demo (#169) */
-void ringnav_clean_end(void); /* a clean end begins: the watchdog stops, the state record goes (system.c) */
+void child_oom_first(
+    void); /* between fork and exec: the OOM killer takes this child, not demo (#169) */
+void ringnav_clean_end(
+    void); /* a clean end begins: the watchdog stops, the state record goes (system.c) */
 void reboot_record(void *caller); /* a Bluetooth abnormal reboot's q2-crash.log (system.c) */
 int card_mounted(void);           /* /proc/mounts has the card (system.c) */
 /* The crash log's record of a long job's current file and demo's memory (tags.c) */
 void crash_note(const char *path, const char *file, const char *log, unsigned every, unsigned *n);
 #ifdef canvas_set_fill_color
-/* Light Mode: every colour the payload draws passes ui_ink (theme_engine.c) on its way to these stock
- * setters, as stock's own colours pass the style and image hooks. stock_* sets a colour read back
- * from the LCD, which has passed already. */
+/* Light Mode: every colour the payload draws passes ui_ink (theme_engine.c) on its way to these
+ * stock setters, as stock's own colours pass the style and image hooks. stock_* sets a colour read
+ * back from the LCD, which has passed already. */
 unsigned ui_ink(unsigned rgba);
 unsigned ui_ink_raw(unsigned raw);
 static inline int stock_canvas_set_fill_color(void *c, unsigned x) {
@@ -97,8 +99,9 @@ static inline int ink_vgcanvas_set_fill_linear_gradient(void *vg, float sx, floa
 #define PEQ_ACTIVE PEQ_ROOT "/mnt/data/peq-active"
 #define PEQ_SAVED PEQ_ROOT "/mnt/data/peq-presets"
 #define PEQ_IMPORT PEQ_ROOT "/mnt/mmc/EQ"
-#define EQ_OUTPUTS PEQ_ROOT "/mnt/data/peq-outputs" /* EQ per Output: an eq_state per output, and owner */
-#define EQ_DEVICES 32 /* Bluetooth devices remembered at once */
+#define EQ_OUTPUTS                                                                                 \
+    PEQ_ROOT "/mnt/data/peq-outputs" /* EQ per Output: an eq_state per output, and owner */
+#define EQ_DEVICES 32                /* Bluetooth devices remembered at once */
 
 /* Versioned disk representation: fixed-width fields, no pointers or implicit padding.
  * enabled: 0 off, 1 both channels, 2 left only, 3 right only (v1 files hold 0 or 1).
@@ -106,7 +109,10 @@ static inline int ink_vgcanvas_set_fill_linear_gradient(void *vg, float sx, floa
  * automatic: the preamp is 1 Auto (the player cuts each rate's own peak; preamp holds the 48 kHz
  * cut), 2 picked (an import's own preamp too), 0 never picked (saved before 1.3.6: PEQ_PRESET_V2
  * bytes, or imported before 1.4.4), which the UI and PEQ playback also take as Auto. */
-typedef struct { int enabled, type; double frequency, gain, q; } peq_band;
+typedef struct {
+    int enabled, type;
+    double frequency, gain, q;
+} peq_band;
 typedef struct {
     int count, bypass;
     double preamp;
@@ -115,18 +121,27 @@ typedef struct {
     int automatic, spare;
 } peq_preset;
 #define PEQ_PRESET_V2 __builtin_offsetof(peq_preset, automatic)
-typedef struct { unsigned line; const char *reason; } peq_error;
-typedef struct { double b0, b1, b2, a1, a2; } peq_coeff;
+typedef struct {
+    unsigned line;
+    const char *reason;
+} peq_error;
+typedef struct {
+    double b0, b1, b2, a1, a2;
+} peq_coeff;
 typedef struct {
     peq_coeff c[PEQ_BANDS];
     double z[PEQ_CHANNELS][PEQ_BANDS][2], gain[PEQ_CHANNELS];
-    int bypass, used, only[PEQ_BANDS]; /* used: bands past it are identity with zero memory; only: 0 every channel, else channel only-1 */
+    int bypass, used, only[PEQ_BANDS]; /* used: bands past it are identity with zero memory; only: 0
+                                          every channel, else channel only-1 */
 } peq_engine;
 /* The EQ state (docs/internals.md#3eq), PEQ_ACTIVE's Q2PEQ03 record, replaced whole: which EQ plays
  * (mode, EQ_*), the last applied PEQ and the 3EQ, its three fixed bands (eq3_bands) and their
  * headroom preamp. hold: Off, but the 3EQ's preamp kept while its page compares against bypass. */
 enum { EQ_OFF, EQ_3, EQ_PEQ };
-typedef struct { int mode, hold; peq_preset peq, eq3; } eq_state;
+typedef struct {
+    int mode, hold;
+    peq_preset peq, eq3;
+} eq_state;
 typedef struct {
     peq_engine current, next, pending;
     int rate, channels, ramp, ramp_length, waiting;
@@ -154,44 +169,58 @@ void peq_reset(peq_dsp *d, int rate, int channels, const peq_preset *p);
 int peq_update(peq_dsp *d, const peq_preset *p);
 void peq_process(peq_dsp *d, float *audio, unsigned frames);
 
-/* The visualizer's PCM tap (docs/internals.md#visualizer-ipod): hciplayer's filter writes what plays, its
- * first two channels and above 48 kHz every rate / 44100th frame, to ring[seq % VIS_RING], then sets
- * rate (of the ring), stamp (CLOCK_MONOTONIC ns of that write) and seq, the frames written. demo
- * creates the file, sized, under another name and renames it, so it never maps a short one, and bumps
- * want each frame it shows: a second of audio without a bump and the writer stops copying. */
+/* The visualizer's PCM tap (docs/internals.md#visualizer-ipod): hciplayer's filter writes what
+ * plays, its first two channels and above 48 kHz every rate / 44100th frame, to ring[seq %
+ * VIS_RING], then sets rate (of the ring), stamp (CLOCK_MONOTONIC ns of that write) and seq, the
+ * frames written. demo creates the file, sized, under another name and renames it, so it never maps
+ * a short one, and bumps want each frame it shows: a second of audio without a bump and the writer
+ * stops copying. */
 #define VIS_FILE PEQ_ROOT "/tmp/q2vis"
 #define VIS_RING 65536 /* a power of two: 1.5 s at 44.1 kHz, room for VIS_LATENCY_MS */
-typedef struct { unsigned seq, rate; long long stamp; unsigned want, pad; float ring[VIS_RING][2]; } vis_tap;
+typedef struct {
+    unsigned seq, rate;
+    long long stamp;
+    unsigned want, pad;
+    float ring[VIS_RING][2];
+} vis_tap;
 long long now_ns(void);
 unsigned long long now_ms(void);
 /* Crossfade (docs/internals.md#crossfade): demo writes the next track change's fade, an int in ms,
- * 0 for none; hciplayer's filter maps the file read-only and holds the outgoing track's tail for it. */
-#define XFADE_FILE PEQ_ROOT "/tmp/q2xfade" /* the next fade's ms (XF_MS), under demo's count of stops (XF_STOPS) */
+ * 0 for none; hciplayer's filter maps the file read-only and holds the outgoing track's tail for
+ * it. */
+#define XFADE_FILE                                                                                 \
+    PEQ_ROOT "/tmp/q2xfade" /* the next fade's ms (XF_MS), under demo's count of stops (XF_STOPS)  \
+                             */
 #define XF_MS 0xffff
 #define XF_STOPS 16
-/* Mono Audio: demo writes an int, 1 to mix both channels into each; hciplayer's filter and q2video map
- * it read-only (video.c keeps its own copy of the path). */
+/* Mono Audio: demo writes an int, 1 to mix both channels into each; hciplayer's filter and q2video
+ * map it read-only (video.c keeps its own copy of the path). */
 #define MONO_FILE PEQ_ROOT "/tmp/q2mono"
 #define SWAP_FILE PEQ_ROOT "/tmp/q2swap"
-/* AirPlay (docs/internals.md#airplay-sender): the q2-airplay card app makes CAST_FILE, a cast_tap, whole
- * under another name and renames it, and keeps it. While the app reads (want, its CAST_CLOCK, less than
- * CAST_STALE old) hciplayer's filter puts what plays into ring[seq % CAST_RING] at CAST_RATE, 16-bit,
- * then sets id, pts_ms and stamp, then seq; mute set, it also skips the EQ and silences the Q2's own
- * output. A seek or a skip (not a song running into the next) sets jump_seq, then bumps jumps. demo
- * writes its part each pass and the playing song's tags to CAST_TRACK; it reads the app's state and the
- * speaker's place in the song, for the lyrics. The app (q2-airplay's tap.go) mirrors this layout. */
+/* AirPlay (docs/internals.md#airplay-sender): the q2-airplay card app makes CAST_FILE, a cast_tap,
+ * whole under another name and renames it, and keeps it. While the app reads (want, its CAST_CLOCK,
+ * less than CAST_STALE old) hciplayer's filter puts what plays into ring[seq % CAST_RING] at
+ * CAST_RATE, 16-bit, then sets id, pts_ms and stamp, then seq; mute set, it also skips the EQ and
+ * silences the Q2's own output. A seek or a skip (not a song running into the next) sets jump_seq,
+ * then bumps jumps. demo writes its part each pass and the playing song's tags to CAST_TRACK; it
+ * reads the app's state and the speaker's place in the song, for the lyrics. The app (q2-airplay's
+ * tap.go) mirrors this layout. */
 #define CAST_FILE PEQ_ROOT "/tmp/q2cast"
 #define CAST_TRACK PEQ_ROOT "/tmp/q2cast.track"
 #define CAST_MAGIC 0x31544351u /* "QCT1" */
 #define CAST_RATE 44100
 #define CAST_RING 262144 /* a power of two: 5.9 s at CAST_RATE */
-#define CAST_CLOCK(ns) ((unsigned)((unsigned long long)(ns) >> 20)) /* 1.048576 ms ticks: no division */
-#define CAST_STALE 1430  /* 1.5 s of ticks: demo lets go first */
-#define CAST_STALE_PLAYER 1900 /* 2 s: then the filter, its output 500 ms behind in ALSA's buffer */
+#define CAST_CLOCK(ns)                                                                             \
+    ((unsigned)((unsigned long long)(ns) >> 20)) /* 1.048576 ms ticks: no division */
+#define CAST_STALE 1430                          /* 1.5 s of ticks: demo lets go first */
+#define CAST_STALE_PLAYER                                                                          \
+    1900 /* 2 s: then the filter, its output 500 ms behind in ALSA's buffer                        \
+          */
 enum { CAST_OFF, CAST_CONNECTING, CAST_ON };
 typedef struct {
     unsigned magic, size;
     /* the app's */
+    /* clang-format off */
     unsigned want;   /* CAST_CLOCK while it reads */
     int mute;        /* the Q2's own output silent, its EQ skipped */
     int state;       /* CAST_*, for demo */
@@ -214,30 +243,40 @@ typedef struct {
                          * mute until demo has the earphones' level back) */
     unsigned track;  /* CAST_TRACK's writes */
     unsigned spk_seq; /* the app's: bumped with each spk (0: an app that never says) */
+    /* clang-format on */
     short ring[CAST_RING][2];
 } cast_tap;
-_Static_assert(__builtin_offsetof(cast_tap, stamp) == 128 && __builtin_offsetof(cast_tap, ring) == 160,
+_Static_assert(__builtin_offsetof(cast_tap, stamp) == 128 &&
+                   __builtin_offsetof(cast_tap, ring) == 160,
                "q2-airplay's cast_tap layout");
-/* The wired outputs' wait (docs/internals.md#wired-start): demo writes now_ms, never 0, at a press that starts
- * a track or seeks, and 0 at a natural change; hciplayer reads it at init's end and seek's unmute. */
+/* The wired outputs' wait (docs/internals.md#wired-start): demo writes now_ms, never 0, at a press
+ * that starts a track or seeks, and 0 at a natural change; hciplayer reads it at init's end and
+ * seek's unmute. */
 #define PRESS_FILE PEQ_ROOT "/tmp/q2press"
-extern int press_natural; /* crossfade.c: inside a track change nobody pressed for, nothing stamps */
+extern int
+    press_natural; /* crossfade.c: inside a track change nobody pressed for, nothing stamps */
 void press_stamp(void), press_forget(void);
-/* An unpause goes back to where the fade began (docs/internals.md#unpause): demo writes now_ms, never 0, just
- * before a pause's mute; hciplayer reads it at the resume. */
+/* An unpause goes back to where the fade began (docs/internals.md#unpause): demo writes now_ms,
+ * never 0, just before a pause's mute; hciplayer reads it at the resume. */
 #define MUTE_FILE PEQ_ROOT "/tmp/q2mute"
 void mute_stamp(void);
 /* librespot (spotify.c) and its restart loop, whose pid its launcher left, stopped: Spotify's idle
- * stop and Home's Rockbox row, which lets ALSA go too. A q2video sink ends with librespot's pipe. */
+ * stop and Home's Rockbox row, which lets ALSA go too. A q2video sink ends with librespot's pipe.
+ */
 #define SPOT_OUT "/tmp/q2-librespot.out" /* the output for the card's aplay.sh, none on the DAC */
-#define SPOT_DOWNLOAD "/tmp/q2-librespot.download" /* backend download progress, independent of playback */
+#define SPOT_DOWNLOAD                                                                              \
+    "/tmp/q2-librespot.download" /* backend download progress, independent of playback */
 #define SPOT_KILL                                                                                  \
     "kill -9 $(cat /tmp/q2-librespot); killall -9 librespot aplay; "                               \
     "rm -f /tmp/q2-librespot /tmp/q2-librespot.state " SPOT_OUT " " SPOT_DOWNLOAD
 double decibels(double power); /* 10 log10 */
 
-/* Audited against hciplayer 9c3f8c6d… and MPlayer 1.3.0 libaf/af.h: the filter peq_player.c opens. */
-typedef struct { void *audio; int len, rate, nch, format, bps; } af_data;
+/* Audited against hciplayer 9c3f8c6d… and MPlayer 1.3.0 libaf/af.h: the filter peq_player.c opens.
+ */
+typedef struct {
+    void *audio;
+    int len, rate, nch, format, bps;
+} af_data;
 typedef struct af_instance {
     const void *info;
     int (*control)(struct af_instance *, int, void *);
@@ -256,12 +295,28 @@ typedef struct {
     int id, fresh, ending;
 } player_state;
 
-/* The payload's shared helpers: coverflow.c's pages, hashes and worker, photos.c's, navigation.c's. */
+/* The payload's shared helpers: coverflow.c's pages, hashes and worker, photos.c's, navigation.c's.
+ */
 void *text(void *parent, int x, int y, int w, int h);
 /* coverflow.c's flip panel, which navigation.c's hold menu wears under Classic */
 #define PANEL_X 40 /* the panel's first column: Cover Flow's axis less half of it */
 #define BACK_W 294 /* its width and its rows' */
 void coverflow_panel_paint(void *canvas, int x, int y, int head, int h, int over);
+/* The landing's path (coverflow_land.c): the cubic ease-out, and the face's four corners. */
+float land_ease(float x);
+void land_quad(const int from[4], const int to[3], int ms, int len, int travel, float q[8],
+               float *deg);
+/* Classic's landing, the panel turning into Now Playing's art: what a frame of it is drawn from
+ * (coverflow_land.c land_frame). from is the panel's box (x, y, w, h), to the art's (x, y, side),
+ * in the frame's coordinates; the ms are the motion's, the covers' fade's and Now Playing's. The
+ * pixels are the screen's BGRA: shelf the side covers' frame (CF_VIEW_W wide, or 0), back BACK_W x
+ * BACK_H (0 once face up), front ART_SIZE square. */
+typedef struct {
+    int from[4], to[3], len, travel, out_at, out_ms, np_at, np_ms;
+    const unsigned *shelf, *back, *front;
+    unsigned paper; /* opaque */
+} land_t;
+int land_frame(unsigned *d, int pitch, int ms, const land_t *L, int box[4], int *veil);
 void panel_font(void *label, int px, int bold);
 void *page_open(const char *name, int (*closed)(void *, void *), int (*keyup)(void *, void *));
 void motion_open(void *page,
@@ -285,11 +340,12 @@ void row_into(void *item, int h);
 void list_toggle(void *label, const char *title, int on); /* navigation.c: a row's switch */
 /* navigation.c: Classic's value */
 void list_value(void *label, const char *title, const char *value);
-char *csv_find(char *list, const char *item);                /* navigation.c: comma lists */
+char *csv_find(char *list, const char *item); /* navigation.c: comma lists */
 int csv_toggle(char *list, unsigned size, const char *item);
 void *bottom_caption(void *parent, int h);
 int text_differs(void *w, const char *s);
-long file_size(const char *path); /* coverflow.c: -1 when it can't be opened */
+void *song_list(void);                              /* coverflow.c: an empty stSongInfo deque */
+long file_size(const char *path);                   /* coverflow.c: -1 when it can't be opened */
 int picture_size(const char *path, int *w, int *h); /* coverflow.c */
 void *read_all(const char *path, unsigned max, unsigned *size); /* scrobble.c */
 int visual(void *s, int n, int *c, int *frac);
@@ -301,29 +357,75 @@ int by_string(const void *a, const void *b);
 unsigned hash_bytes(unsigned h, const unsigned char *s, unsigned n);
 unsigned fnv(unsigned h, const unsigned char *s);
 void stop_timer(unsigned *timer), rearm(unsigned *timer, int (*fn)(const void *), unsigned ms);
-int return_key(void *event, unsigned *timer, int (*leave)(const void *)); /* a page's keyup: Return */
+int return_key(void *event, unsigned *timer,
+               int (*leave)(const void *)); /* a page's keyup: Return */
 int center_press(unsigned *timer, unsigned *at, int (*single)(const void *), int scrubbing);
-int config_value(const char *section, const char *key, int n, int def); /* theme_engine.c: a config.ini decimal */
+int config_value(const char *section, const char *key, int n,
+                 int def); /* theme_engine.c: a config.ini decimal */
 int image_show(void *img, const char *url, unsigned *size);
 int album_cmp(void *a, void *b);
-int spoken(const char *path); /* navigation.c: under Podcasts or Audiobooks, or an M4B */
-void peq_attach(void); /* peq_ui.c */
+int spoken(const char *path);     /* navigation.c: under Podcasts or Audiobooks, or an M4B */
+void peq_attach(void);            /* peq_ui.c */
+void peq_page_replace(void *old); /* peq_ui.c: the open EQ page closed for a new one */
+/* navigation.c: the settings rows pod_rows builds (pod_values and its Q2POD keys); pod_value(i) is
+ * one's value (only rows with a pod_values entry), read once from config.ini. */
+enum {
+    POD_CHARGE,
+    POD_WAKE,
+    POD_ARTIST_CF,
+    POD_YEAR_OLD,
+    POD_ARTISTS,
+    POD_RESUME,
+    POD_LOCKCLOCK, /* 1 Large, else Standard */
+    POD_ARTIST_AZ,
+    POD_VOL_GUARD,
+    POD_HOLD_HOME,
+    POD_STANDBY,
+    POD_BT_LINK,
+    POD_CF_SORT,    /* Cover Flow's Sort: coverflow.c's SORT_FILE, not config.ini */
+    POD_CF_REFRESH, /* and Refresh Cover Flow, an action */
+    POD_EQ_OUTPUT,  /* EQ per Output: the value and key; its row is Advanced EQ's (peq_ui.c) */
+    POD_KEYTONE, /* Key Tone and In-Vehicle Mode: stock's bytes and SYSSET keys, as its rows did */
+    POD_CARMODE,
+    POD_SMART_WIFI,
+    POD_COVERMODE, /* Enlarged Album Art and Folder Album Cover: stock's bytes and PLAYSET keys, as
+                      its rows do */
+    POD_FOLDERCOVER,
+    POD_BIG_LIB, /* Display's Fast Navigation: Cover Flow's letters and their half copies
+                    (coverflow_thumb.c, lettered, coverflow_halves); off unless the key is 1 */
+    POD_PL_CF,   /* Display's Playlist View: List or Cover Flow, as Artist View */
+    POD_SCAN_DURATIONS,
+    POD_CF_POSITION,
+    POD_HIDE_STREAM, /* Appearance's Hide Streaming / Hide Folder (coverflow_home_layout) */
+    POD_HIDE_FOLDER,
+    POD_REMIND_DAILY, /* System Update's Update Notifications (netupdate_poll); netupdate.c passes
+                         pod_rows 26 */
+    POD_ALBUM_GRID,   /* Library & Folders' Album View: stock's value and PLAYSET key
+                         (album_view_toggle) */
+    /* 中文分支自有的行一律排在 upstream 成员之后：上游的 POD_* 索引、它的 _Static_assert 和
+     * netupdate.c 里 pod_rows 的硬编码就不用每次合并都跟着挪。pod_keys 按名字读写，顺序无关。 */
+    POD_LIBRARY_FILL, /* 补全封面与歌词, an action: onlinematch.c's library_fill_* over the card */
+    POD_COUNT
+};
+int pod_value(int i);
+
 /* EQ per Output (docs/internals.md#eq-per-output): peq_ui.c swaps the EQ when the output named key
- * ("3.5mm", "4.4mm", "usb", a Bluetooth MAC) takes over; forgetting whose it is ends the following. */
+ * ("3.5mm", "4.4mm", "usb", a Bluetooth MAC) takes over; forgetting whose it is ends the following.
+ */
 void eq_output(const char *key), eq_output_forget(void);
-int ringnav_eq_output(void);         /* navigation.c: the setting */
 void ringnav_eq_output_toggle(void); /* and its row's click */
 void peq_boot(void); /* clear a previous session's Simple EQ comparison before restoring playback */
 extern int peq_chained; /* peq_ui.c: peq_stock_eq ran this boot */
 void peq_chain(void);   /* crossfade.c: peq_attach once a connect (ringnav_mode), while playing */
 int swap_on(void);
-int mono_on(void);      /* crossfade.c: Mono Audio's setting */
-#define NS_WARM 2000    /* nightshift.c: Night Shift's temperatures, K */
+int mono_on(void);   /* crossfade.c: Mono Audio's setting */
+#define NS_WARM 2000 /* nightshift.c: Night Shift's temperatures, K */
 #define NS_COOL 5000
 #define NS_STEP 100
 #define NS_DEFAULT 3400
 int night_on(void), night_kelvin(void); /* night_on: 0 Off, 1 On, 2 Auto */
-void night_set(int on, int kelvin), night_save(void), night_paint(void *canvas), night_clock(int dark);
+void night_set(int on, int kelvin), night_save(void), night_paint(void *canvas),
+    night_clock(int dark);
 int clock_night(void); /* theme_engine.c: Night Shift's Auto hours now */
 int worker_stop(unsigned long thread, int *running, volatile int *cancel, unsigned *timer);
 void ringnav_select(void *w, int id, int rows);
@@ -336,21 +438,20 @@ extern volatile unsigned library_gen;
 int duration_seconds(void *song);
 const char *duration_text(char *text, unsigned size, void *song);
 void durations_scanned(void); /* a library scan's end, on its thread */
-int thread_lower(int idle); /* coverflow_loader.c: a worker's nice 19 and its I/O class */
+int thread_lower(int idle);   /* coverflow_loader.c: a worker's nice 19 and its I/O class */
 /* coverflow.c: the o32 statx syscall, as demo imports none */
 int ringnav_statx(int dirfd, const char *path, int flags, unsigned mask, void *buf);
 void *coverflow_album_tracks(void *r);
-/* coverflow.c: qsort's order of unsigned keys; whether key is in keys[0..n), sorted so */
+/* coverflow.c: qsort's order of unsigned keys; whether key is in keys[0..n), sorted so, and the
+ * first there not below it (n for none) */
 int key_cmp(const void *a, const void *b);
 int has_key(const unsigned *keys, unsigned n, unsigned key);
+unsigned key_at(const unsigned *keys, unsigned n, unsigned key);
 unsigned album_id(void *r), album_dir(const char *p, int disc);
 /* navigation.c: Cover Flow's glide and its letter */
 int carousel_glide(void *w, int goal, unsigned ms, int easing);
 void coverflow_letter(void *w, unsigned letter, unsigned now);
 void coverflow_letter_hold(void *w, unsigned letter);
-int ringnav_big_library(void); /* Display's Fast Navigation: letters, years and half copies */
-int ringnav_remind_daily(void); /* System Update's Update Notifications (netupdate_poll) */
-int ringnav_hide_stream(void), ringnav_hide_folder(void); /* Appearance's Hide ... on Home */
 /* A letter with this bit is the Year sort's year instead, in its low bits, 0 undated. */
 #define CF_YEAR 0x80000000u
 int blob_io(const char *path, const char *tmp, void *buf, unsigned size, int write);
@@ -359,9 +460,9 @@ int clip_within(void *canvas, int *old, int *clip, int x, int y, int w, int h);
 void play_folder(void *dq, int idx, int cls);
 int app_urls_play(const char *path); /* tidal.c: a card app's Q2URLS/1 queue, played */
 int app_lyrics(const char *id, char *out, unsigned size); /* tidal.c: an app track's .lrc path */
-int app_fav(void); /* tidal.c: Now Playing's heart on an app's streamed song, -1 not one */
-void app_fav_load(void); /* tidal.c: a queue loading clears an app song's heart */
-int app_urls_at(void); /* tidal.c: the song playing's n in a now=1 URL queue playing; -1 none */
+int app_fav(void);         /* tidal.c: Now Playing's heart on an app's streamed song, -1 not one */
+void app_fav_load(void);   /* tidal.c: a queue loading clears an app song's heart */
+int app_urls_at(void);     /* tidal.c: the song playing's n in a now=1 URL queue playing; -1 none */
 int directory(void *path); /* playback.c: toolsLoadDirectory, for staged */
 #define TIDAL_DIR "/mnt/mmc/.tidal" /* tidal.c's cache, Tidal Downloads' list */
 void tidal_clear(void);
@@ -373,11 +474,11 @@ void tidal_all(int press, char *out, unsigned size), tidal_poll(void), tidal_all
 #define SPOT_DIR "/mnt/mmc/.spotify" /* librespot and its launcher, spotify.c's */
 /* addon.c: card apps, each a card folder .<id> holding its manifest q2app, its
  * launcher run, its binary q2-<id> and its icons. addon_scan finds them again (how many slots: a
- * slot's index stays its app's), addon_name, addon_id and addon_icon (an image name: file://… or the
- * shared stream_app) are one's while it is on the card (else 0), addon_open
- * its Streaming row's click (ctx: the slot). addon_forget and addon_quit: the Apps page replaces or
- * removes the files of the app in folder dir (".<id>"): asked to end and waited for on the Apps
- * page's worker, then, once replaced or removed, forgotten on the UI thread. */
+ * slot's index stays its app's), addon_name, addon_id and addon_icon (an image name: file://… or
+ * the shared stream_app) are one's while it is on the card (else 0), addon_open its Streaming row's
+ * click (ctx: the slot). addon_forget and addon_quit: the Apps page replaces or removes the files
+ * of the app in folder dir (".<id>"): asked to end and waited for on the Apps page's worker, then,
+ * once replaced or removed, forgotten on the UI thread. */
 #define APPS_MAX 8 /* card apps on the card at once */
 int addon_scan(void), addon_open(void *ctx, void *event), addon_hold(void *top);
 int addon_games_last(void); /* the card's games as the last addon_scan found them */
@@ -388,29 +489,38 @@ int addon_is_icon(const char *name); /* a card app's Streaming icon, by its file
 void addon_poll(void), addon_stop(void), addon_paint(void *w, void *canvas), addon_card_away(void);
 void addon_forget(const char *dir), addon_quit(const char *dir);
 /* addon.c's card games (q2app game=1), Games' rows after its own: how many (a scan), one's name,
- * its start over the screen (1 when it runs), whether one runs, and ringnav_input's events for it */
+ * its start over the screen (1 when it runs), whether one runs, and ringnav_input's events for it
+ */
 int addon_games(void), addon_game_start(int k), addon_game_on(void);
-int addon_game_audio(void); /* a card game with audio=1 runs: the sound and the media keys are its */
+int addon_game_audio(
+    void); /* a card game with audio=1 runs: the sound and the media keys are its */
 int addon_game_open(const char *id); /* Home's Shortcut: the card game with this id, -1 none */
 const char *addon_game_name(int k);
-/* games.c: the theme's pop-up for a card game (Q2_POPUP's value), 7 + 6 * 7 + 64 * 7 + 1 bytes at most */
+/* games.c: the theme's pop-up for a card game (Q2_POPUP's value), 7 + 6 * 7 + 64 * 7 + 1 bytes at
+ * most */
 #define POPUP_ENV 512
 void popup_env(char *out, unsigned size);
 int addon_game_input(void *e), addon_is_game(const char *id);
-void ringnav_wdt_long(void); /* system.c: the watchdog's long count for a long pass */
+void ringnav_wdt_long(void);   /* system.c: the watchdog's long count for a long pass */
 int ringnav_smart_awake(void); /* navigation.c: Smart Awake (IPOD KEEPLIT) is on */
 void library_poll(void); /* addon_library.c: an app's library update request, once per addon_poll */
 /* spotify.c's Q2SPOT/1 framing (docs/librespot.md), which the card apps speak too */
 int spot_escape(const char *s, char *out, unsigned size);
+int spot_put(char *out, unsigned size, const char *s); /* "\t" and s escaped appended */
 int spot_reply(char *buf, unsigned len, char **f, int max);
-void spot_shut(int fd);
+int spot_exchange(const char *path, unsigned wait_ms, unsigned max, char *buf, unsigned len,
+                  unsigned *n, volatile int *cancel);
+enum { SPOT_OK, SPOT_NOSOCK, SPOT_FAIL }; /* spot_exchange's results */
+unsigned curl_save(const void *data, unsigned size, unsigned n, void *file); /* netupdate.c */
+/* scrobble.c: a libcurl handle for url, verified with the firmware's CA file */
+void *tls_easy(const char *url, long connect_s, long timeout_s);
 /* library_lists.c: a card folder's songs played from the card (a card app's local row): a
  * folder opens its list, a file plays its folder from it; album, in track order (by name), else
  * newest first. */
 int songs_open(const char *path, const char *title, int album);
 void *app_album_songs(const char *dir); /* library_lists.c: a folder's songs by name, for addon.c */
 int addon_goto(const char *path, const char *title, int album); /* Go to on a card app's song */
-int addon_goes(const char *path); /* addon.c: Go to on path opens a page */
+int addon_goes(const char *path);      /* addon.c: Go to on path opens a page */
 int addon_scrobbles(const char *path); /* addon.c: not when path's app says scrobble=0 */
 int addon_more(void); /* addon.c: Now Playing's ⋯ opens the playing queue's app's page */
 void addon_open_id(const char *id); /* a card app's page by its id, hidden or not */
@@ -422,12 +532,14 @@ int airplay_on(void), airplay_lyrics(int *ms);
  * 0 when the card didn't take it. */
 int addon_fav(const char *id, const char *kind, const char *key, int on);
 int addon_fav_path(const char *path, int on);
-extern unsigned auto_nexts; /* playback.c ringnav_next: tracks that ended by themselves */
+extern unsigned auto_nexts;    /* playback.c ringnav_next: tracks that ended by themselves */
 int stream_cache(int spotify); /* navigation.c: Streaming's Configuration, a cap of 512 << it MB */
 void album_memory(void *r);
-void draw_centred(void *canvas, const unsigned *s, unsigned n, const void *r, unsigned px, unsigned color);
-unsigned book_char(const unsigned char *t, unsigned n, unsigned *i); /* books.c: UTF-8, else Latin-1 */
-int utf8_text(const char *s); /* xiph.c: valid UTF-8, a 4-byte character too */
+void draw_centred(void *canvas, const unsigned *s, unsigned n, const void *r, unsigned px,
+                  unsigned color);
+unsigned book_char(const unsigned char *t, unsigned n,
+                   unsigned *i); /* books.c: UTF-8, else Latin-1 */
+int utf8_text(const char *s);    /* xiph.c: valid UTF-8, a 4-byte character too */
 /* Lyrics as lyrics.c's loader reads them: each line's start (ms, LRC_FAR unsynced), the order it
  * came in, its UTF-8 text and its word stamps (A2's <mm:ss.xx>), each the ms a word starts and its
  * byte offset in the text. */
@@ -451,8 +563,14 @@ void lyrics_publish(const lrc_line *l, unsigned n, const lrc_mark *m);
 int lyrics_rows(void *lrc), lyrics_fit(void *lrc), lyrics_on(void *lrc), lyrics_now(void),
     lyrics_sec(void), lyrics_line(void *lrc, int ms, int page);
 void lyrics_paint(void *row, void *canvas), lyrics_gone(void);
-unsigned accent_tone(int tone); /* iPod: the Accent's ACCENTS column (Minimal's own: MINIMAL_FILL) */
+unsigned
+accent_tone(int tone); /* iPod: the Accent's ACCENTS column (Minimal's own: MINIMAL_FILL) */
 unsigned rgba(unsigned rgb, unsigned alpha);
+typedef struct {
+    int x, y, w, h;
+} rect_t;
+/* navigation.c: a rounded box in color, or a square one when the canvas declines to round it */
+void fill_box(void *canvas, rect_t *r, unsigned color, unsigned radius);
 /* const and pure below: each one's result rests on its arguments (and pure's, memory) alone, so
  * clang can keep one call for several (theme_engine.c and navigation.c define these). */
 unsigned mix(unsigned from, unsigned to, int j, int n) __attribute__((const));
@@ -495,19 +613,21 @@ int video_start(const char *file, int radio); /* books.c */
  * keyboard is up. */
 #define EDIT_NAME "q2_edit"
 void *edit_create(void *item, const char *input_type, int y, int h);
-void t9_box(void *page, void *edit, const char *tips); /* classic_pages.c: a search box and its hint */
-const char *output_device(char *vol);         /* books.c */
-void dac_take(void);                          /* books.c */
+void t9_box(void *page, void *edit,
+            const char *tips);        /* classic_pages.c: a search box and its hint */
+const char *output_device(char *vol); /* books.c */
+void dac_take(void);                  /* books.c */
 /* navigation.c: the theme's font for role on w, or stock's; canvas text's face, 0: the system
  * font */
 int theme_font(void *w, int role, int was);
-#define FONT_ROW -2 /* was: cache the answer in w's own "_font" prop */
+#define FONT_ROW (-2) /* was: cache the answer in w's own "_font" prop */
 /* font_weight.c: w keeps the theme's bold intent where its text fell back to stock's face */
 void font_weight_mark(void *w, int bold);
-void marq_restart(void *row); /* navigation.c: its title changed, its marquee re-armed */
+void marq_restart(void *row);   /* navigation.c: its title changed, its marquee re-armed */
 void list_stop_scroll(void *w); /* navigation.c: its scroll animation stopped */
 const char *theme_face(const unsigned *s, int n, int *px); /* *px, unless 0: the px to draw it at */
 void bar_title_sync(void *win); /* navigation.c: Classic's bar title names win */
+void bar_title_name(void *win); /* navigation.c: names win by its name, on top or not */
 /* navigation.c: Classic's Spotify and Internet Radio Now Playing, laid out as the local page, 0
  * under the other themes; Classic's bar on a canvas (its scrub cue with mark), 0 where none. */
 int stream_ipod(void *art, void *const text[4], void *elapsed, void *remain, void *bar,
@@ -516,7 +636,8 @@ int stream_ipod(void *art, void *const text[4], void *elapsed, void *remain, voi
  * they moved. Not in a paint. */
 int ipod_times(void *elapsed, void *remain, void *bar, int sec);
 int ipod_bar(void *canvas, int x, int y, int bw, int on, int mark);
-/* navigation.c's painters for Classic's info screen (lockscreen.c); colours are final. */
+/* navigation.c's and clock.c's painters for Classic's info screen (lockscreen.c); colours are
+ * final. */
 typedef struct {
     unsigned rgb;       /* 0xRRGGBB */
     short r;            /* a disc's radius in tenths of the -50..50 box; 0: pts */
@@ -549,11 +670,11 @@ int xfade_page(void *top); /* crossfade.c */
 int ipod_battery(void);    /* theme_engine.c: IPOD BATTERY, 0 Icon, else a percentage */
 int title_gone(void *w, void *event); /* ... and looks for its source again at the next sync */
 int bar_title_fits(void *label);      /* label's text fits the bar's title box */
-int ipod_light(void);   /* theme_engine.c: Light Mode */
-unsigned unflip(unsigned v); /* theme_engine.c: the grey Light Mode's flip turns into v */
-int ipod_square_art(void); /* navigation.c: Classic, and Modern under Square */
+int ipod_light(void);                 /* theme_engine.c: Light Mode */
+unsigned unflip(unsigned v);          /* theme_engine.c: the grey Light Mode's flip turns into v */
+int ipod_square_art(void);            /* navigation.c: Classic, and Modern under Square */
 #define SPOT_GREY 0xffaaaaaau
-void radio_search(void);       /* radio.c */
+void radio_search(void);      /* radio.c */
 void toast(const char *text); /* navigation.c */
 /* smart_wifi.c: its radio woken, 1 while its link comes up; its radio off; an action
  * held for that link (fn(ctx, 0) once it is up, if page, or any page when 0, is still in use) */
@@ -564,7 +685,7 @@ int need_link(int (*fn)(void *, void *), void *ctx); /* smart_hold, else "请先
  * netupdate.c's and onlinematch.c's */
 int spot_running(void), scrobble_busy(void), tidal_busy(void), addon_running(void),
     netupdate_busy(void), album_lyrics_busy(void);
-void netupdate_poll(void); /* power_poll: a newer release told on Home (netupdate.c) */
+void netupdate_poll(void);             /* power_poll: a newer release told on Home (netupdate.c) */
 const char *coverflow_sort_name(void); /* coverflow.c */
 void coverflow_sort_step(void), coverflow_refresh_art(void);
 void coverflow_clean_end(void); /* coverflow.c: a clean end mid-build strikes no album */
@@ -578,7 +699,7 @@ void *coverflow_playlist(void *page), *coverflow_playlists_close(void);
 void playlist_open(void *win, int cd_num);
 unsigned playlist_index(int cd_num);
 void playlists_edit(int edit);
-int rockbox_available(void);  /* theme_engine.c: a regular Rockbox binary on the card */
+int rockbox_available(void);   /* theme_engine.c: a regular Rockbox binary on the card */
 int groovebox_available(void); /* theme_engine.c: the Groovebox card app's binary on the card */
 #define SHORTCUT_GROOVEBOX 10  /* IPOD SHORTCUT's Groovebox, after the ten stock-era values */
 #define SHORTCUT_NONE 11       /* IPOD SHORTCUT's None: Home has no Shortcut row */
@@ -589,7 +710,7 @@ const char *shelf_busy(void);           /* netupdate.c: the app folder a job rep
 const char *shelf_moving(void);         /* netupdate.c: the app folder deleted or moved into */
 int shelf_erase(int start);             /* netupdate.c: Spotify's erase, started or running */
 void stream_erased(void);               /* navigation.c: Configuration follows a finished erase */
-void album_lyrics_stop(void);           /* onlinematch.c: Download Album Lyrics before USB storage */
+void album_lyrics_stop(void); /* onlinematch.c: Download Album Lyrics before USB storage */
 
 /* 2038 (docs/internals.md#2038). glibc 2.28's time() truncates the kernel's 64-bit seconds to 32
  * bits, so read unsigned it is right until 2106; -1 still means it failed. */
@@ -597,7 +718,8 @@ static inline long long wall_time(void) {
     long t = time((void *)0);
     return t == -1 ? -1 : (long long)(unsigned long)t;
 }
-/* A wall time before this (2020-09-13) is a clock never set: scrobbling's test, Battery History's. */
+/* A wall time before this (2020-09-13) is a clock never set: scrobbling's test, Battery History's.
+ */
 #define CLOCK_SET 1600000000u
 /* CURLOPT_SSL_CTX_FUNCTION: sets X509_V_FLAG_NO_CHECK_TIME on the SSL_CTX's X509_VERIFY_PARAM, so
  * chains still verify against the pinned roots after they expire (2035 on) and after the 32-bit

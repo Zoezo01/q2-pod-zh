@@ -8,10 +8,10 @@
 #include "stock.h"
 
 #define PHOTO_DIR PEQ_ROOT "/mnt/mmc/.photos"
-#define ALBUMS_MAX 200    /* ponytail: subfolders listed; deeper folders are not albums */
-#define PH_HEAD 4096      /* bytes read for the EXIF orientation; IFD0 sits at the start */
-#define PH_TILE_SLOTS 32  /* decoded thumbnails kept: three rows on screen and some either side */
-#define PH_BAD 9          /* state: the file will not open */
+#define ALBUMS_MAX 200   /* ponytail: subfolders listed; deeper folders are not albums */
+#define PH_HEAD 4096     /* bytes read for the EXIF orientation; IFD0 sits at the start */
+#define PH_TILE_SLOTS 32 /* decoded thumbnails kept: three rows on screen and some either side */
+#define PH_BAD 9         /* state: the file will not open */
 
 enum { ALBUMS, GRID, VIEWER };
 typedef struct {
@@ -39,7 +39,8 @@ static struct {
 int photo_file(const char *name) {
     const char *dot = strrchr(name, '.');
     return name[0] != '.' && dot &&
-           (!strcasecmp(dot + 1, "jpg") || !strcasecmp(dot + 1, "jpeg") || !strcasecmp(dot + 1, "png"));
+           (!strcasecmp(dot + 1, "jpg") || !strcasecmp(dot + 1, "jpeg") ||
+            !strcasecmp(dot + 1, "png"));
 }
 
 static unsigned u16(const unsigned char *p, int le) {
@@ -108,6 +109,7 @@ static void cache_path(char *out, unsigned key, const char *suffix) {
 static int build(int i) {
     char shot[64], tmp[64], small[64];
     unsigned char head[PH_HEAD];
+    /* NOLINTNEXTLINE(clang-analyzer-security.ArrayBound): next_job's i < ph.n <= PHOTOS_MAX */
     void *f = fopen(ph.path[i], "rb");
     if (!f) return PH_BAD; /* storage gone: no marker, the next open retries */
     unsigned n = fread(head, 1, sizeof head, f);
@@ -123,7 +125,8 @@ static int build(int i) {
         if (!thumb(ph.path[i], tmp, turn ? PH_SHOT_H : PH_SHOT_W, turn ? PH_SHOT_W : PH_SHOT_H) ||
             rename(tmp, shot)) {
             unlink(tmp);
-            /* a killed ffmpeg (memory short; a big picture's only decoder) isn't the photo's fault */
+            /* a killed ffmpeg (memory short; a big picture's only decoder) isn't the photo's fault
+             */
             if (access(ph.path[i], 0) || kills != ff_kills) return PH_BAD;
             cache_path(shot, ph.key[i], ".bad");
             if ((f = fopen(shot, "w"))) fclose(f);
@@ -195,9 +198,7 @@ static void drop_photos(void) {
 }
 
 /* qsort's order for a list of strings; shared with books.c. */
-int by_string(const void *a, const void *b) {
-    return strcmp(*(char *const *)a, *(char *const *)b);
-}
+int by_string(const void *a, const void *b) { return strcmp(*(char *const *)a, *(char *const *)b); }
 
 /* dir's photos (full paths) or, with albums, its subfolders that hold any (names), added to list
  * from *n up to cap in name order; with no list, whether dir holds a photo. */
@@ -301,7 +302,8 @@ static void info(void) {
         tk_snprintf(caption, sizeof caption, "%d of %d  %s", ph.current + 1, ph.n, name);
     if (text_differs(ph.info, caption)) { /* a decode redraws the same */
         widget_set_text_utf8(ph.info, caption);
-        widget_set_prop_int(ph.info, "xoffset", 0); /* a long caption's scroll would shift this one left */
+        widget_set_prop_int(ph.info, "xoffset",
+                            0); /* a long caption's scroll would shift this one left */
     }
     widget_set_visible(ph.info, ph.info_on || !s || s == PH_BAD, 0);
 }
@@ -393,9 +395,7 @@ static int leave(const void *unused) {
 }
 
 /* Return: viewer -> grid -> albums -> Local Music. */
-static int keyup(void *ctx, void *event) {
-    return return_key(event, &ph.timer, leave);
-}
+static int keyup(void *ctx, void *event) { return return_key(event, &ph.timer, leave); }
 
 static int closed(void *ctx, void *event) {
     ph.viewer = 0; /* going with the page */
@@ -502,7 +502,8 @@ void photos_paint(void *w, void *canvas) {
     }
 }
 
-/* Local Music's Photos row (navigation.c media_click): the albums, or the grid when there are none. */
+/* Local Music's Photos row (navigation.c media_click): the albums, or the grid when there are none.
+ */
 void photos_open(const char *root) {
     if (ph.page) return;
     void *page = ph.page = page_open("photos_page", closed, keyup);

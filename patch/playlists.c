@@ -8,7 +8,7 @@ static struct {
     void *page, *view, *songs, *picker, *edit;
     void **match;
     int dest, mode, selected, pending, nmatch;
-    unsigned key, timer;
+    unsigned key, timer, gen; /* gen: library_gen when picker was read */
     char name[128], query[128];
 } ple __attribute__((section(".scratch")));
 
@@ -210,9 +210,17 @@ static int ple_run(const void *unused) {
             return 0;
         }
         if (!action) {
-            int n;
-            if (ple.picker) deque_destroy(ple.picker);
-            ple.picker = staged_music(all_songs, (void *)1, &n);
+            /* A later Add Songs in this edit reuses the picker: the whole-library read and name
+             * sort run again only when songtable changed since. The generation is taken before the
+             * read, so one a scan moves meanwhile is never current (as cf.albums_gen), and a failed
+             * read is retried. */
+            unsigned gen = library_gen;
+            if (!ple.picker || ple.gen != gen) {
+                int n;
+                if (ple.picker) deque_destroy(ple.picker);
+                ple.picker = staged_music(all_songs, (void *)1, &n);
+                ple.gen = n < 0 ? ~gen : gen;
+            }
             ple_filter();
             ple.mode = 1;
         } else {
@@ -284,6 +292,15 @@ static int ple_pick(void *ctx, void *event) {
     }
     return 0;
 }
+/* ponytail: Add Songs builds every row it lists at once, a list_item and an hscroll_label each, so
+ * it lists the first PLE_ROWS matches, under ringnav's MAX_ENTRIES (512) as Books', Photos' and Up
+ * Next's 500, then a row that opens Search for the rest. A table_client page would list every song.
+ * An edit's first Add Songs, and the first after library_gen moves, still reads and name-sorts the
+ * whole library on the UI thread, and the list is held until the editor closes. */
+#define PLE_ROWS 500
+/* That row opens the Search box, as row 0 does; picked by its own index, as a song's row is, it
+ * would add the first match not listed. */
+static int ple_more(void *ctx, void *event) { return ple_pick(0, event); }
 /* The T9 box over the title, as Internet Radio's pull-down: page children go so the keyboard has
  * room. Its widget is named search_edit, so navigation.c's search_key closes the keyboard before
  * Return can destroy the edit under it. */
@@ -310,8 +327,9 @@ static void ple_show(void) {
         return;
     }
     ple.edit = 0;
+    int shown = ple.nmatch < PLE_ROWS ? ple.nmatch : PLE_ROWS, rest = ple.nmatch > shown;
     int n = mode == 0   ? (int)deque_size(ple.songs) + 2
-            : mode == 1 ? (ple.nmatch ? ple.nmatch + 1 : 2)
+            : mode == 1 ? (ple.nmatch ? shown + 1 + rest : 2)
             : mode == 2 ? 3
                         : 2;
     char title[180], name[512];
@@ -330,15 +348,16 @@ static void ple_show(void) {
         tk_snprintf(search, sizeof search, "%s%s", *ple.query ? "搜索：" : "搜索", ple.query);
         page_row_detail(ple.view, 0, search, 0, ple_pick);
         /* a tick on a song the playlist already holds: same path and CUE segment */
-        unsigned mask, *in = ple.nmatch ? rec_index(ple.songs, &mask) : 0;
+        unsigned mask = 0, *in = ple.nmatch ? rec_index(ple.songs, &mask) : 0;
         if (!ple.nmatch)
             page_row_detail(ple.view, 1, "无匹配歌曲", 0, 0);
         else
-            for (int i = 0; i < ple.nmatch; i++) {
+            for (int i = 0; i < shown; i++) {
                 void *row = page_row_detail(
                     ple.view, i + 1, track_name(name, sizeof name, ple.match[i]), 0, ple_pick);
                 if (in && rec_find(ple.songs, in, mask, ple.match[i])) ple_tick(row);
             }
+        if (rest) page_row_detail(ple.view, shown + 1, "Search for more songs", 0, ple_more);
         free(in);
     } else
         for (int i = 0; i < n; i++) {
@@ -1012,7 +1031,7 @@ int ringnav_playlist(void *win) {
     /* Playlist View: Cover Flow, once, as the page opens (from Library, Home's list or its
      * shortcut): coming back to it shows the list; with no playlists the list, New Playlist its way
      * on. The covers are the playlists' art, so they build it in every theme, Row Art or not. */
-    int covers = first && list && lists && deque_size(lists) && ringnav_playlist_coverflow();
+    int covers = first && list && lists && deque_size(lists) && pod_value(POD_PL_CF);
     if (toolbar && !covers) return result; /* Minimal, Modern: stock's rows, no art built */
     if (toolbar) { /* the rows stay stock's; the covers' builds stop with the page */
         widget_on(win, EVT_DESTROY, pl_gone, win);

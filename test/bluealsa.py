@@ -7,8 +7,8 @@ import pathlib, struct, subprocess, sys
 from unicorn import UC_HOOK_CODE
 from unicorn.mips_const import *
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'tools'))
-from build import (BLUEALSA, BT_DROP, BT_DROP_HANDLER, BT_PCM_CALLERS, BT_SILENCE_SAMPLES, bt_silence,
-                   machine, read, word)
+from build import BLUEALSA, BT_DROP, BT_DROP_HANDLER, BT_PCM_CALLERS, BT_SILENCE_SAMPLES, bt_silence
+from mips import machine, read, word
 
 
 def check_drop(raw, queued, caller=None):

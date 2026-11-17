@@ -1,7 +1,8 @@
 #include "peq.h"
 
 #ifdef PEQ_HOST
-int __isoc99_sscanf(const char *, const char *, ...); /* stdio.h may hide it behind C23's sscanf redirect */
+int __isoc99_sscanf(const char *, const char *,
+                    ...); /* stdio.h may hide it behind C23's sscanf redirect */
 #endif
 
 static int between(double x, double lo, double hi) {
@@ -9,7 +10,7 @@ static int between(double x, double lo, double hi) {
 }
 
 void peq_default(peq_preset *p) {
-    static const double frequencies[10] = {31, 63, 125, 250, 500, 1000, 2000, 4000, 8000, 16000};
+    static const double frequencies[10] = { 31, 63, 125, 250, 500, 1000, 2000, 4000, 8000, 16000 };
     memset(p, 0, sizeof(*p));
     p->count = 10;
     p->bypass = 1;
@@ -28,12 +29,16 @@ int peq_valid(const peq_preset *p) {
     if (!p || p->count < 0 || p->count > PEQ_BANDS || (p->bypass != 0 && p->bypass != 1) ||
         !between(p->preamp, -60, 24) || !between(p->balance, -12, 12) || (unsigned)p->automatic > 2)
         return 0;
-    for (int i = 0; i < p->count; ++i) if (!valid_band(&p->bands[i])) return 0;
+    for (int i = 0; i < p->count; ++i)
+        if (!valid_band(&p->bands[i])) return 0;
     return 1;
 }
 
 static int error_at(peq_error *e, unsigned line, const char *reason) {
-    if (e) { e->line = line; e->reason = reason; }
+    if (e) {
+        e->line = line;
+        e->reason = reason;
+    }
     return 0;
 }
 
@@ -46,8 +51,9 @@ int peq_number(const char *s, double *out) {
     while (s[n]) {
         if (n == PEQ_LINE_LIMIT) return 0;
         char c = s[n];
-        if (!(c >= '0' && c <= '9') && c != '+' && c != '-' && c != '.' && c != ',' &&
-            c != 'e' && c != 'E') return 0;
+        if (!(c >= '0' && c <= '9') && c != '+' && c != '-' && c != '.' && c != ',' && c != 'e' &&
+            c != 'E')
+            return 0;
         buf[n] = c == ',' ? '.' : c;
         ++n;
     }
@@ -72,7 +78,8 @@ int peq_parse(const char *text, unsigned size, peq_preset *out, peq_error *error
     double side[4] = {0}; /* Preamp under Channel: L or R */
     if (size > PEQ_FILE_LIMIT) return error_at(error, 1, "文件超过 16384 字节");
     if (size >= 3 && (unsigned char)text[0] == 239 && (unsigned char)text[1] == 187 &&
-        (unsigned char)text[2] == 191) pos = 3;
+        (unsigned char)text[2] == 191)
+        pos = 3;
     while (pos < size) {
         char buf[PEQ_LINE_LIMIT + 1], *t[16];
         unsigned length = 0;
@@ -90,7 +97,11 @@ int peq_parse(const char *text, unsigned size, peq_preset *out, peq_error *error
             if (*s == ' ' || *s == '\t' || *s == '\r') { ++s; continue; }
             if (n == 16) return error_at(error, line, "不支持的滤波器格式");
             /* A colon is a separate token, even in "Filter 1:" and "Preamp:". */
-            if (*s == ':') { t[n++] = ":"; ++s; continue; }
+            if (*s == ':') {
+                t[n++] = ":";
+                ++s;
+                continue;
+            }
             t[n++] = s;
             while (*s && *s != ' ' && *s != '\t' && *s != '\r' && *s != ':' && *s != '#') ++s;
             char delimiter = *s;
@@ -145,7 +156,7 @@ int peq_parse(const char *text, unsigned size, peq_preset *out, peq_error *error
         else return error_at(error, line, "不支持的滤波器类型");
         int corner = !t[k][2]; /* APO: LS/HS take a corner frequency, LSC/HSC the centre */
         ++k;
-        if (strcmp(t[k], "Fc") || strcmp(t[k+2], "Hz") || strcmp(t[k+3], "增益") ||
+        if (strcmp(t[k], "Fc") || strcmp(t[k+2], "Hz") || strcmp(t[k+3], "Gain") ||
             strcmp(t[k+5], "dB")) return error_at(error, line, "应为 Fc <Hz> Hz Gain <dB> dB");
         if (!peq_number(t[k+1], &b.frequency) || !peq_number(t[k+4], &b.gain))
             return error_at(error, line, "频率或增益数值无效");
@@ -155,9 +166,11 @@ int peq_parse(const char *text, unsigned size, peq_preset *out, peq_error *error
                 return error_at(error, line, "应为 Q <number>");
         } else if (!b.type) return error_at(error, line, "峰值滤波器需要 Q");
         if (b.type && valid_band(&b)) {
-            /* Match Equalizer APO: no Q means slope 0.9 at Fc; LS/HS with Q shift the corner to the centre. */
+            /* Match Equalizer APO: no Q means slope 0.9 at Fc; LS/HS with Q shift the corner to the
+             * centre. */
             double a = pow(10, b.gain / 40), ab = a + 1 / a;
-            if (k >= n) b.q = 1 / __builtin_sqrt(ab * (1 / 0.9 - 1) + 2);
+            if (k >= n)
+                b.q = 1 / __builtin_sqrt(ab * (1 / 0.9 - 1) + 2);
             else if (corner) {
                 double f = pow(10, __builtin_fabs(b.gain) / 80 * ((1 / (b.q * b.q) - 2) / ab + 1));
                 b.frequency = b.type == 1 ? b.frequency * f : b.frequency / f;
@@ -173,13 +186,14 @@ int peq_parse(const char *text, unsigned size, peq_preset *out, peq_error *error
         if (p.count == PEQ_BANDS) return error_at(error, line, "超过 30 个频段");
         p.bands[p.count++] = b;
     }
-    /* Per-channel preamps become the louder one's common preamp plus a balance that turns the other down. */
+    /* Per-channel preamps become the louder one's common preamp plus a balance that turns the other
+     * down. */
     p.preamp += side[2] > side[3] ? side[2] : side[3];
     p.balance = side[3] - side[2];
     if (!between(p.preamp, -60, 24)) return error_at(error, preamp_line, "前级增益总和超出 -60..24 dB");
     if (!between(p.balance, -12, 12)) return error_at(error, preamp_line, "左右声道前级增益相差超过 12 dB");
     p.automatic = preamp_line ? 2 : 1; /* the file's preamp, as if picked; without one, Auto */
-    *out = p; /* Commit only after the complete file validates. */
+    *out = p;                          /* Commit only after the complete file validates. */
     return 1;
 }
 
@@ -197,7 +211,10 @@ int peq_import_file(const char *path, peq_preset *out, peq_error *error) {
 }
 
 int peq_load(const char *path, peq_preset *out) {
-    struct { char magic[8]; peq_preset preset; } file;
+    struct {
+        char magic[8];
+        peq_preset preset;
+    } file;
     void *f = fopen(path, "rb");
     if (!f) return 0;
     char extra;
@@ -236,27 +253,32 @@ int peq_save(const char *path, const peq_preset *p, int replace) {
     return peq_save_file(path, "Q2PEQ02", p, sizeof(*p));
 }
 
-/* The 3EQ's fixed filters at gain dB each: a 155 Hz low shelf, a peak at 900 Hz to cut or 1750 Hz to
- * boost (Listener's reading of Apple's AirPods EQ; Q 0.707 and the frequencies within its ranges are
- * Q2 Pod's choices), a 5 kHz high shelf. A zero gain is an identity band. */
+/* The 3EQ's fixed filters at gain dB each: a 155 Hz low shelf, a peak at 900 Hz to cut or 1750 Hz
+ * to boost (Listener's reading of Apple's AirPods EQ; Q 0.707 and the frequencies within its ranges
+ * are Q2 Pod's choices), a 5 kHz high shelf. A zero gain is an identity band. */
 void eq3_bands(peq_preset *p, const double gain[3]) {
-    static const int types[3] = {1, 0, 2};
-    static const double frequencies[3] = {155, 1750, 5000};
+    static const int types[3] = { 1, 0, 2 };
+    static const double frequencies[3] = { 155, 1750, 5000 };
     memset(p, 0, sizeof(*p));
     p->count = 3;
     for (int i = 0; i < 3; ++i)
-        p->bands[i] = (peq_band){1, types[i], i == 1 && gain[1] < 0 ? 900 : frequencies[i], gain[i], 0.707};
+        p->bands[i] =
+            (peq_band){ 1, types[i], i == 1 && gain[1] < 0 ? 900 : frequencies[i], gain[i], 0.707 };
 }
 
 static int eq_valid(const eq_state *s) {
-    return s->mode >= EQ_OFF && s->mode <= EQ_PEQ && (s->hold == 0 || s->hold == 1) && peq_valid(&s->peq) &&
-           peq_valid(&s->eq3) && s->eq3.count == 3;
+    return s->mode >= EQ_OFF && s->mode <= EQ_PEQ && (s->hold == 0 || s->hold == 1) &&
+           peq_valid(&s->peq) && peq_valid(&s->eq3) && s->eq3.count == 3;
 }
 
-/* Q2PEQ03, else a Q2PEQ01/02 preset from before 3EQ: its PEQ, on unless bypassed, and a flat 3EQ. */
+/* Q2PEQ03, else a Q2PEQ01/02 preset from before 3EQ: its PEQ, on unless bypassed, and a flat 3EQ.
+ */
 int eq_load_from(const char *path, eq_state *s) {
     static const double flat[3];
-    struct { char magic[8]; eq_state s; } file;
+    struct {
+        char magic[8];
+        eq_state s;
+    } file;
     memset(s, 0, sizeof(*s));
     peq_default(&s->peq);
     eq3_bands(&s->eq3, flat);
@@ -327,23 +349,32 @@ int peq_compile(const peq_preset *p, int rate, peq_engine *out) {
         e.used = i + 1;
         if (p->bands[i].enabled > 1) e.only[i] = p->bands[i].enabled - 1;
         const peq_band *b = &p->bands[i];
-        if (b->frequency >= rate * 0.5) continue; /* not representable at this rate; skip only this band */
+        if (b->frequency >= rate * 0.5)
+            continue; /* not representable at this rate; skip only this band */
         double a = pow(10, b->gain / 40), w = 6.283185307179586 * b->frequency / rate;
         double c = cos(w), alpha = sin(w) / (2 * b->q), r = 2 * __builtin_sqrt(a) * alpha;
         double b0, b1, b2, a0, a1, a2;
         if (!b->type) {
+            /* clang-format off */
             b0 = 1 + alpha * a; b1 = -2 * c; b2 = 1 - alpha * a;
             a0 = 1 + alpha / a; a1 = -2 * c; a2 = 1 - alpha / a;
+            /* clang-format on */
         } else if (b->type == 1) {
-            b0 = a * ((a+1) - (a-1)*c + r); b1 = 2*a*((a-1) - (a+1)*c);
-            b2 = a*((a+1) - (a-1)*c - r); a0 = (a+1) + (a-1)*c + r;
-            a1 = -2*((a-1) + (a+1)*c); a2 = (a+1) + (a-1)*c - r;
+            b0 = a * ((a + 1) - (a - 1) * c + r);
+            b1 = 2 * a * ((a - 1) - (a + 1) * c);
+            b2 = a * ((a + 1) - (a - 1) * c - r);
+            a0 = (a + 1) + (a - 1) * c + r;
+            a1 = -2 * ((a - 1) + (a + 1) * c);
+            a2 = (a + 1) + (a - 1) * c - r;
         } else {
-            b0 = a*((a+1) + (a-1)*c + r); b1 = -2*a*((a-1) + (a+1)*c);
-            b2 = a*((a+1) + (a-1)*c - r); a0 = (a+1) - (a-1)*c + r;
-            a1 = 2*((a-1) - (a+1)*c); a2 = (a+1) - (a-1)*c - r;
+            b0 = a * ((a + 1) + (a - 1) * c + r);
+            b1 = -2 * a * ((a - 1) + (a + 1) * c);
+            b2 = a * ((a + 1) + (a - 1) * c - r);
+            a0 = (a + 1) - (a - 1) * c + r;
+            a1 = 2 * ((a - 1) - (a + 1) * c);
+            a2 = (a + 1) - (a - 1) * c - r;
         }
-        e.c[i] = (peq_coeff){b0/a0, b1/a0, b2/a0, a1/a0, a2/a0};
+        e.c[i] = (peq_coeff){ b0 / a0, b1 / a0, b2 / a0, a1 / a0, a2 / a0 };
     }
     *out = e;
     return 1;
@@ -413,9 +444,22 @@ int peq_update(peq_dsp *d, const peq_preset *p) {
 }
 
 /* Identity coefficients: with zero memory the band passes x through unchanged. */
-static inline __attribute__((always_inline)) int identity(const peq_coeff *c) { return c->b0 == 1 && !c->b1 && !c->b2 && !c->a1 && !c->a2; }
+static inline __attribute__((always_inline)) int identity(const peq_coeff *c) {
+    return c->b0 == 1 && !c->b1 && !c->b2 && !c->a1 && !c->a2;
+}
 
-/* The bands sample can act on, in order: identity bands with zero memory stay so until an update. */
+/* One band's step, transposed direct form II. Flush |y| < ~2e-34 to zero: decaying tails would
+ * otherwise reach denormals, which MIPS FPUs trap on. */
+static inline __attribute__((always_inline)) double biquad(const peq_coeff *c, double *z,
+                                                           double x) {
+    double y = c->b0 * x + z[0] + 1e-18 - 1e-18;
+    z[0] = c->b1 * x - c->a1 * y + z[1];
+    z[1] = c->b2 * x - c->a2 * y;
+    return y;
+}
+
+/* The bands sample can act on, in order: identity bands with zero memory stay so until an update.
+ */
 static int live(const peq_engine *e, int *list) {
     int n = 0;
     for (int i = 0; i < e->used; ++i) {
@@ -433,32 +477,69 @@ static double sample(peq_engine *e, const int *list, int n, double x, int ch) {
         const peq_coeff *c = &e->c[i];
         double *z = e->z[ch][i];
         /* The other channel's band: drop memory carried from a both-channel version. */
-        if (e->only[i] && e->only[i] != ch + 1) { z[0] = z[1] = 0; continue; }
+        if (e->only[i] && e->only[i] != ch + 1) {
+            z[0] = z[1] = 0;
+            continue;
+        }
         /* Still checked per sample: a band can drain to idle mid-block. */
         if (identity(c) && !z[0] && !z[1]) continue;
-        /* Flush |y| < ~2e-34 to zero: decaying tails would otherwise reach denormals, which MIPS FPUs trap on. */
-        double y = c->b0 * x + z[0] + 1e-18 - 1e-18;
-        z[0] = c->b1 * x - c->a1 * y + z[1];
-        z[1] = c->b2 * x - c->a2 * y;
-        x = y;
+        x = biquad(c, z, x);
     }
     return x * e->gain[ch]; /* after the cascade, so filter memory is independent of preamp */
 }
 
+/* A steady block (no ramp, no update waiting): unless a listed band is at identity (draining to
+ * rest, or a one-channel band past Nyquist), sample()'s tests answer the same all block, so each
+ * channel runs its own bands over the block instead. 0: sample() runs it.
+ * ponytail: a one-channel band at or above half the rate (a stream at 40 kHz or less) stays listed
+ * at identity, so its preset takes sample() every block; skipping an identity band with no memory
+ * here, as sample() does, would lift it. */
+static int steady(peq_engine *e, const int *list, int n, float *audio, unsigned frames,
+                  int channels) {
+    for (int k = 0; k < n; ++k)
+        if (identity(&e->c[list[k]])) return 0;
+    for (int ch = 0; ch < channels; ++ch) {
+        const peq_coeff *c[PEQ_BANDS];
+        double *z[PEQ_BANDS];
+        int m = 0;
+        for (int k = 0; k < n; ++k) {
+            int i = list[k];
+            if (e->only[i] && e->only[i] != ch + 1)
+                e->z[ch][i][0] = e->z[ch][i][1] = 0; /* as sample() does at each sample */
+            else
+                c[m] = &e->c[i], z[m++] = e->z[ch][i];
+        }
+        for (float *a = audio + ch, *end = audio + frames * channels; a < end; a += channels) {
+            double x = *a;
+            if (!__builtin_isfinite(x)) x = 0;
+            for (int k = 0; k < m; ++k) x = biquad(c[k], z[k], x);
+            *a = (float)(x * e->gain[ch]);
+        }
+    }
+    return 1;
+}
+
 void peq_process(peq_dsp *d, float *audio, unsigned frames) {
     if (!audio || d->channels < 1 || d->channels > PEQ_CHANNELS) return;
-    if (d->current.bypass && !d->ramp && !d->waiting) return; /* steady bypass leaves the whole block untouched */
-    int cur[PEQ_BANDS], nxt[PEQ_BANDS], nc = live(&d->current, cur), nn = d->ramp ? live(&d->next, nxt) : 0;
+    if (d->current.bypass && !d->ramp && !d->waiting)
+        return; /* steady bypass leaves the whole block untouched */
+    int cur[PEQ_BANDS], nxt[PEQ_BANDS], nc = live(&d->current, cur),
+                                        nn = d->ramp ? live(&d->next, nxt) : 0;
+    if (!d->ramp && !d->waiting && frames &&
+        steady(&d->current, cur, nc, audio, frames, d->channels))
+        return;
     for (unsigned i = 0; i < frames; ++i) {
         if (!d->ramp && d->waiting) {
             d->next = d->pending;
             d->waiting = 0;
             d->ramp = d->ramp_length;
-            /* Carry filter memory over so unchanged bands and preamp-only edits crossfade without a transient. */
+            /* Carry filter memory over so unchanged bands and preamp-only edits crossfade without a
+             * transient. */
             if (!d->current.bypass) memcpy(d->next.z, d->current.z, sizeof(d->next.z));
             /* Bands dropped from the end still run until their carried memory drains. */
             for (int b = d->next.used; b < d->current.used; ++b)
-                for (int ch = 0; ch < PEQ_CHANNELS; ++ch) if (d->next.z[ch][b][0] || d->next.z[ch][b][1]) d->next.used = b + 1;
+                for (int ch = 0; ch < PEQ_CHANNELS; ++ch)
+                    if (d->next.z[ch][b][0] || d->next.z[ch][b][1]) d->next.used = b + 1;
             nn = live(&d->next, nxt);
         }
         for (int ch = 0; ch < d->channels; ++ch, ++audio) {
@@ -471,22 +552,31 @@ void peq_process(peq_dsp *d, float *audio, unsigned frames) {
                 double mix = (double)(d->ramp_length - d->ramp + 1) / d->ramp_length;
                 y += (wet - y) * mix;
             }
-            /* Keep float headroom for downstream volume; the output converter owns full-scale clipping. */
+            /* Keep float headroom for downstream volume; the output converter owns full-scale
+             * clipping. */
             *audio = (float)y;
         }
+        /* NOLINTNEXTLINE(clang-analyzer-unix.cstring.UninitializedRead): only cur[0..nc) is read */
         if (d->ramp && !--d->ramp) d->current = d->next, nc = nn, memcpy(cur, nxt, sizeof(cur));
     }
 }
 
-double decibels(double power) { return 10 * log(power) / 2.302585092994046; } /* no log10 in demo's GOT */
+double decibels(double power) {
+    return 10 * log(power) / 2.302585092994046;
+} /* no log10 in demo's GOT */
 
 long long now_ns(void) {
-    struct { long s, ns; } t; /* struct timespec */
+    struct {
+        long s, ns;
+    } t;                          /* struct timespec */
     clock_gettime(1, (void *)&t); /* CLOCK_MONOTONIC: the same clock in hciplayer and demo */
     return t.s * 1000000000LL + t.ns;
 }
 unsigned long long now_ms(void) { /* not now_ns() / 1e6: no __udivdi3 here */
-    struct { long s, ns; } t;
-    clock_gettime(1, (void *)&t); /* CLOCK_MONOTONIC, librespot's at= clock and the press stamp's on both sides */
+    struct {
+        long s, ns;
+    } t;
+    clock_gettime(1, (void *)&t); /* CLOCK_MONOTONIC, librespot's at= clock and the press stamp's on
+                                     both sides */
     return (unsigned long long)(unsigned)t.s * 1000 + (unsigned)t.ns / 1000000;
 }

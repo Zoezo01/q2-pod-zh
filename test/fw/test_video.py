@@ -311,6 +311,19 @@ def update(at, title):
     return at, f'[http @ 0x6e4a20] Metadata update for StreamTitle: {title}'
 
 
+def ogg(artist='Artist 1', title='Song 1', codec='vorbis'):
+    """Stock ffmpeg 4.2's report on an Ogg station (Icecast's, with no ICY tags), its first song's Vorbis comments under
+    its stream with their keys in capitals, and again under the sound's output."""
+    tags = [f'      {k:<16}: {v}' for k, v in (('ARTIST', artist), ('TITLE', title)) if v]
+    lines = [f"Input #0, ogg, from '{URL}':", '  Duration: N/A, start: 0.000000, bitrate: N/A',
+             f'    Stream #0:0: Audio: {codec}, 48000 Hz, stereo, fltp, 128 kb/s', '    Metadata:', *tags,
+             '      SUBTITLE        : Live', 'Stream mapping:',
+             f'  Stream #0:0 -> #0:0 ({codec} (native) -> pcm_s16le (native))',
+             "Output #0, s16le, to 'pipe:4':", '  Metadata:', '    encoder         : Lavf58.29.100',
+             '    Stream #0:0: Audio: pcm_s16le, 48000 Hz, stereo, s16, 1536 kb/s', '    Metadata:', *tags]
+    return [(300 + i, x) for i, x in enumerate(lines)]  # in order: the stand-in sorts a millisecond's lines
+
+
 REFUSED = [(0, '[tcp @ 0x6e4a20] Connection to tcp://radio.example:80 failed: Connection refused'),
            (0, f'{URL}: Connection refused')]
 
@@ -1542,6 +1555,26 @@ def test_a_station_connects_plays_and_follows_its_titles(q2):
     assert RADIO_STATE not in q2.files and RADIO_SOCK not in q2.files  # a quit: demo sees it gone
     assert all(r.killed is not None and r.reaped is not None for r in q2.runs)
     assert [(r, v) for _, r, v in q2.dac] == [(DAC_PCM, 0), (DAC_MUTE, 0), (DAC_MUTE, 1)]
+
+
+def songs(q2):
+    """The titles demo read while the station played, each once, in order."""
+    titles = [s['title'] for s in q2.radio_states() if s['state'] == 'playing']
+    return [t for i, t in enumerate(titles) if not i or titles[i - 1] != t]
+
+
+@pytest.mark.parametrize('artist, title, codec, shown', [
+    ('Artist 1', 'Song 1', 'vorbis', 'Artist 1 - Song 1'),  # not SUBTITLE's
+    ('', 'Song 1', 'opus', 'Song 1'),  # an artist only if named
+    ('', '', 'opus', '')])  # a stream that names no song (LISTEN.moe's): the codec and bitrate alone
+def test_an_ogg_station_shows_the_song_its_stream_starts_with(q2, artist, title, codec, shown):
+    q2.stations[URL] = [Station(ogg(artist, title, codec), sound=500)]
+    q2.press(b'q', 3000)
+    assert radio(q2) == 0
+    assert songs(q2) == [shown]
+    assert {s['codec'] for s in q2.radio_states() if s['state'] == 'playing'} == {codec.upper()}
+    (run,) = q2.runs
+    assert [n for n, _ in outputs(run.argv)] == [4]  # the sound alone
 
 
 def test_a_dropped_stream_starts_again_at_once_then_a_second_later_each_silent_start(q2):

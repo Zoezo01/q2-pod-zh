@@ -51,15 +51,25 @@ static int mode_is(const char *path, unsigned mode) {
 
 static void scope_add(const char *path, int visible) {
     unsigned n = strlen(path);
-    if (scope.bytes + n * 2 + 96 > SCOPE_MAX) { scope.failed = 1; return; }
+    if (scope.bytes + n * 2 + 96 > SCOPE_MAX) {
+        scope.failed = 1;
+        return;
+    }
     scope_rule *r = calloc(1, sizeof(*r) + n + 2);
-    if (!r) { scope.failed = 1; return; }
+    if (!r) {
+        scope.failed = 1;
+        return;
+    }
+    /* NOLINTNEXTLINE(bugprone-not-null-terminated-result): calloc'd: '/' and a NUL follow */
     memcpy(r->path, path, n);
-    r->path[n] = '/'; r->length = n + 1; r->visible = visible;
+    r->path[n] = '/';
+    r->length = n + 1;
+    r->visible = visible;
     /* Descendants precede ancestors: CASE's first match gives the closest marker. */
     scope_rule **at = &scope.rules;
     while (*at && (*at)->length > r->length) at = &(*at)->next;
-    r->next = *at; *at = r;
+    r->next = *at;
+    *at = r;
     scope.bytes += n * 2 + 96;
 }
 
@@ -75,8 +85,12 @@ static int marker(char *path, unsigned n, const char *name) {
 
 static void scope_walk(char *path, unsigned depth) {
     unsigned n = strlen(path);
-    if (depth > 64 || n + 258 >= PATH_MAX_SCOPE) { walk.failed = 1; return; }
-    int ignore = marker(path, n, "database.ignore"), unignore = marker(path, n, "database.unignore");
+    if (depth > 64 || n + 258 >= PATH_MAX_SCOPE) {
+        walk.failed = 1;
+        return;
+    }
+    int ignore = marker(path, n, "database.ignore"),
+        unignore = marker(path, n, "database.unignore");
     if (ignore || unignore) {
         const char *card = path + sizeof(PEQ_ROOT) - 1;
         unsigned length = strlen(card);
@@ -89,14 +103,17 @@ static void scope_walk(char *path, unsigned depth) {
     if (!dir) return;
     for (struct dirent *e; !walk.failed && (e = readdir(dir));) {
         /* dot folders: ., .., and caches such as .sldp and .coverflow, thousands of files */
-        if (e->d_name[0] == '.' ||
-            (e->d_type && e->d_type != 4)) continue;
+        if (e->d_name[0] == '.' || (e->d_type && e->d_type != 4)) continue;
         int count = scope_snprintf(path + n, PATH_MAX_SCOPE - n, "/%s", e->d_name);
-        if (count < 0 || (unsigned)count >= PATH_MAX_SCOPE - n) { walk.failed = 1; break; }
+        if (count < 0 || (unsigned)count >= PATH_MAX_SCOPE - n) {
+            walk.failed = 1;
+            break;
+        }
         if (e->d_type == 4 || mode_is(path, 0040000)) scope_walk(path, depth + 1);
         path[n] = 0;
     }
-    closedir(dir); path[n] = 0;
+    closedir(dir);
+    path[n] = 0;
 }
 
 /* A library update walks the card on stock's scan thread and saves the markers to RULES, so a
@@ -104,7 +121,8 @@ static void scope_walk(char *path, unsigned depth) {
  * ponytail: a folder scan walks the whole card too; walk only that folder if that gets slow. */
 void library_scope_scan(void) {
     char path[PATH_MAX_SCOPE] = CARD;
-    walk.bytes = 32; walk.failed = 0;
+    walk.bytes = 32;
+    walk.failed = 0;
     walk.out = fopen(RULES ".tmp", "wb");
     if (walk.out) {
         scope_walk(path, 0);
@@ -124,9 +142,13 @@ static void scope_read(void) {
     if (scope.ready) return;
     while (scope.rules) {
         scope_rule *next = scope.rules->next;
-        free(scope.rules); scope.rules = next;
+        free(scope.rules);
+        scope.rules = next;
     }
-    free(scope.sql); scope.sql = 0; scope.bytes = 32; scope.failed = 0;
+    free(scope.sql);
+    scope.sql = 0;
+    scope.bytes = 32;
+    scope.failed = 0;
     void *f = fopen(RULES, "rb");
     char *text = f ? calloc(1, SCOPE_MAX) : 0;
     unsigned size = text ? fread(text, 1, SCOPE_MAX, f) : 0, start = 0;
@@ -135,16 +157,20 @@ static void scope_read(void) {
     for (unsigned i = 0; !scope.failed && i < size; ++i) {
         if (text[i] != '\n') continue;
         char *line = text + start;
-        text[i] = 0; start = i + 1;
-        if ((line[0] != '0' && line[0] != '1') || line[1] != '/') scope.failed = 1;
-        else scope_add(line + 1, line[0] == '1');
+        text[i] = 0;
+        start = i + 1;
+        if ((line[0] != '0' && line[0] != '1') || line[1] != '/')
+            scope.failed = 1;
+        else
+            scope_add(line + 1, line[0] == '1');
     }
     if (start != size) scope.failed = 1; /* a cut line */
     free(text);
     if (!scope.failed) scope.sql = calloc(1, scope.bytes);
     if (scope.sql) {
         char *p = scope.sql;
-        memcpy(p, "case ", 5); p += 5;
+        memcpy(p, "case ", 5);
+        p += 5;
         for (scope_rule *r = scope.rules; r; r = r->next) {
             unsigned characters = 0;
             for (const unsigned char *s = (const unsigned char *)r->path; *s; ++s)
@@ -158,8 +184,10 @@ static void scope_read(void) {
             p += scope_snprintf(p, scope.bytes - (unsigned)(p - scope.sql),
                                 "' collate nocase then %d ", r->visible);
         }
-        if (scope.rules) memcpy(p, "else 1 end", 11);
-        else memcpy(scope.sql, "1", 2);
+        if (scope.rules)
+            memcpy(p, "else 1 end", 11);
+        else
+            memcpy(scope.sql, "1", 2);
     }
     scope.ready = 1;
 }
@@ -172,13 +200,17 @@ char *library_scope_query(const char *sql) {
     /* ponytail: a card too deep or with too many markers to walk, or no memory, ignores the
      * markers: the whole library shows rather than none of it. */
     const char *predicate = scope.sql ? scope.sql : "1";
-    unsigned prefix = (unsigned)(token - sql), n = strlen(predicate);
-    const char *tail = token + sizeof(LIBRARY_SCOPE_TOKEN) - 1;
-    char *expanded = calloc(1, prefix + n + strlen(tail) + 1);
-    if (expanded) {
-        memcpy(expanded, sql, prefix);
-        memcpy(expanded + prefix, predicate, n);
-        memcpy(expanded + prefix + n, tail, strlen(tail) + 1);
+    unsigned t = sizeof(LIBRARY_SCOPE_TOKEN) - 1, n = strlen(predicate), k = 0;
+    for (const char *p = token; p; p = strstr(p + t, LIBRARY_SCOPE_TOKEN)) ++k;
+    /* Every token: Era's Shuffle scopes both its grouping and its rows. */
+    char *expanded = calloc(1, strlen(sql) + k * n + 1), *at = expanded;
+    for (const char *p = sql; at; p = token + t) {
+        token = strstr(p, LIBRARY_SCOPE_TOKEN);
+        unsigned m =
+            token ? (unsigned)(token - p) : strlen(p) + 1; /* the last copy takes the NUL */
+        memcpy(at, p, m), at += m;
+        if (!token) break;
+        memcpy(at, predicate, n), at += n;
     }
     pthread_mutex_unlock(&scope_lock);
     return expanded;
@@ -191,7 +223,10 @@ int library_scope_hidden(const char *path) {
     int hidden = 0;
     if (scope.sql)
         for (scope_rule *r = scope.rules; r; r = r->next)
-            if (!strncasecmp(path, r->path, r->length)) { hidden = !r->visible; break; }
+            if (!strncasecmp(path, r->path, r->length)) {
+                hidden = !r->visible;
+                break;
+            }
     pthread_mutex_unlock(&scope_lock);
     return hidden;
 }

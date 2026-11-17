@@ -1,43 +1,25 @@
 #!/usr/bin/env python3
-"""Compile every FLAC selection and check hook isolation and build()'s refusal of an invalid selection."""
+"""Compile the player with the FLAC fast paths and with --stock-flac's stock paths, and check each build."""
 import argparse
-import itertools
 import pathlib
 import struct
 import sys
 import tempfile
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'tools'))
-from build import build, fileoff, symbols
+from build import fileoff, symbols
 from peq import patch_player
-from flac import EXPERIMENTS, EXPORTS, POINTERS, SYNC_CALLS, patch_words, selection
+from flac import EXPERIMENTS, EXPORTS, POINTERS, SYNC_CALLS, patch_words
 
 
 def verify(stock, out, baseline=None):
-    for invalid in ('sync,sync', 'all', 'lpc,', ',sync', 'sync, output'):
-        try:
-            selection(invalid)
-        except ValueError:
-            pass
-        else:
-            raise AssertionError(('accepted invalid selection', invalid))
-    assert selection('output,sync') == ('sync', 'output') and selection('') == ()
-    refused = out / 'must-not-be-created'
-    try:
-        build(out/'absent.zip', refused, out/'absent.jpg', flac_experiments='all')
-    except ValueError as e:
-        assert str(e) == 'FLAC experiments must be a comma-separated subset of sync,lpc,output without duplicates'
-    else:
-        raise AssertionError('build accepted an invalid selection')
-    assert not refused.exists(), 'refused build wrote output'
     raw = stock.read_bytes()
     all_addresses = set(SYNC_CALLS)
     for pointers in POINTERS.values():
         for _, hi, _, lo, _ in pointers:
             all_addresses.update((hi, lo))
-    for bits in itertools.product((False, True), repeat=3):
-        selected = tuple(n for n, on in zip(EXPERIMENTS, bits) if on)
-        directory = out / ('-'.join(selected) or 'default')
+    for selected in (EXPERIMENTS, ()):  # the default, then --stock-flac
+        directory = out / ('-'.join(selected) or 'stock')
         manifest = patch_player(raw, directory, selected)
         new = (directory/'hciplayer').read_bytes()
         syms = symbols(directory/'peq.elf')
@@ -54,9 +36,9 @@ def verify(stock, out, baseline=None):
             off = fileoff(raw, address)
             assert new[off:off+32] == raw[off:off+32], 'stock fallback changed'
         if not selected and baseline:
-            assert new == baseline.read_bytes(), 'default player differs from baseline'
-        print('PASS', selected or ('default',), flush=True)
-    print('All eight build selections, original fallbacks, invalid names and build validation passed.')
+            assert new == baseline.read_bytes(), 'stock-path player differs from baseline'
+        print('PASS', selected or ('stock',), flush=True)
+    print('The fast paths, the stock paths and the original fallbacks passed.')
 
 
 if __name__ == '__main__':

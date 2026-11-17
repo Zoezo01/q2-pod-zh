@@ -7,7 +7,8 @@ stopped loop waits on the flag while 0, the paused loop on cmd_gen only while no
 Usage: test/hci_wait.py BUILD_DIR"""
 import pathlib, struct, sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]/'tools'))
-from build import jal, machine, read, symbols, word
+from build import jal, symbols
+from mips import machine, read, word
 from peq import CMD_DONE, IDLE_WAIT, PAUSE_WAIT
 from unicorn import UC_HOOK_CODE, UC_HOOK_INTR
 from unicorn.mips_const import *

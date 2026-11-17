@@ -4,7 +4,6 @@
 #include "stock.h"
 
 extern int stock_pause_trampoline(void);
-extern int ringnav_bt_resume(void);
 /* Stock drops an unlisted device's Connected (3) while a link thread waits; adopt it when the wait
  * is for BTLINKMAC (0xa4c0d8), its Connect running (5); checkBluetoothStatus then judges it last.
  * ponytail: the target's Connect still runs; powered on within its page timeout, both may link. */
@@ -36,7 +35,8 @@ int headset_bt_autolink(char *address) {
 }
 /* The control thread can discover a boot reconnect before openBluetooth powers the radio. */
 int headset_bt_init(void *thread) {
-    initBluetoothParam(); /* Lists must exist before callbacks; the later reset would erase links. */
+    initBluetoothParam(); /* Lists must exist before callbacks; the later reset would erase links.
+                           */
     btctl_set_prompt_callback((void *)0x4f9d20, 0);
     headset_status_register();
     btctl_set_a2dp_callback((void *)btrecvA2dpFunc, (void *)0x01020304);
@@ -45,8 +45,8 @@ int headset_bt_init(void *thread) {
 static struct {
     volatile unsigned generation, running, head, tail, report;
     volatile int keys[16];
-    unsigned worker_generation, checked, epoch, paused_epoch, paused_at, recent_at,
-        recent_owner, recent_session;
+    unsigned worker_generation, checked, epoch, paused_epoch, paused_at, recent_at, recent_owner,
+        recent_session;
     unsigned last_at, session, linked_at, eq_checked;
     int linked, known, ears, want, paused, owner, automatic, last_key;
     unsigned char address[14];
@@ -99,8 +99,9 @@ static unsigned media_session(void) {
            *(volatile unsigned *)mcl_pdeqplaylist;
 }
 void media_set_playing(int playing) {
-    if (playing && addon_game_audio()) return; /* a card game with the sound: nothing of stock's
-                                                  starts over its PCM; media_key too */
+    if (playing && addon_game_audio())
+        return; /* a card game with the sound: nothing of stock's
+                   starts over its PCM; media_key too */
     hs.automatic = 1;
     int owner = media_owner();
     if (owner == 4)
@@ -118,9 +119,9 @@ static int focus(void) {
     void *top = window_manager_get_top_window(window_manager());
     const char *name = top ? widget_get_prop_str(top, "name", "") : "";
     return !tk_strcmp(name, "spotify_page") || !tk_strcmp(name, "spotbrowse_page") ? 1
-           : !tk_strcmp(name, "radio_page") || !tk_strcmp(name, "radionp_page") ? 2
-           : tk_str_start_with(name, "tidal_")                                  ? 3
-                                                                                : 0;
+           : !tk_strcmp(name, "radio_page") || !tk_strcmp(name, "radionp_page")    ? 2
+           : tk_str_start_with(name, "tidal_")                                     ? 3
+                                                                                   : 0;
 }
 int media_focused(void) { return focus() != 0; }
 void media_key(unsigned key) {
@@ -136,8 +137,7 @@ void media_key(unsigned key) {
         return;
     }
     int f = focus(); /* a focused Spotify or radio that isn't running leaves them to the owner */
-    if ((f == 1 && spot_media(key)) || (f == 2 && radio_media(key)))
-        return;
+    if ((f == 1 && spot_media(key)) || (f == 2 && radio_media(key))) return;
     if (f != 3 && video_status())
         video_key(key);
     else if (f != 3 && radio_status())
@@ -356,7 +356,7 @@ void headset_ears(unsigned report) {
  * CONNECT_HOLD_MS of the link is dropped; a deliberate press after that plays. */
 #define CONNECT_HOLD_MS 5000
 static int connect_hold(unsigned now) {
-    return hs.linked && now - hs.linked_at < CONNECT_HOLD_MS && !ringnav_bt_resume();
+    return hs.linked && now - hs.linked_at < CONNECT_HOLD_MS && !pod_value(POD_RESUME);
 }
 void headset_command(int code) {
     unsigned now = time_now_ms();
@@ -384,9 +384,9 @@ void headset_command(int code) {
         if (!hs.known || hs.ears) media_set_playing(1);
     }
 }
-/* EQ per Output's name for what plays (stock's config_bal_output and config_po_output: the jack last
- * plugged in; unplugging 4.4 mm leaves output 0, so a jack must be in to count). None, nothing to
- * hear: the EQ stays with its output until another takes over. */
+/* EQ per Output's name for what plays (stock's config_bal_output and config_po_output: the jack
+ * last plugged in; unplugging 4.4 mm leaves output 0, so a jack must be in to count). None, nothing
+ * to hear: the EQ stays with its output until another takes over. */
 static const char *eq_output_key(char *mac) {
     int way = mclGetOutputWay();
     if (way == 2) return "usb";
@@ -399,7 +399,7 @@ void headset_eq_poll(void) {
     unsigned now = time_now_ms();
     if (now - hs.eq_checked < 500) return;
     hs.eq_checked = now;
-    if (!ringnav_eq_output()) return;
+    if (!pod_value(POD_EQ_OUTPUT)) return;
     char mac[32] = { 0 };
     const char *key = eq_output_key(mac);
     if (key) eq_output(key);

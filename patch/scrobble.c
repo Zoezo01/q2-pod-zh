@@ -8,13 +8,15 @@
 
 #define LOG_FILE PEQ_ROOT "/mnt/mmc/.scrobbler.log"
 #define INI_FILE PEQ_ROOT "/mnt/mmc/.scrobble.ini"
-#define CA_FILE PEQ_ROOT "/etc/scrobble-ca.pem" /* supplied by the firmware, no card setup */
-#define BATCH 50                                  /* Last.fm's limit; ListenBrainz takes 100 */
+/* supplied by the firmware, no card setup; netupdate.c, radio.c and onlinematch.c verify by it too
+ * (tls_easy): ISRG, GTS Root R4, DigiCert G2 and github.com's roots */
+#define CA_FILE PEQ_ROOT "/etc/scrobble-ca.pem"
+#define BATCH 50 /* Last.fm's limit; ListenBrainz takes 100 */
 /* Rockbox's lastfm_scrobbler on this card: tags from its 2168-byte id3 buffer, a title from the
  * file name, the numbers */
 #define LINE_BYTES 2560
 #define BODY_MAX (384 << 10) /* 50 lines of LINE_BYTES, URL-encoded, and the names */
-#define LOG_HEAD (1 << 20) /* a window of the log: its whole lines; the rest waits for the next */
+#define LOG_HEAD (1 << 20)   /* a window of the log: its whole lines; the rest waits for the next */
 #define LB_URL "https://api.listenbrainz.org/1/submit-listens"
 #define FM_URL "https://ws.audioscrobbler.com/2.0/"
 
@@ -180,27 +182,36 @@ static unsigned got(const char *data, unsigned size, unsigned n, void *ctx) {
     return size * n;
 }
 
+/* A libcurl handle for url, verified against CA_FILE without date checks (tls_untimed), with no
+ * signals (off the UI thread) and these timeouts in seconds; timeout_s 0 sets none. 0 when curl
+ * can't make one. */
+void *tls_easy(const char *url, long connect_s, long timeout_s) {
+    void *c = curl_easy_init();
+    if (!c) return 0;
+    curl_easy_setopt(c, 10002, url);                   /* CURLOPT_URL */
+    curl_easy_setopt(c, 99, 1L);                       /* NOSIGNAL */
+    curl_easy_setopt(c, 78, connect_s);                /* CONNECTTIMEOUT */
+    if (timeout_s) curl_easy_setopt(c, 13, timeout_s); /* TIMEOUT */
+    curl_easy_setopt(c, 10065, CA_FILE);               /* CAINFO */
+    curl_easy_setopt(c, 64, 1L);                       /* SSL_VERIFYPEER */
+    curl_easy_setopt(c, 81, 2L);                       /* SSL_VERIFYHOST */
+    curl_easy_setopt(c, 20108, tls_untimed);           /* SSL_CTX_FUNCTION: no date checks */
+    return c;
+}
+
 /* POST body; the HTTP status, 0 when no reply. Credentials are sent only over verified TLS;
  * the firmware's CA bundle supplies roots missing from the stock image. */
 static long post(const char *url, const char *body, const char *auth, reply_t *r) {
-    void *c = curl_easy_init(), *h = 0;
+    void *c = tls_easy(url, 15, 60), *h = 0;
     long code = 0;
     if (!c) return 0;
     if (auth) h = curl_slist_append(curl_slist_append(0, auth), "Content-Type: application/json");
     r->n = 0;
     r->s[0] = 0;
-    curl_easy_setopt(c, 10002, url);                 /* CURLOPT_URL */
-    curl_easy_setopt(c, 10015, body);                /* POSTFIELDS */
-    if (h) curl_easy_setopt(c, 10023, h);            /* HTTPHEADER */
-    curl_easy_setopt(c, 20011, got);                 /* WRITEFUNCTION */
-    curl_easy_setopt(c, 10001, r);                   /* WRITEDATA */
-    curl_easy_setopt(c, 99, 1L);                     /* NOSIGNAL: off the UI thread */
-    curl_easy_setopt(c, 78, 15L);                    /* CONNECTTIMEOUT */
-    curl_easy_setopt(c, 13, 60L);                    /* TIMEOUT */
-    curl_easy_setopt(c, 10065, CA_FILE);              /* CAINFO */
-    curl_easy_setopt(c, 64, 1L);                 /* SSL_VERIFYPEER */
-    curl_easy_setopt(c, 81, 2L);             /* SSL_VERIFYHOST */
-    curl_easy_setopt(c, 20108, tls_untimed); /* SSL_CTX_FUNCTION: no date checks */
+    curl_easy_setopt(c, 10015, body);                                 /* POSTFIELDS */
+    if (h) curl_easy_setopt(c, 10023, h);                             /* HTTPHEADER */
+    curl_easy_setopt(c, 20011, got);                                  /* WRITEFUNCTION */
+    curl_easy_setopt(c, 10001, r);                                    /* WRITEDATA */
     if (!curl_easy_perform(c)) curl_easy_getinfo(c, 0x200002, &code); /* RESPONSE_CODE */
     curl_easy_cleanup(c);
     curl_slist_free_all(h);
@@ -300,9 +311,9 @@ static int scrobble_lastfm(const entry_t *e, int n, const char *sk, buf_t *b, re
 }
 
 /* Moves the first done bytes' scrobbles to .sent and keeps the rest under the header. The log is
- * only appended to meanwhile, so those bytes are the ones uploaded. The new log is written first, so
- * a full card fails before .sent gains anything; .sent is synced before the rename drops them. Only
- * the done bytes are held: the rest is copied through. */
+ * only appended to meanwhile, so those bytes are the ones uploaded. The new log is written first,
+ * so a full card fails before .sent gains anything; .sent is synced before the rename drops them.
+ * Only the done bytes are held: the rest is copied through. */
 static int retire(unsigned done) {
     pthread_mutex_lock(up.lock);
     char *p = calloc(1, done + 1), chunk[4096];

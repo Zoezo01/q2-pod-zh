@@ -3,12 +3,14 @@ info page, touch and click dispatch, the settings and list rows' layouts, Hold R
 queue menu's checks and the Library's album and artist lists."""
 import ctypes as C
 import re
+import sqlite3
 import struct
 
 import pytest
 
 import host
 from conftest import NAVIGATION_SOURCE, O, Deques, Files, claim, high_halves
+from test_coverflow import SONGTABLE  # stock's songtable, as demo's CREATE TABLE text has it
 
 W_PARENT, EVT_CLICK, EVENT_TYPE, EVENT_KEY, EVENT_X = O['W_PARENT'], O['EVT_CLICK'], O['EVENT_TYPE'], O['EVENT_KEY'], O['EVENT_X']
 STOP = 11
@@ -32,11 +34,6 @@ def tables(library):
         body = host.tools_build.need(re.search(table + r'\[\w+\]\[\w+\] = \{(.*)\};', inc), f'No {table}')[1]
         rows[table] = [[int(v) for v in row.split(',')] for row in re.findall(r'\{([-\d, ]+)\}', body)]
     return names, rows
-
-
-@pytest.fixture(scope='module')
-def scratch(library):
-    return host.offsets(library.parent/'navigation.o', 'scratch_t')
 
 
 @pytest.fixture(scope='module')
@@ -1074,16 +1071,16 @@ SLIDE_PX = nav_define('SLIDE_PX')
 
 
 class Quick(C.Structure):
-    """navigation.c's quick: Quick Settings' press, hold and slider state."""
+    """quick_settings.c's quick: Quick Settings' press, hold, slider and wheel state."""
     _fields_ = [('win', C.c_void_p), ('icon', C.c_void_p), ('slider', C.c_void_p), ('pressed', C.c_void_p), ('timer', C.c_uint),
-                ('x', C.c_int), ('y', C.c_int), ('sx', C.c_int), ('sy', C.c_int), ('slide', C.c_int)]
+                ('x', C.c_int), ('y', C.c_int), ('sx', C.c_int), ('sy', C.c_int), ('slide', C.c_int), ('wheel', C.c_int)]
 
 
 class Ple(C.Structure):
     """navigation.c's ple: the playlist editor's page and keys."""
     _fields_ = [('page', C.c_void_p), ('view', C.c_void_p), ('songs', C.c_void_p), ('picker', C.c_void_p), ('edit', C.c_void_p),
                 ('match', C.c_void_p), ('dest', C.c_int), ('mode', C.c_int), ('selected', C.c_int), ('pending', C.c_int),
-                ('nmatch', C.c_int), ('key', C.c_uint), ('timer', C.c_uint), ('name', C.c_char * 128), ('query', C.c_char * 128)]
+                ('nmatch', C.c_int), ('key', C.c_uint), ('timer', C.c_uint), ('gen', C.c_uint), ('name', C.c_char * 128), ('query', C.c_char * 128)]
 
 
 class Stock:
@@ -1214,7 +1211,7 @@ class QuickPage:
         self.slider = ui.add('slider', ui.add('view', self.dialog), (40, 200, 300, 30), 'slider_backlight')
         self.state = C.c_int.from_address(C.addressof(fw.var('fw_ctx_g_dropdown_menu_state', C.c_char)))
         self.state.value = state
-        self.quick = fw.var('navigation__quick', Quick)
+        self.quick = fw.var('quick_settings__quick', Quick)
 
 
 def test_the_brightness_slider_takes_a_sideways_drag(fw, st):
@@ -1273,7 +1270,7 @@ def test_settings_brightness_slider_is_stocks_alone(fw, st):
     slider = ui.add('slider', ui.window('backlight_page'), name='slider_backlight')
     stock = Stock(fw, ui)
     stock.send(slider, POINTER_DOWN, x=100, y=210)
-    assert stock.seen == [(slider.addr, POINTER_DOWN, 100, 210)] and not fw.var('navigation__quick', Quick).slider
+    assert stock.seen == [(slider.addr, POINTER_DOWN, 100, 210)] and not fw.var('quick_settings__quick', Quick).slider
 
 
 def pressdown(fw):
@@ -2119,7 +2116,7 @@ class Records:
     name or path is low, so the title after it stays unset; any other lone field is aligned, so the title or path
     before it stays as it was."""
     LOW = ('name', 'path')
-    HIGHS = high_halves(0x100)
+    HIGHS = high_halves(0xc00)  # the long list of names (test_an_artists_long_list_of_names_is_sent_whole) takes 2,500
 
     def __init__(self):
         self.maps, self.used, self.high = [], 0, iter(self.HIGHS)
@@ -2186,14 +2183,14 @@ def ctx_ptr(fw, name):
 
 class Menu:
     """The hold menu as its opener leaves it: on row idx of a list, by its count, record and browsing hashes."""
-    def __init__(self, fw, st, kind, rows, idx, cls=0):
+    def __init__(self, fw, st, qm, kind, rows, idx, cls=0):
         self.fw, self.st = fw, st
         self.record = fw.fn('qm_record', C.c_void_p)
-        rec_hash = fw.fn('navigation__rec_hash', C.c_uint, C.c_void_p)
-        st('qm_kind').value, st('qm_idx', C.c_uint).value, st('qm_rows', C.c_uint).value = kind, idx, len(rows)
-        st('qm_cls', C.c_uint).value = cls
-        st('qm_hash', C.c_uint).value = rec_hash(rows[idx])
-        st('qm_browse', C.c_uint).value = fw.fn('navigation__browse_hash', C.c_uint)()
+        rec_hash = fw.fn('rec_hash', C.c_uint, C.c_void_p)
+        qm('qm_kind').value, st('qm_idx', C.c_uint).value, st('qm_rows', C.c_uint).value = kind, idx, len(rows)
+        qm('qm_cls', C.c_uint).value = cls
+        qm('qm_hash', C.c_uint).value = rec_hash(rows[idx])
+        qm('qm_browse', C.c_uint).value = fw.fn('queue_menu__browse_hash', C.c_uint)()
 
 
 def song_list(fw, records, n=3):
@@ -2204,16 +2201,16 @@ def song_list(fw, records, n=3):
     return deques, handle, rows
 
 
-def test_the_menus_row_is_found_while_the_list_stands(fw, st, records):
+def test_the_menus_row_is_found_while_the_list_stands(fw, st, qm, records):
     deques, handle, rows = song_list(fw, records)
-    menu = Menu(fw, st, QM_SONG, rows, 1)
+    menu = Menu(fw, st, qm, QM_SONG, rows, 1)
     assert menu.record() == rows[1]
 
 
 @pytest.mark.parametrize('change', ['row', 'count', 'browsing', 'index'])
-def test_the_menus_row_is_gone_once_the_list_changes(fw, st, records, change):
+def test_the_menus_row_is_gone_once_the_list_changes(fw, st, qm, records, change):
     deques, handle, rows = song_list(fw, records)
-    menu = Menu(fw, st, QM_SONG, rows, 1)
+    menu = Menu(fw, st, qm, QM_SONG, rows, 1)
     if change == 'row':
         deques[handle][1] = records.song(name=b'other.flac')
     elif change == 'count':
@@ -2225,21 +2222,21 @@ def test_the_menus_row_is_gone_once_the_list_changes(fw, st, records, change):
     assert not menu.record()
 
 
-def test_the_menus_list_by_its_kind(fw, st, records):
+def test_the_menus_list_by_its_kind(fw, qm, records):
     deques = Deques(fw)
     lists = {name: deques.new([records.song(name=name.encode())]) for name in ('p_deque_showlist', 'p_deque_playlist',
                                                                               'mcl_pdeqplaylist')}
     for name, handle in lists.items():
         ctx_ptr(fw, name).value = handle
-    qm_list = fw.fn('navigation__qm_list', C.c_void_p)
+    qm_list = fw.fn('queue_menu__qm_list', C.c_void_p)
     for kind, name in ((QM_SONG, 'p_deque_showlist'), (QM_ALBUM, 'p_deque_showlist'), (QM_PLAYLIST, 'p_deque_playlist'),
                        (QM_PLAYING, 'mcl_pdeqplaylist')):
-        st('qm_kind').value = kind
+        qm('qm_kind').value = kind
         assert qm_list() == lists[name]
 
 
 @pytest.mark.parametrize('page', ['mp', 'rt', 'other'])
-def test_a_coverflow_kind_menu_takes_the_pages_own_tracks(fw, st, records, page):
+def test_a_coverflow_kind_menu_takes_the_pages_own_tracks(fw, st, qm, records, page):
     ui = Ui(fw)
     deques = Deques(fw)
     rows = [records.song(name=b'%d.flac' % i) for i in range(2)]
@@ -2248,21 +2245,21 @@ def test_a_coverflow_kind_menu_takes_the_pages_own_tracks(fw, st, records, page)
     if page != 'other':
         st(f'{page}_page', C.c_void_p).value, st(f'{page}_list', C.c_void_p).value = top.addr, tracks
     ctx_ptr(fw, 'p_deque_showlist').value = deques.new(rows)  # Coverflow's kinds never read the browse list
-    menu = Menu(fw, st, QM_COVERFLOW, rows, 1)
+    menu = Menu(fw, st, qm, QM_COVERFLOW, rows, 1)
     assert menu.record() == (rows[1] if page != 'other' else None)
     ui.wm.children.pop()
     assert not menu.record()  # its page gone
 
 
-def test_now_playings_menu_holds_while_the_track_and_queue_stand(fw, st, records, mcl):
+def test_now_playings_menu_holds_while_the_track_and_queue_stand(fw, st, qm, records, mcl):
     deques = Deques(fw)
     rows = [records.song(name=b'%d.flac' % i) for i in range(3)]
     queue = deques.new(rows)
     ctx_ptr(fw, 'mcl_pdeqplaylist').value = queue
     mcl.pos, mcl.type = 1, 0xf001
-    menu = Menu(fw, st, QM_PLAYING, rows, 1)
-    st('qm_queue', C.c_void_p).value = queue
-    st('qm_queue_hash', C.c_uint).value = fw.fn('queue_hash', C.c_uint, C.c_void_p)(queue)
+    menu = Menu(fw, st, qm, QM_PLAYING, rows, 1)
+    qm('qm_queue', C.c_void_p).value = queue
+    qm('qm_queue_hash', C.c_uint).value = fw.fn('queue_hash', C.c_uint, C.c_void_p)(queue)
     assert menu.record() == rows[1]
     mcl.pos = 2  # the next track
     assert not menu.record()
@@ -2298,7 +2295,7 @@ def test_now_playings_more_while_it_is_open(fw, st):
     ui = Ui(fw)
     win = ui.window('playing_page')
     more = ui.add('image', ui.add('view', win), name='img_more')
-    np_more = fw.fn('navigation__np_more', C.c_void_p)
+    np_more = fw.fn('np_more', C.c_void_p)
     assert not np_more()
     st('np_win', C.c_void_p).value = win.addr
     assert np_more() == more.addr
@@ -2308,20 +2305,20 @@ def test_the_menu_closes_on_return_or_its_arrow_and_forgets_a_closed_dialog(fw, 
     ui = Ui(fw)
     dialog = ui.window('sortselect_dialog')
     st('qm_dialog', C.c_void_p).value = dialog.addr
-    back = fw.fn('navigation__qm_back', C.c_int, C.c_void_p, C.c_void_p)
+    back = fw.fn('queue_menu__qm_back', C.c_int, C.c_void_p, C.c_void_p)
     assert back(dialog.addr, event(O['EVT_KEY_UP'], O['KEY_CENTER'])) == 0 and st('qm_dialog', C.c_void_p).value
     assert back(dialog.addr, event(O['EVT_KEY_UP'], O['KEY_RETURN'])) == STOP
     assert not st('qm_dialog', C.c_void_p).value and [a[0] for _, a in fw.calls('window_close')] == [dialog.addr]
     st('qm_dialog', C.c_void_p).value = dialog.addr
     assert back(dialog.addr, event(EVT_CLICK)) == STOP  # the title bar's arrow
-    gone = fw.fn('navigation__qm_gone', C.c_int, C.c_void_p, C.c_void_p)
+    gone = fw.fn('queue_menu__qm_gone', C.c_int, C.c_void_p, C.c_void_p)
     other = ui.window('msginfo_dialog')
     st('qm_dialog', C.c_void_p).value = dialog.addr
     gone(other.addr, None)
     assert st('qm_dialog', C.c_void_p).value == dialog.addr
     gone(dialog.addr, None)
     assert not st('qm_dialog', C.c_void_p).value
-    fw.fn('navigation__qm_close', None)()
+    fw.fn('queue_menu__qm_close', None)()
     assert len(fw.calls('window_close')) == 2  # nothing more to close
 
 
@@ -2342,23 +2339,23 @@ def put(records, r, offset, value):
 @pytest.mark.parametrize('cls, artist_type, query', [
     (0xf004, 0, ('getMusicBySonger', b'Miles Davis')), (0xf004, 1, ('getMusicByAlbumArtist', b'Miles Davis')),
     (0xf005, 0, ('getMusicByComposer', b'Gil Evans')), (0xf006, 0, ('getMusicByGenre', b'Jazz'))])
-def test_a_group_rows_menu_runs_the_query_its_row_opens(fw, st, records, cls, artist_type, query):
+def test_a_group_rows_menu_runs_the_query_its_row_opens(fw, qm, records, cls, artist_type, query):
     fw.var('fw_ctx_g_artist_type', C.c_int).value = artist_type
     r = records.song(artist=b'Miles Davis') if cls == 0xf004 else records.song()
     if cls != 0xf004:
         put(records, r, {0xf005: 0x20, 0xf006: 0x1c}[cls], {0xf005: b'Gil Evans', 0xf006: b'Jazz'}[cls])
-    st('qm_kind').value, st('qm_cls', C.c_uint).value = QM_GROUP, cls
-    fw.fn('navigation__qm_query', C.c_int, C.c_void_p)(r)
+    qm('qm_kind').value, qm('qm_cls', C.c_uint).value = QM_GROUP, cls
+    fw.fn('queue_menu__qm_query', C.c_int, C.c_void_p)(r)
     assert queried(fw) == [query]
 
 
-def test_an_unknown_rows_menu_asks_for_the_untagged(fw, st, records):
+def test_an_unknown_rows_menu_asks_for_the_untagged(fw, qm, records):
     r = records.song(id_=-1, artist=b'ignored')
-    st('qm_kind').value, st('qm_cls', C.c_uint).value = QM_GROUP, 0xf004
-    fw.fn('navigation__qm_query', C.c_int, C.c_void_p)(r)
-    st('qm_kind').value, st('qm_cls', C.c_uint).value = QM_ALBUM, O['CLASS_ALBUMS']
-    fw.fn('navigation__qm_query', C.c_int, C.c_void_p)(records.song(id_=-1, album=b'ignored'))
-    fw.fn('navigation__qm_query', C.c_int, C.c_void_p)(records.song(album=b'Blue'))
+    qm('qm_kind').value, qm('qm_cls', C.c_uint).value = QM_GROUP, 0xf004
+    fw.fn('queue_menu__qm_query', C.c_int, C.c_void_p)(r)
+    qm('qm_kind').value, qm('qm_cls', C.c_uint).value = QM_ALBUM, O['CLASS_ALBUMS']
+    fw.fn('queue_menu__qm_query', C.c_int, C.c_void_p)(records.song(id_=-1, album=b'ignored'))
+    fw.fn('queue_menu__qm_query', C.c_int, C.c_void_p)(records.song(album=b'Blue'))
     assert queried(fw) == [('getMusicBySonger', None), ('getMusicByAlbum', None), ('getMusicByAlbum', b'Blue')]
 
 
@@ -2367,7 +2364,7 @@ def test_an_unknown_rows_menu_asks_for_the_untagged(fw, st, records):
     (0xff01, 1, 0, ('getMusicByAlbumAndAlbumSonger', b'Blue', b'Miles Davis')),
     (0xff01, 0, 1, ('getMusicByAlbumAndSonger', b'Blue', None)),  # an Unknown artist's album
     (0xff03, 0, 0, ('getMusicByAlbumAndGenre', b'Blue', b'Jazz'))])
-def test_an_albums_menu_under_a_group_keeps_the_group(fw, st, records, cls, artist_type, unknown, query):
+def test_an_albums_menu_under_a_group_keeps_the_group(fw, qm, records, cls, artist_type, unknown, query):
     fw.var('fw_ctx_g_artist_type', C.c_int).value = artist_type
     info = fw.var('fw_ctx_g_local_classinfo_save', C.c_char * 912)
     info[0xa + (cls & 0xf) - 1] = bytes([unknown])
@@ -2376,43 +2373,43 @@ def test_an_albums_menu_under_a_group_keeps_the_group(fw, st, records, cls, arti
         put(records, r, 0x1c, b'Jazz')
     else:
         r = records.song(album=b'Blue', artist=b'Miles Davis')
-    st('qm_kind').value, st('qm_cls', C.c_uint).value = QM_ALBUM, cls
-    fw.fn('navigation__qm_query', C.c_int, C.c_void_p)(r)
+    qm('qm_kind').value, qm('qm_cls', C.c_uint).value = QM_ALBUM, cls
+    fw.fn('queue_menu__qm_query', C.c_int, C.c_void_p)(r)
     assert queried(fw) == [query]
     assert fw.calls(query[0])[0][1][2] == 0  # not the Unknown Album row (id -2)
 
 
 @pytest.mark.parametrize('id_, unknown_album', [(-2, 1), (0, 0), (-1, 0)])
-def test_an_artists_unknown_album_rows_menu_asks_for_its_untagged_albums_songs(fw, st, records, id_, unknown_album):
+def test_an_artists_unknown_album_rows_menu_asks_for_its_untagged_albums_songs(fw, qm, records, id_, unknown_album):
     r = records.song(id_=id_, artist=b'Miles Davis')
-    st('qm_kind').value, st('qm_cls', C.c_uint).value = QM_ALBUM, O['CLASS_ARTIST_ALBUMS']
-    fw.fn('navigation__qm_query', C.c_int, C.c_void_p)(r)
+    qm('qm_kind').value, qm('qm_cls', C.c_uint).value = QM_ALBUM, O['CLASS_ARTIST_ALBUMS']
+    fw.fn('queue_menu__qm_query', C.c_int, C.c_void_p)(r)
     # the artist's songs with no album tag: the query's own flag, as the row opens them (id -2, REC_ID's unknown album)
     ((name, args),) = [(n, a) for n, a in fw.calls() if n.startswith('getMusicByAlbumAnd')]
     assert (name, C.string_at(args[1]), args[2]) == ('getMusicByAlbumAndSonger', b'Miles Davis', unknown_album)
 
 
-def test_a_playlists_menu_runs_its_playlist(fw, st, records):
+def test_a_playlists_menu_runs_its_playlist(fw, qm, records):
     r = records.song(disc=7)
-    st('qm_kind').value = QM_PLAYLIST
-    fw.fn('navigation__qm_query', C.c_int, C.c_void_p)(r)
+    qm('qm_kind').value = QM_PLAYLIST
+    fw.fn('queue_menu__qm_query', C.c_int, C.c_void_p)(r)
     assert queried(fw) == [('getMusicByPlayList', 7)]
 
 
-def test_the_menus_album_id(fw, st, records):
+def test_the_menus_album_id(fw, st, qm, records):
     r = records.song(album=b'Blue', album_artist=b'Miles Davis', path=b'/m/Blue/1.flac')
     album_id = fw.fn('album_id', C.c_uint, C.c_void_p)(r)
     qm_album_id = fw.fn('qm_album_id', C.c_uint, C.c_void_p)
-    st('qm_kind').value, st('qm_cls', C.c_uint).value = QM_ALBUM, O['CLASS_ALBUMS']
+    qm('qm_kind').value, qm('qm_cls', C.c_uint).value = QM_ALBUM, O['CLASS_ALBUMS']
     assert qm_album_id(r) == album_id  # a Library Albums row: the album Coverflow rates
-    st('qm_kind').value = QM_COVERALBUM
+    qm('qm_kind').value = QM_COVERALBUM
     assert qm_album_id(r) == album_id
-    st('qm_kind').value, st('qm_cls', C.c_uint).value = QM_GROUP, 0xf004
+    qm('qm_kind').value, qm('qm_cls', C.c_uint).value = QM_GROUP, 0xf004
     assert qm_album_id(r) == 0  # an artist's row rates no album
     # an artist's albums tab: the id ringnav_artist_list found for the row, while the tab is the one it read
     ids = (C.c_uint * 3)(11, 22, 33)
-    st('qm_kind').value = QM_ALBUM  # its rows are albums
-    st('qm_cls', C.c_uint).value, st('art_ids', C.c_void_p).value, st('art_n', C.c_uint).value = O['CLASS_ARTIST_ALBUMS'], C.addressof(ids), 3
+    qm('qm_kind').value = QM_ALBUM  # its rows are albums
+    qm('qm_cls', C.c_uint).value, st('art_ids', C.c_void_p).value, st('art_n', C.c_uint).value = O['CLASS_ARTIST_ALBUMS'], C.addressof(ids), 3
     st('qm_rows', C.c_uint).value, st('qm_idx', C.c_uint).value = 3, 1
     assert qm_album_id(r) == 22
     st('qm_rows', C.c_uint).value = 4
@@ -2855,9 +2852,9 @@ class ArtistPage:
 ARTIST_TITLE_SIZE = 0x200  # stock's title buffer, all of which artist_list's getFormatString may write
 
 
-def artist(fw, stand_in, records, rows, songs, view=b'1', title=b'Queen'):
+def artist(fw, stand_in, records, rows, songs, view=b'1', title=b'Queen', **config):
     lib = Library(fw)
-    Config(fw, ARTISTCF=view)
+    Config(fw, ARTISTCF=view, **config)
     stand_in(O['ARTIST_TITLE'], title.ljust(ARTIST_TITLE_SIZE, b'\0'))  # the whole buffer, put back whole
     classinfo(fw, artist=b'Queen')
     fw.mock('stock_artist_trampoline', lambda tab, *_: lib.d[lib.show].extend(rows) or len(rows))
@@ -2986,3 +2983,234 @@ def test_cover_flow_for_a_page_no_longer_on_top_drops_its_albums(fw, st, stand_i
     run(timers[0])
     assert [a[0] & 0xffffffff for _, a in fw.calls('fw_deque_destroy')[destroyed:]] == [pending]
     assert page.win.props['anim_hint'] == b'htranslate'
+
+
+# An artist page's groupings over stock's songtable in sqlite3, as the Q2 runs them: toolsQueryDbTable is the build's
+# hook (ringnav_library_query), whose stock body sqlite3 runs. Queen's albums; ABBA's GREATEST HITS and an audiobook of
+# that name; a CUE image's two tracks; Innuendo's CD1 and CD2 folders, the second's name in capitals; Rock 'n' Roll;
+# two untagged songs; Queen's Opera again in a folder database.ignore hides; and twenty albums no Queen song is on.
+LIBRARY = [  # songtable's (id, fileurl, album, songer, albumsonger, year, track, cd_num)
+    (1, '/mnt/mmc/Music/Queen/Opera/01.flac', 'A Night at the Opera', 'Queen', 'Queen', 1975, 1, 1),
+    (2, '/mnt/mmc/Music/Queen/Opera/02.flac', 'A Night at the Opera', 'Queen', 'Queen', 1975, 2, 1),
+    (3, '/mnt/mmc/Music/Queen/Hits/01.flac', 'Greatest Hits', 'Queen', 'Queen', 1981, 1, 1),
+    (4, '/mnt/mmc/Music/Queen/Rock/01.flac', "Rock 'n' Roll", 'Queen', 'Queen', 1990, 1, 1),
+    (5, '/mnt/mmc/Music/Queen/Live/live.flac', 'Live', 'Queen', 'Queen', 1986, 2, 1),
+    (6, '/mnt/mmc/Music/Queen/Live/live.flac', 'Live', 'Queen', 'Queen', 1986, 1, 1),
+    (7, '/mnt/mmc/Music/Queen/Innuendo/CD1/01.flac', 'Innuendo', 'Queen', '', 1991, 1, 1),
+    (8, '/mnt/mmc/Music/Queen/Innuendo/CD2/01.flac', 'INNUENDO', 'Queen', '', 1991, 1, 2),
+    (9, '/mnt/mmc/Music/Queen/loose.flac', '', 'Queen', '', None, None, None),
+    (10, '/mnt/mmc/Hidden/Opera/01.flac', 'A Night at the Opera', 'Queen', 'Queen', 1975, 1, 1),
+    (11, '/mnt/mmc/Music/ABBA/Hits/01.flac', 'GREATEST HITS', 'ABBA', 'ABBA', 1992, 1, 1),
+    (12, '/mnt/mmc/Audiobooks/Hits/01.mp3', 'Greatest Hits', 'Narrator', 'Narrator', 2001, 1, 1),
+    (13, '/mnt/mmc/Music/Misc/x.flac', None, 'Someone', None, None, None, None),
+    *((14 + i, f'/mnt/mmc/Music/Other/{i:02}/01.flac', f'Album {i:02}', 'Other', 'Other', 2000 + i, 1, 1) for i in range(20))]
+TAB_NAMES = {b'a night at the opera', b'greatest hits', b'innuendo', b'live', b"rock 'n' roll"}
+# The page as the whole library's groupings left it (recorded from ed189751): the grid's rows in year order, newest
+# first, with their art keys (Greatest Hits, which ABBA shares, by its album artist) and album ids, the Unknown row
+# last; and Cover Flow's albums, each the music track's row of its album.
+QUEEN_PAGE = [(b'Innuendo', None, 3261162207), (b"Rock 'n' Roll", None, 1791305937), (b'Live', None, 2642090867),
+              (b'Greatest Hits', b'Greatest Hits\x1fQueen', 4034071902), (b'A Night at the Opera', None, 471665787),
+              (None, None, 0)]
+QUEEN_FLOW = [(b'Innuendo', b'', b'/mnt/mmc/Music/Queen/Innuendo/CD1/01.flac', 7),
+              (b"Rock 'n' Roll", b'Queen', b'/mnt/mmc/Music/Queen/Rock/01.flac', 4),
+              (b'Live', b'Queen', b'/mnt/mmc/Music/Queen/Live/live.flac', 6),
+              (b'Greatest Hits', b'Queen', b'/mnt/mmc/Music/Queen/Hits/01.flac', 3),
+              (b'A Night at the Opera', b'Queen', b'/mnt/mmc/Music/Queen/Opera/01.flac', 1),
+              (None, None, b'/mnt/mmc/Music/Queen/loose.flac', -1)]
+# a grouping's names: of_names's where, each name quoted ('' doubled)
+NAMED = re.compile(r" and \(album collate nocase in \((?:'(?:[^']|'')*',?)*\)\)")
+ROW = C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_int, C.POINTER(C.c_char_p), C.POINTER(C.c_char_p))  # sqlite3_exec's
+
+
+class Songtable:
+    """library (LIBRARY's form) answering the library's queries: the SQL stock was asked to run (sent), each row's text
+    through the C's own callback as sqlite3_exec hands it, and the names stock's row maker (album_row) made a record of
+    (named); it skips a row with no name, as stock's does. refuse: a grouping by names fails (returns -1). index:
+    songtable_album, which a library has after any scan."""
+    def __init__(self, fw, lib, records, refuse=False, library=LIBRARY, index=False):
+        self.lib, self.records, self.refuse, self.sent, self.named = lib, records, refuse, [], []
+        self.db = sqlite3.connect(':memory:')
+        self.db.execute(SONGTABLE)
+        self.db.executemany('insert into songtable(id, fileurl, album, songer, albumsonger, year, track, cd_num) '
+                            'values (?, ?, ?, ?, ?, ?, ?, ?)', library)
+        if index:
+            self.db.execute('create index songtable_album on songtable(album collate nocase)')
+        hook = fw.fn('ringnav_library_query', C.c_int, C.c_void_p, C.c_void_p, C.c_void_p, C.c_int)
+        fw.mock('toolsQueryDbTable', lambda db, sql, row, sort, *_: hook(db, sql, row, sort))
+        fw.mock('stock_dbquery_trampoline', self.query)
+        fw.mock('album_row', self.album_row)
+        Files(fw, {'/mnt/data/q2-library-scope': b'0/mnt/mmc/Hidden\n'})  # its database.ignore
+
+    def rows(self, sql):
+        return [tuple(None if v is None else str(v).encode() for v in row) for row in self.db.execute(sql)]
+
+    def query(self, db, sql, row, ctx, *_):
+        self.sent.append(C.string_at(sql).decode())
+        if self.refuse and NAMED.search(self.sent[-1]):
+            return -1
+        found = self.rows(self.sent[-1])
+        for values in found:
+            ROW(row)(ctx, len(values), (C.c_char_p * len(values))(*values), None)
+        return len(found)
+
+    def album_row(self, ctx, n, v, c, *_):
+        col = C.cast(v, C.POINTER(C.c_char_p))
+        if col[1]:
+            self.named.append(col[1])
+            self.lib.staging().append(self.records.song(id_=int(col[0]), album=col[1], artist=col[2], path=col[3], kind=4))
+        return 0
+
+
+def queen_open(fw, st, stand_in, records, refuse=False, index=False, **config):
+    """Queen's page opened on its albums tab, under Cover Flow view: stock's tab (a row a name, by name, the Unknown
+    row last) and Queen's songs. The grid's rows with their art keys and ids, Cover Flow's albums, and the queries."""
+    tab = [(1, 'A Night at the Opera', '/mnt/mmc/Music/Queen/Opera/01.flac'), (3, 'Greatest Hits', '/mnt/mmc/Music/Queen/Hits/01.flac'),
+           (7, 'Innuendo', '/mnt/mmc/Music/Queen/Innuendo/CD1/01.flac'), (6, 'Live', '/mnt/mmc/Music/Queen/Live/live.flac'),
+           (4, "Rock 'n' Roll", '/mnt/mmc/Music/Queen/Rock/01.flac'), (-1, None, '/mnt/mmc/Music/Queen/loose.flac')]
+    return artist_open(fw, st, stand_in, records, 'Queen', tab, LIBRARY, refuse, index, **config)
+
+
+def artist_open(fw, st, stand_in, records, name, tab, library, refuse=False, index=False, **config):
+    """name's page opened on its albums tab, under Cover Flow view, over library: stock's tab, tab's (id, album, path)
+    rows, and the artist's songs, library's of that songer outside the hidden folder."""
+    ui = Ui(fw)
+    ArtistPage(fw, ui)
+    tab = [records.song(id_=i, path=p.encode(), kind=4, **({'album': a.encode(), 'artist': name.encode()} if a else {}))
+           for i, a, p in tab]
+    songs = [records.song(album=(album or '').encode(), album_artist=(aa or '').encode(), path=path.encode())
+             for i, path, album, songer, aa, *_ in library if songer == name and '/Hidden/' not in path]
+    lib = artist(fw, stand_in, records, tab, songs, **config)
+    db = Songtable(fw, lib, records, refuse, library, index)
+    timers = []
+    fw.mock('timer_add', lambda fn, ctx, ms, *_: timers.append(fn) or 3)
+    assert fw.fn('ringnav_artist_list', C.c_int, C.c_int)(1) == len(tab)
+    keys = C.cast(st('art_keys', C.c_void_p).value, C.POINTER(C.c_char_p))
+    ids = C.cast(st('art_ids', C.c_void_p).value, C.POINTER(C.c_uint))
+    page = [(field(r, 'album'), keys[i], ids[i]) for i, r in enumerate(lib.d[lib.show])]
+    pending = list(lib.d[st('art_cf_list', C.c_void_p).value])
+    run(timers[0])  # Cover Flow's albums: their query (no page opens here)
+    flow = fw.fn('coverflow__music_albums', C.c_void_p, C.c_void_p, C.c_int)(lib.d.new(pending), 1)
+    as_shown = lambda r: (field(r, 'album'), field(r, 'album_artist'), field(r, 'path'), C.c_int.from_address(r).value)  # noqa: E731
+    return page, [as_shown(r) for r in lib.d[flow]], db
+
+
+def test_an_artists_page_groups_only_its_tabs_names(fw, st, stand_in, records):
+    """The tab's split, its year order and Cover Flow's music albums read the albums of the tab's names alone, case
+    aside, others' too (their art keys'), each name quoted and the folder markers expanded, and no untagged songs:
+    Cover Flow keeps the Unknown row as given. Each grouping's rows are the whole library's of those names, so the
+    page comes out as it did when they were the whole library's."""
+    page, flow, db = queen_open(fw, st, stand_in, records)
+    assert page == QUEEN_PAGE and flow == QUEEN_FLOW
+    # their queries: the tab's names alone (none of the twenty)
+    assert {n.lower() for n in db.named} == TAB_NAMES
+    split, year, cover_flow, again = db.sent
+    assert cover_flow == again and 'else 0 end) desc,album' in year
+    hidden = "case when substr(fileurl,1,16)='/mnt/mmc/Hidden/' collate nocase then 0 else 1 end"
+    for sql in (split, year, cover_flow):
+        assert " and (album collate nocase in (" in sql and "'Rock ''n'' Roll'" in sql and 'Album 00' not in sql, sql
+        assert hidden in sql and '/*q2-library-scope*/' not in sql and 'from (select' not in sql, sql
+        assert 'or album is null' not in sql and len(NAMED.findall(sql)) == 1, sql
+        assert_of_names(db, sql, TAB_NAMES)
+
+
+def assert_of_names(db, sql, names):
+    """sql's rows are the whole library's rows of names, in its order."""
+    whole = db.rows(NAMED.sub('', sql))
+    assert db.rows(sql) == [r for r in whole if (r[1] or b'').lower() in names], sql
+
+
+def test_an_artists_groupings_that_fail_by_name_read_the_whole_library(fw, st, stand_in, records):
+    page, flow, db = queen_open(fw, st, stand_in, records, refuse=True)
+    assert page == QUEEN_PAGE and flow == QUEEN_FLOW
+    assert [bool(NAMED.search(sql)) for sql in db.sent] == [True, False] * 4  # each by names, then as before
+
+
+def test_an_artists_groupings_by_name_search_songtable_album(fw, st, stand_in, records):
+    """With songtable_album, which a library has after any scan, each grouping finds its names' songs through it,
+    and its rows are still the whole library's of those names, in its order."""
+    page, flow, db = queen_open(fw, st, stand_in, records, index=True)
+    assert page == QUEEN_PAGE and flow == QUEEN_FLOW
+    for sql in db.sent:
+        assert 'songtable_album' in ' '.join(str(r[-1]) for r in db.db.execute('explain query plan ' + sql)), sql
+        assert_of_names(db, sql, TAB_NAMES)
+
+
+@pytest.mark.parametrize('refuse', [False, True])
+def test_an_artists_albums_in_a_to_z_order_group_only_its_tabs_names(fw, st, stand_in, records, refuse):
+    """Playback's Artist album order A-Z (ARTISTAZ): the order's grouping (SORT_SQL by name) by the tab's names gives
+    the page the whole library's grouping gives it (refuse)."""
+    page, flow, db = queen_open(fw, st, stand_in, records, refuse, ARTISTAZ=b'1')
+    az = lambda rows: sorted(rows[:-1], key=lambda r: r[0].lower()) + rows[-1:]  # noqa: E731
+    assert page == az(QUEEN_PAGE) and flow == az(QUEEN_FLOW)
+    order = db.sent[2 if refuse else 1]
+    assert order.endswith(' order by album COLLATE NOCASE') and NAMED.search(order), order
+    assert_of_names(db, order, TAB_NAMES)
+
+
+# Various Artists' 300 albums, every seventh with a ' in its name and every third also another artist's under its name
+# in capitals; a loose song; and twenty albums no song of theirs is on.
+VARIOUS = [f"Rock 'n' Mix {i:03}" if i % 7 == 0 else f'Mix {i:03}' for i in range(300)]
+VARIOUS_LIBRARY = [
+    *((1 + i, f'/mnt/mmc/Music/VA/{i:03}/01.flac', a, 'Various Artists', 'Various Artists', 1950 + i % 70, 1, 1)
+      for i, a in enumerate(VARIOUS)),
+    *((1001 + i, f'/mnt/mmc/Music/Other/{i:03}/01.flac', a.upper(), 'Other', 'Other', 1990, 1, 1)
+      for i, a in enumerate(VARIOUS) if i % 3 == 0),
+    (2001, '/mnt/mmc/Music/VA/loose.flac', '', 'Various Artists', '', None, None, None),
+    *((3001 + i, f'/mnt/mmc/Music/Else/{i:02}/01.flac', f'Album {i:02}', 'Else', 'Else', 2000 + i, 1, 1) for i in range(20))]
+
+
+def test_an_artists_long_list_of_names_is_sent_whole(fw, st, stand_in, records):
+    """Various Artists' 300 names, far past the 2 KB library_query's wrap holds: each grouping is sent once, by all its
+    names, never refused, and its rows are the whole library's of those names, in its order."""
+    order = sorted(range(len(VARIOUS)), key=lambda i: VARIOUS[i].lower())  # stock's tab: by name
+    tab: list[tuple[int, str | None, str]] = [(1 + i, VARIOUS[i], f'/mnt/mmc/Music/VA/{i:03}/01.flac') for i in order]
+    tab.append((-1, None, '/mnt/mmc/Music/VA/loose.flac'))  # the Unknown row
+    page, flow, db = artist_open(fw, st, stand_in, records, 'Various Artists', tab, VARIOUS_LIBRARY)
+    names = {a.lower().encode() for a in VARIOUS}
+    assert {n.lower() for n in db.named} == names
+    split, year, cover_flow, again = db.sent  # once each: no whole-library query after
+    assert cover_flow == again and len(split) > 2048
+    for sql in (split, year, cover_flow):
+        assert len(NAMED.findall(sql)) == 1 and "'Rock ''n'' Mix 007'" in sql and 'Album 00' not in sql, sql
+        assert_of_names(db, sql, names)
+    assert len(page) == len(flow) == len(tab) and page[-1][0] is None and flow[-1][3] == -1
+
+
+def test_the_albums_list_and_rated_albums_still_group_the_whole_library(fw, records):
+    lib = Library(fw)
+    db = Songtable(fw, lib, records)
+    Localclass(fw, lib, [records.song(id_=1, album=b'A Night at the Opera', kind=4)])(CLASS_ALBUMS)
+    fw.mock('getAllAlbum', lambda *_: lib.staging().append(records.song(id_=3, album=b'Greatest Hits', kind=4)) or 1)
+    none = C.CFUNCTYPE(C.c_int, C.c_void_p)(lambda r: 0)  # no album has hearts
+    assert fw.fn('coverflow_rated', C.c_int, C.c_void_p)(C.cast(none, C.c_void_p)) == 0
+    assert len(db.sent) == 3 and not any(NAMED.search(sql) for sql in db.sent)
+    assert 'from (select * from songtable where' in db.sent[0]  # the Albums list's, music alone
+    assert {b'album 00', b'album 19', b'greatest hits'} <= {n.lower() for n in db.named}
+
+
+def test_the_unknown_check_tests_the_tag_before_the_music_filter(fw, records):
+    """The Unknown row's check (library_first) asks stock's bare where first and the music filter after it, which SQLite
+    tests in that order, and finds what the wrapped query finds; a where with a space in it is wrapped as before."""
+    db = Songtable(fw, Library(fw), records)
+    query = fw.fn('ringnav_library_query', C.c_int, C.c_void_p, C.c_char_p, C.c_void_p, C.c_int)
+    music, first = fw.var('navigation__library_music', C.c_int), fw.var('navigation__library_first', C.c_int)
+    none = C.cast(ROW(lambda *_: 0), C.c_void_p)
+    db.db.executemany("insert into songtable(id, fileurl, album) values (?, ?, '')",  # untagged, not music, ahead of 9
+                      [(-2, '/mnt/mmc/Audiobooks/Book/01.mp3'), (-1, '/mnt/mmc/Hidden/loose.flac')])
+    music.value = first.value = 1
+    query(None, b'select * from songtable where album=""', none, 0)
+    query(None, b'select * from songtable where album="" order by id', none, 0)
+    query(None, b'select * from songtable where album="" or 1', none, 0)
+    tag_first, wrapped, spaced = db.sent[-3:]
+    assert tag_first.startswith('select * from songtable where album="" and (fileurl not like') and tag_first.endswith(') limit 1')
+    assert wrapped.startswith('select * from (select * from songtable where fileurl not like') and wrapped.endswith('order by id limit 1')
+    assert spaced.startswith('select * from (select * from songtable where fileurl not like') and spaced.endswith(' or 1 limit 1')
+    query(None, b'select * from songtable where albumsonger=""', none, 0)  # Album Artist's, after its rewrite
+    assert db.sent[-1].startswith("select * from songtable where ifnull(nullif(albumsonger,''),songer)=\"\" and (fileurl not like")
+    assert db.sent[-1].endswith(') limit 1')
+    first.value = 0
+    query(None, b'select * from songtable where album=""', none, 0)
+    assert 'from (select * from songtable where' in db.sent[-1] and 'limit' not in db.sent[-1]
+    assert [r[0] for r in db.rows(tag_first)] == [r[0] for r in db.rows(db.sent[-1])][:1] == [b'9']  # the loose song
+    db.db.execute("update songtable set album = 'Loose' where id = 9")
+    assert db.rows(tag_first) == []  # no untagged music song: the audiobook and the hidden one aren't found

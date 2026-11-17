@@ -1,4 +1,4 @@
-"""Opt-in, checked FLAC experiments for the pinned V1.36 player only."""
+"""The FLAC fast paths for the pinned V1.36 player only: all of EXPERIMENTS, or none (--stock-flac)."""
 
 EXPERIMENTS = ('sync', 'lpc', 'output')
 EXPORTS = {
@@ -23,17 +23,10 @@ POINTERS = {
 }
 
 
-def selection(value):
-    names = value.split(',') if isinstance(value, str) and value else tuple(value)
-    if len(set(names)) != len(names) or set(names) - set(EXPERIMENTS):
-        raise ValueError('FLAC experiments must be a comma-separated subset of sync,lpc,output without duplicates')
-    return tuple(name for name in EXPERIMENTS if name in names)
-
-
 def patch_words(experiments, symbols):
     from build import jal
     words = []
-    for name in selection(experiments):
+    for name in experiments:
         if name == 'sync':
             words.extend((a, 0x0c10adc4, jal(symbols['flac_sync_check'])) for a in SYNC_CALLS)
         else:

@@ -1,5 +1,7 @@
-/* The firmware's libc allocations, counted: linked into the host fw.so with ld --wrap by peak.py, so only the
- * firmware's own calloc/realloc/free/strdup calls come here (Python's and libc's own do not).
+/* The firmware's libc allocations, counted: linked into the host fw.so with ld --wrap by peak.py,
+ * so only the firmware's own calloc/realloc/free/strdup calls come here (Python's and libc's own do
+ * not).
+ *
  * Bytes are the bytes asked for, by pointer in a side table: a pointer this never handed out
  * (stock's, the test's) is freed uncounted. Single-threaded, as the host build is. */
 #include <stdlib.h>
@@ -19,9 +21,14 @@ void q2m_add(long n) {
     if (q2m_live > q2m_peak) q2m_peak = q2m_live;
 }
 
-#define SLOTS (1u << 22) /* ponytail: fixed table, aborts past half full; grow it if a path allocates 2M blocks */
+#define SLOTS                                                                                      \
+    (1u << 22) /* ponytail: fixed table, aborts past half full; grow it if a path allocates 2M     \
+                  blocks */
 #define DEAD ((void *)1)
-static struct { void *p; size_t n; } tab[SLOTS];
+static struct {
+    void *p;
+    size_t n;
+} tab[SLOTS];
 static unsigned used;
 
 static unsigned hash(void *p) { return (unsigned)(((size_t)p >> 4) * 2654435761u); }

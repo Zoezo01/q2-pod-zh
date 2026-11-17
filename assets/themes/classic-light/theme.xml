@@ -59,6 +59,10 @@
     <element name="shelf" top="32" third="1" bright1="256" bright2="256" reflect="46" reflect_top="90" view_h="242"/>
     <!-- The album and the artist in the title's face, 24 px apart: their boxes overlap, as each must hold the font -->
     <element name="caption" name_px="27" artist_px="27" text_y="220" artist_y="26"/>
+    <!-- The landing: a song picked on the flip panel flies its cover to Now Playing. No press, it plays at once;
+         400 ms in all over 55% of the way, the panel fading out from 0 for 110 ms and Now Playing in from 90 ms for
+         100, the landed art held 2000 ms at most for Now Playing's own. ms 0: none. -->
+    <element name="land" press="0" ms="400" travel="55" out_at="0" out_ms="110" np_at="90" np_ms="100" hold="2000"/>
   </view>
   <view name="bar">
     <element name="title" font="classic-light" font_size="21" caps="0"/>

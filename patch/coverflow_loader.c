@@ -222,7 +222,7 @@ void coverflow_halves(void) {
     int n = cf.albums && fx.tex ? (int)deque_size(cf.albums) : 0;
     unsigned now = (unsigned)time_now_ms();
     char url[600] = "file://", path[512];
-    if (fx.halves >= n || !ringnav_big_library() || cf.scoped == PLAYLISTS ||
+    if (fx.halves >= n || !pod_value(POD_BIG_LIB) || cf.scoped == PLAYLISTS ||
         (fx.half_at && (int)(now - fx.half_at) < HALF_GAP_MS) ||
         !card_room(ART_DIR, HALF_KEEP_MB, HALF_KEEP_PCT))
         return;
@@ -232,7 +232,7 @@ void coverflow_halves(void) {
             continue; /* made, or no art */
         fx.half_at = now ? now : 1;
         unsigned *tex = calloc(CF_TEXELS, 4);
-        if (tex && cf_decode(url, tex, 1)) half_make(key, tex);
+        if (tex && cf_decode(url, tex, 1, 0)) half_make(key, tex);
         free(tex);
         return;
     }

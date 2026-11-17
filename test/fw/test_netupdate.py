@@ -1120,12 +1120,14 @@ def test_a_header_fetch_sends_no_body_and_keeps_the_tag(fw):
     net = Net(fw, {b'https': (0, 302, b'https://g/releases/tag/1.2.3')})
     assert fetch(fw) == (0, b'1.2.3', 302)
     assert net.opts[44] == 1 and 52 not in net.opts  # NOBODY, no FOLLOWLOCATION
+    assert (net.opts[78], net.opts[13]) == (15, 30)  # CONNECTTIMEOUT, TIMEOUT
 
 
 def test_a_download_follows_redirects_to_its_file_and_verifies(fw):
     net = Net(fw, {b'https': (0, 200, None)})
     assert fetch(fw, file=7)[0] == 0
     assert net.opts[52] == 1 and net.opts[10001] == 7 and net.opts[64] == 1 and net.opts[81] == 2
+    assert net.opts[78] == 15 and 13 not in net.opts  # no TIMEOUT: an update.tar takes as long as it takes
 
 
 def test_a_download_carried_on_asks_from_its_byte_and_a_new_one_asks_for_no_range(fw):

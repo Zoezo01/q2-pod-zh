@@ -31,40 +31,21 @@ Rebuilt firmware uses `assets/boot-logo.jpg` as the boot splash. Pass another 32
 
 The build replaces the stock equalizer page with a 30-band PEQ editor (bands, shelves, preamp, on/off, presets, stock's built-in genre presets, `/EQ` import) and patch `hciplayer`'s equalizer filter with the matching DSP. Both also clear the 44.1 kHz AAC capability bit in `bluealsa` (see [internals.md](internals.md#bluetooth-aac)).
 
-### Stopped-audio notifier wait
-
-Off by default, `--dev --aic-idle-wait` (on by default from 1.5.0 to 1.6.1). The audited audio driver's stopped-state 10 ms polling is replaced by an
-event wait, woken by start/resume and teardown. Active PCM notification timing, period and
-buffer limits are unchanged. See
-[audio-notifier.md](audio-notifier.md) for the exact scope.
-
-```sh
-python3 tools/build.py 'Q2 Firmware V1.36.zip' --out /tmp/q2-notifier --dev --aic-idle-wait
-```
-
 ### FLAC fast paths
 
-On by default: `--flac-experiments sync,lpc,output` (all three). Pass a subset to build only some, or `--flac-experiments ""` for the stock decoder paths. Each is checked against the pinned V1.36 player.
+On by default: all three (sync, LPC and output, `tools/flac.py`). `--stock-flac` builds the stock decoder paths instead. Each is checked against the pinned V1.36 player.
 
 ### Versioning
 
 The updater refuses only a firmware whose version literal is identical to the installed one (`update_firmware`, `0x502bd0`; the online check `check_otginfo`, `0x5030f8`). So each build carries a 5-character tag, `VERSION` (`x.y.z`, single digits) and `BETA` (a pre-release's beta number, 0 for the release) packed as `V<xyz><beta>`; a release build stops unless both are single digits. For example, 1.8.0 beta 2 is `V1802` and 1.8.0 is `V1800`, so each beta and then the release installs over the one before. Releases up to 1.8.0 BETA were packed as `V<xyz>I` (1.0.0 was `V100I`). The mod installs over stock and over any other build, and stock V1.36 installs back over it.
 
-About's **FW. Version** row reads the same literal, so it shows the stock firmware's version (`STOCK_VERSION`, from the stock `firmware_v20.info`). A **CFW. Version** row below it shows `<version> Pod`, plus ` beta N` in a beta, or ` dev N` in `--dev` builds. Release tags use the plain version (`1.0.0`); releases up to 1.0 were `V`-prefixed. Each release carries `update.tar`.
+About's **Version** row reads the same literal, so it shows the stock firmware's version (`STOCK_VERSION`, from the stock `firmware_v20.info`). A **CFW. Version** row below it shows `<version>`, plus ` beta N` in a beta, or ` dev N` in `--dev` builds. Release tags use the plain version (`1.0.0`); releases up to 1.0 were `V`-prefixed. Each release carries `update.tar`.
 
 `--dev` numbers each test build one past the untracked `.build-number` and the `build-number` in the git directory that every worktree of the checkout shares, and tags it `V` plus that number in three base-36 digits, then `i` (`V001i`, `V002i` … `VZZZi`). No two test builds from one repository's worktrees share a tag (a separate clone counts on its own), and none equals a release's, so the updater installs each test build over the last and the release over any of them. `--dev` applies to that build only: the release procedure never passes it, and the manifest records the build number as `dev` (`false` otherwise).
 
 `--update-repo OWNER/NAME` points **Network Update** at another GitHub repo's latest release, so a fork's test builds update from the fork's own releases. In this Chinese fork it defaults to `Zoezo01/q2-pod-zh` (`REPO` in `tools/build.py`), so a build without it updates from this fork's own Chinese releases. The manifest records it as `update_repo`; `tools/release_zh.py` refuses to publish a build that points anywhere else.
 
 Development builds also start `q2remote`, a key-gated root shell with screenshots and input over Wi-Fi, for developers and agents; see [remote.md](remote.md).
-
-Off by default, `--dev --rotator-lazy-clock`: the rotator clock is held only from its first conversion. See [clock gating](clock-gating.md) for the exact module guard and tests.
-
-Off by default, `--dev --pwm-idle-clock`: the paired PWM/MCU clock gating. It needs all three matching files and a reboot. See [PWM clock gating](pwm-clock-gating.md) for its ownership protocol and fallbacks.
-
-All three kernel-module experiments were on by default from 1.5.0 to 1.6.1 and went back to `--dev` in 1.6.2: no battery saving was measured for any of them, and none handles suspend/resume, which stock Standby does by default.
-
-`--dev --mcu-idle-sleep` is off in release builds. It adds an interruptible MCU sleep with an explicit wake handshake. See [MCU sleep](mcu-sleep.md).
 
 ## Tests
 
@@ -80,12 +61,8 @@ python3 test/mp3_gapless_player.py BUILD   # the built gapless hooks, then stock
 python3 test/build.py                      # JPEG headers, dev tags, and the boot scripts (S90play's dual boot and crash log, S11logo's splash) under the host sh; no ZIP or emulator
 python3 test/build.py 'Q2 Firmware V1.36.zip'   # packaging checks (custom logo, quoted paths)
 python3 test/build.py --build BUILD         # a finished build's payloads and packaging
-python3 test/aic.py STOCKFS               # stopped audio notifier: actual MIPS hooks and modeled wait races
-python3 test/aic_build.py STOCKFS BUILD    # notifier development guard, ABI, default/experimental packaging
 python3 test/remote.py                     # q2remote protocol, auth, event and framebuffer checks
 bash test/wifi_transfer_cgi.sh             # Wi-Fi transfer's file manager (assets/web/q2cgi) under the host's busybox ash (the Q2's is 1.31.1): no ZIP or build; on a tmpfs at /mnt/mmc (one already there, or its own as root); --fat for a FAT32 image and its short-name cases (root). GitHub runs it on every pull request
-python3 test/rotator.py STOCK_MODULE        # actual MIPS rotator clock ownership and failure paths
-python3 test/rotator_build.py [BUILD...]    # dev-only guard (no build needed); given builds, packed/default module isolation
 python3 test/playback.py /tmp/q2-build     # grouped traversal, snapshots and the wheel's ticks (cc)
 python3 test/patch.py /tmp/q2-build        # the patched MIPS payload, wheel and UI scenarios (cc)
 python3 test/chapters.py                   # embedded chapter parsing, both MP4 formats and async extraction
@@ -107,9 +84,10 @@ python3 -m pytest test/unit                # tools/: no stock ZIP, no build, no 
 python3 -m pytest test/fw --basetemp ~/.cache/q2-pytest/fw  # the firmware's C on this machine: no stock ZIP, no build, no Q2 (see Firmware tests)
 ```
 
-- **MIPS suite:** `test/patch.py` executes the actual patched payload and the stock key and touch filters under Unicorn. UI services are mocked; the one other mocked boundary is the `system()` call that Key Tone uses to click the speaker. Case coverage lives in `test/patch.py`. Run the payload, headset worker, metadata dispatch and packaging checks for both Stock and iPod builds.
-- **Where a machine's hook runs:** `Machine.hook` (the mocks, and what a test's subclass adds) is Python, so Unicorn does not call it at every instruction: a small C filter, compiled as the suite starts (`cc`), calls it at each symbol's address, at each address a mock is set at and anywhere in the mocks' own region (`0x1000000` up). A hook that tests any other address itself (a place inside a stock function) names it first with `watch(address)`, or is never called there. `test/playback.py` and `test/headset_io.py` run the same machine.
-- **Draw-call trace:** `Q2_TRACE=FILE python3 test/patch.py BUILD` also writes every draw and widget-property call, each hook's return and each passed case to FILE, by value: payload addresses appear as symbol names (or `P`), stack ones as `S`. Two builds that draw the same give byte-identical files, so `cmp` checks a refactor that should change nothing on screen.
+- **MIPS suite:** `test/patch.py` executes the actual patched payload and the stock key and touch filters under Unicorn. UI services are mocked; the one other mocked boundary is the `system()` call that Key Tone uses to click the speaker. Case coverage lives in `test/patch.py`, the entry point, which runs its scenarios top to bottom. The emulator is `test/q2emu.py`: `Machine`, the mocks, and the machines, helpers and constants scenarios share, imported by name. A stretch of scenarios that reads no name an earlier one set, and sets none a later one reads, is a file in `test/scenarios/` named by area, imported at its place in `test/patch.py`, so the cases keep their order and numbers. One that shares a machine or a name with others stays in `test/patch.py`. Run the payload, headset worker, metadata dispatch and packaging checks for both Stock and iPod builds.
+- **Where a machine's hook runs:** `Machine.hook` (the mocks, and what a test's subclass adds) is Python, so Unicorn does not call it at every instruction: a small C filter, compiled as the suite starts (`cc`), calls it at each symbol's address, at each address a mock is set at and anywhere in the mocks' own region (`0x1000000` up). A hook that tests any other address itself (a place inside a stock function) names it first with `watch(address)`, or is never called there. `test/playback.py` and `test/headset_io.py` import the same machine from `test/q2emu.py`.
+- **Draw-call trace:** `Q2_TRACE=FILE python3 test/patch.py BUILD` also writes every draw and widget-property call, each hook's return and each passed case to FILE, by value: payload addresses appear as symbol names (or `P`), stack ones as `S`. Two builds that draw the same give the same file but for the few values below, so it checks a refactor that should change nothing on screen.
+- **Proving a move between files:** `python3 test/tracecmp.py BASE.trace NEW.trace` compares two traces with the values that aren't address-free or build-free masked (a `_ringnav_box` key's string address, `t9_box`'s leftover `$v0`, a `--dev` build's tag and number), matches the cases by their `== N` lines and prints each line that differs under its case, then `identical, N cases` or the counts. `--split OLD=NEW`, repeatable, allows a `ret` line of the same length whose hook name or `$v0` is OLD in the base and NEW in the new trace, every other field equal: a destroy handler renamed by a move (`--split page_closed=qm_closed`) or a void function's leftover `$v0` naming another file's struct (`--split st=qm`). Allowed lines are still printed, and each pair used is counted. `python3 test/callcmp.py BASE_BUILD BUILD` lists each function whose count of calls to a payload function changed, as when a helper stops being inlined. Both exit 1 on a difference. `python3 test/budget.py BUILD CASE` runs `test/patch.py` up to the trace's `== CASE` line and prints each call of that case, by file and line, against its limit (`Machine.budget`) as `test/patch.py` counts it (from the last nested run's start, as Unicorn's count restarts there), then the largest call's instructions by function; on an instruction limit, CASE is one past the last `== N` the run wrote.
 - **Known gap:** the stock rounded vgcanvas branch can't run end to end under Unicorn 2.1.4. Stock is built `-mfp64`, and Unicorn's MIPS32 FPU only implements `FR=0`, so its 64-bit conversions trap. The test runs the branch up to that instruction and asserts the calls before it.
 - **Reproducibility:** two fresh builds must produce identical `update.tar` files. Packaging verifies MD5 entries, unchanged kernel and rootfs metadata, and a rootfs no larger than stock.
 - **Space:** the payload is built with `-Oz`, and demo's `.pdr` section (MIPS procedure descriptors, 423 KB past every LOAD segment, never read at run time) ships zeroed. mksquashfs packs file tails into fragments (`-tailends`), which saves about 26 KB. For rootfs headroom see [Boot](boot.md#making-a-logo-that-works).
@@ -143,7 +121,7 @@ Q2_FW_STRICT=1 python3 -m pytest test/fw    # fail a test that reaches a stub to
 
 ## Type check
 
-`.github/workflows/types.yml` runs [mypy](https://mypy-lang.org) over `tools/`, `test/unit` and `test/fw` on every pull request and push to `main`. Few functions carry annotations, so mypy checks the bodies of unannotated ones too (`check_untyped_defs` in `pyproject.toml`): a misspelt name, a wrong argument count, a `None` used as a value, bytes for a str.
+`.github/workflows/tests.yml` runs [mypy](https://mypy-lang.org) over `tools/`, `test/unit` and `test/fw` on every pull request and push to `main`. Few functions carry annotations, so mypy checks the bodies of unannotated ones too (`check_untyped_defs` in `pyproject.toml`): a misspelt name, a wrong argument count, a `None` used as a value, bytes for a str.
 
 ```sh
 pip install -r requirements.txt -r test/unit/requirements.txt mypy==2.4.1
@@ -155,13 +133,26 @@ mypy test/fw  # its own run: test/unit has a conftest module too
 - **Off on purpose:** `func-returns-value` (the tests' mocks return `list.append`'s `None`) and `var-annotated` (an empty list or dict). A name may take a new type (`allow_redefinition_new`), as in `d = pathlib.Path(d)`.
 - **ctypes `_fields_`** is one list, `[*((k, C.c_int) for k in ...), ('x', C.c_void_p)]`: mypy reads lists added together as a list of `object`, which `Structure` refuses.
 
+## clang-tidy
+
+`tools/tidy.sh` runs [clang-tidy](https://clang.llvm.org/extra/clang-tidy/) 23 with the root `.clang-tidy` over the C that `test/fw` builds (`NAVIGATION` and `UI_SOURCES`), with the Q2's flags, against the headers `test/fw/host.py` writes, so it needs no stock ZIP. Then `clang -fsyntax-only` with the same flags and `-Werror` fails on any warning the firmware build would. `firmware.yml` and `tools/check.sh` run it; it fails on any hit. Name files to check only those.
+
+```sh
+pip install clang-tidy==23.1.4  # or your distribution's clang-tidy 23
+tools/tidy.sh
+tools/tidy.sh patch/navigation.c
+```
+
+- **Checks:** `bugprone-*` and the clang static analyzer, less what the codebase does on purpose (listed in `.clang-tidy`), and caps on a function's lines and cognitive complexity just above today's largest, so none grows past them.
+- **A hit the analyzer can't see past** (a caller's bound, a table sized by its count) gets `/* NOLINTNEXTLINE(check): the invariant */` above it, naming why it can't happen. A hit that can happen gets a fix.
+
 ## Mutation tests
 
 `.github/workflows/tests.yml` runs `test/unit` on every pull request and push to `main`. `.github/workflows/mutation.yml` runs [mutmut](https://github.com/boxed/mutmut) on every function in `tools/`, and on Sundays `test/cmut` over the C ([below](#c)). mutmut breaks a copy of each function in one small way at a time and checks that `test/unit` notices. It uploads every surviving mutant and mutmut's log as `surviving-mutants`.
 
 - **Pull requests:** mutate only the functions they add or change since their base commit (`targets.py --since`), and report the score in the run's summary without failing. `targets.py` asks mutmut's own generator which functions have mutants, so a change to a decorated function (but for a lone `@staticmethod` or `@classmethod`) or to one with nothing to mutate, such as `return self.x`, mutates nothing.
-- **Nightly:** mutmut keeps a hash of each function with its results in `mutants/`, which the workflow caches, and reruns only the mutants of functions whose code changed. It finds each function's tests afresh, so a function added since Sunday gets its tests, and copies `patch/`, `assets/`, `docs/` and `test/` again. A function already marked as reached by no test keeps that until Sunday. A night with no change to `tools/` still makes every mutant and finds the tests, about three minutes on a desktop. A change to `test/unit`, `test/release.py`, the requirements, or a `.S`, `.c` or `.h` file in `tools/` starts the cache afresh: mutmut keeps its old copies of those, and tests read them. The job fails under 90%, a floor under a fresh run's score: it catches a collapse, not each survivor.
-- **Sundays, and by hand from the Actions tab:** everything from scratch, because a cached result can't see a change outside its own function, such as a module's constant or a function it calls. 15,920 mutants took 75 minutes on four workers of a Ryzen 7 7800X3D desktop, and 91.7% were caught (96.1% outside art.py). art.py's 2,634 take most of that time, each about 5 seconds against everything else's fraction of one. GitHub's runners are slower, so the job allows 240 minutes. Every art.py mutant runs `test_art.py`, so only the two tests that read the pane's icons draw them, the slow part, and the rest share one drawing. One of them checks the other tests' images are the shipped theme's. mutmut forks each mutant's run from a process that has already run the tests, so `conftest.py` clears every `functools` cache at the start of a session, or art's cached images would hide the mutants under them, and caps each process at 4 GB, as a mutant can loop for ever filling memory.
+- **Nightly:** mutmut keeps a hash of each function with its results in `mutants/`, which the workflow caches, and reruns only the mutants of functions whose code changed. It finds each function's tests afresh, so a function added since Sunday gets its tests, and copies `patch/`, `assets/`, `docs/` and `test/` again. A function already marked as reached by no test keeps that until Sunday. A night with no change to `tools/` still makes every mutant and finds the tests, about three minutes on a desktop. A change to `test/unit`, `test/release.py`, `test/mips.py`, the requirements, or a `.S` file in `tools/` starts the cache afresh: mutmut keeps its old copies of those, and tests read them. The job fails under 90%, a floor under a fresh run's score: it catches a collapse, not each survivor.
+- **Sundays, and by hand from the Actions tab:** everything from scratch, because a cached result can't see a change outside its own function, such as a module's constant or a function it calls. art.py's mutants are the slowest, because drawing the images is slow; everything else's are quick. GitHub's runners are slower than a desktop: one tested 16,519 of 20,043 mutants in 4 hours, before art.py drew faster, so the job allows 330 minutes. mutmut gives a mutant only the tests that called its function during its stats pass, so there each `test_art.py` test starts with art's caches cleared and draws what it reads: every art.py mutant runs every test that reads its images. A mutant's own run draws once a session: only the two tests that read the pane's icons draw those, the slow part, and the rest share one drawing. One of them checks the other tests' images are the shipped theme's. mutmut forks each mutant's run from a process that has already run the tests, so `conftest.py` clears every `functools` cache at the start of a session, or art's cached images would hide the mutants under them, and caps each process at 4 GB, as a mutant can loop for ever filling memory.
 
 ```sh
 pip install -r requirements.txt -r test/unit/requirements.txt
@@ -170,10 +161,10 @@ mutmut run $(python3 test/unit/targets.py --since main)     # or only what a bra
 python3 test/unit/report.py --survivors /tmp/survivors.txt  # score, table, each survivor's diff (--since as above)
 ```
 
-- **Needs no stock firmware:** the fixtures in `test/unit` are synthetic, and the stock ZIP is neither fetched nor kept. A function that pins a Shanling file's hash or links against one carries `# pragma: no mutate block` on its `def` line, so it has no mutants: `compile_payload`, `patch_asset`, `compile_common`, `patch_player`, the audio module's `validate_stock` and `patch_module`, the rotator's `patch_module`, and PWM's `link`, `patch_pwm`, `patch_mcu` and `patch_bundle`. They stay with the scripts above, which need a build. A new one gets the same pragma.
+- **Needs no stock firmware:** the fixtures in `test/unit` are synthetic, and the stock ZIP is neither fetched nor kept. A function that pins a Shanling file's hash or links against one carries `# pragma: no mutate block` on its `def` line, so it has no mutants: `compile_payload`, `patch_asset`, `compile_common` and `patch_player`. They stay with the scripts above, which need a build. A new one gets the same pragma.
 - **Keep tests behind the fence:** a mutant changes a command before it runs, and `q2remote`'s commands are shell scripts for a live Q2. `test/unit/conftest.py` refuses every process but the compilers, along with sockets and signals, and hides `Q2_HOST`. `test/remote.py` runs real commands through a real shell, so it stays out of `test/unit`.
 - **`build()`** carries `# pragma: no mutate block`. mutmut writes out a whole copy of a function per mutant, so its 440 lines alone made a 96 MB file that never finished generating. The pragma is on art.py's `wave()` too: only `WAVES` calls it, at import, before mutmut can switch a mutant on, so all 21 of its mutants survived.
-- **Survivors are not all gaps.** Most left are equivalent (`<I` as `<i` on a word under 2^31) or machine code in `patch_bluealsa`, which only `test/bluealsa.py` can judge against a build.
+- **Survivors are not all gaps.** Most left are equivalent (`<I` as `<i` on a word under 2^31).
 
 ### C
 

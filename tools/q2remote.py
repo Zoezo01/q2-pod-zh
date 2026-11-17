@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Drive a --dev Q2 over Wi-Fi (Q2_HOST, and Q2_KEY or a key file; see docs/remote.md).
-
-usage: q2remote.py {sh [--timeout S] COMMAND|shot [--settle] OUT.png|state|wake|key NAME [MS]|wheel N [--step-ms MS]|tap X Y|swipe X1 Y1 X2 Y2 [MS]|push LOCAL REMOTE|pull REMOTE LOCAL|install UPDATE.TAR|log [LINES|-f|--clear]|events EVENT [S]|devices|find|reboot [--wait]|prof S [--all] [--build DIR]}"""
+"""Drive a --dev Q2 over Wi-Fi (Q2_HOST, and Q2_KEY or a key file; see docs/remote.md)."""
+import argparse
 import concurrent.futures
 import contextlib
+import functools
 import hashlib
 import ipaddress
 import os
@@ -470,100 +470,133 @@ def profile(seconds, all_threads, build):
             print(f"{v:6d}  {k}")
 
 
-def input_action(kind, args):
+def input_action(kind, a):
+    """key, tap, swipe or wheel, from main()'s parsed arguments."""
     if kind == "key":
-        code = KEYS.get(args[0].lower())
-        if code is None: raise ValueError(f"key must be one of {', '.join(KEYS)}")
-        try: ms = int(args[1]) if len(args) > 1 else 80
-        except ValueError: raise ValueError("key duration must be an integer number of milliseconds")
-        if not 1 <= ms <= 60000: raise ValueError("key duration must be 1..60000 ms")
-        shell("sh", event_writer(input_path(kind), key_events(code), ms * 1000).encode())
+        if not 1 <= a.ms <= 60000: raise ValueError("key duration must be 1..60000 ms")
+        shell("sh", event_writer(input_path(kind), key_events(KEYS[a.name]), a.ms * 1000).encode())
     elif kind == "tap":
-        try: x, y = map(int, args)
-        except ValueError: raise ValueError("tap coordinates must be integers")
-        shell("sh", event_writer(input_path(kind), touch_batches([(x, y)])).encode())
+        shell("sh", event_writer(input_path(kind), touch_batches([(a.x, a.y)])).encode())
     elif kind == "swipe":
-        try: x1, y1, x2, y2, ms = map(int, args + ["300"] * (len(args) == 4))
-        except ValueError: raise ValueError("swipe coordinates and duration must be integers")
-        if not 20 <= ms <= 10000: raise ValueError("swipe duration must be 20..10000 ms")
-        shell("sh", event_writer(input_path("tap"), touch_batches(swipe_points(x1, y1, x2, y2, ms))).encode())
+        if not 20 <= a.ms <= 10000: raise ValueError("swipe duration must be 20..10000 ms")
+        x1, y1, x2, y2 = a.points
+        shell("sh", event_writer(input_path("tap"), touch_batches(swipe_points(x1, y1, x2, y2, a.ms))).encode())
     elif kind == "wheel":
-        if args[1:2] not in ([], ["--step-ms"]): raise ValueError("usage: wheel N [--step-ms MS]")
-        try: ticks, step_ms = int(args[0]), int(args[2]) if len(args) == 3 else SAMPLE_US // 1000
-        except ValueError: raise ValueError("wheel travel and --step-ms must be integers")
-        if not 0 <= step_ms <= 1000: raise ValueError("--step-ms must be 0..1000")
-        if not -1000 <= ticks <= 1000: raise ValueError("wheel travel must be -1000..1000 ticks")
-        if ticks == 0: return
+        if not 0 <= a.step_ms <= 1000: raise ValueError("--step-ms must be 0..1000")
+        if not -1000 <= a.ticks <= 1000: raise ValueError("wheel travel must be -1000..1000 ticks")
+        if a.ticks == 0: return
         path, units = input_path(kind), wheel_units(config())
         # Settle frames alternate y so the input core does not drop them as unchanged.
         batches = [event(EV_ABS, ABS_X, 100) + event(EV_ABS, ABS_Y, 100) +
                    event(EV_ABS, ABS_PRESSURE, 1) + event(EV_KEY, BTN_TOUCH, 1) + event(EV_SYN, 0, 0)]
         batches.extend(event(EV_ABS, ABS_X, x) + event(EV_ABS, ABS_Y, 100 + i % 2) + event(EV_SYN, 0, 0)
-                       for i, x in enumerate(wheel_positions(ticks, units)))
+                       for i, x in enumerate(wheel_positions(a.ticks, units)))
         batches.append(event(EV_ABS, ABS_PRESSURE, 0) + event(EV_KEY, BTN_TOUCH, 0) + event(EV_SYN, 0, 0))
-        shell("sh", event_writer(path, batches, step_ms * 1000).encode())  # stdin: a long turn outgrows the 4 KB command line
+        shell("sh", event_writer(path, batches, a.step_ms * 1000).encode())  # stdin: a long turn outgrows the 4 KB command line
+
+
+def parser():
+    ap = argparse.ArgumentParser(prog="q2remote.py", description=__doc__)
+    sub = ap.add_subparsers(dest="cmd", metavar="COMMAND")
+    add = functools.partial(sub.add_parser, allow_abbrev=False)  # no "log --cl" for --clear
+    p = add("sh", help="run COMMAND as root; exits with its status")
+    p.add_argument("--timeout", type=float, default=TIMEOUT, metavar="S", help="give up after S seconds without output")
+    p.add_argument("command")
+    p = add("shot", help="save the screen as a PNG")
+    p.add_argument("--settle", action="store_true", help="first wait until the screen stops changing")
+    p.add_argument("out", metavar="OUT.png")
+    for name, text in (("state", "print demo's pid, the uptime and its globals"), ("wake", "light the screen if it is off"),
+                       ("devices", "list the input devices"), ("find", "list the addresses where q2remote answers")):
+        add(name, help=text)
+    p = add("key", help="press a button for MS ms (default 80)")
+    p.add_argument("name", type=str.lower, choices=KEYS, metavar="NAME", help=", ".join(KEYS))
+    p.add_argument("ms", type=int, nargs="?", default=80, metavar="MS")
+    p = add("wheel", help="turn the wheel N ticks")
+    p.add_argument("ticks", type=int, metavar="N")
+    p.add_argument("--step-ms", type=int, default=SAMPLE_US // 1000, metavar="MS")
+    p = add("tap", help="tap at upright screenshot coordinates")
+    p.add_argument("x", type=int)
+    p.add_argument("y", type=int)
+    p = add("swipe", help="drag from X1 Y1 to X2 Y2 over MS ms (default 300)")
+    p.add_argument("points", type=int, nargs=4, metavar=("X1", "Y1", "X2", "Y2"))
+    p.add_argument("ms", type=int, nargs="?", default=300, metavar="MS")
+    p = add("push", help="copy a file to the Q2")
+    p.add_argument("local")
+    p.add_argument("remote")
+    p = add("pull", help="copy a file from the Q2")
+    p.add_argument("remote")
+    p.add_argument("local")
+    p = add("install", help="put UPDATE.TAR on the card")
+    p.add_argument("tar", metavar="UPDATE.TAR")
+    p = add("log", help="print, follow (-f) or empty (--clear) demo's output")
+    g = p.add_mutually_exclusive_group()
+    g.add_argument("lines", type=int, nargs="?", metavar="LINES")
+    g.add_argument("-f", action="store_true")
+    g.add_argument("--clear", action="store_true")
+    p = add("events", help="print raw events from /dev/input/eventN for S seconds (default 5)")
+    p.add_argument("n", type=int, metavar="N")
+    p.add_argument("seconds", type=float, nargs="?", default=5, metavar="S")
+    p = add("reboot", help="sync and reboot")
+    p.add_argument("--wait", action="store_true", help="return once q2remote answers again")
+    p = add("prof", help="sample demo's stacks for S seconds")
+    p.add_argument("seconds", type=float, metavar="S")
+    p.add_argument("--all", action="store_true", help="every thread")
+    p.add_argument("--build", default=os.environ.get("Q2_BUILD"), metavar="DIR", help="the installed build (or Q2_BUILD)")
+    return ap
 
 
 def main(argv):
-    if not argv or argv[0] in ("-h", "--help"):
-        print(__doc__)
-        return 0
-    cmd, a = argv[0], argv[1:]
-    timeout = TIMEOUT
-    if cmd == "sh" and a[:1] == ["--timeout"] and len(a) == 3:
-        timeout, a = float(a[1]), a[2:]
-        if timeout <= 0: raise ValueError("--timeout must be positive")
-    if cmd == "sh" and len(a) == 1:
-        if not a[0]: raise ValueError("sh requires a non-empty command")
-        out, rc = run(a[0], timeout)
+    ap = parser()
+    a = ap.parse_args(argv)
+    cmd = a.cmd
+    if cmd is None:
+        ap.print_help(); return 0
+    if cmd == "sh":
+        if a.timeout <= 0: raise ValueError("--timeout must be positive")
+        if not a.command: raise ValueError("sh requires a non-empty command")
+        out, rc = run(a.command, a.timeout)
         sys.stdout.buffer.write(out); return rc
-    if cmd == "shot" and len(a) in (1, 2) and a[:-1] in ([], ["--settle"]):
-        screenshot(a[-1], len(a) == 2); return 0
-    if cmd == "state" and not a:
+    if cmd == "shot":
+        screenshot(a.out, a.settle); return 0
+    if cmd == "state":
         print(" ".join(f"{k}={v}" for k, v in state().items())); return 0
-    if cmd == "wake" and not a:
+    if cmd == "wake":
         print("woke the screen" if wake() else "the screen is already on"); return 0
-    if cmd == "devices" and not a:
+    if cmd == "devices":
         for d in devices():
             print(f"event{d['event']} {d['name']} handlers={d['handlers']} keys={sorted(bits(d['KEY']))} abs={sorted(bits(d['ABS']))}")
         return 0
     if cmd in ("key", "tap", "swipe", "wheel"):
-        if len(a) not in {"key": (1, 2), "wheel": (1, 3), "tap": (2,), "swipe": (4, 5)}[cmd]: raise ValueError(f"invalid arguments for {cmd}")
         input_action(cmd, a); return 0
-    if cmd == "push" and len(a) == 2:
-        print(push(*a)); return 0
-    if cmd == "pull" and len(a) == 2:
-        pull(*a); return 0
-    if cmd == "install" and len(a) == 1:
-        install(a[0])
+    if cmd == "push":
+        print(push(a.local, a.remote)); return 0
+    if cmd == "pull":
+        pull(a.remote, a.local); return 0
+    if cmd == "install":
+        install(a.tar)
         print("update.tar is on the card: System settings → System Update → TF card update"); return 0
-    if cmd == "log" and len(a) <= 1:
-        if a == ["-f"]:
+    if cmd == "log":
+        if a.f:
             shell(f"tail -f {LOG}", timeout=None, sink=sys.stdout.buffer); return 0
-        if a == ["--clear"]:
+        if a.clear:
             shell(f": >{LOG}"); return 0
-        if a and not a[0].isdigit(): raise ValueError("usage: log [LINES|-f|--clear]")
-        out, rc = run(f"tail -n {a[0] if a else 100} {LOG}")
+        if a.lines is not None and a.lines < 0: raise ValueError("usage: log [LINES|-f|--clear]")
+        out, rc = run(f"tail -n {100 if a.lines is None else a.lines} {LOG}")
         sys.stdout.buffer.write(out); return rc
-    if cmd == "find" and not a:
+    if cmd == "find":
         print("\n".join(find())); return 0
-    if cmd == "reboot" and a in ([], ["--wait"]):
-        reboot(bool(a)); return 0
-    if cmd == "prof" and a and a[0].replace(".", "", 1).isdigit():
-        rest, build = a[1:], os.environ.get("Q2_BUILD")
-        if "--build" in rest:
-            i = rest.index("--build"); build = rest[i + 1]; del rest[i:i + 2]
-        profile(float(a[0]), rest == ["--all"], build); return 0
-    if cmd == "events" and 1 <= len(a) <= 2:
-        try: n = int(a[0]); seconds = float(a[1]) if len(a) > 1 else 5
-        except ValueError: raise ValueError("events requires an integer event number and seconds")
-        if n < 0 or seconds <= 0 or seconds > 3600: raise ValueError("events requires EVENT>=0 and 0<S<=3600")
-        # Device busybox has no timeout(1); the stream may be silent for the whole window.
-        out = shell(f"cat /dev/input/event{n} 2>/dev/null & p=$!; sleep {seconds:g}; kill $p", timeout=TIMEOUT + seconds)
-        for sec, usec, typ, code, value in decode_events(out):
-            print(f"{sec}.{usec:06d} type={typ} code={code} value={value}")
-        return 0
-    raise ValueError(__doc__[__doc__.index("usage:"):])
+    if cmd == "reboot":
+        reboot(a.wait); return 0
+    if cmd == "prof":
+        if not 0 <= a.seconds < float("inf"): raise ValueError("prof requires S>=0")
+        profile(a.seconds, a.all, a.build); return 0
+    # events
+    if a.n < 0 or a.seconds <= 0 or a.seconds > 3600: raise ValueError("events requires EVENT>=0 and 0<S<=3600")
+    # Device busybox has no timeout(1); the stream may be silent for the whole window.
+    out = shell(f"cat /dev/input/event{a.n} 2>/dev/null & p=$!; sleep {a.seconds:g}; kill $p", timeout=TIMEOUT + a.seconds)
+    for sec, usec, typ, code, value in decode_events(out):
+        print(f"{sec}.{usec:06d} type={typ} code={code} value={value}")
+    return 0
 
 
 if __name__ == "__main__":

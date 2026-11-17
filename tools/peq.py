@@ -129,7 +129,7 @@ LIBC = {
     'opendir': ('void *', 'const char *'), 'closedir': ('int', 'void *'),
     'readdir': ('struct dirent *', 'void *'),
     'qsort': ('void', 'void *, unsigned, unsigned, int (*)(const void *, const void *)'),
-    # libcstl and socket imports for the Play/Pause queue menu in navigation.c
+    # libcstl and socket imports for the Play/Pause queue menu (queue_menu.c)
     '_create_deque': ('void *', 'const char *'), 'deque_init': ('void', 'void *'),
     'deque_init_copy': ('void', 'void *, const void *'), 'deque_size': ('unsigned', 'const void *'),
     'deque_at': ('void *', 'const void *, unsigned'), '_deque_push_back': ('void', 'void *, ...'),
@@ -147,7 +147,7 @@ LIBC = {
     'strcasestr': ('char *', 'const char *, const char *'),
     'strncmp': ('int', 'const char *, const char *, unsigned'),
     'strncasecmp': ('int', 'const char *, const char *, unsigned'),
-    # iPod status bar clock (navigation.c)
+    # iPod status bar clock (clock.c)
     'time': ('long', 'long *'),
     'localtime_r': ('const int *', 'const long *, int *'), 'tzset': ('void', 'void'),
     # Scrobble upload (scrobble.c): demo's libcurl and libcrypto
@@ -184,7 +184,7 @@ LIBC = {
 }
 
 # The payload's C beside navigation.c (build.py compile_payload), in link order; test/fw builds the same set.
-UI_SOURCES = ['peq.c', 'peq_ui.c', 'coverflow.c', 'coverflow_thumb.c', 'coverflow_letters.c', 'coverflow_loader.c', 'playlist_art.c', 'library_scope.c', 'scrobble.c', 'photos.c', 'books.c', 'games.c', 'visualizer.c', 'playback.c', 'upnext.c', 'spotify.c', 'addon.c', 'addon_library.c', 'radio.c', 'tidal.c', 'netupdate.c', 'onlinematch.c', 'crossfade.c', 'nightshift.c', 'headset.c', 'lockscreen.c', 'chapters.c', 'lyrics.c', 'xiph.c', 'airplay.c']
+UI_SOURCES = ['peq.c', 'peq_ui.c', 'coverflow.c', 'coverflow_thumb.c', 'coverflow_letters.c', 'coverflow_loader.c', 'coverflow_land.c', 'playlist_art.c', 'library_scope.c', 'scrobble.c', 'photos.c', 'books.c', 'games.c', 'visualizer.c', 'playback.c', 'upnext.c', 'spotify.c', 'addon.c', 'addon_library.c', 'radio.c', 'tidal.c', 'netupdate.c', 'onlinematch.c', 'crossfade.c', 'nightshift.c', 'headset.c', 'lockscreen.c', 'chapters.c', 'lyrics.c', 'xiph.c', 'airplay.c']
 
 def function_macros(address):
     """Each stock function in address (name -> its C address) as a macro calling it there."""
@@ -257,8 +257,7 @@ def compile_common(out, binary, player=False, flac_experiments=()):  # pragma: n
     return [*objects, obj]
 
 def patch_player(raw, out, flac_experiments=()):  # pragma: no mutate block
-    from flac import selection, EXPORTS, patch_words
-    flac_experiments = selection(flac_experiments)
+    from flac import EXPORTS, patch_words
     check(sha(raw) == PLAYER_SHA, 'Unexpected hciplayer')
     out.mkdir(exist_ok=True)
     binary = out/'stock-hciplayer'

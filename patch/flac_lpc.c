@@ -23,6 +23,7 @@ typedef unsigned u32;
 typedef signed i32;
 
 /* Coefficients live on the decoder stack, separately from the sample buffer. */
+/* clang-format off */
 #define LPC32(N)                                                                            \
     static __attribute__((always_inline)) inline void                                        \
     lpc32_##N(i32 *restrict data, const i32 *restrict co, int sh, int len) {                    \
@@ -38,16 +39,20 @@ LPC32(7) LPC32(8) LPC32(9) LPC32(10) LPC32(11) LPC32(12)
 
 #define CASE(N) case N: lpc32_##N(data, co, sh, len); return;
 void flac_lpc32(i32 *restrict data, const i32 *restrict co, int order, int sh, int len) {
+    /* clang-format on */
     if ((unsigned)sh > 31) goto fallback;
     switch (order) {
+        /* clang-format off */
         CASE(1) CASE(2) CASE(3) CASE(4) CASE(5) CASE(6)
         CASE(7) CASE(8) CASE(9) CASE(10) CASE(11) CASE(12)
+        /* clang-format on */
     }
 fallback:
     ((void (*)(i32 *, const i32 *, int, int, int))0x5baedc)(data, co, order, sh, len);
 }
 #undef CASE
 
+/* clang-format off */
 #define LPC64(N)                                                                            \
     static __attribute__((always_inline)) inline void                                        \
     lpc64_##N(i32 *restrict data, const i32 *restrict co, int sh, int len) {                    \
@@ -69,10 +74,13 @@ LPC64(7) LPC64(8) LPC64(9) LPC64(10) LPC64(11) LPC64(12)
 
 #define CASE(N) case N: lpc64_##N(data, co, sh, len); return;
 void flac_lpc64(i32 *restrict data, const i32 *restrict co, int order, int sh, int len) {
+    /* clang-format on */
     if ((unsigned)sh > 31) goto fallback;
     switch (order) {
+        /* clang-format off */
         CASE(1) CASE(2) CASE(3) CASE(4) CASE(5) CASE(6)
         CASE(7) CASE(8) CASE(9) CASE(10) CASE(11) CASE(12)
+        /* clang-format on */
     }
 fallback:
     ((void (*)(i32 *, const i32 *, int, int, int))0x5bb05c)(data, co, order, sh, len);

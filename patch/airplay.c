@@ -1,10 +1,12 @@
-/* AirPlay (docs/internals.md#airplay-sender): what the Q2 plays, sent to AirPlay speakers (Sonos, HomePod,
- * Apple TV…) by the q2-airplay card app, a hidden one (addon.c), whose page lists the speakers. Now
- * Playing's ⋯ page's AirPlay row opens that page. The app makes CAST_FILE (peq.h);
- * demo maps it to tell the app what plays (the player's state, the volume and, in CAST_TRACK, the song's
- * tags) and keeps the PEQ filter, which feeds the app from hciplayer, in the chain. While a speaker plays
- * the volume is the speaker's (the app's spk), never the earphones', whose level comes back from RAM
- * when it stops; the lyrics follow the speaker, which plays the song the app's delay behind the Q2.
+/* AirPlay (docs/internals.md#airplay-sender): what the Q2 plays, sent to AirPlay speakers (Sonos,
+ * HomePod, Apple TV…) by the q2-airplay card app, a hidden one (addon.c), whose page lists the
+ * speakers. Now Playing's ⋯ page's AirPlay row opens that page. The app makes CAST_FILE (peq.h);
+ * demo maps it to tell the app what plays (the player's state, the volume and, in CAST_TRACK, the
+ * song's tags) and keeps the PEQ filter, which feeds the app from hciplayer, in the chain. While a
+ * speaker plays the volume is the speaker's (the app's spk), never the earphones', whose level
+ * comes back from RAM when it stops; the lyrics follow the speaker, which plays the song the app's
+ * delay behind the Q2.
+ *
  * Ported from group-a-study's fork (8f2aedf0, 4cc10246) without its Now Playing button. */
 #include "offsets.inc"
 #include "peq.h"
@@ -20,11 +22,12 @@ extern void *list_row(void *view, const char *icon, int (*click)(void *, void *)
 
 static struct {
     cast_tap *t;
-    unsigned look;  /* time_now_ms of the last look for the file */
-    int on;         /* a speaker playing, as the volume was last swapped */
+    unsigned look;         /* time_now_ms of the last look for the file */
+    int on;                /* a speaker playing, as the volume was last swapped */
     int local, limit, way; /* the earphones' volume, Volume Limit and output while it plays */
-    unsigned spk_seq; /* the app's spk_seq as last taken */
-    unsigned song;  /* the hash of the song CAST_TRACK names */
+    int required;          /* Headphones Required, as it was when a speaker started */
+    unsigned spk_seq;      /* the app's spk_seq as last taken */
+    unsigned song;         /* the hash of the song CAST_TRACK names */
     /* asked: the app opened by the ⋯ row, or running when demo started (its loop's pid file, looked
      * at once): only then is the file looked for, so no one else pays for AirPlay */
     int asked, checked;
@@ -40,7 +43,8 @@ static cast_tap *air_map(void) {
     if (fd < 0) return 0;
     unsigned head[2] = { 0, 0 }; /* the app's, whole before it renames it in (peq.h) */
     void *p = (void *)-1;
-    if (read(fd, head, sizeof head) == sizeof head && head[0] == CAST_MAGIC && head[1] == sizeof(cast_tap))
+    if (read(fd, head, sizeof head) == sizeof head && head[0] == CAST_MAGIC &&
+        head[1] == sizeof(cast_tap))
         p = mmap(0, sizeof(cast_tap), 3, 1, fd, 0); /* PROT_READ | PROT_WRITE, MAP_SHARED */
     close(fd);
     return air.t = p == (void *)-1 ? 0 : p;
@@ -66,17 +70,22 @@ static void air_dialog(int v) {
 /* The speaker's volume, from the app: its own as it said, or the one it last had from the Q2. */
 static int air_speaker(cast_tap *t) {
     air.spk_seq = t ? t->spk_seq : 0;
-    return t && t->spk_seq && t->spk >= 0 && t->spk <= 100 ? t->spk
-                                                           : config_value("Q2POD", "AIRVOL", 101, AIR_VOLUME);
+    return t && t->spk_seq && t->spk >= 0 && t->spk <= 100
+               ? t->spk
+               : config_value("Q2POD", "AIRVOL", 101, AIR_VOLUME);
 }
 
 /* A speaker starting: the earphones' volume, Volume Limit and output kept in RAM (the volume saved
- * under its output's key too), the limit lifted (it is the earphones'), and the speaker's taken up;
+ * under its output's key too), the limit lifted (it is the earphones'), as is Headphones Required,
+ * whose check refuses every start with none connected (#388), and the speaker's taken up;
  * the DAC keeps the earphones' level (ALSA's last half second before the mute plays through it; the
  * wheel sets it later, silent). While it plays ringnav_write_config saves PLAYSET VOLUME as Q2POD
- * AIRVOL, so nothing reaches the earphones' key. Stopping: the earphones' level back from RAM (their
- * output's own if Bluetooth came or went meanwhile), applied and saved; the filter stays silent until
- * the next pass publishes volume -1, so nothing plays at the speaker's level. */
+ * AIRVOL, so nothing reaches the earphones' key. Stopping: the earphones' level back from RAM
+ * (their output's own if Bluetooth came or went meanwhile), applied and saved; the filter stays
+ * silent until the next pass publishes volume -1, so nothing plays at the speaker's level.
+ * Headphones Required comes back unless it was turned on meanwhile, and with none connected what
+ * plays pauses, as stock's switch turned on pauses it. ponytail: the switch's row shows Off while
+ * a speaker plays, as Max Volume shows 100. */
 static void air_volume(cast_tap *t, int on) {
     int v;
     if (on) {
@@ -84,20 +93,27 @@ static void air_volume(cast_tap *t, int on) {
         write_int_config(g_volume, "PLAYSET", "VOLUME");
         air.on = 1;
         g_maxvolume = 100;
+        air.required = g_block_withoutphone_flag;
+        g_block_withoutphone_flag = 0;
         v = air_speaker(t);
     } else {
         write_int_config(g_volume, "Q2POD", "AIRVOL");
         air.on = 0;
         g_maxvolume = (unsigned char)air.limit;
         int way = mclGetOutputWay();
-        v = way == air.way ? air.local
-                           : config_value("PLAYSET", way == 1 ? "BT_VOLUME" : "VOLUME", 101, air.local);
+        v = way == air.way
+                ? air.local
+                : config_value("PLAYSET", way == 1 ? "BT_VOLUME" : "VOLUME", 101, air.local);
         if (v > g_maxvolume) v = g_maxvolume;
     }
     g_volume = (unsigned char)v;
     if (!on) {
         device_set_volume(v, 1);
         write_int_config(v, "PLAYSET", "VOLUME");
+        if (!g_block_withoutphone_flag) g_block_withoutphone_flag = (unsigned char)air.required;
+        if (g_block_withoutphone_flag && !g_po_status && !g_bal_status && !mclGetOutputWay() &&
+            mclGetPlayStatus() == 2)
+            media_set_playing(0);
     }
     air_dialog(v);
 }
@@ -111,7 +127,8 @@ static void put(char *buf, unsigned cap, unsigned *n, const char *key, const cha
     if (*n < cap) buf[(*n)++] = '\n';
 }
 
-/* The playing song's tags to CAST_TRACK for the app (the speaker's now-playing and art), once a song. */
+/* The playing song's tags to CAST_TRACK for the app (the speaker's now-playing and art), once a
+ * song. */
 static void air_track(cast_tap *t) {
     void *q = P(mcl_pdeqplaylist, 0), *r;
     unsigned pos = (unsigned)I(MCL_POS, 0);
@@ -152,12 +169,13 @@ void airplay_poll(void) {
     }
     if ((s == CAST_ON) != air.on)
         air_volume(t, s == CAST_ON);
-    else if (air.on && t && t->spk_seq != air.spk_seq) /* the app reconnected: the speaker's again */
+    else if (air.on && t &&
+             t->spk_seq != air.spk_seq) /* the app reconnected: the speaker's again */
         air_dialog(g_volume = (unsigned char)air_speaker(t));
 }
 
-/* The lyrics' place (lyrics.c lyrics_now) while a speaker plays: the speaker's, from the app; the song
- * just begun while the speaker still finishes the last. 0 when the Q2's own place stands. */
+/* The lyrics' place (lyrics.c lyrics_now) while a speaker plays: the speaker's, from the app; the
+ * song just begun while the speaker still finishes the last. 0 when the Q2's own place stands. */
 int airplay_lyrics(int *ms) {
     cast_tap *t = air.on ? air.t : 0;
     if (!t) return 0;

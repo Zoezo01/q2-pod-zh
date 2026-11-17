@@ -2725,12 +2725,12 @@ def test_classic_s_snake_is_an_lcd_in_a_bezel_with_square_dots(fw, light_mode):
 
 
 @pytest.mark.parametrize('light_mode', (b'0', b'1'))
-def test_classic_s_vortex_is_a_night_sky_each_ring_its_colour_with_a_light_on_every_brick(fw, light_mode):
+def test_classic_s_vortex_is_a_flat_night_sky_each_ring_its_colour_with_a_light_on_every_brick(fw, light_mode):
     p = themed(fw, CLASSIC, LIGHT=light_mode)
     p.go(VORTEX)
     ops = paint(p)
-    sky = ops[:p.s.h]
-    assert [o.rect for o in sky] == [(0, y, 375, 1) for y in range(p.s.h)] and all(not light(o.color) for o in sky)
+    sky = ops[0]
+    assert sky.rect == (0, 0, 375, p.s.h) and rgb(sky.color) == (0x0c, 0x17, 0x35)  # one navy, no gradient
     cap = next(i for i, o in enumerate(ops) if o.kind == 'cap')
     track, *bricks = [o.color for o in ops[:cap] if o.kind == 'arc']
     assert len(bricks) == 2 * 48 and len(set(bricks[::2])) == 3 and all(coloured(c) for c in bricks[::2])

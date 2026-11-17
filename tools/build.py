@@ -11,7 +11,7 @@ ZIP_SHA = '4e298cab6c12d86cfc55565645f7e3ae11d3fb44677a93ca13991e7184ecec4e'
 # 钉住（重新打的 ZIP 永远对不上官方那个）。
 TAR_SHA = '7f57884420e324ac3263571d96a35f04bbef79f35dac34162655c5822bdaa684'
 DEMO_SHA = 'e65d638d6e70332b4c3193af8ac2044941ec0157d20e41e40233aac5b0c2c59f'
-VERSION = '1.8.4'  # major.minor.patch, single digits, shown as is (About and release tag)
+VERSION = '1.8.7'  # major.minor.patch, single digits, shown as is (About and release tag)
 BETA = 0  # a pre-release's beta number (1-9), 0 for the release itself
 # 本分支的 Release 由自己发：网络更新读这个仓库的 releases/latest，release_zh.py 也往这里传。
 # 所以 Release 的 tag 必须正好等于 RELEASE_TAG（A 线是裸 VERSION，之后是 VERSION 点位），
@@ -53,7 +53,10 @@ REPO = 'Zoezo01/q2-pod-zh'  # whose releases Network Update fetches (--update-re
 #     把中文 UTF-8 字节逐个当宽字符画出，成了一串乱码；改为按码点解码（经典主题不受影响）。
 #   - 经典主题正在播放/暂停时进「音乐 → 搜索」，对话自带的标题「搜索」与播放状态词叠在一起；
 #     状态词与页面名共用同一标签，标题非空时不再画状态词。新建播放列表/重命名对话框同理。
-LETTER = 'B'  # 1.8.4 线第二个包：两处顶栏中文修复（A 只作实机验证，未发布）
+# 1.8.7 这条线字母重新从 A 起：A 并入上游 1.8.5（语言/状态栏/USB/About）、1.8.6（性能）与 1.8.7（文件拆分），
+# 中文版不打 LANGUAGE_EN，语言保持简体中文；经典百分比对齐暂用上游实现，我们 V182C 的版本备份在
+# tag zh/batt-ours-v184b 与 .workbuddy/backup/statusbar-ours-v184b.txt，实机对比后再决定。
+LETTER = 'A'  # 1.8.7 线首个包
 TAG = 'V' + VERSION.replace('.', '') + LETTER
 RELEASE_TAG = VERSION if LETTER == 'A' else f'{VERSION}.{ord(LETTER) - 64}'  # 1.8.3, 1.8.3.2, 1.8.3.3…
 
@@ -169,7 +172,7 @@ HOOKS = {
     'dialog_search_dialog_init': (0x49ff6c, 'ringnav_search_init', 'search_init'),
     # The sleep timer's switch as a row, under a set that hides its toolbar (navigation.c)
     'systemset_sleepshutdown_page_init': (0x4d1224, 'ringnav_sleeptimer', 'sleeptimer'),
-    # Classic's Set Date and Set Time: the title and the selectors' changes, after stock's init (navigation.c)
+    # Classic's Set Date and Set Time: the title and the selectors' changes, after stock's init (clock.c)
     'systemset_manualtime_page_init': (0x4cc83c, 'ringnav_manualtime', 'manualtime'),
     # any Tidal track asked for, from a queue or Now Playing, wakes its stream thread (tidal.c)
     'get_tidal_trackurl': (0x483f28, 'ringnav_tidal_track', 'tidaltrack'),
@@ -484,6 +487,8 @@ STANDBY_WAKE = (0x5024b4, 0x0411ff26, 0x24020001)
 # key is written, and stock's two rows are not offered (navigation.c ringnav_display, ringnav_systemset).
 NAV_SHOWN = (0x504b5c, 0xa0620000, 0xa0600000)
 WHEEL_MODE = (0x504ba4, 0x0003100a, 0x24020001)
+# 中文版不打上游 1.8.5 的 LANGUAGE_EN：那条把 config_init 读 SYSSET LANGUAGE 的 atoi 改成 li $v0, 2（en_US），
+# 让所有设备启动英文。我们要保留原厂中文界面，缺省 0 就是简体中文，所以这里不放补丁。
 # V1.36's home_page_init binds a key-up of its own on Home (0x534a74: Return opens Now Playing and stops there; its wheel and
 # Centre act only outside Volume Mode). Home's keys are ringnav's and on_wm_keyup_fun's, as they were: the widget_on call goes.
 HOME_KEYUP = (0x534c28, 0x0320f809, 0)
@@ -1075,8 +1080,7 @@ def source_sha256():
     h = hashlib.sha256()
     manual = [ROOT/'docs/manual'/f for f in ('build.py', 'guide.html')]
     for path in sorted([*(p for p in ROOT.glob('assets/**/*') if p.is_file()), *ROOT.glob('patch/*'),
-                        *ROOT.glob('tools/*.py'), *ROOT.glob('tools/*.c'),
-                        *ROOT.glob('tools/*.h'), *ROOT.glob('tools/*.S'), *manual]):
+                        *ROOT.glob('tools/*.py'), *ROOT.glob('tools/*.S'), *manual]):
         h.update(str(path.relative_to(ROOT)).encode() + b'\0')
         h.update(path.read_bytes())
     return h.hexdigest()
@@ -1147,23 +1151,6 @@ def segments(b):
     size, num = struct.unpack_from('<HH', b, 42)
     check(size == 32, 'Unexpected ELF program header size')
     return [(phoff+i*size, struct.unpack_from('<8I', b, phoff+i*size)) for i in range(num)]
-def load_elf(u, b, load=0):
-    """Map an ELF's LOAD segments into a Unicorn instance, shifted by load."""
-    for _, (t, o, v, _, f, m, _, _) in segments(b):
-        if t != 1: continue
-        v += load
-        start = v & ~4095
-        u.mem_map(start, ((v+m+4095) & ~4095) - start)
-        u.mem_write(v, b[o:o+f])
-def machine(raw, scratch, load=0):
-    """A little-endian MIPS Unicorn with raw's LOAD segments (at +load) and 64 KB of scratch at scratch."""
-    from unicorn import Uc, UC_ARCH_MIPS, UC_MODE_MIPS32, UC_MODE_LITTLE_ENDIAN
-    u = Uc(UC_ARCH_MIPS, UC_MODE_MIPS32 | UC_MODE_LITTLE_ENDIAN)
-    load_elf(u, raw, load)
-    u.mem_map(scratch, 0x10000)
-    return u
-def word(u, address, value): u.mem_write(address, struct.pack('<I', value & 0xffffffff))
-def read(u, address): return struct.unpack('<I', u.mem_read(address, 4))[0]
 def fileoff(b, a):
     for _, (t, o, v, _, f, _, _, _) in segments(b):
         if t == 1 and v <= a < v+f: return o+a-v
@@ -1424,7 +1411,7 @@ FUNCTIONS = {
  'config_playmode': ('int', 'int, int'),
  'toolsRandnum': ('int', 'int'),
  'widget_restack': ('int', 'void *, unsigned'),
- 'widget_index_of': ('int', 'void *'),  # Centred Now Playing's column back in its place (navigation.c np_full)
+ 'widget_index_of': ('int', 'void *'),  # Centred Now Playing's column back in its place (np_lyrics.c np_full)
  'toolsThumbSpecCover': ('int', 'const char *, const char *, int, int'),
  'toolsGetAlbumCover': ('int', 'const char *, const char *, int, int'),
  'toolsGetExternCover': ('int', 'const char *, const char *, int, int'),
@@ -1597,11 +1584,12 @@ GLOBALS = ['tidal_albuminfo_thread_run', 'tidal_collection_thread_run',  # 2: a 
            'g_usbvol_mode',  # USB DAC volume: 0 fixed, else the volume (config_usbvolmode, device_set_volume)
            'g_usbdac_chargeflag',  # USB mode's charge choice, which switch_charge_enable gets there
            'g_memory_play', 'g_carmode', 'g_carmode_state',  # In-Vehicle Mode (pod_click)
+           'g_block_withoutphone_flag',  # Headphones Required (check_forbid_play_no_headset's switch)
            'g_bigcovermode', 'g_foldercover_flag',  # Enlarged Album Art (1 on) and Folder Album Cover (pod_click)
-           'g_block_withoutphone_flag',  # Headphones Required (PLAYSET WITHOUTPHONE), the gate we keep
            'g_headset_output',  # the output config_outputchannel sets: 0, 1 the jacks, 2 Bluetooth
            'g_usbmode',  # USB mode: 1 Audio and DAC, else USB Storage (usbmode_page_init)
            'g_usbdet_value',  # 1 while a USB cable is in (USB mode's scan prompt outlives it)
+           'g_last_otgid',  # 1 while check_otg_status powers a USB device (PE22 off, PC20's 5 V out on)
            # Smart Wi-Fi (smart_wifi.c smart_poll): the Wi-Fi switch's state and stock's own gates on
            # toggling it (wifi_initstatus 0, wifi_connectstatus not 1, connecting), Network service's
            # AirPlay and DLNA, SyncLink (2: over Wi-Fi) and its session, Wi-Fi transfer and a pending time sync
@@ -1660,9 +1648,13 @@ OBSOLETE = ['usr/lib/libdbus-1.so.3.19.8', *(f'usr/lib/lib{n}-2.0.so.0.5400.3' f
 FLAGS = ['--target=mipsel-linux-gnu','-march=mips32r2','-mabi=32','-mfp64',
          '-mno-abicalls','-fno-pic','-G0','-ffreestanding','-fno-builtin',
          '-fno-stack-protector','-fno-unwind-tables','-fno-asynchronous-unwind-tables',
-         '-Oz','-Wall','-Wextra','-Werror','-Wno-unused-parameter']
+         '-Oz','-Wall','-Wextra','-Werror','-Wno-unused-parameter',
+         # Every payload unit and helper builds clean with these. Left out: -Wcast-align (P() on stock's structs),
+         # -Wsign-conversion, -Wcomma, -Wmissing-prototypes (the hooks are entry points stock's code calls).
+         '-Wshadow','-Wimplicit-int-conversion','-Wconditional-uninitialized','-Wmissing-variable-declarations',
+         '-Wvla','-Wundef']
 # navigation.c and the files split out of it (patch/navigation.h), each its own object, linked in this order.
-NAVIGATION = ['navigation.c', 'theme_engine.c', 'playlists.c', 'classic_pages.c', 'home.c', 'np_bar.c', 'volume.c', 'smart_wifi.c', 'system.c', 'usb_charge.c', 'tags.c', 'scrobble_ui.c', 'library_lists.c', 'durations.c', 'font_weight.c', 'coverflow_position.c', 'ratings.c', 'scan_folders.c', 'folder_delete.c', 'battery.c']
+NAVIGATION = ['navigation.c', 'theme_engine.c', 'playlists.c', 'classic_pages.c', 'home.c', 'np_bar.c', 'volume.c', 'smart_wifi.c', 'system.c', 'usb_charge.c', 'tags.c', 'scrobble_ui.c', 'library_lists.c', 'durations.c', 'font_weight.c', 'coverflow_position.c', 'ratings.c', 'scan_folders.c', 'folder_delete.c', 'battery.c', 'np_lyrics.c', 'quick_settings.c', 'clock.c', 'queue_menu.c']
 
 def compile_payload(out):  # pragma: no mutate block
     """Compile and link the payload."""
@@ -1724,19 +1716,12 @@ TAG_C = 'usr/lib/libtag_c.so.2.0.1'
 TAG_C_SHA = 'b00f06c20b33b1238d095fcbcd9e9e04594e715b44e8a9e1a0aa9e3962e8b2b1'
 
 def patch_m4b_cover(raw):
-    """Extend the pinned TagLib cover dispatcher with its existing MP4 extractor."""
+    """Extend the pinned TagLib cover dispatcher with its existing MP4 extractor: tools/m4b_cover.S."""
     from ipod import branch
     check(sha(raw) == TAG_C_SHA, 'Unexpected TagLib cover library')
     image = bytearray(raw)
-    base, site, mp4, next_format, gp = 0x30000, 0x125ac, 0x126d8, 0x125b4, 0x327e0
-    # Keep M4A's successful comparison, then compare M4B before the original MP4 check.
-    # GP-relative data and PC-relative branches work at any shared-library load address.
-    words = [branch(0x10400000, base, mp4), 0,
-             0x8f998170, 0x02002025, 0x27850000 | ((base + 44 - gp) & 0xffff),
-             0x0320f809, 0,
-             branch(0x10400000, base + 28, mp4), 0x8fbc0010,
-             branch(0x10000000, base + 36, next_format), 0]
-    payload = struct.pack('<11I', *words) + b'm4b\0'
+    base, site = 0x30000, 0x125ac
+    payload = assemble('m4b_cover', base, f'-DBASE={base:#x}')[0]
     append_payload(image, payload, base, len(payload), 'TagLib cover')
     struct.pack_into('<I', image, segments(image)[-1][0] + 24, 5)  # immutable code/data
     check(struct.unpack_from('<I', raw, fileoff(raw, site))[0] == 0x1040004a,
@@ -1744,55 +1729,40 @@ def patch_m4b_cover(raw):
     struct.pack_into('<I', image, fileoff(raw, site), branch(0x10000000, site, base))
     return bytes(image)
 
-def bt_silence():
-    """tools/bt_silence.S linked at BT_SILENCE: its bytes and symbols."""
+def assemble(src, base, *defines):
+    """tools/{src}.S linked at base, with clang's defines (-DNAME=value): its bytes and symbols."""
     import tempfile
     with tempfile.TemporaryDirectory() as d:
         d = pathlib.Path(d)
         run('clang', '--target=mipsel-linux-gnu', '-march=mips32r2', '-mno-abicalls', '-fno-pic',
-            f'-DBUDGET={BT_SILENCE_SAMPLES}', '-c', ROOT/'tools/bt_silence.S', '-o', d/'s.o')
-        run('ld.lld', '-m', 'elf32ltsmip', f'-Ttext={BT_SILENCE:#x}', '-e', 'timeout', d/'s.o', '-o', d/'s.elf')
+            *defines, '-c', ROOT/f'tools/{src}.S', '-o', d/'s.o')
+        run('ld.lld', '-m', 'elf32ltsmip', f'-Ttext={base:#x}', '-e', f'{base:#x}', d/'s.o', '-o', d/'s.elf')
         run('llvm-objcopy', '-O', 'binary', '-j', '.text', d/'s.elf', d/'s.bin')
         return (d/'s.bin').read_bytes(), symbols(d/'s.elf')
+
+def bt_silence():
+    """tools/bt_silence.S linked at BT_SILENCE: its bytes and symbols."""
+    return assemble('bt_silence', BT_SILENCE, f'-DBUDGET={BT_SILENCE_SAMPLES}')
 
 def patch_bluealsa(raw):
     """Offer AAC at 48 kHz only. A headset that opens the stream itself (AirPods out of the case)
     picks 44.1 kHz, and bluealsa, still fed 48 kHz, drops about 8% of the AAC frames."""
     image = bytearray(raw)
     image[AAC_44K1] = 0
-    # o32: preserve PCM and ra; hold its fd mutex while flushing the nonblocking
-    # FIFO in 32 KiB batches, then send DROP. No encoder restart or codec change.
-    words = [0x27bdffe0, 0xafbf001c, 0xafb00018, 0x00808025,
-             0x0c10c1a4, 0x2604000c,
-             0x0c10502e, 0x02002025, 0x1c40fffd, 0,
-             0x0c10c0e8, 0x2604000c,
-             0x8e040000, 0x24050006, 0x0c102dce, 0x24840050,
-             0x8fb00018, 0x8fbf001c, 0x00001025, 0x03e00008, 0x27bd0020]
-    reset = BT_DROP_PAYLOAD + len(words) * 4
-    # The shared read helper receives a raw tail pointer, not the ffb_t. Rewind
-    # each audited caller's partial PCM and update the helper's pointer/capacity
-    # before it repolls; otherwise old and new tracks share one encoder frame.
-    words += [0x8fa80054]  # saved return address
-    for caller, offset in BT_PCM_CALLERS:
+    # tools/bt_drop.S: DROP's flush in the control thread, and the rewind for each audited caller.
+    for caller, _ in BT_PCM_CALLERS:
         check(struct.unpack_from('<I', raw, fileoff(raw, caller-8))[0] == 0x0c105174,
               'Bluetooth PCM caller mismatch')
-        body = ([0x264b0000 | offset, 0x8d760000, 0xad760004, 0x8d750008]
-                if offset is not None else
-                [0x8fab004c, 0x8fac0040, 0x02cbb023, 0x02ccb021,
-                 0xafac004c, 0x24150100, 0xafb50048])
-        body += [0x081051e4, 0]  # existing OPEN/RESUME pacing reset and repoll
-        words += [0x3c0a0000 | caller >> 16, 0x354a0000 | caller & 0xffff,
-                  0x150a0000 | len(body)+1, 0, *body]
-    words += [0x081051e4, 0]  # unknown caller: reset pacing without touching its buffer
-    check(len(words)*4 <= BT_SILENCE - BT_DROP_PAYLOAD, 'Bluetooth DROP payload too long')
-    words += [0] * ((BT_SILENCE - BT_DROP_PAYLOAD) // 4 - len(words))
+    callers = ';'.join(f'caller {caller:#x}' + (f', {offset:#x}' if offset is not None else '')
+                       for caller, offset in BT_PCM_CALLERS)
+    drop, dsym = assemble('bt_drop', BT_DROP_PAYLOAD, f'-DCALLERS={callers}')
+    check(len(drop) <= BT_SILENCE - BT_DROP_PAYLOAD, 'Bluetooth DROP payload too long')
     code, sym = bt_silence()
-    payload = struct.pack(f'<{len(words)}I', *words) + code
+    payload = drop.ljust(BT_SILENCE - BT_DROP_PAYLOAD, b'\0') + code
     append_payload(image, payload, BT_DROP_PAYLOAD, len(payload), 'bluealsa')
-    struct.pack_into('<2I', image, fileoff(raw, BT_DROP),
-                     j(BT_DROP_PAYLOAD), 0)
+    struct.pack_into('<2I', image, fileoff(raw, BT_DROP), j(dsym['drop']), 0)
     # Never flush the new track's FIFO from this asynchronously handled signal.
-    struct.pack_into('<2I', image, fileoff(raw, BT_DROP_HANDLER), j(reset), 0)
+    struct.pack_into('<2I', image, fileoff(raw, BT_DROP_HANDLER), j(dsym['reset']), 0)
     for address, old, op, target in BT_SILENCE_SITES:
         check(struct.unpack_from('<I', raw, fileoff(raw, address))[0] == old, 'Bluetooth silence site mismatch')
         new = {'j': j, 'jal': jal}[op](sym[target]) if op else target
@@ -1817,7 +1787,7 @@ def stock_header(context, ranges, themes, dev=0, repo=REPO):
     header.append(f'#define SETTINGS_ICON_NAMES "{names}"')
     header.append(f'#define ROCKBOX_FLAG "{ROCKBOX_FLAG}"')  # Home's Rockbox row, for S90play
     # About: the stock firmware's version on its own row, and this build's on the CFW. Version row.
-    header += [f'#define STOCK_VERSION "{STOCK_VERSION}"', f'#define Q2POD_VERSION "{VERSION} Pod{f" dev {dev}" if dev else f" beta {BETA}" if BETA else ""}"',
+    header += [f'#define STOCK_VERSION "{STOCK_VERSION}"', f'#define Q2POD_VERSION "{VERSION}{f" dev {dev}" if dev else f" beta {BETA}" if BETA else ""}"',
                f'#define Q2POD_TAG "{"" if dev else RELEASE_TAG}"',  # netupdate.c: the release tag, none when --dev
                f'#define Q2POD_DEV {1 if dev else 0}',  # navigation.c stale_note
                f'#define Q2POD_REPO "{repo}"',  # netupdate.c: the repo whose latest release it fetches
@@ -1826,18 +1796,12 @@ def stock_header(context, ranges, themes, dev=0, repo=REPO):
     header.append(f'#define THEME_KEYS {len(theme_keys(themes))}')  # navigation.c st.own[], themes.inc theme_keys[]
     from art import corner_table, qs_lit
     header.append(f'#define ROUND_COVER {corner_table()}')  # navigation.c paint_round_rows
-    header.append(f'#define QS_LIT "{qs_lit()}"')  # navigation.c quick_page: Classic's buttons that are on
+    header.append(f'#define QS_LIT "{qs_lit()}"')  # quick_settings.c quick_page: Classic's buttons that are on
     return '\n'.join(header)+'\n'
 
-def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotator_lazy_clock=False, pwm_idle_clock=False, mcu_idle_sleep=False, flac_experiments='sync,lpc,output'):  # pragma: no mutate block
-    from flac import selection
-    flac_experiments = selection(flac_experiments)
-    # Kernel-module experiments: no measured saving (docs/clock-gating.md, pwm-clock-gating.md,
-    # audio-notifier.md), none handles suspend/resume, and stock Standby suspends by default; dev only.
-    check(not aic_idle_wait or dev, '--aic-idle-wait requires --dev')
-    check(not rotator_lazy_clock or dev, '--rotator-lazy-clock requires --dev')
-    check(not pwm_idle_clock or dev, '--pwm-idle-clock requires --dev')
-    check(not mcu_idle_sleep or (dev and pwm_idle_clock), '--mcu-idle-sleep requires --dev --pwm-idle-clock')
+def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragma: no mutate block
+    from flac import EXPERIMENTS
+    flac_experiments = () if stock_flac else EXPERIMENTS
     check(dev or version_ok(VERSION, BETA), f'VERSION must be three single digits (x.y.z) and BETA 0-9: {VERSION}, {BETA}')
     version = TAG
     check(re.fullmatch(r'[A-Za-z0-9-]+/[A-Za-z0-9._-]+', repo), f'{repo}: not a GitHub owner/name')  # a C string
@@ -1991,6 +1955,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     patch_word(patched, *STANDBY_WAKE, 'Standby resume stays dark')
     patch_word(patched, *NAV_SHOWN, "stock's navigation bar stays shown")
     patch_word(patched, *WHEEL_MODE, "stock's wheel stays in Volume Mode")
+    # LANGUAGE_EN (upstream 1.8.5, forces en_US) is not applied: the default stays Simplified Chinese.
     patch_word(patched, *HOME_KEYUP, 'Home binds no key-up of its own')
     patch_word(patched, *NP_CENTRE, "Now Playing leaves Centre to stock's power-key handling")
     patch_word(patched, *KEYLOCK_LIT, 'Buttons lock acts only with the screen off')
@@ -2204,30 +2169,6 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
                       (BLUEALSA2.encode(), out/'bluealsa2'), (DEFAULT_CONFIG.encode(), out/'config.ini'),
                       (LOGO.encode(), logo)):
         p = swap_inode(p, path, src)
-    aic_notifier = None
-    if aic_idle_wait:
-        from aic import MODULE_PATH, PATCH_POLICY, STOCK_SHA256, patch_module
-        module = patch_module(cat(MODULE_PATH))
-        (out/'soc_aic.ko').write_bytes(module)
-        p = swap_inode(p, MODULE_PATH.encode(), out/'soc_aic.ko')
-        aic_notifier = dict(policy=PATCH_POLICY, path=MODULE_PATH,
-                            original_sha256=STOCK_SHA256, sha256=sha(module))
-    rotator = None
-    if rotator_lazy_clock:
-        from rotator import MODULE_PATH, STOCK_SHA256, patch_module
-        module = patch_module(cat(MODULE_PATH))
-        (out/'soc_rotator.ko').write_bytes(module)
-        p = swap_inode(p, MODULE_PATH.encode(), out/'soc_rotator.ko')
-        rotator = dict(policy='lazy-first-use-v1', path=MODULE_PATH,
-                       original_sha256=STOCK_SHA256, sha256=sha(module))
-    pwm = None
-    if pwm_idle_clock:
-        from pwm import patch_bundle
-        files, pwm = patch_bundle(cat, sleep=mcu_idle_sleep)
-        for path, data in files.items():
-            src = out/pathlib.Path(path).name
-            src.write_bytes(data)
-            p = swap_inode(p, path.encode(), src)
     # New inodes, each with its stock image's metadata: Home's Coverflow and Shortcut card icons (menu_music's,
     # in their own colours like stock's cards), the Local Music and Spotify rows' icons, drawn in assets/icons/ (stock's
     # 52px style) or else a copy of the stock image named (not the copies iPod pre-sizes for Settings), and q2video.
@@ -2361,12 +2302,9 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
         input_kind=input_kind, input_sha256=input_sha,  # this build's real stock input (tar or ZIP)
         demo_sha256=sha(patched), patch_sha256=sha(payload), update_sha256=sha((out/'update.tar').read_bytes()),
         rootfs_sha256=sha(newsq.read_bytes()), kernel_sha256=sha(blobs['recovery-update/xImage']),
-        **({'aic_notifier': aic_notifier} if aic_notifier else {}),
         patch_bytes=len(payload), ring_step_pixels=RING_STEP,
         audio_extension_calls=[dict(address=hex(a), original='0x0320f809', replacement=hex(jal(ps['ringnav_audio_extension']))) for a in AUDIO_EXTENSION_CALLS],
         version=version, dev=dev, update_repo=repo, peq=audio, bluealsa_sha256=sha(bluealsa), q2video_sha256=sha((out/'q2video').read_bytes()), q2boot_sha256=sha((out/'q2boot').read_bytes()), **({'q2remote_sha256': sha((out/'q2remote').read_bytes())} if dev else {}), compact_code=code_changes, changed_assets=changed_assets, logo_sha256=sha(logo_data),
-        **({'rotator_clock': rotator} if rotator else {}),
-        **({'pwm_clock': pwm} if pwm else {}),
         patch_symbols={n:hex(v) for n,v in ps.items() if n.startswith('stock_')},
         tools={t:run(t,'--version').splitlines()[0] for t in ['clang','ld.lld','llvm-objcopy']} |
               {'imagemagick': imagemagick('-version', data=b'').decode().splitlines()[0]})
@@ -2381,20 +2319,11 @@ if __name__ == '__main__':
                     help='320x375 JPEG boot splash (default: assets/boot-logo.jpg)')
     ap.add_argument('--dev', action='store_true',
                     help='development build: tag from the next build number (V001i, V002i...); never a release input')
-    ap.add_argument('--mcu-idle-sleep', action='store_true',
-                    help='experimental: sleep parked MCU with explicit IRQ wake (requires --dev --pwm-idle-clock)')
-    ap.add_argument('--flac-experiments', default='sync,lpc,output', metavar='sync,lpc,output',
-                    help='FLAC fast paths (comma-separated subset; empty for stock FLAC)')
+    ap.add_argument('--stock-flac', action='store_true', help="stock FLAC decoder paths, not the fast paths")
     ap.add_argument('--update-repo', default=REPO, metavar='OWNER/NAME',
                     help="GitHub repo whose latest release Network Update fetches (default: %(default)s), for a fork's test builds")
-    ap.add_argument('--aic-idle-wait', action='store_true',
-                    help='experimental: sleep the stopped PCM notifier until start or teardown (requires --dev)')
-    ap.add_argument('--rotator-lazy-clock', action='store_true',
-                    help='experimental: defer the rotator clock until its first conversion (requires --dev)')
-    ap.add_argument('--pwm-idle-clock', action='store_true',
-                    help='experimental: cooperative Linux/MCU PWM clock gating (requires --dev)')
     a=ap.parse_args()
     try:
-        build(a.zip,a.out.resolve(),a.logo,a.dev,a.update_repo,a.aic_idle_wait,a.rotator_lazy_clock,a.pwm_idle_clock,a.mcu_idle_sleep,a.flac_experiments)
+        build(a.zip,a.out.resolve(),a.logo,a.dev,a.update_repo,a.stock_flac)
     except (OSError, ValueError, zipfile.BadZipFile, subprocess.CalledProcessError) as exc:
         ap.error(str(exc))

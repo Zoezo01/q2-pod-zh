@@ -35,7 +35,8 @@ static unsigned pixels[375 * 320];
 static int cf_floor(float f) { return (int)floorf(f); }
 static int covers_live(void) { return live; }
 static int enabled = 1;
-static int coverflow_position_enabled(void) { return enabled; }
+enum { POD_CF_POSITION }; /* peq.h's pod_rows rows: here only Cover Flow's position is read */
+static int pod_value(int i) { return i == POD_CF_POSITION && enabled; }
 static unsigned time_now_ms(void) { return clock_ms; }
 static unsigned timer_add(int (*fn)(const void *), void *ctx, unsigned ms) {
     assert(ms == 33 && !timer_id);
@@ -208,9 +209,12 @@ int main(int argc, char **argv) {
     assert(coverflow_position_offset(800, 400, 400, 295) == 0);
     assert(coverflow_position_offset(400, 400, 401, 295) == 295); /* Sort card */
     assert(coverflow_position_offset(401, 400, 401, 295) == 0);
-    assert(coverflow_position_offset(-.2f, 400, 401, 295) == 0);     /* artist's albums: bounce at the first */
-    assert(coverflow_position_offset(-.4f, 400, 400, 295) == 0);     /* playlists: the rubber band's deepest */
-    assert(coverflow_position_offset(400.2f, 400, 401, 295) == 295); /* bounce past the All albums card */
+    assert(coverflow_position_offset(-.2f, 400, 401, 295) ==
+           0); /* artist's albums: bounce at the first */
+    assert(coverflow_position_offset(-.4f, 400, 400, 295) ==
+           0); /* playlists: the rubber band's deepest */
+    assert(coverflow_position_offset(400.2f, 400, 401, 295) ==
+           295); /* bounce past the All albums card */
     for (int i = 1; i < 100000; ++i)
         assert(coverflow_position_offset((float)i, 100000, 100000, 295) >=
                coverflow_position_offset((float)(i - 1), 100000, 100000, 295));
@@ -341,9 +345,11 @@ int main(int argc, char **argv) {
     coverflow_position_paint(covers, canvas);
     assert(!fills);
     P(canvas, CANVAS_LCD) = lcd;
-    albums = cards = 2, centre = 0, fraction = CF_ONE / 4; /* a touch drag a quarter past the first */
+    albums = cards = 2, centre = 0,
+    fraction = CF_ONE / 4; /* a touch drag a quarter past the first */
     coverflow_position_paint(slide, canvas);
-    assert(position.x == 38); /* .25 of the 151 px travel: a painter without the touch term gives 0 */
+    assert(position.x ==
+           38); /* .25 of the 151 px travel: a painter without the touch term gives 0 */
     puts("Cover Flow position: 400 albums, direction, fractional motion, wrap, extra cards, 100000 "
          "albums, cover-aligned track, 9x4 soft-grey thumb, 2px track, coincident centres, footer "
          "midpoint, no contrasting outline, paint bounds, light/dark, fill "

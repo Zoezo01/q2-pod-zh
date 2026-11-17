@@ -14,7 +14,7 @@ import sys
 import tempfile
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "tools"))
-from build import FLAGS, ROOT
+from build import FLAGS, ROOT, segments, symbols as elf_symbols
 from unicorn import Uc, UC_ARCH_MIPS, UC_MODE_MIPS32, UC_MODE_LITTLE_ENDIAN
 from unicorn import UC_HOOK_CODE
 from unicorn.mips_const import UC_MIPS_REG_0, UC_MIPS_REG_PC
@@ -28,27 +28,6 @@ GUARD = bytes([0xa5]) * 32
 
 def word(value):
     return struct.pack("<I", value & 0xffffffff)
-
-def elf(path):
-    data = path.read_bytes()
-    h = struct.unpack_from("<16sHHIIIIIHHHHHH", data)
-    assert h[0][:6] == b"\x7fELF\x01\x01"
-    segments, symbols = [], {}
-    for i in range(h[10]):
-        p = struct.unpack_from("<IIIIIIII", data, h[5] + i * h[9])
-        if p[0] == 1:
-            segments.append((p[2], data[p[1]:p[1] + p[4]]))
-    sections = [struct.unpack_from("<IIIIIIIIII", data, h[6] + i * h[11])
-                for i in range(h[12])]
-    for s in sections:
-        if s[1] != 2:
-            continue
-        t = sections[s[6]]
-        strings = data[t[4]:t[4] + t[5]]
-        for off in range(s[4], s[4] + s[5], s[9]):
-            name, value = struct.unpack_from("<II", data, off)
-            symbols[strings[name:].split(b"\0", 1)[0].decode()] = value
-    return segments, symbols
 
 def compile_payload(work):
     obj, payload, script = [work / n for n in ("flac_output.o", "flac_output.elf", "output.ld")]
@@ -69,8 +48,10 @@ class Machine:
         u.mem_map(STACK, 0x10000)
         u.mem_map(RETURN, 0x1000)
         for path in (stock, payload):
-            for address, data in elf(path)[0]:
-                u.mem_write(address, data)
+            raw = path.read_bytes()
+            for _, (kind, off, address, _, filesz, _, _, _) in segments(raw):
+                if kind == 1:
+                    u.mem_write(address, raw[off:off + filesz])
         u.hook_add(UC_HOOK_CODE, self.code)
         self.instructions = {}
 
@@ -158,7 +139,7 @@ def reference(mode, channels, length, shift, samples):
 
 def check(stock, payload, work):
     assert hashlib.sha256(stock.read_bytes()).hexdigest() == SHA, "wrong stock player"
-    symbols = elf(payload)[1]
+    symbols = elf_symbols(payload)
     machine, rng, cases, rows = Machine(stock, payload), random.Random(0x51464c41), [], []
     for mode in MODES:
         for channels in (1, 2):

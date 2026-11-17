@@ -1,0 +1,3 @@
+# Layout-only commits, for git blame --ignore-revs-file (git config blame.ignoreRevsFile .git-blame-ignore-revs).
+# format: every tracked C file through clang-format
+dbd84bebe3aef973f67b5e15dbda7c35b6ef6bc6

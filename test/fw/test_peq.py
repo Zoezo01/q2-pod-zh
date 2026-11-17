@@ -72,6 +72,7 @@ libc.malloc.restype, libc.malloc.argtypes = C.c_void_p, [C.c_size_t]
 libc.free.argtypes = [C.c_void_p]
 
 
+# Not in conftest: it needs this file's libc, whose malloc returns a whole pointer.
 class Exact:
     """data in a malloc of exactly its size, so the sanitizer sees a read past it."""
     def __init__(self, data):
@@ -605,6 +606,64 @@ def test_eight_channels_each_keep_their_own_gain_and_the_last_is_reached(fw):
 def test_the_output_is_not_clipped(fw):
     g = api(fw)
     assert play(g, dsp(g, preset(g, preamp=24)), [1.0, 1.0])[0] == pytest.approx(10 ** (24 / 20), abs=1e-4)
+
+
+SPECIAL = (math.nan, math.inf, -math.inf, -0.0, 1e-45, -1e-40, 1.2e-38, 3.4e38)
+
+
+def by_sample(g, e, samples, channels):
+    """The block through sample() a sample at a time, on engine e, as peq_process's loop runs it: float bits."""
+    out = (C.c_int * BANDS)()
+    n = g.live(r(e), out)
+    xs = (C.c_float * len(samples))(*samples)
+    return b''.join(bytes(C.c_float(g.sample(r(e), out, n, x if math.isfinite(x) else 0.0, k % channels)))
+                    for k, x in enumerate(xs))
+
+
+def test_a_steady_block_is_sample_s_bits(fw):
+    """With no ramp or update waiting, each channel runs its own bands over the whole block: bit for bit what sample()
+    gives a sample at a time, output and filter memory, with memory carried in (the other channel's of a one-channel
+    band too), a band past Nyquist or draining, bad samples, after edits and bypass. No frames change nothing."""
+    g, rng = api(fw), random.Random(3)
+    ten = [(PK, f, gain, 1.41) for f, gain in zip((31, 63, 125, 250, 500, 1000, 2000, 4000, 8000, 16000),
+                                                  (3, 2.5, -1, -2, 1.5, -3, 2, 4, -2.5, 3.5))]
+    sides = [(PK, 10 ** rng.uniform(1.4, 4.3), rng.uniform(-12, 12), 1, on) for on in [2] * 8 + [3] * 8 + [1] * 10]
+    cases: list[tuple[list, int, int]] = [
+        ([(LS, 155, 4, .707), (PK, 900, -3, .707), (HS, 5000, 5, .707)], 44100, 2), (ten, 48000, 2), (ten, 48000, 1),
+        (sides, 44100, 2), (sides, 96000, 8), ([(PK, 18000, 6, 1, 3), (PK, 1000, 3, 1)], 32000, 2),  # past Nyquist
+        ([(PK, 1000, 6, 1), (PK, 3000, 0, 1), (HS, 8000, -4, .7)], 44100, 2)]  # the 0 dB band drains
+    cases += [([(rng.randrange(3), 10 ** rng.uniform(1.31, 4.3), rng.choice((0, rng.uniform(-24, 24))), rng.uniform(.1, 10),
+                 rng.randrange(4)) for _ in range(rng.randrange(1, BANDS + 1))], rng.choice((8000, 22050, 44100, 96000)),
+               rng.choice((1, 2, 6, 8))) for _ in range(6)]
+    compared = 0
+    for bands, rate, channels in cases:
+        p = preset(g, *bands, preamp=-4, balance=1.5)
+        d = dsp(g, p, rate, channels)
+        for ch in range(channels):
+            for i in range(len(bands)):
+                d.current.z[ch][i][0], d.current.z[ch][i][1] = rng.uniform(-.01, .01), rng.uniform(-.01, .01)
+        before = bytes(d)
+        g.peq_process(r(d), (C.c_float * 1)(), 0)
+        assert bytes(d) == before
+        for frames, level, edit in ((1, .5, ''), (300, 1e-3, ''), (1024, .8, ''), (77, 1e-9, ''), (4096, .5, 'gain'),
+                                    (1024, 1e-6, ''), (4096, .5, 'bypass'), (300, .5, ''), (4096, .5, 'bypass'), (1024, .8, '')):
+            if edit == 'gain':
+                p.bands[rng.randrange(len(bands))].gain = rng.choice((0, rng.uniform(-24, 24)))
+            if edit == 'bypass':
+                p.bypass = not p.bypass
+            if edit:
+                assert g.peq_update(r(d), r(p))
+            samples = [rng.choice(SPECIAL) if rng.random() < .01 else level * rng.uniform(-1, 1) for _ in range(frames * channels)]
+            audio = (C.c_float * len(samples))(*samples)
+            ref = Dsp.from_buffer_copy(d)
+            steady = not (d.ramp or d.waiting)
+            if steady:
+                want = bytes(audio) if d.current.bypass else by_sample(g, ref.current, samples, channels)
+            g.peq_process(r(d), audio, frames)
+            if steady:
+                assert bytes(audio) == want and bytes(d) == bytes(ref), (bands, rate, channels, frames)
+                compared += 1
+    assert compared == 7 * len(cases)  # every block but the three an update starts
 
 
 def test_an_update_crossfades_linearly_over_20_ms(fw):

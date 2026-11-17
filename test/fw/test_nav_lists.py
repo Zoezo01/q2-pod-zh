@@ -12,7 +12,7 @@ from collections import Counter
 import pytest
 
 import host
-from conftest import NAVIGATION_SOURCE, O, Deques, claim, ui_name
+from conftest import NAVIGATION_SOURCE, O, Deques, claim, pod_value, ui_name
 from test_coverflow import COVERS, TRACKS, Home, Rec, cf, deque_of  # coverflow.c's home struct, its page and an album
 from test_nav_display_library import Ple  # playlists.c's editor state
 from test_navigation import Config
@@ -1359,18 +1359,6 @@ def test_a_music_load_too_long_to_filter_runs_nothing(fw):
 
 
 # What is painted over a list.
-@pytest.fixture(scope='module')
-def scratch(library):
-    """scratch_t's field offsets as this build lays it out: its pointers move them."""
-    return host.offsets(library.parent/'navigation.o', 'scratch_t')
-
-
-@pytest.fixture
-def st(fw, scratch):
-    base = C.addressof(fw.var('st', C.c_char))
-    return lambda name, ctype=C.c_int: ctype.from_address(base + scratch[name])
-
-
 LCD_FILL = 0x12345678
 
 
@@ -1589,7 +1577,7 @@ def test_homes_library_pane_shows_no_letter(fw, ui):
 @pytest.mark.parametrize('big', [b'0', b'1'])  # Fast Navigation off or on: Cover Flow's own letters change, not this one
 def test_coverflows_album_tracks_show_no_letter(fw, ui, big):
     Config(fw, BIGLIBRARY=big)
-    assert fw.fn('ringnav_big_library', C.c_int)() == int(big)
+    assert pod_value(fw, 'POD_BIG_LIB') == int(big)
     page = Page(ui, titles(200), name='coverflow_page')
     album = [Rec('Abbey Road', artist='The Beatles')]  # the open album: its key is the track list's scope
     deque_of(fw, album)
@@ -1609,7 +1597,7 @@ def test_coverflows_album_tracks_show_no_letter(fw, ui, big):
                                        ('playerjumpinfo_page', 0xff10)])
 def test_an_albums_songs_in_the_library_show_no_letter(fw, ui, name, cls, big):
     Config(fw, BIGLIBRARY=big)
-    assert fw.fn('ringnav_big_library', C.c_int)() == int(big)
+    assert pod_value(fw, 'POD_BIG_LIB') == int(big)
     fw.var('fw_ctx_g_class_type', C.c_int).value = cls
     page, canvas = spun(fw, ui, titles(200), name)
     assert letter(fw, page, canvas) == []  # in disc and track order, not A to Z
@@ -2089,7 +2077,7 @@ def test_two_panes_both_selected_take_no_tick(fw, ui):
 
 def test_a_tap_finds_its_pane_by_ancestry(fw, ui):
     win, (left, right) = two_panes(ui)
-    under = fw.fn('navigation__surface_under', C.c_void_p, C.c_void_p, C.c_void_p, C.POINTER(C.c_void_p), C.c_int)
+    under = fw.fn('surface_under', C.c_void_p, C.c_void_p, C.c_void_p, C.POINTER(C.c_void_p), C.c_int)
     other = C.c_void_p()
     label = right.children[3].children[0]
     assert under(win.at, label.at, C.byref(other), 0) == right.at and other.value == left.at

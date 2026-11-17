@@ -110,6 +110,11 @@ typedef struct {
     short jump_ms, jump_ticks, jump_at, jump_pace, big_jump_at, big_jump_ms, enter_albums, slide_ms;
     short fold_near;
     short arch_at, arch_full, arch_span, arch_in, arch_out, arch_tau;
+    /* coverflow.land (Classic): a song picked on the flip panel flies its cover to Now Playing.
+     * land_ms 0: none. press ms of the panel's press, travel % of the way, out_at/out_ms and
+     * np_at/np_ms the fades, hold ms at most the landed art waits for Now Playing's own. */
+    short land_press, land_ms, land_travel, land_out_at, land_out_ms, land_np_at, land_np_ms,
+        land_hold;
     short name_px, artist_px, text_y, artist_y;
 } cf_style_t;
 typedef struct {

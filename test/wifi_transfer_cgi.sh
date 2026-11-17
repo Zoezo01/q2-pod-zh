@@ -140,6 +140,7 @@ body | python3 -c "import json,sys; d=json.load(sys.stdin); assert isinstance(d,
 run download GET 'path=/mnt/mmc/hello world.txt' '' -
 [ "$(body)" = "SYNTHETIC-DATA" ] && ok "download returns content" || bad "download content"
 printf '%s' "$OUT" | grep -qi 'filename="hello world.txt"' && ok "download Content-Disposition" || bad "download header"
+[ "$(printf '%s' "$OUT" | sed -n 's/^Content-Length:\([0-9]*\).*/\1/p')" = "$(stat -c %s '/mnt/mmc/hello world.txt')" ] && ok "download Content-Length is the file's size" || bad "download Content-Length"
 
 printf 'path=/mnt/mmc/My Folder' > /tmp/bdel; run delete POST '' 'application/x-www-form-urlencoded' /tmp/bdel
 [ -d "/mnt/mmc/My Folder" ] && bad "delete left folder" || ok "delete removed folder"
@@ -175,6 +176,38 @@ print('dir path ok:', e['path'])" && ok "list dir path has one clean trailing sl
 # The client builds the create path as <dirpath>+<name>; with the slash that is /mnt/mmc/SubDir/Child
 run create GET 'path=/mnt/mmc/SubDir/Child' '' -
 { [ -d "/mnt/mmc/SubDir/Child" ] && [ ! -e "/mnt/mmc/SubDirChild" ]; } && ok "create inside a subfolder lands there (no mangled top-level sibling)" || bad "subfolder create mangled"
+
+echo; echo "############ LIST VALUES: escaping, and each file's size and time as the file has them"
+rm -rf /mnt/mmc/esc; mkdir -p /mnt/mmc/esc/sub
+if [ "$FS" = tmpfs ]; then   # FAT refuses " \ and control characters in a name
+  printf 'x' > '/mnt/mmc/esc/a "quoted" name'; printf 'xy' > '/mnt/mmc/esc/back\slash'; printf 'xyz' > "/mnt/mmc/esc/tab$(printf '\t')name"
+  mkdir '/mnt/mmc/esc/q"dir'; printf 'x' > '/mnt/mmc/esc/q"dir/in.flac'; ln -s gone '/mnt/mmc/esc/q"dir/dangling' 2>/dev/null
+fi
+printf '%04000d' 0 > /mnt/mmc/esc/plain.flac; touch -d '2024-01-02 03:04:05' /mnt/mmc/esc/plain.flac
+run list GET 'path=/mnt/mmc/esc/' '' -
+body | python3 -c "import json, os, sys
+d = json.load(sys.stdin)
+ns = sorted(e['name'] for e in d)
+want = ['plain.flac', 'sub'] + (['a \"quoted\" name', 'back\\\\slash', 'q\"dir', 'tabname'] if '$FS' == 'tmpfs' else [])
+assert ns == sorted(want), ns
+for e in d:
+    p = e['path'].rstrip('/')
+    if e['name'] == 'tabname': p = p.replace('tabname', 'tab\tname')
+    st = os.stat(p)
+    assert e['ctime'] == str(int(st.st_mtime)), (e, st.st_mtime)
+    assert ('size' in e) == (not os.path.isdir(p)), e
+    assert 'size' not in e or e['size'] == str(st.st_size), (e, st.st_size)
+print('list values ok')" && ok "list escapes a quote and a backslash, drops a control character, gives each file's size and time" || bad "list values ($(body | head -c 300))"
+if [ "$FS" = tmpfs ]; then
+  run list GET 'path=/mnt/mmc/esc/q%22dir/' '' -
+  body | python3 -c "import json, os, sys
+d = {e['name']: e for e in json.load(sys.stdin)}
+assert d['in.flac']['path'] == '/mnt/mmc/esc/q\"dir/in.flac', d
+p = '/mnt/mmc/esc/q\"dir/dangling'
+if os.path.islink(p): assert d['dangling']['ctime'] == '0' and d['dangling']['size'] == str(os.lstat(p).st_size), d
+print('quoted folder ok')" && ok "list escapes a quoted folder's name in each path, and gives a dangling link time 0 and its own size" || bad "list quoted folder ($(body | head -c 300))"
+fi
+rm -rf /mnt/mmc/esc
 
 echo; echo "############ SECURITY: a card-root delete (trailing slash / dot / double slash) must NOT wipe the card"
 printf keep > /mnt/mmc/keepme

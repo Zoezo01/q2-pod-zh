@@ -484,7 +484,7 @@ def validate_assets(directory):
     from ipod import PLAYING_STOCK
     stock_page = decode(read('rootfs.squashfs', 'release/assets/default/raw/ui/' + PLAYING_STOCK))
     assert not any(CJK.search(n[2].get('text', '')) for n in walk(stock_page))
-    # its lyrics page follows the page's size, for full-screen lyrics (navigation.c np_full)
+    # its lyrics page follows the page's size, for full-screen lyrics (np_lyrics.c np_full)
     named = {n[2].get('name'): n[2] for n in walk(stock_page)}
     assert named['view_lrc']['self_layout'] == 'default(x=0,y=0,w=100%,h=-20)'
     assert named['label_lyricmsg']['self_layout'] == 'default(x=0,y=73,w=100%,h=28)'
@@ -534,8 +534,8 @@ def validate_assets(directory):
     gates = [fileoff(old, a) for a in (*(a for a, _, _ in (*words, *DAC_RELEASE, *PROBE_STOP, *STOP_SITES, STOP_FILL, *PRELOAD_CLOSE, FORCED_EOF, EXIT_HOLD, PRELOAD_PUBLISH, PRELOAD_FAILED, COLD_CLEAR, FLAC_GATE, SEEK_NOSYNC)), *ID3_CALLS, MP3_ALLOC, MP3_FILTER, MP3_READ,
                                        IDLE_WAIT[0], PAUSE_WAIT[0], CMD_DONE[0])]
     # The FLAC fast paths (tools/flac.py, on by default) patch hciplayer's sync calls and LPC/output pointers.
-    from flac import patch_words as flac_words
-    flac = flac_words('sync,lpc,output', symbols(directory/'peq'/'peq.elf'))
+    from flac import EXPERIMENTS, patch_words as flac_words
+    flac = flac_words(EXPERIMENTS, symbols(directory/'peq'/'peq.elf'))
     gates += [fileoff(old, a) for a, _, _ in flac]
     # Lossy gapless: the window's room and the kept edit list.
     from peq import LAVF_PRIV, MOV_EDITS

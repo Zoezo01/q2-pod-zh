@@ -16,8 +16,8 @@ outside the repo, and writes nothing of theirs into the repo but addresses, inst
 import argparse, bisect, collections, difflib, gzip, hashlib, io, pathlib, re, struct, subprocess, sys, tarfile, tempfile, zipfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-# The stock executables our files name addresses in, by their place in the rootfs. Libraries and kernel
-# modules load anywhere: our files pin those by SHA-256 and name offsets, which this tool leaves alone.
+# The stock executables our files name addresses in, by their place in the rootfs. Libraries load anywhere:
+# our files pin those by SHA-256 and name offsets, which this tool leaves alone.
 BINARIES = {'demo': 'release/bin/demo', 'hciplayer': 'usr/bin/hciplayer', 'bluealsa': 'usr/bin/bluealsa'}
 # Our names for stock's unnamed functions and data: binary, address, size, name, what it does.
 STOCK_MAP = ROOT/'tools/stock_map.tsv'

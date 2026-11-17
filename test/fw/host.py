@@ -116,14 +116,19 @@ def compile_one(source, out, extra):
     return obj
 
 
-def build(out, extra=()):
-    """Compile everything into out/fw.so, extra going to cc (test/fw/conftest.py's coverage and sanitizers).
-    Every static gains a global <file>__<name> a test can reach."""
+def headers(out):
+    """The headers SOURCES compile against into out (tools/tidy.sh's too)."""
     out.mkdir(parents=True, exist_ok=True)
     themes = tools_theme.builtins()
     (out/'peq_platform.h').write_text(platform_header())
     (out/'stock.h').write_text(stock_header(themes))
     tools_theme.emit(themes, out)
+
+
+def build(out, extra=()):
+    """Compile everything into out/fw.so, extra going to cc (test/fw/conftest.py's coverage and sanitizers).
+    Every static gains a global <file>__<name> a test can reach."""
+    headers(out)
     with concurrent.futures.ThreadPoolExecutor(8) as pool:
         objects = list(pool.map(lambda s: compile_one(s, out, extra), SOURCES))
     defined, undefined = set(), set()

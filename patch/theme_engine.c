@@ -199,6 +199,7 @@ __attribute__((noinline)) static void settings_read(void) {
             int *v = option_slot(&themes[t], o->setting);
             if (o->values && o->def >= 0 && !(o->values >> *v & 1) &&
                 (t == st.theme || o->setting == SETTING_ACCENT))
+                /* NOLINTNEXTLINE(bugprone-signed-char-misuse): def >= 0 is tested */
                 *v = o->def;
         }
     int buf[11];

@@ -10,7 +10,8 @@ import struct
 import pytest
 
 import host
-from conftest import O, Files, block, in_fork
+from conftest import O, Files, block, in_fork, Config
+from test_nav_loop import LIBC, Clock, Flip, Land  # coverflow.c's cf_flip_t, fl; coverflow_land.c's land
 
 W_X, W_Y, W_W, W_H, W_PARENT = O['W_X'], O['W_Y'], O['W_W'], O['W_H'], O['W_PARENT']
 CANVAS_LCD, LCD_FILL_COLOR = O['CANVAS_LCD'], O['LCD_FILL_COLOR']
@@ -54,17 +55,6 @@ def channels(c):
 def luma(c):
     r, g, b = channels(c)
     return (r * 299 + g * 587 + b * 114) // 1000
-
-
-class Config:
-    """config.ini, its value or the default."""
-    def __init__(self, fw, **values):
-        self.values = {k.encode(): v.encode() for k, v in values.items()}
-        fw.mock('toolsReadConfig', self.read)
-
-    def read(self, path, section, key, out, default, *_):
-        value = self.values.get(C.string_at(key), C.string_at(default))
-        C.memmove(out, value + b'\0', len(value) + 1)
 
 
 def strings(fw):
@@ -1245,7 +1235,7 @@ def test_another_dialog_s_labels_stay(fw, world):
 # Quick Settings.
 
 def test_named_in_a_nul_separated_list(fw):
-    named = fw.fn('navigation__named_in', C.c_int, C.c_char_p, C.c_char_p)
+    named = fw.fn('named_in', C.c_int, C.c_char_p, C.c_char_p)
     names = b'drop_wifi\0drop_bt\0drop_lo\0'
     assert [named(names, n) for n in (b'drop_wifi', b'drop_bt', b'drop_lo', b'drop', b'drop_btx', b'')] == [1, 1, 1, 0, 0, 0]
     assert named(b'', b'drop_wifi') == 0
@@ -1258,7 +1248,7 @@ SILVER = O['GLYPH_LIGHT_MAX']
                                           *((a[RED], int(luma(a[RED]) > SILVER)) for a in ACCENTS)])
 def test_a_bright_tone_is_one_over_graphite_s_silver_line(fw, tone, bright):
     """Perceived brightness over GLYPH_LIGHT_MAX: a grey's is its own level, so the line falls between two greys."""
-    assert fw.fn('navigation__bright_tone', C.c_int, C.c_uint)(tone) == bright
+    assert fw.fn('bright_tone', C.c_int, C.c_uint)(tone) == bright
 
 
 def quick_window(world, **icons):
@@ -1310,7 +1300,7 @@ def test_a_quick_label_wraps_at_the_last_space_that_fits(fw, world, text, lines)
     label = world.add(win, 'label_wifi', 'label', text=text)
     canvas = Canvas(fw)
     x, y = 100, 200  # its first line's box
-    fw.fn('navigation__quick_label', None, C.c_void_p, C.c_void_p, C.c_int, C.c_int)(canvas.p, label, x, y)
+    fw.fn('quick_settings__quick_label', None, C.c_void_p, C.c_void_p, C.c_int, C.c_int)(canvas.p, label, x, y)
     assert [t for t, *_ in canvas.texts] == lines
     boxes = [r for _, r, *_ in canvas.texts]
     box = world.at(label)
@@ -1321,7 +1311,7 @@ def test_a_quick_label_wraps_at_the_last_space_that_fits(fw, world, text, lines)
     assert {c for _, _, c, _ in canvas.texts} == {0xffffffff}  # white in the light half too: final
     assert world[label].props['style:normal:text_color'] == 0  # its own ink clear
     sets = len(fw.calls('widget_set_prop_int'))
-    fw.fn('navigation__quick_label', None, C.c_void_p, C.c_void_p, C.c_int, C.c_int)(canvas.p, label, x, y)
+    fw.fn('quick_settings__quick_label', None, C.c_void_p, C.c_void_p, C.c_int, C.c_int)(canvas.p, label, x, y)
     assert len(fw.calls('widget_set_prop_int')) == sets  # the box once
 
 
@@ -1329,13 +1319,13 @@ def test_an_empty_quick_label_draws_nothing(fw, world):
     theme(fw, CLASSIC)
     label = world.add(world.window('statusbar_dialog', 'dialog'), 'label_wifi', 'label', text='')
     canvas = Canvas(fw)
-    fw.fn('navigation__quick_label', None, C.c_void_p, C.c_void_p, C.c_int, C.c_int)(canvas.p, label, 100, 200)
+    fw.fn('quick_settings__quick_label', None, C.c_void_p, C.c_void_p, C.c_int, C.c_int)(canvas.p, label, 100, 200)
     assert canvas.texts == [] and fw.calls('widget_move_resize') == []
 
 
 class Quick(C.Structure):
     _fields_ = [*((n, C.c_void_p) for n in ('win', 'icon', 'slider', 'pressed')), ('timer', C.c_uint),
-                *((n, C.c_int) for n in ('x', 'y', 'sx', 'sy', 'slide'))]
+                *((n, C.c_int) for n in ('x', 'y', 'sx', 'sy', 'slide', 'wheel'))]
 
 
 ICONS = ['img_wifiswitch', 'img_btswitch', 'img_lock', 'img_gain', 'img_usbmode', 'img_po', 'img_playset', 'img_sysset']
@@ -1351,7 +1341,7 @@ def quick_page(fw, world, images, light='0', pressed=None, **config):
         icons[name] = world.add(win, name, 'image', box=(30 + 80 * (i % 4), 40 + 100 * (i // 4), 60, 60), image=image)
         world.add(win, LABELS[name], 'label', box=(0, 0, 80, 18), text='Label')
     if pressed:
-        fw.var('navigation__quick', Quick).pressed = icons[pressed]
+        fw.var('quick_settings__quick', Quick).pressed = icons[pressed]
     canvas = Canvas(fw)
     paint_bg(fw, win, canvas)
     return win, icons, canvas
@@ -1436,7 +1426,7 @@ def scrub(fw, world, slider, value):
     """Quick Settings' brightness slider at value, painted after stock's: the canvas."""
     world.set(slider, 'value', value)
     canvas = Canvas(fw)
-    fw.fn('navigation__quick_scrub', None, C.c_void_p, C.c_void_p)(slider, canvas.p)
+    fw.fn('quick_scrub', None, C.c_void_p, C.c_void_p)(slider, canvas.p)
     return canvas
 
 
@@ -1495,7 +1485,7 @@ def test_the_brightness_track_is_classic_s_alone(fw, world):
     theme(fw, MINIMAL)
     _, _, slider = quick_window(world)
     canvas = Canvas(fw)
-    fw.fn('navigation__quick_scrub', None, C.c_void_p, C.c_void_p)(slider, canvas.p)
+    fw.fn('quick_scrub', None, C.c_void_p, C.c_void_p)(slider, canvas.p)
     assert canvas.fills == [] and canvas.arts == []
 
 
@@ -1516,15 +1506,75 @@ def sync(fw, win):
 @pytest.mark.parametrize('name, title', [('playing_page', 'Now Playing'), ('playing_page_stock', 'Now Playing'),
                                          ('coverflow_page', 'Cover Flow'), ('equalizer_page', 'EQ'),
                                          ('spotify_page', 'Spotify'), ('radionp_page', 'Internet Radio'),
-                                         ('usbmode_page', 'Q2 Pod')])
+                                         ('usbmode_page', '')])  # USB mode's: no wordmark
 def test_a_page_known_by_name_titles_the_bar(fw, world, st, name, title):
     label = bar_title(fw, world, st)
+    world[label].text = 'Albums'  # the page before
     win = world.window(name)
     world.add(world.add(win, 'view_navbar'), 'label_name', 'hscroll_label', text='Its own label')
     sync(fw, win)
     assert world[label].text == title
     (fn, _, ms), = world.timers
     assert ms == 0 and world.fire(1) == RET_OK and world.invalid == [(label, None)]  # after the paint
+
+
+def test_cover_flow_s_landing_keeps_the_bar_s_title_until_it_lands(fw, world, st):
+    """Now Playing comes up under Cover Flow's landing (coverflow_turning): the bar names it once the art lands,
+    the next paint after the turn."""
+    label = bar_title(fw, world, st)
+    win = world.window('playing_page')
+    flip = fw.var('fl', Flip)
+    flip.dir = 1
+    sync(fw, win)
+    assert world[label].text in ('', None) and not world.timers
+    flip.dir = 0
+    sync(fw, win)
+    assert world[label].text == 'Now Playing'
+
+
+@pytest.mark.parametrize('key, taken, stop', [('KEY_NEXT', 0, 0), ('KEY_RETURN', 1, 0), ('KEY_RETURN', 0, 1)])
+def test_the_wheel_or_return_ends_cover_flow_s_landing_and_the_bar_names_now_playing(fw, world, st, key, taken, stop):
+    """land_key: the bar names Now Playing at once, not after a volume pop-up the tick opens; a Return before Now
+    Playing is the window manager's key target (its open event) is dropped, as Cover Flow's page under it would
+    take it."""
+    label = bar_title(fw, world, st)
+    win = world.window('playing_page')
+    C.c_void_p.from_address(world.wm + O['W_KEY_TARGET']).value = win if taken else world.window('coverflow_page', top=False)
+    land = fw.var('coverflow_land__land', Land)
+    land.front, land.ms = LIBC.calloc(4, 1), -1  # clicked, not painted yet
+    assert fw.fn('land_key', C.c_int, C.c_uint)(O[key]) == stop
+    assert not land.front and world[label].text == 'Now Playing'
+
+
+@pytest.mark.parametrize('name, kind, title', [('msginfo_dialog', 'dialog', 'Now Playing'),
+                                              ('playerjumpinfo_page', 'window', 'Cover Flow')])
+def test_a_dialog_that_ends_cover_flow_s_landing_leaves_the_bar_naming_now_playing(fw, world, st, name, kind, title):
+    """land_tick: a pop-up over Now Playing during the motion ends the landing. A dialog keeps the bar's title, which
+    the landing had left on Cover Flow's: it is Now Playing's now. A page names its own as it paints."""
+    label = bar_title(fw, world, st)
+    sync(fw, world.window('coverflow_page'))
+    win = world.window('playing_page')
+    land = fw.var('coverflow_land__land', Land)
+    land.front, land.win, land.ms, land.len = LIBC.calloc(4, 1), win, 100, 400
+    world.window(name, kind)
+    assert world[label].text == 'Cover Flow'
+    assert fw.fn('coverflow_land__land_tick', C.c_int, C.c_void_p)(None) == 0 and not land.front
+    assert world[label].text == title
+
+
+def test_a_wheel_tick_after_the_landing_s_clock_but_before_its_last_frame_still_names_now_playing(fw, world, st):
+    """coverflow_turning's clock runs out a tick (or a stall) before the motion's last frame, which names the bar:
+    land_key goes by the frame drawn."""
+    label = bar_title(fw, world, st)
+    world.window('playing_page')
+    Clock(fw, 5000)
+    land = fw.var('coverflow_land__land', Land)
+    land.front, land.ms, land.t0, land.len = LIBC.calloc(4, 1), 384, 4000, 400  # a stall: the clock 1000 on
+    assert not fw.fn('coverflow_turning', C.c_int)() and fw.fn('land_key', C.c_int, C.c_uint)(O['KEY_NEXT']) == 0
+    assert not land.front and world[label].text == 'Now Playing'
+    land.front, land.ms = LIBC.calloc(4, 1), 400  # the last frame drawn: the hold's, the key Now Playing's
+    assert fw.fn('land_key', C.c_int, C.c_uint)(O['KEY_NEXT']) == 0 and land.front
+    fw.fn('coverflow_land__land_end', None)()
 
 
 def test_search_is_titled_though_a_dialog(fw, world, st):
@@ -2054,6 +2104,24 @@ def test_over_classic_s_now_playing_speakers_take_the_times_places(fw, world, st
     starts = {x for x, y, w, h, c in canvas.fills if h == 1 and y >= top and x > 66}
     assert 66 + 243 * level // 100 in starts  # the track resumes where the volume ends
     assert canvas.texts == []
+
+
+@pytest.mark.parametrize('light', ['0', '1'])
+def test_classic_s_volume_percentage_is_the_speakers_ink_in_either_half(fw, world, st, light):
+    """White on the dark half's black paper; in the light half the ink on its white paper, as the speakers beside
+    the bar are (white art, which Light Mode flips). Flipped before the setter's own flip, it read white on white."""
+    theme(fw, CLASSIC, LIGHT=light)
+    dialog, *_ = volume(fw, world, st, 40, under='playing_page', np=True, beside=True)
+    page = st('np_win', C.c_void_p).value
+    world.add(world.add(page, 'slide_view_view', box=(0, 8, 375, 200)), 'slide_indicator1', 'slide_indicator',
+              box=(0, 182, 375, 10))
+    vol_paint(fw, dialog, Canvas(fw))  # hides the dots; the number is the next paint's
+    canvas = Canvas(fw)
+    vol_paint(fw, dialog, canvas)
+    ((text, _, color, _),) = canvas.texts
+    ink = fw.fn('ui_ink', C.c_uint, C.c_uint)(rgba(0xffffff))  # white, as the setter shows it in this half
+    assert text == '40%' and color == ink
+    assert color == (rgba(0xffffff) if light == '0' else fw.fn('flip', C.c_uint, C.c_uint)(rgba(0xffffff)))
 
 
 def test_over_classic_s_now_playing_the_volume_s_percentage_takes_the_page_dots_place(fw, world, st, vd):
@@ -2878,20 +2946,26 @@ def usb_page(fw, world, st, number=CLASSIC, mode=0):
 
 
 def test_classic_s_usb_page_says_connected_and_to_eject(fw, world, st):
-    """A heading and a line, under the dark bar titled as the bar titles the page; no bar, no Cancel."""
+    """A heading and a line, under the dark bar with no title (no wordmark); no bar, no Cancel."""
     win = usb_page(fw, world, st)
     heading, line = world[named(world, win, 'msg_heading')].text, world[named(world, win, 'msg_line')].text
     assert heading and line and heading != line
     assert world[named(world, win, 'scrlabel_info')].visible == 0 and st('usb_win', C.c_void_p).value == win
-    title = bar_title(fw, world, st)
-    sync(fw, win)
     canvas = msg_paint(fw, win)
-    assert [t for t, *_ in canvas.texts] == [world[title].text, heading, line]
+    assert [t for t, *_ in canvas.texts] == [heading, line]
     below = world.at(named(world, win, 'msg_line'))[1]
     assert [f for f in canvas.fills if f[1] >= below] == [] and canvas.art('classic_light_orb_usb')
     for gone in world.on(win, EVT_DESTROY):
         gone()
     assert st('usb_win', C.c_void_p).value is None
+
+
+@pytest.mark.parametrize('name, dark', [('usbmode_page', 0), ('manualtime_page', 1)])
+def test_usb_mode_s_page_has_classic_s_own_bar(fw, world, name, dark):
+    """dark_bar: the slider pages and the time form keep Classic's dark bar; USB mode's page has Classic's own, as the
+    rest of Classic."""
+    theme(fw, CLASSIC)
+    assert fw.fn('navigation__dark_bar', C.c_int, C.c_void_p)(world.window(name)) == dark
 
 
 def test_usb_audio_mode_has_nothing_to_eject(fw, world, st):

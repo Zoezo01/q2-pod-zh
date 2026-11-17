@@ -63,7 +63,7 @@ Read off a Q2 running stock V1.36's kernel (`/proc`, `/sys`, the device tree) an
 - **One radio module:** the RTL8733BS also holds Bluetooth's power line (`gpio_bt_dis_n`, `module_driver/rtl8733bs.sh`). If it fails, Wi-Fi and Bluetooth both go: stock shows **Bluetooth abnormal** and reboots at every start. It brings up two interfaces, `wlan0` and `wlan1`.
 - **Battery reporting:** the `battery` supply (AXP2101) reports voltage and capacity; its `energy_full_design` reads 4000, which doesn't match the 1850 mAh cell.
 - **USB:** the card is exported through the kernel's `f_mass_storage` in a configfs gadget. The stock kernel has no `hid-generic`, so USB keyboards and remotes are not seen.
-- **Manuals:** the [X2000 programming manual](https://whycan.com/files/members/3946/X2000_PM_20200515.pdf) covers the SoC's registers ([mcu-sleep.md](mcu-sleep.md#hardware-basis), [clock-gating.md](clock-gating.md)).
+- **Manuals:** the [X2000 programming manual](https://whycan.com/files/members/3946/X2000_PM_20200515.pdf) covers the SoC's registers.
 
 ### Flash layout
 

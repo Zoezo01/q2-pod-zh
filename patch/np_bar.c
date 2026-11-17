@@ -124,11 +124,15 @@ static const unsigned *wide_home_title(const char *s) {
  * Now Playing or Cover Flow, Home by coverflow_home_title (Q2 Pod; nothing with Show Wordmark off,
  * and no clock either way), else stock's title in the page's hidden navbar (scrlabel_title, or a
  * settings page's unnamed first child). A page showing its navbar and an untitled page keep the
- * clock; a pop-up or keyboard leaves the bar as it is. This runs in a paint, which drops the
- * label's invalidate, so bar_repaint follows; the clock waits for its timer. */
+ * clock; a pop-up or keyboard leaves the bar as it is. USB mode's page has neither title nor
+ * clock, with Time in Title on or off, in every theme and Status Bar look. This runs in a paint,
+ * which drops the label's invalidate, so bar_repaint follows; the clock waits for its timer. */
 void bar_title(void *bar, void *top) {
     static const unsigned
         cover_flow[] = { 'C', 'o', 'v', 'e', 'r', ' ', 'F', 'l', 'o', 'w', 0 }, none = 0;
+    static int usb; /* USB mode's page in front, under any pop-up over it */
+    if (top && !tk_strcmp(widget_get_type(top), "window"))
+        usb = !tk_strcmp(widget_get_prop_str(top, "name", ""), "usbmode_page");
     if (st.bar_title) { /* this bar names the page in its own label: off, the clock makes way */
         const unsigned *own = widget_get_text(st.bar_title);
         static int home; /* Home in front: no clock under its title though it is empty */
@@ -144,7 +148,7 @@ void bar_title(void *bar, void *top) {
                 st.clock_key = 0;
             }
         }
-        int titled = !st.time_title && (home || (own && *own));
+        int titled = usb || (!st.time_title && (home || (own && *own)));
         void *clock = titled != st.bar_titled ? widget_lookup(bar, "label_clock", 1) : (void *)0;
         if (!clock) return;
         st.bar_titled = titled;
@@ -176,6 +180,16 @@ void bar_title(void *bar, void *top) {
     void *word = st.play_word ? st.play_word : widget_lookup(bar, "label_playword", 1);
     void *clock = widget_lookup(bar, "label_clock", 1);
     if (!word || !clock) return;
+    /* USB mode’s page: no title, no clock and no play-state word, whatever Time in
+     * Title says (bar_title_of gives it an empty name). */
+    if (usb) {
+        widget_set_text_utf8(word, "");
+        widget_set_visible(word, 0, 0);
+        st.bar_named = st.bar_titled = 0;
+        st.clock_key = 0;
+        widget_set_text(clock, &none);
+        return;
+    }
     void *nav = widget_lookup(top, "view_navbar", 0), *t = (void *)0;
     if (nav && !widget_get_visible(nav)) {
         t = widget_lookup(nav, "scrlabel_title", 0);

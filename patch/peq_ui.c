@@ -2,7 +2,8 @@
 #include "offsets.inc"
 
 extern int stock_eq_trampoline(int mode);
-int peq_chained __attribute__((section(".scratch"))); /* a peq_stock_eq since hciplayer connected: the filter is in */
+int peq_chained __attribute__((
+    section(".scratch"))); /* a peq_stock_eq since hciplayer connected: the filter is in */
 /* All calls, including restored playback, instantiate the replacement even in bypass.
  * Afterwards the flag only drives the status-bar EQ icon (systembar_showface @0x541a70): on
  * while 3EQ or PEQ is. */
@@ -35,18 +36,33 @@ static int eq_commit(eq_state *s) {
     return 1;
 }
 
-/* EQ off but its filter in the chain, for the visualizer's tap (visualizer.c): the switch's Off, so a
- * mode saved on while the stock flag is clear stays silent; nothing if that cannot be saved. */
+/* EQ off but its filter in the chain, for the visualizer's tap (visualizer.c): the switch's Off, so
+ * a mode saved on while the stock flag is clear stays silent; nothing if that cannot be saved. */
 void peq_attach(void) {
     eq_state s;
     eq_load(&s);
     if (s.mode == EQ_OFF || (s.mode = EQ_OFF, s.hold = 0, eq_save(&s))) peq_stock_eq(1);
 }
 
-enum { HOME, BAND, PRESETS, IMPORTS, SAVES, CONFIRM, DELETES, PICK, ADJUST, STOCKS, RENAMES, NAMING };
+enum {
+    HOME,
+    BAND,
+    PRESETS,
+    IMPORTS,
+    SAVES,
+    CONFIRM,
+    DELETES,
+    PICK,
+    ADJUST,
+    STOCKS,
+    RENAMES,
+    NAMING
+};
+/* clang-format off */
 enum { BACK = 1000, APPLY, RESET, BYPASS, PER_OUTPUT, MENU, IMPORT, SAVE, ENABLE, TYPE, RAISE, LOWER, TYPED, CHANNEL, STEP,
        YES, CANCEL, DELETE, BALANCE, PREAMP, GAIN, /* these three open the picker, in picks[] order */
        FREQUENCY, QUALITY, /* and these two the value menu */ KEYBOARD, STOCK, FILE_PREV, FILE_NEXT, RENAME, NAMED };
+/* clang-format on */
 #define FILE_PAGE 128
 #define GRAPH_W (375 - 2 * PEQ_GRAPH_X)
 #define ROW_X page_x()      /* the theme's text column, as coverflow.c's page rows */
@@ -54,26 +70,32 @@ enum { BACK = 1000, APPLY, RESET, BYPASS, PER_OUTPUT, MENU, IMPORT, SAVE, ENABLE
 /* The page's two tabs: Simple, 3EQ's sliders (e3), and Advanced, the PEQ editor (ui.screen). */
 enum { SIMPLE, ADVANCED };
 static struct {
-    void *page, *view, *edit, *graph, *bar; /* bar: the title, which shows the tabs on the top screens */
+    void *page, *view, *edit, *graph,
+        *bar; /* bar: the title, which shows the tabs on the top screens */
     unsigned timer, keyboard_timer;
     int screen, band, step, count, previous, rendered, dirty, pick, adjust, tries;
     int capacity, file_page;
-    int tab, tabs; /* tabs: the wheel is on the tab bar, over Advanced's list */
+    int tab, tabs;   /* tabs: the wheel is on the tab bar, over Advanced's list */
     int from_simple; /* Advanced's Stock presets screen, opened from Simple's Presets */
     double typed;
     peq_preset draft, candidate, named; /* named: the preset applied under applied's name */
     char (*names)[256];
     char destination[600], status[160];
-    char name[256], applied[256]; /* the draft's preset, and the active one's, when loaded from a file */
-    float curve[2][GRAPH_W];      /* the left and right response, in graph rows */
+    char name[256],
+        applied[256];        /* the draft's preset, and the active one's, when loaded from a file */
+    float curve[2][GRAPH_W]; /* the left and right response, in graph rows */
 } ui __attribute__((section(".scratch")));
 
-static const int steps[] = {1, 10, 100, 1000};
-/* Wheel pickers in 0.5 dB rows: row i is first + step * i. Preamp's row 0 is Auto (first is unused there). */
-static const struct { double first, step; int rows; } picks[] = {{-12, 0.5, 49}, {12.5, -0.5, 74}, {24, -0.5, 97}};
+static const int steps[] = { 1, 10, 100, 1000 };
+/* Wheel pickers in 0.5 dB rows: row i is first + step * i. Preamp's row 0 is Auto (first is unused
+ * there). */
+static const struct {
+    double first, step;
+    int rows;
+} picks[] = { { -12, 0.5, 49 }, { 12.5, -0.5, 74 }, { 24, -0.5, 97 } };
 /* Simple, 3EQ (docs/internals.md#3eq): Low, Mid and High, -6 to +6 dB in 0.5 dB steps, on a view
- * that e3_paint draws: the switch, Presets and Reset (R) under the tabs, then a slider per band over
- * a 0 dB line. The wheel moves between the tabs and the six; Centre flips the switch, opens
+ * that e3_paint draws: the switch, Presets and Reset (R) under the tabs, then a slider per band
+ * over a 0 dB line. The wheel moves between the tabs and the six; Centre flips the switch, opens
  * Advanced's Presets screen, resets, or takes a slider, whose gain the wheel then turns until
  * Centre or Return. A touch on a slider drags it. Edits are saved at most every E3_SAVE_MS, and at
  * once when an adjustment ends; the player hears them only while 3EQ is on, which turns PEQ off.
@@ -94,10 +116,10 @@ static struct {
     int caption; /* status is eq_output_caption's: the first turn of the wheel clears it too */
 } e3 __attribute__((section(".scratch")));
 
-/* EQ per Output: PEQ_ACTIVE stays what plays, and owner names the output it was set on. When another
- * output takes over, the EQ goes to owner's file and the new output's comes back; a new output keeps
- * what plays. An open EQ page follows it (page_load). owner is on disk so an edit just before
- * power-off still goes to the right output. */
+/* EQ per Output: PEQ_ACTIVE stays what plays, and owner names the output it was set on. When
+ * another output takes over, the EQ goes to owner's file and the new output's comes back; a new
+ * output keeps what plays. An open EQ page follows it (page_load). owner is on disk so an edit just
+ * before power-off still goes to the right output. */
 static char eq_owner[20] __attribute__((section(".scratch")));
 static void eq_slot(char *path, unsigned n, const char *key) {
     snprintf(path, n, EQ_OUTPUTS "/%s", key);
@@ -111,7 +133,9 @@ static void owner_set(const char *key) {
     peq_save_file(path, "Q2OWNER", file, sizeof file);
 }
 static void owner_read(void) {
-    struct { char magic[8], key[sizeof eq_owner]; } file = { { 0 }, { 0 } };
+    struct {
+        char magic[8], key[sizeof eq_owner];
+    } file = { { 0 }, { 0 } };
     char path[256];
     eq_slot(path, sizeof path, "owner");
     void *f = fopen(path, "rb");
@@ -133,7 +157,7 @@ static int eq_devices(void) {
 }
 /* The bar's message as the EQ page opens: which output's EQ this is. */
 static const char *eq_output_caption(void) {
-    if (!ringnav_eq_output()) return 0;
+    if (!pod_value(POD_EQ_OUTPUT)) return 0;
     if (!eq_owner[0]) owner_read();
     return !eq_owner[0]                     ? 0
            : !strcmp(eq_owner, "3.5mm")     ? "3.5 mm 均衡"
@@ -141,8 +165,8 @@ static const char *eq_output_caption(void) {
            : !strcmp(eq_owner, "usb")       ? "USB 均衡"
                                             : "蓝牙设备均衡";
 }
-/* What plays, as now, into owner's file, if there is an owner. A PEQ_ACTIVE that exists but can't be
- * read isn't filed over a good slot. 0 if the file can't be saved. */
+/* What plays, as now, into owner's file, if there is an owner. A PEQ_ACTIVE that exists but can't
+ * be read isn't filed over a good slot. 0 if the file can't be saved. */
 static int eq_file(eq_state *now) {
     char from[256];
     int readable = eq_load(now) || access(PEQ_ACTIVE, 0);
@@ -184,12 +208,13 @@ void eq_output(const char *key) {
     eq_slot(to, sizeof to, key);
     if (!eq_load_from(to, &next)) next = now;
     /* Off to Off is silent, so the filter stays out of the chain (peq_chain may still want it). */
+    /* NOLINTNEXTLINE(bugprone-suspicious-memory-comparison): no padding; any changed bit saves */
     if (memcmp(&next, &now, sizeof next) &&
         !(now.mode == EQ_OFF && next.mode == EQ_OFF ? eq_save(&next) : eq_commit(&next)))
         return;
     /* ponytail: power lost before owner is saved files the new output's EQ under the old one, once.
-     * A failed save is the same at the next boot; RAM moves on either way, as staying would file the
-     * new EQ over the old slot at the next pass. */
+     * A failed save is the same at the next boot; RAM moves on either way, as staying would file
+     * the new EQ over the old slot at the next pass. */
     owner_set(key);
     if (ui.page) {
         page_load();
@@ -215,13 +240,13 @@ static void *fit(void *label) {
     widget_set_prop_int(label, "style:normal:font_size", 20);
     return label;
 }
-/* LONG: a value of any length (a file's name), in stock's right-aligned ellipsis label (navigation.c's
- * list_value), grey beside the chevron. It stops short of the caption at x 130, past "Presets" in
- * the widest row font, Classic's 27 px (ends at x 118). Stock's label keeps 2 px each side; none on
- * the right ends a name that fits where the row's other values do. Stock draws a cut one from the
- * label's left, so it can end up to a letter short of them, and scrolls it while the row is selected
- * (only_focus: the marquee's). ponytail: a fixed column, not the caption's measured width, so a theme
- * with a wider row font has to move it. */
+/* LONG: a value of any length (a file's name), in stock's right-aligned ellipsis label
+ * (navigation.c's list_value), grey beside the chevron. It stops short of the caption at x 130,
+ * past "Presets" in the widest row font, Classic's 27 px (ends at x 118). Stock's label keeps 2 px
+ * each side; none on the right ends a name that fits where the row's other values do. Stock draws a
+ * cut one from the label's left, so it can end up to a letter short of them, and scrolls it while
+ * the row is selected (only_focus: the marquee's). ponytail: a fixed column, not the caption's
+ * measured width, so a theme with a wider row font has to move it. */
 static void *long_value(void *item, const char *value, int rh) {
     void *label = hscroll_label_create(item, 130, 0, 316 - 130, rh);
     widget_use_style(label, "s_scrlabel_white20r");
@@ -233,7 +258,8 @@ static void *long_value(void *item, const char *value, int rh) {
     theme_font(label, ROLE_TITLE, FONT_ROW);
     return fit(label);
 }
-static void *row_dim(void *view, int index, const char *text, const char *value, int id, int flags) {
+static void *row_dim(void *view, int index, const char *text, const char *value, int id,
+                     int flags) {
     int rh = page_h(48);
     void *item = list_item_create(view, 0, (ui.graph ? graph_head() : 0) + index * rh, 375, rh),
          *label = 0;
@@ -241,7 +267,8 @@ static void *row_dim(void *view, int index, const char *text, const char *value,
     for (int i = 0; i < 1 + (value && !(flags & LONG)); ++i) {
         label = label_create(item, ROW_X, 0, 375 - 2 * ROW_X, rh);
         widget_use_style(label, "s_label_white20l");
-        if (i || flags & DIM || id < 0) widget_set_prop_int(label, "style:normal:text_color", (int)CF_GREY);
+        if (i || flags & DIM || id < 0)
+            widget_set_prop_int(label, "style:normal:text_color", (int)CF_GREY);
         if (i) widget_set_prop_str(label, "style:normal:text_align_h", "right");
         widget_set_text_utf8(label, i ? value : text);
         theme_font(label, ROLE_TITLE, FONT_ROW); /* by its text */
@@ -257,9 +284,12 @@ static void *row_dim(void *view, int index, const char *text, const char *value,
 static float graph_y(double db) {
     if (db > PEQ_GRAPH_DB) db = PEQ_GRAPH_DB;
     if (db < -PEQ_GRAPH_DB) db = -PEQ_GRAPH_DB;
-    return (float)((PEQ_PLOT_TOP + PEQ_PLOT_BOTTOM) / 2.0 - db * (PEQ_PLOT_BOTTOM - PEQ_PLOT_TOP) / (2.0 * PEQ_GRAPH_DB));
+    return (float)((PEQ_PLOT_TOP + PEQ_PLOT_BOTTOM) / 2.0 -
+                   db * (PEQ_PLOT_BOTTOM - PEQ_PLOT_TOP) / (2.0 * PEQ_GRAPH_DB));
 }
-static float graph_x(double f) { return (float)(PEQ_GRAPH_X + (GRAPH_W - 1) * log(f / 20) / log(1000)); }
+static float graph_x(double f) {
+    return (float)(PEQ_GRAPH_X + (GRAPH_W - 1) * log(f / 20) / log(1000));
+}
 
 /* The draft's response, one point a column, for peq_paint. */
 static void curve(void) {
@@ -276,12 +306,13 @@ static void curve(void) {
 /* 3EQ's preamp is a saved number (its player keeps it), so it covers the standard PCM rates' Auto
  * instead of the current track's. shortcut: no bound for nonstandard rates. */
 static double headroom(const peq_preset *p) {
-    static const int rates[] = {8000, 11025, 12000, 16000, 22050, 24000, 32000, 44100,
-                               48000, 64000, 88200, 96000, 176400, 192000, 352800, 384000};
+    static const int rates[] = { 8000,  11025, 12000, 16000, 22050,  24000,  32000,  44100,
+                                 48000, 64000, 88200, 96000, 176400, 192000, 352800, 384000 };
     static peq_preset cached;
     static int have_cache;
     static double gain;
     if (!peq_valid(p)) return p->preamp;
+    /* NOLINTNEXTLINE(bugprone-suspicious-memory-comparison): no padding; a cache key by its bits */
     if (have_cache && !memcmp(p, &cached, sizeof(*p))) return gain;
     gain = 0;
     for (unsigned i = 0; i < sizeof(rates) / sizeof(*rates); ++i) {
@@ -302,6 +333,7 @@ static const double *autos(void) {
     static int have;
     peq_preset p = ui.draft;
     p.preamp = p.balance = 0, p.bypass = p.automatic = 0;
+    /* NOLINTNEXTLINE(bugprone-suspicious-memory-comparison): no padding; a cache key by its bits */
     if (!have || memcmp(&p, &key, sizeof(p))) {
         cut[0] = peq_auto(&p, 44100), cut[1] = peq_auto(&p, 48000);
         key = p, have = 1;
@@ -310,16 +342,20 @@ static const double *autos(void) {
 }
 
 static double *picked(void) {
-    return (double *[]){&ui.draft.balance, &ui.draft.preamp, &ui.draft.bands[ui.band].gain}[ui.pick - BALANCE];
+    return (double *[]){ &ui.draft.balance, &ui.draft.preamp,
+                         &ui.draft.bands[ui.band].gain }[ui.pick - BALANCE];
 }
 
-/* The value menu's edit closed with new text: apply it if it is a number (clamped like Raise/Lower), else restore it. */
+/* The value menu's edit closed with new text: apply it if it is a number (clamped like
+ * Raise/Lower), else restore it. */
 static int typed(void *ctx, void *event) {
     if (!ui.edit) return 0;
     char s[16];
     if (widget_get_text_utf8(ui.edit, s, sizeof s)) s[0] = 0;
-    if (peq_number(s, &ui.typed)) action((void *)(long)TYPED, 0);
-    else if (!ui.timer) ui.timer = timer_add(render, 0, 1); /* show the value again */
+    if (peq_number(s, &ui.typed))
+        action((void *)(long)TYPED, 0);
+    else if (!ui.timer)
+        ui.timer = timer_add(render, 0, 1); /* show the value again */
     return 0;
 }
 
@@ -338,8 +374,12 @@ static int numbers(const void *unused) {
          *kb = im && ui.edit && P(im, IM_WIDGET) == ui.edit ? P(im, IM_KEYBOARD) : 0;
     char s[16];
     if (kb) pages_set_active_by_name(widget_lookup(kb, "panel", 1), "symnum");
-    if (kb && ui.edit && !widget_get_text_utf8(ui.edit, s, sizeof s)) edit_set_select(ui.edit, 0, strlen(s));
-    if (kb || ++ui.tries >= 20) { ui.keyboard_timer = 0; return 7; }
+    if (kb && ui.edit && !widget_get_text_utf8(ui.edit, s, sizeof s))
+        edit_set_select(ui.edit, 0, strlen(s));
+    if (kb || ++ui.tries >= 20) {
+        ui.keyboard_timer = 0;
+        return 7;
+    }
     return 8; /* RET_REPEAT */
 }
 
@@ -350,7 +390,8 @@ static int focused(void *ctx, void *event) {
     return 0;
 }
 
-/* Auto unless the preamp was picked (2): imports and presets or states from before 1.3.6 take it. */
+/* Auto unless the preamp was picked (2): imports and presets or states from before 1.3.6 take it.
+ */
 static int on_auto(void) { return ui.draft.automatic != 2; }
 
 /* A draft on Auto saves its 48 kHz cut, a fallback: the player works out its own for each rate. */
@@ -430,7 +471,8 @@ static void rename_preset(void) {
 checked:
     snprintf(old, sizeof old, "%.*s", (int)strlen(from) - 4, from);
     ui.screen = PRESETS;
-    if (!typed) ui.screen = RENAMES;
+    if (!typed)
+        ui.screen = RENAMES;
     else if (!*t || *t == '.' || *c)
         snprintf(ui.status, sizeof(ui.status), "名称不可用，预设未改");
     else if (!strcmp(t, old)) return;
@@ -470,14 +512,24 @@ static void load_draft(peq_preset *p, const char *name, int length) {
 /* Search fits above T9's screen y=60 (page y=30), so opening the keyboard won't shift the page. */
 void *edit_create(void *item, const char *input_type, int y, int h) {
     void *edit = widget_factory_create_widget(widget_factory(), "edit", item, 12, y, 351, h);
-    static const char *const props[][2] = {{"keyboard", "kb_default_t9"}, {"input_type", 0}, {"action_text", "done"},
-        {"bg_color", "#2B2B2B"}, {"border_color", "#2B2B2B00"}, {"text_color", "#FFFFFF"}, {"round_radius", 0},
-        {"margin_left", "12"}, {"font_size", "22"}};
-    static const char *const states[] = {"normal", "focused", "empty", "empty_focus", "changed", "error", "over", "empty_over"};
+    static const char *const props[][2] = { { "keyboard", "kb_default_t9" },
+                                            { "input_type", 0 },
+                                            { "action_text", "done" },
+                                            { "bg_color", "#2B2B2B" },
+                                            { "border_color", "#2B2B2B00" },
+                                            { "text_color", "#FFFFFF" },
+                                            { "round_radius", 0 },
+                                            { "margin_left", "12" },
+                                            { "font_size", "22" } };
+    static const char *const states[] = { "normal",  "focused", "empty", "empty_focus",
+                                          "changed", "error",   "over",  "empty_over" };
     char name[48], radius[12];
     snprintf(radius, sizeof(radius), "%d", h / 2);
     for (unsigned i = 0; i < sizeof(props) / sizeof(props[0]); ++i) {
-        if (i < 3) { widget_set_prop_str(edit, props[i][0], i == 1 ? input_type : props[i][1]); continue; }
+        if (i < 3) {
+            widget_set_prop_str(edit, props[i][0], i == 1 ? input_type : props[i][1]);
+            continue;
+        }
         for (unsigned j = 0; j < sizeof(states) / sizeof(states[0]); ++j) {
             snprintf(name, sizeof(name), "style:%s:%s", states[j], props[i][0]);
             widget_set_prop_str(edit, name, props[i][1] ? props[i][1] : radius);
@@ -517,7 +569,8 @@ static int action(void *ctx, void *event) {
     int id = (int)(long)ctx;
     if (id < 0) return 0; /* display-only rows */
     int screen = ui.screen;
-    /* The centre button on the value row; no render, which would destroy the edit and close the keyboard. */
+    /* The centre button on the value row; no render, which would destroy the edit and close the
+     * keyboard. */
     if (id == KEYBOARD) {
         widget_set_focused(ui.edit, 1);
         /* Done can close T9 while the edit stays focused; focus alone won't reopen it, nor send
@@ -526,33 +579,53 @@ static int action(void *ctx, void *event) {
         focused(0, 0);
         return 0;
     }
-    if (id == NAMED && ui.screen != NAMING) return 0; /* the row's click after the edit's blur renamed */
+    if (id == NAMED && ui.screen != NAMING)
+        return 0; /* the row's click after the edit's blur renamed */
     peq_band *b = &ui.draft.bands[ui.band];
     ui.status[0] = 0;
     ui.tabs = 0;
     /* Band edits keep the preamp on Auto (just enough cut for the boosts) only if it was there. */
     int edit = (id >= ENABLE && id < STEP) || (id < 256 && ui.screen == PICK && ui.pick == GAIN);
     if (id == BACK) {
-        if (ui.screen == HOME) { navigator_back(); return 0; }
-        if (ui.screen == PICK) ui.screen = ui.pick == GAIN ? BAND : HOME;
-        else if (ui.screen == ADJUST) ui.screen = BAND;
-        else if (ui.screen == NAMING) ui.screen = RENAMES;
-        else ui.screen = ui.from_simple || ui.screen == BAND || ui.screen == PRESETS ? HOME : PRESETS;
-    } else if (id == MENU) ui.screen = PRESETS;
-    else if (id == IMPORT) ui.screen = IMPORTS;
+        if (ui.screen == HOME) {
+            navigator_back();
+            return 0;
+        }
+        if (ui.screen == PICK)
+            ui.screen = ui.pick == GAIN ? BAND : HOME;
+        else if (ui.screen == ADJUST)
+            ui.screen = BAND;
+        else if (ui.screen == NAMING)
+            ui.screen = RENAMES;
+        else
+            ui.screen =
+                ui.from_simple || ui.screen == BAND || ui.screen == PRESETS ? HOME : PRESETS;
+    } else if (id == MENU)
+        ui.screen = PRESETS;
+    else if (id == IMPORT)
+        ui.screen = IMPORTS;
     else if (id == FILE_PREV || id == FILE_NEXT) {
         ui.file_page += id == FILE_NEXT ? 1 : -1;
         ui.rendered = -1;
-    }
-    else if (id == STOCK) ui.screen = STOCKS;
-    else if (id == DELETE) ui.screen = DELETES;
-    else if (id == RENAME) ui.screen = RENAMES;
-    else if (id == NAMED) rename_preset();
-    else if (id >= BALANCE && id <= GAIN) { ui.pick = id; ui.screen = PICK; }
-    else if (id == FREQUENCY || id == QUALITY) { ui.adjust = id; ui.screen = ADJUST; }
-    else if (id == SAVE) ui.screen = SAVES;
+    } else if (id == STOCK)
+        ui.screen = STOCKS;
+    else if (id == DELETE)
+        ui.screen = DELETES;
+    else if (id == RENAME)
+        ui.screen = RENAMES;
+    else if (id == NAMED)
+        rename_preset();
+    else if (id >= BALANCE && id <= GAIN) {
+        ui.pick = id;
+        ui.screen = PICK;
+    } else if (id == FREQUENCY || id == QUALITY) {
+        ui.adjust = id;
+        ui.screen = ADJUST;
+    } else if (id == SAVE)
+        ui.screen = SAVES;
     else if (id == BYPASS) {
-        /* Takes effect at once and keeps unapplied band edits out of the active preset. On turns 3EQ off. */
+        /* Takes effect at once and keeps unapplied band edits out of the active preset. On turns
+         * 3EQ off. */
         eq_state s;
         eq_load(&s);
         s.mode = ui.draft.bypass ? EQ_PEQ : EQ_OFF;
@@ -591,25 +664,27 @@ static int action(void *ctx, void *event) {
     } else if (id == CANCEL) ui.screen = ui.previous;
     else if (id < 256) {
         int file = ui.file_page * FILE_PAGE + id;
-        if (ui.screen == HOME && id < PEQ_BANDS) { ui.band = id; ui.screen = BAND; }
-        else if (ui.screen == PICK && id < picks[ui.pick - BALANCE].rows) {
+        if (ui.screen == HOME && id < PEQ_BANDS) {
+            ui.band = id;
+            ui.screen = BAND;
+        } else if (ui.screen == PICK && id < picks[ui.pick - BALANCE].rows) {
             /* Preamp's Auto row: the band-edit cut, which later band edits then keep up to date. */
             *picked() = ui.pick == PREAMP && !id
                             ? autos()[1]
                             : picks[ui.pick - BALANCE].first + picks[ui.pick - BALANCE].step * id;
             if (ui.pick == PREAMP) ui.draft.automatic = id ? 2 : 1, remember_preamp();
-            if (ui.pick == GAIN && !b->enabled) b->enabled = 1; /* picking a gain is using the band */
+            if (ui.pick == GAIN && !b->enabled)
+                b->enabled = 1; /* picking a gain is using the band */
             ui.dirty = 1;
             ui.screen = ui.pick == GAIN ? BAND : HOME;
-        }
-        else if (ui.screen == STOCKS && id < STOCK_N) {
+        } else if (ui.screen == STOCKS && id < STOCK_N) {
             peq_preset p;
             peq_default(&p);
-            for (int k = 0; k < 10; ++k) p.bands[k].enabled = (p.bands[k].gain = stock_gains[id][k]) != 0;
+            for (int k = 0; k < 10; ++k)
+                p.bands[k].enabled = (p.bands[k].gain = stock_gains[id][k]) != 0;
             p.automatic = 1; /* load_draft sets the preamp */
             load_draft(&p, stock_names[id], sizeof(stock_names[id]));
-        }
-        else if (ui.screen == SAVES && id < 10) {
+        } else if (ui.screen == SAVES && id < 10) {
             snprintf(ui.destination, sizeof(ui.destination), PEQ_SAVED "/Manual %02d.peq", id + 1);
             ui.candidate = ui.draft;
             save_candidate(0);
@@ -621,7 +696,8 @@ static int action(void *ctx, void *event) {
                 snprintf(ui.status, sizeof(ui.status), "第 %u 行：%s", error.line, error.reason);
             else {
                 unsigned n = strlen(ui.names[file]) - 4;
-                snprintf(ui.destination, sizeof(ui.destination), PEQ_SAVED "/%.*s.peq", (int)n, ui.names[file]);
+                snprintf(ui.destination, sizeof(ui.destination), PEQ_SAVED "/%.*s.peq", (int)n,
+                         ui.names[file]);
                 save_candidate(0);
             }
         } else if (file < ui.count && ui.screen == RENAMES) {
@@ -684,21 +760,28 @@ static int render(const void *unused) {
     }
     e3.view = 0;
     int selection = 0, offset = 0;
-    int height = widget_get_prop_int(ui.page, "h", 320), graph = ui.screen == HOME || ui.screen == BAND;
+    int height = widget_get_prop_int(ui.page, "h", 320),
+        graph = ui.screen == HOME || ui.screen == BAND;
     int head = graph * graph_head(), rh = page_h(48);
     /* Whole rows only, so the last row is never clipped. */
     int rows = (height - 48) / rh * rh;
     if (ui.view && ui.rendered == ui.screen) {
         selection = widget_get_prop_int(ui.view, "_ringnav_index", 0);
         offset = widget_get_prop_int(ui.view, "yoffset", 0);
-    } else if (ui.screen == PICK) { /* opens on the nearest row to the current value (Auto if on it), centred */
+    } else if (ui.screen ==
+               PICK) { /* opens on the nearest row to the current value (Auto if on it), centred */
         int last = picks[ui.pick - BALANCE].rows - 1;
-        double r = (*picked() - picks[ui.pick - BALANCE].first) / picks[ui.pick - BALANCE].step + 0.5;
+        double r =
+            (*picked() - picks[ui.pick - BALANCE].first) / picks[ui.pick - BALANCE].step + 0.5;
         selection = r < 0 ? 0 : r > last ? last : (int)r;
-        if (ui.pick == PREAMP && on_auto()) selection = 0;
-        else if (ui.pick == PREAMP && !selection) selection = 1;
+        if (ui.pick == PREAMP && on_auto())
+            selection = 0;
+        else if (ui.pick == PREAMP && !selection)
+            selection = 1;
         offset = selection * rh - (rows - rh) / 2;
+        /* clang-format off */
         offset = offset < 0 ? 0 : offset > (last + 1) * rh - rows ? (last + 1) * rh - rows : offset;
+        /* clang-format on */
     }
     ui.rendered = ui.screen;
     ui.edit = 0;
@@ -715,8 +798,10 @@ static int render(const void *unused) {
     widget_set_prop_int(view, "xslidable", 0);
     widget_set_prop_int(view, "_ringnav_index", ui.tabs && ui.screen == HOME ? -1 : selection);
     /* The graph heads the list and scrolls off with it. It takes no click, so ringnav's rows, row 0
-     * first, are the ones under it; peq_paint draws it from its own paint, inside the list's clip. */
-    ui.graph = graph ? widget_factory_create_widget(widget_factory(), "view", view, 0, 0, 375, head) : 0;
+     * first, are the ones under it; peq_paint draws it from its own paint, inside the list's clip.
+     */
+    ui.graph =
+        graph ? widget_factory_create_widget(widget_factory(), "view", view, 0, 0, 375, head) : 0;
     if (graph) curve();
     char text[160], value[32];
     int n = 0;
@@ -728,7 +813,8 @@ static int render(const void *unused) {
         list_toggle(row(view, n++, "", BYPASS), "启用", !ui.draft.bypass);
         list_toggle(row(view, n++, "", PER_OUTPUT), "各输出独立均衡", ringnav_eq_output());
         /* Balance turns one side down: R 1.0 dB is the left 1 dB quieter. */
-        snprintf(value, sizeof(value), __builtin_fabs(ui.draft.balance) >= 0.05 ? "%s %.1f dB" : "Centre",
+        snprintf(value, sizeof(value),
+                 __builtin_fabs(ui.draft.balance) >= 0.05 ? "%s %.1f dB" : "Centre",
                  ui.draft.balance > 0 ? "R" : "L", __builtin_fabs(ui.draft.balance));
         row_dim(view, n++, "声道平衡", value, BALANCE, INTO);
         if (on_auto())
@@ -776,10 +862,12 @@ static int render(const void *unused) {
         for (int i = 0; i < picks[ui.pick - BALANCE].rows; ++i) {
             double v = picks[ui.pick - BALANCE].first + picks[ui.pick - BALANCE].step * i;
             if (ui.pick == BALANCE) /* L 12.0 dB to R 12.0 dB */
-                snprintf(text, sizeof(text), i == 24 ? "Centre" : "%s %.1f dB", v < 0 ? "L" : "R", __builtin_fabs(v));
+                snprintf(text, sizeof(text), i == 24 ? "Centre" : "%s %.1f dB", v < 0 ? "L" : "R",
+                         __builtin_fabs(v));
             else if (ui.pick == PREAMP && !i)
                 auto_text(text, sizeof(text));
-            else snprintf(text, sizeof(text), "%+.1f dB", v);
+            else
+                snprintf(text, sizeof(text), "%+.1f dB", v);
             void *shown = row(view, n++, text, i);
             if (ui.pick == PREAMP && !i) fit(shown);
         }
@@ -806,7 +894,8 @@ static int render(const void *unused) {
             row_dim(view, n++, "重命名预设", 0, RENAME, INTO);
             row_dim(view, n++, "删除预设", 0, DELETE, INTO);
         }
-        list_files(ui.screen == IMPORTS ? PEQ_IMPORT : PEQ_SAVED, ui.screen == IMPORTS ? ".txt" : ".peq");
+        list_files(ui.screen == IMPORTS ? PEQ_IMPORT : PEQ_SAVED,
+                   ui.screen == IMPORTS ? ".txt" : ".peq");
         int last = ui.count ? (ui.count - 1) / FILE_PAGE : 0;
         if (ui.file_page < 0) ui.file_page = 0;
         if (ui.file_page > last) { ui.file_page = last; selection = offset = 0; }
@@ -829,7 +918,8 @@ static int render(const void *unused) {
     void *title = ui.screen == HOME ? bar(ui.page, 0, 375) : bar(ui.page, 8, 359);
     ui.bar = ui.screen == HOME ? title : 0;
     text[0] = 0;
-    if (ui.status[0]) snprintf(text, sizeof(text), "%s", ui.status);
+    if (ui.status[0])
+        snprintf(text, sizeof(text), "%s", ui.status);
     else if (ui.screen == BAND)
         snprintf(text, sizeof(text), "频段 %d", ui.band + 1);
     else if (ui.screen == PICK && ui.pick == GAIN) snprintf(text, sizeof(text), "频段 %d 增益", ui.band + 1);
@@ -858,7 +948,8 @@ static int render(const void *unused) {
                      ui.adjust == QUALITY ? b->q : b->frequency);
         widget_set_text_utf8(ui.edit, s);
         widget_on(ui.edit, EVT_VALUE_CHANGED, ui.screen == NAMING ? named : typed, 0);
-        if (ui.screen == ADJUST) widget_on(ui.edit, EVT_FOCUS, focused, 0);
+        if (ui.screen == ADJUST)
+            widget_on(ui.edit, EVT_FOCUS, focused, 0);
         else {
             /* The name opens with the keyboard up and the cursor where stock's text setter leaves
              * it, at the end (0x627028). Stock's focus otherwise selects it all (an idle,
@@ -887,7 +978,7 @@ void caption(void *canvas, const char *s, int x, int y, int w, int h, unsigned p
         }
         wide[n] = c;
     }
-    int r[4] = {x, y, w, h};
+    int r[4] = { x, y, w, h };
     draw_centred(canvas, wide, n, r, px, color);
 }
 
@@ -906,8 +997,8 @@ void peq_paint(void *w, void *canvas) {
     if (w && w == e3.view && P(canvas, CANVAS_LCD)) e3_paint(canvas);
     if (w && w == ui.bar && P(canvas, CANVAS_LCD)) tabs_paint(canvas);
     if (!w || w != ui.graph || !P(canvas, CANVAS_LCD)) return;
-    static const int lines[] = {0, 6, -6, 12, -12}, ticks[] = {100, 1000, 10000};
-    static const char *const labels[] = {"100", "1k", "10k"};
+    static const int lines[] = { 0, 6, -6, 12, -12 }, ticks[] = { 100, 1000, 10000 };
+    static const char *const labels[] = { "100", "1k", "10k" };
     unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
     unsigned tone = ui.draft.bypass ? 0x666666 : TONE;
     float zero = graph_y(0);
@@ -919,13 +1010,15 @@ void peq_paint(void *w, void *canvas) {
         int x = (int)graph_x(ticks[i]);
         canvas_set_fill_color(canvas, rgba(0x262626, 255));
         canvas_fill_rect(canvas, x, PEQ_PLOT_TOP, 1, PEQ_PLOT_BOTTOM - PEQ_PLOT_TOP);
-        caption(canvas, labels[i], x - 16, PEQ_PLOT_BOTTOM + 2, 32, PEQ_GRAPH_H - PEQ_PLOT_BOTTOM - 2, 12, CF_GREY);
+        caption(canvas, labels[i], x - 16, PEQ_PLOT_BOTTOM + 2, 32,
+                PEQ_GRAPH_H - PEQ_PLOT_BOTTOM - 2, 12, CF_GREY);
     }
     stock_canvas_set_fill_color(canvas, fill);
     void *vg = canvas_get_vgcanvas(canvas);
     if (!vg) return;
     int split = 0;
-    for (int x = 0; x < GRAPH_W; ++x) split |= __builtin_fabsf(ui.curve[0][x] - ui.curve[1][x]) > 0.25f;
+    for (int x = 0; x < GRAPH_W; ++x)
+        split |= __builtin_fabsf(ui.curve[0][x] - ui.curve[1][x]) > 0.25f;
     vgcanvas_save(vg);
     vgcanvas_translate(vg, (float)I(canvas, CANVAS_X), (float)I(canvas, CANVAS_Y));
     if (!ui.draft.bypass) /* one path, two fills: each gradient is clear beyond 0 dB on its side */
@@ -949,7 +1042,8 @@ void peq_paint(void *w, void *canvas) {
         int edited = ui.screen == BAND && i == ui.band;
         if (!b->enabled && !edited) continue;
         vgcanvas_begin_path(vg);
-        vgcanvas_arc(vg, graph_x(b->frequency), graph_y(b->gain), edited ? 5 : 3.5f, 0, 6.2831853f, 0);
+        vgcanvas_arc(vg, graph_x(b->frequency), graph_y(b->gain), edited ? 5 : 3.5f, 0, 6.2831853f,
+                     0);
         vgcanvas_set_fill_color(vg, rgba(edited ? tone : 0, 255));
         vgcanvas_fill(vg);
         vgcanvas_set_stroke_color(vg, rgba(edited ? 0xffffff : tone, 255));
@@ -963,17 +1057,22 @@ static void e3_done(void);
  * adjustment, else leaves. */
 static int keyup(void *ctx, void *event) {
     if (I(event, EVENT_KEY) != KEY_RETURN) return 0;
-    if (ui.tab == ADVANCED) action((void *)(long)BACK, ctx);
+    if (ui.tab == ADVANCED)
+        action((void *)(long)BACK, ctx);
     else if (e3.adjusting) {
         e3_done();
         e3_show();
-    } else navigator_back();
+    } else
+        navigator_back();
     return 11; /* RET_STOP */
 }
 
 static int e3_flush(void);
-/* Leaving saves what Simple has unsaved and lets go of its Off comparison's held preamp. */
+/* Leaving saves what Simple has unsaved and lets go of its Off comparison's held preamp; ctx is the
+ * page. Another page's destroy (one peq_page_replace let go, coming after its successor's init)
+ * leaves the open page's state alone. */
 static int closed(void *ctx, void *event) {
+    if (ctx != ui.page) return 0;
     stop_timer(&e3.press);
     e3_flush();
     eq_state s;
@@ -1012,7 +1111,10 @@ static void tab_to(int tab) {
     if (tab == ui.tab) return;
     if (ui.tab == SIMPLE) {
         e3_done();
-        if (e3.dirty) { e3_show(); return; } /* keep unsaved gains if saving failed */
+        if (e3.dirty) {
+            e3_show();
+            return;
+        } /* keep unsaved gains if saving failed */
     }
     eq_state s;
     load(&s);
@@ -1041,9 +1143,9 @@ static void *bar(void *page, int x, int w) {
     return title;
 }
 
-/* The page from what plays, as it opens and when another output takes over, under the caption saying
- * whose EQ it is. Unapplied Advanced edits stay in the draft: Apply puts them on the output then
- * playing. */
+/* The page from what plays, as it opens and when another output takes over, under the caption
+ * saying whose EQ it is. Unapplied Advanced edits stay in the draft: Apply puts them on the output
+ * then playing. */
 static void page_load(void) {
     eq_state s;
     peq_preset edits = ui.draft;
@@ -1055,11 +1157,13 @@ static void page_load(void) {
     follow_auto();
     load(&s);
     ui.named.bypass = ui.draft.bypass;
+    /* NOLINTNEXTLINE(bugprone-suspicious-memory-comparison): no padding; named copies the draft */
     if (memcmp(&ui.draft, &ui.named, sizeof(ui.named))) ui.applied[0] = 0; /* replaced since */
     if (ui.dirty) {
         edits.bypass = ui.draft.bypass; /* live state, as load_draft */
         ui.draft = edits;
-    } else memcpy(ui.name, ui.applied, sizeof(ui.name));
+    } else
+        memcpy(ui.name, ui.applied, sizeof(ui.name));
     if (output) {
         e3.caption = 1;
         e3.status = output;
@@ -1081,12 +1185,21 @@ int peq_page_init(void *page, void *context) {
     page_load();
     e3.focus = E3_LOW;
     e3.h = widget_get_prop_int(page, "h", client_h());
-    widget_on(page, EVT_DESTROY, closed, 0);
+    widget_on(page, EVT_DESTROY, closed, page);
     widget_on(page, EVT_KEY_UP, keyup, 0);
     widget_on(page, EVT_POINTER_MOVE_BEFORE, e3_touch, 0); /* a slider's drag */
     widget_on(page, EVT_POINTER_UP_BEFORE, e3_touch, 0);
     render(0);
     return 0;
+}
+
+/* The open EQ page closed so another opens in its place (quick_settings.c quick_long, over a page
+ * that Return's hold opened above it, #397): its state let go now, as its Return would, since its
+ * window's destroy may come after the new page's init, and a second page would share this one
+ * state. */
+void peq_page_replace(void *old) {
+    closed(old, 0);
+    window_manager_close_window_force(window_manager(), old);
 }
 
 /* The sliders' travel, under their names and over their values, which stay clear of the iPod
@@ -1180,20 +1293,26 @@ static void e3_presets(void) {
 
 static void e3_activate(void) {
     e3.status = 0;
-    if (e3.focus == E3_TABS) tab_to(ADVANCED);
-    else if (e3.focus == E3_SWITCH) e3_switch(!e3.on && ui.draft.bypass); /* a playing PEQ shows on */
-    else if (e3.focus == E3_PRESETS) e3_presets();
+    if (e3.focus == E3_TABS)
+        tab_to(ADVANCED);
+    else if (e3.focus == E3_SWITCH)
+        e3_switch(!e3.on && ui.draft.bypass); /* a playing PEQ shows on */
+    else if (e3.focus == E3_PRESETS)
+        e3_presets();
     else if (e3.focus == E3_RESET) {
         for (int i = 0; i < 3; ++i) e3_set(i, 0);
         e3_flush();
-    } else e3_take();
+    } else
+        e3_take();
     e3_show();
 }
 
 static int e3_single(const void *unused) {
     e3.press = 0;
-    if (ui.tab == ADVANCED) tab_to(SIMPLE);
-    else e3_activate();
+    if (ui.tab == ADVANCED)
+        tab_to(SIMPLE);
+    else
+        e3_activate();
     return 7;
 }
 
@@ -1210,7 +1329,8 @@ int eq_key(void *top, unsigned key) {
     }
     if (ui.tab == ADVANCED) {
         if (ui.screen != HOME || !ui.view ||
-            (!ui.tabs && (key != KEY_PREV || widget_get_prop_int(ui.view, "_ringnav_index", -1) > 0)))
+            (!ui.tabs &&
+             (key != KEY_PREV || widget_get_prop_int(ui.view, "_ringnav_index", -1) > 0)))
             return 0; /* the list's */
         if (key == KEY_NEXT || key == KEY_PREV) {
             ui.tabs = key == KEY_PREV;
@@ -1231,8 +1351,12 @@ int eq_key(void *top, unsigned key) {
     }
     if (key != KEY_NEXT && key != KEY_PREV) return 0;
     int dir = key == KEY_NEXT ? 1 : -1;
-    if (e3.adjusting) e3_set(e3.focus - E3_LOW, e3.gain[e3.focus - E3_LOW] + 0.5 * dir);
-    else e3.focus = e3.focus + dir < E3_TABS ? E3_TABS : e3.focus + dir > E3_HIGH ? E3_HIGH : e3.focus + dir;
+    if (e3.adjusting)
+        e3_set(e3.focus - E3_LOW, e3.gain[e3.focus - E3_LOW] + 0.5 * dir);
+    else
+        e3.focus = e3.focus + dir < E3_TABS   ? E3_TABS
+                   : e3.focus + dir > E3_HIGH ? E3_HIGH
+                                              : e3.focus + dir;
     e3_show();
     return 1;
 }
@@ -1247,7 +1371,9 @@ static int e3_touch(void *ctx, void *event) {
         if (xy[1] < E3_BUTTONS) return 0;
         e3.status = 0;
         if (xy[1] < E3_SLIDERS) {
-            e3.focus = xy[0] < e3_button[1][0] - 4 ? E3_SWITCH : xy[0] < e3_button[2][0] - 4 ? E3_PRESETS : E3_RESET;
+            e3.focus = xy[0] < e3_button[1][0] - 4   ? E3_SWITCH
+                       : xy[0] < e3_button[2][0] - 4 ? E3_PRESETS
+                                                     : E3_RESET;
             e3_activate();
             return 0;
         }
@@ -1255,9 +1381,11 @@ static int e3_touch(void *ctx, void *event) {
         e3_take();
         e3.dragging = 1;
     }
-    if (type == EVT_POINTER_UP_BEFORE) e3_done();
+    if (type == EVT_POINTER_UP_BEFORE)
+        e3_done();
     else {
-        double half = (e3_bottom() - e3_top()) / 2.0, g = ((e3_top() + e3_bottom()) / 2 - xy[1]) * E3_MAX / half;
+        double half = (e3_bottom() - e3_top()) / 2.0,
+               g = ((int)((e3_top() + e3_bottom()) / 2) - xy[1]) * E3_MAX / half;
         e3_set(e3.focus - E3_LOW, (int)(g * 2 + (g < 0 ? -0.5 : 0.5)) / 2.0);
     }
     e3_show();
@@ -1275,9 +1403,12 @@ static void e3_box(void *canvas, int x, int y, int w, int h, unsigned rgb) {
  * preset's name (Advanced unnamed), and the sliders are dimmed: one takes over as 3EQ. */
 static void e3_paint(void *canvas) {
     int peq = !ui.draft.bypass, zero = e3_y(0);
-    unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR), tone = e3.on ? TONE : peq ? 0x444444 : 0x666666;
+    unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR), tone = e3.on ? TONE
+                                                                               : peq ? 0x444444
+                                                                                     : 0x666666;
     char text[16];
-    /* The switch names the preset playing: 12 bytes at most, cut on a UTF-8 boundary, at 16px past 9 */
+    /* The switch names the preset playing: 12 bytes at most, cut on a UTF-8 boundary, at 16px past
+     * 9 */
     char preset[16];
     int n = snprintf(preset, sizeof preset, "%s", ui.applied[0] ? ui.applied : "高级");
     if (n > 12) {
@@ -1296,12 +1427,16 @@ static void e3_paint(void *canvas) {
         static const char *const names[] = { "低频", "中频", "高频" };
         int x = 62 + 125 * i, y = e3_y(e3.gain[i]), focus = e3.focus == E3_LOW + i;
         if (focus) e3_box(canvas, x - 56, E3_SLIDERS, 112, e3_bottom() + 36 - E3_SLIDERS, 0x1a1a1a);
-        caption(canvas, names[i], x - 56, E3_SLIDERS, 112, 28, 20, peq ? CF_GREY : 0xffffffffu);
+        caption(canvas, bands[i], x - 56, E3_SLIDERS, 112, 28, 20, peq ? CF_GREY : 0xffffffffu);
         e3_box(canvas, x - 2, e3_top(), 4, e3_bottom() - e3_top(), 0x333333);
         e3_box(canvas, x - 3, y < zero ? y : zero, 6, y < zero ? zero - y : y - zero + 1, tone);
-        e3_box(canvas, x - 20, y - 5, 40, 10, focus && e3.adjusting ? 0xffffff : peq ? 0x555555 : 0x8a8a8a);
+        e3_box(canvas, x - 20, y - 5, 40, 10,
+               focus && e3.adjusting ? 0xffffff
+               : peq                 ? 0x555555
+                                     : 0x8a8a8a);
         snprintf(text, sizeof text, e3.gain[i] ? "%+.1f dB" : "0 dB", e3.gain[i]);
-        caption(canvas, text, x - 56, e3_bottom() + 8, 112, 24, 18, focus && e3.adjusting ? 0xffffffffu : CF_GREY);
+        caption(canvas, text, x - 56, e3_bottom() + 8, 112, 24, 18,
+                focus && e3.adjusting ? 0xffffffffu : CF_GREY);
     }
     e3_box(canvas, 12, zero, 351, 1, 0x8a8a8a); /* 0 dB */
     stock_canvas_set_fill_color(canvas, fill);

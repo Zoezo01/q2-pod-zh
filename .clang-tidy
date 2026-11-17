@@ -1,0 +1,33 @@
+# tools/tidy.sh runs this over the payload's C (docs/building.md#clang-tidy). The caps sit just above today's
+# largest function (ringnav, 332 lines) and most complex (ringnav_image_add, 275), so nothing grows past them.
+# Left out as house style: !strcmp() as equality (suspicious-string-compare), atoi's 0 for junk as the default
+# (unchecked-string-to-number-conversion), and ++ in a && chain, sequenced in C (inc-dec-in-conditions).
+Checks: >-
+  -*,
+  bugprone-*,
+  clang-analyzer-*,
+  readability-function-size,
+  readability-function-cognitive-complexity,
+  readability-misleading-indentation,
+  readability-duplicate-include,
+  misc-redundant-expression,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-reserved-identifier,
+  -bugprone-narrowing-conversions,
+  -bugprone-signed-bitwise,
+  -bugprone-assignment-in-if-condition,
+  -bugprone-assignment-in-selection-statement,
+  -bugprone-implicit-widening-of-multiplication-result,
+  -bugprone-multi-level-implicit-pointer-conversion,
+  -bugprone-casting-through-void,
+  -bugprone-suspicious-string-compare,
+  -bugprone-unchecked-string-to-number-conversion,
+  -bugprone-inc-dec-in-conditions,
+  -clang-analyzer-security.insecureAPI.*,
+  -clang-analyzer-optin.core.FixedAddressDereference,
+  -clang-analyzer-optin.performance.Padding
+WarningsAsErrors: '*'
+CheckOptions:
+  readability-function-size.LineThreshold: 340
+  readability-function-cognitive-complexity.Threshold: 280
+  readability-function-cognitive-complexity.DescribeBasicIncrements: false

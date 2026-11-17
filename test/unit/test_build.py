@@ -5,6 +5,7 @@ import hashlib
 import io
 import pathlib
 import re
+import runpy
 import shutil
 import struct
 import subprocess
@@ -83,32 +84,12 @@ def test_jumps():
     assert build.j(0x7) == 0x08000001 and build.jal(0x7) == 0x0c000001
 
 
-class Memory:
-    def __init__(self):
-        self.store = {}
-
-    def mem_write(self, address, data):
-        self.store[address] = data
-
-    def mem_read(self, address, size):
-        assert size == 4
-        return self.store[address]
-
-
 def test_need():
     assert build.need(0, 'unused') == 0 and build.need(b'', 'unused') == b''  # only None fails
     with pytest.raises(ValueError, match=r'^Missing x$'):
         build.need(None, 'Missing x')
     with pytest.raises(ValueError, match=r'^Unexpected time zone UTC$'):
         build.timezone_offset('UTC')
-
-
-def test_word_and_read():
-    u = Memory()
-    build.word(u, 8, -1)
-    assert u.store[8] == b'\xff\xff\xff\xff' and build.read(u, 8) == 0xffffffff
-    build.word(u, 12, 0x1234567890)
-    assert u.store[12] == struct.pack('<I', 0x34567890) and build.read(u, 12) == 0x34567890
 
 
 def test_segments():
@@ -141,45 +122,6 @@ def test_fileoff():
 def test_fileoff_refuses_what_the_file_does_not_hold(address):
     with pytest.raises(ValueError, match=f'^Unmapped address {address:x}$'):
         build.fileoff(two_loads(), address)
-
-
-class Mapper:
-    def __init__(self):
-        self.calls = []
-
-    def mem_map(self, address, size):
-        self.calls.append(('map', address, size))
-
-    def mem_write(self, address, data):
-        self.calls.append(('write', address, bytes(data)))
-
-
-def loads():
-    """A PHDR first, a LOAD ending on a page, and a LOAD from mid-page with bss past its file bytes."""
-    data = program((6, 52, 0x400034, 0x400034, 0x80, 0x80, 4, 4), (1, 0, 0x400000, 0x400000, 0x200, 0x1000, 5, 0x1000),
-                   (1, 0x1123, 0x411123, 0x411123, 0x10, 0x2000, 6, 0x1000), NULL, size=0x1200)
-    data[0x1123:0x1133] = bytes(range(1, 17))
-    return bytes(data)
-
-
-def test_load_elf():
-    data, u = loads(), Mapper()
-    build.load_elf(u, data, 0x10000)
-    assert u.calls == [('map', 0x410000, 0x1000), ('write', 0x410000, data[:0x200]),
-                       ('map', 0x421000, 0x3000), ('write', 0x421123, bytes(range(1, 17)))]
-
-
-def test_load_elf_at_the_link_address_by_default():
-    data, u = loads(), Mapper()
-    build.load_elf(u, data)
-    assert [c[:2] for c in u.calls] == [('map', 0x400000), ('write', 0x400000), ('map', 0x411000), ('write', 0x411123)]
-
-
-def test_machine_at_the_link_address_by_default():
-    raw = image(0x2000)
-    raw[0x1000] = 0x5a
-    u = build.machine(bytes(raw), 0x800000)
-    assert sorted(u.mem_regions())[0] == (0x400000, 0x401fff, 7) and u.mem_read(0x400000, 1) == b'\x5a'
 
 
 def appendable(size=0x10001):
@@ -749,7 +691,7 @@ def test_jpeg_size_refuses(data, message):
 
 def test_source_sha256_hashes_every_input_by_path(tmp_path, monkeypatch):
     monkeypatch.setattr(build, 'ROOT', tmp_path)
-    files = ['assets/icons/a.png', 'assets/b.jpg', 'patch/c.c', 'tools/d.py', 'tools/e.c', 'tools/f.h', 'tools/g.S',
+    files = ['assets/icons/a.png', 'assets/b.jpg', 'patch/c.c', 'tools/d.py', 'tools/g.S',
              'docs/manual/build.py', 'docs/manual/guide.html']
     for name in files:
         (tmp_path/name).parent.mkdir(parents=True, exist_ok=True)
@@ -783,7 +725,7 @@ def test_compile_helper(tmp_path, monkeypatch):
                            *objs, tmp_path/'libc.so', tmp_path/'libz.so', '-o', tmp_path/'helper')
 
 
-def test_bt_silence_commands(monkeypatch):
+def test_assemble_commands(monkeypatch):
     commands = []
     def run(*args):
         commands.append(args)
@@ -798,7 +740,7 @@ def test_bt_silence_commands(monkeypatch):
     assert (obj.name, elf.name, binary.name) == ('s.o', 's.elf', 's.bin') and obj.parent == elf.parent == binary.parent
     assert cc == ('clang', '--target=mipsel-linux-gnu', '-march=mips32r2', '-mno-abicalls', '-fno-pic', '-DBUDGET=192000', '-c',
                   build.ROOT/'tools/bt_silence.S', '-o', obj)
-    assert ld == ('ld.lld', '-m', 'elf32ltsmip', '-Ttext=0x450400', '-e', 'timeout', obj, '-o', elf)
+    assert ld == ('ld.lld', '-m', 'elf32ltsmip', '-Ttext=0x450400', '-e', '0x450400', obj, '-o', elf)
     assert objcopy == ('llvm-objcopy', '-O', 'binary', '-j', '.text', elf, binary)
 
 
@@ -846,19 +788,8 @@ def test_patch_bluealsa_payload(silence):
     data, header = payload(out)
     assert header[3] == build.BT_DROP_PAYLOAD and header[6] == 7
     assert len(data) == build.BT_SILENCE - build.BT_DROP_PAYLOAD + 24 and data[-24:] == b'\x11' * 24
-    words = struct.unpack(f'<{(len(data) - 24) // 4}I', data[:-24])
-    assert words[:4] == (0x27bdffe0, 0xafbf001c, 0xafb00018, 0x00808025)
-    reset = 21
-    assert words[reset] == 0x8fa80054
-    at = reset + 1
-    for caller, offset in build.BT_PCM_CALLERS:
-        size = 6 if offset is not None else 9
-        assert words[at:at + 4] == (0x3c0a0000 | caller >> 16, 0x354a0000 | caller & 0xffff, 0x150a0000 | size + 1, 0)
-        if offset is not None:
-            assert words[at + 4] == 0x264b0000 | offset
-        assert words[at + 4 + size - 2:at + 4 + size] == (0x081051e4, 0)
-        at += 4 + size
-    assert words[at:at + 2] == (0x081051e4, 0) and set(words[at + 2:]) <= {0}
+    # tools/bt_drop.S, zero-padded to BT_SILENCE: the words patch_bluealsa listed before it
+    assert build.sha(data[:-24]) == 'daf76a14bcb97be5515fb0e93d947536428e6e6791eb4060fdff8c1f7a523d7d'
 
 
 def test_patch_bluealsa_hooks(silence):
@@ -920,24 +851,6 @@ def elf(*headers, size=0x3000):
     return data
 
 
-@pytest.mark.parametrize('load', [0, 0x100000])
-def test_machine(load):
-    from unicorn.mips_const import UC_MIPS_REG_A0
-    b = elf((1, 0x1000, 0x400123, 0x10, 0x2000), (4, 0x1000, 0x800000, 0x10, 0x10), (1, 0x2000, 0x410000, 8, 0x100))
-    b[0x1000:] = b'\xee' * (len(b) - 0x1000)  # bytes past a segment's filesz aren't its own
-    struct.pack_into('<2I', b, 0x2000, 0x2402002a, 0xac820000)  # addiu v0, zero, 42; sw v0, 0(a0)
-    u = build.machine(bytes(b), 0x2000000, load)
-    # whole pages around each LOAD's memsz; nothing for the PT_NOTE
-    assert sorted(r[:2] for r in u.mem_regions()) == [(load + 0x400000, load + 0x402fff), (load + 0x410000, load + 0x410fff),
-                                                      (0x2000000, 0x200ffff)]
-    assert all(r[2] == 7 for r in u.mem_regions())
-    assert u.mem_read(load + 0x400000, 0x3000) == bytes(0x123) + b'\xee' * 0x10 + bytes(0x3000 - 0x133)
-    assert u.mem_read(load + 0x410000, 0x1000)[8:] == bytes(0xff8)
-    u.reg_write(UC_MIPS_REG_A0, 0x2000000)
-    u.emu_start(load + 0x410000, load + 0x410008)
-    assert u.mem_read(0x2000000, 4) == b'\x2a\0\0\0'  # little-endian, into the scratch
-
-
 # The TagLib cover library's layout (test/m4b.py): the M4A test's beq at SITE to the MP4 extractor
 # (0x1040004a, to SITE + 4 + 0x4a * 4), the next format's test after its delay slot, gp and strcasecmp's GOT slot.
 SITE, MP4, NEXT, GP, STRCASECMP = 0x125ac, 0x126d8, 0x125b4, 0x327e0, 0x327e0 - 0x7e90
@@ -956,6 +869,9 @@ def tag_c(monkeypatch):
     return lib
 
 
+mips = runpy.run_path(str(pathlib.Path(__file__).resolve().parents[1]/'mips.py'))  # test/'s harness
+
+
 def dispatch(lib, ext, load):
     """Where lib's cover dispatch goes for ext, entered at SITE with strcasecmp's answer for m4a in v0,
     loaded at load; and what else strcasecmp was asked to compare ext with."""
@@ -964,10 +880,10 @@ def dispatch(lib, ext, load):
                                     UC_MIPS_REG_S0, UC_MIPS_REG_SP, UC_MIPS_REG_V0)
     scratch = 0x2000000
     gc.collect()  # a hooked Unicorn is in a cycle, and holds 1 GB of address space until it's collected
-    u = build.machine(lib, scratch, load)
+    u = mips['machine'](lib, scratch, load)
     strcasecmp, name, sp = scratch, scratch + 0x100, scratch + 0x8000
-    build.word(u, load + STRCASECMP, strcasecmp)  # as the loader fills the GOT
-    build.word(u, sp + 16, load + GP)  # o32: the caller's gp, saved
+    mips['word'](u, load + STRCASECMP, strcasecmp)  # as the loader fills the GOT
+    mips['word'](u, sp + 16, load + GP)  # o32: the caller's gp, saved
     u.mem_write(name, ext.encode() + b'\0')
     for reg, value in ((UC_MIPS_REG_S0, name), (UC_MIPS_REG_GP, load + GP), (UC_MIPS_REG_SP, sp),
                        (UC_MIPS_REG_V0, int(ext.lower() != 'm4a'))):
@@ -1010,8 +926,7 @@ def test_patch_m4b_cover_segment(tag_c):
     assert header == (1, offset, 0x30000, 0x30000, 48, 48, 5, 0x10000)  # read and execute: nothing in it changes
     assert offset % 0x10000 == 0 and offset >= len(tag_c) and len(out) == offset + 48
     assert out[len(tag_c):offset] == bytes(offset - len(tag_c)) and isinstance(out, bytes)
-    words = (0x104089b5, 0, 0x8f998170, 0x02002025, 0x2785d84c, 0x0320f809, 0, 0x104089ae, 0x8fbc0010, 0x10008963, 0)
-    assert out[offset:] == struct.pack('<11I', *words) + b'm4b\0'
+    assert build.sha(out[offset:]) == 'a9f3205b7b2a2d884d56614bb7f293cc25259b4b138eba82d27740d73d61d457'  # tools/m4b_cover.S
     # in the library itself, only the M4A branch and the PT_NULL slot change
     site = build.fileoff(tag_c, SITE)
     rest = bytearray(out[:len(tag_c)])
@@ -1050,9 +965,9 @@ def stock_h(dev=0, repo=build.REPO):
     return build.stock_header(context, RANGES, builtins(), dev, repo)
 
 
-@pytest.mark.parametrize('dev,beta,repo,version,tag,flag', [(0, 0, build.REPO, f'{build.VERSION} Pod', build.RELEASE_TAG, '0'),
-                                                            (0, 2, build.REPO, f'{build.VERSION} Pod beta 2', build.RELEASE_TAG, '0'),
-                                                            (7, 2, 'someone/q2-fork', f'{build.VERSION} Pod dev 7', '', '1')])
+@pytest.mark.parametrize('dev,beta,repo,version,tag,flag', [(0, 0, build.REPO, build.VERSION, build.RELEASE_TAG, '0'),
+                                                            (0, 2, build.REPO, f'{build.VERSION} beta 2', build.RELEASE_TAG, '0'),
+                                                            (7, 2, 'someone/q2-fork', f'{build.VERSION} dev 7', '', '1')])
 def test_stock_header_versions(dev, beta, repo, version, tag, flag, monkeypatch):
     monkeypatch.setattr(build, 'BETA', beta)
     header = stock_h(dev, repo)
@@ -1099,7 +1014,7 @@ const unsigned long h_sizes[] = {{sizeof h_zones / sizeof *h_zones, sizeof h_cit
     zones, cities, order, icons, lit, rounds, bold = array(ctypes.c_ulong, 'h_sizes', 7)
     assert array(ctypes.c_int, 'h_ints', 4) == [build.RING_STEP, len(themes), len(theme.theme_keys(themes)), 0]
     assert [s.decode() for s in array(ctypes.c_char_p, 'h_strings', 6)] == [
-        build.ROCKBOX_FLAG, 'V1.36', f'{build.VERSION} Pod', build.RELEASE_TAG, build.REPO, f'Q2Pod/{build.VERSION} (https://github.com/DiamondBond/q2-pod)']
+        build.ROCKBOX_FLAG, 'V1.36', build.VERSION, build.RELEASE_TAG, build.REPO, f'Q2Pod/{build.VERSION} (https://github.com/DiamondBond/q2-pod)']
     assert [s.decode() for s in array(ctypes.c_char_p, 'h_zones', zones)] == [zone for _, zone in build.TIMEZONES]
     # each row's city, its label after the offset
     cities = [s.decode() for s in array(ctypes.c_char_p, 'h_cities', cities)]

@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 
 import host
-from conftest import O, Deques, Externpic, Files, ask_cover, claim, high_halves, in_fork
+from conftest import O, Deques, Externpic, Files, ask_cover, claim, fnv1a, high_halves, in_fork
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 CX, TOP, ART, ONE, MISS = 187, 13, 160, 65536, 99
@@ -88,7 +88,8 @@ def api(fw):
            'coverflow__grid_cover': (i, C.c_char_p, C.c_char_p, i, i, i), 'coverflow_album_cover': (i, C.c_char_p, C.c_char_p, i, i),
            'coverflow_grid_cover': (i, C.c_char_p, C.c_char_p, i, i), 'coverflow_folder_cover': (i, C.c_char_p, C.c_char_p, i, i),
            'coverflow_player_cover': (i, C.c_char_p, C.c_char_p, i, i), 'coverflow__marked_empty': (i, C.c_char_p),
-           'now_cover': (C.c_ubyte, ptr, ptr), 'hash_bytes': (u, u, ptr, u), 'fnv': (u, u, C.c_char_p)}
+           'now_cover': (C.c_ubyte, ptr, ptr), 'hash_bytes': (u, u, ptr, u), 'fnv': (u, u, C.c_char_p),
+           'album_ident': (u, C.c_char_p, C.c_char_p, C.c_char_p)}
     fw.fn('cf_restyle', None)()  # the theme's Cover Flow values, as the page's open copies them
     return SimpleNamespace(**{k.replace('coverflow__', ''): fw.fn(k, v[0], *v[1:]) for k, v in fns.items()})
 
@@ -106,6 +107,7 @@ def exact(ctype, n):
     return (ctype * n).from_address(libc.calloc(n, C.sizeof(ctype)))
 
 
+# Not in conftest: it needs this file's libc, whose malloc returns a whole pointer.
 class Exact:
     def __init__(self, data):
         self.p = libc.malloc(len(data) or 1)
@@ -632,9 +634,9 @@ def rgba(w, h, colour):
     return (C.c_ubyte * len(data)).from_buffer_copy(data)
 
 
-def decoded(fw, unload=1):
+def decoded(fw, unload=1, bar=0):
     out = exact(C.c_uint, ART * ART)
-    ok = fw.fn('cf_decode', C.c_int, C.c_char_p, C.c_void_p, C.c_int)(b'x', out, unload)
+    ok = fw.fn('cf_decode', C.c_int, C.c_char_p, C.c_void_p, C.c_int, C.c_uint)(b'x', out, unload, bar)
     return ok, out
 
 
@@ -652,6 +654,8 @@ def test_decode_a_wide_cover_sits_between_black_bars(fw):
     _, out = decoded(fw)
     column = [out[y * ART + 80] for y in range(ART)]
     assert column == [0xff000000] * 40 + [0xff0000c8] * 80 + [0xff000000] * 40
+    _, out = decoded(fw, bar=0xf4)  # the landing's: Now Playing's paper
+    assert [out[y * ART + 80] for y in range(ART)] == [0xfff4f4f4] * 40 + [0xff0000c8] * 80 + [0xfff4f4f4] * 40
 
 
 def test_decode_a_tall_cover_too(fw):
@@ -1136,6 +1140,27 @@ def test_fnv_separates_its_fields(fw):
     g = api(fw)
     assert g.fnv(g.fnv(FNV, b'ab'), b'c') != g.fnv(g.fnv(FNV, b'a'), b'bc')
     assert g.fnv(FNV, None) == FNV * 16777619 % 2**32
+
+
+def test_fnv_is_fnv1a_and_its_separator_for_every_byte(fw):
+    g, rng = api(fw), random.Random(7)
+    for b in range(1, 256):
+        assert g.fnv(FNV, bytes([b])) == fnv1a(bytes([b])) * 16777619 % 2**32
+    for _ in range(500):
+        h, data = rng.getrandbits(32), bytes(rng.randrange(1, 256) for _ in range(rng.randrange(64)))
+        assert g.fnv(h, data) == fnv1a(data, h) * 16777619 % 2**32
+
+
+def test_album_ident_is_fnv1a_of_the_ascii_lowered_names_for_every_byte(fw):
+    # saved album ratings are keyed on it, so no byte, 0x80 to 0xff included, may hash differently
+    g, rng = api(fw), random.Random(8)
+    low = lambda s: bytes(b + 32 if 65 <= b <= 90 else b for b in s)
+    pairs = [(bytes([b]), bytes([256 - b])) for b in range(1, 256)]
+    name = lambda: bytes(rng.randrange(1, 256) for _ in range(rng.randrange(1, 32)))
+    pairs += [(name(), name()) for _ in range(300)]
+    for x, y in pairs:
+        h = fnv1a(low(y), fnv1a(low(x)) * 16777619 % 2**32) * 16777619 % 2**32
+        assert g.album_ident(x, y, b'/a/b.flac') == h | (h == 0), (x, y)
 
 
 def rows(*recs, order=None):
@@ -3268,12 +3293,6 @@ def test_no_service_row_or_name_draws_no_service(fw):
 
 # The pages' pieces, shared with photos.c, books.c and navigation.c
 
-@pytest.fixture(scope='module')
-def scratch(library):
-    """scratch_t's field offsets in this build: navigation.c's st."""
-    return host.offsets(library.parent/'navigation.o', 'scratch_t')
-
-
 def bar_title(fw, ui, scratch, width):
     """Classic's bar title, width px: a caption of n characters measures 10 n px."""
     bar = ui.make(0, 'hscroll_label', 0, 0, width, 30)
@@ -3551,3 +3570,187 @@ def test_a_panel_length_too_wide_for_its_reserve_keeps_it(fw):
 def test_a_panel_row_keeps_its_reserve_with_no_canvas(fw):
     _, resize, move, *_ = panel_row(fw, '4:01', canvas=0)
     assert not resize and not move
+
+
+# Classic's landing (coverflow_land.c): its state from the click to the hand-over, on the device path. test/coverflow.py
+# runs it from the panel's click on the host; here the tick and the paint over Now Playing's window, with the C's own
+# buffers (calloc'd: land_end frees them).
+
+from test_nav_loop import Clock, Flip, Land  # noqa: E402
+import test_nav_paint  # noqa: E402  its theme(): the settings the C reads
+
+LIBC = C.CDLL(None)
+LIBC.calloc.restype = C.c_void_p
+LIBC.calloc.argtypes = [C.c_size_t, C.c_size_t]
+W_W, W_H, CANVAS_LCD, LCD_FILL_COLOR, REC_PATH = O['W_W'], O['W_H'], O['CANVAS_LCD'], O['LCD_FILL_COLOR'], O['REC_PATH']
+FLIP_H, BACK_W, BACK_H = 294, 294, 285
+RET_REPEAT = 8
+
+
+def test_the_landing_turns_from_its_click_until_its_motion_ends(fw):
+    clock = Clock(fw, 1000)
+    land, flip = fw.var('coverflow_land__land', Land), fw.var('fl', Flip)
+    turning, landing, end = fw.fn('coverflow_turning', C.c_int), fw.fn('coverflow_landing', C.c_int), fw.fn('coverflow_land__land_end', None)
+    assert not turning() and not landing()
+    flip.dir = 1
+    assert turning() and not landing()
+    flip.dir = 0
+    land.front, land.ms = LIBC.calloc(4, 1), -1  # clicked, no paint yet
+    assert turning() and landing()
+    land.ms, land.t0, land.len = 0, 1000, 400
+    clock.now = 1399
+    assert turning()
+    clock.now = 1400
+    assert not turning() and landing()  # held
+    land.frame = LIBC.calloc(0x48, 1)
+    end()
+    assert not landing() and len(fw.calls('bitmap_destroy')) == 1
+    end()
+    assert len(fw.calls('bitmap_destroy')) == 1  # nothing left to free
+
+
+class Run:
+    """A landing past its press, over Now Playing's window win: the tick and the paint, the clock, the queue's song."""
+    def __init__(self, fw, mcl, path=b'/mnt/mmc/a.flac'):
+        test_nav_paint.theme(fw, test_nav_paint.CLASSIC)
+        self.fw, self.clock = fw, Clock(fw, 1000)
+        self.land = land = fw.var('coverflow_land__land', Land)
+        self.win, self.art, self.px = C.create_string_buffer(0x100), C.create_string_buffer(0x100), (C.c_uint * (375 * FLIP_H))()
+        struct.pack_into('<ii', self.art, W_W, 178, 218)
+        self.lcd, self.canvas = C.create_string_buffer(0x200), C.create_string_buffer(0x100)
+        struct.pack_into('<Q', self.canvas, CANVAS_LCD, C.addressof(self.lcd))
+        struct.pack_into('<I', self.lcd, LCD_FILL_COLOR, 0x12345678)
+        self.path, self.rec = C.create_string_buffer(path), C.create_string_buffer(0x100)
+        struct.pack_into('<Q', self.rec, REC_PATH, C.addressof(self.path))
+        land.from_[:] = [40, 9, BACK_W, BACK_H]
+        land.to[:] = [16, 22, 178]
+        land.len, land.travel, land.out_ms, land.np_at, land.np_ms = 400, 55, 110, 90, 100
+        land.win, land.art = C.addressof(self.win), C.addressof(self.art)
+        land.frame, land.back, land.front = LIBC.calloc(0x48, 1), LIBC.calloc(BACK_W * BACK_H, 4), LIBC.calloc(160 * 160, 4)
+        land.path, land.ms, land.at = fw.fn('coverflow_land__song_key', C.c_uint, C.c_void_p)(self.rec), -1, 1000
+        self.top, self.pressed, self.timer = land.win, 0, 7
+        fw.mock('window_manager_get_top_window', lambda *_: self.top)
+        fw.mock('window_manager_get_pointer_pressed', lambda *_: self.pressed)
+        fw.mock('timer_add', lambda *_: self.timer)
+        fw.var('fw_ctx_mcl_pdeqplaylist', C.c_void_p).value = 1  # the queue: one song, the landing's
+        fw.mock('fw_deque_size', lambda *_: 1)
+        fw.mock('fw_deque_at', lambda *_: C.addressof(self.rec))
+        fw.mock('bitmap_lock_buffer_for_write', lambda *_: C.addressof(self.px))
+        fw.mock('bitmap_lock_buffer_for_read', lambda *_: C.addressof(self.px))
+        fw.mock('bitmap_get_line_length', lambda *_: 375 * 4)
+        self.tick_fn = fw.fn('coverflow_land__land_tick', C.c_int, C.c_void_p)
+        self.paint_fn = fw.fn('land_paint', None, C.c_void_p, C.c_void_p)
+
+    def tick(self, at):
+        self.clock.now = at
+        return self.tick_fn(None)
+
+    def run_to(self, at):  # the motion's ticks on time, every 16 ms, to at: the last one's return
+        ret = None
+        while self.clock.now < at:
+            ret = self.tick(min(self.clock.now + 16, at))
+        return ret
+
+    def paint(self, at=None, w=None):
+        if at is not None:
+            self.clock.now = at
+        draws, fills = len(self.fw.calls('canvas_draw_image')), len(self.fw.calls('canvas_fill_rect'))
+        self.paint_fn(w or self.land.win, C.addressof(self.canvas))
+        return len(self.fw.calls('canvas_draw_image')) - draws, len(self.fw.calls('canvas_fill_rect')) - fills
+
+    def invalidated(self):
+        return self.fw.calls('widget_invalidate_force')[-1][1][:2]
+
+
+def test_the_landing_runs_from_its_first_paint_and_hands_over(fw, mcl):
+    run = Run(fw, mcl)
+    land, win = run.land, run.land.win
+    assert run.tick(1500) == RET_REPEAT  # no paint yet: it waits
+    assert run.paint(w=C.addressof(run.art)) == (0, 0)  # only its window's paint
+    assert run.paint(2000) == (1, 0) and land.t0 == 2000 and land.got == 1  # ms 0, opaque: the whole frame
+    assert run.tick(2016) == RET_REPEAT and run.invalidated() == (win, 0) and land.back
+    assert run.run_to(2120) == RET_REPEAT and run.invalidated() == (win, 0) and not land.back  # veiled; face up
+    assert run.paint() == (1, 1)  # the veil and the face: the art's box is land_art's, under the page dots
+    assert run.run_to(2216) == RET_REPEAT and run.paint() == (1, 0)
+    assert run.run_to(2300) == RET_REPEAT and run.invalidated()[1]  # only the face's boxes now
+    assert run.run_to(2400) == 0 and land.timer == 7 and land.got == 2  # landed: the hold's tick
+    assert run.paint() == (0, 0)  # nothing over Now Playing's children: the landed frame is land_art's
+    assert run.tick(2450) == RET_REPEAT  # Now Playing's art not this song's yet
+    assert run.tick(4400) == 0 and not land.front and run.invalidated() == (C.addressof(run.art), 0)
+
+
+def test_a_late_tick_slows_the_landing(fw, mcl):  # more than two ticks late: one tick on from the frame, t0 slid
+    run = Run(fw, mcl)
+    land = run.land
+    run.paint(2000)
+    assert run.tick(2050) == RET_REPEAT and (land.ms, land.t0) == (16, 2034)
+    assert run.tick(2066) == RET_REPEAT and (land.ms, land.t0) == (32, 2034)
+    assert run.tick(2098) == RET_REPEAT and (land.ms, land.t0) == (64, 2034)  # two ticks: its own step
+    assert run.tick(2198) == RET_REPEAT and (land.ms, land.t0) == (80, 2118)
+    assert run.run_to(2517) == RET_REPEAT and land.ms == 399
+    assert run.tick(2518) == 0 and land.got == 2 and land.t0 == 2118  # landed at the slid t0's 400
+    assert run.tick(4517) == RET_REPEAT and run.tick(4518) == 0 and not land.front  # the hold: its own 2000 from there
+
+
+@pytest.mark.parametrize('case', ['pressed', 'top', 'song', 'cue', 'none', 'dark', 'no_hold_timer'])
+def test_the_landing_ends_at_once(fw, mcl, case):
+    run = Run(fw, mcl)
+    if case == 'dark':
+        assert run.tick(2999) == RET_REPEAT and run.tick(3000) == 0 and not run.land.front  # no first paint within LAND_FIRST_PAINT_MS
+        return
+    run.paint(1000)
+    if case == 'no_hold_timer':
+        run.timer = 0
+        assert run.run_to(1400) == 0 and not run.land.front
+        return
+    run.pressed = case == 'pressed'
+    run.top = 0 if case == 'top' else run.top
+    if case == 'song':
+        run.path.value = b'/mnt/mmc/b.flac'
+    if case == 'cue':  # the next track of a CUE image: the same path
+        struct.pack_into('<i', run.rec, O['REC_CUE_START'], 240)
+    if case == 'none':
+        fw.mock('fw_deque_size', lambda *_: 0)
+    assert run.tick(1100) == 0 and not run.land.front and run.invalidated() == (run.land.win or C.addressof(run.win), 0)
+
+
+@pytest.mark.parametrize('over, acts', [(None, True), ('window', False), ('dialog', True)])
+def test_a_return_under_a_page_not_yet_taking_keys_is_dropped(fw, over, acts):
+    """keyup: a page opened over Cover Flow's (Now Playing from a pick) takes keys only from its open event, after the
+    pass's input. A Return before then still comes to Cover Flow's page, which drops it: it would turn the panel back
+    unseen. Under a dialog or a toast the Return is Cover Flow's, as on its own."""
+    ui, c, flip = Ui(fw), cf(fw), fw.var('fl', Flip)
+    c.page, flip.panel = ui.make(0, 'window'), ui.make(0, 'view')
+    ui.top = ui.make(0, over) if over else c.page
+    e = (C.c_int * 16)()
+    e[O['EVENT_KEY'] // 4] = O['KEY_RETURN']
+    assert fw.fn('coverflow__keyup', C.c_int, C.c_void_p, C.c_void_p)(None, e) == 11  # RET_STOP
+    assert bool(ui.timer(address(fw, 'coverflow__flip_close'))) == acts
+
+
+def test_the_landing_goes_with_its_window(fw, mcl):
+    run = Run(fw, mcl)
+    gone = fw.fn('coverflow_land__land_gone', C.c_int, C.c_void_p, C.c_void_p)
+    assert gone(C.addressof(run.art), None) == 0 and run.land.front  # another window's
+    assert gone(C.addressof(run.win), None) == 0 and not run.land.front
+
+
+def test_the_landing_s_art_is_drawn_in_the_art_s_own_paint(fw, mcl):
+    """land_art, from coverflow_slant: the art's box in the paper (Now Playing's own art not shown), once landed the
+    landed frame at the art's place; what Now Playing paints after the art (the page dots) stays on top."""
+    run = Run(fw, mcl)
+    art, land = run.fw.fn('land_art', None, C.c_void_p, C.c_void_p), run.land
+    fills = lambda: [c[1][1:5] for c in fw.calls('canvas_fill_rect')]
+    art(land.win, C.addressof(run.canvas))
+    assert not fills() and not fw.calls('canvas_draw_image')  # another widget's paint
+    run.paint(2000)
+    run.run_to(2200)
+    before = len(fw.calls('canvas_draw_image'))
+    art(land.art, C.addressof(run.canvas))
+    assert fills()[-1] == (0, 0, 178, 218) and len(fw.calls('canvas_draw_image')) == before  # in the motion: paper
+    run.run_to(2400)
+    rects = []  # its src and dst, read while they live (dst is on land_art's stack)
+    fw.mock('canvas_draw_image', lambda c, b, src, dst, *_: rects.append([list((C.c_int * 4).from_address(r)) for r in (src, dst)]))
+    art(land.art, C.addressof(run.canvas))
+    assert fills()[-1] == (0, 0, 178, 218) and land.got == 2
+    assert rects == [[list(land.box), [0, 0, 178, 218]]] and list(land.box) == [16, 22, 178, 218]

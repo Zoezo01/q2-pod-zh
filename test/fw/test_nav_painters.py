@@ -16,7 +16,7 @@ import typing
 import pytest
 
 import host
-from conftest import NAVIGATION_SOURCE, O, c_enum, Deques, Files, claim, high_halves, libc, ui_name
+from conftest import NAVIGATION_SOURCE, O, POD, c_enum, pod_value, Deques, Files, claim, high_halves, libc, ui_name, opus
 
 STRINGS = dict(re.findall(r'^#define (\w+) "([^"]*)"', (host.ROOT/'patch/offsets.inc').read_text(), re.M))
 LIST_INTO_WHITE, BT_GLYPH = STRINGS['LIST_INTO_WHITE'], STRINGS['BT_GLYPH']
@@ -50,7 +50,6 @@ def bright(c):
     return sum(c >> s & 255 for s in (0, 8, 16))
 
 
-POD = c_enum('POD_CHARGE')  # pod_rows' rows
 SETTING = c_enum('SETTING_ACCENT')  # Display's rows, st.setting_label's slots
 
 
@@ -338,17 +337,6 @@ class Settings:
         value = self.values.get(C.string_at(key), C.string_at(default))
         if value or C.string_at(key) in self.values:
             C.memmove(out, value + b'\0', len(value) + 1)
-
-
-@pytest.fixture(scope='module')
-def scratch(library):
-    return host.offsets(library.parent/'navigation.o', 'scratch_t')
-
-
-@pytest.fixture
-def st(fw, scratch):
-    base = C.addressof(fw.var('st', C.c_char))
-    return lambda name, ctype=C.c_int: ctype.from_address(base + scratch[name])
 
 
 def strings(fw):
@@ -1668,7 +1656,7 @@ def test_power_adds_standby_charge_and_in_vehicle_rows_after_stocks(fw):
     standby, charge, *_, history = (ui.text(label_of(r)) for r in ours)
     assert standby.endswith('Off') and f'{O["CHARGE_STOP"]}%' in charge  # Standby off; where Charge stops
     assert history == 'Battery History' and 'list_into' in [c.props.get('image') for c in ours[-1].walk()]  # opens a page
-    assert [switch(r) for r in ours] == [None, 'switch_off', 'switch_off', 'switch_off', 'switch_off', None]
+    assert [switch(r) for r in ours] == [None, 'switch_off', None, 'switch_off', 'switch_off', None]  # USB DAC Charging: a value
     for r in ours:  # stock's settings row: its button, the title clear of the icon, both the row's height
         button, label = r.children[0], label_of(r)
         icon = next(c for c in r.walk() if c.kind == 'image')
@@ -1700,7 +1688,7 @@ def test_system_update_adds_remind_daily_under_network_update_on_by_default(fw):
 
 def test_remind_daily_off_in_config_reads_off(fw):
     fw.mock('toolsReadConfig', lambda p, s, key, out, d, *_: C.memmove(out, b'0\0', 2) if C.string_at(key) == b'REMINDDAILY' else 0)
-    assert fw.fn('ringnav_remind_daily', C.c_int)() == 0
+    assert pod_value(fw, 'POD_REMIND_DAILY') == 0
 
 
 def test_standby_limit_cycles_its_four_choices_and_saves_each(fw):
@@ -1737,40 +1725,51 @@ def dac_power(fw, **charging):
     q.config()
     fw.fn('ringnav_powermanager', C.c_int, C.c_void_p, C.c_void_p)(win.addr, None)
     dac = view.children[2]
-    assert ui.text(label_of(dac)) == 'USB DAC Charging'
+    assert ui.text(label_of(dac)).startswith('USB DAC Charging: ')
     return ui, win, dac, q
 
 
-def test_usb_dac_charging_is_the_dac_screens_choice_and_drives_the_pin_at_once(fw):
-    ui, win, dac, q = dac_power(fw, pref=1, cable=1)  # Audio and DAC, a cable in
-    assert switch(dac) == 'switch_on' and q.gpio == 0
+def test_usb_dac_charging_cycles_off_on_never_and_drives_the_pin_at_once(fw):
+    ui, win, dac, q = dac_power(fw, cable=1, never=0)  # Audio and DAC, a wall adapter: no host, no DAC screen
+    assert ui.text(label_of(dac)) == 'USB DAC Charging: Off' and q.gpio == 0
     click(ui, dac)
-    assert q.flag.value == 0 and q.saved == [('PLAYSET', 'USBDAC_CHARGE', 0)] and switch(dac) == 'switch_off'
+    assert ui.text(label_of(dac)) == 'USB DAC Charging: On' and q.flag.value == 1 and q.gpio == 0
+    assert q.saved == [('PLAYSET', 'USBDAC_CHARGE', 1), ('Q2POD', 'DACCHARGENEVER', 0)]
+    click(ui, dac)
+    assert ui.text(label_of(dac)) == 'USB DAC Charging: Never' and q.flag.value == 0
+    assert q.saved[2:] == [('PLAYSET', 'USBDAC_CHARGE', 0), ('Q2POD', 'DACCHARGENEVER', 1)]
     assert q.gpio == 1  # inhibited now, not at the next poll
     click(ui, dac)
-    assert q.flag.value == 1 and q.saved[-1] == ('PLAYSET', 'USBDAC_CHARGE', 1) and switch(dac) == 'switch_on'
+    assert ui.text(label_of(dac)) == 'USB DAC Charging: Off' and q.saved[4:] == [
+        ('PLAYSET', 'USBDAC_CHARGE', 0), ('Q2POD', 'DACCHARGENEVER', 0)]
     assert q.gpio == 0
 
 
-def test_usb_dac_charging_on_charges_after_the_dac_screens_off_and_off_leaves_usb_storage_charging(fw):
-    ui, win, dac, q = dac_power(fw, pref=0, cable=1)
-    q.charge(0)  # the DAC screen's switch turned Off: stock's switch_charge_enable(0)
-    click(ui, dac)
+def test_off_chosen_with_a_host_linked_stops_charging_as_the_dac_screen_does(fw):
+    ui, win, dac, q = dac_power(fw, pref=1, cable=1, never=0)
+    fw.mock('navigator_window_is_exist', lambda name, *_: C.string_at(name) == b'usbmode_page')
     assert q.gpio == 0
-    q.usbmode.value = 0  # USB Storage: Off is for Audio and DAC only
-    click(ui, dac)
-    assert q.flag.value == 0 and q.gpio == 0
+    click(ui, dac)  # Never
+    click(ui, dac)  # Off
+    assert ui.text(label_of(dac)) == 'USB DAC Charging: Off' and q.gpio == 1
+    click(ui, dac)  # On
+    assert q.gpio == 0
+
+
+def test_never_leaves_usb_storage_charging(fw):
+    ui, win, dac, q = dac_power(fw, cable=1, never=1, mode=0)
+    assert ui.text(label_of(dac)) == 'USB DAC Charging: Never' and q.gpio == 0
 
 
 def test_the_dac_screens_switch_shows_in_the_row_when_power_is_back(fw):
     ui, win, dac, q = dac_power(fw, pref=1)
     q.flag.value = 0  # the DAC screen's switch, over this page
     ui.fire(win, O['EVT_WINDOW_FOREGROUND'])
-    assert switch(dac) == 'switch_off'
+    assert ui.text(label_of(dac)) == 'USB DAC Charging: Never'  # the fixture's saved Never
 
 
 def test_charge_limits_hold_wins_over_usb_dac_charging_on(fw, st):
-    ui, win, dac, q = dac_power(fw, pref=0, cable=1)
+    ui, win, dac, q = dac_power(fw, pref=0, cable=1, never=0)  # Off, then clicked On
     st('charge_held').value = 1
     q.charge(0)  # charge_poll's hold
     click(ui, dac)
@@ -1848,7 +1847,7 @@ def test_device_volume_off_gives_stock_its_gain_back_at_once(fw, way, sent):
     fw.mock('mclGetOutputWay', lambda *_: way)
     fw.fn('ringnav_btrows', C.c_int, C.c_void_p, C.c_void_p)(win.addr, None)
     link = row(ui, view, 'Control Device Volume')
-    bt_link = fw.fn('navigation__bt_link', C.c_int)
+    bt_link = lambda: pod_value(fw, 'POD_BT_LINK')
     assert switch(link) == 'switch_on' and bt_link() == 1
     click(ui, link)
     assert switch(link) == 'switch_off' and settings.written == [('BTVOLLINK', 0)] and bt_link() == 0
@@ -2054,9 +2053,9 @@ def test_key_tone_shows_click_with_headphones_while_on(fw, st, scratch, was):
 @pytest.mark.parametrize('on', [1, 0])
 def test_eq_per_output_turned_off_forgets_the_outputs_eq(fw, on):
     config = Settings(fw, EQOUTPUT=str(on).encode())
-    assert fw.fn('ringnav_eq_output', C.c_int)() == on
+    assert pod_value(fw, 'POD_EQ_OUTPUT') == on
     fw.fn('ringnav_eq_output_toggle', None)()
-    assert fw.fn('ringnav_eq_output', C.c_int)() == (not on) and config.written == [('EQOUTPUT', int(not on))]
+    assert pod_value(fw, 'POD_EQ_OUTPUT') == (not on) and config.written == [('EQOUTPUT', int(not on))]
     assert bool(fw.calls('fw_unlink')) == bool(on)  # off: what plays stays, the owner's file goes
 
 
@@ -2067,7 +2066,7 @@ def set_text_row(fw, text):
     ui = Ui(fw)
     button = ui.add('button', ui.add('list_item', ui.window('display_page')), (20, 0, 335, 70))
     label = ui.add('hscroll_label', button, (72, 0, 260, 70))
-    fw.fn('navigation__row_label', None, C.c_void_p, C.c_char_p)(label.addr, text.encode())
+    fw.fn('row_label', None, C.c_void_p, C.c_char_p)(label.addr, text.encode())
     return ui, button, label, button.child('_setting_value')
 
 
@@ -2093,7 +2092,7 @@ def test_a_rows_label_elsewhere_is_its_text(fw):
     theme(fw, MINIMAL)
     ui = Ui(fw)
     label = ui.add('hscroll_label', ui.add('button', ui.window('display_page')), (72, 0, 260, 70))
-    fw.fn('navigation__row_label', None, C.c_void_p, C.c_char_p)(label.addr, b'Theme: Minimal')
+    fw.fn('row_label', None, C.c_void_p, C.c_char_p)(label.addr, b'Theme: Minimal')
     assert ui.text(label) == 'Theme: Minimal' and not label.parent.children[1:]
 
 
@@ -2214,12 +2213,36 @@ def test_a_release_before_the_hold_is_stocks_tap(fw, st):
     assert not fw.calls('navigator_to') and not fw.calls('dialog_quit')
 
 
-def test_an_open_eq_page_is_already_the_goal(fw, st):
+def eq_under(quick, *over):
+    """The EQ page open with the windows named over it, then the status bar, then Quick Settings on top."""
+    ui = quick.ui
+    eq = ui.window('equalizer_page', top=False)
+    pages = [ui.window(name, top=False) for name in over]
+    ui.add('system_bar', ui.wm, name='system_bar')
+    ui.wm.children.remove(quick.win)
+    ui.wm.children.append(quick.win)
+    return eq, pages
+
+
+def test_an_open_eq_page_on_top_is_already_the_goal(fw, st):
     quick = Quick(fw, st)
-    fw.mock('navigator_window_is_exist', lambda name, *_: C.string_at(name) == b'equalizer_page')
+    eq_under(quick)
     quick.press('img_playset')
     quick.hold()
-    assert fw.calls('dialog_quit') and not fw.calls('navigator_to')
+    assert fw.calls('dialog_quit') and not fw.calls('navigator_to') and not fw.calls('window_manager_close_window_force')
+
+
+def test_an_eq_page_under_another_closes_and_the_new_one_opens_over_that_page(fw, st):
+    """#397: Quick Settings' hold opened the EQ, Return's hold opened Now Playing over it, and the next hold opened
+    nothing, as the EQ page was open. Its one state is let go and its window closed, then the new one opens over
+    Now Playing, so its Return goes back there."""
+    quick = Quick(fw, st)
+    eq, (np_,) = eq_under(quick, 'playing_page')
+    quick.press('img_playset')
+    quick.hold()
+    assert [a[1] for _, a in fw.calls('window_manager_close_window_force')] == [eq.addr]
+    assert [C.string_at(c[1][0]) for c in fw.calls('navigator_to')] == [b'playset/equalizer_page']
+    assert np_ in quick.ui.wm.children
 
 
 def test_a_tap_on_the_lock_steps_through_its_choices(fw, st):
@@ -2527,19 +2550,6 @@ def comments(*items, vendor=b'libopus'):
     return struct.pack('<I', len(vendor)) + vendor + struct.pack('<I', len(items)) + b''.join(struct.pack('<I', len(c)) + c for c in items)
 
 
-def opus(tags):
-    """An Ogg Opus file: OpusHead, then tags as packet 1 on pages of its own (no CRC: xiph.c reads none)."""
-    pages, seq = [], 0
-    for packet in (b'OpusHead' + bytes([1, 2]) + struct.pack('<HIhB', 312, 48000, 0, 0), tags):
-        lacing = [255] * (len(packet) // 255) + [len(packet) % 255]
-        for at in range(0, len(lacing), 255):
-            part = lacing[at:at + 255]
-            pages.append(b'OggS\0' + bytes([at > 0]) + bytes(8) + struct.pack('<III', 1, seq, 0) + bytes([len(part)]) +
-                         bytes(part) + packet[at * 255:at * 255 + sum(part)])
-            seq += 1
-    return b''.join(pages)
-
-
 BIG = b'P=' + b'v' * (4 << 20)
 
 
@@ -2694,11 +2704,18 @@ def test_the_lyrics_end_on_a_whole_row(fw, st):
     assert [c[1][:4] for c in fw.calls('scroll_view_scroll_to')] == [(lrc.addr, 0, 60, 300)]
 
 
+@pytest.fixture
+def ly(fw, library):
+    """np_lyrics.c's own state, ly, by field."""
+    base, at = C.addressof(fw.var('np_lyrics__nl', C.c_char)), host.offsets(library.parent/'np_lyrics.o', 'nl')
+    return lambda name, ctype=C.c_int: ctype.from_address(base + at[name])
+
+
 @pytest.mark.parametrize('held, spun, pressed', [(1, 0, 0), (0, 2, 0), (0, 0, 1)])
-def test_lyrics_the_wheel_or_a_finger_moved_stay(fw, st, held, spun, pressed):
+def test_lyrics_the_wheel_or_a_finger_moved_stay(fw, st, ly, held, spun, pressed):
     ui = Ui(fw)
     lrc = lyrics(fw, st, ui, np=True)
-    st('lyric_held').value, st('lyric_spun').value = held, spun
+    st('lyric_held').value, ly('lyric_spun').value = held, spun
     ui.pressed = pressed
     assert follow(fw, lrc, 60) == 0 and not fw.calls('scroll_view_scroll_to')
 
@@ -2714,7 +2731,7 @@ def glided(fw, lrc, now, passes=60, ms=16):
     """The offsets the glide's steps (lyric_step, each UI pass, ms apart on the clock now) move the
     lyrics through, the view taking each one as stock's setter does."""
     fw.mock('scroll_view_set_offset', lambda w, x, y, *_: struct.pack_into('<i', lrc.block, O['SCROLL_Y'], i32(y)))
-    step = fw.fn('navigation__lyric_step', None, C.c_void_p)
+    step = fw.fn('np_lyrics__lyric_step', None, C.c_void_p)
     seen = []
     for _ in range(passes):
         now[0] += ms
@@ -2790,7 +2807,7 @@ def test_rows_for_another_song_start_at_the_top(fw, st):
     assert offsets() == [(lrc.addr, 0, 0)]
     # held no more: the page's follow (off the page, a jump) takes them to the playing line, none yet
     lrc.int_at(O['SCROLL_Y']).value = 50
-    fw.fn('navigation__lyric_follow', None, C.c_void_p, C.c_int, C.c_int, C.c_int)(lrc.addr, 0, 0, 0)
+    fw.fn('np_lyrics__lyric_follow', None, C.c_void_p, C.c_int, C.c_int, C.c_int)(lrc.addr, 0, 0, 0)
     assert offsets() == [(lrc.addr, 0, 0)] * 2
     rows_rebuilt(fw, ui.top)
     assert offsets()[2:] == [(lrc.addr, 0, 50)]
@@ -2848,14 +2865,16 @@ class DarkBar(Bar):
         fw.mock('timer_add', lambda fn, ctx, ms, *_: self.timers.append(fn) or 5)
         self.sync()  # stock's showface: finds the bar's widgets
 
-    def to(self, name):
-        self.ui.window(name)
+    def to(self, name, title=None):
+        win = self.ui.window(name)
+        if title:  # stock's navbar label, which the bar's title reads
+            self.ui.set_text(self.ui.add('label', self.ui.add('view', win, name='view_navbar'), name='label_name'), title)
         self.fw.fn('navigation__bar_sync', None, C.c_void_p)(self.bar.addr)
 
 
 def test_a_dark_page_takes_the_bars_title_across_in_white_and_hides_the_clock(fw, st):
     bar = DarkBar(fw, st)
-    bar.to('usbmode_page')
+    bar.to('backlight_page')
     title = bar.w['label_title']
     assert title.box[:3] == (0, 3, 375) and title.props['style:normal:text_align_h'] == 'center'
     assert title.props['_final_n'] and not bar.w['label_clock'].visible
@@ -2870,14 +2889,15 @@ def test_the_dark_bars_latin_title_drops_a_cjk_pages_bold_mark(fw, st):
     bar.ui.set_text(title, '专辑')
     fw.fn('theme_font', C.c_int, C.c_void_p, C.c_int, C.c_int)(title.addr, 2, -2)  # ROLE_BAR, FONT_ROW: the CJK page's
     assert title.props['_q2_bold_fallback'] == 1
-    bar.to('usbmode_page')
+    fw.mock('widget_get_text_utf8', lambda w, out, size, *_: C.memmove(out, (t := bar.ui.text(bar.ui.nodes[w]).encode() + b'\0'), len(t)) and 0)
+    bar.to('backlight_page', 'Backlight')
     fw.fn('bar_title_sync', None, C.c_void_p)(bar.ui.top.addr)
-    assert bar.ui.text(title) == 'Q2 Pod' and title.props['_q2_bold_fallback'] == 0
+    assert bar.ui.text(title) == 'Backlight' and title.props['_q2_bold_fallback'] == 0
 
 
 def test_the_dark_bars_marks_take_its_places_and_stay(fw, st):
     bar = DarkBar(fw, st)
-    bar.to('usbmode_page')
+    bar.to('backlight_page')
     w = bar.w
     assert all(w[n].box[0] + w[n].box[2] <= 0 for n in ('img_bt', 'img_wifi'))  # off screen, where a relayout finds them
     (sx, sy, sw, sh), (bx, by, bw, bh) = state, slot = w['img_state'].box, w['view_battery'].box
@@ -2890,7 +2910,7 @@ def test_the_dark_bars_marks_take_its_places_and_stay(fw, st):
 
 def test_leaving_a_dark_page_puts_the_title_back_as_it_was(fw, st):
     bar = DarkBar(fw, st)
-    bar.to('usbmode_page')
+    bar.to('backlight_page')
     bar.to('about_page')
     title = bar.w['label_title']
     assert title.box[:3] == (60, 3, 200) and bar.w['label_clock'].visible
@@ -2902,7 +2922,7 @@ def test_leaving_a_dark_page_puts_the_title_back_as_it_was(fw, st):
 def test_the_bar_stays_light_off_classic(fw, st):
     bar = DarkBar(fw, st)
     st('theme').value = MINIMAL
-    bar.to('usbmode_page')
+    bar.to('backlight_page')
     assert bar.w['label_clock'].visible and bar.w['img_bt'].box[0] != -400
 
 

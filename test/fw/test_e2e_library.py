@@ -31,7 +31,7 @@ NAVIGATION = NAVIGATION_SOURCE
 
 
 def enum(prefix):
-    """One of navigation.c's enums from 1, by name: the queue menu's row kinds (QM_) and actions (QA_)."""
+    """One of the UI's enums from 1, by name: queue_menu.c's row kinds (QM_) and actions (QA_)."""
     body = host.tools_build.need(re.search(r'enum \{\s*(' + prefix + r'\w+ = 1,.*?)\};', NAVIGATION, re.S), prefix)[1]
     return {name: i + 1 for i, name in enumerate(re.findall(prefix + r'(\w+)', body))}
 
@@ -237,7 +237,7 @@ class Library:
     row a CUE track, and toolsQueryDbTable, which runs a query and calls its row callback with each row's text, as
     sqlite3_exec does."""
     COLUMNS = ('id integer primary key, fileurl, filename, title, album, songer, albumsonger, genre, composer, track, '
-               'cd_num, year, cue_start, cue_end, time_create')
+               'cd_num, year, time, time_end, time_create')
 
     def __init__(self, tags):
         self.tags = tags
@@ -252,7 +252,7 @@ class Library:
             t = self.tags.get(path, {})
             for start, end, title in t.get('cue', [(0, 0, t.get('title', ''))]):
                 self.db.execute('insert into songtable (fileurl, filename, title, album, songer, albumsonger, genre, '
-                                'composer, track, cd_num, year, cue_start, cue_end, time_create) values '
+                                'composer, track, cd_num, year, time, time_end, time_create) values '
                                 '(?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
                                 (path, path.rsplit('/', 1)[1], title, t.get('album', ''), t.get('artist', ''),
                                  t.get('album_artist', ''), '', '', t.get('track', 0), t.get('disc', 0), t.get('year', ''),
@@ -275,8 +275,8 @@ class Q2:
     A stock entry point the build hooks goes to its hook (HOOKED); the hook's trampoline, stock's own body, is the
     model's. What the user would notice is kept: the files the player was told to open (opened), the seconds it was
     told to seek to (seeks), the toasts, the pages opened and each widget's text."""
-    def __init__(self, fw, mcl, scratch, memory, files, tags=None, config=None, library=None):
-        self.fw, self.mcl, self.scratch, self.memory = fw, mcl, scratch, memory
+    def __init__(self, fw, mcl, scratch, qm_fields, memory, files, tags=None, config=None, library=None):
+        self.fw, self.mcl, self.scratch, self.qm_fields, self.memory = fw, mcl, scratch, qm_fields, memory
         self.disk = Disk(fw, files)
         self.library = library or Library(tags or {})
         self.config = dict(config or {})
@@ -349,6 +349,10 @@ class Q2:
         """navigation.c's state (scratch_t st), by field."""
         return ctype.from_address(C.addressof(self.fw.var('st', C.c_char)) + self.scratch[name])
 
+    def qm(self, name, ctype=C.c_int):
+        """queue_menu.c's state (qm), by field."""
+        return ctype.from_address(C.addressof(self.fw.var('queue_menu__qm', C.c_char)) + self.qm_fields[name])
+
     # Pages: AWTK's widgets as zeroed blocks that keep their parent, children, text and handlers.
     def widget(self, parent, kind='widget'):
         self.blocks.append(C.create_string_buffer(0x400))
@@ -403,13 +407,13 @@ class Q2:
     # The queue menu: a Play/Pause hold on a row, as ringnav_keylong takes it, then a pick in its menu, which runs
     # once the dialog has closed (qm_run) and finds its row again before it acts.
     def menu(self, kind, cls, at, rows, r, action):
-        st = self.st
-        st('qm_kind').value, st('qm_cls', C.c_uint).value, st('qm_action').value = kind, cls, action
+        st, qm = self.st, self.qm
+        qm('qm_kind').value, qm('qm_cls', C.c_uint).value, qm('qm_action').value = kind, cls, action
         st('qm_idx', C.c_uint).value, st('qm_rows', C.c_uint).value = at, rows
-        st('qm_hash', C.c_uint).value = self.fw.fn('navigation__rec_hash', C.c_uint, C.c_void_p)(r)
-        st('qm_browse', C.c_uint).value = self.fw.fn('navigation__browse_hash', C.c_uint)()
+        qm('qm_hash', C.c_uint).value = self.fw.fn('rec_hash', C.c_uint, C.c_void_p)(r)
+        qm('qm_browse', C.c_uint).value = self.fw.fn('queue_menu__browse_hash', C.c_uint)()
         st('qm_dialog', C.c_void_p).value = self.widget(0, 'dialog')
-        self.fw.fn('navigation__qm_run', C.c_int, C.c_void_p)(None)
+        self.fw.fn('queue_menu__qm_run', C.c_int, C.c_void_p)(None)
 
     def hold(self, title, action):
         """A hold on the list's song row showing title."""
@@ -420,8 +424,8 @@ class Q2:
     def hold_playing(self, action):
         """A hold on Now Playing: the track playing."""
         q = self.deques[self.queue]
-        self.st('qm_queue', C.c_void_p).value = self.queue
-        self.st('qm_queue_hash', C.c_uint).value = self.fw.fn('queue_hash', C.c_uint, C.c_void_p)(self.queue)
+        self.qm('qm_queue', C.c_void_p).value = self.queue
+        self.qm('qm_queue_hash', C.c_uint).value = self.fw.fn('queue_hash', C.c_uint, C.c_void_p)(self.queue)
         self.menu(QM['PLAYING'], SONGS, self.mcl.pos, len(q), q[self.mcl.pos], action)
 
     # Calls, as stock's code makes them.
@@ -466,7 +470,7 @@ class Q2:
         r = self.memory.record(
             id_=int(row['id']), name=row['filename'], path=row['fileurl'], title=row['title'], album=row['album'],
             artist=row['songer'], album_artist=row['albumsonger'], track=int(row['track'] or 0),
-            disc=int(row['cd_num'] or 0), cue=(int(row['cue_start'] or 0), int(row['cue_end'] or 0)))
+            disc=int(row['cd_num'] or 0), cue=(int(row['time'] or 0), int(row['time_end'] or 0)))
         self.deques[self.directory()].append(r)
         return 0
 
@@ -796,18 +800,12 @@ class Q2:
             self.ui_pass()
 
 
-@pytest.fixture(scope='module')
-def scratch(library):
-    """scratch_t's field offsets as this build lays it out: its pointers move them."""
-    return host.offsets(library.parent/'navigation.o', 'scratch_t')
-
-
 @pytest.fixture
-def q2(fw, mcl, scratch):
+def q2(fw, mcl, scratch, qm_fields):
     """A Q2 for the test's firmware (or a restart's), its records in the test's Memory."""
     memory = Memory()
     yield lambda files, tags=None, config=None, firmware=None, library=None: Q2(
-        firmware or fw, mcl, scratch, memory, files, tags, config, library)
+        firmware or fw, mcl, scratch, qm_fields, memory, files, tags, config, library)
     memory.close()
 
 
@@ -861,6 +859,49 @@ def test_a_marked_folder_stays_out_of_the_songs_and_albums_until_its_marker_goes
     albums = q.albums()
     assert albums[-1] is None and sorted(albums[:-1]) == [('Demos', 'Alpha'), ('First', 'Alpha'), ('First', 'Beta'),
                                                          ('Kept', 'Gamma'), ('Second', 'Beta')]
+
+
+def test_cover_flow_s_most_played_sums_each_album_as_the_whole_library_did(q2):
+    """Cover Flow's Most Played order (library_lists.c album_plays) sums each album's listens over the counted songs'
+    rows alone, fetched by id, as it summed them over every record getAllMusic(3) gave through the query hook: the two
+    Firsts apart by album artist, a song whose album artist is NULL by its own, and a counted audiobook, podcast and
+    song of a database.ignore'd folder left out, one of a database.unignore'd folder kept."""
+    files, tags = music_card()
+    dark = '/mnt/mmc/Music/Beta/Second/03 Dark.flac'
+    tags[dark] = dict(title='Dark', album='Second', artist='Beta', track=3, seconds=SONG)
+    files[dark] = b'\0' * 64
+    q = q2(files, tags)
+    q.update()
+    q.library.db.execute("update songtable set albumsonger=null where fileurl=?", (dark,))
+    plays = {'Alpha/First/01 Dawn.flac': 3, 'Beta/First/01 Other.flac': 4, 'Beta/Second/01 Rise.flac': 1,
+             'Beta/Second/03 Dark.flac': 2, 'Junk/Demos/Demo.flac': 5, 'Junk/Keep/Gem.flac': 6, 'Gone.flac': 9}
+    table = [(key('/mnt/mmc/Music/' + path), n) for path, n in plays.items()]
+    table += [(key('/mnt/mmc/Audiobooks/Novel/Novel.m4b'), 7), (key('/mnt/mmc/Podcasts/Show/Episode 1.mp3'), 8)]
+    slots = b''.join(struct.pack('<2I', *t) for t in table)
+    files['/mnt/data/ringnav-plays'] = slots.ljust(8 * O['PLAYS_SLOTS'], b'\0')
+    albums = [('First', 'Alpha'), ('First', 'Beta'), ('Kept', 'Gamma'), ('Second', 'Beta'), ('Second', ''),
+              ('Demos', 'Alpha'), ('Novel', ''), ('Show', '')]  # the last three's songs are left out
+
+    def album_of(r):
+        album = text_of(r, 'album'), text_of(r, 'album_artist')
+        return albums.index(album) if album in albums else -1
+    of = C.CFUNCTYPE(C.c_int, C.c_void_p)(album_of)
+    album_plays = q.fw.fn('album_plays', None, C.c_void_p, C.c_void_p)
+    sql, query = [], q.library.query
+    q.library.query = lambda text, row, ctx: sql.append(text) or query(text, row, ctx)
+    sums = (C.c_uint * len(albums))()
+    album_plays(C.cast(of, C.c_void_p), sums)
+    assert list(sums) == [3, 4, 6, 1, 2, 0, 0, 0]
+    assert not q.fw.calls('getAllMusic') and sql[0] == 'select id,fileurl,time from songtable'
+    assert len(sql) == 2 and sql[1].startswith('select * from songtable not indexed where id in (')
+    count = dict(table)  # main: every record getAllMusic(3) gives, scoped to music, through the query hook
+    staged = q.fw.fn('staged', C.c_void_p, C.c_void_p, C.c_void_p, C.POINTER(C.c_int))
+    whole = q.deques[staged(C.cast(q.fw.lib.songs_unsorted, C.c_void_p), 1, C.byref(C.c_int()))]
+    want = [0] * len(albums)
+    for r in whole:
+        if count.get(key(text_of(r, 'path'))):
+            want[of(r)] += count[key(text_of(r, 'path'))]
+    assert len(whole) == 8 and list(sums) == want
 
 
 # A list played: an album to its end, gapless, a folder's speed, and the queue menu's Play Next and Add to Queue.

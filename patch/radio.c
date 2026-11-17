@@ -17,8 +17,7 @@
 #define RADIO_SOCK "/tmp/q2radio.sock"
 #define RADIO_API "https://all.api.radio-browser.info" /* the directory's round-robin name */
 #define RADIO_QUERY "?order=votes&reverse=true&limit=100&hidebroken=true"
-#define RADIO_CA "/etc/scrobble-ca.pem" /* scrobble.c's; ISRG Root X1 signs the directory */
-#define RADIO_MAX 200                   /* stations, countries or genres a list holds */
+#define RADIO_MAX 200 /* stations, countries or genres a list holds */
 #define FETCH_MAX (256 << 10)
 #define RADIO_POLL_MS 500
 #define RADIO_QUIT_MS 1500 /* q2video's own exit, before it is killed */
@@ -81,6 +80,7 @@ int playlist(char *buf, unsigned *name, unsigned *url, int max) {
     }
     qsort(keys, (unsigned)nk, sizeof *keys, key_order);
     for (char *s = buf; s < end; s += strlen(s) + 1) {
+        /* NOLINTNEXTLINE(clang-analyzer-security.ArrayBound): s < end, and *end is buf's NUL */
         while (*s == ' ' || *s == '\t') ++s;
         char *v = strstr(s, "=");
         if (!v || strncasecmp(s, "Title", 5) || v <= s + 5 || !v[1]) continue;
@@ -153,7 +153,8 @@ static struct {
     int pid, sock, active, at, wait;
     unsigned polled, volume; /* volume: g_volume + 1 as q2video last had it */
     list_t list;             /* the list played from, side buttons step through it */
-    char state[12], title[256], codec[16], bitrate[16], error[64]; /* error: q2video's ALSA reason */
+    char state[12], title[256], codec[16], bitrate[16],
+        error[64];            /* error: q2video's ALSA reason */
     unsigned long long since; /* q2video's at=: when the sound started, 0 before */
     unsigned serial;          /* bumped by each start and favourites change: Now Playing's heart */
 } rd __attribute__((section(".scratch")));
@@ -295,10 +296,7 @@ static int m3u_write(const char *path, const list_t *l, int skip, const list_t *
     return ok && !rename(tmp, path);
 }
 
-
-static void send_key(const char *c, unsigned n) {
-    dgram_send(&rd.sock, RADIO_SOCK, c, n);
-}
+static void send_key(const char *c, unsigned n) { dgram_send(&rd.sock, RADIO_SOCK, c, n); }
 
 /* q2video quit, and killed if it does not go within RADIO_QUIT_MS. The media keys stay radio's. */
 static void radio_halt(void) {
@@ -310,7 +308,8 @@ static void radio_halt(void) {
     while (!(done = waitpid(rd.pid, &status, 1)) && time_now_ms() - start < RADIO_QUIT_MS)
         sleep_ms(20);
     if (!done) {
-        char kill[24]; /* this helper only: librespot's sink is a q2video too (demo imports no kill) */
+        char kill[24]; /* this helper only: librespot's sink is a q2video too (demo imports no kill)
+                        */
         tk_snprintf(kill, sizeof kill, "kill -9 %d", rd.pid);
         system(kill);
         waitpid(rd.pid, &status, 0);
@@ -479,9 +478,7 @@ static int np_leave(const void *unused) {
     return 0;
 }
 
-static int np_keyup(void *ctx, void *event) {
-    return return_key(event, &np.leave, np_leave);
-}
+static int np_keyup(void *ctx, void *event) { return return_key(event, &np.leave, np_leave); }
 
 static int np_closed(void *ctx, void *event) {
     stop_timer(&np.timer);
@@ -509,18 +506,18 @@ static void np_open(void) {
     void *art = image_create(page, SPOT_ART_X, SPOT_ART_Y, SPOT_ART_PX, SPOT_ART_PX);
     image_set_draw_type(art, IMAGE_DRAW_SCALE_DOWN);
     image_base_set_image(art, "stream_radio");
-    np.station =
-        label(page, SPOT_TEXT_X, SPOT_ART_Y + 41, SPOT_TEXT_W, 28, "s_scrlabel_white20l", NP_TITLE_PX, 0xffffffffu);
-    np.artist = label(page, SPOT_TEXT_X, SPOT_ART_Y + 75, SPOT_TEXT_W, 22, "s_scrlabel_white20l", NP_META_PX,
-                      0xff000000u | NP_ARTIST_RGB);
-    np.song = label(page, SPOT_TEXT_X, SPOT_ART_Y + 103, SPOT_TEXT_W, 22, "s_scrlabel_white20l", NP_META_PX,
-              0xff000000u | NP_ALBUM_RGB);
-    np.info = label(page, SPOT_TIME_X, SPOT_TIMES_Y, 375 - 2 * SPOT_TIME_X - 80, 16, "s_scrlabel_white20l", 14, SPOT_GREY);
+    np.station = label(page, SPOT_TEXT_X, SPOT_ART_Y + 41, SPOT_TEXT_W, 28, "s_scrlabel_white20l",
+                       NP_TITLE_PX, 0xffffffffu);
+    np.artist = label(page, SPOT_TEXT_X, SPOT_ART_Y + 75, SPOT_TEXT_W, 22, "s_scrlabel_white20l",
+                      NP_META_PX, 0xff000000u | NP_ARTIST_RGB);
+    np.song = label(page, SPOT_TEXT_X, SPOT_ART_Y + 103, SPOT_TEXT_W, 22, "s_scrlabel_white20l",
+                    NP_META_PX, 0xff000000u | NP_ALBUM_RGB);
+    np.info = label(page, SPOT_TIME_X, SPOT_TIMES_Y, 375 - 2 * SPOT_TIME_X - 80, 16,
+                    "s_scrlabel_white20l", 14, SPOT_GREY);
     np.elapsed = label(page, 375 - SPOT_TIME_X - 80, SPOT_TIMES_Y, 80, 16, "s_scrlabel_white20r",
                        14, SPOT_GREY);
     /* local Now Playing's heart (tools/ipod.py img_fav) */
-    np.heart =
-        image_create(page, 303, SPOT_ART_Y + SPOT_ART_PX - 50 + NP_ICON_PAD, 50, 50);
+    np.heart = image_create(page, 303, SPOT_ART_Y + SPOT_ART_PX - 50 + NP_ICON_PAD, 50, 50);
     image_set_draw_type(np.heart, IMAGE_DRAW_CENTER);
     widget_set_prop_str(np.heart, "clickable", "true");
     widget_on(np.heart, EVT_CLICK, np_heart, 0);
@@ -539,9 +536,9 @@ static void *fetch_worker(void *unused);
 static int menu_click(void *ctx, void *event), pick_click(void *ctx, void *event),
     station_click(void *ctx, void *event);
 
-/* The search box's OK, or its keyboard closed with text: the directory searched by name, Return then
- * going back to the menu or the country or genre list. An empty OK closes the keyboard with no other
- * event, so it is taken here too. */
+/* The search box's OK, or its keyboard closed with text: the directory searched by name, Return
+ * then going back to the menu or the country or genre list. An empty OK closes the keyboard with no
+ * other event, so it is taken here too. */
 static int searched(void *ctx, void *event) {
     char q[sizeof ui.caption];
     if (widget_get_text_utf8(ui.edit, q, sizeof q) || !q[0]) {
@@ -567,7 +564,8 @@ static int search_left(void *ctx, void *event) {
 void radio_search(void) {
     if (!ui.page || ui.note || ui.edit) return;
     if (ui.view) ui.sel[ui.level] = widget_get_prop_int(ui.view, "_ringnav_index", 0);
-    widget_destroy_children(ui.page), ui.view = 0; /* the box alone: the keyboard leaves no room for the rows */
+    widget_destroy_children(ui.page),
+        ui.view = 0; /* the box alone: the keyboard leaves no room for the rows */
     ui.edit = edit_create(ui.page, "text", 2, 26);
     t9_box(ui.page, ui.edit, "搜索电台");
     widget_on(ui.edit, EVT_VALUE_CHANGED, searched, 0);
@@ -662,21 +660,13 @@ static int fetch_progress(void *u, long long a, long long b, long long c, long l
 }
 
 static void *fetch_worker(void *unused) {
-    void *c = curl_easy_init();
+    void *c = tls_easy(fx.url, 10, 30);
     if (c) {
-        curl_easy_setopt(c, 10002, fx.url);         /* CURLOPT_URL */
         curl_easy_setopt(c, 20011, fetch_got);      /* WRITEFUNCTION */
         curl_easy_setopt(c, 20219, fetch_progress); /* XFERINFOFUNCTION */
         curl_easy_setopt(c, 43, 0L);                /* NOPROGRESS off, for it */
-        curl_easy_setopt(c, 99, 1L);                /* NOSIGNAL: off the UI thread */
         curl_easy_setopt(c, 52, 1L);                /* FOLLOWLOCATION */
-        curl_easy_setopt(c, 78, 10L);               /* CONNECTTIMEOUT */
-        curl_easy_setopt(c, 13, 30L);               /* TIMEOUT */
         curl_easy_setopt(c, 10018, "Q2Pod");        /* USERAGENT, as the directory asks */
-        curl_easy_setopt(c, 10065, RADIO_CA);       /* CAINFO */
-        curl_easy_setopt(c, 64, 1L);                /* SSL_VERIFYPEER */
-        curl_easy_setopt(c, 81, 2L);                /* SSL_VERIFYHOST */
-        curl_easy_setopt(c, 20108, tls_untimed);    /* SSL_CTX_FUNCTION: no date checks */
         if (!curl_easy_perform(c)) curl_easy_getinfo(c, 0x200002, &fx.code); /* RESPONSE_CODE */
         curl_easy_cleanup(c);
     }
@@ -798,7 +788,8 @@ const char *radio_hold(void *top) {
 
 static int leave(const void *unused) {
     ui.leave = 0;
-    if (ui.edit) /* the search box emptied, so no search; its blur shuts the keyboard, then the box */
+    if (ui.edit) /* the search box emptied, so no search; its blur shuts the keyboard, then the box
+                  */
         widget_set_text_utf8(ui.edit, ""), widget_set_focused(ui.edit, 0);
     else if (ui.note)
         fetch_cancel(), show(ui.level);
@@ -810,9 +801,7 @@ static int leave(const void *unused) {
 }
 
 /* Return: the search box shut, else a list goes up a level, the menu back to Streaming. */
-static int keyup(void *ctx, void *event) {
-    return return_key(event, &ui.leave, leave);
-}
+static int keyup(void *ctx, void *event) { return return_key(event, &ui.leave, leave); }
 
 static int closed(void *ctx, void *event) {
     fetch_cancel();

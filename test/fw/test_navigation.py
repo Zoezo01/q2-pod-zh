@@ -8,11 +8,10 @@ import struct
 import pytest
 
 import host
-from conftest import text, Game, c_enum
+from conftest import POD, text, Game, opus, pod_value, stock_stub
 from conftest import FNV_PRIME, O, Deques, Files, claim, fnv1a, in_fork  # noqa: F401
 
 STOCK_RED = O['STOCK_RED']
-POD = c_enum('POD_CHARGE')  # pod_rows' rows, by name
 PAPER, INK = O['LIGHT_PAPER'], O['LIGHT_INK']
 REC_NAME, REC_PATH, REC_CUE_START = O['REC_NAME'], O['REC_PATH'], O['REC_CUE_START']
 KEY_PLAY, KEY_RETURN, KEY_CENTER = O['KEY_PLAY'], O['KEY_RETURN'], O['KEY_CENTER']
@@ -59,38 +58,6 @@ class Config:
 def strings(fw):
     """Stock's AWTK string helpers, which the C leans on."""
     fw.mock('tk_str_start_with', lambda s, prefix, *_: C.string_at(s).startswith(C.string_at(prefix)))
-
-
-@pytest.fixture(scope='module')
-def scratch(library):
-    """scratch_t's field offsets as this build lays it out: its pointers move them."""
-    return host.offsets(library.parent/'navigation.o', 'scratch_t')
-
-
-@pytest.fixture
-def st(fw, scratch):
-    base = C.addressof(fw.var('st', C.c_char))
-    return lambda name, ctype=C.c_int: ctype.from_address(base + scratch[name])
-
-
-@pytest.fixture(scope='module')
-def power_fields(library):
-    """system.c's own state, pw: its field offsets as this build lays it out."""
-    return host.offsets(library.parent/'system.o', 'pw')
-
-
-@pytest.fixture
-def power(fw, power_fields):
-    base = C.addressof(fw.var('system__pw', C.c_char))
-    return lambda name, ctype=C.c_int: ctype.from_address(base + power_fields[name])
-
-
-def stock_stub(address, result, log):
-    """x86-64 at a fixed stock address: its first three arguments logged, result returned. Only ever in a fork."""
-    claim(address)
-    code = (b'\x48\xb8' + struct.pack('<Q', C.addressof(log)) + bytes.fromhex('488938 48897008 48895010') +
-            b'\xb8' + struct.pack('<I', result) + b'\xc3')
-    C.memmove(address, code, len(code))
 
 
 def rgba(c, a=0xff):
@@ -159,7 +126,7 @@ def test_time_zones_list_west_to_east_ties_in_their_order(fw):
         return out
     fw.mock('fw_localtime_r', local)
     rows = (C.c_ubyte * len(zones))()
-    fw.fn('navigation__tz_now', None, C.c_void_p)(rows)
+    fw.fn('clock__tz_now', None, C.c_void_p)(rows)
     assert list(rows) == sorted(order, key=lambda z: offset[names[z]])
     assert now['zone'] == names[fw.var('g_time_zone', C.c_ubyte).value]  # the saved zone is set again
 
@@ -390,20 +357,19 @@ def test_pod_rows_choices(fw, i, choices):
 
 def test_pod_settings_defaults(fw):
     Config(fw)
-    assert fw.fn('ringnav_artist_view', C.c_int)() == 1  # Artist albums defaults to Coverflow
-    assert [fw.fn(name, C.c_int)() for name in ('ringnav_year_old', 'ringnav_artist_az',
-                                                'ringnav_lock_clock', 'ringnav_bt_resume',
-                                                'ringnav_big_library', 'ringnav_playlist_coverflow')] == [0] * 6  # Fast Navigation off
+    assert pod_value(fw, 'POD_ARTIST_CF') == 1  # Artist albums defaults to Coverflow
+    assert [pod_value(fw, name) for name in ('POD_YEAR_OLD', 'POD_ARTIST_AZ', 'POD_LOCKCLOCK', 'POD_RESUME',
+                                             'POD_BIG_LIB', 'POD_PL_CF')] == [0] * 6  # Fast Navigation off
 
 
 def test_pod_settings_read_their_keys_once(fw):
     Config(fw, YEAROLD=b'1', ARTISTCF=b'2', PLAYLISTCF=b'1', ARTISTAZ=b'9', VOLGUARD=b'1', BIGLIBRARY=b'1')
-    assert fw.fn('ringnav_artist_view', C.c_int)() == 2 and fw.fn('ringnav_big_library', C.c_int)() == 1
-    assert fw.fn('ringnav_playlist_coverflow', C.c_int)() == 1
-    assert fw.fn('ringnav_year_old', C.c_int)() == 1 and fw.fn('ringnav_artist_az', C.c_int)() == 0
+    assert pod_value(fw, 'POD_ARTIST_CF') == 2 and pod_value(fw, 'POD_BIG_LIB') == 1
+    assert pod_value(fw, 'POD_PL_CF') == 1
+    assert pod_value(fw, 'POD_YEAR_OLD') == 1 and pod_value(fw, 'POD_ARTIST_AZ') == 0
     assert fw.var('wheel_guard', C.c_int).value == 1
     count = len(fw.calls('toolsReadConfig'))
-    fw.fn('ringnav_year_old', C.c_int)()
+    pod_value(fw, 'POD_YEAR_OLD')
     assert len(fw.calls('toolsReadConfig')) == count
 
 
@@ -469,20 +435,20 @@ def test_rockbox_is_a_file_on_the_card(fw, fn, path, result, mode, available):
 @pytest.mark.parametrize('flag, mode, choice', [(0, 1, 0), (1, 3, 1), (1, 2, 2), (1, 1, 3)])
 def test_lock_choice_names_stocks_modes(fw, flag, mode, choice):
     fw.var('g_keylock_flag', C.c_ubyte).value, fw.var('g_keylock_mode', C.c_ubyte).value = flag, mode
-    assert fw.fn('navigation__lock_choice', C.c_int)() == choice and not fw.calls('write_int_config')
+    assert fw.fn('lock_choice', C.c_int)() == choice and not fw.calls('write_int_config')
 
 
 @pytest.mark.parametrize('mode', [0, 4, 200])
 def test_an_unknown_lock_mode_locks_everything(fw, mode):
     fw.var('g_keylock_flag', C.c_ubyte).value, fw.var('g_keylock_mode', C.c_ubyte).value = 1, mode
-    assert fw.fn('navigation__lock_choice', C.c_int)() == 1
+    assert fw.fn('lock_choice', C.c_int)() == 1
     assert fw.var('g_keylock_mode', C.c_ubyte).value == 3 and len(fw.calls('write_int_config')) == 1
 
 
 @pytest.mark.parametrize('choice', range(4))
 def test_a_lock_choice_comes_back(fw, choice):
-    fw.fn('navigation__lock_set', None, C.c_int)(choice)
-    assert fw.fn('navigation__lock_choice', C.c_int)() == choice
+    fw.fn('lock_set', None, C.c_int)(choice)
+    assert fw.fn('lock_choice', C.c_int)() == choice
     assert [c[1][0] for c in fw.calls('write_int_config')] == [fw.var('g_keylock_mode', C.c_ubyte).value, int(choice > 0)]
 
 
@@ -968,12 +934,12 @@ def test_the_scan_any_folder_name(fw, heap):
 def test_chapter_file(fw, path, cue, m4b):
     """An M4B, or a spoken file that is not a CUE track (its sheet lists its chapters)."""
     strings(fw)
-    assert fw.fn('navigation__chapter_file', C.c_int, C.c_void_p)(record([], path, cue=cue)) == m4b
+    assert fw.fn('chapter_file', C.c_int, C.c_void_p)(record([], path, cue=cue)) == m4b
 
 
 def test_chapter_file_any_path(fw, heap):
     strings(fw)
-    check = fw.fn('navigation__chapter_file', C.c_int, C.c_void_p)
+    check = fw.fn('chapter_file', C.c_int, C.c_void_p)
     for data in hostile(random.Random(0xc4), [b'/a/b.m4b', b'/a/b.M4B', b'x.m4b.mp3', b'.m4b'], 1500):
         path = heap.string(data)
         r = C.create_string_buffer(0x60)
@@ -1183,19 +1149,6 @@ def test_flac_any_file(fw, heap):
     assert not files.open  # every file closed
 
 
-def opus(tags):
-    """An Ogg Opus file: OpusHead, then tags as packet 1 on pages of its own (no CRC: xiph.c reads none)."""
-    pages, seq = [], 0
-    for packet in (b'OpusHead' + bytes([1, 2]) + struct.pack('<HIhB', 312, 48000, 0, 0), tags):
-        lacing = [255] * (len(packet) // 255) + [len(packet) % 255]
-        for at in range(0, len(lacing), 255):
-            part = lacing[at:at + 255]
-            pages.append(b'OggS\0' + bytes([at > 0]) + bytes(8) + struct.pack('<III', 1, seq, 0) + bytes([len(part)]) +
-                         bytes(part) + packet[at * 255:at * 255 + sum(part)])
-            seq += 1
-    return b''.join(pages)
-
-
 @pytest.mark.parametrize('size, big', [(1000, 0), ((4 << 20) + 1, 1)])
 def test_ogg_tags_only_over_the_cap(fw, size, big):
     """xiph.c as the Q2 builds it, through the card's file calls: only a header over OGG_TAGS_MAX is
@@ -1283,7 +1236,7 @@ def test_rec_hash_of_an_empty_record(fw):
     h = fnv1a(b'')
     for _ in range(5):
         h = h * FNV_PRIME & 0xffffffff
-    assert fw.fn('navigation__rec_hash', C.c_uint, C.c_void_p)(empty) == fnv1a(b'\0' * 8, h)
+    assert fw.fn('rec_hash', C.c_uint, C.c_void_p)(empty) == fnv1a(b'\0' * 8, h)
 
 
 def test_rec_index_finds_the_first_of_a_path_and_cue_start(fw, heap):
@@ -1359,7 +1312,7 @@ class Tree:
 
 def folder_tracks(fw, tree, path):
     add = tree.deques.new()
-    fw.fn('navigation__folder_tracks', None, C.c_char_p, C.c_void_p, C.c_int)(path, add, 0)
+    fw.fn('queue_menu__folder_tracks', None, C.c_char_p, C.c_void_p, C.c_int)(path, add, 0)
     return [C.string_at(struct.unpack_from('<Q', C.string_at(r, 0x60), REC_PATH)[0]) for r in tree.deques[add]]
 
 
@@ -1383,24 +1336,24 @@ def test_a_subfolder_past_1023_bytes_is_passed_over(fw):
     assert folder_tracks(fw, tree, b'/m') == [b'/m/' + fits + b'/a']
 
 
-def qm_folder_tracks(fw, st, tree, folder, name):
+def qm_folder_tracks(fw, qm, tree, folder, name):
     """qm_tracks for a Folder row named name while g_folder_path is folder: the paths it adds."""
-    st('qm_kind').value = 4  # QM_FOLDER
+    qm('qm_kind').value = 4  # QM_FOLDER
     C.memmove(C.addressof(fw.var('fw_ctx_g_folder_path', C.c_char)), folder + b'\0', len(folder) + 1)
     add = tree.deques.new()
-    fw.fn('navigation__qm_tracks', None, C.c_void_p, C.c_void_p)(record(tree.keep, name=name, kind=4), add)
+    fw.fn('queue_menu__qm_tracks', None, C.c_void_p, C.c_void_p)(record(tree.keep, name=name, kind=4), add)
     return [C.string_at(struct.unpack_from('<Q', C.string_at(r, 0x60), REC_PATH)[0]) for r in tree.deques[add]]
 
 
-def test_a_queued_folder_whose_path_is_cut_adds_nothing(fw, st):
+def test_a_queued_folder_whose_path_is_cut_adds_nothing(fw, qm):
     """qm_tracks joins g_folder_path and the row's name into 1024 bytes. A cut path is a prefix, here the
     folder beside it, whose songs were queued for the wrong row: so, as folder_tracks passes such a subfolder
     over, the row adds nothing."""
     folder = b'/m/' + b'f' * 1000
     fits, over = b'n' * 19, b'n' * 20  # 1003 + 1 + 19 bytes fit; one more is cut to the folder beside it
     tree = Tree(fw, {folder + b'/' + fits: [(b'a', 8)], folder + b'/' + over: [(b'b', 8)]})
-    assert qm_folder_tracks(fw, st, tree, folder, fits) == [folder + b'/' + fits + b'/a']
-    assert qm_folder_tracks(fw, st, tree, folder, over) == []
+    assert qm_folder_tracks(fw, qm, tree, folder, fits) == [folder + b'/' + fits + b'/a']
+    assert qm_folder_tracks(fw, qm, tree, folder, over) == []
 
 
 def song_folder(fw, heap, path, stat=0, mode=0o040755):
@@ -1410,7 +1363,7 @@ def song_folder(fw, heap, path, stat=0, mode=0o040755):
         return stat
     fw.mock('fw___xstat', xstat)
     out = heap.string(b'', 1024)
-    got = fw.fn('navigation__song_folder', C.c_int, C.c_void_p, C.c_void_p)(record(keep, path), out)
+    got = fw.fn('song_folder', C.c_int, C.c_void_p, C.c_void_p)(record(keep, path), out)
     return got, C.string_at(out), out
 
 
@@ -1794,7 +1747,7 @@ class Clock:
         fw.mock('widget_set_text_utf8', lambda label, chars, *_: self.labels.append(C.string_at(chars)) and 0)
         fw.mock('timer_add', lambda fn, ctx, ms, *_: self.timers.append(ms) or 9)
         fw.var('fw_ctx_system_bar', C.c_uint).value = 0x30
-        self.show = fw.fn('navigation__clock_show', None)
+        self.show = fw.fn('clock_show', None)
 
 
 @pytest.mark.parametrize('hour, minute, twelve, full', [
@@ -1914,9 +1867,9 @@ def test_root_click_saves_the_next_folder(fw):
 QM_SONG, QM_FOLDER, QM_COVERFLOW = 1, 4, 5
 
 
-def qm_apply(fw, st, deques, add, next_, kind, cls=0xf00a):
-    st('qm_kind').value, st('qm_cls', C.c_uint).value = kind, cls
-    return fw.fn('navigation__qm_apply', C.c_int, C.c_void_p, C.c_int)(deques.new(add), next_)
+def qm_apply(fw, qm, deques, add, next_, kind, cls=0xf00a):
+    qm('qm_kind').value, qm('qm_cls', C.c_uint).value = kind, cls
+    return fw.fn('queue_menu__qm_apply', C.c_int, C.c_void_p, C.c_int)(deques.new(add), next_)
 
 
 @pytest.fixture
@@ -1930,42 +1883,42 @@ def queue(fw, mcl):
 
 
 @pytest.mark.parametrize('kind, cls', [(QM_SONG, 0xf00a), (QM_FOLDER, 1)])
-def test_an_empty_queue_loads_without_playing(fw, st, queue, kind, cls):
+def test_an_empty_queue_loads_without_playing(fw, qm, queue, kind, cls):
     deques, _ = queue
-    assert qm_apply(fw, st, deques, [0x10], 1, kind) == 1
+    assert qm_apply(fw, qm, deques, [0x10], 1, kind) == 1
     load = fw.calls('mclLoadPlayList')
     assert len(load) == 1 and load[0][1][1:3] == (0, cls) and not fw.calls('mclStartPlayer')
 
 
-def test_add_grows_a_local_queue(fw, st, queue):
+def test_add_grows_a_local_queue(fw, qm, queue):
     deques, handle = queue
     deques[handle].extend([1, 2])
-    assert qm_apply(fw, st, deques, [3], 0, QM_SONG) == 1 and deques[handle] == [1, 2, 3]
+    assert qm_apply(fw, qm, deques, [3], 0, QM_SONG) == 1 and deques[handle] == [1, 2, 3]
 
 
 @pytest.mark.parametrize('kind', [0, 0x2000, 0x3001])
-def test_a_stream_keeps_its_queue(fw, st, queue, mcl, kind):
+def test_a_stream_keeps_its_queue(fw, qm, queue, mcl, kind):
     deques, handle = queue
     deques[handle].extend([1, 2])
     mcl.type = kind
-    assert qm_apply(fw, st, deques, [3], 0, QM_SONG) == 0 and deques[handle] == [1, 2]
+    assert qm_apply(fw, qm, deques, [3], 0, QM_SONG) == 0 and deques[handle] == [1, 2]
 
 
-def test_airplay_keeps_its_queue(fw, st, queue):
+def test_airplay_keeps_its_queue(fw, qm, queue):
     deques, handle = queue
     deques[handle].append(1)
     fw.mock('airplayGetFlag', lambda *_: 2)
-    assert qm_apply(fw, st, deques, [3], 0, QM_SONG) == 0
+    assert qm_apply(fw, qm, deques, [3], 0, QM_SONG) == 0
 
 
-def test_nothing_to_add_is_no_action(fw, st, queue):
+def test_nothing_to_add_is_no_action(fw, qm, queue):
     deques, handle = queue
-    assert qm_apply(fw, st, deques, [], 0, QM_SONG) == 0 and not fw.calls('mclLoadPlayList')
+    assert qm_apply(fw, qm, deques, [], 0, QM_SONG) == 0 and not fw.calls('mclLoadPlayList')
 
 
-def test_no_queue_is_no_action(fw, st, mcl):
+def test_no_queue_is_no_action(fw, qm, mcl):
     deques = Deques(fw)
-    assert qm_apply(fw, st, deques, [1], 0, QM_SONG) == 0
+    assert qm_apply(fw, qm, deques, [1], 0, QM_SONG) == 0
 
 
 def test_shuffle_play_takes_a_random_start_and_the_saved_mode(fw, queue, mcl):
@@ -2065,14 +2018,57 @@ def test_a_full_ratings_table_refuses(fw):
     assert keep(0, 0xfffffff8, 2) == 0 and keep(0, 8, 2) == 1
 
 
+def every_rated_one(songs, favs, table):
+    """The Ratings lists' hearts as rate_all once found them, each song against every rated key: My Fav's (| 7) first,
+    then the table's kept words in slot order, a match on the top 29 bits; a favourite is 5 and ends the walk, else
+    the last kept match's hearts stand."""
+    keys, out = [k | 7 for k in favs] + [w for w in table if w], []
+    for key in songs:
+        h = 0
+        for j, k in enumerate(keys):
+            if h >= 5:
+                break
+            if (k ^ key) < 8:
+                h = 5 if j < len(favs) else k & 7
+        out.append(h)
+    return out
+
+
+@pytest.mark.parametrize('seed', [1, 2, 3])
+def test_each_song_s_hearts_are_those_every_rated_key_gave_it(fw, seed):
+    """rate_all's sorted searches give each song the hearts the walk of every rated key gave it, over a table rate_keep
+    wrote: CUE tracks of one image, a song listed twice, My Fav rows out of the library and one twice, favourites with
+    kept hearts, slots cleared and filled again, words at both ends of the table."""
+    rnd, keep, deques, files = random.Random(seed), [], Deques(fw), Files(fw)
+    rate = fw.fn('rate_keep', C.c_int, C.c_int, C.c_uint, C.c_int)
+    paths = [b'/m/%d.flac' % i for i in range(300)]
+    rows = [(p, 0) for p in paths] + [(b'/m/image.flac', s) for s in (0, 240, 480)]
+    rows.append(rows[7])
+    keys = [listen_key(p, s) for p, s in rows]
+    favs = rnd.sample(paths, 40) + [b'/x/%d.flac' % i for i in range(20)]
+    favs.append(favs[0])
+    for key in rnd.sample(keys, 150) + [listen_key(b'/y/%d.flac' % i) for i in range(60)] + [0xfffffff9, 1]:
+        assert rate(0, key, rnd.randint(1, 4)) == 1
+    for n in [0] * 40 + [1, 2, 3, 4] * 10:  # cleared, then rated again, into the first free slots
+        assert rate(0, rnd.choice(keys), n) == 1
+    fw.mock('getAllFav', lambda *_: deques[directory(fw)].extend(record(keep, p) for p in favs) or len(favs))
+    hearts = (C.c_ubyte * (len(rows) + 1))()
+    fw.fn('ratings__rate_all', None, C.c_void_p, C.c_void_p)(deques.new(record(keep, p, cue=s) for p, s in rows), hearts)
+    table = struct.unpack('<%dI' % O['RATE_SLOTS'], files.files['/mnt/data/ringnav-ratings'])
+    want = every_rated_one(keys, [listen_key(p) for p in favs], table)
+    assert list(hearts[:len(rows)]) == want and set(want) == {0, 1, 2, 3, 4, 5}
+
+
 # Era's Shuffle.
-def test_era_shuffle_is_the_decades_songs_in_library_order(fw, heap):
+def test_era_shuffle_is_its_query_s_records_alone(fw, heap):
+    """Shuffle's songs are the records stock's select * fill makes of its one query's rows, in the query's order; the
+    library itself is never read."""
     keep, deques = [], Deques(fw)
     state = fw.var('library_lists__era', Era)
     state.v, state.m, state.cap = C.cast(heap.calloc(2, C.sizeof(EraRow)), C.POINTER(EraRow)), 1, 1
     state.v[0].year = 1975
-    songs = [record(keep, id_=i) for i in (5, 9, 1, 7, 3)]
-    fw.mock('getAllMusic', lambda *_: deques[directory(fw)].extend(songs) or len(songs))
+    songs = {i: record(keep, id_=i) for i in (5, 9, 1, 7, 3)}
+    fw.mock('db_song_row_callback', lambda ctx, n, v, c, *_: deques[directory(fw)].append(songs[int(C.cast(v, C.POINTER(C.c_char_p))[0])]) or 0)
     def run(db, sql, callback, *_):
         if callback:
             call = C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_int, C.POINTER(C.c_char_p), C.c_void_p)(callback)
@@ -2080,8 +2076,8 @@ def test_era_shuffle_is_the_decades_songs_in_library_order(fw, heap):
                 call(None, 1, row(key), None)
     fw.mock('sqlite3_exec', run)
     out = fw.fn('library_lists__era_shuffle_songs', C.c_long)()
-    assert [struct.unpack_from('<i', C.string_at(r, 8), O['REC_ID'])[0] for r in deques[out]] == [9, 1, 7]
-    assert not fw.var('library_lists__era_keys', EraKeys).v
+    assert [struct.unpack_from('<i', C.string_at(r, 8), O['REC_ID'])[0] for r in deques[out]] == [7, 1, 9]
+    assert not fw.calls('getAllMusic')
 
 
 def test_era_shuffle_of_nothing(fw):
@@ -2091,7 +2087,7 @@ def test_era_shuffle_of_nothing(fw):
 
 
 # Era.
-class EraKeys(C.Structure):
+class Ids(C.Structure):
     _fields_ = [('v', C.POINTER(C.c_uint)), ('n', C.c_uint), ('cap', C.c_uint)]
 
 
@@ -2198,18 +2194,12 @@ def test_era_closed(fw, era):
     assert not era.albums and era.cap == 0 and not era.v
 
 
-def test_era_keys_grow_and_keep_their_values(fw):
-    keys = fw.var('library_lists__era_keys', EraKeys)
-    add = fw.fn('library_lists__era_key_row', *ROW)
+def test_ids_grow_and_keep_their_values(fw):
+    keys = fw.var('library_lists__ids', Ids)
+    add = fw.fn('library_lists__ids_add', C.c_int, C.c_uint)
     for i in range(3000):
-        assert add(None, 1, row(b'%d' % i), None) == 0
+        assert add(i) == 0
     assert keys.n == 3000 and keys.cap == 4096 and list(keys.v[:3000]) == list(range(3000))
-
-
-@pytest.mark.parametrize('n, values', [(0, ()), (2, (b'1', b'2')), (1, (None,))])
-def test_era_keys_ignore_a_bad_row(fw, n, values):
-    keys = fw.var('library_lists__era_keys', EraKeys)
-    assert fw.fn('library_lists__era_key_row', *ROW)(None, n, row(*values) if values else None, None) == 0 and keys.n == 0
 
 
 @pytest.mark.parametrize('a, b, order', [(1, 2, -1), (2, 1, 1), (7, 7, 0), (0xffffffff, 1, 1), (1, 0x80000000, -1)])
@@ -2480,7 +2470,7 @@ def test_library_query_any_text(fw):
 
 # Small page state.
 def test_qm_gone_clears_its_own_dialog_only(fw, st):
-    gone = fw.fn('navigation__qm_gone', C.c_int, C.c_void_p, C.c_void_p)
+    gone = fw.fn('queue_menu__qm_gone', C.c_int, C.c_void_p, C.c_void_p)
     dialog = st('qm_dialog', C.c_void_p)
     dialog.value = 0x10
     assert gone(0x20, None) == 0 and dialog.value == 0x10
@@ -2514,10 +2504,10 @@ def test_artist_cf_gone_clears_what_it_held(fw, st):
     assert not veil.value
 
 
-def test_qm_restore_puts_back_what_a_go_to_overwrote(fw, st, scratch):
-    saved = (C.c_ubyte * 912).from_address(C.addressof(fw.var('st', C.c_char)) + scratch['qm_classinfo'])
+def test_qm_restore_puts_back_what_a_go_to_overwrote(fw, qm):
+    saved = (C.c_ubyte * 912).from_address(C.addressof(qm('qm_classinfo', C.c_ubyte)))
     saved[:912] = [i & 255 for i in range(912)]
-    assert fw.fn('navigation__qm_restore', C.c_int, C.c_void_p, C.c_void_p)(None, None) == 0
+    assert fw.fn('queue_menu__qm_restore', C.c_int, C.c_void_p, C.c_void_p)(None, None) == 0
     assert C.string_at(C.addressof(fw.var('fw_ctx_g_local_classinfo_save', C.c_char)), 912) == bytes(saved)
 
 

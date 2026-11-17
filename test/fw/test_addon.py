@@ -9,8 +9,8 @@ import struct
 import pytest
 
 import host
-from conftest import O, Deques, Game, block, claim, high_halves, libc, text
-from test_coverflow import png, scratch  # an icon's header; navigation.c's st by field
+from conftest import O, SPOT_FAIL, SPOT_NOSOCK, SPOT_OK, Deques, Game, block, claim, high_halves, libc, text
+from test_coverflow import png  # an icon's header
 from test_netupdate import JOB_INSTALL, JOB_REMOVE, SH_CANCELLED, SH_CARD, SH_NET, SH_OK, Sh  # test_netupdate.py keeps netupdate.c's App Store mirror
 from test_radio import Rd  # test_radio.py keeps the mirror
 from test_tidal import Au, Queue, free_stubbed  # test_tidal.py keeps tidal.c's au mirror
@@ -27,7 +27,6 @@ RULES = b'/mnt/data/q2-library-scope'
 TOKEN = b'/*q2-library-scope*/1'
 K_LOAD, K_READY, K_ERROR, K_WAIT = range(4)
 G_FIND, G_SORT = 4, 5
-REQ_OK, REQ_NOSOCK, REQ_FAIL = range(3)
 S_WAIT, S_PLAY, S_DONE = range(3)
 L_IDLE, L_WAIT, L_SCAN, L_IMPORT = range(4)
 W_W, W_H, CANVAS_LCD = O['W_W'], O['W_H'], O['CANVAS_LCD']
@@ -1795,7 +1794,7 @@ class Page:
     def tick(self):
         self.fw.fn('addon__tick', C.c_int, C.c_void_p)(None)
 
-    def answer(self, status=b'ok', msg=b'', cursor=b'', rows=(), id=None, fail=REQ_OK, raw=None):
+    def answer(self, status=b'ok', msg=b'', cursor=b'', rows=(), id=None, fail=SPOT_OK, raw=None):
         data = raw if raw is not None else b'Q2SPOT/1\n%d\t%s\t%s\t%s\n' % (self.req.id if id is None else id, status, msg, cursor) + \
             b''.join(b'\t'.join(r) + b'\n' for r in rows)
         C.memmove(self.req.buf, data + b'\0', len(data) + 1)
@@ -1963,7 +1962,7 @@ def test_an_action_that_fails_puts_its_row_back_with_the_toast(fw):
     p.click(0)
     p.world.ms += 400
     p.tick()
-    p.answer(fail=REQ_FAIL)
+    p.answer(fail=SPOT_FAIL)
     assert written[:2] == [(kids[items[0]][1], 'Working…'.encode()), (kids[items[0]][1], b'one')]  # then Loading…, as before
     assert p.toasts == [b"Foo didn't answer"] and p.pg.busy == 0
 
@@ -2042,14 +2041,14 @@ def test_a_reply_to_another_request_is_dropped(fw):
 def test_no_socket_while_it_starts_waits(fw):
     p = Page(fw)
     p.world.ms += 500
-    p.answer(fail=REQ_NOSOCK, raw=b'')
+    p.answer(fail=SPOT_NOSOCK, raw=b'')
     assert p.top.state == K_WAIT and p.pg.again == p.world.ms + 500
 
 
 def test_no_socket_long_after_says_so_and_retry_restarts_it(fw):
     p = Page(fw)
     p.world.ms += 20000
-    p.answer(fail=REQ_NOSOCK, raw=b'')
+    p.answer(fail=SPOT_NOSOCK, raw=b'')
     assert p.top.state == K_ERROR and p.top.nosock == 1 and p.top.note == b"Foo isn't running"
     p.click(0)
     assert p.ap.a[0].restart == 1 and p.top.state == K_LOAD
@@ -2100,7 +2099,7 @@ def test_stop_0_ends_an_error_page_in_cancel_which_leaves_the_page_the_app_runni
 def test_stop_0_keeps_a_slow_start_to_its_waiting_page(fw):
     p = Page(fw, NOSTOP)
     p.world.ms += 500
-    p.answer(fail=REQ_NOSOCK, raw=b'')
+    p.answer(fail=SPOT_NOSOCK, raw=b'')
     assert p.top.state == K_WAIT
     p.world.ms += 3001
     p.tick()
@@ -2879,7 +2878,7 @@ def test_a_field_sent_while_the_app_restarts_is_its_levels_error_and_retry_asks_
     p.answer(rows=[USER, PASSWORD])
     field(p, 1)
     p.ap.a[0].restart = 1
-    p.answer(fail=REQ_NOSOCK, raw=b'')
+    p.answer(fail=SPOT_NOSOCK, raw=b'')
     assert p.top.state == K_ERROR and p.top.note == b"Foo isn't running" and p.drawn == 2
     p.click(0)
     assert SECRET not in p.request() and p.request().endswith(b'\tmenu\n')
@@ -2888,7 +2887,7 @@ def test_a_field_sent_while_the_app_restarts_is_its_levels_error_and_retry_asks_
 def test_a_level_asked_while_the_app_restarts_still_waits(fw):
     p = Page(fw)
     p.ap.a[0].restart = 1
-    p.answer(fail=REQ_NOSOCK, raw=b'')
+    p.answer(fail=SPOT_NOSOCK, raw=b'')
     assert p.top.state == K_WAIT
 
 
@@ -3109,16 +3108,12 @@ def test_a_cursor_too_long_for_its_level_opens_nothing(fw):
     assert p.pg.depth == 2                # doesn't
 
 
-def test_top_app_cell_and_put(fw):
+def test_top_app_and_cell(fw):
     p = Page(fw)
     p.answer(rows=[item(1)])
     assert fw.fn('addon__top', C.POINTER(Lv))().contents.op == b'menu'
     assert fw.fn('addon__app', C.POINTER(App))().contents.id == b'foo'
     assert p.cell(0, 2) == b'Row 1' and p.cell(0, 3) == b'sub'
-    put = fw.fn('addon__put', C.c_int, C.c_void_p, C.c_uint, C.c_char_p)
-    out = block(fw, size=8)
-    assert put(out, 8, b'a%') == 1 and C.string_at(out) == b'\ta%25'
-    assert put(block(fw, size=5), 5, b'abc') == 1 and put(block(fw, size=4), 4, b'abc') == 0 and put(block(fw, size=1), 1, b'') == 0
 
 
 @pytest.mark.parametrize('kind,uri,yes', [
@@ -3343,7 +3338,7 @@ def test_hostile_replies_through_the_page(fw):
             if kind < 0.1:
                 p.answer(raw=bytes(r.choice(b'Q2SPOT/1\n\t%0a') for _ in range(40)))
             elif kind < 0.15:
-                p.answer(fail=r.choice((REQ_FAIL, REQ_NOSOCK)), raw=b'')
+                p.answer(fail=r.choice((SPOT_FAIL, SPOT_NOSOCK)), raw=b'')
             elif kind < 0.2:
                 p.answer(id=p.req.id + 1, rows=[hostile_row(r)])
             elif p.pg.act:
@@ -4012,21 +4007,82 @@ def worker(fw, script, connect=0):
 
 def test_a_reply_read_to_eof(fw):
     req = worker(fw, [b'Q2SPOT/1\n', b'1\tok\t\t\n'])
-    assert req.done == 1 and req.fail == REQ_OK and C.string_at(req.buf) == b'Q2SPOT/1\n1\tok\t\t\n'
+    assert req.done == 1 and req.fail == SPOT_OK and C.string_at(req.buf) == b'Q2SPOT/1\n1\tok\t\t\n'
 
 
 def test_no_socket(fw):
-    assert worker(fw, [], connect=-1).fail == REQ_NOSOCK
+    assert worker(fw, [], connect=-1).fail == SPOT_NOSOCK
 
 
 def test_a_reply_of_exactly_the_limit_is_whole(fw):
     req = worker(fw, [b'x' * 32768, b'x' * 32768])
-    assert req.fail == REQ_OK and req.n == REPLY_MAX
+    assert req.fail == SPOT_OK and req.n == REPLY_MAX
 
 
 def test_a_reply_past_the_limit_fails_and_stays_in_its_buffer(fw):
     req = worker(fw, [b'x' * 32768, b'x' * 32768, b'y'])
-    assert req.fail == REQ_FAIL and req.n == REPLY_MAX + 1
+    assert req.fail == SPOT_FAIL and req.n == REPLY_MAX + 1
+
+
+class SpotWk(C.Structure):  # spotify.c's wk
+    _fields_ = Req._fields_[:9]
+
+
+@pytest.mark.parametrize('replies,sent,connect', [
+    ([b'Q2SPOT/1\n', b'1\tok\t\t\n'], 16, 0),  # read to EOF
+    ([b'Q2SPOT/1\n1\tok\n'], 5, 0),  # the request goes out in pieces
+    ([], 16, -1),  # no socket
+    ([b'x' * 32768, b'x' * 32768, b'y'], 16, 0),  # past the limit
+    ([b'abc', -1], 16, 0),  # a read error
+    ([None] * 40, 16, 0),  # nothing ever ready: the deadline
+])
+def test_spotify_and_the_apps_make_the_same_exchange(fw, replies, sent, connect):
+    """spotify.c's and addon.c's workers are one spot_exchange: the same calls and bytes on the socket, each
+    connecting to its own path, and the same outcome, over the same script."""
+    path = text(b'/tmp/q2-foo.browse.sock')  # the app's, not SPOT_BROWSE: each worker's own path reaches connect
+    def run(worker, var, kind):
+        log: list[tuple] = []
+        script, clock = list(replies), [0]
+        r = fw.var(var, kind)
+        r.buf, r.n, r.len, r.cancel = block(fw, b'Q2SPOT/1\n1\tmenu\n', REPLY_MAX + 2), 0, 16, 0
+        if kind is Req:
+            r.path = C.addressof(path)
+        def tick(which, ts, *_):
+            clock[0] += 1
+            t = C.cast(ts, C.POINTER(C.c_long))
+            t[0], t[1] = clock[0], 0
+        def select(n, rd, wr, ex, tv, *_):
+            log.append(('select', n, bool(rd), bool(wr), C.string_at(tv, 2 * C.sizeof(C.c_int))))
+            return 0 if script and script[0] is None and not wr and script.pop(0) is None else 1
+        def send(fd, buf, n, flags, *_):
+            log.append(('send', C.string_at(buf, min(n, sent)), flags))
+            return min(n, sent)
+        def recv(fd, buf, n, flags, *_):
+            piece = script.pop(0) if script else b''
+            log.append(('recv', n))
+            if piece == -1:
+                return -1
+            C.memmove(buf, piece, len(piece))
+            return len(piece)
+        fw.mock('fw_clock_gettime', tick)
+        fw.mock('fw_socket', lambda *a: log.append(('socket', a[:3])) or 5)
+        fw.mock('fw_fcntl', lambda *a: log.append(('fcntl', a[:3])) or 0)
+        fw.mock('fw_connect', lambda fd, to, n, *_: log.append(('connect', C.string_at(to, n))) or connect)
+        fw.mock('fw_select', select)
+        fw.mock('fw_send', send)
+        fw.mock('fw_recv', recv)
+        fw.mock('spot_shut', lambda fd, *_: log.append(('shut', fd)))
+        fw.mock('fw_close', lambda fd, *_: log.append(('close', fd)))
+        fw.fn(worker, C.c_void_p, C.c_void_p)(None)
+        return log, r.fail, r.n, r.done, C.string_at(r.buf, min(r.n, REPLY_MAX) + 1)
+    def sockaddr(name):
+        return ('connect', b'\x01\x00' + name.ljust(108, b'\0'))
+    spotify, app = run('spotify__worker', 'spotify__wk', SpotWk), run('addon__worker', 'addon__req', Req)
+    assert sockaddr(b'/tmp/q2-librespot.browse.sock') in spotify[0]  # spotify.c's SPOT_BROWSE
+    assert sockaddr(b'/tmp/q2-foo.browse.sock') in app[0]
+    def unaddressed(result):
+        return [e for e in result[0] if e[0] != 'connect'], *result[1:]
+    assert unaddressed(spotify) == unaddressed(app)
 
 
 def line_end(fw, s):
@@ -4690,6 +4746,12 @@ def test_no_rules_show_everything(fw):
 def test_a_query_is_expanded_where_its_token_is(fw):
     World(fw)
     assert query(fw, b'select * from t where ' + TOKEN + b' and x') == b'select * from t where 1 and x'
+
+
+def test_every_token_in_a_query_is_expanded(fw):
+    World(fw, {RULES: b'0/mnt/mmc/A\n'})
+    rule = predicate(fw)
+    assert query(fw, TOKEN + b' and (' + TOKEN + b')') == rule + b' and (' + rule + b')'
 
 
 def test_no_query_no_copy(fw):

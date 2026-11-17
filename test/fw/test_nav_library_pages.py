@@ -4,14 +4,17 @@ Configuration, scrobble_ui.c's Upload Scrobbles, the Library and Streaming pages
 builds and the payload rearranges, Folder view's hooks, the queue menu's tracks and the playlist editor's records
 (playlists.c)."""
 import ctypes as C
+import random
 import re
+import sqlite3
 import struct
 
 import pytest
 
 import host
-from conftest import FNV_PRIME, O, Deques, Files, claim, favdir_card, fnv1a, high_halves, in_fork, libc, ui_name
+from conftest import FNV_PRIME, O, Deques, Files, favdir_card, fnv1a, high_halves, in_fork, libc, ui_name, stock_stub
 from conftest import Rows as HeldRows  # Rows here is Folder view's list
+from test_coverflow import SONGTABLE
 from test_navigation import Sa  # test_navigation.py keeps the mirror
 from test_tidal import HEARTS, urls_play
 
@@ -31,6 +34,7 @@ TIDAL_DIR, SPOT_DIR = '/mnt/mmc/.tidal', '/mnt/mmc/.spotify'
 DOT = '·'
 HEART, NO_HEART = '♥', '♡'
 CLICK = C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_void_p)
+ROW = C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_int, C.POINTER(C.c_char_p), C.POINTER(C.c_char_p))  # sqlite3_exec's
 TICK = C.CFUNCTYPE(C.c_int, C.c_void_p)
 TYPES = {'window_create': 'window', 'list_item_create': 'list_item', 'hscroll_label_create': 'hscroll_label',
          'image_create': 'image', 'button_create': 'button', 'scroll_view_create': 'scroll_view',
@@ -259,31 +263,6 @@ class Config:
         return 0
 
 
-@pytest.fixture(scope='module')
-def scratch(library):
-    """scratch_t's field offsets as this build lays it out: its pointers move them."""
-    return host.offsets(library.parent/'navigation.o', 'scratch_t')
-
-
-@pytest.fixture
-def st(fw, scratch):
-    """navigation.c's state by field: st('rt_page', C.c_void_p).value."""
-    base = C.addressof(fw.var('st', C.c_char))
-    return lambda name, ctype=C.c_int: ctype.from_address(base + scratch[name])
-
-
-@pytest.fixture(scope='module')
-def lists_fields(library):
-    """library_lists.c's own state, ll: its field offsets as this build lays it out."""
-    return host.offsets(library.parent/'library_lists.o', 'll')
-
-
-@pytest.fixture
-def lists(fw, lists_fields):
-    base = C.addressof(fw.var('library_lists__ll', C.c_char))
-    return lambda name, ctype=C.c_int: ctype.from_address(base + lists_fields[name])
-
-
 # Song records. The Q2's hold 4-byte pointers 4 bytes apart (REC_NAME, REC_PATH, REC_TITLE, REC_ALBUM, REC_ARTIST),
 # and P() reads 8 here: a field's pointer is its own word with the next field's word as its high half. So each
 # record's strings sit where that chain says: string k at (word k+1) << 32 | (word k), a page mapped for it. The
@@ -369,15 +348,67 @@ def file_key(path):
 
 
 class Library:
-    """Stock's library queries over a list of records: getAllMusic fills staged's deque with every song."""
-    def __init__(self, fw, ui, songs=()):
-        self.fw, self.deques, self.songs, self.asked = fw, ui.deques, list(songs), []
+    """Stock's library over a list of records. getAllMusic fills staged's deque with every song in getAllMusic(3)'s
+    order (time_create descending, a second's songs by id). songtable (SONGTABLE) holds a row a record, ids from 1: a
+    toolsQueryDbTable goes through its hook (library_query) to stock's body, which runs the SQL and hands the row
+    callback each row's text, as sqlite3_exec does; stock's select * fill (db_song_row_callback) stages the record of
+    the row's id. stamps: each song's time_create; by default the list's order, newest first. music: whether each song
+    is one the Library's lists show, for getAllMusic's rows (MUSIC_WHERE and the folder markers); by default all."""
+    def __init__(self, fw, ui, songs=(), stamps=None, music=None):
+        self.fw, self.deques, self.songs, self.stamps, self.asked, self.sql = fw, ui.deques, list(songs), stamps, [], []
+        self.music = music
         fw.mock('getAllMusic', self.all)
+        hook = fw.fn('ringnav_library_query', C.c_int, C.c_void_p, C.c_void_p, C.c_void_p, C.c_int)
+        fw.mock('toolsQueryDbTable', lambda db, sql, row, sort, *_: hook(db, sql, row, sort))
+        fw.mock('stock_dbquery_trampoline', self.query)
+        fw.mock('db_song_row_callback', self.fill)
+
+    def stamp(self, i):
+        return self.stamps[i] if self.stamps else len(self.songs) - i
+
+    def ordered(self):
+        shown = [i for i in range(len(self.songs)) if self.music is None or self.music[i]]
+        return [self.songs[i] for i in sorted(shown, key=lambda i: -self.stamp(i))]
 
     def all(self, sort, *_):
         self.asked.append(sort)
-        self.deques[self.directory()].extend(self.songs)
+        self.deques[self.directory()].extend(self.ordered())
         return len(self.songs)
+
+    def table(self):
+        db = sqlite3.connect(':memory:')
+        db.execute(SONGTABLE)
+        db.executemany('insert into songtable(id, filename, fileurl, name, album, songer, time, time_end, time_create) '
+                       'values (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                       [(i + 1, *(field(r, f).decode() for f in ('name', 'path', 'title', 'album', 'artist')),
+                         *(C.c_int.from_address(r + O[k]).value for k in ('REC_CUE_START', 'REC_CUE_END')), self.stamp(i))
+                        for i, r in enumerate(self.songs)])
+        return db
+
+    def query(self, db, sql, row, ctx, *_):
+        self.sql.append(C.string_at(sql).decode())
+        rows = self.table().execute(self.sql[-1])
+        names = [d[0].encode() for d in rows.description]
+        n = 0
+        for values in rows.fetchall():
+            argv = (C.c_char_p * len(names))(*[None if v is None else str(v).encode() for v in values])
+            if ROW(row)(ctx, len(names), argv, (C.c_char_p * len(names))(*names)):
+                return -1  # the callback stopped it
+            n += 1
+        return n
+
+    def fill(self, ctx, n, values, columns, *_):
+        self.deques[self.directory()].append(self.songs[int(C.cast(values, C.POINTER(C.c_char_p))[0]) - 1])
+        return 0
+
+    def passes(self):
+        """The counted songs' passes over songtable (library_lists.c counted_query): every song's id, path and CUE
+        start, unscoped, the hook leaving it as it is."""
+        return [sql for sql in self.sql if sql == 'select id,fileurl,time from songtable']
+
+    def fetches(self):
+        """The counted songs' fetches by id (songs_by_id), scoped to the Library's music there."""
+        return [sql for sql in self.sql if sql.startswith('select * from songtable not indexed where id in (')]
 
     def directory(self):
         return self.fw.var('fw_ctx_tools_pdeq_directory', C.c_uint).value
@@ -422,6 +453,25 @@ def test_shuffle_songs_plays_the_library_from_a_random_song(fw, ui, mcl, song):
     assert queue == songs and 0 <= at < 4 and cls == LIBRARY
     assert library.asked == [3]  # unsorted: Shuffle has no use for the title sort
     assert ui.windows  # the page stays, as Most Played's rows leave it
+
+
+def test_shuffle_songs_headphones_required_forbids_changes_nothing(fw, ui, mcl, song):
+    """Headphones Required with no output: Shuffle Songs asks stock's gate (0: it shows its message) before it
+    takes the mode to restore, ends advanced play, saves Shuffle or opens Now Playing, and its refusal does none
+    of them, with no toast of ours. Here the queue is an earlier Shuffle Songs, holding mode 3 to restore. Now
+    Playing refused only after Shuffle was saved, and the old queue then became Shuffle Songs anew."""
+    Library(fw, ui, [song(b'/m/%d.flac' % i) for i in range(4)])
+    fw.var('fw_ctx_mcl_pdeqplaylist', C.c_uint).value = ui.deques.new([song(b'/q/%d.flac' % i) for i in range(3)])
+    mcl.type, mcl.pos = LIBRARY, 0
+    assert fw.fn('playback_shuffle', C.c_int, C.c_int)(3) == 1  # advanced Shuffle Songs, mode 3 to restore
+    asked = []
+    fw.mock('check_forbid_play_no_headset', lambda quiet, *_: asked.append(quiet) or 1)
+    call(fw, 'shuffle_menu')
+    fw.var('fw_log_n', C.c_int).value = 0
+    ui.click(ui.top(), 0)
+    assert asked == [0] and not ui.played and not ui.toasts and not fw.calls('config_playmode')
+    assert not fw.calls('fw_unlink') and fw.fn('playback_option', C.c_int, C.c_int)(0) == 1  # still advanced
+    assert fw.fn('playback_unshuffle', C.c_int)() == 3
 
 
 @pytest.mark.parametrize('row, folders', [(1, 0), (2, 1)])
@@ -497,7 +547,7 @@ def test_most_played_ranks_its_kept_songs_again_without_the_library(fw, ui, song
     ui.close(ui.top())
     st('plays', C.c_uint * 4)[:] = [listen_key(b'/m/b.flac'), 3, listen_key(b'/m/a.flac'), 2]  # b heard twice since
     call(fw, 'most_played')
-    assert ui.captions(ui.top()) == ['B', 'A'] and library.asked == [3]
+    assert ui.captions(ui.top()) == ['B', 'A'] and len(library.passes()) == 1 and not library.asked
 
 
 def test_most_played_reads_the_library_again_after_it_changed(fw, ui, song):
@@ -509,7 +559,7 @@ def test_most_played_reads_the_library_again_after_it_changed(fw, ui, song):
     library.songs.append(b)
     fw.var('library_gen', C.c_uint).value += 1  # a scan or an update since
     call(fw, 'most_played')
-    assert ui.captions(ui.top()) == ['A', 'B'] and library.asked == [3, 3]
+    assert ui.captions(ui.top()) == ['A', 'B'] and len(library.passes()) == 2
 
 
 def test_most_played_opens_once(fw, ui, song):
@@ -539,6 +589,97 @@ def test_album_plays_sums_each_album_s_listens(fw, ui, song):
     sums = (C.c_uint * 2)()
     fw.fn('album_plays', None, C.c_void_p, C.c_void_p)(C.cast(of, C.c_void_p), sums)
     assert list(sums) == [7, 2]
+
+
+SCOPE_RULES = '/mnt/data/q2-library-scope'  # library_scope.c's marker rules: a database.ignore'd folder
+
+
+def counted_library(fw, ui, song):
+    """A library the first open reads part of: albums of ten, a CUE image's four tracks, a song in songtable twice
+    (another scan's stamp), an audiobook, a podcast, an .m4b and a hidden folder's two songs, the stamps shared by a
+    few songs each and in no id order; 39 counted, slot by slot: 29 of the music, the image's last three tracks (not its
+    first, so only a pass that keys each track by its CUE start finds them), the twice-listed song, each spoken and
+    hidden one and a file that has gone, one count 0. Returns the library, the table's (key, count) slots, and each
+    row's path, CUE start, album and whether the Library's lists show it (MUSIC_WHERE, scoped)."""
+    rng = random.Random(7)
+    rows = [(b'/mnt/mmc/M/A%02d/%03d.flac' % (i // 10, i), 0, b'S%03d' % i, b'Al%02d' % (i // 10)) for i in range(180)]
+    rows += [(b'/mnt/mmc/M/cue/image.flac', 300 * k, b'C%d' % k, b'Live') for k in range(4)]
+    rows += [rows[5], (b'/mnt/mmc/Audiobooks/B/01.mp3', 0, b'Book', b''), (b'/mnt/mmc/Podcasts/P/01.mp3', 0, b'Pod', b''),
+             (b'/mnt/mmc/M/Tale.M4B', 0, b'Tale', b''), (b'/mnt/mmc/Hidden/h1.flac', 0, b'H1', b''),
+             (b'/mnt/mmc/Hidden/h2.flac', 0, b'H2', b'')]
+    songs = [song(path, title, b'Ar', album, cue=cue, end=cue and cue + 300) for path, cue, title, album in rows]
+    shown = [not re.search(rb'^/mnt/mmc/(audiobooks|podcasts|hidden)/|\.m4b$', path.lower()) for path, *_ in rows]
+    library = Library(fw, ui, songs, stamps=[rng.randrange(40) for _ in songs], music=shown)
+    counted = [*rng.sample(range(6, 180), 29), 5, *range(181, 184), *range(185, 190)]
+    table = [(listen_key(rows[i][0], rows[i][1]), rng.choice((1, 2, 3, 5, 8))) for i in counted]
+    table += [(listen_key(b'/mnt/mmc/M/gone.flac'), 4)]
+    table[3] = (table[3][0], 0)
+    Files(fw, {PLAYS_FILE: b''.join(struct.pack('<2I', *t) for t in table).ljust(PLAYS_SLOTS * 8, b'\0'),
+               SCOPE_RULES: b'0/mnt/mmc/Hidden\n'})
+    return library, table, [(*row, ok) for row, ok in zip(rows, shown)]
+
+
+def test_most_played_reads_only_the_counted_songs_as_the_library_gives_them(fw, ui, song):
+    """Most Played's first open: one pass over every song in songtable for the counted keys, then those rows alone by
+    id, scoped to the Library's music there, in getAllMusic(3)'s order (newest first, a second's songs by id), ranked
+    as the whole library was: a CUE image's tracks apart, a song in songtable twice listed twice, counted spoken and
+    hidden songs found by the pass and left out by the fetch."""
+    library, table, rows = counted_library(fw, ui, song)
+    call(fw, 'most_played')
+    slot = {key: j for j, (key, _) in reversed(list(enumerate(table)))}  # a key's first slot, as the C's scan
+    order = sorted((i for i, row in enumerate(rows) if row[-1]), key=lambda i: -library.stamp(i))
+    counted = [i for i in order if listen_key(*rows[i][:2]) in slot]
+    score = {i: table[slot[listen_key(*rows[i][:2])]][1] * PLAYS_SLOTS + PLAYS_SLOTS - slot[listen_key(*rows[i][:2])]
+             for i in counted}
+    ranked = sorted(counted, key=lambda i: -score[i])[:O['PLAYS_TOP']]  # stable: ties in the library's order
+    plays = [table[slot[listen_key(*rows[i][:2])]][1] for i in ranked]
+    assert ui.rows(ui.top()) == [(rows[i][2].decode(), f'Ar {DOT} {n} play' + 's' * (n != 1)) for i, n in zip(ranked, plays)]
+    ui.click(ui.top(), 0)
+    assert ui.played[0][0] == [library.songs[i] for i in ranked]
+    (fetch,) = library.fetches()
+    ids = host.tools_build.need(re.search(r'in \(([\d,]*)\)', fetch), 'no id list')[1]
+    assert sorted(map(int, ids.split(','))) == [i + 1 for i in range(len(rows)) if listen_key(*rows[i][:2]) in slot]
+    assert "fileurl not like '%.m4b'" in fetch  # MUSIC_WHERE, and the scope's marker expanded:
+    assert "when substr(fileurl,1,16)='/mnt/mmc/Hidden/' collate nocase then 0" in fetch
+    assert len(library.passes()) == 1 and not fw.calls('getAllMusic')
+
+
+def test_album_plays_sums_the_counted_songs_as_the_whole_library_did(fw, ui, song):
+    """Cover Flow's Most Played order: each album's listens, as main summed them over every record getAllMusic(3)
+    gave, now over the counted songs' rows alone: one pass over songtable's ids and paths, then those rows by id,
+    scoped to music there (a CUE image's tracks and a song in songtable twice as before, spoken and hidden songs left
+    out), and the whole library never read. album_of sees the library's own records, each counted one once."""
+    library, table, rows = counted_library(fw, ui, song)
+    albums = sorted({row[3] for row in rows if row[3]})
+    seen = []
+
+    def album_of(r):
+        seen.append(r)
+        return albums.index(field(r, 'album')) if field(r, 'album') in albums else -1
+    of = C.CFUNCTYPE(C.c_int, C.c_void_p)(album_of)
+    sums = (C.c_uint * len(albums))()
+    fw.fn('album_plays', None, C.c_void_p, C.c_void_p)(C.cast(of, C.c_void_p), sums)
+    count = {key: n for key, n in reversed(table)}  # a key's first slot, as the C's scan
+    want, heard = [0] * len(albums), []
+    for r in library.ordered():  # main: getAllMusic(3)'s records, every one
+        c = count.get(listen_key(field(r, 'path'), C.c_int.from_address(r + REC_CUE_START).value))
+        if c:
+            want[albums.index(field(r, 'album'))] += c
+            heard.append(r)
+    assert list(sums) == want and sorted(seen) == sorted(heard) and any(want)
+    assert len(library.passes()) == 1 and len(library.fetches()) == 1 and not fw.calls('getAllMusic')
+
+
+def test_most_played_lists_a_song_twice_in_the_library_s_order_at_its_last_row(fw, ui, song):
+    """A song in songtable twice ranks as one: at the 100th row, the row getAllMusic(3) gives first (the newer
+    stamp) is listed, not the one with the lower id, as the whole library ranked them."""
+    songs = [song(b'/m/%03d.flac' % i, b'S%03d' % i) for i in range(99)]
+    songs += [song(b'/m/twice.flac', b'Older'), song(b'/m/twice.flac', b'Newer')]
+    Library(fw, ui, songs, stamps=[100] * 99 + [1, 2])
+    table = [(listen_key(b'/m/%03d.flac' % i), 5) for i in range(99)] + [(listen_key(b'/m/twice.flac'), 1)]
+    Files(fw, {PLAYS_FILE: b''.join(struct.pack('<2I', *t) for t in table).ljust(PLAYS_SLOTS * 8, b'\0')})
+    call(fw, 'most_played')
+    assert ui.captions(ui.top()) == ['S%03d' % i for i in range(99)] + ['Newer']
 
 
 # Ratings' lists.
@@ -590,6 +731,18 @@ def test_a_ratings_list_plays_from_its_row(fw, ui, song):
     call(fw, 'rated_open', 3)
     ui.click(ui.top(), 2)
     assert ui.played == [([rated.fav, rated.four, rated.three, rated.one], 2, LIBRARY)]
+
+
+def test_a_favourite_outranks_its_kept_hearts(fw, ui, song):
+    """A song in My Fav has 5 hearts whatever is kept for it: an album's five hearts put its songs in My Fav and
+    leave their kept 1-4 (rate_album_favs)."""
+    a, b = song(b'/m/a.flac', b'A'), song(b'/m/b.flac', b'B')
+    library = Library(fw, ui, [a, b])
+    Files(fw, {RATINGS: ratings((listen_key(b'/m/a.flac'), 2), (listen_key(b'/m/b.flac'), 3))})
+    stock_fav = song(b'/m/a.flac')
+    fw.mock('getAllFav', lambda *_: library.deques[library.directory()].append(stock_fav) or 1)
+    call(fw, 'rated_open', 3)
+    assert ui.rows(ui.top()) == [('A', HEART * 5), ('B', HEART * 3 + NO_HEART * 2)]
 
 
 def test_a_ratings_list_in_library_order_among_equal_hearts(fw, ui, song):
@@ -1218,14 +1371,6 @@ def test_another_window_s_end_leaves_the_heart(fw, ui, song, mcl, st):
     assert st('rate_win', C.c_void_p).value == heart.win and ui.pending('rate_tick')
 
 
-def stock_stub(address, result, log):
-    """x86-64 at a fixed stock address: its first three arguments logged, result returned. Only ever in a fork."""
-    claim(address)
-    code = (b'\x48\xb8' + struct.pack('<Q', C.addressof(log)) + bytes.fromhex('488938 48897008 48895010') +
-            b'\xb8' + struct.pack('<I', result) + b'\xc3')
-    C.memmove(address, code, len(code))
-
-
 @in_fork
 def test_five_hearts_are_a_my_fav_through_the_heart_s_own_click(fw, ui, song, mcl):
     heart = Heart(fw, ui, song, mcl, kept=4)
@@ -1354,23 +1499,23 @@ def test_a_rating_that_cannot_be_written_says_so(fw, ui, song, mcl):
 QM_ALBUM, CLASS_ARTIST_ALBUMS = 2, O['CLASS_ARTIST_ALBUMS']
 
 
-def album_menu(fw, ui, song, st, album_id=0xa1b0):
+def album_menu(fw, ui, song, st, qm, album_id=0xa1b0):
     """The queue menu on row 1 of an artist's albums tab, that row's album_id album_id."""
     rows = [song(b'/m/x.flac', album=b'X'), song(b'/m/y.flac', album=b'Y')]
     fw.var('fw_ctx_p_deque_showlist', C.c_uint).value = ui.deques.new(rows)
     ids = (C.c_uint * 2)(0x77, album_id)
-    st('qm_kind').value, st('qm_cls', C.c_uint).value = QM_ALBUM, CLASS_ARTIST_ALBUMS
+    qm('qm_kind').value, qm('qm_cls', C.c_uint).value = QM_ALBUM, CLASS_ARTIST_ALBUMS
     st('qm_rows', C.c_uint).value, st('qm_idx', C.c_uint).value = 2, 1
-    st('qm_hash', C.c_uint).value = fw.fn('navigation__rec_hash', C.c_uint, C.c_void_p)(rows[1])
-    st('qm_browse', C.c_uint).value = fw.fn('navigation__browse_hash', C.c_uint)()
+    qm('qm_hash', C.c_uint).value = fw.fn('rec_hash', C.c_uint, C.c_void_p)(rows[1])
+    qm('qm_browse', C.c_uint).value = fw.fn('queue_menu__browse_hash', C.c_uint)()
     st('art_ids', C.c_void_p).value, st('art_n', C.c_uint).value = C.addressof(ids), 2
     win = ui.new('window_create', 0, 0, 0, 0, 0)
     return win, ids  # the caller holds ids while st.art_ids points into it
 
 
-def test_an_album_s_rating_is_kept_apart_from_its_songs(fw, ui, song, st):
+def test_an_album_s_rating_is_kept_apart_from_its_songs(fw, ui, song, st, qm):
     files = Files(fw)
-    win, ids = album_menu(fw, ui, song, st)
+    win, ids = album_menu(fw, ui, song, st, qm)
     show = fw.fn('rate_show', C.c_int, C.c_void_p, C.c_int, C.c_uint)
     assert show(win, 4, 0xa1b0) == 1 and show(win, 2, 0xa1b0) == 0  # one picker at a time
     key = fw.fn('rate_key', C.c_int, C.c_void_p, C.c_uint)
@@ -1381,18 +1526,18 @@ def test_an_album_s_rating_is_kept_apart_from_its_songs(fw, ui, song, st):
     assert ALBUM_RATINGS in files.files
 
 
-def test_an_album_no_longer_under_the_picker_is_not_rated(fw, ui, song, st):
+def test_an_album_no_longer_under_the_picker_is_not_rated(fw, ui, song, st, qm):
     files = Files(fw)
-    win, ids = album_menu(fw, ui, song, st)
+    win, ids = album_menu(fw, ui, song, st, qm)
     fw.fn('rate_show', C.c_int, C.c_void_p, C.c_int, C.c_uint)(win, 4, 0xa1b0)
     ui.new('window_create', 0, 0, 0, 0, 0)  # another page over it
     fw.fn('rate_key', C.c_int, C.c_void_p, C.c_uint)(win, KEY_CENTER)
     assert ui.toasts == ['Album changed'] and not files.files
 
 
-def test_an_album_whose_row_changed_is_not_rated(fw, ui, song, st):
+def test_an_album_whose_row_changed_is_not_rated(fw, ui, song, st, qm):
     files = Files(fw)
-    win, ids = album_menu(fw, ui, song, st, album_id=0xb2c0)  # the row now holds another album
+    win, ids = album_menu(fw, ui, song, st, qm, album_id=0xb2c0)  # the row now holds another album
     fw.fn('rate_show', C.c_int, C.c_void_p, C.c_int, C.c_uint)(win, 4, 0xa1b0)
     fw.fn('rate_key', C.c_int, C.c_void_p, C.c_uint)(win, KEY_CENTER)
     assert ui.toasts == ['Album changed'] and not files.files
@@ -1443,7 +1588,7 @@ class Book:
         fw.mock('mclGetPlayStatus', lambda *_: self.state)
 
     def open(self):
-        self.fw.fn('navigation__chapters_open', None, C.c_void_p)(self.track)
+        self.fw.fn('chapters_open', None, C.c_void_p)(self.track)
         return self.ui.top() if self.ui.windows else None
 
     def selected(self, page):
@@ -2279,7 +2424,7 @@ def test_about_shows_stock_s_version_and_the_payload_s_after_it_without_stock_s_
     fw.mock('stock_about_trampoline', lambda *_: 5)
     assert fw.fn('ringnav_about', C.c_int, C.c_void_p, C.c_void_p)(win, None) == 5
     version, beta = host.tools_build.VERSION, host.tools_build.BETA
-    assert about_rows(ui, view) == [ABOUT[0], ('FW. Version', host.tools_build.STOCK_VERSION), ('CFW. Version', f'{version} Pod' + (f' beta {beta}' if beta else '')),
+    assert about_rows(ui, view) == [ABOUT[0], ('FW. Version', host.tools_build.STOCK_VERSION), ('CFW. Version', version + (f' beta {beta}' if beta else '')),
                                     *ABOUT[2:]]
 
 
@@ -2397,6 +2542,43 @@ def test_a_decade_lists_its_albums_by_year(fw, ui):
     assert 'having release_year between 1990 and 1999' in db.asked[-1]
 
 
+def era_library():
+    """A real songtable: a name two artists share across decades, one album dated in two (also spelled in two cases), one
+    dated in the 1990s and 2000s in two cases (only a NOCASE filter keeps it out of the 1990s), a full date and an undated
+    album."""
+    lib = sqlite3.connect(':memory:')
+    lib.execute(SONGTABLE)
+    lib.executemany('insert into songtable(id, fileurl, album, songer, albumsonger, year, track, cd_num) values (?, ?, ?, ?, ?, ?, ?, ?)', [
+        (1, '/m/queen/1.flac', 'Hits', 'Queen', 'Queen', 1981, 1, 1), (2, '/m/abba/1.flac', 'HITS', 'ABBA', 'ABBA', 1992, 1, 1),
+        (3, '/m/mixed/1.flac', 'Mixed', 'Band', 'Band', 1989, 1, 1), (4, '/m/mixed/2.flac', 'Mixed', 'Band', 'Band', 1991, 2, 1),
+        (5, '/m/new/1.flac', 'New', 'Band', '', 20220510, 1, 1), (6, '/m/dated/1.flac', 'Dated', 'Band', '', 19950510, 1, 1),
+        (7, '/m/none/1.flac', 'Undated', 'Band', '', None, 1, 1), (8, '/m/old/1.flac', 'Old', 'Band', '', 1975, 1, 1),
+        (9, '/m/wall/1.flac', 'The Wall', 'Floyd', 'Floyd', 1989, 1, 1), (10, '/m/wall/2.flac', 'THE WALL', 'Floyd', 'Floyd', 1991, 2, 1),
+        (11, '/m/late/1.flac', 'Late', 'Band', 'Band', 1995, 1, 1), (12, '/m/late/2.flac', 'LATE', 'Band', 'Band', 2003, 2, 1)])
+    return lib
+
+
+def every_song(sent):
+    """The query with the decade's names filter taken out: it groups every song."""
+    return re.sub(r' and album collate nocase in \(select album from songtable where .*? between 1990 and 1999\)', '', sent)
+
+
+def test_a_decade_query_groups_only_the_names_dated_in_it(fw, ui):
+    """The decade's query groups the songs of the names with a song dated in it, and gives the rows that grouping every
+    song gives: a name two artists share across decades, one album dated in two (also spelled in two cases), a full date and an
+    undated album, with and without songtable_album."""
+    db, _ = era_decade(fw, ui)
+    sent = db.asked[-1]
+    every = every_song(sent)
+    assert every != sent
+    lib = era_library()
+    rows = lib.execute(sent).fetchall()
+    assert rows == lib.execute(every).fetchall()
+    assert [(album, year) for album, _, year, _ in rows] == [('Mixed', 1991), ('The Wall', 1991), ('HITS', 1992), ('Dated', 1995)]
+    lib.execute('create index songtable_album on songtable(album collate nocase)')  # as a library has after any scan
+    assert lib.execute(sent).fetchall() == rows
+
+
 def test_a_decade_s_albums_stop_at_its_count(fw, ui):
     EraDb(fw, decades=[(b'1990', b'1')], albums=ERA_ALBUMS)  # the albums query found more since
     call(fw, 'era_menu')
@@ -2432,17 +2614,19 @@ def test_a_failing_decade_query_says_era_unavailable(fw, ui):
 def test_a_failing_song_query_says_era_unavailable(fw, ui, row):
     db, page = era_decade(fw, ui)
     run = db.run
-    fw.mock('sqlite3_exec', lambda d, sql, *a: 1 if b'select distinct s.id' in C.string_at(sql) else run(d, sql, *a))
+    fw.mock('sqlite3_exec', lambda d, sql, *a: 1 if b'id in (select s.id' in C.string_at(sql) else run(d, sql, *a))
     fw.mock('getMusicByAlbum', lambda *_: -1)  # stock's count when its query fails (toolsQueryDbTable: no database, or sqlite3_exec fails)
     ui.click(page, row)
     assert ui.toasts == ['Era unavailable'] and not ui.played
 
 
-# Shuffle's key query worked but loading the library failed: still 'Era unavailable', not 'Storage unavailable'
-def test_shuffle_with_the_library_failing_says_era_unavailable(fw, ui, mcl):
-    fw.mock('getAllMusic', lambda *_: -1)
+# Shuffle's query gave a song and then failed: still 'Era unavailable', not that one song shuffled
+def test_shuffle_with_its_query_failing_after_a_row_says_era_unavailable(fw, ui, song, mcl):
+    Library(fw, ui, [song(b'/m/1.flac', id_=1)])
     db, page = era_decade(fw, ui)
-    db.albums = [(b'9',)]
+    run = db.run
+    fw.mock('sqlite3_exec', lambda d, sql, *a: run(d, sql, *a) or 1 if b'id in (select s.id' in C.string_at(sql) else run(d, sql, *a))
+    db.albums = [(b'1',)]
     ui.click(page, 1)
     assert ui.toasts == ['Era unavailable'] and not ui.played
 
@@ -2510,10 +2694,29 @@ def test_shuffle_plays_the_decade_s_songs_shuffled(fw, ui, song, mcl):
     library = Library(fw, ui, songs)
     fw.mock('fw_access', lambda *_: 0)
     db, page = era_decade(fw, ui)
-    db.albums = [(b'9',), (b'1',)]  # the decade's song ids
+    db.albums = [(b'2',), (b'3',)]  # the decade's rows, which stock's select * fill makes records of
     ui.click(page, 1)
     (queue, at, cls), = ui.played
-    assert queue == songs[1:] and cls == LIBRARY and library.asked == [3]
+    assert queue == songs[1:] and cls == LIBRARY and library.asked == []  # the library itself is never read
+
+
+def test_shuffle_s_query_groups_only_the_names_dated_in_the_decade(fw, ui):
+    """Shuffle's song query narrows its grouping as the decade's page does, finds the songs grouping every song finds,
+    and keeps to the Library's music, its scope token expanded, in both its grouping and its rows: an audiobook and an
+    .m4b of a decade's album stay out, and an audiobook dated later leaves its album in the decade."""
+    db, page = era_decade(fw, ui)
+    ui.click(page, 1)
+    sent = db.asked[-1]
+    every = every_song(sent)
+    assert every != sent and sent.startswith('select * from songtable where ') and '/*q2-library-scope*/' not in sent
+    lib = era_library()
+    lib.executemany('insert into songtable(id, fileurl, album, songer, albumsonger, year, track, cd_num) values (?, ?, ?, ?, ?, ?, ?, ?)', [
+        (13, '/mnt/mmc/audiobooks/wall/3.mp3', 'The Wall', 'Floyd', 'Floyd', 1991, 3, 1), (14, '/m/wall/4.m4b', 'the wall', 'Floyd', 'Floyd', 1990, 4, 1),
+        (15, '/m/x/1.flac', 'X', 'Y', 'Y', 1995, 1, 1), (16, '/mnt/mmc/audiobooks/x/2.mp3', 'X', 'Y', 'Y', 2005, 2, 1)])
+    ids = lambda sql: sorted(lib.execute(f'select id from ({sql})').fetchall())
+    assert ids(sent) == ids(every) == [(2,), (3,), (4,), (6,), (9,), (10,), (15,)]
+    lib.execute('create index songtable_album on songtable(album collate nocase)')
+    assert ids(sent) == [(2,), (3,), (4,), (6,), (9,), (10,), (15,)]
 
 
 def test_an_album_row_that_is_gone_says_so(fw, ui, song):
@@ -2700,7 +2903,7 @@ def book_place(fw, song, files, path=b'/mnt/mmc/Audiobooks/b.flac'):
     folder = song(b'/mnt/mmc/Audiobooks/x', kind=4)
     listing = deques.new([folder, tracks[0], other, tracks[1], tracks[2]])
     at, off = C.c_int(-1), C.c_int(-1)
-    place = fw.fn('navigation__book_place', C.c_void_p, C.c_void_p, C.c_void_p, C.POINTER(C.c_int), C.POINTER(C.c_int))
+    place = fw.fn('book_place', C.c_void_p, C.c_void_p, C.c_void_p, C.POINTER(C.c_int), C.POINTER(C.c_int))
     best = place(listing, tracks[1], C.byref(at), C.byref(off))
     return (field(best, 'title') if best else None), at.value, off.value
 
@@ -2755,17 +2958,17 @@ def test_shuffle_songs_starts_anywhere_but_the_song_holding_its_place(fw, ui, so
 QM_SONG_, QM_FOLDER_, QM_COVERALBUM_, QM_PLAYLIST_ = 1, 4, 6, 8
 
 
-def collect(fw, ui, st, kind, r, cls=0):
-    st('qm_kind').value, st('qm_cls', C.c_uint).value = kind, cls
+def collect(fw, ui, qm, kind, r, cls=0):
+    qm('qm_kind').value, qm('qm_cls', C.c_uint).value = kind, cls
     return [field(t, 'path') for t in ui.deques[fw.fn('qm_collect', C.c_long, C.c_void_p)(r)]]
 
 
-def test_a_song_row_s_tracks_are_the_song_but_a_video(fw, ui, song, st):
-    assert collect(fw, ui, st, QM_SONG_, song(b'/m/a.flac')) == [b'/m/a.flac']
-    assert collect(fw, ui, st, QM_SONG_, song(b'/m/clip.mp4')) == []
+def test_a_song_row_s_tracks_are_the_song_but_a_video(fw, ui, song, qm):
+    assert collect(fw, ui, qm, QM_SONG_, song(b'/m/a.flac')) == [b'/m/a.flac']
+    assert collect(fw, ui, qm, QM_SONG_, song(b'/m/clip.mp4')) == []
 
 
-def test_a_folder_row_s_tracks_take_in_its_subfolders(fw, ui, song, st):
+def test_a_folder_row_s_tracks_take_in_its_subfolders(fw, ui, song, qm):
     tree = {b'/mnt/mmc/Music/Album': [song(b'/mnt/mmc/Music/Album/1.flac'), song(name=b'CD2', kind=4),
                                      song(name=b'.hidden', kind=4), song(b'/mnt/mmc/Music/Album/v.mp4')],
             b'/mnt/mmc/Music/Album/CD2': [song(b'/mnt/mmc/Music/Album/CD2/2.flac')],
@@ -2773,11 +2976,11 @@ def test_a_folder_row_s_tracks_take_in_its_subfolders(fw, ui, song, st):
     fw.mock('toolsLoadDirectory', lambda path, *_: ui.deques[fw.var('fw_ctx_tools_pdeq_directory', C.c_uint).value]
             .extend(tree.get(C.string_at(path), [])) or 0)
     fw.var('fw_ctx_g_folder_path', C.c_char * 1024).value = b'/mnt/mmc/Music'
-    assert collect(fw, ui, st, QM_FOLDER_, song(name=b'Album', kind=4)) == [b'/mnt/mmc/Music/Album/1.flac',
+    assert collect(fw, ui, qm, QM_FOLDER_, song(name=b'Album', kind=4)) == [b'/mnt/mmc/Music/Album/1.flac',
                                                                               b'/mnt/mmc/Music/Album/CD2/2.flac']
 
 
-def test_a_playlist_row_s_tracks_leave_out_spoken_ones(fw, ui, song, st):
+def test_a_playlist_row_s_tracks_leave_out_spoken_ones(fw, ui, song, qm):
     rows = [song(b'/mnt/mmc/Music/a.flac'), song(b'/mnt/mmc/Podcasts/ep.mp3'), song(b'/mnt/mmc/Music/x', kind=4),
             song(b'/mnt/mmc/Music/b.flac')]
     asked = []
@@ -2785,38 +2988,38 @@ def test_a_playlist_row_s_tracks_leave_out_spoken_ones(fw, ui, song, st):
             .extend(rows) or 0)
     fw.mock('tk_str_start_with', lambda s, prefix, *_: C.string_at(s).startswith(C.string_at(prefix)))
     playlist = song(kind=4, disc=7)  # a playlist row: its cd_num
-    assert collect(fw, ui, st, QM_PLAYLIST_, playlist) == [b'/mnt/mmc/Music/a.flac', b'/mnt/mmc/Music/b.flac'] and asked == [7]
+    assert collect(fw, ui, qm, QM_PLAYLIST_, playlist) == [b'/mnt/mmc/Music/a.flac', b'/mnt/mmc/Music/b.flac'] and asked == [7]
 
 
-def album_songs(fw, ui, song, st):
+def album_songs(fw, ui, song, qm):
     """A row whose tracks are two songs in a card app's favdir (a playlist row's, the simplest to give): its files."""
     rows = [song(b'/mnt/mmc/Jellyfin/A/1.flac'), song(b'/mnt/mmc/Jellyfin/A/2.flac')]
     fw.mock('getMusicByPlayList', lambda n, *_: ui.deques[fw.var('fw_ctx_tools_pdeq_directory', C.c_uint).value]
             .extend(rows) or 0)
     files = Files(fw)
     favdir_card(fw, files.files)
-    st('qm_kind').value = QM_PLAYLIST_
+    qm('qm_kind').value = QM_PLAYLIST_
     return files
 
 
-def test_an_album_s_favourite_is_told_for_each_of_its_songs(fw, ui, song, st):
-    files = album_songs(fw, ui, song, st)
+def test_an_album_s_favourite_is_told_for_each_of_its_songs(fw, ui, song, qm):
+    files = album_songs(fw, ui, song, qm)
     fw.fn('rate_album_favs', None, C.c_void_p, C.c_int)(song(kind=4, disc=7), 1)
     assert files.files['/mnt/mmc/.jf/fav.log'] == b''.join(b'\npath\t1\t/mnt/mmc/Jellyfin/A/%d.flac\n' % i
                                                          for i in (1, 2))
 
 
-def test_an_album_s_unfavourite_is_told_only_for_songs_that_were_favourites(fw, ui, song, st):
+def test_an_album_s_unfavourite_is_told_only_for_songs_that_were_favourites(fw, ui, song, qm):
     """A song liked on the app's server and never hearted here isn't the Q2's to unlike."""
-    files = album_songs(fw, ui, song, st)
+    files = album_songs(fw, ui, song, qm)
     fw.mock('checkFavExist', lambda r, *_: field(r, 'path').endswith(b'/2.flac'))
     fw.fn('rate_album_favs', None, C.c_void_p, C.c_int)(song(kind=4, disc=7), 0)
     assert files.files['/mnt/mmc/.jf/fav.log'] == b'\npath\t0\t/mnt/mmc/Jellyfin/A/2.flac\n'
     assert len(fw.calls('deleteMusicFromFav')) == 2  # My Fav is cleared of both as before
 
 
-def test_an_album_s_favourite_stops_telling_at_the_first_refusal(fw, ui, song, st):
-    files = album_songs(fw, ui, song, st)
+def test_an_album_s_favourite_stops_telling_at_the_first_refusal(fw, ui, song, qm):
+    files = album_songs(fw, ui, song, qm)
     tried = []
     fw.mock('fw_fopen', lambda path, mode, *_: tried.append(C.string_at(path)) or 0 if C.string_at(path).endswith(b'fav.log')
             else files.fopen(path, mode))
@@ -2824,24 +3027,24 @@ def test_an_album_s_favourite_stops_telling_at_the_first_refusal(fw, ui, song, s
     assert tried == [b'/mnt/mmc/.jf/fav.log'] and ui.toasts == ['Favourite not sent to the app']
 
 
-def test_a_cover_s_tracks_are_its_album_in_order(fw, ui, song, st):
+def test_a_cover_s_tracks_are_its_album_in_order(fw, ui, song, qm):
     albums = Albums(fw, ui, song)
-    assert collect(fw, ui, st, QM_COVERALBUM_, albums.songs[b'Blue'][0]) == [b'/m/blue/1.flac', b'/m/blue/x.flac']
+    assert collect(fw, ui, qm, QM_COVERALBUM_, albums.songs[b'Blue'][0]) == [b'/m/blue/1.flac', b'/m/blue/x.flac']
 
 
 @pytest.mark.parametrize('mode, forced', [(2, 2), (0, 0)])
-def test_play_next_in_stock_shuffle_forces_the_track_next(fw, ui, song, st, mcl, mode, forced):
+def test_play_next_in_stock_shuffle_forces_the_track_next(fw, ui, song, st, qm, mcl, mode, forced):
     a, b, c = song(b'/m/a.flac'), song(b'/m/b.flac'), song(b'/m/c.flac')
     held = HeldRows(fw)  # the queue holds its own copies, as libcstl's: Play Next turns them into place by their bytes
     queue = held.rows([a, b])
     fw.var('fw_ctx_mcl_pdeqplaylist', C.c_uint).value = queue
     C.c_uint64.from_address(O['MCL_POOL']).value = held.new()
     mcl.type, mcl.pos, mcl.mode, mcl.lastpos = LIBRARY, 0, mode, -1
-    st('qm_kind').value = QM_SONG_
-    assert fw.fn('navigation__qm_apply', C.c_int, C.c_void_p, C.c_int)(held.new([c]), 1) == 1
+    qm('qm_kind').value = QM_SONG_
+    assert fw.fn('queue_menu__qm_apply', C.c_int, C.c_void_p, C.c_int)(held.new([c]), 1) == 1
     assert [field(r, 'path') for r in held[queue]] == [field(r, 'path') for r in (a, c, b)]
     assert st('qm_forced', C.c_uint).value == forced
-    assert st('qm_forced_hash', C.c_uint).value == fw.fn('navigation__rec_hash', C.c_uint, C.c_void_p)(c)
+    assert st('qm_forced_hash', C.c_uint).value == fw.fn('rec_hash', C.c_uint, C.c_void_p)(c)
 
 
 # Rated albums.
@@ -2881,7 +3084,7 @@ def test_a_card_app_s_album_songs_are_in_track_order(fw, ui, song):
 class Ple(C.Structure):
     _fields_ = [*((k, C.c_void_p) for k in 'page view songs picker edit match'.split()),
                 *((k, C.c_int) for k in 'dest mode selected pending nmatch'.split()),
-                ('key', C.c_uint), ('timer', C.c_uint), ('name', C.c_char * 128), ('query', C.c_char * 128)]
+                ('key', C.c_uint), ('timer', C.c_uint), ('gen', C.c_uint), ('name', C.c_char * 128), ('query', C.c_char * 128)]
 
 
 @pytest.mark.parametrize('query, titles', [(b'moon', [b'Blue Moon']), (b'ELVIS', [b'Blue Moon', b'02 Untitled']),

@@ -1,4 +1,4 @@
-"""patch/navigation.c's Play/Pause hold and what it reaches: the queue menu (docs/internals.md#queue-menu) and
+"""The Play/Pause hold (navigation.c's keylong) and what it reaches: queue_menu.c's queue menu (docs/internals.md#queue-menu) and
 playlists.c's playlist editor, Playlists' More page and Classic's Playlists rows, then the UI loop's polls that keep
 a place, a listen and the state record (resume, library_lists.c's Most Played, scrobbling, and system.c's charge
 limit, watchdog and q2-state)."""
@@ -414,42 +414,6 @@ def ui(fw):
 
 
 @pytest.fixture(scope='module')
-def scratch(library):
-    """scratch_t's field offsets as this build lays it out: its pointers move them."""
-    return host.offsets(library.parent/'navigation.o', 'scratch_t')
-
-
-@pytest.fixture
-def st(fw, scratch):
-    base = C.addressof(fw.var('st', C.c_char))
-    return lambda name, ctype=C.c_int: ctype.from_address(base + scratch[name])
-
-
-@pytest.fixture(scope='module')
-def power_fields(library):
-    """system.c's own state, pw: its field offsets as this build lays it out."""
-    return host.offsets(library.parent/'system.o', 'pw')
-
-
-@pytest.fixture
-def power(fw, power_fields):
-    base = C.addressof(fw.var('system__pw', C.c_char))
-    return lambda name, ctype=C.c_int: ctype.from_address(base + power_fields[name])
-
-
-@pytest.fixture(scope='module')
-def lists_fields(library):
-    """library_lists.c's own state, ll: its field offsets as this build lays it out."""
-    return host.offsets(library.parent/'library_lists.o', 'll')
-
-
-@pytest.fixture
-def lists(fw, lists_fields):
-    base = C.addressof(fw.var('library_lists__ll', C.c_char))
-    return lambda name, ctype=C.c_int: ctype.from_address(base + lists_fields[name])
-
-
-@pytest.fixture(scope='module')
 def rates_fields(library):
     """ratings.c's own state, ra: its field offsets as this build lays it out."""
     return host.offsets(library.parent/'ratings.o', 'ra')
@@ -488,7 +452,7 @@ CLASSIC, MINIMAL = 'classic-light', 'ipod'
 class Ple(C.Structure):
     _fields_ = [*((k, C.c_void_p) for k in 'page view songs picker edit match'.split()),
                 *((k, C.c_int) for k in 'dest mode selected pending nmatch'.split()),
-                ('key', C.c_uint), ('timer', C.c_uint), ('name', C.c_char * 128), ('query', C.c_char * 128)]
+                ('key', C.c_uint), ('timer', C.c_uint), ('gen', C.c_uint), ('name', C.c_char * 128), ('query', C.c_char * 128)]
 
 
 def directory(fw):
@@ -722,6 +686,46 @@ def test_add_songs_lists_the_library_with_the_playlists_ticked(editor, ui):
     assert editor.title() == 'Add Songs: Road Trip' and editor.ticked() == ['One', 'Two', 'Three']
 
 
+def test_add_songs_reads_the_library_again_only_after_it_changes(editor, ui, fw):
+    """A later Add Songs in this edit reuses the picker, so stock is asked for the library again only when it has changed."""
+    reads = lambda: len(fw.calls('getAllMusic'))
+    editor.pick('Add Songs')
+    assert reads() == 1 and ui.key(editor.ple.page, KEY_RETURN) == STOP and editor.ple.mode == 0
+    editor.table.library = editor.table.library[:2]  # a read now would list two
+    editor.pick('Add Songs')
+    assert reads() == 1 and editor.rows() == ['Search', 'One', 'Two', 'Three', 'Twenty', 'Five']
+    assert ui.key(editor.ple.page, KEY_RETURN) == STOP
+    fw.var('library_gen', C.c_uint).value += 2  # an update rewrote songtable
+    editor.pick('Add Songs')
+    assert reads() == 2 and editor.rows() == ['Search', 'One', 'Two'] and editor.ticked() == ['One', 'Two']
+
+
+def test_a_failed_add_songs_read_is_read_again(editor, ui, fw):
+    def failed(*_):  # some rows, then an error
+        editor.table.fill(editor.table.library[:1])
+        return -1
+    fw.mock('getAllMusic', failed)
+    editor.pick('Add Songs')
+    assert ui.key(editor.ple.page, KEY_RETURN) == STOP
+    fw.mock('getAllMusic', lambda *_: editor.table.fill(editor.table.library))
+    editor.pick('Add Songs')
+    assert editor.rows() == ['Search', 'One', 'Two', 'Three', 'Twenty', 'Five']
+
+
+def test_a_scan_during_the_add_songs_read_leaves_it_stale(editor, ui, fw):
+    gen = fw.var('library_gen', C.c_uint)
+    def scanned(*_):  # a scan's first step lands while stock reads
+        gen.value += 1
+        return editor.table.fill(editor.table.library)
+    fw.mock('getAllMusic', scanned)
+    editor.pick('Add Songs')
+    assert ui.key(editor.ple.page, KEY_RETURN) == STOP
+    editor.table.library = editor.table.library[:2]
+    fw.mock('getAllMusic', lambda *_: editor.table.fill(editor.table.library))
+    editor.pick('Add Songs')
+    assert editor.rows() == ['Search', 'One', 'Two']
+
+
 def test_a_picked_song_is_added_and_ticked(editor, ui):
     editor.pick('Add Songs')
     editor.pick('Five')
@@ -798,6 +802,43 @@ def test_an_unreadable_box_clears_the_query(editor, ui):
     ui.key(editor.ple.page, KEY_RETURN)
     ui.due('ple_run')
     assert editor.rows()[0] == 'Search' and len(editor.rows()) == 6
+
+
+def test_add_songs_lists_500_songs_then_a_row_that_searches(fw, ui, recs, st):
+    """Every row is built at once, and the wheel walks at most ringnav's MAX_ENTRIES (512): the first 500 songs,
+    then a last row the wheel still reaches, which opens the Search box as row 0 does."""
+    editor = Editor(fw, ui, recs, songs=('b', 'c'))  # without One, the first song not listed
+    use_set(st, MINIMAL)
+    assert editor.open(1, None) == 0
+    editor.table.library *= 120  # 600 songs
+    editor.pick('Add Songs')
+    assert editor.rows() == ['Search', *list(TITLES.values()) * 100, 'Search for more songs']
+    C.c_ubyte.from_address(editor.view() + O['VIEW_VERTICAL']).value = 1  # rows_view's yslidable
+    m = fw.var('g_menu', Menu)
+    assert fw.fn('load_rows', C.c_int, C.POINTER(Menu), C.c_void_p)(m, editor.view()) == 1
+    assert m.n == 502 and m.at[501] == ui.kids(editor.view())[-1]
+    editor.pick('Search for more songs')
+    assert editor.ple.mode == 4 and ui.lookup(editor.ple.page, 'search_edit', 1)
+    assert editor.table.songs(3) == ['Two', 'Three']  # it added nothing
+
+
+def test_a_search_with_more_than_500_matches_ends_in_that_row(editor, ui):
+    editor.table.library *= 150  # 750 songs, 600 of them with an e
+    editor.pick('Add Songs')
+    editor.pick('Search')
+    ui.nodes[ui.lookup(editor.ple.page, 'search_edit', 1)].text = 'e'
+    ui.key(editor.ple.page, KEY_RETURN)
+    ui.due('ple_run')
+    assert editor.rows() == ['Search: e', *['One', 'Three', 'Twenty', 'Five'] * 125, 'Search for more songs']
+    editor.pick('Search for more songs')
+    assert ui.nodes[ui.lookup(editor.ple.page, 'search_edit', 1)].text == 'e'  # the query, as row 0 keeps it
+
+
+@pytest.mark.parametrize('songs, more', [(500, []), (501, ['Search for more songs'])])
+def test_only_a_list_past_500_songs_is_cut(editor, songs, more):
+    editor.table.library = (editor.table.library * 101)[:songs]
+    editor.pick('Add Songs')
+    assert editor.rows() == ['Search', *list(TITLES.values()) * 100, *more]
 
 
 @pytest.mark.parametrize('steps', [('Two',), ('Two', 'Remove from Playlist'), ('Add Songs',)])
@@ -904,6 +945,9 @@ def test_a_long_press_of_a_side_button_is_the_editors(editor, ui, fw):
     assert not fw.calls('stock_keylong_trampoline') and not editor.table.log
 
 
+STAND_IN_LOGS = []  # each stand-in's log: its code writes there at every call, until the child exits
+
+
 # Stock code at a fixed address, for a handler the C calls there. Only ever in a fork.
 def stock_handler(address, result=0):
     """x86-64 at address: its first two arguments and the event's x (rsi + EVENT_X) logged, result returned."""
@@ -912,6 +956,7 @@ def stock_handler(address, result=0):
     code = (b'\x48\xb8' + struct.pack('<Q', C.addressof(log)) + bytes.fromhex('488938 48897008') +
             b'\x8b\x4e' + bytes([EVENT_X]) + bytes.fromhex('48894810') + b'\xb8' + struct.pack('<I', result) + b'\xc3')
     C.memmove(address, code, len(code))
+    STAND_IN_LOGS.append(log)
     return log
 
 
@@ -1357,7 +1402,7 @@ def test_go_to_album_opens_its_songs_and_puts_the_browsing_back_after(fw, ui, st
     before = bytes(info)
     ui.routes['playerjumpinfo_page'] = lambda ctx: ui.window('playerjumpinfo_page')
     r = recs(album='Abbey Road', path='/mnt/mmc/a.flac', id_=4)
-    fw.fn('navigation__qm_goto', None, C.c_void_p, C.c_int)(r, 1)
+    fw.fn('queue_menu__qm_goto', None, C.c_void_p, C.c_int)(r, 1)
     assert struct.unpack_from('<I', info)[0] == 0xff10 and info[9] == b'\0'
     assert C.string_at(C.addressof(info) + 0xd) == b'Abbey Road' and ui.went == ['playerjumpinfo_page']
     page = ui.top()
@@ -1368,23 +1413,23 @@ def test_go_to_album_opens_its_songs_and_puts_the_browsing_back_after(fw, ui, st
 
 def test_go_to_album_writes_the_artist_too(fw, ui, st, recs):
     r = recs(artist='The Beatles', path='/mnt/mmc/a.flac')
-    fw.fn('navigation__qm_goto', None, C.c_void_p, C.c_int)(r, 1)
+    fw.fn('queue_menu__qm_goto', None, C.c_void_p, C.c_int)(r, 1)
     assert C.string_at(C.addressof(classinfo(fw)) + 0x10d) == b'The Beatles'
 
 
-def test_go_to_artist_opens_artistinfo_with_the_class_and_record(fw, ui, st, recs):
+def test_go_to_artist_opens_artistinfo_with_the_class_and_record(fw, ui, qm, recs):
     seen = []
     ui.routes['localmusic/artistinfo_page'] = lambda ctx: seen.append((C.c_int.from_address(ctx).value,
                                                                          C.c_void_p.from_address(ctx + 8).value)) or ui.window('artistinfo_page')
-    st('qm_cls', C.c_uint).value = 0xf004
+    qm('qm_cls', C.c_uint).value = 0xf004
     r = recs(artist='Nina Simone', path='/mnt/mmc/n.flac')
-    fw.fn('navigation__qm_goto', None, C.c_void_p, C.c_int)(r, 0)
+    fw.fn('queue_menu__qm_goto', None, C.c_void_p, C.c_int)(r, 0)
     assert seen == [(0xf004, r)] and ui.handlers(ui.top(), EVT_WINDOW_CLOSE) == [ui.fn('qm_restore')]
 
 
 def test_a_go_to_that_opened_nothing_keeps_no_restore(fw, ui, st, recs):
     under = ui.window('playing_page')
-    fw.fn('navigation__qm_goto', None, C.c_void_p, C.c_int)(recs(album='A'), 1)
+    fw.fn('queue_menu__qm_goto', None, C.c_void_p, C.c_int)(recs(album='A'), 1)
     assert ui.top() == under and not ui.handlers(under, EVT_WINDOW_CLOSE)
 
 
@@ -2032,7 +2077,7 @@ def test_most_playeds_tracks_hold_as_its_songs(hold, recs, ui, st, fw):
 # What a hold leaves stock.
 @pytest.mark.parametrize('how', ['dialog', 'timer', 'picker', 'dark', 'animating', 'touch', 'airplay', 'select mode',
                                  'not a list', 'stream', 'no key', 'video', 'rows changed'])
-def test_a_hold_that_isnt_the_menus_is_stocks(hold, recs, ui, st, fw, mcl, how):
+def test_a_hold_that_isnt_the_menus_is_stocks(hold, recs, ui, st, qm, fw, mcl, how):
     songs = [song(recs, i) for i in range(3)]
     if how in ('not a list', 'video', 'rows changed'):
         rows = songs if how != 'video' else [recs(path=f'/mnt/mmc/{i}.mp4', kind=8) for i in range(3)]
@@ -2042,7 +2087,7 @@ def test_a_hold_that_isnt_the_menus_is_stocks(hold, recs, ui, st, fw, mcl, how):
     else:
         hold.now_playing(songs)
     {'dialog': lambda: setattr(st('qm_dialog', C.c_void_p), 'value', 1),
-     'timer': lambda: setattr(st('qm_timer', C.c_uint), 'value', 5),
+     'timer': lambda: setattr(qm('qm_timer', C.c_uint), 'value', 5),
      'picker': lambda: setattr(st('qm_playlist', C.c_void_p), 'value', 1),
      'dark': lambda: setattr(fw.var('g_backlight_status', C.c_ubyte), 'value', 0),
      'animating': lambda: fw.mock('window_manager_is_animating', lambda *_: 1),
@@ -2205,7 +2250,7 @@ def quick(fw, ui, state, idex=-1, pressed=0):
     ui.nodes[top].props['timer_idex'] = idex
     fw.var('fw_ctx_g_dropdown_menu_state', C.c_int).value = state
     ui.pressed = pressed
-    fw.fn('navigation__quick_poll', None)()
+    fw.fn('quick_poll', None)()
     return top
 
 
@@ -2643,7 +2688,7 @@ def test_a_played_song_moving_out_of_the_table_marks_most_played_stale(player, r
 
 # Stock Shuffle's pick and a pending Play next (ringnav_shuffle, shuffle_forced).
 def rec_hash(fw, r):
-    return fw.fn('navigation__rec_hash', C.c_uint, C.c_void_p)(r)
+    return fw.fn('rec_hash', C.c_uint, C.c_void_p)(r)
 
 
 def shuffle_queue(fw, recs, mcl, n=4):

@@ -11,8 +11,8 @@
 #include "stock.h"
 #endif
 
-/* s into out (size bytes) with %, tab, LF and CR as %25, %09, %0A and %0D (Q2SPOT/1, docs/librespot.md);
- * its length, or -1 when it doesn't fit. */
+/* s into out (size bytes) with %, tab, LF and CR as %25, %09, %0A and %0D (Q2SPOT/1,
+ * docs/librespot.md); its length, or -1 when it doesn't fit. */
 int spot_escape(const char *s, char *out, unsigned size) {
     unsigned k = 0;
     for (; *s; ++s) {
@@ -20,7 +20,8 @@ int spot_escape(const char *s, char *out, unsigned size) {
         int esc = c == '%' || c == '\t' || c == '\n' || c == '\r';
         if (k + (esc ? 3u : 1u) >= size) return -1;
         if (esc)
-            out[k++] = '%', out[k++] = "0123456789ABCDEF"[c >> 4], out[k++] = "0123456789ABCDEF"[c & 15];
+            out[k++] = '%', out[k++] = "0123456789ABCDEF"[c >> 4],
+            out[k++] = "0123456789ABCDEF"[c & 15];
         else
             out[k++] = (char)c;
     }
@@ -29,8 +30,16 @@ int spot_escape(const char *s, char *out, unsigned size) {
     return (int)k;
 }
 
+/* "\t" and s escaped appended to out (size bytes); 0 when it doesn't fit. */
+int spot_put(char *out, unsigned size, const char *s) {
+    unsigned k = strlen(out);
+    return k + 1 < size && (out[k] = '\t', spot_escape(s, out + k + 1, size - k - 1) >= 0);
+}
+
 int hex(char c) {
-    return c >= '0' && c <= '9' ? c - '0' : (c | 32) >= 'a' && (c | 32) <= 'f' ? (c | 32) - 'a' + 10 : -1;
+    return c >= '0' && c <= '9'                 ? c - '0'
+           : (c | 32) >= 'a' && (c | 32) <= 'f' ? (c | 32) - 'a' + 10
+                                                : -1;
 }
 
 /* A Q2SPOT/1 reply in buf (len bytes, a NUL after them) cut in place: f the header's 4 fields, then
@@ -48,10 +57,11 @@ int spot_reply(char *buf, unsigned len, char **f, int max) {
             if (got == width) return -1;
             f[k + got++] = s;
             for (; s < end && *s != '\t' && *s != '\n'; ++o) {
-                int v = *s != '%' ? (unsigned char)*s : s + 2 < end && hex(s[1]) >= 0 && hex(s[2]) >= 0
-                                                          ? hex(s[1]) << 4 | hex(s[2])
-                                                          : 0;
-                if (!v) return -1; /* a NUL would cut the field */
+                int v = *s != '%' ? (unsigned char)*s
+                        : s + 2 < end && hex(s[1]) >= 0 && hex(s[2]) >= 0
+                            ? hex(s[1]) << 4 | hex(s[2])
+                            : 0;
+                if (!v) return -1;      /* a NUL would cut the field */
                 s += *s == '%' ? 3 : 1; /* before o, which may be s, is written */
                 *o = (char)v;
             }
@@ -67,13 +77,14 @@ int spot_reply(char *buf, unsigned len, char **f, int max) {
 #ifndef PEQ_HOST
 
 #define SPOT_BIN SPOT_DIR "/librespot"
-#define SPOT_RUN "/bin/sh " SPOT_DIR "/run" /* backgrounds itself, once per boot */
+#define SPOT_RUN "/bin/sh " SPOT_DIR "/run"  /* backgrounds itself, once per boot */
 #define SPOT_STATE "/tmp/q2-librespot.state" /* the fork's --status-file */
 #define SPOT_COVER SPOT_STATE ".jpg"
 #define SPOT_SOCK "/tmp/q2-librespot.sock" /* its --control-socket */
 #define SPOT_SINK "/tmp/q2sink.sock"       /* q2video -s, its sink off the DAC: video.c SINK_SOCK */
 #define SPOT_ART "/tmp/q2spot.jpg"         /* the cover at the page's size */
 #define SPOT_POLL_MS 500
+/* clang-format off */
 #define SPOT_YIELD_MS 1500 /* local music waits at most this long for librespot to let the DAC go  \
                             */
 #define SPOT_STEP_MS 5000  /* a scrub tick, as Now Playing's */
@@ -92,6 +103,7 @@ int spot_reply(char *buf, unsigned len, char **f, int max) {
 #define SPOT_ALIVE_MS 10000   /* while it holds the timers, librespot's socket is checked this often */
 #define SPOT_LOG SPOT_DIR "/spot.log" /* librespot's stderr, which run appends to */
 #define SPOT_REFUSED "error audio key" /* Spotify refused a track's key: librespot-org/librespot#1649 */
+/* clang-format on */
 
 /* librespot as last read; kept for the life of demo. */
 static struct {
@@ -100,11 +112,11 @@ static struct {
     unsigned long long at;
     char raw[1536]; /* the file as last read, behind a '\n' so every key follows one */
     char state[12], track[64], title[256], artist[256], album[256];
-    char out[24]; /* SPOT_OUT as last written */
-    int auth, loading, old; /* auth: 0 unknown, 1 authenticated, -1 pairing; loading: 1 waiting, 2 timeout,
-                             * 3 key refused */
+    char out[24];           /* SPOT_OUT as last written */
+    int auth, loading, old; /* auth: 0 unknown, 1 authenticated, -1 pairing; loading: 1 waiting, 2
+                             * timeout, 3 key refused */
     unsigned load_at;
-    long log_from; /* SPOT_LOG's bytes before this play's */
+    long log_from;             /* SPOT_LOG's bytes before this play's */
     char wanted[64], from[64]; /* the track asked for, and the one there when it was */
 } sp __attribute__((section(".scratch")));
 
@@ -112,9 +124,11 @@ static struct {
 static struct {
     void *page, *info, *msg, *art, *bar, *glyph, *title, *artist, *album, *elapsed, *remain, *note,
         *sub;
-    unsigned timer, leave, scrub_at, shown, playing, press, press_at, bar_drawn; /* bar_drawn: its state + 1 */
-    int scrub, scrub_ms, ipod;         /* ipod: Classic's layout (stream_ipod) */
-    char art_track[64], art_tried[64]; /* art_tried: the track whose cover failed, tried art_tries times */
+    unsigned timer, leave, scrub_at, shown, playing, press, press_at,
+        bar_drawn;             /* bar_drawn: its state + 1 */
+    int scrub, scrub_ms, ipod; /* ipod: Classic's layout (stream_ipod) */
+    char art_track[64],
+        art_tried[64]; /* art_tried: the track whose cover failed, tried art_tries times */
     int art_tries;
 } ui __attribute__((section(".scratch")));
 
@@ -177,7 +191,7 @@ static unsigned spot_position(void) {
  * (spot_output). */
 static void spot_take(void) {
     headset_manual();
-    radio_stop(); /* Internet Radio's q2video holds the PCM */
+    radio_stop();                               /* Internet Radio's q2video holds the PCM */
     if (mclGetPlayStatus() != 1) player_stop(); /* 1 stopped */
     dac_take();
 }
@@ -185,15 +199,17 @@ static void spot_take(void) {
 /* The output in use, which the card's aplay.sh reads each time librespot starts its sink: SPOT_OUT
  * holds output_device's device and volume for Bluetooth or a USB DAC (q2video -s plays there), and
  * is gone for the headphone DAC (aplay on plughw:0,0), except with Mono Audio on: q2video mixes it,
- * so the DAC is plughw:0,0 with an h volume (the DAC applies it). Written aside and renamed, when it
- * changes; a running q2video gets v and the volume, as radio's does. ponytail: a new device, or
+ * so the DAC is plughw:0,0 with an h volume (the DAC applies it). Written aside and renamed, when
+ * it changes; a running q2video gets v and the volume, as radio's does. ponytail: a new device, or
  * Mono Audio's switch on the DAC, waits for the sink's next start (pause and play), as Videos and
  * Internet Radio keep theirs till they end. */
 static void spot_output(void) {
     char vol[5], out[sizeof sp.out] = "", v[2] = { 'v', (char)headset_gain() };
     const char *dev = output_device(vol);
-    if (dev) tk_snprintf(out, sizeof out, "%s %s\n", dev, vol);
-    else if (mono_on() || swap_on()) tk_snprintf(out, sizeof out, "plughw:0,0 h%s\n", vol);
+    if (dev)
+        tk_snprintf(out, sizeof out, "%s %s\n", dev, vol);
+    else if (mono_on() || swap_on())
+        tk_snprintf(out, sizeof out, "plughw:0,0 h%s\n", vol);
     if (!strcmp(out, sp.out)) return;
     memcpy(sp.out, out, sizeof out);
     void *f = out[0] ? fopen(SPOT_OUT ".tmp", "w") : 0;
@@ -260,7 +276,8 @@ static int spot_refused(void) {
     long end = f && !fseek(f, 0, 2) ? ftell(f) : 0, from = sp.log_from;
     if (end < from) from = 0; /* a new log */
     if (end - from > (long)sizeof buf - 1) from = end - (long)sizeof buf + 1;
-    unsigned n = f && end > from && !fseek(f, from, 0) ? fread(buf, 1, (unsigned)(end - from), f) : 0;
+    unsigned n =
+        f && end > from && !fseek(f, from, 0) ? fread(buf, 1, (unsigned)(end - from), f) : 0;
     if (f) fclose(f);
     buf[n] = 0;
     long keep = end - (long)sizeof SPOT_REFUSED + 2;
@@ -299,6 +316,7 @@ void spot_poll(void) {
     spot_output();
     char raw[sizeof sp.raw];
     if (spot_read(raw, sizeof raw)) {
+        /* NOLINTNEXTLINE(clang-analyzer-unix.cstring.UninitializedRead): read only to its NUL */
         memcpy(sp.raw, raw, sizeof raw);
         spot_parse();
         sp.dead = 0;
@@ -379,12 +397,13 @@ static int spot_single(const void *info) {
     return 0;
 }
 
-/* ringnav(), the page on top, as Now Playing: a centre press waits DOUBLE_CLICK_MS (center_press); a second one
- * starts a scrub, else it turns the screen off. While scrubbing one press seeks it at once, the wheel moves
- * it SPOT_STEP_MS a tick, and SCRUB_MS without a tick seeks there (spot_poll). Otherwise the wheel
- * stays stock's volume. */
+/* ringnav(), the page on top, as Now Playing: a centre press waits DOUBLE_CLICK_MS (center_press);
+ * a second one starts a scrub, else it turns the screen off. While scrubbing one press seeks it at
+ * once, the wheel moves it SPOT_STEP_MS a tick, and SCRUB_MS without a tick seeks there
+ * (spot_poll). Otherwise the wheel stays stock's volume. */
 int spot_key(void *top, unsigned key) {
-    if (!ui.page || top != ui.page || sp.loading || sp.auth < 0 || !sp.track[0] || !sp.duration) return 0;
+    if (!ui.page || top != ui.page || sp.loading || sp.auth < 0 || !sp.track[0] || !sp.duration)
+        return 0;
     if (key == KEY_CENTER) {
         int press = center_press(&ui.press, &ui.press_at, spot_single, ui.scrub);
         if (press != 2) return press;
@@ -415,7 +434,8 @@ static void times(unsigned ms) {
 static void spot_refresh(void) {
     if (sp.loading == 1 && time_now_ms() - sp.load_at >= SPOT_WAIT_MS) sp.loading = 2;
     if (sp.loading == 2 && spot_started()) sp.loading = 0; /* a paused track writes no new state */
-    int track = sp.auth >= 0 && !sp.loading && sp.track[0] && strcmp(sp.state, "none"), installed = sp.launched;
+    int track = sp.auth >= 0 && !sp.loading && sp.track[0] && strcmp(sp.state, "none"),
+        installed = sp.launched;
     widget_set_visible(ui.info, track, 0);
     widget_set_visible(ui.msg, !track, 0);
     if (!track) {
@@ -441,7 +461,8 @@ static void spot_refresh(void) {
                 theme_font(fields[i], ROLE_NP, FONT_ROW); /* the local page's title */
         }
     /* ponytail: the cover is sized on the UI thread, one decode a track; a worker if it stutters */
-    /* A cover that fails (written after its state line, or bad) is tried again on the next 3 ticks. */
+    /* A cover that fails (written after its state line, or bad) is tried again on the next 3 ticks.
+     */
     if (tk_strcmp(ui.art_tried, sp.track)) ui.art_tries = 0;
     if (sp.cover && tk_strcmp(ui.art_track, sp.track) && ui.art_tries < 4) {
         int px = I(ui.art, W_W); /* Classic's slanted art is wider */
@@ -482,14 +503,6 @@ static int tick(const void *unused) {
     return 8; /* RET_REPEAT */
 }
 
-static void box(void *canvas, int x, int y, int w, int h, unsigned color, unsigned radius) {
-    int r[4] = { x, y, w, h };
-    if (canvas_fill_rounded_rect(canvas, r, (void *)0, &color, radius)) {
-        canvas_set_fill_color(canvas, color);
-        canvas_fill_rect(canvas, x, y, w, h);
-    }
-}
-
 /* ringnav_paint, every widget after stock painted it: the bar, as Now Playing's capsule (the
  * accent's light tone), and the play state in the top row. */
 void spot_paint(void *w, void *canvas) {
@@ -506,8 +519,10 @@ void spot_paint(void *w, void *canvas) {
         int x = (int)((ms >> 4) * SPOT_BAR_W / ((sp.duration >> 4) | 1)); /* 32-bit to 57 h */
         /* Minimal's 4 px line, Modern's 8 px capsule: the view's height at most */
         int h = theme()->np_bar < SPOT_BAR_H ? theme()->np_bar : SPOT_BAR_H;
-        box(canvas, 0, 0, SPOT_BAR_W, h, rgba(TRACK_COLOR, 255), h / 2);
-        if (x) box(canvas, 0, 0, x < h ? h : x, h, ui.scrub ? 0xffffffffu : tone, h / 2);
+        fill_box(canvas, &(rect_t){ 0, 0, SPOT_BAR_W, h }, rgba(TRACK_COLOR, 255), h / 2);
+        if (x)
+            fill_box(canvas, &(rect_t){ 0, 0, x < h ? h : x, h }, ui.scrub ? 0xffffffffu : tone,
+                     h / 2);
     } else { /* a triangle playing, two bars otherwise */
         canvas_set_fill_color(canvas, 0xffffffffu);
         if (sp.playing)
@@ -543,8 +558,7 @@ static int closed(void *ctx, void *event) {
     return 0;
 }
 
-void *label(void *parent, int x, int y, int w, int h, const char *style, int px,
-                   unsigned color) {
+void *label(void *parent, int x, int y, int w, int h, const char *style, int px, unsigned color) {
     void *l = text(parent, x, y, w, h);
     widget_use_style(l, style);
     widget_set_prop_int(l, "style:normal:font_size", px);
@@ -565,14 +579,12 @@ static void spot_np(void) {
     ui.art = image_create(ui.info, SPOT_ART_X, SPOT_ART_Y, SPOT_ART_PX, SPOT_ART_PX);
     image_set_draw_type(ui.art, 4); /* as Coverflow's covers */
     image_base_set_image(ui.art, PLACEHOLDER);
-    ui.title =
-        label(ui.info, SPOT_TEXT_X, SPOT_ART_Y + 41, SPOT_TEXT_W, 28, "s_scrlabel_white20l", NP_TITLE_PX, 0xffffffffu);
-    ui.artist =
-        label(ui.info, SPOT_TEXT_X, SPOT_ART_Y + 75, SPOT_TEXT_W, 22, "s_scrlabel_white20l", NP_META_PX,
-              0xff000000u | NP_ARTIST_RGB);
-    ui.album =
-        label(ui.info, SPOT_TEXT_X, SPOT_ART_Y + 103, SPOT_TEXT_W, 22, "s_scrlabel_white20l", NP_META_PX,
-              0xff000000u | NP_ALBUM_RGB);
+    ui.title = label(ui.info, SPOT_TEXT_X, SPOT_ART_Y + 41, SPOT_TEXT_W, 28, "s_scrlabel_white20l",
+                     NP_TITLE_PX, 0xffffffffu);
+    ui.artist = label(ui.info, SPOT_TEXT_X, SPOT_ART_Y + 75, SPOT_TEXT_W, 22, "s_scrlabel_white20l",
+                      NP_META_PX, 0xff000000u | NP_ARTIST_RGB);
+    ui.album = label(ui.info, SPOT_TEXT_X, SPOT_ART_Y + 103, SPOT_TEXT_W, 22, "s_scrlabel_white20l",
+                     NP_META_PX, 0xff000000u | NP_ALBUM_RGB);
     void *fields[] = { ui.title, ui.artist, ui.album };
     for (unsigned i = 0; i < 3; ++i) {
         hscroll_label_set_only_focus(fields[i], 0);
@@ -602,7 +614,19 @@ static void spot_np(void) {
 enum { L_BASE, L_LIST, L_CATS, L_CONFIRM, L_DOWNLOADS, L_JOB, L_STORAGE, L_SELECT, L_REMOVE };
 enum { S_LOAD, S_READY, S_ERROR, S_PAIR, S_OLD, S_WAIT }; /* S_WAIT: no socket yet, asked again */
 enum { A_FETCH, A_PLAY, A_ENQUEUE, A_SET, A_SIGNOUT, A_DOWNLOAD, A_CAPS, A_REMOVE, A_PREVIEW };
-enum { M_PLAYING, M_LIKED, M_PLAYLISTS, M_ALBUMS, M_ARTISTS, M_SEARCH, M_QUEUE, M_SETTINGS, M_ACCOUNT, M_DOWNLOADED, M_DOWNLOADS };
+enum {
+    M_PLAYING,
+    M_LIKED,
+    M_PLAYLISTS,
+    M_ALBUMS,
+    M_ARTISTS,
+    M_SEARCH,
+    M_QUEUE,
+    M_SETTINGS,
+    M_ACCOUNT,
+    M_DOWNLOADED,
+    M_DOWNLOADS
+};
 enum { G_ROW, G_SHOW, G_SEARCH };
 
 typedef struct {
@@ -610,23 +634,24 @@ typedef struct {
     unsigned id; /* the fetch whose reply this level takes */
     char *buf;   /* the reply; 0 before it came, or once evicted */
     char *f[4 + 6 * SPOT_ROWS];
-    char title[256], note[128], op[16], args[320], cursor[1100]; /* args, cursor: "\t" and escaped */
+    char title[256], note[128], op[16], args[320],
+        cursor[1100]; /* args, cursor: "\t" and escaped */
 } level_t;
 
 /* The request in flight, on its pthread: written from buf, the reply then read into it. */
 static struct {
     unsigned long thread;
-    int running, fail; /* fail: W_* */
+    int running, fail; /* fail: SPOT_* */
     volatile int cancel, done;
     unsigned id, n, len; /* id: the latest request's, never reused */
     char *buf;
 } wk __attribute__((section(".scratch")));
-enum { W_OK, W_NOSOCK, W_FAIL };
 
 /* The page, while open. act: what the request in flight is for (A_*). */
 static struct {
     void *page, *view, *edit;
-    unsigned timer, go, leave, poll_at, until; /* until: no socket before it is librespot starting */
+    unsigned timer, go, leave, poll_at,
+        until; /* until: no socket before it is librespot starting */
     int depth, act, next, arg, playing, rows[11], caps_checked, downloads, can_download;
     char selected[6500], remove_kind[16], remove_note[128];
     char term[64];
@@ -644,18 +669,12 @@ static const char *const MENU[] = { "正在播放", "喜欢的歌曲", "播放�
                                     "搜索", "播放队列", "播放设置", "账号", "已下载歌曲", "下载" };
 static const char *const CATS[] = { "歌曲", "专辑", "表演者", "播放列表" };
 
-/* "\t" and s escaped appended to out (size bytes); 0 when it doesn't fit. */
-static int put(char *out, unsigned size, const char *s) {
-    unsigned k = strlen(out);
-    return k + 1 < size && (out[k] = '\t', spot_escape(s, out + k + 1, size - k - 1) >= 0);
-}
-
 static void request(const char *op, const char *tail, int act);
 
 static void remove_request(int confirm) {
     char tail[7000] = "";
-    if (put(tail, sizeof tail, br.remove_kind) && put(tail, sizeof tail, br.selected) &&
-        (!confirm || put(tail, sizeof tail, "confirm")))
+    if (spot_put(tail, sizeof tail, br.remove_kind) && spot_put(tail, sizeof tail, br.selected) &&
+        (!confirm || spot_put(tail, sizeof tail, "confirm")))
         request("remove", tail, confirm ? A_REMOVE : A_PREVIEW);
 }
 
@@ -671,39 +690,49 @@ static void fetch_cancel(void) {
 __asm__(".globl spot_shut\nspot_shut:\nli $a1, 1\nli $v0, 4182\nsyscall\njr $ra\n");
 void spot_shut(int fd);
 
-/* One connection a request: written, shut for writing, and read to EOF within SPOT_WAIT_MS, 100 ms
- * at a time so a cancel is joined at once. */
-static void *worker(void *unused) {
-    struct unix_addr to = { 1, SPOT_BROWSE };
-    unsigned long long end = now_ms() + SPOT_WAIT_MS;
+/* One Q2SPOT/1 connection to the socket at path, the card apps' too (addon.c's worker): buf's len
+ * bytes written, shut for writing, and the reply read into buf from *n to EOF, failing past max
+ * bytes, within wait_ms, 100 ms at a time so a cancel is joined at once. 0 (SPOT_OK) at EOF,
+ * SPOT_NOSOCK with no connection, else SPOT_FAIL. */
+int spot_exchange(const char *path, unsigned wait_ms, unsigned max, char *buf, unsigned len,
+                  unsigned *n, volatile int *cancel) {
+    struct unix_addr to = { 1, { 0 } };
+    tk_snprintf(to.path, sizeof to.path, "%s", path);
+    unsigned long long end = now_ms() + wait_ms;
     unsigned sent = 0;
-    int fd = socket(1, 2, 0), k = 1; /* AF_UNIX, SOCK_STREAM (MIPS numbering) */
-    wk.fail = W_NOSOCK;
-    if (fd >= 0 && fd < 1024 && !fcntl(fd, 4, 0x80) && !connect(fd, &to, sizeof to)) { /* F_SETFL, O_NONBLOCK (MIPS) */
-        wk.fail = W_FAIL;
-        while (!wk.cancel && now_ms() < end) {
+    int fd = socket(1, 2, 0), k = 1, fail = SPOT_NOSOCK; /* AF_UNIX, SOCK_STREAM (MIPS numbering) */
+    if (fd >= 0 && fd < 1024 && !fcntl(fd, 4, 0x80) &&
+        !connect(fd, &to, sizeof to)) { /* F_SETFL, O_NONBLOCK (MIPS) */
+        fail = SPOT_FAIL;
+        while (!*cancel && now_ms() < end) {
             unsigned set[32] = { 0 }; /* fd_set */
             int tv[2] = { 0, 100000 };
             set[fd / 32] = 1u << fd % 32;
-            int writing = sent < wk.len;
+            int writing = sent < len;
             if ((k = select(fd + 1, writing ? 0 : set, writing ? set : 0, 0, tv)) <= 0) {
                 if (k) break; /* not a timeout */
                 continue;
             }
             if (writing) {
-                k = send(fd, wk.buf + sent, wk.len - sent, 0x4000); /* MSG_NOSIGNAL */
+                k = send(fd, buf + sent, len - sent, 0x4000); /* MSG_NOSIGNAL */
                 if (k <= 0) break;
-                if ((sent += (unsigned)k) == wk.len) spot_shut(fd);
+                if ((sent += (unsigned)k) == len) spot_shut(fd);
                 continue;
             }
-            if ((k = recv(fd, wk.buf + wk.n, SPOT_REPLY_MAX + 1 - wk.n, 0)) <= 0 ||
-                (wk.n += (unsigned)k) > SPOT_REPLY_MAX) {
-                wk.fail = k ? W_FAIL : W_OK;
+            if ((k = recv(fd, buf + *n, max + 1 - *n, 0)) <= 0 || (*n += (unsigned)k) > max) {
+                fail = k ? SPOT_FAIL : SPOT_OK;
                 break;
             }
         }
     }
     if (fd >= 0) close(fd);
+    return fail;
+}
+
+/* One connection a request (spot_exchange) to librespot's browse socket. */
+static void *worker(void *unused) {
+    wk.fail =
+        spot_exchange(SPOT_BROWSE, SPOT_WAIT_MS, SPOT_REPLY_MAX, wk.buf, wk.len, &wk.n, &wk.cancel);
     if (wk.n <= SPOT_REPLY_MAX) wk.buf[wk.n] = 0; /* past the reply, the request's bytes */
     wk.done = 1;
     return 0;
@@ -717,14 +746,15 @@ static void request(const char *op, const char *tail, int act) {
     br.act = act;
     if (act == A_PLAY) {
         const char *uri = strrchr(tail, '\t');
-        tk_snprintf(sp.wanted, sizeof sp.wanted, "%s", uri && strstr(uri + 1, "spotify:track:") == uri + 1 ? uri + 15 : "");
+        tk_snprintf(sp.wanted, sizeof sp.wanted, "%s",
+                    uri && strstr(uri + 1, "spotify:track:") == uri + 1 ? uri + 15 : "");
         tk_snprintf(sp.from, sizeof sp.from, "%s", sp.track);
     }
     ++wk.id;
     if (act == A_FETCH) top()->id = wk.id;
     wk.cancel = 0;
     wk.n = 0;
-    wk.fail = W_FAIL;
+    wk.fail = SPOT_FAIL;
     int n = (wk.buf = calloc(SPOT_REPLY_MAX + 2, 1))
                 ? tk_snprintf(wk.buf, SPOT_REQ_MAX, "Q2SPOT/1\n%u\t%s%s\n", wk.id, op, tail)
                 : 0;
@@ -783,7 +813,9 @@ static void show(void) {
     } else if (l->kind == L_BASE) {
         br.playing = has_track();
         for (int r = M_PLAYING; r <= M_DOWNLOADS; ++r)
-            if ((r != M_DOWNLOADED || !br.downloads) && ((r != M_PLAYING && r != M_QUEUE && r != M_SETTINGS) || br.playing)) br.rows[n++] = r;
+            if ((r != M_DOWNLOADED || !br.downloads) &&
+                ((r != M_PLAYING && r != M_QUEUE && r != M_SETTINGS) || br.playing))
+                br.rows[n++] = r;
         br.view = page_list(br.page, br.page, 0, "Spotify", n, 48);
         for (int i = 0; i < n; ++i) /* Now Playing and Search open no list */
             if (br.rows[i] == M_PLAYING || br.rows[i] == M_SEARCH)
@@ -794,7 +826,8 @@ static void show(void) {
         br.view = page_list(br.page, br.page, 0, l->title, n = 4, 48);
         for (int i = 0; i < n; ++i) into(i, CATS[i], 0);
     } else if (l->kind == L_DOWNLOADS) {
-        br.view = page_list(br.page, br.page, 0, "Downloads", n = br.downloads ? 4 : 2 + br.can_download, 64);
+        br.view = page_list(br.page, br.page, 0, "Downloads",
+                            n = br.downloads ? 4 : 2 + br.can_download, 64);
         if (br.downloads) {
             into(0, "已下载歌单", "");
             into(1, "已下载歌曲", "");
@@ -824,7 +857,8 @@ static void show(void) {
         row(0, "取消", 0);
         row(1, "退出账号", 0);
     } else {
-        int download = (br.can_download && !strcmp(l->op, "playlist")) || (br.downloads && !strcmp(l->op, "liked"));
+        int download = (br.can_download && !strcmp(l->op, "playlist")) ||
+                       (br.downloads && !strcmp(l->op, "liked"));
         int manage = br.downloads && !strcmp(l->op, "collection");
         if (!(n = l->n + more(l) + download + manage + (l->kind == L_SELECT))) {
             page_list(br.page, br.page, 0, "暂无内容", 0, 48);
@@ -864,8 +898,10 @@ static void base(int state) {
     show();
 }
 
-/* A level over the top one, which keeps its selected row; the one SPOT_KEEP down lets its rows go. */
-static void push(int kind, const char *op, const char *args, const char *cursor, const char *title) {
+/* A level over the top one, which keeps its selected row; the one SPOT_KEEP down lets its rows go.
+ */
+static void push(int kind, const char *op, const char *args, const char *cursor,
+                 const char *title) {
     level_t *l;
     /* The arguments may point into the top level, including the slot reused at the depth limit. */
     level_t next = { 0 };
@@ -881,7 +917,8 @@ static void push(int kind, const char *op, const char *args, const char *cursor,
         for (int i = 1; i < SPOT_DEPTH - 1; ++i) br.lv[i] = br.lv[i + 1];
         --br.depth;
     }
-    if (br.depth >= SPOT_KEEP && ((l = &br.lv[br.depth - SPOT_KEEP])->kind == L_LIST || l->kind == L_SELECT) && l->buf) {
+    if (br.depth >= SPOT_KEEP &&
+        ((l = &br.lv[br.depth - SPOT_KEEP])->kind == L_LIST || l->kind == L_SELECT) && l->buf) {
         free(l->buf);
         l->buf = 0;
         l->n = 0;
@@ -907,8 +944,11 @@ static void got(void) {
     level_t *l = top();
     /* A shown level's refresh (Download Progress) is cut into head too, so a failed one leaves its
      * fields on the reply it shows. */
-    char id[12], *head[4 + 6 * SPOT_ROWS], **f = br.act || l->state == S_READY ? head : l->f, *reply = wk.buf; /* ours: a request below takes wk */
-    int act = br.act, n = wk.fail == W_OK ? spot_reply(reply, wk.n, f, act && act != A_CAPS ? 0 : SPOT_ROWS) : -1;
+    char id[12], *head[4 + 6 * SPOT_ROWS], **f = br.act || l->state == S_READY ? head : l->f,
+                                           *reply = wk.buf; /* ours: a request below takes wk */
+    int act = br.act, n = wk.fail == SPOT_OK
+                              ? spot_reply(reply, wk.n, f, act && act != A_CAPS ? 0 : SPOT_ROWS)
+                              : -1;
     wk.buf = 0;
     tk_snprintf(id, sizeof id, "%u", wk.id);
     if (n >= 0 && strcmp(f[0], id)) n = -1;
@@ -931,18 +971,26 @@ static void got(void) {
         br.caps_checked = n >= 0 && strcmp(status, "offline") && strcmp(status, "throttled");
         if (!br.caps_checked) br.poll_at = time_now_ms() + SPOT_PAIR_MS;
         /* download alone: Download Playlist; every other one: the Downloads hub */
-        static const char *const ops[] = { "download", "collections", "collection", "playcollection", "downloadliked", "jobs", "job", "remove" };
+        static const char *const ops[] = { "download",      "collections",
+                                           "collection",    "playcollection",
+                                           "downloadliked", "jobs",
+                                           "job",           "remove" };
         unsigned caps = 0, hub = (1u << sizeof ops / sizeof *ops) - 2;
-        if (ok) for (int i = 0; i < n; ++i) for (unsigned j = 0; j < sizeof ops / sizeof *ops; ++j)
-            if (!strcmp(f[4 + 6 * i], "op") && !strcmp(f[5 + 6 * i], ops[j])) caps |= 1u << j;
+        if (ok)
+            for (int i = 0; i < n; ++i)
+                for (unsigned j = 0; j < sizeof ops / sizeof *ops; ++j)
+                    if (!strcmp(f[4 + 6 * i], "op") && !strcmp(f[5 + 6 * i], ops[j]))
+                        caps |= 1u << j;
         br.can_download = caps & 1;
         br.downloads = (caps & hub) == hub;
-        if (!br.edit) { /* the level shown again, a click on its old rows dropped, so rows and go() agree */
+        if (!br.edit) { /* the level shown again, a click on its old rows dropped, so rows and go()
+                           agree */
             stop_timer(&br.go);
             if (br.view) top()->sel = widget_get_prop_int(br.view, "_ringnav_index", 0);
             show();
         }
-    } else if (act) { /* never sent again: play, enqueue, shuffle, repeat and signout change things */
+    } else if (act) { /* never sent again: play, enqueue, shuffle, repeat and signout change things
+                       */
         if (ok && act == A_SIGNOUT) br.until = time_now_ms() + SPOT_SIGNOUT_MS;
         if (login || (ok && act == A_SIGNOUT))
             base(S_PAIR);
@@ -954,8 +1002,7 @@ static void got(void) {
             sp.load_at = time_now_ms();
             sp.log_from = log_size();
             spot_np();
-        }
-        else if (ok && act == A_REMOVE) {
+        } else if (ok && act == A_REMOVE) {
             br.selected[0] = 0;
             while (br.depth > 1 && top()->kind != L_STORAGE) drop(&br.lv[--br.depth]);
             show();
@@ -966,10 +1013,10 @@ static void got(void) {
         } else if (!ok || act == A_DOWNLOAD)
             toast(msg);
     } else if (l->id != wk.id) {
-    } else if (wk.fail == W_NOSOCK && (int)(br.until - time_now_ms()) > 0) {
+    } else if (wk.fail == SPOT_NOSOCK && (int)(br.until - time_now_ms()) > 0) {
         if (l->state != S_PAIR) l->state = S_WAIT, show(); /* librespot starting */
         br.poll_at = time_now_ms() + 500;
-    } else if (wk.fail == W_NOSOCK && !access(SPOT_STATE, 0))
+    } else if (wk.fail == SPOT_NOSOCK && !access(SPOT_STATE, 0))
         sp.old = 1, base(S_OLD);
     else if (login)
         base(S_PAIR);
@@ -981,13 +1028,16 @@ static void got(void) {
         }
         l->state = S_READY;
         br.poll_at = time_now_ms() + 2000;
-        if (l->kind == L_BASE && !br.caps_checked) request("caps", "", A_CAPS);
-        else show();
+        if (l->kind == L_BASE && !br.caps_checked)
+            request("caps", "", A_CAPS);
+        else
+            show();
     } else if (l->state == S_READY) /* Download Progress's refresh: the list stays */
         br.poll_at = time_now_ms() + 2000;
     else {
         l->state = S_ERROR;
-        l->retry = n < 0 || !strcmp(status, "offline") || !strcmp(status, "throttled") || !strcmp(status, "error");
+        l->retry = n < 0 || !strcmp(status, "offline") || !strcmp(status, "throttled") ||
+                   !strcmp(status, "error");
         tk_snprintf(l->note, sizeof l->note, "%s", msg);
         show();
     }
@@ -1022,7 +1072,8 @@ static int search_left(void *ctx, void *event) {
 
 /* A row's choice, on a timer: a row's click may not rebuild the list it is in. */
 static int go(const void *unused) {
-    static const char *const ops[] = { 0, "liked", "playlists", "albums", "artists", 0, "queue", "settings", "account", "downloaded" };
+    static const char *const ops[] = { 0, "liked", "playlists", "albums",  "artists",
+                                       0, "queue", "settings",  "account", "downloaded" };
     static const char *const cats[] = { "tracks", "albums", "artists", "playlists" };
     level_t *l = top();
     int i = br.arg;
@@ -1046,7 +1097,8 @@ static int go(const void *unused) {
             push(L_LIST, ops[r], "", "", MENU[r]);
         else { /* peq_ui.c's T9 edit over the title, its keyboard open */
             l->sel = widget_get_prop_int(br.view, "_ringnav_index", 0);
-            widget_destroy_children(br.page), br.view = 0; /* the box alone: the keyboard leaves no room for the rows */
+            widget_destroy_children(br.page),
+                br.view = 0; /* the box alone: the keyboard leaves no room for the rows */
             br.edit = edit_create(br.page, "text", 2, 26);
             t9_box(br.page, br.edit, "搜索 Spotify");
             widget_on(br.edit, EVT_VALUE_CHANGED, searched, 0);
@@ -1055,7 +1107,8 @@ static int go(const void *unused) {
             widget_set_focused(br.edit, 1);
         }
     } else if (l->kind == L_CATS) {
-        if (put(a, sizeof a, cats[i]) && put(a, sizeof a, br.term)) push(L_LIST, "search", a, "", CATS[i]);
+        if (spot_put(a, sizeof a, cats[i]) && spot_put(a, sizeof a, br.term))
+            push(L_LIST, "search", a, "", CATS[i]);
     } else if (l->kind == L_DOWNLOADS) {
         if (!br.downloads) {
             if (!i) push(L_LIST, "downloaded", "", "", "已下载歌曲");
@@ -1069,12 +1122,14 @@ static int go(const void *unused) {
         if (i == 2) remove_request(0);
         else push(L_SELECT, i ? "downloaded" : "collections", "", "", i ? "选择歌曲" : "选择歌单");
     } else if (l->kind == L_REMOVE) {
-        if (i == 2) remove_request(1);
-        else if (i == 1) pop();
+        if (i == 2)
+            remove_request(1);
+        else if (i == 1)
+            pop();
     } else if (l->kind == L_JOB) {
         static const char *const actions[] = { "pause", "resume", "cancel", "retry", "update" };
         tk_snprintf(a, sizeof a, "%s", l->args);
-        if (put(a, sizeof a, actions[i])) request("job", a, A_DOWNLOAD);
+        if (spot_put(a, sizeof a, actions[i])) request("job", a, A_DOWNLOAD);
     } else if (l->kind == L_SELECT && i == l->n + more(l)) {
         if (br.selected[0]) remove_request(0);
         else toast("请至少选择一项");
@@ -1097,29 +1152,39 @@ static int go(const void *unused) {
         char c[sizeof l->cursor] = "";
         if (!l->f[3][0])
             push(L_CONFIRM, "", "", "", "");
-        else if (put(c, sizeof c, l->f[3]))
+        else if (spot_put(c, sizeof c, l->f[3]))
             push(l->kind, l->op, l->args, c, l->title);
     } else {
-        const char *kind = cell(l, i, 0), *uri = cell(l, i, 1), *v = cell(l, i, 2), *ctx = cell(l, i, 4);
-        int queue = !strcmp(l->op, "queue"), dl = !strcmp(l->op, "downloaded"), shuffle = !strcmp(uri, "shuffle");
-        if (opens(kind)) { /* a job its controls; an album, playlist, artist or collection its list */
+        const char *kind = cell(l, i, 0), *uri = cell(l, i, 1), *v = cell(l, i, 2),
+                   *ctx = cell(l, i, 4);
+        int queue = !strcmp(l->op, "queue"), dl = !strcmp(l->op, "downloaded"),
+            shuffle = !strcmp(uri, "shuffle");
+        if (opens(
+                kind)) { /* a job its controls; an album, playlist, artist or collection its list */
             int job = !strcmp(kind, "job");
-            if (put(a, sizeof a, uri)) push(job ? L_JOB : L_LIST, job ? "" : kind, a, "", job ? ctx : v);
+            if (spot_put(a, sizeof a, uri))
+                push(job ? L_JOB : L_LIST, job ? "" : kind, a, "", job ? ctx : v);
         } else if (!strcmp(kind, "track") && !strcmp(l->op, "collection")) {
-            if (put(a, sizeof a, ctx) && put(a, sizeof a, cell(l, i, 5))) {
+            if (spot_put(a, sizeof a, ctx) && spot_put(a, sizeof a, cell(l, i, 5))) {
                 request("playcollection", a, A_PLAY);
-                tk_snprintf(sp.wanted, sizeof sp.wanted, "%s", strstr(uri, "spotify:track:") == uri ? uri + 14 : "");
+                tk_snprintf(sp.wanted, sizeof sp.wanted, "%s",
+                            strstr(uri, "spotify:track:") == uri ? uri + 14 : "");
             }
         } else if (!strcmp(kind, "missing")) {
             toast(cell(l, i, 3));
-        } else if (!strcmp(kind, "track")) { /* in its context, or alone; a queue row by its place; a download has no context */
-            if (queue ? put(a, sizeof a, cell(l, i, 5)) && put(a, sizeof a, uri)
-                : ctx[0] ? put(a, sizeof a, ctx) && put(a, sizeof a, cell(l, i, 5)) && put(a, sizeof a, uri)
-                         : put(a, sizeof a, uri))
-                request(dl ? "playdownload" : queue ? "skip" : "play", a, A_PLAY); /* Now Playing once it plays */
+        } else if (!strcmp(kind, "track")) { /* in its context, or alone; a queue row by its place;
+                                                a download has no context */
+            if (queue    ? spot_put(a, sizeof a, cell(l, i, 5)) && spot_put(a, sizeof a, uri)
+                : ctx[0] ? spot_put(a, sizeof a, ctx) && spot_put(a, sizeof a, cell(l, i, 5)) &&
+                               spot_put(a, sizeof a, uri)
+                         : spot_put(a, sizeof a, uri))
+                request(dl      ? "playdownload"
+                        : queue ? "skip"
+                                : "play",
+                        a, A_PLAY); /* Now Playing once it plays */
         } else if (!strcmp(kind, "setting"))
             request(shuffle ? "shuffle" : "repeat",
-                    shuffle              ? strcmp(v, "on") ? "\ton" : "\toff"
+                    shuffle                 ? strcmp(v, "on") ? "\ton" : "\toff"
                     : !strcmp(v, "off")     ? "\tcontext"
                     : !strcmp(v, "context") ? "\ttrack"
                                             : "\toff",
@@ -1138,11 +1203,12 @@ static int br_tick(const void *unused) {
         wk.running = wk.done = 0;
         got();
     } else if (!wk.running && (int)(time_now_ms() - br.poll_at) >= 0 &&
-               (l->state == S_WAIT || ((l->state == S_PAIR || l->state == S_OLD) && g_backlight_status &&
-                                       window_manager_get_top_window(window_manager()) == br.page)))
+               (l->state == S_WAIT ||
+                ((l->state == S_PAIR || l->state == S_OLD) && g_backlight_status &&
+                 window_manager_get_top_window(window_manager()) == br.page)))
         fetch(l);
-    else if (!wk.running && !br.go && !br.edit && br.depth == 1 && l->state == S_READY && !br.caps_checked &&
-             (int)(time_now_ms() - br.poll_at) >= 0 && g_backlight_status &&
+    else if (!wk.running && !br.go && !br.edit && br.depth == 1 && l->state == S_READY &&
+             !br.caps_checked && (int)(time_now_ms() - br.poll_at) >= 0 && g_backlight_status &&
              window_manager_get_top_window(window_manager()) == br.page)
         request("caps", "", A_CAPS);
     else if (!wk.running && !br.go && l->state == S_READY && !strcmp(l->op, "jobs") &&
@@ -1157,7 +1223,8 @@ static int br_tick(const void *unused) {
 
 static int br_leave(const void *unused) {
     br.leave = 0;
-    if (br.edit) /* the search box emptied, so no search; its blur shuts the keyboard, then the box */
+    if (br.edit) /* the search box emptied, so no search; its blur shuts the keyboard, then the box
+                  */
         widget_set_text_utf8(br.edit, ""), widget_set_focused(br.edit, 0);
     else if (br.depth > 1)
         pop();
@@ -1167,9 +1234,7 @@ static int br_leave(const void *unused) {
 }
 
 /* Return: the search box shut, else a level back, the base back to Streaming. */
-static int br_keyup(void *ctx, void *event) {
-    return return_key(event, &br.leave, br_leave);
-}
+static int br_keyup(void *ctx, void *event) { return return_key(event, &br.leave, br_leave); }
 
 static int br_closed(void *ctx, void *event) {
     fetch_cancel();
@@ -1191,7 +1256,8 @@ int spot_open(void *ctx, void *event) {
     if (!sp.launched && smart_hold(spot_open, ctx, 0)) return 0;
     spot_launch();
     if (br.page || !(br.lv = calloc(SPOT_DEPTH, sizeof *br.lv))) return 0;
-    if (!(br.page = page_open("spotbrowse_page", br_closed, br_keyup))) return free(br.lv), br.lv = 0, 0;
+    if (!(br.page = page_open("spotbrowse_page", br_closed, br_keyup)))
+        return free(br.lv), br.lv = 0, 0;
     br.depth = 1;
     br.until = sp.launch_at + SPOT_OLD_MS;
     tk_snprintf(br.lv[0].op, sizeof br.lv[0].op, "account");
@@ -1210,7 +1276,7 @@ int spot_hold(void *w) {
     char a[sizeof l->args] = "";
     const char *kind = i >= 0 && i < l->n ? cell(l, i, 0) : "";
     int track = !strcmp(kind, "track");
-    if ((!track && strcmp(kind, "playlist")) || !put(a, sizeof a, cell(l, i, 1))) return 0;
+    if ((!track && strcmp(kind, "playlist")) || !spot_put(a, sizeof a, cell(l, i, 1))) return 0;
     /* a playlist downloads, as its own Download Playlist row; its reply is toasted */
     request(track ? "enqueue" : "download", a, track ? A_ENQUEUE : A_DOWNLOAD);
     return 1;

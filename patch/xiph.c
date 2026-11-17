@@ -78,7 +78,7 @@ static void join(char *text, unsigned short *used, const char *v, unsigned n) {
         }
         *used = XIPH_TEXT;
     } else
-        *used = u;
+        *used = (unsigned short)u;
     text[u] = 0;
 }
 

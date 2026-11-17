@@ -2063,7 +2063,7 @@ def test_the_pages_go_by_the_names_the_firmware_knows_them_by(fw):
     assert forward(ui(fw).page) == (1, [])
     assert forward(other) == (1, [b'f'])
     assert forward(np_(fw).page) == (2, [b'f'])
-    bar_title_of, label = fw.fn('navigation__bar_title_of', C.c_char_p, C.c_void_p, C.c_void_p), C.c_void_p()
+    bar_title_of, label = fw.fn('bar_title_of', C.c_char_p, C.c_void_p, C.c_void_p), C.c_void_p()
     assert bar_title_of(np_(fw).page, C.byref(label)) == b'Internet Radio'
 
 

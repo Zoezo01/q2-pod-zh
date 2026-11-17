@@ -8,7 +8,7 @@ int playback_unshuffle(void);   /* the stock mode Shuffle Songs replaces */
 int playback_shuffle(int mode); /* the queue as Shuffle Songs, Repeat All; the next restores mode */
 int playback_listable(void);    /* View Queue: a shuffle's order is up (stock Shuffle given one) */
 int playback_group_skip(int forward);
-int playback_back(void); /* the track stock Shuffle's Previous left, once; else -1 */
+int playback_back(void);        /* the track stock Shuffle's Previous left, once; else -1 */
 int playback_peek(unsigned at); /* stock Shuffle's next drawn ahead from at, once; else -1 */
 int shuffle_forced(void);       /* navigation.c: a Play next stock Shuffle goes to next, or -1 */
 unsigned playback_upcoming(unsigned *out, unsigned max); /* Up Next: queue indices, in play order */
@@ -18,18 +18,18 @@ void playback_insert(unsigned at, unsigned n, int next); /* the advanced part al
 int playback_move(unsigned from); /* Up Next's hold: from plays next; its new index, else -1 */
 void playback_poll(void);
 void playback_speed_start(void);
-void playback_track_speed(void); /* a track's start: the folder's speed, to the decoder */
-int playback_start_fits(void);   /* 0: the track at MCL_POS is too long to open */
-int playback_video(void *record); /* a video file, kept out of audio queues */
+void playback_track_speed(void);         /* a track's start: the folder's speed, to the decoder */
+int playback_start_fits(void);           /* 0: the track at MCL_POS is too long to open */
+int playback_video(void *record);        /* a video file, kept out of audio queues */
 void xfade_poll(int next, int shuffled); /* crossfade.c */
-void mono_sync(void);      /* crossfade.c */
+void mono_sync(void);                    /* crossfade.c */
 int playback_resumed(void *r);
 void playback_save(void);
 void playback_clear(void);
 /* mclLoadPlayList's loads so far: a queue loaded later is another one (addon.c stream_queue) */
 extern unsigned playback_loads;
 #define WHEEL_PCT_MIN 10 /* the slowest: 140 units a tick, 0.7 of a turn */
-int wheel_pct(void); /* Wheel sensitivity, WHEEL_PCT_MIN-200%, 50 unless set */
+int wheel_pct(void);     /* Wheel sensitivity, WHEEL_PCT_MIN-200%, 50 unless set */
 void wheel_set_pct(int n);
 void wheel_guard_reset(void);
 extern int wheel_guard; /* Volume guard: the screen-off wheel's guard, 0 off */
@@ -39,7 +39,7 @@ extern int wheel_guard; /* Volume guard: the screen-off wheel's guard, 0 off */
  * set while a finger is on the wheel */
 extern volatile int wheel_raw, wheel_travel, wheel_held, wheel_mute;
 enum { WHEEL_TICKS, WHEEL_RAW, WHEEL_THUMB }; /* wheel_raw's values: off, 1, 2 */
-extern volatile unsigned wheel_frame_at; /* the wheel's last frame with pressure */
+extern volatile unsigned wheel_frame_at;      /* the wheel's last frame with pressure */
 enum { THUMB_MOVED = 1, THUMB_TURNED = 2, THUMB_CLICK = 4 }; /* coverflow_wheel_poll's answer */
 void wheel_gate_note(void); /* --dev: tick_gate dropped a tick for want of a frame */
 int playback_keeps(void *q, int at), restart_armed(int key);

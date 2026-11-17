@@ -1,5 +1,6 @@
 /* Network Update (docs/internals.md#network-update): System Update's second row fetches the latest
- * Q2 Pod release from GitHub to the card's update.tar, then hands over to stock's TF card update. */
+ * Q2 Pod release from GitHub to the card's update.tar, then hands over to stock's TF card update.
+ */
 #include "peq.h"
 
 /* The tag in a releases/latest redirect, ".../releases/tag/1.3.4": what follows the last '/'. */
@@ -33,6 +34,8 @@ typedef struct {
     char name[32], id[16], repo[80], dir[17], bin[40], latest[32], dropped;
     const char *keep;
 } shelf_app;
+extern shelf_app shelf_apps[SH_MAX]; /* global: test/fw reads both by name */
+extern int shelf_n;
 shelf_app shelf_apps[SH_MAX];
 int shelf_n;
 #define apps shelf_apps
@@ -48,8 +51,8 @@ static const struct {
       ".spotify/librespot" },
 };
 /* The firmware's own card folders, never a card app's: a remove deletes .<id> whole. */
-static const char *const reserved[] = { "books", "coverflow", "downpic", "photos", "q2", "sldp",
-                                        "tidal" };
+static const char *const reserved[] = { "books", "coverflow", "downpic", "photos",
+                                        "q2",    "sldp",      "tidal" };
 
 /* Whether id is a special[] app's, which a remove never deletes whole. */
 static int special_id(const char *id) {
@@ -167,6 +170,7 @@ int netupdate_asset(const char *json, const char *name, unsigned *size, char *sh
         const char *end = strstr(p, "\"browser_download_url\""), *z = json_at(p, "\"size\""),
                    *d = json_at(p, "\"digest\"");
         if (!end || !z || z > end || !d || d > end || !json_string(d, s, sizeof s)) return 0;
+        /* NOLINTNEXTLINE(clang-analyzer-unix.cstring.UninitializedRead): strlen(s) is 71 */
         if (strlen(s) != 71 || memcmp(s, "sha256:", 7)) return 0;
         for (int i = 7; i < 71; ++i)
             if (!((s[i] >= '0' && s[i] <= '9') || (s[i] >= 'a' && s[i] <= 'f'))) return 0;
@@ -343,7 +347,8 @@ void shelf_remove(int i) {
 #define SHA_CHUNK (1u << 14)
 int netupdate_sha256(const char *path, char *hex, unsigned *size) {
     unsigned char *buf = calloc(1, SHA_CHUNK), digest[32] = { 0 };
-    void *ctx = calloc(1, 128), *f = buf && ctx ? fopen(path, "rb") : 0; /* stock's sha256_t, 0x68 bytes */
+    void *ctx = calloc(1, 128),
+         *f = buf && ctx ? fopen(path, "rb") : 0; /* stock's sha256_t, 0x68 bytes */
     unsigned n = SHA_CHUNK, total = 0;
     if (f) tk_sha256_init(ctx);
     while (f && n == SHA_CHUNK) {
@@ -360,33 +365,44 @@ int netupdate_sha256(const char *path, char *hex, unsigned *size) {
     return ok;
 }
 
-#define NU_REPO "https://github.com/" Q2POD_REPO "/releases/latest" /* tools/build.py --update-repo */
+#define NU_REPO                                                                                    \
+    "https://github.com/" Q2POD_REPO "/releases/latest" /* tools/build.py --update-repo */
 #define NU_API "https://api.github.com/repos/" Q2POD_REPO "/releases/tags/"
 #define NU_GET "https://github.com/" Q2POD_REPO "/releases/download/"
 #define NU_ASSET "update.tar"
 #define NU_FILE "/mnt/mmc/update.tar"
 #define NU_JSON "/tmp/q2-update.json"
-#define NU_CA "/etc/scrobble-ca.pem" /* scrobble.c's; github.com's and its asset host's roots */
 #define NU_BATTERY 16 /* percent: under it, off a charger, stock's updater refuses to flash */
 #define NU_TRIES 3    /* tries in a row that add nothing to the part, before a press gives up */
 #define SH_RESERVE (64ull << 20) /* left free on the card beyond a download or what it unpacks */
 
-enum { NU_IDLE, NU_RUNNING, NU_DONE, NU_LATEST, NU_NET, NU_MISSING, NU_CARD, NU_CANCELLED, NU_BUSY,
-       NU_SPACE, NU_BAD };
+enum {
+    NU_IDLE,
+    NU_RUNNING,
+    NU_DONE,
+    NU_LATEST,
+    NU_NET,
+    NU_MISSING,
+    NU_CARD,
+    NU_CANCELLED,
+    NU_BUSY,
+    NU_SPACE,
+    NU_BAD
+};
 
 static struct {
     unsigned long thread;
     volatile int state, cancel, percent; /* cancel, percent: progress()'s pair */
-    volatile int stage;    /* for the label: 1 the tar is coming, 2 it is read back, 3 between tries */
-    volatile int base;     /* the percentage the part held when this try began */
-    unsigned need;         /* NU_SPACE's MB */
-    void *label; /* the row's label while System Update is open, for the percentage */
+    volatile int stage; /* for the label: 1 the tar is coming, 2 it is read back, 3 between tries */
+    volatile int base;  /* the percentage the part held when this try began */
+    unsigned need;      /* NU_SPACE's MB */
+    void *label;        /* the row's label while System Update is open, for the percentage */
 } nu __attribute__((section(".scratch")));
 
 extern int stock_fwupdate_trampoline(void *win, void *ctx);
 
-/* The notice (netupdate_poll): with Wi-Fi on, now and then the latest release's tag, kept when it is
- * newer than this build; Home tells of it once a release and System Update's row names it. */
+/* The notice (netupdate_poll): with Wi-Fi on, now and then the latest release's tag, kept when it
+ * is newer than this build; Home tells of it once a release and System Update's row names it. */
 #define NU_TOLD "/mnt/data/q2-update.told" /* the tag Home last told of */
 #define NU_POLL_MS 2000u
 #define NU_EVERY_MS (24u * 60 * 60 * 1000) /* between checks that reached GitHub */
@@ -399,7 +415,8 @@ static struct {
     char tag[16], told[16];
 } nc __attribute__((section(".scratch")));
 
-static unsigned save(const void *data, unsigned size, unsigned n, void *file) {
+/* curl's WRITEFUNCTION into a FILE; tidal.c's too */
+unsigned curl_save(const void *data, unsigned size, unsigned n, void *file) {
     return fwrite(data, size, n, file) * size;
 }
 
@@ -413,41 +430,34 @@ static int progress(void *xfer, long long total, long long now, long long c, lon
 
 /* One transfer: the latest tag (url without asset, headers only, no redirect) or the asset to file,
  * from its byte `from` on (HTTP Range) when the file holds those before it. curl's own code. */
-static int fetch(const char *url, void *file, char *tag, unsigned n, long *code,
-                 volatile int *xfer, long from) {
-    void *c = curl_easy_init();
+static int fetch(const char *url, void *file, char *tag, unsigned n, long *code, volatile int *xfer,
+                 long from) {
+    void *c = tls_easy(url, 15, file ? 0 : 30); /* a header-only check times out at 30 s */
     int err = 1;
     char *location = 0;
     if (!c) return 1;
-    curl_easy_setopt(c, 10002, url);          /* CURLOPT_URL */
-    curl_easy_setopt(c, 10018, "Q2Pod");      /* USERAGENT */
-    curl_easy_setopt(c, 99, 1L);              /* NOSIGNAL: off the UI thread */
-    curl_easy_setopt(c, 78, 15L);             /* CONNECTTIMEOUT */
-    curl_easy_setopt(c, 10065, NU_CA);        /* CAINFO */
-    curl_easy_setopt(c, 64, 1L);              /* SSL_VERIFYPEER */
-    curl_easy_setopt(c, 81, 2L);              /* SSL_VERIFYHOST */
-    curl_easy_setopt(c, 20108, tls_untimed);  /* SSL_CTX_FUNCTION: no date checks */
+    curl_easy_setopt(c, 10018, "Q2Pod"); /* USERAGENT */
     if (file) {
-        curl_easy_setopt(c, 52, 1L);          /* FOLLOWLOCATION: to the asset host */
-        curl_easy_setopt(c, 20011, save);     /* WRITEFUNCTION */
-        curl_easy_setopt(c, 10001, file);     /* WRITEDATA */
-        curl_easy_setopt(c, 19, 1024L);       /* LOW_SPEED_LIMIT: a stalled transfer ends */
-        curl_easy_setopt(c, 20, 30L);         /* LOW_SPEED_TIME */
-        curl_easy_setopt(c, 20219, progress); /* XFERINFOFUNCTION */
-        curl_easy_setopt(c, 10057, xfer);     /* XFERINFODATA */
-        curl_easy_setopt(c, 43, 0L);          /* NOPROGRESS off, for it */
+        curl_easy_setopt(c, 52, 1L);           /* FOLLOWLOCATION: to the asset host */
+        curl_easy_setopt(c, 20011, curl_save); /* WRITEFUNCTION */
+        curl_easy_setopt(c, 10001, file);      /* WRITEDATA */
+        curl_easy_setopt(c, 19, 1024L);        /* LOW_SPEED_LIMIT: a stalled transfer ends */
+        curl_easy_setopt(c, 20, 30L);          /* LOW_SPEED_TIME */
+        curl_easy_setopt(c, 20219, progress);  /* XFERINFOFUNCTION */
+        curl_easy_setopt(c, 10057, xfer);      /* XFERINFODATA */
+        curl_easy_setopt(c, 43, 0L);           /* NOPROGRESS off, for it */
         if (from) { /* RESUME_FROM: curl fails a reply that isn't the range */
             curl_easy_setopt(c, 21, from);
-            curl_easy_setopt(c, 45, 1L); /* FAILONERROR: a 403/429/5xx keeps the part, not its error page */
+            curl_easy_setopt(
+                c, 45, 1L); /* FAILONERROR: a 403/429/5xx keeps the part, not its error page */
         }
     } else {
-        curl_easy_setopt(c, 44, 1L);          /* NOBODY */
-        curl_easy_setopt(c, 13, 30L);         /* TIMEOUT */
+        curl_easy_setopt(c, 44, 1L); /* NOBODY */
     }
     /* curl itself fails a body shorter than its Content-Length (PARTIAL_FILE). */
     err = curl_easy_perform(c);
-    if (!err) err = curl_easy_getinfo(c, 0x200002, code); /* RESPONSE_CODE */
-    if (!err && tag && !curl_easy_getinfo(c, 0x10001f, &location)) {    /* REDIRECT_URL */
+    if (!err) err = curl_easy_getinfo(c, 0x200002, code);            /* RESPONSE_CODE */
+    if (!err && tag && !curl_easy_getinfo(c, 0x10001f, &location)) { /* REDIRECT_URL */
         const char *t = netupdate_tag(location);
         tk_snprintf(tag, n, "%s", t ? t : "");
     }
@@ -463,6 +473,7 @@ static char *get_by(const char *url, long *code, const char *tmp, volatile int *
     err = (f && fclose(f)) || err;
     char *body = err || *code != 200 ? 0 : read_all(tmp, 1u << 20, &n);
     unlink(tmp);
+    /* NOLINTNEXTLINE(clang-analyzer-security.ArrayBound): percent follows cancel in nu and sh */
     xfer[1] = 0;
     return body;
 }
@@ -477,14 +488,6 @@ static int room(unsigned long long bytes, unsigned *need) {
     return SH_SPACE;
 }
 
-/* path's bytes; -1 when it can't be opened. */
-static long file_bytes(const char *path) {
-    void *f = fopen(path, "rb");
-    long n = f && !fseek(f, 0, 2) ? ftell(f) : -1;
-    if (f) fclose(f);
-    return n;
-}
-
 /* A press's work, to the state it ends in. The old update.tar stays until the new one is whole:
  * only a part of the release's size and SHA-256, as the card gives it back, is renamed over it. */
 static int update(void) {
@@ -495,8 +498,9 @@ static int update(void) {
         return NU_NET;
     /* Tags are single-digit x.y.z, so strcmp orders them: nothing older than this build, which
      * stock's updater would flash. Q2POD_TAG is empty in --dev builds, which take any tag.
-     * ponytail: a beta (BETA in tools/build.py) refuses its own version's release too, so its testers
-     * install that from the card; take an equal tag under a beta if they shouldn't have to. */
+     * ponytail: a beta (BETA in tools/build.py) refuses its own version's release too, so its
+     * testers install that from the card; take an equal tag under a beta if they shouldn't have to.
+     */
     if (*Q2POD_TAG && strcmp(tag, Q2POD_TAG) <= 0) return NU_LATEST;
     if (nu.cancel) return NU_CANCELLED; /* pressed while checking, or the page was left */
     /* That tag's release, for what GitHub recorded of its update.tar; then the tar by the same tag,
@@ -511,19 +515,19 @@ static int update(void) {
     if (!listed) return NU_MISSING;
     /* Room for the tar and for stock's unpacking of it beside it. ponytail: an old update.tar the
      * new one replaces isn't counted as room. */
-    long held = file_bytes(NU_FILE ".part"); /* its bytes are already out of the free room */
+    long held = file_size(NU_FILE ".part"); /* its bytes are already out of the free room */
     unsigned long long left = 2ull * size - (held < 0 || (unsigned long)held > size ? 0 : held);
     int r = card_mounted() ? room(left, &nu.need) : SH_CARD;
     if (r) return r == SH_SPACE ? NU_SPACE : NU_CARD;
     snprintf(url, sizeof url, NU_GET "%s/" NU_ASSET, tag);
-    /* The tar, each try carrying on from what the part holds: a try before it in this press, or what
-     * a lost connection, a power cut or leaving the page left on the card. A part already whole is
-     * only read back. Whatever a part holds (an older release's start, a card's stale blocks), the
-     * read-back alone decides. ponytail: a part of another release costs the rest of this one's
-     * download before it is found damaged and deleted. */
+    /* The tar, each try carrying on from what the part holds: a try before it in this press, or
+     * what a lost connection, a power cut or leaving the page left on the card. A part already
+     * whole is only read back. Whatever a part holds (an older release's start, a card's stale
+     * blocks), the read-back alone decides. ponytail: a part of another release costs the rest of
+     * this one's download before it is found damaged and deleted. */
     int state = NU_RUNNING, tries = 0;
     while (state == NU_RUNNING) {
-        long have = file_bytes(NU_FILE ".part");
+        long have = file_size(NU_FILE ".part");
         if (have < 0 || (unsigned long)have > size) have = 0; /* none, or not this release's */
         if ((unsigned long)have == size) break;
         void *f = fopen(NU_FILE ".part", have ? "ab" : "wb");
@@ -531,7 +535,8 @@ static int update(void) {
         nu.base = (int)((unsigned)(have >> 10) * 100 / ((size >> 10) + 1)); /* KB: 32-bit math */
         nu.percent = 0, nu.stage = 1;
         int err = fetch(url, f, 0, 0, &code, &nu.cancel, have), bad = ferror(f);
-        bad = fflush(f) || fsync(fileno(f)) || bad; /* a part cut short too: it is carried on from */
+        bad =
+            fflush(f) || fsync(fileno(f)) || bad; /* a part cut short too: it is carried on from */
         bad = fclose(f) || bad;
         if (nu.cancel)
             state = NU_CANCELLED;
@@ -545,7 +550,7 @@ static int update(void) {
             /* A reply that wasn't the range asked for (curl's RANGE_ERROR, or no 206) left the
              * part unusable: the next try starts it again. */
             if (!err || err == 33) unlink(NU_FILE ".part");
-            tries = file_bytes(NU_FILE ".part") > have ? 0 : tries + 1;
+            tries = file_size(NU_FILE ".part") > have ? 0 : tries + 1;
             nu.stage = 3;
             for (int i = 0; tries < NU_TRIES && i < 50 && !nu.cancel; ++i) usleep(100000); /* 5 s */
             if (tries == NU_TRIES || nu.cancel) state = nu.cancel ? NU_CANCELLED : NU_NET;
@@ -666,7 +671,9 @@ int ringnav_fwupdate(void *win, void *ctx) {
     static const char *const icons[] = { 0 };
     int result = stock_fwupdate_trampoline(win, ctx);
     void *view = win ? widget_lookup(win, "scroll_view_fwupdate", 1) : (void *)0;
-    void *button = view && widget_count_children(view) == 2 ? widget_get_child(widget_get_child(view, 1), 0) : 0;
+    void *button = view && widget_count_children(view) == 2
+                       ? widget_get_child(widget_get_child(view, 1), 0)
+                       : 0;
     if (button) {
         widget_set_name(button, "2");
         widget_on(button, EVT_CLICK, online_click, 0);
@@ -702,7 +709,7 @@ void netupdate_poll(void) {
     unsigned long tid;
     char s[80];
     if (!*Q2POD_TAG) return;
-    if (!ringnav_remind_daily()) { /* not while a check thread owns the tag, as named() */
+    if (!pod_value(POD_REMIND_DAILY)) { /* not while a check thread owns the tag, as named() */
         if (!nc.busy) *nc.tag = 0, nc.at = 0; /* back On: check at once */
         return;
     }
@@ -906,7 +913,8 @@ static void *sh_worker(void *unused) {
                 rmdir(SPOT_DIR);
         else {
             addon_quit(apps[i].dir); /* USB storage may take the card meanwhile */
-            /* ponytail: read once; USB storage taking the card during the unlinks still says removed */
+            /* ponytail: read once; USB storage taking the card during the unlinks still says
+             * removed */
             if (card_mounted()) {
                 if (is(i, "rockbox") && t >= 0) shelf_remove(t); /* no themes without Rockbox */
                 shelf_remove(i);
@@ -1002,8 +1010,9 @@ static int sh_wait(const void *unused) {
     pthread_join(sh.thread, 0);
     int job = sh.job, r = sh.result, i = sh.app, manual = sh.manual;
     sh.job = 0;
-    /* its files replaced or gone: an update that failed or was cancelled before it stopped its app leaves it running, still tracked,
-     * and a remove cut off by USB storage leaves it marked to start again with the card */
+    /* its files replaced or gone: an update that failed or was cancelled before it stopped its app
+     * leaves it running, still tracked, and a remove cut off by USB storage leaves it marked to
+     * start again with the card */
     if (r == SH_OK && (job == JOB_REMOVE || job == JOB_INSTALL)) addon_forget(apps[i].dir);
     if (job == JOB_CHECK) /* the rows built again: the list may have changed */
         memcpy(apps, sh.next, sizeof apps), shelf_n = sh.n, sh.rows = -1;
@@ -1143,13 +1152,14 @@ int shelf_open(void *ctx, void *event) {
         if (get_wifisignal() > 0)
             sh_start(JOB_CHECK, 0), sh_refresh();
         else
-            /* once Smart Wi-Fi's link is up; a row pressed while it waits takes its place and acts on
-             * the list shown (an install fetches the list first), and the next open checks */
+            /* once Smart Wi-Fi's link is up; a row pressed while it waits takes its place and acts
+             * on the list shown (an install fetches the list first), and the next open checks */
             smart_hold(sh_check, 0, "apps_page");
     }
     return 0;
 }
 
-/* Smart Wi-Fi (smart_wifi.c smart_needed): Network Update's download or an Apps job keeps the radio on. */
+/* Smart Wi-Fi (smart_wifi.c smart_needed): Network Update's download or an Apps job keeps the radio
+ * on. */
 int netupdate_busy(void) { return nu.state == NU_RUNNING || sh.job; }
 #endif

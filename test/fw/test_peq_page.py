@@ -819,6 +819,7 @@ def test_a_page_the_card_no_longer_fills_is_its_last(fw):
     p.click('Presets')
     p.click('Next page')
     del p.card.files[f'{SAVED}/128.peq'], p.card.files[f'{SAVED}/129.peq']  # gone from the card meanwhile
+    p.props[(p.ui.view, '_ringnav_index')] = 7  # the wheel's row: 129.peq
     p.click('128.peq')
     assert p.ui.file_page == 0 and p.title() == 'Cannot read preset; settings unchanged' and p.captions()[5] == '000.peq'
     assert p.props[(p.ui.view, 'offset')] == 0 and p.props[(p.ui.view, '_ringnav_index')] == 0
@@ -964,6 +965,24 @@ def test_closing_saves_simple_s_gains_and_ends_the_held_comparison(fw):
     assert s.hold == 0 and list(s.eq3.bands[k].gain for k in range(3)) == [3, 2, 0] and fw.calls('stock_eq_trampoline')
     assert p.ui.page is None and p.ui.view is None and p.ui.names is None and p.e3.view is None
     assert p.key(KEY_NEXT) == 0  # nothing open
+
+
+def test_a_page_replaced_lets_go_at_once_and_its_late_destroy_leaves_the_new_one(fw):
+    """Quick Settings' hold over a page opened above the EQ page (quick_settings.c quick_long, #397): the old page's state
+    goes at once, as a close's, and its window closes; its destroy, coming after the new page's init, changes nothing."""
+    p = page(fw, state(fw, EQ_OFF, hold=1, gains=(3, 0, 0))).open()
+    old = p.page
+    p.e3.gain[1], p.e3.dirty = 2, 1
+    late = p.handler(old, EVT_DESTROY)
+    fw.fn('peq_page_replace', None, C.c_void_p)(old)
+    s = p.card.state()
+    assert s.hold == 0 and [s.eq3.bands[k].gain for k in range(3)] == [3, 2, 0] and p.ui.page is None
+    assert [a[1] for _, a in fw.calls('window_manager_close_window_force')] == [old]
+    p.page = p.new(0, 0, 0, 375, 320)
+    p.props[(p.page, 'h')] = 290
+    p.open()
+    late()
+    assert p.ui.page == p.page and p.e3.view  # the new page's, whole
 
 
 def test_closing_from_simple_s_presets_reopens_on_simple(fw):

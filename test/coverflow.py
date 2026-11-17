@@ -18,11 +18,11 @@ PROTOTYPES = {**FUNCTIONS, **LIBC}  # the stock calls the host shims stand in fo
 SHELF_60 = {'cf.x1': 112, 'cf.xs': 48, 'cf.z1': 90, 'cf.zs': 20, 'cf.eye': 300, 'cf.tilt': 60, 'cf.horizon': 50, 'cf.swing': 0}
 # The thumb cases' shelf and follower, 1.8.0's Classic: the door's swing, the eye drawn back mid-turn, no arch
 SHELF_180 = {'cf.eye': 94, 'cf.tilt': 89, 'cf.x1': 116, 'cf.xs': 34, 'cf.z1': 77, 'cf.zs': 1, 'cf.horizon': 63, 'cf.swing': 1,
-             'cf.lift': 20, 'cf.eye_turn': 150, 'cf.art_persp': 13, 'cf.arch_span': 0}
+             'cf.lift': 20, 'cf.eye_turn': 150, 'cf.art_persp': 13, 'cf.arch_span': 0, 'cf.land_ms': 0}
 
-# coverflow.c, coverflow_thumb.c, coverflow_letters.c, coverflow_loader.c and playlist_art.c as one unit, so the shim's
+# coverflow.c, coverflow_thumb.c, coverflow_letters.c, coverflow_loader.c, coverflow_land.c and playlist_art.c as one unit, so the shim's
 # stubs are defined once
-CF_SOURCES = '#include "coverflow.c"\n#include "coverflow_thumb.c"\n#include "coverflow_letters.c"\n#include "coverflow_loader.c"\n#include "playlist_art.c"\n#include "coverflow_position.c"\n'
+CF_SOURCES = '#include "coverflow.c"\n#include "coverflow_thumb.c"\n#include "coverflow_letters.c"\n#include "coverflow_loader.c"\n#include "coverflow_land.c"\n#include "playlist_art.c"\n#include "coverflow_position.c"\n'
 SHIM_H = r"""
 extern char system_bar[];
 #include <dirent.h>
@@ -84,6 +84,8 @@ sqlite3_open sqlite3_exec sqlite3_close reset_poweroptions_timer getMusicByPlayL
 int stock_canvas_set_fill_color(void *, unsigned);
 void *shim_calloc(size_t, size_t);
 #define calloc shim_calloc
+void shim_free(void *);
+#define free shim_free
 #include <stdio.h>
 extern void shim_read(size_t) __attribute__((weak)); /* the tests' clock: half copies take half_ms */
 static inline size_t shim_fread(void *p, size_t s, size_t n, FILE *f) {
@@ -248,8 +250,14 @@ const char *widget_get_prop_str(void *x, const char *k, const char *d) {
 }
 static handler touch_fn, changed_fn; /* the covers' touch and the slide_menu's change */
 static handler foreground_fn; /* the page's, as a window over it closes */
+static void *np_win, *np_art, *np_gone_ctx; /* the Now Playing window the shim opened, its art, its destroy's */
+static handler np_gone;
 unsigned widget_on(void *x, unsigned type, handler f, void *ctx) {
     if (!x) return 0;
+    if (type == EVT_DESTROY && x == np_win) {
+        np_gone = f, np_gone_ctx = ctx;
+        return 1;
+    }
     if (type >= EVT_POINTER_DOWN && type <= EVT_POINTER_ABORT) touch_fn = f;
     if (type == EVT_VALUE_CHANGED) changed_fn = f;
     if (type == EVT_WINDOW_FOREGROUND) foreground_fn = f;
@@ -296,7 +304,13 @@ static int letters, letter_held; /* held: the thumb's, with no LETTER_MS, until 
 void coverflow_letter(void *x, unsigned letter, unsigned now) { letter_shown = letter, letter_held = 0, letters += letter != 0; }
 void coverflow_letter_hold(void *x, unsigned letter) { letter_shown = letter, letter_held = 1, ++letters; }
 static void *invalidated; /* the last widget invalidated */
-int widget_invalidate_force(void *x, void *y) { wm_repaints += x == &wm_repaints; invalidated = x; return 0; }
+static int invalid_rect[4], invalid_whole; /* the last invalidation's rect, or the whole widget */
+int widget_invalidate_force(void *x, void *y) {
+    wm_repaints += x == &wm_repaints;
+    invalidated = x, invalid_whole = !y;
+    if (y) memcpy(invalid_rect, y, sizeof invalid_rect);
+    return 0;
+}
 static void *wm_stack[4]; /* the window manager's windows, bottom first: none unless a test stacks them */
 static int wm_n;
 unsigned widget_count_children(void *x) { return x == &wm_repaints ? (unsigned)wm_n : (unsigned)W(x)->nkids; }
@@ -304,6 +318,7 @@ void *widget_get_child(void *x, unsigned i) { return x == &wm_repaints ? wm_stac
 static void *home_art, *home_list; /* iPod Home's art and list; none in the carousel tests */
 void *widget_lookup(void *x, const char *n, int r) {
     return !x ? 0 : !strcmp(n, "img_cover_flow") ? x : !strcmp(n, "img_homeart") ? home_art :
+           !strcmp(n, "img_cover") ? (x == np_win ? np_art : 0) :
            !strcmp(n, "list_view_home") ? home_list : 0;
 }
 static int home_mode, classic, light; /* home_mode: HOME, 0 Split, 1 Full, 2 Carousel */
@@ -311,8 +326,6 @@ int ipod_home(void) { return home_mode; }
 int home_lib_on(void) { return 1; }
 int row_preview_on(void) { return 1; }
 int show_q2pod(void) { return 1; }
-int ringnav_hide_folder(void) { return 0; }
-int ringnav_hide_stream(void) { return 0; }
 int library_search(void) { return 1; }
 void library_rows(void *list) {}
 void stream_rows(void *list) {}
@@ -322,7 +335,6 @@ int canvas_set_font(void *c, const char *f, unsigned px) { return 0; }
 float canvas_measure_text(void *c, const unsigned *s, unsigned n) { return 0; }
 const char *theme_face(const unsigned *s, int n, int *px) { return 0; }
 void font_weight_mark(void *w, int bold) {}
-int coverflow_position_enabled(void) { return 0; }
 void home_pane_read(int *services, int *games, int *free_tenths) { *services = 5; *games = 4; *free_tenths = 412; }
 extern volatile unsigned library_gen;
 static int count_calls, count_answer = 704;
@@ -360,6 +372,15 @@ int canvas_offline_destroy(void *c) { return 0; }
 unsigned unflip(unsigned v) { return v; }
 unsigned mix(unsigned a, unsigned b, int j, int n) { return a; }
 void bar_title_sync(void *win) {}
+void bar_title_name(void *win) {}
+/* navigation.c's: Now Playing's art this song's (np_art_ready), its layout (np_layout), a row lit */
+static int np_ready, np_centred, lit_row = -1;
+static void *lit_list;
+int np_art_ready(void) { return np_ready; }
+int np_layout(void) { return np_centred; }
+void ringnav_light(void *list, int index) { lit_list = list, lit_row = index; }
+static int held_drops;
+void drop_held(void) { ++held_drops; }
 int bar_title_fits(void *label) { return 1; }
 void list_value(void *l, const char *t, const char *v) { (void)l, (void)t, (void)v; }
 /* CF_STYLE0: main() passes Minimal's .cf from tools/theme.py ROLE_MACROS, thumb off: the tick cases' (Modern inherits it);
@@ -442,9 +463,19 @@ static char nav_to[32];
 static struct { void *dq; int idx, cls, mode; } nav_ctx;
 static void *nav_queue[64];
 static unsigned nav_n, navs;
+/* np_opens: playing_page opens a window (1, its img_cover at np_art_box; 2 without one; 3 a toast's), the queue
+   its context's at MCL_POS (mapped by the test); nav_ms: the open's time on the clock */
+static int np_opens, nav_ms, np_art_box[4] = { SPOT_ART_X, NP_IPOD_ART_Y, NP_IPOD_ART, NP_IPOD_ART + 40 };
 int navigator_to_with_context(const char *n, const void *c) {
     snprintf(nav_to, sizeof nav_to, "%s", n);
     memcpy(&nav_ctx, c, sizeof nav_ctx);
+    clock_ms += nav_ms;
+    if (np_opens && !strcmp(n, "playing_page")) {
+        top_window = np_win = placed(make(0, np_opens == 3 ? "msginfo_dialog" : "playing_page"), 0, 0, 375, 294);
+        void *body = placed(make(np_win, "view"), 0, 0, 375, 294);
+        np_art = np_opens == 1 ? placed(make(body, "image"), np_art_box[0], np_art_box[1], np_art_box[2], np_art_box[3]) : 0;
+        shim_queue = nav_ctx.dq, *(volatile int *)MCL_POS = nav_ctx.idx;
+    }
     if (!strcmp(n, "playing_page")) played_idx = nav_ctx.idx, played_cls = nav_ctx.cls, ++playback_loads; /* stock's load */
     nav_n = *(const unsigned *)nav_ctx.dq; /* the queue's deque, as below */
     memcpy(nav_queue, (const char *)nav_ctx.dq + sizeof(unsigned), sizeof nav_queue);
@@ -458,6 +489,7 @@ static unsigned texel(unsigned p) { return (p & 0xff00ff00u) | (p & 255u) << 16 
 /* The frame bitmap (bitmap_t as above) and the canvas: canvas_draw_image keeps what it drew, in the
    textures' order. */
 static unsigned drawn_format; /* the last frame drawn's: 3, the screen's BGRA8888, is copied */
+static int alpha_ok, drawn_opaque; /* a frame of straight alpha may be drawn (the landing's); the last was opaque */
 static int frames, frame_fail, tex_fail, locks, draws, drawn[4];
 static unsigned shown[CF_VIEW_H * CF_VIEW_W];
 #undef calloc /* the payload's calloc is this shim; the tests' own is libc's */
@@ -466,11 +498,22 @@ static int calloc_fail, more_fail, more_asks; /* no memory at all; none for fx.m
 static int tex_slots; /* fx_open's last textures: fx_base's and the placeholder */
 static unsigned mem_kb = ~0u, mem_asks; /* /proc/meminfo's MemAvailable (chapters.c's), and its reads */
 unsigned mem_available_kb(void) { return ++mem_asks, mem_kb; }
+#undef free /* the payload's free is this shim too, keeping land_tex and land_back */
+void free(void *);
+static void *land_tex, *land_back; /* the last art-sized (CF_TEXELS, 4) and back-sized calloc, until freed */
+void shim_free(void *p) {
+    if (p && p == land_tex) land_tex = 0;
+    if (p && p == land_back) land_back = 0;
+    (free)(p);
+}
 void *shim_calloc(size_t n, size_t size) {
     int more = size == 160 * 160 * 4 && n == 64 - 15; /* fx_window's: FX_POOL past a thumb theme's fx_base */
     more_asks += more;
     if (size == 160 * 160 * 4 && !more) tex_slots = (int)n;
-    return calloc_fail || (tex_fail && size == 160 * 160 * 4) || (more_fail && more) ? 0 : calloc(n, size);
+    void *p = calloc_fail || (tex_fail && size == 160 * 160 * 4) || (more_fail && more) ? 0 : calloc(n, size);
+    if (size == 4 && n == 160 * 160) land_tex = p;
+    if (size == 4 && n == BACK_W * 285) land_back = p;
+    return p;
 }
 static int half_ms; /* a half copy's read, on the fake clock */
 static int card_us; /* a half copy's read, slept by the loader on a real thread (card()) */
@@ -540,7 +583,8 @@ int canvas_draw_image(void *c, void *b, const void *src, const void *dst) {
         return 0;
     }
     ++draws;
-    assert(!memcmp(r, q, 16) && ((unsigned short *)b)[6] & 1); /* 1:1, and marked opaque */
+    drawn_opaque = ((unsigned short *)b)[6] & 1;
+    assert(!memcmp(r, q, 16) && (drawn_opaque || alpha_ok)); /* 1:1, and marked opaque unless a test allows alpha */
     memcpy(drawn, r, sizeof drawn);
     unsigned fw = ((unsigned *)b)[0] < CF_VIEW_W ? ((unsigned *)b)[0] : CF_VIEW_W, fh = ((unsigned *)b)[1] < CF_VIEW_H ? ((unsigned *)b)[1] : CF_VIEW_H;
     for (unsigned y = 0; y < fh; ++y) memcpy(shown + y * CF_VIEW_W, *(unsigned char **)((char *)b + 0x14) + y * ((unsigned *)b)[2], fw * 4);
@@ -561,7 +605,13 @@ int coverflow_scan_all(void *, void *);
 static void rescan(void) { coverflow_scan_all(0, 0); } /* the library changed, as only a scan changes it */
 
 static int (*timer_fn)(const void *);
-unsigned timer_add(int (*f)(const void *), void *ctx, unsigned ms) { timer_fn = f; return 1; }
+static unsigned timer_ms; /* the last timer's period */
+static int timer_fail; /* no timer to be had */
+unsigned timer_add(int (*f)(const void *), void *ctx, unsigned ms) {
+    if (timer_fail) return 0;
+    timer_fn = f, timer_ms = ms;
+    return 1;
+}
 int timer_remove(unsigned id) { timer_fn = 0; return 0; }
 void stop_timer(unsigned *t) { if (*t) timer_remove(*t); *t = 0; } /* navigation.c's */
 void rearm(unsigned *t, int (*f)(const void *), unsigned ms) { stop_timer(t); *t = timer_add(f, 0, ms); }
@@ -631,6 +681,25 @@ void *staged_music(int (*query)(void *), void *arg, int *count) {
     music_only = 0;
     return out;
 }
+/* an artist's groupings (of_names) go straight to stock's query, the scope token expanded
+   (library_scope.c's, no markers here); and tags.c's quoting */
+int toolsQueryDbTable(const char *db, const char *sql, void *row, int sort);
+int stock_dbquery_trampoline(const char *db, const char *sql, void *row, int sort) {
+    return toolsQueryDbTable(db, sql, row, sort);
+}
+char *library_scope_query(const char *sql) { return sql ? strdup(sql) : 0; }
+int scan_quote(char *sql, unsigned cap, unsigned *n, const char *s) {
+    if (*n + 3 >= cap) return 0;
+    sql[(*n)++] = '\'';
+    for (; s && *s; ++s) {
+        if (*n + 3 >= cap) return 0;
+        if (*s == '\'') sql[(*n)++] = '\'';
+        sql[(*n)++] = *s;
+    }
+    sql[(*n)++] = '\'';
+    sql[*n] = 0;
+    return 1;
+}
 static int spoken_path(const char *path) {
     return !strncasecmp(path, "/mnt/mmc/audiobooks/", 20) ||
            !strncasecmp(path, "/mnt/mmc/podcasts/", 18) ||
@@ -669,13 +738,14 @@ static char rank_rows[16][0x60];
 static int rank_year[16]; /* the Year query's year column, each ranked row's (split_row's REC_YEAR) */
 /* navigation.c's Year order: newest first (0) or oldest. */
 static int year_old;
-int ringnav_year_old(void) { return year_old; }
 /* navigation.c's Fast Navigation: letters, years and half copies; main turns it on for their tests */
 static int big_library;
-int ringnav_big_library(void) { return big_library; }
 static int artist_view;
-int ringnav_artist_view(void) { return artist_view; }
-int ringnav_artist_az(void) { return 0; }
+/* navigation.c's settings: those above, the rest (Artist Album Order, Cover Flow's position, Hide ...
+   on Home) off */
+int pod_value(int i) {
+    return i == POD_YEAR_OLD ? year_old : i == POD_BIG_LIB ? big_library : i == POD_ARTIST_CF ? artist_view : 0;
+}
 /* Stock's row maker for a ranking query (split_row's first four columns): the album named by v[1]
    as a row of its own, added to the staged deque. */
 static int rank_n;
@@ -1276,6 +1346,157 @@ static void flip_frames(void) {
     close_page();
     classic = 0;
     open_page(); /* Minimal's values again */
+    close_page();
+}
+
+/* The landing's path: the panel's back (180 degrees) at the panel's place, on the flip's own way
+   round to Now Playing's keystone at the art's place; the left edge the nearer all the way; the
+   travel done by 55% of the time, the size and turn eased over all of it. */
+static void land_geometry(void) {
+    const int from[4] = { 40, 9, 294, 285 }, to[3] = { 16, 22, 178 };
+    const double lean = asin(700 * (1 - 224 / 256.0) / (1 + 224 / 256.0) / 89) * 180 / M_PI, i = 178 * (256 - 224) / 512.0;
+    const double ks[8] = { 16, 22, 194, 22 + i, 194, 200 - i, 16, 200 };
+    float q[8], deg, was = 0, cx_was = 1e9f;
+    assert(land_ease(0) == 0 && land_ease(1) == 1 && land_ease(.5f) == .875f && land_ease(-1) == 0 && land_ease(2) == 1);
+    land_quad(from, to, 0, 400, 55, q, &deg);
+    assert(deg == 180 && fabsf(q[0] - 334) <= .5f);
+    float lo = 1e9f, hi = -1e9f, top = 1e9f, bot = -1e9f;
+    for (int j = 0; j < 8; j += 2) lo = fminf(lo, q[j]), hi = fmaxf(hi, q[j]), top = fminf(top, q[j + 1]), bot = fmaxf(bot, q[j + 1]);
+    assert(fabsf(lo - 40) <= .5f && fabsf(hi - 334) <= .5f && fabsf(top - 9) <= .5f && fabsf(bot - 294) <= .5f);
+    for (int ms = 0; ms <= 420; ++ms) {
+        land_quad(from, to, ms, 400, 55, q, &deg);
+        float cx = (q[0] + q[2] + q[4] + q[6]) / 4;
+        top = 1e9f, bot = -1e9f;
+        for (int j = 1; j < 8; j += 2) top = fminf(top, q[j]), bot = fmaxf(bot, q[j]);
+        if (ms >= 1 && ms <= 399) assert(q[7] - q[1] >= q[5] - q[3]);
+        if (ms <= 400) assert(deg >= was);
+        if (ms >= 2 && ms <= 390) assert(deg > was);
+        if (ms == 1) assert(deg > 180);
+        if (ms <= 190) assert(cx <= cx_was);
+        if (ms >= 220) assert(fabsf(cx - 105) <= 2.5f);
+        if (ms == 220) assert(bot - top > 178);
+        if (ms >= 400) {
+            assert(fabs(deg - (360 - lean)) <= .001);
+            for (int j = 0; j < 8; ++j) assert(fabs(q[j] - ks[j]) <= .01);
+        }
+        was = deg, cx_was = cx;
+    }
+}
+
+/* The landing's frames: before Now Playing comes in, the whole frame, opaque: the paper, the shelf
+   parted as the flip leaves it and fading out, the panel's back 1:1 at the start; then only the face
+   and its reflection over alpha 0, the veil going; from the end, slant_render's art exactly, on
+   either paper. The back reads as the panel did all the while it shows, the front as the art. */
+void slant_render(unsigned *, int, int, int, const unsigned *, int, unsigned);
+static void land_frames(void) {
+    enum { W = 375, H = 294, S = 178, REFL = (178 * 22 + 99) / 100 };
+    static unsigned f[W * H], shelf[W * H], back[285 * 294], front[160 * 160], sback[285 * 294], sfront[160 * 160], want[S * (S + REFL)];
+    classic = 1;
+    open_page();
+    int vh = shim_themes[1].cf.view_h, box[4], veil;
+    assert(vh < H);
+    for (int i = 0; i < W * H; ++i) shelf[i] = 0xff00ff00u;
+    for (int i = 0; i < 285 * 294; ++i) back[i] = 0xff0000ffu, sback[i] = 0xff000000u | (unsigned)(40 + 60 * (i % 294 * 4 / 294));
+    for (int i = 0; i < 160 * 160; ++i) front[i] = 0xffff0000u, sfront[i] = 0xff000000u | (unsigned)(40 + 60 * (i % 160 / 40));
+    land_t L = { { 40, 9, 294, 285 }, { 16, 22, S }, 400, 55, 0, 110, 90, 100, shelf, back, front, 0xff000000u };
+    float q[8], deg;
+#define A(p) ((p) >> 24)
+#define R(p) ((p) >> 16 & 255)
+#define G(p) ((p) >> 8 & 255)
+#define B(p) ((p) & 255)
+    /* the start: the panel where it stood, the shelf parted, the paper under it */
+    assert(land_frame(f, W, 0, &L, box, &veil) == 1 && veil == 255);
+    assert(f[(9 + 142) * W + 40 + 147] == 0xff0000ffu && f[5 * W + PANEL_X - 24 - 1] == 0xff00ff00u && f[(H - 1) * W + 5] == 0xff000000u);
+    assert(land_frame(f, W, 60, &L, box, &veil) == 1);
+    unsigned p = f[5 * W + PANEL_X - 24 - 1];
+    assert(G(p) > 0 && G(p) < 255 && !R(p) && !B(p) && A(p) == 255);
+    /* Now Playing coming in: the frame no longer opaque, its veil going */
+    assert(land_frame(f, W, 96, &L, box, &veil) == 0 && abs(veil - 240) <= 3);
+    /* mid-way: the front, opaque inside, nothing outside it, the box holding it */
+    assert(land_frame(f, W, 200, &L, box, &veil) == 0 && veil == 0);
+    land_quad(L.from, L.to, 200, 400, 55, q, &deg);
+    float lo = 1e9f, hi = -1e9f, top = 1e9f, bot = -1e9f;
+    for (int j = 0; j < 8; j += 2) lo = fminf(lo, q[j]), hi = fmaxf(hi, q[j]), top = fminf(top, q[j + 1]), bot = fmaxf(bot, q[j + 1]);
+    assert(f[(int)((top + bot) / 2) * W + (int)((lo + hi) / 2)] == 0xffff0000u);
+    assert(A(f[box[1] * W + box[0] + box[2] - 1]) == 0);
+    assert(box[0] <= (int)lo && box[1] <= (top < 0 ? 0 : (int)top) && box[0] + box[2] >= (int)ceilf(hi) && box[1] + box[3] >= (int)ceilf(bot));
+    /* the reflection under the near edge, partly there, red */
+    assert(land_frame(f, W, 300, &L, box, &veil) == 0);
+    land_quad(L.from, L.to, 300, 400, 55, q, &deg);
+    int rx = (int)ceilf(q[6]) + 4, ry = (int)q[7] + 3;
+    p = f[ry * W + rx];
+    assert(A(p) > 0 && A(p) < 255 && R(p) > G(p) && R(p) > B(p));
+    /* column 16 holds only the 3% of the face past x 16.97: its share of the reflection, nothing left of it */
+    assert(box[0] == (int)q[6] && A(f[ry * W + (int)q[6]]) * 8 < A(p));
+    /* the landing: the reflection steady across it; slant_render's art, exactly, at the art's place */
+    assert(land_frame(f, W, 399, &L, box, &veil) == 0);
+    p = f[(22 + S + 4) * W + 17];
+    int before = (int)(R(p) * A(p) / 255);
+    assert(land_frame(f, W, 400, &L, box, &veil) == 2);
+    assert(box[0] == 16 && box[1] == 22 && box[2] == S && box[3] == S + REFL);
+    assert(abs((int)R(f[(22 + S + 4) * W + 17]) - before) <= 3);
+    slant_render(want, S, S, S + REFL, front, 160, 0);
+    for (int y = 0; y < S + REFL; ++y) for (int x = 0; x < S; ++x) assert(f[(22 + y) * W + 16 + x] == want[y * S + x]);
+    /* any panel, any ms: the box inside the frame, never a negative size (a playlist's panel's edge-on turn once
+       cleared a negative width, off the end of the frame) */
+    for (int fx = -60; fx <= 120; fx += 20)
+        for (int fy = -40; fy <= 60; fy += 20)
+            for (int fw = 200; fw <= 300; fw += 47) {
+                land_t any = L;
+                any.from[0] = fx, any.from[1] = fy, any.from[2] = fw, any.from[3] = fw - 9;
+                for (int ms = 0; ms <= 400; ms += 10) {
+                    land_frame(f, W, ms, &any, box, &veil);
+                    assert(box[0] >= 0 && box[1] >= 0 && box[2] >= 0 && box[3] >= 0);
+                    assert(box[0] + box[2] <= W && box[1] + box[3] <= H);
+                }
+            }
+    /* Now Playing late: every frame of the motion opaque */
+    land_t late = L;
+    late.np_at = 400;
+    for (int ms = 0; ms < 400; ++ms) assert(land_frame(f, W, ms, &late, box, &veil) == 1);
+    /* stripes: the front left to right as the art; the back as the panel, 1:1 at the start and
+       reading the same way round while it shows */
+    land_t st = L;
+    st.back = sback, st.front = sfront;
+    land_frame(f, W, 0, &st, box, &veil);
+    for (int y = 0; y < 285; ++y) for (int x = 0; x < 294; ++x) assert(f[(9 + y) * W + 40 + x] == sback[y * 294 + x]);
+    for (int ms = 50; ms <= 300; ms += 250) {
+        land_frame(f, W, ms, &st, box, &veil);
+        land_quad(L.from, L.to, ms, 400, 55, q, &deg);
+        int y = (int)((q[1] + q[7] + q[3] + q[5]) / 4), seen = 0, last = -1;
+        for (int x = 0; x < W; ++x) {
+            unsigned c = f[y * W + x];
+            if (A(c) != 255 || R(c) || G(c) || (B(c) - 40) % 60) continue;
+            int k = (int)(B(c) - 40) / 60;
+            if (k != last) assert(k == seen++), last = k;
+        }
+        assert(seen == 4);
+    }
+    /* the reflection's first rows mirror the front's last, never what lies after it in memory */
+    static unsigned guarded[161 * 160];
+    for (int i = 0; i < 161 * 160; ++i) guarded[i] = i < 160 * 160 ? 0xffff0000u : 0xff00ffffu;
+    land_t g = L;
+    g.front = guarded;
+    for (int ms = 250; ms < 400; ms += 50) {
+        assert(land_frame(f, W, ms, &g, box, &veil) == 0);
+        for (int y = box[1]; y < box[1] + box[3]; ++y)
+            for (int x = box[0]; x < box[0] + box[2]; ++x) assert(!G(f[y * W + x]) && !B(f[y * W + x]));
+    }
+    /* Light Mode's paper */
+    land_t light_paper = L;
+    light_paper.paper = 0xfff4f4f4u;
+    land_frame(f, W, 0, &light_paper, box, &veil);
+    assert(f[(H - 1) * W + 5] == 0xfff4f4f4u);
+    assert(land_frame(f, W, 400, &light_paper, box, &veil) == 2);
+    slant_render(want, S, S, S + REFL, front, 160, 0xf4);
+    for (int y = 0; y < S + REFL; ++y) for (int x = 0; x < S; ++x) assert(f[(22 + y) * W + 16 + x] == want[y * S + x]);
+#undef A
+#undef R
+#undef G
+#undef B
+    close_page();
+    classic = 0;
+    open_page();
     close_page();
 }
 
@@ -2023,8 +2244,9 @@ static void artist_only(void) {
     artist_view = 0;
 }
 
-/* The Unknown Album card shows only when its press would find a song: getAllAlbum appends it even
-   when every song carries an album tag. It stays last whatever the Sort. */
+/* The Unknown Album card shows only when Cover Flow's grouping finds an untagged music song:
+   getAllAlbum appends it even when every song carries an album tag, and the open runs no query of
+   its own for it. It stays last whatever the Sort. */
 static void unknown_card(void) {
     unknown_row = 1;
     rescan();
@@ -2035,7 +2257,7 @@ static void unknown_card(void) {
     rescan();
     open_page();
     widget *s = slide();
-    assert(s->nkids == albums + 1 && !strcmp(album_at(albums), "Unknown Album"));
+    assert(s->nkids == albums + 1 && unknown_queries == 0 && !strcmp(album_at(albums), "Unknown Album"));
     ranked[0] = "Unknown Album", ranked[1] = "None", ranked[2] = 0; /* Artist, then year */
     press_sort();
     assert(!strcmp(album_at(albums), "Unknown Album") && !strcmp(album_at(0), "None"));
@@ -6993,6 +7215,7 @@ static void flip_big_playlist(void) {
 }
 static int rows_heard; /* the rows' own playlist_art_ready, under the covers' */
 static void rows_hear(int cd_num) { rows_heard = cd_num; }
+static void land_playlist(void);
 static void playlist_covers(void) {
     static char lists[2][0x60];
     static const cf_style_t shipped = CF_SHIPPED;
@@ -7116,6 +7339,7 @@ static void playlist_covers(void) {
     th_pass(0, 17);
     shim_themes[1].cf = fixture;
     flip_playlist();
+    land_playlist();
     flip_big_playlist();
     assert(saved_key() == kept); /* a playlist is never the album Cover Flow reopens on */
     free(d);
@@ -7299,6 +7523,428 @@ static void unknown_resume(void) {
     rescan();
 }
 
+/* Classic's landing (docs/ipod.md#cover-flow): a song picked on the panel lights its row for land_press, then plays,
+   and over Now Playing's window, from its first paint, the panel turns over and lands as its leaning art for land_ms;
+   the landed art then stays over Now Playing's own until that is this song's (np_art_ready), land_hold at most.
+   The fixture's Classic has none (cf.land_ms 0); these switch on the shipped values. */
+int coverflow_landing(void), coverflow_turning(void);
+void coverflow_slant(void *, void *, unsigned);
+int cf_decode(const char *, unsigned *, int, unsigned);
+static int land_canvas[32];
+static char land_lcd[0x200];
+static void *land_mcl; /* MCL_POS's page, mapped for the queue's position */
+static void land_values(int on) {
+    static const cf_style_t shipped = CF_SHIPPED;
+    cf_style_t *c = &shim_themes[1].cf;
+    assert(shipped.land_press == 0 && shipped.land_ms == 400 && shipped.land_hold == 2000 && shipped.land_np_at == 90);
+    c->land_press = on ? shipped.land_press : 0, c->land_ms = on ? shipped.land_ms : 0;
+    c->land_travel = on ? shipped.land_travel : 0, c->land_out_at = on ? shipped.land_out_at : 0;
+    c->land_out_ms = on ? shipped.land_out_ms : 0, c->land_np_at = on ? shipped.land_np_at : 0;
+    c->land_np_ms = on ? shipped.land_np_ms : 0, c->land_hold = on ? shipped.land_hold : 0;
+}
+static void land_setup(int on) { /* on, then off again as it was */
+    static int was[8];
+    theme_t *t = &shim_themes[1];
+    if (on) {
+        int now[8] = { t->painter[PAINT_PAGES], t->font[ROLE_TITLE], classic, square_art, offline_ok, moves_ok, (int)pressed, 0 };
+        memcpy(was, now, sizeof was);
+        t->painter[PAINT_PAGES] = PAGES_CLASSIC_LIGHT, t->font[ROLE_TITLE] = FONT_CLASSIC_LIGHT;
+        classic = square_art = offline_ok = moves_ok = 1, pressed = 0;
+    } else {
+        t->painter[PAINT_PAGES] = was[0], t->font[ROLE_TITLE] = was[1], classic = was[2], square_art = was[3];
+        offline_ok = was[4], moves_ok = was[5], pressed = (unsigned)was[6];
+    }
+    alpha_ok = np_opens = on;
+    land_values(on);
+    if (on) {
+        for (int i = 0; i < 320 * 375; ++i) offline[i] = 0xff302010u; /* the panel as stock paints it */
+        *(void **)((char *)land_canvas + CANVAS_LCD) = land_lcd;
+        *(unsigned *)(land_lcd + LCD_FILL_COLOR) = 0x12345678;
+        land_mcl = mmap((void *)(MCL_POS & ~4095), 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);
+        assert(land_mcl != MAP_FAILED);
+    } else {
+        munmap(land_mcl, 4096);
+        shim_queue = 0, top_window = 0, np_win = np_art = 0, nav_ms = 0, np_ready = np_centred = 0;
+        timer_fn = 0; /* the ticks the tests ran by hand returned 0: AWTK's would be gone */
+    }
+}
+/* Cover Flow open on album a (its name), its panel standing: the panel. */
+static widget *land_panel(const char *name) {
+    open_page();
+    widget *s = slide();
+    int a = 0;
+    while (strcmp(names[a], name)) ++a;
+    *(int *)(s->raw + SLIDE_INDEX) = a, *(int *)(s->raw + SLIDE_OFFSET) = 0;
+    w[s->kids[a]].click(w[s->kids[a]].ctx, 0);
+    int (*f)(const void *) = timer_fn;
+    timer_fn = 0, f(0); /* to_tracks: the turn starts */
+    f = timer_fn, clock_ms += 270;
+    assert(f(0) == 0 && !coverflow_turning() && frames == 1);
+    top_window = page;
+    widget *panel = panel_of();
+    assert(panel && panel->visible && !strcmp(label_in(panel, 0)->text, name));
+    return panel;
+}
+/* After it: nothing of it left, the panel standing. */
+static void land_gone_all(widget *panel) {
+    assert(!coverflow_landing() && !coverflow_turning() && !land_tex && !land_back && frames == 1 && panel->visible);
+}
+static int land_paint_now(void) { /* a paint of Now Playing's window: the draws */
+    fills = 0;
+    int d = draws;
+    coverflow_paint(np_win, land_canvas);
+    return draws - d;
+}
+/* The motion's ticks on time, every FLIP_TICK_MS, up to the clock's to: the last one's return. */
+static int land_run(int (*tick)(const void *), unsigned to) {
+    int r = 0;
+    while (clock_ms < to) clock_ms = clock_ms + 16 < to ? clock_ms + 16 : to, r = tick(0);
+    return r;
+}
+static void land_lifecycle(void) {
+    land_setup(1);
+    widget *panel = land_panel("Folder"), *row = row_under(panel, 0), *view = &w[row->parent];
+    unsigned base = mem_asks;
+    navs = 0, clock_ms = 1000, lit_row = -1, held_drops = 0;
+    /* The click: the row lit (a tap's too), the panel kept standing with its back captured and the art made, nothing
+       played yet; the press's timer for land_press (0: the next loop's, 1 ms). Wheel ticks held go (drop_held). */
+    row->click(row->ctx, 0);
+    int (*press)(const void *) = timer_fn;
+    void *tex = land_tex, *back = land_back;
+    assert(!navs && coverflow_landing() && coverflow_turning() && press && timer_ms == 1 && mem_asks == base + 1);
+    assert(held_drops == 1);
+    assert(lit_row == 0 && lit_list == view && panel->visible && frames == 2 && tex && back);
+    /* A second click during the press: nothing. (A Return then is ringnav's, land_key's: test/fw.) */
+    row->click(row->ctx, 0);
+    assert(!navs && timer_fn == press && land_tex == tex && land_back == back && frames == 2);
+    /* The press: today's play (by album, 0xff10, the album's queue), the tick at FLIP_TICK_MS. The open took 150 ms:
+       the motion's clock starts at the first paint, ms 0 drawn there. */
+    clock_ms = 1080, nav_ms = 150;
+    timer_fn = 0, press(0);
+    int (*tick)(const void *) = timer_fn;
+    assert(navs == 1 && !strcmp(nav_to, "playing_page") && nav_ctx.cls == 0xff10 && !nav_ctx.idx);
+    assert(nav_ctx.dq == coverflow_tracks(page) && top_window == np_win && tick && timer_ms == 16 && coverflow_turning());
+    clock_ms = 1300;
+    assert(land_paint_now() == 1 && drawn_opaque && !memcmp(drawn, ((int[]){ 0, 0, 375, 294 }), 16));
+    assert(shown[120 * CF_VIEW_W + PANEL_X + 5] == 0xff102030u); /* ms 0: the panel's back where it stood */
+    assert(coverflow_turning());
+    /* Its coverflow_slant renders nothing under it: Now Playing's art's box is the paper, in the art's own paint, so
+       what Now Playing paints after it (the page dots) stays on top; the frame is drawn over it. */
+    int was = frames, d0 = draws;
+    fills = 0;
+    coverflow_slant(np_art, land_canvas, 0);
+    assert(frames == was && land_tex == tex && draws == d0 && fills == 1 && fill_color == 0x12345678);
+    assert(fill[0].x == 0 && fill[0].y == 0 && fill[0].w == 178 && fill[0].h == 218 && fill[0].color == 0xff000000u);
+    fills = 0;
+    coverflow_slant(page, land_canvas, 0); /* another image's paint: nothing */
+    assert(!fills && draws == d0);
+    /* Opaque at first: the whole window each tick; the back goes once the front faces the eye. */
+    clock_ms = 1316;
+    assert(tick(0) == 8 && invalidated == np_win && invalid_whole && land_back == back);
+    /* Veiled (np_at 90 + np_ms 100): the window still; the paper's veil and the face, over Now Playing's children (the
+       page dots too): no fill of the art's box there. */
+    assert(land_run(tick, 1420) == 8 && invalidated == np_win && invalid_whole && !land_back);
+    assert(land_paint_now() == 1 && !drawn_opaque && fills == 1 && fill[0].w == 375 && fill[0].h == 294);
+    assert(fill[0].color >> 24 > 0 && fill[0].color >> 24 < 255 && fill_color == 0x12345678);
+    /* Then only the face's old and new boxes. */
+    assert(land_run(tick, 1500) == 8 && invalid_whole && land_paint_now() == 1);
+    int old[4];
+    memcpy(old, drawn, sizeof old);
+    clock_ms = 1516;
+    assert(tick(0) == 8 && invalidated == np_win && !invalid_whole);
+    assert(land_paint_now() == 1 && !drawn_opaque && !fills && memcmp(old, drawn, sizeof old));
+    for (int *b = old; b; b = b == old ? drawn : 0)
+        assert(invalid_rect[0] <= b[0] && invalid_rect[1] <= b[1] && invalid_rect[0] + invalid_rect[2] >= b[0] + b[2] &&
+               invalid_rect[1] + invalid_rect[3] >= b[1] + b[3]);
+    assert(land_run(tick, 1699) == 8 && coverflow_turning());
+    /* At land_ms: the art as slant_render lands it, opaque, drawn by the art's own paint at its place, the window's
+       paint over it drawing nothing (the page dots stay); the bar's title follows; the hold's tick. */
+    clock_ms = 1700;
+    assert(!coverflow_turning() && tick(0) == 0 && timer_fn == tick && timer_ms == 50 && coverflow_landing());
+    assert(land_paint_now() == 0 && !fills);
+    moves = 0;
+    coverflow_slant(np_art, land_canvas, 0);
+    assert(moves == 1 && !memcmp(moved[0][0], ((int[]){ 16, 22, 178, 218 }), 16));
+    assert(!memcmp(moved[0][1], ((int[]){ 0, 0, 178, 218 }), 16) && fills == 1 && fill[0].w == 178);
+    moves = 0;
+    /* The player's cover written but Now Playing's art not this song's yet: held. Then it is: handed over. */
+    snprintf(shim_lastcover, sizeof shim_lastcover, "%s", paths[1]);
+    clock_ms = 1750;
+    assert(tick(0) == 8 && coverflow_landing());
+    np_ready = 1, clock_ms = 1800;
+    assert(tick(0) == 0 && invalidated == np_art);
+    land_gone_all(panel);
+    assert(navs == 1 && land_paint_now() == 0);
+    np_ready = 0;
+    /* A click after: a landing again. Nothing arrives: handed over land_hold after the landing. */
+    row->click(row->ctx, 0);
+    press = timer_fn, nav_ms = 0;
+    clock_ms = 2000, press(0), tick = timer_fn;
+    land_paint_now();
+    land_run(tick, 2400);
+    clock_ms = 4399;
+    assert(tick(0) == 8);
+    clock_ms = 4400;
+    assert(tick(0) == 0);
+    land_gone_all(panel);
+    /* Now Playing destroyed mid-motion, and mid-hold: it ends, the covers drawn again; another window's goes by. */
+    for (int k = 0; k < 2; ++k) {
+        row->click(row->ctx, 0);
+        press = timer_fn, clock_ms = 5000, press(0), tick = timer_fn;
+        land_paint_now();
+        land_run(tick, k ? 5400 : 5100);
+        assert(!np_gone(page, 0) && coverflow_landing());
+        assert(!np_gone(np_gone_ctx, 0) && invalidated == &w[slide()->parent] && !timer_fn);
+        land_gone_all(panel);
+    }
+    /* Dark: no first paint within LAND_FIRST_PAINT_MS (2000) of Now Playing's open ends it; nor does a hold need a
+       paint to end. */
+    row->click(row->ctx, 0);
+    press = timer_fn, clock_ms = 6000, press(0), tick = timer_fn;
+    clock_ms = 7999;
+    assert(tick(0) == 8 && coverflow_turning());
+    clock_ms = 8000;
+    assert(tick(0) == 0 && !coverflow_landing() && !land_tex);
+    land_gone_all(panel);
+    row->click(row->ctx, 0);
+    press = timer_fn, clock_ms = 9000, press(0), tick = timer_fn;
+    land_paint_now();
+    land_run(tick, 9400);
+    clock_ms = 11400;
+    assert(tick(0) == 0);
+    land_gone_all(panel);
+    /* A touch on Now Playing, another window on top or another song: ends it at once, mid-motion or mid-hold, the
+       song played once. */
+    for (int k = 0; k < 6; ++k) {
+        navs = 0;
+        row->click(row->ctx, 0);
+        press = timer_fn, clock_ms = 12000, press(0), tick = timer_fn;
+        land_paint_now();
+        if (k & 1) land_run(tick, 12600);
+        else clock_ms = 12150;
+        static deque other = { 1, { 0 } };
+        other.at[0] = records[0];
+        if (k < 2) pressed = 1;
+        else if (k < 4) top_window = page;
+        else if (k == 4) *(volatile int *)MCL_POS = 1; /* past the queue */
+        else shim_queue = &other;                    /* another song */
+        assert(tick(0) == 0 && invalidated == np_win && invalid_whole && navs == 1);
+        land_gone_all(panel);
+        pressed = 0, top_window = page, *(volatile int *)MCL_POS = 0;
+    }
+    /* land.hold 0: the first paint still has LAND_FIRST_PAINT_MS (about 700 ms on the Q2), and the landing shows; the
+       hold only bounds the hand-over, at its first tick. */
+    shim_themes[1].cf.land_hold = 0;
+    row->click(row->ctx, 0);
+    press = timer_fn, clock_ms = 13000, press(0), tick = timer_fn;
+    assert(land_run(tick, 13700) == 8 && coverflow_turning() && coverflow_landing());
+    assert(land_paint_now() == 1 && drawn_opaque);
+    assert(land_run(tick, 14100) == 0 && !coverflow_turning() && coverflow_landing());
+    clock_ms = 14150;
+    assert(tick(0) == 0 && !coverflow_landing() && !land_tex && invalidated == np_art);
+    land_gone_all(panel);
+    shim_themes[1].cf.land_hold = 2000;
+    /* A compilation's track, its artist not the album's (its own record, as the device's album rows are): its cover is
+       the panel's album's, so it lands. */
+    static char guest[0x60];
+    deque *tracks = coverflow_tracks(page);
+    void *was_track = tracks->at[0];
+    memcpy(guest, was_track, sizeof guest);
+    *(const char **)(guest + REC_ARTIST) = "A guest";
+    tracks->at[0] = guest;
+    row->click(row->ctx, 0);
+    assert(coverflow_landing());
+    tracks->at[0] = was_track;
+    /* Cover Flow closing ends it: during the press its song plays at once, as with no landing; during the motion its
+       frame leaves Now Playing, the song played once. */
+    navs = 0, played_idx = -1;
+    close_page();
+    assert(!coverflow_landing() && !land_tex && !land_back && !frames && navs == 1 && !played_idx);
+    panel = land_panel("Folder"), row = row_under(panel, 0), navs = 0;
+    row->click(row->ctx, 0);
+    press = timer_fn, clock_ms = 30000, press(0), tick = timer_fn;
+    land_paint_now();
+    clock_ms = 30100, tick(0);
+    close_page();
+    assert(!coverflow_landing() && navs == 1 && invalidated == np_win && invalid_whole && !frames);
+    land_setup(0);
+}
+/* A late tick: more than two ticks after the last frame, it renders one tick on from that frame, the clock's
+   t0 slid forward, so a late frame slows the motion rather than skip it; turning and the motion's end follow the slid
+   t0, and the hold after it is the hold's own. On time, a tick renders the clock's ms. */
+/* The motion ends at at, as coverflow_turning has it (its t0 + land_ms): the clock left as it was. */
+static int land_ends_at(unsigned at) {
+    unsigned was = clock_ms;
+    clock_ms = at - 1;
+    int before = coverflow_turning();
+    clock_ms = at;
+    int after = coverflow_turning();
+    clock_ms = was;
+    return before && !after;
+}
+static void land_clock(void) {
+    land_setup(1);
+    widget *panel = land_panel("Folder"), *row = row_under(panel, 0);
+    clock_ms = 40000;
+    row->click(row->ctx, 0);
+    int (*press)(const void *) = timer_fn;
+    press(0);
+    int (*tick)(const void *) = timer_fn;
+    clock_ms = 40100;
+    land_paint_now();
+    assert(land_ends_at(40500));
+    clock_ms = 40150; /* the first tick 50 ms after the first paint: ms 16, not 50; t0 40134 */
+    assert(tick(0) == 8 && land_ends_at(40534));
+    clock_ms = 40166; /* ms 32 */
+    assert(tick(0) == 8 && land_ends_at(40534));
+    clock_ms = 40180; /* on time: its own step, 14 */
+    assert(tick(0) == 8 && land_ends_at(40534));
+    clock_ms = 40212; /* two ticks' step, still its own: ms 78 */
+    assert(tick(0) == 8 && land_ends_at(40534));
+    clock_ms = 40312; /* a 100 ms stall: 16 on, ms 94; t0 40218 */
+    assert(tick(0) == 8 && land_ends_at(40618));
+    assert(land_run(tick, 40617) == 8 && coverflow_turning());
+    clock_ms = 40618;
+    assert(!coverflow_turning() && tick(0) == 0 && timer_fn == tick && timer_ms == 50 && coverflow_landing());
+    clock_ms = 40618 + 1999; /* the hold's 50 ms ticks are never slid: land_hold from the end */
+    assert(tick(0) == 8 && coverflow_landing());
+    clock_ms = 40618 + 2000;
+    assert(tick(0) == 0);
+    land_gone_all(panel);
+    close_page();
+    land_setup(0);
+}
+/* A playlist's panel lands the picked song's album's cover from the cache (as Home's art falls back to it), played as
+   a song list from the press on. */
+static void land_playlist(void) {
+    static char list[0x60];
+    land_setup(1);
+    memset(list, 0, sizeof list);
+    *(int *)(list + REC_ID) = *(int *)(list + REC_DISC) = 40; /* records 0 and 1 */
+    *(const char **)(list + REC_TITLE) = "Landing";
+    deque *d = _create_deque(0);
+    d->at[d->n++] = list;
+    page = &w[nw + 1];
+    assert(coverflow_playlists(d));
+    top_window = page;
+    run(); /* the covers come up */
+    w[slide()->kids[0]].click(w[slide()->kids[0]].ctx, 0);
+    int (*f)(const void *) = timer_fn;
+    timer_fn = 0, f(0);
+    f = timer_fn, clock_ms += 270, f(0);
+    top_window = page;
+    widget *panel = 0;
+    for (int i = 0; i < page->nkids; ++i)
+        if (box(&w[page->kids[i]])[2] == 294) panel = &w[page->kids[i]];
+    assert(panel && deque_size(coverflow_tracks(page)));
+    widget *view = kid(kid(panel, "list_view"), "scroll_view");
+    void *t = deque_at(coverflow_tracks(page), 0);
+    char url[620];
+    snprintf(url, sizeof url, "file://");
+    art_file(url + 7, *(const char **)((char *)t + REC_ALBUM));
+    static unsigned want[160 * 160];
+    assert(cf_decode(url, want, 1, 0));
+    ++playback_loads; /* a queue loaded since */
+    decode_ms = 100; /* the art's decode outlasts the press: it plays at the next pass */
+    w[view->kids[0]].click(w[view->kids[0]].ctx, 0);
+    decode_ms = 0;
+    assert(coverflow_landing() && land_tex && !coverflow_playlist_queue() && timer_ms == 1);
+    for (int i = 0; i < 160 * 160; ++i) assert(texel(((unsigned *)land_tex)[i]) == want[i]);
+    int (*press)(const void *) = timer_fn;
+    press(0);
+    assert(played_cls == 0xf001 && coverflow_playlist_queue() && coverflow_landing());
+    close_page();
+    assert(!coverflow_landing());
+    /* Its album not in the cache: Now Playing at once. */
+    const char *album_was = *(const char **)((char *)t + REC_ALBUM);
+    *(const char **)((char *)t + REC_ALBUM) = "Uncached";
+    page = &w[nw + 1];
+    assert(coverflow_playlists(d));
+    top_window = page;
+    run();
+    w[slide()->kids[0]].click(w[slide()->kids[0]].ctx, 0);
+    f = timer_fn, timer_fn = 0, f(0);
+    f = timer_fn, clock_ms += 270, f(0);
+    view = 0;
+    for (int i = 0; i < page->nkids; ++i)
+        if (box(&w[page->kids[i]])[2] == 294) view = kid(kid(&w[page->kids[i]], "list_view"), "scroll_view");
+    navs = 0;
+    w[view->kids[0]].click(w[view->kids[0]].ctx, 0);
+    assert(navs == 1 && !coverflow_landing() && !land_tex && played_cls == 0xf001);
+    close_page();
+    *(const char **)((char *)t + REC_ALBUM) = album_was;
+    free(d);
+    land_setup(0);
+}
+/* Where it can't run, Now Playing opens as today: at the click, or at the press for the window's cases. */
+static void land_fallbacks(void) {
+    land_setup(1);
+    for (int k = 0; k < 19; ++k) {
+        widget *panel = land_panel(k == 3 ? "None" : "Folder"), *row = row_under(panel, 0);
+        navs = 0, clock_ms = 20000;
+        if (k == 0) np_centred = 1;
+        if (k == 1) mem_kb = 1000;
+        if (k == 2) frame_fail = 1;
+        if (k == 4) classic = 0;
+        if (k == 5) timer_fail = 1;
+        if (k == 6) np_opens = 2;                             /* no img_cover */
+        if (k == 7) np_art_box[3] = NP_IPOD_ART;              /* not slanted */
+        if (k == 8) np_art_box[2] = 177, np_art_box[3] = 220; /* another side */
+        if (k == 9) np_opens = 0;                             /* Headphones Required: its window closed, Cover Flow on top */
+        if (k == 12) np_opens = 3;                            /* another window on top */
+        if (k == 13) calloc_fail = 1;
+        if (k == 14) offline_ok = 0;                       /* the capture can't paint the panel */
+        if (k == 15) np_art_box[1] = 294 - NP_IPOD_ART;   /* its reflection past the frame */
+        if (k == 16) np_art_box[0] = -1;                   /* left of the frame */
+        if (k == 17) np_art_box[1] = -1;                   /* above it */
+        if (k == 18) np_art_box[0] = CF_VIEW_W - NP_IPOD_ART + 1; /* past its right edge */
+        row->click(row->ctx, 0);
+        calloc_fail = 0;
+        if (k >= 6 && k != 13 && k != 14) {
+            assert(!navs && coverflow_landing());
+            int (*press)(const void *) = timer_fn;
+            if (k == 10) timer_fail = 1; /* no tick */
+            if (k == 11) {               /* no hold's tick */
+                press(0);
+                int (*tick)(const void *) = timer_fn;
+                land_paint_now();
+                land_run(tick, clock_ms + 384);
+                clock_ms += 16, timer_fail = 1;
+                assert(tick(0) == 0);
+            } else
+                timer_fn = 0, press(0);
+        }
+        assert(navs == 1 && !strcmp(nav_to, "playing_page") && !coverflow_landing() && !land_tex && !land_back);
+        assert(frames == 1 && panel->visible);
+        np_centred = 0, mem_kb = ~0u, frame_fail = 0, classic = 1, timer_fail = 0, np_opens = 1, offline_ok = 1;
+        np_art_box[0] = SPOT_ART_X, np_art_box[1] = NP_IPOD_ART_Y, np_art_box[2] = NP_IPOD_ART, np_art_box[3] = NP_IPOD_ART + 40;
+        close_page();
+    }
+    /* A row's click during the turn back (a finger held on it through Return: stock's grab outlives the hide): it plays
+       at once, the turn's buffers kept, nothing taken for a landing. */
+    widget *panel = land_panel("Folder"), *row = row_under(panel, 0);
+    key(KEY_RETURN);
+    void *back = land_back;
+    unsigned asks = mem_asks;
+    assert(coverflow_turning() && frames == 2 && back);
+    navs = 0;
+    row->click(row->ctx, 0);
+    assert(navs == 1 && !coverflow_landing() && land_back == back && mem_asks == asks && frames == 2);
+    close_page();
+    assert(!frames && !land_back);
+    /* A cover not square, in Light Mode: its bars are Now Playing's paper, as its own art's, not the shelf's black. */
+    light = 1, art_h = 120;
+    panel = land_panel("Folder"), row = row_under(panel, 0);
+    row->click(row->ctx, 0);
+    unsigned *tex = land_tex;
+    assert(coverflow_landing() && tex);
+    for (int x = 0; x < 160; x += 53) assert(tex[x] == 0xffffffffu && tex[159 * 160 + x] == 0xffffffffu);
+    assert(tex[80 * 160 + 80] != 0xffffffffu); /* the cover between them */
+    close_page();
+    light = 0, art_h = 160;
+    land_setup(0);
+}
+
 int main(void) {
     big_library = 1; /* every test of letters, years and half copies; off: unlettered_sorts, half_art */
     /* Titles come from tags, unchanged; missing tags retain filename/CUE fallbacks. */
@@ -7470,6 +8116,8 @@ int main(void) {
     enter_frames();
     edge_drawn();
     flip_frames();
+    land_geometry();
+    land_frames();
     sorting();
     unlettered_sorts();
     by_years(0);
@@ -7485,6 +8133,9 @@ int main(void) {
     ffmpeg_art();
     player_cover();
     flip_turn();
+    land_lifecycle();
+    land_clock();
+    land_fallbacks();
     scoped_pages();
     cancel_build();
     unknown_resume();

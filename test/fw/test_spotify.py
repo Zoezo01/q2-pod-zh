@@ -7,9 +7,9 @@ import ctypes as C
 
 import pytest
 
-from conftest import O, Files
+from conftest import O, SPOT_NOSOCK, Files
 from test_streaming import (A_CAPS, A_DOWNLOAD, A_PLAY, A_PREVIEW, A_REMOVE, A_SIGNOUT, L_CONFIRM, L_DOWNLOADS, L_JOB,
-                            L_LIST, L_REMOVE, L_SELECT, L_STORAGE, S_OLD, S_PAIR, S_WAIT, W_NOSOCK, Br, Sp, Wk, track)
+                            L_LIST, L_REMOVE, L_SELECT, L_STORAGE, S_OLD, S_PAIR, S_WAIT, Br, Sp, Wk, track)
 
 STATE, DOWNLOAD, LOG, OUT = '/tmp/q2-librespot.state', '/tmp/q2-librespot.download', '/mnt/mmc/.spotify/spot.log', '/tmp/q2-librespot.out'
 SOCK, SINK = b'/tmp/q2-librespot.sock', b'/tmp/q2sink.sock'
@@ -1175,7 +1175,7 @@ def test_after_signing_out_no_socket_is_librespot_restarting_for_15_s(fw, later,
     asked = b.wk.id
     assert b.request().endswith(b'\taccount\n')
     b.clock.now = out + later
-    b.answer(fail=W_NOSOCK, raw=b'')
+    b.answer(fail=SPOT_NOSOCK, raw=b'')
     assert b.top.state == (S_PAIR if waits else S_OLD) and b.sp.old == (not waits)
     b.tick(500)
     assert b.wk.id == asked + waits  # asked again soon while it restarts
@@ -1194,7 +1194,7 @@ def test_after_a_refused_key_s_kill_the_open_browser_waits_15_s_for_librespot(fw
     assert b.sp.loading == 3 and [C.string_at(a[0]) for _, a in fw.calls('fw_system')][-1] == b'killall -9 librespot aplay'
     asked = b.wk.id
     b.clock.now = killed + later
-    b.answer(fail=W_NOSOCK, raw=b'')  # the list asked for meanwhile: no socket
+    b.answer(fail=SPOT_NOSOCK, raw=b'')  # the list asked for meanwhile: no socket
     assert b.top.state == (S_WAIT if waits else S_OLD) and b.br.depth == 1 + waits  # else an old add-on, at the base
     b.tick(500)
     assert b.wk.id == asked + waits  # the list asked again soon while it restarts
