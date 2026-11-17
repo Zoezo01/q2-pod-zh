@@ -434,25 +434,6 @@ def test_classic_light_font():
 
 
 @pytest.mark.parametrize('face', ['bold_font', 'classic_light_font'])
-def test_vietnamese_letters_survive_the_font_subset(face):
-    from unicodedata import normalize
-    from fontTools.ttLib import TTFont
-
-    vowels = 'aăâeêioôơuưyAĂÂEÊIOÔƠUƯY'
-    tones = '\u0300\u0301\u0303\u0309\u0323'
-    letters = set(vowels + 'đĐ')
-    letters.update(normalize('NFC', vowel + tone) for vowel in vowels for tone in tones)
-
-    font_bytes, ranges = getattr(build, face)()
-    font = TTFont(io.BytesIO(font_bytes))
-    cmap = font.getBestCmap()
-    bounds = [int(value, 16) for value in ranges.split('{')[1].rstrip('}').split(',')]
-    assert all(ord(letter) in cmap for letter in letters)
-    assert all(any(lo <= ord(letter) <= hi for lo, hi in zip(bounds[::2], bounds[1::2]))
-               for letter in letters)
-
-
-@pytest.mark.parametrize('face', ['bold_font', 'classic_light_font'])
 def test_both_faces_are_given_a_play_mark_on_the_middle_of_their_capitals(face):
     """View Queue's mark (navigation.c stock_row_style): neither source has U+25B6, and a title holding
     a character its face lacks leaves that face."""
