@@ -99,7 +99,7 @@ PTRS = set('''bar_bt bar_wifi bar_pct bar_slot bar_icon bar_idle bar_state bar_e
 BYTES = {'title_align', 'slider_kind', 'bar_dark'}
 SHORTS = {'title_x', 'title_y', 'title_w'}
 UNSIGNED = set('''codec_timer batt_key bar_timer np_hash np_art np_marquee np_remain_timer np_fit_timer np_press
-    np_press_at scrub_timer scrub_track settle_timer lyric_push_at lyric_at lyric_follow_at lyric_song lyric_rows_song
+    np_press_at scrub_timer scrub_track settle_timer lyric_song lyric_rows_song
     bc_timer bc_track bc_repaint bc_key bc_box bc_shape bc_url clock_key clock_timer keep_lit_at genre_timer
     last_input'''.split())
 
@@ -1941,7 +1941,7 @@ class Lyrics(Now):
         fw.mock('mclGetLyricSize', lambda *_: len(LINES))
         super().__init__(fw, ui, mcl, st, lyrics=kwargs.pop('lyrics', LINES), **kwargs)
         ui.ints[self.slide, b'value'] = page
-        self.poll_fn = fw.fn('navigation__lyric_poll', None)
+        self.poll_fn = fw.fn('lyric_poll', None)
         fw.mock('widget_to_local', self.to_local)
 
     def to_local(self, w, xy, *_):
@@ -2141,7 +2141,7 @@ def test_a_tick_before_the_wheel_goes_raw_glides_to_the_next_rows_top(fw, ui, mc
     theme(fw, st, CLASSIC)
     lyr = Lyrics(fw, ui, mcl, st, sec=35)
     at = lyr.settle()
-    lyrics = fw.fn('navigation__np_lyrics', C.c_int, C.c_uint)
+    lyrics = fw.fn('np_lyrics', C.c_int, C.c_uint)
     tops = sorted(ui.box(r)[1] for r in lyr.rows)
     assert lyrics(KEY_NEXT) == 1 and st.lyric_held == 1
     assert lyr.settle() == min(t for t in tops if t > at)

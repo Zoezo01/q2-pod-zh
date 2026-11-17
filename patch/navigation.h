@@ -174,10 +174,7 @@ typedef struct {
     int np_artist_face;      /* the artist label's active face */
     int np_bold;             /* the title's font: theme_font's face | px << 2, -1 not set yet */
     void *np_slide, *np_lrc; /* the art/lyrics/info pages and the lyric lines' scroll_view */
-    /* Now Playing's full-screen lyrics (np_full) and where the last touch on them came down
-     * (np_lyric_touch) */
-    int np_full, np_tap_x, np_tap_y;
-    int np_was[9]; /* the column before full screen (np_full) */
+    int np_full; /* Now Playing's full-screen lyrics (np_lyrics.c np_full): 2 the iPod page's */
     /* The full-screen art's song name, its shade and its window, the fade's step and timer
      * (ringnav_bigcover) */
     void *bc[3];
@@ -228,17 +225,11 @@ typedef struct {
     int scrub, scrub_to, scrub_moved, settle_played;
     int held_sec; /* a paused seek to scrub_to on scrub_track: the player's second then, +1; 0 none
                    */
-    /* The lyrics (lyric_poll), of the song lyric_song, their rows built for lyric_rows_song:
-     * lyric_raw while their page holds the wheel's raw travel; lyric_held once the wheel or a drag
-     * moved them; lyric_spun once the wheel moved them since it was let go (2: only nudged them,
-     * still following); lyric_touch while a
-     * finger is on Now Playing, 1 if it came down on the lyrics, lyric_drag_y the offset then; the
-     * glide's target lyric_to (1/16 px), its last step lyric_at, and lyric_glide while it moves;
-     * lyric_follow_at the last follow. */
-    int lyric_raw, lyric_held, lyric_spun, lyric_touch, lyric_drag_y, lyric_glide, lyric_to;
-    int lyric_push, lyric_home; /* travel short of LYRIC_PUSH_DETENTS, and where it nudged from */
-    unsigned lyric_push_at;
-    unsigned lyric_at, lyric_follow_at, lyric_song, lyric_rows_song;
+    /* The lyrics (np_lyrics.c keeps the rest), of the song lyric_song, their rows built for
+     * lyric_rows_song: lyric_held once the wheel or a drag moved them; lyric_glide while the glide
+     * moves them. */
+    int lyric_held, lyric_glide;
+    unsigned lyric_song, lyric_rows_song;
     /* The Display settings, read from config.ini on first use, and the display page's value labels.
      */
     int settings_read, accent, minimal_accent, home, battery, home_rockbox, home_groovebox, theme,
@@ -260,18 +251,13 @@ typedef struct {
     unsigned tick_drop; /* tick_gate: the wheel keys whose press it dropped, bits */
     unsigned tick_at;   /* tick_gate: the last tick it passed (ringnav_sleep's dark turn) */
     int greeted;        /* the first reachable list got its boot repaint */
-    /* Queue menu: the hold's AWTK press time marks its release; the target is a track/list row
-     * checked by count, record and browsing-state hashes; qm_cls is the class its list holds;
-     * qm_forced is a shuffle Play next. */
+    /* Queue menu (queue_menu.c keeps the rest): the hold's AWTK press time marks its release; the
+     * target row's place in its list, checked by count; qm_forced is a shuffle Play next; the
+     * dialog, and the playlist page Add to Playlist opened. */
     unsigned long long qm_press;
-    int qs_wheel;     /* Quick Settings' wheel, 1 + Q2POD QSVOLUME once read (quick_volume) */
     unsigned qs_hold; /* Return's hold closed Quick Settings then, 0 once acted on (quick_poll) */
-    unsigned qm_timer, qm_cls, qm_idx, qm_rows, qm_hash, qm_browse, qm_forced, qm_forced_hash;
-    int qm_kind, qm_action, qm_choice;
-    char qm_name[96]; /* a playlist cover's name, the covers' own: the live list may be older */
-    void *qm_dialog, *qm_queue, *qm_playlist;
-    unsigned qm_queue_hash;
-    unsigned char qm_classinfo[912]; /* g_local_classinfo_save before a Go to */
+    unsigned qm_idx, qm_rows, qm_forced, qm_forced_hash;
+    void *qm_dialog, *qm_playlist;
     /* Podcasts/Audiobooks: folder_page opens at media_root once media_open is set (else at the
      * card, /mnt/mmc, with a card and no drive; otherwise the storage selector stays); while the
      * page is there, Back at that root leaves it. */
@@ -332,6 +318,9 @@ extern int scrobble_ready(void), scrobble_start(void), scrobble_poll(int *sent),
     scrobble_flag(const char *key), scrobble_value(const char *key);
 extern const char *now_tag(void *r, int field);
 extern void *queue_now(unsigned *pos, unsigned *n);
+extern void *coverflow_tracks(void *page), *coverflow_album(void *page);
+extern int coverflow_goto_album(void *r), coverflow_shows_album(void *r);
+extern void up_next(int (*keyup)(void *, void *));
 
 /* navigation.c */
 void pod_settings(void);
@@ -349,7 +338,6 @@ void paint_panel(void *w, void *canvas, const rect_t *r, const char *shadow, int
 #define PANEL_PAD 8
 #define PANEL_DROP 2
 unsigned stops_row(const stops_t *s, int j, int h) __attribute__((pure));
-int clock_due(const void *info);
 int bar_repaint(const void *info);
 void clock_text(void *label, int negative, int t);
 void label_font(void *w, int bold);
@@ -385,8 +373,6 @@ extern const stops_t confirm_dark, confirm_tray, confirm_well;
 int search_key(unsigned key);
 int geom(int group);
 int load_rows(menu_t *m, void *w);
-void *qm_record(void);
-void *qm_collect(void *r);
 void *rec_find(void *songs, const unsigned *slot, unsigned mask, void *r);
 unsigned *rec_index(void *songs, unsigned *mask);
 void reveal(menu_t *m, int id, int immediate);
@@ -394,15 +380,90 @@ void row_meta(void *w);
 void *staged_music(int (*query)(void *), void *arg, int *count);
 int usable(void);
 int all_songs(void *music);
-long clock_back(long long wall);
 void text_inks(void *w);
 unsigned listen_key(void *r) __attribute__((pure));
 void plays_load(void);
 int songs_unsorted(void *music);
 void drop_input(void);
 int pointer_down(void);
-unsigned qm_album_id(void *r);
 char *scrobble_tag(char *o, char *end, const char *s);
+unsigned np_track(void);
+void scrub_end(void);
+void view_still(void *w);
+extern const char *const lock_names[4];
+int lock_choice(void);
+void lock_set(int choice);
+int named_in(const char *names, const char *name);
+int bright_tone(unsigned tone);
+int ringnav_dispatch(void *target, void *event);
+int compact_now_playing(void);
+int fields(void *top);
+void *field_widget(void *top, int f);
+void field_set(void *top, int f);
+/* A swipe between the date and time pages moves the field to that page's first. */
+static inline int field_on_page(int f, int time) { return time != (f >= 3) ? (time ? 3 : 0) : f; }
+int slider_gone(void *win, void *event);
+const char *bar_title_of(void *win, void **label);
+/* Audited top windows (contexts.inc): each its content-identity class and its flags. */
+enum { CTX_DYNAMIC, CTX_FIXED, CTX_FOLDER, CTX_LOCAL };
+typedef struct {
+    const char *name;
+    unsigned char kind, flags;
+} context_t;
+extern const context_t contexts[];
+int context_id(const char *name);
+int allowed_top(void *top);
+void *surface_under(void *top, void *target, void **other, int wheel);
+unsigned local_hash(unsigned h);
+int load(menu_t *m, void *w, int recall);
+int moving(menu_t *m);
+int reconcile(menu_t *m, int settle);
+void *more_image(void *w);
+#define BAR_ROWS geom_val(V_BAR)
+static inline int dialogs_painted(void) { return theme()->painter[PAINT_CONFIRM] != CONFIRM_STOCK; }
+char *play_key(void);
+unsigned rec_hash(void *r);
+unsigned queue_hash(void *q);
+extern const unsigned char qm_by[3];
+int class_query(unsigned cls, void *r);
+void *np_more(void);
+void album_open(void *r);
+int chapter_file(void *r);
+void chapters_open(void *r);
+void *book_place(void *list, void *r, int *at, int *off);
+int song_folder(void *r, char *path);
+
+/* np_lyrics.c */
+void lyric_init(void);
+void lyric_poll(void);
+void np_full(int on);
+int np_lyrics(unsigned key);
+int np_lyric_touch(void *ctx, void *event);
+
+/* quick_settings.c */
+int quick_dispatch(void *target, void *event);
+void quick_fill(void *w);
+void quick_page(void *win, void *canvas);
+void quick_scrub(void *w, void *canvas);
+void quick_poll(void);
+int quick_volume(void);
+const char *quick_wheel_toggle(void *top);
+
+/* queue_menu.c */
+int qm_hold(void);
+void *qm_record(void);
+void *qm_collect(void *r);
+unsigned qm_album_id(void *r);
+
+/* clock.c */
+long clock_back(long long wall);
+int clock_due(const void *info);
+void clock_show(void);
+int time_click(void *target, void *event);
+int time_form(void *top);
+void time_open(void *win);
+void time_paint(void *w, void *canvas);
+void time_wheel(void *top, int f, int dir);
 
 /* font_weight.c: a marked label's foreground painted again 1 px right */
 void font_weight_paint(void *w, void *canvas);

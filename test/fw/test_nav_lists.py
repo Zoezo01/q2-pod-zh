@@ -2077,7 +2077,7 @@ def test_two_panes_both_selected_take_no_tick(fw, ui):
 
 def test_a_tap_finds_its_pane_by_ancestry(fw, ui):
     win, (left, right) = two_panes(ui)
-    under = fw.fn('navigation__surface_under', C.c_void_p, C.c_void_p, C.c_void_p, C.POINTER(C.c_void_p), C.c_int)
+    under = fw.fn('surface_under', C.c_void_p, C.c_void_p, C.c_void_p, C.POINTER(C.c_void_p), C.c_int)
     other = C.c_void_p()
     label = right.children[3].children[0]
     assert under(win.at, label.at, C.byref(other), 0) == right.at and other.value == left.at

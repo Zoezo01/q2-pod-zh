@@ -126,7 +126,7 @@ def test_time_zones_list_west_to_east_ties_in_their_order(fw):
         return out
     fw.mock('fw_localtime_r', local)
     rows = (C.c_ubyte * len(zones))()
-    fw.fn('navigation__tz_now', None, C.c_void_p)(rows)
+    fw.fn('clock__tz_now', None, C.c_void_p)(rows)
     assert list(rows) == sorted(order, key=lambda z: offset[names[z]])
     assert now['zone'] == names[fw.var('g_time_zone', C.c_ubyte).value]  # the saved zone is set again
 
@@ -435,20 +435,20 @@ def test_rockbox_is_a_file_on_the_card(fw, fn, path, result, mode, available):
 @pytest.mark.parametrize('flag, mode, choice', [(0, 1, 0), (1, 3, 1), (1, 2, 2), (1, 1, 3)])
 def test_lock_choice_names_stocks_modes(fw, flag, mode, choice):
     fw.var('g_keylock_flag', C.c_ubyte).value, fw.var('g_keylock_mode', C.c_ubyte).value = flag, mode
-    assert fw.fn('navigation__lock_choice', C.c_int)() == choice and not fw.calls('write_int_config')
+    assert fw.fn('lock_choice', C.c_int)() == choice and not fw.calls('write_int_config')
 
 
 @pytest.mark.parametrize('mode', [0, 4, 200])
 def test_an_unknown_lock_mode_locks_everything(fw, mode):
     fw.var('g_keylock_flag', C.c_ubyte).value, fw.var('g_keylock_mode', C.c_ubyte).value = 1, mode
-    assert fw.fn('navigation__lock_choice', C.c_int)() == 1
+    assert fw.fn('lock_choice', C.c_int)() == 1
     assert fw.var('g_keylock_mode', C.c_ubyte).value == 3 and len(fw.calls('write_int_config')) == 1
 
 
 @pytest.mark.parametrize('choice', range(4))
 def test_a_lock_choice_comes_back(fw, choice):
-    fw.fn('navigation__lock_set', None, C.c_int)(choice)
-    assert fw.fn('navigation__lock_choice', C.c_int)() == choice
+    fw.fn('lock_set', None, C.c_int)(choice)
+    assert fw.fn('lock_choice', C.c_int)() == choice
     assert [c[1][0] for c in fw.calls('write_int_config')] == [fw.var('g_keylock_mode', C.c_ubyte).value, int(choice > 0)]
 
 
@@ -934,12 +934,12 @@ def test_the_scan_any_folder_name(fw, heap):
 def test_chapter_file(fw, path, cue, m4b):
     """An M4B, or a spoken file that is not a CUE track (its sheet lists its chapters)."""
     strings(fw)
-    assert fw.fn('navigation__chapter_file', C.c_int, C.c_void_p)(record([], path, cue=cue)) == m4b
+    assert fw.fn('chapter_file', C.c_int, C.c_void_p)(record([], path, cue=cue)) == m4b
 
 
 def test_chapter_file_any_path(fw, heap):
     strings(fw)
-    check = fw.fn('navigation__chapter_file', C.c_int, C.c_void_p)
+    check = fw.fn('chapter_file', C.c_int, C.c_void_p)
     for data in hostile(random.Random(0xc4), [b'/a/b.m4b', b'/a/b.M4B', b'x.m4b.mp3', b'.m4b'], 1500):
         path = heap.string(data)
         r = C.create_string_buffer(0x60)
@@ -1236,7 +1236,7 @@ def test_rec_hash_of_an_empty_record(fw):
     h = fnv1a(b'')
     for _ in range(5):
         h = h * FNV_PRIME & 0xffffffff
-    assert fw.fn('navigation__rec_hash', C.c_uint, C.c_void_p)(empty) == fnv1a(b'\0' * 8, h)
+    assert fw.fn('rec_hash', C.c_uint, C.c_void_p)(empty) == fnv1a(b'\0' * 8, h)
 
 
 def test_rec_index_finds_the_first_of_a_path_and_cue_start(fw, heap):
@@ -1312,7 +1312,7 @@ class Tree:
 
 def folder_tracks(fw, tree, path):
     add = tree.deques.new()
-    fw.fn('navigation__folder_tracks', None, C.c_char_p, C.c_void_p, C.c_int)(path, add, 0)
+    fw.fn('queue_menu__folder_tracks', None, C.c_char_p, C.c_void_p, C.c_int)(path, add, 0)
     return [C.string_at(struct.unpack_from('<Q', C.string_at(r, 0x60), REC_PATH)[0]) for r in tree.deques[add]]
 
 
@@ -1336,24 +1336,24 @@ def test_a_subfolder_past_1023_bytes_is_passed_over(fw):
     assert folder_tracks(fw, tree, b'/m') == [b'/m/' + fits + b'/a']
 
 
-def qm_folder_tracks(fw, st, tree, folder, name):
+def qm_folder_tracks(fw, qm, tree, folder, name):
     """qm_tracks for a Folder row named name while g_folder_path is folder: the paths it adds."""
-    st('qm_kind').value = 4  # QM_FOLDER
+    qm('qm_kind').value = 4  # QM_FOLDER
     C.memmove(C.addressof(fw.var('fw_ctx_g_folder_path', C.c_char)), folder + b'\0', len(folder) + 1)
     add = tree.deques.new()
-    fw.fn('navigation__qm_tracks', None, C.c_void_p, C.c_void_p)(record(tree.keep, name=name, kind=4), add)
+    fw.fn('queue_menu__qm_tracks', None, C.c_void_p, C.c_void_p)(record(tree.keep, name=name, kind=4), add)
     return [C.string_at(struct.unpack_from('<Q', C.string_at(r, 0x60), REC_PATH)[0]) for r in tree.deques[add]]
 
 
-def test_a_queued_folder_whose_path_is_cut_adds_nothing(fw, st):
+def test_a_queued_folder_whose_path_is_cut_adds_nothing(fw, qm):
     """qm_tracks joins g_folder_path and the row's name into 1024 bytes. A cut path is a prefix, here the
     folder beside it, whose songs were queued for the wrong row: so, as folder_tracks passes such a subfolder
     over, the row adds nothing."""
     folder = b'/m/' + b'f' * 1000
     fits, over = b'n' * 19, b'n' * 20  # 1003 + 1 + 19 bytes fit; one more is cut to the folder beside it
     tree = Tree(fw, {folder + b'/' + fits: [(b'a', 8)], folder + b'/' + over: [(b'b', 8)]})
-    assert qm_folder_tracks(fw, st, tree, folder, fits) == [folder + b'/' + fits + b'/a']
-    assert qm_folder_tracks(fw, st, tree, folder, over) == []
+    assert qm_folder_tracks(fw, qm, tree, folder, fits) == [folder + b'/' + fits + b'/a']
+    assert qm_folder_tracks(fw, qm, tree, folder, over) == []
 
 
 def song_folder(fw, heap, path, stat=0, mode=0o040755):
@@ -1363,7 +1363,7 @@ def song_folder(fw, heap, path, stat=0, mode=0o040755):
         return stat
     fw.mock('fw___xstat', xstat)
     out = heap.string(b'', 1024)
-    got = fw.fn('navigation__song_folder', C.c_int, C.c_void_p, C.c_void_p)(record(keep, path), out)
+    got = fw.fn('song_folder', C.c_int, C.c_void_p, C.c_void_p)(record(keep, path), out)
     return got, C.string_at(out), out
 
 
@@ -1747,7 +1747,7 @@ class Clock:
         fw.mock('widget_set_text_utf8', lambda label, chars, *_: self.labels.append(C.string_at(chars)) and 0)
         fw.mock('timer_add', lambda fn, ctx, ms, *_: self.timers.append(ms) or 9)
         fw.var('fw_ctx_system_bar', C.c_uint).value = 0x30
-        self.show = fw.fn('navigation__clock_show', None)
+        self.show = fw.fn('clock_show', None)
 
 
 @pytest.mark.parametrize('hour, minute, twelve, full', [
@@ -1867,9 +1867,9 @@ def test_root_click_saves_the_next_folder(fw):
 QM_SONG, QM_FOLDER, QM_COVERFLOW = 1, 4, 5
 
 
-def qm_apply(fw, st, deques, add, next_, kind, cls=0xf00a):
-    st('qm_kind').value, st('qm_cls', C.c_uint).value = kind, cls
-    return fw.fn('navigation__qm_apply', C.c_int, C.c_void_p, C.c_int)(deques.new(add), next_)
+def qm_apply(fw, qm, deques, add, next_, kind, cls=0xf00a):
+    qm('qm_kind').value, qm('qm_cls', C.c_uint).value = kind, cls
+    return fw.fn('queue_menu__qm_apply', C.c_int, C.c_void_p, C.c_int)(deques.new(add), next_)
 
 
 @pytest.fixture
@@ -1883,42 +1883,42 @@ def queue(fw, mcl):
 
 
 @pytest.mark.parametrize('kind, cls', [(QM_SONG, 0xf00a), (QM_FOLDER, 1)])
-def test_an_empty_queue_loads_without_playing(fw, st, queue, kind, cls):
+def test_an_empty_queue_loads_without_playing(fw, qm, queue, kind, cls):
     deques, _ = queue
-    assert qm_apply(fw, st, deques, [0x10], 1, kind) == 1
+    assert qm_apply(fw, qm, deques, [0x10], 1, kind) == 1
     load = fw.calls('mclLoadPlayList')
     assert len(load) == 1 and load[0][1][1:3] == (0, cls) and not fw.calls('mclStartPlayer')
 
 
-def test_add_grows_a_local_queue(fw, st, queue):
+def test_add_grows_a_local_queue(fw, qm, queue):
     deques, handle = queue
     deques[handle].extend([1, 2])
-    assert qm_apply(fw, st, deques, [3], 0, QM_SONG) == 1 and deques[handle] == [1, 2, 3]
+    assert qm_apply(fw, qm, deques, [3], 0, QM_SONG) == 1 and deques[handle] == [1, 2, 3]
 
 
 @pytest.mark.parametrize('kind', [0, 0x2000, 0x3001])
-def test_a_stream_keeps_its_queue(fw, st, queue, mcl, kind):
+def test_a_stream_keeps_its_queue(fw, qm, queue, mcl, kind):
     deques, handle = queue
     deques[handle].extend([1, 2])
     mcl.type = kind
-    assert qm_apply(fw, st, deques, [3], 0, QM_SONG) == 0 and deques[handle] == [1, 2]
+    assert qm_apply(fw, qm, deques, [3], 0, QM_SONG) == 0 and deques[handle] == [1, 2]
 
 
-def test_airplay_keeps_its_queue(fw, st, queue):
+def test_airplay_keeps_its_queue(fw, qm, queue):
     deques, handle = queue
     deques[handle].append(1)
     fw.mock('airplayGetFlag', lambda *_: 2)
-    assert qm_apply(fw, st, deques, [3], 0, QM_SONG) == 0
+    assert qm_apply(fw, qm, deques, [3], 0, QM_SONG) == 0
 
 
-def test_nothing_to_add_is_no_action(fw, st, queue):
+def test_nothing_to_add_is_no_action(fw, qm, queue):
     deques, handle = queue
-    assert qm_apply(fw, st, deques, [], 0, QM_SONG) == 0 and not fw.calls('mclLoadPlayList')
+    assert qm_apply(fw, qm, deques, [], 0, QM_SONG) == 0 and not fw.calls('mclLoadPlayList')
 
 
-def test_no_queue_is_no_action(fw, st, mcl):
+def test_no_queue_is_no_action(fw, qm, mcl):
     deques = Deques(fw)
-    assert qm_apply(fw, st, deques, [1], 0, QM_SONG) == 0
+    assert qm_apply(fw, qm, deques, [1], 0, QM_SONG) == 0
 
 
 def test_shuffle_play_takes_a_random_start_and_the_saved_mode(fw, queue, mcl):
@@ -2470,7 +2470,7 @@ def test_library_query_any_text(fw):
 
 # Small page state.
 def test_qm_gone_clears_its_own_dialog_only(fw, st):
-    gone = fw.fn('navigation__qm_gone', C.c_int, C.c_void_p, C.c_void_p)
+    gone = fw.fn('queue_menu__qm_gone', C.c_int, C.c_void_p, C.c_void_p)
     dialog = st('qm_dialog', C.c_void_p)
     dialog.value = 0x10
     assert gone(0x20, None) == 0 and dialog.value == 0x10
@@ -2504,10 +2504,10 @@ def test_artist_cf_gone_clears_what_it_held(fw, st):
     assert not veil.value
 
 
-def test_qm_restore_puts_back_what_a_go_to_overwrote(fw, st, scratch):
-    saved = (C.c_ubyte * 912).from_address(C.addressof(fw.var('st', C.c_char)) + scratch['qm_classinfo'])
+def test_qm_restore_puts_back_what_a_go_to_overwrote(fw, qm):
+    saved = (C.c_ubyte * 912).from_address(C.addressof(qm('qm_classinfo', C.c_ubyte)))
     saved[:912] = [i & 255 for i in range(912)]
-    assert fw.fn('navigation__qm_restore', C.c_int, C.c_void_p, C.c_void_p)(None, None) == 0
+    assert fw.fn('queue_menu__qm_restore', C.c_int, C.c_void_p, C.c_void_p)(None, None) == 0
     assert C.string_at(C.addressof(fw.var('fw_ctx_g_local_classinfo_save', C.c_char)), 912) == bytes(saved)
 
 

@@ -2,12 +2,8 @@
 """Grouped playback against the actual MIPS payload, using the regression suite's UI/deque mocks.
 Run: python3 test/playback.py BUILD_DIRECTORY
 """
-import pathlib
 from unicorn import UC_HOOK_MEM_READ, UC_HOOK_CODE
-# Load only fixture definitions; the full UI suite remains independently runnable.
-source = pathlib.Path(__file__).with_name('patch.py').read_text()
-exec(compile(source[:source.index('checks=0')], 'test/patch.py', 'exec'))
-exec(compile(source[source.index('class QueueMachine'):source.index('sel=lambda m:')], 'test/patch.py', 'exec'))
+from q2emu import *  # test/patch.py's machines and mocks; the UI suite stays its own run
 ps = payload_syms
 
 class PlaybackMachine(QueueMachine):

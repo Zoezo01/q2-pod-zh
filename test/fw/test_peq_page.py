@@ -968,7 +968,7 @@ def test_closing_saves_simple_s_gains_and_ends_the_held_comparison(fw):
 
 
 def test_a_page_replaced_lets_go_at_once_and_its_late_destroy_leaves_the_new_one(fw):
-    """Quick Settings' hold over a page opened above the EQ page (navigation.c quick_long, #397): the old page's state
+    """Quick Settings' hold over a page opened above the EQ page (quick_settings.c quick_long, #397): the old page's state
     goes at once, as a close's, and its window closes; its destroy, coming after the new page's init, changes nothing."""
     p = page(fw, state(fw, EQ_OFF, hold=1, gains=(3, 0, 0))).open()
     old = p.page

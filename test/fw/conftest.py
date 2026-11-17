@@ -390,6 +390,19 @@ def st(fw, scratch):
 
 
 @pytest.fixture(scope='module')
+def qm_fields(library):
+    """queue_menu.c's own state, qm: its field offsets as this build lays it out."""
+    return host.offsets(library.parent/'queue_menu.o', 'qm')
+
+
+@pytest.fixture
+def qm(fw, qm_fields):
+    """queue_menu.c's state by field: qm('qm_kind').value."""
+    base = C.addressof(fw.var('queue_menu__qm', C.c_char))
+    return lambda name, ctype=C.c_int: ctype.from_address(base + qm_fields[name])
+
+
+@pytest.fixture(scope='module')
 def power_fields(library):
     """system.c's own state, pw: its field offsets as this build lays it out."""
     return host.offsets(library.parent/'system.o', 'pw')

@@ -2410,9 +2410,9 @@ def open_time(fw, ui, twelve=True, at=(4, 2, 4, 21, 5)):
     top = time_window(ui, at=at)
     nav = top.add(W(ui, 'view', 'view_navbar'))
     title = nav.add(W(ui, 'label', 'title'))
-    fw.fn('navigation__time_open', None, C.c_void_p)(top.p)
+    fw.fn('time_open', None, C.c_void_p)(top.p)
     fw.fn('ringnav_manualtime', C.c_int, C.c_void_p, C.c_void_p)(top.p, None)
-    assert fw.fn('navigation__time_form', C.c_int, C.c_void_p)(top.p) == 1
+    assert fw.fn('time_form', C.c_int, C.c_void_p)(top.p) == 1
     return top, title
 
 
@@ -2470,7 +2470,7 @@ def test_classic_twenty_four_hour_has_no_am_pm(fw, keys, classic):
     ui = Ui(fw)
     top, _ = open_time(fw, ui, twelve=False)
     assert not [w for w in top.find(b'time').children if w.kind == b'image']
-    assert fw.fn('navigation__fields', C.c_int, C.c_void_p)(top.p) == 5
+    assert fw.fn('fields', C.c_int, C.c_void_p)(top.p) == 5
 
 
 @pytest.mark.parametrize('start, key, want', [(23, KEY_NEXT, 12), (12, KEY_PREV, 23), (11, KEY_NEXT, 0), (0, KEY_PREV, 11), (15, KEY_NEXT, 16)])
@@ -2559,7 +2559,7 @@ def test_the_page_closing_forgets_it(fw, keys, classic, st):
 
 
 def time_paint(fw, top, canvas):
-    fw.fn('navigation__time_paint', None, C.c_void_p, C.c_void_p)(top.p, canvas.p)
+    fw.fn('time_paint', None, C.c_void_p, C.c_void_p)(top.p, canvas.p)
 
 
 def in_box(canvas, w):

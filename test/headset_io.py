@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """Run the real MIPS headset worker against bounded, simulated kernel I/O."""
-import pathlib
-source=pathlib.Path(__file__).with_name('patch.py').read_text()
-exec(compile(source[:source.index('checks=0')], 'test/patch.py', 'exec'))
+from q2emu import *  # test/patch.py's machine and mocks
 
 class KernelMachine(Machine):
     def __init__(self,stale=False):

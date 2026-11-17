@@ -208,7 +208,7 @@ def measure(name, action, library, scratch, arena, files, db, n):
     conftest.claim(start)
     C.memset(start, 0, size)
     add = fw.fn('q2m_add', None, C.c_long)
-    q = e2e.Q2(fw, conftest.Mcl(), scratch, arena, files, library=db)
+    q = e2e.Q2(fw, conftest.Mcl(), scratch, host.offsets(library.parent/'queue_menu.o', 'qm'), arena, files, library=db)
     q.deques.lists[q.pool] = []  # ints, not rows
     live, peak, calls = (C.c_long.in_dll(fw.lib, f'q2m_{k}') for k in ('live', 'peak', 'calls'))
     peak.value, calls.value = live.value, 0

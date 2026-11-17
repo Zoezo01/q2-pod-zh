@@ -679,7 +679,7 @@ void *song_list(void) {
     return d;
 }
 
-/* Its rows (*count its result) in a deque of their own; shared with navigation.c's queue menu. */
+/* Its rows (*count its result) in a deque of their own; shared with queue_menu.c. */
 void *staged(int (*query)(void *), void *arg, int *count) {
     void *out = song_list();
     *count = staged_into(out, query, arg);
@@ -3816,7 +3816,7 @@ int coverflow_artist(void *albums) {
     return 1;
 }
 
-/* Go to Album from a Coverflow song (navigation.c's qm_goto) and Era's albums: r's tracks alone, no
+/* Go to Album from a Coverflow song (queue_menu.c's qm_goto) and Era's albums: r's tracks alone, no
  * covers under them, so Return closes the page; 0 when it has none. */
 int coverflow_goto_album(void *r) {
     void *t = coverflow_album_tracks(r), *one;

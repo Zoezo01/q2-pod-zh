@@ -22,6 +22,7 @@ import traceback
 import unicorn
 
 PATCH = str(pathlib.Path(__file__).resolve().with_name('patch.py'))
+SCENARIOS = (PATCH, str(pathlib.Path(PATCH).with_name('scenarios')) + '/')  # where a case's own lines are
 
 
 def functions(*elves):
@@ -63,7 +64,7 @@ def main():
     sys.path.insert(0, str(pathlib.Path(PATCH).parents[1] / 'tools'))
     from build import PRIVATE_FUNCTIONS  # stock functions the payload names that stock's symbols don't
     table = sorted({**dict(functions(build / 'stock-demo', build / 'patch.elf')), **{v: k for k, v in PRIVATE_FUNCTIONS.items()}}.items())
-    calls = []  # per top-level emu_start: its line in patch.py, the limit, {address: instructions}, total, mark
+    calls = []  # per top-level emu_start: its file:line, the limit, {address: instructions}, total, mark
     depth = [0]
     start = unicorn.Uc.emu_start
 
@@ -79,14 +80,15 @@ def main():
 
     def emu_start(u, begin, until, timeout=0, count=0):
         frame = sys._getframe(1)
-        while frame and not (frame.f_code.co_filename == PATCH and frame.f_code.co_name == '<module>'): frame = frame.f_back
+        while frame and not (frame.f_code.co_filename.startswith(SCENARIOS) and frame.f_code.co_name == '<module>'): frame = frame.f_back
         if depth[0]:  # a nested run: Unicorn's count, and so the limit, starts again here
             calls[-1]['mark'], calls[-1]['limit'] = calls[-1]['n'], count
             return start(u, begin, until, timeout, count)
-        to = window(frame.f_globals.get('checks', 0) if frame else 0, a.case)
+        to = window(getattr(sys.modules.get('q2emu'), 'checks', 0), a.case)
         if to == 'stop': report()
         if to == 'run': return start(u, begin, until, timeout, count)
-        c = {'line': frame.f_lineno if frame else 0, 'limit': count, 'counts': collections.defaultdict(int), 'n': 0, 'mark': 0}
+        line = f'{pathlib.Path(frame.f_code.co_filename).name}:{frame.f_lineno}' if frame else 0
+        c = {'line': line, 'limit': count, 'counts': collections.defaultdict(int), 'n': 0, 'mark': 0}
         counts = c['counts']
 
         def tally(_u, address, _size, _d): counts[address] += 1; c['n'] += 1

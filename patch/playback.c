@@ -614,7 +614,7 @@ static int rebuild(int keep) {
     free(oldhistory);
     /* Each run of the group_cmp sort is a group, named by its smallest index. Under Shuffle Songs
      * groups are read only by a group repeat (upcoming) and by Next/Previous Album
-     * (playback_group_skip), which the hold menu offers only under shuffle >= 3 (navigation.c
+     * (playback_group_skip), which the hold menu offers only under shuffle >= 3 (queue_menu.c
      * group_first); every change of shuffle or repeat rebuilds. So outside a group repeat each
      * entry is its own group and the sort, two deque_at a comparison, is skipped. */
     if (s.shuffle == 1 && !category_repeat())

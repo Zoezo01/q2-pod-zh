@@ -1,7 +1,7 @@
 /* Night Shift (docs/internals.md#night-shift): Display's row (crossfade.c's page, xf.ctx 3) warms
  * the screen as f.lux does, red kept and green and blue scaled to a colour temperature, Q2POD
  * NIGHTSHIFT (0 Off, 1 On, 2 Auto) and NIGHTK (NS_WARM..NS_COOL in NS_STEPs) in config.ini. Auto is
- * on from 19:00 to 7:00 by the clock, the hours Light Mode's Auto is dark (navigation.c
+ * on from 19:00 to 7:00 by the clock, the hours Light Mode's Auto is dark (theme_engine.c
  * clock_night), and off while the clock cannot be read; clock_show applies it each minute
  * (night_clock). While it is on, the screen's lcd end_frame is night_end: before stock shows a
  * frame, the pixels drawn in it, those whose alpha is not NS_DONE, are warmed and given NS_DONE.

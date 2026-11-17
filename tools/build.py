@@ -130,7 +130,7 @@ HOOKS = {
     'dialog_search_dialog_init': (0x49ff6c, 'ringnav_search_init', 'search_init'),
     # The sleep timer's switch as a row, under a set that hides its toolbar (navigation.c)
     'systemset_sleepshutdown_page_init': (0x4d1224, 'ringnav_sleeptimer', 'sleeptimer'),
-    # Classic's Set Date and Set Time: the title and the selectors' changes, after stock's init (navigation.c)
+    # Classic's Set Date and Set Time: the title and the selectors' changes, after stock's init (clock.c)
     'systemset_manualtime_page_init': (0x4cc83c, 'ringnav_manualtime', 'manualtime'),
     # any Tidal track asked for, from a queue or Now Playing, wakes its stream thread (tidal.c)
     'get_tidal_trackurl': (0x483f28, 'ringnav_tidal_track', 'tidaltrack'),
@@ -1370,7 +1370,7 @@ FUNCTIONS = {
  'config_playmode': ('int', 'int, int'),
  'toolsRandnum': ('int', 'int'),
  'widget_restack': ('int', 'void *, unsigned'),
- 'widget_index_of': ('int', 'void *'),  # Centred Now Playing's column back in its place (navigation.c np_full)
+ 'widget_index_of': ('int', 'void *'),  # Centred Now Playing's column back in its place (np_lyrics.c np_full)
  'toolsThumbSpecCover': ('int', 'const char *, const char *, int, int'),
  'toolsGetAlbumCover': ('int', 'const char *, const char *, int, int'),
  'toolsGetExternCover': ('int', 'const char *, const char *, int, int'),
@@ -1613,7 +1613,7 @@ FLAGS = ['--target=mipsel-linux-gnu','-march=mips32r2','-mabi=32','-mfp64',
          '-Wshadow','-Wimplicit-int-conversion','-Wconditional-uninitialized','-Wmissing-variable-declarations',
          '-Wvla','-Wundef']
 # navigation.c and the files split out of it (patch/navigation.h), each its own object, linked in this order.
-NAVIGATION = ['navigation.c', 'theme_engine.c', 'playlists.c', 'classic_pages.c', 'home.c', 'np_bar.c', 'volume.c', 'smart_wifi.c', 'system.c', 'usb_charge.c', 'tags.c', 'scrobble_ui.c', 'library_lists.c', 'durations.c', 'font_weight.c', 'coverflow_position.c', 'ratings.c', 'scan_folders.c', 'folder_delete.c', 'battery.c']
+NAVIGATION = ['navigation.c', 'theme_engine.c', 'playlists.c', 'classic_pages.c', 'home.c', 'np_bar.c', 'volume.c', 'smart_wifi.c', 'system.c', 'usb_charge.c', 'tags.c', 'scrobble_ui.c', 'library_lists.c', 'durations.c', 'font_weight.c', 'coverflow_position.c', 'ratings.c', 'scan_folders.c', 'folder_delete.c', 'battery.c', 'np_lyrics.c', 'quick_settings.c', 'clock.c', 'queue_menu.c']
 
 def compile_payload(out):  # pragma: no mutate block
     """Compile and link the payload."""
@@ -1755,7 +1755,7 @@ def stock_header(context, ranges, themes, dev=0, repo=REPO):
     header.append(f'#define THEME_KEYS {len(theme_keys(themes))}')  # navigation.c st.own[], themes.inc theme_keys[]
     from art import corner_table, qs_lit
     header.append(f'#define ROUND_COVER {corner_table()}')  # navigation.c paint_round_rows
-    header.append(f'#define QS_LIT "{qs_lit()}"')  # navigation.c quick_page: Classic's buttons that are on
+    header.append(f'#define QS_LIT "{qs_lit()}"')  # quick_settings.c quick_page: Classic's buttons that are on
     return '\n'.join(header)+'\n'
 
 def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragma: no mutate block
