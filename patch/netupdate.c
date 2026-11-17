@@ -769,7 +769,7 @@ static struct {
     int job, app, armed, rows, n, map[SH_MAX + 1];        /* map: a row's app or ROW_CHECK */
     int manual;                                           /* the check is Check for Updates' */
     unsigned need;                                        /* SH_SPACE's MB */
-    unsigned long long checked;                           /* now_ms of the last whole check */
+    unsigned long long checked;                           /* boot_ms of the last whole check */
     shelf_app next[SH_MAX]; /* the check's list (n apps), the page's once the check ends */
     void *page, *row[SH_MAX + 1];
     int tab;     /* the open tab: 0 Apps, 1 Games; kept while the Q2 is on */
@@ -911,10 +911,19 @@ static int install(int i) {
     return r;
 }
 
+/* now_ms on the boot clock, which counts Standby: a check's age is real time. */
+static unsigned long long boot_ms(void) {
+    struct {
+        long s, ns;
+    } t = { 0 };                  /* struct timespec */
+    clock_gettime(7, (void *)&t); /* CLOCK_BOOTTIME */
+    return (unsigned long long)(unsigned)t.s * 1000 + (unsigned)t.ns / 1000000; /* no __udivdi3 */
+}
+
 static void *sh_worker(void *unused) {
     int i = sh.app, t = sh_find("themes");
     if (sh.job == JOB_CHECK) {
-        if (check() && !sh.cancel) sh.checked = now_ms();
+        if (check() && !sh.cancel) sh.checked = boot_ms();
     } else if (sh.job == JOB_INSTALL) {
         int r = listed(i);
         sh.result = r ? r : install(i);
@@ -976,7 +985,7 @@ static void sh_text(int r) {
     char s[40];
     const char *t = s;
     unsigned min =
-        i == ROW_CHECK ? (unsigned)(now_ms() - sh.checked) / 60000 : 0; /* no __udivdi3 */
+        i == ROW_CHECK ? (unsigned)(boot_ms() - sh.checked) / 60000 : 0; /* no __udivdi3 */
     if (i == ROW_CHECK && sh.job == JOB_CHECK)
         t = "Checking…";
     else if (i == ROW_CHECK && !shelf_n) /* with no list yet, the press loads it */
@@ -1117,7 +1126,7 @@ static int sh_click(void *ctx, void *event) {
             sh_start(JOB_REMOVE, i);
     } else if (!need_link(sh_held, (void *)(long)i)) {
         /* held for Smart Wi-Fi's link (a press while it waits takes its place), or none */
-    } else if (i == ROW_CHECK && sh.checked && now_ms() - sh.checked < SH_RECHECK_MS)
+    } else if (i == ROW_CHECK && sh.checked && boot_ms() - sh.checked < SH_RECHECK_MS)
         sh_told(1, 0);
     else if (i == ROW_CHECK)
         sh_start(JOB_CHECK, 0), sh.manual = 1;
@@ -1171,7 +1180,9 @@ void shelf_tab(int tab) {
     sh_rows();
 }
 
-/* ringnav, before stock's song skip: on the App Store, Previous opens Apps and Next Games. */
+/* ringnav, before stock's song skip: on the App Store, Previous opens Apps and Next Games.
+ * ponytail: a toast on top (msginfo_dialog, 0x49b7c8) stops them for its time, as for field_key;
+ * looking past it (smart_wifi.c page_in_use) would lift that. */
 int shelf_key(void *top, unsigned key) {
     if (!sh.page || top != sh.page || (key != KEY_BACK_BTN && key != KEY_FWD_BTN)) return 0;
     shelf_tab(key == KEY_FWD_BTN);
@@ -1209,7 +1220,7 @@ int shelf_open(void *ctx, void *event) {
         free(list);
     }
     sh_rows();
-    if (!sh.job && (!sh.checked || now_ms() - sh.checked > SH_STALE_MS)) {
+    if (!sh.job && (!sh.checked || boot_ms() - sh.checked > SH_STALE_MS)) {
         if (get_wifisignal() > 0)
             sh_start(JOB_CHECK, 0), sh_refresh();
         else

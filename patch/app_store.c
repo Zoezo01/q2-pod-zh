@@ -2,9 +2,10 @@
  * each app's row a tile and its state, drawn flat in every theme (no gloss). Classic and Modern
  * have a two-part switch, the open half in the accent, Classic's on a strip under its bar and
  * Modern's in the page's title row; Minimal names the tabs in its title row, the open one by a dot.
- * A tab with apps that can be updated has a red badge with their count (Minimal: "N UPDATES" at
- * the strip's end). netupdate.c builds the page and keeps its state; this file draws it, in
- * ringnav_paint after stock (store_paint), and takes the tabs' taps. */
+ * A tab with apps that can be updated has a badge with their count, red, or on the open
+ * half in its text colour (Minimal: "N UPDATES" at the strip's end). netupdate.c builds the page
+ * and keeps its state; this file draws it, in ringnav_paint after stock (store_paint), and takes
+ * the tabs' taps. */
 #include "navigation.h" /* st: the selected row; theme(), scheme() */
 
 #define STRIP_H 44 /* Classic's strip, its bar holding the title */
@@ -76,14 +77,13 @@ void store_tabs_set(void *strip, int tab, const int *updates) {
     widget_invalidate_force(strip, 0);
 }
 
-/* page_row_detail's item for the app with id and name: its two lines moved past the tile and clear
- * of the state's box, the tile's colour and letters kept for store_paint. */
+/* page_row_detail's item for the app with id and name: its name moved past the tile and clear of
+ * the state's box (its second line by store_state), the tile's colour and letters kept for
+ * store_paint. */
 void store_row(void *item, const char *id, const char *name) {
     const theme_t *T = theme(); /* page_row_detail's boxes for a row with a detail */
     widget_move_resize(widget_get_child(item, 0), TEXT_X, T->page_cap_y, PILL_X - 8 - TEXT_X,
                        T->page_cap_h);
-    widget_move_resize(widget_get_child(item, 1), TEXT_X, T->page_det_y, PILL_X - 8 - TEXT_X,
-                       T->page_det_h);
     char letters[8];
     /* the first character, or two digits ("20" for 2048) */
     unsigned n = 1;
@@ -94,13 +94,14 @@ void store_row(void *item, const char *id, const char *name) {
     widget_set_prop_int(item, "_hue",
                         (int)(hash_bytes(FNV_SEED, (const unsigned char *)id, strlen(id)) %
                               (sizeof hues / sizeof *hues)));
-    widget_set_prop_int(item, "_state", -1);
 }
 
 /* The row's state for its box: 0 Install, 1 Update, 2 Installed, -1 none (its second line says
- * what is happening). */
+ * what is happening, and runs to the row's end). */
 void store_state(void *item, int state) {
-    if (widget_get_prop_int(item, "_state", -1) == state) return;
+    if (widget_get_prop_int(item, "_state", -2) == state) return; /* -2: store_row's, none yet */
+    widget_move_resize(widget_get_child(item, 1), TEXT_X, theme()->page_det_y,
+                       (state < 0 ? 375 - 16 : PILL_X - 8) - TEXT_X, theme()->page_det_h);
     widget_set_prop_int(item, "_state", state);
     widget_invalidate_force(item, 0);
 }

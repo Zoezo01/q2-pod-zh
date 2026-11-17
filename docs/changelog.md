@@ -1,7 +1,7 @@
 # Changelog
 
 - **1.8.8**:
-  - App Store: games have their own tab. Two tabs head the page, **Apps** and **Games**: tap one, or press Previous or Next. Each app has a coloured tile with its first letter and its developer under its name, and its state at the row's end, with **Install** and **Update** as buttons. A red number on a tab counts its apps with an update, and **Check for Updates** says when the last check ran. Buddy, Groovebox, 2048 and Dino Runner are on the Games tab.
+  - App Store: games have their own tab. Two tabs head the page, **Apps** and **Games**: tap one, or press Previous or Next. Each app has a tile with its first letter and its developer under its name, and its state at the row's end, with **INSTALL** and **UPDATE** as buttons (words in Minimal). The tabs count the apps with an update, and **Check for Updates** says when the last check ran. Buddy, Groovebox, 2048 and Dino Runner are on the Games tab.
 - **1.8.7**:
   - Edit Playlist: **Add Songs** opens at once the second time and later in one edit, on a big library. It read and sorted the whole library again each time.
   - Library: **Shuffle Songs**, and **Play Next** or **Add to Queue** while it plays, work faster on a big library.

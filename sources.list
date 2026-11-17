@@ -2,6 +2,7 @@
 # "owner/repo Name", the name optional. Lines under [Games] are on its Games tab, the rest on Apps;
 # older firmware skips the [Games] line and lists them all. The device fetches this file; see
 # docs/internals.md#q2-shelf.
+# Firmware before the tabs (1.8.7 and older) reads only the first 16 apps, so the games, last, are the first left out.
 DiamondBond/q2-rockbox Rockbox
 DiamondBond/q2-rockbox-themes Rockbox Themes
 DiamondBond/q2-librespot Spotify

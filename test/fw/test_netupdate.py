@@ -2279,10 +2279,10 @@ def test_without_a_newer_release_the_row_keeps_its_name(fw):
 
 class Store:
     """The App Store opened for real on a Disk, on top while open: each row's detail, the toasts, the wait timer, the
-    worker, the standby holds, the clock (now_ms), the card's free bytes (statfs) and the card mounted (/proc/mounts,
+    worker, the standby holds, the clocks (now_ms, boot_ms), the card's free bytes (statfs) and the card mounted (/proc/mounts,
     card_mounted). Row 0 is Check for Updates, the list's apps under it."""
     def __init__(self, fw, card, wifi=1, thread=0, free=1 << 30):
-        self.fw, self.card, self.wifi, self.free, self.seconds = fw, card, wifi, free, 5000
+        self.fw, self.card, self.wifi, self.free, self.seconds, self.slept = fw, card, wifi, free, 5000, 0
         self.text, self.toasts, self.timers, self.workers, self.held, self.props = {}, [], [], [], [], {}
         fw.mock('get_wifisignal', lambda *_: self.wifi)
         fw.mock('window_create', lambda *_: 77)
@@ -2303,7 +2303,9 @@ class Store:
         self.open()
 
     def clock(self, kind, ts, *_):
-        C.c_long.from_address(ts).value, C.c_long.from_address(ts + 8).value = self.seconds, 0
+        """The seconds awake; the boot clock (CLOCK_BOOTTIME, 7) counts the time slept in Standby too."""
+        C.c_long.from_address(ts).value = self.seconds + (self.slept if kind == 7 else 0)
+        C.c_long.from_address(ts + 8).value = 0
 
     def statfs(self, path, buf, *_):
         words = C.cast(buf, C.POINTER(C.c_uint))
@@ -2934,18 +2936,93 @@ def test_a_tap_on_the_tabs_switches_after_its_own_event(fw, theme, x, tab):
     assert s.sh.tab == tab and s.details() == [[b'me', b'you'][tab].decode()]
 
 
-def test_a_press_held_for_wifi_follows_its_app_not_its_row(fw):
-    """Smart Wi-Fi holds a press until the link is up (need_link, sh_held by the app): switched to another tab
-    meanwhile, the app's row is gone and the press with it, never acting on whichever app took its row."""
+def test_a_checks_age_counts_the_time_slept_in_standby(fw):
+    """CLOCK_MONOTONIC stops in Standby's suspend: an overnight sleep must not leave the list "Checked just now"."""
+    card = Disk(fw)
+    store_net(fw)
+    s = Store(fw, card)
+    s.run()
+    s.close()
+    s.slept, s.wifi = 3600, 0  # an hour in Standby, no time awake
+    s.open()
+    assert s.check_label() == 'Checked 1 h ago'
+    s.close()
+    s.wifi = 1
+    s.open()
+    assert s.sh.job == JOB_CHECK  # over SH_STALE_MS old: checked again
+
+
+def test_rockbox_s_armed_line_runs_to_the_rows_end_with_no_state_beside_it(fw):
+    """\"Starts at power-on. Press again to install" (258 px in Classic) needs the room the state's box leaves."""
+    moved = {}
+    props = {}
+    fw.mock('widget_get_child', lambda item, i, *_: 500 + i)
+    fw.mock('widget_move_resize', lambda w, x, y, wd, h, *_: moved.__setitem__(w, (x, wd)) or 0)
+    fw.mock('widget_set_prop_int', lambda w, k, v, *_: props.__setitem__((w, C.string_at(k)), C.c_int(v).value) or 0)
+    fw.mock('widget_get_prop_int', lambda w, k, d, *_: props.get((w, C.string_at(k)), d))
+    fw.fn('store_row', None, C.c_void_p, C.c_char_p, C.c_char_p)(9, b'rockbox', b'Rockbox')
+    state = fw.fn('store_state', None, C.c_void_p, C.c_int)
+    state(9, -1)  # armed: no box
+    assert moved[501] == (72, 375 - 16 - 72)
+    state(9, ST_INSTALL)
+    assert moved[501] == (72, 375 - 16 - 84 - 8 - 72) and moved[500] == moved[501]  # clear of the box, as the name
+
+
+def test_a_press_held_for_wifi_through_a_real_click_follows_its_app(fw):
+    """sh_click's own hold (need_link) keeps sh_held and the app, not sh_click and the row: run after a tab switch,
+    the row that now holds another app is never pressed."""
+    class Sw(C.Structure):
+        _fields_ = [('at', C.c_uint), ('busy_at', C.c_uint), ('woke_at', C.c_uint), ('hold_timer', C.c_uint),
+                    ('off', C.c_int), ('quiet', C.c_int), ('armed', C.c_int), ('up', C.c_int), ('held', C.c_int),
+                    ('hold_fn', C.c_void_p), ('hold_ctx', C.c_void_p), ('hold_win', C.c_void_p), ('hold_name', C.c_char * 32)]
     card = Disk(fw, {SOURCES: b'me/q2-foo Foo\n[Games]\nyou/q2-bar Bar\n'})
     store_net(fw)
     s = Store(fw, card, wifi=0)
-    held = fw.fn('netupdate__sh_held', C.c_int, C.c_void_p, C.c_void_p)
+    name = C.create_string_buffer(b'apps_page')
+    fw.mock('window_manager', lambda *_: 66)  # its one child, the page (Store's widget_get_child)
+    fw.mock('widget_count_children', lambda *_: 1)
+    fw.mock('widget_get_prop_str', lambda w, k, d, *_: C.addressof(name))
+    fw.mock('tk_strcmp', lambda a, b, *_: C.string_at(a) != C.string_at(b))  # the page in use isn't a toast
+    fw.mock('time_now_ms', lambda *_: 2)
+    sw = fw.var('smart_wifi__sw', Sw)
+    sw.woke_at = 1  # Smart Wi-Fi bringing the radio back
+    s.click(1)  # Foo's Install
+    assert sw.hold_fn and s.sh.job == 0 and s.toasts[-1] == 'Connecting to Wi-Fi…'
+    fn, ctx = C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_void_p)(sw.hold_fn), sw.hold_ctx
     key = fw.fn('shelf_key', C.c_int, C.c_void_p, C.c_uint)
-    s.wifi = 3
     key(77, O['KEY_FWD_BTN'])  # Games: Bar is row 1 now
-    held(0, None)  # Foo's press
-    assert s.sh.job == 0 and not s.workers
+    s.wifi = 3
+    fw.mock('networkGetConnectStatus', lambda *_: 1)
+    assert C.CFUNCTYPE(C.c_int, C.c_void_p)(s.timers[-1])(None) == 0  # hold_link: the link is up, the press runs
+    assert sw.hold_fn is None and s.sh.job == 0 and not s.workers  # Foo's row is gone: nothing, never Bar
     key(77, O['KEY_BACK_BTN'])
-    held(0, None)
-    assert s.sh.job == JOB_INSTALL and s.sh.app == 0  # back on Apps: Foo's
+    sw.held = 1  # as hold_link runs it
+    fn(ctx, None)
+    assert s.sh.job == JOB_INSTALL and s.sh.app == 0  # back on Apps: the press kept was Foo's
+
+
+def test_next_through_ringnav_opens_games_before_stocks_skip(fw):
+    """ringnav's hook: on the App Store, Next's key-up is the tabs' (STOP), never a track skip."""
+    card = Disk(fw, {SOURCES: b'me/q2-foo Foo\n[Games]\nyou/q2-bar Bar\n'})
+    store_net(fw)
+    s = Store(fw, card, wifi=0)
+    fw.var('g_backlight_status', C.c_ubyte).value = 1
+    event = C.create_string_buffer(0x40)
+    C.c_uint.from_buffer(event, O['EVENT_KEY']).value = O['KEY_FWD_BTN']
+    assert fw.fn('ringnav', C.c_int, C.c_void_p, C.c_void_p)(None, event) == 11  # STOP: stock's skip never sees it
+    assert s.sh.tab == 1 and s.details() == ['you']
+
+
+def test_classic_moves_the_list_under_the_tabs_strip(fw):
+    """Classic has no title row: the list moves down the strip's 44 px, held to the page's height."""
+    from test_games import config
+    config(fw, THEME=b'1')
+    moved = {}
+    fw.mock('widget_move_resize', lambda w, x, y, wd, h, *_: moved.__setitem__(w, (x, y, wd, h)) or 0)
+    fw.mock('widget_get_prop_int', lambda w, k, d, *_: 400 if C.string_at(k) == b'h' else d)
+    page, view, lst = (block(fw, size=0x200) for _ in range(3))
+    C.c_void_p.from_address(view + O['W_PARENT']).value = lst
+    C.c_int.from_address(lst + O['W_Y']).value, C.c_int.from_address(lst + O['W_H']).value = 10, 390
+    fw.fn('store_tabs', C.c_void_p, C.c_void_p, C.c_void_p)(page, view)
+    assert moved[lst] == (0, 54, 375, 346) and moved[view] == (0, 0, 375, 346)
+    fw.fn('store_tabs', C.c_void_p, C.c_void_p, C.c_void_p)(0, 0)  # closed
