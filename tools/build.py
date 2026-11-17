@@ -943,8 +943,9 @@ def play_mark(font):
     for table in font['cmap'].tables:
         if table.isUnicode(): table.cmap[PLAY_MARK] = name
 
-def subset_font(src, family, ranges_macro, notice=None, *, add_play_mark=True, hinting=True):
-    """src cut to its Latin, Greek, Cyrillic and punctuation, with an optional play mark, renamed family (its own name is the font's reserved name under OFL and GUST alike): the font's
+def subset_font(src, family, ranges_macro, notice=None):
+    """src given a play mark (play_mark), then cut to its Latin, Greek, Cyrillic, punctuation and that
+    mark, renamed family (its own name is the font's reserved name under OFL and GUST alike): the font's
     bytes and ranges_macro listing exactly what it keeps. notice, if any, goes in its description (name
     ID 10)."""
     from fontTools import subset
@@ -954,11 +955,9 @@ def subset_font(src, family, ranges_macro, notice=None, *, add_play_mark=True, h
     label = ranges_macro.split('_')[0].title()
     have = sorted(u for u in font.getBestCmap() if 0x20 <= u < 0x530 or 0x1ea0 <= u <= 0x1ef9 or 0x2000 <= u < 0x2200)
     # Vietnamese tone-marked vowels U+1EA0–U+1EF9 live outside the first Latin ranges.
-    if add_play_mark:
-        play_mark(font)
-        have.append(PLAY_MARK)
+    play_mark(font)
+    have.append(PLAY_MARK)
     options = subset.Options()
-    options.hinting = hinting
     if notice: options.name_IDs.append(7)  # the trademark notice, as its licence asks
     sub = subset.Subsetter(options)
     sub.populate(unicodes=have)
@@ -994,13 +993,6 @@ BOLD_TTF = 'release/assets/default/raw/fonts/bold.ttf'
 
 def bold_font():
     return subset_font(ROOT/'assets/fonts/LiberationSans-Bold.ttf', 'Q2 Pod Sans', 'BOLD_RANGES')
-
-# Folder view's regular-weight face for Vietnamese names.
-FOLDER_REGULAR_TTF = 'release/assets/default/raw/fonts/folder-regular.ttf'
-
-def folder_regular_font():
-    return subset_font(ROOT/'assets/fonts/LiberationSans-Regular.ttf', 'Q2 Pod Folder Sans',
-                       'FOLDER_REGULAR_RANGES', add_play_mark=False, hinting=False)
 
 # Classic's font (navigation.c theme_font): TeX Gyre Heros Bold (GUST Font License, assets/fonts), the same cut.
 # The LPPL asks a modified font to say so itself, and where the original is: assets/fonts/README-classic-light.txt
@@ -1825,7 +1817,6 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
         check(syms.get(name) == address, f'{name}: not at {address:#x} in the stock demo')
     syms.update(PRIVATE_FUNCTIONS)
     bold, bold_ranges = bold_font()
-    folder_regular, folder_regular_ranges = folder_regular_font()
     classic_light, classic_light_ranges = classic_light_font()
     for name in GLOBALS:
         check(re.search(rf'\b1\s+OBJECT\s+GLOBAL\s+DEFAULT\s+\d+\s+{name}$',
@@ -1836,7 +1827,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
     from theme import builtins, emit, geometry_sets
     themes = builtins()
     (out/'stock.h').write_text(stock_header({name: f'0x{syms[name]:x}u' for name in CONTEXT_DATA},
-                                            [bold_ranges, classic_light_ranges, folder_regular_ranges], themes, dev, repo))
+                                            [bold_ranges, classic_light_ranges], themes, dev, repo))
     set_pages, redirects = {}, {}
     ui = 'release/assets/default/raw/ui/'
     for i, g in enumerate(geometry_sets(themes)[1:], 1):
@@ -2163,7 +2154,6 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
                                BOOT: (HELPER_LIKE, compile_helper(out, cat, 'boot', 'q2boot', HELPER_LIBS[:1])),
                                **({LOGO_LIGHT: (xx+'list_tidal.png', light)} if light else {}),  # the swapped logo.jpg has no stock inode left
                                BOLD_TTF: (FONT, bold),
-                               FOLDER_REGULAR_TTF: (FONT, folder_regular),
                                CLASSIC_LIGHT_TTF: (FONT, classic_light),
                                **{'release/assets/default/raw/fonts/' + n: ('etc/hosts', (ROOT/'assets/fonts'/n).read_bytes()) for n in FONT_NOTICES},
                                **({REMOTE: (HELPER_LIKE, compile_helper(out, cat, 'remote', 'q2remote', HELPER_LIBS[:1]))} if dev else {})}.items():

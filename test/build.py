@@ -474,10 +474,8 @@ def validate_assets(directory):
     from build import SCROBBLE_CA
     assert read('rootfs.squashfs', SCROBBLE_CA) == (ROOT/'assets/scrobble-ca.pem').read_bytes()
     # Classic's bold ships, cut to what BOLD_RANGES lists
-    from build import (BOLD_TTF, CLASSIC_LIGHT_TTF, CLASSIC_LIGHT_NOTICE, FOLDER_REGULAR_TTF, FONT_NOTICES,
-                       bold_font, folder_regular_font, subset_font)
+    from build import BOLD_TTF, CLASSIC_LIGHT_TTF, CLASSIC_LIGHT_NOTICE, FONT_NOTICES, bold_font, subset_font
     assert read('rootfs.squashfs', BOLD_TTF) == bold_font()[0]
-    assert read('rootfs.squashfs', FOLDER_REGULAR_TTF) == folder_regular_font()[0]
     assert read('rootfs.squashfs', CLASSIC_LIGHT_TTF) == subset_font(ROOT/'assets/fonts/texgyreheros-bold.otf', 'Q2 Pod Classic Light', 'CLASSIC_LIGHT_RANGES', CLASSIC_LIGHT_NOTICE)[0]
     for name in FONT_NOTICES:
         assert read('rootfs.squashfs', 'release/assets/default/raw/fonts/' + name) == (ROOT/'assets/fonts'/name).read_bytes()
