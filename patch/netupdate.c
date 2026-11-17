@@ -23,15 +23,16 @@ const char *netupdate_tag(const char *location) {
 #define SH_DIR CARD "/.q2"
 #define STAGING SH_DIR "/staging"
 #define SH_CAP (1u << 30) /* the most an install may unpack */
-#define SH_MAX 16
+#define SH_MAX 32
 
 enum { SH_OK, SH_NET, SH_SPACE, SH_CARD, SH_MISSING, SH_BAD, SH_CANCELLED, SH_BUSY };
 /* repo: its GitHub owner/name; id: the repo's name less "q2-", for the card folder .<id>, the tag
  * and file list; keep: unzip -x patterns an update never writes (the user's); bin: the app's
  * binary, present without a tag file meaning a manual install, and moved after every other file:
- * power-on runs Rockbox's. dropped: gone from the list but installed, so it can only be removed. */
+ * power-on runs Rockbox's. dropped: gone from the list but installed, so it can only be removed.
+ * game: listed under [Games], so on the App Store's Games tab. */
 typedef struct {
-    char name[32], id[16], repo[80], dir[17], bin[40], latest[32], dropped;
+    char name[32], id[16], repo[80], dir[17], bin[40], latest[32], dropped, game;
     const char *keep;
 } shelf_app;
 extern shelf_app shelf_apps[SH_MAX]; /* global: test/fw reads both by name */
@@ -74,13 +75,19 @@ static int only(const char *s, unsigned n, int kind) {
 
 /* sources.list's lines, "owner/repo [Name]" ("#" a comment, "-" before it a dropped app), into
  * out: at most max, each owner, repo and id checked (they go into URLs and shell commands; the id
- * as addon.c's, 1 to 15 of a-z0-9-), a bad or repeated id's line skipped. The count. */
+ * as addon.c's, 1 to 15 of a-z0-9-), a bad or repeated id's line skipped. A line "[Games]" makes
+ * the apps after it games, any other "[...]" line apps again; firmware before the tabs skips both,
+ * as a bad owner. The count. */
 int shelf_sources(const char *text, shelf_app *out, int max) {
-    int n = 0;
+    int n = 0, game = 0;
     for (const char *p = text, *e; p && *p && n < max; p = *e ? e + 1 : e) {
         e = strstr(p, "\n");
         e = e ? e : p + strlen(p);
         while (p < e && (*p == ' ' || *p == '\t')) ++p;
+        if (p < e && *p == '[') {
+            game = e - p >= 7 && !memcmp(p, "[Games]", 7);
+            continue;
+        }
         int dropped = p < e && *p == '-';
         p += dropped;
         const char *end = e, *slash = p, *sp = p;
@@ -96,7 +103,7 @@ int shelf_sources(const char *text, shelf_app *out, int max) {
             continue;
         int bad = 0;
         for (const char *c = name; c < end; ++c) bad |= (unsigned char)*c < ' ' || *c == 127;
-        shelf_app a = { .dropped = (char)dropped };
+        shelf_app a = { .dropped = (char)dropped, .game = (char)game };
         memcpy(a.repo, p, owner + 1 + rn);
         snprintf(a.name, sizeof a.name, "%.*s", (int)(nn ? nn : rn), nn ? name : repo);
         const char *id = rn > 3 && !memcmp(repo, "q2-", 3) ? repo + 3 : repo;
@@ -741,11 +748,12 @@ void netupdate_poll(void) {
         pthread_detach(tid);
 }
 
-/* The Apps page (System settings): Check for Updates, then a row per app in sources.list, its state
- * as the row's detail. One job at a time on one thread: a check (the list, then the latest tags) on
- * opening or from Check for Updates, an install, a remove or Spotify's erase (Streaming →
- * Configuration's, shelf_erase). Leaving the page leaves it running; its progress shows when the
- * page opens again. */
+/* The App Store (System settings): its Apps and Games tabs (app_store.c draws them), then Check for
+ * Updates and a row per app of the open tab, in sources.list's order: its name over its GitHub
+ * owner, or what is happening to it, and its state at the row's end. One job at a time on one
+ * thread: a check (the list, then the latest tags) on opening or from Check for Updates, an
+ * install, a remove or Spotify's erase (Streaming → Configuration's, shelf_erase). Leaving the page
+ * leaves it running; its progress shows when the page opens again. */
 #define SH_JSON "/tmp/q2-shelf.json"
 #define SH_LIST SH_DIR "/sources.list" /* the last list fetched, for the page offline */
 #define SH_LIST_URL "https://raw.githubusercontent.com/DiamondBond/q2-pod/main/sources.list"
@@ -764,6 +772,8 @@ static struct {
     unsigned long long checked;                           /* now_ms of the last whole check */
     shelf_app next[SH_MAX]; /* the check's list (n apps), the page's once the check ends */
     void *page, *row[SH_MAX + 1];
+    int tab;     /* the open tab: 0 Apps, 1 Games; kept while the Q2 is on */
+    void *strip; /* the tabs (app_store.c store_tabs) */
 } sh __attribute__((section(".scratch")));
 
 static int is(int i, const char *id) { return i >= 0 && i < shelf_n && !strcmp(apps[i].id, id); }
@@ -811,7 +821,7 @@ static int release(shelf_app *a, char *tag, char *url, unsigned *size) {
  * repo's releases reaching a Q2 (GHSA-8wpr-pmqx-538x).
  * Whether every release was checked: a list that failed is fetched again with the next check. */
 static int check(void) {
-    char path[96], tag[32], url[256], text[SH_MAX * 120];
+    char path[96], tag[32], url[256], text[SH_MAX * 120 + 8];
     unsigned size, m = 0;
     long code = 0;
     char *list = get(SH_LIST_URL, &code);
@@ -825,9 +835,12 @@ static int check(void) {
         if (!listed && file_mode(path))
             sh.next[n] = apps[i], sh.next[n].dropped = 1, *sh.next[n++].latest = 0;
     }
-    for (int k = 0; fresh && k < n; ++k)
-        m += snprintf(text + m, sizeof text - m, "%s%s %s\n", sh.next[k].dropped ? "-" : "",
-                      sh.next[k].repo, sh.next[k].name);
+    for (int g = 0, said = 0; fresh && g < 2; ++g) /* the apps, then [Games] and the games */
+        for (int k = 0; k < n; ++k)
+            if (sh.next[k].game == g)
+                m += snprintf(text + m, sizeof text - m, "%s%s%s %s\n",
+                              g && !said++ ? "[Games]\n" : "", sh.next[k].dropped ? "-" : "",
+                              sh.next[k].repo, sh.next[k].name);
     if (fresh) mkdir(SH_DIR, 0755), blob_io(SH_LIST, SH_LIST ".tmp", text, m, 1);
     sh.n = n;
     if (!n) sh.result = SH_NET, ok = 0; /* no list at all: said, and the next press fetches it */
@@ -949,18 +962,32 @@ static int sh_state(int i) {
     return ST_INSTALL;
 }
 
+/* Whether app i has a row: Rockbox Themes only with Rockbox on the card, a dropped app only while
+ * installed. */
+static int sh_shown(int i) {
+    return (!is(i, "themes") || rockbox_available()) && (!apps[i].dropped || sh_tagged(i) >= 0);
+}
+
 static void sh_text(int r) {
     static const char *const stages[] = { "Checking…", "Downloading", "Unpacking…", "Installing…",
                                           "Removing…" };
-    static const char *const states[] = { "Install", "Update", "Installed" };
     int i = sh.map[r], armed = sh.armed == r + 1,
         busy = (sh.job == JOB_INSTALL || sh.job == JOB_REMOVE) && sh.app == i;
     char s[40];
     const char *t = s;
+    unsigned min =
+        i == ROW_CHECK ? (unsigned)(now_ms() - sh.checked) / 60000 : 0; /* no __udivdi3 */
     if (i == ROW_CHECK && sh.job == JOB_CHECK)
         t = "Checking…";
-    else if (i == ROW_CHECK) /* with no list yet, the press loads it */
-        t = !shelf_n ? "Connect to Wi-Fi to load the list" : theme()->sep[0].n ? " " : "";
+    else if (i == ROW_CHECK && !shelf_n) /* with no list yet, the press loads it */
+        t = "Connect to Wi-Fi to load the list";
+    else if (i == ROW_CHECK && !sh.checked)
+        t = theme()->sep[0].n ? " " : "";
+    else if (i == ROW_CHECK && !min) /* ponytail: said as the page is drawn, not each minute */
+        t = "Checked just now";
+    else if (i == ROW_CHECK)
+        snprintf(s, sizeof s, min < 60 ? "Checked %u min ago" : "Checked %u h ago",
+                 min < 60 ? min : min / 60);
     else if (busy && sh.cancel)
         t = "Cancelling…";
     else if (busy && sh.stage == 1 && sh.percent)
@@ -971,9 +998,11 @@ static void sh_text(int r) {
         t = "Press again to remove";
     else if (armed) /* docs/boot.md#rockbox */
         t = "Starts at power-on. Press again to install";
-    else
-        t = states[sh_state(i)];
+    else /* its GitHub owner, as an app's developer */
+        snprintf(s, sizeof s, "%.*s", (int)(strstr(apps[i].repo, "/") - apps[i].repo),
+                 apps[i].repo);
     widget_set_text_utf8(widget_get_child(sh.row[r], 1), t);
+    if (i != ROW_CHECK) store_state(sh.row[r], busy || armed ? -1 : sh_state(i));
 }
 
 static void sh_rows(void);
@@ -987,7 +1016,7 @@ static void sh_refresh(void) {
 static void sh_told(int manual, const char *failed) {
     char s[40];
     int n = 0;
-    for (int r = 1; r < sh.rows; ++r) n += sh_tagged(sh.map[r]) == ST_UPDATE; /* past ROW_CHECK */
+    for (int i = 0; i < shelf_n; ++i) n += sh_shown(i) && sh_tagged(i) == ST_UPDATE;
     if (n)
         snprintf(s, sizeof s, "%d app%s can be updated", n, n == 1 ? "" : "s"), toast(s);
     else if (manual && failed)
@@ -1058,6 +1087,16 @@ static void sh_start(int job, int i) {
  * power-on default) on a second press of the same row. Pressed again, the running install cancels.
  * Check for Updates checks now (loading the list, with none yet), unless the last whole check is
  * under SH_RECHECK_MS old: then it says that check's count again. */
+static int sh_click(void *ctx, void *event);
+
+/* A press held for Smart Wi-Fi's link (need_link) by its app, ROW_CHECK for Check for Updates: made
+ * again on that app's row, or dropped with the row gone (another tab, or the page closed). */
+static int sh_held(void *ctx, void *unused) {
+    for (int r = 0; r < sh.rows; ++r)
+        if (sh.map[r] == (int)(long)ctx) return sh_click((void *)(long)r, 0);
+    return 0;
+}
+
 static int sh_click(void *ctx, void *event) {
     int r = (int)(long)ctx, i = sh.map[r], armed = sh.armed == r + 1;
     sh.armed = 0;
@@ -1076,7 +1115,7 @@ static int sh_click(void *ctx, void *event) {
             sh.armed = r + 1;
         else
             sh_start(JOB_REMOVE, i);
-    } else if (!need_link(sh_click, ctx)) {
+    } else if (!need_link(sh_held, (void *)(long)i)) {
         /* held for Smart Wi-Fi's link (a press while it waits takes its place), or none */
     } else if (i == ROW_CHECK && sh.checked && now_ms() - sh.checked < SH_RECHECK_MS)
         sh_told(1, 0);
@@ -1093,29 +1132,50 @@ static int sh_click(void *ctx, void *event) {
 }
 
 static int sh_closed(void *ctx, void *event) {
-    sh.page = 0, sh.rows = sh.armed = 0;
+    sh.page = sh.strip = store_tabs(0, 0), sh.rows = sh.armed = 0;
     return 0;
 }
 
-/* The rows: Check for Updates, then the list's apps in its order, Rockbox Themes only with Rockbox
- * on the card and a dropped app only while installed; built again when a job ends changes which. */
+/* The rows: Check for Updates, then the open tab's apps (sh_shown) in the list's order; built again
+ * when a job's end or the tab changes which. The tabs' badges are counted here too, as only a job's
+ * end changes them. */
 static void sh_rows(void) {
-    int map[SH_MAX + 1] = { ROW_CHECK }, n = 1;
-    for (int i = 0; i < shelf_n; ++i)
-        if ((!is(i, "themes") || rockbox_available()) && (!apps[i].dropped || sh_tagged(i) >= 0))
-            map[n++] = i;
+    int map[SH_MAX + 1] = { ROW_CHECK }, n = 1, updates[2] = { 0, 0 };
+    for (int i = 0; i < shelf_n; ++i) {
+        if (sh_shown(i) && apps[i].game == sh.tab) map[n++] = i;
+        updates[(int)apps[i].game] += sh_shown(i) && sh_tagged(i) == ST_UPDATE;
+    }
     if (sh.page && (n != sh.rows || memcmp(map, sh.map, sizeof map))) {
         memcpy(sh.map, map, sizeof map);
         sh.rows = 0;
         void *view = page_list(sh.page, sh.page, 0, "App Store", n, 64);
-        for (int r = 0; r < n; ++r)
+        sh.strip = store_tabs(sh.page, view);
+        for (int r = 0; r < n; ++r) {
+            int i = map[r];
             /* sh_text writes the detail: a blank one, or a theme would centre the name over it */
-            sh.row[r] = page_row_detail(
-                view, r, map[r] == ROW_CHECK ? "Check for Updates" : apps[map[r]].name,
-                theme()->sep[0].n ? " " : "", sh_click);
+            sh.row[r] =
+                page_row_detail(view, r, i == ROW_CHECK ? "Check for Updates" : apps[i].name,
+                                theme()->sep[0].n ? " " : "", sh_click);
+            if (i != ROW_CHECK) store_row(sh.row[r], apps[i].id, apps[i].name);
+        }
         sh.rows = n;
     }
+    store_tabs_set(sh.strip, sh.tab, updates);
     sh_refresh();
+}
+
+/* The open tab, 0 Apps or 1 Games: the strip's tap (app_store.c) or shelf_key. */
+void shelf_tab(int tab) {
+    if (!sh.page || tab == sh.tab) return;
+    sh.tab = tab, sh.armed = 0;
+    sh_rows();
+}
+
+/* ringnav, before stock's song skip: on the App Store, Previous opens Apps and Next Games. */
+int shelf_key(void *top, unsigned key) {
+    if (!sh.page || top != sh.page || (key != KEY_BACK_BTN && key != KEY_FWD_BTN)) return 0;
+    shelf_tab(key == KEY_FWD_BTN);
+    return 1;
 }
 
 /* Streaming → Configuration's Erase Spotify Data (navigation.c): with start, Spotify's login, cache
