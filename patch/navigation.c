@@ -4037,8 +4037,9 @@ static const unsigned short bold_ranges[] = BOLD_RANGES,
 /* 1 iff every character of c (n < 0: up to the NUL; NULL has none) is in face's cmap. */
 static int face_has(int face, const unsigned *c, int n) {
     const unsigned short *r = face == FONT_CLASSIC_LIGHT ? classic_light_ranges : bold_ranges;
-    unsigned k = face == FONT_CLASSIC_LIGHT ? sizeof classic_light_ranges / sizeof *classic_light_ranges
-                                           : sizeof bold_ranges / sizeof *bold_ranges;
+    unsigned k = face == FONT_CLASSIC_LIGHT
+                     ? sizeof classic_light_ranges / sizeof *classic_light_ranges
+                     : sizeof bold_ranges / sizeof *bold_ranges;
     if (face == FONT_DEFAULT) return 1;
     if (!c) return 0;
     for (; n < 0 ? *c : n; ++c, --n) {
