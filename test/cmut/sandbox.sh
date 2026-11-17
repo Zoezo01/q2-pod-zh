@@ -32,7 +32,7 @@ patch/mp3_gapless.c)
     cflags='-fPIC -DPEQ_HOST -fsanitize=undefined -fno-sanitize-recover=undefined -Wall -Wextra -Werror
         -Wno-unused-function'
     mounts=patch ;;
-patch/lockscreen.c|patch/photos.c|patch/headset.c|patch/radio.c|patch/visualizer.c|patch/font_weight.c)
+patch/lockscreen.c|patch/photos.c|patch/headset.c|patch/radio.c|patch/visualizer.c)
     name=${source#patch/}
     test=test/fw/test_${name%.c}.py
     fw=1
