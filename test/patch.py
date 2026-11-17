@@ -391,7 +391,7 @@ def battery_checks():
                 b.nodes[w['img_battery']]['image']=image
                 b.nodes[w['label_battery']]['text']=f'{value}%'
                 paint(); before=lcd(); bands,letters=slot()
-                bw,bh,nh=O['BATT_INSIDE_W'],O['BATT_INSIDE_H'],O['BATT_NUB_H']; y=(30+1-bh)//2
+                bw,bh,nh=O['BATT_INSIDE_W'],O['BATT_INSIDE_H'],O['BATT_NUB_H']; y=(30+1-bh)//2-1
                 assert b.get(w['view_battery']+O['W_W'])==bw+O['BATT_NUB_W']
                 assert [x[:5] for x in bands]==[(bw,y+(bh-nh)//2,O['BATT_NUB_W'],nh,color_t(rgb))]
                 assert [(r['kind'],r['rect'],r['color'],r['radius']) for r in b.rounded]==[('fill',(0,y,bw,bh),color_t(rgb),3)]
@@ -1112,33 +1112,33 @@ m.tap(m.row_button('取消全选')); assert m.marks==[0,0,0] and m.rows()[0]=='�
 
 # Export in select mode reaches stock's handler, marked: exportPlayList's first argument 0 and the marks kept.
 m=ClassicPlaylistMachine(); m.rebuild(); m.tap(m.row_button(EDIT)); m.stack_rows(); m.tap(m.row_button('List 1'))
-m.tap(m.row_button('导出 1 张播放列表'))
+m.tap(m.row_button('导出 1 张播放列表…'))
 assert m.confirms and m.exports==[(0,[0,1,0])] and not m.deletes
 # A dialog's close is stock's mode's end: its foreground handler rebuilds, and the rows follow.
 m.answer=0; assert m.call(address=m.REBUILD_DONE,args=(m.top,0,0,0),gap=0,clear=False)==0; m.stack_rows()
 assert m.navbar()==0 and m.rows()==[NEW,EDIT]+LISTS and m.bar()=='播放列表'
 # ... and Export all goes through Select All.
-m.tap(m.row_button(EDIT)); m.stack_rows(); m.tap(m.row_button('全选')); m.answer=10; m.tap(m.row_button('导出 3 张播放列表'))
+m.tap(m.row_button(EDIT)); m.stack_rows(); m.tap(m.row_button('全选')); m.answer=10; m.tap(m.row_button('导出 3 张播放列表…'))
 assert m.exports[-1]==(0,[1,1,1]); passed()
 
 # Delete takes stock's confirm, once: Cancel deletes nothing, and OK deletes the marked. A row scrolled past or a selection
 # moved can't reach it: each row clicks its own action, and a turn of the wheel cancels a pending Centre.
 m=ClassicPlaylistMachine(); m.rebuild(); m.paint(m.view); m.tap(m.row_button(EDIT)); m.stack_rows(); m.paint(m.view)
 m.tap(m.row_button('List 2')); m.stack_rows(); m.paint(m.view)
-assert m.rows()[-2]=='删除 1 张播放列表…'
+assert m.rows()[-2]=='删除 1 张播放列表'
 cpm_wheel(m,O['KEY_NEXT'],5); assert m.selected(m.view)==6   # Delete's row
 m.call(O['KEY_CENTER']); m.call(O['KEY_PREV'],gap=10); m.advance(O['DOUBLE_CLICK_MS'],clear=False); m.advance(0,clear=False); m.paint(m.view)
 assert not m.confirms and not m.deletes and m.selected(m.view)==5  # Export's row, never fired
 cpm_wheel(m,O['KEY_PREV'],3); assert m.selected(m.view)==2
 cpm_centre(m); assert m.marks==[0,1,1] and not m.confirms and not m.deletes  # the row's mark, nothing more
-m.answer=0; m.tap(m.row_button('删除 2 张播放列表…')); assert len(m.confirms)==1 and not m.deletes
-m.answer=10; m.tap(m.row_button('删除 2 张播放列表…')); assert len(m.confirms)==2 and m.deletes==[[0,1,1]]; passed()
+m.answer=0; m.tap(m.row_button('删除 2 张播放列表')); assert len(m.confirms)==1 and not m.deletes
+m.answer=10; m.tap(m.row_button('删除 2 张播放列表')); assert len(m.confirms)==2 and m.deletes==[[0,1,1]]; passed()
 
 # Import is inside Select Playlists, and on an empty list a row of its own beside New Playlist, over a label that holds its font.
 m=ClassicPlaylistMachine(0); kids=m.rebuild()
 assert m.rows()==[NEW,'导入歌单'] and m.nodes[m.row_button(NEW)]['visible']
 note=next(k for k in m.nodes[m.top]['children'] if m.nodes[k]['name']=='_pl_none')
-assert m.nodes[note]['text']=='No Playlists' and m.nodes[note]['visible']==1 and m.get(note+O['W_H'])==32>=27 and m.get(note+O['W_Y'])==124
+assert m.nodes[note]['text']=='暂无播放列表' and m.nodes[note]['visible']==1 and m.get(note+O['W_H'])==32>=27 and m.get(note+O['W_Y'])==124
 m.tap(m.row_button('导入歌单')); assert m.confirms and any(c[0]=='importPlayList' for c in m.calls)
 m.lists('Made'); m.rebuild(); assert m.rows()==[NEW,EDIT,'Made'] and m.nodes[note]['visible']==0
 m.tap(m.row_button(EDIT)); m.stack_rows(); m.tap(m.row_button('导入歌单')); assert any(c[0]=='importPlayList' for c in m.calls); passed()
@@ -1166,7 +1166,7 @@ passed()
 m=ClassicPlaylistMachine(); m.rebuild(); m.paint(m.view)
 ev=m.alloc(0x30); m.word(ev,O['EVT_CLICK']); m.word(ev+O['EVENT_X'],300)
 m.nested(0x4b4840,m.row_button('List 2'),ev,0,0); assert m.mores==[2]
-m.press(100); assert m.hold()==11 and m.nodes[m.top]['name']=='sortselect_dialog' and m.labels()[-1]=='More\u2026'
+m.press(100); assert m.hold()==11 and m.nodes[m.top]['name']=='sortselect_dialog' and m.labels()[-1]=='更多…'
 m=ClassicPlaylistMachine(); m.rebuild(); m.paint(m.view); cpm_wheel(m,O['KEY_PREV'],2)
 assert m.selected(m.view)==0
 m.press(200); before=m.top; assert m.hold()==11 and m.top==before; passed()
@@ -1206,7 +1206,7 @@ m.call(address=f,args=(ctx,0,0,0),gap=0,clear=False); assert m.navbar()==0; pass
 
 # Return in select mode: the latest click of a pass wins (Done over a Delete just tapped), and without Done's target it is stock's.
 m=ClassicPlaylistMachine(); m.rebuild(); m.tap(m.row_button(EDIT)); m.stack_rows(); m.tap(m.row_button('List 1'))
-ev=m.alloc(0x30); m.word(ev,O['EVT_CLICK']); m.on_click(m.row_button('删除 1 张播放列表…'),ev)
+ev=m.alloc(0x30); m.word(ev,O['EVT_CLICK']); m.on_click(m.row_button('删除 1 张播放列表'),ev)
 f,ctx=m.handler(m.top,O['EVT_KEY_UP']); key=m.alloc(0x40); m.word(key,O['EVT_KEY_UP']); m.word(key+O['EVENT_KEY'],O['KEY_RETURN'])
 assert m.call(address=f,args=(ctx,key,0,0),gap=0,clear=False)==11; m.advance(0,clear=False)
 assert not m.confirms and not m.deletes and m.navbar()==0 and m.rows()==[NEW,EDIT]+LISTS
@@ -1726,7 +1726,7 @@ passed()
 # An empty category list says so once its page is up, instead of a black page.
 m=ClassMachine(page='localclass_page',cls=0xf001,rows=0)
 assert m.call(address=HOOKS['load_localclass_list'][0],args=(0xf006,0,0,0),gap=0)==0 and not m.toasts
-m.advance(0); assert [t[3] for t in m.toasts]==['No genres']; passed()
+m.advance(0); assert [t[3] for t in m.toasts]==['暂无流派']; passed()
 # Albums: each stock row (a name) becomes that name's albums, told apart by album artist, else folder.
 m=ClassMachine(page='localclass_page',cls=0xf001,rows=2); m.word(m.row(1)+O['REC_ALBUM'],m.string('Other'))
 m.split=[m.song('Baroness'),m.song('STP')]; m.word(m.split[1]+O['REC_PATH'],m.string('/q/STP'))
@@ -10600,8 +10600,8 @@ m=QobuzMachine(); m.open(); m.answer(*OK,[]); old=m.page; m.mock('window_manager
 m.top=m.node('window','playing_page')
 assert run(m,'addon_goto',m.string(QSONG),m.string('The Band'),0)==1 and m.top!=old
 assert [c[2] for c in m.calls if c[0]=='window_manager_close_window_force']==[old]
-m.page=m.top; m.destroy(old); m.answer(*OK,[('info','','No albums','','','')])
-assert m.requests[-1]==('goto','artist',QSONG) and m.labels()==['The Band','No albums',''],(m.requests[-1],m.labels()); passed()
+m.page=m.top; m.destroy(old); m.answer(*OK,[('info','','暂无专辑','','','')])
+assert m.requests[-1]==('goto','artist',QSONG) and m.labels()==['The Band','暂无专辑',''],(m.requests[-1],m.labels()); passed()
 m=AppMachine(); assert run(m,'addon_goto',m.string('/mnt/mmc/.soulseek/a.flac'),m.string('A'),1)==0
 m=QobuzMachine()
 for path in ('/mnt/mmc/Music/a.flac','/mnt/mmc/.qobuz','/mnt/mmc/.Bad_Id/a.flac','/mnt/mmc/.waytoolongforanidxx/a.flac',

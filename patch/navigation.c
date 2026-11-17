@@ -3824,6 +3824,14 @@ static int bar_word_sync(void *bar) {
         /* The face reads the text — the word was created empty, so its first answer kept the
          * classic face, which has no hanzi and painted the word as nothing (#V172Y). */
         theme_font(st.play_word, ROLE_BAR, FONT_ROW);
+        /* Minimal/Modern: theme_font may take ROLE_BAR's size; the word keeps the bar's own. */
+        if (!st.bar_title)
+            for (unsigned i = 0; i < 3; ++i) {
+                char size[48];
+                snprintf(size, sizeof size, "style:%s:font_size",
+                         i == 0 ? "normal" : i == 1 ? "focused" : "disable");
+                widget_set_prop_int(st.play_word, size, PLAY_WORD_PX);
+            }
     }
     if (was != show) widget_set_visible(st.play_word, show, 0);
     return changed || was != show;
@@ -4167,10 +4175,11 @@ static void dark_battery(void *canvas, int x, int y, unsigned key) {
     paint_stops(canvas, x + 11, y + 8, 22 * (int)(key & 2 ? 100 : key >> 3) / 100, 9, &level);
 }
 /* A battery body bh rows high, either look's: its top in the slot w, which is its row's height
- * (bar_sync), centred on it as the icons beside it are. Beside the percentage it rises
- * BATT_PCT_DY, to the digits' ink. */
+ * (bar_sync), centred on it as the icons beside it are. The row's 16 px text inks to 14.4 while a
+ * centred body inks to 15.5, so every mode rises one pixel — what BATT_PCT_DY used to do only
+ * while the percentage stood beside the icon. */
 static int batt_top(void *w, int bh) {
-    return (I(w, W_H) + 1 - bh) / 2 - BATT_PCT_DY * (st.batt_mode == 2);
+    return (I(w, W_H) + 1 - bh) / 2 - 1;
 }
 /* Mode 1 is the percentage alone; mode 3 uses a compact solid battery with dark digits; mode 2
  * puts the percentage beside the charge-level icon. Under Classic the battery is
@@ -4201,8 +4210,11 @@ static void paint_battery(void *w, void *canvas) {
         /* bar_sync fitted the mode to BATT_PCT_W: again, with these */
         if (!st.bar_timer) st.bar_timer = timer_add(bar_repaint, (void *)0, 0);
     }
+    /* A 16 px label's digits ink a row above a centred icon's ink. Under Minimal/Modern give the
+     * drawn percentage that row back; Classic's own face and shorter row already share the middle. */
+    int pct_dy = classic_light ? 0 : BATT_PCT_DY;
     if (st.batt_mode == 1) {
-        rect_t r = { 0, 0, I(w, W_W), I(w, W_H) };
+        rect_t r = { 0, pct_dy, I(w, W_W), I(w, W_H) };
         draw_centred(canvas, s, n, &r, px, color);
         return;
     }
@@ -4212,7 +4224,7 @@ static void paint_battery(void *w, void *canvas) {
         int f = classic_light_battery(w, canvas, 1, y, key);
         if (st.batt_mode == 2) {
             int x = 1 + bw + BATT_NUB_W + BATT_GAP;
-            rect_t r = { x, 0, I(w, W_W) - x, I(w, W_H) };
+            rect_t r = { x, pct_dy, I(w, W_W) - x, I(w, W_H) };
             draw_centred(canvas, s, n, &r, px, color);
         } else if (inside) {
             /* dark on the level, whatever its colour; past it white, on the dark rows. White flips
@@ -4248,7 +4260,7 @@ static void paint_battery(void *w, void *canvas) {
     canvas_fill_rect(canvas, 2, y + 2, (bw - 4) * (key & 2 ? 100 : level) / 100, bh - 4);
     if (st.batt_mode == 2) {
         int x = bw + BATT_NUB_W + BATT_GAP;
-        rect_t r = { x, 0, I(w, W_W) - x, I(w, W_H) };
+        rect_t r = { x, pct_dy, I(w, W_W) - x, I(w, W_H) };
         draw_centred(canvas, s, n, &r, BATT_PX, color);
     }
     stock_canvas_set_fill_color(canvas, fill);

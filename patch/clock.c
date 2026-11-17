@@ -129,6 +129,14 @@ void clock_show(void) {
         tk_snprintf(s, sizeof s, "%d:%02d %s", (tm[2] + 11) % 12 + 1, tm[1],
                     tm[2] < 12 ? "上午" : "下午");
     widget_set_text_utf8(label, s);
+    /* The clock's own 16 px, in every state the bar's children read (disable's style says 20),
+     * and against stock V1.36's 21 px page-title writes: the time reads like the word beside it. */
+    if (!st.bar_title)
+        for (unsigned i = 0; i < 3; ++i)
+            widget_set_prop_int(label,
+                                i ? (i == 1 ? "style:disable:font_size" : "style:focused:font_size")
+                                  : "style:normal:font_size",
+                                16);
 }
 static void clock_zone(void) {
     if (st.clock_timer) clock_show(); /* the bar runs; boot's call comes before it */
