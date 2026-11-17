@@ -811,7 +811,7 @@ static int render(const void *unused) {
         row(view, n++, ui.dirty ? "应用更改" : "无待应用更改", ui.dirty ? APPLY : -1);
         row(view, n++, "恢复默认设置", RESET);
         list_toggle(row(view, n++, "", BYPASS), "启用", !ui.draft.bypass);
-        list_toggle(row(view, n++, "", PER_OUTPUT), "各输出独立均衡", ringnav_eq_output());
+        list_toggle(row(view, n++, "", PER_OUTPUT), "各输出独立均衡", pod_value(POD_EQ_OUTPUT));
         /* Balance turns one side down: R 1.0 dB is the left 1 dB quieter. */
         snprintf(value, sizeof(value),
                  __builtin_fabs(ui.draft.balance) >= 0.05 ? "%s %.1f dB" : "Centre",
@@ -1424,7 +1424,7 @@ static void e3_paint(void *canvas) {
         caption(canvas, names[i], x, E3_BUTTONS, w, 40, !i && peq && n > 9 ? 16 : 20, 0xffffffffu);
     }
     for (int i = 0; i < 3; ++i) {
-        static const char *const names[] = { "低频", "中频", "高频" };
+        static const char *const bands[] = { "低频", "中频", "高频" };
         int x = 62 + 125 * i, y = e3_y(e3.gain[i]), focus = e3.focus == E3_LOW + i;
         if (focus) e3_box(canvas, x - 56, E3_SLIDERS, 112, e3_bottom() + 36 - E3_SLIDERS, 0x1a1a1a);
         caption(canvas, bands[i], x - 56, E3_SLIDERS, 112, 28, 20, peq ? CF_GREY : 0xffffffffu);

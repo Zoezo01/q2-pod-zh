@@ -1706,7 +1706,7 @@ static void got(void) {
     int ok = n >= 0 && !strcmp(f[1], "ok");
     unsigned now = time_now_ms();
     char why[48];
-    tk_snprintf(why, sizeof why, req.fail == REQ_NOSOCK ? "%s 未运行" : "%s 未响应",
+    tk_snprintf(why, sizeof why, req.fail == SPOT_NOSOCK ? "%s 未运行" : "%s 未响应",
                 app()->name);
     if (act) busy_row(0); /* before the toast, whose loop can pop the level */
     pg.act = 0;

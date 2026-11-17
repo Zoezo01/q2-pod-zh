@@ -277,7 +277,7 @@ static int qm_run(const void *unused) {
     int a = qm.qm_action, cls = qm.qm_kind == QM_COVERFLOW ? 0xf001 : (int)qm.qm_cls;
     unsigned aid = r ? qm_album_id(r) : 0; /* an album's own Favourites and Rate */
     if (r && a >= 100) {
-        if (!playback_set(qm.qm_choice - 1, a - 100)) toast("Queue unchanged");
+        if (!playback_set(qm.qm_choice - 1, a - 100)) toast("队列未更改");
         qm.qm_choice = 0;
     } else if (r && a == QA_CHAPTERS) {
         chapters_open(r);
@@ -304,7 +304,7 @@ static int qm_run(const void *unused) {
         if (more && !addon_more())
             stock_dispatch_trampoline(more, pointer_event_init(click, EVT_CLICK, more, 0, 0));
     } else if (r && (a == QA_NEXT_GROUP || a == QA_PREV_GROUP)) {
-        if (!playback_group_skip(a == QA_NEXT_GROUP)) toast("No other group");
+        if (!playback_group_skip(a == QA_NEXT_GROUP)) toast("没有其他分组");
     } else if (aid && a == QA_RATE) {
         rate_show(window_manager_get_top_window(window_manager()), rate_kept(1, aid), aid);
     } else if (aid && (a == QA_FAV || a == QA_UNFAV)) {
@@ -351,20 +351,20 @@ static int qm_run(const void *unused) {
             play_folder(songs, at, 0xf001);
             deque_destroy(songs);
         } else
-            toast("Queue unchanged");
+            toast("队列未更改");
     } else if (r && a == QA_FOLDER) {
         st.go_layer = song_folder(r, st.go_folder);
         if (st.go_layer)
             navigator_to("folder_page"); /* its init, ringnav_folder, opens there */
         else
-            toast("Folder not found");
+            toast("找不到文件夹");
         st.go_layer = 0; /* never left for a later Folder visit */
     } else if (r && a >= QA_ALBUM)
         qm_goto(r, a == QA_ALBUM);
     else {
         void *add = r ? qm_collect(r) : (void *)0;
         if (!add || !(a == QA_SHUFFLE ? shuffle_play(add) : qm_apply(add, a == QA_NEXT)))
-            toast("Queue unchanged");
+            toast("队列未更改");
         if (add) deque_destroy(add);
     }
     return 0;
@@ -448,15 +448,15 @@ static int qm_open(const void *unused) {
     if (qm.qm_choice) {
         /* stock's play modes, its category named as Group by sets it (album or folder) */
         static const char *const shuffle[2][5] = {
-            { "Off", "All Songs", "Songs in Album", "Albums", "Albums and Songs" },
-            { "Off", "All Songs", "Songs in Folder", "Folders", "Folders and Songs" }
+            { "关闭", "全部歌曲", "专辑内歌曲", "专辑", "专辑及歌曲" },
+            { "关闭", "全部歌曲", "文件夹内歌曲", "文件夹", "文件夹及歌曲" }
         };
-        static const char *const repeat[2][6] = { { "Play One Song", "Play One Album", "Play All",
-                                                    "Repeat Song", "Repeat Album", "Repeat All" },
-                                                  { "Play One Song", "Play One Folder", "Play All",
-                                                    "Repeat Song", "Repeat Folder",
-                                                    "Repeat All" } };
-        static const char *const groups[] = { "Album", "Folder" };
+        static const char *const repeat[2][6] = { { "播放单曲", "播放单张专辑", "全部播放",
+                                                    "单曲循环", "专辑循环", "全部循环" },
+                                                  { "播放单曲", "播放单个文件夹", "全部播放",
+                                                    "单曲循环", "文件夹循环",
+                                                    "全部循环" } };
+        static const char *const groups[] = { "专辑", "文件夹" };
         int kind = qm.qm_choice - 1,
             count = kind == 0   ? 5
                     : kind == 1 ? 6
@@ -465,7 +465,7 @@ static int qm_open(const void *unused) {
         const char *const *names = kind == 0   ? shuffle[folder]
                                    : kind == 1 ? repeat[folder]
                                                : groups;
-        qm_title(dialog, kind == 0 ? "Shuffle" : kind == 1 ? "Repeat" : "Group by");
+        qm_title(dialog, kind == 0 ? "随机播放" : kind == 1 ? "重复播放" : "分组方式");
         widget_destroy_children(view);
         int painted = dialogs_painted(), row = painted ? theme()->page_row : QM_ROW,
             w = painted ? BACK_W : 375;
@@ -551,27 +551,27 @@ static int qm_open(const void *unused) {
         acts[n++] = QA_NEW_PLAYLIST;
         if (!geom_val(V_TOOLBAR)) acts[n++] = QA_EDIT_PLAYLISTS;
     }
-    static const char *const rows[] = { "Play Next",
-                                        "Add to Queue",
-                                        "Shuffle",
-                                        "Add to Favourites",
-                                        "Remove from Favourites",
-                                        "Add to Playlist",
-                                        "Go to Album",
-                                        "Go to Artist",
-                                        "Shuffle",
-                                        "Repeat",
-                                        "Group by",
-                                        "Next Album",
-                                        "Previous Album",
-                                        "Rate",
-                                        "Resume",
-                                        "View Queue",
-                                        "Go to Folder",
-                                        "Chapters",
-                                        "More…",
-                                        "New Playlist",
-                                        "Select Playlists…" };
+    static const char *const rows[] = { "下一首播放",
+                                        "加入播放队列",
+                                        "随机播放",
+                                        "加入收藏",
+                                        "取消收藏",
+                                        "加入播放列表",
+                                        "前往专辑",
+                                        "前往表演者",
+                                        "随机播放",
+                                        "重复播放",
+                                        "分组方式",
+                                        "下一张专辑",
+                                        "上一张专辑",
+                                        "评价",
+                                        "继续播放",
+                                        "查看队列",
+                                        "前往文件夹",
+                                        "章节",
+                                        "更多…",
+                                        "新建播放列表",
+                                        "选择播放列表…" };
     char rated[32];
     /* stock sortselect row styles */
     int painted = dialogs_painted(), pitch = painted ? theme()->page_row : QM_ROW;
@@ -582,16 +582,16 @@ static int qm_open(const void *unused) {
         widget_use_style(label, "s_scrlabel_white24l");
         if (acts[i] == QA_RATE) {
             int h = aid ? album_hearts : checkFavExist(r) ? 5 : rate_kept(0, listen_key(r));
-            const char *row = aid ? "Rate Album" : "Rate";
+            const char *row = aid ? "专辑评价" : "评价";
             char hs[16];
             tk_snprintf(rated, sizeof rated, h ? "%s  %s" : "%s", row, hearts_text(hs, h));
         }
         widget_set_text_utf8(label,
                              acts[i] == QA_RATE ? rated
                              : acts[i] == QA_GROUP
-                                 ? (playback_option(2) ? "Group by: Folder" : "Group by: Album")
-                             : acts[i] == QA_NEXT_GROUP && playback_option(2) ? "Next Folder"
-                             : acts[i] == QA_PREV_GROUP && playback_option(2) ? "Previous Folder"
+                                 ? (playback_option(2) ? "分组：文件夹" : "分组：专辑")
+                             : acts[i] == QA_NEXT_GROUP && playback_option(2) ? "下一个文件夹"
+                             : acts[i] == QA_PREV_GROUP && playback_option(2) ? "上一个文件夹"
                                                                               : rows[acts[i] - 1]);
         if (painted) hold_label(item, label);
         widget_on(item, EVT_CLICK, qm_pick, (void *)(long)acts[i]);

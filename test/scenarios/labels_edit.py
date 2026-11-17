@@ -266,7 +266,7 @@ assert m.confirm()==11 and m.showlabels()==['Move Up','Move Down','Remove from P
 assert m.key()==11 and m.selected(m.find('scroll_view'))==3
 m.close()
 m=PlaylistEditMachine(); m.open_editor()
-assert m.showlabels()==['Add Songs','Done','A','B','C']
+assert m.showlabels()==['Add Songs','完成','A','B','C']
 assert m.nodes[m.nodes[m.page]['children'][0]]['text']=='Editing: Mix'
 # A repeat and long press cannot move again, and releases never reach playback.
 for key,want in ((O['KEY_FWD_BTN'],['B','A','C']),(O['KEY_FWD_BTN'],['B','C','A']),(O['KEY_BACK_BTN'],['B','A','C'])):
@@ -294,7 +294,7 @@ assert m.toasts[-1][3]=='Added to Playlist' and m.showlabels()==['Search','T1','
 m.choose(1); assert m.toasts[-1][3]=='Already in playlist'
 m.fail='write'; m.choose(2); assert m.toasts[-1][3]=='Could not save playlist'; m.fail=''
 assert m.ticks()==[False,True,False]  # ticked on add, not on a failed write
-assert m.key()==11 and m.showlabels()==['Add Songs','Done','B','C','T1']
+assert m.key()==11 and m.showlabels()==['Add Songs','完成','B','C','T1']
 m.choose(1); assert m.top!=m.page and not m.get(payload_syms['ple'])
 assert m.names()==m.before_queue; passed()
 # Add Songs' Search row filters by tagged title, artist or album, case-insensitively; the query
@@ -361,12 +361,12 @@ assert m.db.execute('select * from playlist').fetchall()==before and not m.backs
 
 m=playlist_hold(0); m.press(7000); assert m.hold()!=11 and not m.opened  # Import: no dots, stock keeps the hold
 m=playlist_hold(); m.press(7100); assert m.hold()==11 and m.release()==0  # the locked hold's release never toggles playback
-assert m.labels()==['Play Next','Add to Queue','Shuffle','More…'] and m.nodes[m.title]['text']=='List 1'
+assert m.labels()==['下一首播放','加入播放队列','随机播放','更多…'] and m.nodes[m.title]['text']=='List 1'
 m.pick(3); m.advance(0); assert m.opened[-1]==('localmusic/playlistsmore_page',1) and m.names()==['A','B','C']; passed()
 for row,want in ((0,['A','T1','T2','B','C']),(1,['A','B','C','T1','T2'])):
     m=playlist_hold(); assert m.run(row) is None and m.names()==want and m.query[:2]==('getMusicByPlayList',8)
     assert not m.playback(); passed()
-m=playlist_hold(1); m.found=[m.song('dir',4)]; assert m.run(0)=='Queue unchanged' and m.names()==['A','B','C']; passed()
+m=playlist_hold(1); m.found=[m.song('dir',4)]; assert m.run(0)=='队列未更改' and m.names()==['A','B','C']; passed()
 m=playlist_hold(); m.press(7100); assert m.hold()==11 and m.release()==0
 m.word(syms['p_deque_playlist'],m.deque([m.song('Other',4)])); m.pick(3); m.advance(0)
 assert not [o for o in m.opened if o[0]=='localmusic/playlistsmore_page']; passed()  # the list changed: nothing
@@ -395,14 +395,14 @@ m.db.execute("insert into playlist values(150,0,'/hidden',0,0,'Hidden')")
 assert m.mutate(101,103)==1 and m.order()==['C','B','A','Hidden']
 assert m.mutate(102,0)==1 and m.order()==['C','A','Hidden'] and m.order(1)==['Other']
 # Reopening uses the database order and leaves the live queue unchanged.
-m.open_editor(); assert m.showlabels()==['Add Songs','Done','C','A','Hidden'] and m.names()==m.before_queue
+m.open_editor(); assert m.showlabels()==['Add Songs','完成','C','A','Hidden'] and m.names()==m.before_queue
 assert m.mutate(101,200,0)==0
 m.db.execute('update playlist set id=2147483647 where id=200'); assert m.mutate(101,103)==0
 passed()
 # Back cancels a deferred confirmation before returning to the editor.
 m=PlaylistEditMachine(); m.open_editor(); m.choose(2); m.choose(2)
 m.pick(0); assert m.key()==11 and m.order()==list('ABC')
-assert m.showlabels()==['Add Songs','Done','A','B','C']; passed()
+assert m.showlabels()==['Add Songs','完成','A','B','C']; passed()
 # A side press during a deferred click cannot change the row that click refers to.
 m.choose(2); assert m.key()==11
 m.view=m.find('scroll_view')

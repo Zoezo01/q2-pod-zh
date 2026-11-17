@@ -82,9 +82,9 @@ for car,cls,want in ((0,1,[(0x5550,4,1,3)]),(0,0xff,[]),(1,0xf003,[])):
     else: assert not nav
     passed()
 # Refusals leave the queue alone: a stream queue, or a row whose record changed under the menu.
-m=QueueMachine(); m.word(O['MCL_TYPE'],2); assert m.run(0)=='Queue unchanged' and m.names()==['A','B','C']
+m=QueueMachine(); m.word(O['MCL_TYPE'],2); assert m.run(0)=='队列未更改' and m.names()==['A','B','C']
 m=QueueMachine(); m.press(1); m.hold(); m.release(); m.word(m.row(0)+O['REC_NAME'],m.string('other'))
-m.pick(0); m.advance(0); assert m.toasts[-1][3]=='Queue unchanged' and m.names()==['A','B','C']; passed()
+m.pick(0); m.advance(0); assert m.toasts[-1][3]=='队列未更改' and m.names()==['A','B','C']; passed()
 # Unsupported pages and states keep the stock long key: no menu, and the release is stock.
 for setup,toggles in ((lambda m:m.byte(syms['g_lockscreen_pageflag'],1),1),(lambda m:m.byte(syms['g_backlight_status'],0),1),
         (lambda m:m.byte(syms['g_navbar_status'],1),1),

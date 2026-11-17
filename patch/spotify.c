@@ -953,7 +953,7 @@ static void got(void) {
     tk_snprintf(id, sizeof id, "%u", wk.id);
     if (n >= 0 && strcmp(f[0], id)) n = -1;
     const char *status = n < 0 ? "error" : f[1];
-    const char *msg = wk.fail == W_NOSOCK      ? "Spotify 未运行"
+    const char *msg = wk.fail == SPOT_NOSOCK      ? "Spotify 未运行"
                       : n >= 0 && f[2][0] ? f[2]
                                                : "Spotify 未响应";
     int ok = !strcmp(status, "ok"), login = !strcmp(status, "login");

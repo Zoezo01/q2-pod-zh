@@ -1416,7 +1416,7 @@ class FolderClickMachine(LookupMachine):
         if name=='lookup:folder_enter': self.returns(8,clobber=True); return
         return super().hook(u,address,size,unused)
 
-SONG_MENU=['Play Next','Add to Queue','Add to Favourites','Add to Playlist','Go to Album','Go to Artist']
+SONG_MENU=['下一首播放','加入播放队列','加入收藏','加入播放列表','前往专辑','前往表演者']
 
 def playing_menu(**kw):
     m=QueueMachine(page='playing_page',pos=1,**kw)
@@ -2692,7 +2692,7 @@ def cover_open(files,**kw):
     m.cover_names=names; m.cover_files=[(n,8) for n in files(names)] if files else False; m.open()
     return m,[m.text(c[1]) for c in m.calls if c[0]=='strdup' and m.text(c[1]).startswith('/mnt/mmc/a')]
 
-COVER_ALBUM=['Play Next','Add to Queue','Shuffle','Add to Favourites','Rate Album']  # a cover's menu, Go to artist aside
+COVER_ALBUM=['下一首播放','加入播放队列','随机播放','加入收藏','专辑评价']  # a cover's menu, Go to artist aside
 
 class PlaylistCoverMachine(CoverflowMachine):
     def __init__(self):
@@ -3595,7 +3595,7 @@ def stops_row(stops,j,h):  # paint_stops' pixel row j of h, as the C mixes it
     return sum(((ca>>s&255)*(n-i)+(cb>>s&255)*i)//n<<s for s in (0,8,16))
 
 def action_page(nm,sorts=True):
-    alabel=nm.node('hscroll_label',text='Play All'); aplay=nm.node('image'); asort=nm.node('image')
+    alabel=nm.node('hscroll_label',text='全部播放'); aplay=nm.node('image'); asort=nm.node('image')
     for c,box in ((alabel,(70,0,130,50)),(aplay,(16,0,50,50)),(asort,(306,0,50,50))):
         for off,v in zip(('W_X','W_Y','W_W','W_H'),box): nm.word(c+O[off],v)
     aview=nm.node('view','view_navbar_allplay',[alabel,aplay]+[asort]*sorts); nm.word(aview+O['W_H'],28)
@@ -4431,7 +4431,7 @@ def chevron(m,i):
 def switch(m,i): return m.nodes[m.nodes[m.rows()[i]]['children'][-1]].get('image')
 ME=OK+([('account','spotify:user:alice','Alice','Premium','','')],)
 
-MENU=['Spotify','Liked Songs','Playlists','Albums','Artists','Search','Account','Downloaded Tracks','Downloads']
+MENU=['Spotify','Liked Songs','播放列表','Albums','Artists','Search','Account','Downloaded Tracks','Downloads']
 
 # Card apps (patch/addon.c): programs on the card Q2 Pod knows only by their folder, .<id> holding its
 # manifest q2app, its launcher run and its binary q2-<id>; Streaming lists them after Spotify, by name,

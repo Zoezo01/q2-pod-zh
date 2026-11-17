@@ -3846,7 +3846,6 @@ int bar_repaint(const void *info) {
  * than BATT_ROOM (a wide badge while it shows). widget_set_visible does nothing for an unchanged
  * state and relayouts the view for a new one. */
 static int slider_page(void *top);
-static int time_form(void *top);
 static void text_ink_fixed(void *w, unsigned color, int n);
 /* A label's final ink, 0xAARRGGBB in its first n states, stored as what Light Mode's style hook
  * turns into it, so stored for this half. text_inks writes it again when the half changes. */
@@ -5501,7 +5500,7 @@ void bar_title_sync(void *win) {
     /* a page under the top window that writes its caption would flip the bar with each paint */
     if (!st.bar_title || !win || win != window_manager_get_top_window(window_manager())) return;
     static const unsigned none = 0;
-    char s[256], now[256]; /* stock writes nothing unless all of it fits */
+    char s[256]; /* stock writes nothing unless all of it fits */
     /* Home's "Q2 Pod" makes way while a player plays: the play state's word takes that room
      * (state_own_place, bar_word_sync). */
     int playing = bar_status() == 2 || bar_status() == 3;

@@ -124,7 +124,7 @@ assert m.open()==('/mnt/mmc/Podcasts',3) and m.back()[::2]==(0,0); passed()
 # folder_back, run here, climbs a folder at a time to the card and out of the page, or to the storage
 # selector with a drive. The path is copied as it is: percent signs, format directives and UTF-8 stay literal.
 
-GO=[*SONG_MENU,'Go to Folder']
+GO=[*SONG_MENU,'前往文件夹']
 DEEP='/mnt/mmc/Music/100% %s%n/Ünï cødé'
 for otg in (0,1):
     m=GoMachine(DEEP+'/song.flac',['/mnt/mmc/Music/100% %s%n',DEEP],otg=otg); m.push(5,6)  # a visit left deep
@@ -145,14 +145,14 @@ for path,dirs,row in (('/mnt/mmcx/a.mp3',['/mnt/mmcx'],0),('/mnt/mmc/A/../a.mp3'
 m=GoMachine(DEEP+'/a.mp3',[DEEP]); m.open_pages.add('folder_page'); assert m.menu()[1]==SONG_MENU; passed()
 # Gone between the menu and the pick: a toast, no page, and the next Folder visit opens as before.
 m=GoMachine(DEEP+'/a.mp3',[DEEP]); m.menu(); m.dirs.clear(); m.go()
-assert m.toasts[-1][3]=='Folder not found' and m.opened[-1][0]!='folder_page' and m.open()==('/mnt/mmc',2); passed()
+assert m.toasts[-1][3]=='找不到文件夹' and m.opened[-1][0]!='folder_page' and m.open()==('/mnt/mmc',2); passed()
 # The card gone as the page opens: stock's page, the pending folder dropped.
 m=GoMachine(DEEP+'/a.mp3',[DEEP]); m.menu(); m.missing=True; m.go()
 assert m.opened[-1][0]=='folder_page' and m.u.mem_read(syms['g_folder_layer'],1)[0]==1; m.missing=False
 assert m.open()==('/mnt/mmc',2); passed()
 # Now Playing: the playing song's row sits after Go to Artist, before the play modes.
 m=playing_menu(); m.dirs.add('/mnt/mmc/Music'); m.word(m.items(m.get(syms['mcl_pdeqplaylist']))[1]+O['REC_PATH'],m.string('/mnt/mmc/Music/B'))
-m.press(6000); assert m.hold()==11 and m.labels()==SONG_MENU[:2]+['View Queue']+SONG_MENU[2:]+['Go to Folder','Shuffle','Repeat','Group by: Album']
+m.press(6000); assert m.hold()==11 and m.labels()==SONG_MENU[:2]+['查看队列']+SONG_MENU[2:]+['前往文件夹','随机播放','重复播放','分组：专辑']
 passed()
 
 # Photos (patch/photos.c): the helpers first. Names: .jpg, .jpeg and .png, case aside, not hidden.

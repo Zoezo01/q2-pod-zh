@@ -127,7 +127,7 @@ void clock_show(void) {
         tk_snprintf(s, sizeof s, "%d:%02d", (tm[2] + 11) % 12 + 1, tm[1]);
     else if (ok)
         tk_snprintf(s, sizeof s, "%d:%02d %s", (tm[2] + 11) % 12 + 1, tm[1],
-                    tm[2] < 12 ? "AM" : "PM");
+                    tm[2] < 12 ? "上午" : "下午");
     widget_set_text_utf8(label, s);
 }
 static void clock_zone(void) {
@@ -292,7 +292,7 @@ void time_open(void *win) {
     if (ok) { /* Save, past the page's stock height: painted, its box the touch */
         widget_move_resize(P(ok, W_PARENT), 0, 0, 375, 294);
         widget_move_resize(ok, 0, 244, 375, 26);
-        widget_set_text_utf8(ok, "Save");
+        widget_set_text_utf8(ok, "保存");
         widget_set_opacity(ok, 0);
     }
     st.slider_win = win;
@@ -427,7 +427,7 @@ static unsigned time_chars(unsigned *to, const char *s) {
 }
 /* The page, in the window's coordinates, under its children. */
 void time_paint(void *w, void *canvas) {
-    static const unsigned colon = ':', save[] = { 'S', 'a', 'v', 'e' };
+    static const unsigned colon = ':', save[] = { 0x4fdd, 0x5b58, 0 };
     static const char *const cells[2][2] = {
         { "classic_light_cell_45", "classic_light_cell_lit_45" },
         { "classic_light_cell_60", "classic_light_cell_lit_60" },
@@ -463,7 +463,7 @@ void time_paint(void *w, void *canvas) {
         rect_t r = { row->x[i], TIME_CELL_Y, cw, TIME_CELL_H };
         paint_art(w, canvas, cells[!f][f == at], r.x - TIME_CELL_PAD, r.y - TIME_CELL_PAD);
         if (f == TIME_AMPM)
-            tk_snprintf(b, sizeof b, "%s", hour < 12 ? "AM" : "PM");
+            tk_snprintf(b, sizeof b, "%s", hour < 12 ? "上午" : "下午");
         else if (f == 3 && row->n == 3)
             tk_snprintf(b, sizeof b, "%d", hour % 12 ?: 12);
         else
@@ -476,7 +476,7 @@ void time_paint(void *w, void *canvas) {
         time_text(canvas, &colon, 1, &r, 32, 0xffffff, 255);
     }
     rect_t label = { 0, 244, 375, 26 }, under = { 0, 245, 375, 26 };
-    time_text(canvas, save, 4, &under, 24, 0, 0x59);
-    time_text(canvas, save, 4, &label, 24, 0xffffff, 0xb8);
+    time_text(canvas, save, 2, &under, 24, 0, 0x59);
+    time_text(canvas, save, 2, &label, 24, 0xffffff, 0xb8);
     stock_canvas_set_fill_color(canvas, fill);
 }
