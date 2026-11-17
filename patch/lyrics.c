@@ -407,7 +407,7 @@ static int ly_wrap(ly_line *l, const unsigned *s, const unsigned short *adv) {
 static void ly_layout(void *canvas, ly_line *l) {
     const unsigned *s = ly.tab->text + l->text;
     unsigned short *adv = ly.tab->adv + l->text;
-    l->use_bold = ly_vietnamese_font(s, l->n);
+    l->use_bold = (unsigned char)(ly_vietnamese_font(s, l->n) != 0);
     canvas_set_font(canvas, l->use_bold ? "bold" : (const char *)0, LYRIC_PX);
     for (unsigned k = 0; k < l->n; ++k)
         adv[k] = (unsigned short)(canvas_measure_text(canvas, s + k, 1) + 0.5f);
