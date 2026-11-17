@@ -11268,8 +11268,8 @@ m.reply=(ROOT/'test/shelf/q2-librespot.json').read_bytes(); shelf_job(m)
 assert m.opts[10002]=='https://api.github.com/repos/lampsonlnguyen/q2-dino-runner/releases/latest' and m.opts[10018]=='Q2Pod'  # the last of fourteen, a game's
 assert m.opts[10065]=='/etc/scrobble-ca.pem' and m.opts[64]==1 and m.opts[81]==2 and m.opts[20108]
 assert m.labels()[8]=='Update' and m.labels()[2]=='Checked just now' and '/tmp/q2-shelf.json' not in m.files  # q2-v1.8 against the latest q2-v1.9
-assert m.toasts[-1][3]=='1 app can be updated'; passed()  # the opening check's end, the page on top
-m.row(0); assert m.toasts[-1][3]=='1 app can be updated' and len(m.threads)==1; passed()  # within SH_RECHECK_MS: no requests
+assert m.toasts[-1][3]=='2 apps can be updated'; passed()  # the opening check's end, the page on top: Rockbox, there by hand, and Spotify
+m.row(0); assert m.toasts[-1][3]=='2 apps can be updated' and len(m.threads)==1; passed()  # within SH_RECHECK_MS: no requests
 toasts=len(m.toasts); m.close(); m.now+=9*60*1000; apps_open(m); assert len(m.threads)==1 and m.labels()[8]=='Update' and len(m.toasts)==toasts; passed()  # still fresh: no requests
 m.listed=(ROOT/'sources.list').read_bytes()  # an install fetches the list first
 m.row(3); assert m.labels()[8]=='Checking…' and len(m.threads)==2 and KILL in m.systems[-1]; m.row(3); assert m.labels()[8]=='Cancelling…'

@@ -229,7 +229,7 @@ Copy your music to the card over USB-C, then run **Library → Update Library �
 - **For users:** [User guide][guide] · [Setup](docs/setup.md) · [Changelog](docs/changelog.md) · [Accessibility](ACCESSIBILITY.md)
 - **Library folder markers:** [Hide folders while keeping playlists](docs/discovery.md)
 - **Hardware:** [Specs and internals](docs/hardware.md) · [Replacing the battery](docs/battery.md) · [Teardown photo](docs/teardown.jpg)
-- **For developers:** [Building](docs/building.md) · [Releasing](docs/releasing.md) · [Internals](docs/internals.md) · [Remote control (dev builds)](docs/remote.md) · [Contributing](CONTRIBUTING.md)
+- **For developers:** [Building](docs/building.md) · [Releasing](docs/releasing.md) · [Internals](docs/internals.md) · [Remote control (dev builds)](docs/remote.md) · [Desktop emulator](https://github.com/lampsonlnguyen/q2-emulation) · [Contributing](CONTRIBUTING.md)
 
 <details>
 <summary><h2>License</h2></summary>

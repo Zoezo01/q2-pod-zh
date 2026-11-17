@@ -977,6 +977,10 @@ static int sh_shown(int i) {
     return (!is(i, "themes") || rockbox_available()) && (!apps[i].dropped || sh_tagged(i) >= 0);
 }
 
+/* Whether app i's row offers Update. The tabs' counts and a check's toast count these, a manual
+ * install's too (no tag, so its version is unknown), so the numbers are the rows'. */
+static int sh_updatable(int i) { return sh_shown(i) && sh_state(i) == ST_UPDATE; }
+
 static void sh_text(int r) {
     static const char *const stages[] = { "Checking…", "Downloading", "Unpacking…", "Installing…",
                                           "Removing…" };
@@ -1019,13 +1023,12 @@ static void sh_refresh(void) {
     for (int r = 0; sh.page && r < sh.rows; ++r) sh_text(r);
 }
 
-/* A check's toast: how many rows' apps have a newer release than their tag file's (a manual
- * install's Update isn't counted: its version is unknown); with none, from Check for Updates
- * (manual), why it failed or that none have. */
+/* A check's toast: how many apps' rows offer Update (sh_updatable); with none, from Check for
+ * Updates (manual), why it failed or that none have. */
 static void sh_told(int manual, const char *failed) {
     char s[40];
     int n = 0;
-    for (int i = 0; i < shelf_n; ++i) n += sh_shown(i) && sh_tagged(i) == ST_UPDATE;
+    for (int i = 0; i < shelf_n; ++i) n += sh_updatable(i);
     if (n)
         snprintf(s, sizeof s, "%d app%s can be updated", n, n == 1 ? "" : "s"), toast(s);
     else if (manual && failed)
@@ -1152,7 +1155,7 @@ static void sh_rows(void) {
     int map[SH_MAX + 1] = { ROW_CHECK }, n = 1, updates[2] = { 0, 0 };
     for (int i = 0; i < shelf_n; ++i) {
         if (sh_shown(i) && apps[i].game == sh.tab) map[n++] = i;
-        updates[(int)apps[i].game] += sh_shown(i) && sh_tagged(i) == ST_UPDATE;
+        updates[(int)apps[i].game] += sh_updatable(i);
     }
     if (sh.page && (n != sh.rows || memcmp(map, sh.map, sizeof map))) {
         memcpy(sh.map, map, sizeof map);
