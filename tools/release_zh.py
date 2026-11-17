@@ -52,8 +52,8 @@ def changelog_sections():
     sections, current = [], None
     for line in lines:
         if line.startswith('## '):
-            if current and current[0].split()[1].rstrip('（').startswith(LAST_RELEASED):
-                break  # the sections are newest first; LAST_RELEASED ends the run
+            if line.split()[1].rstrip('（').startswith(LAST_RELEASED):
+                break  # newest first; LAST_RELEASED's own section is already published, not repeated
             current = [line, []]
             sections.append(current)
         elif current is not None and line.strip() != '---':
@@ -100,15 +100,16 @@ INSTALL_ZH = f'''# Q2 Pod 简体中文固件 {VERSION}（{TAG}）
 
 包内是山灵 Q2 Pod **{VERSION}**（底座仍为官方 **V1.36** 固件）+ 简体中文汉化，另加自制功能。
 
-> 跟上上游 **{VERSION}**（上一版公开发布是 {LAST_RELEASED}）。字母每换一条上游版本线从 A 重起：**{TAG} 比前面各版都新**，已刷 V184A 的机器也能直接 TF 卡刷。
+> 跟上上游 **{VERSION}**（含 1.8.5、1.8.6 三条线；上一版公开发布是 {LAST_RELEASED}）。字母每换一条上游版本线从 A 重起：**{TAG} 比前面各版都新**，已刷 V184B 的机器也能直接 TF 卡刷。
 
-## 这一版带来的（上游 {VERSION}）
+## 这一版带来的（上游 1.8.5–1.8.7）
 
-- **Tidal 下载**：正在播放的专辑 / 歌单一键存卡，行上实时计数，已存过的歌自动跳过。
-- **大曲库提速**：开机恢复播放队列、「最近播放」定位一首歌不再整库扫描。
-- **专辑页网格视图**：播放设置 → 资料库与文件夹 → 专辑视图，选列表或封面网格。
-- **状态栏与设置行修复**：电量百分比不再被图标挤掉、长标签不再被截断；「标题栏显示时间」关闭时主页时钟也跟着隐藏。
-- **顶栏中文两处修复**（V184B）：简约 / 现代主题主页列表名不再乱码；经典主题搜索页的「搜索」不再与播放状态词叠字。
+- **大曲库提速**：编辑播放列表「添加歌曲」、随机播放 / 下一首播放 / 加入队列、专辑 / 表演者 / 作曲者 / 流派、年代页、最多播放、Wi-Fi 传输都只读需要的歌。
+- **Tidal 下载修复**：没有 `.tidal` 文件夹的卡也能用；超长艺术家 / 标题能存并打标签。
+- **USB 与充电**：给 USB-C 耳机、USB DAC 或 U 盘供电时不再发烫耗电；USB DAC 充电默认关，新增「从不」档。
+- **Classic 主题**：百分比与图标对齐；Cover Flow 选歌翻转到正在播放；USB 模式页用经典状态栏、无时钟。
+- **EQ 与网络电台**：EQ 更省 CPU；Ogg Vorbis / Opus 电台显示歌名。
+- **中文版**：队列菜单、时钟、快速设置、USB DAC 三档全部中文；上游「启动英文」不采用，保持简体中文。
 
 完整记录见仓库的 [更新日志](https://github.com/Zoezo01/q2-pod-zh/blob/main/docs/changelog-zh.md)。
 
