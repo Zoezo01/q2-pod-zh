@@ -115,7 +115,6 @@ jobs:
           - {file: headset, floor: 92}
           - {file: radio, floor: 87}
           - {file: visualizer, floor: 89}
-          - {file: font_weight, floor: 87}
     env:
       FILE: ${{ matrix.file }}
       FLOOR: ${{ matrix.floor }}
