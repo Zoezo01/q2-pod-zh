@@ -2770,6 +2770,7 @@ int ringnav_paint(void *w, void *canvas) {
         if (bar) paint_scrollbar(canvas, bar, table);
     }
     addon_paint(w, canvas);
+    store_paint(w, canvas);
     peq_paint(w, canvas);
     battery_paint(w, canvas);
     visualizer_paint(w, canvas);
@@ -6611,7 +6612,8 @@ static int compact_row_layout(void *layout, void *row) {
     }
     unsigned count = widget_count_children(row);
     const theme_t *T = theme();
-    int tall = T->art_x && I(row, W_H) > geom(G_PITCH), plain = two_lines(row), choice = 0;
+    int tall = T->art_x && I(row, W_H) > geom(G_PITCH), plain = two_lines(row), choice = 0,
+        fixed = 0; /* the text's box ends at a theme's column */
     /* Names differ (view_info, viewinfo_N, ...); all seven constructors put the title
      * first, either directly in the row or one level inside its text container. */
     for (unsigned i = 0; i < count && !text; ++i) {
@@ -6652,13 +6654,13 @@ static int compact_row_layout(void *layout, void *row) {
          * side (the move's below, after stock's layout); a two-line row's from the set's text
          * inset, unless stock's choice box shows. */
         if (tall && !plain) width = T->art_text_end - T->art_text_x + 4;
-        if (plain && !choice) {
-            /* stock's chevron last, as Search's Artists: the text ends where an art row's does */
-            void *last = widget_get_child(row, count - 1);
-            int into = last != text && widget_get_visible(last) &&
-                       !tk_strcmp(widget_get_prop_str(last, "image", ""), "list_into");
-            width = (into ? T->art_text_end : T->row_text_end) - geom_val(V_TEXT_X) + 2;
-        }
+        /* stock's chevron last, as Search's Artists and Library's one-line Artists, Composers and
+         * Genres: the text ends where an art row's does, not before stock's 50 px img_into */
+        void *last = widget_get_child(row, count - 1);
+        int into = last != text && widget_get_visible(last) &&
+                   !tk_strcmp(widget_get_prop_str(last, "image", ""), "list_into");
+        fixed = !choice && (plain || (into && one_line(row)));
+        if (fixed) width = (into ? T->art_text_end : T->row_text_end) - geom_val(V_TEXT_X) + 2;
         if (width < 0) width = 0;
         widget_resize(text, width, I(text, W_H));
         /* Stock's rows scroll a long title once as the page opens, every row at a time, its
@@ -6710,8 +6712,7 @@ static int compact_row_layout(void *layout, void *row) {
     if (tx && text && I(text, W_X) <= B(layout, DEFAULT_LAYOUT_X_MARGIN)) {
         tx = tx > I(row, W_X) ? tx - I(row, W_X) : 0;
         widget_move_resize(text, tx, I(text, W_Y),
-                           plain && !choice ? I(text, W_W) : I(text, W_W) - (tx - I(text, W_X)),
-                           I(text, W_H));
+                           fixed ? I(text, W_W) : I(text, W_W) - (tx - I(text, W_X)), I(text, W_H));
     }
     return ret;
 }
@@ -9347,6 +9348,7 @@ int ringnav(void *ctx, void *event) {
     }
     void *front = window_manager_get_top_window(window_manager());
     if (usable() && field_key(front, key)) return STOP; /* before stock's track skip */
+    if (usable() && shelf_key(front, key)) return STOP; /* the App Store's tabs */
     /* The restart toast's msginfo_dialog stops Previous and Next itself (0x49b7c8), for its 2 s of
      * the 3 s: the same key goes on. ponytail: the toast stays up its time; another key is still
      * stopped. */
