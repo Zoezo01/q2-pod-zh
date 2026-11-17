@@ -1576,6 +1576,26 @@ def test_classics_two_line_row_without_art_ends_its_text_at_the_themes_column(fw
     assert other.box[0] + other.box[2] == rows.theme['art_text_end'] + 2
 
 
+def test_classics_one_line_row_with_stocks_chevron_ends_its_text_where_an_art_rows_does(fw, st, geometry, default_layout):
+    """Library's Artists, Composers and Genres: the name ran out 29 px short, before stock's 50 px img_into."""
+    ui = Ui(fw)
+    rows = Rows(fw, ui, st, geometry, geom='GEOM_CLASSIC_LIGHT', theme=b'1')
+    pitch = rows.rows['boot_values'][rows.names['GEOM_CLASSIC_LIGHT']][rows.names['G_PITCH']]
+    text_x = rows.rows['geom_vals'][rows.names['GEOM_CLASSIC_LIGHT']][rows.names['V_TEXT_X']]
+    item = rows.row(pitch, ('image', (MARGIN, 0, 26, pitch), 'img_choice'), ('image', (MARGIN, 0, 0, pitch), 'img_icon'),
+                    ('hscroll_label', (MARGIN, 0, 200, pitch), 'scrlabel_name'), ('image', (300, 0, 50, pitch), 'img_into'))
+    item.box = (20, 0, 335, pitch)  # stock's button in the row, at text_x
+    choice, icon, title, into = item.children
+    choice.visible = icon.visible = 0
+    into.props['image'] = b'list_into'
+    rows(item)
+    assert (20 + title.box[0], 20 + title.box[0] + title.box[2]) == (text_x, rows.theme['art_text_end'] + 2)
+    choice.visible = 1  # multi-select: stock's places
+    title.box = (MARGIN + 26 + SPACING, 0, 200, pitch)
+    rows(item)
+    assert title.box[0] + title.box[2] == 335 - MARGIN - 50 - SPACING
+
+
 def test_classics_art_row_puts_cover_and_text_on_the_themes_columns(fw, st, geometry, default_layout):
     ui = Ui(fw)
     rows = Rows(fw, ui, st, geometry, geom='GEOM_CLASSIC_LIGHT', theme=b'1')
