@@ -38,7 +38,7 @@ API = 'https://api.github.com'
 UPLOADS = 'https://uploads.github.com'
 MEMBERS = ['firmware_v20.info', 'recovery-update', 'recovery-update/xImage',
            'recovery-update/rootfs.squashfs']
-LAST_RELEASED = '1.8.4'  # the newest line with a published Release; notes carry the sections after it
+LAST_RELEASED = '1.8.7'  # the newest line with a published Release; notes carry the sections after it
 
 
 def need(ok, message):
@@ -52,8 +52,11 @@ def changelog_sections():
     sections, current = [], None
     for line in lines:
         if line.startswith('## '):
-            if line.split()[1].rstrip('（').startswith(LAST_RELEASED):
-                break  # newest first; LAST_RELEASED's own section is already published, not repeated
+            if VERSION == LAST_RELEASED:
+                if current is not None:  # same line: only its newest section, not the ones below
+                    break
+            elif line.split()[1].rstrip('（').startswith(LAST_RELEASED):
+                break  # a new line: the published line's own section is not repeated
             current = [line, []]
             sections.append(current)
         elif current is not None and line.strip() != '---':
