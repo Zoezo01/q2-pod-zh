@@ -23,12 +23,13 @@ _n = int(TAG.replace(b'.', b'')) + 1
 NEWER = b'%d.%d.%d' % (_n // 100, _n // 10 % 10, _n % 10)
 OLDER = b'0.9.9'
 
-SH_MAX = 16
+SH_MAX = 32
 SH_CAP = 1 << 30
 SH_OK, SH_NET, SH_SPACE, SH_CARD, SH_MISSING, SH_BAD, SH_CANCELLED, SH_BUSY = range(8)
 NU_IDLE, NU_RUNNING, NU_DONE, NU_LATEST, NU_NET, NU_MISSING, NU_CARD, NU_CANCELLED, NU_BUSY, NU_SPACE, NU_BAD = range(11)
 JOB_CHECK, JOB_INSTALL, JOB_REMOVE, JOB_ERASE = 1, 2, 3, 4
 ST_INSTALL, ST_UPDATE, ST_INSTALLED = range(3)
+STATES = ['Install', 'Update', 'Installed']
 ROW_CHECK = SH_MAX
 STAGING = '/mnt/mmc/.q2/staging'
 JSON_PATH = b'/tmp/q2-shelf.json'
@@ -38,13 +39,13 @@ RELEASE = pathlib.Path(__file__).resolve().parents[1]/'fixtures/q2-pod-release.j
 
 class App(C.Structure):
     _fields_ = [('name', C.c_char * 32), ('id', C.c_char * 16), ('repo', C.c_char * 80), ('dir', C.c_char * 17),
-                ('bin', C.c_char * 40), ('latest', C.c_char * 32), ('dropped', C.c_char), ('keep', C.c_char_p)]
+                ('bin', C.c_char * 40), ('latest', C.c_char * 32), ('dropped', C.c_char), ('game', C.c_char), ('keep', C.c_char_p)]
 
 
 class Sh(C.Structure):
     _fields_ = [('thread', C.c_ulong), *((n, C.c_int) for n in ('running', 'cancel', 'percent', 'stage', 'result', 'job', 'app', 'armed', 'rows', 'n')),
                 ('map', C.c_int * (SH_MAX + 1)), ('manual', C.c_int), ('need', C.c_uint), ('checked', C.c_ulonglong), ('next', App * SH_MAX),
-                ('page', C.c_void_p), ('row', C.c_void_p * (SH_MAX + 1))]
+                ('page', C.c_void_p), ('row', C.c_void_p * (SH_MAX + 1)), ('tab', C.c_int), ('strip', C.c_void_p)]
 
 
 class Nu(C.Structure):
@@ -110,6 +111,14 @@ def sources(fw, text, count=SH_MAX):
     n = fw.fn('shelf_sources', C.c_int, C.c_void_p, C.c_void_p, C.c_int)(block(fw, text), out, count)
     table = C.cast(out, C.POINTER(App))
     return [(a.repo, a.name, a.id, a.dir, a.bin, a.keep) for a in table[:n]]
+
+
+def test_games_follow_their_section_and_any_other_section_is_apps_again(fw):
+    out = block(fw, size=4 * C.sizeof(App))
+    text = b'me/q2-a\n[Games]\n  me/q2-b B\n-me/q2-c\n[Apps]\nme/q2-d\n[Gamesx]\n'
+    n = fw.fn('shelf_sources', C.c_int, C.c_void_p, C.c_void_p, C.c_int)(block(fw, text), out, 4)
+    table = C.cast(out, C.POINTER(App))
+    assert [(a.id, ord(a.game), ord(a.dropped)) for a in table[:n]] == [(b'a', 0, 0), (b'b', 1, 0), (b'c', 1, 1), (b'd', 0, 0)]
 
 
 def test_a_card_app_from_its_line(fw):
@@ -178,7 +187,7 @@ def test_no_list_is_no_apps(fw):
 
 def test_the_repo_ships_a_list_that_parses(fw):
     lines = [x for x in (SHELF.parent.parent/'sources.list').read_bytes().splitlines() if x.strip() and not x.startswith(b'#')]
-    assert len(sources(fw, b'\n'.join(lines))) == len(lines)
+    assert b'[Games]' in lines and len(sources(fw, b'\n'.join(lines))) == len(lines) - 1  # every line an app but the section's
 
 
 def test_hostile_sources(fw):
@@ -1325,7 +1334,7 @@ def test_file_mode_is_its_type_bits(fw):
 class Page:
     """The Apps page: its rows' text and toasts, with no thread run. Row 0 is Check for Updates."""
     def __init__(self, fw, *lines):
-        self.fw, self.text, self.toasts = fw, {}, []
+        self.fw, self.text, self.toasts, self.props = fw, {}, [], {}
         self.table = apps(fw, *lines)
         self.card = Card(fw)
         self.sh = fw.var('netupdate__sh', Sh)
@@ -1337,12 +1346,16 @@ class Page:
         fw.mock('widget_get_child', lambda row, i, *_: row)
         fw.mock('list_item_create', lambda view, x, y, *_: 1000 + y)
         fw.mock('widget_set_text_utf8', lambda w, s, *_: self.text.__setitem__(w, C.string_at(s).decode()))
+        fw.mock('widget_set_prop_int', lambda w, k, v, *_: self.props.__setitem__((w, C.string_at(k).decode()), C.c_int(v).value) or 0)
+        fw.mock('widget_get_prop_int', lambda w, k, d, *_: self.props.get((w, C.string_at(k).decode()), d))
         fw.mock('navigator_to_with_context', lambda path, info, *_: self.toasts.append(C.string_at(info + 8).decode()))
         self.sh.page = 77
         fw.fn('netupdate__sh_rows', None)()
 
     def label(self, r):
-        return self.text[self.sh.row[r]]
+        """Row r's state (app_store.c draws it at the row's end), or with none its second line."""
+        state = self.props.get((self.sh.row[r], '_state'), -1) if r else -1
+        return STATES[state] if state >= 0 else self.text[self.sh.row[r]]
 
     def click(self, r=1):
         self.fw.fn('netupdate__sh_click', C.c_int, C.c_void_p, C.c_void_p)(r, None)
@@ -2270,13 +2283,15 @@ class Store:
     card_mounted). Row 0 is Check for Updates, the list's apps under it."""
     def __init__(self, fw, card, wifi=1, thread=0, free=1 << 30):
         self.fw, self.card, self.wifi, self.free, self.seconds = fw, card, wifi, free, 5000
-        self.text, self.toasts, self.timers, self.workers, self.held = {}, [], [], [], []
+        self.text, self.toasts, self.timers, self.workers, self.held, self.props = {}, [], [], [], [], {}
         fw.mock('get_wifisignal', lambda *_: self.wifi)
         fw.mock('window_create', lambda *_: 77)
         fw.mock('window_manager_get_top_window', lambda *_: 77)
         fw.mock('widget_get_child', lambda row, i, *_: row)
         fw.mock('list_item_create', lambda view, x, y, *_: 1000 + y)
         fw.mock('widget_set_text_utf8', lambda w, s, *_: self.text.__setitem__(w, C.string_at(s).decode()))
+        fw.mock('widget_set_prop_int', lambda w, k, v, *_: self.props.__setitem__((w, C.string_at(k).decode()), C.c_int(v).value) or 0)
+        fw.mock('widget_get_prop_int', lambda w, k, d, *_: self.props.get((w, C.string_at(k).decode()), d))
         fw.mock('navigator_to_with_context', lambda path, info, *_: self.toasts.append(C.string_at(info + 8).decode()))
         fw.mock('timer_add', lambda fn, ctx, ms, *_: self.timers.append(fn) or len(self.timers))
         fw.mock('fw_pthread_create', lambda t, a, fn, arg, *_: thread or self.workers.append(fn) or 0)
@@ -2316,8 +2331,16 @@ class Store:
         return self.text.get(self.sh.row[0])
 
     def labels(self):
-        """The apps' rows, under Check for Updates."""
+        """The open tab's apps' rows, under Check for Updates: each one's state (app_store.c draws it at the row's
+        end), or with none its second line, saying what is happening to it."""
         assert self.sh.map[0] == ROW_CHECK
+        return [STATES[self.state(r)] if self.state(r) >= 0 else self.text.get(self.sh.row[r]) for r in range(1, self.sh.rows)]
+
+    def state(self, r):
+        return self.props.get((self.sh.row[r], '_state'), -1)
+
+    def details(self):
+        """The open tab's apps' second lines."""
         return [self.text.get(self.sh.row[r]) for r in range(1, self.sh.rows)]
 
 
@@ -2331,13 +2354,13 @@ def test_the_store_loads_its_list_then_not_again_for_ten_minutes(fw):
     assert s.wait() == RET_REPEAT and s.held == []  # a check holds no standby
     assert s.run() == 0 and s.sh.job == 0 and s.toasts == ['All apps are up to date']  # none installed has a newer one
     assert s.labels() == ['Install'] and card.files[SOURCES] == b'me/q2-foo Foo\n' and s.sh.next[0].latest == b'2.0'
-    assert s.check_label().strip() == ''  # its detail blank again, the list loaded
+    assert s.check_label() == 'Checked just now'  # the list loaded
     assert net.urls == [b'https://raw.githubusercontent.com/DiamondBond/q2-pod/main/sources.list',
                         b'https://api.github.com/repos/me/q2-foo/releases/latest']
     s.close()
     s.seconds += 600
     s.open()
-    assert not s.workers and s.sh.job == 0  # checked ten minutes ago: not yet
+    assert not s.workers and s.sh.job == 0 and s.check_label() == 'Checked 10 min ago'  # not yet
     s.close()
     s.seconds += 1
     s.open()
@@ -2793,3 +2816,136 @@ def test_only_a_checked_id_reaches_the_shell_from_a_list_or_a_zip(fw, put):
         assert not entry or (b'/mnt/mmc/' + put.encode()) in card.moves(b'/mnt/mmc/.foo/')
     # -rf, the one value that is an id, goes the whole way too
     assert ("rm -rf '/mnt/mmc/.-rf'" in ran) == (put in ('me/q2--rf Evil', 'me/-rf Evil'))
+
+
+def test_the_tabs_split_the_list_and_previous_and_next_switch_them(fw):
+    card = Disk(fw, {SOURCES: b'me/q2-foo Foo\n[Games]\nyou/q2-bar Bar\n'})
+    store_net(fw)
+    fw.mock('widget_factory_create_widget', lambda *_: 88)  # the strip
+    s = Store(fw, card, wifi=0)
+    assert s.sh.tab == 0 and s.labels() == ['Install'] and s.details() == ['me'] and s.props[(88, '_tab')] == 0
+    key = fw.fn('shelf_key', C.c_int, C.c_void_p, C.c_uint)
+    assert key(77, O['KEY_FWD_BTN']) == 1 and s.sh.tab == 1 and s.details() == ['you'] and s.props[(88, '_tab')] == 1  # Next: Games
+    assert key(77, O['KEY_FWD_BTN']) == 1 and s.sh.tab == 1  # Next again stays
+    assert key(66, O['KEY_BACK_BTN']) == 0 and s.sh.tab == 1  # another page's
+    assert key(77, O['KEY_CENTER']) == 0  # Centre is the list's
+    assert key(77, O['KEY_BACK_BTN']) == 1 and s.sh.tab == 0 and s.details() == ['me']  # Previous: Apps
+    s.close()
+    assert key(77, O['KEY_BACK_BTN']) == 0  # closed
+
+
+def test_a_tabs_badge_counts_its_own_updates(fw):
+    card = Disk(fw, {SOURCES: b'me/q2-foo Foo\n[Games]\nyou/q2-bar Bar\n', b'/mnt/mmc/.q2/apps/bar.tag': b'1.0'})
+    store_net(fw)
+    fw.mock('widget_factory_create_widget', lambda *_: 88)
+    s = Store(fw, card, wifi=0)
+    fw.var('shelf_apps', App * SH_MAX)[1].latest = b'2.0'
+    fw.fn('netupdate__sh_rows', None)()
+    assert (s.props[(88, '_b0')], s.props[(88, '_b1')]) == (0, 1)
+
+
+def test_a_check_keeps_the_games_section_in_the_cards_list(fw):
+    card = Disk(fw)
+    store_net(fw, listed=b'me/q2-foo Foo\n[Games]\nme/q2-bar Bar\n')
+    s = Store(fw, card)
+    s.run()
+    assert card.files[SOURCES] == b'me/q2-foo Foo\n[Games]\nme/q2-bar Bar\n' and s.labels() == ['Install']
+
+
+@pytest.mark.parametrize('theme', (b'0', b'1', b'2'))  # Minimal, Classic, Modern
+def test_app_store_paints_a_rows_tile_and_state_and_the_tabs_badges(fw, theme):
+    from test_games import Canvas, config, words
+    config(fw, THEME=theme)
+    props, strs = {}, {}
+    fw.mock('widget_set_prop_int', lambda w, k, v, *_: props.__setitem__((w, C.string_at(k)), C.c_int(v).value) or 0)
+    fw.mock('widget_get_prop_int', lambda w, k, d, *_: props.get((w, C.string_at(k)), d))
+    fw.mock('widget_set_prop_str', lambda w, k, v, *_: strs.__setitem__(w, C.create_string_buffer(C.string_at(v))) or 0)
+    fw.mock('widget_get_prop_str', lambda w, k, d, *_: C.addressof(strs[w]) if w in strs else d)
+    fw.var('app_store__on_page', C.c_char).value = b'\x01'
+
+    def widget(h):
+        w = block(fw, size=0x200)
+        C.c_int.from_address(w + O['W_H']).value = h
+        C.c_void_p.from_address(w + O['W_PARENT']).value = 0x1234  # not the selected list
+        return w
+
+    def painted(w):
+        canvas = Canvas(fw)
+        fw.fn('store_paint', None, C.c_void_p, C.c_void_p)(w, canvas.p)
+        return canvas.ops, [t.upper() for t, _, _ in words(canvas.ops)]
+    row = widget(fw.fn('page_h', C.c_int, C.c_int)(64))
+    fw.fn('store_row', None, C.c_void_p, C.c_char_p, C.c_char_p)(row, b'foo', b'Foo')
+    fw.fn('store_state', None, C.c_void_p, C.c_int)(row, ST_UPDATE)
+    ops, texts = painted(row)
+    assert 'F' in texts and 'UPDATE' in texts  # the tile's letter, the state
+    assert (theme == b'0') != any(o.rect and o.rect[0] == 375 - 16 - 84 and o.rect[2] == 84 for o in ops)  # a button but in Minimal
+    fw.fn('store_state', None, C.c_void_p, C.c_int)(row, -1)
+    assert painted(row)[1] == ['F']  # busy: the second line says it
+    strip = widget(48 if theme != b'1' else 44)
+    fw.fn('store_tabs_set', None, C.c_void_p, C.c_int, C.POINTER(C.c_int))(strip, 1, (C.c_int * 2)(0, 2))
+    texts = ' '.join(painted(strip)[1])
+    assert 'APPS' in texts and 'GAMES' in texts and '2' in texts
+    fw.var('app_store__on_page', C.c_char).value = b'\x00'
+    assert painted(row)[0] == []  # the page closed: nothing
+
+
+def test_a_selected_rows_state_takes_the_rows_ink_as_stocks_labels_do(fw, st):
+    """Minimal's Ivory selects on a light card: the row's labels turn near-black (ringnav_style_color), the state too."""
+    from test_games import Canvas, config, dark, light
+    config(fw, THEME=b'0', MINIMAL_ACCENT=b'7')
+    props = {}
+    fw.mock('widget_set_prop_int', lambda w, k, v, *_: props.__setitem__((w, C.string_at(k)), C.c_int(v).value) or 0)
+    fw.mock('widget_get_prop_int', lambda w, k, d, *_: props.get((w, C.string_at(k)), d))
+    tile = C.create_string_buffer(b'F')
+    fw.mock('widget_get_prop_str', lambda w, k, d, *_: C.addressof(tile) if C.string_at(k) == b'_tile' else d)
+    fw.var('app_store__on_page', C.c_char).value = b'\x01'
+    h = fw.fn('page_h', C.c_int, C.c_int)(64)
+    row, view = block(fw, size=0x200), block(fw, size=0x200)
+    C.c_int.from_address(row + O['W_Y']).value, C.c_int.from_address(row + O['W_H']).value = 2 * h, h
+    C.c_void_p.from_address(row + O['W_PARENT']).value = view
+    fw.fn('store_state', None, C.c_void_p, C.c_int)(row, ST_UPDATE)
+
+    def state():
+        canvas = Canvas(fw)
+        fw.fn('store_paint', None, C.c_void_p, C.c_void_p)(row, canvas.p)
+        return [o.color for o in canvas.ops if o.kind == 'text' and o.rect[0] > 200]
+    assert state() and all(light(c) for c in state())  # not selected: Update in white
+    st('sel_w', C.c_void_p).value, st('sel_row').value = view, 2
+    assert state() and all(dark(c) for c in state())  # its row selected, on the light card
+    st('sel_row').value = 1
+    assert all(light(c) for c in state())  # another row
+
+
+@pytest.mark.parametrize('theme, x, tab', ((b'0', 105, 1), (b'0', 95, 0), (b'2', 105, 0), (b'2', 200, 1)))
+def test_a_tap_on_the_tabs_switches_after_its_own_event(fw, theme, x, tab):
+    """The new rows replace the strip, so the switch waits for a timer; Minimal's Games name starts at 120."""
+    from test_games import config
+    config(fw, THEME=theme)
+    card = Disk(fw, {SOURCES: b'me/q2-foo Foo\n[Games]\nyou/q2-bar Bar\n'})
+    store_net(fw)
+    fw.mock('widget_factory_create_widget', lambda *_: 88)
+    s = Store(fw, card, wifi=0)
+    event = block(fw, size=0x40)
+    C.c_int.from_address(event + O['EVENT_X']).value = x
+    timers = len(s.timers)
+    fw.fn('app_store__tab_touch', C.c_int, C.c_void_p, C.c_void_p)(88, event)
+    assert s.sh.tab == 0 and len(s.timers) == timers + 1  # nothing yet: the strip is the event's
+    C.CFUNCTYPE(C.c_int, C.c_void_p)(s.timers[-1])(None)
+    assert s.sh.tab == tab and s.details() == [[b'me', b'you'][tab].decode()]
+
+
+def test_a_press_held_for_wifi_follows_its_app_not_its_row(fw):
+    """Smart Wi-Fi holds a press until the link is up (need_link, sh_held by the app): switched to another tab
+    meanwhile, the app's row is gone and the press with it, never acting on whichever app took its row."""
+    card = Disk(fw, {SOURCES: b'me/q2-foo Foo\n[Games]\nyou/q2-bar Bar\n'})
+    store_net(fw)
+    s = Store(fw, card, wifi=0)
+    held = fw.fn('netupdate__sh_held', C.c_int, C.c_void_p, C.c_void_p)
+    key = fw.fn('shelf_key', C.c_int, C.c_void_p, C.c_uint)
+    s.wifi = 3
+    key(77, O['KEY_FWD_BTN'])  # Games: Bar is row 1 now
+    held(0, None)  # Foo's press
+    assert s.sh.job == 0 and not s.workers
+    key(77, O['KEY_BACK_BTN'])
+    held(0, None)
+    assert s.sh.job == JOB_INSTALL and s.sh.app == 0  # back on Apps: Foo's

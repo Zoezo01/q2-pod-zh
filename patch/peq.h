@@ -694,11 +694,24 @@ int groovebox_available(void); /* theme_engine.c: the Groovebox card app's binar
 int page_keyup(void *ctx, void *event); /* navigation.c: Return leaves a payload page */
 int ringnav_localclass(int cls);        /* navigation.c: load_localclass_list's hook */
 int shelf_open(void *ctx, void *event); /* netupdate.c: System settings' Apps page */
-const char *shelf_busy(void);           /* netupdate.c: the app folder a job replaces */
-const char *shelf_moving(void);         /* netupdate.c: the app folder deleted or moved into */
-int shelf_erase(int start);             /* netupdate.c: Spotify's erase, started or running */
-void stream_erased(void);               /* navigation.c: Configuration follows a finished erase */
-void album_lyrics_stop(void); /* onlinematch.c: Download Album Lyrics before USB storage */
+void shelf_tab(int tab);                /* netupdate.c: the App Store's open tab, 0 Apps, 1 Games */
+int shelf_key(void *top, unsigned key); /* netupdate.c: Previous and Next switch its tabs */
+/* app_store.c: the App Store's tabs and rows, drawn in ringnav_paint (store_paint) */
+void *store_tabs(void *page, void *view);
+void store_tabs_set(void *strip, int tab, const int *updates);
+void store_row(void *item, const char *id, const char *name);
+void store_state(void *item, int state);
+void store_paint(void *w, void *canvas);
+/* games.c: s in the theme's face at px, h rows from y: align 0 from x, 1 centred on it, 2 ending at
+ * it; Minimal's capitals spaced. Its width. */
+int text_at(void *canvas, const char *s, int x, int y, int h, unsigned px, unsigned color,
+            int align);
+enum { LEFT, MID, RIGHT };      /* text_at's align */
+const char *shelf_busy(void);   /* netupdate.c: the app folder a job replaces */
+const char *shelf_moving(void); /* netupdate.c: the app folder deleted or moved into */
+int shelf_erase(int start);     /* netupdate.c: Spotify's erase, started or running */
+void stream_erased(void);       /* navigation.c: Configuration follows a finished erase */
+void album_lyrics_stop(void);   /* onlinematch.c: Download Album Lyrics before USB storage */
 
 /* 2038 (docs/internals.md#2038). glibc 2.28's time() truncates the kernel's 64-bit seconds to 32
  * bits, so read unsigned it is right until 2106; -1 still means it failed. */

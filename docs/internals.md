@@ -1780,7 +1780,7 @@ A request with neither line reports `ok` at once and runs nothing. The scan open
 
 **System settings → App Store** (titled **App Store**; just above System Update; `shelf_open` in `patch/netupdate.c`, the `apps_page` runtime window) installs, updates and removes the apps in [`sources.list`](../sources.list) from their GitHub releases. The firmware names no app but its own three. The list is fetched from `raw.githubusercontent.com/DiamondBond/q2-pod/main/sources.list`, which doesn't count against the API's rate limit, and kept as `/mnt/mmc/.q2/sources.list` so the page works offline. The first row, **Check for Updates** (`ROW_CHECK`), runs a check when pressed, so with no list yet it is the one row and fetches the list.
 
-Each line is `owner/repo [Name]` (`#` starts a comment, `-` before it marks a dropped app), and `shelf_sources` reads up to 16 (`SH_MAX`). The owner is `A-Za-z0-9-`, the repo also allows `._`, and the name defaults to the repo's. A line is skipped when any of these fail or its id repeats an earlier one's. The id is the repo's name less `q2-`, and must be 1 to 15 of `a-z0-9-`, addon.c's rule, since it goes into shell commands. A card app's folder is `.<id>`, its binary `.<id>/q2-<id>`, and nothing in it is kept from unzip.
+Each line is `owner/repo [Name]` (`#` starts a comment, `-` before it marks a dropped app), and `shelf_sources` reads up to 32 (`SH_MAX`). A `[Games]` line puts the lines after it on the Games tab (`game`), and any other `[...]` line ends that; older firmware skips the `[Games]` line as a bad one and lists every app on one page. A check's copy on the card keeps the section: the apps first, then `[Games]` and the games. The owner is `A-Za-z0-9-`, the repo also allows `._`, and the name defaults to the repo's. A line is skipped when any of these fail or its id repeats an earlier one's. The id is the repo's name less `q2-`, and must be 1 to 15 of `a-z0-9-`, addon.c's rule, since it goes into shell commands. A card app's folder is `.<id>`, its binary `.<id>/q2-<id>`, and nothing in it is kept from unzip.
 
 Q2 Pod's own apps are matched by the repo's name, so a fork is the same app; another repo whose id would be one of theirs is skipped:
 
@@ -1788,7 +1788,13 @@ Q2 Pod's own apps are matched by the repo's name, so a fork is the same app; ano
 - `q2-rockbox-themes` → `themes`: folder `.rockbox`, no binary, keeps the same file.
 - `q2-librespot` → `spotify`: binary `.spotify/librespot`, keeps `.spotify/cache/*` and `.spotify/.cache-size`.
 
-The app rows follow the list's order. Each one shows its app's state as the row's detail:
+Two tabs head the page, **Apps** and **Games** (`sh.tab`, kept while the Q2 is on), then Check for Updates and the open tab's apps in the list's order. `patch/app_store.c` draws them, flat in every theme, from `ringnav_paint` (`store_paint`), after stock has painted each widget:
+
+- **The tabs** are a 44 px `view` (`store_tabs`): in Minimal and Modern in place of the hidden title label, in Classic (whose bar holds the title) above the list, moved down to make room. Minimal writes the names in its spaced capitals with a dot by the open one; Classic and Modern draw a two-part box, the open half in the accent. A red disc counts a tab's apps with an update (`store_tabs_set`, counted in `sh_rows`). A tap picks the tab under it, from a timer as the new rows replace the strip (`shelf_tab`); Previous and Next pick Apps and Games (`shelf_key`, called from ringnav's keyup before stock's track skip).
+- **An app's row** (`store_row`) moves its two lines right of a 40 px tile, a flat square holding the name's first letter (two digits for a name starting with one) in one of ten colours hashed from the id, dark grey with `icons_mono`. The second line is the repo's owner. Its state is drawn at the row's end (`store_state`): **Installed** as a word, **Install** and **Update** as a button outlined in Classic and Modern, as a word in Minimal. While a job runs on the app, or a second press is wanted, the state goes and the second line says what is happening.
+- **Check for Updates** says when the last whole check ran: "Checked just now", then "Checked N min ago" or "N h ago". It's written as the page is drawn, not each minute.
+
+Each app's state:
 
 - **Installed** with a tag in `/mnt/mmc/.q2/apps/<id>.tag`.
 - **Update** when that tag differs from the latest release's (string equality, not order), or when the app's binary is there without a tag (a manual install).
