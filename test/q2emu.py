@@ -1,5 +1,5 @@
 """test/patch.py's emulator: Machine runs the payload and stock's code under Unicorn against mocked UI services;
-the machines and helpers its scenarios share. Imported by test/patch.py, test/playback.py and
+the machines and helpers its scenarios share. Imported by test/patch.py, test/scenarios/, test/playback.py and
 test/headset_io.py, with the build directory as argv[1]."""
 import ctypes, hashlib, io, json, math, os, pathlib, re, sqlite3, struct, subprocess, sys, tempfile
 from functools import cmp_to_key
