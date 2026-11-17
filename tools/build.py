@@ -943,8 +943,9 @@ def play_mark(font):
     for table in font['cmap'].tables:
         if table.isUnicode(): table.cmap[PLAY_MARK] = name
 
-def subset_font(src, family, ranges_macro, notice=None, *, add_play_mark=True, hinting=True):
-    """src cut to its Latin, Greek, Cyrillic and punctuation, with an optional play mark, renamed family (its own name is the font's reserved name under OFL and GUST alike): the font's
+def subset_font(src, family, ranges_macro, notice=None):
+    """src given a play mark (play_mark), then cut to its Latin, Greek, Cyrillic, punctuation and that
+    mark, renamed family (its own name is the font's reserved name under OFL and GUST alike): the font's
     bytes and ranges_macro listing exactly what it keeps. notice, if any, goes in its description (name
     ID 10)."""
     from fontTools import subset
@@ -954,11 +955,9 @@ def subset_font(src, family, ranges_macro, notice=None, *, add_play_mark=True, h
     label = ranges_macro.split('_')[0].title()
     have = sorted(u for u in font.getBestCmap() if 0x20 <= u < 0x530 or 0x1ea0 <= u <= 0x1ef9 or 0x2000 <= u < 0x2200)
     # Vietnamese tone-marked vowels U+1EA0–U+1EF9 live outside the first Latin ranges.
-    if add_play_mark:
-        play_mark(font)
-        have.append(PLAY_MARK)
+    play_mark(font)
+    have.append(PLAY_MARK)
     options = subset.Options()
-    options.hinting = hinting
     if notice: options.name_IDs.append(7)  # the trademark notice, as its licence asks
     sub = subset.Subsetter(options)
     sub.populate(unicodes=have)
