@@ -679,7 +679,7 @@ void *song_list(void) {
     return d;
 }
 
-/* Its rows (*count its result) in a deque of their own; shared with navigation.c's queue menu. */
+/* Its rows (*count its result) in a deque of their own; shared with queue_menu.c. */
 void *staged(int (*query)(void *), void *arg, int *count) {
     void *out = song_list();
     *count = staged_into(out, query, arg);

@@ -31,7 +31,7 @@ NAVIGATION = NAVIGATION_SOURCE
 
 
 def enum(prefix):
-    """One of navigation.c's enums from 1, by name: the queue menu's row kinds (QM_) and actions (QA_)."""
+    """One of the UI's enums from 1, by name: queue_menu.c's row kinds (QM_) and actions (QA_)."""
     body = host.tools_build.need(re.search(r'enum \{\s*(' + prefix + r'\w+ = 1,.*?)\};', NAVIGATION, re.S), prefix)[1]
     return {name: i + 1 for i, name in enumerate(re.findall(prefix + r'(\w+)', body))}
 

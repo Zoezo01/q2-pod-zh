@@ -2707,7 +2707,7 @@ def test_the_lyrics_end_on_a_whole_row(fw, st):
 @pytest.fixture
 def ly(fw, library):
     """np_lyrics.c's own state, ly, by field."""
-    base, at = C.addressof(fw.var('np_lyrics__ly', C.c_char)), host.offsets(library.parent/'np_lyrics.o', 'ly')
+    base, at = C.addressof(fw.var('np_lyrics__nl', C.c_char)), host.offsets(library.parent/'np_lyrics.o', 'nl')
     return lambda name, ctype=C.c_int: ctype.from_address(base + at[name])
 
 

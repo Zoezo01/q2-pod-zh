@@ -2199,13 +2199,13 @@ int addon_goto(const char *path, const char *title, int album) {
     return page_at((int)(a - ap.a), "goto", args, title && *title ? title : a->name, 0);
 }
 
-/* Now Playing's ⋯ (navigation.c: its img_more's click, the hold menu's More… too) while the queue
- * playing is the one an app's .play started (no queue loaded since) and its q2app says more=<op>
- * <title>: the app's page opens at op, with no arguments, titled title (the app's name without
- * one), instead of stock's ⋯ page, whose rows (Playlists, Quality Choice) mean nothing for an app's
- * queue. Its page already open is closed first, as for Go to. 1 when it opened.
- * ponytail: a stock reload of the same queue (a pick that loads it again) counts as another queue,
- * so ⋯ is stock's until the app plays a queue again; it errs toward stock's page. */
+/* Now Playing's ⋯ (navigation.c's img_more click, and queue_menu.c's More… in the hold menu) while
+ * the queue playing is the one an app's .play started (no queue loaded since) and its q2app says
+ * more=<op> <title>: the app's page opens at op, with no arguments, titled title (the app's name
+ * without one), instead of stock's ⋯ page, whose rows (Playlists, Quality Choice) mean nothing for
+ * an app's queue. Its page already open is closed first, as for Go to. 1 when it opened. ponytail:
+ * a stock reload of the same queue (a pick that loads it again) counts as another queue, so ⋯ is
+ * stock's until the app plays a queue again; it errs toward stock's page. */
 int addon_more(void) {
     app_t *a = qa.app;
     char op[sizeof pg.lv->op];

@@ -15,7 +15,7 @@ static struct {
     unsigned lyric_at, lyric_follow_at;
     int np_was[9]; /* the column before full screen (np_full) */
     int np_tap_x, np_tap_y;
-} ly __attribute__((section(".scratch")));
+} nl __attribute__((section(".scratch")));
 
 /* scroll_lrc's rows are 20 px, or 25 a line when wrapped (0x53b838), and its 178 px are no whole
  * number of them, so the view's end (content height - view height), where stock's follow and the
@@ -55,7 +55,7 @@ static int lyrics_shown(void) {
 /* Another song: its lyrics at the top, nothing held or gliding, and stock's animator, which would
  * carry them on to where the last song's follow sent them, stopped. */
 static void lyric_top(void *lrc) {
-    st.lyric_held = ly.lyric_spun = st.lyric_glide = ly.lyric_to = ly.lyric_push = 0;
+    st.lyric_held = nl.lyric_spun = st.lyric_glide = nl.lyric_to = nl.lyric_push = 0;
     view_still(lrc);
     scroll_view_set_offset(lrc, I(lrc, SCROLL_X), 0);
 }
@@ -63,8 +63,8 @@ static void lyric_top(void *lrc) {
 /* The lyrics glide to `to` (1/16 px) within their content; lyric_step moves them, every UI pass. */
 static void lyric_glide(void *lrc, int to) {
     view_still(lrc);
-    ly.lyric_to = clamp_step(to, (I(lrc, VIEW_CONTENT_H) - I(lrc, W_H)) * 16, 0);
-    if (!st.lyric_glide) ly.lyric_at = (unsigned)time_now_ms();
+    nl.lyric_to = clamp_step(to, (I(lrc, VIEW_CONTENT_H) - I(lrc, W_H)) * 16, 0);
+    if (!st.lyric_glide) nl.lyric_at = (unsigned)time_now_ms();
     st.lyric_glide = 1;
 }
 
@@ -76,7 +76,7 @@ static void lyric_glide(void *lrc, int to) {
 int ringnav_lyric_follow(void *lrc, int x, int y, int ms) {
     lyric_pad(lrc);
     if (lrc == st.np_lrc) {
-        if (st.lyric_held || ly.lyric_spun == 2 || lyrics_on(lrc) || pointer_down()) return 0;
+        if (st.lyric_held || nl.lyric_spun == 2 || lyrics_on(lrc) || pointer_down()) return 0;
         if (lyrics_shown()) {
             lyric_glide(lrc, y * 16);
             return 0;
@@ -120,11 +120,11 @@ static void lyric_hold(void) {
 #define LYRIC_EASE_MS 50
 static void lyric_step(void *lrc) {
     unsigned now = (unsigned)time_now_ms();
-    int dt = (int)(now - ly.lyric_at);
-    ly.lyric_at = now;
+    int dt = (int)(now - nl.lyric_at);
+    nl.lyric_at = now;
     lyric_pad(lrc);
     int y = I(lrc, SCROLL_Y),
-        to = (clamp_step(ly.lyric_to, (I(lrc, VIEW_CONTENT_H) - I(lrc, W_H)) * 16, 0) + 8) >> 4;
+        to = (clamp_step(nl.lyric_to, (I(lrc, VIEW_CONTENT_H) - I(lrc, W_H)) * 16, 0) + 8) >> 4;
     if (to == y) {
         st.lyric_glide = 0;
         return;
@@ -138,7 +138,7 @@ static void lyric_step(void *lrc) {
  * The end is one (lyric_pad). */
 static void lyric_snap(void *lrc) {
     lyric_pad(lrc);
-    int at = st.lyric_glide ? ly.lyric_to : I(lrc, SCROLL_Y) * 16, to = 0;
+    int at = st.lyric_glide ? nl.lyric_to : I(lrc, SCROLL_Y) * 16, to = 0;
     for (int i = 0, n = widget_count_children(lrc); i < n; ++i) {
         int top = I(widget_get_child(lrc, i), W_Y) * 16;
         if ((top > at ? top - at : at - top) < (to > at ? to - at : at - to)) to = top;
@@ -173,11 +173,11 @@ void lyric_init(void) {
 static void lyric_follow(void *lrc, int ms, int front, int shown) {
     int line = lyrics_line(lrc, ms, front), to = lyric_centre(lrc, line > 0 ? line : 0);
     if (to < 0) to = 0;
-    if (st.lyric_held || ly.lyric_spun == 2 || pointer_down())
+    if (st.lyric_held || nl.lyric_spun == 2 || pointer_down())
         return; /* lyric_spun 2: a finger on the wheel holds the nudge */
     lyric_pad(lrc);
     if (shown) {
-        if (to * 16 != ly.lyric_to || (!st.lyric_glide && I(lrc, SCROLL_Y) != to))
+        if (to * 16 != nl.lyric_to || (!st.lyric_glide && I(lrc, SCROLL_Y) != to))
             lyric_glide(lrc, to * 16);
     } else if (I(lrc, SCROLL_Y) != to) {
         view_still(lrc);
@@ -199,7 +199,7 @@ void np_full(int on) {
     void *col = P(st.np_slide, W_PARENT), *dots = widget_lookup(col, "slide_indicator1", 1),
          *view = P(st.np_lrc, W_PARENT);
     /* off, the layout it started in: Centred's setting changes only the next Now Playing's */
-    int *was = ly.np_was, ipod = on ? np_layout() != NP_CENTRED && dots && view : st.np_full == 2;
+    int *was = nl.np_was, ipod = on ? np_layout() != NP_CENTRED && dots && view : st.np_full == 2;
     if (on) {
         int now[] = { I(col, W_X), I(col, W_Y),          I(col, W_W),
                       I(col, W_H), widget_index_of(col), I(st.np_slide, W_H) };
@@ -226,7 +226,7 @@ void np_full(int on) {
     widget_layout(col);
     if (lyrics_fit(st.np_lrc)) lyric_pad(st.np_lrc);
     /* the follow takes them; the offset the layout left is no drag of the touch (lyric_poll) */
-    st.lyric_held = 0, ly.lyric_drag_y = I(st.np_lrc, SCROLL_Y);
+    st.lyric_held = 0, nl.lyric_drag_y = I(st.np_lrc, SCROLL_Y);
 }
 
 void lyric_poll(void) {
@@ -242,17 +242,17 @@ void lyric_poll(void) {
     int shown = page && lyrics_shown(),
         /* not during a scrub: its ticks are np_key's, the lyrics' again once it ends */
         on = shown && !st.scrub && widget_count_children(lrc) && mclGetLyricSize() > 0;
-    if (touch && !ly.lyric_touch) {
-        ly.lyric_touch = page ? 1 : 2;
-        ly.lyric_drag_y = page ? I(lrc, SCROLL_Y) : 0;
+    if (touch && !nl.lyric_touch) {
+        nl.lyric_touch = page ? 1 : 2;
+        nl.lyric_drag_y = page ? I(lrc, SCROLL_Y) : 0;
         if (page) view_still(lrc);
-    } else if (!touch && ly.lyric_touch) {
-        if (ly.lyric_touch == 1 && page && I(lrc, SCROLL_Y) != ly.lyric_drag_y) lyric_hold();
-        ly.lyric_touch = 0;
+    } else if (!touch && nl.lyric_touch) {
+        if (nl.lyric_touch == 1 && page && I(lrc, SCROLL_Y) != nl.lyric_drag_y) lyric_hold();
+        nl.lyric_touch = 0;
     }
-    if (on != ly.lyric_raw) {
+    if (on != nl.lyric_raw) {
         __sync_lock_test_and_set(&wheel_travel, 0);
-        ly.lyric_raw = on;
+        nl.lyric_raw = on;
         if (on || wheel_raw == WHEEL_RAW) wheel_raw = on; /* never the thumb's, handed over */
     }
     int travel = on ? __sync_lock_test_and_set(&wheel_travel, 0) : 0;
@@ -262,23 +262,23 @@ void lyric_poll(void) {
      * follow. More takes over. */
     if (travel && !st.lyric_held) {
         unsigned at = (unsigned)time_now_ms();
-        if (!ly.lyric_push || at - ly.lyric_push_at > LYRIC_PUSH_MS) {
+        if (!nl.lyric_push || at - nl.lyric_push_at > LYRIC_PUSH_MS) {
             lyric_pad(lrc);
-            ly.lyric_push = 0; /* a nudge still held keeps its home: no walking off tick by tick */
-            if (ly.lyric_spun != 2)
-                ly.lyric_home = st.lyric_glide ? ly.lyric_to : I(lrc, SCROLL_Y) * 16;
+            nl.lyric_push = 0; /* a nudge still held keeps its home: no walking off tick by tick */
+            if (nl.lyric_spun != 2)
+                nl.lyric_home = st.lyric_glide ? nl.lyric_to : I(lrc, SCROLL_Y) * 16;
         }
-        ly.lyric_push_at = at;
-        ly.lyric_push += travel;
+        nl.lyric_push_at = at;
+        nl.lyric_push += travel;
         /* the clicks Wheel Sensitivity makes: fewer raw units each as it rises */
         int push = LYRIC_PUSH_DETENTS * WHEEL_TICK_UNITS * 50 / wheel_pct();
-        if (ly.lyric_push > -push && ly.lyric_push < push) {
+        if (nl.lyric_push > -push && nl.lyric_push < push) {
             st.last_input = at;
             reset_poweroptions_timer(1, 1, 1);
             /* x rises anticlockwise: back up the lyrics */
             lyric_glide(lrc,
-                        ly.lyric_home - ((ly.lyric_push > 0) - (ly.lyric_push < 0)) * BUMP_PX * 16);
-            ly.lyric_spun = 2;
+                        nl.lyric_home - ((nl.lyric_push > 0) - (nl.lyric_push < 0)) * BUMP_PX * 16);
+            nl.lyric_spun = 2;
             travel = 0;
         }
     }
@@ -286,24 +286,24 @@ void lyric_poll(void) {
         st.last_input = time_now_ms();
         reset_poweroptions_timer(1, 1, 1);
         lyric_hold();
-        ly.lyric_push = 0;
+        nl.lyric_push = 0;
         lyric_pad(lrc);
         int y = I(lrc, SCROLL_Y),
-            from = st.lyric_glide || (ly.lyric_to + 8) >> 4 == y ? ly.lyric_to : y * 16;
+            from = st.lyric_glide || (nl.lyric_to + 8) >> 4 == y ? nl.lyric_to : y * 16;
         /* x rises anticlockwise: back up the lyrics */
         int row = lyrics_on(lrc) ? LYRIC_SLOT : LYRIC_ROW_PX;
         lyric_glide(lrc, from - travel * row * 16 * wheel_pct() / (WHEEL_TICK_UNITS * 50));
-        ly.lyric_spun = 1;
+        nl.lyric_spun = 1;
     }
     if (!page)
-        ly.lyric_spun = ly.lyric_push = 0;
-    else if (ly.lyric_spun == 2 && !wheel_held) {
+        nl.lyric_spun = nl.lyric_push = 0;
+    else if (nl.lyric_spun == 2 && !wheel_held) {
         /* a nudge springs back, shown or not, unless a tick took them meanwhile; the follow moves
          * them on if the line changed. The next touch starts its push afresh. */
-        if (shown && !st.lyric_held) lyric_glide(lrc, ly.lyric_home);
-        ly.lyric_spun = ly.lyric_push = 0;
-    } else if (shown && ly.lyric_spun && !wheel_held) {
-        ly.lyric_spun = 0;
+        if (shown && !st.lyric_held) lyric_glide(lrc, nl.lyric_home);
+        nl.lyric_spun = nl.lyric_push = 0;
+    } else if (shown && nl.lyric_spun && !wheel_held) {
+        nl.lyric_spun = 0;
         lyric_snap(lrc);
     }
     /* The page in front and usable (lit): the clock and the follow every pass (it narrows on each
@@ -311,8 +311,8 @@ void lyric_poll(void) {
      * whole seconds (lyrics_sec), so a dark or covered page reads the clock only that often. */
     int front = page && usable() && window_manager_get_top_window(wm) == st.np_win;
     unsigned now = (unsigned)time_now_ms();
-    if (lyrics_on(lrc) && (front || now - ly.lyric_follow_at >= LYRIC_FOLLOW_MS)) {
-        ly.lyric_follow_at = now;
+    if (lyrics_on(lrc) && (front || now - nl.lyric_follow_at >= LYRIC_FOLLOW_MS)) {
+        nl.lyric_follow_at = now;
         lyric_follow(lrc, front ? lyrics_now() : lyrics_sec(), front, shown);
     }
     if (!shown)
@@ -331,7 +331,7 @@ int np_lyrics(unsigned key) {
         return 0;
     lyric_hold();
     lyric_pad(lrc);
-    int y = st.lyric_glide ? (ly.lyric_to + 8) >> 4 : I(lrc, SCROLL_Y),
+    int y = st.lyric_glide ? (nl.lyric_to + 8) >> 4 : I(lrc, SCROLL_Y),
         max = I(lrc, VIEW_CONTENT_H) - I(lrc, W_H), to = key == KEY_NEXT ? max : 0;
     for (int i = 0, n = widget_count_children(lrc); i < n; ++i) {
         int top = I(widget_get_child(lrc, i), W_Y);
@@ -349,13 +349,13 @@ int np_lyrics(unsigned key) {
 #define TAP_PX 10 /* AWTK's drag threshold */
 int np_lyric_touch(void *ctx, void *event) {
     int type = I(event, EVENT_TYPE), x = I(event, EVENT_X), y = I(event, EVENT_Y);
-    int tap = (unsigned)(x - ly.np_tap_x + TAP_PX) <= 2 * TAP_PX &&
-              (unsigned)(y - ly.np_tap_y + TAP_PX) <= 2 * TAP_PX;
+    int tap = (unsigned)(x - nl.np_tap_x + TAP_PX) <= 2 * TAP_PX &&
+              (unsigned)(y - nl.np_tap_y + TAP_PX) <= 2 * TAP_PX;
     if (type == EVT_POINTER_DOWN) {
-        ly.np_tap_x = x, ly.np_tap_y = y;
+        nl.np_tap_x = x, nl.np_tap_y = y;
         return 0;
     }
-    ly.np_tap_x = 1 << 20; /* used or taken for a swipe: a later lift is no tap */
+    nl.np_tap_x = 1 << 20; /* used or taken for a swipe: a later lift is no tap */
     if (type == EVT_POINTER_ABORT) {
         if (st.np_full) np_full(0);
     } else if (tap && (st.np_full || lyrics_on(st.np_lrc)))

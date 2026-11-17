@@ -1,4 +1,4 @@
-"""patch/navigation.c's Play/Pause hold and what it reaches: the queue menu (docs/internals.md#queue-menu) and
+"""The Play/Pause hold (navigation.c's keylong) and what it reaches: queue_menu.c's queue menu (docs/internals.md#queue-menu) and
 playlists.c's playlist editor, Playlists' More page and Classic's Playlists rows, then the UI loop's polls that keep
 a place, a listen and the state record (resume, library_lists.c's Most Played, scrobbling, and system.c's charge
 limit, watchdog and q2-state)."""
