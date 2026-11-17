@@ -4201,11 +4201,8 @@ static void paint_battery(void *w, void *canvas) {
         /* bar_sync fitted the mode to BATT_PCT_W: again, with these */
         if (!st.bar_timer) st.bar_timer = timer_add(bar_repaint, (void *)0, 0);
     }
-    /* A 16 px label's digits ink a row above a centred icon's ink. Under Minimal/Modern give the
-     * drawn percentage that row back; Classic's own face and shorter row already share the middle. */
-    int pct_dy = classic_light ? 0 : BATT_PCT_DY;
     if (st.batt_mode == 1) {
-        rect_t r = { 0, pct_dy, I(w, W_W), I(w, W_H) };
+        rect_t r = { 0, 0, I(w, W_W), I(w, W_H) };
         draw_centred(canvas, s, n, &r, px, color);
         return;
     }
@@ -4251,7 +4248,7 @@ static void paint_battery(void *w, void *canvas) {
     canvas_fill_rect(canvas, 2, y + 2, (bw - 4) * (key & 2 ? 100 : level) / 100, bh - 4);
     if (st.batt_mode == 2) {
         int x = bw + BATT_NUB_W + BATT_GAP;
-        rect_t r = { x, pct_dy, I(w, W_W) - x, I(w, W_H) };
+        rect_t r = { x, 0, I(w, W_W) - x, I(w, W_H) };
         draw_centred(canvas, s, n, &r, BATT_PX, color);
     }
     stock_canvas_set_fill_color(canvas, fill);
