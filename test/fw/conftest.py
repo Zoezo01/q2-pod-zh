@@ -5,6 +5,7 @@ Q2_FW_SANITIZE=1 builds it with AddressSanitizer and UBSan: run pytest with LD_P
 Q2_FW_STRICT=1 fails a test that reached a stub tools/ doesn't declare, unmocked (host.Fw.unknown):
 its 0 is a guess at what stock would answer."""
 import ctypes as C
+import fcntl
 import functools
 import hashlib
 import os
@@ -86,7 +87,16 @@ def library(tmp_path_factory):
         extra += ['-fsanitize=address,undefined', '-fno-sanitize-recover=undefined', '-fno-sanitize=alignment']
     if os.environ.get('Q2_FW_COVERAGE'):
         extra += ['--coverage']
-    return host.build(tmp_path_factory.mktemp('fw'), extra)
+    if not os.environ.get('PYTEST_XDIST_WORKER'):
+        return host.build(tmp_path_factory.mktemp('fw'), extra)
+    # pytest-xdist's workers (-n) share one build, in the folder above their own: the first to ask makes it and the
+    # rest wait. A build each, all at once, took a worker's first test half of its 60 seconds under ASan.
+    out = tmp_path_factory.getbasetemp().parent/'fw'
+    with open(f'{out}.lock', 'w') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if not (out/'sizes.json').exists():  # host.build's last file
+            host.build(out, extra)
+    return out/'fw.so'
 
 
 @pytest.fixture
