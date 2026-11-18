@@ -680,11 +680,11 @@ def test_font_letters_maps_every_stock_letter_to_a_composite_of_its_own_glyphs()
     ('ả', [('a', 0, 0), ('\u0309', 142, -33)], 142),           # centred on the ink, 16 over a lowercase top
     ('Ả', [('A', 0, 0), ('\u0309', 156, 6)], 170),             # 8 over a capital's
     ('ấ', [('a', 0, 0), ('\u0302', 142, 1), ('\u0301', 192, 13)], 142),   # never stock's â; acute beside ^
-    ('ầ', [('a', 0, 0), ('\u0302', 142, 1), ('\u0300', 86, 13)], 142),    # the grave on ^'s left, ấ mirrored
+    ('ầ', [('a', 0, 0), ('\u0302', 142, 1), ('\u0300', 94, 25)], 142),    # the grave on ^'s left, in and up
     ('ẫ', [('a', 0, 0), ('\u0302', 142, 1), ('\u0303', 142, 35)], 142),   # the tilde stacks over ^
     ('ắ', [('a', 0, 0), ('\u0306', 142, 0), ('\u0301', 142, 37)], 142),   # stacked over a lowercase breve
     ('Ắ', [('A', 0, 0), ('\u0306', 156, 39), ('\u0301', 204, 52)], 170),  # beside on a capital
-    ('Ằ', [('A', 0, 0), ('\u0306', 156, 39), ('\u0300', 102, 52)], 170),  # the grave on its left there too
+    ('Ằ', [('A', 0, 0), ('\u0306', 156, 39), ('\u0300', 102, 52)], 170),  # Ắ's mirror: beside a breve it stays low
     ('Ẵ', [('A', 0, 0), ('\u0306', 156, 39), ('\u0303', 156, 72)], 170),  # tilde stacked, top 255
     ('Ỗ', [('O', 0, 0), ('\u0302', 156, 57), ('\u0303', 156, 73)], 170),  # clamped to 256 (91 stacked)
     ('ỉ', [('\u0131', 0, 0), ('\u0309', 105, -31)], 68),       # dotless i under a mark above

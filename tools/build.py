@@ -941,6 +941,7 @@ MARK_CX = -71
 MARK_GAP, MARK_GAP_CAP = 16, 8  # a first mark above sits this far over a lowercase or a capital base's top
 MARK_STACK = 3                  # a second mark stacked over the first
 MARK_BESIDE = (-6, 12)          # a second mark beside the first: from its right edge, x in and y up; the grave mirrored, on its left
+GRAVE_BESIDE = (-14, 24)        # the grave beside a circumflex: further in and higher, clear of the letter before it (đầu, Về)
 MARK_TOP = 256                  # no mark above passes stock's own Â
 HORN_ADVANCE = 14               # ơ ư: the horn widens its letter
 DOT_Y = 24                      # the dot below ỵ sits this far right, under y's stem
@@ -983,8 +984,10 @@ def font_letters(data):
                 if first is None:
                     x, y = cx, top + (MARK_GAP_CAP if base.isupper() else MARK_GAP) - g.yMin
                 elif m != tilde and (first[0] == circumflex or base.isupper()):
-                    x = first[4] - MARK_BESIDE[0] - g.xMax if m == grave else first[1] + MARK_BESIDE[0] - g.xMin
-                    y = first[2] + MARK_BESIDE[1] - g.yMin
+                    # ponytail: Ằ's grave keeps the mirror, level with Ắ's acute: any higher it runs into the breve's horn
+                    dx, dy = GRAVE_BESIDE if (m, first[0]) == (grave, circumflex) else MARK_BESIDE
+                    x = first[4] - dx - g.xMax if m == grave else first[1] + dx - g.xMin
+                    y = first[2] + dy - g.yMin
                 else:
                     x, y = cx, first[3] + MARK_STACK - g.yMin
                 y = min(y, MARK_TOP - g.yMax)
