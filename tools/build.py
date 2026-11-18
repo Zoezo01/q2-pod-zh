@@ -294,6 +294,9 @@ BOOT_HOOK = (b'    /release/bin/demo &\n', f'''    (
             done
             rockbox
         fi
+        # Every register in the kernel log when a signal ends demo or a helper (show_regs), where a fault otherwise
+        # leaves its address, epc and ra alone; the crash log keeps the log's end (docs/boot.md#rockbox-from-home)
+        echo 1 > /proc/sys/kernel/print-fatal-signals
         # demo's stderr (docs/boot.md#rockbox-from-home): stock starts its Bluetooth and Wi-Fi helpers from demo,
         # so they inherit it and their reasons for failing land here, in RAM, instead of on the serial console;
         # emptied once a minute past 512 KB (O_APPEND keeps demo writing at its end), its tail goes in the crash

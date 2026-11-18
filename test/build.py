@@ -47,6 +47,8 @@ def boot_check():
                         '/tmp/q2-scan-file', '/tmp/q2-scan.log', '/tmp/q2-art-file', '/tmp/q2-art.log'):
                 script = script.replace(old, f'{r}{old}')
             script = script.replace('usleep 200000\n', ':\n').replace('usleep 500000', ':')
+            assert script.count('echo 1 > /proc/sys/kernel/print-fatal-signals\n') == 1  # the PC's is left alone
+            script = script.replace('/proc/sys/kernel/print-fatal-signals', f'{r}/fatal-signals')
             # demo's stderr file, and its cap's minute: one pass here while {r}/minute exists
             script = script.replace('/tmp/q2-demo.err', f'{r}/tmp/q2-demo.err')
             assert script.count('while sleep 60; do') == 1
@@ -181,6 +183,7 @@ def boot_check():
         err, minute, noise = r/'tmp/q2-demo.err', r/'minute', ''.join(f'err {i}\n' for i in range(1, 71))
         exe('release/bin/demo', 'i=0; while [ $i -lt 70 ]; do i=$((i+1)); echo "err $i" >&2; done; ' + demo)
         err.unlink(missing_ok=True); out, cp = logged(137, False)
+        assert (r/'fatal-signals').read_text() == '1\n'  # the kernel logs a fatal signal's registers, for the dmesg tail
         lines = out.split('== stderr\n')[1].splitlines()
         assert len(lines) == 60 and lines[0] == 'err 11' and lines[-1] == 'err 70' and err.read_text() == noise
         out, cp = logged(137, False)
