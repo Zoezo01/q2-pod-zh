@@ -473,7 +473,9 @@ void tidal_all(int press, char *out, unsigned size), tidal_poll(void), tidal_all
  * launcher run, its binary q2-<id> and its icons. addon_scan finds them again (how many slots: a
  * slot's index stays its app's), addon_name, addon_id and addon_icon (an image name: file://… or
  * the shared stream_app) are one's while it is on the card (else 0), addon_open its Streaming row's
- * click (ctx: the slot). addon_forget and addon_quit: the Apps page replaces or removes the files
+ * click (ctx: the slot). An app whose q2app says row=library is a Library row instead: addon_libs
+ * (how many, a scan), addon_lib_name, addon_lib_icon and addon_lib_open, its click (ctx: its place
+ * by name). addon_forget and addon_quit: the Apps page replaces or removes the files
  * of the app in folder dir (".<id>"): asked to end and waited for on the Apps page's worker, then,
  * once replaced or removed, forgotten on the UI thread. */
 #define APPS_MAX 8 /* card apps on the card at once */
@@ -481,13 +483,16 @@ int addon_scan(void), addon_open(void *ctx, void *event), addon_hold(void *top);
 int addon_games_last(void); /* the card's games as the last addon_scan found them */
 #define GAMES_BUILTIN 4     /* games.c's Sudoku, Vortex, Solitaire and Snake */
 const char *addon_name(int a), *addon_id(int a), *addon_icon(int a);
+const char *addon_slot_id(int i); /* slot i's app's id while it has a row anywhere, else 0 */
+int addon_libs(void), addon_lib_open(void *ctx, void *event);
+const char *addon_lib_name(int k), *addon_lib_icon(int k);
 int card_path(const char *path); /* on the card, no ".." segment: what an app or server may name */
 int addon_is_icon(const char *name); /* a card app's Streaming icon, by its file:// name */
 void addon_poll(void), addon_stop(void), addon_paint(void *w, void *canvas), addon_card_away(void);
 void addon_forget(const char *dir), addon_quit(const char *dir);
-/* addon.c's card games (q2app game=1), Games' rows after its own: how many (a scan), one's name,
- * its start over the screen (1 when it runs), whether one runs, and ringnav_input's events for it
- */
+/* addon.c's card games (q2app game=1, or any app whose row=games), Games' rows after its own: how
+ * many (a scan), one's name, its press (a game's start over the screen, another app's page: 1 when
+ * it runs or opened), whether a game runs, and ringnav_input's events for it */
 int addon_games(void), addon_game_start(int k), addon_game_on(void);
 int addon_game_audio(
     void); /* a card game with audio=1 runs: the sound and the media keys are its */
@@ -497,7 +502,9 @@ const char *addon_game_name(int k);
  * most */
 #define POPUP_ENV 512
 void popup_env(char *out, unsigned size);
-int addon_game_input(void *e), addon_is_game(const char *id);
+int addon_game_input(void *e);
+/* where app id's row is, as the screen names it: "Streaming", "Library's Games" or "Library" */
+const char *addon_where(const char *id);
 void ringnav_wdt_long(void);   /* system.c: the watchdog's long count for a long pass */
 int ringnav_smart_awake(void); /* navigation.c: Smart Awake (IPOD KEEPLIT) is on */
 void library_poll(void); /* addon_library.c: an app's library update request, once per addon_poll */

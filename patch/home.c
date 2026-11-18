@@ -60,8 +60,9 @@ static void library_look(void *view) {
 int library_search(void) { return !geom_val(V_LIB_ART); }
 
 /* The Library: Search (library_search), one Shuffle row opening its menu, browsing, the user's own
- * lists, listening history, the card's other media, then upkeep. The added rows' buttons have no
- * name, so stock's row click (atoi of the name, 0x53510c) never sees them. */
+ * lists, listening history, the card's other media, Games, the card apps whose q2app says
+ * row=library (addon.c), then upkeep. The added rows' buttons have no name, so stock's row click
+ * (atoi of the name, 0x53510c) never sees them. */
 int ringnav_localmusic(void *win, void *ctx) {
     int result = stock_localmusic_trampoline(win, ctx);
     void *view = win ? widget_lookup(win, "scroll_view_localmusic", 1) : (void *)0;
@@ -99,6 +100,10 @@ int ringnav_localmusic(void *win, void *ctx) {
             widget_restack(
                 library_row(view, icons[k], media_click, (void *)(long)(k + 1), MEDIA[k], 1), n++);
     widget_restack(library_row(view, "local_games", games_open, 0, "Games", 1), n++);
+    for (int k = 0, apps = addon_libs(); k < apps; k++)
+        widget_restack(library_row(view, addon_lib_icon(k), addon_lib_open, (void *)(long)k,
+                                   addon_lib_name(k), 1),
+                       n++);
     if (scrobble_ready())
         widget_restack(
             library_row(view, "local_scrobble", upload_scrobbles, 0, "Upload Scrobbles", 0), n++);

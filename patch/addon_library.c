@@ -257,8 +257,9 @@ static void library_take(const char *id) {
 }
 
 static void library_step(void) {
-    const char *id;
-    for (int k = 0; libup.state == L_IDLE && (id = addon_id(k)); ++k) library_take(id);
+    const char *id; /* every app with a row, the Library's and Games' too */
+    for (int i = 0; libup.state == L_IDLE && i < APPS_MAX; ++i)
+        if ((id = addon_slot_id(i))) library_take(id);
     if (libup.state == L_WAIT) {
         /* the scan's dialog stops the player: a song paused under a lit screen keeps its place */
         if (!library_safe() || (mclGetPlayStatus() == 3 && g_backlight_status)) return;

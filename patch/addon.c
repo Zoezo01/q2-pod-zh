@@ -6,15 +6,19 @@
  *            (0: its songs stay out of the scrobble log, addon_scrobbles), stop (0: its page has no
  *            Stop row, and an error page's second row is Cancel) more (an op, then a space and
  *            a title: Now Playing's ⋯ opens its page there while its queue plays, addon_more),
- *            favdir (a card folder whose songs' hearts it is told of, addon_fav_path) and hidden
- *            (1: no Streaming row, its page opened by id: addon_open_id, as AirPlay's is);
+ *            favdir (a card folder whose songs' hearts it is told of, addon_fav_path), hidden
+ *            (1: no row, its page opened by id: addon_open_id, as AirPlay's is) and row (where
+ *            its row is: library, games or streaming; without it, Games for a game and
+ *            Streaming for any other);
  *   run      its launcher, which copies the app to /tmp and runs it there in a restart loop, so
  *            the card is never kept busy, leaving the loop's pid in /tmp/q2-<id>;
  *   q2-<id>  the app;
  *   icon-40.png, icon.png
- *            its Streaming row's icon, 40 px (SET_ICON), drawn 1:1, else 52 px, scaled to fit;
- *            one over ART_MAX px either way counts as none; without them, the shared stream_app.
- * Streaming lists those on the card (home.c ringnav_stream). A row starts its app and opens
+ *            its Streaming row's icon, 40 px (SET_ICON), drawn 1:1, else 52 px, scaled to fit
+ *            (a Library row's: the 52 px one first); one over ART_MAX px either way counts as
+ *            none; without them, the shared stream_app.
+ * Streaming lists those on the card (home.c ringnav_stream), but the ones whose row says the
+ * Library (ringnav_localmusic, after Games) or Games. A row starts its app and opens
  * addon_page, a list the app draws over Q2SPOT/1 (docs/librespot.md) on /tmp/q2-<id>.browse.sock:
  * each row's kind says what a press does (a local row plays a song or folder from the card,
  * library_lists.c's songs_open). Its status file /tmp/q2-<id>.state says whether to hold standby
@@ -36,8 +40,10 @@
  * An app's /tmp/q2-<id>.sleep asks for a sleep timer: playback pauses at a time, or as the track
  * playing ends (sleep_read, sleep_check).
  *
- * A card game (q2app game=1, then no run or Streaming row) is a row in Library's Games instead:
- * it runs over the whole screen, as Videos' player does, until it exits (addon_game_start). One
+ * A card game (q2app game=1, then no run) is a row in Library's Games instead, unless its row
+ * says where: it runs over the whole screen, as Videos' player does, until it exits (game_start).
+ * Where a row is and what its press does are apart (press): a game's row starts it from the
+ * Library or Streaming too, and any other app's row in Games opens its page. One
  * with audio=1 as well owns the sound: the player is stopped and the headphone output readied
  * before it starts, as for a video, it gets the output device (and a soft output's volume) as
  * its arguments, Play/Pause and the side buttons reach it, and the idle quit is its own.
@@ -108,13 +114,16 @@ typedef struct {
     char more[48]; /* q2app's more: an op, a space and a title (addon_more) */
     int qr, game, audio, hidden, present, launched, hold, relaunch, restart;
     int nostop;                                   /* q2app's stop=0: no Stop row on its page */
+    int row;                                      /* where its row is: a ROW_ */
     unsigned polled, launch_at, restart_at, play; /* play: its .play as read last, hashed */
 } app_t;
+enum { ROW_STREAMING, ROW_GAMES, ROW_LIBRARY }; /* as addon_scan's rows[] names them */
 
 static struct {
     app_t a[APPS_MAX];
-    int n, shown, order[APPS_MAX]; /* order: the slots on the card, by name */
-    int games, game[APPS_MAX];     /* the card games among them, by name too */
+    int n, shown, order[APPS_MAX]; /* order: Streaming's rows, the slots on the card by name */
+    int games, game[APPS_MAX];     /* Games' rows, by name too */
+    int libs, lib[APPS_MAX];       /* and the Library's */
 } ap __attribute__((section(".scratch")));
 
 /* An id goes into shell commands: lowercase letters, digits and '-' only. */
@@ -160,6 +169,16 @@ int addon_scan(void) {
         a->game = number(raw, "game") == 1;
         a->audio = number(raw, "audio") == 1;
         a->hidden = number(raw, "hidden") == 1;
+        /* its row where row says, else as firmware without the key lists it: Games for a game,
+         * Streaming for any other */
+        static const char *const rows[] = { "streaming", "games", "library" };
+        char row[12];
+        field(raw, "row", row, sizeof row);
+        unsigned r = strlen(row);
+        if (r && row[r - 1] == '\r') row[r - 1] = 0; /* a Windows editor's line end */
+        a->row = a->game ? ROW_GAMES : ROW_STREAMING;
+        for (int i = 0; i < 3; ++i)
+            if (!strcmp(row, rows[i])) a->row = i;
         char stop[4]; /* as text, as scrobble: number() is 0 for a missing key too */
         field(raw, "stop", stop, sizeof stop);
         a->nostop = !strcmp(stop, "0") || !strcmp(stop, "0\r");
@@ -167,23 +186,27 @@ int addon_scan(void) {
         unsigned k = strlen(a->more);
         if (k && a->more[k - 1] == '\r') a->more[k - 1] = 0; /* a Windows editor's line end */
         a->present = !access(a->bin, 0);
-        /* the row's size first, the other scaled to fit (navigation.c set_child), else stream_app
-         * (one over ART_MAX px either way, or whose size can't be read, counts as none: demo
-         * decodes it whole) */
+        /* the row's size first (40 px, a Library row's 52), the other scaled to fit on Streaming
+         * (navigation.c set_child; a Library row draws it 1:1, so one over 52 px shows its middle),
+         * else stream_app (one over ART_MAX px either way, or whose size can't be read, counts as
+         * none: demo decodes it whole) */
         static const char *const icons[2] = { "icon-40.png", "icon.png" };
         tk_snprintf(a->icon, sizeof a->icon, "stream_app");
         for (int i = 1; i >= 0; --i) {
             int w = 0, h = 0;
-            tk_snprintf(path, sizeof path, CARD "/%s/%s", e->d_name, icons[i]);
+            tk_snprintf(path, sizeof path, CARD "/%s/%s", e->d_name,
+                        icons[a->row == ROW_LIBRARY ? 1 - i : i]);
             if (picture_size(path, &w, &h) && w && h && w <= ART_MAX && h <= ART_MAX)
                 tk_snprintf(a->icon, sizeof a->icon, "file://%s", path);
         }
     }
     if (d) closedir(d);
-    ap.shown = ap.games = 0;
+    ap.shown = ap.games = ap.libs = 0;
     for (int i = 0; i < ap.n; ++i) { /* by name: an insertion, eight at most */
         if (!ap.a[i].present || ap.a[i].hidden) continue;
-        int *order = ap.a[i].game ? ap.game : ap.order, k = ap.a[i].game ? ap.games++ : ap.shown++;
+        int row = ap.a[i].row;
+        int *order = row == ROW_GAMES ? ap.game : row == ROW_LIBRARY ? ap.lib : ap.order;
+        int k = row == ROW_GAMES ? ap.games++ : row == ROW_LIBRARY ? ap.libs++ : ap.shown++;
         for (; k && strcasecmp(ap.a[order[k - 1]].name, ap.a[i].name) > 0; --k)
             order[k] = order[k - 1];
         order[k] = i;
@@ -195,6 +218,16 @@ int addon_scan(void) {
 const char *addon_name(int k) { return k >= 0 && k < ap.shown ? ap.a[ap.order[k]].name : 0; }
 const char *addon_id(int k) { return k >= 0 && k < ap.shown ? ap.a[ap.order[k]].id : 0; }
 const char *addon_icon(int k) { return k >= 0 && k < ap.shown ? ap.a[ap.order[k]].icon : 0; }
+/* Slot i's id while its app is on the card with a row, wherever the row is, else 0
+ * (addon_library.c's requests: an app's row in the Library or Games asks as one on Streaming). */
+const char *addon_slot_id(int i) {
+    return i >= 0 && i < ap.n && ap.a[i].present && !ap.a[i].hidden ? ap.a[i].id : 0;
+}
+/* The Library's card rows (home.c ringnav_localmusic): how many, the card read again, then one's
+ * name and icon. */
+int addon_libs(void) { return addon_scan(), ap.libs; }
+const char *addon_lib_name(int k) { return k >= 0 && k < ap.libs ? ap.a[ap.lib[k]].name : 0; }
+const char *addon_lib_icon(int k) { return k >= 0 && k < ap.libs ? ap.a[ap.lib[k]].icon : 0; }
 
 /* Whether an image's name is a card app's Streaming icon, file:///mnt/mmc/.<id>/icon*.png
  * (navigation.c ringnav_image_add: Minimal greys it as Streaming's own icons). */
@@ -815,28 +848,18 @@ static void game_end(void) {
     game_kill("");
 }
 
-/* netupdate.c's toast once app id is installed: a game is in Games, not Streaming */
-int addon_is_game(const char *id) {
+/* netupdate.c's toast once app id is installed: where its row is, as the screen names it */
+const char *addon_where(const char *id) {
+    static const char *const where[] = { "Streaming", "Library's Games", "Library" };
     addon_scan();
-    for (int k = 0; k < ap.games; ++k)
-        if (!strcmp(ap.a[ap.game[k]].id, id)) return 1;
-    return 0;
+    for (int i = 0; i < ap.n; ++i)
+        if (ap.a[i].present && !strcmp(ap.a[i].id, id)) return where[ap.a[i].row];
+    return where[ROW_STREAMING];
 }
 
-/* Home's Shortcut (theme_engine.c home_shortcut_open): the card game with this id started as its
- * Games row would start it (1 running, 0 not, with addon_game_start's toast); -1 when no card game
- * has the id (no q2app with game=1 in its folder, or no slot left). */
-int addon_game_open(const char *id) {
-    int n = addon_games();
-    for (int k = 0; k < n; ++k)
-        if (!strcmp(ap.a[ap.game[k]].id, id)) return addon_game_start(k);
-    return -1;
-}
-
-/* Card game k started over the screen: 1 when it runs. */
-int addon_game_start(int k) {
-    app_t *a = k >= 0 && k < ap.games ? &ap.a[ap.game[k]] : 0;
-    if (gm.pid || !a) return 0;
+/* Game a started over the screen: 1 when it runs. */
+static int game_start(app_t *a) {
+    if (gm.pid) return 0;
     const char *busy = shelf_busy();
     if (busy && !strcmp(busy + 1, a->id)) return toast("Wait until the App Store finishes"), 0;
     if (access(a->bin, 0)) return toast("It isn't on the card"), 0;
@@ -875,6 +898,17 @@ int addon_game_start(int k) {
     __sync_lock_test_and_set(&wheel_travel, 0);
     wheel_raw = 1;
     return 1;
+}
+
+/* Home's Shortcut (theme_engine.c home_shortcut_open): the card game with this id started as its
+ * row would start it, wherever the row is (1 running, 0 not, with game_start's toast); -1 when no
+ * card game has the id (no q2app with game=1 in its folder, one hidden, or no slot left). */
+int addon_game_open(const char *id) {
+    addon_scan();
+    for (int i = 0; i < ap.n; ++i)
+        if (ap.a[i].present && !ap.a[i].hidden && ap.a[i].game && !strcmp(ap.a[i].id, id))
+            return game_start(&ap.a[i]);
+    return -1;
 }
 
 /* ringnav_input, every event: 1 when it is the game's (sent as its datagram) or the release of the
@@ -2079,12 +2113,33 @@ static int page_at(int k, const char *op, const char *args, const char *title, i
     return 1;
 }
 
+/* A row's press, wherever the row is: a game runs over the whole screen (1 when it runs), any other
+ * app opens its page (1 when it opened, or said why not). */
+static int press(int slot) {
+    app_t *a = &ap.a[slot];
+    return a->game ? game_start(a) : page_at(slot, "menu", "", a->name, 1);
+}
+
 /* An app's Streaming row (home.c ringnav_stream; ctx: its place by name at the last scan). */
 int addon_open(void *ctx, void *event) {
     (void)event;
     int k = (int)(long)ctx;
     if (smart_hold(addon_open, ctx, 0)) return 0; /* the app starts once Smart Wi-Fi's link is up */
-    if (k >= 0 && k < ap.shown) page_at(ap.order[k], "menu", "", ap.a[ap.order[k]].name, 1);
+    if (k >= 0 && k < ap.shown) press(ap.order[k]);
+    return 0;
+}
+/* Games' card row k (games.c pick_card_game): 1 when its game runs, or its page opened. */
+int addon_game_start(int k) { return k >= 0 && k < ap.games ? press(ap.game[k]) : 0; }
+/* An app's Library row (home.c ringnav_localmusic; ctx: its place by name at the last scan). It
+ * opens at once, with no wait for Smart Wi-Fi's link, as a Games row does: what such an app lists
+ * is on the card, and the radio comes back for an app with a page once it runs (addon_running).
+ * ponytail: a request it makes over the network in its first seconds can fail for want of the
+ * link; holding the row as Streaming's (smart_hold) would cost every open up to SMART_CONNECT_MS
+ * wherever there is no network. A q2app key for the wait, if an app ever needs the link first. */
+int addon_lib_open(void *ctx, void *event) {
+    (void)event;
+    int k = (int)(long)ctx;
+    if (k >= 0 && k < ap.libs) press(ap.lib[k]);
     return 0;
 }
 

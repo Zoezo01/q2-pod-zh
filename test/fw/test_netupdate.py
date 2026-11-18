@@ -2462,7 +2462,8 @@ def test_an_install_cancelled_while_it_asks_for_the_list_installs_nothing(fw):
     assert net.urls == [LIST_URL] and FOO_APP not in card.files
 
 
-@pytest.mark.parametrize('q2app, where', [(b'name=Foo\n', 'Streaming'), (b'name=Foo\ngame=1\n', "Library's Games")])
+@pytest.mark.parametrize('q2app, where', [(b'name=Foo\n', 'Streaming'), (b'name=Foo\ngame=1\n', "Library's Games"),
+                                          (b'name=Foo\nrow=library\n', 'Library')])
 def test_an_app_installs_into_place_and_removes_without_a_trace(fw, q2app, where):
     card = Disk(fw)
     store_net(fw, {**FOO, '.foo/q2app': q2app})

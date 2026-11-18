@@ -37,13 +37,13 @@ LIBRARY = 0xf001  # stock's library class, which a local queue plays under
 class App(C.Structure):
     _fields_ = [('id', C.c_char * 16), ('name', C.c_char * 32), ('tips', C.c_char * 32), ('bin', C.c_char * 48), ('run', C.c_char * 48),
                 ('pid', C.c_char * 32), ('state', C.c_char * 40), ('browse', C.c_char * 48), ('icon', C.c_char * 56), ('more', C.c_char * 48),
-                *((n, C.c_int) for n in ('qr', 'game', 'audio', 'hidden', 'present', 'launched', 'hold', 'relaunch', 'restart', 'nostop')),
+                *((n, C.c_int) for n in ('qr', 'game', 'audio', 'hidden', 'present', 'launched', 'hold', 'relaunch', 'restart', 'nostop', 'row')),
                 *((n, C.c_uint) for n in ('polled', 'launch_at', 'restart_at', 'play'))]
 
 
 class Ap(C.Structure):
     _fields_ = [('a', App * APPS_MAX), ('n', C.c_int), ('shown', C.c_int), ('order', C.c_int * APPS_MAX),
-                ('games', C.c_int), ('game', C.c_int * APPS_MAX)]
+                ('games', C.c_int), ('game', C.c_int * APPS_MAX), ('libs', C.c_int), ('lib', C.c_int * APPS_MAX)]
 
 
 class Sm(C.Structure):
@@ -329,6 +329,35 @@ def test_a_hidden_app_has_no_streaming_row(fw):
     card(fw, one=b'name=One\n', airplay=b'name=AirPlay\nhidden=1\n')  # opened by id instead (addon_open_id)
     assert scan(fw) == 1 and names(fw, 'addon_id') == [None, b'one', None]
     assert (ap(fw).a[1].id, ap(fw).a[1].hidden, ap(fw).a[1].present) == (b'airplay', 1, 1)
+
+
+ROWS = ROW_STREAMING, ROW_GAMES, ROW_LIBRARY = range(3)  # addon.c's, in the order Ap counts them: shown, games, libs
+
+
+@pytest.mark.parametrize('manifest, row', [
+    (b'name=N\n', ROW_STREAMING), (b'name=N\ngame=1\n', ROW_GAMES),  # without the key: as firmware before it lists them
+    (b'name=N\nrow=library\n', ROW_LIBRARY), (b'name=N\ngame=1\nrow=library\n', ROW_LIBRARY),
+    (b'name=N\nrow=games\n', ROW_GAMES), (b'name=N\ngame=1\nrow=streaming\n', ROW_STREAMING),  # the row, not the kind
+    (b'name=N\r\nrow=library\r\n', ROW_LIBRARY),  # a Windows editor's line ends
+    (b'name=N\nrow=Library\n', ROW_STREAMING), (b'name=N\ngame=1\nrow=librarys\n', ROW_GAMES),  # another word: as without it
+])
+def test_a_manifest_says_where_its_row_is(fw, manifest, row):
+    card(fw, one=manifest)
+    scan(fw)
+    assert ap(fw).a[0].row == row and (ap(fw).shown, ap(fw).games, ap(fw).libs) == tuple(int(row == r) for r in ROWS)
+
+
+def test_library_rows_are_by_name_with_the_52_px_icon_first(fw):
+    card(fw, tools=(b'name=Utilities\nrow=library\n', ('icon.png', 'icon-40.png')), mixtape=b'name=Mixtape\nrow=library\n',
+         small=(b'name=small\nrow=library\n', ('icon-40.png',)), foo=(b'name=Foo\n', ('icon.png', 'icon-40.png')))
+    name, icon = fw.fn('addon_lib_name', C.c_char_p, C.c_int), fw.fn('addon_lib_icon', C.c_char_p, C.c_int)
+    assert fw.fn('addon_libs', C.c_int)() == 3 and [name(k) for k in range(-1, 4)] == [None, b'Mixtape', b'small', b'Utilities', None]
+    assert [icon(k) for k in range(-1, 4)] == [None, b'stream_app', b'file:///mnt/mmc/.small/icon-40.png',
+                                               b'file:///mnt/mmc/.tools/icon.png', None]
+    assert names(fw, 'addon_name') == [None, b'Foo', None]  # Streaming keeps the others, its 40 px icon first
+    assert names(fw, 'addon_icon') == [None, b'file:///mnt/mmc/.foo/icon-40.png', None]
+    where = fw.fn('addon_where', C.c_char_p, C.c_char_p)
+    assert (where(b'tools'), where(b'foo')) == (b'Library', b'Streaming')
 
 
 def test_names_are_cut_at_a_whole_character(fw):
@@ -1538,8 +1567,25 @@ def test_card_games_are_games_rows_by_name_not_streaming_rows(fw):
     name = fw.fn('addon_game_name', C.c_char_p, C.c_int)
     assert fw.fn('addon_games_last', C.c_int)() == 2 and [name(k) for k in range(-1, 3)] == [None, b'chess', b'Snake', None]
     assert scan(fw) == 1 and names(fw, 'addon_name') == [None, b'Foo', None]
-    is_game = fw.fn('addon_is_game', C.c_int, C.c_char_p)
-    assert (is_game(b'snake'), is_game(b'chess'), is_game(b'foo'), is_game(b'none')) == (1, 1, 0, 0)
+    where = fw.fn('addon_where', C.c_char_p, C.c_char_p)
+    assert (where(b'snake'), where(b'chess')) == (b"Library's Games",) * 2 and (where(b'foo'), where(b'none')) == (b'Streaming',) * 2
+
+
+@pytest.mark.parametrize('row, press', [(b'library', 'addon_lib_open'), (b'streaming', 'addon_open')])
+def test_a_game_starts_from_a_library_or_streaming_row_too(fw, row, press):
+    g = CardGame(fw, snake=b'name=Snake\ngame=1\nrow=%s\n' % row)
+    assert fw.fn('addon_games_last', C.c_int)() == 0  # no Games row
+    fw.fn(press, C.c_int, C.c_void_p, C.c_void_p)(0, None)
+    assert g.on() == g.PID and fw.var('wheel_raw', C.c_int).value == 1
+    g.key(KEY_DOWN, CENTRE)
+    assert g.sent == [(SNAKE_SOCK, b'k d 218')]
+
+
+def test_the_shortcut_finds_a_game_whose_row_is_elsewhere(fw):
+    g = CardGame(fw, snake=b'name=Snake\ngame=1\nrow=library\n', tools=b'name=Tools\nrow=games\n')
+    opened = fw.fn('addon_game_open', C.c_int, C.c_char_p)
+    assert opened(b'tools') == -1 and not g.on()  # in Games, but no game
+    assert opened(b'snake') == 1 and g.on() == g.PID
 
 
 def test_a_game_runs_over_the_screen_taking_the_wheels_raw_travel(fw):
@@ -3720,6 +3766,21 @@ def test_an_app_gone_from_the_card_says_so(fw):
     assert p.top.state == K_ERROR and p.top.note == b"Foo isn't on the card" and p.world.of('system') == []
 
 
+PRESSES = {b'library': lambda fw, k: fw.fn('addon_lib_open', C.c_int, C.c_void_p, C.c_void_p)(k, None),
+           b'games': lambda fw, k: fw.fn('addon_game_start', C.c_int, C.c_int)(k)}
+
+
+@pytest.mark.parametrize('row', PRESSES)
+def test_an_app_s_library_or_games_row_opens_its_page(fw, row):
+    p = Page(fw, b'name=Foo\nrow=%s\n' % row, opens=False)
+    assert ap(fw).shown == 0  # no Streaming row
+    for k in (5, -1, 0):  # a row past the list opens nothing
+        PRESSES[row](fw, k)
+        assert bool(p.pg.page) == (k == 0)
+    assert p.pg.page == p.page and (p.top.op, p.top.title) == (b'menu', b'Foo') and not fw.calls('fw_fork')
+    assert p.world.of('system') == [(b'/bin/sh /mnt/mmc/.foo/run',)]  # the app started, as from Streaming
+
+
 def test_a_row_past_the_list_opens_nothing(fw):
     p = Page(fw, opens=False)
     fw.fn('addon_open', C.c_int, C.c_void_p, C.c_void_p)(5, None)
@@ -4508,6 +4569,17 @@ def test_an_apps_request_scans_then_imports_what_it_names_and_answers(fw):
     assert lib.answer() == f'7 ok\nexists {LIB_DIR}c.m3u\n'.encode() and lib.toasts == [b'Playlists updated']
     lib.poll()
     assert lib.scans == 1 and len(lib.imports) == 1 and libup(fw).state == L_IDLE  # done once
+
+
+@pytest.mark.parametrize('row', [b'library', b'games'])
+def test_an_app_whose_row_is_not_streaming_s_is_asked_for_its_request_too(fw, row):
+    lib = Library(fw, 'a.m3u', gone=b'name=Gone\n', foo=b'name=Foo\nrow=%s\n' % row)
+    del lib.world.files[b'/mnt/mmc/.gone/q2-gone']  # a slot before it whose app left the card: passed over
+    scan(fw)
+    assert ap(fw).shown == 0
+    lib.request(f'7\nimport {LIB_DIR}a.m3u\n'.encode())
+    lib.poll()
+    assert lib.imports == [[b'a.m3u']] and lib.answer() == b'7 ok\n'
 
 
 def test_playlists_are_loaded_before_the_adds_are_looked_up(fw):
