@@ -1,6 +1,7 @@
 # Changelog
 
 - **1.8.8**:
+  - Library: **Scan Folders** keeps your ticks as you move between folders, so you can tick albums under different artists and scan them all at once. Ticks used to be forgotten each time you opened a folder or went back, so only the last folder's were scanned, or **Scan** said **Folder not specified**. **Cancel** unticks everything.
   - AirPlay: with **Headphones Required** on and no headphones connected, music plays to an AirPlay speaker ([#388](https://github.com/DiamondBond/q2-pod/issues/388)). 1.8.6's fix didn't work: the switch still refused the Play that starts the speaker. It now steps aside as soon as you pick a speaker, and comes back when you pick **This Q2**.
   - App Store: games have their own tab. Two tabs head the page, **Apps** and **Games**: tap one, or press Previous or Next. Each app has its developer under its name and its state at the row's end: **INSTALL**, **UPDATE** or **INSTALLED**. The tabs count the apps with an update, and **Check for Updates** says when the last check ran. Buddy, Groovebox, 2048 and Dino Runner are on the Games tab.
   - App Store: the number of apps that can be updated counts an app you installed by hand, whose row says **UPDATE**. It was left out, so the message could say fewer than the rows showed.

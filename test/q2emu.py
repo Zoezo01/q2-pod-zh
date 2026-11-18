@@ -1752,23 +1752,63 @@ sleep_hook=HOOKS['main_loop_sleep_default'][0]
 
 class SpecFolderMachine(Machine):
     LISTINGS={'/m/0':(3,1),'/m/1':(5,0),'/m/2':(0,0)}  # url: (toolsLoadDirectory's count, a folder among them)
+    TREE={'/mnt/mmc':('/mnt/mmc/A','/mnt/mmc/B'),'/mnt/mmc/A':('/mnt/mmc/A/1','/mnt/mmc/A/2'),'/mnt/mmc/B':('/mnt/mmc/B/1',)}  # the folders in each
+    STOCK={'click':'stock','enter':'stock_enter','back':'stock_back','scan':'stock_scan'}
     def __init__(self):
         super().__init__(True); self.listed=[]; self.seen=[]; self.row=self.alloc(0x100)
-        for n in ('table_row_of','get_specfolderurl','toolsLoadDirectory','toolsCheckTypeDeque'): self.handlers[syms[n]]='spec:'+n
-        self.handlers[int(manifest['patch_symbols']['stock_specfolder_click_trampoline'],16)]='spec:stock'
+        # stock's page: the folders above the listed one, its rows, their ticks (the batch record) and what a scan was given
+        self.path=[]; self.rows=[]; self.ticks=[]; self.scans=[]; self.deqs={}; self.order=[]
+        for n in ('table_row_of','get_specfolderurl','toolsLoadDirectory','toolsCheckTypeDeque','get_specfoldersize','batch_get_selectitem',
+                  'batch_set_selectitem','_create_deque','deque_init','_deque_push_back','deque_destroy','player_stop','navigator_back',
+                  'navigator_to_with_context','clear_specfoldervariate'): self.handlers[syms[n]]='spec:'+n
+        for hook,name in self.STOCK.items(): self.handlers[int(manifest['patch_symbols'][f'stock_specfolder_{hook}_trampoline'],16)]='spec:'+name
+        self.handlers[int(manifest['patch_symbols']['stock_cancelchoice_trampoline'],16)]='spec:stock_cancel'
+    def list(self): self.rows=list(self.TREE[self.path[-1]]); self.ticks=[0]*len(self.rows); self.byte(syms['g_allselect_flag'],0)
     def hook(self,u,address,size,unused):
         name=self.handlers.get(address,'')
         if not name.startswith('spec:'): return super().hook(u,address,size,unused)
         name=name[5:]; a,b,c,d=[u.reg_read(r) for r in REGS]; ret=0
         if name=='table_row_of': ret=a and self.row
-        elif name=='get_specfolderurl': u.mem_write(b,f'/m/{a}'.encode()+b'\0')
+        elif name=='get_specfolderurl': u.mem_write(b,(self.rows[a] if self.rows else f'/m/{a}').encode()+b'\0')
         elif name=='toolsLoadDirectory': self.listed.append(self.text(a)); ret=self.LISTINGS[self.text(a)][0]
         elif name=='toolsCheckTypeDeque': assert b==4; ret=self.LISTINGS[self.listed[-1]][1]
-        else: self.seen.append((a,self.get(b+O['EVENT_X'])))
+        elif name=='get_specfoldersize': ret=len(self.rows)
+        elif name=='batch_get_selectitem': ret=self.ticks[a]
+        elif name=='batch_set_selectitem': self.ticks[a]^=1; ret=int(all(self.ticks))  # stock's: 1 with every row ticked
+        elif name=='stock_enter':  # specfolder_enter: -1 lists the card; a folder with none inside is refused, its ticks kept
+            folder='/mnt/mmc' if signed(a)<0 else self.rows[a]; ret=1 if folder in self.TREE else -1
+            if ret==1: self.path=self.path+[folder] if signed(a)>=0 else [folder]; self.list()
+        elif name=='stock_back':  # specfolder_back: 0 from the card's own list, the page left
+            self.path.pop(); ret=int(bool(self.path))
+            if ret: self.list()
+            else: self.rows=[]; self.ticks=[]
+        elif name=='stock_cancel': self.ticks=[0]*len(self.ticks); self.order.append(name)
+        elif name=='stock_scan': self.order.append(name)
+        elif name=='_create_deque': ret=self.alloc(0x20); self.deqs[ret]=[self.text(a),None]
+        elif name=='deque_init': self.deqs[a][1]=[]
+        elif name=='_deque_push_back': self.deqs[a][1].append(self.text(b))
+        elif name=='navigator_to_with_context':
+            assert self.order[-1]=='navigator_back'  # the page goes first, as stock's
+            self.scans.append((self.text(a),self.deqs[self.get(b)][0],sorted(self.deqs[self.get(b)][1]),[self.get(b+4*i) for i in (1,2,3)]))
+        elif name=='deque_destroy': del self.deqs[a]
+        elif name=='clear_specfoldervariate': self.path=[]; self.rows=[]; self.ticks=[]
+        elif name not in ('player_stop','navigator_back'): self.seen.append((a,self.get(b+O['EVENT_X'])))
+        if name in ('player_stop','navigator_back','navigator_to_with_context','deque_destroy','clear_specfoldervariate'): self.order.append(name)
         self.returns(ret)
     def tap(self,index,x,on_row=True):
         ev=self.alloc(0x30); self.word(ev+O['EVENT_X'],x); self.word(ev+O['EVENT_TARGET'],0x1000 if on_row else 0)
         self.word(self.row+O['ROW_INDEX'],index); self.call(address=HOOKS['specfolder_click'][0],args=(0x77,ev,0,0),gap=0); return self.listed,self.seen[-1]
+    def enter(self,index=-1): return self.call(address=HOOKS['specfolder_enter'][0],args=(index,0,0,0),gap=0)
+    def back(self): return self.call(address=HOOKS['specfolder_back'][0],args=(self.alloc(4),0,0,0),gap=0)
+    def tick(self,index): self.ticks[index]^=1  # stock's row click, in its column
+    def cancel(self): self.call(address=HOOKS['on_cancelchoice_onclick'][0],args=(0x77,0,0,0),gap=0)
+    def scan(self):
+        """The Scan button: what the scan was given, or 'stock' when the click was left to stock's."""
+        self.order=[]; self.scans=[]; assert self.call(address=HOOKS['specfolder_scan'][0],args=(0x77,0,0,0),gap=0)==0
+        if self.order==['stock_scan']: return 'stock'
+        assert self.order==['player_stop','navigator_back','navigator_to_with_context','deque_destroy','clear_specfoldervariate'] and not self.deqs, self.order
+        (page,kind,folders,rest),=self.scans; assert (page,kind,rest)==('dialog/updatemusic_dialog','char*',[0,1,0]); return folders
+    def all(self): return self.get(syms['g_allselect_flag'])&0xff
 
 class SongBindMachine(Machine):
     def hook(self,u,address,size,unused):

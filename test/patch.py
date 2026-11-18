@@ -1542,6 +1542,25 @@ passed()
 for index,x,want,listed in ((0,200,200,['/m/0']),(1,200,0,['/m/1']),(2,81,0,['/m/2']),(1,80,80,[])):
     m=SpecFolderMachine(); assert m.tap(index,x)==(listed,(0x77,want)),(index,x,m.listed,m.seen)
 m=SpecFolderMachine(); assert m.tap(1,200,on_row=False)==([],(0x77,200)); passed()
+# ... and its ticks last from folder to folder. Stock's are the listed folder's alone, cleared by every folder opened and
+# every Return, so albums ticked under two artists never reached one scan and Scan in a folder with none ticked said
+# "Folder not specified". Each folder shows its ticks again, with stock's select-all flag when they are all its rows.
+m=SpecFolderMachine(); assert m.enter()==1 and m.scan()=='stock'  # nothing ticked: stock's click, its message
+assert m.enter(0)==1; m.tick(0); assert m.back()==1 and m.ticks==[0,0] and not m.all()  # A/1 ticked, back at the card
+assert m.enter(1)==1 and m.ticks==[0]; m.tick(0); assert m.back()==1 and m.ticks==[0,0]  # B/1 too
+assert m.enter(0)==1 and m.ticks==[1,0] and not m.all() and m.back()==1  # A lists its tick again
+assert m.enter(1)==1 and m.ticks==[1] and m.all()==1 and m.back()==1  # B's is its every row
+assert m.scan()==['/mnt/mmc/A/1','/mnt/mmc/B/1'] and m.enter()==1 and m.scan()=='stock'  # one scan takes both, and forgets them
+# A tick taken off again leaves; the listed folder's ticks count without leaving it; a refused folder keeps them.
+m=SpecFolderMachine(); m.enter(); m.enter(0); m.tick(0); m.tick(1); m.back(); m.enter(0); m.tick(0); assert m.enter(0)==-1 and m.ticks==[0,1]
+m.back(); m.tick(1); assert m.scan()==['/mnt/mmc/A/2','/mnt/mmc/B']
+# Cancel unticks every folder, the ones not listed too; Return from the card's list, which leaves the page, forgets them.
+m=SpecFolderMachine(); m.enter(); m.enter(0); m.tick(0); m.back(); m.tick(1); m.cancel(); assert m.ticks==[0,0] and m.order==['stock_cancel']
+assert m.enter(0)==1 and m.ticks==[0,0] and m.scan()=='stock'
+m=SpecFolderMachine(); m.enter(); m.enter(0); m.tick(0); m.back(); assert m.back()==0 and m.enter()==1 and m.enter(0)==1 and m.ticks==[0,0]
+# Seventeen ticks outgrow the list's first block of sixteen and all reach the scan.
+m=SpecFolderMachine(); m.TREE={'/mnt/mmc':tuple(f'/mnt/mmc/{i}' for i in range(17))}; m.enter(); m.ticks=[1]*17
+assert m.scan()==sorted(m.TREE['/mnt/mmc']) and len(m.resized)==1; passed()
 # Update Library: the stock scanner, nested folders and all, has no song limit: stock's 20,000 went with V1.36, and
 # Q2 Pod's own 65,000 with it. Only the folder listing, paths and database insert are mocked.
 SONGS,STOP,LISTING=0xa50524,0xa50528,0xa50118  # toolsGetMusicNum's count, toolsStopUpdateMusic's flag, the listing deque

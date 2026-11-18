@@ -196,6 +196,12 @@ HOOKS = {
     'playermore_online': (0x539614, 'ringnav_online_match', 'online_match'),
     # Scan Folders' row click: a tap on a folder with no folders inside ticks it (scan_folders.c)
     'specfolder_click': (0x53f9b4, 'ringnav_specfolder_click', 'specfolder_click'),
+    # ... and its ticks kept from folder to folder: taken as stock leaves a folder (into one, back out), put back on
+    # the one it lists, dropped by Cancel and all scanned by the Scan button's click, which has no symbol
+    'specfolder_enter': (0x512e50, 'ringnav_specfolder_enter', 'specfolder_enter'),
+    'specfolder_back': (0x5131b8, 'ringnav_specfolder_back', 'specfolder_back'),
+    'on_cancelchoice_onclick': (0x53f624, 'ringnav_cancelchoice', 'cancelchoice'),
+    'specfolder_scan': (0x540658, 'ringnav_specfolder_scan', 'specfolder_scan'),
 }
 # The payload's stock_<name>_trampoline, the hooks' third element, resumes each hook past its 3-word PIC
 # prologue.
@@ -1318,6 +1324,8 @@ FUNCTIONS = {
  'toolsLoadDirectory': ('int', 'const char *'),
  'toolsCheckTypeDeque': ('int', 'void *, int'),
  'get_specfolderurl': ('void', 'int, char *, int'),
+ 'get_specfoldersize': ('int', 'void'),  # the folders Scan Folders lists
+ 'clear_specfoldervariate': ('void', 'void'),  # frees that list, its path and its scroll stack
  # Queue menu rows (navigation.c): artist/composer/genre queries, My Fav, the batch selection record
  'getMusicBySonger': ('int', 'const char *'),
  'getMusicByAlbumArtist': ('int', 'const char *'),
@@ -1521,6 +1529,7 @@ PRIVATE_FUNCTIONS = {
     "netservice_row": HOOKS['netservice_row'][0],  # Network service's DLNA, AirPlay and Wi-Fi transfer
     "playermore_online": HOOKS['playermore_online'][0],  # More's Download Cover & Lyrics: (window)
     "specfolder_click": HOOKS['specfolder_click'][0],  # Scan Folders' row click
+    "specfolder_scan": HOOKS['specfolder_scan'][0],  # ... and its Scan button's (btn_startscan)
 }
 GLOBALS = ['tidal_albuminfo_thread_run', 'tidal_collection_thread_run',  # 2: a Tidal list loaded
            'savestartbt', 'transposition', 'tidalfurlstart',  # a stream to start paused; 1 arms Now Playing's online tick (tidal.c app_start)
@@ -1544,7 +1553,8 @@ GLOBALS = ['tidal_albuminfo_thread_run', 'tidal_collection_thread_run',  # 2: a 
            # toggling it (wifi_initstatus 0, wifi_connectstatus not 1, connecting), Network service's
            # AirPlay and DLNA, SyncLink (2: over Wi-Fi) and its session, Wi-Fi transfer and a pending time sync
            'g_wififlag', 'wifi_initstatus', 'wifi_connectstatus', 'g_airplayflag', 'g_dlnaflag',
-           'g_synclinkflag', 'g_syncLink_status', 'g_wifitransport_flag', 'g_syncnettime_flag']
+           'g_synclinkflag', 'g_syncLink_status', 'g_wifitransport_flag', 'g_syncnettime_flag',
+           'g_allselect_flag']  # a multi-select page's select-all picture: 1 with every row ticked (scan_folders.c)
 # Audited stock browsing state, deque pointers, art locks, the status bar widget
 # (system_bar_init stores it), the playing cover's track path and the playing track's tags as
 # player_get_id3info parsed them; sizes are checked against the ELF.
