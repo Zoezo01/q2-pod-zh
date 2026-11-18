@@ -1573,6 +1573,7 @@ FUNCTIONS = {
  'mclGetCueFlag': ('int', 'void'),  # the playing record has a CUE start or end
  'mclGetPlayStatus': ('int', 'void'),  # 1 stopped, 2 playing, 3 paused (mclStop, mclSetResume, mclSetPause)
  'player_stop': ('int', 'void'),
+ 'player_save_stop': ('int', 'void'),  # snapshot local playback and release its PCM
  'player_save_start': ('int', 'int'),  # pause: mclStartPlayer at the saved seek, then paused if set
  'mclGetSavePlayStatus': ('int', 'void'),  # player_save_stop's mclGetPlayStatus, unless that was 1
  'save_memoryplay_info': ('int', 'void'),  # Memory playback's queue and position, as into_poweroff saves them
