@@ -2741,7 +2741,7 @@ def slider_win(m,name,slider,view,label,ends,y=0,**kw):
     m.top=win; m.nodes[m.wm]={'children':[win]}; ui_loaded(m,name,win); return win,s,v,lab,nav,l,r,dec,add
 def slider_new(*a,light='1',**kw):
     m=LoadPlain(); m.config.update(THEME='1',LIGHT=light); return (m,*slider_win(m,*a,**kw))
-# A slider page under Classic (Brightness): dark bar, flat page, band, suns; the track and fill on their 8 rows; 4 of 1..10.
+# A slider page under Classic (Brightness): flat page, band, suns; the track and fill on their 8 rows; 4 of 1..10.
 bk,bwin,bsl,bsl_view,blab,bnav,bl,br,bdec,badd=slider_new('backlight_page','slider_backlight','view_backlight','label_backlight',('img_left','img_right'),min=1,max=10,value=4)
 bare(bk); bg(bk,bwin); bandrows,rest=round_box(bk.bands[1:],28,129,322,46,8)
 assert page_fill(bk)
@@ -2837,8 +2837,8 @@ ns=boot_page(ctx=3); assert ns.nodes[named(ns,ns.win,'caption')]['text']=='Press
 wheel=boot_page(ctx=1); wsw=wheel.switch; assert wheel.nodes[wheel.title]['text']=='Wheel Sensitivity' and not wheel.nodes[wsw]['visible'] and wheel.nodes[wheel.vol]['visible']==1 and wheel.nodes[wheel.vol]['text']=='50%'
 bare(wheel); bg(wheel,wheel.win); assert art_at(wheel)==BAND_ART and shadows(wheel)==[CAPTION] and not triangle(wheel)
 wheel.calls=[]; assert wheel.call(O['KEY_NEXT'])==11 and [c for c in wheel.calls if c[0]=='write_int_config'] and not dirty(wheel,wheel.win); passed()  # no tray
-# The dark bar: the dark half's flat bar and hairline in either half while a slider page is on top, title across on the bar title's rows, clock and marks hidden; back on leaving.
-def dark_setup(light='1',state=0,name='Balance'):
+# Classic's bar with a slider page under it. The slider pages and Set Time once had a dark bar of their own; the bar over them is the one every page has.
+def bar_setup(light='1',state=0,name='Balance'):
     db=LoadPlain(); db.config.update(THEME='1',LIGHT=light); classic_light_boot(db)
     if state: db.handlers.pop(syms['mclGetPlayStatus'],None); db.word(0xa50084,state)
     title,clock=db.node('hscroll_label','label_title'),db.node('hscroll_label','label_clock')
@@ -2852,47 +2852,31 @@ def dark_setup(light='1',state=0,name='Balance'):
     return db,bar,right,title,clock,bt,wifi,pct,slot,st_,win,home
 # Stock's title reads as the page's own name in English; another language's stays, and a paint writes nothing new.
 for tb_name,tb_want in (('Channel Balance','Balance'),('Баланс','Баланс')):
-    tb,tbbar,_,tbtitle,*_,tbwin,_=dark_setup(name=tb_name); bg(tb,tbwin); bg(tb,tbbar); assert tb.nodes[tbtitle]['text']==tb_want,tb.nodes[tbtitle]['text']
+    tb,tbbar,_,tbtitle,*_,tbwin,_=bar_setup(name=tb_name); bg(tb,tbwin); bg(tb,tbbar); assert tb.nodes[tbtitle]['text']==tb_want,tb.nodes[tbtitle]['text']
     tb.calls=[]; bg(tb,tbbar); assert not [c for c in tb.calls if c[0]=='widget_set_text_utf8' and c[1]==tbtitle]
 passed()
 # Beside a bar's title, a 12-hour clock has the form and width of a 24-hour one: AM or PM would reach the title.
-cb,cbbar,_,_,cbclock,*_,cbhome=dark_setup(); cb.clock_minutes=True; cb.top=cbhome; cb.u.mem_write(syms['g_time24h_flag'],b'\0'); bg(cb,cbbar); cb.advance(1); assert cb.nodes[cbclock]['text']=='6:14',cb.nodes[cbclock]['text']; passed()
+cb,cbbar,_,_,cbclock,*_,cbhome=bar_setup(); cb.clock_minutes=True; cb.top=cbhome; cb.u.mem_write(syms['g_time24h_flag'],b'\0'); bg(cb,cbbar); cb.advance(1); assert cb.nodes[cbclock]['text']=='6:14',cb.nodes[cbclock]['text']; passed()
 # ... a clock written before the bar's title is found is written again, in the same minute.
-ck,ckbar,_,_,ckclock,*_,ckhome=dark_setup(); ck.clock_minutes=True; ck.top=ckhome; ck.u.mem_write(syms['g_time24h_flag'],b'\0'); ck_show=lambda: ck.call(address=payload_syms['clock_due'],args=(0,0,0,0),gap=0)
+ck,ckbar,_,_,ckclock,*_,ckhome=bar_setup(); ck.clock_minutes=True; ck.top=ckhome; ck.u.mem_write(syms['g_time24h_flag'],b'\0'); ck_show=lambda: ck.call(address=payload_syms['clock_due'],args=(0,0,0,0),gap=0)
 ck_show(); assert ck.nodes[ckclock]['text']=='6:14 PM',ck.nodes[ckclock]['text']; bg(ck,ckbar); ck_show(); assert ck.nodes[ckclock]['text']=='6:14',ck.nodes[ckclock]['text']; passed()
-# Set Time and Set Date are under it too.
-tdb,tbar,_,ttitle,tclock,*_,thome=dark_setup(); tdb.top=thome; bg(tdb,tbar); assert tdb.nodes[tclock]['visible']==1 and wbox(tdb,ttitle)[0]==20
-tdb.top=tdb.node('window','manualtime_page'); tdb.word(tdb.top+O['W_PARENT'],tdb.wm); bg(tdb,tbar); assert wbox(tdb,ttitle)==(0,-1,375,25) and tdb.nodes[tclock]['visible']==0; passed()
-db,dbar,dright,dtitle,dclock,dbt,dwifi,dpct,dslot,dst,dwin,dhome=dark_setup(state=2)
+# Set Time and Set Date keep it: the title in its box, and no clock's text, so the date shows whole.
+tdb,tbar,_,ttitle,tclock,*_,thome=bar_setup(); tdb.top=thome; bg(tdb,tbar); assert tdb.nodes[tclock]['visible']==1 and wbox(tdb,ttitle)[0]==20
+tdb.top=tdb.node('window','manualtime_page'); tdb.word(tdb.top+O['W_PARENT'],tdb.wm); bg(tdb,tbar); assert wbox(tdb,ttitle)==(20,-1,104,25) and tdb.nodes[tclock]['visible']==1 and not tdb.nodes[tclock].get('text'); passed()  # no clock's text beside the date
+# A slider page too, playing: Classic's rows in the half, the title where its row has it, the clock, Bluetooth and Wi-Fi in their row, the theme's own play state and battery.
+db,dbar,dright,dtitle,dclock,dbt,dwifi,dpct,dslot,dst,dwin,dhome=bar_setup(state=2)
 assert db.nodes[dpct]['visible']==1
-db.style_ints.update({(db.style,'text_align_h'):3,(db.style,'text_color'):signed(0xff112233)})  # what the title's style says, neither left nor white
 for _ in range(2): bg(db,dwin); bg(db,dbar)
-db.bands=[]; cost=[0]; chook=db.u.hook_add(UC_HOOK_CODE,lambda *a: cost.__setitem__(0,cost[0]+1),begin=BASE,end=SCRATCH-1); bg(db,dbar); db.u.hook_del(chook); darkrows=[b for b in db.bands if b[2]==375]; assert cost[0]<100000,cost
-assert [b[:4] for b in darkrows]==[(0,j,375,1) for j in range(26)] and darkrows[0][4]==color_t(0x1c1c1c) and darkrows[24][4]==color_t(0x1c1c1c) and darkrows[25][4]==color_t(0x333333) and wbox(db,dtitle)==(0,-1,375,25)
-assert db.nodes[dtitle]['style:normal:font_size']==21 and db.nodes[dtitle]['style:normal:font_name']=='classic-light' and db.nodes[dtitle]['style:normal:text_align_h']=='center' and db.nodes[dtitle]['style:normal:text_color']&0xffffffff==color_t(0)
-assert db.nodes[dclock]['visible']==0 and wbox(db,dbt)[0]==-400 and wbox(db,dwifi)[0]==-400 and db.nodes[dpct]['visible']==0
-sx,sy,sw_,sh=wbox(db,dst); assert (200+sx+(sw_-10)//2,2+sy+(sh-11)//2)==(278,7) and (sw_,sh)==(18,22)  # its box keeps its size: centred, the 10 x 11 glyph lands here
-assert db.nodes[dst]['image']=='classic_light_play_w' and wbox(db,dslot)==(285-200,1-2,37,21); passed()
-# ... the title has no shadow, as the flat bar's has none; in the dark half too.
-db.letters=[]; bg(db,dbar); assert not shadows(db); passed()
-dd,ddbar,*_,ddwin,_=dark_setup(light='0'); bg(dd,ddwin); bg(dd,ddbar); bg(dd,ddbar); dd.letters=[]; bg(dd,ddbar); assert not shadows(dd); passed()
-# ... a title the theme's face hasn't: the fallback faces at the flat bar's sizes; a font smaller than its box either way.
-for name,face,px in (('Баланс','bold',17),('平衡','default',17)):
-    df,dfbar,_,dftitle,*_,dfwin,_=dark_setup(name=name); bg(df,dfwin); bg(df,dfbar); bg(df,dfbar); df.letters=[]; bg(df,dfbar)
-    assert df.nodes[dftitle]['style:normal:font_name']==face and df.nodes[dftitle]['style:normal:font_size']==px and df.nodes[dftitle]['text']==name
-    assert not shadows(df) and wbox(df,dftitle)[3]>=px; passed()
-db.word(0xa50084,3); bg(db,dbar); assert db.nodes[dst]['image']=='classic_light_pause_w'; passed()  # paused
-db.bands=[]; bg(db,dslot); LV=(0xe2e2e2,0xd7d7d7,0xd3d3d3,0xd4d4d4,0xd7d7d7,0xdedede)
-assert [b[:5] for b in db.bands[:3]]==[(9,6,26,13,color_t(0xf5f5f5)),(10,7,24,11,color_t(0x050505)),(35,10,2,5,color_t(0xf5f5f5))] and [b[:4] for b in db.bands[3:]]==[(11,8+j,11,1) for j in range(9)]
-assert db.bands[3][4]==color_t(0xe2e2e2) and db.bands[-1][4]==color_t(0xdedede) and not db.letters; passed()  # half of 22; no percent
-db.nodes[next(c for c in db.nodes[dright]['children'] if db.nodes[c]['name']=='img_battery')]['image']='bar_charge'; bg(db,dbar); db.bands=[]; bg(db,dslot); assert db.bands[-1][2]==22; passed()  # charging fills it
-db.top=dhome; db.nodes[db.wm]={'children':[dhome]}; bg(db,dhome); assert 'widget_layout_children' in [c[0] for c in db.calls]; bg(db,dbar)
-assert wbox(db,dtitle)==(20,-1,104,25) and db.nodes[dclock]['visible']==1 and db.nodes[dtitle]['style:normal:text_align_h']==3 and db.nodes[dtitle]['style:normal:font_size']==21 and db.nodes[dtitle]['style:normal:font_name']=='classic-light'
-assert db.nodes[dtitle]['style:normal:text_color']&0xffffffff==0xff112233 and wbox(db,dst)[2:]==(18,22)  # as its style said on the way in
-db.bands=[]; db.letters=[]; bg(db,dbar); assert [b for b in db.bands if b[2]==375][0][4]==color_t(0xffffff) and not db.letters; passed()
-# ... a style that says neither: the bar's own left and white.
-dn,dnbar,_,dntitle,*_,dnwin,dnhome=dark_setup(); bg(dn,dnwin); bg(dn,dnbar); bg(dn,dnbar); dn.top=dnhome; dn.nodes[dn.wm]={'children':[dnhome]}; bg(dn,dnhome); bg(dn,dnbar)
-assert dn.nodes[dntitle]['style:normal:text_align_h']==2 and dn.nodes[dntitle]['style:normal:text_color']&0xffffffff==color_t(0xffffff); passed()
+db.bands=[]; cost=[0]; chook=db.u.hook_add(UC_HOOK_CODE,lambda *a: cost.__setitem__(0,cost[0]+1),begin=BASE,end=SCRATCH-1); bg(db,dbar); db.u.hook_del(chook); barrows=[b[:5] for b in db.bands if b[2]==375]; assert cost[0]<100000,cost
+assert barrows and barrows[0][4]==color_t(0xffffff) and color_t(0x1c1c1c) not in [b[4] for b in barrows] and wbox(db,dtitle)==(20,-1,104,25) and db.nodes[dtitle]['text']=='Balance'
+assert db.nodes[dclock]['visible']==1 and wbox(db,dbt)[0]==10 and wbox(db,dwifi)[0]==30 and db.nodes[dpct]['visible']==0 and wbox(db,dst)[2:]==(18,22)
+assert db.nodes[dst]['image']=='classic_light_play_l'; passed()
+db.word(0xa50084,3); bg(db,dbar); assert db.nodes[dst]['image']=='classic_light_pause_l'; passed()  # paused
+db.bands=[]; db.letters=[]; bg(db,dslot); assert (db.bands or db.letters) and (9,6,26,13) not in [b[:4] for b in db.bands]; passed()  # the theme's battery, not a flat white one
+# ... and it is painted the same over the page it came from.
+db.top=dhome; db.nodes[db.wm]={'children':[dhome]}; bg(db,dhome); bg(db,dbar)
+assert wbox(db,dtitle)==(20,-1,104,25) and db.nodes[dclock]['visible']==1 and wbox(db,dst)[2:]==(18,22)
+db.bands=[]; db.letters=[]; bg(db,dbar); assert [b[:5] for b in db.bands if b[2]==375]==barrows and not db.letters; passed()
 # Set Time and Set Date under Classic: stock's page, its selectors over the painted cells. time_form: its tree, loaded and
 # through stock's init; year, month, day, hour and minute as selector indexes; flag: g_time24h_flag.
 def time_form(flag=1,vals=(4,10,4,16,42),theme_='1',light='1'):
@@ -3237,11 +3221,10 @@ def usb_page(mode,theme_='1',light='1',y=26,machine=None):
     win=m.node('window','usbmode_page',[ret,img,info,charge,dacset]); parents(m,win); m.word(win+O['W_PARENT'],m.wm)
     place(m,win,0,y,375,320-y); place(m,ret,20,0,80,60); place(m,charge,247,0,50,50); place(m,dacset,305,0,50,50); m.top=win; m.nodes[m.wm]={'children':[win]}; ui_loaded(m,'usbmode_page',win)
     return m,win,ret,img,info,charge,dacset
-# Update Library's dialog under Classic: the page, the dark bar, the icon; stock's picture and labels hidden, btn_no moved.
+# Update Library's dialog under Classic: the page, the icon and no bar of its own (it paints the real one, below); stock's picture and labels hidden, btn_no moved.
 for light in '10':
     um,uwin,uanim,umsg,uscan,ubtn=msg_dialog(light=light); bare(um); bg(um,uwin); uhead,uline=named(um,uwin,'msg_heading'),named(um,uwin,'msg_line')
-    darkrows=[b for b in um.bands if b[2]==375 and b[1]<26]
-    assert page_fill(um,26,0x63717b if light=='1' else 0x1c1c1c) and [b[:4] for b in darkrows]==[(0,j,375,1) for j in range(26)] and darkrows[0][4]==color_t(0x1c1c1c) and darkrows[24][4]==color_t(0x1c1c1c) and darkrows[25][4]==color_t(0x333333)
+    assert page_fill(um,26,0x63717b if light=='1' else 0x1c1c1c) and not [b for b in um.bands if b[1]<26]  # nothing of its own on the bar's rows
     assert [um.nodes[w]['visible'] for w in (uanim,umsg,uscan)]==[0,0,0] and named(um,uwin,'btn_no')==ubtn and um.nodes[ubtn]['visible']==1
     assert [um.text(c[2]) for c in um.calls if c[0]=='widget_load_image']==['classic_light_orb_note'] and um.image_draws[0][1][:2]==(129,38)
     assert wbox(um,ubtn)==(127,248,121,34) and wbox(um,uhead)==(16,159,343,32) and um.nodes[uhead]['text']=='Updating Library' and wbox(um,uline)==(16,188,343,20)
@@ -3250,11 +3233,13 @@ for light in '10':
     assert um.nodes[uhead]['style:normal:text_color']&0xffffffff==white and um.nodes[uline]['style:normal:text_color']&0xffffffff==white and um.nodes[uhead]['style:normal:text_align_h']=='center'
     for state in ('normal','pressed','over','disable','focused'):
         assert um.nodes[ubtn][f'style:{state}:bg_color']==0 and um.nodes[ubtn][f'style:{state}:font_size']==23 and um.nodes[ubtn][f'style:{state}:font_name']=='classic-light' and um.nodes[ubtn][f'style:{state}:text_color']&0xffffffff==white
-    assert [(t['text'],t['rect'],t['font'][1]) for t in um.letters]==[('Update Library',(0,0,375,25),21),('Updating Library',(16,160,343,32),29),('0 of 704 songs',(16,189,343,20),18)]
-    assert [b[:5] for b in um.bands if b[1]<=7 and b[0]>=294 and b[2]==26]==[(294,7,26,13,color_t(0xf5f5f5))]  # the battery, on the screen
+    assert [(t['text'],t['rect'],t['font'][1]) for t in um.letters]==[('Updating Library',(16,160,343,32),29),('0 of 704 songs',(16,189,343,20),18)]
     cancel,rest=round_box([b for b in um.bands if 248<=b[1]<283],127,248,121,34,7)
     assert cancel[0]==color_t(0x232c33) and cancel[33]==color_t(0x333c43)
     assert [b[:5] for b in rest if b[1]==282 and b[2]>1]==[(127+corner_in(7),282,121-2*corner_in(7),1,0x26000000|0xffffff)] and um.lcd_colors()==LCD_COLORS; passed()
+# ... it covers the status bar, so it paints the real one after its page, as Search does, and the bar names it; any theme's look and battery are the bar's own.
+ur,urwin,*_=msg_dialog(); ur.mock('widget_paint'); urtitle=ur.node('hscroll_label','label_title'); urbar=ur.node('window','system_bar',[urtitle]); ur.word(urbar+O['W_PARENT'],ur.wm); ur.word(syms['system_bar'],urbar)
+bare(ur); bg(ur,urwin); assert [c[1:3] for c in ur.calls if c[0]=='widget_paint']==[(urbar,ur.canvas)] and ur.nodes[urtitle]['text']=='Update Library' and not [b for b in ur.bands if b[1]<26]; passed()
 # ... its count: "312 of 704 songs", the bar 229*312//704 wide; past the total, stock's text and no bar; a tap on Cancel reaches stock's handler.
 assert um.sqls[-1]=='select count(*) from songtable' and sum('select count' in s for s in um.sqls)==1  # read once, on open, with no rows in memory
 um.nodes[umsg]['text']='Updating No.312'; bare(um); bg(um,uwin); track,fillrows=msg_track(um),msg_fill(um)
@@ -3308,15 +3293,15 @@ for mode,line in ((0,'Eject before disconnecting'),(2,'Eject before disconnectin
     assert not [b for b in ub.bands if b[2]==375 and b[4]==color_t(0x1c1c1c)] and not msg_track(ub) and not ub.timers  # the real bar's above it; no count
     assert [(t['text'],t['rect']) for t in ub.letters]==[('Connected',(16,229-26,343,32))]+([(line,(16,256-26,343,20))] if line else []) and ub.lcd_colors()==LCD_COLORS; passed()
 # ... under the real bar it has Classic's own bar, with no title (no wordmark) and no clock; a window that covers the bar
-# paints its own, untitled too.
-db,dbar,dright,dtitle,dclock,dbt,dwifi,dpct,dslot,dst,dwin,dhome=dark_setup()
+# paints the real one too, and no rows of its own.
+db,dbar,dright,dtitle,dclock,dbt,dwifi,dpct,dslot,dst,dwin,dhome=bar_setup()
 uw=db.node('window','usbmode_page'); db.word(uw+O['W_PARENT'],db.wm); place(db,uw,0,26,375,294); ui_loaded(db,'usbmode_page',uw); db.top=uw; db.nodes[db.wm]={'children':[uw]}; db.clock_minutes=True
 for _ in range(2): bg(db,uw); bg(db,dbar)
 db.advance(61000)  # the clock's minute writes no clock over USB's page
 assert db.nodes[dtitle].get('text','')=='' and db.nodes[dclock].get('text','')==''; db.bands=[]; bg(db,dbar); assert [b for b in db.bands if b[2]==375][0][4]==color_t(0xffffff); passed()
 db.word(uw+O['W_Y'],0); db.letters=[]; bg(db,uw); assert db.letters and not [t for t in db.letters if t['rect'][1]<26]; passed()  # a window over the bar paints no title there
-uc,cwin,*_=usb_page(0,y=0); bare(uc); bg(uc,cwin)
-assert page_fill(uc,26) and uc.image_draws[0][1][:2]==(122,67) and [b for b in uc.bands if b[2]==375 and b[1]==0][0][4]==color_t(0x1c1c1c) and uc.letters[0]['text']=='Connected' and wbox(uc,named(uc,cwin,'msg_heading'))==(16,228,343,32); passed()
+uc,cwin,*_=usb_page(0,y=0); uc.mock('widget_paint'); ucbar=uc.node('window','system_bar'); uc.word(ucbar+O['W_PARENT'],uc.wm); uc.word(syms['system_bar'],ucbar); bare(uc); bg(uc,cwin)
+assert page_fill(uc,26) and uc.image_draws[0][1][:2]==(122,67) and not [b for b in uc.bands if b[1]<26] and [c[1] for c in uc.calls if c[0]=='widget_paint']==[ucbar] and uc.letters[0]['text']=='Connected' and wbox(uc,named(uc,cwin,'msg_heading'))==(16,228,343,32); passed()
 # ... a cable opening it over the scan's dialog: each paints its own, and the dialog's end leaves the page.
 sd,swin,_,smsg,_,_=msg_dialog(); ub2=sd.node('window','usbmode_page'); sd.word(ub2+O['W_PARENT'],sd.wm); place(sd,ub2,0,26,375,294); ui_loaded(sd,'usbmode_page',ub2)
 bare(sd); bg(sd,ub2); assert page_fill(sd) and sd.image_draws[0][1][:2]==(122,41) and not msg_track(sd)
@@ -3332,17 +3317,13 @@ for ink_day,ink_night in ((color_t(0),color_t(0xffffff)),):
 passed()
 # ... the hold menu's title.
 ha,had,_=hold_cl('2'); assert hold_inks(ha,had)==hold_inks(*hold_cl('1')[:2]); half_turn(ha,19); assert hold_inks(ha,had)==hold_inks(*hold_cl('0')[:2]); passed()
-# ... the dark bar's title; back on a page with the bar's own title, it keeps that colour through the next turn.
-dh,dhbar,_,dhtitle,*_,dhwin,dhhome=dark_setup('2'); dh.nodes[dh.wm]={'children':[dhbar,dhwin]}; bg(dh,dhwin); bg(dh,dhbar); bg(dh,dhbar)
-assert dh.nodes[dhtitle]['style:normal:text_color']&0xffffffff==color_t(0); half_turn(dh,19); assert dh.nodes[dhtitle]['style:normal:text_color']&0xffffffff==color_t(0xffffff)
-dh.top=dhhome; dh.nodes[dh.wm]={'children':[dhbar,dhhome]}; bg(dh,dhhome); bg(dh,dhbar); back=dh.nodes[dhtitle]['style:normal:text_color']; half_turn(dh,7); assert dh.nodes[dhtitle]['style:normal:text_color']==back; passed()
 # Nothing here crosses the glass, and Minimal keeps stock's dialogs: no images, no moved widgets, stock's labels shown.
-for x,y,w,h in ((127,248,121,35),(16,159,343,32),(16,188,343,20),(72,218,229,15),(129,38,116,116),(122,67,130,130),(16,228,343,32),(16,255,343,20),(278,7,10,11),(294,7,26,13),(320,11,2,5)):
+for x,y,w,h in ((127,248,121,35),(16,159,343,32),(16,188,343,20),(72,218,229,15),(129,38,116,116),(122,67,130,130),(16,228,343,32),(16,255,343,20)):
     assert corner_inset(y)<=x and corner_inset(y+h-1)<=x and x+w<=375-max(corner_inset(y),corner_inset(y+h-1)),(x,y,w,h)
 for h,px in ((32,29),(20,18),(34,23),(25,22)): assert h>px
 df=TTFont(B/'default.ttf',lazy=True); ds=lambda px: px/(df['hhea'].ascent-df['hhea'].descent)
 ink=lambda t,px: sum(df['hmtx'][df.getBestCmap()[ord(c)]][0] for c in t)*ds(px)
-assert ink('Update Library',22)<=375-2*corner_inset(0) and ink('Eject before disconnecting',18)<=375-2*corner_inset(275) and ink('65000 of 65000 songs',18)<=343; passed()
+assert ink('Eject before disconnecting',18)<=375-2*corner_inset(275) and ink('65000 of 65000 songs',18)<=343; passed()
 for theme_ in '0':
     m,win,anim,msg,scan,btn=msg_dialog(theme_=theme_); bare(m); m.paint(win); kids=len(m.nodes[win]['children'])
     assert not m.image_draws and wbox(m,btn)==(44,266,287,40) and m.nodes[anim]['visible'] and m.nodes[msg]['visible'] and kids==4 and not m.sqls and not m.timers and 'style:normal:bg_color' not in m.nodes[btn] and not m.letters
@@ -12106,29 +12087,29 @@ def lock_cl(large=0,light='1',picture='screensaver_default',battery='1',status=0
     m.nodes[w['img_screensaver']]['image']=picture; m.nodes[w['clock_date']]['format']='Y-MM-DD'; m.nodes[w['clock_date']]['text']='Nov 5, 2026'; m.nodes[w['label_battery']]['text']='82%'
     put(m,w['img_screensaver'],0,0,375,320); put(m,w['clock_time'],72,0,151,50)
     m.top=m.node('window','saverscreen_page',[m.node('gesture','app_gesture',[w['img_screensaver'],w['view_shade'],w['view_timeinfo'],w['view_playinfo'],w['img_slide']])]); parents(m,m.top)
-    m.handlers.pop(syms['mclGetPlayStatus'],None); m.word(0xa50084,status); m.clock=clock
+    m.handlers.pop(syms['mclGetPlayStatus'],None); m.word(0xa50084,status); m.clock=clock; m.mock('widget_paint')  # paint_bar's, of the real bar
     if bar_y is not None:  # the bar's title found first, as on a lock that isn't right after boot
-        bar_t=m.node('hscroll_label','label_title'); m.word(bar_t+O['W_Y'],bar_y&0xffffffff); bg(m,classic_light_bar(m,bar_t))
+        bar_t=m.node('hscroll_label','label_title'); m.word(bar_t+O['W_X'],6); m.word(bar_t+O['W_Y'],bar_y&0xffffffff); bg(m,classic_light_bar(m,bar_t))
     assert m.call(address=HOOKS['saverscreen_page_init'][0],args=(m.top,0,0,0),gap=0)==0
     m.image_size=(96,96); return m,w
 def lock_paint(m,w): blank(m); m.call(address=HOOKS['widget_on_paint_border'][0],args=(w['img_screensaver'],m.canvas,0,0),gap=0,count=400000); return m.image_draws
 TRAY_ROWS=(0x474e58,0x14161b)
-# The info screen under Classic, Standard: the page, dark bar, face at 29,54, both trays; date's format "MMM D, Y"; no shade.
+# The info screen under Classic, Standard: the page, no bar of its own (it paints the real one, below), face at 29,54, both trays; date's format "MMM D, Y"; no shade.
 lk,w=lock_cl(); box_=lambda n: screen_box(lk,w[n]); font_=lambda n:(lk.nodes[w[n]]['style:normal:font_name'],lk.nodes[w[n]]['style:normal:font_size'])
-assert lk.nodes[w['clock_date']]['format']=='MMM D, Y' and box_('clock_date')==(0,0,375,25) and lk.nodes[w['view_shade']]['visible']==0
-# ... the date sits on the real bar's title's row, wherever the set puts it; with no bar title yet, at 0.
-for bar_y in (-1,2): lkb,wb=lock_cl(bar_y=bar_y); assert screen_box(lkb,wb['clock_date'])==(0,bar_y,375,25),bar_y
+assert lk.nodes[w['clock_date']]['format']=='MMM D, Y' and box_('clock_date')==(0,0,187,25) and lk.nodes[w['view_shade']]['visible']==0
+# ... the date is the real bar's title: at its text's column (2 px into the label's box) and row, wherever the set puts them, left, as far as the bar's middle; with no bar title yet, at 0.
+for bar_y in (-1,2): lkb,wb=lock_cl(bar_y=bar_y); assert screen_box(lkb,wb['clock_date'])==(8,bar_y,179,25) and lkb.nodes[wb['clock_date']]['style:normal:text_align_h']=='left',bar_y
 assert box_('clock_time')==(134,44,219,116) and font_('clock_time')==('classic-light',112) and lk.nodes[w['clock_time']]['style:normal:text_align_h']=='center'
-assert box_('label_battery')==(226,0,48,26) and font_('label_battery')==('default',13) and lk.nodes[w['label_battery']]['style:normal:text_align_h']=='right'
+assert lk.nodes[w['label_battery']]['visible']==0  # the status bar has the battery
 assert box_('img_playcover')==(28,198,60,60) and box_('scrlabel_title')==(100,202,245,28) and font_('scrlabel_title')==('classic-light',27) and box_('scrlabel_artist')==(100,229,245,22) and font_('scrlabel_artist')==('classic-light',21)
 assert box_('img_slide')==(177,288,21,7) and lk.nodes[w['img_slide']]['draw_type']==O['IMAGE_DRAW_FILL'] and lk.get(w['img_slide']+0x34)&255==216 and lk.nodes[w['scrlabel_artist']]['style:normal:text_color']>>24&255==0xc8 and lk.nodes[w['view_playinfo']]['style:normal:bg_color']==0
-draws=lock_paint(lk,w); rows=[b for b in lk.bands if b[3]==1 and b[2]==375]
+draws=lock_paint(lk,w)
 assert [d[1][:2] for d in draws]==[(173,284),(29,54)] and (0,26,375,294,color_t(0x63717b)) in [b[:5] for b in lk.bands] and lk.nodes[w['img_screensaver']]['image']==''
 assert [lk.text(c[2]) for c in lk.calls if c[0]=='widget_load_image']==['classic_light_hint_shadow','classic_light_clock_dark']
-assert [b[1] for b in rows[:26]]==list(range(26)) and rows[0][4]==color_t(0x1c1c1c) and rows[25][4]==color_t(0x333333)
+assert not [b for b in lk.bands if b[1]<26]  # nothing of its own on the bar's rows
 trays=[b for b in lk.bands if b[0]>=16 and b[0]+b[2]<=359 and b[3]==1 and b[4]>>24==0xff and b[4] in (color_t(0x474e58),color_t(0x14161b))]
 tray_in=corner_in(9); assert [b[:4] for b in trays]==[(16+tray_in,y,343-2*tray_in,1) for y in (44,159,186,269)]  # each opaque between its corners' pixels
-assert not lk.letters and box_('clock_date')[2:]==(375,25) and font_('clock_date')==('classic-light',21) and lk.lcd_colors()==LCD_COLORS; passed()
+assert not lk.letters and box_('clock_date')[2:]==(187,25) and font_('clock_date')==('classic-light',21) and lk.lcd_colors()==LCD_COLORS; passed()
 # ... each label takes the face its text has, as stock writes it after the window loads: bold for Cyrillic, the system font for CJK, at the fallback's size; a paint with nothing new restyles nothing.
 lk.nodes[w['scrlabel_title']]['text']='Песня'; lk.nodes[w['scrlabel_artist']]['text']='歌手'; lk.nodes[w['clock_date']]['text']='Ноя 5, 2026'; lock_paint(lk,w)
 assert font_('scrlabel_title')[0]=='bold' and font_('scrlabel_title')[1]<27 and font_('scrlabel_artist')[0]=='default' and font_('clock_date')==('bold',17)
@@ -12136,12 +12117,13 @@ lk.calls=[]; lock_paint(lk,w); assert not [c for c in lk.calls if c[0]=='widget_
 # Its lock screen hides stock's battery image: stock's timer writes the image back, never its visibility.
 lk,w=lock_cl(); assert lk.nodes[w['img_battery']]['visible']==0 and lk.nodes[w['pgbar_battery']]['visible']==0
 passed()
-# Its labels reach the screen white in either half, as the wallpapers want: the style hook turns what they store.
+# Its labels reach the screen white in either half, as the wallpapers want: the style hook turns what they store. The date is the bar's title, in its ink: dark on Light Mode's bar.
 for light in '01':
     lc,lw=lock_cl(light=light)
-    for n in ('clock_time','clock_date','label_battery','scrlabel_title'):
+    for n in ('clock_time','clock_date','scrlabel_title'):
         begin(lc,lw[n]); out=lc.alloc(4); lc.word(out,lc.nodes[lw[n]]['style:normal:text_color']&0xffffffff); lc.handlers[int(manifest['patch_symbols']['stock_color_trampoline'],16)]='stock_color'
-        lc.call(address=HOOKS['style_get_color'][0],args=(out,0x1234,lc.string('text_color'),0),gap=0); assert lc.get(out)==0xffffffff,(light,n)
+        lc.call(address=HOOKS['style_get_color'][0],args=(out,0x1234,lc.string('text_color'),0),gap=0); ink=lc.get(out)
+        assert (ink==0xffffffff)==(n!='clock_date' or light=='0'),(light,n,hex(ink))
     passed()
 # ... Large: clock_time at 166 px, in a box that holds it, its middle the tray's, no face, tray 128 high.
 lk,w=lock_cl(large=1); assert screen_box(lk,w['clock_time'])==(16,24,343,168) and wbox(lk,w['view_timeinfo'])[3]>=192 and lk.nodes[w['clock_time']]['style:normal:font_size']==166 and lk.nodes[w['clock_time']]['style:normal:font_name']=='classic-light'
@@ -12169,35 +12151,36 @@ passed()
 lk,_=lock_cl(); r=lk.alloc(16)
 for i,v in enumerate((20,40,60,44)): lk.word(r+4*i,v)
 blank(lk); lk.call(address=payload_syms['pale_lit'],args=(lk.canvas,r,1,0),gap=0); assert all(fill_at(lk,80,y) for y in (42,46)) and not [b for b in lk.bands if b[0]>=80 and b[1]>=40+27]; passed()
-# ... a picture: no page image; a chosen picture the same; the trays and bar still paint.
+# ... a picture: no page image; a chosen picture the same; the trays still paint, and nothing of its own on the bar's rows.
 for pic in ('q2pod:aurora','/mnt/mmc/lockscreenimage/a.jpg'):
     lk,w=lock_cl(picture=pic); draws=lock_paint(lk,w); assert [d[1][:2] for d in draws][-1]==(29,54) and not [b for b in lk.bands if b[:4]==(0,26,375,294)] and [lk.text(c[2]) for c in lk.calls if c[0]=='widget_load_image']==['classic_light_hint_shadow','classic_light_clock_dark']
-    assert [b for b in lk.bands if b[:2]==(0,0) and b[2]==375][0][4]==color_t(0x1c1c1c) and color_t(0x474e58) in [b[4] for b in lk.bands] and lk.nodes[w['img_screensaver']]['image']==('' if 'q2pod' in pic else pic)
+    assert not [b for b in lk.bands if b[1]<26] and color_t(0x474e58) in [b[4] for b in lk.bands] and lk.nodes[w['img_screensaver']]['image']==('' if 'q2pod' in pic else pic)
     passed()
 lk,w=lock_cl(picture='q2pod:black',light='1'); lock_paint(lk,w); assert (0,26,375,294,color_t(0)) in [b[:5] for b in lk.bands]; passed()  # Black keeps black, in the light half too
-# ... Auto Light Mode's turn with the screen up: date, time, title and artist, the artist keeping its alpha.
+# ... Auto Light Mode's turn with the screen up: time, title and artist, the artist keeping its alpha; the date, on the bar, keeps the plain white the style hook flips, as the bar's title.
 lk,w=lock_cl(light='2'); lk.nodes[lk.wm]={'children':[lk.top]}; links=lambda: [lk.nodes[w[n]]['style:normal:text_color']&0xffffffff for n in ('clock_date','clock_time','scrlabel_title','scrlabel_artist')]
-lock_paint(lk,w); assert links()==[color_t(0)]*3+[color_t(0)&0xffffff|0xc8000000]; half_turn(lk,19); assert links()==[color_t(0xffffff)]*3+[color_t(0xffffff)&0xffffff|0xc8000000]; passed()
-# ... percent follows ipod_battery(): hidden on Icon, shown otherwise; battery painted, img_battery empty.
+lock_paint(lk,w); assert links()==[color_t(0xffffff)]+[color_t(0)]*2+[color_t(0)&0xffffff|0xc8000000]; half_turn(lk,19); assert links()==[color_t(0xffffff)]*3+[color_t(0xffffff)&0xffffff|0xc8000000]; passed()
+# ... stock's battery is hidden whatever the Battery setting says: the bar's own shows it.
 for mode in range(4):
-    lk,w=lock_cl(battery=str(mode)); assert lk.nodes[w['label_battery']]['visible']==(mode!=0) and lk.nodes[w['img_battery']]['visible']==0 and lk.nodes[w['pgbar_battery']]['visible']==0
-    lock_paint(lk,w); assert (285+9,1+6,26,13,color_t(0xf5f5f5)) in [b[:5] for b in lk.bands] and [b[2] for b in lk.bands if b[0]==285+11 and b[1]==1+8][0]==22*82//100
+    lk,w=lock_cl(battery=str(mode)); assert [lk.nodes[w[n]]['visible'] for n in ('label_battery','img_battery','pgbar_battery')]==[0,0,0]
+    lock_paint(lk,w); assert not [b for b in lk.bands if b[1]<26]
 passed()
-# ... the play state's glyph on the bar, playing or paused; a hidden card has no tray.
-for status,glyph in ((2,'classic_light_play_w'),(3,'classic_light_pause_w')):
-    lk,w=lock_cl(status=status); draws=lock_paint(lk,w); assert glyph in [lk.text(c[2]) for c in lk.calls if c[0]=='widget_load_image'] and (278,7) in [d[1][:2] for d in draws]
+# ... the window is full-screen, so it paints the real status bar itself, with the bar's own play state and battery; a hidden card has no tray.
+lk,w=lock_cl(status=2); lbar=classic_light_bar(lk,lk.node('hscroll_label','label_title')); draws=lock_paint(lk,w)
+assert [c[1:3] for c in lk.calls if c[0]=='widget_paint']==[(lbar,lk.canvas)] and not [b for b in lk.bands if b[1]<26] and (278,7) not in [d[1][:2] for d in draws]; passed()
 lk,w=lock_cl(); lk.nodes[w['view_playinfo']]['visible']=0; lock_paint(lk,w); assert not [b for b in lk.bands if b[1]==186 and b[2]>300]; passed()
-# ... charging, as the status bar's icon says, fills the battery.
-lk,w=lock_cl(); icon=lk.node('image','img_battery',image='bar_charge'); sbar=lk.node('system_bar','system_bar',[icon]); parents(lk,sbar); lk.word(sbar+O['W_PARENT'],lk.wm); lk.word(syms['system_bar'],sbar)
-bg(lk,sbar); lock_paint(lk,w); assert [b[2] for b in lk.bands if b[0]==285+11 and b[1]==1+8][0]==22; passed()
+# ... the bar's battery starting to charge, as its icon says, repaints the screen at the next look: nothing else repaints the bar under a full-screen window.
+lk,w=lock_cl(); icon=lk.node('image','img_battery',image='bar_battery'); pct=lk.node('label','label_battery',text='82%'); sbar=lk.node('system_bar','system_bar',[icon,pct]); parents(lk,sbar); lk.word(sbar+O['W_PARENT'],lk.wm); lk.word(syms['system_bar'],sbar)
+bg(lk,sbar); lock_paint(lk,w); assert [c[1] for c in lk.calls if c[0]=='widget_paint'][-1]==sbar; lk.advance(1000)
+lk.calls=[]; lk.advance(1000); assert ('widget_invalidate_force',w['img_screensaver']) not in [c[:2] for c in lk.calls]
+lk.nodes[icon]['image']='bar_charge'; lk.advance(1000); assert ('widget_invalidate_force',w['img_screensaver']) in [c[:2] for c in lk.calls]; passed()
 # ... hands at 16:42 on the dark face; a minute later the timer repaints it; the timer goes with the page.
 lk,w=lock_cl(); lock_paint(lk,w); info_tick=payload_syms['info_tick']; ticks=lambda: [t for t in lk.timers.values() if t[1]==info_tick]
 assert hand_tip(lk,44,112) and hand_tip(lk,94,121) and not hand_tip(lk,110,102) and len(ticks())==1  # minute at 252 degrees, hour at 138
 lk.advance(1000); assert ('widget_invalidate_force',w['img_screensaver']) not in [c[:2] for c in lk.calls]
 lk.clock=(16,43); lk.advance(1000); assert ('widget_invalidate_force',w['img_screensaver']) in [c[:2] for c in lk.calls]
 lock_paint(lk,w); assert hand_tip(lk,44,109) and not hand_tip(lk,43,114); lk.calls=[]; lk.advance(1000); assert ('widget_invalidate_force',w['img_screensaver']) not in [c[:2] for c in lk.calls]
-lk.nodes[w['label_battery']]['text']='81%'; lk.advance(1000); assert ('widget_invalidate_force',w['img_screensaver']) in [c[:2] for c in lk.calls]  # the battery; the play state the same
-lk.word(0xa50084,2); lk.advance(1000); assert ('widget_invalidate_force',w['img_screensaver']) in [c[:2] for c in lk.calls]
+lk.word(0xa50084,2); lk.advance(1000); assert ('widget_invalidate_force',w['img_screensaver']) in [c[:2] for c in lk.calls]  # the play state the same (the bar's battery: above)
 lk.clock=(16,44); lock_paint(lk,w); lk.advance(1000); assert ('widget_invalidate_force',w['img_screensaver']) in [c[:2] for c in lk.calls]  # a paint clipped to stock's clock, as its minute turns, doesn't hide the new minute from the tick
 # ... the screen off, the timer stops at its next look; the first loop pass with it lit starts it again and repaints the whole screen, so no stale hands show.
 lock_paint(lk,w); lk.advance(1000); lk.byte(syms['g_backlight_status'],0); lk.clock=(16,45); lk.calls=[]; lk.advance(1000); assert not ticks() and ('widget_invalidate_force',w['img_screensaver']) not in [c[:2] for c in lk.calls]; lk.advance(5000); assert not ticks()

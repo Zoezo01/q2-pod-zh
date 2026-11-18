@@ -181,8 +181,8 @@ typedef struct {
     unsigned bc_key, bc_box, bc_shape,
         bc_url; /* the track, cover and image bc_fit sized for, the box
                  * it left, the image's w << 16 | h and its track */
-    /* Classic (classic_pages): the rating panel, the slider page and its slider; the dark
-     * bar and the title's place under it; the volume in the time row's place. */
+    /* Classic (classic_pages): the rating panel, the slider page and its slider; the volume in the
+     * time row's place. */
     void *rate_box, *slider_win, *slider_w, *slider_sw;
     const __WCHAR_TYPE__ *slider_hint; /* its caption */
     void *t9_page, *t9_back;           /* t9_box's page and chevron, while its box lives */
@@ -193,9 +193,7 @@ typedef struct {
     /* Classic's T9 keyboard window, and Search with its tab group (search_open). */
     void *kb_win, *search_win, *search_tabs, *pl_box;
     const char *number_face; /* the slider page's value's, as slider_number last set it */
-    int title_color;
-    short title_x, title_y, title_w;
-    unsigned char title_align, slider_kind, bar_dark;
+    unsigned char slider_kind;
     unsigned np_hash; /* of the album text, position and queue length shown, 0 to refresh */
     unsigned np_art;  /* the track and player cover img_cover last took (np_art_poll) */
     int np_left;

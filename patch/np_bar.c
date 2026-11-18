@@ -99,25 +99,43 @@ int np_sync(void *top) {
     return 1;
 }
 
+/* The page in front: top, or under a pop-up the window it is over, read from the window manager's
+ * stack, so a page that went from under a pop-up (the lock screen, opened over Search and closed)
+ * is not still the one in front. The scan's dialog counts: it names the bar it covers. */
+static void *page_of(void *top) {
+    void *wm = window_manager();
+    unsigned i = widget_count_children(wm);
+    while (top && top != st.msg_win && tk_strcmp(widget_get_type(top), "window"))
+        top = i ? widget_get_child(wm, --i) : (void *)0;
+    return top;
+}
+
 /* Time in Title off: the bar's centre names the page in front, as an iPod's, in Modern's bold:
  * Now Playing or Cover Flow, Home by coverflow_home_title (Q2 Pod; nothing with Show Wordmark off,
  * and no clock either way), else stock's title in the page's hidden navbar (scrlabel_title, or a
  * settings page's unnamed first child). A page showing its navbar and an untitled page keep the
  * clock; a pop-up or keyboard leaves the bar as it is. USB mode's page has neither title nor
- * clock, with Time in Title on or off, in every theme and Status Bar look. This runs in a paint,
- * which drops the label's invalidate, so bar_repaint follows; the clock waits for its timer. */
+ * clock, with Time in Title on or off, in every theme and Status Bar look; nor has Classic's lock
+ * screen, whose date and clock are its own. Classic's Set Time and Update Library have no clock
+ * either, so their titles show whole in its room: beside the clock the title's box has 91 px, the
+ * scan's title is 104 px and the widest date being set 90. This runs in a paint, which drops the
+ * label's invalidate, so bar_repaint follows; the clock waits for its timer. */
 void bar_title(void *bar, void *top) {
     static const unsigned
         now_playing[] = { 'N', 'o', 'w', ' ', 'P', 'l', 'a', 'y', 'i', 'n', 'g', 0 },
         cover_flow[] = { 'C', 'o', 'v', 'e', 'r', ' ', 'F', 'l', 'o', 'w', 0 }, none = 0;
-    static int usb; /* USB mode's page in front, under any pop-up over it */
-    if (top && !tk_strcmp(widget_get_type(top), "window"))
-        usb = !tk_strcmp(widget_get_prop_str(top, "name", ""), "usbmode_page");
+    void *page = page_of(top);
+    static int bare; /* a page with no clock in front (above); the last one's with none found */
+    if (page) {
+        const char *name = widget_get_prop_str(page, "name", "");
+        bare = !tk_strcmp(name, "usbmode_page") || time_form(page) || page == st.msg_win ||
+               (classic_pages() && !tk_strcmp(name, "saverscreen_page"));
+    }
     if (st.bar_title) { /* this bar names the page in its own label: off, the clock makes way */
         const unsigned *own = widget_get_text(st.bar_title);
         static int home; /* Home in front: no clock under its title though it is empty */
-        if (top && !tk_strcmp(widget_get_type(top), "window")) home = home_menu(top);
-        int titled = usb || (!st.time_title && (home || (own && *own)));
+        if (page) home = home_menu(page);
+        int titled = bare || (!st.time_title && (home || (own && *own)));
         void *clock = titled != st.bar_titled ? widget_lookup(bar, "label_clock", 1) : (void *)0;
         if (!clock) return;
         st.bar_titled = titled;
@@ -137,12 +155,12 @@ void bar_title(void *bar, void *top) {
         if (!st.bar_timer) st.bar_timer = timer_add(bar_repaint, (void *)0, 0);
         return;
     }
-    if (st.time_title && !st.bar_titled && !usb) return; /* the clock, every paint */
+    if (st.time_title && !st.bar_titled && !bare) return; /* the clock, every paint */
     if (!top || tk_strcmp(widget_get_type(top), "window")) return;
     void *label = widget_lookup(bar, "label_clock", 1);
     if (!label) return;
-    const unsigned *title = usb ? &none : (void *)0; /* USB's: an empty title, so no clock */
-    if (!st.time_title && !usb) {
+    const unsigned *title = bare ? &none : (void *)0; /* USB's: an empty title, so no clock */
+    if (!st.time_title && !bare) {
         void *nav = widget_lookup(top, "view_navbar", 0), *t = (void *)0;
         if (nav && !widget_get_visible(nav)) {
             t = widget_lookup(nav, "scrlabel_title", 0);

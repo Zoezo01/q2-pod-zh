@@ -93,11 +93,10 @@ def has(runs, text):
     return all(any(lo <= ord(c) <= hi for lo, hi in runs) for c in text)
 
 
-PTRS = set('''bar_bt bar_wifi bar_pct bar_slot bar_icon bar_idle bar_state bar_eq bar_title np_win np_pos
+PTRS = set('''msg_win bar_bt bar_wifi bar_pct bar_slot bar_icon bar_idle bar_state bar_eq bar_title np_win np_pos
     np_album np_slider np_remain np_elapsed np_cover np_title np_slide np_lrc slider_win slider_w slider_sw slider_hint
     t9_page t9_back kb_win search_win search_tabs pl_box stream_art stream_bar genre_label number_face'''.split())
-BYTES = {'title_align', 'slider_kind', 'bar_dark'}
-SHORTS = {'title_x', 'title_y', 'title_w'}
+BYTES = {'slider_kind'}
 UNSIGNED = set('''codec_timer batt_key bar_timer np_hash np_art np_marquee np_remain_timer np_fit_timer np_press
     np_press_at scrub_timer scrub_track settle_timer lyric_song lyric_rows_song
     bc_timer bc_track bc_repaint bc_key bc_box bc_shape bc_url clock_key clock_timer keep_lit_at genre_timer
@@ -111,7 +110,7 @@ class State:
         object.__setattr__(self, 'at', scratch)
 
     def ref(self, name, i=0):
-        kind = (C.c_void_p if name in PTRS or name == 'bc' else C.c_ubyte if name in BYTES else C.c_short if name in SHORTS
+        kind = (C.c_void_p if name in PTRS or name == 'bc' else C.c_ubyte if name in BYTES
                 else C.c_uint if name in UNSIGNED else C.c_int)
         return kind.from_address(self.base + self.at[name] + i * C.sizeof(kind))
 
@@ -446,21 +445,6 @@ def test_a_new_level_repaints_the_bar_with_nothing_else_painting(fw, st, ui, t, 
     assert [tick('10%'), frame()] == [1, grows] and slot_width(ui, bar) == width + 10 * grows
     lit.value = 0
     assert tick('86%') == 0  # dark: the wake paints it
-
-
-def test_a_dark_bar_gets_one_repaint_for_a_new_level_and_its_sync_asks_for_no_more(fw, st, ui):
-    theme(fw, st, BATTERY=1)
-    bar = Bar(fw, ui)
-    fw.var('g_backlight_status', C.c_ubyte).value = 1
-    st.bar_dark = 1
-    bar.sync()
-    ui.run_all('bar_repaint')
-    bar.level('87%')
-    before = len(ui.invalidated(bar.bar))
-    fw.fn('ringnav_showface', C.c_int, C.c_void_p)(bar.bar)
-    assert len(ui.invalidated(bar.bar)) - before == 1
-    bar.sync()
-    assert not ui.due('bar_repaint')
 
 
 def test_classic_repaints_the_bar_when_only_the_cable_flips(fw, st, ui):
@@ -921,101 +905,45 @@ def test_classics_light_half_adds_a_soft_edge_and_an_emboss_outside_the_body(fw,
     assert {r[1] for r in past if r[1] >= dark[1] + dark[3]} and {r[0] for r in past if r[0] < dark[0]}  # under it and left
 
 
-# Classic's dark bar (USB mode's page, the slider pages, Set Time): its own battery, the icons off.
-def dark_parts(rects):
-    """The dark battery's rects, the bar's full-width rows left out: its outline (the largest box) and the
-    level's rows (1 high, within it)."""
-    battery = [r for r in rects if r[2] != 375]
-    outline = max(battery, key=lambda r: r[2] * r[3])
-    return outline, [r for r in battery if r[3] == 1]
-
-
-def dark_level(rects):
-    return max((r[2] for r in dark_parts(rects)[1]), default=0)
-
-
-def dark_page(ui):  # a slider page: under Classic's dark bar
-    page = ui.widget(ui.wm, 'backlight_page', 0, 0, 375, 320, kind='window')
-    ui.set_str(page, b'name', b'backlight_page')
-    return page
-
-
-def test_the_dark_bar_moves_the_icons_off_and_paints_its_own_battery(fw, st, ui):
+# The slider pages and Set Time once had a dark bar of their own: the bar over them is the one every page has.
+@pytest.mark.parametrize('name', ['backlight_page', 'maxvol_page', 'bootvol_page', 'balance_page', 'manualtime_page'])
+def test_a_slider_page_or_set_time_keeps_the_bar_s_marks_and_its_battery(fw, st, ui, name):
     theme(fw, st, CLASSIC, BATTERY=3)
     bar = Bar(fw, ui, title=True)
-    bar.sync()  # the bar's first paint finds its widgets
-    title = ui.box(bar.title)
-    ui.top = dark_page(ui)
-    bar.sync()
-    for w in (bar.bt, bar.wifi):
-        x, _, ww, _ = ui.screen(w)
-        assert x + ww <= 0  # off the screen's left
-    g = SETS[GEOM['Classic']]
-    sx, sy, sw, sh = ui.screen(bar.slot)
-    assert 375 // 2 <= sx and sx + sw <= 375 and 0 <= sy and sy + sh <= g.bar  # the bar's right end, on its rows
-    assert ui.shown[bar.clock] == 0 and ui.box(bar.title)[::2] == (0, 375)  # the title across the screen
-    widths = {}
-    for text, icon in (('50%', b'bar_battery'), ('100%', b'bar_battery'), ('10%', b'bar_charge')):
-        canvas = Paint(fw, ui, bar)(text, icon)
-        outline, level = dark_parts(canvas.rects)
-        assert canvas.texts == [] and level and all(within(r, outline) for r in level)  # the level inside the body
-        widths[text] = dark_level(canvas.rects)
-    assert abs(2 * widths['50%'] - widths['100%']) <= 1 and widths['10%'] == widths['100%']  # charging: full
-    state = ui.screen(bar.state)
-    ox, oy, _, oh = outline[:4]
-    assert state[0] + state[2] // 2 < sx + ox and abs(2 * state[1] + state[3] - (2 * (sy + oy) + oh)) <= 1  # left of it, on its rows
-    # a full-screen page's dark bar puts the same battery in the same place
-    full = Canvas(fw)
-    label = wide('10%')  # the label stock wrote, bar_charge still the icon
-    fw.fn('paint_dark_bar', None, C.c_void_p, C.c_void_p, C.c_void_p, C.c_uint)(
-        ui.wm, full.p, None, fw.fn('dark_bar_key', C.c_uint, C.c_void_p)(C.addressof(label)))
-    assert sorted(r for r in full.rects if r[2] != 375) == sorted((x + sx, y + sy, w, h, c) for x, y, w, h, c in canvas.rects)
-    ui.top = 0  # leaving: the title's box and the clock come back
-    bar.sync()
-    assert ui.shown[bar.clock] == 1 and ui.box(bar.title) == title
+    st.bar_title = bar.title
+    ui.shown[bar.state] = 1
+    fw.mock('mclGetPlayStatus', lambda *_: 2)
+    marks = (bar.bt, bar.wifi, bar.slot, bar.state, bar.title, bar.clock)
+
+    def shown(page):
+        ui.top = ui.widget(ui.wm, page, 0, 0, 375, 320, kind='window')
+        ui.set_str(ui.top, b'name', page.encode())
+        canvas = Paint(fw, ui, bar)('50%')
+        return ([ui.box(w) for w in marks], [ui.shown.get(w, 1) for w in marks], ui.prop(bar.state, b'image'),
+                canvas.rects, canvas.texts, canvas.images)
+    plain = shown('about_page')
+    assert shown(name) == plain
+    boxes, visible, image, rects, *_ = plain
+    assert all(0 <= x for x, *_ in boxes[:2]) and rects  # Bluetooth and Wi-Fi where the row put them
+    assert visible == [1, 0, 1, 1, 1, 1]  # all but this bar's Wi-Fi, which is off: the clock and the title too
+    assert image in (b'classic_light_play_d', b'classic_light_play_l')  # the theme's own play state, not a white one
 
 
-def test_dark_bar_key_reads_the_label_and_the_charge_icon(fw, st, ui):
-    theme(fw, st, CLASSIC)
+def test_the_bar_s_battery_key_is_what_its_next_paint_shows(fw, st, ui):
+    """bar_battery_key: the level and the charge, as the bar's own key, for the lock screen's tick, which repaints
+    the bar it paints; nothing before the bar's widgets are found."""
+    theme(fw, st, CLASSIC, BATTERY=3)
     bar = Bar(fw, ui)
-    st.bar_icon = bar.icon
-    key = fw.fn('dark_bar_key', C.c_uint, C.c_void_p)
-    paint = fw.fn('paint_dark_bar', None, C.c_void_p, C.c_void_p, C.c_void_p, C.c_uint)
-    def level(text, icon=b'bar_battery'):
-        ui.set_str(bar.icon, b'image', icon)
-        label = wide(text) if text is not None else None
-        canvas = Canvas(fw)
-        paint(ui.wm, canvas.p, None, key(None if label is None else C.addressof(label)))
-        return dark_level(canvas.rects)
-    assert level('250%') == level('100%') > level('88%') > level('7%') > level(None) == 0  # past 100: full
-    assert level('7%', b'bar_charge') == level('100%') and level('7%', b'bar_lowcharge') == level('7%')
-
-
-@pytest.mark.parametrize('status, art', [(2, b'classic_light_play_w'), (3, b'classic_light_pause_w'), (0, None)])
-def test_a_full_screen_pages_dark_bar(fw, st, ui, status, art):
-    theme(fw, st, CLASSIC)
-    fw.mock('mclGetPlayStatus', lambda *_: status)
-    paint = fw.fn('paint_dark_bar', None, C.c_void_p, C.c_void_p, C.c_void_p, C.c_uint)
-    full = Canvas(fw)
-    paint(ui.wm, full.p, None, 100 << 3)
-    canvas = Canvas(fw)
-    title = wide('Backlight')
-    paint(ui.wm, canvas.p, C.addressof(title), 40 << 3)
-    assert canvas.fill == 0xff123456
-    (text, rect, _, ink, _), = canvas.texts
-    assert (text, rect[0], rect[2], ink) == ('Backlight', 0, 375, rgba(0xffffff))  # white, across the screen
-    outline, level = dark_parts(canvas.rects)
-    rows = {r[1] for r in canvas.rects if r[0] == 0 and r[2] == 375}
-    assert rows == set(range(max(rows) + 1)) and {y for r in canvas.rects for y in range(r[1], r[1] + r[3])} <= rows
-    assert dark_level(canvas.rects) == dark_level(full.rects) * 40 // 100 and all(within(r, outline) for r in level)
-    if art:
-        (name, (x, y, w, h)), = canvas.images
-        assert name == art and x + w <= outline[0] and outline[1] <= y + h // 2 < outline[1] + outline[3]  # left of it, on its rows
-    else:
-        assert canvas.images == []
-    canvas = Canvas(fw)
-    paint(ui.wm, canvas.p, None, 0)
-    assert canvas.texts == []
+    key = fw.fn('bar_battery_key', C.c_uint)
+    assert key() == 0
+    bar.sync()
+    seen = []
+    for text, icon in (('88%', b'bar_battery'), ('87%', b'bar_battery'), ('87%', b'bar_charge'), ('9%', b'bar_lowcharge')):
+        bar.level(text, icon)
+        seen.append(key())
+        bar.sync()
+        assert seen[-1] == st.batt_key  # the key the bar then paints
+    assert len(set(seen)) == 4 and [k >> 3 for k in seen] == [88, 87, 87, 9]
 
 
 # Stock's systembar_showface each second: the play state follows whichever player plays.
@@ -1181,6 +1109,86 @@ def test_usb_mode_shows_no_clock_in_any_theme_or_look(fw, st, ui, t, look, timet
     assert ui.text(bar.clock) == '' and st.bar_titled == 1 and not ui.due('clock_due')
     bar_title(fw, bar, window(ui, 'bare_page'))
     assert st.bar_titled == 0 and len(ui.due('clock_due')) == 1
+
+
+@pytest.mark.parametrize('timetitle', [1, 0])
+def test_classic_s_lock_screen_shows_no_clock_on_the_bar_it_paints(fw, st, ui, timetitle):
+    """Classic's lock screen paints the real bar under its own date and clock: no clock on it with Time in Title
+    on or off, and the next page gets it back."""
+    theme(fw, st, CLASSIC, TIMETITLE=timetitle)
+    bar = Bar(fw, ui, title=True)
+    st.bar_title = bar.title
+    bar_title(fw, bar, window(ui, 'saverscreen_page'))
+    assert ui.text(bar.clock) == '' and st.bar_titled == 1
+    bar_title(fw, bar, window(ui, 'bare_page'))
+    assert st.bar_titled == 0 and len(ui.due('clock_due')) == 1
+
+
+@pytest.mark.parametrize('timetitle, under, titled', [(1, 'display_page', 0), (0, 'home_page', 1)])
+def test_a_lock_screen_gone_from_over_a_pop_up_leaves_the_page_under_it_in_front(fw, st, ui, timetitle, under, titled):
+    """Classic's lock screen opens over a dialog (Search) and closes with the dialog still on top: the page in
+    front is read from the window manager's stack, so the bar is the one the page under the dialog had, its clock
+    back, or none still over a Home with no wordmark, and not the lock screen's."""
+    theme(fw, st, CLASSIC, TIMETITLE=timetitle)
+    bar = Bar(fw, ui, title=True)
+    st.bar_title = bar.title
+    bar_title(fw, bar, window(ui, under))
+    dialog = window(ui, 'search_dialog')
+    ui.types[dialog] = b'dialog'
+    bar_title(fw, bar, dialog)
+    assert st.bar_titled == titled
+    lock = window(ui, 'saverscreen_page')
+    bar_title(fw, bar, lock)
+    assert ui.text(bar.clock) == '' and st.bar_titled == 1
+    ui.kids[ui.wm].remove(lock)
+    bar_title(fw, bar, dialog)
+    assert st.bar_titled == titled and len(ui.due('clock_due')) == (not titled)
+
+
+@pytest.mark.parametrize('timetitle', [1, 0])
+@pytest.mark.parametrize('scan', [0, 1])
+def test_set_time_and_update_library_give_their_title_the_clock_s_room(fw, st, ui, timetitle, scan):
+    """Set Time's title is the date being set and the scan's dialog's is Update Library: neither fits the title's
+    box beside the clock, so under Classic the clock makes way with Time in Title on too, and the title has its
+    room, up to where the right group's starts. The scan's is a dialog, the one msg_open took."""
+    theme(fw, st, CLASSIC, TIMETITLE=timetitle)
+    bar = Bar(fw, ui, title=True, eq_x=-40)
+    st.bar_title, st.bar_eq = bar.title, bar.eq
+    ui.set_text(bar.title, 'Update Library' if scan else 'Nov 18, 2026')
+    box = ui.box(bar.title)
+    top = window(ui, 'updatemusic_dialog' if scan else 'manualtime_page')
+    if scan:
+        ui.types[top] = b'dialog'
+        st.msg_win = top
+    bar_title(fw, bar, top)
+    assert ui.text(bar.clock) == '' and st.bar_titled == 1
+    x, _, w, _ = ui.box(bar.title)
+    assert w > box[2] and x + w == ui.box(bar.row)[0] + ui.box(bar.eq)[0]  # to the right group's room
+    ui.set_text(bar.title, '')  # the next page, with no title: the clock again, the title's box as it was
+    bar_title(fw, bar, window(ui, 'bare_page'))
+    assert ui.box(bar.title) == box and st.bar_titled == 0
+
+
+def test_another_dialog_or_a_slider_page_keeps_the_clock(fw, st, ui):
+    theme(fw, st, CLASSIC)
+    bar = Bar(fw, ui, title=True)
+    st.bar_title = bar.title
+    ui.set_text(bar.title, 'Backlight')
+    bar_title(fw, bar, window(ui, 'backlight_page'))
+    assert ui.text(bar.clock) == '12:00' and st.bar_titled == 0
+    dialog = window(ui, 'updatemusic_dialog')  # not Classic's own: msg_open took none
+    ui.types[dialog] = b'dialog'
+    bar_title(fw, bar, dialog)
+    assert ui.text(bar.clock) == '12:00' and st.bar_titled == 0
+
+
+@pytest.mark.parametrize('t', [MINIMAL, MODERN])
+def test_a_lock_screen_with_no_bar_leaves_the_clock_alone(fw, st, ui, t):
+    """Minimal's and Modern's lock window is stock's, full-screen with no status bar: the clock stays written."""
+    theme(fw, st, t)
+    bar = Bar(fw, ui)
+    bar_title(fw, bar, window(ui, 'saverscreen_page'))
+    assert ui.text(bar.clock) == '12:00' and st.bar_titled == 0
 
 
 def test_classics_home_keeps_the_clock_with_time_in_title_on(fw, st, ui):

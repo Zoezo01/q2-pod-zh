@@ -28,7 +28,7 @@ SUNRISE_RGB = [(1.00, 0.74, 0.38), (0.96, 0.56, 0.46), (0.92, 0.38, 0.36), (0.74
 
 
 class Lk(C.Structure):
-    _fields_ = [*((n, C.c_void_p) for n in 'img full date pct card title artist hint'.split()),
+    _fields_ = [*((n, C.c_void_p) for n in 'img full date card title artist hint'.split()),
                 *((n, C.c_int) for n in 'built_in info page black large'.split()),
                 ('timer', C.c_uint), ('shown', C.c_uint), ('full_key', C.c_uint),
                 ('thumb', C.c_void_p * 6), ('small', C.c_void_p * 6)]
@@ -1014,7 +1014,7 @@ def clock(fw):
 
 
 class Battery:
-    """label_battery's text, a wide string."""
+    """The status bar's label_battery's text, a wide string."""
     def __init__(self, fw, text='88%'):
         self.set(text)
         fw.mock('widget_get_text', lambda *_: C.addressof(self.wide))
@@ -1034,7 +1034,7 @@ def timers(fw):
                                            (b'/mnt/mmc/lockscreenimage/a.jpg', 0)])
 def test_classic_s_info_screen_dresses_stock_s_widgets(fw, clock, picture, page):
     """Over the page (no picture, or the default) or a picture: the bar's date, a tray with the clock, one
-    with the song; stock's shade and battery icon and bar hidden."""
+    with the song; stock's shade and its battery's icon, bar and percent hidden (the status bar has the battery)."""
     Bitmaps(fw)
     Battery(fw)
     added = timers(fw)
@@ -1043,19 +1043,11 @@ def test_classic_s_info_screen_dresses_stock_s_widgets(fw, clock, picture, page)
     assert state.info == 1 and state.page == page and state.img == win['img_screensaver']
     assert win.props('widget_set_prop_str', 'clock_date')['format'] == 'MMM D, Y'
     visible = {name: args[0] for name, args in win.calls('widget_set_visible')}
-    assert visible == {'view_shade': 0, 'img_battery': 0, 'pgbar_battery': 0, 'label_battery': 1}
+    assert visible == {'view_shade': 0, 'img_battery': 0, 'pgbar_battery': 0, 'label_battery': 0}
     cleared = [name for name, _ in win.calls('image_base_set_image')]
     assert cleared == ([] if picture.startswith(b'/') else ['img_screensaver'])  # a card's file is stock's
     assert [ms for _, ms in added] == [1000] and state.timer == 1  # a look each second
     assert len(handlers(fw, EVT_DESTROY)) == 1  # whichever picture: its end stops the timer
-
-
-def test_classic_s_info_screen_with_the_icon_hides_the_percent(fw, clock):
-    Bitmaps(fw)
-    Battery(fw)
-    timers(fw)
-    win = lock_window(fw, WALLS[TIDE], names=INFO, THEME='1', BATTERY='0')
-    assert {name: args[0] for name, args in win.calls('widget_set_visible')}['label_battery'] == 0
 
 
 @pytest.mark.parametrize('large', [0, 1])
@@ -1104,12 +1096,6 @@ def test_the_info_screen_repaints_only_when_the_minute_changes(fw, clock):
     clock['minutes'] += 1
     assert tick(0) == RET_REPEAT and invalidated(fw) == [img]
     assert tick(0) == RET_REPEAT and invalidated(fw) == [img]
-
-
-def test_the_info_screen_repaints_when_the_battery_changes(fw, clock):
-    bat, _, tick = info(fw, clock)
-    bat.set('87%')
-    assert tick(0) == RET_REPEAT and invalidated(fw) == [lk(fw).img]
 
 
 def test_the_info_screen_s_timer_ends_while_the_screen_is_off(fw, clock):
@@ -1255,22 +1241,20 @@ def light(color):
     return color >> 24 and min(channels(color)) >= 0xc0
 
 
+BAR_H = 26  # the status bar's rows, which the real bar paints (paint_bar)
+
+
 def rings(canvas):
     """paint_tray's trays under the bar, top first, each by the box of the dark ring that frames it: the dark fills
     short of the screen's sides that run on down the rows together (the ring's rounded rows, and inside them the
     tray's own darkest rows)."""
-    found, bar = [], bar_height(canvas)
-    for y, x, w in sorted((y, x, w) for x, y, w, h, color in canvas.fills if dark(color) and y >= bar and w < 375):
+    found = []
+    for y, x, w in sorted((y, x, w) for x, y, w, h, color in canvas.fills if dark(color) and y >= BAR_H and w < 375):
         if found and y <= found[-1][3] + 1:
             found[-1] = [min(found[-1][0], x), found[-1][1], max(found[-1][2], x + w), y]
         else:
             found.append([x, y, x + w, y])
     return [(x0, y0, x1 - x0, y1 - y0 + 1) for x0, y0, x1, y1 in found]
-
-
-def bar_height(canvas):
-    """The dark bar's rows: full-width rows of a pixel from the top."""
-    return max(y + h for x, y, w, h, _ in canvas.fills if (x, w, h) == (0, 375, 1) and y < 60)
 
 
 @pytest.mark.parametrize('missing', INFO[1:])
@@ -1291,7 +1275,7 @@ def test_the_clock_s_tray_holds_the_time(fw, clock, large):
     assert info[:3] == (0, 0, 375)
     rx, ry, rw, rh = rings(canvas)[0]
     tray = rx + 1, ry + 1, rw - 2, rh - 2
-    assert tray[0] + tray[2] / 2 == 375 / 2 and tray[1] >= bar_height(canvas)
+    assert tray[0] + tray[2] / 2 == 375 / 2 and tray[1] >= BAR_H
     faces = art.at('classic_light_clock_dark')
     if large:
         assert faces == [] and (time[0], time[2]) == (tray[0], tray[2])
@@ -1306,27 +1290,30 @@ def test_the_clock_s_tray_holds_the_time(fw, clock, large):
     assert win.props('widget_set_prop_str', 'clock_time')['style:normal:text_align_h'] == 'center'
 
 
-def test_the_date_and_the_percent_sit_in_the_dark_bar(fw, clock, st):
-    """The date spans the bar on the real bar's title row, centred; the percent fills the bar's height, set
-    right."""
-    title = C.create_string_buffer(0x400)
-    struct.pack_into('<i', title, W_Y, 1)
+def test_the_date_sits_on_the_real_status_bar_in_its_title_s_ink(fw, clock, st):
+    """A full-screen window gets no status bar, so the screen paints the real one: the theme's and Status Bar's
+    look, battery and icons. The date is its title: from the title's first column (2 px into an hscroll_label's
+    box) on its row, left, ending by the bar's middle (centred, a date reaches a full bar's icons), in plain white
+    with no final ink, so Light Mode's style hook flips it as it does the bar's title."""
+    title, bar = C.create_string_buffer(0x400), C.create_string_buffer(0x400)
+    struct.pack_into('<2i', title, 0, 6, 1)
     st('bar_title', C.c_void_p).value = C.addressof(title)
-    win, _, canvas = info_paint(fw, BATTERY='1')
-    bar = bar_height(canvas)
+    fw.var('fw_ctx_system_bar', C.c_void_p).value = C.addressof(bar)
+    win, art, canvas = info_paint(fw, BATTERY='1')
+    assert [args[0] for _, args in fw.calls('widget_paint')] == [C.addressof(bar)]
+    assert st('paint_w', C.c_void_p).value == win['img_screensaver']  # not left on the bar's last child
+    assert [f for f in canvas.fills if f[1] < BAR_H] == []  # nothing of its own on the bar's rows
     x, y, w, h = boxes(win)['clock_date']
-    assert (x, y, w) == (0, 1, 375) and y + h <= bar
+    assert (x, y) == (8, 1) and x + w == 375 // 2 and y + h <= BAR_H
     assert h >= win.props('widget_set_prop_int', 'clock_date')['style:normal:font_size']
-    assert win.props('widget_set_prop_str', 'clock_date')['style:normal:text_align_h'] == 'center'
-    px, py, pw, ph = boxes(win)['label_battery']
-    assert (py, ph) == (0, bar)
-    assert win.props('widget_set_prop_str', 'label_battery')['style:normal:text_align_h'] == 'right'
-    size = win.props('widget_set_prop_int', 'label_battery')['style:normal:font_size']
-    assert 0 < size < bar and pw >= 2 * size  # wide enough for "100%"
-    # set right against the bar's battery, at the bar's right end
-    battery = [(x, x + w) for x, y, w, h, _ in canvas.fills if y < bar and w < 375 and x > 375 // 2]
-    left, right = min(x for x, _ in battery), max(x for _, x in battery)
-    assert px + pw <= left < px + pw + (right - left)
+    assert win.props('widget_set_prop_str', 'clock_date')['style:normal:text_align_h'] == 'left'
+    ink = win.props('widget_set_prop_int', 'clock_date')
+    assert ink['style:normal:text_color'] & 0xffffffff == 0xffffffff and ink['_final_n'] == 0
+
+
+def test_the_info_screen_without_a_status_bar_paints_none(fw, clock):
+    info_paint(fw)
+    assert fw.calls('widget_paint') == []
 
 
 @pytest.mark.parametrize('shown', [0, 1])
@@ -1411,8 +1398,7 @@ def test_a_card_picture_after_a_built_in_shows_no_wallpaper_under_the_info_scree
                                            (b'/mnt/mmc/lockscreenimage/a.jpg', 0)])
 def test_the_page_paints_under_the_bar_only_with_no_picture(fw, clock, picture, page):
     _, _, canvas = info_paint(fw, picture)
-    bar = bar_height(canvas)
-    assert len([f for f in canvas.fills if f[:4] == (0, bar, 375, 320 - bar)]) == page
+    assert len([f for f in canvas.fills if f[:4] == (0, BAR_H, 375, 320 - BAR_H)]) == page
 
 
 def whites(canvas):
@@ -1554,8 +1540,9 @@ class Playing:
     def __init__(self, fw, st, status=2):
         self.status, self.icon = status, C.create_string_buffer(b'bar_battery', 16)
         fw.mock('mclGetPlayStatus', lambda *_: self.status)
-        self.bar_icon = C.create_string_buffer(0x400)
+        self.bar_icon, self.bar_pct = C.create_string_buffer(0x400), C.create_string_buffer(0x400)
         st('bar_icon', C.c_void_p).value = C.addressof(self.bar_icon)
+        st('bar_pct', C.c_void_p).value = C.addressof(self.bar_pct)
         fw.mock('widget_get_prop_str', lambda w, key, default, *_:
                 C.addressof(self.icon) if w == C.addressof(self.bar_icon) and C.string_at(key) == b'image' else default)
 

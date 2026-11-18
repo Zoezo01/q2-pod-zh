@@ -1,6 +1,7 @@
 # Changelog
 
 - **1.8.8**:
+  - Status bar: under **Theme: Classic**, **Update Library**, Set Time and Set Date, the Brightness, Balance, Max Volume and Default Volume pages and the lock screen have the same status bar as every other screen: Classic's, or the one chosen in **Status Bar**, with its battery and icons, light in Light Mode. They had a black bar with a plain white battery, in Light Mode too. **Update Library** and Set Time show no clock in the bar, so their title has room, and the lock screen's date is at the bar's left, where a title is.
   - Library: **Scan Folders** keeps your ticks as you move between folders, so you can tick albums under different artists and scan them all at once. Ticks used to be forgotten each time you opened a folder or went back, so only the last folder's were scanned, or **Scan** said **Folder not specified**. **Cancel** unticks everything.
   - AirPlay: with **Headphones Required** on and no headphones connected, music plays to an AirPlay speaker ([#388](https://github.com/DiamondBond/q2-pod/issues/388)). 1.8.6's fix didn't work: the switch still refused the Play that starts the speaker. It now steps aside as soon as you pick a speaker, and comes back when you pick **This Q2**.
   - Apps: a card app can have its row in the Library, after **Games**, instead of on Streaming: the place for an app that works on your own music, or for a tool. The App Store says where an app's row is once it's installed. The apps you have stay where they are until their own updates move them.

@@ -675,14 +675,15 @@ void paint_clock(void *w, void *canvas, int x, int y, int size, const char *art,
                  const clock_part_t *parts, int n);
 void paint_page(void *w, void *canvas, int y);
 void paint_art(void *w, void *canvas, const char *name, int x, int y);
-void paint_dark_bar(void *w, void *canvas, const unsigned *title, unsigned key);
-int dark_title_y(void);
+void paint_bar(void *w, void *canvas); /* classic_pages.c: the status bar, on a window over it */
+int bar_title_x(void);
+int bar_title_y(void);
 void paint_tray(void *canvas, int x, int y, int w, int h);
 void text_shadow(void *canvas, const char *face, const unsigned *s, const void *r, unsigned px,
                  unsigned alpha);
 void final_text(void *canvas, const char *face, const unsigned *s, const void *r, unsigned px,
                 unsigned color);
-unsigned dark_bar_key(const unsigned *t);
+unsigned bar_battery_key(void);
 int clock_minutes(void), bar_status(void);
 void slider_label(void *w, int x, int y, int ww, int h, int px, const char *face);
 void text_ink(void *w, unsigned color, int n); /* a label's final 0xAARRGGBB, in either half */
