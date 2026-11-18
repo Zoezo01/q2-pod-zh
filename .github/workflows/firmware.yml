@@ -29,8 +29,8 @@ jobs:
           libavcodec-dev libavutil-dev libmad0-dev libssl-dev pkg-config busybox-static
       - run: pip install -r requirements.txt -r test/unit/requirements.txt gcovr==8.4
       - run: mkdir -p "$RUNNER_TEMP/c-coverage" && echo "Q2_COV=$RUNNER_TEMP/c-coverage" >> "$GITHUB_ENV"
-      - name: Firmware tests  # test/unit runs in tests.yml; on every core here and under ASan (docs/building.md#firmware-tests)
-        run: pip install pytest-xdist==3.8.0 && PATH="$PWD/test/coverage:$PATH" python3 -m pytest test/fw -q -n auto --dist loadfile --max-worker-restart 0
+      - name: Firmware tests  # test/unit runs in tests.yml; on every CPU here and under ASan (docs/building.md#firmware-tests)
+        run: pip install pytest-xdist==3.8.0 && PATH="$PWD/test/coverage:$PATH" python3 -m pytest test/fw -q -n logical --dist loadfile --max-worker-restart 0
       - name: clang-tidy  # docs/building.md#clang-tidy
         if: ${{ !cancelled() }}
         run: pip install clang-tidy==23.1.4 && tools/tidy.sh
@@ -38,7 +38,7 @@ jobs:
         env:
           Q2_FW_SANITIZE: '1'
           ASAN_OPTIONS: detect_leaks=0:allocator_may_return_null=1
-        run: LD_PRELOAD="$(cc -print-file-name=libasan.so)" python3 -m pytest test/fw -q -n auto --dist loadfile --max-worker-restart 0
+        run: LD_PRELOAD="$(cc -print-file-name=libasan.so)" python3 -m pytest test/fw -q -n logical --dist loadfile --max-worker-restart 0
       - name: Host suites  # build: only its checks that need no ZIP or build
         run: |
           export PATH="$PWD/test/coverage:$PATH"
