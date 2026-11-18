@@ -3113,6 +3113,27 @@ def test_forgetting_a_custom_repo_preserves_other_sources_and_comments(fw):
     assert card.files[path] == b'# saved apps\nme/q2-foobar\nother/q2-foo\n'
 
 
+def test_custom_editor_opens_t9_after_its_page_is_active_and_reopens_on_tap(fw):
+    store = Store(fw, Disk(fw), wifi=0)
+    fw.mock('window_create', lambda *_: 88)
+    fw.mock('widget_factory_create_widget', lambda *_: 99)
+    fw.mock('input_method', lambda *_: 66)
+    fw.fn('shelf_tab', None, C.c_int)(2)
+    store.click(store.sh.rows - 1)
+    assert store.sh.edit_page == 88 and store.sh.edit == 99
+    ready = C.CFUNCTYPE(C.c_int, C.c_void_p)(store.timers[-1])
+    assert ready(None) == RET_REPEAT
+    assert not fw.calls('input_method_request')
+    fw.mock('window_manager_get_top_window', lambda *_: 88)
+    assert ready(None) == 0 and store.sh.edit_timer == 0
+    assert fw.calls('input_method_request')[-1][1][:2] == (66, 99)
+    # Done/Return may close the keyboard while retaining the field's focus.
+    fw.fn('netupdate__custom_activate', C.c_int, C.c_void_p, C.c_void_p)(None, None)
+    assert len(fw.calls('input_method_request')) == 2
+    fw.fn('netupdate__custom_closed', C.c_int, C.c_void_p, C.c_void_p)(None, None)
+    assert ready(None) == 0 and store.sh.edit is None
+
+
 def test_custom_sources_cannot_override_an_upstream_id_or_dropped_entry(fw):
     apps(fw, b'upstream/q2-foo')
     card = Disk(fw)

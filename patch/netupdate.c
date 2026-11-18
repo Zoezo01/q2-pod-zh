@@ -1233,14 +1233,36 @@ static int custom_done(void *ctx, void *event) {
     return 0;
 }
 
+static int custom_activate(void *ctx, void *event) {
+    if (!sh.edit) return 0;
+    if (sh.edit_timer) timer_remove(sh.edit_timer);
+    sh.edit_timer = 0;
+    widget_set_focused(sh.edit, 1);
+    /* Done can leave the edit focused after closing T9. A tap must reopen it. */
+    input_method_request(input_method(), sh.edit);
+    return 0;
+}
+
+/* A newly created window is opened on the next UI pass. Opening T9 before
+ * that can put it behind its owner or lose the edit's focus. */
+static int custom_ready(const void *unused) {
+    if (!sh.edit) return sh.edit_timer = 0;
+    void *wm = window_manager();
+    if (window_manager_is_animating(wm) || window_manager_get_top_window(wm) != sh.edit_page)
+        return 8; /* RET_REPEAT */
+    sh.edit_timer = 0;
+    return custom_activate(0, 0);
+}
+
 static void custom_open(void) {
     if (sh.edit_page || !(sh.edit_page = page_open("app_source_page", custom_closed, page_keyup)))
         return;
     sh.edit = edit_create(sh.edit_page, "text", 2, 26);
     widget_set_name(sh.edit, "search_edit");
     t9_box(sh.edit_page, sh.edit, "github.com/owner/q2-app");
+    widget_on(sh.edit, EVT_CLICK, custom_activate, 0);
     widget_on(sh.edit, EVT_IM_ACTION, custom_done, 0);
-    widget_set_focused(sh.edit, 1);
+    sh.edit_timer = timer_add(custom_ready, 0, 16);
 }
 
 /* Install and Update at once; Installed's Remove and Rockbox's first Install (it becomes the
