@@ -202,7 +202,7 @@ int addon_scan(void) {
     }
     if (d) closedir(d);
     ap.shown = ap.games = ap.libs = 0;
-    for (int i = 0; i < ap.n; ++i) { /* by name: an insertion, eight at most */
+    for (int i = 0; i < ap.n; ++i) { /* by name: an insertion, APPS_MAX at most */
         if (!ap.a[i].present || ap.a[i].hidden) continue;
         int row = ap.a[i].row;
         int *order = row == ROW_GAMES ? ap.game : row == ROW_LIBRARY ? ap.lib : ap.order;

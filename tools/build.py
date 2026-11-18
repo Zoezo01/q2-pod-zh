@@ -30,6 +30,7 @@ def dev_tag(number):
     return 'V' + digits + 'i'
 BASE = 0xb00000
 SCRATCH = 0xbd0000  # 832 KB of payload text below it
+SCRATCH_MAX = 0x30000  # the most its state may fill, 192 KB: the segment is demo's last, the heap after it
 RING_STEP = 48
 HOOKS = {
     # USB charging is inhibited before insertion and guarded through enumeration/disconnect.
@@ -1760,10 +1761,10 @@ def compile_payload(out):  # pragma: no mutate block
     return symbols(out/'patch.elf')
 
 def check_layout(payload, ps):
-    """The payload at BASE ends by SCRATCH, and its scratch state starts there and fills at most 128 KB."""
+    """The payload at BASE ends by SCRATCH, and its scratch state starts there and fills at most SCRATCH_MAX."""
     check(len(payload) <= SCRATCH-BASE, 'Payload overlaps its scratch page')
     check(ps['__scratch_start'] == SCRATCH, 'Scratch state moved')
-    check(ps['__scratch_end'] <= SCRATCH + 0x20000, 'Scratch state exceeds its 128 KB')
+    check(ps['__scratch_end'] <= SCRATCH + SCRATCH_MAX, 'Scratch state exceeds its 192 KB')
 
 def compile_helper(out, cat, src, name, rels):
     """Link patch/{src}.c and start.c as name against the stock rootfs's libraries rels."""

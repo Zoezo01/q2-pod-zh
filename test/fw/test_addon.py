@@ -15,7 +15,7 @@ from test_netupdate import JOB_INSTALL, JOB_REMOVE, SH_CANCELLED, SH_CARD, SH_NE
 from test_radio import Rd  # test_radio.py keeps the mirror
 from test_tidal import Au, Queue, free_stubbed  # test_tidal.py keeps tidal.c's au mirror
 
-APPS_MAX = 8
+APPS_MAX = 64
 REPLY_MAX = 64 << 10
 ADDON_ROWS, ADDON_PAGES, ADDON_DEPTH = 50, 10, 6
 M3U_MAX = 256 << 10
@@ -270,8 +270,8 @@ def test_the_longest_id_fits_every_path(fw):
 
 def test_a_slot_stays_its_apps_and_slots_run_out(fw):
     table, _ = slots(fw, *[b'a%d' % i for i in range(APPS_MAX)], b'a3', b'extra')
-    assert C.addressof(table[3].contents) == C.addressof(table[8].contents)
-    assert not table[9] and ap(fw).n == APPS_MAX
+    assert C.addressof(table[3].contents) == C.addressof(table[APPS_MAX].contents)
+    assert not table[APPS_MAX + 1] and ap(fw).n == APPS_MAX
 
 
 def card(fw, **apps):

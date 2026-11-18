@@ -478,7 +478,11 @@ void tidal_all(int press, char *out, unsigned size), tidal_poll(void), tidal_all
  * by name). addon_forget and addon_quit: the Apps page replaces or removes the files
  * of the app in folder dir (".<id>"): asked to end and waited for on the Apps page's worker, then,
  * once replaced or removed, forgotten on the UI thread. */
-#define APPS_MAX 8 /* card apps on the card at once */
+/* Card apps on the card at once: twice what the App Store lists (netupdate.c SH_MAX), for those put
+ * there by hand. ponytail: a fixed table in .scratch, 520 bytes a slot over addon.c,
+ * addon_library.c and navigation.h, its pages untouched until a slot is used; an app past the last
+ * slot gets no row and nothing says so. A heap table that grows, if a card ever holds more. */
+#define APPS_MAX 64
 int addon_scan(void), addon_open(void *ctx, void *event), addon_hold(void *top);
 int addon_games_last(void); /* the card's games as the last addon_scan found them */
 #define GAMES_BUILTIN 4     /* games.c's Sudoku, Vortex, Solitaire and Snake */

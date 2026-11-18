@@ -11152,7 +11152,7 @@ m.files[f'{EXP}/Upper.M3U']=bytearray(b'#EXTM3U\n'); m.files[LIB]=bytearray(f'20
 assert m.files[DONE]==b'201 ok\n' and m.imports[-1]==f'{EXP}/Upper.M3U\n',(m.files[DONE],m.imports[-1:]); passed()
 # demo restarted (Rockbox from Home) keeps /tmp but not libup.taken: a seq .done already answers isn't run again.
 tk=payload_syms['libup']+100; assert m.text(tk)=='deezer',m.text(tk)  # taken[0].id, after 100 bytes of libup
-for o in range(0,40*8,4): m.word(tk+o,0)  # taken[APPS_MAX], each id[16] and seq[24]
+for o in range(0,40*64,4): m.word(tk+o,0)  # taken[APPS_MAX], each id[16] and seq[24]
 k=len(m.imports); m.poll(); assert len(m.imports)==k and m.files[DONE]==b'201 ok\n' and m.text(tk)=='deezer'; passed()
 # A playlist the import couldn't create (stock stops at a create that fails, a database error or the 100
 # playlists' cap, and returns as if done) is no ok: Playlists' list, reloaded, must hold each file's name.

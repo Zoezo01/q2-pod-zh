@@ -8,7 +8,7 @@ from unicorn.unicorn_py3.unicorn import uclib, uccallback, uc_hook_h, HOOK_CODE_
 from unicorn.mips_const import *
 sys.path.insert(0, sys.path[0] + '/../tools')  # tools/ first
 from mips import load_elf
-from build import jal, j, segments, symbols, BASE, SCRATCH, HOOKS, WM_PAINT_LEAF, FUNCTIONS, GLOBALS, CONTEXT_DATA, ROOT, source_sha256, sha, PRIVATE_FUNCTIONS, TAG, VERSION, BETA, dev_tag
+from build import jal, j, segments, symbols, BASE, SCRATCH, SCRATCH_MAX, HOOKS, WM_PAINT_LEAF, FUNCTIONS, GLOBALS, CONTEXT_DATA, ROOT, source_sha256, sha, PRIVATE_FUNCTIONS, TAG, VERSION, BETA, dev_tag
 B=pathlib.Path(sys.argv[1] if len(sys.argv)>1 else 'build')
 payload_syms=symbols(B/'patch.elf')
 manifest=json.loads((B/'manifest.json').read_text())
@@ -123,8 +123,8 @@ def render(m,code,v):
     if code=='d': return '%08x'%m.get(v)
     if code=='f': return '%g'%struct.unpack('<f',struct.pack('<I',v))[0]
     if code=='n' and v in m.nodes: return 'n%d'%list(m.nodes).index(v)
-    # ponytail: an alpha-0 colour from BASE up to SCRATCH + 0x20000 reads as an address (P); none is drawn today
-    if BASE<=v<SCRATCH+0x20000: return PAYLOAD_NAMES.get(v,'P')
+    # ponytail: an alpha-0 colour from BASE up to SCRATCH + SCRATCH_MAX reads as an address (P); none is drawn today
+    if BASE<=v<SCRATCH+SCRATCH_MAX: return PAYLOAD_NAMES.get(v,'P')
     if 0x70000000<=v<0x70010000: return 'S'
     return str(signed(v)) if code=='i' else '%08x'%v
 
@@ -848,9 +848,9 @@ t=Machine(); w=t.node('label'); rect=t.alloc(16); text=t.alloc(8); paint=payload
 for o,v in enumerate((1,2,-3,4)): t.word(rect+4*o,v)
 t.word(text,ord('O')); t.word(text+4,ord('K'))
 assert [render(t,c,v) for c,v in (('n',w),('n',0x1234),('s',t.string('Songs')),('s',0),('i',0xffffffe2),('x',0xff112233),
-        ('r',rect),('r',0),('d',rect),('f',0x3fc00000),('p',paint),('i',paint),('x',SCRATCH+0x1ffff),('x',0x7000eff0),
-        ('x',BASE-4),('x',SCRATCH+0x20000))]==['n0','00001234','"Songs"','null','-30','ff112233','1,2,-3,4','null','00000001',
-        '1.5','ringnav_paint','ringnav_paint','P','S','%08x'%(BASE-4),'%08x'%(SCRATCH+0x20000)]
+        ('r',rect),('r',0),('d',rect),('f',0x3fc00000),('p',paint),('i',paint),('x',SCRATCH+SCRATCH_MAX-1),('x',0x7000eff0),
+        ('x',BASE-4),('x',SCRATCH+SCRATCH_MAX))]==['n0','00001234','"Songs"','null','-30','ff112233','1,2,-3,4','null','00000001',
+        '1.5','ringnav_paint','ringnav_paint','P','S','%08x'%(BASE-4),'%08x'%(SCRATCH+SCRATCH_MAX)]
 for r,v in zip((*REGS,UC_MIPS_REG_SP,UC_MIPS_REG_T9),(t.canvas,text,2,10,0x7000f000,syms['canvas_draw_text'])): t.u.reg_write(r,v)
 t.word(0x7000f010,-20); t.hook(t.u,syms['canvas_draw_text'],4,None)
 t.rockbox_mode=0; t.call(address=payload_syms['ipod_home_shortcut'],args=(0,0,0,0),gap=0)  # "Favorites", a literal: P
