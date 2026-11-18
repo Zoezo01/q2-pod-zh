@@ -2350,6 +2350,23 @@ def test_a_new_playlist_takes_the_first_free_id(fw):
     assert any(b"insert into playlist values (2,'Mine'" in s for s in sql.log)
 
 
+@pytest.mark.parametrize('writer', ['create', 'delete', 'failed delete'])
+def test_each_playlist_writer_opens_the_library_and_closes_what_it_opened(fw, writer):
+    """Create's and Delete's connection is the library's database, and theirs to close, a failed write's too: one
+    left open keeps its lock on the table and its cache."""
+    opened = []
+    def open_(path, db, *_):
+        opened.append(C.string_at(path))
+        C.c_void_p.from_address(db).value = 0xdb
+        return 0
+    fw.mock('sqlite3_open', open_)
+    if writer == 'create':
+        create(fw, b'Mine', (0, 1, 3))
+    else:
+        playlist_delete(fw, sql_fail=(b'delete',) if 'failed' in writer else ())
+    assert opened == [b'/mnt/data/database.db'] and [a[0] for _, a in fw.calls('sqlite3_close')] == [0xdb]
+
+
 def test_a_playlist_name_is_quoted(fw):
     _, sql = create(fw, b"Rock 'n' Roll")
     assert any(b"filename='Rock ''n'' Roll'" in s for s in sql.log) and any(b"(0,'Rock ''n'' Roll'" in s for s in sql.log)
