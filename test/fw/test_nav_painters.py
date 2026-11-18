@@ -1508,7 +1508,7 @@ def test_light_modes_chevron_on_a_coloured_bar_is_white(fw, st, layout, light):
 
 @pytest.mark.parametrize('marked', [1, 0])
 def test_a_bold_marked_label_paints_its_text_again_one_pixel_right(fw, marked):
-    """font_weight.c, through the border hook: stock's self painter once more, 1 px right and back."""
+    """script.c font_weight_paint, through the border hook: stock's self painter once more, 1 px right and back."""
     ui = Ui(fw)
     label = ui.add('label', ui.window('songs_page'), (0, 0, 200, 30), _q2_bold_fallback=marked)
     ui.set_text(label, '专辑')

@@ -1867,7 +1867,7 @@ static void paint_cover(void *w, void *canvas) {
 }
 
 /* Minimal's small capitals (Sudo's): s from x, y (the text's top) in the default font at px,
- * upper-cased (ASCII and Latin-1), SUDO_TRACK px apart, cut off at x + max; returns the whole
+ * upper-cased (script_upper), SUDO_TRACK px apart, cut off at x + max; returns the whole
  * text's width, a trailing SUDO_TRACK included. The text color is restored, the font is not. */
 static int draw_spaced(void *canvas, const unsigned *s, int x, int y, unsigned px, unsigned color,
                        int max) {
@@ -1876,8 +1876,7 @@ static int draw_spaced(void *canvas, const unsigned *s, int x, int y, unsigned p
     canvas_set_text_color(canvas, color);
     int at = 0;
     for (; s && *s; ++s) {
-        unsigned c = *s;
-        if ((c >= 'a' && c <= 'z') || (c >= 0xe0 && c <= 0xfe && c != 0xf7)) c -= 32;
+        unsigned c = script_upper(*s);
         int cw = (int)(canvas_measure_text(canvas, &c, 1) + 0.5f);
         if (at + cw > max)
             max = -1; /* cut off: the rest is only measured */
@@ -4030,25 +4029,6 @@ void label_font(void *w, int bold) {
     for (unsigned i = 0; i < sizeof font / sizeof *font; ++i)
         widget_set_prop_str(w, font[i], bold ? "bold" : "default");
 }
-static const unsigned short bold_ranges[] = BOLD_RANGES,
-                            classic_light_ranges[] = CLASSIC_LIGHT_RANGES;
-
-/* 1 iff every character of c (n < 0: up to the NUL; NULL has none) is in face's cmap. */
-static int face_has(int face, const unsigned *c, int n) {
-    const unsigned short *r = face == FONT_CLASSIC_LIGHT ? classic_light_ranges : bold_ranges;
-    unsigned k = face == FONT_CLASSIC_LIGHT
-                     ? sizeof classic_light_ranges / sizeof *classic_light_ranges
-                     : sizeof bold_ranges / sizeof *bold_ranges;
-    if (face == FONT_DEFAULT) return 1;
-    if (!c) return 0;
-    for (; n < 0 ? *c : n; ++c, --n) {
-        unsigned i = 0;
-        while (i < k && (*c < r[i] || *c > r[i + 1])) i += 2;
-        if (i >= k) return 0;
-    }
-    return 1;
-}
-
 /* The theme's font for role on w: its face (bold.ttf, classic-light.ttf: tools/build.py) when that
  * face has every character of w's text (BOLD_RANGES, CLASSIC_LIGHT_RANGES), else the next bold one
  * that does (classic-light, then bold), else stock's, which has CJK, either at FACE_FALLBACK_PCT
@@ -4057,12 +4037,6 @@ static int face_has(int face, const unsigned *c, int n) {
  * passes FONT_ROW: the answer lives in its own "_font" prop with the role above it (row_faces reads
  * it), and a role the theme leaves to the style writes nothing. */
 static const char *const font_faces[] = { "default", "bold", "classic-light" }; /* [FONT_*] */
-/* bold.ttf or stock's default.ttf standing in for classic-light.ttf: that much of the px gives the
- * same capitals, their cap heights' ratio (test_ipod; stock's face, cap 183 of 299, comes to 83
- * too), so a CJK name sits a little over the capitals beside it, not a third. Only the fallback
- * takes it: Classic's bold stays at its px. */
-#define FACE_FALLBACK_PCT 83
-static int fallback_px(int px) { return (px * FACE_FALLBACK_PCT + 50) / 100; }
 int theme_font(void *w, int role, int was) {
     static const char *const names[] = { "style:normal:font_name", "style:focused:font_name",
                                          "style:disable:font_name" },
@@ -4080,9 +4054,7 @@ int theme_font(void *w, int role, int was) {
     }
     const unsigned *text = face ? widget_get_text(w) : (void *)0, none[1] = { 0 };
     if (face && !text) text = none; /* no text yet: keeps the face, as bold_label did */
-    int fell = face == FONT_CLASSIC_LIGHT && !face_has(FONT_CLASSIC_LIGHT, text, -1);
-    if (fell) face = FONT_BOLD, px = fallback_px(px); /* Cyrillic: still bold */
-    if (face == FONT_BOLD && !face_has(FONT_BOLD, text, -1)) face = FONT_DEFAULT; /* CJK */
+    face = script_face(face, text, -1, &px);
     /* Keep weight separately from face/size: a cached answer or a reused row can change its
      * bold intent even when its fallback face and size stay the same. */
     font_weight_mark(w, wanted_bold && face == FONT_DEFAULT);
@@ -4113,16 +4085,6 @@ int ringnav_table_load(void *ctx, unsigned index, void *row) {
         ((int (*)(void *, unsigned, void *))P(P(row, W_PARENT), TABLE_LOAD_DATA))(ctx, index, row);
     row_faces(row);
     return ret;
-}
-
-/* Canvas text in the theme's face where it has the characters, else bold.ttf where it has them
- * (still bold), else the system font, either at the fallback's px (draw_centred). A theme without
- * a face of its own draws the system font, as before. */
-const char *theme_face(const unsigned *s, int n, int *px) {
-    if (theme()->font[ROLE_TITLE] != FONT_CLASSIC_LIGHT) return (const char *)0;
-    if (face_has(FONT_CLASSIC_LIGHT, s, n)) return "classic-light";
-    if (px) *px = fallback_px(*px); /* bold and stock's here are always the fallback */
-    return face_has(FONT_BOLD, s, n) ? "bold" : (const char *)0;
 }
 
 /***************************************************************************************************

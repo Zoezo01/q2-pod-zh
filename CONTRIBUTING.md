@@ -33,6 +33,8 @@ Commit titles are `area: what changed`, such as `audio: a skip on Bluetooth no l
 
 `patch/navigation.c` is the UI's core: the hooks, input, the shared paint helpers and Now Playing. Its sections are listed at its top, each under a banner of asterisks. Don't add a feature to it. Give the feature its own file in `patch/`, list it in `NAVIGATION` in [`tools/build.py`](tools/build.py), and declare what other files use in `patch/navigation.h` under its file's name, as `smart_wifi.c` and `system.c` do. Change navigation.c only where the code you change lives there, and say why in the pull request if you add to it.
 
+Per-script display code (which face draws which characters, a script's line-break or capital rule) goes in `patch/script.c`, and the fonts' ranges and letters in its half of `tools/build.py`: see Scripts under [Themes](docs/internals.md#themes).
+
 A helper another file calls for every row or pixel goes in `navigation.h` as `static inline`. Mark one `__attribute__((pure))` only if it writes nothing, not even a lazy first load (`accent()` reads the settings on its first call), always returns, and reads no `volatile` memory or state another thread writes: clang may keep one call for several, across a change it can't see. Called across files without that, it runs slower, and the paints can outgrow `test/patch.py`'s instruction limit.
 
 ## License

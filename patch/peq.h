@@ -605,15 +605,29 @@ void t9_box(void *page, void *edit,
             const char *tips);        /* classic_pages.c: a search box and its hint */
 const char *output_device(char *vol); /* books.c */
 void dac_take(void);                  /* books.c */
-/* navigation.c: the theme's font for role on w, or stock's; canvas text's face, 0: the system
- * font */
+/* navigation.c: the theme's font for role on w, or stock's */
 int theme_font(void *w, int role, int was);
-#define FONT_ROW (-2) /* was: cache the answer in w's own "_font" prop */
-/* font_weight.c: w keeps the theme's bold intent where its text fell back to stock's face */
-void font_weight_mark(void *w, int bold);
+#define FONT_ROW (-2)           /* was: cache the answer in w's own "_font" prop */
 void marq_restart(void *row);   /* navigation.c: its title changed, its marquee re-armed */
 void list_stop_scroll(void *w); /* navigation.c: its scroll animation stopped */
-const char *theme_face(const unsigned *s, int n, int *px); /* *px, unless 0: the px to draw it at */
+/* script.c: per-script display (docs/internals.md#themes, Scripts) */
+/* w keeps the theme's bold intent where its text fell back to stock's face */
+void font_weight_mark(void *w, int bold);
+void font_weight_paint(void *w, void *canvas); /* a marked label's foreground again 1 px right */
+int script_face(int face, const unsigned *s, int n, int *px); /* the FONT_* that draws s */
+/* canvas text's face, 0: the system font; *px, unless 0: the px to draw it at */
+const char *theme_face(const unsigned *s, int n, int *px);
+/* 1 for a character lyrics break a line beside and time as three: CJK ideographs, kana, Hangul
+ * and full-width forms. */
+static inline int script_cjk(unsigned c) {
+    return (c >= 0x2e80 && c < 0xa000) || (c >= 0xac00 && c < 0xd7b0) ||
+           (c >= 0xff00 && c < 0xfff0);
+}
+/* c's capital for Minimal's small capitals: ASCII and Latin-1; anything else is c. */
+static inline unsigned script_upper(unsigned c) {
+    if ((c >= 'a' && c <= 'z') || (c >= 0xe0 && c <= 0xfe && c != 0xf7)) c -= 32;
+    return c;
+}
 void bar_title_sync(void *win); /* navigation.c: Classic's bar title names win */
 void bar_title_name(void *win); /* navigation.c: names win by its name, on top or not */
 /* navigation.c: Classic's Spotify and Internet Radio Now Playing, laid out as the local page, 0

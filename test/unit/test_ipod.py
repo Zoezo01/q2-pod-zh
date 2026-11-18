@@ -806,7 +806,7 @@ def test_fallback_scale_matches_the_faces():  # theme_font's bold.ttf, at the Cl
     def cap(path):
         f = TTFont(path, lazy=True)
         return f['OS/2'].sCapHeight / (f['hhea'].ascent - f['hhea'].descent)
-    pct = re.search(r'#define FACE_FALLBACK_PCT (\d+)', (ipod.ROOT/'patch/navigation.c').read_text())
+    pct = re.search(r'#define FACE_FALLBACK_PCT (\d+)', (ipod.ROOT/'patch/script.c').read_text())
     assert pct
     assert int(pct[1]) == round(100*cap(ipod.ROOT/'assets/fonts/texgyreheros-bold.otf')/cap(ipod.ROOT/'assets/fonts/LiberationSans-Bold.ttf')) == 83
 

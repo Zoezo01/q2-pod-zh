@@ -463,9 +463,6 @@ void time_open(void *win);
 void time_paint(void *w, void *canvas);
 void time_wheel(void *top, int f, int dir);
 
-/* font_weight.c: a marked label's foreground painted again 1 px right */
-void font_weight_paint(void *w, void *canvas);
-
 /* coverflow_position.c */
 void coverflow_position_reset(void);
 void coverflow_tail(void); /* coverflow.c: the covers follow the queue's album */
