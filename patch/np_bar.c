@@ -73,6 +73,7 @@ int np_fit_due(const void *info) {
 int np_sync(void *top) {
     if (!top || top != st.np_win) return 0;
     st.np_bold = theme_font(st.np_title, ROLE_NP, st.np_bold); /* the title, as it changes */
+    if (st.np_artist) st.np_artist_face = theme_font(st.np_artist, ROLE_META, st.np_artist_face);
     unsigned at, n;
     void *r = queue_now(&at, &n);
     const char *album = now_tag(r, REC_ALBUM);

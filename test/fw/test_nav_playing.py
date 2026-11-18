@@ -94,7 +94,7 @@ def has(runs, text):
 
 
 PTRS = set('''bar_bt bar_wifi bar_pct bar_slot bar_icon bar_idle bar_state bar_eq bar_title np_win np_pos
-    np_album np_slider np_remain np_elapsed np_cover np_title np_slide np_lrc slider_win slider_w slider_sw slider_hint
+    np_album np_slider np_remain np_elapsed np_cover np_title np_artist np_slide np_lrc slider_win slider_w slider_sw slider_hint
     t9_page t9_back kb_win search_win search_tabs pl_box stream_art stream_bar genre_label number_face'''.split())
 BYTES = {'title_align', 'slider_kind', 'bar_dark'}
 SHORTS = {'title_x', 'title_y', 'title_w'}

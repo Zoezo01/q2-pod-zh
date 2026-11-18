@@ -255,6 +255,7 @@ typedef struct {
     unsigned mark, marks;   /* its word stamps, mark[mark..mark + marks) */
     unsigned char px, rows; /* its layout (px 0 until then): rows of ly.w */
     unsigned short start[LYRIC_ROWS], len[LYRIC_ROWS], w[LYRIC_ROWS];
+    unsigned char use_bold; /* bundled face when stock lacks Vietnamese glyphs */
 } ly_line;
 typedef struct {
     int ms;
@@ -351,7 +352,23 @@ int lyrics_on(void *lrc) {
            (unsigned)widget_count_children(lrc) == ly.rows;
 }
 
-/* Lines are drawn in the system font, LYRIC_BOLD more times a pixel right for weight. */
+/* The stock font misses Vietnamese letters. Switch the whole line only if the
+ * bundled face covers every character, so a fallback never drops CJK or other text. */
+static int ly_vietnamese_font(const unsigned *s, unsigned n) {
+    static const unsigned short ranges[] = BOLD_RANGES;
+    int vietnamese = 0;
+    for (unsigned i = 0; i < n; ++i) {
+        unsigned c = s[i], j = 0;
+        while (j < sizeof ranges / sizeof *ranges && (c < ranges[j] || c > ranges[j + 1])) j += 2;
+        if (j == sizeof ranges / sizeof *ranges) return 0;
+        vietnamese |= (c >= 0x1ea0 && c <= 0x1ef9) || (c >= 0x102 && c <= 0x103) ||
+                      (c >= 0x110 && c <= 0x111) || (c >= 0x1a0 && c <= 0x1a1) ||
+                      (c >= 0x1af && c <= 0x1b0);
+    }
+    return vietnamese;
+}
+
+/* Stock's regular face is drawn again to give it weight. */
 #define LYRIC_BOLD 2
 static int ly_cjk(unsigned c) {
     return (c >= 0x2e80 && c < 0xa000) || (c >= 0xac00 && c < 0xd7b0) ||
@@ -372,7 +389,9 @@ static int ly_wrap(ly_line *l, const unsigned *s, const unsigned short *adv) {
                 brk = i, wbrk = x, resume = i + 1;
             else if (i > start && (ly_cjk(s[i]) || ly_cjk(s[i - 1])))
                 brk = i, wbrk = x, resume = i;
-            if (i > start && x + adv[i] + LYRIC_BOLD > (ly.w ? ly.w : 375 - 2 * LYRIC_X)) break;
+            if (i > start &&
+                x + adv[i] + (l->use_bold ? 0 : LYRIC_BOLD) > (ly.w ? ly.w : 375 - 2 * LYRIC_X))
+                break;
         }
         unsigned end = i;
         if (i < l->n && brk > start) end = brk, x = wbrk, i = resume;
@@ -388,7 +407,8 @@ static int ly_wrap(ly_line *l, const unsigned *s, const unsigned short *adv) {
 static void ly_layout(void *canvas, ly_line *l) {
     const unsigned *s = ly.tab->text + l->text;
     unsigned short *adv = ly.tab->adv + l->text;
-    canvas_set_font(canvas, (const char *)0, LYRIC_PX); /* the system default font */
+    l->use_bold = (unsigned char)(ly_vietnamese_font(s, l->n) != 0);
+    canvas_set_font(canvas, l->use_bold ? "bold" : (const char *)0, LYRIC_PX);
     for (unsigned k = 0; k < l->n; ++k)
         adv[k] = (unsigned short)(canvas_measure_text(canvas, s + k, 1) + 0.5f);
     int rows = ly_wrap(l, s, adv);
@@ -595,14 +615,14 @@ int lyrics_line(void *lrc, int ms, int page) {
 
 /* One row of text clipped to from..to (the row's x) within its own clip (base). */
 static void ly_ink(void *canvas, const int *base, const unsigned *s, unsigned n, int y, int from,
-                   int to, unsigned color) {
+                   int to, unsigned color, int weight) {
     int x = I(canvas, CANVAS_X),
         clip[4] = { x + from > base[0] ? x + from : base[0], base[1], 0, base[3] };
     clip[2] = (x + to < base[0] + base[2] ? x + to : base[0] + base[2]) - clip[0];
     if (clip[2] <= 0 || clip[3] <= 0) return;
     canvas_set_clip_rect(canvas, clip);
     canvas_set_text_color(canvas, color);
-    for (int b = 0; b <= LYRIC_BOLD; ++b) canvas_draw_text(canvas, s, n, LYRIC_X + b, y);
+    for (int b = 0; b <= weight; ++b) canvas_draw_text(canvas, s, n, LYRIC_X + b, y);
 }
 
 /* ringnav_paint, after stock painted a lyrics row (blank): its line, centred in it, bold
@@ -628,13 +648,16 @@ void lyrics_paint(void *row, void *canvas) {
         y = (h - l->rows * pitch) / 2 + (pitch - l->px) / 2, w = I(row, W_W);
     unsigned text = (unsigned)I(P(canvas, CANVAS_LCD), LCD_TEXT_COLOR);
     canvas_get_clip_rect(canvas, base);
-    canvas_set_font(canvas, (const char *)0, l->px);
+    canvas_set_font(canvas, l->use_bold ? "bold" : (const char *)0, l->px);
+    int weight = l->use_bold ? 0 : LYRIC_BOLD;
     for (unsigned r = 0; r < l->rows; lit -= l->w[r++], y += pitch) {
         const unsigned *s = ly.tab->text + l->text + l->start[r];
         int cut = lit <= 0 ? LYRIC_X : lit >= l->w[r] ? w : LYRIC_X + lit;
         if (cut < w)
-            ly_ink(canvas, base, s, l->len[r], y, cut, w, rgba(on ? LYRIC_DIM : LYRIC_REST, alpha));
-        if (cut > LYRIC_X) ly_ink(canvas, base, s, l->len[r], y, 0, cut, rgba(LYRIC_LIT, alpha));
+            ly_ink(canvas, base, s, l->len[r], y, cut, w, rgba(on ? LYRIC_DIM : LYRIC_REST, alpha),
+                   weight);
+        if (cut > LYRIC_X)
+            ly_ink(canvas, base, s, l->len[r], y, 0, cut, rgba(LYRIC_LIT, alpha), weight);
     }
     canvas_set_clip_rect(canvas, base);
     stock_canvas_set_text_color(canvas, text);
