@@ -1,6 +1,7 @@
 # Changelog
 
 - **1.8.8**:
+  - Album art: a cover read for a list at the moment a song's art loads for Now Playing can no longer come out as the other's picture, or missing. Shanling's firmware passes both through one temporary file, and nothing made them take turns.
   - Settings: a crash, a forced restart or an empty battery while a setting is being saved no longer resets every setting. Shanling's firmware empties the settings file and writes it again at each save, turning Bluetooth on or off among them; cut off in between, the Q2 started with its settings gone. Each save now replaces the file whole or leaves it as it was.
   - Status bar: under **Theme: Classic**, **Update Library**, Set Time and Set Date, the Brightness, Balance, Max Volume and Default Volume pages and the lock screen have the same status bar as every other screen: Classic's, or the one chosen in **Status Bar**, with its battery and icons, light in Light Mode. They had a black bar with a plain white battery, in Light Mode too. **Update Library** and Set Time show no clock in the bar, so their title has room, and the lock screen's date is at the bar's left, where a title is.
   - Library: **Scan Folders** keeps your ticks as you move between folders, so you can tick albums under different artists and scan them all at once. Ticks used to be forgotten each time you opened a folder or went back, so only the last folder's were scanned, or **Scan** said **Folder not specified**. **Cancel** unticks everything.

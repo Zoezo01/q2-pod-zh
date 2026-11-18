@@ -453,12 +453,22 @@ static int grid_cover(const char *track, const char *dst, int w, int h, int albu
  * comment header (docs/internals.md#oversized-ogg-tags). One over OGG_TAGS_MAX gets none from
  * stock, so its caller's fallback (coverflow_player_cover, grid_cover, build_art) hands it to
  * ffmpeg, which the kernel kills before demo. Stock reads no .opus or .oga picture, so those are
- * not measured. */
+ * not measured.
+ * Stock's body writes the picture to /tmp/.tmp_picture, decodes that file and removes it, and its
+ * two cover threads come here under a lock each (parse_albumcovertask_thd parse_cover_mutex,
+ * player_parsecover_thd g_playcover_mutex): a list's cover read while a track's began could
+ * decode the other's picture, half of each, or find the file gone. So the body runs under a lock
+ * of its own, the last any caller takes (album_art holds both of stock's first): it nests with
+ * none. */
 #ifndef PEQ_HOST
 int ringnav_album_cover(const char *track, const char *dst, int w, int h) {
+    static int lock[6] __attribute__((section(".scratch"))); /* MIPS glibc's zeroed mutex */
     const char *dot = strrchr(track, '.');
     if (dot && !strcasecmp(dot, ".ogg") && ogg_tags(track, 0)) return 0;
-    return stock_album_cover_trampoline(track, dst, w, h);
+    pthread_mutex_lock(lock);
+    int ok = stock_album_cover_trampoline(track, dst, w, h);
+    pthread_mutex_unlock(lock);
+    return ok;
 }
 #endif
 
@@ -514,8 +524,9 @@ int coverflow_folder_cover(const char *track, const char *dst, int w, int h) {
  * playlist_art.c. */
 int album_art(const char *track, const char *dst, int shared) {
     /* toolsGetAlbumCover goes through the shared /tmp/.tmp_picture, which stock guards with
-     * either lock (parse_albumcovertask_thd, player_parsecover_thd); hold both. Stock never
-     * nests them, so this order cannot deadlock. */
+     * either lock (parse_albumcovertask_thd, player_parsecover_thd); hold both, as before
+     * ringnav_album_cover had its own for the file. Stock never nests them, so this order
+     * cannot deadlock. */
     pthread_mutex_lock((void *)parse_cover_mutex);
     pthread_mutex_lock((void *)g_playcover_mutex);
     int ok = toolsGetAlbumCover(track, dst, ART_SIZE, ART_SIZE) == 1;
