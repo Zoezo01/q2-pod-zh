@@ -30,9 +30,9 @@ enum { SH_OK, SH_NET, SH_SPACE, SH_CARD, SH_MISSING, SH_BAD, SH_CANCELLED, SH_BU
  * and file list; keep: unzip -x patterns an update never writes (the user's); bin: the app's
  * binary, present without a tag file meaning a manual install, and moved after every other file:
  * power-on runs Rockbox's. dropped: gone from the list but installed, so it can only be removed.
- * game: listed under [Games], so on the App Store's Games tab. */
+ * game: listed under [Games]. custom: added on this Q2, shown under Custom. */
 typedef struct {
-    char name[32], id[16], repo[80], dir[17], bin[40], latest[32], dropped, game;
+    char name[32], id[16], repo[80], dir[17], bin[40], latest[32], dropped, game, custom;
     const char *keep;
 } shelf_app;
 extern shelf_app shelf_apps[SH_MAX]; /* global: test/fw reads both by name */
@@ -756,24 +756,27 @@ void netupdate_poll(void) {
  * leaves it running; its progress shows when the page opens again. */
 #define SH_JSON "/tmp/q2-shelf.json"
 #define SH_LIST SH_DIR "/sources.list" /* the last list fetched, for the page offline */
+#define SH_CUSTOM SH_DIR "/custom-sources.list" /* repositories added on this Q2 */
 #define SH_LIST_URL "https://raw.githubusercontent.com/DiamondBond/q2-pod/main/sources.list"
 #define SH_STALE_MS (10 * 60 * 1000ull)
 #define SH_RECHECK_MS (60 * 1000ull) /* Check for Updates' least gap: an API request per app */
 enum { JOB_CHECK = 1, JOB_INSTALL, JOB_REMOVE, JOB_ERASE };
 enum { ST_INSTALL, ST_UPDATE, ST_INSTALLED };
-enum { ROW_CHECK = SH_MAX }; /* map's row that is no app: Check for Updates, the first */
+enum { ROW_CHECK = SH_MAX, ROW_ADD }; /* map's two non-app rows */
 
 static struct {
     unsigned long thread;
     volatile int running, cancel, percent, stage, result; /* cancel, percent: progress()'s pair */
-    int job, app, armed, rows, n, map[SH_MAX + 1];        /* map: a row's app or ROW_CHECK */
+    int job, app, armed, rows, n, map[SH_MAX + 2];        /* map: app index, ROW_CHECK or ROW_ADD */
     int manual;                                           /* the check is Check for Updates' */
     unsigned need;                                        /* SH_SPACE's MB */
     unsigned long long checked;                           /* boot_ms of the last whole check */
     shelf_app next[SH_MAX]; /* the check's list (n apps), the page's once the check ends */
-    void *page, *row[SH_MAX + 1];
-    int tab;     /* the open tab: 0 Apps, 1 Games; kept while the Q2 is on */
+    void *page, *row[SH_MAX + 2];
+    int tab;     /* the open tab: 0 Apps, 1 Games, 2 Custom; kept while the Q2 is on */
     void *strip; /* the tabs (app_store.c store_tabs) */
+    void *edit_page, *edit;
+    unsigned edit_timer;
 } sh __attribute__((section(".scratch")));
 
 static int is(int i, const char *id) { return i >= 0 && i < shelf_n && !strcmp(apps[i].id, id); }
@@ -815,6 +818,28 @@ static int release(shelf_app *a, char *tag, char *url, unsigned *size) {
     return r;
 }
 
+/* Local additions use the same parser and IDs as the upstream list. The upstream
+ * entry wins an ID collision, including an explicit dropped entry. */
+static int custom_sources(shelf_app *out, int n) {
+    unsigned bytes = 0;
+    char *text = read_all(SH_CUSTOM, 1u << 16, &bytes);
+    shelf_app local[SH_MAX];
+    int count = shelf_sources(text, local, SH_MAX);
+    free(text);
+    for (int i = 0; i < count; ++i) {
+        int seen = local[i].dropped || special_id(local[i].id);
+        for (int k = 0; k < n; ++k)
+            if (!strcmp(out[k].id, local[i].id)) {
+                seen = 1;
+                if (!local[i].dropped && !special_id(local[i].id) &&
+                    !strcmp(out[k].repo, local[i].repo) && !out[k].dropped)
+                    out[k].custom = 1;
+            }
+        if (!seen && n < SH_MAX) local[i].custom = 1, out[n++] = local[i];
+    }
+    return n;
+}
+
 /* A check: the list fetched into sh.next, kept as SH_LIST with any app it dropped that is
  * still installed (so it can be removed), else the page's own; then each listed one's latest
  * release. A dropped app's is never asked, nor installed: dropping it is what stops a taken-over
@@ -828,6 +853,7 @@ static int check(void) {
     int n = list ? shelf_sources(list, sh.next, SH_MAX) : 0, fresh = n > 0, ok = 1;
     free(list);
     if (!n) memcpy(sh.next, apps, sizeof apps), n = shelf_n; /* a bad list never replaces one */
+    n = custom_sources(sh.next, n);
     for (int i = 0; fresh && i < shelf_n && n < SH_MAX; ++i) {
         int listed = 0;
         for (int k = 0; k < n; ++k) listed |= !strcmp(sh.next[k].id, apps[i].id);
@@ -867,6 +893,7 @@ static int listed(int i) {
     char *list = get(SH_LIST_URL, &code);
     int n = list ? shelf_sources(list, now, SH_MAX) : 0, r = n ? SH_MISSING : SH_NET;
     free(list);
+    n = custom_sources(now, n);
     for (int k = 0; k < n; ++k)
         if (!now[k].dropped && !strcmp(now[k].repo, apps[i].repo)) r = SH_OK;
     return sh.cancel ? SH_CANCELLED : r;
@@ -990,7 +1017,9 @@ static void sh_text(int r) {
     const char *t = s;
     unsigned min =
         i == ROW_CHECK ? (unsigned)(boot_ms() - sh.checked) / 60000 : 0; /* no __udivdi3 */
-    if (i == ROW_CHECK && sh.job == JOB_CHECK)
+    if (i == ROW_ADD)
+        t = "github.com/owner/repository";
+    else if (i == ROW_CHECK && sh.job == JOB_CHECK)
         t = "Checking…";
     else if (i == ROW_CHECK && !shelf_n) /* with no list yet, the press loads it */
         t = "Connect to Wi-Fi to load the list";
@@ -1015,7 +1044,7 @@ static void sh_text(int r) {
         snprintf(s, sizeof s, "%.*s", (int)(strstr(apps[i].repo, "/") - apps[i].repo),
                  apps[i].repo);
     widget_set_text_utf8(widget_get_child(sh.row[r], 1), t);
-    if (i != ROW_CHECK) store_state(sh.row[r], busy || armed ? -1 : sh_state(i));
+    if (i < SH_MAX) store_state(sh.row[r], busy || armed ? -1 : sh_state(i));
 }
 
 static void sh_rows(void);
@@ -1093,6 +1122,90 @@ static void sh_start(int job, int i) {
         timer_add(sh_wait, (void *)0, 500);
 }
 
+/* Accept a repository URL or owner/repo; shelf_sources validates the canonical
+ * entry before any write or network request. Releases still use the normal installer. */
+static int custom_repo(const char *input, shelf_app *app) {
+    const char *s = input;
+    while (*s == ' ' || *s == '\t') ++s;
+    if (!strncmp(s, "https://github.com/", 19)) s += 19;
+    else if (!strncmp(s, "github.com/", 11)) s += 11;
+    unsigned n = strlen(s);
+    while (n && (unsigned char)s[n - 1] <= ' ') --n;
+    if (n && s[n - 1] == '/') --n;
+    if (n > 4 && !memcmp(s + n - 4, ".git", 4)) n -= 4;
+    if (!n || n >= sizeof app->repo) return 0;
+    char repo[80];
+    memcpy(repo, s, n), repo[n] = 0;
+    return shelf_sources(repo, app, 1) == 1 && !app->dropped &&
+           !special_id(app->id) && strlen(app->repo) == n;
+}
+
+static int custom_closed(void *ctx, void *event) {
+    if (sh.edit_timer) timer_remove(sh.edit_timer);
+    sh.edit_timer = 0;
+    sh.edit_page = sh.edit = 0;
+    return 0;
+}
+
+/* From a timer, after the keyboard's event: closing the editor cannot destroy
+ * a widget while its callback is still running. */
+static int custom_save(const void *unused) {
+    sh.edit_timer = 0;
+    if (!sh.edit) return 0;
+    char input[128], text[(SH_MAX + 1) * 120 + 8];
+    shelf_app app;
+    if (widget_get_text_utf8(sh.edit, input, sizeof input) || !custom_repo(input, &app)) {
+        toast("Enter github.com/owner/q2-app");
+        return 0;
+    }
+    if (sh.job) return toast("Wait for the App Store to finish"), 0;
+    int existing = sh_find(app.id);
+    if (existing >= 0 && (strcmp(apps[existing].repo, app.repo) || apps[existing].dropped))
+        return toast("Another source already uses this app ID"), 0;
+    if (existing >= 0 && apps[existing].custom)
+        return toast("This app is already in Custom"), 0;
+    if (existing < 0 && shelf_n >= SH_MAX) return toast("The App Store list is full"), 0;
+    if (!card_mounted()) return toast("Can't write to the card"), 0;
+    unsigned bytes = 0;
+    char *old = read_all(SH_CUSTOM, 1u << 16, &bytes);
+    if (bytes >= sizeof text - 120) {
+        free(old);
+        return toast("The custom source list is full"), 0;
+    }
+    if (!old && file_mode(SH_CUSTOM)) return toast("Can't read custom sources"), 0;
+    int size = snprintf(text, sizeof text, "%s%s%s\n", old ? old : "",
+                        bytes && old[bytes - 1] != '\n' ? "\n" : "", app.repo);
+    free(old);
+    mkdir(SH_DIR, 0755);
+    if (size >= (int)sizeof text || !blob_io(SH_CUSTOM, SH_CUSTOM ".tmp", text, size, 1))
+        return toast("Can't write to the card"), 0;
+    app.custom = 1;
+    if (existing >= 0) apps[existing].custom = 1;
+    else apps[shelf_n++] = app;
+    sh.checked = 0;
+    widget_set_focused(sh.edit, 0);
+    input_method_request(input_method(), 0);
+    navigator_back();
+    sh.rows = -1;
+    sh_rows();
+    return 0;
+}
+
+static int custom_done(void *ctx, void *event) {
+    if (!sh.edit_timer) sh.edit_timer = timer_add(custom_save, 0, 0);
+    return 0;
+}
+
+static void custom_open(void) {
+    if (sh.edit_page || !(sh.edit_page = page_open("app_source_page", custom_closed, page_keyup)))
+        return;
+    sh.edit = edit_create(sh.edit_page, "text", 2, 26);
+    widget_set_name(sh.edit, "search_edit");
+    t9_box(sh.edit_page, sh.edit, "github.com/owner/q2-app");
+    widget_on(sh.edit, EVT_IM_ACTION, custom_done, 0);
+    widget_set_focused(sh.edit, 1);
+}
+
 /* Install and Update at once; Installed's Remove and Rockbox's first Install (it becomes the
  * power-on default) on a second press of the same row. Pressed again, the running install cancels.
  * Check for Updates checks now (loading the list, with none yet), unless the last whole check is
@@ -1110,6 +1223,11 @@ static int sh_held(void *ctx, void *unused) {
 static int sh_click(void *ctx, void *event) {
     int r = (int)(long)ctx, i = sh.map[r], armed = sh.armed == r + 1;
     sh.armed = 0;
+    if (i == ROW_ADD) {
+        if (sh.job) toast("Wait for the App Store to finish");
+        else custom_open();
+        return 0;
+    }
     if (i == ROW_CHECK && sh.job == JOB_CHECK) {
         sh.manual = 1; /* checking already, the opening check maybe: its end answers the press */
     } else if (sh.job == JOB_CHECK) { /* needs no answer: stopped, so the next press acts */
@@ -1150,11 +1268,13 @@ static int sh_closed(void *ctx, void *event) {
  * when a job's end or the tab changes which. The tabs' badges are counted here too, as only a job's
  * end changes them. */
 static void sh_rows(void) {
-    int map[SH_MAX + 1] = { ROW_CHECK }, n = 1, updates[2] = { 0, 0 };
+    int map[SH_MAX + 2] = { ROW_CHECK }, n = 1, updates[3] = { 0, 0, 0 };
     for (int i = 0; i < shelf_n; ++i) {
-        if (sh_shown(i) && apps[i].game == sh.tab) map[n++] = i;
-        updates[(int)apps[i].game] += sh_updatable(i);
+        int tab = apps[i].custom ? 2 : apps[i].game;
+        if (sh_shown(i) && tab == sh.tab) map[n++] = i;
+        updates[tab] += sh_updatable(i);
     }
+    if (sh.tab == 2) map[n++] = ROW_ADD;
     if (sh.page && (n != sh.rows || memcmp(map, sh.map, sizeof map))) {
         memcpy(sh.map, map, sizeof map);
         sh.rows = 0;
@@ -1163,9 +1283,9 @@ static void sh_rows(void) {
         for (int r = 0; r < n; ++r) {
             int i = map[r];
             /* sh_text writes the detail: a blank one, or a theme would centre the name over it */
-            sh.row[r] =
-                page_row_detail(view, r, i == ROW_CHECK ? "Check for Updates" : apps[i].name,
-                                theme()->sep[0].n ? " " : "", sh_click);
+            const char *name = i == ROW_CHECK ? "Check for Updates"
+                                : i == ROW_ADD ? "Add GitHub App" : apps[i].name;
+            sh.row[r] = page_row_detail(view, r, name, theme()->sep[0].n ? " " : "", sh_click);
         }
         sh.rows = n;
     }
@@ -1173,19 +1293,19 @@ static void sh_rows(void) {
     sh_refresh();
 }
 
-/* The open tab, 0 Apps or 1 Games: the strip's tap (app_store.c) or shelf_key. */
+/* The open tab, 0 Apps, 1 Games or 2 Custom: the strip's tap (app_store.c) or shelf_key. */
 void shelf_tab(int tab) {
-    if (!sh.page || tab == sh.tab) return;
+    if (!sh.page || tab < 0 || tab > 2 || tab == sh.tab) return;
     sh.tab = tab, sh.armed = 0;
     sh_rows();
 }
 
-/* ringnav, before stock's song skip: on the App Store, Previous opens Apps and Next Games.
+/* ringnav, before stock's song skip: on the App Store, Previous and Next cycle the three tabs.
  * ponytail: a toast on top (msginfo_dialog, 0x49b7c8) stops them for its time, as for field_key;
  * looking past it (smart_wifi.c page_in_use) would lift that. */
 int shelf_key(void *top, unsigned key) {
     if (!sh.page || top != sh.page || (key != KEY_BACK_BTN && key != KEY_FWD_BTN)) return 0;
-    shelf_tab(key == KEY_FWD_BTN);
+    shelf_tab((sh.tab + (key == KEY_FWD_BTN ? 1 : 2)) % 3);
     return 1;
 }
 
@@ -1208,7 +1328,7 @@ static int sh_check(void *ctx, void *event) {
     return 0;
 }
 
-/* System settings' Apps row. The card's last list, until a check fetches the list again: with Wi-Fi
+/* System settings' App Store row. The card's last list, until a check fetches the list again: with Wi-Fi
  * when the last whole check is over SH_STALE_MS old (or none), as GitHub allows 60 unauthenticated
  * API requests an hour; while Smart Wi-Fi brings the radio back, once its link is up. */
 int shelf_open(void *ctx, void *event) {
@@ -1217,6 +1337,7 @@ int shelf_open(void *ctx, void *event) {
         unsigned n = 0;
         char *list = read_all(SH_LIST, 1u << 16, &n);
         shelf_n = shelf_sources(list, apps, SH_MAX);
+        shelf_n = custom_sources(apps, shelf_n);
         free(list);
     }
     sh_rows();

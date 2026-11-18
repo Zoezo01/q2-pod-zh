@@ -1,6 +1,6 @@
-/* The App Store's look (docs/internals.md#q2-shelf): its Apps and Games tabs over the list, and at
+/* The App Store's look (docs/internals.md#q2-shelf): its Apps, Games and Custom tabs over the list, and at
  * each app's row's end its state, a word, drawn flat in every theme (no gloss). Classic and Modern
- * have a two-part switch, the open half in the selected row's colour, Classic's on a strip under
+ * have a three-part switch, the open half in the selected row's colour, Classic's on a strip under
  * its bar and Modern's in the page's title row; Minimal names the tabs in its title row, the open
  * one by a dot. A tab with apps that can be updated has a badge with their count, red, or on the
  * open half in its text colour (Minimal: "N UPDATES" at the strip's end). netupdate.c builds the
@@ -15,7 +15,7 @@
 #define SEG_H 30
 #define RIM 0x717171 /* Classic's rims: #8E8E8E on its paper, Light Mode's flip */
 #define BADGE 0xe0261b
-#define GAMES_X 120 /* Minimal's Games name, Apps' from 36 */
+#define TAB_W 112 /* three tabs, clear of the rounded screen edges */
 
 static char on_page __attribute__((section(".scratch"))); /* the App Store's page is open */
 static unsigned tab_timer __attribute__((section(".scratch")));
@@ -42,7 +42,9 @@ static int tab_go(const void *unused) {
 static int tab_touch(void *ctx, void *event) {
     int xy[2] = { I(event, EVENT_X), I(event, EVENT_Y) };
     widget_to_local(ctx, xy);
-    tab_want = xy[0] >= (theme()->painter[PAINT_SELECTION] == SEL_CARD ? GAMES_X - 20 : 188);
+    tab_want = (xy[0] - SEG_X) / ((375 - 2 * SEG_X) / 3);
+    if (tab_want < 0) tab_want = 0;
+    if (tab_want > 2) tab_want = 2;
     rearm(&tab_timer, tab_go, 0);
     return 0;
 }
@@ -75,6 +77,7 @@ void store_tabs_set(void *strip, int tab, const int *updates) {
     widget_set_prop_int(strip, "_tab", tab);
     widget_set_prop_int(strip, "_b0", updates[0]);
     widget_set_prop_int(strip, "_b1", updates[1]);
+    widget_set_prop_int(strip, "_b2", updates[2]);
     widget_invalidate_force(strip, 0);
 }
 
@@ -129,36 +132,33 @@ static void badge(void *canvas, int right, int cy, int n, int open) {
 static void paint_strip(void *w, void *canvas) {
     const theme_t *T = theme();
     int h = I(w, W_H), tab = widget_get_prop_int(w, "_tab", 0),
-        n[2] = { widget_get_prop_int(w, "_b0", 0), widget_get_prop_int(w, "_b1", 0) };
-    static const char *const names[2] = { "Apps", "Games" };
+        n[3] = { widget_get_prop_int(w, "_b0", 0), widget_get_prop_int(w, "_b1", 0),
+                 widget_get_prop_int(w, "_b2", 0) };
+    static const char *const names[3] = { "Apps", "Games", "Custom" };
     canvas_set_fill_color(canvas, rgba(0, 255)); /* the paper */
     canvas_fill_rect(canvas, 0, 0, 375, h);
     if (T->painter[PAINT_SELECTION] == SEL_CARD) { /* Minimal: the names, the open one dotted */
         int x = 36;
-        for (int i = 0; i < 2; ++i) {
+        for (int i = 0; i < 3; ++i) {
             if (i == tab) {
                 rect_t dot = { x - 14, h / 2 - 2, 5, 5 };
                 fill_box(canvas, &dot, rgba(0xffffff, 255), 3);
             }
             text_at(canvas, names[i], x, 0, h, 17, rgba(i == tab ? 0xffffff : 0x5c5c5c, 255), LEFT);
-            x = GAMES_X;
+            x += TAB_W;
         }
-        if (n[0] + n[1]) {
-            char s[24];
-            snprintf(s, sizeof s, "%d update%s", n[0] + n[1], n[0] + n[1] == 1 ? "" : "s");
-            text_at(canvas, s, 375 - 20, 0, h, 12, rgba(SUDO_MUTED, 255), RIGHT);
-        }
+        for (int i = 0; i < 3; ++i)
+            if (n[i]) badge(canvas, 36 + TAB_W * i + 74, h / 2, n[i], i == tab);
         return;
     }
     /* Classic and Modern: the switch, its open half the selected row's colour; Classic's rim grey
      * under a hairline, Modern's the row's colour */
     int classic = T->painter[PAINT_SELECTION] == SEL_STOPS, y = (h - SEG_H) / 2,
-        half = (375 - 2 * SEG_X) / 2, raw;
+        half = (375 - 2 * SEG_X) / 3, raw;
     unsigned ink, band = row_look(&ink, &raw);
     rect_t box = { SEG_X, y, 375 - 2 * SEG_X, SEG_H },
            in = { SEG_X + 1, y + 1, box.w - 2, SEG_H - 2 },
-           open = { tab ? SEG_X + half : SEG_X + 1, y + 1, half - 1 + tab * (box.w - 2 * half),
-                    SEG_H - 2 };
+           open = { SEG_X + 1 + tab * half, y + 1, half - 1, SEG_H - 2 };
     if (classic) {
         canvas_set_fill_color(canvas, rgba(0x2f2f2f, 255));
         canvas_fill_rect(canvas, 0, h - 1, 375, 1);
@@ -169,11 +169,11 @@ static void paint_strip(void *w, void *canvas) {
     fill_box(canvas, &in, rgba(0, 255), 6);
     ui_ink_raw(raw);
     fill_box(canvas, &open, rgba(band, 255), 6);
-    canvas_set_fill_color(canvas, rgba(band, 255)); /* fill_box's vgcanvas leaves it as it was */
-    canvas_fill_rect(canvas, tab ? open.x : open.x + open.w - 8, open.y, 8,
-                     open.h); /* square inside */
+    canvas_set_fill_color(canvas, rgba(band, 255));
+    if (tab > 0) canvas_fill_rect(canvas, open.x, open.y, 8, open.h);
+    if (tab < 2) canvas_fill_rect(canvas, open.x + open.w - 8, open.y, 8, open.h);
     ui_ink_raw(0);
-    for (int i = 0; i < 2; ++i) {
+    for (int i = 0; i < 3; ++i) {
         int cx = SEG_X + half * i + half / 2;
         unsigned c = i == tab ? ink : classic ? 0xffffff : band;
         ui_ink_raw((i == tab || !classic) && raw);

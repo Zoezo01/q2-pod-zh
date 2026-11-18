@@ -45,3 +45,14 @@ Or, with Q2 Pod on Wi-Fi: **System settings → App Store → Rockbox** installs
 - **Rockbox does not start:** the card must be exFAT or FAT32, and the `.rockbox` folder must be in the card's main folder.
 - **Want the normal Shanling player back:** flash Shanling's stock V1.36 file the same way as step 1.
 - **Anything else:** see **Troubleshooting the Q2 and your library**, **Troubleshooting Cover Flow, sound and streaming** and **Getting help** in Chapter 11 of the [user guide](https://github.com/DiamondBond/q2-pod/releases/latest/download/Q2-Pod-User-Guide.pdf).
+
+
+## Add a custom card app
+
+Open **System settings → App Store → Custom → Add GitHub App**, enter a repository
+such as `lampsonlnguyen/q2-arcade` (a full `https://github.com/owner/repository`
+link also works), and press **Done**. Select its row in Custom to install it.
+
+The repository must publish a Q2-compatible card app ZIP in its latest GitHub release.
+Custom sources are saved on the card in `.q2/custom-sources.list` and use the App Store's
+existing install, update and removal flow. Adding a repository already listed under Apps or Games moves its entry into Custom.

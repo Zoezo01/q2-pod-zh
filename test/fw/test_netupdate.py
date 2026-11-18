@@ -39,13 +39,13 @@ RELEASE = pathlib.Path(__file__).resolve().parents[1]/'fixtures/q2-pod-release.j
 
 class App(C.Structure):
     _fields_ = [('name', C.c_char * 32), ('id', C.c_char * 16), ('repo', C.c_char * 80), ('dir', C.c_char * 17),
-                ('bin', C.c_char * 40), ('latest', C.c_char * 32), ('dropped', C.c_char), ('game', C.c_char), ('keep', C.c_char_p)]
+                ('bin', C.c_char * 40), ('latest', C.c_char * 32), ('dropped', C.c_char), ('game', C.c_char), ('custom', C.c_char), ('keep', C.c_char_p)]
 
 
 class Sh(C.Structure):
     _fields_ = [('thread', C.c_ulong), *((n, C.c_int) for n in ('running', 'cancel', 'percent', 'stage', 'result', 'job', 'app', 'armed', 'rows', 'n')),
-                ('map', C.c_int * (SH_MAX + 1)), ('manual', C.c_int), ('need', C.c_uint), ('checked', C.c_ulonglong), ('next', App * SH_MAX),
-                ('page', C.c_void_p), ('row', C.c_void_p * (SH_MAX + 1)), ('tab', C.c_int), ('strip', C.c_void_p)]
+                ('map', C.c_int * (SH_MAX + 2)), ('manual', C.c_int), ('need', C.c_uint), ('checked', C.c_ulonglong), ('next', App * SH_MAX),
+                ('page', C.c_void_p), ('row', C.c_void_p * (SH_MAX + 2)), ('tab', C.c_int), ('strip', C.c_void_p), ('edit_page', C.c_void_p), ('edit', C.c_void_p), ('edit_timer', C.c_uint)]
 
 
 class Nu(C.Structure):
@@ -2336,14 +2336,14 @@ class Store:
         """The open tab's apps' rows, under Check for Updates: each one's state (app_store.c draws it at the row's
         end), or with none its second line, saying what is happening to it."""
         assert self.sh.map[0] == ROW_CHECK
-        return [STATES[self.state(r)] if self.state(r) >= 0 else self.text.get(self.sh.row[r]) for r in range(1, self.sh.rows)]
+        return [STATES[self.state(r)] if self.state(r) >= 0 else self.text.get(self.sh.row[r]) for r in range(1, self.sh.rows - (self.sh.tab == 2))]
 
     def state(self, r):
         return self.props.get((self.sh.row[r], '_state'), -1)
 
     def details(self):
         """The open tab's apps' second lines."""
-        return [self.text.get(self.sh.row[r]) for r in range(1, self.sh.rows)]
+        return [self.text.get(self.sh.row[r]) for r in range(1, self.sh.rows - (self.sh.tab == 2))]
 
 
 def test_the_store_loads_its_list_then_not_again_for_ten_minutes(fw):
@@ -2829,10 +2829,12 @@ def test_the_tabs_split_the_list_and_previous_and_next_switch_them(fw):
     assert s.sh.tab == 0 and s.labels() == ['Install'] and s.details() == ['me'] and s.props[(88, '_tab')] == 0
     key = fw.fn('shelf_key', C.c_int, C.c_void_p, C.c_uint)
     assert key(77, O['KEY_FWD_BTN']) == 1 and s.sh.tab == 1 and s.details() == ['you'] and s.props[(88, '_tab')] == 1  # Next: Games
-    assert key(77, O['KEY_FWD_BTN']) == 1 and s.sh.tab == 1  # Next again stays
-    assert key(66, O['KEY_BACK_BTN']) == 0 and s.sh.tab == 1  # another page's
+    assert key(77, O['KEY_FWD_BTN']) == 1 and s.sh.tab == 2  # Next: Custom
+    assert s.sh.map[s.sh.rows - 1] == SH_MAX + 1
+    assert key(66, O['KEY_BACK_BTN']) == 0 and s.sh.tab == 2  # another page's
     assert key(77, O['KEY_CENTER']) == 0  # Centre is the list's
-    assert key(77, O['KEY_BACK_BTN']) == 1 and s.sh.tab == 0 and s.details() == ['me']  # Previous: Apps
+    assert key(77, O['KEY_BACK_BTN']) == 1 and s.sh.tab == 1  # Previous: Games
+    assert key(77, O['KEY_BACK_BTN']) == 1 and s.sh.tab == 0 and s.details() == ['me']
     s.close()
     assert key(77, O['KEY_BACK_BTN']) == 0  # closed
 
@@ -2892,16 +2894,17 @@ def test_app_store_paints_a_rows_state_as_a_word_and_the_tabs_badges(fw, theme):
     fw.fn('store_state', None, C.c_void_p, C.c_int)(row, -1)
     assert painted(row)[0] == []  # busy: the second line says it
     strip = widget(48 if theme != b'1' else 44)
-    fw.fn('store_tabs_set', None, C.c_void_p, C.c_int, C.POINTER(C.c_int))(strip, 1, (C.c_int * 2)(0, 2))
+    fw.fn('store_tabs_set', None, C.c_void_p, C.c_int, C.POINTER(C.c_int))(strip, 1, (C.c_int * 3)(0, 2, 0))
     ops, texts = painted(strip)
     texts = ' '.join(texts)
-    assert 'APPS' in texts and 'GAMES' in texts and '2' in texts
-    # the disc ends 10 px inside its half (14 + 2 * 173), clear of the name beside it; Minimal has none
-    assert (theme == b'0') != any(o.rect and (o.rect[0], o.rect[2]) == (350 - 16, 16) for o in ops)
-    if theme != b'0':  # the open half in the selected row's colour: Classic Blue's band's middle stop, Modern's bar's
+    assert 'APPS' in texts and 'GAMES' in texts and 'CUSTOM' in texts and '2' in texts
+    # Each tab keeps its own badge within its third of the strip.
+    right = 222 if theme == b'0' else 234
+    assert any(o.rect and (o.rect[0], o.rect[2]) == (right - 16, 16) for o in ops)
+    if theme != b'0':
         band = rgba(0x007dde) if theme == b'1' else tone(fw, 0)
-        assert any(o.kind == 'fill' and o.rect[0] == 14 + 173 and o.color == band for o in ops)
-    assert {o.px for o in ops if o.kind == 'text'} == {b'0': {17, 12}, b'1': {23, 15}, b'2': {16, 11}}[theme]  # names, count
+        assert any(o.kind == 'fill' and o.rect[0] == 130 and o.color == band for o in ops)
+    assert {o.px for o in ops if o.kind == 'text'} == {b'0': {17, 11}, b'1': {23, 15}, b'2': {16, 11}}[theme]
     fw.var('app_store__on_page', C.c_char).value = b'\x00'
     assert painted(row)[0] == []  # the page closed: nothing
 
@@ -2931,9 +2934,9 @@ def test_a_selected_rows_state_takes_the_rows_ink_as_stocks_labels_do(fw, st):
     assert all(light(c) for c in state())  # another row
 
 
-@pytest.mark.parametrize('theme, x, tab', ((b'0', 105, 1), (b'0', 95, 0), (b'2', 105, 0), (b'2', 200, 1)))
+@pytest.mark.parametrize('theme, x, tab', ((b'0', 160, 1), (b'0', 95, 0), (b'2', 105, 0), (b'2', 200, 1), (b'0', 300, 2), (b'2', 300, 2)))
 def test_a_tap_on_the_tabs_switches_after_its_own_event(fw, theme, x, tab):
-    """The new rows replace the strip, so the switch waits for a timer; Minimal's Games name starts at 120."""
+    """The new rows replace the strip, so the switch waits for a timer; the three tabs share the same hit regions in every theme."""
     from test_games import config
     config(fw, THEME=theme)
     card = Disk(fw, {SOURCES: b'me/q2-foo Foo\n[Games]\nyou/q2-bar Bar\n'})
@@ -2946,7 +2949,8 @@ def test_a_tap_on_the_tabs_switches_after_its_own_event(fw, theme, x, tab):
     fw.fn('app_store__tab_touch', C.c_int, C.c_void_p, C.c_void_p)(88, event)
     assert s.sh.tab == 0 and len(s.timers) == timers + 1  # nothing yet: the strip is the event's
     C.CFUNCTYPE(C.c_int, C.c_void_p)(s.timers[-1])(None)
-    assert s.sh.tab == tab and s.details() == [[b'me', b'you'][tab].decode()]
+    assert s.sh.tab == tab
+    assert s.details() == ([] if tab == 2 else [[b'me', b'you'][tab].decode()])
 
 
 def test_a_checks_age_counts_the_time_slept_in_standby(fw):
@@ -3038,3 +3042,95 @@ def test_classic_moves_the_list_under_the_tabs_strip(fw):
     fw.fn('store_tabs', C.c_void_p, C.c_void_p, C.c_void_p)(page, view)
     assert moved[lst] == (0, 54, 375, 346) and moved[view] == (0, 0, 375, 346)
     fw.fn('store_tabs', C.c_void_p, C.c_void_p, C.c_void_p)(0, 0)  # closed
+
+
+@pytest.mark.parametrize('url,repo', [
+    (b'https://github.com/me/q2-foo', b'me/q2-foo'),
+    (b' github.com/me/q2-foo/ ', b'me/q2-foo'),
+    (b'me/q2-foo.git', b'me/q2-foo'),
+    (b'https://example.com/me/q2-foo', None),
+    (b'https://github.com/me/q2-foo/releases/latest', None),
+    (b'me/q2-foo Foo', None),
+    (b'me/q2-foo\nother/q2-bar', None),
+    (b'me/q2-rockbox', None),
+    (b'me/q2-tidal', None),
+])
+def test_custom_repository_link_uses_the_source_list_validation(fw, url, repo):
+    app = App()
+    ok = fw.fn('netupdate__custom_repo', C.c_int, C.c_char_p, C.c_void_p)(url, C.byref(app))
+    assert bool(ok) == (repo is not None)
+    if repo:
+        assert app.repo == repo
+
+
+def test_custom_source_survives_refresh_and_installs_through_the_existing_worker(fw):
+    card = Disk(fw)
+    net = store_net(fw, listed=b'me/q2-other Other\n')
+    store = Store(fw, card, wifi=0)
+    fw.fn('shelf_tab', None, C.c_int)(2)
+    assert store.sh.map[store.sh.rows - 1] == SH_MAX + 1
+    store.sh.edit = 99
+    url = b'https://github.com/me/q2-foo'
+    fw.mock('widget_get_text_utf8', lambda w, buf, cap, *_: C.memmove(buf, url + b'\0', len(url) + 1) and 0)
+    fw.fn('netupdate__custom_save', C.c_int, C.c_void_p)(None)
+    custom = b'/mnt/mmc/.q2/custom-sources.list'
+    assert card.files[custom] == b'me/q2-foo\n'
+    assert fw.var('shelf_n', C.c_int).value == 1
+    assert fw.var('shelf_apps', App * SH_MAX)[0].custom == b'\1'
+    store.wifi = 1
+    store.click(1)
+    assert store.sh.job == JOB_INSTALL
+    store.run()
+    assert card.files[b'/mnt/mmc/.foo/q2app'] == FOO['.foo/q2app']
+    store.click(0)
+    store.run()
+    assert any(store.sh.next[i].repo == b'me/q2-foo' and store.sh.next[i].dropped == b'\0'
+               for i in range(store.sh.n))
+    store.close()
+    fw.var('shelf_n', C.c_int).value = 0
+    store.wifi = 0
+    store.open()
+    assert any(app.repo == b'me/q2-foo' and app.custom == b'\1'
+               for app in fw.var('shelf_apps', App * SH_MAX))
+
+
+def test_custom_sources_cannot_override_an_upstream_id_or_dropped_entry(fw):
+    apps(fw, b'upstream/q2-foo')
+    card = Disk(fw)
+    card.files[b'/mnt/mmc/.q2/custom-sources.list'] = b'fork/q2-foo\nme/q2-bar\n'
+    net = store_net(fw, listed=b'-upstream/q2-foo Foo\n')
+    listed = fw.fn('netupdate__listed', C.c_int, C.c_int)
+    assert listed(0) == SH_MISSING
+    merge = fw.fn('netupdate__custom_sources', C.c_int, C.c_void_p, C.c_int)
+    table = (App * SH_MAX)()
+    table[0].repo, table[0].id, table[0].dropped = b'upstream/q2-foo', b'foo', 1
+    assert merge(table, 1) == 2
+    assert table[0].dropped and table[0].repo == b'upstream/q2-foo' and table[1].repo == b'me/q2-bar'
+
+
+def test_cached_full_list_keeps_custom_apps_on_the_custom_tab(fw):
+    card = Card(fw, {b'/mnt/mmc/.q2/custom-sources.list': b'me/q2-custom\n'})
+    table = (App * SH_MAX)()
+    for i in range(SH_MAX):
+        table[i].repo, table[i].id = f'upstream/q2-app{i}'.encode(), f'app{i}'.encode()
+    table[-1].repo, table[-1].id = b'me/q2-custom', b'custom'
+    merge = fw.fn('netupdate__custom_sources', C.c_int, C.c_void_p, C.c_int)
+    assert merge(table, SH_MAX) == SH_MAX and table[-1].custom == b'\1'
+
+
+
+def test_adding_an_existing_repository_moves_it_to_custom_without_a_duplicate(fw):
+    card = Disk(fw, {SOURCES: b'me/q2-foo Foo\n'})
+    store = Store(fw, card, wifi=0)
+    fw.fn('shelf_tab', None, C.c_int)(2)
+    store.sh.edit = 99
+    url = b'me/q2-foo'
+    fw.mock('widget_get_text_utf8', lambda w, buf, cap, *_: C.memmove(buf, url + b'\0', len(url) + 1) and 0)
+    fw.fn('netupdate__custom_save', C.c_int, C.c_void_p)(None)
+    assert fw.var('shelf_n', C.c_int).value == 1
+    assert fw.var('shelf_apps', App * SH_MAX)[0].custom == b'\1'
+    net = store_net(fw)
+    store.wifi = 1
+    store.click(0)
+    store.run()
+    assert store.sh.n == 1 and store.sh.next[0].custom == b'\1'
