@@ -260,6 +260,42 @@ def test_a_slots_paths(fw):
                                                               b'/tmp/q2-foo.state', b'/tmp/q2-foo.browse.sock')
 
 
+APP_BIN, APP_PID, RUN = b'/mnt/mmc/.a/q2-a', b'/tmp/q2-a', (b'/bin/sh /mnt/mmc/.a/run',)
+
+
+# A URL queue's song on the app's own server (tidal.c app_track): its app, not running, starts as its page starts it,
+# and the player waits for it while it started in the last ADDON_START_MS (10 s).
+@pytest.mark.parametrize('files, launched, since, waits, started', [
+    ({APP_BIN}, 0, 0, 1, True),  # ended (idle, or stopped): started
+    ({APP_BIN, APP_PID}, 0, 0, 0, False),  # running: nothing, no wait
+    ({APP_BIN, APP_PID}, 1, 2000, 1, False),  # its page started it 2 s ago: running, maybe not answering yet
+    ({APP_BIN}, 1, 2000, 1, False),  # starting, its loop's pid file not there yet: not started twice
+    ({APP_BIN}, 1, 20000, 1, True),  # started long ago, ended since
+    (set(), 0, 0, 0, False),  # its binary gone from the card
+])
+def test_a_url_queue_s_app_starts_when_it_isn_t_running(fw, files, launched, since, waits, started):
+    (a,), world = slots(fw, b'a')
+    world.files, world.ms = dict.fromkeys(files, b''), 30000
+    a.contents.launched, a.contents.launch_at = launched, 30000 - since
+    assert fw.fn('addon_wake', C.c_int, C.c_char_p)(b'a') == waits
+    assert world.of('system') == ([RUN] if started else [])
+
+
+def test_an_app_the_card_doesn_t_hold_isn_t_woken(fw):
+    slots(fw, b'a')
+    assert fw.fn('addon_wake', C.c_int, C.c_char_p)(b'b') == 0
+
+
+@pytest.mark.parametrize('connect, up', [(0, 1), (-1, 0)])
+def test_an_app_answers_when_its_socket_takes_a_connection(fw, connect, up):
+    log = []
+    fw.mock('fw_socket', lambda *a: log.append(('socket', a[:3])) or 5)
+    fw.mock('fw_connect', lambda fd, to, n, *_: log.append(('connect', C.string_at(to + 2))) or connect)
+    fw.mock('fw_close', lambda fd, *_: log.append(('close', fd)))
+    assert fw.fn('addon_answers', C.c_int, C.c_char_p)(b'a') == up
+    assert log == [('socket', (1, 2, 0)), ('connect', b'/tmp/q2-a.browse.sock'), ('close', 5)]
+
+
 def test_the_longest_id_fits_every_path(fw):
     i = b'a' * 15
     (a,), _ = slots(fw, i)
@@ -430,7 +466,7 @@ def test_more_apps_than_slots(fw):
 def test_the_features_are_published_at_every_scan(fw):
     world = card(fw)
     scan(fw)
-    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections art window urls sort field more fav now\n'
+    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections art window urls sort field more fav now wake\n'
     assert world.of('rename') == [(b'/tmp/q2-addon.caps.tmp', b'/tmp/q2-addon.caps')]
 
 

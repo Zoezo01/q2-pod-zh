@@ -9,7 +9,8 @@ import re
 import pytest
 
 import host
-from conftest import O, Deques, Files, claim, high_halves, libc
+from conftest import O, Deques, Files, Game, claim, high_halves, in_fork, libc, stock_stub
+from test_radio import Rd  # test_radio.py keeps the mirror
 from test_streaming import Td
 
 TIDAL = '/mnt/mmc/.tidal'
@@ -494,6 +495,124 @@ def test_a_load_through_ringnav_load_takes_an_app_song_s_heart_with_it(fw, queue
     fw.mock('stock_load_trampoline', lambda *_: 0)
     fw.fn('ringnav_load', C.c_int, C.c_void_p, C.c_int, C.c_int)(None, 0, 1)
     assert favourite(fw) == 0
+
+
+# A song a card app serves itself, on 127.0.0.1 (q2-jellyfin's relay, which adds the token), plays only while the
+# app runs: an app that ended (idle, Stop) is started as its page starts it before the URL
+# goes to the player, which waits for its socket, AU_WAKE_MS at most. docs/internals.md, Card apps.
+LOCAL = b'http://127.0.0.1:2317/song/1?q=hi'
+WAKE = [LOCAL + b'\tA', b'https://x/b.flac\tB', b'http://127.0.0.10/c.flac\tC', b'http://127.0.0.1/d.flac\tD']
+
+
+class Wake:
+    """The URL queue WAKE of app a, playing at pos, with the app on the card, its loop running or not: the song's
+    start through ringnav_tidal_track, then its thread's job run here. tidal_playurl, at its stock address, is a
+    stub: call this in_fork."""
+    def __init__(self, fw, queue, mcl, running, answers_at=1):
+        self.fw, self.tries, self.slept, self.played, self.ran, self.jobs = fw, 0, 0, [], [], []
+        self.answers_at, self.ms = answers_at, 100000
+        urls_play(fw, Files(fw), WAKE)
+        fw.fn('addon__slot', C.c_void_p, C.c_char_p)(b'a')
+        present = {b'/mnt/mmc/.a/q2-a', *([b'/tmp/q2-a'] if running else [])}
+        fw.mock('fw_access', lambda p, *_: 0 if C.string_at(p) in present else -1)
+        fw.mock('fw_system', lambda cmd, *_: self.ran.append(C.string_at(cmd)))
+        fw.mock('time_now_ms', lambda *_: self.ms)
+        fw.mock('networkGetConnectStatus', lambda *_: 1)
+        self.log = (C.c_ulonglong * 3)()
+        stock_stub(int(re.findall(r'#define tidal_playurl \(\(.*\)(0x[0-9a-f]+)u\)', (host.ROOT/'patch/tidal.c').read_text())[0], 16),
+                   0, self.log)
+        fw.mock('fw_pthread_create', lambda t, attr, fn, arg, *_: self.jobs.append((fn, arg)) and 0)
+        fw.mock('stock_tidal_trampoline', lambda url, *_: self.played.append(C.string_at(url)))
+        fw.mock('fw_socket', lambda *_: 5)
+        fw.mock('fw_connect', self.connect)
+        fw.mock('fw_usleep', self.usleep)
+        self.later = None  # what happens while the job waits, once
+        for k in range(len(WAKE)):
+            queue.row(f'app:1:{k}')
+        self.mcl = mcl
+        mcl.type = 0xf1
+
+    def connect(self, fd, to, n, *_):
+        assert C.string_at(to + 2) == b'/tmp/q2-a.browse.sock'
+        self.tries += 1
+        return 0 if self.tries >= self.answers_at else -1
+
+    def usleep(self, us, *_):
+        self.slept += us
+        if self.later:
+            self.later(), setattr(self, 'later', None)
+
+    def start(self, pos):
+        self.mcl.pos = pos
+        assert self.fw.fn('ringnav_tidal_track', C.c_int, C.c_void_p, C.c_void_p, C.c_void_p, C.c_void_p)(0, 0, 0, 0) == 1
+        return self.jobs[-1]
+
+    def run(self, job):
+        C.CFUNCTYPE(C.c_void_p, C.c_void_p)(job[0])(job[1])
+
+
+@in_fork
+def test_a_song_on_the_app_s_own_server_starts_the_app_and_waits_for_it(fw, queue, mcl):
+    w = Wake(fw, queue, mcl, running=False, answers_at=4)
+    w.run(w.start(0))
+    assert w.ran == [b'/bin/sh /mnt/mmc/.a/run'] and w.tries == 4 and w.slept == 3 * 100000 and w.played == [LOCAL]
+
+
+@in_fork
+def test_a_running_app_s_song_plays_at_once(fw, queue, mcl):
+    w = Wake(fw, queue, mcl, running=True)
+    w.run(w.start(0))
+    assert w.ran == [] and w.tries == 0 and w.slept == 0 and w.played == [LOCAL]
+
+
+@in_fork
+def test_a_song_from_another_server_starts_nothing(fw, queue, mcl):
+    w = Wake(fw, queue, mcl, running=False)
+    for pos, url in (1, b'https://x/b.flac'), (2, b'http://127.0.0.10/c.flac'):
+        w.run(w.start(pos))
+        assert w.played[-1] == url
+    assert w.ran == [] and w.tries == 0 and w.slept == 0
+
+
+@in_fork
+def test_an_app_that_never_answers_holds_its_song_five_seconds_at_most(fw, queue, mcl):
+    w = Wake(fw, queue, mcl, running=False, answers_at=10 ** 6)
+    w.run(w.start(3))
+    assert w.slept == 5000 * 1000 and w.tries == 50 and w.played == [b'http://127.0.0.1/d.flac']
+
+
+@in_fork
+def test_a_start_meanwhile_ends_the_wait_and_its_song_alone_plays(fw, queue, mcl):
+    w = Wake(fw, queue, mcl, running=False, answers_at=10 ** 6)
+    first = w.start(0)
+    w.later = lambda: w.start(1)  # Next, while the first waits
+    w.run(first)
+    assert w.slept == 100000 and w.played == []
+    w.run(w.jobs[-1])
+    assert w.played == [b'https://x/b.flac'] and w.ran == [b'/bin/sh /mnt/mmc/.a/run']
+
+
+# The URL goes to stock's player past ringnav_start_player, which moves Spotify and a station off the PCM and refuses
+# under a card game's sound: one started during the wait keeps it, and the song is dropped.
+@pytest.mark.parametrize('what', ['radio', 'game'])
+@in_fork
+def test_something_else_started_during_the_wait_keeps_the_sound(fw, queue, mcl, what):
+    w = Wake(fw, queue, mcl, running=False, answers_at=10 ** 6)
+    rd, gm = fw.var('radio__rd', Rd), fw.var('addon__gm', Game)
+    on = {'radio': lambda: setattr(rd, 'active', 1) or setattr(rd, 'pid', 4321),
+          'game': lambda: setattr(gm, 'pid', 4321) or setattr(gm, 'audio', 1)}
+    w.later = on[what]  # a station, or a game with audio=1, starts while the song waits
+    w.run(w.start(0))
+    assert w.slept == 100000 and w.played == [] and w.ran == [b'/bin/sh /mnt/mmc/.a/run']
+
+
+@in_fork
+def test_a_second_song_while_the_app_starts_waits_without_starting_it_again(fw, queue, mcl):
+    w = Wake(fw, queue, mcl, running=False, answers_at=2)
+    w.start(0)
+    w.ms += 1000
+    w.run(w.start(3))  # its loop's pid file not there yet: still starting
+    assert w.ran == [b'/bin/sh /mnt/mmc/.a/run'] and w.slept == 100000 and w.played == [b'http://127.0.0.1/d.flac']
 
 
 def test_a_url_queue_takes_web_urls_and_card_paths_alone(fw):

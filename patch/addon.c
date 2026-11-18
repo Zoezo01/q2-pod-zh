@@ -28,10 +28,10 @@
  * stream_poll plays as it fills, or an .m3u of card paths, which it plays in order, waiting for
  * each, or its Q2URLS/1 queue of stream URLs, /tmp/q2-<id>.urls, which stock's Tidal player plays
  * (tidal.c app_urls_play), telling it in /tmp/q2-<id>.now which of them plays when the queue asks
- * (now_poll). It asks for Update Library and its playlists' import in
- * /tmp/q2-<id>.library (addon_library.c), the result in .library.done. A list reply whose message
- * is "pages" and that has a cursor is followed by its next pages, appended to the same list
- * (page_next), up to ADDON_PAGES.
+ * (now_poll), and starting it again for a song it serves itself (addon_wake). It asks for Update
+ * Library and its playlists' import in /tmp/q2-<id>.library (addon_library.c), the result in
+ * .library.done. A list reply whose message is "pages" and that has a cursor is followed by its
+ * next pages, appended to the same list (page_next), up to ADDON_PAGES.
  *
  * Go to Album and Go to Artist on a song in an app's folder open the app's own page for them when
  * its q2app says goto=1 (addon_goto), and every song an app queues plays with its file's tags
@@ -96,7 +96,7 @@
 /* This firmware's card-app features, space-separated; a feature adds its word. */
 #define ADDON_CAPS                                                                                 \
     "playlist progress pages library goto sleep game audio sections art window urls sort field "   \
-    "more fav now"
+    "more fav now wake"
 #define ADDON_SECTIONS 8  /* sections an app's first page may have */
 #define SWIPE_CLAIM_PX 24 /* a sideways move this far, twice as far as up or down, is a swipe's */
 #define SWIPE_PX 60       /* and this far at the lift, more than up or down, changes section */
@@ -261,6 +261,35 @@ static void launch(app_t *a) {
     a->launched = 1;
     a->launch_at = time_now_ms();
     system(a->run); /* exits at once when the app runs already */
+}
+
+/* A song of an app's URL queue served by the app itself is about to play (tidal.c app_track, on
+ * the thread that starts the player, nearly always the UI's): an app that isn't running (its
+ * loop's pid file gone: it ended idle, or was stopped) starts as its page starts it (page_at).
+ * Whether it started in the last ADDON_START_MS, so the player waits for it (addon_answers).
+ * ponytail: a jack or Bluetooth restart (player_save_start's thread) and the UI thread's page_at
+ * can both launch within the same ~100 ms (launched isn't set under a lock), giving two launcher
+ * loops: the second takes the browse socket, the first keeps the relay port, and the pid file
+ * names only one. */
+int addon_wake(const char *id) {
+    app_t *a = 0;
+    for (int i = 0; i < ap.n && !a; ++i)
+        if (!strcmp(ap.a[i].id, id)) a = &ap.a[i];
+    if (!a) return 0;
+    if (access(a->pid, 0) && !access(a->bin, 0) &&
+        (!a->launched || time_now_ms() - a->launch_at >= ADDON_START_MS))
+        launch(a);
+    return a->launched && time_now_ms() - a->launch_at < ADDON_START_MS;
+}
+
+/* Whether app id's socket takes a connection (nothing sent; the app answers it as a bad request):
+ * it is up. On tidal.c's start thread. */
+int addon_answers(const char *id) {
+    struct unix_addr to = { 1, { 0 } };
+    tk_snprintf(to.path, sizeof to.path, "/tmp/q2-%s.browse.sock", id);
+    int fd = socket(1, 2, 0), ok = fd >= 0 && !connect(fd, &to, sizeof to); /* AF_UNIX, STREAM */
+    if (fd >= 0) close(fd);
+    return ok;
 }
 
 /* Stream mode (q2-deezer's stream.go): an app's /tmp/q2-<id>.play holds "<seq> <folder>", a hidden
