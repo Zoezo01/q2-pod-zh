@@ -306,6 +306,7 @@ extern int stock_keyup_trampoline(void *, void *), stock_touch_trampoline(void *
     stock_btrows_trampoline(void *, void *), stock_playlist_trampoline(void *),
     stock_stream_trampoline(void *, void *), stock_start_player_trampoline(void),
     stock_standby_trampoline(void), stock_cardmount_trampoline(void),
+    stock_config_write_trampoline(const char *, const char *, const char *, const char *),
     stock_usbmode_trampoline(void *, void *, void *, void *),
     stock_hscroll_start_trampoline(void *), stock_wifi_page_trampoline(void *, void *),
     stock_stream_row_trampoline(void *, void *), stock_netservice_row_trampoline(void *, void *),

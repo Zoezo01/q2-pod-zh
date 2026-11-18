@@ -18,6 +18,7 @@ static struct {
     int logo_mounted;
     volatile int logo_busy;
     const char *volatile logo_err;
+    int config_mutex[6]; /* one settings save at a time: MIPS glibc's zero-initialized mutex */
 } pw __attribute__((section(".scratch")));
 
 /* Standby unloads the card's driver and waits at most 1.55 s for the mount after reloading it, so
@@ -306,6 +307,49 @@ void reboot_record(void *caller) {
         "mv /mnt/data/q2-crash.log.tmp /mnt/data/q2-crash.log; sync",
         status, caller);
     if (n > 0 && n < (int)sizeof cmd) system(cmd);
+}
+/* Settings writer (docs/internals.md#settings-writer): every save, stock's and the payload's, is
+ * stock's toolsWriteConfig. It rebuilds the file in /tmp/tmp.cfg, then toolsCopyFile reopens the
+ * settings file with "w" and copies that over it, checking no write, and system("sync") follows.
+ * A crash, a forced restart or an empty battery between that truncate and the sync, or a full
+ * /tmp, left config.ini empty or cut short, and config_init copies the default file in only when
+ * there is none: every setting read as its default from then on.
+ * Hooked, stock rewrites a copy beside the file, <path>.new, which takes the file's place by
+ * rename once it is on the flash and no shorter than a save can make it. Anything else leaves the
+ * file as it was and fails the save. A file not there yet has nothing to lose and is stock's to
+ * create. One save runs at a time: /tmp/tmp.cfg and the copy are one name each. Every save is
+ * the UI thread's today, so the mutex is for the first one a worker makes.
+ * ponytail: the check is the copy's size, not a parse: one cut short by less than CONFIG_LINE
+ * passes. A full /tmp or flash cuts at a 4 KB page, so that takes a file over a page whose last
+ * page holds less than a line; parse the copy against the file if one is ever seen. */
+#define CONFIG_LINE 256 /* toolsWriteConfig's longest line: the most one save shortens a file */
+static long flushed(const char *path) { /* a file's size once it's on the flash, or -1 */
+    void *f = fopen(path, "rb");
+    long size = f && !fsync(fileno(f)) && !fseek(f, 0, 2) ? ftell(f) : -1;
+    if (f) fclose(f);
+    return size;
+}
+int ringnav_config_write(const char *path, const char *section, const char *key,
+                         const char *value) {
+    char fresh[300];
+    int result = -1;
+    pthread_mutex_lock(pw.config_mutex);
+    if (access(path, 0) || snprintf(fresh, sizeof fresh, "%s.new", path) >= (int)sizeof fresh)
+        result = stock_config_write_trampoline(path, section, key, value);
+    else {
+        int had = toolsCopyFile(path, fresh);
+        long size = had < 0 || stock_config_write_trampoline(fresh, section, key, value)
+                        ? -1
+                        : flushed(fresh);
+        if (size > 0 && size >= had - CONFIG_LINE && !rename(fresh, path)) {
+            char *slash = strrchr(fresh, '/');
+            result = 0;
+            if (slash) *slash = 0, flushed(fresh); /* the folder: the rename, on the flash too */
+        } else
+            unlink(fresh);
+    }
+    pthread_mutex_unlock(pw.config_mutex);
+    return result;
 }
 /* Standby limit (docs/internals.md#standby-limit): device_standby puts the radios, the card and the
  * DAC down, then toolsIntoStandby suspends to RAM ("mem" to /sys/power/state) and returns once

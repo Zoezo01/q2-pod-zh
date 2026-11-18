@@ -149,6 +149,8 @@ HOOKS = {
     'toolsIntoStandby': (0x5d1110, 'ringnav_standby', 'standby'),
     # Standby's card driver reload: no removed and inserted toasts on the wake
     'check_cardmount_status': (0x4f39a4, 'ringnav_cardmount', 'cardmount'),
+    # Every settings save: one at a time, on a copy that replaces the file by rename (system.c)
+    'toolsWriteConfig': (0x5d0284, 'ringnav_config_write', 'config_write'),
     'playset_playset_page_init': (0x4bd4d0, 'ringnav_audioset', 'audioset'),
     # Bluetooth's list, rebuilt on every search and link change, gains Resume on connect
     'btmenu_rows': (0x4c3ef8, 'ringnav_btrows', 'btrows'),
@@ -1471,6 +1473,7 @@ FUNCTIONS = {
  'write_int_config': ('int', 'int, const char *, const char *'),
  'toolsWriteConfig': ('int', 'const char *, const char *, const char *, const char *'),
  'toolsReadConfig': ('int', 'const char *, const char *, const char *, char *, const char *'),
+ 'toolsCopyFile': ('int', 'const char *, const char *'),  # the bytes read, -1 when either can't open (system.c)
  'button_create': ('void *', 'void *, int, int, int, int'),
  'widget_move_resize': ('int', 'void *, int, int, int, int'),
  # The artist page's toolbar (navigation.c artist_bar): its tabs move down under it
