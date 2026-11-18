@@ -1762,10 +1762,23 @@ def test_a_long_album_is_cut_at_its_label_and_starts_its_marquee(fw, ui, st):
     assert st('np_over').value == 20 * (10 + TRACK) - TRACK - album.room
 
 
-@pytest.mark.parametrize('text, shown', [('é÷ÿ', 'É÷ÿ'), ('àz', 'ÀZ')])
+@pytest.mark.parametrize('text, shown', [('é÷ÿ', 'É÷Ÿ'), ('àz', 'ÀZ')])
 def test_capitals_cover_latin_1(fw, ui, st, text, shown):
     canvas, album = Canvas(fw), Album(fw, ui, st, text)
     assert ''.join(c for c, _, _, _ in caps(fw, canvas, album.view)) == shown
+
+
+@pytest.mark.parametrize('text', ['Nguyễn Văn ơ ư', 'Кино ёѓ', 'Dvořák ÿ ı łż', 'Ҡҫ Ӂӂ ӏ Ӑӑ', 'αβγ'])
+def test_capitals_cover_vietnamese_cyrillic_and_central_european(fw, ui, st, text):
+    canvas, album = Canvas(fw), Album(fw, ui, st, text, width=1000)
+    assert ''.join(c for c, _, _, _ in caps(fw, canvas, album.view)) == (text.upper() if text != 'αβγ' else text)  # Greek waits
+
+
+def test_capitals_are_unicodes_where_they_change_a_letter(fw):
+    upper = fw.fn('navigation__script_upper', C.c_uint, C.c_uint)
+    changed = {c: upper(c) for c in [*range(0x20, 0x530), *range(0x1e00, 0x1f00)] if upper(c) != c}
+    assert all(chr(c).upper() == chr(u) for c, u in changed.items())
+    assert len(changed) == 314 and not any(0x370 <= c < 0x400 for c in changed)
 
 
 def test_the_album_marquee_holds_scrolls_holds_and_comes_back(fw, ui, st):

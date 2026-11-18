@@ -623,10 +623,26 @@ static inline int script_cjk(unsigned c) {
     return (c >= 0x2e80 && c < 0xa000) || (c >= 0xac00 && c < 0xd7b0) ||
            (c >= 0xff00 && c < 0xfff0);
 }
-/* c's capital for Minimal's small capitals: ASCII and Latin-1; anything else is c. */
+/* c's capital for Minimal's small capitals, Unicode's simple upper-casing of ASCII, Latin-1, Latin
+ * Extended-A, ơ ư, Cyrillic and Vietnamese's letters with tone marks; anything else (Greek too) is
+ * c. ponytail: every capital it gives was checked for a glyph in stock V1.36's font, after
+ * font_letters (tools/build.py); a new base font, or a new range here, needs the same check: a
+ * capital the font lacks draws nothing. */
 static inline unsigned script_upper(unsigned c) {
-    if ((c >= 'a' && c <= 'z') || (c >= 0xe0 && c <= 0xfe && c != 0xf7)) c -= 32;
-    return c;
+    if ((c >= 'a' && c <= 'z') || (c >= 0xe0 && c <= 0xfe && c != 0xf7) ||
+        (c >= 0x430 && c <= 0x44f))
+        return c - 32;
+    if (c >= 0x450 && c <= 0x45f) return c - 80; /* ѐ to џ */
+    if (c == 0xff) return 0x178;                 /* ÿ */
+    if (c == 0x131) return 'I';                  /* dotless ı */
+    if ((c >= 0x100 && c <= 0x137) || (c >= 0x14a && c <= 0x177) || c == 0x1a1 ||
+        (c >= 0x460 && c <= 0x481) || (c >= 0x48a && c <= 0x4bf) || (c >= 0x4d0 && c <= 0x52f) ||
+        (c >= 0x1ea0 && c <= 0x1ef9))
+        return c & ~1u; /* pairs, the capital even */
+    if ((c >= 0x139 && c <= 0x148) || (c >= 0x179 && c <= 0x17e) || c == 0x1b0 ||
+        (c >= 0x4c1 && c <= 0x4ce))
+        return (c - 1) | 1; /* pairs, the capital odd */
+    return c == 0x4cf ? 0x4c0 : c;
 }
 void bar_title_sync(void *win); /* navigation.c: Classic's bar title names win */
 void bar_title_name(void *win); /* navigation.c: names win by its name, on top or not */
