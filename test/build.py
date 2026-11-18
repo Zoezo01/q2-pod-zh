@@ -666,6 +666,7 @@ def validate_assets(directory):
             assert not bad, (rel, bad)
         if rel not in changed:
             assert new == (default_config(original) if rel == DEFAULT_CONFIG else original), rel
+            assert rel != DEFAULT_CONFIG or new.endswith(b'NAVHIDE=0\n') and not original.endswith(b'\n'), rel  # a save's new section starts its own line
             continue
         assert changed[rel] == dict(original_sha256=sha(original), sha256=sha(new))
         if '/raw/styles/' in rel:

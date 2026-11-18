@@ -5,7 +5,7 @@ import pytest
 
 INI = '/mnt/data/config.ini'
 NEW = INI + '.new'
-WHOLE = b'[SYSSET]\nBLUETOOTH=0\n' + b''.join(b'KEY%d=%d\n' % (i, i) for i in range(60))
+WHOLE = b"[SYSSET]\nBLUETOOTH=0\n" + b"".join(b"KEY%d=%s\n" % (i, b"v" * 80) for i in range(60))
 
 
 def name(path):
@@ -14,7 +14,9 @@ def name(path):
 
 class Flash:
     """The flash's files as a dict, and stock's toolsWriteConfig past its hook: it rewrites the file it is given in
-    place, as stock does, or leaves it as `fault` says. `during` is the flash as stock's writer found it."""
+    place, as stock does (a blank line or one with a NUL dropped, the key's line replaced, or added last), or leaves
+    it as `fault` says: ('keep', n) is a full /tmp or flash, only the first n bytes written. `during` is the flash
+    as stock's writer found it."""
     def __init__(self, fw, files, fault=None):
         self.files, self.fds, self.depth, self.events, self.fault = dict(files), {}, 0, [], fault
         self.during = {}
@@ -27,8 +29,7 @@ class Flash:
         fw.mock('fw_fopen', self.open)
         fw.mock('fw_fileno', lambda f, *_: f)
         fw.mock('fw_fsync', self.sync)
-        fw.mock('fw_fseek', lambda f, *_: -(self.fds[f] not in self.files))  # a folder has no size
-        fw.mock('fw_ftell', lambda f, *_: len(self.files[self.fds[f]]))
+        fw.mock('fw_fread', self.read)
         fw.mock('fw_fclose', lambda f, *_: self.fds.pop(f) and 0)
         fw.mock('fw_rename', self.rename)
         fw.mock('fw_unlink', lambda path, *_: self.files.pop(name(path), None) and 0)
@@ -53,22 +54,33 @@ class Flash:
         self.during = dict(self.files)
         if self.fault == 'stock':
             return -1
-        old = self.files.get(path, b'')
-        kept = [line for line in old.splitlines(keepends=True) if not line.startswith(key + b'=')]
-        new = b''.join(kept) + key + b'=' + C.string_at(value) + b'\n'
-        self.files[path] = new[:len(old) - self.fault[1]] if isinstance(self.fault, tuple) else new
+        kept = [line for line in self.files.get(path, b'').splitlines(keepends=True)
+                if line.strip() and b'\0' not in line]
+        at = next((i for i, line in enumerate(kept) if line.startswith(key + b'=')), len(kept))
+        kept[at:at + 1] = [key + b'=' + C.string_at(value) + b'\n']
+        new = b''.join(kept)
+        self.files[path] = new[:self.fault[1]] if isinstance(self.fault, tuple) else new
         return 0
 
     def open(self, path, *_):
         path = name(path)
-        if self.fault == 'open' or not any(f == path or f.startswith(path + '/') for f in self.files):
+        if self.fault == 'open' and path.endswith('.new') or not any(
+                f == path or f.startswith(path + '/') for f in self.files):
             return 0
-        self.fds[len(self.fds) + 5] = path
-        return len(self.fds) + 4
+        handle = max(self.fds, default=4) + 1
+        self.fds[handle] = [path, 0]
+        return handle
 
     def sync(self, fd, *_):
-        self.events.append(('sync', self.fds[fd]))
+        self.events.append(('sync', self.fds[fd][0]))
         return -(self.fault == 'sync')
+
+    def read(self, buf, size, count, f, *_):
+        path, at = self.fds[f]
+        data = self.files.get(path, b'')[at:at + size * count]  # a folder reads as nothing
+        C.memmove(buf, data, len(data))
+        self.fds[f][1] += len(data)
+        return len(data) // size
 
     def rename(self, old, new, *_):
         old, new = name(old), name(new)
@@ -79,52 +91,79 @@ class Flash:
         return 0
 
 
+def saved(flash, path=INI):
+    return flash.save(path.encode(), b'SYSSET', b'BLUETOOTH', b'1')
+
+
 def test_a_save_rewrites_a_copy_and_renames_it_over_the_file(fw):
     """Stock's writer truncates the file it is given and writes it again: it is given the copy, so the file is whole
     whenever it is cut off. The copy is on the flash before the rename, and the folder after."""
     flash = Flash(fw, {INI: WHOLE})
-    assert flash.save(INI.encode(), b'SYSSET', b'BLUETOOTH', b'1') == 0
+    assert saved(flash) == 0
     assert flash.during == {INI: WHOLE, NEW: WHOLE}
-    assert flash.files == {INI: WHOLE.replace(b'BLUETOOTH=0\n', b'') + b'BLUETOOTH=1\n'}
+    assert flash.files == {INI: WHOLE.replace(b'BLUETOOTH=0', b'BLUETOOTH=1')}
     assert flash.events == [('copy', INI, NEW), ('stock', NEW), ('sync', NEW), ('rename', NEW, INI),
                             ('sync', '/mnt/data')]
     assert flash.depth == 0 and not flash.fds
 
 
-@pytest.mark.parametrize('fault', ['copy', 'stock', 'open', 'sync', 'rename', ('cut', len(WHOLE)), ('cut', 257)])
+LAST = WHOLE.rindex(b'KEY59=')  # where the file's last line starts
+
+
+@pytest.mark.parametrize('fault', ['copy', 'stock', 'open', 'sync', 'rename', ('keep', 0), ('keep', 4096),
+                                   ('keep', LAST)])
 def test_a_save_that_fails_leaves_the_file_as_it_was(fw, fault):
-    """A copy that can't be made, stock's writer failing, a copy that isn't on the flash, comes out empty or is cut
-    short by more than a line (a full /tmp: stock checks no write), or a rename refused."""
+    """A copy that can't be made, stock's writer failing, a copy that isn't on the flash, comes out empty or is a
+    line short (a full /tmp: stock checks no write; the last is one line short, cut where a line ends), or a
+    rename refused."""
+    assert fault != ('keep', 4096) or len(WHOLE) > 4096 + 300  # a page of it, lines short
     flash = Flash(fw, {INI: WHOLE}, fault)
-    assert flash.save(INI.encode(), b'SYSSET', b'BLUETOOTH', b'1') == -1
+    assert saved(flash) == -1
     assert flash.files == {INI: WHOLE} and flash.depth == 0 and not flash.fds
     assert all(event[1] != INI for event in flash.events if event[0] == 'stock')  # never stock's truncate on the file
 
 
-def test_a_save_may_shorten_the_file_by_a_line(fw):
-    """A long value replaced by a short one: 256 bytes less, toolsWriteConfig's longest line, is still a whole file."""
-    flash = Flash(fw, {INI: WHOLE}, ('cut', 256))
-    assert flash.save(INI.encode(), b'SYSSET', b'BLUETOOTH', b'1') == 0
-    assert len(flash.files[INI]) == len(WHOLE) - 256 and NEW not in flash.files
+@pytest.mark.parametrize('junk', [b'\n' * 400, b' \t\r\n' * 100, b'\0' * 600 + b'\n', b'\0' * 300 + b'junk\n',
+                                  b'A=1\0tail\n'])
+def test_a_save_drops_what_stocks_writer_does(fw, junk):
+    """Blank lines and NULs in the file, however many, between two lines and at its end: stock's writer cleans
+    them out, and the copy is no line short for it."""
+    head = b'[SYSSET]\nBLUETOOTH=0\n'
+    flash = Flash(fw, {INI: head + junk + WHOLE[len(head):] + junk[:-1]})
+    assert saved(flash) == 0
+    assert flash.files == {INI: WHOLE.replace(b'BLUETOOTH=0', b'BLUETOOTH=1')}
+
+
+def test_a_last_line_without_its_newline_is_a_line(fw):
+    """Stock's default config.ini ends "NAVHIDE=0": a copy without that line is a line short."""
+    whole = b'[SYSSET]\nBLUETOOTH=0\nWHEELMODE=0\nNAVHIDE=0'
+    flash = Flash(fw, {INI: whole}, ('keep', whole.rindex(b'NAVHIDE')))
+    assert saved(flash) == -1 and flash.files == {INI: whole}
+    flash = Flash(fw, {INI: whole})
+    assert saved(flash) == 0 and flash.files == {INI: whole.replace(b'BLUETOOTH=0', b'BLUETOOTH=1')}
 
 
 def test_an_empty_file_takes_a_save(fw):
-    """A config.ini an earlier firmware left empty fills again from its first save."""
+    """A config.ini an earlier firmware left empty fills again from its first save, unless that comes out empty."""
     flash = Flash(fw, {INI: b''})
-    assert flash.save(INI.encode(), b'SYSSET', b'BLUETOOTH', b'1') == 0
+    assert saved(flash) == 0
     assert flash.files == {INI: b'BLUETOOTH=1\n'}
+    flash = Flash(fw, {INI: b''}, ('keep', 0))
+    assert saved(flash) == -1 and flash.files == {INI: b''}
 
 
 @pytest.mark.parametrize('result', [0, -1])
 def test_a_file_not_there_yet_is_stocks_to_create(fw, result):
     flash = Flash(fw, {}, 'stock' if result else None)
-    assert flash.save(INI.encode(), b'SYSSET', b'BLUETOOTH', b'1') == result
+    assert saved(flash) == result
     assert flash.events == [('stock', INI)] and flash.depth == 0
     assert flash.files == ({} if result else {INI: b'BLUETOOTH=1\n'})
 
 
-def test_a_name_too_long_for_the_copys_is_stocks_too(fw):
-    path = '/mnt/data/' + 'x' * 290
+@pytest.mark.parametrize('length, direct', [(295, False), (296, True)])
+def test_a_name_too_long_for_the_copys_is_stocks_too(fw, length, direct):
+    """The copy's name is the file's and ".new" in 300 bytes: a 296-character path leaves no room for its NUL."""
+    path = '/mnt/data/' + 'x' * (length - len('/mnt/data/'))
     flash = Flash(fw, {path: WHOLE})
-    assert flash.save(path.encode(), b'SYSSET', b'BLUETOOTH', b'1') == 0
-    assert flash.events == [('stock', path)]
+    assert saved(flash, path) == 0
+    assert (flash.events == [('stock', path)]) == direct and len(flash.files) == 1

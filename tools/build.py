@@ -400,7 +400,9 @@ def default_config(config):
     for key in DEFAULT_CONFIG_OFF:
         check(config.count(b'\n%s=1\n' % key) == 1, 'Unexpected default config.ini')
         config = config.replace(b'\n%s=1\n' % key, b'\n%s=0\n' % key)
-    return config
+    # Stock's ends without a newline, so the first section a save added came out as NAVHIDE=0[Q2POD], which no read
+    # finds: the first Q2 Pod setting saved after a reset was lost once.
+    return config if config.endswith(b'\n') else config + b'\n'
 # toolsSetRtcTime's command, with its padding; -u keeps the RTC in UTC. See docs/internals.md#clock.
 RTC_WRITE = (b'hwclock -w\0\0', b'hwclock -wu\0')
 # network_checkstatus's command once Wi-Fi connects (its digit at file offset 0x3852bd): stock turns
