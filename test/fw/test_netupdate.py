@@ -2860,7 +2860,7 @@ def test_a_check_keeps_the_games_section_in_the_cards_list(fw):
 
 @pytest.mark.parametrize('theme', (b'0', b'1', b'2'))  # Minimal, Classic, Modern
 def test_app_store_paints_a_rows_state_as_a_word_and_the_tabs_badges(fw, theme):
-    from test_games import Canvas, config, grey, tone, words
+    from test_games import Canvas, config, grey, rgba, tone, words
     config(fw, THEME=theme)
     props, strs = {}, {}
     fw.mock('widget_set_prop_int', lambda w, k, v, *_: props.__setitem__((w, C.string_at(k)), C.c_int(v).value) or 0)
@@ -2898,6 +2898,9 @@ def test_app_store_paints_a_rows_state_as_a_word_and_the_tabs_badges(fw, theme):
     assert 'APPS' in texts and 'GAMES' in texts and '2' in texts
     # the disc ends 10 px inside its half (14 + 2 * 173), clear of the name beside it; Minimal has none
     assert (theme == b'0') != any(o.rect and (o.rect[0], o.rect[2]) == (350 - 16, 16) for o in ops)
+    if theme != b'0':  # the open half in the selected row's colour: Classic Blue's band's middle stop, Modern's bar's
+        band = rgba(0x007dde) if theme == b'1' else tone(fw, 0)
+        assert any(o.kind == 'fill' and o.rect[0] == 14 + 173 and o.color == band for o in ops)
     assert {o.px for o in ops if o.kind == 'text'} == {b'0': {17, 12}, b'1': {23, 15}, b'2': {16, 11}}[theme]  # names, count
     fw.var('app_store__on_page', C.c_char).value = b'\x00'
     assert painted(row)[0] == []  # the page closed: nothing
