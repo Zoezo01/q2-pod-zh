@@ -612,7 +612,8 @@ LETTERS_FONT = {'a': LOWER, 'e': LOWER, 'o': LOWER, 'u': LOWER, 'y': LOWER, 'i':
                 'Y': CAPITAL, 'O': (2, 168, 0, 200, 170), '\xe2': (9, 133, 0, 200, 142),
                 '\u0300': (-94, -48, 151, 186, 0), '\u0301': (-88, -42, 151, 186, 0), '\u0302': (-110, -32, 151, 186, 0),
                 '\u0303': (-113, -29, 155, 183, 0), '\u0306': (-108, -34, 152, 185, 0), '\u0309': (-98, -44, 185, 229, 0),
-                '\u031b': (-26, 14, 84, 155, 0), '\u0323': (-82, -60, -54, -28, 0), '\u1ea1': LOWER}
+                '\u031b': (-26, 14, 84, 155, 0), '\u0323': (-82, -60, -54, -28, 0), '\u0325': (-94, -48, -54, -8, 0),
+                '\u1ea1': LOWER}
 
 
 def letters_font(drop=(), move=None):
@@ -620,6 +621,7 @@ def letters_font(drop=(), move=None):
     shifts one's box right a unit."""
     from fontTools.fontBuilder import FontBuilder
     from fontTools.pens.ttGlyphPen import TTGlyphPen
+    from fontTools.ttLib.tables._c_m_a_p import CmapSubtable
     names = {ord(c): f'u{ord(c):04X}' for c in LETTERS_FONT if c not in drop}
     glyphs = {'.notdef': TTGlyphPen(None).glyph()}
     for c, (x0, x1, y0, y1, _) in LETTERS_FONT.items():
@@ -638,6 +640,10 @@ def letters_font(drop=(), move=None):
     fb.setupNameTable({'familyName': 'Letters', 'styleName': 'Regular'})
     fb.setupOS2()
     fb.setupPost()
+    mac = CmapSubtable.newSubtable(6)  # Mac Roman, as stock's font has: its codes aren't Unicode
+    mac.platformID, mac.platEncID, mac.language = 1, 0, 0
+    mac.cmap = {0x61: 'u0061'}
+    fb.font['cmap'].tables.append(mac)
     fb.font['head'].created = fb.font['head'].modified = 0xb0000000
     fb.font.recalcTimestamp = False
     out = io.BytesIO()
@@ -666,6 +672,7 @@ def test_font_letters_maps_every_stock_letter_to_a_composite_of_its_own_glyphs()
         assert all(p.glyphName in before.getGlyphOrder() for p in glyph.components)
         assert after['hmtx'][cmap[u]][1] == glyph.xMin
     assert cmap[0x1ea1] == 'u1EA1' and not after['glyf']['u1EA1'].isComposite()  # ạ was there: left alone
+    assert after['cmap'].getcmap(1, 0).cmap == {0x61: 'u0061'}
     assert after['head'].modified == before['head'].modified == 0xb0000000 and after['head'].created == before['head'].created
 
 
@@ -673,14 +680,17 @@ def test_font_letters_maps_every_stock_letter_to_a_composite_of_its_own_glyphs()
     ('ả', [('a', 0, 0), ('\u0309', 142, -33)], 142),           # centred on the ink, 16 over a lowercase top
     ('Ả', [('A', 0, 0), ('\u0309', 156, 6)], 170),             # 8 over a capital's
     ('ấ', [('a', 0, 0), ('\u0302', 142, 1), ('\u0301', 192, 13)], 142),   # never stock's â; acute beside ^
+    ('ầ', [('a', 0, 0), ('\u0302', 142, 1), ('\u0300', 86, 13)], 142),    # the grave on ^'s left, ấ mirrored
     ('ẫ', [('a', 0, 0), ('\u0302', 142, 1), ('\u0303', 142, 35)], 142),   # the tilde stacks over ^
     ('ắ', [('a', 0, 0), ('\u0306', 142, 0), ('\u0301', 142, 37)], 142),   # stacked over a lowercase breve
     ('Ắ', [('A', 0, 0), ('\u0306', 156, 39), ('\u0301', 204, 52)], 170),  # beside on a capital
+    ('Ằ', [('A', 0, 0), ('\u0306', 156, 39), ('\u0300', 102, 52)], 170),  # the grave on its left there too
     ('Ẵ', [('A', 0, 0), ('\u0306', 156, 39), ('\u0303', 156, 72)], 170),  # tilde stacked, top 255
     ('Ỗ', [('O', 0, 0), ('\u0302', 156, 57), ('\u0303', 156, 73)], 170),  # clamped to 256 (91 stacked)
     ('ỉ', [('\u0131', 0, 0), ('\u0309', 105, -31)], 68),       # dotless i under a mark above
     ('ị', [('i', 0, 0), ('\u0323', 99, 0)], 56),               # the dot keeps i's dot
     ('ỵ', [('y', 0, 0), ('\u0323', 166, 0)], 142),             # the dot under y's stem
+    ('Ỵ', [('Y', 0, 0), ('\u0323', 156, 0)], 170),             # centred under a capital Y
     ('ơ', [('o', 0, 0), ('\u031b', 142, 0)], 156),             # the horn at the advance, which grows
     ('Ư', [('U', 0, 0), ('\u031b', 170, 47)], 184),            # raised by the base's top over o's
     ('Ợ', [('O', 0, 0), ('\u031b', 170, 64), ('\u0323', 156, 0)], 184)])
@@ -688,6 +698,7 @@ def test_font_letters_places_the_marks(letter, parts, advance):
     from fontTools.ttLib import TTFont
     font = TTFont(io.BytesIO(build.font_letters(letters_font())))
     assert letter_parts(font, letter) == parts
+    assert not any(hasattr(p, 'transform') for p in font['glyf'][font.getBestCmap()[ord(letter)]].components)
     assert font['hmtx'][font.getBestCmap()[ord(letter)]][0] == advance
 
 
@@ -699,10 +710,10 @@ def test_font_letters_wants_the_stock_glyphs(font, message):
         build.font_letters(letters_font(**font))
 
 
-def test_stock_font_is_font_letters_after_font_quotes(monkeypatch):
-    monkeypatch.setattr(build, 'font_quotes', lambda d: d + b'q')
-    monkeypatch.setattr(build, 'font_letters', lambda d: d + b'l')
-    assert build.stock_font(b'') == b'ql'
+def test_font_letters_refuses_a_mark_it_has_no_rule_for(monkeypatch):
+    monkeypatch.setattr(build, 'STOCK_LETTERS', ((0x1e01, 0x1e01),))  # ḁ: a and a ring below
+    with pytest.raises(ValueError, match=r'^No rule for U\+0325$'):
+        build.font_letters(letters_font())
 
 
 def strings_bin(pairs):

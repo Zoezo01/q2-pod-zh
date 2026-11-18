@@ -489,8 +489,8 @@ def validate_assets(directory):
     assert named['view_lrc']['self_layout'] == 'default(x=0,y=0,w=100%,h=-20)'
     assert named['label_lyricmsg']['self_layout'] == 'default(x=0,y=73,w=100%,h=28)'
     # Curly quotes draw the straight glyphs, ♡ takes ♥'s box and advance, and the letters stock lacks are
-    # added (font_letters); other tables keep their stock bytes (head: its checksum; hhea, maxp and post
-    # count the added glyphs).
+    # added (font_letters); other tables keep their stock bytes (head: its checksum), but for the added
+    # glyphs' counts in hhea and maxp and their names in post.
     from build import QUOTES, STOCK_LETTERS
     from fontTools.ttLib import TTFont
     old, new = (TTFont(io.BytesIO(read(i, FONT))) for i in ('stock.squashfs', 'rootfs.squashfs'))
@@ -503,7 +503,11 @@ def validate_assets(directory):
     letters = [u for lo, hi in STOCK_LETTERS for u in range(lo, hi + 1) if u not in old.getBestCmap()]
     assert len(letters) == 94 and all(new['glyf'][new.getBestCmap()[u]].isComposite() for u in letters)
     assert new['maxp'].numGlyphs == old['maxp'].numGlyphs + 94
+    assert not any(hasattr(p, 'transform') for u in letters for p in new['glyf'][new.getBestCmap()[u]].components)
     assert all(new.reader[t] == old.reader[t] for t in old.reader.keys() if t not in ('cmap', 'head', 'glyf', 'loca', 'hmtx', 'hhea', 'maxp', 'post'))
+    for t, grown in (('hhea', {'numberOfHMetrics'}), ('maxp', {'numGlyphs', 'maxComponentDepth', 'maxComponentElements', 'maxCompositeContours', 'maxCompositePoints'})):
+        assert {k: v for k, v in vars(new[t]).items() if k not in grown} == {k: v for k, v in vars(old[t]).items() if k not in grown}
+    assert new.getGlyphOrder()[:len(old.getGlyphOrder())] == old.getGlyphOrder()  # post: names added, none changed
     # The crash watchdog only sleeps longer; check_mem_thd returns on entry, so it never drops caches.
     old, new = read('stock.squashfs', WATCHDOG), read('rootfs.squashfs', WATCHDOG)
     assert new == old.replace(*WATCHDOG_SLEEP) and new != old

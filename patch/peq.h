@@ -623,11 +623,12 @@ static inline int script_cjk(unsigned c) {
     return (c >= 0x2e80 && c < 0xa000) || (c >= 0xac00 && c < 0xd7b0) ||
            (c >= 0xff00 && c < 0xfff0);
 }
-/* c's capital for Minimal's small capitals, Unicode's simple upper-casing of ASCII, Latin-1, Latin
- * Extended-A, ơ ư, Cyrillic and Vietnamese's letters with tone marks; anything else (Greek too) is
- * c. ponytail: every capital it gives was checked for a glyph in stock V1.36's font, after
- * font_letters (tools/build.py); a new base font, or a new range here, needs the same check: a
- * capital the font lacks draws nothing. */
+/* c's capital for Minimal's small capitals: Unicode's simple capital of each letter of ASCII,
+ * Latin-1 and Latin Extended-A but µ and ſ, of ơ ư, Cyrillic and Vietnamese's letters with tone
+ * marks; anything else (Greek too) is c. ponytail: checked on stock V1.36's font after font_letters
+ * (tools/build.py): where it has the small letter it has the capital (of Cyrillic from U+0492 it
+ * has neither case); a new base font, or a new range here, needs the same check: a capital the font
+ * lacks draws nothing. */
 static inline unsigned script_upper(unsigned c) {
     if ((c >= 'a' && c <= 'z') || (c >= 0xe0 && c <= 0xfe && c != 0xf7) ||
         (c >= 0x430 && c <= 0x44f))

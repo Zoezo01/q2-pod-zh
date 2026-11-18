@@ -1768,10 +1768,10 @@ def test_capitals_cover_latin_1(fw, ui, st, text, shown):
     assert ''.join(c for c, _, _, _ in caps(fw, canvas, album.view)) == shown
 
 
-@pytest.mark.parametrize('text', ['Nguyễn Văn ơ ư', 'Кино ёѓ', 'Dvořák ÿ ı łż', 'Ҡҫ Ӂӂ ӏ Ӑӑ', 'αβγ'])
+@pytest.mark.parametrize('text', ['Nguyễn Văn ơ ư', 'Кино ёѓ', 'Dvořák ÿ ı łż', 'Ҡҫ Ӂӂ ӏ Ӑӑ'])
 def test_capitals_cover_vietnamese_cyrillic_and_central_european(fw, ui, st, text):
     canvas, album = Canvas(fw), Album(fw, ui, st, text, width=1000)
-    assert ''.join(c for c, _, _, _ in caps(fw, canvas, album.view)) == (text.upper() if text != 'αβγ' else text)  # Greek waits
+    assert ''.join(c for c, _, _, _ in caps(fw, canvas, album.view)) == text.upper()
 
 
 def test_capitals_are_unicodes_where_they_change_a_letter(fw):

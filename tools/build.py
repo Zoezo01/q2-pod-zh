@@ -940,14 +940,14 @@ STOCK_LETTERS = (
 MARK_CX = -71
 MARK_GAP, MARK_GAP_CAP = 16, 8  # a first mark above sits this far over a lowercase or a capital base's top
 MARK_STACK = 3                  # a second mark stacked over the first
-MARK_BESIDE = (-6, 12)          # a second mark beside the first: from its right edge, x in and y up
+MARK_BESIDE = (-6, 12)          # a second mark beside the first: from its right edge, x in and y up; the grave mirrored, on its left
 MARK_TOP = 256                  # no mark above passes stock's own Â
 HORN_ADVANCE = 14               # ơ ư: the horn widens its letter
 DOT_Y = 24                      # the dot below ỵ sits this far right, under y's stem
 
 def font_letters(data):
     """STOCK_LETTERS that stock's font (data) lacks, added: each a composite glyph of the plain base
-    letter of its NFD (never stock's precomposed â ê ô ă, a larger design than its ASCII and marks) and
+    letter of its NFD (never stock's precomposed â ê ô ă, a different design from its ASCII and marks) and
     each mark, at an offset from the base's box; i under a mark above is dotless ı. A letter already in
     the font is left alone. head keeps its stock timestamp, as in font_quotes."""
     # ponytail: marks sit at fixed offsets from the base's box (stb_truetype reads no GPOS), tuned on stock
@@ -957,7 +957,7 @@ def font_letters(data):
     from fontTools.ttLib import TTFont
     font = TTFont(io.BytesIO(data), recalcTimestamp=False)
     glyf, hmtx, cmap = font['glyf'], font['hmtx'], font.getBestCmap()
-    horn, dot, circumflex, tilde = '\u031b', '\u0323', '\u0302', '\u0303'
+    horn, dot, grave, circumflex, tilde = '\u031b', '\u0323', '\u0300', '\u0302', '\u0303'
     for m in (circumflex, dot):
         g = glyf[cmap[ord(m)]]
         check(g.xMin + g.xMax == 2 * MARK_CX, 'Unexpected combining marks')
@@ -979,14 +979,16 @@ def font_letters(data):
             elif m == dot:
                 x, y = cx + (DOT_Y if base == 'y' else 0), 0
             else:
+                check(g.yMin > 0, f'No rule for U+{ord(m):04X}')  # what follows places a mark above
                 if first is None:
                     x, y = cx, top + (MARK_GAP_CAP if base.isupper() else MARK_GAP) - g.yMin
                 elif m != tilde and (first[0] == circumflex or base.isupper()):
-                    x, y = first[1] + MARK_BESIDE[0] - g.xMin, first[2] + MARK_BESIDE[1] - g.yMin
+                    x = first[4] - MARK_BESIDE[0] - g.xMax if m == grave else first[1] + MARK_BESIDE[0] - g.xMin
+                    y = first[2] + MARK_BESIDE[1] - g.yMin
                 else:
                     x, y = cx, first[3] + MARK_STACK - g.yMin
                 y = min(y, MARK_TOP - g.yMax)
-                if first is None: first = (m, x + g.xMax, y + g.yMin, y + g.yMax)
+                if first is None: first = (m, x + g.xMax, y + g.yMin, y + g.yMax, x + g.xMin)
             pen.addComponent(cmap[ord(m)], (1, 0, 0, 1, round(x), round(y)))
         letter = f'uni{cp:04X}'
         glyf[letter] = glyph = pen.glyph()
@@ -998,10 +1000,6 @@ def font_letters(data):
     out = io.BytesIO()
     font.save(out, reorderTables=False)
     return out.getvalue()
-
-def stock_font(data):
-    """Stock's default.ttf as the firmware ships it: font_quotes, then font_letters."""
-    return font_letters(font_quotes(data))
 
 PLAY_MARK = 0x25b6
 
@@ -2266,7 +2264,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
         line = need(re.search(rb'^'+re.escape(path.encode())+rb' R .+\n', p, re.M), f'Missing stock inode {path}')
         removed.append(line.group().split()[:6])
         p = p[:line.start()]+p[line.end():]
-    for path, fix, name in ((TAG_C, patch_m4b_cover, 'libtag_c.so.2.0.1'), (FONT, stock_font, 'default.ttf'),
+    for path, fix, name in ((TAG_C, patch_m4b_cover, 'libtag_c.so.2.0.1'), (FONT, lambda d: font_letters(font_quotes(d)), 'default.ttf'),
                             *((p, lambda d, p=p: patch_web(p, d), p.rsplit('/', 1)[-1]) for p in WEB)):
         original = cat(path)
         data = fix(original)
