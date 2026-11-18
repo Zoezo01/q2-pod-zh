@@ -371,6 +371,13 @@ BLUEALSA = 'usr/bin/bluealsa'
 # a track change doesn't restart the stream (true-wireless buds started one ear first).
 BLUEALSA2 = 'usr/bin/bluealsa2'
 BT_KEEPALIVE = (b'bluealsa -c LDAC', b'bluealsa --keep-alive=5 -c LDAC')
+# The Bluetooth daemon, BlueZ 5.66: avdtp_new's "stream_setup = TRUE; dc_timeout = DISCONNECT_TIMEOUT", for a connection
+# the other side opens. BlueZ's timeout is 1 s and stock's build has 30, so a car that leaves the stream to the Q2
+# was silent for 30 s. Back to 1, here only; see docs/internals.md, Bluetooth stream setup.
+BLUETOOTHD = 'usr/bin/bluetoothd'
+# sw $v1, 0x45c($s0); li $v1, 30 or 1; ...; bal avdtp_connect_cb; sw $v1, 0x458($s0)
+BT_GRACE = tuple(bytes.fromhex(f'5c0403ae {li} 25300002 180002ae 25202002 0c82998f d4393927 b2fe1104 580403ae')
+                 for li in ('1e000324', '01000324'))
 SCROBBLE_CA = 'etc/scrobble-ca.pem'
 AAC_44K1 = 0x317b8
 # DROP is acknowledged before the encoder handles its signal. Flush in the control
@@ -2227,6 +2234,9 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
     bluealsa2 = cat(BLUEALSA2)
     check(bluealsa2.count(BT_KEEPALIVE[0]) == 1, 'Unexpected bluealsa2')
     (out/'bluealsa2').write_bytes(bluealsa2.replace(*BT_KEEPALIVE))
+    bluetoothd = cat(BLUETOOTHD)
+    check(bluetoothd.count(BT_GRACE[0]) == 1, 'Unexpected bluetoothd')
+    (out/'bluetoothd').write_bytes(bluetoothd.replace(*BT_GRACE))
     logo_data = logo.read_bytes()
     check(jpeg_size(logo_data) == (320, 375), 'Logo must be 320x375 like the stock splash')
     # Package exactly the validated bytes, even if the input is edited during compression.
@@ -2238,7 +2248,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
     for path, src in ((b'release/bin/demo', out/'demo'), (b'usr/bin/hciplayer', out/'peq/hciplayer'),
                       (BLUEALSA.encode(), out/'bluealsa'), (WATCHDOG.encode(), out/'watchdog'),
                       (S90PLAY.encode(), out/'S90play'), (S11LOGO.encode(), out/'S11logo'),
-                      (BLUEALSA2.encode(), out/'bluealsa2'), (DEFAULT_CONFIG.encode(), out/'config.ini'),
+                      (BLUEALSA2.encode(), out/'bluealsa2'), (BLUETOOTHD.encode(), out/'bluetoothd'), (DEFAULT_CONFIG.encode(), out/'config.ini'),
                       (LOGO.encode(), logo)):
         p = swap_inode(p, path, src)
     # New inodes, each with its stock image's metadata: Home's Coverflow and Shortcut card icons (menu_music's,

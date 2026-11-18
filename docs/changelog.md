@@ -1,6 +1,7 @@
 # Changelog
 
 - **1.8.8**:
+  - Bluetooth: a car that connects to the Q2 by itself plays within a second or two. Shanling's firmware waited 30 seconds for the car to start the sound before starting it itself, so with a car that leaves that to the player (a Tesla) a song ran silent for half a minute.
   - System: when the player crashes, `q2-crash.log` records the processor's registers at that moment, so a report says what the player was working on and not only where it stopped.
   - Album art: a PNG cover that is damaged or cut short, inside a song or as a file in its folder, no longer stops the Q2's covers. Shanling's firmware read such a picture again and again without end, which kept the Q2 busy and filled its memory until the player restarted; a setting saved while the memory was full could reset them all. The cover now counts as missing.
   - Settings: on a Q2 just reset, the first Q2 Pod setting you change is kept. Shanling's default settings file doesn't end its last line, so that setting was written onto the end of it and never read back.
