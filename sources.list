@@ -14,13 +14,12 @@ m-d-e-v/q2-podcasts Podcasts
 harpmudd/q2-lma Live Music Archive
 # group-a-study/q2-applemusic Apple Music
 group-a-study/q2-airplay AirPlay
-lampsonlnguyen/q2-utilities-app Utilities
+# lampsonlnguyen/q2-utilities-app Utilities
 [Games]
 DiamondBond/q2-fidget Buddy
 DiamondBond/q2-groovebox Groovebox
-lampsonlnguyen/q2-arcade Additional Arcade Games
+lampsonlnguyen/q2-arcade Arcade Games
 lampsonlnguyen/q2-2048 2048
 lampsonlnguyen/q2-dino-runner Dino Runner
 lampsonlnguyen/q2-flappybird Flappy Bird
-lampsonlnguyen/q2-simon-says
-# lampsonlnguyen/q2-arcade Q2 Arcade
+# lampsonlnguyen/q2-simon-says Simon Says
