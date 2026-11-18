@@ -2339,13 +2339,13 @@ def test_the_library_adds_the_card_s_media_folders_and_upload(fw, ui):
                                                'Update Library']
 
 
-def test_the_library_lists_the_card_apps_whose_row_is_there_after_games(fw, ui):
+def test_the_library_lists_the_card_apps_whose_row_is_there_above_games(fw, ui):
     tape = {'/mnt/mmc/.tape/q2app': b'name=Mixtape\nrow=library\n', '/mnt/mmc/.tape/q2-tape': b'ELF'}
     tools = {'/mnt/mmc/.tools/q2app': b'name=Utilities\nrow=library\n', '/mnt/mmc/.tools/q2-tools': b'ELF'}
-    win, view = library(fw, ui, token=b'x', files={**deezer(), **BLOCKS, **tape, **tools})
+    win, view = library(fw, ui, folders=['/mnt/mmc/Videos'], token=b'x', files={**deezer(), **BLOCKS, **tape, **tools})
     rows = [c for c, _ in page_rows(ui, view)]
-    assert rows[rows.index('Games'):] == ['Games', 'Mixtape', 'Utilities', 'Upload Scrobbles', 'Update Library']
-    for k, item in enumerate(ui.kids[view][rows.index('Mixtape'):rows.index('Upload Scrobbles')]):
+    assert rows[rows.index('Videos'):] == ['Videos', 'Mixtape', 'Utilities', 'Games', 'Upload Scrobbles', 'Update Library']
+    for k, item in enumerate(ui.kids[view][rows.index('Mixtape'):rows.index('Games')]):
         button, = ui.kids[item]
         assert [(fn, ctx) for w, e, fn, ctx in ui.handlers if w == button and e == EVT_CLICK] == [(ui.fn('addon_lib_open'), k)]
         assert [ui.image[w] for w in ui.subtree(item) if w in ui.image] == ['stream_app', 'list_into']  # opens a page

@@ -18,7 +18,7 @@
  *            (a Library row's: the 52 px one first); one over ART_MAX px either way counts as
  *            none; without them, the shared stream_app.
  * Streaming lists those on the card (home.c ringnav_stream), but the ones whose row says the
- * Library (ringnav_localmusic, after Games) or Games. A row starts its app and opens
+ * Library (ringnav_localmusic, above Games) or Games. A row starts its app and opens
  * addon_page, a list the app draws over Q2SPOT/1 (docs/librespot.md) on /tmp/q2-<id>.browse.sock:
  * each row's kind says what a press does (a local row plays a song or folder from the card,
  * library_lists.c's songs_open). Its status file /tmp/q2-<id>.state says whether to hold standby
