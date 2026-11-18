@@ -488,9 +488,10 @@ def validate_assets(directory):
     named = {n[2].get('name'): n[2] for n in walk(stock_page)}
     assert named['view_lrc']['self_layout'] == 'default(x=0,y=0,w=100%,h=-20)'
     assert named['label_lyricmsg']['self_layout'] == 'default(x=0,y=73,w=100%,h=28)'
-    # Curly quotes draw the straight glyphs and ♡ takes ♥'s box and advance; other tables keep their
-    # stock bytes (head: its checksum).
-    from build import QUOTES
+    # Curly quotes draw the straight glyphs, ♡ takes ♥'s box and advance, and the letters stock lacks are
+    # added (font_letters); other tables keep their stock bytes (head: its checksum; hhea, maxp and post
+    # count the added glyphs).
+    from build import QUOTES, STOCK_LETTERS
     from fontTools.ttLib import TTFont
     old, new = (TTFont(io.BytesIO(read(i, FONT))) for i in ('stock.squashfs', 'rootfs.squashfs'))
     assert all(new.getBestCmap()[c] == old.getBestCmap()[q] for c, q in QUOTES.items())
@@ -499,7 +500,10 @@ def validate_assets(directory):
     assert new['hmtx'][empty] == new['hmtx'][full] == (old['hmtx'][full][0] + 32, g[full].xMin)
     assert abs(g[empty].xMin - g[full].xMin) <= 1 and abs(g[empty].xMax - g[full].xMax) <= 1
     assert abs(g[empty].yMin - g[full].yMin) <= 1 and abs(g[empty].yMax - g[full].yMax) <= 1
-    assert all(new.reader[t] == old.reader[t] for t in old.reader.keys() if t not in ('cmap', 'head', 'glyf', 'loca', 'hmtx'))
+    letters = [u for lo, hi in STOCK_LETTERS for u in range(lo, hi + 1) if u not in old.getBestCmap()]
+    assert len(letters) == 94 and all(new['glyf'][new.getBestCmap()[u]].isComposite() for u in letters)
+    assert new['maxp'].numGlyphs == old['maxp'].numGlyphs + 94
+    assert all(new.reader[t] == old.reader[t] for t in old.reader.keys() if t not in ('cmap', 'head', 'glyf', 'loca', 'hmtx', 'hhea', 'maxp', 'post'))
     # The crash watchdog only sleeps longer; check_mem_thd returns on entry, so it never drops caches.
     old, new = read('stock.squashfs', WATCHDOG), read('rootfs.squashfs', WATCHDOG)
     assert new == old.replace(*WATCHDOG_SLEEP) and new != old

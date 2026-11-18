@@ -94,7 +94,7 @@ def has(runs, text):
 
 
 PTRS = set('''bar_bt bar_wifi bar_pct bar_slot bar_icon bar_idle bar_state bar_eq bar_title np_win np_pos
-    np_album np_slider np_remain np_elapsed np_cover np_title np_artist np_slide np_lrc slider_win slider_w slider_sw slider_hint
+    np_album np_slider np_remain np_elapsed np_cover np_title np_slide np_lrc slider_win slider_w slider_sw slider_hint
     t9_page t9_back kb_win search_win search_tabs pl_box stream_art stream_bar genre_label number_face'''.split())
 BYTES = {'title_align', 'slider_kind', 'bar_dark'}
 SHORTS = {'title_x', 'title_y', 'title_w'}
@@ -1194,6 +1194,7 @@ def test_classics_home_keeps_the_clock_with_time_in_title_on(fw, st, ui):
 # The theme's faces (theme_font, theme_face): its own face where it has the text's characters, else bold.ttf,
 # else stock's, which has CJK.
 LATIN, CYRILLIC, CJK = 'Albums', 'Альбом', '专辑'
+VIETNAMESE = ('Mỹ Anh', 'Tiếng Việt')  # letters with tone marks, past the Latin block
 TITLE_PX = CLASSIC['font_px[ROLE_TITLE]']
 FACES = [b'default', b'bold', b'classic-light']  # navigation.c's font_faces, by FONT_*
 
@@ -1207,7 +1208,7 @@ def label_font(ui, w):
     return ui.prop(w, b'style:normal:font_name'), ui.prop(w, b'style:normal:font_size')
 
 
-@pytest.mark.parametrize('text, face', [(LATIN, b'classic-light'), (CYRILLIC, b'bold'), (CJK, b'default')])
+@pytest.mark.parametrize('text, face', [(LATIN, b'classic-light'), *((t, b'classic-light') for t in VIETNAMESE), (CYRILLIC, b'bold'), (CJK, b'default')])
 def test_classics_title_face_falls_back_by_the_text(fw, st, ui, ranges, text, face):
     assert first_face(ranges, text) == face  # the text is where the cmaps say, or the test proves nothing
     theme(fw, st, CLASSIC)
