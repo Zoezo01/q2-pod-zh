@@ -1758,8 +1758,8 @@ ponytail: only releases that carry the fixed-name assets can be fetched, and a C
 **q2-boy music and Now Playing.** The `.boy` card game with `audio=1` gets
 `Q2_BOY_AUDIO_BRIDGE=2`. It reads the firmware's audio status from
 `/tmp/q2-boy.audio.reply` and submits an action to `/tmp/q2-boy.audio.req`.
-The bridge prefers music at launch if the app saved that choice in
-`q2-boy/audio-source.cfg` on the card. The firmware releases its audio output
+The bridge leaves active playback alone when the game launches. With nothing
+playing, it uses the app’s saved preference, if present. The firmware releases its audio output
 only while the game owns it, and can restore the local player's saved queue
 position and pause state when the game selects Q2 Music or exits.
 

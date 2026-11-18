@@ -883,7 +883,7 @@ static int game_start(app_t *a) {
     if (gm.boy_bridge) {
         unlink(BOY_AUDIO_REQUEST);
         unlink(BOY_AUDIO_REPLY);
-        audio = !boy_prefers_music();
+        audio = !media_playing() && !boy_prefers_music();
         if (audio) boy_take_audio();
     }
     if (audio) {
