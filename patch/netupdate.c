@@ -1066,13 +1066,40 @@ static void sh_told(int manual, const char *failed) {
         toast("All apps are up to date");
 }
 
+/* Remove just this repository's line, retaining comments and the other sources.
+ * Clear the cached list first: if saving the local list fails it still restores
+ * the entry on the next open. Neither file changes unless its rename succeeds. */
+static int custom_unlist(const char *path, const char *repo) {
+    unsigned bytes = 0, length = strlen(repo);
+    char *text = read_all(path, 1u << 16, &bytes);
+    if (!text) return !file_mode(path);
+    char *out = text;
+    for (char *p = text, *end; *p; p = end) {
+        end = strstr(p, "\n");
+        end = end ? end + 1 : p + strlen(p);
+        char *start = p, *word;
+        while (start < end && (*start == ' ' || *start == '\t')) ++start;
+        if (start < end && *start == '-') ++start;
+        for (word = start; word < end && (unsigned char)*word > ' '; ++word) {}
+        if ((unsigned)(word - start) != length || memcmp(start, repo, length)) {
+            memmove(out, p, end - p);
+            out += end - p;
+        }
+    }
+    char tmp[96];
+    snprintf(tmp, sizeof tmp, "%s.tmp", path);
+    int ok = blob_io(path, tmp, text, out - text, 1);
+    free(text);
+    return ok;
+}
+
 static int sh_wait(const void *unused) {
     static const char *const said[] = {
         [SH_NET] = "Can't reach GitHub",           [SH_CARD] = "Can't write to the card",
         [SH_MISSING] = "No update for this build", [SH_BAD] = "The download is not a usable app",
         [SH_CANCELLED] = "Download cancelled",     [SH_BUSY] = "GitHub is busy, try later",
     };
-    char s[64];
+    char s[64], removed[32];
     if (sh.running) {
         if (sh.job != JOB_CHECK) reset_poweroptions_timer(1, 1, 0); /* standby, auto power-off */
         sh_refresh();
@@ -1080,6 +1107,7 @@ static int sh_wait(const void *unused) {
     }
     pthread_join(sh.thread, 0);
     int job = sh.job, r = sh.result, i = sh.app, manual = sh.manual;
+    if (job == JOB_REMOVE) snprintf(removed, sizeof removed, "%s", apps[i].name);
     sh.job = 0;
     /* its files replaced or gone: an update that failed or was cancelled before it stopped its app
      * leaves it running, still tracked, and a remove cut off by USB storage leaves it marked to
@@ -1089,6 +1117,15 @@ static int sh_wait(const void *unused) {
         memcpy(apps, sh.next, sizeof apps), shelf_n = sh.n, sh.rows = -1;
     if (job == JOB_ERASE || (job != JOB_CHECK && is(i, "spotify")))
         spot_stop(); /* spotify.c forgets the old one */
+    if (job == JOB_REMOVE && !r && apps[i].custom) {
+        if (card_mounted() && custom_unlist(SH_LIST, apps[i].repo) &&
+            custom_unlist(SH_CUSTOM, apps[i].repo)) {
+            memmove(apps + i, apps + i + 1, (shelf_n - i - 1) * sizeof *apps);
+            --shelf_n;
+            sh.rows = -1;
+        } else
+            r = SH_CARD;
+    }
     sh_rows();
     if (job == JOB_CHECK && !sh.cancel && sh.page &&
         window_manager_get_top_window(window_manager()) == sh.page) /* not left or covered */
@@ -1104,7 +1141,7 @@ static int sh_wait(const void *unused) {
     else if (job == JOB_INSTALL)
         snprintf(s, sizeof s, "%s is ready in %s", apps[i].name, addon_where(apps[i].id)), toast(s);
     else if (job == JOB_REMOVE)
-        snprintf(s, sizeof s, "%s removed", apps[i].name), toast(s);
+        snprintf(s, sizeof s, "%s removed", removed), toast(s);
     else if (job == JOB_ERASE)
         stream_erased(), toast("Spotify's login and cache erased"); /* rows first: toast blocks */
     return 0;
@@ -1284,7 +1321,7 @@ static void sh_rows(void) {
             int i = map[r];
             /* sh_text writes the detail: a blank one, or a theme would centre the name over it */
             const char *name = i == ROW_CHECK ? "Check for Updates"
-                                : i == ROW_ADD ? "Add GitHub App" : apps[i].name;
+                                : i == ROW_ADD ? "+ Add App" : apps[i].name;
             sh.row[r] = page_row_detail(view, r, name, theme()->sep[0].n ? " " : "", sh_click);
         }
         sh.rows = n;

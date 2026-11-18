@@ -3092,6 +3092,25 @@ def test_custom_source_survives_refresh_and_installs_through_the_existing_worker
     store.open()
     assert any(app.repo == b'me/q2-foo' and app.custom == b'\1'
                for app in fw.var('shelf_apps', App * SH_MAX))
+    store.click(1)
+    assert not store.sh.job and store.labels() == ['Press again to remove']
+    store.click(1)
+    assert store.sh.job == JOB_REMOVE
+    store.run()
+    assert card.files[custom] == b'' and FOO_APP not in card.files
+    assert store.sh.rows == 1 + 1 and store.sh.map[1] == SH_MAX + 1
+    store.close()
+    fw.var('shelf_n', C.c_int).value = 0
+    store.open()
+    assert all(app.repo != b'me/q2-foo' for app in
+               fw.var('shelf_apps', App * SH_MAX)[:fw.var('shelf_n', C.c_int).value])
+
+
+def test_forgetting_a_custom_repo_preserves_other_sources_and_comments(fw):
+    path = b'/mnt/mmc/.q2/custom-sources.list'
+    card = Disk(fw, {path: b'# saved apps\nme/q2-foo Foo\nme/q2-foobar\nother/q2-foo\n'})
+    assert fw.fn('netupdate__custom_unlist', C.c_int, C.c_char_p, C.c_char_p)(path, b'me/q2-foo')
+    assert card.files[path] == b'# saved apps\nme/q2-foobar\nother/q2-foo\n'
 
 
 def test_custom_sources_cannot_override_an_upstream_id_or_dropped_entry(fw):
