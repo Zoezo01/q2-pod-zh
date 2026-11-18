@@ -470,6 +470,36 @@ int ringnav_album_cover(const char *track, const char *dst, int w, int h) {
     pthread_mutex_unlock(lock);
     return ok;
 }
+
+/* Stock's three libpng routines call _setjmp and never test what it returns: the reader for an
+ * embedded PNG (0x5c91bc, under toolsGetAlbumCover), and toolsGrayPngConvRgbPng (0x5cb7b4), which
+ * toolsGetExternCover gives every PNG cover file of up to 1 MB beside the music, at its read and
+ * at its write of a gray one as RGB. A libpng error (a file cut short or damaged, a full card)
+ * longjmps there with 1, and stock went on as if for the first time: png_init_io, the read, the
+ * same error, forever, each round a line on stderr, which is a file in RAM
+ * (docs/internals.md#png-errors). Each jalr png_init_io after a _setjmp comes to a guard ($v0
+ * still _setjmp's, $t9 png_init_io, the call's own return in $ra): 0 goes on to png_init_io,
+ * anything else to one of stock's own endings in that routine (patch/offsets.inc), which frees
+ * what it took and returns without a picture. */
+#define PNG_GUARD(name, ending)                                                                    \
+    __asm__(".globl " #name "\n.set push\n.set noreorder\n" #name ":\n"                            \
+            "beqz $v0, 1f\nnop\nli $t9, " STR(ending) "\n1: jr $t9\nnop\n.set pop\n")
+PNG_GUARD(png_read_guard, PNG_READ_FAIL);
+PNG_GUARD(png_rgb_guard, PNG_RGB_FAIL);
+/* toolsGrayPngConvRgbPng's read has no ending that frees the rows it allocates before
+ * png_read_image (the array at 0x4c($sp), one row for each line of the height at 0x54($sp)):
+ * all of them are there once the array is, and no libpng call that can fail comes between. The
+ * guard clears the array's slot on the way in, and frees them here on an error. */
+void png_rows_free(void **rows, int n);
+void png_rows_free(void **rows, int n) {
+    if (!rows) return;
+    while (n-- > 0) free(rows[n]);
+    free(rows);
+}
+__asm__(".globl png_gray_guard\n.set push\n.set noreorder\npng_gray_guard:\n"
+        "bnez $v0, 1f\nnop\njr $t9\nsw $zero, 0x4c($sp)\n"
+        "1: lw $a0, 0x4c($sp)\nlw $a1, 0x54($sp)\n"
+        "li $ra, " STR(PNG_GRAY_FAIL) "\nj png_rows_free\nnop\n.set pop\n");
 #endif
 
 int coverflow_grid_cover(const char *track, const char *dst, int w, int h) {

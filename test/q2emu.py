@@ -4902,6 +4902,47 @@ class OggCoverMachine(TagMachine):
         self.stock_covers=[]; self.ffmpeg=0; self.dst='/mnt/mmc/.sldp/x0.jpg'
         return self.call(address=payload_syms['coverflow_grid_cover'],args=(self.string(track),self.string(self.dst),110,110),gap=0)
 
+class PngMachine(Machine):
+    """Stock's libpng routines (the reader for an embedded PNG, 0x5c91bc, and toolsGrayPngConvRgbPng) over a libpng
+    whose call `fail` refuses the file: it longjmps to the routine's last _setjmp with 1, as png_error does. The
+    picture is gray, 3 by 2. png holds each library call with its first two arguments; live, what is allocated or
+    open."""
+    FILE,PNG,INFO,MALLOC=0x1100000,0x1100100,0x1100200,0x1000020
+    LIBPNG=('sig_cmp','create_read_struct','create_info_struct','init_io','read_png','destroy_read_struct','read_info',
+            'get_color_type','get_image_width','get_image_height','get_bit_depth','get_valid','set_filler','set_gray_to_rgb',
+            'read_update_info','get_rowbytes','read_image','create_write_struct','set_IHDR','set_expand','write_info',
+            'write_image','write_end','destroy_write_struct')
+    def __init__(self,patched,fail):
+        super().__init__(patched); self.fail=fail; self.png=[]; self.live=set()
+        for n in ('fopen@GLIBC_2.2','fread@GLIBC_2.0','rewind@GLIBC_2.0','_setjmp@GLIBC_2.0','fclose@GLIBC_2.2','printf@GLIBC_2.0',
+                  *('png_%s@PNG12_0'%n for n in self.LIBPNG)): self.handlers[syms[n]]='png:'+n.split('@')[0]
+        self.word(GP-0x9f8,self.MALLOC); self.handlers[self.MALLOC]='png:malloc'  # malloc's GOT slot, and free's
+        self.handlers[self.get(GP-0x870)]='png:free'
+    def hook(self,u,address,size,unused):
+        name=self.handlers.get(address,'')
+        if not name.startswith('png:'): return super().hook(u,address,size,unused)
+        name=name[4:]; a,b=(u.reg_read(r) for r in REGS[:2])
+        assert name!='png_init_io' or u.reg_read(UC_MIPS_REG_T9)==address  # the guards' jump to it is a PIC call too
+        self.png.append((name,self.get(a),self.get(b)) if 'destroy' in name else (name,a,b))
+        if name=='_setjmp': self.jmpbuf=[(r,u.reg_read(r)) for r in (UC_MIPS_REG_RA,UC_MIPS_REG_SP,UC_MIPS_REG_GP,*SAVED)]
+        if name==self.fail:
+            for r,v in self.jmpbuf: u.reg_write(r,v)
+            u.reg_write(UC_MIPS_REG_V0,1); u.reg_write(UC_MIPS_REG_PC,self.jmpbuf[0][1]); return
+        ret={'fread':4,'png_create_read_struct':self.PNG,'png_create_write_struct':self.PNG,'png_create_info_struct':self.INFO,
+             'png_get_image_width':3,'png_get_image_height':2,'png_get_bit_depth':8,'png_get_rowbytes':12}.get(name,0)
+        if name in ('fopen','malloc'): ret=self.FILE+len([c for c in self.png if c[0]=='fopen'])-1 if name=='fopen' else self.alloc(a); self.live.add(ret)
+        if name in ('fclose','free'): self.live.remove(a)
+        self.returns(ret,clobber=True)
+    def read(self,address=0x5c91bc,count=None):
+        """The reader for an embedded PNG, or toolsGrayPngConvRgbPng at 0x5cb7b4: what it returns."""
+        self.png=[]; out=[self.alloc(4) for _ in range(3)]  # the reader's width, height and channels: written only for a picture
+        return self.call(address=address,args=(self.string('/mnt/mmc/cover.png'),*out),gap=0,count=count)
+    def loops(self,address=0x5c91bc):
+        """Stock's: the routine never returns, and the failing call comes round again and again."""
+        try: self.read(address,count=6000)
+        except AssertionError as e: return str(e)=='Instruction limit reached' and [c[0] for c in self.png].count(self.fail)>10
+        return False
+
 class ScanNoteMachine(TagMachine):
     STATM=b'30000 22750 1200 1 0 25000 0\n'  # 22,750 resident pages: 91,000 kB
     def __init__(self,files):

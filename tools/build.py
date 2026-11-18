@@ -551,6 +551,26 @@ LYRIC_OPEN = (0x5bc30c, 0x0320f809)
 # row's jal coverflow_folder_cover, which tries the folder's first song by name first.
 GRID_COVER = ((0x4f863c, 0x4f8638, 'coverflow_album_cover'), (0x4f9738, 0x4f9728, 'coverflow_folder_cover'),
               (0x4f97f4, 0x4f97f0, 'coverflow_grid_cover'))
+# Stock's three libpng routines never test their _setjmp, so a libpng error's longjmp started the read or the write
+# again, forever (coverflow.c, PNG_GUARD): the reader for an embedded PNG (0x5c91bc), and toolsGrayPngConvRgbPng's
+# read and write of a PNG cover file. Each row: the jalr png_init_io after the _setjmp, which becomes jal its
+# guard; the words from the _setjmp's lw $t9 up to that jalr (nothing between them writes $v0); the guard; and the
+# stock ending it sends an error to (patch/offsets.inc), with the words there.
+PNG_GUARDS = (
+    (0x5c92ec, (0x8f99f950, 0x0320f809, 0xafa20020, 0x8fbc0010, 0x8fa40024, 0x8f99f8a4, 0x0320f809), 'png_read_guard',
+     'PNG_READ_FAIL', (0xafa00028, 0x8f99fb08, 0x00003025, 0x27a50020, 0x0320f809, 0x27a40024, 0x8fbc0010, 0x8f99fa88,
+                       0x0320f809, 0x8fa4002c, 0x1000ff7f)),
+    (0x5cb8c4, (0x8f99f950, 0x0320f809, 0xafa20040, 0x8fbc0028, 0x8fa40044, 0x8f99f8a4, 0x0320f809), 'png_gray_guard',
+     'PNG_GRAY_FAIL', (0x8fbc0028, 0x8f99fb08, 0x00003025, 0x27a50040, 0x0320f809, 0x27a40044, 0x1000ffac, 0x8fbc0028)),
+    (0x5cbb74, (0x8f99f950, 0x0320f809, 0xafa20038, 0x00008025, 0x8fbc0028, 0x8fa4003c, 0x8f99f8a4, 0x0320f809),
+     'png_rgb_guard', 'PNG_RGB_FAIL', (0x8fbc0028, 0x8fa20054, 0x0202102a, 0x1440000f, 0x8fa3004c, 0x8f99f790, 0x0320f809,
+                                       0x8fa4004c, 0x27a50038, 0x8fbc0028, 0x8f99fb04, 0x0320f809, 0x27a4003c, 0x8fbc0028,
+                                       0x8f99fa88, 0x0320f809, 0x8fa40058, 0x1000feec, 0x24020001)),
+)
+# What png_gray_guard reads of toolsGrayPngConvRgbPng's frame: sw $v0, 0x54($sp), the height, and sw $v0, 0x4c($sp),
+# the rows' array after its malloc; and PNG_GRAY_FAIL's branch lands on fclose(the file) and the return of -1.
+PNG_GRAY_WORDS = ((0x5cb93c, (0xafa20054,)), (0x5cba0c, (0xafa2004c,)),
+                  (0x5cb838, (0x8f99fa88, 0x0320f809, 0x8fa40048, 0x1000ffec, 0x2402ffff)))
 # The bal toolsTrimLeft on each name copy in the two library name comparators (0x5cc870, 0x5cd188, the
 # Chinese and other-language sorts); they become jal ringnav_sort_key, which also drops a leading article.
 SCAN_REFRESH = (0x5dc4d8, 0x0411fd8d)  # toolsLoadAllFile's existing-song check, folder scans only
@@ -1722,7 +1742,7 @@ def compile_payload(out):  # pragma: no mutate block
         f'--undefined={WM_PAINT_LEAF[2]}', f'--undefined={QUEUE_LEAF[2]}', '--undefined=ringnav_audio_extension', '--undefined=start_mute', '--undefined=start_sleep', '--undefined=ringnav_genre_copy', '--undefined=ringnav_lyric_save', '--undefined=ringnav_lyric_drop', '--undefined=ringnav_cover_copy','--undefined=ringnav_folder_rm','--undefined=ringnav_bootmode', '--undefined=lockscreen_access','--undefined=ringnav_ts_read',
         '--undefined=ringnav_baidu_poll', '--undefined=ringnav_tidal_poll', '--undefined=addon_m3u_dir', f'--undefined={COVERINFO_CALL[2]}',
         '--undefined=coverflow_player_cover', '--undefined=coverflow_grid_cover', '--undefined=coverflow_album_cover', '--undefined=coverflow_folder_cover', '--undefined=headset_bt_init',
-        '--undefined=headset_status_register', '--undefined=headset_bt_autolink',
+        '--undefined=headset_status_register', '--undefined=headset_bt_autolink', *[f'--undefined={guard[2]}' for guard in PNG_GUARDS],
         *nav,out/'trampoline.o',*extra,'-o',out/'patch.elf')
     run('llvm-objcopy','-O','binary',out/'patch.elf',out/'patch.bin')
     return symbols(out/'patch.elf')
@@ -2040,6 +2060,13 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
         check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, load))[0] == 0x8f99b76c,
               'grid cover: expected toolsGetAlbumCover import')
         patch_word(patched, call, 0x0320f809, jal(ps[fn]), 'Ogg art in Albums and Folder view')
+    for call, before, guard, ending, words in PNG_GUARDS:
+        check(struct.unpack_from('<%dI' % len(before), raw_demo, fileoff(raw_demo, call + 4 - 4 * len(before))) == before
+              and struct.unpack_from('<%dI' % len(words), raw_demo, fileoff(raw_demo, inc(ending))) == words,
+              'PNG routine at %#x: unexpected _setjmp or ending' % call)
+        patch_word(patched, call, 0x0320f809, jal(ps[guard]), 'Album art: a PNG libpng refuses ends its read')
+    check(all(struct.unpack_from('<%dI' % len(words), raw_demo, fileoff(raw_demo, at)) == words for at, words in PNG_GRAY_WORDS),
+          'toolsGrayPngConvRgbPng: unexpected frame or ending')
     patch_word(patched, *BT_CONNECT_START, jal(ps['ringnav_bt_connect_start']),
                'Bluetooth: Resume on connect')
     check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, BT_INIT[0] - 4))[0] == 0x8f99f61c,
