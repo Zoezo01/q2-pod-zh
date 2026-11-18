@@ -138,16 +138,6 @@ The [user guide][guide] covers every control, EQ, Cover Flow and more tips.
     <td></td>
   </tr>
   <tr valign="top">
-    <td><b><a href="https://github.com/andsuor/q2-subsonic">Subsonic</a></b></td>
-    <td>Sync music from your Subsonic server to the card, or stream it.</td>
-    <td></td>
-  </tr>
-  <tr valign="top">
-    <td><b><a href="https://github.com/harpmudd/q2-lma">Live Music Archive</a></b></td>
-    <td>Stream concerts from the Internet Archive's Live Music Archive.</td>
-    <td><a href="https://github.com/harpmudd/q2-lma/raw/main/docs/guide/LMA-Mini-Guide.pdf">Guide</a></td>
-  </tr>
-  <tr valign="top">
     <td><b><a href="https://github.com/group-a-study/q2-soulseek">Soulseek</a></b></td>
     <td>Search the Soulseek network and download music straight to the card.</td>
     <td></td>
@@ -158,26 +148,71 @@ The [user guide][guide] covers every control, EQ, Cover Flow and more tips.
     <td></td>
   </tr>
   <tr valign="top">
+    <td><b><a href="https://github.com/andsuor/q2-subsonic">Subsonic</a></b></td>
+    <td>Sync music from your Subsonic server to the card, or stream it.</td>
+    <td></td>
+  </tr>
+  <tr valign="top">
     <td><b><a href="https://github.com/m-d-e-v/q2-podcasts">Podcasts</a></b></td>
     <td>Subscribe to shows and download episodes, with a sleep timer.</td>
     <td></td>
   </tr>
   <tr valign="top">
-    <td><b><a href="https://github.com/DiamondBond/q2-fidget">Buddy</a></b></td>
-    <td>A Tamagotchi-style buddy to poke, in <b>Library → Games</b>.</td>
-    <td><a href="https://github.com/DiamondBond/q2-fidget/raw/main/docs/guide/Buddy-Mini-Guide.pdf">Guide</a></td>
-  </tr>
-  <tr valign="top">
-    <td><b><a href="https://github.com/DiamondBond/q2-groovebox">Groovebox</a></b></td>
-    <td>Sixteen pads, a step sequencer and punch-in effects, in <b>Library → Games</b>.</td>
-    <td><a href="https://github.com/DiamondBond/q2-groovebox/raw/main/docs/guide/Groovebox-Mini-Guide.pdf">Guide</a></td>
+    <td><b><a href="https://github.com/harpmudd/q2-lma">Live Music Archive</a></b></td>
+    <td>Stream concerts from the Internet Archive's Live Music Archive.</td>
+    <td><a href="https://github.com/harpmudd/q2-lma/raw/main/docs/guide/LMA-Mini-Guide.pdf">Guide</a></td>
   </tr>
   <tr valign="top">
     <td><b><a href="https://github.com/group-a-study/q2-airplay">AirPlay</a></b></td>
     <td>Send what the Q2 plays to AirPlay speakers: choose <b>AirPlay</b> at the top of Now Playing's <b>⋯</b>.</td>
     <td></td>
   </tr>
+  <tr valign="top">
+    <td><b><a href="https://github.com/lampsonlnguyen/q2-utilities-app">Utilities</a></b></td>
+    <td>A stopwatch, a calendar, a to-do list and a calculator, in <b>Library → Utilities</b>.</td>
+    <td></td>
+  </tr>
 </table>
+
+<details>
+<summary><h3>Games</h3></summary>
+
+On the App Store's **Games** tab. Each plays in **Library → Games**.
+
+<table>
+  <tr valign="top">
+    <td width="200"><b><a href="https://github.com/DiamondBond/q2-fidget">Buddy</a></b></td>
+    <td>A Tamagotchi-style buddy to poke.</td>
+    <td width="60"><a href="https://github.com/DiamondBond/q2-fidget/raw/main/docs/guide/Buddy-Mini-Guide.pdf">Guide</a></td>
+  </tr>
+  <tr valign="top">
+    <td><b><a href="https://github.com/DiamondBond/q2-groovebox">Groovebox</a></b></td>
+    <td>Sixteen pads, a step sequencer and punch-in effects.</td>
+    <td><a href="https://github.com/DiamondBond/q2-groovebox/raw/main/docs/guide/Groovebox-Mini-Guide.pdf">Guide</a></td>
+  </tr>
+  <tr valign="top">
+    <td><b><a href="https://github.com/lampsonlnguyen/q2-arcade">Arcade Games</a></b></td>
+    <td>Pong, Blocks, Breakout, Tic-Tac-Toe, Connect Four, Battleship, Road Dodge and Catch.</td>
+    <td></td>
+  </tr>
+  <tr valign="top">
+    <td><b><a href="https://github.com/lampsonlnguyen/q2-2048">2048</a></b></td>
+    <td>Slide the tiles and join matching numbers to reach 2048.</td>
+    <td></td>
+  </tr>
+  <tr valign="top">
+    <td><b><a href="https://github.com/lampsonlnguyen/q2-dino-runner">Dino Runner</a></b></td>
+    <td>The no-internet dinosaur runner: jump the cacti, duck the pterodactyls, beat your best distance.</td>
+    <td></td>
+  </tr>
+  <tr valign="top">
+    <td><b><a href="https://github.com/lampsonlnguyen/q2-flappybird">Flappy Bird</a></b></td>
+    <td>Tap or press Centre to flap through the gaps between the pipes.</td>
+    <td></td>
+  </tr>
+</table>
+
+</details>
 
 <details>
 <summary><h2>Extras</h2></summary>
