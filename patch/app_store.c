@@ -1,11 +1,13 @@
-/* The App Store's look (docs/internals.md#q2-shelf): its Apps, Games and Custom tabs over the list, and at
- * each app's row's end its state, a word, drawn flat in every theme (no gloss). Classic and Modern
- * have a three-part switch, the open half in the selected row's colour, Classic's on a strip under
- * its bar and Modern's in the page's title row; Minimal names the tabs in its title row, the open
- * one by a dot. A tab with apps that can be updated has a badge with their count, red, or on the
- * open half in its text colour (Minimal: "N UPDATES" at the strip's end). netupdate.c builds the
- * page and keeps its state; this file draws it, in ringnav_paint after stock (store_paint), and
- * takes the tabs' taps. */
+/* The App Store's look (docs/internals.md#q2-shelf): its Apps, Games and
+ * Custom tabs over the list, and at each app's row's end its state, a word,
+ * drawn flat in every theme (no gloss). Classic and Modern have a three-part
+ * switch, the open half in the selected row's colour, Classic's on a strip
+ * under its bar and Modern's in the page's title row; Minimal names the tabs
+ * in its title row, the open one by a dot. A tab with apps that can be updated
+ * has a badge with their count, red, or on the open half in its text colour
+ * (Minimal: "N UPDATES" at the strip's end). netupdate.c builds the page and
+ * keeps its state; this file draws it, in ringnav_paint after stock
+ * (store_paint), and takes the tabs' taps. */
 #include "navigation.h" /* st: the selected row; theme(), scheme() */
 
 #define STRIP_H 44 /* Classic's strip, its bar holding the title */
