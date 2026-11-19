@@ -2,7 +2,11 @@
  * Q2 Pod release from GitHub to the card's update.tar, then hands over to stock's TF card update.
  */
 #include "peq.h"
-#include <string.h>
+
+/* Freestanding MIPS builds use generated platform declarations, not host libc headers. */
+#ifndef PEQ_HOST
+char *strchr(const char *s, int c);
+#endif
 
 /* The tag in a releases/latest redirect, ".../releases/tag/1.3.4": what follows the last '/'. */
 const char *netupdate_tag(const char *location) {
