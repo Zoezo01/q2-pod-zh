@@ -3781,6 +3781,21 @@ def test_an_app_s_library_or_games_row_opens_its_page(fw, row):
     assert p.world.of('system') == [(b'/bin/sh /mnt/mmc/.foo/run',)]  # the app started, as from Streaming
 
 
+@pytest.mark.parametrize('row', [b'streaming', *PRESSES])
+def test_an_install_s_toast_leaves_the_open_page_s_rows_on_their_apps(fw, row):
+    """The App Store's "... is ready in ..." comes at the install's end, over whatever page is open:
+    one whose rows hold their places by name keeps them, though the new app's name comes first."""
+    p = Page(fw, b'name=Foo\nrow=%s\n' % row, opens=False)  # the page built, Foo its only app row
+    p.world.files.update({b'/mnt/mmc/.bar/q2app': b'name=Bar\nrow=%s\n' % row, b'/mnt/mmc/.bar/q2-bar': b'ELF'})
+    p.world.dirs[b'/mnt/mmc'].append(b'.bar')
+    where = {b'streaming': b'Streaming', b'library': b'Library', b'games': b"Library's Games"}[row]
+    assert fw.fn('addon_where', C.c_char_p, C.c_char_p)(b'bar') == where
+    PRESSES.get(row, lambda fw, k: fw.fn('addon_open', C.c_int, C.c_void_p, C.c_void_p)(k, None))(fw, 0)
+    assert p.top.title == b'Foo'
+    assert scan(fw) == (2 if row == b'streaming' else 0)  # the next build lists Bar, first
+    assert names(fw, 'addon_name')[1] == (b'Bar' if row == b'streaming' else None)
+
+
 def test_a_row_past_the_list_opens_nothing(fw):
     p = Page(fw, opens=False)
     fw.fn('addon_open', C.c_int, C.c_void_p, C.c_void_p)(5, None)
