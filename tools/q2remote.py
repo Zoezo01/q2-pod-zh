@@ -579,7 +579,10 @@ def main(argv):
         if a.f:
             shell(f"tail -f {LOG}", timeout=None, sink=sys.stdout.buffer); return 0
         if a.clear:
-            shell(f": >{LOG}"); return 0
+            # Never create a log when startup disabled capture. Older firmware used a regular file;
+            # current firmware's alias must name the private log, not an unexpected symlink target.
+            shell(f'[ -f {LOG} ] && {{ [ ! -L {LOG} ] || '
+                  f'[ "$(readlink {LOG})" = /tmp/q2-logbuf/demo.log ]; }} && ( : >{LOG} )'); return 0
         if a.lines is not None and a.lines < 0: raise ValueError("usage: log [LINES|-f|--clear]")
         out, rc = run(f"tail -n {100 if a.lines is None else a.lines} {LOG}")
         sys.stdout.buffer.write(out); return rc

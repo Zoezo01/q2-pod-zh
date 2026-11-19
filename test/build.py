@@ -38,21 +38,24 @@ print('Dev build tag checks passed.')
 def boot_check():
     """S90play's dual boot (build.py BOOT_HOOK) under the host sh, with stand-in programs."""
     import os, subprocess, tempfile, pathlib
-    from build import BOOT_HOOK, WHEEL_LOG_HOOK, ROCKBOX_FLAG, WIFI_OFF
+    from build import BOOT_HOOK, WHEEL_LOG_HOOK, ROCKBOX_FLAG, WIFI_OFF, demo_log
     with tempfile.TemporaryDirectory(prefix='q2-boot-') as tmp:
         r = pathlib.Path(tmp)
         def host(hook):
-            script = hook.decode().replace(' &\n', '\n')
+            # Logging's generated setup/failure paths run in test/demo_log.py. These repeated host
+            # boots use a regular file: the PC must never mount a filesystem for a boot-hook test.
+            logging = (b'        log=/tmp/q2-demo.err\n        log_status=enabled\n'
+                       b'        log_label=stderr\n        log_lines=60\n'
+                       b'        while :; do\n            /release/bin/demo 2>>"$log"\n')
+            script = hook.replace(demo_log(), logging).decode().replace(' &\n', '\n')
             for old in ('/mnt/', '/tmp/mmc_add', ROCKBOX_FLAG, '/usr/bin/q2boot', '/release/bin/demo', '/proc/mounts', '/tmp/q2-demo.log',
                         '/tmp/q2-scan-file', '/tmp/q2-scan.log', '/tmp/q2-art-file', '/tmp/q2-art.log'):
                 script = script.replace(old, f'{r}{old}')
             script = script.replace('usleep 200000\n', ':\n').replace('usleep 500000', ':')
             assert script.count('echo 1 > /proc/sys/kernel/print-fatal-signals\n') == 1  # the PC's is left alone
             script = script.replace('/proc/sys/kernel/print-fatal-signals', f'{r}/fatal-signals')
-            # demo's stderr file, and its cap's minute: one pass here while {r}/minute exists
             script = script.replace('/tmp/q2-demo.err', f'{r}/tmp/q2-demo.err')
-            assert script.count('while sleep 60; do') == 1
-            script = script.replace('while sleep 60; do', f'while [ -f {r}/minute ] && rm -f {r}/minute; do')
+            script = script.replace('/tmp/q2-logbuf', f'{r}/tmp/q2-logbuf')
         # This script runs under the PC's own sh: the real killall -9 and ifconfig would take down the PC's network,
         # not a Q2's. So they never run here: a log line stands in, and the text must be gone before anything starts.
             assert script.count(WIFI_OFF) == 2  # before Rockbox, and the hand-over's late pass
@@ -178,9 +181,8 @@ def boot_check():
             note_file.unlink(); note_log.unlink()
             out, cp = logged(137, False)
             assert f'== {last}' not in out and f'== {name}\n' not in out
-        # demo's stderr (build.py BOOT_HOOK): kept in RAM across its runs, its last 60 lines end the crash log; the
-        # once-a-minute cap (one pass here while {r}/minute exists) empties it past 512 KB and leaves a smaller one alone
-        err, minute, noise = r/'tmp/q2-demo.err', r/'minute', ''.join(f'err {i}\n' for i in range(1, 71))
+        # The collector tails the selected log; generated setup and trimming have their own tests.
+        err, noise = r/'tmp/q2-demo.err', ''.join(f'err {i}\n' for i in range(1, 71))
         exe('release/bin/demo', 'i=0; while [ $i -lt 70 ]; do i=$((i+1)); echo "err $i" >&2; done; ' + demo)
         err.unlink(missing_ok=True); out, cp = logged(137, False)
         assert (r/'fatal-signals').read_text() == '1\n'  # the kernel logs a fatal signal's registers, for the dmesg tail
@@ -188,10 +190,6 @@ def boot_check():
         assert len(lines) == 60 and lines[0] == 'err 11' and lines[-1] == 'err 70' and err.read_text() == noise
         out, cp = logged(137, False)
         assert err.read_text() == noise * 2 and out.split('== stderr\n')[1].splitlines() == lines  # appended across demo's runs
-        err.write_bytes(b'x' * 524289); minute.write_text(''); boot(True, False, status=0)
-        assert not minute.exists() and err.read_text() == noise  # past the cap: emptied before demo ran again
-        err.write_bytes(b'x' * 524288); minute.write_text(''); boot(True, False, status=0)
-        assert not minute.exists() and err.read_bytes() == b'x' * 524288 + noise.encode()  # at the cap: kept
         exe('release/bin/demo', demo); err.unlink(); out, cp = logged(137, False)
         assert out.endswith('== stderr\n') and err.read_text() == ''  # the shell makes the file as demo starts: an empty section says so
         err.unlink()
@@ -251,6 +249,10 @@ def boot_check():
         for f in (crash, copy, wheel, wcopy): f.unlink(missing_ok=True)
     print('Dual boot: Rockbox by default, one-session Q2 Pod, stale choice ignored, card fallback, Home Rockbox row and Wi-Fi off before Rockbox passed.')
 boot_check()
+
+from demo_log import check as demo_log_check, remote_clear_check
+demo_log_check()
+remote_clear_check()
 
 def logo_check():
     """S11logo_display_shell's splash choice (build.py LOGO_HOOK) under the host sh."""

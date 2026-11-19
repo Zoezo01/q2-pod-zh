@@ -251,6 +251,38 @@ ROCKBOX_FLAG = '/tmp/q2pod-rockbox'
 # starts udhcpc later too. A second pass 2 s in, called off if Rockbox has already left and demo is starting Wi-Fi
 # again, catches a shell that took longer. ponytail: 300 ms and 2 s are guesses; a shell slower than 2 s still escapes.
 WIFI_OFF = 'killall -9 wifi_connect.sh udhcpc wpa_supplicant 2>/dev/null; ifconfig wlan0 down 2>/dev/null'
+
+
+def demo_log(dev=False):
+    """One bounded RAM log per boot; setup errors must never end the launching shell."""
+    suffix, cap, trim = ('log', '4m', 3670016) if dev else ('err', '512k', 458752)
+    return f'''        # Stock's helpers inherit demo's output. Only this private tmpfs may hold it; setup failure
+        # discards output. The kernel cap holds between the minute's trims (docs/boot.md).
+        log=/dev/null
+        log_status=disabled
+        log_label="{'q2-demo.log' if dev else 'stderr'}"
+        log_lines={200 if dev else 60}
+        if mkdir -m 0700 /tmp/q2-logbuf 2>/dev/null &&
+           mount -t tmpfs -o size={cap},nr_inodes=4,mode=0700 q2-logbuf /tmp/q2-logbuf &&
+           ( : >/tmp/q2-logbuf/demo.{suffix} ) &&
+           [ ! -e /tmp/q2-demo.{suffix} ] && [ ! -L /tmp/q2-demo.{suffix} ] &&
+           ln -s /tmp/q2-logbuf/demo.{suffix} /tmp/q2-demo.{suffix} &&
+           [ -L /tmp/q2-demo.{suffix} ] &&
+           [ "$(readlink /tmp/q2-demo.{suffix})" = /tmp/q2-logbuf/demo.{suffix} ]; then
+            log=/tmp/q2-logbuf/demo.{suffix}
+            log_status=enabled
+            # Truncate the same inode: inherited O_APPEND descriptors resume after a full mount.
+            # Isolate special-builtin redirections: BusyBox may exit the shell on their failure.
+            (while sleep 60; do
+                n=$(wc -c 2>/dev/null <"$log")
+                [ "${{n:-0}}" -gt {trim} ] && ( : >"$log" )
+            done) &
+        fi
+        while :; do
+            /release/bin/demo {'>>"$log" 2>&1' if dev else '2>>"$log"'}
+'''.encode()
+
+
 BOOT_HOOK = (b'    /release/bin/demo &\n', f'''    (
         c=/mnt/data/q2-crash.log
         m=/mnt/data/q2-state
@@ -298,13 +330,7 @@ BOOT_HOOK = (b'    /release/bin/demo &\n', f'''    (
         # Every register in the kernel log when a signal ends demo or a helper (show_regs), where a fault otherwise
         # leaves its address, epc and ra alone; the crash log keeps the log's end (docs/boot.md#rockbox-from-home)
         echo 1 > /proc/sys/kernel/print-fatal-signals
-        # demo's stderr (docs/boot.md#rockbox-from-home): stock starts its Bluetooth and Wi-Fi helpers from demo,
-        # so they inherit it and their reasons for failing land here, in RAM, instead of on the serial console;
-        # emptied once a minute past 512 KB (O_APPEND keeps demo writing at its end), its tail goes in the crash
-        # log. stdout stays on the console as stock's; --dev takes both (LOG_HOOK)
-        (while sleep 60; do n=$(wc -c 2>/dev/null </tmp/q2-demo.err); [ "${{n:-0}}" -gt 524288 ] && : >/tmp/q2-demo.err; done) &
-        while :; do
-            /release/bin/demo 2>>/tmp/q2-demo.err
+{demo_log().decode().rstrip()}
             s=$?
             [ -e {ROCKBOX_FLAG} ] || break
             rm -f {ROCKBOX_FLAG}
@@ -330,8 +356,12 @@ BOOT_HOOK = (b'    /release/bin/demo &\n', f'''    (
                 [ -f /tmp/q2-scan.log ] && {{ echo "== scan"; tail -n 60 /tmp/q2-scan.log; }}
                 [ -f /tmp/q2-art-file ] && {{ echo "== last art"; cat /tmp/q2-art-file; }}
                 [ -f /tmp/q2-art.log ] && {{ echo "== art"; tail -n 60 /tmp/q2-art.log; }}
-                [ -f /tmp/q2-demo.err ] && {{ echo "== stderr"; tail -n 60 /tmp/q2-demo.err; }}
-                [ -f /tmp/q2-demo.log ] && {{ echo "== q2-demo.log"; tail -n 200 /tmp/q2-demo.log; }}
+                echo "== demo log"; echo "$log_status destination=$log"
+                if [ "$log_status" = enabled ]; then
+                    echo "bytes=$(wc -c <\"$log\")"
+                    df -k /tmp/q2-logbuf
+                    echo "== $log_label"; tail -n "$log_lines" "$log"
+                fi
             }} > $c.tmp 2>&1; mv $c.tmp $c
             sync
         fi
@@ -344,13 +374,8 @@ S11LOGO = 'etc/init.d/S11logo_display_shell'
 LOGO, LOGO_LIGHT = 'release/assets/default/raw/images/xx/logo.jpg', 'release/assets/default/raw/images/xx/logo-light.jpg'
 REMOTE_HOOK = (b'/usr/bin/dbus-daemon --config-file=/etc/dbus-1/system.conf\n',
                b'/usr/bin/dbus-daemon --config-file=/etc/dbus-1/system.conf\n/usr/bin/q2remote &\n')
-# --dev only (docs/remote.md#log): demo's console output, and hciplayer's, which inherits it, in RAM, so
-# emptied once a minute past 4 MB (O_APPEND keeps demo writing at its end), in place of the release's stderr
-# file and its cap. In BOOT_HOOK's start path.
-LOG_HOOK = (b'        (while sleep 60; do n=$(wc -c 2>/dev/null </tmp/q2-demo.err); [ "${n:-0}" -gt 524288 ] && : >/tmp/q2-demo.err; done) &\n'
-            b'        while :; do\n            /release/bin/demo 2>>/tmp/q2-demo.err\n',
-            b'        (while sleep 60; do n=$(wc -c 2>/dev/null </tmp/q2-demo.log); [ "${n:-0}" -gt 4000000 ] && : >/tmp/q2-demo.log; done) &\n'
-            b'        while :; do\n            /release/bin/demo >>/tmp/q2-demo.log 2>&1\n')
+# --dev captures stdout too, with a larger private cap; setup and failure behavior stay identical.
+LOG_HOOK = (demo_log(), demo_log(True))
 # --dev only: the wheel's frame log (playback.c wl_flush) and stale-press notes (navigation.c stale_note) go to the
 # card's q2-wheel.log, appended, when the card is up, up to 256 KB. In BOOT_HOOK's start path.
 WHEEL_LOG_HOOK = (b'        rb=/mnt/mmc/.rockbox\n',
