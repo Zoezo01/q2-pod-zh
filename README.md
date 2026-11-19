@@ -44,7 +44,7 @@ CHINESE_UI = True   # 资产按 patch_asset 的结果原样打包，只保留解
 
 - 官方V1.36版本已支持，去除我们自制，沿用官方。
 
-### 6. 新功能：一键补全封面与歌词
+### 5. 新功能：一键补全封面与歌词
 
 ```text
 主菜单 → 设置 → 播放设置 → 补全封面与歌词
@@ -68,7 +68,7 @@ CHINESE_UI = True   # 资产按 patch_asset 的结果原样打包，只保留解
 - `patch/onlinematch.c`：`library_fill_*`（枚举、三段任务、带单位的进度、转动的指示、取消），`lf_cover_save()` 先问 `kg_cover_save()`（酷狗搜索 → 专辑信息 → 480 px 图），再复用 `mb_url()` / `caa()` / `itunes_url()`，`lf_song_take()` / `lf_song_collect()` 处理没有专辑标签的单曲。
 - `patch/navigation.c`：导出 `ringnav_fill_albums()`（全库专辑 SQL，复用年代页的 `ERA_ALBUMS`）、`ringnav_album_tracks()`（单张专辑曲目）与 `ringnav_fill_songs()`（无专辑标签的歌），新增枚举 `POD_LIBRARY_FILL` 与设置行。
 
-### 7. 载荷窗口从 512 KB 扩到 1 MB
+### 6. 载荷窗口从 512 KB 扩到 1 MB
 
 上游的载荷（`patch/*.c` 编译结果）装在 `0xb00000`，紧跟着 `0xb80000` 是状态区，所以代码只能用 512 KB。1.6.3 编译出来是 523,800 B——离 524,288 的硬上限只剩 488 字节，再合并一版必然撞线（`tools/build.py` 里 `check(len(payload) < SCRATCH-BASE)` 会直接抛异常，包都出不来）。现在 1.8.0 是 760,728 B，同样不在这条线上。
 
