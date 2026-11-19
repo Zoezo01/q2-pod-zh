@@ -2693,13 +2693,13 @@ def test_new_songs_count_into_a_table_full_of_songs_played_twice(player, recs, s
 
 @pytest.mark.parametrize('at, gone', [(O['PLAYS_FRESH'] - 1, O['PLAYS_SLOTS'] - 2), (O['PLAYS_FRESH'], O['PLAYS_FRESH'])])
 def test_a_full_table_never_replaces_one_of_the_last_counted(player, recs, st, at, gone):
-    """The one song played once, at `at`: among the PLAYS_FRESH counted last it stays, and the furthest back of
-    the lowest counts behind them goes, the slot before a favourite counted longest ago; one place further back
-    it is the one that goes."""
+    """Songs played twice fill the table, one played once is at `at` and a favourite (9 plays) is last. Just
+    inside the PLAYS_FRESH counted last, the single play stays and the furthest back song played twice goes,
+    the one before the favourite; at PLAYS_FRESH the single play is outside them, the lowest, and goes."""
     table = (C.c_uint * (2 * O['PLAYS_SLOTS'])).from_address(C.addressof(st('plays')))
     for i in range(O['PLAYS_SLOTS']):
         table[2 * i], table[2 * i + 1] = 1000 + i, 1 if i == at else 2
-    table[2 * O['PLAYS_SLOTS'] - 1] = 9  # the last slot's count
+    table[2 * O['PLAYS_SLOTS'] - 1] = 9  # the favourite, counted longest ago
     st('plays_read', C.c_uint).value = 1
     player.play([recs(path='/mnt/mmc/Music/a.flac')], total=100)
     for s in range(60):
