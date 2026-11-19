@@ -1267,9 +1267,19 @@ static int custom_done(void *ctx, void *event) {
         sh.custom_stage = 1;
         if (sh.edit_timer) timer_remove(sh.edit_timer);
         sh.edit_timer = timer_add(custom_focus_repo, 0, 16);
-    } else if (!sh.edit_timer) {
-        sh.edit_timer = timer_add(custom_save, 0, 0);
+    } else {
+        /* Done only closes the keyboard. Download requires an explicit tap. */
+        widget_set_focused(sh.edit, 0);
+        input_method_request(input_method(), 0);
     }
+    return 0;
+}
+
+static int custom_download(void *ctx, void *event) {
+    if (!sh.custom_stage || sh.edit_timer) return 0;
+    widget_set_focused(sh.edit, 0);
+    input_method_request(input_method(), 0);
+    sh.edit_timer = timer_add(custom_save, 0, 16);
     return 0;
 }
 
@@ -1301,6 +1311,13 @@ static void custom_open(void) {
     widget_set_prop_str(sh.edit, "action_text", "next");
     widget_on(sh.edit, EVT_CLICK, custom_activate, 0);
     widget_on(sh.edit, EVT_IM_ACTION, custom_done, 0);
+    /* Below the keyboard's top edge; accessible once Done dismisses T9. */
+    void *button = list_item_create(sh.edit_page, 12, 44, 351, 48);
+    widget_use_style(button, "s_listitem_black");
+    void *caption = label_create(button, 12, 0, 327, 48);
+    widget_use_style(caption, "s_label_white20l");
+    widget_set_text_utf8(caption, "Download");
+    widget_on(button, EVT_CLICK, custom_download, 0);
     sh.edit_timer = timer_add(custom_ready, 0, 16);
 }
 
