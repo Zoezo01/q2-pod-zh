@@ -778,6 +778,8 @@ static struct {
     void *strip; /* the tabs (app_store.c store_tabs) */
     void *edit_page, *edit, *repo_edit;
     unsigned edit_timer;
+    char custom_owner[48];
+    int custom_stage;
 } sh __attribute__((section(".scratch")));
 
 static int is(int i, const char *id) { return i >= 0 && i < shelf_n && !strcmp(apps[i].id, id); }
@@ -1184,6 +1186,8 @@ static int custom_closed(void *ctx, void *event) {
     if (sh.edit_timer) timer_remove(sh.edit_timer);
     sh.edit_timer = 0;
     sh.edit_page = sh.edit = sh.repo_edit = 0;
+    sh.custom_stage = 0;
+    sh.custom_owner[0] = 0;
     return 0;
 }
 
@@ -1191,11 +1195,11 @@ static int custom_closed(void *ctx, void *event) {
  * a widget while its callback is still running. */
 static int custom_save(const void *unused) {
     sh.edit_timer = 0;
-    if (!sh.edit || !sh.repo_edit) return 0;
+    if (!sh.edit || !sh.custom_stage) return 0;
     char owner[48], name[48], input[128], text[(SH_MAX + 1) * 120 + 8];
     shelf_app app;
-    if (widget_get_text_utf8(sh.edit, owner, sizeof owner) ||
-        widget_get_text_utf8(sh.repo_edit, name, sizeof name) || !*owner || !*name ||
+    snprintf(owner, sizeof owner, "%s", sh.custom_owner);
+    if (widget_get_text_utf8(sh.edit, name, sizeof name) || !*owner || !*name ||
         strrchr(owner, '/') || strrchr(name, '/')) {
         toast("Enter a GitHub user and repository");
         return 0;
@@ -1232,7 +1236,6 @@ static int custom_save(const void *unused) {
         apps[shelf_n++] = app;
     sh.checked = 0;
     widget_set_focused(sh.edit, 0);
-    widget_set_focused(sh.repo_edit, 0);
     input_method_request(input_method(), 0);
     navigator_back();
     sh.rows = -1;
@@ -1240,23 +1243,28 @@ static int custom_save(const void *unused) {
     return 0;
 }
 
-/* Switch editors after the input method finishes closing the first keyboard.
- * Reopening it synchronously from EVT_IM_ACTION loses keyboard input. */
+/* Only one edit may sit above the stock T9 keyboard (page y=30).
+ * A second edit below it is covered and does not receive key events. */
 static int custom_focus_repo(const void *unused) {
-    if (!sh.edit || !sh.repo_edit) return sh.edit_timer = 0;
+    if (!sh.edit || !sh.custom_stage) return sh.edit_timer = 0;
     void *wm = window_manager();
     if (window_manager_is_animating(wm) || window_manager_get_top_window(wm) != sh.edit_page)
         return 8;
     sh.edit_timer = 0;
-    widget_set_focused(sh.edit, 0);
-    widget_set_focused(sh.repo_edit, 1);
-    input_method_request(input_method(), sh.repo_edit);
+    widget_set_prop_str(sh.edit, "tips", "Repository");
+    widget_set_prop_str(sh.edit, "action_text", "done");
+    widget_set_text_utf8(sh.edit, "");
+    widget_set_focused(sh.edit, 1);
+    input_method_request(input_method(), sh.edit);
     return 0;
 }
 
-/* T9's Done moves from Username to Repository, then saves on Done. */
+/* Next saves the username and reuses the same visible, keyboard-connected edit. */
 static int custom_done(void *ctx, void *event) {
-    if (ctx == sh.edit) {
+    if (!sh.custom_stage) {
+        if (widget_get_text_utf8(sh.edit, sh.custom_owner, sizeof sh.custom_owner) ||
+            !*sh.custom_owner) return toast("Enter a GitHub username"), 0;
+        sh.custom_stage = 1;
         if (sh.edit_timer) timer_remove(sh.edit_timer);
         sh.edit_timer = timer_add(custom_focus_repo, 0, 16);
     } else if (!sh.edit_timer) {
@@ -1266,12 +1274,9 @@ static int custom_done(void *ctx, void *event) {
 }
 
 static int custom_activate(void *ctx, void *event) {
-    void *edit = ctx ? ctx : sh.edit;
-    if (!edit) return 0;
-    if (sh.edit_timer) timer_remove(sh.edit_timer);
-    sh.edit_timer = 0;
-    widget_set_focused(edit, 1);
-    input_method_request(input_method(), edit);
+    if (!sh.edit) return 0;
+    widget_set_focused(sh.edit, 1);
+    input_method_request(input_method(), sh.edit);
     return 0;
 }
 
@@ -1287,16 +1292,15 @@ static int custom_ready(const void *unused) {
 static void custom_open(void) {
     if (sh.edit_page || !(sh.edit_page = page_open("app_source_page", custom_closed, page_keyup)))
         return;
+    sh.custom_stage = 0;
+    sh.custom_owner[0] = 0;
     sh.edit = edit_create(sh.edit_page, "text", 2, 26);
-    sh.repo_edit = edit_create(sh.edit_page, "text", 32, 26);
+    sh.repo_edit = 0;
     widget_set_name(sh.edit, "search_edit");
-    widget_set_name(sh.repo_edit, "search_edit");
-    widget_set_prop_str(sh.edit, "tips", "Username");
-    widget_set_prop_str(sh.repo_edit, "tips", "Repository");
+    widget_set_prop_str(sh.edit, "tips", "Username (Next to repository)");
+    widget_set_prop_str(sh.edit, "action_text", "next");
     widget_on(sh.edit, EVT_CLICK, custom_activate, 0);
-    widget_on(sh.repo_edit, EVT_CLICK, custom_activate, 0);
     widget_on(sh.edit, EVT_IM_ACTION, custom_done, 0);
-    widget_on(sh.repo_edit, EVT_IM_ACTION, custom_done, 0);
     sh.edit_timer = timer_add(custom_ready, 0, 16);
 }
 
