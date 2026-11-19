@@ -3,11 +3,6 @@
  */
 #include "peq.h"
 
-/* Freestanding MIPS builds use generated platform declarations, not host libc headers. */
-#ifndef PEQ_HOST
-char *strchr(const char *s, int c);
-#endif
-
 /* The tag in a releases/latest redirect, ".../releases/tag/1.3.4": what follows the last '/'. */
 const char *netupdate_tag(const char *location) {
     const char *slash = location ? strrchr(location, '/') : 0;
@@ -1201,7 +1196,7 @@ static int custom_save(const void *unused) {
     shelf_app app;
     if (widget_get_text_utf8(sh.edit, owner, sizeof owner) ||
         widget_get_text_utf8(sh.repo_edit, name, sizeof name) || !*owner || !*name ||
-        strchr(owner, '/') || strchr(name, '/')) {
+        strrchr(owner, '/') || strrchr(name, '/')) {
         toast("Enter a GitHub user and repository");
         return 0;
     }
