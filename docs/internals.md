@@ -1842,7 +1842,7 @@ Each app's state:
 - **UPDATE** when that tag differs from the latest release's (string equality, not order), or when the app's binary is there without a tag (a manual install).
 - Otherwise **INSTALL**.
 
-Rockbox Themes is listed only while `.rockbox/rockbox` is a regular file. The rows are built when the page opens, and again when a job's end changes which (`sh_rows`). Themes says "Install Rockbox first" without Rockbox.
+Rockbox Themes is listed only while `.rockbox/rockbox` is a regular file. The rows are built when the page opens, and again when a job's end changes which (`sh_rows`). A job's end waits while a row's press is still running (`sh.clicks`): a press that answers with a toast while a job runs ("Stopped checking for updates", "Wait for the one in progress") runs the toast's 2 s loop inside its own click, and that loop runs the job's timer, so the rows built again there freed the pressed row under its click, as Battery History's Export Log once did. Themes says "Install Rockbox first" without Rockbox.
 
 ponytail: a card app keeps nothing from an update. Its settings survive only because its release zip doesn't ship them; an app whose zip ships its settings file overwrites the user's copy on every update. The fix belongs in that app's release, or in a `keep` list here if one ever needs it.
 
