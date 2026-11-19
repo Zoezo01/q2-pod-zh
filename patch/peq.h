@@ -737,7 +737,7 @@ int groovebox_available(void); /* theme_engine.c: the Groovebox card app's binar
 int page_keyup(void *ctx, void *event); /* navigation.c: Return leaves a payload page */
 int ringnav_localclass(int cls);        /* navigation.c: load_localclass_list's hook */
 int shelf_open(void *ctx, void *event); /* netupdate.c: System settings' Apps page */
-void shelf_tab(int tab);                /* netupdate.c: the App Store's open tab, 0 Apps, 1 Games, 2 Custom */
+void shelf_tab(int tab); /* netupdate.c: open tab (0 Apps, 1 Games, 2 Custom) */
 int shelf_key(void *top, unsigned key); /* netupdate.c: Previous and Next switch its tabs */
 /* app_store.c: the App Store's tabs and rows, drawn in ringnav_paint (store_paint) */
 void *store_tabs(void *page, void *view);
