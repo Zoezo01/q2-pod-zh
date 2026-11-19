@@ -755,7 +755,7 @@ void netupdate_poll(void) {
  * install, a remove or Spotify's erase (Streaming → Configuration's, shelf_erase). Leaving the page
  * leaves it running; its progress shows when the page opens again. */
 #define SH_JSON "/tmp/q2-shelf.json"
-#define SH_LIST SH_DIR "/sources.list" /* the last list fetched, for the page offline */
+#define SH_LIST SH_DIR "/sources.list" /* last list fetched, for offline use */
 #define SH_CUSTOM SH_DIR "/custom-sources.list" /* repositories added on this Q2 */
 #define SH_LIST_URL "https://raw.githubusercontent.com/DiamondBond/q2-pod/main/sources.list"
 #define SH_STALE_MS (10 * 60 * 1000ull)
@@ -1164,8 +1164,10 @@ static void sh_start(int job, int i) {
 static int custom_repo(const char *input, shelf_app *app) {
     const char *s = input;
     while (*s == ' ' || *s == '\t') ++s;
-    if (!strncmp(s, "https://github.com/", 19)) s += 19;
-    else if (!strncmp(s, "github.com/", 11)) s += 11;
+    if (!strncmp(s, "https://github.com/", 19))
+        s += 19;
+    else if (!strncmp(s, "github.com/", 11))
+        s += 11;
     unsigned n = strlen(s);
     while (n && (unsigned char)s[n - 1] <= ' ') --n;
     if (n && s[n - 1] == '/') --n;
@@ -1173,8 +1175,8 @@ static int custom_repo(const char *input, shelf_app *app) {
     if (!n || n >= sizeof app->repo) return 0;
     char repo[80];
     memcpy(repo, s, n), repo[n] = 0;
-    return shelf_sources(repo, app, 1) == 1 && !app->dropped &&
-           !special_id(app->id) && strlen(app->repo) == n;
+    return shelf_sources(repo, app, 1) == 1 && !app->dropped && !special_id(app->id) &&
+           strlen(app->repo) == n;
 }
 
 static int custom_closed(void *ctx, void *event) {
@@ -1199,8 +1201,7 @@ static int custom_save(const void *unused) {
     int existing = sh_find(app.id);
     if (existing >= 0 && (strcmp(apps[existing].repo, app.repo) || apps[existing].dropped))
         return toast("Another source already uses this app ID"), 0;
-    if (existing >= 0 && apps[existing].custom)
-        return toast("This app is already in Custom"), 0;
+    if (existing >= 0 && apps[existing].custom) return toast("This app is already in Custom"), 0;
     if (existing < 0 && shelf_n >= SH_MAX) return toast("The App Store list is full"), 0;
     if (!card_mounted()) return toast("Can't write to the card"), 0;
     unsigned bytes = 0;
@@ -1217,8 +1218,10 @@ static int custom_save(const void *unused) {
     if (size >= (int)sizeof text || !blob_io(SH_CUSTOM, SH_CUSTOM ".tmp", text, size, 1))
         return toast("Can't write to the card"), 0;
     app.custom = 1;
-    if (existing >= 0) apps[existing].custom = 1;
-    else apps[shelf_n++] = app;
+    if (existing >= 0)
+        apps[existing].custom = 1;
+    else
+        apps[shelf_n++] = app;
     sh.checked = 0;
     widget_set_focused(sh.edit, 0);
     input_method_request(input_method(), 0);
@@ -1283,8 +1286,10 @@ static int sh_click(void *ctx, void *event) {
     int r = (int)(long)ctx, i = sh.map[r], armed = sh.armed == r + 1;
     sh.armed = 0;
     if (i == ROW_ADD) {
-        if (sh.job) toast("Wait for the App Store to finish");
-        else custom_open();
+        if (sh.job)
+            toast("Wait for the App Store to finish");
+        else
+            custom_open();
         return 0;
     }
     if (i == ROW_CHECK && sh.job == JOB_CHECK) {
@@ -1342,8 +1347,8 @@ static void sh_rows(void) {
         for (int r = 0; r < n; ++r) {
             int i = map[r];
             /* sh_text writes the detail: a blank one, or a theme would centre the name over it */
-            const char *name = i == ROW_CHECK ? "Check for Updates"
-                                : i == ROW_ADD ? "+ Add App" : apps[i].name;
+            const char *name =
+                i == ROW_CHECK ? "Check for Updates" : i == ROW_ADD ? "+ Add App" : apps[i].name;
             sh.row[r] = page_row_detail(view, r, name, theme()->sep[0].n ? " " : "", sh_click);
         }
         sh.rows = n;
@@ -1387,9 +1392,10 @@ static int sh_check(void *ctx, void *event) {
     return 0;
 }
 
-/* System settings' App Store row. The card's last list, until a check fetches the list again: with Wi-Fi
- * when the last whole check is over SH_STALE_MS old (or none), as GitHub allows 60 unauthenticated
- * API requests an hour; while Smart Wi-Fi brings the radio back, once its link is up. */
+/* System settings' App Store row. The card's last list, until a check fetches
+ * the list again: with Wi-Fi when the last whole check is over SH_STALE_MS old
+ * (or none), as GitHub allows 60 unauthenticated API requests an hour; while
+ * Smart Wi-Fi brings the radio back, once its link is up. */
 int shelf_open(void *ctx, void *event) {
     if (sh.page || !(sh.page = page_open("apps_page", sh_closed, page_keyup))) return 0;
     if (sh.job != JOB_CHECK && !shelf_n) { /* an erase can run from Configuration before it opens */
