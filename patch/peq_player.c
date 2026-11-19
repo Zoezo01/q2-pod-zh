@@ -426,8 +426,11 @@ static unsigned cast_copy(cast_tap *t, const float *a, unsigned frames, int nch,
     int half = cs.half;
     while (cs.pos + half < n) {
         int i = (int)cs.pos;
-        float x = (float)(cs.pos - i) * RS_PHASES, ff = x - (int)x;
+        /* in double: a fraction just under 1 that (float) rounded up to 1 made jf RS_PHASES, so the
+         * taps read a point past the kernel's end and one before its start */
+        double x = (cs.pos - i) * RS_PHASES;
         int jf = (int)x;
+        float ff = (float)(x - jf);
         const float *p = cs.buf + 2 * (i - half + 1), *q;
         float l = 0, rr = 0;
         for (int d = half - 1; d >= 0; --d, p += 2) { /* frames at and before the point */
