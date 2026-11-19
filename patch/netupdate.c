@@ -1195,8 +1195,8 @@ static int custom_save(const void *unused) {
     char owner[48], name[48], input[128], text[(SH_MAX + 1) * 120 + 8];
     shelf_app app;
     if (widget_get_text_utf8(sh.edit, owner, sizeof owner) ||
-        widget_get_text_utf8(sh.repo_edit, name, sizeof name) ||
-        !*owner || !*name || strchr(owner, '/') || strchr(name, '/')) {
+        widget_get_text_utf8(sh.repo_edit, name, sizeof name) || !*owner || !*name ||
+        strchr(owner, '/') || strchr(name, '/')) {
         toast("Enter a GitHub user and repository");
         return 0;
     }
