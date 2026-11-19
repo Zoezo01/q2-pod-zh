@@ -755,7 +755,8 @@ void netupdate_poll(void) {
  * install, a remove or Spotify's erase (Streaming → Configuration's, shelf_erase). Leaving the page
  * leaves it running; its progress shows when the page opens again. */
 #define SH_JSON "/tmp/q2-shelf.json"
-#define SH_LIST SH_DIR "/sources.list" /* last list fetched, for offline use */
+/* Last list fetched, for offline use. */
+#define SH_LIST SH_DIR "/sources.list"
 #define SH_CUSTOM SH_DIR "/custom-sources.list" /* repositories added on this Q2 */
 #define SH_LIST_URL "https://raw.githubusercontent.com/DiamondBond/q2-pod/main/sources.list"
 #define SH_STALE_MS (10 * 60 * 1000ull)
@@ -1347,8 +1348,9 @@ static void sh_rows(void) {
         for (int r = 0; r < n; ++r) {
             int i = map[r];
             /* sh_text writes the detail: a blank one, or a theme would centre the name over it */
-            const char *name =
-                i == ROW_CHECK ? "Check for Updates" : i == ROW_ADD ? "+ Add App" : apps[i].name;
+            const char *name = apps[i >= 0 ? i : 0].name;
+            if (i == ROW_CHECK) name = "Check for Updates";
+            if (i == ROW_ADD) name = "+ Add App";
             sh.row[r] = page_row_detail(view, r, name, theme()->sep[0].n ? " " : "", sh_click);
         }
         sh.rows = n;
