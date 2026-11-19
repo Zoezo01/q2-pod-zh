@@ -34,7 +34,7 @@
 - **状态栏改用上游的「真状态栏」方案**：我们 V183F 自绘的暗色顶栏（`dark_bar`、`dark_title`、`paint_dark_bar` 及配套的白色播放图标）随上游一并删除，三级页面、更新曲库、设置时间、锁屏都画真状态栏。之前「深色顶栏的黑字」问题由此从根上消失。
 - **越南语字库照收**：上游新增 `patch/script.c` 与字库范围；我们 `theme_font` 里「CJK 落到原厂字体时按 `BAR_CJK_PX` 降一档」的规则保留在 `script_face` 之后。
 - **我们自己的两处实机修正保留**：经典主题电池百分比的 1px 光学补偿、顶栏时钟与「正在播放 / 播放暂停」固定 16 px。
-- `sources.list` 跟随上游加入 **2048** 与 **恐龙跑酷**（`lampsonlnguyen/q2-dino-runner`），中文版里应用名保持上游英文/原名。
+- `sources.list` 跟随上游加入 **街机合集（Arcade Games）**、**2048**、**恐龙跑酷（Dino Runner）** 与 **Flappy Bird**（Simon Says 仍注释掉），中文版里应用名保持上游原名。
 
 ## 1.8.7（V187B）
 
