@@ -8155,12 +8155,14 @@ static void spot_keep(unsigned key, int sec, int total) {
 }
 
 /* Counts key's play and moves it first, so among equal counts the least recently played is the
- * one replaced when no slot is free. */
+ * one replaced when no slot is free; never one of the PLAYS_FRESH counted last, so a song played
+ * once keeps its count until a second play can come. */
+_Static_assert(PLAYS_FRESH < PLAYS_SLOTS, "a full table has a slot to replace");
 static void play_count(void *r, unsigned key) {
     plays_load();
-    int i = 0;
+    int i = PLAYS_FRESH;
     for (int j = 0; j < PLAYS_SLOTS && st.plays[i].key != key; j++)
-        if (st.plays[j].key == key || st.plays[j].n <= st.plays[i].n) i = j;
+        if (st.plays[j].key == key || (j >= PLAYS_FRESH && st.plays[j].n <= st.plays[i].n)) i = j;
     unsigned evicted = st.plays[i].key;
     mp_counted(r, key, evicted != key ? evicted : 0);
     unsigned n = st.plays[i].key == key ? st.plays[i].n + 1 : 1;

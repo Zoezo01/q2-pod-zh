@@ -1,6 +1,7 @@
 # Changelog
 
 - **1.8.9**:
+  - Most Played: songs you start playing once the play counts have filled up are counted when you play them again within a few days, so a new album can join **Most Played**. Once all 512 places held songs played twice or more, each song played for the first time took the place of the one played for the first time before it, so no new song got past one play and Most Played stopped changing.
   - App Store: one **Check for Updates** checks every app and game on both tabs, **Apps** and **Games**. A check asked GitHub once per app, and GitHub allows a Q2 only 60 of those an hour, so with today's list it ran out part way and the games, last in the list, showed no update until you checked again. A check now asks without using that allowance.
   - App Store: under **Theme: Classic** and **Theme: Modern**, the open tab, **Apps** or **Games**, is the colour your theme gives the selected row, its name in the row's ink. Under Classic it was the accent's own blue, darker than Classic Blue's rows.
 - **1.8.8**:
