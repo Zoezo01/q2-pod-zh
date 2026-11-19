@@ -1240,12 +1240,25 @@ static int custom_save(const void *unused) {
     return 0;
 }
 
+/* Switch editors after the input method finishes closing the first keyboard.
+ * Reopening it synchronously from EVT_IM_ACTION loses keyboard input. */
+static int custom_focus_repo(const void *unused) {
+    if (!sh.edit || !sh.repo_edit) return sh.edit_timer = 0;
+    void *wm = window_manager();
+    if (window_manager_is_animating(wm) || window_manager_get_top_window(wm) != sh.edit_page)
+        return 8;
+    sh.edit_timer = 0;
+    widget_set_focused(sh.edit, 0);
+    widget_set_focused(sh.repo_edit, 1);
+    input_method_request(input_method(), sh.repo_edit);
+    return 0;
+}
+
 /* T9's Done moves from Username to Repository, then saves on Done. */
 static int custom_done(void *ctx, void *event) {
     if (ctx == sh.edit) {
-        widget_set_focused(sh.edit, 0);
-        widget_set_focused(sh.repo_edit, 1);
-        input_method_request(input_method(), sh.repo_edit);
+        if (sh.edit_timer) timer_remove(sh.edit_timer);
+        sh.edit_timer = timer_add(custom_focus_repo, 0, 16);
     } else if (!sh.edit_timer) {
         sh.edit_timer = timer_add(custom_save, 0, 0);
     }
