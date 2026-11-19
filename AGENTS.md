@@ -1,3 +1,7 @@
+## Formatting and validation
+
+Before committing any C changes, run `tools/format.sh` and then `tools/format.sh --check` using the repository's pinned clang-format version (`23.1.5`, as specified in `.github/workflows/tests.yml`). Follow `.clang-format`; do not hand-format as a substitute. Do not push changes while the formatting check fails. Run the relevant tests and report any checks that could not be executed.
+
 ## Where code goes
 
 Don't add features to `patch/navigation.c`: give each its own file, as CONTRIBUTING.md's [Where new code goes](CONTRIBUTING.md#where-new-code-goes) says. Add to navigation.c only where the code being changed already lives, and say why.
