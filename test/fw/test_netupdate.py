@@ -2383,6 +2383,54 @@ def test_a_check_stopped_part_way_is_done_again_at_the_next_open(fw):
     assert s.sh.job == JOB_CHECK
 
 
+# A check that doesn't ask for a release again keeps the one the last check found, so a row that offered UPDATE
+# still does: it used to say INSTALLED, and pressing it offered to remove the app.
+TWO = b'me/q2-foo Foo\nme/q2-bar Bar\n'
+
+
+def checked(fw, listed=TWO, **replies):
+    """Foo and Bar installed at 1.0, a whole check that found 2.0 for each, and the page reopened over 10 minutes
+    later, its opening check running: the App Store, and the Net that check meets (replies as store_net's)."""
+    card = Disk(fw, {SOURCES: TWO, b'/mnt/mmc/.q2/apps/foo.tag': b'1.0', b'/mnt/mmc/.q2/apps/bar.tag': b'1.0'})
+    store_net(fw, listed=TWO)
+    s = Store(fw, card)
+    assert s.run() == 0 and s.labels() == ['Update', 'Update']
+    s.close()
+    s.seconds += 601
+    net = store_net(fw, listed=listed, **replies)
+    s.open()
+    assert s.sh.job == JOB_CHECK
+    return s, net
+
+
+def test_a_check_stopped_while_it_asks_github_keeps_the_updates_found_before(fw):
+    s, net = checked(fw)
+    net.only, net.during = b'https://api', lambda k: k or s.click(1)  # Foo's row, as Foo's release comes in
+    assert s.run() == 0 and net.urls[-1] == b'https://api.github.com/repos/me/q2-foo/releases/latest'
+    assert s.sh.cancel == 1 and s.labels() == ['Update', 'Update']
+    s.click(1)
+    assert s.sh.job == JOB_INSTALL and s.sh.app == 0 and s.sh.armed == 0  # an update, not Remove's first press
+
+
+@pytest.mark.parametrize('api', [(0, 403, None, b'{"message":"API rate limit exceeded"}'), (7, 0, None)])
+def test_a_check_github_refuses_or_cant_be_reached_keeps_the_updates_found_before(fw, api):
+    s, _ = checked(fw, api=api)
+    assert s.run() == 0 and s.labels() == ['Update', 'Update'] and s.sh.checked == 1000 * 5000
+    assert s.toasts == ['2 apps can be updated'] * 2  # the opening check's count, as the first's
+
+
+@pytest.mark.parametrize('listed', [b'other/q2-foo Foo\nme/q2-bar Bar\n', b'-me/q2-foo Foo\nme/q2-bar Bar\n'],
+                         ids=['moved to another repo', 'dropped'])
+def test_an_app_moved_or_dropped_keeps_no_update_from_before(fw, listed):
+    s, _ = checked(fw, listed=listed, api=(0, 403, None, b'{"message":"API rate limit exceeded"}'))
+    assert s.run() == 0 and s.labels() == ['Installed', 'Update']
+
+
+def test_a_release_gone_since_takes_its_update_away(fw):
+    s, _ = checked(fw, api=(0, 404, None, b'{"message":"Not Found"}'))
+    assert s.run() == 0 and s.labels() == ['Installed', 'Installed']
+
+
 # An install goes by the list as it is now, fetched as the install starts. The page's rows may be the card's
 # list of days ago, and a repo dropped since then must not install (GHSA-8wpr-pmqx-538x): on that list its
 # release was fetched and unpacked onto the card in each of the three ways below.

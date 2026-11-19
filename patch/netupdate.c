@@ -819,6 +819,9 @@ static int release(shelf_app *a, char *tag, char *url, unsigned *size) {
  * still installed (so it can be removed), else the page's own; then each listed one's latest
  * release. A dropped app's is never asked, nor installed: dropping it is what stops a taken-over
  * repo's releases reaching a Q2 (GHSA-8wpr-pmqx-538x).
+ * A listed app keeps the latest release the page knew for it, from the same repo, until this check
+ * asks again: a check stopped part way (a row's press) or refused (GitHub's 60 requests an hour)
+ * leaves an UPDATE row as it was, where its row said INSTALLED and a press offered to remove it.
  * Whether every release was checked: a list that failed is fetched again with the next check. */
 static int check(void) {
     char path[96], tag[32], url[256], text[SH_MAX * 120 + 8];
@@ -828,6 +831,11 @@ static int check(void) {
     int n = list ? shelf_sources(list, sh.next, SH_MAX) : 0, fresh = n > 0, ok = 1;
     free(list);
     if (!n) memcpy(sh.next, apps, sizeof apps), n = shelf_n; /* a bad list never replaces one */
+    for (int k = 0; fresh && k < n; ++k) {
+        int i = sh_find(sh.next[k].id);
+        if (i >= 0 && !sh.next[k].dropped && !strcmp(apps[i].repo, sh.next[k].repo))
+            memcpy(sh.next[k].latest, apps[i].latest, sizeof sh.next[k].latest);
+    }
     for (int i = 0; fresh && i < shelf_n && n < SH_MAX; ++i) {
         int listed = 0;
         for (int k = 0; k < n; ++k) listed |= !strcmp(sh.next[k].id, apps[i].id);
@@ -847,7 +855,10 @@ static int check(void) {
     for (int k = 0; k < n && !sh.cancel; ++k) {
         if (sh.next[k].dropped) continue;
         int r = release(&sh.next[k], tag, url, &size);
-        if (r == SH_MISSING) continue; /* checked: no release yet */
+        if (r == SH_MISSING) { /* checked: no release yet, or none with a zip */
+            *sh.next[k].latest = 0;
+            continue;
+        }
         ok &= !r;
         if (!sh.result) sh.result = r; /* SH_NET or SH_BUSY, for sh_told */
     }

@@ -1,6 +1,7 @@
 # Changelog
 
 - **1.8.9**:
+  - App Store: an app showing **UPDATE** keeps it when a check doesn't finish: when you press a row while the page is still checking, or when GitHub turns the check away for asking too often in an hour. The row used to change to **INSTALLED**, and pressing it then offered to remove the app instead of updating it.
   - App Store: under **Theme: Classic** and **Theme: Modern**, the open tab, **Apps** or **Games**, is the colour your theme gives the selected row, its name in the row's ink. Under Classic it was the accent's own blue, darker than Classic Blue's rows.
 - **1.8.8**:
   - Bluetooth: a car that connects to the Q2 by itself plays within a second or two. Shanling's firmware waited 30 seconds for the car to start the sound before starting it itself, so with a car that leaves that to the player (a Tesla) a song ran silent for half a minute.
