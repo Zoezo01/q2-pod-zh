@@ -8721,9 +8721,12 @@ seen=' '.join(t for t,*_ in first+second).split(); assert seen==words[:len(seen)
 assert m.call(O['KEY_PREV'])==11 and page_lines()==first and m.call(O['KEY_PREV'])==11 and page_lines()==first; passed()
 # Centre shows how far in and the title on a band clear of the glass; Return keeps the page.
 m.call(); m.call(); third=page_lines()
+# The turned page is saved 2 s on, without Return: a power-off ends demo without one (books.c save_due).
+m.advance(2000); saved=bytes(m.files.get('/mnt/data/ringnav-books',b'')[:8])
+assert len(saved)==8 and struct.unpack('<II',saved)[0]==fnv(R+'/Zed.txt') and struct.unpack('<II',saved)[1]>0; passed()
 assert m.call(O['KEY_CENTER'])==11 and m.nodes[info]['visible'] and re.fullmatch(r'\d%  Zed',m.nodes[info]['text'])
 x,y,bw,bh=cf_geometry(m,info); inset=max(corner_inset(30+y),corner_inset(30+y+bh)); assert inset<=x and x+bw<=375-inset
-assert m.key()==11 and m.nodes[books]['visible'] and '/mnt/data/ringnav-books' in m.files
+assert m.key()==11 and m.nodes[books]['visible'] and bytes(m.files['/mnt/data/ringnav-books'][:8])==saved
 assert m.nodes[m.find('scroll_view',books)]['_ringnav_index']==1
 open_book(1); assert page_lines()==third; passed()
 # An EPUB is made into text on the worker first ("Preparing…"), then read like a .txt: chapters
