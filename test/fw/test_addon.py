@@ -357,7 +357,7 @@ def test_library_rows_are_by_name_with_the_52_px_icon_first(fw):
     assert names(fw, 'addon_name') == [None, b'Foo', None]  # Streaming keeps the others, its 40 px icon first
     assert names(fw, 'addon_icon') == [None, b'file:///mnt/mmc/.foo/icon-40.png', None]
     where = fw.fn('addon_where', C.c_char_p, C.c_char_p)
-    assert (where(b'tools'), where(b'foo')) == (b'Library', b'Streaming')
+    assert (where(b'tools'), where(b'foo')) == ('资料库'.encode(), '流媒体'.encode())
 
 
 def test_names_are_cut_at_a_whole_character(fw):

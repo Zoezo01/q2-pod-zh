@@ -118,6 +118,8 @@ static const unsigned *wide_home_title(const char *s) {
     }
     name[i] = 0;
     return name;
+}
+
 /* The page in front: top, or under a pop-up the window it is over, read from the window manager's
  * stack, so a page that went from under a pop-up (the lock screen, opened over Search and closed)
  * is not still the one in front. The scan's dialog counts: it names the bar it covers. */
@@ -150,13 +152,13 @@ void bar_title(void *bar, void *top) {
     if (st.bar_title) { /* this bar names the page in its own label: off, the clock makes way */
         const unsigned *own = widget_get_text(st.bar_title);
         static int home; /* Home in front: no clock under its title though it is empty */
-        if (top && !tk_strcmp(widget_get_type(top), "window")) home = home_menu(top);
+        if (page) home = home_menu(page); /* under a pop-up too: the page it covers */
         /* Now Playing's page names nothing (bar_title_of): V1.36's np page writes its own title
          * under us ("▶ 正在播放", the bar's play state says it instead), so whatever lands in the
          * label while that page is on top goes before the paint does. */
         if (top && own && *own) {
-            const char *page = widget_get_prop_str(top, "name", "");
-            if (tk_str_start_with(page, "playing_page")) {
+            const char *pname = widget_get_prop_str(top, "name", "");
+            if (tk_str_start_with(pname, "playing_page")) {
                 widget_set_text_utf8(st.bar_title, "");
                 own = widget_get_text(st.bar_title);
                 st.clock_key = 0;

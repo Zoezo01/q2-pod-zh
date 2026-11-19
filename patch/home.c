@@ -91,6 +91,7 @@ int ringnav_localmusic(void *win, void *ctx) {
     widget_restack(stock[L_HIRES], n++);
     widget_restack(library_row(view, "local_longsongs", long_songs, 0, "长曲目", 1), n++);
     /* Podcasts, Audiobooks, Photos, Books and Videos, each only with its folder; then the card's
+     * Library apps and iPod's Games. */
     static const char *const icons[] = { "local_podcasts", "local_audiobooks", "local_photos",
                                          "local_books", "local_videos" };
     char path[sizeof st.media_root];

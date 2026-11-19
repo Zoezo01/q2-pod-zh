@@ -2344,8 +2344,8 @@ def test_the_library_lists_the_card_apps_whose_row_is_there_above_games(fw, ui):
     tools = {'/mnt/mmc/.tools/q2app': b'name=Utilities\nrow=library\n', '/mnt/mmc/.tools/q2-tools': b'ELF'}
     win, view = library(fw, ui, folders=['/mnt/mmc/Videos'], token=b'x', files={**deezer(), **BLOCKS, **tape, **tools})
     rows = [c for c, _ in page_rows(ui, view)]
-    assert rows[rows.index('Videos'):] == ['Videos', 'Mixtape', 'Utilities', 'Games', 'Upload Scrobbles', 'Update Library']
-    for k, item in enumerate(ui.kids[view][rows.index('Mixtape'):rows.index('Games')]):
+    assert rows[rows.index('视频'):] == ['视频', 'Mixtape', 'Utilities', '游戏', '上传听歌记录', '更新曲库']
+    for k, item in enumerate(ui.kids[view][rows.index('Mixtape'):rows.index('游戏')]):
         button, = ui.kids[item]
         assert [(fn, ctx) for w, e, fn, ctx in ui.handlers if w == button and e == EVT_CLICK] == [(ui.fn('addon_lib_open'), k)]
         assert [ui.image[w] for w in ui.subtree(item) if w in ui.image] == ['stream_app', 'list_into']  # opens a page

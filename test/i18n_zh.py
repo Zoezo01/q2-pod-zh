@@ -623,6 +623,21 @@ ZH_GENERATED = {
 # codepoint array, theme names) plus its corrections. Run gen_zh_expect.py to
 # refresh the block above; it never touches what follows.
 ZH_OVERRIDES = {
+    # 1.8.8: the App Store's tabs and state words, its toast and the check's age.
+    'Apps': '应用',
+    'INSTALL': '安装',
+    'INSTALLED': '已安装',
+    'UPDATE': '更新',
+    '%s is ready in %s': '%s 已就绪，可在%s中找到',
+    'Checked 1 h ago': '已检查 1 小时前',
+    'Checked 1 min ago': '已检查 1 分钟前',
+    'Checked just now': '刚刚检查',
+    '1 app can be updated': '有 1 个应用可更新',
+    '2 apps can be updated': '有 2 个应用可更新',
+    '4 apps can be updated': '有 4 个应用可更新',
+    'Press again to remove': '再按一次以移除',
+    'Removing…': '移除中…',
+    'Foo removed': 'Foo 已移除',
     'Update Library': '更新曲库',
     'Classic Light': '经典',
     "Couldn't save": '保存失败',

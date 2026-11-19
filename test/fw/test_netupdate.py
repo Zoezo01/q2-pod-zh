@@ -29,7 +29,7 @@ SH_OK, SH_NET, SH_SPACE, SH_CARD, SH_MISSING, SH_BAD, SH_CANCELLED, SH_BUSY = ra
 NU_IDLE, NU_RUNNING, NU_DONE, NU_LATEST, NU_NET, NU_MISSING, NU_CARD, NU_CANCELLED, NU_BUSY, NU_SPACE, NU_BAD = range(11)
 JOB_CHECK, JOB_INSTALL, JOB_REMOVE, JOB_ERASE = 1, 2, 3, 4
 ST_INSTALL, ST_UPDATE, ST_INSTALLED = range(3)
-STATES = ['Install', 'Update', 'Installed']
+STATES = ['安装', '更新', '已安装']
 ROW_CHECK = SH_MAX
 STAGING = '/mnt/mmc/.q2/staging'
 JSON_PATH = b'/tmp/q2-shelf.json'
@@ -1373,7 +1373,7 @@ class Page:
 def test_rows_say_install_under_check_for_updates(fw):
     p = Page(fw, b'me/foo', b'me/bar')
     assert p.sh.rows == 3 and p.sh.map[0] == ROW_CHECK and p.label(0) == ''
-    assert p.label(1) == 'Install' and p.label(2) == 'Install'
+    assert p.label(1) == '安装' and p.label(2) == '安装'
 
 
 def test_a_press_installs_at_once(fw):
@@ -1471,7 +1471,7 @@ def test_a_check_says_how_many_rows_offer_update(fw):
         p.card.files[b'/mnt/mmc/.q2/apps/%c.tag' % app] = b'1.0'
     p.card.files[b'/mnt/mmc/.d/q2-d'] = b''  # a manual install: its row says Update, so it counts
     assert p.checked(b'2.0', b'2.0', b'2.0') == ['4 apps can be updated']
-    assert p.label(4) == 'Update'
+    assert p.label(4) == '更新'
     p.toasts.clear()
     assert p.checked(b'2.0', b'1.0', b'1.0') == ['2 apps can be updated']
 
@@ -1643,7 +1643,7 @@ def test_a_dropped_app_never_installs_and_shows_only_while_installed(fw):
     assert p.sh.rows == 2  # Check for Updates and bar: foo isn't installed
     p.card.files[b'/mnt/mmc/.q2/apps/foo.tag'] = b'1.0'
     fw.fn('netupdate__sh_rows', None)()
-    assert p.sh.rows == 3 and p.label(2) == 'Installed'
+    assert p.sh.rows == 3 and p.label(2) == '已安装'
 
 
 def test_a_full_list_keeps_the_cards_list_inside_its_buffer(fw):
@@ -2355,7 +2355,7 @@ def test_the_store_loads_its_list_then_not_again_for_ten_minutes(fw):
     assert s.toasts == [] and s.sh.cancel == 0 and s.sh.manual == 1 and len(s.workers) == 1
     assert s.wait() == RET_REPEAT and s.held == []  # a check holds no standby
     assert s.run() == 0 and s.sh.job == 0 and s.toasts == ['All apps are up to date']  # none installed has a newer one
-    assert s.labels() == ['Install'] and card.files[SOURCES] == b'me/q2-foo Foo\n' and s.sh.next[0].latest == b'2.0'
+    assert s.labels() == ['安装'] and card.files[SOURCES] == b'me/q2-foo Foo\n' and s.sh.next[0].latest == b'2.0'
     assert s.check_label() == 'Checked just now'  # the list loaded
     assert net.urls == [b'https://raw.githubusercontent.com/DiamondBond/q2-pod/main/sources.list',
                         b'https://api.github.com/repos/me/q2-foo/releases/latest']
@@ -2395,7 +2395,7 @@ def test_an_app_dropped_since_the_cards_list_is_not_installed_with_no_check_run(
     card = Disk(fw, {SOURCES: b'me/q2-foo Foo\n'})
     net = store_net(fw, listed=b'me/q2-bar Bar\n')
     s = Store(fw, card, wifi=0)
-    assert s.sh.job == 0 and s.labels() == ['Install']
+    assert s.sh.job == 0 and s.labels() == ['安装']
     s.wifi = 1
     s.click()
     assert s.sh.job == JOB_INSTALL and s.check_label().strip() == '' and s.labels() == ['Checking…']
@@ -2409,7 +2409,7 @@ def test_an_app_dropped_since_the_cards_list_is_not_installed_after_the_check_is
     net = store_net(fw, listed=b'me/q2-bar Bar\n')
     s = Store(fw, card)
     s.click()
-    assert s.run() == 0 and s.labels() == ['Install']
+    assert s.run() == 0 and s.labels() == ['安装']
     s.click()
     assert s.sh.job == JOB_INSTALL and s.run() == 0 and s.toasts[-1] == 'No update for this build'
     assert not [u for u in net.urls if not u.startswith(b'https://raw')] and FOO_APP not in card.files
@@ -2421,7 +2421,7 @@ def test_no_app_installs_while_the_list_cant_be_fetched(fw):
     net = store_net(fw)
     net.replies[b'https://raw'] = (7, 0, None)
     s = Store(fw, card)
-    assert s.run() == 0 and s.labels() == ['Install'] and s.sh.next[0].latest == b'2.0'
+    assert s.run() == 0 and s.labels() == ['安装'] and s.sh.next[0].latest == b'2.0'
     s.click()
     assert s.run() == 0 and s.toasts[-1] == "Can't reach GitHub"
     assert not [u for u in net.urls if u.startswith(b'https://h/')] and FOO_APP not in card.files
@@ -2448,7 +2448,7 @@ def test_an_install_asks_for_the_list_then_the_release_and_its_zip(fw):
     s.click()
     assert s.run() == 0 and s.toasts == ['Foo is ready in Streaming'] and card.files[FOO_APP] == FOO['.foo/q2-foo']
     assert [u.split(b'/')[2] for u in net.urls] == [b'raw.githubusercontent.com', b'api.github.com', b'h']
-    assert card.files[SOURCES] == b'me/q2-foo Foo\n' and s.labels() == ['Installed']  # the page's list is the check's to change
+    assert card.files[SOURCES] == b'me/q2-foo Foo\n' and s.labels() == ['已安装']  # the page's list is the check's to change
 
 
 def test_an_install_cancelled_while_it_asks_for_the_list_installs_nothing(fw):
@@ -2462,8 +2462,8 @@ def test_an_install_cancelled_while_it_asks_for_the_list_installs_nothing(fw):
     assert net.urls == [LIST_URL] and FOO_APP not in card.files
 
 
-@pytest.mark.parametrize('q2app, where', [(b'name=Foo\n', 'Streaming'), (b'name=Foo\ngame=1\n', "Library's Games"),
-                                          (b'name=Foo\nrow=library\n', 'Library')])
+@pytest.mark.parametrize('q2app, where', [(b'name=Foo\n', '流媒体'), (b'name=Foo\ngame=1\n', '游戏'),
+                                          (b'name=Foo\nrow=library\n', '资料库')])
 def test_an_app_installs_into_place_and_removes_without_a_trace(fw, q2app, where):
     card = Disk(fw)
     store_net(fw, {**FOO, '.foo/q2app': q2app})
@@ -2476,7 +2476,7 @@ def test_an_app_installs_into_place_and_removes_without_a_trace(fw, q2app, where
     s.click()
     assert s.sh.job == JOB_INSTALL and s.labels() == ['Checking…']
     assert s.wait() == RET_REPEAT and s.held == [(1, 1, 0)]  # standby and power-off held through a job
-    assert s.run() == 0 and s.toasts == [f'Foo is ready in {where}'] and s.labels() == ['Installed']
+    assert s.run() == 0 and s.toasts == [f'Foo 已就绪，可在{where}中找到'] and s.labels() == ['已安装']
     placed = {k: v for k, v in card.files.items() if k.startswith(b'/mnt/mmc/.foo/')}
     assert placed == {b'/mnt/mmc/.foo/q2-foo': b'\x7fELF foo', b'/mnt/mmc/.foo/q2app': q2app, b'/mnt/mmc/.foo/lib/x.so': b'lib'}
     assert card.files[b'/mnt/mmc/.q2/apps/foo.files'] == b''.join(sorted(k[len(b'/mnt/mmc/'):] + b'\n' for k in placed))
@@ -2487,7 +2487,7 @@ def test_an_app_installs_into_place_and_removes_without_a_trace(fw, q2app, where
     assert s.labels() == ['Press again to remove'] and not s.workers
     s.click()
     assert s.labels() == ['Removing…']
-    assert s.run() == 0 and s.toasts[-1] == 'Foo removed' and s.labels() == ['Install']
+    assert s.run() == 0 and s.toasts[-1] == 'Foo removed' and s.labels() == ['安装']
     assert on_card() == before
 
 
@@ -2550,7 +2550,7 @@ def test_a_remove_cut_off_by_usb_storage_says_the_card_was_not_written(fw):
     fw.mock('fw_usleep', usleep)
     s.click()
     s.click()
-    assert s.run() == 0 and s.toasts[-1] == "Can't write to the card" and s.labels() == ['Installed']
+    assert s.run() == 0 and s.toasts[-1] == "Can't write to the card" and s.labels() == ['已安装']
     assert installed <= set(card.files) and not card.of('unlink') and not card.of('rmdir')
 
 
@@ -2583,7 +2583,7 @@ def test_a_cancel_during_the_release_request_downloads_nothing(fw):
     s.wifi = 1
     net.during = lambda k: net.urls[-1].startswith(b'https://api') and k == CHUNKS - 1 and s.click()  # as it ends
     s.click()
-    assert s.run() == 0 and s.toasts == ['Download cancelled'] and s.labels() == ['Install']
+    assert s.run() == 0 and s.toasts == ['Download cancelled'] and s.labels() == ['安装']
     assert not [u for u in net.urls if u.startswith(b'https://h/')] and sorted(card.files) == [SOURCES, MOUNTS]
 
 
@@ -2604,7 +2604,7 @@ def test_a_cancel_while_unpacking_installs_nothing(fw):
     card.system = system
     s.click()
     assert s.run() == 0 and seen == [['Unpacking…'], ['Cancelling…']]
-    assert s.toasts == ['Download cancelled'] and s.labels() == ['Install']
+    assert s.toasts == ['Download cancelled'] and s.labels() == ['安装']
     assert not card.moves(b'/mnt/mmc/.foo/') and sorted(card.files) == [SOURCES, MOUNTS]  # nothing placed, no staging left
 
 
@@ -2631,7 +2631,7 @@ def test_an_install_that_fails_says_why_and_leaves_the_card_alone(fw, case, said
     s = Store(fw, card, wifi=0, free=case.get('free', 1 << 30))
     s.wifi = 1
     s.click()
-    assert s.run() == 0 and s.toasts == [said] and s.labels() == ['Install']
+    assert s.run() == 0 and s.toasts == [said] and s.labels() == ['安装']
     assert sorted(card.files) == [SOURCES, MOUNTS]
 
 
@@ -2645,7 +2645,7 @@ def test_rockbox_installs_on_a_second_press_keeping_its_config(fw):
     label, = s.labels()
     assert label.endswith('Press again to install') and not s.workers
     s.click()
-    assert s.run() == 0 and s.toasts == ['Rockbox is ready. Find it on Home'] and s.labels() == ['Installed']
+    assert s.run() == 0 and s.toasts == ['Rockbox is ready. Find it on Home'] and s.labels() == ['已安装']
     assert card.files[b'/mnt/mmc/.rockbox/config.cfg'] == b'mine' and card.files[b'/mnt/mmc/.rockbox/rockbox'] == b'bin'
     assert card.moves(b'/mnt/mmc/.rockbox/') == [b'/mnt/mmc/.rockbox/fonts/a.fnt', b'/mnt/mmc/.rockbox/rockbox']
 
@@ -2657,11 +2657,11 @@ def test_the_themes_come_with_rockbox_and_go_before_it(fw):
                      b'/mnt/mmc/.q2/apps/rockbox.tag': b'2.0'})
     store_net(fw, {'.rockbox/wps/a.wps': b'wps', '.rockbox/fonts/a.fnt': b'font'}, listed=card.files[SOURCES])
     s = Store(fw, card, wifi=0)
-    assert s.labels() == ['Installed', 'Install']
+    assert s.labels() == ['已安装', '安装']
     s.wifi = 1
     s.click(2)
     assert s.run() == 0 and s.toasts == ["Rockbox Themes are ready in Rockbox's Theme Settings"]
-    assert s.labels() == ['Installed', 'Installed'] and card.files[b'/mnt/mmc/.rockbox/wps/a.wps'] == b'wps'
+    assert s.labels() == ['已安装', '已安装'] and card.files[b'/mnt/mmc/.rockbox/wps/a.wps'] == b'wps'
     s.click(1)
     s.click(1)
     assert s.run() == 0 and s.toasts[-1] == 'Rockbox removed'
@@ -2669,7 +2669,7 @@ def test_the_themes_come_with_rockbox_and_go_before_it(fw):
     assert gone.index(b'/mnt/mmc/.rockbox/wps/a.wps') < gone.index(b'/mnt/mmc/.rockbox/rockbox')  # the themes first
     # both apps' files, lists and tags gone: the card holds its list alone
     assert sorted(k for k in card.files if k.startswith(b'/mnt/mmc/')) == [SOURCES]
-    assert s.labels() == ['Install']  # and the themes' row with Rockbox
+    assert s.labels() == ['安装']  # and the themes' row with Rockbox
 
 
 def test_another_app_s_remove_leaves_rockbox_and_its_themes(fw):
@@ -2679,12 +2679,12 @@ def test_another_app_s_remove_leaves_rockbox_and_its_themes(fw):
     card = Disk(fw, {SOURCES: b'x/q2-rockbox Rockbox\nx/q2-rockbox-themes Rockbox Themes\nme/q2-foo Foo\n', **rockbox,
                      FOO_APP: b'bin', b'/mnt/mmc/.q2/apps/foo.files': b'.foo/q2-foo\n', b'/mnt/mmc/.q2/apps/foo.tag': b'2.0'})
     s = Store(fw, card, wifi=0)
-    assert s.labels() == ['Installed', 'Installed', 'Installed']
+    assert s.labels() == ['已安装', '已安装', '已安装']
     s.click(3)
     s.click(3)
     assert s.run() == 0 and s.toasts[-1] == 'Foo removed' and FOO_APP not in card.files
     assert {path: card.files.get(path) for path in rockbox} == rockbox  # the themes go with Rockbox alone
-    assert s.labels() == ['Installed', 'Installed', 'Install']
+    assert s.labels() == ['已安装', '已安装', '安装']
 
 
 def test_the_themes_pressed_once_rockbox_left_the_card_ask_for_it(fw):
@@ -2772,7 +2772,7 @@ def test_a_job_that_can_t_start_says_so_and_the_row_stays(fw):
     s = Store(fw, card, wifi=0, thread=11)
     s.wifi = 1
     s.click()
-    assert s.toasts == ["Can't start the download"] and s.sh.job == 0 and not s.sh.running and s.labels() == ['Install']
+    assert s.toasts == ["Can't start the download"] and s.sh.job == 0 and not s.sh.running and s.labels() == ['安装']
 
 
 # No byte a peer chooses is the shell's. Of a list's line only the id reaches a command (1 to 15 of a-z0-9-, there after
@@ -2799,7 +2799,7 @@ def test_only_a_checked_id_reaches_the_shell_from_a_list_or_a_zip(fw, put):
     for r in range(1, s.sh.rows):
         s.click(r)
         s.run()
-        if s.labels()[r - 1] == 'Installed':
+        if s.labels()[r - 1] == '已安装':
             s.click(r)
             s.click(r)
             s.run()
@@ -2826,7 +2826,7 @@ def test_the_tabs_split_the_list_and_previous_and_next_switch_them(fw):
     store_net(fw)
     fw.mock('widget_factory_create_widget', lambda *_: 88)  # the strip
     s = Store(fw, card, wifi=0)
-    assert s.sh.tab == 0 and s.labels() == ['Install'] and s.details() == ['me'] and s.props[(88, '_tab')] == 0
+    assert s.sh.tab == 0 and s.labels() == ['安装'] and s.details() == ['me'] and s.props[(88, '_tab')] == 0
     key = fw.fn('shelf_key', C.c_int, C.c_void_p, C.c_uint)
     assert key(77, O['KEY_FWD_BTN']) == 1 and s.sh.tab == 1 and s.details() == ['you'] and s.props[(88, '_tab')] == 1  # Next: Games
     assert key(77, O['KEY_FWD_BTN']) == 1 and s.sh.tab == 1  # Next again stays
@@ -2855,7 +2855,7 @@ def test_a_check_keeps_the_games_section_in_the_cards_list(fw):
     store_net(fw, listed=b'me/q2-foo Foo\n[Games]\nme/q2-bar Bar\n')
     s = Store(fw, card)
     s.run()
-    assert card.files[SOURCES] == b'me/q2-foo Foo\n[Games]\nme/q2-bar Bar\n' and s.labels() == ['Install']
+    assert card.files[SOURCES] == b'me/q2-foo Foo\n[Games]\nme/q2-bar Bar\n' and s.labels() == ['安装']
 
 
 @pytest.mark.parametrize('theme', (b'0', b'1', b'2'))  # Minimal, Classic, Modern
@@ -2878,27 +2878,32 @@ def test_app_store_paints_a_rows_state_as_a_word_and_the_tabs_badges(fw, theme):
     def painted(w):
         canvas = Canvas(fw)
         fw.fn('store_paint', None, C.c_void_p, C.c_void_p)(w, canvas.p)
-        return canvas.ops, [t.upper() for t, _, _ in words(canvas.ops)]
+        def text_of(t):  # the fixture reads bytes back as Latin-1: a CJK word comes out as mojibake
+            try:
+                return t.encode('latin-1').decode('utf-8')
+            except (UnicodeEncodeError, UnicodeDecodeError):
+                return t
+        return canvas.ops, [text_of(t).upper() for t, _, _ in words(canvas.ops)]
     row = widget(fw.fn('page_h', C.c_int, C.c_int)(64))
     fw.fn('store_state', None, C.c_void_p, C.c_int)(row, ST_UPDATE)
     ops, texts = painted(row)
-    assert texts == ['UPDATE'] and {o.kind for o in ops} == {'text'}  # the state, a word alone: no tile, no box
+    assert texts == ['更新'] and {o.kind for o in ops} == {'text'}  # the state, a word alone: no tile, no box
     # Classic's face draws smaller at a px than stock's: its sizes take its rows' step, 27 to 20
-    assert {o.px for o in ops} == {16 if theme == b'1' else 12}
+    assert {o.px for o in ops} == {13 if theme == b'1' else 12}  # Classic's face lacks 更新: stock's at 83%
     assert words(ops)[0][1] == (0xffffffff if theme == b'0' else tone(fw, 0))  # in the accent, Minimal's in white
     fw.fn('store_state', None, C.c_void_p, C.c_int)(row, ST_INSTALL)
     ops, texts = painted(row)
-    assert texts == ['INSTALL'] and grey(words(ops)[0][1])  # the others muted
+    assert texts == ['安装'] and grey(words(ops)[0][1])  # the others muted
     fw.fn('store_state', None, C.c_void_p, C.c_int)(row, -1)
     assert painted(row)[0] == []  # busy: the second line says it
     strip = widget(48 if theme != b'1' else 44)
     fw.fn('store_tabs_set', None, C.c_void_p, C.c_int, C.POINTER(C.c_int))(strip, 1, (C.c_int * 2)(0, 2))
     ops, texts = painted(strip)
     texts = ' '.join(texts)
-    assert 'APPS' in texts and 'GAMES' in texts and '2' in texts
+    assert '应用' in texts and '游戏' in texts and '2' in texts
     # the disc ends 10 px inside its half (14 + 2 * 173), clear of the name beside it; Minimal has none
     assert (theme == b'0') != any(o.rect and (o.rect[0], o.rect[2]) == (350 - 16, 16) for o in ops)
-    assert {o.px for o in ops if o.kind == 'text'} == {b'0': {17, 12}, b'1': {23, 15}, b'2': {16, 11}}[theme]  # names, count
+    assert {o.px for o in ops if o.kind == 'text'} == {b'0': {17, 12}, b'1': {19, 15}, b'2': {16, 11}}[theme]  # names, count (Classic's 应用/游戏 fall back)
     fw.var('app_store__on_page', C.c_char).value = b'\x00'
     assert painted(row)[0] == []  # the page closed: nothing
 
@@ -2983,7 +2988,8 @@ def test_a_press_held_for_wifi_through_a_real_click_follows_its_app(fw):
     class Sw(C.Structure):
         _fields_ = [('at', C.c_uint), ('busy_at', C.c_uint), ('woke_at', C.c_uint), ('hold_timer', C.c_uint),
                     ('off', C.c_int), ('quiet', C.c_int), ('armed', C.c_int), ('up', C.c_int), ('held', C.c_int),
-                    ('hold_fn', C.c_void_p), ('hold_ctx', C.c_void_p), ('hold_win', C.c_void_p), ('hold_name', C.c_char * 32)]
+                    ('hold_fn', C.c_void_p), ('hold_ctx', C.c_void_p), ('hold_win', C.c_void_p), ('cap_win', C.c_void_p),
+                    ('hold_name', C.c_char * 32)]
     card = Disk(fw, {SOURCES: b'me/q2-foo Foo\n[Games]\nyou/q2-bar Bar\n'})
     store_net(fw)
     s = Store(fw, card, wifi=0)
