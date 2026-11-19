@@ -2638,6 +2638,23 @@ def test_album_artist_scrobbles_in_the_artists_place_when_asked(player, recs, fw
     assert player.card.files['/mnt/mmc/.scrobbler.log'].decode().splitlines()[-1].startswith('A\t')
 
 
+CREDIT = '、'.join(['高坂穂乃果(CV.新田恵海)'] * 9).encode()  # 312 bytes: stock keeps 255 of a tag, inside 乃
+
+
+@pytest.mark.parametrize('artist, album, title, logged', [
+    (CREDIT[:255], '', 'Song', [CREDIT[:255].decode('utf-8', 'ignore').encode(), b'', b'Song']),
+    # three long names: the line's room ends the title, inside a character
+    ('a' * 300, 'b' * 300, '音' * 100, [b'a' * 300, b'b' * 300, '音'.encode() * 49]),
+], ids=['a tag stock cut', 'the line full'])
+def test_a_name_cut_inside_a_character_is_logged_without_it(player, recs, artist, album, title, logged):
+    player.play([recs(path='/mnt/mmc/Music/a.flac', title=title, artist=artist, album=album)], total=100)
+    for s in range(60):
+        player.poll(s)
+    line = player.card.files['/mnt/mmc/.scrobbler.log'].splitlines()[-1]
+    assert line.split(b'\t')[:3] == logged
+    line.decode('utf-8')  # the whole line: AudioScrobbler's log is UTF-8, for any uploader
+
+
 def test_a_tab_in_a_tag_stays_one_field(player, recs):
     player.play([recs(path='/mnt/mmc/Music/a.flac', title='a\tb', artist='x\ny')], total=100)
     for s in range(60):

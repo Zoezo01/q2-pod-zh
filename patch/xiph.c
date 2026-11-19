@@ -224,3 +224,19 @@ int utf8_latin1(const char *s, char *latin1) {
 }
 
 int utf8_text(const char *s) { return utf8_latin1(s, 0) != 0; }
+
+/* s made valid UTF-8 in place: a byte that starts no whole character, as utf8_text reads one, goes.
+ * A text cut inside a character (stock keeps 255 bytes of a tag) ends on the character before. */
+void utf8_mend(char *s) {
+    char *o = s;
+    for (const char *p = s; *p;) {
+        unsigned c = (unsigned char)*p, k = c < 0xc0 ? 1 : c < 0xe0 ? 2 : c < 0xf0 ? 3 : 4, n = 0;
+        char one[5] = { 0 };
+        while (n < k && p[n]) one[n] = p[n], ++n;
+        if (n == k && utf8_text(one))
+            while (n--) *o++ = *p++;
+        else
+            ++p;
+    }
+    *o = 0;
+}

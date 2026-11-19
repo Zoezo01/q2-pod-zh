@@ -8180,6 +8180,17 @@ char *scrobble_tag(char *o, char *end, const char *s) {
     *o++ = '\t';
     return o;
 }
+/* scrobble_tag for a name, made UTF-8 as the log is (utf8_mend): a tag stock cut inside a character
+ * (it keeps 255 bytes), or one this line's room cuts, ends on the character before. */
+static char *scrobble_name(char *o, char *end, const char *s) {
+    char *at = o;
+    o = scrobble_tag(o, end, s);
+    o[-1] = 0; /* its tab */
+    utf8_mend(at);
+    o = at + strlen(at);
+    *o++ = '\t';
+    return o;
+}
 
 static void scrobble(void *r, int total, int heard) {
     const char *artist = now_tag(r, REC_ARTIST), *album_artist = now_tag(r, REC_ALBUM_ARTIST);
@@ -8193,9 +8204,9 @@ static void scrobble(void *r, int total, int heard) {
     char line[800], name[512], *end = line + sizeof line - 48, *o = line; /* 48: the numbers */
     const char *title = now_tag(r, REC_TITLE);
     if (!title || !*title || !strcmp(title, "(null)")) title = track_name(name, sizeof name, r);
-    o = scrobble_tag(o, end, artist);
-    o = scrobble_tag(o, end, now_tag(r, REC_ALBUM));
-    o = scrobble_tag(o, end, title);
+    o = scrobble_name(o, end, artist);
+    o = scrobble_name(o, end, now_tag(r, REC_ALBUM));
+    o = scrobble_name(o, end, title);
     if (I(r, REC_TRACK) > 0) o += tk_snprintf(o, 12, "%d", I(r, REC_TRACK));
     o += tk_snprintf(o, (unsigned)(line + sizeof line - o), "\t%d\tL\t%u\t\n", total,
                      (unsigned)(now - heard));

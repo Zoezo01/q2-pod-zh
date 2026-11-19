@@ -714,6 +714,18 @@ def test_utf8_text_any_bytes_as_python_reads_them(fw, heap):
         heap.free(block)
 
 
+def test_utf8_mend_keeps_what_python_reads_and_drops_the_rest(fw, heap):
+    """Every whole character stays and every other byte goes, as Python's decoder with errors='ignore' has it: a
+    tag stock cut inside a character (scrobble.c's names) ends on the one before."""
+    mend = fw.fn('utf8_mend', None, C.c_void_p)
+    cut = '、'.join(['高坂穂乃果(CV.新田恵海)'] * 9).encode()  # 255 and 256 bytes end inside 乃
+    for data in [b'', 'Café 音乐 𝄞'.encode(), cut[:255], cut[:256], *hostile(random.Random(0x3e4d), SEEDS, 3000)]:
+        block = heap.string(data)
+        mend(block)
+        assert C.string_at(block) == data.decode('utf-8', 'ignore').encode(), data
+        heap.free(block)
+
+
 @pytest.mark.parametrize('c', range(256))
 def test_ascii_letter(fw, c):
     assert fw.fn('tags__ascii_letter', C.c_int, C.c_uint)(c) == (65 <= c <= 90 or 97 <= c <= 122)
