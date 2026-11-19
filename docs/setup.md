@@ -49,9 +49,11 @@ Or, with Q2 Pod on Wi-Fi: **System settings → App Store → Rockbox** installs
 
 ## Add a custom card app
 
-Open **System settings → App Store → Custom → + Add App** at the bottom, enter a repository
-such as `lampsonlnguyen/q2-arcade` (a full `https://github.com/owner/repository`
-link also works), and press **Done**. Select its row in Custom to install it.
+Open **System settings → App Store → Custom → + Add App** at the bottom. Enter the GitHub
+**Username** (for example, `lampsonlnguyen`) and **Repository** (for example,
+`q2-arcade`) in the two fields, pressing **Done** to move between them and again
+to save. Q2 Pod constructs `username/repository` automatically; no URL is needed.
+Select its row in Custom to install it.
 
 The repository must publish a Q2-compatible card app ZIP in its latest GitHub release.
 Custom sources are saved on the card in `.q2/custom-sources.list` and use the App Store's
