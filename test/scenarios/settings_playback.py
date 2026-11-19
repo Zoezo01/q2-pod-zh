@@ -79,6 +79,33 @@ assert t.cover('/mnt/mmc/big.ogg')==1 and not t.stock_covers and t.ffmpeg==1 and
 for path in ('/mnt/mmc/small.ogg','/mnt/mmc/big.opus'):
     assert t.cover(path)==1 and t.stock_covers==[path] and not t.ffmpeg,path
 assert not t.handles; passed()
+# A PNG that libpng refuses (cut short, damaged; a card too full to write one): stock's three libpng routines never
+# test their _setjmp, so the error's longjmp starts the read or the write again, forever. Each call after a
+# _setjmp goes through a guard (coverflow.c PNG_GUARD), which sends the error to one of stock's own endings.
+from build import PNG_GUARDS
+for call,_,guard,_,_ in PNG_GUARDS: assert struct.unpack_from('<I',demo,fileoff(demo,call))[0]==jal(payload_syms[guard])
+names=lambda m: [c[0] for c in m.png]
+F,P,I,GRAY=PngMachine.FILE,PngMachine.PNG,PngMachine.INFO,0x5cb7b4
+# The reader for an embedded PNG: no picture, the libpng structs and the file released.
+assert PngMachine(False,'png_read_png').loops(); passed()
+png=PngMachine(True,'png_read_png')
+assert png.read()==0 and names(png)==['fopen','fread','png_sig_cmp','rewind','png_create_read_struct',
+    'png_create_info_struct','_setjmp','png_init_io','png_read_png','png_destroy_read_struct','fclose'] and not png.live
+assert png.png[7:10]==[('png_init_io',P,F),('png_read_png',P,I),('png_destroy_read_struct',P,I)]; passed()
+# toolsGrayPngConvRgbPng, which every PNG cover file beside the music goes through: its header refused, as any
+# cover's can be; a gray one's picture refused, after its rows were allocated; and the write of it as RGB.
+for fail in ('png_read_info','png_read_image','png_write_info'): assert PngMachine(False,fail).loops(GRAY),fail
+passed()
+png=PngMachine(True,'png_read_info')
+assert png.read(GRAY)==-1 and names(png)[6:]==['_setjmp','png_init_io','png_read_info','png_destroy_read_struct','fclose']
+assert png.png[-2:]==[('png_destroy_read_struct',P,I),('fclose',F,png.png[-1][2])] and not png.live; passed()
+png=PngMachine(True,'png_read_image')
+assert png.read(GRAY)==-1 and names(png)[-11:]==['malloc','png_get_rowbytes','malloc','png_get_rowbytes','malloc','png_read_image',
+    'free','free','free','png_destroy_read_struct','fclose']
+assert names(png).count('fclose')==1 and not png.live; passed()
+png=PngMachine(True,'png_write_info')
+assert png.read(GRAY)==1 and names(png)[-6:]==['png_write_info','free','free','free','png_destroy_write_struct','fclose']
+assert names(png).count('fclose')==2 and not png.live; passed()
 # The crash log's scan record (tags.c crash_note): each tag read names its file in /tmp/q2-scan-file
 # before stock reads it, and every 500th appends "<count> <VmRSS kB> <path>" to /tmp/q2-scan.log, which
 # each demo starts afresh and stops past 64 KB.

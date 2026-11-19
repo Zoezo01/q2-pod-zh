@@ -400,7 +400,7 @@ def test_lyrics_gone_forgets_the_rows(fw):
     (0xd7b0, 0), (0xfeff, 0), (0xff00, 1), (0xffef, 1), (0xfff0, 0), (0x41, 0), (0xe9, 0), (0x1f600, 0),
 ])
 def test_cjk(fw, c, cjk):
-    assert fw.fn('lyrics__ly_cjk', C.c_int, C.c_uint)(c) == cjk
+    assert fw.fn('lyrics__script_cjk', C.c_int, C.c_uint)(c) == cjk
 
 
 def wrap(fw, s, width=100, adv=10):

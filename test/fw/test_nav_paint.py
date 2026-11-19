@@ -1506,7 +1506,8 @@ def sync(fw, win):
 @pytest.mark.parametrize('name, title', [('playing_page', 'Now Playing'), ('playing_page_stock', 'Now Playing'),
                                          ('coverflow_page', 'Cover Flow'), ('equalizer_page', 'EQ'),
                                          ('spotify_page', 'Spotify'), ('radionp_page', 'Internet Radio'),
-                                         ('usbmode_page', '')])  # USB mode's: no wordmark
+                                         ('usbmode_page', ''),  # USB mode's: no wordmark
+                                         ('saverscreen_page', '')])  # the lock screen's date has the bar
 def test_a_page_known_by_name_titles_the_bar(fw, world, st, name, title):
     label = bar_title(fw, world, st)
     world[label].text = 'Albums'  # the page before
@@ -1583,6 +1584,20 @@ def test_search_is_titled_though_a_dialog(fw, world, st):
     st('search_win', C.c_void_p).value = win
     sync(fw, win)
     assert world[label].text == 'Search'
+
+
+def test_update_library_s_dialog_titles_the_bar_it_covers(fw, world, st):
+    """The scan's dialog paints the real bar (paint_bar), which names it as the row that opens it; any other
+    dialog keeps the window's title."""
+    label = bar_title(fw, world, st)
+    world[label].text = 'Settings'  # the page under it
+    other = world.window('updatemusic_dialog', 'dialog')  # not the one msg_open took: not Classic's own
+    sync(fw, other)
+    assert world[label].text == 'Settings'
+    win = world.window('updatemusic_dialog', 'dialog')
+    st('msg_win', C.c_void_p).value = win
+    sync(fw, win)
+    assert world[label].text == 'Update Library'
 
 
 def navbar_page(world, text='Albums', kind='hscroll_label'):
@@ -1682,17 +1697,6 @@ def test_home_s_own_list_is_q2_pod(fw, world, st):
     win, _ = navbar_page(world)
     sync(fw, win)
     assert world[label].text == 'Albums'
-
-
-def test_a_dark_page_s_title_is_the_dark_bar_s(fw, world, st):
-    label = bar_title(fw, world, st)
-    st('bar_dark', C.c_ubyte).value = 1
-    y = world.at(label)[1]
-    win, _ = navbar_page(world)
-    sync(fw, win)
-    _, _, bar_w, bar_h = world.at(world[label].parent)
-    assert world.at(label) == (0, y, bar_w, bar_h - 1)  # across the bar over its line, as the dark bar's title
-    assert world[label].props['style:normal:text_align_h'] == 'center'
 
 
 def classic_geom(fw, st):
@@ -1833,14 +1837,20 @@ def test_classic_s_bar_is_its_gloss_over_its_line(fw, world, scheme, light):
     assert canvas.fill == 0xff123456
 
 
-def test_a_dark_page_s_bar_is_the_dark_bar(fw, world, st, scheme):
-    theme(fw, CLASSIC, LIGHT='1')
-    st('bar_dark', C.c_ubyte).value = 1
+@pytest.mark.parametrize('name', ['backlight_page', 'maxvol_page', 'bootvol_page', 'balance_page', 'manualtime_page',
+                                  'usbmode_page', 'saverscreen_page'])
+@pytest.mark.parametrize('light, look', [('1', '0'), ('0', '0'), ('1', '1'), ('1', '2')])
+def test_no_page_swaps_the_bar_for_a_dark_one(fw, world, name, light, look):
+    """The slider pages, Set Time, USB mode and the lock screen once had a fixed dark bar in either half: each
+    has the bar every page has, the theme's or Status Bar's look in the half shown."""
+    def painted(top):
+        world.top = world.window(top)
+        canvas = Canvas(fw)
+        paint_bg(fw, bar, canvas)
+        return [f for f in canvas.fills if f[2] == 375]  # the bar's own rows
+    theme(fw, CLASSIC, LIGHT=light, STATUSBAR=look)
     bar = system_bar(fw, world)
-    canvas = Canvas(fw)
-    paint_bg(fw, bar, canvas)
-    rows = canvas.rows(x=0, w=375)
-    assert sorted(rows) == list(range(26)) and rows[25] != rgba(scheme('bar_line'))  # the dark half's line
+    assert painted(name) == painted('albums_page') != []
 
 
 LOOKS = {'1': MINIMAL, '2': MODERN, '3': CLASSIC}  # Status Bar's values, the picker's order
@@ -1877,17 +1887,6 @@ def test_status_bar_goes_by_the_light_half_of_the_theme_shown(fw, world, scheme)
     paint_bg(fw, bar, canvas)
     rows = canvas.rows(x=0, w=375)
     assert sorted(rows) == list(range(26)) and luma(rgb_of(rows[0])) > luma(rgb_of(rows[23]))
-
-
-@pytest.mark.parametrize('look', ['1', '2'])
-def test_a_dark_page_under_a_flat_status_bar_is_plain_black(fw, world, st, look):
-    theme(fw, CLASSIC, LIGHT='1', STATUSBAR=look)
-    st('bar_dark', C.c_ubyte).value = 1
-    bar = system_bar(fw, world)
-    canvas = Canvas(fw)
-    paint_bg(fw, bar, canvas)
-    assert canvas.fills[0] == (0, 0, 375, 26, rgba(0))
-    assert canvas.fill == 0xff123456
 
 
 def test_painting_the_bar_keeps_its_clock_and_title_current(fw, world, st):
@@ -2835,6 +2834,7 @@ def msg_paint(fw, win, y=0, world=None):
     if world:
         world.box(win, 0, y, 375, 320 - y)
     canvas = Canvas(fw)
+    fw.mock('widget_paint', lambda w, c, *_: canvas.arts.append(('widget_paint', w)))
     paint_bg(fw, win, canvas)
     return canvas
 
@@ -2916,17 +2916,36 @@ def test_the_scan_s_bar_fills_to_its_part(fw, world, st, whole):
     assert {'352', '704'} <= set(re.findall(r'\d+', world[line].text))  # the line carries both numbers
     canvas = msg_paint(fw, win)
     texts = [t for t, *_ in canvas.texts]
-    assert texts[1:] == [world[heading].text, world[line].text]  # under the dark bar's title, their shadows
+    assert texts == [world[heading].text, world[line].text]  # their shadows; the bar's title is the real bar's
     assert canvas.art('classic_light_orb_note') and canvas.fill == 0xff123456
 
 
-def test_a_message_window_under_the_bar_draws_no_bar_of_its_own(fw, world, st, whole):
-    """The same page lower down: its own page from its top, the rest where it was on the screen, no title."""
+@pytest.mark.parametrize('light', ['0', '1'])
+def test_the_scan_s_dialog_paints_the_real_status_bar(fw, world, st, light):
+    """The dialog covers the bar, so it paints the bar itself over its page, as Search does: the theme's or Status
+    Bar's look in the half shown, not a dark bar of its own, and no battery or title of its own either."""
     win, _ = scan_dialog(fw, world, st, 'Scanned 9')
+    theme(fw, CLASSIC, LIGHT=light)
+    bar = system_bar(fw, world)
+    title = world.add(bar, 'label_title', 'hscroll_label', box=(142, 0, 91, 26))
+    st('bar_title', C.c_void_p).value = title
+    canvas = msg_paint(fw, win)
+    page = canvas.fills[0]
+    assert page[:4] == (0, 26, 375, 294) and canvas.arts.index(('widget_paint', bar)) == 0  # the page, then the bar
+    assert [f for f in canvas.fills if f[1] < 26] == [] and world[title].text == 'Update Library'
+    assert st('paint_w', C.c_void_p).value == win and canvas.fill == 0xff123456
+
+
+def test_a_message_window_under_the_bar_draws_no_bar_of_its_own(fw, world, st, whole):
+    """The same page lower down: its own page from its top, the rest where it was on the screen; the bar above
+    it is the window manager's to paint."""
+    win, _ = scan_dialog(fw, world, st, 'Scanned 9')
+    bar = system_bar(fw, world)
     full = msg_paint(fw, win)
     canvas = msg_paint(fw, win, 26, world)
     _, dy, w, h = world.at(win)
-    assert [t for t, *_ in full.texts][1:] == [t for t, *_ in canvas.texts]  # all but the dark bar's title
+    assert [t for t, *_ in full.texts] == [t for t, *_ in canvas.texts]
+    assert ('widget_paint', bar) in full.arts and ('widget_paint', bar) not in canvas.arts
     assert canvas.fills[0][:4] == (0, 0, w, h)  # the page from its own top
     (orb,), (was,) = canvas.art('classic_light_orb_note'), full.art('classic_light_orb_note')
     assert orb[1] + dy == was[1]  # the screen's place, in the window's rows
@@ -2946,7 +2965,7 @@ def usb_page(fw, world, st, number=CLASSIC, mode=0):
 
 
 def test_classic_s_usb_page_says_connected_and_to_eject(fw, world, st):
-    """A heading and a line, under the dark bar with no title (no wordmark); no bar, no Cancel."""
+    """A heading and a line, under the bar with no title (no wordmark); no bar, no Cancel."""
     win = usb_page(fw, world, st)
     heading, line = world[named(world, win, 'msg_heading')].text, world[named(world, win, 'msg_line')].text
     assert heading and line and heading != line
@@ -2958,14 +2977,6 @@ def test_classic_s_usb_page_says_connected_and_to_eject(fw, world, st):
     for gone in world.on(win, EVT_DESTROY):
         gone()
     assert st('usb_win', C.c_void_p).value is None
-
-
-@pytest.mark.parametrize('name, dark', [('usbmode_page', 0), ('manualtime_page', 1)])
-def test_usb_mode_s_page_has_classic_s_own_bar(fw, world, name, dark):
-    """dark_bar: the slider pages and the time form keep Classic's dark bar; USB mode's page has Classic's own, as the
-    rest of Classic."""
-    theme(fw, CLASSIC)
-    assert fw.fn('navigation__dark_bar', C.c_int, C.c_void_p)(world.window(name)) == dark
 
 
 def test_usb_audio_mode_has_nothing_to_eject(fw, world, st):

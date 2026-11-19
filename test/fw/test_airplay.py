@@ -191,9 +191,12 @@ def required(fw, on, jack=0):
 def test_a_speaker_plays_with_headphones_required_and_none_connected_then_the_switch_comes_back(fw, end):
     tap = Tap(fw)
     switch, pauses = required(fw, 1)
-    tap.app(state=CAST_ON, spk=20)
+    tap.status = PAUSED
+    tap.app(state=CAST_CONNECTING)  # a speaker picked: the app starts it once the Q2 plays
     tap.poll()
-    assert switch.value == 0  # every start stock's check refuses with none connected goes through
+    assert switch.value == 0  # so the Play stock's check refuses with none connected goes through
+    tap.status = PLAYING
+    tap.app(state=CAST_ON, spk=20)
     tap.poll()
     assert switch.value == 0
     if end == 'stopped':

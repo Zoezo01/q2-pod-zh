@@ -8,7 +8,7 @@ from unicorn.unicorn_py3.unicorn import uclib, uccallback, uc_hook_h, HOOK_CODE_
 from unicorn.mips_const import *
 sys.path.insert(0, sys.path[0] + '/../tools')  # tools/ first
 from mips import load_elf
-from build import jal, j, segments, symbols, BASE, SCRATCH, HOOKS, WM_PAINT_LEAF, FUNCTIONS, GLOBALS, CONTEXT_DATA, ROOT, source_sha256, sha, PRIVATE_FUNCTIONS, TAG, VERSION, BETA, dev_tag
+from build import jal, j, segments, symbols, BASE, SCRATCH, SCRATCH_MAX, HOOKS, WM_PAINT_LEAF, FUNCTIONS, GLOBALS, CONTEXT_DATA, ROOT, source_sha256, sha, PRIVATE_FUNCTIONS, TAG, VERSION, BETA, dev_tag
 B=pathlib.Path(sys.argv[1] if len(sys.argv)>1 else 'build')
 payload_syms=symbols(B/'patch.elf')
 manifest=json.loads((B/'manifest.json').read_text())
@@ -123,8 +123,8 @@ def render(m,code,v):
     if code=='d': return '%08x'%m.get(v)
     if code=='f': return '%g'%struct.unpack('<f',struct.pack('<I',v))[0]
     if code=='n' and v in m.nodes: return 'n%d'%list(m.nodes).index(v)
-    # ponytail: an alpha-0 colour from BASE up to SCRATCH + 0x20000 reads as an address (P); none is drawn today
-    if BASE<=v<SCRATCH+0x20000: return PAYLOAD_NAMES.get(v,'P')
+    # ponytail: an alpha-0 colour from BASE up to SCRATCH + SCRATCH_MAX reads as an address (P); none is drawn today
+    if BASE<=v<SCRATCH+SCRATCH_MAX: return PAYLOAD_NAMES.get(v,'P')
     if 0x70000000<=v<0x70010000: return 'S'
     return str(signed(v)) if code=='i' else '%08x'%v
 
@@ -848,9 +848,9 @@ t=Machine(); w=t.node('label'); rect=t.alloc(16); text=t.alloc(8); paint=payload
 for o,v in enumerate((1,2,-3,4)): t.word(rect+4*o,v)
 t.word(text,ord('O')); t.word(text+4,ord('K'))
 assert [render(t,c,v) for c,v in (('n',w),('n',0x1234),('s',t.string('Songs')),('s',0),('i',0xffffffe2),('x',0xff112233),
-        ('r',rect),('r',0),('d',rect),('f',0x3fc00000),('p',paint),('i',paint),('x',SCRATCH+0x1ffff),('x',0x7000eff0),
-        ('x',BASE-4),('x',SCRATCH+0x20000))]==['n0','00001234','"Songs"','null','-30','ff112233','1,2,-3,4','null','00000001',
-        '1.5','ringnav_paint','ringnav_paint','P','S','%08x'%(BASE-4),'%08x'%(SCRATCH+0x20000)]
+        ('r',rect),('r',0),('d',rect),('f',0x3fc00000),('p',paint),('i',paint),('x',SCRATCH+SCRATCH_MAX-1),('x',0x7000eff0),
+        ('x',BASE-4),('x',SCRATCH+SCRATCH_MAX))]==['n0','00001234','"Songs"','null','-30','ff112233','1,2,-3,4','null','00000001',
+        '1.5','ringnav_paint','ringnav_paint','P','S','%08x'%(BASE-4),'%08x'%(SCRATCH+SCRATCH_MAX)]
 for r,v in zip((*REGS,UC_MIPS_REG_SP,UC_MIPS_REG_T9),(t.canvas,text,2,10,0x7000f000,syms['canvas_draw_text'])): t.u.reg_write(r,v)
 t.word(0x7000f010,-20); t.hook(t.u,syms['canvas_draw_text'],4,None)
 t.rockbox_mode=0; t.call(address=payload_syms['ipod_home_shortcut'],args=(0,0,0,0),gap=0)  # "Favorites", a literal: P
@@ -1752,23 +1752,63 @@ sleep_hook=HOOKS['main_loop_sleep_default'][0]
 
 class SpecFolderMachine(Machine):
     LISTINGS={'/m/0':(3,1),'/m/1':(5,0),'/m/2':(0,0)}  # url: (toolsLoadDirectory's count, a folder among them)
+    TREE={'/mnt/mmc':('/mnt/mmc/A','/mnt/mmc/B'),'/mnt/mmc/A':('/mnt/mmc/A/1','/mnt/mmc/A/2'),'/mnt/mmc/B':('/mnt/mmc/B/1',)}  # the folders in each
+    STOCK={'click':'stock','enter':'stock_enter','back':'stock_back','scan':'stock_scan'}
     def __init__(self):
         super().__init__(True); self.listed=[]; self.seen=[]; self.row=self.alloc(0x100)
-        for n in ('table_row_of','get_specfolderurl','toolsLoadDirectory','toolsCheckTypeDeque'): self.handlers[syms[n]]='spec:'+n
-        self.handlers[int(manifest['patch_symbols']['stock_specfolder_click_trampoline'],16)]='spec:stock'
+        # stock's page: the folders above the listed one, its rows, their ticks (the batch record) and what a scan was given
+        self.path=[]; self.rows=[]; self.ticks=[]; self.scans=[]; self.deqs={}; self.order=[]
+        for n in ('table_row_of','get_specfolderurl','toolsLoadDirectory','toolsCheckTypeDeque','get_specfoldersize','batch_get_selectitem',
+                  'batch_set_selectitem','_create_deque','deque_init','_deque_push_back','deque_destroy','player_stop','navigator_back',
+                  'navigator_to_with_context','clear_specfoldervariate'): self.handlers[syms[n]]='spec:'+n
+        for hook,name in self.STOCK.items(): self.handlers[int(manifest['patch_symbols'][f'stock_specfolder_{hook}_trampoline'],16)]='spec:'+name
+        self.handlers[int(manifest['patch_symbols']['stock_cancelchoice_trampoline'],16)]='spec:stock_cancel'
+    def list(self): self.rows=list(self.TREE[self.path[-1]]); self.ticks=[0]*len(self.rows); self.byte(syms['g_allselect_flag'],0)
     def hook(self,u,address,size,unused):
         name=self.handlers.get(address,'')
         if not name.startswith('spec:'): return super().hook(u,address,size,unused)
         name=name[5:]; a,b,c,d=[u.reg_read(r) for r in REGS]; ret=0
         if name=='table_row_of': ret=a and self.row
-        elif name=='get_specfolderurl': u.mem_write(b,f'/m/{a}'.encode()+b'\0')
+        elif name=='get_specfolderurl': u.mem_write(b,(self.rows[a] if self.rows else f'/m/{a}').encode()+b'\0')
         elif name=='toolsLoadDirectory': self.listed.append(self.text(a)); ret=self.LISTINGS[self.text(a)][0]
         elif name=='toolsCheckTypeDeque': assert b==4; ret=self.LISTINGS[self.listed[-1]][1]
-        else: self.seen.append((a,self.get(b+O['EVENT_X'])))
+        elif name=='get_specfoldersize': ret=len(self.rows)
+        elif name=='batch_get_selectitem': ret=self.ticks[a]
+        elif name=='batch_set_selectitem': self.ticks[a]^=1; ret=int(all(self.ticks))  # stock's: 1 with every row ticked
+        elif name=='stock_enter':  # specfolder_enter: -1 lists the card; a folder with none inside is refused, its ticks kept
+            folder='/mnt/mmc' if signed(a)<0 else self.rows[a]; ret=1 if folder in self.TREE else -1
+            if ret==1: self.path=self.path+[folder] if signed(a)>=0 else [folder]; self.list()
+        elif name=='stock_back':  # specfolder_back: 0 from the card's own list, the page left
+            self.path.pop(); ret=int(bool(self.path))
+            if ret: self.list()
+            else: self.rows=[]; self.ticks=[]
+        elif name=='stock_cancel': self.ticks=[0]*len(self.ticks); self.order.append(name)
+        elif name=='stock_scan': self.order.append(name)
+        elif name=='_create_deque': ret=self.alloc(0x20); self.deqs[ret]=[self.text(a),None]
+        elif name=='deque_init': self.deqs[a][1]=[]
+        elif name=='_deque_push_back': self.deqs[a][1].append(self.text(b))
+        elif name=='navigator_to_with_context':
+            assert self.order[-1]=='navigator_back'  # the page goes first, as stock's
+            self.scans.append((self.text(a),self.deqs[self.get(b)][0],sorted(self.deqs[self.get(b)][1]),[self.get(b+4*i) for i in (1,2,3)]))
+        elif name=='deque_destroy': del self.deqs[a]
+        elif name=='clear_specfoldervariate': self.path=[]; self.rows=[]; self.ticks=[]
+        elif name not in ('player_stop','navigator_back'): self.seen.append((a,self.get(b+O['EVENT_X'])))
+        if name in ('player_stop','navigator_back','navigator_to_with_context','deque_destroy','clear_specfoldervariate'): self.order.append(name)
         self.returns(ret)
     def tap(self,index,x,on_row=True):
         ev=self.alloc(0x30); self.word(ev+O['EVENT_X'],x); self.word(ev+O['EVENT_TARGET'],0x1000 if on_row else 0)
         self.word(self.row+O['ROW_INDEX'],index); self.call(address=HOOKS['specfolder_click'][0],args=(0x77,ev,0,0),gap=0); return self.listed,self.seen[-1]
+    def enter(self,index=-1): return self.call(address=HOOKS['specfolder_enter'][0],args=(index,0,0,0),gap=0)
+    def back(self): return self.call(address=HOOKS['specfolder_back'][0],args=(self.alloc(4),0,0,0),gap=0)
+    def tick(self,index): self.ticks[index]^=1  # stock's row click, in its column
+    def cancel(self): self.call(address=HOOKS['on_cancelchoice_onclick'][0],args=(0x77,0,0,0),gap=0)
+    def scan(self):
+        """The Scan button: what the scan was given, or 'stock' when the click was left to stock's."""
+        self.order=[]; self.scans=[]; assert self.call(address=HOOKS['specfolder_scan'][0],args=(0x77,0,0,0),gap=0)==0
+        if self.order==['stock_scan']: return 'stock'
+        assert self.order==['player_stop','navigator_back','navigator_to_with_context','deque_destroy','clear_specfoldervariate'] and not self.deqs, self.order
+        (page,kind,folders,rest),=self.scans; assert (page,kind,rest)==('dialog/updatemusic_dialog','char*',[0,1,0]); return folders
+    def all(self): return self.get(syms['g_allselect_flag'])&0xff
 
 class SongBindMachine(Machine):
     def hook(self,u,address,size,unused):
@@ -4271,8 +4311,11 @@ class RadioMachine(SpotMachine):
                 if parent not in self.nodes or x not in self.nodes[parent]['children']: return False
                 x=parent
             return True
+        def shown(x,n):  # an App Store row's state, app_store.c draws it at the row's end, over its detail
+            row=self.nodes.get(self.get(x+O['W_PARENT']),{}); state=row.get('_state',-1)
+            return ('Install','Update','Installed')[state] if state>=0 and row['children'][1:2]==[x] else n.get('text','')
         w=w or self.page
-        return [n.get('text','') for x,n in self.nodes.items() if n['type']=='hscroll_label' and linked(x,w)]  # a new label's text is ''
+        return [shown(x,n) for x,n in self.nodes.items() if n['type']=='hscroll_label' and linked(x,w)]  # a new label's text is ''
     def back(self,w=None):
         """Return on page w (the radio list by default), and its timers."""
         w=w or self.page; f,ctx=self.handler(w,O['EVT_KEY_UP']); ev=self.alloc(0x40)
@@ -4858,6 +4901,47 @@ class OggCoverMachine(TagMachine):
     def cover(self,track):
         self.stock_covers=[]; self.ffmpeg=0; self.dst='/mnt/mmc/.sldp/x0.jpg'
         return self.call(address=payload_syms['coverflow_grid_cover'],args=(self.string(track),self.string(self.dst),110,110),gap=0)
+
+class PngMachine(Machine):
+    """Stock's libpng routines (the reader for an embedded PNG, 0x5c91bc, and toolsGrayPngConvRgbPng) over a libpng
+    whose call `fail` refuses the file: it longjmps to the routine's last _setjmp with 1, as png_error does. The
+    picture is gray, 3 by 2. png holds each library call with its first two arguments; live, what is allocated or
+    open."""
+    FILE,PNG,INFO,MALLOC=0x1100000,0x1100100,0x1100200,0x1000020
+    LIBPNG=('sig_cmp','create_read_struct','create_info_struct','init_io','read_png','destroy_read_struct','read_info',
+            'get_color_type','get_image_width','get_image_height','get_bit_depth','get_valid','set_filler','set_gray_to_rgb',
+            'read_update_info','get_rowbytes','read_image','create_write_struct','set_IHDR','set_expand','write_info',
+            'write_image','write_end','destroy_write_struct')
+    def __init__(self,patched,fail):
+        super().__init__(patched); self.fail=fail; self.png=[]; self.live=set()
+        for n in ('fopen@GLIBC_2.2','fread@GLIBC_2.0','rewind@GLIBC_2.0','_setjmp@GLIBC_2.0','fclose@GLIBC_2.2','printf@GLIBC_2.0',
+                  *('png_%s@PNG12_0'%n for n in self.LIBPNG)): self.handlers[syms[n]]='png:'+n.split('@')[0]
+        self.word(GP-0x9f8,self.MALLOC); self.handlers[self.MALLOC]='png:malloc'  # malloc's GOT slot, and free's
+        self.handlers[self.get(GP-0x870)]='png:free'
+    def hook(self,u,address,size,unused):
+        name=self.handlers.get(address,'')
+        if not name.startswith('png:'): return super().hook(u,address,size,unused)
+        name=name[4:]; a,b=(u.reg_read(r) for r in REGS[:2])
+        assert name!='png_init_io' or u.reg_read(UC_MIPS_REG_T9)==address  # the guards' jump to it is a PIC call too
+        self.png.append((name,self.get(a),self.get(b)) if 'destroy' in name else (name,a,b))
+        if name=='_setjmp': self.jmpbuf=[(r,u.reg_read(r)) for r in (UC_MIPS_REG_RA,UC_MIPS_REG_SP,UC_MIPS_REG_GP,*SAVED)]
+        if name==self.fail:
+            for r,v in self.jmpbuf: u.reg_write(r,v)
+            u.reg_write(UC_MIPS_REG_V0,1); u.reg_write(UC_MIPS_REG_PC,self.jmpbuf[0][1]); return
+        ret={'fread':4,'png_create_read_struct':self.PNG,'png_create_write_struct':self.PNG,'png_create_info_struct':self.INFO,
+             'png_get_image_width':3,'png_get_image_height':2,'png_get_bit_depth':8,'png_get_rowbytes':12}.get(name,0)
+        if name in ('fopen','malloc'): ret=self.FILE+len([c for c in self.png if c[0]=='fopen'])-1 if name=='fopen' else self.alloc(a); self.live.add(ret)
+        if name in ('fclose','free'): self.live.remove(a)
+        self.returns(ret,clobber=True)
+    def read(self,address=0x5c91bc,count=None):
+        """The reader for an embedded PNG, or toolsGrayPngConvRgbPng at 0x5cb7b4: what it returns."""
+        self.png=[]; out=[self.alloc(4) for _ in range(3)]  # the reader's width, height and channels: written only for a picture
+        return self.call(address=address,args=(self.string('/mnt/mmc/cover.png'),*out),gap=0,count=count)
+    def loops(self,address=0x5c91bc):
+        """Stock's: the routine never returns, and the failing call comes round again and again."""
+        try: self.read(address,count=6000)
+        except AssertionError as e: return str(e)=='Instruction limit reached' and [c[0] for c in self.png].count(self.fail)>10
+        return False
 
 class ScanNoteMachine(TagMachine):
     STATM=b'30000 22750 1200 1 0 25000 0\n'  # 22,750 resident pages: 91,000 kB

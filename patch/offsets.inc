@@ -695,6 +695,10 @@ static inline int arc_out(int r, int y) {
 #define MCL_FD 0xa5008c         /* player socket, -1 none */
 #define INITCONFIG_MODE_RET 0x51e0d0 /* player_initconfig's mclSetPlayMode call (jalr 0x51e0c8) returns here */
 #define TIDAL_ALL_RET 0x487b7c /* the Tidal stream thread's id free and loop, past its ending for a song started (tidal.c tidal_start) */
+/* Where coverflow.c's PNG guards send a libpng error: one of stock's own endings in each routine. */
+#define PNG_READ_FAIL 0x5c93f0 /* the embedded-PNG reader (0x5c91bc), out of memory: the read structs destroyed, the file closed, no picture */
+#define PNG_GRAY_FAIL 0x5cb96c /* toolsGrayPngConvRgbPng (0x5cb7b4), a cover that isn't gray: lw $gp, the read structs destroyed, the file closed, -1 */
+#define PNG_RGB_FAIL 0x5cbc00  /* and its last steps after writing one: lw $gp, the rows freed from $s0 on, the write structs destroyed, the file closed */
 /* mclUsbAudioSetVol (0x5bec64): the USB DAC's volume control, -1 before the first set, -2 when it
  * has none and hciplayer's soft volume (mcl-softvolflag) applies instead (0x5bab48 opens hw:1). */
 #define USB_MIXER 0xa50044

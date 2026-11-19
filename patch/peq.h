@@ -476,21 +476,30 @@ void tidal_all(int press, char *out, unsigned size), tidal_poll(void), tidal_all
  * launcher run, its binary q2-<id> and its icons. addon_scan finds them again (how many slots: a
  * slot's index stays its app's), addon_name, addon_id and addon_icon (an image name: file://… or
  * the shared stream_app) are one's while it is on the card (else 0), addon_open its Streaming row's
- * click (ctx: the slot). addon_forget and addon_quit: the Apps page replaces or removes the files
+ * click (ctx: the slot). An app whose q2app says row=library is a Library row instead: addon_libs
+ * (how many, a scan), addon_lib_name, addon_lib_icon and addon_lib_open, its click (ctx: its place
+ * by name). addon_forget and addon_quit: the Apps page replaces or removes the files
  * of the app in folder dir (".<id>"): asked to end and waited for on the Apps page's worker, then,
  * once replaced or removed, forgotten on the UI thread. */
-#define APPS_MAX 8 /* card apps on the card at once */
+/* Card apps on the card at once: twice what the App Store lists (netupdate.c SH_MAX), for those put
+ * there by hand. ponytail: a fixed table in .scratch, 520 bytes a slot over addon.c,
+ * addon_library.c and navigation.h, its pages untouched until a slot is used; an app past the last
+ * slot gets no row and nothing says so. A heap table that grows, if a card ever holds more. */
+#define APPS_MAX 64
 int addon_scan(void), addon_open(void *ctx, void *event), addon_hold(void *top);
 int addon_games_last(void); /* the card's games as the last addon_scan found them */
 #define GAMES_BUILTIN 4     /* games.c's Sudoku, Vortex, Solitaire and Snake */
 const char *addon_name(int a), *addon_id(int a), *addon_icon(int a);
+const char *addon_slot_id(int i); /* slot i's app's id while it has a row anywhere, else 0 */
+int addon_libs(void), addon_lib_open(void *ctx, void *event);
+const char *addon_lib_name(int k), *addon_lib_icon(int k);
 int card_path(const char *path); /* on the card, no ".." segment: what an app or server may name */
 int addon_is_icon(const char *name); /* a card app's Streaming icon, by its file:// name */
 void addon_poll(void), addon_stop(void), addon_paint(void *w, void *canvas), addon_card_away(void);
 void addon_forget(const char *dir), addon_quit(const char *dir);
-/* addon.c's card games (q2app game=1), Games' rows after its own: how many (a scan), one's name,
- * its start over the screen (1 when it runs), whether one runs, and ringnav_input's events for it
- */
+/* addon.c's card games (q2app game=1, or any app whose row=games), Games' rows after its own: how
+ * many (a scan), one's name, its press (a game's start over the screen, another app's page: 1 when
+ * it runs or opened), whether a game runs, and ringnav_input's events for it */
 int addon_games(void), addon_game_start(int k), addon_game_on(void);
 int addon_game_audio(
     void); /* a card game with audio=1 runs: the sound and the media keys are its */
@@ -500,7 +509,9 @@ const char *addon_game_name(int k);
  * most */
 #define POPUP_ENV 512
 void popup_env(char *out, unsigned size);
-int addon_game_input(void *e), addon_is_game(const char *id);
+int addon_game_input(void *e);
+/* where app id's row is, as the screen names it: "Streaming", "Library's Games" or "Library" */
+const char *addon_where(const char *id);
 void ringnav_wdt_long(void);   /* system.c: the watchdog's long count for a long pass */
 int ringnav_smart_awake(void); /* navigation.c: Smart Awake (IPOD KEEPLIT) is on */
 void library_poll(void); /* addon_library.c: an app's library update request, once per addon_poll */
@@ -617,15 +628,46 @@ void t9_box(void *page, void *edit,
             const char *tips);        /* classic_pages.c: a search box and its hint */
 const char *output_device(char *vol); /* books.c */
 void dac_take(void);                  /* books.c */
-/* navigation.c: the theme's font for role on w, or stock's; canvas text's face, 0: the system
- * font */
+/* navigation.c: the theme's font for role on w, or stock's */
 int theme_font(void *w, int role, int was);
-#define FONT_ROW (-2) /* was: cache the answer in w's own "_font" prop */
-/* font_weight.c: w keeps the theme's bold intent where its text fell back to stock's face */
-void font_weight_mark(void *w, int bold);
+#define FONT_ROW (-2)           /* was: cache the answer in w's own "_font" prop */
 void marq_restart(void *row);   /* navigation.c: its title changed, its marquee re-armed */
 void list_stop_scroll(void *w); /* navigation.c: its scroll animation stopped */
-const char *theme_face(const unsigned *s, int n, int *px); /* *px, unless 0: the px to draw it at */
+/* script.c: per-script display (docs/internals.md#themes, Scripts) */
+/* w keeps the theme's bold intent where its text fell back to stock's face */
+void font_weight_mark(void *w, int bold);
+void font_weight_paint(void *w, void *canvas); /* a marked label's foreground again 1 px right */
+int script_face(int face, const unsigned *s, int n, int *px); /* the FONT_* that draws s */
+/* canvas text's face, 0: the system font; *px, unless 0: the px to draw it at */
+const char *theme_face(const unsigned *s, int n, int *px);
+/* 1 for a character lyrics break a line beside and time as three: CJK ideographs, kana, Hangul
+ * and full-width forms. */
+static inline int script_cjk(unsigned c) {
+    return (c >= 0x2e80 && c < 0xa000) || (c >= 0xac00 && c < 0xd7b0) ||
+           (c >= 0xff00 && c < 0xfff0);
+}
+/* c's capital for Minimal's small capitals: Unicode's simple capital of each letter of ASCII,
+ * Latin-1 and Latin Extended-A but µ and ſ, of ơ ư, Cyrillic and Vietnamese's letters with tone
+ * marks; anything else (Greek too) is c. ponytail: checked on stock V1.36's font after font_letters
+ * (tools/build.py): where it has the small letter it has the capital (of Cyrillic from U+0492 it
+ * has neither case); a new base font, or a new range here, needs the same check: a capital the font
+ * lacks draws nothing. */
+static inline unsigned script_upper(unsigned c) {
+    if ((c >= 'a' && c <= 'z') || (c >= 0xe0 && c <= 0xfe && c != 0xf7) ||
+        (c >= 0x430 && c <= 0x44f))
+        return c - 32;
+    if (c >= 0x450 && c <= 0x45f) return c - 80; /* ѐ to џ */
+    if (c == 0xff) return 0x178;                 /* ÿ */
+    if (c == 0x131) return 'I';                  /* dotless ı */
+    if ((c >= 0x100 && c <= 0x137) || (c >= 0x14a && c <= 0x177) || c == 0x1a1 ||
+        (c >= 0x460 && c <= 0x481) || (c >= 0x48a && c <= 0x4bf) || (c >= 0x4d0 && c <= 0x52f) ||
+        (c >= 0x1ea0 && c <= 0x1ef9))
+        return c & ~1u; /* pairs, the capital even */
+    if ((c >= 0x139 && c <= 0x148) || (c >= 0x179 && c <= 0x17e) || c == 0x1b0 ||
+        (c >= 0x4c1 && c <= 0x4ce))
+        return (c - 1) | 1; /* pairs, the capital odd */
+    return c == 0x4cf ? 0x4c0 : c;
+}
 void bar_title_sync(void *win); /* navigation.c: Classic's bar title names win */
 void bar_title_name(void *win); /* navigation.c: names win by its name, on top or not */
 /* navigation.c: Classic's Spotify and Internet Radio Now Playing, laid out as the local page, 0
@@ -649,14 +691,15 @@ void paint_clock(void *w, void *canvas, int x, int y, int size, const char *art,
                  const clock_part_t *parts, int n);
 void paint_page(void *w, void *canvas, int y);
 void paint_art(void *w, void *canvas, const char *name, int x, int y);
-void paint_dark_bar(void *w, void *canvas, const unsigned *title, unsigned key);
-int dark_title_y(void);
+void paint_bar(void *w, void *canvas); /* classic_pages.c: the status bar, on a window over it */
+int bar_title_x(void);
+int bar_title_y(void);
 void paint_tray(void *canvas, int x, int y, int w, int h);
 void text_shadow(void *canvas, const char *face, const unsigned *s, const void *r, unsigned px,
                  unsigned alpha);
 void final_text(void *canvas, const char *face, const unsigned *s, const void *r, unsigned px,
                 unsigned color);
-unsigned dark_bar_key(const unsigned *t);
+unsigned bar_battery_key(void);
 int clock_minutes(void), bar_status(void);
 void slider_label(void *w, int x, int y, int ww, int h, int px, const char *face);
 void text_ink(void *w, unsigned color, int n); /* a label's final 0xAARRGGBB, in either half */
@@ -706,11 +749,23 @@ int groovebox_available(void); /* theme_engine.c: the Groovebox card app's binar
 int page_keyup(void *ctx, void *event); /* navigation.c: Return leaves a payload page */
 int ringnav_localclass(int cls);        /* navigation.c: load_localclass_list's hook */
 int shelf_open(void *ctx, void *event); /* netupdate.c: System settings' Apps page */
-const char *shelf_busy(void);           /* netupdate.c: the app folder a job replaces */
-const char *shelf_moving(void);         /* netupdate.c: the app folder deleted or moved into */
-int shelf_erase(int start);             /* netupdate.c: Spotify's erase, started or running */
-void stream_erased(void);               /* navigation.c: Configuration follows a finished erase */
-void album_lyrics_stop(void); /* onlinematch.c: Download Album Lyrics before USB storage */
+void shelf_tab(int tab);                /* netupdate.c: the App Store's open tab, 0 Apps, 1 Games */
+int shelf_key(void *top, unsigned key); /* netupdate.c: Previous and Next switch its tabs */
+/* app_store.c: the App Store's tabs and rows, drawn in ringnav_paint (store_paint) */
+void *store_tabs(void *page, void *view);
+void store_tabs_set(void *strip, int tab, const int *updates);
+void store_state(void *item, int state);
+void store_paint(void *w, void *canvas);
+/* games.c: s in the theme's face at px, h rows from y: align 0 from x, 1 centred on it, 2 ending at
+ * it; Minimal's capitals spaced. Its width. */
+int text_at(void *canvas, const char *s, int x, int y, int h, unsigned px, unsigned color,
+            int align);
+enum { LEFT, MID, RIGHT };      /* text_at's align */
+const char *shelf_busy(void);   /* netupdate.c: the app folder a job replaces */
+const char *shelf_moving(void); /* netupdate.c: the app folder deleted or moved into */
+int shelf_erase(int start);     /* netupdate.c: Spotify's erase, started or running */
+void stream_erased(void);       /* navigation.c: Configuration follows a finished erase */
+void album_lyrics_stop(void);   /* onlinematch.c: Download Album Lyrics before USB storage */
 
 /* 2038 (docs/internals.md#2038). glibc 2.28's time() truncates the kernel's 64-bit seconds to 32
  * bits, so read unsigned it is right until 2106; -1 still means it failed. */

@@ -157,7 +157,7 @@ static struct {
     void *img, *full; /* the lock window's picture and its wallpaper */
     /* Classic's info screen (info_screen): its widgets while img is its picture; no picture
      * (the page shows), Black and Large's clock; its timer and the state it last painted. */
-    void *date, *pct, *card, *title, *artist, *hint;
+    void *date, *card, *title, *artist, *hint;
     int built_in, info, page, black, large; /* built_in: img is a built-in's, either theme */
     unsigned timer, shown;
     unsigned full_key;                 /* full's id, width and height, kept between windows */
@@ -195,7 +195,7 @@ static void *wall_bitmap(int w, int h, int id) {
  * widget already replaced by a newer one matches nothing here. */
 static int forget(void *ctx, void *event) {
     if (ctx == lk.img) { /* full stays for the next lock window */
-        lk.img = lk.date = lk.pct = lk.card = lk.title = lk.artist = lk.hint = 0;
+        lk.img = lk.date = lk.card = lk.title = lk.artist = lk.hint = 0;
         lk.info = 0;
         stop_timer(&lk.timer);
     }
@@ -259,10 +259,15 @@ static const clock_part_t info_hands[] = {
     { 0xffffff, 30, 0, 0, { { 0 } } },
     { 0x0c0f15, 12, 0, 0, { { 0 } } },
 };
-/* What the screen shows that no stock widget repaints: the minute, the battery, the play state. */
+/* What the screen shows that no stock widget repaints: the minute, and the bar's battery and play
+ * state, watched here so they never wait on the bar's own invalidates reaching a full-screen
+ * window.
+ *
+ * ponytail: Bluetooth's and Wi-Fi's icons are not watched; one the bar's invalidate doesn't bring
+ * shows at the next minute. Add them here if that is ever seen. */
 static unsigned info_state(void) {
-    return (unsigned)(clock_minutes() + 1) << 12 |
-           dark_bar_key(lk.pct ? widget_get_text(lk.pct) : 0) << 2 | ((unsigned)bar_status() & 3);
+    return (unsigned)(clock_minutes() + 1) << 12 | bar_battery_key() << 2 |
+           ((unsigned)bar_status() & 3);
 }
 /* Stock repaints its own labels. A look each second with the screen on, and a repaint only on a
  * change. With it off the timer stops, for the battery, and info_poll starts it again at the first
@@ -303,9 +308,10 @@ static void info_label(void *w, int x, int y, int ww, int h, int px, const char 
     slider_label(w, x, y, ww, h, px, face);
     widget_set_prop_str(w, "style:normal:text_align_h", align);
 }
-/* Stock's window, stock's widgets, in screen pixels: over the picture or the page, a dark bar with
- * the date, a tray with the clock, a tray with the song. A digit_clock formats itself each second,
- * so the date's format is all there is to set; both clocks keep stock's format otherwise. */
+/* Stock's window, stock's widgets, in screen pixels: over the picture or the page, the status bar
+ * with the date, a tray with the clock, a tray with the song. A digit_clock formats itself each
+ * second, so the date's format is all there is to set; both clocks keep stock's format otherwise.
+ */
 static void info_screen(void *win, void *img, int id) {
     int large = pod_value(POD_LOCKCLOCK);
     void *info = widget_lookup(win, "view_timeinfo", 1),
@@ -321,8 +327,13 @@ static void info_screen(void *win, void *img, int id) {
      * AWTK looks through the children from the last, so those taps stay the card's */
     if (info) widget_move_resize(info, 0, 0, 375, large ? 192 : 172);
     if (shade) widget_set_visible(shade, 0, 0);
+    /* the bar's title: in its place, as far as the bar's middle (centred, a date would reach the
+     * icons of a full bar), in its ink: white, which Light Mode's style hook flips */
     if (date) {
-        info_label(date, 0, dark_title_y(), 375, 25, INFO_DATE_PX, "classic-light", "center");
+        info_label(date, bar_title_x(), bar_title_y(), 375 / 2 - bar_title_x(), 25, INFO_DATE_PX,
+                   "classic-light", "left");
+        widget_set_prop_int(date, "_final_n", 0);
+        widget_set_prop_int(date, "style:normal:text_color", (int)RGBA(0xffffff));
         widget_set_prop_str(date, "format", "MMM D, Y");
     }
     if (time) {
@@ -331,11 +342,9 @@ static void info_screen(void *win, void *img, int id) {
         else
             info_label(time, 134, 44, 219, 116, 112, "classic-light", "center");
     }
-    if (pct) {
-        info_label(pct, 226, 0, 48, 26, 13, "default", "right");
-        widget_set_visible(pct, ipod_battery() != 0, 0);
-    }
-    /* hidden, not emptied: stock's battery timer (0x53ed54) writes its image again */
+    /* the bar has the battery. Hidden, not emptied: stock's battery timer (0x53ed54) writes its
+     * image again */
+    if (pct) widget_set_visible(pct, 0, 0);
     if (batt) widget_set_visible(batt, 0, 0);
     if (bar) widget_set_visible(bar, 0, 0);
     if (card) { /* its box holds the tray's ring and the row under it, so a hidden card takes them
@@ -354,7 +363,7 @@ static void info_screen(void *win, void *img, int id) {
         image_set_draw_type(hint, IMAGE_DRAW_FILL);
         widget_set_opacity(hint, 216);
     }
-    lk.date = date, lk.pct = pct, lk.card = card, lk.title = title, lk.artist = artist;
+    lk.date = date, lk.card = card, lk.title = title, lk.artist = artist;
     lk.hint = hint;
     lk.large = large;
     lk.black = id == WALLS - 1;
@@ -382,9 +391,8 @@ static void info_paint(void *w, void *canvas) {
         stock_canvas_set_fill_color(canvas, RGBA(0));
         canvas_fill_rect(canvas, 0, 26, 375, 294);
     }
+    paint_bar(w, canvas); /* a full-screen window has none: the real one, under the date */
     stock_canvas_set_fill_color(canvas, fill);
-    paint_dark_bar(w, canvas, (const unsigned *)0,
-                   dark_bar_key(lk.pct ? widget_get_text(lk.pct) : 0));
     paint_tray(canvas, 16, 44, 343, lk.large ? 128 : 116);
     if (lk.card && widget_get_visible(lk.card)) paint_tray(canvas, 16, 186, 343, 84);
     if (lk.hint && widget_get_visible(lk.hint)) /* its box's 177, 288 less the image's pad */

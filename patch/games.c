@@ -872,12 +872,12 @@ static void frame_rect(void *canvas, int x, int y, int w, int h, unsigned rgb, u
  * mode, its black suits black. */
 static unsigned unflipped(unsigned v) { return unflip(v) * 0x010101u; }
 
-enum { LEFT, MID, RIGHT };
 /* s (ASCII) in the theme's face at px, h rows from y: from x, centred on it or ending at it. A
  * theme with capitals on Home (Minimal) takes them here too, SUDO_TRACK apart. Returns its width.
+ * Shared with app_store.c.
  */
-static int text_at(void *canvas, const char *s, int x, int y, int h, unsigned px, unsigned color,
-                   int align) {
+int text_at(void *canvas, const char *s, int x, int y, int h, unsigned px, unsigned color,
+            int align) {
     unsigned wide[40], n = 0;
     int cw[40], w = 0, caps = theme()->caps_home, fpx = (int)px;
     for (; s[n] && n < 40; ++n)

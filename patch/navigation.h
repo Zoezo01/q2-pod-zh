@@ -184,8 +184,8 @@ typedef struct {
     unsigned bc_key, bc_box, bc_shape,
         bc_url; /* the track, cover and image bc_fit sized for, the box
                  * it left, the image's w << 16 | h and its track */
-    /* Classic (classic_pages): the rating panel, the slider page and its slider; the dark
-     * bar and the title's place under it; the volume in the time row's place. */
+    /* Classic (classic_pages): the rating panel, the slider page and its slider; the volume in the
+     * time row's place. */
     void *rate_box, *slider_win, *slider_w, *slider_sw;
     const __WCHAR_TYPE__ *slider_hint; /* its caption */
     void *t9_page, *t9_back;           /* t9_box's page and chevron, while its box lives */
@@ -196,9 +196,7 @@ typedef struct {
     /* Classic's T9 keyboard window, and Search with its tab group (search_open). */
     void *kb_win, *search_win, *search_tabs, *pl_box;
     const char *number_face; /* the slider page's value's, as slider_number last set it */
-    int title_color;
-    short title_x, title_y, title_w;
-    unsigned char title_align, slider_kind, bar_dark;
+    unsigned char slider_kind;
     unsigned np_hash; /* of the album text, position and queue length shown, 0 to refresh */
     unsigned np_art;  /* the track and player cover img_cover last took (np_art_poll) */
     int np_left;
@@ -313,6 +311,7 @@ extern int stock_keyup_trampoline(void *, void *), stock_touch_trampoline(void *
     stock_btrows_trampoline(void *, void *), stock_playlist_trampoline(void *),
     stock_stream_trampoline(void *, void *), stock_start_player_trampoline(void),
     stock_standby_trampoline(void), stock_cardmount_trampoline(void),
+    stock_config_write_trampoline(const char *, const char *, const char *, const char *),
     stock_usbmode_trampoline(void *, void *, void *, void *),
     stock_hscroll_start_trampoline(void *), stock_wifi_page_trampoline(void *, void *),
     stock_stream_row_trampoline(void *, void *), stock_netservice_row_trampoline(void *, void *),
@@ -467,9 +466,6 @@ int time_form(void *top);
 void time_open(void *win);
 void time_paint(void *w, void *canvas);
 void time_wheel(void *top, int f, int dir);
-
-/* font_weight.c: a marked label's foreground painted again 1 px right */
-void font_weight_paint(void *w, void *canvas);
 
 /* coverflow_position.c */
 void coverflow_position_reset(void);

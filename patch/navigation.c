@@ -18,7 +18,7 @@
  * - Now Playing: scrub and Smart Awake
  * - Now Playing: keys, page and art
  * - Geometry sets
- * - Sliders, dark bar and UI load
+ * - Sliders and UI load
  * - Album tiles and the confirm prompt
  * - Pressed rows and the bar's title
  * - Background paint hook
@@ -1867,7 +1867,7 @@ static void paint_cover(void *w, void *canvas) {
 }
 
 /* Minimal's small capitals (Sudo's): s from x, y (the text's top) in the default font at px,
- * upper-cased (ASCII and Latin-1), SUDO_TRACK px apart, cut off at x + max; returns the whole
+ * upper-cased (script_upper), SUDO_TRACK px apart, cut off at x + max; returns the whole
  * text's width, a trailing SUDO_TRACK included. The text color is restored, the font is not. */
 static int draw_spaced(void *canvas, const unsigned *s, int x, int y, unsigned px, unsigned color,
                        int max) {
@@ -1876,8 +1876,7 @@ static int draw_spaced(void *canvas, const unsigned *s, int x, int y, unsigned p
     canvas_set_text_color(canvas, color);
     int at = 0;
     for (; s && *s; ++s) {
-        unsigned c = *s;
-        if ((c >= 'a' && c <= 'z') || (c >= 0xe0 && c <= 0xfe && c != 0xf7)) c -= 32;
+        unsigned c = script_upper(*s);
         int cw = (int)(canvas_measure_text(canvas, &c, 1) + 0.5f);
         if (at + cw > max)
             max = -1; /* cut off: the rest is only measured */
@@ -2770,6 +2769,7 @@ int ringnav_paint(void *w, void *canvas) {
         if (bar) paint_scrollbar(canvas, bar, table);
     }
     addon_paint(w, canvas);
+    store_paint(w, canvas);
     peq_paint(w, canvas);
     battery_paint(w, canvas);
     visualizer_paint(w, canvas);
@@ -3663,9 +3663,7 @@ static int bar_state_sync(void *bar) {
                 { "classic_light_play_d", "classic_light_pause_d" },
                 { "classic_light_play_l", "classic_light_pause_l" }
             };
-            const char *icon = st.bar_dark
-                                   ? status == 2 ? "classic_light_play_w" : "classic_light_pause_w"
-                               : bar_theme()->painter[PAINT_BATTERY] == BATT_CLASSIC_LIGHT
+            const char *icon = bar_theme()->painter[PAINT_BATTERY] == BATT_CLASSIC_LIGHT
                                    ? classic_light_icon[ipod_light()][status != 2]
                                : status == 2 ? "bar_play"
                                              : "bar_pause";
@@ -3854,87 +3852,16 @@ int bar_repaint(const void *info) {
  * than BATT_ROOM (a wide badge while it shows). widget_set_visible does nothing for an unchanged
  * state and relayouts the view for a new one. */
 static int slider_page(void *top);
-static void text_ink_fixed(void *w, unsigned color, int n);
-/* A label's final ink, 0xAARRGGBB in its first n states, stored as what Light Mode's style hook
- * turns into it, so stored for this half. text_inks writes it again when the half changes. */
-static const char *const ink_state[] = { "normal",
-                                         "pressed",
-                                         "over",
-                                         "disable",
-                                         "focused",
-                                         "normal_of_active",
-                                         "pressed_of_active",
-                                         "over_of_active",
-                                         "disable_of_active",
-                                         "focused_of_active",
-                                         "error",
-                                         "empty",
-                                         "empty_focus",
-                                         "empty_over",
-                                         "changed" };
-/* The pages under Classic's dark bar. USB mode's page has Classic's own, as the rest of Classic. */
-static int dark_bar(void *top) { return slider_page(top) || time_form(top); }
-/* The real bar's title's row, set for bar_px, so a dark bar's title sits on the same rows. */
-int dark_title_y(void) { return st.bar_title ? I(st.bar_title, W_Y) : 0; }
-/* A dark page keeps the page name on the LEFT, as the light bar does: status_metrics' title box
- * starts at 57 (its two px of hscroll_label margin put the ink at 59, clear of the glass). A
- * full-width centred box put the name under the round corner on a third-level page — the menu
- * name looked clipped — and took the room of the play state and battery beside it. End before
- * the state's 266, leaving a gap. */
-#define DARK_TITLE_X 57
-#define DARK_TITLE_W 201
-/* Their title at the bar's size, in the face its text has (none: the system's). A CJK title reads
- * stock's face, a third taller than the clock's digits at the same px: step down, as theme_font's. */
-static void dark_title(void *t) {
-    const unsigned *s = widget_get_text(t);
-    int px = theme()->font_px[ROLE_BAR];
-    const char *face = theme_face(s, (int)wide_len(s), &px);
-    if (!face) px = BAR_CJK_PX;
-    slider_label(t, DARK_TITLE_X, dark_title_y(), DARK_TITLE_W, 25, px, face ? face : "default");
-    widget_set_prop_str(t, "style:normal:text_align_h", "left"); /* slider_label centres a page's own caption */
-    font_weight_mark(t, !face); /* theme_font's rule: only stock's face stands in for bold */
-    /* slider_label's white flips dark under Light Mode; the dark bar does not, so the
-     * title's ink is pinned white across the half changes (V183F photos: black on black) */
-    text_ink_fixed(t, 0xffffffffu, (int)(sizeof ink_state / sizeof *ink_state));
-}
+/* The bar's title's place, where the lock screen's date sits on the bar: its text's first column
+ * (an hscroll_label keeps 2 px each side of its box) and its row, set for bar_px. */
+int bar_title_x(void) { return st.bar_title ? I(st.bar_title, W_X) + 2 : 0; }
+int bar_title_y(void) { return st.bar_title ? I(st.bar_title, W_Y) : 0; }
 /* w at x, y on the screen, unless it's there. */
 void bar_place(void *w, int x, int y, int ww, int h) {
     void *p = P(w, W_PARENT);
     x -= I(p, W_X), y -= I(p, W_Y);
     if (I(w, W_X) != x || I(w, W_Y) != y || I(w, W_W) != ww || I(w, W_H) != h)
         widget_move_resize(w, x, y, ww, h);
-}
-/* w left of the screen, where a relayout finds it. */
-static void bar_off(void *w) {
-    if (I(w, W_X) != -400) widget_move_resize(w, -400, I(w, W_Y), I(w, W_W), I(w, W_H));
-}
-/* On reaching a dark page or leaving one: its title across the bar in white in either half and the
- * clock gone, and back as its style and box were. bar_sync places the rest. */
-static void bar_dark_sync(void *bar) {
-    void *t = st.bar_title;
-    if (!t || !st.bar_slot || !st.bar_state || !classic_pages()) return;
-    int dark = dark_bar(window_manager_get_top_window(window_manager()));
-    if (dark == st.bar_dark) return;
-    void *clock = widget_lookup(bar, "label_clock", 1), *style = P(t, W_ASTYLE);
-    st.bar_dark = (unsigned char)dark;
-    if (clock) widget_set_visible(clock, !dark, 0);
-    if (dark) {
-        st.title_x = (short)I(t, W_X), st.title_y = (short)I(t, W_Y), st.title_w = (short)I(t, W_W);
-        st.title_align = (unsigned char)style_get_int(style, "text_align_h", ALIGN_H_LEFT);
-        st.title_color = style_get_int(style, "text_color", (int)RGBA(0xffffff));
-        dark_title(t);
-    } else {
-        widget_move_resize(t, st.title_x, st.title_y, st.title_w, I(t, W_H));
-        widget_set_prop_int(t, "style:normal:text_align_h", st.title_align);
-        widget_set_prop_int(t, "style:normal:text_color", st.title_color);
-        widget_set_prop_int(t, "_final_n", 0);
-        widget_set_prop_int(t, "_font", -1);
-        theme_font(t, ROLE_BAR, FONT_ROW);
-        widget_layout_children(P(st.bar_slot, W_PARENT));
-        st.clock_key = 0;
-    }
-    /* this paint may have drawn the bar already, and an invalidate mid-paint is lost */
-    if (!st.bar_timer) st.bar_timer = timer_add(bar_repaint, (void *)0, 0);
 }
 /* Charging, as the bar says it: stock's icon is bar_charge whenever a cable is in, the charge
  * enable held off or not (usb_charge.c's guard, Charge Limit), so a held one is not charging. */
@@ -3958,8 +3885,13 @@ static unsigned battery_now(int classic_light) {
            (unsigned)charging << 1 |
            (unsigned)((icon && !tk_strcmp(icon, "bar_lowcharge")) || (held && level < 15));
 }
+/* That key now, for a screen that repaints itself when it changes (the lock screen's tick). */
+unsigned bar_battery_key(void) {
+    return st.bar_icon && st.bar_pct
+               ? battery_now(bar_theme()->painter[PAINT_BATTERY] == BATT_CLASSIC_LIGHT)
+               : 0;
+}
 static void bar_sync(void *bar) {
-    bar_dark_sync(bar);
     int glyph = bar_state_sync(bar); /* looks the widgets up first: the word needs img_state */
     int word = bar_word_sync(bar);
     if ((glyph || word) && !st.bar_timer) st.bar_timer = timer_add(bar_repaint, (void *)0, 0);
@@ -3995,7 +3927,7 @@ static void bar_sync(void *bar) {
      * the group's full height, but a stock relayout can put the icons back on their
      * original zero-height box, which centres their art above the 30 px clock, EQ and
      * play word (V183A device photos). Restore the row's height before the frame draws. */
-    if (!st.bar_title && !st.bar_dark) {
+    if (!st.bar_title) {
         void *row = P(st.bar_bt, W_PARENT);
         if (row) { /* the machine tests park img_bt without a parent: no row to match */
             int row_h = I(row, W_H);
@@ -4041,19 +3973,6 @@ static void bar_sync(void *bar) {
     widget_set_visible(st.bar_slot, 1, 0);
 
     unsigned key = battery_now(classic_light);
-    if (st.bar_dark) { /* each paint: a relayout puts them back */
-        bar_off(st.bar_bt);
-        bar_off(st.bar_wifi);
-        /* The white play state is Classic's own 12 x 14 glyph in its 18 x 22 canvas, the same
-         * size as the light bar's. At 266, 2 its ink centres on the battery's middle row and
-         * ends at 282.5, clear of the body's 294; a 10 x 11 art read a size smaller. */
-        bar_place(st.bar_state, 266, 2, I(st.bar_state, W_W), I(st.bar_state, W_H));
-        bar_place(st.bar_slot, 285, 1, 37, 21);
-        if (key != st.batt_key && !st.bar_timer)
-            st.bar_timer = timer_add(bar_repaint, (void *)0, 0);
-        st.batt_key = key;
-        return;
-    }
     int pct = pct_width(key >> 3);
     int width = mode == 1
                     ? pct
@@ -4163,17 +4082,6 @@ static void classic_light_digits(void *canvas, const unsigned *s, unsigned n, co
     canvas_set_clip_rect(canvas, old);
 }
 
-/* The dark bar's battery, 26 x 13 at 294, 7 and its nub, in its slot at 285, 1, which is at x, y:
- * the level from the left, full while charging. Final colours; the caller restores the fill. */
-static void dark_battery(void *canvas, int x, int y, unsigned key) {
-    static const stops_t level = { 6,
-                                   { 0, 20, 42, 62, 80, 100 },
-                                   { 0xe2e2e2, 0xd7d7d7, 0xd3d3d3, 0xd4d4d4, 0xd7d7d7, 0xdedede } };
-    bar_rect(canvas, RGBA(0xf5f5f5), x + 9, y + 6, 26, 13);
-    bar_rect(canvas, RGBA(0x050505), x + 10, y + 7, 24, 11);
-    bar_rect(canvas, RGBA(0xf5f5f5), x + 35, y + 10, 2, 5);
-    paint_stops(canvas, x + 11, y + 8, 22 * (int)(key & 2 ? 100 : key >> 3) / 100, 9, &level);
-}
 /* A battery body bh rows high, either look's: its top in the slot w, which is its row's height
  * (bar_sync), centred on it as the icons beside it are. The row's 16 px text inks to 14.4 while a
  * centred body inks to 15.5, so every mode rises one pixel — what BATT_PCT_DY used to do only
@@ -4196,11 +4104,6 @@ static void paint_battery(void *w, void *canvas) {
     int inside = st.batt_mode == 3;
     if (!inside) s[n++] = '%';
     unsigned color = RGBA(key & 2 ? BATT_CHARGE_RGB : key & 1 ? BATT_LOW_RGB : 0xffffff);
-    if (st.bar_dark) {
-        dark_battery(canvas, 0, 0, key);
-        stock_canvas_set_fill_color(canvas, fill);
-        return;
-    }
     if (!inside && !st.pct_digit) {
         unsigned c = '0';
         canvas_set_font(canvas, theme_face(&c, 1, 0), px); /* draw_centred's face */
@@ -4283,25 +4186,6 @@ void label_font(void *w, int bold) {
     for (unsigned i = 0; i < sizeof font / sizeof *font; ++i)
         widget_set_prop_str(w, font[i], bold ? "bold" : "default");
 }
-static const unsigned short bold_ranges[] = BOLD_RANGES,
-                            classic_light_ranges[] = CLASSIC_LIGHT_RANGES;
-
-/* 1 iff every character of c (n < 0: up to the NUL; NULL has none) is in face's cmap. */
-static int face_has(int face, const unsigned *c, int n) {
-    const unsigned short *r = face == FONT_CLASSIC_LIGHT ? classic_light_ranges : bold_ranges;
-    unsigned k = face == FONT_CLASSIC_LIGHT
-                     ? sizeof classic_light_ranges / sizeof *classic_light_ranges
-                     : sizeof bold_ranges / sizeof *bold_ranges;
-    if (face == FONT_DEFAULT) return 1;
-    if (!c) return 0;
-    for (; n < 0 ? *c : n; ++c, --n) {
-        unsigned i = 0;
-        while (i < k && (*c < r[i] || *c > r[i + 1])) i += 2;
-        if (i >= k) return 0;
-    }
-    return 1;
-}
-
 /* The theme's font for role on w: its face (bold.ttf, classic-light.ttf: tools/build.py) when that
  * face has every character of w's text (BOLD_RANGES, CLASSIC_LIGHT_RANGES), else the next bold one
  * that does (classic-light, then bold), else stock's, which has CJK, either at FACE_FALLBACK_PCT
@@ -4310,12 +4194,6 @@ static int face_has(int face, const unsigned *c, int n) {
  * passes FONT_ROW: the answer lives in its own "_font" prop with the role above it (row_faces reads
  * it), and a role the theme leaves to the style writes nothing. */
 static const char *const font_faces[] = { "default", "bold", "classic-light" }; /* [FONT_*] */
-/* bold.ttf or stock's default.ttf standing in for classic-light.ttf: that much of the px gives the
- * same capitals, their cap heights' ratio (test_ipod; stock's face, cap 183 of 299, comes to 83
- * too), so a CJK name sits a little over the capitals beside it, not a third. Only the fallback
- * takes it: Classic's bold stays at its px. */
-#define FACE_FALLBACK_PCT 83
-static int fallback_px(int px) { return (px * FACE_FALLBACK_PCT + 50) / 100; }
 int theme_font(void *w, int role, int was) {
     static const char *const names[] = { "style:normal:font_name", "style:focused:font_name",
                                          "style:disable:font_name" },
@@ -4333,9 +4211,7 @@ int theme_font(void *w, int role, int was) {
     }
     const unsigned *text = face ? widget_get_text(w) : (void *)0, none[1] = { 0 };
     if (face && !text) text = none; /* no text yet: keeps the face, as bold_label did */
-    int fell = face == FONT_CLASSIC_LIGHT && !face_has(FONT_CLASSIC_LIGHT, text, -1);
-    if (fell) face = FONT_BOLD, px = fallback_px(px); /* Cyrillic: still bold */
-    if (face == FONT_BOLD && !face_has(FONT_BOLD, text, -1)) face = FONT_DEFAULT; /* CJK */
+    face = script_face(face, text, -1, &px);
     /* The bar's CJK fell to stock's face, whose hanzi read a third taller than the clock's digits
      * at the same px (BAR_CJK_PX): step down to their ink height, as the page names read the
      * clock's size on the bar. */
@@ -4370,16 +4246,6 @@ int ringnav_table_load(void *ctx, unsigned index, void *row) {
         ((int (*)(void *, unsigned, void *))P(P(row, W_PARENT), TABLE_LOAD_DATA))(ctx, index, row);
     row_faces(row);
     return ret;
-}
-
-/* Canvas text in the theme's face where it has the characters, else bold.ttf where it has them
- * (still bold), else the system font, either at the fallback's px (draw_centred). A theme without
- * a face of its own draws the system font, as before. */
-const char *theme_face(const unsigned *s, int n, int *px) {
-    if (theme()->font[ROLE_TITLE] != FONT_CLASSIC_LIGHT) return (const char *)0;
-    if (face_has(FONT_CLASSIC_LIGHT, s, n)) return "classic-light";
-    if (px) *px = fallback_px(*px); /* bold and stock's here are always the fallback */
-    return face_has(FONT_BOLD, s, n) ? "bold" : (const char *)0;
 }
 
 /***************************************************************************************************
@@ -4935,7 +4801,7 @@ const char *style_key(char *key, const char *state, const char *name) {
 }
 
 /***************************************************************************************************
- * Sliders, dark bar and UI load
+ * Sliders and UI load
  **************************************************************************************************/
 
 /* The slider's value as a part of w px. */
@@ -4977,25 +4843,9 @@ void text_ink(void *w, unsigned color, int n) {
     for (int i = 0; i < n; ++i)
         widget_set_prop_int(w, style_key(key, ink_state[i], "text_color"), (int)ink);
 }
-/* The same ink without the Light Mode flip: the dark pages' bar is dark glass in either
- * half, so its title reads white there too (_final_fix marks it for text_inks' re-apply). */
-static void text_ink_fixed(void *w, unsigned color, int n) {
-    char key[STYLE_KEY];
-    widget_set_prop_int(w, "_final", (int)color);
-    widget_set_prop_int(w, "_final_n", n);
-    widget_set_prop_int(w, "_final_fix", 1);
-    for (int i = 0; i < n; ++i)
-        widget_set_prop_int(w, style_key(key, ink_state[i], "text_color"), (int)color);
-}
 void text_inks(void *w) {
     int n = widget_get_prop_int(w, "_final_n", 0);
-    if (n) {
-        unsigned color = (unsigned)widget_get_prop_int(w, "_final", 0);
-        if (widget_get_prop_int(w, "_final_fix", 0))
-            text_ink_fixed(w, color, n);
-        else
-            text_ink(w, color, n);
-    }
+    if (n) text_ink(w, (unsigned)widget_get_prop_int(w, "_final", 0), n);
     for (int i = widget_count_children(w) - 1; i >= 0; --i) text_inks(widget_get_child(w, i));
 }
 /* A page's label: box, face and white, in either half (Light Mode's style hook flips it back). */
@@ -5125,15 +4975,9 @@ void final_text(void *canvas, const char *face, const unsigned *s, const void *r
                      (RGBA(color & 0xffffffu) & 0xffffffu) | (color & 0xff000000u));
     st.raw_ink = raw;
 }
-/* A key for paint_dark_bar: a battery label's "88%", charging as the status bar's icon says. */
-unsigned dark_bar_key(const unsigned *t) {
-    unsigned level = 0;
-    while (t && *t >= '0' && *t <= '9') level = level * 10 + (*t++ - '0');
-    return (level > 100 ? 100 : level) << 3 | (unsigned)bar_charging() << 1;
-}
-/* The dark bar's rows and its line, the last of h rows from y: the scheme's dark half in either
- * half, over the bar's own line, with no second one; a flat Status Bar's plain black. Final
- * colours. */
+/* The dark strip behind Classic's search field (once every dark bar's): its rows and its line,
+ * the last of h rows from y: the scheme's dark half in either half, over the bar's own line, with
+ * no second one; a flat Status Bar's plain black. Final colours. */
 void dark_bar_rows(void *canvas, int y, int w, int h) {
     const theme_t *T = bar_theme();
     const scheme_t *S = &T->schemes[*T->accent_slot];
@@ -5143,28 +4987,6 @@ void dark_bar_rows(void *canvas, int y, int w, int h) {
     }
     paint_stops(canvas, 0, y, w, h - 1, &S->bar);
     bar_rect(canvas, RGBA(S->bar_line), 0, y + h - 1, w, 1);
-}
-/* The dark bar on a full-screen window, which the system bar doesn't paint over: its rows and line,
- * a title if it has one, the play state and the battery by dark_bar_key's key. Final colours; the
- * fill is restored. */
-void paint_dark_bar(void *w, void *canvas, const unsigned *title, unsigned key) {
-    void *lcd = P(canvas, CANVAS_LCD);
-    if (!lcd) return;
-    unsigned fill = (unsigned)I(lcd, LCD_FILL_COLOR);
-    int status = bar_status();
-    dark_bar_rows(canvas, 0, 375, 26);
-    if (title) { /* as the real bar's dark_title */
-        int px = theme()->font_px[ROLE_BAR];
-        const char *face = theme_face(title, -1, &px);
-        if (!face) px = BAR_CJK_PX; /* stock's face's hanzi: the clock's ink height */
-        draw_in_face(canvas, face, title, wide_len(title), &(rect_t){ 0, dark_title_y(), 375, 25 },
-                     (unsigned)px, RGBA(flip_if(ipod_light(), 0xffffff)));
-    }
-    dark_battery(canvas, 285, 1, key);
-    if (status == 2 || status == 3)
-        paint_art(w, canvas, status == 2 ? "classic_light_play_w" : "classic_light_pause_w", 266,
-                  2); /* the dark bar's counterpart, on the battery's middle row */
-    stock_canvas_set_fill_color(canvas, fill);
 }
 /* The info screen's dark tray: its rows, top light, ring and the light row under the ring. */
 void paint_tray(void *canvas, int x, int y, int w, int h) {
@@ -5433,8 +5255,10 @@ const char *bar_title_of(void *win, void **label) {
     if (!tk_strcmp(name, "equalizer_page")) return "均衡器"; /* its 48 px row is the tabs' own label */
     if (!tk_strcmp(name, "spotify_page")) return "Spotify"; /* they hide their own name's label */
     if (!tk_strcmp(name, "radionp_page")) return "网络电台";
-    if (!tk_strcmp(name, "usbmode_page")) return "";        /* no wordmark (bar_title: no clock) */
+    /* no wordmark (bar_title: no clock); the lock screen's date has the bar */
+    if (!tk_strcmp(name, "usbmode_page") || !tk_strcmp(name, "saverscreen_page")) return "";
     if (!tk_strcmp(name, "search_dialog")) return "搜索"; /* stock's toolbar has no label */
+    if (!tk_strcmp(name, "updatemusic_dialog")) return "更新曲库"; /* the row that opens it */
     void *nav = widget_lookup(win, "view_navbar", 1);
     if (nav) {
         for (int i = 0, k = widget_count_children(nav); i < k && !*label; ++i) {
@@ -5489,10 +5313,7 @@ static void bar_title_write(const char *t) {
     char now[256]; /* stock writes nothing unless all of it fits */
     if (widget_get_text_utf8(st.bar_title, now, sizeof now) || tk_strcmp(now, t)) {
         widget_set_text_utf8(st.bar_title, t);
-        if (st.bar_dark)
-            dark_title(st.bar_title);
-        else
-            theme_font(st.bar_title, ROLE_BAR, FONT_ROW);
+        theme_font(st.bar_title, ROLE_BAR, FONT_ROW);
         /* this runs mid-paint, where an invalidate is lost and the bar then redraws only the
          * clock's rect: a page's new caption under the same window would wait for a window's change
          */
@@ -5501,7 +5322,8 @@ static void bar_title_write(const char *t) {
 }
 
 /* Classic's bar title (label_title, only its set's bar has one) names the top window win,
- * Home by the list it shows; a dialog keeps the window's title. The title's source is found once
+ * Home by the list it shows; a dialog keeps the window's title, but Search's and Update Library's,
+ * which cover the bar. The title's source is found once
  * per top window; after that a paint compares only that label's text with the title's (none for a
  * title by name), and the title is written only when it changes, with the face that has its
  * characters (stock draws a character its face lacks as nothing). */
@@ -5521,7 +5343,9 @@ void bar_title_sync(void *win) {
         title_gone(0, 0);
         st.title_win = win;
         widget_on(win, EVT_DESTROY, title_gone, win);
-        if (tk_strcmp(widget_get_type(win), "window") && win != st.search_win) return;
+        /* Search's and the scan's dialogs cover the bar and paint it (paint_bar): theirs to name */
+        if (tk_strcmp(widget_get_type(win), "window") && win != st.search_win && win != st.msg_win)
+            return;
         t = bar_title_of(win, &st.title_lbl);
         /* a page may have Songs' action bar: only a set with action_row looks */
         if (geom_val(V_ACTION_ROW)) st.action_view = widget_lookup(win, "view_navbar_allplay", 0);
@@ -5653,10 +5477,7 @@ int ringnav_paint_bg(void *w, void *canvas) {
         unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
         const theme_t *T = bar_theme();
         const scheme_t *S = bar_scheme();
-        if (st.bar_dark) {
-            dark_bar_rows(canvas, 0, I(w, W_W), 26);
-        } else if (T->painter[PAINT_BAR] ==
-                   BAR_GLOSS) { /* Classic: the gloss rows over the line, final */
+        if (T->painter[PAINT_BAR] == BAR_GLOSS) { /* Classic: the gloss rows over the line, final */
             int h = I(w, W_H) - 1;
             paint_stops(canvas, 0, 0, I(w, W_W), h, &S->bar);
             if (S->bar_line2 && ipod_light()) {
@@ -6845,7 +6666,8 @@ static int compact_row_layout(void *layout, void *row) {
     }
     unsigned count = widget_count_children(row);
     const theme_t *T = theme();
-    int tall = T->art_x && I(row, W_H) > geom(G_PITCH), plain = two_lines(row), choice = 0;
+    int tall = T->art_x && I(row, W_H) > geom(G_PITCH), plain = two_lines(row), choice = 0,
+        fixed = 0; /* the text's box ends at a theme's column */
     /* Names differ (view_info, viewinfo_N, ...); all seven constructors put the title
      * first, either directly in the row or one level inside its text container. */
     for (unsigned i = 0; i < count && !text; ++i) {
@@ -6886,13 +6708,13 @@ static int compact_row_layout(void *layout, void *row) {
          * side (the move's below, after stock's layout); a two-line row's from the set's text
          * inset, unless stock's choice box shows. */
         if (tall && !plain) width = T->art_text_end - T->art_text_x + 4;
-        if (plain && !choice) {
-            /* stock's chevron last, as Search's Artists: the text ends where an art row's does */
-            void *last = widget_get_child(row, count - 1);
-            int into = last != text && widget_get_visible(last) &&
-                       !tk_strcmp(widget_get_prop_str(last, "image", ""), "list_into");
-            width = (into ? T->art_text_end : T->row_text_end) - geom_val(V_TEXT_X) + 2;
-        }
+        /* stock's chevron last, as Search's Artists and Library's one-line Artists, Composers and
+         * Genres: the text ends where an art row's does, not before stock's 50 px img_into */
+        void *last = widget_get_child(row, count - 1);
+        int into = last != text && widget_get_visible(last) &&
+                   !tk_strcmp(widget_get_prop_str(last, "image", ""), "list_into");
+        fixed = !choice && (plain || (into && one_line(row)));
+        if (fixed) width = (into ? T->art_text_end : T->row_text_end) - geom_val(V_TEXT_X) + 2;
         if (width < 0) width = 0;
         widget_resize(text, width, I(text, W_H));
         /* Stock's rows scroll a long title once as the page opens, every row at a time, its
@@ -6944,8 +6766,7 @@ static int compact_row_layout(void *layout, void *row) {
     if (tx && text && I(text, W_X) <= B(layout, DEFAULT_LAYOUT_X_MARGIN)) {
         tx = tx > I(row, W_X) ? tx - I(row, W_X) : 0;
         widget_move_resize(text, tx, I(text, W_Y),
-                           plain && !choice ? I(text, W_W) : I(text, W_W) - (tx - I(text, W_X)),
-                           I(text, W_H));
+                           fixed ? I(text, W_W) : I(text, W_W) - (tx - I(text, W_X)), I(text, W_H));
     }
     return ret;
 }
@@ -9597,6 +9418,7 @@ int ringnav(void *ctx, void *event) {
     }
     void *front = window_manager_get_top_window(window_manager());
     if (usable() && field_key(front, key)) return STOP; /* before stock's track skip */
+    if (usable() && shelf_key(front, key)) return STOP; /* the App Store's tabs */
     /* The restart toast's msginfo_dialog stops Previous and Next itself (0x49b7c8), for its 2 s of
      * the 3 s: the same key goes on. ponytail: the toast stays up its time; another key is still
      * stopped. */

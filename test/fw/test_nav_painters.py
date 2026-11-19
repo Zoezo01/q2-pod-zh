@@ -1508,7 +1508,7 @@ def test_light_modes_chevron_on_a_coloured_bar_is_white(fw, st, layout, light):
 
 @pytest.mark.parametrize('marked', [1, 0])
 def test_a_bold_marked_label_paints_its_text_again_one_pixel_right(fw, marked):
-    """font_weight.c, through the border hook: stock's self painter once more, 1 px right and back."""
+    """script.c font_weight_paint, through the border hook: stock's self painter once more, 1 px right and back."""
     ui = Ui(fw)
     label = ui.add('label', ui.window('songs_page'), (0, 0, 200, 30), _q2_bold_fallback=marked)
     ui.set_text(label, '专辑')
@@ -2813,7 +2813,7 @@ def test_rows_for_another_song_start_at_the_top(fw, st):
     assert offsets()[2:] == [(lrc.addr, 0, 50)]
 
 
-# The status bar: the codec badge's fade, the percentage's width, Classic's dark bar.
+# The status bar: the codec badge's fade, the percentage's width, the bar over Classic's slider pages.
 RET_REPEAT = 8  # AWTK's ret_t: a timer that answers it runs again, any other answer ends it
 
 
@@ -2849,7 +2849,7 @@ def test_the_percentage_is_as_wide_as_its_digits(fw, st, level, digits):
     assert width(level) == digits * 11 + 13
 
 
-class DarkBar(Bar):
+class ClassicBar(Bar):
     def __init__(self, fw, st):
         theme(fw, CLASSIC)
         st('geom').value = CLASSIC_SET
@@ -2857,73 +2857,33 @@ class DarkBar(Bar):
         fw.mock('fw___xstat', lambda *_: -1)
         self.w['label_title'].move(60, 3, 200, 20)
         self.w['view_battery'].move(300, 2, 30, 20)
-        self.w['img_state'].move(345, 2, 20, 20)  # right of the battery, where the dark bar's isn't
+        self.w['img_state'].move(345, 2, 20, 20)
         self.ui.set_text(self.w['label_title'], 'Songs')
-        styles = {b'text_align_h': 1, b'text_color': i32(0xff00ff00)}
-        fw.mock('style_get_int', lambda style, key, default, *_: styles.get(C.string_at(key), i32(default)))
         self.timers: list = []
         fw.mock('timer_add', lambda fn, ctx, ms, *_: self.timers.append(fn) or 5)
         self.sync()  # stock's showface: finds the bar's widgets
 
-    def to(self, name, title=None):
-        win = self.ui.window(name)
-        if title:  # stock's navbar label, which the bar's title reads
-            self.ui.set_text(self.ui.add('label', self.ui.add('view', win, name='view_navbar'), name='label_name'), title)
+    def to(self, name):
+        self.ui.window(name)
         self.fw.fn('navigation__bar_sync', None, C.c_void_p)(self.bar.addr)
 
-
-def test_a_dark_page_takes_the_bars_title_across_in_white_and_hides_the_clock(fw, st):
-    bar = DarkBar(fw, st)
-    bar.to('backlight_page')
-    title = bar.w['label_title']
-    assert title.box[:3] == (0, 3, 375) and title.props['style:normal:text_align_h'] == 'center'
-    assert title.props['_final_n'] and not bar.w['label_clock'].visible
-    assert bar.timers == [C.cast(fw.lib.bar_repaint, C.c_void_p).value]
-    C.CFUNCTYPE(C.c_int, C.c_void_p)(bar.timers[0])(None)  # the repaint, after this paint
-    assert fw.calls('widget_invalidate_force')[-1][1][0] == bar.bar.addr and st('bar_timer', C.c_uint).value == 0
+    def shown(self):
+        """The bar as its widgets stand: each one's box, whether it shows, its image and its style."""
+        return {n: (w.box, w.visible, dict(w.props)) for n, w in self.w.items()}
 
 
-def test_the_dark_bars_latin_title_drops_a_cjk_pages_bold_mark(fw, st):
-    bar = DarkBar(fw, st)
-    title = bar.w['label_title']
-    bar.ui.set_text(title, '专辑')
-    fw.fn('theme_font', C.c_int, C.c_void_p, C.c_int, C.c_int)(title.addr, 2, -2)  # ROLE_BAR, FONT_ROW: the CJK page's
-    assert title.props['_q2_bold_fallback'] == 1
-    fw.mock('widget_get_text_utf8', lambda w, out, size, *_: C.memmove(out, (t := bar.ui.text(bar.ui.nodes[w]).encode() + b'\0'), len(t)) and 0)
-    bar.to('backlight_page', 'Backlight')
-    fw.fn('bar_title_sync', None, C.c_void_p)(bar.ui.top.addr)
-    assert bar.ui.text(title) == 'Backlight' and title.props['_q2_bold_fallback'] == 0
-
-
-def test_the_dark_bars_marks_take_its_places_and_stay(fw, st):
-    bar = DarkBar(fw, st)
-    bar.to('backlight_page')
-    w = bar.w
-    assert all(w[n].box[0] + w[n].box[2] <= 0 for n in ('img_bt', 'img_wifi'))  # off screen, where a relayout finds them
-    (sx, sy, sw, sh), (bx, by, bw, bh) = state, slot = w['img_state'].box, w['view_battery'].box
-    assert all(0 <= x and x + ww <= 375 and 0 <= y and y + h <= bar.bar.box[3] for x, y, ww, h in (state, slot))  # on the bar
-    assert 2 * sx + sw < 2 * bx and by <= sy + sh // 2 < by + bh  # the play state left of the battery, on its line
-    moves = len(fw.calls('widget_move_resize'))
-    fw.fn('navigation__bar_sync', None, C.c_void_p)(bar.bar.addr)
-    assert len(fw.calls('widget_move_resize')) == moves
-
-
-def test_leaving_a_dark_page_puts_the_title_back_as_it_was(fw, st):
-    bar = DarkBar(fw, st)
-    bar.to('backlight_page')
+@pytest.mark.parametrize('name', ['backlight_page', 'maxvol_page', 'bootvol_page', 'balance_page', 'manualtime_page'])
+def test_a_slider_page_or_set_time_keeps_the_bar_every_page_has(fw, st, name):
+    """They once swapped it for a dark bar: the title across it in white, the clock hidden, Bluetooth and Wi-Fi
+    off the screen, a battery of its own. Now the bar is the same over them as over any page."""
+    bar = ClassicBar(fw, st)
     bar.to('about_page')
+    plain = bar.shown()
+    bar.to(name)
+    assert bar.shown() == plain
     title = bar.w['label_title']
-    assert title.box[:3] == (60, 3, 200) and bar.w['label_clock'].visible
-    assert (title.props['style:normal:text_align_h'], title.props['style:normal:text_color']) == (1, i32(0xff00ff00))
-    assert title.props['_final_n'] == 0  # its own ink again, not the dark bar's white
-    assert fw.calls('widget_layout_children')[-1][1][0] == bar.bar.addr and st('clock_key', C.c_uint).value == 0
-
-
-def test_the_bar_stays_light_off_classic(fw, st):
-    bar = DarkBar(fw, st)
-    st('theme').value = MINIMAL
-    bar.to('backlight_page')
-    assert bar.w['label_clock'].visible and bar.w['img_bt'].box[0] != -400
+    assert title.box[:3] == (60, 3, 200) and not title.props.get('_final_n') and bar.w['label_clock'].visible
+    assert bar.w['img_state'].props['image'] in ('classic_light_play_d', 'classic_light_play_l')  # the theme's own
 
 
 @pytest.mark.parametrize('titled, shown', [(0, '6:05 PM'), (1, '6:05')])

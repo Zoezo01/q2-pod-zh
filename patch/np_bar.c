@@ -118,21 +118,35 @@ static const unsigned *wide_home_title(const char *s) {
     }
     name[i] = 0;
     return name;
+/* The page in front: top, or under a pop-up the window it is over, read from the window manager's
+ * stack, so a page that went from under a pop-up (the lock screen, opened over Search and closed)
+ * is not still the one in front. The scan's dialog counts: it names the bar it covers. */
+static void *page_of(void *top) {
+    void *wm = window_manager();
+    unsigned i = widget_count_children(wm);
+    while (top && top != st.msg_win && tk_strcmp(widget_get_type(top), "window"))
+        top = i ? widget_get_child(wm, --i) : (void *)0;
+    return top;
 }
 
 /* Time in Title off: the bar's centre names the page in front, as an iPod's, in Modern's bold:
  * Now Playing or Cover Flow, Home by coverflow_home_title (Q2 Pod; nothing with Show Wordmark off,
  * and no clock either way), else stock's title in the page's hidden navbar (scrlabel_title, or a
  * settings page's unnamed first child). A page showing its navbar and an untitled page keep the
- * clock; a pop-up or keyboard leaves the bar as it is. USB mode's page has neither title nor
+ * clock; a pop-up or keyboard leaves the bar as it is. A page with no clock in front (bare: USB
+ * mode's, Set Time and Set Date, the scan's dialog, Classic's lock screen) has neither title nor
  * clock, with Time in Title on or off, in every theme and Status Bar look. This runs in a paint,
  * which drops the label's invalidate, so bar_repaint follows; the clock waits for its timer. */
 void bar_title(void *bar, void *top) {
     static const unsigned
         cover_flow[] = { 'C', 'o', 'v', 'e', 'r', ' ', 'F', 'l', 'o', 'w', 0 }, none = 0;
-    static int usb; /* USB mode's page in front, under any pop-up over it */
-    if (top && !tk_strcmp(widget_get_type(top), "window"))
-        usb = !tk_strcmp(widget_get_prop_str(top, "name", ""), "usbmode_page");
+    void *page = page_of(top);
+    static int bare; /* a page with no clock in front (above); the last one's with none found */
+    if (page) {
+        const char *name = widget_get_prop_str(page, "name", "");
+        bare = !tk_strcmp(name, "usbmode_page") || time_form(page) || page == st.msg_win ||
+               (classic_pages() && !tk_strcmp(name, "saverscreen_page"));
+    }
     if (st.bar_title) { /* this bar names the page in its own label: off, the clock makes way */
         const unsigned *own = widget_get_text(st.bar_title);
         static int home; /* Home in front: no clock under its title though it is empty */
@@ -148,7 +162,7 @@ void bar_title(void *bar, void *top) {
                 st.clock_key = 0;
             }
         }
-        int titled = usb || (!st.time_title && (home || (own && *own)));
+        int titled = bare || (!st.time_title && (home || (own && *own)));
         void *clock = titled != st.bar_titled ? widget_lookup(bar, "label_clock", 1) : (void *)0;
         if (!clock) return;
         st.bar_titled = titled;
@@ -180,9 +194,10 @@ void bar_title(void *bar, void *top) {
     void *word = st.play_word ? st.play_word : widget_lookup(bar, "label_playword", 1);
     void *clock = widget_lookup(bar, "label_clock", 1);
     if (!word || !clock) return;
-    /* USB mode’s page: no title, no clock and no play-state word, whatever Time in
-     * Title says (bar_title_of gives it an empty name). */
-    if (usb) {
+    /* A page with no clock in front: no title, no clock and no play-state word, whatever Time in
+     * Title says (bar_title_of gives it an empty name). USB mode's page, Set Time and Set Date,
+     * the scan's dialog, Classic's lock screen. */
+    if (bare) {
         widget_set_text_utf8(word, "");
         widget_set_visible(word, 0, 0);
         st.bar_named = 0;
@@ -199,9 +214,9 @@ void bar_title(void *bar, void *top) {
     }
     /* Now Playing names nothing: the word beside the glyph says playing or paused,
      * as it does under Classic (bar_title_of). */
-    const char *page = widget_get_prop_str(top, "name", "");
-    const unsigned *title = tk_str_start_with(page, "playing_page") ? (void *)0
-                            : !tk_strcmp(page, "coverflow_page")    ? cover_flow
+    const char *pname = widget_get_prop_str(top, "name", "");
+    const unsigned *title = tk_str_start_with(pname, "playing_page") ? (void *)0
+                            : !tk_strcmp(pname, "coverflow_page")    ? cover_flow
                             : t ? widget_get_text(t)
                                 : (void *)0;
     if (title && !*title) title = (void *)0;

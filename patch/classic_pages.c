@@ -261,9 +261,17 @@ void pl_box_open(void *win) {
     widget_on(win, EVT_DESTROY, pl_box_gone, win);
     timer_add(pl_box_due, (void *)0, 0);
 }
+/* The status bar itself, in the paint of a window w that covers it: a dialog at 0, 0, which the
+ * window manager paints over the bar, or a full-screen window, which gets none. It is the real
+ * bar, so it has the theme's and Status Bar's look, battery and icons in either half. */
+void paint_bar(void *w, void *canvas) {
+    void *bar = *(void *const *)system_bar;
+    if (bar) widget_paint(bar, canvas);
+    st.paint_w = w; /* the bar's last child otherwise */
+}
 /* The dialog's own paint, under its children; the bar goes after the page, as Search's. */
 void pl_box_paint(void *w, void *canvas) {
-    void *lcd = P(canvas, CANVAS_LCD), *bar = *(void *const *)system_bar;
+    void *lcd = P(canvas, CANVAS_LCD);
     if (!lcd) return;
     unsigned fill = (unsigned)I(lcd, LCD_FILL_COLOR);
     for (int y = 0; y < 60; ++y)
@@ -271,8 +279,7 @@ void pl_box_paint(void *w, void *canvas) {
     paint_ramp(canvas, 60, 320, 0);
     paint_art(w, canvas, "classic_light_kb_back", 43, 33);
     paint_field_plain(w, canvas, 72, 28, 244);
-    if (bar) widget_paint(bar, canvas);
-    st.paint_w = w;
+    paint_bar(w, canvas);
     stock_canvas_set_fill_color(canvas, fill);
 }
 /* The history's top under Classic: the field (33 to 64), the strip's 7 rows above it and below. */
@@ -359,7 +366,7 @@ static int search_strip_end(void) {
 /* The dialog's own paint, under its children: the dark bar's rows behind the field. The bar goes
  * first: the window manager paints a dialog over it. With the keyboard up there's no bar. */
 void search_paint(void *w, void *canvas) {
-    void *lcd = P(canvas, CANVAS_LCD), *bar = *(void *const *)system_bar;
+    void *lcd = P(canvas, CANVAS_LCD);
     if (!lcd) return;
     unsigned fill = (unsigned)I(lcd, LCD_FILL_COLOR);
     search_hint(w);
@@ -370,8 +377,7 @@ void search_paint(void *w, void *canvas) {
     } else {
         dark_bar_rows(canvas, 26, 375, search_strip_end() - 26);
         paint_field(w, canvas, 24, 33, 327);
-        if (bar) widget_paint(bar, canvas);
-        st.paint_w = w;
+        paint_bar(w, canvas);
     }
     stock_canvas_set_fill_color(canvas, fill);
 }
@@ -452,7 +458,7 @@ void search_tabs_paint(void *group, void *canvas) {
     stock_canvas_set_fill_color(canvas, fill);
 }
 
-/* Classic's slider pages, one shape over stock's four windows: a dark bar (dark_bar_rows),
+/* Classic's slider pages, one shape over stock's four windows: under Classic's own bar,
  * the page image, a band holding the slider between its ends, the caption. Only the painter reads
  * these tables. */
 static const stops_t slider_band = { 8,
@@ -515,9 +521,9 @@ void slider_scrub(void *w, void *canvas) {
     stock_canvas_set_fill_color(canvas, fill);
 }
 
-/* Classic's message screens, over stock's two windows: Update Local Music's dialog
- * (full-screen, so it paints its own bar) and USB mode's page. Screen rows; each window's own
- * origin is read when it paints. Only the painter reads these tables. */
+/* Classic's message screens, over stock's two windows: Update Library's dialog
+ * (full-screen, so it paints the status bar itself, paint_bar) and USB mode's page. Screen rows;
+ * each window's own origin is read when it paints. Only the painter reads these tables. */
 #define MSG_BAR_X 72
 #define MSG_BAR_Y 218
 #define MSG_BAR_W 229
@@ -636,7 +642,6 @@ void msg_open(void *win) {
 }
 /* Under the window's children. */
 void msg_paint(void *w, void *canvas) {
-    static const unsigned update[] = { 0x66f4, 0x65b0, 0x66f2, 0x5e93, 0 }; /* 更新曲库 */
     void *lcd = P(canvas, CANVAS_LCD);
     if (!lcd) return;
     unsigned fill = (unsigned)I(lcd, LCD_FILL_COLOR);
@@ -646,7 +651,7 @@ void msg_paint(void *w, void *canvas) {
     bar_place(heading, 16, head, 343, MSG_HEAD_H);
     bar_place(below, 16, line, 343, 20);
     paint_page(w, canvas, 26 - dy);
-    if (dy < 26) paint_dark_bar(w, canvas, scan ? update : 0, st.batt_key); /* USB's: no title */
+    if (dy < 26) paint_bar(w, canvas); /* over the bar: bar_title_of has the scan's title */
     paint_art(w, canvas, scan ? "classic_light_orb_note" : "classic_light_orb_usb",
               scan ? 129 : 122, (scan ? 38 : 67) - dy);
     text_shadow(canvas, "classic-light", widget_get_text(heading),

@@ -2120,6 +2120,20 @@ def test_stock_reads_no_picture_out_of_an_ogg_comment_header_over_the_cap(fw, tr
     assert calls == ([(track, b'/tmp/.tmp_picture', 160, 150)] if stock else [])
 
 
+def test_stock_s_embedded_art_read_runs_under_a_lock_of_its_own(fw):
+    """Stock's list thread and its Now Playing thread hold a lock each around toolsGetAlbumCover, whose body writes,
+    decodes and removes the one /tmp/.tmp_picture: the hook's own lock is around the whole of it."""
+    held = []
+    fw.mock('fw_pthread_mutex_lock', lambda lock, *_: held.append(lock) and 0)
+    fw.mock('fw_pthread_mutex_unlock', lambda lock, *_: held.remove(lock))
+    fw.mock('stock_album_cover_trampoline', lambda *_: len(held))
+    cover = fw.fn('ringnav_album_cover', C.c_int, C.c_char_p, C.c_char_p, C.c_int, C.c_int)
+    assert cover(b'/m/a.flac', b'/m/a.jpg', 160, 160) == 1 and not held
+    locks = [args[0] for _, args in fw.calls('fw_pthread_mutex_lock')]
+    assert cover(b'/m/b.mp3', b'/m/b.jpg', 160, 160) == 1 and not held
+    assert [args[0] for _, args in fw.calls('fw_pthread_mutex_lock')] == locks * 2  # one lock, every caller's
+
+
 @pytest.mark.parametrize('writer, stock, walks', (('coverflow_scan_folder', 'stock_scan_folder_trampoline', True),
                                                   ('coverflow_delete_song', 'stock_delete_song_trampoline', False)))
 def test_each_songtable_writer_moves_the_generation_round_stock_s_write(fw, writer, stock, walks):

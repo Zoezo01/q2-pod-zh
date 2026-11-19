@@ -171,12 +171,12 @@ def test_check_layout_payload_may_reach_its_scratch_page(size, refused):
         build.check_layout(bytes(size), ps)
 
 
-@pytest.mark.parametrize('end,refused', [(build.SCRATCH + 0x20000, False), (build.SCRATCH + 0x20001, True)])
-def test_check_layout_scratch_state_may_fill_128_kb(end, refused):
-    # Scratch state of exactly 128 KB is accepted, one byte more refused
+@pytest.mark.parametrize('end,refused', [(build.SCRATCH + 0x30000, False), (build.SCRATCH + 0x30001, True)])
+def test_check_layout_scratch_state_may_fill_192_kb(end, refused):
+    # Scratch state of exactly 192 KB is accepted, one byte more refused
     ps = {'__scratch_start': build.SCRATCH, '__scratch_end': end}
     if refused:
-        with pytest.raises(ValueError, match='^Scratch state exceeds its 128 KB$'):
+        with pytest.raises(ValueError, match='^Scratch state exceeds its 192 KB$'):
             build.check_layout(b'', ps)
     else:
         build.check_layout(b'', ps)
@@ -367,13 +367,23 @@ def test_english_ui_refuses_a_file_it_cannot_rewrite():
         build.english_ui('x', bytes(data))
 
 
+VIETNAMESE = (0x1ea3, 0x1ef9, 0x1a1, 0x1b0)  # ả ỹ ơ ư
+
+
+def in_macro(ranges, u):
+    """u inside one of a *_RANGES macro's lo,hi runs."""
+    bounds = [int(v, 16) for v in ranges[ranges.index('{') + 1:-1].split(',')]
+    return any(lo <= u <= hi for lo, hi in zip(bounds[::2], bounds[1::2]))
+
+
 def test_bold_font():
     from fontTools.ttLib import TTFont
     font_bytes, ranges = build.bold_font()
     font = TTFont(io.BytesIO(font_bytes))
     source = TTFont(build.ROOT/'assets/fonts/LiberationSans-Bold.ttf')
-    have = sorted(u for u in source.getBestCmap() if 0x20 <= u < 0x530 or 0x2000 <= u < 0x2200) + [build.PLAY_MARK]
+    have = sorted(u for u in source.getBestCmap() if any(a <= u <= b for a, b in build.FACE_RANGES)) + [build.PLAY_MARK]
     assert sorted(font.getBestCmap()) == have and 0x41 in have and 0x2013 in have and 0x4e2d not in have
+    assert all(u in have and in_macro(ranges, u) for u in VIETNAMESE)
     for rec in font['name'].names:
         if rec.nameID in (1, 3, 4, 6, 16, 17, 18, 21, 22):
             assert 'Liberation' not in str(rec)
@@ -415,8 +425,9 @@ def test_classic_light_font():
     from fontTools.ttLib import TTFont
     font_bytes, ranges = build.classic_light_font()
     font, source = TTFont(io.BytesIO(font_bytes)), TTFont(build.ROOT/'assets/fonts/texgyreheros-bold.otf')
-    have = sorted(u for u in source.getBestCmap() if 0x20 <= u < 0x530 or 0x2000 <= u < 0x2200) + [build.PLAY_MARK]
+    have = sorted(u for u in source.getBestCmap() if any(a <= u <= b for a, b in build.FACE_RANGES)) + [build.PLAY_MARK]
     assert sorted(font.getBestCmap()) == have and 0x41 in have and 0xe9 in have
+    assert all(u in have and in_macro(ranges, u) for u in VIETNAMESE)
     names = {rec.nameID: str(rec) for rec in font['name'].names}
     assert names[1].replace(' ', '').startswith('Q2PodClassicLight') and names[6].startswith('Q2PodClassicLight')  # the Windows record is TeXGyreHeros, unspaced
     assert all(len(names[i]) <= 31 for i in (1, 4, 6))  # AWTK font names
@@ -451,10 +462,10 @@ def test_both_faces_are_given_a_play_mark_on_the_middle_of_their_capitals(face):
     assert xs[0] == xs[1] and ys[1] == (ys[0] + ys[2]) // 2  # an upright edge on the left, its point level with the middle
     assert abs(ys[0] + ys[2] - cap) <= 1  # on the capitals' middle
     assert abs((ys[2] - ys[0]) / cap - .78) < .005 and abs((xs[2] - xs[0]) / cap - .70) < .005
-    # at a Classic row's title px, bold standing in at FACE_FALLBACK_PCT of it (navigation.c fallback_px),
+    # at a Classic row's title px, bold standing in at FACE_FALLBACK_PCT of it (script.c fallback_px),
     # the upright edge lies on a pixel's, so it is drawn sharp
     px = next(t for t in theme.builtins() if t['id'] == 'classic-light')['font_px[ROLE_TITLE]']
-    pct = re.search(r'#define FACE_FALLBACK_PCT (\d+)', (build.ROOT/'patch/navigation.c').read_text())
+    pct = re.search(r'#define FACE_FALLBACK_PCT (\d+)', (build.ROOT/'patch/script.c').read_text())
     assert pct
     pixel = (font['hhea'].ascent - font['hhea'].descent) / (px if face == 'classic_light_font' else (px * int(pct[1]) + 50) // 100)
     assert abs(xs[0] / pixel - 1) < .02
@@ -592,6 +603,117 @@ def test_font_quotes_keeps_the_rest_of_the_font():
 def test_font_quotes_wants_the_stock_glyphs(font, message):
     with pytest.raises(ValueError, match=f'^{message}$'):
         build.font_quotes(hearts_font(**font))
+
+
+# A font with stock's letters and marks in their boxes (xMin, xMax, yMin, yMax), and its advance.
+LOWER, CAPITAL = (9, 133, 0, 136, 142), (2, 168, 0, 183, 170)
+LETTERS_FONT = {'a': LOWER, 'e': LOWER, 'o': LOWER, 'u': LOWER, 'y': LOWER, 'i': (17, 39, 0, 183, 56),
+                '\u0131': (22, 46, 0, 138, 68), 'A': CAPITAL, 'E': CAPITAL, 'I': CAPITAL, 'U': CAPITAL,
+                'Y': CAPITAL, 'O': (2, 168, 0, 200, 170), '\xe2': (9, 133, 0, 200, 142),
+                '\u0300': (-94, -48, 151, 186, 0), '\u0301': (-88, -42, 151, 186, 0), '\u0302': (-110, -32, 151, 186, 0),
+                '\u0303': (-113, -29, 155, 183, 0), '\u0306': (-108, -34, 152, 185, 0), '\u0309': (-98, -44, 185, 229, 0),
+                '\u031b': (-26, 14, 84, 155, 0), '\u0323': (-82, -60, -54, -28, 0), '\u0325': (-94, -48, -54, -8, 0),
+                '\u1ea1': LOWER}
+
+
+def letters_font(drop=(), move=None):
+    """LETTERS_FONT as a TrueType font, glyphs named by code point: drop leaves characters out, move
+    shifts one's box right a unit."""
+    from fontTools.fontBuilder import FontBuilder
+    from fontTools.pens.ttGlyphPen import TTGlyphPen
+    from fontTools.ttLib.tables._c_m_a_p import CmapSubtable
+    names = {ord(c): f'u{ord(c):04X}' for c in LETTERS_FONT if c not in drop}
+    glyphs = {'.notdef': TTGlyphPen(None).glyph()}
+    for c, (x0, x1, y0, y1, _) in LETTERS_FONT.items():
+        if c in drop: continue
+        dx, pen = int(c == move), TTGlyphPen(None)
+        pen.moveTo((x0 + dx, y0))
+        for point in ((x0 + dx, y1), (x1 + dx, y1), (x1 + dx, y0)): pen.lineTo(point)
+        pen.closePath()
+        glyphs[names[ord(c)]] = pen.glyph()
+    fb = FontBuilder(256, isTTF=True)
+    fb.setupGlyphOrder(list(glyphs))
+    fb.setupCharacterMap(names)
+    fb.setupGlyf(glyphs)
+    fb.setupHorizontalMetrics({'.notdef': (100, 0), **{names[ord(c)]: (m[4], m[0] + int(c == move)) for c, m in LETTERS_FONT.items() if c not in drop}})
+    fb.setupHorizontalHeader(ascent=230, descent=-60)
+    fb.setupNameTable({'familyName': 'Letters', 'styleName': 'Regular'})
+    fb.setupOS2()
+    fb.setupPost()
+    mac = CmapSubtable.newSubtable(6)  # Mac Roman, as stock's font has: its codes aren't Unicode
+    mac.platformID, mac.platEncID, mac.language = 1, 0, 0
+    mac.cmap = {0x61: 'u0061'}
+    fb.font['cmap'].tables.append(mac)
+    fb.font['head'].created = fb.font['head'].modified = 0xb0000000
+    fb.font.recalcTimestamp = False
+    out = io.BytesIO()
+    fb.save(out)
+    return out.getvalue()
+
+
+def letter_parts(font, c):
+    """c's glyph as (component, x, y) for each part, its letters by character."""
+    glyph, back = font['glyf'][font.getBestCmap()[ord(c)]], {f'u{ord(ch):04X}': ch for ch in LETTERS_FONT}
+    return [(back[p.glyphName], p.x, p.y) for p in glyph.components]
+
+
+def test_font_letters_maps_every_stock_letter_to_a_composite_of_its_own_glyphs():
+    from fontTools.ttLib import TTFont
+    src = letters_font()
+    before, after = TTFont(io.BytesIO(src)), TTFont(io.BytesIO(build.font_letters(src)))
+    letters = [u for lo, hi in build.STOCK_LETTERS for u in range(lo, hi + 1)]
+    cmap = after.getBestCmap()
+    assert len(letters) == 94 and all(u in cmap for u in letters)
+    added = [u for u in letters if u not in before.getBestCmap()]
+    assert len(added) == 93 and after['maxp'].numGlyphs == before['maxp'].numGlyphs + 93
+    for u in added:
+        glyph = after['glyf'][cmap[u]]
+        assert cmap[u] == f'uni{u:04X}' and glyph.isComposite()
+        assert all(p.glyphName in before.getGlyphOrder() for p in glyph.components)
+        assert after['hmtx'][cmap[u]][1] == glyph.xMin
+    assert cmap[0x1ea1] == 'u1EA1' and not after['glyf']['u1EA1'].isComposite()  # ạ was there: left alone
+    assert after['cmap'].getcmap(1, 0).cmap == {0x61: 'u0061'}
+    assert after['head'].modified == before['head'].modified == 0xb0000000 and after['head'].created == before['head'].created
+
+
+@pytest.mark.parametrize('letter,parts,advance', [
+    ('ả', [('a', 0, 0), ('\u0309', 142, -33)], 142),           # centred on the ink, 16 over a lowercase top
+    ('Ả', [('A', 0, 0), ('\u0309', 156, 6)], 170),             # 8 over a capital's
+    ('ấ', [('a', 0, 0), ('\u0302', 142, 1), ('\u0301', 192, 13)], 142),   # never stock's â; acute beside ^
+    ('ầ', [('a', 0, 0), ('\u0302', 142, 1), ('\u0300', 94, 25)], 142),    # the grave on ^'s left, in and up
+    ('ẫ', [('a', 0, 0), ('\u0302', 142, 1), ('\u0303', 142, 35)], 142),   # the tilde stacks over ^
+    ('ắ', [('a', 0, 0), ('\u0306', 142, 0), ('\u0301', 142, 37)], 142),   # stacked over a lowercase breve
+    ('Ắ', [('A', 0, 0), ('\u0306', 156, 39), ('\u0301', 204, 52)], 170),  # beside on a capital
+    ('Ằ', [('A', 0, 0), ('\u0306', 156, 39), ('\u0300', 102, 52)], 170),  # Ắ's mirror: beside a breve it stays low
+    ('Ẵ', [('A', 0, 0), ('\u0306', 156, 39), ('\u0303', 156, 72)], 170),  # tilde stacked, top 255
+    ('Ỗ', [('O', 0, 0), ('\u0302', 156, 57), ('\u0303', 156, 73)], 170),  # clamped to 256 (91 stacked)
+    ('ỉ', [('\u0131', 0, 0), ('\u0309', 105, -31)], 68),       # dotless i under a mark above
+    ('ị', [('i', 0, 0), ('\u0323', 99, 0)], 56),               # the dot keeps i's dot
+    ('ỵ', [('y', 0, 0), ('\u0323', 166, 0)], 142),             # the dot under y's stem
+    ('Ỵ', [('Y', 0, 0), ('\u0323', 156, 0)], 170),             # centred under a capital Y
+    ('ơ', [('o', 0, 0), ('\u031b', 142, 0)], 156),             # the horn at the advance, which grows
+    ('Ư', [('U', 0, 0), ('\u031b', 170, 47)], 184),            # raised by the base's top over o's
+    ('Ợ', [('O', 0, 0), ('\u031b', 170, 64), ('\u0323', 156, 0)], 184)])
+def test_font_letters_places_the_marks(letter, parts, advance):
+    from fontTools.ttLib import TTFont
+    font = TTFont(io.BytesIO(build.font_letters(letters_font())))
+    assert letter_parts(font, letter) == parts
+    assert not any(hasattr(p, 'transform') for p in font['glyf'][font.getBestCmap()[ord(letter)]].components)
+    assert font['hmtx'][font.getBestCmap()[ord(letter)]][0] == advance
+
+
+@pytest.mark.parametrize('font,message', [
+    (dict(move='\u0302'), 'Unexpected combining marks'), (dict(move='\u0323'), 'Unexpected combining marks'),
+    (dict(drop='\u0309'), "Font without its letters' parts"), (dict(drop='\u0131'), "Font without its letters' parts")])
+def test_font_letters_wants_the_stock_glyphs(font, message):
+    with pytest.raises(ValueError, match=f'^{message}$'):
+        build.font_letters(letters_font(**font))
+
+
+def test_font_letters_refuses_a_mark_it_has_no_rule_for(monkeypatch):
+    monkeypatch.setattr(build, 'STOCK_LETTERS', ((0x1e01, 0x1e01),))  # ḁ: a and a ring below
+    with pytest.raises(ValueError, match=r'^No rule for U\+0325$'):
+        build.font_letters(letters_font())
 
 
 def strings_bin(pairs):

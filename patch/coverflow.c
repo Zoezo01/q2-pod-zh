@@ -453,13 +453,53 @@ static int grid_cover(const char *track, const char *dst, int w, int h, int albu
  * comment header (docs/internals.md#oversized-ogg-tags). One over OGG_TAGS_MAX gets none from
  * stock, so its caller's fallback (coverflow_player_cover, grid_cover, build_art) hands it to
  * ffmpeg, which the kernel kills before demo. Stock reads no .opus or .oga picture, so those are
- * not measured. */
+ * not measured.
+ * Stock's body writes the picture to /tmp/.tmp_picture, decodes that file and removes it, and its
+ * two cover threads come here under a lock each (parse_albumcovertask_thd parse_cover_mutex,
+ * player_parsecover_thd g_playcover_mutex): a list's cover read while a track's began could
+ * decode the other's picture, half of each, or find the file gone. So the body runs under a lock
+ * of its own, the last any caller takes (album_art holds both of stock's first): it nests with
+ * none. */
 #ifndef PEQ_HOST
 int ringnav_album_cover(const char *track, const char *dst, int w, int h) {
+    static int lock[6] __attribute__((section(".scratch"))); /* MIPS glibc's zeroed mutex */
     const char *dot = strrchr(track, '.');
     if (dot && !strcasecmp(dot, ".ogg") && ogg_tags(track, 0)) return 0;
-    return stock_album_cover_trampoline(track, dst, w, h);
+    pthread_mutex_lock(lock);
+    int ok = stock_album_cover_trampoline(track, dst, w, h);
+    pthread_mutex_unlock(lock);
+    return ok;
 }
+
+/* Stock's three libpng routines call _setjmp and never test what it returns: the reader for an
+ * embedded PNG (0x5c91bc, under toolsGetAlbumCover), and toolsGrayPngConvRgbPng (0x5cb7b4), which
+ * toolsGetExternCover gives every PNG cover file of up to 1 MB beside the music, at its read and
+ * at its write of a gray one as RGB. A libpng error (a file cut short or damaged, a full card)
+ * longjmps there with 1, and stock went on as if for the first time: png_init_io, the read, the
+ * same error, forever, each round a line on stderr, which is a file in RAM
+ * (docs/internals.md#png-errors). Each jalr png_init_io after a _setjmp comes to a guard ($v0
+ * still _setjmp's, $t9 png_init_io, the call's own return in $ra): 0 goes on to png_init_io,
+ * anything else to one of stock's own endings in that routine (patch/offsets.inc), which frees
+ * what it took and returns without a picture. */
+#define PNG_GUARD(name, ending)                                                                    \
+    __asm__(".globl " #name "\n.set push\n.set noreorder\n" #name ":\n"                            \
+            "beqz $v0, 1f\nnop\nli $t9, " STR(ending) "\n1: jr $t9\nnop\n.set pop\n")
+PNG_GUARD(png_read_guard, PNG_READ_FAIL);
+PNG_GUARD(png_rgb_guard, PNG_RGB_FAIL);
+/* toolsGrayPngConvRgbPng's read has no ending that frees the rows it allocates before
+ * png_read_image (the array at 0x4c($sp), one row for each line of the height at 0x54($sp)):
+ * all of them are there once the array is, and no libpng call that can fail comes between. The
+ * guard clears the array's slot on the way in, and frees them here on an error. */
+void png_rows_free(void **rows, int n);
+void png_rows_free(void **rows, int n) {
+    if (!rows) return;
+    while (n-- > 0) free(rows[n]);
+    free(rows);
+}
+__asm__(".globl png_gray_guard\n.set push\n.set noreorder\npng_gray_guard:\n"
+        "bnez $v0, 1f\nnop\njr $t9\nsw $zero, 0x4c($sp)\n"
+        "1: lw $a0, 0x4c($sp)\nlw $a1, 0x54($sp)\n"
+        "li $ra, " STR(PNG_GRAY_FAIL) "\nj png_rows_free\nnop\n.set pop\n");
 #endif
 
 int coverflow_grid_cover(const char *track, const char *dst, int w, int h) {
@@ -514,8 +554,9 @@ int coverflow_folder_cover(const char *track, const char *dst, int w, int h) {
  * playlist_art.c. */
 int album_art(const char *track, const char *dst, int shared) {
     /* toolsGetAlbumCover goes through the shared /tmp/.tmp_picture, which stock guards with
-     * either lock (parse_albumcovertask_thd, player_parsecover_thd); hold both. Stock never
-     * nests them, so this order cannot deadlock. */
+     * either lock (parse_albumcovertask_thd, player_parsecover_thd); hold both, as before
+     * ringnav_album_cover had its own for the file. Stock never nests them, so this order
+     * cannot deadlock. */
     pthread_mutex_lock((void *)parse_cover_mutex);
     pthread_mutex_lock((void *)g_playcover_mutex);
     int ok = toolsGetAlbumCover(track, dst, ART_SIZE, ART_SIZE) == 1;

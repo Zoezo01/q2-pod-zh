@@ -54,7 +54,7 @@ def test_classic_draws_its_images_and_the_others_none():
         assert set(art.images({**themes[0], **half})) == {'minimal_vol_lo', 'minimal_vol_hi'}
     full = art.images(themes[1])
     assert {k: v for k, v in full.items() if '_icon_' not in k} == classic()  # what the other tests draw
-    assert set(full) == {f'classic_light_{n}' for n in ('sort_bars', 'icon_note', 'icon_folder', 'icon_stack', 'icon_game', 'icon_wave', 'icon_gear', 'chevron', 'bolt', 'plug', 'note', 'play_l', 'play_d', 'pause_l', 'pause_d', 'vol_lo', 'vol_hi', *(f'spk_{v}_{h}' for v in ('quiet', 'loud') for h in 'ldw'), *(f'drop_{n}{k}' for n in QS_NAMES for k in QS_INKS(n)), 'drop_track', 'drop_knob', 'sun_small', 'sun_big', 'play_w', 'pause_w', 'orb_note', 'orb_usb', 'tray_108', 'tray_165', 'tray_164', 'cell_45', 'cell_60', 'cell_lit_45', 'cell_lit_60', 'tile', 'clock_chrome', 'clock_shadow', 'hint_shadow', 'clock_dark', 'kb_del', 'kb_shift', 'kb_back', 'field_glass', 'field', 'band_shadow', 'panel_shadow', 'rate_shadow', 'tray_shadow', 'confirm_shadow', 'track_inset', 'lit_edge', 'band_top', 'band_foot', 'heart_on_l', 'heart_on_d', 'heart_off_l', 'heart_off_d', 'station')}
+    assert set(full) == {f'classic_light_{n}' for n in ('sort_bars', 'icon_note', 'icon_folder', 'icon_stack', 'icon_game', 'icon_wave', 'icon_gear', 'chevron', 'bolt', 'plug', 'note', 'play_l', 'play_d', 'pause_l', 'pause_d', 'vol_lo', 'vol_hi', *(f'spk_{v}_{h}' for v in ('quiet', 'loud') for h in 'ldw'), *(f'drop_{n}{k}' for n in QS_NAMES for k in QS_INKS(n)), 'drop_track', 'drop_knob', 'sun_small', 'sun_big', 'orb_note', 'orb_usb', 'tray_108', 'tray_165', 'tray_164', 'cell_45', 'cell_60', 'cell_lit_45', 'cell_lit_60', 'tile', 'clock_chrome', 'clock_shadow', 'hint_shadow', 'clock_dark', 'kb_del', 'kb_shift', 'kb_back', 'field_glass', 'field', 'band_shadow', 'panel_shadow', 'rate_shadow', 'tray_shadow', 'confirm_shadow', 'track_inset', 'lit_edge', 'band_top', 'band_foot', 'heart_on_l', 'heart_on_d', 'heart_off_l', 'heart_off_d', 'station')}
 
 
 # The approved rendered rows, within 1 per channel: the fill down column 272 of the pause bars
@@ -101,7 +101,7 @@ def test_the_bolt_and_the_plug_fill_the_batterys_inside():
 
 def test_the_volume_and_slider_page_images():
     got = classic()
-    size = {'spk_quiet': (12, 14), 'spk_loud': (22, 14), 'sun_small': (16, 16), 'sun_big': (22, 22), 'play_w': (18, 22), 'pause_w': (18, 22), 'orb_note': (116, 116), 'orb_usb': (130, 130)}
+    size = {'spk_quiet': (12, 14), 'spk_loud': (22, 14), 'sun_small': (16, 16), 'sun_big': (22, 22), 'orb_note': (116, 116), 'orb_usb': (130, 130)}
     for name, wh in size.items():
         for n in ([f'{name}_{h}' for h in 'ldw'] if name.startswith('spk') else [name]):
             w, h, at = pixels(got[f'classic_light_{n}'])
@@ -113,7 +113,7 @@ def test_the_volume_and_slider_page_images():
             w, h, at = pixels(got[f'classic_light_spk_{n}_{half}'])
             assert at(5, 7) == (*rgb, 255) and {at(x, y)[:3] for x in range(w) for y in range(h) if at(x, y)[3]} == {rgb}  # the cone; no other colour
             assert any(at(x, y)[3] for x in range(11, w) for y in range(h)) == (n == 'loud')  # only loud has arcs
-    for n in ('sun_small', 'sun_big', 'play_w', 'pause_w'):
+    for n in ('sun_small', 'sun_big'):
         w, h, at = pixels(got[f'classic_light_{n}'])
         assert {at(x, y)[:3] for x in range(w) for y in range(h) if at(x, y)[3]} == {(255, 255, 255)}
     assert pixels(got['classic_light_sun_big'])[2](11, 11)[3] == 255 and pixels(got['classic_light_sun_small'])[2](8, 8)[3] == 255
@@ -121,10 +121,6 @@ def test_the_volume_and_slider_page_images():
         w, h, at = pixels(got[f'classic_light_{n}'])
         inked = [(x, y) for x in range(w) for y in range(h) if at(x, y)[3] >= 64]
         assert max(p[0] for p in inked) - min(p[0] for p in inked) + 1 == side and max(p[1] for p in inked) - min(p[1] for p in inked) + 1 == side, n
-    # The dark bar's white state is Classic's own 12 x 14 glyph in the 18 x 22 canvas; play has
-    # ink at (7, 11), pause's two bars leave the column at (10, 11) clear.
-    assert pixels(got['classic_light_play_w'])[:2] == (18, 22)
-    assert pixels(got['classic_light_play_w'])[2](7, 11)[3] == 255 and pixels(got['classic_light_pause_w'])[2](10, 11)[3] < 64
 
 
 def test_the_confirm_shadow_falls_soft_and_black_under_the_tray():

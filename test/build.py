@@ -47,6 +47,8 @@ def boot_check():
                         '/tmp/q2-scan-file', '/tmp/q2-scan.log', '/tmp/q2-art-file', '/tmp/q2-art.log'):
                 script = script.replace(old, f'{r}{old}')
             script = script.replace('usleep 200000\n', ':\n').replace('usleep 500000', ':')
+            assert script.count('echo 1 > /proc/sys/kernel/print-fatal-signals\n') == 1  # the PC's is left alone
+            script = script.replace('/proc/sys/kernel/print-fatal-signals', f'{r}/fatal-signals')
             # demo's stderr file, and its cap's minute: one pass here while {r}/minute exists
             script = script.replace('/tmp/q2-demo.err', f'{r}/tmp/q2-demo.err')
             assert script.count('while sleep 60; do') == 1
@@ -181,6 +183,7 @@ def boot_check():
         err, minute, noise = r/'tmp/q2-demo.err', r/'minute', ''.join(f'err {i}\n' for i in range(1, 71))
         exe('release/bin/demo', 'i=0; while [ $i -lt 70 ]; do i=$((i+1)); echo "err $i" >&2; done; ' + demo)
         err.unlink(missing_ok=True); out, cp = logged(137, False)
+        assert (r/'fatal-signals').read_text() == '1\n'  # the kernel logs a fatal signal's registers, for the dmesg tail
         lines = out.split('== stderr\n')[1].splitlines()
         assert len(lines) == 60 and lines[0] == 'err 11' and lines[-1] == 'err 70' and err.read_text() == noise
         out, cp = logged(137, False)
@@ -288,7 +291,7 @@ logo_check()
 
 def validate_assets(directory):
     import functools, json, re, struct, subprocess
-    from build import sha, run, fileoff, symbols, BLUEALSA, AAC_44K1, GRADIENT_LEAF, WM_PAINT_LEAF, QUEUE_LEAF, HELPER, HELPER_LIKE, BOOT, BOOT_HOOK, REMOTE, REMOTE_HOOK, LOG_HOOK, WHEEL_LOG_HOOK, S90PLAY, S11LOGO, LOGO_HOOK, LOGO_LIGHT, BLUEALSA2, BT_KEEPALIVE, RTC_WRITE, WIFI_LPS, HOOKS, LOCK_CLOCK_12H, WATCHDOG, WATCHDOG_SLEEP, DROP_CACHES, STREAM_POLL_CALLS, DARK_POLLS, WHEEL_TS_READ, PDR
+    from build import sha, run, fileoff, symbols, BLUEALSA, AAC_44K1, GRADIENT_LEAF, WM_PAINT_LEAF, QUEUE_LEAF, HELPER, HELPER_LIKE, BOOT, BOOT_HOOK, REMOTE, REMOTE_HOOK, LOG_HOOK, WHEEL_LOG_HOOK, S90PLAY, S11LOGO, LOGO_HOOK, LOGO_LIGHT, BLUEALSA2, BT_KEEPALIVE, BLUETOOTHD, BT_GRACE, RTC_WRITE, WIFI_LPS, HOOKS, LOCK_CLOCK_12H, WATCHDOG, WATCHDOG_SLEEP, DROP_CACHES, STREAM_POLL_CALLS, DARK_POLLS, WHEEL_TS_READ, PDR
     from ipod import (ART_PLACEHOLDERS, sized_art, AUDIT, TOOLBAR_SWITCHES, BOTTOM, CONFIRM, VOLUME, BIGCOVER, BC_ART, BC_TITLE_PAD, QUICK_SETTINGS, QS_TOP, QS_LABEL_GAP, QS_LABEL_H,
                       QS_LABEL_W, QS_ROW_GAP, QS_PITCH, QS_BAR, QS_TOUCH, QS_EDGE, QS_SUN, HOME_LABEL_END, HOME_LIST_W, HOME_TEXT_X, HOME_TOP, PITCH, ARTIST_PAGE, HOME_OURS, HOME_PAGE, HOME_ROW, HOME_ROWS, NAVBAR_ONLY, PLAYING_PAGE, SET_ROW, SET_ROWS, SET_TOP, UI_ASSETS,
                       NP_BAR, NP_TOUCH, NP_MARGIN, NP_POS_X, NP_TOP, STATUS_BAR, STATUS_HIDDEN, STATUS_LEFT, STATUS_MARGIN, STATUS_RIGHT, CLOCK_MIN, CLOCK_TEXT, corner_inset, corner_x,
@@ -457,6 +460,8 @@ def validate_assets(directory):
     assert read('rootfs.squashfs', S90PLAY) == expected_start
     assert read('rootfs.squashfs', S11LOGO) == read('stock.squashfs', S11LOGO).replace(*LOGO_HOOK)  # the card's logo, if saved
     assert read('rootfs.squashfs', BLUEALSA2) == read('stock.squashfs', BLUEALSA2).replace(*BT_KEEPALIVE)  # keep-alive 5 s
+    daemon = read('stock.squashfs', BLUETOOTHD)  # a connection the other side opens: 30 s to 1 s
+    assert read('rootfs.squashfs', BLUETOOTHD) == daemon.replace(*BT_GRACE) != daemon
     # bluealsa: AAC capability, the two DROP jumps, the silence sites, and one appended LOAD payload.
     from build import BT_DROP, BT_DROP_HANDLER, BT_DROP_PAYLOAD, BT_SILENCE_SITES, patch_bluealsa, segments
     old, new = read('stock.squashfs', BLUEALSA), read('rootfs.squashfs', BLUEALSA)
@@ -488,9 +493,10 @@ def validate_assets(directory):
     named = {n[2].get('name'): n[2] for n in walk(stock_page)}
     assert named['view_lrc']['self_layout'] == 'default(x=0,y=0,w=100%,h=-20)'
     assert named['label_lyricmsg']['self_layout'] == 'default(x=0,y=73,w=100%,h=28)'
-    # Curly quotes draw the straight glyphs and ♡ takes ♥'s box and advance; other tables keep their
-    # stock bytes (head: its checksum).
-    from build import QUOTES
+    # Curly quotes draw the straight glyphs, ♡ takes ♥'s box and advance, and the letters stock lacks are
+    # added (font_letters); other tables keep their stock bytes (head: its checksum), but for the added
+    # glyphs' counts in hhea and maxp and their names in post.
+    from build import QUOTES, STOCK_LETTERS
     from fontTools.ttLib import TTFont
     old, new = (TTFont(io.BytesIO(read(i, FONT))) for i in ('stock.squashfs', 'rootfs.squashfs'))
     assert all(new.getBestCmap()[c] == old.getBestCmap()[q] for c, q in QUOTES.items())
@@ -499,7 +505,14 @@ def validate_assets(directory):
     assert new['hmtx'][empty] == new['hmtx'][full] == (old['hmtx'][full][0] + 32, g[full].xMin)
     assert abs(g[empty].xMin - g[full].xMin) <= 1 and abs(g[empty].xMax - g[full].xMax) <= 1
     assert abs(g[empty].yMin - g[full].yMin) <= 1 and abs(g[empty].yMax - g[full].yMax) <= 1
-    assert all(new.reader[t] == old.reader[t] for t in old.reader.keys() if t not in ('cmap', 'head', 'glyf', 'loca', 'hmtx'))
+    letters = [u for lo, hi in STOCK_LETTERS for u in range(lo, hi + 1) if u not in old.getBestCmap()]
+    assert len(letters) == 94 and all(new['glyf'][new.getBestCmap()[u]].isComposite() for u in letters)
+    assert new['maxp'].numGlyphs == old['maxp'].numGlyphs + 94
+    assert not any(hasattr(p, 'transform') for u in letters for p in new['glyf'][new.getBestCmap()[u]].components)
+    assert all(new.reader[t] == old.reader[t] for t in old.reader.keys() if t not in ('cmap', 'head', 'glyf', 'loca', 'hmtx', 'hhea', 'maxp', 'post'))
+    for t, grown in (('hhea', {'numberOfHMetrics'}), ('maxp', {'numGlyphs', 'maxComponentDepth', 'maxComponentElements', 'maxCompositeContours', 'maxCompositePoints'})):
+        assert {k: v for k, v in vars(new[t]).items() if k not in grown} == {k: v for k, v in vars(old[t]).items() if k not in grown}
+    assert new.getGlyphOrder()[:len(old.getGlyphOrder())] == old.getGlyphOrder()  # post: names added, none changed
     # The crash watchdog only sleeps longer; check_mem_thd returns on entry, so it never drops caches.
     old, new = read('stock.squashfs', WATCHDOG), read('rootfs.squashfs', WATCHDOG)
     assert new == old.replace(*WATCHDOG_SLEEP) and new != old
@@ -658,6 +671,7 @@ def validate_assets(directory):
             assert not bad, (rel, bad)
         if rel not in changed:
             assert new == (default_config(original) if rel == DEFAULT_CONFIG else original), rel
+            assert rel != DEFAULT_CONFIG or new.endswith(b'NAVHIDE=0\n') and not original.endswith(b'\n'), rel  # a save's new section starts its own line
             continue
         assert changed[rel] == dict(original_sha256=sha(original), sha256=sha(new))
         if '/raw/styles/' in rel:

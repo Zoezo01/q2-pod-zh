@@ -25,7 +25,7 @@ static struct {
     unsigned look;         /* time_now_ms of the last look for the file */
     int on;                /* a speaker playing, as the volume was last swapped */
     int local, limit, way; /* the earphones' volume, Volume Limit and output while it plays */
-    int required;          /* Headphones Required, as it was when a speaker started */
+    int picked, required;  /* a speaker picked, and Headphones Required as it was then */
     unsigned spk_seq;      /* the app's spk_seq as last taken */
     unsigned song;         /* the hash of the song CAST_TRACK names */
     /* asked: the app opened by the ⋯ row, or running when demo started (its loop's pid file, looked
@@ -76,16 +76,12 @@ static int air_speaker(cast_tap *t) {
 }
 
 /* A speaker starting: the earphones' volume, Volume Limit and output kept in RAM (the volume saved
- * under its output's key too), the limit lifted (it is the earphones'), as is Headphones Required,
- * whose check refuses every start with none connected (#388), and the speaker's taken up;
+ * under its output's key too), the limit lifted (it is the earphones'), and the speaker's taken up;
  * the DAC keeps the earphones' level (ALSA's last half second before the mute plays through it; the
  * wheel sets it later, silent). While it plays ringnav_write_config saves PLAYSET VOLUME as Q2POD
  * AIRVOL, so nothing reaches the earphones' key. Stopping: the earphones' level back from RAM
  * (their output's own if Bluetooth came or went meanwhile), applied and saved; the filter stays
- * silent until the next pass publishes volume -1, so nothing plays at the speaker's level.
- * Headphones Required comes back unless it was turned on meanwhile, and with none connected what
- * plays pauses, as stock's switch turned on pauses it. ponytail: the switch's row shows Off while
- * a speaker plays, as Max Volume shows 100. */
+ * silent until the next pass publishes volume -1, so nothing plays at the speaker's level. */
 static void air_volume(cast_tap *t, int on) {
     int v;
     if (on) {
@@ -93,8 +89,6 @@ static void air_volume(cast_tap *t, int on) {
         write_int_config(g_volume, "PLAYSET", "VOLUME");
         air.on = 1;
         g_maxvolume = 100;
-        air.required = g_block_withoutphone_flag;
-        g_block_withoutphone_flag = 0;
         v = air_speaker(t);
     } else {
         write_int_config(g_volume, "Q2POD", "AIRVOL");
@@ -110,12 +104,26 @@ static void air_volume(cast_tap *t, int on) {
     if (!on) {
         device_set_volume(v, 1);
         write_int_config(v, "PLAYSET", "VOLUME");
-        if (!g_block_withoutphone_flag) g_block_withoutphone_flag = (unsigned char)air.required;
-        if (g_block_withoutphone_flag && !g_po_status && !g_bal_status && !mclGetOutputWay() &&
-            mclGetPlayStatus() == 2)
-            media_set_playing(0);
     }
     air_dialog(v);
+}
+
+/* Headphones Required is the earphones' too, so it is cleared in RAM from a speaker's pick: the app
+ * starts the speaker only once the Q2 plays, and the switch's check refuses that start with none
+ * connected (#388; 1.8.6 cleared it at CAST_ON, which never came). It comes back when the app lets
+ * go, unless turned on meanwhile, and then with none connected what plays pauses, as stock's switch
+ * turned on pauses it. ponytail: the switch's row shows Off meanwhile, as Max Volume shows 100. */
+static void air_required(int picked) {
+    air.picked = picked;
+    if (picked) {
+        air.required = g_block_withoutphone_flag;
+        g_block_withoutphone_flag = 0;
+        return;
+    }
+    if (!g_block_withoutphone_flag) g_block_withoutphone_flag = (unsigned char)air.required;
+    if (g_block_withoutphone_flag && !g_po_status && !g_bal_status && !mclGetOutputWay() &&
+        mclGetPlayStatus() == 2)
+        media_set_playing(0);
 }
 
 /* "key=value\n" appended to buf at *n (cap bytes), the value's own line breaks made spaces. */
@@ -172,6 +180,7 @@ void airplay_poll(void) {
     else if (air.on && t &&
              t->spk_seq != air.spk_seq) /* the app reconnected: the speaker's again */
         air_dialog(g_volume = (unsigned char)air_speaker(t));
+    if ((s != CAST_OFF) != air.picked) air_required(s != CAST_OFF);
 }
 
 /* The lyrics' place (lyrics.c lyrics_now) while a speaker plays: the speaker's, from the app; the

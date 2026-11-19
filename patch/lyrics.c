@@ -353,10 +353,6 @@ int lyrics_on(void *lrc) {
 
 /* Lines are drawn in the system font, LYRIC_BOLD more times a pixel right for weight. */
 #define LYRIC_BOLD 2
-static int ly_cjk(unsigned c) {
-    return (c >= 0x2e80 && c < 0xa000) || (c >= 0xac00 && c < 0xd7b0) ||
-           (c >= 0xff00 && c < 0xfff0);
-}
 
 /* Line l's rows at its advances: breaking before a space (which goes) or beside a CJK character,
  * else mid-word; up to LYRIC_ROWS kept. How many it takes. */
@@ -370,7 +366,7 @@ static int ly_wrap(ly_line *l, const unsigned *s, const unsigned short *adv) {
         for (; i < l->n; x += adv[i++]) {
             if (s[i] == ' ')
                 brk = i, wbrk = x, resume = i + 1;
-            else if (i > start && (ly_cjk(s[i]) || ly_cjk(s[i - 1])))
+            else if (i > start && (script_cjk(s[i]) || script_cjk(s[i - 1])))
                 brk = i, wbrk = x, resume = i;
             if (i > start && x + adv[i] + LYRIC_BOLD > (ly.w ? ly.w : 375 - 2 * LYRIC_X)) break;
         }
@@ -533,7 +529,7 @@ static int ly_along(const ly_line *l, unsigned c) {
 static int ly_sung(const ly_line *l, unsigned a) {
     int units = 0;
     for (const unsigned *s = ly.tab->text + l->text; a < l->n; ++a)
-        units += ly_cjk(s[a]) ? 3 : s[a] > ' ' && s[a] != ',' && s[a] != '.' ? 1 : 0;
+        units += script_cjk(s[a]) ? 3 : s[a] > ' ' && s[a] != ',' && s[a] != '.' ? 1 : 0;
     return units * LYRIC_UNIT_MS > LYRIC_MIN_MS ? units * LYRIC_UNIT_MS : LYRIC_MIN_MS;
 }
 

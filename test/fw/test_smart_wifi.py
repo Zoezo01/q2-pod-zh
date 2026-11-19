@@ -6,7 +6,7 @@ import ctypes as C
 import pytest
 
 from conftest import O
-from test_addon import Ap  # each file keeps its own state's mirror
+from test_addon import Ap, card  # each file keeps its own state's mirror
 from test_nav_library_pages import Up
 from test_nav_painters import Ui, strings  # noqa: F401  the window stack
 from test_netupdate import JOB_INSTALL, NU_RUNNING, Nu, Sh
@@ -504,6 +504,17 @@ def test_another_page_where_the_closed_one_was_does_not_get_its_press(q2):
     q2.up()
     q2.tick()
     assert len(press.runs) == 1 and q2.timers == []
+
+
+@pytest.mark.parametrize('row, press, held', [(b'streaming', 'addon_open', True), (b'library', 'addon_lib_open', False)])
+def test_a_card_app_s_streaming_row_is_held_for_the_link_and_its_library_row_is_not(fw, q2, row, press, held):
+    """What a Library app lists is on the card: its row waits for no link (its page: test_addon.py)."""
+    q2.idle()
+    card(fw, foo=b'name=Foo\nrow=%s\n' % row)  # its files; the clock stays the Q2's
+    fw.mock('time_now_ms', lambda *_: q2.now & 0xffffffff)
+    fw.fn('addon_scan', C.c_int)()
+    fw.fn(press, C.c_int, C.c_void_p, C.c_void_p)(0, None)
+    assert (q2.toasts, len(q2.timers), q2.switched) == (([WAIT], 1, ['off', 'on']) if held else ([], 0, ['off']))
 
 
 def test_spotifys_row_with_the_radio_as_the_user_left_it_is_not_held(q2):
