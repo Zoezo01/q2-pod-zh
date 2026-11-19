@@ -519,7 +519,7 @@ class Machine:
             ret=0 if self.text(b)=='text' else self.string(n.get(self.text(b),''))
             if self.text(b)=='name' and not n.get('name'): ret=0
         elif name=='widget_get_text': ret=self.wide_string(n.get('text',''))
-        elif name=='player_playtime_and_length' and hasattr(self,'playtime'): self.word(a,self.playtime); self.word(b,225); ret=0
+        elif name=='player_playtime_and_length' and hasattr(self,'playtime'): self.word(a,self.playtime); self.word(b,getattr(self,'length',225)); ret=0
         elif name=='widget_get_text_utf8':
             text=n.get('text','').encode()
             self.u.mem_write(b,bytes(c))  # stock's wide-string conversion writes nothing unless all bytes fit
