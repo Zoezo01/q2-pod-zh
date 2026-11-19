@@ -1348,9 +1348,13 @@ static void sh_rows(void) {
         for (int r = 0; r < n; ++r) {
             int i = map[r];
             /* sh_text writes the detail: a blank one, or a theme would centre the name over it */
-            const char *name = apps[i >= 0 ? i : 0].name;
-            if (i == ROW_CHECK) name = "Check for Updates";
-            if (i == ROW_ADD) name = "+ Add App";
+            const char *name;
+            if (i == ROW_CHECK)
+                name = "Check for Updates";
+            else if (i == ROW_ADD)
+                name = "+ Add App";
+            else
+                name = apps[i].name;
             sh.row[r] = page_row_detail(view, r, name, theme()->sep[0].n ? " " : "", sh_click);
         }
         sh.rows = n;
