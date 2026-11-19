@@ -11265,7 +11265,7 @@ assert tab('KEY_BACK_BTN')==1 and m.labels()[3:5]==['Rockbox','Install'] and tab
 m.close(); m.wifi=3; m.rockbox_mode=0o100755; m.dirs['/mnt/mmc/.spotify']=[]; apps_open(m)
 assert m.labels()==['App Store','Check for Updates','Checking…','Rockbox','Update','Rockbox Themes','Install','Spotify','Installed','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Podcasts','Install','Live Music Archive','Install','AirPlay','Install','Utilities','Install']
 m.reply=(ROOT/'test/shelf/q2-librespot.json').read_bytes(); shelf_job(m)
-assert m.opts[10002]=='https://api.github.com/repos/lampsonlnguyen/q2-flappybird/releases/latest' and m.opts[10018]=='Q2Pod'  # the last of seventeen, a game's
+assert m.opts[10002]=='https://github.com/lampsonlnguyen/q2-flappybird/releases/latest' and m.opts[10018]=='Q2Pod' and m.opts[44]==1  # the last of seventeen, a game's: its redirect, headers only, no API request
 assert m.opts[10065]=='/etc/scrobble-ca.pem' and m.opts[64]==1 and m.opts[81]==2 and m.opts[20108]
 assert m.labels()[8]=='Update' and m.labels()[2]=='Checked just now' and '/tmp/q2-shelf.json' not in m.files  # q2-v1.8 against the latest q2-v1.9
 assert m.toasts[-1][3]=='2 apps can be updated'; passed()  # the opening check's end, the page on top: Rockbox, there by hand, and Spotify

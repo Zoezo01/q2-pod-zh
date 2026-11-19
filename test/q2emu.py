@@ -4652,6 +4652,12 @@ class ShelfMachine(RadioMachine):
             reply,self.reply=self.reply,self.listed
             try: return super().hook(u,address,size,unused)
             finally: self.reply=reply
+        if name=='r:curl_easy_getinfo' and 20011 not in self.opts and self.opts.get(10002,'').startswith('https://github.com/'):
+            # a check's releases/latest: the redirect to the tag reply's JSON names, else none (404)
+            tag=re.search(rb'"tag_name" *: *"([^"]+)"',self.reply); saved=self.code,self.location,self.codes
+            self.code,self.location,self.codes=(302,'https://github.com/o/r/releases/tag/'+tag[1].decode(),[]) if tag else (404,'',[])
+            try: return super().hook(u,address,size,unused)
+            finally: self.code,self.location,self.codes=saved
         if name=='c:statfs@GLIBC_2.0':
             b=u.reg_read(UC_MIPS_REG_A1); self.word(b+4,4096); self.word(b+28,self.free>>12); self.returns(0,clobber=True); return
         if name=='b:rename@GLIBC_2.0': self.moves.append(self.text(u.reg_read(UC_MIPS_REG_A1)))
