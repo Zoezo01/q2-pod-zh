@@ -1,6 +1,7 @@
 # Changelog
 
 - **1.8.9**:
+  - System Update, App Store: a press that stops **Network update** or a check for updates stops it at once. On a network that drops packets, a request already sent to GitHub was waited out first, up to 30 seconds, before the download was cancelled or the App Store would start another job.
   - App Store: one **Check for Updates** checks every app and game on both tabs, **Apps** and **Games**. A check asked GitHub once per app, and GitHub allows a Q2 only 60 of those an hour, so with today's list it ran out part way and the games, last in the list, showed no update until you checked again. A check now asks without using that allowance.
   - App Store: under **Theme: Classic** and **Theme: Modern**, the open tab, **Apps** or **Games**, is the colour your theme gives the selected row, its name in the row's ink. Under Classic it was the accent's own blue, darker than Classic Blue's rows.
 - **1.8.8**:

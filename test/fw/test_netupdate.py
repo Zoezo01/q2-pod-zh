@@ -1167,6 +1167,81 @@ def test_a_redirect_with_no_location_clears_the_tag(fw):
     assert fetch(fw)[:2] == (0, b'')
 
 
+class Hung:
+    """libcurl when no answer comes: a transfer whose URL starts with one of hang's takes its 30 s, its progress
+    callback (when on) called once a second, as curl calls it whether connecting or waiting for the reply, until that
+    answers non-zero (CURLE_ABORTED_BY_CALLBACK, 42) or the time is up (CURLE_OPERATION_TIMEDOUT, 28); any other URL
+    fails at once (CURLE_COULDNT_CONNECT, 7). press(k) runs before second k, as a press on the UI thread lands then.
+    calls: the seconds the callback was asked; urls: each transfer's."""
+    def __init__(self, fw, hang=(b'https://',), press=None):
+        self.opts, self.calls, self.urls, self.hang, self.press = {}, [], [], hang, press
+        def setopt(c, opt, value, *_):
+            self.opts[opt] = value
+        def perform(c, *_):
+            url = C.string_at(self.opts[10002])
+            self.urls.append(url)
+            if not url.startswith(self.hang):
+                return 7
+            on = self.opts.get(43, 1) == 0 and 20219 in self.opts  # NOPROGRESS off, XFERINFOFUNCTION
+            progress = C.CFUNCTYPE(C.c_int, C.c_void_p, *[C.c_longlong] * 4)(self.opts[20219]) if on else None
+            for k in range(30):
+                if self.press:
+                    self.press(k)
+                if progress:
+                    self.calls.append(k)
+                    if progress(self.opts.get(10057), 0, 0, 0, 0):
+                        return 42
+            return 28
+        fw.mock('fw_curl_easy_init', lambda *_: self.opts.clear() or 1)
+        fw.mock('fw_curl_easy_setopt', setopt)
+        fw.mock('fw_curl_easy_perform', perform)
+
+
+def head(fw, xfer):
+    fn = fw.fn('netupdate__fetch', C.c_int, C.c_char_p, C.c_void_p, C.c_void_p, C.c_uint, C.POINTER(C.c_long), C.c_void_p, C.c_long)
+    return fn(b'https://x', None, block(fw, size=64), 64, C.byref(C.c_long(0)), xfer, 0)
+
+
+def test_a_cancel_ends_a_header_request_that_hangs_at_once(fw):
+    """A header-only request given a cancel to read (Network Update's first, a check's) reads it at curl's progress
+    calls, as a download does: a press ends one that gets no answer at the next call, not at its 30 s timeout."""
+    xfer = (C.c_int * 2)()
+    hung = Hung(fw, press=lambda k: k == 2 and xfer.__setitem__(0, 1))
+    assert head(fw, xfer) == 42  # CURLE_ABORTED_BY_CALLBACK
+    assert hung.calls == [0, 1, 2] and hung.opts[44] == 1  # still headers only
+    assert (hung.opts[78], hung.opts[13]) == (15, 30)  # and still its own timeouts
+
+
+def test_a_header_request_with_no_cancel_to_read_has_no_progress_callback(fw):
+    """Home's daily check (nc_worker) gives none, so curl is never handed a null for the callback to write to."""
+    hung = Hung(fw)
+    assert head(fw, None) == 28 and not hung.calls
+    assert 20219 not in hung.opts and 10057 not in hung.opts
+
+
+@pytest.mark.parametrize('cancel', [1, 2])  # the row pressed again; System Update left
+def test_a_cancel_while_network_updates_first_request_hangs_ends_it_at_once(fw, cancel):
+    """The cancel ends the request in flight and the press reads Download cancelled, not Can't reach GitHub; the
+    part on the card stays, as after any cancel before the download, for the next press to carry on from."""
+    nu = fw.var('netupdate__nu', Nu)
+    card = slot(fw, {PART: BODY[:1000]})
+    hung = Hung(fw, press=lambda k: k == 3 and setattr(nu, 'cancel', cancel))
+    fw.fn('netupdate__worker', C.c_void_p, C.c_void_p)(None)
+    assert nu.state == NU_CANCELLED and hung.calls == [0, 1, 2, 3] and hung.urls == [LATEST]
+    assert card.files[PART] == BODY[:1000]
+
+
+def test_a_press_that_stops_a_check_ends_its_hung_request_at_once(fw):
+    """A row's press stops a check (sh.cancel); the header request in flight ends at the next progress call, so the
+    job is over for the next press rather than after the request's 15 or 30 s, and no other app is asked."""
+    Card(fw)
+    apps(fw, b'me/foo', b'me/bar')
+    sh = fw.var('netupdate__sh', Sh)
+    hung = Hung(fw, hang=(b'https://github.com/',), press=lambda k: k == 1 and setattr(sh, 'cancel', 1))
+    assert check(fw) == 0
+    assert hung.calls == [0, 1] and hung.urls[1:] == [b'https://github.com/me/foo/releases/latest']
+
+
 def json_get(fw, card, body, code=200, result=0):
     Net(fw, {b'https://api': (result, code, None)})
     card.files[JSON_PATH] = body
