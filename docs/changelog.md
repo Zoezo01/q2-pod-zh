@@ -2,6 +2,7 @@
 
 - **1.8.9**:
   - App Store: one **Check for Updates** checks every app and game on both tabs, **Apps** and **Games**. A check asked GitHub once per app, and GitHub allows a Q2 only 60 of those an hour, so with today's list it ran out part way and the games, last in the list, showed no update until you checked again. A check now asks without using that allowance.
+  - Lyrics: **Download Album Lyrics** asks LRCLIB about every song over one connection, so an album's lyrics arrive sooner, most of all on a slow network. It used to open a new encrypted connection for each song.
   - App Store: under **Theme: Classic** and **Theme: Modern**, the open tab, **Apps** or **Games**, is the colour your theme gives the selected row, its name in the row's ink. Under Classic it was the accent's own blue, darker than Classic Blue's rows.
 - **1.8.8**:
   - Bluetooth: a car that connects to the Q2 by itself plays within a second or two. Shanling's firmware waited 30 seconds for the car to start the sound before starting it itself, so with a car that leaves that to the player (a Tesla) a song ran silent for half a minute.
