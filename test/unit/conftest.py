@@ -31,7 +31,8 @@ if 'MUTANT_UNDER_TEST' in os.environ:
     threading.stack_size(1 << 20)
 sys.path.insert(0, str(ROOT))
 # build first: the others import it, or each other in this order, while they load.
-for name in ('build', 'ipod', 'theme', 'art', 'peq', 'flac', 'q2remote', 'release', 'rebase', 'lastfm_key'):
+for name in ('build', 'ipod', 'theme', 'art', 'peq', 'flac', 'q2remote', 'release', 'rebase', 'lastfm_key',
+             'langpack'):
     sys.modules[name] = importlib.import_module('tools.' + name)
 
 # The compilers a test may run. A mutant changes these tools' commands before they run, and
