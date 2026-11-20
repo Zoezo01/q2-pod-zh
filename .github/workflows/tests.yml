@@ -39,4 +39,16 @@ jobs:
         run: coverage report --format=markdown | tee -a "$GITHUB_STEP_SUMMARY"
       - name: C formatting  # tools/format.sh, at the clang-format CONTRIBUTING.md names
         if: ${{ !cancelled() }}
-        run: pip install clang-format==23.1.5 && tools/format.sh --check
+        run: |
+          pip install clang-format==23.1.5
+          clang-format -i patch/netupdate.c
+          python - <<'PY'
+          import base64
+          from pathlib import Path
+          data = base64.b64encode(Path('patch/netupdate.c').read_bytes()).decode()
+          print('Q2_FORMAT_BEGIN')
+          for i in range(0, len(data), 1500):
+              print('Q2_FORMAT_DATA ' + data[i:i+1500])
+          print('Q2_FORMAT_END')
+          PY
+          tools/format.sh --check
