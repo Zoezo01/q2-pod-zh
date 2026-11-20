@@ -758,7 +758,7 @@ void netupdate_poll(void) {
 #define SH_LIST SH_DIR "/sources.list" /* the last list fetched, for the page offline */
 #define SH_LIST_URL "https://raw.githubusercontent.com/DiamondBond/q2-pod/main/sources.list"
 #define SH_STALE_MS (10 * 60 * 1000ull)
-#define SH_RECHECK_MS (60 * 1000ull) /* Check for Updates' least gap: an API request per app */
+#define SH_RECHECK_MS (60 * 1000ull) /* Check for Updates' least gap: a request per app */
 enum { JOB_CHECK = 1, JOB_INSTALL, JOB_REMOVE, JOB_ERASE };
 enum { ST_INSTALL, ST_UPDATE, ST_INSTALLED };
 enum { ROW_CHECK = SH_MAX }; /* map's row that is no app: Check for Updates, the first */
@@ -815,14 +815,33 @@ static int release(shelf_app *a, char *tag, char *url, unsigned *size) {
     return r;
 }
 
+/* A check's answer for a: the latest release's tag into a->latest from github.com's releases/latest
+ * redirect, as Network Update's NU_REPO, so no API request. The API allows 60 an hour, and a check
+ * of every app ran out part way: the list's end, the Games tab, kept no state until another check.
+ * An install still asks the API (release) for its zip.
+ * ponytail: the tag is the redirect's URL path segment, the .tag file the API's tag_name; a tag
+ * with characters a URL escapes would read UPDATE after its install: decode it if one ever does.
+ * A latest release with no zip reads UPDATE too, and its install says "No update for this build".
+ */
+static int latest(shelf_app *a) {
+    char url[160], tag[32] = "";
+    long code = 0;
+    snprintf(url, sizeof url, "https://github.com/%s/releases/latest", a->repo);
+    if (fetch(url, 0, tag, sizeof tag, &code, 0, 0)) return SH_NET;
+    if (code == 429) return SH_BUSY;
+    if (code != 302 || !*tag) return SH_MISSING; /* no release: a redirect to /releases */
+    snprintf(a->latest, sizeof a->latest, "%s", tag);
+    return SH_OK;
+}
+
 /* A check: the list fetched into sh.next, kept as SH_LIST with any app it dropped that is
  * still installed (so it can be removed), else the page's own; then each listed one's latest
  * release. A dropped app's is never asked, nor installed: dropping it is what stops a taken-over
  * repo's releases reaching a Q2 (GHSA-8wpr-pmqx-538x).
  * Whether every release was checked: a list that failed is fetched again with the next check. */
 static int check(void) {
-    char path[96], tag[32], url[256], text[SH_MAX * 120 + 8];
-    unsigned size, m = 0;
+    char path[96], text[SH_MAX * 120 + 8];
+    unsigned m = 0;
     long code = 0;
     char *list = get(SH_LIST_URL, &code);
     int n = list ? shelf_sources(list, sh.next, SH_MAX) : 0, fresh = n > 0, ok = 1;
@@ -846,7 +865,7 @@ static int check(void) {
     if (!n) sh.result = SH_NET, ok = 0; /* no list at all: said, and the next press fetches it */
     for (int k = 0; k < n && !sh.cancel; ++k) {
         if (sh.next[k].dropped) continue;
-        int r = release(&sh.next[k], tag, url, &size);
+        int r = latest(&sh.next[k]);
         if (r == SH_MISSING) continue; /* checked: no release yet */
         ok &= !r;
         if (!sh.result) sh.result = r; /* SH_NET or SH_BUSY, for sh_told */
@@ -1209,8 +1228,8 @@ static int sh_check(void *ctx, void *event) {
 }
 
 /* System settings' Apps row. The card's last list, until a check fetches the list again: with Wi-Fi
- * when the last whole check is over SH_STALE_MS old (or none), as GitHub allows 60 unauthenticated
- * API requests an hour; while Smart Wi-Fi brings the radio back, once its link is up. */
+ * when the last whole check is over SH_STALE_MS old (or none), a request per app; while Smart Wi-Fi
+ * brings the radio back, once its link is up. */
 int shelf_open(void *ctx, void *event) {
     if (sh.page || !(sh.page = page_open("apps_page", sh_closed, page_keyup))) return 0;
     if (sh.job != JOB_CHECK && !shelf_n) { /* an erase can run from Configuration before it opens */
