@@ -759,6 +759,7 @@ void netupdate_poll(void) {
 #define SH_LIST_URL "https://raw.githubusercontent.com/DiamondBond/q2-pod/main/sources.list"
 #define SH_STALE_MS (10 * 60 * 1000ull)
 #define SH_RECHECK_MS (60 * 1000ull) /* Check for Updates' least gap: a request per app */
+#define SH_LOST 2 /* apps in a row with no answer from GitHub: a check ends there */
 enum { JOB_CHECK = 1, JOB_INSTALL, JOB_REMOVE, JOB_ERASE };
 enum { ST_INSTALL, ST_UPDATE, ST_INSTALLED };
 enum { ROW_CHECK = SH_MAX }; /* map's row that is no app: Check for Updates, the first */
@@ -863,9 +864,10 @@ static int check(void) {
     if (fresh) mkdir(SH_DIR, 0755), blob_io(SH_LIST, SH_LIST ".tmp", text, m, 1);
     sh.n = n;
     if (!n) sh.result = SH_NET, ok = 0; /* no list at all: said, and the next press fetches it */
-    for (int k = 0; k < n && !sh.cancel; ++k) {
+    for (int k = 0, lost = 0; k < n && !sh.cancel && lost < SH_LOST; ++k) {
         if (sh.next[k].dropped) continue;
         int r = latest(&sh.next[k]);
+        lost = r == SH_NET ? lost + 1 : 0;
         if (r == SH_MISSING) continue; /* checked: no release yet */
         ok &= !r;
         if (!sh.result) sh.result = r; /* SH_NET or SH_BUSY, for sh_told */

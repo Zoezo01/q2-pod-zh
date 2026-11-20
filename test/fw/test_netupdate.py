@@ -1595,6 +1595,52 @@ def test_a_check_keeps_why_a_release_failed_but_not_a_missing_one(fw):
     assert check(fw) == 1 and sh.result == SH_OK  # no release yet: checked, the minute's gap holds
 
 
+def six(fw):
+    """The page's list: six apps, me/app0 to me/app5."""
+    return apps(fw, *[b'me/app%d' % i for i in range(6)])
+
+
+def asked(net):
+    return [u.split(b'/')[4] for u in net.urls if u.startswith(b'https://github.com/')]
+
+
+def test_a_check_that_cant_reach_github_stops_after_two_apps(fw):
+    """Two apps in a row whose request gets no answer at all (here each waits out its connect timeout) end the check:
+    on a network that drops packets every request would wait its 15 s, so the apps after them aren't asked."""
+    Card(fw)
+    six(fw)
+    sh = fw.var('netupdate__sh', Sh)
+    net = Net(fw, {b'https://': (28, 0, None)})  # CURLE_OPERATION_TIMEDOUT: no answer
+    assert check(fw) == 0 and sh.result == SH_NET
+    assert asked(net) == [b'app0', b'app1']
+
+
+def test_an_answer_of_any_kind_keeps_a_check_going(fw):
+    """Only no answer twice in a row stops a check: a 404, a repo with no release, GitHub's 429 or one lost request
+    between answers says GitHub is there, so every app is still asked and the one with a release gets it."""
+    Card(fw)
+    six(fw)
+    sh = fw.var('netupdate__sh', Sh)
+    net = Net(fw, {b'https://raw': (7, 0, None), b'https://github.com/me/app0': (28, 0, None),
+                   b'https://github.com/me/app1': (0, 404, None), b'https://github.com/me/app2': (7, 0, None),
+                   b'https://github.com/me/app3': (0, 429, None), b'https://github.com/me/app4': (6, 0, None),
+                   b'https://github.com/me/app5': redirect(b'1.0')})
+    assert check(fw) == 0 and sh.result == SH_NET  # the first failure is still the one said
+    assert asked(net) == [b'app%d' % i for i in range(6)] and sh.next[5].latest == b'1.0'
+
+
+def test_apps_after_the_stop_keep_their_update_when_the_list_is_out_of_reach_too(fw):
+    """The usual outage takes the list's host too, so the check runs on the page's own list: an app it stops
+    before asking keeps the release the page knew, and its row still says UPDATE."""
+    Card(fw)
+    table = six(fw)
+    table[4].latest = b'2.0'
+    sh = fw.var('netupdate__sh', Sh)
+    Net(fw, {b'https://': (28, 0, None)})
+    check(fw)
+    assert sh.n == 6 and sh.next[4].latest == b'2.0'
+
+
 def test_no_list_anywhere_is_a_failed_check(fw):
     Card(fw)
     fw.var('shelf_n', C.c_int).value = 0

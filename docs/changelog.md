@@ -1,6 +1,7 @@
 # Changelog
 
 - **1.8.9**:
+  - App Store: when GitHub can't be reached, **Check for Updates** gives up after two apps and says **Can't reach GitHub** within a minute. It used to try every app in turn, each waiting up to 15 seconds on a network that drops packets, four and a half minutes with today's list.
   - App Store: one **Check for Updates** checks every app and game on both tabs, **Apps** and **Games**. A check asked GitHub once per app, and GitHub allows a Q2 only 60 of those an hour, so with today's list it ran out part way and the games, last in the list, showed no update until you checked again. A check now asks without using that allowance.
   - App Store: under **Theme: Classic** and **Theme: Modern**, the open tab, **Apps** or **Games**, is the colour your theme gives the selected row, its name in the row's ink. Under Classic it was the accent's own blue, darker than Classic Blue's rows.
 - **1.8.8**:
