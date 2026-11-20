@@ -1041,6 +1041,18 @@ def test_upload_reports_how_it_went(fw, ui, ok, sent, toast, pending):
     assert scrobbler.sa.pending == pending  # listens sent no longer count toward the automatic upload
 
 
+@pytest.mark.parametrize('ok, misses', [(1, 0), (0, 3)])
+def test_upload_scrobbles_success_starts_the_automatic_uploads_waits_over(fw, ui, ok, misses):
+    """Three automatic tries in a row sent nothing, so the next wake waits two hours; Upload Scrobbles that
+    succeeds starts the count over, one that fails leaves it."""
+    scrobbler = Scrobbler(fw)
+    scrobbler.sa.misses = 3
+    call(fw, 'upload_scrobbles')
+    scrobbler.ends(ok, 1)
+    ui.fire('upload_wait')
+    assert scrobbler.sa.misses == misses
+
+
 def test_upload_while_one_runs(fw, ui):
     scrobbler = Scrobbler(fw)
     call(fw, 'upload_scrobbles')

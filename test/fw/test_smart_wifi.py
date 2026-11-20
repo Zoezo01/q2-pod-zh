@@ -612,3 +612,77 @@ def test_stocks_actions_run_at_once_with_the_radio_as_the_user_left_it(fw, q2):
     assert fw.fn('ringnav_online_match', C.c_int, C.c_void_p)(more.addr) == 9
     assert stock == [(tidal.addr, 0x77), (transfer.addr, 0x77), more.addr]
     assert q2.toasts == [] and q2.timers == [] and q2.switched == []
+
+
+# The automatic upload's wakes (scrobble_ui.c scrobble_auto, docs/internals.md#scrobbling).
+class Listening:
+    """Music playing on with Smart Wi-Fi on and [SCROBBLE] AUTO=1 (a ListenBrainz token on the card): a song heard
+    every 4 minutes and the UI loop's scrobble_auto at each poll. network: whether a woken radio finds a link, 5 s
+    on; sent: how an upload's thread ends, 3 s after it starts. wakes: when the radio came on; uploads: when each
+    upload started."""
+    def __init__(self, q, network=False, sent=True):
+        self.q, self.network, self.sent, self.wakes, self.uploads, self.link_at = q, network, sent, [], [], None
+        self.up = q.fw.var('scrobble__up', Up)
+        values = {b'TOKEN': b'abc', b'AUTO': b'1'}
+        def read(path, section, key, out, default, *_):
+            value = values.get(C.string_at(key), b'')
+            C.memmove(out, value + b'\0', len(value) + 1)
+        m = q.fw.mock
+        m('toolsReadConfig', read)
+        m('fw_pthread_create', lambda t, attr, fn, arg, *_: self.uploads.append(q.now) or 0)
+        m('navigator_window_is_exist', lambda *_: 0)
+        def switch(toggle=1, *_):
+            Q2.switch(q, toggle)
+            if q.wifi.value:
+                self.wakes.append(q.now)
+                self.link_at = q.now + 5000 if self.network else None
+        m('wifi_switch', switch)
+        self.auto, self.listened = q.fw.fn('scrobble_auto', None), q.fw.fn('scrobble_listened', None)
+        q.idle()
+        self.song = q.now + 240000
+
+    def run(self, minutes):
+        q, end = self.q, self.q.now + minutes * 60000
+        while q.now < end:
+            q.now += POLL
+            if self.link_at and q.now >= self.link_at:
+                q.up()
+                self.link_at = None
+            q.poll()
+            if q.now >= self.song:
+                self.listened()
+                self.song += 240000
+            if self.up.running and not self.up.done and q.now - self.uploads[-1] >= 3000:
+                self.up.done, self.up.ok, self.up.sent = 1, int(self.sent), int(self.sent)
+            self.auto()
+
+    def gaps(self, since=0):
+        """Whole minutes between the radio's wakes, from wake since on."""
+        w = self.wakes[since:]
+        return [(b - a) // 60000 for a, b in zip(w, w[1:])]
+
+
+def test_an_automatic_upload_that_finds_no_link_wakes_the_radio_less_and_less_often(q2):
+    """Away from any known network each wake for the automatic upload brings no link, and each kept the radio on for
+    Smart Wi-Fi's five minutes: the next wake now comes 30 minutes after the last try, then 60, then every 120. It
+    came every half hour at most, sooner while the listens since pulled the retry in."""
+    day = Listening(q2)
+    day.run(8 * 60)
+    assert day.gaps() == [31, 61, 121, 121] and not day.uploads
+
+
+def test_back_on_a_network_the_upload_goes_and_a_success_starts_the_waits_over(q2):
+    """Coming back to a known network, a link up for anything else (here Streaming's page wakes the radio) uploads at
+    the next minute's check, however long the next wake would still wait. The upload sent, the count starts over: the
+    next try that finds no link is followed by a wake 30 minutes on, not 120."""
+    day = Listening(q2)
+    day.run(6 * 60)
+    assert len(day.wakes) == 4 and not day.uploads  # the next wake would wait 120 minutes
+    day.network = True
+    page = q2.ui.window('stream_page')
+    day.run(2)
+    assert len(day.uploads) == 1 and day.up.ok and len(day.wakes) == 5  # the page's wake, its link, the upload
+    q2.ui.wm.children.remove(page)
+    day.network, woken = False, len(day.wakes)
+    day.run(4 * 60)
+    assert day.gaps(since=woken)[:2] == [31, 61]  # after the next listens' first miss: 30, then 60 again

@@ -1,6 +1,7 @@
 # Changelog
 
 - **1.8.9**:
+  - Scrobbling: with **Smart Wi-Fi** and automatic uploads on, an upload that can't get through wakes the radio less and less often, after 30 minutes, then an hour, then every two hours, until one succeeds. It used to wake the radio every half hour or sooner for as long as it failed, each time for five minutes: away from known Wi-Fi, about two and a half hours of radio over a day of listening.
   - App Store: one **Check for Updates** checks every app and game on both tabs, **Apps** and **Games**. A check asked GitHub once per app, and GitHub allows a Q2 only 60 of those an hour, so with today's list it ran out part way and the games, last in the list, showed no update until you checked again. A check now asks without using that allowance.
   - App Store: under **Theme: Classic** and **Theme: Modern**, the open tab, **Apps** or **Games**, is the colour your theme gives the selected row, its name in the row's ink. Under Classic it was the accent's own blue, darker than Classic Blue's rows.
 - **1.8.8**:
