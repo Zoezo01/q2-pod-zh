@@ -1242,7 +1242,7 @@ static int custom_save(const void *unused) {
     }
     if (!old && file_mode(SH_CUSTOM)) return toast("Can't read custom sources"), 0;
     int size = snprintf(text, sizeof text, "%s%s%s\n", old ? old : "",
-                        bytes && old[bytes - 1] != '\n' ? "\n" : "", app.repo);
+                        old && bytes && old[bytes - 1] != '\n' ? "\n" : "", app.repo);
     free(old);
     mkdir(SH_DIR, 0755);
     if (size >= (int)sizeof text || !blob_io(SH_CUSTOM, SH_CUSTOM ".tmp", text, size, 1))
