@@ -841,8 +841,9 @@ static int custom_sources(shelf_app *out, int n) {
         if (!seen && n < SH_MAX) local[i].custom = 1, out[n++] = local[i];
     }
     return n;
+}
 
-    /* A check's answer for a: the latest release's tag into a->latest from github.com's
+/* A check's answer for a: the latest release's tag into a->latest from github.com's
      * releases/latest redirect, as Network Update's NU_REPO, so no API request. The API allows 60
      * an hour, and a check of every app ran out part way: the list's end, the Games tab, kept no
      * state until another check. An install still asks the API (release) for its zip. ponytail: the
