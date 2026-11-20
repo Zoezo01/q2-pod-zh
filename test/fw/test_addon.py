@@ -1599,6 +1599,64 @@ def test_a_game_runs_over_the_screen_taking_the_wheels_raw_travel(fw):
     assert g.sent == [(SNAKE_SOCK, b'k d 218')]
 
 
+BOY_DISPLAY_REQUEST = b'/tmp/q2-boy.display.req'
+BOY_DISPLAY_DIMMED = b'/tmp/q2-boy.display.dimmed'
+
+
+def test_q2_boy_child_is_told_it_can_request_idle_dimming(fw):
+    g = CardGame(fw, boy=b'name=Pocket Boy\ngame=1\naudio=1\n')
+    fw.mock('fw_fork', lambda *_: 0)
+    g.start()
+    env = {C.string_at(arg[0]): C.string_at(arg[1]) for _, arg in fw.calls('fw_setenv')}
+    assert env[b'Q2_BOY_DISPLAY_BRIDGE'] == b'1'
+
+
+def test_q2_boy_dims_and_wakes_without_changing_the_saved_brightness(fw):
+    g = CardGame(fw, boy=b'name=Pocket Boy\ngame=1\naudio=1\n')
+    fw.var('g_backlight_status', C.c_ubyte).value = 1
+    brightness = fw.var('g_lightness', C.c_ubyte)
+    brightness.value = 4
+    g.world.files[BOY_DISPLAY_REQUEST] = b'1'  # stale files from an earlier run
+    g.world.files[BOY_DISPLAY_DIMMED] = b'1'
+    assert g.start() == 1
+    assert BOY_DISPLAY_REQUEST not in g.world.files and BOY_DISPLAY_DIMMED not in g.world.files
+    g.world.files[BOY_DISPLAY_REQUEST] = b'1'
+    g.poll(250)
+    assert g.world.files[BOY_DISPLAY_DIMMED] == b'1'
+    assert [args[0] for _, args in fw.calls('toolSetBackLight')] == [1]
+    g.world.files[BOY_DISPLAY_REQUEST] = b'0'
+    g.poll(79)
+    assert BOY_DISPLAY_DIMMED in g.world.files
+    g.poll(1)
+    assert BOY_DISPLAY_DIMMED not in g.world.files
+    assert [args[0] for _, args in fw.calls('toolSetBackLight')] == [1, 5]
+    assert brightness.value == 4
+
+
+def test_q2_boy_crash_restores_the_panel_and_clears_the_request(fw):
+    g = CardGame(fw, boy=b'name=Pocket Boy\ngame=1\naudio=1\n')
+    fw.var('g_backlight_status', C.c_ubyte).value = 1
+    fw.var('g_lightness', C.c_ubyte).value = 6
+    assert g.start() == 1
+    g.world.files[BOY_DISPLAY_REQUEST] = b'1'
+    g.poll()
+    g.status, g.exited = 11, True
+    g.poll()
+    assert BOY_DISPLAY_REQUEST not in g.world.files and BOY_DISPLAY_DIMMED not in g.world.files
+    assert [args[0] for _, args in fw.calls('toolSetBackLight')] == [1, 7]
+
+
+@pytest.mark.parametrize('game_id, brightness, lit', [('snake', 4, 1), ('boy', 0, 1), ('boy', 4, 0)])
+def test_idle_dimming_requires_q2_boy_and_a_lit_panel_above_minimum(fw, game_id, brightness, lit):
+    g = CardGame(fw, **{game_id: b'name=Game\ngame=1\naudio=1\n'})
+    fw.var('g_backlight_status', C.c_ubyte).value = lit
+    fw.var('g_lightness', C.c_ubyte).value = brightness
+    assert g.start() == 1
+    g.world.files[BOY_DISPLAY_REQUEST] = b'1'
+    g.poll()
+    assert BOY_DISPLAY_DIMMED not in g.world.files and not fw.calls('toolSetBackLight')
+
+
 def test_the_child_runs_the_game_first_for_the_oom_killer_and_with_none_of_demos_files(fw):
     g = CardGame(fw)
     fw.mock('fw_fork', lambda *_: 0)

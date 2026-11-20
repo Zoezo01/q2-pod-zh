@@ -823,6 +823,8 @@ static void poll_one(app_t *a) {
 #define GAME_IDLE_MS 120000
 #define GAME_HOLD_MS 700 /* navigation.c's KEY_HOLD_MS, Return's hold elsewhere */
 #define GAME_KILL_MS 3000
+#include "boy_display.h"
+
 static struct {
     int pid, sock, eat;  /* eat: the held Return's release, after the game it ended */
     int audio;           /* the running game's audio=1: the keys and the DAC are its */
@@ -860,6 +862,7 @@ const char *addon_where(const char *id) {
 /* Game a started over the screen: 1 when it runs. */
 static int game_start(app_t *a) {
     if (gm.pid) return 0;
+    int display_bridge = a->audio && !strcmp(a->id, "boy");
     const char *busy = shelf_busy();
     if (busy && !strcmp(busy + 1, a->id)) return toast("Wait until the App Store finishes"), 0;
     if (access(a->bin, 0)) return toast("It isn't on the card"), 0;
@@ -881,6 +884,7 @@ static int game_start(app_t *a) {
         /* the child's alone: demo's environment stays as it was. ponytail: a fork while another
          * thread holds libc's environment lock (stock's toolsSetTimeZone) hangs the child here;
          * Return's hold ends it */
+        if (display_bridge) setenv("Q2_BOY_DISPLAY_BRIDGE", "1", 1);
         setenv("Q2_POPUP", pop, 1);
         if (a->audio) /* q2video's arguments: the device, then a soft output's volume */
             execl(a->bin, a->bin, dev ? dev : "plughw:0,0", dev ? vol : (char *)0, (char *)0);
@@ -897,6 +901,7 @@ static int game_start(app_t *a) {
     tk_snprintf(gm.path, sizeof gm.path, "/tmp/q2-%s.input.sock", a->id);
     __sync_lock_test_and_set(&wheel_travel, 0);
     wheel_raw = 1;
+    if (display_bridge) boy_display_start();
     return 1;
 }
 
@@ -994,6 +999,7 @@ int addon_running(void) {
 void addon_poll(void) {
     if (!nw.swept) now_sweep();
     game_poll();
+    if (bd.active) boy_display_poll(gm.pid, addon_game_input(0));
     for (int i = 0; i < ap.n; ++i) poll_one(&ap.a[i]);
     sleep_check();
     now_poll();
