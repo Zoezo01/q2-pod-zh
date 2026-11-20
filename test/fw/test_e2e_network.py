@@ -978,6 +978,11 @@ def api(repo):
     return f'https://api.github.com/repos/{repo}/releases/latest'
 
 
+def latest(repo):
+    """github.com's redirect to the latest release, which a check reads its tag from."""
+    return f'https://github.com/{repo}/releases/latest'
+
+
 def release_json(tag, url, size):
     """GitHub's releases/latest, trimmed: a notes file, then the zip."""
     assets = [{'name': 'notes.txt', 'size': 5, 'browser_download_url': 'https://h/notes.txt'},
@@ -1002,6 +1007,7 @@ class GitHub:
     def release(self, repo, tag, files, **reply):
         data = zipped(files)
         url = f'https://github.com/{repo}/releases/download/{tag}/{repo.split("/")[1]}.zip'
+        self.w.net.route(latest(repo), Reply(302, location=f'https://github.com/{repo}/releases/tag/{tag}'))
         self.w.net.route(api(repo), Reply(200, release_json(tag, url, len(data))))
         self.w.net.route(url, Reply(200, data, chunk=len(data) // 4 + 1, **reply))
         return url, data
@@ -1063,7 +1069,7 @@ def test_the_app_store_lists_installs_and_streaming_finds_the_app(w):
     _, data = hub.release('me/q2-foo', '1.0', app_zip('x' * 40000), during=lambda sent: (w.ui.run(500), shown.append(store.detail('Foo'))))
     assert store.rows() == [] and store.detail(store.CHECK) == 'Checking…'  # no list on the card yet
     w.ui.run(500)
-    assert store.rows() == [('Foo', 'Install')] and w.net.asked == [LIST_URL, api('me/q2-foo')]
+    assert store.rows() == [('Foo', 'Install')] and w.net.asked == [LIST_URL, latest('me/q2-foo')]
     assert not w.ui.toasts  # nothing installed to update, and the opening check isn't Check for Updates
     assert w.card.files['/mnt/mmc/.q2/sources.list'] == b'me/q2-foo Foo\n'  # the page's list offline
     store.press('Foo')

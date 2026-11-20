@@ -1541,14 +1541,21 @@ def check(fw):
     return fw.fn('netupdate__check', C.c_int)()
 
 
+def redirect(tag):
+    """github.com's releases/latest answer: the latest release's tag in the redirect, as a check reads it."""
+    return (0, 302, b'https://github.com/me/x/releases/tag/' + tag)
+
+
 def test_the_check_takes_a_fresh_list_and_each_release(fw):
     card = Card(fw)
-    Net(fw, {b'https://raw': (0, 200, None), b'https://api': (0, 200, None)})
+    net = Net(fw, {b'https://raw': (0, 200, None), b'https://github.com/': redirect(b'1.0')})
     card.files[JSON_PATH] = b'me/foo Foo\nme/bar\n'
     sh = fw.var('netupdate__sh', Sh)
     fw.mock('fw_fopen', fw_fopen_list(card))
     assert check(fw) == 1
-    assert sh.n == 2 and sh.next[0].id == b'foo' and sh.next[0].latest == b'1.0'
+    assert sh.n == 2 and sh.next[0].id == b'foo' and sh.next[0].latest == b'1.0' and sh.next[1].latest == b'1.0'
+    assert net.urls[1:] == [b'https://github.com/me/foo/releases/latest', b'https://github.com/me/bar/releases/latest']
+    assert all(net.opts.get(o) is None for o in (20011, 52))  # headers only, no redirect followed: no API request
     assert b'/mnt/mmc/.q2/sources.list' in [c[1] for c in card.of('rename')]
     assert card.written[b'/mnt/mmc/.q2/sources.list.tmp'] == b'me/foo Foo\nme/bar bar\n'
 
@@ -1577,11 +1584,14 @@ def test_a_check_keeps_why_a_release_failed_but_not_a_missing_one(fw):
     card = Card(fw)
     apps(fw, b'me/foo', b'me/bar')
     sh = fw.var('netupdate__sh', Sh)
-    net = Net(fw, {b'https://raw': (7, 0, None), b'https://api.github.com/repos/me/foo': (0, 404, None),
-                   b'https://api': (0, 403, None)})
+    net = Net(fw, {b'https://raw': (7, 0, None), b'https://github.com/me/foo': (0, 404, None),
+                   b'https://github.com': (0, 429, None)})
     assert check(fw) == 0 and sh.result == SH_BUSY
     sh.result = SH_OK
-    net.replies = {b'https://raw': (7, 0, None), b'https://api': (0, 404, None)}
+    net.replies = {b'https://raw': (7, 0, None), b'https://github.com': (6, 0, None)}
+    assert check(fw) == 0 and sh.result == SH_NET
+    sh.result = SH_OK
+    net.replies = {b'https://raw': (7, 0, None), b'https://github.com': (0, 302, b'https://github.com/me/foo/releases')}
     assert check(fw) == 1 and sh.result == SH_OK  # no release yet: checked, the minute's gap holds
 
 
@@ -1596,7 +1606,7 @@ def test_no_list_anywhere_is_a_failed_check(fw):
 def test_a_bad_list_never_replaces_the_one_there(fw):
     card = Card(fw)
     apps(fw, b'me/kept')
-    Net(fw, {b'https://raw': (0, 200, None), b'https://api': (0, 200, None)})
+    Net(fw, {b'https://raw': (0, 200, None), b'https://github.com/': redirect(b'1.0')})
     card.files[JSON_PATH] = b'# nothing\n'
     sh = fw.var('netupdate__sh', Sh)
     check(fw)
@@ -1606,7 +1616,7 @@ def test_a_bad_list_never_replaces_the_one_there(fw):
 def test_an_app_dropped_from_the_list_but_installed_stays_removable(fw):
     card = Card(fw, {b'/mnt/mmc/.q2/apps/old.tag': b'1'})
     apps(fw, b'me/old', b'me/gone')
-    Net(fw, {b'https://raw': (0, 200, None), b'https://api': (0, 200, None)})
+    Net(fw, {b'https://raw': (0, 200, None), b'https://github.com/': redirect(b'1.0')})
     fw.mock('fw_fopen', fw_fopen_list(card))
     card.files[JSON_PATH] = b'me/new\n'
     sh = fw.var('netupdate__sh', Sh)
@@ -1620,18 +1630,18 @@ def test_a_dropped_app_gets_no_release_and_stays_dropped_on_the_card(fw):
     card = Card(fw, {b'/mnt/mmc/.q2/apps/old.tag': b'1'})
     table = apps(fw, b'me/old')
     table[0].latest = b'2.0'
-    net = Net(fw, {b'https://raw': (0, 200, None), b'https://api': (0, 200, None)})
+    net = Net(fw, {b'https://raw': (0, 200, None), b'https://github.com/': redirect(b'1.0')})
     fw.mock('fw_fopen', fw_fopen_list(card))
     card.files[JSON_PATH] = b'me/new\n'
     sh = fw.var('netupdate__sh', Sh)
     check(fw)
     assert sh.next[1].dropped == b'\x01' and sh.next[1].latest == b''
-    assert not [u for u in net.urls if b'repos/me/old' in u]
+    assert not [u for u in net.urls if b'/me/old/' in u]
     assert card.written[b'/mnt/mmc/.q2/sources.list.tmp'] == b'me/new new\n-me/old old\n'
     reloaded = apps(fw, b'me/new new', b'-me/old old')
     assert [(a.id, a.dropped) for a in reloaded[:2]] == [(b'new', b'\x00'), (b'old', b'\x01')]
     net.urls.clear()
-    assert check(fw) == 1 and not [u for u in net.urls if b'repos/me/old' in u]  # the list failed, the mark held
+    assert check(fw) == 1 and not [u for u in net.urls if b'/me/old/' in u]  # the list failed, the mark held
 
 
 def test_a_dropped_app_never_installs_and_shows_only_while_installed(fw):
@@ -1648,7 +1658,7 @@ def test_a_dropped_app_never_installs_and_shows_only_while_installed(fw):
 
 def test_a_full_list_keeps_the_cards_list_inside_its_buffer(fw):
     card = Card(fw)
-    Net(fw, {b'https://raw': (0, 200, None), b'https://api': (0, 200, None)})
+    Net(fw, {b'https://raw': (0, 200, None), b'https://github.com/': redirect(b'1.0')})
     lines = b''.join(b'%s/%s%02d %s\n' % (b'o' * 39, b'a' * 13, i, b'n' * 31) for i in range(SH_MAX))
     card.files[JSON_PATH] = lines
     fw.mock('fw_fopen', fw_fopen_list(card))
@@ -2054,9 +2064,11 @@ FOO = {'.foo/q2-foo': b'\x7fELF foo', '.foo/q2app': b'name=Foo\n', '.foo/lib/x.s
 
 
 def store_net(fw, files=FOO, listed=b'me/q2-foo Foo\n', size=None, **replies):
-    """The list, every release's JSON (tag 2.0, its zip of files) and the zip; api= or zip= replace those replies."""
+    """The list, every release's tag for a check and JSON for an install (2.0, its zip of files) and the zip; latest=,
+    api= or zip= replace those replies."""
     data = app_zip(files)
     return Net(fw, {b'https://raw': (0, 200, None, listed),
+                    b'https://github.com/': replies.get('latest', redirect(b'2.0')),
                     b'https://api': replies.get('api', (0, 200, None, github('2.0', ('app.zip', size or len(data))))),
                     b'https://h/': replies.get('zip', (0, 200, None, data))})
 
@@ -2358,7 +2370,7 @@ def test_the_store_loads_its_list_then_not_again_for_ten_minutes(fw):
     assert s.labels() == ['Install'] and card.files[SOURCES] == b'me/q2-foo Foo\n' and s.sh.next[0].latest == b'2.0'
     assert s.check_label() == 'Checked just now'  # the list loaded
     assert net.urls == [b'https://raw.githubusercontent.com/DiamondBond/q2-pod/main/sources.list',
-                        b'https://api.github.com/repos/me/q2-foo/releases/latest']
+                        b'https://github.com/me/q2-foo/releases/latest']
     s.close()
     s.seconds += 600
     s.open()
