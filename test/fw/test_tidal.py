@@ -309,6 +309,56 @@ def test_a_copy_that_may_not_have_reached_the_card_is_not_kept(fw, call):
     assert card.listing() == []
 
 
+def card_log(fw, card):
+    """Each fsync, by its file's name, and each rename, in order; the cache folder opens, for its own."""
+    log: list = []
+    card.files[TIDAL], rename = b'', card.rename
+    fw.mock('fw_fileno', lambda f, *_: f)
+    fw.mock('fw_fsync', lambda fd, *_: log.append(('fsync', card.open[fd][0])) or 0)
+    fw.mock('fw_rename', lambda old, new, *_: log.append(('rename', C.string_at(old).decode(),
+                                                          C.string_at(new).decode())) or rename(old, new))
+    return log
+
+
+@pytest.mark.parametrize('titled', [True, False])
+def test_a_kept_copy_is_on_the_card_under_its_name_when_its_job_ends(fw, queue, titled):
+    """FAT (Linux's vfat) gives a renamed file's new name its size and first cluster only when the file itself is
+    written back, so a power cut up to a minute after the rename left the song on the card at 0 bytes, its data in
+    clusters no name pointed at. The download and its remux are each synced before their rename; after the last,
+    the folder (its names), then the file (its size)."""
+    card = Card(fw)
+    Cdn(fw, {URL: b'fLaC'})
+    if titled:
+        queue.row('123', 'Song', 'Artist', 'Album', '')
+        Ffmpeg(fw, card)
+    log = card_log(fw, card)
+    t = Tidal(fw, card)
+    t.play(URL, '123')
+    t.run()
+    name = cached('123-0 Artist - Song.flac' if titled else '123-0.flac')
+    tmp = name + '.tmp'
+    remux = [('fsync', tmp + '.tag.tmp'), ('rename', tmp + '.tag.tmp', tmp)] if titled else []
+    assert log == [('fsync', tmp), *remux, ('rename', tmp, name), ('fsync', TIDAL), ('fsync', name)]
+    assert card.files[name] == (b'TAGGED' if titled else b'fLaC')
+
+
+@pytest.mark.parametrize('refused, kept', [('.tag.tmp', b'fLaC'), (TIDAL, b'TAGGED'), ('.flac', b'TAGGED')],
+                         ids=['the remux', 'the folder after the rename', 'the copy after the rename'])
+def test_a_sync_the_card_refuses(fw, queue, refused, kept):
+    """A remux the card won't sync is dropped, the synced download kept as any failed remux leaves it; a sync after
+    the last rename that fails keeps the copy, its data synced before."""
+    card = Card(fw)
+    Cdn(fw, {URL: b'fLaC'})
+    queue.row('123', 'Song', 'Artist', 'Album', '')
+    Ffmpeg(fw, card)
+    card_log(fw, card)
+    fw.mock('fw_fsync', lambda fd, *_: -1 if card.open[fd][0].endswith(refused) else 0)
+    t = Tidal(fw, card)
+    t.play(URL, '123')
+    t.run()
+    assert card.listing() == ['123-0 Artist - Song.flac'] and card.files[cached('123-0 Artist - Song.flac')] == kept
+
+
 def test_a_thread_that_cant_start_leaves_nothing_waiting_and_the_next_track_starts_one(fw):
     card = Card(fw)
     Cdn(fw, {URL: b'a', NEXT: b'b'})
