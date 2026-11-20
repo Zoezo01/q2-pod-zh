@@ -45,7 +45,8 @@ class App(C.Structure):
 class Sh(C.Structure):
     _fields_ = [('thread', C.c_ulong), *((n, C.c_int) for n in ('running', 'cancel', 'percent', 'stage', 'result', 'job', 'app', 'armed', 'rows', 'n')),
                 ('map', C.c_int * (SH_MAX + 2)), ('manual', C.c_int), ('need', C.c_uint), ('checked', C.c_ulonglong), ('next', App * SH_MAX),
-                ('page', C.c_void_p), ('row', C.c_void_p * (SH_MAX + 2)), ('tab', C.c_int), ('strip', C.c_void_p), ('edit_page', C.c_void_p), ('edit', C.c_void_p), ('edit_timer', C.c_uint)]
+                ('page', C.c_void_p), ('row', C.c_void_p * (SH_MAX + 2)), ('tab', C.c_int), ('strip', C.c_void_p), ('edit_page', C.c_void_p), ('edit', C.c_void_p), ('repo_edit', C.c_void_p), ('edit_timer', C.c_uint),
+                 ('custom_owner', C.c_char * 48), ('custom_stage', C.c_int)]
 
 
 class Nu(C.Structure):
@@ -3082,8 +3083,10 @@ def test_custom_source_survives_refresh_and_installs_through_the_existing_worker
     fw.fn('shelf_tab', None, C.c_int)(2)
     assert store.sh.map[store.sh.rows - 1] == SH_MAX + 1
     store.sh.edit = 99
-    url = b'https://github.com/me/q2-foo'
-    fw.mock('widget_get_text_utf8', lambda w, buf, cap, *_: C.memmove(buf, url + b'\0', len(url) + 1) and 0)
+    store.sh.custom_owner = b'me'
+    store.sh.custom_stage = 1
+    name = b'q2-foo'
+    fw.mock('widget_get_text_utf8', lambda w, buf, cap, *_: C.memmove(buf, name + b'\0', len(name) + 1) and 0)
     fw.fn('netupdate__custom_save', C.c_int, C.c_void_p)(None)
     custom = b'/mnt/mmc/.q2/custom-sources.list'
     assert card.files[custom] == b'me/q2-foo\n'
@@ -3176,8 +3179,10 @@ def test_adding_an_existing_repository_moves_it_to_custom_without_a_duplicate(fw
     store = Store(fw, card, wifi=0)
     fw.fn('shelf_tab', None, C.c_int)(2)
     store.sh.edit = 99
-    url = b'me/q2-foo'
-    fw.mock('widget_get_text_utf8', lambda w, buf, cap, *_: C.memmove(buf, url + b'\0', len(url) + 1) and 0)
+    store.sh.custom_owner = b'me'
+    store.sh.custom_stage = 1
+    name = b'q2-foo'
+    fw.mock('widget_get_text_utf8', lambda w, buf, cap, *_: C.memmove(buf, name + b'\0', len(name) + 1) and 0)
     fw.fn('netupdate__custom_save', C.c_int, C.c_void_p)(None)
     assert fw.var('shelf_n', C.c_int).value == 1
     assert fw.var('shelf_apps', App * SH_MAX)[0].custom == b'\1'
