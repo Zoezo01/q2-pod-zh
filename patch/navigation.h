@@ -549,6 +549,9 @@ void vol_paint(void *top, void *canvas);
 void smart_wake(void); /* Smart Wi-Fi's radio back now, if it had it off */
 int smart_config(const char *section, const char *key);
 void smart_poll(void);
+/* the automatic scrobble upload's smart_wifi_wait, and its try over */
+int smart_wifi_auto(void);
+void smart_wifi_release(void);
 
 /* battery.c */
 void battery_tick(int level, int cable);

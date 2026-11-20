@@ -2998,7 +2998,7 @@ def test_a_press_held_for_wifi_through_a_real_click_follows_its_app(fw):
     class Sw(C.Structure):
         _fields_ = [('at', C.c_uint), ('busy_at', C.c_uint), ('woke_at', C.c_uint), ('hold_timer', C.c_uint),
                     ('off', C.c_int), ('quiet', C.c_int), ('armed', C.c_int), ('up', C.c_int), ('held', C.c_int),
-                    ('hold_fn', C.c_void_p), ('hold_ctx', C.c_void_p), ('hold_win', C.c_void_p), ('hold_name', C.c_char * 32)]
+                    ('lone', C.c_int), ('hold_fn', C.c_void_p), ('hold_ctx', C.c_void_p), ('hold_win', C.c_void_p), ('hold_name', C.c_char * 32)]
     card = Disk(fw, {SOURCES: b'me/q2-foo Foo\n[Games]\nyou/q2-bar Bar\n'})
     store_net(fw)
     s = Store(fw, card, wifi=0)
