@@ -1606,8 +1606,14 @@ BOY_DISPLAY_DIMMED = b'/tmp/q2-boy.display.dimmed'
 def test_q2_boy_child_is_told_it_can_request_idle_dimming(fw):
     g = CardGame(fw, boy=b'name=Pocket Boy\ngame=1\naudio=1\n')
     fw.mock('fw_fork', lambda *_: 0)
+    env = {}
+
+    def capture_env(name, value, *_):
+        env[C.string_at(name)] = C.string_at(value)
+        return 0
+
+    fw.mock('fw_setenv', capture_env)
     g.start()
-    env = {C.string_at(arg[0]): C.string_at(arg[1]) for _, arg in fw.calls('fw_setenv')}
     assert env[b'Q2_BOY_DISPLAY_BRIDGE'] == b'1'
 
 
