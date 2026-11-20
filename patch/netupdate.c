@@ -844,680 +844,663 @@ static int custom_sources(shelf_app *out, int n) {
 }
 
 /* A check's answer for a: the latest release's tag into a->latest from github.com's
-     * releases/latest redirect, as Network Update's NU_REPO, so no API request. The API allows 60
-     * an hour, and a check of every app ran out part way: the list's end, the Games tab, kept no
-     * state until another check. An install still asks the API (release) for its zip. ponytail: the
-     * tag is the redirect's URL path segment, the .tag file the API's tag_name; a tag with
-     * characters a URL escapes would read UPDATE after its install: decode it if one ever does. A
-     * latest release with no zip reads UPDATE too, and its install says "No update for this build".
-     */
-    static int latest(shelf_app * a) {
-        char url[160], tag[32] = "";
-        long code = 0;
-        snprintf(url, sizeof url, "https://github.com/%s/releases/latest", a->repo);
-        if (fetch(url, 0, tag, sizeof tag, &code, 0, 0)) return SH_NET;
-        if (code == 429) return SH_BUSY;
-        if (code != 302 || !*tag) return SH_MISSING; /* no release: a redirect to /releases */
-        snprintf(a->latest, sizeof a->latest, "%s", tag);
-        return SH_OK;
-    }
+ * releases/latest redirect, as Network Update's NU_REPO, so no API request. The API allows 60
+ * an hour, and a check of every app ran out part way: the list's end, the Games tab, kept no
+ * state until another check. An install still asks the API (release) for its zip. ponytail: the
+ * tag is the redirect's URL path segment, the .tag file the API's tag_name; a tag with
+ * characters a URL escapes would read UPDATE after its install: decode it if one ever does. A
+ * latest release with no zip reads UPDATE too, and its install says "No update for this build".
+ */
+static int latest(shelf_app *a) {
+    char url[160], tag[32] = "";
+    long code = 0;
+    snprintf(url, sizeof url, "https://github.com/%s/releases/latest", a->repo);
+    if (fetch(url, 0, tag, sizeof tag, &code, 0, 0)) return SH_NET;
+    if (code == 429) return SH_BUSY;
+    if (code != 302 || !*tag) return SH_MISSING; /* no release: a redirect to /releases */
+    snprintf(a->latest, sizeof a->latest, "%s", tag);
+    return SH_OK;
+}
 
-    /* A check: the list fetched into sh.next, kept as SH_LIST with any app it dropped that is
-     * still installed (so it can be removed), else the page's own; then each listed one's latest
-     * release. A dropped app's is never asked, nor installed: dropping it is what stops a
-     * taken-over repo's releases reaching a Q2 (GHSA-8wpr-pmqx-538x). Whether every release was
-     * checked: a list that failed is fetched again with the next check. */
-    static int check(void) {
-        char path[96], text[SH_MAX * 120 + 8];
-        unsigned m = 0;
-        long code = 0;
-        char *list = get(SH_LIST_URL, &code);
-        int n = list ? shelf_sources(list, sh.next, SH_MAX) : 0, fresh = n > 0, ok = 1;
-        free(list);
-        if (!n) memcpy(sh.next, apps, sizeof apps), n = shelf_n; /* a bad list never replaces one */
-        n = custom_sources(sh.next, n);
-        for (int i = 0; fresh && i < shelf_n && n < SH_MAX; ++i) {
-            int listed = 0;
-            for (int k = 0; k < n; ++k) listed |= !strcmp(sh.next[k].id, apps[i].id);
-            app_file(path, sizeof path, i, ".tag");
-            if (!listed && file_mode(path))
-                sh.next[n] = apps[i], sh.next[n].dropped = 1, *sh.next[n++].latest = 0;
-        }
-        for (int g = 0, said = 0; fresh && g < 2; ++g) /* the apps, then [Games] and the games */
-            for (int k = 0; k < n; ++k)
-                if (sh.next[k].game == g)
-                    m += snprintf(text + m, sizeof text - m, "%s%s%s %s\n",
-                                  g && !said++ ? "[Games]\n" : "", sh.next[k].dropped ? "-" : "",
-                                  sh.next[k].repo, sh.next[k].name);
-        if (fresh) mkdir(SH_DIR, 0755), blob_io(SH_LIST, SH_LIST ".tmp", text, m, 1);
-        sh.n = n;
-        if (!n)
-            sh.result = SH_NET, ok = 0; /* no list at all: said, and the next press fetches it */
-        for (int k = 0; k < n && !sh.cancel; ++k) {
-            if (sh.next[k].dropped) continue;
-            int r = latest(&sh.next[k]);
-            if (r == SH_MISSING) continue; /* checked: no release yet */
-            ok &= !r;
-            if (!sh.result) sh.result = r; /* SH_NET or SH_BUSY, for sh_told */
-        }
-        return ok;
-    }
-
-    /* Whether the list as it is now, fetched for this install, still names app i's repo: SH_OK,
-     * SH_NET with no list to be had, SH_MISSING once the repo is dropped or gone from it,
-     * SH_CANCELLED when cancelled meanwhile. The page's list may be the card's of days ago (opened
-     * with no Wi-Fi, the opening check stopped by a press, or the list out of reach while GitHub's
-     * API answered; GHSA-8wpr-pmqx-538x). ponytail: an install needs raw.githubusercontent.com as
-     * well as the API; a network that blocks only the list's host installs nothing. */
-    static int listed(int i) {
-        shelf_app now[SH_MAX];
-        long code = 0;
-        char *list = get(SH_LIST_URL, &code);
-        int n = list ? shelf_sources(list, now, SH_MAX) : 0, r = n ? SH_MISSING : SH_NET;
-        free(list);
-        n = custom_sources(now, n);
-        for (int k = 0; k < n; ++k)
-            if (!now[k].dropped && !strcmp(now[k].repo, apps[i].repo)) r = SH_OK;
-        return sh.cancel ? SH_CANCELLED : r;
-    }
-
-    /* Cancel lands during the download, else after the step it was pressed in; never once moving
-     * starts. ponytail: TLS and curl's length check are the only checks on the zip; unzip's CRCs
-     * the only ones in it. */
-    static int install(int i) {
-        char tag[32], url[256], part[96], path[96];
-        unsigned size = 0, total = 0;
-        long code = 0;
-        int r = apps[i].dropped ? SH_MISSING : release(&apps[i], tag, url, &size);
-        if (sh.cancel) return SH_CANCELLED;
-        if (r) return r;
-        system("rm -rf " STAGING); /* an interrupted install's, too */
-        mkdir(SH_DIR, 0755), mkdir(STAGING, 0755), mkdir(SH_DIR "/apps", 0755);
-        if ((r = room(size, &sh.need))) return r;
-        staged(part, sizeof part, i, ".part");
-        void *f = fopen(part, "wb");
-        if (!f) return SH_CARD;
-        sh.stage = 1;
-        int err = fetch(url, f, 0, 0, &code, &sh.cancel, 0), bad = ferror(f);
-        bad = fclose(f) || bad;
-        r = sh.cancel     ? SH_CANCELLED
-            : bad         ? SH_CARD
-            : err         ? SH_NET
-            : code != 200 ? SH_MISSING
-                          : SH_OK;
-        if (!r) sh.stage = 2, r = shelf_list(i, &total);
-        if (!r) r = room(total, &sh.need);
-        if (!r) r = shelf_unpack(i);
-        if (!r && sh.cancel) r = SH_CANCELLED;
-        if (!r) {
-            sh.stage = 3;
-            if (is(i, "spotify"))
-                system(SPOT_KILL);   /* librespot runs from .spotify, if started since */
-            addon_quit(apps[i].dir); /* a card app, the same: its files closed first */
-            app_file(path, sizeof path, i, ".tag");
-            r = shelf_place(i);
-            char tmp[100];
-            snprintf(tmp, sizeof tmp, "%s.tmp", path);
-            if (!r && !blob_io(path, tmp, tag, strlen(tag), 1)) r = SH_CARD;
-        }
-        system("rm -rf " STAGING);
-        return r;
-    }
-
-    /* now_ms on the boot clock, which counts Standby: a check's age is real time. */
-    static unsigned long long boot_ms(void) {
-        struct {
-            long s, ns;
-        } t = { 0 };                  /* struct timespec */
-        clock_gettime(7, (void *)&t); /* CLOCK_BOOTTIME */
-        return (unsigned long long)(unsigned)t.s * 1000 +
-               (unsigned)t.ns / 1000000; /* no __udivdi3 */
-    }
-
-    static void *sh_worker(void *unused) {
-        int i = sh.app, t = sh_find("themes");
-        if (sh.job == JOB_CHECK) {
-            if (check() && !sh.cancel) sh.checked = boot_ms();
-        } else if (sh.job == JOB_INSTALL) {
-            int r = listed(i);
-            sh.result = r ? r : install(i);
-        } else {
-            /* Erase Spotify Data: the add-on's logs go too, as spot.log names the account and each
-             * track played */
-            if (sh.job == JOB_ERASE)
-                system("rm -rf " SPOT_DIR "/cache " SPOT_DIR "/.cache-size " SPOT_DIR
-                       "/spot.log " SPOT_DIR "/aplay.log " SPOT_DIR "/load.log"),
-                    rmdir(SPOT_DIR);
-            else {
-                addon_quit(apps[i].dir); /* USB storage may take the card meanwhile */
-                /* ponytail: read once; USB storage taking the card during the unlinks still says
-                 * removed */
-                if (card_mounted()) {
-                    if (is(i, "rockbox") && t >= 0) shelf_remove(t); /* no themes without Rockbox */
-                    shelf_remove(i);
-                } else
-                    sh.result = SH_CARD; /* the bare mount point: nothing removed */
-            }
-            system("sync");
-        }
-        sh.running = 0;
-        return 0;
-    }
-
-    /* With a tag file ST_INSTALLED, or ST_UPDATE when the latest differs; -1 without one. */
-    static int sh_tagged(int i) {
-        char path[96], tag[40];
+/* A check: the list fetched into sh.next, kept as SH_LIST with any app it dropped that is
+ * still installed (so it can be removed), else the page's own; then each listed one's latest
+ * release. A dropped app's is never asked, nor installed: dropping it is what stops a
+ * taken-over repo's releases reaching a Q2 (GHSA-8wpr-pmqx-538x). Whether every release was
+ * checked: a list that failed is fetched again with the next check. */
+static int check(void) {
+    char path[96], text[SH_MAX * 120 + 8];
+    unsigned m = 0;
+    long code = 0;
+    char *list = get(SH_LIST_URL, &code);
+    int n = list ? shelf_sources(list, sh.next, SH_MAX) : 0, fresh = n > 0, ok = 1;
+    free(list);
+    if (!n) memcpy(sh.next, apps, sizeof apps), n = shelf_n; /* a bad list never replaces one */
+    n = custom_sources(sh.next, n);
+    for (int i = 0; fresh && i < shelf_n && n < SH_MAX; ++i) {
+        int listed = 0;
+        for (int k = 0; k < n; ++k) listed |= !strcmp(sh.next[k].id, apps[i].id);
         app_file(path, sizeof path, i, ".tag");
-        state_read(path, tag, sizeof tag); /* "\n" and the tag */
-        if (!tag[1]) return -1;
-        return *apps[i].latest && strcmp(tag + 1, apps[i].latest) ? ST_UPDATE : ST_INSTALLED;
+        if (!listed && file_mode(path))
+            sh.next[n] = apps[i], sh.next[n].dropped = 1, *sh.next[n++].latest = 0;
     }
-
-    /* sh_tagged's state, else ST_UPDATE for a manual install. */
-    static int sh_state(int i) {
-        char path[96];
-        int s = sh_tagged(i);
-        if (s >= 0) return s;
-        if (*apps[i].bin) {
-            snprintf(path, sizeof path, CARD "/%s", apps[i].bin);
-            if (file_mode(path) == 0100000) return ST_UPDATE;
-        }
-        return ST_INSTALL;
+    for (int g = 0, said = 0; fresh && g < 2; ++g) /* the apps, then [Games] and the games */
+        for (int k = 0; k < n; ++k)
+            if (sh.next[k].game == g)
+                m += snprintf(text + m, sizeof text - m, "%s%s%s %s\n",
+                              g && !said++ ? "[Games]\n" : "", sh.next[k].dropped ? "-" : "",
+                              sh.next[k].repo, sh.next[k].name);
+    if (fresh) mkdir(SH_DIR, 0755), blob_io(SH_LIST, SH_LIST ".tmp", text, m, 1);
+    sh.n = n;
+    if (!n) sh.result = SH_NET, ok = 0; /* no list at all: said, and the next press fetches it */
+    for (int k = 0; k < n && !sh.cancel; ++k) {
+        if (sh.next[k].dropped) continue;
+        int r = latest(&sh.next[k]);
+        if (r == SH_MISSING) continue; /* checked: no release yet */
+        ok &= !r;
+        if (!sh.result) sh.result = r; /* SH_NET or SH_BUSY, for sh_told */
     }
+    return ok;
+}
 
-    /* Whether app i has a row: Rockbox Themes only with Rockbox on the card, a dropped app only
-     * while installed. */
-    static int sh_shown(int i) {
-        return (!is(i, "themes") || rockbox_available()) && (!apps[i].dropped || sh_tagged(i) >= 0);
-    }
+/* Whether the list as it is now, fetched for this install, still names app i's repo: SH_OK,
+ * SH_NET with no list to be had, SH_MISSING once the repo is dropped or gone from it,
+ * SH_CANCELLED when cancelled meanwhile. The page's list may be the card's of days ago (opened
+ * with no Wi-Fi, the opening check stopped by a press, or the list out of reach while GitHub's
+ * API answered; GHSA-8wpr-pmqx-538x). ponytail: an install needs raw.githubusercontent.com as
+ * well as the API; a network that blocks only the list's host installs nothing. */
+static int listed(int i) {
+    shelf_app now[SH_MAX];
+    long code = 0;
+    char *list = get(SH_LIST_URL, &code);
+    int n = list ? shelf_sources(list, now, SH_MAX) : 0, r = n ? SH_MISSING : SH_NET;
+    free(list);
+    n = custom_sources(now, n);
+    for (int k = 0; k < n; ++k)
+        if (!now[k].dropped && !strcmp(now[k].repo, apps[i].repo)) r = SH_OK;
+    return sh.cancel ? SH_CANCELLED : r;
+}
 
-    /* Whether app i's row offers Update. The tabs' counts and a check's toast count these, a manual
-     * install's too (no tag, so its version is unknown), so the numbers are the rows'. */
-    static int sh_updatable(int i) { return sh_shown(i) && sh_state(i) == ST_UPDATE; }
-
-    static void sh_text(int r) {
-        static const char *const stages[] = { "Checking…", "Downloading", "Unpacking…",
-                                              "Installing…", "Removing…" };
-        int i = sh.map[r], armed = sh.armed == r + 1,
-            busy = (sh.job == JOB_INSTALL || sh.job == JOB_REMOVE) && sh.app == i;
-        char s[40];
-        const char *t = s;
-        unsigned min =
-            i == ROW_CHECK ? (unsigned)(boot_ms() - sh.checked) / 60000 : 0; /* no __udivdi3 */
-        if (i == ROW_ADD)
-            t = "github.com/owner/repository";
-        else if (i == ROW_CHECK && sh.job == JOB_CHECK)
-            t = "Checking…";
-        else if (i == ROW_CHECK && !shelf_n) /* with no list yet, the press loads it */
-            t = "Connect to Wi-Fi to load the list";
-        else if (i == ROW_CHECK && !sh.checked)
-            t = theme()->sep[0].n ? " " : "";
-        else if (i == ROW_CHECK && !min) /* ponytail: said as the page is drawn, not each minute */
-            t = "Checked just now";
-        else if (i == ROW_CHECK)
-            snprintf(s, sizeof s, min < 60 ? "Checked %u min ago" : "Checked %u h ago",
-                     min < 60 ? min : min / 60);
-        else if (busy && sh.cancel)
-            t = "Cancelling…";
-        else if (busy && sh.stage == 1 && sh.percent)
-            snprintf(s, sizeof s, "Downloading %d%%", sh.percent);
-        else if (busy)
-            t = stages[sh.stage];
-        else if (armed && sh_state(i) == ST_INSTALLED)
-            t = "Press again to remove";
-        else if (armed) /* docs/boot.md#rockbox */
-            t = "Starts at power-on. Press again to install";
-        else /* its GitHub owner, as an app's developer */
-            snprintf(s, sizeof s, "%.*s", (int)(strstr(apps[i].repo, "/") - apps[i].repo),
-                     apps[i].repo);
-        widget_set_text_utf8(widget_get_child(sh.row[r], 1), t);
-        if (i < SH_MAX) store_state(sh.row[r], busy || armed ? -1 : sh_state(i));
-    }
-
-    static void sh_rows(void);
-    static void sh_refresh(void) {
-        for (int r = 0; sh.page && r < sh.rows; ++r) sh_text(r);
-    }
-
-    /* A check's toast: how many apps' rows offer Update (sh_updatable); with none, from Check for
-     * Updates (manual), why it failed or that none have. */
-    static void sh_told(int manual, const char *failed) {
-        char s[40];
-        int n = 0;
-        for (int i = 0; i < shelf_n; ++i) n += sh_updatable(i);
-        if (n)
-            snprintf(s, sizeof s, "%d app%s can be updated", n, n == 1 ? "" : "s"), toast(s);
-        else if (manual && failed)
-            toast(failed);
-        else if (manual)
-            toast("All apps are up to date");
-    }
-
-    /* Remove just this repository's line, retaining comments and the other sources.
-     * Clear the cached list first: if saving the local list fails it still restores
-     * the entry on the next open. Neither file changes unless its rename succeeds. */
-    static int custom_unlist(const char *path, const char *repo) {
-        unsigned bytes = 0, length = strlen(repo);
-        char *text = read_all(path, 1u << 16, &bytes);
-        if (!text) return !file_mode(path);
-        char *out = text;
-        for (char *p = text, *end; *p; p = end) {
-            end = strstr(p, "\n");
-            end = end ? end + 1 : p + strlen(p);
-            char *start = p, *word;
-            while (start < end && (*start == ' ' || *start == '\t')) ++start;
-            if (start < end && *start == '-') ++start;
-            for (word = start; word < end && (unsigned char)*word > ' '; ++word) {}
-            if ((unsigned)(word - start) != length || memcmp(start, repo, length)) {
-                memmove(out, p, end - p);
-                out += end - p;
-            }
-        }
-        char tmp[96];
+/* Cancel lands during the download, else after the step it was pressed in; never once moving
+ * starts. ponytail: TLS and curl's length check are the only checks on the zip; unzip's CRCs
+ * the only ones in it. */
+static int install(int i) {
+    char tag[32], url[256], part[96], path[96];
+    unsigned size = 0, total = 0;
+    long code = 0;
+    int r = apps[i].dropped ? SH_MISSING : release(&apps[i], tag, url, &size);
+    if (sh.cancel) return SH_CANCELLED;
+    if (r) return r;
+    system("rm -rf " STAGING); /* an interrupted install's, too */
+    mkdir(SH_DIR, 0755), mkdir(STAGING, 0755), mkdir(SH_DIR "/apps", 0755);
+    if ((r = room(size, &sh.need))) return r;
+    staged(part, sizeof part, i, ".part");
+    void *f = fopen(part, "wb");
+    if (!f) return SH_CARD;
+    sh.stage = 1;
+    int err = fetch(url, f, 0, 0, &code, &sh.cancel, 0), bad = ferror(f);
+    bad = fclose(f) || bad;
+    r = sh.cancel ? SH_CANCELLED : bad ? SH_CARD : err ? SH_NET : code != 200 ? SH_MISSING : SH_OK;
+    if (!r) sh.stage = 2, r = shelf_list(i, &total);
+    if (!r) r = room(total, &sh.need);
+    if (!r) r = shelf_unpack(i);
+    if (!r && sh.cancel) r = SH_CANCELLED;
+    if (!r) {
+        sh.stage = 3;
+        if (is(i, "spotify"))
+            system(SPOT_KILL);   /* librespot runs from .spotify, if started since */
+        addon_quit(apps[i].dir); /* a card app, the same: its files closed first */
+        app_file(path, sizeof path, i, ".tag");
+        r = shelf_place(i);
+        char tmp[100];
         snprintf(tmp, sizeof tmp, "%s.tmp", path);
-        int ok = blob_io(path, tmp, text, out - text, 1);
-        free(text);
-        return ok;
+        if (!r && !blob_io(path, tmp, tag, strlen(tag), 1)) r = SH_CARD;
     }
+    system("rm -rf " STAGING);
+    return r;
+}
 
-    static int sh_wait(const void *unused) {
-        static const char *const said[] = {
-            [SH_NET] = "Can't reach GitHub",
-            [SH_CARD] = "Can't write to the card",
-            [SH_MISSING] = "No update for this build",
-            [SH_BAD] = "The download is not a usable app",
-            [SH_CANCELLED] = "Download cancelled",
-            [SH_BUSY] = "GitHub is busy, try later",
-        };
-        char s[64], removed[32];
-        if (sh.running) {
-            if (sh.job != JOB_CHECK)
-                reset_poweroptions_timer(1, 1, 0); /* standby, auto power-off */
-            sh_refresh();
-            return 8; /* RET_REPEAT */
-        }
-        pthread_join(sh.thread, 0);
-        int job = sh.job, r = sh.result, i = sh.app, manual = sh.manual;
-        if (job == JOB_REMOVE) snprintf(removed, sizeof removed, "%s", apps[i].name);
-        sh.job = 0;
-        /* its files replaced or gone: an update that failed or was cancelled before it stopped its
-         * app leaves it running, still tracked, and a remove cut off by USB storage leaves it
-         * marked to start again with the card */
-        if (r == SH_OK && (job == JOB_REMOVE || job == JOB_INSTALL)) addon_forget(apps[i].dir);
-        if (job == JOB_CHECK) /* the rows built again: the list may have changed */
-            memcpy(apps, sh.next, sizeof apps), shelf_n = sh.n, sh.rows = -1;
-        if (job == JOB_ERASE || (job != JOB_CHECK && is(i, "spotify")))
-            spot_stop(); /* spotify.c forgets the old one */
-        if (job == JOB_REMOVE && !r && apps[i].custom) {
-            if (card_mounted() && custom_unlist(SH_LIST, apps[i].repo) &&
-                custom_unlist(SH_CUSTOM, apps[i].repo)) {
-                memmove(apps + i, apps + i + 1, (shelf_n - i - 1) * sizeof *apps);
-                --shelf_n;
-                sh.rows = -1;
+/* now_ms on the boot clock, which counts Standby: a check's age is real time. */
+static unsigned long long boot_ms(void) {
+    struct {
+        long s, ns;
+    } t = { 0 };                  /* struct timespec */
+    clock_gettime(7, (void *)&t); /* CLOCK_BOOTTIME */
+    return (unsigned long long)(unsigned)t.s * 1000 + (unsigned)t.ns / 1000000; /* no __udivdi3 */
+}
+
+static void *sh_worker(void *unused) {
+    int i = sh.app, t = sh_find("themes");
+    if (sh.job == JOB_CHECK) {
+        if (check() && !sh.cancel) sh.checked = boot_ms();
+    } else if (sh.job == JOB_INSTALL) {
+        int r = listed(i);
+        sh.result = r ? r : install(i);
+    } else {
+        /* Erase Spotify Data: the add-on's logs go too, as spot.log names the account and each
+         * track played */
+        if (sh.job == JOB_ERASE)
+            system("rm -rf " SPOT_DIR "/cache " SPOT_DIR "/.cache-size " SPOT_DIR
+                   "/spot.log " SPOT_DIR "/aplay.log " SPOT_DIR "/load.log"),
+                rmdir(SPOT_DIR);
+        else {
+            addon_quit(apps[i].dir); /* USB storage may take the card meanwhile */
+            /* ponytail: read once; USB storage taking the card during the unlinks still says
+             * removed */
+            if (card_mounted()) {
+                if (is(i, "rockbox") && t >= 0) shelf_remove(t); /* no themes without Rockbox */
+                shelf_remove(i);
             } else
-                r = SH_CARD;
+                sh.result = SH_CARD; /* the bare mount point: nothing removed */
         }
-        sh_rows();
-        if (job == JOB_CHECK && !sh.cancel && sh.page &&
-            window_manager_get_top_window(window_manager()) == sh.page) /* not left or covered */
-            sh_told(manual, r ? said[r] : 0);
-        else if (job == JOB_INSTALL && r == SH_SPACE)
-            snprintf(s, sizeof s, "Needs %u MB more space", sh.need), toast(s);
-        else if ((job == JOB_INSTALL || job == JOB_REMOVE) && r)
-            toast(said[r]);
-        else if (job == JOB_INSTALL && is(i, "rockbox"))
-            toast("Rockbox is ready. Find it on Home");
-        else if (job == JOB_INSTALL && is(i, "themes"))
-            toast("Rockbox Themes are ready in Rockbox's Theme Settings");
-        else if (job == JOB_INSTALL)
-            snprintf(s, sizeof s, "%s is ready in %s", apps[i].name, addon_where(apps[i].id)),
-                toast(s);
-        else if (job == JOB_REMOVE)
-            snprintf(s, sizeof s, "%s removed", removed), toast(s);
-        else if (job == JOB_ERASE)
-            stream_erased(),
-                toast("Spotify's login and cache erased"); /* rows first: toast blocks */
-        return 0;
+        system("sync");
     }
+    sh.running = 0;
+    return 0;
+}
 
-    static void sh_start(int job, int i) {
-        if (job == JOB_ERASE || (is(i, "spotify") && job != JOB_CHECK))
-            spot_stop(); /* on this thread: spotify.c's state too */
-        sh.job = job, sh.app = i, sh.cancel = sh.percent = sh.result = sh.manual = 0,
-        sh.running = 1;
-        sh.stage = job == JOB_REMOVE ? 4 : 0;
-        if (pthread_create(&sh.thread, 0, sh_worker, 0)) {
-            sh.job = sh.running = 0;
-            toast("Can't start the download");
+/* With a tag file ST_INSTALLED, or ST_UPDATE when the latest differs; -1 without one. */
+static int sh_tagged(int i) {
+    char path[96], tag[40];
+    app_file(path, sizeof path, i, ".tag");
+    state_read(path, tag, sizeof tag); /* "\n" and the tag */
+    if (!tag[1]) return -1;
+    return *apps[i].latest && strcmp(tag + 1, apps[i].latest) ? ST_UPDATE : ST_INSTALLED;
+}
+
+/* sh_tagged's state, else ST_UPDATE for a manual install. */
+static int sh_state(int i) {
+    char path[96];
+    int s = sh_tagged(i);
+    if (s >= 0) return s;
+    if (*apps[i].bin) {
+        snprintf(path, sizeof path, CARD "/%s", apps[i].bin);
+        if (file_mode(path) == 0100000) return ST_UPDATE;
+    }
+    return ST_INSTALL;
+}
+
+/* Whether app i has a row: Rockbox Themes only with Rockbox on the card, a dropped app only
+ * while installed. */
+static int sh_shown(int i) {
+    return (!is(i, "themes") || rockbox_available()) && (!apps[i].dropped || sh_tagged(i) >= 0);
+}
+
+/* Whether app i's row offers Update. The tabs' counts and a check's toast count these, a manual
+ * install's too (no tag, so its version is unknown), so the numbers are the rows'. */
+static int sh_updatable(int i) { return sh_shown(i) && sh_state(i) == ST_UPDATE; }
+
+static void sh_text(int r) {
+    static const char *const stages[] = { "Checking…", "Downloading", "Unpacking…", "Installing…",
+                                          "Removing…" };
+    int i = sh.map[r], armed = sh.armed == r + 1,
+        busy = (sh.job == JOB_INSTALL || sh.job == JOB_REMOVE) && sh.app == i;
+    char s[40];
+    const char *t = s;
+    unsigned min =
+        i == ROW_CHECK ? (unsigned)(boot_ms() - sh.checked) / 60000 : 0; /* no __udivdi3 */
+    if (i == ROW_ADD)
+        t = "github.com/owner/repository";
+    else if (i == ROW_CHECK && sh.job == JOB_CHECK)
+        t = "Checking…";
+    else if (i == ROW_CHECK && !shelf_n) /* with no list yet, the press loads it */
+        t = "Connect to Wi-Fi to load the list";
+    else if (i == ROW_CHECK && !sh.checked)
+        t = theme()->sep[0].n ? " " : "";
+    else if (i == ROW_CHECK && !min) /* ponytail: said as the page is drawn, not each minute */
+        t = "Checked just now";
+    else if (i == ROW_CHECK)
+        snprintf(s, sizeof s, min < 60 ? "Checked %u min ago" : "Checked %u h ago",
+                 min < 60 ? min : min / 60);
+    else if (busy && sh.cancel)
+        t = "Cancelling…";
+    else if (busy && sh.stage == 1 && sh.percent)
+        snprintf(s, sizeof s, "Downloading %d%%", sh.percent);
+    else if (busy)
+        t = stages[sh.stage];
+    else if (armed && sh_state(i) == ST_INSTALLED)
+        t = "Press again to remove";
+    else if (armed) /* docs/boot.md#rockbox */
+        t = "Starts at power-on. Press again to install";
+    else /* its GitHub owner, as an app's developer */
+        snprintf(s, sizeof s, "%.*s", (int)(strstr(apps[i].repo, "/") - apps[i].repo),
+                 apps[i].repo);
+    widget_set_text_utf8(widget_get_child(sh.row[r], 1), t);
+    if (i < SH_MAX) store_state(sh.row[r], busy || armed ? -1 : sh_state(i));
+}
+
+static void sh_rows(void);
+static void sh_refresh(void) {
+    for (int r = 0; sh.page && r < sh.rows; ++r) sh_text(r);
+}
+
+/* A check's toast: how many apps' rows offer Update (sh_updatable); with none, from Check for
+ * Updates (manual), why it failed or that none have. */
+static void sh_told(int manual, const char *failed) {
+    char s[40];
+    int n = 0;
+    for (int i = 0; i < shelf_n; ++i) n += sh_updatable(i);
+    if (n)
+        snprintf(s, sizeof s, "%d app%s can be updated", n, n == 1 ? "" : "s"), toast(s);
+    else if (manual && failed)
+        toast(failed);
+    else if (manual)
+        toast("All apps are up to date");
+}
+
+/* Remove just this repository's line, retaining comments and the other sources.
+ * Clear the cached list first: if saving the local list fails it still restores
+ * the entry on the next open. Neither file changes unless its rename succeeds. */
+static int custom_unlist(const char *path, const char *repo) {
+    unsigned bytes = 0, length = strlen(repo);
+    char *text = read_all(path, 1u << 16, &bytes);
+    if (!text) return !file_mode(path);
+    char *out = text;
+    for (char *p = text, *end; *p; p = end) {
+        end = strstr(p, "\n");
+        end = end ? end + 1 : p + strlen(p);
+        char *start = p, *word;
+        while (start < end && (*start == ' ' || *start == '\t')) ++start;
+        if (start < end && *start == '-') ++start;
+        for (word = start; word < end && (unsigned char)*word > ' '; ++word) {}
+        if ((unsigned)(word - start) != length || memcmp(start, repo, length)) {
+            memmove(out, p, end - p);
+            out += end - p;
+        }
+    }
+    char tmp[96];
+    snprintf(tmp, sizeof tmp, "%s.tmp", path);
+    int ok = blob_io(path, tmp, text, out - text, 1);
+    free(text);
+    return ok;
+}
+
+static int sh_wait(const void *unused) {
+    static const char *const said[] = {
+        [SH_NET] = "Can't reach GitHub",           [SH_CARD] = "Can't write to the card",
+        [SH_MISSING] = "No update for this build", [SH_BAD] = "The download is not a usable app",
+        [SH_CANCELLED] = "Download cancelled",     [SH_BUSY] = "GitHub is busy, try later",
+    };
+    char s[64], removed[32];
+    if (sh.running) {
+        if (sh.job != JOB_CHECK) reset_poweroptions_timer(1, 1, 0); /* standby, auto power-off */
+        sh_refresh();
+        return 8; /* RET_REPEAT */
+    }
+    pthread_join(sh.thread, 0);
+    int job = sh.job, r = sh.result, i = sh.app, manual = sh.manual;
+    if (job == JOB_REMOVE) snprintf(removed, sizeof removed, "%s", apps[i].name);
+    sh.job = 0;
+    /* its files replaced or gone: an update that failed or was cancelled before it stopped its
+     * app leaves it running, still tracked, and a remove cut off by USB storage leaves it
+     * marked to start again with the card */
+    if (r == SH_OK && (job == JOB_REMOVE || job == JOB_INSTALL)) addon_forget(apps[i].dir);
+    if (job == JOB_CHECK) /* the rows built again: the list may have changed */
+        memcpy(apps, sh.next, sizeof apps), shelf_n = sh.n, sh.rows = -1;
+    if (job == JOB_ERASE || (job != JOB_CHECK && is(i, "spotify")))
+        spot_stop(); /* spotify.c forgets the old one */
+    if (job == JOB_REMOVE && !r && apps[i].custom) {
+        if (card_mounted() && custom_unlist(SH_LIST, apps[i].repo) &&
+            custom_unlist(SH_CUSTOM, apps[i].repo)) {
+            memmove(apps + i, apps + i + 1, (shelf_n - i - 1) * sizeof *apps);
+            --shelf_n;
+            sh.rows = -1;
         } else
-            timer_add(sh_wait, (void *)0, 500);
+            r = SH_CARD;
     }
+    sh_rows();
+    if (job == JOB_CHECK && !sh.cancel && sh.page &&
+        window_manager_get_top_window(window_manager()) == sh.page) /* not left or covered */
+        sh_told(manual, r ? said[r] : 0);
+    else if (job == JOB_INSTALL && r == SH_SPACE)
+        snprintf(s, sizeof s, "Needs %u MB more space", sh.need), toast(s);
+    else if ((job == JOB_INSTALL || job == JOB_REMOVE) && r)
+        toast(said[r]);
+    else if (job == JOB_INSTALL && is(i, "rockbox"))
+        toast("Rockbox is ready. Find it on Home");
+    else if (job == JOB_INSTALL && is(i, "themes"))
+        toast("Rockbox Themes are ready in Rockbox's Theme Settings");
+    else if (job == JOB_INSTALL)
+        snprintf(s, sizeof s, "%s is ready in %s", apps[i].name, addon_where(apps[i].id)), toast(s);
+    else if (job == JOB_REMOVE)
+        snprintf(s, sizeof s, "%s removed", removed), toast(s);
+    else if (job == JOB_ERASE)
+        stream_erased(), toast("Spotify's login and cache erased"); /* rows first: toast blocks */
+    return 0;
+}
 
-    /* Accept a repository URL or owner/repo; shelf_sources validates the canonical
-     * entry before any write or network request. Releases still use the normal installer. */
-    static int custom_repo(const char *input, shelf_app *app) {
-        const char *s = input;
-        while (*s == ' ' || *s == '\t') ++s;
-        if (!strncmp(s, "https://github.com/", 19))
-            s += 19;
-        else if (!strncmp(s, "github.com/", 11))
-            s += 11;
-        unsigned n = strlen(s);
-        while (n && (unsigned char)s[n - 1] <= ' ') --n;
-        if (n && s[n - 1] == '/') --n;
-        if (n > 4 && !memcmp(s + n - 4, ".git", 4)) n -= 4;
-        if (!n || n >= sizeof app->repo) return 0;
-        char repo[80];
-        memcpy(repo, s, n), repo[n] = 0;
-        return shelf_sources(repo, app, 1) == 1 && !app->dropped && !special_id(app->id) &&
-               strlen(app->repo) == n;
-    }
+static void sh_start(int job, int i) {
+    if (job == JOB_ERASE || (is(i, "spotify") && job != JOB_CHECK))
+        spot_stop(); /* on this thread: spotify.c's state too */
+    sh.job = job, sh.app = i, sh.cancel = sh.percent = sh.result = sh.manual = 0, sh.running = 1;
+    sh.stage = job == JOB_REMOVE ? 4 : 0;
+    if (pthread_create(&sh.thread, 0, sh_worker, 0)) {
+        sh.job = sh.running = 0;
+        toast("Can't start the download");
+    } else
+        timer_add(sh_wait, (void *)0, 500);
+}
 
-    static int custom_closed(void *ctx, void *event) {
-        if (sh.edit_timer) timer_remove(sh.edit_timer);
-        sh.edit_timer = 0;
-        sh.edit_page = sh.edit = sh.repo_edit = 0;
-        sh.custom_stage = 0;
-        sh.custom_owner[0] = 0;
+/* Accept a repository URL or owner/repo; shelf_sources validates the canonical
+ * entry before any write or network request. Releases still use the normal installer. */
+static int custom_repo(const char *input, shelf_app *app) {
+    const char *s = input;
+    while (*s == ' ' || *s == '\t') ++s;
+    if (!strncmp(s, "https://github.com/", 19))
+        s += 19;
+    else if (!strncmp(s, "github.com/", 11))
+        s += 11;
+    unsigned n = strlen(s);
+    while (n && (unsigned char)s[n - 1] <= ' ') --n;
+    if (n && s[n - 1] == '/') --n;
+    if (n > 4 && !memcmp(s + n - 4, ".git", 4)) n -= 4;
+    if (!n || n >= sizeof app->repo) return 0;
+    char repo[80];
+    memcpy(repo, s, n), repo[n] = 0;
+    return shelf_sources(repo, app, 1) == 1 && !app->dropped && !special_id(app->id) &&
+           strlen(app->repo) == n;
+}
+
+static int custom_closed(void *ctx, void *event) {
+    if (sh.edit_timer) timer_remove(sh.edit_timer);
+    sh.edit_timer = 0;
+    sh.edit_page = sh.edit = sh.repo_edit = 0;
+    sh.custom_stage = 0;
+    sh.custom_owner[0] = 0;
+    return 0;
+}
+
+/* From a timer, after the keyboard's event: closing the editor cannot destroy
+ * a widget while its callback is still running. */
+static int custom_save(const void *unused) {
+    sh.edit_timer = 0;
+    if (!sh.edit || !sh.custom_stage) return 0;
+    char owner[48], name[48], input[128], text[(SH_MAX + 1) * 120 + 8];
+    shelf_app app;
+    snprintf(owner, sizeof owner, "%s", sh.custom_owner);
+    if (widget_get_text_utf8(sh.edit, name, sizeof name) || !*owner || !*name ||
+        strrchr(owner, '/') || strrchr(name, '/')) {
+        toast("Enter a GitHub user and repository");
         return 0;
     }
-
-    /* From a timer, after the keyboard's event: closing the editor cannot destroy
-     * a widget while its callback is still running. */
-    static int custom_save(const void *unused) {
-        sh.edit_timer = 0;
-        if (!sh.edit || !sh.custom_stage) return 0;
-        char owner[48], name[48], input[128], text[(SH_MAX + 1) * 120 + 8];
-        shelf_app app;
-        snprintf(owner, sizeof owner, "%s", sh.custom_owner);
-        if (widget_get_text_utf8(sh.edit, name, sizeof name) || !*owner || !*name ||
-            strrchr(owner, '/') || strrchr(name, '/')) {
-            toast("Enter a GitHub user and repository");
-            return 0;
-        }
-        snprintf(input, sizeof input, "%s/%s", owner, name);
-        if (!custom_repo(input, &app)) {
-            toast("Invalid GitHub user or repository");
-            return 0;
-        }
-        if (sh.job) return toast("Wait for the App Store to finish"), 0;
-        int existing = sh_find(app.id);
-        if (existing >= 0 && (strcmp(apps[existing].repo, app.repo) || apps[existing].dropped))
-            return toast("Another source already uses this app ID"), 0;
-        if (existing >= 0 && apps[existing].custom)
-            return toast("This app is already in Custom"), 0;
-        if (existing < 0 && shelf_n >= SH_MAX) return toast("The App Store list is full"), 0;
-        if (!card_mounted()) return toast("Can't write to the card"), 0;
-        unsigned bytes = 0;
-        char *old = read_all(SH_CUSTOM, 1u << 16, &bytes);
-        if (bytes >= sizeof text - 120) {
-            free(old);
-            return toast("The custom source list is full"), 0;
-        }
-        if (!old && file_mode(SH_CUSTOM)) return toast("Can't read custom sources"), 0;
-        int size = snprintf(text, sizeof text, "%s%s%s\n", old ? old : "",
-                            bytes && old[bytes - 1] != '\n' ? "\n" : "", app.repo);
+    snprintf(input, sizeof input, "%s/%s", owner, name);
+    if (!custom_repo(input, &app)) {
+        toast("Invalid GitHub user or repository");
+        return 0;
+    }
+    if (sh.job) return toast("Wait for the App Store to finish"), 0;
+    int existing = sh_find(app.id);
+    if (existing >= 0 && (strcmp(apps[existing].repo, app.repo) || apps[existing].dropped))
+        return toast("Another source already uses this app ID"), 0;
+    if (existing >= 0 && apps[existing].custom) return toast("This app is already in Custom"), 0;
+    if (existing < 0 && shelf_n >= SH_MAX) return toast("The App Store list is full"), 0;
+    if (!card_mounted()) return toast("Can't write to the card"), 0;
+    unsigned bytes = 0;
+    char *old = read_all(SH_CUSTOM, 1u << 16, &bytes);
+    if (bytes >= sizeof text - 120) {
         free(old);
-        mkdir(SH_DIR, 0755);
-        if (size >= (int)sizeof text || !blob_io(SH_CUSTOM, SH_CUSTOM ".tmp", text, size, 1))
-            return toast("Can't write to the card"), 0;
-        app.custom = 1;
-        if (existing >= 0)
-            apps[existing].custom = 1;
+        return toast("The custom source list is full"), 0;
+    }
+    if (!old && file_mode(SH_CUSTOM)) return toast("Can't read custom sources"), 0;
+    int size = snprintf(text, sizeof text, "%s%s%s\n", old ? old : "",
+                        bytes && old[bytes - 1] != '\n' ? "\n" : "", app.repo);
+    free(old);
+    mkdir(SH_DIR, 0755);
+    if (size >= (int)sizeof text || !blob_io(SH_CUSTOM, SH_CUSTOM ".tmp", text, size, 1))
+        return toast("Can't write to the card"), 0;
+    app.custom = 1;
+    if (existing >= 0)
+        apps[existing].custom = 1;
+    else
+        apps[shelf_n++] = app;
+    sh.checked = 0;
+    widget_set_focused(sh.edit, 0);
+    input_method_request(input_method(), 0);
+    navigator_back();
+    sh.rows = -1;
+    sh_rows();
+    return 0;
+}
+
+/* Only one edit may sit above the stock T9 keyboard (page y=30).
+ * A second edit below it is covered and does not receive key events. */
+static int custom_focus_repo(const void *unused) {
+    if (!sh.edit || !sh.custom_stage) return sh.edit_timer = 0;
+    void *wm = window_manager();
+    if (window_manager_is_animating(wm) || window_manager_get_top_window(wm) != sh.edit_page)
+        return 8;
+    sh.edit_timer = 0;
+    widget_set_prop_str(sh.edit, "tips", "Repository");
+    widget_set_prop_str(sh.edit, "action_text", "done");
+    widget_set_text_utf8(sh.edit, "");
+    widget_set_focused(sh.edit, 1);
+    input_method_request(input_method(), sh.edit);
+    return 0;
+}
+
+/* Next saves the username and reuses the same visible, keyboard-connected edit. */
+static int custom_done(void *ctx, void *event) {
+    if (!sh.custom_stage) {
+        if (widget_get_text_utf8(sh.edit, sh.custom_owner, sizeof sh.custom_owner) ||
+            !*sh.custom_owner)
+            return toast("Enter a GitHub username"), 0;
+        sh.custom_stage = 1;
+        if (sh.edit_timer) timer_remove(sh.edit_timer);
+        sh.edit_timer = timer_add(custom_focus_repo, 0, 16);
+    } else {
+        /* Done only closes the keyboard. Download requires an explicit tap. */
+        widget_set_focused(sh.edit, 0);
+        input_method_request(input_method(), 0);
+    }
+    return 0;
+}
+
+static int custom_download(void *ctx, void *event) {
+    if (!sh.custom_stage || sh.edit_timer) return 0;
+    widget_set_focused(sh.edit, 0);
+    input_method_request(input_method(), 0);
+    sh.edit_timer = timer_add(custom_save, 0, 16);
+    return 0;
+}
+
+static int custom_activate(void *ctx, void *event) {
+    if (!sh.edit) return 0;
+    widget_set_focused(sh.edit, 1);
+    input_method_request(input_method(), sh.edit);
+    return 0;
+}
+
+static int custom_ready(const void *unused) {
+    if (!sh.edit) return sh.edit_timer = 0;
+    void *wm = window_manager();
+    if (window_manager_is_animating(wm) || window_manager_get_top_window(wm) != sh.edit_page)
+        return 8;
+    sh.edit_timer = 0;
+    return custom_activate(sh.edit, 0);
+}
+
+static void custom_open(void) {
+    if (sh.edit_page || !(sh.edit_page = page_open("app_source_page", custom_closed, page_keyup)))
+        return;
+    sh.custom_stage = 0;
+    sh.custom_owner[0] = 0;
+    sh.edit = edit_create(sh.edit_page, "text", 2, 26);
+    sh.repo_edit = 0;
+    widget_set_name(sh.edit, "search_edit");
+    widget_set_prop_str(sh.edit, "tips", "Username (Next to repository)");
+    widget_set_prop_str(sh.edit, "action_text", "next");
+    widget_on(sh.edit, EVT_CLICK, custom_activate, 0);
+    widget_on(sh.edit, EVT_IM_ACTION, custom_done, 0);
+    /* Below the keyboard's top edge; accessible once Done dismisses T9. */
+    void *button = list_item_create(sh.edit_page, 12, 44, 351, 48);
+    widget_use_style(button, "s_listitem_black");
+    void *caption = label_create(button, 12, 0, 327, 48);
+    widget_use_style(caption, "s_label_white20l");
+    widget_set_text_utf8(caption, "Download");
+    widget_on(button, EVT_CLICK, custom_download, 0);
+    sh.edit_timer = timer_add(custom_ready, 0, 16);
+}
+
+/* Install and Update at once; Installed's Remove and Rockbox's first Install (it becomes the
+ * power-on default) on a second press of the same row. Pressed again, the running install
+ * cancels. Check for Updates checks now (loading the list, with none yet), unless the last
+ * whole check is under SH_RECHECK_MS old: then it says that check's count again. */
+static int sh_click(void *ctx, void *event);
+
+/* A press held for Smart Wi-Fi's link (need_link) by its app, ROW_CHECK for Check for Updates:
+ * made again on that app's row, or dropped with the row gone (another tab, or the page closed).
+ */
+static int sh_held(void *ctx, void *unused) {
+    for (int r = 0; r < sh.rows; ++r)
+        if (sh.map[r] == (int)(long)ctx) return sh_click((void *)(long)r, 0);
+    return 0;
+}
+
+static int sh_click(void *ctx, void *event) {
+    int r = (int)(long)ctx, i = sh.map[r], armed = sh.armed == r + 1;
+    sh.armed = 0;
+    if (i == ROW_ADD) {
+        if (sh.job)
+            toast("Wait for the App Store to finish");
         else
-            apps[shelf_n++] = app;
-        sh.checked = 0;
-        widget_set_focused(sh.edit, 0);
-        input_method_request(input_method(), 0);
-        navigator_back();
-        sh.rows = -1;
-        sh_rows();
+            custom_open();
         return 0;
     }
-
-    /* Only one edit may sit above the stock T9 keyboard (page y=30).
-     * A second edit below it is covered and does not receive key events. */
-    static int custom_focus_repo(const void *unused) {
-        if (!sh.edit || !sh.custom_stage) return sh.edit_timer = 0;
-        void *wm = window_manager();
-        if (window_manager_is_animating(wm) || window_manager_get_top_window(wm) != sh.edit_page)
-            return 8;
-        sh.edit_timer = 0;
-        widget_set_prop_str(sh.edit, "tips", "Repository");
-        widget_set_prop_str(sh.edit, "action_text", "done");
-        widget_set_text_utf8(sh.edit, "");
-        widget_set_focused(sh.edit, 1);
-        input_method_request(input_method(), sh.edit);
-        return 0;
-    }
-
-    /* Next saves the username and reuses the same visible, keyboard-connected edit. */
-    static int custom_done(void *ctx, void *event) {
-        if (!sh.custom_stage) {
-            if (widget_get_text_utf8(sh.edit, sh.custom_owner, sizeof sh.custom_owner) ||
-                !*sh.custom_owner)
-                return toast("Enter a GitHub username"), 0;
-            sh.custom_stage = 1;
-            if (sh.edit_timer) timer_remove(sh.edit_timer);
-            sh.edit_timer = timer_add(custom_focus_repo, 0, 16);
-        } else {
-            /* Done only closes the keyboard. Download requires an explicit tap. */
-            widget_set_focused(sh.edit, 0);
-            input_method_request(input_method(), 0);
-        }
-        return 0;
-    }
-
-    static int custom_download(void *ctx, void *event) {
-        if (!sh.custom_stage || sh.edit_timer) return 0;
-        widget_set_focused(sh.edit, 0);
-        input_method_request(input_method(), 0);
-        sh.edit_timer = timer_add(custom_save, 0, 16);
-        return 0;
-    }
-
-    static int custom_activate(void *ctx, void *event) {
-        if (!sh.edit) return 0;
-        widget_set_focused(sh.edit, 1);
-        input_method_request(input_method(), sh.edit);
-        return 0;
-    }
-
-    static int custom_ready(const void *unused) {
-        if (!sh.edit) return sh.edit_timer = 0;
-        void *wm = window_manager();
-        if (window_manager_is_animating(wm) || window_manager_get_top_window(wm) != sh.edit_page)
-            return 8;
-        sh.edit_timer = 0;
-        return custom_activate(sh.edit, 0);
-    }
-
-    static void custom_open(void) {
-        if (sh.edit_page ||
-            !(sh.edit_page = page_open("app_source_page", custom_closed, page_keyup)))
-            return;
-        sh.custom_stage = 0;
-        sh.custom_owner[0] = 0;
-        sh.edit = edit_create(sh.edit_page, "text", 2, 26);
-        sh.repo_edit = 0;
-        widget_set_name(sh.edit, "search_edit");
-        widget_set_prop_str(sh.edit, "tips", "Username (Next to repository)");
-        widget_set_prop_str(sh.edit, "action_text", "next");
-        widget_on(sh.edit, EVT_CLICK, custom_activate, 0);
-        widget_on(sh.edit, EVT_IM_ACTION, custom_done, 0);
-        /* Below the keyboard's top edge; accessible once Done dismisses T9. */
-        void *button = list_item_create(sh.edit_page, 12, 44, 351, 48);
-        widget_use_style(button, "s_listitem_black");
-        void *caption = label_create(button, 12, 0, 327, 48);
-        widget_use_style(caption, "s_label_white20l");
-        widget_set_text_utf8(caption, "Download");
-        widget_on(button, EVT_CLICK, custom_download, 0);
-        sh.edit_timer = timer_add(custom_ready, 0, 16);
-    }
-
-    /* Install and Update at once; Installed's Remove and Rockbox's first Install (it becomes the
-     * power-on default) on a second press of the same row. Pressed again, the running install
-     * cancels. Check for Updates checks now (loading the list, with none yet), unless the last
-     * whole check is under SH_RECHECK_MS old: then it says that check's count again. */
-    static int sh_click(void *ctx, void *event);
-
-    /* A press held for Smart Wi-Fi's link (need_link) by its app, ROW_CHECK for Check for Updates:
-     * made again on that app's row, or dropped with the row gone (another tab, or the page closed).
-     */
-    static int sh_held(void *ctx, void *unused) {
-        for (int r = 0; r < sh.rows; ++r)
-            if (sh.map[r] == (int)(long)ctx) return sh_click((void *)(long)r, 0);
-        return 0;
-    }
-
-    static int sh_click(void *ctx, void *event) {
-        int r = (int)(long)ctx, i = sh.map[r], armed = sh.armed == r + 1;
-        sh.armed = 0;
-        if (i == ROW_ADD) {
-            if (sh.job)
-                toast("Wait for the App Store to finish");
-            else
-                custom_open();
-            return 0;
-        }
-        if (i == ROW_CHECK && sh.job == JOB_CHECK) {
-            sh.manual =
-                1; /* checking already, the opening check maybe: its end answers the press */
-        } else if (sh.job == JOB_CHECK) { /* needs no answer: stopped, so the next press acts */
-            sh.cancel = 1;
-            toast("Stopped checking for updates");
-        } else if (sh.job) {
-            if (sh.job == JOB_INSTALL && sh.app == i && sh.stage < 3)
-                sh.cancel = 1; /* not once moving */
-            else if (sh.job != JOB_INSTALL || sh.app != i)
-                toast("Wait for the one in progress");
-        } else if (i != ROW_CHECK && sh_state(i) == ST_INSTALLED) {
-            if (!armed)
-                sh.armed = r + 1;
-            else
-                sh_start(JOB_REMOVE, i);
-        } else if (!need_link(sh_held, (void *)(long)i)) {
-            /* held for Smart Wi-Fi's link (a press while it waits takes its place), or none */
-        } else if (i == ROW_CHECK && sh.checked && boot_ms() - sh.checked < SH_RECHECK_MS)
-            sh_told(1, 0);
-        else if (i == ROW_CHECK)
-            sh_start(JOB_CHECK, 0), sh.manual = 1;
-        else if (is(i, "themes") && !rockbox_available())
-            toast("Install Rockbox first");
-        else if (is(i, "rockbox") && sh_state(i) == ST_INSTALL && !armed)
+    if (i == ROW_CHECK && sh.job == JOB_CHECK) {
+        sh.manual = 1; /* checking already, the opening check maybe: its end answers the press */
+    } else if (sh.job == JOB_CHECK) { /* needs no answer: stopped, so the next press acts */
+        sh.cancel = 1;
+        toast("Stopped checking for updates");
+    } else if (sh.job) {
+        if (sh.job == JOB_INSTALL && sh.app == i && sh.stage < 3)
+            sh.cancel = 1; /* not once moving */
+        else if (sh.job != JOB_INSTALL || sh.app != i)
+            toast("Wait for the one in progress");
+    } else if (i != ROW_CHECK && sh_state(i) == ST_INSTALLED) {
+        if (!armed)
             sh.armed = r + 1;
         else
-            sh_start(JOB_INSTALL, i);
-        sh_refresh();
-        return 0;
-    }
+            sh_start(JOB_REMOVE, i);
+    } else if (!need_link(sh_held, (void *)(long)i)) {
+        /* held for Smart Wi-Fi's link (a press while it waits takes its place), or none */
+    } else if (i == ROW_CHECK && sh.checked && boot_ms() - sh.checked < SH_RECHECK_MS)
+        sh_told(1, 0);
+    else if (i == ROW_CHECK)
+        sh_start(JOB_CHECK, 0), sh.manual = 1;
+    else if (is(i, "themes") && !rockbox_available())
+        toast("Install Rockbox first");
+    else if (is(i, "rockbox") && sh_state(i) == ST_INSTALL && !armed)
+        sh.armed = r + 1;
+    else
+        sh_start(JOB_INSTALL, i);
+    sh_refresh();
+    return 0;
+}
 
-    static int sh_closed(void *ctx, void *event) {
-        sh.page = sh.strip = store_tabs(0, 0), sh.rows = sh.armed = 0;
-        return 0;
-    }
+static int sh_closed(void *ctx, void *event) {
+    sh.page = sh.strip = store_tabs(0, 0), sh.rows = sh.armed = 0;
+    return 0;
+}
 
-    /* The rows: Check for Updates, then the open tab's apps (sh_shown) in the list's order; built
-     * again when a job's end or the tab changes which. The tabs' badges are counted here too, as
-     * only a job's end changes them. */
-    static void sh_rows(void) {
-        int map[SH_MAX + 2] = { ROW_CHECK }, n = 1, updates[3] = { 0, 0, 0 };
-        for (int i = 0; i < shelf_n; ++i) {
-            int tab = apps[i].custom ? 2 : apps[i].game;
-            if (sh_shown(i) && tab == sh.tab) map[n++] = i;
-            updates[tab] += sh_updatable(i);
-        }
-        if (sh.tab == 2) map[n++] = ROW_ADD;
-        if (sh.page && (n != sh.rows || memcmp(map, sh.map, sizeof map))) {
-            memcpy(sh.map, map, sizeof map);
-            sh.rows = 0;
-            void *view = page_list(sh.page, sh.page, 0, "App Store", n, 64);
-            sh.strip = store_tabs(sh.page, view);
-            for (int r = 0; r < n; ++r) {
-                int i = map[r];
-                /* sh_text writes the detail: a blank one, or a theme would centre the name over it
-                 */
-                const char *name;
-                if (i == ROW_CHECK)
-                    name = "Check for Updates";
-                else if (i == ROW_ADD)
-                    name = "+ Add App";
-                else
-                    name = apps[i].name;
-                sh.row[r] = page_row_detail(view, r, name, theme()->sep[0].n ? " " : "", sh_click);
-            }
-            sh.rows = n;
-        }
-        store_tabs_set(sh.strip, sh.tab, updates);
-        sh_refresh();
+/* The rows: Check for Updates, then the open tab's apps (sh_shown) in the list's order; built
+ * again when a job's end or the tab changes which. The tabs' badges are counted here too, as
+ * only a job's end changes them. */
+static void sh_rows(void) {
+    int map[SH_MAX + 2] = { ROW_CHECK }, n = 1, updates[3] = { 0, 0, 0 };
+    for (int i = 0; i < shelf_n; ++i) {
+        int tab = apps[i].custom ? 2 : apps[i].game;
+        if (sh_shown(i) && tab == sh.tab) map[n++] = i;
+        updates[tab] += sh_updatable(i);
     }
-
-    /* The open tab, 0 Apps, 1 Games or 2 Custom: the strip's tap (app_store.c) or shelf_key. */
-    void shelf_tab(int tab) {
-        if (!sh.page || tab < 0 || tab > 2 || tab == sh.tab) return;
-        sh.tab = tab, sh.armed = 0;
-        sh_rows();
-    }
-
-    /* ringnav, before stock's song skip: on the App Store, Previous and Next cycle the three tabs.
-     * ponytail: a toast on top (msginfo_dialog, 0x49b7c8) stops them for its time, as for
-     * field_key; looking past it (smart_wifi.c page_in_use) would lift that. */
-    int shelf_key(void *top, unsigned key) {
-        if (!sh.page || top != sh.page || (key != KEY_BACK_BTN && key != KEY_FWD_BTN)) return 0;
-        shelf_tab((sh.tab + (key == KEY_FWD_BTN ? 1 : 2)) % 3);
-        return 1;
-    }
-
-    /* Streaming → Configuration's Erase Spotify Data (navigation.c): with start, Spotify's login,
-     * cache and logs erased on this thread, unless a job is running (a check stops, as an App Store
-     * row's press stops it, so the next press acts); whether an erase is running. */
-    int shelf_erase(int start) {
-        if (start && sh.job == JOB_CHECK)
-            sh.cancel = 1, toast("Stopped checking for updates");
-        else if (start && sh.job)
-            toast("Wait for the one in progress");
-        else if (start)
-            sh_start(JOB_ERASE, -1);
-        return sh.job == JOB_ERASE;
-    }
-
-    /* The opening check, held for Smart Wi-Fi's link (smart_hold). */
-    static int sh_check(void *ctx, void *event) {
-        if (!sh.job && get_wifisignal() > 0) sh_start(JOB_CHECK, 0), sh_refresh();
-        return 0;
-    }
-
-    /* System settings' App Store row. The card's last list, until a check fetches
-     * the list again: with Wi-Fi when the last whole check is over SH_STALE_MS old
-     * (or none), as GitHub allows 60 unauthenticated API requests an hour; while
-     * Smart Wi-Fi brings the radio back, once its link is up. */
-    /* System settings' Apps row. The card's last list, until a check fetches the list again: with
-     * Wi-Fi when the last whole check is over SH_STALE_MS old (or none), a request per app; while
-     * Smart Wi-Fi brings the radio back, once its link is up. */
-    int shelf_open(void *ctx, void *event) {
-        if (sh.page || !(sh.page = page_open("apps_page", sh_closed, page_keyup))) return 0;
-        if (sh.job != JOB_CHECK &&
-            !shelf_n) { /* an erase can run from Configuration before it opens */
-            unsigned n = 0;
-            char *list = read_all(SH_LIST, 1u << 16, &n);
-            shelf_n = shelf_sources(list, apps, SH_MAX);
-            shelf_n = custom_sources(apps, shelf_n);
-            free(list);
-        }
-        sh_rows();
-        if (!sh.job && (!sh.checked || boot_ms() - sh.checked > SH_STALE_MS)) {
-            if (get_wifisignal() > 0)
-                sh_start(JOB_CHECK, 0), sh_refresh();
+    if (sh.tab == 2) map[n++] = ROW_ADD;
+    if (sh.page && (n != sh.rows || memcmp(map, sh.map, sizeof map))) {
+        memcpy(sh.map, map, sizeof map);
+        sh.rows = 0;
+        void *view = page_list(sh.page, sh.page, 0, "App Store", n, 64);
+        sh.strip = store_tabs(sh.page, view);
+        for (int r = 0; r < n; ++r) {
+            int i = map[r];
+            /* sh_text writes the detail: a blank one, or a theme would centre the name over it
+             */
+            const char *name;
+            if (i == ROW_CHECK)
+                name = "Check for Updates";
+            else if (i == ROW_ADD)
+                name = "+ Add App";
             else
-                /* once Smart Wi-Fi's link is up; a row pressed while it waits takes its place and
-                 * acts on the list shown (an install fetches the list first), and the next open
-                 * checks */
-                smart_hold(sh_check, 0, "apps_page");
+                name = apps[i].name;
+            sh.row[r] = page_row_detail(view, r, name, theme()->sep[0].n ? " " : "", sh_click);
         }
-        return 0;
+        sh.rows = n;
     }
+    store_tabs_set(sh.strip, sh.tab, updates);
+    sh_refresh();
+}
 
-    /* Smart Wi-Fi (smart_wifi.c smart_needed): Network Update's download or an Apps job keeps the
-     * radio on. */
-    int netupdate_busy(void) { return nu.state == NU_RUNNING || sh.job; }
+/* The open tab, 0 Apps, 1 Games or 2 Custom: the strip's tap (app_store.c) or shelf_key. */
+void shelf_tab(int tab) {
+    if (!sh.page || tab < 0 || tab > 2 || tab == sh.tab) return;
+    sh.tab = tab, sh.armed = 0;
+    sh_rows();
+}
+
+/* ringnav, before stock's song skip: on the App Store, Previous and Next cycle the three tabs.
+ * ponytail: a toast on top (msginfo_dialog, 0x49b7c8) stops them for its time, as for
+ * field_key; looking past it (smart_wifi.c page_in_use) would lift that. */
+int shelf_key(void *top, unsigned key) {
+    if (!sh.page || top != sh.page || (key != KEY_BACK_BTN && key != KEY_FWD_BTN)) return 0;
+    shelf_tab((sh.tab + (key == KEY_FWD_BTN ? 1 : 2)) % 3);
+    return 1;
+}
+
+/* Streaming → Configuration's Erase Spotify Data (navigation.c): with start, Spotify's login,
+ * cache and logs erased on this thread, unless a job is running (a check stops, as an App Store
+ * row's press stops it, so the next press acts); whether an erase is running. */
+int shelf_erase(int start) {
+    if (start && sh.job == JOB_CHECK)
+        sh.cancel = 1, toast("Stopped checking for updates");
+    else if (start && sh.job)
+        toast("Wait for the one in progress");
+    else if (start)
+        sh_start(JOB_ERASE, -1);
+    return sh.job == JOB_ERASE;
+}
+
+/* The opening check, held for Smart Wi-Fi's link (smart_hold). */
+static int sh_check(void *ctx, void *event) {
+    if (!sh.job && get_wifisignal() > 0) sh_start(JOB_CHECK, 0), sh_refresh();
+    return 0;
+}
+
+/* System settings' App Store row. The card's last list, until a check fetches
+ * the list again: with Wi-Fi when the last whole check is over SH_STALE_MS old
+ * (or none), as GitHub allows 60 unauthenticated API requests an hour; while
+ * Smart Wi-Fi brings the radio back, once its link is up. */
+/* System settings' Apps row. The card's last list, until a check fetches the list again: with
+ * Wi-Fi when the last whole check is over SH_STALE_MS old (or none), a request per app; while
+ * Smart Wi-Fi brings the radio back, once its link is up. */
+int shelf_open(void *ctx, void *event) {
+    if (sh.page || !(sh.page = page_open("apps_page", sh_closed, page_keyup))) return 0;
+    if (sh.job != JOB_CHECK && !shelf_n) { /* an erase can run from Configuration before it opens */
+        unsigned n = 0;
+        char *list = read_all(SH_LIST, 1u << 16, &n);
+        shelf_n = shelf_sources(list, apps, SH_MAX);
+        shelf_n = custom_sources(apps, shelf_n);
+        free(list);
+    }
+    sh_rows();
+    if (!sh.job && (!sh.checked || boot_ms() - sh.checked > SH_STALE_MS)) {
+        if (get_wifisignal() > 0)
+            sh_start(JOB_CHECK, 0), sh_refresh();
+        else
+            /* once Smart Wi-Fi's link is up; a row pressed while it waits takes its place and
+             * acts on the list shown (an install fetches the list first), and the next open
+             * checks */
+            smart_hold(sh_check, 0, "apps_page");
+    }
+    return 0;
+}
+
+/* Smart Wi-Fi (smart_wifi.c smart_needed): Network Update's download or an Apps job keeps the
+ * radio on. */
+int netupdate_busy(void) { return nu.state == NU_RUNNING || sh.job; }
 #endif
