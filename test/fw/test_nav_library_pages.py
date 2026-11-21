@@ -2448,8 +2448,8 @@ def test_home_s_streaming_list_is_streaming_s_rows(fw, ui):
     assert [c[1][:2] for c in fw.calls('widget_off_by_ctx')] == [(win, win)]
 
 
-ABOUT = [('Model', 'Q2'), ('FW. Version', 'V100I'), ('Serial', '1'), ('Storage', '-'), ('Remaining', '-'),
-         ('Legal', ''), ('Reset', '')]
+ABOUT = [('Model', 'Q2'), ('FW. Version', 'V100I'), ('Storage', '-'), ('Remaining', '-'),
+         ('Wi-Fi MAC', 'a0:b1:c2:d3:e4:f5'), ('IP Address', '-'), ('Serial', '1')]  # stock's, in its order
 
 
 def about(ui, rows):
@@ -2478,6 +2478,17 @@ def test_about_shows_stock_s_version_and_the_payload_s_after_it_without_stock_s_
     version, beta = host.tools_build.VERSION, host.tools_build.BETA
     assert about_rows(ui, view) == [ABOUT[0], ('FW. Version', host.tools_build.STOCK_VERSION), ('CFW. Version', version + (f' beta {beta}' if beta else '')),
                                     *ABOUT[2:]]
+
+
+@pytest.mark.parametrize('mac, toasts', [('a0:b1:c2:d3:e4:f5', ['a0:b1:c2:d3:e4:f5']), ('', [])])
+def test_a_tap_on_wi_fi_mac_toasts_the_whole_address(fw, ui, mac, toasts):
+    win, view = about(ui, ABOUT)
+    fw.mock('stock_about_trampoline', lambda *_: 5)
+    fw.fn('ringnav_about', C.c_int, C.c_void_p, C.c_void_p)(win, None)
+    row = next(item for item in ui.kids[view] if ui.text.get(ui.kids[ui.kids[item][0]][0]) == 'Wi-Fi MAC')
+    button = ui.kids[row][0]
+    ui.text[ui.kids[button][1]] = mac
+    assert ui.handler(button, EVT_CLICK)() == 0 and ui.toasts == toasts
 
 
 def test_an_about_page_that_is_not_stock_s_is_left(fw, ui):

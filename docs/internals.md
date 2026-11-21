@@ -25,7 +25,7 @@ Checked MIPS prologues redirect into a payload at `0xb00000`, using the final un
 | `scanSpecFolder`                      | `0x5074d4` | The same                                                                                                                                |
 | `deleteMusicFromMusicDb`              | `0x50b794` | Marks Coverflow's album list stale, before and after stock runs                                                                         |
 | `main_loop_sleep_default`             | `0x65c470` | Screen off: the UI loop idles longer ([Battery](#battery))                                                                              |
-| `systemset_about_page_init`           | `0x4c1390` | FW. Version shows V1.36 again; adds the CFW. Version row ([building.md](building.md)); drops stock's thanks (`about_more`)              |
+| `systemset_about_page_init`           | `0x4c1390` | FW. Version shows V1.36 again; adds CFW. Version ([building.md](building.md)); drops stock's thanks; Wi-Fi MAC toasts on a tap          |
 | `systemset_fwupdate_page_init`        | `0x4c88d0` | Network update fetches the latest GitHub release ([Network update](#network-update))                                                    |
 | `dialog_checkfw_dialog_init`          | `0x49982c` | An update saves the place before stopping the player ([Reboots](#audio-writes-and-the-queue-checkpoint))                                |
 | `device_reboot`                       | `0x502004` | Restart saves the playing place first ([Reboots](#audio-writes-and-the-queue-checkpoint))                                               |

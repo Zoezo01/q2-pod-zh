@@ -7978,10 +7978,22 @@ static void about_label(void *button, int x, int w, const char *style, const cha
     theme_font(label, x < 100 ? ROLE_TITLE : ROLE_META, FONT_ROW);
 }
 
+/* Wi-Fi MAC (row 4): its 17 characters overrun the value label, which scrolls only with AWTK's
+ * focus, never the list's selection, so a tap or Centre toasts it whole, as Serial (row 6) opens
+ * its own dialog (#459). */
+static int about_mac(void *label, void *event) {
+    char mac[64];
+    widget_get_text_utf8(label, mac, sizeof mac);
+    if (*mac) toast(mac);
+    return 0;
+}
+
 int ringnav_about(void *win, void *ctx) {
     int result = stock_about_trampoline(win, ctx);
     void *view = win ? widget_lookup(win, "scroll_view_about", 1) : (void *)0;
     if (view && widget_count_children(view) == 8) {
+        void *mac = widget_get_child(widget_get_child(view, 4), 0);
+        if (mac) widget_on(mac, EVT_CLICK, about_mac, widget_get_child(mac, 1));
         widget_destroy(widget_get_child(view, 7)); /* stock's thanks */
         widget_set_text_utf8(widget_get_child(widget_get_child(widget_get_child(view, 1), 0), 1),
                              STOCK_VERSION);
