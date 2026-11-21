@@ -518,6 +518,7 @@ class Machine:
             # An unnamed widget's name is NULL too, whatever the default: stock answers its value_str.
             ret=0 if self.text(b)=='text' else self.string(n.get(self.text(b),''))
             if self.text(b)=='name' and not n.get('name'): ret=0
+            if self.text(b)=='image' and n.get('type')=='image' and not n.get('image'): ret=0  # so is an image's that names none
         elif name=='widget_get_text': ret=self.wide_string(n.get('text',''))
         elif name=='player_playtime_and_length' and hasattr(self,'playtime'): self.word(a,self.playtime); self.word(b,getattr(self,'length',225)); ret=0
         elif name=='widget_get_text_utf8':

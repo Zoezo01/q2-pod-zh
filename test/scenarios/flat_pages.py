@@ -307,7 +307,7 @@ for theme_, light in (('2', '0'), ('2', '1'), ('0', '0')):
     try: q = LoadQueue(queue=3, pos=1)
     finally: SETUP.clear()
     q.handlers[HOOKS['playing_page_init'][0] + 12] = 'stock_playing'; q.image_size = (32, 32)
-    marks = [q.node('image', n, image=i) for n, i in (('img_more', 'play_more'), ('img_playmode', 'play_cycle1'), ('img_fav', 'play_fav'))]
+    marks = [q.node('image', n, image=i) for n, i in (('img_more', ''), ('img_playmode', 'play_cycle1'), ('img_fav', 'play_fav'))]  # More names no image: stock draws its style's
     q.win = q.top = q.node('window', 'playing_page', marks); q.word(q.win + O['W_PARENT'], q.wm); parents(q, q.win); place(q, q.win, 0, 26, 375, 294)
     for i, w in enumerate(marks): place(q, w, 20 + 60 * i, 250, 40, 40); q.byte(w + 0x34, 255)  # stock's opacity
     q.word(syms['system_bar'], q.node('window', 'system_bar')); assert q.call(address=HOOKS['playing_page_init'][0], args=(q.win, 7, 0, 0), gap=0) == 0

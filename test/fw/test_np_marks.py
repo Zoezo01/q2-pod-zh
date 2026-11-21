@@ -17,14 +17,19 @@ GLYPHS = {'play_more': 'np_more', 'play_moredown': 'np_more_q', 'play_fav': 'np_
 
 class Page:
     """Now Playing with its three marks, stock's images on the page, opened under theme t."""
-    def __init__(self, fw, ui, mcl, st, t, light=0, images=('play_more', 'play_order', 'play_unfav')):
+    def __init__(self, fw, ui, mcl, st, t, light=0, images=(None, 'play_order', 'play_unfav')):
+        """More names no image, as on the Q2: stock draws it as its style's background, by its state."""
         theme(fw, st, t, light)
         self.fw, self.ui, self.opacity = fw, ui, {}
         fw.mock('widget_set_opacity', lambda w, v, *_: self.opacity.__setitem__(w, v))
+        # stock answers an image that names none with null, not the default
+        fw.mock('widget_get_prop_str', lambda w, key, default, *_:
+                0 if C.string_at(key) == b'image' and (w, b'image') not in ui.strs else ui.str_ptr(w, C.string_at(key), default))
         self.now = Now(fw, ui, mcl, st, opened=False)
         self.marks = [ui.widget(self.now.win, name, 300 + 10 * i, 250, 40, 40) for i, name in enumerate(MARKS)]
         for w, image in zip(self.marks, images):
-            ui.set_str(w, b'image', image.encode())
+            if image:
+                ui.set_str(w, b'image', image.encode())
         assert self.now.open() == 41
 
     def paint(self, w=None):
@@ -54,14 +59,30 @@ def test_the_flat_themes_draw_each_mark_in_its_flat_glyph_the_half_s(fw, ui, mcl
 
 @pytest.mark.parametrize('image', GLYPHS)
 def test_each_state_has_its_own_glyph(fw, ui, mcl, st, image):
-    """Heart on and off, each play mode and More, pressed or not: a name each, so each reads apart."""
-    page = Page(fw, ui, mcl, st, MODERN, images=(image, 'play_order', 'play_unfav'))
+    """Heart on and off and each play mode: a name each, so each reads apart."""
+    page = Page(fw, ui, mcl, st, MODERN, images=(None, image, 'play_unfav'))
     loads, _ = page.paint()
     assert f'flat_{GLYPHS[image]}_d' in loads
 
 
+@pytest.mark.parametrize('state, glyph', [(b'normal', 'np_more'), (b'pressed', 'np_more_q'), (None, 'np_more')])
+def test_more_names_no_image_and_is_drawn_by_its_state(fw, ui, mcl, st, state, glyph):
+    page = Page(fw, ui, mcl, st, MODERN)
+    if state:
+        ui.set_str(page.marks[0], b'state_for_style', state)
+    loads, draws = page.paint()
+    assert f'flat_{glyph}_d' in loads and len(draws) == 3
+
+
+def test_another_image_that_names_none_yet_draws_nothing(fw, ui, mcl, st):
+    """Internet Radio's heart between the page's opening and its first state."""
+    page = Page(fw, ui, mcl, st, MODERN, images=(None, 'play_order', None))
+    loads, draws = page.paint()
+    assert sorted(loads) == ['flat_np_more_d', 'flat_np_order_d'] and len(draws) == 2
+
+
 def test_an_image_without_a_glyph_is_drawn_as_it_is_and_a_hidden_one_not_at_all(fw, ui, mcl, st):
-    page = Page(fw, ui, mcl, st, MODERN, images=('play_more', 'cover_other', 'play_fav'))
+    page = Page(fw, ui, mcl, st, MODERN, images=(None, 'cover_other', 'play_fav'))
     ui.shown[page.marks[0]] = 0
     loads, _ = page.paint()
     assert sorted(loads) == ['cover_other', 'flat_np_heart_on_d']

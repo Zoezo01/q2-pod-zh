@@ -64,6 +64,15 @@ void np_marks(void *w, void *canvas) {
         const char *image = widget_get_prop_str(m, "image", "");
         char name[40];
         unsigned bitmap[64]; /* bitmap_t: width @0, height @4 */
+        /* An image that names none answers null, not the default. More is one: stock draws it as
+         * its style's background, play_more or, pressed, play_moredown. Another, the radio's heart
+         * before its first state, has nothing to draw. */
+        if (!image || !*image) {
+            if (tk_strcmp(widget_get_prop_str(m, "name", ""), "img_more")) continue;
+            image = tk_strcmp(widget_get_prop_str(m, "state_for_style", ""), "pressed")
+                        ? "play_more"
+                        : "play_moredown";
+        }
         for (unsigned k = 0; k < sizeof glyphs / sizeof *glyphs; ++k)
             if (!tk_strcmp(image, glyphs[k][0])) {
                 tk_snprintf(name, sizeof name, FLAT_ART "%s_%s", glyphs[k][1],
@@ -71,7 +80,7 @@ void np_marks(void *w, void *canvas) {
                 image = name;
                 break;
             }
-        if (!*image || widget_load_image(m, image, bitmap)) continue;
+        if (widget_load_image(m, image, bitmap)) continue;
         int bw = (int)bitmap[0], bh = (int)bitmap[1], src[4] = { 0, 0, bw, bh },
             dst[4] = { I(m, W_X) + (I(m, W_W) - bw) / 2, I(m, W_Y) + (I(m, W_H) - bh) / 2, bw, bh };
         canvas_draw_image(canvas, bitmap, src, dst);
