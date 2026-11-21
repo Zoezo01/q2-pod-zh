@@ -183,6 +183,16 @@ The [user guide][guide] covers every control, EQ, Cover Flow and more tips.
     <td></td>
   </tr>
   <tr valign="top">
+    <td><b><a href="https://github.com/DiamondBond/q2-eq-studio">EQ Studio</a></b></td>
+    <td>Edit the EQ on your phone: open <b>Library → Apps → EQ Studio</b> and scan the code with a phone on the same Wi-Fi. Drag the bands on a curve, or pick one of AutoEq's presets for thousands of headphones, and hear each change as you make it.</td>
+    <td></td>
+  </tr>
+  <tr valign="top">
+    <td><b><a href="https://github.com/DiamondBond/q2-mixtape">Mixtape</a></b></td>
+    <td>Mixes from your own music, 5 minutes to an hour long: a shuffle, your most played, forgotten favourites, songs that sound like an album or artist, or Last.fm's and ListenBrainz's picks. In <b>Library → Apps → Mixtape</b>.</td>
+    <td></td>
+  </tr>
+  <tr valign="top">
     <td><b><a href="https://github.com/DiamondBond/q2-groovebox">Groovebox</a></b></td>
     <td>Sixteen pads, a step sequencer and punch-in effects, in <b>Library → Apps → Groovebox</b>.</td>
     <td><a href="https://github.com/DiamondBond/q2-groovebox/raw/main/docs/guide/Groovebox-Mini-Guide.pdf">Guide</a></td>
