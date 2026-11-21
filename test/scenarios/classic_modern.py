@@ -59,7 +59,9 @@ for light in '01':
 # Balance: L and R in Classic's face.
 m = slider_flat('balance_page', 'slider_balance', 'view_balance', 'label_balance', ('img_left', 'img_right'), config=CM, min=-10, max=10, value=0)
 L, R = [next(c for c in m.nodes[m.win]['children'] if m.nodes[c].get('text') == t) for t in 'LR']
-assert {(m.nodes[w]['style:normal:font_name'], m.nodes[w]['style:normal:font_size']) for w in (L, R)} == {('classic-light', 21)}; passed()
+assert {(m.nodes[w]['style:normal:font_name'], m.nodes[w]['style:normal:font_size']) for w in (L, R)} == {('classic-light', 21)}
+bare(m); bg(m, m.win); assert m.bands[0][:5] == (0, 0, 375, 294, color_t(PAPER['0'])) and not m.image_draws
+under, rest = round_box(scrub_bands(m), 0, 17, 309, 36, 18); assert set(under) == {color_t(FLAT_REST['0'])} and not m.image_draws; passed()
 
 # Default Volume, each half: On holding in Classic Blue, the words in Classic's face.
 for light in '01':
@@ -115,8 +117,8 @@ for light, line in (('0', 0x38383a), ('1', 0xd1d1d6)):  # on Classic's paper
     x, y, w, h = wbox(m, nav); shown = min(n, 6); foot = y + 44 + shown * 32 + 10
     assert (x, w, h) == (40, 294, 44) and wbox(m, lst) == (40, y + 44, 294, shown * 32) and foot <= 308, (n, wbox(m, lst))
     assert [wbox(m, i) for i in items] == [(0, 32 * k, 294, 32) for k in range(n)] and m.nodes[d]['highlight'] == ''
-    title = named(m, nav, 'scrlabel_title'); ink = 0xffffff if light == '0' else 0
-    assert m.nodes[title]['style:normal:font_size'] == 25 and m.nodes[title]['style:normal:text_color'] & 0xffffff == ink, m.nodes[title]
+    title = named(m, nav, 'scrlabel_title')  # stock's raw white, which Light Mode's style hook flips (test_flat_dialogs)
+    assert m.nodes[title]['style:normal:font_size'] == 25 and m.nodes[title]['style:normal:text_color'] & 0xffffffff == 0xffffffff and '_final' not in m.nodes[title]
     bare(m); bg(m, d); rows = {b[1]: b for b in m.bands if b[0] == 40 and b[2] == 294}
     assert rows[y + 20][4] == rows[foot - 11][4] == color_t(paper) and rows[y + 43][4] == color_t(line), sorted(rows)
     m.paint(d); assert {b[4] for b in m.bands if b[1] == foot and b[2] > 100} == {color_t(line)}; passed()
@@ -180,3 +182,60 @@ for theme_, light in (('3', '0'), ('3', '1'), ('2', '0')):
     assert drawn == [f'flat_np_{r.nodes[heart]["image"][5:].replace("unfav", "heart_off").replace("fav", "heart_on")}_{"dl"[int(light)]}', 'canvas_draw_image'], drawn
     r.destroy(rnp); passed()
 CONFIG.clear()
+
+
+# Update Library and USB Connected (classic_pages.c msg_paint_flat) on Classic's paper: the flat look's mark, the half's,
+# the heading in its ink; Update Library's Cancel a pill at rest.
+def msg_page(light, usb):
+    """test/patch.py's msg_dialog and usb_page under Classic Modern (its place is a later one by now)."""
+    m = MsgMachine(); m.songs = 704; m.config.update(LIGHT=light, **CM); m.byte(O['SCAN_WHOLE'], 1); m.byte(syms['g_usbmode'], 0)
+    if usb:
+        kids = [m.node('image', 'img_return'), m.node('image', 'img_usbmode'), m.node('hscroll_label', 'scrlabel_info'), m.node('image', 'img_daccharge'), m.node('image', 'img_dacset')]
+        win = m.node('window', 'usbmode_page', kids); y = 26
+    else:
+        kids = [m.node('image_animation', 'img_animation'), m.node('label', 'label_msg', text='Updating No.0'), m.node('label', 'label_scanfolder'), m.node('button', 'btn_no', text='Cancel')]
+        win = m.node('dialog', 'updatemusic_dialog', kids); y = 0; place(m, kids[3], 44, 266, 287, 40)
+    parents(m, win); m.word(win + O['W_PARENT'], m.wm); place(m, win, 0, y, 375, 320 - y); m.top = win; m.nodes[m.wm] = {'children': [win]}
+    ui_loaded(m, 'usbmode_page' if usb else 'dialog/updatemusic_dialog', win)
+    if not usb: m.counted()
+    return m, win
+for light in '01':
+    um, uwin = msg_page(light, False); bare(um); bg(um, uwin)
+    assert page_fill(um, 26, PAPER[light]) and art_at(um) == [(f'flat_msg_note_{"dl"[int(light)]}', (145, 46))], art_at(um)
+    cancel, _ = round_box([b for b in um.bands if 248 <= b[1] < 284], 127, 248, 121, 36, 18); assert set(cancel) == {color_t(FLAT_REST[light])}
+    assert [um.nodes[named(um, uwin, n)]['text'] for n in ('msg_heading', 'msg_line')] == ['Updating Library', '0 of 704 songs']
+    ub, bwin = msg_page(light, True); bare(ub); bg(ub, bwin)
+    assert page_fill(ub, 0, PAPER[light]) and art_at(ub) == [(f'flat_msg_usb_{"dl"[int(light)]}', (145, 82 - 26))], art_at(ub)
+    assert [ub.nodes[named(ub, bwin, n)].get('text') for n in ('msg_heading', 'msg_line')] == ['Connected', 'Eject before disconnecting']; passed()
+
+# Set Time in each half: the paper, the clock's face flat_, the half's, and no Classic art.
+for light in '01':
+    m = time_flat(light=light, **CM); m.nodes[m.slide]['value'] = 1; bare(m); bg(m, m.win)
+    assert m.bands[0][:5] == (0, 0, 375, 294, color_t(PAPER[light])) and {'16', '42', ':', 'Save'} <= {t['text'] for t in m.letters}
+    assert [n for n, _ in qs_arts(m)] == ['flat_clock_face_' + 'dl'[int(light)]] and m.lcd_colors() == LCD_COLORS; passed()
+
+# The volume over the flat Quick Settings (quick_settings.c quick_vol_flat), under both flat themes: the page's bar's card
+# and its bar, Classic's speakers under Classic Modern and the flat look's under Modern; no panel, no number.
+for config, near, far in ((CM, 'classic_light_spk_quiet_w', 'classic_light_spk_loud_d'), ({'THEME': '2', 'ACCENT': '4'}, 'flat_spk_quiet', 'flat_spk_loud_qd')):
+    m = Machine(); m.config.update(LIGHT='0', **config); m.image_size = (12, 14)
+    if config is CM: booted(m)
+    qs = m.node('dialog', 'statusbar_dialog'); m.word(qs + O['W_PARENT'], m.wm); place(m, qs, 0, 0, 375, 320)
+    sv, lv = m.node('slider', 'slider_vol', max=100, value=50), m.node('label', 'label_vol')
+    dlg = m.node('dialog', 'volume_dialog', [sv, lv]); m.word(dlg + O['W_PARENT'], m.wm); place(m, dlg, 0, 0, 375, 320)
+    m.word(syms['system_bar'], m.node('window', 'system_bar')); m.nodes[m.wm] = {'children': [qs, dlg]}; m.top = dlg; bare(m); bg(m, dlg)
+    card, rest = round_box(m.bands, 18, 226, 339, 62, 26); assert set(card) == {color_t(CARD['0'])} and not m.rounded
+    assert m.image_loads == [near, far] and [d[1][:2] for d in m.image_draws] == [(45, 250), (308, 250)] and not m.letters, m.image_loads; passed()
+
+# The lock screen's info page (lockscreen.c info_paint: paint_page from row 26) keeps Classic's colours, not the pane's grey.
+for light, fill in (('0', 0x1c1c1c), ('1', 0x63717b)):
+    m = Machine(); m.config.update(LIGHT=light, **CM); booted(m); bare(m)
+    m.call(address=payload_syms['paint_page'], args=(0, m.canvas, 26, 0), gap=0); assert page_fill(m, 26, fill), m.bands[:1]; passed()
+
+# The hold card's rows painted, the selected one in the theme's band, the others on the card's paper.
+for light in '01':
+    m, d, lst, nav = hold_cm(light, page='playing_page', pos=1); m.top = d; items = m.nodes[m.view]['children']
+    place(m, m.view, 0, 0, 294, 192); m.word(m.view + O['VIEW_CONTENT_H'], 32 * len(items)); bare(m); m.paint(m.view)
+    rows = {b[1]: b[4] for b in m.bands if b[0] == 0 and b[2] == 294}
+    assert m.selected(m.view) == 0 and sorted(rows) == list(range(32)) and rows[16] == color_t(0x0081de), sorted(rows)  # Classic Blue's band
+    m.call(); bare(m); m.paint(m.view); rows = {b[1]: b[4] for b in m.bands if b[0] == 0 and b[2] == 294}
+    assert m.selected(m.view) == 1 and sorted(rows) == list(range(32, 64)) and rows[48] == color_t(0x0081de), sorted(rows); passed()
