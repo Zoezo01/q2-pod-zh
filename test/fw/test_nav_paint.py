@@ -890,6 +890,15 @@ def test_minimal_s_caps_draw_the_bar_s_idle_text(fw, st, world):
     assert style_color(fw, rgba(0xffffff), b'text_color') == rgba(0xffffff, 0)
 
 
+@pytest.mark.parametrize('light', ['0', '1'])
+def test_modern_s_bar_idle_text_is_the_payload_s_too(fw, st, world, light):
+    """paint_caps draws the mark under every theme, so stock's label's own ink is clear in either half."""
+    theme(fw, MODERN, LIGHT=light)
+    idle = world.add(world.window('system_bar'), 'label_idle', 'label')
+    st('bar_idle', C.c_void_p).value = st('paint_w', C.c_void_p).value = idle
+    assert style_color(fw, rgba(0xffffff), b'text_color') == rgba(0xffffff, 0)
+
+
 @pytest.mark.parametrize('enabled, grey', [((1, 1), 0xffffff), ((1, 0), 0xaaaaaa), ((0, 1), 0xaaaaaa)])
 def test_a_playlist_row_s_delete_and_rename_grey_under_a_disabled_parent(fw, st, world, enabled, grey):
     theme(fw, MODERN, ACCENT=str(TIDAL))

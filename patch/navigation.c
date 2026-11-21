@@ -1910,16 +1910,34 @@ static int np_marquee(const void *info) {
 
 /* Minimal's Home labels are HOME_CAPS_PX small capitals over their transparent stock ink
  * (ringnav_style_color), white on the selected row, else SUDO_MUTED; the status bar's idle "Q2" is
- * the 1.0.1 wordmark's MARK_PX grey capitals; Now Playing's album (docs/ipod.md#now-playing) is
- * NP_CAPS_PX, painted on its page (view_album) over its transparent label, scrolled by np_marquee
- * when wider than it. ponytail: other long labels are cut off, not scrolled. */
+ * the 1.0.1 wordmark's MARK_PX grey capitals (any other theme's: its label's text, below); Now
+ * Playing's album (docs/ipod.md#now-playing) is NP_CAPS_PX, painted on its page (view_album) over
+ * its transparent label, scrolled by np_marquee when wider than it. ponytail: other long labels are
+ * cut off, not scrolled. */
+#define BAR_MARK_PX 18 /* tools/ipod.py label_idle's font_size */
 static void paint_caps(void *w, void *canvas) {
     if (!w || !P(canvas, CANVAS_LCD)) return;
     const theme_t *T = theme();
     if (w == st.bar_idle) {
-        if (T->caps_mark)
+        if (T->caps_mark) {
             draw_spaced(canvas, widget_get_text(w), 0, (I(w, W_H) - MARK_PX) / 2, MARK_PX,
                         RGBA(0xaaaaaa), 375);
+            return;
+        }
+        /* any other theme's: the label's text where and as stock drew it (18 px, left, centred
+         * on its row, the system face), in white through Light Mode's ink, so white on the dark
+         * bar and the half's ink on the light one; ours, as stock's label drew it pale on
+         * Modern's Light Mode bar */
+        const unsigned *s = widget_get_text(w);
+        unsigned text = (unsigned)I(P(canvas, CANVAS_LCD), LCD_TEXT_COLOR);
+        int align_v = I(canvas, CANVAS_ALIGN_V), align_h = I(canvas, CANVAS_ALIGN_H);
+        rect_t r = { 0, 0, I(w, W_W), I(w, W_H) };
+        canvas_set_font(canvas, (void *)0, BAR_MARK_PX);
+        canvas_set_text_color(canvas, RGBA(0xffffff));
+        I(canvas, CANVAS_ALIGN_V) = 1, I(canvas, CANVAS_ALIGN_H) = ALIGN_H_LEFT;
+        if (s && *s) canvas_draw_text_in_rect(canvas, s, wide_len(s), &r);
+        I(canvas, CANVAS_ALIGN_V) = align_v, I(canvas, CANVAS_ALIGN_H) = align_h;
+        stock_canvas_set_text_color(canvas, text);
         return;
     }
     if (st.np_album && w == P(st.np_album, W_PARENT)) {
@@ -5377,8 +5395,7 @@ unsigned *ringnav_style_color(unsigned *color, void *style, const char *name, un
             *color &= 0xffffff;
             return color;
         }
-        if ((T->caps_mark && st.paint_w == st.bar_idle) ||
-            (T->caps_home && coverflow_home_owns(st.paint_w))) {
+        if (st.paint_w == st.bar_idle || (T->caps_home && coverflow_home_owns(st.paint_w))) {
             *color &= 0xffffff; /* paint_caps draws it */
             return color;
         }
