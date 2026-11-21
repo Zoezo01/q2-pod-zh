@@ -271,6 +271,12 @@ static void launch(app_t *a) {
     system(a->run); /* exits at once when the app runs already */
 }
 
+/* On the card and not running: its page starts it (page_at), and once more when it ended itself
+ * under the page (revive). */
+static int startable(const app_t *a) {
+    return !access(a->bin, 0) && (!a->launched || access(a->pid, 0));
+}
+
 /* A song of an app's URL queue served by the app itself is about to play (tidal.c app_track, on
  * the thread that starts the player, nearly always the UI's): an app that isn't running (its
  * loop's pid file gone: it ended idle, or was stopped) starts as its page starts it (page_at).
@@ -1523,6 +1529,7 @@ static struct {
     int art_lo, art_hi; /* the rows whose covers may be decoded, half open (art_window) */
     char *sort[6];      /* the sort icon's row (take_sort), its fields in the shown reply */
     int field;          /* the box open is field row field - 1's; 0, a search's */
+    int up;             /* the app has answered this page since its last start (got, revive) */
 } pg __attribute__((section(".scratch")));
 
 static void qr_open(const char *state, const char *title);
@@ -2058,6 +2065,23 @@ static int sec_take(char **g, int n) {
     return 1;
 }
 
+/* got's: a level's request found no socket, long after the app's start. An app that has answered
+ * this page and has since ended itself (idle: its loop gone) starts again as page_at starts it; 1
+ * when it did, and the level waits as for that start. Once: only a reply sets pg.up again, so an
+ * app that doesn't come up shows its error page, as does one that never answered, one whose loop
+ * still runs (Retry's restart), one USB storage starts again (relaunch) and one the App Store has
+ * (launch refuses).
+ * ponytail: a pid file a dead loop left reads as running, as for addon_wake: the error page, and
+ * Retry restarts it; a look at the pid's process would tell. */
+static int revive(void) {
+    app_t *a = app();
+    int up = pg.up;
+    pg.up = 0;
+    if (!up || a->relaunch || !startable(a)) return 0;
+    launch(a);
+    return time_now_ms() - a->launch_at < ADDON_START_MS;
+}
+
 /* The finished request: an action's toast, or the top level's rows. */
 static void got(void) {
     lv_t *l = top();
@@ -2077,6 +2101,7 @@ static void got(void) {
     req.buf = 0;
     tk_snprintf(id, sizeof id, "%u", req.id);
     if (n >= 0 && strcmp(f[0], id)) n = -1;
+    if (n >= 0) pg.up = 1;
     int ok = n >= 0 && !strcmp(f[1], "ok");
     unsigned now = time_now_ms();
     char why[48];
@@ -2089,6 +2114,8 @@ static void got(void) {
             toast(f[2]);
         else if (!ok)
             toast(why);
+        if (!strcmp(pg.aop, "stop"))
+            pg.up = 0; /* asked to end: its level's reload starts nothing */
         if (ok && !strcmp(pg.aop, "stop")) {
             app()->launched = app()->hold = 0;
             navigator_back();
@@ -2110,7 +2137,7 @@ static void got(void) {
         append(l, from);
     } else if (req.fail == SPOT_NOSOCK &&
                !req.field && /* a field's text: its error, never resent */
-               (app()->restart || now - app()->launch_at < ADDON_START_MS)) {
+               (app()->restart || now - app()->launch_at < ADDON_START_MS || revive())) {
         if (l->state != K_WAIT && l->state != K_READY) l->state = K_WAIT, show();
         pg.again = now + 500;
     } else if (ok && pg.depth == 1 && !pg.nsec && !strcmp(f[2], "sections") && sec_take(g, n)) {
@@ -2449,7 +2476,7 @@ static int page_at(int k, const char *op, const char *args, const char *title, i
     pg.a = k;
     app_t *a = app();
     int missing = access(a->bin, 0);
-    if (!missing && (!a->launched || access(a->pid, 0))) launch(a), pg.code = qr && a->qr;
+    if (startable(a)) launch(a), pg.code = qr && a->qr;
     pg.depth = 1;
     static const unsigned short touches[] = { EVT_POINTER_DOWN, EVT_POINTER_MOVE_BEFORE,
                                               EVT_POINTER_UP_BEFORE, EVT_POINTER_ABORT };

@@ -10540,8 +10540,11 @@ assert m.labels()==['Loading…']; m.advance(2900); assert m.labels()==['Loading
 m.advance(400); assert m.labels()==['Loading…','Stop Soulseek'],m.labels()  # the page's next 250 ms tick
 m.systems=[]; m.row(0); assert m.systems==[SKILL] and m.toasts[-1][3]=='Soulseek stopped' and 'navigator_back' in [c[0] for c in m.calls]
 m.close(); passed()
-# An app that isn't running (it stopped by itself) has nothing to stop: Retry alone, which starts it.
-m=SlskMachine(); m.open(); m.answer('ok','refresh','',SMENU); m.serve=None; m.advance(10000); m.poll(); m.worker()
+# An app that stopped by itself is started again by its page's next ask, the level on show kept (addon.c
+# revive). One that doesn't come back has nothing to stop: Retry alone, which starts it.
+m=SlskMachine(); m.open(); m.answer('ok','refresh','',SMENU); m.serve=None; m.systems=[]; m.advance(10000); m.poll(); m.worker()
+assert m.systems==['/bin/sh /mnt/mmc/.soulseek/run'] and m.labels()==SLABELS,(m.systems,m.labels())
+m.advance(10000); m.poll(); m.worker(); assert m.systems==['/bin/sh /mnt/mmc/.soulseek/run'],m.systems
 assert m.labels()==["Soulseek isn't running",'Retry'],m.labels()
 m.systems=[]; m.row(0); assert m.systems==['/bin/sh /mnt/mmc/.soulseek/run'],m.systems; m.close(); passed()
 

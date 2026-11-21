@@ -76,7 +76,7 @@ class Pg(C.Structure):
                 ('f', C.POINTER(C.c_char_p)), ('pages', C.c_int), ('paging', C.c_int), ('moved', C.c_byte),
                 ('sec', C.c_void_p), ('nsec', C.c_byte), ('cur', C.c_byte), ('sx', C.c_int), ('sy', C.c_int),
                 *((n, C.c_byte) for n in ('sdown', 'sclaim')), ('art_lo', C.c_int), ('art_hi', C.c_int),
-                ('sort', C.c_char_p * 6), ('field', C.c_int)]
+                ('sort', C.c_char_p * 6), ('field', C.c_int), ('up', C.c_int)]
 
 
 class Qp(C.Structure):
@@ -3662,6 +3662,22 @@ def test_a_screen_run_whose_page_has_gone_asks_nothing_at_its_end(fw, after):
     assert p.pg.page is None if after == 'closed' else p.top.state == K_READY
 
 
+def test_a_screen_run_s_end_starts_an_app_that_ended_itself_under_it(fw):
+    p = Page(fw)
+    p.answer(rows=[SCREEN])
+    g = CardGame(fw, world=p.world)
+    p.click(0)
+    gone_idle(p)
+    ended(g)
+    assert p.top.state == K_LOAD and p.request().endswith(b'\tmenu\n')
+    p.answer(**NONE)
+    assert p.world.of('system') == [FOO_RUN, FOO_RUN] and p.top.state == K_WAIT
+    p.world.ms += 500
+    p.tick()
+    p.answer(rows=[SEEN])
+    assert p.top.state == K_READY and p.cell(0, 3) == b'Watched'
+
+
 def test_a_game_s_end_asks_nothing_of_the_app_s_page_open(fw):
     """Only a screen row's run: a game started by a row of Games, its app's page open (Now Playing's ⋯), leaves it."""
     p = Page(fw, b'name=Foo\ngame=1\nrow=games\n', opens=False)
@@ -3814,6 +3830,148 @@ def test_a_level_asked_while_the_app_restarts_still_waits(fw):
     p.ap.a[0].restart = 1
     p.answer(fail=SPOT_NOSOCK, raw=b'')
     assert p.top.state == K_WAIT
+
+
+# An app that ended itself under its page (idle) is started again by the page's next request for a level (revive).
+FOO_RUN = (b'/bin/sh /mnt/mmc/.foo/run',)
+NONE = dict(fail=SPOT_NOSOCK, raw=b'')  # a request that found no socket
+
+
+def gone_idle(p, rows=None):
+    """The app answered its page (rows, unless it has), then ended itself: its loop's pid file gone, and its poll
+    has let it go (poll_one)."""
+    if rows is not None:
+        p.answer(rows=rows)
+    del p.world.files[b'/tmp/q2-foo']
+    addon_poll(p.fw, p.world, 20000)
+    assert (p.ap.a[0].launched, p.pg.up) == (0, 1) and p.world.of('system') == [FOO_RUN]
+
+
+def test_a_level_that_finds_its_app_ended_starts_it_again_and_waits_as_for_a_start(fw):
+    p = Page(fw)
+    gone_idle(p, [item(1, b'list')])
+    p.click(0)  # a level not shown yet
+    p.answer(**NONE)
+    assert p.world.of('system') == [FOO_RUN, FOO_RUN] and (p.ap.a[0].launched, p.ap.a[0].launch_at, p.pg.up) == (1, p.world.ms, 0)
+    assert p.top.state == K_WAIT and p.pg.again == p.world.ms + 500 and p.toasts == []
+    assert fw.fn('addon_wake', C.c_int, C.c_char_p)(b'foo') == 1 and len(p.world.of('system')) == 2  # a song's wake waits on this start
+    p.world.ms += 500
+    p.tick()
+    p.answer(**NONE)  # not up yet: asked again, nothing started
+    assert p.top.state == K_WAIT and len(p.world.of('system')) == 2
+    p.world.ms += 500
+    p.tick()
+    p.answer(rows=[item(3)])
+    assert p.top.state == K_READY and p.cell(0, 2) == b'Row 3' and p.pg.up == 1  # and once more, should it end again
+
+
+def test_an_app_gone_since_its_last_poll_is_started_again_too(fw):
+    """Still launched until poll_one's next look: its loop's pid file gone is what says it ended."""
+    p = Page(fw)
+    p.answer(rows=[item(1, b'list')])
+    del p.world.files[b'/tmp/q2-foo']
+    p.world.ms += 20000
+    p.click(0)
+    p.answer(**NONE)
+    assert p.ap.a[0].launched == 1 and p.world.of('system') == [FOO_RUN, FOO_RUN] and p.top.state == K_WAIT
+
+
+def test_a_live_level_stays_shown_while_its_app_starts_again(fw):
+    p = live(fw, [item(1)])
+    gone_idle(p)
+    drawn = len(fw.calls('list_item_create'))
+    p.tick()  # its time long past
+    p.answer(**NONE)
+    assert p.world.of('system') == [FOO_RUN, FOO_RUN] and p.top.state == K_READY and p.pg.again == p.world.ms + 500
+    p.world.ms += 500
+    p.tick()
+    assert p.req.running == 1 and p.request().endswith(b'\tmenu\n')
+    p.answer(msg=b'refresh', rows=[item(1)])
+    assert p.top.state == K_READY and p.top.live == 1 and len(fw.calls('list_item_create')) == drawn
+
+
+def test_an_app_that_does_not_come_back_shows_its_error_and_is_started_once(fw):
+    p = Page(fw)
+    gone_idle(p, [item(1, b'list')])
+    p.click(0)
+    p.answer(**NONE)
+    p.world.ms += 9499
+    p.tick()
+    assert p.top.slow == 1 and p.drawn == 1  # Stop Foo, as on any slow start
+    p.tick()
+    p.answer(**NONE)  # ADDON_START_MS is not over
+    assert p.top.state == K_WAIT
+    p.world.ms += 501
+    p.tick()
+    p.answer(**NONE)
+    assert (p.top.state, p.top.note, p.top.retry, p.top.nosock) == (K_ERROR, b"Foo isn't running", 1, 1)
+    assert p.world.of('system') == [FOO_RUN, FOO_RUN]
+    p.click(0)  # Retry starts it, as it did
+    assert p.world.of('system') == [FOO_RUN] * 3 and p.top.state == K_LOAD
+    p.world.ms += 10000
+    p.answer(**NONE)
+    assert p.top.state == K_ERROR and p.world.of('system') == [FOO_RUN] * 3  # the page itself starts it no more
+
+
+@pytest.mark.parametrize('why', ['never answered', 'its loop runs', 'USB storage starts it', 'the App Store has it', 'gone from the card'])
+def test_only_an_app_that_answered_and_ended_itself_is_started_again(fw, why):
+    """addon.c revive: every other missing socket is the error page it was, and Retry's restart of a running app."""
+    p = Page(fw)
+    a = p.ap.a[0]
+    if why != 'never answered':
+        p.answer(rows=[item(1, b'list')])
+        p.click(0)
+    p.world.ms += 20000
+    if why == 'its loop runs':  # its socket gone, its pid file there
+        assert a.launched == 1
+    else:
+        del p.world.files[b'/tmp/q2-foo']
+        a.launched = 0
+    if why == 'USB storage starts it':  # addon_card_away stopped it: poll_one starts it once the card is back
+        a.relaunch = 1
+    elif why == 'the App Store has it':  # replacing its files: launch refuses
+        table = C.addressof(C.c_char.in_dll(fw.lib, 'shelf_apps'))
+        fw.var('shelf_n', C.c_int).value = fw.fn('shelf_sources', C.c_int, C.c_char_p, C.c_void_p, C.c_int)(b'me/foo', table, 1)
+        sh = fw.var('netupdate__sh', Sh)
+        sh.running, sh.job, sh.app = 1, JOB_INSTALL, 0
+    elif why == 'gone from the card':
+        del p.world.files[FOO_BIN]
+    p.answer(**NONE)
+    assert (p.top.state, p.top.note, p.top.retry) == (K_ERROR, b"Foo isn't running", 1) and p.world.of('system') == [FOO_RUN]
+    assert (a.launched, a.relaunch) == (why == 'its loop runs', why == 'USB storage starts it')
+    if why == 'its loop runs':
+        p.click(0)  # Retry
+        assert a.restart == 1 and p.world.of('system')[-1][0].startswith(b'kill ')
+
+
+def test_an_action_starts_nothing_but_its_level_asked_again_does(fw):
+    p = Page(fw)
+    gone_idle(p, [item(1)])
+    p.click(0)
+    p.answer(**NONE)
+    assert p.toasts == [b"Foo isn't running"] and p.world.of('system') == [FOO_RUN] and p.top.state == K_LOAD
+    p.answer(**NONE)  # the level as the action left it
+    assert p.world.of('system') == [FOO_RUN, FOO_RUN] and p.top.state == K_WAIT
+
+
+def test_a_stop_op_that_finds_no_socket_starts_nothing(fw):
+    """The app was asked to end: its level's reload shows the error page, as it did."""
+    p = Page(fw)
+    gone_idle(p, [(b'action', b'stop', b'Stop Foo', b'', b'', b'')])
+    p.click(0)
+    p.answer(**NONE)
+    p.answer(**NONE)
+    assert p.top.state == K_ERROR and p.world.of('system') == [FOO_RUN] and p.backs == 0
+
+
+def test_a_field_s_text_that_finds_no_socket_starts_nothing(fw):
+    p = Page(fw, NOSTOP)
+    gone_idle(p, [USER, PASSWORD])
+    field(p, 1)
+    p.answer(**NONE)
+    assert p.top.state == K_ERROR and p.top.note == b"Foo isn't running" and p.world.of('system') == [FOO_RUN]
+    p.click(0)  # Retry: the level, never the text
+    assert SECRET not in p.request() and p.request().endswith(b'\tmenu\n') and p.world.of('system') == [FOO_RUN, FOO_RUN]
 
 
 def test_a_request_with_no_worker_is_wiped_before_it_is_let_go(fw):
