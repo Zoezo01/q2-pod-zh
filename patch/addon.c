@@ -276,10 +276,12 @@ int addon_wake(const char *id) {
     for (int i = 0; i < ap.n && !a; ++i)
         if (!strcmp(ap.a[i].id, id)) a = &ap.a[i];
     if (!a) return 0;
-    if (access(a->pid, 0) && !access(a->bin, 0) &&
+    /* a Retry's restart or USB storage's relaunch pending: poll_one starts it, the song waits */
+    int pending = (a->restart || a->relaunch) && !access(a->bin, 0);
+    if (!pending && access(a->pid, 0) && !access(a->bin, 0) &&
         (!a->launched || time_now_ms() - a->launch_at >= ADDON_START_MS))
         launch(a);
-    return a->launched && time_now_ms() - a->launch_at < ADDON_START_MS;
+    return pending || (a->launched && time_now_ms() - a->launch_at < ADDON_START_MS);
 }
 
 /* Whether app id's socket takes a connection (nothing sent; the app answers it as a bad request):

@@ -265,18 +265,23 @@ APP_BIN, APP_PID, RUN = b'/mnt/mmc/.a/q2-a', b'/tmp/q2-a', (b'/bin/sh /mnt/mmc/.
 
 # A URL queue's song on the app's own server (tidal.c app_track): its app, not running, starts as its page starts it,
 # and the player waits for it while it started in the last ADDON_START_MS (10 s).
-@pytest.mark.parametrize('files, launched, since, waits, started', [
-    ({APP_BIN}, 0, 0, 1, True),  # ended (idle, or stopped): started
-    ({APP_BIN, APP_PID}, 0, 0, 0, False),  # running: nothing, no wait
-    ({APP_BIN, APP_PID}, 1, 2000, 1, False),  # its page started it 2 s ago: running, maybe not answering yet
-    ({APP_BIN}, 1, 2000, 1, False),  # starting, its loop's pid file not there yet: not started twice
-    ({APP_BIN}, 1, 20000, 1, True),  # started long ago, ended since
-    (set(), 0, 0, 0, False),  # its binary gone from the card
+@pytest.mark.parametrize('files, launched, since, waits, started, pending', [
+    ({APP_BIN}, 0, 0, 1, True, None),  # ended (idle, or stopped): started
+    ({APP_BIN, APP_PID}, 0, 0, 0, False, None),  # running: nothing, no wait
+    ({APP_BIN, APP_PID}, 1, 2000, 1, False, None),  # its page started it 2 s ago: running, maybe not answering yet
+    ({APP_BIN}, 1, 2000, 1, False, None),  # starting, its loop's pid file not there yet: not started twice
+    ({APP_BIN}, 1, 20000, 1, True, None),  # started long ago, ended since
+    (set(), 0, 0, 0, False, None),  # its binary gone from the card
+    ({APP_BIN}, 0, 0, 1, False, 'restart'),  # Retry's restart pending: poll_one starts it, the song waits
+    ({APP_BIN}, 0, 0, 1, False, 'relaunch'),  # back from USB storage, not started again yet: the same
+    (set(), 0, 0, 0, False, 'relaunch'),  # still in USB storage, the card away: no wait
 ])
-def test_a_url_queue_s_app_starts_when_it_isn_t_running(fw, files, launched, since, waits, started):
+def test_a_url_queue_s_app_starts_when_it_isn_t_running(fw, files, launched, since, waits, started, pending):
     (a,), world = slots(fw, b'a')
     world.files, world.ms = dict.fromkeys(files, b''), 30000
     a.contents.launched, a.contents.launch_at = launched, 30000 - since
+    if pending:
+        setattr(a.contents, pending, 1)
     assert fw.fn('addon_wake', C.c_int, C.c_char_p)(b'a') == waits
     assert world.of('system') == ([RUN] if started else [])
 
