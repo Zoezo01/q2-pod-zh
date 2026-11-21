@@ -34,8 +34,11 @@ CHOICES = {'list.selection.painter': {'card': 'SEL_CARD', 'stops': 'SEL_STOPS', 
            'bar.battery.painter': {'stock': 'BATT_STOCK', 'classic-light': 'BATT_CLASSIC_LIGHT'},
            'playing.scrubber.painter': {'stock': 'SCRUB_STOCK', 'rows': 'SCRUB_ROWS'},
            'volume.panel.painter': {'stock': 'VOL_STOCK', 'classic-light': 'VOL_CLASSIC_LIGHT', 'flat': 'VOL_FLAT'},
-           'dialog.confirm.painter': {'stock': 'CONFIRM_STOCK', 'classic-light': 'CONFIRM_CLASSIC_LIGHT', 'flat': 'CONFIRM_FLAT'},
-           'pages.own.painter': {'stock': 'PAGES_STOCK', 'classic-light': 'PAGES_CLASSIC_LIGHT', 'flat': 'PAGES_FLAT'},
+           # each a bit (theme.h): classic-light+flat is the flat look's screens over Classic's own
+           'dialog.confirm.painter': {'stock': 'CONFIRM_STOCK', 'classic-light': 'CONFIRM_CLASSIC_LIGHT', 'flat': 'CONFIRM_FLAT',
+                                      'classic-light+flat': 'CONFIRM_CLASSIC_FLAT'},
+           'pages.own.painter': {'stock': 'PAGES_STOCK', 'classic-light': 'PAGES_CLASSIC_LIGHT', 'flat': 'PAGES_FLAT',
+                                 'classic-light+flat': 'PAGES_CLASSIC_FLAT'},
            **dict.fromkeys(('playing.title.font', 'playing.info.font', 'home.rows.font', 'list.row.font', 'list.row.meta_font', 'list.row.tall_font', 'bar.title.font'), FONTS),
            'playing.layout': {'ipod': 'NP_IPOD', 'centred': 'NP_CENTRED'},
            'scheme.mode': {'derive': 'SCHEME_DERIVE', 'light': 'SCHEME_LIGHT', 'dark': 'SCHEME_DARK'}}
@@ -141,6 +144,8 @@ SCHEMA = {k.path: k for k in (
     key('dialog.confirm.painter', 'painter[PAINT_CONFIRM]', 'enum'),
     key('pages.own.painter', 'painter[PAINT_PAGES]', 'enum'),  # the theme's own pages (theme.h classic_pages)
     key('pages.own.art_final', 'art_final', 'bool'),  # a theme's own art is final: Classic Light's classic_light_ images, the flat look's flat_
+    key('pages.quick.light_ground', 'qs_ground', 'color'),  # the flat Quick Settings' ground round its cards in the light half; 0: the paper
+    key('pages.date.gap', 'date_gap', 'int', 20),  # the flat Set Date's px between its fields, the day where Classic's is; 0: Classic's places
     # the rows painter's pixel rows, top to bottom (final colours): the track, the played part over it; the volume
     # panel away from Now Playing and a card app's progress (paint_rows_bar)
     Key('playing.scrubber.dark_track', 'np_rows[0]', 'rows', 0, 0, (), 'live'),
@@ -914,9 +919,11 @@ def validate(t, name):
     for s in settings:
         if settings.count(s) > 1:
             err(f'{s} declared twice')
-    flat = t['painter[PAINT_PAGES]'] == list(CHOICES['pages.own.painter']).index('flat')
+    flat = t['painter[PAINT_PAGES]'] & list(CHOICES['pages.own.painter']).index('flat')
     if t['art_final'] and t['id'] != 'classic-light' and not flat:  # navigation.c's image hook knows its names alone
         err('pages.own: art_final is for classic-light\'s own images and the flat look\'s only')
+    if (t['qs_ground'] or t['date_gap']) and not flat:
+        err('pages.quick.light_ground and pages.date.gap are the flat look\'s')
     for end in ('top', 'bottom') if t['sb_w'] else ():  # the thumb's round end gives its corner pixel to the glass
         y = t['sb_' + end]
         if corner_inset(y) > t['sb_right'] + 1:

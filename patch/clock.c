@@ -209,6 +209,12 @@ static int time_value(int f) {
 static const time_row_t *time_row(int time) {
     return &time_rows[time ? 1 + !g_time24h_flag : 0]; /* 24 or 12-hour */
 }
+/* A field's x: its row's; on the date's row under a theme's gap (the flat look's date.gap) the day
+ * stays and the month and year step left by it. */
+static int field_x(const time_row_t *row, int i) {
+    int gap = row == time_rows ? theme()->date_gap : 0;
+    return !gap ? row->x[i] : row->x[2] - (2 - i) * gap - (i < 2) * TIME_CELL_W - !i * TIME_YEAR_W;
+}
 static const char *time_month(void) { return time_months[clamp_step(time_value(1) - 1, 11, 0)]; }
 
 /* The bar's title reads the page's own label (bar_title_sync). */
@@ -280,7 +286,7 @@ void time_open(void *win) {
         for (int i = 0; i < row->n; ++i) {
             c = field_widget(win, row->first + i);
             if (!c) continue;
-            widget_move_resize(c, row->x[i], TIME_CELL_Y,
+            widget_move_resize(c, field_x(row, i), TIME_CELL_Y,
                                row->first + i ? TIME_CELL_W : TIME_YEAR_W, TIME_CELL_H);
             widget_set_opacity(c, 0);
             /* a drag steps a row, TIME_CELL_H / 3; stock's release adds its speed times this */
@@ -478,7 +484,7 @@ static void time_paint_flat(void *w, void *canvas) {
     }
     for (int i = 0; i < row->n; ++i) {
         int f = row->first + i;
-        rect_t r = { row->x[i], TIME_CELL_Y, f ? TIME_CELL_W : TIME_YEAR_W, TIME_CELL_H };
+        rect_t r = { field_x(row, i), TIME_CELL_Y, f ? TIME_CELL_W : TIME_YEAR_W, TIME_CELL_H };
         flat_box(canvas, &r, RGBA(f == at ? on : rest), 10);
         if (f == TIME_AMPM)
             tk_snprintf(b, sizeof b, "%s", hour < 12 ? "AM" : "PM");

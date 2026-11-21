@@ -10,11 +10,19 @@ const unsigned flat_rest[2] = { 0x2c2c2e, 0xe9e9ec }, flat_ink[2] = { 0xffffff, 
 unsigned flat_page(void) { return ipod_light() ? scheme()->paper : 0; }
 /* What is on, final: the theme's selection bar, its middle row (paint_selection's SEL_BAR), so a
  * lit button matches the row that is chosen. A neutral accent's bar (Graphite's dark grey) is
- * about a button's grey at rest: it takes its red tone, the silver, as Classic's lit tiles do. */
+ * about a button's grey at rest: it takes its red tone, the silver, as Classic's lit tiles do.
+ * Over Classic's own pages (classic_pages) it is those tiles' colour (quick_page's qs_tile): the
+ * theme's own scheme's blue (Classic Blue's), another accent's red tone. */
 unsigned flat_on(void) {
     const scheme_t *S = scheme();
-    return flip_if(ipod_light(), neutral(S->tones[0]) ? accent_tone(TONE_RED)
-                                                      : mix(S->tones[0], S->tones[1], 1, 2));
+    if (classic_pages() && theme()->schemes[accent()].label) return 0x207cde;
+    return flip_if(ipod_light(), classic_pages() || neutral(S->tones[0])
+                                     ? accent_tone(TONE_RED)
+                                     : mix(S->tones[0], S->tones[1], 1, 2));
+}
+/* The flat look's headings and words: the theme's own face (theme_face's), or bold */
+const char *flat_face(void) {
+    return theme()->font[ROLE_TITLE] == FONT_CLASSIC_LIGHT ? "classic-light" : "bold";
 }
 /* A round box in a final colour: stock's, one call, as a row at a time costs a page's other parts
  * their share of a paint. Light Mode's ink is held off it, as flipping a colour back is not exact.

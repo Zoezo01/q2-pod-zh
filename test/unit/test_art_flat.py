@@ -43,10 +43,18 @@ def test_the_family_is_the_looks_not_the_themes():
         *(f'np_{g}_{h}' for g in ('more', 'more_q', 'order', 'shuffle', 'repeat', 'repeat1', 'heart_on', 'heart_off') for h in 'ld'))}
     assert set(art.FLAT_BUTTONS) == set(art.QS_BUTTONS)  # the same stock names: QS_LIT says which are on
     for t in theme.builtins():  # no shipped theme draws them before its theme.xml says flat
-        assert t['painter[PAINT_PAGES]'] == art.FLAT or not any(k.startswith('flat_') for k in art.images(t))
+        assert t['painter[PAINT_PAGES]'] & art.FLAT or not any(k.startswith('flat_') for k in art.images(t))
     classic = art.images(theme.builtins()[1])
     assert not any(k.startswith('flat_') for k in classic)
     assert set(art.images(theme.builtins()[2])) == set(art.flat_images())  # Modern: the flat look's alone
+
+
+def test_classic_modern_draws_no_image_of_its_own():
+    """Classic Modern's images are Classic's and the flat look's, the same bytes: tools/build.py writes nothing more."""
+    _, classic, modern, cm = theme.builtins()
+    got, known = art.images(cm), {**art.images(classic), **art.images(modern)}
+    assert set(got) <= set(known) and all(known[k] == v for k, v in got.items())
+    assert set(art.flat_images()) <= set(got) and 'classic_light_chevron' in got
 
 
 @pytest.mark.parametrize('name, side', [('drop_wifi', 54), ('drop_dim', 24), ('drop_bright_qd', 30), ('msg_usb_d', 84), ('clock_face_l', 110)])

@@ -922,7 +922,7 @@ static void hud(void *canvas, const char *name, unsigned v, int x, int y, int ri
  * the panel and no chevron on the band; paint_panel's shadow images are per size. */
 /* its own panel needs the scheme's gloss and band: fewer than two stops are none */
 static int pop_own(const theme_t *T, const scheme_t *S) {
-    return T->painter[PAINT_CONFIRM] == CONFIRM_CLASSIC_LIGHT && S->bar.n > 1 && S->sel.n > 1;
+    return T->painter[PAINT_CONFIRM] & CONFIRM_CLASSIC_LIGHT && S->bar.n > 1 && S->sel.n > 1;
 }
 /* the panel's chosen row, its row i of POP_ROW */
 static unsigned pop_band(const scheme_t *S, int i) {

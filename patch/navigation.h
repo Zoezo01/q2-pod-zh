@@ -336,7 +336,6 @@ enum { FORM_NONE, FORM_PAGE, FORM_TRAY };
 #define HOLD_FOOT 10
 /* the toast's box, and the flat look's tray: the same in both halves */
 #define TOAST_RGBA 0xee2b2b2bu
-#define FLAT_FACE "bold" /* the flat look's headings and words: Modern's bold */
 #define MCL(a) (*(volatile int *)(a))
 int clamp_step(int offset, int maximum, int delta);
 unsigned put_num(unsigned *s, unsigned v);
@@ -426,12 +425,13 @@ int moving(menu_t *m);
 int reconcile(menu_t *m, int settle);
 void *more_image(void *w);
 #define BAR_ROWS geom_val(V_BAR)
-/* Classic's dialogs alone: the toast, small dialogs' cleared dim, a game's panel, the hold menu */
+/* Classic's dialogs: the toast, small dialogs' cleared dim, a game's panel, the hold menu; and the
+ * prompts, where flat_dialogs doesn't take them */
 static inline int classic_dialogs(void) {
-    return theme()->painter[PAINT_CONFIRM] == CONFIRM_CLASSIC_LIGHT;
+    return theme()->painter[PAINT_CONFIRM] & CONFIRM_CLASSIC_LIGHT;
 }
 /* The flat look's prompts: the confirm control's painters alone */
-static inline int flat_dialogs(void) { return theme()->painter[PAINT_CONFIRM] == CONFIRM_FLAT; }
+static inline int flat_dialogs(void) { return !!(theme()->painter[PAINT_CONFIRM] & CONFIRM_FLAT); }
 char *play_key(void);
 unsigned rec_hash(void *r);
 unsigned queue_hash(void *q);
@@ -467,6 +467,7 @@ extern const unsigned flat_rest[2],
     flat_ink[2]; /* final, [0] dark, [1] light; flat_quiet: theme.h */
 unsigned flat_page(void);
 unsigned flat_on(void);
+const char *flat_face(void);
 enum { BAR_PLAIN, BAR_SUNS, BAR_SPEAKERS }; /* flat_bar's marks */
 void flat_bar(void *w, void *canvas, const rect_t *r, int part, unsigned rest, int marks);
 void flat_box(void *canvas, rect_t *r, unsigned rgba, unsigned radius);

@@ -931,8 +931,10 @@ def flat_images():
 
 
 def images(t):
-    """Theme t's generated images, {name: PNG bytes}; those its values state."""
-    out, prefix = {}, t['id'].replace('-', '_')
+    """Theme t's generated images, {name: PNG bytes}; those its values state. Its own are named as the payload
+    loads them (classic_light_*) whichever theme's values draw them, and tools/build.py refuses two themes
+    drawing one name differently."""
+    out, prefix = {}, 'classic_light'
     if t['chevron_x']:  # white on the band in both halves, its point on the middle row
         out[f'{prefix}_sort_bars'] = png(*SORT_BOX[2:], compose(SORT_BOX, [(path(SORT), lambda x, y: (0xffffff, 1))]))
         out[f'{prefix}_chevron'] = png(*CHEVRON_BOX[2:], compose(CHEVRON_BOX, [
@@ -966,9 +968,9 @@ def images(t):
     if t['painter[PAINT_VOLUME]'] == list(CHOICES['volume.panel.painter']).index('classic-light'):
         for half, rgb in SPEAKER_INKS.items():
             out |= {f'{prefix}_spk_quiet_{half}': speaker(False, rgb), f'{prefix}_spk_loud_{half}': speaker(True, rgb)}
-    if t['painter[PAINT_PAGES]'] == FLAT:
+    if t['painter[PAINT_PAGES]'] & FLAT:
         out |= flat_images()
-    elif t['painter[PAINT_PAGES]']:
+    if t['painter[PAINT_PAGES]'] & list(CHOICES['pages.own.painter']).index('classic-light'):
         out |= {f'{prefix}_sun_{name}': sun(*a) for name, a in SUNS.items()}
         out |= {f'{prefix}_orb_note': png(116, 116, orb(100, False)), f'{prefix}_orb_usb': png(130, 130, orb(114, True))}
         out |= {f'{prefix}_{name}': shadow(*a) for name, a in SHADOWS.items()}
@@ -986,7 +988,7 @@ def images(t):
         for w in CELL_WIDTHS:
             out |= {f'{prefix}_cell_{w}': cell(w, False), f'{prefix}_cell_lit_{w}': cell(w, True)}
         out |= {f'{prefix}_tile': tile(), f'{prefix}_clock_chrome': clock_chrome(), f'{prefix}_clock_shadow': clock_shadow(), f'{prefix}_hint_shadow': hint_shadow()}
-    if t['painter[PAINT_CONFIRM]'] == list(CHOICES['dialog.confirm.painter']).index('classic-light'):
+    if t['painter[PAINT_CONFIRM]'] & list(CHOICES['dialog.confirm.painter']).index('classic-light'):
         out[f'{prefix}_confirm_shadow'] = png(*TRAY_SHADOW_BOX[2:], tray_shadow())
     if t['station_stops']:  # Internet Radio's Now Playing art, as large as the slanted art (navigation.c stream_ipod)
         px = inc('NP_IPOD_ART')

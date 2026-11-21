@@ -13,7 +13,7 @@ from conftest import NAVIGATION_SOURCE, O, Deques, Externpic, ask_cover, in_fork
 
 THEMES = host.tools_theme.builtins()
 SETS = host.tools_theme.geometry_sets(THEMES)
-MINIMAL, CLASSIC, MODERN = THEMES
+MINIMAL, CLASSIC, MODERN = THEMES[:3]
 GEOM = {t['name']: SETS.index(host.tools_theme.geometry(t)) for t in THEMES}
 RET_REPEAT, STOP = 8, 11
 FONT_ROW = -2

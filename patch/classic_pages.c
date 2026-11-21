@@ -484,8 +484,8 @@ static void slider_switch_flat(void *canvas, void *sw) {
             cell = { 2, { 0, 100 }, { lit, lit } };
     paint_round_rows(canvas, &track, &rest, 18);
     paint_round_rows(canvas, held ? &right : &left, &cell, 18);
-    final_text(canvas, FLAT_FACE, off, &left, 19, held ? ink : over);
-    final_text(canvas, FLAT_FACE, on, &right, 19, held ? over : ink);
+    final_text(canvas, flat_face(), off, &left, 19, held ? ink : over);
+    final_text(canvas, flat_face(), on, &right, 19, held ? over : ink);
 }
 /* The page, in the window's coordinates, under its children: the flat look's the half's paper and
  * the switch, its bar slider_scrub's and its words labels of their own. */
@@ -665,7 +665,7 @@ void msg_open(void *win) {
     widget_set_name(c, "msg_heading");
     widget_set_text_utf8(c, scan ? "Updating Library" : "Connected");
     slider_label(c, 16, 0, 343, MSG_HEAD_H, flat ? MSG_FLAT_HEAD_PX : MSG_HEAD_PX,
-                 flat ? FLAT_FACE : "classic-light");
+                 flat ? flat_face() : "classic-light");
     c = text(win, 16, 0, 343, line_h);
     widget_set_name(c, "msg_line");
     slider_label(c, 16, 0, 343, line_h, flat ? MSG_FLAT_LINE_PX : MSG_LINE_PX, "default");
@@ -679,7 +679,7 @@ void msg_open(void *win) {
     for (unsigned i = 0; i < sizeof state / sizeof *state; ++i) {
         widget_set_prop_int(btn, style_key(key, state[i], "bg_color"), 0);
         widget_set_prop_str(btn, style_key(key, state[i], "font_name"),
-                            flat ? FLAT_FACE : "classic-light");
+                            flat ? flat_face() : "classic-light");
         widget_set_prop_int(btn, style_key(key, state[i], "font_size"),
                             flat ? MSG_FLAT_BTN_PX : CONFIRM_CELL_PX);
     }

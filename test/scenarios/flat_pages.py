@@ -18,7 +18,7 @@ def bg(m, w): m.call(address=HOOKS['widget_on_paint_background'][0], args=(w, m.
 
 def qs_flat(light='0', accent='4', **config):
     """Quick Settings under Modern, as Classic's qs_new lays it out: the dialog as its asset leaves it, through stock's init."""
-    SETUP[:] = [lambda k: (k.config.update(THEME='2', LIGHT=light, ACCENT=accent, **config), k)]
+    SETUP[:] = [lambda k: (k.config.update({'THEME': '2', 'LIGHT': light, 'ACCENT': accent, **config}), k)]
     try: q = LoadQueue()
     finally: SETUP.clear()
     q.mock('dialog_quit', 'widget_dispatch_event_to_target_recursive'); q.image_size = (54, 54)
@@ -179,9 +179,9 @@ for light in '01':
         assert wbox(q, named(q, q.win, 'switch_hit')) == (125, 28, 125, 44) and wbox(q, q.slider) == (33, 115, 309, 70); passed()
 
 
-def time_flat(flag=1, vals=(4, 10, 4, 16, 42), light='0'):
+def time_flat(flag=1, vals=(4, 10, 4, 16, 42), light='0', **config):
     """test/patch.py's time_form under Modern: stock's Set Time page as it loads, through stock's init."""
-    m = LoadPlain(); m.config.update(THEME='2', LIGHT=light, ACCENT='4'); m.u.mem_write(syms['g_time24h_flag'], bytes([flag]))
+    m = LoadPlain(); m.config.update({'THEME': '2', 'LIGHT': light, 'ACCENT': '4', **config}); m.u.mem_write(syms['g_time24h_flag'], bytes([flag]))
     names = ('tselector_year', 'tselector_month', 'tselector_day', 'tselector_hour', 'tselector_min')
     sels = [m.node('text_selector', n, options=o) for n, o in zip(names, (31, 12, 31, 24, 60))]
     for s, v in zip(sels, vals): m.word(s + O['SELECTOR_INDEX'], v); m.byte(s + 0x34, 255)
@@ -213,9 +213,9 @@ for light in '01':
     assert m.lcd_colors() == LCD_COLORS; passed()
 
 
-def confirm_flat(light='0'):
+def confirm_flat(light='0', **config):
     """Shut Down? under Modern: stock's confirminfo_dialog as its asset leaves it."""
-    m = Machine(); m.config.update(THEME='2', LIGHT=light, ACCENT='4')
+    m = Machine(); m.config.update({'THEME': '2', 'LIGHT': light, 'ACCENT': '4', **config})
     d = m.node('dialog', 'confirminfo_dialog'); m.word(d + O['W_PARENT'], m.wm); place(m, d, 0, 0, 375, 320); m.top = d; m.clip = (0, 0, 375, 320)
     m.char_px = 52.6 / 6; m.image_size = (315, 68)
     cells = [m.entry(d, O['CONFIRM_TOP'] + i * 48) for i in range(2)]

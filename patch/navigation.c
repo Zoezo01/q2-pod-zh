@@ -4771,7 +4771,7 @@ static void slider_open(void *win) {
             c = text(win, x, y, 20, 26);
             widget_set_text_utf8(c, k ? "R" : "L");
             if (flat)
-                page_label(c, x, y, 20, 26, 21, FLAT_FACE, flat_quiet[0]);
+                page_label(c, x, y, 20, 26, 21, flat_face(), flat_quiet[0]);
             else
                 slider_label(c, x, y, 20, 26, 24, "classic-light");
         }
@@ -5574,11 +5574,13 @@ static void shrink_centred(void *bitmap, int to, int a) {
     bitmap_unlock_buffer(bitmap);
 }
 
-/* An art_final theme's own image: Classic's classic_light_, the flat look's FLAT_ART */
+/* An art_final theme's own image: Classic's classic_light_, the flat look's FLAT_ART, either with
+ * both */
 static int final_art(const theme_t *t, const char *name) {
+    unsigned p = t->painter[PAINT_PAGES];
     return t->art_final &&
-           tk_str_start_with(name,
-                             t->painter[PAINT_PAGES] == PAGES_FLAT ? FLAT_ART : "classic_light_");
+           ((p & PAGES_CLASSIC_LIGHT && tk_str_start_with(name, "classic_light_")) ||
+            (p & PAGES_FLAT && tk_str_start_with(name, FLAT_ART)));
 }
 int ringnav_image_add(void *manager, const char *name, void *bitmap) {
     static const unsigned char at[4][4] = BITMAP_RGBA_AT;

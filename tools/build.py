@@ -2301,7 +2301,10 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
     added = []
     changed_assets = {}
     from art import images as theme_images
-    drawn = {xx+n+'.png': (xx+'list_tidal.png', d) for t in builtin_themes() for n, d in theme_images(t).items()}
+    drawn = {}
+    for t in builtin_themes():  # a theme on another's art draws its names, as that one does
+        for n, d in theme_images(t).items():
+            check(drawn.setdefault(xx+n+'.png', (xx+'list_tidal.png', d))[1] == d, f'{t["id"]}: {n} is another theme\'s, drawn otherwise')
     for path, (like, data) in {**{xx+n: (xx+l, d) for n, (l, d) in icons.items()}, **pages, **drawn,
                                'etc/init.d/S12usbcharge': ('etc/init.d/S20urandom', (ROOT/'patch/usb_charge.sh').read_bytes()),
                                HELPER: (HELPER_LIKE, compile_helper(out, cat, 'video', 'q2video', HELPER_LIBS)),

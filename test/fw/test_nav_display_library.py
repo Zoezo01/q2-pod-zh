@@ -599,12 +599,12 @@ def picks(view):
     return [(item.labels()[0].text, item.children[0].children[0].props['image'].decode()) for item in view.children]
 
 
-def test_the_theme_picker_lists_minimal_modern_classic_marking_the_running_one(fw):
+def test_the_theme_picker_lists_minimal_modern_classic_classic_modern_marking_the_running_one(fw):
     ui = Ui(fw)
     page = appearance(fw, ui, THEME=b'2')
     themes_page(fw, ui, page)
     assert page.title() == 'Theme'
-    assert picks(page.view()) == [('Minimal', 'unselect'), ('Modern', 'select'), ('Classic', 'unselect')]
+    assert picks(page.view()) == [('Minimal', 'unselect'), ('Modern', 'select'), ('Classic', 'unselect'), ('Classic Modern', 'unselect')]
 
 
 def pick(ui, page, t):
@@ -672,6 +672,23 @@ def test_picking_classic_asks_to_restart_and_saves_its_preset_alone(fw, st, answ
     # the running state stays Minimal's until the restart
     assert (st('theme').value, st('home').value, st('light').value) == (MINIMAL, 2, 2)
     assert len(fw.calls('stock_reboot_trampoline')) == (answer == 10)
+
+
+def test_classic_and_classic_modern_switch_live(fw, st):
+    """Classic Modern has Classic's geometry sets, so picking it from Classic asks no restart, and back."""
+    cm = next(t for t in THEMES if t['id'] == 'classic-modern')
+    restart = fw.fn('theme_restart', C.c_int, C.c_int)
+    ui = Ui(fw)
+    page = appearance(fw, ui, THEME=b'%d' % CLASSIC)
+    for g in range(len(host.tools_theme.geometry_sets(THEMES))):  # Classic's booted set
+        st('geom').value = g
+        if not restart(CLASSIC):
+            break
+    assert not restart(cm['index']) and restart(MINIMAL)
+    themes_page(fw, ui, page)
+    prompts = Prompts(fw, 0)
+    pick(ui, page, cm)
+    assert prompts.seen == [] and writes(fw)[0] == ('THEME', cm['index']) and st('theme').value == cm['index']
 
 
 def test_a_new_theme_moves_a_cached_settings_list_to_its_top(fw, st, geometry):

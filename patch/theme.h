@@ -13,10 +13,12 @@ enum {
     PAINTER_N
 }; /* theme_t.painter[] */
 enum { VOL_STOCK, VOL_CLASSIC_LIGHT, VOL_FLAT }; /* painter[PAINT_VOLUME]: the volume */
-/* painter[PAINT_CONFIRM]: the confirm control, hold menu, toast and small dialogs */
-enum { CONFIRM_STOCK, CONFIRM_CLASSIC_LIGHT, CONFIRM_FLAT };
-/* painter[PAINT_PAGES]: the theme's own pages (classic_pages, flat_pages; either, own_pages) */
-enum { PAGES_STOCK, PAGES_CLASSIC_LIGHT, PAGES_FLAT };
+/* painter[PAINT_CONFIRM]: the confirm control, hold menu, toast and small dialogs; and
+ * painter[PAINT_PAGES]: the theme's own pages (classic_pages, flat_pages; either, own_pages). Each
+ * a bit: Classic's, the flat look's, or both (CLASSIC_FLAT: the flat look's screens over Classic's)
+ */
+enum { CONFIRM_STOCK, CONFIRM_CLASSIC_LIGHT, CONFIRM_FLAT, CONFIRM_CLASSIC_FLAT };
+enum { PAGES_STOCK, PAGES_CLASSIC_LIGHT, PAGES_FLAT, PAGES_CLASSIC_FLAT };
 /* painter[PAINT_SCRUB]: SCRUB_ROWS, a gloss bar's rows (np_rows) for the volume panel and a card
  * app's progress */
 enum { SCRUB_STOCK, SCRUB_ROWS };
@@ -180,6 +182,10 @@ typedef struct {
     short letter_px;          /* ... and its size, 0: LETTER_PX */
     short home_top, home_full_row, home_text_x, home_label_end[2] /* [0] split, [1] full */,
         set_top, np_bar, np_scrub;
+    /* the flat Quick Settings' ground in the light half, 0: the paper; the flat Set Date's px
+     * between its fields, 0: Classic's places */
+    unsigned qs_ground;
+    short date_gap;
     stops_t np_track[2]; /* Classic's progress bar's track (paint_scrubber), final: [0] dark, [1]
                             light; n 0: stock's plain bar */
     stops_t np_fill;     /* ... its played part under the theme's own scheme (Classic Blue), both
@@ -218,12 +224,14 @@ typedef struct {
 } theme_t;
 const theme_t *theme(void); /* accent(); return &themes[st.theme]; */
 /* Classic's own pages: Quick Settings, sliders, rating, dialogs' pages, T9 and Search, Set Time,
- * message screens, the lock info screen, Cover Flow's flip */
+ * message screens, the lock info screen, Cover Flow's flip; those the flat look doesn't draw where
+ * it has both */
 static inline int classic_pages(void) {
-    return theme()->painter[PAINT_PAGES] == PAGES_CLASSIC_LIGHT;
+    return theme()->painter[PAINT_PAGES] & PAGES_CLASSIC_LIGHT;
 }
-/* The flat look's own pages: the screens Classic draws as its own, in flat painters */
-static inline int flat_pages(void) { return theme()->painter[PAINT_PAGES] == PAGES_FLAT; }
+/* The flat look's own pages: Quick Settings, the slider pages, the message screens, Set Date and
+ * Set Time, in flat painters (flat_pages wins over classic_pages where a screen has both) */
+static inline int flat_pages(void) { return !!(theme()->painter[PAINT_PAGES] & PAGES_FLAT); }
 #define FLAT_ART "flat_"             /* the flat look's images' prefix (tools/art.py FLAT_ART) */
 extern const unsigned flat_quiet[2]; /* flat.c: a quiet line, final, [0] dark, [1] light */
 /* A theme's own pages in either look: where the page's layout and touch are shared */

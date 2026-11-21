@@ -1,0 +1,13 @@
+<!-- Theme: Classic Modern (IPOD/THEME 3, docs/ipod.md#display-settings): Classic in everything, on its sets and
+     options (a switch between the two is live), but for the flat look's screens (patch/flat.c) over Classic's
+     own pages: Quick Settings, the slider pages, the message screens, Set Date and Set Time, and the confirm
+     prompts. Over Classic's own pages the flat look takes Classic's face and its lit tiles' colour. -->
+<theme format="1" id="classic-modern" name="Classic Modern" index="3" extends="classic-light">
+  <!-- Quick Settings' cards on a pale grey in the light half, and Set Date's fields 6 px apart -->
+  <view name="pages">
+    <element name="own" painter="classic-light+flat"/>
+    <element name="quick" light_ground="#f2f2f7"/>
+    <element name="date" gap="6"/>
+  </view>
+  <view name="dialog"><element name="confirm" painter="classic-light+flat"/></view>
+</theme>

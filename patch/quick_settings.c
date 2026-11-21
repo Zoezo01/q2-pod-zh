@@ -336,16 +336,18 @@ static void quick_label_flat(void *canvas, void *label, int x, int y) {
         quick_line_flat(canvas, s + skip, n - skip, x, y + QS_FLAT_LINE);
     }
 }
-/* The page, flat, in its window's coordinates: the ground and its two cards, then each button by
- * the image stock last gave its icon: a 54 px disc, at rest or on (QS_LIT, tools/art.py), a sixth
- * darker while pressed, its glyph in the disc's ink (white, or _l at rest in the light half and on
- * a bright fill), and its label. */
+/* The page, flat, in its window's coordinates: the ground (the theme's light_ground in the light
+ * half, else the page's) and its two cards, then each button by the image stock last gave its
+ * icon: a 54 px disc, at rest or on (QS_LIT, tools/art.py), a sixth darker while pressed, its glyph
+ * in the disc's ink (white, or _l at rest in the light half and on a bright fill), and its label.
+ */
 static void quick_page_flat(void *win, void *canvas) {
     int light = ipod_light();
     unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR), on = flat_on();
+    unsigned ground = light && theme()->qs_ground ? theme()->qs_ground : flat_page();
     rect_t buttons = { 18, 20, 339, 196 }, bar = qs_bar_card;
     stops_t card = { 2, { 0, 100 }, { qs_card[light], qs_card[light] } };
-    bar_rect(canvas, RGBA(flat_page()), 0, 0, I(win, W_W), I(win, W_H));
+    bar_rect(canvas, RGBA(ground), 0, 0, I(win, W_W), I(win, W_H));
     paint_round_rows(canvas, &buttons, &card, 26);
     paint_round_rows(canvas, &bar, &card, 26);
     for (unsigned i = 0; i < sizeof quick_icons / sizeof *quick_icons; ++i) {
