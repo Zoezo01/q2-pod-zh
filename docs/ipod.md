@@ -762,7 +762,7 @@ NPCENTRED`, off; `playset_covermode`): `ringnav_ui_load`, hooked on every window
   down to the page dots, wrapped again at that width (`np_full`, `lyrics_fit`) and back on the playing line; a tap or
   Return brings the column back, as do a swipe, another page and leaving the page; a window over the page leaves it
   full screen
-  ([Word-timed lyrics](internals.md#word-timed-lyrics)); last, every theme's "Hide Streaming" and "Hide Folder" switches. Choosing a Theme loads its preset (`theme_preset`), before the restart where there is one: Minimal sets Light Mode Off, Graphite (`MINIMAL_ACCENT` 0), rounded corners, Split and Time in Title on; Classic sets Light Mode On, Classic Blue (`CLASSIC_LIGHT_ACCENT` 9), Split, and Time in Title, Library on Home, Row Preview and Row Art on; Modern sets Light Mode On, Cobalt (`ACCENT` 4), Square, Split and Time in Title off; Light Mode's Auto, Battery, Shortcut and Centred Now Playing are kept, and only changed values are saved.
+  ([Word-timed lyrics](internals.md#word-timed-lyrics)); last, every theme's "Hide Streaming" and "Hide Folder" switches. Choosing a Theme loads its preset (`theme_preset`), before the restart where there is one: Minimal sets Light Mode Off, Graphite (`MINIMAL_ACCENT` 0), rounded corners, Split and Time in Title on; Classic sets Light Mode On, Classic Blue (`CLASSIC_LIGHT_ACCENT` 9), Split, and Time in Title, Library on Home, Row Preview and Row Art on; Modern sets Light Mode On, Cobalt (`ACCENT` 4), Square, Split and Time in Title off; Classic Modern sets Classic's; Light Mode's Auto, Battery, Shortcut and Centred Now Playing are kept, and only changed values are saved.
 - Display's main page: a "Smart Awake" switch (`IPOD KEEPLIT`, off;
   `keep_lit_poll`): with Now Playing lit in front on its lyrics, info or visualizer page, or its
   full-screen art (`bigcover_page`) in front, and a song playing, it calls
@@ -835,13 +835,15 @@ Now Playing uses 24 px monochrome control glyphs on 28 px canvases inside the ex
 
 ### Theme
 
-The Theme list shows Minimal, Modern, Classic (`theme_rows`), whatever their stored numbers.
+The Theme list shows Minimal, Modern, Classic, Classic Modern (`theme_rows`), whatever their stored numbers.
 **Theme: Minimal** (`THEME=0`, the default) is the look described above. **Theme: Classic**
 (`1`) is a light iPod look with a dark half, on its own layout (below). **Theme: Modern** (`2`)
-is 1.6.5's Classic on Minimal's layout (below). A stored `THEME=3` or past reads as Minimal.
-Choosing Classic, or leaving it, asks "Restart to apply?", because Classic lays its rows out
+is 1.6.5's Classic on Minimal's layout (below). **Theme: Classic Modern** (`3`) is Classic with
+Modern's flat screens (below). A stored `THEME=4` or past reads as Minimal.
+Choosing Classic or Classic Modern from Minimal or Modern, or the other way, asks "Restart to apply?", because Classic lays its rows out
 from its own geometry sets ([internals.md](internals.md#themes)): Cancel changes nothing; OK
 saves the theme and its preset ([Display settings](#display-settings)) and restarts the Q2.
+Classic and Classic Modern share their sets, so a change between them applies at once, as between Minimal and Modern. Status Bar's values stay Theme, Minimal, Modern and Classic.
 
 Corners is Minimal's and Modern's setting, Square until chosen; Classic's covers are always square. Every theme insets an album grid's cover inside the tile (`album_children`), so the selection card frames it; Classic's and Modern's card is in the accent's colour, Classic's square.
 
@@ -895,6 +897,10 @@ photo pages' own drawing) keeps Minimal's layout under this theme's colours and 
 - **Streaming's Now Playing.** Spotify and Internet Radio take local Now Playing's places: the 178 px art at x 16, y 22, turned over its reflection; the title, artist and album at x 206 from y 38 (34 and 62 under it); the 20-pixel bar from x 66 to 309 at y 245 with the 21 px times beside it, narrowed as local Now Playing's for a long track. Spotify's bar shows its position and the scrub's diamond; the page's name and play state are in the title bar. Internet Radio plays as an album: a generated station cover, the station, artist and song, the stream where "3 of 12" sits, the heart at x 300, y 165, and a bar that is always full with the running time on its left; the wheel stays the volume.
 - **Info.** Now Playing's third page is a list of nine rows in Classic's face, each name on the left and its value on the right in grey, a long value ending in an ellipsis: 20 px rows from under the top row to the page dots, names 100 px wide from x 20, values to x 355.
 - **Its font.** The face is a subset of TeX Gyre Heros Bold (`assets/fonts`, GUST Font License), a play mark added at U+25B6 (View Queue's, [Queue menu](internals.md#queue-menu)), renamed and shipped as `fonts/classic-light.ttf`; `assets/fonts/README-classic-light.txt` says what changed and where the original is. Where it lacks a character, `fonts/bold.ttf` stands in ([Home](#home)).
+
+#### Classic Modern
+
+**Theme: Classic Modern** is Classic in everything, its rows, bar, Home, Now Playing, Cover Flow, accents (`CLASSIC_LIGHT_ACCENT`, Classic Blue first), options, lock screen, hold menu, toast and the pop-up a card game is given, but for the screens Modern draws flat ([Modern](#modern)): Quick Settings, the slider pages (Brightness, Max Volume, Balance and Default Volume), Update Library and USB mode, the confirm prompts, and Set Date and Set Time. Those are Modern's flat screens on Classic's paper, with Classic's typeface for their words and what is on in the colour of Classic's lit Quick Settings tiles: `#207cde` under Classic Blue, another accent's red tone. In the light half Quick Settings' cards sit on a pale grey (`#f2f2f7`), and Set Date's year and month are 6 px apart left of the day.
 
 ### Light Mode
 
