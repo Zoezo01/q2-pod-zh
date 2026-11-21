@@ -23,7 +23,7 @@
   </tr>
   <tr valign="top">
     <td><b>Display</b></td>
-    <td>Minimal, Modern and Classic themes, accent colours, Light Mode with an Auto schedule, Rounded Corners, Night Shift for the evening, and Smart Awake.</td>
+    <td>Minimal, Modern, Classic and Classic Modern themes, accent colours, Light Mode with an Auto schedule, Rounded Corners, Night Shift for the evening, and Smart Awake.</td>
   </tr>
   <tr valign="top">
     <td><b>Wheel</b></td>
