@@ -1126,7 +1126,7 @@ def validate_assets(directory):
 if __name__ == '__main__':
     import argparse, json, pathlib, subprocess, tempfile
     from unittest.mock import patch
-    from build import build, run, sha
+    from build import build, check_rootfs_size, run, sha
     ap=argparse.ArgumentParser(description=__doc__)
     ap.add_argument('zip',type=pathlib.Path,nargs='?')
     ap.add_argument('--build', type=pathlib.Path)
@@ -1142,8 +1142,14 @@ if __name__ == '__main__':
                 if command[0]=='mksquashfs': custom.write_bytes(b'edited during compression')
                 return run(*command)
             a=root/"build ' a"
-            with patch('build.run',side_effect=change_source):
+            checked=[]
+            def size_check(size,stock_size):
+                checked.append((size,stock_size,(a/'update.tar').exists()))
+                check_rootfs_size(size,stock_size)
+            with patch('build.run',side_effect=change_source),patch('build.check_rootfs_size',side_effect=size_check):
                 build(args.zip,a,custom)
+            # The size and its floor are checked once, on the image as packaged against stock's, before update.tar exists.
+            assert checked==[((a/'rootfs.squashfs').stat().st_size,(a/'stock.squashfs').stat().st_size,False)]
             validate_assets(a)
             manifest=json.loads((a/'manifest.json').read_text())
             assert manifest['logo_sha256']==sha(logo)
