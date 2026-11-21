@@ -11268,7 +11268,7 @@ m.files[LIB]=bytearray(f'400\nimport {EXP}/Mix.m3u\n'.encode()); m.poll()
 assert m.files.get(DONE)==b'400 ok\n' and m.imports==[f'{EXP}/Mix.m3u\n'],(m.files.get(DONE),m.imports); passed()
 import scenarios.requests_update
 
-# Q2 Shelf (netupdate.c, docs/internals.md#q2-shelf): System settings' Apps page, Check for Updates
+# Q2 Shelf (netupdate.c, docs/internals.md#q2-shelf): Library's App Store page, Check for Updates
 # then a row per app with its state from .q2/apps/<id>.tag, a manual install's binary and, with Wi-Fi,
 # a check of GitHub's latest releases on opening, kept SH_STALE_MS, its end toasting how many apps can
 # be updated. Install and Update start a worker at once; Remove, Erase and Rockbox's first Install (the
