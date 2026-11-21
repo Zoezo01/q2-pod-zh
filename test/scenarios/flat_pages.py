@@ -40,7 +40,7 @@ def qs_flat(light='0', accent='4', **config):
 
 
 def on_of(q, light, accent):
-    """What is on, final: Modern's bar's middle row (flat.c quick_on), Graphite's red tone, flipped in the light half as
+    """What is on, final: Modern's bar's middle row (flat.c flat_on), Graphite's red tone, flipped in the light half as
     the bar's ink is."""
     a = ACCENTS[int(accent)]
     c = a[3] if accent == '0' else sum(((a[0] >> k & 255) + (a[1] >> k & 255)) // 2 << k for k in (0, 8, 16))  # Graphite: its silver

@@ -11,7 +11,7 @@ unsigned flat_page(void) { return ipod_light() ? scheme()->paper : 0; }
 /* What is on, final: the theme's selection bar, its middle row (paint_selection's SEL_BAR), so a
  * lit button matches the row that is chosen. A neutral accent's bar (Graphite's dark grey) is
  * about a button's grey at rest: it takes its red tone, the silver, as Classic's lit tiles do. */
-unsigned quick_on(void) {
+unsigned flat_on(void) {
     const scheme_t *S = scheme();
     return flip_if(ipod_light(), neutral(S->tones[0]) ? accent_tone(TONE_RED)
                                                       : mix(S->tones[0], S->tones[1], 1, 2));
@@ -26,7 +26,7 @@ void flat_bar(void *w, void *canvas, const rect_t *r, int part, unsigned rest, i
         signed char nx, ny, fx, fy; /* the near one's place from r's corner, the far one's in */
     } mark[] = { [BAR_SUNS] = { "drop_dim", "drop_bright", 6, 6, 33, 3 },
                  [BAR_SPEAKERS] = { "spk_quiet", "spk_loud", 12, 11, 34, 11 } };
-    unsigned on = quick_on();
+    unsigned on = flat_on();
     const char *dark = bright_tone(on) ? "_l" : "";
     rect_t f = { r->x, r->y, part < r->h ? r->h : part, r->h };
     stops_t under = { 2, { 0, 100 }, { rest, rest } }, lit = { 2, { 0, 100 }, { on, on } };

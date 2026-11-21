@@ -296,21 +296,22 @@ void quick_scrub(void *w, void *canvas) {
 }
 
 /* Quick Settings in the flat look, in final colours, [0] dark, [1] light: the two cards on the
- * page's ground, a button at rest, a label. */
-static const unsigned qs_card[2] = { 0x1c1c1e, 0xffffff }, qs_rest[2] = { 0x3a3a3c, 0xe9e9ec },
-                      qs_quiet[2] = { 0x98989d, 0x6e6e73 };
+ * page's ground, and a button or the bar at rest on a card, a step lighter in the dark half than
+ * flat_rest, the pages' rest on the bare paper, so it stands off the card's grey. */
+static const unsigned qs_card[2] = { 0x1c1c1e, 0xffffff }, qs_rest[2] = { 0x3a3a3c, 0xe9e9ec };
 #define QS_FLAT_W 86
 #define QS_FLAT_PX 14
 #define QS_FLAT_LINE 14 /* a line's pitch */
 #define QS_FLAT_BOX 16  /* each line's box, holding the font */
-/* One line of a label, the first n of s, quiet in x, y's box, in the system's face. */
+/* One line of a label, the first n of s, quiet in x, y's box, in the system's face. final_text
+ * takes a nul-ended string, hence the copy; its 31 characters are more than the 86 px box holds. */
 static void quick_line_flat(void *canvas, const unsigned *s, unsigned n, int x, int y) {
     unsigned line[32];
     rect_t r = { x, y, QS_FLAT_W, QS_FLAT_BOX };
     if (n > sizeof line / sizeof *line - 1) n = sizeof line / sizeof *line - 1;
     for (unsigned i = 0; i < n; ++i) line[i] = s[i];
     line[n] = 0;
-    final_text(canvas, (void *)0, line, &r, QS_FLAT_PX, 0xff000000u | qs_quiet[ipod_light()]);
+    final_text(canvas, (void *)0, line, &r, QS_FLAT_PX, 0xff000000u | flat_quiet[ipod_light()]);
 }
 /* quick_label's, flat: a label under its button, x, y its first line's box, a second line when it
  * is wider than the box. */
@@ -341,7 +342,7 @@ static void quick_label_flat(void *canvas, void *label, int x, int y) {
  * a bright fill), and its label. */
 static void quick_page_flat(void *win, void *canvas) {
     int light = ipod_light();
-    unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR), on = quick_on();
+    unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR), on = flat_on();
     rect_t buttons = { 18, 20, 339, 196 }, bar = qs_bar_card;
     stops_t card = { 2, { 0, 100 }, { qs_card[light], qs_card[light] } };
     bar_rect(canvas, RGBA(flat_page()), 0, 0, I(win, W_W), I(win, W_H));
@@ -394,12 +395,15 @@ void quick_vol_flat(void *w, void *canvas, int dy, int level, int max) {
              qs_rest[ipod_light()], BAR_SPEAKERS);
 }
 
-/* Quick Settings' swipe up under the own pages: a touch from QS_SWIPE_Y that has gone SLIDE_PX
- * up, and isn't the slider's by then, counts for stock's handler as one from its line. */
+/* Quick Settings' swipe up under the own pages: a touch from QS_SWIPE_Y (the flat look's bar's
+ * card) that has gone SLIDE_PX up, and isn't the slider's by then, counts for stock's handler as
+ * one from its line. */
 static void quick_swipe(void *target, void *event) {
     int from = I(g_pressdown_y, 0);
-    if (from < QS_SWIPE_Y || from >= QS_SWIPE_STOCK || from - I(event, EVENT_Y) < SLIDE_PX ||
-        I(g_dropdown_menu_state, 0) != 3 || (quick.slider && quick.slide > 0) || !own_pages() ||
+    /* the flat look's from its bar's card, which its slider's touch fills from 233 */
+    if (from < (flat_pages() ? qs_bar_card.y : QS_SWIPE_Y) || from >= QS_SWIPE_STOCK ||
+        from - I(event, EVENT_Y) < SLIDE_PX || I(g_dropdown_menu_state, 0) != 3 ||
+        (quick.slider && quick.slide > 0) || !own_pages() ||
         tk_strcmp(widget_get_prop_str(target, "name", ""), "statusbar_dialog"))
         return;
     I(g_pressdown_y, 0) = QS_SWIPE_STOCK;

@@ -474,7 +474,7 @@ static const stops_t slider_band = { 8,
 static void slider_switch_flat(void *canvas, void *sw) {
     static const unsigned off[] = { 'O', 'f', 'f', 0 }, on[] = { 'O', 'n', 0 };
     int light = ipod_light();
-    unsigned lit = quick_on(), ink = 0xff000000u | flat_ink[light];
+    unsigned lit = flat_on(), ink = 0xff000000u | flat_ink[light];
     unsigned over = bright_tone(lit) ? 0xff000000u | flat_ink[1] : 0xffffffffu;
     rect_t track = { 128, 32, 120, 36 }, left = { 128, 32, 60, 36 }, right = { 188, 32, 60, 36 };
     const char *image = widget_get_prop_str(sw, "image", "");

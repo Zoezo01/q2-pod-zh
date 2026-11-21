@@ -4,12 +4,13 @@ import ctypes as C
 
 import pytest
 
-from conftest import O
+from conftest import O, Config
 from test_nav_paint import (ACCENTS, GRAPHITE, ICONS, LABELS, MINIMAL, MODERN, PAPER, RED, RED_PX, TIDAL, WHITE, Canvas, Quick, bitmaps,
                             channels, fill_props, image_add, layout, luma, paint_bg, quick_window, rgb_of, rgba, scheme, scrub,
                             SLIDER_PAGES, SLIDERS, named, on_page, slider_scrub, slider_paint, ui_load,
                             st, stock_h, theme, vol_paint, volume, world)  # noqa: F401 (fixtures, by name)
 from test_nav_painters import Quick as QuickInit
+from test_nav_display_library import POINTER_MOVE, SLIDE_PX, QuickPage, Stock, Ui, pressdown
 MODERN_ACCENTS = [0, 1, 2, 3, 4, 5, 6, 8]  # Modern's colorSchemes, by ACCENT
 
 
@@ -33,7 +34,7 @@ def test_what_is_on_is_modern_s_selection_bar(fw, accent, light):
     Graphite's bar, a grey like a button at rest, gives way to its silver red tone."""
     theme(fw, MODERN, LIGHT=light, ACCENT=str(accent))
     want = ACCENTS[accent][RED] if accent == GRAPHITE else mix(ACCENTS[accent][0], ACCENTS[accent][1])
-    assert fw.fn('quick_on', C.c_uint)() == (flip(fw, want) if light == '1' else want)
+    assert fw.fn('flat_on', C.c_uint)() == (flip(fw, want) if light == '1' else want)
 
 
 @pytest.mark.parametrize('light, paper', [('0', 0), ('1', PAPER * 0x010101)])
@@ -85,7 +86,7 @@ def test_an_on_button_is_modern_s_bar_under_a_glyph_that_shows(fw, world, stock_
     on, off = stock_h['QS_LIT'][0], 'drop_wifi'
     assert off not in stock_h['QS_LIT']
     _, icons, canvas = quick_page(fw, world, {'img_wifiswitch': on, 'img_btswitch': off}, ACCENT=str(accent))
-    lit = fw.fn('quick_on', C.c_uint)()
+    lit = fw.fn('flat_on', C.c_uint)()
     assert face(canvas, world.at(icons['img_wifiswitch'])) == rgba(lit)
     plain = face(canvas, world.at(icons['img_btswitch']))
     assert grey(plain) and luma(rgb_of(plain)) < 0x60  # a dark grey at rest
@@ -192,7 +193,7 @@ def flat_scrub(fw, world, value, **config):
 
 
 def lit_of(fw, canvas):
-    on = rgba(fw.fn('quick_on', C.c_uint)())
+    on = rgba(fw.fn('flat_on', C.c_uint)())
     return [f for f in canvas.fills if f[4] == on], [f for f in canvas.fills if f[4] != on]
 
 
@@ -212,13 +213,13 @@ def test_the_brightness_fill_grows_with_the_value_from_its_round_end(fw, world):
     assert (w, h) == (309, 36) and ends == {v: h + (w - h) * v // 100 for v in ends}
 
 
-@pytest.mark.parametrize('value, light, accent', [(50, '1', TIDAL), (50, '0', TIDAL), (100, '0', TIDAL), (50, '0', GRAPHITE),
+@pytest.mark.parametrize('value, light, accent', [(50, '1', TIDAL), (50, '0', TIDAL), (90, '0', TIDAL), (100, '0', TIDAL), (50, '0', GRAPHITE),
                                                   (100, '1', GRAPHITE)])
 def test_the_bar_s_suns_take_the_ink_that_shows(fw, world, value, light, accent):
     """The small one is on the fill: white, or dark on a bright one. The large one is quiet in the half until the
     fill reaches it, then the small one's ink."""
     canvas = flat_scrub(fw, world, value, LIGHT=light, ACCENT=str(accent))
-    small = '_l' if bright(fw, fw.fn('quick_on', C.c_uint)()) else ''
+    small = '_l' if bright(fw, fw.fn('flat_on', C.c_uint)()) else ''
     large = small if value == 100 else '_ql' if light == '1' else '_qd'
     assert [n for n, _ in canvas.arts] == ['flat_drop_dim' + small, 'flat_drop_bright' + large]
     _, rest = lit_of(fw, canvas)
@@ -356,7 +357,7 @@ def test_default_volume_s_flat_switch_is_a_pill_with_the_half_that_holds_lit(fw,
     win, _ = flat_slider(fw, world, st, SLIDER_BOOT)
     world.add(win, 'img_bootswitch', 'image', image=image)
     canvas = slider_paint(fw, win)
-    on = rgba(fw.fn('quick_on', C.c_uint)())
+    on = rgba(fw.fn('flat_on', C.c_uint)())
     lit = [f for f in canvas.fills if f[4] == on]
     assert min(f[0] for f in lit) == (188 if held else 128) and max(f[0] + f[2] for f in lit) == (248 if held else 188)
     assert [(t, r, face) for t, r, _, face in canvas.texts] == [('Off', (128, 32, 60, 36), ('bold', 19)), ('On', (188, 32, 60, 36), ('bold', 19))]
@@ -376,6 +377,16 @@ def test_the_flat_slider_s_bar_is_quick_settings_bar_on_its_own_rows(fw, world, 
     assert canvas.fill == 0xff123456
 
 
+@pytest.mark.parametrize('start, counts', [(226, 1), (240, 1), (225, 0)])
+def test_the_flat_swipe_up_starts_at_the_bar_s_card(fw, st, start, counts):
+    """The flat bar's touch starts at 233, above Classic's line: a swipe from its card counts, as Classic's from its."""
+    ui = Ui(fw)
+    Config(fw, THEME='2')
+    qs = QuickPage(fw, ui, st)
+    stock = Stock(fw, ui)
+    pressdown(fw).value = start
+    stock.send(qs.dialog, POINTER_MOVE, x=100, y=start - SLIDE_PX)
+    assert pressdown(fw).value == (O['QS_SWIPE_STOCK'] if counts else start)
 
 
 @pytest.mark.parametrize('part, lit_w', [(0, 0), (10, 36), (36, 36), (200, 200)])
@@ -388,3 +399,29 @@ def test_the_flat_bar_s_fill_is_none_or_at_least_its_round_end(fw, part, lit_w):
     lit, rest = lit_of(fw, canvas)
     assert all(10 <= f[0] and f[0] + f[2] <= 310 for f in canvas.fills)
     assert (max(f[0] + f[2] for f in lit) - 10 if lit else 0) == lit_w and (not lit or min(f[0] for f in lit) >= 10)
+
+
+class Rect(C.Structure):
+    _fields_ = [('x', C.c_int), ('y', C.c_int), ('w', C.c_int), ('h', C.c_int)]
+
+
+@pytest.mark.parametrize('accent', [a for a in MODERN_ACCENTS if a != GRAPHITE])
+def test_what_is_on_is_the_bar_paint_selection_draws(fw, layout, accent):
+    """The lit colour against the bar itself: paint_selection's gradient of the live scheme's tones, its middle
+    row, so the bar and what is lit can't drift apart."""
+    theme(fw, MODERN, ACCENT=str(accent))
+    row = C.c_void_p.from_address(fw.fn('scheme', C.c_void_p)() + layout['scheme']['tones']).value  # its ACCENTS row
+    tones = (C.c_uint * 5).from_address(row or 0)
+    canvas = Canvas(fw)
+    fw.fn('navigation__gradient', None, C.c_void_p, Rect, C.c_uint, C.c_uint, C.c_uint, C.c_int)(
+        canvas.p, Rect(0, 0, 375, 49), tones[0], tones[1], tones[4], 0)
+    assert canvas.rows(x=0, w=375)[24] == rgba(fw.fn('flat_on', C.c_uint)())
+
+
+@pytest.mark.parametrize('light', ['0', '1'])
+def test_classic_s_status_bar_keeps_its_images_final_under_modern(fw, bitmaps, light):
+    """Status Bar: Classic under Modern: the bar's theme is art_final under its own prefix, the flat look's aside."""
+    theme(fw, MODERN, LIGHT=light, STATUSBAR='3')
+    bm = bitmaps(fw, [[RED_PX, WHITE]])
+    image_add(fw, b'classic_light_bolt', bm)
+    assert bm.rows() == [[RED_PX, WHITE]]
