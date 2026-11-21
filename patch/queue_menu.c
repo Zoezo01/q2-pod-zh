@@ -141,7 +141,7 @@ static void folder_tracks(const char *path, void *add, int depth) {
     for (unsigned i = 0; i < deque_size(rows); ++i) {
         void *t = deque_at(rows, i);
         const char *name = P(t, REC_NAME);
-        if (I(t, REC_TYPE) == 8 && !playback_video(t))
+        if (I(t, REC_TYPE) == 8)
             _deque_push_back(add, t);
         else if (I(t, REC_TYPE) == 4 && depth < 8 && name && *name != '.') {
             char sub[1024];
@@ -179,9 +179,9 @@ void *qm_collect(void *r) {
     if (qm.qm_kind == QM_COVERALBUM || (qm.qm_kind == QM_ALBUM && qm.qm_cls == CLASS_ALBUMS))
         return coverflow_album_tracks(r);
     void *add = song_list();
-    if (qm.qm_kind == QM_SONG || qm.qm_kind == QM_COVERFLOW || qm.qm_kind == QM_PLAYING) {
-        if (!playback_video(r)) _deque_push_back(add, r);
-    } else
+    if (qm.qm_kind == QM_SONG || qm.qm_kind == QM_COVERFLOW || qm.qm_kind == QM_PLAYING)
+        _deque_push_back(add, r);
+    else
         qm_tracks(r, add);
     return add;
 }
@@ -708,7 +708,7 @@ int qm_hold(void) {
      * (0xff07 songs, 0xff01 albums) but not g_class_type. */
     unsigned cls = (unsigned)(tk_strcmp(name, "artistinfo_page") ? I(g_class_type, 0)
                                                                  : I(g_local_classinfo_save, 0));
-    if (!r || !key || playback_video(r)) return 0;
+    if (!r || !key) return 0;
     qm.qm_kind = I(r, REC_TYPE) == 8 ? QM_SONG : 0;
     if (coverflow) {
         if (qm.qm_kind) qm.qm_kind = QM_COVERFLOW;

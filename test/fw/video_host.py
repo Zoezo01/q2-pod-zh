@@ -2,8 +2,8 @@
 (tools/build.py compile_helper), so here it is a library of its own, built as host.py builds fw.so.
 
 video.c compiles as it does for the Q2, without PEQ_HOST: it declares what it calls itself, glibc's
-and alsa-lib's. Each of those calls but host.py's pure libc (and sscanf, which video.c declares under
-its own name) is a stub named fw_<name> (fw_fork, fw_snd_pcm_writei) that records the call and returns
+and alsa-lib's. Each of those calls but host.py's pure libc is a stub named fw_<name> (fw_fork,
+fw_snd_pcm_writei) that records the call and returns
 0 or what a test's mock returns, so nothing reaches a process, file, socket or sound card here. main
 is video_main and a static <name> is video__<name>, as in fw.so. Each stub's return type is video.c's
 own declaration (gcc -aux-info), for conftest's strict mode.
@@ -28,7 +28,7 @@ import subprocess
 import host
 
 SOURCE = host.ROOT/'patch'/'video.c'
-PURE = host.PURE | {'sscanf'}
+PURE = host.PURE
 # The calls the harness answers first: each goes on to its stub, fw_<name>.
 HARNESS = {'_exit': 'fw_video_exit', 'poll': 'fw_video_poll', 'usleep': 'fw_video_usleep', 'fork': 'fw_video_fork'}
 # video.c's ffmpeg(), whose child's half the harness runs: its parameters and their types, in order.
@@ -152,7 +152,7 @@ def build(out, extra=()):
     subprocess.run(['cc', '-O1', '-fPIC', '-fno-omit-frame-pointer', '-w', '-c', str(out/'fw_stubs.c'), '-o', str(out/'fw_stubs.o')],
                    check=True)
     library = out/'q2video.so'
-    # -Bsymbolic: video.c's own names (scale, swap, overlay) bind to themselves, never to a namesake loaded first.
+    # -Bsymbolic: video.c's own names (scale, swap, mono) bind to themselves, never to a namesake loaded first.
     subprocess.run(['cc', '-shared', '-Wl,-Bsymbolic', *extra, str(obj), str(out/'fw_stubs.o'), '-o', str(library)], check=True)
     types = declared(aux.read_text())
     (out/'stubs.json').write_text(json.dumps({f'fw_{name}': types.get(name) for name in calls}))

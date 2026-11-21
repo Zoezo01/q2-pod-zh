@@ -42,11 +42,11 @@
  * (addon_eq.c), the answer in .eq.done.
  *
  * A card game (q2app game=1, then no run) is a row in Library's Games instead, unless its row
- * says where: it runs over the whole screen, as Videos' player does, until it exits (game_start).
+ * says where: it runs over the whole screen until it exits (game_start).
  * Where a row is and what its press does are apart (press): a game's row starts it from the
  * Library or Streaming too, and any other app's row in Games opens its page. One
  * with audio=1 as well owns the sound: the player is stopped and the headphone output readied
- * before it starts, as for a video, it gets the output device (and a soft output's volume) as
+ * before it starts, it gets the output device (and a soft output's volume) as
  * its arguments, Play/Pause and the side buttons reach it, and the idle quit is its own.
  * A row of kind screen on an app's page runs the app's binary the same way, the row's uri and
  * context in its environment, and the page's level is asked again when it ends (screen_back).
@@ -855,7 +855,7 @@ static void poll_one(app_t *a) {
 
 /* Card games: Library's Games lists them after its own (games.c); a row runs the game's binary
  * from its folder, with no launcher, over the whole screen while demo goes on without painting
- * (navigation.c ringnav_wm_paint) or input (ringnav_input), as Videos' q2video does. Each input
+ * (navigation.c ringnav_wm_paint) or input (ringnav_input). Each input
  * event reaches the game instead as a text datagram on /tmp/q2-<id>.input.sock:
  *   "t d X Y", "t m X Y", "t u X Y"   touch down, move, up (an abort too), in the landscape
  *                                     view's pixels (375 x 320), turned from the panel's
@@ -865,16 +865,16 @@ static void poll_one(app_t *a) {
  *   "v LEVEL", "v LEVEL ARG"          the volume, 0 to 100, to a game with the sound (game_volume)
  * Play/Pause and the side buttons stay the music's, as stock has them under the Games page, unless
  * the game's q2app says audio=1: the sound is then the game's (player_stop and dac_take before it
- * starts, as video_start; the output device and, on Bluetooth or USB, the volume as its arguments,
+ * starts, as radio_start; the output device and, on Bluetooth or USB, the volume as its arguments,
  * as q2video gets them, and opened as q2video opens them, video.c sound_open; g_dacoff_time held
  * while it runs), those keys reach it as "k d|u 171", 222 and 223, a headset's buttons do nothing
  * (headset.c media_key, media_set_playing), and the idle quit below is left to the game, which
- * alone knows whether it is playing. Music stays stopped when it ends, as after a video. The game
+ * alone knows whether it is playing. Music stays stopped when it ends. The game
  * ends itself (from its Return menu); Return held GAME_HOLD_MS ends it (TERM, and its release is
  * dropped so stock's Games stays), as does GAME_IDLE_MS without input unless Smart Awake is on;
  * one still there GAME_KILL_MS after a TERM is KILLed. demo repaints when it has gone. Stock makes
  * a held key's long press after this hook, so the hold is timed here, from the game's key-down.
- * ponytail: the screen stays on while it is in front, as for a video, and the idle quit is what
+ * ponytail: the screen stays on while it is in front, and the idle quit is what
  * lets it sleep without Smart Awake; a game that wants to sleep on screen needs the wake path to
  * reach stock under it.
  *
@@ -1096,7 +1096,7 @@ static int game_start(app_t *a, const char *uri, const char *ctx) {
     game_unlink("volume");
     if (a->audio == 2) game_unlink("audio");
     if (a->view) game_unlink("view"), game_unlink("quit");
-    /* the sound is its: hciplayer off the PCM, the jack readied, as video_play */
+    /* the sound is its: hciplayer off the PCM, the jack readied */
     if (a->audio == 1) {
         headset_manual();
         spot_yield();
@@ -1304,7 +1304,7 @@ static void game_poll(void) {
     /* behind Now Playing the screen sleeps and Auto power-off counts on their timers; standby,
      * which unmounts the card, waits while the game runs from it */
     reset_poweroptions_timer(1, !gm.native, !gm.native);
-    if (gm.audio) { /* the DAC kept on, as video_poll; the idle quit is the game's own */
+    if (gm.audio) { /* the DAC kept on, as radio_poll; the idle quit is the game's own */
         if (I(g_dacoff_time, 0) > 0) I(g_dacoff_time, 0) = 0;
         return;
     }

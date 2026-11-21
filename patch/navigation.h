@@ -543,7 +543,7 @@ enum {
 #define INK_EDIT 15
 #define INK_TAB 10
 #define INK_BUTTON 5
-enum { PODCASTS = 1, AUDIOBOOKS, PHOTOS, BOOKS, VIDEOS };
+enum { PODCASTS = 1, AUDIOBOOKS, PHOTOS, BOOKS };
 enum { TONE_LIGHT = 2, TONE_RED = 3 }; /* columns of ACCENTS */
 int geom_val(int v) __attribute__((pure));
 extern const char *const MEDIA[];

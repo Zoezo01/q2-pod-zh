@@ -510,17 +510,13 @@ static struct {
     unsigned save; /* a turned page's save_due, BOOK_SAVE_MS after the first turn not yet saved */
 } bk __attribute__((section(".scratch")));
 
-/* 1 for .txt, 2 for .epub, 3 for a video, by the extension from its dot; else 0. */
+/* 1 for .txt, 2 for .epub, by the extension from its dot; else 0. */
 static int ext_kind(const char *dot) {
     if (!dot) return 0;
-    for (const char *v = "mp4\0m4v\0mkv\0avi\0mov\0mpg\0"; *v; v += 4)
-        if (!strcasecmp(dot + 1, v)) return 3;
     return !strcasecmp(dot + 1, "txt") ? 1 : !strcasecmp(dot + 1, "epub") ? 2 : 0;
 }
 /* ext_kind of a file name, not hidden. */
 static int book_kind(const char *name) { return name[0] == '.' ? 0 : ext_kind(strrchr(name, '.')); }
-/* Folder view's listing (playback.c ringnav_audio_extension): ext, from its dot, is a video's. */
-int video_ext(const char *ext) { return ext_kind(ext) == 3; }
 
 /* dir's books, and with depth those of its subfolders, as full paths. */
 static void scan(const char *dir, int depth) {
@@ -529,8 +525,7 @@ static void scan(const char *dir, int depth) {
     for (struct dirent *e; d && bk.n < BOOKS_MAX && (e = readdir(d));) {
         if (e->d_name[0] == '.') continue;
         tk_snprintf(path, sizeof path, "%s/%s", dir, e->d_name);
-        int kind = book_kind(e->d_name);
-        if ((e->d_type == 8 || !e->d_type) && kind && kind != 3) {
+        if ((e->d_type == 8 || !e->d_type) && book_kind(e->d_name)) {
             if ((bk.path[bk.n] = strdup(path))) ++bk.n;
         } else if ((e->d_type == 4 || !e->d_type) && depth)
             scan(path, 0);
@@ -577,7 +572,7 @@ static void info(void) {
     widget_set_visible(bk.info, bk.info_on || bk.state, 0);
 }
 
-/* key's place first in BOOK_MARKS: a book's byte offset, or a video's second. */
+/* key's place first in BOOK_MARKS: a book's byte offset. */
 static void mark(unsigned key, unsigned pos) {
     int k = 0;
     while (k < MARKS_N - 1 && bk.marks[k].key != key) ++k;
@@ -753,38 +748,18 @@ void books_paint(void *w, void *canvas) {
     stock_canvas_set_fill_color(canvas, fill);
 }
 
-/* Videos (docs/internals.md#videos): patch/video.c draws on /dev/fb0 and plays the sound while
- * demo runs on without painting (ringnav_wm_paint) or input (ringnav_input); a key's release
- * reaches it as a datagram on its socket. */
-#define VIDEO_BIN "/usr/bin/q2video"
-#define VIDEO_SOCK "/tmp/q2video.sock" /* video.c Q2VIDEO_SOCK */
-#define VIDEO_PLACE                                                                                \
-    "/tmp/q2video.place"          /* video.c Q2VIDEO_PLACE: the second to start at, then left */
-#define VIDEO_PAUSE_QUIT_MS 30000 /* paused this long, no key: quit as Return, so it sleeps */
-#define VIDEO_TOO_LARGE                                                                            \
-    3 /* video.c TOO_LARGE, its exit status: the picture's decode would not fit the RAM */
-static struct {
-    int paused, volume, gain, pid, sock,
-        seek; /* seek: the wheel seeks, since seek_at (time_now_ms) */
-    unsigned polled, control_at, seek_at, key,
-        at;             /* key: the video's in BOOK_MARKS, at its second there */
-    unsigned paused_at; /* time_now_ms when the pause began, 0 playing */
-} vid __attribute__((section(".scratch")));
-
-int video_on(void) { return vid.pid; }
-
 /* A USB DAC's volume is in software, hciplayer's as Bluetooth's, only when the USB volume is
  * variable (g_usbvol_mode) and the DAC has no volume control of its own: mclUsbAudioSetVol then
  * finds none (USB_MIXER -2) and tells hciplayer {mcl-softvolflag\1}. Otherwise the DAC applies it.
  */
 static int usb_soft(void) { return g_usbvol_mode && I(USB_MIXER, 0) == -2; }
 
-/* The output in use for q2video (here, radio.c) and librespot's sink (spotify.c): 0 for the
+/* The output in use for q2video (radio_start) and librespot's sink (spotify.c): 0 for the
  * headphone DAC, which keeps the volume set. Bluetooth's is hciplayer's soft volume, so the helper
  * gets g_volume in vol (5 bytes) to apply it the same way, on hciplayer's own plug:bluealsa (the
  * device demo writes to /mnt/data/asound.conf). A USB DAC is "usb", which the helper finds in
  * /proc/asound/cards (plughw, for its rate): with g_volume when its volume is soft, else "h" and
- * the volume, which the helper only shows. */
+ * the volume, which the helper leaves to the DAC. */
 const char *output_device(char *vol) {
     int way = mclGetOutputWay();
     tk_snprintf(vol, 5, way == 2 && !usb_soft() ? "h%u" : "%u",
@@ -805,9 +780,10 @@ void dac_take(void) {
     device_set_volume(g_volume, 1);
 }
 
-/* q2video on output_device, else the headphone DAC's plughw:0,0 (the only card), readied first, for
- * file or, with radio, Internet Radio's url (radio.c): its pid, 0 when it did not start. */
-int video_start(const char *file, int radio) {
+#define Q2VIDEO "/usr/bin/q2video" /* patch/video.c */
+/* Internet Radio's url (radio.c) in q2video -r on output_device, else on the headphone DAC's
+ * plughw:0,0 (the only card), readied first: its pid, 0 when it did not start. */
+int radio_start(const char *url) {
     char vol[5];
     const char *out = output_device(vol);
     player_stop();        /* hciplayer holds the PCM even paused */
@@ -816,129 +792,10 @@ int video_start(const char *file, int radio) {
     if (!pid) {
         child_oom_first();
         const char *dev = out ? out : "plughw:0,0", *v = out ? vol : (char *)0;
-        if (radio)
-            execl(VIDEO_BIN, VIDEO_BIN, "-r", dev, file, v, (char *)0);
-        else
-            execl(VIDEO_BIN, VIDEO_BIN, dev, file, v, (char *)0);
+        execl(Q2VIDEO, Q2VIDEO, "-r", dev, url, v, (char *)0);
         child_exit(127);
     }
     return pid > 0 ? pid : 0;
-}
-
-/* path played from its saved place, from the Videos list or Folder view (books_video). */
-static void video_play(const char *path) {
-    if (vid.pid) return;
-    headset_manual();
-    spot_yield(); /* librespot and radio hold the PCM too, as for local music */
-    radio_stop();
-    if (!bk.page) BLOB_IO(BOOK_MARKS, bk.marks, 0); /* Folder view: no list read them */
-    vid.key = fnv(FNV_SEED, (const unsigned char *)path);
-    vid.key |= !vid.key;
-    vid.at = 0;
-    for (int k = 0; k < MARKS_N; ++k)
-        if (bk.marks[k].key == vid.key) vid.at = bk.marks[k].pos;
-    BLOB_IO(VIDEO_PLACE, vid.at, 1);
-    vid.pid = video_start(path, 0);
-    vid.seek = vid.paused = 0;
-    vid.paused_at = 0;
-    vid.volume = g_volume; /* the helper starts at output_device's level: nothing to send, no bar */
-    vid.gain = headset_gain();
-    unlink("/tmp/q2video.state");
-    if (vid.pid) vid.sock = socket(1, 1, 0); /* AF_UNIX, SOCK_DGRAM (MIPS numbering) */
-}
-/* Folder view's file (navigation.c ringnav_folder_click): a video plays as from the Videos list;
- * 0 for anything else, left to stock. */
-int books_video(const char *path) {
-    const char *name = path ? strrchr(path, '/') : 0;
-    if (!name || book_kind(name + 1) != 3) return 0;
-    video_play(path);
-    return 1;
-}
-
-/* the helper's soft volume and gain (its bar), and what it was last sent */
-static void video_sync(void) {
-    char v[4] = { 'v', (char)g_volume, 'g', (char)headset_gain() };
-    dgram_send(&vid.sock, VIDEO_SOCK, v, 2);
-    dgram_send(&vid.sock, VIDEO_SOCK, v + 2, 2);
-    vid.volume = g_volume;
-    vid.gain = headset_gain();
-}
-
-/* ringnav_sleep, every UI loop pass: the helper's end, and meanwhile no screen, standby or DAC
- * power-off timeout (on_wm_idle_status, check_dacoff_state). A pause of VIDEO_PAUSE_QUIT_MS quits
- * as Return does (the place kept), so a pause from a dropped headset can't hold them forever.
- * ponytail: input goes to the helper, so the pause can't just let the screen time out under it;
- * a hold that lets a paused video go dark needs the wake path to reach stock while q2video runs. */
-void video_poll(void) {
-    int status = 0;
-    if (!vid.pid) return;
-    if (!waitpid(vid.pid, &status, 1)) { /* WNOHANG: still playing */
-        int paused;
-        if (time_now_ms() - vid.polled >= 400) {
-            vid.polled = time_now_ms();
-            if (time_now_ms() - vid.control_at >= 1000 &&
-                BLOB_IO("/tmp/q2video.state", paused, 0) && (paused == 0 || paused == 1))
-                vid.paused = paused;
-            if (vid.volume != g_volume || vid.gain != headset_gain()) video_sync();
-            if (!vid.paused)
-                vid.paused_at = 0;
-            else if (!vid.paused_at)
-                vid.paused_at = vid.polled ?: 1;
-            else if (vid.polled - vid.paused_at >= VIDEO_PAUSE_QUIT_MS)
-                dgram_send(&vid.sock, VIDEO_SOCK, "q", 1); /* again each poll until it ends */
-        }
-        reset_poweroptions_timer(1, 1, 1);
-        if (I(g_dacoff_time, 0) > 0) I(g_dacoff_time, 0) = 0;
-        if (vid.seek && time_now_ms() - vid.seek_at >= SCRUB_MS) vid.seek = 0; /* back on volume */
-        return;
-    }
-    close(vid.sock);
-    vid.pid = 0;
-    unsigned at;
-    /* where it stopped; a video never resumed takes no slot from the books. From Folder view no
-     * page holds the marks, so they are read again first: mark writes them whole. */
-    if (BLOB_IO(VIDEO_PLACE, at, 0) && (at || vid.at)) {
-        if (!bk.page) BLOB_IO(BOOK_MARKS, bk.marks, 0);
-        mark(vid.key, at);
-    }
-    widget_invalidate_force(window_manager(), 0);
-    /* last: the toast's loop polls here again */
-    if (!(status & 0x7f) && (status >> 8 & 0xff) == VIDEO_TOO_LARGE)
-        toast("Too large to play on the Q2: convert it to a smaller size");
-}
-
-/* Return quits, Play/Pause pauses, the side buttons seek. The wheel is the volume, as on Now
- * Playing; Centre toggles it to seeking, which ends SCRUB_MS after the last tick (video_poll). The
- * volume steps as stock's volume_dialog keys (0x4a3694): 1 a tick, up to 100 and g_maxvolume,
- * through device_set_volume (the DAC's, or hciplayer's for Bluetooth and a soft USB volume) and
- * saved; the helper gets it for that soft gain and its bar. */
-void video_key(unsigned key) {
-    vid.paused_at = 0; /* a key restarts a pause's VIDEO_PAUSE_QUIT_MS */
-    if (key == KEY_PLAY || key == KEY_FWD_BTN || key == KEY_BACK_BTN || key == KEY_RETURN)
-        headset_manual();
-    int wheel = key == KEY_NEXT || key == KEY_PREV, v = g_volume + (key == KEY_NEXT ? 1 : -1);
-    if (key == KEY_CENTER) vid.seek = !vid.seek;
-    if (key == KEY_CENTER || (wheel && vid.seek)) vid.seek_at = time_now_ms();
-    if (wheel && !vid.seek && v >= 0 && (key == KEY_PREV || (v <= 100 && v <= g_maxvolume))) {
-        g_volume = (unsigned char)v;
-        device_set_volume(v, 1);
-        write_int_config(v, "PLAYSET", "VOLUME");
-    }
-    char c = key == KEY_RETURN                                      ? 'q'
-             : key == KEY_PLAY                                      ? 'p'
-             : key == KEY_FWD_BTN || (key == KEY_NEXT && vid.seek)  ? 'f'
-             : key == KEY_BACK_BTN || (key == KEY_PREV && vid.seek) ? 'b'
-             : key == KEY_CENTER && vid.seek                        ? 's'
-             : wheel || key == KEY_CENTER                           ? 'v'
-                                                                    : 0;
-    if (c == 'v')
-        video_sync();
-    else if (c)
-        dgram_send(&vid.sock, VIDEO_SOCK, &c, 1);
-    if (c == 'p') {
-        vid.paused = !vid.paused;
-        vid.control_at = time_now_ms();
-    }
 }
 
 /* Local Music's Books row (navigation.c media_click): the books, by path. */
@@ -962,15 +819,6 @@ void books_open(const char *root) {
     char name[256];
     for (int k = 0; k < bk.n; ++k)
         page_row_detail_into(bk.view, k, title(bk.path[k], name), 0, open_book);
-}
-int video_status(void) { return vid.pid ? (vid.paused ? 3 : 2) : 0; }
-unsigned video_session(void) { return (unsigned)vid.pid; }
-void video_set_playing(int playing) {
-    if (vid.pid) {
-        dgram_send(&vid.sock, VIDEO_SOCK, playing ? "r" : "a", 1);
-        vid.paused = !playing;
-        vid.control_at = time_now_ms();
-    }
 }
 
 #endif

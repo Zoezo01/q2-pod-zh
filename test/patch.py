@@ -919,18 +919,6 @@ assert m.closed==['playermore_page','artistinfo_page','albuminfo_page'] and m.ba
 assert m.opened==[('localmusic/artistinfo_page',0xf001,m.items(m.get(syms['mcl_pdeqplaylist']))[1])]
 assert m.u.mem_read(syms['g_songerinfo_flag'],1)==b'\1'; passed()
 
-# Folder view's row click (ringnav_folder_click over stock's 0x532414): a video file goes to books_video,
-# as Library's Videos row plays it, and stock never queues it as a song; a song row, a video books_video
-# refuses and any row in select mode stay stock's (folder_enter's 8, then the queue and Now Playing).
-for selected,name,navbar,played in ((1,'clip.mp4',0,True),(1,'clip.mp4',1,True),(0,'Row 0',0,False)):  # select mode selects
-    m=FolderClickMachine(['home_page','folder_page'],selected,False); m.byte(syms['g_navbar_status'],navbar)
-    m.items(m.get(syms['p_deque_showlist']))[1]=m.song('clip.mp4')
-    w=m.node('button','row'); m.word(w+O['ROW_INDEX'],selected); m.word(m.event+O['EVENT_TARGET'],w)
-    m.call(address=payload_syms['ringnav_folder_click'],args=(w,m.event,0,0),gap=0)
-    assert m.videos==([] if navbar else ['/p/'+name]),(name,navbar,m.videos)
-    assert played==(not any(o[0]=='playing_page' for o in m.opened)),(name,navbar)
-passed()
-
 # Now Playing targets the queue even when the last browsed list has unrelated rows.
 for state in (3,2):  # paused and playing both expose the same actions
     m=playing_menu(); m.handlers.pop(syms['mclGetPlayStatus'],None); m.word(0xa50084,state)
@@ -1406,17 +1394,6 @@ for cls,artist_type,page,query in ((0xff01,1,'album_page',('getMusicByAlbumAndAl
     assert page!='folder_page' or [m.text(c[1]) for c in m.calls if c[0]=='toolsLoadDirectory']==['/mnt/sd/Music/Row 0','/mnt/sd/Music/Row 0/dir']
     assert m.names(m.get(syms['tools_pdeq_directory']))==['staged'] and m.pool()==list(range(len(want)))
     passed()
-# Videos never enter an audio queue, including through a folder's hold menu.
-for action in (0,1):
-    m=QueueMachine(page='folder_page'); m.word(m.row(0)+O['REC_TYPE'],4)
-    m.found=[m.song('film.mp4'),m.song('song.flac'),m.song('film.MKV')]
-    assert m.run(action) is None
-    assert m.names()==(['A','song.flac','B','C'] if action==0 else ['A','B','C','song.flac']); passed()
-m=QueueMachine(page='folder_page'); m.word(m.row(0)+O['REC_PATH'],m.string('/mnt/mmc/Videos/film.mp4'))
-m.press(100); m.hold(); assert m.nodes[m.top]['name']=='folder_page' and m.names()==['A','B','C']; passed()
-m=QueueMachine(page='folder_page'); m.word(m.row(0)+O['REC_TYPE'],4)
-m.word(m.row(0)+O['REC_PATH'],m.string('/mnt/mmc/Videos/Album.mp4'))
-m.press(100); assert m.hold()==11 and m.nodes[m.top]['name']=='sortselect_dialog'; passed()
 # Artist, composer and genre rows, and their album lists, use batch_add_file's per-class queries.
 for cls,artist_type,query in ((0xf004,0,('getMusicBySonger','Artist',None)),(0xf004,1,('getMusicByAlbumArtist','Artist',None)),
         (0xf005,0,('getMusicByComposer','Comp',None)),(0xf006,0,('getMusicByGenre','Pop',None)),
@@ -2162,16 +2139,6 @@ assert m.names()==m.before_queue
 songs=m.get(payload_syms['ple']+8); loads=m.get(payload_syms['playback_loads'])
 m.call(address=syms['mclLoadPlayList'],args=(songs,0,0xff13,0),gap=0)
 assert m.names()==['B','A','C'] and m.get(payload_syms['playback_loads'])==loads+1; passed()  # a card app's stream counts loads
-# A Videos folder's listed videos never join a queue (#128): stock loads a copy without them, its start
-# on the same song, or the next after a video; the caller's list stays whole. Videos alone leave an empty queue.
-for names,at,queued,pos in ((('a.mp3','v.mp4','b.flac','w.MKV'),2,['a.mp3','b.flac'],1),
-                            (('a.mp3','v.mp4','b.flac'),1,['a.mp3','b.flac'],1),
-                            (('v.mp4','a.mp3'),0,['a.mp3'],0),(('a.mp3','b.flac'),1,['a.mp3','b.flac'],1),
-                            (('v.mp4','w.mkv'),1,[],0)):
-    m=QueueMachine(); src=m.deque([m.song(n) for n in names])
-    m.call(address=syms['mclLoadPlayList'],args=(src,at,1,0),gap=0)
-    assert m.names()==queued and m.get(O['MCL_POS'])==pos and len(m.items(src))==len(names),(names,m.names(),m.get(O['MCL_POS']))
-    passed()
 # Explicit stock loading order also reaches export and later playback loads through the shared query hook.
 m=LibraryQueryMachine(); m.db.execute('create table playlist(id,cd_num)')
 m.db.executemany('insert into playlist values(?,?)',[(103,0),(101,0),(102,0),(100,0),(104,1)])
@@ -8892,95 +8859,6 @@ key(O['KEY_RETURN']); m.advance(0); pick(0); key(O['KEY_RETURN']); m.advance(0);
 key(O['KEY_RETURN']); m.advance(0); pick(1); assert len(frames())==1
 m.close(); assert m.get(payload_syms['g'])==0 and not frames() and m.get(payload_syms['wheel_raw'])==0; passed()
 
-# Videos (patch/books.c, docs/internals.md#videos): the card's Videos folder (case aside) lists its and
-# its subfolders' video files as Books does; a row stops the music and starts /usr/bin/q2video with
-# the headphone DAC's PCM and the path as plain argv, never through a shell.
-R='/mnt/mmc/VIDEOS'
-tree={'/mnt/mmc':[('Music',4),('VIDEOS',4)],R:[('b.MKV',8),('a.mp4',8),('notes.txt',8),('._a.mp4',8),('Trip',4)],R+'/Trip':[('c.avi',8)]}
-m=BooksMachine(tree,{})
-view=m.node('scroll_view','scroll_view_localmusic',[m.node('list_item') for _ in range(11)]); m.top=m.node('window','localmusic_page',[view])
-assert m.call(address=HOOKS['localmusic_page_init'][0],args=(m.top,5,0,0),gap=0,count=5_000_000)==0
-button=m.nodes[m.nodes[view]['children'][-4]]['children'][0]; icon,label,into=m.nodes[button]['children']
-assert m.nodes[icon]['image']=='local_videos' and m.nodes[label]['text']=='Videos' and len(m.nodes[view]['children'])==20
-f,ctx=m.handler(button,O['EVT_CLICK']); m.calls=[]
-assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and [m.text(c[1]) for c in m.calls if c[0]=='navigator_to']==['folder_page']; m.page=m.node('window','folder_page'); passed()
-# Folder view's video (books_video) starts the same q2video, with no Videos page open; anything else is left to stock.
-for path,ok in ((R+'/b.MKV',1),(R+'/notes.txt',0),(R+'/._a.mp4',0)):
-    v=BooksMachine(tree,{}); assert v.call(address=payload_syms['books_video'],args=(v.string(path),0,0,0),gap=0)==ok,path
-    v=BooksMachine(tree,{}); v.forked=0; v.call(address=payload_syms['books_video'],args=(v.string(path),0,0,0),gap=0)  # the child
-    assert v.execs==([('/usr/bin/q2video','/usr/bin/q2video','plughw:0,0',path,0)] if ok else []),path
-passed()
-def play(path):  # Folder view's row (books_video), with the child run as the fork's
-    m.calls=[]; m.call(address=payload_syms['books_video'],args=(m.string(path),0,0,0),gap=0)
-    return [c[0] for c in m.calls]
-# The headphone output is readied as stock's player_start readies it (config_outputchannel, PCM
-# mode, unmuted, the volume) before q2video starts; a DAC check_dacoff_state powered off comes on with it. Bluetooth (way 1) plays on hciplayer's
-# plug:bluealsa with the volume for the helper's soft volume. A USB DAC (2) plays on "usb" (q2video
-# finds its card), through plughw: with the volume marked h (the DAC's own control, or a fixed USB volume),
-# or plain when the USB volume is variable and the DAC has no control (USB_MIXER -2: hciplayer's soft volume).
-m.forked=0; m.word(syms['g_dacoff_time'],0xffffffff); m.byte(syms['g_headset_output'],1); names=play(R+'/b.MKV')
-take=[n for n in names if n in ('player_stop','config_outputchannel','mclSetPcmMode','mclSetMute','device_set_volume','fork')]
-assert take==['player_stop','config_outputchannel','mclSetPcmMode','mclSetMute','device_set_volume','fork'] and m.execs[-1][2:5]==('plughw:0,0',R+'/b.MKV',0)
-assert ('config_outputchannel',1,2) in [c[:3] for c in m.calls]
-m.word(syms['g_dacoff_time'],5); m.byte(syms['g_volume'],42)
-m.way=1; names=play(R+'/Trip/c.avi'); assert 'mclSetDacPwr' not in names and 'config_outputchannel' not in names and m.execs[-1][2:]==('plug:bluealsa',R+'/Trip/c.avi',('42',0))
-m.way=2; m.byte(syms['g_usbvol_mode'],0); m.word(O['USB_MIXER'],0xfffffffe)
-assert 'mclSetDacPwr' not in play(R+'/Trip/c.avi') and m.execs[-1][2:]==('usb',R+'/Trip/c.avi',('h42',0))
-m.byte(syms['g_usbvol_mode'],1); m.word(O['USB_MIXER'],0); play(R+'/Trip/c.avi'); assert m.execs[-1][2:]==('usb',R+'/Trip/c.avi',('h42',0))
-m.word(O['USB_MIXER'],0xfffffffe); play(R+'/Trip/c.avi'); assert m.execs[-1][2:]==('usb',R+'/Trip/c.avi',('42',0))
-passed()
-# Playing: no key or touch reaches the UI; a key's release goes to the player's socket as a datagram:
-# Play/Pause pauses, the side buttons seek, Return quits.
-m.way=0; m.forked=4242; play(R+'/Trip/c.avi')
-# The helper starts at the output's level: the first poll sends nothing (no volume bar flash); a change sends v then g.
-def vpoll(): m.now+=500; m.sent=[]; m.call(address=payload_syms['video_poll'],args=(0,0,0,0),gap=0,clear=False); return [x[1] for x in m.sent]
-assert vpoll()==[]; m.byte(syms['g_volume'],43); assert vpoll()==['v+','g+']; passed()
-inp=HOOKS['window_manager_dispatch_input_event'][0]; m.handlers[inp+12]='stock_input'
-def event(kind,key=0):
-    m.calls=[]; m.sent=[]
-    assert m.call(key,address=inp,args=(m.wm,m.event,0,0),event_type=kind,gap=0,clear=False)==0
-    return [c[0] for c in m.calls if c[0]!='time_now_ms']  # the hook times the idle, not input
-for key,c in ((O['KEY_PLAY'],'p'),(O['KEY_FWD_BTN'],'f'),(O['KEY_BACK_BTN'],'b'),(O['KEY_RETURN'],'q')):
-    assert 'stock_input' not in event(O['EVT_KEY_UP'],key) and m.sent==[(7,c,1,0x40,1,'/tmp/q2video.sock',110)]
-assert event(0x110,O['KEY_CENTER'])==[] and event(O['EVT_POINTER_DOWN'])==[] and not m.sent; passed()
-# The wheel is the volume, as stock's volume dialog steps it: 1 a tick through device_set_volume, saved as
-# PLAYSET VOLUME, up to g_maxvolume (and 100) and down to 0; each tick sends v and the volume, at an end too.
-def key(k):
-    names=event(O['EVT_KEY_UP'],k); assert 'stock_input' not in names and m.sent[0][2]==len(m.sent[0][1])
-    assert len(m.sent)==(2 if m.sent[0][1].startswith('v') else 1)
-    if len(m.sent)==2: assert m.sent[1][1]=='g'+m.sent[0][1][1]
-    vol=[c[1:3] for c in m.calls if c[0]=='device_set_volume']; saved=[(c[1],m.text(c[2]),m.text(c[3])) for c in m.calls if c[0]=='write_int_config']
-    assert len(vol)==len(saved)<=1 and all(v==(s[0],1) and s[1:]==('PLAYSET','VOLUME') for v,s in zip(vol,saved))
-    return m.sent[0][1],vol and vol[0][0]
-m.byte(syms['g_volume'],50); m.byte(syms['g_maxvolume'],52)
-assert [key(O['KEY_NEXT']) for _ in range(3)]==[('v\x33',51),('v\x34',52),('v\x34',[])] and m.u.mem_read(syms['g_volume'],1)[0]==52
-m.byte(syms['g_maxvolume'],100); m.byte(syms['g_volume'],100); assert key(O['KEY_NEXT'])==('v\x64',[])
-m.byte(syms['g_volume'],1); assert [key(O['KEY_PREV']) for _ in range(2)]==[('v\0',0),('v\0',[])]; passed()
-# Centre toggles the wheel to seeking (s, then f and b, no volume) and back (v); seeking also ends
-# SCRUB_MS after the last tick, on the UI loop's poll.
-m.handlers[HOOKS['main_loop_sleep_default'][0]+12]='stock_sleep'
-def poll(ms):
-    m.now+=ms; m.call(address=HOOKS['main_loop_sleep_default'][0],args=(0x1234,0,0,0),gap=0,clear=False)
-m.byte(syms['g_volume'],30)
-assert key(O['KEY_CENTER'])==('s',[]) and key(O['KEY_NEXT'])==('f',[]) and key(O['KEY_PREV'])==('b',[])
-poll(O['SCRUB_MS']-1); assert key(O['KEY_NEXT'])==('f',[]) and key(O['KEY_FWD_BTN'])==('f',[]) and key(O['KEY_PLAY'])==('p',[])
-poll(O['SCRUB_MS']-1); assert key(O['KEY_NEXT'])==('f',[]); poll(O['SCRUB_MS']); assert key(O['KEY_NEXT'])==('v\x1f',31)
-assert key(O['KEY_CENTER'])==('s',[]) and key(O['KEY_CENTER'])==('v\x1f',[]) and key(O['KEY_PREV'])==('v\x1e',30); passed()
-# Nor does the window manager paint over it; the screen, standby and DAC power-off timeouts are held off.
-vt=m.alloc(16); m.word(m.wm+0x94,vt); m.word(vt+0xc,0x400100); m.handlers[0x400100]='wm_vt_paint'
-def wm_paint():
-    m.calls=[]; m.call(address=WM_PAINT_LEAF[1],args=(m.wm,0,0,0),gap=0,clear=False); return [c[0] for c in m.calls]
-assert wm_paint()==[]
-sleep_hook=HOOKS['main_loop_sleep_default'][0]; m.handlers[sleep_hook+12]='stock_sleep'
-m.calls=[]; m.call(address=sleep_hook,args=(0x1234,0,0,0),gap=0,clear=False)
-assert ('reset_poweroptions_timer',1,1,1) in [c[:4] for c in m.calls] and m.get(syms['g_dacoff_time'])==0 and 'widget_invalidate_force' not in [c[0] for c in m.calls]
-# Its end: the socket closes, the whole screen repaints once, and the UI has its input and paint again.
-m.waited=4242; m.calls=[]; m.call(address=sleep_hook,args=(0x1234,0,0,0),gap=0,clear=False)
-assert ('close',7) in [c[:2] for c in m.calls] and ('widget_invalidate_force',m.wm,0) in [c[:3] for c in m.calls]
-assert 'stock_input' in event(O['EVT_KEY_UP'],O['KEY_RETURN']) and not m.sent and wm_paint()==['wm_vt_paint']
-m.calls=[]; m.call(address=sleep_hook,args=(0x1234,0,0,0),gap=0,clear=False); assert 'waitpid' not in [c[0] for c in m.calls]
-passed()
-
 # The reentrant clock import resolves tzset's lazy GOT slot once (no shared buffer written), then
 # calls localtime_r with the caller's buffer, preserving both arguments and the return address.
 from build import run
@@ -9079,7 +8957,7 @@ assert 'config_outputchannel' not in names and 'reset_poweroptions_timer' in nam
 # Bluetooth's way is left alone: a DAC check_dacoff_state powered off is only powered on.
 m.state('paused'); m.poll(); m.byte(syms['g_headset_output'],2); m.word(syms['g_dacoff_time'],0xffffffff); m.state('playing'); m.poll()
 assert 'config_outputchannel' not in [c[0] for c in m.calls] and ('mclSetDacPwr',1) in [c[:2] for c in m.calls]; passed()
-# The card's aplay.sh plays where Videos would: no SPOT_OUT on the headphone DAC; Bluetooth's
+# The card's aplay.sh plays where a station would: no SPOT_OUT on the headphone DAC; Bluetooth's
 # plug:bluealsa and the volume, rewritten when it changes, which a running q2video sink also gets.
 OUT='/tmp/q2-librespot.out'; assert OUT not in m.files
 m.way=1; m.byte(syms['g_volume'],42); m.poll(); assert m.files[OUT]==b'plug:bluealsa 42\n' and m.sent[-1][1::4]==('v*','/tmp/q2sink.sock')
@@ -10048,7 +9926,7 @@ CONFIG['KEEPLIT']='1'; a=AppMachine(); del CONFIG['KEEPLIT']; card_app(a,'fidget
 assert a.call(address=payload_syms['addon_games'],args=(0,0,0,0),gap=0,clear=False,count=5_000_000)==1
 assert a.call(address=payload_syms['addon_game_start'],args=(0,0,0,0),gap=0,clear=False,count=5_000_000)==1
 assert not idle(a) and not idle(a) and any(c[0]=='reset_poweroptions_timer' for c in a.calls); passed()
-# A card game with the sound (q2app audio=1): the output is handed over before the fork as for a video (player_stop,
+# A card game with the sound (q2app audio=1): the output is handed over before the fork as for a station (player_stop,
 # the jack readied by dac_take) and the binary gets q2video's arguments: the device, and on Bluetooth or USB the
 # volume (h: the DAC's own); Play/Pause and the side buttons reach it; the DAC stays on and nothing ends it for
 # idling; the Shortcut opens it by id, -1 for an id no card game has.
@@ -12461,7 +12339,7 @@ m.word(r+O['REC_PATH'],m.string('/mnt/mmc/cue.m4b')); m.word(r+O['REC_CUE_START'
 playing(m,0,200,pos=0,n=110); assert m.places()==[(fnv('/mnt/mmc/cue.m4b'),261)] and not m.seeks; passed()  # its file's place
 
 # Mock only player endpoints, exercising the actual routing and ear/AVRCP state machine.
-for owner in (1,2,3,4):
+for owner in (1,2,3):
     m=HeadsetMachine(owner); m.byte(syms['g_backlight_status'],0)
     m.ears(3); assert m.playing and not m.actions
     m.ears(2); assert not m.playing and m.actions==[(owner,'pause')]

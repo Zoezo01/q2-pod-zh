@@ -2076,12 +2076,11 @@ def test_most_playeds_tracks_hold_as_its_songs(hold, recs, ui, st, fw):
 
 # What a hold leaves stock.
 @pytest.mark.parametrize('how', ['dialog', 'timer', 'picker', 'dark', 'animating', 'touch', 'airplay', 'select mode',
-                                 'not a list', 'stream', 'no key', 'video', 'rows changed'])
+                                 'not a list', 'stream', 'no key', 'rows changed'])
 def test_a_hold_that_isnt_the_menus_is_stocks(hold, recs, ui, st, qm, fw, mcl, how):
     songs = [song(recs, i) for i in range(3)]
-    if how in ('not a list', 'video', 'rows changed'):
-        rows = songs if how != 'video' else [recs(path=f'/mnt/mmc/{i}.mp4', kind=8) for i in range(3)]
-        hold.songs_page('notes_page' if how == 'not a list' else 'allmusic_page', rows)
+    if how in ('not a list', 'rows changed'):
+        hold.songs_page('notes_page' if how == 'not a list' else 'allmusic_page', songs)
         if how == 'rows changed':
             hold.deques[fw.var('fw_ctx_p_deque_showlist', C.c_uint).value].append(songs[0])
     else:

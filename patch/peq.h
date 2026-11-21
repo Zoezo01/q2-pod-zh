@@ -620,13 +620,12 @@ void headset_volume_reset(void);
 void headset_poll(void), headset_eq_poll(void), headset_manual(void);
 int media_owner(void), media_playing(void), media_focused(void);
 void media_set_playing(int playing), media_key(unsigned key);
-void video_key(unsigned key);
 int radio_media(unsigned key), spot_media(unsigned key);
 int headset_gain(void);
-int spot_status(void), radio_status(void), video_status(void);
-unsigned spot_session(void), radio_session(void), video_session(void);
-void spot_set_playing(int playing), radio_set_playing(int playing), video_set_playing(int playing);
-int video_start(const char *file, int radio); /* books.c */
+int spot_status(void), radio_status(void);
+unsigned spot_session(void), radio_session(void);
+void spot_set_playing(int playing), radio_set_playing(int playing);
+int radio_start(const char *url); /* books.c */
 /* peq_ui.c's T9 edit, named EDIT_NAME: navigation.c's search_key cancels it on Return while its
  * keyboard is up. */
 #define EDIT_NAME "q2_edit"

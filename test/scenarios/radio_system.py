@@ -131,13 +131,3 @@ for site in AUDIO_EXTENSION_CALLS:
         m.u.hook_add(UC_HOOK_CODE,extension_return,begin=site+8,end=site+8)
         assert bool(m.call(address=site,args=(formats,suffix,0,0),gap=0))==bool(accepted)
         passed()
-    # Folder view lists videos in the card's Videos folder (#128); the library scan and other folders never do.
-    for folder in (b'/mnt/mmc/vIdEoS/Films',b'/mnt/mmc/Videos',b'/mnt/mmc/Music',b'/mnt/mmc/VideosOld',b'/mnt/sda1/Videos'):
-        for ext in ('.mp4','.MKV','.pdf'):
-            m=Machine(); m.mock('strstr@GLIBC_2.0'); m.u.mem_write(syms['g_folder_path'],folder+b'\0')
-            formats=m.string('.mp3 .flac'); suffix=m.string(ext)
-            m.word(0x7000f000+(0xdd4 if site==0x5d4cac else 0xd64),formats)
-            m.u.hook_add(UC_HOOK_CODE,extension_return,begin=site+8,end=site+8)
-            listed=site==0x5d4cac and folder in (b'/mnt/mmc/vIdEoS/Films',b'/mnt/mmc/Videos') and ext!='.pdf'
-            assert bool(m.call(address=site,args=(formats,suffix,0,0),gap=0))==listed,(site,folder,ext)
-            passed()

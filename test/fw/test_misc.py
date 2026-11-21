@@ -1,4 +1,4 @@
-"""The smaller patch files on their device path: Night Shift, Books and EPUB, q2video's samples, Crossfade's page, the EQ page's
+"""The smaller patch files on their device path: Night Shift, Books and EPUB, Crossfade's page, the EQ page's
 files and rules, and Up Next."""
 import ctypes as C
 import io
@@ -14,7 +14,7 @@ from test_books import stored  # test_books.py keeps the stored-block maker
 
 pytestmark = pytest.mark.usefixtures('stock_gapless')  # Crossfade's page has stock's Gapless on, as stock's default
 
-CENTER, PREV, NEXT, PLAY, RETURN, BACK_BTN, FWD_BTN = 218, 172, 173, 171, 170, 222, 223
+CENTER, PREV, NEXT, PLAY = 218, 172, 173, 171
 FNV = 2166136261
 r = C.byref
 
@@ -395,48 +395,37 @@ def test_the_save_writes_only_what_changed(fw):
 # Books: extensions
 
 def kinds(fw):
-    return (fw.fn('books__ext_kind', C.c_int, C.c_void_p), fw.fn('books__book_kind', C.c_int, C.c_void_p),
-            fw.fn('video_ext', C.c_int, C.c_void_p))
-
-
-VIDEOS = ('mp4', 'm4v', 'mkv', 'avi', 'mov', 'mpg')
+    return fw.fn('books__ext_kind', C.c_int, C.c_void_p), fw.fn('books__book_kind', C.c_int, C.c_void_p)
 
 
 def test_ext_kind_by_the_extension_case_aside(fw):
-    ext, _, _ = kinds(fw)
-    for e in VIDEOS:
-        assert ext(b'.' + e.encode()) == 3 and ext(b'.' + e.upper().encode()) == 3
+    ext, _ = kinds(fw)
     assert (ext(b'.txt'), ext(b'.TXT'), ext(b'.epub'), ext(b'.EpUb')) == (1, 1, 2, 2)
-    for e in (b'.', b'.t', b'.tx', b'.txtx', b'.mp', b'.mp44', b'.mpeg', b'.epu', b'.epubb', b'.flac', b'.txt '):
+    for e in (b'.', b'.t', b'.tx', b'.txtx', b'.mp4', b'.mkv', b'.epu', b'.epubb', b'.flac', b'.txt '):
         assert ext(e) == 0, e
     assert ext(None) == 0
 
 
 def test_book_kind_is_a_file_name_s_and_never_a_hidden_one(fw):
-    _, book, _ = kinds(fw)
-    assert (book(b'a.txt'), book(b'a.b.epub'), book(b'x.mkv')) == (1, 2, 3)
+    _, book = kinds(fw)
+    assert (book(b'a.txt'), book(b'a.b.epub'), book(b'x.mkv')) == (1, 2, 0)
     assert (book(b'.txt'), book(b'.a.txt'), book(b'noext'), book(b''), book(b'a.')) == (0, 0, 0, 0, 0)
     assert book(b'a.txt.bak') == 0
 
 
-def test_video_ext_is_only_a_video(fw):
-    _, _, video = kinds(fw)
-    assert video(b'.mp4') and not video(b'.txt') and not video(b'.epub') and not video(None)
-
-
 def test_extensions_hostile_sweep(fw):
-    ext, book, video = kinds(fw)
+    ext, book = kinds(fw)
     rng = random.Random(1)
     for _ in range(2000):
         name = bytes(rng.choices(b'.txTmp4EPUBkvaiogns\xff', k=rng.randrange(0, 10))).replace(b'\0', b'x')
         dot = name.rfind(b'.')
         tail = name[dot + 1:].lower() if dot >= 0 else None
-        want = 3 if tail and tail.decode('latin1') in VIDEOS else 1 if tail == b'txt' else 2 if tail == b'epub' else 0
+        want = 1 if tail == b'txt' else 2 if tail == b'epub' else 0
         with Exact(name + b'\0') as p:
             assert book(p) == (0 if name[:1] == b'.' else want), name
         if dot >= 0:
             with Exact(name[dot:] + b'\0') as p:
-                assert ext(p) == want and bool(video(p)) == (want == 3), name
+                assert ext(p) == want, name
 
 
 # Books: EPUB
@@ -1106,141 +1095,6 @@ def test_marks_hostile_sweep(fw):
         b, *_ = book_open(fw, data, marks=marks)
         assert b.pos < 5000
         assert b.base <= b.pos <= b.base + b.len
-
-
-class Vid(C.Structure):
-    _fields_ = [*((k, C.c_int) for k in 'paused volume gain pid sock seek'.split()),
-                *((k, C.c_uint) for k in 'polled control_at seek_at key at paused_at'.split())]
-
-
-def video(fw):
-    return fw.var('books__vid', Vid)
-
-
-def test_books_video_only_plays_a_video_file(fw):
-    Card(fw)
-    play = fw.fn('books_video', C.c_int, C.c_char_p)
-    fw.mock('fw_fork', lambda *_: 77)
-    fw.mock('fw_socket', lambda *_: 9)
-    assert not play(None) and not play(b'noslash.mp4') and not play(b'/m/a.mp3') and not play(b'/m/.hidden.mp4')
-    assert video(fw).pid == 0
-    assert play(b'/m/a.mp4') == 1 and video(fw).pid == 77 and video(fw).sock == 9
-
-
-def test_a_video_starts_from_its_mark(fw):
-    g = fw.fn('fnv', C.c_uint, C.c_uint, C.c_char_p)
-    key = g(FNV, b'/m/a.mp4')
-    card = Card(fw, {MARKS_FILE: struct.pack('<II', key, 321) + bytes(504)})
-    fw.mock('fw_fork', lambda *_: 77)
-    assert fw.fn('books_video', C.c_int, C.c_char_p)(b'/m/a.mp4') == 1
-    assert card.files['/tmp/q2video.place'] == struct.pack('<I', 321) and video(fw).key == key
-
-
-def test_a_second_video_waits_for_the_first(fw):
-    Card(fw)
-    fw.mock('fw_fork', lambda *_: 77)
-    video(fw).pid = 5
-    fw.fn('books_video', C.c_int, C.c_char_p)(b'/m/a.mp4')
-    assert video(fw).pid == 5 and not fw.calls('fw_fork')
-
-
-def stopped(fw, place):
-    card = Card(fw, {'/tmp/q2video.place': place} if place is not None else {})
-    fw.mock('fw_waitpid', lambda *_: 1234)
-    v = video(fw)
-    v.pid, v.key = 1234, 66
-    fw.fn('video_poll', None)()
-    return v, card
-
-
-def test_a_video_s_end_keeps_its_place(fw):
-    v, card = stopped(fw, struct.pack('<I', 500))
-    assert v.pid == 0
-    assert card.files[MARKS_FILE][:8] == struct.pack('<II', 66, 500)
-
-
-def test_a_video_never_resumed_takes_no_slot(fw):
-    _, card = stopped(fw, struct.pack('<I', 0))
-    assert MARKS_FILE not in card.files
-
-
-@pytest.mark.parametrize('status, said', [
-    (3 << 8, [b'Too large to play on the Q2: convert it to a smaller size']),  # video.c TOO_LARGE, its exit status
-    (0, []), (1 << 8, []), (3, []), (3 << 8 | 9, [])])  # an end, another failure, and signals that only look like it
-def test_a_video_refused_as_too_large_says_so_once_it_is_over(fw, status, said):
-    Card(fw)
-    v, seen = video(fw), []
-    def gone(pid, out, *_):
-        C.c_int.from_address(out).value = status
-        return 1234
-    fw.mock('fw_waitpid', gone)
-    # toast's dialog runs the UI's polls again: by then the video is over, so this poll is not entered twice
-    fw.mock('navigator_to_with_context', lambda page, info, *_: seen.append((v.pid, C.string_at(info + 8))))
-    v.pid = 1234
-    fw.fn('video_poll', None)()
-    assert seen == [(0, text) for text in said] and v.pid == 0
-
-
-def test_a_resumed_video_stopped_near_its_start_forgets_its_place(fw):
-    card = Card(fw, {'/tmp/q2video.place': struct.pack('<I', 0)})
-    fw.mock('fw_waitpid', lambda *_: 1234)
-    v = video(fw)
-    v.pid, v.key, v.at = 1234, 66, 300
-    fw.fn('video_poll', None)()
-    assert card.files[MARKS_FILE][:8] == struct.pack('<II', 66, 0)
-
-
-def test_a_paused_video_quits_after_30_s(fw):
-    Card(fw)
-    v = video(fw)
-    v.pid, v.paused = 1, 1
-    now = [100000]
-    fw.mock('time_now_ms', lambda *_: now[0])
-    poll = fw.fn('video_poll', None)
-    v.control_at = now[0]
-    poll()
-    assert v.paused_at == 100000 and not fw.calls('fw_sendto')
-    now[0] += 29599
-    poll()
-    assert not fw.calls('fw_sendto')
-    now[0] += 401  # exactly 30 s since the pause began, a poll due
-    poll()
-    assert fw.calls('fw_sendto')[0][1][1:3][1] == 1 and C.string_at(fw.calls('fw_sendto')[0][1][1], 1) == b'q'
-
-
-def test_a_key_restarts_the_pause_s_30_s(fw):
-    v = video(fw)
-    v.paused_at = 5
-    fw.fn('video_key', None, C.c_uint)(0)
-    assert v.paused_at == 0
-
-
-@pytest.mark.parametrize('key, seek, volume, maxvol, want', (
-    (NEXT, 0, 50, 100, 51), (PREV, 0, 50, 100, 49), (NEXT, 0, 100, 100, 100), (NEXT, 0, 100, 120, 100), (NEXT, 0, 40, 40, 40),
-    (PREV, 0, 0, 100, 0), (PREV, 0, 60, 40, 59), (NEXT, 1, 50, 100, 50), (PREV, 1, 50, 100, 50)))
-def test_the_wheel_is_the_volume_up_to_its_limits_unless_seeking(fw, key, seek, volume, maxvol, want):
-    written = config(fw)
-    video(fw).seek = seek
-    fw.var('g_volume', C.c_ubyte).value = volume
-    fw.var('g_maxvolume', C.c_ubyte).value = maxvol
-    fw.fn('video_key', None, C.c_uint)(key)
-    assert fw.var('g_volume', C.c_ubyte).value == want
-    assert written == ([('VOLUME', want)] if want != volume else [])
-
-
-@pytest.mark.parametrize('stored, want', ((0, 1), (1, 0)))
-def test_centre_toggles_seeking(fw, stored, want):
-    video(fw).seek = stored
-    fw.fn('video_key', None, C.c_uint)(CENTER)
-    assert video(fw).seek == want
-
-
-def test_play_flips_the_pause_at_once(fw):
-    fw.mock('time_now_ms', lambda *_: 5000)
-    fw.fn('video_key', None, C.c_uint)(PLAY)
-    assert video(fw).paused == 1 and video(fw).control_at == 5000
-    fw.fn('video_key', None, C.c_uint)(PLAY)
-    assert video(fw).paused == 0
 
 
 # Crossfade's page

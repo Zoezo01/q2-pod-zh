@@ -1,43 +1,15 @@
-/* q2video, Videos' player (docs/internals.md#videos): /usr/bin/q2video DEVICE FILE [VOLUME],
- * started by demo (books.c play_video). Stock ffmpeg decodes FILE, fits it into the screen, turns
- * it onto the portrait panel as the boot logo is stored and converts it to the framebuffer's BGRA,
- * frames on one pipe and 48 kHz stereo on another; this plays the sound on ALSA DEVICE ("-"
- * for none; VOLUME, Bluetooth's or a soft USB volume's 0-100, scales it as hciplayer does there,
- * and "h" before it marks a USB DAC that applies the volume itself) and puts each frame on
- * /dev/fb0 when the sound reaches it, dropping late ones. demo sends keys as datagrams to
- * Q2VIDEO_SOCK: p pause, f and b seek SEEK_S, s seek mode, v and a byte the volume set, q quit;
- * the last four show a bar along the bottom for OVERLAY_MS, the position or the volume. It starts
- * at Q2VIDEO_PLACE's second, demo's, and leaves there resume_at's for a quit (0 for an end). A
- * picture whose decode would not fit the RAM (too_large) is not started: it ends with TOO_LARGE.
- * q2video -r DEVICE URL [VOLUME] plays Internet Radio (radio.c): the stream's sound alone, ffmpeg
- * restarted when it drops, and its report's ICY tags in RADIO_STATE; keys come on RADIO_SOCK, v
- * and q as above. q2video -s DEVICE VOLUME is librespot's sink on Bluetooth or a USB DAC
- * (spotify.c): stdin's 44.1 kHz sound, v and q on SINK_SOCK. No MIPS sysroot: the declarations
- * below are glibc 2.28's and alsa-lib's, with MIPS o32 constants. */
-#define W                                                                                          \
-    320 /* /dev/fb0: 320 x 375, 32 bpp, red at bit 16, two pages (docs/internals.md#videos)        \
-         */
-#define H 375
-#define FPS 25
+/* q2video, the sound helper (docs/internals.md#q2video): /usr/bin/q2video -r DEVICE URL [VOLUME]
+ * plays Internet Radio (radio.c), started by demo (books.c radio_start). Stock ffmpeg decodes URL
+ * to 48 kHz stereo on a pipe, restarted when it drops, and its report's ICY tags go to RADIO_STATE;
+ * this plays the sound on ALSA DEVICE ("-" for none; VOLUME, Bluetooth's or a soft USB volume's
+ * 0-100, scales it as hciplayer does there, and "h" before it marks a USB DAC that applies the
+ * volume itself). demo sends keys as datagrams to RADIO_SOCK: v and a byte the volume set, q quit.
+ * q2video -s DEVICE VOLUME is librespot's sink on Bluetooth or a USB DAC (spotify.c): stdin's
+ * 44.1 kHz sound, v and q on SINK_SOCK. No MIPS sysroot: the declarations below are glibc 2.28's
+ * and alsa-lib's, with MIPS o32 constants. */
 #define RATE 48000
-#define CHUNK 512      /* frames per ALSA write: the audio clock's step, about 11 ms */
+#define CHUNK 512      /* frames per ALSA write, about 11 ms */
 #define LATENCY 200000 /* ALSA buffer, us */
-#define SEEK_S 10
-/* clang-format off */
-#define SEEK_WAIT_MS 400 /* a run of wheel ticks restarts ffmpeg once */
-#define STALL_MS 3000    /* one ALSA write this long: the output takes no sound, the video goes on silent */
-#define PROBE_MS 3000    /* ffmpeg -i's report is waited for this long before the decode starts */
-#define PROBE_MAX 16384  /* of that report: a long chapter list comes before its streams */
-#define FRAMES_HELD 10   /* frames a decode holds at once, at most (too_large) */
-#define TOO_LARGE 3      /* main's status for a picture too_large: books.c VIDEO_TOO_LARGE */
-/* clang-format on */
-#define OVERLAY_MS 1500
-#define EDGE_S 30 /* a stop this near either end restarts at 0, as navigation.c's RESUME_EDGE_S */
-#define BAR_X 40  /* the bar's ends from the picture's sides, clear of the 80 px glass corners */
-#define BAR_Y 22  /* its bottom from the picture's */
-#define BAR_H 8
-#define Q2VIDEO_SOCK "/tmp/q2video.sock"
-#define Q2VIDEO_PLACE "/tmp/q2video.place" /* an int, the second: books.c VIDEO_PLACE */
 #define RADIO_SOCK "/tmp/q2radio.sock"
 #define SINK_SOCK "/tmp/q2sink.sock" /* spotify.c SPOT_SINK */
 #define SWAP_FILE "/tmp/q2swap"
@@ -54,39 +26,18 @@
 #include <stdio.h>
 #include <string.h>
 #else
-int snprintf(char *, unsigned, const char *, ...), sscanf(const char *, const char *, ...);
-void *memcpy(void *, const void *, unsigned), *memset(void *, int, unsigned);
+int snprintf(char *, unsigned, const char *, ...);
+void *memcpy(void *, const void *, unsigned);
 char *strstr(const char *, const char *);
 unsigned strlen(const char *);
 int strncmp(const char *, const char *, unsigned);
 #endif
-
-/* ffmpeg's argv into a (27 slots) for frames from second at; ss holds the start. The picture is
- * fitted into the landscape H x W view, then turned clockwise onto the portrait framebuffer.
- * Without audio there is no sound output. */
-void ffmpeg_argv(const char **a, char *ss, int at, const char *file, int audio) {
-    snprintf(ss, 16, "%d", at);
-    /* clang-format off */
-    const char *v[27] = { FFMPEG, "-nostdin", "-loglevel", "quiet", "-ss", ss, "-i", file,
-                          "-map", "0:v:0", "-vf",
-                          "scale=375:320:force_original_aspect_ratio=decrease:flags=fast_bilinear,"
-                          "format=bgra,pad=375:320:(ow-iw)/2:(oh-ih)/2,transpose=clock",
-                          "-r", "25", "-f", "rawvideo", "pipe:3",
-                          "-map", "0:a:0", "-ac", "2", "-ar", "48000", "-f", "s16le", "pipe:4", 0 };
-    /* clang-format on */
-    memcpy(a, v, sizeof v);
-    if (!audio) a[17] = 0;
-}
 
 /* hciplayer's Bluetooth soft volume (its mixer_setvolume, 0x4287a4) for demo's volume v, 0-100,
  * in 1/65536: 0.002 v under 50, then 0.1 + 0.018 (v - 50), 1 at 100. */
 int bt_gain(int v) {
     v = v < 0 ? 0 : v > 100 ? 100 : v;
     return 65536 * (v < 50 ? 2 * v : 18 * v - 800) / 1000;
-}
-
-int video_pause(int paused, int command) {
-    return command == 'p' ? !paused : command == 'a' ? 1 : command == 'r' ? 0 : paused;
 }
 
 /* n samples times gain g (at most 65536, so no sample overflows). */
@@ -105,58 +56,6 @@ void swap(short *s, unsigned n) {
         s[i] = s[i + 1];
         s[i + 1] = left;
     }
-}
-
-/* The seconds in ffmpeg's "Duration: HH:MM:SS.ss" line; 0 without one. */
-int duration(const char *s) {
-    int h, m, sec;
-    s = strstr(s, "Duration: ");
-    return s && sscanf(s + 10, "%d:%d:%d", &h, &m, &sec) == 3 ? h * 3600 + m * 60 + sec : 0;
-}
-
-/* The picture's width and height from that report's first video stream ("Stream #0:0(und): Video:
- * h264 (High) (avc1 / 0x31637661), yuv420p(tv, bt709), 1280x720 [SAR 1:1 DAR 16:9], ..."): the
- * first ", WxH" on its line; 0 without one. */
-int picture(const char *s, int *w, int *h) {
-    for (s = strstr(s, "Video: "); s && *s && *s != '\n'; ++s)
-        if (s[0] == ',' && s[1] == ' ' && sscanf(s + 2, "%dx%d", w, h) == 2 && *w > 0 && *h > 0)
-            return 1;
-    return 0;
-}
-
-/* 1 when decoding a w x h picture would hold more than avail kB (MemAvailable) in frames alone,
- * FRAMES_HELD of them at 12 bits a pixel. The Q2 has 128 MB and no swap, and ffmpeg keeps its
- * frames while it runs: past what is free the Q2 stalls, every key with it, until the kernel kills
- * ffmpeg. An unknown size or avail (0) is never too large.
- * ponytail: FRAMES_HELD is counted on a PC, not on the Q2: there ffmpeg held 4 frames' worth (one
- * reference, no B-frames) to 10 (three references and B-frames, or HEVC) above a small clip's. A
- * video that starts and then stalls the Q2 means raising it; one refused that would play, lowering
- * it. */
-int too_large(int w, int h, unsigned avail) {
-    return w > 0 && h > 0 && avail &&
-           (long long)w * h / 1024 * 3 * FRAMES_HELD / 2 >
-               avail; /* /1024 first: no size overflows */
-}
-
-/* The second to start at after a quit at pos of len (0 unknown): 0 within EDGE_S of either end. */
-int resume_at(int pos, int len) { return pos < EDGE_S || (len && pos > len - EDGE_S) ? 0 : pos; }
-
-/* The overlay on framebuffer page f, line bytes a row: a bar along the picture's bottom, white for
- * n of total, black for the rest. The picture is turned clockwise (picture x is panel y), so the
- * bar runs down the panel's columns BAR_Y to BAR_Y + BAR_H. */
-void overlay(unsigned char *f, unsigned line, int n, int total) {
-    int end = H - BAR_X;
-    if (total <= 0) return;
-    n = n < 0 ? 0 : n > total ? total : n;
-    int fill = BAR_X + (end - BAR_X) * n / total; /* total: seconds, far below overflow */
-    for (int y = BAR_X; y < end; ++y)
-        memset(f + y * line + BAR_Y * 4, y < fill ? 0xff : 0, BAR_H * 4);
-}
-
-/* Frame n's fate at clock ms: 0 wait, 1 show, 2 drop (a whole frame late). */
-int frame_due(int n, long long clock) {
-    long long due = (long long)n * 1000 / FPS;
-    return clock < due ? 0 : clock < due + 1000 / FPS ? 1 : 2;
 }
 
 /* ffmpeg's report line s: key's value ("    icy-br          : 128", "Metadata update for
@@ -216,19 +115,14 @@ int open(const char *, int, ...), close(int), read(int, void *, unsigned),
 int fork(void), execv(const char *, const char *const *), waitpid(int, int *, int), kill(int, int);
 int dup2(int, int), pipe2(int *, int), fcntl(int, int, ...), poll(struct pollfd *, unsigned, int);
 int socket(int, int, int), bind(int, const void *, unsigned), recv(int, void *, unsigned, int);
-void *fopen(const char *, const char *);
-unsigned fwrite(const void *, unsigned, unsigned, void *);
-int fclose(void *);
 int atoi(const char *), unlink(const char *), rename(const char *, const char *),
     write(int, const void *, unsigned), usleep(unsigned), clock_gettime(int, struct timespec *),
     strcmp(const char *, const char *);
 int setenv(const char *, const char *, int);
-void *mmap(void *, unsigned, int, int, int, long), *malloc(unsigned),
-    (*signal(int, void (*)(int)))(int);
+void *mmap(void *, unsigned, int, int, int, long), (*signal(int, void (*)(int)))(int);
 void _exit(int) __attribute__((noreturn));
 int pthread_create(unsigned long *, const void *, void *(*)(void *), void *),
     pthread_join(unsigned long, void **);
-int pthread_timedjoin_np(unsigned long, void **, const struct timespec *);
 int snd_pcm_open(void **, const char *, int, int), snd_pcm_close(void *), snd_pcm_drop(void *);
 int snd_pcm_set_params(void *, int, int, unsigned, unsigned, int, unsigned),
     snd_pcm_prepare(void *);
@@ -246,23 +140,16 @@ int snd_pcm_get_params(void *, unsigned long *, unsigned long *);
 #define SIGCHLD 18
 #define AF_UNIX 1
 #define SOCK_DGRAM 1 /* MIPS swaps it with SOCK_STREAM */
-#define F_SETPIPE_SZ 1031
 #define F_SETFD 2
-#define FBIOGET_VSCREENINFO 0x4600
-#define FBIOGET_FSCREENINFO 0x4602
-#define FBIOPAN_DISPLAY 0x4606
 
 static struct {
     void *pcm;
     int fd;               /* ffmpeg's sound */
     int gain;             /* bt_gain's, 65536 on the DAC */
-    volatile int paused;  /* the main loop's; the writer holds back */
-    volatile int done;    /* the sound ended: the rest goes on the monotonic clock */
+    volatile int done;    /* the sound ended */
     volatile long played; /* frames heard since this ffmpeg started */
     char error[64]; /* why sound_open found no device, or the writer stopped, for RADIO_STATE */
-    int video;      /* a failed write is dropped: the picture needs ffmpeg's sound read on */
-    unsigned long buffer;       /* ALSA's ring, frames (sound_open) */
-    volatile unsigned write_at; /* now_ms when the writer went into snd_pcm_writei, 0 out of it */
+    unsigned long buffer; /* ALSA's ring, frames (sound_open) */
 } au;
 
 static long long now_ms(void) {
@@ -306,26 +193,21 @@ static void *writer(void *unused) {
         }
         unsigned frames = got / 4;
         if (!frames) break;
-        while (au.paused) usleep(100000);
         if (au.gain < 65536) scale(buf, 2 * frames, au.gain);
         if (mono_on && *mono_on > 0) mono(buf, frames);
         if (swap_on && *swap_on > 0) swap(buf, frames);
         int recovered = 0;
         for (unsigned sent = 0; sent < frames;) {
-            au.write_at = (unsigned)now_ms() | 1;
             long r = snd_pcm_writei(au.pcm, buf + 2 * sent, frames - sent);
-            au.write_at = 0;
             if (r < 0) {
                 int err = recovered ? (int)r : snd_pcm_recover(au.pcm, (int)r, 1);
                 if (!err) {
                     recovered = 1;
                     continue;
                 }
-                if (!au.video) /* a lost device ends the sink, or radio's run, which then says why
-                                */
-                    return snprintf(au.error, sizeof au.error, "write: %s", snd_strerror(err)),
-                           au.done = 1, (void *)0;
-                break;
+                /* a lost device ends the sink, or radio's run, which then says why */
+                return snprintf(au.error, sizeof au.error, "write: %s", snd_strerror(err)),
+                       au.done = 1, (void *)0;
             }
             if (!r) {
                 usleep(1000);
@@ -338,13 +220,12 @@ static void *writer(void *unused) {
         long avail = snd_pcm_avail(au.pcm), ring = avail >= 0 ? (long)au.buffer - avail : 0;
         if (snd_pcm_delay(au.pcm, &delay) || delay < 0) delay = 0; /* no answer: it ran dry */
         /* nothing heard while ALSA still holds all that was written (its first fill; Bluetooth adds
-         * the link's own delay), nor what its ring still holds: after a seek's drop bluealsa
+         * the link's own delay), nor what its ring still holds: after a restart's drop bluealsa
          * answers the link's delay alone */
         if (delay < ring) delay = ring;
         au.played = delay < written ? written - delay : 0;
     }
-    return au.done = 1,
-           (void *)0; /* played stays behind the buffer, as the picture's clock wants */
+    return au.done = 1, (void *)0;
 }
 
 /* fd onto at for ffmpeg: dup2 of an fd onto itself keeps O_CLOEXEC, so exec would close it (demo
@@ -374,15 +255,6 @@ static int dgram_listen(const char *path) {
     unlink(path);
     bind(sock, &addr, sizeof addr);
     return sock;
-}
-
-/* /proc/meminfo's MemAvailable, kB; 0 unknown. */
-static unsigned mem_available(void) {
-    char b[1024], *m;
-    int fd = open("/proc/meminfo", O_CLOEXEC), n = fd >= 0 ? read(fd, b, sizeof b - 1) : 0;
-    if (fd >= 0) close(fd);
-    b[n > 0 ? n : 0] = 0;
-    return (m = strstr(b, "MemAvailable:")) ? (unsigned)atoi(m + 13) : 0;
 }
 
 /* "usb", the USB DAC, as plughw:N,0: its card is the one /proc/asound/cards lists as "N [id]:
@@ -589,15 +461,6 @@ static int sink(char **argv) {
     return !au.pcm;
 }
 
-static void video_state(int paused) {
-    void *f = fopen("/tmp/q2video.state.tmp", "wb");
-    if (f) {
-        int ok = fwrite(&paused, sizeof paused, 1, f) == 1;
-        if (fclose(f)) ok = 0;
-        if (ok) rename("/tmp/q2video.state.tmp", "/tmp/q2video.state");
-    }
-}
-
 int main(int argc, char **argv) {
     if (argc < 3) return 2;
     /* Stock ALSA's plug/prepare leaves a slave lock held; our PCM calls never overlap. */
@@ -606,165 +469,6 @@ int main(int argc, char **argv) {
     signal(SIGCHLD, 0);                          /* SIG_DFL, so waitpid sees ffmpeg */
     if (argc > 3 && !strcmp(argv[1], "-r")) return radio(argc - 1, argv + 1);
     if (argc > 3 && !strcmp(argv[1], "-s")) return sink(argv + 1);
-    unsigned var[40], fix[17];
-    int fb = open("/dev/fb0", O_RDWR | O_CLOEXEC);
-    if (fb < 0 || ioctl(fb, FBIOGET_VSCREENINFO, var) || ioctl(fb, FBIOGET_FSCREENINFO, fix))
-        return 1;
-    unsigned line = fix[11], row = W * 4, y0 = var[5], back = y0 ? 0 : H; /* demo's other page */
-    /* anything but the Q2's xres, yres, yres_virtual, bpp and red offset: no drawing */
-    if (var[0] != W || var[1] != H || var[3] < 2 * H || var[6] != 32 || var[8] != 16 ||
-        row > line || 2 * H * line > fix[5])
-        return 1;
-    unsigned char *mem = mmap(0, fix[5], 3, 1, fb, 0), *frame = malloc(row * H);
-    if (mem == (void *)-1 || !frame) return 1;
-    int sock = dgram_listen(Q2VIDEO_SOCK);
-    /* ffmpeg -i alone first, for the picture's size and the length the position bar needs: it runs
-     * while the sound opens */
-    char info[PROBE_MAX];
-    int pp[2] = { -1, -1 }, got = 0, w = 0, h = 0;
-    const char *pa[] = { FFMPEG, "-nostdin", "-hide_banner", "-i", argv[2], 0 };
-    int probe = pipe2(pp, O_CLOEXEC) ? -1 : ffmpeg(pa, pp[1], 2, -1, 0);
-    close(pp[1]);
-    int soft = argc > 3 && argv[3][0] != 'h',
-        dac = sound_open(argv[1], argc > 3 ? argv[3] : 0, RATE), on = 1;
-    /* its report whole before the decode starts, or what PROBE_MS brought of it */
-    for (long long by = now_ms() + PROBE_MS, left;
-         pp[0] >= 0 && got < (int)sizeof info - 1 && (left = by - now_ms()) > 0;) {
-        struct pollfd p = { pp[0], 1, 0 };
-        int r = poll(&p, 1, (int)left) > 0
-                    ? read(pp[0], info + got, sizeof info - 1 - (unsigned)got)
-                    : 0;
-        if (r <= 0) break;
-        got += r;
-    }
-    info[got] = 0;
-    close(pp[0]);
-    if (probe > 0) kill(probe, SIGKILL), waitpid(probe, 0, 0);
-    int at = 0, audio = au.pcm != 0, first = 1, quit = 0, held = 0, stuck = 0;
-    int len = duration(info), vol = 0, pos_bar = 0, redraw = 0;
-    int large = picture(info, &w, &h) && too_large(w, h, mem_available());
-    long long until = 0;
-    int fd = open(Q2VIDEO_PLACE, O_CLOEXEC), place = 0;
-    if (fd >= 0) read(fd, &at, sizeof at), close(fd);
-    if (large) place = at; /* not played: its place stays */
-    video_state(0);
-    while (!quit && !large) {
-        int vp[2], ap[2] = { -1, -1 };
-        if (pipe2(vp, O_CLOEXEC) || (audio && pipe2(ap, O_CLOEXEC))) break;
-        fcntl(vp[0], F_SETPIPE_SZ, 4 << 20); /* frames ahead, so the sound paces ffmpeg */
-        const char *args[27];
-        char ss[16];
-        ffmpeg_argv(args, ss, at, argv[2], audio);
-        int pid = ffmpeg(args, vp[1], 3, audio ? ap[1] : -1, 4);
-        close(vp[1]);
-        unsigned long thread = 0;
-        au.paused = held; /* before the writer starts, so a paused seek plays nothing */
-        if (audio) {
-            close(ap[1]);
-            au.fd = ap[0];
-            au.played = au.done = 0, au.video = 1;
-            if (pthread_create(&thread, 0, writer,
-                               0)) /* no reader: ffmpeg's sound write fails and it ends */
-                thread = 0, close(ap[0]), ap[0] = -1;
-        }
-        int n = 0, seek = 0, ended = pid < 0, paced = audio && thread;
-        unsigned have = 0, size = row * H;
-        long long wall = 0, last = now_ms(), seek_at = 0;
-        while (!ended && !quit) {
-            long long t = now_ms(), clock;
-            unsigned in = au.write_at;
-            /* the picture's clock is the sound's: an output that takes none would hold the first
-             * frame for ever, and the writer with it (stuck: never joined, the PCM never touched)
-             */
-            if (thread && in && (int)((unsigned)t - in) >= STALL_MS) { /* in may be after t */
-                stuck = 1;
-                break;
-            }
-            if (!au.paused) wall += t - last;
-            last = t;
-            if (paced && au.done) paced = 0, wall = (long long)au.played * 1000 / RATE;
-            clock = paced ? (long long)au.played * 1000 / RATE : wall;
-            if (until && t >= until) until = 0, redraw = au.paused;
-            int cap =
-                au.paused && !until && !seek ? 1000 : 100; /* paused and still: wait on a key */
-            int wait = cap, fate = have == size ? frame_due(n, clock) : 0;
-            if (fate == 1 ||
-                (redraw && have == size)) { /* paused, the next frame shows the change */
-                for (unsigned y = 0; y < H; ++y)
-                    memcpy(mem + (back + y) * line, frame + y * row, row);
-                if (until)
-                    overlay(mem + back * line, line, pos_bar ? at + seek + n / FPS : vol,
-                            pos_bar ? len : 100);
-                var[5] = back; /* draw the hidden page and pan, as demo does */
-                ioctl(fb, FBIOPAN_DISPLAY, var);
-                back = back ? 0 : H;
-                redraw = 0;
-            }
-            if (fate) {
-                ++n, have = 0;
-                continue;
-            }
-            if (have == size && !au.paused) wait = (int)((long long)n * 1000 / FPS - clock) + 1;
-            if (seek && seek_at - t < wait) wait = (int)(seek_at - t);
-            if (seek && wait <= 0) break;
-            struct pollfd p[2] = { { sock, 1, 0 }, { vp[0], 1, 0 } }; /* POLLIN */
-            poll(p, have < size ? 2 : 1, wait < cap ? wait : cap);
-            char c[2] = { 0 };
-            if (p[0].revents && recv(sock, c, 2, 0) > 0) {
-                t = now_ms(); /* the wait may have been a second: the time to the key counts before
-                                 the toggle, and a seek's 400 ms and a bar's 1.5 s run from the key
-                               */
-                if (!au.paused) wall += t - last;
-                last = t;
-                if (c[0] == 'p' || c[0] == 'a' || c[0] == 'r') {
-                    au.paused = video_pause(au.paused, c[0]);
-                    video_state(au.paused);
-                }
-                if (c[0] == 'f' || c[0] == 'b')
-                    seek += c[0] == 'f' ? SEEK_S : -SEEK_S, seek_at = t + SEEK_WAIT_MS;
-                if (c[0] == 'g') au.gain = soft ? bt_gain((unsigned char)c[1]) : 65536;
-                if (c[0] == 'v') vol = (unsigned char)c[1], au.gain = soft ? bt_gain(vol) : 65536;
-                if (c[0] && c[0] != 'p' && c[0] != 'a' && c[0] != 'r' && c[0] != 'g' &&
-                    c[0] != 'q') /* s, f, b, v: the bar */
-                    pos_bar = c[0] != 'v', until = t + OVERLAY_MS, redraw = au.paused;
-                quit = c[0] == 'q';
-            }
-            if (have < size && p[1].revents) {
-                int r = read(vp[0], frame + have, size - have);
-                ended = r <= 0;
-                if (r > 0) have += (unsigned)r;
-            }
-        }
-        if (pid > 0) kill(pid, SIGKILL), waitpid(pid, 0, 0);
-        held = au.paused && !quit; /* a seek keeps the pause, showing its first frame */
-        au.paused = 0;             /* so the writer reads to the end and stops */
-        struct timespec by;        /* CLOCK_REALTIME, as pthread_timedjoin_np takes it */
-        clock_gettime(0, &by), by.sec += 2;
-        if (thread && !stuck && pthread_timedjoin_np(thread, 0, &by)) stuck = 1; /* still in ALSA */
-        close(vp[0]);
-        if (thread && !stuck && !quit && !seek && !held)
-            snd_pcm_drain(au.pcm); /* an end: the buffer plays out */
-        if (audio && !stuck) close(ap[0]), snd_pcm_drop(au.pcm), snd_pcm_prepare(au.pcm);
-        place = quit ? resume_at(at + seek + n / FPS, len) : 0; /* a pending seek too */
-        int lost = stuck && audio; /* the sound stalled in this run: on from here, silent */
-        if (stuck) audio = 0;
-        if (seek || lost) {
-            at += n / FPS + seek;
-            at = at < 0 ? 0 : at;
-        } else if (!n && first && audio)
-            audio = 0; /* no sound stream: once more, silent, on the clock */
-        else
-            break;
-        first = 0;
-    }
-    if (au.pcm && !stuck) snd_pcm_close(au.pcm);
-    if (dac >= 0) ioctl(dac, DAC_MUTE, &on); /* as hciplayer leaves it stopped */
-    if (var[5] != y0) var[5] = y0, ioctl(fb, FBIOPAN_DISPLAY, var);
-    fd = open(Q2VIDEO_PLACE, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
-    if (fd >= 0) write(fd, &place, sizeof place), close(fd);
-    unlink(Q2VIDEO_SOCK);
-    unlink("/tmp/q2video.state");
-    if (stuck) _exit(0); /* the writer is still in ALSA: no library teardown under it */
-    return large ? TOO_LARGE : 0;
+    return 2;
 }
 #endif

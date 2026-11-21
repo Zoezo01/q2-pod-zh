@@ -161,7 +161,7 @@ static const char *library_missing(char *why, unsigned size) {
 }
 
 /* Whether the scan or the import may run now: nothing plays (media_playing: the player, Spotify,
- * radio, a video; or AirPlay, or the Bluetooth receiver, as ringnav_sleep's quiet check has it;
+ * radio; or AirPlay, or the Bluetooth receiver, as ringnav_sleep's quiet check has it;
  * stock's scan dialog stops the player), no scan runs, and every open window, the window manager's
  * children less the status bar, is one known to hold no library records: Home, Streaming and its
  * Configuration, a card app's page and its QR code, Now Playing, and System and Playback settings'

@@ -90,9 +90,9 @@ HOOKS = {
     'folder_back': (0x512778, 'ringnav_folder_back', 'folder_back'),
     # Folder's roots: OTG only with a drive plugged in (g_otg_status)
     'folder_load_top': (0x511ff8, 'ringnav_folder_top', 'folder_top'),
-    # Videos from Folder view: a video row plays in q2video, not as a song (navigation.c)
+    # Folder view's row click: a folder entered pushes its list in (navigation.c)
     'folder_click': (0x532414, 'ringnav_folder_click', 'folder_click'),
-    # Videos: no input reaches the UI while q2video plays
+    # Every input event, before the window manager: the wheel, chord and wake gates, a card game's input (navigation.c)
     'window_manager_dispatch_input_event': (0x680a4c, 'ringnav_input', 'input'),
     # SyncLink's (Eddict Player's) play/pause, previous and next pass the Buttons lock (#113)
     'main_loop_post_key_event': (0x69ebac, 'ringnav_post_key', 'post_key'),
@@ -216,15 +216,15 @@ GP = 0xa3aae0
 # vtable, then tail-calls get_gradient (+0x18); its first two words (beqz a0; nop) become the jump
 # and the payload does the whole of it. The third word is pinned too, so the layout is the audited one.
 GRADIENT_LEAF = ('style_get_gradient', 0x65d4ac, 'ringnav_style_gradient', (0x10800009, 0, 0x8c820000))
-# Videos: window_manager_paint is a leaf too (null-checks the manager and its vtable at +0x94, then
-# tail-calls paint, +0xc); the payload does the whole of it and skips it while q2video plays.
+# window_manager_paint is a leaf too (null-checks the manager and its vtable at +0x94, then
+# tail-calls paint, +0xc); the payload does the whole of it and skips it while a card game has the screen.
 WM_PAINT_LEAF = ('window_manager_paint', 0x680a1c, 'ringnav_wm_paint', (0x10800009, 0, 0x8c820094))
 # The UI loop's input queue has one way in, main_loop_queue_event, a leaf too (null-checks the loop, its
 # queue_event slot at +0x18 and the request, then tail-calls the slot); the payload does the whole of it
 # and keeps the touch thread's empty events out of the queue (playback.c ringnav_queue_event).
 QUEUE_LEAF = ('main_loop_queue_event', 0x65c418, 'ringnav_queue_event', (0x10800008, 0, 0x8c990018))
-# Videos' player (patch/video.c): a separate executable against the rootfs's own libraries,
-# with display_logo's inode metadata.
+# Internet Radio's player and Spotify's sink (patch/video.c): a separate executable against the
+# rootfs's own libraries, with display_logo's inode metadata.
 HELPER, HELPER_LIKE = 'usr/bin/q2video', 'usr/bin/display_logo'
 HELPER_LIBS = ['lib/libc-2.28.so', 'lib/libpthread-2.28.so', 'usr/lib/libasound.so.2.0.0']
 # Rockbox dual boot (docs/boot.md#rockbox): S90play starts Rockbox whenever the card has it, as an
@@ -754,7 +754,7 @@ LABELS = tuple((k.encode(), o.encode(), n.encode()) for k, o, n in (
 
 # Wi-Fi transfer's web page (stock thttpd on :8888): in English, an Upload Folder button, and a folder,
 # picked or dropped, keeps its tree: each file's folders are made with stock's create (a plain mkdir) before
-# it goes, as stock's upload only moves a file into an existing folder. The formats Q2 Pod's pages read are allowed too.
+# it goes, as stock's upload only moves a file into an existing folder. The formats Q2 Pod's pages read, and videos, are allowed too.
 MKDIR_JS = r'''// Each folder of a folder upload is made once per batch, parents first; stock's create is a plain mkdir,
 // so a folder that exists fails harmlessly and a real failure shows as its files' upload error.
 // ponytail: the stock CGIs run mkdir and mv through system() in double quotes, so a name with " ` or $
@@ -1572,7 +1572,7 @@ FUNCTIONS = {
  'folder_reinit_navbarname': ('int', 'void'),
  'folder_refresh': ('int', 'void *'),
  'album_covermode': ('int', 'void *, void *'),  # album_page's list/grid switch's click (library_lists.c album_view_toggle)
- # Videos (books.c): stop the music, the DAC's power, and the screen and standby timeouts held off
+ # q2video's start (books.c): the output in use, the music stopped, the DAC's power, and the standby timeouts held off
  'mclGetOutputWay': ('int', 'void'),
  'mclGetLyricSize': ('int', 'void'),  # the playing track's lyric lines, 0 without
  'player_play_pause': ('int', 'void'),
@@ -2279,12 +2279,12 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
     xx = 'release/assets/default/raw/images/xx/'
     icons = {n: ('menu_musicdown.png' if n.endswith('down.png') else 'menu_music.png',
                  (ROOT/'assets/icons'/n).read_bytes()) for n in ICONS}
-    drawn = ('podcasts', 'audiobooks', 'books', 'videos')
+    drawn = ('podcasts', 'audiobooks', 'books')
     icons.update({f'local_{n}.png': (like, (ROOT/'assets/icons'/f'local_{n}.png').read_bytes() if n in drawn
                                      else cat(xx+like)) for n, like in dict(
         shuffle='playset_playmode.png', scrobble='wifiset_wifi.png', podcasts='netservice_dlna.png',
         audiobooks='playset_foldercover.png', photos='playset_covermode.png', books='system_language.png',
-        videos='system_display.png', longsongs='system_time.png', era='local_genre.png',
+        longsongs='system_time.png', era='local_genre.png',
         store='system_update.png').items()})
     icons['local_games.png'] = ('system_language.png', (ROOT/'assets/icons/local_games.png').read_bytes())
     icons['local_apps.png'] = ('system_language.png', (ROOT/'assets/icons/stream_app.png').read_bytes())  # 52 px, Library's Apps

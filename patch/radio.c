@@ -2,8 +2,8 @@
  * card's favourites (RADIO_DIR's .m3u and .pls files) and radio-browser.info's directory, fetched
  * on a pthread through demo's libcurl. A station plays in q2video -r (video.c), which writes the
  * stream's tags to RADIO_STATE and takes keys on RADIO_SOCK. Like Spotify, while it plays it holds
- * the standby timers and the DAC, and it hands the output over with local music, Videos and
- * Spotify both ways. */
+ * the standby timers and the DAC, and it hands the output over with local music and Spotify both
+ * ways. */
 #include "offsets.inc"
 #include "peq.h"
 #ifndef PEQ_HOST
@@ -319,7 +319,7 @@ static void radio_halt(void) {
     tk_snprintf(rd.state, sizeof rd.state, "stopped");
 }
 
-/* Local music, Videos or Spotify takes the output: radio stops, and the keys are theirs. */
+/* Local music or Spotify takes the output: radio stops, and the keys are theirs. */
 void radio_stop(void) {
     radio_halt();
     rd.active = 0;
@@ -335,9 +335,9 @@ static void radio_play(int i) {
     radio_halt();
     spot_yield();
     /* Smart Wi-Fi bringing the radio back: radio_poll starts the station once the link is up, and
-     * the local track stops now, as video_start would stop it */
+     * the local track stops now, as radio_start would stop it */
     if ((rd.wait = smart_wifi_wait())) player_stop();
-    rd.pid = rd.wait ? 0 : video_start(url_of(&rd.list, rd.at), 1);
+    rd.pid = rd.wait ? 0 : radio_start(url_of(&rd.list, rd.at));
     rd.active = 1;
     rd.volume = headset_gain() + 1u;
     rd.since = 0;
@@ -358,7 +358,7 @@ void radio_poll(void) {
     if (rd.wait) { /* Smart Wi-Fi's link (smart_wifi_wait), or SMART_CONNECT_MS without it */
         if (smart_wifi_wait()) return;
         rd.wait = 0;
-        if (!(rd.pid = video_start(url_of(&rd.list, rd.at), 1)))
+        if (!(rd.pid = radio_start(url_of(&rd.list, rd.at))))
             tk_snprintf(rd.state, sizeof rd.state, "error");
         return;
     }

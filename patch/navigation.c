@@ -169,9 +169,8 @@ extern void coverflow_home_top(void);
 extern void coverflow_home_row(void *surface, void *row, int id, int painting);
 extern void lockscreen_paint(void *w, void *canvas);
 extern void coverflow_paint(void *w, void *canvas), photos_paint(void *w, void *canvas),
-    photos_open(const char *root), books_paint(void *w, void *canvas), books_open(const char *root),
-    video_poll(void);
-extern int books_key(void *top, unsigned key), video_on(void), books_video(const char *path);
+    photos_open(const char *root), books_paint(void *w, void *canvas), books_open(const char *root);
+extern int books_key(void *top, unsigned key);
 extern void games_paint(void *w, void *canvas);
 extern void spot_poll(void), spot_paint(void *w, void *canvas), *spot_art(void);
 extern int un_hold(void *top);
@@ -3644,9 +3643,9 @@ static int pct_width(unsigned level) {
 /* What the playing source reports: 2 playing, 3 paused. */
 int bar_status(void) {
     if (media_owner() == 1) return mclGetPlayStatus();
-    return video_status() ?: radio_status() ?: spot_status();
+    return radio_status() ?: spot_status();
 }
-/* img_state follows whichever player plays, stock's or Spotify's, radio's or a video's, and
+/* img_state follows whichever player plays, stock's, Spotify's or radio's, and
  * label_idle shows when neither it nor label_eq does. Returns whether a state image changed. */
 static int bar_state_sync(void *bar) {
     int changed = 0;
@@ -3829,7 +3828,7 @@ static void bar_sync(void *bar) {
 }
 
 /* systembar_showface, each second: stock hides img_state whenever its own player is stopped, so
- * with Spotify, radio or a video playing it went off here and back on at the next paint, two
+ * with Spotify or radio playing it went off here and back on at the next paint, two
  * relayouts a second and a frame with EQ drawn in the play icon's place. Correct it before paint,
  * dark or not, so a wake never shows stock's hidden icon; the badge waits for paint. Stock writes
  * the battery into label_battery and img_battery, which bar_sync hides, so their writes repaint
@@ -7849,18 +7848,11 @@ int stream_config(void *ctx, void *event) {
 
 /* 1 + the MEDIA folder s names (up to its end or a '/'), 0 for none. MEDIA is letters only. */
 static int media_kind(const char *s) {
-    for (int k = 0; k < VIDEOS; k++) {
+    for (int k = 0; k < BOOKS; k++) {
         unsigned n = strlen(MEDIA[k]);
         if (!strncasecmp(s, MEDIA[k], n) && (!s[n] || s[n] == '/')) return k + 1;
     }
     return 0;
-}
-
-/* Folder view lists, in the card's Videos folder, its videos (playback.c ringnav_audio_extension):
- * stock lists audio files only, so their rows never reached ringnav_folder_click. */
-int folder_videos(void) {
-    const char *p = (const char *)g_folder_path;
-    return tk_str_start_with(p, "/mnt/mmc/") && media_kind(p + 9) == VIDEOS;
 }
 
 /* A track in Podcasts or Audiobooks: always resumed, never counted or scrobbled. Shared (peq.h). */
@@ -7945,11 +7937,10 @@ int song_folder(void *r, char *path) {
 }
 
 /* folder_page_init lists the storage roots at g_folder_layer 1, a root's folders at 2 and deeper
- * folders at 3 on (folder_enter). Videos browse here too, folder by folder. A media root becomes a
- * layer-3 folder, so stock's reload, title (its name, folder_reinit_navbarname) and entering all
- * treat it as one. Each open starts a fresh visit (folder_reset_variable): folder_back pops the
- * enter history kept for each layer and leaves an M3U before stepping up, and a visit left without
- * Back (Home, playing) keeps both. */
+ * folders at 3 on (folder_enter). A media root becomes a layer-3 folder, so stock's reload, title
+ * (its name, folder_reinit_navbarname) and entering all treat it as one. Each open starts a fresh
+ * visit (folder_reset_variable): folder_back pops the enter history kept for each layer and leaves
+ * an M3U before stepping up, and a visit left without Back (Home, playing) keeps both. */
 int ringnav_folder(void *win, void *ctx) {
     int result = stock_folder_trampoline(win, ctx), layer = 3;
     char root[265];
@@ -8004,18 +7995,8 @@ int ringnav_folder_back(void *yoffset, void *index) {
     return result;
 }
 
-/* folder_page's row click (stock's, 0x532414: the tapped or Centre-pressed row's index into
- * p_deque_showlist, then folder_enter, whose 8, a file, it queues as songs): a video plays as from
- * Library's Videos row (books_video). Select mode (g_navbar_status) and everything else is stock's.
- */
+/* folder_page's row click (stock's, 0x532414): a row that enters a folder pushes its list in. */
 int ringnav_folder_click(void *ctx, void *event) {
-    void *row = event && !g_navbar_status ? table_row_of(P(event, EVENT_TARGET)) : (void *)0;
-    void *list = P(p_deque_showlist, 0);
-    unsigned i = row ? (unsigned)I(row, ROW_INDEX) : ~0u;
-    if (i < deque_size(list)) {
-        void *r = deque_at(list, i);
-        if (I(r, REC_TYPE) == 8 && books_video(P(r, REC_PATH))) return 0;
-    }
     int layer = g_folder_layer, result = stock_folder_click_trampoline(ctx, event);
     if (g_folder_layer > layer) folder_push(1);
     return result;
@@ -8697,7 +8678,6 @@ int ringnav_sleep(void *loop) {
     headset_poll();
     headset_eq_poll();
     bt_volume_poll();
-    video_poll();
     spot_poll();
     radio_poll();
     tidal_poll();
@@ -8718,9 +8698,8 @@ int ringnav_sleep(void *loop) {
     if (st.bc[0] && np_track() != st.bc_track) bc_show();
     if (!g_backlight_status) {
         st.dark |= 1;
-        int quiet = I(g_dacoff_time, 0) < 0 && !media_playing() && !video_on() &&
-                    airplayGetFlag() != 2 && (signed char)bt__recv_pageflag != 2 &&
-                    time_now_ms() - st.wake_at >= WAKE_MS;
+        int quiet = I(g_dacoff_time, 0) < 0 && !media_playing() && airplayGetFlag() != 2 &&
+                    (signed char)bt__recv_pageflag != 2 && time_now_ms() - st.wake_at >= WAKE_MS;
         dark_quiet = quiet;
         if ((unsigned)time_now_ms() - st.tick_at >= DARK_TURN_MS)
             sleep_ms(quiet ? DARK_IDLE_SLEEP_MS : SCREEN_OFF_SLEEP_MS);
@@ -8901,10 +8880,9 @@ static int remote_key(void *e) {
     return 0;
 }
 
-/* window_manager_dispatch_input_event: while q2video plays (books.c) no key or touch reaches the
- * UI; a key's release goes to the player instead. A card game (addon.c) takes every event but the
- * music's keys of one without the sound or gameview=1, and none while Now Playing is over it, nor a
- * key pressed there, to its release. Every event times ringnav_sleep's idle. */
+/* window_manager_dispatch_input_event: a card game (addon.c) takes every event but the music's
+ * keys of one without the sound or gameview=1, and none while Now Playing is over it, nor a key
+ * pressed there, to its release. Every event times ringnav_sleep's idle. */
 int ringnav(void *ctx, void *event);
 /* A wheel tick needs a ring frame with pressure within WHEEL_FRESH_MS (wheel_sample stamps it
  * before it posts), and no stop from Return, so a tick with no finger behind it goes no further,
@@ -8951,10 +8929,6 @@ int ringnav_input(void *wm, void *e) {
     st.last_input = time_now_ms();
     unsigned type = e ? (unsigned)I(e, EVENT_TYPE) : 0;
     unsigned key = e ? (unsigned)I(e, EVENT_KEY) : 0;
-    if (video_on()) {
-        if (e && I(e, EVENT_TYPE) == EVT_KEY_UP) video_key((unsigned)I(e, EVENT_KEY));
-        return 0;
-    }
     if (addon_game_input(e)) return 0;
     if (type >= EVT_POINTER_FIRST && type <= EVT_POINTER_ABORT) { /* a finger (stale_heal) */
         st.touch_at = st.last_input;
@@ -9003,12 +8977,12 @@ int ringnav_input(void *wm, void *e) {
 }
 
 /* window_manager_paint, a leaf (tools/build.py WM_PAINT_LEAF): the window manager's own paint
- * (vtable +0xc), except while q2video or a card game has the framebuffer (each poll repaints after
- * it) and while the screen is off, unless a window animates (AWTK steps it from the paint); the
- * first lit pass repaints the whole screen (ringnav_sleep; docs/internals.md Battery). */
+ * (vtable +0xc), except while a card game has the framebuffer (its poll repaints after it) and
+ * while the screen is off, unless a window animates (AWTK steps it from the paint); the first lit
+ * pass repaints the whole screen (ringnav_sleep; docs/internals.md Battery). */
 int ringnav_wm_paint(void *wm) {
     if (wm && !g_backlight_status && !window_manager_is_animating(wm)) return 0; /* RET_OK */
-    int away = video_on() || addon_game_front();
+    int away = addon_game_front();
     void *vt = wm && !away ? P(wm, 0x94) : (void *)0;
     int (*paint)(void *) = vt ? (int (*)(void *))P(vt, 0xc) : (int (*)(void *))0;
     return paint ? paint(wm) : away ? 0 : 0x10; /* RET_BAD_PARAMS, as stock */

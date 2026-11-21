@@ -2376,9 +2376,9 @@ def test_the_library_s_rows_in_their_order(fw, ui, st, theme, lead):
 
 
 def test_the_library_adds_the_card_s_media_folders_and_upload(fw, ui):
-    win, view = library(fw, ui, folders=['/mnt/mmc/podcasts', '/mnt/mmc/VIDEOS', '/mnt/mmc/Music'], token=b'x')
+    win, view = library(fw, ui, folders=['/mnt/mmc/podcasts', '/mnt/mmc/AUDIOBOOKS', '/mnt/mmc/Music'], token=b'x')
     rows = [c for c, _ in page_rows(ui, view)]
-    assert rows[rows.index('Long Songs'):] == ['Long Songs', 'Podcasts', 'Videos', 'Apps', 'Games', 'App Store',
+    assert rows[rows.index('Long Songs'):] == ['Long Songs', 'Podcasts', 'Audiobooks', 'Apps', 'Games', 'App Store',
                                                'Upload Scrobbles', 'Update Library']
 
 
@@ -2395,8 +2395,8 @@ def row_click(ui, view, caption):
 def test_apps_lists_the_card_apps_whose_row_is_the_library_s_by_name_above_games(fw, ui):
     """row=library puts an app on Library's Apps page, not at the Library's root; each row presses as the app's
     Library row did."""
-    win, view = library(fw, ui, folders=['/mnt/mmc/Videos'], token=b'x', files={**deezer(), **BLOCKS, **TOOLS, **TAPE})
-    assert page_rows(ui, view)[-7:] == [(c, True) for c in ('Long Songs', 'Videos', 'Apps', 'Games', 'App Store',
+    win, view = library(fw, ui, folders=['/mnt/mmc/Podcasts'], token=b'x', files={**deezer(), **BLOCKS, **TOOLS, **TAPE})
+    assert page_rows(ui, view)[-7:] == [(c, True) for c in ('Long Songs', 'Podcasts', 'Apps', 'Games', 'App Store',
                                                              'Upload Scrobbles', 'Update Library')]
     item, = [item for item in ui.kids[view] if row_text(ui, item) == 'Apps']
     assert [ui.image[w] for w in ui.subtree(item) if w in ui.image] == ['local_apps', 'list_into']
@@ -3049,14 +3049,14 @@ def test_library_count_is_the_query_s_number(fw):
     assert count(b'select count(*) from songtable') == -1
 
 
-# Podcasts, Audiobooks and Videos: Folder view at the card's folder.
+# Podcasts and Audiobooks: Folder view at the card's folder.
 def test_a_media_row_opens_folder_view_at_its_folder(fw, ui, st):
     Disk(fw, folders=['/mnt/mmc/PODCASTS', '/mnt/mmc/Music'])
     call(fw, 'media_click', 1)
     assert ui.went == ['folder_page'] and st('media_root', C.c_char * 32).value == b'/mnt/mmc/PODCASTS'
 
 
-@pytest.mark.parametrize('kind, name', [(1, 'Podcasts'), (5, 'Videos')])
+@pytest.mark.parametrize('kind, name', [(1, 'Podcasts'), (2, 'Audiobooks')])
 def test_a_media_row_whose_folder_went_says_so(fw, ui, kind, name):
     Disk(fw, {'/mnt/mmc/Podcasts': b'a file, not a folder'}, folders=['/mnt/mmc/Music'])
     call(fw, 'media_click', kind)
@@ -3145,7 +3145,7 @@ def test_back_below_the_root_is_stock_s(fw, ui, st):
     assert folder.layer.value == 3 and st('media_root', C.c_char * 32).value == b'/mnt/mmc/Podcasts'
 
 
-def test_classic_s_folder_levels_slide_in(fw, ui, song):
+def test_classic_s_folder_levels_slide_in(fw, ui):
     Config(fw, THEME=b'1')  # its levels move in place
     folder = Folder(fw, ui)
     table = ui.new('list_view_create', folder.win, 0, 0, 375, 300)
@@ -3154,9 +3154,8 @@ def test_classic_s_folder_levels_slide_in(fw, ui, song):
     fw.mock('widget_animator_prop_create', lambda w, *_: w)
     folder.layer.value = 4
     folder.back()
-    rows = Rows(fw, ui, [song(b'/mnt/mmc/A/B', kind=4)])
     fw.mock('stock_folder_click_trampoline', lambda *_: setattr(folder.layer, 'value', folder.layer.value + 1) or 2)
-    rows.click(0)
+    assert fw.fn('ringnav_folder_click', C.c_int, C.c_void_p, C.c_void_p)(None, None) == 2
     folder.layer.value = 1
     folder.back()  # out of Folder view: no level to slide
     # Back's level comes in from the left, a deeper one from the right: each starts a width off, animated to 0
@@ -3173,34 +3172,6 @@ def test_the_storage_list_drops_otg_without_a_drive(fw, ui, otg, roots):
     fw.mock('fw_deque_pop_back', lambda q, *_: ui.deques[q].pop() and 0)
     fw.fn('ringnav_folder_top', None)()
     assert len(ui.deques[showlist]) == roots
-
-
-class Rows:
-    """Folder view's list (p_deque_showlist) and stock's row lookup: a click's target is row i."""
-    def __init__(self, fw, ui, records):
-        fw.var('fw_ctx_p_deque_showlist', C.c_uint).value = ui.deques.new(records)
-        self.row, self.event = C.create_string_buffer(0x100), C.create_string_buffer(0x40)
-        fw.mock('table_row_of', lambda target, *_: C.addressof(self.row))
-        fw.mock('stock_folder_click_trampoline', lambda *_: 2)
-        self.fw = fw
-
-    def click(self, i):
-        struct.pack_into('<i', self.row, O['ROW_INDEX'], i)
-        return self.fw.fn('ringnav_folder_click', C.c_int, C.c_void_p, C.c_void_p)(None, C.addressof(self.event))
-
-
-def test_a_video_in_folder_view_plays_as_a_video(fw, ui, song):
-    Files(fw)
-    rows = Rows(fw, ui, [song(b'/mnt/mmc/Videos/a.mp4'), song(b'/mnt/mmc/Videos/b.flac')])
-    fw.mock('fw_fork', lambda *_: 4242)
-    assert rows.click(0) == 0 and fw.calls('fw_fork') and not fw.calls('stock_folder_click_trampoline')
-    assert rows.click(1) == 2 and len(fw.calls('stock_folder_click_trampoline')) == 1
-
-
-def test_select_mode_leaves_a_video_to_stock(fw, ui, song):
-    rows = Rows(fw, ui, [song(b'/mnt/mmc/Videos/a.mp4')])
-    fw.var('g_navbar_status', C.c_ubyte).value = 1
-    assert rows.click(0) == 2 and not fw.calls('fw_fork')
 
 
 # A spoken CUE track's saved place.
@@ -3278,14 +3249,13 @@ def collect(fw, ui, qm, kind, r, cls=0):
     return [field(t, 'path') for t in ui.deques[fw.fn('qm_collect', C.c_long, C.c_void_p)(r)]]
 
 
-def test_a_song_row_s_tracks_are_the_song_but_a_video(fw, ui, song, qm):
+def test_a_song_row_s_tracks_are_the_song(fw, ui, song, qm):
     assert collect(fw, ui, qm, QM_SONG_, song(b'/m/a.flac')) == [b'/m/a.flac']
-    assert collect(fw, ui, qm, QM_SONG_, song(b'/m/clip.mp4')) == []
 
 
 def test_a_folder_row_s_tracks_take_in_its_subfolders(fw, ui, song, qm):
     tree = {b'/mnt/mmc/Music/Album': [song(b'/mnt/mmc/Music/Album/1.flac'), song(name=b'CD2', kind=4),
-                                     song(name=b'.hidden', kind=4), song(b'/mnt/mmc/Music/Album/v.mp4')],
+                                     song(name=b'.hidden', kind=4)],
             b'/mnt/mmc/Music/Album/CD2': [song(b'/mnt/mmc/Music/Album/CD2/2.flac')],
             b'/mnt/mmc/Music/Album/.hidden': [song(b'/mnt/mmc/Music/Album/.hidden/3.flac')]}
     fw.mock('toolsLoadDirectory', lambda path, *_: ui.deques[fw.var('fw_ctx_tools_pdeq_directory', C.c_uint).value]

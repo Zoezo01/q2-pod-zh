@@ -2905,22 +2905,8 @@ def games_check(tmp):
     print('Games: Sudoku uniqueness, clues, conflicts, completion and saves; Vortex paddle, bricks, lives, levels, speed, tunnelling and determinism; Solitaire deal, draw, moves, finish and random play; Snake turns, growth, walls, self collision and food placement passed.')
 
 def video_check(tmp):
-    """Videos' player (video.c): ffmpeg's argv for the Q2's framebuffer, frame pacing and BT volume."""
+    """q2video (video.c): the Bluetooth volume, Mono Audio and the swap on its samples, and radio's tags."""
     lib = compile_host(tmp, 'q2video.so', ROOT/'patch/video.c')
-    def argv(at, audio):
-        a, ss = (C.c_char_p * 27)(), C.create_string_buffer(16)
-        lib.ffmpeg_argv(a, ss, at, b'/mnt/mmc/Videos/a b.mp4', audio)
-        return [x.decode() for x in a[:a[:].index(None)]]
-    # /dev/fb0 is 320x375 BGRA (display_logo, soc_fb.ko): fitted into the landscape 375x320 view and
-    # turned clockwise, as the boot logo.
-    head = ['/usr/bin/ffmpeg', '-nostdin', '-loglevel', 'quiet', '-ss', '30', '-i', '/mnt/mmc/Videos/a b.mp4',
-            '-map', '0:v:0', '-vf', 'scale=375:320:force_original_aspect_ratio=decrease:flags=fast_bilinear,format=bgra,'
-            'pad=375:320:(ow-iw)/2:(oh-ih)/2,transpose=clock', '-r', '25', '-f', 'rawvideo', 'pipe:3']
-    assert argv(30, 1) == head + ['-map', '0:a:0', '-ac', '2', '-ar', '48000', '-f', 's16le', 'pipe:4']
-    assert argv(30, 0) == head
-    # Frame n shows from n/25 s of the clock, and is dropped a whole frame late.
-    lib.frame_due.argtypes = [C.c_int, C.c_longlong]
-    assert [lib.frame_due(1, t) for t in (0, 39, 40, 79, 80)] == [0, 0, 1, 1, 2] and lib.frame_due(0, 0) == 1
     # Bluetooth: hciplayer's soft volume curve in 1/65536, clamped to 0-100, and the samples scaled by it.
     assert [lib.bt_gain(v) for v in (-5, 0, 1, 25, 49, 50, 75, 99, 100, 120)] == \
         [0, 0, 131, 3276, 6422, 6553, 36044, 64356, 65536, 65536]
@@ -2934,49 +2920,6 @@ def video_check(tmp):
     pcm = (C.c_short * 4)(32767, -32768, 1000, -3000)
     lib.swap(pcm, 2); assert list(pcm) == [-32768, 32767, -3000, 1000]
     lib.mono(pcm, 2); lib.swap(pcm, 2); assert list(pcm) == [-1, -1, -1000, -1000]
-    # The length from ffmpeg -i's report, for the position bar.
-    assert lib.duration(b'Input #0, mov\n  Duration: 01:02:03.45, start: 0.0\n') == 3723
-    assert lib.duration(b'  Duration: N/A, bitrate: N/A') == 0 and lib.duration(b'') == 0
-    # The picture's size from the same report's first video stream, and whether ten of its frames fit the memory free.
-    w, h = C.c_int(), C.c_int()
-    def size(report):
-        return (w.value, h.value) if lib.picture(report, C.byref(w), C.byref(h)) else None
-    assert size(b'  Duration: 00:01:00.00\n    Stream #0:0(und): Video: h264 (High) (avc1 / 0x31637661), '
-                b'yuv420p(tv, bt709), 1920x1080 [SAR 1:1 DAR 16:9], 30 fps\n') == (1920, 1080)
-    assert size(b'    Stream #0:0: Video: hevc (Main 10) (hvc1 / 0x31637668), '
-                b'yuv420p10le(tv, bt2020nc/bt2020/arib-std-b67), 3840x2160, 45000 kb/s') == (3840, 2160)
-    assert size(b'    title : a film, 640x480\n    Stream #0:0: Audio: aac, 48000 Hz, stereo') is None
-    assert size(b'    Stream #0:0: Video: h264, none, 0x0\n    Stream #0:1: Video: mjpeg, yuvj420p, 500x500') is None
-    assert size(b'') is None
-    lib.too_large.argtypes = [C.c_int, C.c_int, C.c_uint]
-    assert [lib.too_large(*s, 40000) for s in ((640, 360), (1280, 720), (1920, 1080), (2560, 1440), (3840, 2160))] == \
-        [0, 0, 0, 1, 1]
-    assert lib.too_large(1920, 1080, 30375) == 0 and lib.too_large(1920, 1080, 30374) == 1
-    assert lib.too_large(3840, 2160, 0) == 0 and lib.too_large(0, 2160, 1) == 0 and lib.too_large(3840, -1, 1) == 0
-    assert lib.too_large(2**31 - 1, 2**31 - 1, 2**32 - 1) == 1  # no overflow on a size no picture has
-    # A quit's place, kept for next time, but 0 within 30 s of either end; an unknown length keeps it.
-    assert [lib.resume_at(p, 600) for p in (0, 29, 30, 300, 570, 571, 600)] == [0, 0, 30, 300, 570, 0, 0]
-    assert lib.resume_at(5000, 0) == 5000
-    for paused in (0, 1):
-        assert lib.video_pause(paused, ord('a')) == 1
-        assert lib.video_pause(paused, ord('r')) == 0
-        assert lib.video_pause(paused, ord('p')) == 1-paused
-        assert lib.video_pause(paused, ord('f')) == paused
-    # The bar: along the bottom of the picture as seen, 40 px in from its ends and 23-30 px up, white
-    # for the share given and black after; the picture is turned clockwise, so the bar runs down
-    # columns 22-29 (picture x = panel y), from the top. Nothing else changes.
-    def bar(n, total, line=1300):  # a padded line, as fix.line_length may be
-        f = (C.c_ubyte * (line * 375))(*([0x55] * (line * 375)))
-        lib.overlay(f, line, n, total)
-        return [[f[y * line + x * 4 + b] for x in range(320) for b in range(4)] for y in range(375)], f
-    p, f = bar(1, 4)
-    for y in range(375):
-        for x in range(320 * 4):
-            want = 0x55 if not (22 * 4 <= x < 30 * 4 and 40 <= y < 335) else 0xff if y < 40 + 295 // 4 else 0
-            assert p[y][x] == want, (x, y)
-    assert all(f[y * 1300 + c] == 0x55 for y in range(375) for c in range(1280, 1300))
-    assert [r[88] for r in bar(7, 5)[0][40:335]] == [0xff] * 295  # clamped to all
-    assert [r[88] for r in bar(-3, 5)[0][40:335]] == [0] * 295 and bar(1, 0)[0][100][88] == 0x55
     # Internet Radio (-r): the ICY tags in stock ffmpeg 4.2's report, in its input dump or as updates.
     out = C.create_string_buffer(16)
     def meta(line, key, n=16):
@@ -2993,7 +2936,7 @@ def video_check(tmp):
     assert tag(b'      SUBTITLE        : Live', b'TITLE') == 0 and tag(b'      title           : x', b'TITLE') == 0
     assert tag(b'      TITLES          : x', b'TITLE') == 0 and tag(b'      TITLE', b'TITLE') == 0
     assert tag('      TITLE           : 夜の歌夜'.encode(), b'TITLE', 11) == '夜の歌'  # 10 bytes: not a third of 夜
-    print('Videos: ffmpeg argv, frame pacing, Bluetooth volume, length, picture size and bar passed; radio tags passed.')
+    print('q2video: Bluetooth volume, Mono Audio and swap passed; radio tags passed.')
 
 
 def audio_writer_check(tmp):

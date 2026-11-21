@@ -161,7 +161,7 @@ LIBC = {
     'MD5_Update': ('int', 'void *, const void *, unsigned'), 'MD5_Final': ('int', 'unsigned char *, void *'),
     'dup2': ('int', 'int, int'),
     '__udivdi3': ('unsigned long long', 'unsigned long long, unsigned long long'),
-    # Videos (books.c): q2video started and waited for, and its key socket
+    # Internet Radio (books.c, radio.c): q2video started and waited for, and its key socket
     'fork': ('int', 'void'), 'execl': ('int', 'const char *, const char *, ...'), 'exit': ('void', 'int'),
     'setenv': ('int', 'const char *, const char *, int'),  # addon.c: a card game's Q2_POPUP, in the child
     # Home's Rockbox row (navigation.c rockbox_open)
