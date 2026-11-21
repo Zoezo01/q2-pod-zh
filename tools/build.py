@@ -485,6 +485,10 @@ HOME_KEYUP = (0x534c28, 0x0320f809, 0)
 # the guard after Standby), whose flags only that function clears. So the handler's test for Centre never matches (its
 # bne is a b), and Centre is one more key it knows nothing of, as until V1.34.
 NP_CENTRE = (0x53dbac, 0x1443000d, 0x1000000d)
+# V1.34's Update Library dialog key-up (updatemusic_dialog_on_keyup) takes Centre as it takes Return: lit, it stops the scan
+# and ends the release, so a press during a scan no longer turned the screen off (#455). V1.32's took Return alone. Centre
+# goes on to on_wm_keyup_fun again (its bne is a b, to the wheel's test, which passes it); Return and Cancel still stop it.
+SCAN_CENTRE = (0x4a2acc, 0x14430009, 0x10000009)
 # V1.36's on_wm_keyup_before_fun applies Buttons lock on the lit lock window too (beqz g_lockscreen_pageflag past the lock).
 # Buttons lock stays the dark screen's (navigation.c lock_names), as V1.32's: the branch is taken always.
 KEYLOCK_LIT = (0x4f2728, 0x10400010, 0x10000010)
@@ -2036,6 +2040,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
     patch_word(patched, *LANGUAGE_EN, 'every unit boots in English')
     patch_word(patched, *HOME_KEYUP, 'Home binds no key-up of its own')
     patch_word(patched, *NP_CENTRE, "Now Playing leaves Centre to stock's power-key handling")
+    patch_word(patched, *SCAN_CENTRE, "Update Library's dialog leaves Centre to stock's power-key handling")
     patch_word(patched, *KEYLOCK_LIT, 'Buttons lock acts only with the screen off')
     patch_word(patched, *VOL_DARK, 'The volume dialog steps with the screen off')
     for site in MORE_ARTIST_CLOSE:
