@@ -1,6 +1,6 @@
 """patch/books.c from the card to the page (docs/internals.md#books): the Books page's list, a book opened, laid
 out, paged both ways through its window and left at its mark, an EPUB prepared on its worker, stored deflate blocks,
-and Videos' output, DAC and q2video's start (#videos)."""
+and q2video's output, the DAC and Internet Radio's start of it (#q2video)."""
 import ctypes as C
 import io
 import random
@@ -17,7 +17,7 @@ from test_radio import Curl, fetched, m3u, page  # test_radio.py keeps Internet 
 ROOT = '/mnt/mmc/Books'
 MARKS = '/mnt/data/ringnav-books'
 BOOK_DIR = '/mnt/mmc/.books'
-VIDEO_BIN = b'/usr/bin/q2video'
+Q2VIDEO, STATION = b'/usr/bin/q2video', b'http://r.example/a'
 READY, PREPARING, BAD = range(3)
 LIST, READER = range(2)
 RET_REPEAT, RET_STOP = 8, 11
@@ -40,11 +40,6 @@ class Bk(C.Structure):
                 ('buf', C.c_void_p), ('thread', C.c_ulong), ('timer', C.c_uint), ('poll', C.c_uint), ('running', C.c_int),
                 ('finished', C.c_int), ('result', C.c_int), ('cancel', C.c_int), ('marks', Mark * 64),
                 ('save', C.c_uint)]
-
-
-class Vid(C.Structure):
-    _fields_ = [*((k, C.c_int) for k in 'paused volume gain pid sock seek'.split()),
-                *((k, C.c_uint) for k in 'polled control_at seek_at key at paused_at'.split())]
 
 
 def book_key(path):
@@ -619,7 +614,7 @@ def test_a_sync_flush_s_empty_stored_block_joins_two_runs(fw):
     assert inflate(fw, packed, len(first + second)) == first + second
 
 
-# Videos: the output q2video plays on, the DAC, and the helper's start.
+# q2video: the output it plays on, the DAC, and Internet Radio's start of it.
 
 @pytest.fixture
 def mixer():
@@ -635,7 +630,7 @@ def mixer():
     (0, 0, 0, 40, None, b'40'),               # the headphone DAC, which keeps the volume set
     (1, 0, 0, 40, b'plug:bluealsa', b'40'),   # hciplayer's soft volume
     (2, 1, -2, 40, b'usb', b'40'),            # a variable USB volume on a DAC with no control: soft
-    (2, 1, 0, 40, b'usb', b'h40'),            # the DAC's own control applies it: the helper only shows it
+    (2, 1, 0, 40, b'usb', b'h40'),            # the DAC's own control applies it: the helper leaves it alone
     (2, 0, -2, 40, b'usb', b'h40'),           # a fixed USB volume
     (2, 0, 0, 100, b'usb', b'h100'),          # the longest, in its 5 bytes
 ])
@@ -678,19 +673,17 @@ def execl(fw):
     return calls
 
 
-@pytest.mark.parametrize('way, radio, want', [
-    (0, 0, [VIDEO_BIN, VIDEO_BIN, b'plughw:0,0', b'/m/a.mp4']),
-    (1, 0, [VIDEO_BIN, VIDEO_BIN, b'plug:bluealsa', b'/m/a.mp4', b'40']),
-    (0, 1, [VIDEO_BIN, VIDEO_BIN, b'-r', b'plughw:0,0', b'/m/a.mp4']),
-    (1, 1, [VIDEO_BIN, VIDEO_BIN, b'-r', b'plug:bluealsa', b'/m/a.mp4', b'40']),
+@pytest.mark.parametrize('way, want', [
+    (0, [Q2VIDEO, Q2VIDEO, b'-r', b'plughw:0,0', STATION]),
+    (1, [Q2VIDEO, Q2VIDEO, b'-r', b'plug:bluealsa', STATION, b'40']),
 ])
-def test_the_child_runs_q2video_on_the_output_and_exits_127_if_it_can_t(fw, way, radio, want):
+def test_the_child_runs_q2video_on_the_output_and_exits_127_if_it_can_t(fw, way, want):
     fw.mock('mclGetOutputWay', lambda *_: way)
     fw.var('g_volume', C.c_ubyte).value = 40
     fw.mock('fw_fork', lambda *_: 0)
     exits, calls = [], execl(fw)
     fw.mock('child_exit', lambda status, *_: exits.append(status))
-    fw.fn('video_start', C.c_int, C.c_char_p, C.c_int)(b'/m/a.mp4', radio)
+    fw.fn('radio_start', C.c_int, C.c_char_p)(STATION)
     assert calls == [want] and exits == [127]
 
 
@@ -698,13 +691,12 @@ def test_the_child_runs_q2video_on_the_output_and_exits_127_if_it_can_t(fw, way,
 HOSTILE = ["'; reboot #", '$(reboot)', '`reboot`', '../../etc/passwd', '-r', '--help']
 
 
-@pytest.mark.hostile('books.c:video_start')
-def test_a_hostile_station_url_or_video_name_is_one_argument_of_q2video_and_no_shell_s(fw):
-    """video_start's two execs. The directory's answer: a line is a station only with "://" in it and a newline or
+@pytest.mark.hostile('books.c:radio_start')
+def test_a_hostile_station_url_is_one_argument_of_q2video_and_no_shell_s(fw):
+    """radio_start's exec. The directory's answer: a line is a station only with "://" in it and a newline or
     CR ends a line (docs/internals.md), and a station's URL is q2video's one argument after -r and the device, byte
     for byte: q2video reads its arguments by place (video.c main) and gives ffmpeg the URL after -i, so there it
-    is no option, device or volume. A card's video (Folder view's row, books_video): its path, the one argument
-    after the device, and nothing but a video's name is played. No shell runs for either."""
+    is no option, device or volume. No shell runs for it."""
     p = page(fw)
     fw.mock('fw_fork', lambda *_: 0)  # the child's side
     fw.mock('child_exit', lambda *_: 0)  # where the exec's return ends here
@@ -719,13 +711,7 @@ def test_a_hostile_station_url_or_video_name_is_one_argument_of_q2video_and_no_s
     assert sorted(rows) == list(range(len(urls)))  # the bare values are no stations
     for i in sorted(rows):
         rows[i]()
-    assert calls == [[VIDEO_BIN, VIDEO_BIN, b'-r', b'plughw:0,0', url.encode()] for url in urls]
-    calls.clear()
-    video = fw.fn('books_video', C.c_int, C.c_char_p)
-    assert not any(video(h.encode()) for h in HOSTILE) and calls == []
-    paths = [f'/mnt/mmc/Videos/{h}.mp4'.encode() for h in HOSTILE] + [b'/mnt/mmc/Videos/a\nb.mp4', b'-r/a.mp4']
-    assert all(video(path) == 1 for path in paths)
-    assert calls == [[VIDEO_BIN, VIDEO_BIN, b'plughw:0,0', path] for path in paths]
+    assert calls == [[Q2VIDEO, Q2VIDEO, b'-r', b'plughw:0,0', url.encode()] for url in urls]
     assert not [name for name, _ in fw.calls() if name in ('fw_system', 'fw_popen')]
 
 
@@ -734,32 +720,10 @@ def test_q2video_starts_once_the_player_lets_go_of_the_pcm(fw):
     for name in ('player_stop', 'mclSetMute', 'fw_fork'):
         fw.mock(name, lambda *_, n=name: order.append(n) or (4321 if n == 'fw_fork' else 0))
     fw.mock('mclGetOutputWay', lambda *_: 0)
-    start = fw.fn('video_start', C.c_int, C.c_char_p, C.c_int)
-    assert start(b'/m/a.mp4', 0) == 4321 and order == ['player_stop', 'mclSetMute', 'fw_fork']
+    start = fw.fn('radio_start', C.c_int, C.c_char_p)
+    assert start(STATION) == 4321 and order == ['player_stop', 'mclSetMute', 'fw_fork']
     order.clear()
     fw.mock('mclGetOutputWay', lambda *_: 1)  # Bluetooth: the DAC left alone
-    assert start(b'/m/a.mp4', 0) == 4321 and order == ['player_stop', 'fw_fork']
+    assert start(STATION) == 4321 and order == ['player_stop', 'fw_fork']
     fw.mock('fw_fork', lambda *_: -1)
-    assert start(b'/m/a.mp4', 0) == 0  # no process
-
-
-def test_the_helper_s_own_pause_is_read_unless_a_key_just_set_it(fw):
-    card = Files(fw)
-    now = [100000]
-    fw.mock('time_now_ms', lambda *_: now[0])
-    v = fw.var('books__vid', Vid)
-    v.pid = 5
-    v.volume = fw.var('g_volume', C.c_ubyte).value = 30
-    v.gain = fw.fn('headset_gain', C.c_int)()
-    poll = fw.fn('video_poll', None)
-
-    def state(paused, later=400):
-        card.files['/tmp/q2video.state'] = struct.pack('<i', paused)
-        now[0] += later
-        poll()
-        return v.paused
-    assert state(1) == 1 and state(0) == 0
-    assert state(7) == 0 and state(-1) == 0  # neither paused nor playing: kept
-    fw.fn('video_key', None, C.c_uint)(O['KEY_PLAY'])  # paused by a key
-    assert v.paused == 1 and state(0, 400) == 1  # the helper hasn't caught up: its stale state waits
-    assert state(0, 600) == 0  # a second after the key, its state stands
+    assert start(STATION) == 0  # no process

@@ -86,6 +86,8 @@ static int net_page_open(void) {
     for (unsigned i = 0, n = widget_count_children(wm); i < n; ++i) {
         const char *name = widget_get_prop_str(widget_get_child(wm, i), "name", "");
         if (!tk_strcmp(name, "tidal_downloads")) continue; /* the card's tracks */
+        /* a card app's page whose q2app says wifi=0 */
+        if (!tk_strcmp(name, "addon_page") && addon_offline()) continue;
         for (unsigned k = 0; k < sizeof pages / sizeof *pages; ++k)
             if (tk_str_start_with(name, pages[k])) return 1;
     }

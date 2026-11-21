@@ -1,7 +1,7 @@
 /* Spotify (docs/internals.md#spotify): librespot, built from the q2-librespot fork, runs from the
  * card's SPOT_DIR as a Spotify Connect receiver beside the stock player. It writes its state, the
  * track and position to SPOT_STATE (and the cover to SPOT_COVER), takes commands on SPOT_SOCK and
- * answers the browser on SPOT_BROWSE; this file is the other end. Like Videos' q2video, while it
+ * answers the browser on SPOT_BROWSE; this file is the other end. Like Internet Radio, while it
  * plays it holds the standby timers and the DAC, which it sets up as stock's AirPlay receiver does,
  * and it hands the DAC over with local music both ways. Streaming's Spotify row opens the browser,
  * whose Now Playing is the page for it. */
@@ -201,8 +201,8 @@ static void spot_take(void) {
  * is gone for the headphone DAC (aplay on plughw:0,0), except with Mono Audio on: q2video mixes it,
  * so the DAC is plughw:0,0 with an h volume (the DAC applies it). Written aside and renamed, when
  * it changes; a running q2video gets v and the volume, as radio's does. ponytail: a new device, or
- * Mono Audio's switch on the DAC, waits for the sink's next start (pause and play), as Videos and
- * Internet Radio keep theirs till they end. */
+ * Mono Audio's switch on the DAC, waits for the sink's next start (pause and play), as Internet
+ * Radio keeps its own till it ends. */
 static void spot_output(void) {
     char vol[5], out[sizeof sp.out] = "", v[2] = { 'v', (char)headset_gain() };
     const char *dev = output_device(vol);

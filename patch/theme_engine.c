@@ -327,10 +327,10 @@ const char *ipod_home_shortcut(void) {
     _Static_assert(SHORTCUT_NONE + 1 == SETTING_N_SHORTCUT, "None is the last");
     return names[shortcut_target()];
 }
-/* Podcasts, Audiobooks and Videos (docs/internals.md#podcasts-and-audiobooks): the card's top-level
+/* Podcasts and Audiobooks (docs/internals.md#podcasts-and-audiobooks): the card's top-level
  * folders of these names, case aside, browsed in folder_page from there; Photos opens photos.c,
  * Books books.c. */
-const char *const MEDIA[] = { "Podcasts", "Audiobooks", "Photos", "Books", "Videos" };
+const char *const MEDIA[] = { "Podcasts", "Audiobooks", "Photos", "Books" };
 extern int rockbox_open(void *, void *);
 int rated_albums(void *, void *);
 int home_shortcut_open(void *ctx, void *event) {

@@ -92,7 +92,7 @@ void confirm_track_flat(void *w, void *canvas, int form) {
         rect_t tray = { 38, 248, 299, 56 };
         flat_box(canvas, &tray, TOAST_RGBA, 12);
     } else {
-        bar_rect(canvas, RGBA(scheme()->paper), 0, BAR_ROWS, 375, 320 - BAR_ROWS);
+        bar_rect(canvas, RGBA(flat_page()), 0, BAR_ROWS, 375, 320 - BAR_ROWS);
         void *bar = *(void *const *)system_bar; /* over Quick Settings nothing else draws it */
         if (bar) widget_paint(bar, canvas);
         st.paint_w = w;

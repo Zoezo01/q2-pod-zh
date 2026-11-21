@@ -104,12 +104,6 @@ class Sp(C.Structure):
                 ('wanted', C.c_char * 64), ('from_', C.c_char * 64)]
 
 
-class Vid(C.Structure):
-    """books.c's video player (test_headset.py's mirror): pid while a video plays."""
-    _fields_ = [*((k, C.c_int) for k in 'paused volume gain pid sock seek'.split()),
-                *((k, C.c_uint) for k in 'polled control_at seek_at key at paused_at'.split())]
-
-
 class Mallinfo2(C.Structure):
     _fields_ = [(n, C.c_size_t) for n in 'arena ordblks smblks hblks hblkhd usmblks fsmblks uordblks fordblks keepcost'.split()]
 
@@ -2053,11 +2047,10 @@ def test_now_playing_s_end_stops_its_timers(fw):
 
 
 def test_the_pages_go_by_the_names_the_firmware_knows_them_by(fw):
-    """headset.c's media keys: while radio_page or radionp_page is on top the radio's even over a playing video, as a
-    focused streaming page takes them (test_headset.py), and the video's under any other page. The title bar names
-    Now Playing by its window's name."""
+    """headset.c's media keys: radio_page or radionp_page on top is a focused streaming page (test_headset.py), and
+    any other page is not. The title bar names Now Playing by its window's name."""
     p = page(fw)
-    player = play(fw, p)
+    play(fw, p)
     other = p.w.new(0, 'window_create')
     p.w.names[other] = 'playing_page'  # local Now Playing
     top = [ui(fw).page]
@@ -2069,15 +2062,10 @@ def test_the_pages_go_by_the_names_the_firmware_knows_them_by(fw):
     fw.mock('widget_get_prop_str', name)
     fw.mock('window_manager_get_top_window', lambda *_: top[0])
     fw.mock('tk_str_start_with', lambda s, prefix, *_: C.string_at(s).startswith(C.string_at(prefix)))
-    fw.var('books__vid', Vid).pid = 4321
-    def forward(window):
-        """Next pressed with window on top: the station then playing and what the video was sent."""
+    def focused(window):
         top[0] = window
-        fw.fn('media_key', None, C.c_uint)(KEY_FWD_BTN)
-        return rd(fw).at, [data for path, data in player.sent if path == b'/tmp/q2video.sock']
-    assert forward(ui(fw).page) == (1, [])
-    assert forward(other) == (1, [b'f'])
-    assert forward(np_(fw).page) == (2, [b'f'])
+        return fw.fn('media_focused', C.c_int)()
+    assert (focused(ui(fw).page), focused(other), focused(np_(fw).page)) == (1, 0, 1)
     bar_title_of, label = fw.fn('bar_title_of', C.c_char_p, C.c_void_p, C.c_void_p), C.c_void_p()
     assert bar_title_of(np_(fw).page, C.byref(label)) == b'Internet Radio'
 

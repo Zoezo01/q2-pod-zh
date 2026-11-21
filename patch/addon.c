@@ -9,7 +9,8 @@
  *            favdir (a card folder whose songs' hearts it is told of, addon_fav_path), hidden
  *            (1: no row, its page opened by id: addon_open_id, as AirPlay's is) and row (where
  *            its row is: library, games or streaming; without it, Games for a game and
- *            Streaming for any other);
+ *            Streaming for any other); wifi (0: it never uses the network, so Smart Wi-Fi keeps
+ *            no radio on for it: addon_running, addon_offline);
  *   run      its launcher, which copies the app to /tmp and runs it there in a restart loop, so
  *            the card is never kept busy, leaving the loop's pid in /tmp/q2-<id>;
  *   q2-<id>  the app;
@@ -41,12 +42,14 @@
  * (addon_eq.c), the answer in .eq.done.
  *
  * A card game (q2app game=1, then no run) is a row in Library's Games instead, unless its row
- * says where: it runs over the whole screen, as Videos' player does, until it exits (game_start).
+ * says where: it runs over the whole screen until it exits (game_start).
  * Where a row is and what its press does are apart (press): a game's row starts it from the
  * Library or Streaming too, and any other app's row in Games opens its page. One
  * with audio=1 as well owns the sound: the player is stopped and the headphone output readied
- * before it starts, as for a video, it gets the output device (and a soft output's volume) as
+ * before it starts, it gets the output device (and a soft output's volume) as
  * its arguments, Play/Pause and the side buttons reach it, and the idle quit is its own.
+ * A row of kind screen on an app's page runs the app's binary the same way, the row's uri and
+ * context in its environment, and the page's level is asked again when it ends (screen_back).
  *
  * An app's first page may be sections (sec_take): one shows at a time, and a sideways swipe moves
  * to the next or the previous (swipe).
@@ -96,7 +99,7 @@
 /* This firmware's card-app features, space-separated; a feature adds its word. */
 #define ADDON_CAPS                                                                                 \
     "playlist progress pages library goto sleep game audio sections art window urls sort field "   \
-    "more fav now fieldtext wake audio2 dim gameview eq"
+    "more fav now fieldtext wake audio2 dim gameview eq screen volume"
 #define ADDON_SECTIONS 8  /* sections an app's first page may have */
 #define SWIPE_CLAIM_PX 24 /* a sideways move this far, twice as far as up or down, is a swipe's */
 #define SWIPE_PX 60       /* and this far at the lift, more than up or down, changes section */
@@ -114,6 +117,7 @@ typedef struct {
     char more[48]; /* q2app's more: an op, a space and a title (addon_more) */
     int qr, game, audio, view, hidden, present, launched, hold, relaunch, restart;
     int nostop;                                   /* q2app's stop=0: no Stop row on its page */
+    int nowifi;                                   /* q2app's wifi=0: it never uses the network */
     int row;                                      /* where its row is: a ROW_ */
     unsigned polled, launch_at, restart_at, play; /* play: its .play as read last, hashed */
 } app_t;
@@ -184,6 +188,9 @@ static void slots_read(void) {
         char stop[4]; /* as text, as scrobble: number() is 0 for a missing key too */
         field(raw, "stop", stop, sizeof stop);
         a->nostop = !strcmp(stop, "0") || !strcmp(stop, "0\r");
+        char wifi[4]; /* as text too: only 0 says it never uses the network */
+        field(raw, "wifi", wifi, sizeof wifi);
+        a->nowifi = !strcmp(wifi, "0") || !strcmp(wifi, "0\r");
         field(raw, "more", a->more, sizeof a->more);
         unsigned k = strlen(a->more);
         if (k && a->more[k - 1] == '\r') a->more[k - 1] = 0; /* a Windows editor's line end */
@@ -262,6 +269,12 @@ static void launch(app_t *a) {
     a->launched = 1;
     a->launch_at = time_now_ms();
     system(a->run); /* exits at once when the app runs already */
+}
+
+/* On the card and not running: its page starts it (page_at), and once more when it ended itself
+ * under the page (revive). */
+static int startable(const app_t *a) {
+    return !access(a->bin, 0) && (!a->launched || access(a->pid, 0));
 }
 
 /* A song of an app's URL queue served by the app itself is about to play (tidal.c app_track, on
@@ -842,25 +855,26 @@ static void poll_one(app_t *a) {
 
 /* Card games: Library's Games lists them after its own (games.c); a row runs the game's binary
  * from its folder, with no launcher, over the whole screen while demo goes on without painting
- * (navigation.c ringnav_wm_paint) or input (ringnav_input), as Videos' q2video does. Each input
+ * (navigation.c ringnav_wm_paint) or input (ringnav_input). Each input
  * event reaches the game instead as a text datagram on /tmp/q2-<id>.input.sock:
  *   "t d X Y", "t m X Y", "t u X Y"   touch down, move, up (an abort too), in the landscape
  *                                     view's pixels (375 x 320), turned from the panel's
  *   "k d CODE", "k u CODE"            a key down, up (AWTK's codes: Return 170, Centre 218)
  *   "w N"                             the wheel's raw travel since the last (wheel_raw: 200 a turn,
  *                                     rising anticlockwise), sent once a UI loop pass
+ *   "v LEVEL", "v LEVEL ARG"          the volume, 0 to 100, to a game with the sound (game_volume)
  * Play/Pause and the side buttons stay the music's, as stock has them under the Games page, unless
  * the game's q2app says audio=1: the sound is then the game's (player_stop and dac_take before it
- * starts, as video_start; the output device and, on Bluetooth or USB, the volume as its arguments,
+ * starts, as radio_start; the output device and, on Bluetooth or USB, the volume as its arguments,
  * as q2video gets them, and opened as q2video opens them, video.c sound_open; g_dacoff_time held
  * while it runs), those keys reach it as "k d|u 171", 222 and 223, a headset's buttons do nothing
  * (headset.c media_key, media_set_playing), and the idle quit below is left to the game, which
- * alone knows whether it is playing. Music stays stopped when it ends, as after a video. The game
+ * alone knows whether it is playing. Music stays stopped when it ends. The game
  * ends itself (from its Return menu); Return held GAME_HOLD_MS ends it (TERM, and its release is
  * dropped so stock's Games stays), as does GAME_IDLE_MS without input unless Smart Awake is on;
  * one still there GAME_KILL_MS after a TERM is KILLed. demo repaints when it has gone. Stock makes
  * a held key's long press after this hook, so the hold is timed here, from the game's key-down.
- * ponytail: the screen stays on while it is in front, as for a video, and the idle quit is what
+ * ponytail: the screen stays on while it is in front, and the idle quit is what
  * lets it sleep without Smart Awake; a game that wants to sleep on screen needs the wake path to
  * reach stock under it.
  *
@@ -871,7 +885,14 @@ static void poll_one(app_t *a) {
  * there when that time is up, and can give the screen to stock's Now Playing (game_view).
  * ponytail: with .quit there a hung gameview game has no exit on the device but the 15-second
  * hardware Centre hold: Return alone is its input, Centre never reaches stock's Shut Down hold,
- * and the idle quit is skipped while it has the sound or with Smart Awake. */
+ * and the idle quit is skipped while it has the sound or with Smart Awake.
+ *
+ * A row of kind screen on a card app's page (go, caps word screen) runs that app's binary as a
+ * game's row runs a game, all of the above its q2app's too: audio=1 there gives its screen rows
+ * the sound. The child also gets the row's uri and context as Q2_URI and Q2_CONTEXT, and when it
+ * ends its page's top level is asked again (screen_back). A game with the sound sets the Q2's
+ * volume, or asks for it, in /tmp/q2-<id>.volume, and is told it as "v" datagrams (game_volume),
+ * caps word volume. */
 #define GAME_IDLE_MS 120000
 #define GAME_HOLD_MS 700 /* navigation.c's KEY_HOLD_MS, Return's hold elsewhere */
 #define GAME_CHORD_MS 1200
@@ -889,9 +910,12 @@ static struct {
     unsigned polled;     /* when game_files last looked */
     char id[APP_ID];
     int view;   /* gameview=1 */
-    int down;   /* gameview: GAME_ bits held */
+    int down;   /* GAME_ bits held */
     int native; /* Now Playing has the screen and the keys */
     int stock;  /* GAME_ bits pressed on Now Playing: stock's to their release */
+    int screen; /* a screen row's run: its app's slot + 1 (screen_back) */
+    /* .volume as acted on last, and the "v" datagram sent last */
+    char vreq[8], vsent[16];
 } gm __attribute__((section(".scratch")));
 
 int addon_games(void) { return addon_scan(), ap.games; }
@@ -1054,8 +1078,12 @@ static void game_files(unsigned now) {
     if (gm.view && due) game_view();
 }
 
-/* Game a started over the screen: 1 when it runs. */
-static int game_start(app_t *a) {
+/* Game a started over the screen: 1 when it runs. uri and ctx: a screen row's (go), the child's
+ * Q2_URI and Q2_CONTEXT, else 0.
+ * ponytail: the uri goes into the environment whole, REPLY_MAX at most, which fits the 128 KB
+ * Linux takes for one exec string with 4 KB pages (its own limit, not read from the Q2's kernel);
+ * a cut here, if a reply is ever allowed to be longer. */
+static int game_start(app_t *a, const char *uri, const char *ctx) {
     if (gm.pid) return 0;
     const char *busy = shelf_busy();
     if (busy && !strcmp(busy + 1, a->id)) return toast("Wait until the App Store finishes"), 0;
@@ -1065,9 +1093,10 @@ static int game_start(app_t *a) {
     popup_env(pop, sizeof pop); /* the theme's pop-up, for its own menus */
     tk_snprintf(gm.id, sizeof gm.id, "%s", a->id);
     game_unlink("dim"); /* an earlier run's */
+    game_unlink("volume");
     if (a->audio == 2) game_unlink("audio");
     if (a->view) game_unlink("view"), game_unlink("quit");
-    /* the sound is its: hciplayer off the PCM, the jack readied, as video_play */
+    /* the sound is its: hciplayer off the PCM, the jack readied */
     if (a->audio == 1) {
         headset_manual();
         spot_yield();
@@ -1084,6 +1113,7 @@ static int game_start(app_t *a) {
          * thread holds libc's environment lock (stock's toolsSetTimeZone) hangs the child here;
          * Return's hold ends it */
         setenv("Q2_POPUP", pop, 1);
+        if (uri) setenv("Q2_URI", uri, 1), setenv("Q2_CONTEXT", ctx, 1);
         if (a->audio == 1) /* q2video's arguments: the device, then a soft output's volume */
             execl(a->bin, a->bin, dev ? dev : "plughw:0,0", dev ? vol : (char *)0, (char *)0);
         else
@@ -1097,6 +1127,8 @@ static int game_start(app_t *a) {
     gm.back = gm.dim = 0;
     gm.view = a->view;
     gm.native = gm.down = gm.stock = 0;
+    gm.screen = uri ? (int)(a - ap.a) + 1 : 0;
+    gm.vreq[0] = gm.vsent[0] = 0;
     gm.polled = time_now_ms();
     gm.sock = socket(1, 1, 0); /* AF_UNIX, SOCK_DGRAM (MIPS numbering) */
     gm.seen = time_now_ms();
@@ -1114,7 +1146,7 @@ int addon_game_open(const char *id) {
     addon_scan();
     for (int i = 0; i < ap.n; ++i)
         if (ap.a[i].present && !ap.a[i].hidden && ap.a[i].game && !strcmp(ap.a[i].id, id))
-            return game_start(&ap.a[i]);
+            return game_start(&ap.a[i], 0, 0);
     return -1;
 }
 
@@ -1128,7 +1160,7 @@ int addon_game_input(void *e) {
     int keyish = type == EVT_KEY_DOWN || type == EVT_KEY_UP || type == EVT_KEY_LONG;
     int button = key == KEY_RETURN ? GAME_RETURN : key == KEY_CENTER ? GAME_CENTER : 0;
     if (keyish && (gm.eat & button)) { /* an eaten key's repeats and release */
-        if (type == EVT_KEY_UP) gm.eat &= ~button;
+        if (type == EVT_KEY_UP) gm.eat &= ~button, gm.down &= ~button;
         return 1;
     }
     if (!gm.pid) return 0;
@@ -1141,12 +1173,14 @@ int addon_game_input(void *e) {
     if (!gm.view && !gm.audio && keyish &&
         (key == KEY_PLAY || key == KEY_BACK_BTN || key == KEY_FWD_BTN))
         return 0;
-    if (gm.view && keyish && button) {
+    if (keyish && button) { /* every run's: one still down at its end is eaten (game_poll) */
         /* ponytail: a lost release leaves its bit set (gm.down, gm.stock): that button alone arms
-         * the chord, or its next press is dropped at an open or stays stock's, until its next
-         * release */
+         * the chord, or its next press is dropped at an open or a run's end or stays stock's,
+         * until its next release */
         if (type == EVT_KEY_DOWN) gm.down |= button;
         if (type == EVT_KEY_UP) gm.down &= ~button;
+    }
+    if (gm.view && keyish && button) {
         if (gm.down != GAME_CHORD)
             gm.held = 0;
         else if (!gm.held && type == EVT_KEY_DOWN)
@@ -1174,6 +1208,46 @@ int addon_game_input(void *e) {
     return 1;
 }
 
+/* game_poll's, every pass while the game has the sound: its /tmp/q2-<id>.volume, written whole, is
+ * the level it wants, 0 to 100, or "?" to ask (a line end allowed). A level, at most 100 and the
+ * Maximum volume, becomes the Q2's own (g_volume, device_set_volume) and is saved (PLAYSET
+ * VOLUME), and either is answered on its socket: "v LEVEL", then on Bluetooth or a USB DAC a space
+ * and what its second argument would be now (output_device: "v 41", "v 41 100", "v 41 h41"). The
+ * file's text is acted on once (gm.vreq); any other text is ignored. Every ADDON_POLL_MS (due) the
+ * same datagram is built again and goes when it differs from the last sent (gm.vsent): the level
+ * or the output changed by other means (a headset's keys), and the request standing in the file
+ * is removed, so the game can ask for that level again.
+ * ponytail: a failed open, or one small read of a tmpfs file, every pass while a game has the
+ * sound; a request renamed into place between a pass's read and that removal goes unread, which a
+ * seq in the file would close. */
+static void game_volume(int due) {
+    char f[32], raw[8], arg[5], m[16];
+    game_file(f, "volume");
+    unsigned n = state_read(f, raw, sizeof raw);
+    while (n && (raw[n] == '\n' || raw[n] == '\r')) raw[n--] = 0;
+    const char *c = raw + 1;
+    int v = 0, asked = strcmp(c, gm.vreq) != 0;
+    if (asked) tk_snprintf(gm.vreq, sizeof gm.vreq, "%s", c);
+    for (; *c >= '0' && *c <= '9'; ++c) v = v * 10 + (*c - '0');
+    if (asked && c > raw + 1 && !*c) {
+        if (v > 100) v = 100;
+        if (v > g_maxvolume) v = g_maxvolume;
+        g_volume = (unsigned char)v;
+        device_set_volume(v, 1);
+        write_int_config(v, "PLAYSET", "VOLUME");
+    } else if (strcmp(raw + 1, "?"))
+        asked = 0; /* nothing new, or nothing it could mean */
+    if (!asked && !due && gm.vsent[0]) return;
+    const char *dev = output_device(arg);
+    tk_snprintf(m, sizeof m, "v %u%s%s", (unsigned)g_volume, dev ? " " : "", dev ? arg : "");
+    int moved = gm.vsent[0] && strcmp(m, gm.vsent); /* gm.vsent empty: the level it started at */
+    if (!asked && moved) game_unlink("volume"), gm.vreq[0] = 0;
+    if (asked || moved) dgram_send(&gm.sock, gm.path, m, strlen(m));
+    tk_snprintf(gm.vsent, sizeof gm.vsent, "%s", m);
+}
+
+static void screen_back(int slot);
+
 /* every UI loop pass: the wheel's travel, the screen held in front, standby held, the idle quit,
  * its end */
 static void game_poll(void) {
@@ -1186,16 +1260,26 @@ static void game_poll(void) {
         if (gm.swap && gm.audio) sound_back(); /* a crash too */
         if (gm.audio && mclGetPlayStatus() == 3) player_stop();
         gm.pid = gm.audio = 0;
+        /* it left on a press: the key's repeats and release are not the page's under it */
+        gm.eat |= gm.down, gm.down = 0;
         if (gm.native) game_view_back();
         if (gm.view) game_unlink("view"), game_unlink("quit");
         if (gm.dim && g_backlight_status) toolSetBackLight(g_lightness + 1);
         if (gm.dim) game_unlink("dim");
+        game_unlink("volume");
         wheel_raw = 0;
+        /* a finger down since before the end: its moves are stock's now, whose pull-down
+         * (on_wm_tsmove_fun) asks for no press and goes by the last one it saw, not the game's.
+         * ponytail: read in stock's code (a move is dispatched with no pointer pressed, 0x6b3350),
+         * not traced in a running demo */
+        if (I(g_pressdown_y, 0) < QS_PULL_Y) I(g_pressdown_y, 0) = QS_PULL_Y;
         widget_invalidate_force(window_manager(), 0);
+        if (gm.screen) screen_back(gm.screen - 1);
         if (status == 127 << 8) toast("It couldn't start"); /* the child's execl failed */
         return;
     }
     unsigned now = (unsigned)time_now_ms();
+    if (gm.audio) game_volume(now - gm.polled >= ADDON_POLL_MS); /* before game_files stamps it */
     if (gm.dim || now - gm.polled >= ADDON_POLL_MS) game_files(now);
     /* Back, Hold Return: Home, or it never opened; lit, as game_view's cancel */
     if (gm.native && g_backlight_status && !navigator_window_is_exist("playing_page"))
@@ -1220,7 +1304,7 @@ static void game_poll(void) {
     /* behind Now Playing the screen sleeps and Auto power-off counts on their timers; standby,
      * which unmounts the card, waits while the game runs from it */
     reset_poweroptions_timer(1, !gm.native, !gm.native);
-    if (gm.audio) { /* the DAC kept on, as video_poll; the idle quit is the game's own */
+    if (gm.audio) { /* the DAC kept on, as radio_poll; the idle quit is the game's own */
         if (I(g_dacoff_time, 0) > 0) I(g_dacoff_time, 0) = 0;
         return;
     }
@@ -1232,10 +1316,11 @@ static void game_poll(void) {
 /* Smart Wi-Fi (smart_wifi.c smart_needed): an app started, or restarting after Retry, keeps the
  * radio on until it stops (by itself, Stop Streaming Services or Rockbox). One stopped for USB
  * storage counts once it starts again: the cable holds the radio meanwhile, and an app deleted from
- * the computer, which never starts again, holds nothing. */
+ * the computer, which never starts again, holds nothing. One whose q2app says wifi=0 never uses the
+ * network and never counts, nor does its page (addon_offline). */
 int addon_running(void) {
     for (int i = 0; i < ap.n; ++i)
-        if (ap.a[i].launched || ap.a[i].restart) return 1;
+        if ((ap.a[i].launched || ap.a[i].restart) && !ap.a[i].nowifi) return 1;
     return 0;
 }
 
@@ -1395,9 +1480,14 @@ static int req_done(void) {
  * cursor in its context, in the level's place rather than over it (page_to): uri "prev" slides it
  * in from the left and selects its last row, any other from the right, selecting its row after the
  * first (the app's Previous page row).
+ * screen (caps word "screen") runs the app's own binary over the whole screen, as a card game's row
+ * runs a game (game_start), the row's uri and context in its environment; when it ends, the level
+ * is asked again (screen_back).
  * A reply whose message is "refresh" is asked again every ADDON_LIVE_MS while its level is on top,
+ * no game or screen row's run in front of it (tick),
  * and at once after an action on it (the level stays shown, no Loading…), and redrawn only when it
- * changed, its selected row kept; one with the same rows (same_rows) is written in place (relabel)
+ * changed or its covers' count did (got), its selected row kept;
+ * one with the same rows (same_rows) is written in place (relabel)
  * instead of rebuilt. One whose message is "pages" and that has a cursor
  * is followed by its next pages (page_next), appended to its list (append) under a Loading… row;
  * any other keeps More….
@@ -1449,6 +1539,7 @@ static struct {
     int art_lo, art_hi; /* the rows whose covers may be decoded, half open (art_window) */
     char *sort[6];      /* the sort icon's row (take_sort), its fields in the shown reply */
     int field;          /* the box open is field row field - 1's; 0, a search's */
+    int up;             /* the app has answered this page since its last start (got, revive) */
 } pg __attribute__((section(".scratch")));
 
 static void qr_open(const char *state, const char *title);
@@ -1879,6 +1970,22 @@ static void keep_sel(void) {
         top()->sel = widget_get_prop_int(pg.view, "_ringnav_index", 0);
 }
 
+/* A screen row's run has ended (game_poll), slot its app's: that app's page, if it is the one open,
+ * has its top level asked again, so the app can show what the run changed: a live level in place,
+ * as after an action's reply (got), any other reloaded from its first page, its selected row kept.
+ * An action the run outlasted gives way, its row's own text back, as for action(). A live level is
+ * not asked while the run is in front (tick), so this is its ask. */
+static void screen_back(int slot) {
+    if (!pg.page || pg.a != slot) return;
+    lv_t *l = top();
+    busy_row(0);
+    keep_sel();
+    if (l->state == K_READY && l->live)
+        fetch(l);
+    else /* a next page on its way is not the level's first */
+        req_cancel(), l->state = K_LOAD, show();
+}
+
 /* A level over the top one, which lets its reply go (Back asks for it again); base: args' bytes
  * that name its list, before a More…'s cursor. */
 static void push(const char *op, const char *args, unsigned base, const char *title) {
@@ -1968,6 +2075,26 @@ static int sec_take(char **g, int n) {
     return 1;
 }
 
+/* got's: a level's request found no socket, long after the app's start. An app that has answered
+ * this page and has since ended itself (idle: its loop gone) starts again as page_at starts it; 1
+ * when it did, and the level waits as for that start. Once: only a reply sets pg.up again, so an
+ * app that doesn't come up shows its error page, as does one that never answered, one whose loop
+ * still runs (Retry's restart), one USB storage starts again (relaunch) and one the App Store has
+ * (launch refuses).
+ * ponytail: a pid file a dead loop left reads as running, as for addon_wake: the error page, and
+ * Retry restarts it; a look at the pid's process would tell.
+ * ponytail: why the app ended isn't known, so any end but one this page's stop op asked for reads
+ * as an idle one (its web page's stop, an action whose op has another name), and the open page's
+ * next level starts it again; a file the app leaves when it was told to end would tell. */
+static int revive(void) {
+    app_t *a = app();
+    int up = pg.up;
+    pg.up = 0;
+    if (!up || a->relaunch || !startable(a)) return 0;
+    launch(a);
+    return time_now_ms() - a->launch_at < ADDON_START_MS;
+}
+
 /* The finished request: an action's toast, or the top level's rows. */
 static void got(void) {
     lv_t *l = top();
@@ -1975,7 +2102,7 @@ static void got(void) {
     /* its own size, before spot_reply points into it: a full list keeps ADDON_PAGES of them */
     if (req.fail == SPOT_OK && (fit = realloc(reply, req.n + 1))) reply = fit;
     /* The reply's bytes past its id, before spot_reply cuts them: the same as shown, nothing
-     * redrawn. */
+     * redrawn but a live list whose covers' count moved. */
     unsigned skip = 9, hash = 0;
     while (req.fail == SPOT_OK && skip < req.n && reply[skip] != '\t') ++skip;
     if (req.fail == SPOT_OK && skip < req.n)
@@ -1987,6 +2114,7 @@ static void got(void) {
     req.buf = 0;
     tk_snprintf(id, sizeof id, "%u", req.id);
     if (n >= 0 && strcmp(f[0], id)) n = -1;
+    if (n >= 0) pg.up = 1;
     int ok = n >= 0 && !strcmp(f[1], "ok");
     unsigned now = time_now_ms();
     char why[48];
@@ -1999,6 +2127,8 @@ static void got(void) {
             toast(f[2]);
         else if (!ok)
             toast(why);
+        if (!strcmp(pg.aop, "stop"))
+            pg.up = 0; /* asked to end: its level's reload starts nothing */
         if (ok && !strcmp(pg.aop, "stop")) {
             app()->launched = app()->hold = 0;
             navigator_back();
@@ -2020,7 +2150,7 @@ static void got(void) {
         append(l, from);
     } else if (req.fail == SPOT_NOSOCK &&
                !req.field && /* a field's text: its error, never resent */
-               (app()->restart || now - app()->launch_at < ADDON_START_MS)) {
+               (app()->restart || now - app()->launch_at < ADDON_START_MS || revive())) {
         if (l->state != K_WAIT && l->state != K_READY) l->state = K_WAIT, show();
         pg.again = now + 500;
     } else if (ok && pg.depth == 1 && !pg.nsec && !strcmp(f[2], "sections") && sec_take(g, n)) {
@@ -2060,7 +2190,14 @@ static void got(void) {
                 relabel(l); /* only texts and bars moved: the rows stay */
             else
                 show();
-        }
+        } else if (l->live && pg.view && pg.pages == 1 && art_rows(l->n) != l->art)
+            /* the shown reply again, and a cover's file came or went since the list was drawn (an
+             * app that fetches art after it answers): drawn again, its row kept.
+             * ponytail: a header read, or a failed open, per row every ADDON_LIVE_MS a live list
+             * is on show; and one with More…'s pages is not counted (l->art is its first page's),
+             * so a cover that comes late there waits for the next rebuild: count at append if
+             * apps page live lists. */
+            keep_sel(), show();
         if (pg.code) /* turned on by its row: its address at once, the menu behind it */
             pg.code = 0, qr_open(app()->state, app()->name);
     }
@@ -2268,6 +2405,8 @@ static int go(const void *unused) {
             action(i, uri, ctx);
         else if (!strcmp(kind, "remote"))
             qr_open(app()->state, app()->name);
+        else if (!strcmp(kind, "screen")) /* its binary over the whole screen, as a game's row */
+            game_start(app(), uri, ctx);
         else if (!strcmp(kind, "local")) { /* a song, or a folder of them, on the card alone */
             if (card_path(uri)) songs_open(uri, cell(i, 2), !strcmp(ctx, "album"));
         } else if (!strcmp(kind, "search"))
@@ -2293,6 +2432,7 @@ static int tick(const void *unused) {
         show();
     else if (!req.running && (int)(now - pg.again) >= 0 && !pg.edit &&
              (l->state == K_WAIT || (l->state == K_READY && l->live && g_backlight_status &&
+                                     !addon_game_front() && /* nobody sees it under a run */
                                      window_manager_get_top_window(window_manager()) == pg.page)))
         fetch(l);
     art_window();
@@ -2332,6 +2472,13 @@ static int closed(void *ctx, void *event) {
     return 0;
 }
 
+/* smart_wifi.c's net_page_open: the app page open is one whose q2app says wifi=0, so it is no page
+ * that uses the network.
+ * ponytail: Streaming's page still wakes the radio and a Streaming row still waits for the link
+ * (addon_open), so such an app's row belongs in Library's Apps or Games (row=); a test of nowifi
+ * before smart_hold there, if one ever sits on Streaming. */
+int addon_offline(void) { return pg.page && app()->nowifi; }
+
 /* Slot k's page, its first level op (args: "\t" and escaped each) titled title: the app started if
  * it isn't (its QR code shown at the first answer when qr); gone from the card, the page says so.
  * 1 when it opened or said why not. */
@@ -2349,7 +2496,7 @@ static int page_at(int k, const char *op, const char *args, const char *title, i
     pg.a = k;
     app_t *a = app();
     int missing = access(a->bin, 0);
-    if (!missing && (!a->launched || access(a->pid, 0))) launch(a), pg.code = qr && a->qr;
+    if (startable(a)) launch(a), pg.code = qr && a->qr;
     pg.depth = 1;
     static const unsigned short touches[] = { EVT_POINTER_DOWN, EVT_POINTER_MOVE_BEFORE,
                                               EVT_POINTER_UP_BEFORE, EVT_POINTER_ABORT };
@@ -2373,7 +2520,7 @@ static int page_at(int k, const char *op, const char *args, const char *title, i
  * app opens its page (1 when it opened, or said why not). */
 static int press(int slot) {
     app_t *a = &ap.a[slot];
-    return a->game ? game_start(a) : page_at(slot, "menu", "", a->name, 1);
+    return a->game ? game_start(a, 0, 0) : page_at(slot, "menu", "", a->name, 1);
 }
 
 /* An app's Streaming row (home.c ringnav_stream; ctx: its app's slot, addon_slot): a read that

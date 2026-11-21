@@ -1407,17 +1407,6 @@ class LookupMachine(QueueMachine):
             ret=self.selected
         self.returns(ret,clobber=True)
 
-class FolderClickMachine(LookupMachine):
-    def __init__(self,*a):
-        super().__init__(*a); self.videos=[]
-        self.handlers[payload_syms['books_video']]='lookup:books_video'; self.handlers[syms['folder_enter']]='lookup:folder_enter'
-    def hook(self,u,address,size,unused):
-        name=self.handlers.get(address,'')
-        if name=='lookup:books_video':
-            path=self.text(u.reg_read(UC_MIPS_REG_A0)); self.videos.append(path); self.returns(int(path.endswith('.mp4')),clobber=True); return
-        if name=='lookup:folder_enter': self.returns(8,clobber=True); return
-        return super().hook(u,address,size,unused)
-
 SONG_MENU=['Play Next','Add to Queue','Add to Favourites','Add to Playlist','Go to Album','Go to Artist']
 
 def playing_menu(**kw):
@@ -2873,7 +2862,7 @@ def at_theme(t,cls,*a,**kw):  # a cls machine that reads THEME t and the light h
     try: return cls(*a,**kw)
     finally: CONFIG.pop('THEME'); CONFIG.pop('LIGHT')
 
-class FolderPush(FolderClickMachine):  # stock's click and Back as their step of the layer
+class FolderPush(LookupMachine):  # stock's click and Back as their step of the layer
     step=0
     def hook(self,u,address,size,unused):
         if self.handlers.get(address,'')!='stock_folder_step': return super().hook(u,address,size,unused)
@@ -5332,8 +5321,8 @@ class HeadsetMachine(Machine):
     def __init__(self,owner=1):
         super().__init__(); self.owner=owner; self.playing=True; self.session=42; self.actions=[]; self.saved=0
         self.handlers[syms['mclGetSavePlayStatus']]='hs:saved'
-        for name in ('spot_status','radio_status','video_status','spot_session','radio_session','video_session',
-                     'spot_set_playing','radio_set_playing','video_set_playing','spot_media','radio_media','video_key'):
+        for name in ('spot_status','radio_status','spot_session','radio_session',
+                     'spot_set_playing','radio_set_playing','spot_media','radio_media'):
             self.handlers[payload_syms[name]]='hs:'+name
         self.handlers[syms['mclGetPlayStatus']]='hs:local_status'
         self.handlers[syms['player_play_pause']]='hs:local_toggle'
@@ -5343,7 +5332,7 @@ class HeadsetMachine(Machine):
         name=self.handlers.get(address,'')
         if not name.startswith('hs:'): return super().hook(u,address,size,unused)
         name=name[3:]; a=u.reg_read(REGS[0]); ret=0
-        owner=4 if name.startswith('video') else 3 if name.startswith('radio') else 2 if name.startswith('spot') else 1
+        owner=3 if name.startswith('radio') else 2 if name.startswith('spot') else 1
         if name=='saved': ret=self.saved
         elif name.endswith('_status'): ret=(2 if self.playing else 3) if self.owner==owner else 0
         elif name.endswith('_session'): ret=self.session

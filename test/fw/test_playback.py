@@ -1049,36 +1049,7 @@ def test_a_group_skip_back_plays_where_it_lands(fw, player):
     assert player.pending() == [] and player.history() == before[:before.index(order[3])] + [order[0]]
 
 
-# A load's videos.
-def no_videos(fw, player, rows, at):
-    where = C.c_int(at)
-    out = fw.fn('playback__no_videos', C.c_long, C.c_void_p, C.POINTER(C.c_int))(player.deques.new(rows), where)
-    return (player.deques[out] if out else None), where.value
-
-
-@pytest.mark.parametrize('kinds, at, kept, new_at', [
-    ('aaa', 1, None, 1),
-    ('ava', 2, [0, 2], 1),      # the same track
-    ('ava', 1, [0, 2], 1),      # a video: the next song after it
-    ('vaa', 0, [1, 2], 0),
-    ('vaa', 2, [1, 2], 1),
-    ('aav', 2, [0, 1], 1),      # a last video has no next song
-    ('vvv', 1, [], 0),
-])
-def test_no_videos_keeps_the_songs_and_the_place(fw, player, kinds, at, kept, new_at):
-    rows = [player.song(b'/m/%d.%s' % (i, b'mp4' if k == 'v' else b'flac')) for i, k in enumerate(kinds)]
-    got, where = no_videos(fw, player, rows, at)
-    assert got == (None if kept is None else [rows[i] for i in kept]) and where == new_at
-
-
-@pytest.mark.parametrize('path, kind, video', [
-    (b'/a/b.mp4', 8, 1), (b'/a/b.MKV', 8, 1), (b'/a/b.m4v', 8, 1), (b'/a/b.flac', 8, 0), (b'/a/b.mp4', 4, 0),
-    (b'/a/b', 8, 0), (b'/a.mp4/b', 8, 0), (b'/a/.mov', 8, 1), (b'/a/b.mp4.flac', 8, 0), (b'/a/b.', 8, 0), (b'', 8, 0),
-])
-def test_playback_video(fw, player, path, kind, video):
-    assert fw.fn('playback_video', C.c_int, C.c_void_p)(player.song(path, kind=kind)) == video
-
-
+# A load.
 def names(rng, seeds, count=2000):
     """Random names without a NUL, and the seeds cut short and bitten."""
     for _ in range(count):
@@ -1091,13 +1062,6 @@ def names(rng, seeds, count=2000):
                 if data:
                     data[rng.randrange(len(data))] = rng.randrange(1, 256)
             yield bytes(data)
-
-
-def test_playback_video_any_name(fw, player):
-    video = fw.fn('playback_video', C.c_int, C.c_void_p)
-    for name in names(random.Random(0x71d), [b'/m/a.mp4', b'/m/b.MKV', b'/m.mov/c.flac', b'/m/.avi']):
-        tail = name.rsplit(b'.', 1)[1].lower() if b'.' in name else b''
-        assert video(player.song(name)) == (b'.' in name and tail in (b'mp4', b'm4v', b'mkv', b'avi', b'mov', b'mpg'))
 
 
 def test_audio_extension_any_name(fw):
@@ -1147,10 +1111,6 @@ def test_a_speed_file_any_bytes(saved, fw):
         assert mode.value == (value if value < 4 else 0)
 
 
-def test_playback_video_of_a_record_with_no_path(fw):
-    assert fw.fn('playback_video', C.c_int, C.c_void_p)(C.create_string_buffer(b'\0' * 0x34 + b'\x08' + b'\0' * 0x30)) == 0
-
-
 def test_a_load_ends_advanced_play_and_counts(fw, player):
     load = fw.fn('ringnav_load', C.c_int, C.c_void_p, C.c_int, C.c_int)
     rows = player.load(player.albums(3))
@@ -1188,15 +1148,6 @@ def test_a_restored_load_keeps_its_type_and_its_state(fw, player, mcl):
     fw.mock('stock_load_trampoline', lambda q, at, kind, *_: seen.append(kind & 0xffffffff))
     load(player.handle, 0, 5)
     assert seen == [0xf00a] and player.s.active == 1 and player.s.restoring == 0
-
-
-def test_load_hands_stock_a_copy_without_the_videos(fw, player):
-    load = fw.fn('ringnav_load', C.c_int, C.c_void_p, C.c_int, C.c_int)
-    rows = [player.song(b'/m/1.flac'), player.song(b'/m/2.mp4'), player.song(b'/m/3.flac')]
-    q, seen = player.deques.new(rows), []
-    fw.mock('stock_load_trampoline', lambda dq, at, kind, *_: seen.append((list(player.deques[dq]), at)) and 0)
-    load(q, 2, FOLDER)
-    assert seen == [([rows[0], rows[2]], 1)] and player.deques[q] == rows
 
 
 def test_the_mode_shuffle_songs_replaced_comes_back_once(fw, player, mcl):
@@ -2992,7 +2943,7 @@ def test_a_pick_that_keeps_nothing_is_stocks(fw, keeps, player, case):
 
 
 # Calls from stock's own sites, which the C tells by its return address.
-VIEW_QUEUE_RET, UNPLAYABLE_NEXT_RET, LOAD_DIRECTORY_RET, SPEED_RECONNECT_RET = 0x53acf8, 0x4f4ddc, 0x5d4cb4, 0x51e04c
+VIEW_QUEUE_RET, UNPLAYABLE_NEXT_RET, SPEED_RECONNECT_RET = 0x53acf8, 0x4f4ddc, 0x51e04c
 PAGE_PICK_RET, ALBUM_PLAY_RET, ALBUMINFO_PLAY_RET = 0x53e514, 0x4a97c0, 0x4ac008
 
 
@@ -3068,17 +3019,6 @@ def test_stocks_skip_past_an_unplayable_file_neither_asks_nor_stamps(fw, held, p
     assert fw.var('press_natural', C.c_int).value == 0
     held.change(1)  # the same Next pressed asks
     assert held.changes() == [1] and held.armed(1)
-
-
-@pytest.mark.parametrize('folder, listed', [(b'/mnt/mmc/Videos/trips', True), (b'/mnt/mmc/Videos', True),
-                                            (b'/mnt/mmc/Music', False), (b'/mnt/mmc/Videosx', False)])
-def test_folder_view_lists_videos_in_the_videos_folder_only(fw, stock_call, folder, listed):
-    fw.var('fw_ctx_g_folder_path', C.c_char * 1024).value = folder
-    fw.mock('tk_str_start_with', lambda s, prefix, *_: C.string_at(s).startswith(C.string_at(prefix)))
-    formats, ext = C.create_string_buffer(b'.mp3.flac'), C.create_string_buffer(b'.mp4')
-    listing = stock_call(LOAD_DIRECTORY_RET, 'ringnav_audio_extension', C.c_void_p, C.c_void_p, C.c_void_p)
-    assert (listing(formats, ext) == C.addressof(ext)) == listed
-    assert fw.fn('ringnav_audio_extension', C.c_void_p, C.c_void_p, C.c_void_p)(formats, ext) is None  # the scan: never
 
 
 @pytest.mark.parametrize('how', ['reconnect', 'out of range'])

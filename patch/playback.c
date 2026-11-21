@@ -919,28 +919,6 @@ int ringnav_start_queue(int at) {
     }
     return stock_start_queue_trampoline(at);
 }
-/* A video Folder view lists in the Videos folder (ringnav_audio_extension) plays from its row in
- * q2video, never from a queue: stock gets a copy without them, at moved to the same track (or the
- * next song after a video), and q, the caller's showlist, stays whole. 0 when nothing to drop. */
-extern int video_ext(const char *ext);
-int playback_video(void *r) {
-    const char *path = P(r, REC_PATH);
-    return I(r, REC_TYPE) == 8 && path && video_ext(strrchr(path, '.'));
-}
-static void *no_videos(void *q, int *at) {
-    unsigned n = q ? deque_size(q) : 0, keep = 0, before = 0;
-    for (unsigned i = 0; i < n; ++i)
-        if (!playback_video(deque_at(q, i))) keep++, before += (int)i < *at;
-    if (keep == n) return 0;
-    void *out = song_list();
-    for (unsigned i = 0; i < n; ++i)
-        if (!playback_video(deque_at(q, i))) _deque_push_back(out, deque_at(q, i));
-    if (!keep)
-        *at = 0;
-    else if (*at > 0)
-        *at = (int)(before < keep ? before : keep - 1);
-    return out;
-}
 /* playback_groups' own start (s.grouping): Now Playing's load of the queue it has just grouped and
  * ordered, at the order's first track. Its tables stand, started as rebuild(0) would start them
  * there (that track leads its group, which comes first), so the library is not grouped again. Any
@@ -965,9 +943,7 @@ int ringnav_load(void *q, int at, int type) {
     close_preload();
     /* After Shuffle Songs, before stock loads; ringnav_mode's playback_clear ends its shuffle. */
     if (unshuffle && !s.restoring) config_playmode(playback_unshuffle(), 1);
-    void *own = no_videos(q, &at);
-    int result = stock_load_trampoline(own ? own : q, at, type);
-    if (own) deque_destroy(own);
+    int result = stock_load_trampoline(q, at, type);
     back_to = 0;
     if (s.restoring == 2)
         s.restoring = 0;
@@ -1835,14 +1811,7 @@ int ringnav_checkfw(void *win, void *ctx) {
 }
 
 /* Stock passes its audio extension list and the final dot suffix in folder and scan paths.
- * Keep every existing format; TagLib's FileRef already dispatches M4B to MP4. Folder view's
- * listing (toolsLoadDirectory) in the card's Videos folder also takes videos, which a row click
- * hands to books_video; the library scan never does, and no queue keeps them (no_videos). */
-#define LOAD_DIRECTORY_RET 0x5d4cb4 /* toolsLoadDirectory's (build.py AUDIO_EXTENSION_CALLS) */
-extern int folder_videos(void);
+ * Keep every existing format; TagLib's FileRef already dispatches M4B to MP4. */
 char *ringnav_audio_extension(const char *formats, const char *ext) {
-    if (!strcasecmp(ext, ".m4b") || (__builtin_return_address(0) == (void *)LOAD_DIRECTORY_RET &&
-                                     video_ext(ext) && folder_videos()))
-        return (char *)ext;
-    return strstr(formats, ext);
+    return !strcasecmp(ext, ".m4b") ? (char *)ext : strstr(formats, ext);
 }

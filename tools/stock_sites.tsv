@@ -49,7 +49,6 @@ demo	0x49f7a8	0x4	search_fill_genre_tab	the only call to widget_set_children_lay
 demo	0x4a1fd8	0x4	statusbar_dialog_slide_timer	1st of 2 calls to dialog_quit; tools/build.py FUNCTIONS
 demo	0x4a2acc	0x4	updatemusic_dialog_on_keyup	`bne $2, $3, +10 words`, before the only call to updatemusic_dialog_on_stop; tools/build.py SCAN_CENTRE
 demo	0x4a2de4	0x4	dialog_updatemusic_dialog_init	`sw $zero, -0x4f3c($2)`, the delay slot of the only call to toolsClearDbCount; patch/navigation.c ringnav
-demo	0x4a3694	0x4	volume_dialog_on_keyup	`addiu $sp, $sp, -0x28`; patch/books.c video_key
 demo	0x4a36b4	0x4	volume_dialog_on_keyup	`beqz $2, +70 words`; tools/build.py VOL_DARK
 demo	0x4a3930	0x4	localmusic_album_cover_pause	`sw $3, 0x0($2), forming albumcover_taskstate`; tools/build.py COVER_PAUSE
 demo	0x4a4514	0x4	localmusic_album_table_reload	the load of $25 for the only call to widget_move_resize, after "table_view"; patch/ipod.json navbar_resize_calls (a page's list keeps its asset's box: stock's resize for its navigation bar switch does nothing)
@@ -379,7 +378,6 @@ demo	0x5d3820	0x4	tools_parse_cue_file	5th of 7 calls to toolsIconvConvert, afte
 demo	0x5d3bdc	0x4	tools_parse_cue_file	6th of 7 calls to toolsIconvConvert, after "read file error"; tools/build.py CUE_TEXT
 demo	0x5d3f64	0x4	tools_parse_cue_file	7th of 7 calls to toolsIconvConvert, after "utf-8"; tools/build.py CUE_TEXT
 demo	0x5d4cac	0x4	toolsLoadDirectory	2nd of 6 calls to strstr, after "lockscreenimage"; tools/build.py AUDIO_EXTENSION_CALLS
-demo	0x5d4cb4	0x4	toolsLoadDirectory	`bnez $2, +155 words` (3rd of 9 such), before 3rd of 6 calls to strstr, after "lockscreenimage"; patch/playback.c LOAD_DIRECTORY_RET
 demo	0x5d67bc	0x4	tools_scan_folder_list	the load of $25 for 2nd of 2 calls to readdir, after "%s/%s"; tools/build.py SCAN_DIRS
 demo	0x5d6864	0x4	tools_scan_folder_list	3rd of 13 calls to strcmp, after "%s/%s"; tools/build.py SCAN_DIRS
 demo	0x5d69fc	0x4	tools_scan_folder_list	2nd of 5 calls to strstr, after ".Trashes"; tools/build.py AUDIO_EXTENSION_CALLS
