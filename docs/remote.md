@@ -78,7 +78,7 @@ All of it is injected by writing input events to `/dev/input/eventN`, so the fir
 
 ## Log
 
-`--dev` builds start demo with its output, and that of the hciplayer it starts, appended to `/tmp/q2-demo.log` instead of the serial console; release builds keep stderr alone ([boot.md](boot.md#rockbox-from-home)). This legacy filename links to `/tmp/q2-logbuf/demo.log`, on a private tmpfs with a hard 4 MiB data cap. Once a minute the file is emptied above 3.5 MiB, keeping the same inode for `log -f` and inherited append writers. A flood can lose newer messages until the next trim. The log disappears at reboot. If bounded capture cannot be set up, output is discarded and the crash collector says capture is disabled. `log --clear` empties an existing log; it does not create one when capture is unavailable. demo's stdout is block-buffered once it goes to a file, so its lines arrive in batches rather than as they are printed; stderr arrives at once.
+`--dev` builds start demo with its output, and that of the hciplayer it starts, appended to `/tmp/q2-demo.log` instead of the serial console; release builds keep its stderr alone, in `/tmp/q2-demo.err`, emptied past 512 KB and never past 1 MB ([boot.md](boot.md#rockbox-from-home)). The file is in RAM: once a minute it is emptied if it has grown past 4 MB, it never grows past 8 MB (a link into a tmpfs of that size, `/tmp/q2-log`), and it is gone after a reboot. demo's stdout is block-buffered once it goes to a file, so its lines arrive in batches rather than as they are printed; stderr arrives at once.
 
 ## Troubleshooting
 

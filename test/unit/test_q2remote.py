@@ -1225,7 +1225,7 @@ def test_main_sh_empty(world):
     (['pull', 'a', 'b'], ('pull', ('a', 'b'), {})),
     (['reboot'], ('reboot', (False,), {})),
     (['reboot', '--wait'], ('reboot', (True,), {})),
-    (['log', '--clear'], ('shell', ('[ -f /tmp/q2-demo.log ] && { [ ! -L /tmp/q2-demo.log ] || [ "$(readlink /tmp/q2-demo.log)" = /tmp/q2-logbuf/demo.log ]; } && ( : >/tmp/q2-demo.log )',), {})),
+    (['log', '--clear'], ('shell', (': >/tmp/q2-demo.log',), {})),
 ])
 def test_main_dispatch(world, argv, expected, capsys):
     assert q.main(argv) == 0
