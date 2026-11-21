@@ -1584,11 +1584,14 @@ FUNCTIONS = {
  'mclGetCueFlag': ('int', 'void'),  # the playing record has a CUE start or end
  'mclGetPlayStatus': ('int', 'void'),  # 1 stopped, 2 playing, 3 paused (mclStop, mclSetResume, mclSetPause)
  'player_stop': ('int', 'void'),
+ 'player_save_stop': ('int', 'void'),  # a playing or paused queue stopped, its status and place kept for player_save_start; nothing when stopped
  'player_save_start': ('int', 'int'),  # pause: mclStartPlayer at the saved seek, then paused if set
+ 'mclSetSavePlayStatus': ('int', 'int'),  # what player_save_start resumes: 2 playing, 3 paused, 1 nothing (0x5be924)
  'mclGetSavePlayStatus': ('int', 'void'),  # player_save_stop's mclGetPlayStatus, unless that was 1
  'save_memoryplay_info': ('int', 'void'),  # Memory playback's queue and position, as into_poweroff saves them
  'mclSetDacPwr': ('int', 'int'),
  'reset_poweroptions_timer': ('int', 'int, int, int'),
+ 'toolSetBackLight': ('int', 'int'),  # the panel's level, 1 its lowest; config_lightness gives it g_lightness + 1
  'btctl_transport_get_volume': ('int', 'void'),
  'btctl_transport_set_volume': ('int', 'int'),
  'device_set_volume': ('int', 'int, int'),  # volume, notify: the DAC's or hciplayer's, as the volume dialog
@@ -1667,7 +1670,7 @@ GLOBALS = ['tidal_albuminfo_thread_run', 'tidal_collection_thread_run',  # 2: a 
            'savestartbt', 'transposition', 'tidalfurlstart',  # a stream to start paused; 1 arms Now Playing's online tick (tidal.c app_start)
            'isFav_playing',  # Now Playing's heart on a 0xf1 track: 1 a favourite (tidal.c app_fav)
            'g_time_zone','g_playspeed_mode', 'g_time24h_flag', 'g_backlight_status', 'g_lockscreen_pageflag', 'g_testmode_flag',
-           'g_keylock_flag', 'g_keylock_mode',
+           'g_keylock_flag', 'g_keylock_mode', 'g_lightness',
            'g_bluetoothflag', 'bt_linkstatus', 'g_guideflag', 'g_poweroff_state', 'g_usblink_status', 'bt__recv_pageflag',
            'g_power_longkey', 'g_ingore_bootkey_flag', 'g_equalizer_flag', 'g_navbar_status', 'g_playcover_type',
            'g_keytone_flag', 'g_folder_layer', 'g_otg_status', 'g_delete_flag', 'g_volume', 'g_maxvolume',

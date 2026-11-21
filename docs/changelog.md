@@ -1,6 +1,8 @@
 # Changelog
 
 - **1.8.9**:
+  - Games: a card game can dim the screen while its menus sit idle, and bring it back to your brightness when you touch it. Your brightness setting isn't changed.
+  - Games: a card game can keep the Q2's music playing while you play, and take the sound for its own when you choose, then give it back with the music where it was.
   - App Store: an app that isn't in Q2 Pod's list can be installed and updated from it. Put its GitHub repository, one `owner/repo Name` a line, in `.q2/custom-sources.list` on the card; it shows after the listed apps, on **Games** under a `[Games]` line. A repository already in the list is skipped.
   - Dev builds: the player's log, `/tmp/q2-demo.log`, has 8 MB of memory of its own. Something printing without end could fill the memory the player shares with it in less than the minute between the log's trims.
   - Most Played: songs you start playing once the play counts have filled up are counted when you play them again within a few days, so a new album can join **Most Played**. Once all 512 places held songs played twice or more, each song played for the first time took the place of the one played for the first time before it, so no new song got past one play and Most Played stopped changing.
