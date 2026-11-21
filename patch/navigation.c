@@ -4813,7 +4813,7 @@ void paint_tray(void *canvas, int x, int y, int w, int h) {
 }
 /* USB Storage's page, every theme: the computer's eject (SCSI START STOP UNIT, LoEj) closes the
  * card's LUN in the kernel's f_mass_storage, and its configfs file then reads empty. Once it has
- * read open, empty is the eject: the heading (Classic) or stock's line (scrlabel_info, which
+ * read open, empty is the eject: the heading (own pages) or stock's line (scrlabel_info, which
  * stock's timer rewrites "USB Connected" every 500 ms, so a label of its style covers it) says OK
  * to Disconnect. No file (the gadget not built yet, or torn down) is no eject. The LUN stays closed
  * until stock rebuilds the gadget, so the poll ends there.
@@ -4861,12 +4861,13 @@ void *ringnav_ui_load(const char *name, void *parent) {
          !tk_strcmp(widget_get_prop_str(root, "name", ""), "checkfw_dialog")))
         widget_set_prop_str(root, "highlight", "");
     if (root && slider_page(root)) slider_open(root); /* every theme's: no knob; Classic's page */
-    if (root && classic_pages()) {
+    if (root && own_pages()) { /* Search, T9 and the playlist's box Classic's alone */
         const char *loaded = widget_get_prop_str(root, "name", "");
         msg_open(root);
-        if (!tk_strcmp(loaded, "search_dialog")) search_open(root);
-        if (!tk_strcmp(loaded, "kb_default_t9")) kb_open(root);
-        if (!tk_strcmp(loaded, "addplaylist_dialog") || !tk_strcmp(loaded, "renameplaylist_dialog"))
+        if (classic_pages() && !tk_strcmp(loaded, "search_dialog")) search_open(root);
+        if (classic_pages() && !tk_strcmp(loaded, "kb_default_t9")) kb_open(root);
+        if (classic_pages() && (!tk_strcmp(loaded, "addplaylist_dialog") ||
+                                !tk_strcmp(loaded, "renameplaylist_dialog")))
             pl_box_open(root);
         if (time_form(root)) time_open(root);
     }

@@ -7,7 +7,8 @@ import pytest
 from conftest import O, Config
 from test_nav_paint import (ACCENTS, GRAPHITE, ICONS, LABELS, MINIMAL, MODERN, PAPER, RED, RED_PX, TIDAL, WHITE, Canvas, Quick, bitmaps,
                             channels, fill_props, image_add, layout, luma, paint_bg, quick_window, rgb_of, rgba, scheme, scrub,
-                            SLIDER_PAGES, SLIDERS, named, on_page, slider_scrub, slider_paint, ui_load,
+                            SLIDER_PAGES, SLIDERS, USB_LUN, Files, added, count, inside, msg_paint, named, poll,
+                            whole, on_page, slider_scrub, slider_paint, ui_load,
                             st, stock_h, theme, vol_paint, volume, world)  # noqa: F401 (fixtures, by name)
 from test_nav_painters import Quick as QuickInit
 from test_nav_display_library import POINTER_MOVE, SLIDE_PX, QuickPage, Stock, Ui, pressdown
@@ -425,3 +426,80 @@ def test_classic_s_status_bar_keeps_its_images_final_under_modern(fw, bitmaps, l
     bm = bitmaps(fw, [[RED_PX, WHITE]])
     image_add(fw, b'classic_light_bolt', bm)
     assert bm.rows() == [[RED_PX, WHITE]]
+
+
+# The message screens (msg_open, msg_paint) in the flat look: Update Library's dialog and USB mode's page.
+
+def flat_scan(fw, world, st, text='Scanned 0', **config):
+    """test_nav_paint's scan_dialog under Modern: (dialog, the count's threads)."""
+    theme(fw, MODERN, ACCENT=str(TIDAL), **config)
+    win = world.window('updatemusic_dialog', 'dialog')
+    for name in ('img_animation', 'label_scanfolder'):
+        world.add(win, name, 'image')
+    world.add(win, 'label_msg', 'label', text=text)
+    world.add(win, 'btn_no', 'button', box=(100, 250, 175, 40), text='Stop')
+    threads = []
+    fw.mock('fw_pthread_create', lambda t, attr, fn, arg, *_: threads.append(fn) or 0)
+    ui_load(fw, st, b'updatemusic_dialog', win)
+    return win, threads
+
+
+def test_the_flat_scan_dialog_is_a_heading_a_line_and_cancel_s_pill(fw, world, st):
+    win, threads = flat_scan(fw, world, st)
+    heading, line, btn = (named(world, win, n) for n in ('msg_heading', 'msg_line', 'btn_no'))
+    assert world[heading].text and world.at(heading)[3] > world.at(line)[3] == 22
+    assert world.at(btn) == (127, 248, 121, 36) and world[btn].props['style:normal:font_name'] == 'bold'
+    assert (world[heading].props['style:normal:font_name'], world[heading].props['style:normal:font_size']) == ('bold', 27)
+    canvas = msg_paint(fw, win)
+    rest = rgba(0x2c2c2e)
+    pill = [f for f in canvas.fills if f[4] == rest and 248 <= f[1] < 284]
+    assert {f[1] for f in pill} == set(range(248, 284)) and canvas.texts == []
+    assert [n for n, _ in canvas.arts if n != 'widget_paint'] == ['flat_msg_note_d'] and len(threads) == 1
+
+
+def test_the_flat_scan_s_bar_is_thin_and_fills_to_its_part(fw, world, st, whole):
+    whole.value = 1
+    win, threads = flat_scan(fw, world, st, 'Scanned 352')
+    before = msg_paint(fw, win)
+    count(fw, threads, 704)
+    assert poll(world) == 8 and world[named(world, win, 'msg_line')].text == '352 of 704 songs'
+    (target, box), = world.invalid
+    bar = added(msg_paint(fw, win), before)
+    on = rgba(fw.fn('flat_on', C.c_uint)())
+    lit = [f for f in bar if f[4] == on]
+    assert {f[1] for f in bar} == set(range(222, 226)) and min(f[0] for f in bar) == 88 and max(f[0] + f[2] for f in bar) == 288
+    assert abs(max(f[0] + f[2] for f in lit) - (88 + 200 * 352 // 704)) <= 1  # its round end's soft pixel aside
+    assert target == win and all(inside(f[:4], box) for f in bar) and inside(world.at(named(world, win, 'msg_line')), box)
+
+
+def flat_usb(fw, world, st, **config):
+    """test_nav_paint's usb_page under Modern, with its config."""
+    theme(fw, MODERN, **config)
+    fw.var('g_usbmode', C.c_ubyte).value = 0
+    win = world.window('usbmode_page')
+    world.add(win, 'img_usbmode', 'image')
+    world.add(win, 'scrlabel_info', 'hscroll_label', box=(20, 200, 335, 30), text='USB Connected')
+    ui_load(fw, st, b'usbmode_page', win)
+    return win
+
+
+@pytest.mark.parametrize('light, ink, quiet', [('0', 0xffffff, 0x98989d), ('1', 0x1c1c1e, 0x6e6e73)])
+def test_a_flat_message_page_is_the_half_s_paper_under_its_ink(fw, world, st, light, ink, quiet):
+    win = flat_usb(fw, world, st, LIGHT=light)
+    canvas = msg_paint(fw, win)
+    final = lambda n: world[named(world, win, n)].props['_final'] & 0xffffffff
+    assert canvas.fills[0][4] == rgba(fw.fn('flat_page', C.c_uint)()) and canvas.art(f'flat_msg_usb_{"l" if light == "1" else "d"}')
+    assert (final('msg_heading'), final('msg_line')) == (0xff000000 | ink, 0xff000000 | quiet) and canvas.texts == []
+
+
+def test_modern_s_usb_page_says_connected_eject_and_then_ok_to_disconnect(fw, world, st):
+    """Modern takes the own pages' words: Connected over Eject before disconnecting, stock's line hidden; the eject
+    turns the heading to OK to Disconnect and empties the line, as Classic's."""
+    files = Files(fw, {USB_LUN: b'/dev/mmcblk0p1\n'})
+    win = flat_usb(fw, world, st)
+    text = lambda n: world[named(world, win, n)].text
+    assert (text('msg_heading'), text('msg_line')) == ('Connected', 'Eject before disconnecting')
+    assert world[named(world, win, 'scrlabel_info')].visible == 0
+    assert poll(world) == 8
+    files.files[USB_LUN] = b''
+    assert poll(world) == 7 and (text('msg_heading'), text('msg_line')) == ('OK to Disconnect', '')
