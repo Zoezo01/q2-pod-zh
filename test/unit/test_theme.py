@@ -1242,6 +1242,14 @@ def test_classic_light_builtin():
     assert theme.geometry_sets([m, c, n]) == [SET0, CLASSIC_LIGHT, CLASSIC_LIGHT_TEXT]
 
 
+def test_emit_shares_a_theme_s_rows_with_the_one_it_repeats(tmp_path):
+    """Classic Modern's schemes are Classic's, so it points at Classic's arrays and adds none."""
+    theme.emit(theme.builtins(), tmp_path)
+    inc = (tmp_path/'themes.inc').read_text()
+    assert re.findall(r'static const scheme_t (\w+)\[\]', inc) == ['minimal_schemes', 'classic_light_schemes', 'classic_light_light', 'modern_schemes']
+    assert re.findall(r'\.(schemes|light) = (\w+),', inc)[-2:] == [('schemes', 'classic_light_schemes'), ('light', 'classic_light_light')]
+
+
 def test_classic_modern_builtin():
     """Classic Modern is Classic but for its own pages' and prompts' painters, both looks', and the flat look's
     Quick Settings ground and Set Date gap: Classic's sets, options and accent key, so a switch between them is live."""

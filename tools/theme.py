@@ -1167,14 +1167,17 @@ def emit(themes, out, redirects={}):
                 f'.bar = {stops_c(s["bar"])}, .bar_line = 0x{s["bar_line"]:06x}, .bar_line2 = 0x{s["bar_line2"]:06x}'
                 + (f', .label = {json.dumps(s["label"])}' if 'label' in s else '') + ' },'
                 for v, s in enumerate(scheme_half(s, light) for s in t['schemes'])]
+    drawn, named = {}, {}  # a theme whose rows are an earlier one's points at its array (Classic Modern at Classic's)
+    def array(name, body, *asserts):
+        if tuple(body) not in drawn:
+            drawn[tuple(body)] = name
+            lines.extend([f'static const scheme_t {name}[] = {{', *body, '};', *asserts])
+        return drawn[tuple(body)]
     for t in themes:
         i, one = c_name(t), shared(t)
         # one: the light rows serve both halves (today's lines); else the dark rows, then the light ones
-        lines += [f'static const scheme_t {i}_schemes[] = {{', *rows(t, one), '};',
-                  f'_Static_assert(sizeof {i}_schemes / sizeof *{i}_schemes >= ACCENT_N, "one scheme per ACCENTS row, then the theme\'s own");']
-        if not one:
-            lines += [f'static const scheme_t {i}_light[] = {{', *rows(t, True), '};',
-                      f'_Static_assert(sizeof {i}_light == sizeof {i}_schemes, "one light half per scheme");']
+        dark = array(f'{i}_schemes', rows(t, one), f'_Static_assert(sizeof {i}_schemes / sizeof *{i}_schemes >= ACCENT_N, "one scheme per ACCENTS row, then the theme\'s own");')
+        named[i] = dark, dark if one else array(f'{i}_light', rows(t, True), f'_Static_assert(sizeof {i}_light == sizeof {dark}, "one light half per scheme");')
         lines.append(f'static const option_t {i}_opts[] = {{')
         lines += [f'    {{ .setting = {setting(o)}, .def = {o["def"]}, .preset = {o["preset"]}, .keep = {o["keep"]}, '
                   f'.values = 0x{o["values"]:x} }},' for o in t['opts']]
@@ -1189,7 +1192,7 @@ def emit(themes, out, redirects={}):
         fields = [('name', json.dumps(t['name'])),
                   *((k.field, field(k)) for k in SCHEMA.values() if k.cls == 'live' and view_attr(k.path)),
                   ('accent_slot', ACCENT_KEYS.get(t['accent_key']) or f'&st.own[{keys.index(t["accent_key"])}]'), ('accent_key', json.dumps(t['accent_key'])),
-                  ('schemes', f'{c_name(t)}_schemes'), ('light', f'{c_name(t)}_schemes' if shared(t) else f'{c_name(t)}_light'),
+                  ('schemes', named[c_name(t)][0]), ('light', named[c_name(t)][1]),
                   ('n_schemes', len(t['schemes'])),
                   ('opts', f'{c_name(t)}_opts'), ('n_opts', len(t['opts'])),
                   ('undeclared', ' | '.join(f'(1 << {m})' for m in t['undeclared']) or 0),
