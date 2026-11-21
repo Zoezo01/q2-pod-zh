@@ -396,6 +396,9 @@ def validate_assets(directory):
     assert games == (ROOT/'assets/icons/local_games.png').read_bytes()
     assert png_header(games) == (52, 52, 8, 6)
     assert imagemagick('png:-', '-format', '%[fx:p{0,0}.a]', 'info:', data=games) == b'0'
+    # Library's Apps and App Store rows: the card app's 52 px square disc, stock's System Update icon
+    assert read('rootfs.squashfs', xx+'local_apps.png') == (ROOT/'assets/icons/stream_app.png').read_bytes()
+    assert read('rootfs.squashfs', xx+'local_store.png') == read('stock.squashfs', xx+'system_update.png')
     flow = read('rootfs.squashfs', xx+'default_album_flow.png')
     assert flow == sized_art(master, 160) and png_header(flow) == (160, 160, 8, 6)
     assert read('rootfs.squashfs', xx+'default_album_home.png') == master

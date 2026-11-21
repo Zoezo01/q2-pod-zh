@@ -14,11 +14,10 @@
  *            the card is never kept busy, leaving the loop's pid in /tmp/q2-<id>;
  *   q2-<id>  the app;
  *   icon-40.png, icon.png
- *            its Streaming row's icon, 40 px (SET_ICON), drawn 1:1, else 52 px, scaled to fit
- *            (a Library row's: the 52 px one first); one over ART_MAX px either way counts as
- *            none; without them, the shared stream_app.
+ *            its Streaming row's icon, 40 px (SET_ICON), drawn 1:1, else 52 px, scaled to fit;
+ *            one over ART_MAX px either way counts as none; without them, the shared stream_app.
  * Streaming lists those on the card (home.c ringnav_stream), but the ones whose row says the
- * Library (ringnav_localmusic, above Games) or Games. A row starts its app and opens
+ * Library (Library's Apps page, addon_apps) or Games. A row starts its app and opens
  * addon_page, a list the app draws over Q2SPOT/1 (docs/librespot.md) on /tmp/q2-<id>.browse.sock:
  * each row's kind says what a press does (a local row plays a song or folder from the card,
  * library_lists.c's songs_open). Its status file /tmp/q2-<id>.state says whether to hold standby
@@ -186,16 +185,14 @@ static void slots_read(void) {
         unsigned k = strlen(a->more);
         if (k && a->more[k - 1] == '\r') a->more[k - 1] = 0; /* a Windows editor's line end */
         a->present = !access(a->bin, 0);
-        /* the row's size first (40 px, a Library row's 52), the other scaled to fit on Streaming
-         * (navigation.c set_child; a Library row draws it 1:1, so one over 52 px shows its middle),
-         * else stream_app (one over ART_MAX px either way, or whose size can't be read, counts as
-         * none: demo decodes it whole) */
+        /* the row's size first (40 px), the other scaled to fit on Streaming (navigation.c
+         * set_child), else stream_app (one over ART_MAX px either way, or whose size can't be
+         * read, counts as none: demo decodes it whole) */
         static const char *const icons[2] = { "icon-40.png", "icon.png" };
         tk_snprintf(a->icon, sizeof a->icon, "stream_app");
         for (int i = 1; i >= 0; --i) {
             int w = 0, h = 0;
-            tk_snprintf(path, sizeof path, CARD "/%s/%s", e->d_name,
-                        icons[a->row == ROW_LIBRARY ? 1 - i : i]);
+            tk_snprintf(path, sizeof path, CARD "/%s/%s", e->d_name, icons[i]);
             if (picture_size(path, &w, &h) && w && h && w <= ART_MAX && h <= ART_MAX)
                 tk_snprintf(a->icon, sizeof a->icon, "file://%s", path);
         }
@@ -229,11 +226,9 @@ const char *addon_icon(int k) { return k >= 0 && k < ap.shown ? ap.a[ap.order[k]
 const char *addon_slot_id(int i) {
     return i >= 0 && i < ap.n && ap.a[i].present && !ap.a[i].hidden ? ap.a[i].id : 0;
 }
-/* The Library's card rows (home.c ringnav_localmusic): how many, the card read again, then one's
- * name and icon. */
+/* Library's Apps rows (addon_apps): how many, the card read again, then one's name. */
 int addon_libs(void) { return addon_scan(), ap.libs; }
 const char *addon_lib_name(int k) { return k >= 0 && k < ap.libs ? ap.a[ap.lib[k]].name : 0; }
-const char *addon_lib_icon(int k) { return k >= 0 && k < ap.libs ? ap.a[ap.lib[k]].icon : 0; }
 
 /* Whether an image's name is a card app's Streaming icon, file:///mnt/mmc/.<id>/icon*.png
  * (navigation.c ringnav_image_add: Minimal greys it as Streaming's own icons). */
@@ -893,7 +888,7 @@ static void game_end(void) {
  * slots are read again, not the lists' order: the toast comes over whatever page is open, whose
  * rows hold their places by name, and a new app sorted in would move each after it on a row. */
 const char *addon_where(const char *id) {
-    static const char *const where[] = { "Streaming", "Library's Games", "Library" };
+    static const char *const where[] = { "Streaming", "Library's Games", "Library's Apps" };
     slots_read();
     for (int i = 0; i < ap.n; ++i)
         if (ap.a[i].present && !strcmp(ap.a[i].id, id)) return where[ap.a[i].row];
@@ -1643,9 +1638,8 @@ static void show(void) {
     } else if (l->state == K_ERROR) {
         n = 1 + (app()->nostop || stoppable());
         pg.view = page_list(pg.page, pg.page, 0, l->note, n, 48);
-        page_row_detail(pg.view, 0,
-                        l->retry ? "Retry" : "Install it again in System settings → App Store", 0,
-                        clicked);
+        page_row_detail(pg.view, 0, l->retry ? "Retry" : "Install it again in Library → App Store",
+                        0, clicked);
         if (app()->nostop)
             page_row_detail(pg.view, 1, "Cancel", 0, clicked);
         else if (n > 1)
@@ -2180,7 +2174,7 @@ int addon_open(void *ctx, void *event) {
 }
 /* Games' card row k (games.c pick_card_game): 1 when its game runs, or its page opened. */
 int addon_game_start(int k) { return k >= 0 && k < ap.games ? press(ap.game[k]) : 0; }
-/* An app's Library row (home.c ringnav_localmusic; ctx: its place by name at the last scan). It
+/* An app's row on Library's Apps page (addon_apps; ctx: its place by name at the last scan). It
  * opens at once, with no wait for Smart Wi-Fi's link, as a Games row does: what such an app lists
  * is on the card, and the radio comes back for an app with a page once it runs (addon_running).
  * ponytail: a request it makes over the network in its first seconds can fail for want of the
@@ -2190,6 +2184,42 @@ int addon_lib_open(void *ctx, void *event) {
     (void)event;
     int k = (int)(long)ctx;
     if (k >= 0 && k < ap.libs) press(ap.lib[k]);
+    return 0;
+}
+
+/* Library's Apps page: its apps' rows by name, Games' chooser's (games.c), "No apps" with none. Its
+ * rows are built again when the card's count of them changes as the page comes back on top or an
+ * App Store job ends (addon_apps_sync). ponytail: a count, not the names: one app swapped for
+ * another while the page is open shows at its next open. */
+static struct {
+    void *page;
+    int n; /* the rows built, -1: none yet */
+} la __attribute__((section(".scratch")));
+static int apps_closed(void *ctx, void *event) {
+    la.page = 0;
+    return 0;
+}
+static void apps_rows(void) {
+    int n = addon_libs();
+    if (n == la.n) return;
+    void *view = page_list_or(la.page, la.page, "Apps", "No apps", la.n = n, 48);
+    for (int k = 0; k < n; ++k) page_row_into(view, k, addon_lib_name(k), addon_lib_open);
+}
+int addon_apps(void *ctx, void *event) {
+    if (la.page || !(la.page = page_open("cardapps_page", apps_closed, page_keyup))) return 0;
+    widget_on(la.page, EVT_WINDOW_FOREGROUND, addon_apps_sync, la.page);
+    la.n = -1;
+    apps_rows();
+    return 0;
+}
+/* win (0: the top window) back on top, or an App Store job's end: the Library's Apps row there
+ * (home.c, named library_apps) shown while the card has an app for it, the Apps page's rows built
+ * again. */
+int addon_apps_sync(void *win, void *event) {
+    if (!win) win = window_manager_get_top_window(window_manager());
+    void *row = win ? widget_lookup(win, "library_apps", 1) : (void *)0;
+    if (row) widget_set_visible(row, addon_libs() > 0, 0), widget_layout(P(row, W_PARENT));
+    if (win && win == la.page) apps_rows();
     return 0;
 }
 

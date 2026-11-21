@@ -332,7 +332,7 @@ def appearance_titles(t):
     """Appearance's rows under theme t: Theme, t's options in its theme.xml's order, then the Home switches every
     theme has."""
     return ['Theme'] + [o['label'] if o['setting'] == 'SETTING_OWN' else PAYLOAD[o['setting']][0] for o in t['opts']] + \
-        ['Hide Streaming', 'Hide Folder']
+        ['Hide Streaming', 'Hide Folder', 'Hide Apps', 'Hide Games', 'Hide App Store']
 
 
 def stored_key(t, o):
@@ -385,7 +385,7 @@ def test_appearance_lists_theme_then_minimals_options_in_its_order(fw):
     assert titles(page.view()) == appearance_titles(t)
     # no set_text: a row reads "Title: value", a switch its On or Off
     switches = [PAYLOAD[o['setting']][0] for o in t['opts'] if o['setting'] in PAYLOAD and PAYLOAD[o['setting']][2]] + \
-        ['Hide Streaming', 'Hide Folder']
+        ['Hide Streaming', 'Hide Folder', 'Hide Apps', 'Hide Games', 'Hide App Store']
     assert switches and [row[0] for row in rows(page.view()) if row[1] is not None] == switches
     read = readings(page.view())
     # the running theme's name, and Accent at Minimal's own default, under its own key
@@ -394,6 +394,16 @@ def test_appearance_lists_theme_then_minimals_options_in_its_order(fw):
     assert (read['Light Mode'], read['Rounded Corners'], read['Home'], read['Shortcut'], read['Time in Title']) == \
         ('Off', 'On' if t['name'] == 'Minimal' else 'Off', 'Split', 'Favorites', 'On')
     assert (read['Show Wordmark'], read['Hide Streaming'], read['Hide Folder']) == ('On', 'Off', 'Off')
+    assert (read['Hide Apps'], read['Hide Games'], read['Hide App Store']) == ('Off', 'Off', 'Off')
+
+
+@pytest.mark.parametrize('title, key', [('Hide Apps', 'HIDEAPPS'), ('Hide Games', 'HIDEGAMES'),
+                                        ('Hide App Store', 'HIDESTORE')])
+def test_a_library_hide_switch_saves_its_key(fw, title, key):
+    ui = Ui(fw)
+    page = appearance(fw, ui)
+    ui.click(button_of(page.view(), title))
+    assert readings(page.view())[title] == 'On' and writes(fw) == [(key, 1)]
 
 
 def test_classic_appearance_rows_read_title_and_value_and_its_own_options(fw):
@@ -716,7 +726,7 @@ def test_system_settings_adds_its_rows_and_hides_five(fw):
     ui = Ui(fw)
     Config(fw)
     page = Settings(fw, ui)
-    assert titles(page.view) == ['stock_1', 'stock_2', 'stock_3', 'Controls', 'stock_4', 'system_time', 'stock_0', 'App Store',
+    assert titles(page.view) == ['stock_1', 'stock_2', 'stock_3', 'Controls', 'stock_4', 'system_time', 'stock_0',
                                  'system_update', 'system_reset', 'stock_5', 'stock_6', 'stock_7', 'stock_8', 'system_about']
     # stock's Language (English only for now), Wheel Function, In-Vehicle, General and System
     assert [item.name for item in page.view.children if not item.visible] == ['stock_0', 'stock_5', 'stock_6', 'stock_7', 'stock_8']

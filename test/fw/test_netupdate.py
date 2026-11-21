@@ -2773,7 +2773,7 @@ def test_an_install_cancelled_while_it_asks_for_the_list_installs_nothing(fw):
 
 
 @pytest.mark.parametrize('q2app, where', [(b'name=Foo\n', 'Streaming'), (b'name=Foo\ngame=1\n', "Library's Games"),
-                                          (b'name=Foo\nrow=library\n', 'Library')])
+                                          (b'name=Foo\nrow=library\n', "Library's Apps")])
 def test_an_app_installs_into_place_and_removes_without_a_trace(fw, q2app, where):
     card = Disk(fw)
     store_net(fw, {**FOO, '.foo/q2app': q2app})
@@ -2783,10 +2783,13 @@ def test_an_app_installs_into_place_and_removes_without_a_trace(fw, q2app, where
     def on_card():  # addon.c's scan writes its /tmp caps file: only the card counts
         return {k: v for k, v in card.files.items() if k.startswith(b'/mnt/mmc/')}
     before = on_card()
+    looked = []  # the top window searched for Library's Apps row as each job ends (addon_apps_sync)
+    fw.mock('widget_lookup', lambda w, name, *_: looked.append((w, C.string_at(name))) and 0)
     s.click()
     assert s.sh.job == JOB_INSTALL and s.labels() == ['Checking…']
     assert s.wait() == RET_REPEAT and s.held == [(1, 1, 0)]  # standby and power-off held through a job
     assert s.run() == 0 and s.toasts == [f'Foo is ready in {where}'] and s.labels() == ['Installed']
+    assert looked.count((77, b'library_apps')) == 1
     placed = {k: v for k, v in card.files.items() if k.startswith(b'/mnt/mmc/.foo/')}
     assert placed == {b'/mnt/mmc/.foo/q2-foo': b'\x7fELF foo', b'/mnt/mmc/.foo/q2app': q2app, b'/mnt/mmc/.foo/lib/x.so': b'lib'}
     assert card.files[b'/mnt/mmc/.q2/apps/foo.files'] == b''.join(sorted(k[len(b'/mnt/mmc/'):] + b'\n' for k in placed))
@@ -2798,7 +2801,7 @@ def test_an_app_installs_into_place_and_removes_without_a_trace(fw, q2app, where
     s.click()
     assert s.labels() == ['Removing…']
     assert s.run() == 0 and s.toasts[-1] == 'Foo removed' and s.labels() == ['Install']
-    assert on_card() == before
+    assert on_card() == before and looked.count((77, b'library_apps')) == 2
 
 
 # A remove leaves no login behind, even from an app that saves it on its TERM, after 3 s too.

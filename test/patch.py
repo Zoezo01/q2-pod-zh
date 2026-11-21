@@ -6094,9 +6094,10 @@ assert [row_text(r) for r in (hold,scrub_one)]==['Hold Return: Recent','Single P
 view=display_page(m,1); rows=setting_rows(m,view)
 kids=m.nodes[view]['children']; status_row,time_title,show_q2,light,corners,shortcut,centred,hide_stream,hide_folder=kids[1],kids[2],kids[3],kids[4],kids[6],kids[8],kids[10],kids[11],kids[12]
 assert row_text(shortcut)=='Shortcut: Rockbox'
-assert kids==[rows[3],status_row,time_title,show_q2,light,rows[0],corners,rows[1],shortcut,rows[2],centred,hide_stream,hide_folder] and m.nodes[rows[0]].get('visible',1)==1  # Theme, Status Bar, Time in Title, Show Wordmark, Light Mode, Accent, Corners, Home, Shortcut, Battery, Centred Now Playing, Hide Streaming / Folder on Home
+assert kids[:-3]==[rows[3],status_row,time_title,show_q2,light,rows[0],corners,rows[1],shortcut,rows[2],centred,hide_stream,hide_folder] and m.nodes[rows[0]].get('visible',1)==1  # Theme, Status Bar, Time in Title, Show Wordmark, Light Mode, Accent, Corners, Home, Shortcut, Battery, Centred Now Playing, Hide Streaming / Folder on Home
 assert [row_text(r) for r in (show_q2,hide_stream,hide_folder)]==['Show Wordmark: On','Hide Streaming','Hide Folder'],[row_text(r) for r in (show_q2,hide_stream,hide_folder)]
-assert m.icons_set==['system_display']*3+['switch_on']+['system_display']*4+['switch_off','playset_covermode','playset_covermode','system_powermanager','playset_covermode','switch_off']+['system_display','switch_off']*2,m.icons_set
+assert [row_text(r) for r in kids[-3:]]==['Hide Apps','Hide Games','Hide App Store']  # Library's rows
+assert m.icons_set==['system_display']*3+['switch_on']+['system_display']*4+['switch_off','playset_covermode','playset_covermode','system_powermanager','playset_covermode','switch_off']+['system_display','switch_off']*5,m.icons_set
 assert all(m.nodes[r]['type']=='list_item' and m.nodes[r]['style']=='s_listitem_black' for r in rows)
 buttons=[m.nodes[r]['children'][0] for r in rows]; labels=[m.nodes[b]['children'][1] for b in buttons]
 for b,l in zip(buttons,labels):
@@ -6425,7 +6426,7 @@ def title_value(r):  # (title, value) of a value row, or None
     return (kids[1]['text'],v[0]) if v else None
 assert [title_value(r) for r in dm.nodes[dv]['children']]==[('Theme','Classic'),('Status Bar','Theme'),('Time in Title','On'),('Show Wordmark','On'),('Light Mode','On'),
                                                            ('Accent','Classic Blue'),('Home','Split'),('Shortcut','Rockbox'),('Battery','Icon'),('Library on Home','On'),('Row Preview','On'),('Row Art','On'),
-                                                           ('Hide Streaming','Off'),('Hide Folder','Off')]
+                                                           ('Hide Streaming','Off'),('Hide Folder','Off'),('Hide Apps','Off'),('Hide Games','Off'),('Hide App Store','Off')]
 assert not {'switch_on','switch_off'} & set(dm.icons_set); passed()
 # Controls' switches read On/Off as values under Classic.
 dm,dv=classic_light_display(sub=3)
@@ -6574,7 +6575,7 @@ writes=pick_theme(2); assert [(w[0],m.text(w[1]),m.text(w[2])) for w in writes]=
 assert corners_switch()==['switch_off'] and m.nodes[light_label]['text']=='Light Mode: On'
 assert ('image_manager_unload_all',0x1000500) in [c[:2] for c in m.calls] and ('widget_invalidate_force',m.wm) in [c[:2] for c in m.calls]
 kids=m.nodes[view]['children']
-assert kids==[rows[3],status_row,time_title,show_q2,light,rows[0],corners,rows[1],shortcut,rows[2],centred,hide_stream,hide_folder] and m.nodes[rows[0]].get('visible',1)==1
+assert kids[:-3]==[rows[3],status_row,time_title,show_q2,light,rows[0],corners,rows[1],shortcut,rows[2],centred,hide_stream,hide_folder] and m.nodes[rows[0]].get('visible',1)==1
 assert texts()==['Accent: Cobalt','Home: Split','Battery: Icon','Theme: Modern']; home_bounds(False,True); passed()
 # Theme, the first row, keeps the selection, and the very next paint is the preset's Cobalt bar.
 m.paint(view); assert m.selected(view)==0 and [m.bands[i][4] for i in (0,1,47)]==[color_t(ACCENTS[4][i]) for i in (4,0,1)]; passed()
@@ -6595,7 +6596,7 @@ writes=pick_theme(0); assert [(w[0],m.text(w[2])) for w in writes]==[(0,'THEME')
 assert texts()[3]=='Theme: Minimal' and corners_switch()==['switch_on'] and m.nodes[light_label]['text']=='Light Mode: Off'
 m.paint(view); assert m.selected(view)==0
 kids=m.nodes[view]['children']
-assert kids==[rows[3],status_row,time_title,show_q2,light,rows[0],corners,rows[1],shortcut,rows[2],centred,hide_stream,hide_folder] and texts()[0]=='Accent: Graphite' and texts()[1]=='Home: Split'
+assert kids[:-3]==[rows[3],status_row,time_title,show_q2,light,rows[0],corners,rows[1],shortcut,rows[2],centred,hide_stream,hide_folder] and texts()[0]=='Accent: Graphite' and texts()[1]=='Home: Split'
 home_bounds(False)
 m.paint(view); assert not m.bands and m.rounded[0]['color']==color_t(ACCENTS[0][0]); passed()
 # Light Mode's Auto survives a Theme change; the other preset rows are the user's to change after.
@@ -7050,9 +7051,9 @@ m.paint(view); assert CL_SEL(3) in [b[4] for b in m.bands] and CL_SEL(2) not in 
 m,view,rows=display({'THEME':'1','CLASSIC_LIGHT_ACCENT':'7'})
 assert [row_text(r) for r in m.nodes[view]['children']][:4]==['Theme: Classic','Status Bar: Theme','Time in Title: On','Show Wordmark: On']
 m,view,rows=display({'THEME':'2','ACCENT':'7'})
-assert [row_text(r) for r in m.nodes[view]['children']]==['Theme: Modern','Status Bar: Theme','Time in Title','Show Wordmark: On','Light Mode: Off','Accent: Graphite','Rounded Corners','Home: Split','Shortcut: Rockbox','Battery: Icon','Centred Now Playing','Hide Streaming','Hide Folder']
+assert [row_text(r) for r in m.nodes[view]['children']]==['Theme: Modern','Status Bar: Theme','Time in Title','Show Wordmark: On','Light Mode: Off','Accent: Graphite','Rounded Corners','Home: Split','Shortcut: Rockbox','Battery: Icon','Centred Now Playing','Hide Streaming','Hide Folder','Hide Apps','Hide Games','Hide App Store']
 m,view,rows=display({'THEME':'3'})
-assert [row_text(r) for r in m.nodes[view]['children']]==['Theme: Minimal','Status Bar: Theme','Time in Title','Show Wordmark: On','Light Mode: Off','Accent: Ivory','Rounded Corners','Home: Split','Shortcut: Rockbox','Battery: Icon','Centred Now Playing','Hide Streaming','Hide Folder']
+assert [row_text(r) for r in m.nodes[view]['children']]==['Theme: Minimal','Status Bar: Theme','Time in Title','Show Wordmark: On','Light Mode: Off','Accent: Ivory','Rounded Corners','Home: Split','Shortcut: Rockbox','Battery: Icon','Centred Now Playing','Hide Streaming','Hide Folder','Hide Apps','Hide Games','Hide App Store']
 passed()
 # Classic's stops painter: a 52 px selected row is the #94c7de top line, Classic Blue's six stops over the
 # 50 rows below it and the #004184 edge on its last, full width and square, its colours final
@@ -7267,7 +7268,7 @@ for mode,stored,want in ((1,'0',light_row),(2,'1',dark_row)):
 passed()
 # THEME=1: its Appearance is Theme and Classic's own options.
 m,view,rows=display({'THEME':'1'},setup=classic_light)
-assert [row_text(r) for r in m.nodes[view]['children']]==['Theme: Classic','Status Bar: Theme','Time in Title: On','Show Wordmark: On','Light Mode: On','Accent: Classic Blue','Home: Split','Shortcut: Rockbox','Battery: Icon','Library on Home: On','Row Preview: On','Row Art: On','Hide Streaming: Off','Hide Folder: Off']; passed()
+assert [row_text(r) for r in m.nodes[view]['children']]==['Theme: Classic','Status Bar: Theme','Time in Title: On','Show Wordmark: On','Light Mode: On','Accent: Classic Blue','Home: Split','Shortcut: Rockbox','Battery: Icon','Library on Home: On','Row Preview: On','Row Art: On','Hide Streaming: Off','Hide Folder: Off','Hide Apps: Off','Hide Games: Off','Hide App Store: Off']; passed()
 # Classic's Accent is Classic Blue (its own scheme, after the ACCENTS rows) by default and for a stored value
 # Classic does not offer (Ivory, 7) or cannot read (12). The row cycles the 8 accents in Classic's order,
 # then Classic Blue, each band its own gloss: Classic Blue's stops, the others derived from their tones.
@@ -7286,7 +7287,7 @@ passed()
 # key is read 15th, after CLASSIC_LIGHT_ACCENT, on unless chosen; Centre writes the next value under the theme's
 # key; the stored value picks the set the first system_bar boots: Off classic-light-text, On (or unreadable) classic-light.
 m,view,rows=display({},setup=classic_light); art=m.nodes[view]['children'][11]
-assert [row_text(r) for r in m.nodes[view]['children']]==['Theme: Classic','Status Bar: Theme','Time in Title: On','Show Wordmark: On','Light Mode: On','Accent: Classic Blue','Home: Split','Shortcut: Rockbox','Battery: Icon','Library on Home: On','Row Preview: On','Row Art: On','Hide Streaming: Off','Hide Folder: Off']
+assert [row_text(r) for r in m.nodes[view]['children']]==['Theme: Classic','Status Bar: Theme','Time in Title: On','Show Wordmark: On','Light Mode: On','Accent: Classic Blue','Home: Split','Shortcut: Rockbox','Battery: Icon','Library on Home: On','Row Preview: On','Row Art: On','Hide Streaming: Off','Hide Folder: Off','Hide Apps: Off','Hide Games: Off','Hide App Store: Off']
 assert m.config_reads[13:19]==[('/mnt/data/config.ini','IPOD',k,v) for k,v in (('STATUSBAR','0'),('SHOWQ2POD','1'),('CLASSIC_LIGHT_ACCENT','9'),('HOMELIB','1'),('ROWPREVIEW','1'),('ROWART','1'))]
 assert art_boot({})==art_boot({'ROWART':'1'})==art_boot({'ROWART':'2'})==['classic-light_system_bar']
 assert art_boot({'ROWART':'0'})==['classic-light-text_system_bar']
@@ -7720,17 +7721,20 @@ view=m.node('scroll_view','scroll_view_localmusic',stock); m.top=m.node('window'
 assert m.call(address=HOOKS['localmusic_page_init'][0],args=(m.top,5,0,0),gap=0)==0
 assert m.calls[0][:3]==('stock_localmusic',m.top,5)
 # Library order: Shuffle; Artist, Album, All Songs, Genre, Era, Playlist, Ratings (in My Fav's place, hidden);
-# Recently Added, Recent, Most Played, Frequent (hidden: Most Played is its list), Hi-Res, Long Songs; iPod's Games;
-# then Update Library, last (stock rows by get_localmusic_showinfo index).
+# Recently Added, Recent, Most Played, Frequent (hidden: Most Played is its list), Hi-Res, Long Songs; Apps (hidden: no
+# card app for it), Games, App Store; then Update Library, last (stock rows by get_localmusic_showinfo index).
 kids=m.nodes[view]['children']; row,era,rated,top,long=kids[0],kids[5],kids[7],kids[11],kids[14]
-assert [kids[i] for i in (*range(1,5),6,8,9,10,12,13,16)]==[stock[i] for i in (3,2,1,4,10,6,9,8,7,5,0)] and m.nodes[row]['style']=='s_listitem_black'
+assert [kids[i] for i in (*range(1,5),6,8,9,10,12,13,18)]==[stock[i] for i in (3,2,1,4,10,6,9,8,7,5,0)] and m.nodes[row]['style']=='s_listitem_black'
 icon,label,into=m.nodes[m.nodes[era]['children'][0]]['children']
 assert m.nodes[icon]['image']=='local_era' and m.nodes[label]['text']=='Era' and m.nodes[into]['image']=='list_into'
-icon,label,into=m.nodes[m.nodes[kids[15]]['children'][0]]['children']
-assert m.nodes[icon]['image']=='local_games' and m.nodes[label]['text']=='Games' and len(kids)==17
+icon,label,into=m.nodes[m.nodes[kids[16]]['children'][0]]['children']
+assert m.nodes[icon]['image']=='local_games' and m.nodes[label]['text']=='Games' and len(kids)==19
+for k,image,text,fn in ((15,'local_apps','Apps','addon_apps'),(17,'local_store','App Store','shelf_open')):
+    button=m.nodes[kids[k]]['children'][0]; icon,label,into=m.nodes[button]['children']
+    assert m.nodes[icon]['image']==image and m.nodes[label]['text']==text and m.handler(button,O['EVT_CLICK'])[0]==payload_syms[fn]
 icon,label,into=m.nodes[m.nodes[long]['children'][0]]['children']
 assert m.nodes[icon]['image']=='local_longsongs' and m.nodes[label]['text']=='Long Songs'
-assert [k for k in kids if not m.nodes[k].get('visible',1)]==[stock[6],stock[7]]  # My Fav and Frequent
+assert [k for k in kids if not m.nodes[k].get('visible',1)]==[stock[6],stock[7],kids[15]]  # My Fav, Frequent and Apps
 icon,label,into=m.nodes[m.nodes[top]['children'][0]]['children']
 assert m.nodes[icon]['image']=='local_frequentplay' and m.nodes[label]['text']=='Most Played'
 icon,label,into=m.nodes[m.nodes[rated]['children'][0]]['children']
@@ -7901,7 +7905,7 @@ f,ctx=m.handler(named(m,m.top,'img_settings'),O['EVT_CLICK']); m.call(address=f,
 m.call(O['KEY_RETURN']); assert ltitled()=='Q2 Pod'
 # Open it again: the list comes back with the same rows (the real constructor rebuilds them, the mock keeps them; stock's constructor runs, its count no longer stock's; Classic's Search first), in Home's shape.
 lbefore=list(m.nodes[lview]['children']); m.calls=[]; f,ctx=m.handler(named(m,m.top,'img_library'),O['EVT_CLICK']); assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0
-assert m.nodes[lview]['children']==lbefore and len(lbefore)==18 and any(c[0]=='stock_localmusic' for c in m.calls) and not any(c[0]=='widget_restack' for c in m.calls)
+assert m.nodes[lview]['children']==lbefore and len(lbefore)==20 and any(c[0]=='stock_localmusic' for c in m.calls) and not any(c[0]=='widget_restack' for c in m.calls)
 assert m.nodes[lib]['visible'] and ltitled()=='Library'
 for r in lbefore:
     lb=m.nodes[r]['children'][0]; assert m.get(lb+O['W_X'])==0 and m.get(lb+O['W_W'])==O['HOME_SPLIT_W'],lb
@@ -8692,9 +8696,9 @@ files={R+'/Zed.txt':bytearray(txt.encode()),R+'/Series/A Tale.EPUB':bytearray(bu
 m=BooksMachine(tree,files)
 view=m.node('scroll_view','scroll_view_localmusic',[m.node('list_item') for _ in range(11)]); m.top=m.node('window','localmusic_page',[view])
 assert m.call(address=HOOKS['localmusic_page_init'][0],args=(m.top,5,0,0),gap=0,count=5_000_000)==0
-button=m.nodes[m.nodes[view]['children'][-2]]['children'][0]; icon,label,into=m.nodes[button]['children']
-assert m.nodes[icon]['image']=='local_books' and m.nodes[label]['text']=='Books' and len(m.nodes[view]['children'])==18
-library_geometry(m,m.nodes[view]['children'][-2])
+button=m.nodes[m.nodes[view]['children'][-4]]['children'][0]; icon,label,into=m.nodes[button]['children']
+assert m.nodes[icon]['image']=='local_books' and m.nodes[label]['text']=='Books' and len(m.nodes[view]['children'])==20
+library_geometry(m,m.nodes[view]['children'][-4])
 f,ctx=m.handler(button,O['EVT_CLICK']); assert m.call(address=f,args=(ctx,m.event,0,0),gap=0,count=5_000_000)==0
 page=m.page=m.top; assert m.nodes[page]['name']=='books_page' and m.nodes[page]['style:normal:bg_color']==-0x1000000
 books,reader=m.nodes[page]['children']; sheet,info=m.nodes[reader]['children']
@@ -8752,9 +8756,9 @@ G_SCREEN,G_PICKING,G_PAUSED,G_CELL,G_CUR,G_VX=36,44,56,76,157,164
 def games_open():
     view=m.node('scroll_view','scroll_view_localmusic',[m.node('list_item') for _ in range(11)]); m.top=m.node('window','localmusic_page',[view])
     assert m.call(address=HOOKS['localmusic_page_init'][0],args=(m.top,5,0,0),gap=0,count=5_000_000)==0
-    button=m.nodes[m.nodes[view]['children'][-1]]['children'][0]; icon,label,into=m.nodes[button]['children']
+    button=m.nodes[m.nodes[view]['children'][-2]]['children'][0]; icon,label,into=m.nodes[button]['children']
     assert m.nodes[icon]['image']=='local_games' and m.nodes[label]['text']=='Games'
-    library_geometry(m,m.nodes[view]['children'][-1])
+    library_geometry(m,m.nodes[view]['children'][-2])
     f,ctx=m.handler(button,O['EVT_CLICK']); assert m.call(address=f,args=(ctx,m.event,0,0),gap=0,count=5_000_000)==0
     m.page=m.top; assert m.nodes[m.page]['name']=='games_page' and m.nodes[m.page]['style:normal:bg_color']==-0x1000000
     return m.nodes[m.page]['children']
@@ -10164,7 +10168,7 @@ m=SlskMachine(); m.open(); m.answer('ok','sections','',SECS); asked=len(m.thread
 assert m.requests[-1]==('downloads',) and len(m.threads)==asked and m.labels()[:2]==['Downloads 1/3','Downloads'],m.labels(); passed()
 # Gone from the card since Streaming listed it: the page says so and nothing starts.
 m=SlskMachine(); m.gone(); m.open()
-assert m.labels()==["Soulseek isn't on the card",'Install it again in System settings → App Store'] and not m.systems and not m.threads
+assert m.labels()==["Soulseek isn't on the card",'Install it again in Library → App Store'] and not m.systems and not m.threads
 m.row(0); assert not m.threads; m.poll(); assert not m.systems; m.close(); passed()
 # With it: started, the menu asked; no socket yet is the add-on starting, asked again; its rows.
 m=SlskMachine(); m.open(); assert m.systems==['/bin/sh /mnt/mmc/.soulseek/run'] and m.labels()==['Loading…']
@@ -10548,7 +10552,7 @@ FMENU=[('remote','','Open on Your Phone','http://192.168.1.23:8000 · PIN 548 00
 FLABELS=['File Browser','Open on Your Phone','http://192.168.1.23:8000 · PIN 548 001','Card: 12.3 GB free','of 59.4 GB','Read Only: Off',
          'The phone can upload, rename, move and delete','Turn Off File Browser','It also turns off after 15 minutes unused']
 m=FileBrowserMachine(); m.gone(); m.open()
-assert m.labels()==["File Browser isn't on the card",'Install it again in System settings → App Store'] and not m.systems; m.close(); passed()
+assert m.labels()==["File Browser isn't on the card",'Install it again in Library → App Store'] and not m.systems; m.close(); passed()
 m=FileBrowserMachine(); m.open(); assert m.systems==['/bin/sh /mnt/mmc/.filebrowser/run'] and m.labels()==['Loading…']
 m.worker(); assert m.labels()==['Starting File Browser…']; m.advance(500)
 m.files[FSTATE]=bytearray(f"addr=192.168.1.23:8000\nhold=0\nnote=Manage the card's files there\npin=548001\nqr={hexed}\nqrsize=21\nversion=q2f-v1.0\n".encode())
@@ -10647,7 +10651,7 @@ m.playtime=224; m.poll(); m.word(O['MCL_POS'],1); m.playtime=0; assert paused(m.
 # the card, and a song on the card, a local row, plays from it as local music (library_lists.c songs_open).
 DZBIN,DZBROWSE,DZSTATE,DZPID='/mnt/mmc/.deezer/q2-deezer','/tmp/q2-deezer.browse.sock','/tmp/q2-deezer.state','/tmp/q2-deezer'
 m=DeezerMachine(); m.gone(); m.open()
-assert m.labels()==["Deezer isn't on the card",'Install it again in System settings → App Store'] and not m.systems; m.close(); passed()
+assert m.labels()==["Deezer isn't on the card",'Install it again in Library → App Store'] and not m.systems; m.close(); passed()
 # Started, the menu asked; signed out, its sign-in row opens the code over its status file (and only
 # then: Deezer's row doesn't open it by itself).
 m=DeezerMachine(); m.open(); assert m.systems==['/bin/sh /mnt/mmc/.deezer/run'] and m.labels()==['Loading…']

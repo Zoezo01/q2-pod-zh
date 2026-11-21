@@ -331,7 +331,7 @@ def test_the_row_pressed_without_the_app_on_the_card_says_where_to_install_it(fw
     tap, more, said = Tap(fw, running=False), More(fw), []
     fw.mock('navigator_to_with_context', lambda page, info, *_: said.append(C.string_at(info + 8).decode()))
     more.open()
-    assert more.click() == 0 and said == ['Install AirPlay in System settings → App Store']
+    assert more.click() == 0 and said == ['Install AirPlay in Library → App Store']
     tap.poll(), tap.poll()
     assert tap.opens == 0  # nor is its file looked for
 

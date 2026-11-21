@@ -203,7 +203,7 @@ int airplay_lyrics(int *ms) {
 static int air_open(void *ctx, void *event) {
     (void)event;
     if (access("/mnt/mmc/." AIR_ID "/q2-" AIR_ID, 0))
-        toast("Install AirPlay in System settings → App Store");
+        toast("Install AirPlay in Library → App Store");
     else if (!smart_hold(air_open, ctx, 0)) /* the app starts once Smart Wi-Fi's link is up */
         air.asked = 1, addon_open_id(AIR_ID);
     return 0;

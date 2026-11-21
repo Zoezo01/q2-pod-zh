@@ -765,7 +765,7 @@ void netupdate_poll(void) {
         pthread_detach(tid);
 }
 
-/* The App Store (System settings): its Apps and Games tabs (app_store.c draws them), then Check for
+/* The App Store (Library's row): its Apps and Games tabs (app_store.c draws them), then Check for
  * Updates and a row per app of the open tab, in sources.list's order: its name over its GitHub
  * owner, or what is happening to it, and its state at the row's end. One job at a time on one
  * thread: a check (the list, then the latest tags) on opening or from Check for Updates, an
@@ -1136,6 +1136,8 @@ static int sh_wait(const void *unused) {
     if (job == JOB_ERASE || (job != JOB_CHECK && is(i, "spotify")))
         spot_stop(); /* spotify.c forgets the old one */
     sh_rows();
+    if (r == SH_OK && (job == JOB_REMOVE || job == JOB_INSTALL))
+        addon_apps_sync(0, 0); /* Library's Apps row or page, if on top */
     if (job == JOB_CHECK && !sh.cancel && sh.page &&
         window_manager_get_top_window(window_manager()) == sh.page) /* not left or covered */
         sh_told(manual, r ? said[r] : 0);
@@ -1285,7 +1287,7 @@ static int sh_check(void *ctx, void *event) {
     return 0;
 }
 
-/* System settings' Apps row. The card's last list, until a check fetches the list again: with Wi-Fi
+/* Library's App Store row. The card's last list, until a check fetches the list again: with Wi-Fi
  * when the last whole check is over SH_STALE_MS old (or none), a request per app; while Smart Wi-Fi
  * brings the radio back, once its link is up. */
 int shelf_open(void *ctx, void *event) {
