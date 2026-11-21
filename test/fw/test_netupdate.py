@@ -1636,6 +1636,76 @@ def test_the_check_takes_a_fresh_list_and_each_release(fw):
     assert card.written[b'/mnt/mmc/.q2/sources.list.tmp'] == b'me/foo Foo\nme/bar bar\n'
 
 
+def curl_calls(fw):
+    """libcurl's calls so far, in order: their names, and (name, arguments) pairs."""
+    curl = [(n, a) for n, a in fw.calls() if n.startswith('fw_curl_easy_')]
+    return [n for n, _ in curl], curl
+
+
+def test_a_checks_requests_share_one_handle_each_setting_its_url(fw):
+    """The apps' requests in a check go on one libcurl handle, so GitHub's connection and TLS session go on to the
+    next: each sets its URL again and stays header-only, and the check cleans the handle up at its end."""
+    card = Card(fw)
+    net = Net(fw, {b'https://raw': (0, 200, None), b'https://github.com/': redirect(b'1.0')})
+    card.files[JSON_PATH] = b'me/foo Foo\nme/bar\nme/baz\n'
+    fw.mock('fw_fopen', fw_fopen_list(card))
+    assert check(fw) == 1
+    names, curl = curl_calls(fw)
+    performs = [k for k, n in enumerate(names) if n == 'fw_curl_easy_perform']
+    assert len(performs) == 4 and names.count('fw_curl_easy_init') == 2  # the list's handle, then the apps' one
+    for since, at in zip(performs, performs[1:]):  # each app's request: its own URL, headers only
+        assert {10002, 44} <= {a[1] for n, a in curl[since:at] if n == 'fw_curl_easy_setopt'}
+    assert net.urls[1:] == [b'https://github.com/me/%s/releases/latest' % r for r in (b'foo', b'bar', b'baz')]
+    assert names.count('fw_curl_easy_cleanup') == 2 and names[-1] == 'fw_curl_easy_cleanup'
+
+
+def test_a_stopped_check_cleans_up_its_handle(fw):
+    card = Card(fw)
+    sh = fw.var('netupdate__sh', Sh)
+    net = Net(fw, {b'https://raw': (0, 200, None), b'https://github.com/': redirect(b'1.0')})
+    card.files[JSON_PATH] = b'me/foo Foo\nme/bar\n'
+    fw.mock('fw_fopen', fw_fopen_list(card))
+
+    def info(c, what, out, *_):  # Net's, and a press during the first app's request
+        if what == 0x200002:
+            C.cast(out, C.POINTER(C.c_long))[0] = net.code
+            sh.cancel = net.urls[-1].endswith(b'/foo/releases/latest')
+        elif what == 0x10001f:
+            C.cast(out, C.POINTER(C.c_void_p))[0] = C.addressof(net.location) if net.location else 0
+        return 0
+    fw.mock('fw_curl_easy_getinfo', info)
+    check(fw)
+    names, _ = curl_calls(fw)
+    assert net.urls[1:] == [b'https://github.com/me/foo/releases/latest'] and names.count('fw_curl_easy_init') == 2
+    assert names.count('fw_curl_easy_cleanup') == 2 and names[-1] == 'fw_curl_easy_cleanup'
+
+
+def test_a_check_stopped_after_two_unanswered_apps_cleans_up_its_handle(fw):
+    """SH_LOST ends the loop with the apps' handle still kept: it is cleaned up there too, after the second app."""
+    Card(fw)
+    six(fw)
+    net = Net(fw, {b'https://': (28, 0, None)})
+    assert check(fw) == 0 and asked(net) == [b'app0', b'app1']
+    names, _ = curl_calls(fw)
+    assert names.count('fw_curl_easy_init') == 2 and names.count('fw_curl_easy_cleanup') == 2
+    assert names[-1] == 'fw_curl_easy_cleanup'
+
+
+def test_a_press_ends_the_kept_handles_next_request_at_once(fw):
+    """The second app's request goes on the first's handle and still reads sh.cancel at curl's progress calls, so a
+    press ends it at once; the handle is cleaned up as the check ends."""
+    Card(fw)
+    apps(fw, b'me/foo', b'me/bar', b'me/baz')
+    sh = fw.var('netupdate__sh', Sh)
+    hung = Hung(fw, hang=(b'https://github.com/',),
+                press=lambda k: k == 1 and hung.urls[-1].endswith(b'/bar/releases/latest') and setattr(sh, 'cancel', 1))
+    assert check(fw) == 0
+    assert asked(hung) == [b'foo', b'bar'] and hung.calls == list(range(30)) + [0, 1]
+    names, _ = curl_calls(fw)
+    assert names.count('fw_curl_easy_init') == 2 and names.count('fw_curl_easy_cleanup') == 2
+    assert names[-1] == 'fw_curl_easy_cleanup'
+
+
 def fw_fopen_list(card):
     """The first read of the temp file is the list; the rest are releases."""
     release_json = github('1.0', ('a.zip', 5))

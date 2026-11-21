@@ -438,13 +438,17 @@ static int progress(void *xfer, long long total, long long now, long long c, lon
 /* One transfer: the latest tag (url without asset, headers only, no redirect) or the asset to file,
  * from its byte `from` on (HTTP Range) when the file holds those before it. With xfer, curl's
  * progress calls read its cancel, a header-only request's too, so a press ends one that hangs
- * (connecting, or waiting for an answer) at once rather than at its timeout. curl's own code. */
-static int fetch(const char *url, void *file, char *tag, unsigned n, long *code, volatile int *xfer,
-                 long from) {
-    void *c = tls_easy(url, 15, file ? 0 : 30); /* a header-only check times out at 30 s */
+ * (connecting, or waiting for an answer) at once rather than at its timeout. curl's own code. With
+ * keep (header-only requests alone: a download's options would stay set), the handle is *keep's,
+ * made there if none, and stays there for the caller to clean up, so the next request goes on its
+ * connection, or resumes its TLS session on a new one. */
+static int fetch_on(void **keep, const char *url, void *file, char *tag, unsigned n, long *code,
+                    volatile int *xfer, long from) {
+    void *c = keep && *keep ? *keep : tls_easy(url, 15, file ? 0 : 30); /* header-only: 30 s */
     int err = 1;
     char *location = 0;
     if (!c) return 1;
+    curl_easy_setopt(c, 10002, url);     /* URL: a kept handle has the last one */
     curl_easy_setopt(c, 10018, "Q2Pod"); /* USERAGENT */
     /* xfer is nu's or sh's, both static, so the callback's pointer is good for every call */
     if (xfer) {
@@ -473,8 +477,16 @@ static int fetch(const char *url, void *file, char *tag, unsigned n, long *code,
         const char *t = netupdate_tag(location);
         tk_snprintf(tag, n, "%s", t ? t : "");
     }
-    curl_easy_cleanup(c);
+    if (keep)
+        *keep = c;
+    else
+        curl_easy_cleanup(c);
     return err;
+}
+
+static int fetch(const char *url, void *file, char *tag, unsigned n, long *code, volatile int *xfer,
+                 long from) {
+    return fetch_on(0, url, file, tag, n, code, xfer, from);
 }
 
 /* url's body (1 MB at most) through the file tmp, NUL-terminated; 0 unless a whole 200. */
@@ -830,11 +842,11 @@ static int release(shelf_app *a, char *tag, char *url, unsigned *size) {
  * with characters a URL escapes would read UPDATE after its install: decode it if one ever does.
  * A latest release with no zip reads UPDATE too, and its install says "No update for this build".
  */
-static int latest(shelf_app *a) {
+static int latest(shelf_app *a, void **keep) {
     char url[160], tag[32] = "";
     long code = 0;
     snprintf(url, sizeof url, "https://github.com/%s/releases/latest", a->repo);
-    if (fetch(url, 0, tag, sizeof tag, &code, &sh.cancel, 0))
+    if (fetch_on(keep, url, 0, tag, sizeof tag, &code, &sh.cancel, 0))
         return sh.cancel ? SH_CANCELLED : SH_NET; /* a row's press ends the request itself */
     if (code == 429) return SH_BUSY;
     if (code != 302 || !*tag) return SH_MISSING; /* no release: a redirect to /releases */
@@ -879,9 +891,11 @@ static int check(void) {
     if (fresh) mkdir(SH_DIR, 0755), blob_io(SH_LIST, SH_LIST ".tmp", text, m, 1);
     sh.n = n;
     if (!n) sh.result = SH_NET, ok = 0; /* no list at all: said, and the next press fetches it */
+    /* one handle for the apps' requests, all to github.com */
+    void *head = 0;
     for (int k = 0, lost = 0; k < n && !sh.cancel && lost < SH_LOST; ++k) {
         if (sh.next[k].dropped) continue;
-        int r = latest(&sh.next[k]);
+        int r = latest(&sh.next[k], &head);
         lost = r == SH_NET ? lost + 1 : 0;
         if (r == SH_MISSING) { /* checked: no release yet */
             *sh.next[k].latest = 0;
@@ -890,6 +904,7 @@ static int check(void) {
         ok &= !r;
         if (!sh.result) sh.result = r; /* SH_NET or SH_BUSY, for sh_told */
     }
+    if (head) curl_easy_cleanup(head);
     return ok;
 }
 
