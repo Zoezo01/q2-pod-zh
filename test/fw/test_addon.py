@@ -3768,6 +3768,20 @@ def test_the_release_of_a_press_that_ended_a_screen_run_is_not_the_page_s(fw, co
     assert g.sent == [(FOO_SOCK, b'k d %d' % code)]
 
 
+@pytest.mark.parametrize('began, after', [(12, 31), (30, 31), (31, 31), (200, 200)])
+def test_a_finger_down_at_a_run_s_end_pulls_nothing_down(fw, began, after):
+    """Stock's pull-down goes by the last press it saw (g_pressdown_y), which a touch under the run never was."""
+    p = Page(fw)
+    p.answer(rows=[SCREEN])
+    g = CardGame(fw, world=p.world)
+    p.click(0)
+    start = C.c_int.from_address(C.addressof(fw.var('fw_ctx_g_pressdown_y', C.c_char)))
+    start.value = began
+    assert g.touch(O['EVT_POINTER_FIRST'], 10, 20) == 1  # "t d": the run leaves on it
+    ended(g)
+    assert start.value == after
+
+
 @pytest.mark.parametrize('code', [RETURN, CENTRE])
 def test_a_key_released_before_the_run_s_end_leaves_nothing_to_eat(fw, code):
     p = Page(fw)

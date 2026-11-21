@@ -1268,6 +1268,11 @@ static void game_poll(void) {
         if (gm.dim) game_unlink("dim");
         game_unlink("volume");
         wheel_raw = 0;
+        /* a finger down since before the end: its moves are stock's now, whose pull-down
+         * (on_wm_tsmove_fun) asks for no press and goes by the last one it saw, not the game's.
+         * ponytail: read in stock's code (a move is dispatched with no pointer pressed, 0x6b3350),
+         * not traced in a running demo */
+        if (I(g_pressdown_y, 0) < QS_PULL_Y) I(g_pressdown_y, 0) = QS_PULL_Y;
         widget_invalidate_force(window_manager(), 0);
         if (gm.screen) screen_back(gm.screen - 1);
         if (status == 127 << 8) toast("It couldn't start"); /* the child's execl failed */
