@@ -96,7 +96,7 @@
 /* This firmware's card-app features, space-separated; a feature adds its word. */
 #define ADDON_CAPS                                                                                 \
     "playlist progress pages library goto sleep game audio sections art window urls sort field "   \
-    "more fav now fieldtext wake"
+    "more fav now fieldtext wake audio2"
 #define ADDON_SECTIONS 8  /* sections an app's first page may have */
 #define SWIPE_CLAIM_PX 24 /* a sideways move this far, twice as far as up or down, is a swipe's */
 #define SWIPE_PX 60       /* and this far at the lift, more than up or down, changes section */
@@ -167,7 +167,8 @@ static void slots_read(void) {
         if (!a->tips[0]) tk_snprintf(a->tips, sizeof a->tips, "Search");
         a->qr = number(raw, "qr") == 1;
         a->game = number(raw, "game") == 1;
-        a->audio = number(raw, "audio") == 1;
+        unsigned long long sound = number(raw, "audio"); /* 2: the game's or the music's */
+        a->audio = sound <= 2 ? (int)sound : 0;
         a->hidden = number(raw, "hidden") == 1;
         /* its row where row says, else as firmware without the key lists it: Games for a game,
          * Streaming for any other */
@@ -860,7 +861,10 @@ static void poll_one(app_t *a) {
  * a held key's long press after this hook, so the hold is timed here, from the game's key-down.
  * ponytail: the screen stays on while it runs, as for a video, and the idle quit is what lets it
  * sleep without Smart Awake; a game that wants to sleep on screen needs the wake path to reach
- * stock under it. */
+ * stock under it.
+ *
+ * audio=2: the game starts as one without the sound, the music left playing, and asks for it in
+ * /tmp/q2-<id>.audio (game_sound), caps word audio2. */
 #define GAME_IDLE_MS 120000
 #define GAME_HOLD_MS 700 /* navigation.c's KEY_HOLD_MS, Return's hold elsewhere */
 #define GAME_KILL_MS 3000
@@ -870,19 +874,15 @@ static struct {
     unsigned seen;       /* time_now_ms of the last input */
     unsigned held, term; /* when Return went down, when TERM went (0: neither) */
     char path[48];       /* the game's socket */
-    int boy_bridge, resume_owner, resume_status;
-    unsigned audio_poll, audio_seq, audio_last[9], native_at;
-    int native_ui;
-    void *native_origin;
+    int swap, back;      /* audio=2; what played before its take (mclGetPlayStatus) */
+    unsigned polled;     /* when game_sound last looked */
+    char id[APP_ID];
 } gm __attribute__((section(".scratch")));
-
-#include "boy_audio.h"
 
 int addon_games(void) { return addon_scan(), ap.games; }
 int addon_games_last(void) { return ap.games; }
 const char *addon_game_name(int k) { return k >= 0 && k < ap.games ? ap.a[ap.game[k]].name : 0; }
 int addon_game_on(void) { return gm.pid; }
-int addon_game_front(void) { return gm.pid && !gm.native_ui; }
 int addon_game_audio(void) { return gm.pid && gm.audio; }
 
 static void game_kill(const char *how) {
@@ -907,6 +907,64 @@ const char *addon_where(const char *id) {
     return where[ROW_STREAMING];
 }
 
+static void game_file(char *out, const char *ext) {
+    tk_snprintf(out, 32, "/tmp/q2-%s.%s", gm.id, ext);
+}
+static void game_unlink(const char *ext) {
+    char f[32];
+    game_file(f, ext);
+    unlink(f);
+}
+
+/* An audio=2 game's sound given back: what played before its take plays on from where it was (or
+ * stays paused there), through stock's own restart after a Bluetooth link (player_save_start, as
+ * ringnav_bt_connect_start). Spotify and a station stay paused, as after an audio=1 game:
+ * spot_yield gave Spotify up (spot_set_playing then does nothing) and radio_stop ended the station.
+ */
+static void sound_back(void) {
+    int back = gm.back;
+    gm.audio = gm.back = 0;
+    if ((back == 2 || back == 3) && !check_forbid_play_no_headset(0))
+        player_save_start(back == 3);
+    else if (mclGetPlayStatus() == 3) /* game_poll's pause stuck on nothing */
+        player_stop();
+}
+
+/* An audio=2 game's /tmp/q2-<id>.audio, read every ADDON_POLL_MS: "game" takes the sound as an
+ * audio=1 game's start does, the local queue stopped with its place kept (player_save_stop, stock's
+ * own stop for a Bluetooth drop), and the file then holds the game's q2video arguments as one line
+ * ("plughw:0,0", "plug:bluealsa 40", "usb h40"); "music", once the game has closed its PCM, gives
+ * the sound back (sound_back) and the file is removed. Anything else, the answer too, is left. */
+static void game_sound(void) {
+    char f[32], tmp[36], raw[16], vol[5], line[32];
+    game_file(f, "audio");
+    unsigned n = state_read(f, raw, sizeof raw);
+    while (n && (raw[n] == '\n' || raw[n] == '\r')) raw[n--] = 0;
+    if (!strcmp(raw + 1, "music")) {
+        if (gm.audio) sound_back();
+        unlink(f);
+        return;
+    }
+    if (strcmp(raw + 1, "game")) return;
+    if (!gm.audio) {
+        gm.back = media_owner() == 1 ? mclGetPlayStatus() : 0;
+        headset_manual();
+        spot_yield();
+        radio_stop();
+        if (gm.back == 2 || gm.back == 3)
+            player_save_stop();
+        else
+            player_stop();
+    }
+    const char *dev = output_device(vol);
+    if (!gm.audio && !dev) dac_take();
+    gm.audio = 1;
+    tk_snprintf(line, sizeof line, "%s%s%s\n", dev ? dev : "plughw:0,0", dev ? " " : "",
+                dev ? vol : "");
+    tk_snprintf(tmp, sizeof tmp, "%s.tmp", f);
+    blob_io(f, tmp, line, strlen(line), 1);
+}
+
 /* Game a started over the screen: 1 when it runs. */
 static int game_start(app_t *a) {
     if (gm.pid) return 0;
@@ -916,28 +974,14 @@ static int game_start(app_t *a) {
     char vol[5], pop[POPUP_ENV];
     const char *dev = 0;
     popup_env(pop, sizeof pop); /* the theme's pop-up, for its own menus */
-    gm.boy_bridge = a->audio && !strcmp(a->id, "boy");
-    gm.resume_owner = gm.resume_status = 0;
-    gm.audio_seq = gm.audio_poll = 0;
-    gm.native_ui = 0;
-    gm.native_origin = (void *)0;
-    memset(gm.audio_last, 0, sizeof gm.audio_last);
-    int audio = a->audio;
-    if (gm.boy_bridge) {
-        unlink(BOY_AUDIO_REQUEST);
-        unlink(BOY_AUDIO_REPLY);
-        audio = !media_playing() && !boy_prefers_music();
-        if (audio) boy_take_audio();
-    }
-    if (audio) {
-        if (!gm.boy_bridge) {
-            headset_manual();
-            spot_yield();
-            radio_stop();
-            player_stop();
-        }
+    if (a->audio ==
+        1) { /* the sound is its: hciplayer off the PCM, the jack readied, as video_play */
+        headset_manual();
+        spot_yield();
+        radio_stop();
+        player_stop();
         dev = output_device(vol);
-        if (!gm.boy_bridge && !dev) dac_take();
+        if (!dev) dac_take();
     }
     int pid = fork();
     if (!pid) {
@@ -947,20 +991,21 @@ static int game_start(app_t *a) {
          * thread holds libc's environment lock (stock's toolsSetTimeZone) hangs the child here;
          * Return's hold ends it */
         setenv("Q2_POPUP", pop, 1);
-        if (gm.boy_bridge) setenv("Q2_BOY_AUDIO_BRIDGE", "2", 1);
-        if (audio) /* q2video's arguments: the device, then a soft output's volume */
+        if (a->audio == 1) /* q2video's arguments: the device, then a soft output's volume */
             execl(a->bin, a->bin, dev ? dev : "plughw:0,0", dev ? vol : (char *)0, (char *)0);
         else
             execl(a->bin, a->bin, (char *)0);
         child_exit(127);
     }
-    if (pid < 0) {
-        if (gm.boy_bridge && audio) boy_restore_music();
-        return toast("It couldn't start"), 0;
-    }
+    if (pid < 0) return toast("It couldn't start"), 0;
     gm.pid = pid;
-    gm.audio = audio;
-    gm.sock = socket(1, 1, 0); /* AF_UNIX, SOCK_DGRAM (MIPS numbering) */
+    gm.audio = a->audio == 1;
+    gm.swap = a->audio == 2;
+    gm.back = 0;
+    gm.polled = time_now_ms();
+    tk_snprintf(gm.id, sizeof gm.id, "%s", a->id);
+    if (gm.swap) game_unlink("audio"); /* an earlier run's */
+    gm.sock = socket(1, 1, 0);         /* AF_UNIX, SOCK_DGRAM (MIPS numbering) */
     gm.seen = time_now_ms();
     gm.held = gm.term = gm.eat = 0;
     tk_snprintf(gm.path, sizeof gm.path, "/tmp/q2-%s.input.sock", a->id);
@@ -983,26 +1028,15 @@ int addon_game_open(const char *id) {
 /* ringnav_input, every event: 1 when it is the game's (sent as its datagram) or the release of the
  * Return held to end it; 0 for stock's, a music key among them */
 int addon_game_input(void *e) {
-    if (!e) return addon_game_front();
+    if (!e) return gm.pid != 0;
     unsigned type = (unsigned)I(e, EVENT_TYPE), key = (unsigned)I(e, EVENT_KEY);
     int keyish = type == EVT_KEY_DOWN || type == EVT_KEY_UP || type == EVT_KEY_LONG;
     if (keyish && key == KEY_RETURN && gm.eat) /* the held Return's repeats and release */
         return gm.eat = type != EVT_KEY_UP, 1;
     if (!gm.pid) return 0;
-    if (gm.native_ui) {
-        if (keyish && key == KEY_RETURN) {
-            void *top = window_manager_get_top_window(window_manager());
-            if (top && !tk_strcmp(widget_get_prop_str(top, "name", ""), "playing_page")) {
-                if (type == EVT_KEY_UP) boy_close_now_playing(1);
-                return 1;
-            }
-        }
+    if (!gm.audio && keyish && (key == KEY_PLAY || key == KEY_BACK_BTN || key == KEY_FWD_BTN))
         return 0;
-    }
-    if (!gm.audio && !gm.boy_bridge && keyish &&
-        (key == KEY_PLAY || key == KEY_BACK_BTN || key == KEY_FWD_BTN))
-        return 0;
-    if (keyish && key == KEY_RETURN && !gm.boy_bridge)
+    if (keyish && key == KEY_RETURN)
         gm.held = type == EVT_KEY_UP ? 0
                   : type == EVT_KEY_DOWN && !gm.held
                       ? (unsigned)time_now_ms() | 1 /* not a repeat's */
@@ -1033,27 +1067,21 @@ static void game_poll(void) {
         close(gm.sock);
         /* a jack or USB change meanwhile ran stock's player_save_start(1): its start failed
          * (ringnav_start_player) but its pause stuck on nothing, so Play would do nothing */
+        if (gm.swap && gm.audio) sound_back(); /* a crash too */
         if (gm.audio && mclGetPlayStatus() == 3) player_stop();
         gm.pid = gm.audio = 0;
-        if (gm.boy_bridge) {
-            gm.native_ui = 0;
-            boy_restore_music();
-            unlink(BOY_AUDIO_REQUEST);
-            unlink(BOY_AUDIO_REPLY);
-            gm.boy_bridge = 0;
-        }
         wheel_raw = 0;
         widget_invalidate_force(window_manager(), 0);
         if (status == 127 << 8) toast("It couldn't start"); /* the child's execl failed */
         return;
     }
     unsigned now = (unsigned)time_now_ms();
-    boy_audio_poll(now);
+    if (gm.swap && now - gm.polled >= ADDON_POLL_MS) gm.polled = now, game_sound();
     /* signed: a stamp can be just after now (| 1 rounds up, game_end reads the clock again) */
     if (gm.held && (int)(now - gm.held) >= GAME_HOLD_MS) gm.held = 0, gm.eat = 1, game_end();
     if (gm.term && (int)(now - gm.term) >= GAME_KILL_MS) gm.term = now | 1, game_kill("-9 ");
     int travel = __sync_lock_test_and_set(&wheel_travel, 0);
-    if (travel && !gm.native_ui) {
+    if (travel) {
         char m[16];
         tk_snprintf(m, sizeof m, "w %d", travel);
         dgram_send(&gm.sock, gm.path, m, strlen(m));
@@ -1064,7 +1092,7 @@ static void game_poll(void) {
         if (I(g_dacoff_time, 0) > 0) I(g_dacoff_time, 0) = 0;
         return;
     }
-    if (gm.boy_bridge || time_now_ms() - gm.seen < GAME_IDLE_MS) return;
+    if (time_now_ms() - gm.seen < GAME_IDLE_MS) return;
     if (!ringnav_smart_awake()) game_end();
     gm.seen = time_now_ms(); /* Smart Awake: asked again GAME_IDLE_MS on */
 }

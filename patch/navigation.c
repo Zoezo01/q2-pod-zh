@@ -8919,8 +8919,7 @@ int ringnav_input(void *wm, void *e) {
  * first lit pass repaints the whole screen (ringnav_sleep; docs/internals.md Battery). */
 int ringnav_wm_paint(void *wm) {
     if (wm && !g_backlight_status && !window_manager_is_animating(wm)) return 0; /* RET_OK */
-    int away =
-        video_on() || addon_game_front(); /* native Now Playing can paint over a suspended q2-boy */
+    int away = video_on() || addon_game_on();
     void *vt = wm && !away ? P(wm, 0x94) : (void *)0;
     int (*paint)(void *) = vt ? (int (*)(void *))P(vt, 0xc) : (int (*)(void *))0;
     return paint ? paint(wm) : away ? 0 : 0x10; /* RET_BAD_PARAMS, as stock */

@@ -474,7 +474,7 @@ def test_more_apps_than_slots(fw):
 def test_the_features_are_published_at_every_scan(fw):
     world = card(fw)
     scan(fw)
-    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections art window urls sort field more fav now fieldtext wake\n'
+    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections art window urls sort field more fav now fieldtext wake audio2\n'
     assert world.of('rename') == [(b'/tmp/q2-addon.caps.tmp', b'/tmp/q2-addon.caps')]
 
 
@@ -1604,6 +1604,77 @@ class CardGame:
 
     def kills(self):
         return [c[0] for c in self.world.of('system')]
+
+
+SWITCH = b'name=Switch\ngame=1\naudio=2\n'
+SOUND = b'/tmp/q2-switch.audio'
+
+
+def switched(fw, playing=2):
+    """An audio=2 game running over local music that plays (2), is paused (3) or stopped (1)."""
+    g = CardGame(fw, switch=SWITCH)
+    fw.mock('mclGetPlayStatus', lambda *_: playing)
+    fw.mock('check_forbid_play_no_headset', lambda *_: 0)
+    g.world.files[SOUND] = b'game\n'  # an earlier run's
+    assert g.start() == 1
+    return g, fw.var('addon__gm', Game)
+
+
+def test_a_game_that_can_switch_the_sound_starts_without_it_the_music_left_playing(fw):
+    g, gm = switched(fw)
+    assert (gm.audio, gm.swap) == (0, 1) and SOUND not in g.world.files
+    assert not fw.calls('player_stop') and not fw.calls('player_save_stop') and not fw.calls('mclSetMute')
+    assert g.key(KEY_DOWN, O['KEY_PLAY']) == 0  # the music's key, as under any game without the sound
+    g.poll(499)
+    assert not fw.calls('player_save_stop')
+
+
+@pytest.mark.parametrize('playing, kept, resumed', [(2, 1, [(0,)]), (3, 1, [(1,)]), (1, 0, [])])
+def test_a_game_takes_the_sound_and_gives_it_back_the_music_where_it_was(fw, playing, kept, resumed):
+    g, gm = switched(fw, playing)
+    g.world.files[SOUND] = b'game'
+    g.poll(500)
+    assert gm.audio == 1 and len(fw.calls('player_save_stop')) == kept and len(fw.calls('player_stop')) == 1 - kept
+    assert g.world.files[SOUND] == b'plughw:0,0\n' and fw.calls('mclSetMute')  # the jack readied, dac_take
+    assert g.key(KEY_DOWN, O['KEY_PLAY']) == 1 and g.sent[-1] == (b'/tmp/q2-switch.input.sock', b'k d %d' % O['KEY_PLAY'])
+    g.poll(500)
+    assert len(fw.calls('player_save_stop')) == kept and g.world.files[SOUND] == b'plughw:0,0\n'  # its answer, left
+    g.world.files[SOUND] = b'music\n'
+    g.poll(500)
+    assert gm.audio == 0 and SOUND not in g.world.files
+    assert [a[:1] for _, a in fw.calls('player_save_start')] == resumed
+    assert g.key(KEY_DOWN, O['KEY_PLAY']) == 0
+
+
+def test_a_game_that_ends_with_the_sound_gives_it_back(fw):
+    g, gm = switched(fw, 3)
+    g.world.files[SOUND] = b'game\n'
+    g.poll(500)
+    g.status, g.exited = 11, True  # SIGSEGV
+    g.poll()
+    assert (gm.pid, gm.audio) == (0, 0) and [a[:1] for _, a in fw.calls('player_save_start')] == [(1,)]
+
+
+@pytest.mark.parametrize('text, takes', [(b'game', 1), (b'game\r\n', 1), (b'Game\n', 0), (b'gam', 0), (b'game now\n', 0),
+                                         (b'plughw:0,0\n', 0), (b'', 0), (b'music\n', 0)])
+def test_the_sound_s_request(fw, text, takes):
+    g, gm = switched(fw)
+    g.world.files[SOUND] = text
+    g.poll(500)
+    assert gm.audio == takes and len(fw.calls('player_save_stop')) == takes
+    assert (SOUND in g.world.files) == (text != b'music\n')
+
+
+@pytest.mark.parametrize('manifest', [b'name=Snake\ngame=1\n', b'name=Snake\ngame=1\naudio=1\n', b'name=Snake\ngame=1\naudio=3\n'])
+def test_a_game_without_audio_2_never_reads_the_sound_s_file(fw, manifest):
+    g = CardGame(fw, snake=manifest)
+    g.world.files[b'/tmp/q2-snake.audio'] = b'game\n'
+    assert g.start() == 1
+    opened = []
+    fw.mock('fw_fopen', lambda path, mode, *_: opened.append(C.string_at(path)) or 0)
+    g.poll(500)
+    assert b'/tmp/q2-snake.audio' not in opened and b'/tmp/q2-snake.audio' in g.world.files
+    assert fw.var('addon__gm', Game).audio == (manifest.endswith(b'audio=1\n'))
 
 
 def test_card_games_are_games_rows_by_name_not_streaming_rows(fw):
@@ -5084,18 +5155,6 @@ def test_the_groovebox_shortcut_starts_the_card_game_with_the_sound(fw):
     gm = fw.var('addon__gm', Game)
     assert (gm.pid, gm.audio, gm.sock, gm.path) == (77, 1, 9, b'/tmp/q2-groovebox.input.sock')
     assert fw.calls('player_stop') and fw.calls('mclSetMute') and fw.calls('device_set_volume')  # the jack readied, dac_take
-
-
-@pytest.mark.parametrize('status, game_audio', [(2, 0), (1, 1)])
-def test_q2_boy_keeps_playing_music_at_launch(fw, status, game_audio):
-    card(fw, boy=b'name=q2-boy\ngame=1\naudio=1\n')
-    fw.mock('fw_fork', lambda *_: 77)
-    fw.mock('mclGetPlayStatus', lambda *_: status)
-    assert fw.fn('addon_game_open', C.c_int, C.c_char_p)(b'boy') == 1
-    gm = fw.var('addon__gm', Game)
-    assert (gm.pid, gm.boy_bridge, gm.audio) == (77, 1, game_audio)
-    assert bool(fw.calls('player_stop')) == bool(game_audio)
-    assert not fw.calls('player_save_stop')
 
 
 @pytest.mark.parametrize('folder, said', [({}, b'Groovebox is not on the card'),
