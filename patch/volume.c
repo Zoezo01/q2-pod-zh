@@ -69,8 +69,7 @@ void vol_paint(void *top, void *canvas) {
     const theme_t *T = theme();
     int gloss = !np && T->painter[PAINT_VOLUME] == VOL_CLASSIC_LIGHT;
     /* over the flat Quick Settings: its bar's card, how far down from the dialog */
-    void *qs =
-        !np && T->painter[PAINT_PAGES] == PAGES_FLAT ? widget_get_child(wm, n - 2) : (void *)0;
+    void *qs = !np && flat_pages() ? widget_get_child(wm, n - 2) : (void *)0;
     if (qs && tk_strcmp(widget_get_prop_str(qs, "name", ""), "statusbar_dialog")) qs = (void *)0;
     int qs_dy = qs ? I(qs, W_Y) - I(top, W_Y) : 0;
     rect_t area, bar, text, lo, hi;

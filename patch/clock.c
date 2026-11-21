@@ -176,8 +176,8 @@ int time_form(void *top) {
 #define TIME_YEAR_W 60
 #define TIME_CELL_W 45
 #define TIME_AMPM 5
-#define TIME_TILE_H                                                                                \
-    100 /* the flat look's tile, and Save's pill: the prompts' button, on their row */
+/* the flat look's tile, and Save's pill: the prompts' button, on their row */
+#define TIME_TILE_H 100
 #define TIME_SAVE_X 127
 #define TIME_SAVE_Y 224
 #define TIME_SAVE_W 121
