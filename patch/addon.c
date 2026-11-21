@@ -283,13 +283,14 @@ int addon_wake(const char *id) {
 }
 
 /* Whether app id's socket takes a connection (nothing sent; the app answers it as a bad request):
- * it is up. On tidal.c's start thread. */
+ * it is up. spot_exchange's non-blocking connect, so a full listen queue reads as not yet. On
+ * tidal.c's start thread. */
 int addon_answers(const char *id) {
-    struct unix_addr to = { 1, { 0 } };
-    tk_snprintf(to.path, sizeof to.path, "/tmp/q2-%s.browse.sock", id);
-    int fd = socket(1, 2, 0), ok = fd >= 0 && !connect(fd, &to, sizeof to); /* AF_UNIX, STREAM */
-    if (fd >= 0) close(fd);
-    return ok;
+    char path[48], none = 0;
+    unsigned n = 0;
+    volatile int cancel = 0;
+    tk_snprintf(path, sizeof path, "/tmp/q2-%s.browse.sock", id);
+    return spot_exchange(path, 0, 0, &none, 0, &n, &cancel) != SPOT_NOSOCK;
 }
 
 /* Stream mode (q2-deezer's stream.go): an app's /tmp/q2-<id>.play holds "<seq> <folder>", a hidden

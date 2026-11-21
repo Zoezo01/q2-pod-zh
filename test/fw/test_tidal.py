@@ -524,6 +524,7 @@ class Wake:
         fw.mock('fw_pthread_create', lambda t, attr, fn, arg, *_: self.jobs.append((fn, arg)) and 0)
         fw.mock('stock_tidal_trampoline', lambda url, *_: self.played.append(C.string_at(url)))
         fw.mock('fw_socket', lambda *_: 5)
+        fw.mock('fw_fcntl', lambda *_: 0)
         fw.mock('fw_connect', self.connect)
         fw.mock('fw_usleep', self.usleep)
         self.later = None  # what happens while the job waits, once

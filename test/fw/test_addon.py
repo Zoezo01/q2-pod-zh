@@ -290,10 +290,13 @@ def test_an_app_the_card_doesn_t_hold_isn_t_woken(fw):
 def test_an_app_answers_when_its_socket_takes_a_connection(fw, connect, up):
     log = []
     fw.mock('fw_socket', lambda *a: log.append(('socket', a[:3])) or 5)
+    fw.mock('fw_fcntl', lambda *a: log.append(('fcntl', a[:3])) or 0)  # O_NONBLOCK: a full queue doesn't block
     fw.mock('fw_connect', lambda fd, to, n, *_: log.append(('connect', C.string_at(to + 2))) or connect)
+    fw.mock('fw_select', lambda *a: log.append(('select',)) or 1)
+    fw.mock('fw_send', lambda *a: log.append(('send',)) or 0)
     fw.mock('fw_close', lambda fd, *_: log.append(('close', fd)))
     assert fw.fn('addon_answers', C.c_int, C.c_char_p)(b'a') == up
-    assert log == [('socket', (1, 2, 0)), ('connect', b'/tmp/q2-a.browse.sock'), ('close', 5)]
+    assert log == [('socket', (1, 2, 0)), ('fcntl', (5, 4, 0x80)), ('connect', b'/tmp/q2-a.browse.sock'), ('close', 5)]
 
 
 def test_the_longest_id_fits_every_path(fw):
