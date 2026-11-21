@@ -70,7 +70,7 @@ enum { BACK = 1000, APPLY, RESET, BYPASS, PER_OUTPUT, MENU, IMPORT, SAVE, ENABLE
 /* The page's two tabs: Simple, 3EQ's sliders (e3), and Advanced, the PEQ editor (ui.screen). */
 enum { SIMPLE, ADVANCED };
 static struct {
-    void *page, *view, *edit, *graph,
+    widget_t *page, *view, *edit, *graph,
         *bar; /* bar: the title, which shows the tabs on the top screens */
     unsigned timer, keyboard_timer;
     int screen, band, step, count, previous, rendered, dirty, pick, adjust, tries;
@@ -108,7 +108,7 @@ enum { E3_TABS, E3_SWITCH, E3_PRESETS, E3_RESET, E3_LOW, E3_HIGH = E3_LOW + 2 };
 /* The three buttons' x and width: Enabled and Presets wide, Reset a small R box. */
 static const short e3_button[3][2] = { { 12, 140 }, { 161, 140 }, { 310, 53 } };
 static struct {
-    void *view;
+    widget_t *view;
     unsigned save, press, press_at;
     int focus, adjusting, dragging, dirty, on, h;
     double gain[3];
@@ -222,7 +222,7 @@ void eq_output(const char *key) {
     }
 }
 
-static int action(void *ctx, void *event);
+static int action(void *ctx, event_t *event);
 
 /* A row: the caption on the left, white or, for display-only rows and off bands (DIM), grey, and
  * the value, if any, in grey against the right edge, or left of stock's list_into chevron on a row
@@ -236,7 +236,7 @@ static int graph_head(void) {
     return (PEQ_GRAPH_H + rh - 1) / rh * rh;
 }
 /* A label with too long a text for the theme's row font: the row style's 20 px. Returns it. */
-static void *fit(void *label) {
+static widget_t *fit(widget_t *label) {
     widget_set_prop_int(label, "style:normal:font_size", 20);
     return label;
 }
@@ -247,8 +247,8 @@ static void *fit(void *label) {
  * cut one from the label's left, so it can end up to a letter short of them, and scrolls it while
  * the row is selected (only_focus: the marquee's). ponytail: a fixed column, not the caption's
  * measured width, so a theme with a wider row font has to move it. */
-static void *long_value(void *item, const char *value, int rh) {
-    void *label = hscroll_label_create(item, 130, 0, 316 - 130, rh);
+static widget_t *long_value(widget_t *item, const char *value, int rh) {
+    widget_t *label = hscroll_label_create(item, 130, 0, 316 - 130, rh);
     widget_use_style(label, "s_scrlabel_white20r");
     widget_set_prop_int(label, "style:normal:text_color", (int)CF_GREY);
     widget_set_prop_int(label, "style:normal:margin_right", 0);
@@ -258,11 +258,11 @@ static void *long_value(void *item, const char *value, int rh) {
     theme_font(label, ROLE_TITLE, FONT_ROW);
     return fit(label);
 }
-static void *row_dim(void *view, int index, const char *text, const char *value, int id,
-                     int flags) {
+static widget_t *row_dim(widget_t *view, int index, const char *text, const char *value, int id,
+                         int flags) {
     int rh = page_h(48);
-    void *item = list_item_create(view, 0, (ui.graph ? graph_head() : 0) + index * rh, 375, rh),
-         *label = 0;
+    widget_t *item = list_item_create(view, 0, (ui.graph ? graph_head() : 0) + index * rh, 375, rh),
+             *label = 0;
     widget_use_style(item, "s_listitem_black");
     for (int i = 0; i < 1 + (value && !(flags & LONG)); ++i) {
         label = label_create(item, ROW_X, 0, 375 - 2 * ROW_X, rh);
@@ -348,7 +348,7 @@ static double *picked(void) {
 
 /* The value menu's edit closed with new text: apply it if it is a number (clamped like
  * Raise/Lower), else restore it. */
-static int typed(void *ctx, void *event) {
+static int typed(void *ctx, event_t *event) {
     if (!ui.edit) return 0;
     char s[16];
     if (widget_get_text_utf8(ui.edit, s, sizeof s)) s[0] = 0;
@@ -361,7 +361,7 @@ static int typed(void *ctx, void *event) {
 
 /* The rename edit's Done (EVT_IM_ACTION, and EVT_VALUE_CHANGED, which stock sends only for a
  * changed text) renames, once: Done sends both. */
-static int named(void *ctx, void *event) {
+static int named(void *ctx, event_t *event) {
     if (ui.edit && ui.screen == NAMING) action((void *)(long)NAMED, 0);
     return 0;
 }
@@ -370,8 +370,8 @@ static int named(void *ctx, void *event) {
  * The keyboard may open after focus; look for it every 16 ms, up to 20 times. It is the input
  * method's own, for this edit: a lookup by name could find the last one while it still closes. */
 static int numbers(const void *unused) {
-    void *im = input_method(),
-         *kb = im && ui.edit && P(im, IM_WIDGET) == ui.edit ? P(im, IM_KEYBOARD) : 0;
+    input_method_t *im = input_method();
+    widget_t *kb = im && ui.edit && P(im, IM_WIDGET) == ui.edit ? P(im, IM_KEYBOARD) : 0;
     char s[16];
     if (kb) pages_set_active_by_name(widget_lookup(kb, "panel", 1), "symnum");
     if (kb && ui.edit && !widget_get_text_utf8(ui.edit, s, sizeof s))
@@ -383,7 +383,7 @@ static int numbers(const void *unused) {
     return 8; /* RET_REPEAT */
 }
 
-static int focused(void *ctx, void *event) {
+static int focused(void *ctx, event_t *event) {
     stop_timer(&ui.keyboard_timer);
     ui.tries = 0;
     ui.keyboard_timer = timer_add(numbers, 0, 16);
@@ -515,8 +515,8 @@ static void load_draft(peq_preset *p, const char *name, int length) {
 }
 
 /* Search fits above T9's screen y=60 (page y=30), so opening the keyboard won't shift the page. */
-void *edit_create(void *item, const char *input_type, int y, int h) {
-    void *edit = widget_factory_create_widget(widget_factory(), "edit", item, 12, y, 351, h);
+widget_t *edit_create(widget_t *item, const char *input_type, int y, int h) {
+    widget_t *edit = widget_factory_create_widget(widget_factory(), "edit", item, 12, y, 351, h);
     static const char *const props[][2] = { { "keyboard", "kb_default_t9" },
                                             { "input_type", 0 },
                                             { "action_text", "done" },
@@ -599,7 +599,7 @@ const char *eq_set(const peq_preset *p, int mode) {
 static void load(eq_state *s);
 static void e3_show(void);
 
-static int action(void *ctx, void *event) {
+static int action(void *ctx, event_t *event) {
     int id = (int)(long)ctx;
     if (id < 0) return 0; /* display-only rows */
     int screen = ui.screen;
@@ -783,8 +783,8 @@ static int action(void *ctx, void *event) {
     return 0;
 }
 
-static void *bar(void *page, int x, int w);
-static int e3_touch(void *ctx, void *event);
+static widget_t *bar(widget_t *page, int x, int w);
+static int e3_touch(void *ctx, event_t *event);
 
 static int render(const void *unused) {
     ui.timer = 0;
@@ -835,11 +835,11 @@ static int render(const void *unused) {
     widget_destroy_children(ui.page);
     /* No item_height: stock's layout (0x5fd484) would give the graph a row's height; the rows are
      * the theme's high themselves. */
-    void *list = list_view_create(ui.page, 0, 48, 375, rows);
+    widget_t *list = list_view_create(ui.page, 0, 48, 375, rows);
     /* The theme's default list_view is a light card; stock pages paint theirs black inline. */
     widget_set_prop_int(list, "style:normal:bg_color", (int)0xff000000u);
     widget_set_prop_int(list, "style:normal:border_color", 0);
-    void *view = scroll_view_create(list, 0, 0, 375, rows);
+    widget_t *view = scroll_view_create(list, 0, 0, 375, rows);
     ui.view = view;
     widget_set_prop_int(view, "yslidable", 1);
     widget_set_prop_int(view, "xslidable", 0);
@@ -868,7 +868,7 @@ static int render(const void *unused) {
             auto_text(value, sizeof(value));
         else
             snprintf(value, sizeof(value), "%.1f dB", ui.draft.preamp);
-        void *shown = row_dim(view, n++, "Preamp", value, PREAMP, INTO);
+        widget_t *shown = row_dim(view, n++, "Preamp", value, PREAMP, INTO);
         /* At 20px two double-digit cuts overrun the iPod's 280px column beside the caption and
          * chevron; at 16 the longest, -60.0 at both, leaves 6px (the stock font's widths), and a
          * theme's row font, its caption wider, 4 at 15. */
@@ -922,7 +922,7 @@ static int render(const void *unused) {
                 auto_text(text, sizeof(text));
             else
                 snprintf(text, sizeof(text), "%+.1f dB", v);
-            void *shown = row(view, n++, text, i);
+            widget_t *shown = row(view, n++, text, i);
             if (ui.pick == PREAMP && !i) fit(shown);
         }
     } else if (ui.screen ==
@@ -975,7 +975,7 @@ static int render(const void *unused) {
     scroll_view_set_offset(view, 0, offset);
     /* A message takes the title bar until the next action, so it never shrinks the list; on the
      * main screen the bar otherwise shows the tabs (peq_paint). */
-    void *title = ui.screen == HOME ? bar(ui.page, 0, 375) : bar(ui.page, 8, 359);
+    widget_t *title = ui.screen == HOME ? bar(ui.page, 0, 375) : bar(ui.page, 8, 359);
     ui.bar = ui.screen == HOME ? title : 0;
     text[0] = 0;
     if (ui.status[0])
@@ -1031,7 +1031,8 @@ unsigned rgba(unsigned c, unsigned a) { return a << 24 | (c & 255) << 16 | (c & 
 
 /* UTF-8 s centred in x, y, w, h (draw_centred); a stray continuation byte is drawn as itself.
  * Shared with visualizer.c. */
-void caption(void *canvas, const char *s, int x, int y, int w, int h, unsigned px, unsigned color) {
+void caption(canvas_t *canvas, const char *s, int x, int y, int w, int h, unsigned px,
+             unsigned color) {
     unsigned wide[32], n = 0;
     for (const unsigned char *p = (const unsigned char *)s; *p && n < 32; ++n) {
         unsigned c = *p++;
@@ -1045,7 +1046,7 @@ void caption(void *canvas, const char *s, int x, int y, int w, int h, unsigned p
     draw_centred(canvas, wide, n, r, px, color);
 }
 
-static void path(void *vg, const float *y) {
+static void path(vgcanvas_t *vg, const float *y) {
     vgcanvas_begin_path(vg);
     vgcanvas_move_to(vg, PEQ_GRAPH_X, y[0]);
     for (int x = 1; x < GRAPH_W; ++x) vgcanvas_line_to(vg, PEQ_GRAPH_X + x, y[x]);
@@ -1055,8 +1056,8 @@ static void path(void *vg, const float *y) {
  * and 10 kHz, labelled in grey; the response as a 2px line in the accent's light tone,
  * fading to clear toward 0 dB, the other channel's dimmer when the two differ; a ring on each
  * band in use, the edited band's larger and filled. Off: the line alone, grey. */
-static void e3_paint(void *canvas), tabs_paint(void *canvas);
-void peq_paint(void *w, void *canvas) {
+static void e3_paint(canvas_t *canvas), tabs_paint(canvas_t *canvas);
+void peq_paint(widget_t *w, canvas_t *canvas) {
     if (w && w == e3.view && P(canvas, CANVAS_LCD)) e3_paint(canvas);
     if (w && w == ui.bar && P(canvas, CANVAS_LCD)) tabs_paint(canvas);
     if (!w || w != ui.graph || !P(canvas, CANVAS_LCD)) return;
@@ -1077,7 +1078,7 @@ void peq_paint(void *w, void *canvas) {
                 PEQ_GRAPH_H - PEQ_PLOT_BOTTOM - 2, 12, CF_GREY);
     }
     stock_canvas_set_fill_color(canvas, fill);
-    void *vg = canvas_get_vgcanvas(canvas);
+    vgcanvas_t *vg = canvas_get_vgcanvas(canvas);
     if (!vg) return;
     int split = 0;
     for (int x = 0; x < GRAPH_W; ++x)
@@ -1118,7 +1119,7 @@ void peq_paint(void *w, void *canvas) {
 static void e3_done(void);
 /* Replaces the stock page's on_common_keyup: Return steps back one screen; on Simple it ends an
  * adjustment, else leaves. */
-static int keyup(void *ctx, void *event) {
+static int keyup(void *ctx, event_t *event) {
     if (I(event, EVENT_KEY) != KEY_RETURN) return 0;
     if (ui.tab == ADVANCED)
         action((void *)(long)BACK, ctx);
@@ -1134,7 +1135,7 @@ static int e3_flush(void);
 /* Leaving saves what Simple has unsaved and lets go of its Off comparison's held preamp; ctx is the
  * page. Another page's destroy (one peq_page_replace let go, coming after its successor's init)
  * leaves the open page's state alone. */
-static int closed(void *ctx, void *event) {
+static int closed(void *ctx, event_t *event) {
     if (ctx != ui.page) return 0;
     stop_timer(&e3.press);
     e3_flush();
@@ -1190,7 +1191,7 @@ static void tab_to(int tab) {
     if (!ui.timer) ui.timer = timer_add(render, 0, 1); /* not inside the press's own widget */
 }
 
-static int tab_touch(void *ctx, void *event) {
+static int tab_touch(void *ctx, event_t *event) {
     int xy[2] = { I(event, EVENT_X), I(event, EVENT_Y) };
     widget_to_local(ui.page, xy);
     tab_to(xy[0] < 188 ? SIMPLE : ADVANCED);
@@ -1198,8 +1199,8 @@ static int tab_touch(void *ctx, void *event) {
 }
 
 /* The title label; the tabs' bar when the bar takes their taps. */
-static void *bar(void *page, int x, int w) {
-    void *title = label_create(page, x, 0, w, 48);
+static widget_t *bar(widget_t *page, int x, int w) {
+    widget_t *title = label_create(page, x, 0, w, 48);
     widget_use_style(title, "s_label_white20c");
     widget_set_prop_int(title, "line_wrap", 1);
     if (w == 375) widget_on(title, EVT_POINTER_DOWN, tab_touch, 0);
@@ -1237,7 +1238,7 @@ static void page_load(void) {
 /* Playback's EQ row: opens on the tab it was last on (ui.tab, zeroed to Simple at boot).
  * Opening changes nothing. ponytail: kept in RAM, so a reboot goes back to Simple; saving it in
  * eq_state would keep it, add when asked. */
-int peq_page_init(void *page, void *context) {
+int peq_page_init(widget_t *page, void *context) {
     if (!page) return 16;
     ui.page = page;
     ui.view = 0;
@@ -1260,7 +1261,7 @@ int peq_page_init(void *page, void *context) {
  * that Return's hold opened above it, #397): its state let go now, as its Return would, since its
  * window's destroy may come after the new page's init, and a second page would share this one
  * state. */
-void peq_page_replace(void *old) {
+void peq_page_replace(widget_t *old) {
     closed(old, 0);
     window_manager_close_window_force(window_manager(), old);
 }
@@ -1381,7 +1382,7 @@ static int e3_single(const void *unused) {
 
 /* ringnav(), the page on top: Simple's wheel and Centre, and Advanced's tab bar, which the wheel
  * reaches past the list's first row. */
-int eq_key(void *top, unsigned key) {
+int eq_key(widget_t *top, unsigned key) {
     static const unsigned release[EVENT_KEY / 4 + 1] = { [EVENT_KEY / 4] = KEY_CENTER };
     if (!ui.page || top != ui.page) return 0;
     if (e3.caption && (key == KEY_NEXT || key == KEY_PREV)) {
@@ -1426,7 +1427,7 @@ int eq_key(void *top, unsigned key) {
 
 /* A touch: a button on the press; a slider's gain follows the finger, in 0.5 dB steps,
  * until it lifts. */
-static int e3_touch(void *ctx, void *event) {
+static int e3_touch(void *ctx, event_t *event) {
     int type = I(event, EVENT_TYPE), xy[2] = { I(event, EVENT_X), I(event, EVENT_Y) };
     if (!e3.view || (type != EVT_POINTER_DOWN && !e3.dragging)) return 0;
     widget_to_local(e3.view, xy);
@@ -1455,7 +1456,7 @@ static int e3_touch(void *ctx, void *event) {
     return 0;
 }
 
-static void e3_box(void *canvas, int x, int y, int w, int h, unsigned rgb) {
+static void e3_box(canvas_t *canvas, int x, int y, int w, int h, unsigned rgb) {
     canvas_set_fill_color(canvas, rgba(rgb, 255));
     canvas_fill_rect(canvas, x, y, w, h);
 }
@@ -1464,7 +1465,7 @@ static void e3_box(void *canvas, int x, int y, int w, int h, unsigned rgb) {
  * while 3EQ is off; the selected control on a lighter card; the slider being adjusted with a white
  * handle and value, the others grey. While PEQ plays the switch shows it on, under the applied
  * preset's name (Advanced unnamed), and the sliders are dimmed: one takes over as 3EQ. */
-static void e3_paint(void *canvas) {
+static void e3_paint(canvas_t *canvas) {
     int peq = !ui.draft.bypass, zero = e3_y(0);
     unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR), tone = e3.on ? TONE
                                                                                : peq ? 0x444444
@@ -1510,7 +1511,7 @@ static void e3_paint(void *canvas) {
 
 /* The tab bar, unless a message has it: the open tab white over an accent line, the other grey,
  * and while the wheel is on the bar, the other on the lighter card Centre would open. */
-static void tabs_paint(void *canvas) {
+static void tabs_paint(canvas_t *canvas) {
     int simple = ui.tab == SIMPLE, focus = simple ? e3.focus == E3_TABS : ui.tabs;
     if (simple ? e3.status != 0 : ui.status[0] != 0) return;
     unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);

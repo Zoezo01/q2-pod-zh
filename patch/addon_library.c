@@ -185,9 +185,9 @@ static int library_safe(void) {
     if (media_playing() || airplayGetFlag() == 2 || (signed char)bt__recv_pageflag == 2 ||
         library_scanning())
         return 0;
-    void *wm = window_manager(), *bar = *(void *const *)system_bar;
+    widget_t *wm = window_manager(), *bar = *(void *const *)system_bar;
     for (unsigned i = 0, n = widget_count_children(wm); i < n; ++i) {
-        void *w = widget_get_child(wm, i);
+        widget_t *w = widget_get_child(wm, i);
         const char *name = widget_get_prop_str(w, "name", "");
         unsigned k = 0;
         while (k < sizeof safe / sizeof *safe && tk_strcmp(name, safe[k])) ++k;

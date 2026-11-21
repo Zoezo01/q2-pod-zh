@@ -1,19 +1,19 @@
 /* Scan Folders (stock's specfolder_page; docs/internals.md, "Scan Folders' rows"). */
 #include "navigation.h"
 
-extern int stock_specfolder_click_trampoline(void *, void *);
+extern int stock_specfolder_click_trampoline(void *, event_t *);
 extern int stock_specfolder_enter_trampoline(int, int);
 extern int stock_specfolder_back_trampoline(int *);
-extern int stock_specfolder_scan_trampoline(void *, void *);
-extern int stock_cancelchoice_trampoline(void *, void *);
+extern int stock_specfolder_scan_trampoline(void *, event_t *);
+extern int stock_cancelchoice_trampoline(void *, event_t *);
 
 #define TICK_COLUMN 81 /* the row click's slti: a tap left of it ticks, past it opens */
 
 /* The list shows folders only, so specfolder_enter refuses a folder with none inside and stock
  * says "Folder not found". An album's folder is what's picked here: that tap goes to the column.
  * ponytail: a folder that does open is listed twice on the tap, here and by specfolder_enter. */
-int ringnav_specfolder_click(void *ctx, void *event) {
-    void *row = table_row_of(P(event, EVENT_TARGET));
+int ringnav_specfolder_click(void *ctx, event_t *event) {
+    widget_t *row = table_row_of(P(event, EVENT_TARGET));
     if (row && I(event, EVENT_X) >= TICK_COLUMN) {
         char url[1024] = "";
         get_specfolderurl(I(row, ROW_INDEX), url, sizeof url);
@@ -99,7 +99,7 @@ int ringnav_specfolder_back(int *yoffset) {
 }
 
 /* Cancel unticks every folder, the ones not listed too. */
-int ringnav_cancelchoice(void *ctx, void *event) {
+int ringnav_cancelchoice(void *ctx, event_t *event) {
     picks_clear();
     return stock_cancelchoice_trampoline(ctx, event);
 }
@@ -108,7 +108,7 @@ int ringnav_cancelchoice(void *ctx, void *event) {
  * pick. With none it is stock's, for its "Folder not specified". A folder ticked along with one
  * inside it is scanned twice, which the scan's existing-song check (ringnav_scan_refresh) makes
  * a second reading, not a second copy. */
-int ringnav_specfolder_scan(void *ctx, void *event) {
+int ringnav_specfolder_scan(void *ctx, event_t *event) {
     picks_keep();
     void *list = picks.n ? _create_deque("char*") : 0;
     if (!list) return stock_specfolder_scan_trampoline(ctx, event);

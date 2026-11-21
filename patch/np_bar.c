@@ -19,11 +19,11 @@ static int ipod_bar_x(int sec) {
  * and widest bar, or the last track's, whose times hold the 0:00 an unknown length shows. Each
  * keeps its y and height and repaints where it was and where it goes, so the caller is outside a
  * paint, which loses its invalidates (#116). 1 when any moved. */
-int ipod_times(void *elapsed, void *remain, void *bar, int sec) {
+int ipod_times(widget_t *elapsed, widget_t *remain, widget_t *bar, int sec) {
     if (sec <= 0) return 0;
     int x = ipod_bar_x(sec), tw = x - (NP_IPOD_BAR_X - NP_IPOD_TIME_W1), bw = 375 - 2 * x,
         moved = 0;
-    void *w[] = { elapsed, remain, bar ? bar : st.stream_bar };
+    widget_t *w[] = { elapsed, remain, bar ? bar : st.stream_bar };
     const int to[3][2] = { { x - NP_IPOD_TIME_GAP - tw, tw },
                            { x + bw + NP_IPOD_TIME_GAP, tw },
                            { x, bw } };
@@ -70,7 +70,7 @@ int np_fit_due(const void *info) {
  * drag or scrub previews it). Labels are written only when their source changes; 1 when the
  * remaining time was. Classic's times beside the bar refit when the length's class changes: a
  * seek, a pause or a rate change keeps it. */
-int np_sync(void *top) {
+int np_sync(widget_t *top) {
     if (!top || top != st.np_win) return 0;
     st.np_bold = theme_font(st.np_title, ROLE_NP, st.np_bold); /* the title, as it changes */
     unsigned at, n;
@@ -102,8 +102,8 @@ int np_sync(void *top) {
 /* The page in front: top, or under a pop-up the window it is over, read from the window manager's
  * stack, so a page that went from under a pop-up (the lock screen, opened over Search and closed)
  * is not still the one in front. The scan's dialog counts: it names the bar it covers. */
-static void *page_of(void *top) {
-    void *wm = window_manager();
+static widget_t *page_of(widget_t *top) {
+    widget_t *wm = window_manager();
     unsigned i = widget_count_children(wm);
     while (top && top != st.msg_win && tk_strcmp(widget_get_type(top), "window"))
         top = i ? widget_get_child(wm, --i) : (void *)0;
@@ -121,11 +121,11 @@ static void *page_of(void *top) {
  * title's box has 91 px, the scan's title is 104 px and the widest date being set 90. This runs in
  * a paint, which drops the label's invalidate, so bar_repaint follows; the clock waits for its
  * timer. */
-void bar_title(void *bar, void *top) {
+void bar_title(widget_t *bar, widget_t *top) {
     static const unsigned
         now_playing[] = { 'N', 'o', 'w', ' ', 'P', 'l', 'a', 'y', 'i', 'n', 'g', 0 },
         cover_flow[] = { 'C', 'o', 'v', 'e', 'r', ' ', 'F', 'l', 'o', 'w', 0 }, none = 0;
-    void *page = page_of(top);
+    widget_t *page = page_of(top);
     static int bare; /* a page with no clock in front (above); the last one's with none found */
     if (page) {
         const char *name = widget_get_prop_str(page, "name", "");
@@ -137,7 +137,8 @@ void bar_title(void *bar, void *top) {
         static int home; /* Home in front: no clock under its title though it is empty */
         if (page) home = home_menu(page);
         int titled = bare || (!st.time_title && (home || (own && *own)));
-        void *clock = titled != st.bar_titled ? widget_lookup(bar, "label_clock", 1) : (void *)0;
+        widget_t *clock =
+            titled != st.bar_titled ? widget_lookup(bar, "label_clock", 1) : (void *)0;
         if (!clock) return;
         st.bar_titled = titled;
         st.clock_key = 0;
@@ -158,11 +159,11 @@ void bar_title(void *bar, void *top) {
     }
     if (st.time_title && !st.bar_titled && !bare) return; /* the clock, every paint */
     if (!top || tk_strcmp(widget_get_type(top), "window")) return;
-    void *label = widget_lookup(bar, "label_clock", 1);
+    widget_t *label = widget_lookup(bar, "label_clock", 1);
     if (!label) return;
     const unsigned *title = bare ? &none : (void *)0; /* USB's: an empty title, so no clock */
     if (!st.time_title && !bare) {
-        void *nav = widget_lookup(top, "view_navbar", 0), *t = (void *)0;
+        widget_t *nav = widget_lookup(top, "view_navbar", 0), *t = (void *)0;
         if (nav && !widget_get_visible(nav)) {
             t = widget_lookup(nav, "scrlabel_title", 0);
             if (!t && widget_count_children(nav)) t = widget_get_child(nav, 0);
@@ -215,7 +216,7 @@ void bar_title(void *bar, void *top) {
  * draws it, sizes the dragger to it and fills and seeks short of the ends by half of it. An icon
  * that's no string reads as none (value_str). An empty one in the asset would too, as on stock's
  * own brightness bar, but stock then looks the image up at every paint. */
-void slider_knobless(void *slider) {
+void slider_knobless(widget_t *slider) {
     static const char *const knob[] = { "style:normal:icon", "style:pressed:icon",
                                         "style:over:icon", "style:focused:icon",
                                         "style:disable:icon" };
@@ -228,7 +229,7 @@ void slider_knobless(void *slider) {
  * on exit in track seconds (it adds a CUE track's start), and the timer restarts. */
 /* The accent's light tone (Minimal's own accent: MINIMAL_FILL) fills the progress bar in every
  * state a touch passes through; a white fill (Minimal: a thicker line) marks the scrub. */
-void slider_fill(void *slider, unsigned color) {
+void slider_fill(widget_t *slider, unsigned color) {
     static const char *const fill[] = { "style:normal:fg_color", "style:pressed:fg_color",
                                         "style:over:fg_color", "style:focused:fg_color" };
     for (unsigned i = 0; i < sizeof fill / sizeof *fill; ++i)
@@ -247,7 +248,8 @@ void np_fill(int scrub) {
 
 /* One part of Classic's bar, w wide at x, y: the stops' rows h high, then mirrored under them from
  * SCRUB_REFLECT_A/256 to the paper over SCRUB_REFLECT_ROWS. */
-static void bar_part(void *canvas, const stops_t *s, int x, int y, int w, int h, unsigned paper) {
+static void bar_part(canvas_t *canvas, const stops_t *s, int x, int y, int w, int h,
+                     unsigned paper) {
     paint_stops(canvas, x, y, w, h, s);
     for (int k = 0; k < SCRUB_REFLECT_ROWS; ++k) {
         int a = SCRUB_REFLECT_A * (SCRUB_REFLECT_ROWS - k) / SCRUB_REFLECT_ROWS;
@@ -262,7 +264,7 @@ static void bar_part(void *canvas, const stops_t *s, int x, int y, int w, int h,
  * whatever the fill reaches, each mirrored under it. With mark, a scrub's cue on the gloss: a
  * diamond in the ink, NP_SCRUB_MARK each side of its middle row and column, at the fill's end, kept
  * inside the bar. 0 when the theme has none. The canvas's fill colour is left as it was. */
-int ipod_bar(void *canvas, int x, int y, int bw, int on, int mark) {
+int ipod_bar(canvas_t *canvas, int x, int y, int bw, int on, int mark) {
     const theme_t *T = theme();
     const stops_t *track = &T->np_track[ipod_light()];
     if (track->n < 2) return 0;
@@ -288,7 +290,7 @@ int ipod_bar(void *canvas, int x, int y, int bw, int on, int mark) {
 
 /* Classic's progress bar over stock's plain one, centred in the slider as stock's, the scrub's cue
  * on it while a scrub runs; the times sit beside it (tools/ipod.py np_ipod). */
-void paint_scrubber(void *w, void *canvas) {
+void paint_scrubber(widget_t *w, canvas_t *canvas) {
     if (w && w == st.stream_bar && P(canvas, CANVAS_LCD))
         ipod_bar(canvas, 0, 0, I(w, W_W), I(w, W_W), 0);
     if (!w || w != st.np_slider || !P(canvas, CANVAS_LCD)) return;
@@ -301,7 +303,7 @@ void paint_scrubber(void *w, void *canvas) {
 /* The rows painter's bar (the volume panel, a card app's progress): the track's rows, then the
  * fill's, the theme's own scheme's (Classic Blue) or another accent's band, as Now Playing's bar
  * (ipod_bar). */
-void paint_rows_bar(void *canvas, int x, int y, int w, int h, int fill_w) {
+void paint_rows_bar(canvas_t *canvas, int x, int y, int w, int h, int fill_w) {
     const theme_t *T = theme();
     const unsigned (*rows)[NP_ROWS] = T->np_rows + 2 * ipod_light();
     const stops_t *band = T->schemes[accent()].label ? (const stops_t *)0 : &scheme()->sel;
@@ -321,7 +323,7 @@ void np_theme(void) {
     static const char *const radius[] = { "style:normal:round_radius", "style:pressed:round_radius",
                                           "style:over:round_radius", "style:disable:round_radius",
                                           "style:focused:round_radius" };
-    void *glyph = st.np_win ? widget_lookup(st.np_win, "img_playstate", 1) : (void *)0;
+    widget_t *glyph = st.np_win ? widget_lookup(st.np_win, "img_playstate", 1) : (void *)0;
     const theme_t *T = theme();
     int h = T->np_bar;
     for (unsigned i = 0; st.np_slider && i < sizeof radius / sizeof *radius; ++i)

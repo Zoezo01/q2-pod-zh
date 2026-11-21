@@ -403,10 +403,10 @@ static struct {
     volatile int stage; /* for the label: 1 the tar is coming, 2 it is read back, 3 between tries */
     volatile int base;  /* the percentage the part held when this try began */
     unsigned need;      /* NU_SPACE's MB */
-    void *label;        /* the row's label while System Update is open, for the percentage */
+    widget_t *label;    /* the row's label while System Update is open, for the percentage */
 } nu __attribute__((section(".scratch")));
 
-extern int stock_fwupdate_trampoline(void *win, void *ctx);
+extern int stock_fwupdate_trampoline(widget_t *win, void *ctx);
 
 /* The notice (netupdate_poll): with Wi-Fi on, now and then the latest release's tag, kept when it
  * is newer than this build; Home tells of it once a release and System Update's row names it. */
@@ -658,7 +658,7 @@ static int wait_done(const void *unused) {
 }
 
 /* A second press cancels: the transfer ends at its next progress call. */
-static int online_click(void *ctx, void *event) {
+static int online_click(void *ctx, event_t *event) {
     if (nu.state == NU_RUNNING) {
         nu.cancel = 1;
         show("Cancelling…");
@@ -685,23 +685,24 @@ static int online_click(void *ctx, void *event) {
 
 /* Leaving the page cancels: the card may be unmounted or shared over USB next. As 2, unless a press
  * cancelled already: the part, closed by then, stays for the next press to carry on from. */
-static int label_gone(void *ctx, void *event) {
+static int label_gone(void *ctx, event_t *event) {
     if (nu.label == ctx) nu.label = 0, nu.cancel = nu.cancel ? nu.cancel : 2;
     return 0;
 }
 
-extern void pod_rows(void *win, const char *view_name, int first, int n, const char *const *icons);
+extern void pod_rows(widget_t *win, const char *view_name, int first, int n,
+                     const char *const *icons);
 
 /* systemset_fwupdate_page_init: stock's two rows (0x4c8660), each button named by its index, which
  * stock's click (0x4c84cc) reads with atoi: 0 TF card update, 1 Shanling's server. Renamed "2", the
  * second does nothing in stock's click and ours runs. */
-int ringnav_fwupdate(void *win, void *ctx) {
+int ringnav_fwupdate(widget_t *win, void *ctx) {
     static const char *const icons[] = { 0 };
     int result = stock_fwupdate_trampoline(win, ctx);
-    void *view = win ? widget_lookup(win, "scroll_view_fwupdate", 1) : (void *)0;
-    void *button = view && widget_count_children(view) == 2
-                       ? widget_get_child(widget_get_child(view, 1), 0)
-                       : 0;
+    widget_t *view = win ? widget_lookup(win, "scroll_view_fwupdate", 1) : (void *)0;
+    widget_t *button = view && widget_count_children(view) == 2
+                           ? widget_get_child(widget_get_child(view, 1), 0)
+                           : 0;
     if (button) {
         widget_set_name(button, "2");
         widget_on(button, EVT_CLICK, online_click, 0);
@@ -743,7 +744,7 @@ void netupdate_poll(void) {
     }
     if (nc.busy || (nc.polled && now - nc.polled < NU_POLL_MS)) return;
     nc.polled = now | !now;
-    void *top = window_manager_get_top_window(window_manager());
+    widget_t *top = window_manager_get_top_window(window_manager());
     if (*nc.tag && g_backlight_status && top &&
         !tk_strcmp(widget_get_prop_str(top, "name", ""), "home_page")) {
         if (!nc.read) nc.read = 1, BLOB_IO(NU_TOLD, nc.told, 0);
@@ -790,10 +791,10 @@ static struct {
     unsigned need;                                        /* SH_SPACE's MB */
     unsigned long long checked;                           /* boot_ms of the last whole check */
     shelf_app next[SH_MAX]; /* the check's list (n apps), the page's once the check ends */
-    void *page, *row[SH_MAX + 1];
-    int tab;     /* the open tab: 0 Apps, 1 Games; kept while the Q2 is on */
-    void *strip; /* the tabs (app_store.c store_tabs) */
-    int clicks;  /* sh_click's running, which a job's end waits for (sh_wait) */
+    widget_t *page, *row[SH_MAX + 1];
+    int tab;         /* the open tab: 0 Apps, 1 Games; kept while the Q2 is on */
+    widget_t *strip; /* the tabs (app_store.c store_tabs) */
+    int clicks;      /* sh_click's running, which a job's end waits for (sh_wait) */
 } sh __attribute__((section(".scratch")));
 
 static int is(int i, const char *id) { return i >= 0 && i < shelf_n && !strcmp(apps[i].id, id); }
@@ -1174,17 +1175,17 @@ static void sh_start(int job, int i) {
  * power-on default) on a second press of the same row. Pressed again, the running install cancels.
  * Check for Updates checks now (loading the list, with none yet), unless the last whole check is
  * under SH_RECHECK_MS old: then it says that check's count again. */
-static int sh_click(void *ctx, void *event);
+static int sh_click(void *ctx, event_t *event);
 
 /* A press held for Smart Wi-Fi's link (need_link) by its app, ROW_CHECK for Check for Updates: made
  * again on that app's row, or dropped with the row gone (another tab, or the page closed). */
-static int sh_held(void *ctx, void *unused) {
+static int sh_held(void *ctx, event_t *unused) {
     for (int r = 0; r < sh.rows; ++r)
         if (sh.map[r] == (int)(long)ctx) return sh_click((void *)(long)r, 0);
     return 0;
 }
 
-static int sh_click(void *ctx, void *event) {
+static int sh_click(void *ctx, event_t *event) {
     int r = (int)(long)ctx, i = sh.map[r], armed = sh.armed == r + 1;
     ++sh.clicks; /* a count: a held press (sh_held) can run inside another's toast */
     sh.armed = 0;
@@ -1220,7 +1221,7 @@ static int sh_click(void *ctx, void *event) {
     return 0;
 }
 
-static int sh_closed(void *ctx, void *event) {
+static int sh_closed(void *ctx, event_t *event) {
     sh.page = sh.strip = store_tabs(0, 0), sh.rows = sh.armed = 0;
     return 0;
 }
@@ -1237,7 +1238,7 @@ static void sh_rows(void) {
     if (sh.page && (n != sh.rows || memcmp(map, sh.map, sizeof map))) {
         memcpy(sh.map, map, sizeof map);
         sh.rows = 0;
-        void *view = page_list(sh.page, sh.page, 0, "App Store", n, 64);
+        widget_t *view = page_list(sh.page, sh.page, 0, "App Store", n, 64);
         sh.strip = store_tabs(sh.page, view);
         for (int r = 0; r < n; ++r) {
             int i = map[r];
@@ -1262,7 +1263,7 @@ void shelf_tab(int tab) {
 /* ringnav, before stock's song skip: on the App Store, Previous opens Apps and Next Games.
  * ponytail: a toast on top (msginfo_dialog, 0x49b7c8) stops them for its time, as for field_key;
  * looking past it (smart_wifi.c page_in_use) would lift that. */
-int shelf_key(void *top, unsigned key) {
+int shelf_key(widget_t *top, unsigned key) {
     if (!sh.page || top != sh.page || (key != KEY_BACK_BTN && key != KEY_FWD_BTN)) return 0;
     shelf_tab(key == KEY_FWD_BTN);
     return 1;
@@ -1282,7 +1283,7 @@ int shelf_erase(int start) {
 }
 
 /* The opening check, held for Smart Wi-Fi's link (smart_hold). */
-static int sh_check(void *ctx, void *event) {
+static int sh_check(void *ctx, event_t *event) {
     if (!sh.job && get_wifisignal() > 0) sh_start(JOB_CHECK, 0), sh_refresh();
     return 0;
 }
@@ -1290,7 +1291,7 @@ static int sh_check(void *ctx, void *event) {
 /* Library's App Store row. The card's last list, until a check fetches the list again: with Wi-Fi
  * when the last whole check is over SH_STALE_MS old (or none), a request per app; while Smart Wi-Fi
  * brings the radio back, once its link is up. */
-int shelf_open(void *ctx, void *event) {
+int shelf_open(void *ctx, event_t *event) {
     if (sh.page || !(sh.page = page_open("apps_page", sh_closed, page_keyup))) return 0;
     if (sh.job != JOB_CHECK && !shelf_n) { /* an erase can run from Configuration before it opens */
         unsigned n = 0;

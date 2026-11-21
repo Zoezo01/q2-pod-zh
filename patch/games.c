@@ -523,7 +523,7 @@ struct best {
     unsigned magic, score, sum;
 };
 static struct game {
-    void *page, *list, *view, *sheet;
+    widget_t *page, *list, *view, *sheet;
     unsigned timer, frame, at, acc; /* frame: Vortex's timer, at its last run, acc 1/60000 s due */
     int h, screen, target, picking, pick, confirm, paused, choice, carry;
     int dirty; /* unsaved: 1 Sudoku, 2 Solitaire */
@@ -536,8 +536,8 @@ static struct game {
     int pop_ring, pop_seg, trail[TRAIL][2], record; /* record: the last game set Best */
     struct best sn_best;
     struct snake sn;
-    int rows;    /* the chooser's: its own games, then the card's */
-    void *title; /* the caption the bar reads, where the theme's bar holds it */
+    int rows;        /* the chooser's: its own games, then the card's */
+    widget_t *title; /* the caption the bar reads, where the theme's bar holds it */
 } *g __attribute__((section(".scratch")));
 
 static int sud_started(const struct sudoku *s) {
@@ -688,11 +688,11 @@ static void to(int screen) {
     rearm(&g->timer, show, 0);
 }
 
-static int pick_game(void *ctx, void *event) {
+static int pick_game(void *ctx, event_t *event) {
     if (g->screen == CHOOSER) to((int)(long)ctx + 1);
     return 0;
 }
-static int pick_card_game(void *ctx, void *event) { /* the card's, over the whole screen */
+static int pick_card_game(void *ctx, event_t *event) { /* the card's, over the whole screen */
     if (g->screen == CHOOSER) addon_game_start((int)(long)ctx - 4);
     return 0;
 }
@@ -707,7 +707,7 @@ static int leave(const void *unused) {
 }
 
 /* Return in the chooser (a game's goes to games_key): back to the Library. */
-static int keyup(void *ctx, void *event) { return return_key(event, &g->timer, leave); }
+static int keyup(void *ctx, event_t *event) { return return_key(event, &g->timer, leave); }
 
 static void sudoku_key(unsigned key) {
     struct sudoku *s = &g->sud;
@@ -821,7 +821,7 @@ static void solitaire_key(unsigned key) {
 /* ringnav(), before stock: a game takes every key but Power and a held Return (Home), so the
  * wheel, Centre, Play/Pause and the side buttons never reach the volume, the media or the screen.
  */
-int games_key(void *top, unsigned key) {
+int games_key(widget_t *top, unsigned key) {
     if (!g || top != g->page || g->screen == CHOOSER) return 0;
     if (key == KEY_RETURN && *(volatile unsigned char *)RETURN_RELEASE_LATCH) return 0;
     struct game was = *g;
@@ -840,19 +840,19 @@ int games_key(void *top, unsigned key) {
     return 1;
 }
 
-static void box(void *canvas, int x, int y, int w, int h, unsigned rgb) {
+static void box(canvas_t *canvas, int x, int y, int w, int h, unsigned rgb) {
     canvas_set_fill_color(canvas, rgba(rgb, 255));
     canvas_fill_rect(canvas, x, y, w, h);
 }
 
 /* A box with its corners rounded r, square when the canvas declines to round it. */
-static void round_box(void *canvas, int x, int y, int w, int h, unsigned rgb, unsigned r) {
+static void round_box(canvas_t *canvas, int x, int y, int w, int h, unsigned rgb, unsigned r) {
     fill_box(canvas, &(rect_t){ x, y, w, h }, rgba(rgb, 255), r);
 }
 
 /* A two-pixel frame, its corners rounded r (4 or more) or, at 0 or when the canvas declines,
  * square. */
-static void frame_rect(void *canvas, int x, int y, int w, int h, unsigned rgb, unsigned r) {
+static void frame_rect(canvas_t *canvas, int x, int y, int w, int h, unsigned rgb, unsigned r) {
     int out[4] = { x, y, w, h }, in[4] = { x + 1, y + 1, w - 2, h - 2 };
     unsigned c = rgba(rgb, 255);
     if (r && !canvas_stroke_rounded_rect(canvas, out, (void *)0, &c, r, 1) &&
@@ -876,7 +876,7 @@ static unsigned unflipped(unsigned v) { return unflip(v) * 0x010101u; }
  * theme with capitals on Home (Minimal) takes them here too, SUDO_TRACK apart. Returns its width.
  * Shared with app_store.c.
  */
-int text_at(void *canvas, const char *s, int x, int y, int h, unsigned px, unsigned color,
+int text_at(canvas_t *canvas, const char *s, int x, int y, int h, unsigned px, unsigned color,
             int align) {
     unsigned wide[40], n = 0;
     int cw[40], w = 0, caps = theme()->caps_home, fpx = (int)px;
@@ -899,8 +899,8 @@ int text_at(void *canvas, const char *s, int x, int y, int h, unsigned px, unsig
 
 /* A score line at y: the name in the quiet ink, the number in the loud one, from x or (right)
  * ending at it. */
-static void hud(void *canvas, const char *name, unsigned v, int x, int y, int right, unsigned ink,
-                unsigned dim) {
+static void hud(canvas_t *canvas, const char *name, unsigned v, int x, int y, int right,
+                unsigned ink, unsigned dim) {
     char num[12];
     tk_snprintf(num, sizeof num, "%u", v);
     if (right) {
@@ -930,7 +930,7 @@ static unsigned pop_band(const scheme_t *S, int i) {
            : i == POP_ROW - 1 && S->sel_edge ? S->sel_edge
                                              : stops_row(&S->sel, i, POP_ROW);
 }
-static void popup(void *canvas, const char *title, const char *a, const char *b, int choice) {
+static void popup(canvas_t *canvas, const char *title, const char *a, const char *b, int choice) {
     const theme_t *T = theme();
     const scheme_t *S = scheme();
     int own = pop_own(T, S);
@@ -1029,7 +1029,7 @@ void popup_env(char *out, unsigned size) {
 }
 
 /* Vortex's and Snake's: Return's menu, the game over, the pause. */
-static void paused_popup(void *canvas, int over) {
+static void paused_popup(canvas_t *canvas, int over) {
     if (g->paused == MENU)
         popup(canvas, "Paused", "Continue", "Quit", g->choice);
     else if (over)
@@ -1042,7 +1042,7 @@ static void paused_popup(void *canvas, int over) {
  * every cell holding the cursor's digit (the one being picked) dark on the tone. The theme's own
  * board: the cursor's cell is its selection band, framed only while a digit is picked, and the
  * cells holding its digit a pale tint of the band on the paper. */
-static void sudoku_paint(void *canvas, unsigned tone) {
+static void sudoku_paint(canvas_t *canvas, unsigned tone) {
     const struct sudoku *s = &g->sud;
     const scheme_t *S = scheme();
     int x0 = (375 - 9 * CELL) / 2, y0 = (g->h - 9 * CELL) / 2;
@@ -1094,7 +1094,8 @@ static void sudoku_paint(void *canvas, unsigned tone) {
         popup(canvas, "Solved!", "Play/Pause: new game", 0, 0);
 }
 
-static void arc(void *vg, float cx, float cy, int r, int a0, int a1, int width, unsigned color) {
+static void arc(vgcanvas_t *vg, float cx, float cy, int r, int a0, int a1, int width,
+                unsigned color) {
     vgcanvas_begin_path(vg);
     vgcanvas_arc(vg, cx, cy, (float)r, (float)a0 * TURN, (float)a1 * TURN, 0);
     vgcanvas_set_line_width(vg, (float)width);
@@ -1102,7 +1103,7 @@ static void arc(void *vg, float cx, float cy, int r, int a0, int a1, int width, 
     vgcanvas_stroke(vg);
 }
 
-static void dot(void *vg, float x, float y, float r, unsigned color) {
+static void dot(vgcanvas_t *vg, float x, float y, float r, unsigned color) {
     vgcanvas_begin_path(vg);
     vgcanvas_arc(vg, x, y, r, 0, 1024 * TURN, 0);
     vgcanvas_set_fill_color(vg, color);
@@ -1117,10 +1118,10 @@ static void dot(void *vg, float x, float y, float r, unsigned color) {
  * paddle and the ball in a glow. ponytail: the light is a second arc a brick, 96 strokes a frame at
  * most; drop it (VORTEX_SHINE 0) if a Q2 can't hold the frame rate. */
 #define VORTEX_SHINE 1
-static void vortex_paint(void *canvas, unsigned tone) {
+static void vortex_paint(canvas_t *canvas, unsigned tone) {
     static const unsigned ring[RINGS] = { 0xf0a020, 0x36b24a, 0x2f86f0 };
     const struct vortex *v = &g->vx;
-    void *vg = canvas_get_vgcanvas(canvas);
+    vgcanvas_t *vg = canvas_get_vgcanvas(canvas);
     float cx = 187.5f, cy = (float)g->h / 2;
     unsigned age = (unsigned)time_now_ms() - g->pop_at;
     int own = classic_pages();
@@ -1189,7 +1190,7 @@ static void vortex_paint(void *canvas, unsigned tone) {
  * nothing covers it. A strip under FAN (a closed-up column's) takes smaller text, whole in what
  * shows. The theme's own (final colours): white with a shadow under an uncovered one, its back
  * blue in a white border, dotted when nothing covers it. */
-static void card_paint(void *canvas, int x, int y, int c, int whole, int strip, unsigned tone) {
+static void card_paint(canvas_t *canvas, int x, int y, int c, int whole, int strip, unsigned tone) {
     static const unsigned short suit[] = { 0x2660, 0x2665, 0x2666, 0x2663 }; /* ♠♥♦♣ */
     static const stops_t back = { 2, { 0, 100 }, { 0x3f7fe0, 0x1f4fb0 } };
     unsigned text[3], n = 0;
@@ -1235,7 +1236,7 @@ static void card_paint(void *canvas, int x, int y, int c, int whole, int strip, 
  * the sheet. The cursor's pile is framed round its top card, white over a held run framed in the
  * tone. The theme's own table is solid green felt, an empty pile a darker well in it, and the
  * frames SOL_HAND. */
-static void solitaire_paint(void *canvas, unsigned tone) {
+static void solitaire_paint(canvas_t *canvas, unsigned tone) {
     const struct solitaire *s = &g->sol;
     int own = classic_pages();
     if (own) {
@@ -1278,9 +1279,9 @@ static void solitaire_paint(void *canvas, unsigned tone) {
 /* The board dark in a grey frame, the body rounded in the tone, the head brighter, the apple round
  * and red, the score and best over it. The theme's own: an LCD in a bezel, the body and a hollow
  * apple square dark dots on its grid of unlit ones. */
-static void snake_paint(void *canvas, unsigned tone) {
+static void snake_paint(canvas_t *canvas, unsigned tone) {
     const struct snake *s = &g->sn;
-    void *vg = canvas_get_vgcanvas(canvas);
+    vgcanvas_t *vg = canvas_get_vgcanvas(canvas);
     int w = SN_N * SN_CELL, own = classic_pages();
     int fx = SN_X + s->food % SN_N * SN_CELL, fy = SN_Y + s->food / SN_N * SN_CELL;
     if (own) {
@@ -1322,7 +1323,7 @@ static void snake_paint(void *canvas, unsigned tone) {
 }
 
 /* ringnav_paint: a game's sheet, after stock painted it. */
-void games_paint(void *w, void *canvas) {
+void games_paint(widget_t *w, canvas_t *canvas) {
     if (!g || w != g->sheet || g->screen == CHOOSER || !P(canvas, CANVAS_LCD)) return;
     unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR), tone = accent_tone(2);
     unsigned raw = ui_ink_raw(0);
@@ -1338,7 +1339,7 @@ void games_paint(void *w, void *canvas) {
     stock_canvas_set_fill_color(canvas, fill);
 }
 
-static int closed(void *ctx, void *event) {
+static int closed(void *ctx, event_t *event) {
     hold(RUN);
     stop_timer(&g->timer);
     flush(0);
@@ -1349,15 +1350,15 @@ static int closed(void *ctx, void *event) {
 
 /* The Library's Games row: the chooser, the Sudoku in progress and Vortex's and Snake's best scores
  * read. */
-int games_open(void *ctx, void *event) {
+int games_open(void *ctx, event_t *event) {
     if (g || !(g = calloc(1, sizeof *g))) return 0;
-    void *page = g->page = page_open("games_page", closed, keyup);
+    widget_t *page = g->page = page_open("games_page", closed, keyup);
     if (!page) {
         free(g);
         g = 0;
         return 0;
     }
-    void *f = widget_factory();
+    widget_factory_t *f = widget_factory();
     g->h = widget_get_prop_int(page, "h", client_h());
     /* The sheet first, under the list: hidden, it still took the chooser's taps above it. */
     g->sheet = widget_factory_create_widget(f, "view", page, 0, 0, 375, g->h);

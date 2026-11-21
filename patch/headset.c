@@ -97,7 +97,7 @@ void media_set_playing(int playing) {
 }
 /* The streaming page on top, which owns the playback keys: 1 Spotify, 2 radio, 3 Tidal; 0 none. */
 static int focus(void) {
-    void *top = window_manager_get_top_window(window_manager());
+    widget_t *top = window_manager_get_top_window(window_manager());
     const char *name = top ? widget_get_prop_str(top, "name", "") : "";
     return !tk_strcmp(name, "spotify_page") || !tk_strcmp(name, "spotbrowse_page") ? 1
            : !tk_strcmp(name, "radio_page") || !tk_strcmp(name, "radionp_page")    ? 2

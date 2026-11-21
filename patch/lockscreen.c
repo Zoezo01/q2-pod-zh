@@ -140,10 +140,11 @@ int wall_render(unsigned *dst, int stride, int w, int h, int id) {
 #include "stock.h"
 #include "theme.h"
 
-extern int stock_saver_trampoline(void *, void *), stock_saverrows_trampoline(void *),
-    stock_saverlist_trampoline(void), stock_savercover_trampoline(void *);
-extern void pod_rows(void *win, const char *view_name, int first, int n, const char *const *icons);
-extern int ringnav_wm_paint(void *wm); /* navigation.c: window_manager_paint's leaf */
+extern int stock_saver_trampoline(widget_t *, void *), stock_saverrows_trampoline(widget_t *),
+    stock_saverlist_trampoline(void), stock_savercover_trampoline(widget_t *);
+extern void pod_rows(widget_t *win, const char *view_name, int first, int n,
+                     const char *const *icons);
+extern int ringnav_wm_paint(widget_t *wm); /* navigation.c: window_manager_paint's leaf */
 
 /* The built-ins' names in the picture list and SYSSET SCREENSAVERPATH, by id. None is a file:
  * stock's lock window falls back to the name as an asset, finds none and draws nothing, and these
@@ -154,14 +155,16 @@ static const char *const walls[WALLS] = { "q2pod:aurora", "q2pod:sunrise", "q2po
 #define PICTURES P(p_deque_screensaverlist, 0)
 
 static struct {
-    void *img, *full; /* the lock window's picture and its wallpaper */
+    widget_t *img;
+    void *full; /* the lock window's picture and its wallpaper */
     /* Classic's info screen (info_screen): its widgets while img is its picture; no picture
      * (the page shows), Black and Large's clock; its timer and the state it last painted. */
-    void *date, *card, *title, *artist, *hint;
+    widget_t *date, *card, *title, *artist, *hint;
     int built_in, info, page, black, large; /* built_in: img is a built-in's, either theme */
     unsigned timer, shown;
-    unsigned full_key;                 /* full's id, width and height, kept between windows */
-    void *thumb[WALLS], *small[WALLS]; /* the picker's built-in thumbnails and theirs */
+    unsigned full_key; /* full's id, width and height, kept between windows */
+    widget_t *thumb[WALLS];
+    void *small[WALLS]; /* the picker's built-in thumbnails and theirs */
 } lk __attribute__((section(".scratch")));
 
 #define INFO_DATE_PX (theme()->font_px[ROLE_BAR])
@@ -193,7 +196,7 @@ static void *wall_bitmap(int w, int h, int id) {
 
 /* A picture widget (ctx) goes: its pointer must never match a later widget at the same address. A
  * widget already replaced by a newer one matches nothing here. */
-static int forget(void *ctx, void *event) {
+static int forget(void *ctx, event_t *event) {
     if (ctx == lk.img) { /* full stays for the next lock window */
         lk.img = lk.date = lk.card = lk.title = lk.artist = lk.hint = 0;
         lk.info = 0;
@@ -234,11 +237,12 @@ int lockscreen_images(void) {
  * right end, wide enough for "100%", when the Battery setting shows a percentage (the icon hides;
  * stock never sets their visibility), the time (116 px)
  * across the screen under it, all above the now-playing card (y 190). */
-static void big_clock(void *win) {
-    void *info = widget_lookup(win, "view_timeinfo", 1),
-         *time = widget_lookup(win, "clock_time", 1), *date = widget_lookup(win, "clock_date", 1),
-         *pct = widget_lookup(win, "label_battery", 1),
-         *batt = widget_lookup(win, "img_battery", 1);
+static void big_clock(widget_t *win) {
+    widget_t *info = widget_lookup(win, "view_timeinfo", 1),
+             *time = widget_lookup(win, "clock_time", 1),
+             *date = widget_lookup(win, "clock_date", 1),
+             *pct = widget_lookup(win, "label_battery", 1),
+             *batt = widget_lookup(win, "img_battery", 1);
     if (!info || !time || !date || !pct || !batt) return;
     widget_move_resize(info, 0, 14, 375, 150);
     widget_move_resize(date, 0, 0, 375, 30);
@@ -290,7 +294,7 @@ void info_poll(void) {
 }
 /* A label's face and size for its text, which stock writes after the window loads, in any script.
  * Answers the face (0: the system font) and px. */
-static const char *info_face(void *w, int *px) {
+static const char *info_face(widget_t *w, int *px) {
     const char *face = theme_face(w ? widget_get_text(w) : 0, -1, px);
     /* a face is one of theme_face's literals: the payload's .rodata fits the low 24 bits */
     int key = *px << 24 | (int)(long)face;
@@ -302,7 +306,7 @@ static const char *info_face(void *w, int *px) {
     return face;
 }
 /* A label's box, face, size and colour, left unless it's centred. */
-static void info_label(void *w, int x, int y, int ww, int h, int px, const char *face,
+static void info_label(widget_t *w, int x, int y, int ww, int h, int px, const char *face,
                        const char *align) {
     if (!w) return;
     slider_label(w, x, y, ww, h, px, face);
@@ -312,17 +316,18 @@ static void info_label(void *w, int x, int y, int ww, int h, int px, const char 
  * with the date, a tray with the clock, a tray with the song. A digit_clock formats itself each
  * second, so the date's format is all there is to set; both clocks keep stock's format otherwise.
  */
-static void info_screen(void *win, void *img, int id) {
+static void info_screen(widget_t *win, widget_t *img, int id) {
     int large = pod_value(POD_LOCKCLOCK);
-    void *info = widget_lookup(win, "view_timeinfo", 1),
-         *time = widget_lookup(win, "clock_time", 1), *date = widget_lookup(win, "clock_date", 1),
-         *pct = widget_lookup(win, "label_battery", 1),
-         *batt = widget_lookup(win, "img_battery", 1),
-         *bar = widget_lookup(win, "pgbar_battery", 1),
-         *shade = widget_lookup(win, "view_shade", 1),
-         *card = widget_lookup(win, "view_playinfo", 1),
-         *cover = widget_lookup(win, "img_playcover", 1),
-         *hint = widget_lookup(win, "img_slide", 1);
+    widget_t *info = widget_lookup(win, "view_timeinfo", 1),
+             *time = widget_lookup(win, "clock_time", 1),
+             *date = widget_lookup(win, "clock_date", 1),
+             *pct = widget_lookup(win, "label_battery", 1),
+             *batt = widget_lookup(win, "img_battery", 1),
+             *bar = widget_lookup(win, "pgbar_battery", 1),
+             *shade = widget_lookup(win, "view_shade", 1),
+             *card = widget_lookup(win, "view_playinfo", 1),
+             *cover = widget_lookup(win, "img_playcover", 1),
+             *hint = widget_lookup(win, "img_slide", 1);
     /* Large's clock box holds its font, over the card's top rows: stock's card is above it, and
      * AWTK looks through the children from the last, so those taps stay the card's */
     if (info) widget_move_resize(info, 0, 0, 375, large ? 192 : 172);
@@ -353,8 +358,8 @@ static void info_screen(void *win, void *img, int id) {
         widget_set_prop_int(card, "style:normal:bg_color", 0);
     }
     if (cover) widget_move_resize(cover, 13, 13, 60, 60);
-    void *title = widget_lookup(win, "scrlabel_title", 1),
-         *artist = widget_lookup(win, "scrlabel_artist", 1);
+    widget_t *title = widget_lookup(win, "scrlabel_title", 1),
+             *artist = widget_lookup(win, "scrlabel_artist", 1);
     info_label(title, 85, 17, 245, 28, INFO_TITLE_PX, "classic-light", "left");
     info_label(artist, 85, 44, 245, 22, INFO_ARTIST_PX, "classic-light", "left");
     if (artist) text_ink(artist, 0xc8ffffffu, 1);
@@ -376,7 +381,7 @@ static void info_screen(void *win, void *img, int id) {
     rearm(&lk.timer, info_tick, 1000);
 }
 /* The screen's own paint, in img's border hook: under the clocks, the song and the hint. */
-static void info_paint(void *w, void *canvas) {
+static void info_paint(widget_t *w, canvas_t *canvas) {
     void *lcd = P(canvas, CANVAS_LCD);
     if (!lcd) return;
     int px = INFO_TITLE_PX;
@@ -406,9 +411,9 @@ static void info_paint(void *w, void *canvas) {
 
 /* saverscreen_page_init: stock builds the lock window; a built-in picture then paints in place of
  * stock's (lockscreen_paint), and Large lays the clock out again. */
-int lockscreen_init(void *win, void *ctx) {
+int lockscreen_init(widget_t *win, void *ctx) {
     int result = stock_saver_trampoline(win, ctx);
-    void *img = widget_lookup(win, "img_screensaver", 1);
+    widget_t *img = widget_lookup(win, "img_screensaver", 1);
     int id = wall_id(PICTURE);
     int info = img && classic_pages();
     lk.built_in = id >= 0;
@@ -438,9 +443,9 @@ int lockscreen_init(void *win, void *ctx) {
 /* The lock window's cover (stock 0x53f124, from the window's timer once a new track's cover is
  * parsed, and from its init): stock sets img_playcover to the same file name and never invalidates
  * it, so the old art stayed until something else repainted over it. */
-int lockscreen_cover(void *win) {
+int lockscreen_cover(widget_t *win) {
     int result = stock_savercover_trampoline(win);
-    void *img = widget_lookup(win, "img_playcover", 1);
+    widget_t *img = widget_lookup(win, "img_playcover", 1);
     if (img) widget_invalidate_force(img, 0);
     return result;
 }
@@ -449,13 +454,13 @@ int lockscreen_cover(void *win) {
  * About, then the picture grid with the switch on. Clock (navigation.c's POD_LOCKCLOCK) follows
  * Time show, 78 high as stock's rows, and the built-ins' thumbnails are found for lockscreen_paint.
  */
-int lockscreen_rows(void *win) {
+int lockscreen_rows(widget_t *win) {
     static const char *const icons[] = { 0 };
     int result = stock_saverrows_trampoline(win);
-    void *view = widget_lookup(win, "scroll_view", 1);
+    widget_t *view = widget_lookup(win, "scroll_view", 1);
     if (!view || widget_count_children(view) < 2) return result;
     pod_rows(win, "scroll_view", 6 /* POD_LOCKCLOCK */, 1, icons);
-    void *row = widget_get_child(view, widget_count_children(view) - 1);
+    widget_t *row = widget_get_child(view, widget_count_children(view) - 1);
     widget_resize(row, I(row, W_W), 78);
     widget_restack(row, 1);
     void *list = PICTURES;
@@ -463,7 +468,7 @@ int lockscreen_rows(void *win) {
         int id = wall_id(deque_at(list, i));
         char name[16];
         tk_snprintf(name, sizeof name, "image_%u", i);
-        void *img = id >= 0 ? widget_lookup(view, name, 1) : (void *)0;
+        widget_t *img = id >= 0 ? widget_lookup(view, name, 1) : (void *)0;
         if (!img) continue;
         image_base_set_image(img, "");
         lk.thumb[id] = img; /* a rebuilt grid's thumbnails are the same size: small[id] stays */
@@ -477,7 +482,7 @@ int lockscreen_rows(void *win) {
  * over a built-in picture it draws the wallpaper; thumbnails render on first sight. Stock painted
  * the children (a thumbnail's img_choice, the check badge) first, so they are painted again on top.
  */
-void lockscreen_paint(void *w, void *canvas) {
+void lockscreen_paint(widget_t *w, canvas_t *canvas) {
     void *bm = 0;
     if (!w) return;
     if (w == lk.img && lk.built_in) bm = lk.full;

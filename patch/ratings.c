@@ -8,13 +8,15 @@
  * Ratings menu. navigation.h's st has the windows and the list page. */
 static struct {
     unsigned *rates, *album_rates;
-    void *rate_fav, *rate_ctx, *rate_badge;
+    widget_t *rate_fav;
+    void *rate_ctx;
+    widget_t *rate_badge;
     int rate_shown;                     /* the badge's hearts plus 1, 0 for a new badge */
     int rate_pick, rate_was, rate_held; /* the hearts picked, those the picker opened on */
     int rate_armed;                     /* a press came down on the picker: its release is a tap */
     unsigned rate_at;                   /* when a hold opened the picker (never 0), else 0 */
     unsigned rate_hold, rate_tick, rate_album;
-    void *rt_menu;
+    widget_t *rt_menu;
     int rt_held; /* the list a Play/Pause hold on the menu shuffles */
 } ra __attribute__((section(".scratch")));
 
@@ -27,7 +29,7 @@ static struct {
 #define ALBUM_RATINGS_FILE "/mnt/data/ringnav-album-ratings"
 /* Now Playing's heart click (playing_page_init binds it to img_fav with the window): stock's My
  * Fav toggled for the playing track (manage_myfav), and the heart's image with it. */
-#define FAV_CLICK ((int (*)(void *, void *))0x53c968)
+#define FAV_CLICK ((int (*)(void *, event_t *))0x53c968)
 
 /* The songs' table, or with album the albums'. */
 static int rate_io(int album, int write) {
@@ -126,7 +128,7 @@ const char *hearts_text(char *s, int n) {
 }
 
 /* A theme's glyph on w (tools/art.py): the half's image, set only on a change. */
-static void np_image(void *w, const char *glyph) {
+static void np_image(widget_t *w, const char *glyph) {
     char name[40];
     tk_snprintf(name, sizeof name, "classic_light_%s_%s", glyph, ipod_light() ? "l" : "d");
     if (w && tk_strcmp(widget_get_prop_str(w, "image", ""), name)) {
@@ -155,19 +157,19 @@ static int rate_tick(const void *unused) {
     return 8; /* RET_REPEAT */
 }
 
-static int rate_tap(void *ctx, void *event);
-static int rate_out(void *ctx, void *event);
-static int rate_press(void *ctx, void *event);
+static int rate_tap(void *ctx, event_t *event);
+static int rate_out(void *ctx, event_t *event);
+static int rate_press(void *ctx, event_t *event);
 /* The picker goes down with its page or panel (Coverflow's load destroys the page's children). */
-static int rate_panel_gone(void *win, void *event) {
+static int rate_panel_gone(void *win, event_t *event) {
     if (win == st.rate_on) st.rate_on = (void *)0;
     st.rate_box = (void *)0; /* rate_panel names it again */
     return 0;
 }
 /* The picker on win, made on first use: a dark rounded panel, its caption, then five of the
  * heart's own images. */
-static void *rate_panel(void *win) {
-    void *panel = widget_lookup(win, "rate_panel", 0);
+static widget_t *rate_panel(widget_t *win) {
+    widget_t *panel = widget_lookup(win, "rate_panel", 0);
     /* Classic's panel paints itself (ringnav_paint_bg) */
     int gloss = classic_pages();
     if (panel) {
@@ -179,7 +181,7 @@ static void *rate_panel(void *win) {
      */
     int mx = gloss ? PANEL_PAD : 0, my = gloss ? PANEL_PAD - PANEL_DROP : 0;
     if (gloss) { /* under the panel, over the page: a tap outside leaves it as Return does */
-        void *out = image_create(win, 0, 0, I(win, W_W), I(win, W_H));
+        widget_t *out = image_create(win, 0, 0, I(win, W_W), I(win, W_H));
         widget_set_name(out, "rate_out");
         widget_set_prop_str(out, "clickable", "true");
         widget_on(out, EVT_CLICK, rate_out, (void *)0);
@@ -196,7 +198,7 @@ static void *rate_panel(void *win) {
                             (int)(0xff000000u | FILL_RGB)); /* opaque */
         widget_set_prop_int(panel, "style:normal:round_radius", LETTER_RADIUS);
     }
-    void *caption = text(panel, mx, my + 8, w, 28);
+    widget_t *caption = text(panel, mx, my + 8, w, 28);
     if (gloss) { /* the ink, which Light Mode's style hook flips back */
         widget_set_prop_int(caption, "style:normal:text_color",
                             (int)RGBA(flip_if(ipod_light(), scheme()->ink)));
@@ -205,7 +207,7 @@ static void *rate_panel(void *win) {
     }
     for (int i = 0; i < 5; i++) {
         /* centred in it, Classic's 32 x 30 heart starts 58 down the panel */
-        void *heart = image_create(panel, mx + 12 + i * 56, my + 44 + gloss, 56, 56);
+        widget_t *heart = image_create(panel, mx + 12 + i * 56, my + 44 + gloss, 56, 56);
         image_set_draw_type(heart, IMAGE_DRAW_CENTER);
         widget_set_prop_str(heart, "clickable", "true");
         widget_on(heart, EVT_CLICK, rate_tap, (void *)(long)(i + 1));
@@ -218,11 +220,11 @@ static void *rate_panel(void *win) {
 
 /* The picker's hearts and caption for rate_pick. */
 static void rate_paint(void) {
-    void *panel = rate_panel(st.rate_on);
+    widget_t *panel = rate_panel(st.rate_on);
     char t[24] = "Unrated";
     int gloss = classic_pages();
     for (int i = 0; i < 5; i++) {
-        void *heart = widget_get_child(panel, (unsigned)i + 1);
+        widget_t *heart = widget_get_child(panel, (unsigned)i + 1);
         if (gloss)
             np_image(heart, i < ra.rate_pick ? "heart_on" : "heart_off");
         else
@@ -238,8 +240,8 @@ static void rate_paint(void) {
 }
 
 /* What's under the picker takes a touch again, or doesn't. */
-static void rate_outside(void *win, int on) {
-    void *out = widget_lookup(win, "rate_out", 0);
+static void rate_outside(widget_t *win, int on) {
+    widget_t *out = widget_lookup(win, "rate_out", 0);
     if (!out) return;
     widget_set_visible(out, on, 0);
     widget_set_sensitive(out, on);
@@ -249,10 +251,10 @@ static void rate_outside(void *win, int on) {
  * centre card, else the playing track, My Fav in or out through the heart's own click and the
  * rest kept here. */
 static void rate_close(int save) {
-    void *win = st.rate_on;
+    widget_t *win = st.rate_on;
     if (!win) return;
     st.rate_on = (void *)0;
-    void *panel = rate_panel(win);
+    widget_t *panel = rate_panel(win);
     widget_set_visible(panel, 0, 0);
     widget_set_sensitive(panel, 0); /* stock's hit test skips only the insensitive, hidden or not */
     rate_outside(win, 0);
@@ -282,7 +284,7 @@ static void rate_close(int save) {
  * stock clicks a heart that saw no press is not traced (the abort in rate_long was meant to stop
  * it); a finger that lifts and comes down again later than that is a tap. */
 #define RATE_SETTLE_MS 400
-static int rate_press(void *ctx, void *event) {
+static int rate_press(void *ctx, event_t *event) {
     ra.rate_armed = !ra.rate_at || (unsigned)time_now_ms() - ra.rate_at >= RATE_SETTLE_MS;
     return 0;
 }
@@ -292,14 +294,14 @@ static int rate_tapped(void) {
     return armed;
 }
 /* The heart the picker opened on, tapped again, takes the rating away. */
-static int rate_tap(void *ctx, void *event) {
+static int rate_tap(void *ctx, event_t *event) {
     if (!rate_tapped()) return STOP;
     int n = (int)(long)ctx;
     ra.rate_pick = n == ra.rate_was ? 0 : n;
     rate_close(1);
     return STOP;
 }
-static int rate_out(void *ctx, void *event) {
+static int rate_out(void *ctx, event_t *event) {
     if (rate_tapped()) rate_close(0);
     return STOP;
 }
@@ -307,14 +309,14 @@ static int rate_out(void *ctx, void *event) {
 /* The picker over win on pick hearts, for the queue menu's album album or, with 0, the playing
  * track: the wheel moves the rating, Centre saves it and Return leaves it as it was; a tap on a
  * heart saves that many, or none on the one it opened on. */
-int rate_show(void *win, int pick, unsigned album) {
+int rate_show(widget_t *win, int pick, unsigned album) {
     if (!win || st.rate_on) return 0;
     st.rate_on = win;
     ra.rate_pick = ra.rate_was = pick;
     ra.rate_album = album;
     ra.rate_armed = 0, ra.rate_at = 0;
     rate_paint();
-    void *panel = rate_panel(win);
+    widget_t *panel = rate_panel(win);
     widget_set_visible(panel, 1, 0);
     widget_set_sensitive(panel, 1);
     rate_outside(win, 1);
@@ -327,7 +329,7 @@ int rate_open(void) {
 }
 
 /* The wheel, Centre and Return while the picker is up. */
-int rate_key(void *top, unsigned key) {
+int rate_key(widget_t *top, unsigned key) {
     if (!st.rate_on || top != st.rate_on) return 0;
     if (key == KEY_NEXT || key == KEY_PREV) {
         ra.rate_pick = clamp_step(ra.rate_pick, 5, key == KEY_NEXT ? 1 : -1);
@@ -349,10 +351,10 @@ static int rate_long(const void *unused) {
     ra.rate_at = (unsigned)time_now_ms() | 1;
     unsigned abort_event[12];
     pointer_event_init(abort_event, EVT_POINTER_ABORT, st.rate_win, 0, 0);
-    widget_dispatch_event_to_target_recursive(st.rate_win, abort_event);
+    widget_dispatch_event_to_target_recursive(st.rate_win, (event_t *)abort_event);
     return 0;
 }
-static int rate_down(void *ctx, void *event) {
+static int rate_down(void *ctx, event_t *event) {
     ra.rate_held = 0;
     rearm(&ra.rate_hold, rate_long, RATE_HOLD_MS);
     return 0;
@@ -360,7 +362,7 @@ static int rate_down(void *ctx, void *event) {
 /* Returns 0 as stock's does: a STOP skips the slide_view's own release, and it keeps its grab.
  * A card app's streamed song with an item has the app's heart instead (tidal.c app_fav), flipped
  * at once in stock's Tidal images, as stock's own click draws a 0xf1 track's. */
-static int rate_fav_click(void *ctx, void *event) {
+static int rate_fav_click(void *ctx, event_t *event) {
     stop_timer(&ra.rate_hold);
     if (ra.rate_held || st.rate_on) {
         ra.rate_held = 0;
@@ -380,7 +382,7 @@ static int rate_fav_click(void *ctx, void *event) {
     return 0;
 }
 
-static int rate_gone(void *win, void *event) {
+static int rate_gone(void *win, event_t *event) {
     if (win != st.rate_win) return 0;
     stop_timer(&ra.rate_hold);
     stop_timer(&ra.rate_tick);
@@ -391,8 +393,9 @@ static int rate_gone(void *win, void *event) {
 
 /* Now Playing's heart (playing_page_init): stock's click is swapped for one that
  * tells a hold from a tap, and the badge sits on the heart's top right. */
-void rate_bind(void *win) {
-    void *fav = widget_lookup(win, "img_fav", 1), *emitter = fav ? P(fav, W_EMITTER) : (void *)0;
+void rate_bind(widget_t *win) {
+    widget_t *fav = widget_lookup(win, "img_fav", 1);
+    void *emitter = fav ? P(fav, W_EMITTER) : (void *)0;
     stop_timer(&ra.rate_tick);
     stop_timer(&ra.rate_hold);
     ra.rate_ctx = (void *)0;
@@ -422,18 +425,18 @@ static int fav_songs(void *unused) {
     return getAllFav(); /* select * from myfav, stock's song rows */
 }
 
-int rt_play(void *ctx, void *event) {
+int rt_play(void *ctx, event_t *event) {
     play_folder(st.rt_list, (int)(long)ctx, 0xf001);
     return 0;
 }
 /* A list's page closed (this one's or Long Songs', library_lists.c): its songs go. */
-int rt_closed(void *ctx, void *event) {
+int rt_closed(void *ctx, event_t *event) {
     st.rt_page = 0;
     if (st.rt_list) deque_destroy(st.rt_list);
     st.rt_list = 0;
     return 0;
 }
-static int rt_menu_closed(void *ctx, void *event) {
+static int rt_menu_closed(void *ctx, event_t *event) {
     ra.rt_menu = 0;
     return 0;
 }
@@ -490,13 +493,13 @@ static void *rated_songs(int k, unsigned char **of) {
     free(h);
     return list;
 }
-static int rated_open(void *ctx, void *event) {
+static int rated_open(void *ctx, event_t *event) {
     int k = (int)(long)ctx - ((int)(long)ctx > RT_ALBUMS);
     if (st.rt_page || !(st.rt_page = page_open("rated_page", rt_closed, page_keyup))) return 0;
     unsigned char *of;
     void *list = st.rt_list = rated_songs(k, &of);
     int count = (int)deque_size(list);
-    void *view = page_list(st.rt_page, st.rt_page, 0, rt_names[k], count ? count : 1, 64);
+    widget_t *view = page_list(st.rt_page, st.rt_page, 0, rt_names[k], count ? count : 1, 64);
     char name[512], detail[300], hs[16];
     for (int i = 0; i < count; i++) {
         void *t = deque_at(list, (unsigned)i);
@@ -525,8 +528,8 @@ static int rt_shuffle(const void *unused) {
     deque_destroy(list);
     return 0;
 }
-int rated_hold(void *top) {
-    void *wm = window_manager(), *w = (void *)0;
+int rated_hold(widget_t *top) {
+    widget_t *wm = window_manager(), *w = (void *)0;
     if (top && top == ra.rt_menu && usable() && !window_manager_is_animating(wm) && !pointer_down())
         w = surface_under(top, (void *)0, (void *)0, 0);
     int cur = w && load(&g_menu, w, 1) ? reconcile(&g_menu, !moving(&g_menu)) : -1;
@@ -539,16 +542,16 @@ int rated_hold(void *top) {
 /* Albums: the rated albums as Coverflow (coverflow_rated), by most hearts unless sorted. */
 extern int coverflow_rated(int (*hearts)(void *));
 static int album_hearts(void *r) { return rate_kept(1, album_id(r)); }
-int rated_albums(void *ctx, void *event) {
+int rated_albums(void *ctx, event_t *event) {
     if (!coverflow_rated(album_hearts)) toast("No rated albums yet");
     return 0;
 }
 
 /* The songs' best first, then the albums, then the songs' lists to tidy. */
-int ratings_menu(void *ctx, void *event) {
+int ratings_menu(void *ctx, event_t *event) {
     if (ra.rt_menu || !(ra.rt_menu = page_open("ratings_page", rt_menu_closed, page_keyup)))
         return 0;
-    void *view = page_list(ra.rt_menu, ra.rt_menu, 0, "Ratings", 5, 48);
+    widget_t *view = page_list(ra.rt_menu, ra.rt_menu, 0, "Ratings", 5, 48);
     for (int i = 0; i < 5; i++)
         page_row_into(view, i, i == RT_ALBUMS ? "Albums" : rt_names[i - (i > RT_ALBUMS)],
                       i == RT_ALBUMS ? rated_albums : rated_open);

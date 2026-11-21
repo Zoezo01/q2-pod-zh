@@ -34,9 +34,9 @@ static struct {
     int rs_read, rs_min;
     int mono_read, mono, swap_read, swap;
     volatile int *flag, *mono_flag, *swap_flag, *press_file, *mute_file;
-    void *swap_label;
-    void *mono_label; /* the Mono Audio row's, while Playback is open */
-    void *page, *sw, *view, *slider, *dec, *add, *label;
+    widget_t *swap_label;
+    widget_t *mono_label; /* the Mono Audio row's, while Playback is open */
+    widget_t *page, *sw, *view, *slider, *dec, *add, *label;
     unsigned press, press_at;
 } xf __attribute__((section(".scratch")));
 
@@ -51,27 +51,27 @@ static void settings(void) {
     xf.read = 1;
 }
 
-static void row_text(void *label) {
+static void row_text(widget_t *label) {
     char t[32] = "Crossfade: Off";
     if (xf.on) tk_snprintf(t, sizeof t, "Crossfade: %d s", xf.seconds);
     widget_set_text_utf8(label, t);
 }
 
 /* Playback's row (navigation.c ringnav_audioset makes it): the label, named for refresh(). */
-void xfade_row(void *label) {
+void xfade_row(widget_t *label) {
     settings();
     widget_set_name(label, XF_ROW);
     row_text(label);
 }
 
-static void wheel_text(void *label) {
+static void wheel_text(widget_t *label) {
     char t[32];
     tk_snprintf(t, sizeof t, "Wheel Sensitivity: %d%%", wheel_pct());
     widget_set_text_utf8(label, t);
 }
 
 /* Display's row (navigation.c ringnav_display makes it): the label, named for refresh(). */
-void wheel_row(void *label) {
+void wheel_row(widget_t *label) {
     widget_set_name(label, WHEEL_ROW);
     wheel_text(label);
 }
@@ -90,19 +90,19 @@ int resume_min(void) {
     return xf.rs_min;
 }
 
-static void rs_text(void *label) {
+static void rs_text(widget_t *label) {
     char t[32] = "Resume Songs: Off";
     if (resume_min()) tk_snprintf(t, sizeof t, "Resume Songs: %d min", resume_min());
     widget_set_text_utf8(label, t);
 }
 
 /* Playback's row (navigation.c ringnav_audioset makes it): the label, named for refresh(). */
-void resume_row(void *label) {
+void resume_row(widget_t *label) {
     widget_set_name(label, RS_ROW);
     rs_text(label);
 }
 
-static void night_text(void *label) {
+static void night_text(widget_t *label) {
     char t[32] = "Night Shift: Off";
     if (night_on() == 2)
         tk_snprintf(t, sizeof t, "Night Shift: Auto");
@@ -112,7 +112,7 @@ static void night_text(void *label) {
 }
 
 /* Display's row (navigation.c ringnav_display makes it): the label, named for refresh(). */
-void night_row(void *label) {
+void night_row(widget_t *label) {
     widget_set_name(label, NS_ROW);
     night_text(label);
 }
@@ -207,14 +207,14 @@ void mono_sync(void) {
     if (xf.mono) peq_chain();
 }
 
-static void mono_text(void *label) { list_toggle(label, "Mono Audio", mono_on()); }
+static void mono_text(widget_t *label) { list_toggle(label, "Mono Audio", mono_on()); }
 
 /* Playback's row (navigation.c ringnav_audioset makes it): the label, kept for mono_click. */
-void mono_row(void *label) {
+void mono_row(widget_t *label) {
     xf.mono_label = label;
     mono_text(label);
 }
-int mono_click(void *ctx, void *event) {
+int mono_click(void *ctx, event_t *event) {
     xf.mono = !mono_on();
     write_int_config(xf.mono, "Q2POD", "MONO");
     mono_sync();
@@ -223,11 +223,11 @@ int mono_click(void *ctx, void *event) {
 }
 
 static void swap_text(void) { list_toggle(xf.swap_label, "Swap L/R", swap_on()); }
-void swap_row(void *label) {
+void swap_row(widget_t *label) {
     xf.swap_label = label;
     swap_text();
 }
-int swap_click(void *ctx, void *event) {
+int swap_click(void *ctx, event_t *event) {
     xf.swap = !swap_on();
     write_int_config(xf.swap, "Q2POD", "SWAPLR");
     mono_sync();
@@ -241,20 +241,20 @@ static void gapless_on(void) {
     if (!xf.on || *(volatile unsigned char *)MCL_GAPLESS) return;
     write_int_config(1, "PLAYSET", "GAPLESS");
     mclSetGaplessMode(1);
-    void *sw = widget_lookup(window_manager(), GAP_SW, 1);
+    widget_t *sw = widget_lookup(window_manager(), GAP_SW, 1);
     if (sw) image_base_set_image(sw, "switch_on");
 }
 /* Gapless's row, ahead of stock's click (AWTK runs the newest handler first): with Crossfade on,
  * a press leaves it on and says why. */
-static int gapless_click(void *ctx, void *event) {
+static int gapless_click(void *ctx, event_t *event) {
     settings();
     if (!xf.on || !*(volatile unsigned char *)MCL_GAPLESS) return 0;
     toast("Crossfade needs Gapless");
     return 11; /* RET_STOP */
 }
 /* Playback's view (navigation.c ringnav_audioset): stock's Gapless row's button, the switch's. */
-void xfade_gapless_row(void *view) {
-    void *sw = widget_lookup(view, GAP_SW, 1);
+void xfade_gapless_row(widget_t *view) {
+    widget_t *sw = widget_lookup(view, GAP_SW, 1);
     if (sw) widget_on(P(sw, W_PARENT), EVT_CLICK, gapless_click, 0);
 }
 /* config_init, before it loads stock's Gapless (playback.c ringnav_bootmode): Crossfade saved on,
@@ -289,7 +289,7 @@ static void refresh(int save) {
         write_int_config(xf.seconds, "Q2POD", "XFADESEC");
     }
     if (!xf.ctx) gapless_on(); /* at once, a drag too: a drag plays its value */
-    void *row = widget_lookup(window_manager(), XF_ROW, 1);
+    widget_t *row = widget_lookup(window_manager(), XF_ROW, 1);
     if (row) row_text(row);
     if ((row = widget_lookup(window_manager(), WHEEL_ROW, 1))) wheel_text(row);
     if ((row = widget_lookup(window_manager(), RS_ROW, 1))) rs_text(row);
@@ -359,7 +359,7 @@ static void set_value(int n, int held) {
     if (!held && xf.unsaved) refresh(1);
 }
 
-static int toggle(void *ctx, void *event) {
+static int toggle(void *ctx, event_t *event) {
     if (!switched()) return 0;
     xf.sliding = 0;
     if (xf.ctx == 3) {
@@ -371,16 +371,16 @@ static int toggle(void *ctx, void *event) {
     refresh(1);
     return 0;
 }
-static int step(void *ctx, void *event) {
+static int step(void *ctx, event_t *event) {
     set_value(value() + (int)(long)ctx * steps[xf.ctx], 0);
     return 0;
 }
 /* A drag's values (ctx 1) show and play at once; the release (ctx 0) saves the last. */
-static int slid(void *ctx, void *event) {
+static int slid(void *ctx, event_t *event) {
     if (!xf.setting) set_value(widget_get_prop_int(xf.slider, "value", value()), ctx != 0);
     return 0;
 }
-static int gone(void *ctx, void *event) {
+static int gone(void *ctx, event_t *event) {
     if (xf.page != ctx) return 0;
     xf.sliding = 0;
     if (xf.unsaved) refresh(1); /* a release never seen */
@@ -389,19 +389,20 @@ static int gone(void *ctx, void *event) {
     return 0;
 }
 
-int xfade_page(void *top) { return xf.page && top == xf.page; }
+int xfade_page(widget_t *top) { return xf.page && top == xf.page; }
 
 /* The row's click: stock's Boot volume page, its handlers swapped for these; ctx 1 for Wheel
  * sensitivity's row, 2 for Resume Songs', 3 for Night Shift's. */
-int xfade_open(void *ctx, void *event) {
+int xfade_open(void *ctx, event_t *event) {
     int mode = (int)(long)ctx, wheel = mode == 1;
     settings();
     if (xf.page) return 0;
-    void *wm = window_manager(), *below = window_manager_get_top_window(wm);
+    widget_t *wm = window_manager(), *below = window_manager_get_top_window(wm);
     navigator_to("playset/bootvol_page");
-    void *page = window_manager_get_top_window(wm);
+    widget_t *page = window_manager_get_top_window(wm);
     if (page == below) return 0;
-    void *nav = widget_lookup(page, "view_navbar", 1), *title = nav ? widget_get_child(nav, 0) : 0;
+    widget_t *nav = widget_lookup(page, "view_navbar", 1),
+             *title = nav ? widget_get_child(nav, 0) : 0;
     xf.sw = widget_lookup(page, "img_bootswitch", 1);
     xf.view = widget_lookup(page, "view_bootvol", 1);
     xf.slider = widget_lookup(page, "slider_bootvol", 1);
@@ -457,7 +458,7 @@ static int single(const void *info) {
 /* ringnav(), the page on top: Centre toggles, a double press turns the screen off as on every
  * page, and the wheel sets the length, down to Off. Wheel sensitivity: the wheel a ten a tick
  * (not through +/-, which stock may have disabled), Centre to edit_key, which goes back. */
-int xfade_key(void *top, unsigned key) {
+int xfade_key(widget_t *top, unsigned key) {
     static const unsigned release[EVENT_KEY / 4 + 1] = { [EVENT_KEY / 4] = KEY_CENTER };
     if (!xf.page || top != xf.page) return 0;
     if (key == KEY_CENTER) {

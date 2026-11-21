@@ -25,7 +25,7 @@ static struct {
     } rec;
     int read, cable; /* cable: in at the last tick */
     int stale;       /* a row the open page doesn't show yet: it came while the screen was off */
-    void *page, *graph, *view;
+    widget_t *page, *graph, *view;
 } bh __attribute__((section(".scratch")));
 
 /* The record from the flash, once; one that isn't whole, isn't this layout or whose levels don't
@@ -128,7 +128,7 @@ unsigned battery_log(char *out, unsigned size) {
 
 /* Export Log: the log written whole to the card's root, temp and rename; not while a computer has
  * the card (USB storage) or without a megabyte free. */
-static int bh_export(void *ctx, void *event) {
+static int bh_export(void *ctx, event_t *event) {
     char out[BH_ROWS * 64 + 64];
     if (navigator_window_is_exist("usbmode_page"))
         toast("The card is in use over USB");
@@ -143,13 +143,13 @@ static int bh_export(void *ctx, void *event) {
     return 0;
 }
 
-static int bh_closed(void *ctx, void *event) {
+static int bh_closed(void *ctx, event_t *event) {
     bh.page = bh.graph = bh.view = 0;
     return 0;
 }
 /* A history row's click: none, but ringnav's wheel and Centre reach only rows with one
  * (navigation.c clickable), and stock's widget_on keeps no null handler. */
-static int bh_row(void *ctx, void *event) { return 0; }
+static int bh_row(void *ctx, event_t *event) { return 0; }
 /* The page's graph, two rows high, over the list: Export Log, then each row, a day's first with its
  * date. Built again for each new row while it is open (battery_tick; after the screen comes back
  * on, for one that came while it was off), the selected row and the scroll kept. */
@@ -159,10 +159,10 @@ static void bh_fill(void) {
         offset = bh.view ? widget_get_prop_int(bh.view, "yoffset", 0) : 0;
     bh.stale = 0;
     bh.graph = 0;
-    void *view = bh.view = page_list_or(bh.page, bh.page, "Battery History", "Unplug to start",
-                                        n ? (int)n + 1 : 0, 48);
+    widget_t *view = bh.view = page_list_or(bh.page, bh.page, "Battery History", "Unplug to start",
+                                            n ? (int)n + 1 : 0, 48);
     if (!n) return;
-    void *list = P(view, W_PARENT);
+    widget_t *list = P(view, W_PARENT);
     int rh = page_h(48), head = 2 * rh, y = I(list, W_Y),
         room = widget_get_prop_int(bh.page, "h", client_h()) - y - head,
         h = I(list, W_H) < room ? I(list, W_H) : room;
@@ -181,7 +181,7 @@ static void bh_fill(void) {
     scroll_view_set_offset(view, 0, offset);
 }
 /* Power's Battery History row. */
-int battery_history(void *ctx, void *event) {
+int battery_history(void *ctx, event_t *event) {
     if (bh.page || !(bh.page = page_open("battery_page", bh_closed, page_keyup))) return 0;
     bh_load();
     bh.view = 0;
@@ -205,7 +205,7 @@ static int bh_x(unsigned i, int x0, int w, unsigned now, int forward) {
 /* The graph (ringnav_paint): faint lines at 100%, 50% and 0%, labelled in grey, and the level as
  * steps from the start to now, a 2px line in the accent's light tone over a faint fill, as
  * peq_ui.c's curve. */
-void battery_paint(void *w, void *canvas) {
+void battery_paint(widget_t *w, canvas_t *canvas) {
     if (!w || w != bh.graph || !P(canvas, CANVAS_LCD) || !bh.rec.n) return;
     static const char *const labels[] = { "100%", "50%", "0%" };
     unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR),

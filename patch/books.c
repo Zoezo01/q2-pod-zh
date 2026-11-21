@@ -424,7 +424,7 @@ unsigned book_char(const unsigned char *t, unsigned n, unsigned *i) {
  * page starts. */
 unsigned book_page(const unsigned char *t, unsigned n, unsigned pos, int rows, int width,
                    int (*measure)(void *, unsigned),
-                   void (*line)(void *, int, const unsigned *, int), void *ctx) {
+                   void (*line)(void *, int, const unsigned *, int), canvas_t *ctx) {
     unsigned wc[BOOK_LINE];
     for (int row = 0, stop = 0; row < rows && pos < n && !stop; ++row) {
         unsigned i = pos, cut = pos, brk = 0;
@@ -465,7 +465,7 @@ unsigned book_page(const unsigned char *t, unsigned n, unsigned pos, int rows, i
 /* The start of the page before the one at pos: pages laid out from a line start up to BOOK_BACK
  * bytes back, until one reaches pos. */
 unsigned book_back(const unsigned char *t, unsigned n, unsigned pos, int rows, int width,
-                   int (*measure)(void *, unsigned), void *ctx) {
+                   int (*measure)(void *, unsigned), canvas_t *ctx) {
     unsigned s = pos > BOOK_BACK ? pos - BOOK_BACK : 0, e;
     while (s && s < pos && t[s - 1] != '\n') ++s;
     if (s == pos && pos) { /* no line start: past a character's continuation bytes, 3 at most */
@@ -493,7 +493,7 @@ unsigned book_back(const unsigned char *t, unsigned n, unsigned pos, int rows, i
 enum { LIST, READER };
 enum { READY, PREPARING, BAD };
 static struct {
-    void *page, *list, *view, *reader, *sheet, *info;
+    widget_t *page, *list, *view, *reader, *sheet, *info;
     char **path; /* the books, by path */
     int n, screen, target, current, state, info_on;
     const char *file; /* the text read: the .txt, or the EPUB's in BOOK_DIR */
@@ -658,7 +658,7 @@ static int to_reader(const void *unused) {
     return 0;
 }
 
-static int open_book(void *ctx, void *event) {
+static int open_book(void *ctx, event_t *event) {
     bk.target = (int)(long)ctx;
     rearm(&bk.timer, to_reader, 0);
     return 0;
@@ -682,10 +682,10 @@ static int leave(const void *unused) {
 }
 
 /* Return: reader -> books -> Local Music. */
-static int keyup(void *ctx, void *event) { return return_key(event, &bk.timer, leave); }
+static int keyup(void *ctx, event_t *event) { return return_key(event, &bk.timer, leave); }
 
 /* ringnav(): the reader takes the wheel (a page either way) and Centre (the caption). */
-int books_key(void *top, unsigned key) {
+int books_key(widget_t *top, unsigned key) {
     if (!bk.page || top != bk.page || bk.screen != READER) return 0;
     unsigned was = bk.pos;
     if (key == KEY_CENTER)
@@ -703,7 +703,7 @@ int books_key(void *top, unsigned key) {
     return 1;
 }
 
-static int closed(void *ctx, void *event) {
+static int closed(void *ctx, event_t *event) {
     marks_save();
     stop_worker();
     stop_timer(&bk.timer);
@@ -725,7 +725,7 @@ static void draw_line(void *canvas, int row, const unsigned *s, int n) {
 
 /* ringnav_paint calls this for every widget after stock painted it: the reader's sheet gets the
  * page, and the page before it is found while the font is set. */
-void books_paint(void *w, void *canvas) {
+void books_paint(widget_t *w, canvas_t *canvas) {
     if (!bk.page || w != bk.sheet || bk.state || bk.pos < bk.base) return;
     unsigned color = (unsigned)I(P(canvas, CANVAS_LCD), LCD_TEXT_COLOR);
     canvas_set_font(canvas, (void *)0, BOOK_PX); /* the system default font */
@@ -801,10 +801,10 @@ int radio_start(const char *url) {
 /* Local Music's Books row (navigation.c media_click): the books, by path. */
 void books_open(const char *root) {
     if (bk.page) return;
-    void *page = bk.page = page_open("books_page", closed, keyup);
+    widget_t *page = bk.page = page_open("books_page", closed, keyup);
     if (!page) return;
     BLOB_IO(BOOK_MARKS, bk.marks, 0);
-    void *f = widget_factory();
+    widget_factory_t *f = widget_factory();
     int h = widget_get_prop_int(page, "h", client_h());
     bk.list = widget_factory_create_widget(f, "view", page, 0, 0, 375, h);
     bk.reader = widget_factory_create_widget(f, "view", page, 0, 0, 375, h);

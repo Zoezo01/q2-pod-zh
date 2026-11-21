@@ -9,21 +9,21 @@
 /* two local pages' three (one opens over another that stays) and Internet Radio's heart; past it a
  * page's marks all stay stock's, so no page is half flat */
 #define NP_MARKS 7
-static void *np_mark[NP_MARKS];
+static widget_t *np_mark[NP_MARKS];
 static unsigned np_marked; /* how many: with none a paint looks no further */
-static int np_mark_gone(void *w, void *event) {
+static int np_mark_gone(void *w, event_t *event) {
     (void)event;
     for (unsigned i = 0; i < NP_MARKS; ++i)
         if (np_mark[i] == w) np_mark[i] = (void *)0, --np_marked;
     return 0;
 }
-static int np_held(const void *image) {
+static int np_held(const widget_t *image) {
     for (unsigned i = 0; i < NP_MARKS; ++i)
         if (np_mark[i] == image) return 1;
     return 0;
 }
 /* A page's images, n of them, all or none: those not held yet, if they all fit */
-void np_mark_add(void *const *image, unsigned n) {
+void np_mark_add(widget_t *const *image, unsigned n) {
     unsigned fresh = 0;
     if (!flat_pages()) return;
     for (unsigned k = 0; k < n; ++k) fresh += image[k] && !np_held(image[k]);
@@ -37,14 +37,14 @@ void np_mark_add(void *const *image, unsigned n) {
     }
 }
 /* Local Now Playing's More, play mode and heart */
-void np_marks_page(void *win) {
+void np_marks_page(widget_t *win) {
     static const char *const names[] = { "img_more", "img_playmode", "img_fav" };
-    void *image[3];
+    widget_t *image[3];
     if (!win) return;
     for (unsigned i = 0; i < 3; ++i) image[i] = widget_lookup(win, names[i], 1);
     np_mark_add(image, 3);
 }
-void np_marks(void *w, void *canvas) {
+void np_marks(widget_t *w, canvas_t *canvas) {
     static const char *const glyphs[][2] = {
         { "play_more", "np_more" },    { "play_moredown", "np_more_q" },
         { "play_fav", "np_heart_on" }, { "play_unfav", "np_heart_off" },
@@ -59,7 +59,7 @@ void np_marks(void *w, void *canvas) {
         return;
     }
     for (unsigned i = 0; i < NP_MARKS; ++i) {
-        void *m = np_mark[i];
+        widget_t *m = np_mark[i];
         if (!m || P(m, W_PARENT) != w || !widget_get_visible(m)) continue;
         const char *image = widget_get_prop_str(m, "image", "");
         char name[40];

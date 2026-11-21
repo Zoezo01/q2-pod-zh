@@ -331,9 +331,9 @@ const char *ipod_home_shortcut(void) {
  * folders of these names, case aside, browsed in folder_page from there; Photos opens photos.c,
  * Books books.c. */
 const char *const MEDIA[] = { "Podcasts", "Audiobooks", "Photos", "Books" };
-extern int rockbox_open(void *, void *);
-int rated_albums(void *, void *);
-int home_shortcut_open(void *ctx, void *event) {
+extern int rockbox_open(void *, event_t *);
+int rated_albums(void *, event_t *);
+int home_shortcut_open(void *ctx, event_t *event) {
     int s = shortcut_target();
     if (!s) return rockbox_open(ctx, event);
     if (s == SHORTCUT_GROOVEBOX) {            /* the card game by id, as its Games row starts it */

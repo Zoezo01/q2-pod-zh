@@ -59,7 +59,7 @@ enum {
 static unsigned browse_hash(void) { return local_hash(hash_bytes(FNV_SEED, g_folder_path, 1024)); }
 
 /* Coverflow's or Most Played's tracks, when page is theirs. */
-static void *page_tracks(void *page) {
+static void *page_tracks(widget_t *page) {
     return !page                ? (void *)0
            : page == st.mp_page ? st.mp_list
            : page == st.rt_page ? st.rt_list
@@ -108,19 +108,19 @@ unsigned qm_album_id(void *r) {
 }
 
 static void qm_close(void) {
-    void *dialog = st.qm_dialog;
+    widget_t *dialog = st.qm_dialog;
     st.qm_dialog = (void *)0;
     if (dialog) window_close(dialog);
 }
 
 /* Return and the title bar arrow dismiss without the stock sort-change flag. */
-static int qm_back(void *dialog, void *event) {
+static int qm_back(void *dialog, event_t *event) {
     if (I(event, EVENT_TYPE) == EVT_KEY_UP && I(event, EVENT_KEY) != KEY_RETURN) return 0;
     qm_close();
     return STOP;
 }
 
-static int qm_gone(void *dialog, void *event) {
+static int qm_gone(void *dialog, event_t *event) {
     if (st.qm_dialog == dialog) st.qm_dialog = (void *)0;
     return 0;
 }
@@ -214,7 +214,7 @@ static int qm_apply(void *add, int next) {
 
 /* Go to album/artist reuse g_local_classinfo_save, which the pages underneath reload from when
  * they come back, so it is put back as the page opened here closes. */
-static int qm_restore(void *page, void *event) {
+static int qm_restore(void *page, event_t *event) {
     memcpy((void *)g_local_classinfo_save, qm.qm_classinfo, sizeof qm.qm_classinfo);
     return 0;
 }
@@ -226,7 +226,7 @@ static int qm_restore(void *page, void *event) {
  * (addon.c addon_goto). */
 static void qm_goto(void *r, int album) {
     unsigned char *info = (unsigned char *)g_local_classinfo_save;
-    void *wm = window_manager(), *page = window_manager_get_top_window(wm);
+    widget_t *wm = window_manager(), *page = window_manager_get_top_window(wm);
     /* a card app's song (Qobuz's): the app's own page for its album or artist, when it says so */
     if (addon_goto(P(r, REC_PATH), P(r, album ? REC_ALBUM : REC_ARTIST), album)) return;
     if (album && (navigator_window_is_exist("coverflow_page") || pod_value(POD_ARTIST_CF)) &&
@@ -247,7 +247,7 @@ static void qm_goto(void *r, int album) {
         } context = { (int)qm.qm_cls, r };
         navigator_to_with_context("localmusic/artistinfo_page", &context);
     }
-    void *top = window_manager_get_top_window(wm);
+    widget_t *top = window_manager_get_top_window(wm);
     if (top != page) widget_on(top, EVT_WINDOW_CLOSE, qm_restore, top);
 }
 
@@ -261,7 +261,7 @@ static int qm_edit_run(const void *info) {
     playlists_edit((int)(long)P(info, TIMER_CTX));
     return 0;
 }
-static int qm_edit_due(void *edit, void *event) {
+static int qm_edit_due(void *edit, event_t *event) {
     timer_add(qm_edit_run, edit, 0);
     return 0;
 }
@@ -299,7 +299,7 @@ static int qm_run(const void *unused) {
     } else if (a == QA_NEW_PLAYLIST || a == QA_EDIT_PLAYLISTS) {
         /* the page's own, not the playlist's: qm_edit_due */
     } else if (a == QA_MORE) {
-        void *more = np_more(); /* clicked as a tap would, so stock's own handler opens it */
+        widget_t *more = np_more(); /* clicked as a tap would, so stock's own handler opens it */
         char click[0x30];
         if (more && !addon_more())
             stock_dispatch_trampoline(more, pointer_event_init(click, EVT_CLICK, more, 0, 0));
@@ -331,7 +331,7 @@ static int qm_run(const void *unused) {
             "localmusic/playlist_page",
             (void *)(long)((qm.qm_kind == QM_PLAYING ? 0x20000 : 0x10000) | cls));
         if (qm.qm_kind == QM_PLAYING) {
-            void *top = window_manager_get_top_window(window_manager());
+            widget_t *top = window_manager_get_top_window(window_manager());
             if (!tk_strcmp(widget_get_prop_str(top, "name", ""), "playlist_page")) {
                 st.qm_playlist = top;
                 qm_playlist_bind(top, 0, qm_playlist_pick);
@@ -371,7 +371,7 @@ static int qm_run(const void *unused) {
 }
 
 /* Touch and centre both arrive as the row's click; the first one wins. */
-static int qm_pick(void *action, void *event) {
+static int qm_pick(void *action, event_t *event) {
     if (st.qm_dialog && !qm.qm_timer) {
         qm.qm_action = (int)(long)action;
         qm.qm_timer = timer_add(qm_run, (void *)0, 0);
@@ -394,16 +394,16 @@ static int qm_pick(void *action, void *event) {
 /* the lowest row the card's ring may take: the glass hides 38 px of it, the ring is at 39 */
 #define QM_FOOT 308
 static int own_hold(void) { return classic_dialogs() || flat_dialogs(); }
-static void hold_open(void *dialog, int n) {
-    void *nav = widget_lookup(dialog, "view_navbar", 1),
-         *list = widget_lookup(dialog, "list_view", 1);
+static void hold_open(widget_t *dialog, int n) {
+    widget_t *nav = widget_lookup(dialog, "view_navbar", 1),
+             *list = widget_lookup(dialog, "list_view", 1);
     if (!nav || !list) return;
     int flat = flat_dialogs(), row = theme()->page_row, foot = flat ? HOLD_FOOT : 0,
         fit = (2 * QM_FOOT - 320 - BAR_ROWS - QM_HEAD - foot) / row,
         rows = n < QM_ROWS ? n : QM_ROWS;
     if (rows > fit) rows = fit;
     int h = QM_HEAD + rows * row + foot, y = BAR_ROWS + (320 - BAR_ROWS - h) / 2;
-    void *title = widget_lookup(nav, "scrlabel_title", 1);
+    widget_t *title = widget_lookup(nav, "scrlabel_title", 1);
     widget_set_prop_str(dialog, "highlight", "");
     widget_set_prop_int(dialog, "style:normal:bg_color", 0);
     widget_set_prop_int(nav, "style:normal:bg_color", 0);
@@ -423,25 +423,25 @@ static void hold_open(void *dialog, int n) {
                         "default(x=0,y=0,w=100%,h=100%)");
 }
 /* A row's label as the flip panel's track: the theme's face, left; Light Mode flips its white. */
-static void hold_label(void *item, void *label) {
+static void hold_label(widget_t *item, widget_t *label) {
     widget_set_prop_int(item, "style:normal:bg_color", 0);
     widget_move_resize(label, 12, 0, BACK_W - 24, theme()->page_row);
     panel_font(label, 25, 1);
 }
 /* The title loops, as Now Playing's; stock's sortselect title doesn't. Its holds at its start and
  * end are every label's (ringnav_hscroll_start, ringnav_hscroll_lull). */
-static void qm_title(void *dialog, const char *s) {
-    void *title = widget_lookup(dialog, "scrlabel_title", 1);
+static void qm_title(widget_t *dialog, const char *s) {
+    widget_t *title = widget_lookup(dialog, "scrlabel_title", 1);
     widget_set_prop_int(title, "loop", 1);
     widget_set_text_utf8(title, s);
 }
 static int qm_open(const void *unused) {
     qm.qm_timer = 0;
-    void *wm = window_manager(), *page = window_manager_get_top_window(wm);
+    widget_t *wm = window_manager(), *page = window_manager_get_top_window(wm);
     void *r = usable() && !window_manager_is_animating(wm) ? qm_record() : (void *)0;
     if (!r) return 0;
     navigator_to("dialog/sortselect_dialog");
-    void *dialog = window_manager_get_top_window(wm);
+    widget_t *dialog = window_manager_get_top_window(wm);
     if (dialog == page) return 0;
     if (tk_strcmp(widget_get_prop_str(dialog, "name", ""), "sortselect_dialog")) {
         window_close(dialog);
@@ -450,8 +450,8 @@ static int qm_open(const void *unused) {
     /* The Play hold is a button, as Centre and Return: it ends a click's touch hiding
      * (hide_outline). A choice opens from a row's click, which may be a tap. */
     if (!qm.qm_choice) st.touch_mode = 0;
-    void *back = widget_lookup(dialog, "img_return", 1),
-         *view = widget_lookup(dialog, "scroll_view", 1);
+    widget_t *back = widget_lookup(dialog, "img_return", 1),
+             *view = widget_lookup(dialog, "scroll_view", 1);
     widget_off_by_func(dialog, EVT_KEY_UP, (void *)SORTSELECT_KEYUP, dialog);
     widget_off_by_func(back, EVT_CLICK, (void *)SORTSELECT_CLOSE, dialog);
     widget_on(dialog, EVT_KEY_UP, qm_back, dialog);
@@ -482,9 +482,9 @@ static int qm_open(const void *unused) {
         int painted = own_hold(), row = painted ? theme()->page_row : QM_ROW,
             w = painted ? BACK_W : 375;
         for (int i = 0; i < count; ++i) {
-            void *item = list_item_create(view, 0, i * row, w, row);
+            widget_t *item = list_item_create(view, 0, i * row, w, row);
             widget_use_style(item, "s_listitem_black");
-            void *label = hscroll_label_create(item, 30, 0, 310, row);
+            widget_t *label = hscroll_label_create(item, 30, 0, 310, row);
             widget_use_style(label, "s_scrlabel_white24l");
             widget_set_text_utf8(label, names[i]);
             if (painted) hold_label(item, label);
@@ -588,9 +588,9 @@ static int qm_open(const void *unused) {
     /* stock sortselect row styles */
     int painted = own_hold(), pitch = painted ? theme()->page_row : QM_ROW;
     for (int i = 0; i < n; ++i) {
-        void *item = list_item_create(view, 0, i * pitch, painted ? BACK_W : 375, pitch);
+        widget_t *item = list_item_create(view, 0, i * pitch, painted ? BACK_W : 375, pitch);
         widget_use_style(item, "s_listitem_black");
-        void *label = hscroll_label_create(item, 30, 0, 266, pitch);
+        widget_t *label = hscroll_label_create(item, 30, 0, 266, pitch);
         widget_use_style(label, "s_scrlabel_white24l");
         if (acts[i] == QA_RATE) {
             int h = aid ? album_hearts : checkFavExist(r) ? 5 : rate_kept(0, listen_key(r));
@@ -638,7 +638,7 @@ static int qm_list_hold(unsigned at, char *key, void *cover) {
  * else stays stock. */
 int qm_hold(void) {
     qm.qm_choice = 0;
-    void *wm = window_manager(), *top = window_manager_get_top_window(wm);
+    widget_t *wm = window_manager(), *top = window_manager_get_top_window(wm);
     const char *name = top ? widget_get_prop_str(top, "name", "") : "";
     int playing = !tk_strcmp(name, "playing_page");
     if (st.rate_on && top == st.rate_on) { /* the picker's: the hold and its release do nothing */
@@ -685,7 +685,7 @@ int qm_hold(void) {
     }
     void *list = page_tracks(top);
     int coverflow = list != 0;
-    void *w = surface_under(top, (void *)0, (void *)0, 0);
+    widget_t *w = surface_under(top, (void *)0, (void *)0, 0);
     if ((!coverflow && kind < CTX_FOLDER) || !w || !load(&g_menu, w, 1) || g_menu.ctx < 0 ||
         g_menu.kind == 3)
         return 0;
@@ -697,7 +697,7 @@ int qm_hold(void) {
     if (!tk_strcmp(name, "playlist_page") && widget_get_prop_int(top, PL_MODE, 0)) return 0;
     if (!tk_strcmp(name, "playlist_page")) {
         /* The row's index counts Import and Export; its dots' name carries the playlist's. */
-        void *more = more_image(g_menu.at[cur]);
+        widget_t *more = more_image(g_menu.at[cur]);
         return qm_list_hold((unsigned)atoi(more ? widget_get_prop_str(more, "name", "") + 8 : "-1"),
                             key, 0);
     }

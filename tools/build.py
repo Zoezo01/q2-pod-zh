@@ -1317,7 +1317,7 @@ FUNCTIONS = {
  'getAllPlayList': ('int', 'void'),  # every playlist's header, into tools_pdeq_directory (coverflow.c's playlists)
  'checkPlayListExist': ('int', 'void *, int'),
  'toolsSetTimeZone': ('int', 'const char *'),
- 'widget_on': ('unsigned', 'widget_t *, unsigned, int (*)(void *, void *), void *'),
+ 'widget_on': ('unsigned', 'widget_t *, unsigned, int (*)(void *, event_t *), void *'),
  'widget_set_visible': ('int', 'widget_t *, int, int'),
  'widget_set_opacity': ('int', 'widget_t *, unsigned'),
  'widget_set_enable': ('int', 'widget_t *, int'),
@@ -1331,10 +1331,10 @@ FUNCTIONS = {
  'widget_set_name': ('int', 'widget_t *, const char *'),
  'widget_set_sensitive': ('int', 'widget_t *, int'),
  'widget_to_local': ('int', 'widget_t *, void *'),
- 'widget_dispatch_event_to_target_recursive': ('int', 'widget_t *, void *'),
+ 'widget_dispatch_event_to_target_recursive': ('int', 'widget_t *, event_t *'),
  'label_create': ('widget_t *', 'widget_t *, int, int, int, int'),
  'label_resize_to_content': ('int', 'widget_t *, unsigned, unsigned, unsigned, unsigned'),  # Classic's toast (navigation.c toast_paint)
- 'stock_search': ('int', 'void *, void *'),
+ 'stock_search': ('int', 'void *, event_t *'),
  'widget_set_children_layout': ('int', 'widget_t *, const char *'),
  'widget_get_canvas': ('canvas_t *', 'widget_t *'),  # the lyrics page measures its lines (lyrics.c)
  'widget_resize': ('int', 'widget_t *, int, int'),
@@ -1369,9 +1369,9 @@ FUNCTIONS = {
  'widget_animator_scroll_set_params': ('int', 'widget_animator_t *, int, int, int, int'),
  'slide_menu_set_value': ('int', 'widget_t *, int'),
  'slide_menu_item_width': ('int', 'widget_t *'),
- 'slide_menu_on_scroll_done': ('int', 'void *, void *'),
+ 'slide_menu_on_scroll_done': ('int', 'void *, event_t *'),
  'widget_animator_scroll_create': ('widget_animator_t *', 'widget_t *, unsigned, unsigned, int'),
- 'widget_animator_on': ('unsigned', 'widget_animator_t *, unsigned, int (*)(void *, void *), void *'),
+ 'widget_animator_on': ('unsigned', 'widget_animator_t *, unsigned, int (*)(void *, event_t *), void *'),
  'widget_set_focused': ('int', 'widget_t *, int'),
  'input_method': ('input_method_t *', 'void'),
  'input_method_request': ('int', 'input_method_t *, widget_t *'),
@@ -1403,7 +1403,7 @@ FUNCTIONS = {
  'vgcanvas_set_fill_color': ('int', 'vgcanvas_t *, unsigned'), 'vgcanvas_set_stroke_color': ('int', 'vgcanvas_t *, unsigned'),
  'vgcanvas_set_fill_linear_gradient': ('int', 'vgcanvas_t *, float, float, float, float, unsigned, unsigned'),
  'vgcanvas_set_line_width': ('int', 'vgcanvas_t *, float'), 'vgcanvas_set_line_cap': ('int', 'vgcanvas_t *, const char *'),
- 'pointer_event_init': ('void *', 'void *, int, widget_t *, int, int'),
+ 'pointer_event_init': ('event_t *', 'void *, int, widget_t *, int, int'),
  'time_now_ms': ('unsigned', 'void'),
  'sleep_ms': ('int', 'unsigned'),
  'timer_add': ('unsigned', 'int (*)(const void *), void *, unsigned'),
@@ -1439,8 +1439,8 @@ FUNCTIONS = {
  'widget_set_text': ('int', 'widget_t *, const unsigned *'),
  'widget_off_by_func': ('int', 'widget_t *, unsigned, void *, void *'),
  'widget_off_by_ctx': ('int', 'widget_t *, void *'),  # Home's Library list (home.c library_rows)
- 'on_home_music_onclick': ('int', 'void *, void *'),  # stock's Library card, which Home's Full keeps (coverflow.c home_library)
- 'on_home_stream_onclick': ('int', 'void *, void *'),  # stock's Streaming card, the same (coverflow.c home_streaming)
+ 'on_home_music_onclick': ('int', 'void *, event_t *'),  # stock's Library card, which Home's Full keeps (coverflow.c home_library)
+ 'on_home_stream_onclick': ('int', 'void *, event_t *'),  # stock's Streaming card, the same (coverflow.c home_streaming)
  'window_close': ('int', 'widget_t *'),
  'dialog_quit': ('int', 'widget_t *, unsigned'),  # quick settings' close, as its swipe up ends (0x4a1fd8)
  'window_manager_close_window_force': ('int', 'widget_t *, widget_t *'),
@@ -1562,7 +1562,7 @@ FUNCTIONS = {
  'buzzeer_switch': ('int', 'int'),  # the stock key click; it reads g_keytone_flag
  # Require Output (g_block_withoutphone_flag) with no output: toasts (0) and returns 1, as before each stock start
  'check_forbid_play_no_headset': ('int', 'int'),
- 'on_wm_keyup_fun': ('int', 'void *, void *'),  # stock key-up: np_single replays a centre release
+ 'on_wm_keyup_fun': ('int', 'void *, event_t *'),  # stock key-up: np_single replays a centre release
  'get_wifisignal': ('int', 'void'),  # the status bar's Wi-Fi bars, 1-4; -1 when not connected
  'fwupdate_tf': ('int', 'void'),  # System Update's TF card update: battery check, confirm, flash
  'widget_set_tr_text': ('int', 'widget_t *, const char *'),
@@ -1571,7 +1571,7 @@ FUNCTIONS = {
  'folder_reset_variable': ('int', 'void'),  # a fresh visit: layer 0, no path, enter history or CUE
  'folder_reinit_navbarname': ('int', 'void'),
  'folder_refresh': ('int', 'widget_t *'),
- 'album_covermode': ('int', 'void *, void *'),  # album_page's list/grid switch's click (library_lists.c album_view_toggle)
+ 'album_covermode': ('int', 'void *, event_t *'),  # album_page's list/grid switch's click (library_lists.c album_view_toggle)
  # q2video's start (books.c): the output in use, the music stopped, the DAC's power, and the standby timeouts held off
  'mclGetOutputWay': ('int', 'void'),
  'mclGetLyricSize': ('int', 'void'),  # the playing track's lyric lines, 0 without

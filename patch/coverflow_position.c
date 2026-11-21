@@ -9,7 +9,7 @@
 #define POSITION_TICK_MS 33
 
 static struct {
-    void *parent, *slide;
+    widget_t *parent, *slide;
     float pos;
     int x, r[4], dirty;
     unsigned moved, timer, alpha;
@@ -66,7 +66,7 @@ static int coverflow_position_offset(float pos, int albums, int cards, int trave
 /* The shelf invalidates only its own height. A changed position or opacity asks for the small
  * footer strip too. Queue damage on the UI timer, not from inside a paint: toolkit
  * paint cleanup can otherwise consume the new damage before it reaches the screen. */
-void coverflow_position_paint(void *w, void *canvas) {
+void coverflow_position_paint(widget_t *w, canvas_t *canvas) {
     if (!w || (w != cf.slide && w != cf.covers) || !position_live()) return;
     int n = (int)deque_size(cf.albums), cards = (int)widget_count_children(cf.slide), c, frac;
     if (!visual(cf.slide, cards, &c, &frac)) return;

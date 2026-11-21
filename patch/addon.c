@@ -961,7 +961,7 @@ static void game_unlink(const char *ext) {
 
 /* The game in front again: Now Playing closed if it is on top (a cancel, the game's end). */
 static void game_view_back(void) {
-    void *top = window_manager_get_top_window(window_manager());
+    widget_t *top = window_manager_get_top_window(window_manager());
     if (top && !tk_strcmp(widget_get_prop_str(top, "name", ""), "playing_page")) navigator_back();
     gm.native = 0;
     gm.seen = time_now_ms();
@@ -987,7 +987,7 @@ static void game_view(void) {
     tk_snprintf(tmp, sizeof tmp, "%s.tmp", path);
     char open[] = "open";
     if (!blob_io(path, tmp, open, sizeof open - 1, 1)) return;
-    void *wm = window_manager();
+    widget_t *wm = window_manager();
     gm.native = 1;
     /* a key held into the open: its repeats and release are no page's */
     gm.eat |= gm.down, gm.down = 0;
@@ -1154,7 +1154,7 @@ int addon_game_open(const char *id) {
  * hold that ended it, a key held into Now Playing's open); 0 for stock's: a music key of a game
  * without the sound or gameview=1, every event while Now Playing is over the game, and a key
  * pressed there to its release */
-int addon_game_input(void *e) {
+int addon_game_input(event_t *e) {
     if (!e) return addon_game_front();
     unsigned type = (unsigned)I(e, EVENT_TYPE), key = (unsigned)I(e, EVENT_KEY);
     int keyish = type == EVT_KEY_DOWN || type == EVT_KEY_UP || type == EVT_KEY_LONG;
@@ -1517,7 +1517,7 @@ typedef struct {
 } lv_t;
 
 static struct {
-    void *page, *view, *edit;
+    widget_t *page, *view, *edit;
     unsigned timer, go, leave, again; /* again: when a waiting or live level asks again */
     int depth, act, next, arg, a,
         code; /* act: what the request in flight is for, 1 an action; a: the app's slot; code: its
@@ -1568,7 +1568,7 @@ static void action(int i, const char *op, const char *ctx) {
     pg.act = 1, pg.arow = i, pg.busy = 0, pg.acted = time_now_ms();
 }
 
-static int clicked(void *ctx, void *event);
+static int clicked(void *ctx, event_t *event);
 
 /* Whether row i opens a page (go()): a list (a sort row left as a row is one), the phone remote's
  * QR page or a folder on the card. Its row has a chevron. */
@@ -1595,7 +1595,7 @@ static int progress_h(void) {
 }
 
 /* A progress row's bar's permille, clamped to 0 to 1000 for addon_paint. */
-static void set_pml(void *bar, long permille) {
+static void set_pml(widget_t *bar, long permille) {
     widget_set_prop_int(bar, "_pml", permille < 0 ? 0 : permille > 1000 ? 1000 : (int)permille);
 }
 
@@ -1603,9 +1603,9 @@ static void set_pml(void *bar, long permille) {
  * (the theme's: an empty detail has moved the label), left and right on one line, over a bar
  * centred in the detail's, which addon_paint fills from the left: its _pml prop, permille, clamped
  * to 0 to 1000 (set_pml); strtol saturates what overflows, which atoi leaves undefined. */
-static void progress_row(void *item, long permille) {
+static void progress_row(widget_t *item, long permille) {
     const theme_t *T = theme();
-    void *t = widget_get_child(item, 0), *s = widget_get_child(item, 1);
+    widget_t *t = widget_get_child(item, 0), *s = widget_get_child(item, 1);
     int x = I(t, W_X), w = I(t, W_W), h = T->page_cap_h;
     int y = T->page_cap_y + (I(item, W_H) - page_h(64)) / 2; /* a cover list's rows are taller */
     int dx = I(s, W_X), dy = I(s, W_Y), dw = I(s, W_W), dh = I(s, W_H);
@@ -1617,8 +1617,8 @@ static void progress_row(void *item, long permille) {
     theme_font(s, ROLE_META, FONT_ROW);
     widget_move_resize(s, x + w * 3 / 5, y, w - w * 3 / 5, h);
     int bh = progress_h();
-    void *bar = widget_factory_create_widget(widget_factory(), "view", item, dx, dy + (dh - bh) / 2,
-                                             dw, bh);
+    widget_t *bar = widget_factory_create_widget(widget_factory(), "view", item, dx,
+                                                 dy + (dh - bh) / 2, dw, bh);
     set_pml(bar, permille);
 }
 
@@ -1697,11 +1697,11 @@ static int row_h(const lv_t *l) { return l->art ? ART_ROW_H : page_h(64); }
  * the theme's left, the theme's label boxes beside it, centred in the taller row, an empty detail
  * centring the caption, and the chevron when it opens a page. The image goes before row_into, whose
  * chevron stays the last child (navigation.c into_mark), and is sized after it. */
-static void *art_row(int index, const char *caption, const char *detail, const char *url,
-                     int into) {
+static widget_t *art_row(int index, const char *caption, const char *detail, const char *url,
+                         int into) {
     int x = page_x(), tx = x + ART_PX + 12, w = 375 - x - tx, dy = (ART_ROW_H - page_h(64)) / 2;
-    void *item = page_row_detail(pg.view, index, caption, detail, clicked), *img = 0;
-    void *t = widget_get_child(item, 0), *s = widget_get_child(item, 1);
+    widget_t *item = page_row_detail(pg.view, index, caption, detail, clicked), *img = 0;
+    widget_t *t = widget_get_child(item, 0), *s = widget_get_child(item, 1);
     widget_move_resize(item, 0, index * ART_ROW_H, 375, ART_ROW_H);
     widget_move_resize(t, tx, *detail ? I(t, W_Y) + dy : 0, w, *detail ? I(t, W_H) : ART_ROW_H);
     widget_move_resize(s, tx, I(s, W_Y) + dy, w, I(s, W_H));
@@ -1726,7 +1726,7 @@ static void row(lv_t *l, int i) {
             page_row_detail(pg.view, i, pg.paging ? "Loading…" : "More…", "", clicked);
         return;
     }
-    void *item;
+    widget_t *item;
     if (l->art) {
         char url[ART_URL];
         item = art_row(i, cell(i, 2), cell(i, 3), art_file(i, url) ? url : 0, opens(i));
@@ -1794,12 +1794,12 @@ static int take_sort(char **f, int *n) {
     return take_row(f, n, "sort");
 }
 
-static int bar_tapped(void *ctx, void *event);
+static int bar_tapped(void *ctx, event_t *event);
 
 /* A 50 px image at x in the title bar, h high from y, in stock style s: clickable (an image sends
  * no click unless it is, as Tidal's img_search), a tap queueing code. */
 static void bar_icon(int x, int y, int h, const char *s, int code) {
-    void *icon = image_create(pg.page, x, y, 50, h);
+    widget_t *icon = image_create(pg.page, x, y, 50, h);
     widget_use_style(icon, s);
     widget_set_prop_int(icon, "clickable", 1);
     widget_on(icon, EVT_CLICK, bar_tapped, (void *)(long)code);
@@ -1821,7 +1821,7 @@ static void bar_icon(int x, int y, int h, const char *s, int code) {
 #define SORT_X 265
 #define TITLE_END (SORT_X + 15) /* 280: the sort's ink */
 static void find_icon(int sort) {
-    void *title = widget_get_child(pg.page, 0);
+    widget_t *title = widget_get_child(pg.page, 0);
     int h = I(title, W_H), end = sort ? TITLE_END : FIND_X;
     widget_move_resize(title, 375 - end, 0, 2 * end - 375,
                        h); /* centred: 95 to 280, or 73 to 302 */
@@ -1875,7 +1875,7 @@ static int same_rows(const lv_t *l, char **g, int n) {
 
 /* Row item's label w, its title (k 2) or detail (3), says s, from its left in the face it needs;
  * a new title's marquee starts again at the next paint. */
-static void retext(void *item, void *w, unsigned k, const char *s) {
+static void retext(widget_t *item, widget_t *w, unsigned k, const char *s) {
     widget_set_text_utf8(w, s);
     theme_font(w, k == 2 ? ROLE_TALL : ROLE_META, FONT_ROW);
     widget_set_prop_int(w, "xoffset", 0);
@@ -1892,9 +1892,9 @@ static void retext(void *item, void *w, unsigned k, const char *s) {
  */
 static void relabel(const lv_t *l) {
     for (int i = 0; i < l->n; ++i) {
-        void *item = widget_get_child(pg.view, (unsigned)i);
+        widget_t *item = widget_get_child(pg.view, (unsigned)i);
         for (unsigned c = 0, k = 2, m = widget_count_children(item); c < m; ++c) {
-            void *w = widget_get_child(item, c);
+            widget_t *w = widget_get_child(item, c);
             if (!tk_strcmp(widget_get_type(w), "hscroll_label")) {
                 if (text_differs(w, cell(i, k))) retext(item, w, k, cell(i, k));
                 ++k;
@@ -1914,7 +1914,7 @@ static void busy_row(int on) {
     int i = pg.arow;
     if (on == pg.busy || !pg.view || l->state != K_READY || i >= l->n) return;
     int k = 2 + !!cell(i, 3)[0];
-    void *item = widget_get_child(pg.view, (unsigned)i);
+    widget_t *item = widget_get_child(pg.view, (unsigned)i);
     retext(item, widget_get_child(item, (unsigned)k - 2), (unsigned)k,
            on ? "Working…" : cell(i, k));
     pg.busy = on;
@@ -1936,7 +1936,7 @@ static void show(void) {
         tk_snprintf(t, sizeof t, "Starting %s…", app()->name);
         if (!l->since) l->since = time_now_ms() | 1;
         l->slow = (int)(time_now_ms() - l->since) >= SLOW_MS && stoppable(); /* since: now + 1 */
-        void *v =
+        widget_t *v =
             page_list(pg.page, pg.page, 0, l->state == K_WAIT ? t : "Loading…", n = l->slow, 48);
         if (n) pg.view = v, stop_row(0);
     } else if (l->state == K_ERROR) {
@@ -2238,7 +2238,7 @@ static void later(int next, int arg) {
     if (pg.page) rearm(&pg.go, go, 0); /* not once closed: the box's blur can come after */
 }
 
-static int clicked(void *ctx, void *event) {
+static int clicked(void *ctx, event_t *event) {
     (void)event;
     /* Loading… does nothing: dropped here, as by go() its page may have put a row at its index */
     if (pg.paging && (int)(long)ctx == top()->n) return 0;
@@ -2253,7 +2253,7 @@ static int clicked(void *ctx, void *event) {
  *
  * ponytail: stock's widget_get_text_utf8 writes nothing for a text over 255 bytes, which closes
  * silently. */
-static int searched(void *ctx, void *event) {
+static int searched(void *ctx, event_t *event) {
     char t[256] = "";
     (void)ctx, (void)event;
     if (widget_get_text_utf8(pg.edit, t, sizeof t)) t[0] = 0;
@@ -2269,7 +2269,7 @@ static int searched(void *ctx, void *event) {
     return 0;
 }
 
-static int search_left(void *ctx, void *event) {
+static int search_left(void *ctx, event_t *event) {
     (void)ctx, (void)event;
     if (!pg.go) later(G_SHOW, 0);
     return 0;
@@ -2282,7 +2282,7 @@ static int search_left(void *ctx, void *event) {
  * and down stay the list's.
  * ponytail: touch only. The wheel moves the selection, as on every list, so the sections past the
  * first are reached by a swipe alone; bind a key here if that is ever asked for. */
-static int swipe(void *ctx, void *event) {
+static int swipe(void *ctx, event_t *event) {
     (void)ctx;
     int type = I(event, EVENT_TYPE);
     if (type == EVT_POINTER_ABORT || pg.nsec < 2 || pg.depth != 1 || pg.edit) {
@@ -2314,7 +2314,7 @@ static int swipe(void *ctx, void *event) {
         if (ax < SWIPE_CLAIM_PX || ax < 2 * ay) return 0;
         unsigned abort_event[12];
         pointer_event_init(abort_event, EVT_POINTER_ABORT, pg.page, pg.sx, pg.sy);
-        widget_dispatch_event_to_target_recursive(pg.page, abort_event);
+        widget_dispatch_event_to_target_recursive(pg.page, (event_t *)abort_event);
         pg.sdown = pg.sclaim = 1; /* after: the abort comes back here and clears them */
         if (pg.view) list_stop_scroll(pg.view); /* as pull_event: a fling under the claim ends */
     }
@@ -2343,7 +2343,7 @@ static void search_box(int field) {
 
 /* A title bar icon's tap, ctx its G_ code, on a timer as a row's: what it opens replaces the page
  * the icon is in. */
-static int bar_tapped(void *ctx, void *event) {
+static int bar_tapped(void *ctx, event_t *event) {
     (void)event;
     later((int)(long)ctx, 0);
     return 0;
@@ -2478,12 +2478,12 @@ static int leave(const void *unused) {
     return 0;
 }
 
-static int keyup(void *ctx, void *event) {
+static int keyup(void *ctx, event_t *event) {
     (void)ctx;
     return return_key(event, &pg.leave, leave);
 }
 
-static int closed(void *ctx, void *event) {
+static int closed(void *ctx, event_t *event) {
     (void)event;
     if (ctx != pg.page) return 0; /* a page addon_goto replaced, its state gone already */
     req_cancel();
@@ -2552,7 +2552,7 @@ static int press(int slot) {
 /* An app's Streaming row (home.c ringnav_stream; ctx: its app's slot, addon_slot): a read that
  * sorts the apps again while the row is open (an App Store job's end, Home's pane, the AirPlay row)
  * leaves it on its app, and a removed app's row says it isn't on the card. */
-int addon_open(void *ctx, void *event) {
+int addon_open(void *ctx, event_t *event) {
     (void)event;
     int i = (int)(long)ctx;
     if (smart_hold(addon_open, ctx, 0)) return 0; /* the app starts once Smart Wi-Fi's link is up */
@@ -2567,7 +2567,7 @@ int addon_game_start(int k) { return k >= 0 && k < ap.games ? press(ap.game[k]) 
  * ponytail: a request it makes over the network in its first seconds can fail for want of the
  * link; holding the row as Streaming's (smart_hold) would cost every open up to SMART_CONNECT_MS
  * wherever there is no network. A q2app key for the wait, if an app ever needs the link first. */
-int addon_lib_open(void *ctx, void *event) {
+int addon_lib_open(void *ctx, event_t *event) {
     (void)event;
     int k = (int)(long)ctx;
     if (k >= 0 && k < ap.libs) press(ap.lib[k]);
@@ -2578,19 +2578,19 @@ int addon_lib_open(void *ctx, void *event) {
  * rows are built again when their count changes (addon_apps_sync). ponytail: a count, not the
  * names: one app swapped for another while the page is open shows at its next open. */
 static struct {
-    void *page;
+    widget_t *page;
     int n; /* the rows built, -1: none yet */
 } la __attribute__((section(".scratch")));
-static int apps_closed(void *ctx, void *event) {
+static int apps_closed(void *ctx, event_t *event) {
     la.page = 0;
     return 0;
 }
 static void apps_rows(int n) {
     if (n == la.n) return;
-    void *view = page_list_or(la.page, la.page, "Apps", "No apps", la.n = n, 48);
+    widget_t *view = page_list_or(la.page, la.page, "Apps", "No apps", la.n = n, 48);
     for (int k = 0; k < n; ++k) page_row_into(view, k, addon_lib_name(k), addon_lib_open);
 }
-int addon_apps(void *ctx, void *event) {
+int addon_apps(void *ctx, event_t *event) {
     if (la.page || !(la.page = page_open("cardapps_page", apps_closed, page_keyup))) return 0;
     widget_on(la.page, EVT_WINDOW_FOREGROUND, addon_apps_sync, la.page);
     la.n = -1;
@@ -2601,9 +2601,9 @@ int addon_apps(void *ctx, void *event) {
  * remove's end, for the top window. The Library's Apps row there (home.c library_apps_show) shown
  * while the card has an app for it, the Apps page's rows built again. The card is read again only
  * after such a job or USB storage: a return from Artists takes the last scan's count. */
-int addon_apps_sync(void *win, void *event) {
+int addon_apps_sync(void *win, event_t *event) {
     if (!win) apps_stale = 1, win = window_manager_get_top_window(window_manager());
-    void *row = win ? widget_lookup(win, "library_apps", 1) : (void *)0;
+    widget_t *row = win ? widget_lookup(win, "library_apps", 1) : (void *)0;
     if (!row && (!win || win != la.page)) return 0;
     int n = apps_stale ? addon_libs() : ap.libs;
     apps_stale = 0;
@@ -2618,7 +2618,7 @@ void addon_open_id(const char *id) {
     addon_scan();
     for (int i = 0; i < ap.n; ++i)
         if (ap.a[i].present && !strcmp(ap.a[i].id, id)) {
-            void *old = pg.page;
+            widget_t *old = pg.page;
             if (old) closed(old, 0), window_manager_close_window_force(window_manager(), old);
             page_at(i, "menu", "", ap.a[i].name, 1);
             return;
@@ -2718,7 +2718,7 @@ int addon_goto(const char *path, const char *title, int album) {
     if (!a || !spot_put(args, sizeof args, album ? "album" : "artist") ||
         !spot_put(args, sizeof args, path))
         return 0;
-    void *old = pg.page;
+    widget_t *old = pg.page;
     if (old) closed(old, 0), window_manager_close_window_force(window_manager(), old);
     return page_at((int)(a - ap.a), "goto", args, title && *title ? title : a->name, 0);
 }
@@ -2738,14 +2738,14 @@ int addon_more(void) {
     unsigned k = title ? (unsigned)(title - a->more) : strlen(a->more);
     if (!k || k >= sizeof op) return 0; /* no op, or one too long for a level */
     tk_snprintf(op, k + 1, "%s", a->more);
-    void *old = pg.page;
+    widget_t *old = pg.page;
     if (old) closed(old, 0), window_manager_close_window_force(window_manager(), old);
     return page_at((int)(a - ap.a), op, "", title && title[1] ? title + 1 : a->name, 0);
 }
 
 /* ringnav_keylong: Play/Pause held on a row with a hold op (a list: all of it downloaded) sends it;
  * 1 when it was one. A progress row's position is its bar, a field row's its box's text. */
-int addon_hold(void *w) {
+int addon_hold(widget_t *w) {
     lv_t *l = pg.page && w == pg.page ? top() : 0;
     int i = l && l->state == K_READY && pg.view ? widget_get_prop_int(pg.view, "_ringnav_index", -1)
                                                 : -1;
@@ -2761,14 +2761,14 @@ int addon_hold(void *w) {
  * read again every second. Without an address (no Wi-Fi) or a file (not running), it says so. */
 #define QR_HEX 640
 static struct {
-    void *page, *qr, *col, *msg, *addr, *pin, *note, *say, *sub;
+    widget_t *page, *qr, *col, *msg, *addr, *pin, *note, *say, *sub;
     unsigned timer, leave, seen; /* seen: the state file as last read, hashed */
     const char *state;
     int size;
     char *hex; /* the code's rows, QR_HEX bytes calloc'd with the page */
 } qp __attribute__((section(".scratch")));
 
-static void set(void *w, const char *s) {
+static void set(widget_t *w, const char *s) {
     if (tk_strcmp(widget_get_prop_str(w, "text", ""), s)) widget_set_text_utf8(w, s);
 }
 
@@ -2776,7 +2776,7 @@ static void set(void *w, const char *s) {
  * at the label's own size.
  * ponytail: a font-only theme_font role would save the size rewrite. */
 static int qr_light(void) { return classic_pages(); }
-static void *qr_face(void *l, int px) {
+static widget_t *qr_face(widget_t *l, int px) {
     if (qr_light()) {
         theme_font(l, ROLE_INFO, FONT_ROW);
         widget_set_prop_int(l, "style:normal:font_size", px);
@@ -2831,12 +2831,12 @@ static int qr_leave(const void *unused) {
     return 0;
 }
 
-static int qr_keyup(void *ctx, void *event) {
+static int qr_keyup(void *ctx, event_t *event) {
     (void)ctx;
     return return_key(event, &qp.leave, qr_leave);
 }
 
-static int qr_closed(void *ctx, void *event) {
+static int qr_closed(void *ctx, event_t *event) {
     (void)ctx, (void)event;
     stop_timer(&qp.timer);
     stop_timer(&qp.leave);
@@ -2845,8 +2845,8 @@ static int qr_closed(void *ctx, void *event) {
     return 0;
 }
 
-static void *qr_label(void *parent, int x, int y, int w, int h, const char *style, int px,
-                      unsigned color) {
+static widget_t *qr_label(widget_t *parent, int x, int y, int w, int h, const char *style, int px,
+                          unsigned color) {
     return qr_face(label(parent, x, y, w, h, style, px, color), px);
 }
 
@@ -2856,7 +2856,8 @@ static void qr_open(const char *state, const char *title) {
         free(qp.hex), qp.hex = 0;
         return;
     }
-    void *f = widget_factory(), *page = qp.page;
+    widget_factory_t *f = widget_factory();
+    widget_t *page = qp.page;
     int h = widget_get_prop_int(page, "h", client_h()), cl = qr_light();
     /* the two text lines, or open, the address, PIN, its value, the note: y, height, px */
     static const short rows[2][7][3] = {
@@ -2880,7 +2881,7 @@ static void qr_open(const char *state, const char *title) {
      */
     int x = cl ? 200 : 0, w = cl ? 163 : 375 - QR_COL - 12, short_w = cl ? 163 : 140;
     qp.state = state;
-    void *name = qr_label(page, 16, 12, 240, 16, "s_scrlabel_white20l", 16, SPOT_GREY);
+    widget_t *name = qr_label(page, 16, 12, 240, 16, "s_scrlabel_white20l", 16, SPOT_GREY);
     widget_set_text_utf8(name, title);
     qr_face(name, 16);
     if (cl) {
@@ -2908,7 +2909,7 @@ static void qr_open(const char *state, const char *title) {
         qr_label(qp.col, x, r[5][0], short_w, r[5][1], "s_scrlabel_white20l", r[5][2], 0xffffffffu);
     qp.note = qr_label(qp.col, cl ? 24 : 0, r[6][0], cl ? 330 : w, r[6][1], "s_scrlabel_white20l",
                        r[6][2], SPOT_GREY);
-    void *scroll[] = { qp.addr, qp.note };
+    widget_t *scroll[] = { qp.addr, qp.note };
     for (unsigned i = 0; i < 2; ++i)
         hscroll_label_set_only_focus(scroll[i], 0), hscroll_label_set_ellipses(scroll[i], 0);
     qp.msg = widget_factory_create_widget(f, "view", page, 0, 0, 375, h);
@@ -2926,7 +2927,7 @@ static void qr_open(const char *state, const char *title) {
  * Spotify's bar, over a dim track; the scrubber's rows under a theme that has them); and the code,
  * dark modules on the white plate, a row's run of them one rectangle, inside a quiet zone of two
  * modules. */
-void addon_paint(void *w, void *canvas) {
+void addon_paint(widget_t *w, canvas_t *canvas) {
     /* the height first: no prop lookup for the page's other widgets */
     int pml = pg.page && I(w, W_H) == progress_h() && P(canvas, CANVAS_LCD)
                   ? widget_get_prop_int(w, "_pml", -1)

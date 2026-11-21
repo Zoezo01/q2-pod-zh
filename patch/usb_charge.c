@@ -7,8 +7,8 @@
 static struct {
     int mutex[6]; /* MIPS glibc's zero-initialized pthread_mutex_t */
     int ready, cable, requested, have_request, applied, have_applied;
-    int never; /* Q2POD DACCHARGENEVER: Off held from the cable's first moment, not stock's */
-    void *row; /* Power's USB DAC Charging label, while that page is built */
+    int never;     /* Q2POD DACCHARGENEVER: Off held from the cable's first moment, not stock's */
+    widget_t *row; /* Power's USB DAC Charging label, while that page is built */
 } usb_charge __attribute__((section(".scratch")));
 
 /* Off allows what stock asks: usbmode_page_init asks for g_usbdac_chargeflag once a host links,
@@ -112,7 +112,7 @@ static void dac_text(void) {
     tk_snprintf(text, sizeof text, "USB DAC Charging: %s", dac_names[dac_mode()]);
     row_label(usb_charge.row, text);
 }
-static int dac_click(void *ctx, void *event) {
+static int dac_click(void *ctx, event_t *event) {
     int mode = (dac_mode() + 1) % 3;
     g_usbdac_chargeflag = mode == 1;
     usb_charge.never = mode == 2;
@@ -122,11 +122,11 @@ static int dac_click(void *ctx, void *event) {
     dac_text();
     return 0;
 }
-static int dac_shown(void *ctx, void *event) {
+static int dac_shown(void *ctx, event_t *event) {
     dac_text();
     return 0;
 }
-void usb_charge_row(void *win, void *view) {
+void usb_charge_row(widget_t *win, widget_t *view) {
     if (!view) return;
     usb_charge.row = list_row(view, "usb_chargeswitch", dac_click, 0);
     dac_text();

@@ -1,5 +1,6 @@
 #ifndef Q2_THEME_H
 #define Q2_THEME_H
+#include "stock_types.h"
 /* The built-in themes' shape (docs/internals.md#themes); the table is theme_engine.c's themes[]. */
 
 enum {
@@ -245,10 +246,10 @@ const theme_t *bar_theme(void);          /* Status Bar's choice: the theme whose
 const scheme_t *bar_scheme(void);        /* scheme() for bar_theme() */
 int bar_geom_val(int v); /* geom_val for what bar_theme() paints: V_BATT_W, V_BATT_H */
 int client_h(void);      /* the window under the bar of the set theme_boot wrote (theme_engine.c) */
-void paint_stops(void *canvas, int x, int y, int w, int h, const stops_t *s); /* navigation.c */
+void paint_stops(canvas_t *canvas, int x, int y, int w, int h, const stops_t *s); /* navigation.c */
 /* The rows painter: the track across w, the played part over its first fill_w px; final colours
  * (the volume panel away from Now Playing, a card app's progress). */
-void paint_rows_bar(void *canvas, int x, int y, int w, int h, int fill_w);
+void paint_rows_bar(canvas_t *canvas, int x, int y, int w, int h, int fill_w);
 /* 0xRRGGBB to an opaque color_t, whose bytes are r, g, b, a. */
 static inline unsigned RGBA(unsigned c) {
     return 0xff000000u | (c & 255) << 16 | (c & 0xff00) | c >> 16;
