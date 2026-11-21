@@ -48,4 +48,8 @@ Or, with Q2 Pod on Wi-Fi: **Library → App Store → Rockbox** installs it (pre
 - **Rockbox is stuck:** hold Play/Pause while turning the Q2 on. It goes to Q2 Pod.
 - **Rockbox does not start:** the card must be exFAT or FAT32, and the `.rockbox` folder must be in the card's main folder.
 - **Want the normal Shanling player back:** flash Shanling's stock V1.36 file the same way as step 1.
+- **The Q2 froze, restarted by itself or lost power with the card in:** the card is left marked as not cleanly ejected, and a computer may offer to scan and fix it. Your music is normally fine. Q2 Pod has no card check of its own; to clear the mark, and repair anything a half-finished write left behind, shut the Q2 down, put the card in a computer's card reader and check it there:
+  - **Windows:** right-click the card in File Explorer, then **Properties → Tools → Check**. Or, in a Command Prompt run as administrator, `chkdsk X: /f` with the card's drive letter.
+  - **macOS:** open **Disk Utility**, select the card and click **First Aid**.
+  - **Linux:** with the card unmounted, `sudo fsck.exfat -y /dev/sdX1` for an exFAT card or `sudo fsck.fat -a /dev/sdX1` for FAT32. `lsblk -f` shows the card's name and which of the two it is.
 - **Anything else:** see **Troubleshooting the Q2 and your library**, **Troubleshooting Cover Flow, sound and streaming** and **Getting help** in Chapter 11 of the [user guide](https://github.com/DiamondBond/q2-pod/releases/latest/download/Q2-Pod-User-Guide.pdf).
