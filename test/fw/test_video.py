@@ -273,7 +273,6 @@ class Q2:
         self.strings: dict[int, int] = {}
         self.dac: list[tuple] = []
         self.real_writer = False  # the sound thread's body runs, whole, when it is started; else its model
-        self.thread_error = 0
         self.in_writer = False
         self.threads: list[tuple] = []
         self.thread_pipes: list[Pipe | None] = []
@@ -622,8 +621,6 @@ class Q2:
         return 0
 
     def thread(self, thread, attr, start, arg, *_):
-        if self.thread_error:
-            return self.thread_error
         C.c_ulong.from_address(thread).value = 0x7100 + len(self.threads)
         end = self.fds.get(self.au.fd)
         pipe = end.pipe if isinstance(end, End) and not end.write else None
