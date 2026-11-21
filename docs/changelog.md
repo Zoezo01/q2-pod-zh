@@ -2,6 +2,7 @@
 
 - **1.8.9**:
   - Now Playing: the **AirPlay** row at the top of **⋯** shows only once AirPlay is installed from the App Store. It used to show for everyone, and without the app a press only said where to install it.
+  - Display: every change on the screen takes less of the processor on its way to the panel, so Cover Flow's covers, lists and page slides each draw with less work. The step that turns the picture upright for the panel copied each dot through a separate call; it now moves four bytes at a time.
   - Playback: **Headphones Required** is now **Require Output (Beta)**. It is experimental: if it won't play with headphones in, turn it off and on again.
   - Library: **Apps**, **Games** and **App Store** are together in the Library, above Upload Scrobbles and Update Library. **App Store** moved here from System settings. **Apps** lists the card apps that had their own Library row, such as Utilities and Weather, and shows once one is installed. **Hide Apps**, **Hide Games** and **Hide App Store** in Display → Appearance take each row away.
   - Games: a card game can dim the screen while its menus sit idle, and bring it back to your brightness when you touch it. Your brightness setting isn't changed.

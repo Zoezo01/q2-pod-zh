@@ -80,6 +80,8 @@ HOOKS = {
     'mclSetOutputWay': (0x5bd544, 'ringnav_output', 'output'),
     'write_int_config': (0x4fe67c, 'ringnav_write_config', 'write_config'),
     'main_loop_sleep_default': (0x65c470, 'ringnav_sleep', 'sleep'),
+    # The screen's flush (patch/rotate.c): each changed rectangle turned into the framebuffer a word a pixel
+    'rotate_bgra8888_image': (0x6e11a0, 'ringnav_rotate', 'rotate'),
     'systemset_about_page_init': (0x4c1390, 'ringnav_about', 'about'),
     # Network Update (patch/netupdate.c): the latest GitHub release to the card's update.tar
     'systemset_fwupdate_page_init': (0x4c88d0, 'ringnav_fwupdate', 'fwupdate'),
@@ -1535,6 +1537,9 @@ FUNCTIONS = {
  'bitmap_create_ex': ('void *', 'unsigned, unsigned, unsigned, unsigned'),
  'bitmap_destroy': ('int', 'void *'),
  'bitmap_lock_buffer_for_read': ('const unsigned char *', 'void *'),
+ # rotate.c reads both as stock's own rotate does
+ 'bitmap_get_physical_line_length': ('unsigned', 'void *'),
+ 'bitmap_get_physical_height': ('unsigned', 'void *'),
  'canvas_draw_image': ('int', 'void *, void *, const void *, const void *'),
  'widget_paint': ('int', 'void *, void *'),  # the system bar, under a dialog that covers it (classic_pages.c search_paint)
  # Cover Flow's flip paints the tracks panel to a bitmap as stock's window snapshots do (coverflow.c flip_capture)
@@ -1749,7 +1754,7 @@ FLAGS = ['--target=mipsel-linux-gnu','-march=mips32r2','-mabi=32','-mfp64',
          '-Wshadow','-Wimplicit-int-conversion','-Wconditional-uninitialized','-Wmissing-variable-declarations',
          '-Wvla','-Wundef']
 # navigation.c and the files split out of it (patch/navigation.h), each its own object, linked in this order.
-NAVIGATION = ['navigation.c', 'theme_engine.c', 'playlists.c', 'classic_pages.c', 'home.c', 'np_bar.c', 'volume.c', 'smart_wifi.c', 'system.c', 'usb_charge.c', 'tags.c', 'scrobble_ui.c', 'library_lists.c', 'durations.c', 'script.c', 'coverflow_position.c', 'ratings.c', 'scan_folders.c', 'folder_delete.c', 'battery.c', 'np_lyrics.c', 'quick_settings.c', 'flat.c', 'clock.c', 'queue_menu.c', 'np_marks.c']
+NAVIGATION = ['navigation.c', 'theme_engine.c', 'playlists.c', 'classic_pages.c', 'home.c', 'np_bar.c', 'volume.c', 'smart_wifi.c', 'system.c', 'usb_charge.c', 'tags.c', 'scrobble_ui.c', 'library_lists.c', 'durations.c', 'script.c', 'coverflow_position.c', 'ratings.c', 'scan_folders.c', 'folder_delete.c', 'battery.c', 'np_lyrics.c', 'quick_settings.c', 'flat.c', 'clock.c', 'queue_menu.c', 'np_marks.c', 'rotate.c']
 
 def compile_payload(out):  # pragma: no mutate block
     """Compile and link the payload."""
