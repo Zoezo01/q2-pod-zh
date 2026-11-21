@@ -235,3 +235,12 @@ for light in '01':
     inside = lambda x, w: {b[4] for b in m.bands if b[2] > 1 and x <= b[0] and b[0] + b[2] <= x + w and y0 <= b[1] < y0 + h0}
     held, other = inside(x0, w0), inside(x1, w1)
     on = color_t(on_of(m, light, '4')); assert on in held and other == {color_t(FLAT_REST[light])}; passed()  # both at rest, then the held one lit
+# ... with stock's delete checkbox: not a cell (the wheel stops on OK, nothing lit behind it), its box where stock put
+# it, nothing of the payload's drawn on it: stock's check_button paints itself on the paper.
+m, d, cells = confirm_flat()
+box = m.node('check_button', 'msg_delcheckbutton', text='Also delete source file'); place(m, box, 10, 124, 355, 24)
+m.nodes[d]['children'].append(box); parents(m, d)
+for _ in range(3): bare(m); m.paint(d); m.call(O['KEY_NEXT'])
+bare(m); m.paint(d); on = color_t(on_of(m, '0', '4')); x1, y1, w1, h1 = wbox(m, cells[1])
+assert m.selected(d) == 1 and all(x1 <= b[0] < x1 + w1 and y1 <= b[1] < y1 + h1 for b in m.bands if b[4] == on)
+assert wbox(m, box) == (10, 124, 355, 24) and [l['text'] for l in m.letters] == ['Cancel', 'OK'] and not m.image_draws; passed()
