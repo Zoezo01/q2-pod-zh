@@ -1782,9 +1782,9 @@ def test_apps_after_the_stop_keep_their_update_when_the_list_is_out_of_reach_too
     table = six(fw)
     table[4].latest = b'2.0'
     sh = fw.var('netupdate__sh', Sh)
-    Net(fw, {b'https://': (28, 0, None)})
+    net = Net(fw, {b'https://': (28, 0, None)})
     check(fw)
-    assert sh.n == 6 and sh.next[4].latest == b'2.0'
+    assert asked(net) == [b'app0', b'app1'] and sh.n == 6 and sh.next[4].latest == b'2.0'
 
 
 def test_no_list_anywhere_is_a_failed_check(fw):
@@ -2665,7 +2665,8 @@ def test_a_check_stopped_by_a_press_keeps_the_updates_found_before(fw):
     assert s.sh.job == JOB_INSTALL and s.sh.app == 0 and s.sh.armed == 0  # an update, not Remove's first press
 
 
-@pytest.mark.parametrize('latest', [(0, 429, None), (7, 0, None)], ids=['429', "can't connect"])
+@pytest.mark.parametrize('latest', [(0, 429, None), (0, 403, None), (0, 503, None), (7, 0, None)],
+                         ids=['429', '403', '503', "can't connect"])
 def test_a_check_github_turns_away_or_cant_be_reached_keeps_the_updates_found_before(fw, latest):
     s, _ = checked(fw, latest=latest)
     assert s.run() == 0 and s.labels() == ['Update', 'Update'] and s.sh.checked == 1000 * 5000

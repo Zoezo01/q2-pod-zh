@@ -1166,6 +1166,10 @@ def test_dark_in_the_last_7_s_it_runs_every_100_ms(fw):
     assert sched.at(0, 99, 100) == [True, False, True]
 
 
+def test_dark_from_a_tracks_third_second_it_runs_a_second_apart(fw):
+    assert Scheduling(fw, sec=2, total=200, lit=0).at(0, 100) == [True, False]
+
+
 @pytest.mark.parametrize('status, sec, total, lit', [
     (2, 1, 6, 0),    # a track 7 s long or shorter
     (2, 10, 0, 0),   # no length known

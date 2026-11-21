@@ -848,7 +848,8 @@ static int latest(shelf_app *a, void **keep) {
     snprintf(url, sizeof url, "https://github.com/%s/releases/latest", a->repo);
     if (fetch_on(keep, url, 0, tag, sizeof tag, &code, &sh.cancel, 0))
         return sh.cancel ? SH_CANCELLED : SH_NET; /* a row's press ends the request itself */
-    if (code == 429) return SH_BUSY;
+    /* refused: no word on a release, so the one known stays */
+    if (code == 403 || code == 429 || code >= 500) return SH_BUSY;
     if (code != 302 || !*tag) return SH_MISSING; /* no release: a redirect to /releases */
     snprintf(a->latest, sizeof a->latest, "%s", tag);
     return SH_OK;
@@ -860,8 +861,9 @@ static int latest(shelf_app *a, void **keep) {
  * repo's releases reaching a Q2 (GHSA-8wpr-pmqx-538x).
  * A listed app keeps the latest release the page knew for it, from the same repo, until this check
  * asks again: a check stopped part way (a row's press, or SH_LOST) or turned away (GitHub out of
- * reach, or a 429) leaves an UPDATE row as it was: read INSTALLED, its press would offer removal.
- * Whether every release was checked: a list that failed is fetched again with the next check. */
+ * reach, or refusing) leaves an UPDATE row as it was: read INSTALLED, its press would offer
+ * removal. Whether every release was checked: a list that failed is fetched again with the next
+ * check. */
 static int check(void) {
     char path[96], text[SH_MAX * 120 + 8];
     unsigned m = 0;
