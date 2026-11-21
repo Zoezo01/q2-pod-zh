@@ -280,6 +280,7 @@ Copy your music to the card over USB-C, then run **Library → Update Library �
 - **Library folder markers:** [Hide folders while keeping playlists](docs/discovery.md)
 - **Hardware:** [Specs and internals](docs/hardware.md) · [Replacing the battery](docs/battery.md) · [Teardown photo](docs/teardown.jpg)
 - **For developers:** [Building](docs/building.md) · [Releasing](docs/releasing.md) · [Internals](docs/internals.md) · [Remote control (dev builds)](docs/remote.md) · [Emulator](https://github.com/bryanmario/q2-emulator) · [Simulator](https://github.com/lampsonlnguyen/q2-emulation) · [Contributing](CONTRIBUTING.md)
+- **From the community:** [Q2 Theme Studio](https://tyleree.github.io/q2-themes/), by tyleree, makes EQ presets and themes in the browser and saves them to the card you point it at. It isn't part of Q2 Pod, so it's at your own risk. Its EQ presets work here: they go in `EQ/`, to import. Its themes don't: they need a test firmware from its author's fork, an unofficial build of an older Q2 Pod that nobody here can help with. Back up the card before you install that one, and repeat the [install steps](#install) to come back to Q2 Pod.
 
 <details>
 <summary><h2>License</h2></summary>
