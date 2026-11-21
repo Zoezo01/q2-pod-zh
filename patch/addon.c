@@ -1209,14 +1209,14 @@ int addon_game_input(void *e) {
 }
 
 /* game_poll's, every pass while the game has the sound: its /tmp/q2-<id>.volume, written whole, is
- * the level it wants, 0 to 100, or "?" to ask (a line end allowed). A level is set as video_key
- * sets the wheel's (books.c: device_set_volume, saved), at most 100 and the Maximum volume, and
- * either is answered on its socket: "v LEVEL", then on Bluetooth or a USB DAC a space and what its
- * second argument would be now (output_device: "v 41", "v 41 100", "v 41 h41"). The file's text is
- * acted on once (gm.vreq); any other text is ignored. Every ADDON_POLL_MS (due) the same datagram
- * goes when it would differ from the last sent, as video_poll tells q2video: the level or the
- * output changed by other means (a headset's keys), and the request standing in the file is
- * removed, so the game can ask for that level again.
+ * the level it wants, 0 to 100, or "?" to ask (a line end allowed). A level, at most 100 and the
+ * Maximum volume, becomes the Q2's own (g_volume, device_set_volume) and is saved (PLAYSET
+ * VOLUME), and either is answered on its socket: "v LEVEL", then on Bluetooth or a USB DAC a space
+ * and what its second argument would be now (output_device: "v 41", "v 41 100", "v 41 h41"). The
+ * file's text is acted on once (gm.vreq); any other text is ignored. Every ADDON_POLL_MS (due) the
+ * same datagram is built again and goes when it differs from the last sent (gm.vsent): the level
+ * or the output changed by other means (a headset's keys), and the request standing in the file
+ * is removed, so the game can ask for that level again.
  * ponytail: a failed open, or one small read of a tmpfs file, every pass while a game has the
  * sound; a request renamed into place between a pass's read and that removal goes unread, which a
  * seq in the file would close. */
