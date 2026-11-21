@@ -436,7 +436,9 @@ static int progress(void *xfer, long long total, long long now, long long c, lon
 }
 
 /* One transfer: the latest tag (url without asset, headers only, no redirect) or the asset to file,
- * from its byte `from` on (HTTP Range) when the file holds those before it. curl's own code. */
+ * from its byte `from` on (HTTP Range) when the file holds those before it. With xfer, curl's
+ * progress calls read its cancel, a header-only request's too, so a press ends one that hangs
+ * (connecting, or waiting for an answer) at once rather than at its timeout. curl's own code. */
 static int fetch(const char *url, void *file, char *tag, unsigned n, long *code, volatile int *xfer,
                  long from) {
     void *c = tls_easy(url, 15, file ? 0 : 30); /* a header-only check times out at 30 s */
@@ -444,15 +446,18 @@ static int fetch(const char *url, void *file, char *tag, unsigned n, long *code,
     char *location = 0;
     if (!c) return 1;
     curl_easy_setopt(c, 10018, "Q2Pod"); /* USERAGENT */
+    /* xfer is nu's or sh's, both static, so the callback's pointer is good for every call */
+    if (xfer) {
+        curl_easy_setopt(c, 20219, progress); /* XFERINFOFUNCTION */
+        curl_easy_setopt(c, 10057, xfer);     /* XFERINFODATA */
+        curl_easy_setopt(c, 43, 0L);          /* NOPROGRESS off, for it */
+    }
     if (file) {
         curl_easy_setopt(c, 52, 1L);           /* FOLLOWLOCATION: to the asset host */
         curl_easy_setopt(c, 20011, curl_save); /* WRITEFUNCTION */
         curl_easy_setopt(c, 10001, file);      /* WRITEDATA */
         curl_easy_setopt(c, 19, 1024L);        /* LOW_SPEED_LIMIT: a stalled transfer ends */
         curl_easy_setopt(c, 20, 30L);          /* LOW_SPEED_TIME */
-        curl_easy_setopt(c, 20219, progress);  /* XFERINFOFUNCTION */
-        curl_easy_setopt(c, 10057, xfer);      /* XFERINFODATA */
-        curl_easy_setopt(c, 43, 0L);           /* NOPROGRESS off, for it */
         if (from) { /* RESUME_FROM: curl fails a reply that isn't the range */
             curl_easy_setopt(c, 21, from);
             curl_easy_setopt(
@@ -502,7 +507,7 @@ static int update(void) {
     unsigned size = 0, n = 0;
     long code = 0;
     if (fetch(NU_REPO, 0, tag, sizeof tag, &code, &nu.cancel, 0) || code != 302 || !*tag)
-        return NU_NET;
+        return nu.cancel ? NU_CANCELLED : NU_NET; /* a cancel ends this request itself */
     /* Tags are single-digit x.y.z, so strcmp orders them: nothing older than this build, which
      * stock's updater would flash. Q2POD_TAG is empty in --dev builds, which take any tag.
      * ponytail: a beta (BETA in tools/build.py) refuses its own version's release too, so its
@@ -828,7 +833,8 @@ static int latest(shelf_app *a) {
     char url[160], tag[32] = "";
     long code = 0;
     snprintf(url, sizeof url, "https://github.com/%s/releases/latest", a->repo);
-    if (fetch(url, 0, tag, sizeof tag, &code, 0, 0)) return SH_NET;
+    if (fetch(url, 0, tag, sizeof tag, &code, &sh.cancel, 0))
+        return sh.cancel ? SH_CANCELLED : SH_NET; /* a row's press ends the request itself */
     if (code == 429) return SH_BUSY;
     if (code != 302 || !*tag) return SH_MISSING; /* no release: a redirect to /releases */
     snprintf(a->latest, sizeof a->latest, "%s", tag);
