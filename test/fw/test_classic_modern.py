@@ -181,3 +181,17 @@ def test_classic_s_images_and_the_flat_look_s_are_final(fw, bitmaps, light, name
     bm = bitmaps(fw, [[RED_PX, WHITE]])
     image_add(fw, name, bm)
     assert bm.rows() == [[RED_PX, WHITE]]
+
+
+@LIGHTS
+@pytest.mark.parametrize('value, far', [(50, None), (100, '_w')])
+def test_the_volume_pages_speakers_are_classic_s(fw, world, st, light, value, far):
+    """Classic's speakers (SPEAKER_INKS) in the bar's ends: the near one white on Tidal's fill, the far one the half's
+    _l or _d until the fill reaches it; not the flat look's quiet greys."""
+    theme(fw, CLASSIC_MODERN, LIGHT=light, CLASSIC_LIGHT_ACCENT=str(TIDAL))
+    win = world.window(SLIDER_PAGES[flat_pages.SLIDER_MAX])
+    view = world.add(win, 'view_slider', box=(0, 120, 375, 60))
+    s = world.add(view, SLIDERS[flat_pages.SLIDER_MAX], 'slider', box=(81, 15, 204, 30), min=0, max=100, value=value)
+    ui_load(fw, st, SLIDER_PAGES[flat_pages.SLIDER_MAX].encode(), win)
+    canvas = slider_scrub(fw, s)
+    assert [n for n, _ in canvas.arts] == ['classic_light_spk_quiet_w', 'classic_light_spk_loud' + (far or ('_d', '_l')[int(light)])]

@@ -52,12 +52,19 @@ void flat_bar(void *w, void *canvas, const rect_t *r, int part, unsigned rest, i
     if (marks != BAR_SUNS && marks != BAR_SPEAKERS) return;
     /* ponytail: the near mark is the fill's ink even with no fill; every caller fills at least the
      * round end, a mark quiet in the half there would take images of its own */
-    tk_snprintf(name, sizeof name, FLAT_ART "%s%s", mark[marks].near, dark);
+    int reached = part > r->w - r->h / 2;
+    /* over Classic's own pages the speakers are Classic's (tools/art.py SPEAKER_INKS): white or _l
+     * on the fill, the far one unreached the half's _l or _d, not the quiet greys */
+    int classic = marks == BAR_SPEAKERS && classic_pages();
+    const char *on_ink = classic ? (*dark ? "_l" : "_w") : dark;
+    tk_snprintf(name, sizeof name, "%s%s%s", classic ? "classic_light_" : FLAT_ART,
+                mark[marks].near, on_ink);
     paint_art(w, canvas, name, r->x + mark[marks].nx, r->y + mark[marks].ny);
-    tk_snprintf(name, sizeof name, FLAT_ART "%s%s", mark[marks].far,
-                part > r->w - r->h / 2 ? dark
-                : ipod_light()         ? "_ql"
-                                       : "_qd");
+    tk_snprintf(name, sizeof name, "%s%s%s", classic ? "classic_light_" : FLAT_ART, mark[marks].far,
+                reached        ? on_ink
+                : classic      ? (ipod_light() ? "_l" : "_d")
+                : ipod_light() ? "_ql"
+                               : "_qd");
     paint_art(w, canvas, name, r->x + r->w - mark[marks].fx, r->y + mark[marks].fy);
 }
 /* A page's label on the half's paper: slider_label's box and face, its ink the dark half's
