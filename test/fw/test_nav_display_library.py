@@ -691,6 +691,39 @@ def test_classic_and_classic_modern_switch_live(fw, st):
     assert prompts.seen == [] and writes(fw)[0] == ('THEME', cm['index']) and st('theme').value == cm['index']
 
 
+@pytest.mark.parametrize('frm', ['Classic', 'Classic Modern'])
+def test_classic_and_classic_modern_keep_each_other_s_settings(fw, st, frm):
+    """The two share their settings (one accent key, Classic's options), so a switch either way loads no preset: what the
+    user set stays, for both. Dark, Tidal, Library on Home and Row Art off, here."""
+    cm = next(t for t in THEMES if t['id'] == 'classic-modern')
+    there, to = (CLASSIC, cm) if frm == 'Classic' else (cm['index'], theme_of(CLASSIC))
+    stored = {'THEME': there, 'LIGHT': 0, 'CLASSIC_LIGHT_ACCENT': 2, 'HOMELIB': 0, 'ROWART': 0, 'TIMETITLE': 0}
+    restart = fw.fn('theme_restart', C.c_int, C.c_int)
+    ui = Ui(fw)
+    page = appearance(fw, ui, **{k: b'%d' % v for k, v in stored.items()})
+    for g in range(len(host.tools_theme.geometry_sets(THEMES))):
+        st('geom').value = g
+        if not restart(there):
+            break
+    themes_page(fw, ui, page)
+    pick(ui, page, to)
+    assert writes(fw) == [('THEME', to['index'])] and (st('light').value, st('time_title').value) == (0, 0)
+
+
+def test_minimal_to_classic_modern_saves_classic_s_preset(fw):
+    """Settings Classic Modern doesn't share: Classic's preset, as picking Classic saves it."""
+    cm = next(t for t in THEMES if t['id'] == 'classic-modern')
+    stored = {'LIGHT': 0, 'HOME': 2, 'TIMETITLE': 0} | {k: d for k, (_, d, _) in host.tools_theme.theme_keys(THEMES).items()}
+    ui = Ui(fw)
+    page = appearance(fw, ui, **{k: b'%d' % v for k, v in stored.items()})
+    themes_page(fw, ui, page)
+    Prompts(fw, 10)
+    pick(ui, page, cm)
+    saved = writes(fw)
+    assert saved == [('THEME', cm['index'])] + preset_writes(cm, stored) and saved[1:]
+    assert preset_writes(cm, stored) == preset_writes(theme_of(CLASSIC), stored)
+
+
 def test_a_new_theme_moves_a_cached_settings_list_to_its_top(fw, st, geometry):
     names, rows_ = geometry
     ui = Ui(fw)

@@ -5930,6 +5930,11 @@ static void settings_layout(void *w) {
 static void setting_put(int *value, int v, const char *key) {
     if (*value != v) write_int_config(*value = v, "IPOD", key);
 }
+/* A theme whose settings are another's (its accent key the same: Classic Modern's are Classic's)
+ * keeps them on a switch between the two: no preset. */
+static int themes_share(const char *accent_key, const theme_t *T) {
+    return !tk_strcmp(accent_key, T->accent_key);
+}
 /* live 0 saves the preset alone (restart_confirm: the running state keeps the booted theme). */
 static void theme_preset(const theme_t *T, int live) {
     int buf[11];
@@ -6067,8 +6072,9 @@ static void genre_fill(void *win, void *label, const char *text) {
  * relaid, the Appearance rows (Theme and t's options) redrawn, the per-theme caches dropped and
  * everything repainted. */
 void theme_select(int t) {
+    const char *was = theme()->accent_key;
     setting_put(&st.theme, t, "THEME");
-    theme_preset(theme(), 1);
+    if (!themes_share(was, theme())) theme_preset(theme(), 1);
     coverflow_home_layout();
     settings_layout(window_manager());
     np_theme();
@@ -6094,7 +6100,8 @@ void restart_confirm(int setting, int value) {
     const theme_t *T = theme();
     int was = *option_slot(T, setting);
     setting_put(&was, value, option_key(T, setting));
-    if (setting == SETTING_THEME) theme_preset(&themes[value], 0);
+    if (setting == SETTING_THEME && !themes_share(T->accent_key, &themes[value]))
+        theme_preset(&themes[value], 0);
     ringnav_reboot();
 }
 static int theme_pick(void *ctx, void *event) {
