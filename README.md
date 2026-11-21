@@ -225,6 +225,11 @@ On the App Store's **Games** tab. Each plays in **Library → Games**.
     <td>Play your own Game Boy, Game Boy Color, Game Boy Advance, NES and Super NES games from the card.</td>
     <td></td>
   </tr>
+  <tr valign="top">
+    <td><b><a href="https://github.com/Carbon-66/Q2-ClassiCube">ClassiCube</a></b></td>
+    <td>Build and explore a world of blocks, saved on the card: the wheel turns, a touch stick walks.</td>
+    <td></td>
+  </tr>
 </table>
 
 </details>
