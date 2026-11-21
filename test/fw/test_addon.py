@@ -2963,6 +2963,13 @@ def test_a_field_rows_position_is_the_text_its_box_opens_with(fw):
     box = edit_box(fw)
     p.click(0)
     assert p.pg.edit == box and (box, b'https://music.example/jf') in set_text
+    log = [(n, a) for n, a in fw.calls() if a[0] == box]
+
+    def first(name, ok=lambda a: True):
+        return next(i for i, (n, a) in enumerate(log) if n == name and ok(a))
+    # stock's setter sends EVT_VALUE_CHANGED at once, so searched is bound after it; and its focus selects it all
+    assert first('widget_set_text_utf8') < first('widget_on', lambda a: a[1] == O['EVT_VALUE_CHANGED'])
+    assert first('widget_set_prop_int', lambda a: C.string_at(a[1]) == b'select_none_when_focused' and a[2] == 1) < first('widget_set_focused')
 
 
 def test_a_field_row_with_no_position_opens_an_empty_box(fw):

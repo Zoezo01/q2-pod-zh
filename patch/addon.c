@@ -1843,9 +1843,9 @@ static int clicked(void *ctx, void *event) {
 }
 
 /* The box's text: one that doesn't fit pg.term whole is let go, cleared, and nothing is sent. Done
- * sends this twice (EVT_IM_ACTION, EVT_VALUE_CHANGED), so pg.field stays set here (field_sent and
- * search_box clear it) and the toast waits for no pending go: the second call must not toast again
- * or send the cut text.
+ * sends this twice (EVT_IM_ACTION and, for a changed text, EVT_VALUE_CHANGED), so pg.field stays
+ * set here (field_sent and search_box clear it) and the toast waits for no pending go: the second
+ * call must not toast again or send the cut text.
  *
  * ponytail: stock's widget_get_text_utf8 writes nothing for a text over 255 bytes, which closes
  * silently. */
@@ -1919,8 +1919,10 @@ static int swipe(void *ctx, void *event) {
 
 /* peq_ui.c's T9 edit over the title, its keyboard open: a Search row's press, or its icon's tap
  * (field 0); or field row field - 1's press, its title the box's hint and its position, when set,
- * the text it opens with (caps word fieldtext: a value to edit, such as an address), set before
- * the handlers, as the playlist editor's search sets its last query. */
+ * the text it opens with (caps word fieldtext: a value to edit, such as an address). The text goes
+ * in before the handlers, as stock's setter sends EVT_VALUE_CHANGED at once (0x627044), and stays
+ * unselected, the caret at its end (0x627028): stock's focus selects it all (an idle, 0x6223f0),
+ * so a key would replace it. */
 static void search_box(int field) {
     keep_sel();
     pg.field = field;
@@ -1931,6 +1933,7 @@ static void search_box(int field) {
     widget_on(pg.edit, EVT_VALUE_CHANGED, searched, 0);
     widget_on(pg.edit, EVT_IM_ACTION, searched, 0);
     widget_on(pg.edit, EVT_BLUR, search_left, 0);
+    widget_set_prop_int(pg.edit, "select_none_when_focused", 1);
     widget_set_focused(pg.edit, 1);
 }
 
