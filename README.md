@@ -182,6 +182,11 @@ The [user guide][guide] covers every control, EQ, Cover Flow and more tips.
     <td>Today's weather and a seven-day forecast for where you are or a city you choose, in <b>Library → Apps → Weather</b>.</td>
     <td></td>
   </tr>
+  <tr valign="top">
+    <td><b><a href="https://github.com/DiamondBond/q2-groovebox">Groovebox</a></b></td>
+    <td>Sixteen pads, a step sequencer and punch-in effects, in <b>Library → Apps → Groovebox</b>.</td>
+    <td><a href="https://github.com/DiamondBond/q2-groovebox/raw/main/docs/guide/Groovebox-Mini-Guide.pdf">Guide</a></td>
+  </tr>
 </table>
 
 <details>
@@ -194,11 +199,6 @@ On the App Store's **Games** tab. Each plays in **Library → Games**.
     <td width="200"><b><a href="https://github.com/DiamondBond/q2-fidget">Buddy</a></b></td>
     <td>A Tamagotchi-style buddy to poke.</td>
     <td width="60"><a href="https://github.com/DiamondBond/q2-fidget/raw/main/docs/guide/Buddy-Mini-Guide.pdf">Guide</a></td>
-  </tr>
-  <tr valign="top">
-    <td><b><a href="https://github.com/DiamondBond/q2-groovebox">Groovebox</a></b></td>
-    <td>Sixteen pads, a step sequencer and punch-in effects.</td>
-    <td><a href="https://github.com/DiamondBond/q2-groovebox/raw/main/docs/guide/Groovebox-Mini-Guide.pdf">Guide</a></td>
   </tr>
   <tr valign="top">
     <td><b><a href="https://github.com/lampsonlnguyen/q2-arcade">Arcade Games</a></b></td>
