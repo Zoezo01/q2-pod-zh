@@ -2564,6 +2564,64 @@ def test_a_check_stopped_part_way_is_done_again_at_the_next_open(fw):
     assert s.sh.job == JOB_CHECK
 
 
+# A check that doesn't ask for a release again keeps the one the last check found, so a row that offered UPDATE
+# still does: it used to say INSTALLED, and pressing it offered to remove the app.
+TWO = b'me/q2-foo Foo\nme/q2-bar Bar\n'
+FOUR = TWO + b'me/q2-baz Baz\nme/q2-qux Qux\n'
+
+
+def checked(fw, listed=TWO, first=TWO, **replies):
+    """first's apps installed at 1.0, a whole check that found 2.0 for each, and the page reopened over 10 minutes
+    later, its opening check running: the App Store, and the Net that check meets (replies as store_net's)."""
+    tags = {b'/mnt/mmc/.q2/apps/%s.tag' % line.split()[0][6:]: b'1.0' for line in first.splitlines()}
+    card = Disk(fw, {SOURCES: first, **tags})
+    store_net(fw, listed=first)
+    s = Store(fw, card)
+    assert s.run() == 0 and s.labels() == ['Update'] * len(tags)
+    s.close()
+    s.seconds += 601
+    net = store_net(fw, listed=listed, **replies)
+    s.open()
+    assert s.sh.job == JOB_CHECK
+    return s, net
+
+
+def test_a_check_stopped_by_a_press_keeps_the_updates_found_before(fw):
+    s, net = checked(fw)
+    net.only, net.during = b'https://raw', lambda k: k == CHUNKS - 1 and s.click(1)  # Foo's row, as the list comes in
+    assert s.run() == 0 and net.urls[-1].startswith(b'https://raw')  # a fresh list, then no release asked
+    assert s.sh.cancel == 1 and s.labels() == ['Update', 'Update']
+    s.click(1)
+    assert s.sh.job == JOB_INSTALL and s.sh.app == 0 and s.sh.armed == 0  # an update, not Remove's first press
+
+
+@pytest.mark.parametrize('latest', [(0, 429, None), (7, 0, None)], ids=['429', "can't connect"])
+def test_a_check_github_turns_away_or_cant_be_reached_keeps_the_updates_found_before(fw, latest):
+    s, _ = checked(fw, latest=latest)
+    assert s.run() == 0 and s.labels() == ['Update', 'Update'] and s.sh.checked == 1000 * 5000
+    assert s.toasts == ['2 apps can be updated'] * 2  # the opening check's count, as the first's
+
+
+def test_apps_after_a_check_stops_unanswered_keep_their_update_with_a_fresh_list(fw):
+    """Two apps with no answer end the check there (SH_LOST); the two after them, never asked, keep UPDATE."""
+    s, net = checked(fw, listed=FOUR, first=FOUR, latest=(28, 0, None))
+    assert s.run() == 0 and asked(net) == [b'q2-foo', b'q2-bar'] and s.labels() == ['Update'] * 4
+
+
+@pytest.mark.parametrize('listed', [b'other/q2-foo Foo\nme/q2-bar Bar\n', b'-me/q2-foo Foo\nme/q2-bar Bar\n'],
+                         ids=['moved to another repo', 'dropped'])
+def test_an_app_moved_or_dropped_keeps_no_update_from_before(fw, listed):
+    s, _ = checked(fw, listed=listed, latest=(0, 429, None))
+    assert s.run() == 0 and s.labels() == ['Installed', 'Update']
+
+
+@pytest.mark.parametrize('latest', [(0, 404, None), (0, 302, b'https://github.com/me/q2-foo/releases')],
+                         ids=['repo gone', 'no release'])
+def test_a_release_gone_since_takes_its_update_away(fw, latest):
+    s, _ = checked(fw, latest=latest)
+    assert s.run() == 0 and s.labels() == ['Installed', 'Installed']
+
+
 # An install goes by the list as it is now, fetched as the install starts. The page's rows may be the card's
 # list of days ago, and a repo dropped since then must not install (GHSA-8wpr-pmqx-538x): on that list its
 # release was fetched and unpacked onto the card in each of the three ways below.
