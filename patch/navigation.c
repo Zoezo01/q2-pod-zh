@@ -2336,7 +2336,7 @@ static void hold_paint(void *w, void *canvas, int over) {
 #define TOAST_LINE 24
 #define TOAST_PX 22
 static void toast_paint(void *w, void *canvas) {
-    if (!w || P(w, W_PARENT) != window_manager() || !dialogs_painted()) return;
+    if (!w || P(w, W_PARENT) != window_manager() || !classic_dialogs()) return;
     const char *name = widget_get_prop_str(w, "name", "");
     int qr = !tk_strcmp(name, "showsn_dialog");
     if (!qr && tk_strcmp(name, "msginfo_dialog") && tk_strcmp(name, "checkfw_dialog")) return;
@@ -4841,7 +4841,7 @@ void *ringnav_ui_load(const char *name, void *parent) {
     void *root = stock_ui_load_trampoline(ui_redirect(name, path), parent);
     /* the two small dialogs stock leaves dimming what's under them; its others clear it themselves
      */
-    if (root && dialogs_painted() &&
+    if (root && classic_dialogs() &&
         (!tk_strcmp(widget_get_prop_str(root, "name", ""), "showsn_dialog") ||
          !tk_strcmp(widget_get_prop_str(root, "name", ""), "checkfw_dialog")))
         widget_set_prop_str(root, "highlight", "");

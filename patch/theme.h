@@ -12,11 +12,11 @@ enum {
     PAINT_PAGES,
     PAINTER_N
 }; /* theme_t.painter[] */
-enum { VOL_STOCK, VOL_CLASSIC_LIGHT }; /* painter[PAINT_VOLUME]: the volume */
+enum { VOL_STOCK, VOL_CLASSIC_LIGHT, VOL_FLAT }; /* painter[PAINT_VOLUME]: the volume */
 /* painter[PAINT_CONFIRM]: the confirm control, hold menu, toast and small dialogs */
-enum { CONFIRM_STOCK, CONFIRM_CLASSIC_LIGHT };
-/* painter[PAINT_PAGES]: the theme's own pages (classic_pages) */
-enum { PAGES_STOCK, PAGES_CLASSIC_LIGHT };
+enum { CONFIRM_STOCK, CONFIRM_CLASSIC_LIGHT, CONFIRM_FLAT };
+/* painter[PAINT_PAGES]: the theme's own pages (classic_pages, flat_pages; either, own_pages) */
+enum { PAGES_STOCK, PAGES_CLASSIC_LIGHT, PAGES_FLAT };
 /* painter[PAINT_SCRUB]: SCRUB_ROWS, a gloss bar's rows (np_rows) for the volume panel and a card
  * app's progress */
 enum { SCRUB_STOCK, SCRUB_ROWS };
@@ -222,6 +222,10 @@ const theme_t *theme(void); /* accent(); return &themes[st.theme]; */
 static inline int classic_pages(void) {
     return theme()->painter[PAINT_PAGES] == PAGES_CLASSIC_LIGHT;
 }
+/* The flat look's own pages: the screens Classic draws as its own, in flat painters */
+static inline int flat_pages(void) { return theme()->painter[PAINT_PAGES] == PAGES_FLAT; }
+/* A theme's own pages in either look: where the page's layout and touch are shared */
+static inline int own_pages(void) { return theme()->painter[PAINT_PAGES] != PAGES_STOCK; }
 int theme_geom(const theme_t *T); /* navigation.c: the set T boots with its stored values */
 const scheme_t *scheme(void);     /* theme()'s scheme accent(), in the half Light Mode picks */
 extern const unsigned char theme_rows[]; /* the Theme picker's order, by stored THEME */

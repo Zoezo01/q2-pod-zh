@@ -418,6 +418,10 @@ int reconcile(menu_t *m, int settle);
 void *more_image(void *w);
 #define BAR_ROWS geom_val(V_BAR)
 static inline int dialogs_painted(void) { return theme()->painter[PAINT_CONFIRM] != CONFIRM_STOCK; }
+/* Classic's dialogs alone: the toast, the small dialogs' cleared dim, a game's panel */
+static inline int classic_dialogs(void) {
+    return theme()->painter[PAINT_CONFIRM] == CONFIRM_CLASSIC_LIGHT;
+}
 char *play_key(void);
 unsigned rec_hash(void *r);
 unsigned queue_hash(void *q);
