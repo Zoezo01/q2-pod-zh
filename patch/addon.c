@@ -95,7 +95,7 @@
 /* This firmware's card-app features, space-separated; a feature adds its word. */
 #define ADDON_CAPS                                                                                 \
     "playlist progress pages library goto sleep game audio sections art window urls sort field "   \
-    "more fav now fieldtext wake audio2 dim"
+    "more fav now fieldtext wake audio2 dim gameview"
 #define ADDON_SECTIONS 8  /* sections an app's first page may have */
 #define SWIPE_CLAIM_PX 24 /* a sideways move this far, twice as far as up or down, is a swipe's */
 #define SWIPE_PX 60       /* and this far at the lift, more than up or down, changes section */
@@ -860,10 +860,13 @@ static void poll_one(app_t *a) {
  *
  * audio=2: the game starts as one without the sound, the music left playing, and asks for it in
  * /tmp/q2-<id>.audio (game_sound), caps word audio2. Any game's /tmp/q2-<id>.dim turns the panel
- * down (game_files), caps word dim. */
+ * down (game_files), caps word dim. Games with gameview=1 keep their buttons in front and can
+ * let stock's Now Playing take over temporarily. */
 #define GAME_IDLE_MS 120000
 #define GAME_HOLD_MS 700 /* navigation.c's KEY_HOLD_MS, Return's hold elsewhere */
+#define GAME_CHORD_MS 1200
 #define GAME_KILL_MS 3000
+enum { GAME_RETURN = 1, GAME_CENTER = 2, GAME_CHORD = GAME_RETURN | GAME_CENTER };
 static struct {
     int pid, sock, eat;  /* eat: the held Return's release, after the game it ended */
     int audio;           /* the running game's audio=1: the keys and the DAC are its */
@@ -875,12 +878,17 @@ static struct {
     int dim;             /* .dim acted on */
     unsigned polled;     /* when game_files last looked */
     char id[APP_ID];
+    int view, quit_off, down, native;
+    unsigned opened;
+    void *origin; /* the window Now Playing returns to */
 } gm __attribute__((section(".scratch")));
 
 int addon_games(void) { return addon_scan(), ap.games; }
 int addon_games_last(void) { return ap.games; }
 const char *addon_game_name(int k) { return k >= 0 && k < ap.games ? ap.a[ap.game[k]].name : 0; }
 int addon_game_on(void) { return gm.pid; }
+int addon_game_front(void) { return gm.pid && !gm.native; }
+int addon_game_keys(void) { return (gm.view && addon_game_front()) || (gm.eat & GAME_CENTER); }
 int addon_game_audio(void) { return gm.pid && gm.audio; }
 
 static void game_kill(const char *how) {
@@ -912,6 +920,55 @@ static void game_unlink(const char *ext) {
     char f[32];
     game_file(f, ext);
     unlink(f);
+}
+
+static int game_now_playing(void *win) {
+    return win && !tk_strcmp(widget_get_prop_str(win, "name", ""), "playing_page");
+}
+
+static void game_view_back(int pop) {
+    void *wm = window_manager();
+    if (pop && game_now_playing(window_manager_get_top_window(wm))) navigator_back();
+    gm.native = gm.down = 0;
+    gm.held = 0;
+    gm.origin = (void *)0;
+    gm.seen = time_now_ms();
+    __sync_lock_test_and_set(&wheel_travel, 0);
+    wheel_raw = 1;
+    game_unlink("view");
+    widget_invalidate_force(wm, 0);
+}
+
+/* The foreground game has paused its draw and given back the sound before writing "now".
+ * An "open" reply transfers display and input to stock until Return or the page's own Back. */
+static void game_view(unsigned now) {
+    char path[32], tmp[36], req[12];
+    game_file(path, "view");
+    if (gm.native) {
+        void *wm = window_manager();
+        if (access(path, 0))
+            game_view_back(1); /* the game cancelled its request */
+        else if (now - gm.opened >= ADDON_POLL_MS && !window_manager_is_animating(wm) &&
+                 window_manager_get_top_window(wm) == gm.origin)
+            game_view_back(0); /* Back or the page did not open */
+        return;
+    }
+    unsigned n = state_read(path, req, sizeof req);
+    if (n != 3 || strcmp(req + 1, "now") || gm.audio) return;
+    tk_snprintf(tmp, sizeof tmp, "%s.tmp", path);
+    char open[] = "open";
+    if (!blob_io(path, tmp, open, sizeof open - 1, 1)) return;
+    void *wm = window_manager();
+    gm.origin = window_manager_get_top_window(wm);
+    gm.native = 1;
+    gm.opened = now;
+    gm.down = 0;
+    gm.held = 0;
+    wheel_raw = 0;
+    __sync_lock_test_and_set(&wheel_travel, 0);
+    static const int context[4] = { 0, 0, 0xff, 2 };
+    navigator_switch_to_with_context("playing_page", context, 0);
+    widget_invalidate_force(wm, 0);
 }
 
 /* An audio=2 game's sound given back: what played before its take plays on from where it was (or
@@ -989,7 +1046,14 @@ static void game_files(unsigned now) {
         gm.dim = want;
         toolSetBackLight(want ? 1 : g_lightness + 1);
     }
-    if (gm.swap && due) game_sound();
+    if (gm.swap && due && !gm.native) game_sound();
+    if (gm.view && due) {
+        game_file(f, "quit");
+        int off = !access(f, 0);
+        if (off != gm.quit_off) gm.held = 0;
+        gm.quit_off = off;
+        game_view(now);
+    }
 }
 
 /* Game a started over the screen: 1 when it runs. */
@@ -1001,6 +1065,14 @@ static int game_start(app_t *a) {
     char vol[5], pop[POPUP_ENV];
     const char *dev = 0;
     popup_env(pop, sizeof pop); /* the theme's pop-up, for its own menus */
+    char manifest[512], manifest_path[48];
+    tk_snprintf(manifest_path, sizeof manifest_path, CARD "/.%s/q2app", a->id);
+    int view =
+        state_read(manifest_path, manifest, sizeof manifest) && number(manifest, "gameview") == 1;
+    tk_snprintf(gm.id, sizeof gm.id, "%s", a->id);
+    game_unlink("dim"); /* an earlier run's */
+    if (a->audio == 2) game_unlink("audio");
+    if (view) game_unlink("view"), game_unlink("quit");
     /* the sound is its: hciplayer off the PCM, the jack readied, as video_play */
     if (a->audio == 1) {
         headset_manual();
@@ -1029,10 +1101,9 @@ static int game_start(app_t *a) {
     gm.audio = a->audio == 1;
     gm.swap = a->audio == 2;
     gm.back = gm.dim = 0;
+    gm.view = view;
+    gm.native = gm.quit_off = gm.down = 0;
     gm.polled = time_now_ms();
-    tk_snprintf(gm.id, sizeof gm.id, "%s", a->id);
-    game_unlink("dim"); /* an earlier run's */
-    if (gm.swap) game_unlink("audio");
     gm.sock = socket(1, 1, 0); /* AF_UNIX, SOCK_DGRAM (MIPS numbering) */
     gm.seen = time_now_ms();
     gm.held = gm.term = gm.eat = 0;
@@ -1056,15 +1127,34 @@ int addon_game_open(const char *id) {
 /* ringnav_input, every event: 1 when it is the game's (sent as its datagram) or the release of the
  * Return held to end it; 0 for stock's, a music key among them */
 int addon_game_input(void *e) {
-    if (!e) return gm.pid != 0;
+    if (!e) return addon_game_front();
     unsigned type = (unsigned)I(e, EVENT_TYPE), key = (unsigned)I(e, EVENT_KEY);
     int keyish = type == EVT_KEY_DOWN || type == EVT_KEY_UP || type == EVT_KEY_LONG;
-    if (keyish && key == KEY_RETURN && gm.eat) /* the held Return's repeats and release */
-        return gm.eat = type != EVT_KEY_UP, 1;
+    int button = key == KEY_RETURN ? GAME_RETURN : key == KEY_CENTER ? GAME_CENTER : 0;
+    if (keyish && (gm.eat & button)) { /* repeats and releases of the quit shortcut */
+        if (type == EVT_KEY_UP) gm.eat &= ~button;
+        return 1;
+    }
     if (!gm.pid) return 0;
-    if (!gm.audio && keyish && (key == KEY_PLAY || key == KEY_BACK_BTN || key == KEY_FWD_BTN))
+    if (gm.native) {
+        if (keyish && key == KEY_RETURN &&
+            game_now_playing(window_manager_get_top_window(window_manager()))) {
+            if (type == EVT_KEY_UP) game_view_back(1);
+            return 1;
+        }
         return 0;
-    if (keyish && key == KEY_RETURN)
+    }
+    if (!gm.view && !gm.audio && keyish &&
+        (key == KEY_PLAY || key == KEY_BACK_BTN || key == KEY_FWD_BTN))
+        return 0;
+    if (gm.view && keyish && button) {
+        if (type == EVT_KEY_DOWN) gm.down |= button;
+        if (type == EVT_KEY_UP) gm.down &= ~button;
+        if (gm.quit_off || gm.down != GAME_CHORD)
+            gm.held = 0;
+        else if (!gm.held && type == EVT_KEY_DOWN)
+            gm.held = (unsigned)time_now_ms() | 1;
+    } else if (keyish && key == KEY_RETURN)
         gm.held = type == EVT_KEY_UP ? 0
                   : type == EVT_KEY_DOWN && !gm.held
                       ? (unsigned)time_now_ms() | 1 /* not a repeat's */
@@ -1098,6 +1188,8 @@ static void game_poll(void) {
         if (gm.swap && gm.audio) sound_back(); /* a crash too */
         if (gm.audio && mclGetPlayStatus() == 3) player_stop();
         gm.pid = gm.audio = 0;
+        if (gm.native) game_view_back(1);
+        if (gm.view) game_unlink("view"), game_unlink("quit");
         if (gm.dim && g_backlight_status) toolSetBackLight(g_lightness + 1);
         if (gm.dim) game_unlink("dim");
         wheel_raw = 0;
@@ -1108,10 +1200,14 @@ static void game_poll(void) {
     unsigned now = (unsigned)time_now_ms();
     if (gm.dim || now - gm.polled >= ADDON_POLL_MS) game_files(now);
     /* signed: a stamp can be just after now (| 1 rounds up, game_end reads the clock again) */
-    if (gm.held && (int)(now - gm.held) >= GAME_HOLD_MS) gm.held = 0, gm.eat = 1, game_end();
+    if (gm.held && (int)(now - gm.held) >= (gm.view ? GAME_CHORD_MS : GAME_HOLD_MS)) {
+        gm.held = 0;
+        gm.eat = gm.view ? GAME_CHORD : GAME_RETURN;
+        game_end();
+    }
     if (gm.term && (int)(now - gm.term) >= GAME_KILL_MS) gm.term = now | 1, game_kill("-9 ");
     int travel = __sync_lock_test_and_set(&wheel_travel, 0);
-    if (travel) {
+    if (travel && !gm.native) {
         char m[16];
         tk_snprintf(m, sizeof m, "w %d", travel);
         dgram_send(&gm.sock, gm.path, m, strlen(m));
@@ -1122,7 +1218,7 @@ static void game_poll(void) {
         if (I(g_dacoff_time, 0) > 0) I(g_dacoff_time, 0) = 0;
         return;
     }
-    if (time_now_ms() - gm.seen < GAME_IDLE_MS) return;
+    if (gm.native || time_now_ms() - gm.seen < GAME_IDLE_MS) return;
     if (!ringnav_smart_awake()) game_end();
     gm.seen = time_now_ms(); /* Smart Awake: asked again GAME_IDLE_MS on */
 }

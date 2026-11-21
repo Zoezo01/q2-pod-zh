@@ -472,7 +472,7 @@ def test_more_apps_than_slots(fw):
 def test_the_features_are_published_at_every_scan(fw):
     world = card(fw)
     scan(fw)
-    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections art window urls sort field more fav now fieldtext wake audio2 dim\n'
+    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections art window urls sort field more fav now fieldtext wake audio2 dim gameview\n'
     assert world.of('rename') == [(b'/tmp/q2-addon.caps.tmp', b'/tmp/q2-addon.caps')]
 
 
@@ -1606,6 +1606,99 @@ class CardGame:
 
 SWITCH = b'name=Switch\ngame=1\naudio=2\n'
 SOUND = b'/tmp/q2-switch.audio'
+VIEW = b'/tmp/q2-switch.view'
+QUIT = b'/tmp/q2-switch.quit'
+
+
+def game_with_view(fw):
+    g = CardGame(fw, switch=SWITCH + b'gameview=1\n')
+    current = [1]
+    names = (C.create_string_buffer(b'games_page'), C.create_string_buffer(b'playing_page'))
+    fw.mock('window_manager_get_top_window', lambda *_: current[0])
+    fw.mock('widget_get_prop_str', lambda w, *_: C.addressof(names[w - 1]))
+    fw.mock('navigator_switch_to_with_context', lambda *_: current.__setitem__(0, 2) or 0)
+    fw.mock('navigator_back', lambda *_: current.__setitem__(0, 1) or 0)
+    return g, current
+
+
+@pytest.mark.parametrize('how', ['return', 'touch', 'cancel', 'crash'])
+def test_game_can_give_now_playing_the_screen_and_keys(fw, how):
+    g, current = game_with_view(fw)
+    g.world.files[VIEW] = b'open'
+    g.world.files[QUIT] = b'off'
+    assert g.start() == 1 and VIEW not in g.world.files and QUIT not in g.world.files
+    playback = [171, 222, 223]
+    for key in playback:
+        assert g.key(KEY_DOWN, key) == 1 and g.key(KEY_UP, key) == 1
+    assert [m for _, m in g.sent] == [f'k {edge} {key}'.encode() for key in playback for edge in ('d', 'u')]
+    game_front = fw.fn('addon_game_front', C.c_int)
+    assert game_front() == 1
+    g.world.files[VIEW] = b'now'
+    g.poll(500)
+    assert g.world.files[VIEW] == b'open' and current[0] == 2
+    assert g.on() == g.PID and game_front() == 0
+    assert fw.var('wheel_raw', C.c_int).value == 0
+    for key in playback:
+        assert g.key(KEY_DOWN, key) == 0 and g.key(KEY_UP, key) == 0
+    assert len(g.sent) == 6
+    if how == 'return':
+        assert g.key(KEY_DOWN, RETURN) == 1 and g.key(KEY_UP, RETURN) == 1
+    elif how == 'touch':
+        current[0] = 1
+        g.poll(500)
+    elif how == 'cancel':
+        del g.world.files[VIEW]
+        g.poll(500)
+    else:
+        g.exited = True
+        g.poll()
+    assert current[0] == 1 and VIEW not in g.world.files
+    assert game_front() == (how != 'crash') and fw.var('wheel_raw', C.c_int).value == (how != 'crash')
+
+
+def test_game_view_waits_for_the_game_to_give_back_the_audio(fw):
+    g, current = game_with_view(fw)
+    assert g.start() == 1
+    g.world.files[SOUND] = b'game'
+    g.world.files[VIEW] = b'now'
+    g.poll(500)
+    assert current[0] == 1 and g.world.files[VIEW] == b'now'
+    g.world.files[SOUND] = b'music'
+    g.poll(500)
+    assert current[0] == 2 and g.world.files[VIEW] == b'open' and SOUND not in g.world.files
+
+
+@pytest.mark.parametrize('off', [False, True])
+def test_game_force_close_uses_both_buttons_and_can_be_disabled(fw, off):
+    g, _ = game_with_view(fw)
+    assert g.start() == 1
+    if off:
+        g.world.files[QUIT] = b'off'
+        g.poll(500)
+
+    def key(kind, code):
+        event = block(fw, size=0x40)
+        C.c_int.from_address(event).value = kind
+        C.c_int.from_address(event + 0x18).value = code
+        fw.fn('ringnav_input', C.c_int, C.c_void_p, C.c_void_p)(0, event)
+
+    fw.var('g_backlight_status', C.c_ubyte).value = 1
+    g.world.ms += 1
+    key(KEY_DOWN, RETURN)
+    g.poll(1800)
+    assert not g.kills() and g.sent[-1][1] == b'k d 170'
+    key(KEY_UP, RETURN)
+    key(KEY_DOWN, RETURN)
+    key(KEY_DOWN, CENTRE)
+    assert g.sent[-1][1] == b'k d 218'  # the stock Centre chord filter wasn't run
+    g.poll(1199)
+    assert not g.kills()
+    g.poll(1)
+    assert g.kills() == ([] if off else [b'kill 4242'])
+    if not off:
+        g.exited = True
+        g.poll()
+        assert g.key(KEY_UP, RETURN) == g.key(KEY_UP, CENTRE) == 1
 
 
 def switched(fw, playing=2):
