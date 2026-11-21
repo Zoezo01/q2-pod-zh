@@ -177,3 +177,38 @@ for light in '01':
         assert [(t['text'], t['rect'], t['font']) for t in letters] == [('Off', (128, 32, 60, 36), ('bold', 19)), ('On', (188, 32, 60, 36), ('bold', 19))]
         assert [t['color'] for t in letters] == ([ink, 0xffffffff] if on else [0xffffffff, ink])
         assert wbox(q, named(q, q.win, 'switch_hit')) == (125, 28, 125, 44) and wbox(q, q.slider) == (33, 115, 309, 70); passed()
+
+
+def time_flat(flag=1, vals=(4, 10, 4, 16, 42), light='0'):
+    """test/patch.py's time_form under Modern: stock's Set Time page as it loads, through stock's init."""
+    m = LoadPlain(); m.config.update(THEME='2', LIGHT=light, ACCENT='4'); m.u.mem_write(syms['g_time24h_flag'], bytes([flag]))
+    names = ('tselector_year', 'tselector_month', 'tselector_day', 'tselector_hour', 'tselector_min')
+    sels = [m.node('text_selector', n, options=o) for n, o in zip(names, (31, 12, 31, 24, 60))]
+    for s, v in zip(sels, vals): m.word(s + O['SELECTOR_INDEX'], v); m.byte(s + 0x34, 255)
+    backs = [m.node('view', 'view_back') for _ in '12']; dot = m.node('image', 'img_dot')
+    pd = m.node('view', 'view', [backs[0], *sels[:3]]); pt = m.node('view', 'view', [backs[1], *sels[3:], dot])
+    slide = m.node('slide_view', 'slide_view', [m.node('view', 'view_date', [pd]), m.node('view', 'view_time', [pt])], value=0)
+    ind, ok = m.node('slide_indicator', 'slide_indicator'), m.node('button', 'btn_enter', text='OK'); m.byte(ok + 0x34, 255)
+    nav = m.node('view', 'view_navbar', [m.node('label', 'title', text='Manual')], visible=0)
+    body = m.node('view', 'slide_view_view', [slide, ind, ok]); win = m.node('window', 'manualtime_page', [nav, body])
+    parents(m, win); m.word(win + O['W_PARENT'], m.wm); place(m, win, 0, 26, 375, 294); place(m, body, 0, 0, 375, 240)
+    place(m, slide, 0, 0, 375, 240); place(m, ok, 44, 181, 287, 40)
+    for s, g in zip(sels, ((44, 0, 80, 170), (182, 0, 55, 170), (274, 0, 55, 170), (61, 0, 100, 170), (224, 0, 100, 170))): place(m, s, *g)
+    m.top = win; m.nodes[m.wm] = {'children': [win]}; ui_loaded(m, 'systemset/manualtime_page', win)
+    m.handlers[int(manifest['patch_symbols']['stock_manualtime_trampoline'], 16)] = 'stock_manualtime'
+    assert m.call(address=HOOKS['systemset_manualtime_page_init'][0], args=(win, 0, 0, 0), gap=0) == 0
+    m.win, m.sels, m.slide, m.ok = win, sels, slide, ok
+    return m
+
+
+# Set Date and Set Time under Modern (clock.c time_paint_flat): the paper, Classic's cells, the field being set in what is
+# on, the rest grey; Save a pill on the prompts' row, its touch the pill; the clock's face flat_, no Classic art.
+for light in '01':
+    m = time_flat(light=light); bare(m); bg(m, m.win)
+    assert m.bands[0][:5] == (0, 0, 375, 294, color_t(paper_of(light))) and wbox(m, m.ok) == (127, 224, 121, 36) and m.nodes[m.ok]['text'] == 'Save'
+    assert not [n for n, _ in qs_arts(m) if n.startswith('classic_light_')]
+    texts = {t['text']: t for t in m.letters}; assert {'Nov', '05', 'Save'} <= set(texts) and not qs_arts(m)
+    m.nodes[m.slide]['value'] = 1; bare(m); bg(m, m.win); texts = {t['text']: t for t in m.letters}
+    assert {'16', '42', ':', 'Save'} <= set(texts) and [n for n, _ in qs_arts(m)] == ['flat_clock_face_' + 'dl'[int(light)]]
+    assert m.lcd_colors() == LCD_COLORS; passed()
+

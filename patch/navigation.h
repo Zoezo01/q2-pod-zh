@@ -328,6 +328,8 @@ enum { SLIDER_LIGHT, SLIDER_MAX, SLIDER_BALANCE, SLIDER_BOOT }; /* st.slider_kin
 #define ROUND_LEFT 1
 #define STYLE_KEY 48
 #define CONFIRM_CELL_PX 23
+#define CONFIRM_FLAT_PX 21 /* the flat look's: a cell's words and its height */
+#define CONFIRM_FLAT_H 36
 #define FLAT_ART "flat_" /* the flat look's images' prefix (tools/art.py FLAT_ART) */
 #define FLAT_FACE "bold" /* the flat look's headings and words: Modern's bold */
 #define MCL(a) (*(volatile int *)(a))

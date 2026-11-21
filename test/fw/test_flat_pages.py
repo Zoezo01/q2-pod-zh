@@ -1,6 +1,8 @@
 """The flat look's own pages (pages.own painter flat, Modern's): Quick Settings' page, buttons and brightness bar,
 patch/flat.c's colours and bar, and its images through the image hook. Classic's are test_nav_paint's."""
+import calendar
 import ctypes as C
+import struct
 
 import pytest
 
@@ -11,6 +13,8 @@ from test_nav_paint import (ACCENTS, GRAPHITE, ICONS, LABELS, MINIMAL, MODERN, P
                             whole, on_page, slider_scrub, slider_paint, ui_load,
                             st, stock_h, theme, vol_paint, volume, world)  # noqa: F401 (fixtures, by name)
 from test_nav_painters import Quick as QuickInit
+import test_nav_loop as loop
+from test_nav_loop import SELECTOR_INDEX, keys, stock_bytes  # noqa: F401 (fixtures, by name)
 from test_nav_display_library import POINTER_MOVE, SLIDE_PX, QuickPage, Stock, Ui, pressdown
 MODERN_ACCENTS = [0, 1, 2, 3, 4, 5, 6, 8]  # Modern's colorSchemes, by ACCENT
 
@@ -503,3 +507,55 @@ def test_modern_s_usb_page_says_connected_eject_and_then_ok_to_disconnect(fw, wo
     assert poll(world) == 8
     files.files[USB_LUN] = b''
     assert poll(world) == 7 and (text('msg_heading'), text('msg_line')) == ('OK to Disconnect', '')
+
+
+# Set Date and Set Time (time_open, time_paint) in the flat look, on test_nav_loop's selectors.
+
+class TimeCanvas(loop.Canvas):
+    """test_nav_loop's canvas, its rounded boxes kept: (x, y, w, h, colour)."""
+    def __init__(self, fw):
+        super().__init__(fw)
+        self.fills = []
+        fw.mock('canvas_fill_rounded_rect', self.box)
+
+    def box(self, c, r, bg, color, radius, *_):
+        self.drawn.append('canvas_fill_rounded_rect')
+        self.fills.append((*struct.unpack_from('<4i', C.string_at(r, 16)), C.c_uint.from_address(color).value))
+        return 0
+
+    def over(self, w):
+        """The colour of the last rounded box over the middle of w's box."""
+        x, y, ww, h = w.box()
+        return [c for fx, fy, fw_, fh, c in self.fills if fx <= x + ww // 2 < fx + fw_ and fy <= y + h // 2 < fy + fh][-1]
+
+
+@pytest.mark.parametrize('edited', range(len(loop.DATE)))
+def test_modern_paints_the_date_page_flat(fw, keys, edited):
+    loop.Config(fw, THEME=b'2')
+    top, _ = loop.open_time(fw, loop.Ui(fw), at=(4, 2, 4, 21, 5))
+    top.ints[b'_edit_field'] = edited
+    canvas = TimeCanvas(fw)
+    loop.time_paint(fw, top, canvas)
+    cells = [top.find(n) for n in loop.DATE]
+    assert [[int(t) for t in loop.in_box(canvas, w)] for w in cells] == [[w.int(SELECTOR_INDEX) + first] for w, first in zip(cells, loop.DATE.values())]
+    assert calendar.month_abbr[loop.held(top)[0]] in [t for t, _ in canvas.texts]  # the tile's month
+    faces = [canvas.over(w) for w in cells]
+    assert len(set(faces)) == 2 and faces.count(faces[edited]) == 1  # the edited field's cell alone holds
+    assert canvas.art == [] and canvas.fill() == 0xff123456  # the tile and the cells are boxes, not images
+
+
+@pytest.mark.parametrize('twelve, hour, shown', [(True, 21, ['9', '05', 'PM']), (False, 21, ['21', '05'])])
+def test_modern_paints_the_time_page_flat(fw, keys, twelve, hour, shown):
+    loop.Config(fw, THEME=b'2')
+    top, _ = loop.open_time(fw, loop.Ui(fw), twelve=twelve, at=(4, 2, 4, hour, 5))
+    top.find(b'slide_view').ints[b'value'] = 1
+    top.ints[b'_edit_field'] = 3
+    canvas = TimeCanvas(fw)
+    loop.time_paint(fw, top, canvas)
+    boxes = [top.find(b'tselector_hour'), top.find(b'tselector_min')] + [w for w in top.find(b'time').children if w.kind == b'image']
+    assert [t for w in boxes for t in loop.in_box(canvas, w)] == shown
+    ok = top.find(b'btn_enter')
+    assert ok.box() == (127, 224, 121, 36) and loop.in_box(canvas, ok) == [ok.utf8.decode()]  # Save's pill, its touch
+    faces = [canvas.over(w) for w in boxes]
+    assert ':' in [t for t, _ in canvas.texts] and len(set(faces)) == 2 and faces.count(faces[0]) == 1  # the hour holds
+    assert canvas.art == ['flat_clock_face_d'] and canvas.over(ok) == faces[1]  # the dark half's face; Save at rest
