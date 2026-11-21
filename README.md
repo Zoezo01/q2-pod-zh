@@ -153,6 +153,11 @@ The [user guide][guide] covers every control, EQ, Cover Flow and more tips.
     <td></td>
   </tr>
   <tr valign="top">
+    <td><b><a href="https://github.com/A4Link/q2-jellyfin">Jellyfin</a></b></td>
+    <td>Stream music from your Jellyfin server, or sync it to the card. Sign in with Quick Connect.</td>
+    <td></td>
+  </tr>
+  <tr valign="top">
     <td><b><a href="https://github.com/m-d-e-v/q2-podcasts">Podcasts</a></b></td>
     <td>Subscribe to shows and download episodes, with a sleep timer.</td>
     <td></td>
