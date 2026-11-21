@@ -1,6 +1,7 @@
 /* iPod Now Playing's fourth page (docs/ipod.md#visualizer): the music as heard, read from
- * hciplayer's tap (peq.h), in one of five styles after Rockbox's FFT, Oscilloscope and VU Meter
- * plugins, Apple's radial spectrum and pulsr's ridge; a tap moves to the next style. */
+ * hciplayer's tap (peq.h), in one of six styles after Rockbox's FFT, Oscilloscope and VU Meter
+ * plugins, Apple's radial spectrum, pulsr's ridge and a contour map; a tap moves to the next
+ * style. */
 #include "peq.h"
 #include "offsets.inc"
 
@@ -13,6 +14,9 @@
 #define VIS_H 186            /* tools/ipod.py NP_SLIDE_H, the page's height, from the lyrics' top */
 #define VIS_ART 88           /* the Halo's centre */
 #define VIS_ROWS 20          /* the Pulsar's lines, a tick each */
+#define CONTOUR_LINES 18     /* the contour's ridgelines */
+#define CONTOUR_STEP 10      /* px between a ridgeline's points */
+#define CONTOUR_N ((VIS_W - 1) / CONTOUR_STEP + 2) /* its points: every step and the right edge */
 /* clang-format on */
 #define TAU 6.2831853f
 /* The Pulsar's lines rise from RIDGE_FLOOR (30 dB under a full-scale sine, VIS_FLOOR_DB) to full
@@ -21,7 +25,7 @@
 #define RIDGE_FLOOR 0.5f
 #define RIDGE_TOP 0.9f
 #define RIDGE_TILT (2 * 0.135f / VIS_FLOOR_DB) /* 2 dB an octave, 0.135 a band */
-enum { SPECTRUM, SCOPE, METERS, HALO, PULSAR, STYLES };
+enum { SPECTRUM, SCOPE, METERS, HALO, PULSAR, CONTOUR, STYLES };
 
 static struct {
     float re[VIS_N], im[VIS_N], pcm[VIS_N][2], hann[VIS_N]; /* hann[VIS_N / 2] is 0 until filled */
@@ -43,6 +47,14 @@ static struct {
                 * track's name shows, and its change repaints */
 #endif
 } vz __attribute__((section(".scratch")));
+
+/* The contour's kick: the bass's last three levels, and the lift its rises give, which falls away
+ * in a quarter second; then its frame: each point's y and its height's shade, 0 to 5. */
+static struct {
+    float last[3], kick;
+    float ridge[CONTOUR_LINES][CONTOUR_N];
+    unsigned char shade[CONTOUR_LINES][CONTOUR_N];
+} cz __attribute__((section(".scratch")));
 
 /* In-place radix-2 FFT of n complex values, n a power of two. */
 static void fft(float *re, float *im, int n) {
@@ -128,12 +140,14 @@ void vis_reset(void) {
     memset(vz.lit, 0, sizeof vz.lit);
     memset(vz.ridge, 0, sizeof vz.ridge);
     vz.bass = 0;
+    memset(cz.last, 0, sizeof cz.last);
+    cz.kick = 0;
 }
 
 /* Only the visible style consumes analysis work; scope and meters do not need an FFT. */
 void vis_analyze(int style, unsigned rate, float dt, unsigned now) {
     float target[VIS_HALO] = { 0 };
-    if (style == SPECTRUM || style == HALO || style == PULSAR) {
+    if (style == SPECTRUM || style == HALO || style == PULSAR || style == CONTOUR) {
         if (rate) vis_bands(vz.pcm, rate, target);
         for (int b = 0; b < VIS_HALO; ++b) {
             float fall = vz.level[b] - VIS_DECAY * dt;
@@ -174,7 +188,7 @@ void vis_analyze(int style, unsigned rate, float dt, unsigned now) {
             vz.vu[ch] += ((to > 1 ? 1 : to) - vz.vu[ch]) * dt / (dt + 0.065f);
             if (peak >= (float)pow(10, VIS_LED_DB / 20.0)) vz.lit[ch] = now + VIS_HOLD_MS;
         }
-    if (style == HALO) {
+    if (style == HALO || style == CONTOUR) {
         float bass = (vz.level[0] + vz.level[2] + vz.level[4] + vz.level[6]) / 4;
         vz.bass += (bass - vz.bass) * 0.5f;
     }
@@ -189,6 +203,27 @@ void vis_analyze(int style, unsigned rate, float dt, unsigned now) {
             v = v < 0 ? 0 : v > 1 ? 1 : v;
             line[b] = v * v * (edge < 1 ? 0.5f - 0.5f * cosf(TAU / 2 * edge) : 1);
         }
+    }
+    if (style == CONTOUR) {
+        /* A kick is the bass's rise, unsmoothed, 40 to 120 Hz, over the lowest of its last three
+         * frames, so an attack two or three frames share counts whole: 8.5 dB is a full lift
+         * (levels span VIS_FLOOR_DB). Under -15 dB it fades out, so quiet music kicks less, and a
+         * held bassline lifts nothing. It lifts at once and falls away in about a quarter second.
+         */
+        float raw = 0;
+        for (int b = 0; b < 12; ++b) raw += target[b] / 12;
+        float floor = cz.last[0];
+        for (int i = 1; i < 3; ++i)
+            if (cz.last[i] < floor) floor = cz.last[i];
+        float gate = (raw - 0.35f) / 0.4f, hit = (raw - floor) * VIS_FLOOR_DB / 8.5f,
+              fall = cz.kick * (1 - dt * 5) - dt * 1.5f;
+        hit *= gate < 0 ? 0 : gate > 1 ? 1 : gate;
+        hit = hit > 1 ? 1 : hit;
+        cz.last[2] = cz.last[1];
+        cz.last[1] = cz.last[0];
+        cz.last[0] = raw;
+        cz.kick = hit > fall ? hit : fall;
+        if (cz.kick < 0) cz.kick = 0;
     }
 }
 
@@ -522,6 +557,85 @@ static void pulsar(void *vg, unsigned tone) {
     }
 }
 
+/* The levels' mean over bands [from, to). */
+static float bands_mean(int from, int to) {
+    float sum = 0;
+    for (int b = from; b < to; ++b) sum += vz.level[b];
+    return sum / (to - from);
+}
+
+/* A bell 1 at z = 0, about exp(-z * z / w) near it: stock imports no expf. */
+static float bell(float z, float w) {
+    float s = 1 + z * z / (2 * w);
+    return 1 / (s * s);
+}
+
+/* A contour map of the music: CONTOUR_LINES ridgelines across the page over a height field, a
+ * mound the bass and its kicks lift, a second the mids lift, and ripples the mids and highs stir,
+ * all drifting with time. Each line stays above the name's row, and its segments take one of six
+ * shades by height, the accent's dark shade low to its bright tint high, a stroke a shade (as the
+ * Halo's), and while a kick lifts it a faint wide stroke under the three brightest: the glow. The
+ * field is separable, so each point is a few multiply-adds on tables of x and of line. */
+static void contour(void *vg, unsigned tone) {
+    static const unsigned alpha[6] = { 0x90, 0xb0, 0xd0, 0xe8, 0xff, 0xff };
+    int n = (PAGE_W - 1) / CONTOUR_STEP + 2;
+    float t = vz.spin * 6, mid = bands_mean(16, 40), high = bands_mean(40, VIS_HALO),
+          lift = 0.15f + 0.6f * vz.bass + 0.9f * cz.kick, px = 0.56f + 0.12f * sinf(t * 0.3f),
+          qx = 0.3f + 0.12f * sinf(t * 0.21f + 1);
+    /* along x: the two mounds, and the three ripples' sines and cosines (sin(ku + p) is
+     * sin ku cos p + cos ku sin p, p a line's) */
+    float gx[CONTOUR_N], bx[CONTOUR_N], wave[3][2][CONTOUR_N];
+    static const float freq[3] = { 11, 19, 5 };
+    for (int i = 0; i < n; ++i) {
+        float u = i < n - 1 ? (float)(i * CONTOUR_STEP) / PAGE_W : 1;
+        gx[i] = bell(u - px, 0.045f);
+        bx[i] = bell(u - qx, 0.025f);
+        for (int r = 0; r < 3; ++r)
+            wave[r][0][i] = sinf(freq[r] * u), wave[r][1][i] = cosf(freq[r] * u);
+    }
+    for (int l = 0; l < CONTOUR_LINES; ++l) {
+        float d = (float)l / (CONTOUR_LINES - 1), base = 30 + d * (VIS_H - 62),
+              gy = lift * bell(d - 0.55f, 0.06f), by = 0.9f * mid * bell(d - 0.35f, 0.03f),
+              phase[3] = { t + 14 * d, 23 * d - 1.6f * t, 0.6f * t - 9 * d },
+              amp[3] = { 0.45f + 0.6f * mid, 0.15f + 0.5f * high, 0.5f }, sp[3], cp[3];
+        for (int r = 0; r < 3; ++r)
+            sp[r] = sinf(phase[r]) * amp[r], cp[r] = cosf(phase[r]) * amp[r];
+        for (int i = 0; i < n; ++i) {
+            float x = gx[i] * gy + bx[i] * by, h = x * 1.4f / (x + 0.6f), ripple = 0;
+            for (int r = 0; r < 3; ++r) ripple += wave[r][0][i] * cp[r] + wave[r][1][i] * sp[r];
+            if (h > 0.98f) h = 0.98f; /* soft to here */
+            float y = base - (64 + 16 * cz.kick) * h - 8 * ripple * (0.45f + h);
+            int shade = (int)(h * 6);
+            cz.ridge[l][i] = y < 2 ? 2 : y > VIS_H - 26 ? VIS_H - 26 : y; /* the name's row below */
+            cz.shade[l][i] = (unsigned char)(shade > 5 ? 5 : shade);
+        }
+    }
+    vgcanvas_set_line_cap(vg, "round");
+    /* the glow of shades 3 to 5 while a kick lifts it (its wide strokes cost the most to draw),
+     * then shades 0 to 5 */
+    for (int pass = cz.kick < 0.05f ? 3 : 0; pass < 9; ++pass) {
+        int glow = pass < 3, k = glow ? pass + 3 : pass - 3;
+        vgcanvas_begin_path(vg);
+        for (int l = 0; l < CONTOUR_LINES; ++l)
+            for (int i = 0, on = 0; i < n - 1; ++i) {
+                if (cz.shade[l][i] != k) {
+                    on = 0;
+                    continue;
+                }
+                float x0 = VIS_X + (float)(i * CONTOUR_STEP),
+                      x1 = i + 1 < n - 1 ? x0 + CONTOUR_STEP : VIS_X + PAGE_W;
+                if (!on) vgcanvas_move_to(vg, x0, cz.ridge[l][i]);
+                vgcanvas_line_to(vg, x1, cz.ridge[l][i + 1]);
+                on = 1;
+            }
+        vgcanvas_set_line_width(vg, glow ? 4 + 3 * cz.kick : 1.25f);
+        vgcanvas_set_stroke_color(vg, rgba(mix(DARK(tone), BRIGHT(tone), 20 * k, 100),
+                                           glow ? 0x30 + (unsigned)(0x70 * cz.kick) : alpha[k]));
+        vgcanvas_stroke(vg);
+    }
+    vgcanvas_set_line_cap(vg, "butt");
+}
+
 /* A paint missed while not settled: once settled, the page paints again. */
 static int look(const void *unused) {
     if (on_page() && !settled()) return 8; /* RET_REPEAT: an overlay can outlast one retry. */
@@ -535,8 +649,8 @@ static int look(const void *unused) {
  * second. Drawing on the window, clipped to the slide area, not on the page: the slide_view clips
  * the page it was given at run time to a sliver. Painting starts the timer. */
 void visualizer_paint(void *w, void *canvas) {
-    static const char *const names[] = { "Spectrum", "Oscilloscope", "VU Meters", "Halo",
-                                         "Pulsar" };
+    static const char *const names[] = { "Spectrum", "Oscilloscope", "VU Meters",
+                                         "Halo",     "Pulsar",       "Contour" };
     if (!w) return;
     if (w == vz.page) { /* the page paints first, its canvas x 0 only when still */
         vz.page_x = I(canvas, CANVAS_X) - vz.ox;
@@ -572,8 +686,10 @@ void visualizer_paint(void *w, void *canvas) {
             meters(vg, canvas, tone, now);
         else if (vz.style == HALO)
             halo(vg, tone);
-        else
+        else if (vz.style == PULSAR)
             pulsar(vg, tone);
+        else
+            contour(vg, tone);
         vgcanvas_restore(vg);
     }
     unsigned shown = now - vz.named;
