@@ -12,4 +12,4 @@ with tempfile.TemporaryDirectory(prefix='q2-cf-position-') as tmp:
     subprocess.run([*shlex.split(os.environ.get('CC', 'cc')), '-std=c11', '-O2', '-Wall', '-Wextra',
                     '-Werror', '-Wno-unused-parameter', str(ROOT/'test/coverflow_position.c'),
                     '-o', str(exe), '-lm'], check=True)
-    for args in ([], ['--repaint']): subprocess.run([str(exe), *args], check=True)
+    for args in ([], ['--repaint'], ['--scrub']): subprocess.run([str(exe), *args], check=True)

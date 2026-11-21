@@ -247,6 +247,47 @@ def position_checks():
 
 position_checks()
 
+# The position bar's scrub on the real payload, each built-in theme: a press in the footer sends the
+# covers to the album under the finger (stock's slide_menu_set_value at once, far; a tap's glide,
+# near), the held thumb fills the strip, and the lift lets go.
+def scrub_checks():
+    for theme_id in ('0','1','2'):
+        def scrub_setup(machine): machine.config.update(THEME=theme_id,CFPOSITION='1')
+        SETUP[:]=[scrub_setup]
+        try: m=CoverflowMachine(albums=8)
+        finally: SETUP.clear()
+        m.open(); m.slide_easing=O['SLIDE_EASING']  # a scrub glides as a tap does, in every theme
+        covers=m.get(m.slide+O['W_PARENT']); n=len(m.nodes[m.slide]['children'])
+        paint_position=lambda w: m.call(address=payload_syms['coverflow_position_paint'],args=(w,m.canvas,0,0),gap=0)
+        fn=lambda name,*a: signed(m.call(address=payload_syms[name],args=(*a,*(0,)*(4-len(a))),gap=0))
+        ox=oy=0; w=covers  # the covers' view on the screen, as widget_to_local walks it
+        while w: ox+=signed(m.get(w+O['W_X'])); oy+=signed(m.get(w+O['W_Y'])); w=m.get(w+O['W_PARENT'])
+        m.word(m.slide+O['SLIDE_INDEX'],1); m.bands=[]; paint_position(m.slide); paint_position(covers)
+        m.word(m.slide+O['SLIDE_INDEX'],0); m.bands=[]; paint_position(m.slide); paint_position(covers)
+        track=m.bands[0]; left,y=track[0],oy+track[1]+1
+        at=lambda k: ox+left+4+round(k*151/(n-1))  # the thumb's centre on album k, on the screen
+        assert n==8 and track[2:4]==(160,2),(theme_id,track)
+        assert fn('coverflow_position_press',ox+left+80,oy+track[1]-40)==0 and not fn('coverflow_position_held')  # over the captions
+        assert fn('coverflow_position_press',at(n-1),y)==1 and fn('coverflow_position_held')
+        assert m.get(m.slide+O['SLIDE_INDEX'])==n-1 and m.get(m.slide+O['SLIDE_OFFSET'])==0 and not m.slides,theme_id
+        stride=fn('stride_of',m.slide)
+        assert fn('coverflow_position_touch',O['EVT_POINTER_MOVE_BEFORE'],at(n-3),y)==1  # two back: a glide
+        (start,ms,slide,origin,goal),=m.slides.values()
+        assert slide==m.slide and ms==O['CF_TAP_MS'] and origin==0 and goal==2*stride,(theme_id,ms,goal,stride)
+        m.bands=[]; paint_position(m.slide); paint_position(covers)
+        track,*thumb=m.bands
+        assert len(thumb)==8 and [b[2:4] for b in thumb]==[(7,1)]+[(9,1)]*6+[(7,1)],(theme_id,thumb)
+        assert thumb[0][1]==track[1]-3 and thumb[-1][1]==track[1]+4  # the strip's 8 rows round the track's 2
+        assert fn('coverflow_position_touch',O['EVT_POINTER_UP_BEFORE'],at(0),y)==1 and not fn('coverflow_position_held')
+        m.advance(O['CF_TAP_MS']+10)
+        assert m.get(m.slide+O['SLIDE_INDEX'])==n-3 and m.get(m.slide+O['SLIDE_OFFSET'])==0,theme_id
+        m.bands=[]; paint_position(m.slide); paint_position(covers)
+        assert len(m.bands)==5,(theme_id,m.bands)  # let go: the 4-row thumb again
+        assert fn('coverflow_position_touch',O['EVT_POINTER_MOVE_BEFORE'],at(0),y)==0  # not held: the covers' own
+        passed()
+
+scrub_checks()
+
 # iPod: the wheel reaches Edit Playlist below stock's Rename and Delete, and Centre opens the editor.
 m=PlaylistEditMachine(); more=m.node('window','playlistsmore_page'); m.word(more+O['W_PARENT'],m.wm)
 m.word(more+O['W_W'],375); m.word(more+O['W_H'],290); m.top=more; m.stack.append(more)

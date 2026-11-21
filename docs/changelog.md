@@ -1,6 +1,7 @@
 # Changelog
 
 - **1.9.0**:
+  - Cover Flow: drag the **Position Bar** to move through your albums quickly. Touch anywhere along it, even after it has faded, and the covers go to the album under your finger and follow it; far jumps show the album's letter. The bar now stays on screen a second after you stop, instead of 0.8 seconds. Turn it on in **Display → Cover Flow**.
   - Now Playing: a fifth visualizer, **Pulsar**, after pulsr: the music as a stack of lines rising up the page, the newest in front, each line hidden where the one in front stands over it. Tap the visualizer page to reach it.
   - Games: a card game can open Now Playing from its menu, with the music's buttons, queue and lyrics; leaving Now Playing goes back to the game where it was. Behind Now Playing the screen turns off and Auto power-off counts as usual. A game that uses this keeps Play/Pause and the side buttons while the music plays, and quits on Return and Centre held together instead of Return alone; the game can turn that off.
   - Apps: a card app can set the EQ, as the EQ page's **Apply** does, turn it off and on, and read what plays, so an app on your phone can tune the EQ while you listen.
