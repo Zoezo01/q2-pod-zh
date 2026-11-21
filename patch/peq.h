@@ -502,8 +502,9 @@ void addon_poll(void), addon_stop(void), addon_paint(void *w, void *canvas), add
 void addon_forget(const char *dir), addon_quit(const char *dir);
 /* addon.c's card games (q2app game=1, or any app whose row=games), Games' rows after its own: how
  * many (a scan), one's name, its press (a game's start over the screen, another app's page: 1 when
- * it runs or opened), whether a game runs, and ringnav_input's events for it */
-int addon_games(void), addon_game_start(int k), addon_game_on(void);
+ * it runs or opened), whether it is in front (addon_game_front: not behind Now Playing), whether
+ * chord_gate leaves Centre to it (addon_game_keys), and ringnav_input's events for it */
+int addon_games(void), addon_game_start(int k);
 int addon_game_front(void), addon_game_keys(void);
 int addon_game_audio(
     void); /* a card game with audio=1 runs: the sound and the media keys are its */

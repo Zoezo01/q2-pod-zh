@@ -393,7 +393,7 @@ class Game(C.Structure):
     """addon.c's gm: the running card game."""
     _fields_ = [*((k, C.c_int) for k in 'pid sock eat audio'.split()), *((k, C.c_uint) for k in 'seen held term'.split()),
                 ('path', C.c_char * 48), ('swap', C.c_int), ('back', C.c_int), ('seek', C.c_int), ('dim', C.c_int), ('polled', C.c_uint), ('id', C.c_char * 16),
-                *((k, C.c_int) for k in 'view quit_off down native'.split()), ('opened', C.c_uint), ('origin', C.c_void_p)]
+                *((k, C.c_int) for k in 'view down native stock'.split())]
 
 
 # Fixtures and fakes the navigation, playback and player tests share.

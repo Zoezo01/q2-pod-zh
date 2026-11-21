@@ -111,7 +111,7 @@
 typedef struct {
     char id[APP_ID], name[32], tips[32], bin[48], run[48], pid[32], state[40], browse[48], icon[56];
     char more[48]; /* q2app's more: an op, a space and a title (addon_more) */
-    int qr, game, audio, hidden, present, launched, hold, relaunch, restart;
+    int qr, game, audio, view, hidden, present, launched, hold, relaunch, restart;
     int nostop;                                   /* q2app's stop=0: no Stop row on its page */
     int row;                                      /* where its row is: a ROW_ */
     unsigned polled, launch_at, restart_at, play; /* play: its .play as read last, hashed */
@@ -168,6 +168,7 @@ static void slots_read(void) {
         a->game = number(raw, "game") == 1;
         unsigned long long sound = number(raw, "audio"); /* 2: the game's or the music's */
         a->audio = sound <= 2 ? (int)sound : 0;
+        a->view = number(raw, "gameview") == 1;
         a->hidden = number(raw, "hidden") == 1;
         /* its row where row says, else as firmware without the key lists it: Games for a game,
          * Streaming for any other */
@@ -854,40 +855,46 @@ static void poll_one(app_t *a) {
  * dropped so stock's Games stays), as does GAME_IDLE_MS without input unless Smart Awake is on;
  * one still there GAME_KILL_MS after a TERM is KILLed. demo repaints when it has gone. Stock makes
  * a held key's long press after this hook, so the hold is timed here, from the game's key-down.
- * ponytail: the screen stays on while it runs, as for a video, and the idle quit is what lets it
- * sleep without Smart Awake; a game that wants to sleep on screen needs the wake path to reach
- * stock under it.
+ * ponytail: the screen stays on while it is in front, as for a video, and the idle quit is what
+ * lets it sleep without Smart Awake; a game that wants to sleep on screen needs the wake path to
+ * reach stock under it.
  *
  * audio=2: the game starts as one without the sound, the music left playing, and asks for it in
  * /tmp/q2-<id>.audio (game_sound), caps word audio2. Any game's /tmp/q2-<id>.dim turns the panel
- * down (game_files), caps word dim. Games with gameview=1 keep their buttons in front and can
- * let stock's Now Playing take over temporarily. */
+ * down (game_files), caps word dim. gameview=1 (caps word gameview): the game has all five buttons
+ * in front, ends on Return and Centre held GAME_CHORD_MS together unless its /tmp/q2-<id>.quit is
+ * there when that time is up, and can give the screen to stock's Now Playing (game_view).
+ * ponytail: with .quit there a hung gameview game has no exit on the device but the 15-second
+ * hardware Centre hold: Return alone is its input, Centre never reaches stock's Shut Down hold,
+ * and the idle quit is skipped while it has the sound or with Smart Awake. */
 #define GAME_IDLE_MS 120000
 #define GAME_HOLD_MS 700 /* navigation.c's KEY_HOLD_MS, Return's hold elsewhere */
 #define GAME_CHORD_MS 1200
 #define GAME_KILL_MS 3000
 enum { GAME_RETURN = 1, GAME_CENTER = 2, GAME_CHORD = GAME_RETURN | GAME_CENTER };
 static struct {
-    int pid, sock, eat;  /* eat: the held Return's release, after the game it ended */
+    int pid, sock, eat;  /* eat: GAME_ bits whose repeats and release are dropped */
     int audio;           /* the running game's audio=1: the keys and the DAC are its */
     unsigned seen;       /* time_now_ms of the last input */
-    unsigned held, term; /* when Return went down, when TERM went (0: neither) */
+    unsigned held, term; /* when Return or the chord went down, when TERM went (0: neither) */
     char path[48];       /* the game's socket */
     int swap;            /* audio=2 */
     int back, seek;      /* what played before the take, and where (mclGetPlayTime) */
     int dim;             /* .dim acted on */
     unsigned polled;     /* when game_files last looked */
     char id[APP_ID];
-    int view, quit_off, down, native;
-    unsigned opened;
-    void *origin; /* the window Now Playing returns to */
+    int view;   /* gameview=1 */
+    int down;   /* gameview: GAME_ bits held */
+    int native; /* Now Playing has the screen and the keys */
+    int stock;  /* GAME_ bits pressed on Now Playing: stock's to their release */
 } gm __attribute__((section(".scratch")));
 
 int addon_games(void) { return addon_scan(), ap.games; }
 int addon_games_last(void) { return ap.games; }
 const char *addon_game_name(int k) { return k >= 0 && k < ap.games ? ap.a[ap.game[k]].name : 0; }
-int addon_game_on(void) { return gm.pid; }
 int addon_game_front(void) { return gm.pid && !gm.native; }
+/* chord_gate's Centre drop skipped: a gameview game in front, or an eaten Centre, whose repeats and
+ * release it would otherwise drop within CHORD_MS of an edge press, leaving the eat bit set */
 int addon_game_keys(void) { return (gm.view && addon_game_front()) || (gm.eat & GAME_CENTER); }
 int addon_game_audio(void) { return gm.pid && gm.audio; }
 
@@ -922,47 +929,38 @@ static void game_unlink(const char *ext) {
     unlink(f);
 }
 
-static int game_now_playing(void *win) {
-    return win && !tk_strcmp(widget_get_prop_str(win, "name", ""), "playing_page");
-}
-
-static void game_view_back(int pop) {
-    void *wm = window_manager();
-    if (pop && game_now_playing(window_manager_get_top_window(wm))) navigator_back();
-    gm.native = gm.down = 0;
-    gm.held = 0;
-    gm.origin = (void *)0;
+/* The game in front again: Now Playing closed if it is on top (a cancel, the game's end). */
+static void game_view_back(void) {
+    void *top = window_manager_get_top_window(window_manager());
+    if (top && !tk_strcmp(widget_get_prop_str(top, "name", ""), "playing_page")) navigator_back();
+    gm.native = 0;
     gm.seen = time_now_ms();
-    __sync_lock_test_and_set(&wheel_travel, 0);
-    wheel_raw = 1;
+    __sync_lock_test_and_set(&wheel_travel, 0); /* Now Playing's raw travel is no game's */
     game_unlink("view");
-    widget_invalidate_force(wm, 0);
 }
 
-/* The foreground game has paused its draw and given back the sound before writing "now".
- * An "open" reply transfers display and input to stock until Return or the page's own Back. */
-static void game_view(unsigned now) {
+/* A gameview game's /tmp/q2-<id>.view, read every ADDON_POLL_MS: "now" (a line end allowed), once
+ * the game has paused its draw and given back the sound, is answered "open" and Now Playing gets
+ * the screen and every key until it closes (game_poll) or the game removes the file. */
+static void game_view(void) {
     char path[32], tmp[36], req[12];
     game_file(path, "view");
     if (gm.native) {
-        void *wm = window_manager();
-        if (access(path, 0))
-            game_view_back(1); /* the game cancelled its request */
-        else if (now - gm.opened >= ADDON_POLL_MS && !window_manager_is_animating(wm) &&
-                 window_manager_get_top_window(wm) == gm.origin)
-            game_view_back(0); /* Back or the page did not open */
+        /* the game cancelled its request; only lit, as in front a dark screen has no wake: stock
+         * lights it on a key-up the game takes */
+        if (access(path, 0) && g_backlight_status) game_view_back();
         return;
     }
     unsigned n = state_read(path, req, sizeof req);
-    if (n != 3 || strcmp(req + 1, "now") || gm.audio) return;
+    while (n && (req[n] == '\n' || req[n] == '\r')) req[n--] = 0;
+    if (strcmp(req + 1, "now") || gm.audio) return;
     tk_snprintf(tmp, sizeof tmp, "%s.tmp", path);
     char open[] = "open";
     if (!blob_io(path, tmp, open, sizeof open - 1, 1)) return;
     void *wm = window_manager();
-    gm.origin = window_manager_get_top_window(wm);
     gm.native = 1;
-    gm.opened = now;
-    gm.down = 0;
+    /* a key held into the open: its repeats and release are no page's */
+    gm.eat |= gm.down, gm.down = 0;
     gm.held = 0;
     wheel_raw = 0;
     __sync_lock_test_and_set(&wheel_travel, 0);
@@ -1047,13 +1045,7 @@ static void game_files(unsigned now) {
         toolSetBackLight(want ? 1 : g_lightness + 1);
     }
     if (gm.swap && due && !gm.native) game_sound();
-    if (gm.view && due) {
-        game_file(f, "quit");
-        int off = !access(f, 0);
-        if (off != gm.quit_off) gm.held = 0;
-        gm.quit_off = off;
-        game_view(now);
-    }
+    if (gm.view && due) game_view();
 }
 
 /* Game a started over the screen: 1 when it runs. */
@@ -1065,14 +1057,10 @@ static int game_start(app_t *a) {
     char vol[5], pop[POPUP_ENV];
     const char *dev = 0;
     popup_env(pop, sizeof pop); /* the theme's pop-up, for its own menus */
-    char manifest[512], manifest_path[48];
-    tk_snprintf(manifest_path, sizeof manifest_path, CARD "/.%s/q2app", a->id);
-    int view =
-        state_read(manifest_path, manifest, sizeof manifest) && number(manifest, "gameview") == 1;
     tk_snprintf(gm.id, sizeof gm.id, "%s", a->id);
     game_unlink("dim"); /* an earlier run's */
     if (a->audio == 2) game_unlink("audio");
-    if (view) game_unlink("view"), game_unlink("quit");
+    if (a->view) game_unlink("view"), game_unlink("quit");
     /* the sound is its: hciplayer off the PCM, the jack readied, as video_play */
     if (a->audio == 1) {
         headset_manual();
@@ -1101,8 +1089,8 @@ static int game_start(app_t *a) {
     gm.audio = a->audio == 1;
     gm.swap = a->audio == 2;
     gm.back = gm.dim = 0;
-    gm.view = view;
-    gm.native = gm.quit_off = gm.down = 0;
+    gm.view = a->view;
+    gm.native = gm.down = gm.stock = 0;
     gm.polled = time_now_ms();
     gm.sock = socket(1, 1, 0); /* AF_UNIX, SOCK_DGRAM (MIPS numbering) */
     gm.seen = time_now_ms();
@@ -1124,33 +1112,36 @@ int addon_game_open(const char *id) {
     return -1;
 }
 
-/* ringnav_input, every event: 1 when it is the game's (sent as its datagram) or the release of the
- * Return held to end it; 0 for stock's, a music key among them */
+/* ringnav_input, every event: 1 when it is the game's (sent as its datagram) or a key it eats (the
+ * hold that ended it, a key held into Now Playing's open); 0 for stock's: a music key of a game
+ * without the sound or gameview=1, every event while Now Playing is over the game, and a key
+ * pressed there to its release */
 int addon_game_input(void *e) {
     if (!e) return addon_game_front();
     unsigned type = (unsigned)I(e, EVENT_TYPE), key = (unsigned)I(e, EVENT_KEY);
     int keyish = type == EVT_KEY_DOWN || type == EVT_KEY_UP || type == EVT_KEY_LONG;
     int button = key == KEY_RETURN ? GAME_RETURN : key == KEY_CENTER ? GAME_CENTER : 0;
-    if (keyish && (gm.eat & button)) { /* repeats and releases of the quit shortcut */
+    if (keyish && (gm.eat & button)) { /* an eaten key's repeats and release */
         if (type == EVT_KEY_UP) gm.eat &= ~button;
         return 1;
     }
     if (!gm.pid) return 0;
-    if (gm.native) {
-        if (keyish && key == KEY_RETURN &&
-            game_now_playing(window_manager_get_top_window(window_manager()))) {
-            if (type == EVT_KEY_UP) game_view_back(1);
-            return 1;
-        }
+    /* Now Playing's, and a press there to its release */
+    if (gm.native || (keyish && (gm.stock & button))) {
+        if (type == EVT_KEY_DOWN) gm.stock |= button;
+        if (type == EVT_KEY_UP) gm.stock &= ~button;
         return 0;
     }
     if (!gm.view && !gm.audio && keyish &&
         (key == KEY_PLAY || key == KEY_BACK_BTN || key == KEY_FWD_BTN))
         return 0;
     if (gm.view && keyish && button) {
+        /* ponytail: a lost release leaves its bit set (gm.down, gm.stock): that button alone arms
+         * the chord, or its next press is dropped at an open or stays stock's, until its next
+         * release */
         if (type == EVT_KEY_DOWN) gm.down |= button;
         if (type == EVT_KEY_UP) gm.down &= ~button;
-        if (gm.quit_off || gm.down != GAME_CHORD)
+        if (gm.down != GAME_CHORD)
             gm.held = 0;
         else if (!gm.held && type == EVT_KEY_DOWN)
             gm.held = (unsigned)time_now_ms() | 1;
@@ -1177,7 +1168,8 @@ int addon_game_input(void *e) {
     return 1;
 }
 
-/* every UI loop pass: the wheel's travel, the screen and standby held, the idle quit, its end */
+/* every UI loop pass: the wheel's travel, the screen held in front, standby held, the idle quit,
+ * its end */
 static void game_poll(void) {
     int status = 0;
     if (!gm.pid) return;
@@ -1188,7 +1180,7 @@ static void game_poll(void) {
         if (gm.swap && gm.audio) sound_back(); /* a crash too */
         if (gm.audio && mclGetPlayStatus() == 3) player_stop();
         gm.pid = gm.audio = 0;
-        if (gm.native) game_view_back(1);
+        if (gm.native) game_view_back();
         if (gm.view) game_unlink("view"), game_unlink("quit");
         if (gm.dim && g_backlight_status) toolSetBackLight(g_lightness + 1);
         if (gm.dim) game_unlink("dim");
@@ -1199,21 +1191,29 @@ static void game_poll(void) {
     }
     unsigned now = (unsigned)time_now_ms();
     if (gm.dim || now - gm.polled >= ADDON_POLL_MS) game_files(now);
+    /* Back, Hold Return: Home, or it never opened; lit, as game_view's cancel */
+    if (gm.native && g_backlight_status && !navigator_window_is_exist("playing_page"))
+        game_view_back();
     /* signed: a stamp can be just after now (| 1 rounds up, game_end reads the clock again) */
     if (gm.held && (int)(now - gm.held) >= (gm.view ? GAME_CHORD_MS : GAME_HOLD_MS)) {
+        char quit[32];
+        game_file(quit, "quit");
         gm.held = 0;
-        gm.eat = gm.view ? GAME_CHORD : GAME_RETURN;
-        game_end();
+        if (!gm.view || access(quit, 0)) gm.eat = gm.view ? GAME_CHORD : GAME_RETURN, game_end();
     }
     if (gm.term && (int)(now - gm.term) >= GAME_KILL_MS) gm.term = now | 1, game_kill("-9 ");
-    int travel = __sync_lock_test_and_set(&wheel_travel, 0);
-    if (travel && !gm.native) {
+    /* decided afresh each pass: lyric_poll may have handed it back */
+    if (!gm.native) wheel_raw = 1;
+    int travel = gm.native ? 0 : __sync_lock_test_and_set(&wheel_travel, 0);
+    if (travel) {
         char m[16];
         tk_snprintf(m, sizeof m, "w %d", travel);
         dgram_send(&gm.sock, gm.path, m, strlen(m));
         gm.seen = time_now_ms();
     }
-    reset_poweroptions_timer(1, 1, 1);
+    /* behind Now Playing the screen sleeps and Auto power-off counts on their timers; standby,
+     * which unmounts the card, waits while the game runs from it */
+    reset_poweroptions_timer(1, !gm.native, !gm.native);
     if (gm.audio) { /* the DAC kept on, as video_poll; the idle quit is the game's own */
         if (I(g_dacoff_time, 0) > 0) I(g_dacoff_time, 0) = 0;
         return;

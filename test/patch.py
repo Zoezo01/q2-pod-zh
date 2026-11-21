@@ -9878,7 +9878,7 @@ passed()
 CAPS='/tmp/q2-addon.caps'
 m=AppMachine(); stream_rows(m); caps=bytes(m.files[CAPS])
 assert caps.endswith(b'\n') and caps.count(b'\n')==1,caps
-assert set(caps.split())=={b'playlist',b'progress',b'pages',b'library',b'goto',b'sleep',b'game',b'audio',b'sections',b'art',b'window',b'urls',b'sort',b'field',b'more',b'fav',b'now',b'fieldtext',b'wake',b'audio2',b'dim'},caps
+assert set(caps.split())=={b'playlist',b'progress',b'pages',b'library',b'goto',b'sleep',b'game',b'audio',b'sections',b'art',b'window',b'urls',b'sort',b'field',b'more',b'fav',b'now',b'fieldtext',b'wake',b'audio2',b'dim',b'gameview'},caps
 m.files[CAPS]=bytearray(b'stale\n'); stream_rows(m); assert m.files[CAPS]==caps; passed()
 # Classic, Home's Split: the Streaming row slides Streaming's rows in, as the Library's: the page's own constructor fills the
 # list, what it sets on a window goes again, every row (stock's 70 px Tidal row and the added ones) takes Home's width and height,
@@ -9995,10 +9995,10 @@ m.click(page['Configuration']); m.page=m.top; m.row(6); assert m.config['STREAMH
 # the wheel back.
 m=AppMachine(); card_app(m,'fidget','name=Buddy\ngame=1\n'); assert 'Buddy' not in stream_rows(m)
 def fn(name,*args): return m.call(address=payload_syms[name],args=(args+(0,0,0,0))[:4],gap=0,clear=False,count=5_000_000)
-assert fn('addon_games')==1 and m.text(fn('addon_game_name',0))=='Buddy' and fn('addon_game_on')==0
+assert fn('addon_games')==1 and m.text(fn('addon_game_name',0))=='Buddy' and fn('addon_game_front')==0
 m.forked=0; m.execs=[]; fn('addon_game_start',0); assert m.execs[-1][:2]==('/mnt/mmc/.fidget/q2-fidget',)*2  # the child
 assert m.env[0]=='Q2_POPUP' and m.env[1].split()[0] in ('minimal','modern','classic') and m.env[2]==1  # the theme's pop-up, set before its exec
-m.forked=4243; assert fn('addon_game_start',0)==1 and fn('addon_game_on')==4243 and m.get(payload_syms['wheel_raw'])==1
+m.forked=4243; assert fn('addon_game_start',0)==1 and fn('addon_game_front')==1 and m.get(payload_syms['wheel_raw'])==1
 inp=HOOKS['window_manager_dispatch_input_event'][0]; m.handlers[inp+12]='stock_input'; GS='/tmp/q2-fidget.input.sock'
 def game_event(kind,key=0,x=0,y=0,stock=False):
     m.calls=[]; m.sent=[]; m.word(m.event+O['EVENT_X'],x); m.word(m.event+O['EVENT_Y'],y)
@@ -10012,7 +10012,7 @@ for k in ('KEY_PLAY','KEY_BACK_BTN','KEY_FWD_BTN'):
 for kind,want in ((O['EVT_POINTER_DOWN']-1,'d'),(O['EVT_POINTER_MOVE_BEFORE']-1,'m'),(O['EVT_POINTER_UP_BEFORE']-1,'u'),(O['EVT_POINTER_ABORT'],'u')):
     assert game_event(kind,x=120,y=88)==[(f't {want} 88 199',GS)],kind  # the panel's (x, y) turned into the view's
 m.word(payload_syms['wheel_travel'],0xffffffdb); m.sent=[]; m.waited=0; fn('addon_poll')
-assert [t[1] for t in m.sent]==['w -37'] and m.get(payload_syms['wheel_travel'])==0 and fn('addon_game_on')==4243
+assert [t[1] for t in m.sent]==['w -37'] and m.get(payload_syms['wheel_travel'])==0 and fn('addon_game_front')==1
 def poll(m):  # one pass: how many kills it sent (their text's stack buffer is reused by then)
     m.calls=[]; m.call(address=payload_syms['addon_poll'],args=(0,0,0,0),gap=0,clear=False,count=5_000_000)
     return [c[0] for c in m.calls].count('system')
@@ -10023,7 +10023,7 @@ for _ in range(12): m.now+=50; game_event(O['EVT_KEY_DOWN'],O['KEY_RETURN'])  # 
 assert poll(m)==0
 m.now+=101; assert poll(m)==1 and poll(m)==0  # 701: the stamps are odd (| 1), 0 being none
 m.now+=3000; assert poll(m)==1
-m.waited=4243; poll(m); assert fn('addon_game_on')==0 and m.get(payload_syms['wheel_raw'])==0
+m.waited=4243; poll(m); assert fn('addon_game_front')==0 and m.get(payload_syms['wheel_raw'])==0
 assert game_event(O['EVT_KEY_DOWN'],O['KEY_RETURN'])==[] and game_event(O['EVT_KEY_UP'],O['KEY_RETURN'])==[]
 assert game_event(O['EVT_KEY_UP'],O['KEY_RETURN'],stock=True)==[]
 # Released before then: the game's Return, nothing ended.
@@ -10041,7 +10041,7 @@ m.waited=4243; poll(m); game_event(O['EVT_KEY_UP'],O['KEY_RETURN'],stock=False);
 # holds it open and lit.
 m.now+=90_000; game_event(O['EVT_KEY_UP'],O['KEY_CENTER']); m.now+=60_000; assert poll(m)==0
 m.now+=60_000; assert poll(m)==1
-m.waited=4243; poll(m); assert fn('addon_game_on')==0
+m.waited=4243; poll(m); assert fn('addon_game_front')==0
 def idle(m):
     m.now+=120_000; m.waited=0; return poll(m)>0
 CONFIG['KEEPLIT']='1'; a=AppMachine(); del CONFIG['KEEPLIT']; card_app(a,'fidget','name=Buddy\ngame=1\n'); a.forked=4243
@@ -10063,7 +10063,7 @@ take=[n for n in names if n in ('player_stop','config_outputchannel','mclSetPcmM
 assert take==['player_stop','config_outputchannel','mclSetPcmMode','mclSetMute','device_set_volume','fork'] and g.execs[-1]==(GB,GB,'plughw:0,0','',0)
 names=start(1); assert 'player_stop' in names and 'config_outputchannel' not in names and g.execs[-1]==(GB,GB,'plug:bluealsa','42',0)
 g.byte(syms['g_usbvol_mode'],0); g.word(O['USB_MIXER'],0xfffffffe); start(2); assert g.execs[-1]==(GB,GB,'usb','h42',0)
-g.way=0; g.forked=4243; assert gn('addon_game_start',0)==1 and gn('addon_game_on')==4243 and gn('addon_game_audio')==1
+g.way=0; g.forked=4243; assert gn('addon_game_start',0)==1 and gn('addon_game_front')==1 and gn('addon_game_audio')==1
 g.handlers[inp+12]='stock_input'
 def gevent(kind,key):
     g.calls=[]; g.sent=[]; g.word(g.event+O['EVENT_X'],0); g.word(g.event+O['EVENT_Y'],0)
@@ -10075,9 +10075,9 @@ assert gevent(O['EVT_KEY_DOWN'],O['KEY_BACK_BTN'])==[('k d 222',GS2)] and gevent
 assert gevent(O['EVT_KEY_LONG'],O['KEY_PLAY'])==[]  # eaten: no Play-hold action of stock's
 g.word(syms['g_dacoff_time'],5); g.now+=120_001; g.waited=0; assert poll(g)==0 and g.get(syms['g_dacoff_time'])==0
 g.now+=120_001; assert poll(g)==0 and any(c[0]=='reset_poweroptions_timer' for c in g.calls)
-g.waited=4243; poll(g); assert gn('addon_game_on')==0 and gn('addon_game_audio')==0
-g.waited=0; assert signed(gn('addon_game_open',g.string('nothere')))==-1 and gn('addon_game_on')==0
-assert gn('addon_game_open',g.string('groovebox'))==1 and gn('addon_game_on')==4243; passed()
+g.waited=4243; poll(g); assert gn('addon_game_front')==0 and gn('addon_game_audio')==0
+g.waited=0; assert signed(gn('addon_game_open',g.string('nothere')))==-1 and gn('addon_game_front')==0
+assert gn('addon_game_open',g.string('groovebox'))==1 and gn('addon_game_front')==1; passed()
 # Stock's Baidu Netdisk row (a Chinese cloud drive; list_baidu's icon) is gone from Streaming, destroyed; its
 # TIDAL row stays first.
 m=AppMachine(); view=m.node('scroll_view','scroll_view_streamsset')

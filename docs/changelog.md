@@ -1,5 +1,7 @@
 # Changelog
 
+- **1.9.0**:
+  - Games: a card game can open Now Playing from its menu, with the music's buttons, queue and lyrics; leaving Now Playing goes back to the game where it was. Behind Now Playing the screen turns off and Auto power-off counts as usual. A game that uses this keeps Play/Pause and the side buttons while the music plays, and quits on Return and Centre held together instead of Return alone; the game can turn that off.
 - **1.8.9**:
   - Now Playing: the **AirPlay** row at the top of **⋯** shows only once AirPlay is installed from the App Store. It used to show for everyone, and without the app a press only said where to install it.
   - Display: every change on the screen takes less of the processor on its way to the panel, so Cover Flow's covers, lists and page slides each draw with less work.
@@ -7,7 +9,6 @@
   - Library: **Apps**, **Games** and **App Store** are together in the Library, above Upload Scrobbles and Update Library. **App Store** moved here from System settings. **Apps** lists the card apps that had their own Library row, such as Utilities and Weather, and shows once one is installed. **Hide Apps**, **Hide Games** and **Hide App Store** in Display → Appearance take each row away.
   - Games: a card game can dim the screen while its menus sit idle, and bring it back to your brightness when you touch it. Your brightness setting isn't changed.
   - Games: a card game can keep the Q2's music playing while you play, and take the sound for its own when you choose, then give it back with the music where it was.
-  - Games: a card game can open Now Playing while a game is paused. Press Return to go back to the game. Games that use this can keep their controls while the music plays and use a held Return and Centre together to force quit.
   - App Store: an app that isn't in Q2 Pod's list can be installed and updated from it. Put its GitHub repository, one `owner/repo Name` a line, in `.q2/custom-sources.list` on the card; it shows after the listed apps, on **Games** under a `[Games]` line. A repository already in the list is skipped.
   - Dev builds: the player's log, `/tmp/q2-demo.log`, has 8 MB of memory of its own. Something printing without end could fill the memory the player shares with it in less than the minute between the log's trims.
   - Display: a fourth theme, **Classic Modern**, is Classic with flat Quick Settings, slider pages, **Update Library** and USB screens, prompts, **Set Date** and **Set Time**, volume panel, hold menu, Home's pane and Now Playing buttons, in Classic's typeface and blue. Switching between Classic and Classic Modern needs no restart.

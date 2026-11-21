@@ -37,7 +37,7 @@ LIBRARY = 0xf001  # stock's library class, which a local queue plays under
 class App(C.Structure):
     _fields_ = [('id', C.c_char * 16), ('name', C.c_char * 32), ('tips', C.c_char * 32), ('bin', C.c_char * 48), ('run', C.c_char * 48),
                 ('pid', C.c_char * 32), ('state', C.c_char * 40), ('browse', C.c_char * 48), ('icon', C.c_char * 56), ('more', C.c_char * 48),
-                *((n, C.c_int) for n in ('qr', 'game', 'audio', 'hidden', 'present', 'launched', 'hold', 'relaunch', 'restart', 'nostop', 'row')),
+                *((n, C.c_int) for n in ('qr', 'game', 'audio', 'view', 'hidden', 'present', 'launched', 'hold', 'relaunch', 'restart', 'nostop', 'row')),
                 *((n, C.c_uint) for n in ('polled', 'launch_at', 'restart_at', 'play'))]
 
 
@@ -1582,7 +1582,7 @@ class CardGame:
         return self.fw.fn('addon_game_start', C.c_int, C.c_int)(k)
 
     def on(self):
-        return self.fw.fn('addon_game_on', C.c_int)()
+        return self.fw.var('addon__gm', Game).pid
 
     def event(self, type, a, b=0):
         e = block(self.fw, size=0x40)
@@ -1613,15 +1613,24 @@ QUIT = b'/tmp/q2-switch.quit'
 def game_with_view(fw):
     g = CardGame(fw, switch=SWITCH + b'gameview=1\n')
     current = [1]
-    names = (C.create_string_buffer(b'games_page'), C.create_string_buffer(b'playing_page'))
+    names = [C.create_string_buffer(n) for n in (b'games_page', b'playing_page', b'home_page', b'playermore_page')]  # 4: a page over Now Playing
     fw.mock('window_manager_get_top_window', lambda *_: current[0])
     fw.mock('widget_get_prop_str', lambda w, *_: C.addressof(names[w - 1]))
+    fw.mock('navigator_window_is_exist', lambda name, *_: C.string_at(name) == b'playing_page' and current[0] in (2, 4))
+    fw.var('g_backlight_status', C.c_ubyte).value = 1
     fw.mock('navigator_switch_to_with_context', lambda *_: current.__setitem__(0, 2) or 0)
     fw.mock('navigator_back', lambda *_: current.__setitem__(0, 1) or 0)
     return g, current
 
 
-@pytest.mark.parametrize('how', ['return', 'touch', 'cancel', 'crash'])
+def ringnav_key(fw, kind, code):
+    event = block(fw, size=0x40)
+    C.c_int.from_address(event).value = kind
+    C.c_int.from_address(event + 0x18).value = code
+    fw.fn('ringnav_input', C.c_int, C.c_void_p, C.c_void_p)(0, event)
+
+
+@pytest.mark.parametrize('how', ['return', 'over', 'home', 'cancel', 'crash'])
 def test_game_can_give_now_playing_the_screen_and_keys(fw, how):
     g, current = game_with_view(fw)
     g.world.files[VIEW] = b'open'
@@ -1633,27 +1642,56 @@ def test_game_can_give_now_playing_the_screen_and_keys(fw, how):
     assert [m for _, m in g.sent] == [f'k {edge} {key}'.encode() for key in playback for edge in ('d', 'u')]
     game_front = fw.fn('addon_game_front', C.c_int)
     assert game_front() == 1
-    g.world.files[VIEW] = b'now'
+    g.world.files[VIEW] = b'now\n'  # a line end allowed
     g.poll(500)
     assert g.world.files[VIEW] == b'open' and current[0] == 2
     assert g.on() == g.PID and game_front() == 0
     assert fw.var('wheel_raw', C.c_int).value == 0
+    travel = fw.var('wheel_travel', C.c_int)
+    travel.value = 7
+    g.poll()
+    assert travel.value == 7  # Now Playing's lyrics and Cover Flow take it
+    assert fw.calls('reset_poweroptions_timer')[-1][1][:3] == (1, 0, 0)  # the screen and Auto power-off on their timers
     for key in playback:
         assert g.key(KEY_DOWN, key) == 0 and g.key(KEY_UP, key) == 0
     assert len(g.sent) == 6
-    if how == 'return':
-        assert g.key(KEY_DOWN, RETURN) == 1 and g.key(KEY_UP, RETURN) == 1
-    elif how == 'touch':
+    if how == 'return':  # Now Playing's own Return: stock's, and the page closes
+        assert g.key(KEY_DOWN, RETURN) == 0 and g.key(KEY_UP, RETURN) == 0 and len(g.sent) == 6
         current[0] = 1
-        g.poll(500)
+        fw.var('g_backlight_status', C.c_ubyte).value = 0
+        g.poll()
+        assert game_front() == 0  # dark: the first lit pass hands it back
+        fw.var('g_backlight_status', C.c_ubyte).value = 1
+        g.poll()
+    elif how == 'over':  # a page over Now Playing keeps it, then its Back
+        current[0] = 4
+        g.poll()
+        assert game_front() == 0 and g.world.files[VIEW] == b'open'
+        current[0] = 1
+        g.poll()
+    elif how == 'home':  # Hold Return: Home from a page over Now Playing closes it and the games page
+        assert g.key(KEY_DOWN, RETURN) == 0  # held as it closes
+        current[0] = 3
+        g.poll()
+        assert g.key(KEY_DOWN, RETURN) == 0 and g.key(KEY_UP, RETURN) == 0 and len(g.sent) == 6  # stock's to its release
+        assert g.key(KEY_DOWN, RETURN) == 1 and g.sent[-1][1] == b'k d 170'
+        g.key(KEY_UP, RETURN)
     elif how == 'cancel':
         del g.world.files[VIEW]
+        fw.var('g_backlight_status', C.c_ubyte).value = 0
+        g.poll(500)
+        assert game_front() == 0  # dark: in front, nothing would light it
+        fw.var('g_backlight_status', C.c_ubyte).value = 1
         g.poll(500)
     else:
         g.exited = True
         g.poll()
-    assert current[0] == 1 and VIEW not in g.world.files
+    assert current[0] == (3 if how == 'home' else 1) and VIEW not in g.world.files
     assert game_front() == (how != 'crash') and fw.var('wheel_raw', C.c_int).value == (how != 'crash')
+    if how != 'crash':
+        fw.var('wheel_raw', C.c_int).value = 0  # lyric_poll's hand-back as Now Playing went
+        g.poll()
+        assert fw.var('wheel_raw', C.c_int).value == 1
 
 
 def test_game_view_waits_for_the_game_to_give_back_the_audio(fw):
@@ -1668,37 +1706,100 @@ def test_game_view_waits_for_the_game_to_give_back_the_audio(fw):
     assert current[0] == 2 and g.world.files[VIEW] == b'open' and SOUND not in g.world.files
 
 
+@pytest.mark.parametrize('code', [CENTRE, RETURN])
+def test_a_key_held_into_now_playings_open_is_no_pages(fw, code):
+    g, current = game_with_view(fw)
+    assert g.start() == 1
+    assert g.key(KEY_DOWN, code) == 1
+    g.world.files[VIEW] = b'now'
+    g.poll(500)
+    assert current[0] == 2
+    sent = len(g.sent)
+    assert g.key(KEY_DOWN, code) == 1 and g.key(KEY_UP, code) == 1 and len(g.sent) == sent
+    assert g.key(KEY_DOWN, code) == 0  # the next press is Now Playing's
+
+
 @pytest.mark.parametrize('off', [False, True])
 def test_game_force_close_uses_both_buttons_and_can_be_disabled(fw, off):
     g, _ = game_with_view(fw)
     assert g.start() == 1
-    if off:
-        g.world.files[QUIT] = b'off'
-        g.poll(500)
 
     def key(kind, code):
-        event = block(fw, size=0x40)
-        C.c_int.from_address(event).value = kind
-        C.c_int.from_address(event + 0x18).value = code
-        fw.fn('ringnav_input', C.c_int, C.c_void_p, C.c_void_p)(0, event)
+        ringnav_key(fw, kind, code)
 
-    fw.var('g_backlight_status', C.c_ubyte).value = 1
     g.world.ms += 1
     key(KEY_DOWN, RETURN)
     g.poll(1800)
     assert not g.kills() and g.sent[-1][1] == b'k d 170'
     key(KEY_UP, RETURN)
+    g.world.ms += 200  # past a hold's ghost
     key(KEY_DOWN, RETURN)
     key(KEY_DOWN, CENTRE)
     assert g.sent[-1][1] == b'k d 218'  # the stock Centre chord filter wasn't run
     g.poll(1199)
     assert not g.kills()
+    if off:
+        g.world.files[QUIT] = b'off'  # made in the hold's last pass, it still counts
     g.poll(1)
     assert g.kills() == ([] if off else [b'kill 4242'])
     if not off:
         g.exited = True
         g.poll()
         assert g.key(KEY_UP, RETURN) == g.key(KEY_UP, CENTRE) == 1
+
+
+def test_a_gameview_game_keeps_returns_ghost_filter(fw):
+    g, _ = game_with_view(fw)
+    assert g.start() == 1
+    g.world.ms += 1
+    ringnav_key(fw, KEY_DOWN, RETURN)
+    g.world.ms += 800
+    ringnav_key(fw, KEY_UP, RETURN)
+    g.world.ms += 100
+    sent = len(g.sent)
+    ringnav_key(fw, KEY_DOWN, RETURN)
+    assert len(g.sent) == sent  # the hold's ghost, dropped as for any game
+
+
+def test_a_centre_dropped_on_now_playing_stays_dropped_after_the_hand_back(fw):
+    g, current = game_with_view(fw)
+    assert g.start() == 1
+    g.world.files[VIEW] = b'now'
+    g.poll(500)
+    sent = len(g.sent)
+    g.world.ms += 1
+    ringnav_key(fw, KEY_DOWN, RETURN)
+    g.world.ms += 100
+    ringnav_key(fw, KEY_DOWN, CENTRE)  # with an edge key: chord_gate's
+    current[0] = 3  # Hold Return: Home
+    g.poll()
+    ringnav_key(fw, KEY_DOWN, CENTRE)  # its repeat
+    ringnav_key(fw, KEY_UP, CENTRE)
+    assert fw.fn('addon_game_front', C.c_int)() == 1 and len(g.sent) == sent
+
+
+def test_now_playing_over_a_game_is_no_idle_and_its_back_restarts_the_count(fw):
+    g, current = game_with_view(fw)
+    assert g.start() == 1
+    g.world.files[VIEW] = b'now'
+    g.poll(500)
+    g.poll(130000)
+    assert not g.kills()
+    current[0] = 1
+    g.poll()
+    assert not g.kills()
+
+
+def test_a_return_held_on_now_playing_as_the_game_ends_is_not_the_next_games(fw):
+    g, _ = game_with_view(fw)
+    assert g.start() == 1
+    g.world.files[VIEW] = b'now'
+    g.poll(500)
+    assert g.key(KEY_DOWN, RETURN) == 0
+    g.exited = True
+    g.poll()
+    g.exited = False
+    assert g.start() == 1 and g.key(KEY_DOWN, RETURN) == 1
 
 
 def switched(fw, playing=2):

@@ -10,7 +10,7 @@ import struct
 import pytest
 
 import host
-from conftest import NAVIGATION_SOURCE, O, Files, claim
+from conftest import NAVIGATION_SOURCE, O, Files, Game, claim
 
 KEY_CENTER, KEY_PREV, KEY_NEXT, KEY_PLAY, KEY_RETURN = (O[k] for k in ('KEY_CENTER', 'KEY_PREV', 'KEY_NEXT', 'KEY_PLAY', 'KEY_RETURN'))
 KEY_BACK_BTN, KEY_FWD_BTN = O['KEY_BACK_BTN'], O['KEY_FWD_BTN']
@@ -1232,15 +1232,24 @@ def test_dark_the_window_manager_paints_only_an_animation(fw, lit, animating, pa
     assert wm.call(wm.p) == 0 and len(wm.painted) == painted
 
 
-@pytest.mark.parametrize('away', ['video', 'game'])
+@pytest.mark.parametrize('away', ['video', 'game', 'native'])
 def test_a_player_or_game_on_the_framebuffer_keeps_the_ui_off_it(fw, away):
     fw.var('g_backlight_status', C.c_ubyte).value = 1
     if away == 'video':
         fw.var('books__vid', Vid).pid = 77
     else:
-        fw.var('addon__gm', C.c_int).value = 78  # addon.c's gm, its pid first
+        gm = fw.var('addon__gm', Game)
+        gm.pid, gm.native = 78, away == 'native'
     wm = Wm(fw)
-    assert wm.call(wm.p) == 0 and wm.painted == []
+    assert wm.call(wm.p) == 0 and wm.painted == ([wm.p] if away == 'native' else [])  # Now Playing over the game paints
+
+
+@pytest.mark.parametrize('native', [0, 1])
+def test_a_game_in_front_keeps_the_loop_paced_and_one_behind_now_playing_doesnt(fw, native):
+    keep = now_playing_top(fw, b'home_page')
+    gm = fw.var('addon__gm', Game)
+    gm.pid, gm.native = 78, native
+    assert fw.fn('navigation__np_animating', C.c_int)() == (not native)
 
 
 def test_no_window_manager_is_stocks_bad_params(fw):

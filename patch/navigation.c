@@ -8496,7 +8496,7 @@ static int now_playing(void) {
  * follow tick every 250 ms and keep up. A game's 33 ms frame timer too: Vortex's raw wheel posts no
  * input to stamp, nor does a card game's, whose travel goes once a pass. */
 static int np_animating(void) {
-    return games_live() || addon_game_on() ||
+    return games_live() || addon_game_front() ||
            (now_playing() && (visualizer_live() || st.lyric_glide ||
                               (st.np_marquee && st.np_off > 0 && st.np_off < st.np_over)));
 }
@@ -8812,9 +8812,11 @@ static int wake_gate(void *e) {
  * CHORD_MS of it ends Centre's hold timer (ringnav_hold_timer), so a rim press held near a corner
  * never reaches stock's Centre hold, the Shut Down dialog. Return's hold (Now Playing, Home) can
  * ghost a second press as it lets go: a Return press starting within RETURN_GHOST_MS of a hold's
- * release is dropped whole too. ponytail: CHORD_MS bounds a Return release that never came (Standby
- * while held); RETURN_GHOST_MS is the tuning knob, and only a ghost after the release is caught.
- * Returns 1 to drop the event. */
+ * release is dropped whole too. A Centre press that starts while a card game has the keys
+ * (addon_game_keys) passes, its repeats and release too: its D-pad and A pressed together.
+ * ponytail: CHORD_MS bounds a Return release that never came (Standby while held);
+ * RETURN_GHOST_MS is the tuning knob, and only a ghost after the release is caught. Returns 1 to
+ * drop the event. */
 #define CHORD_MS 500
 #define RETURN_GHOST_MS 135
 static int chord_gate(void *e) {
@@ -8863,7 +8865,8 @@ static int chord_gate(void *e) {
     if (key != KEY_CENTER) return 0;
     /* a repeat follows its press within 258 ms; a later down is a new press (a lost release) */
     int fresh = type == EVT_KEY_DOWN && (!st.chord_eat || now - st.chord_at > 300);
-    if (fresh) st.chord_eat = st.edge_held && now - st.edge_at < CHORD_MS ? 1 : -1;
+    if (fresh) /* at the press: a hand-off to or from a card game mid-press keeps its fate */
+        st.chord_eat = !addon_game_keys() && st.edge_held && now - st.edge_at < CHORD_MS ? 1 : -1;
     st.chord_at = now;
     int eat = st.chord_eat > 0;
     if (type == EVT_KEY_UP) st.chord_eat = st.centre_hold = 0;
@@ -8900,7 +8903,8 @@ static int remote_key(void *e) {
 
 /* window_manager_dispatch_input_event: while q2video plays (books.c) no key or touch reaches the
  * UI; a key's release goes to the player instead. A card game (addon.c) takes every event but the
- * music's keys. Every event times ringnav_sleep's idle. */
+ * music's keys of one without the sound or gameview=1, and none while Now Playing is over it, nor a
+ * key pressed there, to its release. Every event times ringnav_sleep's idle. */
 int ringnav(void *ctx, void *event);
 /* A wheel tick needs a ring frame with pressure within WHEEL_FRESH_MS (wheel_sample stamps it
  * before it posts), and no stop from Return, so a tick with no finger behind it goes no further,
@@ -8943,8 +8947,7 @@ static void vol_step(unsigned key) {
 }
 int ringnav_input(void *wm, void *e) {
     if (e && tick_gate(e)) return 0;
-    /* Games that use Return and Centre together handle that chord in addon.c. */
-    if (e && ((!addon_game_keys() && chord_gate(e)) || wake_gate(e))) return 0;
+    if (e && (chord_gate(e) || wake_gate(e))) return 0;
     st.last_input = time_now_ms();
     unsigned type = e ? (unsigned)I(e, EVENT_TYPE) : 0;
     unsigned key = e ? (unsigned)I(e, EVENT_KEY) : 0;
