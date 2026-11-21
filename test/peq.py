@@ -3177,6 +3177,11 @@ static int play_pos;
 static int play_type;
 #define MCL_TYPE (&play_type)
 static int addon_fav(const char *id, const char *kind, const char *key, int on) { return 0; }
+static int addon_wake(const char *id) { return 0; }
+static int addon_answers(const char *id) { return 1; }
+static int media_owner(void) { return 1; }
+static int media_playing(void) { return 0; }
+static int addon_game_audio(void) { return 0; }
 static _Atomic int status = 1, gate, performing, performs, ended;
 static _Atomic unsigned long long clk = 1000;
 static char last[64];

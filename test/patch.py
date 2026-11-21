@@ -9871,7 +9871,7 @@ passed()
 CAPS='/tmp/q2-addon.caps'
 m=AppMachine(); stream_rows(m); caps=bytes(m.files[CAPS])
 assert caps.endswith(b'\n') and caps.count(b'\n')==1,caps
-assert set(caps.split())=={b'playlist',b'progress',b'pages',b'library',b'goto',b'sleep',b'game',b'audio',b'sections',b'art',b'window',b'urls',b'sort',b'field',b'more',b'fav',b'now',b'fieldtext'},caps
+assert set(caps.split())=={b'playlist',b'progress',b'pages',b'library',b'goto',b'sleep',b'game',b'audio',b'sections',b'art',b'window',b'urls',b'sort',b'field',b'more',b'fav',b'now',b'fieldtext',b'wake'},caps
 m.files[CAPS]=bytearray(b'stale\n'); stream_rows(m); assert m.files[CAPS]==caps; passed()
 # Classic, Home's Split: the Streaming row slides Streaming's rows in, as the Library's: the page's own constructor fills the
 # list, what it sets on a window goes again, every row (stock's 70 px Tidal row and the added ones) takes Home's width and height,
@@ -11081,6 +11081,22 @@ assert track(0)[0]==1 and m.u.mem_read(syms['isFav_playing'],1)[0]==1
 assert track(1)[0]==1 and m.u.mem_read(syms['isFav_playing'],1)[0]==0
 assert track(0)[0]==1 and m.u.mem_read(syms['isFav_playing'],1)[0]==1
 m.call(address=payload_syms['app_fav_load'],args=(0,0,0,0),gap=0); assert m.u.mem_read(syms['isFav_playing'],1)[0]==0; passed()
+# A song on the app's own server (127.0.0.1, q2-jellyfin's relay, which adds its token) needs the app running: one
+# that ended (its loop's pid file gone) starts as its page starts it, and the song's thread waits for its socket,
+# AU_WAKE_MS (5 s) at most, before the URL goes to the player. A running app's song goes at once.
+LOCAL='http://127.0.0.1:2317/song/1?q=hi'; m.files[URLS]=bytearray(f'#Q2URLS/1\n{LOCAL}\tLocal\n'.encode())
+assert m.call(address=payload_syms['app_urls_play'],args=(m.string(URLS),0,0,0),gap=0)==1
+m.word(syms['mcl_pdeqplaylist'],m.deque(m.play_recs)); m.handlers[NET]='one:net'
+def woken(running,serve):
+    m.files.pop(DZPID,None)
+    if running: m.files[DZPID]=bytearray(b'4242')
+    m.now+=20000; m.systems=[]; m.serve=serve; assert track(0)[0]==1; job=m.threads[0]
+    m.calls=[]; m.call(address=job[0],args=(job[1],0,0,0),gap=0,clear=False,count=20_000_000); names=[c[0].split('@')[0] for c in m.calls]
+    return m.systems,names.count('connect'),names.count('usleep'),[m.text(c[1]) for c in m.calls if c[0]=='stock_tidal']
+ANSWERS=lambda op,args: ('ok','','',[])
+assert woken(False,None)==(['/bin/sh /mnt/mmc/.deezer/run'],50,50,[LOCAL])  # it never answers: the song goes after 5 s
+assert woken(False,ANSWERS)==(['/bin/sh /mnt/mmc/.deezer/run'],1,0,[LOCAL])
+assert woken(True,ANSWERS)==([],0,0,[LOCAL]); m.serve=None; passed()
 # Library update (addon_library.c library_poll): the app's /tmp/q2-<id>.library, "<seq>" then scan and import lines,
 # runs stock's Update Library (its dialog, which stops the player: not while one plays, nor while one is paused
 # with the screen on), then stock's playlist import (which replaces a same-named playlist) for the listed files

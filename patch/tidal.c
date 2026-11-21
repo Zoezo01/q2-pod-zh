@@ -458,7 +458,8 @@ int ringnav_tidal_favs(void *offset) {
  * strcpys it into a 0x600 stack buffer (mclStartPlayer, mcl_tidalStartPlayer) and then expands
  * the } in place, unbounded. */
 #define AU_PATH 1024
-#define AU_ITEM 128 /* an item this long or longer is none: the song's heart stays stock's */
+#define AU_ITEM 128     /* an item this long or longer is none: the song's heart stays stock's */
+#define AU_WAKE_MS 5000 /* the most a song waits for its app, started for it, to answer */
 /* stock's, at build.py APP_URL_CALLS (checked against the demo's symbols) */
 #define mclSetPause ((int (*)(void))0x5bd7c4u)
 #define tidal_playurl ((int (*)(int))0x5bc914u)
@@ -643,13 +644,30 @@ int app_lyrics(const char *id, char *out, unsigned size) {
  * (get_onlineid3info, auto-advance). The trampoline is stock's own, past tidal_start's hook. */
 typedef struct {
     unsigned play, loads;
+    char app[16]; /* the queue's app when it started for this song (addon_wake), else "" */
     char url[];
 } au_job;
 
+/* Something other than stock's player plays: Spotify, a station or a video (a paused one doesn't
+ * count), or a card game has the sound. The trampoline passes ringnav_start_player's checks, so a
+ * job started meanwhile (the app's wait) mustn't take the PCM from it; one that didn't wait
+ * goes as before. Stock's own player isn't asked: an earlier URL still inside stock's start lands
+ * after app_track's mclStop. */
+static int au_other(void) { return (media_owner() > 1 && media_playing()) || addon_game_audio(); }
+
 static void *app_start(void *arg) {
     au_job *j = arg;
+    /* the app started for it: its socket takes a connection once it serves, AU_WAKE_MS at most; a
+     * later start, a queue loaded since or anything else playing (au_other) ends the wait. Outside
+     * au.start: a card song's start, on the UI thread, waits for that. ponytail: Stop Streaming
+     * Services and USB storage (addon_stop, addon_card_away) don't touch au, so the wait runs on
+     * and the URL fails; a call from them raising au.play would end it. */
+    for (unsigned t = 0; *j->app && t < AU_WAKE_MS && j->play == au.play &&
+                         j->loads == playback_loads && !au_other() && !addon_answers(j->app);
+         t += 100)
+        usleep(100000);
     pthread_mutex_lock(au.start);
-    if (j->play == au.play && j->loads == playback_loads) {
+    if (j->play == au.play && j->loads == playback_loads && !(*j->app && au_other())) {
         stock_tidal_trampoline(j->url);
         if (j->play == au.play && j->loads == playback_loads) { /* else a later one's or queue's */
             if (savestartbt) savestartbt = 0, mclSetPause();
@@ -672,7 +690,9 @@ static void *app_start(void *arg) {
  * the thread that runs nearly every start, so it can't pass a start before stock has it running.
  * ponytail: a start on another thread (player_save_start's jack and Bluetooth restarts) could be
  * passed by that tick while the player is stopped; arm after ringnav_start_player's start if a
- * double skip is ever seen there. */
+ * double skip is ever seen there.
+ * A URL on 127.0.0.1 is the app's own server's: an app that ended (idle, or stopped) is started
+ * here (addon_wake) and app_start waits for its socket, so the song doesn't fail. */
 static int app_track(void *r, const char *id) {
     pthread_mutex_lock(au.lock);
     unsigned play = ++au.play;
@@ -703,7 +723,12 @@ static int app_track(void *r, const char *id) {
     au_job *j = url ? calloc(1, sizeof *j + strlen(url) + 1) : 0;
     /* NOLINTNEXTLINE(bugprone-not-null-terminated-result): calloc'd a byte more: a NUL ends it */
     if (j) memcpy(j->url, url, strlen(url)), j->play = play, j->loads = playback_loads;
+    /* a song the app serves itself, on 127.0.0.1 (q2-jellyfin's relay): the app, ended since,
+     * starts first, and the job waits for it */
+    if (j && tk_str_start_with(url, "http://127.0.0.1") && (url[16] == ':' || url[16] == '/'))
+        tk_snprintf(j->app, sizeof j->app, "%s", au.app);
     pthread_mutex_unlock(au.lock);
+    if (j && *j->app && !addon_wake(j->app)) *j->app = 0; /* running: no wait */
     unsigned long t = 0;
     if (j && pthread_create(&t, 0, app_start, j))
         free(j);
