@@ -129,7 +129,7 @@ The [user guide][guide] covers every control, EQ, Cover Flow and more tips.
   </tr>
   <tr valign="top">
     <td><b><a href="https://github.com/DiamondBond/q2-librespot">Spotify</a></b></td>
-    <td>Needs Premium. Open <b>Streaming → Spotify</b> and, the first time, pick the Q2 in the Spotify app on your phone on the same Wi-Fi. If playback won't start on your account, see <a href="https://github.com/DiamondBond/q2-pod/issues/98">#98</a>.</td>
+    <td>Needs Premium. Open <b>Streaming → Spotify</b> and, the first time, pick the Q2 in the Spotify app on your phone on the same Wi-Fi. If playback won't start on your account, see <a href="https://github.com/DiamondBond/q2-pod/issues/98">#98</a>, or try <a href="https://github.com/jtliang24/q2-soloify">Soloify</a>: it plays Spotify through a computer at home that stays on, and takes Spotify's place on the card. Soloify isn't part of Q2 Pod: you set it up by hand, with your own Soloist key from Spotify, and it is still a test release.</td>
     <td></td>
   </tr>
   <tr valign="top">
