@@ -45,7 +45,8 @@ class App(C.Structure):
 class Sh(C.Structure):
     _fields_ = [('thread', C.c_ulong), *((n, C.c_int) for n in ('running', 'cancel', 'percent', 'stage', 'result', 'job', 'app', 'armed', 'rows', 'n')),
                 ('map', C.c_int * (SH_MAX + 1)), ('manual', C.c_int), ('need', C.c_uint), ('checked', C.c_ulonglong), ('next', App * SH_MAX),
-                ('page', C.c_void_p), ('row', C.c_void_p * (SH_MAX + 1)), ('tab', C.c_int), ('strip', C.c_void_p)]
+                ('page', C.c_void_p), ('row', C.c_void_p * (SH_MAX + 1)), ('tab', C.c_int), ('strip', C.c_void_p),
+                ('clicks', C.c_int)]
 
 
 class Nu(C.Structure):
@@ -2379,6 +2380,53 @@ def test_the_store_loads_its_list_then_not_again_for_ten_minutes(fw):
     s.seconds += 1
     s.open()
     assert s.sh.job == JOB_CHECK and len(s.workers) == 1
+
+
+def toast_ends_the_job(fw, s):
+    """toast() as its 2 s modal loop runs it: the first one, said inside a press, lets the job's worker end and runs
+    sh_wait's timer, as the Q2's UI loop does. The list returned gets what sh_wait returned there and how many times
+    the rows were destroyed meanwhile (page_list empties the page before building them again)."""
+    seen = []
+
+    def toast(path, info, *_):
+        s.toasts.append(C.string_at(info + 8).decode())
+        if not seen:
+            built = len(fw.calls('widget_destroy_children'))
+            seen.append(s.run())
+            seen.append(len(fw.calls('widget_destroy_children')) - built)
+        return 0
+    fw.mock('navigator_to_with_context', toast)
+    return seen
+
+
+def test_a_press_that_stops_the_check_keeps_its_row_until_it_returns(fw):
+    """The check's end builds the rows again; inside the press's own toast that would free the pressed row while its
+    click still runs (battery.c's Export Log had the same), so the end waits for the press to return."""
+    card = Disk(fw, {SOURCES: b'me/q2-foo Foo\n'})
+    store_net(fw)
+    s = Store(fw, card)
+    seen = toast_ends_the_job(fw, s)
+    s.click()  # Foo's row while the opening check runs
+    assert seen == [RET_REPEAT, 0] and s.sh.job == JOB_CHECK and s.sh.clicks == 0
+    built = len(fw.calls('widget_destroy_children'))
+    assert s.wait() == 0 and s.sh.job == 0 and len(fw.calls('widget_destroy_children')) == built + 1
+    assert s.labels() == ['Install'] and s.toasts == ['Stopped checking for updates']
+
+
+def test_a_press_while_a_remove_ends_keeps_its_row_until_it_returns(fw):
+    """A dropped app's row shows only while it is installed, so its removal's end builds the rows again: the press
+    told to wait for it must have returned first."""
+    card = Disk(fw, {SOURCES: b'-me/q2-foo Foo\nme/q2-bar Bar\n', b'/mnt/mmc/.q2/apps/foo.tag': b'1.0',
+                     b'/mnt/mmc/.q2/apps/foo.files': b'.foo/q2-foo\n', FOO_APP: b'\x7fELF foo'})
+    s = Store(fw, card, wifi=0)
+    assert s.labels() == ['Installed', 'Install']
+    s.click(1), s.click(1)  # Foo's Remove, pressed twice
+    assert s.sh.job == JOB_REMOVE
+    seen = toast_ends_the_job(fw, s)
+    s.click(0)  # Check for Updates while it runs
+    assert seen == [RET_REPEAT, 0] and s.sh.job == JOB_REMOVE and FOO_APP not in card.files
+    assert s.wait() == 0 and s.labels() == ['Install']
+    assert s.toasts == ['Wait for the one in progress', 'Foo removed']
 
 
 def test_a_check_stopped_part_way_is_done_again_at_the_next_open(fw):

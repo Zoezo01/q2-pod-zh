@@ -774,6 +774,7 @@ static struct {
     void *page, *row[SH_MAX + 1];
     int tab;     /* the open tab: 0 Apps, 1 Games; kept while the Q2 is on */
     void *strip; /* the tabs (app_store.c store_tabs) */
+    int clicks;  /* sh_click's running, which a job's end waits for (sh_wait) */
 } sh __attribute__((section(".scratch")));
 
 static int is(int i, const char *id) { return i >= 0 && i < shelf_n && !strcmp(apps[i].id, id); }
@@ -1068,6 +1069,10 @@ static int sh_wait(const void *unused) {
         sh_refresh();
         return 8; /* RET_REPEAT */
     }
+    /* A press's toast ("Stopped checking for updates", "Wait for the one in progress") runs this
+     * timer in its 2 s loop, inside the press: the rows built again then would free the pressed row
+     * under its own click, so the end waits until the press has returned. */
+    if (sh.clicks) return 8;
     pthread_join(sh.thread, 0);
     int job = sh.job, r = sh.result, i = sh.app, manual = sh.manual;
     sh.job = 0;
@@ -1128,6 +1133,7 @@ static int sh_held(void *ctx, void *unused) {
 
 static int sh_click(void *ctx, void *event) {
     int r = (int)(long)ctx, i = sh.map[r], armed = sh.armed == r + 1;
+    ++sh.clicks; /* a count: a held press (sh_held) can run inside another's toast */
     sh.armed = 0;
     if (i == ROW_CHECK && sh.job == JOB_CHECK) {
         sh.manual = 1; /* checking already, the opening check maybe: its end answers the press */
@@ -1157,6 +1163,7 @@ static int sh_click(void *ctx, void *event) {
     else
         sh_start(JOB_INSTALL, i);
     sh_refresh();
+    --sh.clicks;
     return 0;
 }
 
