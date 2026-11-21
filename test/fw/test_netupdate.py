@@ -3168,6 +3168,30 @@ def test_a_check_keeps_the_games_section_in_the_cards_list(fw):
     assert card.files[SOURCES] == b'me/q2-foo Foo\n[Games]\nme/q2-bar Bar\n' and s.labels() == ['Install']
 
 
+CUSTOM = b'/mnt/mmc/.q2/custom-sources.list'
+LISTED = b'me/q2-foo Foo\n[Games]\nme/q2-bar Bar\n'
+
+
+@pytest.mark.parametrize('mine', [None, b'', b'you/q2-mine Mine\nother/q2-foo Theirs\n[Games]\nme/q2-bar\nyou/q2-play Play\n'])
+def test_the_cards_custom_sources_follow_the_list_and_never_reach_its_copy(fw, mine):
+    """Custom lines after the list's on their own tab, one whose id the list has skipped (another owner's foo, the
+    list's own bar); a missing or empty file changes nothing. An install asks the fetched list with them."""
+    card = Disk(fw, {} if mine is None else {CUSTOM: mine})
+    store_net(fw, {'.mine/q2-mine': b'\x7fELF', '.mine/q2app': b'name=Mine\n'}, listed=LISTED)
+    fw.mock('widget_factory_create_widget', lambda *_: 88)  # the tabs
+    s = Store(fw, card)
+    assert s.run() == 0 and card.files[SOURCES] == LISTED  # the list's copy alone
+    assert [s.sh.next[k].repo for k in range(s.sh.n)] == [b'me/q2-foo', b'me/q2-bar'] + [b'you/q2-mine', b'you/q2-play'] * bool(mine)
+    key = fw.fn('shelf_key', C.c_int, C.c_void_p, C.c_uint)
+    assert s.details() == ['me', 'you'][:1 + bool(mine)]
+    key(77, O['KEY_FWD_BTN'])
+    assert s.details() == ['me', 'you'][:1 + bool(mine)]  # Games: Bar, Play
+    if mine:
+        key(77, O['KEY_BACK_BTN'])
+        s.click(2)  # Mine
+        assert s.run() == 0 and s.toasts[-1] == 'Mine is ready in Streaming' and card.files[CUSTOM] == mine
+        assert card.files[SOURCES] == LISTED
+
 @pytest.mark.parametrize('theme', (b'0', b'1', b'2'))  # Minimal, Classic, Modern
 def test_app_store_paints_a_rows_state_as_a_word_and_the_tabs_badges(fw, theme):
     from test_games import Canvas, config, grey, rgba, tone, words

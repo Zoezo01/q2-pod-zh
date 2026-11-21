@@ -774,6 +774,7 @@ void netupdate_poll(void) {
 #define SH_JSON "/tmp/q2-shelf.json"
 #define SH_LIST SH_DIR "/sources.list" /* the last list fetched, for the page offline */
 #define SH_LIST_URL "https://raw.githubusercontent.com/DiamondBond/q2-pod/main/sources.list"
+#define SH_CUSTOM SH_DIR "/custom-sources.list" /* the user's own, never fetched or copied */
 #define SH_STALE_MS (10 * 60 * 1000ull)
 #define SH_RECHECK_MS (60 * 1000ull) /* Check for Updates' least gap: a request per app */
 #define SH_LOST 2 /* apps in a row with no answer from GitHub: a check ends there */
@@ -855,10 +856,24 @@ static int latest(shelf_app *a, void **keep) {
     return SH_OK;
 }
 
-/* A check: the list fetched into sh.next, kept as SH_LIST with any app it dropped that is
- * still installed (so it can be removed), else the page's own; then each listed one's latest
- * release. A dropped app's is never asked, nor installed: dropping it is what stops a taken-over
- * repo's releases reaching a Q2 (GHSA-8wpr-pmqx-538x).
+/* list's apps into out, then SH_CUSTOM's after an "[Apps]" line, none without a list: shelf_sources
+ * keeps an id's first line, so a custom line whose id the list has is skipped, and SH_MAX cuts
+ * custom lines first. The count; *own, the list's. */
+static int custom_sources(const char *list, shelf_app *out, int *own) {
+    unsigned m = 0, size;
+    char *mine = read_all(SH_CUSTOM, 1u << 16, &m), *both = 0;
+    int n = *own = list ? shelf_sources(list, out, SH_MAX) : 0;
+    if (mine && n && (both = calloc(1, size = strlen(list) + m + 9)))
+        snprintf(both, size, "%s\n[Apps]\n%s", list, mine), n = shelf_sources(both, out, SH_MAX);
+    free(mine), free(both);
+    return n;
+}
+
+/* A check: the list fetched into sh.next with SH_CUSTOM's (custom_sources), kept as SH_LIST without
+ * SH_CUSTOM's and with any app it dropped that is still installed (so it can be removed), else the
+ * page's own; then each listed one's latest release. A dropped app's is never asked, nor
+ * installed: dropping it is what stops a taken-over repo's releases reaching a Q2
+ * (GHSA-8wpr-pmqx-538x).
  * A listed app keeps the latest release the page knew for it, from the same repo, until this check
  * asks again: a check stopped part way (a row's press, or SH_LOST) or turned away (GitHub out of
  * reach, or refusing) leaves an UPDATE row as it was: read INSTALLED, its press would offer
@@ -869,7 +884,7 @@ static int check(void) {
     unsigned m = 0;
     long code = 0;
     char *list = get(SH_LIST_URL, &code);
-    int n = list ? shelf_sources(list, sh.next, SH_MAX) : 0, fresh = n > 0, ok = 1;
+    int own, n = custom_sources(list, sh.next, &own), mine = n, fresh = n > 0, ok = 1;
     free(list);
     if (!n) memcpy(sh.next, apps, sizeof apps), n = shelf_n; /* a bad list never replaces one */
     for (int k = 0; fresh && k < n; ++k) {
@@ -886,7 +901,7 @@ static int check(void) {
     }
     for (int g = 0, said = 0; fresh && g < 2; ++g) /* the apps, then [Games] and the games */
         for (int k = 0; k < n; ++k)
-            if (sh.next[k].game == g)
+            if (sh.next[k].game == g && (k < own || k >= mine))
                 m += snprintf(text + m, sizeof text - m, "%s%s%s %s\n",
                               g && !said++ ? "[Games]\n" : "", sh.next[k].dropped ? "-" : "",
                               sh.next[k].repo, sh.next[k].name);
@@ -921,7 +936,7 @@ static int listed(int i) {
     shelf_app now[SH_MAX];
     long code = 0;
     char *list = get(SH_LIST_URL, &code);
-    int n = list ? shelf_sources(list, now, SH_MAX) : 0, r = n ? SH_MISSING : SH_NET;
+    int own, n = custom_sources(list, now, &own), r = n ? SH_MISSING : SH_NET;
     free(list);
     for (int k = 0; k < n; ++k)
         if (!now[k].dropped && !strcmp(now[k].repo, apps[i].repo)) r = SH_OK;
@@ -1277,8 +1292,9 @@ int shelf_open(void *ctx, void *event) {
     if (sh.page || !(sh.page = page_open("apps_page", sh_closed, page_keyup))) return 0;
     if (sh.job != JOB_CHECK && !shelf_n) { /* an erase can run from Configuration before it opens */
         unsigned n = 0;
+        int own;
         char *list = read_all(SH_LIST, 1u << 16, &n);
-        shelf_n = shelf_sources(list, apps, SH_MAX);
+        shelf_n = custom_sources(list, apps, &own);
         free(list);
     }
     sh_rows();
