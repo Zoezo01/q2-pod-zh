@@ -224,6 +224,9 @@ int addon_scan(void) {
 const char *addon_name(int k) { return k >= 0 && k < ap.shown ? ap.a[ap.order[k]].name : 0; }
 const char *addon_id(int k) { return k >= 0 && k < ap.shown ? ap.a[ap.order[k]].id : 0; }
 const char *addon_icon(int k) { return k >= 0 && k < ap.shown ? ap.a[ap.order[k]].icon : 0; }
+/* Streaming's row k, as the last scan sorted them: its app's slot, which stays that app's, or -1
+ * (home.c ringnav_stream gives it to the row). */
+int addon_slot(int k) { return k >= 0 && k < ap.shown ? ap.order[k] : -1; }
 /* Slot i's id while its app is on the card with a row, wherever the row is, else 0
  * (addon_library.c's requests: an app's row in the Library or Games asks as one on Streaming). */
 const char *addon_slot_id(int i) {
@@ -2372,12 +2375,14 @@ static int press(int slot) {
     return a->game ? game_start(a) : page_at(slot, "menu", "", a->name, 1);
 }
 
-/* An app's Streaming row (home.c ringnav_stream; ctx: its place by name at the last scan). */
+/* An app's Streaming row (home.c ringnav_stream; ctx: its app's slot, addon_slot): a read that
+ * sorts the apps again while the row is open (an App Store job's end, Home's pane, the AirPlay row)
+ * leaves it on its app, and an app removed since says so on its page. */
 int addon_open(void *ctx, void *event) {
     (void)event;
-    int k = (int)(long)ctx;
+    int i = (int)(long)ctx;
     if (smart_hold(addon_open, ctx, 0)) return 0; /* the app starts once Smart Wi-Fi's link is up */
-    if (k >= 0 && k < ap.shown) press(ap.order[k]);
+    if (i >= 0 && i < ap.n) press(i);
     return 0;
 }
 /* Games' card row k (games.c pick_card_game): 1 when its game runs, or its page opened. */

@@ -213,7 +213,8 @@ int ringnav_stream(void *win, void *ctx) {
                 svc_row(widget_get_child(view, c), 0, hide);
         svc_row(library_row(view, "stream_spotify", spot_open, 0, "Spotify", 1), i++, hide);
         for (int k = 0; k < st.svc_n; ++k)
-            svc_row(library_row(view, addon_icon(k), addon_open, (void *)(long)k, addon_name(k), 1),
+            svc_row(library_row(view, addon_icon(k), addon_open, (void *)(long)addon_slot(k),
+                                addon_name(k), 1),
                     i++, hide);
         svc_row(library_row(view, "list_tidal", tidal_downloads, 0, "Tidal Downloads", 1), i++,
                 hide);
