@@ -1,6 +1,7 @@
 # Changelog
 
 - **1.9.0**:
+  - Apps: a card app can play over the whole screen from a row of its page, as a video player does for a film. It can have the sound while it plays, and its page shows what changed when you come back. Details for app authors are in [librespot.md](librespot.md).
   - Now Playing: a fifth visualizer, **Pulsar**, after pulsr: the music as a stack of lines rising up the page, the newest in front, each line hidden where the one in front stands over it. Tap the visualizer page to reach it.
   - Games: a card game can open Now Playing from its menu, with the music's buttons, queue and lyrics; leaving Now Playing goes back to the game where it was. Behind Now Playing the screen turns off and Auto power-off counts as usual. A game that uses this keeps Play/Pause and the side buttons while the music plays, and quits on Return and Centre held together instead of Return alone; the game can turn that off.
   - Apps: a card app can set the EQ, as the EQ page's **Apply** does, turn it off and on, and read what plays, so an app on your phone can tune the EQ while you listen.
