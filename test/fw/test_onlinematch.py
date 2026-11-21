@@ -32,7 +32,8 @@ class Body(C.Structure):
 
 
 class Al(C.Structure):
-    _fields_ = [('job', Job), ('tracks', C.c_void_p), ('thread', C.c_ulong), ('running', C.c_int), ('label', C.c_void_p)]
+    _fields_ = [('job', Job), ('tracks', C.c_void_p), ('thread', C.c_ulong), ('running', C.c_int), ('label', C.c_void_p),
+                ('curl', C.c_void_p)]
 
 
 def joined(fw, parts, n=256, lucene=0):
@@ -614,8 +615,8 @@ class Written:
 
 
 def search(fw, title=b'T', artist=b'A', cancel=None):
-    fn = fw.fn('onlinematch__lrclib_search', C.c_int, C.c_char_p, C.c_char_p, C.c_char_p, C.c_void_p)
-    return fn(title, artist, b'/a/1.lrc.part', cancel)
+    fn = fw.fn('onlinematch__lrclib_search', C.c_int, C.c_char_p, C.c_char_p, C.c_char_p, C.c_void_p, C.c_void_p)
+    return fn(title, artist, b'/a/1.lrc.part', cancel, None)  # no kept handle: one of its own
 
 
 def results(*lyrics):
@@ -691,8 +692,8 @@ def test_a_file_that_cant_open_or_close_is_a_card_error(fw):
 
 
 def lrclib(fw, title, artist=b'A'):
-    fn = fw.fn('onlinematch__lrclib', C.c_int, C.c_char_p, C.c_char_p, C.c_char_p, C.c_void_p)
-    return fn(title, artist, b'/a/1.lrc.part', None)
+    fn = fw.fn('onlinematch__lrclib', C.c_int, C.c_char_p, C.c_char_p, C.c_char_p, C.c_void_p, C.c_void_p)
+    return fn(title, artist, b'/a/1.lrc.part', None, None)
 
 
 def test_a_title_lrclib_lacks_is_asked_again_without_its_accents(fw):
@@ -1198,6 +1199,47 @@ def test_download_album_lyrics_from_the_more_page_to_the_card(fw, mcl, records, 
     assert '/m/A/GH/02 Two.lrc' not in disk.files and not [p for p in disk.files if p.endswith('.part')]
     assert '/mnt/mmc/.downpic/01 One.lrc' not in disk.files and disk.files['/mnt/mmc/.downpic/02 Two.lrc'] == b'stock'
     assert not job.al.thread and not job.al.tracks
+
+
+def test_a_jobs_searches_share_one_handle_each_setting_its_own_options(fw, mcl, records, more_rows):
+    """Download Album Lyrics' searches go on one libcurl handle, so its connection and TLS session go on to the next:
+    each sets its URL, write callback, buffer and cancel flag again, the worker cleans the handle up as the job
+    ends, and the next job (Two alone: the others have lyrics now) makes its own."""
+    greatest_hits(fw, mcl, records)
+    net = lrclib_answers(fw, One='[00:01.00] one\n', Three='[00:01.00] three\n')
+    job, more = Run(fw), More(fw)
+    more.open()
+    for jobs, asked in ((1, ['One', 'Two', 'Three']), (2, ['One', 'Two', 'Three', 'Two'])):
+        more.click()
+        job.run()
+        curl = [(n, a) for n, a in fw.calls() if n.startswith('fw_curl_easy_')]
+        names = [n for n, _ in curl]
+        performs = [k for k, n in enumerate(names) if n == 'fw_curl_easy_perform']
+        assert titles(net) == asked and len(performs) == len(asked) and names.count('fw_curl_easy_init') == jobs
+        for since, at in zip([0] + performs, performs):
+            assert {10002, 20011, 10001, 10057} <= {a[1] for n, a in curl[since:at] if n == 'fw_curl_easy_setopt'}
+        assert names[performs[-1] + 1:] == ['fw_curl_easy_cleanup'] and names.count('fw_curl_easy_cleanup') == jobs
+        assert not job.al.curl
+        job.tick()
+
+
+def test_a_cancel_between_searches_still_cleans_up_the_jobs_handle(fw, mcl, records, more_rows):
+    greatest_hits(fw, mcl, records)
+    job, more = Run(fw), More(fw)
+
+    def answer(url):
+        if titles_of(url) == 'Two':
+            job.al.job.cancel = 1  # a press while the second search runs
+        return b'[]'
+    net = Net(fw, {LRCLIB: (answer,)})
+    more.open()
+    more.click()
+    job.run()
+    names = [n for n, _ in fw.calls() if n.startswith('fw_curl_easy_')]
+    assert titles(net) == ['One', 'Two'] and names.count('fw_curl_easy_init') == 1
+    assert names[-1] == 'fw_curl_easy_cleanup' and names.count('fw_curl_easy_cleanup') == 1 and not job.al.curl
+    assert job.tick() == 0  # the page's timer says how it ended
+    summed(fw, job, LJ_CANCELLED, none=1)  # One's; Two's search ended in the cancel
 
 
 def test_a_press_while_it_runs_cancels_it(fw, mcl, records, more_rows):

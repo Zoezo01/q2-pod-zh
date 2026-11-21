@@ -5,6 +5,7 @@
   - App Store: one **Check for Updates** checks every app and game on both tabs, **Apps** and **Games**. A check asked GitHub once per app, and GitHub allows a Q2 only 60 of those an hour, so with today's list it ran out part way and the games, last in the list, showed no update until you checked again. A check now asks without using that allowance.
   - Resume: a long song, podcast or audiobook you play to the end of its queue starts from the beginning the next time you play it. After a restart it could start up to a minute before its end, where the Q2 last noted its place.
   - Tidal: a song saved to the card as it played stays whole if the Q2 loses power soon after. A power cut in the minute or so after the save could leave it empty in **Tidal Downloads**, its space lost until the card was checked on a computer.
+  - Lyrics: **Download Album Lyrics** asks LRCLIB about every song over one connection, so an album's lyrics arrive sooner, most of all on a slow network. It used to open a new encrypted connection for each song.
   - App Store: under **Theme: Classic** and **Theme: Modern**, the open tab, **Apps** or **Games**, is the colour your theme gives the selected row, its name in the row's ink. Under Classic it was the accent's own blue, darker than Classic Blue's rows.
   - Books: a book left open when the Q2 is turned off, or turns itself off, reopens at the page you were reading. The page was saved only when you left the book, so it reopened where you had started reading.
 - **1.8.8**:
