@@ -412,7 +412,7 @@ static void hold_open(void *dialog, int n) {
     widget_move_resize(title, 12, (QM_HEAD - 33) / 2, BACK_W - 24, 33);
     if (flat) { /* the rows' size and ink: white, which Light Mode turns on the paper */
         panel_font(title, 25, 1);
-        text_ink(title, 0xffffffffu, INK_LABEL); /* final: a half change sets it again */
+        widget_set_prop_int(title, "style:normal:text_color", (int)0xffffffffu);
     } else {
         panel_font(title, 31, 1);
         text_ink(title, 0xffffffffu, INK_LABEL); /* white on the header in either half */

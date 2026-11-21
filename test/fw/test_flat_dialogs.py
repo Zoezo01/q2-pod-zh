@@ -168,16 +168,26 @@ def classic_modern_hold(fw, ui, st, recs, mcl, light=0):
     return hold, box('view_navbar'), box('list_view'), canvas
 
 
-@pytest.mark.parametrize('light', [0, 1])
-def test_classic_modern_s_hold_menu_is_the_card_on_classic_s_32_px_rows(fw, ui, st, recs, mcl, light):
-    """The card, header, foot and ring as Modern's, on Classic's rows: six of 32 px fit where Modern's four of 48 do,
-    and the title's ink text_ink's, as Classic's header's: final white, flipped on the light half's paper, so a theme
-    or half change (text_inks) sets it again."""
-    hold, nav, lst, canvas = classic_modern_hold(fw, ui, st, recs, mcl, light)
+def test_classic_modern_s_hold_menu_is_the_card_on_classic_s_32_px_rows(fw, ui, st, recs, mcl):
+    """The card, header, foot and ring as Modern's, on Classic's rows: six of 32 px fit where Modern's four of 48 do."""
+    hold, nav, lst, canvas = classic_modern_hold(fw, ui, st, recs, mcl)
     rows = [ui.nodes[item].rect() for item in ui.kids(hold.view())]
     assert len(rows) == len(hold_.PLAYING_ROWS) and all((x, w, h) == (0, 294, 32) for x, _, w, h in rows)
     assert nav[0::2] == (40, 294) and nav[3] == 44 and lst == (40, nav[1] + 44, 294, min(6, len(rows)) * 32)
     assert lst[1] + lst[3] + 10 <= 308  # HOLD_FOOT clear of the glass's corner, as Modern's
+
+
+@pytest.mark.parametrize('flat', ['Modern', 'Classic Modern'])
+@pytest.mark.parametrize('light', [0, 1])
+def test_the_flat_hold_card_s_title_reads_on_its_paper(fw, ui, st, recs, mcl, flat, light):
+    """The title's white is stock's raw colour, which the style hook flips at each paint: the half's dark ink on the
+    light paper, white on the dark."""
+    hold = (modern_hold if flat == 'Modern' else classic_modern_hold)(fw, ui, st, recs, mcl, light)[0]
     title = ui.lookup(hold.dialog, 'scrlabel_title', 1)
-    props = {k: v & 0xffffffff for k, v in ui.nodes[title].props.items() if isinstance(v, int)}
-    assert (props['_final'], props['_final_n'], props['style:normal:text_color']) == (0xffffffff, 1, 0xff000000 if light else 0xffffffff)
+    stored = ui.nodes[title].props['style:normal:text_color'] & 0xffffffff
+    st('paint_w', C.c_void_p).value = title
+    fw.mock('tk_str_end_with', lambda s, end, *_: C.string_at(s).endswith(C.string_at(end)))
+    c = C.c_uint(stored)
+    fw.fn('ringnav_style_color', C.c_void_p, C.c_void_p, C.c_void_p, C.c_char_p, C.c_uint)(C.byref(c), None, b'text_color', 0)
+    drawn = c.value & 0xffffff
+    assert (max(drawn >> s & 255 for s in (0, 8, 16)) <= 0x20) if light else drawn == 0xffffff, hex(drawn)
