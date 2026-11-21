@@ -1,5 +1,5 @@
 """The flat look's prompts (dialog.confirm painter flat, Modern's): the confirm's cells, track and words. Classic's are
-test_nav_painters'. The hold menu, its choices and the toast stay stock's under Modern."""
+test_nav_painters'. The hold menu a round card; the toast stays stock's under Modern."""
 import ctypes as C
 
 import pytest
@@ -97,21 +97,57 @@ def test_a_row_action_s_flat_tray_is_the_toast_s_box(fw, st, light):
     assert (inks['Cancel'], inks['Delete']) == (rgba(held), rgba(0xffffff))  # the other cell white on the dark box
 
 
-def test_modern_keeps_stocks_hold_menu_its_choices_and_toast(fw, ui, st, recs, mcl):
-    """As on main, where Modern's prompts were stock's: QM_ROW rows the full width, no panel, no toast box."""
+def modern_hold(fw, ui, st, recs, mcl, light=0):
+    """Now Playing's hold menu under Modern: (the hold, its navbar's box, its list's box, the canvas after both paints)."""
+    theme(fw, MODERN, LIGHT=str(light).encode())  # read before use_set marks the config read
     hold_.use_set(st, hold_.MINIMAL)  # Modern's geometry set, Minimal's
     st('theme').value = MODERN
     hold = hold_.Hold(fw, ui, st, recs, mcl).now_playing([hold_.song(recs, i) for i in range(3)])
     hold.hold()
     hold.menu()
-    rows = [ui.nodes[item].rect() for item in ui.kids(hold.view())]
-    assert rows and all((x, w, h) == (0, 375, 66) for x, _, w, h in rows)  # queue_menu.c QM_ROW
     canvas = Canvas(fw)
     for paint in ('ringnav_paint_bg', 'ringnav_paint'):
         fw.fn(paint, C.c_int, C.c_void_p, C.c_void_p)(hold.dialog, canvas.addr)
-    assert not canvas.px and not canvas.boxes  # hold_paint draws nothing
+    box = lambda name: ui.nodes[ui.lookup(hold.dialog, name, 1)].rect()
+    return hold, box('view_navbar'), box('list_view'), canvas
+
+
+def test_modern_s_hold_menu_is_a_round_card_its_rows_capped_by_the_glass(fw, ui, st, recs, mcl):
+    """Cover Flow's panel's width, centred under the bar: a 44 px header, the theme's 48 px rows, as many as clear
+    the glass's corners with HOLD_FOOT of paper under them (four), the rest scrolling, as Classic's past six."""
+    hold, nav, lst, canvas = modern_hold(fw, ui, st, recs, mcl)
+    rows = [ui.nodes[item].rect() for item in ui.kids(hold.view())]
+    assert len(rows) == len(hold_.PLAYING_ROWS) > 4 and all((x, w, h) == (0, 294, 48) for x, _, w, h in rows)
+    assert [y for _, y, _, _ in rows] == [48 * i for i in range(len(rows))]  # each a row of the scroll, none dropped
+    assert nav[0::2] == (40, 294) and nav[3] == 44 and lst == (40, nav[1] + 44, 294, 4 * 48)
+    foot = lst[1] + lst[3] + 10  # HOLD_FOOT
+    assert foot <= 308  # its ring's last row, foot: the glass hides 38 px there (tools/ipod.py corner_inset), the ring is at 39
+    paper = [c for (x, y), c in canvas.px.items() if 40 + 12 <= x < 334 - 12 and nav[1] <= y < foot]
+    assert paper and set(paper) <= {0xff000000, rgba(0x38383a)}  # the dark half's paper, the line under the header
+    assert canvas.row(nav[1] + 43, 52, 322) == [rgba(0x38383a)] * 270 and canvas.row(nav[1] - 1, 60, 314) == [rgba(0x38383a)] * 254
+    assert canvas.row(foot, 60, 314) == [rgba(0x38383a)] * 254  # the hairline a pixel outside the card
+    assert not canvas.boxes and canvas.restored()
+
+
+def test_modern_s_hold_card_in_the_light_half_is_its_paper(fw, ui, st, recs, mcl):
+    hold, nav, lst, canvas = modern_hold(fw, ui, st, recs, mcl, light=1)
+    paper = fw.fn('flat_page', C.c_uint)() | 0xff000000
+    assert canvas.row(nav[1] + 20, 60, 314) == [paper] * 254 and canvas.row(nav[1] + 43, 60, 314) == [rgba(0xd1d1d6)] * 254
+
+
+def test_modern_s_play_mode_choices_are_the_card_s_rows(fw, ui, st, recs, mcl):
+    """Repeat's six choices, four showing: the rest a wheel away."""
+    hold, nav, lst, canvas = modern_hold(fw, ui, st, recs, mcl)
     hold.pick('Repeat')
-    assert all((x, w, h) == (0, 375, 66) for x, _, w, h in (ui.nodes[i].rect() for i in ui.kids(hold.view())))
+    rows = [ui.nodes[i].rect() for i in ui.kids(hold.view())]
+    assert len(rows) == 6 and all((x, w, h) == (0, 294, 48) for x, _, w, h in rows)
+    assert ui.nodes[ui.lookup(hold.dialog, 'list_view', 1)].rect()[3] == 4 * 48
+
+
+def test_modern_keeps_stocks_toast(fw, ui, st, recs, mcl):
+    """As on main, where Modern's dialogs were stock's: no toast box."""
+    canvas = Canvas(fw)
+    theme(fw, MODERN)
     toast = Ui(fw).window('msginfo_dialog', kind='dialog')
     paint_bg(fw, toast, canvas)
     assert '_toast' not in toast.props and not canvas.boxes

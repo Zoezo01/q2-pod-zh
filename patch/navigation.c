@@ -2342,16 +2342,23 @@ static void confirm_labels(void *w, void *canvas) {
                                                                      : 0xcfd6dc));
     }
 }
-/* The hold menu's panel, Cover Flow's flip panel (coverflow_panel_paint): the navbar its header,
- * the list its rows. over: 0 before the dialog's children, 1 after them. */
+/* The hold menu's panel, Cover Flow's flip panel (coverflow_panel_paint), or the flat look's card
+ * (hold_card_flat): the navbar its header, the list its rows. over: 0 before the dialog's
+ * children, 1 after them. */
 static void hold_paint(void *w, void *canvas, int over) {
-    void *nav = w && w == st.qm_dialog && classic_dialogs() ? widget_lookup(w, "view_navbar", 1)
-                                                            : (void *)0,
+    int flat = flat_dialogs();
+    void *nav = w && w == st.qm_dialog && (flat || classic_dialogs())
+                    ? widget_lookup(w, "view_navbar", 1)
+                    : (void *)0,
          *list = nav ? widget_lookup(w, "list_view", 1) : (void *)0;
     if (!list || !P(canvas, CANVAS_LCD)) return;
     unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
-    coverflow_panel_paint(canvas, I(nav, W_X), I(nav, W_Y), I(nav, W_H), I(nav, W_H) + I(list, W_H),
-                          over);
+    rect_t card = { I(nav, W_X), I(nav, W_Y), BACK_W, I(nav, W_H) + I(list, W_H) + HOLD_FOOT };
+    if (flat)
+        hold_card_flat(canvas, &card, I(nav, W_H), over);
+    else
+        coverflow_panel_paint(canvas, I(nav, W_X), I(nav, W_Y), I(nav, W_H),
+                              I(nav, W_H) + I(list, W_H), over);
     stock_canvas_set_fill_color(canvas, fill);
 }
 /* The toast (msginfo_dialog) and the update's dialog: stock's full-screen dialog, clear, under a

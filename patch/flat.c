@@ -110,3 +110,19 @@ void confirm_labels_flat(void *w, void *canvas, int form) {
     }
     ui_ink_raw(raw);
 }
+
+/* The hold menu's card, flat (hold_paint): its header and rows on the half's paper, then HOLD_FOOT
+ * rows of it, the height of its corners, so the last row's band stays inside them. over: 0 before
+ * the dialog's children (the card, and a line under its header), 1 after them (a hairline round the
+ * card, a pixel outside it, over whatever lies there). Final colours. */
+void hold_card_flat(void *canvas, const rect_t *card, int head, int over) {
+    unsigned line = ipod_light() ? 0xd1d1d6 : 0x38383a, paper = flat_page();
+    if (over) {
+        rect_t ring = { card->x - 1, card->y - 1, card->w + 2, card->h + 2 };
+        round_ring(canvas, &ring, 11, 0xff000000u | line);
+        return;
+    }
+    stops_t face = { 2, { 0, 100 }, { paper, paper } };
+    paint_round_rows(canvas, card, &face, 10);
+    bar_rect(canvas, RGBA(line), card->x, card->y + head - 1, card->w, 1);
+}

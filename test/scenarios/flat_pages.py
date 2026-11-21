@@ -259,3 +259,27 @@ for light in '01':
     track = {(b[0], b[2], b[4]) for b in m.bands if b[1] == y + 1 and b[2] > 1}  # a middle row: its round ends a pixel in
     assert track == {(69, 225, color_t(0x6b6b6b)), (69, 111, color_t(0xffffff))}, track  # half of 227, over the rest
     assert art_at(m) == [('flat_spk_quiet', (44, 273)), ('flat_spk_loud', (309, 273))] and not m.letters; passed()
+
+
+# The hold menu under Modern (queue_menu.c hold_open, flat.c hold_card_flat): a round card as wide as Classic's panel,
+# centred under the bar: the 44 px header, the theme's 48 px rows, four at most so its ring clears the glass with
+# HOLD_FOOT of paper under them, the rest scrolling; flat and opaque on the half's paper, a line under the header.
+def hold_flat(light='0', **kw):
+    SETUP[:] = [lambda k: (k.config.update(THEME='2', LIGHT=light, ACCENT='4'), k)]
+    try: m = QueueMachine(**kw)
+    finally: SETUP.clear()
+    m.press(6000); assert m.hold() == 11; d = m.top; m.word(d + O['W_PARENT'], m.wm); place(m, d, 0, 0, 375, 320); parents(m, d); m.clip = (0, 0, 375, 320)
+    return m, d, named(m, d, 'list_view'), named(m, d, 'view_navbar')
+for light, paper, line in (('0', 0, 0x38383a), ('1', O['LIGHT_PAPER'] * 0x010101, 0xd1d1d6)):
+    m, d, lst, nav = hold_flat(light, page='playing_page', pos=1); items = m.nodes[m.view]['children']; n = len(items)
+    x, y, w, h = wbox(m, nav); foot = y + 44 + 4 * 48 + 10
+    assert n > 4 and (x, w, h) == (40, 294, 44) and wbox(m, lst) == (40, y + 44, 294, 192) and foot <= 308
+    assert [wbox(m, i) for i in items] == [(0, 48 * k, 294, 48) for k in range(n)] and m.nodes[d]['highlight'] == ''
+    bare(m); bg(m, d); rows = {b[1]: b for b in m.bands if b[0] == 40 and b[2] == 294}
+    assert rows[y + 20][4] == rows[foot - 11][4] == color_t(paper) and rows[y + 43][4] == color_t(line), sorted(rows)
+    m.paint(d); assert {b[4] for b in m.bands if b[1] == foot and b[2] > 100} == {color_t(line)}; passed()  # the ring, its corners aside
+# ... more rows than show: the wheel walks every one, the last brought into the list.
+m, d, lst, nav = hold_flat(page='playing_page', pos=1); items = m.nodes[m.view]['children']; n = len(items); m.top = d
+place(m, m.view, 0, 0, 294, 192); m.word(m.view + O['VIEW_CONTENT_H'], 48 * n); m.paint(m.view)
+for _ in range(n - 1): assert m.call() == 11
+top = m.get(m.view + O['SCROLL_Y']); assert m.selected(m.view) == n - 1 and 0 <= 48 * (n - 1) - top <= 192 - 48 and m.nodes[m.view]['virtual_h'] == 48 * n; passed()
