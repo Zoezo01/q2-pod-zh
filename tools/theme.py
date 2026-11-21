@@ -914,8 +914,9 @@ def validate(t, name):
     for s in settings:
         if settings.count(s) > 1:
             err(f'{s} declared twice')
-    if t['art_final'] and t['id'] != 'classic-light':  # navigation.c's image hook knows its names alone
-        err('pages.own: art_final is for classic-light\'s own images only')
+    flat = t['painter[PAINT_PAGES]'] == list(CHOICES['pages.own.painter']).index('flat')
+    if t['art_final'] and t['id'] != 'classic-light' and not flat:  # navigation.c's image hook knows its names alone
+        err('pages.own: art_final is for classic-light\'s own images and the flat look\'s only')
     for end in ('top', 'bottom') if t['sb_w'] else ():  # the thumb's round end gives its corner pixel to the glass
         y = t['sb_' + end]
         if corner_inset(y) > t['sb_right'] + 1:

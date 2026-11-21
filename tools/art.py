@@ -11,6 +11,7 @@ from fontTools.pens.transformPen import TransformPen
 from fontTools.ttLib import TTFont
 from build import ROOT, need
 from ipod import CLASSIC_LIGHT_FONT_SRC, STATE_W, inc
+from theme import CHOICES
 
 SUB = 8  # sub-rows per pixel; columns are exact within a sub-row
 
@@ -814,6 +815,97 @@ def clock_shadow():
     return png(w, h, compose((0, 0, w, h), [(path(f'M0 {h / 2}A{w / 2} {h / 2} 0 1 1 {w} {h / 2}A{w / 2} {h / 2} 0 1 1 0 {h / 2}Z'), paint)]))
 
 
+# The flat look's own images (a theme whose pages.own painter is flat: navigation.c FLAT_ART), one family of solid shapes
+# and lines with round ends, each thing drawn once, under FLAT_ART rather than a theme's id: they are the look's, final in
+# every theme that takes it. Quick Settings (quick_settings.c quick_page_flat) paints each 54 px round button and its
+# glyph over it in the button's ink: FLAT_INK, white, or _l, dark, at rest in the light half and on a bright accent.
+FLAT_ART, FLAT = 'flat_', list(CHOICES['pages.own.painter']).index('flat')
+def holed(d):
+    """d's subpaths as one even-odd polygon: each joined from the first's start and back, those seams crossed twice."""
+    subs = path(d)
+    return [q for poly in subs for q in (*poly, poly[0], subs[0][0])]
+def pane_glyph(name, size):
+    """One of Home's pane icons, the same drawing, its larger side size px, about 0, 0."""
+    polys = path(PANE_ICONS[name])
+    xs, ys = [x for poly in polys for x, _ in poly], [y for poly in polys for _, y in poly]
+    cx, cy, k = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2, size / max(max(xs) - min(xs), max(ys) - min(ys))
+    return ''.join('M' + 'L'.join(f'{(x - cx) * k:.2f} {(y - cy) * k:.2f}' for x, y in poly) + 'Z' for poly in polys)
+# A glyph about 0, 0: fill, shapes, a shape's later subpaths its holes; line, open paths stroked w wide (FLAT_WEIGHT
+# without one) with round ends; dots, filled discs (x, y, r); faint, lines at FLAT_FAINT of the ink.
+FLAT_WEIGHT, FLAT_FAINT, FLAT_DIM, FLAT_BOX = 2.6, .3, .45, 54
+BARS = ('M-7.5 9V4', 'M0 9V-2.5', 'M7.5 9V-9')
+FLAT_GLYPHS: dict[str, dict] = {
+    'wifi': dict(line=('M-11.6 -4.3a18 18 0 0 1 23.2 0', 'M-6.4 1.4a10 10 0 0 1 12.8 0'), dots=((0, 8.4, 2.5),), w=2.9),
+    'bt': dict(line=('M-5.6 -5.8 5.6 5.8 0 11.4V-11.4L5.6 -5.8-5.6 5.8',), w=2.3),
+    'lock': dict(fill=(rounded_path(-8.5, -1.5, 17, 13, 3.4),), line=('M-5 -2v-4.2a5 5 0 0 1 10 0v4.2',)),
+    # stock's three USB modes, each its own: storage a stick, DAC a USB-C port, audio the trident
+    'stick': dict(fill=(rounded_path(-6.5, -4.5, 13, 16.5, 3.2), rounded_path(-4, -12, 8, 6, 1.4))),
+    'usbc': dict(fill=(rounded_path(-12, -5.5, 24, 11, 5.5) + rounded_path(-6.5, -1.4, 13, 2.8, 1.4),)),
+    'usb': dict(fill=('M0 -13.6 -3.9 -7.6H3.9Z', rounded_path(4.3, -10.4, 4.6, 4.6, .8)),
+                line=('M0 10V-8.4', 'M0 6 -6.6 1.2V-3.2', 'M0 2.4 6.6 -2.4V-6'), dots=((-6.6, -4.4, 2.5), (0, 10.4, 3)), w=2.3),
+    'sl': dict(line=('M-8 -11V11', 'M0 -11V11', 'M8 -11V11'), dots=((-8, 4, 3.5), (0, -4.5, 3.5), (8, 5.5, 3.5)), w=2.3),
+    'gear': dict(fill=(pane_glyph('gear', 27),)),  # Home's Settings gear
+    # gain, three bars: all of them high, the first alone low; the output, headphones, its label saying which
+    'gain': dict(line=BARS, w=3.6), 'gain_low': dict(line=BARS[:1], faint=BARS[1:], w=3.6),
+    'phones': dict(fill=(rounded_path(-11.2, 1.5, 5.4, 9.5, 2.2), rounded_path(5.8, 1.5, 5.4, 9.5, 2.2)), line=('M-9 3.5v-3a9 9 0 0 1 18 0v3',), w=2.4),
+    'sun': dict(dots=((0, 0, 4.2),), w=2,
+                line=tuple(f'M{7.2 * math.cos(a * math.pi / 4):.2f} {7.2 * math.sin(a * math.pi / 4):.2f}L{10 * math.cos(a * math.pi / 4):.2f} {10 * math.sin(a * math.pi / 4):.2f}' for a in range(8))),
+    'note': dict(fill=(pane_glyph('note', 28),)),  # Home's note
+}
+FLAT_INK = {'': 0xffffff, '_l': 0x1c1c1e}
+# Stock's name: glyph, the glyph's opacity (disabled: dimmed); which are on is QS_BUTTONS' (qs_lit).
+FLAT_BUTTONS = {
+    'wifi': ('wifi', 1), 'wifiopen': ('wifi', 1), 'bt': ('bt', 1), 'btopen': ('bt', 1), 'keylock': ('lock', 1), 'keylockopen': ('lock', 1),
+    'lowgain': ('gain_low', 1), 'lowgaindisable': ('gain_low', FLAT_DIM), 'highgain': ('gain', 1), 'highgaindisable': ('gain', FLAT_DIM),
+    'lo': ('phones', 1), 'po': ('phones', 1), 'sa': ('phones', 1),
+    'usbstorage': ('stick', 1), 'usbaudio': ('usb', 1), 'usbdac': ('usbc', 1), 'playset': ('sl', 1), 'sysset': ('gear', 1),
+}
+# The brightness bar's suns (flat.c flat_bar): the small one on the fill and the large one past it, name: px, scale; the
+# large one's quiet inks, on the bar's rest in the light and dark half.
+FLAT_SUNS = {'dim': (24, .62), 'bright': (30, .95)}
+FLAT_QUIET = {'_ql': 0x6e6e73, '_qd': 0x98989d}
+# The message screens' mark: a glyph at MSG_SCALE on a MSG_BOX px square, in the half's ink.
+MSG_BOX, MSG_SCALE = 84, 2.8
+MSG_INK = {'l': 0x1c1c1e, 'd': 0xffffff}
+# Set Time's face: a flat disc in the half's resting grey, its numerals quiet. The hands are the payload's.
+CLOCK_PX = 110
+CLOCK_FACE = {'l': (0xe9e9ec, 0x6e6e73), 'd': (0x2c2c2e, 0x98989d)}
+def flat_glyph(glyph, ink, size=FLAT_BOX, k=1):
+    """A glyph's layers for compose on a size px square, its 0, 0 the centre, k times its drawing, in ink."""
+    g = FLAT_GLYPHS[glyph]
+    at = lambda poly: [(size / 2 + x * k, size / 2 + y * k) for x, y in poly]
+    lines = lambda ds: stroke([at(poly) for d in ds for poly in path(d)], g.get('w', FLAT_WEIGHT) * k, closed=False)
+    polys = [at(holed(d)) for d in g.get('fill', ())] + lines(g.get('line', ()))
+    polys += [at(poly) for x, y, r in g.get('dots', ()) for poly in path(circle(x, y, r))]
+    return [(polys, lambda x, y: (ink, 1)), (lines(g.get('faint', ())), lambda x, y: (ink, FLAT_FAINT))]
+@functools.lru_cache(maxsize=None)
+def flat_mark(glyph, opacity, ink, size=FLAT_BOX, k=1):
+    """One glyph, a PNG on clear, at opacity."""
+    mark = bytearray(compose((0, 0, size, size), flat_glyph(glyph, ink, size, k)))
+    mark[3::4] = bytes(round(a * opacity) for a in mark[3::4])
+    return png(size, size, bytes(mark))
+def clock_face(half):
+    """Set Time's face without its hands, drawn on a -50..50 box: the disc, and 1 to 12 at r 39."""
+    k = CLOCK_PX / 100
+    fit = lambda polys: [[(CLOCK_PX / 2 + x * k, CLOCK_PX / 2 + y * k) for x, y in poly] for poly in polys]
+    a = [i * math.pi / 6 for i in range(1, 13)]
+    numerals = [q for i in range(12) for q in numeral(str(i + 1), 10, 39 * math.sin(a[i]), -39 * math.cos(a[i]))]
+    rest, quiet = CLOCK_FACE[half]
+    return png(CLOCK_PX, CLOCK_PX, compose((0, 0, CLOCK_PX, CLOCK_PX), [
+        (fit(path('M-49.5 0A49.5 49.5 0 1 1 49.5 0A49.5 49.5 0 1 1 -49.5 0Z')), ink(rest, 255)),
+        (fit(numerals), ink(quiet, 255))]))
+def flat_images():
+    """The flat look's images, {name: PNG bytes}, under FLAT_ART."""
+    out = {f'drop_{name}{k}': flat_mark(glyph, opacity, rgb) for name, (glyph, opacity) in FLAT_BUTTONS.items() for k, rgb in FLAT_INK.items()}
+    for name, (px, k) in FLAT_SUNS.items():
+        out |= {f'drop_{name}{q}': flat_mark('sun', 1, rgb, px, k) for q, rgb in (FLAT_INK if name == 'dim' else FLAT_INK | FLAT_QUIET).items()}
+    out |= {f'msg_{name}_{half}': flat_mark(name, 1, rgb, MSG_BOX, MSG_SCALE) for name in ('usb', 'note') for half, rgb in MSG_INK.items()}
+    out |= {f'clock_face_{half}': clock_face(half) for half in CLOCK_FACE}
+    # the slider pages' speakers (flat_bar BAR_SPEAKERS): white on the fill, the halves' inks past it
+    out |= {f'spk_{loud}_{half}': speaker(loud == 'loud', SPEAKER_INKS[half]) for loud in ('quiet', 'loud') for half in 'lwd'}
+    return {FLAT_ART + name: data for name, data in out.items()}
+
+
 def images(t):
     """Theme t's generated images, {name: PNG bytes}; those its values state."""
     out, prefix = {}, t['id'].replace('-', '_')
@@ -850,7 +942,9 @@ def images(t):
     if t['painter[PAINT_VOLUME]']:
         for half, rgb in SPEAKER_INKS.items():
             out |= {f'{prefix}_spk_quiet_{half}': speaker(False, rgb), f'{prefix}_spk_loud_{half}': speaker(True, rgb)}
-    if t['painter[PAINT_PAGES]']:
+    if t['painter[PAINT_PAGES]'] == FLAT:
+        out |= flat_images()
+    elif t['painter[PAINT_PAGES]']:
         out |= {f'{prefix}_sun_{name}': sun(*a) for name, a in SUNS.items()}
         out |= {f'{prefix}_orb_note': png(116, 116, orb(100, False)), f'{prefix}_orb_usb': png(130, 130, orb(114, True))}
         out |= {f'{prefix}_{name}': shadow(*a) for name, a in SHADOWS.items()}

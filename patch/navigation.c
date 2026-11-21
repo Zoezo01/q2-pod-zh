@@ -5519,6 +5519,12 @@ static void shrink_centred(void *bitmap, int to, int a) {
     bitmap_unlock_buffer(bitmap);
 }
 
+/* An art_final theme's own image: Classic's classic_light_, the flat look's FLAT_ART */
+static int final_art(const theme_t *t, const char *name) {
+    return t->art_final &&
+           tk_str_start_with(name,
+                             t->painter[PAINT_PAGES] == PAGES_FLAT ? FLAT_ART : "classic_light_");
+}
 int ringnav_image_add(void *manager, const char *name, void *bitmap) {
     static const unsigned char at[4][4] = BITMAP_RGBA_AT;
     unsigned format = bitmap ? *(unsigned short *)((char *)bitmap + 0xe) - 1u : 4,
@@ -5559,11 +5565,11 @@ int ringnav_image_add(void *manager, const char *name, void *bitmap) {
     if (s && !*s && tk_str_start_with(name, "menu_") && tk_strcmp(name, "menu_left") &&
         tk_strcmp(name, "menu_right"))
         s = (void *)0;
-    /* art_final, Classic Light's (tools/theme.py refuses it for another theme), and so on its
-     * Status Bar under any theme: its own images (tools/art.py) are final, but for Sort's bars and
-     * the volume's speakers: marks on the paper, in the half's ink */
-    if (s && !*s && (T->art_final || bar_theme()->art_final) &&
-        tk_str_start_with(name, "classic_light_") && tk_strcmp(name, "classic_light_sort_bars") &&
+    /* art_final, Classic Light's and the flat look's (tools/theme.py refuses it for another theme),
+     * and so on its Status Bar under any theme: its own images (tools/art.py) are final, but for
+     * Sort's bars and the volume's speakers: marks on the paper, in the half's ink */
+    if (s && !*s && (final_art(T, name) || final_art(bar_theme(), name)) &&
+        tk_strcmp(name, "classic_light_sort_bars") &&
         !tk_str_start_with(name, "classic_light_vol_"))
         s = (void *)0;
     /* Minimal: the codec badges (img_flac, img_mp3, ...: red with the name cut out) take the
