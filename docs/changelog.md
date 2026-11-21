@@ -15,6 +15,7 @@
   - App Store: under **Theme: Classic** and **Theme: Modern**, the open tab, **Apps** or **Games**, is the colour your theme gives the selected row, its name in the row's ink. Under Classic it was the accent's own blue, darker than Classic Blue's rows.
   - Books: a book left open when the Q2 is turned off, or turns itself off, reopens at the page you were reading. The page was saved only when you left the book, so it reopened where you had started reading.
   - App Store: when an install ends while Streaming, the Library or Games is open, each row there still opens the app it names. Its "… is ready in …" message used to sort the new app into the lists under that page, so a row after the new app's place opened another app.
+  - Smart Wi-Fi: with automatic scrobble uploads on, the radio an upload woke for itself goes off 30 seconds after the upload, unless something else used the network meanwhile. It used to stay on for Smart Wi-Fi's five minutes after each one, scanning all that time away from known Wi-Fi: over a simulated day of listening, about 35 minutes of radio at home and 105 away.
 - **1.8.8**:
   - Bluetooth: a car that connects to the Q2 by itself plays within a second or two. Shanling's firmware waited 30 seconds for the car to start the sound before starting it itself, so with a car that leaves that to the player (a Tesla) a song ran silent for half a minute.
   - System: when the player crashes, `q2-crash.log` records the processor's registers at that moment, so a report says what the player was working on and not only where it stopped.

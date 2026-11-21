@@ -45,6 +45,7 @@ void scrobble_auto(void) {
         int sent = 0, done = scrobble_poll(&sent);
         if (!done) return;
         sa.running = 0;
+        smart_wifi_release();
         if (done > 0)
             sa.pending = 0, sa.misses = 0;
         else
@@ -65,9 +66,9 @@ void scrobble_auto(void) {
         /* Smart Wi-Fi's radio off: woken for an upload that is on (the card read now), which the
          * next check sends; a wake that brought no link, or AUTO off, again in SA_RETRY_MIN */
         if (sa.woke || (smart_wifi_off() && !scrobble_flag("AUTO")))
-            sa.woke = 0, sa_retry(now);
+            sa.woke = 0, sa_retry(now), smart_wifi_release();
         else if (smart_wifi_off())
-            sa.woke = smart_wifi_wait();
+            sa.woke = smart_wifi_auto();
         return;
     }
     sa.woke = 0;
@@ -75,7 +76,7 @@ void scrobble_auto(void) {
     if (started > 0)
         sa.running = 1;
     else if (started < 0) /* off, or no account: the card again in SA_RETRY_MIN */
-        sa_retry(now);
+        sa_retry(now), smart_wifi_release();
 }
 
 /* Upload Scrobbles: the log goes up on scrobble.c's thread, and a timer reports how it went. */

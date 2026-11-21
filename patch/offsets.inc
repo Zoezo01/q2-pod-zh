@@ -473,10 +473,12 @@ static inline int arc_out(int r, int y) {
 #define CARD_TOAST 0xa4bc07
 #define CARD_QUIET_MS 15000
 /* Smart Wi-Fi (docs/internals.md#smart-wi-fi), checked every SMART_POLL_MS: the radio goes off after
- * SMART_IDLE_MS with nothing needing the network (a new link counts as a use), and whatever wakes it
- * waits up to SMART_CONNECT_MS for the link before going on without it. */
+ * SMART_IDLE_MS with nothing needing the network (a new link counts as a use), SMART_RELEASE_MS
+ * after an automatic upload that woke it for itself, and whatever wakes it waits up to
+ * SMART_CONNECT_MS for the link before going on without it. */
 #define SMART_POLL_MS 1000
 #define SMART_IDLE_MS 300000
+#define SMART_RELEASE_MS 30000
 #define SMART_CONNECT_MS 15000
 #define NET_TYPE 0xa500d4 /* no symbol: initNetworkModule's type, 2 Wi-Fi; networkStart and networkStop act only then */
 /* The Wi-Fi signal (ringnav_wifi_signal) is read from the driver again at most every
