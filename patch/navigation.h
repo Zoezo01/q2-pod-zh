@@ -451,6 +451,14 @@ void quick_poll(void);
 int quick_volume(void);
 const char *quick_wheel_toggle(void *top);
 
+/* flat.c */
+extern const unsigned flat_rest[2], flat_ink[2], flat_quiet[2]; /* final, [0] dark, [1] light */
+unsigned flat_page(void);
+unsigned quick_on(void);
+enum { BAR_PLAIN, BAR_SUNS, BAR_SPEAKERS }; /* flat_bar's marks */
+void flat_bar(void *w, void *canvas, const rect_t *r, int part, unsigned rest, int marks);
+void page_label(void *w, int x, int y, int ww, int h, int px, const char *face, unsigned rgb);
+
 /* queue_menu.c */
 int qm_hold(void);
 void *qm_record(void);
