@@ -40,7 +40,8 @@ class App(C.Structure):
                 ('pid', C.c_char * 32), ('state', C.c_char * 40), ('browse', C.c_char * 48), ('icon', C.c_char * 56), ('more', C.c_char * 48),
                 *((n, C.c_int) for n in ('qr', 'game', 'audio', 'view', 'hidden', 'present', 'launched', 'hold', 'relaunch', 'restart', 'nostop',
                                          'nowifi', 'row', 'wifi', 'wifi_off')),
-                *((n, C.c_uint) for n in ('polled', 'launch_at', 'restart_at', 'play'))]
+                *((n, C.c_uint) for n in ('polled', 'launch_at', 'restart_at', 'play')), ('baricon', C.c_char * 56),
+                ('barword', C.c_char * 12), ('barw', C.c_int)]
 
 
 class Ap(C.Structure):
@@ -512,6 +513,125 @@ def test_network_rows_are_by_name_with_the_52_px_icon_first(fw):
     assert [icon(k) for k in range(2)] == [b'stream_app', b'file:///mnt/mmc/.zeta/icon.png']
 
 
+def bar_app(fw, world, name, size=(16, 16), state=b'bar=1\n', icon='bar.png'):
+    """App name on the card with an icon file of size, running, its status file state; polled."""
+    if size:
+        world.files[f'/mnt/mmc/.{name}/{icon}'.encode()] = png(*size)
+    scan(fw)
+    a = [ap(fw).a[i] for i in range(ap(fw).n) if ap(fw).a[i].id == name.encode()][0]
+    a.launched, a.launch_at = 1, world.ms
+    world.files[f'/tmp/q2-{name}'.encode()] = b'1'
+    world.files[f'/tmp/q2-{name}.state'.encode()] = state
+    world.ms += 1000
+    fw.fn('addon__poll_one', None, C.POINTER(App))(C.pointer(a))
+    return a
+
+
+def bar_icon(fw):
+    return fw.fn('addon_bar_icon', C.c_char_p)()
+
+
+def test_bar_icon_while_state_says_so(fw):
+    world = card(fw, foo=b'name=Foo\n')
+    a = bar_app(fw, world, 'foo')
+    assert bar_icon(fw) == b'file:///mnt/mmc/.foo/bar.png'
+    world.files[b'/tmp/q2-foo.state'] = b'qr=x\nbar=0\n'
+    world.ms += 1000
+    fw.fn('addon__poll_one', None, C.POINTER(App))(C.pointer(a))
+    assert bar_icon(fw) is None
+    world.files[b'/tmp/q2-foo.state'] = b'bar=1\n'
+    world.ms += 1000
+    fw.fn('addon__poll_one', None, C.POINTER(App))(C.pointer(a))
+    assert bar_icon(fw) == b'file:///mnt/mmc/.foo/bar.png'
+    a.launched = 0  # stopped
+    assert bar_icon(fw) is None
+
+
+@pytest.mark.parametrize('size', [(16, 21), (41, 16), None])
+def test_bar_icon_too_big_or_missing_is_none(fw, size):
+    world = card(fw, foo=b'name=Foo\n')
+    bar_app(fw, world, 'foo', size)
+    assert bar_icon(fw) is None
+
+
+def test_bar_icon_at_its_limits(fw):
+    world = card(fw, foo=b'name=Foo\n')
+    bar_app(fw, world, 'foo', (40, 20))
+    assert bar_icon(fw) == b'file:///mnt/mmc/.foo/bar.png'
+
+
+def test_the_bar_is_repainted_when_its_icon_comes_or_goes(fw):
+    # the bar's own paint picks the icon (bar_sync); an app starting, stopping or flipping bar= repaints nothing else
+    bar = C.c_void_p(0x5000)
+    fw.var('fw_ctx_system_bar', C.c_void_p).value = bar.value
+    world = card(fw, foo=b'name=Foo\n')
+    a = bar_app(fw, world, 'foo')
+    repaints = lambda: [c for c in fw.calls('widget_invalidate_force') if c[1][0] == bar.value]
+    fw.fn('addon_poll', None)()
+    assert len(repaints()) == 1
+    fw.fn('addon_poll', None)()
+    assert len(repaints()) == 1  # no change, no repaint
+    a.launched = 0  # stopped, as the Wi-Fi follower stops it
+    fw.fn('addon_poll', None)()
+    assert len(repaints()) == 2
+
+
+def test_the_bar_is_repainted_when_its_icon_changes_word(fw):
+    # bar=on -> bar=off rewrites the app's icon in place: the same pointer, another picture
+    bar = C.c_void_p(0x5000)
+    fw.var('fw_ctx_system_bar', C.c_void_p).value = bar.value
+    world = card(fw, vpn=b'name=Tunnel\n')
+    world.files[b'/mnt/mmc/.vpn/bar-off.png'] = png(16, 16)
+    a = bar_app(fw, world, 'vpn', state=b'bar=on\n', icon='bar-on.png')
+    repaints = lambda: [c for c in fw.calls('widget_invalidate_force') if c[1][0] == bar.value]
+    fw.fn('addon_poll', None)()
+    assert len(repaints()) == 1
+    world.files[b'/tmp/q2-vpn.state'] = b'bar=off\n'
+    world.ms += 1000
+    fw.fn('addon__poll_one', None, C.POINTER(App))(C.pointer(a))
+    fw.fn('addon_poll', None)()
+    assert bar_icon(fw) == b'file:///mnt/mmc/.vpn/bar-off.png' and len(repaints()) == 2
+
+
+def test_a_bar_word_picks_its_icon(fw):
+    # bar=<word> shows bar-<word>.png: a VPN's connected and greyed icons, switched as its state changes
+    world = card(fw, vpn=b'name=Tunnel\n')
+    world.files[b'/mnt/mmc/.vpn/bar-off.png'] = png(16, 16)
+    a = bar_app(fw, world, 'vpn', state=b'bar=on\n', icon='bar-on.png')
+    assert bar_icon(fw) == b'file:///mnt/mmc/.vpn/bar-on.png'
+    for state, icon in ((b'qr=x\nbar=off\r\n', b'file:///mnt/mmc/.vpn/bar-off.png'), (b'bar=on\n', b'file:///mnt/mmc/.vpn/bar-on.png'),
+                        (b'bar=gone\n', None), (b'bar=0\n', None), (b'', None)):
+        world.files[b'/tmp/q2-vpn.state'] = state
+        world.ms += 1000
+        fw.fn('addon__poll_one', None, C.POINTER(App))(C.pointer(a))
+        assert bar_icon(fw) == icon, state
+
+
+@pytest.mark.parametrize('word', [b'../x', b'On', b'a' * 9, b'a b', b'x.y'])
+def test_a_bar_word_outside_its_letters_is_none(fw, word):
+    world = card(fw, vpn=b'name=Tunnel\n')
+    world.files[b'/mnt/mmc/.vpn/bar-' + word + b'.png'] = png(16, 16)
+    bar_app(fw, world, 'vpn', size=None, state=b'bar=' + word + b'\n')
+    assert bar_icon(fw) is None
+
+
+def test_the_bar_icon_s_width_is_its_own(fw):
+    world = card(fw, vpn=b'name=Tunnel\n')
+    bar_app(fw, world, 'vpn', size=(16, 16))
+    width = fw.fn('addon_bar_width', C.c_int)
+    assert width() == 16
+    world2 = card(fw, wide=b'name=Wide\n')
+    a = bar_app(fw, world2, 'wide', size=(40, 20))
+    assert a.barw == 40
+
+
+def test_bar_icon_first_by_name(fw):
+    world = card(fw, zz=b'name=Zed\n', aa=b'name=alpha\n')
+    bar_app(fw, world, 'zz')
+    bar_app(fw, world, 'aa')
+    assert bar_icon(fw) == b'file:///mnt/mmc/.aa/bar.png'
+
+
 def test_library_s_apps_are_by_name(fw):
     card(fw, tools=(b'name=Utilities\nrow=library\n', ('icon.png', 'icon-40.png')), mixtape=b'name=Mixtape\nrow=library\n',
          small=(b'name=small\nrow=library\n', ('icon-40.png',)), foo=(b'name=Foo\n', ('icon.png', 'icon-40.png')))
@@ -593,7 +713,7 @@ def test_more_apps_than_slots(fw):
 def test_the_features_are_published_at_every_scan(fw):
     world = card(fw)
     scan(fw)
-    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections art window urls sort field more fav now fieldtext wake audio2 dim gameview eq screen volume wifi network\n'
+    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections art window urls sort field more fav now fieldtext wake audio2 dim gameview eq screen volume wifi network bar\n'
     assert world.of('rename') == [(b'/tmp/q2-addon.caps.tmp', b'/tmp/q2-addon.caps')]
 
 

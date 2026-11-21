@@ -9,6 +9,7 @@
   - Apps: a card app can set the EQ, as the EQ page's **Apply** does, turn it off and on, and read what plays, so an app on your phone can tune the EQ while you listen.
   - Streaming: after the App Store installs or removes an app, each card app's row on the Streaming page and on Home's Streaming list still opens the app it names. A row on a list open since before the change could open the app next to it, or nothing.
   - Apps: a card app can start when Wi-Fi connects and stop when it drops (`wifi=1`), such as a VPN, and can have its row in **Settings → Network**, after stock's rows (`row=network`).
+  - Apps: a card app can show an icon in the status bar while it runs, and change it with its state, such as a VPN's icon, full while connected and greyed while not (`bar=`).
 - **1.8.9**:
   - Now Playing: the **AirPlay** row at the top of **⋯** shows only once AirPlay is installed from the App Store. It used to show for everyone, and without the app a press only said where to install it.
   - Display: every change on the screen takes less of the processor on its way to the panel, so Cover Flow's covers, lists and page slides each draw with less work.

@@ -100,7 +100,7 @@
 /* This firmware's card-app features, space-separated; a feature adds its word. */
 #define ADDON_CAPS                                                                                 \
     "playlist progress pages library goto sleep game audio sections art window urls sort field "   \
-    "more fav now fieldtext wake audio2 dim gameview eq screen volume wifi network"
+    "more fav now fieldtext wake audio2 dim gameview eq screen volume wifi network bar"
 #define ADDON_SECTIONS 8  /* sections an app's first page may have */
 #define SWIPE_CLAIM_PX 24 /* a sideways move this far, twice as far as up or down, is a swipe's */
 #define SWIPE_PX 60       /* and this far at the lift, more than up or down, changes section */
@@ -109,6 +109,8 @@
 #define ART_MAX 128 /* the most a cover's or an icon's file may be, either way; larger is none */
 #define ART_KEEP 24 /* the rows' covers kept decoded around the list's scroll position */
 #define ART_URL (APP_ID + 32) /* art_file's file:// URL, its NUL included */
+#define BAR_ICON_W 40 /* the most an app's status bar icon may be: wider or higher is none */
+#define BAR_ICON_H 20
 
 /* An app found on the card, kept for the life of demo in its slot. present: on the card at the
  * last scan; relaunch: stopped for USB storage, to start again; restart: stopped by Retry (its
@@ -124,6 +126,10 @@ typedef struct {
     int wifi_off; /* a wifi app the user stopped (or that ended itself): not started again until
                    * the next link (addon_wifi_release) */
     unsigned polled, launch_at, restart_at, play; /* play: its .play as read last, hashed */
+    /* its status file's bar= (bar_read): the word as read last, and file:// of the icon it names
+     * (bar.png for 1, bar-<word>.png else) if one fits BAR_ICON_W x BAR_ICON_H; else "" */
+    char baricon[56], barword[12];
+    int barw; /* the icon's width, for its slot in the bar */
 } app_t;
 enum { ROW_STREAMING, ROW_GAMES, ROW_LIBRARY, ROW_NETWORK }; /* as addon_scan's rows[] names them */
 
@@ -846,6 +852,33 @@ static void sleep_check(void) {
  * auto power-off held while the app asks (hold=1), as Spotify's poll does while it plays; the
  * screen still turns off. An app that stopped by itself (idle, or from the phone) is let go, and
  * one stopped for USB storage starts again once the card is back. */
+/* An app's status bar icon from its status file's bar=: 1 is bar.png, a word of 1 to 8 of a-z0-9
+ * bar-<word>.png (a VPN's bar=on and bar=off: connected, greyed), anything else none. Looked up
+ * when the word changes, not every poll. */
+static void bar_read(app_t *a, const char *raw) {
+    char word[sizeof a->barword], path[64];
+    field(raw, "bar", word, sizeof word);
+    unsigned n = strlen(word);
+    if (n && word[n - 1] == '\r') word[--n] = 0; /* a Windows editor's line end */
+    if (!strcmp(word, a->barword)) return;
+    tk_snprintf(a->barword, sizeof a->barword, "%s", word);
+    a->baricon[0] = 0;
+    a->barw = 0;
+    int ok = n && n <= 8;
+    for (unsigned i = 0; ok && i < n; ++i)
+        ok = (word[i] >= 'a' && word[i] <= 'z') || (word[i] >= '0' && word[i] <= '9');
+    if (!ok || !strcmp(word, "0")) return;
+    if (!strcmp(word, "1"))
+        tk_snprintf(path, sizeof path, CARD "/.%s/bar.png", a->id);
+    else
+        tk_snprintf(path, sizeof path, CARD "/.%s/bar-%s.png", a->id, word);
+    int w = 0, h = 0;
+    if (picture_size(path, &w, &h) && w && h && w <= BAR_ICON_W && h <= BAR_ICON_H) {
+        tk_snprintf(a->baricon, sizeof a->baricon, "file://%s", path);
+        a->barw = w;
+    }
+}
+
 static void poll_one(app_t *a) {
     unsigned now = time_now_ms();
     if ((!a->launched && !a->relaunch && !a->restart) || now - a->polled < ADDON_POLL_MS) return;
@@ -865,6 +898,7 @@ static void poll_one(app_t *a) {
     char raw[QR_RAW];
     state_read(a->state, raw, sizeof raw);
     a->hold = number(raw, "hold") == 1;
+    bar_read(a, raw);
     if (a->hold) reset_poweroptions_timer(1, 1, 0); /* standby, auto power-off; not the screen's */
     stream_poll(a);
     sleep_read(a);
@@ -1336,6 +1370,27 @@ static void game_poll(void) {
     gm.seen = time_now_ms(); /* Smart Awake: asked again GAME_IDLE_MS on */
 }
 
+/* The status bar's card app icon (navigation.c bar_sync): the icon bar= names (bar_read) of the
+ * first app by name that runs, such as a VPN's while it is connected; 0 for none. */
+static const app_t *bar_app(void) {
+    const app_t *best = 0;
+    for (int i = 0; i < ap.n; ++i) {
+        const app_t *a = &ap.a[i];
+        if (a->launched && a->baricon[0] && (!best || strcasecmp(a->name, best->name) < 0))
+            best = a;
+    }
+    return best;
+}
+const char *addon_bar_icon(void) {
+    const app_t *a = bar_app();
+    return a ? a->baricon : 0;
+}
+/* ... and its width in pixels, 0 for none */
+int addon_bar_width(void) {
+    const app_t *a = bar_app();
+    return a ? a->barw : 0;
+}
+
 /* Smart Wi-Fi (smart_wifi.c smart_needed): an app started, or restarting after Retry, keeps the
  * radio on until it stops (by itself, Stop Streaming Services or Rockbox). One stopped for USB
  * storage counts once it starts again: the cable holds the radio meanwhile, and an app deleted from
@@ -1356,6 +1411,14 @@ void addon_poll(void) {
     now_poll();
     library_poll();
     addon_wifi_poll();
+    /* the status bar picks its icon as it paints (bar_sync): an app starting, stopping or changing
+     * its bar= repaints nothing else, so the bar is repainted when the icon changes */
+    static char bar_was[sizeof ap.a[0].baricon] __attribute__((section(".scratch")));
+    const char *bar = addon_bar_icon(); /* compared by its text: bar_read rewrites it in place */
+    if (strcmp(bar ? bar : "", bar_was)) {
+        tk_snprintf(bar_was, sizeof bar_was, "%s", bar ? bar : "");
+        widget_invalidate_force(*(void *const *)system_bar, (void *)0);
+    }
 }
 
 /* An app asked to end through its loop, not its socket, so a frozen one stops too; restart: started

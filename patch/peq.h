@@ -510,7 +510,10 @@ const char *addon_network_name(int k), *addon_network_icon(int k);
  * user stopped since the last link), each stopped, and the user's stops forgotten. */
 int addon_wifi_apps(void);
 void addon_wifi_start(void), addon_wifi_stop(void), addon_wifi_release(void);
-void addon_wifi_poll(void);      /* addon_wifi.c: once per addon_poll pass */
+void addon_wifi_poll(void); /* addon_wifi.c: once per addon_poll pass */
+/* addon.c: a running app's bar.png for the status bar while its status file says bar=1, or 0 */
+const char *addon_bar_icon(void);
+int addon_bar_width(void);       /* addon.c: that icon's width, 0 for none */
 int card_path(const char *path); /* on the card, no ".." segment: what an app or server may name */
 int addon_is_icon(const char *name); /* a card app's Streaming icon, by its file:// name */
 void addon_poll(void), addon_stop(void), addon_paint(void *w, void *canvas), addon_card_away(void);
