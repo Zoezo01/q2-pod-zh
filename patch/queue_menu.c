@@ -384,7 +384,7 @@ static int qm_pick(void *action, void *event) {
 /* Hold menu rows: stock sortselect's list is 210, so three whole rows and the reading margin
  * (SCROLL_MARGIN) show at every scroll, never a half row under the title. */
 #define QM_ROW 66
-/* Under Classic (dialogs_painted) the hold menu is Cover Flow's flip panel
+/* Under Classic (classic_dialogs) the hold menu is Cover Flow's flip panel
  * (docs/ipod.md#cover-flow) centred under the bar, opaque: QM_HEAD rows of header holding the
  * navbar's title, then the theme's page rows, QM_ROWS at most (past them it scrolls), all clear of
  * the glass. No dim; hold_paint draws the panel. */
@@ -467,7 +467,7 @@ static int qm_open(const void *unused) {
                                                : groups;
         qm_title(dialog, kind == 0 ? "Shuffle" : kind == 1 ? "Repeat" : "Group by");
         widget_destroy_children(view);
-        int painted = dialogs_painted(), row = painted ? theme()->page_row : QM_ROW,
+        int painted = classic_dialogs(), row = painted ? theme()->page_row : QM_ROW,
             w = painted ? BACK_W : 375;
         for (int i = 0; i < count; ++i) {
             void *item = list_item_create(view, 0, i * row, w, row);
@@ -574,7 +574,7 @@ static int qm_open(const void *unused) {
                                         "Select Playlists…" };
     char rated[32];
     /* stock sortselect row styles */
-    int painted = dialogs_painted(), pitch = painted ? theme()->page_row : QM_ROW;
+    int painted = classic_dialogs(), pitch = painted ? theme()->page_row : QM_ROW;
     for (int i = 0; i < n; ++i) {
         void *item = list_item_create(view, 0, i * pitch, painted ? BACK_W : 375, pitch);
         widget_use_style(item, "s_listitem_black");

@@ -212,3 +212,26 @@ for light in '01':
     assert {'16', '42', ':', 'Save'} <= set(texts) and [n for n, _ in qs_arts(m)] == ['flat_clock_face_' + 'dl'[int(light)]]
     assert m.lcd_colors() == LCD_COLORS; passed()
 
+
+def confirm_flat(light='0'):
+    """Shut Down? under Modern: stock's confirminfo_dialog as its asset leaves it."""
+    m = Machine(); m.config.update(THEME='2', LIGHT=light, ACCENT='4')
+    d = m.node('dialog', 'confirminfo_dialog'); m.word(d + O['W_PARENT'], m.wm); place(m, d, 0, 0, 375, 320); m.top = d; m.clip = (0, 0, 375, 320)
+    m.char_px = 52.6 / 6; m.image_size = (315, 68)
+    cells = [m.entry(d, O['CONFIRM_TOP'] + i * 48) for i in range(2)]
+    for b, name, text in zip(cells, ('img_cancel', 'img_enter'), ('Cancel', 'OK')):
+        m.nodes[b].update(type='button', name=name, text=text); place(m, b, 0, m.get(b + O['W_Y']), 375, 48)
+    prompt = m.node('hscroll_label', '', text='Shut Down?'); place(m, prompt, 10, 79, 355, 24)
+    m.nodes[d]['children'] = [*cells, prompt]; parents(m, d)
+    return m, d, cells
+
+
+# A confirm under Modern (navigation.c confirm_dress, confirm_track_flat, confirm_lit, confirm_labels): two 36 px pills 8
+# apart on the page form's row, Cancel holding in what is on, OK grey; the words with no shadow; no image.
+for light in '01':
+    m, d, cells = confirm_flat(light); m.paint(d)
+    (x0, y0, w0, h0), (x1, y1, w1, h1) = wbox(m, cells[0]), wbox(m, cells[1])
+    assert (y0, h0) == (y1, h1) == (250, 36) and x1 == x0 + w0 + 8 and abs(x0 + x1 + w1 - 375) <= 1 and not m.image_draws
+    inside = lambda x, w: {b[4] for b in m.bands if b[2] > 1 and x <= b[0] and b[0] + b[2] <= x + w and y0 <= b[1] < y0 + h0}
+    held, other = inside(x0, w0), inside(x1, w1)
+    on = color_t(on_of(m, light, '4')); assert on in held and other == {color_t(FLAT_REST[light])}; passed()  # both at rest, then the held one lit
