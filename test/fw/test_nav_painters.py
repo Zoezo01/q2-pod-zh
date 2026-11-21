@@ -1855,7 +1855,7 @@ def test_device_volume_off_gives_stock_its_gain_back_at_once(fw, way, sent):
 
 
 def playset(fw, ui, view, stock_rows=13):
-    """Stock's Playback rows, s0-s12: s8 Headphones required, s11 Volume and Album Display, s12 Folder skip."""
+    """Stock's Playback rows, s0-s12: s8 Require Output, s11 Volume and Album Display, s12 Folder skip."""
     def build(*_):
         for i in range(stock_rows):
             item = ui.add('list_item', view, (0, 0, 375, 70), f's{i}')
@@ -1880,7 +1880,7 @@ def test_playback_orders_its_rows_and_ends_on_library_and_folders(fw):
     assert rows[-1] is row(ui, view, 'Library & Folders') and 'list_into' in [c.props.get('image') for c in rows[-1].walk()]
     assert (at['s3'], at['s2']) == (0, 1)  # Play Mode, then EQ
     assert at['playset_gapless'] == at['s7'] + 1 and at['playset_memplay'] == at['s6'] + 1  # Crossfade, Resume Songs
-    assert at['s8'] == at['playset_memplay'] + 1  # Headphones required, after Resume Songs
+    assert at['s8'] == at['playset_memplay'] + 1  # Require Output, after Resume Songs
     balance = [k for k, r in enumerate(rows) if icon(r) == 'playset_balance']
     assert balance == [at['s10'] + 1, at['s10'] + 2]  # Mono Audio and Swap L/R
     assert at['s5'] == at['s4'] + 1 == 17  # DSD Output, then USB Audio last but one

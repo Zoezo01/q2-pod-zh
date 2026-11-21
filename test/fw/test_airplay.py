@@ -178,7 +178,7 @@ def test_a_speaker_takes_its_own_volume_and_the_earphones_level_and_limit_come_b
     assert tap.t.volume == -1
 
 
-# Headphones Required (#388) is the earphones' too: a speaker plays with none connected.
+# Require Output (#388) is the earphones' too: a speaker plays with none connected.
 def required(fw, on, jack=0):
     """The switch, and a 3.5 mm jack plugged or not, as stock keeps them; the toggles of stock's player the payload
     makes (media_set_playing's, a pause while it plays)."""

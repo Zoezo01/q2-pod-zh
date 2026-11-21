@@ -59,10 +59,10 @@ void headset_manual(void) {
         hs.recent_owner = 0;
     }
 }
-/* player_play_pause. Headphones required with none to play to: nothing starts, as stock's own
+/* player_play_pause. Require Output with none to play to: nothing starts, as stock's own
  * Play key (playpause_quick_click, 0x4f2fc8), which toasts so; a pause always goes through.
  * ponytail: a card app's own player and a card app's song through player_start aren't asked
- * (docs/internals.md, Headphones Required); gate addon.c's starts if that matters. */
+ * (docs/internals.md, Require Output); gate addon.c's starts if that matters. */
 int ringnav_play_pause(void) {
     headset_manual();
     int status = mclGetPlayStatus();
@@ -127,7 +127,7 @@ void media_key(unsigned key) {
         spot_media(key);
     else if (key == KEY_PLAY)
         player_play_pause();
-    else if (check_forbid_play_no_headset(0)) /* Headphones required: as stock's skip keys */
+    else if (check_forbid_play_no_headset(0)) /* Require Output: as stock's skip keys */
         ;
     else if (key == KEY_FWD_BTN)
         player_next_music();

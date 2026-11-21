@@ -3363,7 +3363,7 @@ static const unsigned char playset_order[] = {
     11 /* Crossfade */,
     6 /* Memory play */,
     12 /* Resume Songs */,
-    8 /* Headphones required */,
+    8 /* Require Output */,
     0 /* Gain */,
     9 /* ReplayGain */,
     16 /* Max Volume */,
@@ -4329,7 +4329,7 @@ int stream_ipod(void *art, void *const text[4], void *elapsed, void *remain, voi
 }
 
 /* playing_page_init: stock builds the page and starts its 250 ms timer, then the iPod labels bind.
- * Headphones required with none to play to: stock toasts, closes the window it was given and
+ * Require Output with none to play to: stock toasts, closes the window it was given and
  * returns STOP before it builds anything (0x53e4b4), so nothing binds. */
 int ringnav_playing(void *win, void *ctx) {
     if (st.np_full)
@@ -6821,7 +6821,7 @@ int ipod_list_layout(void *layout, void *view) {
 
 /* Replaces home_page_init's boot resume, navigator_to_with_context("playing_page", ctx) with ctx
  * {queue, index, class, mode}. Car mode (mode 2, plays) keeps that call; otherwise this is the
- * paused start playing_page_init would make, without the page. Headphones Required no longer skips
+ * paused start playing_page_init would make, without the page. Require Output no longer skips
  * the resume (ipod.py nops stock's test): a paused queue plays nothing, and car mode's start is
  * asked here, as the page would (it would refuse and restore nothing), and comes back paused. */
 void ringnav_boot(const char *page, const int *ctx) {

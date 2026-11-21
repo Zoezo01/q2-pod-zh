@@ -457,7 +457,7 @@ def test_shuffle_songs_plays_the_library_from_a_random_song(fw, ui, mcl, song):
 
 
 def test_shuffle_songs_headphones_required_forbids_changes_nothing(fw, ui, mcl, song):
-    """Headphones Required with no output: Shuffle Songs asks stock's gate (0: it shows its message) before it
+    """Require Output on, nothing connected: Shuffle Songs asks stock's gate (0: it shows its message) before it
     takes the mode to restore, ends advanced play, saves Shuffle or opens Now Playing, and its refusal does none
     of them, with no toast of ours. Here the queue is an earlier Shuffle Songs, holding mode 3 to restore. Now
     Playing refused only after Shuffle was saved, and the old queue then became Shuffle Songs anew."""

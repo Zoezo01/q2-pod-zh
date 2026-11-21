@@ -723,7 +723,7 @@ LABELS = tuple((k.encode(), o.encode(), n.encode()) for k, o, n in (
     ('playset_covermode', 'Enlarged album art(10s wait)', 'Enlarged Album Art'),
     ('playset_filter', 'Digital filters', 'Digital Filters'),
     ('playset_memplay', 'Memory playback', 'Memory Playback'),
-    ('playset_noplay', 'Headphones required for playback', 'Headphones Required'),
+    ('playset_noplay', 'Headphones required for playback', 'Require Output (Beta)'),
     ('replaygain_track', 'Audio', 'Song'),
     ('small_playset', 'Playback Setting', 'Playback'), ('small_sysset', 'System Setting', 'System'),
     ('system_wifiset', 'Wireless Setting', 'Wireless'), ('system_display', 'Display setting', 'Display'),
@@ -1553,7 +1553,7 @@ FUNCTIONS = {
  'player_playtime_and_length': ('int', 'int *, int *'),  # elapsed, total: track seconds; -1 none
  'player_start': ('int', 'void *, int, int, int'),
  'buzzeer_switch': ('int', 'int'),  # the stock key click; it reads g_keytone_flag
- # Headphones required (g_block_withoutphone_flag) with no output: toasts (0) and returns 1, as before each stock start
+ # Require Output (g_block_withoutphone_flag) with no output: toasts (0) and returns 1, as before each stock start
  'check_forbid_play_no_headset': ('int', 'int'),
  'on_wm_keyup_fun': ('int', 'void *, void *'),  # stock key-up: np_single replays a centre release
  'get_wifisignal': ('int', 'void'),  # the status bar's Wi-Fi bars, 1-4; -1 when not connected
@@ -1673,7 +1673,7 @@ GLOBALS = ['tidal_albuminfo_thread_run', 'tidal_collection_thread_run',  # 2: a 
            'g_usbvol_mode',  # USB DAC volume: 0 fixed, else the volume (config_usbvolmode, device_set_volume)
            'g_usbdac_chargeflag',  # USB mode's charge choice, which switch_charge_enable gets there
            'g_memory_play', 'g_carmode', 'g_carmode_state',  # In-Vehicle Mode (pod_click)
-           'g_block_withoutphone_flag',  # Headphones Required (check_forbid_play_no_headset's switch)
+           'g_block_withoutphone_flag',  # Require Output (check_forbid_play_no_headset's switch)
            'g_bigcovermode', 'g_foldercover_flag',  # Enlarged Album Art (1 on) and Folder Album Cover (pod_click)
            'g_headset_output',  # the output config_outputchannel sets: 0, 1 the jacks, 2 Bluetooth
            'g_usbmode',  # USB mode: 1 Audio and DAC, else USB Storage (usbmode_page_init)

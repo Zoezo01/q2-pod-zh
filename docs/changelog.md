@@ -1,6 +1,7 @@
 # Changelog
 
 - **1.8.9**:
+  - Playback: **Headphones Required** is now **Require Output (Beta)**. It is experimental: if it won't play with headphones in, turn it off and on again.
   - Library: **Apps**, **Games** and **App Store** are together in the Library, above Upload Scrobbles and Update Library. **App Store** moved here from System settings. **Apps** lists the card apps that had their own Library row, such as Utilities and Weather, and shows once one is installed. **Hide Apps**, **Hide Games** and **Hide App Store** in Display → Appearance take each row away.
   - App Store: an app that isn't in Q2 Pod's list can be installed and updated from it. Put its GitHub repository, one `owner/repo Name` a line, in `.q2/custom-sources.list` on the card; it shows after the listed apps, on **Games** under a `[Games]` line. A repository already in the list is skipped.
   - Most Played: songs you start playing once the play counts have filled up are counted when you play them again within a few days, so a new album can join **Most Played**. Once all 512 places held songs played twice or more, each song played for the first time took the place of the one played for the first time before it, so no new song got past one play and Most Played stopped changing.

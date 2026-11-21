@@ -7891,7 +7891,7 @@ static void land_fallbacks(void) {
         if (k == 6) np_opens = 2;                             /* no img_cover */
         if (k == 7) np_art_box[3] = NP_IPOD_ART;              /* not slanted */
         if (k == 8) np_art_box[2] = 177, np_art_box[3] = 220; /* another side */
-        if (k == 9) np_opens = 0;                             /* Headphones Required: its window closed, Cover Flow on top */
+        if (k == 9) np_opens = 0;                             /* Require Output: its window closed, Cover Flow on top */
         if (k == 12) np_opens = 3;                            /* another window on top */
         if (k == 13) calloc_fail = 1;
         if (k == 14) offline_ok = 0;                       /* the capture can't paint the panel */

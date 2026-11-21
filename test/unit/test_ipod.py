@@ -1232,7 +1232,7 @@ def code_patches():
             (ipod.inc('LIST_VIEW_LAYOUT_SLOT'), ipod.inc('LIST_VIEW_LAYOUT'), 0x40b000, 'settings lists stack SET_ROW rows and map their children'),
             *[(0x78bba0 + 4 * i, old, new, 'times without a leading zero') for i, (old, new) in enumerate(times)],
             (0x534cf8, 0x0320f809, 0x0c103000, 'boot resume restores the queue paused and stays on Home'),
-            (0x534c4c, 0x1440003c, 0, 'boot resume with Headphones Required on')]
+            (0x534c4c, 0x1440003c, 0, 'boot resume with Require Output on')]
 
 
 def test_patch_code():
