@@ -2561,6 +2561,14 @@ def test_a_page_opens_on_the_apps_menu_and_starts_it(fw):
     assert p.world.of('system') == [(b'/bin/sh /mnt/mmc/.foo/run',)]
 
 
+def test_a_page_opened_on_a_running_app_starts_nothing(fw):
+    p = Page(fw)
+    fw.fn('addon__closed', C.c_int, C.c_void_p, C.c_void_p)(p.page, None)
+    fw.fn('addon_open', C.c_int, C.c_void_p, C.c_void_p)(0, None)
+    assert p.pg.page == p.page and p.request().endswith(b'\tmenu\n')
+    assert p.world.of('system') == [(b'/bin/sh /mnt/mmc/.foo/run',)]  # its one start
+
+
 def test_rows_show_with_a_trailing_more_when_theres_a_cursor(fw):
     p = Page(fw)
     p.answer(rows=[item(1), item(2)])
@@ -3551,6 +3559,23 @@ def test_a_screen_row_runs_as_a_game_does_its_page_left_as_it_was(fw):
     assert g.kills()[1:] == [b'kill %d' % g.PID]  # after its launcher's start
 
 
+def test_a_screen_row_with_empty_fields_sets_both_empty_and_is_asked_again(fw):
+    p = Page(fw)
+    p.answer(rows=[(b'screen', b'', b'Resume', b'', b'', b'')])
+    env = []
+    fw.mock('fw_setenv', lambda name, value, over, *_: env.append((C.string_at(name), C.string_at(value), over)) or 0)
+    calls = execl(fw)
+    fw.mock('fw_fork', lambda *_: 0)  # the child
+    p.click(0)
+    assert env[1:] == [(b'Q2_URI', b'', 1), (b'Q2_CONTEXT', b'', 1)] and len(calls) == 1
+    g = CardGame(fw, world=p.world)  # the parent's side
+    p.click(0)
+    assert fw.var('addon__gm', Game).screen == 1
+    asked = p.req.id
+    ended(g)
+    assert p.req.id == asked + 1
+
+
 def test_a_held_play_on_a_screen_row_still_sends_its_op(fw):
     p = Page(fw)
     p.answer(rows=[SCREEN])
@@ -3596,6 +3621,26 @@ def test_a_live_level_is_not_asked_while_a_run_is_in_front(fw, row, manifest):
     fw.var('addon__gm', Game).native = 1  # Now Playing has the screen, then the page over it
     p.tick()
     assert p.req.id == asked + 1 and p.req.running == 1 and p.request().endswith(b'\tmenu\n')
+
+
+@pytest.mark.parametrize('status', [11, 15, 9, 127 << 8])  # a crash, Return's hold, its kill, a failed exec
+def test_a_screen_run_s_end_asks_however_it_ended(fw, status):
+    p = Page(fw)
+    p.answer(rows=[SCREEN])
+    g = CardGame(fw, world=p.world)
+    p.click(0)
+    asked = p.req.id
+    ended(g, status)
+    assert p.req.id == asked + 1 and p.top.state == K_LOAD
+
+
+def test_a_live_level_showing_an_error_is_reloaded_not_asked_in_place(fw):
+    p = live(fw, [SCREEN])
+    g = CardGame(fw, world=p.world)
+    p.click(0)
+    p.top.state = K_ERROR  # as a reply under the run left it
+    ended(g)
+    assert p.top.state == K_LOAD and p.request().endswith(b'\tmenu\n')
 
 
 def test_a_screen_run_s_end_reloads_any_other_level_with_its_row_kept(fw):
