@@ -10,7 +10,8 @@ import pytest
 
 import host
 from conftest import O, Deques, Files, Game, claim, high_halves, in_fork, libc, stock_stub
-from test_radio import Rd  # test_radio.py keeps the mirror
+from test_books import Vid
+from test_radio import Rd, Sp  # test_radio.py keeps the mirror
 from test_streaming import Td
 
 TIDAL = '/mnt/mmc/.tidal'
@@ -501,7 +502,8 @@ def test_a_load_through_ringnav_load_takes_an_app_song_s_heart_with_it(fw, queue
 # app runs: an app that ended (idle, Stop) is started as its page starts it before the URL
 # goes to the player, which waits for its socket, AU_WAKE_MS at most. docs/internals.md, Card apps.
 LOCAL = b'http://127.0.0.1:2317/song/1?q=hi'
-WAKE = [LOCAL + b'\tA', b'https://x/b.flac\tB', b'http://127.0.0.10/c.flac\tC', b'http://127.0.0.1/d.flac\tD']
+WAKE = [LOCAL + b'\tA', b'https://x/b.flac\tB', b'http://127.0.0.10/c.flac\tC', b'http://127.0.0.1/d.flac\tD',
+        b'http://127.0.0.1.evil/e.flac\tE', b'http://127.0.0.1@host/f.flac\tF']
 
 
 class Wake:
@@ -569,7 +571,8 @@ def test_a_running_app_s_song_plays_at_once(fw, queue, mcl):
 @in_fork
 def test_a_song_from_another_server_starts_nothing(fw, queue, mcl):
     w = Wake(fw, queue, mcl, running=False)
-    for pos, url in (1, b'https://x/b.flac'), (2, b'http://127.0.0.10/c.flac'):
+    for pos, url in ((1, b'https://x/b.flac'), (2, b'http://127.0.0.10/c.flac'), (4, b'http://127.0.0.1.evil/e.flac'),
+                     (5, b'http://127.0.0.1@host/f.flac')):
         w.run(w.start(pos))
         assert w.played[-1] == url
     assert w.ran == [] and w.tries == 0 and w.slept == 0
@@ -595,14 +598,16 @@ def test_a_start_meanwhile_ends_the_wait_and_its_song_alone_plays(fw, queue, mcl
 
 # The URL goes to stock's player past ringnav_start_player, which moves Spotify and a station off the PCM and refuses
 # under a card game's sound: one started during the wait keeps it, and the song is dropped.
-@pytest.mark.parametrize('what', ['radio', 'game'])
+@pytest.mark.parametrize('what', ['radio', 'game', 'spotify', 'video'])
 @in_fork
 def test_something_else_started_during_the_wait_keeps_the_sound(fw, queue, mcl, what):
     w = Wake(fw, queue, mcl, running=False, answers_at=10 ** 6)
-    rd, gm = fw.var('radio__rd', Rd), fw.var('addon__gm', Game)
+    rd, gm, sp, vid = fw.var('radio__rd', Rd), fw.var('addon__gm', Game), fw.var('spotify__sp', Sp), fw.var('books__vid', Vid)
     on = {'radio': lambda: setattr(rd, 'active', 1) or setattr(rd, 'pid', 4321),
-          'game': lambda: setattr(gm, 'pid', 4321) or setattr(gm, 'audio', 1)}
-    w.later = on[what]  # a station, or a game with audio=1, starts while the song waits
+          'game': lambda: setattr(gm, 'pid', 4321) or setattr(gm, 'audio', 1),
+          'spotify': lambda: setattr(sp, 'active', 1) or setattr(sp, 'playing', 1),
+          'video': lambda: setattr(vid, 'pid', 4321)}
+    w.later = on[what]  # a station, a game with audio=1, Spotify or a video starts while the song waits
     w.run(w.start(0))
     assert w.slept == 100000 and w.played == [] and w.ran == [b'/bin/sh /mnt/mmc/.a/run']
 
