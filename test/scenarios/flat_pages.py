@@ -108,9 +108,9 @@ FLAT_INK = {'0': 0xffffff, '1': 0x1c1c1e}  # flat_ink
 def paper_of(light): return 0 if light == '0' else O['LIGHT_PAPER'] * 0x010101
 
 
-def slider_flat(name, slider, view, label, ends, light='0', accent='4', **kw):
+def slider_flat(name, slider, view, label, ends, light='0', accent='4', config={}, **kw):
     """test/patch.py's slider_win under Modern: stock's page as it loads, before its init."""
-    m = LoadPlain(); m.config.update(THEME='2', LIGHT=light, ACCENT=accent)
+    m = LoadPlain(); m.config.update({'THEME': '2', 'LIGHT': light, 'ACCENT': accent, **config})
     s = m.node('slider', slider, **kw); lab = m.node('label', label, text='5'); l, r = (m.node('image', n) for n in ends)
     dec, add = m.node('image', 'img_dec'), m.node('image', 'img_add')
     v = m.node('view', view, [lab, s, l, r, dec, add]); nav = m.node('view', 'view_navbar', visible=0)
@@ -151,9 +151,9 @@ assert {(m.nodes[w]['style:normal:font_name'], m.nodes[w]['style:normal:font_siz
 scrub_bands(m); assert not m.image_draws; passed()
 
 
-def boot_flat(light='0', on=1):
+def boot_flat(light='0', on=1, **config):
     """test/patch.py's boot_page under Modern."""
-    SETUP[:] = [lambda k: (k.config.update(THEME='2', LIGHT=light, ACCENT='4'), k)]
+    SETUP[:] = [lambda k: (k.config.update({'THEME': '2', 'LIGHT': light, 'ACCENT': '4', **config}), k)]
     try: q = LoadQueue(queue=1)
     finally: SETUP.clear()
     win = q.ready = QueueMachine.bootvol(q); parents(q, win); q.word(win + O['W_PARENT'], q.wm); place(q, win, 0, 26, 375, 294)
