@@ -1697,8 +1697,8 @@ def test_a_press_ends_the_kept_handles_next_request_at_once(fw):
     Card(fw)
     apps(fw, b'me/foo', b'me/bar', b'me/baz')
     sh = fw.var('netupdate__sh', Sh)
-    hung = Hung(fw, hang=(b'https://github.com/',),
-                press=lambda k: k == 1 and hung.urls[-1].endswith(b'/bar/releases/latest') and setattr(sh, 'cancel', 1))
+    hung = Hung(fw, hang=(b'https://github.com/',))
+    hung.press = lambda k: k == 1 and hung.urls[-1].endswith(b'/bar/releases/latest') and setattr(sh, 'cancel', 1)
     assert check(fw) == 0
     assert asked(hung) == [b'foo', b'bar'] and hung.calls == list(range(30)) + [0, 1]
     names, _ = curl_calls(fw)
