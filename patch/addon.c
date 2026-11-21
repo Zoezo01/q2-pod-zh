@@ -98,7 +98,7 @@
 /* This firmware's card-app features, space-separated; a feature adds its word. */
 #define ADDON_CAPS                                                                                 \
     "playlist progress pages library goto sleep game audio sections art window urls sort field "   \
-    "more fav now fieldtext wake audio2 dim gameview eq screen"
+    "more fav now fieldtext wake audio2 dim gameview eq screen volume"
 #define ADDON_SECTIONS 8  /* sections an app's first page may have */
 #define SWIPE_CLAIM_PX 24 /* a sideways move this far, twice as far as up or down, is a swipe's */
 #define SWIPE_PX 60       /* and this far at the lift, more than up or down, changes section */
@@ -851,6 +851,7 @@ static void poll_one(app_t *a) {
  *   "k d CODE", "k u CODE"            a key down, up (AWTK's codes: Return 170, Centre 218)
  *   "w N"                             the wheel's raw travel since the last (wheel_raw: 200 a turn,
  *                                     rising anticlockwise), sent once a UI loop pass
+ *   "v LEVEL", "v LEVEL ARG"          the volume, 0 to 100, to a game with the sound (game_volume)
  * Play/Pause and the side buttons stay the music's, as stock has them under the Games page, unless
  * the game's q2app says audio=1: the sound is then the game's (player_stop and dac_take before it
  * starts, as video_start; the output device and, on Bluetooth or USB, the volume as its arguments,
@@ -878,7 +879,9 @@ static void poll_one(app_t *a) {
  * A row of kind screen on a card app's page (go, caps word screen) runs that app's binary as a
  * game's row runs a game, all of the above its q2app's too: audio=1 there gives its screen rows
  * the sound. The child also gets the row's uri and context as Q2_URI and Q2_CONTEXT, and when it
- * ends its page's top level is asked again (screen_back). */
+ * ends its page's top level is asked again (screen_back). A game with the sound sets the Q2's
+ * volume, or asks for it, in /tmp/q2-<id>.volume, and is told it as "v" datagrams (game_volume),
+ * caps word volume. */
 #define GAME_IDLE_MS 120000
 #define GAME_HOLD_MS 700 /* navigation.c's KEY_HOLD_MS, Return's hold elsewhere */
 #define GAME_CHORD_MS 1200
@@ -900,6 +903,8 @@ static struct {
     int native; /* Now Playing has the screen and the keys */
     int stock;  /* GAME_ bits pressed on Now Playing: stock's to their release */
     int screen; /* a screen row's run: its app's slot + 1 (screen_back) */
+    /* .volume as acted on last, and the "v" datagram sent last */
+    char vreq[8], vsent[16];
 } gm __attribute__((section(".scratch")));
 
 int addon_games(void) { return addon_scan(), ap.games; }
@@ -1077,6 +1082,7 @@ static int game_start(app_t *a, const char *uri, const char *ctx) {
     popup_env(pop, sizeof pop); /* the theme's pop-up, for its own menus */
     tk_snprintf(gm.id, sizeof gm.id, "%s", a->id);
     game_unlink("dim"); /* an earlier run's */
+    game_unlink("volume");
     if (a->audio == 2) game_unlink("audio");
     if (a->view) game_unlink("view"), game_unlink("quit");
     /* the sound is its: hciplayer off the PCM, the jack readied, as video_play */
@@ -1111,6 +1117,7 @@ static int game_start(app_t *a, const char *uri, const char *ctx) {
     gm.view = a->view;
     gm.native = gm.down = gm.stock = 0;
     gm.screen = uri ? (int)(a - ap.a) + 1 : 0;
+    gm.vreq[0] = gm.vsent[0] = 0;
     gm.polled = time_now_ms();
     gm.sock = socket(1, 1, 0); /* AF_UNIX, SOCK_DGRAM (MIPS numbering) */
     gm.seen = time_now_ms();
@@ -1188,6 +1195,44 @@ int addon_game_input(void *e) {
     return 1;
 }
 
+/* game_poll's, every pass while the game has the sound: its /tmp/q2-<id>.volume, written whole, is
+ * the level it wants, 0 to 100, or "?" to ask (a line end allowed). A level is set as video_key
+ * sets the wheel's (books.c: device_set_volume, saved), at most 100 and the Maximum volume, and
+ * either is answered on its socket: "v LEVEL", then on Bluetooth or a USB DAC a space and what its
+ * second argument would be now (output_device: "v 41", "v 41 100", "v 41 h41"). The file's text is
+ * acted on once (gm.vreq); any other text is ignored. Every ADDON_POLL_MS (due) the same datagram
+ * goes when it would differ from the last sent, as video_poll tells q2video: the level or the
+ * output changed by other means (a headset's keys), and the request standing in the file is
+ * removed, so the game can ask for that level again.
+ * ponytail: a failed open, or one small read of a tmpfs file, every pass while a game has the
+ * sound; a request renamed into place between a pass's read and that removal goes unread, which a
+ * seq in the file would close. */
+static void game_volume(int due) {
+    char f[32], raw[8], arg[5], m[16];
+    game_file(f, "volume");
+    unsigned n = state_read(f, raw, sizeof raw);
+    while (n && (raw[n] == '\n' || raw[n] == '\r')) raw[n--] = 0;
+    const char *c = raw + 1;
+    int v = 0, asked = strcmp(c, gm.vreq) != 0;
+    if (asked) tk_snprintf(gm.vreq, sizeof gm.vreq, "%s", c);
+    for (; *c >= '0' && *c <= '9'; ++c) v = v * 10 + (*c - '0');
+    if (asked && c > raw + 1 && !*c) {
+        if (v > 100) v = 100;
+        if (v > g_maxvolume) v = g_maxvolume;
+        g_volume = (unsigned char)v;
+        device_set_volume(v, 1);
+        write_int_config(v, "PLAYSET", "VOLUME");
+    } else if (strcmp(raw + 1, "?"))
+        asked = 0; /* nothing new, or nothing it could mean */
+    if (!asked && !due && gm.vsent[0]) return;
+    const char *dev = output_device(arg);
+    tk_snprintf(m, sizeof m, "v %u%s%s", (unsigned)g_volume, dev ? " " : "", dev ? arg : "");
+    int moved = gm.vsent[0] && strcmp(m, gm.vsent); /* gm.vsent empty: the level it started at */
+    if (!asked && moved) game_unlink("volume"), gm.vreq[0] = 0;
+    if (asked || moved) dgram_send(&gm.sock, gm.path, m, strlen(m));
+    tk_snprintf(gm.vsent, sizeof gm.vsent, "%s", m);
+}
+
 static void screen_back(int slot);
 
 /* every UI loop pass: the wheel's travel, the screen held in front, standby held, the idle quit,
@@ -1206,6 +1251,7 @@ static void game_poll(void) {
         if (gm.view) game_unlink("view"), game_unlink("quit");
         if (gm.dim && g_backlight_status) toolSetBackLight(g_lightness + 1);
         if (gm.dim) game_unlink("dim");
+        game_unlink("volume");
         wheel_raw = 0;
         widget_invalidate_force(window_manager(), 0);
         if (gm.screen) screen_back(gm.screen - 1);
@@ -1213,6 +1259,7 @@ static void game_poll(void) {
         return;
     }
     unsigned now = (unsigned)time_now_ms();
+    if (gm.audio) game_volume(now - gm.polled >= ADDON_POLL_MS); /* before game_files stamps it */
     if (gm.dim || now - gm.polled >= ADDON_POLL_MS) game_files(now);
     /* Back, Hold Return: Home, or it never opened; lit, as game_view's cancel */
     if (gm.native && g_backlight_status && !navigator_window_is_exist("playing_page"))

@@ -10,7 +10,7 @@ import pytest
 
 import host
 from conftest import O, SPOT_FAIL, SPOT_NOSOCK, SPOT_OK, Deques, Game, block, claim, high_halves, libc, text
-from test_books import execl  # the child's execl calls
+from test_books import execl, mixer  # noqa: F401  the child's execl calls; USB_MIXER, for a USB DAC's volume
 from test_coverflow import png  # an icon's header
 from test_netupdate import JOB_INSTALL, JOB_REMOVE, SH_CANCELLED, SH_CARD, SH_NET, SH_OK, Sh  # test_netupdate.py keeps netupdate.c's App Store mirror
 from test_radio import Rd  # test_radio.py keeps the mirror
@@ -473,7 +473,7 @@ def test_more_apps_than_slots(fw):
 def test_the_features_are_published_at_every_scan(fw):
     world = card(fw)
     scan(fw)
-    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections art window urls sort field more fav now fieldtext wake audio2 dim gameview eq screen\n'
+    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections art window urls sort field more fav now fieldtext wake audio2 dim gameview eq screen volume\n'
     assert world.of('rename') == [(b'/tmp/q2-addon.caps.tmp', b'/tmp/q2-addon.caps')]
 
 
@@ -2043,6 +2043,187 @@ def test_a_game_that_never_asks_never_touches_the_panel(fw):
     g.status, g.exited = 0, True
     g.poll()
     assert backlight(fw) == []
+
+
+VOLUME = b'/tmp/q2-snake.volume'
+
+
+def loud(fw, level=30, most=100, way=0):
+    """A game with the sound (audio=1) running at volume level under the Maximum volume most, on output way."""
+    g = CardGame(fw, snake=b'name=Snake\ngame=1\naudio=1\n')
+    fw.mock('mclGetOutputWay', lambda *_: way)
+    fw.var('g_volume', C.c_ubyte).value, fw.var('g_maxvolume', C.c_ubyte).value = level, most
+    g.world.files[VOLUME] = b'99'  # an earlier run's
+    assert g.start() == 1 and VOLUME not in g.world.files
+    g.poll()  # the level it started at: nothing to tell
+    assert g.sent == [] and fw.var('g_volume', C.c_ubyte).value == level
+    return g
+
+
+def volumes(fw):
+    """Each level set since the game's fork, as its dac_take set the DAC's before: device_set_volume's level and
+    notify, then what was saved and where."""
+    log = fw.calls()
+    start = max(k for k, (name, _) in enumerate(log) if name == 'fw_fork')
+    saved = [(a[0], C.string_at(a[1]), C.string_at(a[2])) for _, a in fw.calls('write_int_config')]
+    return [a[:2] for name, a in log[start:] if name == 'device_set_volume'], saved
+
+
+def test_a_game_with_the_sound_asks_for_the_volume(fw):
+    g = loud(fw)
+    g.world.files[VOLUME] = b'?\n'
+    g.poll()  # every pass, not every ADDON_POLL_MS
+    assert g.sent == [(SNAKE_SOCK, b'v 30')] and volumes(fw) == ([], [])
+    g.poll(500)
+    assert len(g.sent) == 1 and g.world.files[VOLUME] == b'?\n'  # answered once, the file left
+
+
+@pytest.mark.parametrize('text', [b'41', b'41\n', b'41\r\n'])
+def test_a_game_with_the_sound_sets_the_volume_as_the_wheel_does(fw, text):
+    g = loud(fw)
+    g.world.files[VOLUME] = text
+    g.poll()
+    assert fw.var('g_volume', C.c_ubyte).value == 41 and g.sent == [(SNAKE_SOCK, b'v 41')]
+    assert volumes(fw) == ([(41, 1)], [(41, b'PLAYSET', b'VOLUME')])
+
+
+@pytest.mark.parametrize('most, asked, level', [(60, b'80', 60), (60, b'60', 60), (60, b'59', 59), (100, b'150', 100), (100, b'100', 100),
+                                                (100, b'999999', 100), (100, b'0', 0), (0, b'5', 0), (120, b'110', 100)])
+def test_a_level_is_never_over_100_nor_the_maximum_volume(fw, most, asked, level):
+    g = loud(fw, most=most)
+    g.world.files[VOLUME] = asked
+    g.poll()
+    assert fw.var('g_volume', C.c_ubyte).value == level and g.sent == [(SNAKE_SOCK, b'v %d' % level)]
+    assert volumes(fw) == ([(level, 1)], [(level, b'PLAYSET', b'VOLUME')])
+
+
+@pytest.mark.parametrize('text', [b'', b'\n', b'41x', b'x41', b'-1', b'+41', b' 41', b'4 1', b'4\n1', b'??', b'? 41', b'v 41', b'41.5', b'1234567'])
+def test_a_volume_request_that_means_nothing_is_ignored(fw, text):
+    """Six bytes are read: a longer file is cut there, and what follows a number's digits makes it none."""
+    g = loud(fw)
+    g.world.files[VOLUME] = text
+    g.poll()
+    g.poll(500)
+    ignored = text != b'1234567'  # its first six digits: a number over the limit, clamped
+    assert (g.sent == []) == ignored and (volumes(fw) == ([], [])) == ignored and g.world.files[VOLUME] == text
+
+
+def test_the_same_volume_request_is_acted_on_once(fw):
+    g = loud(fw)
+    g.world.files[VOLUME] = b'41'
+    for _ in range(40):  # past ADDON_POLL_MS too
+        g.poll()
+    g.world.files[VOLUME] = b'41\n'  # written again, the same level
+    g.poll()
+    assert volumes(fw)[0] == [(41, 1)] and len(g.sent) == 1
+    g.world.files[VOLUME] = b'40'
+    g.poll()
+    g.world.files[VOLUME] = b'41'  # another since: asked for again
+    g.poll()
+    assert volumes(fw)[0] == [(41, 1), (40, 1), (41, 1)] and [m for _, m in g.sent] == [b'v 41', b'v 40', b'v 41']
+
+
+@pytest.mark.parametrize('way, usbvol, control, told', [
+    (0, 0, 0, b'v 41'),      # the jack: the DAC applies it
+    (1, 0, 0, b'v 41 41'),   # Bluetooth: hciplayer's soft volume is the game's to apply
+    (2, 1, -2, b'v 41 41'),  # a variable USB volume on a DAC with no control: soft too
+    (2, 1, 0, b'v 41 h41'),  # the DAC's own control applies it: to show only
+    (2, 0, -2, b'v 41 h41'),  # a fixed USB volume
+])
+def test_the_volume_s_datagram_says_what_the_second_argument_would_be_now(fw, mixer, way, usbvol, control, told):
+    fw.var('g_usbvol_mode', C.c_ubyte).value = usbvol
+    mixer.value = control
+    g = loud(fw, way=way)
+    g.world.files[VOLUME] = b'41'
+    g.poll()
+    assert g.sent == [(SNAKE_SOCK, told)]
+    g.world.files[VOLUME] = b'?'
+    g.poll()
+    assert g.sent[1:] == [(SNAKE_SOCK, told)]
+
+
+def test_a_volume_change_by_other_means_is_told_every_half_second(fw):
+    g = loud(fw)
+    level = fw.var('g_volume', C.c_ubyte)
+    level.value = 35  # a headset's key
+    g.poll(483)
+    assert g.sent == []  # compared every ADDON_POLL_MS
+    g.poll(1)
+    assert g.sent == [(SNAKE_SOCK, b'v 35')]
+    g.poll(500)
+    assert len(g.sent) == 1  # told once
+    fw.mock('mclGetOutputWay', lambda *_: 1)  # the output too: Bluetooth now
+    g.poll(500)
+    assert g.sent[1:] == [(SNAKE_SOCK, b'v 35 35')] and volumes(fw) == ([], [])
+
+
+def test_a_change_by_other_means_removes_the_request_so_its_level_can_be_asked_again(fw):
+    g = loud(fw)
+    level = fw.var('g_volume', C.c_ubyte)
+    g.world.files[VOLUME] = b'41'
+    g.poll()
+    g.poll(500)
+    assert VOLUME in g.world.files  # nothing changed since: it stands
+    level.value = 42
+    g.poll(500)
+    assert g.sent[-1] == (SNAKE_SOCK, b'v 42') and VOLUME not in g.world.files and level.value == 42  # not set back
+    g.world.files[VOLUME] = b'41'
+    g.poll()
+    assert level.value == 41 and g.sent[-1] == (SNAKE_SOCK, b'v 41') and volumes(fw)[0] == [(41, 1), (41, 1)]
+
+
+@pytest.mark.parametrize('manifest', [b'name=Snake\ngame=1\n', b'name=Snake\ngame=1\naudio=2\n'])
+def test_a_game_without_the_sound_never_has_its_volume_file_read(fw, manifest):
+    g = CardGame(fw, snake=manifest)
+    fw.var('g_volume', C.c_ubyte).value, fw.var('g_maxvolume', C.c_ubyte).value = 30, 100
+    assert g.start() == 1
+    g.world.files[VOLUME] = b'41'
+    opened = []
+    real = g.world.fopen
+    fw.mock('fw_fopen', lambda path, mode, *_: opened.append(C.string_at(path)) or real(path, mode))
+    g.poll()
+    g.poll(500)
+    assert VOLUME not in opened and g.sent == [] and fw.var('g_volume', C.c_ubyte).value == 30
+    if manifest.endswith(b'audio=2\n'):  # once it holds the sound, as an audio=1 game
+        g.world.files[b'/tmp/q2-snake.audio'] = b'game'
+        g.poll(500)
+        g.poll()
+        assert fw.var('g_volume', C.c_ubyte).value == 41 and g.sent == [(SNAKE_SOCK, b'v 41')]
+        g.world.files[b'/tmp/q2-snake.audio'] = b'music'
+        g.poll(500)
+        g.world.files[VOLUME] = b'50'  # the music's again: left unread
+        g.poll(500)
+        assert fw.var('g_volume', C.c_ubyte).value == 41 and len(g.sent) == 1
+    g.status, g.exited = 0, True
+    g.poll()
+    assert VOLUME not in g.world.files  # removed at its end, read or not
+
+
+@pytest.mark.parametrize('status', [0, 11])  # its own end, a SIGSEGV
+def test_a_game_s_volume_file_goes_at_its_end(fw, status):
+    g = loud(fw)
+    g.world.files[VOLUME] = b'41'
+    g.poll()
+    g.status, g.exited = status, True
+    g.poll()
+    assert VOLUME not in g.world.files and fw.var('g_volume', C.c_ubyte).value == 41  # the level stays
+
+
+@pytest.mark.parametrize('asks', [True, False])
+def test_a_game_s_next_run_starts_with_nothing_asked_or_told(fw, asks):
+    g = loud(fw)
+    level = fw.var('g_volume', C.c_ubyte)
+    g.world.files[VOLUME] = b'41'
+    g.poll()
+    g.status, g.exited = 0, True
+    g.poll()
+    level.value, g.exited = 30, False  # turned down on Now Playing meanwhile
+    assert g.start() == 1
+    if asks:
+        g.world.files[VOLUME] = b'41'  # the last run's level, before its first pass
+    g.poll()
+    g.poll(500)
+    assert level.value == (41 if asks else 30) and [m for _, m in g.sent[1:]] == ([b'v 41'] if asks else [])
 
 
 def test_card_games_are_games_rows_by_name_not_streaming_rows(fw):
