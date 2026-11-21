@@ -384,18 +384,25 @@ static int qm_pick(void *action, void *event) {
 /* Hold menu rows: stock sortselect's list is 210, so three whole rows and the reading margin
  * (SCROLL_MARGIN) show at every scroll, never a half row under the title. */
 #define QM_ROW 66
-/* Under Classic (dialogs_painted) the hold menu is Cover Flow's flip panel
+/* Under Classic (classic_dialogs) the hold menu is Cover Flow's flip panel
  * (docs/ipod.md#cover-flow) centred under the bar, opaque: QM_HEAD rows of header holding the
  * navbar's title, then the theme's page rows, QM_ROWS at most (past them it scrolls), all clear of
- * the glass. No dim; hold_paint draws the panel. */
+ * the glass. Under the flat look (flat_dialogs) a round card as wide, HOLD_FOOT of paper under its
+ * rows, and as many as keep its ring above QM_FOOT. No dim; hold_paint draws the panel or card. */
 #define QM_HEAD 44
 #define QM_ROWS 6
+/* the lowest row the card's ring may take: the glass hides 38 px of it, the ring is at 39 */
+#define QM_FOOT 308
+static int own_hold(void) { return classic_dialogs() || flat_dialogs(); }
 static void hold_open(void *dialog, int n) {
     void *nav = widget_lookup(dialog, "view_navbar", 1),
          *list = widget_lookup(dialog, "list_view", 1);
     if (!nav || !list) return;
-    int row = theme()->page_row, rows = n < QM_ROWS ? n : QM_ROWS, h = QM_HEAD + rows * row,
-        y = BAR_ROWS + (320 - BAR_ROWS - h) / 2;
+    int flat = flat_dialogs(), row = theme()->page_row, foot = flat ? HOLD_FOOT : 0,
+        fit = (2 * QM_FOOT - 320 - BAR_ROWS - QM_HEAD - foot) / row,
+        rows = n < QM_ROWS ? n : QM_ROWS;
+    if (rows > fit) rows = fit;
+    int h = QM_HEAD + rows * row + foot, y = BAR_ROWS + (320 - BAR_ROWS - h) / 2;
     void *title = widget_lookup(nav, "scrlabel_title", 1);
     widget_set_prop_str(dialog, "highlight", "");
     widget_set_prop_int(dialog, "style:normal:bg_color", 0);
@@ -403,8 +410,13 @@ static void hold_open(void *dialog, int n) {
     widget_move_resize(nav, PANEL_X, y, BACK_W, QM_HEAD);
     widget_set_visible(widget_lookup(nav, "img_return", 1), 0, 0);
     widget_move_resize(title, 12, (QM_HEAD - 33) / 2, BACK_W - 24, 33);
-    panel_font(title, 31, 1);
-    text_ink(title, 0xffffffffu, INK_LABEL); /* white on the header in either half */
+    if (flat) { /* the rows' size and ink: white, which Light Mode turns on the paper */
+        panel_font(title, 25, 1);
+        widget_set_prop_int(title, "style:normal:text_color", (int)0xffffffffu);
+    } else {
+        panel_font(title, 31, 1);
+        text_ink(title, 0xffffffffu, INK_LABEL); /* white on the header in either half */
+    }
     widget_set_prop_int(list, "style:normal:bg_color", 0);
     widget_move_resize(list, PANEL_X, y + QM_HEAD, BACK_W, rows * row);
     widget_set_prop_str(widget_lookup(list, "scroll_view", 1), "self_layout",
@@ -467,7 +479,7 @@ static int qm_open(const void *unused) {
                                                : groups;
         qm_title(dialog, kind == 0 ? "Shuffle" : kind == 1 ? "Repeat" : "Group by");
         widget_destroy_children(view);
-        int painted = dialogs_painted(), row = painted ? theme()->page_row : QM_ROW,
+        int painted = own_hold(), row = painted ? theme()->page_row : QM_ROW,
             w = painted ? BACK_W : 375;
         for (int i = 0; i < count; ++i) {
             void *item = list_item_create(view, 0, i * row, w, row);
@@ -574,7 +586,7 @@ static int qm_open(const void *unused) {
                                         "Select Playlists…" };
     char rated[32];
     /* stock sortselect row styles */
-    int painted = dialogs_painted(), pitch = painted ? theme()->page_row : QM_ROW;
+    int painted = own_hold(), pitch = painted ? theme()->page_row : QM_ROW;
     for (int i = 0; i < n; ++i) {
         void *item = list_item_create(view, 0, i * pitch, painted ? BACK_W : 375, pitch);
         widget_use_style(item, "s_listitem_black");

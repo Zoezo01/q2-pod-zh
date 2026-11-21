@@ -430,6 +430,8 @@ void draw_centred(void *c, const unsigned *s, unsigned n, const void *r, unsigne
     centred_text[i] = 0, centred_color = color;
     memcpy(centred_box, r, sizeof centred_box), centred_px = px;
 }
+const unsigned flat_quiet[2]; /* the flat look's pane (flat_pages): no theme here takes it */
+void final_text(void *c, const char *face, const unsigned *s, const void *r, unsigned px, unsigned color) {}
 int ipod_light(void) { return light; }
 static int square_art;
 int ipod_square_art(void) { return square_art; }
@@ -8515,7 +8517,7 @@ def main():
             return False
         return True
     # edge_drawn's held row at the smallest row_out tools/theme.py takes, each built-in theme's
-    cf_style.append('-DCF_ROW_OUT_MIN={ ' + ', '.join(str(next(r for r in range(101) if accepts({**t, 'cf.row_out': r}))) for t in builtins()) + ' }')
+    cf_style.append('-DCF_ROW_OUT_MIN={ ' + ', '.join(str(next(r for r in range(101) if accepts({**t, 'cf.row_out': r}))) for t in builtins()[:3]) + ' }')  # Classic Modern's shelf is Classic's
     source = ((ROOT/'patch/offsets.inc').read_text() + (ROOT/'patch/coverflow.c').read_text()).replace('\\\n', '')
     def macro(name):
         line = re.search(r'^#define ' + name + r' (.*)$', source, re.M)[1]

@@ -472,7 +472,7 @@ def test_more_apps_than_slots(fw):
 def test_the_features_are_published_at_every_scan(fw):
     world = card(fw)
     scan(fw)
-    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections art window urls sort field more fav now fieldtext wake\n'
+    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections art window urls sort field more fav now fieldtext wake audio2 dim\n'
     assert world.of('rename') == [(b'/tmp/q2-addon.caps.tmp', b'/tmp/q2-addon.caps')]
 
 
@@ -1602,6 +1602,245 @@ class CardGame:
 
     def kills(self):
         return [c[0] for c in self.world.of('system')]
+
+
+SWITCH = b'name=Switch\ngame=1\naudio=2\n'
+SOUND = b'/tmp/q2-switch.audio'
+
+
+def switched(fw, playing=2):
+    """An audio=2 game running over local music that plays (2), is paused (3) or stopped (1)."""
+    g = CardGame(fw, switch=SWITCH)
+    fw.mock('mclGetPlayStatus', lambda *_: playing)
+    fw.mock('check_forbid_play_no_headset', lambda *_: 0)
+    g.world.files[SOUND] = b'game\n'  # an earlier run's
+    assert g.start() == 1
+    return g, fw.var('addon__gm', Game)
+
+
+def test_a_game_that_can_switch_the_sound_starts_without_it_the_music_left_playing(fw):
+    g, gm = switched(fw)
+    assert (gm.audio, gm.swap) == (0, 1) and SOUND not in g.world.files
+    assert not fw.calls('player_stop') and not fw.calls('player_save_stop') and not fw.calls('mclSetMute')
+    assert g.key(KEY_DOWN, O['KEY_PLAY']) == 0  # the music's key, as under any game without the sound
+    g.poll(499)
+    assert not fw.calls('player_save_stop')
+
+
+@pytest.mark.parametrize('playing, kept, resumed', [(2, 1, [(0,)]), (3, 1, [(1,)]), (1, 0, [])])
+def test_a_game_takes_the_sound_and_gives_it_back_the_music_where_it_was(fw, playing, kept, resumed):
+    g, gm = switched(fw, playing)
+    g.world.files[SOUND] = b'game'
+    g.poll(500)
+    assert gm.audio == 1 and len(fw.calls('player_save_stop')) == kept and len(fw.calls('player_stop')) == 1 - kept
+    assert g.world.files[SOUND] == b'plughw:0,0\n' and fw.calls('mclSetMute')  # the jack readied, dac_take
+    assert g.key(KEY_DOWN, O['KEY_PLAY']) == 1 and g.sent[-1] == (b'/tmp/q2-switch.input.sock', b'k d %d' % O['KEY_PLAY'])
+    g.poll(500)
+    assert len(fw.calls('player_save_stop')) == kept and g.world.files[SOUND] == b'plughw:0,0\n'  # its answer, left
+    g.world.files[SOUND] = b'music\n'
+    g.poll(500)
+    assert gm.audio == 0 and SOUND not in g.world.files
+    assert [a[:1] for _, a in fw.calls('player_save_start')] == resumed
+    assert g.key(KEY_DOWN, O['KEY_PLAY']) == 0
+
+
+def test_a_game_that_ends_with_the_sound_gives_it_back(fw):
+    g, gm = switched(fw, 3)
+    g.world.files[SOUND] = b'game\n'
+    g.poll(500)
+    g.status, g.exited = 11, True  # SIGSEGV
+    g.poll()
+    assert (gm.pid, gm.audio) == (0, 0) and [a[:1] for _, a in fw.calls('player_save_start')] == [(1,)]
+
+
+def played_at(fw, sec):
+    def time(at, total, *_):
+        C.c_int.from_address(at).value, C.c_int.from_address(total).value = sec, 300
+        return 0
+    fw.mock('mclGetPlayTime', time)
+
+
+@pytest.mark.parametrize('how', ['music', 'end', 'crash'])
+def test_an_output_change_under_the_game_still_leaves_the_music_to_resume(fw, how):
+    """A jack, USB or Bluetooth change under the game runs stock's player_save_stop and player_save_start on the
+    stopped player: the start is refused and stock's mclSetSavePlayStatus(1) would leave player_save_start nothing."""
+    g, gm = switched(fw, 2)
+    played_at(fw, 95)
+    g.world.files[SOUND] = b'game\n'
+    g.poll(500)
+    fw.mock('mclGetSavePlayStatus', lambda *_: 1)  # what the output change left
+    fw.mock('mclGetPlayStatus', lambda *_: 3)  # its refused start, paused on nothing
+    if how == 'music':
+        g.world.files[SOUND] = b'music\n'
+        g.poll(500)
+    else:
+        g.status, g.exited = (0 if how == 'end' else 11), True
+        g.poll()
+    order = [(n, a[:1]) for n, a in fw.calls() if n in ('mclSetSavePlayStatus', 'mclSetStartSeekTime', 'player_save_start', 'player_stop')]
+    assert order == [('mclSetSavePlayStatus', (2,)), ('mclSetStartSeekTime', (95,)), ('player_save_start', (0,))]
+
+
+def test_the_game_has_the_sound_through_the_take(fw):
+    """player_save_stop sleeps 0.4 s: an A2DP link coming up meanwhile must find the sound the game's."""
+    g, gm = switched(fw)
+    seen = []
+    fw.mock('player_save_stop', lambda *_: seen.append(fw.fn('addon_game_audio', C.c_int)()) or 0)
+    g.world.files[SOUND] = b'game\n'
+    g.poll(500)
+    assert seen == [1]
+
+
+def test_a_dimmed_game_reads_its_sound_request_every_500_ms_still(fw):
+    g, gm = switched(fw)
+    fw.var('g_backlight_status', C.c_ubyte).value = 1
+    g.world.files[b'/tmp/q2-switch.dim'] = b'1'
+    g.poll(500)
+    opened = []
+    real = g.world.fopen
+    fw.mock('fw_fopen', lambda path, mode, *_: opened.append(C.string_at(path)) or real(path, mode))
+    for _ in range(10):
+        g.poll(16)
+    assert opened.count(SOUND) == 0
+    g.poll(340)
+    assert opened.count(SOUND) == 1
+
+
+def test_music_asked_with_no_take_leaves_a_paused_queue_alone(fw):
+    g, gm = switched(fw, 3)
+    g.world.files[SOUND] = b'music\n'
+    g.poll(500)
+    assert not fw.calls('player_stop') and not fw.calls('player_save_start') and SOUND not in g.world.files
+
+
+def test_nothing_to_resume_clears_a_pause_stuck_on_nothing(fw):
+    g, gm = switched(fw, 1)
+    g.world.files[SOUND] = b'game\n'
+    g.poll(500)
+    fw.mock('mclGetPlayStatus', lambda *_: 3)
+    g.world.files[SOUND] = b'music\n'
+    g.poll(500)
+    assert len(fw.calls('player_stop')) == 2 and not fw.calls('player_save_start')  # the take's, then the stuck pause
+
+
+def test_a_second_game_request_answers_without_readying_the_jack_again(fw):
+    g, gm = switched(fw)
+    g.world.files[SOUND] = b'game\n'
+    g.poll(500)
+    mutes = len(fw.calls('mclSetMute'))
+    g.world.files[SOUND] = b'game\n'
+    g.poll(500)
+    assert len(fw.calls('mclSetMute')) == mutes and len(fw.calls('player_save_stop')) == 1
+    assert g.world.files[SOUND] == b'plughw:0,0\n'
+
+
+def test_headphones_required_is_left_to_stock_s_resume(fw):
+    """player_save_start pauses the queue itself without an output; check_forbid_play_no_headset would open
+    stock's no-headset page under the game."""
+    g, gm = switched(fw)
+    fw.mock('check_forbid_play_no_headset', lambda *_: 1)
+    g.world.files[SOUND] = b'game\n'
+    g.poll(500)
+    g.world.files[SOUND] = b'music\n'
+    g.poll(500)
+    assert not fw.calls('check_forbid_play_no_headset') and [a[:1] for _, a in fw.calls('player_save_start')] == [(0,)]
+
+
+@pytest.mark.parametrize('text, takes', [(b'game', 1), (b'game\r\n', 1), (b'Game\n', 0), (b'gam', 0), (b'game now\n', 0),
+                                         (b'plughw:0,0\n', 0), (b'', 0), (b'music\n', 0)])
+def test_the_sound_s_request(fw, text, takes):
+    g, gm = switched(fw)
+    g.world.files[SOUND] = text
+    g.poll(500)
+    assert gm.audio == takes and len(fw.calls('player_save_stop')) == takes
+    assert (SOUND in g.world.files) == (text != b'music\n')
+
+
+@pytest.mark.parametrize('manifest', [b'name=Snake\ngame=1\n', b'name=Snake\ngame=1\naudio=1\n', b'name=Snake\ngame=1\naudio=3\n'])
+def test_a_game_without_audio_2_never_reads_the_sound_s_file(fw, manifest):
+    g = CardGame(fw, snake=manifest)
+    g.world.files[b'/tmp/q2-snake.audio'] = b'game\n'
+    assert g.start() == 1
+    opened = []
+    fw.mock('fw_fopen', lambda path, mode, *_: opened.append(C.string_at(path)) or 0)
+    g.poll(500)
+    assert b'/tmp/q2-snake.audio' not in opened and b'/tmp/q2-snake.audio' in g.world.files
+    assert fw.var('addon__gm', Game).audio == (manifest.endswith(b'audio=1\n'))
+
+
+DIM = b'/tmp/q2-snake.dim'
+
+
+def dimmable(fw, lightness=40, lit=1):
+    g = CardGame(fw)
+    fw.var('g_backlight_status', C.c_ubyte).value = lit
+    fw.var('g_lightness', C.c_ubyte).value = lightness
+    g.world.files[DIM] = b''  # an earlier run's
+    assert g.start() == 1 and DIM not in g.world.files
+    return g
+
+
+def backlight(fw):
+    return [a[0] for _, a in fw.calls('toolSetBackLight')]
+
+
+def test_a_game_dims_the_panel_and_brings_it_back_the_setting_untouched(fw):
+    g = dimmable(fw)
+    g.world.files[DIM] = b'1'
+    g.poll(499)
+    assert backlight(fw) == []  # looked at every ADDON_POLL_MS
+    g.poll(1)
+    assert backlight(fw) == [1] and fw.var('addon__gm', Game).dim == 1
+    g.poll()
+    assert backlight(fw) == [1]
+    del g.world.files[DIM]
+    g.poll()  # every pass while dimmed
+    assert backlight(fw) == [1, 41] and fw.var('g_lightness', C.c_ubyte).value == 40
+    assert not fw.calls('write_int_config')
+
+
+@pytest.mark.parametrize('status', [0, 11])  # its own end, a SIGSEGV
+def test_a_game_that_ends_dimmed_gives_the_panel_back(fw, status):
+    g = dimmable(fw, 7)
+    g.world.files[DIM] = b'1'
+    g.poll(500)
+    g.status, g.exited = status, True
+    g.poll()
+    assert backlight(fw) == [1, 8] and DIM not in g.world.files
+
+
+def test_a_game_that_ends_dimmed_with_the_screen_off_leaves_the_panel_to_stock(fw):
+    g = dimmable(fw)
+    g.world.files[DIM] = b'1'
+    g.poll(500)
+    fw.var('g_backlight_status', C.c_ubyte).value = 0
+    g.status, g.exited = 0, True
+    g.poll()
+    assert backlight(fw) == [1] and DIM not in g.world.files
+
+
+def test_the_screen_turned_off_ends_the_dim_and_stock_relights_it(fw):
+    g = dimmable(fw)
+    g.world.files[DIM] = b'1'
+    g.poll(500)
+    fw.var('g_backlight_status', C.c_ubyte).value = 0
+    g.poll()
+    assert backlight(fw) == [1] and DIM not in g.world.files and fw.var('addon__gm', Game).dim == 0
+    g.world.files[DIM] = b'1'  # asked in the dark: let go
+    g.poll(500)
+    assert backlight(fw) == [1] and DIM not in g.world.files
+    fw.var('g_backlight_status', C.c_ubyte).value = 1
+    g.status, g.exited = 0, True
+    g.poll()
+    assert backlight(fw) == [1]  # nothing of the game's left to undo
+
+
+def test_a_game_that_never_asks_never_touches_the_panel(fw):
+    g = dimmable(fw)
+    for _ in range(4):
+        g.poll(500)
+    g.status, g.exited = 0, True
+    g.poll()
+    assert backlight(fw) == []
 
 
 def test_card_games_are_games_rows_by_name_not_streaming_rows(fw):

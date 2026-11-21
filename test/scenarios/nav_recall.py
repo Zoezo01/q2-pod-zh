@@ -217,12 +217,13 @@ assert not m.strokes and [r['rect'] for r in m.rounded if r['kind']=='stroke']==
 assert m.call()==11 and m.selected(d)==1 and not m.moved()
 assert m.call(O['KEY_PREV'])==11 and m.selected(d)==0
 assert m.confirm()==11 and m.dispatched()[0][1]==buttons[0]; passed()
-# Modern frames it over its accent bar too (Classic's band has its own edge: classic_light cases).
+# Modern's confirm is the flat look's: the cell lit flat, no frame (scenarios/flat_pages.py; Classic's band has its own
+# edge: classic_light cases).
 k=Machine(); k.config['THEME']='2'; kd=k.node('dialog','confirminfo_dialog'); k.word(kd+O['W_PARENT'],k.wm)
 k.word(kd+O['W_W'],375); k.word(kd+O['W_H'],320); k.clip=(0,0,375,320); k.top=kd
 kb=[k.entry(kd,220) for _ in range(2)]; k.nodes[kd]['children']=kb
 for b,x in zip(kb,pair): k.word(b+O['W_X'],x); k.word(b+O['W_W'],80); k.word(b+O['W_H'],80)
-k.paint(kd); assert k.bands and [r['rect'] for r in k.rounded if r['kind']=='stroke']==[(53,220,80,80),(54,221,78,78)]; passed()
+k.paint(kd); assert k.bands and not [r for r in k.rounded if r['kind']=='stroke']; passed()
 # A wide button (autoshutdown's Cancel) gets the full-width bar.
 m.nodes[d]['name']='autoshutdown_dialog'; m.nodes[d]['children']=[buttons[0]]; m.word(buttons[0]+O['W_W'],287)
 m.paint(d); assert m.sel()==(0,220,375,80) and not m.strokes; passed()

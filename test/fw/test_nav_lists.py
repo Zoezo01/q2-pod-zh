@@ -1725,11 +1725,15 @@ def test_the_idle_bars_mark_is_spaced_capitals(fw, ui, st):
     assert len({y for _, _, y, _ in drawn}) == 1
 
 
-def test_a_theme_without_capitals_leaves_the_mark_to_its_label(fw, ui, st):
-    theme(fw, 2)
+@pytest.mark.parametrize('light, ink', [('0', 0xffffffff), ('1', 0xff161616)])
+def test_a_theme_without_capitals_draws_the_mark_as_its_label(fw, ui, st, light, ink):
+    """Modern: the label's own text in its box, once, white through Light Mode's ink (the half's ink on the light
+    bar); stock's label's own ink is clear (test_nav_paint)."""
+    theme(fw, 2, LIGHT=light)
+    fw.fn('ipod_light', C.c_int)()
     canvas, mark = Canvas(fw), ui.widget('label', None, (0, 0, 60, 30), text='q2')
     st('bar_idle', C.c_void_p).value = mark.at
-    assert caps(fw, canvas, mark) == []
+    assert caps(fw, canvas, mark) == [] and canvas.boxes == [('q2', (0, 0, 60, 30), ink)]
 
 
 class Album:

@@ -2758,11 +2758,12 @@ bk.bands=[]; bk.call(address=HOOKS['widget_on_paint_border'][0],args=(bsl,bk.can
 assert [b[:4] for b in slider[:8]]==[(1,31,202,1),*[(0,31+i,204,1) for i in range(1,7)],(1,38,202,1)]
 assert slider[0][4]==color_t(0x2f4052) and slider[7][4]==color_t(0x26333f) and slider[8][:4]==(1,31,66,1) and slider[8][4]==color_t(0xf7ffff) and slider[15][4]==color_t(0xc6cbcf)
 assert slider[9][2]==68 and bk.nodes[bsl_view]['visible']==1; passed()
-# Minimal's and Modern's page stays stock's, where the load leaves it, but its slider is a plain one too: no knob.
+# Minimal's page stays stock's, where the load leaves it, and Modern's is the flat look's (scenarios/flat_pages.py), but
+# either's slider is a plain one too: no knob.
 for th in ('0','2'):
     pm=LoadPlain(); pm.config.update(THEME=th); pwin,psl,*_=slider_win(pm,'backlight_page','slider_backlight','view_backlight','label_backlight',('img_left','img_right'),min=1,max=10,value=4)
     assert all(pm.nodes[psl][f'style:{s}:icon']==0 for s in ('normal','pressed','over','disable','focused'))
-    assert wbox(pm,psl)==(31,60,313,70) and 'style:normal:border_color' not in pm.nodes[psl]; passed()
+    assert wbox(pm,psl)==((31,60,313,70) if th=='0' else (33,115,309,70)) and ('style:normal:border_color' in pm.nodes[psl])==(th=='2'); passed()
 bd,bdwin,*_=slider_new('backlight_page','slider_backlight','view_backlight','label_backlight',('img_left','img_right'),light='0',min=1,max=10,value=4); bare(bd); bg(bd,bdwin); assert shadows(bd)==[CAPTION] and page_fill(bd,0,0x1c1c1c); passed()  # black in the dark half too
 # ... paints from what it recorded: no string compare or widget look-up on its way.
 bare(bk); bg(bk,bwin); assert not {'widget_lookup','tk_strcmp'}&slider_paint_calls(bk); passed()
@@ -5630,7 +5631,7 @@ M={'THEME':'2'}
 for config,preset in (({},0),({**C,K:'1'},1),({**C,K:'2'},2),({**C,K:'3','HOME':'1'},3),({**C,K:'7'},BLUE),({**C},BLUE),
                       ({**C,K:'12'},BLUE),({**C,K:'4'},4),({**C,K:'5'},5),({**C,K:'6'},6),({**C,K:'9'},BLUE),({'ACCENT':'1'},0),
                       ({'MINIMAL_ACCENT':'1'},1),({'MINIMAL_ACCENT':'6'},6),({'MINIMAL_ACCENT':'7'},0),({'MINIMAL_ACCENT':'8'},8),({**C,K:'8'},8),
-                      ({**C,'MINIMAL_ACCENT':'2'},BLUE),({**C,'ACCENT':'2'},BLUE),({'ACCENT':'2','THEME':'0'},0),({'MINIMAL_ACCENT':'2','THEME':'3'},2),  # 3: past the themes, Minimal
+                      ({**C,'MINIMAL_ACCENT':'2'},BLUE),({**C,'ACCENT':'2'},BLUE),({'ACCENT':'2','THEME':'0'},0),({'MINIMAL_ACCENT':'2','THEME':'4'},2),  # 4: past the themes, Minimal
                       ({**M,'ACCENT':'1'},1),({**M,'ACCENT':'2'},2),({**M,'ACCENT':'3','HOME':'1'},3),({**M,'ACCENT':'7'},0),({**M},0),
                       ({**M,'ACCENT':'12'},0),({**M,'ACCENT':'4'},4),({**M,'ACCENT':'8'},8),({**M,'MINIMAL_ACCENT':'2'},0),({**M,K:'2'},0)):
     m=Machine(); m.config=config
@@ -5710,7 +5711,7 @@ assert m.config_reads==[('/mnt/data/config.ini','IPOD',key,'0') for key in ('ACC
 # tones; Modern's stored Ivory and an out-of-range ACCENT are Graphite's scheme; a missing MINIMAL_ACCENT is Graphite, a stored Ivory
 # the card (flags 1); Crimson is raw red (flags 2) in each.
 K,BLUE='CLASSIC_LIGHT_ACCENT',4  # Cobalt's row
-for config,name,want in (({},'Minimal',0),({'MINIMAL_ACCENT':'7'},'Minimal',7),({'THEME':'1'},'Classic',BLUE),({'THEME':'3','MINIMAL_ACCENT':'3'},'Minimal',3),
+for config,name,want in (({},'Minimal',0),({'MINIMAL_ACCENT':'7'},'Minimal',7),({'THEME':'1'},'Classic',BLUE),({'THEME':'4','MINIMAL_ACCENT':'3'},'Minimal',3),
                          ({'THEME':'1',K:'7'},'Classic',BLUE),({'THEME':'1',K:'12'},'Classic',BLUE),
                          ({'THEME':'1',K:'1'},'Classic',1),({'MINIMAL_ACCENT':'1'},'Minimal',1),({'THEME':'1',K:'8'},'Classic',8),
                          ({'THEME':'2'},'Modern',0),({'THEME':'2','ACCENT':'7'},'Modern',0),({'THEME':'2','ACCENT':'12'},'Modern',0),
@@ -6879,7 +6880,7 @@ def check_row(m,item,slot):
 # theme's select draws the tick, the others' unselect nothing, and the picker opens on it. Any other leading image still hides.
 m,view=settings('display',default=32,sub=4,boot=classic_light_on); m.rockbox_mode=0; lay(m,view)
 marks=[m.nodes[m.nodes[r]['children'][0]]['children'][0] for r in m.nodes[view]['children']]
-assert [m.nodes[i]['image'] for i in marks]==['unselect','unselect','select'] and all(m.nodes[i]['visible'] for i in marks)  # Classic is last
+assert [m.nodes[i]['image'] for i in marks]==['unselect','unselect','select','unselect'] and all(m.nodes[i]['visible'] for i in marks)  # Classic is third, Classic Modern last
 assert {geometry(m,i) for i in marks}=={(375-SET['EDGE']-50,0,50,32)},[geometry(m,i) for i in marks]
 assert m.paint(view)==0 and m.selected(view)==2,m.selected(view)
 # Opened by a tap, its first paint comes with the pointer still down, which keeps other lists from recalling: a picker arrives
@@ -6898,7 +6899,7 @@ passed()
 # would take Minimal, whose presets overwrite Light Mode, accent and corners.
 m,view=settings('display',sub=4,boot=lambda k:k.config.update(THEME='2')); lay(m,view)
 marks=[m.nodes[m.nodes[r]['children'][0]]['children'][0] for r in m.nodes[view]['children']]
-assert [m.nodes[i]['image'] for i in marks]==['unselect','select','unselect'] and geometry(m,marks[0])[0]==SET['ICON_X']  # Modern is second
+assert [m.nodes[i]['image'] for i in marks]==['unselect','select','unselect','unselect'] and geometry(m,marks[0])[0]==SET['ICON_X']  # Modern is second
 m.paint(view); assert m.selected(view)==1,m.selected(view)
 m,view=settings('display',sub=4,boot=lambda k:k.config.update(THEME='2')); lay(m,view); m.pressed=1
 m.paint(view); assert m.selected(view)==1,m.selected(view); passed()
@@ -7047,12 +7048,12 @@ assert CL_SEL(2) in [b[4] for b in m.bands]; passed()
 accent_row=m.nodes[view]['children'][5]; f,ctx=m.handler(m.nodes[accent_row]['children'][0],O['EVT_CLICK']); m.call(address=f,args=(ctx,m.event,0,0),gap=0)
 m.paint(view); assert CL_SEL(3) in [b[4] for b in m.bands] and CL_SEL(2) not in [b[4] for b in m.bands]; passed()
 # Appearance is Theme, then the theme's options in order: Classic opened fresh with a stored Ivory shows Classic Blue, Modern
-# Graphite; THEME=3 is Minimal.
+# Graphite; THEME=4 is Minimal.
 m,view,rows=display({'THEME':'1','CLASSIC_LIGHT_ACCENT':'7'})
 assert [row_text(r) for r in m.nodes[view]['children']][:4]==['Theme: Classic','Status Bar: Theme','Time in Title: On','Show Wordmark: On']
 m,view,rows=display({'THEME':'2','ACCENT':'7'})
 assert [row_text(r) for r in m.nodes[view]['children']]==['Theme: Modern','Status Bar: Theme','Time in Title','Show Wordmark: On','Light Mode: Off','Accent: Graphite','Rounded Corners','Home: Split','Shortcut: Rockbox','Battery: Icon','Centred Now Playing','Hide Streaming','Hide Folder','Hide Apps','Hide Games','Hide App Store']
-m,view,rows=display({'THEME':'3'})
+m,view,rows=display({'THEME':'4'})
 assert [row_text(r) for r in m.nodes[view]['children']]==['Theme: Minimal','Status Bar: Theme','Time in Title','Show Wordmark: On','Light Mode: Off','Accent: Ivory','Rounded Corners','Home: Split','Shortcut: Rockbox','Battery: Icon','Centred Now Playing','Hide Streaming','Hide Folder','Hide Apps','Hide Games','Hide App Store']
 passed()
 # Classic's stops painter: a 52 px selected row is the #94c7de top line, Classic Blue's six stops over the
@@ -7320,13 +7321,13 @@ m,view,rows=display({'THEME':'1'}); f,ctx=m.handler(m.nodes[rows[3]]['children']
 assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and m.opened[-1]==('systemset/display_page',None)
 assert m.get(payload_syms['display_sub'])==0 and not [c for c in m.calls if c[0]=='write_int_config']
 m,view,_=display({},sub=4)
-assert [row_text(r) for r in m.nodes[view]['children']]==['Minimal','Modern','Classic'] and m.icons_set==['select','unselect','unselect']
-m,view,_=display({'THEME':'2'},sub=4); assert m.icons_set==['unselect','select','unselect']  # the tick by stored THEME
+assert [row_text(r) for r in m.nodes[view]['children']]==['Minimal','Modern','Classic','Classic Modern'] and m.icons_set==['select','unselect','unselect','unselect']
+m,view,_=display({'THEME':'2'},sub=4); assert m.icons_set==['unselect','select','unselect','unselect']  # the tick by stored THEME
 # The current theme's own row does nothing; a live pick (Minimal to Modern, one set) applies at once and moves the check.
 m,view,rows=display({}); pview=display_page(m,4); m.calls=[]
 assert m.call(address=payload_syms['theme_pick'],args=(0,0,0,0),gap=0)==0 and not [c for c in m.calls if c[0]=='write_int_config']
 writes=pick_theme(2); assert [(w[0],m.text(w[2])) for w in writes][:1]==[(2,'THEME')] and row_text(rows[3])=='Theme: Modern'
-assert [m.nodes[m.nodes[m.nodes[r]['children'][0]]['children'][0]]['image'] for r in m.nodes[pview]['children']]==['unselect','select','unselect']  # Modern's row is the second
+assert [m.nodes[m.nodes[m.nodes[r]['children'][0]]['children'][0]]['image'] for r in m.nodes[pview]['children']]==['unselect','select','unselect','unselect']  # Modern's row is the second
 # Classic needs its own set: the confirm asks; Cancel writes nothing and stays Minimal; OK writes THEME and Classic's
 # presets in option order (Light Mode On unless Auto is stored; Classic Blue; Time in Title, Library on Home and Row Art
 # On where they were Off; the battery as stored), then restarts through device_reboot (the queue saved first); the
@@ -9875,7 +9876,7 @@ passed()
 CAPS='/tmp/q2-addon.caps'
 m=AppMachine(); stream_rows(m); caps=bytes(m.files[CAPS])
 assert caps.endswith(b'\n') and caps.count(b'\n')==1,caps
-assert set(caps.split())=={b'playlist',b'progress',b'pages',b'library',b'goto',b'sleep',b'game',b'audio',b'sections',b'art',b'window',b'urls',b'sort',b'field',b'more',b'fav',b'now',b'fieldtext',b'wake'},caps
+assert set(caps.split())=={b'playlist',b'progress',b'pages',b'library',b'goto',b'sleep',b'game',b'audio',b'sections',b'art',b'window',b'urls',b'sort',b'field',b'more',b'fav',b'now',b'fieldtext',b'wake',b'audio2',b'dim'},caps
 m.files[CAPS]=bytearray(b'stale\n'); stream_rows(m); assert m.files[CAPS]==caps; passed()
 # Classic, Home's Split: the Streaming row slides Streaming's rows in, as the Library's: the page's own constructor fills the
 # list, what it sets on a window goes again, every row (stock's 70 px Tidal row and the added ones) takes Home's width and height,
@@ -12772,4 +12773,6 @@ m,more,rows=pl_more(); f,ctx=m.handler(m.nodes[m.nodes[more]['children'][-1]]['c
 m.call(address=f,args=(ctx,m.event,0,0),gap=0); m.page=m.top; m.view=m.find('scroll_view')
 m.choose(0); assert m.showlabels()[0]=='Search' and m.nodes[m.nodes[m.page]['children'][0]]['text']=='Add Songs'
 assert any(c[0]=='hscroll_label_set_only_focus' for c in m.calls); passed()
+import scenarios.flat_pages  # last: its cases follow every other's
+import scenarios.classic_modern  # after flat_pages: its cases follow
 print(f'{q2emu.checks} MIPS execution scenarios passed; toolkit services mocked, stock lock filter executed.')

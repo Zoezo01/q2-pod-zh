@@ -37,8 +37,8 @@ print('Dev build tag checks passed.')
 
 def boot_check():
     """S90play's dual boot (build.py BOOT_HOOK) under the host sh, with stand-in programs."""
-    import os, subprocess, tempfile, pathlib
-    from build import BOOT_HOOK, WHEEL_LOG_HOOK, ROCKBOX_FLAG, WIFI_OFF
+    import os, subprocess, tempfile, pathlib, shutil
+    from build import BOOT_HOOK, WHEEL_LOG_HOOK, LOG_HOOK, ROCKBOX_FLAG, WIFI_OFF
     with tempfile.TemporaryDirectory(prefix='q2-boot-') as tmp:
         r = pathlib.Path(tmp)
         def host(hook):
@@ -51,6 +51,9 @@ def boot_check():
             script = script.replace('/proc/sys/kernel/print-fatal-signals', f'{r}/fatal-signals')
             # demo's stderr file, and its cap's minute: one pass here while {r}/minute exists
             script = script.replace('/tmp/q2-demo.err', f'{r}/tmp/q2-demo.err')
+            # a --dev log's own tmpfs (build.py LOG_HOOK): capfs stands in for mount, failing unless {r}/capfs-ok exists
+            script = script.replace('/tmp/q2-log', f'{r}/tmp/q2-log').replace('mount -t tmpfs', 'capfs')
+            assert 'mount -t' not in script
             assert script.count('while sleep 60; do') == 1
             script = script.replace('while sleep 60; do', f'while [ -f {r}/minute ] && rm -f {r}/minute; do')
         # This script runs under the PC's own sh: the real killall -9 and ifconfig would take down the PC's network,
@@ -270,6 +273,19 @@ def boot_check():
         wcopy.write_bytes(b'x' * 262143); wheel.write_text('== wheel: four\n'); boot(True, False, status=0)
         assert wcopy.read_bytes().endswith(b'== wheel: four\n') and not wheel.exists() and not (r/'mnt/data/q2-wheel.log.m').exists()
         for f in (crash, copy, wheel, wcopy): f.unlink(missing_ok=True)
+        # a release build mounts nothing for its log; a --dev one links q2-demo.log into a tmpfs of its own (LOG_HOOK),
+        # and with the mount refused keeps /tmp's file as before. The crash log's tail reads it either way
+        assert 'q2-log' not in BOOT_HOOK[1].decode()
+        script, dlog, capped = host(BOOT_HOOK[1].replace(*LOG_HOOK)), r/'tmp/q2-demo.log', r/'tmp/q2-log/demo.log'
+        exe('bin/capfs', f'[ -f {r}/capfs-ok ]'); exe('release/bin/demo', 'echo "out 1"; ' + demo)
+        out, cp = logged(137, False)
+        assert not dlog.is_symlink() and dlog.read_text() == 'out 1\n' and out.endswith('== q2-demo.log\nout 1\n')
+        dlog.unlink(); shutil.rmtree(r/'tmp/q2-log'); (r/'capfs-ok').write_text('')
+        out, cp = logged(137, False)
+        assert dlog.is_symlink() and capped.read_text() == 'out 1\n' and out.endswith('== q2-demo.log\nout 1\n')
+        out, cp = logged(137, False)  # a second start's mkdir fails: the link stays, nothing else is made
+        assert dlog.is_symlink() and capped.read_text() == 'out 1\n' * 2
+        exe('release/bin/demo', demo); dlog.unlink(); shutil.rmtree(r/'tmp/q2-log'); (r/'capfs-ok').unlink(); crash.unlink(missing_ok=True)
     print('Dual boot: Rockbox by default, one-session Q2 Pod, stale choice ignored, card fallback, Home Rockbox row and Wi-Fi off before Rockbox passed.')
 boot_check()
 

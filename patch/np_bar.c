@@ -116,10 +116,11 @@ static void *page_of(void *top) {
  * settings page's unnamed first child). A page showing its navbar and an untitled page keep the
  * clock; a pop-up or keyboard leaves the bar as it is. USB mode's page has neither title nor
  * clock, with Time in Title on or off, in every theme and Status Bar look; nor has Classic's lock
- * screen, whose date and clock are its own. Classic's Set Time and Update Library have no clock
- * either, so their titles show whole in its room: beside the clock the title's box has 91 px, the
- * scan's title is 104 px and the widest date being set 90. This runs in a paint, which drops the
- * label's invalidate, so bar_repaint follows; the clock waits for its timer. */
+ * screen, whose date and clock are its own. The own pages' Set Time and Update Library (Classic's,
+ * Modern's) have no clock either, so their titles show whole in its room: beside the clock the
+ * title's box has 91 px, the scan's title is 104 px and the widest date being set 90. This runs in
+ * a paint, which drops the label's invalidate, so bar_repaint follows; the clock waits for its
+ * timer. */
 void bar_title(void *bar, void *top) {
     static const unsigned
         now_playing[] = { 'N', 'o', 'w', ' ', 'P', 'l', 'a', 'y', 'i', 'n', 'g', 0 },
@@ -329,4 +330,5 @@ void np_theme(void) {
     if (glyph) widget_set_opacity(glyph, T->np_state_op);
     /* Minimal: the album is paint_caps' capitals. */
     if (st.np_album) widget_set_opacity(st.np_album, T->np_album_op);
+    np_marks_page(st.np_win); /* the flat look's marks, as the page opens or the theme changes */
 }
