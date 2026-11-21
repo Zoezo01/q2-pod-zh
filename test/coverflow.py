@@ -328,6 +328,7 @@ int row_preview_on(void) { return 1; }
 int show_q2pod(void) { return 1; }
 int library_search(void) { return 1; }
 void library_rows(void *list) {}
+int addon_apps_sync(void *win, void *event) { return 0; }
 void stream_rows(void *list) {}
 int tk_str_start_with(const char *s, const char *p) { return !strncmp(s, p, strlen(p)); }
 const unsigned *widget_get_text(void *w) { return 0; }
