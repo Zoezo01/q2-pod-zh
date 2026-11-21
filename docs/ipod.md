@@ -335,7 +335,7 @@ settings slider and custom volume overlay retain their layouts.
 
 ## Quick settings
 
-The pull-down (`dialog/statusbar_dialog.bin`) covers the whole screen when open. Its eight 60-pixel
+The pull-down (`dialog/statusbar_dialog.bin`) covers the whole screen when open. Under Minimal its eight 60-pixel
 controls keep their four columns in two rows from y 20. Every label is the stock 16-pixel white
 style (`s_label_white16c`), 80 pixels wide and 40 high (two lines), top-aligned so one- and
 two-line labels start on the same line, 6 pixels under its icon and 12 above the next row. The
@@ -347,6 +347,8 @@ never moves or resizes one. A finger held on Wi-Fi or Bluetooth opens its settin
 ([internals.md](internals.md#quick-settings-holds)); a tap stays stock's.
 
 Under Classic (`classic_pages()`) the page is flat, in final colours (`quick_page`, `quick_scrub`): its ground is Home's pane in the half (`#63717B` light, `#1C1C1C` dark), with no gradient, gloss or shadow. `quick_open` moves `view_menu` to y 0, puts the icons at x 31, 115, 199, 283 (24 apart) and y 20, 138, and leaves them at opacity 0, where they keep stock's image name, taps and holds and paint nothing. `quick_page` paints each one's 60-pixel tile with corners of 12 (`qs_tile`): a 1-pixel border round its fill. Off is a two-stop vertical fill in light, lighter at the top, silver (`#E9EBEE` to `#D3D6DC`, border `#9BA2AA`), and a flat `#333333` in dark, the dark bar's hairline, with no ring; on, when stock's image is one that is on (`QS_LIT`, from `tools/art.py`), is flat in the accent's red tone, as Minimal's lit discs, with Classic Blue's own `#207CDE` (border `#125CB0` light, none in dark; another accent's light border is its fill a quarter darker) ([internals](internals.md#quick-settings-blue)). Fill and border are a sixth darker while pressed. Over it goes the glyph, `classic_light_<stock image>`, in the tile's ink: white on (`_l` on a tone brighter than `GLYPH_LIGHT_MAX`), `_l` (`#262626`) off in light, `_d` (`#E4E6E9`) off in dark; a disabled one at 45%. USB's three modes keep stock's three marks: a USB stick for storage, off as stock's grey disc, a USB-C port for DAC and the USB trident for audio, both on. Each label is white in the theme's face, its box 18 high, or 32 when its text wraps. Stock's brightness bar goes clear and its suns are hidden, and `quick_scrub` draws the suns, track, fill and knob over the slider, which keeps its rect and touch, the same in both halves.
+
+Under Modern (`flat_pages()`) the page is flat on the half's paper (black, or `#F4F4F4`): two cards (`#1C1C1E`, or white) hold the buttons and the brightness bar. The buttons are 54-pixel discs at x 33, 118, 203, 288 and y 34, 122, grey at rest (`#3A3A3C`, or `#E9E9EC` in light) and on in the colour of Modern's selection bar (Graphite, whose bar is a grey, its silver), with the `flat_` glyph white, or dark on a bright disc; each label is 14 px in the system face, quiet grey, on two lines when it is wider than 86 px. The brightness bar is 36 px high from x 33 to 342 at y 239, filled from its round end in the same colour, a sun at each end, the far one quiet until the fill reaches it; the slider's touch is the bar's 48 rows from y 233, and a swipe up that starts on the bar's card (from y 226) closes the page. With the wheel on the volume, the volume shows in the bar's place on its card, between two speakers, with no number.
 
 The controls' stock images are 60-pixel discs: `#444444` with a white glyph when off, stock red
 (`#FF1448`) with a white glyph when on (`drop_wifiopen`, `drop_btopen`, `drop_keylockopen`,
@@ -866,6 +868,8 @@ layout and assets: the accent's full-width selection bar under white text (an in
 Rounded Corners), with Home's chevron on its bar, coloured settings icons and the stock
 `list_into`, Home's menu in the stock font, a bold Now Playing title, and Now Playing's 8-pixel capsule and play/pause glyph.
 Its battery is Minimal's, and so is its status bar, but in Light Mode the bar is an iPod's flat grey (`LIGHT_BAR`).
+
+Its own screens are flat ([Quick settings](#quick-settings)): Quick Settings, the slider pages (Brightness, Max Volume, Balance and Default Volume), Update Library and USB mode, Set Date and Set Time, and the confirm prompts, on the half's paper, with what is on in the selection bar's colour and the rest a flat grey. The slider pages draw the 36 px bar with the suns or speakers in its ends, the number over it (L and R at Balance's ends) and "Press Centre When Finished" under it; Default Volume's Off and On are one pill. Update Library and USB mode show a flat note or USB mark over a bold heading and a quiet line, the scan with a thin bar and Cancel's pill, and say Connected, to eject before disconnecting, and OK to Disconnect, as Classic's do. Set Date and Set Time take Classic's fields (no OK stop, AM/PM a field, Save a pill under them) as grey boxes, the one being set lit, over a flat clock face or a date tile. A prompt's two buttons are pills 8 px apart, the one that holds lit; a row action's (Delete) sit on a dark box. The hold menu, the toast and the small dialogs stay stock's.
 
 Minimal and Modern share a geometry set, so a change between them applies at once, as Accent
 does: the image cache is dropped and the screen repaints (icons and chevrons reload in the new
