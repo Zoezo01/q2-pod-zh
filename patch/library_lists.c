@@ -80,7 +80,7 @@ int shuffle_play(void *all) {
             }
             at = (at + 1 + (int)rand_below((unsigned)size - 1)) % size;
         }
-        /* Headphones Required: refused with stock's message before the mode or advanced play
+        /* Require Output: refused with stock's message before the mode or advanced play
          * changes, where Now Playing would refuse only after both. ponytail: an output lost between
          * this check and Now Playing's is still refused after Shuffle is saved and advanced play
          * ended, and the old queue becomes Shuffle Songs, as before; seeing play_folder load

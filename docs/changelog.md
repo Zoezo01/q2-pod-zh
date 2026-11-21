@@ -1,6 +1,8 @@
 # Changelog
 
 - **1.8.9**:
+  - Playback: **Headphones Required** is now **Require Output (Beta)**. It is experimental: if it won't play with headphones in, turn it off and on again.
+  - Library: **Apps**, **Games** and **App Store** are together in the Library, above Upload Scrobbles and Update Library. **App Store** moved here from System settings. **Apps** lists the card apps that had their own Library row, such as Utilities and Weather, and shows once one is installed. **Hide Apps**, **Hide Games** and **Hide App Store** in Display → Appearance take each row away.
   - Games: a card game can dim the screen while its menus sit idle, and bring it back to your brightness when you touch it. Your brightness setting isn't changed.
   - Games: a card game can keep the Q2's music playing while you play, and take the sound for its own when you choose, then give it back with the music where it was.
   - App Store: an app that isn't in Q2 Pod's list can be installed and updated from it. Put its GitHub repository, one `owner/repo Name` a line, in `.q2/custom-sources.list` on the card; it shows after the listed apps, on **Games** under a `[Games]` line. A repository already in the list is skipped.

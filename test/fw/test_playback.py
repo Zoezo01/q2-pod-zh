@@ -2698,7 +2698,7 @@ def test_a_library_of_exactly_the_queue_limit_still_shuffles(saved, fw):
 
 
 def test_a_start_headphones_required_forbids_leaves_the_queue_as_it_was(saved, fw):
-    """Headphones Required with no output: stock's gate is asked (0: it shows its message) before the load, and its
+    """Require Output on, nothing connected: stock's gate is asked (0: it shows its message) before the load, and its
     refusal loads, groups and opens nothing, with no toast of ours (1). Now Playing refused only after that load had
     replaced the queue with the whole library."""
     rows = full_queue(saved)

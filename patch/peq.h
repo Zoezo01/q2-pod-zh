@@ -402,6 +402,10 @@ enum {
                          pod_rows 26 */
     POD_ALBUM_GRID,   /* Library & Folders' Album View: stock's value and PLAYSET key
                          (album_view_toggle) */
+    POD_HIDE_APPS,    /* Appearance's Hide Apps, Hide Games and Hide App Store: Library's rows
+                         (home.c ringnav_localmusic) */
+    POD_HIDE_GAMES,
+    POD_HIDE_STORE,
     POD_COUNT
 };
 int pod_value(int i);
@@ -473,11 +477,11 @@ void tidal_all(int press, char *out, unsigned size), tidal_poll(void), tidal_all
  * launcher run, its binary q2-<id> and its icons. addon_scan finds them again (how many slots: a
  * slot's index stays its app's), addon_name, addon_id and addon_icon (an image name: file://… or
  * the shared stream_app) are one's while it is on the card (else 0), addon_open its Streaming row's
- * click (ctx: the slot). An app whose q2app says row=library is a Library row instead: addon_libs
- * (how many, a scan), addon_lib_name, addon_lib_icon and addon_lib_open, its click (ctx: its place
- * by name). addon_forget and addon_quit: the Apps page replaces or removes the files
- * of the app in folder dir (".<id>"): asked to end and waited for on the Apps page's worker, then,
- * once replaced or removed, forgotten on the UI thread. */
+ * click (ctx: the slot). An app whose q2app says row=library is a row on Library's Apps page
+ * (addon_apps) instead: addon_libs (how many, a scan), addon_lib_name and addon_lib_open, its click
+ * (ctx: its place by name). addon_forget and addon_quit: the Apps page replaces or removes the
+ * files of the app in folder dir (".<id>"): asked to end and waited for on the Apps page's worker,
+ * then, once replaced or removed, forgotten on the UI thread. */
 /* Card apps on the card at once: twice what the App Store lists (netupdate.c SH_MAX), for those put
  * there by hand. ponytail: a fixed table in .scratch, 520 bytes a slot over addon.c,
  * addon_library.c and navigation.h, its pages untouched until a slot is used; an app past the last
@@ -489,7 +493,9 @@ int addon_games_last(void); /* the card's games as the last addon_scan found the
 const char *addon_name(int a), *addon_id(int a), *addon_icon(int a);
 const char *addon_slot_id(int i); /* slot i's app's id while it has a row anywhere, else 0 */
 int addon_libs(void), addon_lib_open(void *ctx, void *event);
-const char *addon_lib_name(int k), *addon_lib_icon(int k);
+const char *addon_lib_name(int k);
+int addon_apps(void *ctx, void *event), addon_apps_sync(void *win, void *event);
+void library_apps_show(void *row, int on); /* home.c: the Library's Apps row */
 int card_path(const char *path); /* on the card, no ".." segment: what an app or server may name */
 int addon_is_icon(const char *name); /* a card app's Streaming icon, by its file:// name */
 void addon_poll(void), addon_stop(void), addon_paint(void *w, void *canvas), addon_card_away(void);
@@ -741,7 +747,7 @@ int groovebox_available(void); /* theme_engine.c: the Groovebox card app's binar
 #define SHORTCUT_NONE 11       /* IPOD SHORTCUT's None: Home has no Shortcut row */
 int page_keyup(void *ctx, void *event); /* navigation.c: Return leaves a payload page */
 int ringnav_localclass(int cls);        /* navigation.c: load_localclass_list's hook */
-int shelf_open(void *ctx, void *event); /* netupdate.c: System settings' Apps page */
+int shelf_open(void *ctx, void *event); /* netupdate.c: Library's App Store page */
 void shelf_tab(int tab);                /* netupdate.c: the App Store's open tab, 0 Apps, 1 Games */
 int shelf_key(void *top, unsigned key); /* netupdate.c: Previous and Next switch its tabs */
 /* app_store.c: the App Store's tabs and rows, drawn in ringnav_paint (store_paint) */

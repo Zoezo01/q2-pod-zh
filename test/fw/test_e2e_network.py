@@ -968,7 +968,7 @@ def test_a_worker_done_before_pthread_create_returns_is_still_reported(w):
     assert w.card.files[TAR] == UPDATE_TAR and ('fwupdate_tf',) in w.log
 
 
-# Q2 Shelf: System settings' App Store
+# Q2 Shelf: Library's App Store
 
 LIST_URL = 'https://raw.githubusercontent.com/DiamondBond/q2-pod/main/sources.list'
 STAGING = '/mnt/mmc/.q2/staging'
@@ -1014,7 +1014,7 @@ class GitHub:
 
 
 class AppStore:
-    """System settings' Apps page: Check for Updates, then a row per app in the list."""
+    """Library's App Store page: Check for Updates, then a row per app in the list."""
     CHECK = 'Check for Updates'
 
     def __init__(self, w):

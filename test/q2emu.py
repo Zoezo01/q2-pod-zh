@@ -4056,7 +4056,7 @@ def frame_jpeg(sof,w,h): return b'\xff\xd8'+JFIF+b'\xff'+bytes([sof])+struct.pac
 def photo_grid(m):
     v=m.node('scroll_view','scroll_view_localmusic',[m.node('list_item') for _ in range(11)]); m.top=m.node('window','localmusic_page',[v])
     assert m.call(address=HOOKS['localmusic_page_init'][0],args=(m.top,5,0,0),gap=0,count=5_000_000)==0
-    f,ctx=m.handler(m.nodes[m.nodes[v]['children'][-2]]['children'][0],O['EVT_CLICK']); assert m.call(address=f,args=(ctx,m.event,0,0),gap=0,count=5_000_000)==0
+    f,ctx=m.handler(m.nodes[m.nodes[v]['children'][-4]]['children'][0],O['EVT_CLICK']); assert m.call(address=f,args=(ctx,m.event,0,0),gap=0,count=5_000_000)==0
     page=m.top; _,grid,_=m.nodes[page]['children']; tv=m.find('scroll_view',grid); assert m.nodes[grid]['visible'] and len(m.nodes[tv]['children'])==20
     return page,tv,next(c[3] for c in reversed(m.calls) if c[0]=='scroll_view_create'),signed(m.get(tv+O['W_H']))
 def photo_back(m,page,tv):
@@ -4067,7 +4067,7 @@ def photos_at(tree,data):
     m=classic_light_new(PhotosMachine,tree=tree,data=data); classic_light_on(m); m.mock('widget_animator_prop_create','widget_animator_prop_set_params','widget_animator_start')
     v=m.node('scroll_view','scroll_view_localmusic',[m.node('list_item') for _ in range(11)]); m.top=m.node('window','localmusic_page',[v])
     assert m.call(address=HOOKS['localmusic_page_init'][0],args=(m.top,5,0,0),gap=0,count=5_000_000)==0
-    f,ctx=m.handler(m.nodes[m.nodes[v]['children'][-2]]['children'][0],O['EVT_CLICK']); assert m.call(address=f,args=(ctx,m.event,0,0),gap=0,count=5_000_000)==0
+    f,ctx=m.handler(m.nodes[m.nodes[v]['children'][-4]]['children'][0],O['EVT_CLICK']); assert m.call(address=f,args=(ctx,m.event,0,0),gap=0,count=5_000_000)==0
     m.page=m.top; return m
 
 class BooksMachine(DepthMachine):

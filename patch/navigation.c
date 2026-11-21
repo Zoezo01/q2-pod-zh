@@ -3091,6 +3091,9 @@ int ringnav_keylock_rows(void *win) {
  */
 /* Bluetooth's Control Device Volume on: the Q2's volume is the device's own (bt_audio_ready). */
 static int bt_vol_link __attribute__((section(".scratch")));
+/* Appearance's Hide Apps, Hide Games and Hide App Store (HIDEAPPS, HIDEGAMES, HIDESTORE): Library's
+ * rows, gone at its next open (home.c ringnav_localmusic). */
+static int hide_lib[3] __attribute__((section(".scratch")));
 static int *const pod_values[] = { &st.charge_limit,
                                    &st.wake_double,
                                    &st.artist_cf,
@@ -3118,7 +3121,10 @@ static int *const pod_values[] = { &st.charge_limit,
                                    &st.hide_stream,
                                    &st.hide_folder,
                                    &st.remind_daily,
-                                   0 };
+                                   0,
+                                   &hide_lib[0],
+                                   &hide_lib[1],
+                                   &hide_lib[2] };
 _Static_assert(POD_LOCKCLOCK == 6, "lockscreen.c passes pod_rows 6");
 _Static_assert(POD_REMIND_DAILY == 26, "netupdate.c passes pod_rows 26");
 _Static_assert(sizeof pod_values / sizeof *pod_values == POD_COUNT, "a pod_values per row");
@@ -3149,7 +3155,10 @@ static const char *const pod_keys[] = { "CHARGELIMIT",
                                         "HIDESTREAM",
                                         "HIDEFOLDER",
                                         "REMINDDAILY",
-                                        0 };
+                                        0,
+                                        "HIDEAPPS",
+                                        "HIDEGAMES",
+                                        "HIDESTORE" };
 _Static_assert(sizeof pod_keys / sizeof *pod_keys == POD_COUNT, "a pod_keys entry per row");
 /* a row's choices: Artist albums three, Standby limit four, every other row two */
 static int pod_choices(unsigned i) { return i == POD_ARTIST_CF ? 3 : i == POD_STANDBY ? 4 : 2; }
@@ -3223,6 +3232,9 @@ static void pod_text(int i) {
         { 0 }, /* Hide Folder: a switch */
         { "Update Notifications: Off", "Update Notifications: On" },
         { "Album View: List", "Album View: Grid" },
+        { 0 }, /* Hide Apps, Hide Games and Hide App Store: switches */
+        { 0 },
+        { 0 },
     };
     _Static_assert(sizeof names / sizeof *names == POD_COUNT, "a names entry per row");
     if (i == POD_CF_SORT) { /* the Sort card's words, as Cover Flow's page holds the row */
@@ -3251,6 +3263,9 @@ static void pod_text(int i) {
                          : i == POD_CF_POSITION    ? "Position Bar"
                          : i == POD_HIDE_STREAM    ? "Hide Streaming"
                          : i == POD_HIDE_FOLDER    ? "Hide Folder"
+                         : i == POD_HIDE_APPS      ? "Hide Apps"
+                         : i == POD_HIDE_GAMES     ? "Hide Games"
+                         : i == POD_HIDE_STORE     ? "Hide App Store"
                                                    : 0;
     if (toggle)
         list_toggle(st.pod_label[i], toggle, v);
@@ -3384,7 +3399,7 @@ static const unsigned char playset_order[] = {
     11 /* Crossfade */,
     6 /* Memory play */,
     12 /* Resume Songs */,
-    8 /* Headphones required */,
+    8 /* Require Output */,
     0 /* Gain */,
     9 /* ReplayGain */,
     16 /* Max Volume */,
@@ -3412,18 +3427,17 @@ static const unsigned char sysset_order[] = {
     1 /* Wireless */,
     2 /* Network */,
     3 /* Display */,
-    10 /* Controls */,
+    9 /* Controls */,
     4 /* Power */,
-    11 /* Date and time */,
+    10 /* Date and time */,
     0 /* Language, hidden */,
-    9 /* App Store */,
-    12 /* Update */,
-    13 /* Reset */,
+    11 /* Update */,
+    12 /* Reset */,
     5 /* Wheel Function, hidden */,
     6 /* In-Vehicle, hidden */,
     7 /* General, hidden */,
     8 /* System, hidden */,
-    14 /* About */,
+    13 /* About */,
 };
 
 /* Folder Root (Q2POD FOLDERROOT): the card's top-level folder Home's Folder opens in, "" the card
@@ -4351,7 +4365,7 @@ int stream_ipod(void *art, void *const text[4], void *elapsed, void *remain, voi
 }
 
 /* playing_page_init: stock builds the page and starts its 250 ms timer, then the iPod labels bind.
- * Headphones required with none to play to: stock toasts, closes the window it was given and
+ * Require Output with none to play to: stock toasts, closes the window it was given and
  * returns STOP before it builds anything (0x53e4b4), so nothing binds. */
 int ringnav_playing(void *win, void *ctx) {
     if (st.np_full)
@@ -6280,6 +6294,8 @@ int ringnav_display(void *win, void *ctx) {
         setting_row(view, SETTING_THEME);
         for (int k = 0; k < T->n_opts; ++k) setting_row(view, T->opts[k].setting);
         pod_rows(win, "scroll_view_display", POD_HIDE_STREAM, 2, home_icons);
+        pod_rows(win, "scroll_view_display", POD_HIDE_APPS, 2, home_icons);
+        pod_rows(win, "scroll_view_display", POD_HIDE_STORE, 1, home_icons);
         return result;
     }
     wheel_row(list_row_into(view, "system_display", xfade_open, (void *)1));
@@ -6343,7 +6359,6 @@ int ringnav_systemset(void *win, void *ctx) {
                                                 { "system_update", "systemset/fwupdate_page" },
                                                 { "system_reset", "systemset/reset_page" },
                                                 { "system_about", "systemset/about_page" } };
-        widget_set_text_utf8(list_row_into(view, "system_update", shelf_open, 0), "App Store");
         widget_set_text_utf8(
             list_row_into(view, "playset_folderjump", display_open, (void *)DISPLAY_CONTROLS),
             "Controls");
@@ -6876,7 +6891,7 @@ int ipod_list_layout(void *layout, void *view) {
 
 /* Replaces home_page_init's boot resume, navigator_to_with_context("playing_page", ctx) with ctx
  * {queue, index, class, mode}. Car mode (mode 2, plays) keeps that call; otherwise this is the
- * paused start playing_page_init would make, without the page. Headphones Required no longer skips
+ * paused start playing_page_init would make, without the page. Require Output no longer skips
  * the resume (ipod.py nops stock's test): a paused queue plays nothing, and car mode's start is
  * asked here, as the page would (it would refuse and restore nothing), and comes back paused. */
 void ringnav_boot(const char *page, const int *ctx) {

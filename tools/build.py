@@ -725,7 +725,7 @@ LABELS = tuple((k.encode(), o.encode(), n.encode()) for k, o, n in (
     ('playset_covermode', 'Enlarged album art(10s wait)', 'Enlarged Album Art'),
     ('playset_filter', 'Digital filters', 'Digital Filters'),
     ('playset_memplay', 'Memory playback', 'Memory Playback'),
-    ('playset_noplay', 'Headphones required for playback', 'Headphones Required'),
+    ('playset_noplay', 'Headphones required for playback', 'Require Output (Beta)'),
     ('replaygain_track', 'Audio', 'Song'),
     ('small_playset', 'Playback Setting', 'Playback'), ('small_sysset', 'System Setting', 'System'),
     ('system_wifiset', 'Wireless Setting', 'Wireless'), ('system_display', 'Display setting', 'Display'),
@@ -1555,7 +1555,7 @@ FUNCTIONS = {
  'player_playtime_and_length': ('int', 'int *, int *'),  # elapsed, total: track seconds; -1 none
  'player_start': ('int', 'void *, int, int, int'),
  'buzzeer_switch': ('int', 'int'),  # the stock key click; it reads g_keytone_flag
- # Headphones required (g_block_withoutphone_flag) with no output: toasts (0) and returns 1, as before each stock start
+ # Require Output (g_block_withoutphone_flag) with no output: toasts (0) and returns 1, as before each stock start
  'check_forbid_play_no_headset': ('int', 'int'),
  'on_wm_keyup_fun': ('int', 'void *, void *'),  # stock key-up: np_single replays a centre release
  'get_wifisignal': ('int', 'void'),  # the status bar's Wi-Fi bars, 1-4; -1 when not connected
@@ -1678,7 +1678,7 @@ GLOBALS = ['tidal_albuminfo_thread_run', 'tidal_collection_thread_run',  # 2: a 
            'g_usbvol_mode',  # USB DAC volume: 0 fixed, else the volume (config_usbvolmode, device_set_volume)
            'g_usbdac_chargeflag',  # USB mode's charge choice, which switch_charge_enable gets there
            'g_memory_play', 'g_carmode', 'g_carmode_state',  # In-Vehicle Mode (pod_click)
-           'g_block_withoutphone_flag',  # Headphones Required (check_forbid_play_no_headset's switch)
+           'g_block_withoutphone_flag',  # Require Output (check_forbid_play_no_headset's switch)
            'g_bigcovermode', 'g_foldercover_flag',  # Enlarged Album Art (1 on) and Folder Album Cover (pod_click)
            'g_headset_output',  # the output config_outputchannel sets: 0, 1 the jacks, 2 Bluetooth
            'g_usbmode',  # USB mode: 1 Audio and DAC, else USB Storage (usbmode_page_init)
@@ -1716,7 +1716,7 @@ CONTEXT_DATA = {'bt_showcoding': 4, 'g_memory_info': 3476, 'g_folder_path': 1024
                 'bt_connectstatus': 4,  # a link thread runs (1), ended (2), checked (3)
                 'bt_initstatus': 4}  # Bluetooth's start-up status: -102 is stock's "Bluetooth abnormal" (system.c reboot_record)
 # Windows the payload creates at runtime (window_create), so no rootfs asset names them.
-PAYLOAD_WINDOWS = {'playlistedit_page', 'chapters_page', 'coverflow_page', 'photos_page', 'books_page', 'games_page', 'mostplayed_page', 'shuffle_page', 'upnext_page', 'ratings_page', 'era_page', 'era_albums_page', 'rated_page', 'longsongs_page', 'spotify_page',
+PAYLOAD_WINDOWS = {'playlistedit_page', 'chapters_page', 'coverflow_page', 'photos_page', 'books_page', 'games_page', 'cardapps_page', 'mostplayed_page', 'shuffle_page', 'upnext_page', 'ratings_page', 'era_page', 'era_albums_page', 'rated_page', 'longsongs_page', 'spotify_page',
                    'spotbrowse_page', 'radio_page', 'radionp_page', 'streamconf_page', 'tidal_downloads', 'apps_page',
                    'addon_page', 'app_songs', 'qrcode_page', 'battery_page'}
 ICONS = [f'menu_{c}{s}.png' for c in ('coverflow', 'rockbox') for s in ('', 'down')]
@@ -2279,8 +2279,10 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
                                      else cat(xx+like)) for n, like in dict(
         shuffle='playset_playmode.png', scrobble='wifiset_wifi.png', podcasts='netservice_dlna.png',
         audiobooks='playset_foldercover.png', photos='playset_covermode.png', books='system_language.png',
-        videos='system_display.png', longsongs='system_time.png', era='local_genre.png').items()})
+        videos='system_display.png', longsongs='system_time.png', era='local_genre.png',
+        store='system_update.png').items()})
     icons['local_games.png'] = ('system_language.png', (ROOT/'assets/icons/local_games.png').read_bytes())
+    icons['local_apps.png'] = ('system_language.png', (ROOT/'assets/icons/stream_app.png').read_bytes())  # 52 px, Library's Apps
     # Minimal's selected Wi-Fi and Bluetooth rows draw this grey copy over stock's white delete mark
     icons['list_delete.png'] = ('navbar_delete.png', cat(xx+'navbar_delete.png'))
     for n in ('spotify', 'radio', 'app', 'config'):  # Streaming's Spotify, Internet Radio, card app and Configuration rows

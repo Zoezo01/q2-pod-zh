@@ -72,7 +72,7 @@ int ringnav_wifi_page(void *win, void *ctx) {
 
 /* A page that uses the network, open anywhere in the window stack: Streaming and its services'
  * pages (Spotify's, Internet Radio's, a card app's and its QR code, Tidal's but Tidal Downloads),
- * System settings' Apps, AirPlay's, Network service, SyncLink, the Wi-Fi page, Wi-Fi transfer and
+ * Library's App Store, AirPlay's, Network service, SyncLink, the Wi-Fi page, Wi-Fi transfer and
  * their dialogs, and the online lyrics and cover search. */
 static int net_page_open(void) {
     static const char *const pages[] = {

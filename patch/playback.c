@@ -742,7 +742,7 @@ int playback_set(int kind, int value) {
     return s.active;
 }
 /* Shuffle Albums (folder 0) or Folders over all: 0 when it is empty, past QUEUE_LIMIT or more than
- * rebuild has memory for; 1 when it starts, or when Headphones Required refuses it with stock's
+ * rebuild has memory for; 1 when it starts, or when Require Output refuses it with stock's
  * message. The limit and that gate come before the load replaces the queue, where rebuild and Now
  * Playing would refuse only after it. ponytail: an output lost during the load and grouping is
  * still refused by Now Playing after it, as before; drawing the order over all before any load, so

@@ -25,7 +25,7 @@ static struct {
     unsigned look;         /* time_now_ms of the last look for the file */
     int on;                /* a speaker playing, as the volume was last swapped */
     int local, limit, way; /* the earphones' volume, Volume Limit and output while it plays */
-    int picked, required;  /* a speaker picked, and Headphones Required as it was then */
+    int picked, required;  /* a speaker picked, and Require Output as it was then */
     unsigned spk_seq;      /* the app's spk_seq as last taken */
     unsigned song;         /* the hash of the song CAST_TRACK names */
     /* asked: the app opened by the ⋯ row, or running when demo started (its loop's pid file, looked
@@ -108,7 +108,7 @@ static void air_volume(cast_tap *t, int on) {
     air_dialog(v);
 }
 
-/* Headphones Required is the earphones' too, so it is cleared in RAM from a speaker's pick: the app
+/* Require Output is the earphones' too, so it is cleared in RAM from a speaker's pick: the app
  * starts the speaker only once the Q2 plays, and the switch's check refuses that start with none
  * connected (#388; 1.8.6 cleared it at CAST_ON, which never came). It comes back when the app lets
  * go, unless turned on meanwhile, and then with none connected what plays pauses, as stock's switch
@@ -203,7 +203,7 @@ int airplay_lyrics(int *ms) {
 static int air_open(void *ctx, void *event) {
     (void)event;
     if (access("/mnt/mmc/." AIR_ID "/q2-" AIR_ID, 0))
-        toast("Install AirPlay in System settings → App Store");
+        toast("Install AirPlay in Library → App Store");
     else if (!smart_hold(air_open, ctx, 0)) /* the app starts once Smart Wi-Fi's link is up */
         air.asked = 1, addon_open_id(AIR_ID);
     return 0;

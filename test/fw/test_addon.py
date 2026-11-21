@@ -391,17 +391,15 @@ def test_a_manifest_says_where_its_row_is(fw, manifest, row):
     assert ap(fw).a[0].row == row and (ap(fw).shown, ap(fw).games, ap(fw).libs) == tuple(int(row == r) for r in ROWS)
 
 
-def test_library_rows_are_by_name_with_the_52_px_icon_first(fw):
+def test_library_s_apps_are_by_name(fw):
     card(fw, tools=(b'name=Utilities\nrow=library\n', ('icon.png', 'icon-40.png')), mixtape=b'name=Mixtape\nrow=library\n',
          small=(b'name=small\nrow=library\n', ('icon-40.png',)), foo=(b'name=Foo\n', ('icon.png', 'icon-40.png')))
-    name, icon = fw.fn('addon_lib_name', C.c_char_p, C.c_int), fw.fn('addon_lib_icon', C.c_char_p, C.c_int)
+    name = fw.fn('addon_lib_name', C.c_char_p, C.c_int)
     assert fw.fn('addon_libs', C.c_int)() == 3 and [name(k) for k in range(-1, 4)] == [None, b'Mixtape', b'small', b'Utilities', None]
-    assert [icon(k) for k in range(-1, 4)] == [None, b'stream_app', b'file:///mnt/mmc/.small/icon-40.png',
-                                               b'file:///mnt/mmc/.tools/icon.png', None]
     assert names(fw, 'addon_name') == [None, b'Foo', None]  # Streaming keeps the others, its 40 px icon first
     assert names(fw, 'addon_icon') == [None, b'file:///mnt/mmc/.foo/icon-40.png', None]
     where = fw.fn('addon_where', C.c_char_p, C.c_char_p)
-    assert (where(b'tools'), where(b'foo')) == (b'Library', b'Streaming')
+    assert (where(b'tools'), where(b'foo')) == (b"Library's Apps", b'Streaming')
 
 
 def test_names_are_cut_at_a_whole_character(fw):
@@ -4112,7 +4110,7 @@ def test_an_install_s_toast_leaves_the_open_page_s_rows_on_their_apps(fw, row):
     p = Page(fw, b'name=Foo\nrow=%s\n' % row, opens=False)  # the page built, Foo its only app row
     p.world.files.update({b'/mnt/mmc/.bar/q2app': b'name=Bar\nrow=%s\n' % row, b'/mnt/mmc/.bar/q2-bar': b'ELF'})
     p.world.dirs[b'/mnt/mmc'].append(b'.bar')
-    where = {b'streaming': b'Streaming', b'library': b'Library', b'games': b"Library's Games"}[row]
+    where = {b'streaming': b'Streaming', b'library': b"Library's Apps", b'games': b"Library's Games"}[row]
     assert fw.fn('addon_where', C.c_char_p, C.c_char_p)(b'bar') == where
     PRESSES.get(row, lambda fw, k: fw.fn('addon_open', C.c_int, C.c_void_p, C.c_void_p)(k, None))(fw, 0)
     assert p.top.title == b'Foo'

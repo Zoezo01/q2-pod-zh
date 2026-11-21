@@ -114,7 +114,7 @@ The [user guide][guide] covers every control, EQ, Cover Flow and more tips.
 
 ## Apps
 
-**System settings → App Store** installs, updates and removes these over Wi-Fi:
+**Library → App Store** installs, updates and removes these over Wi-Fi:
 
 <table>
   <tr valign="top">
@@ -174,12 +174,12 @@ The [user guide][guide] covers every control, EQ, Cover Flow and more tips.
   </tr>
   <tr valign="top">
     <td><b><a href="https://github.com/lampsonlnguyen/q2-utilities-app">Utilities</a></b></td>
-    <td>A stopwatch, a calendar, a to-do list and a calculator, in <b>Library → Utilities</b>.</td>
+    <td>A stopwatch, a calendar, a to-do list and a calculator, in <b>Library → Apps → Utilities</b>.</td>
     <td></td>
   </tr>
   <tr valign="top">
     <td><b><a href="https://github.com/lampsonlnguyen/q2-weather">Weather</a></b></td>
-    <td>Today's weather and a seven-day forecast for where you are or a city you choose, in <b>Library → Weather</b>.</td>
+    <td>Today's weather and a seven-day forecast for where you are or a city you choose, in <b>Library → Apps → Weather</b>.</td>
     <td></td>
   </tr>
 </table>

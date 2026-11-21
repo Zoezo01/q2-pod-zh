@@ -328,6 +328,7 @@ int row_preview_on(void) { return 1; }
 int show_q2pod(void) { return 1; }
 int library_search(void) { return 1; }
 void library_rows(void *list) {}
+int addon_apps_sync(void *win, void *event) { return 0; }
 void stream_rows(void *list) {}
 int tk_str_start_with(const char *s, const char *p) { return !strncmp(s, p, strlen(p)); }
 const unsigned *widget_get_text(void *w) { return 0; }
@@ -7892,7 +7893,7 @@ static void land_fallbacks(void) {
         if (k == 6) np_opens = 2;                             /* no img_cover */
         if (k == 7) np_art_box[3] = NP_IPOD_ART;              /* not slanted */
         if (k == 8) np_art_box[2] = 177, np_art_box[3] = 220; /* another side */
-        if (k == 9) np_opens = 0;                             /* Headphones Required: its window closed, Cover Flow on top */
+        if (k == 9) np_opens = 0;                             /* Require Output: its window closed, Cover Flow on top */
         if (k == 12) np_opens = 3;                            /* another window on top */
         if (k == 13) calloc_fail = 1;
         if (k == 14) offline_ok = 0;                       /* the capture can't paint the panel */

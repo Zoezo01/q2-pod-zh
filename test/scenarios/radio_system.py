@@ -99,7 +99,7 @@ m.paint(view)
 for _ in range(8): m.call()  # stock's two, our six, then Boot to
 assert m.confirm()==11 and m.dispatched()[0][1]==button; passed()
 # System settings: stock V1.36's nine rows, its Language (English only for now), Wheel Function, In-Vehicle, General and System hidden, which the wheel
-# skips; App Store and Controls added, and the four rows stock moved to its System page, opening stock's pages, so the
+# skips; Controls added, and the four rows stock moved to its System page, opening stock's pages, so the
 # list reads as it did. Boot to is Power's now.
 for mode in (0o100755,0):
     m=BootMachine({}); m.rockbox_mode=mode; m.restack=True
@@ -108,11 +108,10 @@ for mode in (0o100755,0):
     view=m.node('scroll_view','scroll_view_sysset',entries.copy())
     m.top=m.node('window','sysset_page',[m.node('list_view','list_view_sysset',[view])])
     assert m.call(address=HOOKS['systemset_sysset_page_init'][0],args=(m.top,5,0,0),gap=0)==0
-    kids=m.nodes[view]['children']; assert len(kids)==15
-    assert [kids.index(e) for e in entries]==[6,0,1,2,4,10,11,12,13]  # Language, hidden, after Date and Time; the hidden four before About
+    kids=m.nodes[view]['children']; assert len(kids)==14
+    assert [kids.index(e) for e in entries]==[6,0,1,2,4,9,10,11,12]  # Language, hidden, after Date and Time; the hidden four before About
     assert [m.nodes[e]['visible'] for e in entries]==[0,1,1,1,1,0,0,0,0]
-    controls,date,apps,update,reset,about=(m.nodes[kids[i]]['children'][0] for i in (3,5,7,8,9,14))
-    assert m.nodes[m.nodes[apps]['children'][1]]['text']=='App Store' and m.handler(apps,O['EVT_CLICK'])[0]==payload_syms['shelf_open']
+    controls,date,update,reset,about=(m.nodes[kids[i]]['children'][0] for i in (3,5,7,8,13))
     assert m.nodes[m.nodes[controls]['children'][1]]['text']=='Controls'
     f,ctx=m.handler(controls,O['EVT_CLICK']); assert f==payload_syms['display_open'] and ctx==3
     for b,key,page in ((date,'system_time','systemset/datetime_page'),(update,'system_update','systemset/fwupdate_page'),(reset,'system_reset','systemset/reset_page'),(about,'system_about','systemset/about_page')):
