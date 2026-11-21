@@ -3,6 +3,7 @@
 
 #define STR_(x) #x
 #define STR(x) STR_(x) /* a macro's value as a string literal */
+#include "stock_types.h"
 
 #ifdef PEQ_HOST
 #ifndef _GNU_SOURCE

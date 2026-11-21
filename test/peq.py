@@ -408,6 +408,11 @@ def headroom_check(lib, ui):
 
 # Host stand-ins for the stock services peq_platform.h maps on the device.
 SHIM_H = r"""
+/* The shim's stock objects are records of its own behind void *: patch/stock_types.h's names are void here,
+ * so every stub keeps the signature it was written with. tools/tidy.sh and the Q2's build hold the types. */
+#define Q2_STOCK_TYPES_H
+typedef void widget_t, event_t, canvas_t, vgcanvas_t, widget_animator_t, widget_factory_t, image_manager_t,
+    input_method_t;
 #include <assert.h>
 #include <dirent.h>
 #include <sys/stat.h>
