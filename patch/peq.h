@@ -504,6 +504,7 @@ void addon_forget(const char *dir), addon_quit(const char *dir);
  * many (a scan), one's name, its press (a game's start over the screen, another app's page: 1 when
  * it runs or opened), whether a game runs, and ringnav_input's events for it */
 int addon_games(void), addon_game_start(int k), addon_game_on(void);
+int addon_game_front(void), addon_game_keys(void);
 int addon_game_audio(
     void); /* a card game with audio=1 runs: the sound and the media keys are its */
 int addon_game_open(const char *id); /* Home's Shortcut: the card game with this id, -1 none */
