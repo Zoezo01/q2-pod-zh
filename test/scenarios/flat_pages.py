@@ -98,3 +98,82 @@ for light, accent, far in (('0', '4', 'flat_drop_bright_qd'), ('1', '4', 'flat_d
 q = qs_flat(); q.nodes[q.slider]['value'] = 10; bare(q); bg(q, q.slider)
 q.call(address=HOOKS['widget_on_paint_border'][0], args=(q.slider, q.canvas, 0, 0), gap=0)
 assert [n for n, _ in qs_arts(q)] == ['flat_drop_dim', 'flat_drop_bright']; passed()
+
+# The slider pages under Modern (navigation.c slider_open, classic_pages.c slider_paint and slider_scrub): the half's
+# paper, flat_bar's 36 px bar on the slider's rows 17 to 52, the caption, the number with L and R, Default Volume's pill.
+FLAT_REST = {'0': 0x2c2c2e, '1': 0xe9e9ec}  # flat.c flat_rest
+FLAT_INK = {'0': 0xffffff, '1': 0x1c1c1e}  # flat_ink
+
+
+def paper_of(light): return 0 if light == '0' else O['LIGHT_PAPER'] * 0x010101
+
+
+def slider_flat(name, slider, view, label, ends, light='0', accent='4', **kw):
+    """test/patch.py's slider_win under Modern: stock's page as it loads, before its init."""
+    m = LoadPlain(); m.config.update(THEME='2', LIGHT=light, ACCENT=accent)
+    s = m.node('slider', slider, **kw); lab = m.node('label', label, text='5'); l, r = (m.node('image', n) for n in ends)
+    dec, add = m.node('image', 'img_dec'), m.node('image', 'img_add')
+    v = m.node('view', view, [lab, s, l, r, dec, add]); nav = m.node('view', 'view_navbar', visible=0)
+    win = m.node('window', name, [nav, v]); parents(m, win); m.word(win + O['W_PARENT'], m.wm)
+    place(m, win, 0, 26, 375, 294); place(m, v, 0, 0, 375, 240); place(m, s, 31, 60, 313, 70); place(m, lab, 100, 15, 175, 32)
+    m.top = win; m.nodes[m.wm] = {'children': [win]}; ui_loaded(m, name, win)
+    m.win, m.slider, m.view, m.label = win, s, v, lab
+    return m
+
+
+def scrub_bands(m):
+    bare(m); m.call(address=HOOKS['widget_on_paint_border'][0], args=(m.slider, m.canvas, 0, 0), gap=0); return m.bands
+
+
+# Brightness, each half: the paper alone under the children; the slider's box, the caption's; the bar under its fill,
+# 4 of 1..10, a sun at each end.
+for light in '01':
+    m = slider_flat('backlight_page', 'slider_backlight', 'view_backlight', 'label_backlight', ('img_left', 'img_right'), light,
+                    min=1, max=10, value=4)
+    bare(m); bg(m, m.win)
+    assert m.bands == [(0, 0, 375, 294, color_t(paper_of(light)), *m.bands[0][5:])] and not m.image_draws and not m.letters
+    assert wbox(m, m.slider) == (33, 115, 309, 70) and wbox(m, m.view) == (0, 0, 375, 294)
+    cap = named(m, m.win, 'caption'); assert wbox(m, cap) == (16, 196, 343, 22) and m.nodes[cap]['text'] == 'Press Centre When Finished'
+    assert (m.nodes[cap]['style:normal:font_name'], m.nodes[cap]['style:normal:font_size']) == ('default', 17)
+    under, rest = round_box(scrub_bands(m), 0, 17, 309, 36, 18); lit, rest = round_box(rest, 0, 17, 36 + 273 * 3 // 9, 36, 18)
+    on = on_of(m, light, '4')
+    assert set(under) == {color_t(FLAT_REST[light])} and set(lit) == {color_t(on)} and not rest
+    assert [n for n, _ in qs_arts(m)] == ['flat_drop_dim', 'flat_drop_bright_q' + 'dl'[int(light)]] and m.lcd_colors() == LCD_COLORS; passed()
+# Max Volume: the speakers, no triangle and no band's repaint on a step.
+m = slider_flat('maxvol_page', 'slider_maxvol', 'view_maxvol', 'label_vol', ('img_volleft', 'img_volright'), max=100, value=50)
+assert wbox(m, m.slider) == (33, 115, 309, 70) and not [h for h in m.nodes[m.slider].get('handlers', []) if h[0] == O['EVT_VALUE_CHANGING']]
+scrub_bands(m); assert [n for n, _ in qs_arts(m)] == ['flat_spk_quiet', 'flat_spk_loud_qd']; passed()
+# Balance: the number over the bar, L and R at its ends in the bold face, quiet; no marks in the bar.
+m = slider_flat('balance_page', 'slider_balance', 'view_balance', 'label_balance', ('img_left', 'img_right'), min=-10, max=10, value=0)
+L, R = [next(c for c in m.nodes[m.win]['children'] if m.nodes[c].get('text') == t) for t in 'LR']
+assert wbox(m, m.label) == (0, 85, 375, 34) and m.nodes[m.label]['visible'] == 1 and wbox(m, L) == (37, 89, 20, 26) and wbox(m, R) == (318, 89, 20, 26)
+assert {(m.nodes[w]['style:normal:font_name'], m.nodes[w]['style:normal:font_size']) for w in (L, R)} == {('bold', 21)}
+scrub_bands(m); assert not m.image_draws; passed()
+
+
+def boot_flat(light='0', on=1):
+    """test/patch.py's boot_page under Modern."""
+    SETUP[:] = [lambda k: (k.config.update(THEME='2', LIGHT=light, ACCENT='4'), k)]
+    try: q = LoadQueue(queue=1)
+    finally: SETUP.clear()
+    win = q.ready = QueueMachine.bootvol(q); parents(q, win); q.word(win + O['W_PARENT'], q.wm); place(q, win, 0, 26, 375, 294)
+    q.bar_title = q.node('hscroll_label', 'label_title'); q.word(syms['system_bar'], q.node('window', 'system_bar', [q.bar_title]))
+    q.view = named(q, win, 'view_bootvol'); q.nav = named(q, win, 'view_navbar'); place(q, q.view, 0, 50, 375, 240); place(q, q.slider, 31, 60, 313, 70)
+    q.nodes[q.title]['text'] = 'Default Volume'; q.nodes[q.switch]['image'] = 'switch_on' if on else 'switch_off'; q.nodes[q.view]['visible'] = on
+    q.below = q.top; q.stack = [q.top]; q.nodes[q.wm] = dict(type='window_manager', name='', children=[q.top, win], visible=1)
+    kids = q.nodes[q.nav]['children']; q.nodes[q.nav]['children'] = []; ui_loaded(q, 'playset/bootvol_page', win); q.nodes[q.nav]['children'] = kids
+    q.win = q.top = win; q.stack.append(win); return q
+
+
+# Default Volume, each half, On and Off: the pill at rest, the half that holds in what is on, its word white, the other's
+# in the half's ink, both in the bold face; the hit box as Classic's.
+for light in '01':
+    for on in (1, 0):
+        q = boot_flat(light, on); bare(q); bg(q, q.win); letters = q.letters  # on_of's call clears them
+        assert q.bands[0][:5] == (0, 0, 375, 294, color_t(paper_of(light)))
+        track, rest = round_box(q.bands[1:], 128, 32, 120, 36, 18); cell, rest = round_box(rest, 188 if on else 128, 32, 60, 36, 18)
+        assert set(track) == {color_t(FLAT_REST[light])} and set(cell) == {color_t(on_of(q, light, '4'))} and not rest
+        ink = color_t(FLAT_INK[light]) | 0xff000000
+        assert [(t['text'], t['rect'], t['font']) for t in letters] == [('Off', (128, 32, 60, 36), ('bold', 19)), ('On', (188, 32, 60, 36), ('bold', 19))]
+        assert [t['color'] for t in letters] == ([ink, 0xffffffff] if on else [0xffffffff, ink])
+        assert wbox(q, named(q, q.win, 'switch_hit')) == (125, 28, 125, 44) and wbox(q, q.slider) == (33, 115, 309, 70); passed()

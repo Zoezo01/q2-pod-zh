@@ -38,12 +38,13 @@ def test_the_family_is_the_looks_not_the_themes():
     assert set(got) == {'flat_' + n for n in (
         *(f'drop_{b}{k}' for b in QS_NAMES for k in ('', '_l')), 'drop_dim', 'drop_dim_l',
         *(f'drop_bright{k}' for k in ('', '_l', '_ql', '_qd')), 'msg_usb_l', 'msg_usb_d', 'msg_note_l', 'msg_note_d',
-        'clock_face_l', 'clock_face_d', *(f'spk_{v}_{h}' for v in ('quiet', 'loud') for h in 'lwd'))}
+        'clock_face_l', 'clock_face_d', 'spk_quiet', 'spk_quiet_l', *(f'spk_loud{k}' for k in ('', '_l', '_ql', '_qd')))}
     assert set(art.FLAT_BUTTONS) == set(art.QS_BUTTONS)  # the same stock names: QS_LIT says which are on
     for t in theme.builtins():  # no shipped theme draws them before its theme.xml says flat
         assert t['painter[PAINT_PAGES]'] == art.FLAT or not any(k.startswith('flat_') for k in art.images(t))
     classic = art.images(theme.builtins()[1])
     assert not any(k.startswith('flat_') for k in classic)
+    assert set(art.images(theme.builtins()[2])) == set(art.flat_images())  # Modern: the flat look's alone
 
 
 @pytest.mark.parametrize('name, side', [('drop_wifi', 54), ('drop_dim', 24), ('drop_bright_qd', 30), ('msg_usb_d', 84), ('clock_face_l', 110)])
@@ -54,7 +55,8 @@ def test_each_image_is_its_square(name, side):
 
 @pytest.mark.parametrize('name, rgb', [('drop_wifi', 0xffffff), ('drop_sysset_l', 0x1c1c1e), ('drop_dim_l', 0x1c1c1e),
                                        ('drop_bright_ql', 0x6e6e73), ('drop_bright_qd', 0x98989d), ('msg_note_l', 0x1c1c1e),
-                                       ('msg_usb_d', 0xffffff), ('spk_loud_w', 0xffffff), ('spk_quiet_l', 0x393c39)])
+                                       ('msg_usb_d', 0xffffff), ('spk_loud', 0xffffff), ('spk_quiet_l', 0x1c1c1e),
+                                       ('spk_loud_qd', 0x98989d)])
 def test_a_glyph_is_one_ink(name, rgb):
     colours, alphas = ink('flat_' + name)
     assert colours == {tuple(rgb.to_bytes(3, 'big'))} and max(alphas) == 255

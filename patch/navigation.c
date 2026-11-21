@@ -4657,11 +4657,14 @@ const char *number_face(void *label, int *px) {
     return face ? face : "default";
 }
 void slider_number(void *label) {
-    if (!classic_pages()) return;
+    if (!own_pages()) return;
     int px;
     widget_set_visible(label, 1, 0);
     st.number_face = number_face(label, &px);
-    slider_label(label, 0, 85, 375, 34, px, st.number_face);
+    if (flat_pages())
+        page_label(label, 0, 85, 375, 34, px, st.number_face, 0xffffff);
+    else
+        slider_label(label, 0, 85, 375, 34, px, st.number_face);
 }
 /* Stock's window as it loads, before its init. Every look-up it makes by name still finds its
  * widget: edit_key clicks img_dec and img_add, hidden here. */
@@ -4687,14 +4690,19 @@ static void slider_open(void *win) {
         s = widget_lookup(win, sliders[kind], 1);
     if (!s) return;
     slider_knobless(s); /* in every theme: the page's slider is a plain one */
-    if (!classic_pages()) return;
+    if (!own_pages()) return;
     --kind;
+    /* the flat look's: its bar wider and taller, the number with L and R over the bar's ends */
+    int flat = flat_pages();
     for (unsigned i = 0; i < sizeof hide / sizeof *hide; ++i)
         if ((c = widget_lookup(win, hide[i], 1))) widget_set_visible(c, 0, 0);
     int maxvol = kind == SLIDER_MAX;
     widget_move_resize(P(s, W_PARENT), 0, 0, 375, 294);
-    widget_move_resize(s, 81, maxvol ? 111 : 117, 204,
-                       70); /* its bar's rows 31..38 of a wide touch */
+    if (flat)
+        widget_move_resize(s, 33, 115, 309, 70); /* its bar's rows 17..52 of a taller touch */
+    else
+        widget_move_resize(s, 81, maxvol ? 111 : 117, 204,
+                           70); /* its bar's rows 31..38 of a wide touch */
     /* stock's slider fills its knob in this colour, then draws the theme's icon on it, and has no
      * knob with neither (slider_knobless) */
     for (unsigned i = 0; i < sizeof states / sizeof *states; ++i)
@@ -4705,22 +4713,29 @@ static void slider_open(void *win) {
     st.slider_sw = (void *)0; /* stock's init makes it, after this: slider_paint finds it */
     st.slider_hint = slider_caption;
     widget_on(win, EVT_DESTROY, slider_gone, win);
-    if (maxvol) { /* the triangle reaches past the slider's rect */
+    if (maxvol && !flat) { /* the triangle reaches past the slider's rect */
         widget_on(s, EVT_VALUE_CHANGING, slider_moved, win);
         widget_on(s, EVT_VALUE_CHANGED, slider_moved, win);
     }
-    c = text(win, 0, 228, 375, 32);
+    c = flat ? text(win, 16, 196, 343, 22) : text(win, 0, 228, 375, 32);
     widget_set_name(c, "caption");
     widget_set_text(c, (const unsigned *)slider_caption);
-    slider_label(c, 0, 228, 375, 32, 31, "classic-light");
+    if (flat)
+        page_label(c, 16, 196, 343, 22, 17, "default", flat_quiet[0]);
+    else
+        slider_label(c, 0, 228, 375, 32, 31, "classic-light");
     if ((c = widget_lookup(win, "label_balance", 1))) {
+        static const short end[2][2] = { { 50, 306 }, { 37, 318 } }; /* [flat]: L's x, R's */
         slider_number(c);
-        c = text(win, 50, 139, 20, 26);
-        widget_set_text_utf8(c, "L");
-        slider_label(c, 50, 139, 20, 26, 24, "classic-light");
-        c = text(win, 306, 139, 20, 26);
-        widget_set_text_utf8(c, "R");
-        slider_label(c, 306, 139, 20, 26, 24, "classic-light");
+        for (int k = 0; k < 2; ++k) {
+            int x = end[flat][k], y = flat ? 89 : 139;
+            c = text(win, x, y, 20, 26);
+            widget_set_text_utf8(c, k ? "R" : "L");
+            if (flat)
+                page_label(c, x, y, 20, 26, 21, FLAT_FACE, flat_quiet[0]);
+            else
+                slider_label(c, x, y, 20, 26, 24, "classic-light");
+        }
     }
     if (kind != SLIDER_BOOT) return;
     /* the toolbar stays for img_bootswitch (tools/ipod.py TOOLBAR_SWITCHES); the bar has the title

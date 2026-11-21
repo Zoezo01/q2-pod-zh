@@ -820,6 +820,7 @@ def clock_shadow():
 # every theme that takes it. Quick Settings (quick_settings.c quick_page_flat) paints each 54 px round button and its
 # glyph over it in the button's ink: FLAT_INK, white, or _l, dark, at rest in the light half and on a bright accent.
 FLAT_ART, FLAT = 'flat_', list(CHOICES['pages.own.painter']).index('flat')
+CLASSIC = list(CHOICES['pages.own.painter']).index('classic-light')  # each own painter's choices: stock, classic-light, flat
 def holed(d):
     """d's subpaths as one even-odd polygon: each joined from the first's start and back, those seams crossed twice."""
     subs = path(d)
@@ -901,8 +902,9 @@ def flat_images():
         out |= {f'drop_{name}{q}': flat_mark('sun', 1, rgb, px, k) for q, rgb in (FLAT_INK if name == 'dim' else FLAT_INK | FLAT_QUIET).items()}
     out |= {f'msg_{name}_{half}': flat_mark(name, 1, rgb, MSG_BOX, MSG_SCALE) for name in ('usb', 'note') for half, rgb in MSG_INK.items()}
     out |= {f'clock_face_{half}': clock_face(half) for half in CLOCK_FACE}
-    # the slider pages' speakers (flat_bar BAR_SPEAKERS): white on the fill, the halves' inks past it
-    out |= {f'spk_{loud}_{half}': speaker(loud == 'loud', SPEAKER_INKS[half]) for loud in ('quiet', 'loud') for half in 'lwd'}
+    # the speakers (flat_bar BAR_SPEAKERS), as the suns: the near one in the fill's ink, the far one quiet until reached
+    out |= {f'spk_{loud}{q}': speaker(loud == 'loud', rgb) for loud in ('quiet', 'loud')
+            for q, rgb in (FLAT_INK if loud == 'quiet' else FLAT_INK | FLAT_QUIET).items()}
     return {FLAT_ART + name: data for name, data in out.items()}
 
 
@@ -939,7 +941,7 @@ def images(t):
         for name, d in PANE_ICONS.items():
             fit = name != 'note'
             out[f'{prefix}_icon_{name}'] = png(*(ICON_BOX if fit else NOTE_BOX)[2:], icon(d, fit))
-    if t['painter[PAINT_VOLUME]']:
+    if t['painter[PAINT_VOLUME]'] == CLASSIC:
         for half, rgb in SPEAKER_INKS.items():
             out |= {f'{prefix}_spk_quiet_{half}': speaker(False, rgb), f'{prefix}_spk_loud_{half}': speaker(True, rgb)}
     if t['painter[PAINT_PAGES]'] == FLAT:
@@ -962,7 +964,7 @@ def images(t):
         for w in CELL_WIDTHS:
             out |= {f'{prefix}_cell_{w}': cell(w, False), f'{prefix}_cell_lit_{w}': cell(w, True)}
         out |= {f'{prefix}_tile': tile(), f'{prefix}_clock_chrome': clock_chrome(), f'{prefix}_clock_shadow': clock_shadow(), f'{prefix}_hint_shadow': hint_shadow()}
-    if t['painter[PAINT_CONFIRM]']:
+    if t['painter[PAINT_CONFIRM]'] == CLASSIC:
         out[f'{prefix}_confirm_shadow'] = png(*TRAY_SHADOW_BOX[2:], tray_shadow())
     if t['station_stops']:  # Internet Radio's Now Playing art, as large as the slanted art (navigation.c stream_ipod)
         px = inc('NP_IPOD_ART')

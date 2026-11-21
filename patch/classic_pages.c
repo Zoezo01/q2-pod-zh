@@ -469,7 +469,26 @@ static const stops_t slider_band = { 8,
                                       { 0, 40, 80, 100 },
                                       { 0x2f4052, 0x42566a, 0x3b4d60, 0x26333f } },
                      slider_lit = { 3, { 0, 45, 100 }, { 0xf7ffff, 0xeceeef, 0xc6cbcf } };
-/* The page, in the window's coordinates, under its children. */
+/* The flat look's Off and On: the two halves of one pill at rest, the one that holds in what is on,
+ * its word white (the ink on a bright fill), the other's in the half's ink. */
+static void slider_switch_flat(void *canvas, void *sw) {
+    static const unsigned off[] = { 'O', 'f', 'f', 0 }, on[] = { 'O', 'n', 0 };
+    int light = ipod_light();
+    unsigned lit = quick_on(), ink = 0xff000000u | flat_ink[light];
+    unsigned over = bright_tone(lit) ? 0xff000000u | flat_ink[1] : 0xffffffffu;
+    rect_t track = { 128, 32, 120, 36 }, left = { 128, 32, 60, 36 }, right = { 188, 32, 60, 36 };
+    const char *image = widget_get_prop_str(sw, "image", "");
+    /* stock's two names, switch_on and switch_off, first differ at [8] */
+    int held = image[0] && image[8] == 'n';
+    stops_t rest = { 2, { 0, 100 }, { flat_rest[light], flat_rest[light] } },
+            cell = { 2, { 0, 100 }, { lit, lit } };
+    paint_round_rows(canvas, &track, &rest, 18);
+    paint_round_rows(canvas, held ? &right : &left, &cell, 18);
+    final_text(canvas, FLAT_FACE, off, &left, 19, held ? ink : over);
+    final_text(canvas, FLAT_FACE, on, &right, 19, held ? over : ink);
+}
+/* The page, in the window's coordinates, under its children: the flat look's the half's paper and
+ * the switch, its bar slider_scrub's and its words labels of their own. */
 void slider_paint(void *w, void *canvas) {
     void *lcd = P(canvas, CANVAS_LCD), *s = st.slider_w, *sw = st.slider_sw;
     if (!lcd) return;
@@ -479,6 +498,12 @@ void slider_paint(void *w, void *canvas) {
     if (number && number_face(number, &px) != st.number_face) slider_number(number);
     if (!sw && st.slider_kind == SLIDER_BOOT)
         sw = st.slider_sw = widget_lookup(w, "img_bootswitch", 1);
+    if (flat_pages()) {
+        bar_rect(canvas, RGBA(flat_page()), 0, 0, 375, 294);
+        if (sw && widget_get_visible(sw)) slider_switch_flat(canvas, sw);
+        stock_canvas_set_fill_color(canvas, fill);
+        return;
+    }
     paint_page(w, canvas, 0);
     if (sw && widget_get_visible(sw)) slider_switch(w, canvas, sw);
     if (widget_get_visible(
@@ -505,10 +530,23 @@ void slider_paint(void *w, void *canvas) {
     stock_canvas_set_fill_color(canvas, fill);
 }
 /* ringnav_paint, after stock's slider: the bar's 8 rows over its own, inset a pixel at each end on
- * the first and last. */
+ * the first and last. The flat look's is flat_bar's on its rows 17 to 52, its fill never less than
+ * its own round end: Brightness's suns, the volumes' speakers, none on Balance, Crossfade and the
+ * rest. Stock hides the slider's view while Default Volume's switch is off, and the bar with it. */
 void slider_scrub(void *w, void *canvas) {
     if (!w || w != st.slider_w || !P(canvas, CANVAS_LCD)) return;
     unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
+    if (flat_pages()) {
+        int kind = st.slider_kind, ww = I(w, W_W);
+        int marks = kind == SLIDER_LIGHT ? BAR_SUNS
+                    : kind == SLIDER_MAX || (kind == SLIDER_BOOT && !xfade_page(st.slider_win))
+                        ? BAR_SPEAKERS
+                        : BAR_PLAIN;
+        rect_t r = { 0, 17, ww, 36 };
+        flat_bar(w, canvas, &r, 36 + slider_part(w, ww - 36), flat_rest[ipod_light()], marks);
+        stock_canvas_set_fill_color(canvas, fill);
+        return;
+    }
     int ww = I(w, W_W), part = slider_part(w, ww);
     for (int j = 0; j < 8; ++j) {
         int in = !j || j == 7;

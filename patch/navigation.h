@@ -329,6 +329,7 @@ enum { SLIDER_LIGHT, SLIDER_MAX, SLIDER_BALANCE, SLIDER_BOOT }; /* st.slider_kin
 #define STYLE_KEY 48
 #define CONFIRM_CELL_PX 23
 #define FLAT_ART "flat_" /* the flat look's images' prefix (tools/art.py FLAT_ART) */
+#define FLAT_FACE "bold" /* the flat look's headings and words: Modern's bold */
 #define MCL(a) (*(volatile int *)(a))
 int clamp_step(int offset, int maximum, int delta);
 unsigned put_num(unsigned *s, unsigned v);

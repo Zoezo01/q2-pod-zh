@@ -7,6 +7,7 @@ import pytest
 from conftest import O
 from test_nav_paint import (ACCENTS, GRAPHITE, ICONS, LABELS, MINIMAL, MODERN, PAPER, RED, RED_PX, TIDAL, WHITE, Canvas, Quick, bitmaps,
                             channels, fill_props, image_add, layout, luma, paint_bg, quick_window, rgb_of, rgba, scheme, scrub,
+                            SLIDER_PAGES, SLIDERS, named, on_page, slider_scrub, slider_paint, ui_load,
                             st, stock_h, theme, vol_paint, volume, world)  # noqa: F401 (fixtures, by name)
 from test_nav_painters import Quick as QuickInit
 MODERN_ACCENTS = [0, 1, 2, 3, 4, 5, 6, 8]  # Modern's colorSchemes, by ACCENT
@@ -226,7 +227,7 @@ def test_the_bar_s_suns_take_the_ink_that_shows(fw, world, value, light, accent)
     assert dim[:2] == (x + 6, top + 6) and bright_[:2] == (x + 309 - 33, top + 3)
 
 
-@pytest.mark.parametrize('loud, quiet, light', [(1, 'spk_quiet_w', '0'), (0, 'spk_quiet_w', '1')])
+@pytest.mark.parametrize('loud, quiet, light', [(1, 'spk_quiet', '0'), (0, 'spk_quiet', '1')])
 def test_the_flat_bar_s_speakers(fw, world, loud, quiet, light):
     """flat_bar's other marks, the slider pages': the near speaker white on the fill, the far one in the half's ink
     until the fill reaches it."""
@@ -235,7 +236,7 @@ def test_the_flat_bar_s_speakers(fw, world, loud, quiet, light):
     r = (C.c_int * 4)(10, 20, 300, 36)
     fw.fn('flat_bar', None, C.c_void_p, C.c_void_p, C.c_void_p, C.c_int, C.c_uint, C.c_int)(
         None, canvas.p, r, 300 if loud else 100, 0x2c2c2e, 2)
-    far = 'spk_loud_w' if loud else 'spk_loud_l' if light == '1' else 'spk_loud_d'
+    far = 'spk_loud' if loud else 'spk_loud_ql' if light == '1' else 'spk_loud_qd'
     assert canvas.arts and [(n, d[:2]) for n, d in canvas.arts] == [('flat_' + quiet, (22, 31)), ('flat_' + far, (276, 31))]
 
 
@@ -268,7 +269,7 @@ def test_over_the_flat_quick_settings_the_volume_is_the_bar_s_card(fw, world, st
     assert min(f[1] for f in canvas.fills) == card[1] and max(f[1] + f[3] for f in canvas.fills) == card[1] + card[3]
     lit, rest = lit_of(fw, canvas)
     assert max(f[0] + f[2] for f in lit) - 33 == 36 + 273 * level // 100 and min(f[1] for f in lit) == 239
-    assert [n for n, _ in canvas.arts][0] == 'flat_spk_quiet_w' and not canvas.texts and not canvas.rounded
+    assert [n for n, _ in canvas.arts][0] == 'flat_spk_quiet' and not canvas.texts and not canvas.rounded
     assert canvas.fill == 0xff123456
 
 
@@ -278,3 +279,112 @@ def test_over_modern_s_other_windows_the_volume_stays_its_panel(fw, world, st):
     canvas = Canvas(fw)
     vol_paint(fw, dialog, canvas)
     assert world.at(vol) == (O['VOL_PANEL_X'], O['VOL_PANEL_Y'], 375 - 2 * O['VOL_PANEL_X'], O['VOL_PANEL_H']) and canvas.texts
+
+
+# The slider pages (slider_open, slider_paint, slider_scrub) in the flat look.
+
+SLIDER_LIGHT, SLIDER_MAX, SLIDER_BALANCE, SLIDER_BOOT = range(4)
+
+
+def flat_slider(fw, world, st, kind, value=50, band=True, number=None, **config):
+    """test_nav_paint's slider_page under Modern: (window, slider)."""
+    theme(fw, MODERN, ACCENT=str(TIDAL), **config)
+    win = world.window(SLIDER_PAGES[kind])
+    view = world.add(win, 'view_slider', box=(0, 120, 375, 60))
+    slider = world.add(view, SLIDERS[kind], 'slider', box=(81, 15, 204, 30), min=0, max=100, value=value)
+    if number is not None:
+        world.add(win, 'label_balance', 'label', text=number)
+    ui_load(fw, st, SLIDER_PAGES[kind].encode(), win)
+    world[view].visible = band
+    return win, slider
+
+
+@pytest.mark.parametrize('kind, ends', [(SLIDER_MAX, ('spk_quiet', 'spk_loud_qd')), (SLIDER_BOOT, ('spk_quiet', 'spk_loud_qd')),
+                                        (SLIDER_LIGHT, ('drop_dim', 'drop_bright_qd')), (SLIDER_BALANCE, ())])
+def test_each_flat_slider_page_s_bar_has_its_marks(fw, world, st, kind, ends):
+    """In the bar's ends, the near one on the fill and the far one quiet (the dark half's, here); none on Balance.
+    The page under it draws no image."""
+    win, slider = flat_slider(fw, world, st, kind)
+    canvas = slider_scrub(fw, slider)
+    assert [n for n, _ in canvas.arts] == ['flat_' + e for e in ends]
+    if ends:
+        w = world.at(slider)[2]
+        (_, low), (_, high) = canvas.arts
+        assert 0 < low[0] < w / 2 < high[0] < w and min(low[1], high[1]) >= 17  # one in each end, on the bar's rows
+    assert slider_paint(fw, win).arts == []
+
+
+def test_a_flat_slider_page_s_caption_is_a_quiet_line_that_turns_with_the_half(fw, world, st):
+    win, slider = flat_slider(fw, world, st, SLIDER_MAX)
+    canvas = slider_paint(fw, win)
+    caption = named(world, win, 'caption')
+    props = world[caption].props
+    assert canvas.texts == [] and len(canvas.fills) == 1  # the page alone: no shadow, the caption its own widget
+    assert (props['style:normal:font_name'], props['_final_n']) == ('default', 0)  # not final: Light Mode's hook flips it
+    r, g, b = channels(rgb_of(props['style:normal:text_color'] & 0xffffffff))
+    assert max(r, g, b) - min(r, g, b) <= O['LIGHT_SPREAD'] and 0x60 < g < 0xc0  # a grey, which the hook flips
+    assert on_page(world, caption)[1] >= sum(on_page(world, slider)[1::2])  # under the slider
+
+
+@pytest.mark.parametrize('light', ['0', '1'])
+def test_a_flat_slider_page_is_the_half_s_paper(fw, world, st, light):
+    win, _ = flat_slider(fw, world, st, SLIDER_LIGHT, LIGHT=light)
+    canvas = slider_paint(fw, win)
+    assert canvas.fills == [(0, 0, 375, 294, rgba(fw.fn('flat_page', C.c_uint)()))] and canvas.fill == 0xff123456
+
+
+def test_a_hidden_band_draws_no_flat_bar(fw, world, st):
+    """Stock hides the slider's view while Default Volume is off: the slider never paints, and the page has none of it."""
+    win, _ = flat_slider(fw, world, st, SLIDER_MAX, band=False)
+    canvas = slider_paint(fw, win)
+    assert canvas.arts == [] and len(canvas.fills) == 1 and world[named(world, win, 'caption')].visible  # the caption still
+
+
+def test_the_flat_value_s_label_is_over_the_bar_and_turns_with_the_half(fw, world, st):
+    win, slider = flat_slider(fw, world, st, SLIDER_BALANCE, number='')
+    label = named(world, win, 'label_balance')
+    world.set_text(label, 'L 3')
+    slider_paint(fw, win)
+    x, y, w, h = world.at(label)
+    _, sy, _, sh = on_page(world, slider)
+    assert (x, w) == (0, world.at(win)[2]) and y + h <= sy + (sh - 36) // 2 and world[label].visible  # over the bar
+    assert world[label].props['_final_n'] == 0  # its ink turns with the half
+
+
+@pytest.mark.parametrize('image, held', [('switch_on', 1), ('switch_off', 0)])
+def test_default_volume_s_flat_switch_is_a_pill_with_the_half_that_holds_lit(fw, world, st, image, held):
+    win, _ = flat_slider(fw, world, st, SLIDER_BOOT)
+    world.add(win, 'img_bootswitch', 'image', image=image)
+    canvas = slider_paint(fw, win)
+    on = rgba(fw.fn('quick_on', C.c_uint)())
+    lit = [f for f in canvas.fills if f[4] == on]
+    assert min(f[0] for f in lit) == (188 if held else 128) and max(f[0] + f[2] for f in lit) == (248 if held else 188)
+    assert [(t, r, face) for t, r, _, face in canvas.texts] == [('Off', (128, 32, 60, 36), ('bold', 19)), ('On', (188, 32, 60, 36), ('bold', 19))]
+    assert canvas.arts == []
+
+
+@pytest.mark.parametrize('value', [0, 50, 100])
+def test_the_flat_slider_s_bar_is_quick_settings_bar_on_its_own_rows(fw, world, st, value):
+    """The slider's width, 36 rows in the middle of its touch; its fill never less than its round end."""
+    _, slider = flat_slider(fw, world, st, SLIDER_BALANCE, value)
+    canvas = slider_scrub(fw, slider)
+    w, h = world.at(slider)[2:]
+    lit, rest = lit_of(fw, canvas)
+    x, rows = min(f[0] for f in rest), {f[1] for f in rest}
+    assert (x, max(f[0] + f[2] for f in rest) - x, w) == (0, 309, 309) and len(rows) == 36 and 2 * min(rows) + 36 == h
+    assert max(f[0] + f[2] for f in lit) == 36 + (w - 36) * value // 100 and {f[1] for f in lit} == rows
+    assert canvas.fill == 0xff123456
+
+
+
+
+@pytest.mark.parametrize('part, lit_w', [(0, 0), (10, 36), (36, 36), (200, 200)])
+def test_the_flat_bar_s_fill_is_none_or_at_least_its_round_end(fw, part, lit_w):
+    """Nothing lit at 0, and less than the round end is the round end: no corner's pixels inside the bar or past it."""
+    theme(fw, MODERN, ACCENT=str(TIDAL))
+    canvas = Canvas(fw)
+    r = (C.c_int * 4)(10, 20, 300, 36)
+    fw.fn('flat_bar', None, C.c_void_p, C.c_void_p, C.c_void_p, C.c_int, C.c_uint, C.c_int)(None, canvas.p, r, part, 0x2c2c2e, 0)
+    lit, rest = lit_of(fw, canvas)
+    assert all(10 <= f[0] and f[0] + f[2] <= 310 for f in canvas.fills)
+    assert (max(f[0] + f[2] for f in lit) - 10 if lit else 0) == lit_w and (not lit or min(f[0] for f in lit) >= 10)

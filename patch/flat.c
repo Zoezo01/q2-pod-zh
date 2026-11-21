@@ -16,33 +16,33 @@ unsigned quick_on(void) {
     return flip_if(ipod_light(), neutral(S->tones[0]) ? accent_tone(TONE_RED)
                                                       : mix(S->tones[0], S->tones[1], 1, 2));
 }
-/* A 36 px bar, flat: r at rest, its first part px in what is on, and its marks in its ends
- * (BAR_SUNS, BAR_SPEAKERS, or none): the near one on the fill, white, or dark on a bright fill,
- * and the far one quiet until the fill reaches it. */
+/* A 36 px bar, flat: r at rest, its first part px in what is on (none at 0, never less than its own
+ * round end), and its marks in its ends (BAR_SUNS, BAR_SPEAKERS, or none): the near one on the
+ * fill, white, or dark on a bright fill, and the far one quiet until the fill reaches it, then the
+ * near one's ink. */
 void flat_bar(void *w, void *canvas, const rect_t *r, int part, unsigned rest, int marks) {
+    static const struct {
+        const char *near, *far;
+        signed char nx, ny, fx, fy; /* the near one's place from r's corner, the far one's in */
+    } mark[] = { [BAR_SUNS] = { "drop_dim", "drop_bright", 6, 6, 33, 3 },
+                 [BAR_SPEAKERS] = { "spk_quiet", "spk_loud", 12, 11, 34, 11 } };
     unsigned on = quick_on();
-    int light = ipod_light(), dark = bright_tone(on), reached = part > r->w - r->h / 2;
-    rect_t f = { r->x, r->y, part, r->h };
+    const char *dark = bright_tone(on) ? "_l" : "";
+    rect_t f = { r->x, r->y, part < r->h ? r->h : part, r->h };
     stops_t under = { 2, { 0, 100 }, { rest, rest } }, lit = { 2, { 0, 100 }, { on, on } };
+    char name[32];
     paint_round_rows(canvas, r, &under, 18);
-    paint_round_rows(canvas, &f, &lit, 18);
-    if (marks == BAR_SUNS) {
-        paint_art(w, canvas, dark ? FLAT_ART "drop_dim_l" : FLAT_ART "drop_dim", r->x + 6,
-                  r->y + 6);
-        paint_art(w, canvas,
-                  reached ? dark ? FLAT_ART "drop_bright_l" : FLAT_ART "drop_bright"
-                  : light ? FLAT_ART "drop_bright_ql"
-                          : FLAT_ART "drop_bright_qd",
-                  r->x + r->w - 33, r->y + 3);
-    } else if (marks == BAR_SPEAKERS) {
-        paint_art(w, canvas, dark ? FLAT_ART "spk_quiet_l" : FLAT_ART "spk_quiet_w", r->x + 12,
-                  r->y + 11);
-        paint_art(w, canvas,
-                  reached ? dark ? FLAT_ART "spk_loud_l" : FLAT_ART "spk_loud_w"
-                  : light ? FLAT_ART "spk_loud_l"
-                          : FLAT_ART "spk_loud_d",
-                  r->x + r->w - 34, r->y + 11);
-    }
+    if (part > 0) paint_round_rows(canvas, &f, &lit, 18);
+    if (marks != BAR_SUNS && marks != BAR_SPEAKERS) return;
+    /* ponytail: the near mark is the fill's ink even with no fill; every caller fills at least the
+     * round end, a mark quiet in the half there would take images of its own */
+    tk_snprintf(name, sizeof name, FLAT_ART "%s%s", mark[marks].near, dark);
+    paint_art(w, canvas, name, r->x + mark[marks].nx, r->y + mark[marks].ny);
+    tk_snprintf(name, sizeof name, FLAT_ART "%s%s", mark[marks].far,
+                part > r->w - r->h / 2 ? dark
+                : ipod_light()         ? "_ql"
+                                       : "_qd");
+    paint_art(w, canvas, name, r->x + r->w - mark[marks].fx, r->y + mark[marks].fy);
 }
 /* A page's label on the half's paper: slider_label's box and face, its ink the dark half's
  * 0xRRGGBB, no longer final, so Light Mode's style hook turns it with the page. */
