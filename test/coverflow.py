@@ -429,6 +429,8 @@ void draw_centred(void *c, const unsigned *s, unsigned n, const void *r, unsigne
     centred_text[i] = 0, centred_color = color;
     memcpy(centred_box, r, sizeof centred_box), centred_px = px;
 }
+const unsigned flat_quiet[2]; /* the flat look's pane (flat_pages): no theme here takes it */
+void final_text(void *c, const char *face, const unsigned *s, const void *r, unsigned px, unsigned color) {}
 int ipod_light(void) { return light; }
 static int square_art;
 int ipod_square_art(void) { return square_art; }
