@@ -491,8 +491,9 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3, .lead { b
       <tr><td>Recently Added, Recent, Most Played, Hi-Res</td><td>Your newest songs, what you played lately, your 100 most played, and hi-res files</td></tr>
       <tr><td>Shuffle</td><td>Shuffle the whole library (<a href="#shuffle">Shuffling your library</a>)</td></tr>
       <tr><td>Podcasts, Audiobooks, Photos, Books, Videos</td><td>Shown when the card has those folders (<a href="#c7">Chapter 7</a>)</td></tr>
+      <tr><td>Apps</td><td>Installed apps that open here, once there is one</td></tr>
       <tr><td>Games</td><td>Sudoku, Vortex, Solitaire, Snake and your installed games</td></tr>
-      <tr><td>Upload Scrobbles, Update Library</td><td>See <a href="#scrobble">Scrobbling</a> and <a href="#addmusic">Adding music</a></td></tr>
+      <tr><td>App Store, Upload Scrobbles, Update Library</td><td>See <a href="#apps">Installing apps</a>, <a href="#scrobble">Scrobbling</a> and <a href="#addmusic">Adding music</a></td></tr>
     </tbody>
   </table>
   <div class="sub">
@@ -795,7 +796,7 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3, .lead { b
   <div class="note important"><p><span class="label">If playback won’t start on your account</span> (<b>Spotify refused this account</b>), see <a class="web" href="https://github.com/DiamondBond/q2-pod/issues/98">issue #98</a> (github.com/DiamondBond/q2-pod/issues/98).</p></div>
   <p class="task">To install Spotify:</p>
   <ol class="steps">
-    <li>On Wi-Fi, choose <b>System settings → App Store → Spotify</b> (<a href="#apps">Installing apps</a>).</li>
+    <li>On Wi-Fi, choose <b>Library → App Store → Spotify</b> (<a href="#apps">Installing apps</a>).</li>
     <li>Or by hand: download <code>q2-librespot-*.zip</code> from github.com/DiamondBond/q2-librespot/releases/latest and unzip it to the card’s root, so the card has a <code>.spotify</code> folder. (On a Mac, Cmd+Shift+. shows hidden folders.)</li>
   </ol>
   <p class="task">To pair it, once:</p>
@@ -1091,11 +1092,11 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
       <tr><td>Battery</td><td>Icon (default), Percent, Icon + Percent (not in Classic) or Percent Inside.</td></tr>
       <tr><td>Time in Title</td><td>On: the title bar shows the time. Off: it names the page instead, and Home reads Q2 Pod. In Classic it always names the page; On adds the time.</td></tr>
       <tr><td>Show Wordmark</td><td>On (default): Home’s title reads Q2 Pod, where an iPod reads iPod. Off: it stays empty.</td></tr>
-      <tr><td>Centred Now Playing</td><td>Minimal and Modern. On: Shanling’s layout, the art large and centred.</td></tr>
+      <tr><td>Centred Now Playing</td><td>Minimal and Modern. On: the art large and centred.</td></tr>
       <tr><td>Library on Home</td><td>Classic, Home: Split. On (default): Library slides in on Home, beside the pane. Off: it opens its own page.</td></tr>
       <tr><td>Row Preview</td><td>Classic, Home: Split. On (default): the pane shows the highlighted row. Off: it shows what’s playing.</td></tr>
       <tr><td>Row Art</td><td>Classic. On (default): album covers in taller rows. Off: one-line rows. Changing it restarts the Q2.</td></tr>
-      <tr><td>Hide Streaming, Hide Folder</td><td>On: takes that row off Home’s list. Home: Carousel keeps its card.</td></tr>
+      <tr><td>Hide Streaming, Hide Folder, Hide Apps, Hide Games, Hide App Store</td><td>On: takes that row off Home’s list, or the Library’s. Home: Carousel keeps its card.</td></tr>
     </tbody>
   </table>
   </div>
@@ -1199,7 +1200,7 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
 
   <div class="sec">
   <h2 id="apps">Installing apps over Wi-Fi</h2>
-  <p><b>System settings → App Store</b> installs and updates Rockbox, its themes, Spotify and card apps. Games have their own tab. Each app shows <b>INSTALL</b>, <b>UPDATE</b> or <b>INSTALLED</b>.</p>
+  <p><b>Library → App Store</b> installs and updates Rockbox, its themes, Spotify and card apps. Games have their own tab. Each app shows <b>INSTALL</b>, <b>UPDATE</b> or <b>INSTALLED</b>.</p>
   <div class="note important"><p><span class="label">Install only apps you trust:</span> a card app can read anything on the card, including your other logins.</p></div>
   <table>
     <thead><tr><th>To</th><th>Do this</th></tr></thead>
@@ -1212,7 +1213,7 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
   <ul>
     <li><b>Rockbox</b> becomes what the Q2 starts, so the first press says so; press again to install. Its themes appear once it’s on, and go with it.</li>
     <li><b>Removing Spotify</b> keeps its login; <b>Erase Spotify Data</b> (<a href="#stream-config">Configuration</a>) deletes it.</li>
-    <li><b>Card apps</b> appear in Streaming, and games in Library → Games. Plugging in USB storage stops them until after; close a game first. An app that syncs music can update your library once nothing is playing. If one won’t start, choose <b>Stop</b> and its name, then open it again.</li>
+    <li><b>Card apps</b> appear in Streaming or Library → Apps, and games in Library → Games. USB storage stops them until after; close a game first. An app that syncs music updates your library once nothing plays. If one won’t start, choose <b>Stop</b> and its name, then open it.</li>
     <li><b>Space:</b> the card needs room for the download, what it unpacks to, and 64 MB more.</li>
   </ul>
   </div>
