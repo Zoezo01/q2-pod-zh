@@ -293,12 +293,24 @@ def test_the_flat_volume_in_the_light_half_is_final(fw, world, st, accent):
     assert canvas.fill == 0xff123456
 
 
-def test_over_modern_s_other_windows_the_volume_stays_its_panel(fw, world, st):
-    theme(fw, MODERN)
-    dialog, vol, _ = volume(fw, world, st, 37)
+@pytest.mark.parametrize('light', ['0', '1'])
+@pytest.mark.parametrize('level, maximum, part', [(0, 100, 0), (1, 100, 4), (50, 100, 113), (100, 100, 227), (40, 80, 113)])
+def test_over_modern_s_other_windows_the_volume_is_the_flat_panel(fw, world, st, light, level, maximum, part):
+    """The toast's box, as wide as Classic's panel, the same in both halves: a thin white bar on grey, its share
+    level / maximum of the track (never less than its round ends) between the white speakers, and no number."""
+    theme(fw, MODERN, ACCENT=str(TIDAL), LIGHT=light)
+    dialog, vol, label = volume(fw, world, st, level, maximum)
     canvas = Canvas(fw)
     vol_paint(fw, dialog, canvas)
-    assert world.at(vol) == (O['VOL_PANEL_X'], O['VOL_PANEL_Y'], 375 - 2 * O['VOL_PANEL_X'], O['VOL_PANEL_H']) and canvas.texts
+    x, y, w, h = 28, O['VOL_PANEL_Y'], 375 - 56, O['VOL_PANEL_H']
+    assert world.at(vol) == (x, y, w, h) and world[vol].visible == world[label].visible == 0
+    assert canvas.rounded == [((x, y, w, h), 0xee2b2b2b, 12)]
+    track = [f for f in canvas.fills if f[1] in range(y + h // 2 - 2, y + h // 2 + 2)]
+    lit = [f for f in track if f[4] & 0xffffff == 0xffffff]  # with its round ends' softer columns
+    assert {f[4] for f in track if f[2] > 4} - {rgba(0xffffff)} == {rgba(0x6b6b6b)}  # the corners aside
+    assert (max(f[0] + f[2] for f in lit) - (x + 40) if lit else 0) == part
+    assert [(n, r[:2]) for n, r in canvas.arts] == [('flat_spk_quiet', (x + 16, y + 17)), ('flat_spk_loud', (x + w - 38, y + 17))]
+    assert not canvas.texts and canvas.fill == 0xff123456
 
 
 # The slider pages (slider_open, slider_paint, slider_scrub) in the flat look.

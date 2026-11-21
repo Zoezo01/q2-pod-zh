@@ -47,7 +47,7 @@ static int vol_poll(const void *info) {
     return 8; /* RET_REPEAT */
 }
 
-#define VOL_CL_X 28 /* Classic's panel: its ring and corners clear the glass */
+#define VOL_CL_X 28 /* Classic's and the flat panel: its ring and corners clear the glass */
 /* The volume, drawn by stock's dialog/volume_dialog itself: transparent and full-screen (its
  * dimming highlight removed at build time, tools/ipod.py), it opens on the wheel's volume and
  * sets its slider_vol. Over Now Playing, as on an iPod classic, the band from the progress bar to
@@ -56,9 +56,10 @@ static int vol_poll(const void *info) {
  * "N%" takes the page dots' place until vol_poll finds the dialog gone. Over any other window
  * (Quick Settings included) a VOL_PANEL_* rounded panel in the fast-scroll letter's style holds a
  * pill bar and the number alone; Classic's, VOL_CL_X in, the rows painter's gloss between two
- * speakers. Over the flat look's Quick Settings it is that page's bar (quick_vol_flat). slider_vol
- * and label_vol are hidden, and slider_vol is moved onto the area drawn, so stock's partial
- * repaints land on it; vol_poll catches the changes those miss. */
+ * speakers; the flat one's (VOL_FLAT), as wide, the toast's box in both halves with a thin white
+ * bar between two white speakers. Over the flat look's Quick Settings it is that page's bar
+ * (quick_vol_flat). slider_vol and label_vol are hidden, and slider_vol is moved onto the area
+ * drawn, so stock's partial repaints land on it; vol_poll catches the changes those miss. */
 void vol_paint(void *top, void *canvas) {
     void *wm = window_manager(), *lcd = P(canvas, CANVAS_LCD);
     if (!lcd || tk_strcmp(widget_get_prop_str(top, "name", ""), "volume_dialog")) return;
@@ -67,7 +68,8 @@ void vol_paint(void *top, void *canvas) {
     if (n < 2 || !vol) return;
     int np = widget_get_child(wm, n - 2) == st.np_win && st.np_slider && st.np_elapsed;
     const theme_t *T = theme();
-    int gloss = !np && T->painter[PAINT_VOLUME] == VOL_CLASSIC_LIGHT;
+    int gloss = !np && T->painter[PAINT_VOLUME] == VOL_CLASSIC_LIGHT,
+        flat = !np && T->painter[PAINT_VOLUME] == VOL_FLAT;
     /* over the flat Quick Settings: its bar's card, how far down from the dialog */
     void *qs = !np && flat_pages() ? widget_get_child(wm, n - 2) : (void *)0;
     if (qs && tk_strcmp(widget_get_prop_str(qs, "name", ""), "statusbar_dialog")) qs = (void *)0;
@@ -95,7 +97,7 @@ void vol_paint(void *top, void *canvas) {
         area = qs_bar_card;
         area.y += qs_dy;
     } else {
-        int ax = gloss ? VOL_CL_X : VOL_PANEL_X;
+        int ax = gloss || flat ? VOL_CL_X : VOL_PANEL_X;
         area = (rect_t){ ax, VOL_PANEL_Y, I(top, W_W) - 2 * ax, VOL_PANEL_H };
         int x = area.x + VOL_PANEL_PAD, bw = area.w - 2 * VOL_PANEL_PAD - VOL_PANEL_TEXT;
         bar = (rect_t){ x, area.y + (area.h - VOL_PANEL_BAR) / 2, bw, VOL_PANEL_BAR };
@@ -124,6 +126,20 @@ void vol_paint(void *top, void *canvas) {
                   y + 2);
         paint_art(top, canvas, L ? "classic_light_spk_loud_l" : "classic_light_spk_loud_d", 317,
                   y + 2);
+        stock_canvas_set_fill_color(canvas, fill);
+        return;
+    }
+    if (flat) { /* no number */
+        static const stops_t rest = { 2, { 0, 100 }, { 0x6b6b6b, 0x6b6b6b } },
+                             lit = { 2, { 0, 100 }, { 0xffffff, 0xffffff } };
+        rect_t track = { area.x + 40, area.y + area.h / 2 - 2, area.w - 92, 4 }, on = track;
+        on.w = max > 0 ? track.w * clamp_step(0, max, level) / max : 0;
+        if (on.w && on.w < 4) on.w = 4; /* the least it shows is its own round ends */
+        flat_box(canvas, &area, TOAST_RGBA, 12);
+        paint_round_rows(canvas, &track, &rest, 2);
+        if (on.w) paint_round_rows(canvas, &on, &lit, 2);
+        paint_art(top, canvas, FLAT_ART "spk_quiet", area.x + 16, area.y + 17);
+        paint_art(top, canvas, FLAT_ART "spk_loud", area.x + area.w - 38, area.y + 17);
         stock_canvas_set_fill_color(canvas, fill);
         return;
     }

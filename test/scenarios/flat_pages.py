@@ -244,3 +244,18 @@ for _ in range(3): bare(m); m.paint(d); m.call(O['KEY_NEXT'])
 bare(m); m.paint(d); on = color_t(on_of(m, '0', '4')); x1, y1, w1, h1 = wbox(m, cells[1])
 assert m.selected(d) == 1 and all(x1 <= b[0] < x1 + w1 and y1 <= b[1] < y1 + h1 for b in m.bands if b[4] == on)
 assert wbox(m, box) == (10, 124, 355, 24) and [l['text'] for l in m.letters] == ['Cancel', 'OK'] and not m.image_draws; passed()
+
+
+# The volume over Modern's other windows (volume.c vol_paint, VOL_FLAT): the toast's box, as wide as Classic's panel and
+# the same in both halves, a thin white bar on grey between the white speakers, no number; the slider moved onto it.
+for light in '01':
+    m = Machine(); m.config.update(THEME='2', LIGHT=light, ACCENT='4'); m.image_size = (12, 14)
+    home = m.node('window', 'home_page'); m.word(home + O['W_PARENT'], m.wm)
+    sv, lv = m.node('slider', 'slider_vol', max=100, value=50), m.node('label', 'label_vol')
+    dlg = m.node('dialog', 'volume_dialog', [sv, lv]); m.word(dlg + O['W_PARENT'], m.wm); place(m, dlg, 0, 0, 375, 320)
+    m.word(syms['system_bar'], m.node('window', 'system_bar')); m.nodes[m.wm] = {'children': [home, dlg]}; m.top = dlg; bare(m); bg(m, dlg)
+    panel = (28, O['VOL_PANEL_Y'], 319, O['VOL_PANEL_H']); y = panel[1] + panel[3] // 2 - 2
+    assert [(r['rect'], r['radius'], r['color']) for r in m.rounded] == [(panel, 12, 0xee2b2b2b)] and wbox(m, sv) == panel
+    track = {(b[0], b[2], b[4]) for b in m.bands if b[1] == y + 1 and b[2] > 1}  # a middle row: its round ends a pixel in
+    assert track == {(69, 225, color_t(0x6b6b6b)), (69, 111, color_t(0xffffff))}, track  # half of 227, over the rest
+    assert art_at(m) == [('flat_spk_quiet', (44, 273)), ('flat_spk_loud', (309, 273))] and not m.letters; passed()

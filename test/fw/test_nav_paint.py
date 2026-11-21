@@ -2235,7 +2235,7 @@ def test_the_bar_s_paint_with_the_volume_on_top_draws_it(fw, world, st):
 
 def test_the_volume_panel_s_colour_is_defined(fw, world, st):
     """The panel away from Now Playing: its fill is the fast-scroll letter's, 85% of the dark surface."""
-    theme(fw, MODERN)
+    theme(fw, MINIMAL)
     dialog, *_ = volume(fw, world, st, 50)
     canvas = Canvas(fw)
     vol_paint(fw, dialog, canvas)

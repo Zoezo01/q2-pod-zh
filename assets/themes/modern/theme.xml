@@ -25,7 +25,8 @@
     <element name="state" opacity="255"/>
   </view>
   <!-- Its own pages and prompts in the flat look (patch/flat.c): Quick Settings, the slider pages, the message screens,
-       Set Date and Set Time, the confirm; the others stay stock's -->
+       Set Date and Set Time, the confirm, the volume's panel; the others stay stock's -->
   <view name="pages"><element name="own" painter="flat" art_final="1"/></view>
   <view name="dialog"><element name="confirm" painter="flat"/></view>
+  <view name="volume"><element name="panel" painter="flat"/></view>
 </theme>
