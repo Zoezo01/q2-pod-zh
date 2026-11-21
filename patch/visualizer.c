@@ -1,6 +1,6 @@
 /* iPod Now Playing's fourth page (docs/ipod.md#visualizer): the music as heard, read from
- * hciplayer's tap (peq.h), in one of four styles after Rockbox's FFT, Oscilloscope and VU Meter
- * plugins; a tap moves to the next style. */
+ * hciplayer's tap (peq.h), in one of five styles after Rockbox's FFT, Oscilloscope and VU Meter
+ * plugins, Apple's radial spectrum and pulsr's ridge; a tap moves to the next style. */
 #include "peq.h"
 #include "offsets.inc"
 
@@ -12,9 +12,16 @@
 #define PAGE_W (vz.w - 2 * VIS_X) /* this page's: the slide's width, 375 or the centred page's 225 */
 #define VIS_H 186            /* tools/ipod.py NP_SLIDE_H, the page's height, from the lyrics' top */
 #define VIS_ART 88           /* the Halo's centre */
+#define VIS_ROWS 20          /* the Pulsar's lines, a tick each */
 /* clang-format on */
 #define TAU 6.2831853f
-enum { SPECTRUM, SCOPE, METERS, HALO, STYLES };
+/* The Pulsar's lines rise from RIDGE_FLOOR (30 dB under a full-scale sine, VIS_FLOOR_DB) to full
+ * height at RIDGE_TOP (6 dB under). ponytail: a fixed scale, so a quiet recording draws low lines;
+ * pulsr follows a running peak instead, the upgrade if that shows. */
+#define RIDGE_FLOOR 0.5f
+#define RIDGE_TOP 0.9f
+#define RIDGE_TILT (2 * 0.135f / VIS_FLOOR_DB) /* 2 dB an octave, 0.135 a band */
+enum { SPECTRUM, SCOPE, METERS, HALO, PULSAR, STYLES };
 
 static struct {
     float re[VIS_N], im[VIS_N], pcm[VIS_N][2], hann[VIS_N]; /* hann[VIS_N / 2] is 0 until filled */
@@ -22,6 +29,8 @@ static struct {
     unsigned held[VIS_BARS], lit[2], bin_rate;
     int w;                 /* the page's width (visualizer_attach) */
     int bin[VIS_HALO + 1]; /* each band's first FFT bin at bin_rate */
+    float ridge[VIS_ROWS][VIS_HALO];
+    int row; /* the newest line in ridge */
 #ifndef PEQ_HOST
     void *win, *slide, *page, *art, *cover;
     vis_tap *tap;
@@ -103,6 +112,9 @@ void vis_bands(const float (*pcm)[2], unsigned rate, float *level) {
 
 static float bar(int i) { return (vz.level[2 * i] + vz.level[2 * i + 1]) / 2; }
 
+/* Where the Pulsar draws band b, 0 to 1 across: pulsr's axis, the bass and mids given more room. */
+static float axis(int b) { return (float)pow((double)b / (VIS_HALO - 1), 0.75); }
+
 /* VU position 0 to 1 of a level in VU (dB): proportional to voltage, +3 at the end, as the meter's
  * scale. */
 static float vu_at(float vu) { return (float)pow(10, (vu - 3) / 20); }
@@ -114,13 +126,14 @@ void vis_reset(void) {
     memset(vz.wave, 0, sizeof vz.wave);
     memset(vz.vu, 0, sizeof vz.vu);
     memset(vz.lit, 0, sizeof vz.lit);
+    memset(vz.ridge, 0, sizeof vz.ridge);
     vz.bass = 0;
 }
 
 /* Only the visible style consumes analysis work; scope and meters do not need an FFT. */
 void vis_analyze(int style, unsigned rate, float dt, unsigned now) {
     float target[VIS_HALO] = { 0 };
-    if (style == SPECTRUM || style == HALO) {
+    if (style == SPECTRUM || style == HALO || style == PULSAR) {
         if (rate) vis_bands(vz.pcm, rate, target);
         for (int b = 0; b < VIS_HALO; ++b) {
             float fall = vz.level[b] - VIS_DECAY * dt;
@@ -164,6 +177,18 @@ void vis_analyze(int style, unsigned rate, float dt, unsigned now) {
     if (style == HALO) {
         float bass = (vz.level[0] + vz.level[2] + vz.level[4] + vz.level[6]) / 4;
         vz.bass += (bass - vz.bass) * 0.5f;
+    }
+    /* A new line: the bands, tilted to the treble, RIDGE_FLOOR to RIDGE_TOP squared, tapered to
+     * flat over each end's 22% by a raised cosine. */
+    if (style == PULSAR) {
+        float *line = vz.ridge[vz.row = (vz.row + 1) % VIS_ROWS];
+        for (int b = 0; b < VIS_HALO; ++b) {
+            float x = axis(b), edge = (x < 1 - x ? x : 1 - x) / 0.22f,
+                  v = (vz.level[b] + RIDGE_TILT * (b - 31.5f) - RIDGE_FLOOR) /
+                      (RIDGE_TOP - RIDGE_FLOOR);
+            v = v < 0 ? 0 : v > 1 ? 1 : v;
+            line[b] = v * v * (edge < 1 ? 0.5f - 0.5f * cosf(TAU / 2 * edge) : 1);
+        }
     }
 }
 
@@ -461,6 +486,42 @@ static void halo(void *vg, unsigned tone) {
     vgcanvas_set_line_cap(vg, "butt");
 }
 
+/* pulsr's ridge (github.com/1337raspberry/pulsr): the last VIS_ROWS lines stacked back up the page,
+ * the newest in front, each further back higher, flatter and darker. A line hides where one in
+ * front stands over it, 2 px clear (a floating horizon), so nothing is filled. */
+static void pulsar(void *vg, unsigned tone) {
+    float hor[VIS_HALO], at[VIS_HALO];
+    for (int i = 0; i < VIS_HALO; ++i) hor[i] = VIS_H, at[i] = VIS_X + PAGE_W * axis(i);
+    vgcanvas_set_line_width(vg, 1.5f);
+    for (int r = 0; r < VIS_ROWS; ++r) { /* front to back, 4 lines a shade */
+        const float *v = vz.ridge[(vz.row + VIS_ROWS - r) % VIS_ROWS];
+        float d = (float)r / (VIS_ROWS - 1), base = 150 - 110 * d, rise = 100 - 60 * d, x0 = at[0],
+              y0 = base - v[0] * rise;
+        int pen = y0 <= hor[0];
+        if (r % 4 == 0) vgcanvas_begin_path(vg);
+        if (pen) vgcanvas_move_to(vg, x0, y0);
+        for (int i = 1; i < VIS_HALO; ++i) {
+            float x1 = at[i], y1 = base - v[i] * rise, d0 = y0 - hor[i - 1], d1 = y1 - hor[i];
+            if ((d1 <= 0) != pen) { /* over the horizon or under it, where it crosses */
+                float t = d0 / (d0 - d1), x = x0 + t * (x1 - x0), y = y0 + t * (y1 - y0);
+                if (pen)
+                    vgcanvas_line_to(vg, x, y);
+                else
+                    vgcanvas_move_to(vg, x, y);
+                pen = !pen;
+            }
+            if (pen) vgcanvas_line_to(vg, x1, y1);
+            if (y0 - 2 < hor[i - 1]) hor[i - 1] = y0 - 2;
+            x0 = x1, y0 = y1;
+        }
+        if (y0 - 2 < hor[VIS_HALO - 1]) hor[VIS_HALO - 1] = y0 - 2;
+        if (r % 4 == 3) {
+            vgcanvas_set_stroke_color(vg, rgba(mix(tone, 0, 20 * (r / 4), 100), 255));
+            vgcanvas_stroke(vg);
+        }
+    }
+}
+
 /* A paint missed while not settled: once settled, the page paints again. */
 static int look(const void *unused) {
     if (on_page() && !settled()) return 8; /* RET_REPEAT: an overlay can outlast one retry. */
@@ -474,7 +535,8 @@ static int look(const void *unused) {
  * second. Drawing on the window, clipped to the slide area, not on the page: the slide_view clips
  * the page it was given at run time to a sliver. Painting starts the timer. */
 void visualizer_paint(void *w, void *canvas) {
-    static const char *const names[] = { "Spectrum", "Oscilloscope", "VU Meters", "Halo" };
+    static const char *const names[] = { "Spectrum", "Oscilloscope", "VU Meters", "Halo",
+                                         "Pulsar" };
     if (!w) return;
     if (w == vz.page) { /* the page paints first, its canvas x 0 only when still */
         vz.page_x = I(canvas, CANVAS_X) - vz.ox;
@@ -508,8 +570,10 @@ void visualizer_paint(void *w, void *canvas) {
             scope(vg, tone);
         else if (vz.style == METERS)
             meters(vg, canvas, tone, now);
-        else
+        else if (vz.style == HALO)
             halo(vg, tone);
+        else
+            pulsar(vg, tone);
         vgcanvas_restore(vg);
     }
     unsigned shown = now - vz.named;

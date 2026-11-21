@@ -10,14 +10,14 @@ import pytest
 
 from conftest import O
 
-N, HALO, BARS, W = 1024, 64, 32, 343
-SPECTRUM, SCOPE, METERS, HALO_STYLE = range(4)
+N, HALO, BARS, W, ROWS = 1024, 64, 32, 343, 20
+SPECTRUM, SCOPE, METERS, HALO_STYLE, PULSAR = range(5)
 DECAY, HOLD_MS, GRAVITY, FLOOR_DB, VU_REF_DB, LED_DB, FPS = 1.6, 400, 3.0, 60, -14, -1, 25
 RET_REMOVE, RET_REPEAT = 7, 8
 EVT_DESTROY, EVT_VALUE_CHANGED, EVT_CLICK = O['EVT_DESTROY'], O['EVT_VALUE_CHANGED'], O['EVT_CLICK']
 W_X, W_Y, W_W, W_PARENT = O['W_X'], O['W_Y'], O['W_W'], O['W_PARENT']
 RING, TAP_SIZE = 65536, 24 + 65536 * 8
-NAMES = ['Spectrum', 'Oscilloscope', 'VU Meters', 'Halo']
+NAMES = ['Spectrum', 'Oscilloscope', 'VU Meters', 'Halo', 'Pulsar']
 
 
 class Vz(C.Structure):
@@ -25,6 +25,7 @@ class Vz(C.Structure):
                 ('level', C.c_float * HALO), ('peak', C.c_float * BARS), ('fall', C.c_float * BARS),
                 ('wave', (C.c_float * W) * 2), ('vu', C.c_float * 2), ('spin', C.c_float), ('bass', C.c_float),
                 ('held', C.c_uint * BARS), ('lit', C.c_uint * 2), ('bin_rate', C.c_uint), ('w', C.c_int), ('bin', C.c_int * 65),
+                ('ridge', (C.c_float * HALO) * ROWS), ('row', C.c_int),
                 *((k, C.c_void_p) for k in 'win slide page art cover tap'.split()),
                 *((k, C.c_uint) for k in 'timer last named heard retry'.split()),
                 *((k, C.c_int) for k in 'ox oy page_x style quiet'.split())]
@@ -508,7 +509,7 @@ def test_only_the_visible_style_does_its_work(fw):
     assert v.re[0] == 123 and max(v.level) == 0 and v.bin_rate == 0
 
 
-@pytest.mark.parametrize('style', range(4))
+@pytest.mark.parametrize('style', range(5))
 def test_the_other_styles_stay_at_rest(fw, style):
     v = vz(fw)
     sine(v, 0.95, k=2)  # 86 Hz: the bass bands read it too
@@ -516,21 +517,22 @@ def test_the_other_styles_stay_at_rest(fw, style):
     for now in (100, 140, 180):
         analyze(fw, style, 44100, now=now)
     moved = {'transform': v.re[0] != 123, 'levels': any(v.level), 'caps': any(v.peak), 'wave': any(v.wave[0]),
-             'needles': any(v.vu), 'leds': any(v.lit), 'pulse': v.bass != 0}
+             'needles': any(v.vu), 'leds': any(v.lit), 'pulse': v.bass != 0, 'lines': any(map(any, v.ridge))}
     assert {k for k, m in moved.items() if m} == [{'transform', 'levels', 'caps'}, {'wave'}, {'needles', 'leds'},
-                                                  {'transform', 'levels', 'pulse'}][style]
+                                                  {'transform', 'levels', 'pulse'},
+                                                  {'transform', 'levels', 'lines'}][style]
 
 
 def test_reset_puts_every_style_at_rest(fw):
     v = vz(fw)
     sine(v, 1)
-    for style in range(4):
+    for style in range(5):
         analyze(fw, style, 44100)
     analyze(fw, METERS, 44100, now=100)
     v.bass = 0.5  # the halo's pulse
     fw.fn('vis_reset', None)()
     assert max(v.level) == max(v.peak) == max(v.vu) == 0 and max(v.wave[0]) == 0 and list(v.lit) == [0, 0]
-    assert v.bass == 0
+    assert v.bass == 0 and not any(map(any, v.ridge))
 
 
 # The tap: VIS_N frames VIS_LATENCY_MS behind the last write.
@@ -941,7 +943,7 @@ def test_a_tap_moves_to_the_next_style_and_saves_it(fw):
         now.v.level[0] = 0.5
         tap()
         styles.append(now.v.style)
-    assert styles == [1, 2, 3, 0, 1] and saved == [(s, b'IPOD', b'VIS') for s in styles]
+    assert styles == [1, 2, 3, 4, 0] and saved == [(s, b'IPOD', b'VIS') for s in styles]
     assert now.v.named == now.now | 1 and now.v.level[0] == 0 and now.invalidated() == 5
 
 
@@ -1144,6 +1146,40 @@ def test_the_halo_draws_64_bars_in_6_shades_dark_to_bright(fw):
     assert len(fw.calls('vgcanvas_line_to')) - lines == HALO  # each bar in one shade's path
     shades = [rgb(a[1]) for _, a in fw.calls('vgcanvas_set_stroke_color')][strokes + 2:]
     assert len(shades) == 6 and all(sum(channels(a)) < sum(channels(b)) for a, b in zip(shades, shades[1:]))
+
+
+def axis(b):
+    """The Pulsar's band b, 0 to 1 across: pulsr's axis."""
+    return (b / (HALO - 1)) ** 0.75
+
+
+def test_the_pulsar_cuts_a_line_a_tick_tilted_and_flat_at_the_ends(fw):
+    v = vz(fw)
+    for b in range(HALO):
+        v.level[b] = 0.8
+    analyze(fw, PULSAR, 0)  # nothing heard: the levels fall a tick's VIS_DECAY, to 0.736
+    want = []
+    for b in range(HALO):
+        x, lift = axis(b), min(1, max(0, (0.736 + 2 * 0.135 / FLOOR_DB * (b - 31.5) - 0.5) / 0.4)) ** 2
+        edge = min(x, 1 - x) / 0.22
+        want.append(lift * (0.5 - 0.5 * math.cos(math.pi * edge) if edge < 1 else 1))
+    assert v.row == 1 and list(v.ridge[1]) == pytest.approx(want, abs=1e-5) and want[0] == 0 == want[-1]
+
+
+def test_the_pulsar_hides_a_line_behind_one_in_front(fw):
+    """A front line standing tall in the middle, the rest flat: the line behind it draws only past its sides."""
+    now = Now(fw, style='4')
+    paint(fw, now.win, Canvas(fw))  # the first paint starts the timer, from rest
+    now.v.row = 0
+    for b in range(24, 40):
+        now.v.ridge[0][b] = 1.0
+    pen = Pen(fw)
+    paint(fw, now.win, Canvas(fw))
+    strokes = [m for m in pen.marks() if m[0] == 'stroke']
+    assert len(strokes) == ROWS // 4
+    behind = [a for sub in strokes[0][1][1:] for _, a in sub]  # the first shade's lines after the front's one
+    tall = (MARGIN + axis(24) * (375 - 2 * MARGIN), MARGIN + axis(39) * (375 - 2 * MARGIN))
+    assert behind and not [p for p in behind if tall[0] + 1 < p[0] < tall[1] - 1]
 
 
 # The drawing itself, as vgcanvas is given it, in the slide area's coordinates.
@@ -1431,9 +1467,9 @@ def test_the_bass_widens_and_lights_the_halo_s_ring(fw):
     assert 0 < a0 < 255 and a2 == 255 and abs(a1 - (a0 + 255) / 2) <= 1
 
 
-@pytest.mark.parametrize('style', range(4))
+@pytest.mark.parametrize('style', range(5))
 def test_the_style_s_name_shows_then_fades_over_its_last_half_second(fw, style):
-    now = Now(fw, style=str((style - 1) % 4), now=100001)
+    now = Now(fw, style=str((style - 1) % 5), now=100001)
     now.handler(now.v.page, EVT_CLICK)()
     seen = []
     after = (0, 999, 1000, 1001, 1250, 1499, 1500)

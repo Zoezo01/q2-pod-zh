@@ -19,7 +19,7 @@
 <table>
   <tr valign="top">
     <td width="200"><b>Interface</b></td>
-    <td>Home in a Split, Full or Carousel layout. Menus, Now Playing (regular or Centred), Cover Flow you can swipe, four visualizers and Games. Quick Settings with a swipe down from the top of the screen.</td>
+    <td>Home in a Split, Full or Carousel layout. Menus, Now Playing (regular or Centred), Cover Flow you can swipe, five visualizers and Games. Quick Settings with a swipe down from the top of the screen.</td>
   </tr>
   <tr valign="top">
     <td><b>Display</b></td>

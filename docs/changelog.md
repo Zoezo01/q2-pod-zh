@@ -1,6 +1,7 @@
 # Changelog
 
 - **1.9.0**:
+  - Now Playing: a fifth visualizer, **Pulsar**, after pulsr: the music as a stack of lines rising up the page, the newest in front, each line hidden where the one in front stands over it. Tap the visualizer page to reach it.
   - Games: a card game can open Now Playing from its menu, with the music's buttons, queue and lyrics; leaving Now Playing goes back to the game where it was. Behind Now Playing the screen turns off and Auto power-off counts as usual. A game that uses this keeps Play/Pause and the side buttons while the music plays, and quits on Return and Centre held together instead of Return alone; the game can turn that off.
 - **1.8.9**:
   - Now Playing: the **AirPlay** row at the top of **⋯** shows only once AirPlay is installed from the App Store. It used to show for everyone, and without the app a press only said where to install it.
