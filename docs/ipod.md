@@ -268,7 +268,7 @@ under such a theme every picker does so when a tap opened it too. Another list w
 `set_row` carries an explicit `item_height`, so only the settings pages are told apart by it.
 
 System Settings puts Wireless and Network first, then Display, Controls and Power, then Date & Time and device
-maintenance, with About last; neither list has headings. Play Mode, EQ, Gapless and Crossfade come first; specialist output controls come next, and Library & Folders last, one reverse detent from the top on Playback's ring. Added binary settings
+maintenance, with About last; neither list has headings. Play Mode, EQ, Gapless and Crossfade come first; specialist output controls come next, and Library & Folders last, one reverse detent from the top on Playback's ring. Gapless and Crossfade are interlocked: while Crossfade is on, Gapless's switch is on and a press on it is refused with the short message "Crossfade needs Gapless", and turning Crossfade on turns Gapless on. Added binary settings
 use Shanling's `switch_on` / `switch_off` images with the whole row as the tap target. Settings
 that cycle between named choices retain their value labels. Crossfade, Resume Songs, Wheel
 Sensitivity and App Store show a chevron, as do the added Library browsing rows.
@@ -328,7 +328,8 @@ Spotify row's Now Playing page uses Now Playing's layout (`NP_*`), rounded art i
 
 Brightness, Channel Balance, Max Volume and Default Volume use eight-pixel rounded, theme-aware bars
 with their original touch areas. Crossfade, Wheel Sensitivity and Resume Songs reuse Default Volume's
-page and inherit its styling. All keep their ranges and wheel/touch controls, but lose their endpoint icons (`slider_plain`, tools/ipod.py):
+page and inherit its styling. Any move of Crossfade's page from Off (the switch, Centre, the slider,
+the wheel or plus) turns stock's Gapless on, as Gapless's own row would; Off leaves it on. All keep their ranges and wheel/touch controls, but lose their endpoint icons (`slider_plain`, tools/ipod.py):
 the images stay, named, with no image and no size, since stock looks them up. The quick
 settings slider and custom volume overlay retain their layouts.
 
