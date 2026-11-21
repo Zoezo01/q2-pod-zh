@@ -4135,9 +4135,10 @@ static int pane_covers(void) { return home.kind <= PANE_LIBRARY && !home.pane; }
  * ink's (_l) on the light half's pane; a flat pane that doesn't follow the rows shows the note. */
 static const char *pane_art(unsigned kind, char *to, unsigned size) {
     if (!flat_pages()) return pane_icons[kind];
-    tk_snprintf(to, (int)size, FLAT_ART "pane_%s%s",
-                theme()->pane_icon_x ? pane_icons[kind] + sizeof "classic_light_" - 1 : "note",
-                ipod_light() ? "_l" : "");
+    const char *name = pane_icons[kind] + sizeof "classic_light_" - 1;
+    if (!theme()->pane_icon_x || !tk_strcmp(name, "icon_note"))
+        name = "note"; /* the same drawing */
+    tk_snprintf(to, (int)size, FLAT_ART "pane_%s%s", name, ipod_light() ? "_l" : "");
     return to;
 }
 

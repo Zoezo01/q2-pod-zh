@@ -664,7 +664,7 @@ def test_only_split_shows_modern_s_pane(fw, mode, shown):
 
 # Classic Modern's pane: Classic's, which follows the rows, in the flat look's colours, icons and caption.
 
-PANE_ICON = ['note', 'note', 'icon_note', 'icon_stack', 'icon_folder', 'icon_game', 'icon_game', 'icon_wave', 'icon_gear']  # pane_icons
+PANE_ICON = ['note', 'note', 'note', 'icon_stack', 'icon_folder', 'icon_game', 'icon_game', 'icon_wave', 'icon_gear']  # pane_icons
 
 
 @pytest.mark.parametrize('light, pane, k, quiet', [('0', 0x1c1c1c, '', 0x98989d), ('1', 0xf2f2f7, '_l', 0x6e6e73)])

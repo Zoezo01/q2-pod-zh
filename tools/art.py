@@ -974,8 +974,8 @@ def images(t):
     if t['painter[PAINT_PAGES]'] & FLAT:
         out |= flat_images()
         if t['pane_icon_x']:  # a flat pane that follows the rows: each row's icon flat, white or the ink (coverflow.c pane_art)
-            out |= {f'{FLAT_ART}pane_icon_{name}{k}': png(*(ICON_BOX if name != 'note' else NOTE_BOX)[2:], icon(d, name != 'note', rgb))
-                    for name, d in PANE_ICONS.items() for k, rgb in FLAT_INK.items()}
+            out |= {f'{FLAT_ART}pane_icon_{name}{k}': png(*ICON_BOX[2:], icon(d, True, rgb))  # the note's is pane_note
+                    for name, d in PANE_ICONS.items() if name != 'note' for k, rgb in FLAT_INK.items()}
     if t['painter[PAINT_PAGES]'] & list(CHOICES['pages.own.painter']).index('classic-light'):
         out |= {f'{prefix}_sun_{name}': sun(*a) for name, a in SUNS.items()}
         out |= {f'{prefix}_orb_note': png(116, 116, orb(100, False)), f'{prefix}_orb_usb': png(130, 130, orb(114, True))}
