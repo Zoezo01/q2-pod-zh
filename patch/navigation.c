@@ -5240,7 +5240,7 @@ int ringnav_paint_bg(void *w, void *canvas) {
         else
             time_paint(w, canvas);
     }
-    if (classic_pages() && P(canvas, CANVAS_LCD) &&
+    if (own_pages() && P(canvas, CANVAS_LCD) &&
         !tk_strcmp(widget_get_prop_str(w, "name", ""), "statusbar_dialog"))
         quick_page(w, canvas);
     if (w == st.msg_win || w == st.usb_win) msg_paint(w, canvas);

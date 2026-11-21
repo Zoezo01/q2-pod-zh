@@ -48,7 +48,7 @@ QS_NAMES = ('wifi', 'wifiopen', 'bt', 'btopen', 'keylock', 'keylockopen', 'lowga
 
 def test_classic_draws_its_images_and_the_others_none():
     themes = theme.builtins()
-    assert not art.images(themes[0]) and not art.images(themes[2])
+    assert not art.images(themes[0]) and all(k.startswith('flat_') for k in art.images(themes[2]))  # Modern: the flat look's
     # the bar's speakers come with a track stated in one half alone
     for half in ({'np_track': themes[1]['np_track']}, {'light': {'np_track': themes[1]['light']['np_track']}}):
         assert set(art.images({**themes[0], **half})) == {'minimal_vol_lo', 'minimal_vol_hi'}

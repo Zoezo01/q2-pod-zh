@@ -24,4 +24,6 @@
     <element name="album" caps="0" opacity="255"/>
     <element name="state" opacity="255"/>
   </view>
+  <!-- Its own pages in the flat look (patch/flat.c): Quick Settings; the others stay stock's -->
+  <view name="pages"><element name="own" painter="flat" art_final="1"/></view>
 </theme>
