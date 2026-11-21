@@ -49,12 +49,19 @@ def test_the_family_is_the_looks_not_the_themes():
     assert set(art.images(theme.builtins()[2])) == set(art.flat_images())  # Modern: the flat look's alone
 
 
-def test_classic_modern_draws_no_image_of_its_own():
-    """Classic Modern's images are Classic's and the flat look's, the same bytes: tools/build.py writes nothing more."""
+def test_classic_modern_draws_only_its_flat_row_icons():
+    """Classic Modern's images are Classic's and the flat look's, the same bytes, and its pane's row icons flat (its pane
+    follows the rows, coverflow.c pane_art), white and the ink, each the drawing Classic's gradient icon fills."""
     _, classic, modern, cm = theme.builtins()
     got, known = art.images(cm), {**art.images(classic), **art.images(modern)}
-    assert set(got) <= set(known) and all(known[k] == v for k, v in got.items())
+    own = {f'flat_pane_icon_{n}{k}' for n in art.PANE_ICONS for k in ('', '_l')}
+    assert set(got) - set(known) == own and all(known[k] == v for k, v in got.items() if k not in own)
     assert set(art.flat_images()) <= set(got) and 'classic_light_chevron' in got
+    for n in art.PANE_ICONS:
+        for k, ink in (('', (255, 255, 255)), ('_l', (0x1c, 0x1c, 0x1e))):
+            w, h, at = pixels(got[f'flat_pane_icon_{n}{k}'])
+            seen = {at(x, y) for x in range(w) for y in range(h)}
+            assert (w, h) == (art.ICON_BOX if n != 'note' else art.NOTE_BOX)[2:] and {c[:3] for c in seen if c[3]} == {ink} and any(c[3] == 255 for c in seen)
 
 
 @pytest.mark.parametrize('name, side', [('drop_wifi', 54), ('drop_dim', 24), ('drop_bright_qd', 30), ('msg_usb_d', 84), ('clock_face_l', 110)])

@@ -1,13 +1,19 @@
 <!-- Theme: Classic Modern (IPOD/THEME 3, docs/ipod.md#display-settings): Classic in everything, on its sets and
      options (a switch between the two is live), but for the flat look's screens (patch/flat.c) over Classic's
-     own pages: Quick Settings, the slider pages, the message screens, Set Date and Set Time, and the confirm
-     prompts. Over Classic's own pages the flat look takes Classic's face and its lit tiles' colour. -->
+     own pages: Quick Settings, the slider pages, the message screens, Set Date and Set Time, the confirm
+     prompts and the hold menu, Now Playing's marks, the flat volume panel and Home's flat pane. Over Classic's own
+     pages the flat look takes Classic's face and its lit tiles' colour. -->
 <theme format="1" id="classic-modern" name="Classic Modern" index="3" extends="classic-light">
-  <!-- Quick Settings' cards on a pale grey in the light half, and Set Date's fields 6 px apart -->
+  <!-- Quick Settings' cards on a pale grey in the light half, Set Date's fields 6 px apart; the lock screen's info page
+       keeps Classic's pane colours -->
   <view name="pages">
-    <element name="own" painter="classic-light+flat"/>
+    <element name="own" painter="classic-light+flat" light.fill="#63717b" dark.fill="#1c1c1c"/>
     <element name="quick" light_ground="#f2f2f7"/>
     <element name="date" gap="6"/>
   </view>
   <view name="dialog"><element name="confirm" painter="classic-light+flat"/></view>
+  <view name="volume"><element name="panel" painter="flat"/></view>
+  <!-- Split's pane where no cover shows: the flat pages' pale grey on paper, each row's flat icon in the half's ink
+       (coverflow.c pane_art) and the caption quiet in the system's face -->
+  <view name="home"><element name="pane" light.stops="#f2f2f7 0, #f2f2f7 100" count_px="17"/></view>
 </theme>

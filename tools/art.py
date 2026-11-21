@@ -260,8 +260,9 @@ ICON_GRADIENT = ((232, 74), (310, 168), ((0, 1), (.42, .9), (.52, .5), (1, .3)))
 CHEVRON = 'M2.9 3 8.4 8.5 2.9 14'
 CHEVRON_STROKE = 3.2
 CHEVRON_BOX = (0, 0, 12, 16)  # the row's chevron (navigation.c paint_chevrons, paint_into)
-def icon(d, fit):
-    """A pane icon's RGBA bytes: its subpaths even-odd in the white gradient, stroked at .42, 1 px in its own scale."""
+def icon(d, fit, rgb=None):
+    """A pane icon's RGBA bytes: its subpaths even-odd in the white gradient, stroked at .42, 1 px in its own scale;
+    or, given rgb, flat in it (the flat look's)."""
     polys = path(d)
     xs, ys = [p[0] for poly in polys for p in poly], [p[1] for poly in polys for p in poly]
     k = min(PANE_FIT / (max(xs) - min(xs)), PANE_FIT / (max(ys) - min(ys))) if fit else 1
@@ -279,6 +280,8 @@ def icon(d, fit):
     placed = [[place(p) for p in poly] for poly in polys]
     # one even-odd polygon: each subpath joined from the first's start and back, those seams crossed twice
     whole = [q for poly in placed for q in (*poly, poly[0], placed[0][0])]
+    if rgb is not None:
+        return compose(ICON_BOX if fit else NOTE_BOX, [([whole], lambda x, y: (rgb, 1))])
     return compose(ICON_BOX if fit else NOTE_BOX, [([whole], paint), (stroke(placed, k), lambda x, y: (0xffffff, 0.42))])
 
 
@@ -970,6 +973,9 @@ def images(t):
             out |= {f'{prefix}_spk_quiet_{half}': speaker(False, rgb), f'{prefix}_spk_loud_{half}': speaker(True, rgb)}
     if t['painter[PAINT_PAGES]'] & FLAT:
         out |= flat_images()
+        if t['pane_icon_x']:  # a flat pane that follows the rows: each row's icon flat, white or the ink (coverflow.c pane_art)
+            out |= {f'{FLAT_ART}pane_icon_{name}{k}': png(*(ICON_BOX if name != 'note' else NOTE_BOX)[2:], icon(d, name != 'note', rgb))
+                    for name, d in PANE_ICONS.items() for k, rgb in FLAT_INK.items()}
     if t['painter[PAINT_PAGES]'] & list(CHOICES['pages.own.painter']).index('classic-light'):
         out |= {f'{prefix}_sun_{name}': sun(*a) for name, a in SUNS.items()}
         out |= {f'{prefix}_orb_note': png(116, 116, orb(100, False)), f'{prefix}_orb_usb': png(130, 130, orb(114, True))}

@@ -174,7 +174,7 @@ def test_a_prompt_s_cell_that_holds_is_classic_blue_s(fw, st, light):
 
 
 @LIGHTS
-@pytest.mark.parametrize('name', [b'classic_light_bolt', b'flat_drop_wifi_l'])
+@pytest.mark.parametrize('name', [b'classic_light_bolt', b'flat_drop_wifi_l', b'flat_pane_icon_folder_l', b'flat_np_more_d'])
 def test_classic_s_images_and_the_flat_look_s_are_final(fw, bitmaps, light, name):
     """Its bar and lists draw Classic's images, its flat screens the flat look's: both final, as each theme has them."""
     theme(fw, CLASSIC_MODERN, LIGHT=light)

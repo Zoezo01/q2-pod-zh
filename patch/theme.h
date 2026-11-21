@@ -185,6 +185,8 @@ typedef struct {
     /* the flat Quick Settings' ground in the light half, 0: the paper; the flat Set Date's px
      * between its fields, 0: Classic's places */
     unsigned qs_ground;
+    unsigned page_fill[2]; /* Classic's own full-screen pages, final: [0] dark, [1] light; 0:
+                              home_pane's */
     short date_gap;
     stops_t np_track[2]; /* Classic's progress bar's track (paint_scrubber), final: [0] dark, [1]
                             light; n 0: stock's plain bar */

@@ -144,6 +144,7 @@ SCHEMA = {k.path: k for k in (
     key('dialog.confirm.painter', 'painter[PAINT_CONFIRM]', 'enum'),
     key('pages.own.painter', 'painter[PAINT_PAGES]', 'enum'),  # the theme's own pages (theme.h classic_pages)
     key('pages.own.art_final', 'art_final', 'bool'),  # a theme's own art is final: Classic Light's classic_light_ images, the flat look's flat_
+    key('pages.own.fill', 'page_fill', 'color', final=True),  # Classic's own full-screen pages (the lock screen's info page); 0: Home's pane's
     key('pages.quick.light_ground', 'qs_ground', 'color'),  # the flat Quick Settings' ground round its cards in the light half; 0: the paper
     key('pages.date.gap', 'date_gap', 'int', 20),  # the flat Set Date's px between its fields, the day where Classic's is; 0: Classic's places
     # the rows painter's pixel rows, top to bottom (final colours): the track, the played part over it; the volume

@@ -660,3 +660,62 @@ def test_only_split_shows_modern_s_pane(fw, mode, shown):
     """Split's art, the pane where no cover shows, is hidden in Full and Carousel."""
     cf, ui, h, home = modern_home(fw, HOME=mode)
     assert ui[h.art].visible == shown
+
+
+# Classic Modern's pane: Classic's, which follows the rows, in the flat look's colours, icons and caption.
+
+PANE_ICON = ['note', 'note', 'icon_note', 'icon_stack', 'icon_folder', 'icon_game', 'icon_game', 'icon_wave', 'icon_gear']  # pane_icons
+
+
+@pytest.mark.parametrize('light, pane, k, quiet', [('0', 0x1c1c1c, '', 0x98989d), ('1', 0xf2f2f7, '_l', 0x6e6e73)])
+def test_classic_modern_s_pane_is_flat_each_row_s_icon_the_half_s(fw, mcl, light, pane, k, quiet):
+    """Each kind's icon flat at Classic's places (the note's for Now Playing's, Library's and Shuffle's), the pane one
+    colour, and the count quiet at 17 px in the system's face."""
+    import test_coverflow as cf
+    t, ui, h, home = cf.home_open(fw, 3, LIGHT=light)
+    fw.var('fw_ctx_mcl_pdeqplaylist', C.c_void_p).value = cf.Deques(fw).new(range(1, 4))
+    for kind, name in enumerate(PANE_ICON):
+        art = f'flat_pane_{name}{k}'
+        bitmaps, canvas = cf.Bitmaps(fw, {art: (100, 115, cf.rgba(1, 1, lambda x, y: (0, 0, 0, 0)))}), cf.Canvas(fw)
+        inks = []
+        fw.mock('canvas_set_text_color', lambda c, colour, *_: inks.append(colour & 0xffffffff))
+        home.kind = kind
+        fw.fn('home_pane_paint', None, C.c_void_p, C.c_int, C.c_int, C.c_int, C.c_int)(canvas.p, 5, -3, cf.HOME_PW, 294)
+        note = kind <= cf.PANE_SHUFFLE
+        at = (t['pane_note_x'], t['pane_note_y']) if note else (t['pane_icon_x'], t['pane_icon_y'])
+        assert {r[0] for r in canvas.rects} == {rgba(pane)} and bitmaps.loads == [art], kind
+        assert [i[2] for i in canvas.images] == [(5 + at[0], -3 + at[1], 100, 115)], kind
+        assert all(px == 17 for _, _, px in canvas.texts) and canvas.fills[-1] == 0x12345678
+        if kind == cf.PANE_NOW:
+            assert canvas.texts == [('3 Songs', (5, -3 + t['pane_count_y'], t['pane_count_w'], 24), 17)]
+            assert canvas.fonts[-1][0] == '' and rgba(quiet) in inks
+
+
+@pytest.mark.parametrize('light, k', [('0', ''), ('1', '_l')])
+def test_classic_modern_s_service_pane_keeps_its_icon_and_names_it_quiet(fw, light, k):
+    import test_coverflow as cf
+    t, ui, h, home = cf.home_open(fw, 3, LIGHT=light)
+    row = ui.make(0, 'view')
+    image, label = ui.make(row, 'image'), ui.make(row, 'hscroll_label')
+    ui[image].image, ui[label].text = 'stream_radio', 'Internet Radio Stations'
+    home.kind, home.row, home.row_image, home.row_label = cf.PANE_SERVICE, row, image, label
+    side = t['pane_svc_px']
+    bitmaps = cf.Bitmaps(fw, {'classic_light_stream_radio': (side, side, cf.rgba(1, 1, lambda x, y: (0, 0, 0, 0)))})
+    canvas = cf.Canvas(fw)
+    fw.fn('home_pane_paint', None, C.c_void_p, C.c_int, C.c_int, C.c_int, C.c_int)(canvas.p, 5, -3, cf.HOME_PW, 294)
+    assert bitmaps.loads == ['classic_light_stream_radio']  # the service's own icon, as Classic's
+    (text, box, px), = canvas.texts
+    assert box == (5, -3 + t['pane_count_y'], t['pane_count_w'], 24) and 17 * 3 // 4 <= px <= 17 and text.endswith('…')
+    assert all(face == '' for face, _ in canvas.fonts[1:])  # the system's face
+
+
+@pytest.mark.parametrize('index, light, fill', [(3, 0, 0x1c1c1c), (3, 1, 0x63717b), (1, 1, 0x63717b), (2, 1, 0xf2f2f7)],
+                         ids=['Classic Modern dark', 'Classic Modern light', 'Classic light', 'Modern light'])
+def test_the_lock_screen_s_page_keeps_classic_s_colours(fw, index, light, fill):
+    """paint_page (the lock screen's info page) in pages.own.fill, Classic's slate under Classic Modern though its
+    pane is the flat grey; a theme without it fills with its pane's colour, as Modern's."""
+    import test_coverflow as cf
+    cf.themed(fw, index, LIGHT=str(light))
+    canvas = cf.Canvas(fw)
+    fw.fn('paint_page', None, C.c_void_p, C.c_void_p, C.c_int)(None, canvas.p, 26)
+    assert [r[0] for r in canvas.rects] == [rgba(fill)]

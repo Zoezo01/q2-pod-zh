@@ -4803,10 +4803,13 @@ void slider_switch(void *w, void *canvas, void *sw) {
     draw_centred(canvas, off, 3, &left, 21, white);
     draw_centred(canvas, on, 2, &right, 21, white);
 }
-/* The page at (0, y, 375, 294): flat in the half's Home pane colour (theme home_pane), final. */
+/* The page at (0, y, 375, 294): flat in the theme's page_fill, or the half's Home pane colour
+ * (theme home_pane), final. */
 void paint_page(void *w, void *canvas, int y) {
     (void)w;
-    bar_rect(canvas, RGBA(theme()->home_pane[ipod_light()].rgb[0]), 0, y, 375, 294);
+    const theme_t *T = theme();
+    unsigned light = (unsigned)ipod_light(), c = T->page_fill[light];
+    bar_rect(canvas, RGBA(c ? c : T->home_pane[light].rgb[0]), 0, y, 375, 294);
 }
 /* A nul-ended string centred in r in face (0: the system font) at px, in a final 0xAARRGGBB, never
  * flipped. Text colour and alignment are restored, the font is not. */
