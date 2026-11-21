@@ -8,7 +8,7 @@
  *            a title: Now Playing's ⋯ opens its page there while its queue plays, addon_more),
  *            favdir (a card folder whose songs' hearts it is told of, addon_fav_path), hidden
  *            (1: no row, its page opened by id: addon_open_id, as AirPlay's is), row (where
- *            its row is: library, games or streaming; without it, Games for a game and
+ *            its row is: library, games, network or streaming; without it, Games for a game and
  *            Streaming for any other) and wifi (0: it never uses the network, so Smart Wi-Fi keeps
  *            no radio on for it: addon_running, addon_offline; 1: it follows the Wi-Fi link,
  *            addon_wifi.c);
@@ -100,7 +100,7 @@
 /* This firmware's card-app features, space-separated; a feature adds its word. */
 #define ADDON_CAPS                                                                                 \
     "playlist progress pages library goto sleep game audio sections art window urls sort field "   \
-    "more fav now fieldtext wake audio2 dim gameview eq screen volume wifi"
+    "more fav now fieldtext wake audio2 dim gameview eq screen volume wifi network"
 #define ADDON_SECTIONS 8  /* sections an app's first page may have */
 #define SWIPE_CLAIM_PX 24 /* a sideways move this far, twice as far as up or down, is a swipe's */
 #define SWIPE_PX 60       /* and this far at the lift, more than up or down, changes section */
@@ -125,13 +125,14 @@ typedef struct {
                    * the next link (addon_wifi_release) */
     unsigned polled, launch_at, restart_at, play; /* play: its .play as read last, hashed */
 } app_t;
-enum { ROW_STREAMING, ROW_GAMES, ROW_LIBRARY }; /* as addon_scan's rows[] names them */
+enum { ROW_STREAMING, ROW_GAMES, ROW_LIBRARY, ROW_NETWORK }; /* as addon_scan's rows[] names them */
 
 static struct {
     app_t a[APPS_MAX];
     int n, shown, order[APPS_MAX]; /* order: Streaming's rows, the slots on the card by name */
     int games, game[APPS_MAX];     /* Games' rows, by name too */
     int libs, lib[APPS_MAX];       /* and the Library's */
+    int nets, net[APPS_MAX];       /* and Settings → Network's (row=network) */
 } ap __attribute__((section(".scratch")));
 
 /* An id goes into shell commands: lowercase letters, digits and '-' only. */
@@ -181,13 +182,13 @@ static void slots_read(void) {
         a->hidden = number(raw, "hidden") == 1;
         /* its row where row says, else as firmware without the key lists it: Games for a game,
          * Streaming for any other */
-        static const char *const rows[] = { "streaming", "games", "library" };
+        static const char *const rows[] = { "streaming", "games", "library", "network" };
         char row[12];
         field(raw, "row", row, sizeof row);
         unsigned r = strlen(row);
         if (r && row[r - 1] == '\r') row[r - 1] = 0; /* a Windows editor's line end */
         a->row = a->game ? ROW_GAMES : ROW_STREAMING;
-        for (int i = 0; i < 3; ++i)
+        for (int i = 0; i < 4; ++i)
             if (!strcmp(row, rows[i])) a->row = i;
         char stop[4]; /* as text, as scrobble: number() is 0 for a missing key too */
         field(raw, "stop", stop, sizeof stop);
@@ -200,14 +201,16 @@ static void slots_read(void) {
         unsigned k = strlen(a->more);
         if (k && a->more[k - 1] == '\r') a->more[k - 1] = 0; /* a Windows editor's line end */
         a->present = !access(a->bin, 0);
-        /* the row's size first (40 px), the other scaled to fit on Streaming (navigation.c
-         * set_child), else stream_app (one over ART_MAX px either way, or whose size can't be
-         * read, counts as none: demo decodes it whole) */
+        /* the row's size first (40 px, a Network row's 52), the other scaled to fit on Streaming
+         * (navigation.c set_child; a Network row draws it 1:1, so one over 52 px shows its middle),
+         * else stream_app (one over ART_MAX px either way, or whose size can't be read, counts as
+         * none: demo decodes it whole) */
         static const char *const icons[2] = { "icon-40.png", "icon.png" };
         tk_snprintf(a->icon, sizeof a->icon, "stream_app");
         for (int i = 1; i >= 0; --i) {
             int w = 0, h = 0;
-            tk_snprintf(path, sizeof path, CARD "/%s/%s", e->d_name, icons[i]);
+            tk_snprintf(path, sizeof path, CARD "/%s/%s", e->d_name,
+                        icons[a->row == ROW_NETWORK ? 1 - i : i]);
             if (picture_size(path, &w, &h) && w && h && w <= ART_MAX && h <= ART_MAX)
                 tk_snprintf(a->icon, sizeof a->icon, "file://%s", path);
         }
@@ -219,12 +222,18 @@ static void slots_read(void) {
  * addon_name. */
 int addon_scan(void) {
     slots_read();
-    ap.shown = ap.games = ap.libs = 0;
+    ap.shown = ap.games = ap.libs = ap.nets = 0;
     for (int i = 0; i < ap.n; ++i) { /* by name: an insertion, APPS_MAX at most */
         if (!ap.a[i].present || ap.a[i].hidden) continue;
         int row = ap.a[i].row;
-        int *order = row == ROW_GAMES ? ap.game : row == ROW_LIBRARY ? ap.lib : ap.order;
-        int k = row == ROW_GAMES ? ap.games++ : row == ROW_LIBRARY ? ap.libs++ : ap.shown++;
+        int *order = row == ROW_GAMES     ? ap.game
+                     : row == ROW_LIBRARY ? ap.lib
+                     : row == ROW_NETWORK ? ap.net
+                                          : ap.order;
+        int k = row == ROW_GAMES     ? ap.games++
+                : row == ROW_LIBRARY ? ap.libs++
+                : row == ROW_NETWORK ? ap.nets++
+                                     : ap.shown++;
         for (; k && strcasecmp(ap.a[order[k - 1]].name, ap.a[i].name) > 0; --k)
             order[k] = order[k - 1];
         order[k] = i;
@@ -247,6 +256,11 @@ const char *addon_slot_id(int i) {
 /* Library's Apps rows (addon_apps): how many, the card read again, then one's name. */
 int addon_libs(void) { return addon_scan(), ap.libs; }
 const char *addon_lib_name(int k) { return k >= 0 && k < ap.libs ? ap.a[ap.lib[k]].name : 0; }
+/* Settings → Network's card rows (navigation.c ringnav_netservice, row=network): how many, the card
+ * read again, then one's name and icon. */
+int addon_network(void) { return addon_scan(), ap.nets; }
+const char *addon_network_name(int k) { return k >= 0 && k < ap.nets ? ap.a[ap.net[k]].name : 0; }
+const char *addon_network_icon(int k) { return k >= 0 && k < ap.nets ? ap.a[ap.net[k]].icon : 0; }
 
 /* Whether an image's name is a card app's Streaming icon, file:///mnt/mmc/.<id>/icon*.png
  * (navigation.c ringnav_image_add: Minimal greys it as Streaming's own icons). */
@@ -951,7 +965,8 @@ static void game_end(void) {
  * Apps page's and Games' rows hold their places by name, so a new app sorted in would move each
  * after it on a row. */
 const char *addon_where(const char *id) {
-    static const char *const where[] = { "Streaming", "Library's Games", "Library's Apps" };
+    static const char *const where[] = { "Streaming", "Library's Games", "Library's Apps",
+                                         "Network settings" };
     slots_read();
     for (int i = 0; i < ap.n; ++i)
         if (ap.a[i].present && !strcmp(ap.a[i].id, id)) return where[ap.a[i].row];
@@ -2661,6 +2676,13 @@ int addon_apps_sync(void *win, void *event) {
     apps_stale = 0;
     if (row) library_apps_show(row, n > 0);
     if (win == la.page) apps_rows(n);
+    return 0;
+}
+/* An app's Network row (ctx: its place by name at the last scan): as a Library row's. */
+int addon_network_open(void *ctx, void *event) {
+    (void)event;
+    int k = (int)(long)ctx;
+    if (k >= 0 && k < ap.nets) press(ap.net[k]);
     return 0;
 }
 

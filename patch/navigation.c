@@ -2877,7 +2877,7 @@ void *list_row(void *view, const char *icon, int (*click)(void *, void *), void 
 }
 
 /* A settings row that opens a page, its label clear of the chevron. */
-static void *list_row_into(void *view, const char *icon, int (*click)(void *, void *), void *ctx) {
+void *list_row_into(void *view, const char *icon, int (*click)(void *, void *), void *ctx) {
     return list_row_core(view, icon, click, ctx, 220, 1); /* laid out, to 10 px before its ink */
 }
 

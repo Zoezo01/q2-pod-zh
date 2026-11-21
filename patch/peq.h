@@ -501,6 +501,11 @@ int addon_libs(void), addon_lib_open(void *ctx, void *event);
 const char *addon_lib_name(int k);
 int addon_apps(void *ctx, void *event), addon_apps_sync(void *win, void *event);
 void library_apps_show(void *row, int on); /* home.c: the Library's Apps row */
+/* addon.c: Settings → Network's rows for apps whose q2app says row=network, as the Library's above:
+ * addon_network (how many, a scan), addon_network_name, addon_network_icon, addon_network_open
+ * (ctx: its place by name). */
+int addon_network(void), addon_network_open(void *ctx, void *event);
+const char *addon_network_name(int k), *addon_network_icon(int k);
 /* addon.c: the wifi=1 apps, for addon_wifi.c's link follower: how many, each started (but those the
  * user stopped since the last link), each stopped, and the user's stops forgotten. */
 int addon_wifi_apps(void);

@@ -45,7 +45,8 @@ class App(C.Structure):
 
 class Ap(C.Structure):
     _fields_ = [('a', App * APPS_MAX), ('n', C.c_int), ('shown', C.c_int), ('order', C.c_int * APPS_MAX),
-                ('games', C.c_int), ('game', C.c_int * APPS_MAX), ('libs', C.c_int), ('lib', C.c_int * APPS_MAX)]
+                ('games', C.c_int), ('game', C.c_int * APPS_MAX), ('libs', C.c_int), ('lib', C.c_int * APPS_MAX),
+                ('nets', C.c_int), ('net', C.c_int * APPS_MAX)]
 
 
 class Sm(C.Structure):
@@ -408,6 +409,7 @@ def test_a_hidden_app_has_no_streaming_row(fw):
 
 
 ROWS = ROW_STREAMING, ROW_GAMES, ROW_LIBRARY = range(3)  # addon.c's, in the order Ap counts them: shown, games, libs
+ROW_NETWORK = 3
 
 
 @pytest.mark.parametrize('manifest, row', [
@@ -423,11 +425,35 @@ def test_a_manifest_says_where_its_row_is(fw, manifest, row):
     assert ap(fw).a[0].row == row and (ap(fw).shown, ap(fw).games, ap(fw).libs) == tuple(int(row == r) for r in ROWS)
 
 
+def test_wifi_and_network_keys(fw):
+    card(fw, vpn=b'name=Tunnel\nqr=1\nwifi=1\nrow=network\r\n', foo=b'name=Foo\n')
+    assert fw.fn('addon_network', C.c_int)() == 1
+    name = fw.fn('addon_network_name', C.c_char_p, C.c_int)
+    assert [name(k) for k in (-1, 0, 1)] == [None, b'Tunnel', None]
+    assert names(fw, 'addon_name') == [None, b'Foo', None]  # not on Streaming
+    a = ap(fw).a[[ap(fw).a[i].id for i in range(2)].index(b'vpn')]
+    assert (a.row, a.wifi, a.wifi_off) == (ROW_NETWORK, 1, 0)
+    assert fw.fn('addon_wifi_apps', C.c_int)() == 1
+
+
+@pytest.mark.parametrize('manifest', [b'name=N\nrow=setting\n', b'name=N\nrow=Settings\n'])
+def test_unknown_row_still_streaming(fw, manifest):
+    card(fw, one=manifest)
+    assert fw.fn('addon_network', C.c_int)() == 0 and ap(fw).shown == 1
+
+
 @pytest.mark.parametrize('manifest, wifi', [(b'wifi=1\n', 1), (b'wifi=1\r\n', 1), (b'wifi=0\n', 0), (b'wifi=yes\n', 0), (b'', 0)])
 def test_only_wifi_1_follows_the_link(fw, manifest, wifi):
     card(fw, one=b'name=N\n' + manifest)
     scan(fw)
     assert ap(fw).a[0].wifi == wifi and fw.fn('addon_wifi_apps', C.c_int)() == wifi
+
+
+def test_caps_has_wifi_and_network(fw):
+    world = card(fw, one=b'name=N\n')
+    scan(fw)
+    words = world.files[b'/tmp/q2-addon.caps'].split()
+    assert b'wifi' in words and b'network' in words
 
 
 def test_a_wifi_app_does_not_hold_the_radio(fw):
@@ -470,6 +496,20 @@ def test_the_follower_stop_leaves_wifi_off_clear(fw):
     fw.fn('addon_wifi_stop', None)()
     vpn, foo = sorted((ap(fw).a[i] for i in range(2)), key=lambda a: a.id != b'vpn')
     assert (vpn.launched, vpn.wifi_off, foo.launched) == (0, 0, 1)  # a plain app is not the follower's
+
+
+def test_the_app_store_says_a_network_app_is_in_network_settings(fw):
+    # netupdate.c's "<name> is ready in <where>" after an install: ROW_NETWORK had no entry
+    card(fw, vpn=b'name=Tunnel\nrow=network\n')
+    assert fw.fn('addon_where', C.c_char_p, C.c_char_p)(b'vpn') == b'Network settings'
+
+
+def test_network_rows_are_by_name_with_the_52_px_icon_first(fw):
+    card(fw, zeta=(b'name=Zeta\nrow=network\n', ('icon.png', 'icon-40.png')), alpha=b'name=Alpha\nrow=network\n')
+    name, icon = fw.fn('addon_network_name', C.c_char_p, C.c_int), fw.fn('addon_network_icon', C.c_char_p, C.c_int)
+    assert fw.fn('addon_network', C.c_int)() == 2
+    assert [name(k) for k in range(-1, 3)] == [None, b'Alpha', b'Zeta', None]
+    assert [icon(k) for k in range(2)] == [b'stream_app', b'file:///mnt/mmc/.zeta/icon.png']
 
 
 def test_library_s_apps_are_by_name(fw):
@@ -553,7 +593,7 @@ def test_more_apps_than_slots(fw):
 def test_the_features_are_published_at_every_scan(fw):
     world = card(fw)
     scan(fw)
-    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections art window urls sort field more fav now fieldtext wake audio2 dim gameview eq screen volume wifi\n'
+    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections art window urls sort field more fav now fieldtext wake audio2 dim gameview eq screen volume wifi network\n'
     assert world.of('rename') == [(b'/tmp/q2-addon.caps.tmp', b'/tmp/q2-addon.caps')]
 
 
@@ -4907,6 +4947,19 @@ def test_a_page_the_app_store_is_replacing_waits_for_it(fw, job, stage, running,
     assert p.world.of('system') == []  # the app isn't started in its folder either way
 
 
+def test_a_network_row_the_app_store_is_replacing_waits_for_it(fw):
+    # Network's row presses as Streaming's does: a remove's files going, no page and the App Store's toast
+    p = Page(fw, b'name=Foo\nrow=network\n', opens=False)
+    assert fw.fn('addon_network', C.c_int)() == 1
+    table = C.addressof(C.c_char.in_dll(fw.lib, 'shelf_apps'))
+    fw.var('shelf_n', C.c_int).value = fw.fn('shelf_sources', C.c_int, C.c_char_p, C.c_void_p, C.c_int)(b'me/foo', table, 1)
+    sh = fw.var('netupdate__sh', Sh)
+    sh.running, sh.job, sh.app, sh.stage = 1, JOB_REMOVE, 0, 4
+    fw.fn('addon_network_open', C.c_int, C.c_void_p, C.c_void_p)(0, None)
+    assert not p.pg.page and not p.pg.lv and p.toasts == [b'Wait until the App Store finishes']
+    assert p.world.of('system') == []
+
+
 @pytest.mark.parametrize('manifest,path,logs', [
     (b'name=Foo\nscrobble=0\n', b'/mnt/mmc/.foo/a.flac', 0),
     (b'name=Foo\r\nscrobble=0\r\n', b'/mnt/mmc/.foo/a.flac', 0),  # a Windows editor's line ends
@@ -5153,6 +5206,7 @@ def test_an_app_gone_from_the_card_says_so(fw):
 
 
 PRESSES = {b'library': lambda fw, k: fw.fn('addon_lib_open', C.c_int, C.c_void_p, C.c_void_p)(k, None),
+           b'network': lambda fw, k: fw.fn('addon_network_open', C.c_int, C.c_void_p, C.c_void_p)(k, None),
            b'games': lambda fw, k: fw.fn('addon_game_start', C.c_int, C.c_int)(k)}
 
 
@@ -5174,7 +5228,8 @@ def test_an_install_s_toast_leaves_the_open_page_s_rows_on_their_apps(fw, row):
     p = Page(fw, b'name=Foo\nrow=%s\n' % row, opens=False)  # the page built, Foo its only app row
     p.world.files.update({b'/mnt/mmc/.bar/q2app': b'name=Bar\nrow=%s\n' % row, b'/mnt/mmc/.bar/q2-bar': b'ELF'})
     p.world.dirs[b'/mnt/mmc'].append(b'.bar')
-    where = {b'streaming': b'Streaming', b'library': b"Library's Apps", b'games': b"Library's Games"}[row]
+    where = {b'streaming': b'Streaming', b'library': b"Library's Apps", b'games': b"Library's Games",
+             b'network': b'Network settings'}[row]
     assert fw.fn('addon_where', C.c_char_p, C.c_char_p)(b'bar') == where
     PRESSES.get(row, lambda fw, k: fw.fn('addon_open', C.c_int, C.c_void_p, C.c_void_p)(k, None))(fw, 0)
     assert p.top.title == b'Foo'
