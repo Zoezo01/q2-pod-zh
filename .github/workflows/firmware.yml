@@ -25,7 +25,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: >-
-          sudo apt-get update && sudo apt-get install -y gcc-multilib clang lld llvm unzip ffmpeg lame
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends gcc-multilib clang lld llvm unzip ffmpeg lame
           libavcodec-dev libavutil-dev libmad0-dev libssl-dev pkg-config busybox-static
       - run: pip install -r requirements.txt -r test/unit/requirements.txt gcovr==8.4
       - run: mkdir -p "$RUNNER_TEMP/c-coverage" && echo "Q2_COV=$RUNNER_TEMP/c-coverage" >> "$GITHUB_ENV"
