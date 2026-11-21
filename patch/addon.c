@@ -100,7 +100,7 @@
 /* This firmware's card-app features, space-separated; a feature adds its word. */
 #define ADDON_CAPS                                                                                 \
     "playlist progress pages library goto sleep game audio sections art window urls sort field "   \
-    "more fav now fieldtext wake audio2 dim gameview eq screen volume wifi network bar"
+    "more fav now fieldtext wake audio2 dim gameview eq screen volume wifi network bar switch"
 #define ADDON_SECTIONS 8  /* sections an app's first page may have */
 #define SWIPE_CLAIM_PX 24 /* a sideways move this far, twice as far as up or down, is a swipe's */
 #define SWIPE_PX 60       /* and this far at the lift, more than up or down, changes section */
@@ -211,15 +211,26 @@ static void slots_read(void) {
          * (navigation.c set_child; a Network row draws it 1:1, so one over 52 px shows its middle),
          * else stream_app (one over ART_MAX px either way, or whose size can't be read, counts as
          * none: demo decodes it whole) */
-        static const char *const icons[2] = { "icon-40.png", "icon.png" };
+        /* An icon-<theme>.png or icon-40-<theme>.png (theme()->name in lower case, a space a dash:
+         * minimal, modern, classic, classic-modern) comes before the plain ones under that theme,
+         * for an app drawn to match it; read at each scan, so a theme change shows at the next. The
+         * last good one tried is taken. */
+        static const char *const icons[2] = { "icon-40", "icon" };
+        char look[16];
+        unsigned n = 0;
+        for (const char *c = theme()->name; c && *c && n < sizeof look - 1; ++c)
+            look[n++] = (char)(*c >= 'A' && *c <= 'Z' ? *c + 32 : *c == ' ' ? '-' : *c);
+        look[n] = 0;
         tk_snprintf(a->icon, sizeof a->icon, "stream_app");
-        for (int i = 1; i >= 0; --i) {
-            int w = 0, h = 0;
-            tk_snprintf(path, sizeof path, CARD "/%s/%s", e->d_name,
-                        icons[a->row == ROW_NETWORK ? 1 - i : i]);
-            if (picture_size(path, &w, &h) && w && h && w <= ART_MAX && h <= ART_MAX)
-                tk_snprintf(a->icon, sizeof a->icon, "file://%s", path);
-        }
+        for (int t = 0; t < 2; ++t)
+            for (int i = 1; i >= 0; --i) {
+                int w = 0, h = 0;
+                tk_snprintf(path, sizeof path, CARD "/%s/%s%s%s.png", e->d_name,
+                            icons[a->row == ROW_NETWORK ? 1 - i : i], t ? "-" : "", t ? look : "");
+                if ((!t || n) && picture_size(path, &w, &h) && w && h && w <= ART_MAX &&
+                    h <= ART_MAX)
+                    tk_snprintf(a->icon, sizeof a->icon, "file://%s", path);
+            }
     }
     if (d) closedir(d);
 }
@@ -1858,6 +1869,9 @@ static void row(lv_t *l, int i) {
     if (l->art) {
         char url[ART_URL];
         item = art_row(i, cell(i, 2), cell(i, 3), art_file(i, url) ? url : 0, opens(i));
+    } else if (!strcmp(cell(i, 0), "switch")) { /* its title and the settings rows' switch */
+        item = page_row_detail(pg.view, i, cell(i, 2), "", clicked);
+        list_toggle(widget_get_child(item, 0), cell(i, 2), !strcmp(cell(i, 3), "on"));
     } else
         item = (opens(i) ? page_row_detail_into : page_row_detail)(pg.view, i, cell(i, 2),
                                                                    cell(i, 3), clicked);
@@ -2021,6 +2035,12 @@ static void retext(void *item, void *w, unsigned k, const char *s) {
 static void relabel(const lv_t *l) {
     for (int i = 0; i < l->n; ++i) {
         void *item = widget_get_child(pg.view, (unsigned)i);
+        if (!strcmp(cell(i, 0), "switch")) { /* its state is the switch's, never text (row()) */
+            void *t = widget_get_child(item, 0);
+            if (text_differs(t, cell(i, 2))) retext(item, t, 2, cell(i, 2));
+            list_toggle(t, cell(i, 2), !strcmp(cell(i, 3), "on"));
+            continue;
+        }
         for (unsigned c = 0, k = 2, m = widget_count_children(item); c < m; ++c) {
             void *w = widget_get_child(item, c);
             if (!tk_strcmp(widget_get_type(w), "hscroll_label")) {
@@ -2041,7 +2061,7 @@ static void busy_row(int on) {
     lv_t *l = top();
     int i = pg.arow;
     if (on == pg.busy || !pg.view || l->state != K_READY || i >= l->n) return;
-    int k = 2 + !!cell(i, 3)[0];
+    int k = 2 + (!!cell(i, 3)[0] && strcmp(cell(i, 0), "switch")); /* a switch's is its state */
     void *item = widget_get_child(pg.view, (unsigned)i);
     retext(item, widget_get_child(item, (unsigned)k - 2), (unsigned)k,
            on ? "Working…" : cell(i, k));
@@ -2557,7 +2577,8 @@ static int go(const void *unused) {
             open_list(uri, ctx, cell(i, 2));
         else if (!strcmp(kind, "page"))
             page_to(l, ctx, strcmp(uri, "prev") ? 1 : -1);
-        else if (!strcmp(kind, "action") && !pg.act) /* one in flight: this press does nothing */
+        else if ((!strcmp(kind, "action") || !strcmp(kind, "switch")) &&
+                 !pg.act) /* one in flight: this press does nothing */
             action(i, uri, ctx);
         else if (!strcmp(kind, "remote"))
             qr_open(app()->state, app()->name);
@@ -2902,7 +2923,8 @@ static struct {
     unsigned timer, leave, seen; /* seen: the state file as last read, hashed */
     const char *state;
     int size;
-    char *hex; /* the code's rows, QR_HEX bytes calloc'd with the page */
+    char *hex;  /* the code's rows, QR_HEX bytes calloc'd with the page */
+    void *pinl; /* the PIN's caption, hidden with no PIN: a sign-in approved elsewhere has none */
 } qp __attribute__((section(".scratch")));
 
 static void set(void *w, const char *s) {
@@ -2950,6 +2972,7 @@ static void qr_refresh(void) {
                                             : 16); /* 192.168.100.200:8080 */
     set(qp.addr, addr);
     set(qp.pin, strlen(pin) == 6 ? spaced : pin);
+    widget_set_visible(qp.pinl, pin[0] != 0, 0);
     set(qp.note, note);
     qr_face(qp.note, qr_light() ? 16 : 14);
     widget_invalidate_force(qp.qr, 0);
@@ -3038,9 +3061,9 @@ static void qr_open(const char *state, const char *title) {
         qr_label(qp.col, x, r[2][0], short_w, r[2][1], "s_scrlabel_white20l", r[2][2], SPOT_GREY),
         "or open");
     qp.addr = qr_label(qp.col, x, r[3][0], w, r[3][1], "s_scrlabel_white20l", r[3][2], 0xffffffffu);
-    widget_set_text_utf8(
-        qr_label(qp.col, x, r[4][0], short_w, r[4][1], "s_scrlabel_white20l", r[4][2], SPOT_GREY),
-        "PIN");
+    qp.pinl =
+        qr_label(qp.col, x, r[4][0], short_w, r[4][1], "s_scrlabel_white20l", r[4][2], SPOT_GREY);
+    widget_set_text_utf8(qp.pinl, "PIN");
     qp.pin =
         qr_label(qp.col, x, r[5][0], short_w, r[5][1], "s_scrlabel_white20l", r[5][2], 0xffffffffu);
     qp.note = qr_label(qp.col, cl ? 24 : 0, r[6][0], cl ? 330 : w, r[6][1], "s_scrlabel_white20l",

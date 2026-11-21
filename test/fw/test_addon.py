@@ -84,7 +84,8 @@ class Pg(C.Structure):
 
 class Qp(C.Structure):
     _fields_ = [*((n, C.c_void_p) for n in ('page', 'qr', 'col', 'msg', 'addr', 'pin', 'note', 'say', 'sub')),
-                *((n, C.c_uint) for n in ('timer', 'leave', 'seen')), ('state', C.c_void_p), ('size', C.c_int), ('hex', C.c_void_p)]
+                *((n, C.c_uint) for n in ('timer', 'leave', 'seen')), ('state', C.c_void_p), ('size', C.c_int), ('hex', C.c_void_p),
+                ('pinl', C.c_void_p)]
 
 
 class Taken(C.Structure):
@@ -713,7 +714,7 @@ def test_more_apps_than_slots(fw):
 def test_the_features_are_published_at_every_scan(fw):
     world = card(fw)
     scan(fw)
-    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections art window urls sort field more fav now fieldtext wake audio2 dim gameview eq screen volume wifi network bar\n'
+    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections art window urls sort field more fav now fieldtext wake audio2 dim gameview eq screen volume wifi network bar switch\n'
     assert world.of('rename') == [(b'/tmp/q2-addon.caps.tmp', b'/tmp/q2-addon.caps')]
 
 
@@ -2820,6 +2821,37 @@ def test_an_action_sends_its_context_toasts_and_asks_again(fw):
     assert p.request().endswith(b'\top1\ta%25b\n') and p.pg.act == 1
     p.answer(msg=b'Done')
     assert p.toasts == [b'Done'] and p.request().endswith(b'\tmenu\n') and p.top.state == K_LOAD
+
+
+def test_a_switch_row_draws_settings_switch_and_presses_as_an_action(fw):
+    # kind switch: the title with the settings rows' switch (navigation.c list_toggle), on while its
+    # subtitle is "on"; a press sends its op and context as an action's does
+    p = Page(fw)
+    p.answer(rows=[(b'switch', b'power', b'Tunnel', b'on', b'', b''), (b'switch', b'auto', b'Start with Wi-Fi', b'off', b'x', b'')])
+    images = [C.string_at(a[1]) for _, a in fw.calls('image_base_set_image')]
+    assert images == [b'switch_on', b'switch_off']
+    texts = [C.string_at(a[1]) for _, a in fw.calls('widget_set_text_utf8')]
+    assert b'Tunnel' in texts and b'Start with Wi-Fi' in texts and b'on' not in texts  # the state isn't shown as text
+    p.click(1)
+    assert p.request().endswith(b'\tauto\tx\n') and p.pg.act == 1
+    p.answer(msg=b'')
+    assert p.request().endswith(b'\tmenu\n')
+
+
+def test_a_switch_moves_when_a_refresh_changes_its_state_and_shows_no_text(fw):
+    # a press, then the list again with the switch flipped: the same rows, written in place (relabel),
+    # must move the switch, never write "on"/"off" (or Working...) as the row's text. Found on a Q2:
+    # the switch stayed on, "off" under its title.
+    p = Page(fw)
+    p.answer(msg=b'refresh', rows=[(b'switch', b'power', b'Tunnel', b'on', b'', b''), item(2, b'info')])
+    texts = lambda: [C.string_at(a[1]) for _, a in fw.calls('widget_set_text_utf8')]
+    images = lambda: [C.string_at(a[1]) for _, a in fw.calls('image_base_set_image')]
+    assert images()[-1] == b'switch_on'
+    p.click(0)
+    p.answer(msg=b'Tunnel off')
+    p.answer(msg=b'refresh', rows=[(b'switch', b'power', b'Tunnel', b'off', b'', b''), item(2, b'info')])
+    assert images()[-1] == b'switch_off'
+    assert not {b'on', b'off', 'Working…'.encode()} & set(texts())
 
 
 def test_an_action_refused_toasts_why(fw):
@@ -5414,6 +5446,14 @@ def test_a_code_shows_with_its_address_and_spaced_pin(fw):
     assert b'192.168.1.2:8080' in q.texts and b'548 001' in q.texts and b'Hi' in q.texts
 
 
+def test_no_pin_hides_its_caption(fw):
+    # an app whose sign-in needs no PIN (one approved in the account, say) has no "PIN" over nothing
+    q = Qr(fw, qr_state(pin=b''))
+    assert q.code == 1 and q.shown.get(q.qp.pinl) == 0
+    q.again(qr_state())
+    assert q.shown.get(q.qp.pinl) == 1 and b'548 001' in q.texts
+
+
 def test_a_pin_of_another_length_shows_as_it_is(fw):
     assert b'12345' in Qr(fw, qr_state(pin=b'12345')).texts
 
@@ -6535,6 +6575,7 @@ def test_hostile_rules_files(fw):
         hidden(fw, b'/mnt/mmc/A/x')
 
 
+
 def shortcut(fw, value):
     """IPOD SHORTCUT in config.ini, every other key its default; Home's shortcut row's click."""
     def read(path, section, key, out, default, *_):
@@ -6842,3 +6883,28 @@ def test_a_card_apps_first_song_waits_while_a_game_has_the_sound(fw, audio, time
     assert s.state == S_WAIT and len(fw.calls('timer_add')) == timers and s.timer == (5 if timers else 0)
 
 
+@pytest.mark.parametrize('theme, want', [(b'0', b'icon-minimal.png'), (b'2', b'icon.png'), (b'1', b'icon.png')])
+def test_a_theme_named_icon_is_taken_under_that_theme(fw, settings_read, theme, want):
+    # icon-<theme>.png and icon-40-<theme>.png (theme()->name, lower case) before the plain ones: an app
+    # drawn for Minimal's grey discs, its own icon elsewhere. Read at each scan, so a theme change shows
+    # at the next. Network rows take the 52 px first, as with the plain names.
+    boot(fw, settings_read, theme)
+    card(fw, vpn=(b'name=Tunnel\nrow=network\n', ('icon.png', 'icon-40.png', 'icon-minimal.png', 'icon-40-minimal.png')))
+    assert fw.fn('addon_network', C.c_int)() == 1
+    assert fw.fn('addon_network_icon', C.c_char_p, C.c_int)(0) == b'file:///mnt/mmc/.vpn/' + want
+
+
+def test_a_theme_name_s_space_is_a_dash(fw, settings_read):
+    # Classic Modern's icon is icon-classic-modern.png: a file name with no space in it
+    boot(fw, settings_read, b'3')
+    card(fw, vpn=(b'name=Tunnel\nrow=network\n', ('icon.png', 'icon-classic-modern.png')))
+    assert fw.fn('addon_network', C.c_int)() == 1
+    assert fw.fn('addon_network_icon', C.c_char_p, C.c_int)(0) == b'file:///mnt/mmc/.vpn/icon-classic-modern.png'
+
+
+def test_a_theme_icon_alone_is_taken_too(fw, settings_read):
+    # an app with only its 40 px Minimal icon: that, under Minimal, before the plain 52 px
+    boot(fw, settings_read, b'0')
+    card(fw, vpn=(b'name=Tunnel\nrow=network\n', ('icon.png', 'icon-40-minimal.png')))
+    assert fw.fn('addon_network', C.c_int)() == 1
+    assert fw.fn('addon_network_icon', C.c_char_p, C.c_int)(0) == b'file:///mnt/mmc/.vpn/icon-40-minimal.png'
