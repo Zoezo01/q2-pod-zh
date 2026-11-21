@@ -27,13 +27,19 @@ for light in '01':
     assert {t['font'][0] for t in m.letters} == {'classic-light'} and wbox(m, m.ok) == (127, 224, 121, 36)
     assert m.lcd_colors() == LCD_COLORS; passed()
 
-# A prompt: the flat pills, Cancel holding in Classic Blue, OK at rest.
+def booted(m):
+    """theme_boot's first system_bar load, which writes Classic's set (q2emu classic_light_boot under THEME 3)."""
+    m.record_syscalls(lambda page: False); m.handlers[int(manifest['patch_symbols']['stock_ui_load_trampoline'], 16)] = 'stock_ui_load'
+    m.call(address=HOOKS['ui_loader_load_widget_with_parent'][0], args=(m.string('system_bar'), 0, 0, 0), gap=0)
+
+
+# A prompt on Classic's set: the paper under its 26 px bar, the flat pills, Cancel holding in Classic Blue, OK at rest.
 for light in '01':
-    m, d, cells = confirm_flat(light, **CM); m.paint(d)
+    m, d, cells = confirm_flat(light, boot=booted, **CM); m.paint(d)
     (x0, y0, w0, h0), (x1, _, w1, _) = wbox(m, cells[0]), wbox(m, cells[1])
     inside = lambda x, w: {b[4] for b in m.bands if b[2] > 1 and x <= b[0] and b[0] + b[2] <= x + w and y0 <= b[1] < y0 + h0}
     assert (y0, h0) == (250, 36) and color_t(BLUE) in inside(x0, w0) and inside(x1, w1) == {color_t(FLAT_REST[light])}
-    assert not m.image_draws; passed()
+    assert (0, 26, 375, 294, color_t(PAPER[light])) in [b[:5] for b in m.bands] and not m.image_draws; passed()
 
 # Brightness, each half: Classic's paper, the bar lit in Classic Blue, the flat suns.
 for light in '01':

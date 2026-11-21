@@ -213,9 +213,10 @@ for light in '01':
     assert m.lcd_colors() == LCD_COLORS; passed()
 
 
-def confirm_flat(light='0', **config):
-    """Shut Down? under Modern: stock's confirminfo_dialog as its asset leaves it."""
-    m = Machine(); m.config.update({'THEME': '2', 'LIGHT': light, 'ACCENT': '4', **config})
+def confirm_flat(light='0', boot=lambda m: None, **config):
+    """Shut Down? under Modern: stock's confirminfo_dialog as its asset leaves it; boot(m) after the config (a theme
+    on its own set boots it)."""
+    m = Machine(); m.config.update({'THEME': '2', 'LIGHT': light, 'ACCENT': '4', **config}); boot(m)
     d = m.node('dialog', 'confirminfo_dialog'); m.word(d + O['W_PARENT'], m.wm); place(m, d, 0, 0, 375, 320); m.top = d; m.clip = (0, 0, 375, 320)
     m.char_px = 52.6 / 6; m.image_size = (315, 68)
     cells = [m.entry(d, O['CONFIRM_TOP'] + i * 48) for i in range(2)]
