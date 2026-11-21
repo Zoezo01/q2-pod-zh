@@ -144,10 +144,19 @@ static int progress(void *stopped_at, long long a, long long b, long long c, lon
     return td.gen != td.want || (*at && (int)(now - *at) >= TIDAL_STOP_MS);
 }
 
+/* path on the card, synced (a folder: the names in it); 0 when it can't be opened or synced. */
+static int synced(const char *path) {
+    void *f = fopen(path, "r");
+    int ok = f && !fsync(fileno(f));
+    if (f) fclose(f);
+    return ok;
+}
+
 /* tmp remuxed by stock ffmpeg with the queue row's tags and, into a FLAC, its cover: Tidal's files
  * carry none, so played from the card (Tidal Downloads) a copy showed Unknown Artist and no art.
- * On any failure tmp stays as downloaded. ponytail: no cover in an .m4a, as ffmpeg 4.2's mp4 muxer
- * writes none; the remux rewrites the whole file once more on the card. */
+ * The remux is synced before it replaces tmp, as tmp was. On any failure, a sync too, tmp stays as
+ * downloaded. ponytail: no cover in an .m4a, as ffmpeg 4.2's mp4 muxer writes none; the remux
+ * rewrites the whole file once more on the card. */
 static void tag(const char *tmp, char (*tags)[TIDAL_TAG], int pic) {
     char out[sizeof td.path + 12];
     int flac = strstr(tmp, ".flac.tmp") != 0, status = -1;
@@ -169,7 +178,7 @@ static void tag(const char *tmp, char (*tags)[TIDAL_TAG], int pic) {
     while (pid > 0 && waitpid(pid, &status, 0) < 0 &&
            *__errno_location() == 4) { /* EINTR: reap it */
     }
-    if (!status && file_size(out) > 0 && !rename(out, tmp)) return;
+    if (!status && file_size(out) > 0 && synced(out) && !rename(out, tmp)) return;
     if (!access(out, 0)) unlink(out);
 }
 
@@ -226,8 +235,11 @@ static void *download(void *unused) {
         ok = ok && cleared == td.cleared && !rename(tmp, path);
         if (ok && all && td.all) run_song(path);
         pthread_mutex_unlock(td.lock);
+        /* The rename onto the card: FAT gives the new name its size and first cluster only when the
+         * file is written back, so the folder's sync alone would leave it there at 0 bytes. Neither
+         * result changes what is kept: the data was synced before the rename. */
         if (ok)
-            trim();
+            synced(TIDAL_DIR), synced(path), trim();
         else
             unlink(tmp);
     }
