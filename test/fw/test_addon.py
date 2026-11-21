@@ -430,7 +430,7 @@ def test_more_apps_than_slots(fw):
 def test_the_features_are_published_at_every_scan(fw):
     world = card(fw)
     scan(fw)
-    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections art window urls sort field more fav now\n'
+    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections art window urls sort field more fav now fieldtext\n'
     assert world.of('rename') == [(b'/tmp/q2-addon.caps.tmp', b'/tmp/q2-addon.caps')]
 
 
@@ -2949,6 +2949,40 @@ def test_a_field_row_with_no_context_sends_the_text_alone(fw):
     p.answer(rows=[USER])
     field(p, 0, b'alice')
     assert p.request().endswith(b'\tuser\talice\n')
+
+
+SERVER = (b'field', b'setserver', b'Server Address:', b'https://music.example/jf', b'menu', b'https://music.example/jf')
+
+
+def test_a_field_rows_position_is_the_text_its_box_opens_with(fw):
+    # caps word fieldtext: the box opens holding the value to edit (an address), set before its handlers
+    p = Page(fw)
+    set_text: list = []
+    fw.mock('widget_set_text_utf8', lambda w, t, *_: set_text.append((w, C.string_at(t))))
+    p.answer(rows=[SERVER, USER])
+    box = edit_box(fw)
+    p.click(0)
+    assert p.pg.edit == box and (box, b'https://music.example/jf') in set_text
+
+
+def test_a_field_row_with_no_position_opens_an_empty_box(fw):
+    p = Page(fw)
+    set_text: list = []
+    fw.mock('widget_set_text_utf8', lambda w, t, *_: set_text.append((w, C.string_at(t))))
+    p.answer(rows=[SERVER, USER])
+    box = edit_box(fw)
+    p.click(1)
+    assert p.pg.edit == box and not [t for w, t in set_text if w == box]
+
+
+def test_a_held_play_on_a_field_row_sends_nothing(fw):
+    # its position is the box's text, not a hold op
+    p = Page(fw)
+    p.answer(rows=[SERVER])
+    calls = len(fw.calls('fw_pthread_create'))
+    p.sel = 0
+    assert fw.fn('addon_hold', C.c_int, C.c_void_p)(p.page) == 0
+    assert len(fw.calls('fw_pthread_create')) == calls
 
 
 def test_a_fields_failure_is_its_levels_error_and_retry_never_sends_the_text_again(fw):

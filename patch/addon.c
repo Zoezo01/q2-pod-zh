@@ -96,7 +96,7 @@
 /* This firmware's card-app features, space-separated; a feature adds its word. */
 #define ADDON_CAPS                                                                                 \
     "playlist progress pages library goto sleep game audio sections art window urls sort field "   \
-    "more fav now"
+    "more fav now fieldtext"
 #define ADDON_SECTIONS 8  /* sections an app's first page may have */
 #define SWIPE_CLAIM_PX 24 /* a sideways move this far, twice as far as up or down, is a swipe's */
 #define SWIPE_PX 60       /* and this far at the lift, more than up or down, changes section */
@@ -1144,7 +1144,8 @@ static int req_done(void) {
  * the title bar's search icon instead, take_find), sort opens as list does (caps word "sort"; one
  * just after a taken search is the title bar's sort icon instead, take_sort), remote opens the QR
  * code, local plays from the card (uri: a song, or a folder to list; context "album": in track
- * order), field opens the T9 box too, whose text goes to its uri, after its context, the reply
+ * order), field opens the T9 box too (its position the text it opens with, caps word fieldtext),
+ * whose text goes to its uri, after its context, the reply
  * taking the level's place with no level pushed and nothing titled with the text (field_sent),
  * info does nothing; its position, when set, is the op a held Play/Pause sends. progress
  * (progress_row) draws a bar of its position, permille, under its title and subtitle; a press or a
@@ -1917,13 +1918,16 @@ static int swipe(void *ctx, void *event) {
 }
 
 /* peq_ui.c's T9 edit over the title, its keyboard open: a Search row's press, or its icon's tap
- * (field 0); or field row field - 1's press, its title the box's hint. */
+ * (field 0); or field row field - 1's press, its title the box's hint and its position, when set,
+ * the text it opens with (caps word fieldtext: a value to edit, such as an address), set before
+ * the handlers, as the playlist editor's search sets its last query. */
 static void search_box(int field) {
     keep_sel();
     pg.field = field;
     widget_destroy_children(pg.page), pg.view = 0; /* the box alone, as Spotify's */
     pg.edit = edit_create(pg.page, "text", 2, 26);
     t9_box(pg.page, pg.edit, field ? cell(field - 1, 2) : app()->tips);
+    if (field && cell(field - 1, 5)[0]) widget_set_text_utf8(pg.edit, cell(field - 1, 5));
     widget_on(pg.edit, EVT_VALUE_CHANGED, searched, 0);
     widget_on(pg.edit, EVT_IM_ACTION, searched, 0);
     widget_on(pg.edit, EVT_BLUR, search_left, 0);
@@ -2283,12 +2287,14 @@ int addon_more(void) {
 }
 
 /* ringnav_keylong: Play/Pause held on a row with a hold op (a list: all of it downloaded) sends it;
- * 1 when it was one. */
+ * 1 when it was one. A progress row's position is its bar, a field row's its box's text. */
 int addon_hold(void *w) {
     lv_t *l = pg.page && w == pg.page ? top() : 0;
     int i = l && l->state == K_READY && pg.view ? widget_get_prop_int(pg.view, "_ringnav_index", -1)
                                                 : -1;
-    if (i < 0 || i >= l->n || !cell(i, 5)[0] || !strcmp(cell(i, 0), "progress")) return 0;
+    if (i < 0 || i >= l->n || !cell(i, 5)[0] || !strcmp(cell(i, 0), "progress") ||
+        !strcmp(cell(i, 0), "field"))
+        return 0;
     action(i, cell(i, 5), cell(i, 4));
     return 1;
 }
