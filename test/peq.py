@@ -1506,8 +1506,15 @@ int __wrap_clock_gettime(clockid_t clock, struct timespec *t) {
 }
 static int left = -1; /* calloc calls before one fails; -1: never */
 static void *xf_ring;  /* crossfade's 6 MB ring while the filter holds it */
+static float *kernel;  /* the AirPlay tap's resampler kernel (RS_PHASES floats a tap, and one), a NaN at each end */
 void *test_calloc(size_t n, size_t size) {
     if (!left--) return 0;
+    if (size == sizeof(float) && n % 512 == 1 && !kernel) { /* a read past either end comes out as NaN */
+        float *p = malloc((n + 2) * sizeof(float));
+        if (!p) return p;
+        p[0] = p[n + 1] = __builtin_nanf("");
+        return kernel = memset(p + 1, 0, n * size);
+    }
     void *p = malloc(n * size);
     if (p && n * size == 6u << 20) xf_ring = p;
     return p ? memset(p, 0, n * size) : p;
@@ -1515,6 +1522,7 @@ void *test_calloc(size_t n, size_t size) {
 void __real_free(void *p);
 void __wrap_free(void *p) {
     if (p && p == xf_ring) xf_ring = 0;
+    if (p && p == kernel) p = kernel - 1, kernel = 0;
     __real_free(p);
 }
 
@@ -1847,8 +1855,10 @@ static void cast_check(void) {
     for (int i = 0; i < 47; ++i) block(&a, buf, 1024, &n, 0.25f, 48000); /* 1 s */
     unsigned got = t->seq - seq, want = (n - from) * 441u / 480; /* at CAST_RATE */
     assert(got + 2 >= want && got <= want + 2);
-    short last = t->ring[(t->seq - 1) & (CAST_RING - 1)][1];
-    assert(last >= 8192 - 2 && last <= 8192 + 2);
+    for (unsigned i = 0; i < got; ++i) { /* each frame of it: none took a tap past the kernel's ends */
+        short level = t->ring[(seq + i) & (CAST_RING - 1)][1];
+        assert(level >= 8192 - 2 && level <= 8192 + 2);
+    }
     a.uninit(&a);
     t->want = CAST_CLOCK(now_ns()) - CAST_STALE_PLAYER; /* the filter keeps its map: the app gone */
     munmap(t, sizeof *t);
@@ -2534,7 +2544,8 @@ def scrobble_check(tmp):
     binary = tmp/'scrobble_test'
     subprocess.run(['cc', '-pthread', '-DPEQ_HOST', f'-DPEQ_ROOT="{root}"', f'-DROOT="{root}"', '-D_GNU_SOURCE',
                     '-O1', '-Wall', '-Wextra', '-Werror', '-Wno-unused-parameter', '-I', str(ROOT/'patch'), '-include', str(tmp/'scrobble_shim.h'),
-                    str(ROOT/'patch/scrobble.c'), str(tmp/'scrobble_test.c'), '-lcrypto', '-o', str(binary)], check=True)
+                    str(ROOT/'patch/scrobble.c'), str(ROOT/'patch/xiph.c'), str(tmp/'scrobble_test.c'), '-lcrypto', '-o', str(binary)],
+                   check=True)  # xiph.c: utf8_mend, which parse() makes each name UTF-8 with
     subprocess.run([str(binary)], check=True)
     requests = [line.split('\t', 3) for line in (root/'requests').read_text().splitlines()]
     artist = lambda i: f'Art "{i}" \\ &=+%é'
@@ -3166,6 +3177,11 @@ static int play_pos;
 static int play_type;
 #define MCL_TYPE (&play_type)
 static int addon_fav(const char *id, const char *kind, const char *key, int on) { return 0; }
+static int addon_wake(const char *id) { return 0; }
+static int addon_answers(const char *id) { return 1; }
+static int media_owner(void) { return 1; }
+static int media_playing(void) { return 0; }
+static int addon_game_audio(void) { return 0; }
 static _Atomic int status = 1, gate, performing, performs, ended;
 static _Atomic unsigned long long clk = 1000;
 static char last[64];

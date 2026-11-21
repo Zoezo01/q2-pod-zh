@@ -1440,6 +1440,17 @@ def test_blob_io_a_failed_sync_or_rename_is_a_failed_write(fw):
     assert g.blob_io(b'/a', b'/a.tmp', buf, 4, 1) == 0 and card.files['/a'] == b'old!'
 
 
+@pytest.mark.parametrize('step', ['fw_fflush', 'fw_fclose'])
+def test_blob_io_a_failed_flush_or_close_is_a_failed_write_too(fw, step):
+    """The last bytes can fail to reach the flash at the flush or at the close: neither may go on to the rename,
+    which would put a short file over the last whole one."""
+    g = api(fw)
+    card = Card(fw, {'/a': b'old!'})
+    fw.mock(step, lambda *_: -1)
+    buf = (C.c_ubyte * 4)(1, 2, 3, 4)
+    assert g.blob_io(b'/a', b'/a.tmp', buf, 4, 1) == 0 and card.files['/a'] == b'old!'
+
+
 def statuses(fw, status):
     fw.mock('fw_fork', lambda *_: 1234)
 

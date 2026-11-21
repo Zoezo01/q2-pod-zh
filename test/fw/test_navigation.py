@@ -714,6 +714,18 @@ def test_utf8_text_any_bytes_as_python_reads_them(fw, heap):
         heap.free(block)
 
 
+def test_utf8_mend_keeps_what_python_reads_and_drops_the_rest(fw, heap):
+    """Every whole character stays and every other byte goes, as Python's decoder with errors='ignore' has it: a
+    tag stock cut inside a character (scrobble.c's names) ends on the one before."""
+    mend = fw.fn('utf8_mend', None, C.c_void_p)
+    cut = '、'.join(['高坂穂乃果(CV.新田恵海)'] * 9).encode()  # 255 and 256 bytes end inside 乃
+    for data in [b'', 'Café 音乐 𝄞'.encode(), cut[:255], cut[:256], *hostile(random.Random(0x3e4d), SEEDS, 3000)]:
+        block = heap.string(data)
+        mend(block)
+        assert C.string_at(block) == data.decode('utf-8', 'ignore').encode(), data
+        heap.free(block)
+
+
 @pytest.mark.parametrize('c', range(256))
 def test_ascii_letter(fw, c):
     assert fw.fn('tags__ascii_letter', C.c_int, C.c_uint)(c) == (65 <= c <= 90 or 97 <= c <= 122)
@@ -2350,6 +2362,23 @@ def test_a_new_playlist_takes_the_first_free_id(fw):
     assert any(b"insert into playlist values (2,'Mine'" in s for s in sql.log)
 
 
+@pytest.mark.parametrize('writer', ['create', 'delete', 'failed delete'])
+def test_each_playlist_writer_opens_the_library_and_closes_what_it_opened(fw, writer):
+    """Create's and Delete's connection is the library's database, and theirs to close, a failed write's too: one
+    left open keeps its lock on the table and its cache."""
+    opened = []
+    def open_(path, db, *_):
+        opened.append(C.string_at(path))
+        C.c_void_p.from_address(db).value = 0xdb
+        return 0
+    fw.mock('sqlite3_open', open_)
+    if writer == 'create':
+        create(fw, b'Mine', (0, 1, 3))
+    else:
+        playlist_delete(fw, sql_fail=(b'delete',) if 'failed' in writer else ())
+    assert opened == [b'/mnt/data/database.db'] and [a[0] for _, a in fw.calls('sqlite3_close')] == [0xdb]
+
+
 def test_a_playlist_name_is_quoted(fw):
     _, sql = create(fw, b"Rock 'n' Roll")
     assert any(b"filename='Rock ''n'' Roll'" in s for s in sql.log) and any(b"(0,'Rock ''n'' Roll'" in s for s in sql.log)
@@ -2517,7 +2546,7 @@ def test_qm_restore_puts_back_what_a_go_to_overwrote(fw, qm):
 # Scrobbling.
 class Sa(C.Structure):
     _fields_ = [('pending', C.c_uint), ('first_at', C.c_uint), ('check_at', C.c_uint), ('running', C.c_int),
-                ('woke', C.c_int)]
+                ('woke', C.c_int), ('misses', C.c_uint), ('missed_at', C.c_uint)]
 
 
 MINUTE = 60000

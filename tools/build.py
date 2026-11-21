@@ -287,6 +287,11 @@ BOOT_HOOK = (b'    /release/bin/demo &\n', f'''    (
             {WIFI_OFF}
             (cd $rb && exec ./rockbox) > $rb/rockbox.log 2>&1
             echo "exit $?" >> $rb/rockbox.log
+            # demo starts Bluetooth afresh: stock closeBluetooth's daemon/ready-file cleanup and PD20 low,
+            # without switchBluetooth's settings writes. Keep the radio module loaded: it also supplies Wi-Fi.
+            killall -9 bluetoothd bluealsa rtk_hciattach 2>/dev/null
+            rm -f /tmp/rtk_init_success /tmp/bt_startup
+            /usr/bin/cmd_gpio set_func PD20 output0
         }}
         if [ "$(cat /mnt/data/boot-target 2>/dev/null)" != q2pod ] && ! /usr/bin/q2boot; then
             for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
@@ -346,9 +351,11 @@ REMOTE_HOOK = (b'/usr/bin/dbus-daemon --config-file=/etc/dbus-1/system.conf\n',
                b'/usr/bin/dbus-daemon --config-file=/etc/dbus-1/system.conf\n/usr/bin/q2remote &\n')
 # --dev only (docs/remote.md#log): demo's console output, and hciplayer's, which inherits it, in RAM, so
 # emptied once a minute past 4 MB (O_APPEND keeps demo writing at its end), in place of the release's stderr
-# file and its cap. In BOOT_HOOK's start path.
+# file and its cap. In BOOT_HOOK's start path. The log is a link into an 8 MB tmpfs of its own, twice the trim, so a
+# flood between trims fills that and not /tmp; a failed mkdir, mount or ln leaves no link and the file is /tmp's.
 LOG_HOOK = (b'        (while sleep 60; do n=$(wc -c 2>/dev/null </tmp/q2-demo.err); [ "${n:-0}" -gt 524288 ] && : >/tmp/q2-demo.err; done) &\n'
             b'        while :; do\n            /release/bin/demo 2>>/tmp/q2-demo.err\n',
+            b'        mkdir /tmp/q2-log && mount -t tmpfs -o size=8m q2-log /tmp/q2-log && ln -s /tmp/q2-log/demo.log /tmp/q2-demo.log\n'
             b'        (while sleep 60; do n=$(wc -c 2>/dev/null </tmp/q2-demo.log); [ "${n:-0}" -gt 4000000 ] && : >/tmp/q2-demo.log; done) &\n'
             b'        while :; do\n            /release/bin/demo >>/tmp/q2-demo.log 2>&1\n')
 # --dev only: the wheel's frame log (playback.c wl_flush) and stale-press notes (navigation.c stale_note) go to the
@@ -480,6 +487,10 @@ HOME_KEYUP = (0x534c28, 0x0320f809, 0)
 # the guard after Standby), whose flags only that function clears. So the handler's test for Centre never matches (its
 # bne is a b), and Centre is one more key it knows nothing of, as until V1.34.
 NP_CENTRE = (0x53dbac, 0x1443000d, 0x1000000d)
+# V1.34's Update Library dialog key-up (updatemusic_dialog_on_keyup) takes Centre as it takes Return: lit, it stops the scan
+# and ends the release, so a press during a scan no longer turned the screen off (#455). V1.32's took Return alone. Centre
+# goes on to on_wm_keyup_fun again (its bne is a b, to the wheel's test, which passes it); Return and Cancel still stop it.
+SCAN_CENTRE = (0x4a2acc, 0x14430009, 0x10000009)
 # V1.36's on_wm_keyup_before_fun applies Buttons lock on the lit lock window too (beqz g_lockscreen_pageflag past the lock).
 # Buttons lock stays the dark screen's (navigation.c lock_names), as V1.32's: the branch is taken always.
 KEYLOCK_LIT = (0x4f2728, 0x10400010, 0x10000010)
@@ -1573,11 +1584,14 @@ FUNCTIONS = {
  'mclGetCueFlag': ('int', 'void'),  # the playing record has a CUE start or end
  'mclGetPlayStatus': ('int', 'void'),  # 1 stopped, 2 playing, 3 paused (mclStop, mclSetResume, mclSetPause)
  'player_stop': ('int', 'void'),
+ 'player_save_stop': ('int', 'void'),  # a playing or paused queue stopped, its status and place kept for player_save_start; nothing when stopped
  'player_save_start': ('int', 'int'),  # pause: mclStartPlayer at the saved seek, then paused if set
+ 'mclSetSavePlayStatus': ('int', 'int'),  # what player_save_start resumes: 2 playing, 3 paused, 1 nothing (0x5be924)
  'mclGetSavePlayStatus': ('int', 'void'),  # player_save_stop's mclGetPlayStatus, unless that was 1
  'save_memoryplay_info': ('int', 'void'),  # Memory playback's queue and position, as into_poweroff saves them
  'mclSetDacPwr': ('int', 'int'),
  'reset_poweroptions_timer': ('int', 'int, int, int'),
+ 'toolSetBackLight': ('int', 'int'),  # the panel's level, 1 its lowest; config_lightness gives it g_lightness + 1
  'btctl_transport_get_volume': ('int', 'void'),
  'btctl_transport_set_volume': ('int', 'int'),
  'device_set_volume': ('int', 'int, int'),  # volume, notify: the DAC's or hciplayer's, as the volume dialog
@@ -1585,6 +1599,7 @@ FUNCTIONS = {
  'config_outputchannel': ('int', 'int, int'),  # g_headset_output, 2
  'mclSetPcmMode': ('int', 'void'),
  'mclSetMute': ('int', 'int'),
+ 'mclSetGaplessMode': ('int', 'int'),  # Crossfade turns stock's Gapless on as its row does (crossfade.c gapless_on)
  'toolsTrimLeft': ('void', 'char *'),
  'switch_charge_enable': ('int', 'int'),  # 1 charges: the active-low charge enable on GPIO PE22 (usbmode_page_init)
  'toolsGpioSetValue': ('int', 'const char *, int'),
@@ -1655,7 +1670,7 @@ GLOBALS = ['tidal_albuminfo_thread_run', 'tidal_collection_thread_run',  # 2: a 
            'savestartbt', 'transposition', 'tidalfurlstart',  # a stream to start paused; 1 arms Now Playing's online tick (tidal.c app_start)
            'isFav_playing',  # Now Playing's heart on a 0xf1 track: 1 a favourite (tidal.c app_fav)
            'g_time_zone','g_playspeed_mode', 'g_time24h_flag', 'g_backlight_status', 'g_lockscreen_pageflag', 'g_testmode_flag',
-           'g_keylock_flag', 'g_keylock_mode',
+           'g_keylock_flag', 'g_keylock_mode', 'g_lightness',
            'g_bluetoothflag', 'bt_linkstatus', 'g_guideflag', 'g_poweroff_state', 'g_usblink_status', 'bt__recv_pageflag',
            'g_power_longkey', 'g_ingore_bootkey_flag', 'g_equalizer_flag', 'g_navbar_status', 'g_playcover_type',
            'g_keytone_flag', 'g_folder_layer', 'g_otg_status', 'g_delete_flag', 'g_volume', 'g_maxvolume',
@@ -1734,7 +1749,7 @@ FLAGS = ['--target=mipsel-linux-gnu','-march=mips32r2','-mabi=32','-mfp64',
          '-Wshadow','-Wimplicit-int-conversion','-Wconditional-uninitialized','-Wmissing-variable-declarations',
          '-Wvla','-Wundef']
 # navigation.c and the files split out of it (patch/navigation.h), each its own object, linked in this order.
-NAVIGATION = ['navigation.c', 'theme_engine.c', 'playlists.c', 'classic_pages.c', 'home.c', 'np_bar.c', 'volume.c', 'smart_wifi.c', 'system.c', 'usb_charge.c', 'tags.c', 'scrobble_ui.c', 'library_lists.c', 'durations.c', 'script.c', 'coverflow_position.c', 'ratings.c', 'scan_folders.c', 'folder_delete.c', 'battery.c', 'np_lyrics.c', 'quick_settings.c', 'clock.c', 'queue_menu.c']
+NAVIGATION = ['navigation.c', 'theme_engine.c', 'playlists.c', 'classic_pages.c', 'home.c', 'np_bar.c', 'volume.c', 'smart_wifi.c', 'system.c', 'usb_charge.c', 'tags.c', 'scrobble_ui.c', 'library_lists.c', 'durations.c', 'script.c', 'coverflow_position.c', 'ratings.c', 'scan_folders.c', 'folder_delete.c', 'battery.c', 'np_lyrics.c', 'quick_settings.c', 'flat.c', 'clock.c', 'queue_menu.c', 'np_marks.c']
 
 def compile_payload(out):  # pragma: no mutate block
     """Compile and link the payload."""
@@ -2031,6 +2046,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
     patch_word(patched, *LANGUAGE_EN, 'every unit boots in English')
     patch_word(patched, *HOME_KEYUP, 'Home binds no key-up of its own')
     patch_word(patched, *NP_CENTRE, "Now Playing leaves Centre to stock's power-key handling")
+    patch_word(patched, *SCAN_CENTRE, "Update Library's dialog leaves Centre to stock's power-key handling")
     patch_word(patched, *KEYLOCK_LIT, 'Buttons lock acts only with the screen off')
     patch_word(patched, *VOL_DARK, 'The volume dialog steps with the screen off')
     for site in MORE_ARTIST_CLOSE:
@@ -2285,7 +2301,10 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
     added = []
     changed_assets = {}
     from art import images as theme_images
-    drawn = {xx+n+'.png': (xx+'list_tidal.png', d) for t in builtin_themes() for n, d in theme_images(t).items()}
+    drawn = {}
+    for t in builtin_themes():  # a theme on another's art draws its names, as that one does
+        for n, d in theme_images(t).items():
+            check(drawn.setdefault(xx+n+'.png', (xx+'list_tidal.png', d))[1] == d, f'{t["id"]}: {n} is another theme\'s, drawn otherwise')
     for path, (like, data) in {**{xx+n: (xx+l, d) for n, (l, d) in icons.items()}, **pages, **drawn,
                                'etc/init.d/S12usbcharge': ('etc/init.d/S20urandom', (ROOT/'patch/usb_charge.sh').read_bytes()),
                                HELPER: (HELPER_LIKE, compile_helper(out, cat, 'video', 'q2video', HELPER_LIBS)),

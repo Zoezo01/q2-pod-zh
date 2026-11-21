@@ -469,7 +469,26 @@ static const stops_t slider_band = { 8,
                                       { 0, 40, 80, 100 },
                                       { 0x2f4052, 0x42566a, 0x3b4d60, 0x26333f } },
                      slider_lit = { 3, { 0, 45, 100 }, { 0xf7ffff, 0xeceeef, 0xc6cbcf } };
-/* The page, in the window's coordinates, under its children. */
+/* The flat look's Off and On: the two halves of one pill at rest, the one that holds in what is on,
+ * its word white (the ink on a bright fill), the other's in the half's ink. */
+static void slider_switch_flat(void *canvas, void *sw) {
+    static const unsigned off[] = { 'O', 'f', 'f', 0 }, on[] = { 'O', 'n', 0 };
+    int light = ipod_light();
+    unsigned lit = flat_on(), ink = 0xff000000u | flat_ink[light];
+    unsigned over = bright_tone(lit) ? 0xff000000u | flat_ink[1] : 0xffffffffu;
+    rect_t track = { 128, 32, 120, 36 }, left = { 128, 32, 60, 36 }, right = { 188, 32, 60, 36 };
+    const char *image = widget_get_prop_str(sw, "image", "");
+    /* stock's two names, switch_on and switch_off, first differ at [8] */
+    int held = image[0] && image[8] == 'n';
+    stops_t rest = { 2, { 0, 100 }, { flat_rest[light], flat_rest[light] } },
+            cell = { 2, { 0, 100 }, { lit, lit } };
+    paint_round_rows(canvas, &track, &rest, 18);
+    paint_round_rows(canvas, held ? &right : &left, &cell, 18);
+    final_text(canvas, flat_face(), off, &left, 19, held ? ink : over);
+    final_text(canvas, flat_face(), on, &right, 19, held ? over : ink);
+}
+/* The page, in the window's coordinates, under its children: the flat look's the half's paper and
+ * the switch, its bar slider_scrub's and its words labels of their own. */
 void slider_paint(void *w, void *canvas) {
     void *lcd = P(canvas, CANVAS_LCD), *s = st.slider_w, *sw = st.slider_sw;
     if (!lcd) return;
@@ -479,6 +498,12 @@ void slider_paint(void *w, void *canvas) {
     if (number && number_face(number, &px) != st.number_face) slider_number(number);
     if (!sw && st.slider_kind == SLIDER_BOOT)
         sw = st.slider_sw = widget_lookup(w, "img_bootswitch", 1);
+    if (flat_pages()) {
+        bar_rect(canvas, RGBA(flat_page()), 0, 0, 375, 294);
+        if (sw && widget_get_visible(sw)) slider_switch_flat(canvas, sw);
+        stock_canvas_set_fill_color(canvas, fill);
+        return;
+    }
     paint_page(w, canvas, 0);
     if (sw && widget_get_visible(sw)) slider_switch(w, canvas, sw);
     if (widget_get_visible(
@@ -505,10 +530,23 @@ void slider_paint(void *w, void *canvas) {
     stock_canvas_set_fill_color(canvas, fill);
 }
 /* ringnav_paint, after stock's slider: the bar's 8 rows over its own, inset a pixel at each end on
- * the first and last. */
+ * the first and last. The flat look's is flat_bar's on its rows 17 to 52, its fill never less than
+ * its own round end: Brightness's suns, the volumes' speakers, none on Balance, Crossfade and the
+ * rest. Stock hides the slider's view while Default Volume's switch is off, and the bar with it. */
 void slider_scrub(void *w, void *canvas) {
     if (!w || w != st.slider_w || !P(canvas, CANVAS_LCD)) return;
     unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
+    if (flat_pages()) {
+        int kind = st.slider_kind, ww = I(w, W_W);
+        int marks = kind == SLIDER_LIGHT ? BAR_SUNS
+                    : kind == SLIDER_MAX || (kind == SLIDER_BOOT && !xfade_page(st.slider_win))
+                        ? BAR_SPEAKERS
+                        : BAR_PLAIN;
+        rect_t r = { 0, 17, ww, 36 };
+        flat_bar(w, canvas, &r, 36 + slider_part(w, ww - 36), flat_rest[ipod_light()], marks);
+        stock_canvas_set_fill_color(canvas, fill);
+        return;
+    }
     int ww = I(w, W_W), part = slider_part(w, ww);
     for (int j = 0; j < 8; ++j) {
         int in = !j || j == 7;
@@ -535,6 +573,12 @@ static const stops_t msg_fill = { 12,
                      msg_cancel = { 3, { 0, 30, 100 }, { 0x232c33, 0x3a434a, 0x333c43 } };
 static const unsigned char msg_track[MSG_BAR_H] = { 0x87, 0x5c, 0x4d, 0x3d, 0x3d, 0x3b, 0x3b,
                                                     0x3b, 0x3b, 0x3b, 0x3b, 0x3b, 0x54, 0x54 };
+/* The flat look's: the half's paper, a mark in its ink over a heading and a quiet line, and for the
+ * scan a thin bar and Cancel's pill. */
+#define MSG_FLAT_X 88
+#define MSG_FLAT_Y 222
+#define MSG_FLAT_W 200
+#define MSG_FLAT_H 4
 static int msg_gone(void *win, void *event) {
     if (win == st.usb_win) st.usb_win = (void *)0;
     if (win == st.msg_win) {
@@ -565,11 +609,11 @@ static int msg_sync(void) {
     tk_snprintf(cp.msg_seen, sizeof cp.msg_seen, "%s", now);
     const char *p = now;
     while (*p && (*p < '0' || *p > '9')) ++p;
-    int count = atoi(p), total = cp.msg_total;
+    int count = atoi(p), total = cp.msg_total, bar = flat_pages() ? MSG_FLAT_W : MSG_BAR_W;
     cp.msg_part = -1;
     if (*p && total && count <= total && *(volatile char *)SCAN_WHOLE == 1) {
-        cp.msg_part = (short)(MSG_BAR_W * count / total);
-        if (cp.msg_part > MSG_BAR_W * 99 / 100) cp.msg_part = MSG_BAR_W * 99 / 100;
+        cp.msg_part = (short)(bar * count / total);
+        if (cp.msg_part > bar * 99 / 100) cp.msg_part = (short)(bar * 99 / 100);
         tk_snprintf(line, sizeof line, "%d of %d songs", count, total);
         widget_set_text_utf8(cp.msg_line, line);
     } else
@@ -579,7 +623,10 @@ static int msg_sync(void) {
 /* Stock's hidden label repaints nothing, so this does, at the rate stock writes it. */
 static int msg_poll(const void *info) {
     (void)info;
-    if (msg_sync()) widget_invalidate_force(st.msg_win, &(rect_t){ 16, 188, 343, 45 });
+    /* the line and the bar */
+    if (msg_sync())
+        widget_invalidate_force(st.msg_win, flat_pages() ? &(rect_t){ 16, 180, 343, 46 }
+                                                         : &(rect_t){ 16, 188, 343, 45 });
     return 8; /* RET_REPEAT */
 }
 int library_count(const char *sql);
@@ -594,6 +641,10 @@ int msg_counting(void) { return cp.msg_counting == 1; } /* coverflow.c's library
 #define MSG_HEAD_PX 29
 #define MSG_HEAD_H 32 /* holds the font */
 #define MSG_LINE_PX 18
+#define MSG_FLAT_HEAD_PX 27 /* the flat look's: the heading's, the line's and its box, Cancel's */
+#define MSG_FLAT_LINE_PX 17
+#define MSG_FLAT_LINE_H 22
+#define MSG_FLAT_BTN_PX 21
 /* Stock's window as it loads, before its init. Every look-up stock makes by name still finds its
  * widget, and btn_no keeps its binding. A cable can open USB's page over the scan's dialog, so each
  * has its own st. */
@@ -609,24 +660,28 @@ void msg_open(void *win) {
     for (unsigned i = 0; i < sizeof hide / sizeof *hide; ++i)
         if ((c = widget_lookup(win, hide[i], 1))) widget_set_visible(c, 0, 0);
     widget_on(win, EVT_DESTROY, msg_gone, win);
+    int flat = flat_pages(), line_h = flat ? MSG_FLAT_LINE_H : 20;
     c = text(win, 16, 0, 343, 24);
     widget_set_name(c, "msg_heading");
     widget_set_text_utf8(c, scan ? "Updating Library" : "Connected");
-    slider_label(c, 16, 0, 343, MSG_HEAD_H, MSG_HEAD_PX, "classic-light");
-    c = text(win, 16, 0, 343, 20);
+    slider_label(c, 16, 0, 343, MSG_HEAD_H, flat ? MSG_FLAT_HEAD_PX : MSG_HEAD_PX,
+                 flat ? flat_face() : "classic-light");
+    c = text(win, 16, 0, 343, line_h);
     widget_set_name(c, "msg_line");
-    slider_label(c, 16, 0, 343, 20, MSG_LINE_PX, "default");
+    slider_label(c, 16, 0, 343, line_h, flat ? MSG_FLAT_LINE_PX : MSG_LINE_PX, "default");
     if (!scan) {
         st.usb_win = win;
         if (g_usbmode != 1) widget_set_text_utf8(c, "Eject before disconnecting");
         return;
     }
     st.msg_win = win, cp.msg_src = src, cp.msg_btn = btn, cp.msg_line = c;
-    widget_move_resize(btn, 127, 248, 121, 34);
+    widget_move_resize(btn, 127, 248, 121, flat ? 36 : 34);
     for (unsigned i = 0; i < sizeof state / sizeof *state; ++i) {
         widget_set_prop_int(btn, style_key(key, state[i], "bg_color"), 0);
-        widget_set_prop_str(btn, style_key(key, state[i], "font_name"), "classic-light");
-        widget_set_prop_int(btn, style_key(key, state[i], "font_size"), CONFIRM_CELL_PX);
+        widget_set_prop_str(btn, style_key(key, state[i], "font_name"),
+                            flat ? flat_face() : "classic-light");
+        widget_set_prop_int(btn, style_key(key, state[i], "font_size"),
+                            flat ? MSG_FLAT_BTN_PX : CONFIRM_CELL_PX);
     }
     text_ink(btn, 0xffffffffu, INK_BUTTON);
     cp.msg_seen[0] = 0, cp.msg_part = -1, cp.msg_total = 0;
@@ -640,10 +695,50 @@ void msg_open(void *win) {
     }
     cp.msg_timer = timer_add(msg_poll, (void *)0, 200);
 }
+/* w's text in a final colour, when it isn't: the half can change under an open page. */
+static void msg_text(void *w, unsigned rgb, int n) {
+    unsigned color = 0xff000000u | rgb;
+    if ((unsigned)widget_get_prop_int(w, "_final", 0) != color) text_ink(w, color, n);
+}
+/* msg_paint's, flat: the page, the mark 100 rows over the heading, the line; the scan's bar, its
+ * least its own round ends, and Cancel's pill. */
+static void msg_paint_flat(void *w, void *canvas, unsigned fill) {
+    int scan = w == st.msg_win, dy = I(w, W_Y), top = scan ? 46 : 82, light = ipod_light();
+    void *heading = widget_lookup(w, "msg_heading", 1), *below = widget_lookup(w, "msg_line", 1);
+    char name[32];
+    if (scan) msg_sync();
+    bar_place(heading, 16, top + 100, 343, MSG_HEAD_H);
+    bar_place(below, 16, top + 134, 343, MSG_FLAT_LINE_H);
+    msg_text(heading, flat_ink[light], INK_LABEL);
+    msg_text(below, flat_quiet[light], INK_LABEL);
+    bar_rect(canvas, RGBA(flat_page()), 0, 26 - dy, 375, 294);
+    if (dy < 26) paint_bar(w, canvas); /* over the bar: bar_title_of has the scan's title */
+    tk_snprintf(name, sizeof name, FLAT_ART "msg_%s_%s", scan ? "note" : "usb", light ? "l" : "d");
+    paint_art(w, canvas, name, 145, top - dy);
+    if (scan) {
+        unsigned on = flat_on();
+        rect_t cancel = { 127, 248, 121, 36 },
+               bar = { MSG_FLAT_X, MSG_FLAT_Y, MSG_FLAT_W, MSG_FLAT_H };
+        stops_t rest = { 2, { 0, 100 }, { flat_rest[light], flat_rest[light] } },
+                lit = { 2, { 0, 100 }, { on, on } };
+        msg_text(cp.msg_btn, flat_ink[light], INK_BUTTON);
+        if (cp.msg_part >= 0) {
+            paint_round_rows(canvas, &bar, &rest, 2);
+            bar.w = cp.msg_part && cp.msg_part < MSG_FLAT_H ? MSG_FLAT_H : cp.msg_part;
+            if (bar.w) paint_round_rows(canvas, &bar, &lit, 2);
+        }
+        paint_round_rows(canvas, &cancel, &rest, 18);
+    }
+    stock_canvas_set_fill_color(canvas, fill);
+}
 /* Under the window's children. */
 void msg_paint(void *w, void *canvas) {
     void *lcd = P(canvas, CANVAS_LCD);
     if (!lcd) return;
+    if (flat_pages()) {
+        msg_paint_flat(w, canvas, (unsigned)I(lcd, LCD_FILL_COLOR));
+        return;
+    }
     unsigned fill = (unsigned)I(lcd, LCD_FILL_COLOR);
     int scan = w == st.msg_win, dy = I(w, W_Y), head = scan ? 159 : 228, line = scan ? 188 : 255;
     void *heading = widget_lookup(w, "msg_heading", 1), *below = widget_lookup(w, "msg_line", 1);

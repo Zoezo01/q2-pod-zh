@@ -1977,6 +1977,21 @@ def test_the_art_and_the_heart_are_local_now_playing_s(fw):
     assert [ms for f, ms in p.timers if f == p.fn('np_tick')] == [500]
 
 
+@pytest.mark.parametrize('theme_, flat', [(b'0', False), (b'1', False), (b'2', True), (b'3', True)])
+def test_the_heart_is_a_flat_mark_under_the_flat_themes(fw, theme_, flat):
+    """Modern and Classic Modern (np_marks.c): the heart's stock image unseen, its state and touch kept, the flat heart
+    drawn on the page; Minimal's and Classic's stock's."""
+    def read(path, section, key, out, default, *_):
+        v = theme_ if C.string_at(key) == b'THEME' else C.string_at(default)
+        C.memmove(out, v + b'\0', len(v) + 1)
+    fw.mock('toolsReadConfig', read)
+    opacity = {}
+    fw.mock('widget_set_opacity', lambda w, v, *_: opacity.__setitem__(w, v))
+    p = page(fw)
+    play(fw, p)
+    assert opacity.get(np_(fw).heart) == (0 if flat else None)
+
+
 @pytest.mark.parametrize('for_s, box', [(65, 'NP_IPOD_TIME_W2'), (3599, 'NP_IPOD_TIME_W2'), (3600, 'NP_IPOD_TIME_W')])
 def test_classic_s_running_time_box(fw, for_s, box):
     """Classic: boxes for "-59:59" (NP_IPOD_TIME_W2) until the stream has played an hour, then for the hours."""

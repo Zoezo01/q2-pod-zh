@@ -540,6 +540,9 @@ int airplay_on(void), airplay_lyrics(int *ms);
  * 0 when the card didn't take it. */
 int addon_fav(const char *id, const char *kind, const char *key, int on);
 int addon_fav_path(const char *path, int on);
+/* addon.c: a URL queue's app started, if it isn't running, before the player asks it for a song
+ * (tidal.c app_track): whether it started lately; and whether its socket takes a connection yet */
+int addon_wake(const char *id), addon_answers(const char *id);
 extern unsigned auto_nexts;    /* playback.c ringnav_next: tracks that ended by themselves */
 int stream_cache(int spotify); /* navigation.c: Streaming's Configuration, a cap of 512 << it MB */
 void album_memory(void *r);
@@ -548,6 +551,7 @@ void draw_centred(void *canvas, const unsigned *s, unsigned n, const void *r, un
 unsigned book_char(const unsigned char *t, unsigned n,
                    unsigned *i); /* books.c: UTF-8, else Latin-1 */
 int utf8_text(const char *s);    /* xiph.c: valid UTF-8, a 4-byte character too */
+void utf8_mend(char *s);         /* xiph.c: s valid UTF-8, the bytes of no whole character gone */
 /* Lyrics as lyrics.c's loader reads them: each line's start (ms, LRC_FAR unsynced), the order it
  * came in, its UTF-8 text and its word stamps (A2's <mm:ss.xx>), each the ms a word starts and its
  * byte offset in the text. */
@@ -658,6 +662,7 @@ static inline unsigned script_upper(unsigned c) {
 }
 void bar_title_sync(void *win); /* navigation.c: Classic's bar title names win */
 void bar_title_name(void *win); /* navigation.c: names win by its name, on top or not */
+void np_mark_add(void *const *image, unsigned n); /* np_marks.c: the flat look takes them */
 /* navigation.c: Classic's Spotify and Internet Radio Now Playing, laid out as the local page, 0
  * under the other themes; Classic's bar on a canvas (its scrub cue with mark), 0 where none. */
 int stream_ipod(void *art, void *const text[4], void *elapsed, void *remain, void *bar,

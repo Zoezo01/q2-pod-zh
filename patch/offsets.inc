@@ -473,10 +473,12 @@ static inline int arc_out(int r, int y) {
 #define CARD_TOAST 0xa4bc07
 #define CARD_QUIET_MS 15000
 /* Smart Wi-Fi (docs/internals.md#smart-wi-fi), checked every SMART_POLL_MS: the radio goes off after
- * SMART_IDLE_MS with nothing needing the network (a new link counts as a use), and whatever wakes it
- * waits up to SMART_CONNECT_MS for the link before going on without it. */
+ * SMART_IDLE_MS with nothing needing the network (a new link counts as a use), SMART_RELEASE_MS
+ * after an automatic upload that woke it for itself, and whatever wakes it waits up to
+ * SMART_CONNECT_MS for the link before going on without it. */
 #define SMART_POLL_MS 1000
 #define SMART_IDLE_MS 300000
+#define SMART_RELEASE_MS 30000
 #define SMART_CONNECT_MS 15000
 #define NET_TYPE 0xa500d4 /* no symbol: initNetworkModule's type, 2 Wi-Fi; networkStart and networkStop act only then */
 /* The Wi-Fi signal (ringnav_wifi_signal) is read from the driver again at most every
@@ -491,11 +493,12 @@ static inline int arc_out(int r, int y) {
 #define RESUME_SAVE_S 60
 #define RESUME_START_S 5
 /* Play counts (docs/internals.md#play-counts): a track over LISTEN_MIN_S counts once half of it,
- * or LISTEN_MAX_S, has been heard; PLAYS_SLOTS counts are kept, the lowest replaced when full, and
- * Most Played lists the top PLAYS_TOP. */
+ * or LISTEN_MAX_S, has been heard; PLAYS_SLOTS counts are kept, the lowest replaced when full but
+ * never one of the PLAYS_FRESH counted last, and Most Played lists the top PLAYS_TOP. */
 #define LISTEN_MIN_S 30
 #define LISTEN_MAX_S 240
 #define PLAYS_SLOTS 512
+#define PLAYS_FRESH 128
 #define PLAYS_TOP 100
 /* Ratings (docs/internals.md#ratings): RATE_SLOTS songs keep 1-4 hearts (5 is My Fav); holding
  * Now Playing's heart RATE_HOLD_MS opens the picker. */

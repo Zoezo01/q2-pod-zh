@@ -1041,6 +1041,18 @@ def test_upload_reports_how_it_went(fw, ui, ok, sent, toast, pending):
     assert scrobbler.sa.pending == pending  # listens sent no longer count toward the automatic upload
 
 
+@pytest.mark.parametrize('ok, misses', [(1, 0), (0, 3)])
+def test_upload_scrobbles_success_starts_the_automatic_uploads_waits_over(fw, ui, ok, misses):
+    """Three automatic tries in a row sent nothing, so the next wake waits two hours; Upload Scrobbles that
+    succeeds starts the count over, one that fails leaves it."""
+    scrobbler = Scrobbler(fw)
+    scrobbler.sa.misses = 3
+    call(fw, 'upload_scrobbles')
+    scrobbler.ends(ok, 1)
+    ui.fire('upload_wait')
+    assert scrobbler.sa.misses == misses
+
+
 def test_upload_while_one_runs(fw, ui):
     scrobbler = Scrobbler(fw)
     call(fw, 'upload_scrobbles')
@@ -1524,6 +1536,34 @@ def test_an_album_s_rating_is_kept_apart_from_its_songs(fw, ui, song, st, qm):
     kept = fw.fn('rate_kept', C.c_int, C.c_int, C.c_uint)
     assert kept(1, 0xa1b0) == 5 and kept(0, 0xa1b0) == 0 and RATINGS not in files.files
     assert ALBUM_RATINGS in files.files
+
+
+@pytest.mark.parametrize('album, table', [(0, RATINGS), (1, ALBUM_RATINGS)])
+def test_a_rating_is_written_beside_its_table_then_renamed_over_it(fw, album, table):
+    """Hearts can't be made again from the music, so their table is never the file opened for writing: a power cut
+    in the write leaves the last table whole."""
+    Files(fw)
+    assert fw.fn('rate_keep', C.c_int, C.c_int, C.c_uint, C.c_int)(album, 0xa1b0, 4) == 1
+    writes = [C.string_at(a[0]).decode() for _, a in fw.calls('fw_fopen') if b'w' in C.string_at(a[1])]
+    renames = [(C.string_at(a[0]).decode(), C.string_at(a[1]).decode()) for _, a in fw.calls('fw_rename')]
+    assert writes == [table + '.tmp'] and renames == [(table + '.tmp', table)]
+
+
+@pytest.mark.parametrize('was, key_, added, removed', [(4, KEY_NEXT, 1, 0), (3, KEY_NEXT, 0, 0), (5, KEY_PREV, 0, 2)])
+def test_an_album_s_fifth_heart_is_its_songs_my_fav(fw, ui, song, st, qm, was, key_, added, removed):
+    """Five hearts make an album a favourite, so the picker's close puts its songs in My Fav, and the fifth taken
+    off takes them out. Any other change of its hearts leaves My Fav alone."""
+    Files(fw)
+    win, ids = album_menu(fw, ui, song, st, qm)
+    tracks = [song(b'/m/y/1.flac', album=b'Y'), song(b'/m/y/2.flac', album=b'Y')]
+    fw.mock('getMusicByAlbumAndSonger', lambda *_: ui.deques[fw.var('fw_ctx_tools_pdeq_directory', C.c_uint).value]
+            .extend(tracks) or 0)
+    assert fw.fn('rate_show', C.c_int, C.c_void_p, C.c_int, C.c_uint)(win, was, 0xa1b0) == 1
+    key = fw.fn('rate_key', C.c_int, C.c_void_p, C.c_uint)
+    key(win, key_)
+    key(win, KEY_CENTER)
+    assert [(a[0], a[1]) for _, a in fw.calls('batch_add_file')] == [(0xf001, 0xf00a)] * added
+    assert len(fw.calls('deleteMusicFromFav')) == removed
 
 
 def test_an_album_no_longer_under_the_picker_is_not_rated(fw, ui, song, st, qm):
@@ -2408,8 +2448,8 @@ def test_home_s_streaming_list_is_streaming_s_rows(fw, ui):
     assert [c[1][:2] for c in fw.calls('widget_off_by_ctx')] == [(win, win)]
 
 
-ABOUT = [('Model', 'Q2'), ('FW. Version', 'V100I'), ('Serial', '1'), ('Storage', '-'), ('Remaining', '-'),
-         ('Legal', ''), ('Reset', '')]
+ABOUT = [('Model', 'Q2'), ('FW. Version', 'V100I'), ('Storage', '-'), ('Remaining', '-'),
+         ('Wi-Fi MAC', 'a0:b1:c2:d3:e4:f5'), ('IP Address', '-'), ('Serial', '1')]  # stock's, in its order
 
 
 def about(ui, rows):
@@ -2438,6 +2478,17 @@ def test_about_shows_stock_s_version_and_the_payload_s_after_it_without_stock_s_
     version, beta = host.tools_build.VERSION, host.tools_build.BETA
     assert about_rows(ui, view) == [ABOUT[0], ('FW. Version', host.tools_build.STOCK_VERSION), ('CFW. Version', version + (f' beta {beta}' if beta else '')),
                                     *ABOUT[2:]]
+
+
+@pytest.mark.parametrize('mac, toasts', [('a0:b1:c2:d3:e4:f5', ['a0:b1:c2:d3:e4:f5']), ('', [])])
+def test_a_tap_on_wi_fi_mac_toasts_the_whole_address(fw, ui, mac, toasts):
+    win, view = about(ui, ABOUT)
+    fw.mock('stock_about_trampoline', lambda *_: 5)
+    fw.fn('ringnav_about', C.c_int, C.c_void_p, C.c_void_p)(win, None)
+    row = next(item for item in ui.kids[view] if ui.text.get(ui.kids[ui.kids[item][0]][0]) == 'Wi-Fi MAC')
+    button = ui.kids[row][0]
+    ui.text[ui.kids[button][1]] = mac
+    assert ui.handler(button, EVT_CLICK)() == 0 and ui.toasts == toasts
 
 
 def test_an_about_page_that_is_not_stock_s_is_left(fw, ui):
@@ -2526,6 +2577,23 @@ def test_era_lists_each_decade_with_its_albums(fw, ui):
     assert db.asked[-1].startswith('select year/10*10,count(*)')
     call(fw, 'era_menu')
     assert ui.windows == [page]
+
+
+def test_era_reads_on_a_small_connection_of_its_own_and_closes_it(fw, ui):
+    """Era groups the whole library on a connection of its own: the library's database, held to a 64-page cache
+    with its temporary tables on disk before the query, so the grouping leaves the player its memory, and closed
+    after it."""
+    db = EraDb(fw, decades=[(b'1990', b'3')])
+    opened, closed = [], []
+    def open_(path, out, *_):
+        opened.append(C.string_at(path))
+        C.c_void_p.from_address(out).value = 0xdb
+        return 0
+    fw.mock('sqlite3_open', open_)
+    fw.mock('sqlite3_close', lambda handle, *_: closed.append(handle))
+    call(fw, 'era_menu')
+    assert opened == [b'/mnt/data/database.db'] and closed == [0xdb]
+    assert db.asked[0] == 'PRAGMA cache_size=64;PRAGMA temp_store=FILE' and len(db.asked) == 2
 
 
 @pytest.mark.parametrize('opens, decades, toast', [(False, [], 'Era unavailable'), (True, [], 'No dated albums yet')])

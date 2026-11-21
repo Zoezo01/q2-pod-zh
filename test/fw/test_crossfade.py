@@ -17,6 +17,7 @@ CLICK, CHANGING, CHANGED, DESTROY = O['EVT_CLICK'], O['EVT_VALUE_CHANGING'], O['
 CENTER, NEXT, PREV = O['KEY_CENTER'], O['KEY_NEXT'], O['KEY_PREV']
 HANDLER = C.CFUNCTYPE(C.c_int, C.c_long, C.c_long)  # an AWTK event handler: (ctx, event)
 libc.munmap.argtypes = [C.c_void_p, C.c_size_t]
+pytestmark = pytest.mark.usefixtures('stock_gapless')  # Crossfade has stock's Gapless on, as stock's default
 
 
 def xf(fw):
@@ -577,6 +578,109 @@ def test_night_shifts_wheel_warms_a_step_a_tick_and_turns_it_on(fw):
     one = kelvin()
     assert one < 3000 and fw.fn('night_on', C.c_int)() == 1 and str(one) in page.label()
     assert page.key(NEXT) == 1 and 3000 - kelvin() == 2 * (3000 - one) and str(kelvin()) in page.label()
+
+
+# Crossfade fades only with stock's Gapless on: turning it on turns Gapless on, as Gapless's row does, and while it
+# is on Gapless's row stays on.
+@pytest.fixture
+def gapless(fw, stock_gapless):
+    """Stock's Gapless byte, off; mclSetGaplessMode, its setter, stores it."""
+    stock_gapless.value = 0
+    fw.mock('mclSetGaplessMode', lambda on, *_: setattr(stock_gapless, 'value', on) or 1)
+    return stock_gapless
+
+
+GAPLESS_SW = 0x7500
+
+
+def turned_on(page, fw, route):
+    if route == 'switch':
+        page.fire('img_bootswitch', CLICK)
+    elif route == 'plus':
+        page.fire('img_add', CLICK)
+    elif route == 'wheel':
+        assert page.key(NEXT) == 1
+    elif route == 'drag':  # held: the fade plays at once, its value saved at the release
+        page.shows = 4
+        page.fire('slider_bootvol', CHANGING)
+    else:
+        centre = Centre(fw)
+        page.key(CENTER)
+        centre.fire()
+
+
+@pytest.mark.parametrize('route', ['switch', 'centre', 'plus', 'wheel', 'drag'])
+def test_turning_crossfade_on_any_way_turns_stocks_gapless_on_as_its_row_does(fw, gapless, route):
+    page = opened(fw, 0, {'XFADE': 0, 'XFADESEC': 5})
+    page.rows['img_gapless7'] = GAPLESS_SW
+    turned_on(page, fw, route)
+    assert xf(fw).on == 1 and gapless.value == 1 and page.images[GAPLESS_SW] == 'switch_on'
+    assert [a[0] for _, a in fw.calls('mclSetGaplessMode')] == [1]
+    saved = [(C.string_at(a[1]), C.string_at(a[2]), a[0]) for _, a in fw.calls('write_int_config')]
+    assert (b'PLAYSET', b'GAPLESS', 1) in saved  # stock's key, as its row saves it
+    page.fire('img_add', CLICK)  # on already: nothing more
+    assert len(fw.calls('mclSetGaplessMode')) == 1 and [k for k, _ in page.config.written].count('GAPLESS') == 1
+
+
+def test_turning_crossfade_off_leaves_gapless_on(fw, gapless):
+    gapless.value = 1
+    page = opened(fw, 0, {'XFADE': 1, 'XFADESEC': 5})
+    page.fire('img_bootswitch', CLICK)
+    assert xf(fw).on == 0 and gapless.value == 1 and not fw.calls('mclSetGaplessMode')
+    assert 'GAPLESS' not in {k for k, _ in page.config.written}
+
+
+VIEW = 0x7700
+
+
+class GaplessRow:
+    """Stock's Gapless row on Playback: its switch, img_gapless7, in the row's button, which stock's click is bound to.
+    press: what AWTK runs first on a click, the handler bound last; toasts: the short messages it showed."""
+    def __init__(self, fw, values):
+        self.fw, self.config = fw, Config(fw, values)
+        self.image, self.button, self.bound, self.toasts = C.create_string_buffer(0x60), 0x7610, [], []
+        struct.pack_into('<Q', self.image, O['W_PARENT'], self.button)
+        fw.mock('widget_lookup', lambda w, name, *_: C.addressof(self.image) if (w, C.string_at(name)) == (VIEW, b'img_gapless7') else 0)
+        fw.mock('widget_on', lambda w, event, f, ctx, *_: self.bound.append((w, event, f, ctx)) or 1)
+        fw.mock('navigator_to_with_context', lambda page, info, *_: self.toasts.append(C.string_at(info + 8).decode()) or 0)
+        fw.fn('xfade_gapless_row', None, C.c_void_p)(VIEW)
+
+    def press(self):
+        (w, event, f, ctx), = self.bound
+        assert (w, event) == (self.button, CLICK)
+        return HANDLER(f)(ctx, 0)
+
+
+def test_gapless_row_stays_on_while_crossfade_is_on_and_says_why(fw, gapless):
+    gapless.value = 1
+    row = GaplessRow(fw, {'XFADE': 1})
+    assert row.press() == 11  # RET_STOP: stock's click never runs
+    assert row.toasts == ['Crossfade needs Gapless'] and gapless.value == 1 and not row.config.written
+    xf(fw).on = 0  # Crossfade's page turned it off: Gapless is the user's again
+    assert row.press() == 0 and len(row.toasts) == 1
+
+
+@pytest.mark.parametrize('values, on', [({'XFADE': 0}, 1), ({'XFADE': 1}, 0)])
+def test_gapless_row_is_stocks_with_crossfade_off_or_gapless_off(fw, gapless, values, on):
+    gapless.value = on  # Gapless off with Crossfade on: stock's click turns it on
+    row = GaplessRow(fw, values)
+    assert row.press() == 0 and not row.toasts
+
+
+def test_a_playback_page_without_stocks_gapless_row_binds_nothing(fw):
+    fw.mock('widget_lookup', lambda *_: 0)
+    fw.fn('xfade_gapless_row', None, C.c_void_p)(VIEW)
+    assert not fw.calls('widget_on')
+
+
+@pytest.mark.parametrize('values, saved', [({'XFADE': 1, 'GAPLESS': 0}, [('GAPLESS', 1)]), ({'XFADE': 1}, [('GAPLESS', 1)]),
+                                           ({'XFADE': 1, 'GAPLESS': 1}, []), ({'XFADE': 0, 'GAPLESS': 0}, [])])
+def test_boot_saves_gapless_on_before_stock_loads_it_while_crossfade_is_on(fw, values, saved):
+    config = Config(fw, values)
+    loaded = []
+    fw.mock('config_playmode', lambda *_: loaded.append(list(config.written)) or 0)
+    fw.fn('ringnav_bootmode', C.c_int, C.c_int, C.c_int)(0, 0)
+    assert [w for w in loaded[0] if w[0] == 'GAPLESS'] == saved  # config_init reads it after this call
 
 
 class Centre:

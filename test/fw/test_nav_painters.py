@@ -1889,6 +1889,30 @@ def test_playback_orders_its_rows_and_ends_on_library_and_folders(fw):
     assert at['playset_covermode'] == balance[1] + 1
 
 
+@pytest.mark.parametrize('crossfade', [0, 1])
+def test_playback_s_gapless_row_is_refused_ahead_of_stocks_click_while_crossfade_is_on(fw, stock_gapless, crossfade):
+    ui, win, view, settings, _ = settings_page(fw, MINIMAL, 'playset_page', 'scroll_view_playset', XFADE=str(crossfade).encode())
+    stock_clicks, toasts = [], []
+    stock = C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_void_p)(lambda ctx, event: stock_clicks.append(ctx) or 0)
+
+    def stock_rows(*_):
+        for i in range(13):
+            item = ui.add('list_item', view, (0, 0, 375, 70), f's{i}')
+            button = ui.add('button', item, (20, 0, 335, 70), str(i))
+            if i == 7:  # Gapless: its switch in its button, stock's click on the button
+                ui.add('image', button, (282, 0, 50, 70), 'img_gapless7', image='switch_on')
+                ui.on(button.addr, EVT_CLICK, C.cast(stock, C.c_void_p).value, button.addr)
+        return 0
+    fw.mock('stock_audioset_trampoline', stock_rows)
+    fw.mock('navigator_to_with_context', lambda page, info, *_: toasts.append(C.string_at(info + 8).decode()) or 0)
+    fw.fn('ringnav_audioset', C.c_int, C.c_void_p, C.c_void_p)(win.addr, None)
+    button = next(r for r in view.children if r.name == 's7').children[0]
+    for kind, fn, ctx in reversed(button.handlers):  # AWTK: the newest first, until one returns RET_STOP
+        if kind == EVT_CLICK and C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_void_p)(fn)(ctx, 0) == 11:
+            break
+    assert (len(stock_clicks), toasts) == ((0, ['Crossfade needs Gapless']) if crossfade else (1, []))
+
+
 def test_playback_s_volume_rows_open_stock_s_pages_and_enlarged_art_is_stock_s_switch(fw):
     ui, win, view, settings, _ = settings_page(fw, MINIMAL, 'playset_page', 'scroll_view_playset')
     playset(fw, ui, view)

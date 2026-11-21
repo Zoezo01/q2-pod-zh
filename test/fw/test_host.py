@@ -2,6 +2,8 @@
 import ctypes as C
 import json
 
+import pytest
+
 import host
 
 
@@ -22,6 +24,14 @@ def test_each_load_starts_clean(library, tmp_path):
     first = host.Fw(library, tmp_path/'a')
     first.var('fw_log_n', C.c_int).value = 7
     assert host.Fw(library, tmp_path/'b').var('fw_log_n', C.c_int).value == 0
+
+
+def test_every_load_shares_one_parse_of_the_tables_and_none_can_write_to_it(library, fw, tmp_path):
+    again = host.Fw(library, tmp_path)
+    assert again.stubs is fw.stubs and again.sizes is fw.sizes
+    for table in (fw.stubs, fw.sizes):
+        with pytest.raises(TypeError):
+            table['fw_system'] = None
 
 
 def test_stubs_cover_everything_with_effects(library):

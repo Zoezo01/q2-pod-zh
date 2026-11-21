@@ -2758,11 +2758,12 @@ bk.bands=[]; bk.call(address=HOOKS['widget_on_paint_border'][0],args=(bsl,bk.can
 assert [b[:4] for b in slider[:8]]==[(1,31,202,1),*[(0,31+i,204,1) for i in range(1,7)],(1,38,202,1)]
 assert slider[0][4]==color_t(0x2f4052) and slider[7][4]==color_t(0x26333f) and slider[8][:4]==(1,31,66,1) and slider[8][4]==color_t(0xf7ffff) and slider[15][4]==color_t(0xc6cbcf)
 assert slider[9][2]==68 and bk.nodes[bsl_view]['visible']==1; passed()
-# Minimal's and Modern's page stays stock's, where the load leaves it, but its slider is a plain one too: no knob.
+# Minimal's page stays stock's, where the load leaves it, and Modern's is the flat look's (scenarios/flat_pages.py), but
+# either's slider is a plain one too: no knob.
 for th in ('0','2'):
     pm=LoadPlain(); pm.config.update(THEME=th); pwin,psl,*_=slider_win(pm,'backlight_page','slider_backlight','view_backlight','label_backlight',('img_left','img_right'),min=1,max=10,value=4)
     assert all(pm.nodes[psl][f'style:{s}:icon']==0 for s in ('normal','pressed','over','disable','focused'))
-    assert wbox(pm,psl)==(31,60,313,70) and 'style:normal:border_color' not in pm.nodes[psl]; passed()
+    assert wbox(pm,psl)==((31,60,313,70) if th=='0' else (33,115,309,70)) and ('style:normal:border_color' in pm.nodes[psl])==(th=='2'); passed()
 bd,bdwin,*_=slider_new('backlight_page','slider_backlight','view_backlight','label_backlight',('img_left','img_right'),light='0',min=1,max=10,value=4); bare(bd); bg(bd,bdwin); assert shadows(bd)==[CAPTION] and page_fill(bd,0,0x1c1c1c); passed()  # black in the dark half too
 # ... paints from what it recorded: no string compare or widget look-up on its way.
 bare(bk); bg(bk,bwin); assert not {'widget_lookup','tk_strcmp'}&slider_paint_calls(bk); passed()
@@ -5630,7 +5631,7 @@ M={'THEME':'2'}
 for config,preset in (({},0),({**C,K:'1'},1),({**C,K:'2'},2),({**C,K:'3','HOME':'1'},3),({**C,K:'7'},BLUE),({**C},BLUE),
                       ({**C,K:'12'},BLUE),({**C,K:'4'},4),({**C,K:'5'},5),({**C,K:'6'},6),({**C,K:'9'},BLUE),({'ACCENT':'1'},0),
                       ({'MINIMAL_ACCENT':'1'},1),({'MINIMAL_ACCENT':'6'},6),({'MINIMAL_ACCENT':'7'},0),({'MINIMAL_ACCENT':'8'},8),({**C,K:'8'},8),
-                      ({**C,'MINIMAL_ACCENT':'2'},BLUE),({**C,'ACCENT':'2'},BLUE),({'ACCENT':'2','THEME':'0'},0),({'MINIMAL_ACCENT':'2','THEME':'3'},2),  # 3: past the themes, Minimal
+                      ({**C,'MINIMAL_ACCENT':'2'},BLUE),({**C,'ACCENT':'2'},BLUE),({'ACCENT':'2','THEME':'0'},0),({'MINIMAL_ACCENT':'2','THEME':'4'},2),  # 4: past the themes, Minimal
                       ({**M,'ACCENT':'1'},1),({**M,'ACCENT':'2'},2),({**M,'ACCENT':'3','HOME':'1'},3),({**M,'ACCENT':'7'},0),({**M},0),
                       ({**M,'ACCENT':'12'},0),({**M,'ACCENT':'4'},4),({**M,'ACCENT':'8'},8),({**M,'MINIMAL_ACCENT':'2'},0),({**M,K:'2'},0)):
     m=Machine(); m.config=config
@@ -5710,7 +5711,7 @@ assert m.config_reads==[('/mnt/data/config.ini','IPOD',key,'0') for key in ('ACC
 # tones; Modern's stored Ivory and an out-of-range ACCENT are Graphite's scheme; a missing MINIMAL_ACCENT is Graphite, a stored Ivory
 # the card (flags 1); Crimson is raw red (flags 2) in each.
 K,BLUE='CLASSIC_LIGHT_ACCENT',4  # Cobalt's row
-for config,name,want in (({},'Minimal',0),({'MINIMAL_ACCENT':'7'},'Minimal',7),({'THEME':'1'},'Classic',BLUE),({'THEME':'3','MINIMAL_ACCENT':'3'},'Minimal',3),
+for config,name,want in (({},'Minimal',0),({'MINIMAL_ACCENT':'7'},'Minimal',7),({'THEME':'1'},'Classic',BLUE),({'THEME':'4','MINIMAL_ACCENT':'3'},'Minimal',3),
                          ({'THEME':'1',K:'7'},'Classic',BLUE),({'THEME':'1',K:'12'},'Classic',BLUE),
                          ({'THEME':'1',K:'1'},'Classic',1),({'MINIMAL_ACCENT':'1'},'Minimal',1),({'THEME':'1',K:'8'},'Classic',8),
                          ({'THEME':'2'},'Modern',0),({'THEME':'2','ACCENT':'7'},'Modern',0),({'THEME':'2','ACCENT':'12'},'Modern',0),
@@ -6878,7 +6879,7 @@ def check_row(m,item,slot):
 # theme's select draws the tick, the others' unselect nothing, and the picker opens on it. Any other leading image still hides.
 m,view=settings('display',default=32,sub=4,boot=classic_light_on); m.rockbox_mode=0; lay(m,view)
 marks=[m.nodes[m.nodes[r]['children'][0]]['children'][0] for r in m.nodes[view]['children']]
-assert [m.nodes[i]['image'] for i in marks]==['unselect','unselect','select'] and all(m.nodes[i]['visible'] for i in marks)  # Classic is last
+assert [m.nodes[i]['image'] for i in marks]==['unselect','unselect','select','unselect'] and all(m.nodes[i]['visible'] for i in marks)  # Classic is third, Classic Modern last
 assert {geometry(m,i) for i in marks}=={(375-SET['EDGE']-50,0,50,32)},[geometry(m,i) for i in marks]
 assert m.paint(view)==0 and m.selected(view)==2,m.selected(view)
 # Opened by a tap, its first paint comes with the pointer still down, which keeps other lists from recalling: a picker arrives
@@ -6897,7 +6898,7 @@ passed()
 # would take Minimal, whose presets overwrite Light Mode, accent and corners.
 m,view=settings('display',sub=4,boot=lambda k:k.config.update(THEME='2')); lay(m,view)
 marks=[m.nodes[m.nodes[r]['children'][0]]['children'][0] for r in m.nodes[view]['children']]
-assert [m.nodes[i]['image'] for i in marks]==['unselect','select','unselect'] and geometry(m,marks[0])[0]==SET['ICON_X']  # Modern is second
+assert [m.nodes[i]['image'] for i in marks]==['unselect','select','unselect','unselect'] and geometry(m,marks[0])[0]==SET['ICON_X']  # Modern is second
 m.paint(view); assert m.selected(view)==1,m.selected(view)
 m,view=settings('display',sub=4,boot=lambda k:k.config.update(THEME='2')); lay(m,view); m.pressed=1
 m.paint(view); assert m.selected(view)==1,m.selected(view); passed()
@@ -7046,12 +7047,12 @@ assert CL_SEL(2) in [b[4] for b in m.bands]; passed()
 accent_row=m.nodes[view]['children'][5]; f,ctx=m.handler(m.nodes[accent_row]['children'][0],O['EVT_CLICK']); m.call(address=f,args=(ctx,m.event,0,0),gap=0)
 m.paint(view); assert CL_SEL(3) in [b[4] for b in m.bands] and CL_SEL(2) not in [b[4] for b in m.bands]; passed()
 # Appearance is Theme, then the theme's options in order: Classic opened fresh with a stored Ivory shows Classic Blue, Modern
-# Graphite; THEME=3 is Minimal.
+# Graphite; THEME=4 is Minimal.
 m,view,rows=display({'THEME':'1','CLASSIC_LIGHT_ACCENT':'7'})
 assert [row_text(r) for r in m.nodes[view]['children']][:4]==['Theme: Classic','Status Bar: Theme','Time in Title: On','Show Wordmark: On']
 m,view,rows=display({'THEME':'2','ACCENT':'7'})
 assert [row_text(r) for r in m.nodes[view]['children']]==['Theme: Modern','Status Bar: Theme','Time in Title','Show Wordmark: On','Light Mode: Off','Accent: Graphite','Rounded Corners','Home: Split','Shortcut: Rockbox','Battery: Icon','Centred Now Playing','Hide Streaming','Hide Folder']
-m,view,rows=display({'THEME':'3'})
+m,view,rows=display({'THEME':'4'})
 assert [row_text(r) for r in m.nodes[view]['children']]==['Theme: Minimal','Status Bar: Theme','Time in Title','Show Wordmark: On','Light Mode: Off','Accent: Ivory','Rounded Corners','Home: Split','Shortcut: Rockbox','Battery: Icon','Centred Now Playing','Hide Streaming','Hide Folder']
 passed()
 # Classic's stops painter: a 52 px selected row is the #94c7de top line, Classic Blue's six stops over the
@@ -7319,13 +7320,13 @@ m,view,rows=display({'THEME':'1'}); f,ctx=m.handler(m.nodes[rows[3]]['children']
 assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and m.opened[-1]==('systemset/display_page',None)
 assert m.get(payload_syms['display_sub'])==0 and not [c for c in m.calls if c[0]=='write_int_config']
 m,view,_=display({},sub=4)
-assert [row_text(r) for r in m.nodes[view]['children']]==['Minimal','Modern','Classic'] and m.icons_set==['select','unselect','unselect']
-m,view,_=display({'THEME':'2'},sub=4); assert m.icons_set==['unselect','select','unselect']  # the tick by stored THEME
+assert [row_text(r) for r in m.nodes[view]['children']]==['Minimal','Modern','Classic','Classic Modern'] and m.icons_set==['select','unselect','unselect','unselect']
+m,view,_=display({'THEME':'2'},sub=4); assert m.icons_set==['unselect','select','unselect','unselect']  # the tick by stored THEME
 # The current theme's own row does nothing; a live pick (Minimal to Modern, one set) applies at once and moves the check.
 m,view,rows=display({}); pview=display_page(m,4); m.calls=[]
 assert m.call(address=payload_syms['theme_pick'],args=(0,0,0,0),gap=0)==0 and not [c for c in m.calls if c[0]=='write_int_config']
 writes=pick_theme(2); assert [(w[0],m.text(w[2])) for w in writes][:1]==[(2,'THEME')] and row_text(rows[3])=='Theme: Modern'
-assert [m.nodes[m.nodes[m.nodes[r]['children'][0]]['children'][0]]['image'] for r in m.nodes[pview]['children']]==['unselect','select','unselect']  # Modern's row is the second
+assert [m.nodes[m.nodes[m.nodes[r]['children'][0]]['children'][0]]['image'] for r in m.nodes[pview]['children']]==['unselect','select','unselect','unselect']  # Modern's row is the second
 # Classic needs its own set: the confirm asks; Cancel writes nothing and stays Minimal; OK writes THEME and Classic's
 # presets in option order (Light Mode On unless Auto is stored; Classic Blue; Time in Title, Library on Home and Row Art
 # On where they were Off; the battery as stored), then restarts through device_reboot (the queue saved first); the
@@ -8721,9 +8722,12 @@ seen=' '.join(t for t,*_ in first+second).split(); assert seen==words[:len(seen)
 assert m.call(O['KEY_PREV'])==11 and page_lines()==first and m.call(O['KEY_PREV'])==11 and page_lines()==first; passed()
 # Centre shows how far in and the title on a band clear of the glass; Return keeps the page.
 m.call(); m.call(); third=page_lines()
+# The turned page is saved 2 s on, without Return: a power-off ends demo without one (books.c save_due).
+m.advance(2000); saved=bytes(m.files.get('/mnt/data/ringnav-books',b'')[:8])
+assert len(saved)==8 and struct.unpack('<II',saved)[0]==fnv(R+'/Zed.txt') and struct.unpack('<II',saved)[1]>0; passed()
 assert m.call(O['KEY_CENTER'])==11 and m.nodes[info]['visible'] and re.fullmatch(r'\d%  Zed',m.nodes[info]['text'])
 x,y,bw,bh=cf_geometry(m,info); inset=max(corner_inset(30+y),corner_inset(30+y+bh)); assert inset<=x and x+bw<=375-inset
-assert m.key()==11 and m.nodes[books]['visible'] and '/mnt/data/ringnav-books' in m.files
+assert m.key()==11 and m.nodes[books]['visible'] and bytes(m.files['/mnt/data/ringnav-books'][:8])==saved
 assert m.nodes[m.find('scroll_view',books)]['_ringnav_index']==1
 open_book(1); assert page_lines()==third; passed()
 # An EPUB is made into text on the worker first ("Preparing…"), then read like a .txt: chapters
@@ -9868,7 +9872,7 @@ passed()
 CAPS='/tmp/q2-addon.caps'
 m=AppMachine(); stream_rows(m); caps=bytes(m.files[CAPS])
 assert caps.endswith(b'\n') and caps.count(b'\n')==1,caps
-assert set(caps.split())=={b'playlist',b'progress',b'pages',b'library',b'goto',b'sleep',b'game',b'audio',b'sections',b'art',b'window',b'urls',b'sort',b'field',b'more',b'fav',b'now'},caps
+assert set(caps.split())=={b'playlist',b'progress',b'pages',b'library',b'goto',b'sleep',b'game',b'audio',b'sections',b'art',b'window',b'urls',b'sort',b'field',b'more',b'fav',b'now',b'fieldtext',b'wake',b'audio2',b'dim'},caps
 m.files[CAPS]=bytearray(b'stale\n'); stream_rows(m); assert m.files[CAPS]==caps; passed()
 # Classic, Home's Split: the Streaming row slides Streaming's rows in, as the Library's: the page's own constructor fills the
 # list, what it sets on a window goes again, every row (stock's 70 px Tidal row and the added ones) takes Home's width and height,
@@ -11078,6 +11082,22 @@ assert track(0)[0]==1 and m.u.mem_read(syms['isFav_playing'],1)[0]==1
 assert track(1)[0]==1 and m.u.mem_read(syms['isFav_playing'],1)[0]==0
 assert track(0)[0]==1 and m.u.mem_read(syms['isFav_playing'],1)[0]==1
 m.call(address=payload_syms['app_fav_load'],args=(0,0,0,0),gap=0); assert m.u.mem_read(syms['isFav_playing'],1)[0]==0; passed()
+# A song on the app's own server (127.0.0.1, q2-jellyfin's relay, which adds its token) needs the app running: one
+# that ended (its loop's pid file gone) starts as its page starts it, and the song's thread waits for its socket,
+# AU_WAKE_MS (5 s) at most, before the URL goes to the player. A running app's song goes at once.
+LOCAL='http://127.0.0.1:2317/song/1?q=hi'; m.files[URLS]=bytearray(f'#Q2URLS/1\n{LOCAL}\tLocal\n'.encode())
+assert m.call(address=payload_syms['app_urls_play'],args=(m.string(URLS),0,0,0),gap=0)==1
+m.word(syms['mcl_pdeqplaylist'],m.deque(m.play_recs)); m.handlers[NET]='one:net'
+def woken(running,serve):
+    m.files.pop(DZPID,None)
+    if running: m.files[DZPID]=bytearray(b'4242')
+    m.now+=20000; m.systems=[]; m.serve=serve; assert track(0)[0]==1; job=m.threads[0]
+    m.calls=[]; m.call(address=job[0],args=(job[1],0,0,0),gap=0,clear=False,count=20_000_000); names=[c[0].split('@')[0] for c in m.calls]
+    return m.systems,names.count('connect'),names.count('usleep'),[m.text(c[1]) for c in m.calls if c[0]=='stock_tidal']
+ANSWERS=lambda op,args: ('ok','','',[])
+assert woken(False,None)==(['/bin/sh /mnt/mmc/.deezer/run'],50,50,[LOCAL])  # it never answers: the song goes after 5 s
+assert woken(False,ANSWERS)==(['/bin/sh /mnt/mmc/.deezer/run'],1,0,[LOCAL])
+assert woken(True,ANSWERS)==([],0,0,[LOCAL]); m.serve=None; passed()
 # Library update (addon_library.c library_poll): the app's /tmp/q2-<id>.library, "<seq>" then scan and import lines,
 # runs stock's Update Library (its dialog, which stops the player: not while one plays, nor while one is paused
 # with the screen on), then stock's playlist import (which replaces a same-named playlist) for the listed files
@@ -11258,14 +11278,14 @@ m=ShelfMachine({LIST:bytearray((ROOT/'sources.list').read_bytes()),SPOT_TAG:byte
                 '/proc/mounts':bytearray(b'/dev/mmcblk0p1 /mnt/mmc vfat rw 0 0\n')})  # the card, for card_mounted before a remove
 m.rockbox_mode=0; m.wifi=-1; apps_open(m)
 BLANK=m.labels()[2]; assert BLANK in ('',' ')  # Check for Updates' blank detail: ' ' under a theme's separators
-assert m.labels()==['App Store','Check for Updates',BLANK,'Rockbox','Install','Spotify','Installed','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Podcasts','Install','Live Music Archive','Install','AirPlay','Install','Utilities','Install'] and not m.threads; passed()  # the Apps tab: no themes without Rockbox
+assert m.labels()==['App Store','Check for Updates',BLANK,'Rockbox','Install','Spotify','Installed','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Jellyfin','Install','Podcasts','Install','Live Music Archive','Install','AirPlay','Install','Utilities','Install','Weather','Install'] and not m.threads; passed()  # the Apps tab: no themes without Rockbox
 tab=lambda key: m.call(address=payload_syms['shelf_key'],args=(m.page,O[key],0,0),gap=0,count=5_000_000)
-assert tab('KEY_FWD_BTN')==1 and m.labels()==['App Store','Check for Updates',BLANK,'Buddy','Install','Groovebox','Install','Arcade Games','Install','2048','Install','Dino Runner','Install','Flappy Bird','Install']
+assert tab('KEY_FWD_BTN')==1 and m.labels()==['App Store','Check for Updates',BLANK,'Buddy','Install','Groovebox','Install','Arcade Games','Install','2048','Install','Dino Runner','Install','Flappy Bird','Install','Pocket Boy','Install','ClassiCube','Install']
 assert tab('KEY_BACK_BTN')==1 and m.labels()[3:5]==['Rockbox','Install'] and tab('KEY_CENTER')==0; passed()  # Next opens Games, Previous Apps
 m.close(); m.wifi=3; m.rockbox_mode=0o100755; m.dirs['/mnt/mmc/.spotify']=[]; apps_open(m)
-assert m.labels()==['App Store','Check for Updates','Checking…','Rockbox','Update','Rockbox Themes','Install','Spotify','Installed','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Podcasts','Install','Live Music Archive','Install','AirPlay','Install','Utilities','Install']
+assert m.labels()==['App Store','Check for Updates','Checking…','Rockbox','Update','Rockbox Themes','Install','Spotify','Installed','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Jellyfin','Install','Podcasts','Install','Live Music Archive','Install','AirPlay','Install','Utilities','Install','Weather','Install']
 m.reply=(ROOT/'test/shelf/q2-librespot.json').read_bytes(); shelf_job(m)
-assert m.opts[10002]=='https://github.com/lampsonlnguyen/q2-flappybird/releases/latest' and m.opts[10018]=='Q2Pod' and m.opts[44]==1  # the last of seventeen, a game's: its redirect, headers only, no API request
+assert m.opts[10002]=='https://github.com/Carbon-66/q2-classicube/releases/latest' and m.opts[10018]=='Q2Pod' and m.opts[44]==1  # the last of twenty-one, a game's: its redirect, headers only, no API request
 assert m.opts[10065]=='/etc/scrobble-ca.pem' and m.opts[64]==1 and m.opts[81]==2 and m.opts[20108]
 assert m.labels()[8]=='Update' and m.labels()[2]=='Checked just now' and '/tmp/q2-shelf.json' not in m.files  # q2-v1.8 against the latest q2-v1.9
 assert m.toasts[-1][3]=='2 apps can be updated'; passed()  # the opening check's end, the page on top: Rockbox, there by hand, and Spotify
@@ -11287,7 +11307,7 @@ m.close(); m.wifi=3; m.now+=11*60*1000; apps_open(m); assert len(m.threads)==5
 m.row(2); assert m.toasts[-1][3]=='Stopped checking for updates'; shelf_job(m); assert len(m.threads)==5 and m.toasts[-1][3]=='Stopped checking for updates'; passed()
 m.close(); m.rockbox_mode=0; m.dirs.pop('/mnt/mmc/.spotify'); m.reply=(ROOT/'test/shelf/q2-rockbox.json').read_bytes()
 toasts=len(m.toasts); apps_open(m); shelf_job(m); assert len(m.toasts)==toasts  # the opening check: nothing to update, nothing said
-assert m.labels()==['App Store','Check for Updates','Checked just now','Rockbox','Install','Spotify','Install','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Podcasts','Install','Live Music Archive','Install','AirPlay','Install','Utilities','Install']  # not stopped: checked again
+assert m.labels()==['App Store','Check for Updates','Checked just now','Rockbox','Install','Spotify','Install','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Jellyfin','Install','Podcasts','Install','Live Music Archive','Install','AirPlay','Install','Utilities','Install','Weather','Install']  # not stopped: checked again
 m.row(1); assert m.labels()[4]=='Starts at power-on. Press again to install' and len(m.threads)==6
 m.row(1); assert len(m.threads)==7 and m.labels()[4]=='Checking…'; m.row(1); shelf_job(m); assert m.toasts[-1][3]=='Download cancelled'
 m.free=10<<20; m.row(1); m.row(1); shelf_job(m)  # the zip (13018581 bytes) and 64 MB left over
@@ -11301,7 +11321,7 @@ assert m.moves[-2:]==['/mnt/mmc/.q2/apps/rockbox.files','/mnt/mmc/.q2/apps/rockb
 assert m.files['/mnt/mmc/.rockbox/rockbox']==b'ELF3.2' and m.files['/mnt/mmc/.rockbox/fonts/a b.fnt']==b'f'
 assert m.files['/mnt/mmc/.q2/apps/rockbox.files']==b'.rockbox/rockbox\n.rockbox/codecs/flac.codec\n.rockbox/fonts/a b.fnt\n'
 assert not [f for f in m.files if '.q2/staging' in f] and 'sync' in m.systems; passed()
-assert m.labels()==['App Store','Check for Updates','Checked just now','Rockbox','Installed','Rockbox Themes','Install','Spotify','Install','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Podcasts','Install','Live Music Archive','Install','AirPlay','Install','Utilities','Install']; passed()  # the rows built again
+assert m.labels()==['App Store','Check for Updates','Checked just now','Rockbox','Installed','Rockbox Themes','Install','Spotify','Install','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Jellyfin','Install','Podcasts','Install','Live Music Archive','Install','AirPlay','Install','Utilities','Install','Weather','Install']; passed()  # the rows built again
 m.listing='        1  10-06-2026 13:18   .rockbox/../../x\n'; m.files.pop('/mnt/mmc/.q2/apps/rockbox.tag'); m.row(1); shelf_job(m)
 assert m.toasts[-1][3]=='The download is not a usable app' and m.files['/mnt/mmc/.rockbox/rockbox']==b'ELF3.2'; passed()
 m.close(); passed()
@@ -11485,9 +11505,12 @@ playing(m,0,200,pos=0,n=110); m.word(r+O['REC_CUE_START'],300); m.poll(0,200); p
 assert len(counts(m))==2 and counts(m)[1]==(fnv('/p/A'),1); passed()
 m=ResumeMachine(); r=m.items(m.get(syms['mcl_pdeqplaylist']))[0]  # a skipped CUE track's time stays its own
 playing(m,0,200,pos=0,n=26); m.word(r+O['REC_CUE_START'],300); playing(m,0,200,n=80); assert not counts(m); passed()
-full=[(i+1,1 if i==5 else 2) for i in range(O['PLAYS_SLOTS'])]
-m=ResumeMachine({'/mnt/data/ringnav-plays':b''.join(struct.pack('<II',*e) for e in full)})
-playing(m,0,200,pos=0,n=110); assert counts(m)==[(fnv('/p/A'),1)]+full[:5]+full[6:]; passed()
+# A full table replaces the furthest back of the lowest counts, but never one of the PLAYS_FRESH counted last:
+# the one song played once there (slot 5) stays and the last slot goes; one at PLAYS_FRESH goes itself.
+for at,gone in ((5,O['PLAYS_SLOTS']-1),(O['PLAYS_FRESH'],O['PLAYS_FRESH'])):
+    full=[(i+1,1 if i==at else 2) for i in range(O['PLAYS_SLOTS'])]
+    m=ResumeMachine({'/mnt/data/ringnav-plays':b''.join(struct.pack('<II',*e) for e in full)})
+    playing(m,0,200,pos=0,n=110); assert counts(m)==[(fnv('/p/A'),1)]+full[:gone]+full[gone+1:],at; passed()
 
 # Both lock UIs use stock's persistent flag/mode, and the existing key gates enforce each choice.
 LOCK_NAMES=['Off','Everything','Buttons only','Volume only']
@@ -12454,7 +12477,7 @@ for packet in (b'',good[:7],good+b'\0',bytes([4,0,4,0,6,0,3,0]),bytes([4,1,4,0,6
 p=m.alloc(8); m.u.mem_write(p,good); assert m.call(address=payload_syms['ringnav_aap_parse'],args=(p,8,0,0),gap=0)==2; passed()
 import scenarios.headset_np
 # on_wm_idle_status's player_mainscheduling (its status round trip) runs every MAINSCHEDULING_MS, a second
-# while dark with nothing playing.
+# while dark with nothing playing, or dark mid-track.
 from build import MAINSCHEDULING_CALL
 assert struct.unpack_from('<I',demo,fileoff(demo,MAINSCHEDULING_CALL[0]))[0]==jal(payload_syms['ringnav_mainscheduling'])
 m=Machine()
@@ -12474,6 +12497,26 @@ del m.playtime; m.now+=1900; schedule(); m.calls=[]; m.now+=10; schedule(); asse
 m.now+=90; m.calls=[]; schedule(); assert scheduled()==0
 m.playtime=224; m.word(PLAY_STATUS,3); m.now+=100; schedule(); m.calls=[]; m.now+=10; schedule()
 assert scheduled()==0; passed()
+# Dark and playing, a second apart from a track's second 2 while more than MAINSCHEDULING_NEAR_S (7 s)
+# of a known length remain; stock's 100 ms again from there (Gapless's next file goes under 6 s from
+# the end), and for a track that short, an unknown length, its first seconds, paused or lit.
+m.byte(syms['g_backlight_status'],0); m.word(PLAY_STATUS,2); m.playtime=100; m.now+=5000; schedule()
+for wait,runs in ((100,0),(899,0),(1,1),(100,0)):
+    m.now+=wait; m.calls=[]; schedule(); assert scheduled()==runs,(wait,runs)
+m.playtime=217; m.now+=100; m.calls=[]; schedule(); assert scheduled()==0  # 8 s left
+m.playtime=218; m.calls=[]; schedule(); assert scheduled()==1              # 7 s left: at once
+m.now+=99; m.calls=[]; schedule(); assert scheduled()==0
+m.now+=1; m.calls=[]; schedule(); assert scheduled()==1
+def paced(): # 100 ms apart, not a second
+    m.now+=5000; schedule(); m.now+=100; m.calls=[]; schedule(); return scheduled()==1
+m.playtime=2; m.length=6; assert paced()                                     # a 6 s file
+m.length=0; assert paced(); del m.length                                     # no length known
+m.playtime=1; assert paced()                                                 # a track's first seconds
+m.playtime=100; m.word(PLAY_STATUS,3); assert paced(); m.word(PLAY_STATUS,2) # paused
+m.byte(syms['g_backlight_status'],1); assert paced()                         # lit
+m.byte(syms['g_backlight_status'],0); m.word(payload_syms['dark_quiet'],1)   # quiet: a second still
+m.now+=5000; schedule(); m.now+=100; m.calls=[]; schedule(); assert scheduled()==0
+m.word(payload_syms['dark_quiet'],0); m.byte(syms['g_backlight_status'],1); del m.playtime; passed()
 
 # Chapter subprocess syscalls use Linux o32 and pass the filename through argv.
 for name,number,args,error in (('chapter_pipe2',4328,(0x1001000,0x80000,0,0),False),
@@ -12726,4 +12769,6 @@ m,more,rows=pl_more(); f,ctx=m.handler(m.nodes[m.nodes[more]['children'][-1]]['c
 m.call(address=f,args=(ctx,m.event,0,0),gap=0); m.page=m.top; m.view=m.find('scroll_view')
 m.choose(0); assert m.showlabels()[0]=='Search' and m.nodes[m.nodes[m.page]['children'][0]]['text']=='Add Songs'
 assert any(c[0]=='hscroll_label_set_only_focus' for c in m.calls); passed()
+import scenarios.flat_pages  # last: its cases follow every other's
+import scenarios.classic_modern  # after flat_pages: its cases follow
 print(f'{q2emu.checks} MIPS execution scenarios passed; toolkit services mocked, stock lock filter executed.')

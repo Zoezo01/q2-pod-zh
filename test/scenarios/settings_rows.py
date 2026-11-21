@@ -112,7 +112,11 @@ m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',stock_ro
 m.stack=[m.top]; m.nodes[m.wm]=dict(type='window_manager',name='',children=m.stack,visible=1)
 assert click(0)==[] and m.nodes[m.title]['text']=='Crossfade' and m.nodes[m.vol]['text']=='Off'
 X=lambda on,sec: [(on,'Q2POD','XFADE'),(sec,'Q2POD','XFADESEC')]
-m.nodes[m.slider]['value']=7; assert press(m.slider,O['EVT_VALUE_CHANGING'])==[] and m.nodes[m.vol]['text']=='7 s'
+# Leaving Off turns stock's Gapless on, as its row does: saved and set through mclSetGaplessMode (a stub
+# here, so the byte is set as it would set it), and later turns on save nothing more.
+m.byte(O['MCL_GAPLESS'],0)
+m.nodes[m.slider]['value']=7; assert press(m.slider,O['EVT_VALUE_CHANGING'])==[(1,'PLAYSET','GAPLESS')] and m.nodes[m.vol]['text']=='7 s'
+assert [c[1] for c in m.calls if c[0]=='mclSetGaplessMode']==[1]; m.byte(O['MCL_GAPLESS'],1)
 m.nodes[m.slider]['value']=9; assert press(m.slider,O['EVT_VALUE_CHANGING'])==[] and press(m.slider,O['EVT_VALUE_CHANGED'])==X(1,9)
 assert texts()[0]=='Crossfade: 9 s' and press(m.switch)==X(0,9) and m.nodes[m.vol]['text']=='Off'
 assert press(m.add)==X(1,1) and turn()==X(1,2)  # up from Off is XF_MIN, 1 s

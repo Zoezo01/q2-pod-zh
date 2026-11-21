@@ -45,7 +45,8 @@ class App(C.Structure):
 class Sh(C.Structure):
     _fields_ = [('thread', C.c_ulong), *((n, C.c_int) for n in ('running', 'cancel', 'percent', 'stage', 'result', 'job', 'app', 'armed', 'rows', 'n')),
                 ('map', C.c_int * (SH_MAX + 1)), ('manual', C.c_int), ('need', C.c_uint), ('checked', C.c_ulonglong), ('next', App * SH_MAX),
-                ('page', C.c_void_p), ('row', C.c_void_p * (SH_MAX + 1)), ('tab', C.c_int), ('strip', C.c_void_p)]
+                ('page', C.c_void_p), ('row', C.c_void_p * (SH_MAX + 1)), ('tab', C.c_int), ('strip', C.c_void_p),
+                ('clicks', C.c_int)]
 
 
 class Nu(C.Structure):
@@ -1167,6 +1168,81 @@ def test_a_redirect_with_no_location_clears_the_tag(fw):
     assert fetch(fw)[:2] == (0, b'')
 
 
+class Hung:
+    """libcurl when no answer comes: a transfer whose URL starts with one of hang's takes its 30 s, its progress
+    callback (when on) called once a second, as curl calls it whether connecting or waiting for the reply, until that
+    answers non-zero (CURLE_ABORTED_BY_CALLBACK, 42) or the time is up (CURLE_OPERATION_TIMEDOUT, 28); any other URL
+    fails at once (CURLE_COULDNT_CONNECT, 7). press(k) runs before second k, as a press on the UI thread lands then.
+    calls: the seconds the callback was asked; urls: each transfer's."""
+    def __init__(self, fw, hang=(b'https://',), press=None):
+        self.opts, self.calls, self.urls, self.hang, self.press = {}, [], [], hang, press
+        def setopt(c, opt, value, *_):
+            self.opts[opt] = value
+        def perform(c, *_):
+            url = C.string_at(self.opts[10002])
+            self.urls.append(url)
+            if not url.startswith(self.hang):
+                return 7
+            on = self.opts.get(43, 1) == 0 and 20219 in self.opts  # NOPROGRESS off, XFERINFOFUNCTION
+            progress = C.CFUNCTYPE(C.c_int, C.c_void_p, *[C.c_longlong] * 4)(self.opts[20219]) if on else None
+            for k in range(30):
+                if self.press:
+                    self.press(k)
+                if progress:
+                    self.calls.append(k)
+                    if progress(self.opts.get(10057), 0, 0, 0, 0):
+                        return 42
+            return 28
+        fw.mock('fw_curl_easy_init', lambda *_: self.opts.clear() or 1)
+        fw.mock('fw_curl_easy_setopt', setopt)
+        fw.mock('fw_curl_easy_perform', perform)
+
+
+def head(fw, xfer):
+    fn = fw.fn('netupdate__fetch', C.c_int, C.c_char_p, C.c_void_p, C.c_void_p, C.c_uint, C.POINTER(C.c_long), C.c_void_p, C.c_long)
+    return fn(b'https://x', None, block(fw, size=64), 64, C.byref(C.c_long(0)), xfer, 0)
+
+
+def test_a_cancel_ends_a_header_request_that_hangs_at_once(fw):
+    """A header-only request given a cancel to read (Network Update's first, a check's) reads it at curl's progress
+    calls, as a download does: a press ends one that gets no answer at the next call, not at its 30 s timeout."""
+    xfer = (C.c_int * 2)()
+    hung = Hung(fw, press=lambda k: k == 2 and xfer.__setitem__(0, 1))
+    assert head(fw, xfer) == 42  # CURLE_ABORTED_BY_CALLBACK
+    assert hung.calls == [0, 1, 2] and hung.opts[44] == 1  # still headers only
+    assert (hung.opts[78], hung.opts[13]) == (15, 30)  # and still its own timeouts
+
+
+def test_a_header_request_with_no_cancel_to_read_has_no_progress_callback(fw):
+    """Home's daily check (nc_worker) gives none, so curl is never handed a null for the callback to write to."""
+    hung = Hung(fw)
+    assert head(fw, None) == 28 and not hung.calls
+    assert 20219 not in hung.opts and 10057 not in hung.opts
+
+
+@pytest.mark.parametrize('cancel', [1, 2])  # the row pressed again; System Update left
+def test_a_cancel_while_network_updates_first_request_hangs_ends_it_at_once(fw, cancel):
+    """The cancel ends the request in flight and the press reads Download cancelled, not Can't reach GitHub; the
+    part on the card stays, as after any cancel before the download, for the next press to carry on from."""
+    nu = fw.var('netupdate__nu', Nu)
+    card = slot(fw, {PART: BODY[:1000]})
+    hung = Hung(fw, press=lambda k: k == 3 and setattr(nu, 'cancel', cancel))
+    fw.fn('netupdate__worker', C.c_void_p, C.c_void_p)(None)
+    assert nu.state == NU_CANCELLED and hung.calls == [0, 1, 2, 3] and hung.urls == [LATEST]
+    assert card.files[PART] == BODY[:1000]
+
+
+def test_a_press_that_stops_a_check_ends_its_hung_request_at_once(fw):
+    """A row's press stops a check (sh.cancel); the header request in flight ends at the next progress call, so the
+    job is over for the next press rather than after the request's 15 or 30 s, and no other app is asked."""
+    Card(fw)
+    apps(fw, b'me/foo', b'me/bar')
+    sh = fw.var('netupdate__sh', Sh)
+    hung = Hung(fw, hang=(b'https://github.com/',), press=lambda k: k == 1 and setattr(sh, 'cancel', 1))
+    assert check(fw) == 0
+    assert hung.calls == [0, 1] and hung.urls[1:] == [b'https://github.com/me/foo/releases/latest']
+
+
 def json_get(fw, card, body, code=200, result=0):
     Net(fw, {b'https://api': (result, code, None)})
     card.files[JSON_PATH] = body
@@ -1560,6 +1636,76 @@ def test_the_check_takes_a_fresh_list_and_each_release(fw):
     assert card.written[b'/mnt/mmc/.q2/sources.list.tmp'] == b'me/foo Foo\nme/bar bar\n'
 
 
+def curl_calls(fw):
+    """libcurl's calls so far, in order: their names, and (name, arguments) pairs."""
+    curl = [(n, a) for n, a in fw.calls() if n.startswith('fw_curl_easy_')]
+    return [n for n, _ in curl], curl
+
+
+def test_a_checks_requests_share_one_handle_each_setting_its_url(fw):
+    """The apps' requests in a check go on one libcurl handle, so GitHub's connection and TLS session go on to the
+    next: each sets its URL again and stays header-only, and the check cleans the handle up at its end."""
+    card = Card(fw)
+    net = Net(fw, {b'https://raw': (0, 200, None), b'https://github.com/': redirect(b'1.0')})
+    card.files[JSON_PATH] = b'me/foo Foo\nme/bar\nme/baz\n'
+    fw.mock('fw_fopen', fw_fopen_list(card))
+    assert check(fw) == 1
+    names, curl = curl_calls(fw)
+    performs = [k for k, n in enumerate(names) if n == 'fw_curl_easy_perform']
+    assert len(performs) == 4 and names.count('fw_curl_easy_init') == 2  # the list's handle, then the apps' one
+    for since, at in zip(performs, performs[1:]):  # each app's request: its own URL, headers only
+        assert {10002, 44} <= {a[1] for n, a in curl[since:at] if n == 'fw_curl_easy_setopt'}
+    assert net.urls[1:] == [b'https://github.com/me/%s/releases/latest' % r for r in (b'foo', b'bar', b'baz')]
+    assert names.count('fw_curl_easy_cleanup') == 2 and names[-1] == 'fw_curl_easy_cleanup'
+
+
+def test_a_stopped_check_cleans_up_its_handle(fw):
+    card = Card(fw)
+    sh = fw.var('netupdate__sh', Sh)
+    net = Net(fw, {b'https://raw': (0, 200, None), b'https://github.com/': redirect(b'1.0')})
+    card.files[JSON_PATH] = b'me/foo Foo\nme/bar\n'
+    fw.mock('fw_fopen', fw_fopen_list(card))
+
+    def info(c, what, out, *_):  # Net's, and a press during the first app's request
+        if what == 0x200002:
+            C.cast(out, C.POINTER(C.c_long))[0] = net.code
+            sh.cancel = net.urls[-1].endswith(b'/foo/releases/latest')
+        elif what == 0x10001f:
+            C.cast(out, C.POINTER(C.c_void_p))[0] = C.addressof(net.location) if net.location else 0
+        return 0
+    fw.mock('fw_curl_easy_getinfo', info)
+    check(fw)
+    names, _ = curl_calls(fw)
+    assert net.urls[1:] == [b'https://github.com/me/foo/releases/latest'] and names.count('fw_curl_easy_init') == 2
+    assert names.count('fw_curl_easy_cleanup') == 2 and names[-1] == 'fw_curl_easy_cleanup'
+
+
+def test_a_check_stopped_after_two_unanswered_apps_cleans_up_its_handle(fw):
+    """SH_LOST ends the loop with the apps' handle still kept: it is cleaned up there too, after the second app."""
+    Card(fw)
+    six(fw)
+    net = Net(fw, {b'https://': (28, 0, None)})
+    assert check(fw) == 0 and asked(net) == [b'app0', b'app1']
+    names, _ = curl_calls(fw)
+    assert names.count('fw_curl_easy_init') == 2 and names.count('fw_curl_easy_cleanup') == 2
+    assert names[-1] == 'fw_curl_easy_cleanup'
+
+
+def test_a_press_ends_the_kept_handles_next_request_at_once(fw):
+    """The second app's request goes on the first's handle and still reads sh.cancel at curl's progress calls, so a
+    press ends it at once; the handle is cleaned up as the check ends."""
+    Card(fw)
+    apps(fw, b'me/foo', b'me/bar', b'me/baz')
+    sh = fw.var('netupdate__sh', Sh)
+    hung = Hung(fw, hang=(b'https://github.com/',))
+    hung.press = lambda k: k == 1 and hung.urls[-1].endswith(b'/bar/releases/latest') and setattr(sh, 'cancel', 1)
+    assert check(fw) == 0
+    assert asked(hung) == [b'foo', b'bar'] and hung.calls == list(range(30)) + [0, 1]
+    names, _ = curl_calls(fw)
+    assert names.count('fw_curl_easy_init') == 2 and names.count('fw_curl_easy_cleanup') == 2
+    assert names[-1] == 'fw_curl_easy_cleanup'
+
+
 def fw_fopen_list(card):
     """The first read of the temp file is the list; the rest are releases."""
     release_json = github('1.0', ('a.zip', 5))
@@ -1593,6 +1739,52 @@ def test_a_check_keeps_why_a_release_failed_but_not_a_missing_one(fw):
     sh.result = SH_OK
     net.replies = {b'https://raw': (7, 0, None), b'https://github.com': (0, 302, b'https://github.com/me/foo/releases')}
     assert check(fw) == 1 and sh.result == SH_OK  # no release yet: checked, the minute's gap holds
+
+
+def six(fw):
+    """The page's list: six apps, me/app0 to me/app5."""
+    return apps(fw, *[b'me/app%d' % i for i in range(6)])
+
+
+def asked(net):
+    return [u.split(b'/')[4] for u in net.urls if u.startswith(b'https://github.com/')]
+
+
+def test_a_check_that_cant_reach_github_stops_after_two_apps(fw):
+    """Two apps in a row whose request gets no answer at all (here each waits out its connect timeout) end the check:
+    on a network that drops packets every request would wait its 15 s, so the apps after them aren't asked."""
+    Card(fw)
+    six(fw)
+    sh = fw.var('netupdate__sh', Sh)
+    net = Net(fw, {b'https://': (28, 0, None)})  # CURLE_OPERATION_TIMEDOUT: no answer
+    assert check(fw) == 0 and sh.result == SH_NET
+    assert asked(net) == [b'app0', b'app1']
+
+
+def test_an_answer_of_any_kind_keeps_a_check_going(fw):
+    """Only no answer twice in a row stops a check: a 404, a repo with no release, GitHub's 429 or one lost request
+    between answers says GitHub is there, so every app is still asked and the one with a release gets it."""
+    Card(fw)
+    six(fw)
+    sh = fw.var('netupdate__sh', Sh)
+    net = Net(fw, {b'https://raw': (7, 0, None), b'https://github.com/me/app0': (28, 0, None),
+                   b'https://github.com/me/app1': (0, 404, None), b'https://github.com/me/app2': (7, 0, None),
+                   b'https://github.com/me/app3': (0, 429, None), b'https://github.com/me/app4': (6, 0, None),
+                   b'https://github.com/me/app5': redirect(b'1.0')})
+    assert check(fw) == 0 and sh.result == SH_NET  # the first failure is still the one said
+    assert asked(net) == [b'app%d' % i for i in range(6)] and sh.next[5].latest == b'1.0'
+
+
+def test_apps_after_the_stop_keep_their_update_when_the_list_is_out_of_reach_too(fw):
+    """The usual outage takes the list's host too, so the check runs on the page's own list: an app it stops
+    before asking keeps the release the page knew, and its row still says UPDATE."""
+    Card(fw)
+    table = six(fw)
+    table[4].latest = b'2.0'
+    sh = fw.var('netupdate__sh', Sh)
+    net = Net(fw, {b'https://': (28, 0, None)})
+    check(fw)
+    assert asked(net) == [b'app0', b'app1'] and sh.n == 6 and sh.next[4].latest == b'2.0'
 
 
 def test_no_list_anywhere_is_a_failed_check(fw):
@@ -2381,6 +2573,53 @@ def test_the_store_loads_its_list_then_not_again_for_ten_minutes(fw):
     assert s.sh.job == JOB_CHECK and len(s.workers) == 1
 
 
+def toast_ends_the_job(fw, s):
+    """toast() as its 2 s modal loop runs it: the first one, said inside a press, lets the job's worker end and runs
+    sh_wait's timer, as the Q2's UI loop does. The list returned gets what sh_wait returned there and how many times
+    the rows were destroyed meanwhile (page_list empties the page before building them again)."""
+    seen = []
+
+    def toast(path, info, *_):
+        s.toasts.append(C.string_at(info + 8).decode())
+        if not seen:
+            built = len(fw.calls('widget_destroy_children'))
+            seen.append(s.run())
+            seen.append(len(fw.calls('widget_destroy_children')) - built)
+        return 0
+    fw.mock('navigator_to_with_context', toast)
+    return seen
+
+
+def test_a_press_that_stops_the_check_keeps_its_row_until_it_returns(fw):
+    """The check's end builds the rows again; inside the press's own toast that would free the pressed row while its
+    click still runs (battery.c's Export Log had the same), so the end waits for the press to return."""
+    card = Disk(fw, {SOURCES: b'me/q2-foo Foo\n'})
+    store_net(fw)
+    s = Store(fw, card)
+    seen = toast_ends_the_job(fw, s)
+    s.click()  # Foo's row while the opening check runs
+    assert seen == [RET_REPEAT, 0] and s.sh.job == JOB_CHECK and s.sh.clicks == 0
+    built = len(fw.calls('widget_destroy_children'))
+    assert s.wait() == 0 and s.sh.job == 0 and len(fw.calls('widget_destroy_children')) == built + 1
+    assert s.labels() == ['Install'] and s.toasts == ['Stopped checking for updates']
+
+
+def test_a_press_while_a_remove_ends_keeps_its_row_until_it_returns(fw):
+    """A dropped app's row shows only while it is installed, so its removal's end builds the rows again: the press
+    told to wait for it must have returned first."""
+    card = Disk(fw, {SOURCES: b'-me/q2-foo Foo\nme/q2-bar Bar\n', b'/mnt/mmc/.q2/apps/foo.tag': b'1.0',
+                     b'/mnt/mmc/.q2/apps/foo.files': b'.foo/q2-foo\n', FOO_APP: b'\x7fELF foo'})
+    s = Store(fw, card, wifi=0)
+    assert s.labels() == ['Installed', 'Install']
+    s.click(1), s.click(1)  # Foo's Remove, pressed twice
+    assert s.sh.job == JOB_REMOVE
+    seen = toast_ends_the_job(fw, s)
+    s.click(0)  # Check for Updates while it runs
+    assert seen == [RET_REPEAT, 0] and s.sh.job == JOB_REMOVE and FOO_APP not in card.files
+    assert s.wait() == 0 and s.labels() == ['Install']
+    assert s.toasts == ['Wait for the one in progress', 'Foo removed']
+
+
 def test_a_check_stopped_part_way_is_done_again_at_the_next_open(fw):
     card = Disk(fw, {SOURCES: b'me/q2-foo Foo\n'})
     net = store_net(fw)
@@ -2393,6 +2632,65 @@ def test_a_check_stopped_part_way_is_done_again_at_the_next_open(fw):
     s.seconds += 1
     s.open()
     assert s.sh.job == JOB_CHECK
+
+
+# A check that doesn't ask for a release again keeps the one the last check found, so a row that offered UPDATE
+# still does: it used to say INSTALLED, and pressing it offered to remove the app.
+TWO = b'me/q2-foo Foo\nme/q2-bar Bar\n'
+FOUR = TWO + b'me/q2-baz Baz\nme/q2-qux Qux\n'
+
+
+def checked(fw, listed=TWO, first=TWO, **replies):
+    """first's apps installed at 1.0, a whole check that found 2.0 for each, and the page reopened over 10 minutes
+    later, its opening check running: the App Store, and the Net that check meets (replies as store_net's)."""
+    tags = {b'/mnt/mmc/.q2/apps/%s.tag' % line.split()[0][6:]: b'1.0' for line in first.splitlines()}
+    card = Disk(fw, {SOURCES: first, **tags})
+    store_net(fw, listed=first)
+    s = Store(fw, card)
+    assert s.run() == 0 and s.labels() == ['Update'] * len(tags)
+    s.close()
+    s.seconds += 601
+    net = store_net(fw, listed=listed, **replies)
+    s.open()
+    assert s.sh.job == JOB_CHECK
+    return s, net
+
+
+def test_a_check_stopped_by_a_press_keeps_the_updates_found_before(fw):
+    s, net = checked(fw)
+    net.only, net.during = b'https://raw', lambda k: k == CHUNKS - 1 and s.click(1)  # Foo's row, as the list comes in
+    assert s.run() == 0 and net.urls[-1].startswith(b'https://raw')  # a fresh list, then no release asked
+    assert s.sh.cancel == 1 and s.labels() == ['Update', 'Update']
+    s.click(1)
+    assert s.sh.job == JOB_INSTALL and s.sh.app == 0 and s.sh.armed == 0  # an update, not Remove's first press
+
+
+@pytest.mark.parametrize('latest', [(0, 429, None), (0, 403, None), (0, 503, None), (7, 0, None)],
+                         ids=['429', '403', '503', "can't connect"])
+def test_a_check_github_turns_away_or_cant_be_reached_keeps_the_updates_found_before(fw, latest):
+    s, _ = checked(fw, latest=latest)
+    assert s.run() == 0 and s.labels() == ['Update', 'Update'] and s.sh.checked == 1000 * 5000
+    assert s.toasts == ['2 apps can be updated'] * 2  # the opening check's count, as the first's
+
+
+def test_apps_after_a_check_stops_unanswered_keep_their_update_with_a_fresh_list(fw):
+    """Two apps with no answer end the check there (SH_LOST); the two after them, never asked, keep UPDATE."""
+    s, net = checked(fw, listed=FOUR, first=FOUR, latest=(28, 0, None))
+    assert s.run() == 0 and asked(net) == [b'q2-foo', b'q2-bar'] and s.labels() == ['Update'] * 4
+
+
+@pytest.mark.parametrize('listed', [b'other/q2-foo Foo\nme/q2-bar Bar\n', b'-me/q2-foo Foo\nme/q2-bar Bar\n'],
+                         ids=['moved to another repo', 'dropped'])
+def test_an_app_moved_or_dropped_keeps_no_update_from_before(fw, listed):
+    s, _ = checked(fw, listed=listed, latest=(0, 429, None))
+    assert s.run() == 0 and s.labels() == ['Installed', 'Update']
+
+
+@pytest.mark.parametrize('latest', [(0, 404, None), (0, 302, b'https://github.com/me/q2-foo/releases')],
+                         ids=['repo gone', 'no release'])
+def test_a_release_gone_since_takes_its_update_away(fw, latest):
+    s, _ = checked(fw, latest=latest)
+    assert s.run() == 0 and s.labels() == ['Installed', 'Installed']
 
 
 # An install goes by the list as it is now, fetched as the install starts. The page's rows may be the card's
@@ -2870,6 +3168,30 @@ def test_a_check_keeps_the_games_section_in_the_cards_list(fw):
     assert card.files[SOURCES] == b'me/q2-foo Foo\n[Games]\nme/q2-bar Bar\n' and s.labels() == ['Install']
 
 
+CUSTOM = b'/mnt/mmc/.q2/custom-sources.list'
+LISTED = b'me/q2-foo Foo\n[Games]\nme/q2-bar Bar\n'
+
+
+@pytest.mark.parametrize('mine', [None, b'', b'you/q2-mine Mine\nother/q2-foo Theirs\n[Games]\nme/q2-bar\nyou/q2-play Play\n'])
+def test_the_cards_custom_sources_follow_the_list_and_never_reach_its_copy(fw, mine):
+    """Custom lines after the list's on their own tab, one whose id the list has skipped (another owner's foo, the
+    list's own bar); a missing or empty file changes nothing. An install asks the fetched list with them."""
+    card = Disk(fw, {} if mine is None else {CUSTOM: mine})
+    store_net(fw, {'.mine/q2-mine': b'\x7fELF', '.mine/q2app': b'name=Mine\n'}, listed=LISTED)
+    fw.mock('widget_factory_create_widget', lambda *_: 88)  # the tabs
+    s = Store(fw, card)
+    assert s.run() == 0 and card.files[SOURCES] == LISTED  # the list's copy alone
+    assert [s.sh.next[k].repo for k in range(s.sh.n)] == [b'me/q2-foo', b'me/q2-bar'] + [b'you/q2-mine', b'you/q2-play'] * bool(mine)
+    key = fw.fn('shelf_key', C.c_int, C.c_void_p, C.c_uint)
+    assert s.details() == ['me', 'you'][:1 + bool(mine)]
+    key(77, O['KEY_FWD_BTN'])
+    assert s.details() == ['me', 'you'][:1 + bool(mine)]  # Games: Bar, Play
+    if mine:
+        key(77, O['KEY_BACK_BTN'])
+        s.click(2)  # Mine
+        assert s.run() == 0 and s.toasts[-1] == 'Mine is ready in Streaming' and card.files[CUSTOM] == mine
+        assert card.files[SOURCES] == LISTED
+
 @pytest.mark.parametrize('theme', (b'0', b'1', b'2'))  # Minimal, Classic, Modern
 def test_app_store_paints_a_rows_state_as_a_word_and_the_tabs_badges(fw, theme):
     from test_games import Canvas, config, grey, rgba, tone, words
@@ -2998,7 +3320,7 @@ def test_a_press_held_for_wifi_through_a_real_click_follows_its_app(fw):
     class Sw(C.Structure):
         _fields_ = [('at', C.c_uint), ('busy_at', C.c_uint), ('woke_at', C.c_uint), ('hold_timer', C.c_uint),
                     ('off', C.c_int), ('quiet', C.c_int), ('armed', C.c_int), ('up', C.c_int), ('held', C.c_int),
-                    ('hold_fn', C.c_void_p), ('hold_ctx', C.c_void_p), ('hold_win', C.c_void_p), ('hold_name', C.c_char * 32)]
+                    ('lone', C.c_int), ('hold_fn', C.c_void_p), ('hold_ctx', C.c_void_p), ('hold_win', C.c_void_p), ('hold_name', C.c_char * 32)]
     card = Disk(fw, {SOURCES: b'me/q2-foo Foo\n[Games]\nyou/q2-bar Bar\n'})
     store_net(fw)
     s = Store(fw, card, wifi=0)

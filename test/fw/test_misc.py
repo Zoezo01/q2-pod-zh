@@ -12,6 +12,8 @@ import pytest
 from conftest import block
 from test_books import stored  # test_books.py keeps the stored-block maker
 
+pytestmark = pytest.mark.usefixtures('stock_gapless')  # Crossfade's page has stock's Gapless on, as stock's default
+
 CENTER, PREV, NEXT, PLAY, RETURN, BACK_BTN, FWD_BTN = 218, 172, 173, 171, 170, 222, 223
 FNV = 2166136261
 r = C.byref
@@ -861,7 +863,8 @@ class Bk(C.Structure):
                 ('file', C.c_char_p), ('cache', C.c_char * 48), ('tmp', C.c_char * 48),
                 *((k, C.c_uint) for k in 'key size pos end prev base len'.split()),
                 ('buf', C.c_void_p), ('thread', C.c_ulong), ('timer', C.c_uint), ('poll', C.c_uint), ('running', C.c_int),
-                ('finished', C.c_int), ('result', C.c_int), ('cancel', C.c_int), ('marks', Mark * 64)]
+                ('finished', C.c_int), ('result', C.c_int), ('cancel', C.c_int), ('marks', Mark * 64),
+                ('save', C.c_uint)]
 
 
 MARKS_FILE = '/mnt/data/ringnav-books'

@@ -1,6 +1,6 @@
 /* Quick Settings, stock's pull-down: its holds (Wi-Fi's, Bluetooth's and the EQ's settings), the
  * key lock's button, the wheel's choice of brightness or volume, a stuck pull-down's release, and
- * Classic's page, buttons and brightness slider. */
+ * the own pages' page, buttons and brightness slider: Classic's, and the flat look's. */
 #include "navigation.h"
 extern int stock_quicksettings_trampoline(void *, void *);
 
@@ -71,7 +71,7 @@ static void quick_press(void *icon) {
 }
 static int quick_down(void *icon, void *event) {
     int page = widget_get_prop_int(icon, QUICK_HOLD, 0);
-    if (classic_pages()) quick_press(icon);
+    if (own_pages()) quick_press(icon);
     if (!page) return 0; /* a button with no hold */
     prop(icon, QUICK_HOLD, page < 0 ? -page : page);
     quick.win = window_manager_get_top_window(window_manager());
@@ -80,7 +80,7 @@ static int quick_down(void *icon, void *event) {
     rearm(&quick.timer, quick_long, RATE_HOLD_MS);
     return 0;
 }
-/* Classic's page (quick_page, quick_scrub), in the window's
+/* The own pages' page (quick_page, quick_scrub), in the window's
  * coordinates: each icon at opacity 0 keeps stock's image name, tap and hold, and paints nothing.
  */
 static const char *const quick_icons[] = { "img_wifiswitch", "img_btswitch", "img_lock",
@@ -90,26 +90,44 @@ static const char *const quick_icons[] = { "img_wifiswitch", "img_btswitch", "im
                                                    "label_lock",    "label_gain",
                                                    "label_usbmode", "label_outputway",
                                                    "label_playset", "label_sysset" };
-/* The knob reaches past the slider, whose own repaint would leave it behind. */
+/* The knob, or the flat bar's ends, reach past the slider, whose own repaint would leave them
+ * behind. */
 static int quick_moved(void *view, void *event) {
     widget_invalidate_force(view, (void *)0);
     return 0;
 }
+/* The flat look's brightness bar, in the window: its box, which the slider takes, its own 48 rows
+ * about it. */
+#define QS_BAR_X 33
+#define QS_BAR_Y 239
+#define QS_BAR_W 309
+#define QS_BAR_H 36
+const rect_t qs_bar_card = { 18, 226, 339, 62 }; /* the bar's card, round it */
 static void quick_open(void *win) {
+    int flat = flat_pages();
     void *c = widget_lookup(win, "view_menu", 1);
-    if (c) widget_move_resize(c, 0, 0, I(c, W_W), I(c, W_Y) + I(c, W_H));
-    static const short column[] = { 31, 115, 199, 283 }; /* 24 apart */
+    /* Classic's to the slider's foot; the flat look's the buttons' card and the gap under it */
+    if (c) widget_move_resize(c, 0, 0, I(c, W_W), flat ? 226 : I(c, W_Y) + I(c, W_H));
+    /* [flat]: Classic's 60 px buttons 24 apart; the flat look's 54 px ones 31 apart, 15 in from
+     * the card's sides */
+    static const short column[2][4] = { { 31, 115, 199, 283 }, { 33, 118, 203, 288 } },
+                       row[2][2] = { { 20, 138 }, { 34, 122 } }, side[2] = { 60, 54 };
     for (unsigned i = 0; i < sizeof quick_icons / sizeof *quick_icons; ++i) {
         if (!(c = widget_lookup(win, quick_icons[i], 1))) continue;
-        widget_move_resize(c, column[i % 4], i < 4 ? 20 : 138, 60, 60);
+        widget_move_resize(c, column[flat][i % 4], row[flat][i >= 4], side[flat], side[flat]);
         widget_set_opacity(c, 0);
         if (!widget_get_prop_int(c, QUICK_HOLD, 0)) widget_on(c, EVT_POINTER_DOWN, quick_down, c);
     }
     if ((c = widget_lookup(win, "image0", 1))) widget_set_visible(c, 0, 0);
     if ((c = widget_lookup(win, "image1", 1))) widget_set_visible(c, 0, 0);
     if ((c = widget_lookup(win, "slider_backlight", 1))) {
-        widget_on(c, EVT_VALUE_CHANGING, quick_moved, P(c, W_PARENT));
-        widget_on(c, EVT_VALUE_CHANGED, quick_moved, P(c, W_PARENT));
+        void *view = P(c, W_PARENT);
+        if (flat) {
+            widget_move_resize(view, 0, QS_BAR_Y + QS_BAR_H / 2 - 24, I(view, W_W), 48);
+            widget_move_resize(c, QS_BAR_X, 0, QS_BAR_W, 48);
+        }
+        widget_on(c, EVT_VALUE_CHANGING, quick_moved, view);
+        widget_on(c, EVT_VALUE_CHANGED, quick_moved, view);
     }
 }
 int ringnav_quick_settings(void *win, void *ctx) {
@@ -124,7 +142,7 @@ int ringnav_quick_settings(void *win, void *ctx) {
             prop(icon, QUICK_HOLD, i + 1);
             widget_on(icon, EVT_POINTER_DOWN, quick_down, icon);
         }
-        if (classic_pages()) quick_open(win);
+        if (own_pages()) quick_open(win);
         widget_on(win, EVT_DESTROY, quick_cancel, win);
         widget_on(win, EVT_WINDOW_CLOSE, quick_cancel, win);
         widget_on(win, EVT_WINDOW_BACKGROUND, quick_cancel, win);
@@ -143,8 +161,8 @@ static int quick_slider(void *w) {
 }
 void quick_fill(void *w) {
     if (!quick_slider(w)) return;
-    /* Classic's bar is quick_scrub's: stock's goes clear, and 1 says it went */
-    int clear = classic_pages();
+    /* the own pages' bar is quick_scrub's: stock's goes clear, and 1 says it went */
+    int clear = own_pages();
     int color = clear ? 1 : (int)RGBA(accent_tone(TONE_LIGHT));
     if (widget_get_prop_int(w, QFILL, 0) == color) return;
     widget_set_prop_int(w, QFILL, color);
@@ -207,7 +225,12 @@ static const unsigned qs_tile[2][2][3] = {
 /* The page, in its window's coordinates: the ground, then each button by the image stock last gave
  * its icon, a sixth darker while pressed, its glyph in the tile's ink (white on, _l on a bright
  * accent or off in light, _d off in dark); and its label. */
+static void quick_page_flat(void *win, void *canvas);
 void quick_page(void *win, void *canvas) {
+    if (flat_pages()) {
+        quick_page_flat(win, canvas);
+        return;
+    }
     int light = ipod_light();
     unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
     paint_stops(canvas, 0, 0, I(win, W_W), I(win, W_H), &theme()->home_pane[light]);
@@ -239,10 +262,15 @@ void quick_page(void *win, void *canvas) {
 /* ringnav_paint, after stock's slider, whose bar quick_fill cleared: the suns, the track, the fill
  * (Classic Blue's own stops, another accent's light tone flat, as Minimal's fill) and the knob, in
  * the window's coordinates less the slider's. */
+static void quick_scrub_flat(void *w, void *canvas);
 void quick_scrub(void *w, void *canvas) {
     static const stops_t track = { 2, { 0, 100 }, { 0x0a0a0a, 0x3a3c40 } };
     static const stops_t blue = { 3, { 0, 50, 100 }, { 0x8cc4f8, 0x2f85df, 0x165fc0 } };
-    if (!classic_pages() || !quick_slider(w) || !P(canvas, CANVAS_LCD)) return;
+    if (!own_pages() || !quick_slider(w) || !P(canvas, CANVAS_LCD)) return;
+    if (flat_pages()) {
+        quick_scrub_flat(w, canvas);
+        return;
+    }
     unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
     void *view = P(w, W_PARENT);
     int ox = -I(view, W_X) - I(w, W_X), oy = -I(view, W_Y) - I(w, W_Y);
@@ -267,12 +295,117 @@ void quick_scrub(void *w, void *canvas) {
     stock_canvas_set_fill_color(canvas, fill);
 }
 
-/* Quick Settings' swipe up under Classic: a touch from QS_SWIPE_Y that has gone SLIDE_PX up,
- * and isn't the slider's by then, counts for stock's handler as one from its line. */
+/* Quick Settings in the flat look, in final colours, [0] dark, [1] light: the two cards on the
+ * page's ground, and a button or the bar at rest on a card, a step lighter in the dark half than
+ * flat_rest, the pages' rest on the bare paper, so it stands off the card's grey. */
+static const unsigned qs_card[2] = { 0x1c1c1e, 0xffffff }, qs_rest[2] = { 0x3a3a3c, 0xe9e9ec };
+#define QS_FLAT_W 86
+#define QS_FLAT_PX 14
+#define QS_FLAT_LINE 14 /* a line's pitch */
+#define QS_FLAT_BOX 16  /* each line's box, holding the font */
+/* One line of a label, the first n of s, quiet in x, y's box, in the system's face. final_text
+ * takes a nul-ended string, hence the copy; its 31 characters are more than the 86 px box holds. */
+static void quick_line_flat(void *canvas, const unsigned *s, unsigned n, int x, int y) {
+    unsigned line[32];
+    rect_t r = { x, y, QS_FLAT_W, QS_FLAT_BOX };
+    if (n > sizeof line / sizeof *line - 1) n = sizeof line / sizeof *line - 1;
+    for (unsigned i = 0; i < n; ++i) line[i] = s[i];
+    line[n] = 0;
+    final_text(canvas, (void *)0, line, &r, QS_FLAT_PX, 0xff000000u | flat_quiet[ipod_light()]);
+}
+/* quick_label's, flat: a label under its button, x, y its first line's box, a second line when it
+ * is wider than the box. */
+static void quick_label_flat(void *canvas, void *label, int x, int y) {
+    const unsigned *s = widget_get_text(label);
+    unsigned n = wide_len(s), cut = 0, k = 1;
+    if (!n) return;
+    canvas_set_font(canvas, (void *)0, QS_FLAT_PX);
+    int wrap = canvas_measure_text(canvas, s, n) > QS_FLAT_W, h = QS_FLAT_BOX + wrap * QS_FLAT_LINE;
+    if (widget_get_prop_int(label, "_ringnav_box", 0) != h) {
+        widget_set_prop_int(label, "_ringnav_box", h);
+        slider_label(label, x, y, QS_FLAT_W, h, QS_FLAT_PX, "default");
+        widget_set_prop_int(label, "style:normal:text_color", 0);
+    }
+    for (; wrap && k < n && canvas_measure_text(canvas, s, k) <= QS_FLAT_W; ++k)
+        if (s[k] == ' ') cut = k;
+    if (!wrap) cut = n;
+    if (!cut) cut = k > 1 ? k - 1 : 1;
+    quick_line_flat(canvas, s, cut, x, y);
+    if (wrap) {
+        unsigned skip = cut + (s[cut] == ' ');
+        quick_line_flat(canvas, s + skip, n - skip, x, y + QS_FLAT_LINE);
+    }
+}
+/* The page, flat, in its window's coordinates: the ground (the theme's light_ground in the light
+ * half, else the page's) and its two cards, then each button by the image stock last gave its
+ * icon: a 54 px disc, at rest or on (QS_LIT, tools/art.py), a sixth darker while pressed, its glyph
+ * in the disc's ink (white, or _l at rest in the light half and on a bright fill), and its label.
+ */
+static void quick_page_flat(void *win, void *canvas) {
+    int light = ipod_light();
+    unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR), on = flat_on();
+    unsigned ground = light && theme()->qs_ground ? theme()->qs_ground : flat_page();
+    rect_t buttons = { 18, 20, 339, 196 }, bar = qs_bar_card;
+    stops_t card = { 2, { 0, 100 }, { qs_card[light], qs_card[light] } };
+    bar_rect(canvas, RGBA(ground), 0, 0, I(win, W_W), I(win, W_H));
+    paint_round_rows(canvas, &buttons, &card, 26);
+    paint_round_rows(canvas, &bar, &card, 26);
+    for (unsigned i = 0; i < sizeof quick_icons / sizeof *quick_icons; ++i) {
+        void *icon = widget_lookup(win, quick_icons[i], 1);
+        void *label = widget_lookup(win, quick_labels[i], 1);
+        if (!icon) continue;
+        char name[40];
+        const char *image = widget_get_prop_str(icon, "image", "");
+        int lit = named_in(QS_LIT, image);
+        unsigned c = lit ? on : qs_rest[light];
+        const char *ink = (lit ? bright_tone(c) : light) ? "_l" : "";
+        if (icon == quick.pressed) c = mix(c, 0, 1, 6);
+        rect_t r = { I(icon, W_X), I(icon, W_Y), 54, 54 };
+        stops_t face = { 2, { 0, 100 }, { c, c } };
+        paint_round_rows(canvas, &r, &face, 27);
+        tk_snprintf(name, sizeof name, FLAT_ART "%s%s", image, ink);
+        paint_art(win, canvas, name, r.x, r.y);
+        if (label) quick_label_flat(canvas, label, r.x - (QS_FLAT_W - 54) / 2, r.y + 57);
+    }
+    stock_canvas_set_fill_color(canvas, fill);
+}
+/* quick_scrub's, flat: the bar, its fill never less than its own round end, the suns in it; in the
+ * window's coordinates less the slider's. */
+static void quick_scrub_flat(void *w, void *canvas) {
+    unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
+    void *view = P(w, W_PARENT);
+    int ox = -I(view, W_X) - I(w, W_X), oy = -I(view, W_Y) - I(w, W_Y);
+    int min = widget_get_prop_int(w, "min", 0), max = widget_get_prop_int(w, "max", 100);
+    int part = QS_BAR_H;
+    if (max > min)
+        part += (QS_BAR_W - QS_BAR_H) *
+                clamp_step(0, max - min, widget_get_prop_int(w, "value", 0) - min) / (max - min);
+    rect_t r = { QS_BAR_X + ox, QS_BAR_Y + oy, QS_BAR_W, QS_BAR_H };
+    flat_bar(w, canvas, &r, part, qs_rest[ipod_light()], BAR_SUNS);
+    stock_canvas_set_fill_color(canvas, fill);
+}
+/* The volume over the flat page (vol_paint, the wheel on stock's volume), dy down the screen from
+ * w: the bar's card, and the volume in the bar's place between the speakers, so nothing of the page
+ * is half covered. */
+void quick_vol_flat(void *w, void *canvas, int dy, int level, int max) {
+    rect_t card = qs_bar_card, r = { QS_BAR_X, QS_BAR_Y + dy, QS_BAR_W, QS_BAR_H };
+    stops_t face = { 2, { 0, 100 }, { qs_card[ipod_light()], qs_card[ipod_light()] } };
+    card.y += dy;
+    paint_round_rows(canvas, &card, &face, 26);
+    flat_bar(w, canvas, &r,
+             QS_BAR_H + (max > 0 ? (QS_BAR_W - QS_BAR_H) * clamp_step(0, max, level) / max : 0),
+             qs_rest[ipod_light()], BAR_SPEAKERS);
+}
+
+/* Quick Settings' swipe up under the own pages: a touch from QS_SWIPE_Y (the flat look's bar's
+ * card) that has gone SLIDE_PX up, and isn't the slider's by then, counts for stock's handler as
+ * one from its line. */
 static void quick_swipe(void *target, void *event) {
     int from = I(g_pressdown_y, 0);
-    if (from < QS_SWIPE_Y || from >= QS_SWIPE_STOCK || from - I(event, EVENT_Y) < SLIDE_PX ||
-        I(g_dropdown_menu_state, 0) != 3 || (quick.slider && quick.slide > 0) || !classic_pages() ||
+    /* the flat look's from its bar's card, which its slider's touch fills from 233 */
+    if (from < (flat_pages() ? qs_bar_card.y : QS_SWIPE_Y) || from >= QS_SWIPE_STOCK ||
+        from - I(event, EVENT_Y) < SLIDE_PX || I(g_dropdown_menu_state, 0) != 3 ||
+        (quick.slider && quick.slide > 0) || !own_pages() ||
         tk_strcmp(widget_get_prop_str(target, "name", ""), "statusbar_dialog"))
         return;
     I(g_pressdown_y, 0) = QS_SWIPE_STOCK;

@@ -47,6 +47,7 @@ demo	0x49f404	0x4	search_fill_artist_tab	the only call to widget_set_children_la
 demo	0x49f6fc	0x4	search_fill_genre_tab	`addiu $2, $zero, 0x46`, before the only call to button_create, after "label_genre_msg"; patch/ipod.json immediates search_body (Search's rows: the button and its full-height children)
 demo	0x49f7a8	0x4	search_fill_genre_tab	the only call to widget_set_children_layout, after "label_genre_msg"; patch/ipod.json stock_row_layout_calls (stock's own table rows fit their title on a relayout under a set that re-pitches them)
 demo	0x4a1fd8	0x4	statusbar_dialog_slide_timer	1st of 2 calls to dialog_quit; tools/build.py FUNCTIONS
+demo	0x4a2acc	0x4	updatemusic_dialog_on_keyup	`bne $2, $3, +10 words`, before the only call to updatemusic_dialog_on_stop; tools/build.py SCAN_CENTRE
 demo	0x4a2de4	0x4	dialog_updatemusic_dialog_init	`sw $zero, -0x4f3c($2)`, the delay slot of the only call to toolsClearDbCount; patch/navigation.c ringnav
 demo	0x4a3694	0x4	volume_dialog_on_keyup	`addiu $sp, $sp, -0x28`; patch/books.c video_key
 demo	0x4a36b4	0x4	volume_dialog_on_keyup	`beqz $2, +70 words`; tools/build.py VOL_DARK

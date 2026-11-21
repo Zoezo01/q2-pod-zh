@@ -23,7 +23,7 @@
   </tr>
   <tr valign="top">
     <td><b>Display</b></td>
-    <td>Minimal, Modern and Classic themes, accent colours, Light Mode with an Auto schedule, Rounded Corners, Night Shift for the evening, and Smart Awake.</td>
+    <td>Minimal, Modern, Classic and Classic Modern themes, accent colours, Light Mode with an Auto schedule, Rounded Corners, Night Shift for the evening, and Smart Awake.</td>
   </tr>
   <tr valign="top">
     <td><b>Wheel</b></td>
@@ -129,7 +129,7 @@ The [user guide][guide] covers every control, EQ, Cover Flow and more tips.
   </tr>
   <tr valign="top">
     <td><b><a href="https://github.com/DiamondBond/q2-librespot">Spotify</a></b></td>
-    <td>Needs Premium. Open <b>Streaming → Spotify</b> and, the first time, pick the Q2 in the Spotify app on your phone on the same Wi-Fi. If playback won't start on your account, see <a href="https://github.com/DiamondBond/q2-pod/issues/98">#98</a>.</td>
+    <td>Needs Premium. Open <b>Streaming → Spotify</b> and, the first time, pick the Q2 in the Spotify app on your phone on the same Wi-Fi. If playback won't start on your account, see <a href="https://github.com/DiamondBond/q2-pod/issues/98">#98</a>, or try <a href="https://github.com/jtliang24/q2-soloify">Soloify</a>: it plays Spotify through a computer at home that stays on, and takes Spotify's place on the card. Soloify isn't part of Q2 Pod: you set it up by hand, with your own Soloist key from Spotify, and it is still a test release.</td>
     <td></td>
   </tr>
   <tr valign="top">
@@ -153,6 +153,11 @@ The [user guide][guide] covers every control, EQ, Cover Flow and more tips.
     <td></td>
   </tr>
   <tr valign="top">
+    <td><b><a href="https://github.com/A4Link/q2-jellyfin">Jellyfin</a></b></td>
+    <td>Stream music from your Jellyfin server, or sync it to the card. Sign in with Quick Connect.</td>
+    <td></td>
+  </tr>
+  <tr valign="top">
     <td><b><a href="https://github.com/m-d-e-v/q2-podcasts">Podcasts</a></b></td>
     <td>Subscribe to shows and download episodes, with a sleep timer.</td>
     <td></td>
@@ -170,6 +175,11 @@ The [user guide][guide] covers every control, EQ, Cover Flow and more tips.
   <tr valign="top">
     <td><b><a href="https://github.com/lampsonlnguyen/q2-utilities-app">Utilities</a></b></td>
     <td>A stopwatch, a calendar, a to-do list and a calculator, in <b>Library → Utilities</b>.</td>
+    <td></td>
+  </tr>
+  <tr valign="top">
+    <td><b><a href="https://github.com/lampsonlnguyen/q2-weather">Weather</a></b></td>
+    <td>Today's weather and a seven-day forecast for where you are or a city you choose, in <b>Library → Weather</b>.</td>
     <td></td>
   </tr>
 </table>
@@ -208,6 +218,16 @@ On the App Store's **Games** tab. Each plays in **Library → Games**.
   <tr valign="top">
     <td><b><a href="https://github.com/lampsonlnguyen/q2-flappybird">Flappy Bird</a></b></td>
     <td>Tap or press Centre to flap through the gaps between the pipes.</td>
+    <td></td>
+  </tr>
+  <tr valign="top">
+    <td><b><a href="https://github.com/SlayTheEarth/q2-boy">Pocket Boy</a></b></td>
+    <td>Play your own Game Boy, Game Boy Color, Game Boy Advance, NES and Super NES games from the card.</td>
+    <td></td>
+  </tr>
+  <tr valign="top">
+    <td><b><a href="https://github.com/Carbon-66/Q2-ClassiCube">ClassiCube</a></b></td>
+    <td>Build and explore a world of blocks, saved on the card: the wheel turns, a touch stick walks.</td>
     <td></td>
   </tr>
 </table>
@@ -264,7 +284,8 @@ Copy your music to the card over USB-C, then run **Library → Update Library �
 - **For users:** [User guide][guide] · [Setup](docs/setup.md) · [Changelog](docs/changelog.md) · [Accessibility](ACCESSIBILITY.md)
 - **Library folder markers:** [Hide folders while keeping playlists](docs/discovery.md)
 - **Hardware:** [Specs and internals](docs/hardware.md) · [Replacing the battery](docs/battery.md) · [Teardown photo](docs/teardown.jpg)
-- **For developers:** [Building](docs/building.md) · [Releasing](docs/releasing.md) · [Internals](docs/internals.md) · [Remote control (dev builds)](docs/remote.md) · [Desktop emulator](https://github.com/lampsonlnguyen/q2-emulation) · [Contributing](CONTRIBUTING.md)
+- **For developers:** [Building](docs/building.md) · [Releasing](docs/releasing.md) · [Internals](docs/internals.md) · [Remote control (dev builds)](docs/remote.md) · [Emulator](https://github.com/bryanmario/q2-emulator) · [Simulator](https://github.com/lampsonlnguyen/q2-emulation) · [Contributing](CONTRIBUTING.md)
+- **From the community:** [Q2 Theme Studio](https://tyleree.github.io/q2-themes/), by tyleree, makes EQ presets and themes in the browser and saves them to the card you point it at. It isn't part of Q2 Pod, so it's at your own risk. Its EQ presets work here: they go in `EQ/`, to import. Its themes don't: they need a test firmware from its author's fork, an unofficial build of an older Q2 Pod that nobody here can help with. Back up the card before you install that one, and repeat the [install steps](#install) to come back to Q2 Pod.
 
 <details>
 <summary><h2>License</h2></summary>

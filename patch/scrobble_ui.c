@@ -5,16 +5,22 @@
 /* [SCROBBLE] AUTO=1 (docs/internals.md#scrobbling): on Wi-Fi the log goes up by itself, silently,
  * once its oldest unsent listen is SA_MAX_MIN old, SA_STEP_MIN sooner per listen since, at least
  * every SA_MIN_MIN: a listen on its own waits three hours, an afternoon's album goes within the
- * hour, and with no listens nothing goes. A failed upload tries again after SA_RETRY_MIN.
+ * hour, and with no listens nothing goes. A failed upload tries again after SA_RETRY_MIN. Tries in
+ * a row that send nothing (an upload that failed, a wake that brought no link) put the next wake of
+ * Smart Wi-Fi's radio further off: SA_RETRY_MIN, doubled SA_WAKE_DOUBLINGS times at most, from the
+ * last one; a link up anyway uploads on time, and any success starts over.
  * ponytail: only listens since boot and outside an upload count; any others stay in the log and
  * go with the next upload, so the loop never reads the card for them. */
 #define SA_MAX_MIN 180
 #define SA_MIN_MIN 60
 #define SA_STEP_MIN 4
 #define SA_RETRY_MIN 30
+#define SA_WAKE_DOUBLINGS 2 /* the wake after tries that sent nothing: 30, 60, then 120 minutes */
 static struct {
     unsigned pending, first_at, check_at;
     int running, woke; /* woke: Smart Wi-Fi's radio woken for this upload */
+    /* tries in a row that sent nothing, and the last one's time */
+    unsigned misses, missed_at;
 } sa __attribute__((section(".scratch")));
 unsigned scrobble_auto_ms(unsigned pending) {
     int min = SA_MAX_MIN - SA_STEP_MIN * (int)pending;
@@ -24,9 +30,14 @@ void scrobble_listened(void) {
     if (!sa.pending++)
         sa.first_at = (unsigned)time_now_ms(), sa.woke = 0; /* a wake for the last batch's */
 }
-/* Due again SA_RETRY_MIN from now, sooner if more listens come. */
+/* Due again SA_RETRY_MIN from now, sooner if more listens come; one more try that sent nothing. */
 static void sa_retry(unsigned now) {
     sa.first_at = now - scrobble_auto_ms(sa.pending) + SA_RETRY_MIN * 60000u;
+    sa.missed_at = now, ++sa.misses;
+}
+/* From the last of misses (1 or more) tries in a row that sent nothing to the next wake. */
+static unsigned sa_wake_ms(unsigned misses) {
+    return SA_RETRY_MIN * 60000u << (misses > SA_WAKE_DOUBLINGS ? SA_WAKE_DOUBLINGS : misses - 1);
 }
 void scrobble_auto(void) {
     unsigned now = (unsigned)time_now_ms();
@@ -34,8 +45,9 @@ void scrobble_auto(void) {
         int sent = 0, done = scrobble_poll(&sent);
         if (!done) return;
         sa.running = 0;
+        smart_wifi_release();
         if (done > 0)
-            sa.pending = 0;
+            sa.pending = 0, sa.misses = 0;
         else
             sa_retry(now);
         return;
@@ -49,12 +61,14 @@ void scrobble_auto(void) {
      * ringnav_usbmode if that ever bites. */
     if (navigator_window_is_exist("usbmode_page")) return;
     if (get_wifisignal() <= 0) {
+        /* after tries that sent nothing, no wake (nor card read) before sa_wake_ms is over */
+        if (sa.misses && now - sa.missed_at < sa_wake_ms(sa.misses)) return;
         /* Smart Wi-Fi's radio off: woken for an upload that is on (the card read now), which the
          * next check sends; a wake that brought no link, or AUTO off, again in SA_RETRY_MIN */
         if (sa.woke || (smart_wifi_off() && !scrobble_flag("AUTO")))
-            sa.woke = 0, sa_retry(now);
+            sa.woke = 0, sa_retry(now), smart_wifi_release();
         else if (smart_wifi_off())
-            sa.woke = smart_wifi_wait();
+            sa.woke = smart_wifi_auto();
         return;
     }
     sa.woke = 0;
@@ -62,14 +76,14 @@ void scrobble_auto(void) {
     if (started > 0)
         sa.running = 1;
     else if (started < 0) /* off, or no account: the card again in SA_RETRY_MIN */
-        sa_retry(now);
+        sa_retry(now), smart_wifi_release();
 }
 
 /* Upload Scrobbles: the log goes up on scrobble.c's thread, and a timer reports how it went. */
 static int upload_wait(const void *unused) {
     int sent = 0, done = scrobble_poll(&sent);
     if (!done) return 8; /* RET_REPEAT */
-    if (done > 0) sa.pending = 0;
+    if (done > 0) sa.pending = 0, sa.misses = 0;
     char s[48];
     tk_snprintf(s, sizeof s, done < 0 ? "Upload failed, %d sent" : "Scrobbles sent: %d", sent);
     toast(done > 0 && !sent ? "Nothing to upload" : s);

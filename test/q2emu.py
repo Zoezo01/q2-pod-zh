@@ -519,7 +519,7 @@ class Machine:
             ret=0 if self.text(b)=='text' else self.string(n.get(self.text(b),''))
             if self.text(b)=='name' and not n.get('name'): ret=0
         elif name=='widget_get_text': ret=self.wide_string(n.get('text',''))
-        elif name=='player_playtime_and_length' and hasattr(self,'playtime'): self.word(a,self.playtime); self.word(b,225); ret=0
+        elif name=='player_playtime_and_length' and hasattr(self,'playtime'): self.word(a,self.playtime); self.word(b,getattr(self,'length',225)); ret=0
         elif name=='widget_get_text_utf8':
             text=n.get('text','').encode()
             self.u.mem_write(b,bytes(c))  # stock's wide-string conversion writes nothing unless all bytes fit
@@ -4833,8 +4833,6 @@ def stock_keyups():
             ({**wheel,ret:('dialog_quit','')},(0x499b9c,)),
             # msginfo_dialog, the toast: as the confirm, and Play/Pause and the side buttons end here too
             ({**every,ret:('dialog_quit','')},(0x49b7c8,)),
-            # updatemusic_dialog, the library scan's: Return, the wheel and Centre
-            ({**wheel,ret:stop},(0x4a2a94,)),
             # checkfw_dialog, the update's: every key
             (every,(0x499528,))):
         for handler in handlers: assert keyups(True,handler)==keyups(False,handler)==want,hex(handler)
@@ -4842,6 +4840,8 @@ def stock_keyups():
     # a second); under NP_CENTRE it goes on to on_wm_keyup_fun, which ringnav's passed-on releases are for.
     back={ret:('on_return_onclick stop','')}
     assert keyups(True,0x53da5c)==back and keyups(False,0x53da5c)=={**back,centre:('power_keyup_detect power_keyup_pending_custom stop','')}
+    # updatemusic_dialog, the library scan's: Return and the wheel end there; stock's Centre too, which SCAN_CENTRE sends on
+    assert keyups(True,0x4a2a94)=={prev:stop,nxt:stop,ret:stop} and keyups(False,0x4a2a94)=={**wheel,ret:stop}
 
 class TagMachine(BooksMachine):
     def __init__(self,files):

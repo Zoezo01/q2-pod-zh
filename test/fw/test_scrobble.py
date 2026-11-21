@@ -456,6 +456,33 @@ def test_a_batch_a_service_refuses_stays_in_the_log(fw, why, reply):
     assert (result, sent) == (-1, 0) and card.files[LOG] == log and LOG + '.sent' not in card.files
 
 
+def utf8_only(url, body):
+    """The services reading a body as their servers do: as UTF-8, a 400 when it isn't. ListenBrainz's submit-listens
+    decodes the JSON so before reading it; Last.fm's form is %-escaped, and its bytes are read the same way."""
+    data = body.encode('latin1')
+    if 'audioscrobbler' in url:
+        data = urllib.parse.unquote_to_bytes(data.decode('ascii'))
+    try:
+        data.decode('utf-8')
+    except UnicodeDecodeError:
+        return 400, '{"code":400,"error":"Cannot parse JSON document"}'
+    return Net.ok(url, body)
+
+
+def test_a_name_cut_inside_a_character_goes_up_without_it(fw):
+    """A tag stock kept 255 bytes of, its last character cut: the batch went up as it was, ListenBrainz refused it,
+    and a refused batch stays, so every upload after stopped at it. The name goes up whole-charactered now, to both
+    services, and Last.fm's signature is over what is sent (forms() checks it)."""
+    credit = '、'.join(['高坂穂乃果(CV.新田恵海)'] * 9).encode()[:255]  # inside 乃: not UTF-8
+    assert credit.decode('utf-8', 'ignore').encode() != credit
+    log = HEADER + credit + b'\tAlbum\tSong\t1\t200\tL\t1700000000\t\n' + line(title='Later')
+    (_, result, sent), card, net = upload(fw, log, reply=utf8_only)
+    assert (result, sent) == (1, 2) and card.files[LOG] == HEADER
+    whole = credit.decode('utf-8', 'ignore')
+    assert [x[1].encode('latin1').decode() for x in net.listens()[0]] == [whole, 'Art']
+    assert (net.forms()[1]['artist[0]'], net.forms()[1]['track[1]']) == (whole, 'Later')
+
+
 def echoed(url, body):
     """Last.fm's replies, which echo names: auth.getMobileSession's the account's, track.scrobble's each listen's (a
     one-listen batch's is an object, not a list)."""

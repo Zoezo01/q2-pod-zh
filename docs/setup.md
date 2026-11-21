@@ -32,6 +32,10 @@ Rockbox is a separate player and is not needed for Q2 Pod. Skip this step unless
 
 Or, with Q2 Pod on Wi-Fi: **System settings → App Store → Rockbox** installs it (press twice: it becomes what the Q2 starts at power-on), then **Rockbox Themes** installs the themes. The same page updates and removes them.
 
+## 4. Optional: a card app that isn't in the App Store
+
+**System settings → App Store** also installs and updates apps you list yourself. On a computer, make a text file named `custom-sources.list` in the card's `.q2` folder, with one app a line: its GitHub repository and the name to show, such as `someone/q2-myapp My App`. Apps go on the **Apps** tab; lines under a `[Games]` line go on **Games**. They show after the App Store's own apps, the next time the page checks for updates. The repository's name less `q2-` names the app's folder, `.myapp`: it must be up to 15 lower-case letters, digits or `-`, and not the same as an app the App Store already lists, or the line is skipped. The app's latest GitHub release must have a zip with that folder and the app in it, `.myapp/q2-myapp`. To take an app off the page, delete its line; while it is installed it stays, to be removed there.
+
 ## How to use it
 
 - **Want Q2 Pod instead of Rockbox?** Hold Play/Pause while turning the Q2 on. It only lasts that time; the next start is Rockbox. To always start Q2 Pod, set **System settings → Power → Boot to: Q2 Pod**.

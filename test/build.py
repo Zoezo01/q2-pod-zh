@@ -37,26 +37,31 @@ print('Dev build tag checks passed.')
 
 def boot_check():
     """S90play's dual boot (build.py BOOT_HOOK) under the host sh, with stand-in programs."""
-    import os, subprocess, tempfile, pathlib
-    from build import BOOT_HOOK, WHEEL_LOG_HOOK, ROCKBOX_FLAG, WIFI_OFF
+    import os, subprocess, tempfile, pathlib, shutil
+    from build import BOOT_HOOK, WHEEL_LOG_HOOK, LOG_HOOK, ROCKBOX_FLAG, WIFI_OFF
     with tempfile.TemporaryDirectory(prefix='q2-boot-') as tmp:
         r = pathlib.Path(tmp)
         def host(hook):
             script = hook.decode().replace(' &\n', '\n')
             for old in ('/mnt/', '/tmp/mmc_add', ROCKBOX_FLAG, '/usr/bin/q2boot', '/release/bin/demo', '/proc/mounts', '/tmp/q2-demo.log',
-                        '/tmp/q2-scan-file', '/tmp/q2-scan.log', '/tmp/q2-art-file', '/tmp/q2-art.log'):
+                        '/tmp/q2-scan-file', '/tmp/q2-scan.log', '/tmp/q2-art-file', '/tmp/q2-art.log', '/tmp/rtk_init_success', '/tmp/bt_startup'):
                 script = script.replace(old, f'{r}{old}')
             script = script.replace('usleep 200000\n', ':\n').replace('usleep 500000', ':')
             assert script.count('echo 1 > /proc/sys/kernel/print-fatal-signals\n') == 1  # the PC's is left alone
             script = script.replace('/proc/sys/kernel/print-fatal-signals', f'{r}/fatal-signals')
             # demo's stderr file, and its cap's minute: one pass here while {r}/minute exists
             script = script.replace('/tmp/q2-demo.err', f'{r}/tmp/q2-demo.err')
+            # a --dev log's own tmpfs (build.py LOG_HOOK): capfs stands in for mount, failing unless {r}/capfs-ok exists
+            script = script.replace('/tmp/q2-log', f'{r}/tmp/q2-log').replace('mount -t tmpfs', 'capfs')
+            assert 'mount -t' not in script
             assert script.count('while sleep 60; do') == 1
             script = script.replace('while sleep 60; do', f'while [ -f {r}/minute ] && rm -f {r}/minute; do')
         # This script runs under the PC's own sh: the real killall -9 and ifconfig would take down the PC's network,
         # not a Q2's. So they never run here: a log line stands in, and the text must be gone before anything starts.
             assert script.count(WIFI_OFF) == 2  # before Rockbox, and the hand-over's late pass
             script = script.replace(WIFI_OFF, f'echo wifi >> {r}/order')
+            script = script.replace('killall -9 bluetoothd bluealsa rtk_hciattach', 'kill_bluetooth')
+            script = script.replace('/usr/bin/cmd_gpio set_func PD20 output0', 'reset_bluetooth')
             assert script.count('/usr/bin/cmd_gpio set_func PE22 output0') == 1  # Rockbox starts with charging allowed (S12 inhibits it)
             script = script.replace('/usr/bin/cmd_gpio', 'echo gpio >> ' + str(r) + '/order; : ')
             assert 'usleep 300000' in script  # Home's hand-over pauses before Rockbox: logged, its place is the point
@@ -68,6 +73,14 @@ def boot_check():
         script = host(BOOT_HOOK[1])
         for d in ('proc', 'mnt/data', 'mnt/mmc/.rockbox', 'tmp', 'usr/bin', 'release/bin', 'bin'): (r/d).mkdir(parents=True)
         def exe(path, body): (r/path).write_text('#!/bin/sh\n' + body + '\n'); (r/path).chmod(0o755)
+        # Real host processes/GPIO must never be touched. A failed stand-in also checks that cleanup
+        # cannot prevent demo from starting; reset observes whether both stale readiness files are gone.
+        ready = (r/'tmp/rtk_init_success', r/'tmp/bt_startup')
+        config = r/'mnt/data/config.ini'
+        config.write_text('BT=1\nBTAUTOLINK=1\nBTLINKMAC=12:34:56:78:9A:BC\n')
+        saved_config = config.read_bytes()
+        exe('bin/kill_bluetooth', f'echo bt-stop >> {r}/order; [ ! -f {r}/bt-fail ]')
+        exe('bin/reset_bluetooth', f'[ ! -e {ready[0]} ] && [ ! -e {ready[1]} ] || exit 2; echo bt-reset >> {r}/order; [ ! -f {r}/bt-fail ]')
         # demo takes Home's Rockbox row (leaves the flag) as many times as the shortcuts file says
         flag, shortcuts = f'{r}{ROCKBOX_FLAG}', r/'shortcuts'
         # a demo that leaves q2-state (r/keep): it ended without ringnav_clean_end
@@ -84,8 +97,12 @@ def boot_check():
             if card: exe('mnt/mmc/.rockbox/rockbox', f'pwd >> {r}/ran; echo rockbox >> {r}/order; exit {code}')
             else: rb.unlink(missing_ok=True)
             (r/'ran').write_text(''); (r/'order').write_text('')
+            for marker in ready: marker.write_text('left by the preceding Bluetooth helpers\n')
             subprocess.run(['sh', '-c', script], check=True, env=dict(os.environ, PATH=f'{r}/bin:' + os.environ['PATH']))
-            return (r/'ran').read_text().split(), target.exists() and target.read_text().strip()
+            assert config.read_bytes() == saved_config
+            ran = (r/'ran').read_text().split()
+            assert all(not marker.exists() if str(rb.parent) in ran else marker.exists() for marker in ready)
+            return ran, target.exists() and target.read_text().strip()
         (r/'proc/mounts').write_text('')
         rockbox = [str(rb.parent), 'demo']
         assert boot(False, False) == (['demo'], False)          # no Rockbox on the card: Q2 Pod
@@ -112,7 +129,7 @@ def boot_check():
         assert boot(True, False, 81, 1) == (['demo', 'demo'], False)  # no Rockbox on the card: Q2 Pod again
         # Wi-Fi goes off before every start of Rockbox and at no other time; demo follows Rockbox whatever its status
         def order(*args): boot(*args); return (r/'order').read_text().split()
-        session = ['gpio', 'wifi', 'rockbox', 'demo']  # charging is allowed before Rockbox starts
+        session = ['gpio', 'wifi', 'rockbox', 'bt-stop', 'bt-reset', 'demo']  # Bluetooth goes off only after Rockbox
         for code in (0, 1, 81, 137, 255): assert order(False, True, code) == session
         handover = ['settle', 'late', 'wifi']
         assert order(True, True, 81, 1) == ['demo', *handover, *session]  # Home's Rockbox row waits for what demo launched
@@ -121,6 +138,13 @@ def boot_check():
         assert order(True, False, 81, 1) == ['demo', *handover, 'demo']  # nor when the row is taken
         assert order(True, True) == ['demo']                    # Play/Pause held
         target.write_text('q2pod'); assert order(False, True) == ['demo']; target.unlink()
+        assert all(marker.exists() for marker in ready)  # no actual Rockbox execution: leave Bluetooth alone
+        (r/'bt-fail').touch()
+        for held, shortcut_count in ((False, 0), (True, 1)):
+            assert order(held, True, 137, shortcut_count) == (['demo', *handover, *session] if held else session)
+            assert all(not marker.exists() for marker in ready)
+            assert (r/'mnt/mmc/.rockbox/rockbox.log').read_text() == 'exit 137\n'
+        (r/'bt-fail').unlink()
         # an abnormal end of demo leaves its status on /mnt/data, which the next boot copies to a mounted card;
         # 0, 143 and the Rockbox hand-over leave nothing
         crash, copy, mounts = r/'mnt/data/q2-crash.log', r/'mnt/mmc/q2-crash.log', r/'proc/mounts'
@@ -249,6 +273,19 @@ def boot_check():
         wcopy.write_bytes(b'x' * 262143); wheel.write_text('== wheel: four\n'); boot(True, False, status=0)
         assert wcopy.read_bytes().endswith(b'== wheel: four\n') and not wheel.exists() and not (r/'mnt/data/q2-wheel.log.m').exists()
         for f in (crash, copy, wheel, wcopy): f.unlink(missing_ok=True)
+        # a release build mounts nothing for its log; a --dev one links q2-demo.log into a tmpfs of its own (LOG_HOOK),
+        # and with the mount refused keeps /tmp's file as before. The crash log's tail reads it either way
+        assert 'q2-log' not in BOOT_HOOK[1].decode()
+        script, dlog, capped = host(BOOT_HOOK[1].replace(*LOG_HOOK)), r/'tmp/q2-demo.log', r/'tmp/q2-log/demo.log'
+        exe('bin/capfs', f'[ -f {r}/capfs-ok ]'); exe('release/bin/demo', 'echo "out 1"; ' + demo)
+        out, cp = logged(137, False)
+        assert not dlog.is_symlink() and dlog.read_text() == 'out 1\n' and out.endswith('== q2-demo.log\nout 1\n')
+        dlog.unlink(); shutil.rmtree(r/'tmp/q2-log'); (r/'capfs-ok').write_text('')
+        out, cp = logged(137, False)
+        assert dlog.is_symlink() and capped.read_text() == 'out 1\n' and out.endswith('== q2-demo.log\nout 1\n')
+        out, cp = logged(137, False)  # a second start's mkdir fails: the link stays, nothing else is made
+        assert dlog.is_symlink() and capped.read_text() == 'out 1\n' * 2
+        exe('release/bin/demo', demo); dlog.unlink(); shutil.rmtree(r/'tmp/q2-log'); (r/'capfs-ok').unlink(); crash.unlink(missing_ok=True)
     print('Dual boot: Rockbox by default, one-session Q2 Pod, stale choice ignored, card fallback, Home Rockbox row and Wi-Fi off before Rockbox passed.')
 boot_check()
 

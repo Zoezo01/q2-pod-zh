@@ -4131,6 +4131,16 @@ static const char *const pane_icons[] = { "classic_light_note",        "classic_
                                           "classic_light_icon_game",   "classic_light_icon_wave",
                                           "classic_light_icon_gear" };
 static int pane_covers(void) { return home.kind <= PANE_LIBRARY && !home.pane; }
+/* A row's image: the theme's, or in the flat look the flat family's (tools/art.py flat_pane_*), the
+ * ink's (_l) on the light half's pane; a flat pane that doesn't follow the rows shows the note. */
+static const char *pane_art(unsigned kind, char *to, unsigned size) {
+    if (!flat_pages()) return pane_icons[kind];
+    const char *name = pane_icons[kind] + sizeof "classic_light_" - 1;
+    if (!theme()->pane_icon_x || !tk_strcmp(name, "icon_note"))
+        name = "note"; /* the same drawing */
+    tk_snprintf(to, (int)size, FLAT_ART "pane_%s%s", name, ipod_light() ? "_l" : "");
+    return to;
+}
 
 /* The pan runs only while it shows: Home on top and not sliding (its snapshot would not move), the
  * screen lit, a cover that pans (the placeholder does not; Full never paints the art), on a row
@@ -4588,22 +4598,31 @@ static void pane_service(void *canvas, int x, int y) {
     const unsigned *name = label ? widget_get_text(label) : (const unsigned *)0;
     while (name && name[n] && n < 32) s[n] = name[n], ++n;
     if (!n) return;
-    int box[4] = { x, y + T->pane_count_y, T->pane_count_w, 24 }, px = T->pane_count_px, face = px;
-    canvas_set_font(canvas, theme_face(s, (int)n, &face), (unsigned)face);
+    /* the flat look's: quiet in the system's face, final */
+    int box[4] = { x, y + T->pane_count_y, T->pane_count_w, 24 }, px = T->pane_count_px, face = px,
+        flat = flat_pages();
+    canvas_set_font(canvas, flat ? (const char *)0 : theme_face(s, (int)n, &face), (unsigned)face);
     float w = canvas_measure_text(canvas, s, n);
     if (w > box[2]) {
         int fit = (int)((float)px * box[2] / w), least = px * 3 / 4;
         face = px = fit > least ? fit : least;
-        canvas_set_font(canvas, theme_face(s, (int)n, &face), (unsigned)face);
+        canvas_set_font(canvas, flat ? (const char *)0 : theme_face(s, (int)n, &face),
+                        (unsigned)face);
         while (n > 1 && canvas_measure_text(canvas, s, n) > box[2]) s[--n - 1] = 0x2026;
     }
-    draw_centred(canvas, s, n, box, (unsigned)px, RGBA(ipod_light() ? 0u : 0xffffffu));
+    s[n] = 0;
+    if (flat)
+        final_text(canvas, (const char *)0, s, box, (unsigned)px,
+                   0xff000000u | flat_quiet[ipod_light()]);
+    else
+        draw_centred(canvas, s, n, box, (unsigned)px, RGBA(ipod_light() ? 0u : 0xffffffu));
 }
 
 /* Split's panel in the theme's home_pane, the half's: the stops, its light, a shadow down its left
  * edge, the row's image from the theme (tools/art.py) and its caption. Raw colours, but the
  * caption's: ui_ink flips black to the light half's white paper, and the dark half draws white as
- * it is. */
+ * it is. The flat look's (flat_pages) is its own note, white or the ink on the light half's pane,
+ * and the caption quiet in the system's face, final. */
 void home_pane_paint(void *canvas, int x, int y, int w, int h) {
     const theme_t *T = theme();
     unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR), bitmap[64]; /* bitmap_t */
@@ -4620,7 +4639,9 @@ void home_pane_paint(void *canvas, int x, int y, int w, int h) {
         stock_canvas_set_fill_color(canvas, fill);
         return;
     }
-    if (!widget_load_image(home.art, pane_icons[home.kind], bitmap)) {
+    int flat = flat_pages(), light = ipod_light();
+    char name[40];
+    if (!widget_load_image(home.art, pane_art(home.kind, name, sizeof name), bitmap)) {
         int note = home.kind <= PANE_SHUFFLE;
         int src[4] = { 0, 0, (int)bitmap[0], (int)bitmap[1] },
             dst[4] = { x + (note ? T->pane_note_x : T->pane_icon_x),
@@ -4630,11 +4651,16 @@ void home_pane_paint(void *canvas, int x, int y, int w, int h) {
     char t[20];
     int len = pane_caption(t, sizeof t);
     if (len > 0) {
-        unsigned s[20];
+        unsigned s[21];
         for (int i = 0; i < len; ++i) s[i] = (unsigned char)t[i];
+        s[len] = 0;
         int box[4] = { x, y + T->pane_count_y, T->pane_count_w, 24 }; /* rect_t */
-        draw_centred(canvas, s, (unsigned)len, box, T->pane_count_px,
-                     RGBA(ipod_light() ? 0u : 0xffffffu));
+        if (flat)
+            final_text(canvas, (const char *)0, s, box, T->pane_count_px,
+                       0xff000000u | flat_quiet[light]);
+        else
+            draw_centred(canvas, s, (unsigned)len, box, T->pane_count_px,
+                         RGBA(light ? 0u : 0xffffffu));
     }
     stock_canvas_set_fill_color(canvas, fill);
 }
@@ -4746,8 +4772,9 @@ static int home_counts(const void *unused) {
         home.pane_read = now | 1;
         home_pane_read(&home.services, &home.games, &home.free_tenths);
         unsigned bitmap[64]; /* bitmap_t: decoded once, so no row's first show reads it */
+        char name[40];
         for (unsigned i = 0; i < sizeof pane_icons / sizeof *pane_icons; ++i)
-            widget_load_image(home.art, pane_icons[i], bitmap);
+            widget_load_image(home.art, pane_art(i, name, sizeof name), bitmap);
         pane_invalidate();
     }
     return 0;

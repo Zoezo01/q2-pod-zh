@@ -11,6 +11,7 @@ on a stock widget's layout, stays with test/patch.py, which runs the MIPS build 
 import _ctypes
 import concurrent.futures
 import ctypes
+import functools
 import json
 import os
 import pathlib
@@ -18,6 +19,7 @@ import re
 import shutil
 import subprocess
 import sys
+from types import MappingProxyType
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT/'tools'))
@@ -171,6 +173,13 @@ def offsets(obj, type_name):
     return found
 
 
+@functools.cache
+def tables(folder):
+    """A build's stubs.json and sizes.json, parsed once a run, not once a load: 2 to 3 ms of each test went on it.
+    Every load shares them, so they are read-only: a test that wrote to one would change it for the next."""
+    return tuple(MappingProxyType(json.loads((folder/name).read_text())) for name in ('stubs.json', 'sizes.json'))
+
+
 class Fw:
     """A fresh load of the library: its globals start as the Q2's do, and nothing outlives the test.
     close() unloads it; its private copy leaves the disk as soon as it's loaded."""
@@ -180,8 +189,7 @@ class Fw:
         self.lib = ctypes.CDLL(str(copy))
         os.unlink(copy)
         self.keep = []
-        self.stubs = json.loads((library.parent/'stubs.json').read_text())
-        self.sizes = json.loads((library.parent/'sizes.json').read_text())
+        self.stubs, self.sizes = tables(library.parent)
 
     def close(self):
         if 'lib' in vars(self):  # once; fw.lib goes with the library

@@ -599,12 +599,12 @@ def picks(view):
     return [(item.labels()[0].text, item.children[0].children[0].props['image'].decode()) for item in view.children]
 
 
-def test_the_theme_picker_lists_minimal_modern_classic_marking_the_running_one(fw):
+def test_the_theme_picker_lists_minimal_modern_classic_classic_modern_marking_the_running_one(fw):
     ui = Ui(fw)
     page = appearance(fw, ui, THEME=b'2')
     themes_page(fw, ui, page)
     assert page.title() == 'Theme'
-    assert picks(page.view()) == [('Minimal', 'unselect'), ('Modern', 'select'), ('Classic', 'unselect')]
+    assert picks(page.view()) == [('Minimal', 'unselect'), ('Modern', 'select'), ('Classic', 'unselect'), ('Classic Modern', 'unselect')]
 
 
 def pick(ui, page, t):
@@ -672,6 +672,56 @@ def test_picking_classic_asks_to_restart_and_saves_its_preset_alone(fw, st, answ
     # the running state stays Minimal's until the restart
     assert (st('theme').value, st('home').value, st('light').value) == (MINIMAL, 2, 2)
     assert len(fw.calls('stock_reboot_trampoline')) == (answer == 10)
+
+
+def test_classic_and_classic_modern_switch_live(fw, st):
+    """Classic Modern has Classic's geometry sets, so picking it from Classic asks no restart, and back."""
+    cm = next(t for t in THEMES if t['id'] == 'classic-modern')
+    restart = fw.fn('theme_restart', C.c_int, C.c_int)
+    ui = Ui(fw)
+    page = appearance(fw, ui, THEME=b'%d' % CLASSIC)
+    for g in range(len(host.tools_theme.geometry_sets(THEMES))):  # Classic's booted set
+        st('geom').value = g
+        if not restart(CLASSIC):
+            break
+    assert not restart(cm['index']) and restart(MINIMAL)
+    themes_page(fw, ui, page)
+    prompts = Prompts(fw, 0)
+    pick(ui, page, cm)
+    assert prompts.seen == [] and writes(fw)[0] == ('THEME', cm['index']) and st('theme').value == cm['index']
+
+
+@pytest.mark.parametrize('frm', ['Classic', 'Classic Modern'])
+def test_classic_and_classic_modern_keep_each_other_s_settings(fw, st, frm):
+    """The two share their settings (one accent key, Classic's options), so a switch either way loads no preset: what the
+    user set stays, for both. Dark, Tidal, Library on Home and Row Art off, here."""
+    cm = next(t for t in THEMES if t['id'] == 'classic-modern')
+    there, to = (CLASSIC, cm) if frm == 'Classic' else (cm['index'], theme_of(CLASSIC))
+    stored = {'THEME': there, 'LIGHT': 0, 'CLASSIC_LIGHT_ACCENT': 2, 'HOMELIB': 0, 'ROWART': 0, 'TIMETITLE': 0}
+    restart = fw.fn('theme_restart', C.c_int, C.c_int)
+    ui = Ui(fw)
+    page = appearance(fw, ui, **{k: b'%d' % v for k, v in stored.items()})
+    for g in range(len(host.tools_theme.geometry_sets(THEMES))):
+        st('geom').value = g
+        if not restart(there):
+            break
+    themes_page(fw, ui, page)
+    pick(ui, page, to)
+    assert writes(fw) == [('THEME', to['index'])] and (st('light').value, st('time_title').value) == (0, 0)
+
+
+def test_minimal_to_classic_modern_saves_classic_s_preset(fw):
+    """Settings Classic Modern doesn't share: Classic's preset, as picking Classic saves it."""
+    cm = next(t for t in THEMES if t['id'] == 'classic-modern')
+    stored = {'LIGHT': 0, 'HOME': 2, 'TIMETITLE': 0} | {k: d for k, (_, d, _) in host.tools_theme.theme_keys(THEMES).items()}
+    ui = Ui(fw)
+    page = appearance(fw, ui, **{k: b'%d' % v for k, v in stored.items()})
+    themes_page(fw, ui, page)
+    Prompts(fw, 10)
+    pick(ui, page, cm)
+    saved = writes(fw)
+    assert saved == [('THEME', cm['index'])] + preset_writes(cm, stored) and saved[1:]
+    assert preset_writes(cm, stored) == preset_writes(theme_of(CLASSIC), stored)
 
 
 def test_a_new_theme_moves_a_cached_settings_list_to_its_top(fw, st, geometry):

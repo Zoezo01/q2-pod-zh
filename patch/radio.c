@@ -524,6 +524,7 @@ static void np_open(void) {
     np.seen = ~rd.serial;
     void *rows[4] = { np.station, np.artist, np.song, np.info };
     np.ipod = stream_ipod(art, rows, np.elapsed, 0, 0, np.heart);
+    np_mark_add(&np.heart, 1); /* the flat look's heart */
     if (np.ipod) {
         widget_set_visible(name, 0, 0); /* the title bar names the page */
         image_base_set_image(art, "classic_light_station");

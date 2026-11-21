@@ -154,9 +154,9 @@ int time_click(void *target, void *event) {
     return result;
 }
 
-/* Classic's Set Date and Set Time: no OK stop, and AM/PM a field in 12-hour. */
+/* The own pages' Set Date and Set Time, either look's: no OK stop, and AM/PM a field in 12-hour. */
 int time_form(void *top) {
-    return top && classic_pages() &&
+    return top && own_pages() &&
            !tk_strcmp(widget_get_prop_str(top, "name", ""), "manualtime_page");
 }
 
@@ -176,6 +176,12 @@ int time_form(void *top) {
 #define TIME_YEAR_W 60
 #define TIME_CELL_W 45
 #define TIME_AMPM 5
+/* the flat look's tile, and Save's pill: the prompts' button, on their row */
+#define TIME_TILE_H 100
+#define TIME_SAVE_X 127
+#define TIME_SAVE_Y 224
+#define TIME_SAVE_W 121
+#define TIME_SAVE_H 36
 typedef struct {
     const char *tray;
     short tray_x, sep_x; /* no separator at 0 */
@@ -202,6 +208,12 @@ static int time_value(int f) {
 }
 static const time_row_t *time_row(int time) {
     return &time_rows[time ? 1 + !g_time24h_flag : 0]; /* 24 or 12-hour */
+}
+/* A field's x: its row's; on the date's row under a theme's gap (the flat look's date.gap) the day
+ * stays and the month and year step left by it. */
+static int field_x(const time_row_t *row, int i) {
+    int gap = row == time_rows ? theme()->date_gap : 0;
+    return !gap ? row->x[i] : row->x[2] - (2 - i) * gap - (i < 2) * TIME_CELL_W - !i * TIME_YEAR_W;
 }
 static const char *time_month(void) { return time_months[clamp_step(time_value(1) - 1, 11, 0)]; }
 
@@ -274,7 +286,7 @@ void time_open(void *win) {
         for (int i = 0; i < row->n; ++i) {
             c = field_widget(win, row->first + i);
             if (!c) continue;
-            widget_move_resize(c, row->x[i], TIME_CELL_Y,
+            widget_move_resize(c, field_x(row, i), TIME_CELL_Y,
                                row->first + i ? TIME_CELL_W : TIME_YEAR_W, TIME_CELL_H);
             widget_set_opacity(c, 0);
             /* a drag steps a row, TIME_CELL_H / 3; stock's release adds its speed times this */
@@ -291,7 +303,10 @@ void time_open(void *win) {
     }
     if (ok) { /* Save, past the page's stock height: painted, its box the touch */
         widget_move_resize(P(ok, W_PARENT), 0, 0, 375, 294);
-        widget_move_resize(ok, 0, 244, 375, 26);
+        if (flat_pages())
+            widget_move_resize(ok, TIME_SAVE_X, TIME_SAVE_Y, TIME_SAVE_W, TIME_SAVE_H);
+        else
+            widget_move_resize(ok, 0, 244, 375, 26);
         widget_set_text_utf8(ok, "Save");
         widget_set_opacity(ok, 0);
     }
@@ -425,9 +440,76 @@ static unsigned time_chars(unsigned *to, const char *s) {
     while (s[n] && n < 5) to[n] = (unsigned char)s[n], ++n;
     return n;
 }
+/* The flat look's Set Time hands in the half's ink, [0] dark and [1] light (flat_ink), and the
+ * pivot's dot in its face's grey (flat_rest). */
+#define TIME_HANDS(ink, face)                                                                      \
+    {                                                                                              \
+        { ink, 0, 5, 1, { { -12, 0 }, { -21, -60 }, { 0, -190 }, { 21, -60 }, { 12, 0 } } },       \
+        { ink, 0, 5, 2, { { -10, 0 }, { -18, -70 }, { 0, -280 }, { 18, -70 }, { 10, 0 } } },       \
+        { ink, 37, 0, 0, { { 0 } } },                                                              \
+        { face, 24, 0, 0, { { 0 } } },                                                             \
+    }
+static const clock_part_t time_clock_flat[2][4] = { TIME_HANDS(0xffffff, 0x2c2c2e),
+                                                    TIME_HANDS(0x1c1c1e, 0xe9e9ec) };
+/* time_paint's, flat: grey boxes at rest, the cell that holds in what is on, the clock's flat face
+ * or the date's tile with its month in what is on, and Save's pill. */
+static void time_paint_flat(void *w, void *canvas) {
+    static const unsigned colon = ':', save[] = { 'S', 'a', 'v', 'e' };
+    rect_t tile = { TIME_TILE_X, TIME_TILE_Y, TIME_TILE_W, TIME_TILE_H },
+           pill = { TIME_SAVE_X, TIME_SAVE_Y, TIME_SAVE_W, TIME_SAVE_H };
+    void *lcd = P(canvas, CANVAS_LCD);
+    if (!lcd) return;
+    unsigned fill = (unsigned)I(lcd, LCD_FILL_COLOR), s[5], n;
+    int time = tf.slide && widget_get_prop_int(tf.slide, "value", 0) == 1;
+    int at = field_on_page(widget_get_prop_int(w, "_edit_field", 0), time);
+    int hour = time_value(3), minute = time_value(4), light = ipod_light();
+    unsigned on = flat_on(), ink = flat_ink[light], rest = flat_rest[light],
+             over = bright_tone(on) ? flat_ink[1] : 0xffffff;
+    const time_row_t *row = time_row(time);
+    char b[6];
+    bar_rect(canvas, RGBA(flat_page()), 0, 0, 375, 294);
+    if (time) {
+        paint_clock(w, canvas, 46, 73, 110,
+                    light ? FLAT_ART "clock_face_l" : FLAT_ART "clock_face_d", hour, minute,
+                    time_clock_flat[light], 4);
+    } else { /* the month in what is on, over the day */
+        rect_t head = { TIME_TILE_X, TIME_TILE_Y + 6, TIME_TILE_W, 26 },
+               day = { TIME_TILE_X, TIME_TILE_Y + 26, TIME_TILE_W, 70 };
+        flat_box(canvas, &tile, RGBA(rest), 13);
+        n = time_chars(s, time_month());
+        time_text(canvas, s, n, &head, 21, on, 255);
+        tk_snprintf(b, sizeof b, "%02d", time_value(2));
+        n = time_chars(s, b);
+        time_text(canvas, s, n, &day, 64, ink, 255);
+    }
+    for (int i = 0; i < row->n; ++i) {
+        int f = row->first + i;
+        rect_t r = { field_x(row, i), TIME_CELL_Y, f ? TIME_CELL_W : TIME_YEAR_W, TIME_CELL_H };
+        flat_box(canvas, &r, RGBA(f == at ? on : rest), 10);
+        if (f == TIME_AMPM)
+            tk_snprintf(b, sizeof b, "%s", hour < 12 ? "AM" : "PM");
+        else if (f == 3 && row->n == 3)
+            tk_snprintf(b, sizeof b, "%d", hour % 12 ?: 12);
+        else
+            tk_snprintf(b, sizeof b, f ? "%02d" : "%d", time_value(f));
+        n = time_chars(s, b);
+        time_text(canvas, s, n, &r, f == TIME_AMPM ? 23 : 27, f == at ? over : ink, 255);
+    }
+    if (row->sep_x) {
+        rect_t r = { row->sep_x, TIME_CELL_Y, 12, TIME_CELL_H };
+        time_text(canvas, &colon, 1, &r, 27, ink, 255);
+    }
+    flat_box(canvas, &pill, RGBA(rest), 18);
+    time_text(canvas, save, 4, &pill, CONFIRM_FLAT_PX, ink, 255);
+    stock_canvas_set_fill_color(canvas, fill);
+}
 /* The page, in the window's coordinates, under its children. */
 void time_paint(void *w, void *canvas) {
     static const unsigned colon = ':', save[] = { 'S', 'a', 'v', 'e' };
+    if (flat_pages()) {
+        time_paint_flat(w, canvas);
+        return;
+    }
     static const char *const cells[2][2] = {
         { "classic_light_cell_45", "classic_light_cell_lit_45" },
         { "classic_light_cell_60", "classic_light_cell_lit_60" },

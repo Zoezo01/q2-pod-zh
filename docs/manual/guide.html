@@ -765,8 +765,8 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3, .lead { b
   <table>
     <thead><tr><th>Setting</th><th>What it does</th></tr></thead>
     <tbody>
-      <tr><td>Gapless</td><td>Plays albums without gaps. Encoder padding is removed from MP3 (with a gapless tag), AAC in M4A, Opus and Vorbis; intentional silence stays. Keep it on.</td></tr>
-      <tr><td>Crossfade</td><td>Fades one song into the next, 1–15 s (5 s by default). Turn all the way down for Off; Centre turns it on or off. Only between different albums, so albums stay gapless. Needs Gapless. Off by default.</td></tr>
+      <tr><td>Gapless</td><td>Plays albums without gaps. Encoder padding is removed from MP3 (with a gapless tag), AAC in M4A, Opus and Vorbis; intentional silence stays. Keep it on. It stays on while Crossfade is on: to turn it off, turn Crossfade off first.</td></tr>
+      <tr><td>Crossfade</td><td>Fades one song into the next, 1–15 s (5 s by default). Turn all the way down for Off; Centre turns it on or off. Only between different albums, so albums stay gapless. Turning it on turns Gapless on, which a fade needs. Off by default.</td></tr>
       <tr><td>Memory Playback</td><td>Brings your queue back, paused, at start-up: Track at the start of the song, Location where you stopped.</td></tr>
       <tr><td>Resume Songs</td><td>Songs this long or longer pick up where you stopped, as podcasts do: 20 to 120 minutes, 30 by default, or Off.</td></tr>
       <tr><td>Max Volume</td><td>Limits how loud the Q2 goes: turn the wheel to set the limit, then press Centre.</td></tr>
@@ -1081,9 +1081,9 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
   <table>
     <thead><tr><th>Setting</th><th>What it does</th></tr></thead>
     <tbody>
-      <tr><td>Theme</td><td><b>Minimal</b> (default); <b>Modern</b>, Minimal with full-width bars in the accent colour; or <b>Classic</b>, the iPod look: a glossy title bar, smaller rows and a light screen. Minimal and Modern switch at once; choosing or leaving Classic restarts the Q2. Tidal’s pages, games and photos keep Minimal’s layout.</td></tr>
+      <tr><td>Theme</td><td><b>Minimal</b> (default); <b>Modern</b>, Minimal with full-width bars in the accent colour; <b>Classic</b>, the iPod look: a glossy bar and smaller rows; <b>Classic Modern</b>, Classic with flat Quick Settings and prompts. Minimal and Modern switch at once, as do the Classics; others restart. Tidal, games and photos keep Minimal’s layout.</td></tr>
       <tr><td>Light Mode</td><td>Off (dark), On (light), or Auto: light from 7:00 to 19:00. Choosing Classic or Modern turns it on, unless it’s Auto.</td></tr>
-      <tr><td>Accent</td><td>Graphite (default), Crimson, Tidal, Champagne, Cobalt, Tangerine, Plum, Green or Ivory. Classic starts on Classic Blue, Modern on Cobalt; neither has Ivory. Each theme keeps its own.</td></tr>
+      <tr><td>Accent</td><td>Graphite (default), Crimson, Tidal, Champagne, Cobalt, Tangerine, Plum, Green or Ivory (Minimal only). Classic starts on Classic Blue, Modern on Cobalt; Classics share one.</td></tr>
       <tr><td>Status Bar</td><td>Theme (default) matches your theme; or Minimal, Modern or Classic’s bar under any theme.</td></tr>
       <tr><td>Rounded Corners</td><td>Minimal and Modern. On: pill-shaped bars and rounded tiles. Off: full-width bars and square tiles.</td></tr>
       <tr><td>Home</td><td>Split (default): the menu beside the cover. Full: the menu alone. Carousel: Shanling’s home carousel of eight cards; the wheel moves between them and Centre opens one.</td></tr>
