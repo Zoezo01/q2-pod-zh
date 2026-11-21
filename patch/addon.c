@@ -267,10 +267,13 @@ static void launch(app_t *a) {
  * the thread that starts the player, nearly always the UI's): an app that isn't running (its
  * loop's pid file gone: it ended idle, or was stopped) starts as its page starts it (page_at).
  * Whether it started in the last ADDON_START_MS, so the player waits for it (addon_answers).
- * ponytail: a jack or Bluetooth restart (player_save_start's thread) and the UI thread's page_at
- * can both launch within the same ~100 ms (launched isn't set under a lock), giving two launcher
- * loops: the second takes the browse socket, the first keeps the relay port, and the pid file
- * names only one. */
+ * A pid file a dead loop left reads as running: nothing starts, and the song fails as before.
+ * ponytail: page_at launches whenever the pid file is missing, without the ADDON_START_MS here, so
+ * the page opened while a wake's start is under way (its loop's pid file not written yet) launches
+ * it again, and so can a jack or Bluetooth restart's wake (player_save_start's thread) beside the
+ * UI thread's page_at (launched isn't set under a lock): two launcher loops, the second takes the
+ * browse socket, the first keeps the relay port, and the pid file names only one. page_at taking
+ * the same window, or a lock in the app's run, would close both. */
 int addon_wake(const char *id) {
     app_t *a = 0;
     for (int i = 0; i < ap.n && !a; ++i)

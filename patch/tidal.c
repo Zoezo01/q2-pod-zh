@@ -659,7 +659,9 @@ static void *app_start(void *arg) {
     au_job *j = arg;
     /* the app started for it: its socket takes a connection once it serves, AU_WAKE_MS at most; a
      * later start, a queue loaded since or anything else playing (au_other) ends the wait. Outside
-     * au.start: a card song's start, on the UI thread, waits for that. */
+     * au.start: a card song's start, on the UI thread, waits for that. ponytail: Stop Streaming
+     * Services and USB storage (addon_stop, addon_card_away) don't touch au, so the wait runs on
+     * and the URL fails; a call from them raising au.play would end it. */
     for (unsigned t = 0; *j->app && t < AU_WAKE_MS && j->play == au.play &&
                          j->loads == playback_loads && !au_other() && !addon_answers(j->app);
          t += 100)
