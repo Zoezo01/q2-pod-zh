@@ -177,7 +177,8 @@ extern void spot_poll(void), spot_paint(void *w, void *canvas), *spot_art(void);
 extern int un_hold(void *top);
 extern void radio_poll(void);
 extern void xfade_row(void *label), wheel_row(void *label), resume_row(void *label),
-    mono_row(void *label), swap_row(void *label), night_row(void *label);
+    mono_row(void *label), swap_row(void *label), night_row(void *label),
+    xfade_gapless_row(void *view);
 extern int mono_click(void *ctx, void *event), swap_click(void *ctx, void *event);
 extern int xfade_open(void *ctx, void *event), xfade_key(void *top, unsigned key), resume_min(void);
 extern int eq_key(void *top, unsigned key); /* peq_ui.c */
@@ -3483,6 +3484,7 @@ int ringnav_audioset(void *win, void *ctx) {
         return result;
     }
     xfade_row(list_row_into(view, "playset_gapless", xfade_open, (void *)0));  /* crossfade.c */
+    xfade_gapless_row(view);                                                   /* crossfade.c */
     resume_row(list_row_into(view, "playset_memplay", xfade_open, (void *)2)); /* crossfade.c */
     mono_row(list_row(view, "playset_balance", mono_click, 0));
     swap_row(list_row(view, "playset_balance", swap_click, 0));

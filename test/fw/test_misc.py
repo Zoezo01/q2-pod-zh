@@ -12,6 +12,8 @@ import pytest
 from conftest import block
 from test_books import stored  # test_books.py keeps the stored-block maker
 
+pytestmark = pytest.mark.usefixtures('stock_gapless')  # Crossfade's page has stock's Gapless on, as stock's default
+
 CENTER, PREV, NEXT, PLAY, RETURN, BACK_BTN, FWD_BTN = 218, 172, 173, 171, 170, 222, 223
 FNV = 2166136261
 r = C.byref

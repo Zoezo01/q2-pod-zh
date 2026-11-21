@@ -7,7 +7,9 @@
  * same way, the length a music track needs to keep its place (navigation.c resume_poll). Display's
  * Night Shift row opens it as well (xf.ctx 3): the switch and Centre cycle Off, On and Auto, as
  * Light Mode's row does, and the slider runs NS_COOL to NS_WARM, warmer to the right, a NS_STEP a
- * tick (nightshift.c). Mono Audio's row lives here too (mono_sync). */
+ * tick (nightshift.c). Mono Audio's row lives here too (mono_sync). Crossfade fades only with
+ * stock's Gapless on, so turning it on turns Gapless on and, while it is on, Gapless's row stays on
+ * (gapless_on, gapless_click, xfade_boot). */
 #include "offsets.inc"
 #include "peq.h"
 #include "playback.h"
@@ -20,6 +22,7 @@
 #define WHEEL_ROW "label_wheel"  /* and Controls' Wheel sensitivity row's */
 #define RS_ROW "label_resumemin" /* and Playback's Resume Songs row's */
 #define NS_ROW "label_night"     /* and Display's Night Shift row's */
+#define GAP_SW "img_gapless7"    /* stock's Gapless switch, in its row's button "7" */
 #define RS_MIN 20
 #define RS_MAX 120
 #define RS_DEFAULT 30
@@ -232,6 +235,36 @@ int swap_click(void *ctx, void *event) {
     return 0;
 }
 
+/* Crossfade on: stock's Gapless on, as its row's click turns it on (0x4bd158): saved, set, and its
+ * switch on the Playback page below shown on. */
+static void gapless_on(void) {
+    if (!xf.on || *(volatile unsigned char *)MCL_GAPLESS) return;
+    write_int_config(1, "PLAYSET", "GAPLESS");
+    mclSetGaplessMode(1);
+    void *sw = widget_lookup(window_manager(), GAP_SW, 1);
+    if (sw) image_base_set_image(sw, "switch_on");
+}
+/* Gapless's row, ahead of stock's click (AWTK runs the newest handler first): with Crossfade on,
+ * a press leaves it on and says why. */
+static int gapless_click(void *ctx, void *event) {
+    settings();
+    if (!xf.on || !*(volatile unsigned char *)MCL_GAPLESS) return 0;
+    toast("Crossfade needs Gapless");
+    return 11; /* RET_STOP */
+}
+/* Playback's view (navigation.c ringnav_audioset): stock's Gapless row's button, the switch's. */
+void xfade_gapless_row(void *view) {
+    void *sw = widget_lookup(view, GAP_SW, 1);
+    if (sw) widget_on(P(sw, W_PARENT), EVT_CLICK, gapless_click, 0);
+}
+/* config_init, before it loads stock's Gapless (playback.c ringnav_bootmode): Crossfade saved on,
+ * so is Gapless, which stock then loads and sets. */
+void xfade_boot(void) {
+    settings();
+    if (xf.on && config_value("PLAYSET", "GAPLESS", 2, 0) != 1)
+        write_int_config(1, "PLAYSET", "GAPLESS");
+}
+
 /* The slider's value: the sensitivity; Resume's minutes, RS_MIN - 5 for Off; Night Shift's steps
  * below NS_COOL, on or off; or 0 for Off, else the length. */
 static int value(void) {
@@ -255,6 +288,7 @@ static void refresh(int save) {
         write_int_config(xf.on, "Q2POD", "XFADE");
         write_int_config(xf.seconds, "Q2POD", "XFADESEC");
     }
+    if (!xf.ctx) gapless_on(); /* at once, a drag too: a drag plays its value */
     void *row = widget_lookup(window_manager(), XF_ROW, 1);
     if (row) row_text(row);
     if ((row = widget_lookup(window_manager(), WHEEL_ROW, 1))) wheel_text(row);

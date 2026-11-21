@@ -1594,6 +1594,7 @@ FUNCTIONS = {
  'config_outputchannel': ('int', 'int, int'),  # g_headset_output, 2
  'mclSetPcmMode': ('int', 'void'),
  'mclSetMute': ('int', 'int'),
+ 'mclSetGaplessMode': ('int', 'int'),  # Crossfade turns stock's Gapless on as its row does (crossfade.c gapless_on)
  'toolsTrimLeft': ('void', 'char *'),
  'switch_charge_enable': ('int', 'int'),  # 1 charges: the active-low charge enable on GPIO PE22 (usbmode_page_init)
  'toolsGpioSetValue': ('int', 'const char *, int'),

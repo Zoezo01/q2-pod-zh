@@ -215,6 +215,16 @@ class Mcl:
         C.c_int.from_address(O['MCL_' + name.upper()]).value = value
 
 @pytest.fixture
+def stock_gapless():
+    """Stock's Gapless byte (mclGetGaplessMode), on as stock's default, and put back after: conftest's map outlives
+    a test."""
+    byte = C.c_ubyte.from_address(O['MCL_GAPLESS'])
+    saved, byte.value = byte.value, 1
+    yield byte
+    byte.value = saved
+
+
+@pytest.fixture
 def mcl():
     """Stock's player globals, zeroed for the test and put back after: conftest's map outlives a load."""
     start, size = O['MCL_POOL'], O['MCL_FD'] + 4 - O['MCL_POOL']
