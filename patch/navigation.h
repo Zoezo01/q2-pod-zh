@@ -467,6 +467,7 @@ unsigned flat_page(void);
 unsigned flat_on(void);
 enum { BAR_PLAIN, BAR_SUNS, BAR_SPEAKERS }; /* flat_bar's marks */
 void flat_bar(void *w, void *canvas, const rect_t *r, int part, unsigned rest, int marks);
+void flat_box(void *canvas, rect_t *r, unsigned rgba, unsigned radius);
 void page_label(void *w, int x, int y, int ww, int h, int px, const char *face, unsigned rgb);
 void confirm_track_flat(void *w, void *canvas, int form);
 void confirm_lit(void *canvas, const rect_t *c);

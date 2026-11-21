@@ -279,6 +279,20 @@ def test_over_the_flat_quick_settings_the_volume_is_the_bar_s_card(fw, world, st
     assert canvas.fill == 0xff123456
 
 
+@pytest.mark.parametrize('accent', [TIDAL, GRAPHITE])
+def test_the_flat_volume_in_the_light_half_is_final(fw, world, st, accent):
+    """The card white, the bar's rest the light half's grey and its fill what is on, as Quick Settings' own bar."""
+    theme(fw, MODERN, ACCENT=str(accent), LIGHT='1')
+    dialog, vol, label = volume(fw, world, st, 50, under='statusbar_dialog')
+    canvas = Canvas(fw)
+    vol_paint(fw, dialog, canvas)
+    lit, rest = lit_of(fw, canvas)
+    card = [f for f in rest if f[1] == 232 and f[2] > 1]  # a row of the card above the bar, its corners aside
+    bar = [f for f in rest if f[1] == 239 + 18 and 33 <= f[0] < 342 and f[2] > 1]
+    assert lit and {f[4] for f in card} == {rgba(0xffffff)} and {f[4] for f in bar} == {rgba(0xe9e9ec)}  # qs_card, qs_rest
+    assert canvas.fill == 0xff123456
+
+
 def test_over_modern_s_other_windows_the_volume_stays_its_panel(fw, world, st):
     theme(fw, MODERN)
     dialog, vol, _ = volume(fw, world, st, 37)
@@ -559,3 +573,39 @@ def test_modern_paints_the_time_page_flat(fw, keys, twelve, hour, shown):
     faces = [canvas.over(w) for w in boxes]
     assert ':' in [t for t, _ in canvas.texts] and len(set(faces)) == 2 and faces.count(faces[0]) == 1  # the hour holds
     assert canvas.art == ['flat_clock_face_d'] and canvas.over(ok) == faces[1]  # the dark half's face; Save at rest
+
+
+def test_modern_s_date_page_in_the_light_half_is_final(fw, keys):
+    """The boxes in their final colours, Light Mode's ink held off them (flat_box): the tile and Save at the light
+    half's rest, the field being set in what is on, as Quick Settings has them."""
+    loop.Config(fw, THEME=b'2', LIGHT=b'1')
+    top, _ = loop.open_time(fw, loop.Ui(fw), at=(4, 2, 4, 21, 5))
+    top.ints[b'_edit_field'] = 1
+    canvas = TimeCanvas(fw)
+    loop.time_paint(fw, top, canvas)
+    on, rest = fw.fn('flat_on', C.c_uint)(), fw.var('flat_rest', C.c_uint * 2)[1]
+    final = rgba
+    assert canvas.over(top.find(b'tselector_month')) == final(on)  # the field being set
+    assert canvas.over(top.find(b'tselector_year')) == canvas.over(top.find(b'btn_enter')) == final(rest)  # Save at rest
+    assert canvas.fills[0][4] == final(rest) and canvas.fills[0][:2] != top.find(b'btn_enter').box()[:2]  # the tile first
+
+
+@pytest.mark.parametrize('twelve, last', [(True, 5), (False, 4)])
+def test_modern_set_time_walks_its_fields_then_saves(fw, keys, twelve, last):
+    """Classic's model under Modern: Centre walks every field, AM/PM the sixth in 12-hour, and the next Centre saves,
+    with no stop on OK; the side buttons stop at the last field."""
+    loop.Config(fw, THEME=b'2')
+    ui = loop.Ui(fw)
+    top, _ = loop.open_time(fw, ui, twelve=twelve)
+    assert fw.fn('fields', C.c_int, C.c_void_p)(top.p) == last + 1
+    seen = []
+    for _ in range(last):
+        loop.centre(ui, keys)
+        seen.append(loop.field(top))
+    assert seen == list(range(1, last + 1)) and ui.clicks == []
+    loop.centre(ui, keys)
+    assert ui.clicks == [(b'btn_enter', loop.EVT_CLICK)]
+    top, _ = loop.open_time(fw, loop.Ui(fw), twelve=twelve)
+    for _ in range(8):
+        keys(loop.KEY_FWD_BTN, 10)
+    assert loop.field(top) == last

@@ -16,6 +16,14 @@ unsigned flat_on(void) {
     return flip_if(ipod_light(), neutral(S->tones[0]) ? accent_tone(TONE_RED)
                                                       : mix(S->tones[0], S->tones[1], 1, 2));
 }
+/* A round box in a final colour: stock's, one call, as a row at a time costs a page's other parts
+ * their share of a paint. Light Mode's ink is held off it, as flipping a colour back is not exact.
+ */
+void flat_box(void *canvas, rect_t *r, unsigned rgba, unsigned radius) {
+    unsigned raw = ui_ink_raw(1);
+    fill_box(canvas, r, rgba, radius);
+    ui_ink_raw(raw);
+}
 /* A 36 px bar, flat: r at rest, its first part px in what is on (none at 0, never less than its own
  * round end), and its marks in its ends (BAR_SUNS, BAR_SPEAKERS, or none): the near one on the
  * fill, white, or dark on a bright fill, and the far one quiet until the fill reaches it, then the
@@ -67,7 +75,7 @@ void confirm_track_flat(void *w, void *canvas, int form) {
     stops_t rest = { 2, { 0, 100 }, { grey, grey } };
     if (form == FORM_TRAY) {
         rect_t tray = { 38, 248, 299, 56 };
-        fill_box(canvas, &tray, flip_if(light, TOAST_RGBA), 12);
+        flat_box(canvas, &tray, TOAST_RGBA, 12);
     } else {
         bar_rect(canvas, RGBA(scheme()->paper), 0, BAR_ROWS, 375, 320 - BAR_ROWS);
         void *bar = *(void *const *)system_bar; /* over Quick Settings nothing else draws it */
@@ -94,10 +102,11 @@ void confirm_labels_flat(void *w, void *canvas, int form) {
     if (!cell[0] || !cell[1]) return;
     unsigned over = bright_tone(flat_on()) ? flat_ink[1] : 0xffffff,
              plain = form == FORM_TRAY ? 0xffffff : flat_ink[light];
+    unsigned raw = ui_ink_raw(1); /* final, as flat_box */
     for (int k = 0; k < 2; ++k) {
         const unsigned *s = widget_get_text(cell[k]);
         rect_t r = { I(cell[k], W_X), I(cell[k], W_Y), I(cell[k], W_W), I(cell[k], W_H) };
-        draw_centred(canvas, s, wide_len(s), &r, CONFIRM_FLAT_PX,
-                     RGBA(flip_if(light, k == lit ? over : plain)));
+        draw_centred(canvas, s, wide_len(s), &r, CONFIRM_FLAT_PX, RGBA(k == lit ? over : plain));
     }
+    ui_ink_raw(raw);
 }

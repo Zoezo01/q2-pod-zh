@@ -1,10 +1,12 @@
 """The flat look's prompts (dialog.confirm painter flat, Modern's): the confirm's cells, track and words. Classic's are
-test_nav_painters'. The hold menu stays stock's under Modern."""
+test_nav_painters'. The hold menu, its choices and the toast stay stock's under Modern."""
 import ctypes as C
 
 import pytest
 
-from test_nav_painters import MODERN, SETS, Confirm, Scheme, Ui, g, layout, rgba, theme  # noqa: F401 (layout: a fixture)
+import test_nav_hold as hold_
+from test_nav_hold import recs, ui  # noqa: F401 (fixtures)
+from test_nav_painters import MODERN, SETS, Canvas, Confirm, Scheme, Ui, g, layout, paint_bg, rgba, theme  # noqa: F401 (layout: a fixture)
 
 MODERN_SET = next((i for i, s in enumerate(SETS) if s.name == 'modern'), 0)
 
@@ -61,20 +63,20 @@ def test_the_flat_cell_that_holds_is_flat_in_what_is_on(fw, st, light):
 @pytest.mark.parametrize('light', [0, 1])
 @pytest.mark.parametrize('accent', [b'1', b'4'])  # Crimson, Tidal: a dark and a bright fill
 def test_the_flat_cells_words_have_no_shadow(fw, st, light, accent):
-    """White on the held cell, dark on a bright fill; the half's ink on the other. Final: the light half turns what
-    it sets first, and Light Mode's text setter turns it again."""
+    """White on the held cell, dark on a bright fill; the half's ink on the other; final in either half."""
     confirm = Confirm(fw, modern(fw, st, light, ACCENT=accent))
     canvas = confirm.paint()
-    flip = fw.fn('flip', C.c_uint, C.c_uint)
-    final = lambda c: rgba(flip(flip(c)) if light else c)
+    final = rgba
     held = 0x1c1c1e if fw.fn('bright_tone', C.c_int, C.c_uint)(flat_on(fw)) else 0xffffff
     drawn = {t: (r, c) for t, r, c in canvas.texts}
     assert len(canvas.texts) == 2 and drawn['Cancel'][0] == confirm.cancel.box and drawn['OK'][0] == confirm.enter.box
     assert (drawn['Cancel'][1], drawn['OK'][1]) == (final(held), final((0xffffff, 0x1c1c1e)[light]))
 
 
-def test_a_row_action_s_flat_tray_is_the_toast_s_box(fw, st):
-    ui = modern(fw, st)
+@pytest.mark.parametrize('light', [0, 1])
+def test_a_row_action_s_flat_tray_is_the_toast_s_box(fw, st, light):
+    """The toast's dark box in either half, final (flat_box), its words white and final too."""
+    ui = modern(fw, st, light)
     seen = {}
 
     def open_dialog(name, prompt, *_):
@@ -88,8 +90,28 @@ def test_a_row_action_s_flat_tray_is_the_toast_s_box(fw, st):
     assert fw.fn('playlists__confirm_over', C.c_int, C.c_void_p, C.c_char_p)(None, verb) == 1
     text, shown, images, boxes, cells, inks = seen['tray']
     assert text == 'Delete' and not shown and images == []  # the cell says what it's for; no question, no shadow
-    ((bx, by, bw, bh), _, radius), = boxes
-    assert radius == 12 and 2 * bx + bw == 375 and all(bx <= x and x + w <= bx + bw and by <= y and y + h <= by + bh
-                                                        for x, y, w, h in cells)
+    ((bx, by, bw, bh), color, radius), = boxes
+    assert color == 0xee2b2b2b and radius == 12 and 2 * bx + bw == 375  # navigation.h TOAST_RGBA, centred
+    assert all(bx <= x and x + w <= bx + bw and by <= y and y + h <= by + bh for x, y, w, h in cells)
     held = 0x1c1c1e if fw.fn('bright_tone', C.c_int, C.c_uint)(flat_on(fw)) else 0xffffff  # Graphite's silver: dark
     assert (inks['Cancel'], inks['Delete']) == (rgba(held), rgba(0xffffff))  # the other cell white on the dark box
+
+
+def test_modern_keeps_stocks_hold_menu_its_choices_and_toast(fw, ui, st, recs, mcl):
+    """As on main, where Modern's prompts were stock's: QM_ROW rows the full width, no panel, no toast box."""
+    hold_.use_set(st, hold_.MINIMAL)  # Modern's geometry set, Minimal's
+    st('theme').value = MODERN
+    hold = hold_.Hold(fw, ui, st, recs, mcl).now_playing([hold_.song(recs, i) for i in range(3)])
+    hold.hold()
+    hold.menu()
+    rows = [ui.nodes[item].rect() for item in ui.kids(hold.view())]
+    assert rows and all((x, w, h) == (0, 375, 66) for x, _, w, h in rows)  # queue_menu.c QM_ROW
+    canvas = Canvas(fw)
+    for paint in ('ringnav_paint_bg', 'ringnav_paint'):
+        fw.fn(paint, C.c_int, C.c_void_p, C.c_void_p)(hold.dialog, canvas.addr)
+    assert not canvas.px and not canvas.boxes  # hold_paint draws nothing
+    hold.pick('Repeat')
+    assert all((x, w, h) == (0, 375, 66) for x, _, w, h in (ui.nodes[i].rect() for i in ui.kids(hold.view())))
+    toast = Ui(fw).window('msginfo_dialog', kind='dialog')
+    paint_bg(fw, toast, canvas)
+    assert '_toast' not in toast.props and not canvas.boxes

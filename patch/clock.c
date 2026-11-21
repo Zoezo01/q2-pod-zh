@@ -445,11 +445,6 @@ static unsigned time_chars(unsigned *to, const char *s) {
     }
 static const clock_part_t time_clock_flat[2][4] = { TIME_HANDS(0xffffff, 0x2c2c2e),
                                                     TIME_HANDS(0x1c1c1e, 0xe9e9ec) };
-/* A flat round box in a final colour: stock's, one call, as a row of the page costs the clock's
- * hands their share of a paint. */
-static void time_box(void *canvas, rect_t *r, unsigned rgb, unsigned radius) {
-    fill_box(canvas, r, RGBA(flip_if(ipod_light(), rgb)), radius);
-}
 /* time_paint's, flat: grey boxes at rest, the cell that holds in what is on, the clock's flat face
  * or the date's tile with its month in what is on, and Save's pill. */
 static void time_paint_flat(void *w, void *canvas) {
@@ -474,7 +469,7 @@ static void time_paint_flat(void *w, void *canvas) {
     } else { /* the month in what is on, over the day */
         rect_t head = { TIME_TILE_X, TIME_TILE_Y + 6, TIME_TILE_W, 26 },
                day = { TIME_TILE_X, TIME_TILE_Y + 26, TIME_TILE_W, 70 };
-        time_box(canvas, &tile, rest, 13);
+        flat_box(canvas, &tile, RGBA(rest), 13);
         n = time_chars(s, time_month());
         time_text(canvas, s, n, &head, 21, on, 255);
         tk_snprintf(b, sizeof b, "%02d", time_value(2));
@@ -484,7 +479,7 @@ static void time_paint_flat(void *w, void *canvas) {
     for (int i = 0; i < row->n; ++i) {
         int f = row->first + i;
         rect_t r = { row->x[i], TIME_CELL_Y, f ? TIME_CELL_W : TIME_YEAR_W, TIME_CELL_H };
-        time_box(canvas, &r, f == at ? on : rest, 10);
+        flat_box(canvas, &r, RGBA(f == at ? on : rest), 10);
         if (f == TIME_AMPM)
             tk_snprintf(b, sizeof b, "%s", hour < 12 ? "AM" : "PM");
         else if (f == 3 && row->n == 3)
@@ -498,7 +493,7 @@ static void time_paint_flat(void *w, void *canvas) {
         rect_t r = { row->sep_x, TIME_CELL_Y, 12, TIME_CELL_H };
         time_text(canvas, &colon, 1, &r, 27, ink, 255);
     }
-    time_box(canvas, &pill, rest, 18);
+    flat_box(canvas, &pill, RGBA(rest), 18);
     time_text(canvas, save, 4, &pill, CONFIRM_FLAT_PX, ink, 255);
     stock_canvas_set_fill_color(canvas, fill);
 }
