@@ -1481,7 +1481,8 @@ static int req_done(void) {
  * A reply whose message is "refresh" is asked again every ADDON_LIVE_MS while its level is on top,
  * no game or screen row's run in front of it (tick),
  * and at once after an action on it (the level stays shown, no Loading…), and redrawn only when it
- * changed, its selected row kept; one with the same rows (same_rows) is written in place (relabel)
+ * changed or its covers' count did (got), its selected row kept;
+ * one with the same rows (same_rows) is written in place (relabel)
  * instead of rebuilt. One whose message is "pages" and that has a cursor
  * is followed by its next pages (page_next), appended to its list (append) under a Loading… row;
  * any other keeps More….
@@ -2096,7 +2097,7 @@ static void got(void) {
     /* its own size, before spot_reply points into it: a full list keeps ADDON_PAGES of them */
     if (req.fail == SPOT_OK && (fit = realloc(reply, req.n + 1))) reply = fit;
     /* The reply's bytes past its id, before spot_reply cuts them: the same as shown, nothing
-     * redrawn. */
+     * redrawn but a live list whose covers' count moved. */
     unsigned skip = 9, hash = 0;
     while (req.fail == SPOT_OK && skip < req.n && reply[skip] != '\t') ++skip;
     if (req.fail == SPOT_OK && skip < req.n)
@@ -2184,7 +2185,14 @@ static void got(void) {
                 relabel(l); /* only texts and bars moved: the rows stay */
             else
                 show();
-        }
+        } else if (l->live && pg.view && pg.pages == 1 && art_rows(l->n) != l->art)
+            /* the shown reply again, and a cover's file came or went since the list was drawn (an
+             * app that fetches art after it answers): drawn again, its row kept.
+             * ponytail: a header read, or a failed open, per row every ADDON_LIVE_MS a live list
+             * is on show; and one with More…'s pages is not counted (l->art is its first page's),
+             * so a cover that comes late there waits for the next rebuild: count at append if
+             * apps page live lists. */
+            keep_sel(), show();
         if (pg.code) /* turned on by its row: its address at once, the menu behind it */
             pg.code = 0, qr_open(app()->state, app()->name);
     }

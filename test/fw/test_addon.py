@@ -3486,6 +3486,38 @@ def test_a_refresh_in_place_keeps_the_covers_and_a_new_cover_rebuilds(fw):
     assert p.top.art == 2 and len(fw.calls('list_item_create')) > drawn
 
 
+def test_a_cover_that_comes_under_the_same_refresh_draws_the_list_again(fw):
+    """addon.c got: the shown reply again is still counted for covers, a file written after the app answered."""
+    p = live(fw, rows_of(0, 3))
+    drawn = len(fw.calls('list_item_create'))
+    p.world.files[art_path(b'op1', b'')] = jpeg()
+    p.sel = 2
+    refresh(p, rows_of(0, 3))
+    assert p.top.art == 1 and len(fw.calls('list_item_create')) == drawn + 3 and p.top.sel == 2  # its row kept
+    drawn += 3
+    refresh(p, rows_of(0, 3))
+    assert len(fw.calls('list_item_create')) == drawn  # as many covers as drawn: nothing
+    del p.world.files[art_path(b'op1', b'')]
+    refresh(p, rows_of(0, 3))
+    assert p.top.art == 0 and len(fw.calls('list_item_create')) == drawn + 3  # and one that went
+
+
+@pytest.mark.parametrize('how', ['not live', 'the search box open', 'pages appended'])
+def test_the_same_reply_counts_covers_only_for_a_live_list_on_show_in_one_page(fw, how):
+    p = live(fw, rows_of(0, 3)) if how != 'not live' else Page(fw)
+    if how == 'not live':
+        p.answer(rows=rows_of(0, 3))
+    drawn = len(fw.calls('list_item_create'))
+    p.world.files[art_path(b'op1', b'')] = jpeg()
+    if how == 'the search box open':
+        p.pg.view = None
+    if how == 'pages appended':
+        p.pg.pages = 2
+    p.fw.fn('addon__fetch', None, C.POINTER(Lv))(p.pg.lv)  # asked again, whatever asks
+    p.answer(msg=b'refresh' if how != 'not live' else b'', rows=rows_of(0, 3))
+    assert p.top.art == 0 and len(fw.calls('list_item_create')) == drawn and p.top.state == K_READY
+
+
 def test_a_search_box_s_redraw_stays_queued_over_a_refresh(fw):
     p = live(fw, rows_of(0, 5))
     p.world.ms += 2000
