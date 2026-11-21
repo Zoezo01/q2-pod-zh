@@ -1512,6 +1512,7 @@ typedef struct {
     unsigned since;    /* when it began loading or waiting, 0 once done */
     unsigned base;     /* args' bytes before a More…'s cursor: the list's own */
     unsigned id, hash; /* id: the fetch whose reply this level takes; hash: its rows' bytes */
+    unsigned key;      /* the selected row's (row_key) at keep_sel, 0 none: find_sel's */
     char title[128], note[128], op[16], args[400]; /* args: "\t" and escaped each */
 } lv_t;
 
@@ -1964,10 +1965,34 @@ static void show(void) {
     art_window();
 }
 
-/* The selected row kept, from a page showing the level's own rows (not an error or a wait's). */
+/* What a row is, whatever it says: FNV-1a over its kind, uri and context, each with its end. */
+static unsigned row_key(int i) {
+    unsigned key = hash_bytes(FNV_SEED, (const unsigned char *)cell(i, 0), strlen(cell(i, 0)) + 1);
+    key = hash_bytes(key, (const unsigned char *)cell(i, 1), strlen(cell(i, 1)) + 1);
+    return hash_bytes(key, (const unsigned char *)cell(i, 4), strlen(cell(i, 4)) + 1);
+}
+
+/* The selected row kept, from a page showing the level's own rows (not an error or a wait's): its
+ * index, and what it is while the shown reply still says (the trailing row is nothing). */
 static void keep_sel(void) {
-    if (pg.view && top()->state == K_READY)
-        top()->sel = widget_get_prop_int(pg.view, "_ringnav_index", 0);
+    lv_t *l = top();
+    if (!pg.view || l->state != K_READY) return;
+    l->sel = widget_get_prop_int(pg.view, "_ringnav_index", 0);
+    l->key = (unsigned)l->sel < (unsigned)l->n ? row_key(l->sel) : 0;
+}
+
+/* got's, a reply's rows in the place of the level's: the row keep_sel kept is selected where it is
+ * now. Its index stays when the row there is still that one (so of two equal rows, the one that
+ * was selected); else it is the first row equal to it, and with none the index as it was. An index
+ * past this page of a list with more to come is left to append.
+ * ponytail: a hash, so one row in four thousand million is taken for another's. */
+static void find_sel(lv_t *l) {
+    if (!l->key || (l->sel < l->n ? row_key(l->sel) == l->key : pg.f[3][0] != 0)) return;
+    for (int i = 0; i < l->n; ++i)
+        if (row_key(i) == l->key) {
+            l->sel = i;
+            return;
+        }
 }
 
 /* A screen row's run has ended (game_poll), slot its app's: that app's page, if it is the one open,
@@ -2048,6 +2073,7 @@ static void page_to(lv_t *l, const char *c, int dir) {
     drop();
     memcpy(l->args, a, sizeof a);
     l->n = 0, l->state = K_LOAD;
+    l->key = 0;                         /* its own choice of row, not the one kept */
     l->sel = dir > 0 ? first : 1 << 20; /* show() clamps it to the last row */
     pg.moved = (signed char)dir;
     show();
@@ -2189,7 +2215,7 @@ static void got(void) {
             if (same)
                 relabel(l); /* only texts and bars moved: the rows stay */
             else
-                show();
+                find_sel(l), show();
         } else if (l->live && pg.view && pg.pages == 1 && art_rows(l->n) != l->art)
             /* the shown reply again, and a cover's file came or went since the list was drawn (an
              * app that fetches art after it answers): drawn again, its row kept.

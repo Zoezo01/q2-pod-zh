@@ -65,7 +65,7 @@ class Req(C.Structure):
 
 class Lv(C.Structure):
     _fields_ = [*((n, C.c_int) for n in ('state', 'n', 'sel', 'live', 'retry', 'nosock', 'slow', 'art', 'find', 'sort')),
-                *((n, C.c_uint) for n in ('since', 'base', 'id', 'hash')),
+                *((n, C.c_uint) for n in ('since', 'base', 'id', 'hash', 'key')),
                 ('title', C.c_char * 128), ('note', C.c_char * 128), ('op', C.c_char * 16), ('args', C.c_char * 400)]
 
 
@@ -3816,6 +3816,131 @@ def test_a_game_s_end_asks_nothing_of_the_app_s_page_open(fw):
     asked = p.req.id
     ended(g)
     assert p.req.id == asked and p.top.state == K_READY
+
+
+@pytest.mark.parametrize('rows, was, now', [
+    ([item(9), *rows_of(0, 3)], 1, 2),  # a row inserted above
+    (rows_of(1, 2), 2, 1),  # one removed above: the last row, past the new list's end
+    ([item(0), item(2), item(3)], 1, 1),  # the selected row itself gone: its index, as before
+    ([item(9), item(0), row_of(b'op1', b'Renamed', b''), item(2)], 1, 2),  # its texts are not what it is
+    ([item(9), item(0), item(1, b'list'), item(2)], 1, 1),  # another kind is another row
+    ([item(9), item(0), item(1, ctx=b'x'), item(2)], 1, 1),  # and another context
+    ([item(9), item(0), row_of(b'op', ctx=b'1'), item(2)], 1, 1),  # each field ends where it ends
+])
+def test_a_refresh_with_other_rows_selects_the_row_that_was_selected(fw, rows, was, now):
+    """addon.c keep_sel and find_sel: the selection is a row (its kind, uri and context), not an index."""
+    p = live(fw, rows_of(0, 3))
+    p.sel = was
+    sel = selects(fw)
+    refresh(p, rows)
+    assert p.top.sel == now and (sel[-1:] == [now] or now == was)
+
+
+def test_of_two_equal_rows_the_selected_one_stays_else_the_first_is_found(fw):
+    twice = [item(0), item(1), item(2), item(1)]
+    p = live(fw, twice)
+    p.sel = 3
+    refresh(p, [*twice, item(4)])
+    assert p.top.sel == 3  # the row at its index is still it
+    refresh(p, [item(9), *twice, item(4)])
+    assert p.top.sel == 2  # moved: the first equal to it, the one it was now at 4
+
+
+def test_the_same_refresh_neither_redraws_nor_selects(fw):
+    p = live(fw, rows_of(0, 3))
+    p.sel = 2
+    drawn, sel = len(fw.calls('list_item_create')), selects(fw)
+    refresh(p, rows_of(0, 3))
+    assert len(fw.calls('list_item_create')) == drawn and sel == []
+    refresh(p, [item(0), row_of(b'op1', b'Renamed'), item(2)])  # written in place
+    assert len(fw.calls('list_item_create')) == drawn and sel == []
+
+
+CONTINUE = (b'list', b'continue', b'Continue Watching', b'', b'', b'')
+
+
+@pytest.mark.parametrize('lively', [False, True])
+@pytest.mark.parametrize('before, after, was, now', [
+    ([item(1), SCREEN, item(2)], [CONTINUE, item(1), SEEN, item(2)], 1, 2),  # a row came above it
+    ([CONTINUE, item(1), SCREEN, item(2)], [item(1), SEEN, item(2)], 2, 1),  # and went
+])
+def test_a_screen_run_s_end_selects_the_row_it_ran_from_wherever_it_is_now(fw, lively, before, after, was, now):
+    p = live(fw, before) if lively else Page(fw)
+    if not lively:
+        p.answer(rows=before)
+    g = CardGame(fw, world=p.world)
+    p.sel = was
+    p.click(was)
+    ended(g)
+    if not lively:
+        p.sel = 0  # the Loading… page's
+    sel = selects(fw)
+    p.answer(msg=b'refresh' if lively else b'', rows=after)
+    assert p.top.state == K_READY and p.top.sel == now and sel[-1] == now
+
+
+@pytest.mark.parametrize('lively', [False, True])
+def test_an_action_s_reload_selects_the_row_pressed_wherever_it_is_now(fw, lively):
+    p = live(fw, rows_of(0, 3)) if lively else Page(fw)
+    if not lively:
+        p.answer(rows=rows_of(0, 3))
+    p.sel = 2
+    p.click(2)
+    p.answer()  # the action's reply: the level is asked again
+    if not lively:
+        p.sel = 0  # the Loading… page's
+    sel = selects(fw)
+    p.answer(msg=b'refresh' if lively else b'', rows=[item(9), *rows_of(0, 3)])
+    assert p.top.sel == 3 and sel[-1] == 3
+
+
+def test_back_selects_the_row_that_opened_the_level_wherever_it_is_now(fw):
+    p = Page(fw)
+    p.answer(rows=[item(0), item(1, b'list')])
+    p.sel = 1
+    p.click(1)
+    p.answer(rows=[item(5)])
+    p.back()
+    p.answer(rows=[item(9), item(0), item(1, b'list')])
+    assert p.pg.depth == 1 and p.top.sel == 2
+
+
+def test_the_trailing_row_is_kept_by_its_index_alone(fw):
+    p = Page(fw)
+    p.answer(cursor=b'c', rows=rows_of(0, 2))
+    p.sel = 2  # More…
+    p.click(2)
+    assert p.pg.depth == 2 and (p.pg.lv[0].sel, p.pg.lv[0].key) == (2, 0)
+    p.back()
+    p.answer(cursor=b'c', rows=[item(9), *rows_of(0, 2)])
+    assert p.top.sel == 2
+
+
+def test_a_row_of_a_later_page_waits_for_its_page_not_an_equal_row_of_the_first(fw):
+    """addon.c find_sel: an index past the first page of a list with more to come stays append's to select."""
+    p = Page(fw)
+    p.answer(msg=b'pages', cursor=b'c', rows=[item(0), item(1, b'list')])
+    p.answer(msg=b'pages', rows=[item(1, b'list'), item(2)])
+    assert p.top.n == 4
+    p.sel = 2  # the second page's, equal to the first's
+    p.click(2)
+    p.answer(rows=[item(5)])
+    p.back()
+    p.answer(msg=b'pages', cursor=b'c', rows=[item(0), item(1, b'list')])
+    assert p.top.sel == 2
+
+
+def test_a_window_selects_its_own_row_not_the_one_kept(fw):
+    """addon.c page_to: a page row's press chooses the row itself, whatever an earlier reload kept."""
+    p = windowed(fw)
+    p.answer(rows=[item(2), item(3), NEXT])
+    p.sel = 1
+    p.click(1)
+    p.answer()  # op3's action: the level reloads, op3 kept
+    p.answer(rows=[item(2), item(3), NEXT])
+    p.click(2)
+    p.answer(rows=[(b'page', b'prev', b'Previous page', b'', b'', b''), item(4), item(3), NEXT])
+    assert p.top.sel == 1  # the row after the first, though op3 is in this window too
 
 
 @pytest.mark.parametrize('why, said', [('store', [b'Wait until the App Store finishes']), ('gone', [b"It isn't on the card"]),
