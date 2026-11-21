@@ -9,7 +9,8 @@
  *            favdir (a card folder whose songs' hearts it is told of, addon_fav_path), hidden
  *            (1: no row, its page opened by id: addon_open_id, as AirPlay's is) and row (where
  *            its row is: library, games or streaming; without it, Games for a game and
- *            Streaming for any other);
+ *            Streaming for any other); wifi (0: it never uses the network, so Smart Wi-Fi keeps
+ *            no radio on for it: addon_running, addon_offline);
  *   run      its launcher, which copies the app to /tmp and runs it there in a restart loop, so
  *            the card is never kept busy, leaving the loop's pid in /tmp/q2-<id>;
  *   q2-<id>  the app;
@@ -116,6 +117,7 @@ typedef struct {
     char more[48]; /* q2app's more: an op, a space and a title (addon_more) */
     int qr, game, audio, view, hidden, present, launched, hold, relaunch, restart;
     int nostop;                                   /* q2app's stop=0: no Stop row on its page */
+    int nowifi;                                   /* q2app's wifi=0: it never uses the network */
     int row;                                      /* where its row is: a ROW_ */
     unsigned polled, launch_at, restart_at, play; /* play: its .play as read last, hashed */
 } app_t;
@@ -186,6 +188,9 @@ static void slots_read(void) {
         char stop[4]; /* as text, as scrobble: number() is 0 for a missing key too */
         field(raw, "stop", stop, sizeof stop);
         a->nostop = !strcmp(stop, "0") || !strcmp(stop, "0\r");
+        char wifi[4]; /* as text too: only 0 says it never uses the network */
+        field(raw, "wifi", wifi, sizeof wifi);
+        a->nowifi = !strcmp(wifi, "0") || !strcmp(wifi, "0\r");
         field(raw, "more", a->more, sizeof a->more);
         unsigned k = strlen(a->more);
         if (k && a->more[k - 1] == '\r') a->more[k - 1] = 0; /* a Windows editor's line end */
@@ -1296,10 +1301,11 @@ static void game_poll(void) {
 /* Smart Wi-Fi (smart_wifi.c smart_needed): an app started, or restarting after Retry, keeps the
  * radio on until it stops (by itself, Stop Streaming Services or Rockbox). One stopped for USB
  * storage counts once it starts again: the cable holds the radio meanwhile, and an app deleted from
- * the computer, which never starts again, holds nothing. */
+ * the computer, which never starts again, holds nothing. One whose q2app says wifi=0 never uses the
+ * network and never counts, nor does its page (addon_offline). */
 int addon_running(void) {
     for (int i = 0; i < ap.n; ++i)
-        if (ap.a[i].launched || ap.a[i].restart) return 1;
+        if ((ap.a[i].launched || ap.a[i].restart) && !ap.a[i].nowifi) return 1;
     return 0;
 }
 
@@ -2417,6 +2423,13 @@ static int closed(void *ctx, void *event) {
     memset(&pg, 0, sizeof pg);
     return 0;
 }
+
+/* smart_wifi.c's net_page_open: the app page open is one whose q2app says wifi=0, so it is no page
+ * that uses the network.
+ * ponytail: Streaming's page still wakes the radio and a Streaming row still waits for the link
+ * (addon_open), so such an app's row belongs in Library's Apps or Games (row=); a test of nowifi
+ * before smart_hold there, if one ever sits on Streaming. */
+int addon_offline(void) { return pg.page && app()->nowifi; }
 
 /* Slot k's page, its first level op (args: "\t" and escaped each) titled title: the app started if
  * it isn't (its QR code shown at the first answer when qr); gone from the card, the page says so.

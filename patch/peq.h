@@ -486,7 +486,7 @@ void tidal_all(int press, char *out, unsigned size), tidal_poll(void), tidal_all
  * files of the app in folder dir (".<id>"): asked to end and waited for on the Apps page's worker,
  * then, once replaced or removed, forgotten on the UI thread. */
 /* Card apps on the card at once: twice what the App Store lists (netupdate.c SH_MAX), for those put
- * there by hand. ponytail: a fixed table in .scratch, 524 bytes a slot over addon.c,
+ * there by hand. ponytail: a fixed table in .scratch, 532 bytes a slot over addon.c,
  * addon_library.c, addon_eq.c and navigation.h, its pages untouched until a slot is used; an app
  * past the last slot gets no row and nothing says so. A heap table that grows, if a card ever holds
  * more. */
@@ -736,6 +736,7 @@ int need_link(int (*fn)(void *, void *), void *ctx); /* smart_hold, else "Connec
  * netupdate.c's and onlinematch.c's */
 int spot_running(void), scrobble_busy(void), tidal_busy(void), addon_running(void),
     netupdate_busy(void), album_lyrics_busy(void);
+int addon_offline(void);               /* addon.c: the card app's page open is a wifi=0 app's */
 void netupdate_poll(void);             /* power_poll: a newer release told on Home (netupdate.c) */
 const char *coverflow_sort_name(void); /* coverflow.c */
 void coverflow_sort_step(void), coverflow_refresh_art(void);

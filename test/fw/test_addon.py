@@ -38,7 +38,7 @@ LIBRARY = 0xf001  # stock's library class, which a local queue plays under
 class App(C.Structure):
     _fields_ = [('id', C.c_char * 16), ('name', C.c_char * 32), ('tips', C.c_char * 32), ('bin', C.c_char * 48), ('run', C.c_char * 48),
                 ('pid', C.c_char * 32), ('state', C.c_char * 40), ('browse', C.c_char * 48), ('icon', C.c_char * 56), ('more', C.c_char * 48),
-                *((n, C.c_int) for n in ('qr', 'game', 'audio', 'view', 'hidden', 'present', 'launched', 'hold', 'relaunch', 'restart', 'nostop', 'row')),
+                *((n, C.c_int) for n in ('qr', 'game', 'audio', 'view', 'hidden', 'present', 'launched', 'hold', 'relaunch', 'restart', 'nostop', 'nowifi', 'row')),
                 *((n, C.c_uint) for n in ('polled', 'launch_at', 'restart_at', 'play'))]
 
 
@@ -368,6 +368,31 @@ def test_a_manifest_can_drop_the_stop_row_and_take_now_playings_more(fw, manifes
     card(fw, one=manifest)
     scan(fw)
     assert (ap(fw).a[0].nostop, ap(fw).a[0].more) == (nostop, more)
+
+
+@pytest.mark.parametrize('manifest, nowifi', [
+    (b'name=N\nwifi=0\n', 1), (b'name=N\r\nwifi=0\r\n', 1),  # a Windows editor's line ends
+    (b'name=N\n', 0), (b'name=N\nwifi=1\n', 0), (b'name=N\nwifi=00\n', 0), (b'name=N\nwifi=off\n', 0),  # as text: only 0
+])
+def test_a_manifest_can_say_its_app_never_uses_the_network(fw, manifest, nowifi):
+    """wifi=0: Smart Wi-Fi's addon_running never counts the app, started or restarting, and its page open is no
+    network page's (addon_offline, which smart_wifi.c's net_page_open asks)."""
+    card(fw, one=manifest, two=b'name=Two\n')
+    scan(fw)
+    one, two = ap(fw).a[0], ap(fw).a[1]
+    running, offline = fw.fn('addon_running', C.c_int), fw.fn('addon_offline', C.c_int)
+    assert one.nowifi == nowifi and two.nowifi == 0 and running() == 0 and offline() == 0
+    one.launched = 1
+    assert running() == (not nowifi)
+    one.launched, one.restart = 0, 1  # Retry's restart
+    assert running() == (not nowifi)
+    two.launched = 1  # another app still counts
+    assert running() == 1
+    pg = fw.var('addon__pg', Pg)
+    pg.page, pg.a = 1, 0  # its page open
+    assert offline() == nowifi
+    pg.a = 1
+    assert offline() == 0
 
 
 def test_a_hidden_app_has_no_streaming_row(fw):
