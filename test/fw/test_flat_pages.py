@@ -621,3 +621,42 @@ def test_modern_set_time_walks_its_fields_then_saves(fw, keys, twelve, last):
     for _ in range(8):
         keys(loop.KEY_FWD_BTN, 10)
     assert loop.field(top) == last
+
+
+# Home's pane where no cover shows (coverflow.c home_pane_paint), Modern's: flat, the note and the queue's count.
+
+def modern_home(fw, **keys):
+    import test_coverflow as cf
+    _, ui, h, home = cf.home_open(fw, cf.MODERN, **keys)
+    return cf, ui, h, home
+
+
+@pytest.mark.parametrize('light, pane, note, quiet', [('0', 0x1c1c1c, 'flat_pane_note', 0x98989d),
+                                                      ('1', 0xf2f2f7, 'flat_pane_note_l', 0x6e6e73)])
+def test_modern_s_pane_is_flat_with_the_half_s_note_and_a_quiet_count(fw, mcl, light, pane, note, quiet):
+    cf, ui, h, home = modern_home(fw, LIGHT=light)
+    fw.var('fw_ctx_mcl_pdeqplaylist', C.c_void_p).value = cf.Deques(fw).new(range(1, 4))
+    home.kind = cf.PANE_NOW
+    bitmaps, canvas = cf.Bitmaps(fw, {note: (100, 115, cf.rgba(1, 1, lambda x, y: (0, 0, 0, 0)))}), cf.Canvas(fw)
+    inks = []
+    fw.mock('canvas_set_text_color', lambda c, colour, *_: inks.append(colour & 0xffffffff))
+    fw.fn('home_pane_paint', None, C.c_void_p, C.c_int, C.c_int, C.c_int, C.c_int)(canvas.p, 5, -3, cf.HOME_PW, 294)
+    assert {r[0] for r in canvas.rects} == {rgba(pane)}  # one colour: no light across it, no shadow
+    assert bitmaps.loads == [note] and [i[2] for i in canvas.images] == [(5 + 40, -3 + 57, 100, 115)]
+    assert canvas.texts == [('3 Songs', (5, -3 + 185, 182, 24), 17)] and canvas.fonts[-1][0] == ''  # the system's face
+    assert rgba(quiet) in inks and canvas.fills[-1] == 0x12345678
+
+
+def test_modern_s_pane_stays_now_playing_s_on_every_row(fw):
+    """icon_x 0: the highlighted row doesn't change the pane."""
+    cf, ui, h, home = modern_home(fw)
+    home.kind = cf.PANE_NOW
+    for name in cf.Homes.ROWS:
+        assert cf.home_row(fw, h.view, h.rows[name]) == cf.PANE_NOW
+
+
+@pytest.mark.parametrize('mode, shown', [('0', 1), ('1', 0), ('2', 0)])
+def test_only_split_shows_modern_s_pane(fw, mode, shown):
+    """Split's art, the pane where no cover shows, is hidden in Full and Carousel."""
+    cf, ui, h, home = modern_home(fw, HOME=mode)
+    assert ui[h.art].visible == shown

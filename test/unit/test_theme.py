@@ -165,6 +165,8 @@ MODERN = {
     'icons_mono': 0, 'icons_badge_muted': 0, 'icons_addon_mono': 0, 'font[ROLE_NP]': 1, 'np_album_op': 255, 'np_state_op': 255,
     'home_top': 0, 'home_full_row': 369, 'home_text_x': 33, 'home_label_end[0]': 33, 'home_label_end[1]': 33,
     'set_top': 0, 'np_bar': 8, 'np_scrub': 8, 'art_square': 1, 'painter[PAINT_PAGES]': 2, 'painter[PAINT_CONFIRM]': 2, 'painter[PAINT_VOLUME]': 2, 'art_final': 1,
+    'home_pane': ((0, 0x1c1c1c), (100, 0x1c1c1c)), 'light': {'home_pane': ((0, 0xf2f2f7), (100, 0xf2f2f7))},
+    'pane_note_x': 40, 'pane_note_y': 57, 'pane_count_y': 185, 'pane_count_w': 182, 'pane_count_px': 17,
     'schemes': [ZERO if v == 7 else {**MODERN_ROLES, 'raw_red': int(v == 1)} for v in range(9)],
     'opts': [STATUSBAR, opt('SETTING_TIMETITLE', preset=0), SHOWQ2POD, opt('SETTING_LIGHT', preset=1, keep=2),
              opt('SETTING_ACCENT', default=0, preset=4, values=0x17f), opt('SETTING_ROUNDED', preset=0), opt('SETTING_HOME', preset=0),

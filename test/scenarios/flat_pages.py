@@ -283,3 +283,17 @@ m, d, lst, nav = hold_flat(page='playing_page', pos=1); items = m.nodes[m.view][
 place(m, m.view, 0, 0, 294, 192); m.word(m.view + O['VIEW_CONTENT_H'], 48 * n); m.paint(m.view)
 for _ in range(n - 1): assert m.call() == 11
 top = m.get(m.view + O['SCROLL_Y']); assert m.selected(m.view) == n - 1 and 0 <= 48 * (n - 1) - top <= 192 - 48 and m.nodes[m.view]['virtual_h'] == 48 * n; passed()
+
+
+# Home's Split under Modern where no cover shows (coverflow.c home_pane_paint): the pane flat in the half's colour, the
+# flat look's note, the queue's count quiet in the system's face; Now Playing's on every row.
+for light, pane, note, quiet in (('0', 0x1c1c1c, 'flat_pane_note', 0x98989d), ('1', 0xf2f2f7, 'flat_pane_note_l', 0x6e6e73)):
+    SETUP[:] = [lambda k: (k.config.update(THEME='2', LIGHT=light, ACCENT='4'), k)]
+    try: m = QueueMachine(queue=3)
+    finally: SETUP.clear()
+    m.top = home = asset_tree(m, HOME_PAGE); m.handlers[HOOKS['home_page_init'][0] + 12] = 'stock_home'
+    m.call(address=HOOKS['home_page_init'][0], args=(home, 0, 0, 0), gap=0); pane_nocover(m)
+    art = named(m, home, 'img_homeart'); bare(m); m.call(address=payload_syms['coverflow_home_clip'], args=(art, m.canvas, 0, 0), gap=0)
+    loads = [m.text(c[2]) for c in m.calls if c[0] == 'widget_load_image']
+    assert {b[4] for b in m.bands if b[2] > 1} == {color_t(pane)} and loads == [note], (loads, {b[4] for b in m.bands})
+    assert [(l['text'], l['font'][1], l['color']) for l in m.letters] == [('3 Songs', 17, color_t(quiet))], m.letters; passed()

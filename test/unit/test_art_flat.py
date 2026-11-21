@@ -38,7 +38,8 @@ def test_the_family_is_the_looks_not_the_themes():
     assert set(got) == {'flat_' + n for n in (
         *(f'drop_{b}{k}' for b in QS_NAMES for k in ('', '_l')), 'drop_dim', 'drop_dim_l',
         *(f'drop_bright{k}' for k in ('', '_l', '_ql', '_qd')), 'msg_usb_l', 'msg_usb_d', 'msg_note_l', 'msg_note_d',
-        'clock_face_l', 'clock_face_d', 'spk_quiet', 'spk_quiet_l', *(f'spk_loud{k}' for k in ('', '_l', '_ql', '_qd')))}
+        'clock_face_l', 'clock_face_d', 'spk_quiet', 'spk_quiet_l', *(f'spk_loud{k}' for k in ('', '_l', '_ql', '_qd')),
+        'pane_note', 'pane_note_l')}
     assert set(art.FLAT_BUTTONS) == set(art.QS_BUTTONS)  # the same stock names: QS_LIT says which are on
     for t in theme.builtins():  # no shipped theme draws them before its theme.xml says flat
         assert t['painter[PAINT_PAGES]'] == art.FLAT or not any(k.startswith('flat_') for k in art.images(t))
@@ -56,10 +57,15 @@ def test_each_image_is_its_square(name, side):
 @pytest.mark.parametrize('name, rgb', [('drop_wifi', 0xffffff), ('drop_sysset_l', 0x1c1c1e), ('drop_dim_l', 0x1c1c1e),
                                        ('drop_bright_ql', 0x6e6e73), ('drop_bright_qd', 0x98989d), ('msg_note_l', 0x1c1c1e),
                                        ('msg_usb_d', 0xffffff), ('spk_loud', 0xffffff), ('spk_quiet_l', 0x1c1c1e),
-                                       ('spk_loud_qd', 0x98989d)])
+                                       ('spk_loud_qd', 0x98989d), ('pane_note', 0xffffff), ('pane_note_l', 0x1c1c1e)])
 def test_a_glyph_is_one_ink(name, rgb):
     colours, alphas = ink('flat_' + name)
     assert colours == {tuple(rgb.to_bytes(3, 'big'))} and max(alphas) == 255
+
+
+def test_the_pane_s_note_is_on_classic_s_note_box():
+    """note.svg's viewBox, as Classic's note: note_x and note_y place either alike."""
+    assert pixels(flat()['flat_pane_note'])[:2] == pixels(art.images(theme.builtins()[1])['classic_light_note'])[:2] == art.NOTE_BOX[2:]
 
 
 def test_a_disabled_button_is_dimmed_and_low_gain_has_faint_bars():

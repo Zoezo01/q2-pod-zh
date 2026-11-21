@@ -17,7 +17,15 @@
     <element name="selection" painter="bar"/>
     <element name="icons" mono="0" badge_muted="0" addon_mono="0"/>
   </view>
-  <view name="home"><element name="chevron" visible="1"/><element name="rows" caps="0"/></view>
+  <!-- Where no cover shows, Split's pane in the flat look: one flat colour, the flat pages' pale grey on paper and
+       #1c1c1c on black, the note (tools/art.py's flat pane_note, at note_x, note_y) and the queue's count, quiet in the
+       system's face at count_px, centred on the pane's first count_w columns at count_y. It stays Now Playing's on every
+       row (icon_x 0) -->
+  <view name="home">
+    <element name="chevron" visible="1"/><element name="rows" caps="0"/>
+    <element name="pane" light.stops="#f2f2f7 0, #f2f2f7 100" dark.stops="#1c1c1c 0, #1c1c1c 100" light_a="0" shadow_w="0"
+             icon_x="0" note_x="40" note_y="57" count_y="185" count_w="182" count_px="17"/>
+  </view>
   <view name="playing">
     <element name="art" square="1"/>
     <element name="title" font="bold"/>

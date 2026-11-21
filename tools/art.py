@@ -901,6 +901,9 @@ def flat_images():
         out |= {f'drop_{name}{q}': flat_mark('sun', 1, rgb, px, k) for q, rgb in (FLAT_INK if name == 'dim' else FLAT_INK | FLAT_QUIET).items()}
     out |= {f'msg_{name}_{half}': flat_mark(name, 1, rgb, MSG_BOX, MSG_SCALE) for name in ('usb', 'note') for half, rgb in MSG_INK.items()}
     out |= {f'clock_face_{half}': clock_face(half) for half in CLOCK_FACE}
+    # Home's pane where no cover shows (coverflow.c home_pane_paint): the note, flat, white or the ink on the light half's
+    out |= {f'pane_note{k}': png(*NOTE_BOX[2:], compose(NOTE_BOX, [(path(PANE_ICONS['note']), lambda x, y, c=rgb: (c, 1))]))
+            for k, rgb in FLAT_INK.items()}
     # the speakers (flat_bar BAR_SPEAKERS), as the suns: the near one in the fill's ink, the far one quiet until reached
     out |= {f'spk_{loud}{q}': speaker(loud == 'loud', rgb) for loud in ('quiet', 'loud')
             for q, rgb in (FLAT_INK if loud == 'quiet' else FLAT_INK | FLAT_QUIET).items()}

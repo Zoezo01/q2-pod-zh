@@ -224,6 +224,8 @@ static inline int classic_pages(void) {
 }
 /* The flat look's own pages: the screens Classic draws as its own, in flat painters */
 static inline int flat_pages(void) { return theme()->painter[PAINT_PAGES] == PAGES_FLAT; }
+#define FLAT_ART "flat_"             /* the flat look's images' prefix (tools/art.py FLAT_ART) */
+extern const unsigned flat_quiet[2]; /* flat.c: a quiet line, final, [0] dark, [1] light */
 /* A theme's own pages in either look: where the page's layout and touch are shared */
 static inline int own_pages(void) { return theme()->painter[PAINT_PAGES] != PAGES_STOCK; }
 int theme_geom(const theme_t *T); /* navigation.c: the set T boots with its stored values */

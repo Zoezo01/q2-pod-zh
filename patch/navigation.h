@@ -336,7 +336,6 @@ enum { FORM_NONE, FORM_PAGE, FORM_TRAY };
 #define HOLD_FOOT 10
 /* the toast's box, and the flat look's tray: the same in both halves */
 #define TOAST_RGBA 0xee2b2b2bu
-#define FLAT_ART "flat_" /* the flat look's images' prefix (tools/art.py FLAT_ART) */
 #define FLAT_FACE "bold" /* the flat look's headings and words: Modern's bold */
 #define MCL(a) (*(volatile int *)(a))
 int clamp_step(int offset, int maximum, int delta);
@@ -464,7 +463,8 @@ int quick_volume(void);
 const char *quick_wheel_toggle(void *top);
 
 /* flat.c */
-extern const unsigned flat_rest[2], flat_ink[2], flat_quiet[2]; /* final, [0] dark, [1] light */
+extern const unsigned flat_rest[2],
+    flat_ink[2]; /* final, [0] dark, [1] light; flat_quiet: theme.h */
 unsigned flat_page(void);
 unsigned flat_on(void);
 enum { BAR_PLAIN, BAR_SUNS, BAR_SPEAKERS }; /* flat_bar's marks */
