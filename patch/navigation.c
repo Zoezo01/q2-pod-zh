@@ -8243,8 +8243,12 @@ static void resume_poll(void) {
     int sec = 0, total = 0;
     void *r = queue_now(&at, &n);
     if (!r || player_playtime_and_length(&sec, &total) < 0 || total <= 0) {
-        if (st.rs_long && mclGetPlayStatus() == 1)
-            st.rs_stopped = 1; /* not a load's or seek's -1 */
+        /* a stop (not a load's or seek's -1) saves where it stopped, as a track change does: a
+         * track that ends its queue is forgotten there, not left at its last minute's save */
+        if (st.rs_long && mclGetPlayStatus() == 1 && !st.rs_stopped) {
+            st.rs_stopped = 1;
+            if (!st.rs_pending) spot_save(st.rs_sec);
+        }
         return;
     }
     unsigned key = listen_key(r);                   /* a CUE image's tracks share one path */

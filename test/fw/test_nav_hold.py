@@ -2421,6 +2421,42 @@ def test_a_stopped_long_track_started_again_goes_back_to_where_it_stopped(player
     assert player.seeks == [400]
 
 
+def test_a_long_track_that_ends_its_queue_keeps_no_place(player, recs):
+    """The queue's end stops the player at the track's last second, where its place is forgotten, as at a track
+    change. The last minute's save, up to a minute short of the end, used to stay and start the track there after a
+    restart."""
+    player.play([recs(path=LONG)], total=3600)
+    player.poll(0), player.poll(1), player.poll(3540)  # a seek: saved there, 60 s before the end
+    for s in range(3541, 3600):
+        player.poll(s)
+    assert player.places() == [(key_of(LONG), 3540)]
+    player.total, player.status = 0, 1  # stopped
+    player.poll()
+    assert player.places() == []
+
+
+def test_a_stop_saves_the_second_it_stopped_at(player, recs, fw):
+    player.play([recs(path=LONG)])
+    player.poll(0), player.poll(1), player.poll(600)
+    for s in range(601, 640):
+        player.poll(s)
+    player.total, player.status = 0, 1
+    player.poll()
+    assert player.places() == [(key_of(LONG), 639)]
+    writes = len(fw.calls('fw_rename'))
+    player.poll(), player.poll()
+    assert len(fw.calls('fw_rename')) == writes  # still stopped: nothing more is written
+
+
+def test_a_stop_before_the_saved_place_plays_keeps_it(player, recs):
+    player.card.files[RESUME_FILE] = places_file((key_of(LONG), 700))
+    player.play([recs(path=LONG)])
+    player.poll(0), player.poll(0)  # settled, its jump waiting for it to play
+    player.total, player.status = 0, 1
+    player.poll()
+    assert player.places() == [(key_of(LONG), 700)] and player.seeks == []
+
+
 def test_a_confirmed_restart_starts_over(player, recs, fw):
     player.play([recs(path=LONG)])
     player.poll(0), player.poll(1), player.poll(400)
