@@ -2076,7 +2076,10 @@ static int sec_take(char **g, int n) {
  * still runs (Retry's restart), one USB storage starts again (relaunch) and one the App Store has
  * (launch refuses).
  * ponytail: a pid file a dead loop left reads as running, as for addon_wake: the error page, and
- * Retry restarts it; a look at the pid's process would tell. */
+ * Retry restarts it; a look at the pid's process would tell.
+ * ponytail: why the app ended isn't known, so any end but one this page's stop op asked for reads
+ * as an idle one (its web page's stop, an action whose op has another name), and the open page's
+ * next level starts it again; a file the app leaves when it was told to end would tell. */
 static int revive(void) {
     app_t *a = app();
     int up = pg.up;
