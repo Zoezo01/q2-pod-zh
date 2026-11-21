@@ -177,6 +177,11 @@ The [user guide][guide] covers every control, EQ, Cover Flow and more tips.
     <td>A stopwatch, a calendar, a to-do list and a calculator, in <b>Library → Utilities</b>.</td>
     <td></td>
   </tr>
+  <tr valign="top">
+    <td><b><a href="https://github.com/lampsonlnguyen/q2-weather">Weather</a></b></td>
+    <td>Today's weather and a seven-day forecast for where you are or a city you choose, in <b>Library → Weather</b>.</td>
+    <td></td>
+  </tr>
 </table>
 
 <details>
@@ -213,6 +218,11 @@ On the App Store's **Games** tab. Each plays in **Library → Games**.
   <tr valign="top">
     <td><b><a href="https://github.com/lampsonlnguyen/q2-flappybird">Flappy Bird</a></b></td>
     <td>Tap or press Centre to flap through the gaps between the pipes.</td>
+    <td></td>
+  </tr>
+  <tr valign="top">
+    <td><b><a href="https://github.com/SlayTheEarth/q2-boy">Pocket Boy</a></b></td>
+    <td>Play your own Game Boy, Game Boy Color, Game Boy Advance, NES and Super NES games from the card.</td>
     <td></td>
   </tr>
 </table>
