@@ -168,6 +168,7 @@ class Machine:
         for name in ('slide_menu_item_width','slide_menu_on_scroll_done','canvas_get_vgcanvas',
                      'widget_animator_scroll_set_params','slide_menu_set_value','toolsTimeItoa','on_wm_keyup_fun','table_client_get_virtual_h',
                      'mclGetPlayType','networkGetConnectStatus','wifi_switch',  # Smart Wi-Fi's: stock's, as before it named them
+                     'bitmap_get_physical_line_length','bitmap_get_physical_height',  # the flush's: stock's, as before it named them
                      'tk_sha256_init','tk_sha256_hash','tk_sha256_done'):  # Network Update's read-back: stock's own SHA-256
             self.handlers.pop(syms[name],None)
         self.mock('widget_is_instance_of','widget_animator_scroll_create','widget_animator_on',

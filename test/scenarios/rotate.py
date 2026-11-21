@@ -19,8 +19,6 @@ class RotateMachine(Machine):
     and instructions from the start (a block hook added later misses the blocks already translated)."""
     def __init__(self):
         super().__init__()
-        for name in ('bitmap_get_physical_line_length', 'bitmap_get_physical_height'):
-            self.handlers.pop(syms[name])
         self.u.mem_map(POOL, POOL_SIZE)
         self.img, self.pages = POOL, (POOL + 0x100000, POOL + 0x200000)
         self.structs = POOL + 0x300000
