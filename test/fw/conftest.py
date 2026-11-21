@@ -392,7 +392,10 @@ def favdir_card(fw, files, app='jf', folder='Jellyfin'):
 class Game(C.Structure):
     """addon.c's gm: the running card game."""
     _fields_ = [*((k, C.c_int) for k in 'pid sock eat audio'.split()), *((k, C.c_uint) for k in 'seen held term'.split()),
-                ('path', C.c_char * 48)]
+                ('path', C.c_char * 48),
+                *((k, C.c_int) for k in 'boy_bridge resume_owner resume_status'.split()),
+                ('audio_poll', C.c_uint), ('audio_seq', C.c_uint), ('audio_last', C.c_uint * 9),
+                ('native_at', C.c_uint), ('native_ui', C.c_int), ('native_origin', C.c_void_p)]
 
 
 # Fixtures and fakes the navigation, playback and player tests share.

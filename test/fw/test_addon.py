@@ -5086,6 +5086,18 @@ def test_the_groovebox_shortcut_starts_the_card_game_with_the_sound(fw):
     assert fw.calls('player_stop') and fw.calls('mclSetMute') and fw.calls('device_set_volume')  # the jack readied, dac_take
 
 
+@pytest.mark.parametrize('status, game_audio', [(2, 0), (1, 1)])
+def test_q2_boy_keeps_playing_music_at_launch(fw, status, game_audio):
+    card(fw, boy=b'name=q2-boy\ngame=1\naudio=1\n')
+    fw.mock('fw_fork', lambda *_: 77)
+    fw.mock('mclGetPlayStatus', lambda *_: status)
+    assert fw.fn('addon_game_open', C.c_int, C.c_char_p)(b'boy') == 1
+    gm = fw.var('addon__gm', Game)
+    assert (gm.pid, gm.boy_bridge, gm.audio) == (77, 1, game_audio)
+    assert bool(fw.calls('player_stop')) == bool(game_audio)
+    assert not fw.calls('player_save_stop')
+
+
 @pytest.mark.parametrize('folder, said', [({}, b'Groovebox is not on the card'),
                                           ({'groovebox': b'name=Groovebox\n'}, b"Groovebox can't start from the card")])
 def test_the_groovebox_shortcut_says_when_no_card_game_is_it(fw, folder, said):

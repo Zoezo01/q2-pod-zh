@@ -1,6 +1,7 @@
 # Changelog
 
 - **1.8.9**:
+  - Games: q2-boy can keep the Q2's music playing and open Now Playing. Press Return to go back to the game menu.
   - Most Played: songs you start playing once the play counts have filled up are counted when you play them again within a few days, so a new album can join **Most Played**. Once all 512 places held songs played twice or more, each song played for the first time took the place of the one played for the first time before it, so no new song got past one play and Most Played stopped changing.
   - Scrobbling: with **Smart Wi-Fi** and automatic uploads on, an upload that can't get through wakes the radio less and less often, after 30 minutes, then an hour, then every two hours, until one succeeds. It used to wake the radio every half hour or sooner for as long as it failed, each time for five minutes: away from known Wi-Fi, about two and a half hours of radio over a day of listening.
   - System Update, App Store: a press that stops **Network update** or a check for updates stops it at once. On a network that drops packets, a request already sent to GitHub was waited out first, up to 30 seconds, before the download was cancelled or the App Store would start another job.

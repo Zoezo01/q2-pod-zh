@@ -870,12 +870,19 @@ static struct {
     unsigned seen;       /* time_now_ms of the last input */
     unsigned held, term; /* when Return went down, when TERM went (0: neither) */
     char path[48];       /* the game's socket */
+    int boy_bridge, resume_owner, resume_status;
+    unsigned audio_poll, audio_seq, audio_last[9], native_at;
+    int native_ui;
+    void *native_origin;
 } gm __attribute__((section(".scratch")));
+
+#include "boy_audio.h"
 
 int addon_games(void) { return addon_scan(), ap.games; }
 int addon_games_last(void) { return ap.games; }
 const char *addon_game_name(int k) { return k >= 0 && k < ap.games ? ap.a[ap.game[k]].name : 0; }
 int addon_game_on(void) { return gm.pid; }
+int addon_game_front(void) { return gm.pid && !gm.native_ui; }
 int addon_game_audio(void) { return gm.pid && gm.audio; }
 
 static void game_kill(const char *how) {
@@ -909,13 +916,28 @@ static int game_start(app_t *a) {
     char vol[5], pop[POPUP_ENV];
     const char *dev = 0;
     popup_env(pop, sizeof pop); /* the theme's pop-up, for its own menus */
-    if (a->audio) { /* the sound is its: hciplayer off the PCM, the jack readied, as video_play */
-        headset_manual();
-        spot_yield();
-        radio_stop();
-        player_stop();
+    gm.boy_bridge = a->audio && !strcmp(a->id, "boy");
+    gm.resume_owner = gm.resume_status = 0;
+    gm.audio_seq = gm.audio_poll = 0;
+    gm.native_ui = 0;
+    gm.native_origin = (void *)0;
+    memset(gm.audio_last, 0, sizeof gm.audio_last);
+    int audio = a->audio;
+    if (gm.boy_bridge) {
+        unlink(BOY_AUDIO_REQUEST);
+        unlink(BOY_AUDIO_REPLY);
+        audio = !media_playing() && !boy_prefers_music();
+        if (audio) boy_take_audio();
+    }
+    if (audio) {
+        if (!gm.boy_bridge) {
+            headset_manual();
+            spot_yield();
+            radio_stop();
+            player_stop();
+        }
         dev = output_device(vol);
-        if (!dev) dac_take();
+        if (!gm.boy_bridge && !dev) dac_take();
     }
     int pid = fork();
     if (!pid) {
@@ -925,15 +947,19 @@ static int game_start(app_t *a) {
          * thread holds libc's environment lock (stock's toolsSetTimeZone) hangs the child here;
          * Return's hold ends it */
         setenv("Q2_POPUP", pop, 1);
-        if (a->audio) /* q2video's arguments: the device, then a soft output's volume */
+        if (gm.boy_bridge) setenv("Q2_BOY_AUDIO_BRIDGE", "2", 1);
+        if (audio) /* q2video's arguments: the device, then a soft output's volume */
             execl(a->bin, a->bin, dev ? dev : "plughw:0,0", dev ? vol : (char *)0, (char *)0);
         else
             execl(a->bin, a->bin, (char *)0);
         child_exit(127);
     }
-    if (pid < 0) return toast("It couldn't start"), 0;
+    if (pid < 0) {
+        if (gm.boy_bridge && audio) boy_restore_music();
+        return toast("It couldn't start"), 0;
+    }
     gm.pid = pid;
-    gm.audio = a->audio;
+    gm.audio = audio;
     gm.sock = socket(1, 1, 0); /* AF_UNIX, SOCK_DGRAM (MIPS numbering) */
     gm.seen = time_now_ms();
     gm.held = gm.term = gm.eat = 0;
@@ -957,15 +983,26 @@ int addon_game_open(const char *id) {
 /* ringnav_input, every event: 1 when it is the game's (sent as its datagram) or the release of the
  * Return held to end it; 0 for stock's, a music key among them */
 int addon_game_input(void *e) {
-    if (!e) return gm.pid != 0;
+    if (!e) return addon_game_front();
     unsigned type = (unsigned)I(e, EVENT_TYPE), key = (unsigned)I(e, EVENT_KEY);
     int keyish = type == EVT_KEY_DOWN || type == EVT_KEY_UP || type == EVT_KEY_LONG;
     if (keyish && key == KEY_RETURN && gm.eat) /* the held Return's repeats and release */
         return gm.eat = type != EVT_KEY_UP, 1;
     if (!gm.pid) return 0;
-    if (!gm.audio && keyish && (key == KEY_PLAY || key == KEY_BACK_BTN || key == KEY_FWD_BTN))
+    if (gm.native_ui) {
+        if (keyish && key == KEY_RETURN) {
+            void *top = window_manager_get_top_window(window_manager());
+            if (top && !tk_strcmp(widget_get_prop_str(top, "name", ""), "playing_page")) {
+                if (type == EVT_KEY_UP) boy_close_now_playing(1);
+                return 1;
+            }
+        }
         return 0;
-    if (keyish && key == KEY_RETURN)
+    }
+    if (!gm.audio && !gm.boy_bridge && keyish &&
+        (key == KEY_PLAY || key == KEY_BACK_BTN || key == KEY_FWD_BTN))
+        return 0;
+    if (keyish && key == KEY_RETURN && !gm.boy_bridge)
         gm.held = type == EVT_KEY_UP ? 0
                   : type == EVT_KEY_DOWN && !gm.held
                       ? (unsigned)time_now_ms() | 1 /* not a repeat's */
@@ -998,17 +1035,25 @@ static void game_poll(void) {
          * (ringnav_start_player) but its pause stuck on nothing, so Play would do nothing */
         if (gm.audio && mclGetPlayStatus() == 3) player_stop();
         gm.pid = gm.audio = 0;
+        if (gm.boy_bridge) {
+            gm.native_ui = 0;
+            boy_restore_music();
+            unlink(BOY_AUDIO_REQUEST);
+            unlink(BOY_AUDIO_REPLY);
+            gm.boy_bridge = 0;
+        }
         wheel_raw = 0;
         widget_invalidate_force(window_manager(), 0);
         if (status == 127 << 8) toast("It couldn't start"); /* the child's execl failed */
         return;
     }
     unsigned now = (unsigned)time_now_ms();
+    boy_audio_poll(now);
     /* signed: a stamp can be just after now (| 1 rounds up, game_end reads the clock again) */
     if (gm.held && (int)(now - gm.held) >= GAME_HOLD_MS) gm.held = 0, gm.eat = 1, game_end();
     if (gm.term && (int)(now - gm.term) >= GAME_KILL_MS) gm.term = now | 1, game_kill("-9 ");
     int travel = __sync_lock_test_and_set(&wheel_travel, 0);
-    if (travel) {
+    if (travel && !gm.native_ui) {
         char m[16];
         tk_snprintf(m, sizeof m, "w %d", travel);
         dgram_send(&gm.sock, gm.path, m, strlen(m));
@@ -1019,7 +1064,7 @@ static void game_poll(void) {
         if (I(g_dacoff_time, 0) > 0) I(g_dacoff_time, 0) = 0;
         return;
     }
-    if (time_now_ms() - gm.seen < GAME_IDLE_MS) return;
+    if (gm.boy_bridge || time_now_ms() - gm.seen < GAME_IDLE_MS) return;
     if (!ringnav_smart_awake()) game_end();
     gm.seen = time_now_ms(); /* Smart Awake: asked again GAME_IDLE_MS on */
 }
