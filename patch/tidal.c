@@ -650,8 +650,9 @@ typedef struct {
 
 /* Something other than stock's player plays: Spotify, a station or a video (a paused one doesn't
  * count), or a card game has the sound. The trampoline passes ringnav_start_player's checks, so a
- * job started meanwhile (the app's wait) mustn't take the PCM from it. Stock's own player isn't
- * asked: an earlier URL still inside stock's start lands after app_track's mclStop. */
+ * job started meanwhile (the app's wait) mustn't take the PCM from it; one that didn't wait
+ * goes as before. Stock's own player isn't asked: an earlier URL still inside stock's start lands
+ * after app_track's mclStop. */
 static int au_other(void) { return (media_owner() > 1 && media_playing()) || addon_game_audio(); }
 
 static void *app_start(void *arg) {
@@ -664,7 +665,7 @@ static void *app_start(void *arg) {
          t += 100)
         usleep(100000);
     pthread_mutex_lock(au.start);
-    if (j->play == au.play && j->loads == playback_loads && !au_other()) {
+    if (j->play == au.play && j->loads == playback_loads && !(*j->app && au_other())) {
         stock_tidal_trampoline(j->url);
         if (j->play == au.play && j->loads == playback_loads) { /* else a later one's or queue's */
             if (savestartbt) savestartbt = 0, mclSetPause();

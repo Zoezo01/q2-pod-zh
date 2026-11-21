@@ -606,6 +606,19 @@ def test_something_else_started_during_the_wait_keeps_the_sound(fw, queue, mcl, 
     assert w.slept == 100000 and w.played == [] and w.ran == [b'/bin/sh /mnt/mmc/.a/run']
 
 
+# A song that didn't wait for its app goes to the player as before, whatever else reads as playing: ringnav_start_player
+# has just moved it off the PCM.
+@in_fork
+def test_a_song_that_didn_t_wait_goes_whatever_else_plays(fw, queue, mcl):
+    w = Wake(fw, queue, mcl, running=True)
+    rd = fw.var('radio__rd', Rd)
+    rd.active, rd.pid = 1, 4321
+    for pos, url in (0, LOCAL), (1, b'https://x/b.flac'):
+        w.run(w.start(pos))
+        assert w.played[-1] == url
+    assert w.slept == 0 and w.ran == []
+
+
 @in_fork
 def test_a_second_song_while_the_app_starts_waits_without_starting_it_again(fw, queue, mcl):
     w = Wake(fw, queue, mcl, running=False, answers_at=2)
