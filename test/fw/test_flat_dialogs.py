@@ -151,3 +151,33 @@ def test_modern_keeps_stocks_toast(fw, ui, st, recs, mcl):
     toast = Ui(fw).window('msginfo_dialog', kind='dialog')
     paint_bg(fw, toast, canvas)
     assert '_toast' not in toast.props and not canvas.boxes
+
+
+def classic_modern_hold(fw, ui, st, recs, mcl, light=0):
+    """Now Playing's hold menu under Classic Modern, on Classic's set, as modern_hold's."""
+    theme(fw, 3, LIGHT=str(light).encode())
+    hold_.use_set(st, hold_.CLASSIC)
+    st('theme').value = 3
+    hold = hold_.Hold(fw, ui, st, recs, mcl).now_playing([hold_.song(recs, i) for i in range(3)])
+    hold.hold()
+    hold.menu()
+    canvas = Canvas(fw)
+    for paint in ('ringnav_paint_bg', 'ringnav_paint'):
+        fw.fn(paint, C.c_int, C.c_void_p, C.c_void_p)(hold.dialog, canvas.addr)
+    box = lambda name: ui.nodes[ui.lookup(hold.dialog, name, 1)].rect()
+    return hold, box('view_navbar'), box('list_view'), canvas
+
+
+@pytest.mark.parametrize('light', [0, 1])
+def test_classic_modern_s_hold_menu_is_the_card_on_classic_s_32_px_rows(fw, ui, st, recs, mcl, light):
+    """The card, header, foot and ring as Modern's, on Classic's rows: six of 32 px fit where Modern's four of 48 do,
+    and the title's ink text_ink's, as Classic's header's: final white, flipped on the light half's paper, so a theme
+    or half change (text_inks) sets it again."""
+    hold, nav, lst, canvas = classic_modern_hold(fw, ui, st, recs, mcl, light)
+    rows = [ui.nodes[item].rect() for item in ui.kids(hold.view())]
+    assert len(rows) == len(hold_.PLAYING_ROWS) and all((x, w, h) == (0, 294, 32) for x, _, w, h in rows)
+    assert nav[0::2] == (40, 294) and nav[3] == 44 and lst == (40, nav[1] + 44, 294, min(6, len(rows)) * 32)
+    assert lst[1] + lst[3] + 10 <= 308  # HOLD_FOOT clear of the glass's corner, as Modern's
+    title = ui.lookup(hold.dialog, 'scrlabel_title', 1)
+    props = {k: v & 0xffffffff for k, v in ui.nodes[title].props.items() if isinstance(v, int)}
+    assert (props['_final'], props['_final_n'], props['style:normal:text_color']) == (0xffffffff, 1, 0xff000000 if light else 0xffffffff)
