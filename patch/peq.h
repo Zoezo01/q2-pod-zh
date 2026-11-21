@@ -476,10 +476,10 @@ void tidal_all(int press, char *out, unsigned size), tidal_poll(void), tidal_all
     tidal_all_show(void), tidal_card_away(void);
 #define SPOT_DIR "/mnt/mmc/.spotify" /* librespot and its launcher, spotify.c's */
 /* addon.c: card apps, each a card folder .<id> holding its manifest q2app, its
- * launcher run, its binary q2-<id> and its icons. addon_scan finds them again (how many slots: a
+ * launcher run, its binary q2-<id> and its icons. addon_scan finds them again (how many rows: a
  * slot's index stays its app's), addon_name, addon_id and addon_icon (an image name: file://… or
- * the shared stream_app) are one's while it is on the card (else 0), addon_slot its slot (-1), and
- * addon_open its Streaming row's click (ctx: that slot, which a later scan's sort leaves on its
+ * the shared stream_app) are one's while it is on the card (else 0), addon_slot its slot (else -1),
+ * and addon_open its Streaming row's click (ctx: that slot, which a later scan's sort leaves on its
  * app). An app whose q2app says row=library is a row on Library's Apps page
  * (addon_apps) instead: addon_libs (how many, a scan), addon_lib_name and addon_lib_open, its click
  * (ctx: its place by name). addon_forget and addon_quit: the Apps page replaces or removes the

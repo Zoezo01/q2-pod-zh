@@ -915,8 +915,9 @@ static void game_end(void) {
 }
 
 /* netupdate.c's toast once app id is installed: where its row is, as the screen names it. The
- * slots are read again, not the lists' order: the toast comes over whatever page is open, whose
- * rows hold their places by name, and a new app sorted in would move each after it on a row. */
+ * slots are read again, not the lists' order: the toast comes over whatever page is open, and the
+ * Apps page's and Games' rows hold their places by name, so a new app sorted in would move each
+ * after it on a row. */
 const char *addon_where(const char *id) {
     static const char *const where[] = { "Streaming", "Library's Games", "Library's Apps" };
     slots_read();
@@ -2377,7 +2378,7 @@ static int press(int slot) {
 
 /* An app's Streaming row (home.c ringnav_stream; ctx: its app's slot, addon_slot): a read that
  * sorts the apps again while the row is open (an App Store job's end, Home's pane, the AirPlay row)
- * leaves it on its app, and an app removed since says so on its page. */
+ * leaves it on its app, and a removed app's row says it isn't on the card. */
 int addon_open(void *ctx, void *event) {
     (void)event;
     int i = (int)(long)ctx;

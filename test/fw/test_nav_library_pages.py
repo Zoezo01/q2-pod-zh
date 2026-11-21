@@ -2647,7 +2647,7 @@ def test_streaming_rows_open_their_own_apps_after_an_app_store_job(fw, ui, sort,
     page says it has gone). What sorts: the job's end with Home on top, its Library list built (addon_apps_sync);
     Home back on top after the App Store (that, then Classic's pane, home_pane_read); the AirPlay row opening its
     app by id over Streaming's page (addon_open_id). With none, Streaming's page on top at the job's end sorts
-    nothing, and the rows were right before the change too."""
+    nothing, so those two cases hold either way."""
     logs = [(C.c_long * 3)(), (C.c_long * 3)()]  # kept: the stubs write to them
     stock_stub(O['LOCALMUSIC_BG'], 0, logs[0])
     stock_stub(O['STREAM_BG'], 0, logs[1])
