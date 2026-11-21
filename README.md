@@ -182,6 +182,11 @@ The [user guide][guide] covers every control, EQ, Cover Flow and more tips.
     <td>Today's weather and a seven-day forecast for where you are or a city you choose, in <b>Library → Apps → Weather</b>.</td>
     <td></td>
   </tr>
+  <tr valign="top">
+    <td><b><a href="https://github.com/DiamondBond/q2-eq-studio">EQ Studio</a></b></td>
+    <td>Edit the EQ on your phone: open <b>Library → Apps → EQ Studio</b> and scan the code with a phone on the same Wi-Fi. Drag the bands on a curve, or pick one of AutoEq's presets for thousands of headphones, and hear each change as you make it.</td>
+    <td></td>
+  </tr>
 </table>
 
 <details>
