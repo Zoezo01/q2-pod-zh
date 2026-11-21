@@ -37,13 +37,13 @@ def test_the_flat_confirm_s_cells_are_side_by_side_8_apart(fw, st):
 @pytest.mark.parametrize('light', [0, 1])
 def test_the_flat_page_form_lays_paper_and_each_cell_its_own_pill(fw, st, layout, light):
     confirm = Confirm(fw, modern(fw, st, light))
-    S = Scheme(fw, layout)
+    paper = rgba((0, Scheme(fw, layout).paper)[light])  # Modern's one row holds the light half's paper
     canvas = confirm.paint()
     x0, y0, w0, h0 = confirm.cancel.box
     x1, _, w1, _ = confirm.enter.box
-    drawn = [x for x in range(375) if canvas.px.get((x, y0 + h0 // 2)) != rgba(S.paper)]
+    drawn = [x for x in range(375) if canvas.px.get((x, y0 + h0 // 2)) != paper]
     assert (min(drawn), max(drawn) + 1) == (x0, x1 + w1) and x0 + w0 not in drawn  # both cells, the paper between
-    assert canvas.px[x0 + 1, y0] == rgba(S.paper) and canvas.images == []  # a pill: its corner the paper's; no art
+    assert canvas.px[x0 + 1, y0] == paper and canvas.images == []  # a pill: its corner the paper's; no art
     assert canvas.restored()
 
 
