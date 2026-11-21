@@ -861,7 +861,8 @@ class Bk(C.Structure):
                 ('file', C.c_char_p), ('cache', C.c_char * 48), ('tmp', C.c_char * 48),
                 *((k, C.c_uint) for k in 'key size pos end prev base len'.split()),
                 ('buf', C.c_void_p), ('thread', C.c_ulong), ('timer', C.c_uint), ('poll', C.c_uint), ('running', C.c_int),
-                ('finished', C.c_int), ('result', C.c_int), ('cancel', C.c_int), ('marks', Mark * 64)]
+                ('finished', C.c_int), ('result', C.c_int), ('cancel', C.c_int), ('marks', Mark * 64),
+                ('save', C.c_uint)]
 
 
 MARKS_FILE = '/mnt/data/ringnav-books'
