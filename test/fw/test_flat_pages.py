@@ -4,9 +4,10 @@ import ctypes as C
 
 import pytest
 
+from conftest import O
 from test_nav_paint import (ACCENTS, GRAPHITE, ICONS, LABELS, MINIMAL, MODERN, PAPER, RED, RED_PX, TIDAL, WHITE, Canvas, Quick, bitmaps,
                             channels, fill_props, image_add, layout, luma, paint_bg, quick_window, rgb_of, rgba, scheme, scrub,
-                            st, stock_h, theme, world)  # noqa: F401 (fixtures, by name)
+                            st, stock_h, theme, vol_paint, volume, world)  # noqa: F401 (fixtures, by name)
 from test_nav_painters import Quick as QuickInit
 MODERN_ACCENTS = [0, 1, 2, 3, 4, 5, 6, 8]  # Modern's colorSchemes, by ACCENT
 
@@ -252,3 +253,28 @@ def test_classic_s_images_are_not_final_under_modern(fw, bitmaps):
     bm = bitmaps(fw, [[WHITE]])
     image_add(fw, b'classic_light_band_top', bm)
     assert bm.rows() != [[WHITE]]
+
+
+@pytest.mark.parametrize('level', [0, 50, 100])
+def test_over_the_flat_quick_settings_the_volume_is_the_bar_s_card(fw, world, st, level):
+    """The wheel on stock's volume over Modern's Quick Settings: the bar's card with the volume in the bar's place,
+    between the speakers, no number; stock's slider moved onto the card for its repaints."""
+    theme(fw, MODERN, ACCENT=str(TIDAL))
+    dialog, vol, label = volume(fw, world, st, level, under='statusbar_dialog')
+    canvas = Canvas(fw)
+    vol_paint(fw, dialog, canvas)
+    card = (18, 226, 339, 62)
+    assert world.at(vol) == card and world[vol].visible == world[label].visible == 0
+    assert min(f[1] for f in canvas.fills) == card[1] and max(f[1] + f[3] for f in canvas.fills) == card[1] + card[3]
+    lit, rest = lit_of(fw, canvas)
+    assert max(f[0] + f[2] for f in lit) - 33 == 36 + 273 * level // 100 and min(f[1] for f in lit) == 239
+    assert [n for n, _ in canvas.arts][0] == 'flat_spk_quiet_w' and not canvas.texts and not canvas.rounded
+    assert canvas.fill == 0xff123456
+
+
+def test_over_modern_s_other_windows_the_volume_stays_its_panel(fw, world, st):
+    theme(fw, MODERN)
+    dialog, vol, _ = volume(fw, world, st, 37)
+    canvas = Canvas(fw)
+    vol_paint(fw, dialog, canvas)
+    assert world.at(vol) == (O['VOL_PANEL_X'], O['VOL_PANEL_Y'], 375 - 2 * O['VOL_PANEL_X'], O['VOL_PANEL_H']) and canvas.texts

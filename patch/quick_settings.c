@@ -102,6 +102,7 @@ static int quick_moved(void *view, void *event) {
 #define QS_BAR_Y 239
 #define QS_BAR_W 309
 #define QS_BAR_H 36
+const rect_t qs_bar_card = { 18, 226, 339, 62 }; /* the bar's card, round it */
 static void quick_open(void *win) {
     int flat = flat_pages();
     void *c = widget_lookup(win, "view_menu", 1);
@@ -341,7 +342,7 @@ static void quick_label_flat(void *canvas, void *label, int x, int y) {
 static void quick_page_flat(void *win, void *canvas) {
     int light = ipod_light();
     unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR), on = quick_on();
-    rect_t buttons = { 18, 20, 339, 196 }, bar = { 18, 226, 339, 62 };
+    rect_t buttons = { 18, 20, 339, 196 }, bar = qs_bar_card;
     stops_t card = { 2, { 0, 100 }, { qs_card[light], qs_card[light] } };
     bar_rect(canvas, RGBA(flat_page()), 0, 0, I(win, W_W), I(win, W_H));
     paint_round_rows(canvas, &buttons, &card, 26);
@@ -379,6 +380,18 @@ static void quick_scrub_flat(void *w, void *canvas) {
     rect_t r = { QS_BAR_X + ox, QS_BAR_Y + oy, QS_BAR_W, QS_BAR_H };
     flat_bar(w, canvas, &r, part, qs_rest[ipod_light()], BAR_SUNS);
     stock_canvas_set_fill_color(canvas, fill);
+}
+/* The volume over the flat page (vol_paint, the wheel on stock's volume), dy down the screen from
+ * w: the bar's card, and the volume in the bar's place between the speakers, so nothing of the page
+ * is half covered. */
+void quick_vol_flat(void *w, void *canvas, int dy, int level, int max) {
+    rect_t card = qs_bar_card, r = { QS_BAR_X, QS_BAR_Y + dy, QS_BAR_W, QS_BAR_H };
+    stops_t face = { 2, { 0, 100 }, { qs_card[ipod_light()], qs_card[ipod_light()] } };
+    card.y += dy;
+    paint_round_rows(canvas, &card, &face, 26);
+    flat_bar(w, canvas, &r,
+             QS_BAR_H + (max > 0 ? (QS_BAR_W - QS_BAR_H) * clamp_step(0, max, level) / max : 0),
+             qs_rest[ipod_light()], BAR_SPEAKERS);
 }
 
 /* Quick Settings' swipe up under the own pages: a touch from QS_SWIPE_Y that has gone SLIDE_PX

@@ -447,6 +447,8 @@ int quick_dispatch(void *target, void *event);
 void quick_fill(void *w);
 void quick_page(void *win, void *canvas);
 void quick_scrub(void *w, void *canvas);
+extern const rect_t qs_bar_card;
+void quick_vol_flat(void *w, void *canvas, int dy, int level, int max);
 void quick_poll(void);
 int quick_volume(void);
 const char *quick_wheel_toggle(void *top);

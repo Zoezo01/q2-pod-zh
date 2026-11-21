@@ -56,8 +56,9 @@ static int vol_poll(const void *info) {
  * "N%" takes the page dots' place until vol_poll finds the dialog gone. Over any other window
  * (Quick Settings included) a VOL_PANEL_* rounded panel in the fast-scroll letter's style holds a
  * pill bar and the number alone; Classic's, VOL_CL_X in, the rows painter's gloss between two
- * speakers. slider_vol and label_vol are hidden, and slider_vol is moved onto the area drawn, so
- * stock's partial repaints land on it; vol_poll catches the changes those miss. */
+ * speakers. Over the flat look's Quick Settings it is that page's bar (quick_vol_flat). slider_vol
+ * and label_vol are hidden, and slider_vol is moved onto the area drawn, so stock's partial
+ * repaints land on it; vol_poll catches the changes those miss. */
 void vol_paint(void *top, void *canvas) {
     void *wm = window_manager(), *lcd = P(canvas, CANVAS_LCD);
     if (!lcd || tk_strcmp(widget_get_prop_str(top, "name", ""), "volume_dialog")) return;
@@ -67,6 +68,11 @@ void vol_paint(void *top, void *canvas) {
     int np = widget_get_child(wm, n - 2) == st.np_win && st.np_slider && st.np_elapsed;
     const theme_t *T = theme();
     int gloss = !np && T->painter[PAINT_VOLUME] == VOL_CLASSIC_LIGHT;
+    /* over the flat Quick Settings: its bar's card, how far down from the dialog */
+    void *qs =
+        !np && T->painter[PAINT_PAGES] == PAGES_FLAT ? widget_get_child(wm, n - 2) : (void *)0;
+    if (qs && tk_strcmp(widget_get_prop_str(qs, "name", ""), "statusbar_dialog")) qs = (void *)0;
+    int qs_dy = qs ? I(qs, W_Y) - I(top, W_Y) : 0;
     rect_t area, bar, text, lo, hi;
     int beside = 0;
     if (np) {
@@ -86,6 +92,9 @@ void vol_paint(void *top, void *canvas) {
             area.y = ty < bar.y ? ty : bar.y;
             area.h = (ty + text.h > end ? ty + text.h : end) - area.y;
         }
+    } else if (qs) {
+        area = qs_bar_card;
+        area.y += qs_dy;
     } else {
         int ax = gloss ? VOL_CL_X : VOL_PANEL_X;
         area = (rect_t){ ax, VOL_PANEL_Y, I(top, W_W) - 2 * ax, VOL_PANEL_H };
@@ -103,6 +112,11 @@ void vol_paint(void *top, void *canvas) {
     if (!beside) dots_back();
     unsigned fill = (unsigned)I(lcd, LCD_FILL_COLOR), s[12] = { 'V', 'o', 'l', 'u', 'm', 'e', ' ' },
              k = np ? 7 : 0;
+    if (qs) { /* no number */
+        quick_vol_flat(top, canvas, qs_dy, level, max);
+        stock_canvas_set_fill_color(canvas, fill);
+        return;
+    }
     if (gloss) { /* no number */
         int L = ipod_light(), bx = 68, bw = 243, y = 271;
         paint_panel(top, canvas, &area, "classic_light_panel_shadow", 0);
