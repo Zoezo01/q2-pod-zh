@@ -15,6 +15,7 @@ static struct {
     unsigned rate_at;                   /* when a hold opened the picker (never 0), else 0 */
     unsigned rate_hold, rate_tick, rate_album;
     void *rt_menu;
+    int rt_held; /* the list a Play/Pause hold on the menu shuffles */
 } ra __attribute__((section(".scratch")));
 
 /* Ratings (docs/internals.md#ratings): 0 to 5 hearts a song. 5 is stock's My Fav, so Now Playing's
@@ -465,27 +466,35 @@ static void rate_all(void *songs, unsigned char *h) {
  * the library's title order, each row's hearts under its title. */
 static const char *const rt_names[] = { "Top Rated", "Loved", "All Rated", "Disliked" };
 #define RT_ALBUMS 2 /* the Ratings menu's Albums row, after Loved */
-static int rated_open(void *ctx, void *event) {
+/* List k's songs, each one's hearts in *of (calloc'd, the caller's to free). */
+static void *rated_songs(int k, unsigned char **of) {
     static const unsigned char lo[] = { 4, 5, 1, 1 }, hi[] = { 5, 5, 5, 1 };
-    int k = (int)(long)ctx - ((int)(long)ctx > RT_ALBUMS), n;
-    if (st.rt_page || !(st.rt_page = page_open("rated_page", rt_closed, page_keyup))) return 0;
+    int n;
     /* ponytail: each open still reads the whole library (getAllMusic(0)), now most of its time; the
      * tables hold only hashes, so reading only the rated songs needs a pass keying the library's
      * rows as listen_key does, as Most Played's counted_query does (library_lists.c). */
     void *songs = staged(all_songs, 0, &n), *list = _create_deque("stSongInfo");
     unsigned size = deque_size(songs);
-    unsigned char *h = calloc(size + 1, 1), *of = calloc(size + 1, 1);
+    unsigned char *h = calloc(size + 1, 1);
+    *of = calloc(size + 1, 1);
     deque_init(list);
-    if (h && of) {
+    if (h && *of) {
         rate_all(songs, h);
         for (int v = hi[k]; v >= lo[k]; v--)
             for (unsigned i = 0; i < size; i++)
                 if (h[i] == v)
-                    of[deque_size(list)] = (unsigned char)v,
+                    (*of)[deque_size(list)] = (unsigned char)v,
                     _deque_push_back(list, deque_at(songs, i));
     }
-    st.rt_list = list;
     deque_destroy(songs);
+    free(h);
+    return list;
+}
+static int rated_open(void *ctx, void *event) {
+    int k = (int)(long)ctx - ((int)(long)ctx > RT_ALBUMS);
+    if (st.rt_page || !(st.rt_page = page_open("rated_page", rt_closed, page_keyup))) return 0;
+    unsigned char *of;
+    void *list = st.rt_list = rated_songs(k, &of);
     int count = (int)deque_size(list);
     void *view = page_list(st.rt_page, st.rt_page, 0, rt_names[k], count ? count : 1, 64);
     char name[512], detail[300], hs[16];
@@ -499,9 +508,32 @@ static int rated_open(void *ctx, void *event) {
     }
     if (!count)
         page_row_detail(view, 0, "No songs yet", "Hold the heart on Now Playing to rate", 0);
-    free(h);
     free(of);
     return 0;
+}
+
+/* ringnav_keylong: Play/Pause held on one of the Ratings menu's song lists (Albums aside), the row
+ * a centre press would open (qm_hold's), plays its songs shuffled, as Shuffle Songs does the
+ * library's, out of the hold's dispatch as Up Next's hold; 1 when taken. A hold on a list's own
+ * song is that song's queue menu. */
+static int rt_shuffle(const void *unused) {
+    unsigned char *of;
+    if (!ra.rt_menu) return 0; /* the menu closed */
+    void *list = rated_songs(ra.rt_held, &of);
+    free(of);
+    if (!shuffle_play(list)) toast("No songs yet");
+    deque_destroy(list);
+    return 0;
+}
+int rated_hold(void *top) {
+    void *wm = window_manager(), *w = (void *)0;
+    if (top && top == ra.rt_menu && usable() && !window_manager_is_animating(wm) && !pointer_down())
+        w = surface_under(top, (void *)0, (void *)0, 0);
+    int cur = w && load(&g_menu, w, 1) ? reconcile(&g_menu, !moving(&g_menu)) : -1;
+    int row = cur >= 0 ? g_menu.id[cur] : -1;
+    if (row < 0 || row > 4 || row == RT_ALBUMS || !timer_add(rt_shuffle, (void *)0, 0)) return 0;
+    ra.rt_held = row - (row > RT_ALBUMS);
+    return 1;
 }
 
 /* Albums: the rated albums as Coverflow (coverflow_rated), by most hearts unless sorted. */

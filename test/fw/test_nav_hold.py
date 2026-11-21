@@ -2074,6 +2074,24 @@ def test_most_playeds_tracks_hold_as_its_songs(hold, recs, ui, st, fw):
     assert (cls, kind, tracks & 0xffffffff) == (0xf001, 0xf00a, mp)  # its own tracks, as songs whatever the Library
 
 
+@pytest.mark.parametrize('sel, held', [(-1, 0), (0, 0), (1, 1), (3, 2), (4, 3)])  # -1: no turn yet, the first row
+def test_a_ratings_list_s_row_held_shuffles_that_list(hold, recs, ui, fw, rates, sel, held):
+    hold.songs_page('ratings_page', [song(recs, i) for i in range(5)], sel=sel, showlist=False, cls=0)
+    rates('rt_menu', C.c_void_p).value = hold.page
+    assert hold.hold() == STOP and ui.pending() == [ui.fn('ratings__rt_shuffle')]
+    assert rates('rt_held').value == held and not fw.calls('stock_keylong_trampoline')
+
+
+def test_the_ratings_albums_row_held_is_stocks(hold, recs, ui, fw, rates):
+    hold.songs_page('ratings_page', [song(recs, i) for i in range(5)], sel=2, showlist=False, cls=0)
+    rates('rt_menu', C.c_void_p).value = hold.page
+    fw.mock('stock_keylong_trampoline', lambda *_: 0x77)
+    assert hold.hold() == 0x77 and ui.pending() == []
+    rates('rt_menu', C.c_void_p).value = 0  # another page than the menu: the same
+    hold.songs_page('ratings_page', [song(recs, i) for i in range(5)], sel=0, showlist=False, cls=0)
+    assert hold.hold() == 0x77 and ui.pending() == []
+
+
 # What a hold leaves stock.
 @pytest.mark.parametrize('how', ['dialog', 'timer', 'picker', 'dark', 'animating', 'touch', 'airplay', 'select mode',
                                  'not a list', 'stream', 'no key', 'rows changed'])

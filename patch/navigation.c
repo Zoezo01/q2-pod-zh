@@ -8142,14 +8142,16 @@ static int home_cf_hold(void *top) {
  * Internet Radio station it is the favourite toggle, on a Spotify track Add to Queue (its reply
  * toasts), on a card app's row its hold op (addon_hold: a Deezer list downloaded whole), in Quick
  * Settings the wheel's brightness/volume switch, on View Queue's shuffle list
- * Play Next (un_hold), the release latched as the queue menu's. */
+ * Play Next (un_hold), on a Ratings list's row Shuffle (rated_hold), the release latched as the
+ * queue menu's. */
 int ringnav_keylong(void *ctx, void *event) {
     if (event && ple_key((unsigned)I(event, EVENT_KEY), 3)) return STOP;
     if (!event || I(event, EVENT_KEY) != KEY_PLAY) return stock_keylong_trampoline(ctx, event);
     void *top = window_manager_get_top_window(window_manager());
     const char *fav = radio_hold(top);
     if (!fav) fav = quick_wheel_toggle(top);
-    int taken = fav || spot_hold(top) || addon_hold(top) || un_hold(top) || home_cf_hold(top);
+    int taken = fav || spot_hold(top) || addon_hold(top) || un_hold(top) || home_cf_hold(top) ||
+                rated_hold(top);
     if (!taken && qm_hold()) return STOP;
     /* Stock has no Play/Pause hold, so its release would play or pause: Classic's does nothing. */
     if (taken || (usable() && classic_pages())) {

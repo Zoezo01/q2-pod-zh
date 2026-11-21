@@ -782,6 +782,40 @@ def test_a_ratings_list_closes_with_its_page(fw, ui, song, st):
     assert 'Loved' in ui.shown(ui.top())
 
 
+def shuffle_rated(fw, ui, library, held, close=False):
+    """rated_hold's pass for list held (Top Rated, Loved, All Rated, Disliked), the Ratings menu open (or closed
+    since the hold): test_nav_hold.py holds the menu's rows."""
+    call(fw, 'ratings_menu')
+    if close:
+        ui.close(ui.top())
+    fields = host.offsets(library.parent/'ratings.o', 'ra')
+    C.c_int.from_address(C.addressof(fw.var('ratings__ra', C.c_char)) + fields['rt_held']).value = held
+    fw.fn('ratings__rt_shuffle', C.c_int, C.c_void_p)(None)
+
+
+@pytest.mark.parametrize('held, want', [(0, 'fav four'), (1, 'fav'), (2, 'fav four three one'), (3, 'one')])
+def test_a_held_ratings_list_plays_its_songs_shuffled(fw, ui, song, mcl, library, held, want):
+    rated = Rated(fw, ui, song)
+    shuffle_rated(fw, ui, library, held)
+    (queue, at, cls), = ui.played
+    assert queue == [getattr(rated, n) for n in want.split()] and 0 <= at < len(queue) and cls == LIBRARY
+    assert len(ui.windows) == 1 and not ui.toasts  # Now Playing over the menu, which stays
+
+
+def test_a_held_ratings_list_with_no_songs_says_so(fw, ui, song, mcl, library):
+    Library(fw, ui, [song(b'/m/a.flac', b'A')])
+    Files(fw)
+    fw.mock('getAllFav', lambda *_: 0)
+    shuffle_rated(fw, ui, library, 0)
+    assert ui.toasts == ['No songs yet'] and not ui.played
+
+
+def test_a_ratings_menu_closed_before_its_shuffle_plays_nothing(fw, ui, song, mcl, library):
+    Rated(fw, ui, song)
+    shuffle_rated(fw, ui, library, 0, close=True)
+    assert not ui.played and not ui.toasts
+
+
 def test_no_rated_albums_says_so(fw, ui, song):
     Files(fw)
     fw.mock('getAllAlbum', lambda *_: 0)

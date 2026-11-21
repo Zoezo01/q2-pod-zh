@@ -638,7 +638,7 @@ int rate_show(void *win, int pick, unsigned album);
 void rate_bind(void *win); /* ratings: Now Playing's heart */
 int rated_albums(void *ctx, void *event);
 int rt_closed(void *ctx, void *event);
-int ratings_menu(void *ctx, void *event);
+int ratings_menu(void *ctx, void *event), rated_hold(void *top);
 void ratings_copy_due(void);
 void ratings_copy_poll(void);
 int rt_play(void *ctx, void *event);

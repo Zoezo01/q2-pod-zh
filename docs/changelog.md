@@ -1,6 +1,7 @@
 # Changelog
 
 - **1.9.0**:
+  - Ratings: hold Play/Pause on **Top Rated**, **Loved**, **All Rated** or **Disliked** in **Library → Ratings** to play that list shuffled. A hold on a song in the list still opens the song's options.
   - Videos: Videos is now an app from the App Store, not part of the firmware. Install it from **Library → App Store → Videos**, then open it from **Library → Apps → Videos**. It plays the same `Videos` folder, and Wi-Fi transfer now also takes WebM, MPEG, WMV, FLV, TS, M2TS, 3GP and OGV videos.
   - Apps: a card app can play over the whole screen from a row of its page, as a video player does for a film. It can have the sound and set the Q2's volume while it plays, and its page shows what changed when you come back. An app that never uses the network can say so, and Smart Wi-Fi then doesn't keep Wi-Fi on for it. An app's page left open after the app closed itself, as apps do when idle, starts it again instead of saying it isn't running. A cover an app makes after its list is on screen shows there within two seconds, and Return or Centre pressed to close a game no longer also acts on the page behind it. Details for app authors are in [librespot.md](librespot.md).
   - Now Playing: a fifth visualizer, **Pulsar**, after pulsr: the music as a stack of lines rising up the page, the newest in front, each line hidden where the one in front stands over it. Tap the visualizer page to reach it.
