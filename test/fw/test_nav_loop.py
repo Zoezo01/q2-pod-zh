@@ -1109,8 +1109,9 @@ def test_the_cover_pollers_slow_whenever_the_screen_is_off(fw):
 
 class Scheduling:
     """ringnav_mainscheduling: the player's position as stock's cache has it, the clock as the test moves it."""
-    def __init__(self, fw, status=2, sec=10, total=200):
+    def __init__(self, fw, status=2, sec=10, total=200, lit=1):
         self.clock, self.status, self.sec, self.total = Clock(fw), status, sec, total
+        fw.var('g_backlight_status', C.c_ubyte).value = lit
         fw.mock('mclGetPlayStatus', lambda *_: self.status)
         fw.mock('player_playtime_and_length', self.position)
         fw.mock('player_mainscheduling', lambda *_: 5)
@@ -1150,6 +1151,30 @@ def test_the_tracks_last_second_runs_every_pass_until_2_s_after(fw):
 def test_paused_at_the_end_it_stays_paced(fw):
     sched = Scheduling(fw, status=3, sec=199, total=200)
     assert sched.at(0, 1, 2) == [True, False, False]
+
+
+def test_dark_mid_track_it_runs_every_dark_poll(fw):
+    poll = O['DARK_POLL_US'] // 1000
+    sched = Scheduling(fw, sec=10, total=200, lit=0)
+    assert sched.at(0, 100, poll - 1, poll) == [True, False, False, True]
+
+
+def test_dark_in_the_last_7_s_it_runs_every_100_ms(fw):
+    sched = Scheduling(fw, sec=192, total=200, lit=0)  # 8 s left: a second apart
+    assert sched.at(0, 100) == [True, False]
+    sched.sec = 193  # 7 s left: Gapless's next file goes under 6 s from the end, polled at once
+    assert sched.at(0, 99, 100) == [True, False, True]
+
+
+@pytest.mark.parametrize('status, sec, total, lit', [
+    (2, 1, 6, 0),    # a track 7 s long or shorter
+    (2, 10, 0, 0),   # no length known
+    (2, -1, 200, 0), # no position yet
+    (3, 10, 200, 0), # paused
+    (2, 10, 200, 1), # lit
+])
+def test_dark_keeps_100_ms_without_a_known_mid_track(fw, status, sec, total, lit):
+    assert Scheduling(fw, status=status, sec=sec, total=total, lit=lit).at(0, 99, 100) == [True, False, True]
 
 
 def test_mainscheduling_at_a_zero_clock_still_paces(fw):

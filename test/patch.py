@@ -12460,7 +12460,7 @@ for packet in (b'',good[:7],good+b'\0',bytes([4,0,4,0,6,0,3,0]),bytes([4,1,4,0,6
 p=m.alloc(8); m.u.mem_write(p,good); assert m.call(address=payload_syms['ringnav_aap_parse'],args=(p,8,0,0),gap=0)==2; passed()
 import scenarios.headset_np
 # on_wm_idle_status's player_mainscheduling (its status round trip) runs every MAINSCHEDULING_MS, a second
-# while dark with nothing playing.
+# while dark with nothing playing, or dark mid-track.
 from build import MAINSCHEDULING_CALL
 assert struct.unpack_from('<I',demo,fileoff(demo,MAINSCHEDULING_CALL[0]))[0]==jal(payload_syms['ringnav_mainscheduling'])
 m=Machine()
@@ -12480,6 +12480,25 @@ del m.playtime; m.now+=1900; schedule(); m.calls=[]; m.now+=10; schedule(); asse
 m.now+=90; m.calls=[]; schedule(); assert scheduled()==0
 m.playtime=224; m.word(PLAY_STATUS,3); m.now+=100; schedule(); m.calls=[]; m.now+=10; schedule()
 assert scheduled()==0; passed()
+# Dark and playing, a second apart while more than MAINSCHEDULING_NEAR_S (7 s) of a known length
+# remain; stock's 100 ms again from there (Gapless's next file goes under 6 s from the end), and for a
+# track that short, an unknown length, paused or lit.
+m.byte(syms['g_backlight_status'],0); m.word(PLAY_STATUS,2); m.playtime=100; m.now+=5000; schedule()
+for wait,runs in ((100,0),(899,0),(1,1),(100,0)):
+    m.now+=wait; m.calls=[]; schedule(); assert scheduled()==runs,(wait,runs)
+m.playtime=217; m.now+=100; m.calls=[]; schedule(); assert scheduled()==0  # 8 s left
+m.playtime=218; m.calls=[]; schedule(); assert scheduled()==1              # 7 s left: at once
+m.now+=99; m.calls=[]; schedule(); assert scheduled()==0
+m.now+=1; m.calls=[]; schedule(); assert scheduled()==1
+def paced(): # 100 ms apart, not a second
+    m.now+=5000; schedule(); m.now+=100; m.calls=[]; schedule(); return scheduled()==1
+m.playtime=2; m.length=6; assert paced()                                     # a 6 s file
+m.length=0; assert paced(); del m.length                                     # no length known
+m.playtime=100; m.word(PLAY_STATUS,3); assert paced(); m.word(PLAY_STATUS,2) # paused
+m.byte(syms['g_backlight_status'],1); assert paced()                         # lit
+m.byte(syms['g_backlight_status'],0); m.word(payload_syms['dark_quiet'],1)   # quiet: a second still
+m.now+=5000; schedule(); m.now+=100; m.calls=[]; schedule(); assert scheduled()==0
+m.word(payload_syms['dark_quiet'],0); m.byte(syms['g_backlight_status'],1); del m.playtime; passed()
 
 # Chapter subprocess syscalls use Linux o32 and pass the filename through argv.
 for name,number,args,error in (('chapter_pipe2',4328,(0x1001000,0x80000,0,0),False),
