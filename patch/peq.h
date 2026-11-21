@@ -495,6 +495,7 @@ const char *addon_slot_id(int i); /* slot i's app's id while it has a row anywhe
 int addon_libs(void), addon_lib_open(void *ctx, void *event);
 const char *addon_lib_name(int k);
 int addon_apps(void *ctx, void *event), addon_apps_sync(void *win, void *event);
+void library_apps_show(void *row, int on); /* home.c: the Library's Apps row */
 int card_path(const char *path); /* on the card, no ".." segment: what an app or server may name */
 int addon_is_icon(const char *name); /* a card app's Streaming icon, by its file:// name */
 void addon_poll(void), addon_stop(void), addon_paint(void *w, void *canvas), addon_card_away(void);

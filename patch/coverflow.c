@@ -5103,6 +5103,8 @@ int coverflow_home(void *win, void *ctx) {
     widget_on(widget_lookup(home.carousel[0], "img_cover_flow", 1), EVT_CLICK, coverflow_open, 0);
     widget_on(widget_lookup(home.carousel[0], "img_rockbox", 1), EVT_CLICK, home_shortcut_open, 0);
     coverflow_home_layout();
+    /* Home's Library list's Apps row, after an App Store install or remove (addon.c) */
+    if (home.lib) widget_on(win, EVT_WINDOW_FOREGROUND, addon_apps_sync, win);
     if (theme()->pane_icon_x) {
         widget_on(win, EVT_WINDOW_FOREGROUND, home_foreground, 0);
         rearm(&home.count_timer, home_counts, PANE_BOOT_MS);

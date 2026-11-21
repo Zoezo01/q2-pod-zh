@@ -1,5 +1,5 @@
-/* Card apps: programs that run from the card beside Q2 Pod, installed by System
- * settings' Apps from their own GitHub releases (netupdate.c) or unzipped to the card by hand, as
+/* Card apps: programs that run from the card beside Q2 Pod, installed by Library's
+ * App Store from their own GitHub releases (netupdate.c) or unzipped to the card by hand, as
  * Spotify's librespot is. Q2 Pod knows none of them by name: each is a card folder .<id> holding
  *   q2app    its manifest, key=value lines: name (its Streaming row's), search (the search box's
  *            hint), qr (1: its row turns it on and shows its QR code once it answers), scrobble
@@ -1066,8 +1066,10 @@ void addon_stop(void) {
  * (addon_poll). On the UI thread, so it must stay short; addon_quit is the Apps page's worker's.
  * ponytail: an app still saving on its TERM after AWAY_MS can write to the card as USB takes it;
  * the real fix defers stock's USB-mode call until the apps are gone, without sleeping. */
+static int apps_stale __attribute__((section(".scratch"))); /* addon_apps_sync scans again */
 void addon_card_away(void) {
     char cmd[96];
+    apps_stale = 1; /* what the card holds after USB storage */
     int left = 0;
     for (int i = 0; i < ap.n; ++i) {
         app_t *a = &ap.a[i];
@@ -2188,9 +2190,8 @@ int addon_lib_open(void *ctx, void *event) {
 }
 
 /* Library's Apps page: its apps' rows by name, Games' chooser's (games.c), "No apps" with none. Its
- * rows are built again when the card's count of them changes as the page comes back on top or an
- * App Store job ends (addon_apps_sync). ponytail: a count, not the names: one app swapped for
- * another while the page is open shows at its next open. */
+ * rows are built again when their count changes (addon_apps_sync). ponytail: a count, not the
+ * names: one app swapped for another while the page is open shows at its next open. */
 static struct {
     void *page;
     int n; /* the rows built, -1: none yet */
@@ -2199,8 +2200,7 @@ static int apps_closed(void *ctx, void *event) {
     la.page = 0;
     return 0;
 }
-static void apps_rows(void) {
-    int n = addon_libs();
+static void apps_rows(int n) {
     if (n == la.n) return;
     void *view = page_list_or(la.page, la.page, "Apps", "No apps", la.n = n, 48);
     for (int k = 0; k < n; ++k) page_row_into(view, k, addon_lib_name(k), addon_lib_open);
@@ -2209,17 +2209,21 @@ int addon_apps(void *ctx, void *event) {
     if (la.page || !(la.page = page_open("cardapps_page", apps_closed, page_keyup))) return 0;
     widget_on(la.page, EVT_WINDOW_FOREGROUND, addon_apps_sync, la.page);
     la.n = -1;
-    apps_rows();
+    apps_rows(addon_libs());
     return 0;
 }
-/* win (0: the top window) back on top, or an App Store job's end: the Library's Apps row there
- * (home.c, named library_apps) shown while the card has an app for it, the Apps page's rows built
- * again. */
+/* win back on top (the Library's, Home's or the Apps page), or 0: an App Store install's or
+ * remove's end, for the top window. The Library's Apps row there (home.c library_apps_show) shown
+ * while the card has an app for it, the Apps page's rows built again. The card is read again only
+ * after such a job or USB storage: a return from Artists takes the last scan's count. */
 int addon_apps_sync(void *win, void *event) {
-    if (!win) win = window_manager_get_top_window(window_manager());
+    if (!win) apps_stale = 1, win = window_manager_get_top_window(window_manager());
     void *row = win ? widget_lookup(win, "library_apps", 1) : (void *)0;
-    if (row) widget_set_visible(row, addon_libs() > 0, 0), widget_layout(P(row, W_PARENT));
-    if (win && win == la.page) apps_rows();
+    if (!row && (!win || win != la.page)) return 0;
+    int n = apps_stale ? addon_libs() : ap.libs;
+    apps_stale = 0;
+    if (row) library_apps_show(row, n > 0);
+    if (win == la.page) apps_rows(n);
     return 0;
 }
 

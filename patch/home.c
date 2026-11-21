@@ -63,8 +63,9 @@ int library_search(void) { return !geom_val(V_LIB_ART); }
  * lists, listening history, the card's other media, Apps (the card apps whose q2app says
  * row=library, addon.c addon_apps), Games and App Store (netupdate.c), each unless Appearance hides
  * it, then upkeep. Apps shows while it lists an app: addon_apps_sync finds it by name, as the page
- * comes back on top or an App Store job ends. The added rows' buttons have no name, so stock's row
- * click (atoi of the name, 0x53510c) never sees them. */
+ * comes back on top (one handler, should stock build the page twice) or an App Store job ends. The
+ * added rows' buttons have no name, so stock's row click (atoi of the name, 0x53510c) never sees
+ * them. */
 int ringnav_localmusic(void *win, void *ctx) {
     int result = stock_localmusic_trampoline(win, ctx);
     void *view = win ? widget_lookup(win, "scroll_view_localmusic", 1) : (void *)0;
@@ -105,6 +106,7 @@ int ringnav_localmusic(void *win, void *ctx) {
         widget_set_name(apps, "library_apps");
         widget_set_visible(apps, addon_libs() > 0, 0);
         widget_restack(apps, n++);
+        widget_off_by_func(win, EVT_WINDOW_FOREGROUND, addon_apps_sync, win);
         widget_on(win, EVT_WINDOW_FOREGROUND, addon_apps_sync, win);
     }
     if (!pod_value(POD_HIDE_GAMES))
@@ -116,6 +118,23 @@ int ringnav_localmusic(void *win, void *ctx) {
             library_row(view, "local_scrobble", upload_scrobbles, 0, "Upload Scrobbles", 0), n++);
     library_look(view);
     return result;
+}
+
+/* The Library's Apps row shown (on) or not, the list's selection kept on its row: navigation.c's
+ * load drops a live list's selection when its count of shown rows changes, so the index and the
+ * count it keeps move with the row. */
+void library_apps_show(void *row, int on) {
+    void *view = P(row, W_PARENT);
+    if (!widget_get_visible(row) == !on) return;
+    int sel = widget_get_prop_int(view, SEL, -1), count = widget_get_prop_int(view, COUNT, -1);
+    int at = 0; /* the shown rows before it */
+    for (unsigned i = 0; widget_get_child(view, i) != row; ++i)
+        at += widget_get_visible(widget_get_child(view, i)) != 0;
+    widget_set_visible(row, on, 0);
+    widget_layout(view);
+    if (count < 0) return;
+    prop(view, COUNT, count + (on ? 1 : -1));
+    if (sel >= 0 && (on ? at <= sel : at < sel)) prop(view, SEL, sel + (on ? 1 : -1));
 }
 
 /* Home's Library list (coverflow.c home_library), filled each time it opens, as the page is: the
@@ -173,8 +192,8 @@ static void svc_row(void *row, int i, char *hide) {
 
 /* stream_page_init: stock's rows but Baidu Netdisk (a Chinese cloud drive, signed in to from
  * Baidu's app: its row, the one with list_baidu's icon, removed), then Spotify (spotify.c), which
- * opens its browser, the card apps on the card (addon.c: Deezer, Soulseek, File Browser… as System
- * settings' Apps or the user put them there), Tidal Downloads, Internet Radio (radio.c), AirPlay
+ * opens its browser, the card apps on the card (addon.c: Deezer, Soulseek, File Browser… as the
+ * App Store or the user put them there), Tidal Downloads, Internet Radio (radio.c), AirPlay
  * and Configuration. Their buttons have no name, so stock's row click never sees them. Smart
  * Wi-Fi's radio comes back first. */
 int ringnav_stream(void *win, void *ctx) {

@@ -6224,9 +6224,8 @@ int ringnav_display(void *win, void *ctx) {
         setting_row(view, SETTING_THEME);
         for (int k = 0; k < T->n_opts; ++k) setting_row(view, T->opts[k].setting);
         pod_rows(win, "scroll_view_display", POD_HIDE_STREAM, 2, home_icons);
-        static const char *const library_icons[] = { "system_display", "system_display",
-                                                     "system_display" };
-        pod_rows(win, "scroll_view_display", POD_HIDE_APPS, 3, library_icons);
+        pod_rows(win, "scroll_view_display", POD_HIDE_APPS, 2, home_icons);
+        pod_rows(win, "scroll_view_display", POD_HIDE_STORE, 1, home_icons);
         return result;
     }
     wheel_row(list_row_into(view, "system_display", xfade_open, (void *)1));
