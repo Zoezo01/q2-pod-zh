@@ -251,11 +251,6 @@ ROCKBOX_FLAG = '/tmp/q2pod-rockbox'
 # starts udhcpc later too. A second pass 2 s in, called off if Rockbox has already left and demo is starting Wi-Fi
 # again, catches a shell that took longer. ponytail: 300 ms and 2 s are guesses; a shell slower than 2 s still escapes.
 WIFI_OFF = 'killall -9 wifi_connect.sh udhcpc wpa_supplicant 2>/dev/null; ifconfig wlan0 down 2>/dev/null'
-# demo's stderr goes to a 1 MB tmpfs of its own through a link at its /tmp path (docs/boot.md#rockbox-from-home), so
-# a flood between the minute's trims stops there instead of filling /tmp; 1 MB is twice the trim's 512 KB, which a
-# file at the cap must pass. A failed mkdir, mount or ln leaves no link, and the log is /tmp's file as before. ''
-# here leaves the release start path as it was and the cap to --dev builds (LOG_HOOK).
-LOG_CAP = '        mkdir /tmp/q2-log && mount -t tmpfs -o size=1m q2-log /tmp/q2-log && ln -s /tmp/q2-log/demo.err /tmp/q2-demo.err\n'
 BOOT_HOOK = (b'    /release/bin/demo &\n', f'''    (
         c=/mnt/data/q2-crash.log
         m=/mnt/data/q2-state
@@ -312,7 +307,7 @@ BOOT_HOOK = (b'    /release/bin/demo &\n', f'''    (
         # so they inherit it and their reasons for failing land here, in RAM, instead of on the serial console;
         # emptied once a minute past 512 KB (O_APPEND keeps demo writing at its end), its tail goes in the crash
         # log. stdout stays on the console as stock's; --dev takes both (LOG_HOOK)
-{LOG_CAP}        (while sleep 60; do n=$(wc -c 2>/dev/null </tmp/q2-demo.err); [ "${{n:-0}}" -gt 524288 ] && : >/tmp/q2-demo.err; done) &
+        (while sleep 60; do n=$(wc -c 2>/dev/null </tmp/q2-demo.err); [ "${{n:-0}}" -gt 524288 ] && : >/tmp/q2-demo.err; done) &
         while :; do
             /release/bin/demo 2>>/tmp/q2-demo.err
             s=$?
@@ -356,8 +351,9 @@ REMOTE_HOOK = (b'/usr/bin/dbus-daemon --config-file=/etc/dbus-1/system.conf\n',
                b'/usr/bin/dbus-daemon --config-file=/etc/dbus-1/system.conf\n/usr/bin/q2remote &\n')
 # --dev only (docs/remote.md#log): demo's console output, and hciplayer's, which inherits it, in RAM, so
 # emptied once a minute past 4 MB (O_APPEND keeps demo writing at its end), in place of the release's stderr
-# file and its cap, in an 8 MB tmpfs as LOG_CAP has it (twice the 4 MB trim). In BOOT_HOOK's start path.
-LOG_HOOK = (LOG_CAP.encode() + b'        (while sleep 60; do n=$(wc -c 2>/dev/null </tmp/q2-demo.err); [ "${n:-0}" -gt 524288 ] && : >/tmp/q2-demo.err; done) &\n'
+# file and its cap. In BOOT_HOOK's start path. The log is a link into an 8 MB tmpfs of its own, twice the trim, so a
+# flood between trims fills that and not /tmp; a failed mkdir, mount or ln leaves no link and the file is /tmp's.
+LOG_HOOK = (b'        (while sleep 60; do n=$(wc -c 2>/dev/null </tmp/q2-demo.err); [ "${n:-0}" -gt 524288 ] && : >/tmp/q2-demo.err; done) &\n'
             b'        while :; do\n            /release/bin/demo 2>>/tmp/q2-demo.err\n',
             b'        mkdir /tmp/q2-log && mount -t tmpfs -o size=8m q2-log /tmp/q2-log && ln -s /tmp/q2-log/demo.log /tmp/q2-demo.log\n'
             b'        (while sleep 60; do n=$(wc -c 2>/dev/null </tmp/q2-demo.log); [ "${n:-0}" -gt 4000000 ] && : >/tmp/q2-demo.log; done) &\n'

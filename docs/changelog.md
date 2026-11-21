@@ -1,7 +1,7 @@
 # Changelog
 
 - **1.8.9**:
-  - Stability: the player's error log has 1 MB of memory of its own. Something printing errors without end, as a damaged album cover once did, could fill the memory the player shares with it in less than the minute between the log's trims, and the player was stopped for memory.
+  - Dev builds: the player's log, `/tmp/q2-demo.log`, has 8 MB of memory of its own. Something printing without end could fill the memory the player shares with it in less than the minute between the log's trims.
   - Most Played: songs you start playing once the play counts have filled up are counted when you play them again within a few days, so a new album can join **Most Played**. Once all 512 places held songs played twice or more, each song played for the first time took the place of the one played for the first time before it, so no new song got past one play and Most Played stopped changing.
   - Scrobbling: with **Smart Wi-Fi** and automatic uploads on, an upload that can't get through wakes the radio less and less often, after 30 minutes, then an hour, then every two hours, until one succeeds. It used to wake the radio every half hour or sooner for as long as it failed, each time for five minutes: away from known Wi-Fi, about two and a half hours of radio over a day of listening.
   - System Update, App Store: a press that stops **Network update** or a check for updates stops it at once. On a network that drops packets, a request already sent to GitHub was waited out first, up to 30 seconds, before the download was cancelled or the App Store would start another job.
