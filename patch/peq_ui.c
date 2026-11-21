@@ -571,6 +571,31 @@ static int apply(int on) {
     return 1;
 }
 
+/* A card app's EQ (addon_eq.c): p, if not 0, into the PEQ and playing, as Apply from Simple's
+ * Presets (3EQ goes off); else mode, EQ_PEQ or EQ_OFF, as Advanced's switch. An open EQ page
+ * follows (page_load): p replaces the draft and its unapplied edits, which are the page's alone
+ * (leaving it drops them too); the switch keeps them. Simple's gains are saved first, as a tab
+ * change saves them. Nothing changes under a value's or a name's edit (ui.edit), as eq_output
+ * waits for it: a render would close its keyboard, and its Done would edit the new draft. What
+ * stopped it, else 0. */
+const char *eq_set(const peq_preset *p, int mode) {
+    eq_state s;
+    if (ui.edit) return "The EQ page on the Q2 is editing a value";
+    e3_done();
+    if (e3.dirty) return "Couldn't save the EQ";
+    eq_load(&s);
+    if (p) s.peq = *p, s.peq.bypass = 0, mode = EQ_PEQ;
+    s.mode = mode;
+    s.hold = 0;
+    if (!eq_commit(&s)) return "Couldn't save the EQ";
+    if (ui.page) {
+        if (p) ui.dirty = 0;
+        page_load();
+        if (!ui.timer) ui.timer = timer_add(render, 0, 1);
+    }
+    return 0;
+}
+
 static void load(eq_state *s);
 static void e3_show(void);
 

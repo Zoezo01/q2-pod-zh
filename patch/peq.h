@@ -415,6 +415,8 @@ int pod_value(int i);
  */
 void eq_output(const char *key), eq_output_forget(void);
 void ringnav_eq_output_toggle(void); /* and its row's click */
+/* and a card app's (addon_eq.c): p playing, as Apply, else mode (EQ_PEQ, EQ_OFF), as the switch */
+const char *eq_set(const peq_preset *p, int mode);
 void peq_boot(void); /* clear a previous session's Simple EQ comparison before restoring playback */
 extern int peq_chained; /* peq_ui.c: peq_stock_eq ran this boot */
 void peq_chain(void);   /* crossfade.c: peq_attach once a connect (ringnav_mode), while playing */
@@ -483,9 +485,10 @@ void tidal_all(int press, char *out, unsigned size), tidal_poll(void), tidal_all
  * files of the app in folder dir (".<id>"): asked to end and waited for on the Apps page's worker,
  * then, once replaced or removed, forgotten on the UI thread. */
 /* Card apps on the card at once: twice what the App Store lists (netupdate.c SH_MAX), for those put
- * there by hand. ponytail: a fixed table in .scratch, 520 bytes a slot over addon.c,
- * addon_library.c and navigation.h, its pages untouched until a slot is used; an app past the last
- * slot gets no row and nothing says so. A heap table that grows, if a card ever holds more. */
+ * there by hand. ponytail: a fixed table in .scratch, 524 bytes a slot over addon.c,
+ * addon_library.c, addon_eq.c and navigation.h, its pages untouched until a slot is used; an app
+ * past the last slot gets no row and nothing says so. A heap table that grows, if a card ever holds
+ * more. */
 #define APPS_MAX 64
 int addon_scan(void), addon_open(void *ctx, void *event), addon_hold(void *top);
 int addon_games_last(void); /* the card's games as the last addon_scan found them */
@@ -520,6 +523,7 @@ const char *addon_where(const char *id);
 void ringnav_wdt_long(void);   /* system.c: the watchdog's long count for a long pass */
 int ringnav_smart_awake(void); /* navigation.c: Smart Awake (IPOD KEEPLIT) is on */
 void library_poll(void); /* addon_library.c: an app's library update request, once per addon_poll */
+void addon_eq_poll(int slot, const char *id); /* addon_eq.c: app id's EQ request, in its poll */
 /* spotify.c's Q2SPOT/1 framing (docs/librespot.md), which the card apps speak too */
 int spot_escape(const char *s, char *out, unsigned size);
 int spot_put(char *out, unsigned size, const char *s); /* "\t" and s escaped appended */

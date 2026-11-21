@@ -472,7 +472,7 @@ def test_more_apps_than_slots(fw):
 def test_the_features_are_published_at_every_scan(fw):
     world = card(fw)
     scan(fw)
-    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections art window urls sort field more fav now fieldtext wake audio2 dim gameview\n'
+    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections art window urls sort field more fav now fieldtext wake audio2 dim gameview eq\n'
     assert world.of('rename') == [(b'/tmp/q2-addon.caps.tmp', b'/tmp/q2-addon.caps')]
 
 
@@ -1409,6 +1409,13 @@ def test_an_app_stopped_for_usb_starts_when_the_card_is_back(fw):
     window[0], world.ms = 0, 3000
     poll(C.pointer(a))
     assert a.relaunch == 0 and a.launched == 1
+
+
+def test_a_running_app_s_eq_request_is_answered_in_its_poll(fw):
+    world, a = running(fw)
+    world.files[b'/tmp/q2-foo.eq'] = b's1\nget\n'
+    addon_poll(fw, world)
+    assert world.written[b'/tmp/q2-eq.tmp'].startswith(b's1 ok\nmode off\n')  # test_peq_page.py has the rest
 
 
 def test_polls_are_paced(fw):

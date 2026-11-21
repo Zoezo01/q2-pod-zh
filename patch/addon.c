@@ -37,7 +37,8 @@
  * (tags.c card_tags).
  *
  * An app's /tmp/q2-<id>.sleep asks for a sleep timer: playback pauses at a time, or as the track
- * playing ends (sleep_read, sleep_check).
+ * playing ends (sleep_read, sleep_check). Its /tmp/q2-<id>.eq sets the EQ or reads it
+ * (addon_eq.c), the answer in .eq.done.
  *
  * A card game (q2app game=1, then no run) is a row in Library's Games instead, unless its row
  * says where: it runs over the whole screen, as Videos' player does, until it exits (game_start).
@@ -95,7 +96,7 @@
 /* This firmware's card-app features, space-separated; a feature adds its word. */
 #define ADDON_CAPS                                                                                 \
     "playlist progress pages library goto sleep game audio sections art window urls sort field "   \
-    "more fav now fieldtext wake audio2 dim gameview"
+    "more fav now fieldtext wake audio2 dim gameview eq"
 #define ADDON_SECTIONS 8  /* sections an app's first page may have */
 #define SWIPE_CLAIM_PX 24 /* a sideways move this far, twice as far as up or down, is a swipe's */
 #define SWIPE_PX 60       /* and this far at the lift, more than up or down, changes section */
@@ -832,6 +833,7 @@ static void poll_one(app_t *a) {
     if (a->hold) reset_poweroptions_timer(1, 1, 0); /* standby, auto power-off; not the screen's */
     stream_poll(a);
     sleep_read(a);
+    addon_eq_poll((int)(a - ap.a), a->id);
     if (access(a->pid, 0) && now - a->launch_at > ADDON_START_MS) a->launched = a->hold = 0;
 }
 
