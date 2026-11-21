@@ -3678,6 +3678,43 @@ def test_a_screen_run_s_end_starts_an_app_that_ended_itself_under_it(fw):
     assert p.top.state == K_READY and p.cell(0, 3) == b'Watched'
 
 
+@pytest.mark.parametrize('code', [RETURN, CENTRE])
+def test_the_release_of_a_press_that_ended_a_screen_run_is_not_the_page_s(fw, code):
+    p = Page(fw)
+    p.answer(rows=[SCREEN])
+    g = CardGame(fw, world=p.world)
+    p.click(0)
+    assert g.key(KEY_DOWN, code) == 1  # "k d CODE": the run leaves on the press
+    ended(g)
+    assert g.key(KEY_DOWN, code) == 1 and g.key(KEY_UP, code) == 1  # its repeat and its release: eaten, not the page's
+    assert g.key(KEY_DOWN, code) == 0 and g.key(KEY_UP, code) == 0  # the next press is stock's
+    assert g.sent == [(FOO_SOCK, b'k d %d' % code)]
+
+
+@pytest.mark.parametrize('code', [RETURN, CENTRE])
+def test_a_key_released_before_the_run_s_end_leaves_nothing_to_eat(fw, code):
+    p = Page(fw)
+    p.answer(rows=[SCREEN])
+    g = CardGame(fw, world=p.world)
+    p.click(0)
+    assert g.key(KEY_DOWN, code) == 1 and g.key(KEY_UP, code) == 1
+    ended(g)
+    assert g.key(KEY_DOWN, code) == 0  # stock's: the page's
+
+
+def test_return_s_hold_released_before_the_run_s_end_leaves_nothing_to_eat(fw):
+    """The hold's own eaten release clears the key too, so the end finds nothing down."""
+    p = Page(fw)
+    p.answer(rows=[SCREEN])
+    g = CardGame(fw, world=p.world)
+    p.click(0)
+    assert g.key(KEY_DOWN, RETURN) == 1
+    g.poll(701)  # its TERM
+    assert g.key(KEY_UP, RETURN) == 1  # eaten, the run still there
+    ended(g, 15)
+    assert g.key(KEY_DOWN, RETURN) == 0
+
+
 def test_a_game_s_end_asks_nothing_of_the_app_s_page_open(fw):
     """Only a screen row's run: a game started by a row of Games, its app's page open (Now Playing's ⋯), leaves it."""
     p = Page(fw, b'name=Foo\ngame=1\nrow=games\n', opens=False)

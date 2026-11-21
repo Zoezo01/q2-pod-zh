@@ -910,7 +910,7 @@ static struct {
     unsigned polled;     /* when game_files last looked */
     char id[APP_ID];
     int view;   /* gameview=1 */
-    int down;   /* gameview: GAME_ bits held */
+    int down;   /* GAME_ bits held */
     int native; /* Now Playing has the screen and the keys */
     int stock;  /* GAME_ bits pressed on Now Playing: stock's to their release */
     int screen; /* a screen row's run: its app's slot + 1 (screen_back) */
@@ -1160,7 +1160,7 @@ int addon_game_input(void *e) {
     int keyish = type == EVT_KEY_DOWN || type == EVT_KEY_UP || type == EVT_KEY_LONG;
     int button = key == KEY_RETURN ? GAME_RETURN : key == KEY_CENTER ? GAME_CENTER : 0;
     if (keyish && (gm.eat & button)) { /* an eaten key's repeats and release */
-        if (type == EVT_KEY_UP) gm.eat &= ~button;
+        if (type == EVT_KEY_UP) gm.eat &= ~button, gm.down &= ~button;
         return 1;
     }
     if (!gm.pid) return 0;
@@ -1173,12 +1173,14 @@ int addon_game_input(void *e) {
     if (!gm.view && !gm.audio && keyish &&
         (key == KEY_PLAY || key == KEY_BACK_BTN || key == KEY_FWD_BTN))
         return 0;
-    if (gm.view && keyish && button) {
+    if (keyish && button) { /* every run's: one still down at its end is eaten (game_poll) */
         /* ponytail: a lost release leaves its bit set (gm.down, gm.stock): that button alone arms
-         * the chord, or its next press is dropped at an open or stays stock's, until its next
-         * release */
+         * the chord, or its next press is dropped at an open or a run's end or stays stock's,
+         * until its next release */
         if (type == EVT_KEY_DOWN) gm.down |= button;
         if (type == EVT_KEY_UP) gm.down &= ~button;
+    }
+    if (gm.view && keyish && button) {
         if (gm.down != GAME_CHORD)
             gm.held = 0;
         else if (!gm.held && type == EVT_KEY_DOWN)
@@ -1258,6 +1260,8 @@ static void game_poll(void) {
         if (gm.swap && gm.audio) sound_back(); /* a crash too */
         if (gm.audio && mclGetPlayStatus() == 3) player_stop();
         gm.pid = gm.audio = 0;
+        /* it left on a press: the key's repeats and release are not the page's under it */
+        gm.eat |= gm.down, gm.down = 0;
         if (gm.native) game_view_back();
         if (gm.view) game_unlink("view"), game_unlink("quit");
         if (gm.dim && g_backlight_status) toolSetBackLight(g_lightness + 1);
