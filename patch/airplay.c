@@ -199,22 +199,22 @@ int airplay_lyrics(int *ms) {
     return *ms = pos > 0 ? pos : 0, 1;
 }
 
-/* The app's page, from its hidden slot; told to install it when it isn't on the card. */
+/* The app's page, from its hidden slot, once Smart Wi-Fi's link is up. */
 static int air_open(void *ctx, void *event) {
     (void)event;
-    if (access("/mnt/mmc/." AIR_ID "/q2-" AIR_ID, 0))
-        toast("Install AirPlay in Library → App Store");
-    else if (!smart_hold(air_open, ctx, 0)) /* the app starts once Smart Wi-Fi's link is up */
-        air.asked = 1, addon_open_id(AIR_ID);
+    if (!smart_hold(air_open, ctx, 0)) air.asked = 1, addon_open_id(AIR_ID);
     return 0;
 }
 
-/* Now Playing's ⋯ page (onlinematch.c ringnav_playermore): an AirPlay row, first. */
-void airplay_more(void *view) {
+/* Now Playing's ⋯ page (onlinematch.c ringnav_playermore): an AirPlay row, first, while the app is
+ * on the card; whether it added one. */
+int airplay_more(void *view) {
     char text[80] = "AirPlay";
+    if (access("/mnt/mmc/." AIR_ID "/q2-" AIR_ID, 0)) return 0;
     void *label = list_row(view, "airplay", air_open, 0);
     widget_resize(label, 253, I(label, W_H));
     if (air.on && air.t->speaker[0]) snprintf(text, sizeof text, "AirPlay: %.60s", air.t->speaker);
     widget_set_text_utf8(label, text);
     widget_restack(P(P(label, W_PARENT), W_PARENT), 0);
+    return 1;
 }

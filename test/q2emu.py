@@ -2674,6 +2674,8 @@ class AlbumLyricsMachine(CoverflowMachine):
         view=self.node('scroll_view','scroll_view_more',list(self.stock)); self.top=self.node('window','playermore_page',[view])
         assert self.call(address=HOOKS['playermore_page_init'][0],args=(self.top,0,0,0),gap=0)==0
         assert self.calls[0][:2]==('stock_playermore',self.top)
+        looked=self.accessed[:]; self.accessed.clear()  # over stock's rows the page looks for AirPlay's app (airplay.c)
+        assert looked==(['/mnt/mmc/.airplay/q2-airplay'] if rows==8 else []),looked
         return self.nodes[view]['children']
 
 def album_lyrics_page(**queue):

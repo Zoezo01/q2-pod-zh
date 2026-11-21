@@ -315,6 +315,7 @@ def test_the_lyrics_follow_the_speaker_s_place_in_the_song(fw):
 # Now Playing's ⋯ row.
 def test_the_row_names_the_speaker_while_one_plays(fw):
     tap, more = Tap(fw), More(fw)
+    tap.files.add(BIN)
     more.open()
     tap.app(state=CAST_ON, spk=20)
     tap.poll()
@@ -327,13 +328,13 @@ def test_the_row_names_the_speaker_while_one_plays(fw):
     assert more.texts == ['AirPlay', 'AirPlay', 'AirPlay: Kitchen', 'AirPlay']
 
 
-def test_the_row_pressed_without_the_app_on_the_card_says_where_to_install_it(fw):
-    tap, more, said = Tap(fw, running=False), More(fw), []
-    fw.mock('navigator_to_with_context', lambda page, info, *_: said.append(C.string_at(info + 8).decode()))
+def test_the_page_has_no_airplay_row_until_the_app_is_on_the_card(fw):
+    tap, more = Tap(fw, running=False), More(fw)
     more.open()
-    assert more.click() == 0 and said == ['Install AirPlay in Library → App Store']
-    tap.poll(), tap.poll()
-    assert tap.opens == 0  # nor is its file looked for
+    assert more.texts == [] and more.restacked == [] and not fw.calls('list_item_create')
+    tap.files.add(BIN)
+    more.open()
+    assert more.texts == ['AirPlay'] and more.restacked == [(C.addressof(more.item), 0)]  # first, over stock's rows
 
 
 def test_the_row_opens_the_app_s_page_over_another_app_s(fw):

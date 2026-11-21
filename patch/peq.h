@@ -539,7 +539,8 @@ int addon_scrobbles(const char *path); /* addon.c: not when path's app says scro
 int addon_more(void); /* addon.c: Now Playing's ⋯ opens the playing queue's app's page */
 void addon_open_id(const char *id); /* a card app's page by its id, hidden or not */
 /* airplay.c: the q2-airplay app's side (docs/internals.md#airplay-sender) */
-void airplay_poll(void), airplay_more(void *view);
+void airplay_poll(void);
+int airplay_more(void *view); /* whether it added its row */
 int airplay_on(void), airplay_lyrics(int *ms);
 /* addon.c: a heart's press, appended to the app's fav.log for it to send (docs/librespot.md);
  * addon_fav_path's for a song in a card folder an app's q2app names as favdir, else nothing to do.

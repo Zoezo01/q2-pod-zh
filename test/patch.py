@@ -4099,7 +4099,7 @@ m.tap(); assert m.full()[:6]==COLUMN[:5]+(None,),m.full(); passed()
 # card with an album. A press asks for Wi-Fi first, copies the album's tracks off stock's records (a CUE
 # track left out) and starts the worker; the row shows its progress, a press while it runs cancels, the
 # page's end leaves it running, and the timer joins it and toasts the summary. USB storage stops it quietly.
-# The job's own steps are test/peq.py's album_check. AirPlay's row (airplay.c) goes over stock's, for any song.
+# The job's own steps are test/peq.py's album_check. AirPlay's row (airplay.c) goes over stock's, for any song, while its app is on the card.
 assert [m.get(O['PLAYMORE_ROWS']+4*i) for i in range(O['PLAYMORE_COUNT'])]==[2,3,4,5,6,7,0,1]  # Download Cover & Lyrics third
 m=AlbumLyricsMachine(); kids=m.more(); row=kids[4]
 assert len(kids)==10 and [k for k in kids if k not in (row,kids[0])]==m.stock and m.nodes[row]['style']=='s_listitem_black'
@@ -4112,6 +4112,8 @@ assert m.nodes[icon]['image']=='player_onlinesearch' and [m.get(icon+O[k]) for k
 assert m.nodes[label]['style']=='s_scrlabel_white24l' and m.nodes[label]['text']=='Download Album Lyrics'
 assert [m.get(label+O[k]) for k in ('W_X','W_W','W_H')]==[72,253,70]; passed()
 m=AlbumLyricsMachine(cls=0xf1); assert len(m.more())==9; passed()  # an online queue: AirPlay's row alone
+m=AlbumLyricsMachine(); m.missing=True; kids=m.more()  # AirPlay's app not on the card: no row of its, Download Album Lyrics still third
+assert len(kids)==9 and kids[3] not in m.stock and [k for k in kids if k!=kids[3]]==m.stock; passed()
 for off,v in (('REC_TYPE',4),('REC_ALBUM',0),('REC_PATH',0)):  # a folder, no album tag, no path
     m=AlbumLyricsMachine(); m.word(m.playing()+O[off],v); assert len(m.more())==9,off; passed()
 m=AlbumLyricsMachine(); m.word(m.playing()+O['REC_PATH'],m.string('http://x/y')); assert len(m.more())==9; passed()

@@ -626,14 +626,14 @@ int ringnav_playermore(void *win, void *ctx) {
     for (unsigned i = 0; i < PLAYMORE_COUNT && coverflow_playlist_queue(); ++i)
         if (((const int *)PLAYMORE_ROWS)[i] == PLAYMORE_DELETE)
             widget_set_visible(widget_get_child(view, i), 0, 0);
-    airplay_more(view); /* first, over stock's rows */
+    int air = airplay_more(view); /* first, over stock's rows, when the app is installed */
     if (!al_playing()) return result;
     while (at < PLAYMORE_COUNT && ((const int *)PLAYMORE_ROWS)[at] != PLAYMORE_SEARCH) ++at;
     if (at == PLAYMORE_COUNT) return result;
     void *label = list_row(view, "player_onlinesearch", al_click, 0);
     widget_use_style(label, "s_scrlabel_white24l");
     widget_resize(label, 253, I(label, W_H));
-    widget_restack(P(P(label, W_PARENT), W_PARENT), at + 2); /* AirPlay's row first */
+    widget_restack(P(P(label, W_PARENT), W_PARENT), at + 1 + (unsigned)air); /* after AirPlay's */
     widget_on(label, EVT_DESTROY, al_gone, label);
     al.label = label;
     al_show();
