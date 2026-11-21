@@ -6,6 +6,7 @@
   - Resume: a long song, podcast or audiobook you play to the end of its queue starts from the beginning the next time you play it. After a restart it could start up to a minute before its end, where the Q2 last noted its place.
   - Tidal: a song saved to the card as it played stays whole if the Q2 loses power soon after. A power cut in the minute or so after the save could leave it empty in **Tidal Downloads**, its space lost until the card was checked on a computer.
   - Lyrics: **Download Album Lyrics** asks LRCLIB about every song over one connection, so an album's lyrics arrive sooner, most of all on a slow network. It used to open a new encrypted connection for each song.
+  - Upload Scrobbles: a song with a very long artist, album or title in a script such as Japanese, Chinese or Russian no longer stops every upload after it. The Q2 keeps 255 bytes of a tag, which could end in the middle of a letter; ListenBrainz refused the batch holding it, and the listens after it never went up.
   - App Store: under **Theme: Classic** and **Theme: Modern**, the open tab, **Apps** or **Games**, is the colour your theme gives the selected row, its name in the row's ink. Under Classic it was the accent's own blue, darker than Classic Blue's rows.
   - Books: a book left open when the Q2 is turned off, or turns itself off, reopens at the page you were reading. The page was saved only when you left the book, so it reopened where you had started reading.
 - **1.8.8**:

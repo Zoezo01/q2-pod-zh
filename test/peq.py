@@ -2544,7 +2544,8 @@ def scrobble_check(tmp):
     binary = tmp/'scrobble_test'
     subprocess.run(['cc', '-pthread', '-DPEQ_HOST', f'-DPEQ_ROOT="{root}"', f'-DROOT="{root}"', '-D_GNU_SOURCE',
                     '-O1', '-Wall', '-Wextra', '-Werror', '-Wno-unused-parameter', '-I', str(ROOT/'patch'), '-include', str(tmp/'scrobble_shim.h'),
-                    str(ROOT/'patch/scrobble.c'), str(tmp/'scrobble_test.c'), '-lcrypto', '-o', str(binary)], check=True)
+                    str(ROOT/'patch/scrobble.c'), str(ROOT/'patch/xiph.c'), str(tmp/'scrobble_test.c'), '-lcrypto', '-o', str(binary)],
+                   check=True)  # xiph.c: utf8_mend, which parse() makes each name UTF-8 with
     subprocess.run([str(binary)], check=True)
     requests = [line.split('\t', 3) for line in (root/'requests').read_text().splitlines()]
     artist = lambda i: f'Art "{i}" \\ &=+%é'

@@ -164,7 +164,10 @@ static int epoch(const char *s) {
 }
 
 /* One Rockbox line: artist, album, title, track, length, rating, time, MusicBrainz ID. Only
- * listened (L) lines with an artist, a title and a time of digits (epoch) are scrobbled. */
+ * listened (L) lines with an artist, a title and a time of digits (epoch) are scrobbled. The three
+ * names are made UTF-8 first (utf8_mend): ListenBrainz refuses a body that isn't (400, so the batch
+ * stayed and stopped every upload after it), and Last.fm's signature must cover what is sent. A tag
+ * stock cut inside a character (it keeps 255 bytes) loses that character's bytes. */
 static int parse(char *line, entry_t *e) {
     char *f[8] = { line };
     int n = 1;
@@ -172,7 +175,9 @@ static int parse(char *line, entry_t *e) {
     for (char *s = line; *s && n < 8; s++)
         if (*s == '\t') *s = 0, f[n++] = s + 1;
     e->artist = f[0], e->album = f[1], e->title = f[2], e->length = f[4], e->time = f[6];
-    return n >= 7 && *f[0] && *f[2] && f[5][0] == 'L' && epoch(f[6]);
+    if (n < 7) return 0;
+    utf8_mend(f[0]), utf8_mend(f[1]), utf8_mend(f[2]);
+    return *f[0] && *f[2] && f[5][0] == 'L' && epoch(f[6]);
 }
 
 static unsigned got(const char *data, unsigned size, unsigned n, void *ctx) {
