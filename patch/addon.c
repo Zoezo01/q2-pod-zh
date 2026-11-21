@@ -1469,6 +1469,7 @@ static int req_done(void) {
  * runs a game (game_start), the row's uri and context in its environment; when it ends, the level
  * is asked again (screen_back).
  * A reply whose message is "refresh" is asked again every ADDON_LIVE_MS while its level is on top,
+ * no game or screen row's run in front of it (tick),
  * and at once after an action on it (the level stays shown, no Loading…), and redrawn only when it
  * changed, its selected row kept; one with the same rows (same_rows) is written in place (relabel)
  * instead of rebuilt. One whose message is "pages" and that has a cursor
@@ -1955,9 +1956,8 @@ static void keep_sel(void) {
 /* A screen row's run has ended (game_poll), slot its app's: that app's page, if it is the one open,
  * has its top level asked again, so the app can show what the run changed: a live level in place,
  * as after an action's reply (got), any other reloaded from its first page, its selected row kept.
- * An action the run outlasted gives way, its row's own text back, as for action().
- * ponytail: under the run a live level is still asked every ADDON_LIVE_MS (tick: its page is the
- * top window, the screen lit); a test of addon_game_front there would stop that. */
+ * An action the run outlasted gives way, its row's own text back, as for action(). A live level is
+ * not asked while the run is in front (tick), so this is its ask. */
 static void screen_back(int slot) {
     if (!pg.page || pg.a != slot) return;
     lv_t *l = top();
@@ -2385,6 +2385,7 @@ static int tick(const void *unused) {
         show();
     else if (!req.running && (int)(now - pg.again) >= 0 && !pg.edit &&
              (l->state == K_WAIT || (l->state == K_READY && l->live && g_backlight_status &&
+                                     !addon_game_front() && /* nobody sees it under a run */
                                      window_manager_get_top_window(window_manager()) == pg.page)))
         fetch(l);
     art_window();

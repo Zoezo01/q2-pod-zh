@@ -3576,6 +3576,28 @@ def test_a_screen_run_s_end_asks_a_live_level_again_in_place(fw):
     assert p.cell(1, 3) == b'Watched' and len(fw.calls('list_item_create')) == drawn and p.top.sel == 1  # written in place
 
 
+@pytest.mark.parametrize('row, manifest', [(1, b'name=Foo\n'), (None, b'name=Foo\ngame=1\nrow=games\n')], ids=['a screen run', 'a game'])
+def test_a_live_level_is_not_asked_while_a_run_is_in_front(fw, row, manifest):
+    """addon.c tick: nobody sees the page, and its app would list for the whole run. A game behind Now Playing is not
+    in front: its app's page, opened from there, is asked as any."""
+    p = Page(fw, manifest, opens=row is not None)
+    fw.mock('window_manager_get_top_window', lambda *_: p.page)
+    fw.var('g_backlight_status', C.c_ubyte).value = 1
+    g = CardGame(fw, world=p.world)
+    if row is None:  # the game's own page, as Now Playing's ⋯ opens it
+        assert fw.fn('addon__page_at', C.c_int, C.c_int, C.c_char_p, C.c_char_p, C.c_char_p, C.c_int)(0, b'menu', b'', b'Foo', 0) == 1
+    p.answer(msg=b'refresh', rows=[item(1), SCREEN])
+    assert g.start() == 1 if row is None else p.click(row) is None and g.on() == g.PID
+    asked = p.req.id
+    for _ in range(3):
+        p.world.ms += 2000
+        p.tick()
+    assert p.req.id == asked and not p.req.running
+    fw.var('addon__gm', Game).native = 1  # Now Playing has the screen, then the page over it
+    p.tick()
+    assert p.req.id == asked + 1 and p.req.running == 1 and p.request().endswith(b'\tmenu\n')
+
+
 def test_a_screen_run_s_end_reloads_any_other_level_with_its_row_kept(fw):
     p = Page(fw)
     p.answer(rows=[item(1, b'list')])
