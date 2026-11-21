@@ -662,6 +662,7 @@ static inline unsigned script_upper(unsigned c) {
 }
 void bar_title_sync(void *win); /* navigation.c: Classic's bar title names win */
 void bar_title_name(void *win); /* navigation.c: names win by its name, on top or not */
+void np_mark_add(void *const *image, unsigned n); /* np_marks.c: the flat look takes them */
 /* navigation.c: Classic's Spotify and Internet Radio Now Playing, laid out as the local page, 0
  * under the other themes; Classic's bar on a canvas (its scrub cue with mark), 0 where none. */
 int stream_ipod(void *art, void *const text[4], void *elapsed, void *remain, void *bar,

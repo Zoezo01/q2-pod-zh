@@ -1,4 +1,4 @@
-"""Now Playing's marks in the flat look (np_marks.c, Modern's): More, the play mode and the heart stay stock's images,
+"""Now Playing's marks in the flat look (np_marks.c, Modern's and Classic Modern's): More, the play mode and the heart stay stock's images,
 unseen, and are drawn on their parent in the flat look's plain glyphs, the half's. Classic's and Minimal's stay stock's."""
 import ctypes as C
 import struct
@@ -6,7 +6,9 @@ import struct
 import pytest
 
 from conftest import O
-from test_nav_playing import CLASSIC, MINIMAL, MODERN, Now, theme, ui, st  # noqa: F401 (fixtures)
+from test_nav_playing import CLASSIC, MINIMAL, MODERN, THEMES, Now, theme, ui, st  # noqa: F401 (fixtures)
+
+CLASSIC_MODERN = THEMES[3]
 
 MARKS = ('img_more', 'img_playmode', 'img_fav')
 GLYPHS = {'play_more': 'np_more', 'play_moredown': 'np_more_q', 'play_fav': 'np_heart_on', 'play_unfav': 'np_heart_off',
@@ -40,9 +42,10 @@ class Page:
         return loads, draws
 
 
+@pytest.mark.parametrize('t', [MODERN, CLASSIC_MODERN], ids=['Modern', 'Classic Modern'])
 @pytest.mark.parametrize('light, half', [(0, 'd'), (1, 'l')])
-def test_modern_draws_each_mark_in_its_flat_glyph_the_half_s(fw, ui, mcl, st, light, half):
-    page = Page(fw, ui, mcl, st, MODERN, light)
+def test_the_flat_themes_draw_each_mark_in_its_flat_glyph_the_half_s(fw, ui, mcl, st, t, light, half):
+    page = Page(fw, ui, mcl, st, t, light)
     assert [page.opacity.get(w) for w in page.marks] == [0, 0, 0]  # unseen, still there for touch
     loads, draws = page.paint()
     assert sorted(loads) == sorted(f'flat_{g}_{half}' for g in ('np_more', 'np_order', 'np_heart_off'))
@@ -80,3 +83,48 @@ def test_another_theme_picked_with_the_page_open_gives_stock_its_images_back(fw,
     theme(fw, st, CLASSIC)
     assert page.paint() == ([], []) and [page.opacity[w] for w in page.marks] == [255, 255, 255]
     assert page.paint() == ([], [])
+
+
+def add(fw, *images):
+    """np_mark_add on these widgets, as one page's."""
+    arr = (C.c_void_p * len(images))(*images)
+    fw.fn('np_mark_add', None, C.c_void_p, C.c_uint)(C.addressof(arr), len(images))
+
+
+def test_a_page_opened_over_one_that_stays_takes_all_its_marks(fw, ui, mcl, st):
+    """Two local pages' six and the radio's heart fit; a page past that keeps all of stock's, never half flat."""
+    first, opacity = Page(fw, ui, mcl, st, MODERN), {}
+    fw.mock('widget_set_opacity', lambda w, v, *_: opacity.__setitem__(w, v))
+    second = [ui.widget(ui.wm, f'm{i}', 0, 0, 40, 40) for i in range(3)]
+    add(fw, *second)
+    heart = ui.widget(ui.wm, 'radio_heart', 0, 0, 50, 50)
+    add(fw, heart)
+    assert [opacity.get(w) for w in second + [heart]] == [0, 0, 0, 0] and [first.opacity[w] for w in first.marks] == [0, 0, 0]
+    third = [ui.widget(ui.wm, f'n{i}', 0, 0, 40, 40) for i in range(3)]
+    add(fw, *third)
+    assert not opacity.keys() & set(third)  # no room for all three: none taken
+    add(fw, *first.marks)  # held already: nothing more
+    assert not opacity.keys() & set(first.marks)
+
+
+def test_a_page_s_marks_go_with_it_and_free_their_room(fw, ui, mcl, st):
+    first, opacity = Page(fw, ui, mcl, st, MODERN), {}
+    add(fw, *[ui.widget(ui.wm, f'm{i}', 0, 0, 40, 40) for i in range(4)])
+    fw.mock('widget_set_opacity', lambda w, v, *_: opacity.__setitem__(w, v))
+    late = [ui.widget(ui.wm, f'n{i}', 0, 0, 40, 40) for i in range(3)]
+    add(fw, *late)
+    assert not opacity.keys() & set(late)
+    for w in first.marks:
+        ui.emit(w, O['EVT_DESTROY'], 0)
+    add(fw, *late)
+    assert [opacity.get(w) for w in late] == [0, 0, 0]
+
+
+@pytest.mark.parametrize('was, now', [(MINIMAL, MODERN), (CLASSIC, CLASSIC_MODERN)], ids=['Minimal to Modern', 'Classic to Classic Modern'])
+def test_a_flat_theme_picked_with_the_page_open_takes_its_marks(fw, ui, mcl, st, was, now):
+    """np_theme, which a theme change runs, hands the open page's marks over: no wait for the page to reopen."""
+    page = Page(fw, ui, mcl, st, was)
+    assert not page.opacity.keys() & set(page.marks)
+    theme(fw, st, now)
+    fw.fn('np_theme', None)()
+    assert [page.opacity.get(w) for w in page.marks] == [0, 0, 0] and len(page.paint()[1]) == 3

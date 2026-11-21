@@ -4388,9 +4388,6 @@ int ringnav_playing(void *win, void *ctx) {
     st.np_left = -1;
     np_fill(0);
     np_theme();
-    static const char *const marks[] = { "img_more", "img_playmode", "img_fav" };
-    for (unsigned i = 0; i < sizeof marks / sizeof *marks; ++i)
-        np_mark_add(widget_lookup(win, marks[i], 1));
     widget_on(win, EVT_DESTROY, np_gone, win);
     int sec = -1, total = 0;
     player_playtime_and_length(&sec, &total);

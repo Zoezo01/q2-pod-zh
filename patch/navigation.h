@@ -478,7 +478,8 @@ void hold_card_flat(void *canvas, const rect_t *card, int head, int over);
 void confirm_labels_flat(void *w, void *canvas, int form);
 
 /* np_marks.c */
-void np_mark_add(void *image);
+void np_mark_add(void *const *image, unsigned n);
+void np_marks_page(void *win);
 void np_marks(void *w, void *canvas);
 
 /* queue_menu.c */
