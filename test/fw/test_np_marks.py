@@ -128,3 +128,16 @@ def test_a_flat_theme_picked_with_the_page_open_takes_its_marks(fw, ui, mcl, st,
     theme(fw, st, now)
     fw.fn('np_theme', None)()
     assert [page.opacity.get(w) for w in page.marks] == [0, 0, 0] and len(page.paint()[1]) == 3
+
+
+@pytest.mark.parametrize('held', [5, 6])
+def test_a_page_that_doesn_t_fit_whole_takes_none_with_the_table_part_full(fw, ui, mcl, st, held):
+    """Five or six held: a page's three don't all fit in seven, so it takes none and keeps stock's three; one fits."""
+    first, opacity = Page(fw, ui, mcl, st, MODERN), {}
+    add(fw, *[ui.widget(ui.wm, f'm{i}', 0, 0, 40, 40) for i in range(held - 3)])
+    fw.mock('widget_set_opacity', lambda w, v, *_: opacity.__setitem__(w, v))
+    late = [ui.widget(ui.wm, f'n{i}', 0, 0, 40, 40) for i in range(3)]
+    add(fw, *late)
+    assert not opacity.keys() & set(late)
+    add(fw, late[0])
+    assert opacity == {late[0]: 0}
