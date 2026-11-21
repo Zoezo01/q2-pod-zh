@@ -51,3 +51,53 @@ void page_label(void *w, int x, int y, int ww, int h, int px, const char *face, 
     widget_set_prop_int(w, "_final_n", 0);
     widget_set_prop_int(w, "style:normal:text_color", (int)(0xff000000u | (RGBA(rgb) & 0xffffffu)));
 }
+
+/* The flat look's prompts (dialog.confirm painter flat): navigation.c's confirm_track,
+ * paint_selection and confirm_labels hand over to these. */
+/* confirm_track's, flat: Form A's paper, or the tray, the toast's box, then each cell at rest, the
+ * pages' grey, or a lighter one on the tray's dark box. */
+#define CONFIRM_TRAY_REST 0x48484a
+void confirm_track_flat(void *w, void *canvas, int form) {
+    void *lcd = P(canvas, CANVAS_LCD),
+         *cell[2] = { widget_lookup(w, "img_cancel", 0), widget_lookup(w, "img_enter", 0) };
+    if (!lcd || !cell[0] || !cell[1]) return;
+    unsigned fill = (unsigned)I(lcd, LCD_FILL_COLOR);
+    int light = ipod_light();
+    unsigned grey = form == FORM_TRAY ? CONFIRM_TRAY_REST : flat_rest[light];
+    stops_t rest = { 2, { 0, 100 }, { grey, grey } };
+    if (form == FORM_TRAY) {
+        rect_t tray = { 38, 248, 299, 56 };
+        fill_box(canvas, &tray, flip_if(light, TOAST_RGBA), 12);
+    } else {
+        bar_rect(canvas, RGBA(scheme()->paper), 0, BAR_ROWS, 375, 320 - BAR_ROWS);
+        void *bar = *(void *const *)system_bar; /* over Quick Settings nothing else draws it */
+        if (bar) widget_paint(bar, canvas);
+        st.paint_w = w;
+    }
+    for (int k = 0; k < 2; ++k) {
+        rect_t r = { I(cell[k], W_X), I(cell[k], W_Y), I(cell[k], W_W), I(cell[k], W_H) };
+        paint_round_rows(canvas, &r, &rest, 18);
+    }
+    stock_canvas_set_fill_color(canvas, fill);
+}
+/* The flat look's cell that holds, flat in what is on, from paint_selection's confirm branch. */
+void confirm_lit(void *canvas, const rect_t *c) {
+    unsigned on = flat_on();
+    stops_t lit = { 2, { 0, 100 }, { on, on } };
+    paint_round_rows(canvas, c, &lit, 18);
+}
+/* confirm_labels', flat: no shadow; on the cell that holds white, or the ink on a bright fill; on
+ * the other the half's ink, or white on the tray's dark box. */
+void confirm_labels_flat(void *w, void *canvas, int form) {
+    void *cell[2] = { widget_lookup(w, "img_cancel", 0), widget_lookup(w, "img_enter", 0) };
+    int light = ipod_light(), lit = st.sel_w == w ? st.sel_row : -1;
+    if (!cell[0] || !cell[1]) return;
+    unsigned over = bright_tone(flat_on()) ? flat_ink[1] : 0xffffff,
+             plain = form == FORM_TRAY ? 0xffffff : flat_ink[light];
+    for (int k = 0; k < 2; ++k) {
+        const unsigned *s = widget_get_text(cell[k]);
+        rect_t r = { I(cell[k], W_X), I(cell[k], W_Y), I(cell[k], W_W), I(cell[k], W_H) };
+        draw_centred(canvas, s, wide_len(s), &r, CONFIRM_FLAT_PX,
+                     RGBA(flip_if(light, k == lit ? over : plain)));
+    }
+}

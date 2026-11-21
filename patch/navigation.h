@@ -330,6 +330,10 @@ enum { SLIDER_LIGHT, SLIDER_MAX, SLIDER_BALANCE, SLIDER_BOOT }; /* st.slider_kin
 #define CONFIRM_CELL_PX 23
 #define CONFIRM_FLAT_PX 21 /* the flat look's: a cell's words and its height */
 #define CONFIRM_FLAT_H 36
+/* a confirm's form: none, the page, confirm_over's tray */
+enum { FORM_NONE, FORM_PAGE, FORM_TRAY };
+/* the toast's box, and the flat look's tray: the same in both halves */
+#define TOAST_RGBA 0xee2b2b2bu
 #define FLAT_ART "flat_" /* the flat look's images' prefix (tools/art.py FLAT_ART) */
 #define FLAT_FACE "bold" /* the flat look's headings and words: Modern's bold */
 #define MCL(a) (*(volatile int *)(a))
@@ -421,9 +425,7 @@ int moving(menu_t *m);
 int reconcile(menu_t *m, int settle);
 void *more_image(void *w);
 #define BAR_ROWS geom_val(V_BAR)
-static inline int dialogs_painted(void) { return theme()->painter[PAINT_CONFIRM] != CONFIRM_STOCK; }
-/* Classic's dialogs alone: the toast, the small dialogs' cleared dim, a game's panel, the hold menu
- */
+/* Classic's dialogs alone: the toast, small dialogs' cleared dim, a game's panel, the hold menu */
 static inline int classic_dialogs(void) {
     return theme()->painter[PAINT_CONFIRM] == CONFIRM_CLASSIC_LIGHT;
 }
@@ -466,6 +468,9 @@ unsigned flat_on(void);
 enum { BAR_PLAIN, BAR_SUNS, BAR_SPEAKERS }; /* flat_bar's marks */
 void flat_bar(void *w, void *canvas, const rect_t *r, int part, unsigned rest, int marks);
 void page_label(void *w, int x, int y, int ww, int h, int px, const char *face, unsigned rgb);
+void confirm_track_flat(void *w, void *canvas, int form);
+void confirm_lit(void *canvas, const rect_t *c);
+void confirm_labels_flat(void *w, void *canvas, int form);
 
 /* queue_menu.c */
 int qm_hold(void);

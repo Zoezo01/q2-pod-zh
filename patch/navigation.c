@@ -2078,12 +2078,11 @@ unsigned ringnav_hscroll_lull(void *w, int (*lulled)(const void *), unsigned ms)
 /* Classic's dialogs (CONFIRM_CLASSIC_LIGHT), in screen pixels and final colours. A dialog
  * is full-screen (0, 0, 375, 320) and its background clear, so the bar and the page show through.
  */
-enum { FORM_NONE, FORM_PAGE, FORM_TRAY };
 /* The confirm's form: the tray for the prompt confirm_over asked for, the page for any other. The
  * first confirm painted after the call takes the flag, so a prompt stock opens over it (a held
- * power key) stays a question. */
+ * power key) stays a question. None where the theme leaves its prompts stock's. */
 static int confirm_form(void *win) {
-    if (!dialogs_painted() || P(win, W_PARENT) != window_manager() ||
+    if (theme()->painter[PAINT_CONFIRM] == CONFIRM_STOCK || P(win, W_PARENT) != window_manager() ||
         tk_strcmp(widget_get_prop_str(win, "name", ""), "confirminfo_dialog"))
         return FORM_NONE;
     if (st.confirm_verb && !st.confirm_win) st.confirm_win = win;
@@ -2223,34 +2222,6 @@ static void confirm_check(void *w, void *canvas) {
     if (widget_get_prop_int(check, "value", 0)) paint_tick(canvas, x + 4, y + 6);
     stock_canvas_set_fill_color(canvas, fill);
 }
-/* The toast's box, and the flat look's tray: the same in both halves */
-#define TOAST_RGBA 0xee2b2b2bu
-/* confirm_track's, flat: Form A's paper, or the tray, the toast's box, then each cell at rest, the
- * pages' grey, or a lighter one on the tray's dark box. */
-#define CONFIRM_TRAY_REST 0x48484a
-static void confirm_track_flat(void *w, void *canvas, int form) {
-    void *lcd = P(canvas, CANVAS_LCD),
-         *cell[2] = { widget_lookup(w, "img_cancel", 0), widget_lookup(w, "img_enter", 0) };
-    if (!lcd || !cell[0] || !cell[1]) return;
-    unsigned fill = (unsigned)I(lcd, LCD_FILL_COLOR);
-    int light = ipod_light();
-    unsigned grey = form == FORM_TRAY ? CONFIRM_TRAY_REST : flat_rest[light];
-    stops_t rest = { 2, { 0, 100 }, { grey, grey } };
-    if (form == FORM_TRAY) {
-        rect_t tray = { 38, 248, 299, 56 };
-        fill_box(canvas, &tray, flip_if(light, TOAST_RGBA), 12);
-    } else {
-        bar_rect(canvas, RGBA(scheme()->paper), 0, BAR_ROWS, 375, 320 - BAR_ROWS);
-        void *bar = *(void *const *)system_bar; /* over Quick Settings nothing else draws it */
-        if (bar) widget_paint(bar, canvas);
-        st.paint_w = w;
-    }
-    for (int k = 0; k < 2; ++k) {
-        rect_t r = { I(cell[k], W_X), I(cell[k], W_Y), I(cell[k], W_W), I(cell[k], W_H) };
-        paint_round_rows(canvas, &r, &rest, 18);
-    }
-    stock_canvas_set_fill_color(canvas, fill);
-}
 /* Under the selection: Form A's paper, or the tray with its shadow, then the track. */
 static void confirm_track(void *w, void *canvas, int form) {
     if (flat_dialogs()) {
@@ -2325,13 +2296,6 @@ __attribute__((noinline)) static void pale_lit(void *canvas, const rect_t *c, in
         }
     }
 }
-/* The flat look's cell that holds, flat in what is on. A function of its own, as pale_lit:
- * paint_selection's rows cost what they did without it. */
-__attribute__((noinline)) static void confirm_lit(void *canvas, const rect_t *c) {
-    unsigned on = flat_on();
-    stops_t lit = { 2, { 0, 100 }, { on, on } };
-    paint_round_rows(canvas, c, &lit, 18);
-}
 /* The tray's lit cell: an outer ring. */
 static void tray_lit(void *canvas, const rect_t *c) {
     rect_t ring = { c->x - 1, c->y - 1, c->w + 2, c->h + 2 };
@@ -2344,17 +2308,8 @@ static void confirm_labels(void *w, void *canvas) {
     void *cell[2] = { widget_lookup(w, "img_cancel", 0), widget_lookup(w, "img_enter", 0) };
     int light = ipod_light(), lit = st.sel_w == w ? st.sel_row : -1;
     if (!cell[0] || !cell[1] || !P(canvas, CANVAS_LCD)) return;
-    /* the flat look's, no shadow: on the cell that holds white, or the ink on a bright fill; on the
-     * other the half's ink, or white on the tray's dark box */
     if (flat_dialogs()) {
-        unsigned over = bright_tone(flat_on()) ? flat_ink[1] : 0xffffff,
-                 plain = confirm_form(w) == FORM_TRAY ? 0xffffff : flat_ink[light];
-        for (int k = 0; k < 2; ++k) {
-            const unsigned *s = widget_get_text(cell[k]);
-            rect_t r = { I(cell[k], W_X), I(cell[k], W_Y), I(cell[k], W_W), I(cell[k], W_H) };
-            draw_centred(canvas, s, wide_len(s), &r, CONFIRM_FLAT_PX,
-                         RGBA(flip_if(light, k == lit ? over : plain)));
-        }
+        confirm_labels_flat(w, canvas, confirm_form(w));
         return;
     }
     for (int k = 0; k < 2; ++k) {
