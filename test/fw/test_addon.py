@@ -474,7 +474,7 @@ def test_more_apps_than_slots(fw):
 def test_the_features_are_published_at_every_scan(fw):
     world = card(fw)
     scan(fw)
-    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections art window urls sort field more fav now fieldtext wake audio2\n'
+    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections art window urls sort field more fav now fieldtext wake audio2 dim\n'
     assert world.of('rename') == [(b'/tmp/q2-addon.caps.tmp', b'/tmp/q2-addon.caps')]
 
 
@@ -1677,6 +1677,72 @@ def test_a_game_without_audio_2_never_reads_the_sound_s_file(fw, manifest):
     assert fw.var('addon__gm', Game).audio == (manifest.endswith(b'audio=1\n'))
 
 
+DIM = b'/tmp/q2-snake.dim'
+
+
+def dimmable(fw, lightness=40, lit=1):
+    g = CardGame(fw)
+    fw.var('g_backlight_status', C.c_ubyte).value = lit
+    fw.var('g_lightness', C.c_ubyte).value = lightness
+    g.world.files[DIM] = b''  # an earlier run's
+    assert g.start() == 1 and DIM not in g.world.files
+    return g
+
+
+def backlight(fw):
+    return [a[0] for _, a in fw.calls('toolSetBackLight')]
+
+
+def test_a_game_dims_the_panel_and_brings_it_back_the_setting_untouched(fw):
+    g = dimmable(fw)
+    g.world.files[DIM] = b'1'
+    g.poll(499)
+    assert backlight(fw) == []  # looked at every ADDON_POLL_MS
+    g.poll(1)
+    assert backlight(fw) == [1] and fw.var('addon__gm', Game).dim == 1
+    g.poll()
+    assert backlight(fw) == [1]
+    del g.world.files[DIM]
+    g.poll()  # every pass while dimmed
+    assert backlight(fw) == [1, 41] and fw.var('g_lightness', C.c_ubyte).value == 40
+    assert not fw.calls('write_int_config')
+
+
+@pytest.mark.parametrize('status', [0, 11])  # its own end, a SIGSEGV
+def test_a_game_that_ends_dimmed_gives_the_panel_back(fw, status):
+    g = dimmable(fw, 7)
+    g.world.files[DIM] = b'1'
+    g.poll(500)
+    g.status, g.exited = status, True
+    g.poll()
+    assert backlight(fw) == [1, 8] and DIM not in g.world.files
+
+
+def test_the_screen_turned_off_ends_the_dim_and_stock_relights_it(fw):
+    g = dimmable(fw)
+    g.world.files[DIM] = b'1'
+    g.poll(500)
+    fw.var('g_backlight_status', C.c_ubyte).value = 0
+    g.poll()
+    assert backlight(fw) == [1] and DIM not in g.world.files and fw.var('addon__gm', Game).dim == 0
+    g.world.files[DIM] = b'1'  # asked in the dark: let go
+    g.poll(500)
+    assert backlight(fw) == [1] and DIM not in g.world.files
+    fw.var('g_backlight_status', C.c_ubyte).value = 1
+    g.status, g.exited = 0, True
+    g.poll()
+    assert backlight(fw) == [1]  # nothing of the game's left to undo
+
+
+def test_a_game_that_never_asks_never_touches_the_panel(fw):
+    g = dimmable(fw)
+    for _ in range(4):
+        g.poll(500)
+    g.status, g.exited = 0, True
+    g.poll()
+    assert backlight(fw) == []
+
+
 def test_card_games_are_games_rows_by_name_not_streaming_rows(fw):
     CardGame(fw, snake=b'name=Snake\ngame=1\n', chess=b'name=chess\ngame=1\n', foo=b'name=Foo\n')
     name = fw.fn('addon_game_name', C.c_char_p, C.c_int)
@@ -1712,70 +1778,6 @@ def test_a_game_runs_over_the_screen_taking_the_wheels_raw_travel(fw):
     assert g.start() == 0 and len(fw.calls('fw_fork')) == 1  # one at a time
     g.key(KEY_DOWN, CENTRE)
     assert g.sent == [(SNAKE_SOCK, b'k d 218')]
-
-
-BOY_DISPLAY_REQUEST = b'/tmp/q2-boy.display.req'
-BOY_DISPLAY_DIMMED = b'/tmp/q2-boy.display.dimmed'
-
-
-def test_q2_boy_child_is_told_it_can_request_idle_dimming(fw):
-    g = CardGame(fw, boy=b'name=Pocket Boy\ngame=1\naudio=1\n')
-    fw.mock('fw_fork', lambda *_: 0)
-    env = {}
-
-    def capture_env(name, value, *_):
-        env[C.string_at(name)] = C.string_at(value)
-        return 0
-
-    fw.mock('fw_setenv', capture_env)
-    g.start()
-    assert env[b'Q2_BOY_DISPLAY_BRIDGE'] == b'1'
-
-
-def test_q2_boy_dims_and_wakes_without_changing_the_saved_brightness(fw):
-    g = CardGame(fw, boy=b'name=Pocket Boy\ngame=1\naudio=1\n')
-    fw.var('g_backlight_status', C.c_ubyte).value = 1
-    brightness = fw.var('g_lightness', C.c_ubyte)
-    brightness.value = 4
-    g.world.files[BOY_DISPLAY_REQUEST] = b'1'  # stale files from an earlier run
-    g.world.files[BOY_DISPLAY_DIMMED] = b'1'
-    assert g.start() == 1
-    assert BOY_DISPLAY_REQUEST not in g.world.files and BOY_DISPLAY_DIMMED not in g.world.files
-    g.world.files[BOY_DISPLAY_REQUEST] = b'1'
-    g.poll(250)
-    assert g.world.files[BOY_DISPLAY_DIMMED] == b'1'
-    assert [args[0] for _, args in fw.calls('toolSetBackLight')] == [1]
-    g.world.files[BOY_DISPLAY_REQUEST] = b'0'
-    g.poll(79)
-    assert BOY_DISPLAY_DIMMED in g.world.files
-    g.poll(1)
-    assert BOY_DISPLAY_DIMMED not in g.world.files
-    assert [args[0] for _, args in fw.calls('toolSetBackLight')] == [1, 5]
-    assert brightness.value == 4
-
-
-def test_q2_boy_crash_restores_the_panel_and_clears_the_request(fw):
-    g = CardGame(fw, boy=b'name=Pocket Boy\ngame=1\naudio=1\n')
-    fw.var('g_backlight_status', C.c_ubyte).value = 1
-    fw.var('g_lightness', C.c_ubyte).value = 6
-    assert g.start() == 1
-    g.world.files[BOY_DISPLAY_REQUEST] = b'1'
-    g.poll()
-    g.status, g.exited = 11, True
-    g.poll()
-    assert BOY_DISPLAY_REQUEST not in g.world.files and BOY_DISPLAY_DIMMED not in g.world.files
-    assert [args[0] for _, args in fw.calls('toolSetBackLight')] == [1, 7]
-
-
-@pytest.mark.parametrize('game_id, brightness, lit', [('snake', 4, 1), ('boy', 0, 1), ('boy', 4, 0)])
-def test_idle_dimming_requires_q2_boy_and_a_lit_panel_above_minimum(fw, game_id, brightness, lit):
-    g = CardGame(fw, **{game_id: b'name=Game\ngame=1\naudio=1\n'})
-    fw.var('g_backlight_status', C.c_ubyte).value = lit
-    fw.var('g_lightness', C.c_ubyte).value = brightness
-    assert g.start() == 1
-    g.world.files[BOY_DISPLAY_REQUEST] = b'1'
-    g.poll()
-    assert BOY_DISPLAY_DIMMED not in g.world.files and not fw.calls('toolSetBackLight')
 
 
 def test_the_child_runs_the_game_first_for_the_oom_killer_and_with_none_of_demos_files(fw):

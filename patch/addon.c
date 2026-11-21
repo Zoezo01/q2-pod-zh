@@ -96,7 +96,7 @@
 /* This firmware's card-app features, space-separated; a feature adds its word. */
 #define ADDON_CAPS                                                                                 \
     "playlist progress pages library goto sleep game audio sections art window urls sort field "   \
-    "more fav now fieldtext wake audio2"
+    "more fav now fieldtext wake audio2 dim"
 #define ADDON_SECTIONS 8  /* sections an app's first page may have */
 #define SWIPE_CLAIM_PX 24 /* a sideways move this far, twice as far as up or down, is a swipe's */
 #define SWIPE_PX 60       /* and this far at the lift, more than up or down, changes section */
@@ -864,20 +864,20 @@ static void poll_one(app_t *a) {
  * stock under it.
  *
  * audio=2: the game starts as one without the sound, the music left playing, and asks for it in
- * /tmp/q2-<id>.audio (game_sound), caps word audio2. */
+ * /tmp/q2-<id>.audio (game_sound), caps word audio2. Any game's /tmp/q2-<id>.dim turns the panel
+ * down (game_files), caps word dim. */
 #define GAME_IDLE_MS 120000
 #define GAME_HOLD_MS 700 /* navigation.c's KEY_HOLD_MS, Return's hold elsewhere */
 #define GAME_KILL_MS 3000
-#include "boy_display.h"
-
 static struct {
     int pid, sock, eat;  /* eat: the held Return's release, after the game it ended */
     int audio;           /* the running game's audio=1: the keys and the DAC are its */
     unsigned seen;       /* time_now_ms of the last input */
     unsigned held, term; /* when Return went down, when TERM went (0: neither) */
     char path[48];       /* the game's socket */
-    int swap, back;      /* audio=2; what played before its take (mclGetPlayStatus) */
-    unsigned polled;     /* when game_sound last looked */
+    int swap, back,
+        dim;         /* audio=2; what played before its take (mclGetPlayStatus); .dim acted on */
+    unsigned polled; /* when game_files last looked */
     char id[APP_ID];
 } gm __attribute__((section(".scratch")));
 
@@ -967,10 +967,30 @@ static void game_sound(void) {
     blob_io(f, tmp, line, strlen(line), 1);
 }
 
+/* game_poll's, every ADDON_POLL_MS and every pass while dimmed: the game's /tmp/q2-<id>.dim there
+ * turns the panel to its lowest lit level, 1, and its removal back to the user's, g_lightness + 1,
+ * as stock's Brightness page sets it (config_lightness, 0x4fea30: g_lightness, 0 to 100, saved and
+ * the panel given one more through toolSetBackLight). The setting is never written. With the
+ * screen off the file is removed, the game's sign the dim is over: stock lights the panel again at
+ * the user's level (screen_action, 0x501f64). */
+static void game_files(unsigned now) {
+    char f[32];
+    gm.polled = now;
+    game_file(f, "dim");
+    int want = !access(f, 0);
+    if (!g_backlight_status) {
+        if (want) unlink(f);
+        gm.dim = 0;
+    } else if (want != gm.dim) {
+        gm.dim = want;
+        toolSetBackLight(want ? 1 : g_lightness + 1);
+    }
+    if (gm.swap) game_sound();
+}
+
 /* Game a started over the screen: 1 when it runs. */
 static int game_start(app_t *a) {
     if (gm.pid) return 0;
-    int display_bridge = a->audio && !strcmp(a->id, "boy");
     const char *busy = shelf_busy();
     if (busy && !strcmp(busy + 1, a->id)) return toast("Wait until the App Store finishes"), 0;
     if (access(a->bin, 0)) return toast("It isn't on the card"), 0;
@@ -993,7 +1013,6 @@ static int game_start(app_t *a) {
         /* the child's alone: demo's environment stays as it was. ponytail: a fork while another
          * thread holds libc's environment lock (stock's toolsSetTimeZone) hangs the child here;
          * Return's hold ends it */
-        if (display_bridge) setenv("Q2_BOY_DISPLAY_BRIDGE", "1", 1);
         setenv("Q2_POPUP", pop, 1);
         if (a->audio == 1) /* q2video's arguments: the device, then a soft output's volume */
             execl(a->bin, a->bin, dev ? dev : "plughw:0,0", dev ? vol : (char *)0, (char *)0);
@@ -1005,17 +1024,17 @@ static int game_start(app_t *a) {
     gm.pid = pid;
     gm.audio = a->audio == 1;
     gm.swap = a->audio == 2;
-    gm.back = 0;
+    gm.back = gm.dim = 0;
     gm.polled = time_now_ms();
     tk_snprintf(gm.id, sizeof gm.id, "%s", a->id);
-    if (gm.swap) game_unlink("audio"); /* an earlier run's */
-    gm.sock = socket(1, 1, 0);         /* AF_UNIX, SOCK_DGRAM (MIPS numbering) */
+    game_unlink("dim"); /* an earlier run's */
+    if (gm.swap) game_unlink("audio");
+    gm.sock = socket(1, 1, 0); /* AF_UNIX, SOCK_DGRAM (MIPS numbering) */
     gm.seen = time_now_ms();
     gm.held = gm.term = gm.eat = 0;
     tk_snprintf(gm.path, sizeof gm.path, "/tmp/q2-%s.input.sock", a->id);
     __sync_lock_test_and_set(&wheel_travel, 0);
     wheel_raw = 1;
-    if (display_bridge) boy_display_start();
     return 1;
 }
 
@@ -1075,13 +1094,15 @@ static void game_poll(void) {
         if (gm.swap && gm.audio) sound_back(); /* a crash too */
         if (gm.audio && mclGetPlayStatus() == 3) player_stop();
         gm.pid = gm.audio = 0;
+        if (gm.dim && g_backlight_status) toolSetBackLight(g_lightness + 1);
+        if (gm.dim) game_unlink("dim");
         wheel_raw = 0;
         widget_invalidate_force(window_manager(), 0);
         if (status == 127 << 8) toast("It couldn't start"); /* the child's execl failed */
         return;
     }
     unsigned now = (unsigned)time_now_ms();
-    if (gm.swap && now - gm.polled >= ADDON_POLL_MS) gm.polled = now, game_sound();
+    if (gm.dim || now - gm.polled >= ADDON_POLL_MS) game_files(now);
     /* signed: a stamp can be just after now (| 1 rounds up, game_end reads the clock again) */
     if (gm.held && (int)(now - gm.held) >= GAME_HOLD_MS) gm.held = 0, gm.eat = 1, game_end();
     if (gm.term && (int)(now - gm.term) >= GAME_KILL_MS) gm.term = now | 1, game_kill("-9 ");
@@ -1115,7 +1136,6 @@ int addon_running(void) {
 void addon_poll(void) {
     if (!nw.swept) now_sweep();
     game_poll();
-    if (bd.active) boy_display_poll(gm.pid, addon_game_input(0));
     for (int i = 0; i < ap.n; ++i) poll_one(&ap.a[i]);
     sleep_check();
     now_poll();

@@ -1588,7 +1588,7 @@ FUNCTIONS = {
  'save_memoryplay_info': ('int', 'void'),  # Memory playback's queue and position, as into_poweroff saves them
  'mclSetDacPwr': ('int', 'int'),
  'reset_poweroptions_timer': ('int', 'int, int, int'),
- 'toolSetBackLight': ('int', 'int'),  # config_lightness's hardware call, without writing settings
+ 'toolSetBackLight': ('int', 'int'),  # the panel's level, 1 its lowest; config_lightness gives it g_lightness + 1
  'btctl_transport_get_volume': ('int', 'void'),
  'btctl_transport_set_volume': ('int', 'int'),
  'device_set_volume': ('int', 'int, int'),  # volume, notify: the DAC's or hciplayer's, as the volume dialog
