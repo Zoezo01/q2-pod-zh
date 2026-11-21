@@ -297,3 +297,20 @@ for light, pane, note, quiet in (('0', 0x1c1c1c, 'flat_pane_note', 0x98989d), ('
     loads = [m.text(c[2]) for c in m.calls if c[0] == 'widget_load_image']
     assert {b[4] for b in m.bands if b[2] > 1} == {color_t(pane)} and loads == [note], (loads, {b[4] for b in m.bands})
     assert [(l['text'], l['font'][1], l['color']) for l in m.letters] == [('3 Songs', 17, color_t(quiet))], m.letters; passed()
+
+
+# Now Playing's marks under Modern (np_marks.c): stock's More, play mode and heart left as their state and touch but
+# unseen (opacity 0), and drawn on the page in the flat look's glyphs, the half's ink; stock's under Minimal.
+for theme_, light in (('2', '0'), ('2', '1'), ('0', '0')):
+    SETUP[:] = [lambda k: (k.config.update(THEME=theme_, LIGHT=light, ACCENT='4'), k)]
+    try: q = LoadQueue(queue=3, pos=1)
+    finally: SETUP.clear()
+    q.handlers[HOOKS['playing_page_init'][0] + 12] = 'stock_playing'; q.image_size = (32, 32)
+    marks = [q.node('image', n, image=i) for n, i in (('img_more', 'play_more'), ('img_playmode', 'play_cycle1'), ('img_fav', 'play_fav'))]
+    q.win = q.top = q.node('window', 'playing_page', marks); q.word(q.win + O['W_PARENT'], q.wm); parents(q, q.win); place(q, q.win, 0, 26, 375, 294)
+    for i, w in enumerate(marks): place(q, w, 20 + 60 * i, 250, 40, 40); q.byte(w + 0x34, 255)  # stock's opacity
+    q.word(syms['system_bar'], q.node('window', 'system_bar')); assert q.call(address=HOOKS['playing_page_init'][0], args=(q.win, 7, 0, 0), gap=0) == 0
+    bare(q); bg(q, q.win); flat = theme_ == '2'; half = 'dl'[int(light)]
+    assert [q.get(w + 0x34) & 255 for w in marks] == ([0, 0, 0] if flat else [255, 255, 255]), [q.get(w + 0x34) & 255 for w in marks]
+    drawn = list(zip(q.image_loads, [d[1][:2] for d in q.image_draws]))  # the names as loaded: they are on the stack
+    assert drawn == ([(f'flat_np_{g}_{half}', (24 + 60 * i, 254)) for i, g in enumerate(('more', 'repeat1', 'heart_on'))] if flat else []), drawn; passed()

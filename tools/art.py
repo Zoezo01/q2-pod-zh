@@ -834,6 +834,9 @@ def pane_glyph(name, size):
 # without one) with round ends; dots, filled discs (x, y, r); faint, lines at FLAT_FAINT of the ink.
 FLAT_WEIGHT, FLAT_FAINT, FLAT_DIM, FLAT_BOX = 2.6, .3, .45, 54
 BARS = ('M-7.5 9V4', 'M0 9V-2.5', 'M7.5 9V-9')
+NP_HEADS = ('M8.5 -10.2 13.5 -6 8.5 -1.8Z', 'M8.5 1.8 13.5 6 8.5 10.2Z')
+NP_LOOP = ('M-11 -1V-2.5A3.5 3.5 0 0 1 -7.5 -6H9', 'M11 1V2.5A3.5 3.5 0 0 1 7.5 6H-9')
+NP_TURNS = ('M8.5 -10.2 13.5 -6 8.5 -1.8Z', 'M-8.5 1.8 -13.5 6 -8.5 10.2Z')
 FLAT_GLYPHS: dict[str, dict] = {
     'wifi': dict(line=('M-11.6 -4.3a18 18 0 0 1 23.2 0', 'M-6.4 1.4a10 10 0 0 1 12.8 0'), dots=((0, 8.4, 2.5),), w=2.9),
     'bt': dict(line=('M-5.6 -5.8 5.6 5.8 0 11.4V-11.4L5.6 -5.8-5.6 5.8',), w=2.3),
@@ -851,6 +854,12 @@ FLAT_GLYPHS: dict[str, dict] = {
     'sun': dict(dots=((0, 0, 4.2),), w=2,
                 line=tuple(f'M{7.2 * math.cos(a * math.pi / 4):.2f} {7.2 * math.sin(a * math.pi / 4):.2f}L{10 * math.cos(a * math.pi / 4):.2f} {10 * math.sin(a * math.pi / 4):.2f}' for a in range(8))),
     'note': dict(fill=(pane_glyph('note', 28),)),  # Home's note
+    # Now Playing's marks (np_marks.c): More, and stock's four play modes, in order, shuffle, repeat all and repeat one
+    'more': dict(dots=((-9, 0, 2.6), (0, 0, 2.6), (9, 0, 2.6))),
+    'order': dict(line=('M-12 -6H9', 'M-12 6H9'), fill=NP_HEADS, w=2.3),
+    'shuffle': dict(line=('M-12 -6H-7L5 6H9', 'M-12 6H-7L5 -6H9'), fill=NP_HEADS, w=2.3),
+    'repeat': dict(line=NP_LOOP, fill=NP_TURNS, w=2.3),
+    'repeat1': dict(line=NP_LOOP, fill=(*NP_TURNS, 'M-0.3 -3.4H1.5V3.4H-0.5V-1.3L-2 -0.7V-2.4Z'), w=2.3),
 }
 FLAT_INK = {'': 0xffffff, '_l': 0x1c1c1e}
 # Stock's name: glyph, the glyph's opacity (disabled: dimmed); which are on is QS_BUTTONS' (qs_lit).
@@ -870,6 +879,10 @@ MSG_INK = {'l': 0x1c1c1e, 'd': 0xffffff}
 # Set Time's face: a flat disc in the half's resting grey, its numerals quiet. The hands are the payload's.
 CLOCK_PX = 110
 CLOCK_FACE = {'l': (0xe9e9ec, 0x6e6e73), 'd': (0x2c2c2e, 0x98989d)}
+# Now Playing's marks: a glyph on an NP_BOX px square in the half's ink (MSG_INK); More, pressed, in its quiet grey; the
+# heart the rating panel's at NP_HEART of its size, stock's own, so its rating badge sits where it did, filled when on.
+NP_BOX, NP_MARKS, NP_HEART = 32, ('more', 'order', 'shuffle', 'repeat', 'repeat1'), .8
+NP_QUIET = {'l': 0x6e6e73, 'd': 0x98989d}
 def flat_glyph(glyph, ink, size=FLAT_BOX, k=1):
     """A glyph's layers for compose on a size px square, its 0, 0 the centre, k times its drawing, in ink."""
     g = FLAT_GLYPHS[glyph]
@@ -894,6 +907,10 @@ def clock_face(half):
     return png(CLOCK_PX, CLOCK_PX, compose((0, 0, CLOCK_PX, CLOCK_PX), [
         (fit(path('M-49.5 0A49.5 49.5 0 1 1 49.5 0A49.5 49.5 0 1 1 -49.5 0Z')), ink(rest, 255)),
         (fit(numerals), ink(quiet, 255))]))
+def np_heart(on, rgb):
+    """Now Playing's heart: the rating panel's, NP_HEART of its size, in the middle of an NP_BOX square."""
+    shape = [[(NP_BOX / 2 + (x - 16) * NP_HEART, NP_BOX / 2 + (y - 14.5) * NP_HEART) for x, y in poly] for poly in path(RATE_HEART)]
+    return png(NP_BOX, NP_BOX, compose((0, 0, NP_BOX, NP_BOX), [((shape if on else []) + stroke(shape, 2.4 * NP_HEART), lambda x, y: (rgb, 1))]))
 def flat_images():
     """The flat look's images, {name: PNG bytes}, under FLAT_ART."""
     out = {f'drop_{name}{k}': flat_mark(glyph, opacity, rgb) for name, (glyph, opacity) in FLAT_BUTTONS.items() for k, rgb in FLAT_INK.items()}
@@ -901,6 +918,9 @@ def flat_images():
         out |= {f'drop_{name}{q}': flat_mark('sun', 1, rgb, px, k) for q, rgb in (FLAT_INK if name == 'dim' else FLAT_INK | FLAT_QUIET).items()}
     out |= {f'msg_{name}_{half}': flat_mark(name, 1, rgb, MSG_BOX, MSG_SCALE) for name in ('usb', 'note') for half, rgb in MSG_INK.items()}
     out |= {f'clock_face_{half}': clock_face(half) for half in CLOCK_FACE}
+    out |= {f'np_{name}_{half}': flat_mark(name, 1, rgb, NP_BOX) for name in NP_MARKS for half, rgb in MSG_INK.items()}
+    out |= {f'np_more_q_{half}': flat_mark('more', 1, rgb, NP_BOX) for half, rgb in NP_QUIET.items()}
+    out |= {f'np_heart_{state}_{half}': np_heart(state == 'on', rgb) for state in ('on', 'off') for half, rgb in MSG_INK.items()}
     # Home's pane where no cover shows (coverflow.c home_pane_paint): the note, flat, white or the ink on the light half's
     out |= {f'pane_note{k}': png(*NOTE_BOX[2:], compose(NOTE_BOX, [(path(PANE_ICONS['note']), lambda x, y, c=rgb: (c, 1))]))
             for k, rgb in FLAT_INK.items()}

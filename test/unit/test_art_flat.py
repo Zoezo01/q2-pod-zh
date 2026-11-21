@@ -39,7 +39,8 @@ def test_the_family_is_the_looks_not_the_themes():
         *(f'drop_{b}{k}' for b in QS_NAMES for k in ('', '_l')), 'drop_dim', 'drop_dim_l',
         *(f'drop_bright{k}' for k in ('', '_l', '_ql', '_qd')), 'msg_usb_l', 'msg_usb_d', 'msg_note_l', 'msg_note_d',
         'clock_face_l', 'clock_face_d', 'spk_quiet', 'spk_quiet_l', *(f'spk_loud{k}' for k in ('', '_l', '_ql', '_qd')),
-        'pane_note', 'pane_note_l')}
+        'pane_note', 'pane_note_l',
+        *(f'np_{g}_{h}' for g in ('more', 'more_q', 'order', 'shuffle', 'repeat', 'repeat1', 'heart_on', 'heart_off') for h in 'ld'))}
     assert set(art.FLAT_BUTTONS) == set(art.QS_BUTTONS)  # the same stock names: QS_LIT says which are on
     for t in theme.builtins():  # no shipped theme draws them before its theme.xml says flat
         assert t['painter[PAINT_PAGES]'] == art.FLAT or not any(k.startswith('flat_') for k in art.images(t))
@@ -57,7 +58,9 @@ def test_each_image_is_its_square(name, side):
 @pytest.mark.parametrize('name, rgb', [('drop_wifi', 0xffffff), ('drop_sysset_l', 0x1c1c1e), ('drop_dim_l', 0x1c1c1e),
                                        ('drop_bright_ql', 0x6e6e73), ('drop_bright_qd', 0x98989d), ('msg_note_l', 0x1c1c1e),
                                        ('msg_usb_d', 0xffffff), ('spk_loud', 0xffffff), ('spk_quiet_l', 0x1c1c1e),
-                                       ('spk_loud_qd', 0x98989d), ('pane_note', 0xffffff), ('pane_note_l', 0x1c1c1e)])
+                                       ('spk_loud_qd', 0x98989d), ('pane_note', 0xffffff), ('pane_note_l', 0x1c1c1e),
+                                       ('np_order_l', 0x1c1c1e), ('np_repeat1_d', 0xffffff), ('np_heart_on_l', 0x1c1c1e),
+                                       ('np_heart_off_d', 0xffffff), ('np_more_q_l', 0x6e6e73), ('np_more_q_d', 0x98989d)])
 def test_a_glyph_is_one_ink(name, rgb):
     colours, alphas = ink('flat_' + name)
     assert colours == {tuple(rgb.to_bytes(3, 'big'))} and max(alphas) == 255
@@ -66,6 +69,15 @@ def test_a_glyph_is_one_ink(name, rgb):
 def test_the_pane_s_note_is_on_classic_s_note_box():
     """note.svg's viewBox, as Classic's note: note_x and note_y place either alike."""
     assert pixels(flat()['flat_pane_note'])[:2] == pixels(art.images(theme.builtins()[1])['classic_light_note'])[:2] == art.NOTE_BOX[2:]
+
+
+@pytest.mark.parametrize('half', 'ld')
+def test_each_now_playing_state_reads_apart(half):
+    """More, pressed or not, each play mode and the heart on and off: no two the same drawing, each 32 px square."""
+    names = [f'flat_np_{g}_{half}' for g in ('more', 'order', 'shuffle', 'repeat', 'repeat1', 'heart_on', 'heart_off')]
+    shapes = [tuple(p[3] > 128 for p in (pixels(flat()[n])[2](x, y) for x in range(32) for y in range(32))) for n in names]
+    assert len(set(shapes)) == len(names) and all(pixels(flat()[n])[:2] == (32, 32) for n in names)
+    assert sum(shapes[names.index(f'flat_np_heart_on_{half}')]) > sum(shapes[names.index(f'flat_np_heart_off_{half}')])  # filled
 
 
 def test_a_disabled_button_is_dimmed_and_low_gain_has_faint_bars():
