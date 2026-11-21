@@ -293,7 +293,7 @@ def test_an_app_the_card_doesn_t_hold_isn_t_woken(fw):
 
 @pytest.mark.parametrize('connect, up', [(0, 1), (-1, 0)])
 def test_an_app_answers_when_its_socket_takes_a_connection(fw, connect, up):
-    log = []
+    log: list[tuple] = []
     fw.mock('fw_socket', lambda *a: log.append(('socket', a[:3])) or 5)
     fw.mock('fw_fcntl', lambda *a: log.append(('fcntl', a[:3])) or 0)  # O_NONBLOCK: a full queue doesn't block
     fw.mock('fw_connect', lambda fd, to, n, *_: log.append(('connect', C.string_at(to + 2))) or connect)
