@@ -287,6 +287,11 @@ BOOT_HOOK = (b'    /release/bin/demo &\n', f'''    (
             {WIFI_OFF}
             (cd $rb && exec ./rockbox) > $rb/rockbox.log 2>&1
             echo "exit $?" >> $rb/rockbox.log
+            # demo starts Bluetooth afresh: stock closeBluetooth's daemon/ready-file cleanup and PD20 low,
+            # without switchBluetooth's settings writes. Keep the radio module loaded: it also supplies Wi-Fi.
+            killall -9 bluetoothd bluealsa rtk_hciattach 2>/dev/null
+            rm -f /tmp/rtk_init_success /tmp/bt_startup
+            /usr/bin/cmd_gpio set_func PD20 output0
         }}
         if [ "$(cat /mnt/data/boot-target 2>/dev/null)" != q2pod ] && ! /usr/bin/q2boot; then
             for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
