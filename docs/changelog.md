@@ -10,6 +10,7 @@
   - Upload Scrobbles: a song with a very long artist, album or title in a script such as Japanese, Chinese or Russian no longer stops every upload after it. The Q2 keeps 255 bytes of a tag, which could end in the middle of a letter; ListenBrainz refused the batch holding it, and the listens after it never went up.
   - App Store: under **Theme: Classic** and **Theme: Modern**, the open tab, **Apps** or **Games**, is the colour your theme gives the selected row, its name in the row's ink. Under Classic it was the accent's own blue, darker than Classic Blue's rows.
   - Books: a book left open when the Q2 is turned off, or turns itself off, reopens at the page you were reading. The page was saved only when you left the book, so it reopened where you had started reading.
+  - App Store: when an install ends while Streaming, the Library or Games is open, each row there still opens the app it names. Its "… is ready in …" message used to sort the new app into the lists under that page, so a row after the new app's place opened another app.
 - **1.8.8**:
   - Bluetooth: a car that connects to the Q2 by itself plays within a second or two. Shanling's firmware waited 30 seconds for the car to start the sound before starting it itself, so with a car that leaves that to the player (a Tesla) a song ran silent for half a minute.
   - System: when the player crashes, `q2-crash.log` records the processor's registers at that moment, so a report says what the player was working on and not only where it stopped.

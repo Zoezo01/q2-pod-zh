@@ -150,9 +150,9 @@ static app_t *slot(const char *id) {
     return a;
 }
 
-/* Streaming's page (navigation.c): the card's apps found again, their names read; how many there
- * are, by name for addon_name. A slot keeps its app (and its running state) from scan to scan. */
-int addon_scan(void) {
+/* The card's apps found again, their names read. A slot keeps its app (and its running state) from
+ * scan to scan. */
+static void slots_read(void) {
     char raw[512], path[64];
     void *d = opendir(CARD);
     for (int i = 0; i < ap.n; ++i) ap.a[i].present = 0;
@@ -201,6 +201,12 @@ int addon_scan(void) {
         }
     }
     if (d) closedir(d);
+}
+
+/* Streaming's page (navigation.c): the slots read again; how many apps there are, by name for
+ * addon_name. */
+int addon_scan(void) {
+    slots_read();
     ap.shown = ap.games = ap.libs = 0;
     for (int i = 0; i < ap.n; ++i) { /* by name: an insertion, APPS_MAX at most */
         if (!ap.a[i].present || ap.a[i].hidden) continue;
@@ -848,10 +854,12 @@ static void game_end(void) {
     game_kill("");
 }
 
-/* netupdate.c's toast once app id is installed: where its row is, as the screen names it */
+/* netupdate.c's toast once app id is installed: where its row is, as the screen names it. The
+ * slots are read again, not the lists' order: the toast comes over whatever page is open, whose
+ * rows hold their places by name, and a new app sorted in would move each after it on a row. */
 const char *addon_where(const char *id) {
     static const char *const where[] = { "Streaming", "Library's Games", "Library" };
-    addon_scan();
+    slots_read();
     for (int i = 0; i < ap.n; ++i)
         if (ap.a[i].present && !strcmp(ap.a[i].id, id)) return where[ap.a[i].row];
     return where[ROW_STREAMING];
