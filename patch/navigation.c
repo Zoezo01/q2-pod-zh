@@ -8546,17 +8546,20 @@ int ringnav_dark_cover_usleep(unsigned us) {
  * for its status and waits for the answer on the UI thread: 40 to 125 round trips a second, each
  * waking both players. It runs every MAINSCHEDULING_MS instead, DARK_POLL_US while dark and quiet:
  * a lyric line and the play-state notifications follow within that, as stock's 200 ms status sync
- * does. Dark and playing, it runs every DARK_POLL_US too while more than MAINSCHEDULING_NEAR_S
- * remain of a track whose length is known: nothing is painted, and what the round trip drives
- * happens near the end, Gapless's next file (mclAutoChange sends it under 6 s from the end) and
- * the change itself. In those last seconds, for a track that short, an unknown length, paused or
- * lit, it keeps MAINSCHEDULING_MS. From a second before the playing track's end
+ * does. Dark and playing, it runs every DARK_POLL_US too from a track's second 2 while more than
+ * MAINSCHEDULING_NEAR_S of its known length remain: nothing is painted, and what the round trip
+ * drives happens near the end, Gapless's next file (mclAutoChange sends it under 6 s from the end)
+ * and the change itself. A track's first seconds keep MAINSCHEDULING_MS for what stock does after a
+ * change (a headset's or car's track info, SyncLink and DLNA notices, the play record), as do its
+ * last seconds, a track that short, an unknown length, paused or lit. From a second before the
+ * playing track's end
  * (player_playtime_and_length's cache, a CUE track's own end) until MAINSCHEDULING_END_MS after,
  * it runs every pass, so a change without Gapless starts as soon as stock's did; paused, it stays
  * paced. ponytail: a length that overstates the audio (a VBR MP3 without a Xing header) ends
  * outside the window, up to 100 ms late (up to DARK_POLL_US dark, if it overstates by more than
- * MAINSCHEDULING_NEAR_S); follow mclAutoChange's own end flag if that shows. A file that won't
- * play mid-track is noticed up to DARK_POLL_US late while dark. */
+ * MAINSCHEDULING_NEAR_S); follow mclAutoChange's own end flag if that shows. While dark, a file
+ * that won't play mid-track, a dead hciplayer's restart (player_reconfig) and a change to a track
+ * that starts past its second 2 (resumed at its place) wait up to DARK_POLL_US. */
 #define MAINSCHEDULING_MS 100
 #define MAINSCHEDULING_END_MS 2000
 #define MAINSCHEDULING_NEAR_S 7 /* over mclAutoChange's 6 s Gapless window, and a poll */
@@ -8565,7 +8568,7 @@ int ringnav_mainscheduling(void) {
     int sec = -1, total = 0;
     if (mclGetPlayStatus() == 2) player_playtime_and_length(&sec, &total);
     int dark_mid =
-        !g_backlight_status && total > 0 && sec >= 0 && total - sec > MAINSCHEDULING_NEAR_S;
+        !g_backlight_status && total > 0 && sec >= 2 && total - sec > MAINSCHEDULING_NEAR_S;
     unsigned now = (unsigned)time_now_ms(),
              gap = dark_quiet || dark_mid ? DARK_POLL_US / 1000 : MAINSCHEDULING_MS;
     if (total > 0 && total - sec <= 1) end = now | !now;

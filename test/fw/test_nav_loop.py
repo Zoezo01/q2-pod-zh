@@ -1170,6 +1170,7 @@ def test_dark_in_the_last_7_s_it_runs_every_100_ms(fw):
     (2, 1, 6, 0),    # a track 7 s long or shorter
     (2, 10, 0, 0),   # no length known
     (2, -1, 200, 0), # no position yet
+    (2, 1, 200, 0),  # a track's first seconds: what stock does after a change
     (3, 10, 200, 0), # paused
     (2, 10, 200, 1), # lit
 ])

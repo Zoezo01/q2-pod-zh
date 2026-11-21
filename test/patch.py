@@ -12480,9 +12480,9 @@ del m.playtime; m.now+=1900; schedule(); m.calls=[]; m.now+=10; schedule(); asse
 m.now+=90; m.calls=[]; schedule(); assert scheduled()==0
 m.playtime=224; m.word(PLAY_STATUS,3); m.now+=100; schedule(); m.calls=[]; m.now+=10; schedule()
 assert scheduled()==0; passed()
-# Dark and playing, a second apart while more than MAINSCHEDULING_NEAR_S (7 s) of a known length
-# remain; stock's 100 ms again from there (Gapless's next file goes under 6 s from the end), and for a
-# track that short, an unknown length, paused or lit.
+# Dark and playing, a second apart from a track's second 2 while more than MAINSCHEDULING_NEAR_S (7 s)
+# of a known length remain; stock's 100 ms again from there (Gapless's next file goes under 6 s from
+# the end), and for a track that short, an unknown length, its first seconds, paused or lit.
 m.byte(syms['g_backlight_status'],0); m.word(PLAY_STATUS,2); m.playtime=100; m.now+=5000; schedule()
 for wait,runs in ((100,0),(899,0),(1,1),(100,0)):
     m.now+=wait; m.calls=[]; schedule(); assert scheduled()==runs,(wait,runs)
@@ -12494,6 +12494,7 @@ def paced(): # 100 ms apart, not a second
     m.now+=5000; schedule(); m.now+=100; m.calls=[]; schedule(); return scheduled()==1
 m.playtime=2; m.length=6; assert paced()                                     # a 6 s file
 m.length=0; assert paced(); del m.length                                     # no length known
+m.playtime=1; assert paced()                                                 # a track's first seconds
 m.playtime=100; m.word(PLAY_STATUS,3); assert paced(); m.word(PLAY_STATUS,2) # paused
 m.byte(syms['g_backlight_status'],1); assert paced()                         # lit
 m.byte(syms['g_backlight_status'],0); m.word(payload_syms['dark_quiet'],1)   # quiet: a second still
