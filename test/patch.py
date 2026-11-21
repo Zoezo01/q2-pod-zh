@@ -11485,9 +11485,12 @@ playing(m,0,200,pos=0,n=110); m.word(r+O['REC_CUE_START'],300); m.poll(0,200); p
 assert len(counts(m))==2 and counts(m)[1]==(fnv('/p/A'),1); passed()
 m=ResumeMachine(); r=m.items(m.get(syms['mcl_pdeqplaylist']))[0]  # a skipped CUE track's time stays its own
 playing(m,0,200,pos=0,n=26); m.word(r+O['REC_CUE_START'],300); playing(m,0,200,n=80); assert not counts(m); passed()
-full=[(i+1,1 if i==5 else 2) for i in range(O['PLAYS_SLOTS'])]
-m=ResumeMachine({'/mnt/data/ringnav-plays':b''.join(struct.pack('<II',*e) for e in full)})
-playing(m,0,200,pos=0,n=110); assert counts(m)==[(fnv('/p/A'),1)]+full[:5]+full[6:]; passed()
+# A full table replaces the furthest back of the lowest counts, but never one of the PLAYS_FRESH counted last:
+# the one song played once there (slot 5) stays and the last slot goes; one at PLAYS_FRESH goes itself.
+for at,gone in ((5,O['PLAYS_SLOTS']-1),(O['PLAYS_FRESH'],O['PLAYS_FRESH'])):
+    full=[(i+1,1 if i==at else 2) for i in range(O['PLAYS_SLOTS'])]
+    m=ResumeMachine({'/mnt/data/ringnav-plays':b''.join(struct.pack('<II',*e) for e in full)})
+    playing(m,0,200,pos=0,n=110); assert counts(m)==[(fnv('/p/A'),1)]+full[:gone]+full[gone+1:],at; passed()
 
 # Both lock UIs use stock's persistent flag/mode, and the existing key gates enforce each choice.
 LOCK_NAMES=['Off','Everything','Buttons only','Volume only']

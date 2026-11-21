@@ -491,11 +491,12 @@ static inline int arc_out(int r, int y) {
 #define RESUME_SAVE_S 60
 #define RESUME_START_S 5
 /* Play counts (docs/internals.md#play-counts): a track over LISTEN_MIN_S counts once half of it,
- * or LISTEN_MAX_S, has been heard; PLAYS_SLOTS counts are kept, the lowest replaced when full, and
- * Most Played lists the top PLAYS_TOP. */
+ * or LISTEN_MAX_S, has been heard; PLAYS_SLOTS counts are kept, the lowest replaced when full but
+ * never one of the PLAYS_FRESH counted last, and Most Played lists the top PLAYS_TOP. */
 #define LISTEN_MIN_S 30
 #define LISTEN_MAX_S 240
 #define PLAYS_SLOTS 512
+#define PLAYS_FRESH 128
 #define PLAYS_TOP 100
 /* Ratings (docs/internals.md#ratings): RATE_SLOTS songs keep 1-4 hearts (5 is My Fav); holding
  * Now Playing's heart RATE_HOLD_MS opens the picker. */

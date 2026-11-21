@@ -2672,12 +2672,51 @@ def test_a_full_table_replaces_the_least_played_least_recent(player, recs, st):
     assert got[0] == (key_of('/mnt/mmc/Music/a.flac'), 1) and (1000 + 300, 1) not in got and (1000 + 7, 1) in got
 
 
+def test_new_songs_count_into_a_table_full_of_songs_played_twice(player, recs, st):
+    """Every slot holds a song played twice: an album new to the table, played through three times, keeps
+    three plays a song. The newest song was then the least played, so each new song replaced the one before
+    it and only the last kept a play."""
+    table = (C.c_uint * (2 * O['PLAYS_SLOTS'])).from_address(C.addressof(st('plays')))
+    for i in range(O['PLAYS_SLOTS']):
+        table[2 * i], table[2 * i + 1] = 1000 + i, 2
+    st('plays_read', C.c_uint).value = 1
+    album = [f'/mnt/mmc/Music/New/{k:02}.flac' for k in range(1, 11)]
+    songs = [recs(path=path) for path in album]
+    for _ in range(3):
+        for r in songs:
+            player.play([r], total=100)
+            for s in range(60):
+                player.poll(s)
+    got = dict(plays(player.card.files[PLAYS_FILE]))
+    assert [got.get(key_of(path)) for path in album] == [3] * 10
+
+
+@pytest.mark.parametrize('at, gone', [(O['PLAYS_FRESH'] - 1, O['PLAYS_SLOTS'] - 2), (O['PLAYS_FRESH'], O['PLAYS_FRESH'])])
+def test_a_full_table_never_replaces_one_of_the_last_counted(player, recs, st, at, gone):
+    """Songs played twice fill the table, one played once is at `at` and a favourite (9 plays) is last. Just
+    inside the PLAYS_FRESH counted last, the single play stays and the furthest back song played twice goes,
+    the one before the favourite; at PLAYS_FRESH the single play is outside them, the lowest, and goes."""
+    table = (C.c_uint * (2 * O['PLAYS_SLOTS'])).from_address(C.addressof(st('plays')))
+    for i in range(O['PLAYS_SLOTS']):
+        table[2 * i], table[2 * i + 1] = 1000 + i, 1 if i == at else 2
+    table[2 * O['PLAYS_SLOTS'] - 1] = 9  # the favourite, counted longest ago
+    st('plays_read', C.c_uint).value = 1
+    player.play([recs(path='/mnt/mmc/Music/a.flac')], total=100)
+    for s in range(60):
+        player.poll(s)
+    got = plays(player.card.files[PLAYS_FILE])
+    keys = [k for k, _ in got]
+    assert got[0] == (key_of('/mnt/mmc/Music/a.flac'), 1) and len(got) == O['PLAYS_SLOTS']
+    assert 1000 + gone not in keys and (1000 + O['PLAYS_SLOTS'] - 1, 9) in got
+
+
 def test_a_played_song_moving_out_of_the_table_marks_most_played_stale(player, recs, st, fw, lists):
     a = recs(path='/mnt/mmc/Music/a.flac')
     table = (C.c_uint * (2 * O['PLAYS_SLOTS'])).from_address(C.addressof(st('plays')))
     for i in range(O['PLAYS_SLOTS']):
         table[2 * i], table[2 * i + 1] = 1000 + i, 2
-    table[2 * 5], table[2 * 5 + 1] = key_of('/mnt/mmc/Music/a.flac'), 1  # the least played: shown by Most Played
+    last = O['PLAYS_SLOTS'] - 1  # the least played, counted longest ago: shown by Most Played
+    table[2 * last], table[2 * last + 1] = key_of('/mnt/mmc/Music/a.flac'), 1
     st('plays_read', C.c_uint).value = 1
     st('mp_list', C.c_void_p).value = player.deques.new([a])
     player.play([recs(path='/mnt/mmc/Music/b.flac')], total=100)
