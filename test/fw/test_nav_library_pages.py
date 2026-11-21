@@ -14,6 +14,7 @@ import pytest
 import host
 from conftest import FNV_PRIME, O, Deques, Files, favdir_card, fnv1a, high_halves, in_fork, libc, ui_name, stock_stub
 from conftest import Rows as HeldRows  # Rows here is Folder view's list
+from test_addon import Pg  # test_addon.py keeps the mirror
 from test_coverflow import SONGTABLE
 from test_navigation import Sa  # test_navigation.py keeps the mirror
 from test_tidal import HEARTS, urls_play
@@ -2600,6 +2601,86 @@ def test_home_s_streaming_list_is_streaming_s_rows(fw, ui):
     fw.fn('stream_rows', None, C.c_void_p)(win)
     assert [c for c, _ in page_rows(ui, view)][-1] == 'Configuration' and log[0] == win
     assert [c[1][:2] for c in fw.calls('widget_off_by_ctx')] == [(win, win)]
+
+
+AMPACHE = {'/mnt/mmc/.amp/q2app': b'name=Ampache\n', '/mnt/mmc/.amp/q2-amp': b'ELF'}  # sorts before Deezer
+AIRPLAY = {'/mnt/mmc/.airplay/q2app': b'name=AirPlay\nhidden=1\n', '/mnt/mmc/.airplay/q2-airplay': b'ELF'}  # no row
+
+
+def home_split(fw, ui):
+    """Home in Split with Library on Home: one window holding its Library list, built as on the way to the App
+    Store, and its Streaming list, open, each filled by its page's constructor (home.c library_rows, stream_rows).
+    The window, and the Streaming list's view."""
+    views = {}
+    home = ui.new('window_create', 0, 0, 0, 0, 0)
+    for name, rows, fill in (('scroll_view_localmusic', [(c, None, str(i)) for i, c in enumerate(LIBRARY_STOCK)],
+                              'library_rows'), ('scroll_view_streamsset', STREAM_STOCK, 'stream_rows')):
+        listed = ui.new('list_view_create', home, 0, 0, 187, 290)
+        views[name] = ui.new('scroll_view_create', listed, 0, 0, 187, 290)
+        ui.name[views[name]] = name
+        for row in rows:
+            stock_row(ui, views[name], *row)
+        fw.fn(fill, None, C.c_void_p)(listed)
+    return home, views['scroll_view_streamsset']
+
+
+def press_row(fw, ui, view, caption):
+    """view's row reading caption pressed: the title of the app page it opened and the page's note (None: no page),
+    the page closed again."""
+    item = next(item for item in ui.kids[view] if row_text(ui, item) == caption)
+    button, = ui.kids[item]
+    ui.handler(button, EVT_CLICK)()
+    pg = fw.var('addon__pg', Pg)
+    if not pg.page:
+        return None
+    opened = (pg.lv[0].title, pg.lv[0].note)
+    ui.close(pg.page)
+    return opened
+
+
+@in_fork
+@pytest.mark.parametrize('job', ['install', 'remove'])
+@pytest.mark.parametrize('sort', ['the job ends on Home', 'Home is back on top', 'the AirPlay row', 'none'])
+def test_streaming_rows_open_their_own_apps_after_an_app_store_job(fw, ui, sort, job):
+    """A Streaming row holds its app, not its place by name: Ampache, sorting first, installed or removed while
+    the rows are open, then the card's apps sorted again, and each row still opens its own app (the removed one's
+    page says it has gone). What sorts: the job's end with Home on top, its Library list built (addon_apps_sync);
+    Home back on top after the App Store (that, then Classic's pane, home_pane_read); the AirPlay row opening its
+    app by id over Streaming's page (addon_open_id). With none, Streaming's page on top at the job's end sorts
+    nothing, and the rows were right before the change too."""
+    logs = [(C.c_long * 3)(), (C.c_long * 3)()]  # kept: the stubs write to them
+    stock_stub(O['LOCALMUSIC_BG'], 0, logs[0])
+    stock_stub(O['STREAM_BG'], 0, logs[1])
+    disk = Disk(fw, {**deezer(), **AIRPLAY, **(AMPACHE if job == 'remove' else {})}).files
+    Config(fw)
+    fw.mock('stock_localmusic_trampoline', lambda *_: 9)
+    fw.mock('stock_stream_trampoline', lambda *_: 7)
+    fw.mock('fw_pthread_create', lambda *_: 0)  # an app page's request: its worker never runs
+    if sort in ('the job ends on Home', 'Home is back on top'):
+        top, view = home_split(fw, ui)
+    else:
+        top, view = stock_page(ui, 'scroll_view_streamsset', *STREAM_STOCK)
+        fw.fn('ringnav_stream', C.c_int, C.c_void_p, C.c_void_p)(top, None)
+    if job == 'install':
+        disk.update(AMPACHE)
+    else:
+        for path in AMPACHE:
+            del disk[path]
+    sync = lambda w: CLICK(ui.fn('addon_apps_sync'))(w, 0)
+    if sort == 'Home is back on top':
+        store = ui.new('window_create', 0, 0, 0, 0, 0)
+        sync(0)  # the job's end, the App Store on top
+        ui.close(store)
+        sync(top)  # Return: Home on top again
+        home_pane(fw)
+    else:
+        sync(0)  # the job's end, top on top
+    if sort == 'the AirPlay row':
+        fw.fn('addon_open_id', None, C.c_char_p)(b'airplay')
+        ui.close(fw.var('addon__pg', Pg).page)  # back on Streaming
+    assert press_row(fw, ui, view, 'Deezer') == (b'Deezer', b'')
+    if job == 'remove':
+        assert press_row(fw, ui, view, 'Ampache') == (b'Ampache', b"Ampache isn't on the card")
 
 
 ABOUT = [('Model', 'Q2'), ('FW. Version', 'V100I'), ('Storage', '-'), ('Remaining', '-'),

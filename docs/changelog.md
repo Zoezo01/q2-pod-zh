@@ -4,6 +4,7 @@
   - Now Playing: a fifth visualizer, **Pulsar**, after pulsr: the music as a stack of lines rising up the page, the newest in front, each line hidden where the one in front stands over it. Tap the visualizer page to reach it.
   - Games: a card game can open Now Playing from its menu, with the music's buttons, queue and lyrics; leaving Now Playing goes back to the game where it was. Behind Now Playing the screen turns off and Auto power-off counts as usual. A game that uses this keeps Play/Pause and the side buttons while the music plays, and quits on Return and Centre held together instead of Return alone; the game can turn that off.
   - Apps: a card app can set the EQ, as the EQ page's **Apply** does, turn it off and on, and read what plays, so an app on your phone can tune the EQ while you listen.
+  - Streaming: after the App Store installs or removes an app, each card app's row on the Streaming page and on Home's Streaming list still opens the app it names. A row on a list open since before the change could open the app next to it, or nothing.
 - **1.8.9**:
   - Now Playing: the **AirPlay** row at the top of **⋯** shows only once AirPlay is installed from the App Store. It used to show for everyone, and without the app a press only said where to install it.
   - Display: every change on the screen takes less of the processor on its way to the panel, so Cover Flow's covers, lists and page slides each draw with less work.
