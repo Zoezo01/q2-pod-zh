@@ -875,9 +875,10 @@ static struct {
     unsigned seen;       /* time_now_ms of the last input */
     unsigned held, term; /* when Return went down, when TERM went (0: neither) */
     char path[48];       /* the game's socket */
-    int swap, back,
-        dim;         /* audio=2; what played before its take (mclGetPlayStatus); .dim acted on */
-    unsigned polled; /* when game_files last looked */
+    int swap;            /* audio=2 */
+    int back, seek;      /* what played before the take, and where (mclGetPlayTime) */
+    int dim;             /* .dim acted on */
+    unsigned polled;     /* when game_files last looked */
     char id[APP_ID];
 } gm __attribute__((section(".scratch")));
 
@@ -920,15 +921,21 @@ static void game_unlink(const char *ext) {
 
 /* An audio=2 game's sound given back: what played before its take plays on from where it was (or
  * stays paused there), through stock's own restart after a Bluetooth link (player_save_start, as
- * ringnav_bt_connect_start). Spotify and a station stay paused, as after an audio=1 game:
- * spot_yield gave Spotify up (spot_set_playing then does nothing) and radio_stop ended the station.
- */
+ * ringnav_bt_connect_start), which pauses it itself when Headphones Required finds no output. The
+ * status and place kept at the take are put back first: a jack, USB or Bluetooth change under the
+ * game ran stock's player_save_stop and player_save_start on the stopped player, the start refused
+ * (ringnav_start_player), and that start's mclSetSavePlayStatus(1) would make this one return at
+ * once. No player_stop before it: its mclClearSeekTime would drop the place. Spotify and a station
+ * stay paused, as after an audio=1 game: spot_yield gave Spotify up (spot_set_playing then does
+ * nothing) and radio_stop ended the station. */
 static void sound_back(void) {
     int back = gm.back;
     gm.audio = gm.back = 0;
-    if ((back == 2 || back == 3) && !check_forbid_play_no_headset(0))
+    if (back == 2 || back == 3) {
+        mclSetSavePlayStatus(back);
+        mclSetStartSeekTime(gm.seek);
         player_save_start(back == 3);
-    else if (mclGetPlayStatus() == 3) /* game_poll's pause stuck on nothing */
+    } else if (mclGetPlayStatus() == 3) /* game_poll's pause stuck on nothing */
         player_stop();
 }
 
@@ -948,19 +955,20 @@ static void game_sound(void) {
         return;
     }
     if (strcmp(raw + 1, "game")) return;
-    if (!gm.audio) {
+    int take = !gm.audio, len = 0;
+    gm.audio = 1; /* first: a Bluetooth link coming up during the take starts nothing */
+    if (take) {
         gm.back = media_owner() == 1 ? mclGetPlayStatus() : 0;
         headset_manual();
         spot_yield();
         radio_stop();
-        if (gm.back == 2 || gm.back == 3)
-            player_save_stop();
+        if (gm.back == 2 || gm.back == 3) /* the place, as player_save_stop reads it */
+            mclGetPlayTime(&gm.seek, &len), player_save_stop();
         else
             player_stop();
     }
     const char *dev = output_device(vol);
-    if (!gm.audio && !dev) dac_take();
-    gm.audio = 1;
+    if (take && !dev) dac_take();
     tk_snprintf(line, sizeof line, "%s%s%s\n", dev ? dev : "plughw:0,0", dev ? " " : "",
                 dev ? vol : "");
     tk_snprintf(tmp, sizeof tmp, "%s.tmp", f);
@@ -975,7 +983,8 @@ static void game_sound(void) {
  * the user's level (screen_action, 0x501f64). */
 static void game_files(unsigned now) {
     char f[32];
-    gm.polled = now;
+    int due = now - gm.polled >= ADDON_POLL_MS;
+    if (due) gm.polled = now;
     game_file(f, "dim");
     int want = !access(f, 0);
     if (!g_backlight_status) {
@@ -985,7 +994,7 @@ static void game_files(unsigned now) {
         gm.dim = want;
         toolSetBackLight(want ? 1 : g_lightness + 1);
     }
-    if (gm.swap) game_sound();
+    if (gm.swap && due) game_sound();
 }
 
 /* Game a started over the screen: 1 when it runs. */
@@ -997,8 +1006,8 @@ static int game_start(app_t *a) {
     char vol[5], pop[POPUP_ENV];
     const char *dev = 0;
     popup_env(pop, sizeof pop); /* the theme's pop-up, for its own menus */
-    if (a->audio ==
-        1) { /* the sound is its: hciplayer off the PCM, the jack readied, as video_play */
+    /* the sound is its: hciplayer off the PCM, the jack readied, as video_play */
+    if (a->audio == 1) {
         headset_manual();
         spot_yield();
         radio_stop();

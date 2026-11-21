@@ -1584,6 +1584,7 @@ FUNCTIONS = {
  'player_stop': ('int', 'void'),
  'player_save_stop': ('int', 'void'),  # a playing or paused queue stopped, its status and place kept for player_save_start; nothing when stopped
  'player_save_start': ('int', 'int'),  # pause: mclStartPlayer at the saved seek, then paused if set
+ 'mclSetSavePlayStatus': ('int', 'int'),  # what player_save_start resumes: 2 playing, 3 paused, 1 nothing (0x5be924)
  'mclGetSavePlayStatus': ('int', 'void'),  # player_save_stop's mclGetPlayStatus, unless that was 1
  'save_memoryplay_info': ('int', 'void'),  # Memory playback's queue and position, as into_poweroff saves them
  'mclSetDacPwr': ('int', 'int'),

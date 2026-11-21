@@ -1655,6 +1655,98 @@ def test_a_game_that_ends_with_the_sound_gives_it_back(fw):
     assert (gm.pid, gm.audio) == (0, 0) and [a[:1] for _, a in fw.calls('player_save_start')] == [(1,)]
 
 
+def played_at(fw, sec):
+    def time(at, total, *_):
+        C.c_int.from_address(at).value, C.c_int.from_address(total).value = sec, 300
+        return 0
+    fw.mock('mclGetPlayTime', time)
+
+
+@pytest.mark.parametrize('how', ['music', 'end', 'crash'])
+def test_an_output_change_under_the_game_still_leaves_the_music_to_resume(fw, how):
+    """A jack, USB or Bluetooth change under the game runs stock's player_save_stop and player_save_start on the
+    stopped player: the start is refused and stock's mclSetSavePlayStatus(1) would leave player_save_start nothing."""
+    g, gm = switched(fw, 2)
+    played_at(fw, 95)
+    g.world.files[SOUND] = b'game\n'
+    g.poll(500)
+    fw.mock('mclGetSavePlayStatus', lambda *_: 1)  # what the output change left
+    fw.mock('mclGetPlayStatus', lambda *_: 3)  # its refused start, paused on nothing
+    if how == 'music':
+        g.world.files[SOUND] = b'music\n'
+        g.poll(500)
+    else:
+        g.status, g.exited = (0 if how == 'end' else 11), True
+        g.poll()
+    order = [(n, a[:1]) for n, a in fw.calls() if n in ('mclSetSavePlayStatus', 'mclSetStartSeekTime', 'player_save_start', 'player_stop')]
+    assert order == [('mclSetSavePlayStatus', (2,)), ('mclSetStartSeekTime', (95,)), ('player_save_start', (0,))]
+
+
+def test_the_game_has_the_sound_through_the_take(fw):
+    """player_save_stop sleeps 0.4 s: an A2DP link coming up meanwhile must find the sound the game's."""
+    g, gm = switched(fw)
+    seen = []
+    fw.mock('player_save_stop', lambda *_: seen.append(fw.fn('addon_game_audio', C.c_int)()) or 0)
+    g.world.files[SOUND] = b'game\n'
+    g.poll(500)
+    assert seen == [1]
+
+
+def test_a_dimmed_game_reads_its_sound_request_every_500_ms_still(fw):
+    g, gm = switched(fw)
+    fw.var('g_backlight_status', C.c_ubyte).value = 1
+    g.world.files[b'/tmp/q2-switch.dim'] = b'1'
+    g.poll(500)
+    opened = []
+    real = g.world.fopen
+    fw.mock('fw_fopen', lambda path, mode, *_: opened.append(C.string_at(path)) or real(path, mode))
+    for _ in range(10):
+        g.poll(16)
+    assert opened.count(SOUND) == 0
+    g.poll(340)
+    assert opened.count(SOUND) == 1
+
+
+def test_music_asked_with_no_take_leaves_a_paused_queue_alone(fw):
+    g, gm = switched(fw, 3)
+    g.world.files[SOUND] = b'music\n'
+    g.poll(500)
+    assert not fw.calls('player_stop') and not fw.calls('player_save_start') and SOUND not in g.world.files
+
+
+def test_nothing_to_resume_clears_a_pause_stuck_on_nothing(fw):
+    g, gm = switched(fw, 1)
+    g.world.files[SOUND] = b'game\n'
+    g.poll(500)
+    fw.mock('mclGetPlayStatus', lambda *_: 3)
+    g.world.files[SOUND] = b'music\n'
+    g.poll(500)
+    assert len(fw.calls('player_stop')) == 2 and not fw.calls('player_save_start')  # the take's, then the stuck pause
+
+
+def test_a_second_game_request_answers_without_readying_the_jack_again(fw):
+    g, gm = switched(fw)
+    g.world.files[SOUND] = b'game\n'
+    g.poll(500)
+    mutes = len(fw.calls('mclSetMute'))
+    g.world.files[SOUND] = b'game\n'
+    g.poll(500)
+    assert len(fw.calls('mclSetMute')) == mutes and len(fw.calls('player_save_stop')) == 1
+    assert g.world.files[SOUND] == b'plughw:0,0\n'
+
+
+def test_headphones_required_is_left_to_stock_s_resume(fw):
+    """player_save_start pauses the queue itself without an output; check_forbid_play_no_headset would open
+    stock's no-headset page under the game."""
+    g, gm = switched(fw)
+    fw.mock('check_forbid_play_no_headset', lambda *_: 1)
+    g.world.files[SOUND] = b'game\n'
+    g.poll(500)
+    g.world.files[SOUND] = b'music\n'
+    g.poll(500)
+    assert not fw.calls('check_forbid_play_no_headset') and [a[:1] for _, a in fw.calls('player_save_start')] == [(0,)]
+
+
 @pytest.mark.parametrize('text, takes', [(b'game', 1), (b'game\r\n', 1), (b'Game\n', 0), (b'gam', 0), (b'game now\n', 0),
                                          (b'plughw:0,0\n', 0), (b'', 0), (b'music\n', 0)])
 def test_the_sound_s_request(fw, text, takes):
@@ -1716,6 +1808,16 @@ def test_a_game_that_ends_dimmed_gives_the_panel_back(fw, status):
     g.status, g.exited = status, True
     g.poll()
     assert backlight(fw) == [1, 8] and DIM not in g.world.files
+
+
+def test_a_game_that_ends_dimmed_with_the_screen_off_leaves_the_panel_to_stock(fw):
+    g = dimmable(fw)
+    g.world.files[DIM] = b'1'
+    g.poll(500)
+    fw.var('g_backlight_status', C.c_ubyte).value = 0
+    g.status, g.exited = 0, True
+    g.poll()
+    assert backlight(fw) == [1] and DIM not in g.world.files
 
 
 def test_the_screen_turned_off_ends_the_dim_and_stock_relights_it(fw):
