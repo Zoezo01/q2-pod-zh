@@ -7,10 +7,11 @@
  *            Stop row, and an error page's second row is Cancel) more (an op, then a space and
  *            a title: Now Playing's ⋯ opens its page there while its queue plays, addon_more),
  *            favdir (a card folder whose songs' hearts it is told of, addon_fav_path), hidden
- *            (1: no row, its page opened by id: addon_open_id, as AirPlay's is) and row (where
+ *            (1: no row, its page opened by id: addon_open_id, as AirPlay's is), row (where
  *            its row is: library, games or streaming; without it, Games for a game and
- *            Streaming for any other); wifi (0: it never uses the network, so Smart Wi-Fi keeps
- *            no radio on for it: addon_running, addon_offline);
+ *            Streaming for any other) and wifi (0: it never uses the network, so Smart Wi-Fi keeps
+ *            no radio on for it: addon_running, addon_offline; 1: it follows the Wi-Fi link,
+ *            addon_wifi.c);
  *   run      its launcher, which copies the app to /tmp and runs it there in a restart loop, so
  *            the card is never kept busy, leaving the loop's pid in /tmp/q2-<id>;
  *   q2-<id>  the app;
@@ -99,7 +100,7 @@
 /* This firmware's card-app features, space-separated; a feature adds its word. */
 #define ADDON_CAPS                                                                                 \
     "playlist progress pages library goto sleep game audio sections art window urls sort field "   \
-    "more fav now fieldtext wake audio2 dim gameview eq screen volume"
+    "more fav now fieldtext wake audio2 dim gameview eq screen volume wifi"
 #define ADDON_SECTIONS 8  /* sections an app's first page may have */
 #define SWIPE_CLAIM_PX 24 /* a sideways move this far, twice as far as up or down, is a swipe's */
 #define SWIPE_PX 60       /* and this far at the lift, more than up or down, changes section */
@@ -116,9 +117,12 @@ typedef struct {
     char id[APP_ID], name[32], tips[32], bin[48], run[48], pid[32], state[40], browse[48], icon[56];
     char more[48]; /* q2app's more: an op, a space and a title (addon_more) */
     int qr, game, audio, view, hidden, present, launched, hold, relaunch, restart;
-    int nostop;                                   /* q2app's stop=0: no Stop row on its page */
-    int nowifi;                                   /* q2app's wifi=0: it never uses the network */
-    int row;                                      /* where its row is: a ROW_ */
+    int nostop;   /* q2app's stop=0: no Stop row on its page */
+    int nowifi;   /* q2app's wifi=0: it never uses the network */
+    int row;      /* where its row is: a ROW_ */
+    int wifi;     /* q2app's wifi=1: started with the Wi-Fi link, stopped once it is gone */
+    int wifi_off; /* a wifi app the user stopped (or that ended itself): not started again until
+                   * the next link (addon_wifi_release) */
     unsigned polled, launch_at, restart_at, play; /* play: its .play as read last, hashed */
 } app_t;
 enum { ROW_STREAMING, ROW_GAMES, ROW_LIBRARY }; /* as addon_scan's rows[] names them */
@@ -188,9 +192,10 @@ static void slots_read(void) {
         char stop[4]; /* as text, as scrobble: number() is 0 for a missing key too */
         field(raw, "stop", stop, sizeof stop);
         a->nostop = !strcmp(stop, "0") || !strcmp(stop, "0\r");
-        char wifi[4]; /* as text too: only 0 says it never uses the network */
+        char wifi[4]; /* as text too: 0 never uses the network, 1 follows the link */
         field(raw, "wifi", wifi, sizeof wifi);
         a->nowifi = !strcmp(wifi, "0") || !strcmp(wifi, "0\r");
+        a->wifi = !strcmp(wifi, "1") || !strcmp(wifi, "1\r");
         field(raw, "more", a->more, sizeof a->more);
         unsigned k = strlen(a->more);
         if (k && a->more[k - 1] == '\r') a->more[k - 1] = 0; /* a Windows editor's line end */
@@ -850,7 +855,10 @@ static void poll_one(app_t *a) {
     stream_poll(a);
     sleep_read(a);
     addon_eq_poll((int)(a - ap.a), a->id);
-    if (access(a->pid, 0) && now - a->launch_at > ADDON_START_MS) a->launched = a->hold = 0;
+    if (access(a->pid, 0) && now - a->launch_at > ADDON_START_MS) {
+        if (a->launched) a->wifi_off = a->wifi; /* ended by itself: waits for the next link */
+        a->launched = a->hold = 0;
+    }
 }
 
 /* Card games: Library's Games lists them after its own (games.c); a row runs the game's binary
@@ -1317,10 +1325,11 @@ static void game_poll(void) {
  * radio on until it stops (by itself, Stop Streaming Services or Rockbox). One stopped for USB
  * storage counts once it starts again: the cable holds the radio meanwhile, and an app deleted from
  * the computer, which never starts again, holds nothing. One whose q2app says wifi=0 never uses the
- * network and never counts, nor does its page (addon_offline). */
+ * network and never counts, nor does its page (addon_offline); a wifi=1 app follows the link, it
+ * doesn't hold it. */
 int addon_running(void) {
     for (int i = 0; i < ap.n; ++i)
-        if ((ap.a[i].launched || ap.a[i].restart) && !ap.a[i].nowifi) return 1;
+        if ((ap.a[i].launched || ap.a[i].restart) && !ap.a[i].nowifi && !ap.a[i].wifi) return 1;
     return 0;
 }
 
@@ -1331,6 +1340,7 @@ void addon_poll(void) {
     sleep_check();
     now_poll();
     library_poll();
+    addon_wifi_poll();
 }
 
 /* An app asked to end through its loop, not its socket, so a frozen one stops too; restart: started
@@ -1350,9 +1360,47 @@ void addon_stop(void) {
         app_t *a = &ap.a[i];
         if (a->launched || !access(a->pid, 0)) stop_cmd(a->pid, cmd, sizeof cmd), system(cmd);
         a->launched = a->hold = a->relaunch = a->restart = 0;
+        a->wifi_off = a->wifi;
     }
     /* Rockbox's row kills demo next, /tmp kept; Stop Streaming Services stops a URL queue too */
     if (nw.live) now_write(1, nw.sec, nw.total);
+}
+
+/* The wifi=1 apps (addon_wifi.c follows the link for them): how many are on the card (as the last
+ * scan found them), each started that isn't running, held off or about to start again, each
+ * running one stopped, and the user's stops forgotten for a new link. */
+/* An app's loop runs: its pid file names a process that is there (/proc/<pid>; demo imports no
+ * kill()). A pid file alone may be a dead loop's, kept in /tmp across a restart of demo. */
+static int loop_alive(const app_t *a) {
+    char raw[16], proc[24];
+    if (!state_read(a->pid, raw, sizeof raw)) return 0;
+    int pid = 0;
+    for (const char *c = raw + 1; *c >= '0' && *c <= '9' && pid < 10000000; ++c) /* past its '\n' */
+        pid = pid * 10 + *c - '0';
+    tk_snprintf(proc, sizeof proc, "/proc/%d", pid);
+    return pid > 0 && !access(proc, 0);
+}
+int addon_wifi_apps(void) {
+    int n = 0;
+    for (int i = 0; i < ap.n; ++i) n += ap.a[i].wifi && ap.a[i].present && !ap.a[i].hidden;
+    return n;
+}
+void addon_wifi_start(void) {
+    for (int i = 0; i < ap.n; ++i) {
+        app_t *a = &ap.a[i];
+        /* its loop still running: a stop not yet done (run would exit at once, and the loop's end
+         * then read as the app ending itself); started once it is gone */
+        if (a->wifi && a->present && !a->hidden && !a->wifi_off && !a->launched && !a->relaunch &&
+            !a->restart && !loop_alive(a))
+            launch(a);
+    }
+}
+void addon_wifi_stop(void) {
+    for (int i = 0; i < ap.n; ++i)
+        if (ap.a[i].wifi && (ap.a[i].launched || ap.a[i].restart)) app_stop(&ap.a[i], 0);
+}
+void addon_wifi_release(void) {
+    for (int i = 0; i < ap.n; ++i) ap.a[i].wifi_off = 0;
 }
 
 /* usbmode_page_init's hook (navigation.c), before stock unmounts the card for USB storage: every
@@ -1389,7 +1437,9 @@ void addon_card_away(void) {
 void addon_forget(const char *dir) {
     for (int i = 0; dir && dir[0] == '.' && i < ap.n; ++i)
         if (!strcmp(ap.a[i].id, dir + 1))
-            ap.a[i].launched = ap.a[i].hold = ap.a[i].relaunch = ap.a[i].restart = 0;
+            /* wifi_off too: the App Store's stop isn't the user's, nor the app ending itself */
+            ap.a[i].launched = ap.a[i].hold = ap.a[i].relaunch = ap.a[i].restart =
+                ap.a[i].wifi_off = 0;
 }
 void addon_quit(const char *dir) { /* addon_card_away's wait, libc's clock and sleep, one app */
     char pid[32], cmd[96];
@@ -2157,6 +2207,7 @@ static void got(void) {
             pg.up = 0; /* asked to end: its level's reload starts nothing */
         if (ok && !strcmp(pg.aop, "stop")) {
             app()->launched = app()->hold = 0;
+            app()->wifi_off = app()->wifi;
             navigator_back();
         } else if (ok && l == top() && l->state == K_READY && l->live)
             keep_sel(), fetch(l); /* a live level stays shown, asked again now: no Loading… page */
@@ -2407,6 +2458,7 @@ static int go(const void *unused) {
         char t[48];
         tk_snprintf(t, sizeof t, "%s stopped", app()->name);
         app_stop(app(), 0);
+        app()->wifi_off = app()->wifi;
         toast(t);
         navigator_back();
     } else if (l->state == K_ERROR) {

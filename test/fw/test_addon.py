@@ -38,7 +38,8 @@ LIBRARY = 0xf001  # stock's library class, which a local queue plays under
 class App(C.Structure):
     _fields_ = [('id', C.c_char * 16), ('name', C.c_char * 32), ('tips', C.c_char * 32), ('bin', C.c_char * 48), ('run', C.c_char * 48),
                 ('pid', C.c_char * 32), ('state', C.c_char * 40), ('browse', C.c_char * 48), ('icon', C.c_char * 56), ('more', C.c_char * 48),
-                *((n, C.c_int) for n in ('qr', 'game', 'audio', 'view', 'hidden', 'present', 'launched', 'hold', 'relaunch', 'restart', 'nostop', 'nowifi', 'row')),
+                *((n, C.c_int) for n in ('qr', 'game', 'audio', 'view', 'hidden', 'present', 'launched', 'hold', 'relaunch', 'restart', 'nostop',
+                                         'nowifi', 'row', 'wifi', 'wifi_off')),
                 *((n, C.c_uint) for n in ('polled', 'launch_at', 'restart_at', 'play'))]
 
 
@@ -319,6 +320,9 @@ def test_a_slot_stays_its_apps_and_slots_run_out(fw):
     assert not table[APPS_MAX + 1] and ap(fw).n == APPS_MAX
 
 
+MOUNTED = b'/dev/mmcblk4p1 /mnt/mmc exfat rw 0 0\n'
+
+
 def card(fw, **apps):
     """A card of apps: each a manifest's text, or (manifest, extra files)."""
     files, names = {}, []
@@ -330,6 +334,7 @@ def card(fw, **apps):
         files[f'/mnt/mmc/.{name}/q2app'.encode()] = manifest
         files[f'/mnt/mmc/.{name}/q2-{name}'.encode()] = b'ELF'
         files.update({f'/mnt/mmc/.{name}/{e}'.encode(): png(40, 40) if e.endswith('.png') else b'' for e in extra})
+    files[b'/proc/mounts'] = MOUNTED  # the card is in (card_mounted)
     return World(fw, files, {b'/mnt/mmc': names})
 
 
@@ -370,11 +375,12 @@ def test_a_manifest_can_drop_the_stop_row_and_take_now_playings_more(fw, manifes
     assert (ap(fw).a[0].nostop, ap(fw).a[0].more) == (nostop, more)
 
 
-@pytest.mark.parametrize('manifest, nowifi', [
-    (b'name=N\nwifi=0\n', 1), (b'name=N\r\nwifi=0\r\n', 1),  # a Windows editor's line ends
-    (b'name=N\n', 0), (b'name=N\nwifi=1\n', 0), (b'name=N\nwifi=00\n', 0), (b'name=N\nwifi=off\n', 0),  # as text: only 0
+@pytest.mark.parametrize('manifest, nowifi, counts', [
+    (b'name=N\nwifi=0\n', 1, 0), (b'name=N\r\nwifi=0\r\n', 1, 0),  # a Windows editor's line ends
+    (b'name=N\n', 0, 1), (b'name=N\nwifi=00\n', 0, 1), (b'name=N\nwifi=off\n', 0, 1),  # as text: only 0
+    (b'name=N\nwifi=1\n', 0, 0),  # it uses the network, but follows the link (addon_wifi.c): it doesn't hold it
 ])
-def test_a_manifest_can_say_its_app_never_uses_the_network(fw, manifest, nowifi):
+def test_a_manifest_can_say_its_app_never_uses_the_network(fw, manifest, nowifi, counts):
     """wifi=0: Smart Wi-Fi's addon_running never counts the app, started or restarting, and its page open is no
     network page's (addon_offline, which smart_wifi.c's net_page_open asks)."""
     card(fw, one=manifest, two=b'name=Two\n')
@@ -383,9 +389,9 @@ def test_a_manifest_can_say_its_app_never_uses_the_network(fw, manifest, nowifi)
     running, offline = fw.fn('addon_running', C.c_int), fw.fn('addon_offline', C.c_int)
     assert one.nowifi == nowifi and two.nowifi == 0 and running() == 0 and offline() == 0
     one.launched = 1
-    assert running() == (not nowifi)
+    assert running() == counts
     one.launched, one.restart = 0, 1  # Retry's restart
-    assert running() == (not nowifi)
+    assert running() == counts
     two.launched = 1  # another app still counts
     assert running() == 1
     pg = fw.var('addon__pg', Pg)
@@ -415,6 +421,55 @@ def test_a_manifest_says_where_its_row_is(fw, manifest, row):
     card(fw, one=manifest)
     scan(fw)
     assert ap(fw).a[0].row == row and (ap(fw).shown, ap(fw).games, ap(fw).libs) == tuple(int(row == r) for r in ROWS)
+
+
+@pytest.mark.parametrize('manifest, wifi', [(b'wifi=1\n', 1), (b'wifi=1\r\n', 1), (b'wifi=0\n', 0), (b'wifi=yes\n', 0), (b'', 0)])
+def test_only_wifi_1_follows_the_link(fw, manifest, wifi):
+    card(fw, one=b'name=N\n' + manifest)
+    scan(fw)
+    assert ap(fw).a[0].wifi == wifi and fw.fn('addon_wifi_apps', C.c_int)() == wifi
+
+
+def test_a_wifi_app_does_not_hold_the_radio(fw):
+    world = card(fw, vpn=b'name=Tunnel\nwifi=1\n', foo=b'name=Foo\n')
+    scan(fw)
+    running = fw.fn('addon_running', C.c_int)
+    fw.fn('addon_wifi_start', None)()
+    vpn = [ap(fw).a[i] for i in range(2) if ap(fw).a[i].id == b'vpn'][0]
+    assert vpn.launched == 1 and world.of('system') == [(b'/bin/sh /mnt/mmc/.vpn/run',)]
+    assert running() == 0
+    fw.fn('addon_wifi_start', None)()  # already running: no second start
+    assert len(world.of('system')) == 1
+    foo = [ap(fw).a[i] for i in range(2) if ap(fw).a[i].id == b'foo'][0]
+    foo.launched = 1
+    assert running() == 1
+
+
+def test_a_user_stop_marks_a_wifi_app_off_until_released(fw):
+    world = card(fw, vpn=b'name=Tunnel\nwifi=1\n')
+    scan(fw)
+    fw.fn('addon_wifi_start', None)()
+    fw.fn('addon_stop', None)()  # Stop Streaming Services
+    a = ap(fw).a[0]
+    assert (a.launched, a.wifi_off) == (0, 1)
+    fw.fn('addon_wifi_start', None)()
+    assert len(world.of('system')) == 2  # the start and the stop: no second start
+    fw.fn('addon_wifi_release', None)()
+    fw.fn('addon_wifi_start', None)()
+    assert a.wifi_off == 0 and a.launched == 1 and len(world.of('system')) == 3
+
+
+def test_the_follower_stop_leaves_wifi_off_clear(fw):
+    world = card(fw, vpn=b'name=Tunnel\nwifi=1\n', foo=b'name=Foo\n')
+    scan(fw)
+    fw.fn('addon_wifi_start', None)()
+    for i in range(2):
+        if ap(fw).a[i].id == b'foo':
+            ap(fw).a[i].launched = 1
+    world.files[b'/tmp/q2-vpn'] = b'1'
+    fw.fn('addon_wifi_stop', None)()
+    vpn, foo = sorted((ap(fw).a[i] for i in range(2)), key=lambda a: a.id != b'vpn')
+    assert (vpn.launched, vpn.wifi_off, foo.launched) == (0, 0, 1)  # a plain app is not the follower's
 
 
 def test_library_s_apps_are_by_name(fw):
@@ -498,7 +553,7 @@ def test_more_apps_than_slots(fw):
 def test_the_features_are_published_at_every_scan(fw):
     world = card(fw)
     scan(fw)
-    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections art window urls sort field more fav now fieldtext wake audio2 dim gameview eq screen volume\n'
+    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections art window urls sort field more fav now fieldtext wake audio2 dim gameview eq screen volume wifi\n'
     assert world.of('rename') == [(b'/tmp/q2-addon.caps.tmp', b'/tmp/q2-addon.caps')]
 
 
@@ -6305,7 +6360,6 @@ def test_hostile_rules_files(fw):
         hidden(fw, b'/mnt/mmc/A/x')
 
 
-
 def shortcut(fw, value):
     """IPOD SHORTCUT in config.ini, every other key its default; Home's shortcut row's click."""
     def read(path, section, key, out, default, *_):
@@ -6611,3 +6665,5 @@ def test_a_card_apps_first_song_waits_while_a_game_has_the_sound(fw, audio, time
     fw.fn('addon__stream_poll', None, C.c_void_p)(app)
     s = sm(fw)
     assert s.state == S_WAIT and len(fw.calls('timer_add')) == timers and s.timer == (5 if timers else 0)
+
+
