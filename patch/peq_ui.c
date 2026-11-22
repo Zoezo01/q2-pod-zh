@@ -84,6 +84,7 @@ static struct {
     char name[256],
         applied[256];        /* the draft's preset, and the active one's, when loaded from a file */
     float curve[2][GRAPH_W]; /* the left and right response, in graph rows */
+    int drag;                /* the band a finger holds on the graph, + 1 (graph_touch) */
 } ui __attribute__((section(".scratch")));
 
 static const int steps[] = { 1, 10, 100, 1000 };
@@ -846,10 +847,16 @@ static int render(const void *unused) {
     widget_set_prop_int(view, "_ringnav_index", ui.tabs && ui.screen == HOME ? -1 : selection);
     /* The graph heads the list and scrolls off with it. It takes no click, so ringnav's rows, row 0
      * first, are the ones under it; peq_paint draws it from its own paint, inside the list's clip.
+     * A press on a band's ring drags its gain (graph_touch).
      */
+    ui.drag = 0; /* a new view, which scrolls */
     ui.graph =
         graph ? widget_factory_create_widget(widget_factory(), "view", view, 0, 0, 375, head) : 0;
-    if (graph) curve();
+    if (graph) {
+        curve();
+        widget_on(ui.graph, EVT_POINTER_DOWN, e3_touch, 0);
+        widget_on(ui.graph, EVT_POINTER_ABORT, e3_touch, 0);
+    }
     char text[160], value[32];
     int n = 0;
     static const char *const types[] = { "Peaking", "Low shelf", "High shelf" };
@@ -1153,6 +1160,7 @@ static int closed(void *ctx, event_t *event) {
     }
     ui.view = 0;
     ui.graph = 0;
+    ui.drag = 0;
     free(ui.names);
     ui.names = 0;
     ui.capacity = ui.file_page = 0;
@@ -1425,10 +1433,60 @@ int eq_key(widget_t *top, unsigned key) {
     return 1;
 }
 
+/* Advanced's graph: a press within DRAG_PX of a band's ring (an off band's too, on its gain where
+ * peq_paint draws none) holds that band, and the list stops scrolling (stock's scroll view reads
+ * yslidable at every move, 0x6037c8). Its gain follows the finger in GRAPH_STEP dB steps,
+ * within the graph's +-PEQ_GRAPH_DB, and the band turns on, as a picked gain does; the band becomes
+ * the edited one. Only the draft changes, as with every Advanced edit: Apply plays it. A tap
+ * changes nothing. ponytail: DRAG_PX and GRAPH_STEP are guesses for a finger on the 72 px plot. */
+#define DRAG_PX 20
+#define GRAPH_STEP 0.5
+static int graph_touch(int type, int x, int y) {
+    if (!ui.graph || (type != EVT_POINTER_DOWN && !ui.drag)) return 0;
+    int xy[2] = { x, y };
+    widget_to_local(ui.page, xy);
+    double gy = xy[1] - 48 + widget_get_prop_int(ui.view, "yoffset", 0); /* the list's top */
+    if (type == EVT_POINTER_DOWN) {
+        double best = DRAG_PX * DRAG_PX;
+        ui.drag = 0;
+        for (int i = 0; i < ui.draft.count; ++i) {
+            double dx = graph_x(ui.draft.bands[i].frequency) - xy[0],
+                   dy = graph_y(ui.draft.bands[i].gain) - gy;
+            if (dx * dx + dy * dy < best) best = dx * dx + dy * dy, ui.drag = i + 1;
+        }
+        if (ui.drag) widget_set_prop_int(ui.view, "yslidable", 0);
+        return 0;
+    }
+    /* The lift, or an abort: the list stays held through stock's release, which would otherwise
+     * fling it (0x603314 counts 10 px of the finger's travel as its drag); the render, a pass
+     * later, makes a new list that scrolls. */
+    if (type != EVT_POINTER_MOVE_BEFORE) {
+        ui.drag = 0;
+        follow_auto(); /* two sweeps: once, not at each move (the curve has no preamp) */
+        if (!ui.timer) ui.timer = timer_add(render, 0, 1); /* the rows' values */
+        return 0;
+    }
+    peq_band *b = &ui.draft.bands[ui.drag - 1];
+    double g = ((PEQ_PLOT_TOP + PEQ_PLOT_BOTTOM) / 2.0 - gy) * 2 * PEQ_GRAPH_DB /
+               (PEQ_PLOT_BOTTOM - PEQ_PLOT_TOP) / GRAPH_STEP;
+    g = (int)(g + (g < 0 ? -0.5 : 0.5)) * GRAPH_STEP;
+    g = g > PEQ_GRAPH_DB ? PEQ_GRAPH_DB : g < -PEQ_GRAPH_DB ? -PEQ_GRAPH_DB : g;
+    if (g == b->gain && b->enabled) return 0;
+    b->gain = g;
+    if (!b->enabled) b->enabled = 1;
+    ui.band = ui.drag - 1;
+    ui.dirty = 1;
+    ui.status[0] = 0;
+    curve();
+    widget_invalidate_force(ui.graph, 0);
+    return 0;
+}
+
 /* A touch: a button on the press; a slider's gain follows the finger, in 0.5 dB steps,
- * until it lifts. */
+ * until it lifts. Advanced's go to its graph. */
 static int e3_touch(void *ctx, event_t *event) {
     int type = I(event, EVENT_TYPE), xy[2] = { I(event, EVENT_X), I(event, EVENT_Y) };
+    if (ui.tab == ADVANCED) return graph_touch(type, xy[0], xy[1]);
     if (!e3.view || (type != EVT_POINTER_DOWN && !e3.dragging)) return 0;
     widget_to_local(e3.view, xy);
     if (type == EVT_POINTER_DOWN) {

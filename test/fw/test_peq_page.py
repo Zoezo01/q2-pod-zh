@@ -13,8 +13,8 @@ from conftest import O
 KEY_CENTER, KEY_PREV, KEY_NEXT, KEY_RETURN = O['KEY_CENTER'], O['KEY_PREV'], O['KEY_NEXT'], O['KEY_RETURN']
 EVT_DESTROY, EVT_VALUE_CHANGED, EVT_CLICK, EVT_FOCUS, EVT_KEY_UP, EVT_IM_ACTION = (O[k] for k in (
     'EVT_DESTROY', 'EVT_VALUE_CHANGED', 'EVT_CLICK', 'EVT_FOCUS', 'EVT_KEY_UP', 'EVT_IM_ACTION'))
-EVT_POINTER_DOWN, EVT_POINTER_MOVE_BEFORE, EVT_POINTER_UP_BEFORE = (O[k] for k in (
-    'EVT_POINTER_DOWN', 'EVT_POINTER_MOVE_BEFORE', 'EVT_POINTER_UP_BEFORE'))
+EVT_POINTER_DOWN, EVT_POINTER_MOVE_BEFORE, EVT_POINTER_UP_BEFORE, EVT_POINTER_ABORT = (O[k] for k in (
+    'EVT_POINTER_DOWN', 'EVT_POINTER_MOVE_BEFORE', 'EVT_POINTER_UP_BEFORE', 'EVT_POINTER_ABORT'))
 EVENT_KEY, EVENT_X, EVENT_Y, W_PARENT, IM_WIDGET, IM_KEYBOARD = (
     O['EVENT_KEY'], O['EVENT_X'], O['EVENT_Y'], O['W_PARENT'], O['IM_WIDGET'], 0x0c)
 RET_REMOVE, RET_REPEAT = 7, 8
@@ -47,7 +47,7 @@ class Ui(C.Structure):
                 *((k, C.c_int) for k in 'screen band step count previous rendered dirty pick adjust tries capacity file_page tab tabs from_simple'.split()),
                 ('typed', C.c_double), ('draft', Preset), ('candidate', Preset), ('named', Preset), ('names', C.c_void_p),
                 ('destination', C.c_char * 600), ('status', C.c_char * 160), ('name', C.c_char * 256), ('applied', C.c_char * 256),
-                ('curve', (C.c_float * GRAPH_W) * 2)]
+                ('curve', (C.c_float * GRAPH_W) * 2), ('drag', C.c_int)]
 
 
 class E3(C.Structure):
@@ -1106,6 +1106,39 @@ def test_a_tap_on_r_resets_the_sliders_and_a_drag_follows_the_finger(fw):
     p.touch(view, EVT_POINTER_UP_BEFORE, x, top)
     assert not p.e3.dragging and p.card.state().eq3.bands[1].gain == 6
     assert p.touch(view, EVT_POINTER_MOVE_BEFORE, x, bottom) == 0 and p.e3.gain[1] == 6  # no finger down
+
+
+def test_a_finger_on_a_band_s_ring_drags_its_gain_and_holds_the_list(fw):
+    p = page(fw, state(fw, EQ_PEQ)).advanced()  # ten off bands on the 0 dB line, which shows no rings
+    before, view, graph = dict(p.card.files), p.ui.view, p.ui.graph
+    x, y = round(fw.fn('peq_ui__graph_x', C.c_float, C.c_double)(1000)), lambda db: 48 + 42 - round(db * 2.4)  # page y
+    press = lambda gx, gy: p.touch(graph, EVT_POINTER_DOWN, gx, gy)
+    p.ui.drag = 3  # a lift never seen
+    assert press(x, y(15)) == 0 and not p.ui.drag  # off every ring: the list's
+    assert p.touch(graph, EVT_POINTER_MOVE_BEFORE, x, y(5)) == 0 and p.ui.draft.bands[5].gain == 0
+    assert press(x, y(0)) == 0 and p.ui.drag == 6 and p.props[(view, 'yslidable')] == 0  # 1 kHz's, the list held
+    assert not p.ui.draft.bands[5].enabled and not p.ui.dirty  # the press alone changes nothing
+    p.touch(graph, EVT_POINTER_MOVE_BEFORE, x + 30, y(5))  # sideways moves no frequency
+    b = p.ui.draft.bands[5]
+    assert (b.enabled, b.gain, b.frequency, p.ui.band, p.ui.dirty) == (1, 5, 1000, 5, 1)  # on, as a picked gain
+    assert p.ui.curve[0][x - GRAPH_X] < 42 and fw.calls('widget_invalidate_force') and not p.pending('render')
+    p.touch(graph, EVT_POINTER_MOVE_BEFORE, x, y(30))
+    assert b.gain == GRAPH_DB  # the graph's top
+    p.touch(graph, EVT_POINTER_UP_BEFORE, x, y(30))
+    assert not p.ui.drag and p.props[(view, 'yslidable')] == 0  # still held: stock's release would fling it
+    p.settle()
+    assert p.ui.view != view and p.props[(p.ui.view, 'yslidable')] == 1  # the new list scrolls
+    assert '6  Peaking 1000 Hz +15.0 dB' in p.captions() and 'Apply changes' in p.captions()
+    assert 'Preamp Auto (44.1: -15.0 / 48: -15.0)' in p.captions()  # kept up to date at the lift
+    assert p.card.files == before  # the draft only: Apply plays it
+    p.props[(p.ui.view, 'yoffset')] = 30  # scrolled: the ring is 30 px higher on the page
+    assert press(x, y(15) - 30) == 0 and p.ui.drag == 6
+    abort = C.create_string_buffer(0x40)
+    struct.pack_into('<i', abort, 0, EVT_POINTER_ABORT)
+    p.handler(p.ui.graph, EVT_POINTER_ABORT)(C.addressof(abort))
+    assert not p.ui.drag and p.pending('render')  # stale_heal's abort lets go
+    p.settle()
+    assert p.touch(p.ui.graph, EVT_POINTER_MOVE_BEFORE, x, y(-5)) == 0 and p.ui.draft.bands[5].gain == GRAPH_DB
 
 
 # Simple's paint.

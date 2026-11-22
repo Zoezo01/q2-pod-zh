@@ -1,6 +1,7 @@
 # Changelog
 
 - **1.9.1**:
+  - EQ: in **Advanced**, drag a band up or down on the curve to set its gain, as you drag Simple's sliders. Touch the band's ring, or the line where an off band sits, and the band turns on. Choose **Apply changes** to hear it.
   - Playback: with the screen off, hold Next or Previous to fast-forward or rewind the playing song; let go and it plays on from there. A press still skips to the next or previous song.
   - Library: with the **Languages** app from the App Store installed, Arabic, Persian and Urdu song titles, artists and albums show, right to left with their letters joined. They were blank before. Arabic lyrics read right to left too, lit from the right as they're sung.
 - **1.9.0**:

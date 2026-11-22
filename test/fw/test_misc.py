@@ -721,7 +721,7 @@ class Ui(C.Structure):
                 *((k, C.c_int) for k in 'screen band step count previous rendered dirty pick adjust tries capacity file_page tab tabs from_simple'.split()),
                 ('typed', C.c_double), ('draft', Preset), ('candidate', Preset), ('named', Preset), ('names', C.c_void_p),
                 ('destination', C.c_char * 600), ('status', C.c_char * 160), ('name', C.c_char * 256), ('applied', C.c_char * 256),
-                ('curve', (C.c_float * 343) * 2)]
+                ('curve', (C.c_float * 343) * 2), ('drag', C.c_int)]
 
 
 def ui(fw):

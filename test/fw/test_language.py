@@ -294,11 +294,14 @@ def test_sync_copies_a_packs_font_in_any_language(fw, lang):
 GLYPH = C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_uint, C.c_uint, C.c_void_p)
 
 
+KEPT: list = []  # the callbacks the fake fonts point at, alive for the run
+
+
 def font(got, tag):
     """A font_t whose get_glyph (+0x24) records (tag, character, size)."""
     f = C.create_string_buffer(0x40)
-    f.get = GLYPH(lambda _f, c, size, _g: got.append((tag, c, size)) or 0)
-    C.c_void_p.from_buffer(f, 0x24).value = C.cast(f.get, C.c_void_p).value
+    KEPT.append(GLYPH(lambda _f, c, size, _g: got.append((tag, c, size)) or 0))
+    C.c_void_p.from_buffer(f, 0x24).value = C.cast(KEPT[-1], C.c_void_p).value
     return f
 
 
