@@ -2326,7 +2326,7 @@ class PlaylistEditMachine(CoverflowMachine):
         deleted=self.node('hscroll_label',name='label_del')
         self.word(deleted+O['W_PARENT'],more); self.nodes[more]['children'].append(deleted)
         self.call(address=HOOKS['localmusic_playlistsmore_page_init'][0],args=(more,0,0,0),gap=0)
-        assert self.nodes[deleted]['text']=='Delete Playlist'
+        assert self.nodes[deleted]['text']=='删除播放列表'
         row=self.nodes[more]['children'][-1]; button=self.nodes[row]['children'][0]
         image,label=self.nodes[button]['children']
         y=10+2*h
@@ -2337,7 +2337,7 @@ class PlaylistEditMachine(CoverflowMachine):
         assert [self.get(image+O[k]) for k in ('W_X','W_Y','W_W','W_H')]==[10,0,52,inner]
         assert self.nodes[image]['image']=='rename' and self.nodes[image]['draw_type']==O['IMAGE_DRAW_CENTER']
         assert [self.get(label+O[k]) for k in ('W_X','W_Y','W_W','W_H')]==[72,0,253,inner]
-        assert self.nodes[label]['style']=='s_scrlabel_white20l' and self.nodes[label]['text']=='Edit Playlist'
+        assert self.nodes[label]['style']=='s_scrlabel_white20l' and self.nodes[label]['text']=='编辑播放列表'
         f,ctx=self.handler(button,O['EVT_CLICK'])
         self.call(address=f,args=(ctx,self.event,0,0),gap=0)
         self.page=self.top; self.view=self.find('scroll_view'); self.paint(self.view)
@@ -2387,7 +2387,7 @@ class PlaylistLifecycleMachine(PlaylistEditMachine):
         name=self.handlers.get(address,'')
         if name=='life:back': self.backs+=1; self.returns(0); return
         if name=='c:navigator_to_with_context' and self.text(u.reg_read(REGS[0]))=='dialog/confirminfo_dialog':
-            assert self.text(u.reg_read(REGS[1])+8)=='Delete Playlist?'
+            assert self.text(u.reg_read(REGS[1])+8)=='删除播放列表？'
             self.returns(self.answer); return
         super().hook(u,address,size,unused)
     def create(self,name):

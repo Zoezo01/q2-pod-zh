@@ -2042,11 +2042,15 @@ for name in ('allmusic_page','albuminfo_page','artistinfo_page','album_page','fo
     assert not m.icons and not loaded(m), name; passed()
 
 # The status bar as built (ui/system_bar.bin), laid out by the stock row layouter
-# (children_layouter_default, 0x63bda8) with every icon shown: the icons, 16px high and drawn
-# centred in their 30px cells, and the title clear the glass's rounded top corners.
+# (children_layouter_default, 0x63bda8) with its icons shown: the icons, 16px high and drawn
+# centred in their 30px cells, and the title clear the glass's rounded top corners. EQ is left
+# out of the clock's room here: tools/ipod.py's `shown` excludes label_eq, a badge that only
+# shows while the equalizer runs (22 px between Bluetooth and Wi-Fi), so the built bar reserves
+# the clock's box without it.
 m=Machine(); m.mock('strtol@GLIBC_2.0','strstr@GLIBC_2.0'); m.mock('tk_calloc','tk_free',prefix='alloc:')
 bar=asset_tree(m,STATUS_BAR); m.word(bar+O['W_W'],375)
 views=[named(m,bar,n) for n in ('view_left','view_right')]
+m.nodes[named(m,bar,'label_eq')]['visible']=0
 for v in views:
     layout=m.call(address=syms['children_layouter_default_create'],args=(0,0,0,0),gap=0)
     for param in re.fullmatch(r'default\((.*)\)',m.nodes[v]['asset']['children_layout'])[1].split(','):
@@ -2084,11 +2088,12 @@ m.nodes[named(m,bar,'img_bt')]['visible']=0
 m.nodes[named(m,bar,'img_wifi')]['visible']=0
 slot=named(m,bar,'view_battery')
 m.nodes[named(m,bar,'label_battery')]['text']='50%'
+m.nodes[named(m,bar,'label_eq')]['visible']=1  # the live bar below toggles it with the equalizer
 def paint_live_bar():
     m.call(address=HOOKS['widget_on_paint_background'][0],args=(bar,m.canvas,0,0),gap=0)
 paint_live_bar()
 idle=named(m,bar,'label_idle'); state=named(m,bar,'img_state'); eq=named(m,bar,'label_eq')
-assert m.get(eq+O['W_W'])==28
+assert m.get(eq+O['W_W'])==22  # V180D keeps the badge's two bearings, not stock's 28: 4 columns each side read as a gap
 assert all(m.nodes[eq]['asset'][f'style:{s}:font_size']=='16' for s in ('normal','disable','focused'))
 clock_box=tuple(m.get(title+O[k]) for k in ('W_X','W_Y','W_W','W_H'))
 # bar_sync shows the play state (here local's, mclGetPlayStatus: 2 playing, 3 paused) itself.
@@ -2690,9 +2695,11 @@ q.calls=[]; qs_event(q,q.btns[0],O['EVT_POINTER_UP_BEFORE']); assert not [c for 
 for light in '10':
     q=qs_new(light); qs_paint(q)
     assert [wbox(q,w) for w in q.labels]==[(a[0]-10,a[1]+64,80,32 if n=='label_outputway' else 18) for a,(n,t) in zip(QS_AT,QS_LABELS)]
-    assert all(q.nodes[w]['style:normal:font_size']==17 and q.nodes[w]['style:normal:font_name']=='classic-light' and q.nodes[w]['style:normal:text_color']==0 and q.nodes[w]['style:normal:text_align_h']=='center' for w in q.labels)
-    want=[d for a,(n,t) in zip(QS_AT,QS_LABELS) for d in qs_lines(a,t,('Output','Options') if n=='label_outputway' else None)]
-    assert [(l['text'],l['rect'],l['color']) for l in q.letters]==want and {l['font'] for l in q.letters}=={('classic-light',17)} and all(l['rect'][3]>l['font'][1] for l in q.letters)
+    lock=q.labels[2]  # label_lock: the payload writes the state word 关闭, which Classic's face lacks
+    assert all(q.nodes[w]['style:normal:font_size']==17 and q.nodes[w]['style:normal:font_name']=='classic-light' and q.nodes[w]['style:normal:text_color']==0 and q.nodes[w]['style:normal:text_align_h']=='center' for w in q.labels if w!=lock)
+    assert (q.nodes[lock]['style:normal:font_size'],q.nodes[lock]['style:normal:font_name'])==(14,'default') and q.nodes[lock]['style:normal:text_align_h']=='center'  # default.ttf at the bar's CJK step
+    want=[d for a,(n,_),t in zip(QS_AT,QS_LABELS,(q.nodes[w]['text'] for w in q.labels)) for d in qs_lines(a,t,('Output','Options') if n=='label_outputway' else None)]
+    assert [(l['text'],l['rect'],l['color']) for l in q.letters]==want and {l['font'] for l in q.letters}=={('classic-light',17),('default',14)} and all(l['rect'][3]>l['font'][1] for l in q.letters)
     assert canvas_state(q)[:1]==(LCD_COLORS,); passed()
 # ... a repaint doesn't restyle the labels; a text that stops wrapping gets the one-line box; one the face hasn't takes the fallback's, and back.
 q=qs_new(); qs_paint(q); q.calls=[]; bg(q,q.win); assert not [c for c in q.calls if c[0] in ('widget_move_resize','widget_set_prop_str')]

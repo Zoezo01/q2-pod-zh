@@ -3686,8 +3686,26 @@ int bar_status(void) {
     if (media_owner() == 1) return mclGetPlayStatus();
     return video_status() ?: radio_status() ?: spot_status();
 }
-/* img_state follows whichever player plays, stock's or Spotify's, radio's or a video's, and
- * label_idle shows when neither it nor label_eq does. Returns whether a state image changed. */
+/* label_idle ("Q2") shows when the play glyph, the play word and a page name all leave the
+ * left side alone. bar_word_sync decides the word, so bar_sync calls this again after it: reading
+ * the label's flag before that pass left Q2 hidden for one frame whenever playback stopped. */
+static void bar_idle_sync(void) {
+    if (!st.bar_idle || !st.bar_state) return;
+    int named = !st.bar_title && st.bar_named,
+        word = !st.bar_title && st.play_word && widget_get_visible(st.play_word);
+    widget_set_visible(st.bar_idle, !widget_get_visible(st.bar_state) && !named && !word, 0);
+    if (widget_get_visible(st.bar_idle)) {
+        static const char *const states2[] = { "normal", "focused", "disable" };
+        char prop[48];
+        for (unsigned i = 0; i < 3; ++i) {
+            snprintf(prop, sizeof prop, "style:%s:text_color", states2[i]);
+            widget_set_prop_int(st.bar_idle, prop, 0xffffffffu);
+        }
+    }
+}
+
+/* img_state follows whichever player plays, stock's or Spotify's, radio's or a video's. Returns
+ * whether a state image changed. */
 static int bar_state_sync(void *bar) {
     int changed = 0;
     if (!st.bar_bt && bar) {
@@ -3735,19 +3753,7 @@ static int bar_state_sync(void *bar) {
      * Minimal/Modern put a page name in that very label too (np_bar.c bar_title): with no
      * player running, stock's "Q2" and the name then inked on top of each other --
      * "Q2系统设置" in V183A device photos. Exactly one of the three may show. */
-    if (st.bar_idle && st.bar_state) {
-        int named = !st.bar_title && st.bar_named,
-            word = !st.bar_title && st.play_word && widget_get_visible(st.play_word);
-        widget_set_visible(st.bar_idle, !widget_get_visible(st.bar_state) && !named && !word, 0);
-    }
-    if (st.bar_idle && widget_get_visible(st.bar_idle)) {
-        static const char *const states2[] = { "normal", "focused", "disable" };
-        char prop[48];
-        for (unsigned i = 0; i < 3; ++i) {
-            snprintf(prop, sizeof prop, "style:%s:text_color", states2[i]);
-            widget_set_prop_int(st.bar_idle, prop, 0xffffffffu);
-        }
-    }
+    bar_idle_sync();
     return changed;
 }
 
@@ -3946,6 +3952,7 @@ unsigned bar_battery_key(void) {
 static void bar_sync(void *bar) {
     int glyph = bar_state_sync(bar); /* looks the widgets up first: the word needs img_state */
     int word = bar_word_sync(bar);
+    bar_idle_sync(); /* after the word: idle follows what the word shows this frame */
     if ((glyph || word) && !st.bar_timer) st.bar_timer = timer_add(bar_repaint, (void *)0, 0);
     if (!st.bar_bt || !st.bar_wifi || !st.bar_pct || !st.bar_slot || !st.bar_icon) return;
     int shown = widget_get_visible(st.bar_bt), c = 0;

@@ -262,12 +262,12 @@ m=PlaylistEditMachine(); m.open_editor()
 # The wheel still selects rows and Centre opens the selected song's actions.
 m.on_click=lambda w,e: m.nested(*m.handler(w,O['EVT_CLICK']),e)
 assert m.call()==11 and m.selected(m.view)==3
-assert m.confirm()==11 and m.showlabels()==['Move Up','Move Down','Remove from Playlist']
+assert m.confirm()==11 and m.showlabels()==['上移','下移','从播放列表移除']
 assert m.key()==11 and m.selected(m.find('scroll_view'))==3
 m.close()
 m=PlaylistEditMachine(); m.open_editor()
-assert m.showlabels()==['Add Songs','完成','A','B','C']
-assert m.nodes[m.nodes[m.page]['children'][0]]['text']=='Editing: Mix'
+assert m.showlabels()==['添加歌曲','完成','A','B','C']
+assert m.nodes[m.nodes[m.page]['children'][0]]['text']=='正在编辑: Mix'
 # A repeat and long press cannot move again, and releases never reach playback.
 for key,want in ((O['KEY_FWD_BTN'],['B','A','C']),(O['KEY_FWD_BTN'],['B','C','A']),(O['KEY_BACK_BTN'],['B','A','C'])):
     assert m.call(key,address=HOOKS['on_wm_keydown_before_fun'][0],event_type=O['EVT_KEY_DOWN_BEFORE'],gap=0)==11
@@ -279,22 +279,22 @@ for key,want in ((O['KEY_FWD_BTN'],['B','A','C']),(O['KEY_FWD_BTN'],['B','C','A'
     m.view=m.find('scroll_view'); assert m.selected(m.view)==want.index('A')+2
 assert m.names()==m.before_queue and not m.playback(); passed()
 # Touch actions and confirmation; cancel and Back leave the entry intact.
-m.choose(3); assert m.showlabels()==['Move Up','Move Down','Remove from Playlist']
-m.choose(2); assert m.showlabels()==['Remove from Playlist','Cancel']; m.choose(1)
+m.choose(3); assert m.showlabels()==['上移','下移','从播放列表移除']
+m.choose(2); assert m.showlabels()==['从播放列表移除','取消']; m.choose(1)
 assert m.order()==['B','A','C']; m.choose(3); m.choose(0); assert m.order()==['A','B','C']
 m.choose(2); m.choose(1); assert m.order()==['B','A','C']
 m.choose(3); m.choose(2); m.choose(0); assert m.order()==['B','C'] and m.selected(m.view)==3
 assert m.order(1)==['Other']; passed()
 # The fixed destination picker stays open; failed writes never report success.
 saved=m.alloc(16); m.word(saved,0x12345678); m.word(syms['p_vector_select_record'],saved)
-m.choose(0); assert m.showlabels()==['Search','T1','T2']; m.choose(1)
+m.choose(0); assert m.showlabels()==['搜索','T1','T2']; m.choose(1)
 assert m.get(syms['p_vector_select_record'])==saved and m.get(saved)==0x12345678
 assert not any(c[0].startswith('batch_') for c in m.calls)
-assert m.toasts[-1][3]=='Added to Playlist' and m.showlabels()==['Search','T1','T2']
-m.choose(1); assert m.toasts[-1][3]=='Already in playlist'
-m.fail='write'; m.choose(2); assert m.toasts[-1][3]=='Could not save playlist'; m.fail=''
+assert m.toasts[-1][3]=='已加入播放列表' and m.showlabels()==['搜索','T1','T2']
+m.choose(1); assert m.toasts[-1][3]=='已在播放列表中'
+m.fail='write'; m.choose(2); assert m.toasts[-1][3]=='无法保存播放列表'; m.fail=''
 assert m.ticks()==[False,True,False]  # ticked on add, not on a failed write
-assert m.key()==11 and m.showlabels()==['Add Songs','完成','B','C','T1']
+assert m.key()==11 and m.showlabels()==['添加歌曲','完成','B','C','T1']
 m.choose(1); assert m.top!=m.page and not m.get(payload_syms['ple'])
 assert m.names()==m.before_queue; passed()
 # Add Songs' Search row filters by tagged title, artist or album, case-insensitively; the query
@@ -302,24 +302,24 @@ assert m.names()==m.before_queue; passed()
 
 m=PlaylistEditMachine(); m.word(m.found[0]+O['REC_ARTIST'],m.string('Beatles'))
 m.word(m.found[1]+O['REC_ALBUM'],m.string('Zebra')); m.open_editor(); m.choose(0)
-assert m.showlabels()==['Search','T1','T2']
-ple_search(m,'T2'); assert m.showlabels()==['Search: T2','T2'] and not m.find('edit')
+assert m.showlabels()==['搜索','T1','T2']
+ple_search(m,'T2'); assert m.showlabels()==['搜索：T2','T2'] and not m.find('edit')
 m.choose(0); assert m.nodes[m.find('edit')]['text']=='T2'  # prefilled for editing
 m.nodes[m.find('edit')]['text']='beat'; f,ctx=m.handler(m.find('edit'),O['EVT_IM_ACTION'])
 assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0; m.advance(0); m.view=m.find('scroll_view')
-assert m.showlabels()==['Search: beat','T1']
-m.choose(1); assert m.toasts[-1][3]=='Added to Playlist' and m.showlabels()==['Search: beat','T1']
-ple_search(m,'zeb'); assert m.showlabels()==['Search: zeb','T2']
-ple_search(m,''); assert m.showlabels()==['Search','T1','T2'] and m.ticks()==[False,True,False]
-ple_search(m,'zzz'); assert m.showlabels()==['Search: zzz','No songs match']
+assert m.showlabels()==['搜索：beat','T1']
+m.choose(1); assert m.toasts[-1][3]=='已加入播放列表' and m.showlabels()==['搜索：beat','T1']
+ple_search(m,'zeb'); assert m.showlabels()==['搜索：zeb','T2']
+ple_search(m,''); assert m.showlabels()==['搜索','T1','T2'] and m.ticks()==[False,True,False]
+ple_search(m,'zzz'); assert m.showlabels()==['搜索：zzz','无匹配歌曲']
 # Return from the box applies its text, and a filtered pick can close the page cleanly.
 m.choose(0); m.nodes[m.find('edit')]['text']='t1'; assert m.key()==11
-assert m.showlabels()==['Search: t1','T1']; m.close(); passed()
+assert m.showlabels()==['搜索：t1','T1']; m.close(); passed()
 # Add Songs lists the first 500 songs, under ringnav's MAX_ENTRIES (512), then a row that opens the Search box.
 m=PlaylistEditMachine(); m.found=[m.song(f'S{i:03}') for i in range(600)]; m.budget=1500000; m.open_editor()
 cost=[0]; hook=m.u.hook_add(UC_HOOK_CODE,lambda *a: cost.__setitem__(0,cost[0]+1),begin=BASE,end=SCRATCH-1)
 m.choose(0); m.u.hook_del(hook); cost_line('add songs 600',cost[0])
-labels=m.showlabels(); assert labels==['Search',*(f'S{i:03}' for i in range(500)),'Search for more songs'],(len(labels),labels[-2:])
+labels=m.showlabels(); assert labels==['搜索',*(f'S{i:03}' for i in range(500)),'搜索更多歌曲'],(len(labels),labels[-2:])
 m.choose(501); edit=m.find('edit'); assert edit and m.nodes[edit]['name']=='search_edit' and m.order()==['A','B','C']; passed()
 
 m=PlaylistLifecycleMachine(); assert m.create("O'Brien")==6
@@ -338,18 +338,18 @@ for failure in ('','open','begin','delete','delete from playlist where id>100','
     m=PlaylistLifecycleMachine(); before=m.db.execute('select * from playlist').fetchall(); m.fail=failure; m.delete()
     if failure:
         assert m.db.execute('select * from playlist').fetchall()==before and m.backs==0
-        assert m.toasts[-1][3]=='Could not delete playlist'
+        assert m.toasts[-1][3]=='无法删除播放列表'
     else:
         assert m.db.execute('select id from playlist where id=0 or id=101').fetchall()==[]
         assert m.db.execute('select id from playlist where id=1 or id=102').fetchall()==[(1,),(102,)]
-        assert m.backs==1 and bytes(m.u.mem_read(syms['g_delete_flag'],1))==b'\x01' and m.toasts[-1][3]=='Playlist deleted'
+        assert m.backs==1 and bytes(m.u.mem_read(syms['g_delete_flag'],1))==b'\x01' and m.toasts[-1][3]=='播放列表已删除'
     assert m.reload_pending()==(not failure)
     assert not m.db.in_transaction; passed()
 m=PlaylistLifecycleMachine(); m.db.execute('delete from playlist where id=101'); m.delete()
-assert not m.db.execute('select id from playlist where id=0').fetchall() and m.toasts[-1][3]=='Playlist deleted'
+assert not m.db.execute('select id from playlist where id=0').fetchall() and m.toasts[-1][3]=='播放列表已删除'
 assert m.create('Replacement')==0; passed()
 m=PlaylistLifecycleMachine(); m.db.execute('delete from playlist where id=0'); m.delete()
-assert m.db.execute('select id from playlist where id=101').fetchall()==[(101,)] and m.toasts[-1][3]=='Could not delete playlist'; passed()
+assert m.db.execute('select id from playlist where id=101').fetchall()==[(101,)] and m.toasts[-1][3]=='无法删除播放列表'; passed()
 m=PlaylistLifecycleMachine(); m.answer=0; before=m.db.execute('select * from playlist').fetchall(); m.delete()
 assert m.db.execute('select * from playlist').fetchall()==before and not m.backs and not m.reload_pending(); passed()
 
@@ -395,19 +395,19 @@ m.db.execute("insert into playlist values(150,0,'/hidden',0,0,'Hidden')")
 assert m.mutate(101,103)==1 and m.order()==['C','B','A','Hidden']
 assert m.mutate(102,0)==1 and m.order()==['C','A','Hidden'] and m.order(1)==['Other']
 # Reopening uses the database order and leaves the live queue unchanged.
-m.open_editor(); assert m.showlabels()==['Add Songs','完成','C','A','Hidden'] and m.names()==m.before_queue
+m.open_editor(); assert m.showlabels()==['添加歌曲','完成','C','A','Hidden'] and m.names()==m.before_queue
 assert m.mutate(101,200,0)==0
 m.db.execute('update playlist set id=2147483647 where id=200'); assert m.mutate(101,103)==0
 passed()
 # Back cancels a deferred confirmation before returning to the editor.
 m=PlaylistEditMachine(); m.open_editor(); m.choose(2); m.choose(2)
 m.pick(0); assert m.key()==11 and m.order()==list('ABC')
-assert m.showlabels()==['Add Songs','完成','A','B','C']; passed()
+assert m.showlabels()==['添加歌曲','完成','A','B','C']; passed()
 # A side press during a deferred click cannot change the row that click refers to.
 m.choose(2); assert m.key()==11
 m.view=m.find('scroll_view')
 m.pick(3); m.move(); m.advance(0)
-assert m.order()==list('ABC') and m.showlabels()==['Move Up','Move Down','Remove from Playlist']; passed()
+assert m.order()==list('ABC') and m.showlabels()==['上移','下移','从播放列表移除']; passed()
 # Simultaneous side-button presses retain independent repeat/release latches.
 m=PlaylistEditMachine(); m.open_editor()
 for key in (O['KEY_FWD_BTN'],O['KEY_BACK_BTN']):

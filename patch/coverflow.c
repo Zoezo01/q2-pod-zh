@@ -2759,16 +2759,24 @@ float coverflow_follow(float k) {
     float s = k * ff.span;
     return 1 - (1 + ff.a * s) * ff_decay(s);
 }
+/* int to float without LLVM's unsigned path: for a value it knows is not negative, the MIPS
+ * backend converts through a double (the 2^52 trick), which the test emulator cannot run. */
+static float i2f(int v) {
+    float f;
+    __asm__("mtc1 %1, %0\n\tcvt.s.w %0, %0" : "=f"(f) : "r"(v));
+    return f;
+}
+
 /* A run d px long at time constant tau ms, picking up the speed elapsed ms into the last one (< 0:
  * from rest). Returns its ms: until within half a px of the goal, as stock's update truncates, so
  * the share's jump to 1 is one whole px at most. A goal right ahead of a cover too fast to stop for
  * it (a < 0) gives up the speed it can't use. */
 int coverflow_follow_aim(int d, int tau, int elapsed) {
-    float a = 1, e = 1, s = 0, size = (float)ABS(d);
+    float a = 1, e = 1, s = 0, size = i2f(ABS(d));
     if (elapsed >= 0 && d) {
-        s = (float)elapsed / (float)ff.tau;
-        float v = (float)ff.d * (1 - ff.a + ff.a * s) * ff_decay(s) / (float)ff.tau;
-        a = 1 - v * (float)tau / (float)d;
+        s = i2f(elapsed) / i2f(ff.tau);
+        float v = i2f(ff.d) * (1 - ff.a + ff.a * s) * ff_decay(s) / i2f(ff.tau);
+        a = 1 - v * i2f(tau) / i2f(d);
         if (a < 0) a = 0;
     }
     s = 0;
@@ -2777,7 +2785,7 @@ int coverflow_follow_aim(int d, int tau, int elapsed) {
         e *= .7788008f; /* e^-1/4 */
     } while (size * (1 + a * s) * e > .5f);
     ff.d = d, ff.tau = tau, ff.a = a, ff.span = s;
-    return (int)(s * (float)tau);
+    return (int)(s * i2f(tau));
 }
 static struct {
     int down, drag, caught, x, y, from, n; /* from: the offset at the press, or the drag's start */

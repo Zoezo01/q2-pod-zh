@@ -357,7 +357,7 @@ static void ple_show(void) {
                     ple.view, i + 1, track_name(name, sizeof name, ple.match[i]), 0, ple_pick);
                 if (in && rec_find(ple.songs, in, mask, ple.match[i])) ple_tick(row);
             }
-        if (rest) page_row_detail(ple.view, shown + 1, "Search for more songs", 0, ple_more);
+        if (rest) page_row_detail(ple.view, shown + 1, "搜索更多歌曲", 0, ple_more);
         free(in);
     } else
         for (int i = 0; i < n; i++) {
