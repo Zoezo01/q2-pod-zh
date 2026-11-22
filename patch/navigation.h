@@ -137,6 +137,7 @@ typedef struct {
     unsigned edge_held, edge_at; /* chord_gate: edge buttons held (bits), the last one's press */
     unsigned edge_seen;          /* chord_gate: an edge button's last press or repeat */
     unsigned centre_at, centre_hold; /* a passing Centre press, and its hold timer */
+    int centre_rim;                  /* 1: an edge press came within CHORD_MS of it: no click */
     int return_eat;                  /* 1: a ghost Return press is dropped */
     unsigned return_eat_at;
     widget_t *np_origin; /* the page Hold Return opened Now Playing over */

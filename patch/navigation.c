@@ -8807,7 +8807,8 @@ static int wake_gate(event_t *e) {
  * CHORD_MS of its press, is dropped whole (its repeats and release too), before the wake gate sees
  * it; the edge button keeps its own. Centre pressed first passes, but an edge press within
  * CHORD_MS of it ends Centre's hold timer (ringnav_hold_timer), so a rim press held near a corner
- * never reaches stock's Centre hold, the Shut Down dialog. Return's hold (Now Playing, Home) can
+ * never reaches stock's Centre hold, the Shut Down dialog, nor clicks (centre_rim: ringnav stops
+ * its release). Return's hold (Now Playing, Home) can
  * ghost a second press as it lets go: a Return press starting within RETURN_GHOST_MS of a hold's
  * release is dropped whole too. A Centre press that starts while a card game has the keys
  * (addon_game_keys) passes, its repeats and release too: its D-pad and A pressed together.
@@ -8832,8 +8833,9 @@ static int chord_gate(event_t *e) {
              (!(st.edge_held & edge) || (type == EVT_KEY_DOWN && now - st.edge_seen > 300))) {
         st.edge_held |= edge;
         st.edge_at = now;
-        if (st.centre_at && (int)(now - st.centre_at) < CHORD_MS && st.centre_hold) {
-            timer_remove(st.centre_hold); /* the rim's Centre: no hold */
+        if (st.centre_at && (int)(now - st.centre_at) < CHORD_MS) {
+            st.centre_rim = 1;                                /* the rim's Centre: no click */
+            if (st.centre_hold) timer_remove(st.centre_hold); /* nor hold */
             st.centre_hold = 0;
         }
     }
@@ -8864,6 +8866,7 @@ static int chord_gate(event_t *e) {
     int fresh = type == EVT_KEY_DOWN && (!st.chord_eat || now - st.chord_at > 300);
     if (fresh) /* at the press: a hand-off to or from a card game mid-press keeps its fate */
         st.chord_eat = !addon_game_keys() && st.edge_held && now - st.edge_at < CHORD_MS ? 1 : -1;
+    if (fresh) st.centre_rim = 0;
     st.chord_at = now;
     int eat = st.chord_eat > 0;
     if (type == EVT_KEY_UP) st.chord_eat = st.centre_hold = 0;
@@ -8871,6 +8874,14 @@ static int chord_gate(event_t *e) {
     if (!eat)
         st.centre_at = type == EVT_KEY_UP ? 0 : st.centre_at && !fresh ? st.centre_at : now | 1;
     return eat;
+}
+
+/* ringnav: 1 stops a rim press's Centre release (centre_rim), which clicks nothing. Under stock's
+ * power-key rules it goes on to stock, which drops it too and clears them. */
+static int rim_centre(unsigned key) {
+    if (key != KEY_CENTER || !st.centre_rim) return 0;
+    st.centre_rim = 0;
+    return !g_power_longkey && !g_ingore_bootkey_flag && !*(volatile unsigned char *)BOOT_KEY_GUARD;
 }
 
 /* main_loop_post_key_event: its one caller, on_wm_idle_status, posts SyncLink's (Eddict Player's)
@@ -9301,6 +9312,7 @@ int ringnav(void *ctx, event_t *event) {
         *(volatile signed char *)KEY_LOCKOUT <= 8 - LOCKOUT_KEEP)
         *(volatile unsigned char *)KEY_LOCKOUT = 0;
     if (key == KEY_CENTER || key == KEY_RETURN) st.held = 0; /* a button ends a held turn */
+    if (rim_centre(key)) return STOP;
     /* A tick the other way ends it too and is dropped with it, before or during its replay;
      * replay's own ticks go the held way. */
     if (st.held * (key == KEY_NEXT ? 1 : key == KEY_PREV ? -1 : 0) < 0) {
