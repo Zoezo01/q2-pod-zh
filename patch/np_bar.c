@@ -76,13 +76,13 @@ int np_sync(widget_t *top) {
     unsigned at, n;
     void *r = queue_now(&at, &n);
     const char *album = now_tag(r, REC_ALBUM);
-    char s[24] = "";
+    char s[48] = "";
     unsigned pos[2] = { at, n };
     unsigned h = hash_bytes(fnv(FNV_SEED, (const unsigned char *)album), (const unsigned char *)pos,
                             sizeof pos);
     if (h != st.np_hash) {
         st.np_hash = h;
-        if (r) tk_snprintf(s, sizeof s, "%d of %d", at + 1, n);
+        if (r) tk_snprintf(s, sizeof s, tr("%d of %d"), at + 1, n);
         widget_set_text_utf8(st.np_pos, s);
         widget_set_text_utf8(st.np_album, album ? album : "");
         st.np_off = 0;
@@ -122,9 +122,8 @@ static widget_t *page_of(widget_t *top) {
  * a paint, which drops the label's invalidate, so bar_repaint follows; the clock waits for its
  * timer. */
 void bar_title(widget_t *bar, widget_t *top) {
-    static const unsigned
-        now_playing[] = { 'N', 'o', 'w', ' ', 'P', 'l', 'a', 'y', 'i', 'n', 'g', 0 },
-        cover_flow[] = { 'C', 'o', 'v', 'e', 'r', ' ', 'F', 'l', 'o', 'w', 0 }, none = 0;
+    static const unsigned none = 0;
+    unsigned named[48]; /* Now Playing's, Cover Flow's or Home's title, read below its block */
     widget_t *page = page_of(top);
     static int bare; /* a page with no clock in front (above); the last one's with none found */
     if (page) {
@@ -169,22 +168,20 @@ void bar_title(widget_t *bar, widget_t *top) {
             if (!t && widget_count_children(nav)) t = widget_get_child(nav, 0);
             if (t && tk_strcmp(widget_get_type(t), "hscroll_label")) t = (void *)0;
         }
-        title = top == st.np_win                                                     ? now_playing
-                : !tk_strcmp(widget_get_prop_str(top, "name", ""), "coverflow_page") ? cover_flow
-                : t ? widget_get_text(t)
-                    : (void *)0;
+        const char *word = top == st.np_win ? tr("Now Playing")
+                           : !tk_strcmp(widget_get_prop_str(top, "name", ""), "coverflow_page")
+                               ? tr("Cover Flow")
+                               : (const char *)0;
+        if (word) wide_text(named, 48, word);
+        title = word ? named : t ? widget_get_text(t) : (void *)0;
         if (title && !*title) title = (void *)0;
         static const unsigned null_name[] = { '(', 'n', 'u', 'l', 'l', ')', 0 };
         const unsigned *a = title, *b = null_name; /* stock's "%s" of a NULL name: no title */
         while (a && *a && *a == *b) ++a, ++b;
         if (a && !*a && !*b) title = (void *)0;
         if (home_menu(top)) {
-            static unsigned name[16];
-            const char *h = coverflow_home_title();
-            unsigned i = 0;
-            for (; h[i] && i < sizeof name / sizeof *name - 1; ++i) name[i] = (unsigned char)h[i];
-            name[i] = 0;
-            title = name;
+            wide_text(named, 48, coverflow_home_title());
+            title = named;
         }
     }
     if (!title) {

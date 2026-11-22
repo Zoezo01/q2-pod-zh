@@ -37,6 +37,15 @@ static unsigned utf8_char(const unsigned char *t, unsigned n, unsigned *i) {
     *i += 1 + k;
     return k ? v : c;
 }
+/* s's characters (utf8_char's) into to, at most room - 1 of them and a 0; how many. Shared with
+ * the painters that draw a tr() text (classic_pages.c, np_bar.c, clock.c). */
+unsigned wide_text(unsigned *to, unsigned room, const char *s) {
+    unsigned n = 0, len = (unsigned)strlen(s);
+    for (unsigned i = 0; i < len && n + 1 < room;)
+        to[n++] = utf8_char((const unsigned char *)s, len, &i);
+    to[n] = 0;
+    return n;
+}
 extern int stock_lyric_trampoline(void);
 
 /* A time at p between open and close: "[mm:ss]", "[mm:ss.xx]" or "[mm:ss:xx]" (A2's word stamps

@@ -646,8 +646,8 @@ static int look(const void *unused) {
  * second. Drawing on the window, clipped to the slide area, not on the page: the slide_view clips
  * the page it was given at run time to a sliver. Painting starts the timer. */
 void visualizer_paint(widget_t *w, canvas_t *canvas) {
-    static const char *const names[] = { "Spectrum", "Oscilloscope", "VU Meters",
-                                         "Halo",     "Pulsar",       "Contour" };
+    static const char *const names[] = { N_("Spectrum"), N_("Oscilloscope"), N_("VU Meters"),
+                                         N_("Halo"),     N_("Pulsar"),       N_("Contour") };
     if (!w) return;
     if (w == vz.page) { /* the page paints first, its canvas x 0 only when still */
         vz.page_x = I(canvas, CANVAS_X) - vz.ox;
@@ -691,7 +691,7 @@ void visualizer_paint(widget_t *w, canvas_t *canvas) {
     }
     unsigned shown = now - vz.named;
     if (vz.named && shown < 1500)
-        caption(canvas, names[vz.style], 0, VIS_H - 22, vz.w, 20, 14,
+        caption(canvas, tr(names[vz.style]), 0, VIS_H - 22, vz.w, 20, 14,
                 rgba(0xaaaaaa, shown < 1000 ? 255 : 255 * (1500 - shown) / 500));
     else if (vz.quiet) { /* the track: title · artist, or the title alone, trimmed to fit */
         widget_t *tl = widget_lookup(vz.win, "scrlabel_title", 1),

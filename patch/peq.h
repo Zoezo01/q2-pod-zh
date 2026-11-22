@@ -623,6 +623,8 @@ void fill_box(canvas_t *canvas, rect_t *r, unsigned color, unsigned radius);
 unsigned mix(unsigned from, unsigned to, int j, int n) __attribute__((const));
 void caption(canvas_t *canvas, const char *s, int x, int y, int w, int h, unsigned px,
              unsigned color);
+/* s's characters into to, at most room - 1 and a 0; how many (lyrics.c; a painter's tr() text) */
+unsigned wide_text(unsigned *to, unsigned room, const char *s);
 void peq_paint(widget_t *w, canvas_t *canvas);
 /* spotify.c's, shared with radio.c */
 unsigned long long now_ms(void); /* CLOCK_MONOTONIC */

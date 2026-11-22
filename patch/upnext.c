@@ -42,7 +42,7 @@ static void un_fill(int sel) {
     unsigned *idx = un.idx, n = un.n = playback_upcoming(idx, UP_NEXT_ROWS);
     un.hash = q ? queue_hash(q) : 0;
     widget_t *view = un.view =
-        page_list_or(un.page, un.page, "View Queue", "Nothing to play next", n, 64);
+        page_list_or(un.page, un.page, tr("View Queue"), tr("Nothing to play next"), n, 64);
     char name[512];
     for (unsigned i = 0; i < n; i++) { /* the title over the artist, if tagged */
         void *t = deque_at(q, idx[i]);
@@ -72,7 +72,7 @@ static int un_move(const void *unused) {
     while (i < n && up[i] != at) ++i;
     int stale = queue_hash(q) != un.hash || i == n || (i && playback_move(at) < 0);
     un_fill(0);
-    if (stale) toast("Queue changed");
+    if (stale) toast(tr("Queue changed"));
     return 0;
 }
 int un_hold(widget_t *top) {

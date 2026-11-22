@@ -78,12 +78,12 @@ void ringnav_timezone_row(widget_t *item, int i) {
         if (zone < 0) continue;
         long off = tz_offset[zone];
         int m = (int)((off < 0 ? -off : off) / 60);
-        char s[32];
+        char s[112];
         if (m % 60)
             tk_snprintf(s, sizeof s, "GMT%s%d:%02d %s", off < 0 ? "-" : "+", m / 60, m % 60,
-                        cities[zone]);
+                        tr(cities[zone]));
         else
-            tk_snprintf(s, sizeof s, "GMT%s%d %s", off < 0 ? "-" : "+", m / 60, cities[zone]);
+            tk_snprintf(s, sizeof s, "GMT%s%d %s", off < 0 ? "-" : "+", m / 60, tr(cities[zone]));
         widget_set_text_utf8(label, s);
     }
 }
@@ -120,14 +120,14 @@ void clock_show(void) {
                           : widget_lookup(bar, "label_clock", 1);
     if (!label) return;
     st.clock_key = key;
-    char s[16] = "--:--";
+    char s[48] = "--:--";
     if (ok && full)
         tk_snprintf(s, sizeof s, "%02d:%02d", tm[2], tm[1]);
     else if (ok && st.bar_title) /* beside the bar's title: AM or PM would reach it */
         tk_snprintf(s, sizeof s, "%d:%02d", (tm[2] + 11) % 12 + 1, tm[1]);
     else if (ok)
-        tk_snprintf(s, sizeof s, "%d:%02d %s", (tm[2] + 11) % 12 + 1, tm[1],
-                    tm[2] < 12 ? "AM" : "PM");
+        tk_snprintf(s, sizeof s, tm[2] < 12 ? tr("%d:%02d AM") : tr("%d:%02d PM"),
+                    (tm[2] + 11) % 12 + 1, tm[1]);
     widget_set_text_utf8(label, s);
 }
 static void clock_zone(void) {
@@ -193,8 +193,9 @@ static const time_row_t time_rows[] = {
     { "classic_light_tray_108", 211, 259, 3, 2, { 214, 271 } },
     { "classic_light_tray_165", 183, 231, 3, 3, { 186, 243, 300 } },
 };
-static const char time_months[12][4] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-                                         "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
+static const char time_months[12][4] = { N_("Jan"), N_("Feb"), N_("Mar"), N_("Apr"),
+                                         N_("May"), N_("Jun"), N_("Jul"), N_("Aug"),
+                                         N_("Sep"), N_("Oct"), N_("Nov"), N_("Dec") };
 /* The open form's selectors, by field, AM/PM's none, and its slide view: found after stock's init,
  * so a paint needs no lookup. */
 static struct {
@@ -215,12 +216,14 @@ static int field_x(const time_row_t *row, int i) {
     int gap = row == time_rows ? theme()->date_gap : 0;
     return !gap ? row->x[i] : row->x[2] - (2 - i) * gap - (i < 2) * TIME_CELL_W - !i * TIME_YEAR_W;
 }
-static const char *time_month(void) { return time_months[clamp_step(time_value(1) - 1, 11, 0)]; }
+static const char *time_month(void) {
+    return tr(time_months[clamp_step(time_value(1) - 1, 11, 0)]);
+}
 
 /* The bar's title reads the page's own label (bar_title_sync). */
 static void time_title(widget_t *win) {
     widget_t *label = (void *)0;
-    char s[16];
+    char s[48];
     bar_title_of(win, &label);
     if (!label) return;
     tk_snprintf(s, sizeof s, "%s %d, %d", time_month(), time_value(2), time_value(0));
@@ -307,7 +310,7 @@ void time_open(widget_t *win) {
             widget_move_resize(ok, TIME_SAVE_X, TIME_SAVE_Y, TIME_SAVE_W, TIME_SAVE_H);
         else
             widget_move_resize(ok, 0, 244, 375, 26);
-        widget_set_text_utf8(ok, "Save");
+        widget_set_text_utf8(ok, tr("Save"));
         widget_set_opacity(ok, 0);
     }
     st.slider_win = win;
@@ -429,16 +432,11 @@ static const clock_part_t time_clock[] = {
     { 0xffffff, 24, 0, 0, { { 0 } } },
 };
 
-/* Text in final colours, as Light Mode's text setter flips what it's given. */
-static void time_text(canvas_t *canvas, const unsigned *s, unsigned n, const rect_t *r, unsigned px,
-                      unsigned rgb, unsigned alpha) {
-    draw_centred(canvas, s, n, r, px, alpha << 24 | (RGBA(flip_if(ipod_light(), rgb)) & 0xffffff));
-}
-/* A cell's or the tile's number: its text, widened. */
-static unsigned time_chars(unsigned *to, const char *s) {
-    unsigned n = 0;
-    while (s[n] && n < 5) to[n] = (unsigned char)s[n], ++n;
-    return n;
+/* UTF-8 text in final colours, as Light Mode's text setter flips what it's given. */
+static void time_text(canvas_t *canvas, const char *s, const rect_t *r, unsigned px, unsigned rgb,
+                      unsigned alpha) {
+    caption(canvas, s, r->x, r->y, r->w, r->h, px,
+            alpha << 24 | (RGBA(flip_if(ipod_light(), rgb)) & 0xffffff));
 }
 /* The flat look's Set Time hands in the half's ink, [0] dark and [1] light (flat_ink), and the
  * pivot's dot in its face's grey (flat_rest). */
@@ -454,12 +452,11 @@ static const clock_part_t time_clock_flat[2][4] = { TIME_HANDS(0xffffff, 0x2c2c2
 /* time_paint's, flat: grey boxes at rest, the cell that holds in what is on, the clock's flat face
  * or the date's tile with its month in what is on, and Save's pill. */
 static void time_paint_flat(widget_t *w, canvas_t *canvas) {
-    static const unsigned colon = ':', save[] = { 'S', 'a', 'v', 'e' };
     rect_t tile = { TIME_TILE_X, TIME_TILE_Y, TIME_TILE_W, TIME_TILE_H },
            pill = { TIME_SAVE_X, TIME_SAVE_Y, TIME_SAVE_W, TIME_SAVE_H };
     void *lcd = P(canvas, CANVAS_LCD);
     if (!lcd) return;
-    unsigned fill = (unsigned)I(lcd, LCD_FILL_COLOR), s[5], n;
+    unsigned fill = (unsigned)I(lcd, LCD_FILL_COLOR);
     int time = tf.slide && widget_get_prop_int(tf.slide, "value", 0) == 1;
     int at = field_on_page(widget_get_prop_int(w, "_edit_field", 0), time);
     int hour = time_value(3), minute = time_value(4), light = ipod_light();
@@ -476,36 +473,33 @@ static void time_paint_flat(widget_t *w, canvas_t *canvas) {
         rect_t head = { TIME_TILE_X, TIME_TILE_Y + 6, TIME_TILE_W, 26 },
                day = { TIME_TILE_X, TIME_TILE_Y + 26, TIME_TILE_W, 70 };
         flat_box(canvas, &tile, RGBA(rest), 13);
-        n = time_chars(s, time_month());
-        time_text(canvas, s, n, &head, 21, on, 255);
+        time_text(canvas, time_month(), &head, 21, on, 255);
         tk_snprintf(b, sizeof b, "%02d", time_value(2));
-        n = time_chars(s, b);
-        time_text(canvas, s, n, &day, 64, ink, 255);
+        time_text(canvas, b, &day, 64, ink, 255);
     }
     for (int i = 0; i < row->n; ++i) {
         int f = row->first + i;
         rect_t r = { field_x(row, i), TIME_CELL_Y, f ? TIME_CELL_W : TIME_YEAR_W, TIME_CELL_H };
         flat_box(canvas, &r, RGBA(f == at ? on : rest), 10);
+        const char *t = b;
         if (f == TIME_AMPM)
-            tk_snprintf(b, sizeof b, "%s", hour < 12 ? "AM" : "PM");
+            t = hour < 12 ? tr("AM") : tr("PM");
         else if (f == 3 && row->n == 3)
             tk_snprintf(b, sizeof b, "%d", hour % 12 ?: 12);
         else
             tk_snprintf(b, sizeof b, f ? "%02d" : "%d", time_value(f));
-        n = time_chars(s, b);
-        time_text(canvas, s, n, &r, f == TIME_AMPM ? 23 : 27, f == at ? over : ink, 255);
+        time_text(canvas, t, &r, f == TIME_AMPM ? 23 : 27, f == at ? over : ink, 255);
     }
     if (row->sep_x) {
         rect_t r = { row->sep_x, TIME_CELL_Y, 12, TIME_CELL_H };
-        time_text(canvas, &colon, 1, &r, 27, ink, 255);
+        time_text(canvas, ":", &r, 27, ink, 255);
     }
     flat_box(canvas, &pill, RGBA(rest), 18);
-    time_text(canvas, save, 4, &pill, CONFIRM_FLAT_PX, ink, 255);
+    time_text(canvas, tr("Save"), &pill, CONFIRM_FLAT_PX, ink, 255);
     stock_canvas_set_fill_color(canvas, fill);
 }
 /* The page, in the window's coordinates, under its children. */
 void time_paint(widget_t *w, canvas_t *canvas) {
-    static const unsigned colon = ':', save[] = { 'S', 'a', 'v', 'e' };
     if (flat_pages()) {
         time_paint_flat(w, canvas);
         return;
@@ -516,7 +510,7 @@ void time_paint(widget_t *w, canvas_t *canvas) {
     };
     void *lcd = P(canvas, CANVAS_LCD);
     if (!lcd) return;
-    unsigned fill = (unsigned)I(lcd, LCD_FILL_COLOR), s[5], n;
+    unsigned fill = (unsigned)I(lcd, LCD_FILL_COLOR);
     int time = tf.slide && widget_get_prop_int(tf.slide, "value", 0) == 1;
     int at = field_on_page(widget_get_prop_int(w, "_edit_field", 0), time);
     int hour = time_value(3), minute = time_value(4);
@@ -533,32 +527,30 @@ void time_paint(widget_t *w, canvas_t *canvas) {
                day = { TIME_TILE_X, TIME_TILE_Y + 20, TIME_TILE_W, 82 };
         paint_art(w, canvas, "classic_light_tile", TIME_TILE_X - TIME_TILE_PAD,
                   TIME_TILE_Y - TIME_TILE_PAD);
-        n = time_chars(s, time_month());
-        time_text(canvas, s, n, &head, 28, 0xffffff, 255);
+        time_text(canvas, time_month(), &head, 28, 0xffffff, 255);
         tk_snprintf(b, sizeof b, "%02d", time_value(2));
-        n = time_chars(s, b);
-        time_text(canvas, s, n, &day, 79, 0x1b2030, 255);
+        time_text(canvas, b, &day, 79, 0x1b2030, 255);
     }
     paint_art(w, canvas, row->tray, row->tray_x - TIME_TRAY_PAD, TIME_TRAY_Y - TIME_TRAY_PAD);
     for (int i = 0; i < row->n; ++i) {
         int f = row->first + i, cw = f ? TIME_CELL_W : TIME_YEAR_W;
         rect_t r = { row->x[i], TIME_CELL_Y, cw, TIME_CELL_H };
         paint_art(w, canvas, cells[!f][f == at], r.x - TIME_CELL_PAD, r.y - TIME_CELL_PAD);
+        const char *t = b;
         if (f == TIME_AMPM)
-            tk_snprintf(b, sizeof b, "%s", hour < 12 ? "AM" : "PM");
+            t = hour < 12 ? tr("AM") : tr("PM");
         else if (f == 3 && row->n == 3)
             tk_snprintf(b, sizeof b, "%d", hour % 12 ?: 12);
         else
             tk_snprintf(b, sizeof b, f ? "%02d" : "%d", time_value(f));
-        n = time_chars(s, b);
-        time_text(canvas, s, n, &r, f == TIME_AMPM ? 30 : 35, 0xffffff, 255);
+        time_text(canvas, t, &r, f == TIME_AMPM ? 30 : 35, 0xffffff, 255);
     }
     if (row->sep_x) {
         rect_t r = { row->sep_x, TIME_CELL_Y, 12, TIME_CELL_H };
-        time_text(canvas, &colon, 1, &r, 32, 0xffffff, 255);
+        time_text(canvas, ":", &r, 32, 0xffffff, 255);
     }
     rect_t label = { 0, 244, 375, 26 }, under = { 0, 245, 375, 26 };
-    time_text(canvas, save, 4, &under, 24, 0, 0x59);
-    time_text(canvas, save, 4, &label, 24, 0xffffff, 0xb8);
+    time_text(canvas, tr("Save"), &under, 24, 0, 0x59);
+    time_text(canvas, tr("Save"), &label, 24, 0xffffff, 0xb8);
     stock_canvas_set_fill_color(canvas, fill);
 }

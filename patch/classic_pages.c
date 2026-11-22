@@ -45,8 +45,6 @@ void kb_paint_key(widget_t *w, canvas_t *canvas) {
                                       { 0, 8, 50, 100 },
                                       { 0x9aa1a9, 0x8d939f, 0x7e8693, 0x6a7384 } },
                          enter = { 3, { 0, 50, 100 }, { 0x7cb0ec, 0x3f7fdf, 0x1f5fc8 } };
-    static const unsigned done[] = { 'D', 'o', 'n', 'e', 0 },
-                          space_text[] = { 's', 'p', 'a', 'c', 'e', 0 };
     void *lcd = P(canvas, CANVAS_LCD);
     if (!lcd) return;
     unsigned fill = (unsigned)I(lcd, LCD_FILL_COLOR);
@@ -59,7 +57,9 @@ void kb_paint_key(widget_t *w, canvas_t *canvas) {
     /* the foot: the key's own last rows, two lower */
     for (int i = 0; i < 2; ++i) round_row(canvas, &down, 6, kh - 2 + i, 0xcc282b30u);
     paint_round_rows(canvas, &r, action ? &enter : fn ? &function : &plain, 6);
-    const unsigned *s = action ? done : space ? space_text : widget_get_text(w);
+    unsigned own[32];
+    if (action || space) wide_text(own, 32, action ? tr("Done") : tr("space"));
+    const unsigned *s = action || space ? own : widget_get_text(w);
     if (s && *s) {
         unsigned n = wide_len(s);
         int px = white || space ? 24 : 27, fpx = px;
@@ -194,7 +194,7 @@ void t9_box(widget_t *page, widget_t *edit, const char *tips) {
     widget_set_prop_str(edit, "tips", tips);
     if (!classic_pages()) return;
     widget_t *title = text(page, 0, 0, 375, 28);
-    widget_set_text_utf8(title, "Search");
+    widget_set_text_utf8(title, tr("Search"));
     widget_set_name(title, PAGE_TITLE);
     widget_set_visible(title, 0, 0);
     st.t9_back = image_create(page, 30, 0, 40, 30); /* ringnav_touch takes its press */
@@ -222,10 +222,10 @@ static int pl_box_due(const void *info) {
     if (!win) return 0;
     widget_t *edit = widget_lookup(win, "ssedit", 1);
     void *r = (void *)0;
-    const char *title = "New Playlist", *tips = "Playlist Name";
+    const char *title = tr("New Playlist"), *tips = tr("Playlist Name");
     if (!edit) {
         edit = widget_lookup(win, "edit", 1);
-        title = "Rename";
+        title = tr("Rename");
         if (lists && (unsigned)I(PL_RENAME_ROW, 0) < deque_size(lists))
             r = deque_at(lists, (unsigned)I(PL_RENAME_ROW, 0));
         tips = r ? P(r, REC_TITLE) ?: title : title;
@@ -389,11 +389,14 @@ void search_paint(widget_t *w, canvas_t *canvas) {
  * under the theme's dialog. */
 extern int stock_search_init_trampoline(widget_t *win, void *ctx);
 int ringnav_search_init(widget_t *win, void *ctx) {
-    static const __WCHAR_TYPE__ names[4][8] = { L"Songs", L"Artists", L"Albums", L"Genres" };
+    static const char *const names[] = { N_("Songs"), N_("Artists"), N_("Albums"), N_("Genres") };
     int result = stock_search_init_trampoline(win, ctx);
+    unsigned name[32];
     if (win == st.search_win)
-        for (unsigned i = 0, n = widget_count_children(st.search_tabs); i < n && i < 4; ++i)
-            widget_set_text(widget_get_child(st.search_tabs, i), (const unsigned *)names[i]);
+        for (unsigned i = 0, n = widget_count_children(st.search_tabs); i < n && i < 4; ++i) {
+            wide_text(name, 32, tr(names[i]));
+            widget_set_text(widget_get_child(st.search_tabs, i), name);
+        }
     return result;
 }
 /* The history's delete buttons, stock's: each row's X (s_btn_cancel_navbar) and the header's trash
@@ -475,7 +478,9 @@ static const stops_t slider_band = { 8,
 /* The flat look's Off and On: the two halves of one pill at rest, the one that holds in what is on,
  * its word white (the ink on a bright fill), the other's in the half's ink. */
 static void slider_switch_flat(canvas_t *canvas, widget_t *sw) {
-    static const unsigned off[] = { 'O', 'f', 'f', 0 }, on[] = { 'O', 'n', 0 };
+    unsigned off[32], on[32];
+    wide_text(off, 32, tr("Off"));
+    wide_text(on, 32, tr("On"));
     int light = ipod_light();
     unsigned lit = flat_on(), ink = 0xff000000u | flat_ink[light];
     unsigned over = bright_tone(lit) ? 0xff000000u | flat_ink[1] : 0xffffffffu;
@@ -599,7 +604,7 @@ static int msg_gone(void *win, event_t *event) {
  * scan, or until msg_count answers) the line is stock's text and cp.msg_part -1 hides the bar.
  * Whether anything changed. */
 static int msg_sync(void) {
-    char now[sizeof cp.msg_seen], line[48];
+    char now[sizeof cp.msg_seen], line[64];
     *now = 0;
     int answer = cp.msg_counting;
     if (answer > 1) { /* the total: read stock's text against it */
@@ -607,7 +612,8 @@ static int msg_sync(void) {
     }
     if (!cp.msg_seen[0]) { /* over stock's translation; runs in paints, so only if it differs */
         widget_get_text_utf8(cp.msg_btn, now, sizeof now);
-        if (tk_strcmp(now, "Cancel")) widget_set_text_utf8(cp.msg_btn, "Cancel");
+        const char *cancel = tr("Cancel");
+        if (tk_strcmp(now, cancel)) widget_set_text_utf8(cp.msg_btn, cancel);
         *now = 0;
     }
     widget_get_text_utf8(cp.msg_src, now, sizeof now);
@@ -620,7 +626,7 @@ static int msg_sync(void) {
     if (*p && total && count <= total && *(volatile char *)SCAN_WHOLE == 1) {
         cp.msg_part = (short)(bar * count / total);
         if (cp.msg_part > bar * 99 / 100) cp.msg_part = (short)(bar * 99 / 100);
-        tk_snprintf(line, sizeof line, "%d of %d songs", count, total);
+        tk_snprintf(line, sizeof line, tr("%d of %d songs"), count, total);
         widget_set_text_utf8(cp.msg_line, line);
     } else
         widget_set_text_utf8(cp.msg_line, now);
@@ -669,7 +675,7 @@ void msg_open(widget_t *win) {
     int flat = flat_pages(), line_h = flat ? MSG_FLAT_LINE_H : 20;
     c = text(win, 16, 0, 343, 24);
     widget_set_name(c, "msg_heading");
-    widget_set_text_utf8(c, scan ? "Updating Library" : "Connected");
+    widget_set_text_utf8(c, scan ? tr("Updating Library") : tr("Connected"));
     slider_label(c, 16, 0, 343, MSG_HEAD_H, flat ? MSG_FLAT_HEAD_PX : MSG_HEAD_PX,
                  flat ? flat_face() : "classic-light");
     c = text(win, 16, 0, 343, line_h);
@@ -677,7 +683,7 @@ void msg_open(widget_t *win) {
     slider_label(c, 16, 0, 343, line_h, flat ? MSG_FLAT_LINE_PX : MSG_LINE_PX, "default");
     if (!scan) {
         st.usb_win = win;
-        if (g_usbmode != 1) widget_set_text_utf8(c, "Eject before disconnecting");
+        if (g_usbmode != 1) widget_set_text_utf8(c, tr("Eject before disconnecting"));
         return;
     }
     st.msg_win = win, cp.msg_src = src, cp.msg_btn = btn, cp.msg_line = c;
