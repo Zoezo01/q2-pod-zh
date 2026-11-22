@@ -18,7 +18,8 @@
 #define AIR_VOLUME 35    /* a speaker's volume when the app gives none (an older app) */
 #define AIR_TRACK_MAX 1024
 
-extern void *list_row(void *view, const char *icon, int (*click)(void *, void *), void *ctx);
+extern widget_t *list_row(widget_t *view, const char *icon, int (*click)(void *, event_t *),
+                          void *ctx);
 
 static struct {
     cast_tap *t;
@@ -60,10 +61,10 @@ int airplay_on(void) { return air.on; }
 
 /* An open volume dialog's bar to v, as Bluetooth's volume poll sets it. */
 static void air_dialog(int v) {
-    void *top = window_manager_get_top_window(window_manager());
-    void *slider = top && !tk_strcmp(widget_get_prop_str(top, "name", ""), "volume_dialog")
-                       ? widget_lookup(top, "slider_vol", 1)
-                       : (void *)0;
+    widget_t *top = window_manager_get_top_window(window_manager());
+    widget_t *slider = top && !tk_strcmp(widget_get_prop_str(top, "name", ""), "volume_dialog")
+                           ? widget_lookup(top, "slider_vol", 1)
+                           : (void *)0;
     if (slider) widget_set_prop_int(slider, "value", v);
 }
 
@@ -200,7 +201,7 @@ int airplay_lyrics(int *ms) {
 }
 
 /* The app's page, from its hidden slot, once Smart Wi-Fi's link is up. */
-static int air_open(void *ctx, void *event) {
+static int air_open(void *ctx, event_t *event) {
     (void)event;
     if (!smart_hold(air_open, ctx, 0)) air.asked = 1, addon_open_id(AIR_ID);
     return 0;
@@ -208,10 +209,10 @@ static int air_open(void *ctx, void *event) {
 
 /* Now Playing's ⋯ page (onlinematch.c ringnav_playermore): an AirPlay row, first, while the app is
  * on the card; whether it added one. */
-int airplay_more(void *view) {
+int airplay_more(widget_t *view) {
     char text[80] = "AirPlay";
     if (access("/mnt/mmc/." AIR_ID "/q2-" AIR_ID, 0)) return 0;
-    void *label = list_row(view, "airplay", air_open, 0);
+    widget_t *label = list_row(view, "airplay", air_open, 0);
     widget_resize(label, 253, I(label, W_H));
     if (air.on && air.t->speaker[0]) snprintf(text, sizeof text, "AirPlay: %.60s", air.t->speaker);
     widget_set_text_utf8(label, text);

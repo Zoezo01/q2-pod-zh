@@ -40,7 +40,7 @@ int ringnav_cardmount(void) {
  * ponytail: a window opened at a freed dialog's address before the idle runs is closed in its
  * place; also ask that it is a quit dialog if that shows. */
 static int dialog_close(const void *idle) {
-    void *wm = window_manager(), *dialog = P(idle, IDLE_CTX);
+    widget_t *wm = window_manager(), *dialog = P(idle, IDLE_CTX);
     for (unsigned i = widget_count_children(wm); i--;)
         if (widget_get_child(wm, i) == dialog) return window_close(dialog);
     return 0;

@@ -138,7 +138,7 @@ mypy test/fw  # its own run: test/unit has a conftest module too
 
 ## clang-tidy
 
-`tools/tidy.sh` runs [clang-tidy](https://clang.llvm.org/extra/clang-tidy/) 23 with the root `.clang-tidy` over the C that `test/fw` builds (`NAVIGATION` and `UI_SOURCES`), with the Q2's flags, against the headers `test/fw/host.py` writes, so it needs no stock ZIP. Then `clang -fsyntax-only` with the same flags and `-Werror` fails on any warning the firmware build would. `firmware.yml` and `tools/check.sh` run it; it fails on any hit. Name files to check only those.
+`tools/tidy.sh` runs [clang-tidy](https://clang.llvm.org/extra/clang-tidy/) 23 with the root `.clang-tidy` over the C that `test/fw` builds (`NAVIGATION` and `UI_SOURCES`), with the Q2's flags, against the headers `test/fw/host.py` writes, so it needs no stock ZIP. Then `clang -fsyntax-only` with the same flags and `-Werror` fails on any warning the firmware build would: that pass is also what holds [stock's types](internals.md#stock-handles) on a pull request, an event passed as a widget among them, since `test/fw`'s own build turns that warning off. `firmware.yml` and `tools/check.sh` run it; it fails on any hit. Name files to check only those.
 
 ```sh
 pip install clang-tidy==23.1.4  # or your distribution's clang-tidy 23

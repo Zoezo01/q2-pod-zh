@@ -20,7 +20,7 @@ extern int stock_load_trampoline(void *, int, int), stock_next_trampoline(int),
     stock_prev_trampoline(void), stock_mode_trampoline(int), stock_preload_trampoline(void),
     stock_memory_trampoline(void *), stock_savequeue_trampoline(void), stock_change_trampoline(int),
     stock_seek_time_trampoline(int), stock_seek_start_trampoline(void),
-    stock_reboot_trampoline(void), stock_checkfw_trampoline(void *, void *),
+    stock_reboot_trampoline(void), stock_checkfw_trampoline(widget_t *, void *),
     stock_speed_trampoline(int), stock_open_preload_trampoline(void),
     stock_start_queue_trampoline(int), stock_player_start_trampoline(void *, int, int, int);
 extern void *staged(int (*)(void *), void *, int *);
@@ -1805,7 +1805,7 @@ int ringnav_reboot(void) {
     reboot_save();
     return stock_reboot_trampoline();
 }
-int ringnav_checkfw(void *win, void *ctx) {
+int ringnav_checkfw(widget_t *win, void *ctx) {
     reboot_save();
     return stock_checkfw_trampoline(win, ctx);
 }

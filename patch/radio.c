@@ -227,7 +227,7 @@ enum { R_PLAYING, R_FAVS, R_FEATURED, R_TOP, R_COUNTRY, R_GENRE, A_PICK, A_SEARC
  * failed fetch) stands in for level's list; want is the level a fetch fills, az whether it sorts it
  * A-Z. */
 static struct {
-    void *page, *view, *edit; /* edit: the pull-down's search box */
+    widget_t *page, *view, *edit; /* edit: the pull-down's search box */
     unsigned timer, go, leave;
     int level, next, arg, want, az, note, genre, favs, from, rows[6], sel[3];
     int wifi; /* the fetch waits for Smart Wi-Fi's link */
@@ -236,7 +236,7 @@ static struct {
 } ui __attribute__((section(".scratch")));
 
 static struct {
-    void *page, *station, *artist, *song, *info, *elapsed, *heart;
+    widget_t *page, *station, *artist, *song, *info, *elapsed, *heart;
     unsigned timer, leave, seen; /* seen: rd.serial the heart shows */
     int ipod;                    /* Classic's layout (stream_ipod) */
 } np __attribute__((section(".scratch")));
@@ -449,7 +449,7 @@ int radio_media(unsigned key) {
 }
 
 /* A label's text, written only when it changes, so a scrolling one keeps its place. */
-static void set(void *w, const char *s) {
+static void set(widget_t *w, const char *s) {
     if (text_differs(w, s)) widget_set_text_utf8(w, s);
 }
 
@@ -528,9 +528,9 @@ static int np_leave(const void *unused) {
     return 0;
 }
 
-static int np_keyup(void *ctx, void *event) { return return_key(event, &np.leave, np_leave); }
+static int np_keyup(void *ctx, event_t *event) { return return_key(event, &np.leave, np_leave); }
 
-static int np_closed(void *ctx, void *event) {
+static int np_closed(void *ctx, event_t *event) {
     stop_timer(&np.timer);
     stop_timer(&np.leave);
     memset(&np, 0, sizeof np);
@@ -538,7 +538,7 @@ static int np_closed(void *ctx, void *event) {
 }
 
 /* The heart: the station playing in or out of favourites.m3u. */
-static int np_heart(void *ctx, void *event) {
+static int np_heart(void *ctx, event_t *event) {
     if (rd.list.n) toast(fav_toggle(&rd.list, rd.at));
     return 0;
 }
@@ -550,10 +550,10 @@ static int np_heart(void *ctx, void *event) {
  * that is always full, the heart. */
 static void np_open(void) {
     if (np.page || !(np.page = page_open("radionp_page", np_closed, np_keyup))) return;
-    void *page = np.page;
-    void *name = label(page, 16, 12, 200, 16, "s_scrlabel_white20l", 16, SPOT_GREY);
+    widget_t *page = np.page;
+    widget_t *name = label(page, 16, 12, 200, 16, "s_scrlabel_white20l", 16, SPOT_GREY);
     widget_set_text_utf8(name, "Internet Radio");
-    void *art = image_create(page, SPOT_ART_X, SPOT_ART_Y, SPOT_ART_PX, SPOT_ART_PX);
+    widget_t *art = image_create(page, SPOT_ART_X, SPOT_ART_Y, SPOT_ART_PX, SPOT_ART_PX);
     image_set_draw_type(art, IMAGE_DRAW_SCALE_DOWN);
     image_base_set_image(art, "stream_radio");
     np.station = label(page, SPOT_TEXT_X, SPOT_ART_Y + 41, SPOT_TEXT_W, 28, "s_scrlabel_white20l",
@@ -572,7 +572,7 @@ static void np_open(void) {
     widget_set_prop_str(np.heart, "clickable", "true");
     widget_on(np.heart, EVT_CLICK, np_heart, 0);
     np.seen = ~rd.serial;
-    void *rows[4] = { np.station, np.artist, np.song, np.info };
+    widget_t *rows[4] = { np.station, np.artist, np.song, np.info };
     np.ipod = stream_ipod(art, rows, np.elapsed, 0, 0, np.heart);
     np_mark_add(&np.heart, 1); /* the flat look's heart */
     if (np.ipod) {
@@ -584,13 +584,13 @@ static void np_open(void) {
 }
 
 static void *fetch_worker(void *unused);
-static int menu_click(void *ctx, void *event), pick_click(void *ctx, void *event),
-    station_click(void *ctx, void *event);
+static int menu_click(void *ctx, event_t *event), pick_click(void *ctx, event_t *event),
+    station_click(void *ctx, event_t *event);
 
 /* The search box's OK, or its keyboard closed with text: the directory searched by name, Return
  * then going back to the menu or the country or genre list. An empty OK closes the keyboard with no
  * other event, so it is taken here too. */
-static int searched(void *ctx, void *event) {
+static int searched(void *ctx, event_t *event) {
     char q[sizeof ui.caption];
     if (widget_get_text_utf8(ui.edit, q, sizeof q) || !q[0]) {
         const unsigned *text = widget_get_text(ui.edit);
@@ -605,7 +605,7 @@ static int searched(void *ctx, void *event) {
 }
 
 /* The box left without a search: the page as it was. */
-static int search_left(void *ctx, void *event) {
+static int search_left(void *ctx, event_t *event) {
     if (!ui.go) later(A_SHOW, 0);
     return 0;
 }
@@ -791,7 +791,7 @@ static void later(int next, int arg) {
     if (ui.page) rearm(&ui.go, go, 0); /* not once closed: the box's blur can come after */
 }
 
-static int menu_click(void *ctx, void *event) {
+static int menu_click(void *ctx, event_t *event) {
     int r = ui.rows[(int)(long)ctx];
     if (r != R_PLAYING) {
         ui.favs = r == R_FAVS, ui.from = MENU;
@@ -810,13 +810,13 @@ static int menu_click(void *ctx, void *event) {
     return 0;
 }
 
-static int pick_click(void *ctx, void *event) {
+static int pick_click(void *ctx, event_t *event) {
     ui.favs = 0, ui.from = PICK;
     later(A_PICK, (int)(long)ctx);
     return 0;
 }
 
-static int station_click(void *ctx, void *event) {
+static int station_click(void *ctx, event_t *event) {
     list_copy(&rd.list, &ui.list);
     radio_play((int)(long)ctx);
     np_open();
@@ -825,7 +825,7 @@ static int station_click(void *ctx, void *event) {
 
 /* ringnav_keylong: Play/Pause held on a station, or on Now Playing for the one playing, adds it to
  * favourites.m3u, or takes it out when it is there. The toast's text, or 0 when top is neither. */
-const char *radio_hold(void *top) {
+const char *radio_hold(widget_t *top) {
     const list_t *l = &ui.list;
     int i = -1;
     if (np.page && top == np.page)
@@ -851,9 +851,9 @@ static int leave(const void *unused) {
 }
 
 /* Return: the search box shut, else a list goes up a level, the menu back to Streaming. */
-static int keyup(void *ctx, void *event) { return return_key(event, &ui.leave, leave); }
+static int keyup(void *ctx, event_t *event) { return return_key(event, &ui.leave, leave); }
 
-static int closed(void *ctx, void *event) {
+static int closed(void *ctx, event_t *event) {
     fetch_cancel();
     stop_timer(&ui.timer);
     stop_timer(&ui.go);
@@ -865,7 +865,7 @@ static int closed(void *ctx, void *event) {
 }
 
 /* Streaming's Internet Radio row (home.c ringnav_stream). */
-int radio_open(void *ctx, void *event) {
+int radio_open(void *ctx, event_t *event) {
     if (ui.page || !(ui.page = page_open("radio_page", closed, keyup))) return 0;
     if (access(RADIO_DIR, 0)) mkdir(RADIO_DIR, 0777);
     ui.timer = timer_add(tick, 0, 250);

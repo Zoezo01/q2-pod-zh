@@ -5,7 +5,9 @@
 
 /* Entry IDs are stock's order. Keep our records separate from browsing and the live queue. */
 static struct {
-    void *page, *view, *songs, *picker, *edit;
+    widget_t *page, *view;
+    void *songs, *picker;
+    widget_t *edit;
     void **match;
     int dest, mode, selected, pending, nmatch;
     unsigned key, timer, gen; /* gen: library_gen when picker was read */
@@ -136,16 +138,16 @@ static void ple_filter(void) {
 }
 /* Stock's "select" check at the row's end, as the Shuffle and Repeat menus; the caption stops short
  * of it. */
-static void *ple_tick(void *item) {
-    void *label = item ? widget_get_child(item, 0) : 0;
+static widget_t *ple_tick(widget_t *item) {
+    widget_t *label = item ? widget_get_child(item, 0) : 0;
     if (!label) return 0;
     widget_move_resize(label, I(label, W_X), I(label, W_Y), 330 - I(label, W_X), I(label, W_H));
-    void *tick = image_create(item, 340, 0, 24, I(item, W_H));
+    widget_t *tick = image_create(item, 340, 0, 24, I(item, W_H));
     image_base_set_image(tick, "select");
     return tick;
 }
 static void ple_show(void);
-static int ple_closed(void *ctx, void *event) {
+static int ple_closed(void *ctx, event_t *event) {
     if (ple.timer) timer_remove(ple.timer);
     if (ple.songs) deque_destroy(ple.songs);
     if (ple.picker) deque_destroy(ple.picker);
@@ -182,7 +184,7 @@ int ple_key(unsigned key, int phase) {
     return 1;
 }
 static int ple_run(const void *unused);
-static int ple_back(void *ctx, void *event) {
+static int ple_back(void *ctx, event_t *event) {
     if (I(event, EVENT_KEY) != KEY_RETURN) return 0;
     /* The search box's text is applied by the next loop pass, never under its own key event. */
     if (ple.mode == 4) {
@@ -285,7 +287,7 @@ static int ple_run(const void *unused) {
     ple_show();
     return 0;
 }
-static int ple_pick(void *ctx, void *event) {
+static int ple_pick(void *ctx, event_t *event) {
     if (!ple.timer) {
         ple.pending = (int)(long)ctx;
         ple.timer = timer_add(ple_run, 0, 0);
@@ -300,11 +302,11 @@ static int ple_pick(void *ctx, void *event) {
 #define PLE_ROWS 500
 /* That row opens the Search box, as row 0 does; picked by its own index, as a song's row is, it
  * would add the first match not listed. */
-static int ple_more(void *ctx, void *event) { return ple_pick(0, event); }
+static int ple_more(void *ctx, event_t *event) { return ple_pick(0, event); }
 /* The T9 box over the title, as Internet Radio's pull-down: page children go so the keyboard has
  * room. Its widget is named search_edit, so navigation.c's search_key closes the keyboard before
  * Return can destroy the edit under it. */
-static int ple_searched(void *ctx, void *event) {
+static int ple_searched(void *ctx, event_t *event) {
     widget_set_focused(ple.edit, 0);
     input_method_request(input_method(), 0); /* Detach the keyboard before rebuilding its owner. */
     if (!ple.timer) ple.timer = timer_add(ple_run, 0, 0);
@@ -353,7 +355,7 @@ static void ple_show(void) {
             page_row_detail(ple.view, 1, "No songs match", 0, 0);
         else
             for (int i = 0; i < shown; i++) {
-                void *row = page_row_detail(
+                widget_t *row = page_row_detail(
                     ple.view, i + 1, track_name(name, sizeof name, ple.match[i]), 0, ple_pick);
                 if (in && rec_find(ple.songs, in, mask, ple.match[i])) ple_tick(row);
             }
@@ -374,7 +376,7 @@ static void ple_show(void) {
         hscroll_label_set_only_focus(widget_get_child(widget_get_child(ple.view, i), 0), 1);
     if (n) ringnav_select(ple.view, mode == 0 ? ple.selected + 2 < n ? ple.selected + 2 : 0 : 0, n);
 }
-static int ple_open(void *ctx, void *event) {
+static int ple_open(void *ctx, event_t *event) {
     if (ple.page) return 0;
     unsigned at = (unsigned)(long)ctx;
     void *lists = P(p_deque_playlist, 0);
@@ -390,7 +392,7 @@ static int ple_open(void *ctx, void *event) {
     }
     return 0;
 }
-extern int stock_playlistsmore_trampoline(void *, void *);
+extern int stock_playlistsmore_trampoline(widget_t *, void *);
 /* Stock's allocator assumes ID order; Library presents headers in name order. Allocate under
  * the database lock instead, and report a failed insert instead of pretending it succeeded. */
 static int playlist_used(void *ctx, int n, char **v, char **names) {
@@ -455,7 +457,7 @@ static int confirm_over(void *prompt, const char *verb) {
     st.confirm_win = (void *)0;
     return answer;
 }
-int ringnav_playlist_delete(void *win, void *event) {
+int ringnav_playlist_delete(widget_t *win, event_t *event) {
     void *list = P(p_deque_playlist, 0), *db = 0;
     int row = widget_get_prop_int(win, "_playlist", -1), ok = 0;
     if (!list || row < 0 || (unsigned)row >= deque_size(list)) return 0;
@@ -488,43 +490,43 @@ done:
     return 0;
 }
 
-int ringnav_playlistsmore(void *win, void *ctx) {
+int ringnav_playlistsmore(widget_t *win, void *ctx) {
     int result = stock_playlistsmore_trampoline(win, ctx);
     if (win) {
         widget_set_prop_int(win, "_playlist", (int)ctx);
         /* Stock's row says Delete Song; this page deletes the whole playlist. Rename only this
          * label, as Now Playing's Delete Song still deletes the song. As its translation key, so a
          * re-translation keeps it (no language has the key, so it reads as given). */
-        void *del = widget_lookup(win, "label_del", 1);
+        widget_t *del = widget_lookup(win, "label_del", 1);
         if (del) widget_set_tr_text(del, "Delete Playlist");
         /* A row like this page's stock Rename and Delete: a 375 px list_item, the set's pitch high
          * (SET0 72), holding a 335 px s_btn_listitem, its body high (68), its 52px icon at x 10 and
          * its 20px label at x 72. Edit Playlist follows the Delete row at the same spacing. */
         int h = geom(G_PITCH), inner = geom(G_BODY);
         /* (tools/ipod.py: a set without toolbars has them from the top) */
-        void *item = list_item_create(win, 0, (geom_val(V_TOOLBAR) ? 10 : 0) + 2 * h, 375, h);
+        widget_t *item = list_item_create(win, 0, (geom_val(V_TOOLBAR) ? 10 : 0) + 2 * h, 375, h);
         widget_use_style(item, "s_listitem_black");
-        void *button = button_create(item, 20, 0, 335, inner);
+        widget_t *button = button_create(item, 20, 0, 335, inner);
         widget_use_style(button, "s_btn_listitem");
         widget_on(button, EVT_CLICK, ple_open, ctx);
-        void *image = image_create(button, 10, 0, 52, inner);
+        widget_t *image = image_create(button, 10, 0, 52, inner);
         image_base_set_image(image, "rename");
         image_set_draw_type(image, IMAGE_DRAW_CENTER);
-        void *label = hscroll_label_create(button, 72, 0, 253, inner);
+        widget_t *label = hscroll_label_create(button, 72, 0, 253, inner);
         widget_use_style(label, "s_scrlabel_white20l");
         set_hscroll_label_attribute(label);
         widget_set_text_utf8(label, "Edit Playlist");
         /* A set without settings icons: none here either, the text at its column */
-        void *const rows[][2] = { { widget_lookup(win, "img_rename", 1),
-                                    widget_lookup(win, "label_rename", 1) },
-                                  { widget_lookup(win, "img_del", 1), del },
-                                  { image, label } };
+        widget_t *const rows[][2] = { { widget_lookup(win, "img_rename", 1),
+                                        widget_lookup(win, "label_rename", 1) },
+                                      { widget_lookup(win, "img_del", 1), del },
+                                      { image, label } };
         for (unsigned i = 0; !geom_val(V_SET_ICON) && i < 3; ++i) {
-            void *c = rows[i][1];
+            widget_t *c = rows[i][1];
             if (rows[i][0]) widget_set_visible(rows[i][0], 0, 0);
             if (!c) continue;
             /* the row's whole width, so its chevron is the theme's: on all but Delete */
-            void *row = P(c, W_PARENT), *row_item = row ? P(row, W_PARENT) : (void *)0;
+            widget_t *row = P(c, W_PARENT), *row_item = row ? P(row, W_PARENT) : (void *)0;
             int x = geom_val(V_TEXT_X) - SET_STOCK_X;
             if (row_item) {
                 widget_move_resize(row, 0, 0, 375, h);
@@ -545,8 +547,8 @@ void qm_select(void) {
 }
 
 /* Stock playlist rows use the queue in add mode 2. Guard their final dispatch as well. */
-#define PLAYLIST_PICK ((int (*)(void *, void *))0x4b4840)
-int qm_playlist_pick(void *ctx, void *event) {
+#define PLAYLIST_PICK ((int (*)(void *, event_t *))0x4b4840)
+int qm_playlist_pick(void *ctx, event_t *event) {
     char click[0x30];
     if (!qm_record()) {
         toast("Queue unchanged");
@@ -558,13 +560,13 @@ int qm_playlist_pick(void *ctx, void *event) {
         ctx, geom_val(V_TOOLBAR) ? event : pointer_event_init(click, EVT_CLICK, ctx, 0, 0));
 }
 
-int qm_playlist_gone(void *ctx, void *event) {
+int qm_playlist_gone(void *ctx, event_t *event) {
     st.qm_playlist = 0;
     return 0;
 }
 
 /* w's live EVT_CLICK handler fn, as its emitter holds it (ctx @0, fn @12), or 0. */
-static void *click_bound(void *w, const void *fn) {
+static void *click_bound(widget_t *w, const void *fn) {
     void *emitter = w ? P(w, W_EMITTER) : (void *)0;
     for (void *item = emitter ? P(emitter, 0) : 0; item; item = P(item, EMIT_NEXT))
         if (I(item, EMIT_TYPE) == EVT_CLICK && P(item, 12) == fn && !B(item, EMIT_PENDING_REMOVE))
@@ -572,8 +574,8 @@ static void *click_bound(void *w, const void *fn) {
     return (void *)0;
 }
 
-static int pl_pick(void *ctx, void *event);
-void qm_playlist_bind(void *w, int depth, int (*pick)(void *, void *)) {
+static int pl_pick(void *ctx, event_t *event);
+void qm_playlist_bind(widget_t *w, int depth, int (*pick)(void *, event_t *)) {
     if (!w || depth == 16) return;
     void *item = click_bound(w, (void *)PLAYLIST_PICK) ?: click_bound(w, (void *)pl_pick);
     if (item) {
@@ -594,23 +596,23 @@ enum { PL_SELECT_ALL, PL_NEW, PL_EDIT, PL_IMPORT, PL_EXPORT, PL_DELETE, PL_DONE,
 static const unsigned pl_stock[PL_N] = { 0x4b46a4, 0x4b45a4, 0x4b44d4, 0x4b5e18,
                                          0x4b5c70, 0x4b5b08, 0x4b45ec };
 /* on_common_keyup: the page's own static key-up until stock V1.34, which binds the shared one */
-#define PLAYLIST_KEYUP ((int (*)(void *, void *))0x4f2394)
+#define PLAYLIST_KEYUP ((int (*)(void *, event_t *))0x4f2394)
 
 /* A row's place on the list's two heights: name over second line in the page rows' boxes, which
  * hold their fonts; the dots or a mark at the right edge, centred on the picker's tick's column
  * (x 346), where the selected row's chevron (x 317) shows in their place. The text ends clear of
  * whichever shows. With Row Art its art leads, in an album row's column, the text after it. */
 #define PL_MARK_X 333 /* the tick's column, the dots' hit */
-void pl_fit(void *button) {
+void pl_fit(widget_t *button) {
     const theme_t *T = theme();
-    void *art = widget_lookup(button, PL_ART, 0);
+    widget_t *art = widget_lookup(button, PL_ART, 0);
     int h = I(button, W_H), width = 289, x = T->page_x;
     if (art && widget_get_visible(art)) {
         widget_move_resize(art, T->art_x, (h - geom(G_ART)) / 2, geom(G_ART), geom(G_ART));
         x = T->art_text_x - 2; /* hscroll_label's margin */
     }
     for (unsigned i = 0, n = widget_count_children(button); i < n; ++i) {
-        void *c = widget_get_child(button, i);
+        widget_t *c = widget_get_child(button, i);
         const char *name = widget_get_prop_str(c, "name", "");
         if (tk_str_start_with(name, "img_more") && widget_get_visible(c)) {
             widget_move_resize(c, 321, 0, 50, h);
@@ -622,7 +624,7 @@ void pl_fit(void *button) {
                 image_base_set_image(c, "select");
         }
     }
-    void *info = widget_lookup(button, "view_info", 0);
+    widget_t *info = widget_lookup(button, "view_info", 0);
     if (!info || widget_count_children(info) < 2) return;
     width -= x - T->page_x;
     widget_move_resize(info, x, 0, width, h);
@@ -632,12 +634,12 @@ void pl_fit(void *button) {
 
 /* Stock's row, as the list's other two-line rows: its art stays under Row Art (not in the
  * picker), its count reads "N Songs". */
-static void *pl_art_image(void *button);
-static void pl_row(void *item) {
+static widget_t *pl_art_image(widget_t *button);
+static void pl_row(widget_t *item) {
     const theme_t *T = theme();
     char count[32];
-    void *button = widget_get_child(item, 0), *info = widget_lookup(button, "view_info", 0);
-    void *art = pl_art_image(button);
+    widget_t *button = widget_get_child(item, 0), *info = widget_lookup(button, "view_info", 0);
+    widget_t *art = pl_art_image(button);
     int h = T->page_detail, add = widget_get_prop_int(window_of(item), PL_MODE, 0);
     if (!info || widget_count_children(info) < 2) return;
     widget_set_name(item, PAGE_TALL);
@@ -645,7 +647,7 @@ static void pl_row(void *item) {
     widget_resize(item, I(item, W_W), h);
     widget_move_resize(button, 0, 0, 375, h);
     for (unsigned i = 0, n = widget_count_children(button); i < n; ++i) {
-        void *c = widget_get_child(button, i);
+        widget_t *c = widget_get_child(button, i);
         const char *name = widget_get_prop_str(c, "name", "");
         if (tk_str_start_with(name, "img_more")) {
             /* emptied under the theme: paint_radio draws the dots; a picker has none */
@@ -656,7 +658,7 @@ static void pl_row(void *item) {
         } else if (c != info && !tk_str_start_with(name, "img_choice"))
             widget_set_visible(c, 0, 0);
     }
-    void *title = widget_get_child(info, 0), *second = widget_get_child(info, 1);
+    widget_t *title = widget_get_child(info, 0), *second = widget_get_child(info, 1);
     const unsigned *s = widget_get_text(second);
     unsigned songs = 0;
     while (s && *s && (*s < '0' || *s > '9')) ++s;
@@ -672,19 +674,19 @@ static void pl_row(void *item) {
 /* Each row's click runs next pass: stock's handler may rebuild the rows under it (a dialog's close
  * does) and it finds its widget by handler, as nothing stock names. The row is the action, whatever
  * scrolled: no index reaches stock. */
-static void pl_rows(void *win);
-static int pl_page(void *win) {
+static void pl_rows(widget_t *win);
+static int pl_page(widget_t *win) {
     return win && !tk_strcmp(widget_get_prop_str(win, "name", ""), "playlist_page");
 }
-static void *pl_target(void *parent, unsigned fn) {
+static widget_t *pl_target(widget_t *parent, unsigned fn) {
     for (unsigned i = 0, n = parent ? widget_count_children(parent) : 0; i < n; ++i)
         if (click_bound(widget_get_child(parent, i), (void *)fn))
             return widget_get_child(parent, i);
     return (void *)0;
 }
 /* The hidden widget stock binds action's handler to: in its toolbar, or its tile row. */
-static void *pl_find(void *win, int action) {
-    void *view = widget_lookup(win, "scroll_view", 1);
+static widget_t *pl_find(widget_t *win, int action) {
+    widget_t *view = widget_lookup(win, "scroll_view", 1);
     return pl_target(widget_lookup(win, "view_navbar", 1), pl_stock[action])
                ?: pl_target(view && widget_count_children(view) ? widget_get_child(view, 0)
                                                                 : (void *)0,
@@ -693,12 +695,12 @@ static void *pl_find(void *win, int action) {
 static unsigned pl_timer
     __attribute__((section(".scratch"))); /* pl_click's pending row, its action the timer's ctx */
 static int pl_due(const void *info) {
-    void *wm = window_manager(), *win = window_manager_get_top_window(wm);
+    widget_t *wm = window_manager(), *win = window_manager_get_top_window(wm);
     int action = (int)(long)P(info, TIMER_CTX);
     char click[0x30];
     pl_timer = 0;
     if (!pl_page(win)) return 0;
-    void *w = pl_find(win, action);
+    widget_t *w = pl_find(win, action);
     /* Import writes every song of every list it reads: the art's build steps aside (its reads
      * would make each insert wait), and the rebuild that follows asks again */
     if (w && action == PL_IMPORT) playlist_art_stop();
@@ -708,23 +710,23 @@ static int pl_due(const void *info) {
     return 0;
 }
 /* The latest row clicked in a pass is the one that runs. */
-static int pl_click(void *action, void *event) {
+static int pl_click(void *action, event_t *event) {
     (void)event;
     stop_timer(&pl_timer);
     pl_timer = timer_add(pl_due, action, 0);
     return 0;
 }
 /* The row goes to index at, or after the rest when at < 0. */
-static void pl_action(void *view, const char *caption, int action, int into, int at) {
+static void pl_action(widget_t *view, const char *caption, int action, int into, int at) {
     int h = geom(G_PITCH);
-    void *item = list_item_create(view, 0, 0, 0, h);
+    widget_t *item = list_item_create(view, 0, 0, 0, h);
     widget_use_style(item, "s_listitem_black");
-    void *button = button_create(item, 0, 0, 375, h);
+    widget_t *button = button_create(item, 0, 0, 375, h);
     widget_use_style(button, "s_btn_listitem");
     widget_set_name(button, PL_ACTION);
     widget_set_prop_int(item, PL_ACT, action + 1);
     widget_on(button, EVT_CLICK, pl_click, (void *)(long)action);
-    void *label = hscroll_label_create(button, theme()->page_x, 0, 289, h);
+    widget_t *label = hscroll_label_create(button, theme()->page_x, 0, 289, h);
     widget_use_style(label, "s_scrlabel_white20l");
     set_hscroll_label_attribute(label);
     hscroll_label_set_only_focus(label, 1);
@@ -737,8 +739,9 @@ static void pl_action(void *view, const char *caption, int action, int into, int
 /* Which rows the mode shows, their words, the bar's: on every rebuild, and after a click or mark.
  * Moving between normal and select mode the selection stays on its playlist; marks only add rows
  * after it, so the count that load() would reset it on follows. */
-static void pl_rows(void *win) {
-    void *view = widget_lookup(win, "scroll_view", 1), *nav = widget_lookup(win, "view_navbar", 1);
+static void pl_rows(widget_t *win) {
+    widget_t *view = widget_lookup(win, "scroll_view", 1),
+             *nav = widget_lookup(win, "view_navbar", 1);
     void *lists = P(p_deque_playlist, 0);
     if (!view) return;
     int add = widget_get_prop_int(win, PL_MODE, 0), marking = !add && g_navbar_status == 1,
@@ -746,11 +749,11 @@ static void pl_rows(void *win) {
         n = lists ? (int)deque_size(lists) : 0, count = (int)widget_count_children(view);
     for (int i = 0; marking && i < n; ++i) marks += batch_get_selectitem(i) == 1;
     char words[48];
-    void *row[PL_N] = { 0 };
+    widget_t *row[PL_N] = { 0 };
     int show[PL_N] = { marking,   !marking, !marking && n > 0, marking || !n, marks > 0,
                        marks > 0, marking };
     for (int i = 0; i < count; ++i) {
-        void *item = widget_get_child(view, i);
+        widget_t *item = widget_get_child(view, i);
         int action = widget_get_prop_int(item, PL_ACT, 0) - 1;
         if (action < 0 || action >= PL_N) continue;
         row[action] = item;
@@ -759,7 +762,7 @@ static void pl_rows(void *win) {
     }
     /* PAGE_TALL's the separators': every row shown but the list's last, a playlist's or ours */
     for (int i = count - 1, last = 1; i >= 0; --i) {
-        void *item = widget_get_child(view, i);
+        widget_t *item = widget_get_child(view, i);
         if (!widget_get_prop_int(item, PL_ACT, 0) && !widget_get_prop_int(item, PL_ROW, 0))
             continue;
         int shown = widget_get_visible(item);
@@ -782,7 +785,7 @@ static void pl_rows(void *win) {
                 marks);
     if (nav && widget_count_children(nav)) widget_set_text_utf8(widget_get_child(nav, 0), words);
     bar_title_sync(win);
-    void *none = widget_lookup(win, PL_NONE, 0);
+    widget_t *none = widget_lookup(win, PL_NONE, 0);
     if (!none && !n) {
         none = text(win, 0, 124, 375, 32);
         widget_set_name(none, PL_NONE);
@@ -796,7 +799,7 @@ static void pl_rows(void *win) {
     /* Stock showed its marks or the dots: the rows go to their places, the list to its new height.
      */
     for (int i = 1; i < count; ++i) {
-        void *item = widget_get_child(view, i);
+        widget_t *item = widget_get_child(view, i);
         if (widget_get_prop_int(item, PL_ROW, 0)) pl_fit(widget_get_child(item, 0));
     }
     widget_layout(view);
@@ -826,9 +829,9 @@ int pl_first(menu_t *m, int cur) {
  * More, and a tap left of it, the chevron's column (from x 317) too, opens the playlist. The band's
  * row draws its chevron and no dots, so it opens to the edge; its More is the hold's. A pick or an
  * open is a fresh click at x 0. */
-static int pl_pick(void *ctx, void *event) {
+static int pl_pick(void *ctx, event_t *event) {
     char click[0x30];
-    void *win = window_of(ctx);
+    widget_t *win = window_of(ctx);
     int lit = st.sel_accent && (ctx == st.sel_accent || P(ctx, W_PARENT) == st.sel_accent);
     int list = !widget_get_prop_int(win, PL_MODE, 0);
     /* select mode: stock marks the row, then the rows count the marks. Here, not in a handler of
@@ -842,7 +845,7 @@ static int pl_pick(void *ctx, void *event) {
     return PLAYLIST_PICK(ctx, pointer_event_init(click, EVT_CLICK, ctx, 0, 0));
 }
 /* Return in select mode is Done, not the page; without Done's target it is stock's. */
-static int pl_keyup(void *win, void *event) {
+static int pl_keyup(void *win, event_t *event) {
     if (I(event, EVENT_KEY) == KEY_RETURN && g_navbar_status == 1 && pl_find(win, PL_DONE)) {
         pl_click((void *)PL_DONE, event);
         return STOP;
@@ -851,12 +854,12 @@ static int pl_keyup(void *win, void *event) {
 }
 /* Each playlist row's art (playlist_art.c): stock's 52 px image, its placeholder till the art's
  * file is made, then that file by name. The page whose rows hear of each one made: */
-static void *pl_art_page __attribute__((section(".scratch")));
+static widget_t *pl_art_page __attribute__((section(".scratch")));
 /* A row's art image: stock's unnamed one, named once found by its placeholder. */
-static void *pl_art_image(void *button) {
-    void *art = widget_lookup(button, PL_ART, 0);
+static widget_t *pl_art_image(widget_t *button) {
+    widget_t *art = widget_lookup(button, PL_ART, 0);
     for (unsigned i = 0, n = widget_count_children(button); !art && i < n; ++i) {
-        void *c = widget_get_child(button, i);
+        widget_t *c = widget_get_child(button, i);
         if (!tk_strcmp(widget_get_prop_str(c, "image", ""), "playlist_default"))
             widget_set_name(art = c, PL_ART);
     }
@@ -864,12 +867,12 @@ static void *pl_art_image(void *button) {
 }
 /* The row's index in p_deque_playlist: stock names its button by it (our action rows and its
  * tile row by none, -1: AWTK gives an unnamed widget's name as NULL, not the default). */
-static int pl_at(void *button) {
+static int pl_at(widget_t *button) {
     const char *name = widget_get_prop_str(button, "name", "");
     return name && *name >= '0' && *name <= '9' ? atoi(name) : -1;
 }
 /* The row's playlist */
-static void *pl_record(void *button) {
+static void *pl_record(widget_t *button) {
     void *lists = P(p_deque_playlist, 0);
     int at = pl_at(button);
     return lists && at >= 0 && at < (int)deque_size(lists) ? deque_at(lists, (unsigned)at) : 0;
@@ -884,9 +887,10 @@ unsigned playlist_index(int cd_num) {
 }
 /* A shown row's art, when its file is made; else its build is queued. The songs are read again
  * once, by the worker, at the list's first ask: none when no row shows art. */
-static void pl_art_row(void *button, int *asked) {
+static void pl_art_row(widget_t *button, int *asked) {
     char url[600];
-    void *art = pl_art_image(button), *r = art && widget_get_visible(art) ? pl_record(button) : 0;
+    widget_t *art = pl_art_image(button);
+    void *r = art && widget_get_visible(art) ? pl_record(button) : 0;
     if (!r) return;
     if (!*asked) playlist_art_refresh();
     *asked = 1;
@@ -896,23 +900,24 @@ static void pl_art_row(void *button, int *asked) {
 }
 /* One playlist's art made: its rows alone ask again, as an ask may queue a failed one anew. */
 static void pl_art_ready(int cd_num) {
-    void *view = pl_art_page ? widget_lookup(pl_art_page, "scroll_view", 1) : 0;
+    widget_t *view = pl_art_page ? widget_lookup(pl_art_page, "scroll_view", 1) : 0;
     int asked = 1;
     for (unsigned i = 0, n = view ? widget_count_children(view) : 0; i < n; ++i) {
-        void *item = widget_get_child(view, i), *r;
-        void *button = widget_count_children(item) ? widget_get_child(item, 0) : 0;
+        widget_t *item = widget_get_child(view, i);
+        void *r;
+        widget_t *button = widget_count_children(item) ? widget_get_child(item, 0) : 0;
         if (button && pl_art_image(button) && (r = pl_record(button)) && I(r, REC_DISC) == cd_num)
             pl_art_row(button, &asked);
     }
 }
 /* 1 when a row asked, the songs' read asked for */
-static int pl_arts(void *win) {
-    void *view = widget_lookup(win, "scroll_view", 1);
+static int pl_arts(widget_t *win) {
+    widget_t *view = widget_lookup(win, "scroll_view", 1);
     int asked = 0;
     pl_art_page = win;
     playlist_art_ready = pl_art_ready;
     for (unsigned i = 0, n = view ? widget_count_children(view) : 0; i < n; ++i) {
-        void *item = widget_get_child(view, i);
+        widget_t *item = widget_get_child(view, i);
         if (widget_count_children(item)) pl_art_row(widget_get_child(item, 0), &asked);
     }
     return asked;
@@ -921,10 +926,10 @@ static int pl_arts(void *win) {
 /* Display's Playlist View: Cover Flow: the page, opened unseen, gets the playlists' covers over it
  * on the next pass (coverflow_playlists), then shows under them for their Return (navigation.c's
  * Artist View, cf_veil). The page pending them: */
-static void *pl_cf_win __attribute__((section(".scratch")));
+static widget_t *pl_cf_win __attribute__((section(".scratch")));
 static unsigned pl_cf_timer __attribute__((section(".scratch")));
 static int pl_cf_open(const void *unused) {
-    void *win = pl_cf_win;
+    widget_t *win = pl_cf_win;
     pl_cf_timer = 0;
     pl_cf_win = 0;
     if (win == window_manager_get_top_window(window_manager()))
@@ -941,14 +946,14 @@ static int pl_cf_open(const void *unused) {
  * was built: a playlist whose place is past them (one added since sorts in by name and pushes the
  * last ones past) has no row, and the covers close for the page, which builds its rows again as
  * it comes to the front. */
-void playlist_open(void *win, int cd_num) {
-    void *view = widget_lookup(win, "scroll_view", 1);
+void playlist_open(widget_t *win, int cd_num) {
+    widget_t *view = widget_lookup(win, "scroll_view", 1);
     int at = (int)playlist_index(cd_num);
     char click[0x30];
     I(PLAYLIST_ADD_MODE, 0) = widget_get_prop_int(win, PL_MODE, 0);
     for (unsigned i = 0, n = view ? widget_count_children(view) : 0; i < n; ++i) {
-        void *item = widget_get_child(view, i);
-        void *button = widget_count_children(item) ? widget_get_child(item, 0) : 0;
+        widget_t *item = widget_get_child(view, i);
+        widget_t *button = widget_count_children(item) ? widget_get_child(item, 0) : 0;
         if (button && pl_at(button) == at) {
             stock_dispatch_trampoline(button, pointer_event_init(click, EVT_CLICK, button, 0, 0));
             return;
@@ -964,7 +969,7 @@ void playlists_edit(int edit) {
 }
 
 /* Stock leaves its mode set for a page gone in it (held Return, to Home); its art's builds stop. */
-static int pl_gone(void *win, void *event) {
+static int pl_gone(void *win, event_t *event) {
     (void)event;
     if (win == pl_cf_win) {
         stop_timer(&pl_cf_timer);
@@ -977,8 +982,8 @@ static int pl_gone(void *win, void *event) {
     }
     return 0;
 }
-static void pl_dress(void *win, int first) {
-    void *view = widget_lookup(win, "scroll_view", 1);
+static void pl_dress(widget_t *win, int first) {
+    widget_t *view = widget_lookup(win, "scroll_view", 1);
     int add = widget_get_prop_int(win, PL_MODE, 0);
     if (!view) return;
     /* the rows' click goes through pl_pick (qm's guarded picker keeps its own), its one handler:
@@ -986,7 +991,7 @@ static void pl_dress(void *win, int first) {
      */
     if (win != st.qm_playlist) qm_playlist_bind(win, 0, pl_pick);
     for (unsigned i = 0, n = widget_count_children(view); i < n; ++i) {
-        void *item = widget_get_child(view, i);
+        widget_t *item = widget_get_child(view, i);
         if (!i && !add) {
             widget_set_visible(item, 0, 0);
             continue;
@@ -1018,7 +1023,7 @@ static void pl_dress(void *win, int first) {
  * Row Art (Classic's alone) the rows' art, not the Add to Playlist picker's, a list as it was, and
  * Playlist View's covers. Stock's add mode is one global, left by any picker that closes, which it
  * reads as this page comes back: each page keeps the one it opened with. */
-int ringnav_playlist(void *win) {
+int ringnav_playlist(widget_t *win) {
     int mode = widget_get_prop_int(win, PL_MODE, -1), first = mode < 0;
     if (first)
         widget_set_prop_int(win, PL_MODE, I(PLAYLIST_ADD_MODE, 0));

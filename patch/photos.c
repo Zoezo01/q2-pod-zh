@@ -20,7 +20,7 @@ typedef struct {
     int w, h;  /* the shown size; 0 when the file did not decode */
 } slot_t;
 static struct {
-    void *page, *albums, *grid, *view, *viewer, *slide, *info;
+    widget_t *page, *albums, *grid, *view, *viewer, *slide, *info;
     char root[32];
     char **album; /* album folder names, sorted */
     int nalbums;
@@ -221,8 +221,8 @@ static int scan(const char *dir, char **list, int *n, int cap, int albums) {
     return found;
 }
 
-static int open_tile(void *ctx, void *event);
-static int toggle_info(void *ctx, void *event);
+static int open_tile(void *ctx, event_t *event);
+static int toggle_info(void *ctx, event_t *event);
 
 /* The grid of album target - 1, or with -1 All Photos: the folder's own photos, then every
  * album's. The worker then makes whatever is not cached yet. */
@@ -251,12 +251,12 @@ static int to_grid(const void *unused) {
     widget_set_visible(ph.albums, 0, 0);
     widget_destroy_children(ph.grid);
     widget_set_visible(ph.grid, 1, 0);
-    void *title = page_title(ph.grid,
-                             !n           ? "No photos"
-                             : a >= 0     ? ph.album[a]
-                             : ph.nalbums ? "All Photos"
-                                          : "Photos",
-                             n);
+    widget_t *title = page_title(ph.grid,
+                                 !n           ? "No photos"
+                                 : a >= 0     ? ph.album[a]
+                                 : ph.nalbums ? "All Photos"
+                                              : "Photos",
+                                 n);
     if (!n) page_empty(ph.grid, "Photos");
     if (!theme()->page_title_h) title_gone(0, 0), bar_title_sync(ph.page); /* no more the albums' */
     /* A bare scroll view: a list_view would lay its children out as full-width rows. */
@@ -269,8 +269,8 @@ static int to_grid(const void *unused) {
     widget_set_prop_int(ph.view, "xslidable", 0);
     widget_set_prop_int(ph.view, "virtual_h", rows * PH_TILE_H);
     for (int i = 0; i < n; ++i) {
-        void *tile = list_item_create(ph.view, PH_GRID_X + i % PH_COLS * PH_TILE_W,
-                                      i / PH_COLS * PH_TILE_H, PH_TILE_W, PH_TILE_H);
+        widget_t *tile = list_item_create(ph.view, PH_GRID_X + i % PH_COLS * PH_TILE_W,
+                                          i / PH_COLS * PH_TILE_H, PH_TILE_W, PH_TILE_H);
         widget_use_style(tile, "s_listitem_black");
         widget_on(tile, EVT_CLICK, open_tile, (void *)(long)i);
     }
@@ -308,7 +308,7 @@ static void info(void) {
     widget_set_visible(ph.info, ph.info_on || !s || s == PH_BAD, 0);
 }
 
-static int moved(void *ctx, void *event) {
+static int moved(void *ctx, event_t *event) {
     ph.current = I(ph.slide, SLIDE_INDEX);
     info();
     return 0;
@@ -322,11 +322,11 @@ static int to_viewer(const void *unused) {
     ph.timer = 0;
     int h = widget_get_prop_int(ph.page, "h", client_h());
     if (!ph.slide) {
-        void *f = widget_factory();
+        widget_factory_t *f = widget_factory();
         ph.slide = widget_factory_create_widget(f, "slide_menu", ph.viewer, 0, 0, 375, h);
         slide_menu_set_spacer(ph.slide, 375 - h);
         for (int i = 0; i < ph.n; ++i) {
-            void *img = image_create(ph.slide, 0, 0, 0, 0);
+            widget_t *img = image_create(ph.slide, 0, 0, 0, 0);
             widget_set_prop_int(img, "clickable", 1);
             widget_on(img, EVT_CLICK, toggle_info, 0);
         }
@@ -358,19 +358,19 @@ static void to_tiles(void) {
 }
 
 /* Clicks only schedule: a screen change never destroys the widget whose click is running. */
-static int open_album(void *ctx, void *event) {
+static int open_album(void *ctx, event_t *event) {
     ph.target = (int)(long)ctx;
     rearm(&ph.timer, to_grid, 0);
     return 0;
 }
 
-static int open_tile(void *ctx, void *event) {
+static int open_tile(void *ctx, event_t *event) {
     ph.target = (int)(long)ctx;
     rearm(&ph.timer, to_viewer, 0);
     return 0;
 }
 
-static int toggle_info(void *ctx, void *event) {
+static int toggle_info(void *ctx, event_t *event) {
     ph.info_on = !ph.info_on;
     info();
     return 0;
@@ -395,9 +395,9 @@ static int leave(const void *unused) {
 }
 
 /* Return: viewer -> grid -> albums -> Local Music. */
-static int keyup(void *ctx, void *event) { return return_key(event, &ph.timer, leave); }
+static int keyup(void *ctx, event_t *event) { return return_key(event, &ph.timer, leave); }
 
-static int closed(void *ctx, void *event) {
+static int closed(void *ctx, event_t *event) {
     ph.viewer = 0; /* going with the page */
     drop_photos();
     stop_timer(&ph.timer);
@@ -443,15 +443,15 @@ static slot_t *slot(slot_t *s, int count, int box, int i, const char *suffix) {
 
 /* w's text isn't s. AWTK keeps a widget's text as UTF-32, which widget_get_prop_str(w, "text")
  * never returns, so a compare through it always differs and every set repaints. */
-int text_differs(void *w, const char *s) {
+int text_differs(widget_t *w, const char *s) {
     char cur[512] = ""; /* stock writes nothing when it doesn't fit */
     return widget_get_text_utf8(w, cur, sizeof cur) || strcmp(cur, s);
 }
 
 /* The bottom caption of a page h high: above the rounded glass's bottom corners, dark under white
  * so it reads over any photo. */
-void *bottom_caption(void *parent, int h) {
-    void *label = text(parent, CF_EDGE, h - 56, 375 - 2 * CF_EDGE, 36);
+widget_t *bottom_caption(widget_t *parent, int h) {
+    widget_t *label = text(parent, CF_EDGE, h - 56, 375 - 2 * CF_EDGE, 36);
     widget_set_prop_int(label, "style:normal:bg_color", (int)0xb3000000u);
     widget_set_prop_int(label, "style:normal:round_radius", 8);
     return label;
@@ -466,7 +466,7 @@ static slot_t *shot(int i) {
 }
 
 /* The slot's image fitted into the box at x, y; 0 when there is none to draw. */
-static int draw(void *canvas, slot_t *s, int x, int y, int bw, int bh) {
+static int draw(canvas_t *canvas, slot_t *s, int x, int y, int bw, int bh) {
     int src[4] = { 0, 0, s ? s->w : 0, s ? s->h : 0 }, r[4];
     if (!src[2]) return 0;
     photo_place(src[2], src[3], x, y, bw, bh, r);
@@ -477,7 +477,7 @@ static int draw(void *canvas, slot_t *s, int x, int y, int bw, int bh) {
 /* ringnav_paint calls this for every widget after stock painted it: a grid tile gets its
  * thumbnail (grey until there is one), the viewer's slide_menu the photo at its live offset and,
  * mid-slide, the one coming in. */
-void photos_paint(void *w, void *canvas) {
+void photos_paint(widget_t *w, canvas_t *canvas) {
     if (!ph.page || !w) return;
     if (ph.screen == GRID && P(w, W_PARENT) == ph.view) {
         int i = I(w, W_Y) / PH_TILE_H * PH_COLS + (I(w, W_X) - PH_GRID_X) / PH_TILE_W;
@@ -506,10 +506,10 @@ void photos_paint(void *w, void *canvas) {
  */
 void photos_open(const char *root) {
     if (ph.page) return;
-    void *page = ph.page = page_open("photos_page", closed, keyup);
+    widget_t *page = ph.page = page_open("photos_page", closed, keyup);
     if (!page) return;
     tk_snprintf(ph.root, sizeof ph.root, "%s", root);
-    void *f = widget_factory();
+    widget_factory_t *f = widget_factory();
     int h = widget_get_prop_int(page, "h", client_h());
     ph.albums = widget_factory_create_widget(f, "view", page, 0, 0, 375, h);
     ph.grid = widget_factory_create_widget(f, "view", page, 0, 0, 375, h);
@@ -524,7 +524,7 @@ void photos_open(const char *root) {
         return;
     }
     ph.screen = ALBUMS;
-    void *view = page_list(page, ph.albums, 0, "Photos", ph.nalbums + 1, 48);
+    widget_t *view = page_list(page, ph.albums, 0, "Photos", ph.nalbums + 1, 48);
     page_row_into(view, 0, "All Photos", open_album);
     for (int k = 0; k < ph.nalbums; ++k) page_row_into(view, k + 1, ph.album[k], open_album);
 }

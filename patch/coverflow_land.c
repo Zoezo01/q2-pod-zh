@@ -151,7 +151,10 @@ int land_frame(unsigned *d, int pitch, int ms, const land_t *L, int box[4], int 
  * (song_key). */
 static struct {
     land_t L;
-    void *win, *art, *frame, *top;
+    widget_t *win;
+    widget_t *art;
+    void *frame;
+    widget_t *top;
     unsigned *back, *front;
     unsigned timer, at, t0, path;
     int row, ms, got, veil, box[4];
@@ -177,7 +180,7 @@ int land_turning(void) {
  * shown as it is: no first paint within LAND_FIRST_PAINT_MS of the open, another window on top,
  * another song, a touch on it, the wheel or Return (ringnav, land_key). */
 extern int np_layout(void), np_art_ready(void);
-extern void ringnav_light(void *list, int index), drop_held(void);
+extern void ringnav_light(widget_t *list, int index), drop_held(void);
 #define LAND_HOLD_TICK_MS 50
 #define LAND_FIRST_PAINT_MS 2000 /* open to Now Playing's first paint; about 700 ms on the Q2 */
 
@@ -207,7 +210,7 @@ static void land_render(int ms) {
 /* Over Now Playing's window (ringnav_paint, after its children): the first paint starts the clock.
  * Opaque, the whole frame; else, in the motion, the paper's veil and the face's box. The art's box
  * is land_art's, under the page dots. */
-void land_paint(void *w, void *canvas) {
+void land_paint(widget_t *w, canvas_t *canvas) {
     if (!w || w != land.win) return;
     if (land.ms < 0) {
         land.t0 = (unsigned)time_now_ms();
@@ -231,7 +234,7 @@ void land_paint(void *w, void *canvas) {
 /* Now Playing's art under the landing (coverflow_slant, its own paint, so what Now Playing paints
  * after it, the page dots, stays on top): the paper, so its own art does not show, and once landed
  * the landed frame, at the art's place. */
-void land_art(void *w, void *canvas) {
+void land_art(widget_t *w, canvas_t *canvas) {
     if (!w || w != land.art) return;
     unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
     stock_canvas_set_fill_color(canvas, (ipod_light() ? scheme()->paper : 0) | 0xff000000u);
@@ -242,7 +245,7 @@ void land_art(void *w, void *canvas) {
 }
 
 /* Now Playing's window going: the landing with it, the covers drawn again under it. */
-static int land_gone(void *ctx, void *event) {
+static int land_gone(void *ctx, event_t *event) {
     if (ctx != land.win) return 0;
     land_end();
     widget_invalidate_force(cf.covers, 0);
@@ -254,7 +257,9 @@ static int land_gone(void *ctx, void *event) {
  * (while the frame is opaque or veiled, or was) or the face's old and new boxes invalidated; the
  * back freed once the front faces the eye. Then every LAND_HOLD_TICK_MS of the hold. */
 static int land_tick(const void *unused) {
-    void *wm = window_manager(), *r, *top = window_manager_get_top_window(wm);
+    widget_t *wm = window_manager();
+    void *r;
+    widget_t *top = window_manager_get_top_window(wm);
     unsigned now = (unsigned)time_now_ms(), pos, n;
     /* ponytail: the touch is polled per tick (16 ms, the hold's 50), so a tap shorter than a tick
      * goes to Now Playing; ending it on the pointer's own down event would catch every one */
@@ -302,7 +307,7 @@ static int land_tick(const void *unused) {
                    * longer hold, or holding on while it reads, would cover it */
     /* ponytail: handed over, the 160-texel cache's art turns to stock's 356-texel cover, sharper;
      * the landing rendering from stock's cover would need its decode before Now Playing's own */
-    void *art = land.art; /* handed over: Now Playing's own art */
+    widget_t *art = land.art; /* handed over: Now Playing's own art */
     land.timer = 0;
     land_end();
     widget_invalidate_force(art, 0);
@@ -317,7 +322,7 @@ static int land_open(const void *unused) {
     land.timer = 0;
     coverflow_play(land.row);
     if (!land.front) return 0; /* ended while Now Playing opened */
-    void *win = window_manager_get_top_window(window_manager()), *art = 0;
+    widget_t *win = window_manager_get_top_window(window_manager()), *art = 0;
     if (win != land.top && !tk_strcmp(widget_get_prop_str(win, "name", ""), "playing_page"))
         art = widget_lookup(win, "img_cover", 1);
     if (!art || I(art, W_W) != NP_IPOD_ART || I(art, W_H) <= NP_IPOD_ART ||
@@ -335,7 +340,8 @@ static int land_open(const void *unused) {
                  .out_ms = s->land_out_ms,
                  .np_at = s->land_np_at,
                  .np_ms = s->land_np_ms };
-    for (void *a = art; a != win; a = P(a, W_PARENT)) L.to[0] += I(a, W_X), L.to[1] += I(a, W_Y);
+    for (widget_t *a = art; a != win; a = P(a, W_PARENT))
+        L.to[0] += I(a, W_X), L.to[1] += I(a, W_Y);
     if (L.to[0] < 0 || L.to[1] < 0 || L.to[0] + NP_IPOD_ART > CF_VIEW_W ||
         L.to[1] + I(art, W_H) > FLIP_H) { /* outside the frame slant_render lands in */
         land_end();
@@ -365,7 +371,7 @@ int land_key(unsigned key) {
         (key != KEY_PREV && key != KEY_NEXT && key != KEY_RETURN))
         return 0;
     land_drop();
-    void *wm = window_manager(), *top = window_manager_get_top_window(wm);
+    widget_t *wm = window_manager(), *top = window_manager_get_top_window(wm);
     bar_title_sync(top);
     return key == KEY_RETURN && !*(volatile unsigned char *)RETURN_RELEASE_LATCH &&
            P(wm, W_KEY_TARGET) != top;

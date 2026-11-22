@@ -54,11 +54,11 @@ void coverflow_wheel_land(void) {
     th.on = 0; /* no covers left to land: a page's load replaced them */
 }
 int coverflow_wheel_live(void) { return th.raw || th.on || (cfs.thumb && cf.slide); }
-int coverflow_wheel_on(void *w) { return th.on && w == cf.slide; }
+int coverflow_wheel_on(widget_t *w) { return th.on && w == cf.slide; }
 
 /* From rest, or from a touch's glide or a held tick's step, whose goal it takes over. */
-static void th_grab(void *s, unsigned now) {
-    void *a = P(s, SLIDE_ANIMATOR);
+static void th_grab(widget_t *s, unsigned now) {
+    widget_animator_t *a = P(s, SLIDE_ANIMATOR);
     float stride = (float)stride_of(s);
     th.pos = (float)-I(s, SLIDE_OFFSET) / stride;
     th.goal = a ? (float)-I(a, ANIM_X_TO) / stride : th.pos;
@@ -79,7 +79,7 @@ static void th_grab(void *s, unsigned now) {
 
 /* SLIDE_INDEX on by q albums and the follower back by as many, so nothing moves: its numbers stay
  * small, where a float still resolves the 1e-4 its settling needs. */
-static void th_rebase(void *s, int q, int n) {
+static void th_rebase(widget_t *s, int q, int n) {
     int i = (I(s, SLIDE_INDEX) + q) % n;
     I(s, SLIDE_OFFSET) = 0; /* the pass writes it again from pos */
     slide_menu_set_value(s, i < 0 ? i + n : i);
@@ -100,7 +100,7 @@ static void th_named(int n) {
 
 /* The album named now this one, by SLIDE_INDEX alone: the pictures change, and the follower, the
  * row's shape and the speed go on as they were. */
-static void th_name(void *s, int album, int n) {
+static void th_name(widget_t *s, int album, int n) {
     I(s, SLIDE_OFFSET) = 0; /* the pass writes it again from pos */
     slide_menu_set_value(s,
                          (int)th_album(album - (int)th_album(th_aim(), (unsigned)n), (unsigned)n));
@@ -114,7 +114,7 @@ static void th_name(void *s, int album, int n) {
  * A letter has no motion of its own, so slowing goes on from here with nothing to catch up.
  * ponytail: a letter of fewer albums than the flow's travel since the last (about three at
  * top_speed) steps the pictures back by that, on a row still moving. */
-static void th_name_letter(void *s, int n, unsigned now) {
+static void th_name_letter(widget_t *s, int n, unsigned now) {
     unsigned letter;
     int to = coverflow_letter_next(s, th.jump_to, th.dir, n, &letter);
     if (to == th.jump_to) return; /* one letter in all: the flow goes round */
@@ -133,7 +133,7 @@ static void th_name_letter(void *s, int n, unsigned now) {
  * album, and back from the first to the last's, as the albums wrap; with one letter there is no
  * step, so no click. Answers whether it stepped; the first of letters always does, to show its
  * letter. */
-static int th_letter(void *s, int n, int first) {
+static int th_letter(widget_t *s, int n, int first) {
     unsigned letter;
     int from = first ? th_aim() : cf_round(th.goal), dir = first ? -th.lean : th.dir;
     float at = first ? coverflow_hold() : 0, v = coverflow_enter_v();
@@ -172,7 +172,7 @@ static int th_letter(void *s, int n, int first) {
  * first jump_ticks; the row keeps its lean. 1.7.6's letters count it too, and a turn back ends
  * them. An artist's albums stop at the ends:
  * the first push past one kicks the covers out, and they spring back. */
-static void th_turn(void *s, int travel, unsigned now, int n, int ms) {
+static void th_turn(widget_t *s, int travel, unsigned now, int n, int ms) {
     int dir = travel > 0 ? -1 : 1; /* x rises anticlockwise: back */
     if (dir != th.dir) {
         float l = th.goal - th.pos, m = cfs.back / 100.f;
@@ -234,7 +234,7 @@ static void th_arch(float ms) {
 /* Album by album, since ms after the last tick: part-way is for a slow thumb that stays; a lift,
  * the hold's timeout or a stop from speed goes to the album named, in 1.7.6's letters the letter's
  * first album. The row follows the goal, and the facing point leads it. */
-static void th_albums(void *s, int n, int since, int ms) {
+static void th_albums(widget_t *s, int n, int since, int ms) {
     int idle = since > cfs.hold_ms;
     float left = ABS(th.goal - th.pos);
     if (th.goal != (float)cf_round(th.goal) &&
@@ -285,7 +285,7 @@ static void th_albums(void *s, int n, int since, int ms) {
  * back (th_turn) or that long with no tick ends them, and the album named carries on under it.
  * ponytail: short arcs with a lift each don't reach jump_ms, as on ticks: the rate falls in the
  * lift and rises again. Carry it over the lift for the count too if arcs show on the wheel. */
-static void th_beat(void *s, int n, int travel, unsigned now, int ms, int since) {
+static void th_beat(widget_t *s, int n, int travel, unsigned now, int ms, int since) {
     th.capped = th.rate >= cfs.jump_at
                     ? (th.capped + ms < cfs.jump_ms ? th.capped + ms : cfs.jump_ms)
                 : th.capped > ms ? th.capped - ms
@@ -304,7 +304,7 @@ static void th_beat(void *s, int n, int travel, unsigned now, int ms, int since)
 
 /* usable: navigation.c's; gated: travel is to be dropped (its gates). Answers THUMB_*. */
 int coverflow_wheel_poll(int usable, int gated) {
-    void *s = cf.slide, *wm = window_manager();
+    widget_t *s = cf.slide, *wm = window_manager();
     int shown = usable && cfs.thumb && fx.frame && !fl.panel && covers_live() &&
                 widget_count_children(s) && window_manager_get_top_window(wm) == cf.page &&
                 !window_manager_is_animating(wm);

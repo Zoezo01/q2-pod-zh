@@ -39,7 +39,7 @@ static int tab_go(const void *unused) {
 
 /* A tap on the strip picks the tab under it (Minimal's names, else the switch's halves) from a
  * timer: the new rows replace the strip, never inside its own event. */
-static int tab_touch(void *ctx, void *event) {
+static int tab_touch(void *ctx, event_t *event) {
     int xy[2] = { I(event, EVENT_X), I(event, EVENT_Y) };
     widget_to_local(ctx, xy);
     tab_want = xy[0] >= (theme()->painter[PAINT_SELECTION] == SEL_CARD ? GAMES_X - 20 : 188);
@@ -50,27 +50,27 @@ static int tab_touch(void *ctx, void *event) {
 /* The tabs over view, page_list's on page (or none: the page closed); the strip, its tab and
  * badges set by store_tabs_set. With a title row (Minimal, Modern) the tabs take its place and its
  * label hides; under Classic, whose bar holds the title, the list moves down under the strip. */
-void *store_tabs(void *page, void *view) {
+widget_t *store_tabs(widget_t *page, widget_t *view) {
     on_page = page != 0;
     if (!page) return 0;
     int h = strip_h();
     if (theme()->page_title_h) {
         widget_set_visible(widget_get_child(page, 0), 0, 0); /* page_title's label, the first */
     } else {
-        void *list = P(view, W_PARENT);
+        widget_t *list = P(view, W_PARENT);
         int y = I(list, W_Y) + h, room = widget_get_prop_int(page, "h", client_h()) - y,
             rows = I(list, W_H) < room ? I(list, W_H) : room;
         widget_move_resize(list, 0, y, 375, rows);
         widget_move_resize(view, 0, 0, 375, rows);
     }
-    void *strip = widget_factory_create_widget(widget_factory(), "view", page, 0, 0, 375, h);
+    widget_t *strip = widget_factory_create_widget(widget_factory(), "view", page, 0, 0, 375, h);
     widget_set_prop_int(strip, "_tab", 0);
     widget_on(strip, EVT_POINTER_DOWN, tab_touch, strip);
     return strip;
 }
 
 /* The open tab (0 Apps, 1 Games) and each tab's updates, for the strip's next paint. */
-void store_tabs_set(void *strip, int tab, const int *updates) {
+void store_tabs_set(widget_t *strip, int tab, const int *updates) {
     if (!strip) return;
     widget_set_prop_int(strip, "_tab", tab);
     widget_set_prop_int(strip, "_b0", updates[0]);
@@ -81,7 +81,7 @@ void store_tabs_set(void *strip, int tab, const int *updates) {
 /* An app's row (page_row_detail's item) and its state for the row's end: 0 Install, 1 Update,
  * 2 Installed, -1 none (its second line says what is happening, and runs to the row's end). Its
  * name stays clear of the state's word. */
-void store_state(void *item, int state) {
+void store_state(widget_t *item, int state) {
     if (widget_get_prop_int(item, "_state", -2) == state) return; /* -2: none yet */
     const theme_t *T = theme(); /* page_row_detail's boxes for a row with a detail */
     int x = T->page_x, w = STATE_X - 8 - x;
@@ -113,7 +113,7 @@ static unsigned row_look(unsigned *ink, int *raw) {
 
 /* A tab's count, ending at right: its half's far end, as beside the name it ran into "Games". On
  * the open half it is that half's colours turned round. */
-static void badge(void *canvas, int right, int cy, int n, int open) {
+static void badge(canvas_t *canvas, int right, int cy, int n, int open) {
     char d[12];
     snprintf(d, sizeof d, "%d", n);
     int w = n > 9 ? 22 : 16, raw = 1;
@@ -126,7 +126,7 @@ static void badge(void *canvas, int right, int cy, int n, int open) {
     ui_ink_raw(0);
 }
 
-static void paint_strip(void *w, void *canvas) {
+static void paint_strip(widget_t *w, canvas_t *canvas) {
     const theme_t *T = theme();
     int h = I(w, W_H), tab = widget_get_prop_int(w, "_tab", 0),
         n[2] = { widget_get_prop_int(w, "_b0", 0), widget_get_prop_int(w, "_b1", 0) };
@@ -187,7 +187,7 @@ static void paint_strip(void *w, void *canvas) {
 /* An app's row: its state, a word at the row's end, after stock drew its labels. Update is in the
  * accent (Minimal: white) and the others muted; on the selected row, the row's ink (lit_ink). The
  * accent goes through Light Mode's flip, which keeps a colour and turns a neutral accent dark. */
-static void paint_row(void *w, void *canvas, int state) {
+static void paint_row(widget_t *w, canvas_t *canvas, int state) {
     static const char *const words[3] = { "INSTALL", "UPDATE", "INSTALLED" };
     int h = I(w, W_H), card = theme()->painter[PAINT_SELECTION] == SEL_CARD,
         lit = st.sel_w == P(w, W_PARENT) && st.sel_row == I(w, W_Y) / h, raw = 0;
@@ -200,7 +200,7 @@ static void paint_row(void *w, void *canvas, int state) {
 }
 
 /* ringnav_paint, every widget after stock painted it: the App Store's strip and its apps' rows. */
-void store_paint(void *w, void *canvas) {
+void store_paint(widget_t *w, canvas_t *canvas) {
     if (!on_page || !P(canvas, CANVAS_LCD)) return;
     int h = I(w, W_H);
     if (h != strip_h() && h != page_h(64)) return; /* no prop lookups for other widgets */

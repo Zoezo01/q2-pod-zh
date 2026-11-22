@@ -2,14 +2,14 @@
  * key lock's button, the wheel's choice of brightness or volume, a stuck pull-down's release, and
  * the own pages' page, buttons and brightness slider: Classic's, and the flat look's. */
 #include "navigation.h"
-extern int stock_quicksettings_trampoline(void *, void *);
+extern int stock_quicksettings_trampoline(widget_t *, void *);
 
-static void quick_lock_text(void *win) {
+static void quick_lock_text(widget_t *win) {
     widget_set_text_utf8(widget_lookup(win, "label_lock", 1), lock_names[lock_choice()]);
     image_base_set_image(widget_lookup(win, "img_lock", 1),
                          g_keylock_flag ? "drop_keylockopen" : "drop_keylock");
 }
-int ringnav_quick_lock(void *win, void *event) {
+int ringnav_quick_lock(widget_t *win, event_t *event) {
     lock_set((lock_choice() + 1) % 4);
     quick_lock_text(win);
     return 0;
@@ -17,13 +17,13 @@ int ringnav_quick_lock(void *win, void *event) {
 #define QUICK_HOLD "_quick_hold"
 #define SLIDE_PX 10 /* the brightness slider's sideways move before it takes the touch */
 static struct {
-    void *win, *icon, *slider, *pressed; /* pressed: Classic's button under the finger */
+    widget_t *win, *icon, *slider, *pressed; /* pressed: Classic's button under the finger */
     unsigned timer;
     int x, y, sx, sy, slide; /* slide: the slider's touch, 0 undecided, 1 its own, -1 the swipe's */
     int wheel;               /* the wheel: 1 + Q2POD QSVOLUME once read (quick_volume) */
 } quick __attribute__((section(".scratch")));
 
-static int quick_cancel(void *ctx, void *event) {
+static int quick_cancel(void *ctx, event_t *event) {
     stop_timer(&quick.timer);
     quick.win = quick.icon = quick.slider = 0;
     if (ctx) quick.pressed = 0; /* the window's going */
@@ -31,14 +31,14 @@ static int quick_cancel(void *ctx, void *event) {
 }
 static int quick_long(const void *unused) {
     quick.timer = 0;
-    void *win = quick.win, *icon = quick.icon;
+    widget_t *win = quick.win, *icon = quick.icon;
     if (!win || window_manager_get_top_window(window_manager()) != win || !pointer_down()) return 0;
     int page = widget_get_prop_int(icon, QUICK_HOLD, 0);
     /* Abort the image's press before closing, so its release cannot click the icon. */
     prop(icon, QUICK_HOLD, -page);
     unsigned abort_event[12];
     pointer_event_init(abort_event, EVT_POINTER_ABORT, win, 0, 0);
-    widget_dispatch_event_to_target_recursive(win, abort_event);
+    widget_dispatch_event_to_target_recursive(win, (event_t *)abort_event);
     quick_cancel(0, 0);
     dialog_quit(win, 0);
     /* The EQ page as the top window, under the dialog, is already the goal. One further down
@@ -46,10 +46,10 @@ static int quick_long(const void *unused) {
      * on top, as from any other page: a second would share peq_ui.c's one state. Dialogs and the
      * status bar are no windows. */
     if (page == 3) {
-        void *wm = window_manager(), *eq = 0;
+        widget_t *wm = window_manager(), *eq = 0;
         int top = 1;
         for (unsigned i = widget_count_children(wm); !eq && i-- > 0;) {
-            void *w = widget_get_child(wm, i);
+            widget_t *w = widget_get_child(wm, i);
             if (tk_strcmp(widget_get_type(w), "window")) continue;
             if (!tk_strcmp(widget_get_prop_str(w, "name", ""), "equalizer_page"))
                 eq = w;
@@ -64,12 +64,12 @@ static int quick_long(const void *unused) {
                              : "playset/equalizer_page"); /* as Playback's EQ row (0x4bd114) */
     return 0;
 }
-static void quick_press(void *icon) {
+static void quick_press(widget_t *icon) {
     if (quick.pressed) widget_invalidate_force(quick.pressed, (void *)0);
     if (icon) widget_invalidate_force(icon, (void *)0);
     quick.pressed = icon;
 }
-static int quick_down(void *icon, void *event) {
+static int quick_down(void *icon, event_t *event) {
     int page = widget_get_prop_int(icon, QUICK_HOLD, 0);
     if (own_pages()) quick_press(icon);
     if (!page) return 0; /* a button with no hold */
@@ -92,7 +92,7 @@ static const char *const quick_icons[] = { "img_wifiswitch", "img_btswitch", "im
                                                    "label_playset", "label_sysset" };
 /* The knob, or the flat bar's ends, reach past the slider, whose own repaint would leave them
  * behind. */
-static int quick_moved(void *view, void *event) {
+static int quick_moved(void *view, event_t *event) {
     widget_invalidate_force(view, (void *)0);
     return 0;
 }
@@ -103,9 +103,9 @@ static int quick_moved(void *view, void *event) {
 #define QS_BAR_W 309
 #define QS_BAR_H 36
 const rect_t qs_bar_card = { 18, 226, 339, 62 }; /* the bar's card, round it */
-static void quick_open(void *win) {
+static void quick_open(widget_t *win) {
     int flat = flat_pages();
-    void *c = widget_lookup(win, "view_menu", 1);
+    widget_t *c = widget_lookup(win, "view_menu", 1);
     /* Classic's to the slider's foot; the flat look's the buttons' card and the gap under it */
     if (c) widget_move_resize(c, 0, 0, I(c, W_W), flat ? 226 : I(c, W_Y) + I(c, W_H));
     /* [flat]: Classic's 60 px buttons 24 apart; the flat look's 54 px ones 31 apart, 15 in from
@@ -121,7 +121,7 @@ static void quick_open(void *win) {
     if ((c = widget_lookup(win, "image0", 1))) widget_set_visible(c, 0, 0);
     if ((c = widget_lookup(win, "image1", 1))) widget_set_visible(c, 0, 0);
     if ((c = widget_lookup(win, "slider_backlight", 1))) {
-        void *view = P(c, W_PARENT);
+        widget_t *view = P(c, W_PARENT);
         if (flat) {
             widget_move_resize(view, 0, QS_BAR_Y + QS_BAR_H / 2 - 24, I(view, W_W), 48);
             widget_move_resize(c, QS_BAR_X, 0, QS_BAR_W, 48);
@@ -130,14 +130,14 @@ static void quick_open(void *win) {
         widget_on(c, EVT_VALUE_CHANGED, quick_moved, view);
     }
 }
-int ringnav_quick_settings(void *win, void *ctx) {
+int ringnav_quick_settings(widget_t *win, void *ctx) {
     int result = stock_quicksettings_trampoline(win, ctx);
     if (win) {
         quick_lock_text(win);
         /* held: 1 Wi-Fi's settings, 2 Bluetooth's, 3 the EQ page (Playback's) */
         static const char *const names[] = { "img_wifiswitch", "img_btswitch", "img_playset" };
         for (int i = 0; i < 3; ++i) {
-            void *icon = widget_lookup(win, names[i], 1);
+            widget_t *icon = widget_lookup(win, names[i], 1);
             if (!icon) continue;
             prop(icon, QUICK_HOLD, i + 1);
             widget_on(icon, EVT_POINTER_DOWN, quick_down, icon);
@@ -153,13 +153,13 @@ int ringnav_quick_settings(void *win, void *ctx) {
 /* Quick Settings' brightness slider fills as Now Playing's bar does (np_fill), set before its
  * paint; QFILL holds the fill it last got, so a new accent or Light Mode reaches it. */
 #define QFILL "_ringnav_fill"
-static int quick_slider(void *w) {
-    void *win = w && !tk_strcmp(widget_get_prop_str(w, "name", ""), "slider_backlight")
-                    ? window_of(w)
-                    : (void *)0;
+static int quick_slider(widget_t *w) {
+    widget_t *win = w && !tk_strcmp(widget_get_prop_str(w, "name", ""), "slider_backlight")
+                        ? window_of(w)
+                        : (void *)0;
     return win && !tk_strcmp(widget_get_prop_str(win, "name", ""), "statusbar_dialog");
 }
-void quick_fill(void *w) {
+void quick_fill(widget_t *w) {
     if (!quick_slider(w)) return;
     /* the own pages' bar is quick_scrub's: stock's goes clear, and 1 says it went */
     int clear = own_pages();
@@ -179,13 +179,13 @@ void quick_fill(void *w) {
 #define QS_TEXT_LINE 14 /* a line's pitch, tighter than a label's font and its 2 px spacer */
 #define QS_TEXT_BOX 18  /* each line's box, holding the font */
 /* One line of a label, white in x, y's box. */
-static void quick_line(void *canvas, const unsigned *s, unsigned n, int x, int y) {
+static void quick_line(canvas_t *canvas, const unsigned *s, unsigned n, int x, int y) {
     rect_t r = { x, y, QS_TEXT_W, QS_TEXT_BOX };
     draw_centred(canvas, s, n, &r, QS_TEXT_PX, 0xffffffffu);
 }
 /* A label under its icon, x, y its first line's box. The page draws its lines: stock's label keeps
  * the text and, for its repaint, a box round them, with its own ink clear. */
-static void quick_label(void *canvas, void *label, int x, int y) {
+static void quick_label(canvas_t *canvas, widget_t *label, int x, int y) {
     const unsigned *s = widget_get_text(label);
     unsigned n = wide_len(s), cut = 0, k = 1, raw = st.raw_ink;
     if (!n) return;
@@ -225,8 +225,8 @@ static const unsigned qs_tile[2][2][3] = {
 /* The page, in its window's coordinates: the ground, then each button by the image stock last gave
  * its icon, a sixth darker while pressed, its glyph in the tile's ink (white on, _l on a bright
  * accent or off in light, _d off in dark); and its label. */
-static void quick_page_flat(void *win, void *canvas);
-void quick_page(void *win, void *canvas) {
+static void quick_page_flat(widget_t *win, canvas_t *canvas);
+void quick_page(widget_t *win, canvas_t *canvas) {
     if (flat_pages()) {
         quick_page_flat(win, canvas);
         return;
@@ -235,8 +235,8 @@ void quick_page(void *win, void *canvas) {
     unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
     paint_stops(canvas, 0, 0, I(win, W_W), I(win, W_H), &theme()->home_pane[light]);
     for (unsigned i = 0; i < sizeof quick_icons / sizeof *quick_icons; ++i) {
-        void *icon = widget_lookup(win, quick_icons[i], 1);
-        void *label = widget_lookup(win, quick_labels[i], 1);
+        widget_t *icon = widget_lookup(win, quick_icons[i], 1);
+        widget_t *label = widget_lookup(win, quick_labels[i], 1);
         if (!icon) continue;
         char name[40];
         const char *image = widget_get_prop_str(icon, "image", "");
@@ -262,8 +262,8 @@ void quick_page(void *win, void *canvas) {
 /* ringnav_paint, after stock's slider, whose bar quick_fill cleared: the suns, the track, the fill
  * (Classic Blue's own stops, another accent's light tone flat, as Minimal's fill) and the knob, in
  * the window's coordinates less the slider's. */
-static void quick_scrub_flat(void *w, void *canvas);
-void quick_scrub(void *w, void *canvas) {
+static void quick_scrub_flat(widget_t *w, canvas_t *canvas);
+void quick_scrub(widget_t *w, canvas_t *canvas) {
     static const stops_t track = { 2, { 0, 100 }, { 0x0a0a0a, 0x3a3c40 } };
     static const stops_t blue = { 3, { 0, 50, 100 }, { 0x8cc4f8, 0x2f85df, 0x165fc0 } };
     if (!own_pages() || !quick_slider(w) || !P(canvas, CANVAS_LCD)) return;
@@ -305,7 +305,7 @@ static const unsigned qs_card[2] = { 0x1c1c1e, 0xffffff }, qs_rest[2] = { 0x3a3a
 #define QS_FLAT_BOX 16  /* each line's box, holding the font */
 /* One line of a label, the first n of s, quiet in x, y's box, in the system's face. final_text
  * takes a nul-ended string, hence the copy; its 31 characters are more than the 86 px box holds. */
-static void quick_line_flat(void *canvas, const unsigned *s, unsigned n, int x, int y) {
+static void quick_line_flat(canvas_t *canvas, const unsigned *s, unsigned n, int x, int y) {
     unsigned line[32];
     rect_t r = { x, y, QS_FLAT_W, QS_FLAT_BOX };
     if (n > sizeof line / sizeof *line - 1) n = sizeof line / sizeof *line - 1;
@@ -315,7 +315,7 @@ static void quick_line_flat(void *canvas, const unsigned *s, unsigned n, int x, 
 }
 /* quick_label's, flat: a label under its button, x, y its first line's box, a second line when it
  * is wider than the box. */
-static void quick_label_flat(void *canvas, void *label, int x, int y) {
+static void quick_label_flat(canvas_t *canvas, widget_t *label, int x, int y) {
     const unsigned *s = widget_get_text(label);
     unsigned n = wide_len(s), cut = 0, k = 1;
     if (!n) return;
@@ -341,7 +341,7 @@ static void quick_label_flat(void *canvas, void *label, int x, int y) {
  * icon: a 54 px disc, at rest or on (QS_LIT, tools/art.py), a sixth darker while pressed, its glyph
  * in the disc's ink (white, or _l at rest in the light half and on a bright fill), and its label.
  */
-static void quick_page_flat(void *win, void *canvas) {
+static void quick_page_flat(widget_t *win, canvas_t *canvas) {
     int light = ipod_light();
     unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR), on = flat_on();
     unsigned ground = light && theme()->qs_ground ? theme()->qs_ground : flat_page();
@@ -351,8 +351,8 @@ static void quick_page_flat(void *win, void *canvas) {
     paint_round_rows(canvas, &buttons, &card, 26);
     paint_round_rows(canvas, &bar, &card, 26);
     for (unsigned i = 0; i < sizeof quick_icons / sizeof *quick_icons; ++i) {
-        void *icon = widget_lookup(win, quick_icons[i], 1);
-        void *label = widget_lookup(win, quick_labels[i], 1);
+        widget_t *icon = widget_lookup(win, quick_icons[i], 1);
+        widget_t *label = widget_lookup(win, quick_labels[i], 1);
         if (!icon) continue;
         char name[40];
         const char *image = widget_get_prop_str(icon, "image", "");
@@ -371,7 +371,7 @@ static void quick_page_flat(void *win, void *canvas) {
 }
 /* quick_scrub's, flat: the bar, its fill never less than its own round end, the suns in it; in the
  * window's coordinates less the slider's. */
-static void quick_scrub_flat(void *w, void *canvas) {
+static void quick_scrub_flat(widget_t *w, canvas_t *canvas) {
     unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
     void *view = P(w, W_PARENT);
     int ox = -I(view, W_X) - I(w, W_X), oy = -I(view, W_Y) - I(w, W_Y);
@@ -387,7 +387,7 @@ static void quick_scrub_flat(void *w, void *canvas) {
 /* The volume over the flat page (vol_paint, the wheel on stock's volume), dy down the screen from
  * w: the bar's card, and the volume in the bar's place between the speakers, so nothing of the page
  * is half covered. */
-void quick_vol_flat(void *w, void *canvas, int dy, int level, int max) {
+void quick_vol_flat(widget_t *w, canvas_t *canvas, int dy, int level, int max) {
     rect_t card = qs_bar_card, r = { QS_BAR_X, QS_BAR_Y + dy, QS_BAR_W, QS_BAR_H };
     stops_t face = { 2, { 0, 100 }, { qs_card[ipod_light()], qs_card[ipod_light()] } };
     card.y += dy;
@@ -400,7 +400,7 @@ void quick_vol_flat(void *w, void *canvas, int dy, int level, int max) {
 /* Quick Settings' swipe up under the own pages: a touch from QS_SWIPE_Y (the flat look's bar's
  * card) that has gone SLIDE_PX up, and isn't the slider's by then, counts for stock's handler as
  * one from its line. */
-static void quick_swipe(void *target, void *event) {
+static void quick_swipe(widget_t *target, event_t *event) {
     int from = I(g_pressdown_y, 0);
     /* the flat look's from its bar's card, which its slider's touch fills from 233 */
     if (from < (flat_pages() ? qs_bar_card.y : QS_SWIPE_Y) || from >= QS_SWIPE_STOCK ||
@@ -413,7 +413,7 @@ static void quick_swipe(void *target, void *event) {
 
 /* ringnav_dispatch's Quick Settings part, for each event: a hold's timer and Classic's pressed
  * button, and the brightness slider's touch. What ringnav_dispatch returns, or -1 to go on. */
-int quick_dispatch(void *target, void *event) {
+int quick_dispatch(widget_t *target, event_t *event) {
     int type = I(event, EVENT_TYPE);
     if (quick.timer &&
         (type == EVT_POINTER_UP_BEFORE || type == EVT_POINTER_UP_BEFORE - 1 ||
@@ -432,7 +432,7 @@ int quick_dispatch(void *target, void *event) {
      * (g_dropdown_menu_state 1, 2), never reaches it, and one it already has is aborted. A
      * withheld event returns 0, not STOP, which would end its parents' handling too: the
      * window manager's pointer-down keeps the touch's start (g_pressdown_y) for the swipe. */
-    void *qs = target;
+    widget_t *qs = target;
     if (type == EVT_POINTER_DOWN - 1 && target &&
         !tk_strcmp(widget_get_prop_str(target, "name", ""), "slider_backlight"))
         while (qs && tk_strcmp(widget_get_prop_str(qs, "name", ""), "statusbar_dialog"))
@@ -478,7 +478,7 @@ int quick_volume(void) {
     return quick.wheel - 1;
 }
 /* The words for ringnav_keylong's toast; 0 when the hold is not Quick Settings'. */
-const char *quick_wheel_toggle(void *top) {
+const char *quick_wheel_toggle(widget_t *top) {
     if (!usable() || !top || tk_strcmp(widget_get_prop_str(top, "name", ""), "statusbar_dialog"))
         return 0;
     int volume = !quick_volume();
@@ -498,14 +498,14 @@ const char *quick_wheel_toggle(void *top) {
  * handler (0x4a1e6c, bound at dialog_statusbar_dialog_init) ignores the event's place and at states
  * 1 and 2 with timer_idex -1 always adds its slide timer (0x4a1f4c), which always ends, so one pass
  * does it. */
-static int quick_stuck(void *top) {
+static int quick_stuck(widget_t *top) {
     return usable() && top &&
            !tk_strcmp(widget_get_prop_str(top, "name", ""), "statusbar_dialog") &&
            (unsigned)(I(g_dropdown_menu_state, 0) - 1) < 2 && !pointer_down() &&
            widget_get_prop_int(top, "timer_idex", -1) == -1;
 }
 void quick_poll(void) {
-    void *wm = window_manager(), *top = window_manager_get_top_window(wm);
+    widget_t *wm = window_manager(), *top = window_manager_get_top_window(wm);
     unsigned up[12];
     if (quick_stuck(top))
         ringnav_dispatch(top, pointer_event_init(up, EVT_POINTER_UP_BEFORE - 1, top, 0, 0));

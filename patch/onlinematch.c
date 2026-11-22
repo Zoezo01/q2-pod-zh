@@ -477,14 +477,15 @@ int ringnav_cover_copy(char *cmd, unsigned n, const char *fmt, const char *from,
 /* Download Album Lyrics (docs/internals.md#album-lyrics): a row under stock's Download Cover &
  * Lyrics on Now Playing's ⋯ page saves LRCLIB's lyrics beside every song of the playing song's
  * album, found as that search finds them, on a thread of its own that outlives the page. */
-extern void *list_row(void *view, const char *icon, int (*click)(void *, void *), void *ctx);
+extern widget_t *list_row(widget_t *view, const char *icon, int (*click)(void *, event_t *),
+                          void *ctx);
 static const char AL_TITLE[] = "Download Album Lyrics";
 static struct {
     lyr_job job;
     lyr_track *tracks;
     unsigned long thread; /* 0 once joined */
     volatile int running; /* the worker's, until it returns */
-    void *label;          /* the row's while the page is open */
+    widget_t *label;      /* the row's while the page is open */
     void *curl;           /* the worker's one handle for the job's searches */
 } al;
 
@@ -563,7 +564,7 @@ static void al_put(char *to, unsigned n, const char *s) { snprintf(to, n, "%s", 
 
 /* A press starts the job, copying the album's tracks off stock's records first (a CUE track
  * shares its file's .lrc, so it is left out); a press while it runs cancels it. */
-static int al_click(void *ctx, void *event) {
+static int al_click(void *ctx, event_t *event) {
     if (al.thread) { /* ended, not yet joined: the timer's */
         if (al.running) al.job.cancel = 1, al_show();
         return 0;
@@ -605,7 +606,7 @@ static int al_click(void *ctx, void *event) {
     return 0;
 }
 
-static int al_gone(void *ctx, void *event) {
+static int al_gone(void *ctx, event_t *event) {
     if (al.label == ctx) al.label = 0;
     return 0;
 }
@@ -616,11 +617,11 @@ static int al_gone(void *ctx, void *event) {
  * without stock's rows is left as it built it. Delete is hidden for a playlist's song played from
  * its cover (coverflow_playlist_queue): there it would delete from the library. AirPlay's row
  * (airplay.c) goes over them all, for any song. */
-extern int stock_playermore_trampoline(void *win, void *ctx);
-int ringnav_playermore(void *win, void *ctx) {
+extern int stock_playermore_trampoline(widget_t *win, void *ctx);
+int ringnav_playermore(widget_t *win, void *ctx) {
     int result = stock_playermore_trampoline(win, ctx);
     if (win) stock_more_speed(win), stock_more_into(win);
-    void *view = win ? widget_lookup(win, "scroll_view_more", 1) : (void *)0;
+    widget_t *view = win ? widget_lookup(win, "scroll_view_more", 1) : (void *)0;
     unsigned at = 0;
     if (!view || widget_count_children(view) != PLAYMORE_COUNT) return result;
     for (unsigned i = 0; i < PLAYMORE_COUNT && coverflow_playlist_queue(); ++i)
@@ -630,7 +631,7 @@ int ringnav_playermore(void *win, void *ctx) {
     if (!al_playing()) return result;
     while (at < PLAYMORE_COUNT && ((const int *)PLAYMORE_ROWS)[at] != PLAYMORE_SEARCH) ++at;
     if (at == PLAYMORE_COUNT) return result;
-    void *label = list_row(view, "player_onlinesearch", al_click, 0);
+    widget_t *label = list_row(view, "player_onlinesearch", al_click, 0);
     widget_use_style(label, "s_scrlabel_white24l");
     widget_resize(label, 253, I(label, W_H));
     widget_restack(P(P(label, W_PARENT), W_PARENT), at + 1 + (unsigned)air); /* after AirPlay's */

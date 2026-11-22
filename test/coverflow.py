@@ -24,6 +24,11 @@ SHELF_180 = {'cf.eye': 94, 'cf.tilt': 89, 'cf.x1': 116, 'cf.xs': 34, 'cf.z1': 77
 # stubs are defined once
 CF_SOURCES = '#include "coverflow.c"\n#include "coverflow_thumb.c"\n#include "coverflow_letters.c"\n#include "coverflow_loader.c"\n#include "coverflow_land.c"\n#include "playlist_art.c"\n#include "coverflow_position.c"\n'
 SHIM_H = r"""
+/* The shim's stock objects are records of its own behind void *: patch/stock_types.h's names are void here,
+ * so every stub keeps the signature it was written with. tools/tidy.sh and the Q2's build hold the types. */
+#define Q2_STOCK_TYPES_H
+typedef void widget_t, event_t, canvas_t, vgcanvas_t, widget_animator_t, widget_factory_t, image_manager_t,
+    input_method_t;
 extern char system_bar[];
 #include <dirent.h>
 #include <errno.h>

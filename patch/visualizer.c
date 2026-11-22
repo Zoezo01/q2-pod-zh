@@ -36,7 +36,7 @@ static struct {
     float ridge[VIS_ROWS][VIS_HALO];
     int row; /* the newest line in ridge */
 #ifndef PEQ_HOST
-    void *win, *slide, *page, *art, *cover;
+    widget_t *win, *slide, *page, *art, *cover;
     vis_tap *tap;
     unsigned timer, last, named, heard; /* heard: the last tick with audio */
     unsigned retry;                     /* a paint missed while not settled looks again (look) */
@@ -356,7 +356,7 @@ static void arm(void) {
     vz.timer = timer_add(tick, 0, 1000 / VIS_FPS);
 }
 
-static void line(void *vg, float x0, float y0, float x1, float y1) {
+static void line(vgcanvas_t *vg, float x0, float y0, float x1, float y1) {
     vgcanvas_begin_path(vg);
     vgcanvas_move_to(vg, x0, y0);
     vgcanvas_line_to(vg, x1, y1);
@@ -365,7 +365,7 @@ static void line(void *vg, float x0, float y0, float x1, float y1) {
 
 /* A rounded rectangle as a sub-path of the current path. Stock vgcanvas_rounded_rect begins a new
  * path itself, so in one path of 32 bars only the last survived; its arcs and lines do not. */
-static void capsule(void *vg, float x, float y, float w, float h, float r) {
+static void capsule(vgcanvas_t *vg, float x, float y, float w, float h, float r) {
     if (r > h / 2) r = h / 2;
     vgcanvas_move_to(vg, x, y + r);
     vgcanvas_arc(vg, x + r, y + r, r, TAU / 2, TAU * 3 / 4, 0);
@@ -375,7 +375,7 @@ static void capsule(void *vg, float x, float y, float w, float h, float r) {
     vgcanvas_close_path(vg);
 }
 
-static void disc(void *vg, float x, float y, float r, unsigned color) {
+static void disc(vgcanvas_t *vg, float x, float y, float r, unsigned color) {
     vgcanvas_begin_path(vg);
     vgcanvas_arc(vg, x, y, r, 0, TAU, 0);
     vgcanvas_set_fill_color(vg, color);
@@ -386,7 +386,7 @@ static void disc(void *vg, float x, float y, float r, unsigned color) {
  * its bright tint at full height, a cap on each peak, and a faint reflection under the baseline. */
 #define BASE 142
 #define TALL 126
-static void spectrum(void *vg, unsigned tone) {
+static void spectrum(vgcanvas_t *vg, unsigned tone) {
     float pitch = (float)PAGE_W / VIS_BARS, w = pitch * 0.66f;
     /* Three fills for all the bars: the bars (one gradient, in page coordinates, serves them all),
      * their reflections and their caps. A fill each costs a frame. */
@@ -412,7 +412,7 @@ static void spectrum(void *vg, unsigned tone) {
 
 /* Rockbox's oscilloscope: the right channel a faint accent line, the left over it with a glow, a
  * wide faint stroke under a fine bright one; a point every 2 px, which the anti-aliasing hides. */
-static void scope(void *vg, unsigned tone) {
+static void scope(vgcanvas_t *vg, unsigned tone) {
     static const struct {
         float width;
         unsigned alpha;
@@ -436,7 +436,7 @@ static void scope(void *vg, unsigned tone) {
 
 /* Rockbox's analog VU meters, left and right, in the accent's palette: an arc from -20 to +3 VU,
  * heavier and brighter past 0, ticks and labels, the needle on its pivot and a peak LED. */
-static void meters(void *vg, void *canvas, unsigned tone, unsigned now) {
+static void meters(vgcanvas_t *vg, canvas_t *canvas, unsigned tone, unsigned now) {
     static const signed char marks[] = { -20, -10, -7, -5, -3, -2, -1, 0, 1, 2, 3 };
     static const char *const labels[] = { "-20", "-10", "", "-5", "-3", "", "", "0", "", "", "+3" };
     /* 80 degrees of arc: the end labels of the two meters stay apart, and the face centres on the
@@ -490,7 +490,7 @@ static void meters(void *vg, void *canvas, unsigned tone, unsigned now) {
 
 /* Apple's radial spectrum: VIS_HALO bars, mirrored left and right, radiating from Now Playing's art
  * in a circle, turning slowly, with the bass pulsing the ring. */
-static void halo(void *vg, unsigned tone) {
+static void halo(vgcanvas_t *vg, unsigned tone) {
     float cx = vz.w / 2.0f, cy = VIS_H / 2.0f, art = VIS_ART / 2.0f, r0 = art + 7 + 5 * vz.bass;
     vgcanvas_set_line_width(vg, art * 0.42f + 2); /* round the art: black over its corners */
     vgcanvas_begin_path(vg);
@@ -524,7 +524,7 @@ static void halo(void *vg, unsigned tone) {
 /* pulsr's ridge (github.com/1337raspberry/pulsr): the last VIS_ROWS lines stacked back up the page,
  * the newest in front, each further back higher, flatter and darker. A line hides where one in
  * front stands over it, 2 px clear (a floating horizon), so nothing is filled. */
-static void pulsar(void *vg, unsigned tone) {
+static void pulsar(vgcanvas_t *vg, unsigned tone) {
     float hor[VIS_HALO], at[VIS_HALO];
     for (int i = 0; i < VIS_HALO; ++i) hor[i] = VIS_H, at[i] = VIS_X + PAGE_W * axis(i);
     vgcanvas_set_line_width(vg, 1.5f);
@@ -645,7 +645,7 @@ static int look(const void *unused) {
  * over the slide area, and for 1.5 s after a change the style's name, fading over its last half
  * second. Drawing on the window, clipped to the slide area, not on the page: the slide_view clips
  * the page it was given at run time to a sliver. Painting starts the timer. */
-void visualizer_paint(void *w, void *canvas) {
+void visualizer_paint(widget_t *w, canvas_t *canvas) {
     static const char *const names[] = { "Spectrum", "Oscilloscope", "VU Meters",
                                          "Halo",     "Pulsar",       "Contour" };
     if (!w) return;
@@ -670,7 +670,7 @@ void visualizer_paint(void *w, void *canvas) {
     I(canvas, CANVAS_X) +=
         x; /* the slide area's origin, for the vector drawing and the text alike */
     I(canvas, CANVAS_Y) += y;
-    void *vg = canvas_get_vgcanvas(canvas);
+    vgcanvas_t *vg = canvas_get_vgcanvas(canvas);
     unsigned tone = accent_tone(2), now = time_now_ms();
     if (vg) {
         vgcanvas_save(vg);
@@ -694,8 +694,8 @@ void visualizer_paint(void *w, void *canvas) {
         caption(canvas, names[vz.style], 0, VIS_H - 22, vz.w, 20, 14,
                 rgba(0xaaaaaa, shown < 1000 ? 255 : 255 * (1500 - shown) / 500));
     else if (vz.quiet) { /* the track: title · artist, or the title alone, trimmed to fit */
-        void *tl = widget_lookup(vz.win, "scrlabel_title", 1),
-             *al = widget_lookup(vz.win, "scrlabel_artist", 1);
+        widget_t *tl = widget_lookup(vz.win, "scrlabel_title", 1),
+                 *al = widget_lookup(vz.win, "scrlabel_artist", 1);
         const unsigned *t = tl ? widget_get_text(tl) : 0, *a = al ? widget_get_text(al) : 0;
         unsigned text[160], n = 0, title;
         while (t && *t && n < 100) text[n++] = *t++;
@@ -714,7 +714,7 @@ void visualizer_paint(void *w, void *canvas) {
     canvas_set_clip_rect(canvas, old);
 }
 
-static int next_style(void *ctx, void *event) {
+static int next_style(void *ctx, event_t *event) {
     vz.style = (vz.style + 1) % STYLES;
     vis_reset();
     vz.named = time_now_ms() | 1; /* never 0, which is none */
@@ -723,12 +723,12 @@ static int next_style(void *ctx, void *event) {
     return 0;
 }
 
-static int slid(void *ctx, void *event) {
+static int slid(void *ctx, event_t *event) {
     arm();
     return 0;
 }
 
-static int gone(void *win, void *event) {
+static int gone(void *win, event_t *event) {
     if (win == vz.win) {
         stop_timer(&vz.timer);
         stop_timer(&vz.retry);
@@ -738,9 +738,9 @@ static int gone(void *win, void *event) {
 }
 
 /* ringnav_playing: the page joins the slide_view's art, lyrics and info pages, and its dots. */
-void visualizer_attach(void *win) {
-    void *slide = widget_lookup(win, "slide_view", 1),
-         *dots = widget_lookup(win, "slide_indicator1", 1);
+void visualizer_attach(widget_t *win) {
+    widget_t *slide = widget_lookup(win, "slide_view", 1),
+             *dots = widget_lookup(win, "slide_indicator1", 1);
     if (!slide) return;
     vz.style = config_value("IPOD", "VIS", STYLES, 0);
     vz.win = win;
@@ -749,7 +749,7 @@ void visualizer_attach(void *win) {
     vz.w = I(slide, W_W) > 0 && I(slide, W_W) <= 375 ? I(slide, W_W) : 375;
     /* Classic's slide starts higher, its lyrics down it as far (tools/ipod.py NP_IPOD_LIFT): the
      * page starts where they do, so it stays where the others have it on screen */
-    void *lrc = widget_lookup(slide, "view_lrc", 1);
+    widget_t *lrc = widget_lookup(slide, "view_lrc", 1);
     int top = lrc ? I(lrc, W_Y) : 0;
     vz.page = list_item_create(slide, 0, top, vz.w, VIS_H);
     widget_use_style(vz.page, "s_listitem_black");
@@ -757,7 +757,8 @@ void visualizer_attach(void *win) {
     /* The art is the window's child, over the slide area's centre, for the same reason as the
      * drawing. */
     vz.ox = 0, vz.oy = top;
-    for (void *p = slide; p && p != win; p = P(p, W_PARENT)) vz.ox += I(p, W_X), vz.oy += I(p, W_Y);
+    for (widget_t *p = slide; p && p != win; p = P(p, W_PARENT))
+        vz.ox += I(p, W_X), vz.oy += I(p, W_Y);
     vz.art = image_create(win, vz.ox + (vz.w - VIS_ART) / 2, vz.oy + (VIS_H - VIS_ART) / 2, VIS_ART,
                           VIS_ART);
     widget_set_sensitive(vz.art, 0);

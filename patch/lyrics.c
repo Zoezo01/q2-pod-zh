@@ -289,7 +289,7 @@ typedef struct {
  * rows that match it take it. Zero filled, as all the payload's state (patch/link.ld). */
 static struct {
     ly_tab *tab, *next;
-    void *lrc;
+    widget_t *lrc;
     unsigned rows, sum;
     int ms, cur, fill;
     unsigned lit_at;
@@ -361,7 +361,7 @@ static int ly_take(void) {
  */
 void lyrics_gone(void) { ly.lrc = 0, ly.rows = 0, ly.cur = -1; }
 
-int lyrics_on(void *lrc) {
+int lyrics_on(widget_t *lrc) {
     return lrc && lrc == ly.lrc && ly.tab && ly.rows &&
            (unsigned)widget_count_children(lrc) == ly.rows;
 }
@@ -396,7 +396,7 @@ static int ly_wrap(ly_line *l, const unsigned *s, const unsigned short *adv) {
     return rows;
 }
 
-static void ly_layout(void *canvas, ly_line *l) {
+static void ly_layout(canvas_t *canvas, ly_line *l) {
     const unsigned *s = ly.tab->text + l->text;
     unsigned short *adv = ly.tab->adv + l->text;
     canvas_set_font(canvas, (const char *)0, LYRIC_PX); /* the system default font */
@@ -411,10 +411,10 @@ static void ly_layout(void *canvas, ly_line *l) {
  * whole seconds, without word stamps). Each becomes a blank row as high as its line's rows plus
  * LYRIC_GAP, laid out with the canvas's font, which the list layout puts after a blank LYRIC_SLOT.
  */
-int lyrics_rows(void *lrc) {
+int lyrics_rows(widget_t *lrc) {
     unsigned n = widget_count_children(lrc), chars = 0, sum = 2166136261u;
     for (unsigned i = 0; i < n; ++i) {
-        void *row = widget_get_child(lrc, i);
+        widget_t *row = widget_get_child(lrc, i);
         const unsigned *s = widget_get_text(row);
         unsigned k = 0;
         while (s && s[k]) ++k;
@@ -427,7 +427,7 @@ int lyrics_rows(void *lrc) {
         free(ly.tab);
         ly_tab *t = ly.tab = ly_alloc(n, 0, chars);
         for (unsigned i = 0, c = 0; t && i < n; ++i) {
-            void *row = widget_get_child(lrc, i);
+            widget_t *row = widget_get_child(lrc, i);
             int sec = widget_get_prop_int(row, "lrc_time", LRC_FAR);
             ly_line *o = &t->line[i];
             o->ms = sec >= LRC_FAR / 1000 ? LRC_FAR : sec * 1000, o->text = c;
@@ -441,15 +441,15 @@ int lyrics_rows(void *lrc) {
 /* The page's rows laid out at lrc's width, again when it changes: the iPod page's span the
  * screen, the centred (stock) page's its 225 px column, or the screen in full screen (np_lyrics.c
  * np_full). */
-int lyrics_fit(void *lrc) {
+int lyrics_fit(widget_t *lrc) {
     if (!lyrics_on(lrc)) return 0; /* none, or out of memory: stock's rows stay */
     if (ly.w != I(lrc, W_W) - 2 * LYRIC_X) {
         ly.w = I(lrc, W_W) - 2 * LYRIC_X;
         for (unsigned i = 0; i < ly.tab->n; ++i) ly.tab->line[i].px = 0;
     }
-    void *canvas = widget_get_canvas(lrc);
+    canvas_t *canvas = widget_get_canvas(lrc);
     for (unsigned i = 0; i < ly.rows; ++i) {
-        void *row = widget_get_child(lrc, i);
+        widget_t *row = widget_get_child(lrc, i);
         ly_line *l = &ly.tab->line[i];
         if (canvas && !l->px) ly_layout(canvas, l);
         widget_set_text_utf8(row, "");
@@ -576,7 +576,7 @@ static int ly_lit(unsigned i, int ms) {
 }
 
 /* Line k's rows and those of the lines starting with it, repainted. */
-static void ly_dirty(void *lrc, int k) {
+static void ly_dirty(widget_t *lrc, int k) {
     for (int at = k; k >= 0 && (unsigned)k < ly.rows && ly.tab->line[k].ms == ly.tab->line[at].ms;
          ++k)
         widget_invalidate_force(widget_get_child(lrc, k), (void *)0);
@@ -589,7 +589,7 @@ static void ly_dirty(void *lrc, int k) {
  * loop passes every 25 ms. ponytail: LYRIC_PAINT_MS is a guess at a sweep that still looks
  * smooth; lower it if the light steps, raise it if the page costs too much battery. */
 #define LYRIC_PAINT_MS 66
-int lyrics_line(void *lrc, int ms, int page) {
+int lyrics_line(widget_t *lrc, int ms, int page) {
     if (ly.next && lrc == ly.lrc) ly_take();
     if (!lyrics_on(lrc)) return -1;
     unsigned now = (unsigned)time_now_ms();
@@ -605,8 +605,8 @@ int lyrics_line(void *lrc, int ms, int page) {
 }
 
 /* One row of text clipped to from..to (the row's x) within its own clip (base). */
-static void ly_ink(void *canvas, const int *base, const unsigned *s, unsigned n, int y, int from,
-                   int to, unsigned color) {
+static void ly_ink(canvas_t *canvas, const int *base, const unsigned *s, unsigned n, int y,
+                   int from, int to, unsigned color) {
     int x = I(canvas, CANVAS_X),
         clip[4] = { x + from > base[0] ? x + from : base[0], base[1], 0, base[3] };
     clip[2] = (x + to < base[0] + base[2] ? x + to : base[0] + base[2]) - clip[0];
@@ -620,8 +620,8 @@ static void ly_ink(void *canvas, const int *base, const unsigned *s, unsigned n,
  * (LYRIC_BOLD), LYRIC_LIT as far as it is sung while it plays and LYRIC_DIM past that; any other
  * line LYRIC_REST. A row the page's edge cuts fades with the square of the share of it out of view,
  * so no sliver of a line shows. The text color and clip are restored, the font is not. */
-void lyrics_paint(void *row, void *canvas) {
-    void *lrc = row ? P(row, W_PARENT) : (void *)0;
+void lyrics_paint(widget_t *row, canvas_t *canvas) {
+    widget_t *lrc = row ? P(row, W_PARENT) : (void *)0;
     int i = -1, base[4];
     if (!lyrics_on(lrc) || !P(canvas, CANVAS_LCD)) return;
     while (++i < (int)ly.rows && widget_get_child(lrc, i) != row) {}

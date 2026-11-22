@@ -5,6 +5,8 @@
 #include <stdio.h>
 #include <string.h>
 #define Q2_COVERFLOW_H
+/* This test's widgets and canvas are byte arrays: stock_types.h's names are void here. */
+typedef void widget_t, canvas_t;
 #define CF_ONE 65536
 #define ART_SIZE 160
 #define RGBA(c) (0xff000000u | (c))

@@ -28,7 +28,7 @@ typedef struct {
     int shared; /* another album has a track in this folder, so its cover.jpg may be theirs */
 } job_t;
 typedef struct {
-    void *page, *body, *covers, *slide, *name, *artist, *title;
+    widget_t *page, *body, *covers, *slide, *name, *artist, *title;
     void *albums, *tracks; /* our copies of the stock query results; albums in the Sort's order */
     void *stock;           /* the albums in stock order, which albums is, or is sorted from */
     int sort, sort_read;   /* the Sort card's order (SORT_*), from SORT_FILE once */
@@ -153,7 +153,7 @@ typedef struct {
     void *frame;    /* bitmap_t *, CF_VIEW_W x FLIP_H */
     unsigned *back; /* BACK_W x BACK_H, the panel as painted */
     const unsigned *front;
-    void *panel, *sheet, *title, *artist;
+    widget_t *panel, *sheet, *title, *artist;
     unsigned timer, t0;
     int dir;   /* 1 turning to the panel, -1 back, 0 at rest */
     int drawn; /* the e the frame holds */
@@ -221,15 +221,15 @@ void draw_quad(shelf_t *f, int xl, int xr, int hl, int hr, const unsigned *tex, 
 int cf_floor(float x);
 int cf_round(float x);
 float cf_smooth(float x);
-int coverflow_bounded(void *w);
-int coverflow_jump(void *w, int from, int dir, unsigned *letter);
+int coverflow_bounded(widget_t *w);
+int coverflow_jump(widget_t *w, int from, int dir, unsigned *letter);
 int coverflow_letter_first(int i, unsigned *letter);
 unsigned coverflow_group(int i);
-int coverflow_letter_next(void *w, int from, int dir, int n, unsigned *letter);
+int coverflow_letter_next(widget_t *w, int from, int dir, int n, unsigned *letter);
 int covers_live(void);
 float ff_decay(float s);
-int lettered(void *w);
-int stride_of(void *s);
+int lettered(widget_t *w);
+int stride_of(widget_t *s);
 void titles(unsigned c);
 
 /* coverflow_letters.c */
@@ -256,13 +256,13 @@ void coverflow_halves(void);
 int coverflow_landing(void);
 int land_turning(void);
 int land_start(void *t, int row, unsigned t0);
-void land_paint(void *w, void *canvas);
-void land_art(void *w, void *canvas);
+void land_paint(widget_t *w, canvas_t *canvas);
+void land_art(widget_t *w, canvas_t *canvas);
 void land_drop(void);
 int land_key(unsigned key);
 
 /* Optional browsing position, and its scrub by touch. */
-void coverflow_position_paint(void *w, void *canvas);
+void coverflow_position_paint(widget_t *w, canvas_t *canvas);
 void coverflow_position_reset(void);
 int coverflow_position_press(int x, int y);
 int coverflow_position_touch(int type, int x, int y);
