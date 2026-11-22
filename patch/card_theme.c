@@ -25,8 +25,9 @@ static struct {
 } ct __attribute__((section(".scratch")));
 
 /* text past a UTF-8 BOM when its n bytes (a NUL after them, as read_all's) are a whole card theme:
- * no NUL (read_all keeps it to CT_MAX), the first line "q2theme 1", the last non-blank one "end",
- * so a file cut short by a pulled card is refused whole; else 0. */
+ * no NUL (read_all keeps it to CT_MAX), the first line "q2theme 1", the last "end" with only empty
+ * lines after it (as the Studio's reader has it), so a file cut short by a pulled card is refused
+ * whole; else 0. */
 static char *whole(char *text, unsigned n) {
     static const char head[] = "q2theme 1";
     unsigned at = sizeof head - 1;
@@ -34,18 +35,20 @@ static char *whole(char *text, unsigned n) {
     if (strlen(text) != n || n < at || memcmp(text, head, at)) return 0;
     at += text[at] == '\r';
     if (text[at] != '\n') return 0;
-    while (n && (unsigned char)text[n - 1] <= ' ') --n; /* blank lines and spaces after end */
+    /* empty lines after end: LFs, and CRs each before an LF or the end */
+    while (n && (text[n - 1] == '\n' || (text[n - 1] == '\r' && text[n] != '\r'))) --n;
     return n >= 4 && !memcmp(text + n - 4, "\nend", 4) ? text : 0;
 }
 
+static int eol(const char *c) { return c[*c == '\r'] == '\n'; } /* an LF, or a CR and its LF */
 static int line(const char *q, const char *s) {
     unsigned k = strlen(s);
-    return !strncmp(q, s, k) && (q[k] == '\n' || q[k] == '\r');
+    return !strncmp(q, s, k) && eol(q + k);
 }
 /* text (n bytes) into ct when whole: the lines as Q2 Theme Studio writes them, "accent #rrggbb"
  * (hex in either case) and "battery icon|percent|both|inside", each ending the line (CRLF too), the
- * last of each; any other line (name, color bg, a newer verb, one with a tab or another space) is
- * skipped. 0 when refused. */
+ * last of each; any other line (name, color bg, a newer verb, one with a tab, another space or a
+ * CR that isn't before its LF) is skipped, as the Studio's reader skips it. 0 when refused. */
 static int card_theme_parse(char *text, unsigned n) {
     static const char *const styles[] = { "battery icon", "battery percent", "battery both",
                                           "battery inside" };
@@ -56,7 +59,7 @@ static int card_theme_parse(char *text, unsigned n) {
         unsigned rgb = 0, k = 8;
         if (!strncmp(q, "accent #", 8)) {
             for (int d; (d = hex(q[k])) >= 0; ++k) rgb = rgb << 4 | (unsigned)d;
-            if (k == 14 && (q[k] == '\n' || q[k] == '\r')) ct.accent = 1u << 24 | rgb;
+            if (k == 14 && eol(q + k)) ct.accent = 1u << 24 | rgb;
         }
         for (int m = 0; m < 4; ++m)
             if (line(q, styles[m])) ct.battery = m + 1;

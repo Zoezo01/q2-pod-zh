@@ -2,6 +2,8 @@
 mount, the failed-start guard, the accent's scheme row under the themes that take it and the battery style in all four,
 and the Display rows it sets."""
 import ctypes as C
+import random
+import re
 
 import pytest
 
@@ -80,6 +82,9 @@ def tones(c):
     b'q2theme 1\naccent #c04a8a\0\nend\n',  # an embedded NUL
     b'\xef\xbb\xbf\xef\xbb\xbfq2theme 1\nend\n',  # one BOM only
     b'q2theme 1end\n',
+    AUBERGINE + b'\n \t\n',  # a line of spaces after end isn't an empty one
+    AUBERGINE[:-1] + b' \n',
+    AUBERGINE[:-1] + b'\r\r\n',
 ])
 def test_a_file_not_whole_is_refused_whole(fw, ct, data):
     assert parse(fw, data) == 0 and ct('accent').value == 0 and ct('battery', C.c_int).value == 0
@@ -89,7 +94,9 @@ def test_a_file_not_whole_is_refused_whole(fw, ct, data):
     AUBERGINE,
     b'\xef\xbb\xbf' + AUBERGINE,  # a BOM, as a hand-saved file has it
     AUBERGINE.replace(b'\n', b'\r\n'),
-    AUBERGINE + b'\n \t\n',  # blank lines after end
+    AUBERGINE + b'\n\r\n\n',  # empty lines after end
+    AUBERGINE[:-1],  # no line end after end
+    AUBERGINE[:-1] + b'\r',
     theme_file(b'accent #C04A8A', b'battery inside'),  # upper-case hex
 ])
 def test_a_whole_file_gives_its_accent_and_battery(fw, ct, data):
@@ -103,9 +110,45 @@ def test_a_whole_file_gives_its_accent_and_battery(fw, ct, data):
                                   # only as the Studio writes them: no tab, no leading, trailing or second space
                                   b'  accent\t#C04A8A  ', b' accent #c04a8a', b'accent\t#c04a8a', b'accent  #c04a8a',
                                   b'accent #c04a8a ', b'battery   inside', b' battery inside', b'battery\tinside',
-                                  b'battery inside ', b'battery inside\t'])
+                                  b'battery inside ', b'battery inside\t',
+                                  b'accent #c04a8a\r\r', b'accent #c04a8a\rx', b'battery inside\r\r'])  # a CR not before its LF
 def test_a_line_out_of_shape_is_skipped(fw, ct, line):
     assert parse(fw, theme_file(line)) == 1 and ct('accent').value == 0 and ct('battery', C.c_int).value == 0
+
+
+def studio(data):
+    """What Q2 Theme Studio's own reader (parse, docs/core.js) takes from a file: its accent and battery style, or None
+    where it refuses the file."""
+    text = data.decode('latin-1').removeprefix('\xef\xbb\xbf')
+    lines = [line.removesuffix('\r') for line in text.split('\n')]
+    while lines and lines[-1] == '': lines.pop()
+    if len(lines) < 2 or lines[0] != 'q2theme 1' or lines[-1] != 'end': return None
+    accent = battery = 0
+    for line in lines[1:-1]:
+        word, *rest = line.split(' ')
+        if word == 'accent' and len(rest) == 1 and re.fullmatch('#[0-9a-fA-F]{6}', rest[0]): accent = 1 << 24 | int(rest[0][1:], 16)
+        if word == 'battery' and len(rest) == 1 and rest[0] in STYLES: battery = 1 + STYLES.index(rest[0])
+    return accent, battery
+
+
+def test_the_parse_takes_what_the_studios_reader_takes(fw, ct):
+    rng = random.Random(1)
+    heads = [b'q2theme 1', b'q2theme 1', b'q2theme 1', b'\xef\xbb\xbfq2theme 1', b'q2theme 1 ', b'q2theme 2', b'']
+    lines = [b'accent #c04a8a', b'accent #C04A8A', b'accent #c04a8', b'accent #c04a8a0', b'accent  #c04a8a', b'accent #c04a8a ',
+             b' accent #c04a8a', b'accent\t#c04a8a', b'accent #c04a8a\rx', b'battery inside', b'battery both', b'battery icon',
+             b'battery percent', b'battery bothx', b'battery  both', b'battery both ', b'battery', b'name A', b'color bg #1e1226',
+             b'end', b'q2theme 1', b'', b' ', b'\xa0accent #c04a8a', b'accent #c04a8a\xa0']
+    ends = [b'\n', b'\n', b'\n', b'\r\n', b'\r\n', b'\r', b'\r\r\n', b'\n\n', b' \n', b'\t\n', b'']
+    tails = [b'end', b'end', b'end', b'end ', b'End', b'', b'end\n ', b'end\n\x0c']
+    seen = set()
+    for _ in range(6000):
+        parts = [rng.choice(heads), *rng.choices(lines, k=rng.randrange(5)), rng.choice(tails)]
+        data = b''.join(part + rng.choice(ends) for part in parts)
+        want = studio(data)
+        seen.add(want)
+        got = (ct('accent').value, ct('battery', C.c_int).value) if parse(fw, data) else None
+        assert got == want, data
+    assert len(seen) == 11  # refused, and each of accent or none with a style or none
 
 
 def test_a_hex_digit_is_one_of_22_bytes(fw, ct):
@@ -226,14 +269,14 @@ def test_the_set_aside_bytes_are_not_copied_back(fw, card):
 
 def test_over_16_kb_is_refused_at_the_mount_and_at_the_start(fw, card, ct):
     seen = toasts(fw)
-    big = b'q2theme 1\naccent #c04a8a\nend'.ljust(16384)  # exactly 16 KB: taken
+    big = b'q2theme 1\naccent #c04a8a\nend'.ljust(16384, b'\n')  # exactly 16 KB: taken
     card.files[SRC] = big
     sync(fw)
     assert card.files[DST] == big and said(fw, seen) == 'Card theme saved. Restart to apply'
-    card.files[SRC] = big + b' '  # over, though only blanks
+    card.files[SRC] = big + b'\n'  # over, though only an empty line
     sync(fw)
     assert card.files[DST] == big and said(fw, seen) == "Card theme file can't be used"
-    card.files[DST] = big + b' '
+    card.files[DST] = big + b'\n'
     start(fw)
     assert ct('accent').value == 0 and TRY not in card.files
 
