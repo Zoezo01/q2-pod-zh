@@ -302,10 +302,11 @@ extern int stock_keyup_trampoline(void *, void *), stock_touch_trampoline(void *
     stock_input_trampoline(void *, void *), stock_buzzer_trampoline(int),
     stock_localclass_trampoline(int), stock_detail_trampoline(int, void *),
     stock_artist_trampoline(int), stock_power_trampoline(void *, void *),
-    stock_systemset_trampoline(void *, void *), stock_audioset_trampoline(void *, void *),
-    stock_btrows_trampoline(void *, void *), stock_playlist_trampoline(void *),
-    stock_stream_trampoline(void *, void *), stock_start_player_trampoline(void),
-    stock_standby_trampoline(void), stock_cardmount_trampoline(void),
+    stock_systemset_trampoline(void *, void *), stock_netservice_trampoline(void *, void *),
+    stock_audioset_trampoline(void *, void *), stock_btrows_trampoline(void *, void *),
+    stock_playlist_trampoline(void *), stock_stream_trampoline(void *, void *),
+    stock_start_player_trampoline(void), stock_standby_trampoline(void),
+    stock_cardmount_trampoline(void),
     stock_config_write_trampoline(const char *, const char *, const char *, const char *),
     stock_usbmode_trampoline(void *, void *, void *, void *),
     stock_hscroll_start_trampoline(void *), stock_wifi_page_trampoline(void *, void *),
@@ -580,6 +581,11 @@ int upload_scrobbles(void *ctx, void *event);
 
 /* volume.c */
 void vol_paint(void *top, void *canvas);
+
+/* netservice.c: Settings → Network's card app rows; list_row_into is navigation.c's settings row
+ * with a chevron */
+int ringnav_netservice(void *win, void *ctx);
+void *list_row_into(void *view, const char *icon, int (*click)(void *, void *), void *ctx);
 
 /* smart_wifi.c */
 void smart_wake(void); /* Smart Wi-Fi's radio back now, if it had it off */

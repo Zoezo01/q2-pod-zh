@@ -7,10 +7,11 @@
  *            Stop row, and an error page's second row is Cancel) more (an op, then a space and
  *            a title: Now Playing's ⋯ opens its page there while its queue plays, addon_more),
  *            favdir (a card folder whose songs' hearts it is told of, addon_fav_path), hidden
- *            (1: no row, its page opened by id: addon_open_id, as AirPlay's is) and row (where
- *            its row is: library, games or streaming; without it, Games for a game and
- *            Streaming for any other); wifi (0: it never uses the network, so Smart Wi-Fi keeps
- *            no radio on for it: addon_running, addon_offline);
+ *            (1: no row, its page opened by id: addon_open_id, as AirPlay's is), row (where
+ *            its row is: library, games, network or streaming; without it, Games for a game and
+ *            Streaming for any other) and wifi (0: it never uses the network, so Smart Wi-Fi keeps
+ *            no radio on for it: addon_running, addon_offline; 1: it follows the Wi-Fi link,
+ *            addon_wifi.c);
  *   run      its launcher, which copies the app to /tmp and runs it there in a restart loop, so
  *            the card is never kept busy, leaving the loop's pid in /tmp/q2-<id>;
  *   q2-<id>  the app;
@@ -99,7 +100,7 @@
 /* This firmware's card-app features, space-separated; a feature adds its word. */
 #define ADDON_CAPS                                                                                 \
     "playlist progress pages library goto sleep game audio sections art window urls sort field "   \
-    "more fav now fieldtext wake audio2 dim gameview eq screen volume"
+    "more fav now fieldtext wake audio2 dim gameview eq screen volume wifi network bar switch"
 #define ADDON_SECTIONS 8  /* sections an app's first page may have */
 #define SWIPE_CLAIM_PX 24 /* a sideways move this far, twice as far as up or down, is a swipe's */
 #define SWIPE_PX 60       /* and this far at the lift, more than up or down, changes section */
@@ -108,6 +109,8 @@
 #define ART_MAX 128 /* the most a cover's or an icon's file may be, either way; larger is none */
 #define ART_KEEP 24 /* the rows' covers kept decoded around the list's scroll position */
 #define ART_URL (APP_ID + 32) /* art_file's file:// URL, its NUL included */
+#define BAR_ICON_W 40 /* the most an app's status bar icon may be: wider or higher is none */
+#define BAR_ICON_H 20
 
 /* An app found on the card, kept for the life of demo in its slot. present: on the card at the
  * last scan; relaunch: stopped for USB storage, to start again; restart: stopped by Retry (its
@@ -116,18 +119,26 @@ typedef struct {
     char id[APP_ID], name[32], tips[32], bin[48], run[48], pid[32], state[40], browse[48], icon[56];
     char more[48]; /* q2app's more: an op, a space and a title (addon_more) */
     int qr, game, audio, view, hidden, present, launched, hold, relaunch, restart;
-    int nostop;                                   /* q2app's stop=0: no Stop row on its page */
-    int nowifi;                                   /* q2app's wifi=0: it never uses the network */
-    int row;                                      /* where its row is: a ROW_ */
+    int nostop;   /* q2app's stop=0: no Stop row on its page */
+    int nowifi;   /* q2app's wifi=0: it never uses the network */
+    int row;      /* where its row is: a ROW_ */
+    int wifi;     /* q2app's wifi=1: started with the Wi-Fi link, stopped once it is gone */
+    int wifi_off; /* a wifi app the user stopped (or that ended itself): not started again until
+                   * the next link (addon_wifi_release) */
     unsigned polled, launch_at, restart_at, play; /* play: its .play as read last, hashed */
+    /* its status file's bar= (bar_read): the word as read last, and file:// of the icon it names
+     * (bar.png for 1, bar-<word>.png else) if one fits BAR_ICON_W x BAR_ICON_H; else "" */
+    char baricon[56], barword[12];
+    int barw; /* the icon's width, for its slot in the bar */
 } app_t;
-enum { ROW_STREAMING, ROW_GAMES, ROW_LIBRARY }; /* as addon_scan's rows[] names them */
+enum { ROW_STREAMING, ROW_GAMES, ROW_LIBRARY, ROW_NETWORK }; /* as addon_scan's rows[] names them */
 
 static struct {
     app_t a[APPS_MAX];
     int n, shown, order[APPS_MAX]; /* order: Streaming's rows, the slots on the card by name */
     int games, game[APPS_MAX];     /* Games' rows, by name too */
     int libs, lib[APPS_MAX];       /* and the Library's */
+    int nets, net[APPS_MAX];       /* and Settings → Network's (row=network) */
 } ap __attribute__((section(".scratch")));
 
 /* An id goes into shell commands: lowercase letters, digits and '-' only. */
@@ -177,35 +188,49 @@ static void slots_read(void) {
         a->hidden = number(raw, "hidden") == 1;
         /* its row where row says, else as firmware without the key lists it: Games for a game,
          * Streaming for any other */
-        static const char *const rows[] = { "streaming", "games", "library" };
+        static const char *const rows[] = { "streaming", "games", "library", "network" };
         char row[12];
         field(raw, "row", row, sizeof row);
         unsigned r = strlen(row);
         if (r && row[r - 1] == '\r') row[r - 1] = 0; /* a Windows editor's line end */
         a->row = a->game ? ROW_GAMES : ROW_STREAMING;
-        for (int i = 0; i < 3; ++i)
+        for (int i = 0; i < 4; ++i)
             if (!strcmp(row, rows[i])) a->row = i;
         char stop[4]; /* as text, as scrobble: number() is 0 for a missing key too */
         field(raw, "stop", stop, sizeof stop);
         a->nostop = !strcmp(stop, "0") || !strcmp(stop, "0\r");
-        char wifi[4]; /* as text too: only 0 says it never uses the network */
+        char wifi[4]; /* as text too: 0 never uses the network, 1 follows the link */
         field(raw, "wifi", wifi, sizeof wifi);
         a->nowifi = !strcmp(wifi, "0") || !strcmp(wifi, "0\r");
+        a->wifi = !strcmp(wifi, "1") || !strcmp(wifi, "1\r");
         field(raw, "more", a->more, sizeof a->more);
         unsigned k = strlen(a->more);
         if (k && a->more[k - 1] == '\r') a->more[k - 1] = 0; /* a Windows editor's line end */
         a->present = !access(a->bin, 0);
-        /* the row's size first (40 px), the other scaled to fit on Streaming (navigation.c
-         * set_child), else stream_app (one over ART_MAX px either way, or whose size can't be
-         * read, counts as none: demo decodes it whole) */
-        static const char *const icons[2] = { "icon-40.png", "icon.png" };
+        /* the row's size first (40 px, a Network row's 52), the other scaled to fit on Streaming
+         * (navigation.c set_child; a Network row draws it 1:1, so one over 52 px shows its middle),
+         * else stream_app (one over ART_MAX px either way, or whose size can't be read, counts as
+         * none: demo decodes it whole) */
+        /* An icon-<theme>.png or icon-40-<theme>.png (theme()->name in lower case, a space a dash:
+         * minimal, modern, classic, classic-modern) comes before the plain ones under that theme,
+         * for an app drawn to match it; read at each scan, so a theme change shows at the next. The
+         * last good one tried is taken. */
+        static const char *const icons[2] = { "icon-40", "icon" };
+        char look[16];
+        unsigned n = 0;
+        for (const char *c = theme()->name; c && *c && n < sizeof look - 1; ++c)
+            look[n++] = (char)(*c >= 'A' && *c <= 'Z' ? *c + 32 : *c == ' ' ? '-' : *c);
+        look[n] = 0;
         tk_snprintf(a->icon, sizeof a->icon, "stream_app");
-        for (int i = 1; i >= 0; --i) {
-            int w = 0, h = 0;
-            tk_snprintf(path, sizeof path, CARD "/%s/%s", e->d_name, icons[i]);
-            if (picture_size(path, &w, &h) && w && h && w <= ART_MAX && h <= ART_MAX)
-                tk_snprintf(a->icon, sizeof a->icon, "file://%s", path);
-        }
+        for (int t = 0; t < 2; ++t)
+            for (int i = 1; i >= 0; --i) {
+                int w = 0, h = 0;
+                tk_snprintf(path, sizeof path, CARD "/%s/%s%s%s.png", e->d_name,
+                            icons[a->row == ROW_NETWORK ? 1 - i : i], t ? "-" : "", t ? look : "");
+                if ((!t || n) && picture_size(path, &w, &h) && w && h && w <= ART_MAX &&
+                    h <= ART_MAX)
+                    tk_snprintf(a->icon, sizeof a->icon, "file://%s", path);
+            }
     }
     if (d) closedir(d);
 }
@@ -214,12 +239,18 @@ static void slots_read(void) {
  * addon_name. */
 int addon_scan(void) {
     slots_read();
-    ap.shown = ap.games = ap.libs = 0;
+    ap.shown = ap.games = ap.libs = ap.nets = 0;
     for (int i = 0; i < ap.n; ++i) { /* by name: an insertion, APPS_MAX at most */
         if (!ap.a[i].present || ap.a[i].hidden) continue;
         int row = ap.a[i].row;
-        int *order = row == ROW_GAMES ? ap.game : row == ROW_LIBRARY ? ap.lib : ap.order;
-        int k = row == ROW_GAMES ? ap.games++ : row == ROW_LIBRARY ? ap.libs++ : ap.shown++;
+        int *order = row == ROW_GAMES     ? ap.game
+                     : row == ROW_LIBRARY ? ap.lib
+                     : row == ROW_NETWORK ? ap.net
+                                          : ap.order;
+        int k = row == ROW_GAMES     ? ap.games++
+                : row == ROW_LIBRARY ? ap.libs++
+                : row == ROW_NETWORK ? ap.nets++
+                                     : ap.shown++;
         for (; k && strcasecmp(ap.a[order[k - 1]].name, ap.a[i].name) > 0; --k)
             order[k] = order[k - 1];
         order[k] = i;
@@ -242,6 +273,11 @@ const char *addon_slot_id(int i) {
 /* Library's Apps rows (addon_apps): how many, the card read again, then one's name. */
 int addon_libs(void) { return addon_scan(), ap.libs; }
 const char *addon_lib_name(int k) { return k >= 0 && k < ap.libs ? ap.a[ap.lib[k]].name : 0; }
+/* Settings → Network's card rows (navigation.c ringnav_netservice, row=network): how many, the card
+ * read again, then one's name and icon. */
+int addon_network(void) { return addon_scan(), ap.nets; }
+const char *addon_network_name(int k) { return k >= 0 && k < ap.nets ? ap.a[ap.net[k]].name : 0; }
+const char *addon_network_icon(int k) { return k >= 0 && k < ap.nets ? ap.a[ap.net[k]].icon : 0; }
 
 /* Whether an image's name is a card app's Streaming icon, file:///mnt/mmc/.<id>/icon*.png
  * (navigation.c ringnav_image_add: Minimal greys it as Streaming's own icons). */
@@ -827,6 +863,33 @@ static void sleep_check(void) {
  * auto power-off held while the app asks (hold=1), as Spotify's poll does while it plays; the
  * screen still turns off. An app that stopped by itself (idle, or from the phone) is let go, and
  * one stopped for USB storage starts again once the card is back. */
+/* An app's status bar icon from its status file's bar=: 1 is bar.png, a word of 1 to 8 of a-z0-9
+ * bar-<word>.png (a VPN's bar=on and bar=off: connected, greyed), anything else none. Looked up
+ * when the word changes, not every poll. */
+static void bar_read(app_t *a, const char *raw) {
+    char word[sizeof a->barword], path[64];
+    field(raw, "bar", word, sizeof word);
+    unsigned n = strlen(word);
+    if (n && word[n - 1] == '\r') word[--n] = 0; /* a Windows editor's line end */
+    if (!strcmp(word, a->barword)) return;
+    tk_snprintf(a->barword, sizeof a->barword, "%s", word);
+    a->baricon[0] = 0;
+    a->barw = 0;
+    int ok = n && n <= 8;
+    for (unsigned i = 0; ok && i < n; ++i)
+        ok = (word[i] >= 'a' && word[i] <= 'z') || (word[i] >= '0' && word[i] <= '9');
+    if (!ok || !strcmp(word, "0")) return;
+    if (!strcmp(word, "1"))
+        tk_snprintf(path, sizeof path, CARD "/.%s/bar.png", a->id);
+    else
+        tk_snprintf(path, sizeof path, CARD "/.%s/bar-%s.png", a->id, word);
+    int w = 0, h = 0;
+    if (picture_size(path, &w, &h) && w && h && w <= BAR_ICON_W && h <= BAR_ICON_H) {
+        tk_snprintf(a->baricon, sizeof a->baricon, "file://%s", path);
+        a->barw = w;
+    }
+}
+
 static void poll_one(app_t *a) {
     unsigned now = time_now_ms();
     if ((!a->launched && !a->relaunch && !a->restart) || now - a->polled < ADDON_POLL_MS) return;
@@ -846,11 +909,15 @@ static void poll_one(app_t *a) {
     char raw[QR_RAW];
     state_read(a->state, raw, sizeof raw);
     a->hold = number(raw, "hold") == 1;
+    bar_read(a, raw);
     if (a->hold) reset_poweroptions_timer(1, 1, 0); /* standby, auto power-off; not the screen's */
     stream_poll(a);
     sleep_read(a);
     addon_eq_poll((int)(a - ap.a), a->id);
-    if (access(a->pid, 0) && now - a->launch_at > ADDON_START_MS) a->launched = a->hold = 0;
+    if (access(a->pid, 0) && now - a->launch_at > ADDON_START_MS) {
+        if (a->launched) a->wifi_off = a->wifi; /* ended by itself: waits for the next link */
+        a->launched = a->hold = 0;
+    }
 }
 
 /* Card games: Library's Games lists them after its own (games.c); a row runs the game's binary
@@ -943,7 +1010,8 @@ static void game_end(void) {
  * Apps page's and Games' rows hold their places by name, so a new app sorted in would move each
  * after it on a row. */
 const char *addon_where(const char *id) {
-    static const char *const where[] = { "Streaming", "Library's Games", "Library's Apps" };
+    static const char *const where[] = { "Streaming", "Library's Games", "Library's Apps",
+                                         "Network settings" };
     slots_read();
     for (int i = 0; i < ap.n; ++i)
         if (ap.a[i].present && !strcmp(ap.a[i].id, id)) return where[ap.a[i].row];
@@ -1313,14 +1381,36 @@ static void game_poll(void) {
     gm.seen = time_now_ms(); /* Smart Awake: asked again GAME_IDLE_MS on */
 }
 
+/* The status bar's card app icon (navigation.c bar_sync): the icon bar= names (bar_read) of the
+ * first app by name that runs, such as a VPN's while it is connected; 0 for none. */
+static const app_t *bar_app(void) {
+    const app_t *best = 0;
+    for (int i = 0; i < ap.n; ++i) {
+        const app_t *a = &ap.a[i];
+        if (a->launched && a->baricon[0] && (!best || strcasecmp(a->name, best->name) < 0))
+            best = a;
+    }
+    return best;
+}
+const char *addon_bar_icon(void) {
+    const app_t *a = bar_app();
+    return a ? a->baricon : 0;
+}
+/* ... and its width in pixels, 0 for none */
+int addon_bar_width(void) {
+    const app_t *a = bar_app();
+    return a ? a->barw : 0;
+}
+
 /* Smart Wi-Fi (smart_wifi.c smart_needed): an app started, or restarting after Retry, keeps the
  * radio on until it stops (by itself, Stop Streaming Services or Rockbox). One stopped for USB
  * storage counts once it starts again: the cable holds the radio meanwhile, and an app deleted from
  * the computer, which never starts again, holds nothing. One whose q2app says wifi=0 never uses the
- * network and never counts, nor does its page (addon_offline). */
+ * network and never counts, nor does its page (addon_offline); a wifi=1 app follows the link, it
+ * doesn't hold it. */
 int addon_running(void) {
     for (int i = 0; i < ap.n; ++i)
-        if ((ap.a[i].launched || ap.a[i].restart) && !ap.a[i].nowifi) return 1;
+        if ((ap.a[i].launched || ap.a[i].restart) && !ap.a[i].nowifi && !ap.a[i].wifi) return 1;
     return 0;
 }
 
@@ -1331,6 +1421,15 @@ void addon_poll(void) {
     sleep_check();
     now_poll();
     library_poll();
+    addon_wifi_poll();
+    /* the status bar picks its icon as it paints (bar_sync): an app starting, stopping or changing
+     * its bar= repaints nothing else, so the bar is repainted when the icon changes */
+    static char bar_was[sizeof ap.a[0].baricon] __attribute__((section(".scratch")));
+    const char *bar = addon_bar_icon(); /* compared by its text: bar_read rewrites it in place */
+    if (strcmp(bar ? bar : "", bar_was)) {
+        tk_snprintf(bar_was, sizeof bar_was, "%s", bar ? bar : "");
+        widget_invalidate_force(*(void *const *)system_bar, (void *)0);
+    }
 }
 
 /* An app asked to end through its loop, not its socket, so a frozen one stops too; restart: started
@@ -1350,9 +1449,47 @@ void addon_stop(void) {
         app_t *a = &ap.a[i];
         if (a->launched || !access(a->pid, 0)) stop_cmd(a->pid, cmd, sizeof cmd), system(cmd);
         a->launched = a->hold = a->relaunch = a->restart = 0;
+        a->wifi_off = a->wifi;
     }
     /* Rockbox's row kills demo next, /tmp kept; Stop Streaming Services stops a URL queue too */
     if (nw.live) now_write(1, nw.sec, nw.total);
+}
+
+/* The wifi=1 apps (addon_wifi.c follows the link for them): how many are on the card (as the last
+ * scan found them), each started that isn't running, held off or about to start again, each
+ * running one stopped, and the user's stops forgotten for a new link. */
+/* An app's loop runs: its pid file names a process that is there (/proc/<pid>; demo imports no
+ * kill()). A pid file alone may be a dead loop's, kept in /tmp across a restart of demo. */
+static int loop_alive(const app_t *a) {
+    char raw[16], proc[24];
+    if (!state_read(a->pid, raw, sizeof raw)) return 0;
+    int pid = 0;
+    for (const char *c = raw + 1; *c >= '0' && *c <= '9' && pid < 10000000; ++c) /* past its '\n' */
+        pid = pid * 10 + *c - '0';
+    tk_snprintf(proc, sizeof proc, "/proc/%d", pid);
+    return pid > 0 && !access(proc, 0);
+}
+int addon_wifi_apps(void) {
+    int n = 0;
+    for (int i = 0; i < ap.n; ++i) n += ap.a[i].wifi && ap.a[i].present && !ap.a[i].hidden;
+    return n;
+}
+void addon_wifi_start(void) {
+    for (int i = 0; i < ap.n; ++i) {
+        app_t *a = &ap.a[i];
+        /* its loop still running: a stop not yet done (run would exit at once, and the loop's end
+         * then read as the app ending itself); started once it is gone */
+        if (a->wifi && a->present && !a->hidden && !a->wifi_off && !a->launched && !a->relaunch &&
+            !a->restart && !loop_alive(a))
+            launch(a);
+    }
+}
+void addon_wifi_stop(void) {
+    for (int i = 0; i < ap.n; ++i)
+        if (ap.a[i].wifi && (ap.a[i].launched || ap.a[i].restart)) app_stop(&ap.a[i], 0);
+}
+void addon_wifi_release(void) {
+    for (int i = 0; i < ap.n; ++i) ap.a[i].wifi_off = 0;
 }
 
 /* usbmode_page_init's hook (navigation.c), before stock unmounts the card for USB storage: every
@@ -1389,7 +1526,9 @@ void addon_card_away(void) {
 void addon_forget(const char *dir) {
     for (int i = 0; dir && dir[0] == '.' && i < ap.n; ++i)
         if (!strcmp(ap.a[i].id, dir + 1))
-            ap.a[i].launched = ap.a[i].hold = ap.a[i].relaunch = ap.a[i].restart = 0;
+            /* wifi_off too: the App Store's stop isn't the user's, nor the app ending itself */
+            ap.a[i].launched = ap.a[i].hold = ap.a[i].relaunch = ap.a[i].restart =
+                ap.a[i].wifi_off = 0;
 }
 void addon_quit(const char *dir) { /* addon_card_away's wait, libc's clock and sleep, one app */
     char pid[32], cmd[96];
@@ -1730,6 +1869,9 @@ static void row(lv_t *l, int i) {
     if (l->art) {
         char url[ART_URL];
         item = art_row(i, cell(i, 2), cell(i, 3), art_file(i, url) ? url : 0, opens(i));
+    } else if (!strcmp(cell(i, 0), "switch")) { /* its title and the settings rows' switch */
+        item = page_row_detail(pg.view, i, cell(i, 2), "", clicked);
+        list_toggle(widget_get_child(item, 0), cell(i, 2), !strcmp(cell(i, 3), "on"));
     } else
         item = (opens(i) ? page_row_detail_into : page_row_detail)(pg.view, i, cell(i, 2),
                                                                    cell(i, 3), clicked);
@@ -1893,6 +2035,12 @@ static void retext(void *item, void *w, unsigned k, const char *s) {
 static void relabel(const lv_t *l) {
     for (int i = 0; i < l->n; ++i) {
         void *item = widget_get_child(pg.view, (unsigned)i);
+        if (!strcmp(cell(i, 0), "switch")) { /* its state is the switch's, never text (row()) */
+            void *t = widget_get_child(item, 0);
+            if (text_differs(t, cell(i, 2))) retext(item, t, 2, cell(i, 2));
+            list_toggle(t, cell(i, 2), !strcmp(cell(i, 3), "on"));
+            continue;
+        }
         for (unsigned c = 0, k = 2, m = widget_count_children(item); c < m; ++c) {
             void *w = widget_get_child(item, c);
             if (!tk_strcmp(widget_get_type(w), "hscroll_label")) {
@@ -1913,7 +2061,7 @@ static void busy_row(int on) {
     lv_t *l = top();
     int i = pg.arow;
     if (on == pg.busy || !pg.view || l->state != K_READY || i >= l->n) return;
-    int k = 2 + !!cell(i, 3)[0];
+    int k = 2 + (!!cell(i, 3)[0] && strcmp(cell(i, 0), "switch")); /* a switch's is its state */
     void *item = widget_get_child(pg.view, (unsigned)i);
     retext(item, widget_get_child(item, (unsigned)k - 2), (unsigned)k,
            on ? "Working…" : cell(i, k));
@@ -2157,6 +2305,7 @@ static void got(void) {
             pg.up = 0; /* asked to end: its level's reload starts nothing */
         if (ok && !strcmp(pg.aop, "stop")) {
             app()->launched = app()->hold = 0;
+            app()->wifi_off = app()->wifi;
             navigator_back();
         } else if (ok && l == top() && l->state == K_READY && l->live)
             keep_sel(), fetch(l); /* a live level stays shown, asked again now: no Loading… page */
@@ -2407,6 +2556,7 @@ static int go(const void *unused) {
         char t[48];
         tk_snprintf(t, sizeof t, "%s stopped", app()->name);
         app_stop(app(), 0);
+        app()->wifi_off = app()->wifi;
         toast(t);
         navigator_back();
     } else if (l->state == K_ERROR) {
@@ -2427,7 +2577,8 @@ static int go(const void *unused) {
             open_list(uri, ctx, cell(i, 2));
         else if (!strcmp(kind, "page"))
             page_to(l, ctx, strcmp(uri, "prev") ? 1 : -1);
-        else if (!strcmp(kind, "action") && !pg.act) /* one in flight: this press does nothing */
+        else if ((!strcmp(kind, "action") || !strcmp(kind, "switch")) &&
+                 !pg.act) /* one in flight: this press does nothing */
             action(i, uri, ctx);
         else if (!strcmp(kind, "remote"))
             qr_open(app()->state, app()->name);
@@ -2611,6 +2762,13 @@ int addon_apps_sync(void *win, void *event) {
     if (win == la.page) apps_rows(n);
     return 0;
 }
+/* An app's Network row (ctx: its place by name at the last scan): as a Library row's. */
+int addon_network_open(void *ctx, void *event) {
+    (void)event;
+    int k = (int)(long)ctx;
+    if (k >= 0 && k < ap.nets) press(ap.net[k]);
+    return 0;
+}
 
 /* The page of the app with this id, hidden or not, found on the card again first, over any app's
  * page left open under Now Playing, as addon_more's. */
@@ -2765,7 +2923,8 @@ static struct {
     unsigned timer, leave, seen; /* seen: the state file as last read, hashed */
     const char *state;
     int size;
-    char *hex; /* the code's rows, QR_HEX bytes calloc'd with the page */
+    char *hex;  /* the code's rows, QR_HEX bytes calloc'd with the page */
+    void *pinl; /* the PIN's caption, hidden with no PIN: a sign-in approved elsewhere has none */
 } qp __attribute__((section(".scratch")));
 
 static void set(void *w, const char *s) {
@@ -2813,6 +2972,7 @@ static void qr_refresh(void) {
                                             : 16); /* 192.168.100.200:8080 */
     set(qp.addr, addr);
     set(qp.pin, strlen(pin) == 6 ? spaced : pin);
+    widget_set_visible(qp.pinl, pin[0] != 0, 0);
     set(qp.note, note);
     qr_face(qp.note, qr_light() ? 16 : 14);
     widget_invalidate_force(qp.qr, 0);
@@ -2901,9 +3061,9 @@ static void qr_open(const char *state, const char *title) {
         qr_label(qp.col, x, r[2][0], short_w, r[2][1], "s_scrlabel_white20l", r[2][2], SPOT_GREY),
         "or open");
     qp.addr = qr_label(qp.col, x, r[3][0], w, r[3][1], "s_scrlabel_white20l", r[3][2], 0xffffffffu);
-    widget_set_text_utf8(
-        qr_label(qp.col, x, r[4][0], short_w, r[4][1], "s_scrlabel_white20l", r[4][2], SPOT_GREY),
-        "PIN");
+    qp.pinl =
+        qr_label(qp.col, x, r[4][0], short_w, r[4][1], "s_scrlabel_white20l", r[4][2], SPOT_GREY);
+    widget_set_text_utf8(qp.pinl, "PIN");
     qp.pin =
         qr_label(qp.col, x, r[5][0], short_w, r[5][1], "s_scrlabel_white20l", r[5][2], 0xffffffffu);
     qp.note = qr_label(qp.col, cl ? 24 : 0, r[6][0], cl ? 330 : w, r[6][1], "s_scrlabel_white20l",

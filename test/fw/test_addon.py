@@ -38,13 +38,16 @@ LIBRARY = 0xf001  # stock's library class, which a local queue plays under
 class App(C.Structure):
     _fields_ = [('id', C.c_char * 16), ('name', C.c_char * 32), ('tips', C.c_char * 32), ('bin', C.c_char * 48), ('run', C.c_char * 48),
                 ('pid', C.c_char * 32), ('state', C.c_char * 40), ('browse', C.c_char * 48), ('icon', C.c_char * 56), ('more', C.c_char * 48),
-                *((n, C.c_int) for n in ('qr', 'game', 'audio', 'view', 'hidden', 'present', 'launched', 'hold', 'relaunch', 'restart', 'nostop', 'nowifi', 'row')),
-                *((n, C.c_uint) for n in ('polled', 'launch_at', 'restart_at', 'play'))]
+                *((n, C.c_int) for n in ('qr', 'game', 'audio', 'view', 'hidden', 'present', 'launched', 'hold', 'relaunch', 'restart', 'nostop',
+                                         'nowifi', 'row', 'wifi', 'wifi_off')),
+                *((n, C.c_uint) for n in ('polled', 'launch_at', 'restart_at', 'play')), ('baricon', C.c_char * 56),
+                ('barword', C.c_char * 12), ('barw', C.c_int)]
 
 
 class Ap(C.Structure):
     _fields_ = [('a', App * APPS_MAX), ('n', C.c_int), ('shown', C.c_int), ('order', C.c_int * APPS_MAX),
-                ('games', C.c_int), ('game', C.c_int * APPS_MAX), ('libs', C.c_int), ('lib', C.c_int * APPS_MAX)]
+                ('games', C.c_int), ('game', C.c_int * APPS_MAX), ('libs', C.c_int), ('lib', C.c_int * APPS_MAX),
+                ('nets', C.c_int), ('net', C.c_int * APPS_MAX)]
 
 
 class Sm(C.Structure):
@@ -81,7 +84,8 @@ class Pg(C.Structure):
 
 class Qp(C.Structure):
     _fields_ = [*((n, C.c_void_p) for n in ('page', 'qr', 'col', 'msg', 'addr', 'pin', 'note', 'say', 'sub')),
-                *((n, C.c_uint) for n in ('timer', 'leave', 'seen')), ('state', C.c_void_p), ('size', C.c_int), ('hex', C.c_void_p)]
+                *((n, C.c_uint) for n in ('timer', 'leave', 'seen')), ('state', C.c_void_p), ('size', C.c_int), ('hex', C.c_void_p),
+                ('pinl', C.c_void_p)]
 
 
 class Taken(C.Structure):
@@ -319,6 +323,9 @@ def test_a_slot_stays_its_apps_and_slots_run_out(fw):
     assert not table[APPS_MAX + 1] and ap(fw).n == APPS_MAX
 
 
+MOUNTED = b'/dev/mmcblk4p1 /mnt/mmc exfat rw 0 0\n'
+
+
 def card(fw, **apps):
     """A card of apps: each a manifest's text, or (manifest, extra files)."""
     files, names = {}, []
@@ -330,6 +337,7 @@ def card(fw, **apps):
         files[f'/mnt/mmc/.{name}/q2app'.encode()] = manifest
         files[f'/mnt/mmc/.{name}/q2-{name}'.encode()] = b'ELF'
         files.update({f'/mnt/mmc/.{name}/{e}'.encode(): png(40, 40) if e.endswith('.png') else b'' for e in extra})
+    files[b'/proc/mounts'] = MOUNTED  # the card is in (card_mounted)
     return World(fw, files, {b'/mnt/mmc': names})
 
 
@@ -370,11 +378,12 @@ def test_a_manifest_can_drop_the_stop_row_and_take_now_playings_more(fw, manifes
     assert (ap(fw).a[0].nostop, ap(fw).a[0].more) == (nostop, more)
 
 
-@pytest.mark.parametrize('manifest, nowifi', [
-    (b'name=N\nwifi=0\n', 1), (b'name=N\r\nwifi=0\r\n', 1),  # a Windows editor's line ends
-    (b'name=N\n', 0), (b'name=N\nwifi=1\n', 0), (b'name=N\nwifi=00\n', 0), (b'name=N\nwifi=off\n', 0),  # as text: only 0
+@pytest.mark.parametrize('manifest, nowifi, counts', [
+    (b'name=N\nwifi=0\n', 1, 0), (b'name=N\r\nwifi=0\r\n', 1, 0),  # a Windows editor's line ends
+    (b'name=N\n', 0, 1), (b'name=N\nwifi=00\n', 0, 1), (b'name=N\nwifi=off\n', 0, 1),  # as text: only 0
+    (b'name=N\nwifi=1\n', 0, 0),  # it uses the network, but follows the link (addon_wifi.c): it doesn't hold it
 ])
-def test_a_manifest_can_say_its_app_never_uses_the_network(fw, manifest, nowifi):
+def test_a_manifest_can_say_its_app_never_uses_the_network(fw, manifest, nowifi, counts):
     """wifi=0: Smart Wi-Fi's addon_running never counts the app, started or restarting, and its page open is no
     network page's (addon_offline, which smart_wifi.c's net_page_open asks)."""
     card(fw, one=manifest, two=b'name=Two\n')
@@ -383,9 +392,9 @@ def test_a_manifest_can_say_its_app_never_uses_the_network(fw, manifest, nowifi)
     running, offline = fw.fn('addon_running', C.c_int), fw.fn('addon_offline', C.c_int)
     assert one.nowifi == nowifi and two.nowifi == 0 and running() == 0 and offline() == 0
     one.launched = 1
-    assert running() == (not nowifi)
+    assert running() == counts
     one.launched, one.restart = 0, 1  # Retry's restart
-    assert running() == (not nowifi)
+    assert running() == counts
     two.launched = 1  # another app still counts
     assert running() == 1
     pg = fw.var('addon__pg', Pg)
@@ -402,6 +411,7 @@ def test_a_hidden_app_has_no_streaming_row(fw):
 
 
 ROWS = ROW_STREAMING, ROW_GAMES, ROW_LIBRARY = range(3)  # addon.c's, in the order Ap counts them: shown, games, libs
+ROW_NETWORK = 3
 
 
 @pytest.mark.parametrize('manifest, row', [
@@ -415,6 +425,212 @@ def test_a_manifest_says_where_its_row_is(fw, manifest, row):
     card(fw, one=manifest)
     scan(fw)
     assert ap(fw).a[0].row == row and (ap(fw).shown, ap(fw).games, ap(fw).libs) == tuple(int(row == r) for r in ROWS)
+
+
+def test_wifi_and_network_keys(fw):
+    card(fw, vpn=b'name=Tunnel\nqr=1\nwifi=1\nrow=network\r\n', foo=b'name=Foo\n')
+    assert fw.fn('addon_network', C.c_int)() == 1
+    name = fw.fn('addon_network_name', C.c_char_p, C.c_int)
+    assert [name(k) for k in (-1, 0, 1)] == [None, b'Tunnel', None]
+    assert names(fw, 'addon_name') == [None, b'Foo', None]  # not on Streaming
+    a = ap(fw).a[[ap(fw).a[i].id for i in range(2)].index(b'vpn')]
+    assert (a.row, a.wifi, a.wifi_off) == (ROW_NETWORK, 1, 0)
+    assert fw.fn('addon_wifi_apps', C.c_int)() == 1
+
+
+@pytest.mark.parametrize('manifest', [b'name=N\nrow=setting\n', b'name=N\nrow=Settings\n'])
+def test_unknown_row_still_streaming(fw, manifest):
+    card(fw, one=manifest)
+    assert fw.fn('addon_network', C.c_int)() == 0 and ap(fw).shown == 1
+
+
+@pytest.mark.parametrize('manifest, wifi', [(b'wifi=1\n', 1), (b'wifi=1\r\n', 1), (b'wifi=0\n', 0), (b'wifi=yes\n', 0), (b'', 0)])
+def test_only_wifi_1_follows_the_link(fw, manifest, wifi):
+    card(fw, one=b'name=N\n' + manifest)
+    scan(fw)
+    assert ap(fw).a[0].wifi == wifi and fw.fn('addon_wifi_apps', C.c_int)() == wifi
+
+
+def test_caps_has_wifi_and_network(fw):
+    world = card(fw, one=b'name=N\n')
+    scan(fw)
+    words = world.files[b'/tmp/q2-addon.caps'].split()
+    assert b'wifi' in words and b'network' in words
+
+
+def test_a_wifi_app_does_not_hold_the_radio(fw):
+    world = card(fw, vpn=b'name=Tunnel\nwifi=1\n', foo=b'name=Foo\n')
+    scan(fw)
+    running = fw.fn('addon_running', C.c_int)
+    fw.fn('addon_wifi_start', None)()
+    vpn = [ap(fw).a[i] for i in range(2) if ap(fw).a[i].id == b'vpn'][0]
+    assert vpn.launched == 1 and world.of('system') == [(b'/bin/sh /mnt/mmc/.vpn/run',)]
+    assert running() == 0
+    fw.fn('addon_wifi_start', None)()  # already running: no second start
+    assert len(world.of('system')) == 1
+    foo = [ap(fw).a[i] for i in range(2) if ap(fw).a[i].id == b'foo'][0]
+    foo.launched = 1
+    assert running() == 1
+
+
+def test_a_user_stop_marks_a_wifi_app_off_until_released(fw):
+    world = card(fw, vpn=b'name=Tunnel\nwifi=1\n')
+    scan(fw)
+    fw.fn('addon_wifi_start', None)()
+    fw.fn('addon_stop', None)()  # Stop Streaming Services
+    a = ap(fw).a[0]
+    assert (a.launched, a.wifi_off) == (0, 1)
+    fw.fn('addon_wifi_start', None)()
+    assert len(world.of('system')) == 2  # the start and the stop: no second start
+    fw.fn('addon_wifi_release', None)()
+    fw.fn('addon_wifi_start', None)()
+    assert a.wifi_off == 0 and a.launched == 1 and len(world.of('system')) == 3
+
+
+def test_the_follower_stop_leaves_wifi_off_clear(fw):
+    world = card(fw, vpn=b'name=Tunnel\nwifi=1\n', foo=b'name=Foo\n')
+    scan(fw)
+    fw.fn('addon_wifi_start', None)()
+    for i in range(2):
+        if ap(fw).a[i].id == b'foo':
+            ap(fw).a[i].launched = 1
+    world.files[b'/tmp/q2-vpn'] = b'1'
+    fw.fn('addon_wifi_stop', None)()
+    vpn, foo = sorted((ap(fw).a[i] for i in range(2)), key=lambda a: a.id != b'vpn')
+    assert (vpn.launched, vpn.wifi_off, foo.launched) == (0, 0, 1)  # a plain app is not the follower's
+
+
+def test_the_app_store_says_a_network_app_is_in_network_settings(fw):
+    # netupdate.c's "<name> is ready in <where>" after an install: ROW_NETWORK had no entry
+    card(fw, vpn=b'name=Tunnel\nrow=network\n')
+    assert fw.fn('addon_where', C.c_char_p, C.c_char_p)(b'vpn') == b'Network settings'
+
+
+def test_network_rows_are_by_name_with_the_52_px_icon_first(fw):
+    card(fw, zeta=(b'name=Zeta\nrow=network\n', ('icon.png', 'icon-40.png')), alpha=b'name=Alpha\nrow=network\n')
+    name, icon = fw.fn('addon_network_name', C.c_char_p, C.c_int), fw.fn('addon_network_icon', C.c_char_p, C.c_int)
+    assert fw.fn('addon_network', C.c_int)() == 2
+    assert [name(k) for k in range(-1, 3)] == [None, b'Alpha', b'Zeta', None]
+    assert [icon(k) for k in range(2)] == [b'stream_app', b'file:///mnt/mmc/.zeta/icon.png']
+
+
+def bar_app(fw, world, name, size=(16, 16), state=b'bar=1\n', icon='bar.png'):
+    """App name on the card with an icon file of size, running, its status file state; polled."""
+    if size:
+        world.files[f'/mnt/mmc/.{name}/{icon}'.encode()] = png(*size)
+    scan(fw)
+    a = [ap(fw).a[i] for i in range(ap(fw).n) if ap(fw).a[i].id == name.encode()][0]
+    a.launched, a.launch_at = 1, world.ms
+    world.files[f'/tmp/q2-{name}'.encode()] = b'1'
+    world.files[f'/tmp/q2-{name}.state'.encode()] = state
+    world.ms += 1000
+    fw.fn('addon__poll_one', None, C.POINTER(App))(C.pointer(a))
+    return a
+
+
+def bar_icon(fw):
+    return fw.fn('addon_bar_icon', C.c_char_p)()
+
+
+def test_bar_icon_while_state_says_so(fw):
+    world = card(fw, foo=b'name=Foo\n')
+    a = bar_app(fw, world, 'foo')
+    assert bar_icon(fw) == b'file:///mnt/mmc/.foo/bar.png'
+    world.files[b'/tmp/q2-foo.state'] = b'qr=x\nbar=0\n'
+    world.ms += 1000
+    fw.fn('addon__poll_one', None, C.POINTER(App))(C.pointer(a))
+    assert bar_icon(fw) is None
+    world.files[b'/tmp/q2-foo.state'] = b'bar=1\n'
+    world.ms += 1000
+    fw.fn('addon__poll_one', None, C.POINTER(App))(C.pointer(a))
+    assert bar_icon(fw) == b'file:///mnt/mmc/.foo/bar.png'
+    a.launched = 0  # stopped
+    assert bar_icon(fw) is None
+
+
+@pytest.mark.parametrize('size', [(16, 21), (41, 16), None])
+def test_bar_icon_too_big_or_missing_is_none(fw, size):
+    world = card(fw, foo=b'name=Foo\n')
+    bar_app(fw, world, 'foo', size)
+    assert bar_icon(fw) is None
+
+
+def test_bar_icon_at_its_limits(fw):
+    world = card(fw, foo=b'name=Foo\n')
+    bar_app(fw, world, 'foo', (40, 20))
+    assert bar_icon(fw) == b'file:///mnt/mmc/.foo/bar.png'
+
+
+def test_the_bar_is_repainted_when_its_icon_comes_or_goes(fw):
+    # the bar's own paint picks the icon (bar_sync); an app starting, stopping or flipping bar= repaints nothing else
+    bar = C.c_void_p(0x5000)
+    fw.var('fw_ctx_system_bar', C.c_void_p).value = bar.value
+    world = card(fw, foo=b'name=Foo\n')
+    a = bar_app(fw, world, 'foo')
+    repaints = lambda: [c for c in fw.calls('widget_invalidate_force') if c[1][0] == bar.value]
+    fw.fn('addon_poll', None)()
+    assert len(repaints()) == 1
+    fw.fn('addon_poll', None)()
+    assert len(repaints()) == 1  # no change, no repaint
+    a.launched = 0  # stopped, as the Wi-Fi follower stops it
+    fw.fn('addon_poll', None)()
+    assert len(repaints()) == 2
+
+
+def test_the_bar_is_repainted_when_its_icon_changes_word(fw):
+    # bar=on -> bar=off rewrites the app's icon in place: the same pointer, another picture
+    bar = C.c_void_p(0x5000)
+    fw.var('fw_ctx_system_bar', C.c_void_p).value = bar.value
+    world = card(fw, vpn=b'name=Tunnel\n')
+    world.files[b'/mnt/mmc/.vpn/bar-off.png'] = png(16, 16)
+    a = bar_app(fw, world, 'vpn', state=b'bar=on\n', icon='bar-on.png')
+    repaints = lambda: [c for c in fw.calls('widget_invalidate_force') if c[1][0] == bar.value]
+    fw.fn('addon_poll', None)()
+    assert len(repaints()) == 1
+    world.files[b'/tmp/q2-vpn.state'] = b'bar=off\n'
+    world.ms += 1000
+    fw.fn('addon__poll_one', None, C.POINTER(App))(C.pointer(a))
+    fw.fn('addon_poll', None)()
+    assert bar_icon(fw) == b'file:///mnt/mmc/.vpn/bar-off.png' and len(repaints()) == 2
+
+
+def test_a_bar_word_picks_its_icon(fw):
+    # bar=<word> shows bar-<word>.png: a VPN's connected and greyed icons, switched as its state changes
+    world = card(fw, vpn=b'name=Tunnel\n')
+    world.files[b'/mnt/mmc/.vpn/bar-off.png'] = png(16, 16)
+    a = bar_app(fw, world, 'vpn', state=b'bar=on\n', icon='bar-on.png')
+    assert bar_icon(fw) == b'file:///mnt/mmc/.vpn/bar-on.png'
+    for state, icon in ((b'qr=x\nbar=off\r\n', b'file:///mnt/mmc/.vpn/bar-off.png'), (b'bar=on\n', b'file:///mnt/mmc/.vpn/bar-on.png'),
+                        (b'bar=gone\n', None), (b'bar=0\n', None), (b'', None)):
+        world.files[b'/tmp/q2-vpn.state'] = state
+        world.ms += 1000
+        fw.fn('addon__poll_one', None, C.POINTER(App))(C.pointer(a))
+        assert bar_icon(fw) == icon, state
+
+
+@pytest.mark.parametrize('word', [b'../x', b'On', b'a' * 9, b'a b', b'x.y'])
+def test_a_bar_word_outside_its_letters_is_none(fw, word):
+    world = card(fw, vpn=b'name=Tunnel\n')
+    world.files[b'/mnt/mmc/.vpn/bar-' + word + b'.png'] = png(16, 16)
+    bar_app(fw, world, 'vpn', size=None, state=b'bar=' + word + b'\n')
+    assert bar_icon(fw) is None
+
+
+def test_the_bar_icon_s_width_is_its_own(fw):
+    world = card(fw, vpn=b'name=Tunnel\n')
+    bar_app(fw, world, 'vpn', size=(16, 16))
+    width = fw.fn('addon_bar_width', C.c_int)
+    assert width() == 16
+    world2 = card(fw, wide=b'name=Wide\n')
+    a = bar_app(fw, world2, 'wide', size=(40, 20))
+    assert a.barw == 40
+
+
+def test_bar_icon_first_by_name(fw):
+    world = card(fw, zz=b'name=Zed\n', aa=b'name=alpha\n')
+    bar_app(fw, world, 'zz')
+    bar_app(fw, world, 'aa')
+    assert bar_icon(fw) == b'file:///mnt/mmc/.aa/bar.png'
 
 
 def test_library_s_apps_are_by_name(fw):
@@ -498,7 +714,7 @@ def test_more_apps_than_slots(fw):
 def test_the_features_are_published_at_every_scan(fw):
     world = card(fw)
     scan(fw)
-    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections art window urls sort field more fav now fieldtext wake audio2 dim gameview eq screen volume\n'
+    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections art window urls sort field more fav now fieldtext wake audio2 dim gameview eq screen volume wifi network bar switch\n'
     assert world.of('rename') == [(b'/tmp/q2-addon.caps.tmp', b'/tmp/q2-addon.caps')]
 
 
@@ -2605,6 +2821,37 @@ def test_an_action_sends_its_context_toasts_and_asks_again(fw):
     assert p.request().endswith(b'\top1\ta%25b\n') and p.pg.act == 1
     p.answer(msg=b'Done')
     assert p.toasts == [b'Done'] and p.request().endswith(b'\tmenu\n') and p.top.state == K_LOAD
+
+
+def test_a_switch_row_draws_settings_switch_and_presses_as_an_action(fw):
+    # kind switch: the title with the settings rows' switch (navigation.c list_toggle), on while its
+    # subtitle is "on"; a press sends its op and context as an action's does
+    p = Page(fw)
+    p.answer(rows=[(b'switch', b'power', b'Tunnel', b'on', b'', b''), (b'switch', b'auto', b'Start with Wi-Fi', b'off', b'x', b'')])
+    images = [C.string_at(a[1]) for _, a in fw.calls('image_base_set_image')]
+    assert images == [b'switch_on', b'switch_off']
+    texts = [C.string_at(a[1]) for _, a in fw.calls('widget_set_text_utf8')]
+    assert b'Tunnel' in texts and b'Start with Wi-Fi' in texts and b'on' not in texts  # the state isn't shown as text
+    p.click(1)
+    assert p.request().endswith(b'\tauto\tx\n') and p.pg.act == 1
+    p.answer(msg=b'')
+    assert p.request().endswith(b'\tmenu\n')
+
+
+def test_a_switch_moves_when_a_refresh_changes_its_state_and_shows_no_text(fw):
+    # a press, then the list again with the switch flipped: the same rows, written in place (relabel),
+    # must move the switch, never write "on"/"off" (or Working...) as the row's text. Found on a Q2:
+    # the switch stayed on, "off" under its title.
+    p = Page(fw)
+    p.answer(msg=b'refresh', rows=[(b'switch', b'power', b'Tunnel', b'on', b'', b''), item(2, b'info')])
+    texts = lambda: [C.string_at(a[1]) for _, a in fw.calls('widget_set_text_utf8')]
+    images = lambda: [C.string_at(a[1]) for _, a in fw.calls('image_base_set_image')]
+    assert images()[-1] == b'switch_on'
+    p.click(0)
+    p.answer(msg=b'Tunnel off')
+    p.answer(msg=b'refresh', rows=[(b'switch', b'power', b'Tunnel', b'off', b'', b''), item(2, b'info')])
+    assert images()[-1] == b'switch_off'
+    assert not {b'on', b'off', 'Working…'.encode()} & set(texts())
 
 
 def test_an_action_refused_toasts_why(fw):
@@ -4852,6 +5099,19 @@ def test_a_page_the_app_store_is_replacing_waits_for_it(fw, job, stage, running,
     assert p.world.of('system') == []  # the app isn't started in its folder either way
 
 
+def test_a_network_row_the_app_store_is_replacing_waits_for_it(fw):
+    # Network's row presses as Streaming's does: a remove's files going, no page and the App Store's toast
+    p = Page(fw, b'name=Foo\nrow=network\n', opens=False)
+    assert fw.fn('addon_network', C.c_int)() == 1
+    table = C.addressof(C.c_char.in_dll(fw.lib, 'shelf_apps'))
+    fw.var('shelf_n', C.c_int).value = fw.fn('shelf_sources', C.c_int, C.c_char_p, C.c_void_p, C.c_int)(b'me/foo', table, 1)
+    sh = fw.var('netupdate__sh', Sh)
+    sh.running, sh.job, sh.app, sh.stage = 1, JOB_REMOVE, 0, 4
+    fw.fn('addon_network_open', C.c_int, C.c_void_p, C.c_void_p)(0, None)
+    assert not p.pg.page and not p.pg.lv and p.toasts == [b'Wait until the App Store finishes']
+    assert p.world.of('system') == []
+
+
 @pytest.mark.parametrize('manifest,path,logs', [
     (b'name=Foo\nscrobble=0\n', b'/mnt/mmc/.foo/a.flac', 0),
     (b'name=Foo\r\nscrobble=0\r\n', b'/mnt/mmc/.foo/a.flac', 0),  # a Windows editor's line ends
@@ -5098,6 +5358,7 @@ def test_an_app_gone_from_the_card_says_so(fw):
 
 
 PRESSES = {b'library': lambda fw, k: fw.fn('addon_lib_open', C.c_int, C.c_void_p, C.c_void_p)(k, None),
+           b'network': lambda fw, k: fw.fn('addon_network_open', C.c_int, C.c_void_p, C.c_void_p)(k, None),
            b'games': lambda fw, k: fw.fn('addon_game_start', C.c_int, C.c_int)(k)}
 
 
@@ -5119,7 +5380,8 @@ def test_an_install_s_toast_leaves_the_open_page_s_rows_on_their_apps(fw, row):
     p = Page(fw, b'name=Foo\nrow=%s\n' % row, opens=False)  # the page built, Foo its only app row
     p.world.files.update({b'/mnt/mmc/.bar/q2app': b'name=Bar\nrow=%s\n' % row, b'/mnt/mmc/.bar/q2-bar': b'ELF'})
     p.world.dirs[b'/mnt/mmc'].append(b'.bar')
-    where = {b'streaming': b'Streaming', b'library': b"Library's Apps", b'games': b"Library's Games"}[row]
+    where = {b'streaming': b'Streaming', b'library': b"Library's Apps", b'games': b"Library's Games",
+             b'network': b'Network settings'}[row]
     assert fw.fn('addon_where', C.c_char_p, C.c_char_p)(b'bar') == where
     PRESSES.get(row, lambda fw, k: fw.fn('addon_open', C.c_int, C.c_void_p, C.c_void_p)(k, None))(fw, 0)
     assert p.top.title == b'Foo'
@@ -5182,6 +5444,14 @@ def test_a_code_shows_with_its_address_and_spaced_pin(fw):
     q = Qr(fw, qr_state())
     assert q.code == 1 and C.string_at(q.qp.hex) == HEX21 and q.qp.size == 21
     assert b'192.168.1.2:8080' in q.texts and b'548 001' in q.texts and b'Hi' in q.texts
+
+
+def test_no_pin_hides_its_caption(fw):
+    # an app whose sign-in needs no PIN (one approved in the account, say) has no "PIN" over nothing
+    q = Qr(fw, qr_state(pin=b''))
+    assert q.code == 1 and q.shown.get(q.qp.pinl) == 0
+    q.again(qr_state())
+    assert q.shown.get(q.qp.pinl) == 1 and b'548 001' in q.texts
 
 
 def test_a_pin_of_another_length_shows_as_it_is(fw):
@@ -6611,3 +6881,30 @@ def test_a_card_apps_first_song_waits_while_a_game_has_the_sound(fw, audio, time
     fw.fn('addon__stream_poll', None, C.c_void_p)(app)
     s = sm(fw)
     assert s.state == S_WAIT and len(fw.calls('timer_add')) == timers and s.timer == (5 if timers else 0)
+
+
+@pytest.mark.parametrize('theme, want', [(b'0', b'icon-minimal.png'), (b'2', b'icon.png'), (b'1', b'icon.png')])
+def test_a_theme_named_icon_is_taken_under_that_theme(fw, settings_read, theme, want):
+    # icon-<theme>.png and icon-40-<theme>.png (theme()->name, lower case) before the plain ones: an app
+    # drawn for Minimal's grey discs, its own icon elsewhere. Read at each scan, so a theme change shows
+    # at the next. Network rows take the 52 px first, as with the plain names.
+    boot(fw, settings_read, theme)
+    card(fw, vpn=(b'name=Tunnel\nrow=network\n', ('icon.png', 'icon-40.png', 'icon-minimal.png', 'icon-40-minimal.png')))
+    assert fw.fn('addon_network', C.c_int)() == 1
+    assert fw.fn('addon_network_icon', C.c_char_p, C.c_int)(0) == b'file:///mnt/mmc/.vpn/' + want
+
+
+def test_a_theme_name_s_space_is_a_dash(fw, settings_read):
+    # Classic Modern's icon is icon-classic-modern.png: a file name with no space in it
+    boot(fw, settings_read, b'3')
+    card(fw, vpn=(b'name=Tunnel\nrow=network\n', ('icon.png', 'icon-classic-modern.png')))
+    assert fw.fn('addon_network', C.c_int)() == 1
+    assert fw.fn('addon_network_icon', C.c_char_p, C.c_int)(0) == b'file:///mnt/mmc/.vpn/icon-classic-modern.png'
+
+
+def test_a_theme_icon_alone_is_taken_too(fw, settings_read):
+    # an app with only its 40 px Minimal icon: that, under Minimal, before the plain 52 px
+    boot(fw, settings_read, b'0')
+    card(fw, vpn=(b'name=Tunnel\nrow=network\n', ('icon.png', 'icon-40-minimal.png')))
+    assert fw.fn('addon_network', C.c_int)() == 1
+    assert fw.fn('addon_network_icon', C.c_char_p, C.c_int)(0) == b'file:///mnt/mmc/.vpn/icon-40-minimal.png'

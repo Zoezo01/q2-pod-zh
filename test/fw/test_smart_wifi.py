@@ -160,6 +160,14 @@ def offline_app(q, page=False):
         q.fw.var('addon__pg', Pg).page = q.ui.window('addon_page').addr
 
 
+def link_app(q, page=False):
+    """A card app whose q2app says wifi=1 (addon_wifi.c follows the link with it), running, its page open or not."""
+    card_app(q)
+    q.fw.var('addon__ap', Ap).a[0].wifi = 1
+    if page:
+        q.fw.var('addon__pg', Pg).page = q.ui.window('addon_page').addr
+
+
 # What needs the network, and what is like it but doesn't.
 NEEDS = [('a USB cable in', flag('g_usbdet_value', 1), True),
          ('AirPlay on', flag('g_airplayflag', 1), True),
@@ -178,6 +186,8 @@ NEEDS = [('a USB cable in', flag('g_usbdet_value', 1), True),
          ('a card app that says wifi=0 running', offline_app, False),
          ('its page open', lambda q: offline_app(q, page=True), False),
          ('its page open over Streaming', lambda q: (q.ui.window('stream_page'), offline_app(q, page=True)), True),
+         ('a card app that says wifi=1 running', link_app, False),  # it follows the link; it doesn't hold it
+         ("a wifi=1 app's page open", lambda q: link_app(q, page=True), True),  # its page uses the network
          ('a scrobble upload', state('scrobble__up', Up, running=1), True),
          ('Network Update downloading', state('netupdate__nu', Nu, state=NU_RUNNING), True),
          ('an Apps job', state('netupdate__sh', Sh, job=JOB_INSTALL), True),

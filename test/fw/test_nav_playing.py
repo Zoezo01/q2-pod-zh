@@ -383,6 +383,28 @@ def ui(fw):
     return Ui(fw)
 
 
+def test_status_bar_shows_a_card_app_s_icon_left_of_wifi(fw, st, ui):
+    from test_addon import ap  # addon.c's table: an app running whose status file says bar=1
+    theme(fw, st)
+    bar = Bar(fw, ui)
+    a = ap(fw).a[0]
+    ap(fw).n, a.present, a.launched = 1, 1, 1
+    a.name, a.baricon, a.barw = b'Tunnel', b'file:///mnt/mmc/.vpn/bar.png', 16
+    bar.sync()
+    icon = ui.lookup(bar.row, 'img_addon', 0)
+    assert icon and ui.shown.get(icon, 1) == 1 and ui.strs[icon, b'image'].value == b'file:///mnt/mmc/.vpn/bar.png'
+    assert ui.box(icon)[2:] == (16, ui.box(bar.wifi)[3])  # its own width, Wi-Fi's height
+    assert [a[1] for _, a in fw.calls('widget_restack') if a[0] == icon] == [ui.kids[bar.row].index(bar.wifi)]
+    ui.timers.clear()
+    st.bar_timer = 0  # no repaint waiting
+    a.baricon = b'file:///mnt/mmc/.vpn/bar-off.png'  # bar=off: the greyed icon, in place
+    bar.sync()
+    assert ui.strs[icon, b'image'].value == b'file:///mnt/mmc/.vpn/bar-off.png' and ui.timers  # and the bar again
+    a.baricon = b''  # its status file says bar=0
+    bar.sync()
+    assert ui.lookup(bar.row, 'img_addon', 0) == icon and ui.shown[icon] == 0  # made once, hidden
+
+
 def slot_width(ui, bar):
     return ui.box(bar.slot)[2]
 
