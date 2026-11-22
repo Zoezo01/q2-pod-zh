@@ -24,7 +24,17 @@ REFUSED = {
     "a canvas where the payload's own function wants a list": 'list_row(c, 0, 0, 0);',
     'a handler that takes a widget for its event': (
         'widget_on(w, EVT_CLICK, wrong, 0);', 'static int wrong(void *ctx, widget_t *target) { return ctx && target; }'),
+    # one position each that test/unit's name rule can't reach: what the most used finders and makers hand back, and
+    # a paint's canvas
+    'a widget found by name kept as a canvas': 'c = widget_lookup(w, "name", 1); (void)c;',
+    "a widget's child given as the event": 'widget_dispatch_event_to_target_recursive(w, widget_get_child(w, 0));',
+    'the top window kept as a canvas': 'c = window_manager_get_top_window(window_manager()); (void)c;',
+    "a factory's widget kept as a canvas": 'c = widget_factory_create_widget(widget_factory(), "x", w, 0, 0, 1, 1); (void)c;',
+    'an event made for a widget given as one': 'widget_destroy(pointer_event_init(p, 0, w, 0, 0));',
+    'a widget where a paint wants its canvas': 'widget_paint(w, w);',
 }
+KINDS = ['widget_t', 'event_t', 'canvas_t', 'vgcanvas_t', 'widget_animator_t', 'widget_factory_t', 'image_manager_t',
+         'input_method_t']
 # What it can't: C lets void * be any of them, and P() and I() take any pointer
 ACCEPTED = {
     'each kind where it belongs': (
@@ -56,6 +66,16 @@ def test_a_pointer_of_the_wrong_kind_is_refused(library, tmp_path, name):
     assert result.returncode, name
     errors = [line for line in result.stderr.splitlines() if 'error:' in line]
     assert errors and all('incompatible' in e and 'pointer type' in e for e in errors), result.stderr
+
+
+@pytest.mark.parametrize('kind', KINDS)
+def test_each_kind_refuses_every_other(library, tmp_path, kind):
+    # stock_types.h's whole point: no two are the same type, so a typedef copied and left naming another's struct
+    # fails here, whichever two
+    others = [k for k in KINDS if k != kind]
+    result = compiled(library, tmp_path, ' '.join(f'{{ {kind} *x = ({other} *)p; (void)x; }}' for other in others))
+    errors = [line for line in result.stderr.splitlines() if 'error:' in line]
+    assert len(errors) == len(others) and all('incompatible' in e and 'pointer type' in e for e in errors), result.stderr
 
 
 @pytest.mark.parametrize('name', ACCEPTED)

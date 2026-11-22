@@ -108,7 +108,7 @@ What the types can't see, each compiled as a case by `test/fw/test_stock_types.p
 
 Left as they were, on purpose: what the payload lays out itself and stock fills or reads (a rectangle as `rect_t` or `int[4]`, a point, the `unsigned bitmap[64]` a `bitmap_t` is loaded into, the SHA-256 state), a timer or idle callback's `const void *info` (the `const` already stops it being passed on as an object), and everything that is not AWTK's (a deque, a song record, SQLite, cJSON, TagLib).
 
-For new code: give a new `FUNCTIONS` entry the types (`test/unit` holds every `widget_`, `canvas_` and `vgcanvas_` function to its first parameter's), declare what holds a handle as one, and type a hook from the stock function it replaces (a handler's `event`, a page init's `win`).
+For new code: give a new `FUNCTIONS` entry the types (`test/unit` holds a widget class's, a canvas's and an animator's functions to their first parameter, and a `_create` to what it returns), declare what holds a handle as one, and type a hook from the stock function it replaces (a handler's `event`, a page init's `win`).
 
 ## Supported screens and panes
 
