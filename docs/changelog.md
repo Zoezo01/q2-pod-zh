@@ -12,7 +12,7 @@
   - Now Playing: the visualizer has a sixth style, **Contour**: lines over a moving landscape in your accent colour, dark in the valleys and bright on the peaks. Each kick drum throws the main peak up, then it settles before the next; the bass holds the peak, the mids raise a second one, and the mids and highs ripple the lines. Tap the visualizer to reach it after Pulsar.
   - Apps: a card app can start when Wi-Fi connects and stop when it drops (`wifi=1`), such as a VPN, and can have its row in **System settings → Network**, after stock's rows (`row=network`). Card app pages can show on/off switches like the settings pages' (`switch` rows). A card app can give each theme its own icon (`icon-minimal.png`).
   - Apps: a card app can show an icon in the status bar while it runs, and change it with its state, such as a VPN's icon, full while connected and greyed while not (`bar=`), where the bar has room for it beside the clock.
-  - Books: Books has left the base for a card app to read: the card's `Books` folder is a folder like any other, and the Library has no **Books** row.
+  - Books: the book reader has left the firmware for an app of its own. The card's `Books` folder is now a folder like any other, and the Library has no **Books** row.
 - **1.8.9**:
   - Now Playing: the **AirPlay** row at the top of **⋯** shows only once AirPlay is installed from the App Store. It used to show for everyone, and without the app a press only said where to install it.
   - Display: every change on the screen takes less of the processor on its way to the panel, so Cover Flow's covers, lists and page slides each draw with less work.
