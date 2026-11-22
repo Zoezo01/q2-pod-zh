@@ -1,4 +1,5 @@
 """tools/langpack.py: the texts a pack translates, read from a build and patch/, and a translation's check."""
+import re
 import struct
 
 import pytest
@@ -156,3 +157,32 @@ def test_main_template(tmp_path, capsys, monkeypatch):
     monkeypatch.setattr(langpack, 'template', lambda build: f'from {build}\n')
     assert langpack.main(['template', 'B']) == 0
     assert capsys.readouterr().out == 'from B\n'
+
+
+def marked_calls(source):
+    """Each tr( or N_( call's argument text in C source, comments out."""
+    source = re.sub(r'/\*.*?\*/|//[^\n]*', '', source, flags=re.S)
+    for m in re.finditer(r'\b(?:tr|N_)\(', source):
+        depth, i = 1, m.end()
+        while depth and i < len(source):
+            literal = re.compile(r'"(?:[^"\\\n]|\\.)*"').match(source, i)
+            if literal:
+                i = literal.end()
+                continue
+            depth += {'(': 1, ')': -1}.get(source[i], 0)
+            i += 1
+        yield source[m.end():i - 1]
+
+
+def test_marked_calls():
+    assert list(marked_calls('tr("a") /* tr(x ? "b" : "c") */ N_( "d" "e" ) tr(t[i]) tr(f("g)"))')) == [
+        '"a"', ' "d" "e" ', 't[i]', 'f("g)")']
+
+
+def test_every_literal_handed_to_tr_is_listed():
+    """A literal in an expression, tr(c ? "A" : "B"), is one the template can't list: no pack translates it.
+    Each literal goes alone: c ? tr("A") : tr("B")."""
+    alone = re.compile(r'\s*(?:"(?:[^"\\\n]|\\.)*"\s*)+')
+    for path in sorted((langpack.ROOT/'patch').glob('*.c')):
+        for arg in marked_calls(path.read_text(encoding='utf-8')):
+            assert '"' not in arg or alone.fullmatch(arg), f'{path.name}: tr({arg})'
