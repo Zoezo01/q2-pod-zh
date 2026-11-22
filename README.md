@@ -209,7 +209,7 @@ The [user guide][guide] covers every control, EQ, Cover Flow and more tips.
   </tr>
   <tr valign="top">
     <td><b><a href="https://github.com/js-surya/q2-tailscale">Tailscale</a></b></td>
-    <td>Puts the Q2 on your tailnet, so its apps reach your own music server from anywhere: sign in with a QR code, MagicDNS names, Taildrop to the card, in <b>System settings → Network → Tailscale</b>.</td>
+    <td>Puts the Q2 on your tailnet, so its apps reach your own music server from anywhere: sign in with a QR code, MagicDNS names, Taildrop to the card, in <b>Library → Apps → Tailscale</b>.</td>
     <td></td>
   </tr>
 </table>
