@@ -183,6 +183,11 @@ The [user guide][guide] covers every control, EQ, Cover Flow and more tips.
     <td></td>
   </tr>
   <tr valign="top">
+    <td><b><a href="https://github.com/lampsonlnguyen/q2-books">Books</a></b></td>
+    <td>Read EPUB and TXT books from the card's <code>Books</code> folder, with CrossPoint Reader's layout and fonts, bookmarks and a dictionary, in <b>Library → Apps → Books</b>.</td>
+    <td></td>
+  </tr>
+  <tr valign="top">
     <td><b><a href="https://github.com/DiamondBond/q2-eq-studio">EQ Studio</a></b></td>
     <td>Edit the EQ on your phone: open <b>Library → Apps → EQ Studio</b> and scan the code with a phone on the same Wi-Fi. Drag the bands on a curve, or pick one of AutoEq's presets for thousands of headphones, and hear each change as you make it.</td>
     <td></td>
