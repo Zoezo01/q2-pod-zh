@@ -179,7 +179,7 @@ static void slots_read(void) {
         field(raw, "name", a->name, sizeof a->name);
         if (!a->name[0]) tk_snprintf(a->name, sizeof a->name, "%s", a->id);
         field(raw, "search", a->tips, sizeof a->tips);
-        if (!a->tips[0]) tk_snprintf(a->tips, sizeof a->tips, "Search");
+        if (!a->tips[0]) tk_snprintf(a->tips, sizeof a->tips, "%s", tr("Search"));
         a->qr = number(raw, "qr") == 1;
         a->game = number(raw, "game") == 1;
         unsigned long long sound = number(raw, "audio"); /* 2: the game's or the music's */
@@ -1019,12 +1019,12 @@ static void game_end(void) {
  * Apps page's and Games' rows hold their places by name, so a new app sorted in would move each
  * after it on a row. */
 const char *addon_where(const char *id) {
-    static const char *const where[] = { "Streaming", "Library's Games", "Library's Apps",
-                                         "Network settings" };
+    static const char *const where[] = { N_("Streaming"), N_("Library's Games"),
+                                         N_("Library's Apps"), N_("Network settings") };
     slots_read();
     for (int i = 0; i < ap.n; ++i)
-        if (ap.a[i].present && !strcmp(ap.a[i].id, id)) return where[ap.a[i].row];
-    return where[ROW_STREAMING];
+        if (ap.a[i].present && !strcmp(ap.a[i].id, id)) return tr(where[ap.a[i].row]);
+    return tr(where[ROW_STREAMING]);
 }
 
 static void game_file(char *out, const char *ext) {
@@ -1163,8 +1163,8 @@ static void game_files(unsigned now) {
 static int game_start(app_t *a, const char *uri, const char *ctx) {
     if (gm.pid) return 0;
     const char *busy = shelf_busy();
-    if (busy && !strcmp(busy + 1, a->id)) return toast("Wait until the App Store finishes"), 0;
-    if (access(a->bin, 0)) return toast("It isn't on the card"), 0;
+    if (busy && !strcmp(busy + 1, a->id)) return toast(tr("Wait until the App Store finishes")), 0;
+    if (access(a->bin, 0)) return toast(tr("It isn't on the card")), 0;
     char vol[5], pop[POPUP_ENV];
     const char *dev = 0;
     popup_env(pop, sizeof pop); /* the theme's pop-up, for its own menus */
@@ -1197,7 +1197,7 @@ static int game_start(app_t *a, const char *uri, const char *ctx) {
             execl(a->bin, a->bin, (char *)0);
         child_exit(127);
     }
-    if (pid < 0) return toast("It couldn't start"), 0;
+    if (pid < 0) return toast(tr("It couldn't start")), 0;
     gm.pid = pid;
     gm.audio = a->audio == 1;
     gm.swap = a->audio == 2;
@@ -1352,7 +1352,7 @@ static void game_poll(void) {
         if (I(g_pressdown_y, 0) < QS_PULL_Y) I(g_pressdown_y, 0) = QS_PULL_Y;
         widget_invalidate_force(window_manager(), 0);
         if (gm.screen) screen_back(gm.screen - 1);
-        if (status == 127 << 8) toast("It couldn't start"); /* the child's execl failed */
+        if (status == 127 << 8) toast(tr("It couldn't start")); /* the child's execl failed */
         return;
     }
     unsigned now = (unsigned)time_now_ms();
@@ -1735,8 +1735,8 @@ static int stoppable(void) {
 }
 
 static void stop_row(int i) {
-    char t[48];
-    tk_snprintf(t, sizeof t, "Stop %s", app()->name);
+    char t[128];
+    tk_snprintf(t, sizeof t, tr("Stop %s"), app()->name);
     page_row_detail(pg.view, i, t, 0, clicked);
 }
 
@@ -1871,9 +1871,9 @@ static widget_t *art_row(int index, const char *caption, const char *detail, con
 static void row(lv_t *l, int i) {
     if (i == l->n) {
         if (l->art)
-            art_row(i, pg.paging ? "Loading…" : "More…", "", 0, 0);
+            art_row(i, pg.paging ? tr("Loading…") : tr("More…"), "", 0, 0);
         else
-            page_row_detail(pg.view, i, pg.paging ? "Loading…" : "More…", "", clicked);
+            page_row_detail(pg.view, i, pg.paging ? tr("Loading…") : tr("More…"), "", clicked);
         return;
     }
     widget_t *item;
@@ -2075,7 +2075,7 @@ static void busy_row(int on) {
     int k = 2 + (!!cell(i, 3)[0] && strcmp(cell(i, 0), "switch")); /* a switch's is its state */
     widget_t *item = widget_get_child(pg.view, (unsigned)i);
     retext(item, widget_get_child(item, (unsigned)k - 2), (unsigned)k,
-           on ? "Working…" : cell(i, k));
+           on ? tr("Working…") : cell(i, k));
     pg.busy = on;
 }
 
@@ -2091,20 +2091,21 @@ static void show(void) {
     pg.busy = 0; /* new rows, their own texts: the tick says Working… again */
     if (l->state == K_LOAD && !((req.running || req.done) && !pg.act && req.id == l->id)) fetch(l);
     if (l->state == K_LOAD || l->state == K_WAIT) {
-        char t[48];
-        tk_snprintf(t, sizeof t, "Starting %s…", app()->name);
+        char t[128];
+        tk_snprintf(t, sizeof t, tr("Starting %s…"), app()->name);
         if (!l->since) l->since = time_now_ms() | 1;
         l->slow = (int)(time_now_ms() - l->since) >= SLOW_MS && stoppable(); /* since: now + 1 */
-        widget_t *v =
-            page_list(pg.page, pg.page, 0, l->state == K_WAIT ? t : "Loading…", n = l->slow, 48);
+        widget_t *v = page_list(pg.page, pg.page, 0, l->state == K_WAIT ? t : tr("Loading…"),
+                                n = l->slow, 48);
         if (n) pg.view = v, stop_row(0);
     } else if (l->state == K_ERROR) {
         n = 1 + (app()->nostop || stoppable());
         pg.view = page_list(pg.page, pg.page, 0, l->note, n, 48);
-        page_row_detail(pg.view, 0, l->retry ? "Retry" : "Install it again in Library → App Store",
-                        0, clicked);
+        page_row_detail(pg.view, 0,
+                        l->retry ? tr("Retry") : tr("Install it again in Library → App Store"), 0,
+                        clicked);
         if (app()->nostop)
-            page_row_detail(pg.view, 1, "Cancel", 0, clicked);
+            page_row_detail(pg.view, 1, tr("Cancel"), 0, clicked);
         else if (n > 1)
             stop_row(1);
         page_push(pg.view, pg.moved), pg.moved = 0;
@@ -2302,8 +2303,9 @@ static void got(void) {
     if (n >= 0) pg.up = 1;
     int ok = n >= 0 && !strcmp(f[1], "ok");
     unsigned now = time_now_ms();
-    char why[48];
-    tk_snprintf(why, sizeof why, req.fail == SPOT_NOSOCK ? "%s isn't running" : "%s didn't answer",
+    char why[160];
+    tk_snprintf(why, sizeof why,
+                req.fail == SPOT_NOSOCK ? tr("%s isn't running") : tr("%s didn't answer"),
                 app()->name);
     if (act) busy_row(0); /* before the toast, whose loop can pop the level */
     pg.act = 0;
@@ -2419,9 +2421,8 @@ static int searched(void *ctx, event_t *event) {
     if (widget_get_text_utf8(pg.edit, t, sizeof t)) t[0] = 0;
     if (strlen(t) >= sizeof pg.term) { /* none of it goes: the box closes, the level stays */
         memset(t, 0, sizeof t);
-        if (!pg.go)
-            toast("Too long"); /* its loop would run the go the first call armed, under this handler
-                                */
+        if (!pg.go) /* its loop would run the go the first call armed, under this handler */
+            toast(tr("Too long"));
     }
     tk_snprintf(pg.term, sizeof pg.term, "%s", t);
     memset(t, 0, sizeof t);
@@ -2564,8 +2565,8 @@ static int go(const void *unused) {
     else if (l->state == K_ERROR && i == 1 && app()->nostop) { /* Cancel, as Return */
         leave(0);
     } else if (l->state == K_ERROR ? i == 1 : l->state != K_READY && l->slow) { /* Stop <name> */
-        char t[48];
-        tk_snprintf(t, sizeof t, "%s stopped", app()->name);
+        char t[128];
+        tk_snprintf(t, sizeof t, tr("%s stopped"), app()->name);
         app_stop(app(), 0);
         app()->wifi_off = app()->wifi;
         toast(t);
@@ -2676,7 +2677,7 @@ static int page_at(int k, const char *op, const char *args, const char *title, i
     /* A page is refused when the folder is being deleted or moved into, and while an update
      * downloads for an app that is not running: launch() would be refused too, a dead page. */
     if (busy && !strcmp(busy + 1, b->id) && (shelf_moving() || !b->launched || access(b->pid, 0)))
-        return toast("Wait until the App Store finishes"), 1;
+        return toast(tr("Wait until the App Store finishes")), 1;
     if (pg.page || !(pg.lv = calloc(ADDON_DEPTH, sizeof *pg.lv))) return 0;
     if (!(pg.f = calloc(4 + 6 * ADDON_ROWS * ADDON_PAGES, sizeof *pg.f)) ||
         !(pg.page = page_open("addon_page", closed, keyup)))
@@ -2697,7 +2698,7 @@ static int page_at(int k, const char *op, const char *args, const char *title, i
     tk_snprintf(l->title, sizeof l->title, "%s", title);
     if (missing) {
         l->state = K_ERROR;
-        tk_snprintf(l->note, sizeof l->note, "%s isn't on the card", a->name);
+        tk_snprintf(l->note, sizeof l->note, tr("%s isn't on the card"), a->name);
     }
     pg.timer = timer_add(tick, 0, 250);
     show();
@@ -2749,7 +2750,7 @@ static int apps_closed(void *ctx, event_t *event) {
 }
 static void apps_rows(int n) {
     if (n == la.n) return;
-    widget_t *view = page_list_or(la.page, la.page, "Apps", "No apps", la.n = n, 48);
+    widget_t *view = page_list_or(la.page, la.page, tr("Apps"), tr("No apps"), la.n = n, 48);
     for (int k = 0; k < n; ++k) page_row_into(view, k, addon_lib_name(k), addon_lib_open);
 }
 int addon_apps(void *ctx, event_t *event) {
@@ -2971,8 +2972,12 @@ static void qr_refresh(void) {
     widget_set_visible(qp.col, code, 0);
     widget_set_visible(qp.msg, !code, 0);
     if (!code) {
-        set(qp.say, !n ? "Not running" : addr[0] ? "No code yet" : "Connect the Q2 to Wi-Fi");
-        set(qp.sub, !n ? "Open it again" : addr[0] ? "Wait a moment" : "Then come back here");
+        set(qp.say, !n        ? tr("Not running")
+                    : addr[0] ? tr("No code yet")
+                              : tr("Connect the Q2 to Wi-Fi"));
+        set(qp.sub, !n        ? tr("Open it again")
+                    : addr[0] ? tr("Wait a moment")
+                              : tr("Then come back here"));
         return;
     }
     if (strlen(pin) == 6) /* 548 001 */
@@ -3065,17 +3070,17 @@ static void qr_open(const char *state, const char *title) {
                 : widget_factory_create_widget(f, "view", page, QR_COL, 40, w, QR_PX);
     widget_set_text_utf8(
         qr_label(qp.col, x, r[0][0], short_w, r[0][1], "s_scrlabel_white20l", r[0][2], 0xffffffffu),
-        cl ? "Scan with your phone's" : "Scan with your");
+        cl ? tr("Scan with your phone's") : tr("Scan with your"));
     widget_set_text_utf8(
         qr_label(qp.col, x, r[1][0], short_w, r[1][1], "s_scrlabel_white20l", r[1][2], 0xffffffffu),
-        cl ? "camera" : "phone's camera");
+        cl ? tr("camera") : tr("phone's camera"));
     widget_set_text_utf8(
         qr_label(qp.col, x, r[2][0], short_w, r[2][1], "s_scrlabel_white20l", r[2][2], SPOT_GREY),
-        "or open");
+        tr("or open"));
     qp.addr = qr_label(qp.col, x, r[3][0], w, r[3][1], "s_scrlabel_white20l", r[3][2], 0xffffffffu);
     qp.pinl =
         qr_label(qp.col, x, r[4][0], short_w, r[4][1], "s_scrlabel_white20l", r[4][2], SPOT_GREY);
-    widget_set_text_utf8(qp.pinl, "PIN");
+    widget_set_text_utf8(qp.pinl, tr("PIN"));
     qp.pin =
         qr_label(qp.col, x, r[5][0], short_w, r[5][1], "s_scrlabel_white20l", r[5][2], 0xffffffffu);
     qp.note = qr_label(qp.col, cl ? 24 : 0, r[6][0], cl ? 330 : w, r[6][1], "s_scrlabel_white20l",

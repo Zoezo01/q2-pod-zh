@@ -147,6 +147,7 @@ static int library_adds(void) {
     return any;
 }
 
+#define LIB_MISSING "Couldn't import " /* why's English before the name, which the toast reads */
 /* After the import, the first imported file whose playlist isn't in Playlists' list (stock reloads
  * it), as why; else 0. Stock stops at a create that fails (a database error, the 100 playlists'
  * cap) and returns as if done. */
@@ -154,7 +155,7 @@ static const char *library_missing(char *why, unsigned size) {
     for (const char *l = libup.list; *l; l += strlen(l) + 1) {
         if (*l != 'i' || playlist_named(l + 1)) continue;
         /* the name less its .m3u */
-        tk_snprintf(why, size, "Couldn't import %.*s", (int)strlen(l + 1) - 4, l + 1);
+        tk_snprintf(why, size, LIB_MISSING "%.*s", (int)strlen(l + 1) - 4, l + 1);
         return why;
     }
     return 0;
@@ -302,10 +303,12 @@ static void library_step(void) {
     libup.only = libup.list;
     int r = importPlayList();
     libup.only = 0;
-    char why[300];
+    char why[300], shown[300]; /* the answer's English; the toast's, in any language */
     const char *bad = r == -2 ? "No memory card" : library_missing(why, sizeof why);
     library_done(bad); /* before the toast, whose dialog runs a loop of its own */
-    toast(bad ? bad : "Playlists updated");
+    if (bad == why)
+        tk_snprintf(shown, sizeof shown, tr("Couldn't import %s"), why + sizeof LIB_MISSING - 1);
+    toast(!bad ? tr("Playlists updated") : bad == why ? shown : tr("No memory card"));
 }
 
 /* addon_poll's, once a pass, every LIB_POLL_MS. A stock dialog it opens (Update Library, a

@@ -231,7 +231,7 @@ int smart_hold(int (*fn)(void *, event_t *), void *ctx, const char *page) {
     sw.hold_ctx = ctx;
     sw.hold_win = win;
     tk_snprintf(sw.hold_name, sizeof sw.hold_name, "%s", name);
-    toast("Connecting to Wi-Fi\xe2\x80\xa6");
+    toast(tr("Connecting to Wi-Fi\xe2\x80\xa6"));
     return 1;
 }
 
@@ -242,7 +242,7 @@ int smart_hold(int (*fn)(void *, event_t *), void *ctx, const char *page) {
 int need_link(int (*fn)(void *, event_t *), void *ctx) {
     if (smart_hold(fn, ctx, 0)) return 0;
     if (get_wifisignal() > 0) return 1;
-    toast("Connect to Wi-Fi first");
+    toast(tr("Connect to Wi-Fi first"));
     return 0;
 }
 

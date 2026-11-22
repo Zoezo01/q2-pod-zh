@@ -611,33 +611,33 @@ static void show(const char *text) {
 
 /* The row at rest: the newer release a check found, else its own name. */
 static void named(void) {
-    char s[32];
+    char s[96];
     if (!nc.busy && *nc.tag)
-        tk_snprintf(s, sizeof s, "Update to %s", nc.tag), show(s);
+        tk_snprintf(s, sizeof s, tr("Update to %s"), nc.tag), show(s);
     else if (nu.label)
         widget_set_tr_text(nu.label, "update_online");
 }
 
 static int wait_done(const void *unused) {
     static const char *const said[] = {
-        [NU_LATEST] = "Latest firmware installed",
-        [NU_NET] = "Can't reach GitHub",
-        [NU_MISSING] = "No update for this build",
-        [NU_CARD] = "Can't write to the card",
-        [NU_CANCELLED] = "Download cancelled",
-        [NU_BUSY] = "GitHub is busy, try later",
-        [NU_BAD] = "The download was damaged, try again",
+        [NU_LATEST] = N_("Latest firmware installed"),
+        [NU_NET] = N_("Can't reach GitHub"),
+        [NU_MISSING] = N_("No update for this build"),
+        [NU_CARD] = N_("Can't write to the card"),
+        [NU_CANCELLED] = N_("Download cancelled"),
+        [NU_BUSY] = N_("GitHub is busy, try later"),
+        [NU_BAD] = N_("The download was damaged, try again"),
     };
-    char s[32];
+    char s[112];
     if (nu.state == NU_RUNNING) {
         reset_poweroptions_timer(1, 1, 0); /* standby, auto power-off; not the screen's */
         int percent = nu.base + nu.percent * (100 - nu.base) / 100; /* of the whole tar */
-        tk_snprintf(s, sizeof s, "Downloading %d%%", percent);
-        show(nu.cancel             ? "Cancelling…"
-             : nu.stage == 3       ? "Reconnecting…"
-             : nu.stage == 2       ? "Verifying…"
+        tk_snprintf(s, sizeof s, tr("Downloading %d%%"), percent);
+        show(nu.cancel             ? tr("Cancelling…")
+             : nu.stage == 3       ? tr("Reconnecting…")
+             : nu.stage == 2       ? tr("Verifying…")
              : nu.stage && percent ? s
-                                   : "Checking…");
+                                   : tr("Checking…"));
         return 8; /* RET_REPEAT */
     }
     pthread_join(nu.thread, 0);
@@ -646,13 +646,13 @@ static int wait_done(const void *unused) {
     if (state == NU_LATEST && !nc.busy) *nc.tag = 0; /* a press's answer is the newer */
     named();
     if (state == NU_SPACE)
-        tk_snprintf(s, sizeof s, "Needs %u MB more space", nu.need), toast(s);
+        tk_snprintf(s, sizeof s, tr("Needs %u MB more space"), nu.need), toast(s);
     else if (state != NU_DONE)
-        toast(said[state]);
+        toast(tr(said[state]));
     else if (nu.label)
         fwupdate_tf(); /* stock's TF card update: its battery check and confirm */
     else
-        toast("Update downloaded: use TF card update");
+        toast(tr("Update downloaded: use TF card update"));
     return 0;
 }
 
@@ -660,12 +660,13 @@ static int wait_done(const void *unused) {
 static int online_click(void *ctx, event_t *event) {
     if (nu.state == NU_RUNNING) {
         nu.cancel = 1;
-        show("Cancelling…");
+        show(tr("Cancelling…"));
         /* NOLINTNEXTLINE(bugprone-branch-clone): empty, as need_link's below: each says why */
     } else if (nu.state != NU_IDLE) {
         /* ended, not yet joined by wait_done */
     } else if (I(g_power_capacity, 0) < NU_BATTERY && !g_usbdet_value) {
-        toast("Charge the battery first"); /* before the download, as stock's updater after it */
+        /* before the download, as stock's updater after it */
+        toast(tr("Charge the battery first"));
     } else if (!need_link(online_click, ctx)) {
         /* held for Smart Wi-Fi's link (a press while it waits takes its place), or none */
     } else {
@@ -673,9 +674,9 @@ static int online_click(void *ctx, event_t *event) {
         nu.state = NU_RUNNING;
         if (pthread_create(&nu.thread, 0, worker, 0)) {
             nu.state = NU_IDLE;
-            toast("Can't start the download");
+            toast(tr("Can't start the download"));
         } else {
-            show("Checking…");
+            show(tr("Checking…"));
             timer_add(wait_done, (void *)0, 500);
         }
     }
@@ -708,7 +709,7 @@ int ringnav_fwupdate(widget_t *win, void *ctx) {
         nu.label = widget_get_child(button, 0);
         widget_on(nu.label, EVT_DESTROY, label_gone, nu.label);
         if (nu.state == NU_RUNNING)
-            show("Downloading…");
+            show(tr("Downloading…"));
         else if (*nc.tag)
             named(); /* else stock's name, as it built the row */
         pod_rows(win, "scroll_view_fwupdate", 26 /* POD_REMIND_DAILY */, 1, icons);
@@ -735,7 +736,7 @@ static void *nc_worker(void *unused) {
 void netupdate_poll(void) {
     unsigned now = time_now_ms();
     unsigned long tid;
-    char s[80];
+    char s[224];
     if (!*Q2POD_TAG) return;
     if (!pod_value(POD_REMIND_DAILY)) { /* not while a check thread owns the tag, as named() */
         if (!nc.busy) *nc.tag = 0, nc.at = 0; /* back On: check at once */
@@ -750,7 +751,8 @@ void netupdate_poll(void) {
         if (strncmp(nc.told, nc.tag, sizeof nc.tag)) {
             memcpy(nc.told, nc.tag, sizeof nc.told);
             BLOB_IO(NU_TOLD, nc.told, 1);
-            tk_snprintf(s, sizeof s, "Q2 Pod %s is out: System Update → Network update", nc.tag);
+            tk_snprintf(s, sizeof s, tr("Q2 Pod %s is out: System Update → Network update"),
+                        nc.tag);
             toast(s);
             return;
         }
@@ -1055,38 +1057,39 @@ static int sh_shown(int i) {
 static int sh_updatable(int i) { return sh_shown(i) && sh_state(i) == ST_UPDATE; }
 
 static void sh_text(int r) {
-    static const char *const stages[] = { "Checking…", "Downloading", "Unpacking…", "Installing…",
-                                          "Removing…" };
+    static const char *const stages[] = { N_("Checking…"), N_("Downloading"), N_("Unpacking…"),
+                                          N_("Installing…"), N_("Removing…") };
     int i = sh.map[r], armed = sh.armed == r + 1,
         busy = (sh.job == JOB_INSTALL || sh.job == JOB_REMOVE) && sh.app == i;
-    char s[40];
+    char s[96];
     const char *t = s;
     unsigned min =
         i == ROW_CHECK ? (unsigned)(boot_ms() - sh.checked) / 60000 : 0; /* no __udivdi3 */
     if (i == ROW_CHECK && sh.job == JOB_CHECK)
-        t = "Checking…";
+        t = tr("Checking…");
     else if (i == ROW_CHECK && !shelf_n) /* with no list yet, the press loads it */
-        t = "Connect to Wi-Fi to load the list";
+        t = tr("Connect to Wi-Fi to load the list");
     else if (i == ROW_CHECK && !sh.checked)
         t = theme()->sep[0].n ? " " : "";
     else if (i == ROW_CHECK && !min) /* ponytail: said as the page is drawn, not each minute */
-        t = "Checked just now";
+        t = tr("Checked just now");
     else if (i == ROW_CHECK)
-        snprintf(s, sizeof s, min < 60 ? "Checked %u min ago" : "Checked %u h ago",
+        snprintf(s, sizeof s, min < 60 ? tr("Checked %u min ago") : tr("Checked %u h ago"),
                  min < 60 ? min : min / 60);
     else if (busy && sh.cancel)
-        t = "Cancelling…";
+        t = tr("Cancelling…");
     else if (busy && sh.stage == 1 && sh.percent)
-        snprintf(s, sizeof s, "Downloading %d%%", sh.percent);
+        snprintf(s, sizeof s, tr("Downloading %d%%"), sh.percent);
     else if (busy)
-        t = stages[sh.stage];
+        t = tr(stages[sh.stage]);
     else if (armed && sh_state(i) == ST_INSTALLED)
-        t = "Press again to remove";
+        t = tr("Press again to remove");
     else if (armed) /* docs/boot.md#rockbox */
-        t = "Starts at power-on. Press again to install";
-    else /* its GitHub owner, as an app's developer */
-        snprintf(s, sizeof s, "%.*s", (int)(strstr(apps[i].repo, "/") - apps[i].repo),
-                 apps[i].repo);
+        t = tr("Starts at power-on. Press again to install");
+    else { /* its GitHub owner, as an app's developer: 39 bytes at most, as GitHub's names are */
+        int k = (int)(strstr(apps[i].repo, "/") - apps[i].repo);
+        snprintf(s, sizeof s, "%.*s", k < 39 ? k : 39, apps[i].repo);
+    }
     widget_set_text_utf8(widget_get_child(sh.row[r], 1), t);
     if (i != ROW_CHECK) store_state(sh.row[r], busy || armed ? -1 : sh_state(i));
 }
@@ -1099,24 +1102,29 @@ static void sh_refresh(void) {
 /* A check's toast: how many apps' rows offer Update (sh_updatable); with none, from Check for
  * Updates (manual), why it failed or that none have. */
 static void sh_told(int manual, const char *failed) {
-    char s[40];
+    char s[96];
     int n = 0;
     for (int i = 0; i < shelf_n; ++i) n += sh_updatable(i);
     if (n)
-        snprintf(s, sizeof s, "%d app%s can be updated", n, n == 1 ? "" : "s"), toast(s);
+        snprintf(s, sizeof s, n == 1 ? tr("%d app can be updated") : tr("%d apps can be updated"),
+                 n),
+            toast(s);
     else if (manual && failed)
         toast(failed);
     else if (manual)
-        toast("All apps are up to date");
+        toast(tr("All apps are up to date"));
 }
 
 static int sh_wait(const void *unused) {
     static const char *const said[] = {
-        [SH_NET] = "Can't reach GitHub",           [SH_CARD] = "Can't write to the card",
-        [SH_MISSING] = "No update for this build", [SH_BAD] = "The download is not a usable app",
-        [SH_CANCELLED] = "Download cancelled",     [SH_BUSY] = "GitHub is busy, try later",
+        [SH_NET] = N_("Can't reach GitHub"),
+        [SH_CARD] = N_("Can't write to the card"),
+        [SH_MISSING] = N_("No update for this build"),
+        [SH_BAD] = N_("The download is not a usable app"),
+        [SH_CANCELLED] = N_("Download cancelled"),
+        [SH_BUSY] = N_("GitHub is busy, try later"),
     };
-    char s[64];
+    char s[192];
     if (sh.running) {
         if (sh.job != JOB_CHECK) reset_poweroptions_timer(1, 1, 0); /* standby, auto power-off */
         sh_refresh();
@@ -1142,21 +1150,22 @@ static int sh_wait(const void *unused) {
         addon_apps_sync(0, 0); /* Library's Apps row or page, if on top */
     if (job == JOB_CHECK && !sh.cancel && sh.page &&
         window_manager_get_top_window(window_manager()) == sh.page) /* not left or covered */
-        sh_told(manual, r ? said[r] : 0);
+        sh_told(manual, r ? tr(said[r]) : 0);
     else if (job == JOB_INSTALL && r == SH_SPACE)
-        snprintf(s, sizeof s, "Needs %u MB more space", sh.need), toast(s);
+        snprintf(s, sizeof s, tr("Needs %u MB more space"), sh.need), toast(s);
     else if ((job == JOB_INSTALL || job == JOB_REMOVE) && r)
-        toast(said[r]);
+        toast(tr(said[r]));
     else if (job == JOB_INSTALL && is(i, "rockbox"))
-        toast("Rockbox is ready. Find it on Home");
+        toast(tr("Rockbox is ready. Find it on Home"));
     else if (job == JOB_INSTALL && is(i, "themes"))
-        toast("Rockbox Themes are ready in Rockbox's Theme Settings");
-    else if (job == JOB_INSTALL)
-        snprintf(s, sizeof s, "%s is ready in %s", apps[i].name, addon_where(apps[i].id)), toast(s);
+        toast(tr("Rockbox Themes are ready in Rockbox's Theme Settings"));
+    else if (job == JOB_INSTALL) /* addon_where's place, translated there */
+        snprintf(s, sizeof s, tr("%s is ready in %s"), apps[i].name, addon_where(apps[i].id)),
+            toast(s);
     else if (job == JOB_REMOVE)
-        snprintf(s, sizeof s, "%s removed", apps[i].name), toast(s);
-    else if (job == JOB_ERASE)
-        stream_erased(), toast("Spotify's login and cache erased"); /* rows first: toast blocks */
+        snprintf(s, sizeof s, tr("%s removed"), apps[i].name), toast(s);
+    else if (job == JOB_ERASE) /* rows first: toast blocks */
+        stream_erased(), toast(tr("Spotify's login and cache erased"));
     return 0;
 }
 
@@ -1167,7 +1176,7 @@ static void sh_start(int job, int i) {
     sh.stage = job == JOB_REMOVE ? 4 : 0;
     if (pthread_create(&sh.thread, 0, sh_worker, 0)) {
         sh.job = sh.running = 0;
-        toast("Can't start the download");
+        toast(tr("Can't start the download"));
     } else
         timer_add(sh_wait, (void *)0, 500);
 }
@@ -1194,12 +1203,12 @@ static int sh_click(void *ctx, event_t *event) {
         sh.manual = 1; /* checking already, the opening check maybe: its end answers the press */
     } else if (sh.job == JOB_CHECK) { /* needs no answer: stopped, so the next press acts */
         sh.cancel = 1;
-        toast("Stopped checking for updates");
+        toast(tr("Stopped checking for updates"));
     } else if (sh.job) {
         if (sh.job == JOB_INSTALL && sh.app == i && sh.stage < 3)
             sh.cancel = 1; /* not once moving */
         else if (sh.job != JOB_INSTALL || sh.app != i)
-            toast("Wait for the one in progress");
+            toast(tr("Wait for the one in progress"));
     } else if (i != ROW_CHECK && sh_state(i) == ST_INSTALLED) {
         if (!armed)
             sh.armed = r + 1;
@@ -1212,7 +1221,7 @@ static int sh_click(void *ctx, event_t *event) {
     else if (i == ROW_CHECK)
         sh_start(JOB_CHECK, 0), sh.manual = 1;
     else if (is(i, "themes") && !rockbox_available())
-        toast("Install Rockbox first");
+        toast(tr("Install Rockbox first"));
     else if (is(i, "rockbox") && sh_state(i) == ST_INSTALL && !armed)
         sh.armed = r + 1;
     else
@@ -1239,13 +1248,13 @@ static void sh_rows(void) {
     if (sh.page && (n != sh.rows || memcmp(map, sh.map, sizeof map))) {
         memcpy(sh.map, map, sizeof map);
         sh.rows = 0;
-        widget_t *view = page_list(sh.page, sh.page, 0, "App Store", n, 64);
+        widget_t *view = page_list(sh.page, sh.page, 0, tr("App Store"), n, 64);
         sh.strip = store_tabs(sh.page, view);
         for (int r = 0; r < n; ++r) {
             int i = map[r];
             /* sh_text writes the detail: a blank one, or a theme would centre the name over it */
             sh.row[r] =
-                page_row_detail(view, r, i == ROW_CHECK ? "Check for Updates" : apps[i].name,
+                page_row_detail(view, r, i == ROW_CHECK ? tr("Check for Updates") : apps[i].name,
                                 theme()->sep[0].n ? " " : "", sh_click);
         }
         sh.rows = n;
@@ -1275,9 +1284,9 @@ int shelf_key(widget_t *top, unsigned key) {
  * press stops it, so the next press acts); whether an erase is running. */
 int shelf_erase(int start) {
     if (start && sh.job == JOB_CHECK)
-        sh.cancel = 1, toast("Stopped checking for updates");
+        sh.cancel = 1, toast(tr("Stopped checking for updates"));
     else if (start && sh.job)
-        toast("Wait for the one in progress");
+        toast(tr("Wait for the one in progress"));
     else if (start)
         sh_start(JOB_ERASE, -1);
     return sh.job == JOB_ERASE;
