@@ -4512,22 +4512,6 @@ static int pane_caption(char *t, unsigned size) {
     return 0;
 }
 
-/* s's characters (UTF-8, else a byte as Latin-1, as lyrics.c's utf8_char reads them), at most max,
- * into out; their count. A painter's text, a translation's too. Shared with games.c's text_at. */
-unsigned utf8_wide(const char *s, unsigned *out, unsigned max) {
-    const unsigned char *t = (const unsigned char *)s;
-    unsigned n = 0;
-    for (; *t && n < max; ++n) {
-        unsigned c = *t, k = c >= 0xf8 ? 0 : c >= 0xf0 ? 3 : c >= 0xe0 ? 2 : c >= 0xc0 ? 1 : 0;
-        unsigned v = c & (0x3f >> k), j = 1;
-        while (j <= k && (t[j] & 0xc0) == 0x80) v = v << 6 | (t[j++] & 63);
-        int whole = k && j > k;
-        out[n] = whole ? v : c;
-        t += whole ? j : 1;
-    }
-    return n;
-}
-
 /* w's first child of type, or 0. */
 static widget_t *child_of_type(widget_t *w, const char *type) {
     for (unsigned i = 0, n = widget_count_children(w); i < n; ++i) {
@@ -4683,8 +4667,7 @@ void home_pane_paint(canvas_t *canvas, int x, int y, int w, int h) {
     }
     char t[80]; /* "%u Services" in any language */
     if (pane_caption(t, sizeof t) > 0) {
-        unsigned s[40], len = utf8_wide(t, s, 39);
-        s[len] = 0;
+        unsigned s[40], len = wide_text(s, 40, t);
         int box[4] = { x, y + T->pane_count_y, T->pane_count_w, 24 }; /* rect_t */
         if (flat)
             final_text(canvas, (const char *)0, s, box, T->pane_count_px,

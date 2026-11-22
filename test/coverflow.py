@@ -236,6 +236,13 @@ void set_hscroll_label_attribute(void *x) { assert(!strcmp(W(x)->type, "hscroll_
 int slide_menu_set_value(void *x, int value) { *(int *)(W(x)->raw + SLIDE_INDEX) = value; return 0; }
 int widget_set_name(void *x, const char *s) { snprintf(W(x)->type, 32, "%s", s); return 0; }
 void page_empty(void *body, const char *name) { (void)body; (void)name; } /* navigation.c: page_list_or only */
+const char *tr(const char *en) { return en; } /* language.c: English */
+unsigned wide_text(unsigned *to, unsigned room, const char *s) { /* lyrics.c's, for ASCII */
+    unsigned n = 0;
+    for (; s[n] && n + 1 < room; ++n) to[n] = (unsigned char)s[n];
+    to[n] = 0;
+    return n;
+}
 int widget_use_style(void *x, const char *s) { return 0; }
 int widget_set_text_utf8(void *x, const char *s) { if (s) snprintf(W(x)->text, 160, "%s", s); return 0; } /* stock: NULL keeps the text */
 int widget_restack(void *x, unsigned i) { return 0; }

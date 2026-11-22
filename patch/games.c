@@ -873,7 +873,6 @@ static void frame_rect(canvas_t *canvas, int x, int y, int w, int h, unsigned rg
  * mode, its black suits black. */
 static unsigned unflipped(unsigned v) { return unflip(v) * 0x010101u; }
 
-unsigned utf8_wide(const char *s, unsigned *out, unsigned max); /* coverflow.c */
 /* s (UTF-8, its first 40 characters) in the theme's face at px, h rows from y: from x, centred on
  * it or ending at it. A theme with capitals on Home (Minimal) takes them here too, SUDO_TRACK
  * apart. Returns its width. Shared with app_store.c.
@@ -881,7 +880,7 @@ unsigned utf8_wide(const char *s, unsigned *out, unsigned max); /* coverflow.c *
  */
 int text_at(canvas_t *canvas, const char *s, int x, int y, int h, unsigned px, unsigned color,
             int align) {
-    unsigned wide[40], n = utf8_wide(s, wide, 40);
+    unsigned wide[41], n = wide_text(wide, 41, s);
     int cw[40], w = 0, caps = theme()->caps_home, fpx = (int)px;
     for (unsigned k = 0; caps && k < n; ++k)
         if (wide[k] >= 'a' && wide[k] <= 'z') wide[k] -= 32;
