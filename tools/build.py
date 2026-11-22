@@ -1801,6 +1801,10 @@ def compile_payload(out):  # pragma: no mutate block
     nav = [out/f'{name[:-2]}.o' for name in NAVIGATION]
     for name, o in zip(NAVIGATION, nav):
         run('clang',*FLAGS,'-I',out,'-c',ROOT/'patch'/name,'-o',o)
+    # A stock function used as a value takes its stub's address, not stock's, unless peq.py's STOCK_BY_ADDRESS names it.
+    for o in [*nav, *extra]:
+        for line in run('readelf','-rW',o).splitlines():
+            if 'stock_call_' in line: check('R_MIPS_26' in line, f'{o.name} uses {line.split()[-1]} as a value: add it to STOCK_BY_ADDRESS')
     asm = ['.set noreorder', '.text']
     resume = {x: address for address, _, x in HOOKS.values() if x}
     for x, address in resume.items():
