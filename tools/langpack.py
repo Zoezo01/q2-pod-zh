@@ -74,12 +74,18 @@ def own_strings(root=ROOT):
 
 def asset_strings():
     """The English the build gives assets as their tr_text: build.py's english_ui (but the keyboard's keys) and
-    ipod.py's Home labels and confirm buttons."""
+    ipod.py's Home labels and confirm buttons; and what the build's headers hand tr(): the time zones' cities
+    (clock.c) and the themes' own options and schemes (navigation.c)."""
     import build
     import ipod
+    import theme
+    themes = theme.builtins()
     texts = [*build.ENGLISH.values(), *(v for rel, m in build.ENGLISH_IN.items() if rel != 'kb_default_t9.bin'
                                         for v in m.values()),
-             *(row['text'] for row in ipod.HOME_RENAMED.values()), *ipod.HOME_LITERAL.values(), *ipod.CONFIRM_TEXT]
+             *(row['text'] for row in ipod.HOME_RENAMED.values()), *ipod.HOME_LITERAL.values(), *ipod.CONFIRM_TEXT,
+             *(label.split(' ', 1)[1] for label, _ in build.TIMEZONES),
+             *(t for _, _, o in theme.theme_keys(themes).values() if o for t in (o['label'], *o['names'])),
+             *(s['label'] for t in themes for s in t['schemes'] if s.get('label'))]
     return list(dict.fromkeys(texts))
 
 

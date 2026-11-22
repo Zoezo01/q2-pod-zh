@@ -66,7 +66,8 @@ def test_own_strings_of_this_tree():
 
 def test_asset_strings():
     texts = langpack.asset_strings()
-    assert {'Library', 'Playback', 'System', 'Cover Flow', 'Settings', 'Cancel', 'OK', 'Albums', 'Battery Test'} <= set(texts)
+    assert {'Library', 'Playback', 'System', 'Cover Flow', 'Settings', 'Cancel', 'OK', 'Albums', 'Battery Test',
+            'Kolkata', 'Status Bar', 'Show Wordmark', 'Classic Blue'} <= set(texts)
     assert 'abc' not in texts and '«»' not in texts and len(texts) == len(set(texts))
 
 
