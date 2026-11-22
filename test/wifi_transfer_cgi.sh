@@ -40,6 +40,10 @@ BB=$(command -v busybox)
 DEV=/tmp/devbin; rm -rf "$DEV"; mkdir -p "$DEV"
 for a in sh ash sed tr grep awk tail head cat ls date mkdir rm rmdir mv cut printf dd wc mountpoint realpath busybox; do ln -sf "$BB" "$DEV/$a"; done
 DEVPATH="$DEV"
+# The transfer page's own request, as thttpd passes it: Host cut at its ':', the port apart, the page as
+# Referer. Every request below sends this unless a case sets TH or TR; PAGE_ENV is it for the env -i calls.
+TH=192.168.1.5; TR=http://192.168.1.5:8888/
+PAGE_ENV=(HTTP_HOST=192.168.1.5 SERVER_PORT=8888 HTTP_REFERER=http://192.168.1.5:8888/)
 pass=0; fail=0
 ok()  { pass=$((pass+1)); echo "  PASS: $1"; }
 bad() { fail=$((fail+1)); echo "  FAIL: $1"; }
@@ -48,7 +52,7 @@ bad() { fail=$((fail+1)); echo "  FAIL: $1"; }
 run() {
   local nm=$1 meth=$2 q=$3 ct=$4 bf=$5 len=0 src=/dev/null
   [ "$bf" != "-" ] && { len=$(stat -c %s "$bf"); src=$bf; }
-  OUT=$(env -i PATH="$DEVPATH" SCRIPT_NAME="/$nm" REQUEST_METHOD="$meth" \
+  OUT=$(env -i PATH="$DEVPATH" HTTP_HOST="$TH" SERVER_PORT=8888 HTTP_REFERER="$TR" SCRIPT_NAME="/$nm" REQUEST_METHOD="$meth" \
         QUERY_STRING="$q" CONTENT_TYPE="$ct" CONTENT_LENGTH="$len" \
         $SH "$CGI" < "$src" 2>/dev/null); RC=$?
 }
@@ -66,19 +70,19 @@ mp() { { printf -- "--$2\r\nContent-Disposition: form-data; name=\"path\"\r\n\r\
 # after 4 s. No body sends no CONTENT_LENGTH, as thttpd does for a GET.
 held() {
   local cl=(); [ -n "$4" ] && cl=("CONTENT_LENGTH=${#4}")
-  OUT=$(timeout 4 env -i PATH="$DEVPATH" SCRIPT_NAME="/$1" REQUEST_METHOD="$2" QUERY_STRING="$3" \
+  OUT=$(timeout 4 env -i PATH="$DEVPATH" "${PAGE_ENV[@]}" SCRIPT_NAME="/$1" REQUEST_METHOD="$2" QUERY_STRING="$3" \
         CONTENT_TYPE='application/x-www-form-urlencoded' "${cl[@]}" $SH "$CGI" 2>/dev/null < <(printf '%s' "$4"; sleep 8)); RC=$?
 }
 
 echo "=== busybox ash case [[:cntrl:]] support"; busybox ash -c 'case "$(printf a\\tb)" in *[[:cntrl:]]*) echo yes;; *) echo NO;; esac'
 rm -rf /tmp/pwned* 2>/dev/null
 
-echo; echo "############ SECURITY: command injection must NOT execute (both POST body and GET query, raw and encoded)"
+echo; echo "############ SECURITY: command injection must NOT execute (both POST body and query string, raw and encoded)"
 post create 'path=/mnt/mmc/a$(id>/tmp/pwned1)b' ; # note: this double 'path=' is intentional dup test below; real injection:
 printf 'path=/mnt/mmc/a$(id>/tmp/pwned1)b' > /tmp/b1; run create POST '' 'application/x-www-form-urlencoded' /tmp/b1
 [ -e /tmp/pwned1 ] && bad "POST dollar-paren executed" || ok "POST \$() injection inert"
-run create GET 'path=/mnt/mmc/a`id>/tmp/pwned2`b' '' -
-[ -e /tmp/pwned2 ] && bad "GET backtick executed" || ok "GET backtick injection inert"
+run create POST 'path=/mnt/mmc/a`id>/tmp/pwned2`b' '' -   # a POST with no body: the path is read from the query
+{ [ "$(status)" != 403 ] && [ ! -e /tmp/pwned2 ]; } && ok "query-string backtick injection inert" || bad "query-string backtick ($(status))"
 printf 'path=%%2Fmnt%%2Fmmc%%2Fa%%24%%28id%%3E%%2Ftmp%%2Fpwned3%%29b' > /tmp/b3; run create POST '' 'application/x-www-form-urlencoded' /tmp/b3
 [ -e /tmp/pwned3 ] && bad "encoded injection executed" || ok "URL-encoded \$() injection inert (decode-then-argv)"
 
@@ -98,7 +102,11 @@ echo; echo "############ FUNCTIONAL: create / list / download / delete / upload 
 printf 'path=/mnt/mmc/My Folder' > /tmp/bf; run create POST '' 'application/x-www-form-urlencoded' /tmp/bf
 [ -d "/mnt/mmc/My Folder" ] && ok "create 'My Folder' (POST body, literal space)" || bad "create plain folder ($(status))"
 run create GET 'path=/mnt/mmc/From+Query' '' -
-[ -d "/mnt/mmc/From Query" ] && ok "create via GET query (+ = space)" || bad "create via GET"
+{ [ "$(status)" = 403 ] && [ ! -e "/mnt/mmc/From Query" ]; } && ok "create by GET refused: a change is a POST from the page" || bad "create via GET ($(status))"
+run create POST 'path=/mnt/mmc/From+Query' '' -
+[ -d "/mnt/mmc/From Query" ] && ok "create via the query string of a POST (+ = space)" || bad "create via a POST's query ($(status))"
+post create '/mnt/mmc/From+Body'
+[ -d "/mnt/mmc/From Body" ] && ok "create via a POST body (+ = space)" || bad "create + in a POST body ($(status))"
 printf 'path=/mnt/mmc/M%%C3%%BAsica %%26 Caf%%C3%%A9 (2024)' > /tmp/bu; run create POST '' 'application/x-www-form-urlencoded' /tmp/bu
 [ -d "/mnt/mmc/Música & Café (2024)" ] && ok "create Unicode+&() folder preserved (not mangled)" || bad "create special folder"
 
@@ -123,7 +131,7 @@ B=/tmp/mp_evil; BND=----q2e
 { printf -- "--$BND\r\nContent-Disposition: form-data; name=\"path\"\r\n\r\n/mnt/mmc/\r\n"
   printf -- "--$BND\r\nContent-Disposition: form-data; name=\"files[]\"; filename=\"x\$(touch pwned4y).mp3\"\r\nContent-Type: audio/mpeg\r\n\r\nAUDIOBYTES\r\n--$BND--\r\n"; } > "$B"
 L=$(stat -c %s "$B")
-OUT=$( cd /mnt/mmc && env -i PATH="$DEVPATH" SCRIPT_NAME=/upload REQUEST_METHOD=POST \
+OUT=$( cd /mnt/mmc && env -i PATH="$DEVPATH" "${PAGE_ENV[@]}" SCRIPT_NAME=/upload REQUEST_METHOD=POST \
        CONTENT_TYPE="multipart/form-data; boundary=$BND" CONTENT_LENGTH="$L" busybox ash "$CGI" < "$B" 2>/dev/null )
 [ -e /mnt/mmc/pwned4y ] && bad "upload filename injection executed" || ok "upload filename \$() injection inert"
 [ "$(cat "/mnt/mmc/x\$(touch pwned4y).mp3" 2>/dev/null)" = "AUDIOBYTES" ] && ok "upload stored literal \$()-name file safely (preserved, not executed)" || bad "upload literal-name content wrong"
@@ -166,7 +174,7 @@ run upload POST '' 'multipart/form-data; boundary=----q2big' /tmp/mp_big
 cmp -s "/mnt/mmc/big.bin" /tmp/expect.big && ok "upload 300 KB binary byte-exact (content beyond the 64 KB prefix)" || bad "upload large binary mismatch (size $(busybox stat -c %s /mnt/mmc/big.bin 2>/dev/null) vs 300000)"
 
 echo; echo "############ REGRESSION: list emits directory paths WITH a trailing slash (client contract)"
-run create GET 'path=/mnt/mmc/SubDir' '' -
+post create '/mnt/mmc/SubDir'
 run list GET 'path=/mnt/mmc/' '' -        # the real client lists the home path WITH a trailing slash
 body | python3 -c "import json,sys
 d=json.load(sys.stdin); e=[x for x in d if x['name']=='SubDir'][0]
@@ -174,7 +182,7 @@ assert 'size' not in e, 'dir must have no size'
 assert e['path']=='/mnt/mmc/SubDir/', e['path']
 print('dir path ok:', e['path'])" && ok "list dir path has one clean trailing slash" || bad "list dir trailing slash"
 # The client builds the create path as <dirpath>+<name>; with the slash that is /mnt/mmc/SubDir/Child
-run create GET 'path=/mnt/mmc/SubDir/Child' '' -
+post create '/mnt/mmc/SubDir/Child'
 { [ -d "/mnt/mmc/SubDir/Child" ] && [ ! -e "/mnt/mmc/SubDirChild" ]; } && ok "create inside a subfolder lands there (no mangled top-level sibling)" || bad "subfolder create mangled"
 
 echo; echo "############ LIST VALUES: escaping, and each file's size and time as the file has them"
@@ -246,7 +254,7 @@ B=/tmp/mp_cl; BND=----q2cl
   printf -- "--$BND\r\nContent-Disposition: form-data; name=\"files[]\"; filename=\"cl.txt\"\r\nContent-Type: text/plain\r\n\r\nX\r\n--$BND--\r\n"; } > "$B"
 clbad=0
 for badlen in -1 abc ""; do
-  O=$(env -i PATH="$DEVPATH" SCRIPT_NAME=/upload REQUEST_METHOD=POST \
+  O=$(env -i PATH="$DEVPATH" "${PAGE_ENV[@]}" SCRIPT_NAME=/upload REQUEST_METHOD=POST \
       CONTENT_TYPE="multipart/form-data; boundary=$BND" CONTENT_LENGTH="$badlen" \
       busybox ash "$CGI" < "$B" 2>/dev/null)
   st=$(printf '%s' "$O" | sed -n 's/^Status: \([0-9]*\).*/\1/p' | head -1)
@@ -276,7 +284,7 @@ if [ -L /mnt/mmc/evil ]; then
   { [ "$(status)" = 400 ] && ! printf '%s' "$OUT" | grep -q "$(cat /etc/hostname)"; } && ok "download through off-card symlink refused, no leak" || bad "symlink download ($(status))"
   post delete '/mnt/mmc/evil/zzz_nonexistent'      # confine resolves the existing parent (/etc) and refuses before rm
   [ "$(status)" = 400 ] && ok "delete through off-card symlink refused (no rm off-card)" || bad "symlink delete ($(status))"
-  run create GET 'path=/mnt/mmc/elink/plantdir' '' -
+  post create '/mnt/mmc/elink/plantdir'
   { [ "$(status)" = 400 ] && [ ! -e /tmp/offcard/plantdir ]; } && ok "create through off-card symlink refused (nothing created off-card)" || bad "symlink create ($(status))"
   B=/tmp/mp_sl; BND=----q2sl
   { printf -- "--$BND\r\nContent-Disposition: form-data; name=\"path\"\r\n\r\n/mnt/mmc/elink\r\n"
@@ -312,7 +320,7 @@ if [ -L /mnt/mmc/Links/peek ]; then
   { refused && ! leaks SECRETKEY; } && ok "download of a link to a hidden file refused, no leak" || bad "hidden-file link download ($(status))"
   run list GET 'path=/mnt/mmc/Plain/chain' '' -
   { refused && ! leaks cache; } && ok "a link to that link refused" || bad "hidden-link chain ($(status))"
-  run create GET 'path=/mnt/mmc/Links/peek/planted' '' -
+  post create '/mnt/mmc/Links/peek/planted'
   { refused && [ ! -e /mnt/mmc/.spotify/planted ]; } && ok "create through it refused, nothing made" || bad "hidden-link create ($(status))"
   mp /tmp/mp_hl ----q2hl /mnt/mmc/Links/peek run ATTACKER
   run upload POST '' 'multipart/form-data; boundary=----q2hl' /tmp/mp_hl
@@ -362,11 +370,11 @@ run upload POST '' "multipart/form-data; boundary=$BND" "$B"
 { [ "$(status)" = 400 ] && [ -d /mnt/mmc/ClashDir ]; } && ok "upload onto an existing directory name refused" || bad "upload dir-clash ($(status))"
 
 echo; echo "############ PATH ROBUSTNESS: sibling-prefix, double-encoding, mid-name dot"
-run create GET 'path=/mnt/mmcEVIL' '' -
+post create '/mnt/mmcEVIL'
 { [ "$(status)" = 400 ] && [ ! -e /mnt/mmcEVIL ]; } && ok "sibling-prefix /mnt/mmcEVIL rejected" || bad "sibling-prefix ($(status))"
-run create GET 'path=/mnt/mmc/%252e%252e' '' -
+post create '/mnt/mmc/%252e%252e'
 [ -d "/mnt/mmc/%2e%2e" ] && ok "double-encoded dots stay literal, no traversal" || bad "double-encoding (dir not literal)"
-run create GET 'path=/mnt/mmc/2024.Album' '' -
+post create '/mnt/mmc/2024.Album'
 [ -d "/mnt/mmc/2024.Album" ] && ok "mid-name dot folder created (no dot-rule false positive)" || bad "mid-name dot wrongly rejected"
 
 echo; echo "############ MULTIPART EDGES: zero-byte, content ending in the boundary token, quoted boundary"
@@ -395,15 +403,72 @@ echo; echo "############ REQUEST BODY: exactly CONTENT_LENGTH bytes, never to en
 held create POST '' 'path=/mnt/mmc/HeldPost'
 { [ "$RC" != 124 ] && [ -d /mnt/mmc/HeldPost ]; } && ok "POST create answers while the connection stays open" || bad "POST create waited for end-of-file (rc $RC)"
 held create GET 'path=/mnt/mmc/HeldGet' ''
-{ [ "$RC" != 124 ] && [ -d /mnt/mmc/HeldGet ]; } && ok "GET create (no body, no CONTENT_LENGTH) answers while the connection stays open" || bad "GET create waited for end-of-file (rc $RC)"
+{ [ "$RC" != 124 ] && [ "$(status)" = 403 ] && [ ! -e /mnt/mmc/HeldGet ]; } && ok "GET create (no body, no CONTENT_LENGTH) is refused at once while the connection stays open" || bad "GET create (rc $RC, $(status))"
+held create POST 'path=/mnt/mmc/HeldQuery' ''
+{ [ "$RC" != 124 ] && [ -d /mnt/mmc/HeldQuery ]; } && ok "POST create with its path in the query (no body, no CONTENT_LENGTH) answers while the connection stays open" || bad "bodyless POST create (rc $RC, $(status))"
 held delete POST '' 'path=/mnt/mmc/HeldPost'
 { [ "$RC" != 124 ] && [ ! -e /mnt/mmc/HeldPost ]; } && ok "POST delete answers while the connection stays open" || bad "POST delete waited for end-of-file (rc $RC)"
 printf 'path=/mnt/mmc/CutHereNOT-THE-BODY' > /tmp/bcut      # CONTENT_LENGTH covers "path=/mnt/mmc/CutHere" only
-OUT=$(env -i PATH="$DEVPATH" SCRIPT_NAME=/create REQUEST_METHOD=POST CONTENT_TYPE='application/x-www-form-urlencoded' CONTENT_LENGTH=21 $SH "$CGI" < /tmp/bcut 2>/dev/null)
+OUT=$(env -i PATH="$DEVPATH" "${PAGE_ENV[@]}" SCRIPT_NAME=/create REQUEST_METHOD=POST CONTENT_TYPE='application/x-www-form-urlencoded' CONTENT_LENGTH=21 $SH "$CGI" < /tmp/bcut 2>/dev/null)
 { [ -d /mnt/mmc/CutHere ] && [ ! -e /mnt/mmc/CutHereNOT-THE-BODY ]; } && ok "bytes past CONTENT_LENGTH are not read as the body" || bad "the body was not cut at CONTENT_LENGTH ($(status))"
 printf 'path=/mnt/mmc/HugeLength' > /tmp/bhuge
-OUT=$(env -i PATH="$DEVPATH" SCRIPT_NAME=/create REQUEST_METHOD=POST CONTENT_TYPE='application/x-www-form-urlencoded' CONTENT_LENGTH=99999999999999999999 $SH "$CGI" < /tmp/bhuge 2>/dev/null)
+OUT=$(env -i PATH="$DEVPATH" "${PAGE_ENV[@]}" SCRIPT_NAME=/create REQUEST_METHOD=POST CONTENT_TYPE='application/x-www-form-urlencoded' CONTENT_LENGTH=99999999999999999999 $SH "$CGI" < /tmp/bhuge 2>/dev/null)
 [ -d /mnt/mmc/HugeLength ] && ok "a CONTENT_LENGTH too long for the shell to compare is capped at 64 KB, not an error" || bad "huge CONTENT_LENGTH ($(status))"
+
+echo; echo "############ ONLY THE PAGE: another site's request, or one by a name, changes and reads nothing"
+# A browser sends a request wherever a page points it: another site's link or form, or a site's own name
+# pointed at the Q2 (DNS rebinding), which could also read the replies. thttpd passes Host (no port) and Referer.
+card() { (cd /mnt/mmc && find . | sort && find . -type f -exec cat {} + | md5sum); }  # every name on the card, and its files' bytes
+keep() { rm -rf /mnt/mmc/Keep; mkdir -p /mnt/mmc/Keep/Album; echo x > /mnt/mmc/Keep/Album/01.flac; CARD0=$(card); }  # before each case
+kept() { [ "$(card)" = "$CARD0" ]; }  # a refused request left the whole card as it was
+keep; run delete GET 'path=/mnt/mmc/Keep' '' -
+{ [ "$(status)" = 403 ] && kept; } && ok "delete by GET (another site's <img>) refused" || bad "GET delete ($(status))"
+for m in HEAD PUT DELETE; do  # thttpd hands a CGI these too, and a page elsewhere can have a HEAD sent
+  keep; run delete "$m" 'path=/mnt/mmc/Keep' '' -
+  { [ "$(status)" = 403 ] && kept; } && ok "delete by $m refused" || bad "$m delete ($(status))"
+done
+for TR in http://evil.example/page.html "" http://192.168.1.5:8888.evil.example/ http://evil.example/?http://192.168.1.5:8888/ http://192.168.1.5:8080/ http://192.168.1.50:8888/ ftp://192.168.1.5:8888/ 192.168.1.5:8888/; do
+  keep; post delete /mnt/mmc/Keep
+  { [ "$(status)" = 403 ] && kept; } && ok "delete with Referer '$TR' refused" || bad "delete with Referer '$TR' ($(status))"
+done
+TR=http://192.168.1.5:8888/; SAVED_TH=$TH
+for TH in evil.example q2.local localhost 1.2.3 1.2.3.4.5 1.2.3.4.example 192.168.1.5x .1.2.3 1..2.3 1.2.3.; do
+  keep; TR="http://$TH:8888/"; post delete /mnt/mmc/Keep; d=$(status)
+  run list GET 'path=/mnt/mmc' '' -
+  { [ "$d" = 403 ] && [ "$(status)" = 403 ] && ! leaks Keep && kept; } && ok "Host '$TH': list and delete refused, nothing in the reply" || bad "Host '$TH' (delete $d, list $(status))"
+done
+keep; TH=evil.example; run download GET 'path=/mnt/mmc/Keep/Album/01.flac' '' -
+[ "$(status)" = 403 ] && ok "download by a name pointed at the Q2 refused" || bad "download by a name ($(status))"
+TH=10.0.0.7; TR=http://10.0.0.7:8888/; run list GET 'path=/mnt/mmc' '' -
+[ "$(status)" != 403 ] && leaks Keep && ok "another numeric address lists" || bad "numeric address list ($(status))"
+TH=''; run list GET 'path=/mnt/mmc' '' -
+{ [ "$(status)" != 403 ] && leaks Keep; } && ok "no Host (not a browser) lists" || bad "no-Host list ($(status))"
+TR=http://:8888/; post create /mnt/mmc/NoHost
+{ [ "$(status)" = 403 ] && kept; } && ok "no Host: create refused, whatever the Referer" || bad "no-Host create ($(status))"
+TH='[fe80'; TR='http://[fe80::1]:8888/'; run list GET 'path=/mnt/mmc' '' -
+{ [ "$(status)" != 403 ] && leaks Keep; } && ok "an IPv6 address (thttpd's cut of it) lists" || bad "IPv6 list ($(status))"
+post create /mnt/mmc/Six
+{ [ "$(status)" = 403 ] && kept; } && ok "an IPv6 address: create refused (its Host is cut, so its page can't be told)" || bad "IPv6 create ($(status))"
+TH='[*'; TR='http://[evil]:8888/'; post create /mnt/mmc/Six
+{ [ "$(status)" = 403 ] && kept; } && ok "a Host's characters are no pattern for the Referer to match" || bad "Host read as a pattern ($(status))"
+TH=$SAVED_TH; TR=http://evil.example/
+keep; mp /tmp/mp_xs ----q2xs /mnt/mmc/Keep up.txt hello
+run upload POST '' 'multipart/form-data; boundary=----q2xs' /tmp/mp_xs
+{ [ "$(status)" = 403 ] && kept; } && ok "upload with another site's Referer refused, nothing written" || bad "foreign upload ($(status))"
+post cgi-bin/delete.cgi /mnt/mmc/Keep
+{ [ "$(status)" = 403 ] && kept; } && ok "delete by the /cgi-bin/delete.cgi route with another site's Referer refused" || bad "foreign delete by /cgi-bin ($(status))"
+post move /mnt/mmc/Keep
+{ [ "$(status)" = 403 ] && kept; } && ok "an action other than list and download is held to the same rule" || bad "foreign unknown action ($(status))"
+TR=http://192.168.1.5:8888/; keep; post move /mnt/mmc/Keep
+{ [ "$(status)" = 404 ] && kept; } && ok "from the page, an action there isn't is not found" || bad "page unknown action ($(status))"
+TR=http://192.168.1.5:8888/index.html
+run upload POST '' 'multipart/form-data; boundary=----q2xs' /tmp/mp_xs
+[ "$(cat /mnt/mmc/Keep/up.txt 2>/dev/null)" = hello ] && ok "the page's own upload (Referer the page's index.html) writes" || bad "page upload ($(status))"
+post cgi-bin/delete.cgi /mnt/mmc/Keep/up.txt
+{ [ "$(status)" != 403 ] && [ ! -e /mnt/mmc/Keep/up.txt ]; } && ok "the page's own delete by the /cgi-bin/delete.cgi route removes the file" || bad "page delete by /cgi-bin ($(status))"
+post delete /mnt/mmc/Keep
+{ [ "$(status)" != 403 ] && [ ! -e /mnt/mmc/Keep ]; } && ok "the page's own delete removes the folder" || bad "page delete ($(status))"
+TR=http://192.168.1.5:8888/
 
 echo; echo "############ MULTIPART NEWLINES: content is kept to the byte whatever newlines it holds"
 # busybox awk takes RS="\0" as an empty RS (paragraph mode): a record's leading newlines are dropped,
@@ -533,7 +598,7 @@ if [ "$FS" = vfat ]; then
   { refused && ! leaks LOGIN; } && ok "download from inside .spotify by its short name refused, no leak" || bad "short-name folder download ($(status))"
   run download GET "path=/mnt/mmc/Albums/$A_PRIV/notes.txt" '' -
   { refused && ! leaks NOTES; } && ok "a hidden folder inside a folder refused by its short name" || bad "nested short-name download ($(status))"
-  run create GET "path=/mnt/mmc/$A_SPOT/planted" '' -
+  post create "/mnt/mmc/$A_SPOT/planted"
   { refused && [ ! -e /mnt/mmc/.spotify/planted ]; } && ok "create inside .spotify by its short name refused, nothing made" || bad "short-name create ($(status))"
   post delete "/mnt/mmc/$A_LOG"
   { refused && [ "$(cat /mnt/mmc/.scrobbler.log)" = LISTENS ]; } && ok "delete of .scrobbler.log by its short name refused" || bad "short-name delete ($(status))"
@@ -550,7 +615,7 @@ if [ "$FS" = vfat ]; then
   [ "$(body)" = song ] && ok "an ordinary file still downloads by its own short name" || bad "ordinary short name ($(status))"
   run download GET 'path=/mnt/mmc/ALBUMS/a long song name.FLAC' '' -
   [ "$(body)" = song ] && ok "an ordinary file still downloads in another case" || bad "another case ($(status))"
-  run create GET 'path=/mnt/mmc/albums/New+Sub' '' -
+  post create '/mnt/mmc/albums/New+Sub'
   [ -d "/mnt/mmc/Albums/New Sub" ] && ok "create under another case of a folder lands in that folder" || bad "create under another case ($(status))"
   mp /tmp/mp_a3 ----q2a3 /mnt/mmc/ALBUMS 'a long song name.flac' newer
   run upload POST '' 'multipart/form-data; boundary=----q2a3' /tmp/mp_a3
