@@ -186,6 +186,13 @@ LIBC = {
 # The payload's C beside navigation.c (build.py compile_payload), in link order; test/fw builds the same set.
 UI_SOURCES = ['peq.c', 'peq_ui.c', 'coverflow.c', 'coverflow_thumb.c', 'coverflow_letters.c', 'coverflow_loader.c', 'coverflow_land.c', 'playlist_art.c', 'library_scope.c', 'scrobble.c', 'photos.c', 'games.c', 'visualizer.c', 'playback.c', 'upnext.c', 'spotify.c', 'addon.c', 'addon_library.c', 'addon_eq.c', 'addon_wifi.c', 'radio.c', 'tidal.c', 'netupdate.c', 'app_store.c', 'onlinematch.c', 'crossfade.c', 'nightshift.c', 'headset.c', 'lockscreen.c', 'chapters.c', 'lyrics.c', 'xiph.c', 'airplay.c']
 
+# Stock functions the payload uses as values, not only calls: they keep stock's own address.
+STOCK_BY_ADDRESS = {'btrecvA2dpFunc', 'db_song_row_callback', 'taglib_file_new', 'stock_search',
+                    'getMusicByAlbumAndAlbumSonger', 'getMusicByAlbumAndComposer', 'getMusicByAlbumAndGenre',
+                    'getMusicByAlbumAndSonger', 'getMusicByAlbumArtist', 'getMusicByComposer',
+                    'getMusicByGenre', 'getMusicBySonger', 'parseTidalAlbumDetailJson',
+                    'parseTidalColTracksJson', 'parseTidalPlaylistDetailJson'}
+
 def function_macros(address):
     """Each stock function in address (name -> its C address) as a macro calling it there."""
     return [f'#define {name} (({ret} (*)({args})){address[name]})' for name, (ret, args) in FUNCTIONS.items() if name in address]
@@ -236,7 +243,17 @@ def compile_common(out, binary, player=False, flac_experiments=()):  # pragma: n
             asm += [f'.globl {name}', f'.set {name}, peq_lib_{name}']
     if not player:
         syms = symbols(binary) | PRIVATE_FUNCTIONS
-        header += function_macros({name: f'0x{syms[name]:x}u' for name in FUNCTIONS if syms.get(name)})
+        # Each stock function through a stub that sets $t9 (stock's prologue takes $gp from it) and
+        # jumps: a call site is one jal, not lui/ori/jalr.
+        for name, (ret, args) in FUNCTIONS.items():
+            if not syms.get(name): continue
+            if name in STOCK_BY_ADDRESS:  # used as a value (a callback, a comparison): stock's own address
+                header += function_macros({name: f'0x{syms[name]:x}u'})
+                continue
+            a = syms[name]
+            header += [f'extern {ret} stock_call_{name}({args});', f'#define {name} stock_call_{name}']
+            asm += [f'.section .text.stock_call_{name},"ax",@progbits', f'.globl stock_call_{name}',
+                    f'stock_call_{name}:', f'lui $t9, {a >> 16}', f'j 0x{a:x}', f'ori $t9, $t9, {a & 65535}']
         # build.py has already checked each is a one-byte global.
         header += [f'#define {name} (*(volatile unsigned char *)0x{syms[name]:x}u)' for name in GLOBALS]
     else:
