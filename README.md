@@ -197,6 +197,11 @@ The [user guide][guide] covers every control, EQ, Cover Flow and more tips.
     <td>Sixteen pads, a step sequencer and punch-in effects, in <b>Library → Apps → Groovebox</b>.</td>
     <td><a href="https://github.com/DiamondBond/q2-groovebox/raw/main/docs/guide/Groovebox-Mini-Guide.pdf">Guide</a></td>
   </tr>
+  <tr valign="top">
+    <td><b><a href="https://github.com/DiamondBond/q2-videos">Videos</a></b></td>
+    <td>Plays the videos in the card's <code>Videos</code> folder, in <b>Library → Apps → Videos</b>: folders with thumbnails, Continue Watching, subtitles, sound tracks and chapters.</td>
+    <td></td>
+  </tr>
 </table>
 
 <details>
