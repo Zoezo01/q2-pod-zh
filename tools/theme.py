@@ -158,6 +158,7 @@ SCHEMA = {k.path: k for k in (
     Key('playing.scrubber.stops', 'np_track', 'stops', 0, 0, (), 'live', True),  # Classic's track, final (paint_scrubber); (): stock's bar
     Key('playing.scrubber.fill', 'np_fill', 'stops', 0, 0, (), 'live'),  # its played part under the theme's own scheme (ipod_bar); (): the scheme's band
     key('playing.art.square', 'art_square', 'bool'),
+    key('card.theme.colors', 'card_colors', 'bool'),  # takes a card theme's accent (patch/card_theme.c)
     key('list.row.font', 'font[ROLE_TITLE]', 'enum'),
     key('list.row.meta_font', 'font[ROLE_META]', 'enum'),
     key('list.row.title_px', 'font_px[ROLE_TITLE]', 'int', 64),
@@ -948,6 +949,8 @@ def validate(t, name):
     if t['painter[PAINT_SELECTION]'] == stops and not all(s['sel'] or s['light'].get('sel') for i, s in enumerate(t['schemes'])
                                                           if t['accents'] >> i & 1):
         err('selection: painter stops needs every offered scheme\'s sel.stops')
+    if t['card_colors'] and not shared(t):  # card_theme_row's one copy serves both halves
+        err('card.theme.colors needs one scheme array for both halves')
     if t['painter[PAINT_BATTERY]'] == list(CHOICES['bar.battery.painter']).index('classic-light') and not t['batt']:
         err('battery: this painter needs stops')
     for n in sorted({t['geom_set'], *(s for o in t['opts'] for s in o.get('sets') or ())}):
@@ -1105,11 +1108,15 @@ def builtins(root=ROOT/'assets/themes'):
     for (_, _, t), (_, n, u) in itertools.combinations(found, 2):
         if t['accent_key'] == u['accent_key'] and (t['accents'], accent_default(t)) != (u['accents'], accent_default(u)):
             fail(n.file, n.line, f'accent key {u["accent_key"]} is {t["id"]}\'s, with other colorSchemes or default')
-    # Themes on one set switch live (theme_select), relabelling the booted one's Appearance rows: the same rows.
+    # Themes on one set switch live (theme_select), relabelling the booted one's Appearance rows: the same rows;
+    # and keeping the card theme's accent card_theme_load kept or dropped by the booted one's card_colors.
     def rows(t): return [o['key'] if o['setting'] == 'SETTING_OWN' else o['setting'] for o in t['opts']]
+    def boots(t): return {t['geom_set'], *(s for o in t['opts'] for s in o.get('sets') or ())}
     for (_, _, t), (_, n, u) in itertools.combinations(found, 2):
         if t['geom_set'] == u['geom_set'] and rows(t) != rows(u):
             fail(n.file, n.line, f"{u['id']} runs on {t['id']}'s set, with other options")
+        if boots(t) & boots(u) and t['card_colors'] != u['card_colors']:
+            fail(n.file, n.line, f"{u['id']} shares a set with {t['id']}, with other card.theme.colors")
     # An own key is one stored value too: its values and default alike; its preset is each theme's (as LIGHT's).
     def shape(e): return e[:2] + ({k: v for k, v in e[2].items() if k not in ('preset', 'keep')} if e[2] else None,)
     owners = {}

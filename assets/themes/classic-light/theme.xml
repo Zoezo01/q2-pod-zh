@@ -144,6 +144,8 @@
   <!-- Battery: the plain icon, chosen with Classic, the percent alone, or Percent Inside. default is what a stored
        Icon + Percent reads as; the key itself stays as stored until the row is cycled. -->
   <option setting="battery" values="icon percent inside" default="inside"/>
+  <!-- Classic keeps its own colours under a card theme, and Classic Modern by extends: only its battery style applies -->
+  <view name="card"><element name="theme" colors="0"/></view>
   <!-- Row Art, Classic's own option: it decides album covers. On shows them in 52 px rows in Albums and the other
        art lists (the classic-light set), Off makes those lists 32 px text (classic-light-text). The Library is text either way.
        A change restarts the Q2. Choosing Classic presets On. -->

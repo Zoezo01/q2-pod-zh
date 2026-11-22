@@ -278,6 +278,7 @@ void ringnav_clean_end(void) {
     durations_shutdown(1);
     unlink(STATE_FILE);
     unlink(STALL_FILE); /* one the thread hadn't removed yet: S90play's next demo never would */
+    card_theme_ran();
     coverflow_clean_end();
 }
 /* Reboot record (docs/internals.md#bluetooth-boot-reconnect): when its Bluetooth controller never
@@ -456,6 +457,19 @@ static unsigned jpeg_size(const unsigned char *b, unsigned n) {
     }
     return 0;
 }
+/* 1 when the refused file src was told of at an earlier mount, as seen (size and mtime) records;
+ * else it is recorded now, through tmp. A failed stat records nothing.
+ * ponytail: the key is size + mtime (2 s on FAT), so another bad file of the same size and time
+ * stays silent; the record is written before the toast shows, so a power cut or a missed 2 s toast
+ * leaves the file recorded as told. */
+int told_once(const char *src, const char *seen, const char *tmp) {
+    unsigned sb[36], was[2], key[2];
+    if (__xstat(3, src, sb)) return 0;
+    key[0] = sb[12], key[1] = sb[16]; /* size, mtime */
+    if (blob_io(seen, tmp, was, sizeof was, 0) && !memcmp(was, key, sizeof key)) return 1;
+    blob_io(seen, tmp, key, sizeof key, 1);
+    return 0;
+}
 static void *logo_sync(void *unused) {
     unsigned n = 0, old_n;
     unsigned char *b = 0, *old = 0;
@@ -486,21 +500,13 @@ static void *logo_sync(void *unused) {
             unlink(LOGO_DST ".tmp"), err = N_("Could not save boot logo");
     }
     free(b), free(old);
-    unsigned sb[36], seen[2], key[2];
-    if (err == logo_refused &&
-        !__xstat(3, LOGO_SRC, sb)) { /* LOGO_SEEN names the file last refused */
-        /* ponytail: the key is size + mtime (2 s on FAT), so another bad file of the same size and
-         * time stays silent; the record is written before the toast shows, so a power cut or a
-         * missed 2 s toast leaves the file recorded as told. A failed stat records nothing. */
-        key[0] = sb[12], key[1] = sb[16]; /* size, mtime */
-        if (BLOB_IO(LOGO_SEEN, seen, 0) && !memcmp(seen, key, sizeof key))
-            err = 0; /* said at an earlier mount: once a file, not each power-on */
-        else
-            BLOB_IO(LOGO_SEEN, key, 1);
-    } else if (err != logo_refused)
+    if (err == logo_refused && told_once(LOGO_SRC, LOGO_SEEN, LOGO_SEEN ".tmp"))
+        err = 0; /* said at an earlier mount: once a file, not each power-on */
+    else if (err != logo_refused)
         unlink(LOGO_SEEN); /* a good logo, or none: the same bad file put back is told again */
     pw.logo_err = err;
     language_sync(); /* the card's language pack, as its logo */
+    card_theme_sync();
     pw.logo_busy = 0;
     return 0;
 }
@@ -543,6 +549,7 @@ void power_poll(void) {
     coverflow_tail();
     charge_poll();
     standby_poll();
+    card_theme_poll();
     logo_poll();
     ratings_copy_poll();
     wdt_poll();

@@ -5939,9 +5939,13 @@ static void setting_text(int i) {
                                                 N_("Light Mode: Auto") };
     int a = accent();
     const scheme_t *S = scheme();
-    const char *const names[] = { S->label ? (const char *)0 : accent_names[a],
+    /* the card theme's rows (card_theme_sets) name it, not a stored value */
+    const char *const names[] = { card_theme_sets(SETTING_ACCENT) ? N_("Accent: Card Theme")
+                                  : S->label                      ? (const char *)0
+                                                                  : accent_names[a],
                                   home[st.home],
-                                  battery[st.battery],
+                                  card_theme_sets(SETTING_BATTERY) ? N_("Battery: Card Theme")
+                                                                   : battery[st.battery],
                                   (const char *)0,
                                   (const char *)0,
                                   (const char *)0,
@@ -6032,6 +6036,10 @@ static void theme_preset(const theme_t *T, int live) {
 void restart_confirm(int setting, int value);
 static int setting_click(void *ctx, event_t *event) {
     int i = (int)(long)ctx;
+    if (card_theme_sets(i)) { /* nothing to cycle or save while the card theme sets it */
+        toast(tr("Set by the card theme"));
+        return 0;
+    }
     const theme_t *T = theme();
     int *value = option_slot(T, i), was = *value;
     const char *key = option_key(T, i);

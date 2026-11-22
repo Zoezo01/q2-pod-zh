@@ -578,7 +578,18 @@ extern const char *const accent_names[];
 extern const char *const np_pages[];
 extern const int setting_counts[];
 extern int *const setting_values[];
-static inline const unsigned *tones_of(int v) { return theme()->schemes[v].tones; }
+/* card_theme.c */
+void card_theme_load(void);
+const scheme_t *card_theme_row(const scheme_t *s);
+int card_theme_sets(int i);
+void card_theme_ran(void);
+void card_theme_poll(void);
+void card_theme_sync(void);
+
+static inline const unsigned *tones_of(int v) {
+    const theme_t *T = theme();
+    return card_theme_row(&T->schemes[v])->tones;
+}
 static inline const unsigned *tones(void) { return tones_of(accent()); }
 
 /* scrobble_ui.c */
@@ -611,6 +622,7 @@ void battery_paint(widget_t *w, canvas_t *canvas);
 
 /* system.c */
 void power_poll(void);
+int told_once(const char *src, const char *seen, const char *tmp);
 
 /* side_seek.c: a dark hold of Previous or Next (ple_key's phases) */
 int side_seek(unsigned key, int phase);

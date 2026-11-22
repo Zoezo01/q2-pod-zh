@@ -192,6 +192,7 @@ __attribute__((noinline)) static void settings_read(void) {
     /* the themes' own keys, after the thirteen, in table order */
     for (int k = 0; k < THEME_KEYS; ++k)
         st.own[k] = config_value("IPOD", theme_keys[k].key, theme_keys[k].n, theme_keys[k].def);
+    card_theme_load(); /* its battery style a value as stored ones are, BATTERY untouched */
     /* A stored value outside an option's values reads as its default (Classic's Ivory: Classic
      * Blue), the key untouched. A payload key is every theme's: only the live theme's reading
      * counts. */
@@ -227,7 +228,7 @@ static int light_on(const theme_t *T, int v) {
 const scheme_t *scheme(void) {
     int v = accent();
     const theme_t *T = &themes[st.theme];
-    return &(light_on(T, v) ? T->light : T->schemes)[v];
+    return card_theme_row(&(light_on(T, v) ? T->light : T->schemes)[v]);
 }
 /* scheme() for code that runs only in the light half (flip, red_map's light term), so after
  * ipod_light()'s accent(): the light row without a second accent() and light_on() on these
@@ -409,9 +410,14 @@ unsigned red_map(unsigned c, unsigned tone, unsigned glyph, int light) {
 }
 unsigned accent_map(unsigned c, int preset, int tone) {
     const theme_t *T = theme(); /* once: this runs per colour */
-    const unsigned *a = T->schemes[preset].tones;
-    if (ipod_light())
-        return !(c >> 24) || neutral(c) ? ui_ink(c)
-                                        : red_map(c, flip(tone_of(a, tone)), 0xffffff, 1);
-    return T->schemes[preset].flags & SCHEME_RAW_RED ? c : red_map(c, a[tone], 0xffffff, 0);
+    const scheme_t *S = card_theme_row(&T->schemes[preset]);
+    const unsigned *a = S->tones;
+    int light = ipod_light();
+    if (light && (!(c >> 24) || neutral(c))) return ui_ink(c);
+    unsigned to = light ? flip(tone_of(a, tone)) : a[tone];
+    /* Crimson's reds; a card accent's own tone, itself a blend of stock red, stays */
+    if ((!light && S->flags & SCHEME_RAW_RED) ||
+        (S != &T->schemes[preset] && !((c ^ RGBA(to)) & 0xffffff)))
+        return c;
+    return red_map(c, to, 0xffffff, light);
 }
