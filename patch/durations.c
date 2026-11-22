@@ -303,7 +303,7 @@ void durations_poll(void) {
          * first: the toast's loop polls again, finding the pass running. */
         if (duration_run() && fresh && usable() && !g_poweroff_state && !st.toasts &&
             !pointer_down())
-            toast("Measuring song lengths\xe2\x80\xa6");
+            toast(tr("Measuring song lengths\xe2\x80\xa6"));
         return;
     }
     if (!__atomic_load_n(&ds.due, __ATOMIC_ACQUIRE) || library_scanning()) return;

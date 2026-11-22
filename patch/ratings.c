@@ -77,7 +77,7 @@ int rate_keep(int album, unsigned key, int n) {
 
 /* Report only failures from rate_keep. */
 int rate_saved(int k) {
-    if (k <= 0) toast(k ? "Rating not saved" : "Ratings are full");
+    if (k <= 0) toast(k ? tr("Rating not saved") : tr("Ratings are full"));
     return k > 0;
 }
 
@@ -85,7 +85,7 @@ int rate_saved(int k) {
  * Now Playing's heart and the queue menu's Favourites rows. 0 when it wasn't, said in a toast. */
 int fav_told(void *r, int on) {
     if (!r || addon_fav_path(P(r, REC_PATH), on)) return 1;
-    toast("Favourite not sent to the app");
+    toast(tr("Favourite not sent to the app"));
     return 0;
 }
 
@@ -221,7 +221,7 @@ static widget_t *rate_panel(widget_t *win) {
 /* The picker's hearts and caption for rate_pick. */
 static void rate_paint(void) {
     widget_t *panel = rate_panel(st.rate_on);
-    char t[24] = "Unrated";
+    char t[64] = "";
     int gloss = classic_pages();
     for (int i = 0; i < 5; i++) {
         widget_t *heart = widget_get_child(panel, (unsigned)i + 1);
@@ -230,13 +230,14 @@ static void rate_paint(void) {
         else
             image_base_set_image(heart, i < ra.rate_pick ? "play_fav" : "play_unfav");
     }
-    if (ra.rate_pick)
-        tk_snprintf(t, sizeof t,
-                    !gloss              ? "%d of 5"
-                    : ra.rate_pick == 1 ? "1 Heart"
-                                        : "%d Hearts",
-                    ra.rate_pick);
-    widget_set_text_utf8(widget_get_child(panel, 0), t);
+    const char *caption = t;
+    if (!ra.rate_pick)
+        caption = tr("Unrated");
+    else if (gloss && ra.rate_pick == 1)
+        caption = tr("1 Heart");
+    else
+        tk_snprintf(t, sizeof t, gloss ? tr("%d Hearts") : tr("%d of 5"), ra.rate_pick);
+    widget_set_text_utf8(widget_get_child(panel, 0), caption);
 }
 
 /* What's under the picker takes a touch again, or doesn't. */
@@ -262,7 +263,7 @@ static void rate_close(int save) {
     if (save && ra.rate_album) { /* the menu's album, still on its page */
         void *a = window_manager_get_top_window(window_manager()) == win ? qm_record() : (void *)0;
         if (!a || qm_album_id(a) != ra.rate_album) {
-            toast("Album changed");
+            toast(tr("Album changed"));
             return;
         }
         if (rate_saved(rate_keep(1, ra.rate_album, n)) && (n == 5 || ra.rate_was == 5))
@@ -370,9 +371,9 @@ static int rate_fav_click(void *ctx, event_t *event) {
     }
     int app = app_fav();
     if (app >= 0) image_base_set_image(ra.rate_fav, app ? "tidal_fav_add" : "tidal_fav_rm");
-    if (app == -2) toast("Favourite not saved");
+    if (app == -2) toast(tr("Favourite not saved"));
     if (app == -3)
-        toast("This app has no favourites"); /* an app's song without an item: not Tidal's */
+        toast(tr("This app has no favourites")); /* an app's song without an item: not Tidal's */
     if (app != -1) return 0;
     FAV_CLICK(ctx, event);
     ratings_copy_due();
@@ -467,7 +468,8 @@ static void rate_all(void *songs, unsigned char *h) {
 
 /* Top Rated (4-5 hearts), Loved (5), All Rated (1-5) and Disliked (1): most hearts first, then
  * the library's title order, each row's hearts under its title. */
-static const char *const rt_names[] = { "Top Rated", "Loved", "All Rated", "Disliked" };
+static const char *const rt_names[] = { N_("Top Rated"), N_("Loved"), N_("All Rated"),
+                                        N_("Disliked") };
 #define RT_ALBUMS 2 /* the Ratings menu's Albums row, after Loved */
 /* List k's songs, each one's hearts in *of (calloc'd, the caller's to free). */
 static void *rated_songs(int k, unsigned char **of) {
@@ -499,7 +501,7 @@ static int rated_open(void *ctx, event_t *event) {
     unsigned char *of;
     void *list = st.rt_list = rated_songs(k, &of);
     int count = (int)deque_size(list);
-    widget_t *view = page_list(st.rt_page, st.rt_page, 0, rt_names[k], count ? count : 1, 64);
+    widget_t *view = page_list(st.rt_page, st.rt_page, 0, tr(rt_names[k]), count ? count : 1, 64);
     char name[512], detail[300], hs[16];
     for (int i = 0; i < count; i++) {
         void *t = deque_at(list, (unsigned)i);
@@ -510,7 +512,8 @@ static int rated_open(void *ctx, event_t *event) {
         page_row_detail(view, i, track_name(name, sizeof name, t), detail, rt_play);
     }
     if (!count)
-        page_row_detail(view, 0, "No songs yet", "Hold the heart on Now Playing to rate", 0);
+        page_row_detail(view, 0, tr("No songs yet"), tr("Hold the heart on Now Playing to rate"),
+                        0);
     free(of);
     return 0;
 }
@@ -524,7 +527,7 @@ static int rt_shuffle(const void *unused) {
     if (!ra.rt_menu) return 0; /* the menu closed */
     void *list = rated_songs(ra.rt_held, &of);
     free(of);
-    if (!shuffle_play(list)) toast("No songs yet");
+    if (!shuffle_play(list)) toast(tr("No songs yet"));
     deque_destroy(list);
     return 0;
 }
@@ -543,7 +546,7 @@ int rated_hold(widget_t *top) {
 extern int coverflow_rated(int (*hearts)(void *));
 static int album_hearts(void *r) { return rate_kept(1, album_id(r)); }
 int rated_albums(void *ctx, event_t *event) {
-    if (!coverflow_rated(album_hearts)) toast("No rated albums yet");
+    if (!coverflow_rated(album_hearts)) toast(tr("No rated albums yet"));
     return 0;
 }
 
@@ -551,9 +554,9 @@ int rated_albums(void *ctx, event_t *event) {
 int ratings_menu(void *ctx, event_t *event) {
     if (ra.rt_menu || !(ra.rt_menu = page_open("ratings_page", rt_menu_closed, page_keyup)))
         return 0;
-    widget_t *view = page_list(ra.rt_menu, ra.rt_menu, 0, "Ratings", 5, 48);
+    widget_t *view = page_list(ra.rt_menu, ra.rt_menu, 0, tr("Ratings"), 5, 48);
     for (int i = 0; i < 5; i++)
-        page_row_into(view, i, i == RT_ALBUMS ? "Albums" : rt_names[i - (i > RT_ALBUMS)],
+        page_row_into(view, i, i == RT_ALBUMS ? tr("Albums") : tr(rt_names[i - (i > RT_ALBUMS)]),
                       i == RT_ALBUMS ? rated_albums : rated_open);
     return 0;
 }

@@ -166,7 +166,7 @@ static void ple_move(int at, int dir) {
         ple_reload();
         ple_show();
     } else
-        toast("Could not save playlist");
+        toast(tr("Could not save playlist"));
 }
 /* phase: press, release, or native delivery/long press. A repeat never moves twice. */
 int ple_key(unsigned key, int phase) {
@@ -237,12 +237,12 @@ static int ple_run(const void *unused) {
         else {
             void *r = ple.match[action - 1];
             if (checkPlayListExist(r, ple.dest))
-                toast("Already in playlist");
+                toast(tr("Already in playlist"));
             else {
                 int before = (int)deque_size(ple.songs);
                 void *one = _create_deque("stSongInfo");
                 if (!one) {
-                    toast("Could not save playlist");
+                    toast(tr("Could not save playlist"));
                     return 0;
                 }
                 deque_init(one);
@@ -259,7 +259,7 @@ static int ple_run(const void *unused) {
                 ple_reload();
                 int added = (int)deque_size(ple.songs) > before;
                 if (added) ple_tick(widget_get_child(ple.view, (unsigned)action));
-                toast(added ? "Added to Playlist" : "Could not save playlist");
+                toast(added ? tr("Added to Playlist") : tr("Could not save playlist"));
             }
             return 0; /* picker stays on its selected song */
         }
@@ -280,7 +280,7 @@ static int ple_run(const void *unused) {
             if (ple_mutate(ple.dest, deque_at(ple.songs, (unsigned)ple.selected), 0))
                 ple_reload();
             else
-                toast("Could not save playlist");
+                toast(tr("Could not save playlist"));
         }
         ple.mode = 0;
     }
@@ -317,7 +317,7 @@ static void ple_search_show(void) {
     ple.view = 0;
     ple.edit = edit_create(ple.page, "text", 2, 26);
     widget_set_name(ple.edit, "search_edit");
-    t9_box(ple.page, ple.edit, "Search songs");
+    t9_box(ple.page, ple.edit, tr("Search songs"));
     if (*ple.query) widget_set_text_utf8(ple.edit, ple.query);
     widget_on(ple.edit, EVT_IM_ACTION, ple_searched, 0);
     widget_set_focused(ple.edit, 1);
@@ -334,39 +334,40 @@ static void ple_show(void) {
             : mode == 1 ? (ple.nmatch ? shown + 1 + rest : 2)
             : mode == 2 ? 3
                         : 2;
-    char title[180], name[512];
-    tk_snprintf(title, sizeof title, "%s: %s",
-                mode == 0   ? "Editing"
-                : mode == 1 ? "Add Songs"
-                : mode == 2 ? "Song Actions"
-                            : "Remove song?",
+    char title[256], name[512];
+    tk_snprintf(title, sizeof title,
+                mode == 0   ? tr("Editing: %s")
+                : mode == 1 ? tr("Add Songs: %s")
+                : mode == 2 ? tr("Song Actions: %s")
+                            : tr("Remove song?: %s"),
                 ple.name);
     /* a bar that holds captions has room for the task's name alone, and no first line for it */
     ple.view = page_list(ple.page, ple.page, 0,
-                         mode == 1 && !theme()->page_title_h ? "Add Songs" : title, n, 48);
-    static const char *const actions[] = { "Move Up", "Move Down", "Remove from Playlist" };
+                         mode == 1 && !theme()->page_title_h ? tr("Add Songs") : title, n, 48);
+    static const char *const actions[] = { N_("Move Up"), N_("Move Down"),
+                                           N_("Remove from Playlist") };
     if (mode == 1) {
-        char search[160];
-        tk_snprintf(search, sizeof search, "%s%s", *ple.query ? "Search: " : "Search", ple.query);
-        page_row_detail(ple.view, 0, search, 0, ple_pick);
+        char search[192];
+        tk_snprintf(search, sizeof search, tr("Search: %s"), ple.query);
+        page_row_detail(ple.view, 0, *ple.query ? search : tr("Search"), 0, ple_pick);
         /* a tick on a song the playlist already holds: same path and CUE segment */
         unsigned mask = 0, *in = ple.nmatch ? rec_index(ple.songs, &mask) : 0;
         if (!ple.nmatch)
-            page_row_detail(ple.view, 1, "No songs match", 0, 0);
+            page_row_detail(ple.view, 1, tr("No songs match"), 0, 0);
         else
             for (int i = 0; i < shown; i++) {
                 widget_t *row = page_row_detail(
                     ple.view, i + 1, track_name(name, sizeof name, ple.match[i]), 0, ple_pick);
                 if (in && rec_find(ple.songs, in, mask, ple.match[i])) ple_tick(row);
             }
-        if (rest) page_row_detail(ple.view, shown + 1, "Search for more songs", 0, ple_more);
+        if (rest) page_row_detail(ple.view, shown + 1, tr("Search for more songs"), 0, ple_more);
         free(in);
     } else
         for (int i = 0; i < n; i++) {
             const char *caption =
-                mode == 0 && i < 2 ? (i ? "Done" : "Add Songs")
-                : mode == 2        ? actions[i]
-                : mode == 3 ? (i ? "Cancel" : "Remove from Playlist")
+                mode == 0 && i < 2 ? (i ? tr("Done") : tr("Add Songs"))
+                : mode == 2        ? tr(actions[i])
+                : mode == 3 ? (i ? tr("Cancel") : tr("Remove from Playlist"))
                             : track_name(name, sizeof name,
                                          deque_at(ple.songs, (unsigned)(i - (mode == 0 ? 2 : 0))));
             page_row_detail(ple.view, i, caption, 0, ple_pick);
@@ -466,8 +467,9 @@ int ringnav_playlist_delete(widget_t *win, event_t *event) {
     struct {
         int kind, ms;
         char text[0x400];
-    } prompt = { 1, 0, "Delete Playlist?" };
-    if (confirm_over(&prompt, "Delete") != 10) return 0;
+    } prompt = { 1, 0, "" };
+    tk_snprintf(prompt.text, sizeof prompt.text, "%s", tr("Delete Playlist?"));
+    if (confirm_over(&prompt, tr("Delete")) != 10) return 0;
     char sql[256];
     if (pl_db(&db)) goto done;
     if (sqlite3_exec(db, "begin immediate", 0, 0, 0)) goto done;
@@ -486,7 +488,7 @@ done:
         g_delete_flag = 1;
         navigator_back();
     }
-    toast(ok ? "Playlist deleted" : "Could not delete playlist");
+    toast(ok ? tr("Playlist deleted") : tr("Could not delete playlist"));
     return 0;
 }
 
@@ -496,9 +498,10 @@ int ringnav_playlistsmore(widget_t *win, void *ctx) {
         widget_set_prop_int(win, "_playlist", (int)ctx);
         /* Stock's row says Delete Song; this page deletes the whole playlist. Rename only this
          * label, as Now Playing's Delete Song still deletes the song. As its translation key, so a
-         * re-translation keeps it (no language has the key, so it reads as given). */
+         * re-translation keeps it (stock's tables lack the key, so it reads as given or as a
+         * language pack's line for it). */
         widget_t *del = widget_lookup(win, "label_del", 1);
-        if (del) widget_set_tr_text(del, "Delete Playlist");
+        if (del) widget_set_tr_text(del, N_("Delete Playlist"));
         /* A row like this page's stock Rename and Delete: a 375 px list_item, the set's pitch high
          * (SET0 72), holding a 335 px s_btn_listitem, its body high (68), its 52px icon at x 10 and
          * its 20px label at x 72. Edit Playlist follows the Delete row at the same spacing. */
@@ -515,7 +518,7 @@ int ringnav_playlistsmore(widget_t *win, void *ctx) {
         widget_t *label = hscroll_label_create(button, 72, 0, 253, inner);
         widget_use_style(label, "s_scrlabel_white20l");
         set_hscroll_label_attribute(label);
-        widget_set_text_utf8(label, "Edit Playlist");
+        widget_set_text_utf8(label, tr("Edit Playlist"));
         /* A set without settings icons: none here either, the text at its column */
         widget_t *const rows[][2] = { { widget_lookup(win, "img_rename", 1),
                                         widget_lookup(win, "label_rename", 1) },
@@ -551,7 +554,7 @@ void qm_select(void) {
 int qm_playlist_pick(void *ctx, event_t *event) {
     char click[0x30];
     if (!qm_record()) {
-        toast("Queue unchanged");
+        toast(tr("Queue unchanged"));
         return 0; /* a STOP would leave the list's scroll_view holding its grab */
     }
     qm_select();
@@ -637,7 +640,7 @@ void pl_fit(widget_t *button) {
 static widget_t *pl_art_image(widget_t *button);
 static void pl_row(widget_t *item) {
     const theme_t *T = theme();
-    char count[32];
+    char count[64];
     widget_t *button = widget_get_child(item, 0), *info = widget_lookup(button, "view_info", 0);
     widget_t *art = pl_art_image(button);
     int h = T->page_detail, add = widget_get_prop_int(window_of(item), PL_MODE, 0);
@@ -663,7 +666,7 @@ static void pl_row(widget_t *item) {
     unsigned songs = 0;
     while (s && *s && (*s < '0' || *s > '9')) ++s;
     while (s && *s >= '0' && *s <= '9') songs = songs * 10 + (*s++ - '0');
-    tk_snprintf(count, sizeof count, "%u %s", songs, songs == 1 ? "Song" : "Songs");
+    tk_snprintf(count, sizeof count, songs == 1 ? tr("%u Song") : tr("%u Songs"), songs);
     widget_set_text_utf8(second, count);
     hscroll_label_set_only_focus(title, 1);
     theme_font(title, ROLE_TALL, FONT_ROW);
@@ -748,7 +751,7 @@ static void pl_rows(widget_t *win) {
         marks = 0, was = widget_get_prop_int(win, PL_MARKING, 0),
         n = lists ? (int)deque_size(lists) : 0, count = (int)widget_count_children(view);
     for (int i = 0; marking && i < n; ++i) marks += batch_get_selectitem(i) == 1;
-    char words[48];
+    char words[96];
     widget_t *row[PL_N] = { 0 };
     int show[PL_N] = { marking,   !marking, !marking && n > 0, marking || !n, marks > 0,
                        marks > 0, marking };
@@ -771,25 +774,28 @@ static void pl_rows(widget_t *win) {
     }
     if (row[PL_SELECT_ALL])
         widget_set_text_utf8(widget_get_child(widget_get_child(row[PL_SELECT_ALL], 0), 0),
-                             B(G_ALLSELECT_FLAG, 0) ? "Deselect All" : "Select All");
+                             B(G_ALLSELECT_FLAG, 0) ? tr("Deselect All") : tr("Select All"));
     for (int i = PL_EXPORT; marks && i <= PL_DELETE && row[i]; ++i) {
-        tk_snprintf(words, sizeof words, "%s %d Playlist%s%s", i == PL_EXPORT ? "Export" : "Delete",
-                    marks, marks == 1 ? "" : "s", i == PL_EXPORT ? "" : "\xe2\x80\xa6");
+        tk_snprintf(words, sizeof words,
+                    i == PL_EXPORT
+                        ? marks == 1 ? tr("Export %d Playlist") : tr("Export %d Playlists")
+                    : marks == 1 ? tr("Delete %d Playlist\xe2\x80\xa6")
+                                 : tr("Delete %d Playlists\xe2\x80\xa6"),
+                    marks);
         widget_set_text_utf8(widget_get_child(widget_get_child(row[i], 0), 0), words);
     }
     /* the bar reads the toolbar's first label, which stock writes with the last list opened */
-    tk_snprintf(words, sizeof words,
-                marks     ? "%d Selected"
-                : marking ? "Select Playlists"
-                          : "Playlists",
-                marks);
-    if (nav && widget_count_children(nav)) widget_set_text_utf8(widget_get_child(nav, 0), words);
+    tk_snprintf(words, sizeof words, tr("%d Selected"), marks);
+    if (nav && widget_count_children(nav))
+        widget_set_text_utf8(widget_get_child(nav, 0), marks     ? words
+                                                       : marking ? tr("Select Playlists")
+                                                                 : tr("Playlists"));
     bar_title_sync(win);
     widget_t *none = widget_lookup(win, PL_NONE, 0);
     if (!none && !n) {
         none = text(win, 0, 124, 375, 32);
         widget_set_name(none, PL_NONE);
-        widget_set_text_utf8(none, "No Playlists");
+        widget_set_text_utf8(none, tr("No Playlists"));
         theme_font(none, ROLE_TITLE, FONT_ROW);
         widget_set_prop_int(none, "style:normal:text_color", (int)SPOT_GREY);
     }
@@ -1001,15 +1007,15 @@ static void pl_dress(widget_t *win, int first) {
     /* New and Edit head the list, after the hidden tile row (a picker has none); Select All, select
      * mode's first row, sits with them, as the two modes never show both */
     if (add) {
-        pl_action(view, "New Playlist\xe2\x80\xa6", PL_NEW, 1, 0);
+        pl_action(view, tr("New Playlist\xe2\x80\xa6"), PL_NEW, 1, 0);
     } else {
-        pl_action(view, "Select All", PL_SELECT_ALL, 0, 1);
-        pl_action(view, "New Playlist\xe2\x80\xa6", PL_NEW, 1, 2);
-        pl_action(view, "Select Playlists\xe2\x80\xa6", PL_EDIT, 1, 3);
-        pl_action(view, "Import Playlists", PL_IMPORT, 0, -1);
-        pl_action(view, "Export", PL_EXPORT, 0, -1);
-        pl_action(view, "Delete", PL_DELETE, 0, -1);
-        pl_action(view, "Done", PL_DONE, 0, -1);
+        pl_action(view, tr("Select All"), PL_SELECT_ALL, 0, 1);
+        pl_action(view, tr("New Playlist\xe2\x80\xa6"), PL_NEW, 1, 2);
+        pl_action(view, tr("Select Playlists\xe2\x80\xa6"), PL_EDIT, 1, 3);
+        pl_action(view, tr("Import Playlists"), PL_IMPORT, 0, -1);
+        pl_action(view, tr("Export"), PL_EXPORT, 0, -1);
+        pl_action(view, tr("Delete"), PL_DELETE, 0, -1);
+        pl_action(view, tr("Done"), PL_DONE, 0, -1);
     }
     pl_rows(win);
     if (first && !add) { /* stock binds it with ctx win (0x4b6024) */

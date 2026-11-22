@@ -277,7 +277,7 @@ static int qm_run(const void *unused) {
     int a = qm.qm_action, cls = qm.qm_kind == QM_COVERFLOW ? 0xf001 : (int)qm.qm_cls;
     unsigned aid = r ? qm_album_id(r) : 0; /* an album's own Favourites and Rate */
     if (r && a >= 100) {
-        if (!playback_set(qm.qm_choice - 1, a - 100)) toast("Queue unchanged");
+        if (!playback_set(qm.qm_choice - 1, a - 100)) toast(tr("Queue unchanged"));
         qm.qm_choice = 0;
     } else if (r && a == QA_CHAPTERS) {
         chapters_open(r);
@@ -304,7 +304,7 @@ static int qm_run(const void *unused) {
         if (more && !addon_more())
             stock_dispatch_trampoline(more, pointer_event_init(click, EVT_CLICK, more, 0, 0));
     } else if (r && (a == QA_NEXT_GROUP || a == QA_PREV_GROUP)) {
-        if (!playback_group_skip(a == QA_NEXT_GROUP)) toast("No other group");
+        if (!playback_group_skip(a == QA_NEXT_GROUP)) toast(tr("No other group"));
     } else if (aid && a == QA_RATE) {
         rate_show(window_manager_get_top_window(window_manager()), rate_kept(1, aid), aid);
     } else if (aid && (a == QA_FAV || a == QA_UNFAV)) {
@@ -351,20 +351,20 @@ static int qm_run(const void *unused) {
             play_folder(songs, at, 0xf001);
             deque_destroy(songs);
         } else
-            toast("Queue unchanged");
+            toast(tr("Queue unchanged"));
     } else if (r && a == QA_FOLDER) {
         st.go_layer = song_folder(r, st.go_folder);
         if (st.go_layer)
             navigator_to("folder_page"); /* its init, ringnav_folder, opens there */
         else
-            toast("Folder not found");
+            toast(tr("Folder not found"));
         st.go_layer = 0; /* never left for a later Folder visit */
     } else if (r && a >= QA_ALBUM)
         qm_goto(r, a == QA_ALBUM);
     else {
         void *add = r ? qm_collect(r) : (void *)0;
         if (!add || !(a == QA_SHUFFLE ? shuffle_play(add) : qm_apply(add, a == QA_NEXT)))
-            toast("Queue unchanged");
+            toast(tr("Queue unchanged"));
         if (add) deque_destroy(add);
     }
     return 0;
@@ -460,15 +460,18 @@ static int qm_open(const void *unused) {
     if (qm.qm_choice) {
         /* stock's play modes, its category named as Group by sets it (album or folder) */
         static const char *const shuffle[2][5] = {
-            { "Off", "All Songs", "Songs in Album", "Albums", "Albums and Songs" },
-            { "Off", "All Songs", "Songs in Folder", "Folders", "Folders and Songs" }
+            { N_("Off"), N_("All Songs"), N_("Songs in Album"), N_("Albums"),
+              N_("Albums and Songs") },
+            { N_("Off"), N_("All Songs"), N_("Songs in Folder"), N_("Folders"),
+              N_("Folders and Songs") }
         };
-        static const char *const repeat[2][6] = { { "Play One Song", "Play One Album", "Play All",
-                                                    "Repeat Song", "Repeat Album", "Repeat All" },
-                                                  { "Play One Song", "Play One Folder", "Play All",
-                                                    "Repeat Song", "Repeat Folder",
-                                                    "Repeat All" } };
-        static const char *const groups[] = { "Album", "Folder" };
+        static const char *const repeat[2][6] = {
+            { N_("Play One Song"), N_("Play One Album"), N_("Play All"), N_("Repeat Song"),
+              N_("Repeat Album"), N_("Repeat All") },
+            { N_("Play One Song"), N_("Play One Folder"), N_("Play All"), N_("Repeat Song"),
+              N_("Repeat Folder"), N_("Repeat All") }
+        };
+        static const char *const groups[] = { N_("Album"), N_("Folder") };
         int kind = qm.qm_choice - 1,
             count = kind == 0   ? 5
                     : kind == 1 ? 6
@@ -477,7 +480,7 @@ static int qm_open(const void *unused) {
         const char *const *names = kind == 0   ? shuffle[folder]
                                    : kind == 1 ? repeat[folder]
                                                : groups;
-        qm_title(dialog, kind == 0 ? "Shuffle" : kind == 1 ? "Repeat" : "Group by");
+        qm_title(dialog, kind == 0 ? tr("Shuffle") : kind == 1 ? tr("Repeat") : tr("Group by"));
         widget_destroy_children(view);
         int painted = own_hold(), row = painted ? theme()->page_row : QM_ROW,
             w = painted ? BACK_W : 375;
@@ -486,7 +489,7 @@ static int qm_open(const void *unused) {
             widget_use_style(item, "s_listitem_black");
             widget_t *label = hscroll_label_create(item, 30, 0, 310, row);
             widget_use_style(label, "s_scrlabel_white24l");
-            widget_set_text_utf8(label, names[i]);
+            widget_set_text_utf8(label, tr(names[i]));
             if (painted) hold_label(item, label);
             if (i == playback_option(kind))
                 image_base_set_image(image_create(item, w - 35, 0, 24, row), "select");
@@ -563,28 +566,28 @@ static int qm_open(const void *unused) {
         acts[n++] = QA_NEW_PLAYLIST;
         if (!geom_val(V_TOOLBAR)) acts[n++] = QA_EDIT_PLAYLISTS;
     }
-    static const char *const rows[] = { "Play Next",
-                                        "Add to Queue",
-                                        "Shuffle",
-                                        "Add to Favourites",
-                                        "Remove from Favourites",
-                                        "Add to Playlist",
-                                        "Go to Album",
-                                        "Go to Artist",
-                                        "Shuffle",
-                                        "Repeat",
-                                        "Group by",
-                                        "Next Album",
-                                        "Previous Album",
-                                        "Rate",
-                                        "Resume",
-                                        "View Queue",
-                                        "Go to Folder",
-                                        "Chapters",
-                                        "More…",
-                                        "New Playlist",
-                                        "Select Playlists…" };
-    char rated[32];
+    static const char *const rows[] = { N_("Play Next"),
+                                        N_("Add to Queue"),
+                                        N_("Shuffle"),
+                                        N_("Add to Favourites"),
+                                        N_("Remove from Favourites"),
+                                        N_("Add to Playlist"),
+                                        N_("Go to Album"),
+                                        N_("Go to Artist"),
+                                        N_("Shuffle"),
+                                        N_("Repeat"),
+                                        N_("Group by"),
+                                        N_("Next Album"),
+                                        N_("Previous Album"),
+                                        N_("Rate"),
+                                        N_("Resume"),
+                                        N_("View Queue"),
+                                        N_("Go to Folder"),
+                                        N_("Chapters"),
+                                        N_("More…"),
+                                        N_("New Playlist"),
+                                        N_("Select Playlists…") };
+    char rated[128];
     /* stock sortselect row styles */
     int painted = own_hold(), pitch = painted ? theme()->page_row : QM_ROW;
     for (int i = 0; i < n; ++i) {
@@ -594,17 +597,17 @@ static int qm_open(const void *unused) {
         widget_use_style(label, "s_scrlabel_white24l");
         if (acts[i] == QA_RATE) {
             int h = aid ? album_hearts : checkFavExist(r) ? 5 : rate_kept(0, listen_key(r));
-            const char *row = aid ? "Rate Album" : "Rate";
+            const char *row = aid ? tr("Rate Album") : tr("Rate");
             char hs[16];
             tk_snprintf(rated, sizeof rated, h ? "%s  %s" : "%s", row, hearts_text(hs, h));
         }
-        widget_set_text_utf8(label,
-                             acts[i] == QA_RATE ? rated
-                             : acts[i] == QA_GROUP
-                                 ? (playback_option(2) ? "Group by: Folder" : "Group by: Album")
-                             : acts[i] == QA_NEXT_GROUP && playback_option(2) ? "Next Folder"
-                             : acts[i] == QA_PREV_GROUP && playback_option(2) ? "Previous Folder"
-                                                                              : rows[acts[i] - 1]);
+        widget_set_text_utf8(
+            label, acts[i] == QA_RATE ? rated
+                   : acts[i] == QA_GROUP
+                       ? (playback_option(2) ? tr("Group by: Folder") : tr("Group by: Album"))
+                   : acts[i] == QA_NEXT_GROUP && playback_option(2) ? tr("Next Folder")
+                   : acts[i] == QA_PREV_GROUP && playback_option(2) ? tr("Previous Folder")
+                                                                    : tr(rows[acts[i] - 1]));
         if (painted) hold_label(item, label);
         widget_on(item, EVT_CLICK, qm_pick, (void *)(long)acts[i]);
     }

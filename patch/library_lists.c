@@ -101,7 +101,7 @@ int shuffle_play(void *all) {
 static int shuffle_songs(void *ctx, void *event) {
     int n;
     void *all = staged(songs_unsorted, (void *)1, &n);
-    if (!shuffle_play(all)) toast("Update Library first");
+    if (!shuffle_play(all)) toast(tr("Update Library first"));
     deque_destroy(all);
     return 0;
 }
@@ -110,7 +110,7 @@ static int shuffle_groups(void *ctx, void *event) {
     int n;
     void *all = staged(songs_unsorted, (void *)1, &n);
     if (!playback_groups(all, (int)(long)ctx))
-        toast(deque_size(all) ? "Too many songs to shuffle" : "Update Library first");
+        toast(deque_size(all) ? tr("Too many songs to shuffle") : tr("Update Library first"));
     deque_destroy(all);
     return 0;
 }
@@ -133,15 +133,15 @@ static int sp_closed(void *ctx, event_t *event) {
 
 int shuffle_menu(void *ctx, event_t *event) {
     if (ll.sp_page || !(ll.sp_page = page_open("shuffle_page", sp_closed, page_keyup))) return 0;
-    widget_t *view = page_list(ll.sp_page, ll.sp_page, 0, "Shuffle", 3, 48);
-    page_row_detail(view, 0, "Shuffle Songs", 0, sp_pick);
-    page_row_detail(view, 1, "Shuffle Albums", 0, sp_pick);
-    page_row_detail(view, 2, "Shuffle Folders", 0, sp_pick);
+    widget_t *view = page_list(ll.sp_page, ll.sp_page, 0, tr("Shuffle"), 3, 48);
+    page_row_detail(view, 0, tr("Shuffle Songs"), 0, sp_pick);
+    page_row_detail(view, 1, tr("Shuffle Albums"), 0, sp_pick);
+    page_row_detail(view, 2, tr("Shuffle Folders"), 0, sp_pick);
     /* With the title in the bar: centred at the page's foot, its box clear of the glass. */
     widget_t *note = theme()->page_title_h ? text(ll.sp_page, 20, 200, 335, 24)
                                            : text(ll.sp_page, 46, 262, 283, 24);
     widget_set_prop_int(note, "style:normal:text_color", (int)0xffaaaaaau);
-    widget_set_text_utf8(note, "Albums and folders take a moment to shuffle");
+    widget_set_text_utf8(note, tr("Albums and folders take a moment to shuffle"));
     theme_font(note, ROLE_INFO, FONT_ROW);
     widget_set_prop_int(note, "style:normal:font_size", 16);
     return 0;
@@ -296,14 +296,15 @@ int most_played(void *ctx, event_t *event) {
     if (st.mp_list && st.mp_list != from) deque_destroy(st.mp_list);
     deque_destroy(from);
     st.mp_list = ranked;
-    widget_t *view = page_list_or(st.mp_page, st.mp_page, "Most Played", "No plays yet", top, 64);
-    char name[512], detail[300];
+    widget_t *view =
+        page_list_or(st.mp_page, st.mp_page, tr("Most Played"), tr("No plays yet"), top, 64);
+    char name[512], detail[300], count[64];
     for (int i = 0; i < top; i++) { /* the artist, if tagged, and the play count, under the title */
         void *t = deque_at(st.mp_list, (unsigned)i);
         const char *artist = P(t, REC_ARTIST);
         unsigned plays = (score[i] - 1) / PLAYS_SLOTS, a = artist && *artist;
-        tk_snprintf(detail, sizeof detail, a ? "%s · %u play%s" : "%s%u play%s", a ? artist : "",
-                    plays, plays == 1 ? "" : "s");
+        tk_snprintf(count, sizeof count, plays == 1 ? tr("%u play") : tr("%u plays"), plays);
+        tk_snprintf(detail, sizeof detail, a ? "%s · %s" : "%s%s", a ? artist : "", count);
         page_row_detail(view, i, track_name(name, sizeof name, t), detail, mp_play);
     }
     return 0;
@@ -338,7 +339,7 @@ static int td_play(void *ctx, event_t *event) {
  * tidal.c's, written again after a press, which starts or ends it, and as it moves on
  * (tidal_poll). The press may toast, and the page close under that. */
 static void td_all_text(int press) {
-    char s[64];
+    char s[160]; /* tidal.c's sentence, in any language */
     tidal_all(press, s, sizeof s);
     if (ll.td_all) widget_set_text_utf8(ll.td_all, s);
 }
@@ -396,7 +397,7 @@ static widget_t *songs_rows(const char *dir, const char *title, int tidal, int a
     if (ll.td_list) deque_destroy(ll.td_list);
     ll.td_list = card_songs(dir, album);
     int n = (int)deque_size(ll.td_list);
-    widget_t *view = page_list_or(ll.td_page, ll.td_page, title, "No downloads yet",
+    widget_t *view = page_list_or(ll.td_page, ll.td_page, title, tr("No downloads yet"),
                                   n + tidal + (tidal && n), 48);
     char name[256];
     if (tidal) {
@@ -407,7 +408,7 @@ static widget_t *songs_rows(const char *dir, const char *title, int tidal, int a
         song_label(P(deque_at(ll.td_list, (unsigned)i), REC_NAME), tidal, name, sizeof name);
         page_row_detail(view, i + tidal, name, 0, td_play);
     }
-    if (tidal && n) page_row_detail(view, n + 1, "Clear All Downloads…", 0, td_clear);
+    if (tidal && n) page_row_detail(view, n + 1, tr("Clear All Downloads…"), 0, td_clear);
     return view;
 }
 /* Clear All Downloads' confirmation in the list's place, as Spotify's Remove Downloads?, on Cancel;
@@ -417,17 +418,17 @@ static int td_show(const void *unused) {
     if (!ll.td_page) return 0;
     unsigned n = deque_size(ll.td_list);
     if (!ll.td_asking) {
-        widget_t *view = songs_rows(TIDAL_DIR, "Tidal Downloads", 1, 0);
+        widget_t *view = songs_rows(TIDAL_DIR, tr("Tidal Downloads"), 1, 0);
         if ((n = deque_size(ll.td_list))) ringnav_select(view, (int)n + 1, (int)n + 2);
         return 0;
     }
-    char note[32];
+    char note[64];
     ll.td_all = 0; /* its row goes with the list */
-    tk_snprintf(note, sizeof note, n == 1 ? "%u track" : "%u tracks", n);
-    widget_t *view = page_list(ll.td_page, ll.td_page, 0, "Remove Downloads?", 3, 64);
-    page_row_detail(view, 0, note, "Keeps settings", 0);
-    page_row_detail(view, 1, "Cancel", "", td_clear);
-    page_row_detail(view, 2, "Remove", "", td_clear);
+    tk_snprintf(note, sizeof note, n == 1 ? tr("%u track") : tr("%u tracks"), n);
+    widget_t *view = page_list(ll.td_page, ll.td_page, 0, tr("Remove Downloads?"), 3, 64);
+    page_row_detail(view, 0, note, tr("Keeps settings"), 0);
+    page_row_detail(view, 1, tr("Cancel"), "", td_clear);
+    page_row_detail(view, 2, tr("Remove"), "", td_clear);
     ringnav_select(view, 1, 3);
     return 0;
 }
@@ -455,7 +456,7 @@ static int songs_page(const char *window, const char *dir, const char *title, in
 }
 int tidal_downloads(void *ctx, event_t *event) {
     (void)ctx, (void)event;
-    return songs_page("tidal_downloads", TIDAL_DIR, "Tidal Downloads", 1, 0);
+    return songs_page("tidal_downloads", TIDAL_DIR, tr("Tidal Downloads"), 1, 0);
 }
 /* A card app's local row (addon.c): a folder ("/" last) lists its songs; a song plays its folder
  * from it, as Tidal Downloads does. album: the folder is an album's, listed and played in track
@@ -481,7 +482,7 @@ int songs_open(const char *path, const char *title, int album) {
     if (at >= 0)
         play_folder(songs, at, 0xf001); /* playing_page copies the queue at once */
     else
-        toast("It isn't on the card any more");
+        toast(tr("It isn't on the card any more"));
     deque_destroy(songs);
     return 0;
 }
@@ -632,11 +633,11 @@ static int era_pick(void *ctx, event_t *event) {
     if (i < 2) {
         void *all = i ? era_shuffle_songs() : era_songs();
         if (!all) {
-            toast("Era unavailable"); /* as a decade's albums: not a card that's away */
+            toast(tr("Era unavailable")); /* as a decade's albums: not a card that's away */
             return 0;
         }
         if (!deque_size(all) || access(P(deque_at(all, 0), REC_PATH), 0))
-            toast("Storage unavailable");
+            toast(tr("Storage unavailable"));
         else if (i)
             shuffle_play(all);
         else
@@ -647,9 +648,9 @@ static int era_pick(void *ctx, event_t *event) {
     int n = 0;
     void *songs = 0, *r = (unsigned)(i - 2) < era.m ? era_record((unsigned)(i - 2), &songs, &n) : 0;
     if (n < 0) /* partial rows then an error: not an album to open */
-        toast("Era unavailable");
+        toast(tr("Era unavailable"));
     else if (!r || !coverflow_goto_album(r))
-        toast("Album not found");
+        toast(tr("Album not found"));
     if ((unsigned)(i - 2) < era.m) deque_destroy(songs);
     return 0;
 }
@@ -667,7 +668,7 @@ static int era_open_decade(void *ctx, event_t *event) {
     era.cap = era.v ? (unsigned)era.count[k] : 0;
     if (!era.v || !era_sql(sql, era_album_row, 0)) { /* as era_menu: not a decade of no albums */
         era_free();
-        toast("Era unavailable");
+        toast(tr("Era unavailable"));
         return 0;
     }
     if (!(era.albums = page_open("era_albums_page", era_closed, page_keyup))) {
@@ -675,9 +676,9 @@ static int era_open_decade(void *ctx, event_t *event) {
         return 0;
     }
     widget_t *view = page_list(era.albums, era.albums, 0, era_name(name, from), (int)era.m + 2, 64);
-    tk_snprintf(detail, sizeof detail, era.m == 1 ? "%u album" : "%u albums", era.m);
-    page_row_detail(view, 0, "Play All", detail, era_pick);
-    page_row_detail(view, 1, "Shuffle", "Every song, shuffled", era_pick);
+    tk_snprintf(detail, sizeof detail, era.m == 1 ? tr("%u album") : tr("%u albums"), era.m);
+    page_row_detail(view, 0, tr("Play All"), detail, era_pick);
+    page_row_detail(view, 1, tr("Shuffle"), tr("Every song, shuffled"), era_pick);
     for (unsigned i = 0; i < era.m; ++i) {
         tk_snprintf(detail, sizeof detail, *era.v[i].artist ? "%s \xe2\x80\xa2 %d" : "%s%d",
                     era.v[i].artist, era.v[i].year);
@@ -692,19 +693,19 @@ int era_menu(void *ctx, event_t *event) {
                  " year from songtable where " MUSIC_WHERE " and ifnull(album,'')<>''" ALBUM_GROUP
                  ") where year>0 group by 1 order by 1",
                  era_decade_row, 0)) {
-        toast("Era unavailable");
+        toast(tr("Era unavailable"));
         return 0;
     }
     if (!era.n) {
-        toast("No dated albums yet");
+        toast(tr("No dated albums yet"));
         return 0;
     }
     if (!(era.page = page_open("era_page", era_closed, page_keyup))) return 0;
-    widget_t *view = page_list(era.page, era.page, 0, "Era", era.n, 64);
-    char name[16], detail[32];
+    widget_t *view = page_list(era.page, era.page, 0, tr("Era"), era.n, 64);
+    char name[16], detail[64];
     for (int i = 0; i < era.n; ++i) {
-        tk_snprintf(detail, sizeof detail, era.count[i] == 1 ? "%d album" : "%d albums",
-                    era.count[i]);
+        tk_snprintf(detail, sizeof detail, era.count[i] == 1 ? tr("%u album") : tr("%u albums"),
+                    (unsigned)era.count[i]);
         page_row_detail_into(view, i, era_name(name, era.decade[i]), detail, era_open_decade);
     }
     return 0;
@@ -741,7 +742,7 @@ static void ls_show(void) {
     if (n) qsort(v, n, sizeof *v, by_length);
     for (unsigned i = 0; i < n; i++) _deque_push_back(list, deque_at(songs, v[i].key));
     st.rt_list = list;
-    widget_t *view = page_list(st.rt_page, st.rt_page, 0, "Long Songs", n ? (int)n : 1, 64);
+    widget_t *view = page_list(st.rt_page, st.rt_page, 0, tr("Long Songs"), n ? (int)n : 1, 64);
     char name[512], detail[300], t[16];
     for (unsigned i = 0; i < n; i++) {
         void *r = deque_at(list, i);
@@ -751,7 +752,7 @@ static void ls_show(void) {
                     artist && *artist ? artist : "", t);
         page_row_detail(view, (int)i, track_name(name, sizeof name, r), detail, rt_play);
     }
-    if (!n) page_row_detail(view, 0, "No songs over 10 minutes", 0, 0);
+    if (!n) page_row_detail(view, 0, tr("No songs over 10 minutes"), 0, 0);
     free(v);
     deque_destroy(songs);
     ls.songs = 0;
@@ -783,8 +784,8 @@ static int ls_cancel(void *ctx, event_t *event) {
 static int ls_poll(const void *unused) {
     int done, total;
     if (!durations_busy(&done, &total)) return ls_done(0);
-    char t[64];
-    tk_snprintf(t, sizeof t, "Measuring songs\xe2\x80\xa6 %d/%d", done, total);
+    char t[128];
+    tk_snprintf(t, sizeof t, tr("Measuring songs\xe2\x80\xa6 %d/%d"), done, total);
     page_retitle(st.rt_page, ls.title, t);
     return 8; /* RET_REPEAT */
 }
@@ -799,8 +800,8 @@ int long_songs(void *ctx, event_t *event) {
     ls.songs = staged(songs_unsorted, (void *)1, &n);
     if (durations_start(ls.songs)) {
         page_row_detail(
-            page_list(st.rt_page, st.rt_page, &ls.title, "Measuring songs\xe2\x80\xa6", 1, 48), 0,
-            "Cancel", 0, ls_cancel);
+            page_list(st.rt_page, st.rt_page, &ls.title, tr("Measuring songs\xe2\x80\xa6"), 1, 48),
+            0, tr("Cancel"), 0, ls_cancel);
         ls.timer = timer_add(ls_poll, (void *)0, 250);
     } else
         ls_show();
