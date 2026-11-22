@@ -188,7 +188,7 @@ static int table_code(const char *name, char *code) {
 static int active(char *code, char *copy, unsigned n) {
     toolsReadConfig("/mnt/data/config.ini", "Q2POD", "LANG", code, "");
     code[255] = 0;
-    if (code_len(code) == strlen(code)) {
+    if (*code && code_len(code) == strlen(code)) {
         tk_snprintf(copy, n, LANG_DATA "/q2-lang-%s.tsv", code);
         if (!access(copy, 0)) return 1;
     }

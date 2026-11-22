@@ -152,9 +152,10 @@ def test_a_reset_or_a_bad_lang_is_english(fw, lang):
     assert lang.tr('Saved') == 'Saved'
 
 
-@pytest.mark.parametrize('value', ['..', 'de/../x', 'd', 'abcdefghijkl', 'fr'])
+@pytest.mark.parametrize('value', ['', '..', 'de/../x', 'd', 'abcdefghijkl', 'fr'])
 def test_lang_names_only_a_code_with_its_copy(fw, lang, value):
     lang.files[COPY] = lines(('Saved', 'Saved', 'Gespeichert'))
+    lang.files['/mnt/data/q2-lang-.tsv'] = lines(('Saved', 'Saved', 'x'))  # what LANG= would name
     Config(fw, LANG=value)
     assert lang.tr('Saved') == 'Saved'
 
