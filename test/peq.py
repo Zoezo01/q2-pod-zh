@@ -3018,6 +3018,7 @@ static char tidal_song_id[0x400];
 #define tidalmutex tidal_id_mutex
 #define tidalsongid tidal_song_id
 static void toast(const char *text) {}
+#define tr(en) (en) /* language.c's, with no language: English */
 static void reset_poweroptions_timer(int standby, int off, int screen) {}
 static void tidal_all_show(void) {}
 #define mcl_pdeqplaylist (&queue)

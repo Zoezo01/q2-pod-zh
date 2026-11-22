@@ -822,7 +822,7 @@ void tidal_all(int press, char *out, unsigned size) {
             td.all = all, td.at = td.saved = td.idle = td.told = td.since = 0,
             td.tried = td.misses = td.full = 0;
         pthread_mutex_unlock(td.lock);
-        if (!td.all) deque_destroy(all), toast("Play a Tidal album or playlist first");
+        if (!td.all) deque_destroy(all), toast(tr("Play a Tidal album or playlist first"));
         /* The folder, as tidal_play makes it before its card_space: tidal_poll's statfs of a
          * missing one fails, which reads as a full card and ends the run at once. */
         else
@@ -830,9 +830,10 @@ void tidal_all(int press, char *out, unsigned size) {
     }
     unsigned n = td.all ? deque_size(td.all) : 0;
     if (n)
-        tk_snprintf(out, size, "Downloading %u of %u. Press to stop", td.at < n ? td.at + 1 : n, n);
+        tk_snprintf(out, size, tr("Downloading %u of %u. Press to stop"), td.at < n ? td.at + 1 : n,
+                    n);
     else
-        tk_snprintf(out, size, "Download Playing Songs");
+        tk_snprintf(out, size, "%s", tr("Download Playing Songs"));
 }
 
 /* ringnav_sleep, every UI loop pass, paced to a second while Download All runs or has its count to
@@ -851,13 +852,14 @@ void tidal_poll(void) {
     if (now - td.polled < 1000) return;
     td.polled = now;
     if (!td.all) {
-        char s[64];
+        char s[160]; /* a sentence in any language */
         if (!g_backlight_status) return;
         /* td.full: the run's next song would have deleted one of its own (trim) */
-        tk_snprintf(s, sizeof s,
-                    td.full ? "Tidal Cache full: %u of %u song%s saved"
-                            : "Downloaded %u of %u song%s",
-                    td.told - 1, td.of, td.of == 1 ? "" : "s");
+        const char *fmt = td.full      ? td.of == 1 ? tr("Tidal Cache full: %u of %u song saved")
+                                                    : tr("Tidal Cache full: %u of %u songs saved")
+                          : td.of == 1 ? tr("Downloaded %u of %u song")
+                                       : tr("Downloaded %u of %u songs");
+        tk_snprintf(s, sizeof s, fmt, td.told - 1, td.of);
         td.told = 0;
         toast(s);
         return;
