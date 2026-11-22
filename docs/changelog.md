@@ -2,6 +2,7 @@
 
 - **1.9.1**:
   - EQ: in **Advanced**, drag a band up or down on the curve to set its gain, as you drag Simple's sliders. Touch the band's ring, or the line where an off band sits, and the band turns on. Choose **Apply changes** to hear it.
+  - Bluetooth: **Receive Audio**, on the Bluetooth page, turned off makes the Q2 only send audio, so it plays to a speaker that can also send, such as an Amazon Echo. The Q2 could take the speaker for a phone and open its receiver page each time they connected, even after unpairing it. Turn Bluetooth off and on after changing it. On, as before, a phone can play to the Q2.
   - Playback: with the screen off, hold Next or Previous to fast-forward or rewind the playing song; let go and it plays on from there. A press still skips to the next or previous song.
   - Library: with the **Languages** app from the App Store installed, Arabic, Persian and Urdu song titles, artists and albums show, right to left with their letters joined. They were blank before. Arabic lyrics read right to left too, lit from the right as they're sung.
 - **1.9.0**:

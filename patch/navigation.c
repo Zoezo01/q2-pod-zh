@@ -3113,6 +3113,8 @@ int ringnav_keylock_rows(widget_t *win) {
  */
 /* Bluetooth's Control Device Volume on: the Q2's volume is the device's own (bt_audio_ready). */
 static int bt_vol_link __attribute__((section(".scratch")));
+/* Bluetooth's Receive Audio (BTRECEIVE), on unless the key is 0: headset.c headset_bt_service. */
+static int bt_receive __attribute__((section(".scratch")));
 /* Appearance's Hide Apps, Hide Games and Hide App Store (HIDEAPPS, HIDEGAMES, HIDESTORE): Library's
  * rows, gone at its next open (home.c ringnav_localmusic). */
 static int hide_lib[3] __attribute__((section(".scratch")));
@@ -3146,7 +3148,8 @@ static int *const pod_values[] = { &st.charge_limit,
                                    0,
                                    &hide_lib[0],
                                    &hide_lib[1],
-                                   &hide_lib[2] };
+                                   &hide_lib[2],
+                                   &bt_receive };
 _Static_assert(POD_LOCKCLOCK == 6, "lockscreen.c passes pod_rows 6");
 _Static_assert(POD_REMIND_DAILY == 26, "netupdate.c passes pod_rows 26");
 _Static_assert(sizeof pod_values / sizeof *pod_values == POD_COUNT, "a pod_values per row");
@@ -3180,16 +3183,19 @@ static const char *const pod_keys[] = { "CHARGELIMIT",
                                         0,
                                         "HIDEAPPS",
                                         "HIDEGAMES",
-                                        "HIDESTORE" };
+                                        "HIDESTORE",
+                                        "BTRECEIVE" };
 _Static_assert(sizeof pod_keys / sizeof *pod_keys == POD_COUNT, "a pod_keys entry per row");
 /* a row's choices: Artist albums three, Standby limit four, every other row two */
 static int pod_choices(unsigned i) { return i == POD_ARTIST_CF ? 3 : i == POD_STANDBY ? 4 : 2; }
 void pod_settings(void) {
     if (st.pod_read) return;
     for (unsigned i = 0; i < sizeof pod_keys / sizeof *pod_keys; ++i)
-        if (pod_keys[i]) /* Artist albums defaults to Coverflow, Update Notifications to On */
-            *pod_values[i] = config_value("Q2POD", pod_keys[i], pod_choices(i),
-                                          i == POD_ARTIST_CF || i == POD_REMIND_DAILY);
+        if (pod_keys[i]) /* Artist albums defaults to Coverflow, Update Notifications and
+                            Receive Audio to On */
+            *pod_values[i] =
+                config_value("Q2POD", pod_keys[i], pod_choices(i),
+                             i == POD_ARTIST_CF || i == POD_REMIND_DAILY || i == POD_BT_RECEIVE);
     st.pod_read = 1;
 }
 /* A pod_rows row's value (POD_*, one with a pod_values entry), read once from config.ini. */
@@ -3257,6 +3263,7 @@ static void pod_text(int i) {
         { 0 }, /* Hide Apps, Hide Games and Hide App Store: switches */
         { 0 },
         { 0 },
+        { 0 }, /* Receive Audio: a switch */
     };
     _Static_assert(sizeof names / sizeof *names == POD_COUNT, "a names entry per row");
     if (i == POD_CF_SORT) { /* the Sort card's words, as Cover Flow's page holds the row */
@@ -3288,6 +3295,7 @@ static void pod_text(int i) {
                          : i == POD_HIDE_APPS      ? "Hide Apps"
                          : i == POD_HIDE_GAMES     ? "Hide Games"
                          : i == POD_HIDE_STORE     ? "Hide App Store"
+                         : i == POD_BT_RECEIVE     ? "Receive Audio"
                                                    : 0;
     if (toggle)
         list_toggle(st.pod_label[i], toggle, v);
@@ -3348,6 +3356,8 @@ static int pod_click(void *ctx, event_t *event) {
          * sends the Q2's level to the device. */
         if (i == POD_BT_LINK && mclGetOutputWay() == 1)
             headset_volume_reset(), device_set_volume(g_volume, 0);
+        /* Receive Audio: the direction at the next link, bluealsa's sink at Bluetooth's next on */
+        if (i == POD_BT_RECEIVE) toast("Turn Bluetooth off and on to apply");
     }
     pod_text(i);
     return 0;
@@ -3383,19 +3393,20 @@ int ringnav_powermanager(widget_t *win, void *ctx) {
 }
 /* The Bluetooth page's list (stock's local builder, btmenu_rows), rebuilt whole on every search and
  * link change: its rows, five with Bluetooth on (one, the switch, off), then the device lists.
- * With Bluetooth on, Resume on connect and Control Device Volume follow the fourth, Bluetooth
- * Headset Volume Control (bt_adjvol), each time, iconless and 78 high as stock's rows. */
+ * With Bluetooth on, Resume on connect, Control Device Volume and Receive Audio follow the fourth,
+ * Bluetooth Headset Volume Control (bt_adjvol), each time, iconless and 78 high as stock's rows. */
 int ringnav_btrows(widget_t *win, void *ctx) {
     static const char *const icons[] = { 0 };
     int result = stock_btrows_trampoline(win, ctx);
     if (!g_bluetoothflag) return result;
     pod_rows(win, "scroll_view_bluetooth", POD_RESUME, 1, icons);
     pod_rows(win, "scroll_view_bluetooth", POD_BT_LINK, 1, icons);
+    pod_rows(win, "scroll_view_bluetooth", POD_BT_RECEIVE, 1, icons);
     widget_t *view = win ? widget_lookup(win, "scroll_view_bluetooth", 1) : (void *)0;
     unsigned n = view ? widget_count_children(view) : 0;
-    if (n < 2) return result;
-    for (unsigned k = 0; k < 2; ++k) {
-        widget_t *row = widget_get_child(view, n - 2 + k);
+    if (n < 3) return result;
+    for (unsigned k = 0; k < 3; ++k) {
+        widget_t *row = widget_get_child(view, n - 3 + k);
         widget_resize(row, I(row, W_W), 78);
         widget_restack(row, 4 + k);
     }

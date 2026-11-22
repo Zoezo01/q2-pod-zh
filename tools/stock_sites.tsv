@@ -244,6 +244,8 @@ demo	0x4faa68	0x4	switchBtPriority	`lw $2, 0x0($4)`, before the only call to btc
 demo	0x4faa74	0x4	switchBtPriority	`nop` (1st of 4 such), before the only call to btctl_set_codec_priority; tools/build.py LDAC_HQ
 demo	0x4faa80	0x4	switchBtPriority	`addiu $4, $zero, 0x16`, before 1st of 4 calls to btctl_set_ldac_quality; tools/build.py LDAC_HQ
 demo	0x4fbf2c	0x4	autoLinkBluetooth	the only call to checkPairDev; tools/build.py BT_AUTOLINK
+demo	0x4fd764	0x4	checkBluetoothStatus	1st of 2 calls to getBtService, after "hciconfig -a hci0 noauth"; tools/build.py BT_SERVICE
+demo	0x4fd9fc	0x4	checkBluetoothStatus	2nd of 2 calls to getBtService, after "[%s]"; tools/build.py BT_SERVICE
 demo	0x4fdcbc	0x4	checkBluetoothStatus	1st of 3 calls to player_save_start, after "[%s]"; tools/build.py BT_CONNECT_START
 demo	0x4fe1e4	0x4	config_bt_init	the only call to initBluetoothParam; tools/build.py BT_PARAMS
 demo	0x5000f0	0x4	remove_file	the only call to snprintf, after "sync"; tools/build.py FOLDER_RM_CALL, FOLDER_RM_FMT
@@ -560,6 +562,7 @@ hciplayer	0x5b6fd8	0x4	flac_decode_frame	`lw $2, 0xc($16)` (2nd of 29 such); pat
 hciplayer	0x5b7648	0x4	flac_decode_frame	`move $2, $20` (1st of 5 such); patch/peq_player.c flac_last
 hciplayer	0x5b78b8	0x4	flac_decode_frame	`lui $6, 0x8f` (15th of 24 such), before 9th of 21 calls to av_log; tools/peq.py FLAC_GATE
 hciplayer	0x5b82e4	0x4	flac_decode_frame	`b -651 words` (47th of 53 such), before 18th of 21 calls to av_log; patch/peq_player.c flac_last, tools/peq.py FLAC_GATE
+bluealsa	0x403f1c	0x4	sub_403940	`sh $5, 0x1580($2)`, after "v1.3"; tools/build.py BT_SINK_DEFAULT
 bluealsa	0x40649c	0x4	sub_4060e0	`bgtz $2, +22 words` (1st of 2 such), before 3rd of 4 calls to __errno_location, after "PCM poll and read error: %s"; tools/build.py BT_PCM_CALLERS
 bluealsa	0x41465c	0x4	sub_4145d0	`lw $6, 0x30($18)`, before the only call to poll, after "<FA"; tools/bt_silence.S, tools/build.py BT_SILENCE_SITES
 bluealsa	0x414664	0x4	sub_4145d0	`addiu $4, $sp, 0x18`, before the only call to poll, after "<FA"; tools/bt_silence.S 1

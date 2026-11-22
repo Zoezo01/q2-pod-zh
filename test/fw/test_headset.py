@@ -1512,6 +1512,19 @@ def test_autolink_only_when_nothing_is_connected(fw, items, paired, result):
     assert fw.fn('headset_bt_autolink', C.c_int, C.c_char_p)(b'AA:BB:CC:DD:EE:FF') == result
 
 
+@pytest.mark.parametrize('receive, services', [
+    (None, [0, 1, 2, 3]),  # no key: Receive Audio on, stock's answer
+    ('1', [0, 1, 2, 3]),
+    ('0', [0, 0, 2, 2]),  # sends only: neither; plays and sends: plays, so the Q2 sends
+])
+def test_receive_audio_off_makes_a_two_way_device_one_the_q2_sends_to(fw, receive, services):
+    config(fw, **({'BTRECEIVE': receive} if receive else {}))
+    asked: list[bytes] = []
+    fw.mock('getBtService', lambda mac, *_: asked.append(C.string_at(mac)) or len(asked) - 1)
+    assert [fw.fn('headset_bt_service', C.c_int, C.c_char_p)(b'AA:BB:CC:DD:EE:FF') for _ in range(4)] == services
+    assert asked == [b'AA:BB:CC:DD:EE:FF'] * 4  # getBtService answers 0, 1, 2, 3 in turn
+
+
 def test_bt_init_registers_the_lists_and_callbacks_first(fw):
     fw.mock('btctl_create_daemon_thread', lambda *_: 23)
     assert fw.fn('headset_bt_init', C.c_int, C.c_void_p)(0x700) == 23

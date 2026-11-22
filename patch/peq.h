@@ -409,6 +409,7 @@ enum {
                          (home.c ringnav_localmusic) */
     POD_HIDE_GAMES,
     POD_HIDE_STORE,
+    POD_BT_RECEIVE, /* Bluetooth's Receive Audio (headset_bt_service; the bluealsa2 launcher) */
     POD_COUNT
 };
 int pod_value(int i);

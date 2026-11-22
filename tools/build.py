@@ -395,7 +395,10 @@ BLUEALSA = 'usr/bin/bluealsa'
 # Its launcher: keep the A2DP transport open 5 s after hciplayer closes the PCM (a stop, a skip, a cold start), so
 # a track change doesn't restart the stream (true-wireless buds started one ear first).
 BLUEALSA2 = 'usr/bin/bluealsa2'
-BT_KEEPALIVE = (b'bluealsa -c LDAC', b'bluealsa --keep-alive=5 -c LDAC')
+# Bluetooth → Receive Audio off (Q2POD BTRECEIVE=0) leaves out A2DP Sink, so a device that both plays and sends
+# (an Amazon Echo) can only take the Q2's audio; read at each start, which openBluetooth runs at every Bluetooth on.
+BT_KEEPALIVE = (b'bluealsa -c LDAC', b"grep -qx BTRECEIVE=0 /mnt/data/config.ini 2>/dev/null || sink='-p a2dp-sink'\n"
+                b'bluealsa --keep-alive=5 $sink -c LDAC')
 # The Bluetooth daemon, BlueZ 5.66: avdtp_new's "stream_setup = TRUE; dc_timeout = DISCONNECT_TIMEOUT", for a connection
 # the other side opens. BlueZ's timeout is 1 s and stock's build has 30, so a car that leaves the stream to the Q2
 # was silent for 30 s. Back to 1, here only; see docs/internals.md, Bluetooth stream setup.
@@ -405,6 +408,9 @@ BT_GRACE = tuple(bytes.fromhex(f'5c0403ae {li} 25300002 180002ae 25202002 0c8299
                  for li in ('1e000324', '01000324'))
 SCROBBLE_CA = 'etc/scrobble-ca.pem'
 AAC_44K1 = 0x317b8
+# After its options, stock's main turns both A2DP profiles on whatever -p said: sh 0x101 over a2dp_source and a2dp_sink.
+# sb leaves a2dp_source on and a2dp_sink to -p, which the launcher passes unless Receive Audio is off.
+BT_SINK_DEFAULT = (0x403f1c, 0xa4451580, 0xa0451580)
 # DROP is acknowledged before the encoder handles its signal. Flush in the control
 # thread instead, so a delayed signal cannot discard the next track's first PCM.
 BT_DROP = 0x40cb50
@@ -542,6 +548,9 @@ BT_PARAMS = (0x4fe1e4, 0x0411f5ef)  # config_bt_init's reset moves before the co
 # autoLinkBluetooth's bal checkPairDev also skips while the link list holds a connected link.
 BT_STATUS = (0x4fa700, 0x0320f809)
 BT_AUTOLINK = (0x4fbf2c, 0x0411fd04)
+# checkBluetoothStatus' two bal getBtService, after the Q2's link and after the other side's: jal headset_bt_service,
+# which with Receive Audio off makes a device that plays and sends one the Q2 sends to (docs/internals.md).
+BT_SERVICE = ((0x4fd764, 0x0411f6a0), (0x4fd9fc, 0x0411f5fa))
 # player_parsecover_thd's jalr toolsGetExternCover (lw $t9 at 0x51dcbc; Now Playing's folder art, after its
 # embedded art failed) becomes jal coverflow_player_cover, which gives ffmpeg what stock's decoder refuses.
 PLAYER_COVER = (0x51dccc, 0x0320f809)
@@ -1606,6 +1615,7 @@ FUNCTIONS = {
  'getBtLinkSize': ('int', 'void'), 'getBtLinkItem': ('int', 'int, int *, char *'),
  'getBtLinkStatus': ('int', 'char *'), 'addBtLinkItem': ('void', 'char *, int'),
  'updateBtLinkStatus': ('int', 'int, char *'), 'checkPairDev': ('int', 'char *'),
+ 'getBtService': ('int', 'char *'),
  'btctl_create_daemon_thread': ('int', 'void *'),
  'initBluetoothParam': ('void', 'void'),
  'btctl_set_prompt_callback': ('void', 'void *, void *'),
@@ -1801,7 +1811,7 @@ def compile_payload(out):  # pragma: no mutate block
         f'--undefined={WM_PAINT_LEAF[2]}', f'--undefined={QUEUE_LEAF[2]}', f'--undefined={FONT_GLYPH_LEAF[2]}', '--undefined=ringnav_audio_extension', '--undefined=start_mute', '--undefined=start_sleep', '--undefined=ringnav_genre_copy', '--undefined=ringnav_lyric_save', '--undefined=ringnav_lyric_drop', '--undefined=ringnav_cover_copy','--undefined=ringnav_folder_rm','--undefined=ringnav_bootmode', '--undefined=lockscreen_access','--undefined=ringnav_ts_read',
         '--undefined=ringnav_baidu_poll', '--undefined=ringnav_tidal_poll', '--undefined=addon_m3u_dir', f'--undefined={COVERINFO_CALL[2]}',
         '--undefined=coverflow_player_cover', '--undefined=coverflow_grid_cover', '--undefined=coverflow_album_cover', '--undefined=coverflow_folder_cover', '--undefined=headset_bt_init',
-        '--undefined=headset_status_register', '--undefined=headset_bt_autolink', *[f'--undefined={guard[2]}' for guard in PNG_GUARDS],
+        '--undefined=headset_status_register', '--undefined=headset_bt_autolink', '--undefined=headset_bt_service', *[f'--undefined={guard[2]}' for guard in PNG_GUARDS],
         *nav,out/'trampoline.o',*extra,'-o',out/'patch.elf')
     run('llvm-objcopy','-O','binary',out/'patch.elf',out/'patch.bin')
     return symbols(out/'patch.elf')
@@ -1882,6 +1892,9 @@ def patch_bluealsa(raw):
     picks 44.1 kHz, and bluealsa, still fed 48 kHz, drops about 8% of the AAC frames."""
     image = bytearray(raw)
     image[AAC_44K1] = 0
+    address, old, new = BT_SINK_DEFAULT
+    check(struct.unpack_from('<I', raw, fileoff(raw, address))[0] == old, 'Bluetooth profile default mismatch')
+    struct.pack_into('<I', image, fileoff(raw, address), new)
     # tools/bt_drop.S: DROP's flush in the control thread, and the rewind for each audited caller.
     for caller, _ in BT_PCM_CALLERS:
         check(struct.unpack_from('<I', raw, fileoff(raw, caller-8))[0] == 0x0c105174,
@@ -2144,6 +2157,8 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
           (0x8f99fc1c, 0x0320f809, 0x2484c180), 'Bluetooth status: expected btctl_device_status_callback(0x4fc180)')
     patch_word(patched, *BT_STATUS, jal(ps['headset_status_register']), 'Bluetooth: incoming link during a connect')
     patch_word(patched, *BT_AUTOLINK, jal(ps['headset_bt_autolink']), 'Bluetooth: auto-link keeps an incoming link')
+    for site in BT_SERVICE:
+        patch_word(patched, *site, jal(ps['headset_bt_service']), 'Bluetooth: Receive Audio off sends')
     patch_word(patched, *SCAN_REFRESH, jal(ps['ringnav_scan_refresh']), 'folder scan refreshes existing tags')
     patch_word(patched, *TAG_TEXT, jal(ps['ringnav_gbk_tag']), 'tag text GBK only when it reads as GBK')
     check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, GENRE_COPY[0] - 4))[0] == 0x8f99f680,

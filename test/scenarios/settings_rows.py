@@ -217,22 +217,28 @@ for clock,hooked in (((22,0),True),((6,59),True),((7,0),False),('localtime',Fals
     m,fb,end=tint_machine({'NIGHTSHIFT':'2'},clock=clock); m.call(address=payload_syms['night_paint'],args=(m.canvas,0,0,0),gap=0)
     assert (m.get(m.lcd+0x7c)==payload_syms['night_end'])==hooked,clock
 passed()
-# Bluetooth's list (btmenu_rows, rebuilt on every search) gains Resume on connect and Control Device Volume
-# with Bluetooth on, right after its fourth row, Bluetooth Headset Volume Control, as stock's rows: no icon,
-# 78 high. Both off unless Q2POD RESUME / BTVOLLINK is 1 (docs/internals.md#resume-on-connect,
+# Bluetooth's list (btmenu_rows, rebuilt on every search) gains Resume on connect, Control Device Volume and
+# Receive Audio with Bluetooth on, right after its fourth row, Bluetooth Headset Volume Control, as stock's rows:
+# no icon, 78 high. The first two off unless Q2POD RESUME / BTVOLLINK is 1 (docs/internals.md#resume-on-connect,
 # #headset-controls-and-volume); off, the Q2's volume is its own gain and the device keeps its own volume.
+# Receive Audio on unless BTRECEIVE is 0 (docs/internals.md#bluetooth-receive-audio).
 m,rows,texts,icons,click=settings_page('btrows','scroll_view_bluetooth',stock_rows=7)  # 5 rows, 2 devices
-assert len(rows)==2 and icons==[None,None] and texts()==['Resume on Connect','Control Device Volume']
+names=['Resume on Connect','Control Device Volume','Receive Audio']
+assert len(rows)==3 and icons==[None]*3 and texts()==names
 for k,row in enumerate(rows):
     kids=m.nodes[m.nodes[row]['children'][0]]['children']  # the label and its switch
-    assert len(kids)==2 and m.get(kids[0]+O['W_X'])==10 and m.get(row+O['W_H'])==78 and switch_image(m,row)=='switch_off'
+    assert len(kids)==2 and m.get(kids[0]+O['W_X'])==10 and m.get(row+O['W_H'])==78
+    assert switch_image(m,row)==('switch_on' if k==2 else 'switch_off')
     assert m.nodes[named(m,m.top,'scroll_view_bluetooth')]['children'].index(row)==4+k
 assert click(0)==[(1,'Q2POD','RESUME')] and switch_image(m,rows[0])=='switch_on'
 assert click(0)==[(0,'Q2POD','RESUME')] and switch_image(m,rows[0])=='switch_off'
 assert click(1)==[(1,'Q2POD','BTVOLLINK')] and switch_image(m,rows[1])=='switch_on'
 assert click(1)==[(0,'Q2POD','BTVOLLINK')] and switch_image(m,rows[1])=='switch_off'
-assert texts()==['Resume on Connect','Control Device Volume']; passed()
-m,rows,texts,*_=settings_page('btrows','scroll_view_bluetooth',{'RESUME':'1','BTVOLLINK':'1'},stock_rows=7)
-assert [switch_image(m,r) for r in rows]==['switch_on','switch_on']; passed()
+assert click(2)==[(0,'Q2POD','BTRECEIVE')] and switch_image(m,rows[2])=='switch_off'
+assert m.toasts[-1][3]=='Turn Bluetooth off and on to apply'  # bluealsa's A2DP Sink changes at its next start
+assert click(2)==[(1,'Q2POD','BTRECEIVE')] and switch_image(m,rows[2])=='switch_on'
+assert texts()==names; passed()
+m,rows,texts,*_=settings_page('btrows','scroll_view_bluetooth',{'RESUME':'1','BTVOLLINK':'1','BTRECEIVE':'0'},stock_rows=7)
+assert [switch_image(m,r) for r in rows]==['switch_on','switch_on','switch_off']; passed()
 m,rows,*_=settings_page('btrows','scroll_view_bluetooth',stock_rows=1,bt=0)  # just the switch
 assert rows==[]; passed()

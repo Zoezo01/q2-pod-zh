@@ -33,6 +33,15 @@ int headset_bt_autolink(char *address) {
     char item[32];
     return !bt_connected(item) && checkPairDev(address);
 }
+/* checkBluetoothStatus' two getBtService calls (tools/build.py BT_SERVICE): 1 the device only sends
+ * (the Q2 receives), 2 it only plays (the Q2 sends), 3 both, judged by /mnt/data/bta2dpfile or by
+ * who connected first. Receive Audio off: both is plays and sends-only is neither, so the receiver
+ * page never opens and no record is written; the bluealsa2 launcher offers no Audio Sink then. */
+int headset_bt_service(char *address) {
+    int service = getBtService(address);
+    if (pod_value(POD_BT_RECEIVE)) return service;
+    return service == 3 ? 2 : service == 1 ? 0 : service;
+}
 /* The control thread can discover a boot reconnect before openBluetooth powers the radio. */
 int headset_bt_init(void *thread) {
     initBluetoothParam(); /* Lists must exist before callbacks; the later reset would erase links.

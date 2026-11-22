@@ -1817,7 +1817,7 @@ def test_classic_shows_a_switch_as_its_value(fw, st):
 
 
 @pytest.mark.parametrize('bt', [1, 0])
-def test_bluetooth_adds_resume_and_device_volume_after_its_fourth_row(fw, bt):
+def test_bluetooth_adds_resume_device_volume_and_receive_after_its_fourth_row(fw, bt):
     """Iconless and as high as stock's rows (78 px on this page), each saving its own key."""
     ui, win, view, settings, build = settings_page(fw, MINIMAL, 'bluetooth_page', 'scroll_view_bluetooth', 7, row_h=78)
     fw.mock('stock_btrows_trampoline', build)
@@ -1827,16 +1827,17 @@ def test_bluetooth_adds_resume_and_device_volume_after_its_fourth_row(fw, bt):
     if not bt:
         assert [r.name for r in rows] == [f's{i}' for i in range(7)]
         return
-    ours = rows[4:6]
-    assert [r.name for r in rows[:4] + rows[6:]] == [f's{i}' for i in range(7)]
+    ours = rows[4:7]
+    assert [r.name for r in rows[:4] + rows[7:]] == [f's{i}' for i in range(7)]
     for r in ours:
         click(ui, r)
-    assert [key for key, _ in settings.written] == ['RESUME', 'BTVOLLINK']  # Resume on Connect, Control Device Volume
-    assert [r.box[3] for r in ours] == [rows[0].box[3]] * 2
+    # Resume on Connect, Control Device Volume, Receive Audio
+    assert settings.written == [('RESUME', 1), ('BTVOLLINK', 1), ('BTRECEIVE', 0)]
+    assert [r.box[3] for r in ours] == [rows[0].box[3]] * 3
     beside = ui.add('scroll_view', win, (0, 0, 375, 100), 'beside')  # a settings row with an icon
     with_icon = ui.nodes[fw.fn('list_row', C.c_void_p, C.c_void_p, C.c_char_p, C.c_void_p, C.c_void_p)(beside.addr, b'icon', None, None)]
-    assert [c.name for r in ours for c in r.walk() if c.kind == 'image'] == ['_setting_switch'] * 2  # no icon
-    assert [label_of(r).box[0] for r in ours] == [with_icon.parent.children[0].box[0]] * 2  # in the icon's place
+    assert [c.name for r in ours for c in r.walk() if c.kind == 'image'] == ['_setting_switch'] * 3  # no icon
+    assert [label_of(r).box[0] for r in ours] == [with_icon.parent.children[0].box[0]] * 3  # in the icon's place
 
 
 @pytest.mark.parametrize('way, sent', [(1, 1), (0, 0)])

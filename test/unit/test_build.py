@@ -901,6 +901,7 @@ def bluealsa():
         struct.pack_into('<I', raw, build.fileoff(raw, caller - 8), 0x0c105174)
     for address, old, _, _ in build.BT_SILENCE_SITES:
         struct.pack_into('<I', raw, build.fileoff(raw, address), old)
+    struct.pack_into('<I', raw, build.fileoff(raw, build.BT_SINK_DEFAULT[0]), build.BT_SINK_DEFAULT[1])
     return bytes(raw)
 
 
@@ -943,6 +944,16 @@ def test_patch_bluealsa_hooks(silence):
                 0x414754: build.jal(silence['read']), 0x42d09c: 0x004147a0}
     for address, new in expected.items():
         assert struct.unpack_from('<I', out, build.fileoff(raw, address))[0] == new
+
+
+def test_patch_bluealsa_leaves_the_a2dp_sink_to_its_options(silence):
+    raw = bluealsa()
+    address, old, new = build.BT_SINK_DEFAULT
+    assert struct.unpack_from('<I', build.patch_bluealsa(raw), build.fileoff(raw, address))[0] == new  # sh to sb
+    bad = bytearray(raw)
+    struct.pack_into('<I', bad, build.fileoff(raw, address), old ^ 1)
+    with pytest.raises(ValueError, match='^Bluetooth profile default mismatch$'):
+        build.patch_bluealsa(bytes(bad))
 
 
 def test_patch_bluealsa_refuses_a_moved_caller(silence):
