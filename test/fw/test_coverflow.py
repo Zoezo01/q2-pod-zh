@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 
 import host
-from conftest import O, Deques, Externpic, Files, ask_cover, claim, fnv1a, high_halves, in_fork
+from conftest import O, Config, Deques, Externpic, Files, ask_cover, claim, fnv1a, high_halves, in_fork
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 CX, TOP, ART, ONE, MISS = 187, 13, 160, 65536, 99
@@ -1358,6 +1358,7 @@ class Card:
         fw.mock('fw_fflush', lambda *_: 0)
         fw.mock('fw_fsync', lambda *_: self.fail_sync)
         fw.mock('fw_access', lambda path, *_: C.string_at(path).decode() not in self.files)
+        fw.mock('fw_fputs', lambda s, f, *_: self.fwrite(s, 1, len(C.string_at(s)), f) and 0)
 
     def fopen(self, path, mode, *_):
         name, kind = C.string_at(path).decode(), C.string_at(mode)[:1]
@@ -1586,6 +1587,32 @@ def test_build_art_a_killed_ffmpeg_leaves_no_marker_so_the_next_open_retries(fw)
     j = job(b'/m/a.mp3')
     g.build_art(r(j))
     assert art(0xabc) not in card.files
+
+
+@pytest.mark.parametrize('on', [0, 1])
+def test_build_art_log_failed_artwork_names_a_killed_ffmpeg_s_album_at_each_build(fw, on):
+    """On: each build whose ffmpeg was stopped appends the heading and the track; still no marker, so the next open
+    tries again and logs again. Off: q2-crash.log untouched."""
+    g = api(fw)
+    Config(fw, CFARTLOG=str(on))
+    card = Card(fw, {'/m/a.mp3': b'', '/m/cover.jpg': b'x', CRASH_LOG: b'== date\n'})
+    builder(fw, card, ff=9)
+    for _ in range(2):
+        g.build_art(r(job(b'/m/a.mp3')))
+    assert art(0xabc) not in card.files
+    assert card.files[CRASH_LOG] == b'== date\n' + b'== cover flow art stopped\n/m/a.mp3\n' * 2 * on
+
+
+@pytest.mark.parametrize('gone', [0, 1])
+def test_build_art_log_failed_artwork_logs_no_ffmpeg_that_exited_nor_a_gone_card(fw, gone):
+    g = api(fw)
+    Config(fw, CFARTLOG='1')
+    card = Card(fw, {'/m/a.mp3': b''})
+    builder(fw, card, ff=9 if gone else 0)
+    if gone:  # the card goes while ffmpeg runs, which then dies with it
+        fw.mock('fw_waitpid', lambda pid, out, *_: (card.files.pop('/m/a.mp3'), setattr(C.c_int.from_address(out), 'value', 9), pid)[2])
+    g.build_art(r(job(b'/m/a.mp3')))
+    assert CRASH_LOG not in card.files and (art(0xabc) in card.files) != gone  # exited, no art: the marker
 
 
 def test_build_art_with_the_storage_gone_touches_nothing(fw):

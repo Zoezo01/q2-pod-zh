@@ -410,6 +410,7 @@ enum {
     POD_HIDE_GAMES,
     POD_HIDE_STORE,
     POD_BT_RECEIVE, /* Bluetooth's Receive Audio (headset_bt_service; the bluealsa2 launcher) */
+    POD_CF_ART_LOG, /* Display's Log Failed Artwork: coverflow.c build_art */
     POD_COUNT
 };
 int pod_value(int i);

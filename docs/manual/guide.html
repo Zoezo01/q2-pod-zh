@@ -1127,6 +1127,7 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
       <tr><td>Fast Navigation</td><td>Off by default. On: turning fast goes by years in the Year sort too, and the large letter stays until you lift your thumb. It keeps small copies of the covers on the card.</td></tr>
       <tr><td>Position Bar</td><td>Off by default. On: a thin bar shows where you are. Drag it to move through your albums.</td></tr>
       <tr><td>Scan Song Durations</td><td>Off by default. On: each <b>Scan music now</b> or <b>Scan specified folders</b> measures new and changed songs’ lengths in the background, and Cover Flow’s song lists show them. Run Scan music now once after turning it on. A large library takes a while, and stays out of Standby meanwhile.</td></tr>
+      <tr><td>Log Failed Artwork</td><td>Off by default. On: <code>q2-crash.log</code> names art that failed.</td></tr>
       <tr><td>Refresh Cover Flow</td><td>Makes all the artwork again the next time Cover Flow opens, Library’s album covers and playlist pictures too: use it after changing covers or tags.</td></tr>
     </tbody>
   </table>
@@ -1288,7 +1289,7 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
   <h2 id="trouble-sound">Troubleshooting Cover Flow, sound and streaming</h2>
   <p><b>Artwork is missing (a grey disc).</b> Embed the cover in the songs, or add a <code>cover</code> or <code>folder</code> image beside them. A folder image is skipped when the folder holds more than one album. Then choose <b>Refresh Cover Flow</b>.</p>
   <p><b>Cover Flow restarts the Q2 while preparing artwork.</b> Open it again: the album it was reading is skipped, and named in <code>q2-crash.log</code> under <b>cover flow skipped</b>. Shrink that album’s embedded covers to about 500 × 500 pixels, then Refresh Cover Flow.</p>
-  <p><b>Cover Flow prepares artwork every time.</b> The library probably lists songs that were moved or deleted: run Update Library. If the count stays, some covers are too big to read; shrink them as above.</p>
+  <p><b>Cover Flow prepares artwork every time.</b> The library probably lists songs that were moved or deleted: run Update Library. If the count stays, some covers are too big to read: <b>Log Failed Artwork</b> names their songs in <code>q2-crash.log</code>; shrink them as above.</p>
   <p><b>No sound, or sound from the wrong place.</b> Reconnect the headphones, and check the volume. Playback uses the output active when it starts; for Spotify, pause and play after switching. If your music stays silent after streaming, choose <b>Stop Streaming Services</b> (<a href="#stream-config">Configuration</a>).</p>
   <p><b>A computer doesn’t see the Q2 as a USB DAC.</b> Windows needs Shanling’s USB driver (V5.20, for the MTouch players) from en.shanling.com/download/69. Install it, then plug the Q2 in again.</p>
   <p><b>Bluetooth drops out.</b> Set <b>Quality</b> to <b>LDAC Connection (auto)</b> (<a href="#bt">Bluetooth headphones</a>).</p>

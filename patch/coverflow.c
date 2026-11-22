@@ -565,9 +565,18 @@ int album_art(const char *track, const char *dst, int shared) {
            ff_thumb(track, dst, ART_SIZE, ART_SIZE);
 }
 
+/* head and track appended to the card's q2-crash.log, synced (art_strike says why) */
+static void crash_log(const char *head, const char *track) {
+    void *f = fopen(CRASH_LOG, "a");
+    if (f) fputs(head, f), fputs(track, f), fputs("\n", f), fflush(f), fsync(fileno(f)), fclose(f);
+}
+
 /* One album's art, written to .tmp and renamed. An empty file marks "no art", so the placeholder
  * shows and the album is not retried until Refresh Coverflow; a run ffmpeg did not finish leaves
- * none. ponytail: an album whose ffmpeg is killed every time costs one kill per open. */
+ * none, and with Log Failed Artwork on, its track in q2-crash.log, at every open.
+ * ponytail: an album whose ffmpeg is killed every time costs one kill per open; ff_kills is any
+ * thread's, so the log can name an album whose picture was fine (a per-run flag from ff_thumb if
+ * that misleads). */
 static void build_art(const job_t *j) {
     char dst[512], tmp[512];
     if (access(j->track, 0)) return; /* storage gone: no marker, the next open retries */
@@ -579,7 +588,12 @@ static void build_art(const job_t *j) {
     /* No marker when an ffmpeg run meanwhile never reached its own exit (a refused fork, or killed:
      * the kernel takes it first when memory runs out, #169; another thread's run counts too, a
      * retry at worst) or storage is gone: the next open retries. */
-    if (kills != ff_kills || access(j->track, 0)) return;
+    if (kills != ff_kills) {
+        if (pod_value(POD_CF_ART_LOG) && !access(j->track, 0))
+            crash_log("== cover flow art stopped\n", j->track);
+        return;
+    }
+    if (access(j->track, 0)) return;
     void *f = fopen(dst, "w");
     if (f) fclose(f);
 }
@@ -624,15 +638,13 @@ void art_strike(const char *file) {
         unsigned key;
         char track[512];
     } note = { 0 };
-    char path[512], line[560];
+    char path[512];
     void *f = fopen(file, "rb");
     unsigned got = f ? fread(&note, 1, sizeof note - 1, f) : 0;
     if (f) fclose(f);
     if (got >= sizeof note.key && access(art_path(path, note.key, ""), 0)) {
         if ((f = fopen(path, "w"))) fclose(f);
-        int n = snprintf(line, sizeof line, "== cover flow skipped\n%s\n", note.track);
-        if ((f = fopen(CRASH_LOG, "a")))
-            fwrite(line, 1, n, f), fflush(f), fsync(fileno(f)), fclose(f);
+        crash_log("== cover flow skipped\n", note.track);
     }
     unlink(file);
 }

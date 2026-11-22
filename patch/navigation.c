@@ -3121,6 +3121,8 @@ static int bt_receive __attribute__((section(".scratch")));
 /* Appearance's Hide Apps, Hide Games and Hide App Store (HIDEAPPS, HIDEGAMES, HIDESTORE): Library's
  * rows, gone at its next open (home.c ringnav_localmusic). */
 static int hide_lib[3] __attribute__((section(".scratch")));
+/* Display's Log Failed Artwork (CFARTLOG): coverflow.c build_art. */
+static int cf_art_log __attribute__((section(".scratch")));
 static int *const pod_values[] = { &st.charge_limit,
                                    &st.wake_double,
                                    &st.artist_cf,
@@ -3152,7 +3154,8 @@ static int *const pod_values[] = { &st.charge_limit,
                                    &hide_lib[0],
                                    &hide_lib[1],
                                    &hide_lib[2],
-                                   &bt_receive };
+                                   &bt_receive,
+                                   &cf_art_log };
 _Static_assert(POD_LOCKCLOCK == 6, "lockscreen.c passes pod_rows 6");
 _Static_assert(POD_REMIND_DAILY == 26, "netupdate.c passes pod_rows 26");
 _Static_assert(sizeof pod_values / sizeof *pod_values == POD_COUNT, "a pod_values per row");
@@ -3187,7 +3190,8 @@ static const char *const pod_keys[] = { "CHARGELIMIT",
                                         "HIDEAPPS",
                                         "HIDEGAMES",
                                         "HIDESTORE",
-                                        "BTRECEIVE" };
+                                        "BTRECEIVE",
+                                        "CFARTLOG" };
 _Static_assert(sizeof pod_keys / sizeof *pod_keys == POD_COUNT, "a pod_keys entry per row");
 /* a row's choices: Artist albums three, Standby limit four, every other row two */
 static int pod_choices(unsigned i) { return i == POD_ARTIST_CF ? 3 : i == POD_STANDBY ? 4 : 2; }
@@ -3266,6 +3270,7 @@ static void pod_text(int i) {
         { 0 },
         { 0 },
         { 0 }, /* Receive Audio: a switch */
+        { 0 }, /* Log Failed Artwork: a switch */
     };
     _Static_assert(sizeof names / sizeof *names == POD_COUNT, "a names entry per row");
     if (i == POD_CF_SORT) { /* the Sort card's words, as Cover Flow's page holds the row */
@@ -3298,6 +3303,7 @@ static void pod_text(int i) {
                          : i == POD_HIDE_GAMES     ? tr("Hide Games")
                          : i == POD_HIDE_STORE     ? tr("Hide App Store")
                          : i == POD_BT_RECEIVE     ? tr("Receive Audio")
+                         : i == POD_CF_ART_LOG     ? tr("Log Failed Artwork")
                                                    : 0;
     static const unsigned standby_hours[] = { 0, STANDBY_LIMIT_1, STANDBY_LIMIT_2,
                                               STANDBY_LIMIT_3 };
@@ -6351,6 +6357,7 @@ int ringnav_display(widget_t *win, void *ctx) {
         pod_rows(win, "scroll_view_display", POD_BIG_LIB, 1, cf_icons + 3);
         pod_rows(win, "scroll_view_display", POD_SCAN_DURATIONS, 1, cf_icons + 3);
         pod_rows(win, "scroll_view_display", POD_CF_POSITION, 1, cf_icons + 3);
+        pod_rows(win, "scroll_view_display", POD_CF_ART_LOG, 1, cf_icons + 3);
         return result;
     }
     if (sub == DISPLAY_APPEARANCE) {

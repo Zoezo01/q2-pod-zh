@@ -9,7 +9,7 @@ import struct
 import pytest
 
 import host
-from conftest import NAVIGATION_SOURCE, O, Deques, Files, claim, high_halves
+from conftest import NAVIGATION_SOURCE, O, Deques, Files, claim, high_halves, pod_value
 from test_coverflow import SONGTABLE  # stock's songtable, as demo's CREATE TABLE text has it
 
 W_PARENT, EVT_CLICK, EVENT_TYPE, EVENT_KEY, EVENT_X = O['W_PARENT'], O['EVT_CLICK'], O['EVENT_TYPE'], O['EVENT_KEY'], O['EVENT_X']
@@ -756,8 +756,18 @@ def test_cover_flow_page_holds_artist_view_playlists_sort_refresh_and_large_libr
     ui.click(button_of(page.view(), 'Cover Flow'))
     assert page.title() == 'Cover Flow'
     found = titles(page.view())
-    assert len(found) == 7 and found[:2] == ['Artist View', 'Playlist View'] and found[2] == 'Sort'
-    assert found[3:] == ['Refresh Cover Flow', 'Fast Navigation', 'Scan Song Durations', 'Position Bar']
+    assert len(found) == 8 and found[:2] == ['Artist View', 'Playlist View'] and found[2] == 'Sort'
+    assert found[3:] == ['Refresh Cover Flow', 'Fast Navigation', 'Scan Song Durations', 'Position Bar', 'Log Failed Artwork']
+
+
+@pytest.mark.parametrize('stored, on', [(None, 0), (b'1', 1), (b'2', 0)])
+def test_log_failed_artwork_is_off_unless_1_and_its_row_saves_cfartlog(fw, stored, on):
+    ui = Ui(fw)
+    page = display(fw, ui, **({'CFARTLOG': stored} if stored else {}))
+    ui.click(button_of(page.view(), 'Cover Flow'))
+    assert pod_value(fw, 'POD_CF_ART_LOG') == on
+    ui.click(button_of(page.view(), 'Log Failed Artwork'))
+    assert writes(fw) == [('CFARTLOG', 1 - on)] and pod_value(fw, 'POD_CF_ART_LOG') == 1 - on
 
 
 class Settings:
