@@ -658,7 +658,9 @@ static void run(void) {
     if (!g->frame) g->frame = timer_add(frame, 0, FRAME_MS);
 }
 
-static const char *const game_names[] = { "Games", "Sudoku", "Vortex", "Solitaire", "Snake" };
+/* The bar's title for the chooser and each game: page_retitle writes these into the page's own
+ * caption, which Minimal/Modern read straight into the bar and Classic through bar_title_of. */
+static const char *const game_names[] = { "游戏", "数独", "旋涡", "纸牌", "贪吃蛇" };
 /* The chooser or the game target, from the next loop pass. */
 static int show(const void *unused) {
     g->timer = 0;

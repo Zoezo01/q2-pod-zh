@@ -4,7 +4,7 @@
 
 这不是山灵官方固件，也不是上游的官方中文版，是自己用的一个分支：在上游的固件补丁之上做中文界面，另外加了三个自己需要的功能。
 
-![版本](https://img.shields.io/badge/%E7%89%88%E6%9C%AC-V189A-3D424B?style=flat-square)
+![版本](https://img.shields.io/badge/%E7%89%88%E6%9C%AC-V189B-3D424B?style=flat-square)
 ![语言](https://img.shields.io/badge/%E7%95%8C%E9%9D%A2-%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-D77868?style=flat-square)
 ![许可](https://img.shields.io/badge/license-GPL--3.0-B99AC8?style=flat-square)
 
@@ -41,9 +41,9 @@ CHINESE_UI = True   # 资产按 patch_asset 的结果原样打包，只保留解
 
 `tools/build.py` 也能直接吃山灵官方的 `update.tar`，不必先解出那个 ZIP。这类输入走另一条 pinned SHA-256 校验，`manifest.json` 里记 `input_kind: "tar"`。上游的 `tools/release.py` 是给 ZIP 输入 + 英文日志的正式发布流水线用的，本分支不用它；发 Release 用 `tools/release_zh.py`（见「网络更新」一节）。
 
-### 3. 版本标记 `V189A`
+### 3. 版本标记 `V189B`
 
-上游英文版 1.8.9 叫 `V1890`，这个分支当前叫 `V189A`。前半截 `189` 是上游版本，末位字母是中文版在自己这条版本线上的发布序号：每换一条上游版本线（1.6.6 → 1.7.2 → 1.7.6 → 1.8.0 → 1.8.2 → 1.8.3 → 1.8.4 → 1.8.5 → 1.8.6 → 1.8.7 → 1.8.8 → 1.8.9）字母从 `A` 重新起，同一条线上顺次往下排。前六条线分别收在 `V180F`、`V182C`、`V183F`、`V184B`、`V187B` 和 `V188A`。（1.6.x 起上游只构建一个版本，所以 `VERSIONS` 表没了；1.8.0 起上游的标记改用四位数字。）
+上游英文版 1.8.9 叫 `V1890`，这个分支当前叫 `V189B`。前半截 `189` 是上游版本，末位字母是中文版在自己这条版本线上的发布序号：每换一条上游版本线（1.6.6 → 1.7.2 → 1.7.6 → 1.8.0 → 1.8.2 → 1.8.3 → 1.8.4 → 1.8.5 → 1.8.6 → 1.8.7 → 1.8.8 → 1.8.9）字母从 `A` 重新起，同一条线上顺次往下排。前六条线分别收在 `V180F`、`V182C`、`V183F`、`V184B`、`V187B` 和 `V188A`。（1.6.x 起上游只构建一个版本，所以 `VERSIONS` 表没了；1.8.0 起上游的标记改用四位数字。）
 
 为什么非要多一个字母：固件升级（`update_firmware`，0x4f8440）判断"是不是最新"，只看包里的标记和设备上已装的标记**一模一样**，不比较版本高低。标记跟英文版错开，一台刷过英文 1.6.2 的机器才能直接升到中文版；以后重新构建，把字母往后挪一位就能再刷一次。
 
@@ -87,25 +87,25 @@ CHINESE_UI = True   # 资产按 patch_asset 的结果原样打包，只保留解
 - `patch/onlinematch.c`：`library_fill_*`（枚举、三段任务、带单位的进度、转动的指示、取消），`lf_cover_save()` 先问 `kg_cover_save()`（酷狗搜索 → 专辑信息 → 480 px 图），再复用 `mb_url()` / `caa()` / `itunes_url()`，`lf_song_take()` / `lf_song_collect()` 处理没有专辑标签的单曲。
 - `patch/navigation.c`：导出 `ringnav_fill_albums()`（全库专辑 SQL，复用年代页的 `ERA_ALBUMS`）、`ringnav_album_tracks()`（单张专辑曲目）与 `ringnav_fill_songs()`（无专辑标签的歌），新增枚举 `POD_LIBRARY_FILL` 与设置行。
 
-### 7. 载荷窗口从 512 KB 扩到 832 KB
+### 7. 载荷窗口从 512 KB 扩到 1 MB
 
 上游的载荷（`patch/*.c` 编译结果）装在 `0xb00000`，紧跟着 `SCRATCH` 是状态区。1.6.3 时窗口只有 512 KB，编译出 523,800 B——离 524,288 的硬上限只剩 488 字节，再合并一版必然撞线（`tools/build.py` 里 `check(len(payload) < SCRATCH-BASE)` 会直接抛异常，包都出不来）。
 
-上游自己也一路在挪这个地址：`0xb80000` → `0xb90000` → `0xbc0000`，1.8.4 挪到 **`0xbd0000`**，窗口变成 832 KB（851,968 B）。本分支跟着取上游的值：
+上游自己也一路在挪这个地址：`0xb80000` → `0xb90000` → `0xbc0000`，1.8.4 挪到 `0xbd0000`（832 KB）。1.8.9 合并进来后载荷长到 847,032 B，只剩 4,936 B，所以我们不再跟着上游，自己往前挪一档到 **`0xc00000`**，窗口 1 MB（1,048,576 B）：
 
-- `patch/link.ld`：`.scratch 0xbd0000`
-- `tools/build.py`：`SCRATCH = 0xbd0000`
+- `patch/link.ld`：`.scratch 0xc00000`
+- `tools/build.py`：`SCRATCH = 0xc00000`
 
-扩容前做过实测：`/proc/self/maps` 显示载荷上方下一处映射在 `0x68da0000`（字体文件），中间大段空闲，heap 在载荷下方、动态库都在 `0x75c00000` 以上。
+扩容前做过实测：`/proc/self/maps` 显示载荷上方下一处映射在 `0x68da0000`（字体文件），中间大段空闲，heap 在载荷下方、动态库都在 `0x75c00000` 以上；状态区 192 KB 紧跟在 1 MB 之后，段尾到 `0xc30000`，仍在同一片空闲里。
 
-**注意余量**：1.8.9 这一版编译出 846,968 B，只剩约 4.9 KB。下次合并前若上游再加大功能，要先把 `SCRATCH` 再上移一档（先实测确认新位置没被占），否则构建会直接失败。
+**余量**：1.8.9 这一版编译出约 847 KB，扩到 1 MB 后余约 197 KB。再往上到 1.5 MB 之前都还有空间，但每次上移都要先实测确认新位置没被占。
 
 ### 差异一览
 
 | 项 | 上游 1.8.9 | 本分支 |
 |---|---|---|
 | 界面语言 | 英文 | 简体中文（`CHINESE_UI = True`） |
-| 版本标记 | `V1890` | `V189A` |
+| 版本标记 | `V1890` | `V189B` |
 | 无耳机时开始播放 | 官方 Require Output (Beta) | 沿用官方（不再替用户写开） |
 | 状态栏播放状态 | 只有图标 | 图标 +「正在播放」/「播放暂停」 |
 | 补全封面与歌词 | 一次一首，封面上手挑 | 播放设置里一键扫全卡 |
@@ -152,7 +152,7 @@ uv pip install -r requirements.txt
 .venv/bin/python tools/build.py /path/update.tar --out build-cn
 ```
 
-`--out` 目录必须不存在。产出一份约 51.5 MiB 的 `update.tar`，标记 `V189A`，载荷大小看构建日志（上游 1.8.4 把正文区搬到 `0xbd0000` 后上限 832 KB）。加 `--dev` 会得到递增的开发标记（`V001c`…），附带一个需要密钥的远程调试服务。
+`--out` 目录必须不存在。产出一份约 51.6 MiB 的 `update.tar`，标记 `V189B`，载荷大小看构建日志（正文区从 V189B 起是 `0xc00000`，上限 1 MB）。加 `--dev` 会得到递增的开发标记（`V001c`…），附带一个需要密钥的远程调试服务。
 
 ## 测试
 
@@ -169,7 +169,7 @@ uv pip install -r requirements.txt
 
 把 [Releases](https://github.com/Zoezo01/q2-pod-zh/releases) 里的 `update.tar`（或你自己编译出来的那个）放在 TF 卡根目录，通过系统设置的 TF 卡升级安装；刷机期间不要断电拔卡。文件名必须就叫 `update.tar`，不要解压、不要改名。
 
-- 本版标记 `V189A`，和官方 `V1.36`、上游英文 `V1890`、已刷过的中文 `V188A`（以及 `V187B`、`V184B`、`V183F`、`V182C`、`V180F`）都不一样，所以从这些版本都能直接刷上来。
+- 本版标记 `V189B`，和官方 `V1.36`、上游英文 `V1890`、已刷过的中文 `V189A`（以及 `V188A`、`V187B`、`V184B`、`V183F`、`V182C`、`V180F`）都不一样，所以从这些版本都能直接刷上来。
 - 同一个标记只能刷一次：设备已在本版时再刷同样的包会被拒绝。**代码改过就要把末位字母递进**（A→B→C→D…），否则设备认不出这是新包；临时重刷请用 `--dev`。
 - 回滚用山灵官方 V1.36 固件。注意别把官方原包当成自建包——官方包约 54 MB、`firmware_v20.info` 第二行是 `V1.36`，自建包约 51 MB。
 - 网络更新已经指向本仓库，装的是本分支的**中文**固件，不会失去汉化。发布条件见下面的「网络更新」一节；没发过 Release 前会显示「此版本暂无更新」。
@@ -182,7 +182,7 @@ uv pip install -r requirements.txt
 
 | 项 | 值 | 为什么 |
 |---|---|---|
-| tag | `tools/build.py` 的 `RELEASE_TAG`：这条线首发（A）是裸 `1.8.9`，之后每个小版本加一位点位（B→`1.8.9.2`、C→`1.8.9.3`…），本版是 `1.8.9` | `strcmp(tag, Q2POD_TAG)` 字符串比较：`1.8.9.2` 比 `1.8.9` 大，所以同一条上游版本线内的 189B、189C 也能提示升级；点位只有一位，字母用到 I |
+| tag | `tools/build.py` 的 `RELEASE_TAG`：这条线首发（A）是裸 `1.8.9`，之后每个小版本加一位点位（B→`1.8.9.2`、C→`1.8.9.3`…），本版是 `1.8.9.2` | `strcmp(tag, Q2POD_TAG)` 字符串比较：`1.8.9.2` 比 `1.8.9` 大，所以同一条上游版本线内的 189B、189C 也能提示升级；点位只有一位，字母用到 I |
 | asset | 文件名必须正好是 `update.tar` | `patch/netupdate.c` 的 `NU_ASSET` |
 | release | 必须是 **latest**、非草稿、非 prerelease | 设备只读 `/releases/latest` 的 302 跳转 |
 | 下载地址 | `Zoezo01/q2-pod-zh` | `tools/build.py` 的 `REPO`，同时编译成 `Q2POD_REPO`；`release.py` 也会校验 manifest 里的 `update_repo` |
@@ -190,7 +190,7 @@ uv pip install -r requirements.txt
 
 发一版的顺序：改 `VERSION` 与 `LETTER`（换上游版本线时 `LETTER` 退回 `A`；同线再改代码就递进字母，`RELEASE_TAG` 跟着加点位）→ 写 `docs/changelog-zh.md` → 服务器上 `tools/build.py --out` 构建 → 把 `update.tar` 传回 → 用 `tools/release_zh.py <构建目录>` 校验并发布（需要环境变量 `GITHUB_TOKEN`）。脚本会先核对标记、`update_repo`、`firmware_v20.info` 第二行和 SHA-256，再建 Release、上传 asset、核对 GitHub 记录的 size/digest，最后才取消草稿。也可以完全按上表在 GitHub 网页上手工发，效果一样。
 
-**注意**：`Q2POD_TAG` 用的是 `RELEASE_TAG`（由 `VERSION` 加点位组成，本版 `1.8.9`），而刷机标记用的是 `TAG`（`V189A`）。两者是两套机制：前者决定「网络更新要不要提示新版本」，后者决定「设备肯不肯重刷这个包」。发新版时两边都要推进。
+**注意**：`Q2POD_TAG` 用的是 `RELEASE_TAG`（由 `VERSION` 加点位组成，本版 `1.8.9.2`），而刷机标记用的是 `TAG`（`V189B`）。两者是两套机制：前者决定「网络更新要不要提示新版本」，后者决定「设备肯不肯重刷这个包」。发新版时两边都要推进。
 
 ## 已知问题
 

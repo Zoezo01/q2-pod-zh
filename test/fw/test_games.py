@@ -1892,7 +1892,7 @@ def test_the_chooser_lists_its_games_then_the_card_s_by_name_and_each_row_opens_
     texts = []
     fw.mock('widget_set_text_utf8', lambda w, s, *_: texts.append(C.string_at(s).decode()))
     p = Page(fw, files)
-    assert texts[-6:] == ['Sudoku', 'Vortex', 'Solitaire', 'Snake', 'Blocks', 'Zork']  # Tunes isn't a game
+    assert texts[-6:] == ['数独', '旋涡', '纸牌', '贪吃蛇', 'Blocks', 'Zork']  # 内置游戏中文，卡带游戏保留原名；Tunes 不是游戏
     rows = handlers(fw, EVT_CLICK)
     assert len(rows) == 6
     fw.mock('fw_fork', lambda *_: 4242)
@@ -2768,7 +2768,7 @@ def test_classic_s_sudoku_puts_the_cursor_s_cell_on_the_band_and_frames_it_only_
     assert not band(ops) and len([o for o in ops if o.kind == 'fill' and 2 in o.rect[2:] and max(o.rect[2:]) == rows[0].rect[2] + 2]) == 4
 
 
-@pytest.mark.parametrize('theme, names', ((CLASSIC, ['Solitaire', 'Games']), (MINIMAL, [])))
+@pytest.mark.parametrize('theme, names', ((CLASSIC, ['纸牌', '游戏']), (MINIMAL, [])))
 def test_the_bar_names_the_game_where_the_theme_s_bar_holds_the_page_s_caption(fw, theme, names):
     said = []
     fw.mock('widget_lookup', lambda w, name, *_: 0x7777 if C.string_at(name) == b'_page_title' else 0)
