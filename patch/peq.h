@@ -581,6 +581,9 @@ int stream_cache(int spotify); /* navigation.c: Streaming's Configuration, a cap
 void album_memory(void *r);
 void draw_centred(canvas_t *canvas, const unsigned *s, unsigned n, const void *r, unsigned px,
                   unsigned color);
+/* bidi_text.c: right-to-left text as AWTK's widgets draw it (visual order, Arabic shaped) */
+int bidi_rtl(const unsigned *s, unsigned n);
+int bidi_visual(const unsigned *s, unsigned n, unsigned *out);
 int utf8_text(const char *s); /* xiph.c: valid UTF-8, a 4-byte character too */
 void utf8_mend(char *s);      /* xiph.c: s valid UTF-8, the bytes of no whole character gone */
 /* Lyrics as lyrics.c's loader reads them: each line's start (ms, LRC_FAR unsynced), the order it

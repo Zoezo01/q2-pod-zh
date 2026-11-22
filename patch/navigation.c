@@ -1586,7 +1586,9 @@ static unsigned article(const char *s) {
 }
 
 /* Text centred in r in the default font at px, in color; text color and alignment are restored,
- * the font is not (stock sets it before its own text). Shared with peq_ui.c and visualizer.c. */
+ * the font is not (stock sets it before its own text). Shared with peq_ui.c and visualizer.c.
+ * Right-to-left text goes through AWTK's bidi, as the label it may shadow draws it (bidi_text.c).
+ */
 static void draw_in_face(canvas_t *canvas, const char *face, const unsigned *s, unsigned n,
                          const void *r, unsigned px, unsigned color) {
     unsigned text = (unsigned)I(P(canvas, CANVAS_LCD), LCD_TEXT_COLOR);
@@ -1594,7 +1596,10 @@ static void draw_in_face(canvas_t *canvas, const char *face, const unsigned *s, 
     canvas_set_font(canvas, face, px);
     canvas_set_text_color(canvas, color);
     I(canvas, CANVAS_ALIGN_V) = I(canvas, CANVAS_ALIGN_H) = 1;
-    canvas_draw_text_in_rect(canvas, s, n, r);
+    if (bidi_rtl(s, n))
+        canvas_draw_text_bidi_in_rect(canvas, s, n, r, (const char *)0, 0);
+    else
+        canvas_draw_text_in_rect(canvas, s, n, r);
     I(canvas, CANVAS_ALIGN_V) = align_v;
     I(canvas, CANVAS_ALIGN_H) = align_h;
     stock_canvas_set_text_color(canvas, text);
@@ -1871,12 +1876,27 @@ static void paint_cover(widget_t *w, canvas_t *canvas) {
 
 /* Minimal's small capitals (Sudo's): s from x, y (the text's top) in the default font at px,
  * upper-cased (script_upper), SUDO_TRACK px apart, cut off at x + max; returns the whole
- * text's width, a trailing SUDO_TRACK included. The text color is restored, the font is not. */
+ * text's width, a trailing SUDO_TRACK included. The text color is restored, the font is not.
+ * Right-to-left text (an Arabic album) is drawn whole in visual order instead (bidi_text.c): joined
+ * letters can't be spaced apart, and have no capitals; the clip cuts it off at x + max. */
+#define SPACED_RTL_MAX 256
 static int draw_spaced(canvas_t *canvas, const unsigned *s, int x, int y, unsigned px,
                        unsigned color, int max) {
     unsigned text = (unsigned)I(P(canvas, CANVAS_LCD), LCD_TEXT_COLOR);
     canvas_set_font(canvas, (void *)0, px);
     canvas_set_text_color(canvas, color);
+    unsigned n = s ? wide_len(s) : 0, vis[SPACED_RTL_MAX];
+    if (n <= SPACED_RTL_MAX && bidi_visual(s, n, vis)) {
+        int w = (int)(canvas_measure_text(canvas, vis, n) + 0.5f), old[4], clip[4];
+        if (max > 0 && clip_within(canvas, old, clip, I(canvas, CANVAS_X) + x,
+                                   I(canvas, CANVAS_Y) + y, max, 2 * (int)px)) {
+            canvas_set_clip_rect(canvas, clip);
+            canvas_draw_text(canvas, vis, n, x, y);
+            canvas_set_clip_rect(canvas, old);
+        }
+        stock_canvas_set_text_color(canvas, text);
+        return w + SUDO_TRACK;
+    }
     int at = 0;
     for (; s && *s; ++s) {
         unsigned c = script_upper(*s);

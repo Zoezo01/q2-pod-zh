@@ -604,8 +604,10 @@ int lyrics_line(widget_t *lrc, int ms, int page) {
     return cur;
 }
 
-/* One row of text clipped to from..to (the row's x) within its own clip (base). */
-static void ly_ink(canvas_t *canvas, const int *base, const unsigned *s, unsigned n, int y,
+/* A row's characters for its right-to-left copy; a longer one (never at the page's width) as is */
+#define LYRIC_RTL_MAX 256
+/* One row of text from x, clipped to from..to (the row's x) within its own clip (base). */
+static void ly_ink(canvas_t *canvas, const int *base, const unsigned *s, unsigned n, int x0, int y,
                    int from, int to, unsigned color) {
     int x = I(canvas, CANVAS_X),
         clip[4] = { x + from > base[0] ? x + from : base[0], base[1], 0, base[3] };
@@ -613,7 +615,7 @@ static void ly_ink(canvas_t *canvas, const int *base, const unsigned *s, unsigne
     if (clip[2] <= 0 || clip[3] <= 0) return;
     canvas_set_clip_rect(canvas, clip);
     canvas_set_text_color(canvas, color);
-    for (int b = 0; b <= LYRIC_BOLD; ++b) canvas_draw_text(canvas, s, n, LYRIC_X + b, y);
+    for (int b = 0; b <= LYRIC_BOLD; ++b) canvas_draw_text(canvas, s, n, x0 + b, y);
 }
 
 /* ringnav_paint, after stock painted a lyrics row (blank): its line, centred in it, bold
@@ -642,10 +644,25 @@ void lyrics_paint(widget_t *row, canvas_t *canvas) {
     canvas_set_font(canvas, (const char *)0, l->px);
     for (unsigned r = 0; r < l->rows; lit -= l->w[r++], y += pitch) {
         const unsigned *s = ly.tab->text + l->text + l->start[r];
+        unsigned n = l->len[r], vis[LYRIC_RTL_MAX], rest = rgba(on ? LYRIC_DIM : LYRIC_REST, alpha);
+        if (n <= LYRIC_RTL_MAX && bidi_visual(s, n, vis)) {
+            /* Right-to-left (bidi_text.c): visual order, joined, against the right edge, lit
+             * from the right; the share sung is the logical advances', put on the shaped width. */
+            int vw = (int)(canvas_measure_text(canvas, vis, n) + 0.5f) + LYRIC_BOLD,
+                x0 = w - LYRIC_X - vw > LYRIC_X ? w - LYRIC_X - vw : LYRIC_X,
+                sung = lit <= 0         ? 0
+                       : lit >= l->w[r] ? vw
+                                        : lit * vw / l->w[r],
+                cut = !sung        ? w
+                      : sung >= vw ? 0
+                                   : x0 + vw - sung;
+            if (cut > 0) ly_ink(canvas, base, vis, n, x0, y, 0, cut, rest);
+            if (cut < w) ly_ink(canvas, base, vis, n, x0, y, cut, w, rgba(LYRIC_LIT, alpha));
+            continue;
+        }
         int cut = lit <= 0 ? LYRIC_X : lit >= l->w[r] ? w : LYRIC_X + lit;
-        if (cut < w)
-            ly_ink(canvas, base, s, l->len[r], y, cut, w, rgba(on ? LYRIC_DIM : LYRIC_REST, alpha));
-        if (cut > LYRIC_X) ly_ink(canvas, base, s, l->len[r], y, 0, cut, rgba(LYRIC_LIT, alpha));
+        if (cut < w) ly_ink(canvas, base, s, n, LYRIC_X, y, cut, w, rest);
+        if (cut > LYRIC_X) ly_ink(canvas, base, s, n, LYRIC_X, y, 0, cut, rgba(LYRIC_LIT, alpha));
     }
     canvas_set_clip_rect(canvas, base);
     stock_canvas_set_text_color(canvas, text);

@@ -2,6 +2,7 @@
 
 - **1.9.1**:
   - Playback: with the screen off, hold Next or Previous to fast-forward or rewind the playing song; let go and it plays on from there. A press still skips to the next or previous song.
+  - Library: with the **Languages** app from the App Store installed, Arabic, Persian, Urdu and Hebrew song titles, artists and albums show, right to left with their letters joined. They were blank before. Arabic lyrics read right to left too, lit from the right as they're sung.
 - **1.9.0**:
   - Cover Flow: drag the **Position Bar** to move through your albums quickly. Touch anywhere along it, even after it has faded, and the covers go to the album under your finger and follow it; far jumps show the album's letter. The bar now stays on screen a second after you stop, instead of 0.8 seconds. Turn it on in **Display → Cover Flow**.
   - Ratings: hold Play/Pause on **Top Rated**, **Loved**, **All Rated** or **Disliked** in **Library → Ratings** to play that list shuffled. A hold on a song in the list still opens the song's options.

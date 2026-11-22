@@ -13,8 +13,10 @@
 
 #define LANG_DATA PEQ_ROOT "/mnt/data" /* the copy, q2-lang-<code>.tsv */
 #define LANG_CARD PEQ_ROOT "/mnt/mmc"
-#define LANG_BYTES (1u << 20) /* a table's most */
-#define LANG_PICKS 24         /* the page's tables */
+#define LANG_BYTES (1u << 20)              /* a table's most */
+#define LANG_FONT LANG_DATA "/q2-font.ttf" /* script.c's GLYPH_FONT, a pack's lang/font.ttf */
+#define LANG_FONT_BYTES (4u << 20)
+#define LANG_PICKS 24 /* the page's tables */
 
 extern const char *stock_locale_tr_trampoline(void *, const char *);
 extern int stock_language_trampoline(widget_t *, void *), ringnav_reboot(void);
@@ -239,12 +241,13 @@ int language_offered(void) {
     return lg.picks > 0;
 }
 
-/* src into dst whole, through a .new and a rename, so a cut leaves the old copy or none. */
-static int copy_in(const char *src, const char *dst) {
+/* src (max bytes at most) into dst whole, through a .new and a rename, so a cut leaves the old
+ * copy or none. */
+static int copy_in(const char *src, const char *dst, unsigned max) {
     char tmp[100];
     unsigned n = 0;
     tk_snprintf(tmp, sizeof tmp, "%s.new", dst);
-    char *b = read_all(src, LANG_BYTES, &n);
+    char *b = read_all(src, max, &n);
     void *f = b ? fopen(tmp, "wb") : 0;
     int ok = f && fwrite(b, 1, n, f) == n;
     if (f && (fflush(f) || fsync(fileno(f)))) ok = 0;
@@ -270,7 +273,7 @@ static int lang_pick(void *ctx, event_t *event) {
     if (navigator_to_with_context("dialog/confirminfo_dialog", &prompt) != 10) return 0;
     if (i >= 0) {
         tk_snprintf(copy, sizeof copy, LANG_DATA "/q2-lang-%s.tsv", lg.code[i]);
-        if (!copy_in(lg.file[i], copy)) {
+        if (!copy_in(lg.file[i], copy, LANG_BYTES)) {
             toast(tr("Couldn't copy the language"));
             return 0;
         }
@@ -300,40 +303,49 @@ int ringnav_language(widget_t *win, void *ctx) {
 }
 
 typedef struct {
-    const char *code;
-    char file[96];
+    char name[24], file[96];
 } lang_find_t;
-static int table_in(const char *dir, void *ctx) {
+static int file_in(const char *dir, void *ctx) {
     lang_find_t *f = ctx;
-    tk_snprintf(f->file, sizeof f->file, "%s/%s.tsv", dir, f->code);
+    tk_snprintf(f->file, sizeof f->file, "%s/%s", dir, f->name);
     if (!access(f->file, 0)) return 1;
     *f->file = 0;
     return 0;
 }
 
-/* The card mounted (system.c's logo thread) or an app installed (netupdate.c's worker): the
- * language in use copied again when its table on the card differs, so a pack's update shows from
- * the next start. A card without it changes nothing: the copy is the Q2's. Its own scan: lg's
- * picks are the UI thread's. */
-void language_sync(void) {
-    char code[256], copy[96];
+/* The first lang folder's name (the table or the font) copied to dst when it differs; none on the
+ * card changes nothing: the copy is the Q2's. */
+static void refresh(lang_find_t *f, const char *dst, unsigned max) {
     unsigned a = 0, b = 0;
-    lang_find_t f = { code, "" };
-    if (!active(code, copy, sizeof copy)) return;
-    lang_apps(table_in, &f);
-    char *card = *f.file ? read_all(f.file, LANG_BYTES, &a) : 0,
-         *have = card ? read_all(copy, LANG_BYTES, &b) : 0;
-    if (card && (!have || a != b || memcmp(card, have, a))) copy_in(f.file, copy);
+    lang_apps(file_in, f);
+    char *card = *f->file ? read_all(f->file, max, &a) : 0,
+         *have = card ? read_all(dst, max, &b) : 0;
+    if (card && (!have || a != b || memcmp(card, have, a))) copy_in(f->file, dst, max);
     free(card), free(have);
 }
 
+/* The card mounted (system.c's logo thread) or an app installed (netupdate.c's worker): the table
+ * in use and a pack's font, for right-to-left titles in any language (script.c), copied again when
+ * the card's differ, so a pack's update shows from the next start. Its own scan: lg's picks are
+ * the UI thread's. */
+void language_sync(void) {
+    char code[256], copy[96];
+    lang_find_t f = { "font.ttf", "" };
+    refresh(&f, LANG_FONT, LANG_FONT_BYTES);
+    if (!active(code, copy, sizeof copy)) return;
+    tk_snprintf(f.name, sizeof f.name, "%s.tsv", code);
+    refresh(&f, copy, LANG_BYTES);
+}
+
 /* The App Store's Remove of the app in the card folder dir (netupdate.c's worker, before its
- * files go): when its q2app says lang=1, every copy goes, so the next start is English. Only the
- * copies: config.ini is the UI thread's to write, and LANG without its copy reads as English. */
+ * files go): when its q2app says lang=1, every copy and the font go, so the next start is English.
+ * Only the copies: config.ini is the UI thread's to write, and LANG without its copy reads as
+ * English. */
 void language_removing(const char *dir) {
     char raw[512], path[128];
     tk_snprintf(path, sizeof path, LANG_CARD "/%s/q2app", dir);
     if (!state_read(path, raw, sizeof raw) || number(raw, "lang") != 1) return;
+    unlink(LANG_FONT);
     void *d = opendir(LANG_DATA);
     for (struct dirent *e; d && (e = readdir(d));) {
         unsigned k = strlen(e->d_name);

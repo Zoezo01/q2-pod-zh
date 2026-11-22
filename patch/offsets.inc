@@ -89,6 +89,7 @@
 #define LCD_BGRA8888 3
 #define CANVAS_ALIGN_V 0x30     /* canvas_set_text_align @0x64770c; middle = 1 */
 #define CANVAS_ALIGN_H 0x34     /* center = 1 */
+#define FONT_GET_GLYPH 0x24     /* font_t's get_glyph, font_get_glyph @0x6548e0 calls it */
 #define FILL_RGB 0x2b2b2b /* the stock dark surface, under the letter and volume overlays */
 /* iPod accents, in the order of the Accent setting (IPOD/ACCENT in config.ini; 0 is the default):
  * { selection top, bottom, light tone, red tone, highlight }, 0xRRGGBB. Equal stops keep

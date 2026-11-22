@@ -28,7 +28,15 @@ void font_weight_paint(widget_t *w, canvas_t *canvas) {
 }
 
 static const unsigned short bold_ranges[] = BOLD_RANGES,
-                            classic_light_ranges[] = CLASSIC_LIGHT_RANGES;
+                            classic_light_ranges[] = CLASSIC_LIGHT_RANGES,
+                            glyph_ranges[] = GLYPH_FALLBACK_RANGES;
+
+/* 1 iff c is in one of r's k / 2 first-last pairs. */
+static int in_ranges(unsigned c, const unsigned short *r, unsigned k) {
+    unsigned i = 0;
+    while (i < k && (c < r[i] || c > r[i + 1])) i += 2;
+    return i < k;
+}
 
 /* 1 iff every character of c (n < 0: up to the NUL; NULL has none) is in face's cmap. */
 static int face_has(int face, const unsigned *c, int n) {
@@ -38,12 +46,38 @@ static int face_has(int face, const unsigned *c, int n) {
                      : sizeof bold_ranges / sizeof *bold_ranges;
     if (face == FONT_DEFAULT) return 1;
     if (!c) return 0;
-    for (; n < 0 ? *c : n; ++c, --n) {
-        unsigned i = 0;
-        while (i < k && (*c < r[i] || *c > r[i + 1])) i += 2;
-        if (i >= k) return 0;
-    }
+    for (; n < 0 ? *c : n; ++c, --n)
+        if (!in_ranges(*c, r, k)) return 0;
     return 1;
+}
+
+/* A language pack's font, for the characters GLYPH_FALLBACK_RANGES lists: right-to-left scripts and
+ * their joining and direction controls, which no face here has (build.py checks stock's maps none).
+ * language.c copies it to the Q2; it is read at the first such character drawn or measured, the
+ * UI thread's. Without it they stay as before: stock's blank .notdef. */
+#define GLYPH_FONT PEQ_ROOT "/mnt/data/q2-font.ttf"
+#define GLYPH_FONT_BYTES (4u << 20)
+static struct {
+    int tried;
+    font_t *font;
+    void *bytes; /* stb reads them as long as the font lives: for good */
+} gf;
+
+/* font_get_glyph, which the build jumps here from (a leaf: FONT_GLYPH_LEAF), the whole of it: the
+ * font's get_glyph, the pack's font's for a character it is for. Bad params (0x10) as stock's for
+ * no font, no get_glyph or no glyph. */
+int ringnav_font_glyph(font_t *font, unsigned chr, unsigned size, void *glyph) {
+    if (in_ranges(chr, glyph_ranges, sizeof glyph_ranges / sizeof *glyph_ranges)) {
+        if (!gf.tried) {
+            unsigned n = 0;
+            gf.tried = 1;
+            gf.bytes = read_all(GLYPH_FONT, GLYPH_FONT_BYTES, &n);
+            gf.font = gf.bytes ? font_stb_create("q2-font", gf.bytes) : (font_t *)0;
+        }
+        if (gf.font) font = gf.font;
+    }
+    int (*get)(font_t *, unsigned, unsigned, void *) = font ? P(font, FONT_GET_GLYPH) : (void *)0;
+    return get && glyph ? get(font, chr, size, glyph) : 0x10;
 }
 
 /* bold.ttf or stock's default.ttf standing in for classic-light.ttf: that much of the px gives the

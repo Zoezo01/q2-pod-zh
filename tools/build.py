@@ -229,6 +229,15 @@ WM_PAINT_LEAF = ('window_manager_paint', 0x680a1c, 'ringnav_wm_paint', (0x108000
 # queue_event slot at +0x18 and the request, then tail-calls the slot); the payload does the whole of it
 # and keeps the touch thread's empty events out of the queue (playback.c ringnav_queue_event).
 QUEUE_LEAF = ('main_loop_queue_event', 0x65c418, 'ringnav_queue_event', (0x10800008, 0, 0x8c990018))
+# font_get_glyph, a leaf too (null-checks the font and its get_glyph at +0x24, and the glyph, then tail-calls
+# get_glyph): every glyph drawn or measured. The payload does the whole of it, a language pack's font giving
+# GLYPH_FALLBACK's characters (script.c ringnav_font_glyph).
+FONT_GLYPH_LEAF = ('font_get_glyph', 0x6548e0, 'ringnav_font_glyph', (0x10800008, 0, 0x8c990024))
+# Right-to-left scripts (Hebrew to Arabic Extended-A, both blocks of presentation forms) and the zero-width,
+# joining and direction controls FriBidi leaves in a visual string (U+FEFF its lam-alef filler): no face here
+# has one (font_quotes checks default.ttf), so a language pack's font draws them.
+GLYPH_FALLBACK = ((0x0590, 0x08ff), (0x200b, 0x200f), (0x2066, 0x2069), (0xfb1d, 0xfdff), (0xfe70, 0xfeff))
+GLYPH_FALLBACK_MACRO = '#define GLYPH_FALLBACK_RANGES {' + ','.join(f'0x{u:x}' for r in GLYPH_FALLBACK for u in r) + '}'
 # Internet Radio's player and Spotify's sink (patch/video.c): a separate executable against the
 # rootfs's own libraries, with display_logo's inode metadata.
 HELPER, HELPER_LIKE = 'usr/bin/q2video', 'usr/bin/display_logo'
@@ -968,6 +977,7 @@ def font_quotes(data):
             check(all(c in table.cmap for c in QUOTES.values()), 'Font without straight quotes')
             table.cmap.update({c: table.cmap[q] for c, q in QUOTES.items()})
     glyf, hmtx, cmap = font['glyf'], font['hmtx'], font.getBestCmap()
+    check(not any(a <= u <= b for u in cmap for a, b in GLYPH_FALLBACK), 'Font maps a GLYPH_FALLBACK character')
     full, empty = glyf[cmap[0x2665]], glyf[cmap[0x2661]]
     check(not empty.isComposite() and empty.xMin == 2 and empty.yMax == 159, 'Unexpected ♡ glyph')
     sx, sy = (full.xMax - full.xMin) / (empty.xMax - empty.xMin), (full.yMax - full.yMin) / (empty.yMax - empty.yMin)
@@ -1398,6 +1408,14 @@ FUNCTIONS = {
  'canvas_draw_text_in_rect': ('int', 'canvas_t *, const unsigned *, unsigned, const void *'),
  'canvas_draw_text': ('int', 'canvas_t *, const unsigned *, unsigned, int, int'),  # lyrics.c, navigation.c
  'canvas_measure_text': ('float', 'canvas_t *, const unsigned *, unsigned'),
+ # AWTK's bidi, as its widgets draw text (bidi_text.c, navigation.c draw_in_face)
+ 'canvas_draw_text_bidi_in_rect': ('int', 'canvas_t *, const unsigned *, unsigned, const void *, const char *, int'),
+ 'bidi_type_from_name': ('int', 'const char *'),
+ 'bidi_init': ('void *', 'void *, int, int, int'),
+ 'bidi_log2vis': ('int', 'void *, const unsigned *, unsigned'),
+ 'bidi_deinit': ('int', 'void *'),
+ # A language pack's font for what no face has (script.c ringnav_font_glyph)
+ 'font_stb_create': ('font_t *', 'const char *, const void *'),  # (name, the TTF's bytes, kept): 0x688e24 makes it non-mono
  'canvas_fill_rounded_rect': ('int', 'canvas_t *, const void *, const void *, const void *, unsigned'),
  'canvas_stroke_rounded_rect': ('int', 'canvas_t *, const void *, const void *, const void *, unsigned, unsigned'),
  # The PEQ curve (peq_ui.c) and the visualizer (visualizer.c): AWTK's software nanovg, float_t float, color_t by value
@@ -1762,7 +1780,7 @@ FLAGS = ['--target=mipsel-linux-gnu','-march=mips32r2','-mabi=32','-mfp64',
          '-Wshadow','-Wimplicit-int-conversion','-Wconditional-uninitialized','-Wmissing-variable-declarations',
          '-Wvla','-Wundef']
 # navigation.c and the files split out of it (patch/navigation.h), each its own object, linked in this order.
-NAVIGATION = ['navigation.c', 'theme_engine.c', 'playlists.c', 'classic_pages.c', 'home.c', 'np_bar.c', 'volume.c', 'smart_wifi.c', 'system.c', 'usb_charge.c', 'tags.c', 'scrobble_ui.c', 'library_lists.c', 'durations.c', 'script.c', 'coverflow_position.c', 'ratings.c', 'scan_folders.c', 'folder_delete.c', 'battery.c', 'np_lyrics.c', 'quick_settings.c', 'flat.c', 'clock.c', 'queue_menu.c', 'np_marks.c', 'rotate.c', 'netservice.c', 'addon_bar.c', 'side_seek.c', 'language.c']
+NAVIGATION = ['navigation.c', 'theme_engine.c', 'playlists.c', 'classic_pages.c', 'home.c', 'np_bar.c', 'volume.c', 'smart_wifi.c', 'system.c', 'usb_charge.c', 'tags.c', 'scrobble_ui.c', 'library_lists.c', 'durations.c', 'script.c', 'coverflow_position.c', 'ratings.c', 'scan_folders.c', 'folder_delete.c', 'battery.c', 'np_lyrics.c', 'quick_settings.c', 'flat.c', 'clock.c', 'queue_menu.c', 'np_marks.c', 'rotate.c', 'netservice.c', 'addon_bar.c', 'side_seek.c', 'language.c', 'bidi_text.c']
 
 def compile_payload(out):  # pragma: no mutate block
     """Compile and link the payload."""
@@ -1780,7 +1798,7 @@ def compile_payload(out):  # pragma: no mutate block
     run('clang',*FLAGS,'-c',out/'trampoline.S','-o',out/'trampoline.o')
     run('ld.lld','-m','elf32ltsmip','--gc-sections','-T',ROOT/'patch/link.ld','-e','ringnav',
         *[f'--undefined={name}' for _, name, _ in HOOKS.values()], f'--undefined={GRADIENT_LEAF[2]}', '--undefined=ringnav_lrc_open',
-        f'--undefined={WM_PAINT_LEAF[2]}', f'--undefined={QUEUE_LEAF[2]}', '--undefined=ringnav_audio_extension', '--undefined=start_mute', '--undefined=start_sleep', '--undefined=ringnav_genre_copy', '--undefined=ringnav_lyric_save', '--undefined=ringnav_lyric_drop', '--undefined=ringnav_cover_copy','--undefined=ringnav_folder_rm','--undefined=ringnav_bootmode', '--undefined=lockscreen_access','--undefined=ringnav_ts_read',
+        f'--undefined={WM_PAINT_LEAF[2]}', f'--undefined={QUEUE_LEAF[2]}', f'--undefined={FONT_GLYPH_LEAF[2]}', '--undefined=ringnav_audio_extension', '--undefined=start_mute', '--undefined=start_sleep', '--undefined=ringnav_genre_copy', '--undefined=ringnav_lyric_save', '--undefined=ringnav_lyric_drop', '--undefined=ringnav_cover_copy','--undefined=ringnav_folder_rm','--undefined=ringnav_bootmode', '--undefined=lockscreen_access','--undefined=ringnav_ts_read',
         '--undefined=ringnav_baidu_poll', '--undefined=ringnav_tidal_poll', '--undefined=addon_m3u_dir', f'--undefined={COVERINFO_CALL[2]}',
         '--undefined=coverflow_player_cover', '--undefined=coverflow_grid_cover', '--undefined=coverflow_album_cover', '--undefined=coverflow_folder_cover', '--undefined=headset_bt_init',
         '--undefined=headset_status_register', '--undefined=headset_bt_autolink', *[f'--undefined={guard[2]}' for guard in PNG_GUARDS],
@@ -1991,7 +2009,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
     from theme import builtins, emit, geometry_sets
     themes = builtins()
     (out/'stock.h').write_text(stock_header({name: f'0x{syms[name]:x}u' for name in CONTEXT_DATA},
-                                            [bold_ranges, classic_light_ranges], themes, dev, repo))
+                                            [bold_ranges, classic_light_ranges, GLYPH_FALLBACK_MACRO], themes, dev, repo))
     set_pages, redirects = {}, {}
     ui = 'release/assets/default/raw/ui/'
     for i, g in enumerate(geometry_sets(themes)[1:], 1):
@@ -2018,7 +2036,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
         gp = ((prolog[0] & 65535) << 16) + (low if low < 32768 else low - 65536) + address
         check(gp == GP, f'{name}: unexpected GOT base')
         jump(off, replacement)
-    for name, address, replacement, words in (WM_PAINT_LEAF, GRADIENT_LEAF, QUEUE_LEAF):
+    for name, address, replacement, words in (WM_PAINT_LEAF, GRADIENT_LEAF, QUEUE_LEAF, FONT_GLYPH_LEAF):
         off = fileoff(patched, address)
         check(syms[name] == address and struct.unpack_from('<III', patched, off) == words, f'{name}: unexpected code')
         jump(off, replacement)

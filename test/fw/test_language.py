@@ -276,3 +276,46 @@ def test_a_failed_copy_says_so_and_keeps_the_language(fw, picking):
     picking.dirs['/mnt/mmc/.langs/lang'] = ['de.tsv', 'fr.tsv']
     fw.fn('language__lang_pick', C.c_int, C.c_long, C.c_void_p)(1, None)
     assert picking.written == [] and COPY in picking.files  # and a toast says so
+
+
+def test_sync_copies_a_packs_font_in_any_language(fw, lang):
+    Config(fw)  # English: right-to-left titles want it all the same
+    lang.pack('langs', {})
+    lang.files['/mnt/mmc/.langs/lang/font.ttf'] = b'font 2'
+    lang.dirs['/mnt/mmc/.langs/lang'].append('font.ttf')
+    lang.files['/mnt/data/q2-font.ttf'] = b'font 1'
+    fw.fn('language_sync', None)()
+    assert lang.files['/mnt/data/q2-font.ttf'] == b'font 2' and lang.dirs['/mnt/mmc/.langs/lang'] == ['font.ttf']
+    lang.dirs['/mnt/data'] = []
+    fw.fn('language_removing', None, C.c_char_p)(b'.langs')
+    assert '/mnt/data/q2-font.ttf' not in lang.files
+
+
+GLYPH = C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_uint, C.c_uint, C.c_void_p)
+
+
+def font(got, tag):
+    """A font_t whose get_glyph (+0x24) records (tag, character, size)."""
+    f = C.create_string_buffer(0x40)
+    f.get = GLYPH(lambda _f, c, size, _g: got.append((tag, c, size)) or 0)
+    C.c_void_p.from_buffer(f, 0x24).value = C.cast(f.get, C.c_void_p).value
+    return f
+
+
+@pytest.mark.parametrize('copied', [True, False])
+def test_a_packs_font_draws_what_no_face_has(fw, lang, copied):
+    """script.c ringnav_font_glyph: GLYPH_FALLBACK's characters from /mnt/data/q2-font.ttf, read once."""
+    got, made = [], []
+    stock, pack = font(got, 'stock'), font(got, 'pack')
+    if copied:
+        lang.files['/mnt/data/q2-font.ttf'] = b'TTF'
+    fw.mock('font_stb_create', lambda name, b, *_: made.append((C.string_at(name), C.string_at(b, 3))) or C.addressof(pack))
+    glyph = fw.fn('ringnav_font_glyph', C.c_int, C.c_void_p, C.c_uint, C.c_uint, C.c_void_p)
+    g = C.create_string_buffer(32)
+    assert glyph(C.addressof(stock), ord('A'), 20, g) == 0 and made == []  # Latin: the font's, nothing read
+    for c, size in ((0x627, 20), (0xfefb, 18), (0x5d0, 20), (0x200f, 20)):
+        assert glyph(C.addressof(stock), c, size, g) == 0
+    to = 'pack' if copied else 'stock'
+    assert got == [('stock', 65, 20), (to, 0x627, 20), (to, 0xfefb, 18), (to, 0x5d0, 20), (to, 0x200f, 20)]
+    assert made == ([(b'q2-font', b'TTF')] if copied else [])  # read at the first, once
+    assert glyph(None, 65, 20, g) == glyph(C.addressof(stock), 65, 20, None) == 0x10  # stock's bad params
