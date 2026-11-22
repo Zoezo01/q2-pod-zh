@@ -120,8 +120,9 @@ static void lang_load(void) {
     char code[256], copy[96];
     lg.loaded = 1;
     char *raw = active(code, copy, sizeof copy) ? read_all(copy, LANG_BYTES, &n) : 0;
-    for (unsigned i = 0; raw && i < n; ++i) lines += raw[i] == '\n';
-    lang_line_t *line = raw ? calloc(lines, sizeof *line) : 0;
+    if (!raw) return;
+    for (unsigned i = 0; i < n; ++i) lines += raw[i] == '\n';
+    lang_line_t *line = calloc(lines, sizeof *line);
     for (char *p = raw, *end = raw + n; line && p < end;) {
         char *e = p, *f[3] = { p, 0, 0 };
         while (e < end && *e != '\n') ++e;
