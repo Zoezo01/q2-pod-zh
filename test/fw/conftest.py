@@ -3,7 +3,9 @@
 Q2_FW_SANITIZE=1 builds it with AddressSanitizer and UBSan: run pytest with LD_PRELOAD set to
 `cc -print-file-name=libasan.so` and ASAN_OPTIONS=detect_leaks=0. Q2_FW_COVERAGE=1 builds it for gcov.
 Q2_FW_STRICT=1 fails a test that reached a stub tools/ doesn't declare, unmocked (host.Fw.unknown):
-its 0 is a guess at what stock would answer."""
+its 0 is a guess at what stock would answer. Q2_FW_PSEUDO=1 gives every text tr() knows (langpack.py's
+own_strings) a translation three times its bytes, so a run with Q2_FW_SANITIZE finds what a long one
+overflows; tests that read English fail, as they should, and only a sanitizer's report is news."""
 import ctypes as C
 import fcntl
 import functools
@@ -110,11 +112,35 @@ def fw(library, tmp_path):
     loaded.mock('tk_sha256_init', lambda ctx, *_: sums.__setitem__(ctx, hashlib.sha256()))
     loaded.mock('tk_sha256_hash', lambda ctx, data, n, *_: sums[ctx].update(C.string_at(data, n)))
     loaded.mock('tk_sha256_done', lambda ctx, out, *_: C.memmove(out, sums.pop(ctx).digest(), 32) and 0)
+    if os.environ.get('Q2_FW_PSEUDO'):
+        pseudo(loaded)
     yield loaded
     unknown = loaded.unknown()
     loaded.close()
     if unknown and os.environ.get('Q2_FW_STRICT'):
         pytest.fail(f'unmocked stubs with no known return type: {", ".join(unknown)}')
+
+
+@functools.cache
+def pseudo_lines():
+    sys.path.insert(0, str(ROOT/'tools'))
+    import langpack
+    texts = sorted({t.encode() for t, _ in langpack.own_strings()})  # strcmp's order, as language.c sorts
+    return [(t, b'[' + t + b' ' + b'~' * (2 * len(t)) + b']') for t in texts]
+
+
+def pseudo(loaded):
+    """language.c's table as a copy's load leaves it (lg: loaded, n, raw, line), each line the text, its English
+    and the pseudo translation."""
+    lines = pseudo_lines()
+    keep = [C.create_string_buffer(b) for pair in lines for b in pair]
+    line = (C.c_char_p * (3 * len(lines)))(*[C.cast(keep[2 * i + k], C.c_char_p) for i in range(len(lines))
+                                              for k in (0, 0, 1)])
+    loaded.keep += [keep, line]
+    lg = C.addressof(loaded.var('language__lg', C.c_char * 32))
+    C.memmove(lg, struct.pack('<iI', 1, len(lines)), 8)
+    C.c_void_p.from_address(lg + 8).value = C.addressof(line)
+    C.c_void_p.from_address(lg + 16).value = C.addressof(line)
 
 
 def text(value):
