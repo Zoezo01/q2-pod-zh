@@ -517,10 +517,10 @@ int ringnav_playlistsmore(widget_t *win, void *ctx) {
         set_hscroll_label_attribute(label);
         widget_set_text_utf8(label, "Edit Playlist");
         /* A set without settings icons: none here either, the text at its column */
-        void *const rows[][2] = { { widget_lookup(win, "img_rename", 1),
-                                    widget_lookup(win, "label_rename", 1) },
-                                  { widget_lookup(win, "img_del", 1), del },
-                                  { image, label } };
+        widget_t *const rows[][2] = { { widget_lookup(win, "img_rename", 1),
+                                        widget_lookup(win, "label_rename", 1) },
+                                      { widget_lookup(win, "img_del", 1), del },
+                                      { image, label } };
         for (unsigned i = 0; !geom_val(V_SET_ICON) && i < 3; ++i) {
             widget_t *c = rows[i][1];
             if (rows[i][0]) widget_set_visible(rows[i][0], 0, 0);

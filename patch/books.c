@@ -423,8 +423,8 @@ unsigned book_char(const unsigned char *t, unsigned n, unsigned *i) {
  * '\f' starts a new page; line breaks at the top of a page are dropped. Returns where the next
  * page starts. */
 unsigned book_page(const unsigned char *t, unsigned n, unsigned pos, int rows, int width,
-                   int (*measure)(void *, unsigned),
-                   void (*line)(void *, int, const unsigned *, int), canvas_t *ctx) {
+                   int (*measure)(canvas_t *, unsigned),
+                   void (*line)(canvas_t *, int, const unsigned *, int), canvas_t *ctx) {
     unsigned wc[BOOK_LINE];
     for (int row = 0, stop = 0; row < rows && pos < n && !stop; ++row) {
         unsigned i = pos, cut = pos, brk = 0;
@@ -465,7 +465,7 @@ unsigned book_page(const unsigned char *t, unsigned n, unsigned pos, int rows, i
 /* The start of the page before the one at pos: pages laid out from a line start up to BOOK_BACK
  * bytes back, until one reaches pos. */
 unsigned book_back(const unsigned char *t, unsigned n, unsigned pos, int rows, int width,
-                   int (*measure)(void *, unsigned), canvas_t *ctx) {
+                   int (*measure)(canvas_t *, unsigned), canvas_t *ctx) {
     unsigned s = pos > BOOK_BACK ? pos - BOOK_BACK : 0, e;
     while (s && s < pos && t[s - 1] != '\n') ++s;
     if (s == pos && pos) { /* no line start: past a character's continuation bytes, 3 at most */
@@ -715,11 +715,11 @@ static int closed(void *ctx, event_t *event) {
 }
 
 /* In 1/16 px, so fractional advances add up as drawn. */
-static int measure(void *canvas, unsigned c) {
+static int measure(canvas_t *canvas, unsigned c) {
     return (int)(16 * canvas_measure_text(canvas, &c, 1));
 }
 
-static void draw_line(void *canvas, int row, const unsigned *s, int n) {
+static void draw_line(canvas_t *canvas, int row, const unsigned *s, int n) {
     canvas_draw_text(canvas, s, n, BOOK_X, BOOK_Y + row * BOOK_LH);
 }
 

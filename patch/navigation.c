@@ -1088,7 +1088,7 @@ static void wheel_offset(menu_t *m, int top) {
     } else if (m->kind == 1) {
         scroll_view_set_offset(m->w, I(m->w, SCROLL_X), top);
         /* The immediate setter skips the on_scroll callback that touch scrolling runs. */
-        int (*on_scroll)(void *, int, int) = P(m->w, VIEW_ON_SCROLL);
+        int (*on_scroll)(widget_t *, int, int) = P(m->w, VIEW_ON_SCROLL);
         if (on_scroll) on_scroll(m->w, I(m->w, SCROLL_X), I(m->w, SCROLL_Y));
         widget_dispatch_simple_event(m->w, EVT_SCROLL);
     } else
@@ -4073,8 +4073,8 @@ static void row_faces(widget_t *w) {
  * on_load_data writes the row's text with no relayout, so the faces its layout picked would stay
  * with the last text: a CJK name in Classic's face, which has none of it, drew blank (#217). */
 int ringnav_table_load(void *ctx, unsigned index, widget_t *row) {
-    int ret =
-        ((int (*)(void *, unsigned, void *))P(P(row, W_PARENT), TABLE_LOAD_DATA))(ctx, index, row);
+    int ret = ((int (*)(void *, unsigned, widget_t *))P(P(row, W_PARENT), TABLE_LOAD_DATA))(
+        ctx, index, row);
     row_faces(row);
     return ret;
 }
@@ -4624,7 +4624,7 @@ int ringnav_ab_x(int t) {
  * (np_layout(); Centred Now Playing forces NP_CENTRED) picks the page. Stock's own page
  * (tools/ipod.py PLAYING_STOCK) is named playing_page too, which ringnav_playing binds as the iPod
  * one; any opener comes through here. */
-extern widget_t *stock_ui_load_trampoline(const char *name, void *parent);
+extern widget_t *stock_ui_load_trampoline(const char *name, widget_t *parent);
 /* key: STYLE_KEY bytes. */
 const char *style_key(char *key, const char *state, const char *name) {
     tk_snprintf(key, STYLE_KEY, "style:%s:%s", state, name);
@@ -4902,7 +4902,7 @@ static int usb_poll(const void *info) {
     return 7; /* RET_REMOVE */
 }
 
-widget_t *ringnav_ui_load(const char *name, void *parent) {
+widget_t *ringnav_ui_load(const char *name, widget_t *parent) {
     char path[64]; /* this call's own: a window stock loads inside this one keeps its name */
     /* application_init's first window; accent() makes theme() final */
     if (name && !st.theme_booted && !tk_strcmp(name, "system_bar")) {
@@ -6502,7 +6502,7 @@ void ringnav_song_unknown(const char *key, char *text, int size) {
  * line: its leading children (artwork, the playing gif; stock's choice box stays) and the text's
  * second line hide, and the title, at the set's centred y, takes their width. Stock re-showing one
  * relayouts the row, which hides it again. */
-static int one_line(void *row) { return !geom(G_TEXT_ART) && I(row, W_H) <= geom(G_PITCH); }
+static int one_line(widget_t *row) { return !geom(G_TEXT_ART) && I(row, W_H) <= geom(G_PITCH); }
 /* Under such a set, a taller row whose leading image stock gave no width (text_art 0, as Songs') is
  * two lines of text: the same children hide, its second line stays. */
 static int two_lines(widget_t *row) {
@@ -6534,7 +6534,7 @@ void row_meta(widget_t *w) {
 
 /* Only audited ordinary row constructors install this per-instance layouter. Stock still
  * positions every child, skips hidden controls, and owns clone/destruction and text overflow. */
-static int compact_row_layout(void *layout, void *row) {
+static int compact_row_layout(void *layout, widget_t *row) {
     widget_t *text = (void *)0, *title = (void *)0;
     /* Classic's playlist rows hold their children in their own places: stock's layout has none */
     if (widget_get_prop_int(P(row, W_PARENT), PL_ROW, 0)) {
@@ -6618,7 +6618,8 @@ static int compact_row_layout(void *layout, void *row) {
             }
         }
     }
-    int ret = ((int (*)(void *, void *))((const unsigned *)DEFAULT_LAYOUT_VTABLE)[2])(layout, row);
+    int ret =
+        ((int (*)(void *, widget_t *))((const unsigned *)DEFAULT_LAYOUT_VTABLE)[2])(layout, row);
     if (tall && text && widget_get_visible(text)) { /* stock's choice box keeps stock's places */
         widget_t *art = 0;
         for (unsigned i = 0; i < count && widget_get_child(row, i) != text; ++i) {
@@ -6881,7 +6882,7 @@ int ipod_list_layout(void *layout, widget_t *view) {
         grid = b && !tk_strcmp(widget_get_type(b), "button") && tile_in(b, list);
     }
     if (grid) I(list, ROW_HEIGHT) = 0; /* this layout only: settings_list reads it */
-    int ret = ((int (*)(void *, void *))LIST_VIEW_LAYOUT)(layout, view);
+    int ret = ((int (*)(void *, widget_t *))LIST_VIEW_LAYOUT)(layout, view);
     if (grid) I(list, ROW_HEIGHT) = forced;
     /* Stock neither places nor sizes a hidden row (no keep_invisible): mapped at 0x0 its button
      * would stay empty once shown (Display's Accent), so it is mapped after its first layout. */
@@ -8995,7 +8996,7 @@ int ringnav_wm_paint(widget_t *wm) {
     if (wm && !g_backlight_status && !window_manager_is_animating(wm)) return 0; /* RET_OK */
     int away = addon_game_front();
     void *vt = wm && !away ? P(wm, 0x94) : (void *)0;
-    int (*paint)(void *) = vt ? (int (*)(void *))P(vt, 0xc) : (int (*)(void *))0;
+    int (*paint)(widget_t *) = vt ? (int (*)(widget_t *))P(vt, 0xc) : (int (*)(widget_t *))0;
     return paint ? paint(wm) : away ? 0 : 0x10; /* RET_BAD_PARAMS, as stock */
 }
 

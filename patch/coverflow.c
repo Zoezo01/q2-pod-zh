@@ -2653,7 +2653,7 @@ static struct {
         short offset;
     } row[GAP_FRAMES];
 } gaps __attribute__((section(".scratch")));
-static void gap_note(void *w, unsigned t0, unsigned t1, unsigned t2) {
+static void gap_note(widget_t *w, unsigned t0, unsigned t1, unsigned t2) {
     unsigned i = gaps.n++ % GAP_FRAMES;
     gaps.row[i].gap = (unsigned short)(t0 - gaps.last);
     gaps.row[i].decode = (unsigned short)(t1 - t0);

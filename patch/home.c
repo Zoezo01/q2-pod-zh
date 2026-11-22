@@ -144,7 +144,7 @@ void library_apps_show(widget_t *row, int on) {
  * among them. */
 void library_rows(widget_t *list) {
     ringnav_localmusic(list, (void *)0);
-    ((int (*)(void *, void *))LOCALMUSIC_BG)(list, (void *)0);
+    ((int (*)(void *, event_t *))LOCALMUSIC_BG)(list, (void *)0);
     widget_off_by_ctx(list, list);
 }
 
@@ -231,7 +231,7 @@ int ringnav_stream(widget_t *win, void *ctx) {
  * again: its play gif's timer and its handlers. */
 void stream_rows(widget_t *list) {
     ringnav_stream(list, (void *)0);
-    ((int (*)(void *, void *))STREAM_BG)(list, (void *)0);
+    ((int (*)(void *, event_t *))STREAM_BG)(list, (void *)0);
     widget_off_by_ctx(list, list);
     library_look(widget_lookup(list, "scroll_view_streamsset", 1));
 }
