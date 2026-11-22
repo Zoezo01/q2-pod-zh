@@ -307,7 +307,7 @@ The payload's own text paths draw with `canvas_draw_text` or `canvas_draw_text_i
 - `draw_spaced` (Minimal's small capitals: Home's labels, Now Playing's album) draws it whole, in visual order, clipped where its letters would have been cut off: joined letters can't be tracked apart, and Arabic has no capitals.
 - Lyrics (`lyrics_paint`): a right-to-left row is drawn in visual order against the right edge, lit from the right as it is sung. Rows still wrap at the logical string's isolated-form advances, which are mostly wider than the joined ones, and the row's clip cuts one that ends up wider; the lit share is the logical advances', put on the shaped width.
 
-Limits: harakat (Arabic's vowel marks) take no mark positioning, so they sit near but not exactly over their letter.
+Limits: harakat (Arabic's vowel marks) take no mark positioning, so they sit near but not exactly over their letter; Hebrew is in the ranges but the pack's font has none yet.
 
 ## English
 
