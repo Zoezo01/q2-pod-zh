@@ -1241,19 +1241,19 @@ def test_holding_the_heart_opens_the_picker_on_its_rating(fw, ui, song, mcl):
     ui.handler(heart.heart, EVT_POINTER_DOWN)()
     assert [ms for _, ms in ui.pending('rate_long')] == [RATE_HOLD_MS]
     ui.fire('rate_long')
-    assert heart.picker() == ('3 of 5', hearts(3)) and heart.panel() not in ui.dull
+    assert heart.picker() == ('3 / 5', hearts(3)) and heart.panel() not in ui.dull
     # the press is aborted, so the slide_view under the heart lets go of it
     (_, (_, kind, target, *_)), = fw.calls('pointer_event_init')
     assert kind == EVT_POINTER_ABORT and target == heart.win
     assert [c[1][0] for c in fw.calls('widget_dispatch_event_to_target_recursive')] == [heart.win]
     ui.handler(heart.heart, EVT_CLICK)()  # the hold's own release: stock's toggle never runs
-    assert heart.picker() == ('3 of 5', hearts(3))
+    assert heart.picker() == ('3 / 5', hearts(3))
 
 
 def test_a_my_fav_opens_the_picker_on_five(fw, ui, song, mcl):
     heart = Heart(fw, ui, song, mcl, kept=2, fav=True)
     heart.hold()
-    assert heart.picker() == ('5 of 5', hearts(5))
+    assert heart.picker() == ('5 / 5', hearts(5))
 
 
 def test_a_short_press_opens_nothing(fw, ui, song, mcl):
@@ -1270,7 +1270,7 @@ def test_the_wheel_moves_the_rating_and_return_leaves_it(fw, ui, song, mcl):
     for key in (KEY_NEXT, KEY_NEXT, KEY_NEXT, *[KEY_PREV] * 6):
         assert heart.key(key) == 1
         seen.append(heart.picker()[0])
-    assert seen == ['4 of 5', '5 of 5', '5 of 5', '4 of 5', '3 of 5', '2 of 5', '1 of 5', 'Unrated', 'Unrated']
+    assert seen == ['4 / 5', '5 / 5', '5 / 5', '4 / 5', '3 / 5', '2 / 5', '1 / 5', 'Unrated', 'Unrated']
     assert heart.picker()[1] == hearts(0)
     assert heart.key(KEY_RETURN) == 1 and heart.picker() is None and heart.panel() in ui.dull
     assert heart.kept() == 3 and not heart.copy_due() and heart.badge() == '3'
@@ -1291,7 +1291,7 @@ def test_the_picker_leaves_other_keys_and_windows_alone(fw, ui, song, mcl):
     assert heart.key(KEY_NEXT) == 0  # no picker
     heart.hold()
     assert heart.key(KEY_PLAY) == 0 and heart.key(KEY_NEXT, top=0x1234) == 0
-    assert heart.picker() == ('3 of 5', hearts(3))
+    assert heart.picker() == ('3 / 5', hearts(3))
 
 
 def test_a_tap_on_a_heart_keeps_that_many(fw, ui, song, mcl):
@@ -1310,9 +1310,9 @@ def test_the_release_of_the_hold_that_opened_the_picker_picks_nothing(fw, ui, so
     heart.hold()
     hearts_ = ui.kids[heart.panel()][1:]
     assert ui.handler(hearts_[4], EVT_CLICK)() == STOP  # no press came down on it
-    assert heart.kept() == 1 and heart.picker() == ('1 of 5', hearts(1))
+    assert heart.kept() == 1 and heart.picker() == ('1 / 5', hearts(1))
     clock[0] += 399  # the same finger settling
-    assert heart.tap(hearts_[4]) == STOP and heart.kept() == 1 and heart.picker() == ('1 of 5', hearts(1))
+    assert heart.tap(hearts_[4]) == STOP and heart.kept() == 1 and heart.picker() == ('1 / 5', hearts(1))
     clock[0] += 1
     assert heart.tap(hearts_[3]) == STOP and heart.kept() == 4 and heart.picker() is None
     heart.hold()
@@ -1334,7 +1334,7 @@ def test_the_picker_is_made_once_per_window(fw, ui, song, mcl):
     heart.key(KEY_RETURN)
     made = len(ui.kids[heart.win])
     heart.hold()
-    assert len(ui.kids[heart.win]) == made and heart.picker() == ('1 of 5', hearts(1))
+    assert len(ui.kids[heart.win]) == made and heart.picker() == ('1 / 5', hearts(1))
 
 
 def test_classic_s_picker_counts_hearts_and_a_tap_outside_leaves_it(fw, ui, song, mcl):
@@ -1343,10 +1343,10 @@ def test_classic_s_picker_counts_hearts_and_a_tap_outside_leaves_it(fw, ui, song
     heart.hold()
     caption, images = heart.picker()
     on, off = images[0], images[1]  # Classic's own lit and unlit heart
-    assert caption == '1 Heart' and images == hearts(1, on, off) and on != off
+    assert caption == '1 颗心' and images == hearts(1, on, off) and on != off
     assert not {on, off} & {'play_fav', 'play_unfav'}  # not Now Playing's
     heart.key(KEY_NEXT)
-    assert heart.picker() == ('2 Hearts', hearts(2, on, off))
+    assert heart.picker() == ('2 颗心', hearts(2, on, off))
     out = ui.lookup(heart.win, 'rate_out', 0)
     assert out not in ui.hidden and out not in ui.dull  # a tap outside the panel reaches it
     assert ui.handler(out, EVT_CLICK)() == STOP and heart.picker() is not None  # the opening hold's release
