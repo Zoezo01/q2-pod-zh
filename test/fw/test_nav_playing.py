@@ -165,7 +165,7 @@ class Ui:
         m('time_now_ms', lambda *_: self.now)
         m('fw___xstat', lambda *_: -1)  # no Rockbox on the card
         m('hscroll_label_create', lambda parent, x, y, w, h, *_: self.widget(parent, '', x, y, w, h))
-        m('image_create', lambda parent, x, y, w, h, *_: self.widget(parent, '', x, y, w, h))
+        m('image_create', lambda parent, x, y, w, h, *_: self.widget(parent, '', C.c_int(x).value, C.c_int(y).value, w, h))
         m('widget_factory_create_widget', lambda f, kind, parent, *_: self.widget(parent, ''))
 
     def cstr(self, value):
@@ -403,6 +403,38 @@ def test_status_bar_shows_a_card_app_s_icon_left_of_wifi(fw, st, ui):
     a.baricon = b''  # its status file says bar=0
     bar.sync()
     assert ui.lookup(bar.row, 'img_addon', 0) == icon and ui.shown[icon] == 0  # made once, hidden
+
+
+def card_app_icon(fw, w=16):
+    """addon.c's table: an app running whose status file names a w px bar icon."""
+    from test_addon import ap
+    a = ap(fw).a[0]
+    ap(fw).n, a.present, a.launched = 1, 1, 1
+    a.name, a.baricon, a.barw = b'Tunnel', b'file:///mnt/mmc/.vpn/bar.png', w
+
+
+def card_app_shown(ui, bar):
+    icon = ui.lookup(bar.row, 'img_addon', 0)
+    return bool(icon) and ui.shown.get(icon, 1) == 1
+
+
+# The app's icon never runs into the clock (BATT_ROOM): Classic's group with Wi-Fi 18, Bluetooth 14, the play state 22
+# and its 29 px battery reaches 83 in Icon, 91 in Percent (37 px of digits), each before the icon's own width + 4.
+@pytest.mark.parametrize('mode, bt, playing, shown, kept', [
+    (0, 1, 2, False, 0),  # Icon, everything showing: 103, hidden
+    (0, 0, 2, True, 0),  # Icon without Bluetooth: 89, shown
+    (1, 0, 2, True, 0),  # Percent without Bluetooth: 97 with the digits, 89 as the icon: the number goes, the icon shows
+    (1, 1, 2, False, 1)])  # Percent, everything: 91 alone, 103 even as the icon: the number stays, the icon hides
+def test_a_card_app_s_bar_icon_shows_only_where_the_row_has_room(fw, st, ui, mode, bt, playing, shown, kept):
+    theme(fw, st, CLASSIC, BATTERY=mode)
+    bar = Bar(fw, ui)
+    crowded(fw, ui, bar)
+    ui.shown[bar.bt] = bt
+    fw.mock('mclGetPlayStatus', lambda *_: playing)
+    st.pct_digit, st.pct_sign = 8, 13
+    card_app_icon(fw)
+    bar.sync()
+    assert card_app_shown(ui, bar) == shown and st.batt_mode == kept
 
 
 def slot_width(ui, bar):

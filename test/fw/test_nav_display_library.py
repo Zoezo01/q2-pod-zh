@@ -789,7 +789,7 @@ def test_system_settings_adds_its_rows_and_hides_five(fw):
 
 
 class Network:
-    """Settings → Network: stock's rows (DLNA, AirPlay, Wi-Fi File Transfer) and what ringnav_netservice adds."""
+    """System settings → Network: stock's rows (DLNA, AirPlay, Wi-Fi File Transfer) and what ringnav_netservice adds."""
     def __init__(self, fw, ui):
         self.win = ui.window('netservice_page')
         self.view = ui.add('scroll_view', self.win, name='scroll_view_netservice')

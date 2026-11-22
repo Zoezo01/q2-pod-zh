@@ -2877,7 +2877,7 @@ void *list_row(void *view, const char *icon, int (*click)(void *, void *), void 
 }
 
 /* A settings row that opens a page, its label clear of the chevron. */
-void *list_row_into(void *view, const char *icon, int (*click)(void *, void *), void *ctx) {
+static void *list_row_into(void *view, const char *icon, int (*click)(void *, void *), void *ctx) {
     return list_row_core(view, icon, click, ctx, 220, 1); /* laid out, to 10 px before its ink */
 }
 
@@ -3746,42 +3746,6 @@ unsigned bar_battery_key(void) {
                ? battery_now(bar_theme()->painter[PAINT_BATTERY] == BATT_CLASSIC_LIGHT)
                : 0;
 }
-/* A card app's icon in the status bar (addon.c addon_bar_icon: a VPN while connected), in the
- * icons' row left of Wi-Fi, made the first time one is asked for. Returns the width it takes, 0
- * while hidden. */
-static void *bar_addon __attribute__((section(".scratch")));
-static int bar_addon_sync(void) {
-    const char *icon = addon_bar_icon();
-    if (!bar_addon) {
-        if (!icon) return 0;
-        bar_addon = image_create(P(st.bar_wifi, W_PARENT), 0, I(st.bar_wifi, W_Y),
-                                 addon_bar_width(), I(st.bar_wifi, W_H));
-        if (!bar_addon) return 0;
-        widget_set_name(bar_addon, "img_addon");
-        image_set_draw_type(bar_addon, IMAGE_DRAW_CENTER);
-        widget_restack(bar_addon, widget_index_of(st.bar_wifi));
-    }
-    int on = icon != 0, changed = 0;
-    if (on && tk_strcmp(widget_get_prop_str(bar_addon, "image", ""), icon)) {
-        image_base_set_image(bar_addon, icon);
-        changed = 1;
-    }
-    int w = on ? addon_bar_width() : I(bar_addon, W_W); /* its own width: Wi-Fi's is 14 px */
-    if (I(bar_addon, W_Y) != I(st.bar_wifi, W_Y) ||
-        I(bar_addon, W_W) != w) { /* as the look moves Wi-Fi's */
-        widget_move_resize(bar_addon, I(bar_addon, W_X), I(st.bar_wifi, W_Y), w, I(bar_addon, W_H));
-        widget_layout_children(P(bar_addon, W_PARENT));
-    }
-    if (on != !!widget_get_visible(bar_addon)) {
-        widget_set_visible(bar_addon, on, 0);
-        widget_layout_children(P(bar_addon, W_PARENT));
-        changed = 1;
-    }
-    /* set mid-paint: this frame may not draw it (bar_state_sync's reason), so the bar again */
-    if (changed && !st.bar_timer) st.bar_timer = timer_add(bar_repaint, (void *)0, 0);
-    return on ? I(bar_addon, W_W) : 0;
-}
-
 static void bar_sync(void *bar) {
     if (bar_state_sync(bar) && !st.bar_timer) st.bar_timer = timer_add(bar_repaint, (void *)0, 0);
     if (!st.bar_bt || !st.bar_wifi || !st.bar_pct || !st.bar_slot || !st.bar_icon) return;
@@ -3812,34 +3776,36 @@ static void bar_sync(void *bar) {
     if (I(st.bar_wifi, W_Y) != B->bar_wifi_dy)
         widget_move_resize(st.bar_wifi, I(st.bar_wifi, W_X), B->bar_wifi_dy, I(st.bar_wifi, W_W),
                            I(st.bar_wifi, W_H));
-    int app_w = bar_addon_sync();
     int classic_row = T->painter[PAINT_BATTERY] == BATT_CLASSIC_LIGHT, /* the row's layout */
         classic_light = B->painter[PAINT_BATTERY] == BATT_CLASSIC_LIGHT,
         body =
             classic_light ? bar_geom_val(V_BATT_W) + 1 : BATT_BODY_W, /* its soft edge's column */
         inside = classic_light ? body : BATT_INSIDE_W;
-    int mode = st.battery;
-    if (mode) {
-        /* the widest the face in use draws it: Classic's 100% is 37 px, which fits beside
-         * Bluetooth, Wi-Fi and the play state where BATT_PCT_W, the stand-in, did not */
-        int pct = pct_width(100);
-        int reach = mode == 1   ? pct
-                    : mode == 3 ? inside + BATT_NUB_W
-                                : body + BATT_NUB_W + BATT_GAP + pct;
-        if (widget_get_visible(st.bar_wifi)) reach += I(st.bar_wifi, W_W) + STATUS_GAP;
-        if (app_w) reach += app_w + STATUS_GAP;
-        if (shown)
-            reach +=
-                STATUS_GAP +
-                (st.codec && st.codec_step < CODEC_STEPS ? codec_reach[st.codec - 1] : BT_REACH);
-        /* Classic: the play state shares the group */
-        if (classic_row && st.bar_state && widget_get_visible(st.bar_state))
-            reach += I(st.bar_state, W_W) + STATUS_GAP;
-        /* Classic's Percent Inside is the icon's own width: the icon would win no room, and
-         * Icon + Percent with none becomes it, which keeps the number */
-        if (reach > BATT_ROOM && !(classic_light && mode == 3))
-            mode = classic_light && mode == 2 ? 3 : 0;
+    /* the widest the face in use draws it: Classic's 100% is 37 px, which fits beside Bluetooth,
+     * Wi-Fi and the play state where BATT_PCT_W, the stand-in, did not */
+    int full = pct_width(100), mode = st.battery, others = 0;
+    if (widget_get_visible(st.bar_wifi)) others += I(st.bar_wifi, W_W) + STATUS_GAP;
+    if (shown)
+        others += STATUS_GAP +
+                  (st.codec && st.codec_step < CODEC_STEPS ? codec_reach[st.codec - 1] : BT_REACH);
+    /* Classic: the play state shares the group */
+    if (classic_row && st.bar_state && widget_get_visible(st.bar_state))
+        others += I(st.bar_state, W_W) + STATUS_GAP;
+    /* the group's reach in each mode (Icon, Percent, Icon + Percent, Percent Inside), and what a
+     * card app's icon adds (addon_bar.c) */
+    const int reach[4] = { others + body + BATT_NUB_W, others + full,
+                           others + body + BATT_NUB_W + BATT_GAP + full,
+                           others + inside + BATT_NUB_W };
+    int app = addon_bar_width() ? addon_bar_width() + STATUS_GAP : 0;
+    /* Past the room a number mode drops to the icon, or to Percent Inside from Classic's Icon +
+     * Percent; Classic's Percent Inside is the icon's own width: the icon would win no room. For
+     * the app's icon it drops only when the icon then fits; where it wouldn't, the number stays and
+     * the app's icon hides, as it does in every mode it would push into the clock. */
+    if (mode && !(classic_light && mode == 3) && reach[mode] + app > BATT_ROOM) {
+        int fall = classic_light && mode == 2 ? 3 : 0;
+        if (reach[mode] > BATT_ROOM || reach[fall] + app <= BATT_ROOM) mode = fall;
     }
+    bar_addon_sync(app && reach[mode] + app <= BATT_ROOM);
     widget_set_visible(st.bar_icon, 0, 0);
     widget_set_visible(st.bar_pct, 0, 0);
     widget_set_visible(st.bar_slot, 1, 0);
@@ -5858,8 +5824,10 @@ int ringnav_image_add(void *manager, const char *name, void *bitmap) {
      * light disc under a dark glyph, as the active ones stand out in the accent. Premultiplied
      * pixels (bitmap_t flags @0xc) flip their straight colour. The lock screen's hint lies on a
      * picture or a dark page in a theme's own light half, so it keeps its white there; so does
-     * Gain's switch, whose thumb stays white as the other switches' do. */
-    unsigned char *ink = paper && !mapped && format < 4 && s && !*s &&
+     * Gain's switch, whose thumb stays white as the other switches' do. A card app's status bar
+     * icon (a file:// name, addon_is_bar_icon) flips as the bar's own glyphs do. */
+    unsigned char *ink = paper && !mapped && format < 4 &&
+                                 ((s && !*s) || addon_is_bar_icon(name)) &&
                                  tk_strcmp(name, "switch_off") &&
                                  (T->light == T->schemes ||
                                   (tk_strcmp(name, "scrsaver_slide") &&

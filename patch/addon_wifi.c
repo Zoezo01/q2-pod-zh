@@ -1,9 +1,10 @@
 /* Card apps that follow the Wi-Fi link (q2app wifi=1, addon.c; docs/internals.md#card-apps): such
  * an app, a VPN for one, starts when the link comes up and stops once the link has been gone
- * ADDON_WIFI_DOWN_MS, so a short drop (a DHCP renew, a roam) leaves it running. Between the two it
- * is never idle-stopped, and it doesn't hold the radio up for Smart Wi-Fi (addon_running), so Smart
- * Wi-Fi's radio off stops it too, and its wake starts it again. A user's Stop, or an app that ended
- * by itself, holds it off until the next link (addon.c wifi_off). Polled once per addon_poll pass.
+ * ADDON_WIFI_DOWN_MS, so a short drop (a DHCP renew, a roam) leaves it running. It doesn't hold the
+ * radio up for Smart Wi-Fi (addon_running), so Smart Wi-Fi's radio off stops it too, and its wake
+ * starts it again. A user's Stop, or an app that ended by itself, holds it off until Wi-Fi is back
+ * after being gone ADDON_WIFI_DOWN_MS or more (addon.c wifi_off), so an app should not end its own
+ * loop on a network blip. Polled once per addon_poll pass.
  *
  * up: the link at the last poll; down_at: when it went (0 while up, or before any link); stopped:
  * this drop's stop is done; read: this link's scan is done; looked_at: when it last asked whether
@@ -11,10 +12,11 @@
  * to Streaming; at boot Wi-Fi can connect half a minute before the card mounts, so the scan waits
  * for the card, asking once a second. ponytail: a link that flaps slower than every
  * ADDON_WIFI_DOWN_MS restarts the apps each time; a longer hold would trade that for a slower stop.
- * ponytail: the connect status follows Wi-Fi's switch and its signal poll, not the association: an
- * app can start a few seconds before the Q2 joins a network, and runs on while Wi-Fi is on with no
- * network in reach; wpa_state COMPLETED (stock's network_checkstatus) would tie it to the
- * association. */
+ * "Up" is the network monitor's connect status (networkGetConnectStatus, +0xd8 of its struct):
+ * non-zero while Wi-Fi has an address (networkGetWifiSignal stores 0 when the interface's address
+ * is 0.0.0.0, else 1-3 by RSSI), 0 after networkStop or networkDisconnect. ponytail: whether the
+ * address is cleared when the access point goes out of range is a device question; if it isn't, the
+ * app runs on until Wi-Fi is turned off. */
 #include "offsets.inc"
 #include "peq.h"
 #include "stock.h"
@@ -27,12 +29,14 @@ static struct {
 } aw __attribute__((section(".scratch")));
 
 void addon_wifi_poll(void) {
-    /* stock's connect status: set by the signal poll while Wi-Fi is on (the status bar's bars,
-     * get_wifisignal, also need it), 0 once Wi-Fi is off or the link drops */
+    /* the network monitor's connect status: non-zero while Wi-Fi has an address, 0 after
+     * networkStop or networkDisconnect */
     int up = networkGetConnectStatus() > 0;
     unsigned now = time_now_ms();
     if (up) {
-        if (!aw.up) { /* a new link: the card read again, the user's stops forgotten */
+        /* a new link (the first after boot, or after a drop that stopped the apps): the card read
+         * again, the user's stops forgotten; a blip under ADDON_WIFI_DOWN_MS is the same link */
+        if (!aw.up && (aw.stopped || !aw.down_at)) {
             aw.read = aw.looked_at = 0;
             addon_wifi_release();
         }
@@ -45,7 +49,7 @@ void addon_wifi_poll(void) {
         }
         aw.up = 1;
         aw.down_at = 0;
-        if (addon_wifi_apps()) addon_wifi_start();
+        addon_wifi_start();
         return;
     }
     if (aw.up) {

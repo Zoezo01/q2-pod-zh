@@ -582,10 +582,11 @@ int upload_scrobbles(void *ctx, void *event);
 /* volume.c */
 void vol_paint(void *top, void *canvas);
 
-/* netservice.c: Settings → Network's card app rows; list_row_into is navigation.c's settings row
- * with a chevron */
+/* netservice.c: System settings → Network's card app rows */
 int ringnav_netservice(void *win, void *ctx);
-void *list_row_into(void *view, const char *icon, int (*click)(void *, void *), void *ctx);
+
+/* addon_bar.c: a card app's status bar icon, shown while room (bar_sync) */
+void bar_addon_sync(int room);
 
 /* smart_wifi.c */
 void smart_wake(void); /* Smart Wi-Fi's radio back now, if it had it off */

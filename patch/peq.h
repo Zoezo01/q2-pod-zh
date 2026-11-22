@@ -501,21 +501,22 @@ int addon_libs(void), addon_lib_open(void *ctx, void *event);
 const char *addon_lib_name(int k);
 int addon_apps(void *ctx, void *event), addon_apps_sync(void *win, void *event);
 void library_apps_show(void *row, int on); /* home.c: the Library's Apps row */
-/* addon.c: Settings → Network's rows for apps whose q2app says row=network, as the Library's above:
- * addon_network (how many, a scan), addon_network_name, addon_network_icon, addon_network_open
- * (ctx: its place by name). */
+/* addon.c: System settings → Network's rows for apps whose q2app says row=network, as the Library's
+ * above: addon_network (how many, a scan), addon_network_name, addon_network_icon,
+ * addon_network_open (ctx: its place by name). */
 int addon_network(void), addon_network_open(void *ctx, void *event);
 const char *addon_network_name(int k), *addon_network_icon(int k);
-/* addon.c: the wifi=1 apps, for addon_wifi.c's link follower: how many, each started (but those the
- * user stopped since the last link), each stopped, and the user's stops forgotten. */
-int addon_wifi_apps(void);
+/* addon.c: the wifi=1 apps, for addon_wifi.c's link follower: each started (but those the user
+ * stopped), each stopped, and the user's stops forgotten. */
 void addon_wifi_start(void), addon_wifi_stop(void), addon_wifi_release(void);
 void addon_wifi_poll(void); /* addon_wifi.c: once per addon_poll pass */
-/* addon.c: a running app's bar.png for the status bar while its status file says bar=1, or 0 */
+/* addon.c: a running app's status bar icon, the one its status file's bar= names (bar.png for 1,
+ * bar-<word>.png for a word; white, which Light Mode turns to the bar's ink), or 0 */
 const char *addon_bar_icon(void);
 int addon_bar_width(void);       /* addon.c: that icon's width, 0 for none */
 int card_path(const char *path); /* on the card, no ".." segment: what an app or server may name */
-int addon_is_icon(const char *name); /* a card app's Streaming icon, by its file:// name */
+int addon_is_icon(const char *name);     /* a card app's Streaming icon, by its file:// name */
+int addon_is_bar_icon(const char *name); /* and its status bar icon */
 void addon_poll(void), addon_stop(void), addon_paint(void *w, void *canvas), addon_card_away(void);
 void addon_forget(const char *dir), addon_quit(const char *dir);
 /* addon.c's card games (q2app game=1, or any app whose row=games), Games' rows after its own: how

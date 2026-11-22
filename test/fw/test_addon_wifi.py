@@ -1,5 +1,6 @@
 """patch/addon_wifi.c: card apps whose q2app says wifi=1 start with the Wi-Fi link and stop once it has been
-gone ADDON_WIFI_DOWN_MS; a user's Stop holds until the next link."""
+gone ADDON_WIFI_DOWN_MS; a user's Stop holds until Wi-Fi is back after being gone
+ADDON_WIFI_DOWN_MS or more."""
 import ctypes as C
 
 from test_addon import MOUNTED, App, ap, card, scan
@@ -91,6 +92,7 @@ def test_while_the_card_is_out_the_mounts_are_read_once_a_second_then_not_at_all
         link.poll(1, 1000)
     assert opened.count(b'/proc/mounts') == 3 and link.starts() == 1
 
+
 def test_a_short_drop_keeps_the_app(fw):
     world, link = vpn_app(fw)
     link.poll(1)
@@ -118,7 +120,7 @@ def test_a_long_drop_stops_once(fw):
     assert link.starts() == 2
 
 
-def test_a_user_stop_holds_until_the_next_link(fw):
+def test_a_user_stop_holds_until_wifi_is_back_after_a_long_drop(fw):
     world, link = vpn_app(fw)
     link.poll(1)
     running(world, link)
@@ -128,11 +130,25 @@ def test_a_user_stop_holds_until_the_next_link(fw):
         link.poll(1, 500)
     assert link.starts() == 1
     link.poll(0, 500)
-    link.poll(1, 500)
+    link.poll(1, 500)  # a blip: the same link, the Stop kept
+    assert link.starts() == 1
+    link.poll(0, 500)
+    link.poll(0, DOWN_MS)
+    link.poll(1, 500)  # back after 10 s gone
     assert link.starts() == 2
 
 
-def test_an_app_that_ended_itself_stays_off_until_the_next_link(fw):
+def test_a_blip_doesnt_scan_the_card_again(fw):
+    world, link = vpn_app(fw)
+    link.poll(1)
+    running(world, link)
+    del world.files[b'/mnt/mmc/.vpn/q2-vpn']  # a scan now would find it gone
+    link.poll(0, 100)
+    link.poll(1, 500)
+    assert vpn(fw).present == 1
+
+
+def test_an_app_that_ended_itself_stays_off_until_wifi_is_back_after_a_long_drop(fw):
     world, link = vpn_app(fw)
     link.poll(1)
     world.ms += 20000  # its start window over, no pid file: it ended (exit 0, or a sign-out)
@@ -142,8 +158,34 @@ def test_an_app_that_ended_itself_stays_off_until_the_next_link(fw):
         link.poll(1, 500)
     assert link.starts() == 1
     link.poll(0, 500)
+    link.poll(0, DOWN_MS)
     link.poll(1, 500)
     assert link.starts() == 2
+
+
+def test_an_app_gone_from_the_card_since_the_scan_isnt_started(fw):
+    # an App Store remove with the link up scans nothing: the follower checks the binary itself
+    world, link = vpn_app(fw)
+    link.poll(1)
+    running(world, link)
+    link.poll(0, 100)
+    link.poll(0, DOWN_MS)
+    del world.files[b'/tmp/q2-vpn'], world.files[b'/mnt/mmc/.vpn/q2-vpn']
+    world.files[b'/proc/mounts'] = b''  # the next link's scan can't run yet: present is the old scan's
+    link.poll(1, 500)
+    assert link.starts() == 1 and vpn(fw).present == 0
+
+
+def test_a_long_drop_during_usb_storage_stops_the_app_waiting_to_start_again(fw):
+    world, link = vpn_app(fw)
+    link.poll(1)
+    running(world, link)
+    fw.mock('sleep_ms', lambda *_: world.files.pop(b'/tmp/q2-vpn', None))
+    fw.fn('addon_card_away', None)()
+    assert vpn(fw).relaunch == 1
+    link.poll(0, 100)
+    link.poll(0, DOWN_MS)  # gone 10 s with the card away: no relaunch once it is back
+    assert vpn(fw).relaunch == 0
 
 
 def test_card_away_and_back_launches_once(fw):

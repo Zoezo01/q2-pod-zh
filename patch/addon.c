@@ -116,7 +116,7 @@
  * last scan; relaunch: stopped for USB storage, to start again; restart: stopped by Retry (its
  * socket gone), to start again once its loop is gone. */
 typedef struct {
-    char id[APP_ID], name[32], tips[32], bin[48], run[48], pid[32], state[40], browse[48], icon[56];
+    char id[APP_ID], name[32], tips[32], bin[48], run[48], pid[32], state[40], browse[48], icon[64];
     char more[48]; /* q2app's more: an op, a space and a title (addon_more) */
     int qr, game, audio, view, hidden, present, launched, hold, relaunch, restart;
     int nostop;   /* q2app's stop=0: no Stop row on its page */
@@ -124,7 +124,7 @@ typedef struct {
     int row;      /* where its row is: a ROW_ */
     int wifi;     /* q2app's wifi=1: started with the Wi-Fi link, stopped once it is gone */
     int wifi_off; /* a wifi app the user stopped (or that ended itself): not started again until
-                   * the next link (addon_wifi_release) */
+                   * Wi-Fi is back after being gone 10 s or more (addon_wifi_release) */
     unsigned polled, launch_at, restart_at, play; /* play: its .play as read last, hashed */
     /* its status file's bar= (bar_read): the word as read last, and file:// of the icon it names
      * (bar.png for 1, bar-<word>.png else) if one fits BAR_ICON_W x BAR_ICON_H; else "" */
@@ -138,7 +138,7 @@ static struct {
     int n, shown, order[APPS_MAX]; /* order: Streaming's rows, the slots on the card by name */
     int games, game[APPS_MAX];     /* Games' rows, by name too */
     int libs, lib[APPS_MAX];       /* and the Library's */
-    int nets, net[APPS_MAX];       /* and Settings → Network's (row=network) */
+    int nets, net[APPS_MAX];       /* and System settings → Network's (row=network) */
 } ap __attribute__((section(".scratch")));
 
 /* An id goes into shell commands: lowercase letters, digits and '-' only. */
@@ -273,8 +273,8 @@ const char *addon_slot_id(int i) {
 /* Library's Apps rows (addon_apps): how many, the card read again, then one's name. */
 int addon_libs(void) { return addon_scan(), ap.libs; }
 const char *addon_lib_name(int k) { return k >= 0 && k < ap.libs ? ap.a[ap.lib[k]].name : 0; }
-/* Settings → Network's card rows (navigation.c ringnav_netservice, row=network): how many, the card
- * read again, then one's name and icon. */
+/* System settings → Network's card rows (netservice.c ringnav_netservice, row=network): how many,
+ * the card read again, then one's name and icon. */
 int addon_network(void) { return addon_scan(), ap.nets; }
 const char *addon_network_name(int k) { return k >= 0 && k < ap.nets ? ap.a[ap.net[k]].name : 0; }
 const char *addon_network_icon(int k) { return k >= 0 && k < ap.nets ? ap.a[ap.net[k]].icon : 0; }
@@ -290,6 +290,15 @@ int addon_is_icon(const char *name) {
         if (n > k && !strcmp(name + n - k, ends[i])) return 1;
     }
     return 0;
+}
+
+/* Whether an image's name is a card app's status bar icon, file:///mnt/mmc/.<id>/bar*.png
+ * (bar_read; navigation.c ringnav_image_add: Light Mode turns it to the bar's ink, as the bar's own
+ * glyphs). */
+int addon_is_bar_icon(const char *name) {
+    const char *f = name ? strrchr(name, '/') : (void *)0;
+    return f && tk_str_start_with(name, "file://" CARD "/.") && tk_str_start_with(f, "/bar") &&
+           tk_str_end_with(f, ".png");
 }
 
 /* A pid file whose loop is gone (crashed, or killed) is removed, so no wait spends its limit on it.
@@ -915,7 +924,7 @@ static void poll_one(app_t *a) {
     sleep_read(a);
     addon_eq_poll((int)(a - ap.a), a->id);
     if (access(a->pid, 0) && now - a->launch_at > ADDON_START_MS) {
-        if (a->launched) a->wifi_off = a->wifi; /* ended by itself: waits for the next link */
+        if (a->launched) a->wifi_off = a->wifi; /* ended by itself: held off (wifi_off) */
         a->launched = a->hold = 0;
     }
 }
@@ -1455,9 +1464,9 @@ void addon_stop(void) {
     if (nw.live) now_write(1, nw.sec, nw.total);
 }
 
-/* The wifi=1 apps (addon_wifi.c follows the link for them): how many are on the card (as the last
- * scan found them), each started that isn't running, held off or about to start again, each
- * running one stopped, and the user's stops forgotten for a new link. */
+/* The wifi=1 apps (addon_wifi.c follows the link for them): each on the card started that isn't
+ * running, held off or about to start again, each running one (or one waiting to start again after
+ * USB storage) stopped, and the user's stops forgotten for a new link. */
 /* An app's loop runs: its pid file names a process that is there (/proc/<pid>; demo imports no
  * kill()). A pid file alone may be a dead loop's, kept in /tmp across a restart of demo. */
 static int loop_alive(const app_t *a) {
@@ -1469,24 +1478,26 @@ static int loop_alive(const app_t *a) {
     tk_snprintf(proc, sizeof proc, "/proc/%d", pid);
     return pid > 0 && !access(proc, 0);
 }
-int addon_wifi_apps(void) {
-    int n = 0;
-    for (int i = 0; i < ap.n; ++i) n += ap.a[i].wifi && ap.a[i].present && !ap.a[i].hidden;
-    return n;
-}
 void addon_wifi_start(void) {
     for (int i = 0; i < ap.n; ++i) {
         app_t *a = &ap.a[i];
         /* its loop still running: a stop not yet done (run would exit at once, and the loop's end
          * then read as the app ending itself); started once it is gone */
         if (a->wifi && a->present && !a->hidden && !a->wifi_off && !a->launched && !a->relaunch &&
-            !a->restart && !loop_alive(a))
-            launch(a);
+            !a->restart && !loop_alive(a)) {
+            /* the card as it is now: an App Store remove, or a link before the card mounts, can
+             * leave present from an older scan */
+            if (access(a->bin, 0))
+                a->present = 0;
+            else
+                launch(a);
+        }
     }
 }
 void addon_wifi_stop(void) {
     for (int i = 0; i < ap.n; ++i)
-        if (ap.a[i].wifi && (ap.a[i].launched || ap.a[i].restart)) app_stop(&ap.a[i], 0);
+        if (ap.a[i].wifi && (ap.a[i].launched || ap.a[i].restart || ap.a[i].relaunch))
+            app_stop(&ap.a[i], 0);
 }
 void addon_wifi_release(void) {
     for (int i = 0; i < ap.n; ++i) ap.a[i].wifi_off = 0;

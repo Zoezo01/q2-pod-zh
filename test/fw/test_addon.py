@@ -37,7 +37,7 @@ LIBRARY = 0xf001  # stock's library class, which a local queue plays under
 
 class App(C.Structure):
     _fields_ = [('id', C.c_char * 16), ('name', C.c_char * 32), ('tips', C.c_char * 32), ('bin', C.c_char * 48), ('run', C.c_char * 48),
-                ('pid', C.c_char * 32), ('state', C.c_char * 40), ('browse', C.c_char * 48), ('icon', C.c_char * 56), ('more', C.c_char * 48),
+                ('pid', C.c_char * 32), ('state', C.c_char * 40), ('browse', C.c_char * 48), ('icon', C.c_char * 64), ('more', C.c_char * 48),
                 *((n, C.c_int) for n in ('qr', 'game', 'audio', 'view', 'hidden', 'present', 'launched', 'hold', 'relaunch', 'restart', 'nostop',
                                          'nowifi', 'row', 'wifi', 'wifi_off')),
                 *((n, C.c_uint) for n in ('polled', 'launch_at', 'restart_at', 'play')), ('baricon', C.c_char * 56),
@@ -435,7 +435,6 @@ def test_wifi_and_network_keys(fw):
     assert names(fw, 'addon_name') == [None, b'Foo', None]  # not on Streaming
     a = ap(fw).a[[ap(fw).a[i].id for i in range(2)].index(b'vpn')]
     assert (a.row, a.wifi, a.wifi_off) == (ROW_NETWORK, 1, 0)
-    assert fw.fn('addon_wifi_apps', C.c_int)() == 1
 
 
 @pytest.mark.parametrize('manifest', [b'name=N\nrow=setting\n', b'name=N\nrow=Settings\n'])
@@ -448,7 +447,7 @@ def test_unknown_row_still_streaming(fw, manifest):
 def test_only_wifi_1_follows_the_link(fw, manifest, wifi):
     card(fw, one=b'name=N\n' + manifest)
     scan(fw)
-    assert ap(fw).a[0].wifi == wifi and fw.fn('addon_wifi_apps', C.c_int)() == wifi
+    assert ap(fw).a[0].wifi == wifi
 
 
 def test_caps_has_wifi_and_network(fw):
@@ -2840,8 +2839,7 @@ def test_a_switch_row_draws_settings_switch_and_presses_as_an_action(fw):
 
 def test_a_switch_moves_when_a_refresh_changes_its_state_and_shows_no_text(fw):
     # a press, then the list again with the switch flipped: the same rows, written in place (relabel),
-    # must move the switch, never write "on"/"off" (or Working...) as the row's text. Found on a Q2:
-    # the switch stayed on, "off" under its title.
+    # must move the switch, never write "on"/"off" (or Working...) as the row's text.
     p = Page(fw)
     p.answer(msg=b'refresh', rows=[(b'switch', b'power', b'Tunnel', b'on', b'', b''), item(2, b'info')])
     texts = lambda: [C.string_at(a[1]) for _, a in fw.calls('widget_set_text_utf8')]
@@ -2852,6 +2850,25 @@ def test_a_switch_moves_when_a_refresh_changes_its_state_and_shows_no_text(fw):
     p.answer(msg=b'refresh', rows=[(b'switch', b'power', b'Tunnel', b'off', b'', b''), item(2, b'info')])
     assert images()[-1] == b'switch_off'
     assert not {b'on', b'off', 'Working…'.encode()} & set(texts())
+
+
+def test_a_classic_switch_row_reads_on_or_off_and_says_working_on_its_title(fw, settings_read):
+    # Classic (set_text): the switch is On or Off as the row's value (navigation.c value_row); Working… goes over
+    # the title, the state never written as text
+    boot(fw, settings_read, b'1')
+    rows = [(b'switch', b'power', b'Tunnel', b'on', b'', b''), (b'switch', b'auto', b'Start with Wi-Fi', b'off', b'', b'')]
+    p = Page(fw)
+    p.answer(msg=b'refresh', rows=rows)
+    texts = [C.string_at(a[1]) for _, a in fw.calls('widget_set_text_utf8')]
+    assert texts[-2:] == [b'Start with Wi-Fi', b'Off'] and b'On' in texts and not {b'on', b'off'} & set(texts)
+    assert fw.calls('image_base_set_image') == []  # no switch image
+    items, kids, written, _ = row_walk(p, rows)
+    p.click(0)
+    p.world.ms += 400
+    p.tick()
+    assert written == [(kids[items[0]][0], 'Working…'.encode())]
+    p.answer(msg=b'Tunnel off')
+    assert written[1:] == [(kids[items[0]][0], b'Tunnel')] and p.toasts == [b'Tunnel off']
 
 
 def test_an_action_refused_toasts_why(fw):
@@ -6900,6 +6917,14 @@ def test_a_theme_name_s_space_is_a_dash(fw, settings_read):
     card(fw, vpn=(b'name=Tunnel\nrow=network\n', ('icon.png', 'icon-classic-modern.png')))
     assert fw.fn('addon_network', C.c_int)() == 1
     assert fw.fn('addon_network_icon', C.c_char_p, C.c_int)(0) == b'file:///mnt/mmc/.vpn/icon-classic-modern.png'
+
+
+def test_a_15_letter_id_s_classic_modern_icon_keeps_its_whole_name(fw, settings_read):
+    # file:///mnt/mmc/.<id>/icon-40-classic-modern.png is 59 bytes for the longest id: cut short, the row names no file
+    boot(fw, settings_read, b'3')
+    card(fw, abcdefghijklmno=(b'name=Long\n', ('icon-40-classic-modern.png',)))
+    scan(fw)
+    assert ap(fw).a[0].icon == b'file:///mnt/mmc/.abcdefghijklmno/icon-40-classic-modern.png'
 
 
 def test_a_theme_icon_alone_is_taken_too(fw, settings_read):
