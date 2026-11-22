@@ -144,7 +144,7 @@ The [user guide][guide] covers every control, EQ, Cover Flow and more tips.
   </tr>
   <tr valign="top">
     <td><b><a href="https://github.com/group-a-study/q2-filebrowser">File Browser</a></b></td>
-    <td>Browse the card and upload files from a phone or computer on the same Wi-Fi.</td>
+    <td>Browse the card and upload files from a phone or computer on the same Wi-Fi, in <b>Library → Apps → File Browser</b>.</td>
     <td></td>
   </tr>
   <tr valign="top">
@@ -268,11 +268,6 @@ On the App Store's **Games** tab. Each plays in **Library → Games**.
   <tr valign="top">
     <td><b><a href="https://github.com/Carbon-66/Q2-Miami">Q2A Miami</a></b></td>
     <td>Drive, walk and take taxi fares across the real Miami, staying ahead of the police.</td>
-    <td></td>
-  </tr>
-  <tr valign="top">
-    <td><b><a href="https://github.com/Carbon-66/Q2-ChallengerDeep">Challenger Deep</a></b></td>
-    <td>Sail a pirate ship and survive the deep.</td>
     <td></td>
   </tr>
 </table>
