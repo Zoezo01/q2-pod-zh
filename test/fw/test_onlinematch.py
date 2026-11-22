@@ -32,7 +32,8 @@ class Body(C.Structure):
 
 
 class Al(C.Structure):
-    _fields_ = [('job', Job), ('tracks', C.c_void_p), ('thread', C.c_ulong), ('running', C.c_int), ('label', C.c_void_p)]
+    _fields_ = [('job', Job), ('tracks', C.c_void_p), ('thread', C.c_ulong), ('running', C.c_int), ('label', C.c_void_p),
+                ('curl', C.c_void_p)]
 
 
 def joined(fw, parts, n=256, lucene=0):
@@ -614,8 +615,8 @@ class Written:
 
 
 def search(fw, title=b'T', artist=b'A', cancel=None):
-    fn = fw.fn('onlinematch__lrclib_search', C.c_int, C.c_char_p, C.c_char_p, C.c_char_p, C.c_void_p)
-    return fn(title, artist, b'/a/1.lrc.part', cancel)
+    fn = fw.fn('onlinematch__lrclib_search', C.c_int, C.c_char_p, C.c_char_p, C.c_char_p, C.c_void_p, C.c_void_p)
+    return fn(title, artist, b'/a/1.lrc.part', cancel, None)  # no kept handle: one of its own
 
 
 def results(*lyrics):
@@ -691,8 +692,8 @@ def test_a_file_that_cant_open_or_close_is_a_card_error(fw):
 
 
 def lrclib(fw, title, artist=b'A'):
-    fn = fw.fn('onlinematch__lrclib', C.c_int, C.c_char_p, C.c_char_p, C.c_char_p, C.c_void_p)
-    return fn(title, artist, b'/a/1.lrc.part', None)
+    fn = fw.fn('onlinematch__lrclib', C.c_int, C.c_char_p, C.c_char_p, C.c_char_p, C.c_void_p, C.c_void_p)
+    return fn(title, artist, b'/a/1.lrc.part', None, None)
 
 
 def test_a_title_lrclib_lacks_is_asked_again_without_its_accents(fw):
@@ -1182,14 +1183,14 @@ def test_download_album_lyrics_from_the_more_page_to_the_card(fw, mcl, records, 
     net = lrclib_answers(fw, One='[00:01.00] one\n', Three='[00:01.00] Mix : X\n[00:02.00] three\n')
     job, more = Run(fw), More(fw)
     assert more.open() == 0x55  # stock's
-    assert more.texts[0] == 'AirPlay' and len(more.texts) == 2  # AirPlay's row first (airplay.c), then its title
-    assert more.restacked == [(C.addressof(more.item), 0), (C.addressof(more.item), 4)]  # under stock's third row
+    assert len(more.texts) == 1  # its title: AirPlay isn't on the card, so its row (airplay.c) isn't there
+    assert more.restacked == [(C.addressof(more.item), 3)]  # under stock's third row
     assert more.click() == 0 and job.timers[0][1] == 500
-    assert (job.al.job.done, job.al.job.total) == (0, 3) and more.texts[-1] != more.texts[1]  # its progress instead
+    assert (job.al.job.done, job.al.job.total) == (0, 3) and more.texts[-1] != more.texts[0]  # its progress instead
     assert len(fw.calls('fw_deque_destroy')) == 2  # the library's rows and the album's list, copied: both go
     assert job.tick() == 8 and fw.calls('reset_poweroptions_timer')[-1][1][:3] == (1, 1, 0)  # standby held off
     job.run()
-    assert job.tick() == 0 and more.texts[-1] == more.texts[1]  # its title again
+    assert job.tick() == 0 and more.texts[-1] == more.texts[0]  # its title again
     summed(fw, job, saved=2, none=1)
     assert titles(net) == ['One', 'Two', 'Three']  # its own songs in disc and track order, the CUE track left out
     assert {urllib.parse.parse_qs(urllib.parse.urlsplit(u).query)['artist_name'][0] for u in net.urls} == {'A'}
@@ -1200,6 +1201,57 @@ def test_download_album_lyrics_from_the_more_page_to_the_card(fw, mcl, records, 
     assert not job.al.thread and not job.al.tracks
 
 
+def test_a_jobs_searches_share_one_handle_each_setting_its_own_options(fw, mcl, records, more_rows):
+    """Download Album Lyrics' searches go on one libcurl handle, so its connection and TLS session go on to the next:
+    each sets its URL, write callback, buffer and cancel flag again, the worker cleans the handle up as the job
+    ends, and the next job (Two alone: the others have lyrics now) makes its own."""
+    greatest_hits(fw, mcl, records)
+    net = lrclib_answers(fw, One='[00:01.00] one\n', Three='[00:01.00] three\n')
+    job, more = Run(fw), More(fw)
+    more.open()
+    for jobs, asked in ((1, ['One', 'Two', 'Three']), (2, ['One', 'Two', 'Three', 'Two'])):
+        more.click()
+        job.run()
+        curl = [(n, a) for n, a in fw.calls() if n.startswith('fw_curl_easy_')]
+        names = [n for n, _ in curl]
+        performs = [k for k, n in enumerate(names) if n == 'fw_curl_easy_perform']
+        assert titles(net) == asked and len(performs) == len(asked) and names.count('fw_curl_easy_init') == jobs
+        for since, at in zip([0] + performs, performs):
+            assert {10002, 20011, 10001, 10057} <= {a[1] for n, a in curl[since:at] if n == 'fw_curl_easy_setopt'}
+        assert names[performs[-1] + 1:] == ['fw_curl_easy_cleanup'] and names.count('fw_curl_easy_cleanup') == jobs
+        assert not job.al.curl
+        job.tick()
+
+
+def test_a_cancel_between_searches_still_cleans_up_the_jobs_handle(fw, mcl, records, more_rows):
+    greatest_hits(fw, mcl, records)
+    job, more = Run(fw), More(fw)
+
+    def answer(url):
+        if titles_of(url) == 'Two':
+            job.al.job.cancel = 1  # a press while the second search runs
+        return b'[]'
+    net = Net(fw, {LRCLIB: (answer,)})
+    more.open()
+    more.click()
+    job.run()
+    names = [n for n, _ in fw.calls() if n.startswith('fw_curl_easy_')]
+    assert titles(net) == ['One', 'Two'] and names.count('fw_curl_easy_init') == 1
+    assert names[-1] == 'fw_curl_easy_cleanup' and names.count('fw_curl_easy_cleanup') == 1 and not job.al.curl
+    assert job.tick() == 0  # the page's timer says how it ended
+    summed(fw, job, LJ_CANCELLED, none=1)  # One's; Two's search ended in the cancel
+
+
+def test_with_airplay_on_the_card_its_row_is_first_and_album_lyrics_one_lower(fw, mcl, records, more_rows):
+    disk = greatest_hits(fw, mcl, records)
+    disk.files['/mnt/mmc/.airplay/q2-airplay'] = b'ELF'
+    Run(fw)
+    more = More(fw)
+    more.open()
+    assert more.texts[0] == 'AirPlay' and len(more.texts) == 2
+    assert more.restacked == [(C.addressof(more.item), 0), (C.addressof(more.item), 4)]  # still under stock's third row
+
+
 def test_a_press_while_it_runs_cancels_it(fw, mcl, records, more_rows):
     greatest_hits(fw, mcl, records)
     net = lrclib_answers(fw)
@@ -1208,7 +1260,7 @@ def test_a_press_while_it_runs_cancels_it(fw, mcl, records, more_rows):
     more.click()
     progress = more.texts[-1]
     more.click()
-    assert job.al.job.cancel == 1 and more.texts[-1] not in (more.texts[1], progress)  # it says it is cancelling
+    assert job.al.job.cancel == 1 and more.texts[-1] not in (more.texts[0], progress)  # it says it is cancelling
     job.run()
     assert job.tick() == 0 and not net.urls
     summed(fw, job, LJ_CANCELLED)
@@ -1237,7 +1289,7 @@ def test_a_second_job_counts_afresh(fw, mcl, records, more_rows):
     job.tick()
     more.click()
     j = job.al.job
-    assert (j.done, j.total, j.saved, j.none, j.had, j.failed) == (0, 3, 0, 0, 0, 0) and more.texts[-1] != more.texts[1]
+    assert (j.done, j.total, j.saved, j.none, j.had, j.failed) == (0, 3, 0, 0, 0, 0) and more.texts[-1] != more.texts[0]
     job.run()
     job.tick()
     assert (j.saved, j.none, j.had) == (0, 2, 1)  # One's lyrics, saved the first time, beside it now
@@ -1252,7 +1304,7 @@ def test_usb_storage_stops_the_job_quietly(fw, mcl, records, more_rows):
     more.click()
     fw.fn('album_lyrics_stop', None)()
     assert [c[1][0] for c in fw.calls('fw_pthread_join')] == [THREAD] and not net.urls  # cancelled before it asked
-    assert not job.al.thread and not job.al.tracks and more.texts[-1] == more.texts[1]  # its title again
+    assert not job.al.thread and not job.al.tracks and more.texts[-1] == more.texts[0]  # its title again
     assert job.tick() == 0 and job.toasts == []
 
 
@@ -1283,7 +1335,7 @@ def test_a_thread_that_wont_start_says_so(fw, mcl, records, more_rows):
     more.open()
     more.click()
     assert len(job.toasts) == 1 and fw.calls('fw_pthread_create') and not job.timers
-    assert (job.al.thread, job.al.tracks, job.al.running) == (0, None, 0) and len(more.texts) == 2  # still its title
+    assert (job.al.thread, job.al.tracks, job.al.running) == (0, None, 0) and len(more.texts) == 1  # still its title
 
 
 def test_only_the_albums_songs_files_on_the_card_are_fetched(fw, mcl, records, more_rows):
@@ -1335,5 +1387,5 @@ def test_the_row_only_for_a_playing_song_on_the_card_under_stocks_rows(fw, mcl, 
     assert more.open(win=case != 'no window') == 0x55
     if case in ('no window', 'no view', 'not stock rows'):
         assert not fw.calls('list_item_create') and not more.texts and not more.on
-    else:  # AirPlay's row alone (airplay.c), for any song
+    else:  # AirPlay's row alone (airplay.c), for any song, its app on the card
         assert len(fw.calls('list_item_create')) == 1 and more.texts == ['AirPlay']

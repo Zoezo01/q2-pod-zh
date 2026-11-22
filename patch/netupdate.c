@@ -436,23 +436,32 @@ static int progress(void *xfer, long long total, long long now, long long c, lon
 }
 
 /* One transfer: the latest tag (url without asset, headers only, no redirect) or the asset to file,
- * from its byte `from` on (HTTP Range) when the file holds those before it. curl's own code. */
-static int fetch(const char *url, void *file, char *tag, unsigned n, long *code, volatile int *xfer,
-                 long from) {
-    void *c = tls_easy(url, 15, file ? 0 : 30); /* a header-only check times out at 30 s */
+ * from its byte `from` on (HTTP Range) when the file holds those before it. With xfer, curl's
+ * progress calls read its cancel, a header-only request's too, so a press ends one that hangs
+ * (connecting, or waiting for an answer) at once rather than at its timeout. curl's own code. With
+ * keep (header-only requests alone: a download's options would stay set), the handle is *keep's,
+ * made there if none, and stays there for the caller to clean up, so the next request goes on its
+ * connection, or resumes its TLS session on a new one. */
+static int fetch_on(void **keep, const char *url, void *file, char *tag, unsigned n, long *code,
+                    volatile int *xfer, long from) {
+    void *c = keep && *keep ? *keep : tls_easy(url, 15, file ? 0 : 30); /* header-only: 30 s */
     int err = 1;
     char *location = 0;
     if (!c) return 1;
+    curl_easy_setopt(c, 10002, url);     /* URL: a kept handle has the last one */
     curl_easy_setopt(c, 10018, "Q2Pod"); /* USERAGENT */
+    /* xfer is nu's or sh's, both static, so the callback's pointer is good for every call */
+    if (xfer) {
+        curl_easy_setopt(c, 20219, progress); /* XFERINFOFUNCTION */
+        curl_easy_setopt(c, 10057, xfer);     /* XFERINFODATA */
+        curl_easy_setopt(c, 43, 0L);          /* NOPROGRESS off, for it */
+    }
     if (file) {
         curl_easy_setopt(c, 52, 1L);           /* FOLLOWLOCATION: to the asset host */
         curl_easy_setopt(c, 20011, curl_save); /* WRITEFUNCTION */
         curl_easy_setopt(c, 10001, file);      /* WRITEDATA */
         curl_easy_setopt(c, 19, 1024L);        /* LOW_SPEED_LIMIT: a stalled transfer ends */
         curl_easy_setopt(c, 20, 30L);          /* LOW_SPEED_TIME */
-        curl_easy_setopt(c, 20219, progress);  /* XFERINFOFUNCTION */
-        curl_easy_setopt(c, 10057, xfer);      /* XFERINFODATA */
-        curl_easy_setopt(c, 43, 0L);           /* NOPROGRESS off, for it */
         if (from) { /* RESUME_FROM: curl fails a reply that isn't the range */
             curl_easy_setopt(c, 21, from);
             curl_easy_setopt(
@@ -468,8 +477,16 @@ static int fetch(const char *url, void *file, char *tag, unsigned n, long *code,
         const char *t = netupdate_tag(location);
         tk_snprintf(tag, n, "%s", t ? t : "");
     }
-    curl_easy_cleanup(c);
+    if (keep)
+        *keep = c;
+    else
+        curl_easy_cleanup(c);
     return err;
+}
+
+static int fetch(const char *url, void *file, char *tag, unsigned n, long *code, volatile int *xfer,
+                 long from) {
+    return fetch_on(0, url, file, tag, n, code, xfer, from);
 }
 
 /* url's body (1 MB at most) through the file tmp, NUL-terminated; 0 unless a whole 200. */
@@ -502,7 +519,7 @@ static int update(void) {
     unsigned size = 0, n = 0;
     long code = 0;
     if (fetch(NU_REPO, 0, tag, sizeof tag, &code, &nu.cancel, 0) || code != 302 || !*tag)
-        return NU_NET;
+        return nu.cancel ? NU_CANCELLED : NU_NET; /* a cancel ends this request itself */
     /* Tags are single-digit x.y.z, so strcmp orders them: nothing older than this build, which
      * stock's updater would flash. Q2POD_TAG is empty in --dev builds, which take any tag.
      * ponytail: a beta (BETA in tools/build.py) refuses its own version's release too, so its
@@ -744,7 +761,7 @@ void netupdate_poll(void) {
         pthread_detach(tid);
 }
 
-/* The App Store (System settings): its Apps and Games tabs (app_store.c draws them), then Check for
+/* The App Store (Library's row): its Apps and Games tabs (app_store.c draws them), then Check for
  * Updates and a row per app of the open tab, in sources.list's order: its name over its GitHub
  * owner, or what is happening to it, and its state at the row's end. One job at a time on one
  * thread: a check (the list, then the latest tags) on opening or from Check for Updates, an
@@ -756,8 +773,10 @@ void netupdate_poll(void) {
  * build offers, and their authors' releases are upstream's to curate. Firmware updates
  * come from this fork (Q2POD_REPO, tools/build.py REPO) below. */
 #define SH_LIST_URL "https://raw.githubusercontent.com/DiamondBond/q2-pod/main/sources.list"
+#define SH_CUSTOM SH_DIR "/custom-sources.list" /* the user's own, never fetched or copied */
 #define SH_STALE_MS (10 * 60 * 1000ull)
-#define SH_RECHECK_MS (60 * 1000ull) /* Check for Updates' least gap: an API request per app */
+#define SH_RECHECK_MS (60 * 1000ull) /* Check for Updates' least gap: a request per app */
+#define SH_LOST 2 /* apps in a row with no answer from GitHub: a check ends there */
 enum { JOB_CHECK = 1, JOB_INSTALL, JOB_REMOVE, JOB_ERASE };
 enum { ST_INSTALL, ST_UPDATE, ST_INSTALLED };
 enum { ROW_CHECK = SH_MAX }; /* map's row that is no app: Check for Updates, the first */
@@ -773,6 +792,7 @@ static struct {
     void *page, *row[SH_MAX + 1];
     int tab;     /* the open tab: 0 Apps, 1 Games; kept while the Q2 is on */
     void *strip; /* the tabs (app_store.c store_tabs) */
+    int clicks;  /* sh_click's running, which a job's end waits for (sh_wait) */
 } sh __attribute__((section(".scratch")));
 
 static int is(int i, const char *id) { return i >= 0 && i < shelf_n && !strcmp(apps[i].id, id); }
@@ -814,19 +834,63 @@ static int release(shelf_app *a, char *tag, char *url, unsigned *size) {
     return r;
 }
 
-/* A check: the list fetched into sh.next, kept as SH_LIST with any app it dropped that is
- * still installed (so it can be removed), else the page's own; then each listed one's latest
- * release. A dropped app's is never asked, nor installed: dropping it is what stops a taken-over
- * repo's releases reaching a Q2 (GHSA-8wpr-pmqx-538x).
- * Whether every release was checked: a list that failed is fetched again with the next check. */
+/* A check's answer for a: the latest release's tag into a->latest from github.com's releases/latest
+ * redirect, as Network Update's NU_REPO, so no API request. The API allows 60 an hour, and a check
+ * of every app ran out part way: the list's end, the Games tab, kept no state until another check.
+ * An install still asks the API (release) for its zip.
+ * ponytail: the tag is the redirect's URL path segment, the .tag file the API's tag_name; a tag
+ * with characters a URL escapes would read UPDATE after its install: decode it if one ever does.
+ * A latest release with no zip reads UPDATE too, and its install says "No update for this build".
+ */
+static int latest(shelf_app *a, void **keep) {
+    char url[160], tag[32] = "";
+    long code = 0;
+    snprintf(url, sizeof url, "https://github.com/%s/releases/latest", a->repo);
+    if (fetch_on(keep, url, 0, tag, sizeof tag, &code, &sh.cancel, 0))
+        return sh.cancel ? SH_CANCELLED : SH_NET; /* a row's press ends the request itself */
+    /* refused: no word on a release, so the one known stays */
+    if (code == 403 || code == 429 || code >= 500) return SH_BUSY;
+    if (code != 302 || !*tag) return SH_MISSING; /* no release: a redirect to /releases */
+    snprintf(a->latest, sizeof a->latest, "%s", tag);
+    return SH_OK;
+}
+
+/* list's apps into out, then SH_CUSTOM's after an "[Apps]" line, none without a list: shelf_sources
+ * keeps an id's first line, so a custom line whose id the list has is skipped, and SH_MAX cuts
+ * custom lines first. The count; *own, the list's. */
+static int custom_sources(const char *list, shelf_app *out, int *own) {
+    unsigned m = 0, size;
+    char *mine = read_all(SH_CUSTOM, 1u << 16, &m), *both = 0;
+    int n = *own = list ? shelf_sources(list, out, SH_MAX) : 0;
+    if (mine && n && (both = calloc(1, size = strlen(list) + m + 9)))
+        snprintf(both, size, "%s\n[Apps]\n%s", list, mine), n = shelf_sources(both, out, SH_MAX);
+    free(mine), free(both);
+    return n;
+}
+
+/* A check: the list fetched into sh.next with SH_CUSTOM's (custom_sources), kept as SH_LIST without
+ * SH_CUSTOM's and with any app it dropped that is still installed (so it can be removed), else the
+ * page's own; then each listed one's latest release. A dropped app's is never asked, nor
+ * installed: dropping it is what stops a taken-over repo's releases reaching a Q2
+ * (GHSA-8wpr-pmqx-538x).
+ * A listed app keeps the latest release the page knew for it, from the same repo, until this check
+ * asks again: a check stopped part way (a row's press, or SH_LOST) or turned away (GitHub out of
+ * reach, or refusing) leaves an UPDATE row as it was: read INSTALLED, its press would offer
+ * removal. Whether every release was checked: a list that failed is fetched again with the next
+ * check. */
 static int check(void) {
-    char path[96], tag[32], url[256], text[SH_MAX * 120 + 8];
-    unsigned size, m = 0;
+    char path[96], text[SH_MAX * 120 + 8];
+    unsigned m = 0;
     long code = 0;
     char *list = get(SH_LIST_URL, &code);
-    int n = list ? shelf_sources(list, sh.next, SH_MAX) : 0, fresh = n > 0, ok = 1;
+    int own, n = custom_sources(list, sh.next, &own), mine = n, fresh = n > 0, ok = 1;
     free(list);
     if (!n) memcpy(sh.next, apps, sizeof apps), n = shelf_n; /* a bad list never replaces one */
+    for (int k = 0; fresh && k < n; ++k) {
+        int i = sh_find(sh.next[k].id);
+        if (i >= 0 && !sh.next[k].dropped && !strcmp(apps[i].repo, sh.next[k].repo))
+            memcpy(sh.next[k].latest, apps[i].latest, sizeof sh.next[k].latest);
+    }
     for (int i = 0; fresh && i < shelf_n && n < SH_MAX; ++i) {
         int listed = 0;
         for (int k = 0; k < n; ++k) listed |= !strcmp(sh.next[k].id, apps[i].id);
@@ -836,20 +900,27 @@ static int check(void) {
     }
     for (int g = 0, said = 0; fresh && g < 2; ++g) /* the apps, then [Games] and the games */
         for (int k = 0; k < n; ++k)
-            if (sh.next[k].game == g)
+            if (sh.next[k].game == g && (k < own || k >= mine))
                 m += snprintf(text + m, sizeof text - m, "%s%s%s %s\n",
                               g && !said++ ? "[Games]\n" : "", sh.next[k].dropped ? "-" : "",
                               sh.next[k].repo, sh.next[k].name);
     if (fresh) mkdir(SH_DIR, 0755), blob_io(SH_LIST, SH_LIST ".tmp", text, m, 1);
     sh.n = n;
     if (!n) sh.result = SH_NET, ok = 0; /* no list at all: said, and the next press fetches it */
-    for (int k = 0; k < n && !sh.cancel; ++k) {
+    /* one handle for the apps' requests, all to github.com */
+    void *head = 0;
+    for (int k = 0, lost = 0; k < n && !sh.cancel && lost < SH_LOST; ++k) {
         if (sh.next[k].dropped) continue;
-        int r = release(&sh.next[k], tag, url, &size);
-        if (r == SH_MISSING) continue; /* checked: no release yet */
+        int r = latest(&sh.next[k], &head);
+        lost = r == SH_NET ? lost + 1 : 0;
+        if (r == SH_MISSING) { /* checked: no release yet */
+            *sh.next[k].latest = 0;
+            continue;
+        }
         ok &= !r;
         if (!sh.result) sh.result = r; /* SH_NET or SH_BUSY, for sh_told */
     }
+    if (head) curl_easy_cleanup(head);
     return ok;
 }
 
@@ -864,7 +935,7 @@ static int listed(int i) {
     shelf_app now[SH_MAX];
     long code = 0;
     char *list = get(SH_LIST_URL, &code);
-    int n = list ? shelf_sources(list, now, SH_MAX) : 0, r = n ? SH_MISSING : SH_NET;
+    int own, n = custom_sources(list, now, &own), r = n ? SH_MISSING : SH_NET;
     free(list);
     for (int k = 0; k < n; ++k)
         if (!now[k].dropped && !strcmp(now[k].repo, apps[i].repo)) r = SH_OK;
@@ -1048,6 +1119,10 @@ static int sh_wait(const void *unused) {
         sh_refresh();
         return 8; /* RET_REPEAT */
     }
+    /* A press's toast ("Stopped checking for updates", "Wait for the one in progress") runs this
+     * timer in its 2 s loop, inside the press: the rows built again then would free the pressed row
+     * under its own click, so the end waits until the press has returned. */
+    if (sh.clicks) return 8;
     pthread_join(sh.thread, 0);
     int job = sh.job, r = sh.result, i = sh.app, manual = sh.manual;
     sh.job = 0;
@@ -1060,6 +1135,8 @@ static int sh_wait(const void *unused) {
     if (job == JOB_ERASE || (job != JOB_CHECK && is(i, "spotify")))
         spot_stop(); /* spotify.c forgets the old one */
     sh_rows();
+    if (r == SH_OK && (job == JOB_REMOVE || job == JOB_INSTALL))
+        addon_apps_sync(0, 0); /* Library's Apps row or page, if on top */
     if (job == JOB_CHECK && !sh.cancel && sh.page &&
         window_manager_get_top_window(window_manager()) == sh.page) /* not left or covered */
         sh_told(manual, r ? said[r] : 0);
@@ -1109,6 +1186,7 @@ static int sh_held(void *ctx, void *unused) {
 
 static int sh_click(void *ctx, void *event) {
     int r = (int)(long)ctx, i = sh.map[r], armed = sh.armed == r + 1;
+    ++sh.clicks; /* a count: a held press (sh_held) can run inside another's toast */
     sh.armed = 0;
     if (i == ROW_CHECK && sh.job == JOB_CHECK) {
         sh.manual = 1; /* checking already, the opening check maybe: its end answers the press */
@@ -1138,6 +1216,7 @@ static int sh_click(void *ctx, void *event) {
     else
         sh_start(JOB_INSTALL, i);
     sh_refresh();
+    --sh.clicks;
     return 0;
 }
 
@@ -1208,15 +1287,16 @@ static int sh_check(void *ctx, void *event) {
     return 0;
 }
 
-/* System settings' Apps row. The card's last list, until a check fetches the list again: with Wi-Fi
- * when the last whole check is over SH_STALE_MS old (or none), as GitHub allows 60 unauthenticated
- * API requests an hour; while Smart Wi-Fi brings the radio back, once its link is up. */
+/* Library's App Store row. The card's last list, until a check fetches the list again: with Wi-Fi
+ * when the last whole check is over SH_STALE_MS old (or none), a request per app; while Smart Wi-Fi
+ * brings the radio back, once its link is up. */
 int shelf_open(void *ctx, void *event) {
     if (sh.page || !(sh.page = page_open("apps_page", sh_closed, page_keyup))) return 0;
     if (sh.job != JOB_CHECK && !shelf_n) { /* an erase can run from Configuration before it opens */
         unsigned n = 0;
+        int own;
         char *list = read_all(SH_LIST, 1u << 16, &n);
-        shelf_n = shelf_sources(list, apps, SH_MAX);
+        shelf_n = custom_sources(list, apps, &own);
         free(list);
     }
     sh_rows();

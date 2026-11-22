@@ -1,11 +1,11 @@
 /* The App Store's look (docs/internals.md#q2-shelf): its Apps and Games tabs over the list, and at
  * each app's row's end its state, a word, drawn flat in every theme (no gloss). Classic and Modern
- * have a two-part switch, the open half in the accent, Classic's on a strip under its bar and
- * Modern's in the page's title row; Minimal names the tabs in its title row, the open one by a dot.
- * A tab with apps that can be updated has a badge with their count, red, or on the open
- * half in its text colour (Minimal: "N UPDATES" at the strip's end). netupdate.c builds the page
- * and keeps its state; this file draws it, in ringnav_paint after stock (store_paint), and takes
- * the tabs' taps. */
+ * have a two-part switch, the open half in the selected row's colour, Classic's on a strip under
+ * its bar and Modern's in the page's title row; Minimal names the tabs in its title row, the open
+ * one by a dot. A tab with apps that can be updated has a badge with their count, red, or on the
+ * open half in its text colour (Minimal: "N UPDATES" at the strip's end). netupdate.c builds the
+ * page and keeps its state; this file draws it, in ringnav_paint after stock (store_paint), and
+ * takes the tabs' taps. */
 #include "navigation.h" /* st: the selected row; theme(), scheme() */
 
 #define STRIP_H 44 /* Classic's strip, its bar holding the title */
@@ -99,23 +99,30 @@ static unsigned on_accent(void) {
     return S->sel_text ? S->sel_text : 0xffffff;
 }
 
-/* The selected row's ink, as ringnav_style_color gives its labels: on_accent's, final (*raw), on a
- * coloured band (st.sel_accent); otherwise near-black on Minimal's light cards, else white. */
-static unsigned lit_ink(int *raw) {
-    *raw = st.sel_accent != 0;
-    return *raw ? on_accent() : scheme()->flags & SCHEME_CARD ? 0x171717 : 0xffffff;
+/* The selected row's look, as paint_selection and ringnav_style_color (st.sel_accent) give it: its
+ * colour, flat (Classic's band its middle stop, Modern's bar its tone), and in *ink its labels':
+ * on_accent's on a band or a coloured bar or card, near-black on Minimal's light card, else white.
+ * *raw: both final, else in the dark half's terms, which Light Mode flips. */
+static unsigned row_look(unsigned *ink, int *raw) {
+    const scheme_t *S = scheme();
+    int stops = theme()->painter[PAINT_SELECTION] == SEL_STOPS, card = S->flags & SCHEME_CARD;
+    *raw = stops || (!neutral(S->tones[0]) && !card);
+    *ink = *raw ? on_accent() : card ? 0x171717 : 0xffffff;
+    return stops ? S->sel.rgb[S->sel.n / 2] : card ? S->fill : S->tones[0];
 }
 
-/* A tab's count, ending at right: its half's far end, as beside the name it ran into "Games". */
+/* A tab's count, ending at right: its half's far end, as beside the name it ran into "Games". On
+ * the open half it is that half's colours turned round. */
 static void badge(void *canvas, int right, int cy, int n, int open) {
     char d[12];
     snprintf(d, sizeof d, "%d", n);
-    int w = n > 9 ? 22 : 16;
+    int w = n > 9 ? 22 : 16, raw = 1;
+    unsigned ink = 0xffffff, fill = BADGE;
+    if (open) ink = row_look(&fill, &raw); /* the digits in the row's colour, on its ink */
     rect_t r = { right - w, cy - 8, w, 16 };
-    ui_ink_raw(1);
-    fill_box(canvas, &r, rgba(open ? on_accent() : BADGE, 255), 8);
-    caption(canvas, d, r.x, r.y, r.w, r.h, face_px(11),
-            rgba(open ? accent_tone(0) : 0xffffff, 255));
+    ui_ink_raw(raw);
+    fill_box(canvas, &r, rgba(fill, 255), 8);
+    caption(canvas, d, r.x, r.y, r.w, r.h, face_px(11), rgba(ink, 255));
     ui_ink_raw(0);
 }
 
@@ -143,10 +150,11 @@ static void paint_strip(void *w, void *canvas) {
         }
         return;
     }
-    /* Classic and Modern: the switch, Classic's rim grey under a hairline, Modern's the accent */
+    /* Classic and Modern: the switch, its open half the selected row's colour; Classic's rim grey
+     * under a hairline, Modern's the row's colour */
     int classic = T->painter[PAINT_SELECTION] == SEL_STOPS, y = (h - SEG_H) / 2,
-        half = (375 - 2 * SEG_X) / 2;
-    unsigned accent = accent_tone(0);
+        half = (375 - 2 * SEG_X) / 2, raw;
+    unsigned ink, band = row_look(&ink, &raw);
     rect_t box = { SEG_X, y, 375 - 2 * SEG_X, SEG_H },
            in = { SEG_X + 1, y + 1, box.w - 2, SEG_H - 2 },
            open = { tab ? SEG_X + half : SEG_X + 1, y + 1, half - 1 + tab * (box.w - 2 * half),
@@ -155,20 +163,20 @@ static void paint_strip(void *w, void *canvas) {
         canvas_set_fill_color(canvas, rgba(0x2f2f2f, 255));
         canvas_fill_rect(canvas, 0, h - 1, 375, 1);
     }
-    ui_ink_raw(!classic);
-    fill_box(canvas, &box, rgba(classic ? RIM : accent, 255), 7);
+    ui_ink_raw(!classic && raw);
+    fill_box(canvas, &box, rgba(classic ? RIM : band, 255), 7);
     ui_ink_raw(0);
     fill_box(canvas, &in, rgba(0, 255), 6);
-    ui_ink_raw(1);
-    fill_box(canvas, &open, rgba(accent, 255), 6);
-    canvas_set_fill_color(canvas, rgba(accent, 255)); /* fill_box's vgcanvas leaves it as it was */
+    ui_ink_raw(raw);
+    fill_box(canvas, &open, rgba(band, 255), 6);
+    canvas_set_fill_color(canvas, rgba(band, 255)); /* fill_box's vgcanvas leaves it as it was */
     canvas_fill_rect(canvas, tab ? open.x : open.x + open.w - 8, open.y, 8,
                      open.h); /* square inside */
     ui_ink_raw(0);
     for (int i = 0; i < 2; ++i) {
         int cx = SEG_X + half * i + half / 2;
-        unsigned c = i == tab ? on_accent() : classic ? 0xffffff : accent;
-        if (i == tab || !classic) ui_ink_raw(1);
+        unsigned c = i == tab ? ink : classic ? 0xffffff : band;
+        ui_ink_raw((i == tab || !classic) && raw);
         rect_t r = { cx - half / 2, y, half, SEG_H };
         caption(canvas, names[i], r.x, r.y, r.w, r.h, face_px(classic ? 17 : 16), rgba(c, 255));
         ui_ink_raw(0);
@@ -183,7 +191,8 @@ static void paint_row(void *w, void *canvas, int state) {
     static const char *const words[3] = { "安装", "更新", "已安装" };
     int h = I(w, W_H), card = theme()->painter[PAINT_SELECTION] == SEL_CARD,
         lit = st.sel_w == P(w, W_PARENT) && st.sel_row == I(w, W_Y) / h, raw = 0;
-    unsigned ink = lit ? lit_ink(&raw) : state != 1 ? SUDO_MUTED : card ? 0xffffff : accent_tone(0);
+    unsigned ink = state != 1 ? SUDO_MUTED : card ? 0xffffff : accent_tone(0);
+    if (lit) row_look(&ink, &raw);
     if (raw) ui_ink_raw(1);
     text_at(canvas, words[state], card ? 375 - 16 : 375 - 20, 0, h, face_px(12), rgba(ink, 255),
             RIGHT);

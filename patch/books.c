@@ -487,6 +487,8 @@ unsigned book_back(const unsigned char *t, unsigned n, unsigned pos, int rows, i
 #define BOOK_TONE accent_tone(2)
 #define BOOKS_MAX 500 /* ponytail: ringnav navigates at most MAX_ENTRIES (512) rows */
 #define MARKS_N 64    /* books whose page is kept, the most recently read first */
+/* a turned page's save waits this long; a power-off loses at most this */
+#define BOOK_SAVE_MS 2000
 
 enum { LIST, READER };
 enum { READY, PREPARING, BAD };
@@ -505,6 +507,7 @@ static struct {
     struct {
         unsigned key, pos;
     } marks[MARKS_N];
+    unsigned save; /* a turned page's save_due, BOOK_SAVE_MS after the first turn not yet saved */
 } bk __attribute__((section(".scratch")));
 
 /* 1 for .txt, 2 for .epub, 3 for a video, by the extension from its dot; else 0. */
@@ -584,7 +587,15 @@ static void mark(unsigned key, unsigned pos) {
 }
 
 static void marks_save(void) {
+    stop_timer(&bk.save);
     if (bk.screen == READER && !bk.state) mark(bk.key, bk.pos);
+}
+/* A power-off ends demo without Return or the page's close (docs/boot.md), so a turned page is
+ * saved BOOK_SAVE_MS after the first turn not yet saved, as Games saves a move. */
+static int save_due(const void *unused) {
+    bk.save = 0;
+    marks_save();
+    return 0;
 }
 
 /* The text file is ready: open it at the page last read. */
@@ -681,6 +692,7 @@ static int keyup(void *ctx, void *event) { return return_key(event, &bk.timer, l
 /* ringnav(): the reader takes the wheel (a page either way) and Centre (the caption). */
 int books_key(void *top, unsigned key) {
     if (!bk.page || top != bk.page || bk.screen != READER) return 0;
+    unsigned was = bk.pos;
     if (key == KEY_CENTER)
         bk.info_on = !bk.info_on;
     else if (bk.state)
@@ -689,6 +701,7 @@ int books_key(void *top, unsigned key) {
         bk.pos = bk.end;
     else if (key == KEY_PREV && bk.prev < bk.pos)
         bk.pos = bk.prev;
+    if (bk.pos != was && !bk.save) bk.save = timer_add(save_due, (void *)0, BOOK_SAVE_MS);
     window(bk.pos);
     info();
     widget_invalidate_force(bk.page, 0);

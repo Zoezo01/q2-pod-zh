@@ -1855,7 +1855,7 @@ def test_device_volume_off_gives_stock_its_gain_back_at_once(fw, way, sent):
 
 
 def playset(fw, ui, view, stock_rows=13):
-    """Stock's Playback rows, s0-s12: s8 Headphones required, s11 Volume and Album Display, s12 Folder skip."""
+    """Stock's Playback rows, s0-s12: s8 Require Output, s11 Volume and Album Display, s12 Folder skip."""
     def build(*_):
         for i in range(stock_rows):
             item = ui.add('list_item', view, (0, 0, 375, 70), f's{i}')
@@ -1880,13 +1880,37 @@ def test_playback_orders_its_rows_and_ends_on_library_and_folders(fw):
     assert rows[-1] is row(ui, view, 'Library & Folders') and 'list_into' in [c.props.get('image') for c in rows[-1].walk()]
     assert (at['s3'], at['s2']) == (0, 1)  # Play Mode, then EQ
     assert at['playset_gapless'] == at['s7'] + 1 and at['playset_memplay'] == at['s6'] + 1  # Crossfade, Resume Songs
-    assert at['s8'] == at['playset_memplay'] + 1  # Headphones required, after Resume Songs
+    assert at['s8'] == at['playset_memplay'] + 1  # Require Output, after Resume Songs
     balance = [k for k, r in enumerate(rows) if icon(r) == 'playset_balance']
     assert balance == [at['s10'] + 1, at['s10'] + 2]  # Mono Audio and Swap L/R
     assert at['s5'] == at['s4'] + 1 == 17  # DSD Output, then USB Audio last but one
     # that page's rows, where V1.32 had them: the two volumes before Balance, Enlarged Album Art after Swap L/R
     assert [at['playset_maxvol'], at['playset_bootvol'], at['s10']] == list(range(at['s9'] + 1, at['s9'] + 4))
     assert at['playset_covermode'] == balance[1] + 1
+
+
+@pytest.mark.parametrize('crossfade', [0, 1])
+def test_playback_s_gapless_row_is_refused_ahead_of_stocks_click_while_crossfade_is_on(fw, stock_gapless, crossfade):
+    ui, win, view, settings, _ = settings_page(fw, MINIMAL, 'playset_page', 'scroll_view_playset', XFADE=str(crossfade).encode())
+    stock_clicks, toasts = [], []
+    stock = C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_void_p)(lambda ctx, event: stock_clicks.append(ctx) or 0)
+
+    def stock_rows(*_):
+        for i in range(13):
+            item = ui.add('list_item', view, (0, 0, 375, 70), f's{i}')
+            button = ui.add('button', item, (20, 0, 335, 70), str(i))
+            if i == 7:  # Gapless: its switch in its button, stock's click on the button
+                ui.add('image', button, (282, 0, 50, 70), 'img_gapless7', image='switch_on')
+                ui.on(button.addr, EVT_CLICK, C.cast(stock, C.c_void_p).value, button.addr)
+        return 0
+    fw.mock('stock_audioset_trampoline', stock_rows)
+    fw.mock('navigator_to_with_context', lambda page, info, *_: toasts.append(C.string_at(info + 8).decode()) or 0)
+    fw.fn('ringnav_audioset', C.c_int, C.c_void_p, C.c_void_p)(win.addr, None)
+    button = next(r for r in view.children if r.name == 's7').children[0]
+    for kind, fn, ctx in reversed(button.handlers):  # AWTK: the newest first, until one returns RET_STOP
+        if kind == EVT_CLICK and C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_void_p)(fn)(ctx, 0) == 11:
+            break
+    assert (len(stock_clicks), toasts) == ((0, ['Crossfade needs Gapless']) if crossfade else (1, []))
 
 
 def test_playback_s_volume_rows_open_stock_s_pages_and_enlarged_art_is_stock_s_switch(fw):

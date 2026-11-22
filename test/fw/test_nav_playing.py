@@ -13,7 +13,7 @@ from conftest import NAVIGATION_SOURCE, O, Deques, Externpic, ask_cover, in_fork
 
 THEMES = host.tools_theme.builtins()
 SETS = host.tools_theme.geometry_sets(THEMES)
-MINIMAL, CLASSIC, MODERN = THEMES
+MINIMAL, CLASSIC, MODERN = THEMES[:3]
 GEOM = {t['name']: SETS.index(host.tools_theme.geometry(t)) for t in THEMES}
 RET_REPEAT, STOP = 8, 11
 FONT_ROW = -2
@@ -1413,7 +1413,7 @@ def test_no_window_binds_nothing(fw, ui, mcl, st):
 
 
 def test_a_page_stock_refused_binds_nothing(fw, ui, mcl, st):
-    """Headphones required with none to play to: stock toasts, closes the window it was given and returns STOP (11)."""
+    """Require Output with none to play to: stock toasts, closes the window it was given and returns STOP (11)."""
     theme(fw, st, CLASSIC)
     now = Now(fw, ui, mcl, st, opened=False)
     fw.mock('stock_playing_trampoline', lambda w, ctx, *_: 11)

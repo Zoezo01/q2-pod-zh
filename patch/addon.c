@@ -1,5 +1,5 @@
-/* Card apps: programs that run from the card beside Q2 Pod, installed by System
- * settings' Apps from their own GitHub releases (netupdate.c) or unzipped to the card by hand, as
+/* Card apps: programs that run from the card beside Q2 Pod, installed by Library's
+ * App Store from their own GitHub releases (netupdate.c) or unzipped to the card by hand, as
  * Spotify's librespot is. Q2 Pod knows none of them by name: each is a card folder .<id> holding
  *   q2app    its manifest, key=value lines: name (its Streaming row's), search (the search box's
  *            hint), qr (1: its row turns it on and shows its QR code once it answers), scrobble
@@ -14,11 +14,10 @@
  *            the card is never kept busy, leaving the loop's pid in /tmp/q2-<id>;
  *   q2-<id>  the app;
  *   icon-40.png, icon.png
- *            its Streaming row's icon, 40 px (SET_ICON), drawn 1:1, else 52 px, scaled to fit
- *            (a Library row's: the 52 px one first); one over ART_MAX px either way counts as
- *            none; without them, the shared stream_app.
+ *            its Streaming row's icon, 40 px (SET_ICON), drawn 1:1, else 52 px, scaled to fit;
+ *            one over ART_MAX px either way counts as none; without them, the shared stream_app.
  * Streaming lists those on the card (home.c ringnav_stream), but the ones whose row says the
- * Library (ringnav_localmusic, above Games) or Games. A row starts its app and opens
+ * Library (Library's Apps page, addon_apps) or Games. A row starts its app and opens
  * addon_page, a list the app draws over Q2SPOT/1 (docs/librespot.md) on /tmp/q2-<id>.browse.sock:
  * each row's kind says what a press does (a local row plays a song or folder from the card,
  * library_lists.c's songs_open). Its status file /tmp/q2-<id>.state says whether to hold standby
@@ -28,10 +27,10 @@
  * stream_poll plays as it fills, or an .m3u of card paths, which it plays in order, waiting for
  * each, or its Q2URLS/1 queue of stream URLs, /tmp/q2-<id>.urls, which stock's Tidal player plays
  * (tidal.c app_urls_play), telling it in /tmp/q2-<id>.now which of them plays when the queue asks
- * (now_poll). It asks for Update Library and its playlists' import in
- * /tmp/q2-<id>.library (addon_library.c), the result in .library.done. A list reply whose message
- * is "pages" and that has a cursor is followed by its next pages, appended to the same list
- * (page_next), up to ADDON_PAGES.
+ * (now_poll), and starting it again for a song it serves itself (addon_wake). It asks for Update
+ * Library and its playlists' import in /tmp/q2-<id>.library (addon_library.c), the result in
+ * .library.done. A list reply whose message is "pages" and that has a cursor is followed by its
+ * next pages, appended to the same list (page_next), up to ADDON_PAGES.
  *
  * Go to Album and Go to Artist on a song in an app's folder open the app's own page for them when
  * its q2app says goto=1 (addon_goto), and every song an app queues plays with its file's tags
@@ -96,7 +95,7 @@
 /* This firmware's card-app features, space-separated; a feature adds its word. */
 #define ADDON_CAPS                                                                                 \
     "playlist progress pages library goto sleep game audio sections art window urls sort field "   \
-    "more fav now"
+    "more fav now fieldtext wake audio2 dim"
 #define ADDON_SECTIONS 8  /* sections an app's first page may have */
 #define SWIPE_CLAIM_PX 24 /* a sideways move this far, twice as far as up or down, is a swipe's */
 #define SWIPE_PX 60       /* and this far at the lift, more than up or down, changes section */
@@ -150,9 +149,9 @@ static app_t *slot(const char *id) {
     return a;
 }
 
-/* Streaming's page (navigation.c): the card's apps found again, their names read; how many there
- * are, by name for addon_name. A slot keeps its app (and its running state) from scan to scan. */
-int addon_scan(void) {
+/* The card's apps found again, their names read. A slot keeps its app (and its running state) from
+ * scan to scan. */
+static void slots_read(void) {
     char raw[512], path[64];
     void *d = opendir(CARD);
     for (int i = 0; i < ap.n; ++i) ap.a[i].present = 0;
@@ -167,7 +166,8 @@ int addon_scan(void) {
         if (!a->tips[0]) tk_snprintf(a->tips, sizeof a->tips, "搜索");
         a->qr = number(raw, "qr") == 1;
         a->game = number(raw, "game") == 1;
-        a->audio = number(raw, "audio") == 1;
+        unsigned long long sound = number(raw, "audio"); /* 2: the game's or the music's */
+        a->audio = sound <= 2 ? (int)sound : 0;
         a->hidden = number(raw, "hidden") == 1;
         /* its row where row says, else as firmware without the key lists it: Games for a game,
          * Streaming for any other */
@@ -186,21 +186,25 @@ int addon_scan(void) {
         unsigned k = strlen(a->more);
         if (k && a->more[k - 1] == '\r') a->more[k - 1] = 0; /* a Windows editor's line end */
         a->present = !access(a->bin, 0);
-        /* the row's size first (40 px, a Library row's 52), the other scaled to fit on Streaming
-         * (navigation.c set_child; a Library row draws it 1:1, so one over 52 px shows its middle),
-         * else stream_app (one over ART_MAX px either way, or whose size can't be read, counts as
-         * none: demo decodes it whole) */
+        /* the row's size first (40 px), the other scaled to fit on Streaming (navigation.c
+         * set_child), else stream_app (one over ART_MAX px either way, or whose size can't be
+         * read, counts as none: demo decodes it whole) */
         static const char *const icons[2] = { "icon-40.png", "icon.png" };
         tk_snprintf(a->icon, sizeof a->icon, "stream_app");
         for (int i = 1; i >= 0; --i) {
             int w = 0, h = 0;
-            tk_snprintf(path, sizeof path, CARD "/%s/%s", e->d_name,
-                        icons[a->row == ROW_LIBRARY ? 1 - i : i]);
+            tk_snprintf(path, sizeof path, CARD "/%s/%s", e->d_name, icons[i]);
             if (picture_size(path, &w, &h) && w && h && w <= ART_MAX && h <= ART_MAX)
                 tk_snprintf(a->icon, sizeof a->icon, "file://%s", path);
         }
     }
     if (d) closedir(d);
+}
+
+/* Streaming's page (navigation.c): the slots read again; how many apps there are, by name for
+ * addon_name. */
+int addon_scan(void) {
+    slots_read();
     ap.shown = ap.games = ap.libs = 0;
     for (int i = 0; i < ap.n; ++i) { /* by name: an insertion, APPS_MAX at most */
         if (!ap.a[i].present || ap.a[i].hidden) continue;
@@ -223,11 +227,9 @@ const char *addon_icon(int k) { return k >= 0 && k < ap.shown ? ap.a[ap.order[k]
 const char *addon_slot_id(int i) {
     return i >= 0 && i < ap.n && ap.a[i].present && !ap.a[i].hidden ? ap.a[i].id : 0;
 }
-/* The Library's card rows (home.c ringnav_localmusic): how many, the card read again, then one's
- * name and icon. */
+/* Library's Apps rows (addon_apps): how many, the card read again, then one's name. */
 int addon_libs(void) { return addon_scan(), ap.libs; }
 const char *addon_lib_name(int k) { return k >= 0 && k < ap.libs ? ap.a[ap.lib[k]].name : 0; }
-const char *addon_lib_icon(int k) { return k >= 0 && k < ap.libs ? ap.a[ap.lib[k]].icon : 0; }
 
 /* Whether an image's name is a card app's Streaming icon, file:///mnt/mmc/.<id>/icon*.png
  * (navigation.c ringnav_image_add: Minimal greys it as Streaming's own icons). */
@@ -255,6 +257,41 @@ static void launch(app_t *a) {
     a->launched = 1;
     a->launch_at = time_now_ms();
     system(a->run); /* exits at once when the app runs already */
+}
+
+/* A song of an app's URL queue served by the app itself is about to play (tidal.c app_track, on
+ * the thread that starts the player, nearly always the UI's): an app that isn't running (its
+ * loop's pid file gone: it ended idle, or was stopped) starts as its page starts it (page_at).
+ * Whether it started in the last ADDON_START_MS, so the player waits for it (addon_answers).
+ * A pid file a dead loop left reads as running: nothing starts, and the song fails as before.
+ * ponytail: page_at launches whenever the pid file is missing, without the ADDON_START_MS here, so
+ * the page opened while a wake's start is under way (its loop's pid file not written yet) launches
+ * it again, and so can a jack or Bluetooth restart's wake (player_save_start's thread) beside the
+ * UI thread's page_at (launched isn't set under a lock): two launcher loops, the second takes the
+ * browse socket, the first keeps the relay port, and the pid file names only one. page_at taking
+ * the same window, or a lock in the app's run, would close both. */
+int addon_wake(const char *id) {
+    app_t *a = 0;
+    for (int i = 0; i < ap.n && !a; ++i)
+        if (!strcmp(ap.a[i].id, id)) a = &ap.a[i];
+    if (!a) return 0;
+    /* a Retry's restart or USB storage's relaunch pending: poll_one starts it, the song waits */
+    int pending = (a->restart || a->relaunch) && !access(a->bin, 0);
+    if (!pending && access(a->pid, 0) && !access(a->bin, 0) &&
+        (!a->launched || time_now_ms() - a->launch_at >= ADDON_START_MS))
+        launch(a);
+    return pending || (a->launched && time_now_ms() - a->launch_at < ADDON_START_MS);
+}
+
+/* Whether app id's socket takes a connection (nothing sent; the app answers it as a bad request):
+ * it is up. spot_exchange's non-blocking connect, so a full listen queue reads as not yet. On
+ * tidal.c's start thread. */
+int addon_answers(const char *id) {
+    char path[48], none = 0;
+    unsigned n = 0;
+    volatile int cancel = 0;
+    tk_snprintf(path, sizeof path, "/tmp/q2-%s.browse.sock", id);
+    return spot_exchange(path, 0, 0, &none, 0, &n, &cancel) != SPOT_NOSOCK;
 }
 
 /* Stream mode (q2-deezer's stream.go): an app's /tmp/q2-<id>.play holds "<seq> <folder>", a hidden
@@ -819,7 +856,11 @@ static void poll_one(app_t *a) {
  * a held key's long press after this hook, so the hold is timed here, from the game's key-down.
  * ponytail: the screen stays on while it runs, as for a video, and the idle quit is what lets it
  * sleep without Smart Awake; a game that wants to sleep on screen needs the wake path to reach
- * stock under it. */
+ * stock under it.
+ *
+ * audio=2: the game starts as one without the sound, the music left playing, and asks for it in
+ * /tmp/q2-<id>.audio (game_sound), caps word audio2. Any game's /tmp/q2-<id>.dim turns the panel
+ * down (game_files), caps word dim. */
 #define GAME_IDLE_MS 120000
 #define GAME_HOLD_MS 700 /* navigation.c's KEY_HOLD_MS, Return's hold elsewhere */
 #define GAME_KILL_MS 3000
@@ -829,6 +870,11 @@ static struct {
     unsigned seen;       /* time_now_ms of the last input */
     unsigned held, term; /* when Return went down, when TERM went (0: neither) */
     char path[48];       /* the game's socket */
+    int swap;            /* audio=2 */
+    int back, seek;      /* what played before the take, and where (mclGetPlayTime) */
+    int dim;             /* .dim acted on */
+    unsigned polled;     /* when game_files last looked */
+    char id[APP_ID];
 } gm __attribute__((section(".scratch")));
 
 int addon_games(void) { return addon_scan(), ap.games; }
@@ -848,13 +894,102 @@ static void game_end(void) {
     game_kill("");
 }
 
-/* netupdate.c's toast once app id is installed: where its row is, as the screen names it */
+/* netupdate.c's toast once app id is installed: where its row is, as the screen names it. The
+ * slots are read again, not the lists' order: the toast comes over whatever page is open, whose
+ * rows hold their places by name, and a new app sorted in would move each after it on a row. */
 const char *addon_where(const char *id) {
-    static const char *const where[] = { "流媒体", "游戏", "资料库" };
-    addon_scan();
+    static const char *const where[] = { "Streaming", "Library's Games", "Library's Apps" };
+    slots_read();
     for (int i = 0; i < ap.n; ++i)
         if (ap.a[i].present && !strcmp(ap.a[i].id, id)) return where[ap.a[i].row];
     return where[ROW_STREAMING];
+}
+
+static void game_file(char *out, const char *ext) {
+    tk_snprintf(out, 32, "/tmp/q2-%s.%s", gm.id, ext);
+}
+static void game_unlink(const char *ext) {
+    char f[32];
+    game_file(f, ext);
+    unlink(f);
+}
+
+/* An audio=2 game's sound given back: what played before its take plays on from where it was (or
+ * stays paused there), through stock's own restart after a Bluetooth link (player_save_start, as
+ * ringnav_bt_connect_start), which pauses it itself when Headphones Required finds no output. The
+ * status and place kept at the take are put back first: a jack, USB or Bluetooth change under the
+ * game ran stock's player_save_stop and player_save_start on the stopped player, the start refused
+ * (ringnav_start_player), and that start's mclSetSavePlayStatus(1) would make this one return at
+ * once. No player_stop before it: its mclClearSeekTime would drop the place. Spotify and a station
+ * stay paused, as after an audio=1 game: spot_yield gave Spotify up (spot_set_playing then does
+ * nothing) and radio_stop ended the station. */
+static void sound_back(void) {
+    int back = gm.back;
+    gm.audio = gm.back = 0;
+    if (back == 2 || back == 3) {
+        mclSetSavePlayStatus(back);
+        mclSetStartSeekTime(gm.seek);
+        player_save_start(back == 3);
+    } else if (mclGetPlayStatus() == 3) /* game_poll's pause stuck on nothing */
+        player_stop();
+}
+
+/* An audio=2 game's /tmp/q2-<id>.audio, read every ADDON_POLL_MS: "game" takes the sound as an
+ * audio=1 game's start does, the local queue stopped with its place kept (player_save_stop, stock's
+ * own stop for a Bluetooth drop), and the file then holds the game's q2video arguments as one line
+ * ("plughw:0,0", "plug:bluealsa 40", "usb h40"); "music", once the game has closed its PCM, gives
+ * the sound back (sound_back) and the file is removed. Anything else, the answer too, is left. */
+static void game_sound(void) {
+    char f[32], tmp[36], raw[16], vol[5], line[32];
+    game_file(f, "audio");
+    unsigned n = state_read(f, raw, sizeof raw);
+    while (n && (raw[n] == '\n' || raw[n] == '\r')) raw[n--] = 0;
+    if (!strcmp(raw + 1, "music")) {
+        if (gm.audio) sound_back();
+        unlink(f);
+        return;
+    }
+    if (strcmp(raw + 1, "game")) return;
+    int take = !gm.audio, len = 0;
+    gm.audio = 1; /* first: a Bluetooth link coming up during the take starts nothing */
+    if (take) {
+        gm.back = media_owner() == 1 ? mclGetPlayStatus() : 0;
+        headset_manual();
+        spot_yield();
+        radio_stop();
+        if (gm.back == 2 || gm.back == 3) /* the place, as player_save_stop reads it */
+            mclGetPlayTime(&gm.seek, &len), player_save_stop();
+        else
+            player_stop();
+    }
+    const char *dev = output_device(vol);
+    if (take && !dev) dac_take();
+    tk_snprintf(line, sizeof line, "%s%s%s\n", dev ? dev : "plughw:0,0", dev ? " " : "",
+                dev ? vol : "");
+    tk_snprintf(tmp, sizeof tmp, "%s.tmp", f);
+    blob_io(f, tmp, line, strlen(line), 1);
+}
+
+/* game_poll's, every ADDON_POLL_MS and every pass while dimmed: the game's /tmp/q2-<id>.dim there
+ * turns the panel to its lowest lit level, 1, and its removal back to the user's, g_lightness + 1,
+ * as stock's Brightness page sets it (config_lightness, 0x4fea30: g_lightness, 0 to 100, saved and
+ * the panel given one more through toolSetBackLight). The setting is never written. With the
+ * screen off the file is removed, the game's sign the dim is over: stock lights the panel again at
+ * the user's level (screen_action, 0x501f64). */
+static void game_files(unsigned now) {
+    char f[32];
+    int due = now - gm.polled >= ADDON_POLL_MS;
+    if (due) gm.polled = now;
+    game_file(f, "dim");
+    int want = !access(f, 0);
+    if (!g_backlight_status) {
+        if (want) unlink(f);
+        gm.dim = 0;
+    } else if (want != gm.dim) {
+        gm.dim = want;
+        toolSetBackLight(want ? 1 : g_lightness + 1);
+    }
+    if (gm.swap && due) game_sound();
 }
 
 /* Game a started over the screen: 1 when it runs. */
@@ -866,7 +1001,8 @@ static int game_start(app_t *a) {
     char vol[5], pop[POPUP_ENV];
     const char *dev = 0;
     popup_env(pop, sizeof pop); /* the theme's pop-up, for its own menus */
-    if (a->audio) { /* the sound is its: hciplayer off the PCM, the jack readied, as video_play */
+    /* the sound is its: hciplayer off the PCM, the jack readied, as video_play */
+    if (a->audio == 1) {
         headset_manual();
         spot_yield();
         radio_stop();
@@ -882,7 +1018,7 @@ static int game_start(app_t *a) {
          * thread holds libc's environment lock (stock's toolsSetTimeZone) hangs the child here;
          * Return's hold ends it */
         setenv("Q2_POPUP", pop, 1);
-        if (a->audio) /* q2video's arguments: the device, then a soft output's volume */
+        if (a->audio == 1) /* q2video's arguments: the device, then a soft output's volume */
             execl(a->bin, a->bin, dev ? dev : "plughw:0,0", dev ? vol : (char *)0, (char *)0);
         else
             execl(a->bin, a->bin, (char *)0);
@@ -890,7 +1026,13 @@ static int game_start(app_t *a) {
     }
     if (pid < 0) return toast("无法启动"), 0;
     gm.pid = pid;
-    gm.audio = a->audio;
+    gm.audio = a->audio == 1;
+    gm.swap = a->audio == 2;
+    gm.back = gm.dim = 0;
+    gm.polled = time_now_ms();
+    tk_snprintf(gm.id, sizeof gm.id, "%s", a->id);
+    game_unlink("dim"); /* an earlier run's */
+    if (gm.swap) game_unlink("audio");
     gm.sock = socket(1, 1, 0); /* AF_UNIX, SOCK_DGRAM (MIPS numbering) */
     gm.seen = time_now_ms();
     gm.held = gm.term = gm.eat = 0;
@@ -953,14 +1095,18 @@ static void game_poll(void) {
         close(gm.sock);
         /* a jack or USB change meanwhile ran stock's player_save_start(1): its start failed
          * (ringnav_start_player) but its pause stuck on nothing, so Play would do nothing */
+        if (gm.swap && gm.audio) sound_back(); /* a crash too */
         if (gm.audio && mclGetPlayStatus() == 3) player_stop();
         gm.pid = gm.audio = 0;
+        if (gm.dim && g_backlight_status) toolSetBackLight(g_lightness + 1);
+        if (gm.dim) game_unlink("dim");
         wheel_raw = 0;
         widget_invalidate_force(window_manager(), 0);
         if (status == 127 << 8) toast("无法启动"); /* the child's execl failed */
         return;
     }
     unsigned now = (unsigned)time_now_ms();
+    if (gm.dim || now - gm.polled >= ADDON_POLL_MS) game_files(now);
     /* signed: a stamp can be just after now (| 1 rounds up, game_end reads the clock again) */
     if (gm.held && (int)(now - gm.held) >= GAME_HOLD_MS) gm.held = 0, gm.eat = 1, game_end();
     if (gm.term && (int)(now - gm.term) >= GAME_KILL_MS) gm.term = now | 1, game_kill("-9 ");
@@ -1028,8 +1174,10 @@ void addon_stop(void) {
  * (addon_poll). On the UI thread, so it must stay short; addon_quit is the Apps page's worker's.
  * ponytail: an app still saving on its TERM after AWAY_MS can write to the card as USB takes it;
  * the real fix defers stock's USB-mode call until the apps are gone, without sleeping. */
+static int apps_stale __attribute__((section(".scratch"))); /* addon_apps_sync scans again */
 void addon_card_away(void) {
     char cmd[96];
+    apps_stale = 1; /* what the card holds after USB storage */
     int left = 0;
     for (int i = 0; i < ap.n; ++i) {
         app_t *a = &ap.a[i];
@@ -1136,7 +1284,8 @@ static int req_done(void) {
  * the title bar's search icon instead, take_find), sort opens as list does (caps word "sort"; one
  * just after a taken search is the title bar's sort icon instead, take_sort), remote opens the QR
  * code, local plays from the card (uri: a song, or a folder to list; context "album": in track
- * order), field opens the T9 box too, whose text goes to its uri, after its context, the reply
+ * order), field opens the T9 box too (its position the text it opens with, caps word fieldtext),
+ * whose text goes to its uri, after its context, the reply
  * taking the level's place with no level pushed and nothing titled with the text (field_sent),
  * info does nothing; its position, when set, is the op a held Play/Pause sends. progress
  * (progress_row) draws a bar of its position, permille, under its title and subtitle; a press or a
@@ -1599,9 +1748,8 @@ static void show(void) {
     } else if (l->state == K_ERROR) {
         n = 1 + (app()->nostop || stoppable());
         pg.view = page_list(pg.page, pg.page, 0, l->note, n, 48);
-        page_row_detail(pg.view, 0,
-                        l->retry ? "重试" : "请前往系统设置 → 应用商店重新安装", 0,
-                        clicked);
+        page_row_detail(pg.view, 0, l->retry ? "Retry" : "Install it again in Library → App Store",
+                        0, clicked);
         if (app()->nostop)
             page_row_detail(pg.view, 1, "取消", 0, clicked);
         else if (n > 1)
@@ -1834,9 +1982,9 @@ static int clicked(void *ctx, void *event) {
 }
 
 /* The box's text: one that doesn't fit pg.term whole is let go, cleared, and nothing is sent. Done
- * sends this twice (EVT_IM_ACTION, EVT_VALUE_CHANGED), so pg.field stays set here (field_sent and
- * search_box clear it) and the toast waits for no pending go: the second call must not toast again
- * or send the cut text.
+ * sends this twice (EVT_IM_ACTION and, for a changed text, EVT_VALUE_CHANGED), so pg.field stays
+ * set here (field_sent and search_box clear it) and the toast waits for no pending go: the second
+ * call must not toast again or send the cut text.
  *
  * ponytail: stock's widget_get_text_utf8 writes nothing for a text over 255 bytes, which closes
  * silently. */
@@ -1907,16 +2055,22 @@ static int swipe(void *ctx, void *event) {
 }
 
 /* peq_ui.c's T9 edit over the title, its keyboard open: a Search row's press, or its icon's tap
- * (field 0); or field row field - 1's press, its title the box's hint. */
+ * (field 0); or field row field - 1's press, its title the box's hint and its position, when set,
+ * the text it opens with (caps word fieldtext: a value to edit, such as an address). The text goes
+ * in before the handlers, as stock's setter sends EVT_VALUE_CHANGED at once (0x627044), and stays
+ * unselected, the caret at its end (0x627028): stock's focus selects it all (an idle, 0x6223f0),
+ * so a key would replace it. */
 static void search_box(int field) {
     keep_sel();
     pg.field = field;
     widget_destroy_children(pg.page), pg.view = 0; /* the box alone, as Spotify's */
     pg.edit = edit_create(pg.page, "text", 2, 26);
     t9_box(pg.page, pg.edit, field ? cell(field - 1, 2) : app()->tips);
+    if (field && cell(field - 1, 5)[0]) widget_set_text_utf8(pg.edit, cell(field - 1, 5));
     widget_on(pg.edit, EVT_VALUE_CHANGED, searched, 0);
     widget_on(pg.edit, EVT_IM_ACTION, searched, 0);
     widget_on(pg.edit, EVT_BLUR, search_left, 0);
+    widget_set_prop_int(pg.edit, "select_none_when_focused", 1);
     widget_set_focused(pg.edit, 1);
 }
 
@@ -2128,7 +2282,7 @@ int addon_open(void *ctx, void *event) {
 }
 /* Games' card row k (games.c pick_card_game): 1 when its game runs, or its page opened. */
 int addon_game_start(int k) { return k >= 0 && k < ap.games ? press(ap.game[k]) : 0; }
-/* An app's Library row (home.c ringnav_localmusic; ctx: its place by name at the last scan). It
+/* An app's row on Library's Apps page (addon_apps; ctx: its place by name at the last scan). It
  * opens at once, with no wait for Smart Wi-Fi's link, as a Games row does: what such an app lists
  * is on the card, and the radio comes back for an app with a page once it runs (addon_running).
  * ponytail: a request it makes over the network in its first seconds can fail for want of the
@@ -2138,6 +2292,44 @@ int addon_lib_open(void *ctx, void *event) {
     (void)event;
     int k = (int)(long)ctx;
     if (k >= 0 && k < ap.libs) press(ap.lib[k]);
+    return 0;
+}
+
+/* Library's Apps page: its apps' rows by name, Games' chooser's (games.c), "No apps" with none. Its
+ * rows are built again when their count changes (addon_apps_sync). ponytail: a count, not the
+ * names: one app swapped for another while the page is open shows at its next open. */
+static struct {
+    void *page;
+    int n; /* the rows built, -1: none yet */
+} la __attribute__((section(".scratch")));
+static int apps_closed(void *ctx, void *event) {
+    la.page = 0;
+    return 0;
+}
+static void apps_rows(int n) {
+    if (n == la.n) return;
+    void *view = page_list_or(la.page, la.page, "应用", "暂无应用", la.n = n, 48);
+    for (int k = 0; k < n; ++k) page_row_into(view, k, addon_lib_name(k), addon_lib_open);
+}
+int addon_apps(void *ctx, void *event) {
+    if (la.page || !(la.page = page_open("cardapps_page", apps_closed, page_keyup))) return 0;
+    widget_on(la.page, EVT_WINDOW_FOREGROUND, addon_apps_sync, la.page);
+    la.n = -1;
+    apps_rows(addon_libs());
+    return 0;
+}
+/* win back on top (the Library's, Home's or the Apps page), or 0: an App Store install's or
+ * remove's end, for the top window. The Library's Apps row there (home.c library_apps_show) shown
+ * while the card has an app for it, the Apps page's rows built again. The card is read again only
+ * after such a job or USB storage: a return from Artists takes the last scan's count. */
+int addon_apps_sync(void *win, void *event) {
+    if (!win) apps_stale = 1, win = window_manager_get_top_window(window_manager());
+    void *row = win ? widget_lookup(win, "library_apps", 1) : (void *)0;
+    if (!row && (!win || win != la.page)) return 0;
+    int n = apps_stale ? addon_libs() : ap.libs;
+    apps_stale = 0;
+    if (row) library_apps_show(row, n > 0);
+    if (win == la.page) apps_rows(n);
     return 0;
 }
 
@@ -2273,12 +2465,14 @@ int addon_more(void) {
 }
 
 /* ringnav_keylong: Play/Pause held on a row with a hold op (a list: all of it downloaded) sends it;
- * 1 when it was one. */
+ * 1 when it was one. A progress row's position is its bar, a field row's its box's text. */
 int addon_hold(void *w) {
     lv_t *l = pg.page && w == pg.page ? top() : 0;
     int i = l && l->state == K_READY && pg.view ? widget_get_prop_int(pg.view, "_ringnav_index", -1)
                                                 : -1;
-    if (i < 0 || i >= l->n || !cell(i, 5)[0] || !strcmp(cell(i, 0), "progress")) return 0;
+    if (i < 0 || i >= l->n || !cell(i, 5)[0] || !strcmp(cell(i, 0), "progress") ||
+        !strcmp(cell(i, 0), "field"))
+        return 0;
     action(i, cell(i, 5), cell(i, 4));
     return 1;
 }

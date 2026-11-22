@@ -34,6 +34,7 @@ TIDAL_DIR, SPOT_DIR = '/mnt/mmc/.tidal', '/mnt/mmc/.spotify'
 DOT = '·'
 HEART, NO_HEART = '♥', '♡'
 CLICK = C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_void_p)
+EVT_WINDOW_FOREGROUND = O['EVT_WINDOW_FOREGROUND']
 ROW = C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_int, C.POINTER(C.c_char_p), C.POINTER(C.c_char_p))  # sqlite3_exec's
 TICK = C.CFUNCTYPE(C.c_int, C.c_void_p)
 TYPES = {'window_create': 'window', 'list_item_create': 'list_item', 'hscroll_label_create': 'hscroll_label',
@@ -456,7 +457,7 @@ def test_shuffle_songs_plays_the_library_from_a_random_song(fw, ui, mcl, song):
 
 
 def test_shuffle_songs_headphones_required_forbids_changes_nothing(fw, ui, mcl, song):
-    """Headphones Required with no output: Shuffle Songs asks stock's gate (0: it shows its message) before it
+    """Require Output on, nothing connected: Shuffle Songs asks stock's gate (0: it shows its message) before it
     takes the mode to restore, ends advanced play, saves Shuffle or opens Now Playing, and its refusal does none
     of them, with no toast of ours. Here the queue is an earlier Shuffle Songs, holding mode 3 to restore. Now
     Playing refused only after Shuffle was saved, and the old queue then became Shuffle Songs anew."""
@@ -1041,6 +1042,18 @@ def test_upload_reports_how_it_went(fw, ui, ok, sent, toast, pending):
     assert scrobbler.sa.pending == pending  # listens sent no longer count toward the automatic upload
 
 
+@pytest.mark.parametrize('ok, misses', [(1, 0), (0, 3)])
+def test_upload_scrobbles_success_starts_the_automatic_uploads_waits_over(fw, ui, ok, misses):
+    """Three automatic tries in a row sent nothing, so the next wake waits two hours; Upload Scrobbles that
+    succeeds starts the count over, one that fails leaves it."""
+    scrobbler = Scrobbler(fw)
+    scrobbler.sa.misses = 3
+    call(fw, 'upload_scrobbles')
+    scrobbler.ends(ok, 1)
+    ui.fire('upload_wait')
+    assert scrobbler.sa.misses == misses
+
+
 def test_upload_while_one_runs(fw, ui):
     scrobbler = Scrobbler(fw)
     call(fw, 'upload_scrobbles')
@@ -1524,6 +1537,34 @@ def test_an_album_s_rating_is_kept_apart_from_its_songs(fw, ui, song, st, qm):
     kept = fw.fn('rate_kept', C.c_int, C.c_int, C.c_uint)
     assert kept(1, 0xa1b0) == 5 and kept(0, 0xa1b0) == 0 and RATINGS not in files.files
     assert ALBUM_RATINGS in files.files
+
+
+@pytest.mark.parametrize('album, table', [(0, RATINGS), (1, ALBUM_RATINGS)])
+def test_a_rating_is_written_beside_its_table_then_renamed_over_it(fw, album, table):
+    """Hearts can't be made again from the music, so their table is never the file opened for writing: a power cut
+    in the write leaves the last table whole."""
+    Files(fw)
+    assert fw.fn('rate_keep', C.c_int, C.c_int, C.c_uint, C.c_int)(album, 0xa1b0, 4) == 1
+    writes = [C.string_at(a[0]).decode() for _, a in fw.calls('fw_fopen') if b'w' in C.string_at(a[1])]
+    renames = [(C.string_at(a[0]).decode(), C.string_at(a[1]).decode()) for _, a in fw.calls('fw_rename')]
+    assert writes == [table + '.tmp'] and renames == [(table + '.tmp', table)]
+
+
+@pytest.mark.parametrize('was, key_, added, removed', [(4, KEY_NEXT, 1, 0), (3, KEY_NEXT, 0, 0), (5, KEY_PREV, 0, 2)])
+def test_an_album_s_fifth_heart_is_its_songs_my_fav(fw, ui, song, st, qm, was, key_, added, removed):
+    """Five hearts make an album a favourite, so the picker's close puts its songs in My Fav, and the fifth taken
+    off takes them out. Any other change of its hearts leaves My Fav alone."""
+    Files(fw)
+    win, ids = album_menu(fw, ui, song, st, qm)
+    tracks = [song(b'/m/y/1.flac', album=b'Y'), song(b'/m/y/2.flac', album=b'Y')]
+    fw.mock('getMusicByAlbumAndSonger', lambda *_: ui.deques[fw.var('fw_ctx_tools_pdeq_directory', C.c_uint).value]
+            .extend(tracks) or 0)
+    assert fw.fn('rate_show', C.c_int, C.c_void_p, C.c_int, C.c_uint)(win, was, 0xa1b0) == 1
+    key = fw.fn('rate_key', C.c_int, C.c_void_p, C.c_uint)
+    key(win, key_)
+    key(win, KEY_CENTER)
+    assert [(a[0], a[1]) for _, a in fw.calls('batch_add_file')] == [(0xf001, 0xf00a)] * added
+    assert len(fw.calls('deleteMusicFromFav')) == removed
 
 
 def test_an_album_no_longer_under_the_picker_is_not_rated(fw, ui, song, st, qm):
@@ -2301,9 +2342,9 @@ LIBRARY_STOCK = ['Update Library', 'All Songs', 'Album', 'Artist', 'Genre', 'Hi-
                  'Recently Added', 'Playlist']
 
 
-def library(fw, ui, folders=(), token=b'', extra=0, files=None):
+def library(fw, ui, folders=(), token=b'', extra=0, files=None, **config):
     Disk(fw, files, folders=folders)
-    Config(fw, TOKEN=token)
+    Config(fw, TOKEN=token, **config)
     fw.mock('stock_localmusic_trampoline', lambda *_: 9)
     win, view = stock_page(ui, 'scroll_view_localmusic', *[(c, None, str(i)) for i, c in enumerate(LIBRARY_STOCK)])
     for i in range(extra):
@@ -2326,29 +2367,159 @@ LEADS = [(None, []), (b'1', ['Search'])]
 def test_the_library_s_rows_in_their_order(fw, ui, st, theme, lead):
     boot(fw, st, theme)
     win, view = library(fw, ui)
-    # My Fav and Frequent hidden, kept in the page for stock's index: Ratings and Most Played list theirs
-    assert page_rows(ui, view) == [(c, c not in ('My Fav', 'Frequent')) for c in lead + [
+    # My Fav and Frequent hidden, kept in the page for stock's index: Ratings and Most Played list theirs; Apps
+    # hidden with no app for it
+    assert page_rows(ui, view) == [(c, c not in ('My Fav', 'Frequent', 'Apps')) for c in lead + [
         'Shuffle', 'Artist', 'Album', 'All Songs', 'Genre', 'Era', 'Playlist', 'Ratings', 'My Fav', 'Recently Added', 'Recent',
-        'Most Played', 'Frequent', 'Hi-Res', 'Long Songs', 'Games', 'Update Library']]
+        'Most Played', 'Frequent', 'Hi-Res', 'Long Songs', 'Apps', 'Games', 'App Store', 'Update Library']]
 
 
 def test_the_library_adds_the_card_s_media_folders_and_upload(fw, ui):
     win, view = library(fw, ui, folders=['/mnt/mmc/podcasts', '/mnt/mmc/VIDEOS', '/mnt/mmc/Music'], token=b'x')
     rows = [c for c, _ in page_rows(ui, view)]
-    assert rows[rows.index('Long Songs'):] == ['Long Songs', 'Podcasts', 'Videos', 'Games', 'Upload Scrobbles',
-                                               'Update Library']
+    assert rows[rows.index('Long Songs'):] == ['Long Songs', 'Podcasts', 'Videos', 'Apps', 'Games', 'App Store',
+                                               'Upload Scrobbles', 'Update Library']
 
 
-def test_the_library_lists_the_card_apps_whose_row_is_there_above_games(fw, ui):
-    tape = {'/mnt/mmc/.tape/q2app': b'name=Mixtape\nrow=library\n', '/mnt/mmc/.tape/q2-tape': b'ELF'}
-    tools = {'/mnt/mmc/.tools/q2app': b'name=Utilities\nrow=library\n', '/mnt/mmc/.tools/q2-tools': b'ELF'}
-    win, view = library(fw, ui, folders=['/mnt/mmc/Videos'], token=b'x', files={**deezer(), **BLOCKS, **tape, **tools})
-    rows = [c for c, _ in page_rows(ui, view)]
-    assert rows[rows.index('视频'):] == ['视频', 'Mixtape', 'Utilities', '游戏', '上传听歌记录', '更新曲库']
-    for k, item in enumerate(ui.kids[view][rows.index('Mixtape'):rows.index('游戏')]):
-        button, = ui.kids[item]
-        assert [(fn, ctx) for w, e, fn, ctx in ui.handlers if w == button and e == EVT_CLICK] == [(ui.fn('addon_lib_open'), k)]
-        assert [ui.image[w] for w in ui.subtree(item) if w in ui.image] == ['stream_app', 'list_into']  # opens a page
+TAPE = {'/mnt/mmc/.tape/q2app': b'name=Mixtape\nrow=library\n', '/mnt/mmc/.tape/q2-tape': b'ELF'}
+TOOLS = {'/mnt/mmc/.tools/q2app': b'name=Utilities\nrow=library\n', '/mnt/mmc/.tools/q2-tools': b'ELF'}
+
+
+def row_click(ui, view, caption):
+    """The (function, ctx) of the view's row titled caption."""
+    item, = [item for item in ui.kids[view] if row_text(ui, item) == caption]
+    return [(fn, ctx) for w, e, fn, ctx in ui.handlers if w == ui.kids[item][0] and e == EVT_CLICK]
+
+
+def test_apps_lists_the_card_apps_whose_row_is_the_library_s_by_name_above_games(fw, ui):
+    """row=library puts an app on Library's Apps page, not at the Library's root; each row presses as the app's
+    Library row did."""
+    win, view = library(fw, ui, folders=['/mnt/mmc/Videos'], token=b'x', files={**deezer(), **BLOCKS, **TOOLS, **TAPE})
+    assert page_rows(ui, view)[-7:] == [(c, True) for c in ('Long Songs', 'Videos', 'Apps', 'Games', 'App Store',
+                                                             'Upload Scrobbles', 'Update Library')]
+    item, = [item for item in ui.kids[view] if row_text(ui, item) == 'Apps']
+    assert [ui.image[w] for w in ui.subtree(item) if w in ui.image] == ['local_apps', 'list_into']
+    assert row_click(ui, view, 'Apps') == [(ui.fn('addon_apps'), 0)]
+    CLICK(ui.fn('addon_apps'))(0, 0)
+    page = ui.top()
+    assert ui.name[page] == 'cardapps_page' and ui.captions(page) == ['Mixtape', 'Utilities']
+    assert fw.fn('allowed_top', C.c_int, C.c_void_p)(page) == 1  # the wheel moves on it (contexts.inc)
+    assert [(fn, ctx) for item in ui.kids[ui.view(page)] for w, e, fn, ctx in ui.handlers
+            if w == item and e == EVT_CLICK] == [(ui.fn('addon_lib_open'), 0), (ui.fn('addon_lib_open'), 1)]
+    assert ui.key(page, KEY_RETURN) == STOP and ui.backs == 1  # back to the Library
+
+
+def test_apps_shows_once_an_app_is_there_and_its_page_follows_the_card(fw, ui):
+    """The Apps row and page follow the card as each comes back on top, or an App Store job ends on them."""
+    disk = Disk(fw, deezer()).files
+    Config(fw)
+    fw.mock('stock_localmusic_trampoline', lambda *_: 9)
+    win, view = stock_page(ui, 'scroll_view_localmusic', *[(c, None, str(i)) for i, c in enumerate(LIBRARY_STOCK)])
+    fw.fn('ringnav_localmusic', C.c_int, C.c_void_p, C.c_void_p)(win, None)
+    sync = lambda w: CLICK(ui.fn('addon_apps_sync'))(w, 0)
+    assert ('Apps', False) in page_rows(ui, view)
+    assert [ctx for w, e, fn, ctx in ui.handlers if w == win and e == EVT_WINDOW_FOREGROUND and fn == ui.fn('addon_apps_sync')] == [win]
+    disk.update(TAPE)
+    sync(0)  # an App Store job's end on the Library
+    assert ('Apps', True) in page_rows(ui, view)
+    CLICK(ui.fn('addon_apps'))(0, 0)
+    page = ui.top()
+    assert ui.captions(page) == ['Mixtape']
+    disk.update(TOOLS)
+    sync(0)  # an App Store job's end: the top window, the page
+    assert ui.captions(page) == ['Mixtape', 'Utilities']
+    for path in [*TAPE, *TOOLS]:
+        del disk[path]
+    sync(0)
+    assert 'No apps' in ui.shown(page)  # its last app removed while it is open
+    ui.close(page)
+    sync(win)  # back on the Library after it: the card read then
+    assert ('Apps', False) in page_rows(ui, view)
+
+
+def apps_library(fw, ui, files):
+    """The Library page over a Disk of files: (disk's files, window, view)."""
+    disk = Disk(fw, files).files
+    Config(fw)
+    fw.mock('stock_localmusic_trampoline', lambda *_: 9)
+    win, view = stock_page(ui, 'scroll_view_localmusic', *[(c, None, str(i)) for i, c in enumerate(LIBRARY_STOCK)])
+    fw.fn('ringnav_localmusic', C.c_int, C.c_void_p, C.c_void_p)(win, None)
+    return disk, win, view
+
+
+def test_the_apps_page_opens_once_and_again_after_return(fw, ui):
+    apps_library(fw, ui, TAPE)
+    press = lambda: CLICK(ui.fn('addon_apps'))(0, 0)
+    press()
+    press()  # a second press while it is open opens nothing more
+    pages = [w for w in ui.windows if ui.name.get(w) == 'cardapps_page']
+    assert len(pages) == 1
+    page, = pages
+    assert [ctx for w, e, fn, ctx in ui.handlers if w == page and e == EVT_WINDOW_FOREGROUND and fn == ui.fn('addon_apps_sync')] == [page]
+    ui.close(page)  # Return
+    press()
+    assert ui.name[ui.top()] == 'cardapps_page' and ui.top() != page and ui.captions(ui.top()) == ['Mixtape']
+
+
+def test_a_return_to_the_library_reads_the_card_only_after_a_store_job_or_usb_storage(fw, ui):
+    disk, win, view = apps_library(fw, ui, deezer())
+    sync = lambda w: CLICK(ui.fn('addon_apps_sync'))(w, 0)
+    opened = lambda: len(fw.calls('fw_opendir'))
+    disk.update(TAPE)
+    before = opened()
+    sync(win)  # back from Artists: the last scan's count, no read
+    assert opened() == before and ('Apps', False) in page_rows(ui, view)
+    store = ui.new('window_create', 0, 0, 0, 0, 0)  # an install's end with the App Store on top: no row there
+    sync(0)
+    assert opened() == before
+    ui.close(store)
+    sync(win)  # back on the Library: read again, once
+    assert opened() == before + 1 and ('Apps', True) in page_rows(ui, view)
+    sync(win)
+    assert opened() == before + 1
+    for path in TAPE:
+        del disk[path]
+    fw.fn('addon_card_away', None)()  # USB storage: the card may have changed
+    sync(win)
+    assert opened() == before + 2 and ('Apps', False) in page_rows(ui, view)
+
+
+@pytest.mark.parametrize('sel, shown, after', [(14, True, 15), (3, True, 3), (13, True, 14), (15, False, 14), (13, False, 13)])
+def test_the_library_s_highlight_stays_on_its_row_as_apps_shows_or_goes(fw, ui, sel, shown, after):
+    """navigation.c's load drops a live list's selection when its count changes: the index and count it keeps move
+    with Apps. Shown rows before it: Shuffle to Long Songs, 13 (My Fav and Frequent hidden); App Store is 14 or 15,
+    and Apps' own highlight goes to Games."""
+    disk, win, view = apps_library(fw, ui, {} if shown else TAPE)
+    count = len([1 for _, v in page_rows(ui, view) if v])
+    ui.props[(view, '_ringnav_index')], ui.props[(view, '_ringnav_count')] = sel, count
+    disk.update(TAPE) if shown else [disk.pop(p) for p in TAPE]
+    fw.fn('addon_card_away', None)()
+    CLICK(ui.fn('addon_apps_sync'))(win, 0)
+    assert ('Apps', shown) in page_rows(ui, view)
+    assert ui.props[(view, '_ringnav_count')] == count + (1 if shown else -1) == len([1 for _, v in page_rows(ui, view) if v])
+    assert ui.props[(view, '_ringnav_index')] == after
+
+
+def test_the_library_s_apps_handler_is_set_once(fw, ui):
+    _, win, _ = apps_library(fw, ui, {})
+    assert (win, EVT_WINDOW_FOREGROUND, ui.fn('addon_apps_sync'), win) in ui.offs  # one handler if built twice
+
+
+@pytest.mark.parametrize('key, gone', [('HIDEAPPS', 'Apps'), ('HIDEGAMES', 'Games'), ('HIDESTORE', 'App Store')])
+def test_each_hide_switch_takes_its_row_off_the_library(fw, ui, key, gone):
+    win, view = library(fw, ui, files=TAPE, **{key: b'1'})
+    rows = [c for c, shown in page_rows(ui, view) if shown]
+    assert rows[rows.index('Long Songs'):] == [c for c in ('Long Songs', 'Apps', 'Games', 'App Store', 'Update Library')
+                                               if c != gone]
+    assert (gone == 'Apps') == (not [h for h in ui.handlers if h[0] == win and h[1] == EVT_WINDOW_FOREGROUND])
+
+
+def test_the_app_store_row_opens_the_store_s_page_and_games_its_chooser(fw, ui):
+    win, view = library(fw, ui)
+    assert row_click(ui, view, 'App Store') == [(ui.fn('shelf_open'), 0)]
+    assert row_click(ui, view, 'Games') == [(ui.fn('games_open'), 0)]
+    item, = [item for item in ui.kids[view] if row_text(ui, item) == 'App Store']
+    assert [ui.image[w] for w in ui.subtree(item) if w in ui.image] == ['local_store', 'list_into']
 
 
 def test_the_library_s_added_rows_have_no_name_for_stock_s_click(fw, ui):
@@ -2387,13 +2558,36 @@ def test_home_s_library_list_is_the_library_s_rows(fw, ui, st, theme, lead):
     log = (C.c_long * 3)()
     stock_stub(O['LOCALMUSIC_BG'], 0, log)
     boot(fw, st, theme)
-    _, page = library(fw, ui)  # the Library page's own rows
+    _, page = library(fw, ui, files=TAPE, HIDEGAMES=b'1')  # the Library page's own rows
     win, view = stock_page(ui, 'scroll_view_localmusic', *[(c, None, str(i)) for i, c in enumerate(LIBRARY_STOCK)])
     fw.fn('library_rows', None, C.c_void_p)(win)
     rows = [c for c, _ in page_rows(ui, view)]
     assert page_rows(ui, view) == page_rows(ui, page) and rows[:len(lead) + 2] == lead + ['Shuffle', 'Artist']
+    assert rows[-4:] == ['Long Songs', 'Apps', 'App Store', 'Update Library'] and ('Apps', True) in page_rows(ui, view)
     assert log[0] == win  # its play gif's timer stopped, as the page's background does
     assert [c[1][:2] for c in fw.calls('widget_off_by_ctx')] == [(win, win)]
+
+
+@in_fork
+def test_home_s_library_list_follows_an_install_and_a_remove_from_the_app_store(fw, ui):
+    """Home's window carries addon_apps_sync (coverflow.c): back on Home after the App Store, its Library list shows Apps
+    once an app is installed for it, and drops it once the last is removed."""
+    log = (C.c_long * 3)()  # kept: the stub writes to it
+    stock_stub(O['LOCALMUSIC_BG'], 0, log)
+    disk = Disk(fw, deezer()).files
+    Config(fw)
+    fw.mock('stock_localmusic_trampoline', lambda *_: 9)
+    home, view = stock_page(ui, 'scroll_view_localmusic', *[(c, None, str(i)) for i, c in enumerate(LIBRARY_STOCK)])
+    fw.fn('library_rows', None, C.c_void_p)(home)
+    sync = lambda w: CLICK(ui.fn('addon_apps_sync'))(w, 0)
+    for change, shown in ((lambda: disk.update(TAPE), True), (lambda: [disk.pop(p) for p in TAPE], False)):
+        store = ui.new('window_create', 0, 0, 0, 0, 0)
+        change()
+        sync(0)  # the job's end, the App Store on top
+        assert ('Apps', not shown) in page_rows(ui, view)
+        ui.close(store)
+        sync(home)  # Return: Home on top again
+        assert ('Apps', shown) in page_rows(ui, view)
 
 
 @in_fork
@@ -2408,8 +2602,8 @@ def test_home_s_streaming_list_is_streaming_s_rows(fw, ui):
     assert [c[1][:2] for c in fw.calls('widget_off_by_ctx')] == [(win, win)]
 
 
-ABOUT = [('Model', 'Q2'), ('FW. Version', 'V100I'), ('Serial', '1'), ('Storage', '-'), ('Remaining', '-'),
-         ('Legal', ''), ('Reset', '')]
+ABOUT = [('Model', 'Q2'), ('FW. Version', 'V100I'), ('Storage', '-'), ('Remaining', '-'),
+         ('Wi-Fi MAC', 'a0:b1:c2:d3:e4:f5'), ('IP Address', '-'), ('Serial', '1')]  # stock's, in its order
 
 
 def about(ui, rows):
@@ -2438,6 +2632,17 @@ def test_about_shows_stock_s_version_and_the_payload_s_after_it_without_stock_s_
     version, beta = host.tools_build.VERSION, host.tools_build.BETA
     assert about_rows(ui, view) == [ABOUT[0], ('FW. Version', host.tools_build.STOCK_VERSION), ('CFW. Version', version + (f' beta {beta}' if beta else '')),
                                     *ABOUT[2:]]
+
+
+@pytest.mark.parametrize('mac, toasts', [('a0:b1:c2:d3:e4:f5', ['a0:b1:c2:d3:e4:f5']), ('', [])])
+def test_a_tap_on_wi_fi_mac_toasts_the_whole_address(fw, ui, mac, toasts):
+    win, view = about(ui, ABOUT)
+    fw.mock('stock_about_trampoline', lambda *_: 5)
+    fw.fn('ringnav_about', C.c_int, C.c_void_p, C.c_void_p)(win, None)
+    row = next(item for item in ui.kids[view] if ui.text.get(ui.kids[ui.kids[item][0]][0]) == 'Wi-Fi MAC')
+    button = ui.kids[row][0]
+    ui.text[ui.kids[button][1]] = mac
+    assert ui.handler(button, EVT_CLICK)() == 0 and ui.toasts == toasts
 
 
 def test_an_about_page_that_is_not_stock_s_is_left(fw, ui):
@@ -2526,6 +2731,23 @@ def test_era_lists_each_decade_with_its_albums(fw, ui):
     assert db.asked[-1].startswith('select year/10*10,count(*)')
     call(fw, 'era_menu')
     assert ui.windows == [page]
+
+
+def test_era_reads_on_a_small_connection_of_its_own_and_closes_it(fw, ui):
+    """Era groups the whole library on a connection of its own: the library's database, held to a 64-page cache
+    with its temporary tables on disk before the query, so the grouping leaves the player its memory, and closed
+    after it."""
+    db = EraDb(fw, decades=[(b'1990', b'3')])
+    opened, closed = [], []
+    def open_(path, out, *_):
+        opened.append(C.string_at(path))
+        C.c_void_p.from_address(out).value = 0xdb
+        return 0
+    fw.mock('sqlite3_open', open_)
+    fw.mock('sqlite3_close', lambda handle, *_: closed.append(handle))
+    call(fw, 'era_menu')
+    assert opened == [b'/mnt/data/database.db'] and closed == [0xdb]
+    assert db.asked[0] == 'PRAGMA cache_size=64;PRAGMA temp_store=FILE' and len(db.asked) == 2
 
 
 @pytest.mark.parametrize('opens, decades, toast', [(False, [], 'Era unavailable'), (True, [], 'No dated albums yet')])

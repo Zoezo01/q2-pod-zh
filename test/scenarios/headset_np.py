@@ -113,7 +113,7 @@ for owner,page,want in ((2,'spotbrowse_page',[(2,O['KEY_PLAY'])]),(1,'spotify_pa
                         (3,'radionp_page',[(3,O['KEY_PLAY'])]),(2,'tidal_downloads',[(1,'pause')]),(2,'home_page',[(2,O['KEY_PLAY'])])):
     m=HeadsetMachine(owner); m.top=m.node('window',page,[])
     m.fn('media_key',O['KEY_PLAY']); assert m.actions==want,(page,m.actions); passed()
-# Headphones Required (docs/internals.md): stock V1.36's switch lets nothing start with no output connected, and Q2 Pod's
+# Require Output (docs/internals.md): stock V1.36's switch lets nothing start with no output connected, and Q2 Pod's
 # own starts ask stock's check_forbid_play_no_headset, as stock's do. Everywhere else this suite and test/fw answer for
 # that function; from here to Resume on connect stock's own code answers. First the gate alone, on both builds: it
 # refuses only with the switch on, outside test mode, and no output, which is a Bluetooth link with its codec up, a

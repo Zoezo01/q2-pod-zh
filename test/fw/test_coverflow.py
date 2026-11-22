@@ -1440,6 +1440,17 @@ def test_blob_io_a_failed_sync_or_rename_is_a_failed_write(fw):
     assert g.blob_io(b'/a', b'/a.tmp', buf, 4, 1) == 0 and card.files['/a'] == b'old!'
 
 
+@pytest.mark.parametrize('step', ['fw_fflush', 'fw_fclose'])
+def test_blob_io_a_failed_flush_or_close_is_a_failed_write_too(fw, step):
+    """The last bytes can fail to reach the flash at the flush or at the close: neither may go on to the rename,
+    which would put a short file over the last whole one."""
+    g = api(fw)
+    card = Card(fw, {'/a': b'old!'})
+    fw.mock(step, lambda *_: -1)
+    buf = (C.c_ubyte * 4)(1, 2, 3, 4)
+    assert g.blob_io(b'/a', b'/a.tmp', buf, 4, 1) == 0 and card.files['/a'] == b'old!'
+
+
 def statuses(fw, status):
     fw.mock('fw_fork', lambda *_: 1234)
 
@@ -2669,13 +2680,16 @@ def test_home_binds_its_cards_and_lists_and_asks_the_pane_s_counts_after_boot(fw
         assert ui.handlers(h.rows[row]) == [(address(fw, fn), ctx)], row
     on_card = [ui.handlers(ui.lookup(h.carousel[0], n)) for n in ('img_cover_flow', 'img_rockbox')]
     assert on_card == [[(address(fw, 'coverflow__coverflow_open'), 0)], [(address(fw, 'home_shortcut_open'), 0)]]
-    assert ui.handlers(h.win, EVT_WINDOW_FOREGROUND) == [(address(fw, 'coverflow__home_foreground'), 0)]
+    # the Library list's Apps row after an App Store install or remove, then the pane's counts
+    assert ui.handlers(h.win, EVT_WINDOW_FOREGROUND) == [(address(fw, 'addon_apps_sync'), h.win),
+                                                          (address(fw, 'coverflow__home_foreground'), 0)]
     assert ui.timer(address(fw, 'coverflow__home_counts'))[1] > 0  # not in boot's first paints: later
 
 
 def test_a_theme_without_the_pane_asks_no_counts(fw):
     _, ui, h, _ = home_open(fw, MINIMAL)
-    assert not ui.handlers(h.win, EVT_WINDOW_FOREGROUND) and not ui.timer(address(fw, 'coverflow__home_counts'))
+    assert ui.handlers(h.win, EVT_WINDOW_FOREGROUND) == [(address(fw, 'addon_apps_sync'), h.win)]  # the Library list's
+    assert not ui.timer(address(fw, 'coverflow__home_counts'))
 
 
 def test_settings_slides_in_over_the_list_and_return_slides_the_list_back(fw):

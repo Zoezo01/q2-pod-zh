@@ -275,8 +275,9 @@ int ipod_light(void) {
     int v = accent();
     return light_on(&themes[st.theme], v);
 }
-/* The Theme picker's rows, by stored THEME: Minimal, Modern, Classic. */
-const unsigned char theme_rows[] = { 0, 2, 1 };
+/* The Theme picker's rows, by stored THEME: Minimal, Modern, Classic, Classic Modern. Status Bar's
+ * values are its first three. */
+const unsigned char theme_rows[] = { 0, 2, 1, 3 };
 _Static_assert(sizeof theme_rows == THEME_N, "a row per theme");
 /* Status Bar's look: the theme whose fill, battery, play state and icon rows (bar.icons) the bar
  * paints, Status Bar's value in the picker's order, 0 the theme's own. The row is still the booted

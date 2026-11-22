@@ -9,6 +9,7 @@ from conftest import O
 from test_addon import Ap, card  # each file keeps its own state's mirror
 from test_nav_library_pages import Up
 from test_nav_painters import Ui, strings  # noqa: F401  the window stack
+from test_navigation import Sa
 from test_netupdate import JOB_INSTALL, NU_RUNNING, Nu, Sh
 from test_onlinematch import Al
 from test_radio import Rd
@@ -256,6 +257,162 @@ def test_a_radio_woken_for_a_page_left_at_once_gets_its_five_minutes(q2):
     assert q2.switched == ['off', 'on']
     q2.pass_(POLL)
     assert q2.switched == ['off', 'on', 'off']
+
+
+# An automatic scrobble upload's own wake (scrobble_ui.c scrobble_auto): smart_wifi_auto wakes the radio, and once the
+# upload's try is over (smart_wifi_release) the radio goes SMART_RELEASE_MS after its last use, not SMART_IDLE_MS,
+# unless anything else has used it since the wake.
+RELEASE = O['SMART_RELEASE_MS']
+
+
+class Auto:
+    """scrobble_ui.c's two calls for one automatic upload, with Smart Wi-Fi's radio off: the wake, its link 5 s on,
+    the upload on scrobble.c's thread (scrobble_busy) for 3 s from the next poll, and the release at its end, in
+    the same pass of the UI loop, before power_poll."""
+    def __init__(self, q):
+        self.q, self.up = q, q.fw.var('scrobble__up', Up)
+        self.wake_fn, self.release = q.fw.fn('smart_wifi_auto', C.c_int), q.fw.fn('smart_wifi_release', None)
+
+    def wake(self):
+        assert self.q.off() and self.wake_fn() == 1 and not self.q.off()
+
+    def upload(self, during=lambda q: None):
+        self.q.pass_(5 * POLL)
+        self.q.up()
+        self.q.pass_(POLL)
+        self.up.running = 1
+        self.q.pass_(POLL)
+        during(self.q)
+        self.q.pass_(2 * POLL)
+        self.up.running = 0
+        self.release()
+
+
+def test_a_radio_woken_for_an_automatic_upload_goes_thirty_seconds_after_it(q2):
+    """Nothing else used the radio: it goes SMART_RELEASE_MS after the upload's last poll, unsaved, where it kept
+    SMART_IDLE_MS. Its link's arrival was a use too, long over."""
+    assert RELEASE == 30 * 1000
+    q2.idle()
+    auto = Auto(q2)
+    auto.wake()
+    auto.upload()
+    q2.pass_(RELEASE - POLL)
+    assert q2.switched == ['off', 'on']
+    q2.pass_(POLL)
+    assert q2.switched == ['off', 'on', 'off'] and q2.saved == []
+
+
+def left(name):
+    """A page opened for a poll, then left."""
+    def use(q):
+        page = q.ui.window(name)
+        q.pass_(POLL)
+        q.ui.wm.children.remove(page)
+    return use
+
+
+def row_again(q):
+    q.row.value = 0
+    q.pass_(POLL)
+    q.row.value = 1
+
+
+def queue_for_a_poll(q):
+    q.queue = 2
+    q.pass_(POLL)
+    q.queue = 0
+
+
+@pytest.mark.parametrize('use', [left('stream_page'), lambda q: Press(q).click(None, None), row_again, queue_for_a_poll],
+                         ids=['a network page opened and left', 'a press that needs the link',
+                              'the Smart Wi-Fi row off and on again', 'a stream queue for a poll'])
+def test_anything_else_during_the_upload_keeps_the_five_minutes(q2, use):
+    """Any other use between the wake and the upload's end, over by then, makes the radio no longer the upload's
+    alone: it goes SMART_IDLE_MS after its last use, as before."""
+    q2.idle()
+    auto = Auto(q2)
+    auto.wake()
+    auto.upload(during=use)
+    q2.pass_(IDLE - POLL)
+    assert q2.switched == ['off', 'on']
+    q2.pass_(POLL)
+    assert q2.switched == ['off', 'on', 'off']
+
+
+def test_a_page_opened_after_the_release_gets_its_five_minutes(q2):
+    q2.idle()
+    auto = Auto(q2)
+    auto.wake()
+    auto.upload()
+    q2.pass_(RELEASE - 2 * POLL)
+    left('radio_page')(q2)  # its last poll, a second short of the release's 30 s
+    q2.pass_(IDLE - POLL)
+    assert q2.switched == ['off', 'on']
+    q2.pass_(POLL)
+    assert q2.switched == ['off', 'on', 'off']
+
+
+def test_a_time_sync_pending_at_the_release_keeps_the_radio_and_then_its_thirty_seconds(q2):
+    """The link's time sync is the upload's own wake's: still pending when the upload ends, it holds the radio,
+    and the 30 s run from its end."""
+    q2.idle()
+    auto = Auto(q2)
+    auto.wake()
+    q2.set('g_syncnettime_flag', 1)
+    auto.upload()
+    q2.pass_(2 * RELEASE)
+    assert q2.switched == ['off', 'on']
+    q2.set('g_syncnettime_flag', 0)  # cleared after its poll: its last
+    q2.pass_(RELEASE - POLL)
+    assert q2.switched == ['off', 'on']
+    q2.pass_(POLL)
+    assert q2.switched == ['off', 'on', 'off']
+
+
+def test_a_release_for_a_radio_woken_for_something_else_changes_nothing(q2):
+    """The automatic upload found the link up, woken by a page left at once: its end leaves SMART_IDLE_MS."""
+    q2.idle()
+    q2.wake()
+    q2.pass_(5 * POLL)
+    q2.up()
+    q2.pass_(POLL)  # the new link: the last use
+    Auto(q2).release()
+    q2.pass_(IDLE - POLL)
+    assert q2.switched == ['off', 'on']
+    q2.pass_(POLL)
+    assert q2.switched == ['off', 'on', 'off']
+
+
+@pytest.mark.parametrize('ending, off_after_s', [('sent', 92), ('failed', 92), ('no link', 60), ('no account', 60)])
+def test_each_end_of_the_automatic_upload_s_try_lets_its_radio_go(q2, ending, off_after_s):
+    """Through scrobble_auto, from the wake at a due check: the upload sent or failed (3 s, from the next minute's
+    check), the wake bringing no link by that check, or a link with no account to send to. The radio goes 30 s
+    after its last use; it stayed five minutes (362, 362, 300 and 305 s)."""
+    sa, up = q2.fw.var('scrobble_ui__sa', Sa), q2.fw.var('scrobble__up', Up)
+    values = {b'AUTO': b'1', **({} if ending == 'no account' else {b'TOKEN': b'abc'})}
+
+    def read(path, section, key, out, default, *_):
+        value = values.get(C.string_at(key), b'')
+        C.memmove(out, value + b'\0', len(value) + 1)
+    q2.fw.mock('toolsReadConfig', read)
+    q2.fw.mock('navigator_window_is_exist', lambda *_: 0)
+    q2.fw.mock('fw_pthread_create', lambda *_: 0)
+    scrobble_auto = q2.fw.fn('scrobble_auto', None)
+    q2.idle()
+    sa.pending, sa.first_at = 1, (q2.now - 180 * 60000) & 0xffffffff  # due: one listen, three hours old
+    woke = q2.now
+    scrobble_auto()  # radio off: woken
+    assert q2.switched == ['off', 'on']
+    while q2.switched == ['off', 'on'] and q2.now - woke < 600000:
+        q2.now += POLL  # the UI loop: scrobble_auto, then power_poll's smart_poll
+        if ending != 'no link' and q2.now - woke == 5000:
+            q2.up()
+        if up.running and q2.now - woke == 63000:
+            up.done, up.ok, up.sent = 1, int(ending == 'sent'), int(ending == 'sent')
+        scrobble_auto()
+        q2.poll()
+    assert (q2.now - woke) // 1000 == off_after_s and q2.switched == ['off', 'on', 'off']
+    assert sa.running == 0 and sa.pending == (0 if ending == 'sent' else 1)
 
 
 def test_the_users_own_tap_is_saved_and_the_radio_is_the_users_again(q2):
@@ -612,3 +769,77 @@ def test_stocks_actions_run_at_once_with_the_radio_as_the_user_left_it(fw, q2):
     assert fw.fn('ringnav_online_match', C.c_int, C.c_void_p)(more.addr) == 9
     assert stock == [(tidal.addr, 0x77), (transfer.addr, 0x77), more.addr]
     assert q2.toasts == [] and q2.timers == [] and q2.switched == []
+
+
+# The automatic upload's wakes (scrobble_ui.c scrobble_auto, docs/internals.md#scrobbling).
+class Listening:
+    """Music playing on with Smart Wi-Fi on and [SCROBBLE] AUTO=1 (a ListenBrainz token on the card): a song heard
+    every 4 minutes and the UI loop's scrobble_auto at each poll. network: whether a woken radio finds a link, 5 s
+    on; sent: how an upload's thread ends, 3 s after it starts. wakes: when the radio came on; uploads: when each
+    upload started."""
+    def __init__(self, q, network=False, sent=True):
+        self.q, self.network, self.sent, self.wakes, self.uploads, self.link_at = q, network, sent, [], [], None
+        self.up = q.fw.var('scrobble__up', Up)
+        values = {b'TOKEN': b'abc', b'AUTO': b'1'}
+        def read(path, section, key, out, default, *_):
+            value = values.get(C.string_at(key), b'')
+            C.memmove(out, value + b'\0', len(value) + 1)
+        m = q.fw.mock
+        m('toolsReadConfig', read)
+        m('fw_pthread_create', lambda t, attr, fn, arg, *_: self.uploads.append(q.now) or 0)
+        m('navigator_window_is_exist', lambda *_: 0)
+        def switch(toggle=1, *_):
+            Q2.switch(q, toggle)
+            if q.wifi.value:
+                self.wakes.append(q.now)
+                self.link_at = q.now + 5000 if self.network else None
+        m('wifi_switch', switch)
+        self.auto, self.listened = q.fw.fn('scrobble_auto', None), q.fw.fn('scrobble_listened', None)
+        q.idle()
+        self.song = q.now + 240000
+
+    def run(self, minutes):
+        q, end = self.q, self.q.now + minutes * 60000
+        while q.now < end:
+            q.now += POLL
+            if self.link_at and q.now >= self.link_at:
+                q.up()
+                self.link_at = None
+            q.poll()
+            if q.now >= self.song:
+                self.listened()
+                self.song += 240000
+            if self.up.running and not self.up.done and q.now - self.uploads[-1] >= 3000:
+                self.up.done, self.up.ok, self.up.sent = 1, int(self.sent), int(self.sent)
+            self.auto()
+
+    def gaps(self, since=0):
+        """Whole minutes between the radio's wakes, from wake since on."""
+        w = self.wakes[since:]
+        return [(b - a) // 60000 for a, b in zip(w, w[1:])]
+
+
+def test_an_automatic_upload_that_finds_no_link_wakes_the_radio_less_and_less_often(q2):
+    """Away from any known network each wake for the automatic upload brings no link, and each kept the radio on for
+    Smart Wi-Fi's five minutes: the next wake now comes 30 minutes after the last try, then 60, then every 120. It
+    came every half hour at most, sooner while the listens since pulled the retry in."""
+    day = Listening(q2)
+    day.run(8 * 60)
+    assert day.gaps() == [31, 61, 121, 121] and not day.uploads
+
+
+def test_back_on_a_network_the_upload_goes_and_a_success_starts_the_waits_over(q2):
+    """Coming back to a known network, a link up for anything else (here Streaming's page wakes the radio) uploads at
+    the next minute's check, however long the next wake would still wait. The upload sent, the count starts over: the
+    next try that finds no link is followed by a wake 30 minutes on, not 120."""
+    day = Listening(q2)
+    day.run(6 * 60)
+    assert len(day.wakes) == 4 and not day.uploads  # the next wake would wait 120 minutes
+    day.network = True
+    page = q2.ui.window('stream_page')
+    day.run(2)
+    assert len(day.uploads) == 1 and day.up.ok and len(day.wakes) == 5  # the page's wake, its link, the upload
+    q2.ui.wm.children.remove(page)
+    day.network, woken = False, len(day.wakes)
+    day.run(4 * 60)
+    assert day.gaps(since=woken)[:2] == [31, 61]  # after the next listens' first miss: 30, then 60 again

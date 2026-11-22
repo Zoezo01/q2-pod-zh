@@ -33,9 +33,12 @@ CHOICES = {'list.selection.painter': {'card': 'SEL_CARD', 'stops': 'SEL_STOPS', 
            'bar.fill.painter': {'flat': 'BAR_FLAT', 'gloss': 'BAR_GLOSS'},
            'bar.battery.painter': {'stock': 'BATT_STOCK', 'classic-light': 'BATT_CLASSIC_LIGHT'},
            'playing.scrubber.painter': {'stock': 'SCRUB_STOCK', 'rows': 'SCRUB_ROWS'},
-           'volume.panel.painter': {'stock': 'VOL_STOCK', 'classic-light': 'VOL_CLASSIC_LIGHT'},
-           'dialog.confirm.painter': {'stock': 'CONFIRM_STOCK', 'classic-light': 'CONFIRM_CLASSIC_LIGHT'},
-           'pages.own.painter': {'stock': 'PAGES_STOCK', 'classic-light': 'PAGES_CLASSIC_LIGHT'},
+           'volume.panel.painter': {'stock': 'VOL_STOCK', 'classic-light': 'VOL_CLASSIC_LIGHT', 'flat': 'VOL_FLAT'},
+           # each a bit (theme.h): classic-light+flat is the flat look's screens over Classic's own
+           'dialog.confirm.painter': {'stock': 'CONFIRM_STOCK', 'classic-light': 'CONFIRM_CLASSIC_LIGHT', 'flat': 'CONFIRM_FLAT',
+                                      'classic-light+flat': 'CONFIRM_CLASSIC_FLAT'},
+           'pages.own.painter': {'stock': 'PAGES_STOCK', 'classic-light': 'PAGES_CLASSIC_LIGHT', 'flat': 'PAGES_FLAT',
+                                 'classic-light+flat': 'PAGES_CLASSIC_FLAT'},
            **dict.fromkeys(('playing.title.font', 'playing.info.font', 'home.rows.font', 'list.row.font', 'list.row.meta_font', 'list.row.tall_font', 'bar.title.font'), FONTS),
            'playing.layout': {'ipod': 'NP_IPOD', 'centred': 'NP_CENTRED'},
            'scheme.mode': {'derive': 'SCHEME_DERIVE', 'light': 'SCHEME_LIGHT', 'dark': 'SCHEME_DARK'}}
@@ -140,7 +143,10 @@ SCHEMA = {k.path: k for k in (
     key('volume.panel.painter', 'painter[PAINT_VOLUME]', 'enum'),
     key('dialog.confirm.painter', 'painter[PAINT_CONFIRM]', 'enum'),
     key('pages.own.painter', 'painter[PAINT_PAGES]', 'enum'),  # the theme's own pages (theme.h classic_pages)
-    key('pages.own.art_final', 'art_final', 'bool'),  # Classic Light's own art (art.py's classic_light_ images) is final
+    key('pages.own.art_final', 'art_final', 'bool'),  # a theme's own art is final: Classic Light's classic_light_ images, the flat look's flat_
+    key('pages.own.fill', 'page_fill', 'color', final=True),  # Classic's own full-screen pages (the lock screen's info page); 0: Home's pane's
+    key('pages.quick.light_ground', 'qs_ground', 'color'),  # the flat Quick Settings' ground round its cards in the light half; 0: the paper
+    key('pages.date.gap', 'date_gap', 'int', 20),  # the flat Set Date's px between its fields, the day where Classic's is; 0: Classic's places
     # the rows painter's pixel rows, top to bottom (final colours): the track, the played part over it; the volume
     # panel away from Now Playing and a card app's progress (paint_rows_bar)
     Key('playing.scrubber.dark_track', 'np_rows[0]', 'rows', 0, 0, (), 'live'),
@@ -914,8 +920,11 @@ def validate(t, name):
     for s in settings:
         if settings.count(s) > 1:
             err(f'{s} declared twice')
-    if t['art_final'] and t['id'] != 'classic-light':  # navigation.c's image hook knows its names alone
-        err('pages.own: art_final is for classic-light\'s own images only')
+    flat = t['painter[PAINT_PAGES]'] & list(CHOICES['pages.own.painter']).index('flat')
+    if t['art_final'] and t['id'] != 'classic-light' and not flat:  # navigation.c's image hook knows its names alone
+        err('pages.own: art_final is for classic-light\'s own images and the flat look\'s only')
+    if (t['qs_ground'] or t['date_gap']) and not flat:
+        err('pages.quick.light_ground and pages.date.gap are the flat look\'s')
     for end in ('top', 'bottom') if t['sb_w'] else ():  # the thumb's round end gives its corner pixel to the glass
         y = t['sb_' + end]
         if corner_inset(y) > t['sb_right'] + 1:
@@ -1159,14 +1168,17 @@ def emit(themes, out, redirects={}):
                 f'.bar = {stops_c(s["bar"])}, .bar_line = 0x{s["bar_line"]:06x}, .bar_line2 = 0x{s["bar_line2"]:06x}'
                 + (f', .label = {json.dumps(s["label"])}' if 'label' in s else '') + ' },'
                 for v, s in enumerate(scheme_half(s, light) for s in t['schemes'])]
+    drawn, named = {}, {}  # a theme whose rows are an earlier one's points at its array (Classic Modern at Classic's)
+    def array(name, body, *asserts):
+        if tuple(body) not in drawn:
+            drawn[tuple(body)] = name
+            lines.extend([f'static const scheme_t {name}[] = {{', *body, '};', *asserts])
+        return drawn[tuple(body)]
     for t in themes:
         i, one = c_name(t), shared(t)
         # one: the light rows serve both halves (today's lines); else the dark rows, then the light ones
-        lines += [f'static const scheme_t {i}_schemes[] = {{', *rows(t, one), '};',
-                  f'_Static_assert(sizeof {i}_schemes / sizeof *{i}_schemes >= ACCENT_N, "one scheme per ACCENTS row, then the theme\'s own");']
-        if not one:
-            lines += [f'static const scheme_t {i}_light[] = {{', *rows(t, True), '};',
-                      f'_Static_assert(sizeof {i}_light == sizeof {i}_schemes, "one light half per scheme");']
+        dark = array(f'{i}_schemes', rows(t, one), f'_Static_assert(sizeof {i}_schemes / sizeof *{i}_schemes >= ACCENT_N, "one scheme per ACCENTS row, then the theme\'s own");')
+        named[i] = dark, dark if one else array(f'{i}_light', rows(t, True), f'_Static_assert(sizeof {i}_light == sizeof {dark}, "one light half per scheme");')
         lines.append(f'static const option_t {i}_opts[] = {{')
         lines += [f'    {{ .setting = {setting(o)}, .def = {o["def"]}, .preset = {o["preset"]}, .keep = {o["keep"]}, '
                   f'.values = 0x{o["values"]:x} }},' for o in t['opts']]
@@ -1181,7 +1193,7 @@ def emit(themes, out, redirects={}):
         fields = [('name', json.dumps(t['name'])),
                   *((k.field, field(k)) for k in SCHEMA.values() if k.cls == 'live' and view_attr(k.path)),
                   ('accent_slot', ACCENT_KEYS.get(t['accent_key']) or f'&st.own[{keys.index(t["accent_key"])}]'), ('accent_key', json.dumps(t['accent_key'])),
-                  ('schemes', f'{c_name(t)}_schemes'), ('light', f'{c_name(t)}_schemes' if shared(t) else f'{c_name(t)}_light'),
+                  ('schemes', named[c_name(t)][0]), ('light', named[c_name(t)][1]),
                   ('n_schemes', len(t['schemes'])),
                   ('opts', f'{c_name(t)}_opts'), ('n_opts', len(t['opts'])),
                   ('undeclared', ' | '.join(f'(1 << {m})' for m in t['undeclared']) or 0),

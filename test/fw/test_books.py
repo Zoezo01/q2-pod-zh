@@ -38,7 +38,8 @@ class Bk(C.Structure):
                 ('file', C.c_char_p), ('cache', C.c_char * 48), ('tmp', C.c_char * 48),
                 *((k, C.c_uint) for k in 'key size pos end prev base len'.split()),
                 ('buf', C.c_void_p), ('thread', C.c_ulong), ('timer', C.c_uint), ('poll', C.c_uint), ('running', C.c_int),
-                ('finished', C.c_int), ('result', C.c_int), ('cancel', C.c_int), ('marks', Mark * 64)]
+                ('finished', C.c_int), ('result', C.c_int), ('cancel', C.c_int), ('marks', Mark * 64),
+                ('save', C.c_uint)]
 
 
 class Vid(C.Structure):
@@ -468,6 +469,40 @@ def test_closing_the_page_keeps_the_page_read_and_lets_go(fw):
     assert shelf.card.files[MARKS][:8] == struct.pack('<II', book_key(path), pos)
     assert fw.fn('books_key', C.c_int, C.c_void_p, C.c_uint)(page, NEXT) == 0  # its keys are stock's again
     assert shelf.paint() == [] and not shelf.bk.page
+
+
+def test_a_turned_page_is_saved_two_seconds_on_without_leaving_the_book(fw):
+    """A power-off ends demo without Return or the page's close, so the page read is saved before either: a
+    run of turns arms one 2 s timer, from the first, which saves the page then reached. A key that turns no
+    page arms none, and the next turn after a save arms another."""
+    path = f'{ROOT}/b.txt'
+    shelf = Shelf(fw, {path: prose(9, 4000)})
+    shelf.click(0)
+    armed = len(shelf.timers)
+    shelf.key(CENTER)  # the caption: no page turned, nothing to save
+    assert len(shelf.timers) == armed
+    for _ in range(3):
+        shelf.paint()
+        shelf.key(NEXT)
+    new = shelf.timers[armed:]
+    assert [ms for _, ms in new] == [2000] and MARKS not in shelf.card.files
+    assert C.CFUNCTYPE(C.c_int, C.c_void_p)(new[0][0])(None) == 0 and armed + 1 not in shelf.removed
+    assert shelf.card.files[MARKS][:8] == struct.pack('<II', book_key(path), shelf.bk.pos) and shelf.bk.pos
+    shelf.paint()
+    shelf.key(NEXT)
+    assert len(shelf.timers) == armed + 2
+
+
+@pytest.mark.parametrize('leave', ['back', 'close'])
+def test_leaving_the_book_with_a_save_pending_saves_at_once_and_stops_the_timer(fw, leave):
+    path = f'{ROOT}/b.txt'
+    shelf = Shelf(fw, {path: prose(9, 4000)})
+    shelf.click(0)
+    shelf.paint()
+    shelf.key(NEXT)
+    pending, pos = len(shelf.timers), shelf.bk.pos  # the Shelf numbers its timers from 1
+    getattr(shelf, leave)()  # Return, or the page destroyed
+    assert pending in shelf.removed and shelf.card.files[MARKS][:8] == struct.pack('<II', book_key(path), pos)
 
 
 @pytest.mark.parametrize('gone', [False, True])

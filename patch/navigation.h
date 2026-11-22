@@ -333,6 +333,14 @@ enum { SLIDER_LIGHT, SLIDER_MAX, SLIDER_BALANCE, SLIDER_BOOT }; /* st.slider_kin
 #define ROUND_LEFT 1
 #define STYLE_KEY 48
 #define CONFIRM_CELL_PX 23
+#define CONFIRM_FLAT_PX 21 /* the flat look's: a cell's words and its height */
+#define CONFIRM_FLAT_H 36
+/* a confirm's form: none, the page, confirm_over's tray */
+enum { FORM_NONE, FORM_PAGE, FORM_TRAY };
+/* paper under the flat hold menu's rows: its card's corners clear the last row */
+#define HOLD_FOOT 10
+/* the toast's box, and the flat look's tray: the same in both halves */
+#define TOAST_RGBA 0xee2b2b2bu
 #define MCL(a) (*(volatile int *)(a))
 int clamp_step(int offset, int maximum, int delta);
 unsigned put_num(unsigned *s, unsigned v);
@@ -422,7 +430,13 @@ int moving(menu_t *m);
 int reconcile(menu_t *m, int settle);
 void *more_image(void *w);
 #define BAR_ROWS geom_val(V_BAR)
-static inline int dialogs_painted(void) { return theme()->painter[PAINT_CONFIRM] != CONFIRM_STOCK; }
+/* Classic's dialogs: the toast, small dialogs' cleared dim, a game's panel, the hold menu; and the
+ * prompts, where flat_dialogs doesn't take them */
+static inline int classic_dialogs(void) {
+    return theme()->painter[PAINT_CONFIRM] & CONFIRM_CLASSIC_LIGHT;
+}
+/* The flat look's prompts: the confirm control's painters alone */
+static inline int flat_dialogs(void) { return !!(theme()->painter[PAINT_CONFIRM] & CONFIRM_FLAT); }
 char *play_key(void);
 unsigned rec_hash(void *r);
 unsigned queue_hash(void *q);
@@ -447,9 +461,31 @@ int quick_dispatch(void *target, void *event);
 void quick_fill(void *w);
 void quick_page(void *win, void *canvas);
 void quick_scrub(void *w, void *canvas);
+extern const rect_t qs_bar_card;
+void quick_vol_flat(void *w, void *canvas, int dy, int level, int max);
 void quick_poll(void);
 int quick_volume(void);
 const char *quick_wheel_toggle(void *top);
+
+/* flat.c */
+extern const unsigned flat_rest[2],
+    flat_ink[2]; /* final, [0] dark, [1] light; flat_quiet: theme.h */
+unsigned flat_page(void);
+unsigned flat_on(void);
+const char *flat_face(void);
+enum { BAR_PLAIN, BAR_SUNS, BAR_SPEAKERS }; /* flat_bar's marks */
+void flat_bar(void *w, void *canvas, const rect_t *r, int part, unsigned rest, int marks);
+void flat_box(void *canvas, rect_t *r, unsigned rgba, unsigned radius);
+void page_label(void *w, int x, int y, int ww, int h, int px, const char *face, unsigned rgb);
+void confirm_track_flat(void *w, void *canvas, int form);
+void confirm_lit(void *canvas, const rect_t *c);
+void hold_card_flat(void *canvas, const rect_t *card, int head, int over);
+void confirm_labels_flat(void *w, void *canvas, int form);
+
+/* np_marks.c */
+void np_mark_add(void *const *image, unsigned n);
+void np_marks_page(void *win);
+void np_marks(void *w, void *canvas);
 
 /* queue_menu.c */
 int qm_hold(void);
@@ -555,6 +591,9 @@ void smart_wake(void); /* Smart Wi-Fi's radio back now, if it had it off */
 void wifi_cap_paint(void *w); /* the Wi-Fi page's status captions in their small face */
 int smart_config(const char *section, const char *key);
 void smart_poll(void);
+/* the automatic scrobble upload's smart_wifi_wait, and its try over */
+int smart_wifi_auto(void);
+void smart_wifi_release(void);
 
 /* battery.c */
 void battery_tick(int level, int cable);

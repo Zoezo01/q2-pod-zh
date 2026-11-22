@@ -11,7 +11,7 @@ ZIP_SHA = '4e298cab6c12d86cfc55565645f7e3ae11d3fb44677a93ca13991e7184ecec4e'
 # 钉住（重新打的 ZIP 永远对不上官方那个）。
 TAR_SHA = '7f57884420e324ac3263571d96a35f04bbef79f35dac34162655c5822bdaa684'
 DEMO_SHA = 'e65d638d6e70332b4c3193af8ac2044941ec0157d20e41e40233aac5b0c2c59f'
-VERSION = '1.8.8'  # major.minor.patch, single digits, shown as is (About and release tag)
+VERSION = '1.8.9'  # major.minor.patch, single digits, shown as is (About and release tag)
 BETA = 0  # a pre-release's beta number (1-9), 0 for the release itself
 # 本分支的 Release 由自己发：网络更新读这个仓库的 releases/latest，release_zh.py 也往这里传。
 # 所以 Release 的 tag 必须正好等于 RELEASE_TAG（A 线是裸 VERSION，之后是 VERSION 点位），
@@ -56,7 +56,7 @@ REPO = 'Zoezo01/q2-pod-zh'  # whose releases Network Update fetches (--update-re
 # 1.8.7 这条线字母重新从 A 起：A 并入上游 1.8.5（语言/状态栏/USB/About）、1.8.6（性能）与 1.8.7（文件拆分），
 # 中文版不打 LANGUAGE_EN，语言保持简体中文；经典百分比对齐暂用上游实现，我们 V182C 的版本备份在
 # tag zh/batt-ours-v184b 与 .workbuddy/backup/statusbar-ours-v184b.txt，实机对比后再决定。
-LETTER = 'A'  # 1.8.8 线首个包：上游越南语字库、App Store 标签页与状态栏真条合并
+LETTER = 'A'  # 1.8.9 线首个包：上游 Classic Modern 主题、扁平外观与资料库应用行合并
 TAG = 'V' + VERSION.replace('.', '') + LETTER
 RELEASE_TAG = VERSION if LETTER == 'A' else f'{VERSION}.{ord(LETTER) - 64}'  # 1.8.3, 1.8.3.2, 1.8.3.3…
 
@@ -122,6 +122,8 @@ HOOKS = {
     'mclSetOutputWay': (0x5bd544, 'ringnav_output', 'output'),
     'write_int_config': (0x4fe67c, 'ringnav_write_config', 'write_config'),
     'main_loop_sleep_default': (0x65c470, 'ringnav_sleep', 'sleep'),
+    # The screen's flush (patch/rotate.c): each changed rectangle turned into the framebuffer a word a pixel
+    'rotate_bgra8888_image': (0x6e11a0, 'ringnav_rotate', 'rotate'),
     'systemset_about_page_init': (0x4c1390, 'ringnav_about', 'about'),
     # Network Update (patch/netupdate.c): the latest GitHub release to the card's update.tar
     'systemset_fwupdate_page_init': (0x4c88d0, 'ringnav_fwupdate', 'fwupdate'),
@@ -329,6 +331,11 @@ BOOT_HOOK = (b'    /release/bin/demo &\n', f'''    (
             {WIFI_OFF}
             (cd $rb && exec ./rockbox) > $rb/rockbox.log 2>&1
             echo "exit $?" >> $rb/rockbox.log
+            # demo starts Bluetooth afresh: stock closeBluetooth's daemon/ready-file cleanup and PD20 low,
+            # without switchBluetooth's settings writes. Keep the radio module loaded: it also supplies Wi-Fi.
+            killall -9 bluetoothd bluealsa rtk_hciattach 2>/dev/null
+            rm -f /tmp/rtk_init_success /tmp/bt_startup
+            /usr/bin/cmd_gpio set_func PD20 output0
         }}
         if [ "$(cat /mnt/data/boot-target 2>/dev/null)" != q2pod ] && ! /usr/bin/q2boot; then
             for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
@@ -388,9 +395,11 @@ REMOTE_HOOK = (b'/usr/bin/dbus-daemon --config-file=/etc/dbus-1/system.conf\n',
                b'/usr/bin/dbus-daemon --config-file=/etc/dbus-1/system.conf\n/usr/bin/q2remote &\n')
 # --dev only (docs/remote.md#log): demo's console output, and hciplayer's, which inherits it, in RAM, so
 # emptied once a minute past 4 MB (O_APPEND keeps demo writing at its end), in place of the release's stderr
-# file and its cap. In BOOT_HOOK's start path.
+# file and its cap. In BOOT_HOOK's start path. The log is a link into an 8 MB tmpfs of its own, twice the trim, so a
+# flood between trims fills that and not /tmp; a failed mkdir, mount or ln leaves no link and the file is /tmp's.
 LOG_HOOK = (b'        (while sleep 60; do n=$(wc -c 2>/dev/null </tmp/q2-demo.err); [ "${n:-0}" -gt 524288 ] && : >/tmp/q2-demo.err; done) &\n'
             b'        while :; do\n            /release/bin/demo 2>>/tmp/q2-demo.err\n',
+            b'        mkdir /tmp/q2-log && mount -t tmpfs -o size=8m q2-log /tmp/q2-log && ln -s /tmp/q2-log/demo.log /tmp/q2-demo.log\n'
             b'        (while sleep 60; do n=$(wc -c 2>/dev/null </tmp/q2-demo.log); [ "${n:-0}" -gt 4000000 ] && : >/tmp/q2-demo.log; done) &\n'
             b'        while :; do\n            /release/bin/demo >>/tmp/q2-demo.log 2>&1\n')
 # --dev only: the wheel's frame log (playback.c wl_flush) and stale-press notes (navigation.c stale_note) go to the
@@ -519,6 +528,10 @@ HOME_KEYUP = (0x534c28, 0x0320f809, 0)
 # the guard after Standby), whose flags only that function clears. So the handler's test for Centre never matches (its
 # bne is a b), and Centre is one more key it knows nothing of, as until V1.34.
 NP_CENTRE = (0x53dbac, 0x1443000d, 0x1000000d)
+# V1.34's Update Library dialog key-up (updatemusic_dialog_on_keyup) takes Centre as it takes Return: lit, it stops the scan
+# and ends the release, so a press during a scan no longer turned the screen off (#455). V1.32's took Return alone. Centre
+# goes on to on_wm_keyup_fun again (its bne is a b, to the wheel's test, which passes it); Return and Cancel still stop it.
+SCAN_CENTRE = (0x4a2acc, 0x14430009, 0x10000009)
 # V1.36's on_wm_keyup_before_fun applies Buttons lock on the lit lock window too (beqz g_lockscreen_pageflag past the lock).
 # Buttons lock stays the dark screen's (navigation.c lock_names), as V1.32's: the branch is taken always.
 KEYLOCK_LIT = (0x4f2728, 0x10400010, 0x10000010)
@@ -753,7 +766,7 @@ LABELS = tuple((k.encode(), o.encode(), n.encode()) for k, o, n in (
     ('playset_covermode', 'Enlarged album art(10s wait)', 'Enlarged Album Art'),
     ('playset_filter', 'Digital filters', 'Digital Filters'),
     ('playset_memplay', 'Memory playback', 'Memory Playback'),
-    ('playset_noplay', 'Headphones required for playback', 'Headphones Required'),
+    ('playset_noplay', 'Headphones required for playback', 'Require Output (Beta)'),
     ('replaygain_track', 'Audio', 'Song'),
     ('small_playset', 'Playback Setting', 'Playback'), ('small_sysset', 'System Setting', 'System'),
     ('system_wifiset', 'Wireless Setting', 'Wireless'), ('system_display', 'Display setting', 'Display'),
@@ -1574,6 +1587,9 @@ FUNCTIONS = {
  'bitmap_create_ex': ('void *', 'unsigned, unsigned, unsigned, unsigned'),
  'bitmap_destroy': ('int', 'void *'),
  'bitmap_lock_buffer_for_read': ('const unsigned char *', 'void *'),
+ # rotate.c reads both as stock's own rotate does
+ 'bitmap_get_physical_line_length': ('unsigned', 'void *'),
+ 'bitmap_get_physical_height': ('unsigned', 'void *'),
  'canvas_draw_image': ('int', 'void *, void *, const void *, const void *'),
  'widget_paint': ('int', 'void *, void *'),  # the system bar, under a dialog that covers it (classic_pages.c search_paint)
  # Cover Flow's flip paints the tracks panel to a bitmap as stock's window snapshots do (coverflow.c flip_capture)
@@ -1594,7 +1610,7 @@ FUNCTIONS = {
  'player_playtime_and_length': ('int', 'int *, int *'),  # elapsed, total: track seconds; -1 none
  'player_start': ('int', 'void *, int, int, int'),
  'buzzeer_switch': ('int', 'int'),  # the stock key click; it reads g_keytone_flag
- # Headphones required (g_block_withoutphone_flag) with no output: toasts (0) and returns 1, as before each stock start
+ # Require Output (g_block_withoutphone_flag) with no output: toasts (0) and returns 1, as before each stock start
  'check_forbid_play_no_headset': ('int', 'int'),
  'on_wm_keyup_fun': ('int', 'void *, void *'),  # stock key-up: np_single replays a centre release
  'get_wifisignal': ('int', 'void'),  # the status bar's Wi-Fi bars, 1-4; -1 when not connected
@@ -1623,11 +1639,14 @@ FUNCTIONS = {
  'mclGetCueFlag': ('int', 'void'),  # the playing record has a CUE start or end
  'mclGetPlayStatus': ('int', 'void'),  # 1 stopped, 2 playing, 3 paused (mclStop, mclSetResume, mclSetPause)
  'player_stop': ('int', 'void'),
+ 'player_save_stop': ('int', 'void'),  # a playing or paused queue stopped, its status and place kept for player_save_start; nothing when stopped
  'player_save_start': ('int', 'int'),  # pause: mclStartPlayer at the saved seek, then paused if set
+ 'mclSetSavePlayStatus': ('int', 'int'),  # what player_save_start resumes: 2 playing, 3 paused, 1 nothing (0x5be924)
  'mclGetSavePlayStatus': ('int', 'void'),  # player_save_stop's mclGetPlayStatus, unless that was 1
  'save_memoryplay_info': ('int', 'void'),  # Memory playback's queue and position, as into_poweroff saves them
  'mclSetDacPwr': ('int', 'int'),
  'reset_poweroptions_timer': ('int', 'int, int, int'),
+ 'toolSetBackLight': ('int', 'int'),  # the panel's level, 1 its lowest; config_lightness gives it g_lightness + 1
  'btctl_transport_get_volume': ('int', 'void'),
  'btctl_transport_set_volume': ('int', 'int'),
  'device_set_volume': ('int', 'int, int'),  # volume, notify: the DAC's or hciplayer's, as the volume dialog
@@ -1635,6 +1654,7 @@ FUNCTIONS = {
  'config_outputchannel': ('int', 'int, int'),  # g_headset_output, 2
  'mclSetPcmMode': ('int', 'void'),
  'mclSetMute': ('int', 'int'),
+ 'mclSetGaplessMode': ('int', 'int'),  # Crossfade turns stock's Gapless on as its row does (crossfade.c gapless_on)
  'toolsTrimLeft': ('void', 'char *'),
  'switch_charge_enable': ('int', 'int'),  # 1 charges: the active-low charge enable on GPIO PE22 (usbmode_page_init)
  'toolsGpioSetValue': ('int', 'const char *, int'),
@@ -1705,7 +1725,7 @@ GLOBALS = ['tidal_albuminfo_thread_run', 'tidal_collection_thread_run',  # 2: a 
            'savestartbt', 'transposition', 'tidalfurlstart',  # a stream to start paused; 1 arms Now Playing's online tick (tidal.c app_start)
            'isFav_playing',  # Now Playing's heart on a 0xf1 track: 1 a favourite (tidal.c app_fav)
            'g_time_zone','g_playspeed_mode', 'g_time24h_flag', 'g_backlight_status', 'g_lockscreen_pageflag', 'g_testmode_flag',
-           'g_keylock_flag', 'g_keylock_mode',
+           'g_keylock_flag', 'g_keylock_mode', 'g_lightness',
            'g_bluetoothflag', 'bt_linkstatus', 'g_guideflag', 'g_poweroff_state', 'g_usblink_status', 'bt__recv_pageflag',
            'g_power_longkey', 'g_ingore_bootkey_flag', 'g_equalizer_flag', 'g_navbar_status', 'g_playcover_type',
            'g_keytone_flag', 'g_folder_layer', 'g_otg_status', 'g_delete_flag', 'g_volume', 'g_maxvolume',
@@ -1713,7 +1733,7 @@ GLOBALS = ['tidal_albuminfo_thread_run', 'tidal_collection_thread_run',  # 2: a 
            'g_usbvol_mode',  # USB DAC volume: 0 fixed, else the volume (config_usbvolmode, device_set_volume)
            'g_usbdac_chargeflag',  # USB mode's charge choice, which switch_charge_enable gets there
            'g_memory_play', 'g_carmode', 'g_carmode_state',  # In-Vehicle Mode (pod_click)
-           'g_block_withoutphone_flag',  # Headphones Required (check_forbid_play_no_headset's switch)
+           'g_block_withoutphone_flag',  # Require Output (check_forbid_play_no_headset's switch)
            'g_bigcovermode', 'g_foldercover_flag',  # Enlarged Album Art (1 on) and Folder Album Cover (pod_click)
            'g_headset_output',  # the output config_outputchannel sets: 0, 1 the jacks, 2 Bluetooth
            'g_usbmode',  # USB mode: 1 Audio and DAC, else USB Storage (usbmode_page_init)
@@ -1751,7 +1771,7 @@ CONTEXT_DATA = {'bt_showcoding': 4, 'g_memory_info': 3476, 'g_folder_path': 1024
                 'bt_connectstatus': 4,  # a link thread runs (1), ended (2), checked (3)
                 'bt_initstatus': 4}  # Bluetooth's start-up status: -102 is stock's "Bluetooth abnormal" (system.c reboot_record)
 # Windows the payload creates at runtime (window_create), so no rootfs asset names them.
-PAYLOAD_WINDOWS = {'playlistedit_page', 'chapters_page', 'coverflow_page', 'photos_page', 'books_page', 'games_page', 'mostplayed_page', 'shuffle_page', 'upnext_page', 'ratings_page', 'era_page', 'era_albums_page', 'rated_page', 'longsongs_page', 'spotify_page',
+PAYLOAD_WINDOWS = {'playlistedit_page', 'chapters_page', 'coverflow_page', 'photos_page', 'books_page', 'games_page', 'cardapps_page', 'mostplayed_page', 'shuffle_page', 'upnext_page', 'ratings_page', 'era_page', 'era_albums_page', 'rated_page', 'longsongs_page', 'spotify_page',
                    'spotbrowse_page', 'radio_page', 'radionp_page', 'streamconf_page', 'tidal_downloads', 'apps_page',
                    'addon_page', 'app_songs', 'qrcode_page', 'battery_page'}
 ICONS = [f'menu_{c}{s}.png' for c in ('coverflow', 'rockbox') for s in ('', 'down')]
@@ -1784,7 +1804,7 @@ FLAGS = ['--target=mipsel-linux-gnu','-march=mips32r2','-mabi=32','-mfp64',
          '-Wshadow','-Wimplicit-int-conversion','-Wconditional-uninitialized','-Wmissing-variable-declarations',
          '-Wvla','-Wundef']
 # navigation.c and the files split out of it (patch/navigation.h), each its own object, linked in this order.
-NAVIGATION = ['navigation.c', 'theme_engine.c', 'playlists.c', 'classic_pages.c', 'home.c', 'np_bar.c', 'volume.c', 'smart_wifi.c', 'system.c', 'usb_charge.c', 'tags.c', 'scrobble_ui.c', 'library_lists.c', 'durations.c', 'script.c', 'coverflow_position.c', 'ratings.c', 'scan_folders.c', 'folder_delete.c', 'battery.c', 'np_lyrics.c', 'quick_settings.c', 'clock.c', 'queue_menu.c']
+NAVIGATION = ['navigation.c', 'theme_engine.c', 'playlists.c', 'classic_pages.c', 'home.c', 'np_bar.c', 'volume.c', 'smart_wifi.c', 'system.c', 'usb_charge.c', 'tags.c', 'scrobble_ui.c', 'library_lists.c', 'durations.c', 'script.c', 'coverflow_position.c', 'ratings.c', 'scan_folders.c', 'folder_delete.c', 'battery.c', 'np_lyrics.c', 'quick_settings.c', 'flat.c', 'clock.c', 'queue_menu.c', 'np_marks.c', 'rotate.c']
 
 def compile_payload(out):  # pragma: no mutate block
     """Compile and link the payload."""
@@ -2088,6 +2108,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
     # LANGUAGE_EN (upstream 1.8.5, forces en_US) is not applied: the default stays Simplified Chinese.
     patch_word(patched, *HOME_KEYUP, 'Home binds no key-up of its own')
     patch_word(patched, *NP_CENTRE, "Now Playing leaves Centre to stock's power-key handling")
+    patch_word(patched, *SCAN_CENTRE, "Update Library's dialog leaves Centre to stock's power-key handling")
     patch_word(patched, *KEYLOCK_LIT, 'Buttons lock acts only with the screen off')
     patch_word(patched, *VOL_DARK, 'The volume dialog steps with the screen off')
     for site in MORE_ARTIST_CLOSE:
@@ -2320,8 +2341,10 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
                                      else cat(xx+like)) for n, like in dict(
         shuffle='playset_playmode.png', scrobble='wifiset_wifi.png', podcasts='netservice_dlna.png',
         audiobooks='playset_foldercover.png', photos='playset_covermode.png', books='system_language.png',
-        videos='system_display.png', longsongs='system_time.png', era='local_genre.png').items()})
+        videos='system_display.png', longsongs='system_time.png', era='local_genre.png',
+        store='system_update.png').items()})
     icons['local_games.png'] = ('system_language.png', (ROOT/'assets/icons/local_games.png').read_bytes())
+    icons['local_apps.png'] = ('system_language.png', (ROOT/'assets/icons/stream_app.png').read_bytes())  # 52 px, Library's Apps
     # Minimal's selected Wi-Fi and Bluetooth rows draw this grey copy over stock's white delete mark
     icons['list_delete.png'] = ('navbar_delete.png', cat(xx+'navbar_delete.png'))
     for n in ('spotify', 'radio', 'app', 'config'):  # Streaming's Spotify, Internet Radio, card app and Configuration rows
@@ -2342,7 +2365,10 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
     added = []
     changed_assets = {}
     from art import images as theme_images
-    drawn = {xx+n+'.png': (xx+'list_tidal.png', d) for t in builtin_themes() for n, d in theme_images(t).items()}
+    drawn = {}
+    for t in builtin_themes():  # a theme on another's art draws its names, as that one does
+        for n, d in theme_images(t).items():
+            check(drawn.setdefault(xx+n+'.png', (xx+'list_tidal.png', d))[1] == d, f'{t["id"]}: {n} is another theme\'s, drawn otherwise')
     for path, (like, data) in {**{xx+n: (xx+l, d) for n, (l, d) in icons.items()}, **pages, **drawn,
                                'etc/init.d/S12usbcharge': ('etc/init.d/S20urandom', (ROOT/'patch/usb_charge.sh').read_bytes()),
                                HELPER: (HELPER_LIKE, compile_helper(out, cat, 'video', 'q2video', HELPER_LIBS)),

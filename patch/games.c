@@ -872,16 +872,24 @@ static void frame_rect(void *canvas, int x, int y, int w, int h, unsigned rgb, u
  * mode, its black suits black. */
 static unsigned unflipped(unsigned v) { return unflip(v) * 0x010101u; }
 
-/* s (ASCII) in the theme's face at px, h rows from y: from x, centred on it or ending at it. A
- * theme with capitals on Home (Minimal) takes them here too, SUDO_TRACK apart. Returns its width.
- * Shared with app_store.c.
+/* s in the theme's face at px, h rows from y: from x, centred on it or ending at it. UTF-8 is
+ * decoded to code points: App Store's Chinese state words and tabs would paint as their bytes
+ * otherwise. A theme with capitals on Home (Minimal) takes ASCII's here too, SUDO_TRACK apart.
+ * Returns its width. Shared with app_store.c.
  */
 int text_at(void *canvas, const char *s, int x, int y, int h, unsigned px, unsigned color,
             int align) {
     unsigned wide[40], n = 0;
     int cw[40], w = 0, caps = theme()->caps_home, fpx = (int)px;
-    for (; s[n] && n < 40; ++n)
-        wide[n] = caps && s[n] >= 'a' && s[n] <= 'z' ? (unsigned)s[n] - 32 : (unsigned char)s[n];
+    const unsigned char *p = (const unsigned char *)s;
+    for (; *p && n < 40; ++n) {
+        unsigned c = *p++;
+        if (c >= 0xc0) { /* a lead byte: its continuation bytes make one code point */
+            int k = c >= 0xf0 ? 3 : c >= 0xe0 ? 2 : 1;
+            for (c &= 0x3f >> k; k-- && (*p & 0xc0) == 0x80;) c = c << 6 | (*p++ & 0x3f);
+        }
+        wide[n] = caps && c >= 'a' && c <= 'z' ? c - 32 : c;
+    }
     if (!n) return 0;
     unsigned step = caps ? 1 : n; /* capitals a letter at a time, to space them */
     int track = caps ? SUDO_TRACK : 0;
@@ -922,7 +930,7 @@ static void hud(void *canvas, const char *name, unsigned v, int x, int y, int ri
  * the panel and no chevron on the band; paint_panel's shadow images are per size. */
 /* its own panel needs the scheme's gloss and band: fewer than two stops are none */
 static int pop_own(const theme_t *T, const scheme_t *S) {
-    return T->painter[PAINT_CONFIRM] != CONFIRM_STOCK && S->bar.n > 1 && S->sel.n > 1;
+    return T->painter[PAINT_CONFIRM] & CONFIRM_CLASSIC_LIGHT && S->bar.n > 1 && S->sel.n > 1;
 }
 /* the panel's chosen row, its row i of POP_ROW */
 static unsigned pop_band(const scheme_t *S, int i) {

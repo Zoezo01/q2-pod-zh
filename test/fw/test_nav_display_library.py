@@ -332,7 +332,7 @@ def appearance_titles(t):
     """Appearance's rows under theme t: Theme, t's options in its theme.xml's order, then the Home switches every
     theme has."""
     return ['Theme'] + [o['label'] if o['setting'] == 'SETTING_OWN' else PAYLOAD[o['setting']][0] for o in t['opts']] + \
-        ['Hide Streaming', 'Hide Folder']
+        ['Hide Streaming', 'Hide Folder', 'Hide Apps', 'Hide Games', 'Hide App Store']
 
 
 def stored_key(t, o):
@@ -385,7 +385,7 @@ def test_appearance_lists_theme_then_minimals_options_in_its_order(fw):
     assert titles(page.view()) == appearance_titles(t)
     # no set_text: a row reads "Title: value", a switch its On or Off
     switches = [PAYLOAD[o['setting']][0] for o in t['opts'] if o['setting'] in PAYLOAD and PAYLOAD[o['setting']][2]] + \
-        ['Hide Streaming', 'Hide Folder']
+        ['Hide Streaming', 'Hide Folder', 'Hide Apps', 'Hide Games', 'Hide App Store']
     assert switches and [row[0] for row in rows(page.view()) if row[1] is not None] == switches
     read = readings(page.view())
     # the running theme's name, and Accent at Minimal's own default, under its own key
@@ -394,6 +394,16 @@ def test_appearance_lists_theme_then_minimals_options_in_its_order(fw):
     assert (read['Light Mode'], read['Rounded Corners'], read['Home'], read['Shortcut'], read['Time in Title']) == \
         ('Off', 'On' if t['name'] == 'Minimal' else 'Off', 'Split', 'Favorites', 'On')
     assert (read['Show Wordmark'], read['Hide Streaming'], read['Hide Folder']) == ('On', 'Off', 'Off')
+    assert (read['Hide Apps'], read['Hide Games'], read['Hide App Store']) == ('Off', 'Off', 'Off')
+
+
+@pytest.mark.parametrize('title, key', [('Hide Apps', 'HIDEAPPS'), ('Hide Games', 'HIDEGAMES'),
+                                        ('Hide App Store', 'HIDESTORE')])
+def test_a_library_hide_switch_saves_its_key(fw, title, key):
+    ui = Ui(fw)
+    page = appearance(fw, ui)
+    ui.click(button_of(page.view(), title))
+    assert readings(page.view())[title] == 'On' and writes(fw) == [(key, 1)]
 
 
 def test_classic_appearance_rows_read_title_and_value_and_its_own_options(fw):
@@ -599,12 +609,12 @@ def picks(view):
     return [(item.labels()[0].text, item.children[0].children[0].props['image'].decode()) for item in view.children]
 
 
-def test_the_theme_picker_lists_minimal_modern_classic_marking_the_running_one(fw):
+def test_the_theme_picker_lists_minimal_modern_classic_classic_modern_marking_the_running_one(fw):
     ui = Ui(fw)
     page = appearance(fw, ui, THEME=b'2')
     themes_page(fw, ui, page)
     assert page.title() == 'Theme'
-    assert picks(page.view()) == [('Minimal', 'unselect'), ('Modern', 'select'), ('Classic', 'unselect')]
+    assert picks(page.view()) == [('Minimal', 'unselect'), ('Modern', 'select'), ('Classic', 'unselect'), ('Classic Modern', 'unselect')]
 
 
 def pick(ui, page, t):
@@ -674,6 +684,56 @@ def test_picking_classic_asks_to_restart_and_saves_its_preset_alone(fw, st, answ
     assert len(fw.calls('stock_reboot_trampoline')) == (answer == 10)
 
 
+def test_classic_and_classic_modern_switch_live(fw, st):
+    """Classic Modern has Classic's geometry sets, so picking it from Classic asks no restart, and back."""
+    cm = next(t for t in THEMES if t['id'] == 'classic-modern')
+    restart = fw.fn('theme_restart', C.c_int, C.c_int)
+    ui = Ui(fw)
+    page = appearance(fw, ui, THEME=b'%d' % CLASSIC)
+    for g in range(len(host.tools_theme.geometry_sets(THEMES))):  # Classic's booted set
+        st('geom').value = g
+        if not restart(CLASSIC):
+            break
+    assert not restart(cm['index']) and restart(MINIMAL)
+    themes_page(fw, ui, page)
+    prompts = Prompts(fw, 0)
+    pick(ui, page, cm)
+    assert prompts.seen == [] and writes(fw)[0] == ('THEME', cm['index']) and st('theme').value == cm['index']
+
+
+@pytest.mark.parametrize('frm', ['Classic', 'Classic Modern'])
+def test_classic_and_classic_modern_keep_each_other_s_settings(fw, st, frm):
+    """The two share their settings (one accent key, Classic's options), so a switch either way loads no preset: what the
+    user set stays, for both. Dark, Tidal, Library on Home and Row Art off, here."""
+    cm = next(t for t in THEMES if t['id'] == 'classic-modern')
+    there, to = (CLASSIC, cm) if frm == 'Classic' else (cm['index'], theme_of(CLASSIC))
+    stored = {'THEME': there, 'LIGHT': 0, 'CLASSIC_LIGHT_ACCENT': 2, 'HOMELIB': 0, 'ROWART': 0, 'TIMETITLE': 0}
+    restart = fw.fn('theme_restart', C.c_int, C.c_int)
+    ui = Ui(fw)
+    page = appearance(fw, ui, **{k: b'%d' % v for k, v in stored.items()})
+    for g in range(len(host.tools_theme.geometry_sets(THEMES))):
+        st('geom').value = g
+        if not restart(there):
+            break
+    themes_page(fw, ui, page)
+    pick(ui, page, to)
+    assert writes(fw) == [('THEME', to['index'])] and (st('light').value, st('time_title').value) == (0, 0)
+
+
+def test_minimal_to_classic_modern_saves_classic_s_preset(fw):
+    """Settings Classic Modern doesn't share: Classic's preset, as picking Classic saves it."""
+    cm = next(t for t in THEMES if t['id'] == 'classic-modern')
+    stored = {'LIGHT': 0, 'HOME': 2, 'TIMETITLE': 0} | {k: d for k, (_, d, _) in host.tools_theme.theme_keys(THEMES).items()}
+    ui = Ui(fw)
+    page = appearance(fw, ui, **{k: b'%d' % v for k, v in stored.items()})
+    themes_page(fw, ui, page)
+    Prompts(fw, 10)
+    pick(ui, page, cm)
+    saved = writes(fw)
+    assert saved == [('THEME', cm['index'])] + preset_writes(cm, stored) and saved[1:]
+    assert preset_writes(cm, stored) == preset_writes(theme_of(CLASSIC), stored)
+
+
 def test_a_new_theme_moves_a_cached_settings_list_to_its_top(fw, st, geometry):
     names, rows_ = geometry
     ui = Ui(fw)
@@ -716,7 +776,7 @@ def test_system_settings_adds_its_rows_and_hides_five(fw):
     ui = Ui(fw)
     Config(fw)
     page = Settings(fw, ui)
-    assert titles(page.view) == ['stock_1', 'stock_2', 'stock_3', 'Controls', 'stock_4', 'system_time', 'stock_0', 'App Store',
+    assert titles(page.view) == ['stock_1', 'stock_2', 'stock_3', 'Controls', 'stock_4', 'system_time', 'stock_0',
                                  'system_update', 'system_reset', 'stock_5', 'stock_6', 'stock_7', 'stock_8', 'system_about']
     # stock's Language (English only for now), Wheel Function, In-Vehicle, General and System
     assert [item.name for item in page.view.children if not item.visible] == ['stock_0', 'stock_5', 'stock_6', 'stock_7', 'stock_8']
@@ -2098,7 +2158,7 @@ def test_hold_return_does_nothing_dark_or_while_windows_move(fw, st, stand_in):
 
 @pytest.mark.parametrize('ctx, forbidden, page, start', [
     ((0x51000, 3, 0xf001, 2), 0, 1, None),  # car mode plays: stock's page
-    ((0x51000, 3, 0xf001, 2), 1, 0, (0x51000, 3, 0xf001, 3)),  # Headphones Required refuses it: paused, as below
+    ((0x51000, 3, 0xf001, 2), 1, 0, (0x51000, 3, 0xf001, 3)),  # Require Output refuses it: paused, as below
     ((0x51000, 3, 0xf001, 3), 1, 0, (0x51000, 3, 0xf001, 3)),  # otherwise the paused start, without the page, unasked
     ((0x51000, 3, 0xff, 3), 0, 0, None)])  # no class: nothing to resume
 def test_the_boot_resume_starts_paused_without_opening_now_playing(fw, ctx, forbidden, page, start):

@@ -21,7 +21,7 @@ static struct {
 
 /* View Queue while a shuffle is on (Up Next): the tracks after the playing one in the order they
  * play, which a shuffle's order differs from the queue's that stock's playerqueue_page lists. A row
- * plays its track as stock's does (player_start_queue, unless Headphones required forbids it), and
+ * plays its track as stock's does (player_start_queue, unless Require Output forbids it), and
  * the page closes, as its snapshot is
  * then stale. ponytail: a snapshot taken on open (and again on a hold's move, un_move), capped at
  * UP_NEXT_ROWS; the page does not follow the playing track, and a queue replaced while it is open

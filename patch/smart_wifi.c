@@ -13,10 +13,13 @@
  * runs; busy_at: the last use; woke_at: its last wake, whose link smart_wifi_wait's callers wait
  * for; up: the link at the last poll; armed: the row was on then; hold_*: the action held for the
  * link (smart_hold), its argument, the page it was pressed on and that page's name, and the timer;
- * held: that action runs now, so it is never held again. */
+ * held: that action runs now, so it is never held again; lone: 1 from an automatic scrobble
+ * upload's own wake (smart_wifi_auto) until anything else uses the radio or it is switched again,
+ * 2 once that upload's try is over (smart_wifi_release): the radio goes SMART_RELEASE_MS after its
+ * last use, not SMART_IDLE_MS. */
 static struct {
     unsigned at, busy_at, woke_at, hold_timer;
-    int off, quiet, armed, up, held;
+    int off, quiet, armed, up, held, lone;
     int (*hold_fn)(void *, void *);
     void *hold_ctx, *hold_win, *cap_win;
     char hold_name[32];
@@ -41,6 +44,7 @@ static void smart_switch(unsigned now) {
     sw.off = !g_wififlag;
     if (wake) sw.woke_at = now | !now; /* never 0; |1 would eat a millisecond when now is even */
     sw.busy_at = now;
+    sw.lone = 0;
 }
 
 /* Streaming's page and the Wi-Fi page: Smart Wi-Fi's radio back at once. */
@@ -57,6 +61,7 @@ int smart_config(const char *section, const char *key) {
     sw.off = 0;
     sw.woke_at = 0;
     sw.busy_at = time_now_ms();
+    sw.lone = 0;
     return 0;
 }
 
@@ -100,7 +105,7 @@ int ringnav_wifi_page(void *win, void *ctx) {
 
 /* A page that uses the network, open anywhere in the window stack: Streaming and its services'
  * pages (Spotify's, Internet Radio's, a card app's and its QR code, Tidal's but Tidal Downloads),
- * System settings' Apps, AirPlay's, Network service, SyncLink, the Wi-Fi page, Wi-Fi transfer and
+ * Library's App Store, AirPlay's, Network service, SyncLink, the Wi-Fi page, Wi-Fi transfer and
  * their dialogs, and the online lyrics and cover search. */
 static int net_page_open(void) {
     static const char *const pages[] = {
@@ -124,22 +129,23 @@ static int net_page_open(void) {
  * Wi-Fi or a SyncLink session, Wi-Fi transfer; a stock stream queue (Tidal's: the types
  * on_wm_timer_networkstatus stops once offline, whatever it is doing, as Play must fetch its URL at
  * once), Spotify's librespot running or waiting to start (it never retries a Connect login or mDNS
- * that failed), a station playing, a card app running, a scrobble upload, Network Update's download
- * or an Apps job, Download Album Lyrics, a Tidal download or an action held for the link
- * (smart_hold); a time sync pending on a link; or a page above. */
+ * that failed), a station playing, a card app running, Network Update's download or an Apps job,
+ * Download Album Lyrics, a Tidal download or an action held for the link (smart_hold); or a page
+ * above. A scrobble upload and a time sync pending on a link need it too (smart_poll), and are an
+ * automatic upload's own. */
 static int smart_needed(void) {
     unsigned type = (unsigned)mclGetPlayType();
     return g_usbdet_value || g_airplayflag || g_dlnaflag || g_synclinkflag == 2 ||
            g_syncLink_status || g_wifitransport_flag || airplayGetFlag() == 2 || type - 2 < 2 ||
            type - 0xf1 < 2 || spot_running() || radio_status() == 2 || addon_running() ||
-           scrobble_busy() || netupdate_busy() || album_lyrics_busy() || tidal_busy() ||
-           sw.hold_timer || (g_syncnettime_flag && networkGetConnectStatus() > 0) ||
+           netupdate_busy() || album_lyrics_busy() || tidal_busy() || sw.hold_timer ||
            net_page_open();
 }
 
 /* power_poll, every SMART_POLL_MS. The row off, or the user's Wi-Fi off: stock's, and a radio Smart
  * Wi-Fi had off comes back. Otherwise a use or a new link restarts the count, a use wakes the
- * radio, and SMART_IDLE_MS without one, associated or not, turns it off. */
+ * radio, and SMART_IDLE_MS without one, associated or not, turns it off: SMART_RELEASE_MS once an
+ * automatic upload that woke it for itself is over, unless anything else has needed it since. */
 void smart_poll(void) {
     unsigned now = time_now_ms();
     if (sw.at && now - sw.at < SMART_POLL_MS) return;
@@ -149,7 +155,7 @@ void smart_poll(void) {
      * bites. */
     if (sw.woke_at && now - sw.woke_at >= SMART_CONNECT_MS) sw.woke_at = 0;
     if (!st.smart_wifi || (!g_wififlag && !sw.off)) {
-        sw.armed = 0;
+        sw.armed = sw.lone = 0;
         smart_wake();
         return;
     }
@@ -158,23 +164,29 @@ void smart_poll(void) {
         sw.busy_at = now; /* turned on, or a new link: time sync first */
     sw.armed = 1;
     sw.up = up;
-    if (smart_needed()) {
+    int other = smart_needed();
+    if (other || scrobble_busy() || (g_syncnettime_flag && up)) {
         sw.busy_at = now;
+        if (other) sw.lone = 0;
         smart_wake();
-    } else if (!sw.off && now - sw.busy_at >= SMART_IDLE_MS && smart_ready())
+    } else if (!sw.off && now - sw.busy_at >= (sw.lone == 2 ? SMART_RELEASE_MS : SMART_IDLE_MS) &&
+               smart_ready())
         smart_switch(now);
 }
 
 /* Smart Wi-Fi has the radio off (the user's switch is on). */
 int smart_wifi_off(void) { return sw.off; }
 
-/* Something that needs the link starting (Spotify's launch, a radio list or station, an automatic
- * scrobble upload): Smart Wi-Fi's radio woken now if it is off, and 1 while that wake's link is not
- * up yet, SMART_CONNECT_MS at most, so the caller waits for it; then, or with the radio as the user
- * left it, 0, and the caller goes on as stock's would. Up is both the status bar's bars, which the
- * payload's own actions check (get_wifisignal), and the monitor thread's connect status, which
- * stock's check (networkGetConnectStatus): each comes from its own poll, about a second apart. */
+/* Something that needs the link starting (Spotify's launch, a radio list or station, a press held
+ * for it, an automatic scrobble upload through smart_wifi_auto): Smart Wi-Fi's radio woken now if
+ * it is off, and 1 while that wake's link is not up yet, SMART_CONNECT_MS at most, so the caller
+ * waits for it; then, or with the radio as the user left it, 0, and the caller goes on as stock's
+ * would. Up is both the status bar's bars, which the payload's own actions check (get_wifisignal),
+ * and the monitor thread's connect status, which stock's check (networkGetConnectStatus): each
+ * comes from its own poll, about a second apart. Each ask is a use: the radio is no automatic
+ * upload's alone (lone) after it. */
 int smart_wifi_wait(void) {
+    sw.lone = 0;
     if (!sw.off && !sw.woke_at) return 0;
     unsigned now = time_now_ms();
     sw.busy_at = now;
@@ -185,6 +197,20 @@ int smart_wifi_wait(void) {
         return 1;
     sw.woke_at = 0;
     return 0;
+}
+
+/* The automatic scrobble upload's smart_wifi_wait (scrobble_ui.c scrobble_auto): a radio this wakes
+ * is the upload's alone (lone 1) until anything else uses it, and once the upload's try is over
+ * (smart_wifi_release) it goes SMART_RELEASE_MS after its last use, not SMART_IDLE_MS. */
+int smart_wifi_auto(void) {
+    int off = sw.off, wait = smart_wifi_wait();
+    if (off && !sw.off) sw.lone = 1;
+    return wait;
+}
+
+/* The automatic upload's try is over: sent, failed, or no link after its wake. */
+void smart_wifi_release(void) {
+    if (sw.lone) sw.lone = 2;
 }
 
 /* The page in use: the top window, past stock's self-closing overlays: toasts (msginfo_dialog, ours

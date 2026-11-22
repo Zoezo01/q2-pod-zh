@@ -297,13 +297,17 @@ static int stopped(void *cancel, long long total, long long now, long long up, l
 }
 
 /* url's reply, NUL-terminated, under max bytes, to free; 0 if the transfer failed or *cancel (when
- * given) stopped it. *len, when given, gets the bytes read: a JPEG has NULs, so a cover cannot be
- * measured with strlen. */
-static char *get_len(const char *url, unsigned max, volatile int *cancel, unsigned *len) {
+/* url's reply, NUL-terminated, under max bytes, to free; 0 if the transfer failed or *cancel (when
+ * given) stopped it. With keep, the handle is *keep's, made there if none, and stays there for the
+ * caller to clean up: the next request goes on its connection, or resumes its TLS session. *len,
+ * when given, gets the bytes read: a JPEG has NULs, so a cover cannot be measured with strlen. */
+static char *get_len(const char *url, unsigned max, volatile int *cancel, void **keep,
+                     unsigned *len) {
     body_t b = { calloc(1, max), 0, max };
-    void *c = b.buf ? easy(url) : 0;
+    void *c = !b.buf ? 0 : keep && *keep ? *keep : easy(url);
     int bad = !c;
     if (c) {
+        curl_easy_setopt(c, 10002, url); /* URL: a kept handle has the last one */
         curl_easy_setopt(c, 20011, got); /* WRITEFUNCTION */
         curl_easy_setopt(c, 10001, &b);  /* WRITEDATA */
         if (cancel) {
@@ -312,7 +316,10 @@ static char *get_len(const char *url, unsigned max, volatile int *cancel, unsign
             curl_easy_setopt(c, 43, 0L);                /* NOPROGRESS off, for it */
         }
         bad = curl_easy_perform(c) != 0; /* an error reply parses to nothing we use */
-        curl_easy_cleanup(c);
+        if (keep)
+            *keep = c;
+        else
+            curl_easy_cleanup(c);
     }
     if (bad) free(b.buf), b.buf = 0;
     if (len) *len = b.buf ? b.len : 0;
@@ -320,7 +327,11 @@ static char *get_len(const char *url, unsigned max, volatile int *cancel, unsign
 }
 
 static char *get(const char *url, unsigned max, volatile int *cancel) {
-    return get_len(url, max, cancel, 0);
+    return get_len(url, max, cancel, 0, 0);
+}
+/* The same, its connection kept for the next request. */
+static char *get_keep(const char *url, unsigned max, volatile int *cancel, void **keep) {
+    return get_len(url, max, cancel, keep, 0);
 }
 
 /* A string member of a cJSON object, or 0. */
@@ -334,12 +345,12 @@ static const char *str(void *json, const char *name) {
  * answered with no results array (an error object), LRC_CARD if out could not be written, or
  * LRC_CANCELLED once *cancel (when given) stopped the transfer. */
 static int lrclib_search(const char *title, const char *artist, const char *out,
-                         volatile int *cancel) {
+                         volatile int *cancel, void **keep) {
     char url[3 * 0x300 + 64]; /* keyinfo's title and artist; a byte encodes to at most 3 */
     char *body;
     int found = LRC_NONE;
     if (!*title || !lrclib_url(url, sizeof url, title, artist)) return LRC_NONE;
-    if (!(body = get(url, LRCLIB_MAX, cancel)))
+    if (!(body = get_keep(url, LRCLIB_MAX, cancel, keep)))
         return cancel && *cancel ? LRC_CANCELLED : LRC_OFFLINE;
     if (*body != '[') { /* the search's results are an array, even when empty */
         free(body);
@@ -363,13 +374,14 @@ static int lrclib_search(const char *title, const char *artist, const char *out,
 /* LRCLIB's lyrics for title and artist (lrclib_search), else, when that finds none and taking their
  * accents off changes them, for those (lrc_fold): LRCLIB has some songs only under the plain names.
  */
-static int lrclib(const char *title, const char *artist, const char *out, volatile int *cancel) {
+static int lrclib(const char *title, const char *artist, const char *out, volatile int *cancel,
+                  void **keep) {
     char t[0x200], a[0x100]; /* keyinfo's sizes; folding never lengthens */
-    int found = lrclib_search(title, artist, out, cancel);
+    int found = lrclib_search(title, artist, out, cancel, keep);
     if (found != LRC_NONE || !lrc_fold(t, sizeof t, title) || !lrc_fold(a, sizeof a, artist) ||
         (!strcmp(t, title) && !strcmp(a, artist)))
         return found;
-    return lrclib_search(t, a, out, cancel);
+    return lrclib_search(t, a, out, cancel, keep);
 }
 
 /* kugou_obtainlyric(keyword, out), online_lyricthd's first source, in its place: LRCLIB alone, as
@@ -381,7 +393,8 @@ int ringnav_lyric_search(const char *keyword, const char *out) {
     /* stock's keyinfo, copied under its lock: file name, title (+0x200), album, artist (+0x500) */
     char key[0x600];
     online_getkeyword_info(key);
-    for (int k = 1; lrclib(key + 0x200, key + 0x500, out, 0) == LRC_BUSY && k < LJ_BUSY_TRIES; ++k)
+    for (int k = 1; lrclib(key + 0x200, key + 0x500, out, 0, 0) == LRC_BUSY && k < LJ_BUSY_TRIES;
+         ++k)
         usleep(LJ_RETRY_US);
     return 1;
 }
@@ -480,14 +493,16 @@ static struct {
     unsigned long thread; /* 0 once joined */
     volatile int running; /* the worker's, until it returns */
     void *label;          /* the row's while the page is open */
+    void *curl;           /* the worker's one handle for the job's searches */
 } al;
 
 static int al_fetch(const lyr_track *t, const char *out, volatile int *cancel) {
-    return lrclib(t->title, t->artist, out, cancel);
+    return lrclib(t->title, t->artist, out, cancel, &al.curl);
 }
 
 static void *al_worker(void *unused) {
     album_lyrics(&al.job, al.tracks, al.job.total, al_fetch);
+    if (al.curl) curl_easy_cleanup(al.curl), al.curl = 0;
     al.running = 0;
     return 0;
 }
@@ -618,14 +633,14 @@ int ringnav_playermore(void *win, void *ctx) {
     for (unsigned i = 0; i < PLAYMORE_COUNT && coverflow_playlist_queue(); ++i)
         if (((const int *)PLAYMORE_ROWS)[i] == PLAYMORE_DELETE)
             widget_set_visible(widget_get_child(view, i), 0, 0);
-    airplay_more(view); /* first, over stock's rows */
+    int air = airplay_more(view); /* first, over stock's rows, when the app is installed */
     if (!al_playing()) return result;
     while (at < PLAYMORE_COUNT && ((const int *)PLAYMORE_ROWS)[at] != PLAYMORE_SEARCH) ++at;
     if (at == PLAYMORE_COUNT) return result;
     void *label = list_row(view, "player_onlinesearch", al_click, 0);
     widget_use_style(label, "s_scrlabel_white24l");
     widget_resize(label, 253, I(label, W_H));
-    widget_restack(P(P(label, W_PARENT), W_PARENT), at + 2); /* AirPlay's row first */
+    widget_restack(P(P(label, W_PARENT), W_PARENT), at + 1 + (unsigned)air); /* after AirPlay's */
     widget_on(label, EVT_DESTROY, al_gone, label);
     al.label = label;
     al_show();
@@ -659,7 +674,7 @@ static void covers(void) {
     const char *album = key[0x400] ? key + 0x400 : key + 0x200, *artist = key + 0x500;
     if (!*album) return;
     int mb = mb_url(url, sizeof url, album, artist);
-    char *body = mb ? get(url, COVER_MAX, 0) : 0;
+    char *body = mb ? get(url, COVER_MAX, 0, 0) : 0;
     /* ponytail: MusicBrainz unreachable means likely offline, so iTunes isn't tried either (one
      * timeout, not two, before stock's sources); ask iTunes anyway if one service is down alone. */
     if (mb && !body) return;
@@ -678,7 +693,7 @@ static void covers(void) {
     }
     cJSON_Delete(json);
     free(body);
-    body = itunes_url(url, sizeof url, album, artist) ? get(url, COVER_MAX, 0) : 0;
+    body = itunes_url(url, sizeof url, album, artist) ? get(url, COVER_MAX, 0, 0) : 0;
     json = body ? cJSON_Parse(body) : 0;
     list = json ? cJSON_GetObjectItem(json, "results") : 0;
     n = list ? cJSON_GetArraySize(list) : 0;
@@ -869,7 +884,7 @@ static int kg_cover_save(const char *album, const char *artist, const char *path
         const char *img = json ? str(cJSON_GetObjectItem(json, "data"), "imgurl") : 0;
         int got = 0;
         if (img && kg_art(img, art)) {
-            char *pic = get_len(art, LF_COVER_MAX, cancel, &len);
+            char *pic = get_len(art, LF_COVER_MAX, cancel, 0, &len);
             if (pic && len) got = lf_write(path, pic, len);
             free(pic);
         }
@@ -894,7 +909,7 @@ static int lf_cover_save(const char *album, const char *artist, const char *path
         char art[0x200];
         if (!id || strlen(id) != 36 || !caa(id, art)) continue;
         unsigned len = 0;
-        char *img = get_len(art, LF_COVER_MAX, cancel, &len);
+        char *img = get_len(art, LF_COVER_MAX, cancel, 0, &len);
         if (img && len) done = lf_write(path, img, len);
         free(img);
     }
@@ -910,7 +925,7 @@ static int lf_cover_save(const char *album, const char *artist, const char *path
         char *img;
         if (!art || strlen(art) >= 0x200) continue;
         memcpy(url, art, strlen(art) + 1);
-        if (!itunes_art(url) || !(img = get_len(url, LF_COVER_MAX, cancel, &len))) continue;
+        if (!itunes_art(url) || !(img = get_len(url, LF_COVER_MAX, cancel, 0, &len))) continue;
         if (len) done = lf_write(path, img, len);
         free(img);
     }

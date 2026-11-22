@@ -168,6 +168,7 @@ class Machine:
         for name in ('slide_menu_item_width','slide_menu_on_scroll_done','canvas_get_vgcanvas',
                      'widget_animator_scroll_set_params','slide_menu_set_value','toolsTimeItoa','on_wm_keyup_fun','table_client_get_virtual_h',
                      'mclGetPlayType','networkGetConnectStatus','wifi_switch',  # Smart Wi-Fi's: stock's, as before it named them
+                     'bitmap_get_physical_line_length','bitmap_get_physical_height',  # the flush's: stock's, as before it named them
                      'tk_sha256_init','tk_sha256_hash','tk_sha256_done'):  # Network Update's read-back: stock's own SHA-256
             self.handlers.pop(syms[name],None)
         self.mock('widget_is_instance_of','widget_animator_scroll_create','widget_animator_on',
@@ -518,8 +519,9 @@ class Machine:
             # An unnamed widget's name is NULL too, whatever the default: stock answers its value_str.
             ret=0 if self.text(b)=='text' else self.string(n.get(self.text(b),''))
             if self.text(b)=='name' and not n.get('name'): ret=0
+            if self.text(b)=='image' and n.get('type')=='image' and not n.get('image'): ret=0  # so is an image's that names none
         elif name=='widget_get_text': ret=self.wide_string(n.get('text',''))
-        elif name=='player_playtime_and_length' and hasattr(self,'playtime'): self.word(a,self.playtime); self.word(b,225); ret=0
+        elif name=='player_playtime_and_length' and hasattr(self,'playtime'): self.word(a,self.playtime); self.word(b,getattr(self,'length',225)); ret=0
         elif name=='widget_get_text_utf8':
             text=n.get('text','').encode()
             self.u.mem_write(b,bytes(c))  # stock's wide-string conversion writes nothing unless all bytes fit
@@ -2673,6 +2675,8 @@ class AlbumLyricsMachine(CoverflowMachine):
         view=self.node('scroll_view','scroll_view_more',list(self.stock)); self.top=self.node('window','playermore_page',[view])
         assert self.call(address=HOOKS['playermore_page_init'][0],args=(self.top,0,0,0),gap=0)==0
         assert self.calls[0][:2]==('stock_playermore',self.top)
+        looked=self.accessed[:]; self.accessed.clear()  # over stock's rows the page looks for AirPlay's app (airplay.c)
+        assert looked==(['/mnt/mmc/.airplay/q2-airplay'] if rows==8 else []),looked
         return self.nodes[view]['children']
 
 def album_lyrics_page(**queue):
@@ -4056,7 +4060,7 @@ def frame_jpeg(sof,w,h): return b'\xff\xd8'+JFIF+b'\xff'+bytes([sof])+struct.pac
 def photo_grid(m):
     v=m.node('scroll_view','scroll_view_localmusic',[m.node('list_item') for _ in range(11)]); m.top=m.node('window','localmusic_page',[v])
     assert m.call(address=HOOKS['localmusic_page_init'][0],args=(m.top,5,0,0),gap=0,count=5_000_000)==0
-    f,ctx=m.handler(m.nodes[m.nodes[v]['children'][-2]]['children'][0],O['EVT_CLICK']); assert m.call(address=f,args=(ctx,m.event,0,0),gap=0,count=5_000_000)==0
+    f,ctx=m.handler(m.nodes[m.nodes[v]['children'][-4]]['children'][0],O['EVT_CLICK']); assert m.call(address=f,args=(ctx,m.event,0,0),gap=0,count=5_000_000)==0
     page=m.top; _,grid,_=m.nodes[page]['children']; tv=m.find('scroll_view',grid); assert m.nodes[grid]['visible'] and len(m.nodes[tv]['children'])==20
     return page,tv,next(c[3] for c in reversed(m.calls) if c[0]=='scroll_view_create'),signed(m.get(tv+O['W_H']))
 def photo_back(m,page,tv):
@@ -4067,7 +4071,7 @@ def photos_at(tree,data):
     m=classic_light_new(PhotosMachine,tree=tree,data=data); classic_light_on(m); m.mock('widget_animator_prop_create','widget_animator_prop_set_params','widget_animator_start')
     v=m.node('scroll_view','scroll_view_localmusic',[m.node('list_item') for _ in range(11)]); m.top=m.node('window','localmusic_page',[v])
     assert m.call(address=HOOKS['localmusic_page_init'][0],args=(m.top,5,0,0),gap=0,count=5_000_000)==0
-    f,ctx=m.handler(m.nodes[m.nodes[v]['children'][-2]]['children'][0],O['EVT_CLICK']); assert m.call(address=f,args=(ctx,m.event,0,0),gap=0,count=5_000_000)==0
+    f,ctx=m.handler(m.nodes[m.nodes[v]['children'][-4]]['children'][0],O['EVT_CLICK']); assert m.call(address=f,args=(ctx,m.event,0,0),gap=0,count=5_000_000)==0
     m.page=m.top; return m
 
 class BooksMachine(DepthMachine):
@@ -4652,6 +4656,12 @@ class ShelfMachine(RadioMachine):
             reply,self.reply=self.reply,self.listed
             try: return super().hook(u,address,size,unused)
             finally: self.reply=reply
+        if name=='r:curl_easy_getinfo' and 20011 not in self.opts and self.opts.get(10002,'').startswith('https://github.com/'):
+            # a check's releases/latest: the redirect to the tag reply's JSON names, else none (404)
+            tag=re.search(rb'"tag_name" *: *"([^"]+)"',self.reply); saved=self.code,self.location,self.codes
+            self.code,self.location,self.codes=(302,'https://github.com/o/r/releases/tag/'+tag[1].decode(),[]) if tag else (404,'',[])
+            try: return super().hook(u,address,size,unused)
+            finally: self.code,self.location,self.codes=saved
         if name=='c:statfs@GLIBC_2.0':
             b=u.reg_read(UC_MIPS_REG_A1); self.word(b+4,4096); self.word(b+28,self.free>>12); self.returns(0,clobber=True); return
         if name=='b:rename@GLIBC_2.0': self.moves.append(self.text(u.reg_read(UC_MIPS_REG_A1)))
@@ -4827,8 +4837,6 @@ def stock_keyups():
             ({**wheel,ret:('dialog_quit','')},(0x499b9c,)),
             # msginfo_dialog, the toast: as the confirm, and Play/Pause and the side buttons end here too
             ({**every,ret:('dialog_quit','')},(0x49b7c8,)),
-            # updatemusic_dialog, the library scan's: Return, the wheel and Centre
-            ({**wheel,ret:stop},(0x4a2a94,)),
             # checkfw_dialog, the update's: every key
             (every,(0x499528,))):
         for handler in handlers: assert keyups(True,handler)==keyups(False,handler)==want,hex(handler)
@@ -4836,6 +4844,8 @@ def stock_keyups():
     # a second); under NP_CENTRE it goes on to on_wm_keyup_fun, which ringnav's passed-on releases are for.
     back={ret:('on_return_onclick stop','')}
     assert keyups(True,0x53da5c)==back and keyups(False,0x53da5c)=={**back,centre:('power_keyup_detect power_keyup_pending_custom stop','')}
+    # updatemusic_dialog, the library scan's: Return and the wheel end there; stock's Centre too, which SCAN_CENTRE sends on
+    assert keyups(True,0x4a2a94)=={prev:stop,nxt:stop,ret:stop} and keyups(False,0x4a2a94)=={**wheel,ret:stop}
 
 class TagMachine(BooksMachine):
     def __init__(self,files):

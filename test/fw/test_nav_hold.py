@@ -2421,6 +2421,42 @@ def test_a_stopped_long_track_started_again_goes_back_to_where_it_stopped(player
     assert player.seeks == [400]
 
 
+def test_a_long_track_that_ends_its_queue_keeps_no_place(player, recs):
+    """The queue's end stops the player at the track's last second, where its place is forgotten, as at a track
+    change. The last minute's save, up to a minute short of the end, used to stay and start the track there after a
+    restart."""
+    player.play([recs(path=LONG)], total=3600)
+    player.poll(0), player.poll(1), player.poll(3540)  # a seek: saved there, 60 s before the end
+    for s in range(3541, 3600):
+        player.poll(s)
+    assert player.places() == [(key_of(LONG), 3540)]
+    player.total, player.status = 0, 1  # stopped
+    player.poll()
+    assert player.places() == []
+
+
+def test_a_stop_saves_the_second_it_stopped_at(player, recs, fw):
+    player.play([recs(path=LONG)])
+    player.poll(0), player.poll(1), player.poll(600)
+    for s in range(601, 640):
+        player.poll(s)
+    player.total, player.status = 0, 1
+    player.poll()
+    assert player.places() == [(key_of(LONG), 639)]
+    writes = len(fw.calls('fw_rename'))
+    player.poll(), player.poll()
+    assert len(fw.calls('fw_rename')) == writes  # still stopped: nothing more is written
+
+
+def test_a_stop_before_the_saved_place_plays_keeps_it(player, recs):
+    player.card.files[RESUME_FILE] = places_file((key_of(LONG), 700))
+    player.play([recs(path=LONG)])
+    player.poll(0), player.poll(0)  # settled, its jump waiting for it to play
+    player.total, player.status = 0, 1
+    player.poll()
+    assert player.places() == [(key_of(LONG), 700)] and player.seeks == []
+
+
 def test_a_confirmed_restart_starts_over(player, recs, fw):
     player.play([recs(path=LONG)])
     player.poll(0), player.poll(1), player.poll(400)
@@ -2638,6 +2674,23 @@ def test_album_artist_scrobbles_in_the_artists_place_when_asked(player, recs, fw
     assert player.card.files['/mnt/mmc/.scrobbler.log'].decode().splitlines()[-1].startswith('A\t')
 
 
+CREDIT = '、'.join(['高坂穂乃果(CV.新田恵海)'] * 9).encode()  # 312 bytes: stock keeps 255 of a tag, inside 乃
+
+
+@pytest.mark.parametrize('artist, album, title, logged', [
+    (CREDIT[:255], '', 'Song', [CREDIT[:255].decode('utf-8', 'ignore').encode(), b'', b'Song']),
+    # three long names: the line's room ends the title, inside a character
+    ('a' * 300, 'b' * 300, '音' * 100, [b'a' * 300, b'b' * 300, '音'.encode() * 49]),
+], ids=['a tag stock cut', 'the line full'])
+def test_a_name_cut_inside_a_character_is_logged_without_it(player, recs, artist, album, title, logged):
+    player.play([recs(path='/mnt/mmc/Music/a.flac', title=title, artist=artist, album=album)], total=100)
+    for s in range(60):
+        player.poll(s)
+    line = player.card.files['/mnt/mmc/.scrobbler.log'].splitlines()[-1]
+    assert line.split(b'\t')[:3] == logged
+    line.decode('utf-8')  # the whole line: AudioScrobbler's log is UTF-8, for any uploader
+
+
 def test_a_tab_in_a_tag_stays_one_field(player, recs):
     player.play([recs(path='/mnt/mmc/Music/a.flac', title='a\tb', artist='x\ny')], total=100)
     for s in range(60):
@@ -2672,12 +2725,51 @@ def test_a_full_table_replaces_the_least_played_least_recent(player, recs, st):
     assert got[0] == (key_of('/mnt/mmc/Music/a.flac'), 1) and (1000 + 300, 1) not in got and (1000 + 7, 1) in got
 
 
+def test_new_songs_count_into_a_table_full_of_songs_played_twice(player, recs, st):
+    """Every slot holds a song played twice: an album new to the table, played through three times, keeps
+    three plays a song. The newest song was then the least played, so each new song replaced the one before
+    it and only the last kept a play."""
+    table = (C.c_uint * (2 * O['PLAYS_SLOTS'])).from_address(C.addressof(st('plays')))
+    for i in range(O['PLAYS_SLOTS']):
+        table[2 * i], table[2 * i + 1] = 1000 + i, 2
+    st('plays_read', C.c_uint).value = 1
+    album = [f'/mnt/mmc/Music/New/{k:02}.flac' for k in range(1, 11)]
+    songs = [recs(path=path) for path in album]
+    for _ in range(3):
+        for r in songs:
+            player.play([r], total=100)
+            for s in range(60):
+                player.poll(s)
+    got = dict(plays(player.card.files[PLAYS_FILE]))
+    assert [got.get(key_of(path)) for path in album] == [3] * 10
+
+
+@pytest.mark.parametrize('at, gone', [(O['PLAYS_FRESH'] - 1, O['PLAYS_SLOTS'] - 2), (O['PLAYS_FRESH'], O['PLAYS_FRESH'])])
+def test_a_full_table_never_replaces_one_of_the_last_counted(player, recs, st, at, gone):
+    """Songs played twice fill the table, one played once is at `at` and a favourite (9 plays) is last. Just
+    inside the PLAYS_FRESH counted last, the single play stays and the furthest back song played twice goes,
+    the one before the favourite; at PLAYS_FRESH the single play is outside them, the lowest, and goes."""
+    table = (C.c_uint * (2 * O['PLAYS_SLOTS'])).from_address(C.addressof(st('plays')))
+    for i in range(O['PLAYS_SLOTS']):
+        table[2 * i], table[2 * i + 1] = 1000 + i, 1 if i == at else 2
+    table[2 * O['PLAYS_SLOTS'] - 1] = 9  # the favourite, counted longest ago
+    st('plays_read', C.c_uint).value = 1
+    player.play([recs(path='/mnt/mmc/Music/a.flac')], total=100)
+    for s in range(60):
+        player.poll(s)
+    got = plays(player.card.files[PLAYS_FILE])
+    keys = [k for k, _ in got]
+    assert got[0] == (key_of('/mnt/mmc/Music/a.flac'), 1) and len(got) == O['PLAYS_SLOTS']
+    assert 1000 + gone not in keys and (1000 + O['PLAYS_SLOTS'] - 1, 9) in got
+
+
 def test_a_played_song_moving_out_of_the_table_marks_most_played_stale(player, recs, st, fw, lists):
     a = recs(path='/mnt/mmc/Music/a.flac')
     table = (C.c_uint * (2 * O['PLAYS_SLOTS'])).from_address(C.addressof(st('plays')))
     for i in range(O['PLAYS_SLOTS']):
         table[2 * i], table[2 * i + 1] = 1000 + i, 2
-    table[2 * 5], table[2 * 5 + 1] = key_of('/mnt/mmc/Music/a.flac'), 1  # the least played: shown by Most Played
+    last = O['PLAYS_SLOTS'] - 1  # the least played, counted longest ago: shown by Most Played
+    table[2 * last], table[2 * last + 1] = key_of('/mnt/mmc/Music/a.flac'), 1
     st('plays_read', C.c_uint).value = 1
     st('mp_list', C.c_void_p).value = player.deques.new([a])
     player.play([recs(path='/mnt/mmc/Music/b.flac')], total=100)

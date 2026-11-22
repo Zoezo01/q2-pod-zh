@@ -59,24 +59,10 @@ void headset_manual(void) {
         hs.recent_owner = 0;
     }
 }
-int media_playing(void);
-/* Stock's Headphones Required (PLAYSET WITHOUTPHONE, g_block_withoutphone_flag; its switch is the
- * row after Resume Songs) is the gate we keep — our own guard is gone (V180A): stock's
- * check_forbid_play_no_headset is asked at every start that matters, its messages come from
- * stock's own Chinese, and a change of stock needs none of ours. It reads Off in stock's config;
- * we seed it On, once, so the firmware starts guarding as our own switch did. Our key in Q2POD
- * marks the seed: a later Off is the user's, and stays. */
-static int seeded; /* polled before any start a user makes, so the flag is set in the session too */
-void headphones_seed(void) {
-    if (seeded) return;
-    seeded = 1;
-    if (config_value("Q2POD", "WITHOUTPHONE", 2, 0)) return;
-    write_int_config(1, "Q2POD", "WITHOUTPHONE");
-    write_int_config(1, "PLAYSET", "WITHOUTPHONE");
-    g_block_withoutphone_flag = 1;
-}
-/* player_play_pause. Headphones Required gates stock's starts itself, and this hook asks it for a
- * Play from a stop (a pause always goes through), as stock's own player_play_pause does inside. */
+/* player_play_pause. Require Output with none to play to: nothing starts, as stock's own
+ * Play key (playpause_quick_click, 0x4f2fc8), which toasts so; a pause always goes through.
+ * ponytail: a card app's own player and a card app's song through player_start aren't asked
+ * (docs/internals.md, Require Output); gate addon.c's starts if that matters. */
 int ringnav_play_pause(void) {
     headset_manual();
     int status = mclGetPlayStatus();
@@ -128,8 +114,6 @@ void media_key(unsigned key) {
     /* The active source's own Play, Next and Previous. A start with no output is stock's
      * Headphones Required's call below (the skip keys) or this Play's own hook; a Bluetooth
      * headset's own remote still starts and changes playback. */
-    if (key == KEY_PLAY || key == KEY_FWD_BTN || key == KEY_BACK_BTN)
-        headphones_seed();
     headset_manual();
     if (addon_game_audio()) { /* a card game with the sound: stock's player must not retake it;
                                  Play/Pause still pauses what plays (a Spotify a phone resumed) */
@@ -146,7 +130,7 @@ void media_key(unsigned key) {
         spot_media(key);
     else if (key == KEY_PLAY)
         player_play_pause();
-    else if (check_forbid_play_no_headset(0)) /* Headphones required: as stock's skip keys */
+    else if (check_forbid_play_no_headset(0)) /* Require Output: as stock's skip keys */
         ;
     else if (key == KEY_FWD_BTN)
         player_next_music();
@@ -406,7 +390,6 @@ void headset_eq_poll(void) {
 }
 void headset_poll(void) {
     unsigned now = time_now_ms();
-    headphones_seed(); /* before the user's first start: the flag is on in the session too */
     if (now - hs.checked < 100) return;
     hs.checked = now;
     int on = g_bluetoothflag && bt_linkstatus && !bt__recv_pageflag;

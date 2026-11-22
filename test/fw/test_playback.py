@@ -463,6 +463,19 @@ def test_shuffle_songs_really_shuffles(player):
     assert len(orders) == len(SEEDS)
 
 
+@pytest.mark.parametrize('shuffle', [3, 4])
+def test_shuffle_albums_really_shuffles_the_albums(player, shuffle):
+    """The albums come in the draw's order, the current one first: not in the queue's for every draw."""
+    player.load(player.albums(2, 2, 2, 2, 2))
+    orders = set()
+    for seed in SEEDS:
+        player.rng(seed)
+        player.clear()
+        assert player.set(0, shuffle) == 1
+        orders.add(tuple(dict.fromkeys(player.album(i) for i in player.order())))
+    assert len(orders) > 1
+
+
 @pytest.mark.parametrize('shuffle', range(5))
 @pytest.mark.parametrize('seed', SEEDS)
 def test_up_next_is_what_then_plays(player, shuffle, seed):
@@ -494,6 +507,23 @@ def test_repeat_all_plays_whole_passes_for_ever(player, shuffle):
     assert len(played) == 28
     for at in range(0, 28, 7):
         assert sorted(played[at:at + 7]) == list(range(7))
+
+
+@pytest.mark.parametrize('shuffle', [1, 3])
+def test_repeat_all_draws_each_pass_anew(player, shuffle):
+    """A pass's end draws the order of the pass after the next: one order played for ever would be no shuffle."""
+    same = []
+    for seed in SEEDS:
+        player.rng(seed)
+        player.load(player.albums(2, 2, 2, 2))
+        player.clear()
+        assert player.set(0, shuffle) == 1
+        first = player.mcl.pos = player.order()[0]
+        player.clear()
+        assert player.set(0, shuffle) == 1 and player.set(1, REPEAT_ALL) == 1 and player.s.cursor == 0
+        played = [first] + player.run(8 * 4 - 1)
+        same.append(played[8:16] == played[16:24] == played[24:32])
+    assert not all(same)
 
 
 @pytest.mark.parametrize('shuffle', range(5))
@@ -819,6 +849,22 @@ def test_move_refuses(fw, player, case):
     assert move({'current': 2, 'past': 6}.get(case, 1)) == -1 and player.pending() == []
 
 
+def test_a_move_is_what_the_player_is_given_next_and_is_saved(saved):
+    """The player asks for its next song ahead of time, and the answer is kept: a move forgets it, and writes the
+    snapshot, so neither the song after this one nor a restart goes by the list as it was."""
+    full_queue(saved)
+    saved.s.npend = 0
+    saved.s.dirty = 1
+    saved.save()
+    successor = saved.fw.fn('playback_successor', C.c_int, C.c_int)
+    move = saved.fw.fn('playback_move', C.c_int, C.c_uint)
+    was, pick = saved.up_next()[:2]
+    assert successor(1) == was
+    old = saved.queue_file()
+    assert move(pick) == pick and successor(1) == pick
+    assert saved.queue_file() != old and snapshot(saved.queue_file())['pending'] == [pick]
+
+
 def test_an_insert_remaps_every_index(fw, player):
     insert = fw.fn('playback_insert', None, C.c_uint, C.c_uint, C.c_int)
     rows = player.load(player.albums(3, 3))
@@ -964,6 +1010,43 @@ def test_group_skip_starts_advanced_play_when_off(fw, player):
     skip = fw.fn('playback_group_skip', C.c_int, C.c_int)
     player.load(player.albums(2, 2))
     assert skip(1) == 1 and player.s.active == 1
+
+
+def test_a_group_skip_forward_plays_where_it_lands(fw, player):
+    """A skip is a start, not the place moved alone: the player is told, the song it had preloaded and Play Next's
+    list go, and the album left counts as played whole, so the pass doesn't come back to it."""
+    skip = fw.fn('playback_group_skip', C.c_int, C.c_int)
+    player.load(player.albums(3, 3, 3))
+    assert player.set(0, 0) == 1
+    order = player.order()
+    player.clear(), player.load(player.deques[player.handle], order[0])
+    assert player.set(0, 0) == 1
+    left, started = set(order[:3]), len(fw.calls('mclStartPlayer'))
+    player.s.pend[0], player.s.npend = order[8], 1
+    player.mcl.preload, player.mcl.prepos, player.mcl.fd = 1, order[1], 9
+    assert skip(1) == 1 and player.mcl.pos == order[3]
+    assert len(fw.calls('mclStartPlayer')) == started + 1
+    assert player.mcl.preload == 0 and [c[1][0] for c in fw.calls('fw_send')] == [9]
+    assert player.pending() == [] and player.seen() == left | {order[3]}
+    assert not left & set(player.run(20))
+
+
+def test_a_group_skip_back_plays_where_it_lands(fw, player):
+    """Back to the album before: started too, Play Next's list gone, and the history cut back to where that album
+    was left, so a second skip back goes on from there."""
+    skip = fw.fn('playback_group_skip', C.c_int, C.c_int)
+    rows = player.load(player.albums(3, 3))
+    assert player.set(0, 0) == 1
+    order = player.order()
+    player.clear(), player.load(rows, order[0])
+    assert player.set(0, 0) == 1
+    player.run(4)
+    before, started = player.history(), len(fw.calls('mclStartPlayer'))
+    player.s.pend[0], player.s.npend = order[5], 1
+    player.mcl.preload, player.mcl.prepos, player.mcl.fd = 1, order[5], 9
+    assert skip(0) == 1 and player.mcl.pos == order[0]
+    assert len(fw.calls('mclStartPlayer')) == started + 1 and player.mcl.preload == 0
+    assert player.pending() == [] and player.history() == before[:before.index(order[3])] + [order[0]]
 
 
 # A load's videos.
@@ -2007,6 +2090,20 @@ def test_no_snapshot_is_stocks(saved):
     assert saved.memory(saved.out) == -7
 
 
+def test_stocks_resume_of_an_album_keeps_that_album_alone(saved):
+    """Stock's own resume builds an album's queue (0xff10) from every album of its name: the resumed song's album
+    stays, the song's place counted in it. Another class's queue is as stock built it."""
+    saved.fw.var('g_memory_play', C.c_ubyte).value = 0
+    rows = [saved.song(b'/m/X/1.flac', b'Same', track=1), saved.song(b'/m/Y/1.flac', b'Same', track=1),
+            saved.song(b'/m/X/2.flac', b'Same', track=2)]
+    saved.fw.mock('stock_memory_trampoline', lambda out, *_: saved.deques.assign(out, saved.deques.new(rows)) or 2)
+    info = saved.fw.var('fw_ctx_g_memory_info', C.c_int)
+    info.value = LIBRARY
+    assert saved.memory(saved.out) == 2 and saved.deques[saved.out] == rows
+    info.value = 0xff10
+    assert saved.memory(saved.out) == 1 and saved.deques[saved.out] == [rows[0], rows[2]]
+
+
 def test_the_same_song_twice_restores_twice(saved):
     a, b = saved.song(b'/m/a.flac'), saved.song(b'/m/b.flac')
     saved.load([a, b, a], 0)
@@ -2090,9 +2187,12 @@ def test_a_field_out_of_range_is_refused_even_sealed(saved, field, value):
     assert restore(saved) == -7
 
 
-def test_a_bad_checksum_is_refused(saved):
+@pytest.mark.parametrize('at', [100, -2])
+def test_a_bad_checksum_is_refused(saved, at):
+    """One bit off: in the order, which the index checks refuse too, and in a path's last letter, a snapshot right in
+    every other way: there the checksum alone tells."""
     data = snapshot_words(saved)
-    data[100] ^= 1
+    data[at] ^= 1
     saved.disk.files[QUEUE_FILE] = bytes(data)
     assert restore(saved) == -7
 
@@ -2598,7 +2698,7 @@ def test_a_library_of_exactly_the_queue_limit_still_shuffles(saved, fw):
 
 
 def test_a_start_headphones_required_forbids_leaves_the_queue_as_it_was(saved, fw):
-    """Headphones Required with no output: stock's gate is asked (0: it shows its message) before the load, and its
+    """Require Output on, nothing connected: stock's gate is asked (0: it shows its message) before the load, and its
     refusal loads, groups and opens nothing, with no toast of ours (1). Now Playing refused only after that load had
     replaced the queue with the whole library."""
     rows = full_queue(saved)

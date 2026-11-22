@@ -742,7 +742,7 @@ int playback_set(int kind, int value) {
     return s.active;
 }
 /* Shuffle Albums (folder 0) or Folders over all: 0 when it is empty, past QUEUE_LIMIT or more than
- * rebuild has memory for; 1 when it starts, or when Headphones Required refuses it with stock's
+ * rebuild has memory for; 1 when it starts, or when Require Output refuses it with stock's
  * message. The limit and that gate come before the load replaces the queue, where rebuild and Now
  * Playing would refuse only after it. ponytail: an output lost during the load and grouping is
  * still refused by Now Playing after it, as before; drawing the order over all before any load, so
@@ -989,11 +989,13 @@ int ringnav_load(void *q, int at, int type) {
 extern void ringnav_read_artistype(void);
 /* config_init applies the saved mode before the Home page can restore the queue; Artists is read
  * here too, as stock reads it only when a Library list or artist page opens, and Night Shift's
- * setting, so no paint reads one (nightshift.c night_paint). */
+ * setting, so no paint reads one (nightshift.c night_paint); and Crossfade's Gapless, saved
+ * before config_init loads it (xfade_boot). */
 int ringnav_bootmode(int mode, int notify) {
     peq_boot();
     ringnav_read_artistype();
     night_on();
+    xfade_boot();
     s.restoring = 1;
     int result = config_playmode(mode, notify);
     s.restoring = 0;

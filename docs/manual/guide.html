@@ -333,7 +333,7 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3, .lead { b
   </div>
   <div class="sub">
   <h3>When the Q2 starts</h3>
-  <p>It opens on Home. With <b>Memory Playback → Location</b> your queue comes back, paused; <b>Track</b> starts the song from the beginning unless it resumes (a podcast or audiobook). <b>In-Vehicle Mode</b> starts playing; with <b>Headphones Required</b> on and nothing connected, the queue comes back paused instead.</p>
+  <p>It opens on Home. With <b>Memory Playback → Location</b> your queue comes back, paused; <b>Track</b> starts the song from the beginning unless it resumes (a podcast or audiobook). <b>In-Vehicle Mode</b> starts playing; with <b>Require Output (Beta)</b> on and nothing connected, the queue comes back paused instead.</p>
   </div>
   </div>
 
@@ -491,8 +491,9 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3, .lead { b
       <tr><td>Recently Added, Recent, Most Played, Hi-Res</td><td>Your newest songs, what you played lately, your 100 most played, and hi-res files</td></tr>
       <tr><td>Shuffle</td><td>Shuffle the whole library (<a href="#shuffle">Shuffling your library</a>)</td></tr>
       <tr><td>Podcasts, Audiobooks, Photos, Books, Videos</td><td>Shown when the card has those folders (<a href="#c7">Chapter 7</a>)</td></tr>
+      <tr><td>Apps</td><td>Installed apps that open here, once there is one</td></tr>
       <tr><td>Games</td><td>Sudoku, Vortex, Solitaire, Snake and your installed games</td></tr>
-      <tr><td>Upload Scrobbles, Update Library</td><td>See <a href="#scrobble">Scrobbling</a> and <a href="#addmusic">Adding music</a></td></tr>
+      <tr><td>App Store, Upload Scrobbles, Update Library</td><td>See <a href="#apps">Installing apps</a>, <a href="#scrobble">Scrobbling</a> and <a href="#addmusic">Adding music</a></td></tr>
     </tbody>
   </table>
   <div class="sub">
@@ -765,14 +766,14 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3, .lead { b
   <table>
     <thead><tr><th>Setting</th><th>What it does</th></tr></thead>
     <tbody>
-      <tr><td>Gapless</td><td>Plays albums without gaps. Encoder padding is removed from MP3 (with a gapless tag), AAC in M4A, Opus and Vorbis; intentional silence stays. Keep it on.</td></tr>
-      <tr><td>Crossfade</td><td>Fades one song into the next, 1–15 s (5 s by default). Turn all the way down for Off; Centre turns it on or off. Only between different albums, so albums stay gapless. Needs Gapless. Off by default.</td></tr>
+      <tr><td>Gapless</td><td>Plays albums without gaps. Encoder padding is removed from MP3 (with a gapless tag), AAC in M4A, Opus and Vorbis; intentional silence stays. Keep it on. It stays on while Crossfade is on: to turn it off, turn Crossfade off first.</td></tr>
+      <tr><td>Crossfade</td><td>Fades one song into the next, 1–15 s (5 s by default). Turn all the way down for Off; Centre turns it on or off. Only between different albums, so albums stay gapless. Turning it on turns Gapless on, which a fade needs. Off by default.</td></tr>
       <tr><td>Memory Playback</td><td>Brings your queue back, paused, at start-up: Track at the start of the song, Location where you stopped.</td></tr>
       <tr><td>Resume Songs</td><td>Songs this long or longer pick up where you stopped, as podcasts do: 20 to 120 minutes, 30 by default, or Off.</td></tr>
       <tr><td>Max Volume</td><td>Limits how loud the Q2 goes: turn the wheel to set the limit, then press Centre.</td></tr>
       <tr><td>Mono Audio</td><td>Mixes both channels into each ear. DSD and AirPlay stay stereo.</td></tr>
       <tr><td>Swap L/R</td><td>Swaps the left and right channels. DSD and AirPlay are unchanged; for Spotify on the jack, pause and play after switching.</td></tr>
-      <tr><td>Headphones Required</td><td>Nothing starts playing until headphones, Bluetooth or a USB DAC is connected, or an AirPlay speaker is picked. Off by default.</td></tr>
+      <tr><td>Require Output (Beta)</td><td>Plays only to headphones, Bluetooth, a USB DAC or AirPlay. Off by default. If it won’t play with headphones in, turn it off and on.</td></tr>
       <tr><td>Digital Filters</td><td>Shanling’s DAC filter.</td></tr>
       <tr><td>Shanling’s own</td><td>Gain, ReplayGain, Default Volume, Channel Balance, Enlarged Album Art, DSD Output Mode and USB Audio Output, as in the Q2’s manual.</td></tr>
     </tbody>
@@ -795,7 +796,7 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3, .lead { b
   <div class="note important"><p><span class="label">If playback won’t start on your account</span> (<b>Spotify refused this account</b>), see <a class="web" href="https://github.com/DiamondBond/q2-pod/issues/98">issue #98</a> (github.com/DiamondBond/q2-pod/issues/98).</p></div>
   <p class="task">To install Spotify:</p>
   <ol class="steps">
-    <li>On Wi-Fi, choose <b>System settings → App Store → Spotify</b> (<a href="#apps">Installing apps</a>).</li>
+    <li>On Wi-Fi, choose <b>Library → App Store → Spotify</b> (<a href="#apps">Installing apps</a>).</li>
     <li>Or by hand: download <code>q2-librespot-*.zip</code> from github.com/DiamondBond/q2-librespot/releases/latest and unzip it to the card’s root, so the card has a <code>.spotify</code> folder. (On a Mac, Cmd+Shift+. shows hidden folders.)</li>
   </ol>
   <p class="task">To pair it, once:</p>
@@ -1081,9 +1082,9 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
   <table>
     <thead><tr><th>Setting</th><th>What it does</th></tr></thead>
     <tbody>
-      <tr><td>Theme</td><td><b>Minimal</b> (default); <b>Modern</b>, Minimal with full-width bars in the accent colour; or <b>Classic</b>, the iPod look: a glossy title bar, smaller rows and a light screen. Minimal and Modern switch at once; choosing or leaving Classic restarts the Q2. Tidal’s pages, games and photos keep Minimal’s layout.</td></tr>
+      <tr><td>Theme</td><td><b>Minimal</b> (default); <b>Modern</b>, Minimal with full-width bars in the accent colour; <b>Classic</b>, the iPod look: a glossy bar and smaller rows; <b>Classic Modern</b>, Classic with flat Quick Settings and prompts. Minimal and Modern switch at once, as do the Classics; others restart. Tidal, games and photos keep Minimal’s layout.</td></tr>
       <tr><td>Light Mode</td><td>Off (dark), On (light), or Auto: light from 7:00 to 19:00. Choosing Classic or Modern turns it on, unless it’s Auto.</td></tr>
-      <tr><td>Accent</td><td>Graphite (default), Crimson, Tidal, Champagne, Cobalt, Tangerine, Plum, Green or Ivory. Classic starts on Classic Blue, Modern on Cobalt; neither has Ivory. Each theme keeps its own.</td></tr>
+      <tr><td>Accent</td><td>Graphite (default), Crimson, Tidal, Champagne, Cobalt, Tangerine, Plum, Green or Ivory (Minimal only). Classic starts on Classic Blue, Modern on Cobalt; Classics share one.</td></tr>
       <tr><td>Status Bar</td><td>Theme (default) matches your theme; or Minimal, Modern or Classic’s bar under any theme.</td></tr>
       <tr><td>Rounded Corners</td><td>Minimal and Modern. On: pill-shaped bars and rounded tiles. Off: full-width bars and square tiles.</td></tr>
       <tr><td>Home</td><td>Split (default): the menu beside the cover. Full: the menu alone. Carousel: Shanling’s home carousel of eight cards; the wheel moves between them and Centre opens one.</td></tr>
@@ -1091,11 +1092,11 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
       <tr><td>Battery</td><td>Icon (default), Percent, Icon + Percent (not in Classic) or Percent Inside.</td></tr>
       <tr><td>Time in Title</td><td>On: the title bar shows the time. Off: it names the page instead, and Home reads Q2 Pod. In Classic it always names the page; On adds the time.</td></tr>
       <tr><td>Show Wordmark</td><td>On (default): Home’s title reads Q2 Pod, where an iPod reads iPod. Off: it stays empty.</td></tr>
-      <tr><td>Centred Now Playing</td><td>Minimal and Modern. On: Shanling’s layout, the art large and centred.</td></tr>
+      <tr><td>Centred Now Playing</td><td>Minimal and Modern. On: the art large and centred.</td></tr>
       <tr><td>Library on Home</td><td>Classic, Home: Split. On (default): Library slides in on Home, beside the pane. Off: it opens its own page.</td></tr>
       <tr><td>Row Preview</td><td>Classic, Home: Split. On (default): the pane shows the highlighted row. Off: it shows what’s playing.</td></tr>
       <tr><td>Row Art</td><td>Classic. On (default): album covers in taller rows. Off: one-line rows. Changing it restarts the Q2.</td></tr>
-      <tr><td>Hide Streaming, Hide Folder</td><td>On: takes that row off Home’s list. Home: Carousel keeps its card.</td></tr>
+      <tr><td>Hide Streaming, Hide Folder, Hide Apps, Hide Games, Hide App Store</td><td>On: takes that row off Home’s list, or the Library’s. Home: Carousel keeps its card.</td></tr>
     </tbody>
   </table>
   </div>
@@ -1199,7 +1200,7 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
 
   <div class="sec">
   <h2 id="apps">Installing apps over Wi-Fi</h2>
-  <p><b>System settings → App Store</b> installs and updates Rockbox, its themes, Spotify and card apps. Games have their own tab. Each app shows <b>INSTALL</b>, <b>UPDATE</b> or <b>INSTALLED</b>.</p>
+  <p><b>Library → App Store</b> installs and updates Rockbox, its themes, Spotify and card apps. Games have their own tab. Each app shows <b>INSTALL</b>, <b>UPDATE</b> or <b>INSTALLED</b>.</p>
   <div class="note important"><p><span class="label">Install only apps you trust:</span> a card app can read anything on the card, including your other logins.</p></div>
   <table>
     <thead><tr><th>To</th><th>Do this</th></tr></thead>
@@ -1212,7 +1213,7 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
   <ul>
     <li><b>Rockbox</b> becomes what the Q2 starts, so the first press says so; press again to install. Its themes appear once it’s on, and go with it.</li>
     <li><b>Removing Spotify</b> keeps its login; <b>Erase Spotify Data</b> (<a href="#stream-config">Configuration</a>) deletes it.</li>
-    <li><b>Card apps</b> appear in Streaming, and games in Library → Games. Plugging in USB storage stops them until after; close a game first. An app that syncs music can update your library once nothing is playing. If one won’t start, choose <b>Stop</b> and its name, then open it again.</li>
+    <li><b>Card apps</b> appear in Streaming or Library → Apps, and games in Library → Games. USB storage stops them until it ends; close a game first. An app that syncs music updates your library once nothing plays. If one won’t start, choose <b>Stop</b> and its name, then open it.</li>
     <li><b>Space:</b> the card needs room for the download, what it unpacks to, and 64 MB more.</li>
   </ul>
   </div>

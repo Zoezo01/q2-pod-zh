@@ -432,4 +432,5 @@ void np_theme(void) {
     if (glyph) widget_set_opacity(glyph, T->np_state_op);
     /* Minimal: the album is paint_caps' capitals. */
     if (st.np_album) widget_set_opacity(st.np_album, T->np_album_op);
+    np_marks_page(st.np_win); /* the flat look's marks, as the page opens or the theme changes */
 }

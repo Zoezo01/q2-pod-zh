@@ -60,9 +60,12 @@ static void library_look(void *view) {
 int library_search(void) { return !geom_val(V_LIB_ART); }
 
 /* The Library: Search (library_search), one Shuffle row opening its menu, browsing, the user's own
- * lists, listening history, the card's other media, the card apps whose q2app says row=library
- * (addon.c), Games, then upkeep. The added rows' buttons have no name, so stock's row click
- * (atoi of the name, 0x53510c) never sees them. */
+ * lists, listening history, the card's other media, Apps (the card apps whose q2app says
+ * row=library, addon.c addon_apps), Games and App Store (netupdate.c), each unless Appearance hides
+ * it, then upkeep. Apps shows while it lists an app: addon_apps_sync finds it by name, as the page
+ * comes back on top (one handler, should stock build the page twice) or an App Store job ends. The
+ * added rows' buttons have no name, so stock's row click (atoi of the name, 0x53510c) never sees
+ * them. */
 int ringnav_localmusic(void *win, void *ctx) {
     int result = stock_localmusic_trampoline(win, ctx);
     void *view = win ? widget_lookup(win, "scroll_view_localmusic", 1) : (void *)0;
@@ -89,21 +92,27 @@ int ringnav_localmusic(void *win, void *ctx) {
     widget_set_visible(stock[L_FREQUENT], 0, 0); /* Most Played is its list, from every listen */
     widget_restack(stock[L_FREQUENT], n++);
     widget_restack(stock[L_HIRES], n++);
-    widget_restack(library_row(view, "local_longsongs", long_songs, 0, "长曲目", 1), n++);
-    /* Podcasts, Audiobooks, Photos, Books and Videos, each only with its folder; then the card's
-     * Library apps and iPod's Games. */
+    widget_restack(library_row(view, "local_longsongs", long_songs, 0, "Long Songs", 1), n++);
+    /* Podcasts, Audiobooks, Photos, Books and Videos, each only with its folder. */
     static const char *const icons[] = { "local_podcasts", "local_audiobooks", "local_photos",
                                          "local_books", "local_videos" };
     char path[sizeof st.media_root];
     for (int k = 0; k < VIDEOS; k++)
         if (media_find(k + 1, path))
             widget_restack(
-                library_row(view, icons[k], media_click, (void *)(long)(k + 1), MEDIA_LABELS[k], 1), n++);
-    for (int k = 0, apps = addon_libs(); k < apps; k++)
-        widget_restack(library_row(view, addon_lib_icon(k), addon_lib_open, (void *)(long)k,
-                                   addon_lib_name(k), 1),
-                       n++);
-    widget_restack(library_row(view, "local_games", games_open, 0, "游戏", 1), n++);
+                library_row(view, icons[k], media_click, (void *)(long)(k + 1), MEDIA[k], 1), n++);
+    if (!pod_value(POD_HIDE_APPS)) {
+        void *apps = library_row(view, "local_apps", addon_apps, 0, "Apps", 1);
+        widget_set_name(apps, "library_apps");
+        widget_set_visible(apps, addon_libs() > 0, 0);
+        widget_restack(apps, n++);
+        widget_off_by_func(win, EVT_WINDOW_FOREGROUND, addon_apps_sync, win);
+        widget_on(win, EVT_WINDOW_FOREGROUND, addon_apps_sync, win);
+    }
+    if (!pod_value(POD_HIDE_GAMES))
+        widget_restack(library_row(view, "local_games", games_open, 0, "Games", 1), n++);
+    if (!pod_value(POD_HIDE_STORE))
+        widget_restack(library_row(view, "local_store", shelf_open, 0, "App Store", 1), n++);
     if (scrobble_ready())
         widget_restack(
             library_row(view, "local_scrobble", upload_scrobbles, 0, "上传听歌记录", 0), n++);
@@ -111,10 +120,28 @@ int ringnav_localmusic(void *win, void *ctx) {
     return result;
 }
 
+/* The Library's Apps row shown (on) or not, the list's selection kept on its row: navigation.c's
+ * load drops a live list's selection when its count of shown rows changes, so the index and the
+ * count it keeps move with the row. */
+void library_apps_show(void *row, int on) {
+    void *view = P(row, W_PARENT);
+    if (!widget_get_visible(row) == !on) return;
+    int sel = widget_get_prop_int(view, SEL, -1), count = widget_get_prop_int(view, COUNT, -1);
+    int at = 0; /* the shown rows before it */
+    for (unsigned i = 0; widget_get_child(view, i) != row; ++i)
+        at += widget_get_visible(widget_get_child(view, i)) != 0;
+    widget_set_visible(row, on, 0);
+    widget_layout(view);
+    if (count < 0) return;
+    prop(view, COUNT, count + (on ? 1 : -1));
+    if (sel >= 0 && (on ? at <= sel : at < sel)) prop(view, SEL, sel + (on ? 1 : -1));
+}
+
 /* Home's Library list (coverflow.c home_library), filled each time it opens, as the page is: the
  * same rows in the same order, whatever card, user or app adds. Stock's constructor takes a window
  * and finds the rows' view by name, so list, which holds one of that name, stands in. What else it
- * sets on the window goes again, list being none: the play gif's timer and its handlers. */
+ * sets on the window goes again, list being none: the play gif's timer and its handlers, Apps'
+ * among them. */
 void library_rows(void *list) {
     ringnav_localmusic(list, (void *)0);
     ((int (*)(void *, void *))LOCALMUSIC_BG)(list, (void *)0);
@@ -163,12 +190,12 @@ static void svc_row(void *row, int i, char *hide) {
     if (svc_find(hide, i)) widget_set_visible(row, 0, 0);
 }
 
-/* stream_page_init: stock's rows — Baidu Netdisk among them, as stock V1.36 offers it (its row is
- * stock's own, its click stock's: sign-in is by the device's code in Baidu's app) — then Spotify
- * (spotify.c), which opens its browser, the card apps on the card (addon.c: Deezer, Soulseek, File
- * Browser… as System settings' Apps or the user put them there), Tidal Downloads, Internet Radio
- * (radio.c), AirPlay and Configuration. Their buttons have no name, so stock's row click never
- * sees them. Smart Wi-Fi's radio comes back first. */
+/* stream_page_init: stock's rows but Baidu Netdisk (a Chinese cloud drive, signed in to from
+ * Baidu's app: its row, the one with list_baidu's icon, removed), then Spotify (spotify.c), which
+ * opens its browser, the card apps on the card (addon.c: Deezer, Soulseek, File Browser… as the
+ * App Store or the user put them there), Tidal Downloads, Internet Radio (radio.c), AirPlay
+ * and Configuration. Their buttons have no name, so stock's row click never sees them. Smart
+ * Wi-Fi's radio comes back first. */
 int ringnav_stream(void *win, void *ctx) {
     smart_wake();
     int result = stock_stream_trampoline(win, ctx);

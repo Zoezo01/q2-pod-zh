@@ -402,9 +402,10 @@ enum {
                          pod_rows 26 */
     POD_ALBUM_GRID,   /* Library & Folders' Album View: stock's value and PLAYSET key
                          (album_view_toggle) */
-    /* 中文分支自有的行一律排在 upstream 成员之后：上游的 POD_* 索引、它的 _Static_assert 和
-     * netupdate.c 里 pod_rows 的硬编码就不用每次合并都跟着挪。pod_keys 按名字读写，顺序无关。 */
-    POD_LIBRARY_FILL, /* 补全封面与歌词, an action: onlinematch.c's library_fill_* over the card */
+    POD_HIDE_APPS,    /* Appearance's Hide Apps, Hide Games and Hide App Store: Library's rows
+                         (home.c ringnav_localmusic) */
+    POD_HIDE_GAMES,
+    POD_HIDE_STORE,
     POD_COUNT
 };
 int pod_value(int i);
@@ -476,11 +477,11 @@ void tidal_all(int press, char *out, unsigned size), tidal_poll(void), tidal_all
  * launcher run, its binary q2-<id> and its icons. addon_scan finds them again (how many slots: a
  * slot's index stays its app's), addon_name, addon_id and addon_icon (an image name: file://… or
  * the shared stream_app) are one's while it is on the card (else 0), addon_open its Streaming row's
- * click (ctx: the slot). An app whose q2app says row=library is a Library row instead: addon_libs
- * (how many, a scan), addon_lib_name, addon_lib_icon and addon_lib_open, its click (ctx: its place
- * by name). addon_forget and addon_quit: the Apps page replaces or removes the files
- * of the app in folder dir (".<id>"): asked to end and waited for on the Apps page's worker, then,
- * once replaced or removed, forgotten on the UI thread. */
+ * click (ctx: the slot). An app whose q2app says row=library is a row on Library's Apps page
+ * (addon_apps) instead: addon_libs (how many, a scan), addon_lib_name and addon_lib_open, its click
+ * (ctx: its place by name). addon_forget and addon_quit: the Apps page replaces or removes the
+ * files of the app in folder dir (".<id>"): asked to end and waited for on the Apps page's worker,
+ * then, once replaced or removed, forgotten on the UI thread. */
 /* Card apps on the card at once: twice what the App Store lists (netupdate.c SH_MAX), for those put
  * there by hand. ponytail: a fixed table in .scratch, 520 bytes a slot over addon.c,
  * addon_library.c and navigation.h, its pages untouched until a slot is used; an app past the last
@@ -492,7 +493,9 @@ int addon_games_last(void); /* the card's games as the last addon_scan found the
 const char *addon_name(int a), *addon_id(int a), *addon_icon(int a);
 const char *addon_slot_id(int i); /* slot i's app's id while it has a row anywhere, else 0 */
 int addon_libs(void), addon_lib_open(void *ctx, void *event);
-const char *addon_lib_name(int k), *addon_lib_icon(int k);
+const char *addon_lib_name(int k);
+int addon_apps(void *ctx, void *event), addon_apps_sync(void *win, void *event);
+void library_apps_show(void *row, int on); /* home.c: the Library's Apps row */
 int card_path(const char *path); /* on the card, no ".." segment: what an app or server may name */
 int addon_is_icon(const char *name); /* a card app's Streaming icon, by its file:// name */
 void addon_poll(void), addon_stop(void), addon_paint(void *w, void *canvas), addon_card_away(void);
@@ -536,13 +539,17 @@ int addon_scrobbles(const char *path); /* addon.c: not when path's app says scro
 int addon_more(void); /* addon.c: Now Playing's ⋯ opens the playing queue's app's page */
 void addon_open_id(const char *id); /* a card app's page by its id, hidden or not */
 /* airplay.c: the q2-airplay app's side (docs/internals.md#airplay-sender) */
-void airplay_poll(void), airplay_more(void *view);
+void airplay_poll(void);
+int airplay_more(void *view); /* whether it added its row */
 int airplay_on(void), airplay_lyrics(int *ms);
 /* addon.c: a heart's press, appended to the app's fav.log for it to send (docs/librespot.md);
  * addon_fav_path's for a song in a card folder an app's q2app names as favdir, else nothing to do.
  * 0 when the card didn't take it. */
 int addon_fav(const char *id, const char *kind, const char *key, int on);
 int addon_fav_path(const char *path, int on);
+/* addon.c: a URL queue's app started, if it isn't running, before the player asks it for a song
+ * (tidal.c app_track): whether it started lately; and whether its socket takes a connection yet */
+int addon_wake(const char *id), addon_answers(const char *id);
 extern unsigned auto_nexts;    /* playback.c ringnav_next: tracks that ended by themselves */
 int stream_cache(int spotify); /* navigation.c: Streaming's Configuration, a cap of 512 << it MB */
 void album_memory(void *r);
@@ -551,6 +558,7 @@ void draw_centred(void *canvas, const unsigned *s, unsigned n, const void *r, un
 unsigned book_char(const unsigned char *t, unsigned n,
                    unsigned *i); /* books.c: UTF-8, else Latin-1 */
 int utf8_text(const char *s);    /* xiph.c: valid UTF-8, a 4-byte character too */
+void utf8_mend(char *s);         /* xiph.c: s valid UTF-8, the bytes of no whole character gone */
 /* Lyrics as lyrics.c's loader reads them: each line's start (ms, LRC_FAR unsynced), the order it
  * came in, its UTF-8 text and its word stamps (A2's <mm:ss.xx>), each the ms a word starts and its
  * byte offset in the text. */
@@ -670,6 +678,7 @@ static inline unsigned script_upper(unsigned c) {
 }
 void bar_title_sync(void *win); /* navigation.c: Classic's bar title names win */
 void bar_title_name(void *win); /* navigation.c: names win by its name, on top or not */
+void np_mark_add(void *const *image, unsigned n); /* np_marks.c: the flat look takes them */
 /* navigation.c: Classic's Spotify and Internet Radio Now Playing, laid out as the local page, 0
  * under the other themes; Classic's bar on a canvas (its scrub cue with mark), 0 where none. */
 int stream_ipod(void *art, void *const text[4], void *elapsed, void *remain, void *bar,
@@ -748,7 +757,7 @@ int groovebox_available(void); /* theme_engine.c: the Groovebox card app's binar
 #define SHORTCUT_NONE 11       /* IPOD SHORTCUT's None: Home has no Shortcut row */
 int page_keyup(void *ctx, void *event); /* navigation.c: Return leaves a payload page */
 int ringnav_localclass(int cls);        /* navigation.c: load_localclass_list's hook */
-int shelf_open(void *ctx, void *event); /* netupdate.c: System settings' Apps page */
+int shelf_open(void *ctx, void *event); /* netupdate.c: Library's App Store page */
 void shelf_tab(int tab);                /* netupdate.c: the App Store's open tab, 0 Apps, 1 Games */
 int shelf_key(void *top, unsigned key); /* netupdate.c: Previous and Next switch its tabs */
 /* app_store.c: the App Store's tabs and rows, drawn in ringnav_paint (store_paint) */
