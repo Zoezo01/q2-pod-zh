@@ -746,9 +746,11 @@ int ipod_square_art(void);   /* navigation.c: Classic, and Modern under Square *
 #define SPOT_GREY 0xffaaaaaau
 void radio_search(void);      /* radio.c */
 void toast(const char *text); /* navigation.c */
-/* language.c: Q2 Pod's English in the language picked (the same pointer when it has no line), and
- * the card's languages kept in step */
-const char *tr(const char *en);
+/* language.c: Q2 Pod's English in the language picked (the same pointer when it has no line; a
+ * format keeps its checks), N_ marking a static table's English for the pack's list (translated
+ * where it is shown), and the card's languages kept in step */
+const char *tr(const char *en) __attribute__((format_arg(1)));
+#define N_(en) en
 void language_sync(void);
 void language_removing(const char *dir);
 int valid_id(const char *s); /* addon.c: a card app's id */
