@@ -316,6 +316,7 @@ def test_over_modern_s_other_windows_the_volume_is_the_flat_panel(fw, world, st,
 # The slider pages (slider_open, slider_paint, slider_scrub) in the flat look.
 
 SLIDER_LIGHT, SLIDER_MAX, SLIDER_BALANCE, SLIDER_BOOT = range(4)
+NUMBERS = ['label_backlight', 'label_vol', 'label_balance', 'label_vol']  # [SLIDER_*]: the value's label
 
 
 def flat_slider(fw, world, st, kind, value=50, band=True, number=None, **config):
@@ -325,7 +326,7 @@ def flat_slider(fw, world, st, kind, value=50, band=True, number=None, **config)
     view = world.add(win, 'view_slider', box=(0, 120, 375, 60))
     slider = world.add(view, SLIDERS[kind], 'slider', box=(81, 15, 204, 30), min=0, max=100, value=value)
     if number is not None:
-        world.add(win, 'label_balance', 'label', text=number)
+        world.add(win, NUMBERS[kind], 'label', text=number)
     ui_load(fw, st, SLIDER_PAGES[kind].encode(), win)
     world[view].visible = band
     return win, slider
@@ -372,10 +373,12 @@ def test_a_hidden_band_draws_no_flat_bar(fw, world, st):
     assert canvas.arts == [] and len(canvas.fills) == 1 and world[named(world, win, 'caption')].visible  # the caption still
 
 
-def test_the_flat_value_s_label_is_over_the_bar_and_turns_with_the_half(fw, world, st):
-    win, slider = flat_slider(fw, world, st, SLIDER_BALANCE, number='')
-    label = named(world, win, 'label_balance')
-    world.set_text(label, 'L 3')
+@pytest.mark.parametrize('kind, text', [(SLIDER_LIGHT, '4'), (SLIDER_MAX, '80'), (SLIDER_BALANCE, 'L 3'), (SLIDER_BOOT, '50')])
+def test_the_flat_value_s_label_is_over_the_bar_and_turns_with_the_half(fw, world, st, kind, text):
+    """Every page's value, as stock's page showed it (#476)."""
+    win, slider = flat_slider(fw, world, st, kind, number='')
+    label = named(world, win, NUMBERS[kind])
+    world.set_text(label, text)
     slider_paint(fw, win)
     x, y, w, h = world.at(label)
     _, sy, _, sh = on_page(world, slider)

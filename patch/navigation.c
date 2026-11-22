@@ -4745,6 +4745,10 @@ static void slider_open(void *win) {
     int flat = flat_pages();
     for (unsigned i = 0; i < sizeof hide / sizeof *hide; ++i)
         if ((c = widget_lookup(win, hide[i], 1))) widget_set_visible(c, 0, 0);
+    /* the flat look's value over the bar on every page, as stock's; Classic's on Balance alone */
+    if (flat && ((c = widget_lookup(win, "label_backlight", 1)) ||
+                 (c = widget_lookup(win, "label_vol", 1))))
+        slider_number(c);
     int maxvol = kind == SLIDER_MAX;
     widget_move_resize(P(s, W_PARENT), 0, 0, 375, 294);
     if (flat)
