@@ -2382,7 +2382,8 @@ static void fx_window(int c, int n, const unsigned **ring) {
             }
             unsigned t = (unsigned)time_now_ms();
             int spent = (int)(t - t0) + (h && (s < 0 || fx.ld[s].ok) ? fx.half_ms : fx.full_ms);
-            if ((!th.on && !up && m <= 2 * CF_REACH) ||
+            /* at rest the shelf's covers load at once; a scrub's jumps, by the frame's budget */
+            if ((!th.on && !coverflow_position_held() && !up && m <= 2 * CF_REACH) ||
                 (big ? !any || spent <= budget : decodes-- > 0)) {
                 if (s >= 0)
                     ld_take(s, i, want[m] - 1);
@@ -2785,8 +2786,9 @@ static struct {
     unsigned st[CF_SAMPLES];
 } tc __attribute__((section(".scratch")));
 
-/* A finger on the covers: they move with it, or are held where it caught them */
-static int touched(void) { return tc.down; }
+/* A finger on the covers: they move with it, or are held where it caught them, or follow the
+ * position bar's scrub */
+static int touched(void) { return tc.down || coverflow_position_held(); }
 
 int stride_of(void *s) { return slide_menu_item_width(s) + I(s, SLIDE_SPACER); }
 static int round_stride(int off, int stride) {
@@ -2909,8 +2911,10 @@ static void lift(int aborted, unsigned now) {
 static int touch(void *ctx, void *event) {
     int type = I(event, EVENT_TYPE), x = I(event, EVENT_X), y = I(event, EVENT_Y);
     if (type == EVT_POINTER_DOWN) {
-        lift(1, 0);                            /* a release the input queue dropped */
-        if (!covers_live() || th.on) return 0; /* the thumb's covers settle first */
+        lift(1, 0); /* a release the input queue dropped */
+        coverflow_position_lift();
+        if (!covers_live() || th.on) return 0;        /* the thumb's covers settle first */
+        if (coverflow_position_press(x, y)) return 0; /* the position bar's scrub */
         void *a = P(cf.slide, SLIDE_ANIMATOR);
         if (a) widget_animator_pause(a); /* caught where it is */
         tc = (typeof(tc)){ .down = 1,
@@ -2920,6 +2924,7 @@ static int touch(void *ctx, void *event) {
                            .from = unbound(I(cf.slide, SLIDE_OFFSET), stride_of(cf.slide)) };
         return 0;
     }
+    if (coverflow_position_touch(type, x, y)) return 0;
     if (!tc.down) return 0;
     if (type == EVT_POINTER_UP_BEFORE || type == EVT_POINTER_ABORT) {
         lift(type == EVT_POINTER_ABORT, stamp(event));
@@ -2944,7 +2949,10 @@ static int touch(void *ctx, void *event) {
 
 /* ringnav, at a key with no finger down: a touch whose release went unseen ends, so the wheel
  * and Centre act on the cover the covers settle on. */
-void coverflow_lost_touch(void) { lift(1, 0); }
+void coverflow_lost_touch(void) {
+    lift(1, 0);
+    coverflow_position_lift();
+}
 
 static void cover(void *img, unsigned i, int near) {
     char url[600] = "file://";

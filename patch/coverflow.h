@@ -259,7 +259,11 @@ void land_art(void *w, void *canvas);
 void land_drop(void);
 int land_key(unsigned key);
 
-/* Optional browsing position. */
+/* Optional browsing position, and its scrub by touch. */
 void coverflow_position_paint(void *w, void *canvas);
 void coverflow_position_reset(void);
+int coverflow_position_press(int x, int y);
+int coverflow_position_touch(int type, int x, int y);
+void coverflow_position_lift(void);
+int coverflow_position_held(void);
 #endif
