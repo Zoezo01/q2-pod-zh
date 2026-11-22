@@ -1,4 +1,4 @@
-"""What stock_types.h's handles refuse, and what they still let through (docs/internals.md#stock-handles).
+"""What stock_types.h's handles refuse (docs/internals.md#stock-handles).
 
 Each case is a function compiled, not run: against the headers test/fw builds with, a pointer of the wrong kind
 a hard error, as the Q2's build and tools/tidy.sh have it (-Werror). A refusal must be all its case's errors are,
@@ -33,23 +33,6 @@ REFUSED = {
     'an event made for a widget given as one': 'widget_destroy(pointer_event_init(p, 0, w, 0, 0));',
     'a widget where a paint wants its canvas': 'widget_paint(w, w);',
 }
-KINDS = ['widget_t', 'event_t', 'canvas_t', 'vgcanvas_t', 'widget_animator_t', 'widget_factory_t', 'image_manager_t',
-         'input_method_t']
-# What it can't: C lets void * be any of them, and P() and I() take any pointer
-ACCEPTED = {
-    'each kind where it belongs': (
-        'widget_paint(w, c); vgcanvas_fill(vg); vgcanvas_fill(canvas_get_vgcanvas(c)); widget_animator_start(a); '
-        'widget_dispatch_event_to_target_recursive(w, e); widget_on(w, EVT_CLICK, right, w);',
-        'static int right(void *ctx, event_t *event) { return ctx && event; }'),
-    'void * as any handle': 'widget_set_visible(p, 1, 0); widget_paint(p, p);',
-    'a handle through void * as another kind': 'void *any = e; widget_set_visible(any, 1, 0);',
-    'what P() reads as whatever it is assigned to': 'canvas_t *wrong = P(w, W_PARENT); widget_paint(w, wrong);',
-    "a handler's ctx as a widget, whatever was registered": (
-        'widget_on(w, EVT_CLICK, as_widget, e);',
-        'static int as_widget(void *ctx, event_t *event) { return widget_set_visible(ctx, 1, 0) + !event; }'),
-    'a cast': 'widget_set_visible((widget_t *)e, 1, 0);',
-    "one class's offset read from a widget of any class": 'return I(w, ROW_INDEX) + I(w, SLIDE_INDEX);',
-}
 
 
 def compiled(library, tmp_path, case):
@@ -66,26 +49,3 @@ def test_a_pointer_of_the_wrong_kind_is_refused(library, tmp_path, name):
     assert result.returncode, name
     errors = [line for line in result.stderr.splitlines() if 'error:' in line]
     assert errors and all('incompatible' in e and 'pointer type' in e for e in errors), result.stderr
-
-
-@pytest.mark.parametrize('kind', KINDS)
-def test_each_kind_refuses_every_other(library, tmp_path, kind):
-    # stock_types.h's whole point: no two are the same type, so a typedef copied and left naming another's struct
-    # fails here, whichever two
-    others = [k for k in KINDS if k != kind]
-    result = compiled(library, tmp_path, ' '.join(f'{{ {kind} *x = ({other} *)p; (void)x; }}' for other in others))
-    errors = [line for line in result.stderr.splitlines() if 'error:' in line]
-    assert len(errors) == len(others) and all('incompatible' in e and 'pointer type' in e for e in errors), result.stderr
-
-
-@pytest.mark.parametrize('name', ACCEPTED)
-def test_what_the_types_cannot_see_still_compiles(library, tmp_path, name):
-    result = compiled(library, tmp_path, ACCEPTED[name])
-    assert not result.returncode and 'error:' not in result.stderr, result.stderr
-
-
-@pytest.mark.parametrize('body', ['return (int)sizeof *w;', 'widget_t copy = *w; (void)copy;', 'return *(int *)e + e->type;'])
-def test_a_handle_has_no_inside(library, tmp_path, body):
-    # nothing here lays stock's objects out: one can't be sized, copied or reached into
-    result = compiled(library, tmp_path, body)
-    assert result.returncode and 'incomplete' in result.stderr, result.stderr

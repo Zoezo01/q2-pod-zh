@@ -98,7 +98,7 @@ Stock's UI is AWTK. The payload calls its functions at their addresses (`FUNCTIO
 
 `FUNCTIONS` types stock's functions with them, a handler is `int (*)(void *ctx, event_t *event)`, and every declaration in the payload that holds one says which. The compiler then refuses one kind where another is asked for (`-Wincompatible-pointer-types`, an error under the build's `-Werror` and in `tools/tidy.sh`, which CI runs with no stock ZIP): an event passed as a widget, a paint's widget and canvas the wrong way round, a `char` buffer as a widget, a handler whose second parameter is not the event. As they are incomplete, a handle can't be dereferenced, sized or copied either: nothing in the C lays a stock object out, and its fields are still read at `offsets.inc`'s offsets. A handle is held exactly as a `void *` was, so no call and no layout changes. From clang 20 on, though, the optimiser also goes by a pointer's type to decide which loads and stores can't touch the same memory (a `void *` one may touch any pointer), so a variable that holds a handle is read and written as its own type or as `void *` (as `P()` reads), never through another pointer type such as `char **`.
 
-What the types can't see, each compiled as a case by `test/fw/test_stock_types.py` beside what they refuse:
+What the types can't see:
 
 - **`void *`.** C turns `void *` into any handle, and any handle into `void *`, without a cast. So what `P()` reads out of stock's memory is whatever it is assigned to, a handler's `ctx` is whatever its body uses it as (stock's own signature has it `void *`, so it stays), and a value that passes through a `void *` variable comes out as anything.
 - **`P`, `I` and `B`** take any pointer. The offset's prefix says whose it is (`W_` any widget, `EVENT_` an event, `CANVAS_` a canvas), and the compiler doesn't hold it to that.
@@ -108,7 +108,7 @@ What the types can't see, each compiled as a case by `test/fw/test_stock_types.p
 
 Left as they were, on purpose: what the payload lays out itself and stock fills or reads (a rectangle as `rect_t` or `int[4]`, a point, the `unsigned bitmap[64]` a `bitmap_t` is loaded into, the SHA-256 state), a timer or idle callback's `const void *info` (the `const` already stops it being passed on as an object), and everything that is not AWTK's (a deque, a song record, SQLite, cJSON, TagLib).
 
-For new code: give a new `FUNCTIONS` entry the types (`test/unit` holds a widget class's, a canvas's and an animator's functions to their first parameter, and a `_create` to what it returns), declare what holds a handle as one, and type a hook from the stock function it replaces (a handler's `event`, a page init's `win`).
+For new code: give a new `FUNCTIONS` entry the types (`test/unit` fails an entry whose object comes first as `void *`, a `_create` or one-of-each that returns `void *`, or a handler without the event), declare what holds a handle as one, and type a hook from the stock function it replaces (a handler's `event`, a page init's `win`).
 
 ## Supported screens and panes
 
