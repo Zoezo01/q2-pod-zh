@@ -8651,7 +8651,7 @@ passed()
 # Vortex, Solitaire and Snake. A game's keys never reach stock's filter or the media keys; Return goes game -> chooser ->
 # Library. Vortex's frame timer and raw wheel run only while it plays: Play/Pause, the screen going
 # off and leaving each stop them, and closing frees the state.
-CONFIG['SHORTCUT']='6'; m=BooksMachine({},{}); del CONFIG['SHORTCUT']
+CONFIG['SHORTCUT']='6'; m=CardMachine({},{}); del CONFIG['SHORTCUT']
 G_SCREEN,G_PICKING,G_PAUSED,G_CELL,G_CUR,G_VX=36,44,56,76,157,164
 def games_open():
     view=m.node('scroll_view','scroll_view_localmusic',[m.node('list_item') for _ in range(11)]); m.top=m.node('window','localmusic_page',[view])
@@ -9738,7 +9738,7 @@ for i,(icon,text) in enumerate(zip(want,['TIDAL','Spotify','A long name for a ca
             near=[(at(x0,y0),(256-fx)*(256-fy)),(at(x1,y0),fx*(256-fy)),(at(x0,y1),(256-fx)*fy),(at(x1,y1),fx*fy)]
             a=sum(p[3]*k for p,k in near); want_px=bytes(sum(p[c]*p[3]*k for p,k in near)//a if a else 0 for c in range(3))+bytes([a>>16])
             assert out[(y*96+x)*4:(y*96+x)*4+4]==want_px,(x,y,out[(y*96+x)*4:(y*96+x)*4+4],want_px)
-    if i==2: assert caption[0].endswith('…') and BOOK_PITCH*len(caption[0])<=182 and caption[0].startswith('A long'),caption
+    if i==2: assert caption[0].endswith('…') and CHAR_PITCH*len(caption[0])<=182 and caption[0].startswith('A long'),caption
     else: assert caption==[text],(i,caption)
 cost=[0]; hook=m.u.hook_add(UC_HOOK_CODE,lambda *a: cost.__setitem__(0,cost[0]+1),begin=BASE,end=SCRATCH-1)
 stream_shows(m); m.u.hook_del(hook); assert cost[0]<100000,cost

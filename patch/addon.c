@@ -1464,9 +1464,6 @@ void addon_stop(void) {
     if (nw.live) now_write(1, nw.sec, nw.total);
 }
 
-/* The wifi=1 apps (addon_wifi.c follows the link for them): each on the card started that isn't
- * running, held off or about to start again, each running one (or one waiting to start again after
- * USB storage) stopped, and the user's stops forgotten for a new link. */
 /* An app's loop runs: its pid file names a process that is there (/proc/<pid>; demo imports no
  * kill()). A pid file alone may be a dead loop's, kept in /tmp across a restart of demo. */
 static int loop_alive(const app_t *a) {
@@ -1478,6 +1475,9 @@ static int loop_alive(const app_t *a) {
     tk_snprintf(proc, sizeof proc, "/proc/%d", pid);
     return pid > 0 && !access(proc, 0);
 }
+/* The wifi=1 apps (addon_wifi.c follows the link for them): each on the card started that isn't
+ * running, held off or about to start again, each running one (or one waiting to start again after
+ * USB storage) stopped, and the user's stops forgotten for a new link. */
 void addon_wifi_start(void) {
     for (int i = 0; i < ap.n; ++i) {
         app_t *a = &ap.a[i];

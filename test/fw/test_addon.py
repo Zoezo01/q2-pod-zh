@@ -2840,15 +2840,16 @@ def test_a_switch_moves_when_a_refresh_changes_its_state_and_shows_no_text(fw):
     # a press, then the list again with the switch flipped: the same rows, written in place (relabel),
     # must move the switch, never write "on"/"off" (or Working...) as the row's text.
     p = Page(fw)
+    texts = []  # read as written: the next answer frees the reply the rows' texts point into
+    fw.mock('widget_set_text_utf8', lambda w, t, *_: texts.append(C.string_at(t)))
     p.answer(msg=b'refresh', rows=[(b'switch', b'power', b'Tunnel', b'on', b'', b''), item(2, b'info')])
-    texts = lambda: [C.string_at(a[1]) for _, a in fw.calls('widget_set_text_utf8')]
     images = lambda: [C.string_at(a[1]) for _, a in fw.calls('image_base_set_image')]
     assert images()[-1] == b'switch_on'
     p.click(0)
     p.answer(msg=b'Tunnel off')
     p.answer(msg=b'refresh', rows=[(b'switch', b'power', b'Tunnel', b'off', b'', b''), item(2, b'info')])
     assert images()[-1] == b'switch_off'
-    assert not {b'on', b'off', 'Working…'.encode()} & set(texts())
+    assert texts and not {b'on', b'off', 'Working…'.encode()} & set(texts)
 
 
 def test_a_classic_switch_row_reads_on_or_off_and_says_working_on_its_title(fw, settings_read):

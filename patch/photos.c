@@ -198,7 +198,9 @@ static void drop_photos(void) {
 }
 
 /* qsort's order for a list of strings. */
-int by_string(const void *a, const void *b) { return strcmp(*(char *const *)a, *(char *const *)b); }
+static int by_string(const void *a, const void *b) {
+    return strcmp(*(char *const *)a, *(char *const *)b);
+}
 
 /* dir's photos (full paths) or, with albums, its subfolders that hold any (names), added to list
  * from *n up to cap in name order; with no list, whether dir holds a photo. */
@@ -223,6 +225,7 @@ static int scan(const char *dir, char **list, int *n, int cap, int albums) {
 
 static int open_tile(void *ctx, event_t *event);
 static int toggle_info(void *ctx, event_t *event);
+static widget_t *bottom_caption(widget_t *parent, int h);
 
 /* The grid of album target - 1, or with -1 All Photos: the folder's own photos, then every
  * album's. The worker then makes whatever is not cached yet. */
@@ -450,7 +453,7 @@ int text_differs(widget_t *w, const char *s) {
 
 /* The bottom caption of a page h high: above the rounded glass's bottom corners, dark under white
  * so it reads over any photo. */
-widget_t *bottom_caption(widget_t *parent, int h) {
+static widget_t *bottom_caption(widget_t *parent, int h) {
     widget_t *label = text(parent, CF_EDGE, h - 56, 375 - 2 * CF_EDGE, 36);
     widget_set_prop_int(label, "style:normal:bg_color", (int)0xb3000000u);
     widget_set_prop_int(label, "style:normal:round_radius", 8);

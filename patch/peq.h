@@ -347,7 +347,6 @@ void list_toggle(widget_t *label, const char *title, int on); /* navigation.c: a
 void list_value(widget_t *label, const char *title, const char *value);
 char *csv_find(char *list, const char *item); /* navigation.c: comma lists */
 int csv_toggle(char *list, unsigned size, const char *item);
-widget_t *bottom_caption(widget_t *parent, int h);
 int text_differs(widget_t *w, const char *s);
 void *song_list(void);                              /* coverflow.c: an empty stSongInfo deque */
 long file_size(const char *path);                   /* coverflow.c: -1 when it can't be opened */
@@ -358,7 +357,6 @@ int thumb(const char *src, const char *dst, int w, int h);
 extern volatile unsigned ff_kills; /* coverflow.c: ffmpeg runs killed or never started */
 int card_space(const char *dir);
 int card_room(const char *dir, unsigned mb, unsigned pct);
-int by_string(const void *a, const void *b);
 unsigned hash_bytes(unsigned h, const unsigned char *s, unsigned n);
 unsigned fnv(unsigned h, const unsigned char *s);
 void stop_timer(unsigned *timer), rearm(unsigned *timer, int (*fn)(const void *), unsigned ms);

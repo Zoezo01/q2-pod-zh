@@ -4063,9 +4063,9 @@ def photos_at(tree,data):
     f,ctx=m.handler(m.nodes[m.nodes[v]['children'][-4]]['children'][0],O['EVT_CLICK']); assert m.call(address=f,args=(ctx,m.event,0,0),gap=0,count=5_000_000)==0
     m.page=m.top; return m
 
-class BooksMachine(DepthMachine):
+class CardMachine(DepthMachine):
     """The card as a tree of {path: [(name, d_type)]} and files as {path: bytearray}, with stdio
-    handles over them, and a fixed-pitch font: every character BOOK_PITCH wide."""
+    handles over them, and a fixed-pitch font: every character CHAR_PITCH wide."""
     def __init__(self,tree,files):
         super().__init__()
         self.tree=tree; self.files=files; self.handles={}; self.dirs={}; self.lines=[]
@@ -4129,7 +4129,7 @@ class BooksMachine(DepthMachine):
         elif name=='strlen': ret=len(self.raw(a))  # bytes: a buffer may end inside a UTF-8 character
         elif name=='strstr':
             i=self.raw(a).find(self.raw(b)); ret=a+i if i>=0 else 0
-        elif name=='canvas_measure_text': u.reg_write(UC_MIPS_REG_F0,struct.unpack('<I',struct.pack('<f',(getattr(self,'char_em',0)*self.font[1] or BOOK_PITCH)*c))[0])
+        elif name=='canvas_measure_text': u.reg_write(UC_MIPS_REG_F0,struct.unpack('<I',struct.pack('<f',(getattr(self,'char_em',0)*self.font[1] or CHAR_PITCH)*c))[0])
         elif name=='mclGetOutputWay': ret=self.way
         elif name=='open': ret=0xffffffff  # the child's oom_score_adj write: refused here, so nothing is written
         elif name=='fork': ret=self.forked
@@ -4153,13 +4153,13 @@ class BooksMachine(DepthMachine):
             u.reg_write(UC_MIPS_REG_V0,0);u.reg_write(UC_MIPS_REG_SP,0x7000f000);u.reg_write(UC_MIPS_REG_PC,0x1000000);return
         self.returns(ret,clobber=True)
 
-BOOK_PITCH=9
+CHAR_PITCH=9
 
 # Spotify (patch/spotify.c, docs/internals.md#spotify): librespot from the card's .spotify folder, its
 # state from the q2-librespot fork's --status-file, its commands to --control-socket.
 STATE,SOCK='/tmp/q2-librespot.state','/tmp/q2-librespot.sock'
-class SpotMachine(BooksMachine):
-    """BooksMachine's card and files, plus librespot's side: system() starts, the monotonic clock is
+class SpotMachine(CardMachine):
+    """CardMachine's card and files, plus librespot's side: system() starts, the monotonic clock is
     self.now, the player's status, and the thumbnailer (a .jpg it makes is a file)."""
     def __init__(self,files):
         super().__init__({},files)
@@ -4836,7 +4836,7 @@ def stock_keyups():
     # updatemusic_dialog, the library scan's: Return and the wheel end there; stock's Centre too, which SCAN_CENTRE sends on
     assert keyups(True,0x4a2a94)=={prev:stop,nxt:stop,ret:stop} and keyups(False,0x4a2a94)=={**wheel,ret:stop}
 
-class TagMachine(BooksMachine):
+class TagMachine(CardMachine):
     def __init__(self,files):
         super().__init__({},files); self.stock_artist=b''
         self.handlers.pop(syms['toolsGetMusicInfo'],None)  # run the hook; only stock's body is mocked

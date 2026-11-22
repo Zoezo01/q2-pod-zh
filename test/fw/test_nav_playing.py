@@ -420,13 +420,19 @@ def card_app_shown(ui, bar):
 
 # The app's icon never runs into the clock (BATT_ROOM): Classic's group with Wi-Fi 18, Bluetooth 14, the play state 22
 # and its 29 px battery reaches 83 in Icon, 91 in Percent (37 px of digits), each before the icon's own width + 4.
-@pytest.mark.parametrize('mode, bt, playing, shown, kept', [
-    (0, 1, 2, False, 0),  # Icon, everything showing: 103, hidden
-    (0, 0, 2, True, 0),  # Icon without Bluetooth: 89, shown
-    (1, 0, 2, True, 0),  # Percent without Bluetooth: 97 with the digits, 89 as the icon: the number goes, the icon shows
-    (1, 1, 2, False, 1)])  # Percent, everything: 91 alone, 103 even as the icon: the number stays, the icon hides
-def test_a_card_app_s_bar_icon_shows_only_where_the_row_has_room(fw, st, ui, mode, bt, playing, shown, kept):
-    theme(fw, st, CLASSIC, BATTERY=mode)
+# Classic reads a stored Icon + Percent as Percent Inside, so its fall to Percent Inside is Status Bar: Classic's
+# (STATUSBAR=3) on Minimal or Modern, whose row leaves the play state out: Wi-Fi and the 27 px battery reach 86 with
+# 100%, 47 inside.
+@pytest.mark.parametrize('t, look, mode, bt, playing, shown, kept', [
+    (CLASSIC, 0, 0, 1, 2, False, 0),  # Icon, everything showing: 103, hidden
+    (CLASSIC, 0, 0, 0, 2, True, 0),  # Icon without Bluetooth: 89, shown
+    (CLASSIC, 0, 1, 0, 2, True, 0),  # Percent without Bluetooth: 97 with the digits, 89 as the icon: the number goes
+    (CLASSIC, 0, 1, 1, 2, False, 1),  # Percent, everything: 91 alone, 103 even as the icon: the number stays
+    (CLASSIC, 0, 3, 1, 2, False, 3),  # Percent Inside, everything: the icon's 83, 103: the number kept, the icon hides
+    (CLASSIC, 0, 3, 0, 2, True, 3),  # Percent Inside without Bluetooth: 89, shown
+    (MINIMAL, 3, 2, 0, 2, True, 3)])  # Icon + Percent: 106 with the icon, 67 inside: the number goes inside
+def test_a_card_app_s_bar_icon_shows_only_where_the_row_has_room(fw, st, ui, t, look, mode, bt, playing, shown, kept):
+    theme(fw, st, t, BATTERY=mode, STATUSBAR=look)
     bar = Bar(fw, ui)
     crowded(fw, ui, bar)
     ui.shown[bar.bt] = bt

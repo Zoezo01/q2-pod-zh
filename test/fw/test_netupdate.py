@@ -152,8 +152,8 @@ def test_a_bad_line_is_passed_over_and_the_next_read(fw, line):
     assert [a[2] for a in sources(fw, line + b'\nme/good\n')] == [b'good']
 
 
-def test_books_is_a_card_app_s_id_again(fw):
-    # The firmware's reader is gone: .books is the card app's folder, not one of the firmware's own
+def test_books_is_an_ordinary_card_app_id(fw):
+    # .books is a card app's folder, not one of the firmware's own
     assert sources(fw, b'owner/q2-books Books\n') == [(b'owner/q2-books', b'Books', b'books', b'.books', b'.books/q2-books', b'')]
 
 
