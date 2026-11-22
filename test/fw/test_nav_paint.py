@@ -2876,7 +2876,7 @@ def test_the_scan_counts_against_the_library_before_it(fw, world, st, whole):
     count(fw, threads, 704)
     assert poll(world) == RET_REPEAT
     line, button = named(world, win, 'msg_line'), named(world, win, 'btn_no')
-    assert world[line].text == '312 of 704 songs'  # msg_sync's own example
+    assert world[line].text == '312 / 704 首'  # msg_sync's own example
     assert world[button].text not in ('Stop', '', None)  # over stock's word
     (target, box), = world.invalid
     after = msg_paint(fw, win)  # the line in its place, the bar drawn

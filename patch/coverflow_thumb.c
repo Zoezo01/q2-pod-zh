@@ -1,8 +1,10 @@
 /* Cover Flow's thumb: the wheel's travel, a follower the covers ride on, its letters and landings.
  */
 #include "coverflow.h"
+#include "i2f.h"
 
 cf_thumb_t th __attribute__((section(".scratch")));
+
 
 /* The thumb (docs/internals.md#coverflow-thumb), every UI pass while the covers are open
  * (navigation.c thumb_poll): the wheel's raw travel, 200 units a turn, moves a goal, and the
@@ -59,9 +61,9 @@ int coverflow_wheel_on(void *w) { return th.on && w == cf.slide; }
 /* From rest, or from a touch's glide or a held tick's step, whose goal it takes over. */
 static void th_grab(void *s, unsigned now) {
     void *a = P(s, SLIDE_ANIMATOR);
-    float stride = (float)stride_of(s);
-    th.pos = (float)-I(s, SLIDE_OFFSET) / stride;
-    th.goal = a ? (float)-I(a, ANIM_X_TO) / stride : th.pos;
+    float stride = i2f(stride_of(s));
+    th.pos = i2f(-I(s, SLIDE_OFFSET)) / stride;
+    th.goal = a ? i2f(-I(a, ANIM_X_TO)) / stride : th.pos;
     if (a) {
         widget_animator_pause(a);
         widget_animator_destroy(a);
@@ -83,7 +85,7 @@ static void th_rebase(void *s, int q, int n) {
     int i = (I(s, SLIDE_INDEX) + q) % n;
     I(s, SLIDE_OFFSET) = 0; /* the pass writes it again from pos */
     slide_menu_set_value(s, i < 0 ? i + n : i);
-    th.pos -= (float)q, th.goal -= (float)q, th.seen -= (float)q;
+    th.pos -= i2f(q), th.goal -= i2f(q), th.seen -= i2f(q);
     th.clicked -= q;
 }
 /* The album named is the one kept, here: closed() may come mid-destroy, with no slide_menu. In
@@ -137,7 +139,7 @@ static int th_letter(void *s, int n, int first) {
     unsigned letter;
     int from = first ? th_aim() : cf_round(th.goal), dir = first ? -th.lean : th.dir;
     float at = first ? coverflow_hold() : 0, v = coverflow_enter_v();
-    float near = at + (float)dir * v * (float)cfs.slide_ms;
+    float near = at + i2f(dir) * v * i2f(cfs.slide_ms);
     if (first &&
         dir > 0) { /* on: the letter after the album before near, if the wheel's is short */
         int before = -cf_floor(-near) - 1;
@@ -155,11 +157,11 @@ static int th_letter(void *s, int n, int first) {
         if (b - (a - a0) < go) go = b - (a - a0), letter = l;
     }
     if (first) {
-        while (((float)go - near) * (float)dir < 0) go += dir * n; /* round a small library */
+        while ((i2f(go) - near) * i2f(dir) < 0) go += dir * n; /* round a small library */
         th_rebase(s, go, n);
-        th.pos = at - (float)go, th.vel = (float)dir * v, th.goal = th.lead = th.lead_v = 0;
+        th.pos = at - i2f(go), th.vel = i2f(dir) * v, th.goal = th.lead = th.lead_v = 0;
     } else
-        th.goal = (float)go;
+        th.goal = i2f(go);
     th.clicked = cf_round(th.goal);
     coverflow_letter_hold(s, letter);
     widget_invalidate_force(s, 0);
@@ -184,7 +186,7 @@ static void th_turn(void *s, int travel, unsigned now, int n, int ms) {
     }
     th.dir = dir;
     /* Wheel Sensitivity scales the travel, 50% as the theme has it */
-    float ticks = (float)ABS(travel) * cfs.ticks_turn * wheel_pct() / 10000,
+    float ticks = i2f(ABS(travel)) * cfs.ticks_turn * wheel_pct() / 10000,
           slow = 1.f / cfs.ticks_album;
     float r = th.rate < 1 ? 1 : th.rate, sr = slow * r, top = cfs.top_speed;
     float f = cf_smooth((th.rate - cfs.fast_at) / (cfs.fast_full - cfs.fast_at));
@@ -193,22 +195,22 @@ static void th_turn(void *s, int travel, unsigned now, int n, int ms) {
      * to a spin's, and past top_speed ticks_album ticks/s, the share would outrun it. This pass's
      * own is over a frame at least: a pass a ms or two after the last would read its ticks as a
      * spin many times the cap's and throw them away. */
-    float inst = ticks * 1000 / (float)(ms < TH_FRAME_MS ? TH_FRAME_MS : ms),
+    float inst = ticks * 1000 / i2f(ms < TH_FRAME_MS ? TH_FRAME_MS : ms),
           cap = top / (inst > r ? inst : r);
     step = step > slow ? step : slow;
     th.ticks += ticks;
     th.tick_at = now;
     if (th.jump || th.beat) th.stretch += ticks;
     if (th.jump) return;
-    th.goal += (float)dir * ticks * (step < cap ? step : cap);
+    th.goal += i2f(dir) * ticks * i2f(step < cap ? step : cap);
     if (coverflow_bounded(s)) {
         int i = I(s, SLIDE_INDEX);
-        float lo = (float)-i, hi = (float)(n - 1 - i);
+        float lo = i2f(-i), hi = i2f(n - 1 - i);
         float g = th.goal < lo ? lo : th.goal > hi ? hi : th.goal;
         if (g != th.goal) {
             th.goal = g;
             if (!th.bounced && ABS(th.pos - g) < .02f)
-                th.pos = g + (float)dir / CF_BOUNCE, th.vel = 0, th.bounced = 1;
+                th.pos = g + i2f(dir) / CF_BOUNCE, th.vel = 0, th.bounced = 1;
         } else
             th.bounced = 0;
     }
@@ -223,7 +225,7 @@ static int th_arched(void) { return cfs.arch_span && !pod_value(POD_BIG_LIB); }
  */
 static void th_arch(float ms) {
     float v = ABS(th.vel) * 1000, left = ABS(th.goal - th.pos) - 1;
-    float want = (v - cfs.arch_at) / (float)(cfs.arch_full - cfs.arch_at);
+    float want = (v - cfs.arch_at) / i2f(cfs.arch_full - cfs.arch_at);
     want = want < 0 ? 0 : want > 1 ? 1 : want;
     want *= left < 0 ? 0 : left > 1 ? 1 : left;
     th.arch +=
@@ -237,14 +239,14 @@ static void th_arch(float ms) {
 static void th_albums(void *s, int n, int since, int ms) {
     int idle = since > cfs.hold_ms;
     float left = ABS(th.goal - th.pos);
-    if (th.goal != (float)cf_round(th.goal) &&
+    if (th.goal != i2f(cf_round(th.goal)) &&
         (!th.finger || idle || (since > cfs.stop_ms && left * 100 > cfs.stop_left))) {
-        th.goal = (float)th_aim(), left = ABS(th.goal - th.pos);
+        th.goal = i2f(th_aim()), left = ABS(th.goal - th.pos);
         if (th.beat && th_moving()) th_name(s, th.jump_to, n); /* onto its letter's first album */
     }
     float f = cf_smooth((th.rate - cfs.fast_at) / (cfs.fast_full - cfs.fast_at));
-    float base = idle || !th.finger ? cfs.snap : cfs.track + (float)(cfs.spin - cfs.track) * f;
-    float rest = cfs.snap + (float)(cfs.spin - cfs.snap) * cf_smooth(left * 100 / cfs.far_left);
+    float base = idle || !th.finger ? cfs.snap : cfs.track + i2f(cfs.spin - cfs.track) * f;
+    float rest = cfs.snap + (float)(cfs.spin - cfs.snap) * cf_smooth(i2f(left * 100) / i2f(cfs.far_left));
     /* only the thumb raises it, and how far is left only lets it fall: lag raising it would add lag
      * and snap the row out at one speed */
     th.tau = th.tau < rest ? th.tau : rest;
@@ -254,19 +256,19 @@ static void th_albums(void *s, int n, int since, int ms) {
     if (th_arched()) th.tau = cfs.arch_tau;
     /* its soft detent, slow and finger down: towards the albums, never against the thumb */
     int g0 = cf_floor(th.goal);
-    float r0 = th.goal - (float)g0, k = th.finger ? (1 - f) * cfs.detent / 100 : 0;
-    float to = (float)g0 + (1 - k) * r0 + k * r0 * r0 * (3 - 2 * r0);
-    th_follow(&th.pos, &th.vel, to, th.tau, (float)ms);
+    float r0 = th.goal - i2f(g0), k = th.finger ? (1 - f) * cfs.detent / 100 : 0;
+    float to = i2f(g0) + (1 - k) * r0 + k * r0 * r0 * (3 - 2 * r0);
+    th_follow(&th.pos, &th.vel, to, th.tau, i2f(ms));
     if (ABS(th.pos - th.goal) < 1e-4f && ABS(th.vel) < 1e-5f) th.pos = th.goal, th.vel = 0;
     if (th_arched()) { /* no facing point ahead of the covers: they bend in to where they are */
-        th_arch((float)ms);
+        th_arch(i2f(ms));
         return;
     }
     /* The facing point is the wheel's target, where the covers will land: off under lead_from, so
      * slow control is exact, and its short follow only smooths a reversal. */
     float l = th.goal - th.pos;
     float want = l * cf_smooth((ABS(l) * 100 - cfs.lead_from) / (cfs.lead_full - cfs.lead_from));
-    th_follow(&th.lead, &th.lead_v, want, cfs.lead_ms, (float)ms);
+    th_follow(&th.lead, &th.lead_v, want, cfs.lead_ms, i2f(ms));
     if (!want && ABS(th.lead) < 1e-4f && ABS(th.lead_v) < 1e-5f) th.lead = th.lead_v = 0;
     /* Once the wheel's stopped, the facing point's follow, lagging as it shrinks, never passes the
      * album the covers land on, or the next one faces for a moment and turns back. While it turns,
@@ -350,10 +352,10 @@ int coverflow_wheel_poll(int usable, int gated) {
      * a second at least, the wheel's travel the entry's own, the facing point running on ahead of
      * it off the screen; then the first letter, which always shows, as a change of art. */
     int entered = 0;
-    float follow = (float)ms; /* the letters' follow this pass */
+    float follow = i2f(ms); /* the letters' follow this pass */
     if (th.on && th.jump && th.enter > 0) {
         float v = coverflow_enter_v();
-        th.enter -= v * (float)ms;
+        th.enter -= v * i2f(ms);
         if (th.enter > 0) {
             widget_invalidate_force(s, 0);
             return THUMB_MOVED;
@@ -386,9 +388,9 @@ int coverflow_wheel_poll(int usable, int gated) {
     }
     /* the thumb's rate, ticks/s: quick to fall, so slowing down gives control back at once. In
      * 1.7.6's letters, a lifted thumb leaves it: a re-grip isn't a slow thumb. */
-    float inst = th.ticks * 1000 / (float)ms, tc = inst > th.rate ? cfs.rate_up : cfs.rate_down;
+    float inst = th.ticks * 1000 / i2f(ms), tc = inst > th.rate ? cfs.rate_up : cfs.rate_down;
     if (!th.beat || (th.finger && th.held))
-        th.rate += (inst - th.rate) * (1 - ff_decay((float)ms / tc));
+        th.rate += (inst - th.rate) * (1 - ff_decay(i2f(ms) / tc));
     th.ticks = 0;
     /* At big_jump_at or more for big_jump_ms the spin goes by letters, where the sort has them: one
      * each jump_ticks of travel at any rate and either way, the first once the row is in (above),
@@ -409,7 +411,7 @@ int coverflow_wheel_poll(int usable, int gated) {
     if (big && !th.jump && th.capped && th.capped >= cfs.big_jump_ms && cfs.jump_ticks &&
         lettered(s)) {
         th.jump = 1, th.lean = -th.dir, th.stretch = 0;
-        th.enter = (float)cfs.enter_albums;
+        th.enter = i2f(cfs.enter_albums);
     }
     for (; th.jump && th.enter <= 0 && th.stretch >= cfs.jump_ticks; th.stretch -= cfs.jump_ticks)
         if (th_letter(s, n, 0)) r |= THUMB_CLICK;
@@ -443,7 +445,7 @@ int coverflow_wheel_poll(int usable, int gated) {
         th_albums(s, n, since, ms);
     int q = cf_round(th.pos);
     if (q >= TH_REBASE || q <= -TH_REBASE) th_rebase(s, q, n);
-    I(s, SLIDE_OFFSET) = -cf_round(th.pos * (float)stride_of(s));
+    I(s, SLIDE_OFFSET) = -cf_round(th.pos * i2f(stride_of(s)));
     if (th.fold || ABS(th.pos - th.seen) >= 1 / 4096.f ||
         ABS(th.lead - th.seen_lead) >= 1 / 4096.f || !th.lead != !th.seen_lead ||
         th.arch != th.seen_arch) { /* the fold's first frame too */
@@ -457,7 +459,7 @@ int coverflow_wheel_poll(int usable, int gated) {
         r |= THUMB_CLICK;
     }
     if (!th.jump && !th.beat && !th.fold && !th.lead && !th.arch && th.pos == th.goal &&
-        th.goal == (float)cf_round(th.goal))
+        th.goal == i2f(cf_round(th.goal)))
         th_commit(cf_round(th.goal));
     return r;
 }

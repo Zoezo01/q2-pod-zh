@@ -483,7 +483,7 @@ static void time_paint_flat(void *w, void *canvas) {
     unsigned on = flat_on(), ink = flat_ink[light], rest = flat_rest[light],
              over = bright_tone(on) ? flat_ink[1] : 0xffffff;
     const time_row_t *row = time_row(time);
-    char b[6];
+    char b[8]; /* 下午 is 6 bytes and its NUL: 6 cut it to 下 and half a lead byte */
     bar_rect(canvas, RGBA(flat_page()), 0, 0, 375, 294);
     if (time) {
         paint_clock(w, canvas, 46, 73, 110,
@@ -538,7 +538,7 @@ void time_paint(void *w, void *canvas) {
     int at = field_on_page(widget_get_prop_int(w, "_edit_field", 0), time);
     int hour = time_value(3), minute = time_value(4);
     const time_row_t *row = time_row(time);
-    char b[6];
+    char b[8]; /* 下午 is 6 bytes and its NUL: 6 cut it to 下 and half a lead byte */
     paint_page(w, canvas, 0);
     if (time) {
         paint_art(w, canvas, "classic_light_clock_shadow", 58, 166);

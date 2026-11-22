@@ -3,6 +3,7 @@
  * queries, and the only thing Coverflow owns is a thumbnail cache, built on a modal screen by one
  * pthread that touches only files, the two stock art locks and the volatile counters below. */
 #include "coverflow.h"
+#include "i2f.h"
 #include "playlist_art.h"
 
 #define LAST_ALBUM ART_DIR "/album"  /* the centre album's key, so a reboot opens on it */
@@ -2758,13 +2759,6 @@ float coverflow_follow(float k) {
     if (k >= 1) return 1;
     float s = k * ff.span;
     return 1 - (1 + ff.a * s) * ff_decay(s);
-}
-/* int to float without LLVM's unsigned path: for a value it knows is not negative, the MIPS
- * backend converts through a double (the 2^52 trick), which the test emulator cannot run. */
-static float i2f(int v) {
-    float f;
-    __asm__("mtc1 %1, %0\n\tcvt.s.w %0, %0" : "=f"(f) : "r"(v));
-    return f;
 }
 
 /* A run d px long at time constant tau ms, picking up the speed elapsed ms into the last one (< 0:

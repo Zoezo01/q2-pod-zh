@@ -2181,7 +2181,10 @@ static void confirm_dress(void *w, void *canvas, int form) {
     int flat = flat_dialogs(), cell_h = flat ? CONFIRM_FLAT_H : 30, gap = flat ? 8 : 0;
     if (!cell[0] || !cell[1] || I(cell[0], W_H) == cell_h) return;
     widget_set_prop_int(w, "style:normal:bg_color", 0);
-    if (form == FORM_TRAY) widget_set_text_utf8(cell[1], st.confirm_verb);
+    if (form == FORM_TRAY) { /* stock's own label is the English Cancel */
+        widget_set_text_utf8(cell[0], "取消");
+        widget_set_text_utf8(cell[1], st.confirm_verb);
+    }
     int line = 0, width[2];
     for (unsigned i = 0, n = widget_count_children(w); i < n; ++i) {
         void *c = widget_get_child(w, i);

@@ -614,7 +614,7 @@ static int msg_sync(void) {
     if (*p && total && count <= total && *(volatile char *)SCAN_WHOLE == 1) {
         cp.msg_part = (short)(bar * count / total);
         if (cp.msg_part > bar * 99 / 100) cp.msg_part = (short)(bar * 99 / 100);
-        tk_snprintf(line, sizeof line, "%d of %d songs", count, total);
+        tk_snprintf(line, sizeof line, "%d / %d 首", count, total);
         widget_set_text_utf8(cp.msg_line, line);
     } else
         widget_set_text_utf8(cp.msg_line, now);

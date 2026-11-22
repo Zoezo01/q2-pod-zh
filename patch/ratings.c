@@ -229,9 +229,9 @@ static void rate_paint(void) {
     }
     if (ra.rate_pick)
         tk_snprintf(t, sizeof t,
-                    !gloss              ? "%d of 5"
-                    : ra.rate_pick == 1 ? "1 Heart"
-                                        : "%d Hearts",
+                    !gloss              ? "%d / 5"
+                    : ra.rate_pick == 1 ? "1 颗心"
+                                        : "%d 颗心",
                     ra.rate_pick);
     widget_set_text_utf8(widget_get_child(panel, 0), t);
 }

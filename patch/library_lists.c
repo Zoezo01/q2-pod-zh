@@ -700,7 +700,7 @@ int era_menu(void *ctx, void *event) {
     void *view = page_list(era.page, era.page, 0, "年代", era.n, 64);
     char name[16], detail[32];
     for (int i = 0; i < era.n; ++i) {
-        tk_snprintf(detail, sizeof detail, era.count[i] == 1 ? "%d album" : "%d albums",
+        tk_snprintf(detail, sizeof detail, "%d 张专辑",
                     era.count[i]);
         page_row_detail_into(view, i, era_name(name, era.decade[i]), detail, era_open_decade);
     }

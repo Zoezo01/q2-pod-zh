@@ -6,8 +6,8 @@ from q2emu import *
 # next album hold follows the reordered deque.
 m=AlbumRateMachine(); m.word(m.albums[2]+O['REC_ARTIST'],m.string('Aardvark'))
 sort_name=lambda: m.text(m.call(address=payload_syms['coverflow_sort_name'],args=(0,0,0,0),gap=0)&0xffffffff)
-assert sort_name()=='Sort: Album'
-for want in ('Sort: Artist','Sort: Year','Sort: Recently Added','Sort: Most Played','Sort: Random','Sort: Album','Sort: Artist'):
+assert sort_name()=='排序：专辑'
+for want in ('排序：表演者','排序：年份','排序：最近添加','排序：最多播放','排序：随机','排序：专辑','排序：表演者'):
     m.call(address=payload_syms['coverflow_sort_step'],args=(0,0,0,0),gap=0); assert sort_name()==want
 assert [v for k,v in m.files.items() if k.endswith('ringnav-coversort')]==[struct.pack('<i',1)]  # SORT_ARTIST
 m.open(); m.slide=m.find('slide_menu'); m.word(m.slide+O['SLIDE_INDEX'],0); m.press(101); assert m.hold()==11

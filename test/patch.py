@@ -2581,7 +2581,7 @@ def place(m,w,*g):
     for k,v in zip(('W_X','W_Y','W_W','W_H'),g): m.word(w+O[k],v)
 def bg(m,w): m.call(address=HOOKS['widget_on_paint_background'][0],args=(w,m.canvas,0,0),gap=0)
 def bare(m): m.bands=[]; m.letters=[]; m.rounded=[]; m.image_draws=[]; m.image_loads=[]; m.calls=[]
-CAPTION=('Press Centre When Finished',(0,229,375,32),('classic-light',31),0x59000000)
+CAPTION=('完成后按中键',(0,229,375,32),('classic-light',31),0x59000000)
 def vol_np(light='1',remain=1,theme='1',**config):
     SETUP[:]=[lambda k:(k.config.update(THEME=theme,LIGHT=light,**config),k)]
     try: q=LoadQueue(queue=3,pos=1)
@@ -2774,7 +2774,7 @@ assert bandrows[0]==color_t(0x6a707a) and bandrows[45]==color_t(0x181b21) and no
 assert bk.lcd_colors()==LCD_COLORS
 assert wbox(bk,bsl)==(81,117,204,70) and wbox(bk,bsl_view)==(0,0,375,294)
 assert not any(bk.nodes[w]['visible'] for w in (bl,br,bdec,badd,blab)) and bk.nodes[bwin]['children'] and named(bk,bwin,'img_add')==badd  # kept by name
-cap=named(bk,bwin,'caption'); assert wbox(bk,cap)==(0,228,375,32) and bk.nodes[cap]['text']=='Press Centre When Finished' and bk.nodes[cap]['style:normal:font_size']==31 and bk.nodes[cap]['style:normal:font_name']=='classic-light'
+cap=named(bk,bwin,'caption'); assert wbox(bk,cap)==(0,228,375,32) and bk.nodes[cap]['text']=='完成后按中键' and bk.nodes[cap]['style:normal:font_size']==31 and bk.nodes[cap]['style:normal:font_name']=='classic-light'
 assert bk.nodes[cap]['style:normal:text_color']&0xffffffff==color_t(0)  # the light half's style hook flips it back to white
 assert all(bk.nodes[bsl][f'style:{s}:border_color']==0 and bk.nodes[bsl][f'style:{s}:icon']==0 for s in ('normal','pressed','over','disable','focused'))  # stock's slider draws its knob in this colour and the theme's icon over it, none with neither
 bk.bands=[]; bk.call(address=HOOKS['widget_on_paint_border'][0],args=(bsl,bk.canvas,0,0),gap=0); slider=bk.bands
@@ -2852,13 +2852,13 @@ for bn_text,bn_face,bn_px in (('Баланс','bold',27),('平衡','default',27)
     bare(ba); bg(ba,bawin); assert not [c for c in ba.calls if c[0]=='widget_set_prop_str' and c[1]==label_balance]
 passed()
 xf0=boot_page(ctx=0); assert xf0.nodes[xf0.switch]['visible']==1 and xf0.nodes[xf0.vol]['visible']==1 and wbox(xf0,xf0.vol)==(0,85,375,34) and xf0.nodes[xf0.view]['visible']==1
-cap0=named(xf0,xf0.win,'caption'); assert xf0.nodes[cap0]['text']=='Press Centre to Turn On or Off'; bare(xf0); bg(xf0,xf0.win); assert shadows(xf0)[-1][0]=='Press Centre to Turn On or Off' and shadows(xf0)[-1][1:]==CAPTION[1:]
-bare(xf0); bg(xf0,xf0.win); assert xf0.nodes[xf0.bar_title]['text']=='Crossfade' and len(xf0.image_draws)==6 and [t['text'] for t in xf0.letters[:2]]==['Off','On'] and any(b[1]==129 for b in xf0.bands) and not triangle(xf0)  # no ends
+cap0=named(xf0,xf0.win,'caption'); assert xf0.nodes[cap0]['text']=='按中键打开或关闭'; bare(xf0); bg(xf0,xf0.win); assert shadows(xf0)[-1][0]=='按中键打开或关闭' and shadows(xf0)[-1][1:]==CAPTION[1:]
+bare(xf0); bg(xf0,xf0.win); assert xf0.nodes[xf0.bar_title]['text']=='交叉淡化' and len(xf0.image_draws)==6 and [t['text'] for t in xf0.letters[:2]]==['Off','On'] and any(b[1]==129 for b in xf0.bands) and not triangle(xf0)  # no ends
 hit=named(xf0,xf0.win,'switch_hit'); f,ctx=next((f,c) for t,f,c in xf0.nodes[hit]['handlers'] if t==O['EVT_CLICK']); xf0.clicks=[]
 assert xf0.call(address=f,args=(ctx,xf0.event,0,0),gap=0)==0 and xf0.clicks==[xf0.switch]; passed()
 xf0.calls=[]; assert xf0.call(O['KEY_NEXT'])==11 and dirty(xf0,xf0.win)==[(125,28,125,44)]; passed()  # the wheel can turn it on: the tray repaints, and only it
-ns=boot_page(ctx=3); assert ns.nodes[named(ns,ns.win,'caption')]['text']=='Press Centre to Change Mode'; bare(ns); bg(ns,ns.win); assert shadows(ns)[-1][0]=='Press Centre to Change Mode'; passed()  # Centre cycles here
-wheel=boot_page(ctx=1); wsw=wheel.switch; assert wheel.nodes[wheel.title]['text']=='Wheel Sensitivity' and not wheel.nodes[wsw]['visible'] and wheel.nodes[wheel.vol]['visible']==1 and wheel.nodes[wheel.vol]['text']=='50%'
+ns=boot_page(ctx=3); assert ns.nodes[named(ns,ns.win,'caption')]['text']=='按中键切换模式'; bare(ns); bg(ns,ns.win); assert shadows(ns)[-1][0]=='按中键切换模式'; passed()  # Centre cycles here
+wheel=boot_page(ctx=1); wsw=wheel.switch; assert wheel.nodes[wheel.title]['text']=='滚轮灵敏度' and not wheel.nodes[wsw]['visible'] and wheel.nodes[wheel.vol]['visible']==1 and wheel.nodes[wheel.vol]['text']=='50%'
 bare(wheel); bg(wheel,wheel.win); assert art_at(wheel)==BAND_ART and shadows(wheel)==[CAPTION] and not triangle(wheel)
 wheel.calls=[]; assert wheel.call(O['KEY_NEXT'])==11 and [c for c in wheel.calls if c[0]=='write_int_config'] and not dirty(wheel,wheel.win); passed()  # no tray
 # Classic's bar with a slider page under it. The slider pages and Set Time once had a dark bar of their own; the bar over them is the one every page has.
@@ -2875,7 +2875,7 @@ def bar_setup(light='1',state=0,name='Balance'):
     home=db.node('window','settings_page'); db.word(home+O['W_PARENT'],db.wm)
     return db,bar,right,title,clock,bt,wifi,pct,slot,st_,win,home
 # Stock's title reads as the page's own name in English; another language's stays, and a paint writes nothing new.
-for tb_name,tb_want in (('Channel Balance','Balance'),('Баланс','Баланс')):
+for tb_name,tb_want in (('Channel Balance','声道平衡'),('Баланс','Баланс')):  # stock's name, as the build translates it
     tb,tbbar,_,tbtitle,*_,tbwin,_=bar_setup(name=tb_name); bg(tb,tbwin); bg(tb,tbbar); assert tb.nodes[tbtitle]['text']==tb_want,tb.nodes[tbtitle]['text']
     tb.calls=[]; bg(tb,tbbar); assert not [c for c in tb.calls if c[0]=='widget_set_text_utf8' and c[1]==tbtitle]
 passed()
@@ -2883,7 +2883,7 @@ passed()
 cb,cbbar,_,_,cbclock,*_,cbhome=bar_setup(); cb.clock_minutes=True; cb.top=cbhome; cb.u.mem_write(syms['g_time24h_flag'],b'\0'); bg(cb,cbbar); cb.advance(1); assert cb.nodes[cbclock]['text']=='6:14',cb.nodes[cbclock]['text']; passed()
 # ... a clock written before the bar's title is found is written again, in the same minute.
 ck,ckbar,_,_,ckclock,*_,ckhome=bar_setup(); ck.clock_minutes=True; ck.top=ckhome; ck.u.mem_write(syms['g_time24h_flag'],b'\0'); ck_show=lambda: ck.call(address=payload_syms['clock_due'],args=(0,0,0,0),gap=0)
-ck_show(); assert ck.nodes[ckclock]['text']=='6:14 PM',ck.nodes[ckclock]['text']; bg(ck,ckbar); ck_show(); assert ck.nodes[ckclock]['text']=='6:14',ck.nodes[ckclock]['text']; passed()
+ck_show(); assert ck.nodes[ckclock]['text']=='6:14 下午',ck.nodes[ckclock]['text']; bg(ck,ckbar); ck_show(); assert ck.nodes[ckclock]['text']=='6:14',ck.nodes[ckclock]['text']; passed()
 # Set Time and Set Date keep it: the title in its box, and no clock's text, so the date shows whole.
 tdb,tbar,_,ttitle,tclock,*_,thome=bar_setup(); tdb.top=thome; bg(tdb,tbar); assert tdb.nodes[tclock]['visible']==1 and wbox(tdb,ttitle)[0]==20
 tdb.top=tdb.node('window','manualtime_page'); tdb.word(tdb.top+O['W_PARENT'],tdb.wm); bg(tdb,tbar); assert wbox(tdb,ttitle)==(20,-1,104,25) and tdb.nodes[tclock]['visible']==1 and not tdb.nodes[tclock].get('text'); passed()  # no clock's text beside the date
@@ -2931,8 +2931,8 @@ TM_WHITE=color_t(0xffffff)
 tm=time_form(); tm_shown=tm_on_time(tm); tm_art=[tm.text(c[2]) for c in tm.calls if c[0]=='widget_load_image']
 assert page_fill(tm) and [d[1][:2] for d in tm.image_draws[0:2]]==[(58,166),(46,73)]
 assert tm_art[:4]==[f'classic_light_{n}' for n in ('clock_shadow','clock_chrome','tray_108','cell_lit_45')] and [d[1][:2] for d in tm.image_draws[2:5]]==[(204,97),(210,103),(267,103)]
-assert wbox(tm,tm.sels[3])==(214,107,45,42) and wbox(tm,tm.sels[4])==(271,107,45,42) and wbox(tm,tm.ok)==(0,244,375,26) and tm.nodes[tm.ok]['text']=='Save'
-assert tm_shown[(214,107,45,42)]['text']=='16' and tm_shown[(271,107,45,42)]['text']=='42' and tm_shown[(259,107,12,42)]['text']==':' and tm_shown[(0,244,375,26)]['text']=='Save'
+assert wbox(tm,tm.sels[3])==(214,107,45,42) and wbox(tm,tm.sels[4])==(271,107,45,42) and wbox(tm,tm.ok)==(0,244,375,26) and tm.nodes[tm.ok]['text']=='保存'
+assert tm_shown[(214,107,45,42)]['text']=='16' and tm_shown[(271,107,45,42)]['text']=='42' and tm_shown[(259,107,12,42)]['text']==':' and tm_shown[(0,244,375,26)]['text']=='保存'
 assert tm_shown[(0,245,375,26)]['color']==0x59000000 and tm_shown[(0,244,375,26)]['color']==(0xb8000000|TM_WHITE&0xffffff)
 assert tm_shown[(214,107,45,42)]['color']==TM_WHITE and all(tm.get(w+0x34)&255==0 for w in (*tm.sels,tm.ok))
 assert not tm.nodes[named(tm,tm.win,'img_dot')]['visible'] and not tm.nodes[named(tm,tm.win,'slide_indicator')]['visible'] and [n['visible'] for n in tm.nodes.values() if n.get('name')=='view_back']==[0,0]
@@ -2958,17 +2958,17 @@ tm=time_form(); tm.nodes[tm.slide]['value']=1; tm.nodes[tm.win]['_edit_field']=3
 # Twelve-hour: six fields; hour 16 shows 4 and PM; the wheel on the hour keeps the half; AM/PM toggles 16 to 4 either way; the selector stays 0..23; Centre on AM/PM saves.
 tm=time_form(0); tm_shown=tm_on_time(tm); tm_art=[tm.text(c[2]) for c in tm.calls if c[0]=='widget_load_image']
 assert 'classic_light_tray_165' in tm_art and wbox(tm,tm.sels[3])==(186,107,45,42) and wbox(tm,tm.sels[4])==(243,107,45,42)
-assert tm_shown[(186,107,45,42)]['text']=='4' and tm_shown[(243,107,45,42)]['text']=='42' and tm_shown[(300,107,45,42)]['text']=='PM' and tm_shown[(231,107,12,42)]['text']==':'
+assert tm_shown[(186,107,45,42)]['text']=='4' and tm_shown[(243,107,45,42)]['text']=='42' and tm_shown[(300,107,45,42)]['text']=='下午' and tm_shown[(231,107,12,42)]['text']==':'
 tm_hit=[c for c in tm.nodes[tm.pt]['children'] if tm.nodes[c]['type']=='image' and tm.nodes[c]['name']!='img_dot'][0]; assert wbox(tm,tm_hit)==(300,107,45,42)
 assert tm.call()==11 and tm_idx(tm,3)==17
 tm.nodes[tm.win]['_edit_field']=5; assert tm.call()==11 and tm_idx(tm,3)==5 and tm_field(tm)==5
-tm_shown=time_shown(tm); assert tm_shown[(186,107,45,42)]['text']=='5' and tm_shown[(300,107,45,42)]['text']=='AM'
+tm_shown=time_shown(tm); assert tm_shown[(186,107,45,42)]['text']=='5' and tm_shown[(300,107,45,42)]['text']=='上午'
 assert tm.call(O['KEY_PREV'])==11 and tm_idx(tm,3)==17; assert tm.call(O['KEY_FWD_BTN'])==11 and tm_field(tm)==5
 f,ctx=next((f,c) for t,f,c in tm.nodes[tm_hit]['handlers'] if t==O['EVT_CLICK']); assert tm.call(address=f,args=(ctx,tm.event,0,0),gap=0)==0 and tm_idx(tm,3)==5
 tm.mock('navigator_back'); assert tm.confirm()==11 and tm.clicks==[tm.ok] and [c[0] for c in tm.calls].count('navigator_back')==1
 tm=time_form(0); tm.nodes[tm.slide]['value']=1; tm.nodes[tm.win]['_edit_field']=5; tm.nodes[tm.slide]['value']=0; assert tm.call()==11 and tm_idx(tm,0)==5 and tm_field(tm)==0; passed()  # a swipe off the time page takes the field with it
 # ... midnight and noon: 0 shows 12 AM, 12 shows 12 PM; 11 PM + 1 on the hour wraps to 12 PM, in its half; 12 AM - 1 to 11 AM.
-for h,txt,half in ((0,'12','AM'),(12,'12','PM'),(23,'11','PM'),(11,'11','AM')):
+for h,txt,half in ((0,'12','上午'),(12,'12','下午'),(23,'11','下午'),(11,'11','上午')):
     tm=time_form(0,vals=(4,10,4,h,0)); tm_shown=tm_on_time(tm); assert tm_shown[(186,107,45,42)]['text']==txt and tm_shown[(300,107,45,42)]['text']==half
 tm=time_form(0,vals=(4,10,4,23,0)); tm.nodes[tm.slide]['value']=1; assert tm.call()==11 and tm_idx(tm,3)==12
 tm=time_form(0,vals=(4,10,4,0,0)); tm.nodes[tm.slide]['value']=1; assert tm.call(O['KEY_PREV'])==11 and tm_idx(tm,3)==11; passed()
@@ -3017,7 +3017,7 @@ for x,y,w,h in ((211,130,108,48),(183,130,165,48),(183,130,164,48),(186,133,60,4
     assert corner_inset(y)<=x and corner_inset(y+h-1)<=x and x+w<=375-max(corner_inset(y),corner_inset(y+h-1)),(x,y,w,h)
 for tm_flag,tm_page in ((1,1),(0,1),(1,0)):
     tm=time_form(tm_flag); tm.nodes[tm.slide]['value']=tm_page; tm_shown=time_shown(tm); assert all(r[3]>t['font'][1] for r,t in tm_shown.items())
-    assert {t['font'] for r,t in tm_shown.items() if r[3]==42}<={('classic-light',35),('classic-light',32),('classic-light',30)} and tm_shown[(0,244,375,26)]['font']==('classic-light',24)
+    assert {t['font'] for r,t in tm_shown.items() if r[3]==42}<={('classic-light',35),('classic-light',32),('classic-light',30),('default',25)} and tm_shown[(0,244,375,26)]['font']==('default',20)  # 下午 and 保存 take default.ttf's CJK step  # 保存: Classic's face has no hanzi, theme_font's CJK step
 passed()
 # Minimal: five fields, the outline, the OK stop, stock's selectors and btn_enter where they were; nothing painted, no title written.
 for theme_ in '0':
@@ -3039,8 +3039,8 @@ for m_,dy in ((dv,26),(vp,0)):  # the images on the screen; the soft shadows' fa
     for name,(x,y) in art_at(m_):
         w,h=art_size(name); assert name=='classic_light_slider_page' or (x>=0 and y+dy>=0 and x+w<=375 and y+dy+h<=320),name
 assert math.hypot(80-(28-1+13),256-1+50-13-240)+13<=80 and math.hypot(80-(35-1+13),118-1+112-13-240)<=80  # the panel's corners, its ring and R 12 in them
-cf=TTFont(CLASSIC_LIGHT_FONT_SRC,lazy=True); cs=31/(cf['hhea'].ascent-cf['hhea'].descent)
-for hint in ('Press Centre When Finished','Press Centre to Turn On or Off','Press Centre to Change Mode'): assert sum(cf['hmtx'][cf.getBestCmap()[ord(c)]][0] for c in hint)*cs<=375-2*corner_inset(256+22),hint  # the caption's ink, centred
+df=TTFont(B/'default.ttf',lazy=True); dh=df['hhea']; dcm=df.getBestCmap()  # 汉字 come from default.ttf, not Classic's face
+for hint in ('完成后按中键','按中键打开或关闭','按中键切换模式'): assert sum(df['hmtx'][dcm[ord(c)]][0] for c in hint)*25/(dh.ascent-dh.descent)<=375-2*corner_inset(256+22),hint  # the caption's ink, centred
 passed()
 # Minimal: every slider page and the volume exactly as today: no images, no band, no moved widget, the toolbar kept.
 for theme_ in '0':
@@ -3145,12 +3145,12 @@ bands,draws,letters=tm.tray_seen; trayrows=[b for b in bands if b[4] in (color_t
 assert draws[0][1]==(30,248,315,68) and trayrows[0][1]==254 and min(b[0] for b in trayrows)==38 and max(b[2] for b in trayrows)==299 and trayrows[0][4]==color_t(0x6a707a)
 assert tm.nodes[tm.tray]['style:normal:bg_color']==0 and tm.nodes[tm.tray_prompt]['visible']==0 and 0x66000000 in [b[4] for b in bands]
 [tcancel,tenter]=tm.nodes[tm.tray]['children'][:2]
-assert tm.nodes[tenter]['text']=='Delete' and wbox(tm,tcancel)[1]==wbox(tm,tenter)[1]==265 and wbox(tm,tcancel)[:1]==((375-wbox(tm,tcancel)[2]-wbox(tm,tenter)[2])//2,)
+assert tm.nodes[tenter]['text']=='删除' and wbox(tm,tcancel)[1]==wbox(tm,tenter)[1]==265 and wbox(tm,tcancel)[:1]==((375-wbox(tm,tcancel)[2]-wbox(tm,tenter)[2])//2,)
 well=[b for b in bands if b[4]>>24==0xff and 265<=b[1]<295 and b[2]<299 and b[0]>38]
-assert tm.second==(258,'OK')
+assert tm.second==(258,'OK')  # stock's own dialog button, not the tray's verb
 cover9=corner_cover(9); first=next(n for n in range(9) if 0<cover9[n]<255); assert (38+first,254,1,1,cover9[first]<<24|color_t(0x6a707a)&0xffffff) in [b[:5] for b in bands]  # the tray's corner, and over the track its inset's
 assert any(b[1]==265 and b[3]==1 and b[2]==1 and b[4]&0xffffff==0 and 0<b[4]>>24<0xce for b in bands)
-assert well[0][1]==265 and well[0][4]==color_t(0x07090d) and [l['text'] for l in letters][1::2]==['Cancel','Delete'] and letters[1]['color']==color_t(0xffffff)
+assert well[0][1]==265 and well[0][4]==color_t(0x07090d) and [l['text'] for l in letters][1::2]==['取消','删除'] and letters[1]['color']==color_t(0xffffff)
 # ... and the flag ends with the call: the next prompt, a question, is the page.
 tm.top=dq=tm.node('dialog','confirminfo_dialog'); tm.word(dq+O['W_PARENT'],tm.wm); place(tm,dq,0,0,375,320); ce=cl_cells(tm,dq); tm.nodes[dq]['children']=ce; parents(tm,dq); tm.paint(dq); assert wbox(tm,ce[0])[1]==258 and tm.nodes[ce[1]]['text']=='OK'; passed()
 # Hold menu under Classic: Cover Flow's flip panel, centred under the bar and clear of the glass: a 44-row header holding the title, then
@@ -3167,7 +3167,7 @@ assert wbox(hm,title)==(12,5,270,33) and (hm.nodes[title]['style:normal:font_nam
 assert hm.nodes[title]['loop']==1 and 'delay' not in hm.nodes[title] and 'lull' not in hm.nodes[title]  # every label's holds, not its own
 assert hold_panel(hm,hd,None)==55
 lab=[c for c in hm.nodes[items[0]]['children'] if hm.nodes[c]['type']=='hscroll_label'][0]
-assert wbox(hm,lab)==(12,0,270,32) and (hm.nodes[lab]['style:normal:font_name'],hm.nodes[lab]['style:normal:font_size'])==(CL_FONT,25) and 'style:normal:text_align_h' not in hm.nodes[lab] and '_final' not in hm.nodes[lab]
+assert wbox(hm,lab)==(12,0,270,32) and (hm.nodes[lab]['style:normal:font_name'],hm.nodes[lab]['style:normal:font_size'])==('default',21)  # 汉字 fall back from Classic's face at 25 and 'style:normal:text_align_h' not in hm.nodes[lab] and '_final' not in hm.nodes[lab]
 hm.paint(hm.view); assert [b[1] for b in hm.bands if b[2]==294 and b[4]>>24==0xff][:1]==[0] and hm.lcd_colors()==LCD_COLORS
 assert not [b for b in hm.bands if b[4] in (0x24000000,0x33000000,0x21ffffff)]
 hd0,hd1,hl0=hold_cl(light='0'); assert hold_panel(hd0,hd1,0xff000000,'0')==55; passed()
@@ -3251,71 +3251,71 @@ for light in '10':
     assert page_fill(um,26,0x63717b if light=='1' else 0x1c1c1c) and not [b for b in um.bands if b[1]<26]  # nothing of its own on the bar's rows
     assert [um.nodes[w]['visible'] for w in (uanim,umsg,uscan)]==[0,0,0] and named(um,uwin,'btn_no')==ubtn and um.nodes[ubtn]['visible']==1
     assert [um.text(c[2]) for c in um.calls if c[0]=='widget_load_image']==['classic_light_orb_note'] and um.image_draws[0][1][:2]==(129,38)
-    assert wbox(um,ubtn)==(127,248,121,34) and wbox(um,uhead)==(16,159,343,32) and um.nodes[uhead]['text']=='Updating Library' and wbox(um,uline)==(16,188,343,20)
+    assert wbox(um,ubtn)==(127,248,121,34) and wbox(um,uhead)==(16,159,343,32) and um.nodes[uhead]['text']=='正在更新本地音乐' and wbox(um,uline)==(16,188,343,20)
     assert um.nodes[uhead]['style:normal:font_size']==29 and um.nodes[uhead]['style:normal:font_name']=='classic-light' and um.nodes[uline]['style:normal:font_size']==18 and um.nodes[uline]['style:normal:font_name']=='default'
     white=color_t(0 if light=='1' else 0xffffff)  # Light Mode's style hook flips it back
     assert um.nodes[uhead]['style:normal:text_color']&0xffffffff==white and um.nodes[uline]['style:normal:text_color']&0xffffffff==white and um.nodes[uhead]['style:normal:text_align_h']=='center'
     for state in ('normal','pressed','over','disable','focused'):
         assert um.nodes[ubtn][f'style:{state}:bg_color']==0 and um.nodes[ubtn][f'style:{state}:font_size']==23 and um.nodes[ubtn][f'style:{state}:font_name']=='classic-light' and um.nodes[ubtn][f'style:{state}:text_color']&0xffffffff==white
-    assert [(t['text'],t['rect'],t['font'][1]) for t in um.letters]==[('Updating Library',(16,160,343,32),29),('0 of 704 songs',(16,189,343,20),18)]
+    assert [(t['text'],t['rect'],t['font'][1]) for t in um.letters]==[('正在更新本地音乐',(16,160,343,32),29),('0 / 704 首',(16,189,343,20),18)]
     cancel,rest=round_box([b for b in um.bands if 248<=b[1]<283],127,248,121,34,7)
     assert cancel[0]==color_t(0x232c33) and cancel[33]==color_t(0x333c43)
     assert [b[:5] for b in rest if b[1]==282 and b[2]>1]==[(127+corner_in(7),282,121-2*corner_in(7),1,0x26000000|0xffffff)] and um.lcd_colors()==LCD_COLORS; passed()
 # ... it covers the status bar, so it paints the real one after its page, as Search does, and the bar names it; any theme's look and battery are the bar's own.
 ur,urwin,*_=msg_dialog(); ur.mock('widget_paint'); urtitle=ur.node('hscroll_label','label_title'); urbar=ur.node('window','system_bar',[urtitle]); ur.word(urbar+O['W_PARENT'],ur.wm); ur.word(syms['system_bar'],urbar)
-bare(ur); bg(ur,urwin); assert [c[1:3] for c in ur.calls if c[0]=='widget_paint']==[(urbar,ur.canvas)] and ur.nodes[urtitle]['text']=='Update Library' and not [b for b in ur.bands if b[1]<26]; passed()
-# ... its count: "312 of 704 songs", the bar 229*312//704 wide; past the total, stock's text and no bar; a tap on Cancel reaches stock's handler.
+bare(ur); bg(ur,urwin); assert [c[1:3] for c in ur.calls if c[0]=='widget_paint']==[(urbar,ur.canvas)] and ur.nodes[urtitle]['text']=='更新曲库' and not [b for b in ur.bands if b[1]<26]; passed()
+# ... its count: "312 / 704 首", the bar 229*312//704 wide; past the total, stock's text and no bar; a tap on Cancel reaches stock's handler.
 assert um.sqls[-1]=='select count(*) from songtable' and sum('select count' in s for s in um.sqls)==1  # read once, on open, with no rows in memory
 um.nodes[umsg]['text']='Updating No.312'; bare(um); bg(um,uwin); track,fillrows=msg_track(um),msg_fill(um)
-assert um.nodes[uline]['text']=='312 of 704 songs' and [b[1] for b in track]==list(range(218,232)) and [b[4]>>24 for b in track]==[0x87,0x5c,0x4d,0x3d,0x3d]+[0x3b]*7+[0x54,0x54] and {b[4]&0xffffff for b in track}=={0}
+assert um.nodes[uline]['text']=='312 / 704 首' and [b[1] for b in track]==list(range(218,232)) and [b[4]>>24 for b in track]==[0x87,0x5c,0x4d,0x3d,0x3d]+[0x3b]*7+[0x54,0x54] and {b[4]&0xffffff for b in track}=={0}
 tinset=[b[0]-72 for b in track]; assert [b[2] for b in track]==[229-2*n for n in tinset] and tinset[0]>0==tinset[7] and tinset==tinset[::-1]
 assert [b[1] for b in fillrows]==list(range(218,232)) and fillrows[7][2]==101 and fillrows[0][:3]==(72+tinset[0],218,101-tinset[0]) and fillrows[0][4]==color_t(0xf7ffff) and fillrows[13][4]==color_t(0xbdc1c4)
 assert [b[:5] for b in um.bands if b[1]==232]==[(79,232,215,1,0x14000000|0xffffff)]; passed()
 um.calls=[]; um.advance(200); assert not [c for c in um.calls if c[0]=='widget_invalidate_force']; passed()  # no change, no repaint
-um.nodes[umsg]['text']='Updating No.313'; um.calls=[]; um.advance(200); assert um.nodes[uline]['text']=='313 of 704 songs' and [c[1] for c in um.calls if c[0]=='widget_invalidate_force']==[uwin]; passed()  # stock's hidden label repaints nothing: the poll does
+um.nodes[umsg]['text']='Updating No.313'; um.calls=[]; um.advance(200); assert um.nodes[uline]['text']=='313 / 704 首' and [c[1] for c in um.calls if c[0]=='widget_invalidate_force']==[uwin]; passed()  # stock's hidden label repaints nothing: the poll does
 for text,want in (('Updating No.704',226),('Library Updated,703 Updated',226),('Updating No.1',0),('Updating No.10',3)):  # 99% until it closes; a sliver's rows stay inside the track
     um.nodes[umsg]['text']=text; bare(um); bg(um,uwin); rows=msg_fill(um); assert max([b[0]+b[2]-72 for b in rows],default=0)==want and all(b[2]>0 for b in rows),text
 passed()
 um.nodes[umsg]['text']='Updating No.705'; bare(um); bg(um,uwin); assert um.nodes[uline]['text']=='Updating No.705' and not msg_track(um) and not msg_fill(um) and [b for b in um.bands if b[1]==232]==[] and (127+corner_in(7),248) in [b[:2] for b in um.bands]; passed()
 um.clicks=[]; assert um.click(ubtn)==0 and um.clicks==[ubtn]; passed()
 # ... the text it's read from is any language's; a first scan or a folder's has no total: stock's text, no bar.
-um.nodes[umsg]['text']='正在更新第312首'; bare(um); bg(um,uwin); assert um.nodes[uline]['text']=='312 of 704 songs' and msg_fill(um); passed()
+um.nodes[umsg]['text']='正在更新第312首'; bare(um); bg(um,uwin); assert um.nodes[uline]['text']=='312 / 704 首' and msg_fill(um); passed()
 for kw in (dict(songs=0),dict(whole=0)):
     f,fwin,_,fmsg,_,_=msg_dialog(text='Updating No.12',**kw); bare(f); bg(f,fwin); assert f.nodes[named(f,fwin,'msg_line')]['text']=='Updating No.12' and not msg_track(f) and not msg_fill(f); passed()
 # ... stock's button text is translated; the screen is English.
-b2,b2win,_,_,_,b2btn=msg_dialog(); b2.nodes[b2btn]['text']='取消'; bare(b2); bg(b2,b2win); assert b2.nodes[b2btn]['text']=='Cancel'; passed()
+b2,b2win,_,_,_,b2btn=msg_dialog(); b2.nodes[b2btn]['text']='Cancel'; bare(b2); bg(b2,b2win); assert b2.nodes[b2btn]['text']=='取消'; passed()
 # ... with stock's label still empty, a later paint leaves the button alone: it writes only a text that differs.
-b3,b3win,_,_,_,b3btn=msg_dialog(text=''); b3.nodes[b3btn]['text']='取消'; bare(b3); bg(b3,b3win); assert b3.nodes[b3btn]['text']=='Cancel'
+b3,b3win,_,_,_,b3btn=msg_dialog(text=''); b3.nodes[b3btn]['text']='取消'; bare(b3); bg(b3,b3win); assert b3.nodes[b3btn]['text']=='取消'
 bare(b3); bg(b3,b3win); assert not [c for c in b3.calls if c[0]=='widget_set_text_utf8' and c[1]==b3btn]; passed()
 # ... the total is a worker's, as Home's counts are: the load opens no connection on the UI thread. Until the answer, stock's text and no bar; then the poll puts up the count.
 q,qwin,_,qmsg,_,_=msg_dialog(text='Updating No.312',counted=False)
 assert not q.sqls and not [c for c in q.calls if c[0] in ('sqlite3_open','pthread_join')] and len(q.threads)==1 and [c for c in q.calls if c[0]=='pthread_detach@GLIBC_2.0']
 bare(q); bg(q,qwin); qline=named(q,qwin,'msg_line'); assert q.nodes[qline]['text']=='Updating No.312' and not msg_track(q) and not msg_fill(q) and not q.sqls
-q.counted(); assert q.sqls[-1]=='select count(*) from songtable'; q.calls=[]; q.advance(200); assert q.nodes[qline]['text']=='312 of 704 songs' and [c[1] for c in q.calls if c[0]=='widget_invalidate_force']==[qwin]; passed()
+q.counted(); assert q.sqls[-1]=='select count(*) from songtable'; q.calls=[]; q.advance(200); assert q.nodes[qline]['text']=='312 / 704 首' and [c[1] for c in q.calls if c[0]=='widget_invalidate_force']==[qwin]; passed()
 # ... the dialog closed first: nothing waits on the worker. A new dialog with it still running shares its answer; with it done, drops the old answer and asks again.
 q,qwin,*_=msg_dialog(counted=False); msg_close(q,qwin); q2win,_,q2msg,_,_=msg_win(q,'Updating No.3'); assert len(q.threads)==1
-q.counted(); bare(q); bg(q,q2win); assert q.nodes[named(q,q2win,'msg_line')]['text']=='3 of 704 songs'; msg_close(q,q2win)
+q.counted(); bare(q); bg(q,q2win); assert q.nodes[named(q,q2win,'msg_line')]['text']=='3 / 704 首'; msg_close(q,q2win)
 q,qwin,*_=msg_dialog(counted=False); q.songs=9; q.counted(); msg_close(q,qwin); q.songs=704; q2win,_,q2msg,_,_=msg_win(q,'Updating No.3'); assert len(q.threads)==1
-bare(q); bg(q,q2win); assert q.nodes[named(q,q2win,'msg_line')]['text']=='Updating No.3' and not msg_fill(q); q.counted(); bare(q); bg(q,q2win); assert q.nodes[named(q,q2win,'msg_line')]['text']=='3 of 704 songs'; passed()
+bare(q); bg(q,q2win); assert q.nodes[named(q,q2win,'msg_line')]['text']=='Updating No.3' and not msg_fill(q); q.counted(); bare(q); bg(q,q2win); assert q.nodes[named(q,q2win,'msg_line')]['text']=='3 / 704 首'; passed()
 # ... the worker done before pthread_create has returned: its answer stands, and the next dialog asks again.
 q=MsgMachine(); q.config.update(THEME='1',LIGHT='1'); q.byte(O['SCAN_WHOLE'],1); q.thread_first=True; qwin,*_=msg_win(q,'Updating No.312'); assert [c for c in q.calls if c[0]=='pthread_detach@GLIBC_2.0']
-bare(q); bg(q,qwin); assert q.nodes[named(q,qwin,'msg_line')]['text']=='312 of 704 songs' and msg_fill(q); msg_close(q,qwin)
-q.songs=9; q.calls=[]; q2win,*_=msg_win(q,'Updating No.3'); assert [c for c in q.calls if c[0]=='pthread_create']; bare(q); bg(q,q2win); assert q.nodes[named(q,q2win,'msg_line')]['text']=='3 of 9 songs'; passed()
+bare(q); bg(q,qwin); assert q.nodes[named(q,qwin,'msg_line')]['text']=='312 / 704 首' and msg_fill(q); msg_close(q,qwin)
+q.songs=9; q.calls=[]; q2win,*_=msg_win(q,'Updating No.3'); assert [c for c in q.calls if c[0]=='pthread_create']; bare(q); bg(q,q2win); assert q.nodes[named(q,q2win,'msg_line')]['text']=='3 / 9 首'; passed()
 # ... no thread to be had, or the database busy: stock's text and no bar; the next dialog asks again.
 q=MsgMachine(); q.config.update(THEME='1',LIGHT='1'); q.byte(O['SCAN_WHOLE'],1); q.thread_fails=True; qwin,*_=msg_win(q,'Updating No.3'); bare(q); bg(q,qwin); assert q.nodes[named(q,qwin,'msg_line')]['text']=='Updating No.3' and not msg_fill(q) and not q.sqls
-msg_close(q,qwin); q.thread_fails=False; q2win,*_=msg_win(q,'Updating No.3'); q.counted(); bare(q); bg(q,q2win); assert q.nodes[named(q,q2win,'msg_line')]['text']=='3 of 704 songs'
+msg_close(q,qwin); q.thread_fails=False; q2win,*_=msg_win(q,'Updating No.3'); q.counted(); bare(q); bg(q,q2win); assert q.nodes[named(q,q2win,'msg_line')]['text']=='3 / 704 首'
 q,qwin,_,qmsg,_,_=msg_dialog(text='Updating No.3',counted=False); q.busy=True; q.counted(); bare(q); bg(q,qwin); assert q.nodes[named(q,qwin,'msg_line')]['text']=='Updating No.3' and not msg_track(q) and not msg_fill(q); passed()
 # ... it goes with the window: no poll, nothing painted.
 f,ctx=next((f,c) for t,f,c in um.nodes[uwin]['handlers'] if t==O['EVT_DESTROY']); um.call(address=f,args=(ctx,um.event,0,0),gap=0)
 assert not [t for t in um.timers.values() if t[1]==payload_syms['msg_poll']] and um.nodes[uwin]['visible']==1; bare(um); bg(um,uwin); assert not um.image_draws and not um.letters; passed()
 # USB Storage's page: Connected, and the line; USB Audio and DAC have no line; a box holds its font.
-for mode,line in ((0,'Eject before disconnecting'),(2,'Eject before disconnecting'),(1,'')):
+for mode,line in ((0,'断开前请先弹出'),(2,'断开前请先弹出'),(1,'')):
     ub,bwin,bret,bimg,binfo,bcharge,bdac=usb_page(mode); bare(ub); bg(ub,bwin); bhead,bline=named(ub,bwin,'msg_heading'),named(ub,bwin,'msg_line')
-    assert ub.nodes[bhead]['text']=='Connected' and ub.nodes[bline].get('text','')==line and wbox(ub,bhead)==(16,228-26,343,32) and wbox(ub,bline)==(16,255-26,343,20)
+    assert ub.nodes[bhead]['text']=='已连接' and ub.nodes[bline].get('text','')==line and wbox(ub,bhead)==(16,228-26,343,32) and wbox(ub,bline)==(16,255-26,343,20)
     assert page_fill(ub) and ub.image_draws[0][1][:2]==(122,67-26) and [ub.text(c[2]) for c in ub.calls if c[0]=='widget_load_image']==['classic_light_orb_usb']
     assert [ub.nodes[w]['visible'] for w in (bimg,binfo,bret,bcharge,bdac)]==[0,0,1,1,1] and wbox(ub,bret)==(20,0,80,60) and wbox(ub,bcharge)==(247,0,50,50) and wbox(ub,bdac)==(305,0,50,50)
     assert not [b for b in ub.bands if b[2]==375 and b[4]==color_t(0x1c1c1c)] and not msg_track(ub) and not ub.timers  # the real bar's above it; no count
-    assert [(t['text'],t['rect']) for t in ub.letters]==[('Connected',(16,229-26,343,32))]+([(line,(16,256-26,343,20))] if line else []) and ub.lcd_colors()==LCD_COLORS; passed()
+    assert [(t['text'],t['rect']) for t in ub.letters]==[('已连接',(16,229-26,343,32))]+([(line,(16,256-26,343,20))] if line else []) and ub.lcd_colors()==LCD_COLORS; passed()
 # ... under the real bar it has Classic's own bar, with no title (no wordmark) and no clock; a window that covers the bar
 # paints the real one too, and no rows of its own.
 db,dbar,dright,dtitle,dclock,dbt,dwifi,dpct,dslot,dst,dwin,dhome=bar_setup()
@@ -3325,7 +3325,7 @@ db.advance(61000)  # the clock's minute writes no clock over USB's page
 assert db.nodes[dtitle].get('text','')=='' and db.nodes[dclock].get('text','')==''; db.bands=[]; bg(db,dbar); assert [b for b in db.bands if b[2]==375][0][4]==color_t(0xffffff); passed()
 db.word(uw+O['W_Y'],0); db.letters=[]; bg(db,uw); assert db.letters and not [t for t in db.letters if t['rect'][1]<26]; passed()  # a window over the bar paints no title there
 uc,cwin,*_=usb_page(0,y=0); uc.mock('widget_paint'); ucbar=uc.node('window','system_bar'); uc.word(ucbar+O['W_PARENT'],uc.wm); uc.word(syms['system_bar'],ucbar); bare(uc); bg(uc,cwin)
-assert page_fill(uc,26) and uc.image_draws[0][1][:2]==(122,67) and not [b for b in uc.bands if b[1]<26] and [c[1] for c in uc.calls if c[0]=='widget_paint']==[ucbar] and uc.letters[0]['text']=='Connected' and wbox(uc,named(uc,cwin,'msg_heading'))==(16,228,343,32); passed()
+assert page_fill(uc,26) and uc.image_draws[0][1][:2]==(122,67) and not [b for b in uc.bands if b[1]<26] and [c[1] for c in uc.calls if c[0]=='widget_paint']==[ucbar] and uc.letters[0]['text']=='已连接' and wbox(uc,named(uc,cwin,'msg_heading'))==(16,228,343,32); passed()
 # ... a cable opening it over the scan's dialog: each paints its own, and the dialog's end leaves the page.
 sd,swin,_,smsg,_,_=msg_dialog(); ub2=sd.node('window','usbmode_page'); sd.word(ub2+O['W_PARENT'],sd.wm); place(sd,ub2,0,26,375,294); ui_loaded(sd,'usbmode_page',ub2)
 bare(sd); bg(sd,ub2); assert page_fill(sd) and sd.image_draws[0][1][:2]==(122,41) and not msg_track(sd)
@@ -3347,7 +3347,7 @@ for x,y,w,h in ((127,248,121,35),(16,159,343,32),(16,188,343,20),(72,218,229,15)
 for h,px in ((32,29),(20,18),(34,23),(25,22)): assert h>px
 df=TTFont(B/'default.ttf',lazy=True); ds=lambda px: px/(df['hhea'].ascent-df['hhea'].descent)
 ink=lambda t,px: sum(df['hmtx'][df.getBestCmap()[ord(c)]][0] for c in t)*ds(px)
-assert ink('Eject before disconnecting',18)<=375-2*corner_inset(275) and ink('65000 of 65000 songs',18)<=343; passed()
+assert ink('Eject before disconnecting',18)<=375-2*corner_inset(275) and ink('65000 / 65000 首',18)<=343; passed()
 for theme_ in '0':
     m,win,anim,msg,scan,btn=msg_dialog(theme_=theme_); bare(m); m.paint(win); kids=len(m.nodes[win]['children'])
     assert not m.image_draws and wbox(m,btn)==(44,266,287,40) and m.nodes[anim]['visible'] and m.nodes[msg]['visible'] and kids==4 and not m.sqls and not m.timers and 'style:normal:bg_color' not in m.nodes[btn] and not m.letters
@@ -4132,7 +4132,7 @@ button=m.nodes[row]['children'][0]; icon,label=m.nodes[button]['children']
 assert m.nodes[button]['style']=='s_btn_listitem' and not m.nodes[button].get('name')
 assert [m.get(button+O[k]) for k in ('W_X','W_Y','W_W','W_H')]==[20,0,335,70]
 assert m.nodes[icon]['image']=='player_onlinesearch' and [m.get(icon+O[k]) for k in ('W_X','W_W','W_H')]==[10,52,70]
-assert m.nodes[label]['style']=='s_scrlabel_white24l' and m.nodes[label]['text']=='Download Album Lyrics'
+assert m.nodes[label]['style']=='s_scrlabel_white24l' and m.nodes[label]['text']=='下载专辑歌词'
 assert [m.get(label+O[k]) for k in ('W_X','W_W','W_H')]==[72,253,70]; passed()
 m=AlbumLyricsMachine(cls=0xf1); assert len(m.more())==9; passed()  # an online queue: AirPlay's row alone
 m=AlbumLyricsMachine(); m.missing=True; kids=m.more()  # AirPlay's app not on the card: no row of its, Download Album Lyrics still third
@@ -4142,25 +4142,25 @@ for off,v in (('REC_TYPE',4),('REC_ALBUM',0),('REC_PATH',0)):  # a folder, no al
 m=AlbumLyricsMachine(); m.word(m.playing()+O['REC_PATH'],m.string('http://x/y')); assert len(m.more())==9; passed()
 m=AlbumLyricsMachine(); assert len(m.more(7))==7; passed()  # not stock's rows: left as they are
 m,label,press=album_lyrics_page()
-m.wifi=-1; press(); assert m.toasts[-1][3]=='Connect to Wi-Fi first' and not m.threads; m.wifi=3
-press(); assert len(m.threads)==1 and m.nodes[label]['text']=='Downloading 1 of 2'
+m.wifi=-1; press(); assert m.toasts[-1][3]=='请先连接 Wi-Fi' and not m.threads; m.wifi=3
+press(); assert len(m.threads)==1 and m.nodes[label]['text']=='正在下载 1 / 2'
 worker,arg=m.threads[-1]; press(); assert len(m.threads)==1  # a second press: cancelling, no second job
-assert m.nodes[label]['text']=='Cancelling…'; passed()
+assert m.nodes[label]['text']=='正在取消…'; passed()
 m,label,press=album_lyrics_page(); press(); worker,arg=m.threads[-1]
-m.advance(500,clear=False); assert ('reset_poweroptions_timer',1,1,0) in [c[:4] for c in m.calls] and m.nodes[label]['text']=='Downloading 1 of 2'
+m.advance(500,clear=False); assert ('reset_poweroptions_timer',1,1,0) in [c[:4] for c in m.calls] and m.nodes[label]['text']=='正在下载 1 / 2'
 f,ctx=m.handler(label,O['EVT_DESTROY']); m.call(address=f,args=(ctx,m.event,0,0),gap=0)  # the page closes: the job goes on
 m.missing=False; assert m.call(address=worker,args=(arg,0,0,0),gap=0,count=5_000_000)==0
 assert m.accessed==['/p/T1','/p/T1.lrc','/p/T2','/p/T2.lrc'],m.accessed  # each song's own .lrc found: none fetched
 n=len(m.toasts); m.advance(500,clear=False)
-assert len(m.toasts)==n+1 and m.toasts[-1][3]=='Album lyrics: 2 already had lyrics' and m.joins==[77]; passed()
+assert len(m.toasts)==n+1 and m.toasts[-1][3]=='专辑歌词：2 已有歌词' and m.joins==[77]; passed()
 press_count=len(m.threads); m.advance(1000); assert len(m.threads)==press_count and len(m.toasts)==n+1; passed()  # the timer has ended
 m,label,press=album_lyrics_page(); press(); worker,arg=m.threads[-1]; press()  # cancelled before its first song
 assert m.call(address=worker,args=(arg,0,0,0),gap=0,count=5_000_000)==0 and not m.accessed
-m.advance(500,clear=False); assert m.toasts[-1][3]=='Cancelled' and m.nodes[label]['text']=='Download Album Lyrics'; passed()
+m.advance(500,clear=False); assert m.toasts[-1][3]=='已取消' and m.nodes[label]['text']=='下载专辑歌词'; passed()
 m,label,press=album_lyrics_page(); press(); worker,arg=m.threads[-1]; n=len(m.toasts)
 assert m.call(address=payload_syms['album_lyrics_stop'],args=(0,0,0,0),gap=0)==0 and m.joins==[77]  # USB storage: joined first
-m.advance(500,clear=False); assert len(m.toasts)==n and m.nodes[label]['text']=='Download Album Lyrics'; passed()
-m.found=[]; press(); assert m.toasts[-1][3]=='No album songs on the card' and len(m.threads)==1; passed()
+m.advance(500,clear=False); assert len(m.toasts)==n and m.nodes[label]['text']=='下载专辑歌词'; passed()
+m.found=[]; press(); assert m.toasts[-1][3]=='卡上没有该专辑的歌曲' and len(m.threads)==1; passed()
 
 # Sparse populated initials: one destination per sustained tick, both directions, utilities
 # and wrap edges. Album and Artist share article handling; nonalphabetical sorts stay single-step.
@@ -4325,7 +4325,7 @@ f,ctx=m.handler(rows[1],O['EVT_CLICK']); m.call(address=f,args=(ctx,m.event,0,0)
 assert len(m.plays)==1 and m.plays[0][0]=='playing_page' and m.plays[0][2:]==(1,0xff10,2)
 assert m.text(syms['g_memory_info']+0x611)=='Album 1' and m.u.mem_read(syms['g_memory_info']+0x60d,1)==b'\0'
 dq=m.plays[-1][1]&0xffffffff; assert m.names(dq)==['T1','T2']; passed()
-m.missing=True; m.call(address=f,args=(ctx,m.event,0,0),gap=0); assert len(m.plays)==1 and 'Storage unavailable' in m.texts(); passed()
+m.missing=True; m.call(address=f,args=(ctx,m.event,0,0),gap=0); assert len(m.plays)==1 and '存储不可用' in m.texts(); passed()
 # Return: tracks -> covers on the same album, covers -> Home.
 assert m.key()==11 and m.nodes[m.get(m.slide+O['W_PARENT'])]['visible'] and m.get(m.slide+O['SLIDE_INDEX'])==1 and not m.homes
 assert m.key(O['KEY_NEXT'])==0 and m.key()==11 and m.homes==1; passed()
@@ -4354,7 +4354,7 @@ with tempfile.TemporaryDirectory() as directory:
 passed()
 # Albums without art start the thread behind a progress screen; destroy joins it and drops the poll.
 m=CoverflowMachine(cached=False); page=m.open()
-assert len(m.threads)==1 and m.timers and any((t or '').startswith('Preparing artwork') for t in m.texts()) and 'Cancel' in m.texts()
+assert len(m.threads)==1 and m.timers and any((t or '').startswith('正在准备封面') for t in m.texts()) and '取消' in m.texts()
 f,ctx=m.handler(page,O['EVT_DESTROY']); m.freed=0; assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0
 assert m.joins==[77] and not m.timers and m.freed==4; passed()  # three job paths and the job array
 # An open lists the cover folder once and asks for no album's file: with the dentry cache cold, exFAT
@@ -4501,13 +4501,13 @@ for edit in (0,1):
 USB_LUN='/sys/kernel/config/usb_gadget/storage_demo/functions/mass_storage.msg/lun.0/file'
 for theme_ in '102':
     m,win,_,_,info,*_=usb_page(0,theme_=theme_,machine=UsbMachine)
-    said=lambda: {n.get('text') for n in m.nodes.values() if isinstance(n,dict) and n.get('visible',1)} & {'Connected','OK to Disconnect'}
+    said=lambda: {n.get('text') for n in m.nodes.values() if isinstance(n,dict) and n.get('visible',1)} & {'已连接','可以断开连接'}
     for data in (None,b'',b'/dev/mmcblk0p1\n'):
         if data is not None: m.files[USB_LUN]=data
-        m.advance(500); assert 'OK to Disconnect' not in said() and m.timers,(theme_,data)
-    m.files.pop(USB_LUN); m.advance(500); assert 'OK to Disconnect' not in said() and m.timers,theme_  # torn down after a path: no eject
-    m.files[USB_LUN]=b''; m.advance(500); assert 'OK to Disconnect' in said() and not m.timers and [c[1] for c in m.calls if c[0]=='widget_invalidate_force']==[win],theme_
-    if theme_=='1': assert said()=={'OK to Disconnect'} and m.nodes[named(m,win,'msg_line')]['text']==''
+        m.advance(500); assert '可以断开连接' not in said() and m.timers,(theme_,data)
+    m.files.pop(USB_LUN); m.advance(500); assert '可以断开连接' not in said() and m.timers,theme_  # torn down after a path: no eject
+    m.files[USB_LUN]=b''; m.advance(500); assert '可以断开连接' in said() and not m.timers and [c[1] for c in m.calls if c[0]=='widget_invalidate_force']==[win],theme_
+    if theme_=='1': assert said()=={'可以断开连接'} and m.nodes[named(m,win,'msg_line')]['text']==''
     else: assert m.nodes[info]['visible']==0
     m,*_=usb_page(1,theme_=theme_,machine=UsbMachine); assert not m.timers
 passed()
@@ -4525,7 +4525,7 @@ rk.bands=[]; rk.image_draws=[]; rk.calls=[]; rk.call(address=HOOKS['widget_on_pa
 ring,rest=round_box(rk.bands,7,5,306,112,13); flat,rest=round_box(rest,8,6,304,110,12); assert not rest and set(flat)=={color_t(0xffffff)}  # one colour, the gloss's top
 assert set(ring)=={color_t(CL_BAR_LINE['1'])} and all(0<=b[0] and b[0]+b[2]<=320 for b in rk.bands)  # the ring, inside the widget's rect
 assert rk.image_draws[-1][1][:2]==(0,0) and 'classic_light_rate_shadow' in [rk.text(c[2]) for c in rk.calls if c[0]=='widget_load_image']; passed()
-assert rk.caption()=='Unrated'; rk.call(O['KEY_NEXT']); assert rk.caption()=='1 Heart'; rk.call(O['KEY_NEXT']); rk.call(O['KEY_NEXT']); assert rk.caption()=='3 Hearts' and rk.hearts()==['classic_light_heart_on_l']*3+['classic_light_heart_off_l']*2; passed()
+assert rk.caption()=='未评价'; rk.call(O['KEY_NEXT']); assert rk.caption()=='1 颗心'; rk.call(O['KEY_NEXT']); rk.call(O['KEY_NEXT']); assert rk.caption()=='3 颗心' and rk.hearts()==['classic_light_heart_on_l']*3+['classic_light_heart_off_l']*2; passed()
 SETUP[:]=[lambda k:(k.config.update(THEME='1',LIGHT='0'),k)]
 try: rd=AlbumRateMachine()
 finally: SETUP.clear()
@@ -4564,14 +4564,14 @@ assert bare_hold(classic_light_new(QueueMachine,page='folder_page'),0)==(11,0) a
 hm=classic_light_new(QueueMachine,page='sysset_page'); hm.byte(syms['g_backlight_status'],0); hm.t=7001; hm.press(hm.t); assert hm.hold()==0; passed()
 # Add, then Remove from Favourites: 5 hearts, then none; the other covers stay unrated.
 assert m.run(3) is None and m.kept()==[(a1&~7)|5] and [c[2] for c in fav_calls(m,'batch_add_file')]==[0xf00a] and not fav_calls(m,'deleteMusicFromFav')
-assert m.menu()[3:5]==['取消收藏','Rate Album  ♥♥♥♥♥']
+assert m.menu()[3:5]==['取消收藏','专辑评价  ♥♥♥♥♥']
 assert m.run(3) is None and m.kept()==[] and fav_calls(m,'deleteMusicFromFav') and not fav_calls(m,'batch_add_file')
 m.word(m.slide+O['SLIDE_INDEX'],0); assert m.menu()[3:5]==['加入收藏','专辑评价']
 m.word(m.slide+O['SLIDE_INDEX'],1); passed()
 # The picker over the covers, on the album's hearts; the wheel moves the rating, never the covers.
-assert m.run(4) is None and m.caption()=='Unrated' and m.hearts()==['play_unfav']*5
+assert m.run(4) is None and m.caption()=='未评价' and m.hearts()==['play_unfav']*5
 for _ in range(3): assert m.call()==11
-assert m.caption()=='3 of 5' and m.hearts()==['play_fav']*3+['play_unfav']*2 and m.get(m.slide+O['SLIDE_INDEX'])==1 and not m.slides
+assert m.caption()=='3 / 5' and m.hearts()==['play_fav']*3+['play_unfav']*2 and m.get(m.slide+O['SLIDE_INDEX'])==1 and not m.slides
 # Hold Play/Pause meanwhile opens nothing, and its release does not toggle playback.
 m.press(9000); assert m.hold()==11 and m.top==m.page and m.release()==0 and m.panel(); passed()
 # Return leaves it as it was (taken before the page's own Return), and Coverflow stays; Centre saves, without opening
@@ -4582,7 +4582,7 @@ m.advance(500); assert not m.plays and m.find('scroll_view')==0 and m.nodes[m.ge
 # Every rating, each shown on the menu's row; 0 unrated, 5 the favourite.
 for want in range(6):
     m.rate(want); assert m.kept()==([(a1&~7)|want] if want else [])
-    rows=m.menu(); assert rows[4]==('Rate Album  '+'♥'*want+'♡'*(5-want) if want else '专辑评价')
+    rows=m.menu(); assert rows[4]==('专辑评价  '+'♥'*want+'♡'*(5-want) if want else '专辑评价')
     assert rows[3]==('取消收藏' if want==5 else '加入收藏')
 passed()
 # Five is its favourite by the picker too: its songs in on reaching it, again on saving it again, out on leaving it.
@@ -4596,10 +4596,10 @@ d,dctx=m.handler(heart,O['EVT_POINTER_DOWN']); m.call(address=d,args=(dctx,m.eve
 m.call(address=f,args=(ctx,m.event,0,0),gap=0); assert m.panel() is None and m.kept()==[(a1&~7)|2]; passed()
 # Kept across boots, apart from the songs' table.
 m2=AlbumRateMachine(files={ALBUM_RATES:m.files[ALBUM_RATES]}); m2.open(); m2.word(m2.slide+O['SLIDE_INDEX'],1)
-assert m2.menu()[4]=='Rate Album  ♥♥♡♡♡' and '/mnt/data/ringnav-ratings' not in m2.files; passed()
+assert m2.menu()[4]=='专辑评价  ♥♥♡♡♡' and '/mnt/data/ringnav-ratings' not in m2.files; passed()
 # Another cover centred, or the page gone, before Centre: nothing is saved.
 assert m.run(4) is None; m.call(); m.word(m.slide+O['SLIDE_INDEX'],0)
-assert m.call(O['KEY_CENTER'])==11 and m.toasts[-1][3]=='Album changed' and m.kept()==[(a1&~7)|2]
+assert m.call(O['KEY_CENTER'])==11 and m.toasts[-1][3]=='专辑已变更' and m.kept()==[(a1&~7)|2]
 m.word(m.slide+O['SLIDE_INDEX'],1); assert m.run(4) is None and m.panel()
 for t,f,ctx in m.nodes[m.page]['handlers']:
     if t==O['EVT_DESTROY']: m.call(address=f,args=(ctx,m.event,0,0),gap=0)
@@ -4607,9 +4607,9 @@ m.stack.remove(m.page); m.top=m.stack[-1]; m.open(); assert m.panel() is None an
 # A full table and a failed write report it, the rating as it was.
 full=b''.join(struct.pack('<I',(i+1)<<3|1) for i in range(O['RATE_SLOTS']))
 m=AlbumRateMachine(files={ALBUM_RATES:full}); m.open(); m.word(m.slide+O['SLIDE_INDEX'],1)
-assert m.run(3)=='Ratings are full' and m.files[ALBUM_RATES]==full and m.rate(4)=='Ratings are full'; passed()
+assert m.run(3)=='评价记录已满' and m.files[ALBUM_RATES]==full and m.rate(4)=='评价记录已满'; passed()
 m=AlbumRateMachine(); m.open(); m.word(m.slide+O['SLIDE_INDEX'],1); m.fail_write=True
-assert m.run(3)=='Rating not saved' and m.menu()[3:5]==['加入收藏','专辑评价'] and ALBUM_RATES not in m.files; passed()
+assert m.run(3)=='评价未保存' and m.menu()[3:5]==['加入收藏','专辑评价'] and ALBUM_RATES not in m.files; passed()
 # A malformed slot (6 or 7 hearts) reads unrated; a truncated file reads empty.
 for data in (struct.pack('<I',(a1&~7)|7).ljust(4*O['RATE_SLOTS'],b'\0'),b'\x05\0'):
     m=AlbumRateMachine(files={ALBUM_RATES:data}); m.open(); m.word(m.slide+O['SLIDE_INDEX'],1)
@@ -4712,7 +4712,7 @@ assert m.rate(4) is None and m.kept()==[(a0&~7)|4] and not song_side_effects(m)
 assert m.run(3) is None and m.kept()==[(a0&~7)|5]; passed()
 # A browse change under the picker saves nothing.
 assert m.run(4) is None; m.u.mem_write(syms['g_folder_path'],b'/elsewhere\0')
-assert m.call(O['KEY_CENTER'])==11 and m.toasts[-1][3]=='Album changed' and m.kept()==[(a0&~7)|5]; passed()
+assert m.call(O['KEY_CENTER'])==11 and m.toasts[-1][3]=='专辑已变更' and m.kept()==[(a0&~7)|5]; passed()
 # An artist's albums tab (Grid): each row's album found among the split albums when the tab loads.
 m=ArtistMachine(page='artistinfo_page',cls=0xff01,rows=2); m.word(syms['g_local_classinfo_save'],0xff01)
 m.split=[m.song('Baroness')]; m.word(m.split[0]+O['REC_ALBUM_ARTIST'],m.string('Baroness'))
@@ -4726,11 +4726,11 @@ SONGS=[('Alpha','A1','','/mnt/mmc/m/a/1.mp3',1990),('Beta','B1','Beta Band','/mn
        ('Delta','D1','','/mnt/mmc/m/d/1.mp3',0),('Eta','E1','','/mnt/mmc/m/e/1.mp3',1989),
        ('Book','W1','','/mnt/mmc/audiobooks/w/1.mp3',1995),('Tale','T1','','/mnt/mmc/m/t.m4b',1993),
        ('Pod','P1','','/mnt/mmc/podcasts/p/1.mp3',1996),('','U1','','/mnt/mmc/m/u.mp3',1994)]
-m=EraMachine(SONGS); assert m.open_era()==['Era','80s','1 album','90s','2 albums','2000s','1 album']
+m=EraMachine(SONGS); assert m.open_era()==['年代','80 年代','1 张专辑','90 年代','2 张专辑','2000 年代','1 张专辑']
 assert m.nodes[m.top]['name']=='era_page' and m.closed_db==1; passed()
 into=lambda: [m.nodes[m.nodes[r]['children'][-1]].get('image')=='list_into' for r in m.nodes[m.find('scroll_view')]['children']]
 assert into()==[True]*3  # a decade opens its albums
-assert m.decade(1)==['90s','全部播放','2 albums','随机播放','Every song, shuffled','Alpha','A1 \u2022 1990','Beta','Beta Band \u2022 1999']
+assert m.decade(1)==['90 年代','全部播放','2 张专辑','随机播放','全部歌曲，随机播放','Alpha','A1 \u2022 1990','Beta','Beta Band \u2022 1999']
 assert m.nodes[m.top]['name']=='era_albums_page' and into()==[False,False,True,True]; passed()  # an album opens Coverflow
 # Era's direct SQLite queries respect markers before counting/grouping and nested exceptions.
 for restore in (False,True):
@@ -4740,18 +4740,18 @@ for restore in (False,True):
     m.scope_markers={'/mnt/mmc/Hidden/database.ignore'}
     if restore: m.scope_markers.add('/mnt/mmc/Hidden/Keep/database.unignore')
     m.scope_scan()
-    assert m.open_era()==['Era','80s','2 albums' if restore else '1 album','90s','2 albums','2000s','1 album']
+    assert m.open_era()==['年代','80 年代','2 张专辑' if restore else '1 张专辑','90 年代','2 张专辑','2000 年代','1 张专辑']
     shown=m.decade(0)
     assert ('Restored' in shown)==restore and 'Hidden' not in shown
     passed()
 # The full library is counted past stock's old 20,000-song limit, with a bounded SQLite cache.
 m=EraMachine((f'Large {i//10}','Artist','Artist',f'/mnt/mmc/music/large/{i}.flac',2020) for i in range(65000))
-assert m.open_era()==['Era','2020s','6500 albums']
+assert m.open_era()==['年代','2020 年代','6500 张专辑']
 assert m.db.execute('PRAGMA cache_size').fetchone()==(64,)
 assert m.db.execute('PRAGMA temp_store').fetchone()==(1,); passed()
 for failure in ('open','PRAGMA','select'):
     m=EraMachine(SONGS); m.fail=failure; top=m.top; m.open_era()
-    assert m.top==top and m.toasts[-1][3]=='Era unavailable' and m.closed_db==1; passed()
+    assert m.top==top and m.toasts[-1][3]=='年代不可用' and m.closed_db==1; passed()
 # The ratings' copy on the card (ratings.c rc_*): the tables' hashes named again from the library, a page a poll.
 RC_FILE='/mnt/mmc/.ratings.tsv'; RC_HEAD='#song\thearts\tpath\tcue_start\n#album\thearts\tname\talbum_artist\tfolder\n'
 class RatingsCopyMachine(FileMocks,EraMachine):
@@ -4860,8 +4860,8 @@ dates=[('Dates','Artist','','/mnt/mmc/music/d1.flac',20220510),
        ('ISO','Artist','','/mnt/mmc/music/i.flac','2021-05-10'),
        ('Month','Artist','','/mnt/mmc/music/m.flac',202004),
        ('Bad','Artist','','/mnt/mmc/music/b.flac','unknown')]
-m=EraMachine(dates); assert m.open_era()==['Era','2020s','3 albums']
-assert m.decade(0)==['2020s','全部播放','3 albums','随机播放','Every song, shuffled',
+m=EraMachine(dates); assert m.open_era()==['年代','2020 年代','3 张专辑']
+assert m.decade(0)==['2020 年代','全部播放','3 张专辑','随机播放','全部歌曲，随机播放',
                      'Month','Artist \u2022 2020','ISO','Artist \u2022 2021','Dates','Artist \u2022 2023']; passed()
 # Play All plays the decade's albums from the first song, each in album order; an album opens its tracks in Coverflow.
 def era_track(m,album,aa,*t):
@@ -4885,23 +4885,23 @@ m.open_era(); m.decade(0)
 f,ctx=m.handler(m.nodes[m.find('scroll_view')]['children'][1],O['EVT_CLICK'])
 m.call(address=f,args=(ctx,m.event,0,0),gap=0)
 assert m.play_names==['old'] and m.names(m.get(syms['tools_pdeq_directory']))==['staged']; passed()
-m=EraMachine(); top=m.top; assert m.open_era() is not None and m.top==top and m.toasts[-1][3]=='No dated albums yet'; passed()
-m=EraMachine([s for s in SONGS if s[4]==0]); top=m.top; m.open_era(); assert m.top==top and m.toasts[-1][3]=='No dated albums yet'; passed()
+m=EraMachine(); top=m.top; assert m.open_era() is not None and m.top==top and m.toasts[-1][3]=='暂无带年份的专辑'; passed()
+m=EraMachine([s for s in SONGS if s[4]==0]); top=m.top; m.open_era(); assert m.top==top and m.toasts[-1][3]=='暂无带年份的专辑'; passed()
 # Library > Ratings > Albums: the rated albums as Coverflow, most hearts first, with the rated Sort card alone
 # (Rating, Album, Artist, Year, kept); closing it brings the library's covers back, with no card.
 m=AlbumRateMachine(); ids=[m.aid(r) for r in m.albums]
-assert ratings_albums(m)==m.top and m.toasts[-1][3]=='No rated albums yet'; passed()
+assert ratings_albums(m)==m.top and m.toasts[-1][3]=='暂无已评价专辑'; passed()
 data=b''.join(struct.pack('<I',(ids[i]&~7)|h) for i,h in ((0,2),(2,5))).ljust(4*O['RATE_SLOTS'],b'\0')
 m=AlbumRateMachine(files={ALBUM_RATES:data}); menu_page=ratings_albums(m)
 m.page=m.top; m.slide=m.find('slide_menu'); assert m.page!=menu_page and m.nodes[m.page]['name']=='coverflow_page'
 def shown(m,i): m.word(m.slide+O['SLIDE_INDEX'],i); f,ctx=m.handler(m.slide,O['EVT_VALUE_CHANGED']); m.call(address=f,args=(ctx,m.event,0,0),gap=0); return m.texts()[0]
-assert len(m.nodes[m.slide]['children'])==3 and [shown(m,i) for i in range(3)]==['Album 2','Album 0','Sort: Rating']
-shown(m,0); assert m.menu()[3:5]==['取消收藏','Rate Album  ♥♥♥♥♥']  # the cover's menu, as Coverflow's
+assert len(m.nodes[m.slide]['children'])==3 and [shown(m,i) for i in range(3)]==['Album 2','Album 0','排序：评价']
+shown(m,0); assert m.menu()[3:5]==['取消收藏','专辑评价  ♥♥♥♥♥']  # the cover's menu, as Coverflow's
 f,ctx=m.handler(m.nodes[m.slide]['children'][2],O['EVT_CLICK']); m.call(address=f,args=(ctx,m.event,0,0),gap=0); m.advance(0)
-m.slide=m.find('slide_menu'); assert [shown(m,i) for i in range(3)]==['Album 0','Album 2','Sort: Album']
+m.slide=m.find('slide_menu'); assert [shown(m,i) for i in range(3)]==['Album 0','Album 2','排序：专辑']
 assert [v for k,v in m.files.items() if k.endswith('ringnav-ratedsort')]==[struct.pack('<i',0)]; passed()
 # Then Artist, Year and Most Played (saved as the library's SORT_PLAYED, 3), round again to Rating.
-for want,saved in (('Sort: Artist',1),('Sort: Year',6),('Sort: Most Played',3),('Sort: Rating',5)):
+for want,saved in (('排序：表演者',1),('排序：年份',6),('排序：最多播放',3),('排序：评价',5)):
     f,ctx=m.handler(m.nodes[m.slide]['children'][2],O['EVT_CLICK']); m.call(address=f,args=(ctx,m.event,0,0),gap=0,count=50_000_000); m.advance(0)
     m.slide=m.find('slide_menu'); assert shown(m,2)==want
     assert [v for k,v in m.files.items() if k.endswith('ringnav-ratedsort')]==[struct.pack('<i',saved)]
@@ -5473,7 +5473,7 @@ for kind,name,turns in (('window','playing_page',0),('dialog','msginfo_dialog',1
     assert m.call(address=f,args=(ctx,ev,0,0),gap=0)==11
     assert len([t for t in m.timers.values() if t[1]==payload_syms['flip_close']])==turns,kind; passed()
 m=flip_open(); m.advance(300); m.missing=True; r=m.nodes[m.find('scroll_view')]['children'][0]; f,ctx=m.handler(r,O['EVT_CLICK']); m.call(address=f,args=(ctx,m.event,0,0),gap=0)
-assert not m.plays and m.nodes[[w for w in m.nodes[m.panel()]['children'] if m.nodes[w]['type']=='hscroll_label'][0]]['text']=='Storage unavailable'; passed()
+assert not m.plays and m.nodes[[w for w in m.nodes[m.panel()]['children'] if m.nodes[w]['type']=='hscroll_label'][0]]['text']=='存储不可用'; passed()
 # The list scrolls by the wheel inside the panel, the header its sibling, so it stays; Go to Album's tracks alone have no covers to turn.
 m=classic_light_new(FlipMachine); m.open(); m.found=[m.song(f'T{i}') for i in range(9)]; [m.word(r+O['REC_CUE_END'],225) for r in m.found]; m.tracks(0); m.advance(300); view=m.find('scroll_view')
 for _ in range(8): m.call()
@@ -6495,11 +6495,11 @@ assert [(c[1],m.text(c[2]),m.text(c[3])) for c in m.calls if c[0]=='write_int_co
 # before: no saved order is Album; Refresh empties the art cache for the next open, and stock's Library covers
 # with AWTK's cached bitmaps, with a toast.
 sort_label,refresh_label=(m.nodes[m.nodes[r]['children'][0]]['children'][1] for r in (cf_sort,cf_refresh))
-assert m.nodes[sort_label]['text']=='Sort: Album' and m.nodes[refresh_label]['text']=='Refresh Cover Flow'
+assert m.nodes[sort_label]['text']=='排序：专辑' and m.nodes[refresh_label]['text']=='刷新 Cover Flow'
 f,ctx=m.handler(m.nodes[cf_refresh]['children'][0],O['EVT_CLICK']); m.mock('opendir@GLIBC_2.0'); m.calls=[]
 assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and m.toasts[-1][3]=='Cover Flow rebuilds artwork next time'
 assert [m.text(c[1]) for c in m.calls if c[0]=='opendir@GLIBC_2.0']==['/mnt/mmc/.coverflow','/mnt/mmc/.sldp']
-assert did(m,'image_manager_unload_all') and m.nodes[refresh_label]['text']=='Refresh Cover Flow'; passed()
+assert did(m,'image_manager_unload_all') and m.nodes[refresh_label]['text']=='刷新 Cover Flow'; passed()
 # Shortcut: no key is Rockbox on a card with it, else Favorites.
 for card,first in ((True,'Rockbox'),(False,'Favorites')):
     CONFIG.clear(); d=Machine(); d.rockbox_mode=0o100755 if card else 0
@@ -7018,7 +7018,7 @@ def label_room(m,c,text=None):  # px its text needs beyond its box
     f=FACES.get(face) or FACES.setdefault(face,TTFont(B/f'{face}.ttf',lazy=True)); cmap=f.getBestCmap(); scale=px/(f['hhea'].ascent-f['hhea'].descent)
     return sum(int(f['hmtx'][cmap[ord(ch)]][0]*scale+0.5) for ch in text or n['text'])+4-geometry(m,c)[2]
 stock_page=lambda name: lambda k: k.handlers.__setitem__(int(manifest['patch_symbols'][f'stock_{name}_trampoline'],16),'stock_'+name)
-SORTS=re.findall(r'"(Sort: [^"]+)"',re.search(r'sort_names\[\] = \{([^}]*)',(pathlib.Path(__file__).parent.parent/'patch/coverflow.c').read_text())[1]); assert len(SORTS)==7,SORTS
+SORTS=re.findall(r'"([^"]+)"',re.search(r'sort_names\[\] = \{([^}]*)',(pathlib.Path(__file__).parent.parent/'patch/coverflow.c').read_text())[1]); assert len(SORTS)==7,SORTS
 playset=HOOKS['playset_playset_page_init'][0]
 for boot,row in ((lambda k:k.config.update(THEME='0'),SET['ROW']),(lambda k:k.config.update(THEME='2'),SET['ROW']),(classic_light_boot,32)):
     for builder,sub,more,rows in [('display',s,None,0) for s in range(4)]+[(HOOKS['systemset_sysset_page_init'][0],0,None,0),(playset,0,None,0),
@@ -8442,12 +8442,12 @@ assert m.tap()==0 and m.favs==set(); passed()
 def aborts(): return [c for c in m.calls if c[0]=='widget_dispatch_event_to_target_recursive' and m.get(c[2])==O['EVT_POINTER_ABORT']]
 m.calls=[]; m.heart(O['RATE_HOLD_MS']-1); assert m.panel() is None and not aborts() and m.tap(press=False)==0 and m.favs=={'B'}; passed()
 # A hold opens the picker on 5 (My Fav), aborting the press so the slide_view drops its grab; its release's click does nothing.
-m.calls=[]; m.heart(); assert m.hearts()==['play_fav']*5 and m.caption()=='5 of 5' and [c[1] for c in aborts()]==[m.np]
+m.calls=[]; m.heart(); assert m.hearts()==['play_fav']*5 and m.caption()=='5 / 5' and [c[1] for c in aborts()]==[m.np]
 assert m.tap(press=False)==0 and m.favs=={'B'}; passed()
 # The wheel moves the rating within 0-5; Return leaves it as it was.
 m.top=m.np
 for k,want in ((O['KEY_NEXT'],5),(O['KEY_PREV'],4),(O['KEY_PREV'],3)): assert m.call(k)==11
-assert m.hearts()==['play_fav']*3+['play_unfav']*2 and m.caption()=='3 of 5' and m.favs=={'B'}
+assert m.hearts()==['play_fav']*3+['play_unfav']*2 and m.caption()=='3 / 5' and m.favs=={'B'}
 assert m.call(O['KEY_RETURN'])==11 and m.panel() is None and m.favs=={'B'} and m.kept()==[]; passed()
 # Centre saves 3: My Fav out through stock's own click, 3 kept, the badge on the empty heart.
 m.heart()
@@ -8457,7 +8457,7 @@ assert m.kept()==[(key_of('B')&~7)|3] and m.badge()=='3'; passed()
 # Down to 0 clears it; a tap on the third heart saves 3 again; a tap on the heart (into My Fav) leaves nothing kept.
 m.heart()
 for _ in range(4): m.call(O['KEY_PREV'])
-assert m.caption()=='Unrated' and m.hearts()==['play_unfav']*5
+assert m.caption()=='未评价' and m.hearts()==['play_unfav']*5
 m.call(O['KEY_CENTER']); assert m.kept()==[] and m.badge() is None and m.favs==set()
 m.heart(); p=m.panel(); assert m.nodes[p]['sensitive']==1; heart=[h for h in m.nodes[p]['children'] if m.nodes[h]['type']=='image'][2]
 # The hold's own release lands on the picker, which opened under the finger: with no press on a heart, or one within
@@ -8480,7 +8480,7 @@ m2.word(O['MCL_POS'],0); m2.advance(500); assert m2.badge() is None; passed()
 # Hold Play/Pause on Now Playing: Rate last, with the hearts, and no Next/Previous album outside Shuffle Albums/Folders; its row opens the same picker.
 m2.word(O['MCL_POS'],1); m2.handlers[syms['navigator_to']]='q:navigator_to'; m2.press(100)
 assert m2.hold()==11 and m2.labels()[-2:]==['分组：专辑','Rate  ♥♥♡♡♡'] and m2.release()==0
-m2.pick(len(m2.labels())-1); m2.advance(0); m2.top=m2.np; assert m2.caption()=='2 of 5' and m2.call(O['KEY_RETURN'])==11; passed()
+m2.pick(len(m2.labels())-1); m2.advance(0); m2.top=m2.np; assert m2.caption()=='2 / 5' and m2.call(O['KEY_RETURN'])==11; passed()
 # More…: last, below Rate, while Now Playing has its img_more; its row clicks that as a tap would
 m3=RateMachine(); more=m3.node('image','img_more'); m3.nodes[m3.np]['children'].append(more); m3.word(more+O['W_PARENT'],m3.np)
 m3.handlers[syms['navigator_to']]='q:navigator_to'; m3.press(100)
@@ -8577,7 +8577,7 @@ button=m.nodes[m.nodes[view]['children'][-2]]['children'][0]; icon,label=m.nodes
 assert m.nodes[icon]['image']=='local_scrobble' and m.nodes[label]['text']=='Upload Scrobbles' and not m.nodes[button].get('name')
 library_geometry(m,m.nodes[view]['children'][-2])
 f,ctx=m.handler(button,O['EVT_CLICK'])
-assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and m.toasts[-1][3]=='Connect to Wi-Fi first' and not m.threads
+assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and m.toasts[-1][3]=='请先连接 Wi-Fi' and not m.threads
 m.wifi=3; assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and m.toasts[-1][3]=='Uploading scrobbles' and len(m.threads)==1
 assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and m.toasts[-1][3]=='Already uploading' and len(m.threads)==1
 m.advance(2000); assert m.toasts[-1][3]=='Already uploading' and not m.joins  # still uploading
@@ -11323,11 +11323,11 @@ toasts=len(m.toasts); m.close(); m.now+=9*60*1000; apps_open(m); assert len(m.th
 m.listed=(ROOT/'sources.list').read_bytes()  # an install fetches the list first
 m.row(3); assert m.labels()[8]=='Checking…' and len(m.threads)==2 and KILL in m.systems[-1]; m.row(3); assert m.labels()[8]=='Cancelling…'
 shelf_job(m); assert m.toasts[-1][3]=='Download cancelled' and m.labels()[8]=='Update'; passed()
-m.wifi=-1; m.row(3); assert m.toasts[-1][3]=='Connect to Wi-Fi first' and len(m.threads)==2; m.wifi=3; passed()
+m.wifi=-1; m.row(3); assert m.toasts[-1][3]=='请先连接 Wi-Fi' and len(m.threads)==2; m.wifi=3; passed()
 m.codes=[200,403]; m.row(3); shelf_job(m); assert m.toasts[-1][3]=='GitHub is busy, try later'; passed()  # the list, then the API's rate limit
 m.files[SPOT_TAG]=bytearray(b'q2-v1.9'); m.close(); m.wifi=-1; apps_open(m); assert m.labels()[8]=='Installed' and len(m.threads)==3
 m.row(3); assert m.labels()[8]=='Press again to remove' and len(m.threads)==3
-m.row(1); assert m.labels()[8]=='Installed' and m.toasts[-1][3]=='Connect to Wi-Fi first'  # another row's press drops it
+m.row(1); assert m.labels()[8]=='Installed' and m.toasts[-1][3]=='请先连接 Wi-Fi'  # another row's press drops it
 m.row(3); m.row(3); assert m.labels()[8]=='Removing…'; shelf_job(m)
 assert m.toasts[-1][3]=='Spotify removed' and KILL in m.systems[-3] and m.systems[-2]=='sync' and KILL in m.systems[-1]  # spot_stop: before and after
 assert not {SPOT_TAG,SPOT_FILES,'/mnt/mmc/.spotify/run','/mnt/mmc/.spotify/librespot'}&set(m.files) and m.labels()[8]=='Install'; passed()
@@ -11359,7 +11359,7 @@ m.close(); passed()
 # leaves the one in use.
 m=ShelfMachine(); m.rockbox_mode=0; m.wifi=-1; apps_open(m)
 assert m.labels()==['App Store','Check for Updates','Connect to Wi-Fi to load the list'] and not m.threads
-m.row(0); assert m.toasts[-1][3]=='Connect to Wi-Fi first' and not m.threads; passed()
+m.row(0); assert m.toasts[-1][3]=='请先连接 Wi-Fi' and not m.threads; passed()
 m.wifi=3; m.row(0); assert m.labels()[2]=='Checking…' and len(m.threads)==1; m.row(0); assert len(m.threads)==1  # checking already
 m.codes=[404]; shelf_job(m); assert m.toasts[-1][3]=="Can't reach GitHub" and m.labels()[1:]==['Check for Updates','Connect to Wi-Fi to load the list']
 m.row(0); assert len(m.threads)==2; passed()  # failed: the next press fetches again
@@ -12462,7 +12462,7 @@ def al_press():
     f,ctx=m.handler(button,O['EVT_CLICK']); assert m.call(address=f,args=(ctx,m.event,0,0),gap=0,count=5_000_000)==0
 al_press(); assert m.toasts[-1][3]==SW_WAIT and not m.threads
 m.advance(500); m.link=1; al_press(); assert m.toasts[-1][3]==SW_WAIT and not m.threads
-m.advance(500,clear=False); assert len(m.threads)==1 and m.nodes[label]['text']=='Downloading 1 of 2'; passed()
+m.advance(500,clear=False); assert len(m.threads)==1 and m.nodes[label]['text']=='正在下载 1 / 2'; passed()
 import scenarios.radio_system
 
 # M4B is spoken audio anywhere, at short duration; persistence and CUE rules stay shared.

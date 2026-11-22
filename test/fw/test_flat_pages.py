@@ -492,7 +492,7 @@ def test_the_flat_scan_s_bar_is_thin_and_fills_to_its_part(fw, world, st, whole)
     win, threads = flat_scan(fw, world, st, 'Scanned 352')
     before = msg_paint(fw, win)
     count(fw, threads, 704)
-    assert poll(world) == 8 and world[named(world, win, 'msg_line')].text == '352 of 704 songs'
+    assert poll(world) == 8 and world[named(world, win, 'msg_line')].text == '352 / 704 首'
     (target, box), = world.invalid
     bar = added(msg_paint(fw, win), before)
     on = rgba(fw.fn('flat_on', C.c_uint)())
