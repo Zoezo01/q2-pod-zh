@@ -354,6 +354,7 @@ int bar_repaint(const void *info);
 void clock_text(widget_t *label, int negative, int t);
 void label_font(widget_t *w, int bold);
 widget_t *list_row(widget_t *view, const char *icon, int (*click)(void *, event_t *), void *ctx);
+int language_offered(void); /* language.c */
 widget_t *list_row_core(widget_t *view, const char *icon, int (*click)(void *, event_t *),
                         void *ctx, int w, int into);
 int media_find(int kind, char *path);

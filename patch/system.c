@@ -499,6 +499,7 @@ static void *logo_sync(void *unused) {
     } else if (err != logo_refused)
         unlink(LOGO_SEEN); /* a good logo, or none: the same bad file put back is told again */
     pw.logo_err = err;
+    language_sync(); /* the card's language pack, as its logo */
     pw.logo_busy = 0;
     return 0;
 }

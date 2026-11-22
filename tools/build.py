@@ -107,6 +107,9 @@ HOOKS = {
     'toolsGetAlbumCover': (0x5d709c, 'ringnav_album_cover', 'album_cover'),
     # Power gains Charge limit; Playback gains Artists (Album Artist)
     'systemset_sysset_page_init': (0x4d3ba8, 'ringnav_systemset', 'systemset'),
+    # Languages (language.c): every stock text a key asks for, the card's translation first; the Language page's rows
+    'locale_info_tr': (0x65c1f4, 'ringnav_locale_tr', 'locale_tr'),
+    'systemset_language_page_init': (0x4cadec, 'ringnav_language', 'language'),
     'systemset_display_page_init': (0x4c7168, 'ringnav_display', 'display'),
     # Network: card apps whose q2app says row=network (a VPN) after stock's rows (addon.c)
     'systemset_netservice_page_init': (0x4cd50c, 'ringnav_netservice', 'netservice'),
@@ -1757,7 +1760,7 @@ FLAGS = ['--target=mipsel-linux-gnu','-march=mips32r2','-mabi=32','-mfp64',
          '-Wshadow','-Wimplicit-int-conversion','-Wconditional-uninitialized','-Wmissing-variable-declarations',
          '-Wvla','-Wundef']
 # navigation.c and the files split out of it (patch/navigation.h), each its own object, linked in this order.
-NAVIGATION = ['navigation.c', 'theme_engine.c', 'playlists.c', 'classic_pages.c', 'home.c', 'np_bar.c', 'volume.c', 'smart_wifi.c', 'system.c', 'usb_charge.c', 'tags.c', 'scrobble_ui.c', 'library_lists.c', 'durations.c', 'script.c', 'coverflow_position.c', 'ratings.c', 'scan_folders.c', 'folder_delete.c', 'battery.c', 'np_lyrics.c', 'quick_settings.c', 'flat.c', 'clock.c', 'queue_menu.c', 'np_marks.c', 'rotate.c', 'netservice.c', 'addon_bar.c', 'side_seek.c']
+NAVIGATION = ['navigation.c', 'theme_engine.c', 'playlists.c', 'classic_pages.c', 'home.c', 'np_bar.c', 'volume.c', 'smart_wifi.c', 'system.c', 'usb_charge.c', 'tags.c', 'scrobble_ui.c', 'library_lists.c', 'durations.c', 'script.c', 'coverflow_position.c', 'ratings.c', 'scan_folders.c', 'folder_delete.c', 'battery.c', 'np_lyrics.c', 'quick_settings.c', 'flat.c', 'clock.c', 'queue_menu.c', 'np_marks.c', 'rotate.c', 'netservice.c', 'addon_bar.c', 'side_seek.c', 'language.c']
 
 def compile_payload(out):  # pragma: no mutate block
     """Compile and link the payload."""

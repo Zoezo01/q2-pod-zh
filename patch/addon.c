@@ -142,7 +142,7 @@ static struct {
 } ap __attribute__((section(".scratch")));
 
 /* An id goes into shell commands: lowercase letters, digits and '-' only. */
-static int valid_id(const char *s) {
+int valid_id(const char *s) {
     unsigned k = 0;
     for (; s[k]; ++k)
         if (k + 1 >= APP_ID ||

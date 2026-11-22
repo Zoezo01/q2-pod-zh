@@ -3432,7 +3432,7 @@ static const unsigned char sysset_order[] = {
     9 /* Controls */,
     4 /* Power */,
     10 /* Date and time */,
-    0 /* Language, hidden */,
+    0 /* Language, with a language pack */,
     11 /* Update */,
     12 /* Reset */,
     5 /* Wheel Function, hidden */,
@@ -6380,9 +6380,9 @@ int ringnav_systemset(widget_t *win, void *ctx) {
             widget_set_tr_text(list_row_into(view, moved[i][0], to_page, (void *)moved[i][1]),
                                moved[i][0]);
         for (unsigned i = 5; i <= 8; ++i) widget_set_visible(widget_get_child(view, i), 0, 0);
-        /* Language: Q2 Pod's pages and labels are English only, so stock's other languages read
-         * half-blank; hidden until they are translated (docs/internals.md, English). */
-        widget_set_visible(widget_get_child(view, 0), 0, 0);
+        /* Language: only while the card has a language pack's tables, which its page lists
+         * (language.c); stock's own tables leave Q2 Pod's pages English. */
+        if (!language_offered()) widget_set_visible(widget_get_child(view, 0), 0, 0);
     }
     reorder(view, sysset_order, sizeof sysset_order);
     return result;

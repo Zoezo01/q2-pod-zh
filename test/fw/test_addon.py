@@ -221,7 +221,7 @@ def ap(fw):
 
 
 def valid_id(fw, s):
-    return fw.fn('addon__valid_id', C.c_int, C.c_void_p)(block(fw, s))
+    return fw.fn('valid_id', C.c_int, C.c_void_p)(block(fw, s))
 
 
 @pytest.mark.parametrize('s,ok', [

@@ -977,6 +977,7 @@ static int install(int i) {
         char tmp[100];
         snprintf(tmp, sizeof tmp, "%s.tmp", path);
         if (!r && !blob_io(path, tmp, tag, strlen(tag), 1)) r = SH_CARD;
+        if (!r) language_sync(); /* a language pack's update, copied for the next start */
     }
     system("rm -rf " STAGING);
     return r;
@@ -1011,6 +1012,7 @@ static void *sh_worker(void *unused) {
              * removed */
             if (card_mounted()) {
                 if (is(i, "rockbox") && t >= 0) shelf_remove(t); /* no themes without Rockbox */
+                language_removing(apps[i].dir); /* a language pack: English from the next start */
                 shelf_remove(i);
             } else
                 sh.result = SH_CARD; /* the bare mount point: nothing removed */
