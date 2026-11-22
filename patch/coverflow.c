@@ -827,8 +827,9 @@ static const char *year_sql(void) {
                                    : YEAR_SQL " desc,album COLLATE NOCASE";
 }
 static const char *const sort_names[] = {
-    "Sort: Album",  "Sort: Artist", "Sort: Recently Added", "Sort: Most Played", "Sort: Random",
-    "Sort: Rating", "Sort: Year"
+    N_("Sort: Album"),       N_("Sort: Artist"), N_("Sort: Recently Added"),
+    N_("Sort: Most Played"), N_("Sort: Random"), N_("Sort: Rating"),
+    N_("Sort: Year")
 };
 /* The order step after cf.sort (dir 1), or cf.sort itself (0), in the page's own orders; an
  * order not among them is the first (Album, or the rated albums' Rating). */
@@ -2969,9 +2970,9 @@ static void cover(widget_t *img, unsigned i, int near) {
 /* Classic's caption: both lines in its face, Now Playing's title's. */
 static int caption_bold(void) { return theme()->font[ROLE_TITLE] == FONT_CLASSIC_LIGHT; }
 
-/* A playlist's count: "1 song", "N songs"; buf holds 24. */
-static const char *songs_text(char *buf, unsigned k) {
-    tk_snprintf(buf, 24, "%u song%s", k, k == 1 ? "" : "s");
+/* A playlist's count, in buf of size: "1 song", "N songs". */
+static const char *songs_text(char *buf, unsigned size, unsigned k) {
+    tk_snprintf(buf, size, k == 1 ? tr("%u song") : tr("%u songs"), k);
     return buf;
 }
 
@@ -2983,12 +2984,13 @@ void titles(unsigned c) {
     cf.titled = (int)c + 1;
     void *r = c + CARDS < n ? deque_at(cf.albums, c) : (void *)0;
     const char *name = r ? P(r, REC_ALBUM) : 0, *by = r ? cover_artist(r) : "";
-    char songs[24];
+    char songs[64];
     if (r && cf.scoped == PLAYLISTS)
-        name = P(r, REC_TITLE), by = songs_text(songs, playlist_songs(I(r, REC_DISC)));
+        name = P(r, REC_TITLE),
+        by = songs_text(songs, sizeof songs, playlist_songs(I(r, REC_DISC)));
     widget_set_text_utf8(cf.name, r                            ? name ?: ""
-                                  : cf.scoped == ARTIST_ALBUMS ? "All albums"
-                                                               : sort_names[cf.sort]);
+                                  : cf.scoped == ARTIST_ALBUMS ? tr("All albums")
+                                                               : tr(sort_names[cf.sort]));
     widget_set_text_utf8(cf.artist, by); /* NULL leaves the old one */
     if (caption_bold()) {                /* by its text */
         theme_font(cf.name, ROLE_NP, FONT_ROW);
@@ -3030,7 +3032,7 @@ static void covers(int dir) {
     cf.screen = COVERS;
     if (cf.text_albums) {
         unsigned n = deque_size(cf.albums);
-        widget_t *view = list("Albums", (int)n);
+        widget_t *view = list(tr("Albums"), (int)n);
         for (unsigned i = 0; i < n; ++i)
             page_row_into(view, (int)i, P(deque_at(cf.albums, i), REC_ALBUM), pick);
         page_push(view, dir);
@@ -3093,8 +3095,8 @@ static int cancel_row(void *ctx, event_t *event) {
 static int poll(const void *unused) {
     cf.timer = 0;
     if (cf.done == cf.total) return to_covers(0); /* stop() joins the thread's last steps */
-    char progress[64];
-    tk_snprintf(progress, sizeof(progress), "Preparing artwork\xe2\x80\xa6 %d/%d", cf.done,
+    char progress[128];
+    tk_snprintf(progress, sizeof(progress), tr("Preparing artwork\xe2\x80\xa6 %d/%d"), cf.done,
                 cf.total);
     page_retitle(cf.page, cf.title, progress);
     cf.timer = timer_add(poll, 0, 250);
@@ -3194,7 +3196,7 @@ static void load_albums(unsigned t0) {
     if (n <= 0) {
         drop_albums();      /* only a real list is kept */
         cf.screen = COVERS; /* Return goes Home */
-        list("Update Library first", 0);
+        list(tr("Update Library first"), 0);
         return;
     }
     unsigned count = deque_size(cf.albums);
@@ -3243,7 +3245,7 @@ static void load_albums(unsigned t0) {
     if (cf.total && card_space(ART_DIR) && !pthread_create(&cf.thread, 0, worker, 0)) {
         cf.running = 1;
         cf.screen = PREPARING;
-        page_row_detail(list("", 1), 0, "Cancel", 0, cancel_row);
+        page_row_detail(list("", 1), 0, tr("Cancel"), 0, cancel_row);
         poll(0);
     } else
         to_covers(0);
@@ -3309,7 +3311,7 @@ static int play(void *ctx, event_t *event) {
     int i = (int)(long)ctx;
     void *t = deque_at(cf.tracks, (unsigned)i);
     if (!t || access(P(t, REC_PATH), 0)) {
-        page_retitle(cf.page, cf.title, "Storage unavailable");
+        page_retitle(cf.page, cf.title, tr("Storage unavailable"));
         return 0;
     }
     if (!land_start(t, i, t0)) coverflow_play(i);
@@ -3530,11 +3532,12 @@ static int flip_open(void *r, int n) {
         widget_on(item, EVT_CLICK, play, (void *)(long)i);
     }
     /* cf.title: where a row's "Storage unavailable" goes */
-    char songs[24];
+    char songs[64];
     cf.title = fl.title =
         panel_label(fl.panel, 12, 1, 270, 33, pl ? P(r, REC_TITLE) : album_name(r), 31, 1);
-    fl.artist = panel_label(fl.panel, 12, 30, 270, 20,
-                            pl ? songs_text(songs, (unsigned)n) : cover_artist(r), 18, 0);
+    fl.artist =
+        panel_label(fl.panel, 12, 30, 270, 20,
+                    pl ? songs_text(songs, sizeof songs, (unsigned)n) : cover_artist(r), 18, 0);
     panel_ink();
     widget_set_sensitive(cf.covers, 0);
     flip_shelf(0);
@@ -3655,7 +3658,7 @@ static int play_all(const void *unused) {
     if (deque_size(all) && !access(P(deque_at(all, 0), REC_PATH), 0))
         play_folder(all, 0, 0xf001);
     else
-        widget_set_text_utf8(cf.name, "Storage unavailable");
+        widget_set_text_utf8(cf.name, tr("Storage unavailable"));
     deque_destroy(all);
     return 0;
 }
@@ -3695,7 +3698,7 @@ static int sort_saved(void) {
 
 /* Cover Flow settings' Sort: its label ("Sort: Album"), and a press's next order, saved,
  * which Coverflow takes at its next open (load). */
-const char *coverflow_sort_name(void) { return sort_names[sort_saved()]; }
+const char *coverflow_sort_name(void) { return tr(sort_names[sort_saved()]); }
 void coverflow_sort_step(void) {
     int sort = sort_saved();
     unsigned i = 0;
@@ -4489,24 +4492,40 @@ static int pane_caption(char *t, unsigned size) {
     switch (home.kind) {
     case PANE_NOW:
         queue_now(&at, &n);
-        return pane_count(t, size, n, "1 Song", "%u Songs");
+        return pane_count(t, size, n, tr("%u Song"), tr("%u Songs"));
     case PANE_LIBRARY:
     case PANE_SHUFFLE:
-        return pane_count(t, size, (unsigned)home.songs, "1 Song", "%u Songs");
+        return pane_count(t, size, (unsigned)home.songs, tr("%u Song"), tr("%u Songs"));
     case PANE_COVERFLOW:
-        return pane_count(t, size, (unsigned)home.albums, "1 Album", "%u Albums");
+        return pane_count(t, size, (unsigned)home.albums, tr("%u Album"), tr("%u Albums"));
     case PANE_GAMES:
-        return pane_count(t, size, (unsigned)home.games, "1 Game", "%u Games");
+        return pane_count(t, size, (unsigned)home.games, tr("%u Game"), tr("%u Games"));
     case PANE_STREAM:
-        return pane_count(t, size, (unsigned)home.services, "1 Service", "%u Services");
+        return pane_count(t, size, (unsigned)home.services, tr("%u Service"), tr("%u Services"));
     case PANE_SETTINGS:
-        return home.free_tenths ? tk_snprintf(t, size, "%u.%u GB Free", home.free_tenths / 10,
+        return home.free_tenths ? tk_snprintf(t, size, tr("%u.%u GB Free"), home.free_tenths / 10,
                                               home.free_tenths % 10)
                                 : 0;
     default:
         break;
     }
     return 0;
+}
+
+/* s's characters (UTF-8, else a byte as Latin-1, as lyrics.c's utf8_char reads them), at most max,
+ * into out; their count. A painter's text, a translation's too. Shared with games.c's text_at. */
+unsigned utf8_wide(const char *s, unsigned *out, unsigned max) {
+    const unsigned char *t = (const unsigned char *)s;
+    unsigned n = 0;
+    for (; *t && n < max; ++n) {
+        unsigned c = *t, k = c >= 0xf8 ? 0 : c >= 0xf0 ? 3 : c >= 0xe0 ? 2 : c >= 0xc0 ? 1 : 0;
+        unsigned v = c & (0x3f >> k), j = 1;
+        while (j <= k && (t[j] & 0xc0) == 0x80) v = v << 6 | (t[j++] & 63);
+        int whole = k && j > k;
+        out[n] = whole ? v : c;
+        t += whole ? j : 1;
+    }
+    return n;
 }
 
 /* w's first child of type, or 0. */
@@ -4662,19 +4681,16 @@ void home_pane_paint(canvas_t *canvas, int x, int y, int w, int h) {
                        y + (note ? T->pane_note_y : T->pane_icon_y), src[2], src[3] };
         canvas_draw_image(canvas, bitmap, src, dst);
     }
-    char t[20];
-    int len = pane_caption(t, sizeof t);
-    if (len > 0) {
-        unsigned s[21];
-        for (int i = 0; i < len; ++i) s[i] = (unsigned char)t[i];
+    char t[80]; /* "%u Services" in any language */
+    if (pane_caption(t, sizeof t) > 0) {
+        unsigned s[40], len = utf8_wide(t, s, 39);
         s[len] = 0;
         int box[4] = { x, y + T->pane_count_y, T->pane_count_w, 24 }; /* rect_t */
         if (flat)
             final_text(canvas, (const char *)0, s, box, T->pane_count_px,
                        0xff000000u | flat_quiet[light]);
         else
-            draw_centred(canvas, s, (unsigned)len, box, T->pane_count_px,
-                         RGBA(light ? 0u : 0xffffffu));
+            draw_centred(canvas, s, len, box, T->pane_count_px, RGBA(light ? 0u : 0xffffffu));
     }
     stock_canvas_set_fill_color(canvas, fill);
 }
@@ -4943,13 +4959,13 @@ void coverflow_home_layout(void) {
         }
     widget_t *rockbox = widget_lookup(home.win, "btn_rockbox", 1);
     if (rockbox) {
-        widget_set_text_utf8(widget_lookup(home.win, "label_rockbox", 1), ipod_home_shortcut());
+        widget_set_text_utf8(widget_lookup(home.win, "label_rockbox", 1), tr(ipod_home_shortcut()));
         /* ponytail: the Shortcut card stays when the row hides (Shortcut: Rockbox, no Rockbox on
          * the card; its tap says so), as the slide_menu lays out hidden cards too; removing it
          * would mean re-adding it once the card has Rockbox */
         if (home.carousel[0])
             widget_set_text_utf8(widget_lookup(home.carousel[0], "label_rockbox", 1),
-                                 ipod_home_shortcut());
+                                 tr(ipod_home_shortcut()));
     }
     int split = HOME_SPLIT_W, outer = full ? 375 : split, inner = !full ? split : T->home_full_row,
         x = T->home_text_x, end = T->home_label_end[full];
@@ -5105,9 +5121,9 @@ void coverflow_home_top(void) {
 const char *coverflow_home_title(void) {
     widget_t *open = home_open();
     return !open                 ? show_q2pod() ? "Q2 Pod" : ""
-           : open == home.lib    ? "Library"
-           : open == home.stream ? "Streaming"
-                                 : "Settings";
+           : open == home.lib    ? tr("Library")
+           : open == home.stream ? tr("Streaming")
+                                 : tr("Settings");
 }
 
 /* home_page_init: stock binds the name-matched img_* cards, then the Coverflow card binds here,

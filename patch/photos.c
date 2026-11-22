@@ -255,12 +255,12 @@ static int to_grid(const void *unused) {
     widget_destroy_children(ph.grid);
     widget_set_visible(ph.grid, 1, 0);
     widget_t *title = page_title(ph.grid,
-                                 !n           ? "No photos"
+                                 !n           ? tr("No photos")
                                  : a >= 0     ? ph.album[a]
-                                 : ph.nalbums ? "All Photos"
-                                              : "Photos",
+                                 : ph.nalbums ? tr("All Photos")
+                                              : tr("Photos"),
                                  n);
-    if (!n) page_empty(ph.grid, "Photos");
+    if (!n) page_empty(ph.grid, tr("Photos"));
     if (!theme()->page_title_h) title_gone(0, 0), bar_title_sync(ph.page); /* no more the albums' */
     /* A bare scroll view: a list_view would lay its children out as full-width rows. */
     int rows = (n + PH_COLS - 1) / PH_COLS;
@@ -297,12 +297,12 @@ static void info(void) {
     if (!ph.info || ph.current >= ph.n) return;
     int s = ph.state[ph.current];
     const char *name = strrchr(ph.path[ph.current], '/') + 1; /* a full path */
-    char caption[300];
+    char caption[384]; /* a file name's 255 bytes and "%d of %d" in any language */
     if (!s || s == PH_BAD)
         tk_snprintf(caption, sizeof caption, "%s",
-                    s ? "Can't open this photo" : "Loading\xe2\x80\xa6");
+                    s ? tr("Can't open this photo") : tr("Loading\xe2\x80\xa6"));
     else
-        tk_snprintf(caption, sizeof caption, "%d of %d  %s", ph.current + 1, ph.n, name);
+        tk_snprintf(caption, sizeof caption, tr("%d of %d  %s"), ph.current + 1, ph.n, name);
     if (text_differs(ph.info, caption)) { /* a decode redraws the same */
         widget_set_text_utf8(ph.info, caption);
         widget_set_prop_int(ph.info, "xoffset",
@@ -527,7 +527,7 @@ void photos_open(const char *root) {
         return;
     }
     ph.screen = ALBUMS;
-    widget_t *view = page_list(page, ph.albums, 0, "Photos", ph.nalbums + 1, 48);
-    page_row_into(view, 0, "All Photos", open_album);
+    widget_t *view = page_list(page, ph.albums, 0, tr("Photos"), ph.nalbums + 1, 48);
+    page_row_into(view, 0, tr("All Photos"), open_album);
     for (int k = 0; k < ph.nalbums; ++k) page_row_into(view, k + 1, ph.album[k], open_album);
 }

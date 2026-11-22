@@ -83,9 +83,11 @@ unsigned mix(unsigned from, unsigned to, int j, int n) {
  * (docs/ipod.md#display-settings). */
 static const unsigned accents[][5] = { ACCENTS };
 _Static_assert(sizeof accents / sizeof *accents == ACCENT_N, "one accent per ACCENTS row");
-const char *const accent_names[] = { "Accent: Graphite",  "Accent: Crimson", "Accent: Tidal",
-                                     "Accent: Champagne", "Accent: Cobalt",  "Accent: Tangerine",
-                                     "Accent: Plum",      "Accent: Ivory",   "Accent: Green" };
+const char *const accent_names[] = { N_("Accent: Graphite"), N_("Accent: Crimson"),
+                                     N_("Accent: Tidal"),    N_("Accent: Champagne"),
+                                     N_("Accent: Cobalt"),   N_("Accent: Tangerine"),
+                                     N_("Accent: Plum"),     N_("Accent: Ivory"),
+                                     N_("Accent: Green") };
 _Static_assert(sizeof accent_names / sizeof *accent_names == ACCENT_N, "one name per ACCENTS row");
 _Static_assert(sizeof st.setting_label / sizeof *st.setting_label == SETTING_OWN + THEME_KEYS,
                "one label per Display row");
@@ -311,25 +313,27 @@ int ipod_home_rockbox(void) {
            : s == SHORTCUT_GROOVEBOX ? st.home_groovebox
                                      : s || st.home_rockbox;
 }
+/* The Shortcut's name, in English: coverflow.c's pane compares it, and tr() shows it. */
 const char *ipod_home_shortcut(void) {
     static const char *const names[] = { "Rockbox",
-                                         "Artists",
-                                         "Albums",
-                                         "Favorites",
-                                         "Rated Albums",
-                                         "Shuffle",
-                                         "Games",
-                                         "Playlists",
-                                         "Podcasts",
-                                         "Audiobooks",
+                                         N_("Artists"),
+                                         N_("Albums"),
+                                         N_("Favorites"),
+                                         N_("Rated Albums"),
+                                         N_("Shuffle"),
+                                         N_("Games"),
+                                         N_("Playlists"),
+                                         N_("Podcasts"),
+                                         N_("Audiobooks"),
                                          [SHORTCUT_GROOVEBOX] = "Groovebox" };
     _Static_assert(sizeof names / sizeof *names == SHORTCUT_NONE, "one per shortcut but None");
     _Static_assert(SHORTCUT_NONE + 1 == SETTING_N_SHORTCUT, "None is the last");
     return names[shortcut_target()];
 }
 /* Podcasts and Audiobooks (docs/internals.md#podcasts-and-audiobooks): the card's top-level
- * folders of these names, case aside, browsed in folder_page from there; Photos opens photos.c. */
-const char *const MEDIA[] = { "Podcasts", "Audiobooks", "Photos" };
+ * folders of these names, case aside, browsed in folder_page from there; Photos opens photos.c.
+ * The Library's rows (home.c) show them translated. */
+const char *const MEDIA[] = { N_("Podcasts"), N_("Audiobooks"), N_("Photos") };
 extern int rockbox_open(void *, event_t *);
 int rated_albums(void *, event_t *);
 int home_shortcut_open(void *ctx, event_t *event) {
@@ -337,8 +341,8 @@ int home_shortcut_open(void *ctx, event_t *event) {
     if (!s) return rockbox_open(ctx, event);
     if (s == SHORTCUT_GROOVEBOX) {            /* the card game by id, as its Games row starts it */
         if (addon_game_open("groovebox") < 0) /* no card game has the id: the folder, or a slot */
-            toast(groovebox_available() ? "Groovebox can't start from the card"
-                                        : "Groovebox is not on the card");
+            toast(groovebox_available() ? tr("Groovebox can't start from the card")
+                                        : tr("Groovebox is not on the card"));
         return 0;
     }
     if (s == 4) return rated_albums(ctx, event);

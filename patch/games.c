@@ -555,7 +555,7 @@ static void flush(int loud) {
     if (g->dirty & 2)
         games_seal(&g->sol, sizeof g->sol, SOL_MAGIC), ok &= BLOB_IO(GAMES_SOLITAIRE, g->sol, 1);
     g->dirty = 0;
-    if (!ok && loud) toast("Couldn't save");
+    if (!ok && loud) toast(tr("Couldn't save"));
 }
 
 static int save_due(const void *unused) {
@@ -585,7 +585,7 @@ static void game_over(void) {
     b->score = (unsigned)score;
     games_seal(b, sizeof *b, snake ? SNAKE_MAGIC : BEST_MAGIC);
     if (!(snake ? BLOB_IO(GAMES_SNAKE, g->sn_best, 1) : BLOB_IO(GAMES_VORTEX, g->best, 1)))
-        toast("Couldn't save");
+        toast(tr("Couldn't save"));
 }
 
 /* Snake's steps, each its period of the time passed (2 a frame at most); 1 when it ended. */
@@ -658,7 +658,8 @@ static void run(void) {
     if (!g->frame) g->frame = timer_add(frame, 0, FRAME_MS);
 }
 
-static const char *const game_names[] = { "Games", "Sudoku", "Vortex", "Solitaire", "Snake" };
+static const char *const game_names[] = { N_("Games"), N_("Sudoku"), "Vortex", N_("Solitaire"),
+                                          N_("Snake") };
 /* The chooser or the game target, from the next loop pass. */
 static int show(const void *unused) {
     g->timer = 0;
@@ -671,7 +672,7 @@ static int show(const void *unused) {
                          g->screen == CHOOSER); /* hidden, its rows still took a game's taps */
     widget_set_visible(g->sheet, g->screen != CHOOSER, 0);
     if (g->title)
-        page_retitle(g->page, g->title, game_names[g->screen]); /* the bar names the game */
+        page_retitle(g->page, g->title, tr(game_names[g->screen])); /* the bar names the game */
     if (g->screen == CHOOSER) {
         flush(1);
         ringnav_select(g->view, from - 1, g->rows);
@@ -872,16 +873,18 @@ static void frame_rect(canvas_t *canvas, int x, int y, int w, int h, unsigned rg
  * mode, its black suits black. */
 static unsigned unflipped(unsigned v) { return unflip(v) * 0x010101u; }
 
-/* s (ASCII) in the theme's face at px, h rows from y: from x, centred on it or ending at it. A
- * theme with capitals on Home (Minimal) takes them here too, SUDO_TRACK apart. Returns its width.
- * Shared with app_store.c.
+unsigned utf8_wide(const char *s, unsigned *out, unsigned max); /* coverflow.c */
+/* s (UTF-8, its first 40 characters) in the theme's face at px, h rows from y: from x, centred on
+ * it or ending at it. A theme with capitals on Home (Minimal) takes them here too, SUDO_TRACK
+ * apart. Returns its width. Shared with app_store.c.
+ * ponytail: capitals of a to z alone; a translation's other letters stay as written.
  */
 int text_at(canvas_t *canvas, const char *s, int x, int y, int h, unsigned px, unsigned color,
             int align) {
-    unsigned wide[40], n = 0;
+    unsigned wide[40], n = utf8_wide(s, wide, 40);
     int cw[40], w = 0, caps = theme()->caps_home, fpx = (int)px;
-    for (; s[n] && n < 40; ++n)
-        wide[n] = caps && s[n] >= 'a' && s[n] <= 'z' ? (unsigned)s[n] - 32 : (unsigned char)s[n];
+    for (unsigned k = 0; caps && k < n; ++k)
+        if (wide[k] >= 'a' && wide[k] <= 'z') wide[k] -= 32;
     if (!n) return 0;
     unsigned step = caps ? 1 : n; /* capitals a letter at a time, to space them */
     int track = caps ? SUDO_TRACK : 0;
@@ -1031,11 +1034,12 @@ void popup_env(char *out, unsigned size) {
 /* Vortex's and Snake's: Return's menu, the game over, the pause. */
 static void paused_popup(canvas_t *canvas, int over) {
     if (g->paused == MENU)
-        popup(canvas, "Paused", "Continue", "Quit", g->choice);
+        popup(canvas, tr("Paused"), tr("Continue"), tr("Quit"), g->choice);
     else if (over)
-        popup(canvas, g->record ? "New best!" : "Game over", "Centre: play again", 0, 0);
+        popup(canvas, g->record ? tr("New best!") : tr("Game over"), tr("Centre: play again"), 0,
+              0);
     else if (g->paused)
-        popup(canvas, "Paused", "Play/Pause: resume", 0, 0);
+        popup(canvas, tr("Paused"), tr("Play/Pause: resume"), 0, 0);
 }
 
 /* Clues on grey, entries plain in the tone, a conflict red and underlined, the cursor framed, and
@@ -1089,9 +1093,9 @@ static void sudoku_paint(canvas_t *canvas, unsigned tone) {
         frame_rect(canvas, x0 + s->cur % 9 * CELL, y0 + s->cur / 9 * CELL, CELL, CELL,
                    g->picking ? 0xffffff : accent_tone(3), 0);
     if (g->confirm)
-        popup(canvas, "New game?", "Centre: yes   Return: no", 0, 0);
+        popup(canvas, tr("New game?"), tr("Centre: yes   Return: no"), 0, 0);
     else if (sud_done(s))
-        popup(canvas, "Solved!", "Play/Pause: new game", 0, 0);
+        popup(canvas, tr("Solved!"), tr("Play/Pause: new game"), 0, 0);
 }
 
 static void arc(vgcanvas_t *vg, float cx, float cy, int r, int a0, int a1, int width,
@@ -1163,12 +1167,12 @@ static void vortex_paint(canvas_t *canvas, unsigned tone) {
                 rgba(own ? 0xc8d4e4 : 0xaaaaaa, 255));
         vgcanvas_restore(vg);
     }
-    hud(canvas, "Score", (unsigned)v->score, HUD_X, 6, 0, ink, dim);
-    hud(canvas, "Best", g->best.score, 375 - HUD_X, 6, 1, ink, dim);
-    hud(canvas, "Level", (unsigned)v->level + 1, HUD_X + 24, g->h - 30, 0, ink,
+    hud(canvas, tr("Score"), (unsigned)v->score, HUD_X, 6, 0, ink, dim);
+    hud(canvas, tr("Best"), g->best.score, 375 - HUD_X, 6, 1, ink, dim);
+    hud(canvas, tr("Level"), (unsigned)v->level + 1, HUD_X + 24, g->h - 30, 0, ink,
         dim); /* in from the glass */
     if (!g->paused && v->state == AIM)
-        text_at(canvas, "Centre", 187, (int)cy - 12, 24, 16, dim, MID);
+        text_at(canvas, tr("Centre"), 187, (int)cy - 12, 24, 16, dim, MID);
     ui_ink_raw(0);
     paused_popup(canvas, v->state == OVER);
 }
@@ -1269,9 +1273,9 @@ static void solitaire_paint(canvas_t *canvas, unsigned tone) {
     }
     ui_ink_raw(0);
     if (g->confirm)
-        popup(canvas, "New game?", "Centre: yes   Return: no", 0, 0);
+        popup(canvas, tr("New game?"), tr("Centre: yes   Return: no"), 0, 0);
     else if (sol_won(s))
-        popup(canvas, "You win!", "Play/Pause: new game", 0, 0);
+        popup(canvas, tr("You win!"), tr("Play/Pause: new game"), 0, 0);
 }
 
 #define SN_LCD 0xc3cdb4 /* the theme's own Snake: an old LCD's field and its dark dots */
@@ -1317,8 +1321,8 @@ static void snake_paint(canvas_t *canvas, unsigned tone) {
         vgcanvas_restore(vg);
     }
     ui_ink_raw(0);
-    hud(canvas, "Score", (unsigned)s->score, HUD_X, 6, 0, rgba(0xffffff, 255), SPOT_GREY);
-    hud(canvas, "Best", g->sn_best.score, 375 - HUD_X, 6, 1, rgba(0xffffff, 255), SPOT_GREY);
+    hud(canvas, tr("Score"), (unsigned)s->score, HUD_X, 6, 0, rgba(0xffffff, 255), SPOT_GREY);
+    hud(canvas, tr("Best"), g->sn_best.score, 375 - HUD_X, 6, 1, rgba(0xffffff, 255), SPOT_GREY);
     paused_popup(canvas, s->state == OVER);
 }
 
@@ -1366,12 +1370,12 @@ int games_open(void *ctx, event_t *event) {
     widget_set_visible(g->sheet, 0, 0);
     int cards = addon_games(); /* then the card's games (addon.c), by name */
     g->rows = GAMES_BUILTIN + cards;
-    g->view = page_list(page, g->list, 0, "Games", g->rows, 48);
+    g->view = page_list(page, g->list, 0, tr("Games"), g->rows, 48);
     g->title = theme()->page_title_h ? (void *)0 : widget_lookup(g->list, PAGE_TITLE, 1);
-    page_row_into(g->view, 0, "Sudoku", pick_game);
+    page_row_into(g->view, 0, tr("Sudoku"), pick_game);
     page_row_into(g->view, 1, "Vortex", pick_game);
-    page_row_into(g->view, 2, "Solitaire", pick_game);
-    page_row_into(g->view, 3, "Snake", pick_game);
+    page_row_into(g->view, 2, tr("Solitaire"), pick_game);
+    page_row_into(g->view, 3, tr("Snake"), pick_game);
     for (int k = 0; k < cards; ++k)
         page_row_into(g->view, 4 + k, addon_game_name(k), pick_card_game);
     if (!BLOB_IO(GAMES_SUDOKU, g->sud, 0) || !games_ok(&g->sud, sizeof g->sud, SUD_MAGIC) ||
