@@ -240,6 +240,21 @@ On the App Store's **Games** tab. Each plays in **Library → Games**.
     <td>Build and explore a world of blocks, saved on the card: the wheel turns, a touch stick walks.</td>
     <td></td>
   </tr>
+  <tr valign="top">
+    <td><b><a href="https://github.com/Carbon-66/Q2-Doom">Doom</a></b></td>
+    <td>Doom with its first episode, or your own WAD: the wheel turns, a touch stick walks.</td>
+    <td></td>
+  </tr>
+  <tr valign="top">
+    <td><b><a href="https://github.com/Carbon-66/Q2-Wings">Wings</a></b></td>
+    <td>Slide down the hills and fly off the tops, island to island, before the sun sets.</td>
+    <td></td>
+  </tr>
+  <tr valign="top">
+    <td><b><a href="https://github.com/Carbon-66/Q2-Miami">Q2A Miami</a></b></td>
+    <td>Drive, walk and take taxi fares across the real Miami, staying ahead of the police.</td>
+    <td></td>
+  </tr>
 </table>
 
 </details>
