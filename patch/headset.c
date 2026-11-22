@@ -36,7 +36,8 @@ int headset_bt_autolink(char *address) {
 /* checkBluetoothStatus' two getBtService calls (tools/build.py BT_SERVICE): 1 the device only sends
  * (the Q2 receives), 2 it only plays (the Q2 sends), 3 both, judged by /mnt/data/bta2dpfile or by
  * who connected first. Receive Audio off: both is plays and sends-only is neither, so the receiver
- * page never opens and no record is written; the bluealsa2 launcher offers no Audio Sink then. */
+ * page never opens and no record is written; the bluealsa2 launcher offers no Audio Sink then.
+ * ponytail: a record from while it was on applies again once it is back on, until an Unpair. */
 int headset_bt_service(char *address) {
     int service = getBtService(address);
     if (pod_value(POD_BT_RECEIVE)) return service;
