@@ -1,4 +1,4 @@
-"""tools/langpack.py: a table's bytes read back, and a translation checked before its table is written."""
+"""tools/langpack.py: the texts a pack translates, read from a build and patch/, and a translation's check."""
 import struct
 
 import pytest
@@ -6,137 +6,145 @@ import pytest
 import langpack
 
 TABLE = [('album', 'Album'), ('album', 'Album'), ('msg_delfile', 'Delete File?'),
-         ('msg_delfile', 'Are you sure you want to delete this file?')]
-ZH = [('album', 'Album', '专辑'), ('album', 'Album', '专辑'), ('msg_delfile', 'Delete File?', '是否删除文件?'),
-      ('msg_delfile', 'Are you sure you want to delete this file?', '您确定要删除此文件吗？')]
+         ('msg_delfile', 'Are you sure you want to delete this file?'), ('genre_statistics', '%d genres')]
 
 
-def test_roundtrip():
-    data = langpack.write_table(TABLE)
-    assert langpack.read_table(data) == TABLE
-    assert langpack.write_table(langpack.read_table(data)) == data
-    assert struct.unpack_from('<HH', data, 0) == (0, len(TABLE))
+def table(pairs):
+    """A strings/*.bin as build.py's relabel reads it: header, offsets, two zero words, then the strings."""
+    offsets, strings, at = [], b'', 4 + 8 * len(pairs) + 8
+    for key, value in pairs:
+        key, value = key.encode(), value.encode()
+        offsets += [at, at + len(key) + 1]
+        strings += key + b'\0' + value + b'\0'
+        at += len(key) + len(value) + 2
+    return struct.pack(f'<HH{2 * len(pairs)}I', 0, len(pairs), *offsets) + b'\0' * 8 + strings
 
 
-def test_empty():
-    assert langpack.read_table(langpack.write_table([])) == []
-    assert langpack.write_table([]) == b'\0' * 12
+def test_read_table():
+    assert langpack.read_table(table(TABLE)) == TABLE
+    assert langpack.read_table(table([])) == []
 
 
-def test_offsets():
-    data = langpack.write_table(TABLE)
-    start = langpack.HEADER + 8 * len(TABLE) + langpack.GAP
-    offsets = struct.unpack_from(f'<{2 * len(TABLE)}I', data, langpack.HEADER)
-    assert offsets[0] == start
-    for (key, value), pair in zip(zip(offsets[0::2], offsets[1::2]), TABLE):
-        assert data[key:].decode().startswith(pair[0])
-        assert data[value:].decode().startswith(pair[1])
-
-
-def test_short():
-    with pytest.raises(ValueError, match='shorter than its header'):
-        langpack.read_table(b'\0\0')
-
-
-def test_not_zero():
-    with pytest.raises(ValueError, match='starts with 3'):
-        langpack.read_table(struct.pack('<HH', 3, 1))
-
-
-def test_header_only():
-    with pytest.raises(ValueError, match='fewer than its header'):
-        langpack.read_table(struct.pack('<HH', 0, 2) + b'\0' * 8)
-
-
-def test_offset_outside():
-    data = bytearray(langpack.write_table(TABLE))
-    struct.pack_into('<I', data, langpack.HEADER, 0)
-    with pytest.raises(ValueError, match='outside the'):
-        langpack.read_table(bytes(data))
-
-
-def test_no_end():
-    with pytest.raises(ValueError, match='has no end'):
-        langpack.read_table(langpack.write_table([('album', 'Album')])[:-1])
-
-
-def test_not_utf8():
-    data = struct.pack('<HH2I', 0, 1, 20, 22) + b'\0' * 8 + b'\xff\0x\0'
-    with pytest.raises(ValueError, match='not UTF-8'):
+@pytest.mark.parametrize('data', [b'\0', b'\1\0\0\0', struct.pack('<HH', 0, 2) + b'\0' * 15])
+def test_not_a_table(data):
+    with pytest.raises(ValueError, match='not a strings table'):
         langpack.read_table(data)
 
 
-def test_translations():
-    assert langpack.read_translations('a\tb\tc\n\nx\ty\tz\n') == [('a', 'b', 'c'), ('x', 'y', 'z')]
-    with pytest.raises(ValueError, match='line 2 has 2 fields'):
-        langpack.read_translations('a\tb\tc\nd\te\n')
+def test_c_literal():
+    assert langpack.c_literal(['Two\\nlines\\t', ' \\"q\\" \\\\']) == 'Two\nlines\t "q" \\'
+    assert langpack.c_literal(['\\xe2\\x80\\xa6', '…', '\\101\\0', '\\q']) == '……A\0\\q'
 
 
-def test_missing():
-    assert langpack.check(TABLE, ZH[:3]) == ["msg_delfile: no line for 'Are you sure you want to delete this file?'"]
+def test_escape():
+    assert langpack.escape('a\\b\nc\td') == 'a\\\\b\\nc\\td'
 
 
-def test_extra():
-    assert langpack.check(TABLE, [*ZH, ('other', 'x', 'y')]) == ["other: no pair in the table for 'x'"]
+def tree(tmp_path, files):
+    (tmp_path/'patch').mkdir()
+    for name, text in files.items():
+        (tmp_path/'patch'/name).write_text(text, encoding='utf-8')
+    return tmp_path
 
 
-def test_no_text():
-    assert langpack.check([('album', 'Album')], [('album', 'Album', '')]) == ['album: no text']
+def test_own_strings(tmp_path):
+    root = tree(tmp_path, {
+        'b.c': 'toast(tr("Saved")); x = tr( "Two " "parts" ); s = str("no"); locale_tr("no");\n'
+               'static const char *n[] = { N_("Songs"), N_("A \\"quote\\"") };\n'
+               '/* tr("In a comment") */ widget(tr("Line\\nbreak"));',
+        'a.c': 'say(tr("Saved")); say(tr("%d songs"));',
+        'c.h': 'tr("Not a .c file")'})
+    assert langpack.own_strings(root) == [('Saved', 'a.c'), ('%d songs', 'a.c'), ('Two parts', 'b.c'),
+                                          ('Songs', 'b.c'), ('A "quote"', 'b.c'), ('Line\nbreak', 'b.c')]
 
 
-@pytest.mark.parametrize('source, text, ok', [
-    ('Total %d songs', '共 %d 首', True), ('Total %d songs', '共首', False), ('%s by %s', '%s / %s', True),
-    ('%s by %s', '%d / %s', False), ('100%% done', '100%% 完成', True)])
-def test_conversions(source, text, ok):
-    assert (langpack.check([('k', source)], [('k', source, text)]) == []) is ok
+def test_own_strings_of_this_tree():
+    texts = dict(langpack.own_strings())
+    assert texts['Restart to apply?'] == 'language.c'
 
 
-def test_build():
-    assert langpack.read_table(langpack.build(TABLE, ZH)) == [(key, text) for key, source, text in ZH]
+def test_template(tmp_path):
+    root = tree(tmp_path, {'a.c': 'tr("Tab\\there"); tr("Genre");'})
+    (tmp_path/'build/strings').mkdir(parents=True)
+    (tmp_path/'build/strings/en_US.bin').write_bytes(table([('genre', 'Genre'), ('a\tb', 'x\ny')]))
+    assert langpack.template(tmp_path/'build', root) == (
+        'genre\tGenre\tstock\na\\tb\tx\\ny\tstock\nTab\\there\tTab\\there\ta.c\nGenre\tGenre\ta.c\n')
 
 
-def test_build_duplicates():
-    rows = [('album', 'Album', '专辑'), ('album', 'Album', '相册')]
-    assert langpack.read_table(langpack.build([('album', 'Album')] * 2, rows)) == [('album', '专辑'), ('album', '相册')]
+def test_read_lines():
+    assert langpack.read_lines('# Deutsch\n\na\tb\tc\n  \n#x\n') == [('a', 'b', 'c')]
+    with pytest.raises(ValueError, match='line 2 has 2 fields, not 3'):
+        langpack.read_lines('# Deutsch\na\tb\n')
 
 
-def test_build_refuses():
-    with pytest.raises(ValueError, match='album: no text'):
-        langpack.build([('album', 'Album')], [('album', 'Album', '')])
+EN = [('album', 'Album', 'stock'), ('msg_delfile', 'Delete File?', 'stock'), ('%d songs', '%d songs', 'a.c'),
+      ('Saved', 'Saved', 'a.c')]
 
 
-def test_main_usage(capsys):
-    assert langpack.main([]) == 2
-    assert langpack.main(['write']) == 2
-    assert langpack.main(['build', 'a']) == 2
-    assert langpack.main(['check', 'a', 'b', 'c']) == 2
-    assert capsys.readouterr().err.count('usage: langpack.py build') == 4
+def test_check_clean():
+    assert langpack.check(EN, [('album', 'Album', 'Album'), ('%d songs', '%d songs', '%d Titel')]) == ([], 2)
+    assert langpack.check(EN, [(k, e, e) for k, e, _ in EN]) == ([], 0)
+
+
+def test_check_problems():
+    problems, left = langpack.check(EN, [
+        ('album', 'Albums', 'Alben'), ('msg_delfile', 'Delete File?', ''), ('%d songs', '%d songs', '%s Titel'),
+        ('Saved', 'Saved', '保存 100%% ✓'), ('Gone', 'Gone', 'Weg')], font={ord(c) for c in 'Weg 1%0'})
+    assert problems == [
+        "album: en.tsv has no 'Albums' (a changed English, or a typo)",
+        "album: the font has no 'Abln'",
+        'msg_delfile: no text',
+        "%d songs: '%s Titel' does not keep the conversions of '%d songs'",
+        "%d songs: the font has no 'Tilst'",
+        "Saved: the font has no '✓保存'",
+        "Gone: en.tsv has no 'Gone' (a changed English, or a typo)"]
+    assert left == 1
+
+
+@pytest.mark.parametrize('en, text, same', [
+    ('%d of %d', '%d von %d', True), ('%5.1f dB', '%.1f dB', False), ('100%%', '100 %%', True), ('%lu', '%lu', True),
+    ('%s %d', '%d %s', False), ('%02x', '%02x', True), ('%d%%', '%d %%', True)])
+def test_conversions(en, text, same):
+    assert (langpack.check([('k', en, '')], [('k', en, text)])[0] == []) == same
 
 
 def test_main(tmp_path, capsys):
-    base, tsv, out = tmp_path/'en_US.bin', tmp_path/'zh_CN.tsv', tmp_path/'zh_CN.bin'
-    base.write_bytes(langpack.write_table(TABLE))
-    tsv.write_text('\n'.join('\t'.join(row) for row in ZH) + '\n', encoding='utf-8')
-    assert langpack.main(['build', str(base), str(tsv), str(out)]) == 0
-    assert langpack.read_table(out.read_bytes()) == [(key, text) for key, source, text in ZH]
-    assert langpack.main(['check', str(base), str(tsv)]) == 0
-    assert '4 pairs, 4 lines: ok' in capsys.readouterr().out
-    tsv.write_text('\n'.join('\t'.join(row) for row in ZH[:3]) + '\n', encoding='utf-8')
-    assert langpack.main(['check', str(base), str(tsv)]) == 1
-    assert 'no line for' in capsys.readouterr().out
+    en, de = tmp_path/'en.tsv', tmp_path/'de.tsv'
+    en.write_text('album\tAlbum\tstock\nSaved\tSaved\ta.c\n', encoding='utf-8')
+    de.write_text('# Deutsch\nalbum\tAlbum\tAlbum\n', encoding='utf-8')
+    assert langpack.main(['check', str(en), str(de)]) == 0
+    assert capsys.readouterr().out == '1 texts left English\n'
+    de.write_text('# Deutsch\nalbum\tAlbum\t\n', encoding='utf-8')
+    assert langpack.main(['check', str(en), str(de)]) == 1
+    assert capsys.readouterr().out == 'album: no text\n1 texts left English\n'
+    assert langpack.main(['check', str(en), str(tmp_path/'none.tsv')]) == 2
+    assert 'none.tsv' in capsys.readouterr().err
+    assert langpack.main(['check', str(en)]) == 2
+    assert langpack.main([]) == 2
+    assert capsys.readouterr().err.startswith('usage: ')
 
 
-def test_main_refusals(tmp_path, capsys):
-    tsv = tmp_path/'zh_CN.tsv'
-    tsv.write_text('\t'.join(ZH[0]) + '\n', encoding='utf-8')
-    assert langpack.main(['check', str(tmp_path/'none.bin'), str(tsv)]) == 2
-    bad = tmp_path/'bad.bin'
-    bad.write_bytes(b'nope')
-    assert langpack.main(['check', str(bad), str(tsv)]) == 2
-    good = tmp_path/'en_US.bin'
-    good.write_bytes(langpack.write_table([('album', 'Album')]))
-    broken = tmp_path/'broken.tsv'
-    broken.write_text('only two\tfields\n', encoding='utf-8')
-    assert langpack.main(['check', str(good), str(broken)]) == 2
-    err = capsys.readouterr().err
-    assert 'has 2 fields' in err and 'starts with' in err
+def test_main_font(tmp_path, capsys):
+    from fontTools.fontBuilder import FontBuilder
+    fb = FontBuilder(1000, isTTF=True)
+    fb.setupGlyphOrder(['.notdef', 'A'])
+    fb.setupCharacterMap({ord('A'): 'A'})
+    from fontTools.pens.ttGlyphPen import TTGlyphPen
+    fb.setupGlyf({name: TTGlyphPen(None).glyph() for name in ('.notdef', 'A')})
+    fb.setupHorizontalMetrics({'.notdef': (500, 0), 'A': (500, 0)})
+    fb.setupHorizontalHeader(ascent=800, descent=-200)
+    fb.setupNameTable({'familyName': 'T', 'styleName': 'R'})
+    fb.setupOS2()
+    fb.setupPost()
+    fb.save(tmp_path/'t.ttf')
+    en, de = tmp_path/'en.tsv', tmp_path/'de.tsv'
+    en.write_text('k\tK\tstock\n', encoding='utf-8')
+    de.write_text('# D\nk\tK\tAB\n', encoding='utf-8')
+    assert langpack.main(['check', str(en), str(de), str(tmp_path/'t.ttf')]) == 1
+    assert capsys.readouterr().out == "k: the font has no 'B'\n0 texts left English\n"
+
+
+def test_main_template(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr(langpack, 'template', lambda build: f'from {build}\n')
+    assert langpack.main(['template', 'B']) == 0
+    assert capsys.readouterr().out == 'from B\n'
