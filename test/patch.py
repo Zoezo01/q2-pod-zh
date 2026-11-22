@@ -7747,7 +7747,7 @@ assert [kids[i] for i in (*range(1,5),6,8,9,10,12,13,18)]==[stock[i] for i in (3
 icon,label,into=m.nodes[m.nodes[era]['children'][0]]['children']
 assert m.nodes[icon]['image']=='local_era' and m.nodes[label]['text']=='Era' and m.nodes[into]['image']=='list_into'
 icon,label,into=m.nodes[m.nodes[kids[16]]['children'][0]]['children']
-assert m.nodes[icon]['image']=='local_games' and m.nodes[label]['text']=='Games' and len(kids)==19
+assert m.nodes[icon]['image']=='local_games' and m.nodes[label]['text']=='游戏' and len(kids)==19
 for k,image,text,fn in ((15,'local_apps','Apps','addon_apps'),(17,'local_store','App Store','shelf_open')):
     button=m.nodes[kids[k]]['children'][0]; icon,label,into=m.nodes[button]['children']
     assert m.nodes[icon]['image']==image and m.nodes[label]['text']==text and m.handler(button,O['EVT_CLICK'])[0]==payload_syms[fn]
@@ -8776,7 +8776,7 @@ def games_open():
     view=m.node('scroll_view','scroll_view_localmusic',[m.node('list_item') for _ in range(11)]); m.top=m.node('window','localmusic_page',[view])
     assert m.call(address=HOOKS['localmusic_page_init'][0],args=(m.top,5,0,0),gap=0,count=5_000_000)==0
     button=m.nodes[m.nodes[view]['children'][-2]]['children'][0]; icon,label,into=m.nodes[button]['children']
-    assert m.nodes[icon]['image']=='local_games' and m.nodes[label]['text']=='Games'
+    assert m.nodes[icon]['image']=='local_games' and m.nodes[label]['text']=='游戏'
     library_geometry(m,m.nodes[view]['children'][-2])
     f,ctx=m.handler(button,O['EVT_CLICK']); assert m.call(address=f,args=(ctx,m.event,0,0),gap=0,count=5_000_000)==0
     m.page=m.top; assert m.nodes[m.page]['name']=='games_page' and m.nodes[m.page]['style:normal:bg_color']==-0x1000000
@@ -8786,7 +8786,7 @@ assert m.call(address=payload_syms['home_shortcut_open'],args=(0,m.event,0,0),ga
 m.page=m.top; assert m.nodes[m.page]['name']=='games_page'
 m.close()
 sheet,chooser=games_open(); G=m.get(payload_syms['g'])
-assert labels(chooser)==['Games','Sudoku','Vortex','Solitaire','Snake'] and not m.nodes[sheet]['visible']
+assert labels(chooser)==['游戏','数独','旋涡','纸牌','贪吃蛇'] and not m.nodes[sheet]['visible']
 rows=m.nodes[m.find('scroll_view',chooser)]['children']
 # The wheel carries over at both ends of the real chooser: a bump, then after a pause the other end.
 w=m.find('scroll_view',chooser); m.paint(w,gap=0)
