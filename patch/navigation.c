@@ -8161,7 +8161,9 @@ static int home_cf_hold(widget_t *top) {
  * Play Next (un_hold), on a Ratings list's row Shuffle (rated_hold), the release latched as the
  * queue menu's. */
 int ringnav_keylong(void *ctx, event_t *event) {
-    if (event && ple_key((unsigned)I(event, EVENT_KEY), 3)) return STOP;
+    if (event &&
+        (ple_key((unsigned)I(event, EVENT_KEY), 3) || side_seek((unsigned)I(event, EVENT_KEY), 3)))
+        return STOP;
     if (!event || I(event, EVENT_KEY) != KEY_PLAY) return stock_keylong_trampoline(ctx, event);
     widget_t *top = window_manager_get_top_window(window_manager());
     const char *fav = radio_hold(top);
@@ -9056,7 +9058,7 @@ int ringnav_buzzer(int on) {
  * scrub, the volume and every other key keep the stock click. */
 int ringnav_keydown(void *ctx, event_t *event) {
     unsigned key = event ? (unsigned)I(event, EVENT_KEY) : 0;
-    if (ple_key(key, 1)) return STOP;
+    if (ple_key(key, 1) || side_seek(key, 1)) return STOP;
     widget_t *top = window_manager_get_top_window(window_manager());
     unsigned char tone = g_keytone_flag;
     widget_t *row = (void *)0;
@@ -9305,6 +9307,10 @@ int ringnav(void *ctx, event_t *event) {
     }
     unsigned key = (unsigned)I(event, EVENT_KEY);
     if (ple_key(key, 2)) return STOP;
+    if (side_seek(key, 2)) { /* stock's filter still ends the press: its click latch, the timer */
+        if (!usb_prompt()) stock_keyup_trampoline(ctx, event);
+        return STOP;
+    }
     /* This release's press was silenced by ringnav_keydown: a row change below clicks instead. */
     int owned = st.tone_key == key;
     st.tone_key = 0;

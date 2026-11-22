@@ -611,6 +611,9 @@ void battery_paint(widget_t *w, canvas_t *canvas);
 /* system.c */
 void power_poll(void);
 
+/* side_seek.c: a dark hold of Previous or Next (ple_key's phases) */
+int side_seek(unsigned key, int phase);
+
 /* usb_charge.c: wrappers for charging, configuration loading and USB gadget dispatch. */
 int ringnav_usb_charge(int on), usb_charge_held(void), usb_charge_wanted(void);
 void usb_charge_row(widget_t *win, widget_t *view); /* Power's USB DAC Charging */

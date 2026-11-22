@@ -945,6 +945,26 @@ def test_a_long_press_of_a_side_button_is_the_editors(editor, ui, fw):
     assert not fw.calls('stock_keylong_trampoline') and not editor.table.log
 
 
+def test_a_dark_held_next_seeks_the_song_and_a_press_still_skips(fw):
+    """side_seek: with the screen off stock's long press of Next arms it, each repeat moves the target 5 s on, and
+    the release seeks there once, through stock's filter but never its skip; a press without the long press stays stock's."""
+    fw.var('g_backlight_status', C.c_ubyte).value = 0
+    fw.mock('mclGetPlayStatus', lambda *_: 2)  # playing
+
+    def playtime(sec, total, *_):
+        C.c_int.from_address(sec).value, C.c_int.from_address(total).value = 60, 200
+
+    fw.mock('player_playtime_and_length', playtime)
+    event = C.create_string_buffer(0x40)
+    struct.pack_into('<i', event, EVENT_KEY, KEY_FWD_BTN)
+    long, down, up = (fw.fn(name, C.c_int, C.c_void_p, C.c_void_p) for name in ('ringnav_keylong', 'ringnav_keydown', 'ringnav'))
+    assert long(None, event) == STOP and down(None, event) == STOP and down(None, event) == STOP
+    assert up(None, event) == STOP and [args[0] for _, args in fw.calls('player_seek_time')] == [70]
+    assert len(fw.calls('stock_keyup_trampoline')) == 1 and not fw.calls('player_next_music')  # the filter's latch
+    up(None, event)  # a short press: its release goes on as before
+    assert len(fw.calls('stock_keyup_trampoline')) == 2 and len(fw.calls('player_seek_time')) == 1
+
+
 STAND_IN_LOGS = []  # each stand-in's log: its code writes there at every call, until the child exits
 
 
