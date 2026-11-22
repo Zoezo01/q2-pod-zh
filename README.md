@@ -207,6 +207,11 @@ The [user guide][guide] covers every control, EQ, Cover Flow and more tips.
     <td>Plays the videos in the card's <code>Videos</code> folder, in <b>Library → Apps → Videos</b>: folders with thumbnails, Continue Watching, subtitles, sound tracks and chapters.</td>
     <td></td>
   </tr>
+  <tr valign="top">
+    <td><b><a href="https://github.com/js-surya/q2-tailscale">Tailscale</a></b></td>
+    <td>Puts the Q2 on your tailnet, so its apps reach your own music server from anywhere: sign in with a QR code, MagicDNS names, Taildrop to the card, in <b>System settings → Network → Tailscale</b>.</td>
+    <td></td>
+  </tr>
 </table>
 
 <details>
