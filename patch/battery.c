@@ -76,27 +76,30 @@ static const int *bh_tm(unsigned i, int *buf) {
     return bh.rec.row[i].at >= CLOCK_SET ? localtime_r(&t, buf) : (void *)0;
 }
 /* Row i as "99% | 12:00": the clock's time, 12-hour as the status bar's unless 24-hour is on, or
- * "+1:23", the hours and minutes since the start, for a clock never set. */
-static void bh_text(char *s, unsigned size, unsigned i) {
+ * "+1:23", the hours and minutes since the start, for a clock never set. shown: the page's, its
+ * AM or PM translated; the log's stay English. */
+static void bh_text(char *s, unsigned size, unsigned i, int shown) {
     int buf[11];
     const int *tm = bh_tm(i, buf);
     unsigned at = bh.rec.row[i].at, from = bh.rec.row[0].at, m = (at - from) / 60,
              pct = bh.rec.row[i].pct;
+    const char *half = tm && tm[2] < 12 ? N_("AM") : N_("PM");
     if (tm && g_time24h_flag)
         tk_snprintf(s, size, "%u%% | %02d:%02d", pct, tm[2], tm[1]);
     else if (tm)
         tk_snprintf(s, size, "%u%% | %d:%02d %s", pct, (tm[2] + 11) % 12 + 1, tm[1],
-                    tm[2] < 12 ? "AM" : "PM");
+                    shown ? tr(half) : half);
     else if (at >= from)
         tk_snprintf(s, size, "%u%% | +%u:%02u", pct, m / 60, m % 60);
     else /* the clock lost after the start */
         tk_snprintf(s, size, "%u%% | --:--", pct);
 }
-/* Row i's date, "11 Nov 2026" (year) or "11 Nov", when it is the first row or a day after the row
- * before's; else "". */
+/* Row i's date, "11 Nov 2026" (year: the log's, in English) or "11 Nov" (the page's, its month
+ * translated), when it is the first row or a day after the row before's; else "". */
 static void bh_day(char *s, unsigned size, unsigned i, int year) {
-    static const char months[12][4] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-                                        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
+    static const char months[12][4] = { N_("Jan"), N_("Feb"), N_("Mar"), N_("Apr"),
+                                        N_("May"), N_("Jun"), N_("Jul"), N_("Aug"),
+                                        N_("Sep"), N_("Oct"), N_("Nov"), N_("Dec") };
     int buf[11], was[11];
     const int *tm = bh_tm(i, buf), *before = i ? bh_tm(i - 1, was) : (void *)0;
     *s = 0;
@@ -106,7 +109,7 @@ static void bh_day(char *s, unsigned size, unsigned i, int year) {
     if (year)
         tk_snprintf(s, size, "%d %s %d", tm[3], months[tm[4]], tm[5] + 1900);
     else
-        tk_snprintf(s, size, "%d %s", tm[3], months[tm[4]]);
+        tk_snprintf(s, size, "%d %s", tm[3], tr(months[tm[4]]));
 }
 
 /* The log's text into out: each day's date over its rows, or, for a clock never set, a line that
@@ -119,7 +122,7 @@ unsigned battery_log(char *out, unsigned size) {
     for (unsigned i = 0; i < bh.rec.n && (len = strlen(out)) < size; ++i) {
         char day[32], row[48];
         bh_day(day, sizeof day, i, 1);
-        bh_text(row, sizeof row, i);
+        bh_text(row, sizeof row, i, 0);
         tk_snprintf(out + len, size - len, *day ? "%s%s\n%s\n" : "%s%s%s\n",
                     len && *day ? "\n" : "", day, row);
     }
@@ -131,15 +134,15 @@ unsigned battery_log(char *out, unsigned size) {
 static int bh_export(void *ctx, event_t *event) {
     char out[BH_ROWS * 64 + 64];
     if (navigator_window_is_exist("usbmode_page"))
-        toast("The card is in use over USB");
+        toast(tr("The card is in use over USB"));
     else if (!card_mounted())
-        toast("Storage unavailable");
+        toast(tr("Storage unavailable"));
     else if (!card_room(PEQ_ROOT "/mnt/mmc", 1, 0))
-        toast("The card is full");
+        toast(tr("The card is full"));
     else if (!blob_io(BH_LOG, BH_LOG ".tmp", out, battery_log(out, sizeof out), 1))
-        unlink(BH_LOG ".tmp"), toast("Couldn't save");
+        unlink(BH_LOG ".tmp"), toast(tr("Couldn't save"));
     else
-        toast("Saved to battery-log.txt");
+        toast(tr("Saved to battery-log.txt"));
     return 0;
 }
 
@@ -159,8 +162,8 @@ static void bh_fill(void) {
         offset = bh.view ? widget_get_prop_int(bh.view, "yoffset", 0) : 0;
     bh.stale = 0;
     bh.graph = 0;
-    widget_t *view = bh.view = page_list_or(bh.page, bh.page, "Battery History", "Unplug to start",
-                                            n ? (int)n + 1 : 0, 48);
+    widget_t *view = bh.view = page_list_or(bh.page, bh.page, tr("Battery History"),
+                                            tr("Unplug to start"), n ? (int)n + 1 : 0, 48);
     if (!n) return;
     widget_t *list = P(view, W_PARENT);
     int rh = page_h(48), head = 2 * rh, y = I(list, W_Y),
@@ -169,10 +172,10 @@ static void bh_fill(void) {
     widget_move_resize(list, 0, y + head, 375, h);
     widget_resize(view, 375, h);
     bh.graph = widget_factory_create_widget(widget_factory(), "view", bh.page, 0, y, 375, head);
-    page_row_detail(view, 0, "Export Log", 0, bh_export);
+    page_row_detail(view, 0, tr("Export Log"), 0, bh_export);
     for (unsigned i = 0; i < n; ++i) {
-        char day[16], s[64];
-        bh_text(s, sizeof s, i);
+        char day[32], s[96]; /* room for a translated month and AM or PM */
+        bh_text(s, sizeof s, i, 1);
         bh_day(day, sizeof day, i, 0);
         if (*day) tk_snprintf(s + strlen(s), sizeof s - strlen(s), ", %s", day);
         page_row_detail(view, (int)i + 1, s, 0, bh_row);

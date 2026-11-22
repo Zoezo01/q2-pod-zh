@@ -80,7 +80,7 @@ static struct {
     double typed;
     peq_preset draft, candidate, named; /* named: the preset applied under applied's name */
     char (*names)[256];
-    char destination[600], status[160];
+    char destination[600], status[256]; /* status: a translated sentence and a file's name */
     char name[256],
         applied[256];        /* the draft's preset, and the active one's, when loaded from a file */
     float curve[2][GRAPH_W]; /* the left and right response, in graph rows */
@@ -161,10 +161,10 @@ static const char *eq_output_caption(void) {
     if (!pod_value(POD_EQ_OUTPUT)) return 0;
     if (!eq_owner[0]) owner_read();
     return !eq_owner[0]                 ? 0
-           : !strcmp(eq_owner, "3.5mm") ? "EQ for 3.5 mm"
-           : !strcmp(eq_owner, "4.4mm") ? "EQ for 4.4 mm"
-           : !strcmp(eq_owner, "usb")   ? "EQ for USB"
-                                        : "EQ for this Bluetooth device";
+           : !strcmp(eq_owner, "3.5mm") ? tr("EQ for 3.5 mm")
+           : !strcmp(eq_owner, "4.4mm") ? tr("EQ for 4.4 mm")
+           : !strcmp(eq_owner, "usb")   ? tr("EQ for USB")
+                                        : tr("EQ for this Bluetooth device");
 }
 /* What plays, as now, into owner's file, if there is an owner. A PEQ_ACTIVE that exists but can't
  * be read isn't filed over a good slot. 0 if the file can't be saved. */
@@ -402,7 +402,7 @@ static void follow_auto(void) {
 
 /* The Preamp row's and the picker's Auto. */
 static void auto_text(char *s, unsigned n) {
-    snprintf(s, n, "Auto (44.1: %.1f / 48: %.1f)", autos()[0], autos()[1]);
+    snprintf(s, n, tr("Auto (44.1: %.1f / 48: %.1f)"), autos()[0], autos()[1]);
 }
 
 /* A Preamp pick sticks to the saved preset it was loaded from (its copy in PEQ_SAVED, never the
@@ -423,7 +423,7 @@ static void list_files(const char *folder, const char *extension) {
     ui.count = 0;
     void *dir = opendir(folder);
     if (!dir) {
-        snprintf(ui.status, sizeof(ui.status), "Folder missing or unavailable");
+        snprintf(ui.status, sizeof(ui.status), "%s", tr("Folder missing or unavailable"));
         return;
     }
     struct dirent *entry;
@@ -437,7 +437,8 @@ static void list_files(const char *folder, const char *extension) {
             void *names = calloc(capacity, 256);
             if (!names) {
                 ui.count = 0;
-                snprintf(ui.status, sizeof(ui.status), "Out of memory; cannot list presets");
+                snprintf(ui.status, sizeof(ui.status), "%s",
+                         tr("Out of memory; cannot list presets"));
                 break;
             }
             if (ui.count) memcpy(names, ui.names, ui.count * 256);
@@ -449,7 +450,8 @@ static void list_files(const char *folder, const char *extension) {
     }
     closedir(dir);
     if (ui.count) qsort(ui.names, ui.count, 256, compare_names);
-    if (!ui.count && !ui.status[0]) snprintf(ui.status, sizeof(ui.status), "No presets found");
+    if (!ui.count && !ui.status[0])
+        snprintf(ui.status, sizeof(ui.status), "%s", tr("No presets found"));
 }
 
 /* File name in ui.destination: sizeof skips PEQ_SAVED and its "/". */
@@ -478,24 +480,26 @@ checked:
     if (!typed)
         ui.screen = RENAMES;
     else if (!*t || *t == '.' || *c)
-        snprintf(ui.status, sizeof(ui.status), "Name not allowed; preset kept");
+        snprintf(ui.status, sizeof(ui.status), "%s", tr("Name not allowed; preset kept"));
     else if (!strcmp(t, old))
         return;
     else if (snprintf(to, sizeof to, PEQ_SAVED "/%s.peq", t), strcasecmp(t, old) && !access(to, 0))
-        snprintf(ui.status, sizeof(ui.status), "Name taken; preset kept");
+        snprintf(ui.status, sizeof(ui.status), "%s", tr("Name taken; preset kept"));
     else if (rename(ui.destination, to))
-        snprintf(ui.status, sizeof(ui.status), "Rename failed; preset kept");
+        snprintf(ui.status, sizeof(ui.status), "%s", tr("Rename failed; preset kept"));
     else {
         if (!strcmp(ui.name, old)) snprintf(ui.name, sizeof(ui.name), "%s", t);
         if (!strcmp(ui.applied, old)) snprintf(ui.applied, sizeof(ui.applied), "%s", t);
-        snprintf(ui.status, sizeof(ui.status), "Renamed to %.100s", t);
+        snprintf(ui.status, sizeof(ui.status), tr("Renamed to %.100s"), t);
     }
 }
 
 /* Stock's genre presets, built in: reset_user_eq's table (modes 4-11), in dB over the ten default
- * bands. Picking one loads it into the editor as a saved preset does; nothing is written. */
-static const char stock_names[][10] = { "Pop",   "Rock",  "Dance",     "Blues",
-                                        "Metal", "Vocal", "Classical", "Jazz" };
+ * bands. Picking one loads it into the editor as a saved preset does; nothing is written. Only
+ * the Stock presets rows say a name translated: the editor keeps it English, as ui.name is a saved
+ * preset's file name too. */
+static const char stock_names[][10] = { N_("Pop"),   N_("Rock"),  N_("Dance"),     N_("Blues"),
+                                        N_("Metal"), N_("Vocal"), N_("Classical"), N_("Jazz") };
 static const signed char stock_gains[][10] = {
     { 3, 1, 0, -2, -4, -4, -2, 0, 1, 2 }, { -2, 0, 2, 4, -2, -2, 0, 0, 4, 4 },
     { -2, 3, 4, 1, -2, -2, 0, 0, 4, 4 },  { -2, 0, 2, 1, 0, 0, 0, 0, -2, -4 },
@@ -512,7 +516,7 @@ static void load_draft(peq_preset *p, const char *name, int length) {
     ui.dirty = 1;
     snprintf(ui.name, sizeof(ui.name), "%.*s", length, name);
     ui.screen = HOME;
-    snprintf(ui.status, sizeof(ui.status), "Preset loaded; choose Apply to activate");
+    snprintf(ui.status, sizeof(ui.status), "%s", tr("Preset loaded; choose Apply to activate"));
 }
 
 /* Search fits above T9's screen y=60 (page y=30), so opening the keyboard won't shift the page. */
@@ -552,8 +556,9 @@ static void save_candidate(int replace) {
         ui.previous = ui.screen;
         ui.screen = CONFIRM;
     } else
-        snprintf(ui.status, sizeof(ui.status),
-                 result ? "Preset saved; active EQ unchanged" : "Save failed; settings unchanged");
+        snprintf(ui.status, sizeof(ui.status), "%s",
+                 result ? tr("Preset saved; active EQ unchanged")
+                        : tr("Save failed; settings unchanged"));
 }
 
 /* The draft into the saved state under its name, playing if it shows On or on is set (Simple's
@@ -668,7 +673,7 @@ static int action(void *ctx, event_t *event) {
         if (eq_commit(&s))
             ui.draft.bypass = s.mode != EQ_PEQ;
         else
-            snprintf(ui.status, sizeof(ui.status), "Switch failed; EQ unchanged");
+            snprintf(ui.status, sizeof(ui.status), "%s", tr("Switch failed; EQ unchanged"));
     } else if (id == PER_OUTPUT)
         ringnav_eq_output_toggle();
     else if (id == ENABLE)
@@ -686,8 +691,8 @@ static int action(void *ctx, event_t *event) {
         if (*value < (k ? 0.1 : 20)) *value = k ? 0.1 : 20;
         if (*value > (k ? 10 : 20000)) *value = k ? 10 : 20000;
     } else if (id == APPLY) {
-        snprintf(ui.status, sizeof(ui.status),
-                 apply(0) ? "Applied" : "Apply failed; active EQ unchanged");
+        snprintf(ui.status, sizeof(ui.status), "%s",
+                 apply(0) ? tr("Applied") : tr("Apply failed; active EQ unchanged"));
     } else if (id == RESET) {
         /* The draft returns to peq_default; On/Off is live state, not part of the edit. */
         int bypass = ui.draft.bypass;
@@ -696,15 +701,15 @@ static int action(void *ctx, event_t *event) {
         follow_auto();
         ui.name[0] = 0;
         ui.dirty = 1;
-        snprintf(ui.status, sizeof(ui.status), "Reset; choose Apply to activate");
+        snprintf(ui.status, sizeof(ui.status), "%s", tr("Reset; choose Apply to activate"));
     } else if (id == YES) {
         ui.screen = ui.previous;
         if (ui.screen != DELETES) save_candidate(1);
         /* Saved presets are copies; the active EQ and the editor draft are untouched. */
         else if (unlink(ui.destination))
-            snprintf(ui.status, sizeof(ui.status), "Delete failed; preset kept");
+            snprintf(ui.status, sizeof(ui.status), "%s", tr("Delete failed; preset kept"));
         else
-            snprintf(ui.status, sizeof(ui.status), "Deleted %.100s; active EQ unchanged",
+            snprintf(ui.status, sizeof(ui.status), tr("Deleted %.100s; active EQ unchanged"),
                      deleting());
     } else if (id == CANCEL)
         ui.screen = ui.previous;
@@ -739,7 +744,8 @@ static int action(void *ctx, event_t *event) {
             peq_error error;
             snprintf(path, sizeof(path), PEQ_IMPORT "/%s", ui.names[file]);
             if (!peq_import_file(path, &ui.candidate, &error))
-                snprintf(ui.status, sizeof(ui.status), "Line %u: %s", error.line, error.reason);
+                snprintf(ui.status, sizeof(ui.status), tr("Line %u: %s"), error.line,
+                         tr(error.reason)); /* peq.c's reasons, marked N_ */
             else {
                 unsigned n = strlen(ui.names[file]) - 4;
                 snprintf(ui.destination, sizeof(ui.destination), PEQ_SAVED "/%.*s.peq", (int)n,
@@ -760,7 +766,8 @@ static int action(void *ctx, event_t *event) {
             if (peq_load(path, &p))
                 load_draft(&p, ui.names[file], (int)strlen(ui.names[file]) - 4);
             else
-                snprintf(ui.status, sizeof(ui.status), "Cannot read preset; settings unchanged");
+                snprintf(ui.status, sizeof(ui.status), "%s",
+                         tr("Cannot read preset; settings unchanged"));
         }
     }
     if (edit) { /* ENABLE, TYPE, RAISE, LOWER, TYPED, CHANNEL and a picked gain */
@@ -777,7 +784,7 @@ static int action(void *ctx, event_t *event) {
         ui.tab = SIMPLE;
         ui.status[0] = 0;
         e3.focus = E3_PRESETS;
-        e3.status = ok ? 0 : "Apply failed; active EQ unchanged";
+        e3.status = ok ? 0 : tr("Apply failed; active EQ unchanged");
     }
     if (screen != ui.screen) ui.file_page = 0;
     if (!ui.timer) ui.timer = timer_add(render, 0, 1);
@@ -857,74 +864,83 @@ static int render(const void *unused) {
         widget_on(ui.graph, EVT_POINTER_DOWN, e3_touch, 0);
         widget_on(ui.graph, EVT_POINTER_ABORT, e3_touch, 0);
     }
-    char text[160], value[32];
+    char text[sizeof ui.status], value[96]; /* text holds a status; value a translated Auto */
     int n = 0;
-    static const char *const types[] = { "Peaking", "Low shelf", "High shelf" };
+    static const char *const types[] = { N_("Peaking"), N_("Low shelf"), N_("High shelf") };
     /* No Back row: Return steps back on every screen (keyup). */
     if (ui.screen == HOME) {
-        row(view, n++, ui.dirty ? "Apply changes" : "Nothing to apply", ui.dirty ? APPLY : -1);
-        row(view, n++, "Reset to defaults", RESET);
-        list_toggle(row(view, n++, "", BYPASS), "Enabled", !ui.draft.bypass);
-        list_toggle(row(view, n++, "", PER_OUTPUT), "EQ per Output", pod_value(POD_EQ_OUTPUT));
+        row(view, n++, ui.dirty ? tr("Apply changes") : tr("Nothing to apply"),
+            ui.dirty ? APPLY : -1);
+        row(view, n++, tr("Reset to defaults"), RESET);
+        list_toggle(row(view, n++, "", BYPASS), tr("Enabled"), !ui.draft.bypass);
+        list_toggle(row(view, n++, "", PER_OUTPUT), tr("EQ per Output"), pod_value(POD_EQ_OUTPUT));
         /* Balance turns one side down: R 1.0 dB is the left 1 dB quieter. */
-        snprintf(value, sizeof(value),
-                 __builtin_fabs(ui.draft.balance) >= 0.05 ? "%s %.1f dB" : "Centre",
-                 ui.draft.balance > 0 ? "R" : "L", __builtin_fabs(ui.draft.balance));
-        row_dim(view, n++, "Balance", value, BALANCE, INTO);
+        if (__builtin_fabs(ui.draft.balance) >= 0.05)
+            snprintf(value, sizeof(value), "%s %.1f dB", ui.draft.balance > 0 ? "R" : "L",
+                     __builtin_fabs(ui.draft.balance));
+        else
+            snprintf(value, sizeof(value), "%s", tr("Centre"));
+        row_dim(view, n++, tr("Balance"), value, BALANCE, INTO);
         if (on_auto())
             auto_text(value, sizeof(value));
         else
             snprintf(value, sizeof(value), "%.1f dB", ui.draft.preamp);
-        widget_t *shown = row_dim(view, n++, "Preamp", value, PREAMP, INTO);
+        widget_t *shown = row_dim(view, n++, tr("Preamp"), value, PREAMP, INTO);
         /* At 20px two double-digit cuts overrun the iPod's 280px column beside the caption and
          * chevron; at 16 the longest, -60.0 at both, leaves 6px (the stock font's widths), and a
          * theme's row font, its caption wider, 4 at 15. */
         if (on_auto()) widget_set_prop_int(shown, "style:normal:font_size", rh == 48 ? 16 : 15);
         /* the draft's preset */
-        row_dim(view, n++, "Presets", ui.name[0] ? ui.name : 0, MENU, INTO | LONG);
+        row_dim(view, n++, tr("Presets"), ui.name[0] ? ui.name : 0, MENU, INTO | LONG);
         /* 16px band captions leave room for the gain and chevron, even at 20000 Hz on one channel.
          */
         for (int i = 0; i < PEQ_BANDS && (i < 10 || i <= ui.draft.count); ++i) {
             peq_band *b = &ui.draft.bands[i];
-            snprintf(text, sizeof(text), "%d  %s %.0f Hz%s", i + 1, types[b->type], b->frequency,
-                     (const char *[]){ "", "", " L", " R" }[b->enabled]);
-            snprintf(value, sizeof(value), b->enabled ? "%+.1f dB" : "Off", b->gain);
+            snprintf(text, sizeof(text), "%d  %s %.0f Hz%s", i + 1, tr(types[b->type]),
+                     b->frequency, (const char *[]){ "", "", " L", " R" }[b->enabled]);
+            if (b->enabled)
+                snprintf(value, sizeof(value), "%+.1f dB", b->gain);
+            else
+                snprintf(value, sizeof(value), "%s", tr("Off"));
             fit(row_dim(view, n++, text, value, i, (b->enabled ? 0 : DIM) | INTO | SMALL));
         }
     } else if (ui.screen == BAND) {
         peq_band *b = &ui.draft.bands[ui.band];
         /* Imported missing bands already have valid defaults from peq_default. */
         if (ui.draft.count <= ui.band) ui.draft.count = ui.band + 1;
-        list_toggle(row(view, n++, "", ENABLE), "Band", b->enabled);
+        list_toggle(row(view, n++, "", ENABLE), tr("Band"), b->enabled);
         if (b->enabled)
-            row_dim(view, n++, "Channels",
-                    (const char *[]){ 0, "Both", "Left", "Right" }[b->enabled], CHANNEL, 0);
-        row_dim(view, n++, "Type", types[b->type], TYPE, 0);
+            row_dim(view, n++, tr("Channels"),
+                    (const char *[]){ 0, tr("Both"), tr("Left"), tr("Right") }[b->enabled], CHANNEL,
+                    0);
+        row_dim(view, n++, tr("Type"), tr(types[b->type]), TYPE, 0);
         snprintf(value, sizeof(value), "%.0f Hz", b->frequency);
-        row_dim(view, n++, "Frequency", value, FREQUENCY, INTO);
+        row_dim(view, n++, tr("Frequency"), value, FREQUENCY, INTO);
         snprintf(value, sizeof(value), "%+.1f dB", b->gain);
-        row_dim(view, n++, "Gain", value, GAIN, INTO);
+        row_dim(view, n++, tr("Gain"), value, GAIN, INTO);
         snprintf(value, sizeof(value), "%.2f", b->q);
         row_dim(view, n++, "Q", value, QUALITY, INTO);
     } else if (ui.screen == ADJUST) {
         /* Row 0 names the value; it and the centre button open the keyboard on the edit over the
          * title (below). */
-        snprintf(text, sizeof(text), ui.adjust == QUALITY ? "Band %d Q" : "Band %d Frequency (Hz)",
+        snprintf(text, sizeof(text),
+                 ui.adjust == QUALITY ? tr("Band %d Q") : tr("Band %d Frequency (Hz)"),
                  ui.band + 1);
         row(view, n++, text, KEYBOARD);
         if (ui.adjust == QUALITY)
             snprintf(value, sizeof(value), "0.05");
         else
             snprintf(value, sizeof(value), "%d Hz", steps[ui.step]);
-        row_dim(view, n++, "Raise", value, RAISE, 0);
-        row_dim(view, n++, "Lower", value, LOWER, 0);
-        if (ui.adjust != QUALITY) row_dim(view, n++, "Step", value, STEP, 0);
+        row_dim(view, n++, tr("Raise"), value, RAISE, 0);
+        row_dim(view, n++, tr("Lower"), value, LOWER, 0);
+        if (ui.adjust != QUALITY) row_dim(view, n++, tr("Step"), value, STEP, 0);
     } else if (ui.screen == PICK) {
         for (int i = 0; i < picks[ui.pick - BALANCE].rows; ++i) {
             double v = picks[ui.pick - BALANCE].first + picks[ui.pick - BALANCE].step * i;
-            if (ui.pick == BALANCE) /* L 12.0 dB to R 12.0 dB */
-                snprintf(text, sizeof(text), i == 24 ? "Centre" : "%s %.1f dB", v < 0 ? "L" : "R",
-                         __builtin_fabs(v));
+            if (ui.pick == BALANCE && i == 24)
+                snprintf(text, sizeof(text), "%s", tr("Centre"));
+            else if (ui.pick == BALANCE) /* L 12.0 dB to R 12.0 dB */
+                snprintf(text, sizeof(text), "%s %.1f dB", v < 0 ? "L" : "R", __builtin_fabs(v));
             else if (ui.pick == PREAMP && !i)
                 auto_text(text, sizeof(text));
             else
@@ -934,28 +950,28 @@ static int render(const void *unused) {
         }
     } else if (ui.screen ==
                NAMING) { /* the name in the edit over the title (below); the row is Done */
-        row(view, n++, "Rename", NAMED);
+        row(view, n++, tr("Rename"), NAMED);
     } else if (ui.screen == CONFIRM && ui.previous == DELETES) {
-        snprintf(text, sizeof(text), "Delete %.100s? Confirm", deleting());
+        snprintf(text, sizeof(text), tr("Delete %.100s? Confirm"), deleting());
         fit(row(view, n++, text, YES));
-        row(view, n++, "Cancel", CANCEL);
+        row(view, n++, tr("Cancel"), CANCEL);
     } else if (ui.screen == CONFIRM) {
-        fit(row(view, n++, "Replace existing preset? Confirm", YES));
-        row(view, n++, "Cancel replacement", CANCEL);
+        fit(row(view, n++, tr("Replace existing preset? Confirm"), YES));
+        row(view, n++, tr("Cancel replacement"), CANCEL);
     } else if (ui.screen == STOCKS) {
-        for (int i = 0; i < STOCK_N; ++i) row(view, n++, stock_names[i], i);
+        for (int i = 0; i < STOCK_N; ++i) row(view, n++, tr(stock_names[i]), i);
     } else if (ui.screen == SAVES) {
         for (int i = 0; i < 10; ++i) {
-            snprintf(text, sizeof(text), "Save as Manual %02d", i + 1);
+            snprintf(text, sizeof(text), tr("Save as Manual %02d"), i + 1);
             row(view, n++, text, i);
         }
     } else {
         if (ui.screen == PRESETS) {
-            row_dim(view, n++, "Stock presets", 0, STOCK, INTO);
-            row_dim(view, n++, "Import from SD /EQ", 0, IMPORT, INTO);
-            row_dim(view, n++, "Save editor preset", 0, SAVE, INTO);
-            row_dim(view, n++, "Rename a preset", 0, RENAME, INTO);
-            row_dim(view, n++, "Delete a preset", 0, DELETE, INTO);
+            row_dim(view, n++, tr("Stock presets"), 0, STOCK, INTO);
+            row_dim(view, n++, tr("Import from SD /EQ"), 0, IMPORT, INTO);
+            row_dim(view, n++, tr("Save editor preset"), 0, SAVE, INTO);
+            row_dim(view, n++, tr("Rename a preset"), 0, RENAME, INTO);
+            row_dim(view, n++, tr("Delete a preset"), 0, DELETE, INTO);
         }
         list_files(ui.screen == IMPORTS ? PEQ_IMPORT : PEQ_SAVED,
                    ui.screen == IMPORTS ? ".txt" : ".peq");
@@ -965,8 +981,8 @@ static int render(const void *unused) {
             ui.file_page = last, offset = 0;
             widget_set_prop_int(view, "_ringnav_index", 0); /* set above, from the page that went */
         }
-        if (ui.file_page) row(view, n++, "Previous page", FILE_PREV);
-        if (ui.file_page < last) row(view, n++, "Next page", FILE_NEXT);
+        if (ui.file_page) row(view, n++, tr("Previous page"), FILE_PREV);
+        if (ui.file_page < last) row(view, n++, tr("Next page"), FILE_NEXT);
         for (int i = 0, start = ui.file_page * FILE_PAGE; i < FILE_PAGE && start + i < ui.count;
              ++i)
             row(view, n++, ui.names[start + i], i);
@@ -988,18 +1004,18 @@ static int render(const void *unused) {
     if (ui.status[0])
         snprintf(text, sizeof(text), "%s", ui.status);
     else if (ui.screen == BAND)
-        snprintf(text, sizeof(text), "Band %d", ui.band + 1);
+        snprintf(text, sizeof(text), tr("Band %d"), ui.band + 1);
     else if (ui.screen == PICK && ui.pick == GAIN)
-        snprintf(text, sizeof(text), "Band %d Gain", ui.band + 1);
+        snprintf(text, sizeof(text), tr("Band %d Gain"), ui.band + 1);
     else if (ui.screen == PICK)
-        snprintf(text, sizeof(text), ui.pick == PREAMP ? "Preamp" : "Balance");
+        snprintf(text, sizeof(text), "%s", ui.pick == PREAMP ? tr("Preamp") : tr("Balance"));
     else if ((ui.screen == IMPORTS || ui.screen == PRESETS || ui.screen == DELETES ||
               ui.screen == RENAMES) &&
              ui.count > FILE_PAGE)
-        snprintf(text, sizeof(text), "Presets %d/%d", ui.file_page + 1,
+        snprintf(text, sizeof(text), tr("Presets %d/%d"), ui.file_page + 1,
                  (ui.count - 1) / FILE_PAGE + 1);
     else if (ui.screen != HOME && ui.screen != ADJUST && ui.screen != NAMING)
-        snprintf(text, sizeof(text), "Presets");
+        snprintf(text, sizeof(text), "%s", tr("Presets"));
     widget_set_text_utf8(title, text);
     /* The value or name in an edit over the title, after it so a tap reaches the edit, as the
      * search fields': its bottom (page y 28) clears T9's top (page y 30), so the keyboard neither
@@ -1300,7 +1316,7 @@ static int e3_flush(void) {
     eq_load(&s);
     e3_preset(&s.eq3);
     if (!eq_save(&s)) {
-        e3.status = "Save failed; EQ unchanged"; /* kept dirty: the next edit tries again */
+        e3.status = tr("Save failed; EQ unchanged"); /* kept dirty: the next edit tries again */
         return 0;
     }
     e3.dirty = 0;
@@ -1337,7 +1353,7 @@ static void e3_switch(int on) {
     s.mode = on ? EQ_3 : EQ_OFF;
     s.hold = !on && e3.on;
     if (!eq_commit(&s)) {
-        e3.status = "Switch failed; EQ unchanged";
+        e3.status = tr("Switch failed; EQ unchanged");
         return;
     }
     e3.on = on;
@@ -1532,16 +1548,17 @@ static void e3_paint(canvas_t *canvas) {
     /* The switch names the preset playing: 12 bytes at most, cut on a UTF-8 boundary, at 16px past
      * 9 */
     char preset[16];
-    int n = snprintf(preset, sizeof preset, "%s", ui.applied[0] ? ui.applied : "Advanced");
+    int n = snprintf(preset, sizeof preset, "%s", ui.applied);
     if (n > 12) {
         n = 12;
         while (n && (preset[n] & 0xc0) == 0x80) --n; /* preset[12] continues a character: drop it */
         preset[n] = 0;
     }
-    const char *const names[] = { peq     ? preset
-                                  : e3.on ? "Enabled: On"
-                                          : "Enabled: Off",
-                                  "Presets", "R" };
+    const char *const names[] = { peq && n ? preset
+                                  : peq    ? tr("Advanced")
+                                  : e3.on  ? tr("Enabled: On")
+                                           : tr("Enabled: Off"),
+                                  tr("Presets"), "R" };
     for (int i = 0; i < 3; ++i) {
         int x = e3_button[i][0], w = e3_button[i][1];
         e3_box(canvas, x, E3_BUTTONS, w, 40, e3.focus == E3_SWITCH + i ? 0x333333 : 0x1a1a1a);
@@ -1549,10 +1566,10 @@ static void e3_paint(canvas_t *canvas) {
         caption(canvas, names[i], x, E3_BUTTONS, w, 40, !i && peq && n > 9 ? 16 : 20, 0xffffffffu);
     }
     for (int i = 0; i < 3; ++i) {
-        static const char *const bands[] = { "Low", "Mid", "High" };
+        static const char *const bands[] = { N_("Low"), N_("Mid"), N_("High") };
         int x = 62 + 125 * i, y = e3_y(e3.gain[i]), focus = e3.focus == E3_LOW + i;
         if (focus) e3_box(canvas, x - 56, E3_SLIDERS, 112, e3_bottom() + 36 - E3_SLIDERS, 0x1a1a1a);
-        caption(canvas, bands[i], x - 56, E3_SLIDERS, 112, 28, 20, peq ? CF_GREY : 0xffffffffu);
+        caption(canvas, tr(bands[i]), x - 56, E3_SLIDERS, 112, 28, 20, peq ? CF_GREY : 0xffffffffu);
         e3_box(canvas, x - 2, e3_top(), 4, e3_bottom() - e3_top(), 0x333333);
         e3_box(canvas, x - 3, y < zero ? y : zero, 6, y < zero ? zero - y : y - zero + 1, tone);
         e3_box(canvas, x - 20, y - 5, 40, 10,
@@ -1576,7 +1593,7 @@ static void tabs_paint(canvas_t *canvas) {
     for (int i = 0; i < 2; ++i) {
         int x = i ? 191 : 8, shown = i == !simple;
         if (focus && !shown) e3_box(canvas, x, 4, 176, 40, 0x333333);
-        caption(canvas, i ? "Advanced" : "Simple", x, 4, 176, 40, 20,
+        caption(canvas, i ? tr("Advanced") : tr("Simple"), x, 4, 176, 40, 20,
                 shown ? 0xffffffffu : CF_GREY);
         if (shown) e3_box(canvas, x + 40, 42, 96, 3, TONE);
     }

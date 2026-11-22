@@ -430,7 +430,8 @@ static void standby_poll(void) {
 #define LOGO_ROT "/tmp/boot-logo.jpg"
 #define LOGO_MAX (512 * 1024)
 #define LOGO_SEEN "/mnt/data/boot-logo.bad" /* the refused card file: size, mtime */
-static const char logo_refused[] = "Boot logo must be a 320x375 JPEG";
+/* logo_sync's texts, a thread's: translated where logo_poll toasts them */
+static const char logo_refused[] = N_("Boot logo must be a 320x375 JPEG");
 /* tools/build.py's jpeg_size: w << 16 | h of a baseline 8-bit three-component JPEG, the only kind
  * stock display_logo draws right; 0 for anything else. */
 static unsigned jpeg_size(const unsigned char *b, unsigned n) {
@@ -482,7 +483,7 @@ static void *logo_sync(void *unused) {
             blob_io(LOGO_DST, LOGO_DST ".tmp", b, n, 1))
             err = 0; /* the same bytes are not written again each boot */
         else
-            unlink(LOGO_DST ".tmp"), err = "Could not save boot logo";
+            unlink(LOGO_DST ".tmp"), err = N_("Could not save boot logo");
     }
     free(b), free(old);
     unsigned sb[36], seen[2], key[2];
@@ -515,7 +516,7 @@ int card_mounted(void) {
 static void logo_poll(void) {
     unsigned now = time_now_ms();
     const char *said = pw.logo_err;
-    if (said) pw.logo_err = 0, toast(said); /* first: a toast's dialog polls here again */
+    if (said) pw.logo_err = 0, toast(tr(said)); /* first: a toast's dialog polls here again */
     /* Mount edges (boot, USB storage's end) come lit; dark it keeps its edge for the first lit
      * poll. */
     if (!g_backlight_status || pw.logo_busy || (pw.logo_at && now - pw.logo_at < CHARGE_POLL_MS))

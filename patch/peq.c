@@ -76,7 +76,7 @@ int peq_parse(const char *text, unsigned size, peq_preset *out, peq_error *error
     unsigned pos = 0, line = 0, preamp_line = 0;
     int scope = 1;          /* APO Channel: 1 both, 2 left, 3 right, as peq_band.enabled */
     double side[4] = { 0 }; /* Preamp under Channel: L or R */
-    if (size > PEQ_FILE_LIMIT) return error_at(error, 1, "file exceeds 16384 bytes");
+    if (size > PEQ_FILE_LIMIT) return error_at(error, 1, N_("file exceeds 16384 bytes"));
     if (size >= 3 && (unsigned char)text[0] == 239 && (unsigned char)text[1] == 187 &&
         (unsigned char)text[2] == 191)
         pos = 3;
@@ -85,8 +85,9 @@ int peq_parse(const char *text, unsigned size, peq_preset *out, peq_error *error
         unsigned length = 0;
         ++line;
         while (pos < size && text[pos] != '\n') {
-            if (length == PEQ_LINE_LIMIT) return error_at(error, line, "line exceeds 512 bytes");
-            if (!text[pos]) return error_at(error, line, "embedded NUL");
+            if (length == PEQ_LINE_LIMIT)
+                return error_at(error, line, N_("line exceeds 512 bytes"));
+            if (!text[pos]) return error_at(error, line, N_("embedded NUL"));
             buf[length++] = text[pos++];
         }
         if (pos < size) ++pos;
@@ -98,7 +99,7 @@ int peq_parse(const char *text, unsigned size, peq_preset *out, peq_error *error
                 ++s;
                 continue;
             }
-            if (n == 16) return error_at(error, line, "unsupported filter form");
+            if (n == 16) return error_at(error, line, N_("unsupported filter form"));
             /* A colon is a separate token, even in "Filter 1:" and "Preamp:". */
             if (*s == ':') {
                 t[n++] = ":";
@@ -110,7 +111,7 @@ int peq_parse(const char *text, unsigned size, peq_preset *out, peq_error *error
             char delimiter = *s;
             if (*s) *s++ = 0;
             if (delimiter == ':') {
-                if (n == 16) return error_at(error, line, "unsupported filter form");
+                if (n == 16) return error_at(error, line, N_("unsupported filter form"));
                 t[n++] = ":";
             }
             if (delimiter == '#') break;
@@ -119,9 +120,9 @@ int peq_parse(const char *text, unsigned size, peq_preset *out, peq_error *error
         if (!strcmp(t[0], "Preamp")) {
             double gain;
             if (n != 4 || strcmp(t[1], ":") || strcmp(t[3], "dB"))
-                return error_at(error, line, "expected Preamp: <gain> dB");
+                return error_at(error, line, N_("expected Preamp: <gain> dB"));
             if (!peq_number(t[2], &gain) || !between(gain, -60, 24))
-                return error_at(error, line, "preamp outside -60..24 dB or invalid number");
+                return error_at(error, line, N_("preamp outside -60..24 dB or invalid number"));
             if (scope == 1)
                 p.preamp += gain;
             else
@@ -132,7 +133,7 @@ int peq_parse(const char *text, unsigned size, peq_preset *out, peq_error *error
         if (!strcmp(t[0], "Channel")) {
             int l = 0, r = 0;
             if (n < 3 || strcmp(t[1], ":"))
-                return error_at(error, line, "expected Channel: L, R or all");
+                return error_at(error, line, N_("expected Channel: L, R or all"));
             for (int i = 2; i < n; ++i) {
                 if (!strcmp(t[i], "L"))
                     l = 1;
@@ -141,27 +142,27 @@ int peq_parse(const char *text, unsigned size, peq_preset *out, peq_error *error
                 else if (!strcmp(t[i], "all"))
                     l = r = 1;
                 else
-                    return error_at(error, line, "only channels L, R and all are supported");
+                    return error_at(error, line, N_("only channels L, R and all are supported"));
             }
             scope = l && r ? 1 : l ? 2 : 3;
             continue;
         }
-        if (strcmp(t[0], "Filter")) return error_at(error, line, "unsupported command");
+        if (strcmp(t[0], "Filter")) return error_at(error, line, N_("unsupported command"));
         int k = 1;
         if (n > 1 && strcmp(t[1], ":")) {
             for (s = t[1]; *s; ++s)
-                if (*s < '0' || *s > '9') return error_at(error, line, "invalid filter label");
+                if (*s < '0' || *s > '9') return error_at(error, line, N_("invalid filter label"));
             ++k;
         }
         if (n <= k || strcmp(t[k++], ":"))
-            return error_at(error, line, "expected Filter [number]:");
+            return error_at(error, line, N_("expected Filter [number]:"));
         if (n - k == 2 && !strcmp(t[k + 1], "None")) continue; /* REW/APO empty slot */
-        if (n - k != 8 && n - k != 10) return error_at(error, line, "unsupported filter form");
+        if (n - k != 8 && n - k != 10) return error_at(error, line, N_("unsupported filter form"));
         peq_band b = { 0, 0, 0, 0, 0.7071067811865476 };
         if (!strcmp(t[k], "ON"))
             b.enabled = scope;
         else if (strcmp(t[k], "OFF"))
-            return error_at(error, line, "expected ON or OFF");
+            return error_at(error, line, N_("expected ON or OFF"));
         ++k;
         if (!strcmp(t[k], "PK") || !strcmp(t[k], "PEQ"))
             b.type = 0;
@@ -170,20 +171,20 @@ int peq_parse(const char *text, unsigned size, peq_preset *out, peq_error *error
         else if (!strcmp(t[k], "HS") || !strcmp(t[k], "HSC"))
             b.type = 2;
         else
-            return error_at(error, line, "unsupported filter type");
+            return error_at(error, line, N_("unsupported filter type"));
         int corner = !t[k][2]; /* APO: LS/HS take a corner frequency, LSC/HSC the centre */
         ++k;
         if (strcmp(t[k], "Fc") || strcmp(t[k + 2], "Hz") || strcmp(t[k + 3], "Gain") ||
             strcmp(t[k + 5], "dB"))
-            return error_at(error, line, "expected Fc <Hz> Hz Gain <dB> dB");
+            return error_at(error, line, N_("expected Fc <Hz> Hz Gain <dB> dB"));
         if (!peq_number(t[k + 1], &b.frequency) || !peq_number(t[k + 4], &b.gain))
-            return error_at(error, line, "invalid frequency or gain number");
+            return error_at(error, line, N_("invalid frequency or gain number"));
         k += 6;
         if (k < n) {
             if (strcmp(t[k], "Q") || !peq_number(t[k + 1], &b.q))
-                return error_at(error, line, "expected Q <number>");
+                return error_at(error, line, N_("expected Q <number>"));
         } else if (!b.type)
-            return error_at(error, line, "peaking filter requires Q");
+            return error_at(error, line, N_("peaking filter requires Q"));
         if (b.type && valid_band(&b)) {
             /* Match Equalizer APO: no Q means slope 0.9 at Fc; LS/HS with Q shift the corner to the
              * centre. */
@@ -201,9 +202,9 @@ int peq_parse(const char *text, unsigned size, peq_preset *out, peq_error *error
         if (!valid_band(&b)) {
             if (!b.enabled)
                 continue; /* APO ignores OFF filters; exporters fill blank slots with Fc 0 Q 0 */
-            return error_at(error, line, "range: 20..20000 Hz, -24..24 dB, Q 0.1..10");
+            return error_at(error, line, N_("range: 20..20000 Hz, -24..24 dB, Q 0.1..10"));
         }
-        if (p.count == PEQ_BANDS) return error_at(error, line, "more than 30 bands");
+        if (p.count == PEQ_BANDS) return error_at(error, line, N_("more than 30 bands"));
         p.bands[p.count++] = b;
     }
     /* Per-channel preamps become the louder one's common preamp plus a balance that turns the other
@@ -211,9 +212,9 @@ int peq_parse(const char *text, unsigned size, peq_preset *out, peq_error *error
     p.preamp += side[2] > side[3] ? side[2] : side[3];
     p.balance = side[3] - side[2];
     if (!between(p.preamp, -60, 24))
-        return error_at(error, preamp_line, "summed preamp outside -60..24 dB");
+        return error_at(error, preamp_line, N_("summed preamp outside -60..24 dB"));
     if (!between(p.balance, -12, 12))
-        return error_at(error, preamp_line, "L/R preamp differ by more than 12 dB");
+        return error_at(error, preamp_line, N_("L/R preamp differ by more than 12 dB"));
     p.automatic = preamp_line ? 2 : 1; /* the file's preamp, as if picked; without one, Auto */
     *out = p;                          /* Commit only after the complete file validates. */
     return 1;
@@ -221,16 +222,16 @@ int peq_parse(const char *text, unsigned size, peq_preset *out, peq_error *error
 
 int peq_import_file(const char *path, peq_preset *out, peq_error *error) {
     char *text = calloc(1, PEQ_FILE_LIMIT + 1);
-    if (!text) return error_at(error, 1, "out of memory");
+    if (!text) return error_at(error, 1, N_("out of memory"));
     void *f = fopen(path, "rb");
     if (!f) {
         free(text);
-        return error_at(error, 1, "cannot open file");
+        return error_at(error, 1, N_("cannot open file"));
     }
     unsigned n = fread(text, 1, PEQ_FILE_LIMIT + 1, f);
     int bad = ferror(f);
     if (fclose(f)) bad = 1;
-    int ok = bad ? error_at(error, 1, "file read failed") : peq_parse(text, n, out, error);
+    int ok = bad ? error_at(error, 1, N_("file read failed")) : peq_parse(text, n, out, error);
     free(text);
     return ok;
 }

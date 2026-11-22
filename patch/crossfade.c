@@ -52,9 +52,9 @@ static void settings(void) {
 }
 
 static void row_text(widget_t *label) {
-    char t[32] = "Crossfade: Off";
-    if (xf.on) tk_snprintf(t, sizeof t, "Crossfade: %d s", xf.seconds);
-    widget_set_text_utf8(label, t);
+    char t[96];
+    tk_snprintf(t, sizeof t, tr("Crossfade: %d s"), xf.seconds);
+    widget_set_text_utf8(label, xf.on ? t : tr("Crossfade: Off"));
 }
 
 /* Playback's row (navigation.c ringnav_audioset makes it): the label, named for refresh(). */
@@ -65,8 +65,8 @@ void xfade_row(widget_t *label) {
 }
 
 static void wheel_text(widget_t *label) {
-    char t[32];
-    tk_snprintf(t, sizeof t, "Wheel Sensitivity: %d%%", wheel_pct());
+    char t[96];
+    tk_snprintf(t, sizeof t, tr("Wheel Sensitivity: %d%%"), wheel_pct());
     widget_set_text_utf8(label, t);
 }
 
@@ -91,9 +91,9 @@ int resume_min(void) {
 }
 
 static void rs_text(widget_t *label) {
-    char t[32] = "Resume Songs: Off";
-    if (resume_min()) tk_snprintf(t, sizeof t, "Resume Songs: %d min", resume_min());
-    widget_set_text_utf8(label, t);
+    char t[96];
+    tk_snprintf(t, sizeof t, tr("Resume Songs: %d min"), resume_min());
+    widget_set_text_utf8(label, resume_min() ? t : tr("Resume Songs: Off"));
 }
 
 /* Playback's row (navigation.c ringnav_audioset makes it): the label, named for refresh(). */
@@ -103,12 +103,11 @@ void resume_row(widget_t *label) {
 }
 
 static void night_text(widget_t *label) {
-    char t[32] = "Night Shift: Off";
-    if (night_on() == 2)
-        tk_snprintf(t, sizeof t, "Night Shift: Auto");
-    else if (night_on())
-        tk_snprintf(t, sizeof t, "Night Shift: %dK", night_kelvin());
-    widget_set_text_utf8(label, t);
+    char t[96];
+    tk_snprintf(t, sizeof t, tr("Night Shift: %dK"), night_kelvin());
+    widget_set_text_utf8(label, night_on() == 2 ? tr("Night Shift: Auto")
+                                : night_on()    ? t
+                                                : tr("Night Shift: Off"));
 }
 
 /* Display's row (navigation.c ringnav_display makes it): the label, named for refresh(). */
@@ -207,7 +206,7 @@ void mono_sync(void) {
     if (xf.mono) peq_chain();
 }
 
-static void mono_text(widget_t *label) { list_toggle(label, "Mono Audio", mono_on()); }
+static void mono_text(widget_t *label) { list_toggle(label, tr("Mono Audio"), mono_on()); }
 
 /* Playback's row (navigation.c ringnav_audioset makes it): the label, kept for mono_click. */
 void mono_row(widget_t *label) {
@@ -222,7 +221,7 @@ int mono_click(void *ctx, event_t *event) {
     return 0;
 }
 
-static void swap_text(void) { list_toggle(xf.swap_label, "Swap L/R", swap_on()); }
+static void swap_text(void) { list_toggle(xf.swap_label, tr("Swap L/R"), swap_on()); }
 void swap_row(widget_t *label) {
     xf.swap_label = label;
     swap_text();
@@ -249,7 +248,7 @@ static void gapless_on(void) {
 static int gapless_click(void *ctx, event_t *event) {
     settings();
     if (!xf.on || !*(volatile unsigned char *)MCL_GAPLESS) return 0;
-    toast("Crossfade needs Gapless");
+    toast(tr("Crossfade needs Gapless"));
     return 11; /* RET_STOP */
 }
 /* Playback's view (navigation.c ringnav_audioset): stock's Gapless row's button, the switch's. */
@@ -296,22 +295,22 @@ static void refresh(int save) {
     if ((row = widget_lookup(window_manager(), NS_ROW, 1))) night_text(row);
     if (!xf.page) return;
     char t[16];
+    const char *shown = t; /* a number, or a word translated */
     if (xf.ctx == 1)
         tk_snprintf(t, sizeof t, "%d%%", wheel_pct());
-    else if (xf.ctx == 2)
-        tk_snprintf(t, sizeof t, xf.rs_min ? "%d min" : "Off", xf.rs_min);
-    else if (xf.ctx == 3) {
-        tk_snprintf(t, sizeof t,
-                    night_on() == 2 ? "Auto"
-                    : night_on()    ? "%dK"
-                                    : "Off",
-                    night_kelvin());
+    else if (xf.ctx == 2) {
+        tk_snprintf(t, sizeof t, "%d min", xf.rs_min);
+        if (!xf.rs_min) shown = tr("Off");
+    } else if (xf.ctx == 3) {
+        tk_snprintf(t, sizeof t, "%dK", night_kelvin());
+        shown = night_on() == 2 ? tr("Auto") : night_on() ? t : tr("Off");
         image_base_set_image(xf.sw, night_on() ? "switch_on" : "switch_off");
     } else {
-        tk_snprintf(t, sizeof t, xf.on ? "%d s" : "Off", xf.seconds);
+        tk_snprintf(t, sizeof t, "%d s", xf.seconds);
+        if (!xf.on) shown = tr("Off");
         image_base_set_image(xf.sw, xf.on ? "switch_on" : "switch_off");
     }
-    widget_set_text_utf8(xf.label, t);
+    widget_set_text_utf8(xf.label, shown);
     if (switched()) slider_tray_dirty(xf.page);
     if (widget_get_prop_int(xf.slider, "value", 0) != value()) {
         xf.setting = 1; /* its value-changed is no release */
@@ -425,10 +424,10 @@ int xfade_open(void *ctx, event_t *event) {
     widget_on(xf.slider, EVT_VALUE_CHANGING, slid, (void *)1L);
     widget_on(xf.slider, EVT_VALUE_CHANGED, slid, 0);
     widget_on(page, EVT_DESTROY, gone, page);
-    widget_set_text_utf8(title, mode == 3   ? "Night Shift"
-                                : mode == 2 ? "Resume Songs"
-                                : wheel     ? "Wheel Sensitivity"
-                                            : "Crossfade");
+    widget_set_text_utf8(title, mode == 3   ? tr("Night Shift")
+                                : mode == 2 ? tr("Resume Songs")
+                                : wheel     ? tr("Wheel Sensitivity")
+                                            : tr("Crossfade"));
     /* Stock shows and enables it only while Boot volume's switch is on: disabled, touch misses the
      * slider and +/- (#140). */
     widget_set_visible(xf.view, 1, 0);

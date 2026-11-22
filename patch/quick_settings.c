@@ -5,7 +5,7 @@
 extern int stock_quicksettings_trampoline(widget_t *, void *);
 
 static void quick_lock_text(widget_t *win) {
-    widget_set_text_utf8(widget_lookup(win, "label_lock", 1), lock_names[lock_choice()]);
+    widget_set_text_utf8(widget_lookup(win, "label_lock", 1), tr(lock_names[lock_choice()]));
     image_base_set_image(widget_lookup(win, "img_lock", 1),
                          g_keylock_flag ? "drop_keylockopen" : "drop_keylock");
 }
@@ -484,7 +484,7 @@ const char *quick_wheel_toggle(widget_t *top) {
     int volume = !quick_volume();
     quick.wheel = 1 + volume;
     write_int_config(volume, "Q2POD", "QSVOLUME");
-    return volume ? "Wheel: Volume" : "Wheel: Brightness";
+    return volume ? tr("Wheel: Volume") : tr("Wheel: Brightness");
 }
 
 /* Stock's swipe down opens Quick Settings at g_dropdown_menu_state 1 and starts its slide only on
