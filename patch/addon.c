@@ -898,7 +898,7 @@ static void game_end(void) {
  * slots are read again, not the lists' order: the toast comes over whatever page is open, whose
  * rows hold their places by name, and a new app sorted in would move each after it on a row. */
 const char *addon_where(const char *id) {
-    static const char *const where[] = { "Streaming", "Library's Games", "Library's Apps" };
+    static const char *const where[] = { "流媒体", "游戏", "资料库的应用" };
     slots_read();
     for (int i = 0; i < ap.n; ++i)
         if (ap.a[i].present && !strcmp(ap.a[i].id, id)) return where[ap.a[i].row];
@@ -1748,7 +1748,7 @@ static void show(void) {
     } else if (l->state == K_ERROR) {
         n = 1 + (app()->nostop || stoppable());
         pg.view = page_list(pg.page, pg.page, 0, l->note, n, 48);
-        page_row_detail(pg.view, 0, l->retry ? "Retry" : "Install it again in Library → App Store",
+        page_row_detail(pg.view, 0, l->retry ? "重试" : "请在 资料库 → 应用商店 重新安装",
                         0, clicked);
         if (app()->nostop)
             page_row_detail(pg.view, 1, "取消", 0, clicked);

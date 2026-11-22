@@ -3,7 +3,7 @@
      own pages: Quick Settings, the slider pages, the message screens, Set Date and Set Time, the confirm
      prompts and the hold menu, Now Playing's marks, the flat volume panel and Home's flat pane. Over Classic's own
      pages the flat look takes Classic's face and its lit tiles' colour. -->
-<theme format="1" id="classic-modern" name="Classic Modern" index="3" extends="classic-light">
+<theme format="1" id="classic-modern" name="经典现代" index="3" extends="classic-light">
   <!-- Quick Settings' cards on a pale grey in the light half, Set Date's fields 6 px apart; the lock screen's info page
        keeps Classic's pane colours -->
   <view name="pages">

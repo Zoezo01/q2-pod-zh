@@ -315,7 +315,7 @@ void time_open(void *win) {
             widget_move_resize(ok, TIME_SAVE_X, TIME_SAVE_Y, TIME_SAVE_W, TIME_SAVE_H);
         else
             widget_move_resize(ok, 0, 244, 375, 26);
-        widget_set_text_utf8(ok, "Save");
+        widget_set_text_utf8(ok, "保存");
         widget_set_opacity(ok, 0);
     }
     st.slider_win = win;
@@ -443,9 +443,18 @@ static void time_text(void *canvas, const unsigned *s, unsigned n, const rect_t 
     draw_centred(canvas, s, n, r, px, alpha << 24 | (RGBA(flip_if(ipod_light(), rgb)) & 0xffffff));
 }
 /* A cell's or the tile's number: its text, widened. */
+/* s's first 5 code points (UTF-8: 上午 and 下午 are one each, not their bytes). */
 static unsigned time_chars(unsigned *to, const char *s) {
     unsigned n = 0;
-    while (s[n] && n < 5) to[n] = (unsigned char)s[n], ++n;
+    const unsigned char *p = (const unsigned char *)s;
+    while (*p && n < 5) {
+        unsigned c = *p++;
+        if (c >= 0xc0) {
+            int k = c >= 0xf0 ? 3 : c >= 0xe0 ? 2 : 1;
+            for (c &= 0x3f >> k; k-- && (*p & 0xc0) == 0x80;) c = c << 6 | (*p++ & 0x3f);
+        }
+        to[n++] = c;
+    }
     return n;
 }
 /* The flat look's Set Time hands in the half's ink, [0] dark and [1] light (flat_ink), and the

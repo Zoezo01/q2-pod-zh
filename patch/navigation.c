@@ -3131,7 +3131,8 @@ static int *const pod_values[] = { &st.charge_limit,
                                    0,
                                    &hide_lib[0],
                                    &hide_lib[1],
-                                   &hide_lib[2] };
+                                   &hide_lib[2],
+                                   0 }; /* POD_LIBRARY_FILL: 中文分支自有 action，排在末尾，无值 */
 _Static_assert(POD_LOCKCLOCK == 6, "lockscreen.c passes pod_rows 6");
 _Static_assert(POD_REMIND_DAILY == 26, "netupdate.c passes pod_rows 26");
 _Static_assert(sizeof pod_values / sizeof *pod_values == POD_COUNT, "a pod_values per row");
@@ -3165,7 +3166,8 @@ static const char *const pod_keys[] = { "CHARGELIMIT",
                                         0,
                                         "HIDEAPPS",
                                         "HIDEGAMES",
-                                        "HIDESTORE" };
+                                        "HIDESTORE",
+                                        0 }; /* POD_LIBRARY_FILL: 中文分支自有 action，无 key */
 _Static_assert(sizeof pod_keys / sizeof *pod_keys == POD_COUNT, "a pod_keys entry per row");
 /* a row's choices: Artist albums three, Standby limit four, every other row two */
 static int pod_choices(unsigned i) { return i == POD_ARTIST_CF ? 3 : i == POD_STANDBY ? 4 : 2; }
@@ -3235,13 +3237,14 @@ static void pod_text(int i) {
         { "播放列表视图：列表", "播放列表视图：Cover Flow" },
         { 0 }, /* Scan Song Durations: a switch */
         { 0 }, /* Position Bar: a switch */
-        { 0 }, /* Hide Streaming: a switch */
-        { 0 }, /* Hide Folder: a switch */
-        { "Update Notifications: Off", "Update Notifications: On" },
-        { "Album View: List", "Album View: Grid" },
-        { 0 }, /* Hide Apps, Hide Games and Hide App Store: switches */
+        { 0 }, /* Hide Streaming on Home: a switch */
+        { 0 }, /* Hide Folder on Home: a switch */
+        { "更新通知：关闭", "更新通知：打开" },
+        { "专辑视图：列表", "专辑视图：网格" },
+        { 0 }, /* 隐藏应用 / 隐藏游戏 / 隐藏应用商店：开关 */
         { 0 },
         { 0 },
+        { "补全封面与歌词" }, /* 中文分支自有 action：行上会显示补全过程 */
     };
     _Static_assert(sizeof names / sizeof *names == POD_COUNT, "a names entry per row");
     if (i == POD_CF_SORT) { /* the Sort card's words, as Cover Flow's page holds the row */
@@ -3264,16 +3267,16 @@ static void pod_text(int i) {
                          : i == POD_KEYTONE        ? "按键音"
                          : i == POD_CARMODE        ? "车载模式"
                          : i == POD_SMART_WIFI     ? "Smart Wi-Fi"
-                         : i == POD_COVERMODE      ? "Enlarged Album Art"
-                         : i == POD_FOLDERCOVER    ? "Folder Album Cover"
-                         : i == POD_BIG_LIB        ? "Fast Navigation"
-                         : i == POD_SCAN_DURATIONS ? "Scan Song Durations"
-                         : i == POD_CF_POSITION    ? "Position Bar"
-                         : i == POD_HIDE_STREAM    ? "Hide Streaming"
-                         : i == POD_HIDE_FOLDER    ? "Hide Folder"
-                         : i == POD_HIDE_APPS      ? "Hide Apps"
-                         : i == POD_HIDE_GAMES     ? "Hide Games"
-                         : i == POD_HIDE_STORE     ? "Hide App Store"
+                         : i == POD_COVERMODE      ? "放大专辑封面"
+                         : i == POD_FOLDERCOVER    ? "文件夹专辑封面"
+                         : i == POD_BIG_LIB        ? "快速导航"
+                         : i == POD_SCAN_DURATIONS ? "检测歌曲时长"
+                         : i == POD_CF_POSITION    ? "位置条"
+                         : i == POD_HIDE_STREAM    ? "主页隐藏流媒体"
+                         : i == POD_HIDE_FOLDER    ? "主页隐藏文件夹"
+                         : i == POD_HIDE_APPS      ? "隐藏应用"
+                         : i == POD_HIDE_GAMES     ? "隐藏游戏"
+                         : i == POD_HIDE_STORE     ? "隐藏应用商店"
                                                    : 0;
     if (toggle)
         list_toggle(st.pod_label[i], toggle, v);

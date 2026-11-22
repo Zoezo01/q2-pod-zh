@@ -128,7 +128,7 @@ def test_each_quick_button_has_its_label_under_it_in_the_system_face(fw, world):
 
 @pytest.mark.parametrize('text, lines', [('Wi-Fi', ['Wi-Fi']), ('Output Way', ['Output', 'Way']),
                                          ('Low Gain', ['Low Gain']), ('Equalisers', ['Equalise', 'rs']),
-                                         ('Sys Settings', ['Sys', 'Settings']), ('x' * 40, ['x' * 8, 'x' * 31])])
+                                         ('Sys 设置', ['Sys', '设置']), ('x' * 40, ['x' * 8, 'x' * 31])])
 def test_a_flat_quick_label_wraps_at_the_last_space_that_fits(fw, world, text, lines):
     """10 px a character here, 86 px a line: a word too long for one breaks where the line is full; a line holds
     31 characters at most."""
@@ -643,7 +643,7 @@ def test_modern_s_pane_is_flat_with_the_half_s_note_and_a_quiet_count(fw, mcl, l
     fw.fn('home_pane_paint', None, C.c_void_p, C.c_int, C.c_int, C.c_int, C.c_int)(canvas.p, 5, -3, cf.HOME_PW, 294)
     assert {r[0] for r in canvas.rects} == {rgba(pane)}  # one colour: no light across it, no shadow
     assert bitmaps.loads == [note] and [i[2] for i in canvas.images] == [(5 + 40, -3 + 57, 100, 115)]
-    assert canvas.texts == [('3 Songs', (5, -3 + 185, 182, 24), 17)] and canvas.fonts[-1][0] == ''  # the system's face
+    assert canvas.texts == [('3 首', (5, -3 + 185, 182, 24), 17)] and canvas.fonts[-1][0] == ''  # the system's face
     assert rgba(quiet) in inks and canvas.fills[-1] == 0x12345678
 
 
@@ -687,7 +687,7 @@ def test_classic_modern_s_pane_is_flat_each_row_s_icon_the_half_s(fw, mcl, light
         assert [i[2] for i in canvas.images] == [(5 + at[0], -3 + at[1], 100, 115)], kind
         assert all(px == 17 for _, _, px in canvas.texts) and canvas.fills[-1] == 0x12345678
         if kind == cf.PANE_NOW:
-            assert canvas.texts == [('3 Songs', (5, -3 + t['pane_count_y'], t['pane_count_w'], 24), 17)]
+            assert canvas.texts == [('3 首', (5, -3 + t['pane_count_y'], t['pane_count_w'], 24), 17)]
             assert canvas.fonts[-1][0] == '' and rgba(quiet) in inks
 
 

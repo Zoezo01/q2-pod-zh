@@ -663,7 +663,7 @@ void msg_open(void *win) {
     int flat = flat_pages(), line_h = flat ? MSG_FLAT_LINE_H : 20;
     c = text(win, 16, 0, 343, 24);
     widget_set_name(c, "msg_heading");
-    widget_set_text_utf8(c, scan ? "Updating Library" : "Connected");
+    widget_set_text_utf8(c, scan ? "正在更新本地音乐" : "已连接");
     slider_label(c, 16, 0, 343, MSG_HEAD_H, flat ? MSG_FLAT_HEAD_PX : MSG_HEAD_PX,
                  flat ? flat_face() : "classic-light");
     c = text(win, 16, 0, 343, line_h);

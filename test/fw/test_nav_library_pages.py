@@ -2395,7 +2395,7 @@ def test_apps_lists_the_card_apps_whose_row_is_the_library_s_by_name_above_games
     """row=library puts an app on Library's Apps page, not at the Library's root; each row presses as the app's
     Library row did."""
     win, view = library(fw, ui, folders=['/mnt/mmc/Videos'], token=b'x', files={**deezer(), **BLOCKS, **TOOLS, **TAPE})
-    assert page_rows(ui, view)[-7:] == [(c, True) for c in ('Long Songs', 'Videos', 'Apps', 'Games', 'App Store',
+    assert page_rows(ui, view)[-7:] == [(c, True) for c in ('长曲目', '视频', '应用', '游戏', '应用商店',
                                                              'Upload Scrobbles', 'Update Library')]
     item, = [item for item in ui.kids[view] if row_text(ui, item) == 'Apps']
     assert [ui.image[w] for w in ui.subtree(item) if w in ui.image] == ['local_apps', 'list_into']

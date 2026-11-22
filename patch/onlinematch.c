@@ -297,7 +297,6 @@ static int stopped(void *cancel, long long total, long long now, long long up, l
 }
 
 /* url's reply, NUL-terminated, under max bytes, to free; 0 if the transfer failed or *cancel (when
-/* url's reply, NUL-terminated, under max bytes, to free; 0 if the transfer failed or *cancel (when
  * given) stopped it. With keep, the handle is *keep's, made there if none, and stays there for the
  * caller to clean up: the next request goes on its connection, or resumes its TLS session. *len,
  * when given, gets the bytes read: a JPEG has NULs, so a cover cannot be measured with strlen. */
@@ -674,7 +673,7 @@ static void covers(void) {
     const char *album = key[0x400] ? key + 0x400 : key + 0x200, *artist = key + 0x500;
     if (!*album) return;
     int mb = mb_url(url, sizeof url, album, artist);
-    char *body = mb ? get(url, COVER_MAX, 0, 0) : 0;
+    char *body = mb ? get(url, COVER_MAX, 0) : 0;
     /* ponytail: MusicBrainz unreachable means likely offline, so iTunes isn't tried either (one
      * timeout, not two, before stock's sources); ask iTunes anyway if one service is down alone. */
     if (mb && !body) return;
@@ -693,7 +692,7 @@ static void covers(void) {
     }
     cJSON_Delete(json);
     free(body);
-    body = itunes_url(url, sizeof url, album, artist) ? get(url, COVER_MAX, 0, 0) : 0;
+    body = itunes_url(url, sizeof url, album, artist) ? get(url, COVER_MAX, 0) : 0;
     json = body ? cJSON_Parse(body) : 0;
     list = json ? cJSON_GetObjectItem(json, "results") : 0;
     n = list ? cJSON_GetArraySize(list) : 0;

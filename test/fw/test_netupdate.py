@@ -2772,8 +2772,8 @@ def test_an_install_cancelled_while_it_asks_for_the_list_installs_nothing(fw):
     assert net.urls == [LIST_URL] and FOO_APP not in card.files
 
 
-@pytest.mark.parametrize('q2app, where', [(b'name=Foo\n', 'Streaming'), (b'name=Foo\ngame=1\n', "Library's Games"),
-                                          (b'name=Foo\nrow=library\n', "Library's Apps")])
+@pytest.mark.parametrize('q2app, where', [(b'name=Foo\n', '流媒体'), (b'name=Foo\ngame=1\n', '游戏'),
+                                          (b'name=Foo\nrow=library\n', '资料库的应用')])
 def test_an_app_installs_into_place_and_removes_without_a_trace(fw, q2app, where):
     card = Disk(fw)
     store_net(fw, {**FOO, '.foo/q2app': q2app})
@@ -2788,7 +2788,7 @@ def test_an_app_installs_into_place_and_removes_without_a_trace(fw, q2app, where
     s.click()
     assert s.sh.job == JOB_INSTALL and s.labels() == ['Checking…']
     assert s.wait() == RET_REPEAT and s.held == [(1, 1, 0)]  # standby and power-off held through a job
-    assert s.run() == 0 and s.toasts == [f'Foo is ready in {where}'] and s.labels() == ['Installed']
+    assert s.run() == 0 and s.toasts == [f'Foo 已就绪，可在{where}中找到'] and s.labels() == ['已安装']
     assert looked.count((77, b'library_apps')) == 1
     placed = {k: v for k, v in card.files.items() if k.startswith(b'/mnt/mmc/.foo/')}
     assert placed == {b'/mnt/mmc/.foo/q2-foo': b'\x7fELF foo', b'/mnt/mmc/.foo/q2app': q2app, b'/mnt/mmc/.foo/lib/x.so': b'lib'}
@@ -2800,7 +2800,7 @@ def test_an_app_installs_into_place_and_removes_without_a_trace(fw, q2app, where
     assert s.labels() == ['Press again to remove'] and not s.workers
     s.click()
     assert s.labels() == ['Removing…']
-    assert s.run() == 0 and s.toasts[-1] == 'Foo removed' and s.labels() == ['Install']
+    assert s.run() == 0 and s.toasts[-1] == 'Foo removed' and s.labels() == ['安装']
     assert on_card() == before and looked.count((77, b'library_apps')) == 2
 
 
@@ -3192,7 +3192,7 @@ def test_the_cards_custom_sources_follow_the_list_and_never_reach_its_copy(fw, m
     if mine:
         key(77, O['KEY_BACK_BTN'])
         s.click(2)  # Mine
-        assert s.run() == 0 and s.toasts[-1] == 'Mine is ready in Streaming' and card.files[CUSTOM] == mine
+        assert s.run() == 0 and s.toasts[-1] == 'Mine 已就绪，可在流媒体中找到' and card.files[CUSTOM] == mine
         assert card.files[SOURCES] == LISTED
 
 @pytest.mark.parametrize('theme', (b'0', b'1', b'2'))  # Minimal, Classic, Modern
@@ -3238,7 +3238,7 @@ def test_app_store_paints_a_rows_state_as_a_word_and_the_tabs_badges(fw, theme):
     if theme != b'0':  # the open half in the selected row's colour: Classic Blue's band's middle stop, Modern's bar's
         band = rgba(0x007dde) if theme == b'1' else tone(fw, 0)
         assert any(o.kind == 'fill' and o.rect[0] == 14 + 173 and o.color == band for o in ops)
-    assert {o.px for o in ops if o.kind == 'text'} == {b'0': {17, 12}, b'1': {23, 15}, b'2': {16, 11}}[theme]  # names, count
+    assert {o.px for o in ops if o.kind == 'text'} == {b'0': {17, 12}, b'1': {19, 15}, b'2': {16, 11}}[theme]  # names, count (Classic's 应用/游戏 fall back)
     fw.var('app_store__on_page', C.c_char).value = b'\x00'
     assert painted(row)[0] == []  # the page closed: nothing
 
@@ -3323,7 +3323,8 @@ def test_a_press_held_for_wifi_through_a_real_click_follows_its_app(fw):
     class Sw(C.Structure):
         _fields_ = [('at', C.c_uint), ('busy_at', C.c_uint), ('woke_at', C.c_uint), ('hold_timer', C.c_uint),
                     ('off', C.c_int), ('quiet', C.c_int), ('armed', C.c_int), ('up', C.c_int), ('held', C.c_int),
-                    ('lone', C.c_int), ('hold_fn', C.c_void_p), ('hold_ctx', C.c_void_p), ('hold_win', C.c_void_p), ('hold_name', C.c_char * 32)]
+                    ('lone', C.c_int), ('hold_fn', C.c_void_p), ('hold_ctx', C.c_void_p), ('hold_win', C.c_void_p), ('cap_win', C.c_void_p),
+                    ('hold_name', C.c_char * 32)]
     card = Disk(fw, {SOURCES: b'me/q2-foo Foo\n[Games]\nyou/q2-bar Bar\n'})
     store_net(fw)
     s = Store(fw, card, wifi=0)

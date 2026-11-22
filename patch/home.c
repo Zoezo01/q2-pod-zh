@@ -92,7 +92,7 @@ int ringnav_localmusic(void *win, void *ctx) {
     widget_set_visible(stock[L_FREQUENT], 0, 0); /* Most Played is its list, from every listen */
     widget_restack(stock[L_FREQUENT], n++);
     widget_restack(stock[L_HIRES], n++);
-    widget_restack(library_row(view, "local_longsongs", long_songs, 0, "Long Songs", 1), n++);
+    widget_restack(library_row(view, "local_longsongs", long_songs, 0, "长曲目", 1), n++);
     /* Podcasts, Audiobooks, Photos, Books and Videos, each only with its folder. */
     static const char *const icons[] = { "local_podcasts", "local_audiobooks", "local_photos",
                                          "local_books", "local_videos" };
@@ -100,9 +100,9 @@ int ringnav_localmusic(void *win, void *ctx) {
     for (int k = 0; k < VIDEOS; k++)
         if (media_find(k + 1, path))
             widget_restack(
-                library_row(view, icons[k], media_click, (void *)(long)(k + 1), MEDIA[k], 1), n++);
+                library_row(view, icons[k], media_click, (void *)(long)(k + 1), MEDIA_LABELS[k], 1), n++);
     if (!pod_value(POD_HIDE_APPS)) {
-        void *apps = library_row(view, "local_apps", addon_apps, 0, "Apps", 1);
+        void *apps = library_row(view, "local_apps", addon_apps, 0, "应用", 1);
         widget_set_name(apps, "library_apps");
         widget_set_visible(apps, addon_libs() > 0, 0);
         widget_restack(apps, n++);
@@ -110,9 +110,9 @@ int ringnav_localmusic(void *win, void *ctx) {
         widget_on(win, EVT_WINDOW_FOREGROUND, addon_apps_sync, win);
     }
     if (!pod_value(POD_HIDE_GAMES))
-        widget_restack(library_row(view, "local_games", games_open, 0, "Games", 1), n++);
+        widget_restack(library_row(view, "local_games", games_open, 0, "游戏", 1), n++);
     if (!pod_value(POD_HIDE_STORE))
-        widget_restack(library_row(view, "local_store", shelf_open, 0, "App Store", 1), n++);
+        widget_restack(library_row(view, "local_store", shelf_open, 0, "应用商店", 1), n++);
     if (scrobble_ready())
         widget_restack(
             library_row(view, "local_scrobble", upload_scrobbles, 0, "上传听歌记录", 0), n++);

@@ -623,6 +623,15 @@ ZH_GENERATED = {
 # codepoint array, theme names) plus its corrections. Run gen_zh_expect.py to
 # refresh the block above; it never touches what follows.
 ZH_OVERRIDES = {
+    # 1.8.9: the fourth theme's name, the Library's Apps row and the flat pages' words.
+    'Classic Modern': '经典现代',
+    'Crossfade needs Gapless': '交叉淡化需要无缝播放',
+    "Library's Apps": '资料库的应用',
+    'Apps': '应用',
+    'No apps': '暂无应用',
+    'Hide Apps': '隐藏应用',
+    'Hide Games': '隐藏游戏',
+    'Hide App Store': '隐藏应用商店',
     # 1.8.8: the App Store's tabs and state words, its toast and the check's age.
     'Apps': '应用',
     'INSTALL': '安装',
