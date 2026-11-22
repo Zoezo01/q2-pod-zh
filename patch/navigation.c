@@ -1349,7 +1349,7 @@ static int pull_event(void *page, event_t *event) {
     widget_t *prompt = widget_lookup(page, PULL_PROMPT, 1);
     if (!prompt) prompt = band_create(page, PULL_PROMPT, 0, 44);
     if (prompt) {
-        widget_set_text_utf8(prompt, ready ? "Release to search" : "Pull to search");
+        widget_set_text_utf8(prompt, ready ? tr("Release to search") : tr("Pull to search"));
         widget_set_visible(prompt, dy > 0, 0);
     }
     return STOP;
@@ -2912,7 +2912,7 @@ static void value_row(widget_t *label, const char *title, const char *value, int
  * peq_ui.c's). */
 void list_toggle(widget_t *label, const char *title, int on) {
     if (theme()->set_text) {
-        value_row(label, title, on ? "On" : "Off", TOGGLE_VALUE_W);
+        value_row(label, title, on ? tr("On") : tr("Off"), TOGGLE_VALUE_W);
         return;
     }
     widget_t *button = P(label, W_PARENT);
@@ -2960,7 +2960,7 @@ void list_value(widget_t *label, const char *title, const char *value) {
 #define SWITCH_ROW "_switch_row"
 static void switch_text(widget_t *win, widget_t *label) {
     widget_t *sw = widget_lookup(win, "img_switch", 1);
-    list_toggle(label, widget_lookup(win, "view_sleep", 1) ? "Sleep Timer" : "Lock Screen",
+    list_toggle(label, widget_lookup(win, "view_sleep", 1) ? tr("Sleep Timer") : tr("Lock Screen"),
                 sw && !tk_strcmp(widget_get_prop_str(sw, "image", ""), "switch_on"));
 }
 static int switch_due(const void *info) {
@@ -3013,12 +3013,14 @@ void row_label(widget_t *label, const char *text) {
     }
     const char *value = text;
     while (*value && !(value[0] == ':' && value[1] == ' ')) ++value;
-    char title[40] = "Accent";
+    char head[128];
+    const char *title = tr("Accent");
     unsigned n = (unsigned)(value - text);
     if (*value) {
-        if (n >= sizeof title) n = sizeof title - 1;
-        memcpy(title, text, n);
-        title[n] = 0;
+        if (n >= sizeof head) n = sizeof head - 1;
+        memcpy(head, text, n);
+        head[n] = 0;
+        title = head;
     }
     list_value(label, title, *value ? value + 2 : text);
 }
@@ -3055,7 +3057,8 @@ int csv_toggle(char *list, unsigned size, const char *item) {
 
 /* Stock modes, only with the screen off: 1 locks wheel volume, 2 the buttons, 3 both.
  * KEY_LOCKOUT is the separate, temporary debounce after a button press. */
-const char *const lock_names[] = { "Off", "Everything", "Buttons only", "Volume only" };
+const char *const lock_names[] = { N_("Off"), N_("Everything"), N_("Buttons only"),
+                                   N_("Volume only") };
 int lock_choice(void) {
     if (g_keylock_flag && (g_keylock_mode < 1 || g_keylock_mode > 3)) {
         g_keylock_mode = 3; /* an unknown mode locks Everything */
@@ -3088,7 +3091,7 @@ int ringnav_keylock_rows(widget_t *win) {
     for (int i = 0; i < 4; ++i) {
         widget_t *label =
             list_row(view, i == choice ? "select" : "unselect", lock_pick, (void *)(long)i);
-        widget_set_text_utf8(label, lock_names[i]);
+        widget_set_text_utf8(label, tr(lock_names[i]));
     }
     return 0;
 }
@@ -3231,21 +3234,20 @@ int ringnav_bt_connect_start(int pause) {
 static void pod_text(int i) {
     static const char *const names[][4] = {
         { "Charge Limit: Off", "Charge Limit: " STR(CHARGE_STOP) "%" },
-        { "Wake: Single Press", "Wake: Double Press" },
-        { "Artist View: Grid", "Artist View: Cover Flow", "Artist View: List" },
-        { "Year Order: Newest First", "Year Order: Oldest First" },
-        { "Artists: Artist", "Artists: Album Artist" },
-        { "Resume on Connect: Off", "Resume on Connect: On" },
-        { "Clock: Standard", "Clock: Large" },
-        { "Artist Album Order: Year", "Artist Album Order: A–Z" },
-        { "Volume Guard: Off", "Volume Guard: On" },
-        { "Hold Return: Recent", "Hold Return: Home" },
-        { "Standby Limit: Off", "Standby Limit: " STR(STANDBY_LIMIT_1) " h",
-          "Standby Limit: " STR(STANDBY_LIMIT_2) " h",
-          "Standby Limit: " STR(STANDBY_LIMIT_3) " h" },
+        { N_("Wake: Single Press"), N_("Wake: Double Press") },
+        { N_("Artist View: Grid"), N_("Artist View: Cover Flow"), N_("Artist View: List") },
+        { N_("Year Order: Newest First"), N_("Year Order: Oldest First") },
+        { N_("Artists: Artist"), N_("Artists: Album Artist") },
+        { N_("Resume on Connect: Off"), N_("Resume on Connect: On") },
+        { N_("Clock: Standard"), N_("Clock: Large") },
+        { N_("Artist Album Order: Year"), N_("Artist Album Order: A–Z") },
+        { N_("Volume Guard: Off"), N_("Volume Guard: On") },
+        { N_("Hold Return: Recent"), N_("Hold Return: Home") },
+        { N_("Standby Limit: Off"), N_("Standby Limit: %u h"), N_("Standby Limit: %u h"),
+          N_("Standby Limit: %u h") },
         { 0 }, /* Control Device Volume: a switch */
         { 0 }, /* Sort's from coverflow.c */
-        { "Refresh Cover Flow" },
+        { N_("Refresh Cover Flow") },
         { 0 }, /* EQ per Output: a switch */
         { 0 }, /* Key Tone: a switch */
         { 0 }, /* In-Vehicle Mode: a switch */
@@ -3253,13 +3255,13 @@ static void pod_text(int i) {
         { 0 }, /* Enlarged Album Art: a switch */
         { 0 }, /* Folder Album Cover: a switch */
         { 0 }, /* Fast Navigation: a switch */
-        { "Playlist View: List", "Playlist View: Cover Flow" },
+        { N_("Playlist View: List"), N_("Playlist View: Cover Flow") },
         { 0 }, /* Scan Song Durations: a switch */
         { 0 }, /* Position Bar: a switch */
         { 0 }, /* Hide Streaming: a switch */
         { 0 }, /* Hide Folder: a switch */
-        { "Update Notifications: Off", "Update Notifications: On" },
-        { "Album View: List", "Album View: Grid" },
+        { N_("Update Notifications: Off"), N_("Update Notifications: On") },
+        { N_("Album View: List"), N_("Album View: Grid") },
         { 0 }, /* Hide Apps, Hide Games and Hide App Store: switches */
         { 0 },
         { 0 },
@@ -3278,29 +3280,36 @@ static void pod_text(int i) {
             : i == POD_FOLDERCOVER ? g_foldercover_flag != 0
             : pod_values[i]        ? *pod_values[i]
                                    : 0;
-    const char *toggle = i == POD_CHARGE           ? "Charge Limit (" STR(CHARGE_STOP) "%)"
-                         : i == POD_RESUME         ? "Resume on Connect"
-                         : i == POD_VOL_GUARD      ? "Volume Guard"
-                         : i == POD_BT_LINK        ? "Control Device Volume"
-                         : i == POD_KEYTONE        ? "Key Tone"
-                         : i == POD_CARMODE        ? "In-Vehicle Mode"
-                         : i == POD_SMART_WIFI     ? "Smart Wi-Fi"
-                         : i == POD_COVERMODE      ? "Enlarged Album Art"
-                         : i == POD_FOLDERCOVER    ? "Folder Album Cover"
-                         : i == POD_BIG_LIB        ? "Fast Navigation"
-                         : i == POD_SCAN_DURATIONS ? "Scan Song Durations"
-                         : i == POD_CF_POSITION    ? "Position Bar"
-                         : i == POD_HIDE_STREAM    ? "Hide Streaming"
-                         : i == POD_HIDE_FOLDER    ? "Hide Folder"
-                         : i == POD_HIDE_APPS      ? "Hide Apps"
-                         : i == POD_HIDE_GAMES     ? "Hide Games"
-                         : i == POD_HIDE_STORE     ? "Hide App Store"
-                         : i == POD_BT_RECEIVE     ? "Receive Audio"
+    const char *toggle = i == POD_CHARGE           ? tr("Charge Limit (%u%%)")
+                         : i == POD_RESUME         ? tr("Resume on Connect")
+                         : i == POD_VOL_GUARD      ? tr("Volume Guard")
+                         : i == POD_BT_LINK        ? tr("Control Device Volume")
+                         : i == POD_KEYTONE        ? tr("Key Tone")
+                         : i == POD_CARMODE        ? tr("In-Vehicle Mode")
+                         : i == POD_SMART_WIFI     ? tr("Smart Wi-Fi")
+                         : i == POD_COVERMODE      ? tr("Enlarged Album Art")
+                         : i == POD_FOLDERCOVER    ? tr("Folder Album Cover")
+                         : i == POD_BIG_LIB        ? tr("Fast Navigation")
+                         : i == POD_SCAN_DURATIONS ? tr("Scan Song Durations")
+                         : i == POD_CF_POSITION    ? tr("Position Bar")
+                         : i == POD_HIDE_STREAM    ? tr("Hide Streaming")
+                         : i == POD_HIDE_FOLDER    ? tr("Hide Folder")
+                         : i == POD_HIDE_APPS      ? tr("Hide Apps")
+                         : i == POD_HIDE_GAMES     ? tr("Hide Games")
+                         : i == POD_HIDE_STORE     ? tr("Hide App Store")
+                         : i == POD_BT_RECEIVE     ? tr("Receive Audio")
                                                    : 0;
+    static const unsigned standby_hours[] = { 0, STANDBY_LIMIT_1, STANDBY_LIMIT_2,
+                                              STANDBY_LIMIT_3 };
+    char room[128];
+    const char *text = toggle ? toggle : tr(names[i][v]);
+    if (i == POD_CHARGE || (i == POD_STANDBY && v))
+        tk_snprintf(room, sizeof room, text, i == POD_CHARGE ? CHARGE_STOP : standby_hours[v]),
+            text = room;
     if (toggle)
-        list_toggle(st.pod_label[i], toggle, v);
+        list_toggle(st.pod_label[i], text, v);
     else
-        widget_set_text_utf8(st.pod_label[i], names[i][v]);
+        widget_set_text_utf8(st.pod_label[i], text);
     /* Stock's rows, so stock's translations */
     if (i == POD_KEYTONE) widget_set_tr_text(st.pod_label[i], "system_keytone");
     if (i == POD_CARMODE) widget_set_tr_text(st.pod_label[i], "system_carmode");
@@ -3320,7 +3329,7 @@ static int pod_click(void *ctx, event_t *event) {
         coverflow_sort_step();
     else if (i == POD_CF_REFRESH) {
         coverflow_refresh_art();
-        toast("Cover Flow rebuilds artwork next time");
+        toast(tr("Cover Flow rebuilds artwork next time"));
     } else if (i == POD_ARTISTS) {
         int v = I(artist_type, 0) != 1;
         I(artist_type, 0) = v;
@@ -3357,7 +3366,7 @@ static int pod_click(void *ctx, event_t *event) {
         if (i == POD_BT_LINK && mclGetOutputWay() == 1)
             headset_volume_reset(), device_set_volume(g_volume, 0);
         /* Receive Audio: the direction at the next link, bluealsa's sink at Bluetooth's next on */
-        if (i == POD_BT_RECEIVE) toast("Turn Bluetooth off and on to apply");
+        if (i == POD_BT_RECEIVE) toast(tr("Turn Bluetooth off and on to apply"));
     }
     pod_text(i);
     return 0;
@@ -3387,7 +3396,7 @@ int ringnav_powermanager(widget_t *win, void *ctx) {
     pod_rows(win, "scroll_view_powermanager", POD_CARMODE, 1, icons + 2);
     if (view) /* battery.c's page */
         widget_set_text_utf8(list_row_into(view, "system_powermanager", battery_history, 0),
-                             "Battery History");
+                             tr("Battery History"));
     boot_row(view);
     return result;
 }
@@ -3511,9 +3520,9 @@ static int root_dir(char *path) {
            (info[5] & 0170000) == 0040000;
 }
 static void root_text(const char *name) {
-    char t[280];
-    tk_snprintf(t, sizeof t, "Folder Root: %s", name[0] ? name : "Card");
-    widget_set_text_utf8(st.root_label, t);
+    char t[320];
+    if (name[0]) tk_snprintf(t, sizeof t, tr("Folder Root: %s"), name);
+    widget_set_text_utf8(st.root_label, name[0] ? t : tr("Folder Root: Card"));
 }
 /* Centre or tap: the next root, saved; Folder opens there from its next visit. */
 static int root_click(void *ctx, event_t *event) {
@@ -3554,7 +3563,7 @@ int ringnav_audioset(widget_t *win, void *ctx) {
     if (sub) {
         widget_t *nav = widget_lookup(win, "view_navbar", 1),
                  *title = nav ? widget_get_child(nav, 0) : (void *)0;
-        if (title) widget_set_text_utf8(title, "Library & Folders");
+        if (title) widget_set_text_utf8(title, tr("Library & Folders"));
         pod_rows(win, "scroll_view_playset", POD_YEAR_OLD, 2, icons);
         pod_rows(win, "scroll_view_playset", POD_ARTIST_AZ, 1, icons);
         char name[256];
@@ -3572,7 +3581,7 @@ int ringnav_audioset(widget_t *win, void *ctx) {
     mono_row(list_row(view, "playset_balance", mono_click, 0));
     swap_row(list_row(view, "playset_balance", swap_click, 0));
     widget_set_text_utf8(list_row_into(view, "playset_folderjump", library_open, 0),
-                         "Library & Folders");
+                         tr("Library & Folders"));
     widget_set_tr_text(
         list_row_into(view, "playset_maxvol", to_page, (void *)"playset/maxvol_page"),
         "playset_maxvol");
@@ -4755,13 +4764,17 @@ void slider_number(widget_t *label) {
 }
 /* Stock's window as it loads, before its init. Every look-up it makes by name still finds its
  * widget: edit_key clicks img_dec and img_add, hidden here. */
-static const __WCHAR_TYPE__ slider_caption[] = L"Press Centre When Finished";
+/* The caption's text, which Classic's painter draws (slider_hint) */
+static void slider_caption(widget_t *c, const char *s) {
+    widget_set_text_utf8(c, s);
+    st.slider_hint = (const __WCHAR_TYPE__ *)widget_get_text(c);
+}
 /* Crossfade's and Night Shift's Centre stays on the page (crossfade.c): what it does there. */
 void slider_centre_hint(widget_t *page, int night) {
     widget_t *c = page && page == st.slider_win ? widget_lookup(page, "caption", 1) : (void *)0;
     if (!c) return;
-    st.slider_hint = night ? L"Press Centre to Change Mode" : L"Press Centre to Turn On or Off";
-    widget_set_text(c, (const unsigned *)st.slider_hint);
+    slider_caption(c, night ? tr("Press Centre to Change Mode")
+                            : tr("Press Centre to Turn On or Off"));
 }
 static void slider_open(widget_t *win) {
     static const char *const sliders[] = { "slider_backlight", "slider_maxvol", "slider_balance",
@@ -4802,7 +4815,6 @@ static void slider_open(widget_t *win) {
     st.slider_w = s;
     st.slider_kind = (unsigned char)kind;
     st.slider_sw = (void *)0; /* stock's init makes it, after this: slider_paint finds it */
-    st.slider_hint = slider_caption;
     widget_on(win, EVT_DESTROY, slider_gone, win);
     if (maxvol && !flat) { /* the triangle reaches past the slider's rect */
         widget_on(s, EVT_VALUE_CHANGING, slider_moved, win);
@@ -4810,7 +4822,7 @@ static void slider_open(widget_t *win) {
     }
     c = flat ? text(win, 16, 196, 343, 22) : text(win, 0, 228, 375, 32);
     widget_set_name(c, "caption");
-    widget_set_text(c, (const unsigned *)slider_caption);
+    slider_caption(c, tr("Press Centre When Finished"));
     if (flat)
         page_label(c, 16, 196, 343, 22, 17, "default", flat_quiet[0]);
     else
@@ -4842,7 +4854,6 @@ static void slider_open(widget_t *win) {
 }
 /* The Off and On tray on its shadow, the recessed track, the lit cell in the scheme's selection. */
 void slider_switch(widget_t *w, canvas_t *canvas, widget_t *sw) {
-    static const unsigned off[] = { 'O', 'f', 'f' }, on[] = { 'O', 'n' };
     rect_t tray = { 125, 28, 125, 44 }, track = { 138, 37, 100, 26 };
     rect_t left = { 138, 37, 50, 26 }, right = { 188, 37, 50, 26 };
     const char *image = widget_get_prop_str(sw, "image", "");
@@ -4855,8 +4866,8 @@ void slider_switch(widget_t *w, canvas_t *canvas, widget_t *sw) {
     paint_art(w, canvas, "classic_light_track_inset", 138, 37);
     paint_round_rows(canvas, cell, &scheme()->sel, 6);
     paint_art(w, canvas, "classic_light_lit_edge", cell->x - 1, 36);
-    draw_centred(canvas, off, 3, &left, 21, white);
-    draw_centred(canvas, on, 2, &right, 21, white);
+    caption(canvas, tr("Off"), left.x, left.y, left.w, left.h, 21, white);
+    caption(canvas, tr("On"), right.x, right.y, right.w, right.h, 21, white);
 }
 /* The page at (0, y, 375, 294): flat in the theme's page_fill, or the half's Home pane colour
  * (theme home_pane), final. */
@@ -4925,13 +4936,13 @@ static int usb_poll(const void *info) {
     if (n > 0) st.usb_lun = 1;
     if (n || !st.usb_lun) return 8; /* RET_REPEAT */
     if ((c = widget_lookup(win, "msg_heading", 1))) {
-        widget_set_text_utf8(c, "OK to Disconnect");
+        widget_set_text_utf8(c, tr("OK to Disconnect"));
         widget_set_text_utf8(widget_lookup(win, "msg_line", 1), "");
     } else if ((c = widget_lookup(win, "scrlabel_info", 1))) {
         widget_t *ok =
             hscroll_label_create(P(c, W_PARENT), I(c, W_X), I(c, W_Y), I(c, W_W), I(c, W_H));
         widget_use_style(ok, "s_scrlabel_white24c");
-        widget_set_text_utf8(ok, "OK to Disconnect");
+        widget_set_text_utf8(ok, tr("OK to Disconnect"));
         widget_set_visible(c, 0, 0);
     }
     widget_invalidate_force(win, (void *)0);
@@ -5150,15 +5161,17 @@ static widget_t *page_caption(widget_t *win) {
  * a stock page's (hidden) navbar title, else a payload page's 48 px caption row (page_title). */
 const char *bar_title_of(widget_t *win, widget_t **label) {
     const char *name = widget_get_prop_str(win, "name", "");
-    if (tk_str_start_with(name, "playing_page")) return "Now Playing";
-    if (!tk_strcmp(name, "coverflow_page")) return "Cover Flow";
-    if (!tk_strcmp(name, "equalizer_page")) return "EQ"; /* its 48 px row is the tabs' own label */
+    if (tk_str_start_with(name, "playing_page")) return tr("Now Playing");
+    if (!tk_strcmp(name, "coverflow_page")) return tr("Cover Flow");
+    if (!tk_strcmp(name, "equalizer_page"))
+        return tr("EQ"); /* its 48 px row is the tabs' own label */
     if (!tk_strcmp(name, "spotify_page")) return "Spotify"; /* they hide their own name's label */
-    if (!tk_strcmp(name, "radionp_page")) return "Internet Radio";
+    if (!tk_strcmp(name, "radionp_page")) return tr("Internet Radio");
     /* no wordmark (bar_title: no clock); the lock screen's date has the bar */
     if (!tk_strcmp(name, "usbmode_page") || !tk_strcmp(name, "saverscreen_page")) return "";
-    if (!tk_strcmp(name, "search_dialog")) return "Search"; /* stock's toolbar has no label */
-    if (!tk_strcmp(name, "updatemusic_dialog")) return "Update Library"; /* the row that opens it */
+    if (!tk_strcmp(name, "search_dialog")) return tr("Search"); /* stock's toolbar has no label */
+    if (!tk_strcmp(name, "updatemusic_dialog"))
+        return tr("Update Library"); /* the row that opens it */
     widget_t *nav = widget_lookup(win, "view_navbar", 1);
     if (nav) {
         for (int i = 0, k = widget_count_children(nav); i < k && !*label; ++i) {
@@ -5257,8 +5270,8 @@ void bar_title_sync(widget_t *win) {
     if (!t) {
         *s = 0;
         if (st.title_lbl) widget_get_text_utf8(st.title_lbl, s, sizeof s);
-        t = !tk_strcmp(s, "Channel Balance") ? "Balance" /* English's only */
-            : !tk_strcmp(s, "(null)")        ? ""        /* stock's "%s" of a NULL name: no title */
+        t = !tk_strcmp(s, "Channel Balance") ? tr("Balance") /* English's only */
+            : !tk_strcmp(s, "(null)")        ? "" /* stock's "%s" of a NULL name: no title */
                                              : s;
     }
     bar_title_write(t);
@@ -5276,7 +5289,7 @@ void bar_title_name(widget_t *win) {
  * the first line, and the bar reads name, the page's, from the hidden label. */
 void page_empty(widget_t *body, const char *name) {
     if (theme()->page_title_h) return;
-    char message[64];
+    char message[192];
     widget_t *caption = widget_get_child(body, 0);
     if (widget_get_text_utf8(caption, message, sizeof message)) return;
     widget_set_name(page_title(body, message, 0), "");
@@ -5909,12 +5922,12 @@ int ringnav_image_add(void *manager, const char *name, void *bitmap) {
  **************************************************************************************************/
 
 static void setting_text(int i) {
-    static const char *const home[] = { "Home: Split", "Home: Full", "Home: Carousel" },
-                             *const battery[] = { "Battery: Icon", "Battery: Percent",
-                                                  "Battery: Icon + Percent",
-                                                  "Battery: Percent Inside" },
-                             *const light[] = { "Light Mode: Off", "Light Mode: On",
-                                                "Light Mode: Auto" };
+    static const char *const home[] = { N_("Home: Split"), N_("Home: Full"), N_("Home: Carousel") },
+                             *const battery[] = { N_("Battery: Icon"), N_("Battery: Percent"),
+                                                  N_("Battery: Icon + Percent"),
+                                                  N_("Battery: Percent Inside") },
+                             *const light[] = { N_("Light Mode: Off"), N_("Light Mode: On"),
+                                                N_("Light Mode: Auto") };
     int a = accent();
     const scheme_t *S = scheme();
     const char *const names[] = { S->label ? (const char *)0 : accent_names[a],
@@ -5926,38 +5939,40 @@ static void setting_text(int i) {
                                   light[st.light],
                                   (const char *)0,
                                   (const char *)0 };
-    char text[64];
+    char text[192];
     if (i == 0 && S->label) {
-        tk_snprintf(text, sizeof text, "Accent: %s", S->label);
+        tk_snprintf(text, sizeof text, tr("Accent: %s"), tr(S->label));
         row_label(st.setting_label[0], text);
         return;
     }
     if (i == 3 || i == 4 || i >= SETTING_OWN) {
         if (i == 3)
-            tk_snprintf(text, sizeof text, "Theme: %s", theme()->name);
+            tk_snprintf(text, sizeof text, tr("Theme: %s"), theme()->name);
+        else if (i == 4 && shortcut() == SHORTCUT_NONE)
+            tk_snprintf(text, sizeof text, "%s", tr("Shortcut: None"));
         else if (i == 4)
-            tk_snprintf(text, sizeof text, "Shortcut: %s",
-                        shortcut() == SHORTCUT_NONE ? "None" : ipod_home_shortcut());
+            tk_snprintf(text, sizeof text, tr("Shortcut: %s"), tr(ipod_home_shortcut()));
         else {
             const theme_key_t *K = &theme_keys[i - SETTING_OWN];
+            const char *value = tr(K->names[st.own[i - SETTING_OWN]]);
             if (theme()->set_text) { /* the label and the value's name, unsplit */
-                list_value(st.setting_label[i], K->label, K->names[st.own[i - SETTING_OWN]]);
+                list_value(st.setting_label[i], tr(K->label), value);
                 return;
             }
-            tk_snprintf(text, sizeof text, "%s: %s", K->label, K->names[st.own[i - SETTING_OWN]]);
+            tk_snprintf(text, sizeof text, "%s: %s", tr(K->label), value);
         }
         row_label(st.setting_label[i], text);
         return;
     }
-    static const char *const toggles[] = { "Rounded Corners",       0,
-                                           "Smart Awake",           "Centred Now Playing",
-                                           "Click With Headphones", "Single Press Scrub",
-                                           "Time in Title" };
+    static const char *const toggles[] = { N_("Rounded Corners"),       0,
+                                           N_("Smart Awake"),           N_("Centred Now Playing"),
+                                           N_("Click With Headphones"), N_("Single Press Scrub"),
+                                           N_("Time in Title") };
     if (i == 5 || i >= 7) {
-        list_toggle(st.setting_label[i], toggles[i - 5], *setting_values[i]);
+        list_toggle(st.setting_label[i], tr(toggles[i - 5]), *setting_values[i]);
         return;
     }
-    row_label(st.setting_label[i], names[i]);
+    row_label(st.setting_label[i], tr(names[i]));
 }
 
 static int settings_list(widget_t *w) {
@@ -6153,7 +6168,8 @@ void restart_confirm(int setting, int value) {
     struct {
         int kind, ms;
         char text[0x400];
-    } prompt = { 1, 0, "Restart to apply?" };
+    } prompt = { 1, 0, "" };
+    tk_snprintf(prompt.text, sizeof prompt.text, "%s", tr("Restart to apply?"));
     if (navigator_to_with_context("dialog/confirminfo_dialog", &prompt) != 10) return;
     const theme_t *T = theme();
     int was = *option_slot(T, setting);
@@ -6198,7 +6214,7 @@ int ringnav_np_info(widget_t *win) {
     char where[64] = "";
     getFormatString("player_location", where, sizeof where);
     const char *loc =
-        *where && *where != '(' ? where : "Location"; /* a missing string reads "(key)" */
+        *where && *where != '(' ? where : tr("Location"); /* a missing string reads "(key)" */
     for (unsigned i = 0; i < sizeof names / sizeof *names; ++i) {
         widget_t *label = win ? widget_lookup(win, names[i], 1) : (void *)0;
         char s[1024], out[1024 + sizeof where + 8];
@@ -6213,7 +6229,7 @@ int ringnav_np_info(widget_t *win) {
         else
             continue;
         while (*v == ' ') ++v;
-        if (!strcmp(v, "Unknown Artist")) v = "Unknown";
+        if (!strcmp(v, "Unknown Artist")) v = tr("Unknown");
         const char *unit = *units[i] ? units[i] + 1 : units[i];
         int len = (int)strlen(v), u = (int)strlen(unit);
         int split = u && len > u && !strcmp(v + len - u, unit) && v[len - u - 1] >= '0' &&
@@ -6286,7 +6302,8 @@ static void setting_row(widget_t *view, int i) {
  * and have no chevron, since they change in place. ponytail: stock's page opened over itself; its
  * own rows' state is never touched on a sub-page. */
 int ringnav_display(widget_t *win, void *ctx) {
-    static const char *const titles[] = { 0, "Appearance", "Cover Flow", "Controls", "Theme" },
+    static const char *const titles[] = { 0, N_("Appearance"), N_("Cover Flow"), N_("Controls"),
+                                          N_("Theme") },
                              *const sub_icons[] = { 0, "system_display", "playset_covermode",
                                                     "playset_folderjump" };
     static const char *const cf_icons[] = { "playset_covermode", "playset_covermode",
@@ -6305,14 +6322,14 @@ int ringnav_display(widget_t *win, void *ctx) {
         night_row(list_row_into(view, "display_backlight", xfade_open, (void *)3));
         for (int i = DISPLAY_APPEARANCE; i <= DISPLAY_COVERFLOW; ++i)
             widget_set_text_utf8(list_row_into(view, sub_icons[i], display_open, (void *)(long)i),
-                                 titles[i]);
+                                 tr(titles[i]));
         reorder(view, main_order, sizeof main_order);
         return result;
     }
     widget_destroy_children(view);
     widget_t *nav = widget_lookup(win, "view_navbar", 1),
              *title = nav ? widget_get_child(nav, 0) : 0;
-    if (title) widget_set_text_utf8(title, titles[sub]);
+    if (title) widget_set_text_utf8(title, tr(titles[sub]));
     if (sub == DISPLAY_THEMES) { /* the built-ins */
         accent();
         for (int i = 0; i < THEME_N; ++i) {
@@ -6358,17 +6375,17 @@ int ringnav_display(widget_t *win, void *ctx) {
 #define BOOT_TARGET "/mnt/data/boot-target"
 static int boot_rockbox __attribute__((section(".scratch")));
 static void boot_text(widget_t *label) {
-    widget_set_text_utf8(label, boot_rockbox ? "Boot to: Rockbox" : "Boot to: Q2 Pod");
+    widget_set_text_utf8(label, boot_rockbox ? tr("Boot to: Rockbox") : tr("Boot to: Q2 Pod"));
 }
 static int boot_click(void *label, event_t *event) {
     if (!rockbox_available()) {
-        toast("Rockbox is not on the card");
+        toast(tr("Rockbox is not on the card"));
         return 0;
     }
     const char *value = boot_rockbox ? "q2pod" : "rockbox";
     if (!blob_io(BOOT_TARGET, BOOT_TARGET ".tmp", (void *)value, strlen(value), 1)) {
         unlink(BOOT_TARGET ".tmp");
-        toast("Could not save boot choice");
+        toast(tr("Could not save boot choice"));
         return 0;
     }
     boot_rockbox = !boot_rockbox;
@@ -6406,7 +6423,7 @@ int ringnav_systemset(widget_t *win, void *ctx) {
                                                 { "system_about", "systemset/about_page" } };
         widget_set_text_utf8(
             list_row_into(view, "playset_folderjump", display_open, (void *)DISPLAY_CONTROLS),
-            "Controls");
+            tr("Controls"));
         for (unsigned i = 0; i < 4; ++i)
             widget_set_tr_text(list_row_into(view, moved[i][0], to_page, (void *)moved[i][1]),
                                moved[i][0]);
@@ -7391,7 +7408,8 @@ int ringnav_art_header(char *buf, unsigned size, const char *fmt, const char *al
  * (g_class_type), on top, whichever of the two list pages shows it, polled every EMPTY_POLL_MS
  * until it opens or stops being on top. */
 static int empty_toast(const void *unused) {
-    static const char *const none[] = { "No albums", "No artists", "No composers", "No genres" };
+    static const char *const none[] = { N_("No albums"), N_("No artists"), N_("No composers"),
+                                        N_("No genres") };
     widget_t *wm = window_manager(), *top = window_manager_get_top_window(wm);
     const char *name = top ? widget_get_prop_str(top, "name", "") : "";
     int mine = (!tk_strcmp(name, "album_page") || !tk_strcmp(name, "localclass_page")) &&
@@ -7401,7 +7419,7 @@ static int empty_toast(const void *unused) {
         return 0;
     }
     if (mine) window_manager_close_window_force(wm, top);
-    toast(none[st.empty_kind]);
+    toast(tr(none[st.empty_kind]));
     return 0;
 }
 
@@ -7691,7 +7709,7 @@ static int chapter_poll(const void *unused) {
         chapter *c = &st.ch->rows[i];
         int sec = c->sec - st.ch_cue;
         if (st.ch_end && c->sec >= st.ch_end) break;
-        if (!*c->title) tk_snprintf(c->title, sizeof c->title, "Chapter %d", i + 1);
+        if (!*c->title) tk_snprintf(c->title, sizeof c->title, tr("Chapter %d"), i + 1);
         if (st.ch_cue && sec <= 0) {
             n = 0;
             sec = 0;
@@ -7700,9 +7718,9 @@ static int chapter_poll(const void *unused) {
         st.ch->rows[n++].sec = sec;
     }
     st.ch->count = n;
-    widget_t *view =
-        page_list_or(st.ch_page, st.ch_page, "Chapters",
-                     st.ch->failed ? "Could not read chapters" : "No embedded chapters", n, 64);
+    widget_t *view = page_list_or(
+        st.ch_page, st.ch_page, tr("Chapters"),
+        st.ch->failed ? tr("Could not read chapters") : tr("No embedded chapters"), n, 64);
     int sec = 0, total, current = 0;
     player_playtime_and_length(&sec, &total);
     for (int i = 0; i < n; ++i) {
@@ -7718,7 +7736,7 @@ static int chapter_poll(const void *unused) {
 void chapters_open(void *r) {
     if (st.ch || !chapter_file(r)) return;
     if (!mp4_fits(P(r, REC_PATH))) {
-        toast("Too long to read chapters on the Q2");
+        toast(tr("Too long to read chapters on the Q2"));
         return;
     }
     st.ch_track = np_track();
@@ -7726,7 +7744,7 @@ void chapters_open(void *r) {
     st.ch_end = I(r, REC_CUE_END);
     st.ch = chapters_start(P(r, REC_PATH), time_now_ms());
     if (!st.ch) {
-        toast("Could not read chapters");
+        toast(tr("Could not read chapters"));
         return;
     }
     st.ch_page = page_open("chapters_page", page_closed, page_keyup);
@@ -7744,7 +7762,7 @@ void chapters_open(void *r) {
         stop_timer(&st.ch_timer);
         return;
     }
-    page_list(st.ch_page, st.ch_page, 0, "Loading chapters…", 0, 64);
+    page_list(st.ch_page, st.ch_page, 0, tr("Loading chapters…"), 0, 64);
 }
 
 /* Streaming's Configuration (docs/internals.md#streaming-configuration): Tidal's and Spotify's
@@ -7768,15 +7786,16 @@ int stream_cache(int spotify) {
 /* Row i's caption: a cache row's size, or Erase Spotify Data's state. */
 static void sc_text(int i) {
     static const char *const sizes[] = { "512 MB", "1 GB", "2 GB", "4 GB", "8 GB" };
-    char s[40];
+    char s[96];
     if (i < 2)
-        tk_snprintf(s, sizeof s, "%s Cache: %s", i ? "Spotify" : "Tidal", sizes[stream_cache(i)]);
+        tk_snprintf(s, sizeof s, i ? tr("Spotify Cache: %s") : tr("Tidal Cache: %s"),
+                    sizes[stream_cache(i)]);
     /* NOLINTNEXTLINE(clang-analyzer-security.ArrayBound): i < 3: the cache rows and Erase's */
     widget_set_text_utf8(widget_get_child(st.sc_row[i], 0),
                          i < 2            ? s
-                         : shelf_erase(0) ? "Erasing…"
-                         : st.sc_armed    ? "Press again to erase login and cache"
-                                          : "Erase Spotify Data");
+                         : shelf_erase(0) ? tr("Erasing…")
+                         : st.sc_armed    ? tr("Press again to erase login and cache")
+                                          : tr("Erase Spotify Data"));
 }
 
 /* netupdate.c's erase ended: .cache-size went with it, so Spotify's row reads 2 GB again. */
@@ -7791,13 +7810,14 @@ void stream_erased(void) {
  * app stays hidden whatever its place. Missing, every row shows. Configuration is never hidden. */
 static const char *const svc_fixed[][2] = { { "TIDAL", "TIDAL" },
                                             { "SPOTIFY", "Spotify" },
-                                            { "DOWNLOADS", "Tidal Downloads" },
-                                            { "RADIO", "Internet Radio" },
+                                            { "DOWNLOADS", N_("Tidal Downloads") },
+                                            { "RADIO", N_("Internet Radio") },
                                             { "AIRPLAY", "AirPlay" } };
 /* Service i's key (label 0) or row label (1), as Streaming last listed them. */
 static const char *svc(int i, int label) {
     if (i >= 2 && i < 2 + st.svc_n) return label ? addon_name(i - 2) : addon_id(i - 2);
-    return svc_fixed[i < 2 ? i : i - st.svc_n][label];
+    const char *s = svc_fixed[i < 2 ? i : i - st.svc_n][label];
+    return label ? tr(s) : s;
 }
 void svc_hidden(char *s) {
     s[0] = 0; /* as root_read: a missing key leaves s alone */
@@ -7818,7 +7838,7 @@ static int svc_toggle(int i) {
     /* ROOT_MAX, not sizeof hide: stock's config line (a 257-byte sprintf, a 255-byte fgets) */
     int hidden = csv_toggle(hide, ROOT_MAX, key);
     if (hidden < 0) {
-        toast("Could not save setting");
+        toast(tr("Could not save setting"));
         return 0;
     }
     toolsWriteConfig("/mnt/data/config.ini", "Q2POD", "STREAMHIDE", hide);
@@ -7856,16 +7876,17 @@ static int sc_click(void *ctx, event_t *event) {
         addon_stop();
         tidal_all_stop();
         if (type != 1 && (type & 0xf000) != 0xf000 && mclGetPlayStatus() != 1) player_stop();
-        toast("Streaming stopped");
+        toast(tr("Streaming stopped"));
         return 0;
     }
-    if (i == 1 && shelf_erase(0)) return toast("Wait for the one in progress"), 0; /* it rm -rfs */
+    if (i == 1 && shelf_erase(0))
+        return toast(tr("Wait for the one in progress")), 0; /* it rm -rfs */
     char path[48], tmp[52], s[8];
     int n = tk_snprintf(s, sizeof s, "%uM", 512u << (stream_cache(i) + 1) % 5);
     tk_snprintf(path, sizeof path, "%s/.cache-size", sc_dirs[i]);
     tk_snprintf(tmp, sizeof tmp, "%s.tmp", path);
     mkdir(sc_dirs[i], 0755);
-    if (!blob_io(path, tmp, s, (unsigned)n, 1)) toast("Could not save setting");
+    if (!blob_io(path, tmp, s, (unsigned)n, 1)) toast(tr("Could not save setting"));
     sc_text(i);
     return 0;
 }
@@ -7874,10 +7895,10 @@ int stream_config(void *ctx, event_t *event) {
     if (st.sc_page || !(st.sc_page = page_open("streamconf_page", page_closed, page_keyup)))
         return 0;
     int n = SVC_FIXED + st.svc_n;
-    widget_t *view = page_list(st.sc_page, st.sc_page, 0, "Configuration", 5 + n, 48);
+    widget_t *view = page_list(st.sc_page, st.sc_page, 0, tr("Configuration"), 5 + n, 48);
     for (int i = 0; i < 3; ++i)
         st.sc_row[i] = page_row_detail(view, i, "", 0, sc_click), sc_text(i);
-    page_row_detail(view, 3, "Stop Streaming Services", 0, sc_click);
+    page_row_detail(view, 3, tr("Stop Streaming Services"), 0, sc_click);
     /* a gap before the toggles, clear as the rows (the theme's default list_item fills) */
     int rh = page_h(48);
     widget_use_style(list_item_create(view, 0, 4 * rh, 375, rh), "s_listitem_black");
@@ -7947,10 +7968,10 @@ int media_find(int kind, char *path) {
  * card may have changed since; without it, a toast. */
 int media_click(void *ctx, event_t *event) {
     int kind = (int)(long)ctx;
-    char root[sizeof st.media_root], t[48];
+    char root[sizeof st.media_root], t[128];
     if (!media_find(kind, root)) {
         /* NOLINTNEXTLINE(clang-analyzer-security.ArrayBound): every caller's kind is a MEDIA's */
-        tk_snprintf(t, sizeof t, "No %s folder on the card", MEDIA[kind - 1]);
+        tk_snprintf(t, sizeof t, tr("No %s folder on the card"), MEDIA[kind - 1]);
         toast(t);
     } else if (kind == PHOTOS)
         photos_open(root);
@@ -8113,7 +8134,7 @@ int ringnav_about(widget_t *win, void *ctx) {
         widget_set_text_utf8(widget_get_child(widget_get_child(widget_get_child(view, 1), 0), 1),
                              STOCK_VERSION);
         widget_t *button = list_button(view);
-        about_label(button, 10, 166, "s_scrlabel_white24l", "CFW. Version");
+        about_label(button, 10, 166, "s_scrlabel_white24l", tr("CFW. Version"));
         about_label(button, 176, 149, "s_scrlabel_white20r", Q2POD_VERSION);
         widget_restack(P(button, W_PARENT), 2);
     }
@@ -8492,7 +8513,7 @@ static void resume_poll(void) {
 int rockbox_open(void *ctx, event_t *event) {
     void *flag = !rockbox_available() ? (void *)0 : fopen(ROCKBOX_FLAG, "w");
     if (!flag) {
-        toast("Rockbox is not on the card");
+        toast(tr("Rockbox is not on the card"));
         return 0;
     }
     fclose(flag);

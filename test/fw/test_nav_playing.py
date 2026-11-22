@@ -2665,7 +2665,7 @@ def test_a_slider_page_takes_classics_shape_and_every_stock_name_still_finds_its
     assert within(slider, view) and within(ui.box(caption), view)
     assert slider[1] + slider[3] <= ui.box(caption)[1] and ui.box(caption)[::2] == (0, 375)  # under it, centred across
     assert {ui.ints[page.slider, f'style:{s}:icon'.encode()] for s in ('normal', 'pressed', 'over', 'disable', 'focused')} == {0}
-    assert ui.text(caption) == read_wide(C.addressof(fw.var('navigation__slider_caption', C.c_uint)))
+    assert ui.text(caption) == 'Press Centre When Finished' == read_wide(st.slider_hint)  # what Classic draws
     assert ui.prop(caption, b'style:normal:font_name') == b'classic-light'
     assert (st.slider_win, st.slider_w, st.slider_kind) == (page.win, page.slider, list(SLIDERS).index(name))
 

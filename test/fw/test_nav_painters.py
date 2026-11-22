@@ -2108,9 +2108,9 @@ def test_a_set_text_rows_title_and_value(fw, text, title, val):
 
 
 def test_a_long_title_is_cut_and_keeps_its_value(fw):
-    ui, button, label, v = set_text_row(fw, 'x' * 50 + ': y')
+    ui, button, label, v = set_text_row(fw, 'x' * 150 + ': y')
     title = ui.text(label)
-    assert title and 'x' * 50 != title == 'x' * len(title) and ui.text(v) == 'y'
+    assert title and 'x' * 150 != title == 'x' * len(title) and ui.text(v) == 'y'
 
 
 def test_a_rows_label_elsewhere_is_its_text(fw):

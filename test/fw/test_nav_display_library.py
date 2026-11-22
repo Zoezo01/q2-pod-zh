@@ -899,7 +899,7 @@ def test_boot_to_flips_and_saves_through_a_temporary_file(fw):
     assert label.text == 'Boot to: Q2 Pod' and page.files.files == {BOOT: b'q2pod'}
     ui.click(label.parent)
     assert label.text == 'Boot to: Rockbox' and page.files.files == {BOOT: b'rockbox'}
-    assert {C.string_at(a[0]).decode() for _, a in fw.calls('fw_fopen')} >= {BOOT + '.tmp'}
+    assert {C.string_at(a[0]) for _, a in fw.calls('fw_fopen')} >= {(BOOT + '.tmp').encode()}
 
 
 def test_boot_to_not_saved_says_so_and_stays(fw):
