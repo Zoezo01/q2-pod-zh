@@ -4,8 +4,8 @@ Q2_FW_SANITIZE=1 builds it with AddressSanitizer and UBSan: run pytest with LD_P
 `cc -print-file-name=libasan.so` and ASAN_OPTIONS=detect_leaks=0. Q2_FW_COVERAGE=1 builds it for gcov.
 Q2_FW_STRICT=1 fails a test that reached a stub tools/ doesn't declare, unmocked (host.Fw.unknown):
 its 0 is a guess at what stock would answer. Q2_FW_PSEUDO=1 gives every text tr() knows (langpack.py's
-own_strings) a translation three times its bytes, so a run with Q2_FW_SANITIZE finds what a long one
-overflows; tests that read English fail, as they should, and only a sanitizer's report is news."""
+own_strings) a translation three times its bytes, and Q2_FW_PSEUDO=lang/xx.tsv a pack's table, so a run with
+Q2_FW_SANITIZE finds what a long one, or a multibyte one, overflows; tests that read English fail, as they should, and only a sanitizer's report is news."""
 import ctypes as C
 import fcntl
 import functools
@@ -122,20 +122,25 @@ def fw(library, tmp_path):
 
 
 @functools.cache
-def pseudo_lines():
+def pseudo_lines(table):
+    """(key, English, text) as language.c keeps them, in its order (by_key: strcmp of the key, then the English):
+    a .tsv's lines, unescaped, or each of Q2 Pod's own texts with a pseudo translation."""
     sys.path.insert(0, str(ROOT/'tools'))
     import langpack
-    texts = sorted({t.encode() for t, _ in langpack.own_strings()})  # strcmp's order, as language.c sorts
-    return [(t, b'[' + t + b' ' + b'~' * (2 * len(t)) + b']') for t in texts]
+    if table.endswith('.tsv'):
+        def undo(s):
+            return re.sub(r'\\([nt\\])', lambda m: {'n': '\n', 't': '\t', '\\': '\\'}[m[1]], s).encode()
+        rows = {tuple(map(undo, r)) for r in langpack.read_lines(pathlib.Path(table).read_text(encoding='utf-8'))}
+    else:
+        rows = {(t, t, b'[' + t + b' ' + b'~' * (2 * len(t)) + b']') for t in (s.encode() for s, _ in langpack.own_strings())}
+    return sorted(rows)
 
 
 def pseudo(loaded):
-    """language.c's table as a copy's load leaves it (lg: loaded, n, raw, line), each line the text, its English
-    and the pseudo translation."""
-    lines = pseudo_lines()
-    keep = [C.create_string_buffer(b) for pair in lines for b in pair]
-    line = (C.c_char_p * (3 * len(lines)))(*[C.cast(keep[2 * i + k], C.c_char_p) for i in range(len(lines))
-                                              for k in (0, 0, 1)])
+    """language.c's table as a copy's load leaves it (lg: loaded, n, raw, line)."""
+    lines = pseudo_lines(os.environ['Q2_FW_PSEUDO'])
+    keep = [C.create_string_buffer(b) for row in lines for b in row]
+    line = (C.c_char_p * len(keep))(*[C.cast(k, C.c_char_p) for k in keep])
     loaded.keep += [keep, line]
     lg = C.addressof(loaded.var('language__lg', C.c_char * 32))
     C.memmove(lg, struct.pack('<iI', 1, len(lines)), 8)
