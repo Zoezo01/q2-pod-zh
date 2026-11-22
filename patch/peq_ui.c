@@ -1433,12 +1433,12 @@ int eq_key(widget_t *top, unsigned key) {
     return 1;
 }
 
-/* Advanced's graph: a press within DRAG_PX of a band's ring (an off band's too, on its gain where
- * peq_paint draws none) holds that band, and the list stops scrolling (stock's scroll view reads
- * yslidable at every move, 0x6037c8). Its gain follows the finger in GRAPH_STEP dB steps,
- * within the graph's +-PEQ_GRAPH_DB, and the band turns on, as a picked gain does; the band becomes
- * the edited one. Only the draft changes, as with every Advanced edit: Apply plays it. A tap
- * changes nothing. ponytail: DRAG_PX and GRAPH_STEP are guesses for a finger on the 72 px plot. */
+/* Advanced's graph: a press within DRAG_PX of an on band's ring holds that band, and the list stops
+ * scrolling (stock's scroll view reads yslidable at every move, 0x6037c8); an off band takes none.
+ * Its gain follows the finger in GRAPH_STEP dB steps, within the graph's +-PEQ_GRAPH_DB, and the
+ * band becomes the edited one. Only the draft changes, as with every Advanced edit: Apply plays it.
+ * A tap changes nothing. ponytail: DRAG_PX and GRAPH_STEP are guesses for a finger on the 72 px
+ * plot. */
 #define DRAG_PX 20
 #define GRAPH_STEP 0.5
 static int graph_touch(int type, int x, int y) {
@@ -1450,6 +1450,7 @@ static int graph_touch(int type, int x, int y) {
         double best = DRAG_PX * DRAG_PX;
         ui.drag = 0;
         for (int i = 0; i < ui.draft.count; ++i) {
+            if (!ui.draft.bands[i].enabled) continue;
             double dx = graph_x(ui.draft.bands[i].frequency) - xy[0],
                    dy = graph_y(ui.draft.bands[i].gain) - gy;
             if (dx * dx + dy * dy < best) best = dx * dx + dy * dy, ui.drag = i + 1;
@@ -1471,9 +1472,8 @@ static int graph_touch(int type, int x, int y) {
                (PEQ_PLOT_BOTTOM - PEQ_PLOT_TOP) / GRAPH_STEP;
     g = (int)(g + (g < 0 ? -0.5 : 0.5)) * GRAPH_STEP;
     g = g > PEQ_GRAPH_DB ? PEQ_GRAPH_DB : g < -PEQ_GRAPH_DB ? -PEQ_GRAPH_DB : g;
-    if (g == b->gain && b->enabled) return 0;
+    if (g == b->gain) return 0;
     b->gain = g;
-    if (!b->enabled) b->enabled = 1;
     ui.band = ui.drag - 1;
     ui.dirty = 1;
     ui.status[0] = 0;

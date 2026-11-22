@@ -1109,18 +1109,22 @@ def test_a_tap_on_r_resets_the_sliders_and_a_drag_follows_the_finger(fw):
 
 
 def test_a_finger_on_a_band_s_ring_drags_its_gain_and_holds_the_list(fw):
-    p = page(fw, state(fw, EQ_PEQ)).advanced()  # ten off bands on the 0 dB line, which shows no rings
+    s = state(fw, EQ_PEQ)
+    s.peq.bands[5].enabled = 1  # 1 kHz on at 0 dB; the other nine off on the same line, with no rings
+    p = page(fw, s).advanced()
     before, view, graph = dict(p.card.files), p.ui.view, p.ui.graph
-    x, y = round(fw.fn('peq_ui__graph_x', C.c_float, C.c_double)(1000)), lambda db: 48 + 42 - round(db * 2.4)  # page y
+    at = lambda f: round(fw.fn('peq_ui__graph_x', C.c_float, C.c_double)(f))
+    x, y = at(1000), lambda db: 48 + 42 - round(db * 2.4)  # page y
     press = lambda gx, gy: p.touch(graph, EVT_POINTER_DOWN, gx, gy)
     p.ui.drag = 3  # a lift never seen
     assert press(x, y(15)) == 0 and not p.ui.drag  # off every ring: the list's
+    assert press(at(500), y(0)) == 0 and not p.ui.drag and p.props[(view, 'yslidable')] == 1  # an off band takes none
     assert p.touch(graph, EVT_POINTER_MOVE_BEFORE, x, y(5)) == 0 and p.ui.draft.bands[5].gain == 0
     assert press(x, y(0)) == 0 and p.ui.drag == 6 and p.props[(view, 'yslidable')] == 0  # 1 kHz's, the list held
-    assert not p.ui.draft.bands[5].enabled and not p.ui.dirty  # the press alone changes nothing
+    assert not p.ui.dirty  # the press alone changes nothing
     p.touch(graph, EVT_POINTER_MOVE_BEFORE, x + 30, y(5))  # sideways moves no frequency
     b = p.ui.draft.bands[5]
-    assert (b.enabled, b.gain, b.frequency, p.ui.band, p.ui.dirty) == (1, 5, 1000, 5, 1)  # on, as a picked gain
+    assert (b.gain, b.frequency, p.ui.band, p.ui.dirty) == (5, 1000, 5, 1)
     assert p.ui.curve[0][x - GRAPH_X] < 42 and fw.calls('widget_invalidate_force') and not p.pending('render')
     p.touch(graph, EVT_POINTER_MOVE_BEFORE, x, y(-2.5))
     assert b.gain == -2.5
