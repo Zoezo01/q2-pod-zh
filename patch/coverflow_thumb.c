@@ -202,7 +202,7 @@ static void th_turn(void *s, int travel, unsigned now, int n, int ms) {
     th.tick_at = now;
     if (th.jump || th.beat) th.stretch += ticks;
     if (th.jump) return;
-    th.goal += i2f(dir) * ticks * i2f(step < cap ? step : cap);
+    th.goal += i2f(dir) * ticks * (step < cap ? step : cap);
     if (coverflow_bounded(s)) {
         int i = I(s, SLIDE_INDEX);
         float lo = i2f(-i), hi = i2f(n - 1 - i);
@@ -246,7 +246,7 @@ static void th_albums(void *s, int n, int since, int ms) {
     }
     float f = cf_smooth((th.rate - cfs.fast_at) / (cfs.fast_full - cfs.fast_at));
     float base = idle || !th.finger ? cfs.snap : cfs.track + i2f(cfs.spin - cfs.track) * f;
-    float rest = cfs.snap + (float)(cfs.spin - cfs.snap) * cf_smooth(i2f(left * 100) / i2f(cfs.far_left));
+    float rest = cfs.snap + (float)(cfs.spin - cfs.snap) * cf_smooth(i2f(left * 100 / cfs.far_left));
     /* only the thumb raises it, and how far is left only lets it fall: lag raising it would add lag
      * and snap the row out at one speed */
     th.tau = th.tau < rest ? th.tau : rest;
