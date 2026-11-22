@@ -2806,6 +2806,17 @@ def test_a_late_edge_press_leaves_centres_hold(fw, st):
     assert not fw.calls('timer_remove') and st('centre_hold', C.c_uint).value == 77
 
 
+def test_an_edge_press_ends_centres_click(fw, st):
+    claim(O['BOOT_KEY_GUARD'])
+    gate = Gate(fw, 'chord_gate')
+    gate(DOWN, KEY_CENTER), gate(DOWN, KEY_PLAY, 30)
+    assert gate(UP, KEY_CENTER, 50) == 0  # the window manager has its release, ringnav stops it
+    assert fw.fn('ringnav', C.c_int, C.c_void_p, C.c_void_p)(None, event(UP, KEY_CENTER)) == 11
+    assert not fw.calls('stock_keyup_trampoline') and st('centre_rim').value == 0
+    gate(UP, KEY_PLAY, 10), gate(DOWN, KEY_CENTER, 1000), gate(DOWN, KEY_PLAY, 600)
+    assert st('centre_rim').value == 0  # a late edge press leaves the click
+
+
 def test_a_ghost_after_return_held_is_dropped_whole(fw):
     gate = Gate(fw, 'chord_gate')
     gate(DOWN, KEY_RETURN), gate(UP, KEY_RETURN, 700)
