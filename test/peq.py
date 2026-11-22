@@ -695,6 +695,7 @@ unsigned char shim_flag(void) { return g_equalizer_flag; }
 static int eq_following;
 void shim_following(int on) { eq_following = on; }
 int pod_value(int i) { return i == POD_EQ_OUTPUT ? eq_following : 0; } /* EQ per Output's, navigation.c's */
+const char *tr(const char *en) { return en; } /* language.c's, with no language: English */
 void ringnav_eq_output_toggle(void) { eq_following = !eq_following; }
 void shim_run(void) { int (*f)(const void *) = timer_fn; timer_fn = 0; if (f) f(0); }
 /* Click the row whose labels, caption and value joined by a space, start with text; optionally let
