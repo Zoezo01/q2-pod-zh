@@ -4764,10 +4764,13 @@ void slider_number(widget_t *label) {
 }
 /* Stock's window as it loads, before its init. Every look-up it makes by name still finds its
  * widget: edit_key clicks img_dec and img_add, hidden here. */
-/* The caption's text, which Classic's painter draws (slider_hint) */
+/* The caption's text, which Classic's painter draws (slider_hint): a copy of our own, so stock
+ * setting the widget's text can't move it. */
 static void slider_caption(widget_t *c, const char *s) {
-    widget_set_text_utf8(c, s);
-    st.slider_hint = (const __WCHAR_TYPE__ *)widget_get_text(c);
+    static unsigned text[112] __attribute__((section(".scratch")));
+    wide_text(text, sizeof text / sizeof *text, s);
+    st.slider_hint = (const __WCHAR_TYPE__ *)text;
+    widget_set_text(c, text);
 }
 /* Crossfade's and Night Shift's Centre stays on the page (crossfade.c): what it does there. */
 void slider_centre_hint(widget_t *page, int night) {
