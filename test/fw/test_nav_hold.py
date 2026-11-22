@@ -812,12 +812,12 @@ def test_add_songs_lists_500_songs_then_a_row_that_searches(fw, ui, recs, st):
     assert editor.open(1, None) == 0
     editor.table.library *= 120  # 600 songs
     editor.pick('Add Songs')
-    assert editor.rows() == ['Search', *list(TITLES.values()) * 100, 'Search for more songs']
+    assert editor.rows() == ['Search', *list(TITLES.values()) * 100, '搜索更多歌曲']
     C.c_ubyte.from_address(editor.view() + O['VIEW_VERTICAL']).value = 1  # rows_view's yslidable
     m = fw.var('g_menu', Menu)
     assert fw.fn('load_rows', C.c_int, C.POINTER(Menu), C.c_void_p)(m, editor.view()) == 1
     assert m.n == 502 and m.at[501] == ui.kids(editor.view())[-1]
-    editor.pick('Search for more songs')
+    editor.pick('搜索更多歌曲')
     assert editor.ple.mode == 4 and ui.lookup(editor.ple.page, 'search_edit', 1)
     assert editor.table.songs(3) == ['Two', 'Three']  # it added nothing
 
@@ -829,12 +829,12 @@ def test_a_search_with_more_than_500_matches_ends_in_that_row(editor, ui):
     ui.nodes[ui.lookup(editor.ple.page, 'search_edit', 1)].text = 'e'
     ui.key(editor.ple.page, KEY_RETURN)
     ui.due('ple_run')
-    assert editor.rows() == ['Search: e', *['One', 'Three', 'Twenty', 'Five'] * 125, 'Search for more songs']
-    editor.pick('Search for more songs')
+    assert editor.rows() == ['Search: e', *['One', 'Three', 'Twenty', 'Five'] * 125, '搜索更多歌曲']
+    editor.pick('搜索更多歌曲')
     assert ui.nodes[ui.lookup(editor.ple.page, 'search_edit', 1)].text == 'e'  # the query, as row 0 keeps it
 
 
-@pytest.mark.parametrize('songs, more', [(500, []), (501, ['Search for more songs'])])
+@pytest.mark.parametrize('songs, more', [(500, []), (501, ['搜索更多歌曲'])])
 def test_only_a_list_past_500_songs_is_cut(editor, songs, more):
     editor.table.library = (editor.table.library * 101)[:songs]
     editor.pick('Add Songs')
