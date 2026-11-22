@@ -125,7 +125,7 @@ typedef struct {
     int wifi;     /* q2app's wifi=1: started with the Wi-Fi link, stopped once it is gone */
     int wifi_off; /* a wifi app the user stopped (or that ended itself): not started again until
                    * Wi-Fi is back after being gone 10 s or more (addon_wifi_release) */
-    unsigned polled, launch_at, restart_at, play; /* play: its .play as read last, hashed */
+    unsigned polled, launch_at, restart_at, play; /* play: its .play as read last (play_read) */
     /* its status file's bar= (bar_read): the word as read last, and file:// of the icon it names
      * (bar.png for 1, bar-<word>.png else) if one fits BAR_ICON_W x BAR_ICON_H; else "" */
     char baricon[56], barword[12];
@@ -151,12 +151,29 @@ int valid_id(const char *s) {
     return k > 0;
 }
 
+#define PLAY_RAW 192 /* an app's .play as far as it is read */
+/* An app's .play into raw, PLAY_RAW bytes: the bytes read, and *h their hash | 1 (0: none). */
+static unsigned play_read(const char *id, char *raw, unsigned *h) {
+    char path[48];
+    tk_snprintf(path, sizeof path, "/tmp/q2-%s.play", id);
+    unsigned got = state_read(path, raw, PLAY_RAW);
+    *h = got ? hash_bytes(FNV_SEED, (const unsigned char *)raw, strlen(raw)) | 1 : 0;
+    return got;
+}
+
 static app_t *slot(const char *id) {
     for (int i = 0; i < ap.n; ++i)
         if (!strcmp(ap.a[i].id, id)) return &ap.a[i];
     if (ap.n == APPS_MAX) return 0;
     app_t *a = &ap.a[ap.n++];
     tk_snprintf(a->id, sizeof a->id, "%s", id);
+    /* A .play /tmp kept from before demo started (a crash, a round trip to Rockbox) is taken as
+     * seen, not played again: the slot is made before this demo can start its app, and kept for
+     * demo's life, so a .play the app writes later is a new session (stream_poll).
+     * ponytail: an app that outlived demo and writes a new .play before this first scan has it
+     * taken as seen too; telling them apart needs the file's mtime against demo's start. */
+    char raw[PLAY_RAW];
+    play_read(id, raw, &a->play);
     tk_snprintf(a->bin, sizeof a->bin, CARD "/.%s/q2-%s", id, id);
     tk_snprintf(a->run, sizeof a->run, "/bin/sh " CARD "/.%s/run", id);
     tk_snprintf(a->pid, sizeof a->pid, "/tmp/q2-%s", id);
@@ -655,11 +672,9 @@ static void *stream_queue(void) {
 }
 
 static void stream_poll(app_t *a) {
-    char path[48], raw[192];
-    tk_snprintf(path, sizeof path, "/tmp/q2-%s.play", a->id);
-    unsigned got = state_read(path, raw, sizeof raw);
+    char path[48], raw[PLAY_RAW];
+    unsigned h, got = play_read(a->id, raw, &h);
     if (!got) return;
-    unsigned h = hash_bytes(FNV_SEED, (const unsigned char *)raw, strlen(raw));
     /* a new session: this app's .play changed. Another app's, left in /tmp while it runs, never
      * takes the queue back. */
     if (h != a->play) {

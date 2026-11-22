@@ -1011,9 +1011,11 @@ class Stream:
     """Stream mode end to end: card apps whose .play names a folder (or playlist) they fill; stock's listing of a
     folder (toolsLoadDirectory); Now Playing loading into stock's queue what play_folder hands it, which
     playback_loads counts, as playback_groups does; and the UI loop's passes, addon_poll and then its timers."""
-    def __init__(self, fw, mcl, songs, **apps):
+    def __init__(self, fw, mcl, songs, left=b'', **apps):
         self.fw, self.mcl, self.songs = fw, mcl, songs
         self.world = card(fw, **(apps or {'foo': b'name=Foo\n'}))
+        if left:  # foo's .play, kept in /tmp from before demo started
+            self.play(left)
         scan(fw)
         for i in range(ap(fw).n):  # each started, its loop running
             ap(fw).a[i].launched = 1
@@ -1237,6 +1239,38 @@ def test_another_apps_play_file_left_in_tmp_never_takes_the_queue_back(fw, mcl, 
     s.play(b'2 /mnt/mmc/.foo/s\n', b'foo')  # a new session of its own does
     s.step()
     assert s.queued() == [one, b'/mnt/mmc/.foo/s/02.flac'] and len(s.loads) == 3
+
+
+def test_a_play_file_left_from_before_q2_pod_started_is_not_played_again(fw, mcl, songs):
+    s = Stream(fw, mcl, songs, left=b'1 ' + SESSION + b'\n')  # a crash, or back from Rockbox, /tmp kept
+    s.land(SESSION + b'/01.flac')
+    s.step()
+    s.step()
+    assert s.loads == [] and s.queued() == [] and not fw.calls('toolsLoadDirectory')
+    scan(fw)  # a rescan (the card mounted, USB storage, the App Store) doesn't make it new
+    s.step()
+    assert s.loads == [] and s.playing() is None
+    s.play(b'2 ' + SESSION + b'\n')  # the app's next session plays
+    s.step()
+    assert s.loads == [(LIBRARY, 1)] and s.queued() == [SESSION + b'/01.flac']
+
+
+def test_a_play_file_an_app_leaves_when_it_stops_keeps_its_queue_followed(fw, mcl, songs):
+    s = started(fw, mcl, songs)
+    app = ap(fw).a[0]
+    app.launched = 0  # it stopped, its .play left in place
+    del s.world.files[app.pid]
+    s.land(SESSION + b'/02.flac')
+    s.step()
+    scan(fw)
+    app.launched = 1  # started again
+    s.world.files[app.pid] = b'1'
+    s.step()
+    s.step()
+    assert len(s.loads) == 1 and s.queued() == [SESSION + b'/01 - One [1].flac', SESSION + b'/02.flac']
+    mcl.pos = 1
+    s.step()
+    assert s.playing() == SESSION + b'/02.flac\n'
 
 
 def playlist(fw, mcl, songs, *entries):
