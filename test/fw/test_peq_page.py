@@ -1122,6 +1122,10 @@ def test_a_finger_on_a_band_s_ring_drags_its_gain_and_holds_the_list(fw):
     b = p.ui.draft.bands[5]
     assert (b.enabled, b.gain, b.frequency, p.ui.band, p.ui.dirty) == (1, 5, 1000, 5, 1)  # on, as a picked gain
     assert p.ui.curve[0][x - GRAPH_X] < 42 and fw.calls('widget_invalidate_force') and not p.pending('render')
+    p.touch(graph, EVT_POINTER_MOVE_BEFORE, x, y(-2.5))
+    assert b.gain == -2.5
+    p.touch(graph, EVT_POINTER_MOVE_BEFORE, x, y(-30))
+    assert b.gain == -GRAPH_DB  # the graph's foot
     p.touch(graph, EVT_POINTER_MOVE_BEFORE, x, y(30))
     assert b.gain == GRAPH_DB  # the graph's top
     p.touch(graph, EVT_POINTER_UP_BEFORE, x, y(30))
