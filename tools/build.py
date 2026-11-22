@@ -31,6 +31,7 @@ def dev_tag(number):
 BASE = 0xb00000
 SCRATCH = 0xbd0000  # 832 KB of payload text below it
 SCRATCH_MAX = 0x30000  # the most its state may fill, 192 KB: the segment is demo's last, the heap after it
+ROOTFS_FREE_MIN = 1 << 20  # bytes of stock's rootfs size a build must leave unused, 1 MiB (docs/building.md, Free space)
 RING_STEP = 48
 HOOKS = {
     # USB charging is inhibited before insertion and guarded through enumeration/disconnect.
@@ -1786,6 +1787,13 @@ def check_layout(payload, ps):
     check(ps['__scratch_start'] == SCRATCH, 'Scratch state moved')
     check(ps['__scratch_end'] <= SCRATCH + SCRATCH_MAX, 'Scratch state exceeds its 192 KB')
 
+def check_rootfs_size(size, stock_size):
+    """The repacked rootfs image is no larger than stock's, and leaves ROOTFS_FREE_MIN bytes of that size unused."""
+    check(size <= stock_size, 'Repacked rootfs exceeds stock size')
+    free = stock_size - size
+    check(free >= ROOTFS_FREE_MIN, f'Repacked rootfs leaves {free:,} bytes of stock size free, '
+                                   f'{ROOTFS_FREE_MIN - free:,} short of ROOTFS_FREE_MIN ({ROOTFS_FREE_MIN:,})')
+
 def compile_helper(out, cat, src, name, rels):
     """Link patch/{src}.c and start.c as name against the stock rootfs's libraries rels."""
     libs = []
@@ -2394,8 +2402,8 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
     check(inodes(newsq) == sorted([i for i in inodes(sq) if i not in removed]+added),
           'Repacked rootfs metadata differs from stock')
     blobs['recovery-update/rootfs.squashfs'] = newsq.read_bytes()
-    # Stock image proves this size fits; do not enlarge beyond its padded size.
-    check(len(blobs['recovery-update/rootfs.squashfs']) <= sq.stat().st_size, 'Repacked rootfs exceeds stock size')
+    # Stock image proves this size fits; do not enlarge beyond its padded size, and keep the floor free under it.
+    check_rootfs_size(len(blobs['recovery-update/rootfs.squashfs']), sq.stat().st_size)
     blobs['firmware_v20.info'] = (f'Shanling Q2\n{version}\n'+''.join(
         hashlib.md5(blobs[n]).hexdigest()+'  '+n+'\n' for n in [
             'recovery-update/xImage','recovery-update/rootfs.squashfs'])).encode()
