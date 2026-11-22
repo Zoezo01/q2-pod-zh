@@ -118,6 +118,64 @@ for mode in (0o100755,0):
         f,ctx=m.handler(b,O['EVT_CLICK']); assert m.nodes[m.nodes[b]['children'][1]]['text']==key and m.nodes[m.nodes[b]['children'][0]]['image']==key
         m.calls=[]; assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and m.opened[-1]==(page,None),key
     passed()
+# Language: a card app whose q2app says lang=1 shows the row; its page lists English and each table by its own name, the
+# one in use ticked; a pick copies the table to /mnt/data, names it in config.ini and restarts, and the next start's
+# texts are its, by key and English, Q2 Pod's own by English alone.
+LANG_COPY='/mnt/data/q2-lang-de.tsv'
+LANG_CARD={'/mnt/mmc/.langs/q2app':b'name=Languages\nhidden=1\nlang=1\n',
+           '/mnt/mmc/.langs/lang/de.tsv':'# Deutsch\nmsg_saved\tSaved\tGespeichert\nRestart to apply?\tRestart to apply?\tNeu starten?\n'.encode()}
+class LangMachine(BootMachine):
+    answer=10  # the confirm's OK
+    stock={'msg_saved':'Saved','msg_gone':'Gone'}  # stock's en_US table; any other key comes back as itself
+    def hook(self,u,address,size,unused):
+        if address==syms['navigator_to_with_context'] and self.text(u.reg_read(REGS[0]))=='dialog/confirminfo_dialog':
+            self.opened.append(('dialog/confirminfo_dialog',self.text(u.reg_read(REGS[1])+8))); self.returns(self.answer); return
+        if address==int(manifest['patch_symbols']['stock_locale_tr_trampoline'],16):
+            key=u.reg_read(REGS[1]); self.returns(self.string(self.stock[self.text(key)]) if self.text(key) in self.stock else key); return
+        return super().hook(u,address,size,unused)
+def lang_machine(files=LANG_CARD,config={}):
+    m=LangMachine(dict(files)); m.config.update(config); m.restack=True
+    m.mock('fflush@GLIBC_2.0','fsync@GLIBC_2.0','fileno@GLIBC_2.0','unlink@GLIBC_2.0')
+    m.scope_tree={'/mnt/mmc':[('.langs',4),('.other',4)],'/mnt/mmc/.langs/lang':[('de.tsv',8),('notes.txt',8)]}
+    m.handlers[payload_syms['stock_reboot_trampoline']]='stock_reboot'  # past ringnav_reboot's save
+    for hook in ('systemset','language'):
+        m.handlers[int(manifest['patch_symbols'][f'stock_{hook}_trampoline'],16)]='stock_'+hook
+    return m
+def lang_page(m):
+    stock=[m.entry(0) for _ in range(12)]
+    view=m.node('scroll_view','scroll_view_language',stock.copy())
+    m.top=m.node('window','language_page',[m.node('list_view','list_view_language',[view])])
+    assert m.call(address=HOOKS['systemset_language_page_init'][0],args=(m.top,5,0,0),gap=0)==0 and m.calls[0][:3]==('stock_language',m.top,5)
+    buttons=[m.nodes[r]['children'][0] for r in m.nodes[view]['children']]
+    assert not set(m.nodes[view]['children'])&set(stock)
+    return buttons,[(m.nodes[m.nodes[b]['children'][0]]['image'],m.nodes[m.nodes[b]['children'][1]]['text']) for b in buttons]
+for files,shown in ((LANG_CARD,1),({k:v for k,v in LANG_CARD.items() if k.endswith('q2app')},0),({},0)):
+    m=lang_machine(files)
+    entries=[m.entry(0) for _ in range(9)]
+    view=m.node('scroll_view','scroll_view_sysset',entries.copy())
+    m.top=m.node('window','sysset_page',[m.node('list_view','list_view_sysset',[view])])
+    assert m.call(address=HOOKS['systemset_sysset_page_init'][0],args=(m.top,5,0,0),gap=0)==0
+    assert m.nodes[entries[0]]['visible']==shown,files; passed()
+m=lang_machine(); buttons,rows=lang_page(m)
+assert rows==[('select','English'),('unselect','Deutsch')],rows  # notes.txt no table, .other no q2app
+f,ctx=m.handler(buttons[0],O['EVT_CLICK']); m.calls=[]; assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0
+assert not m.opened and not any(c[0]=='stock_reboot' for c in m.calls)  # English is in use: nothing
+m.answer=0; f,ctx=m.handler(buttons[1],O['EVT_CLICK']); m.calls=[]; assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0
+assert m.opened==[('dialog/confirminfo_dialog','Restart to apply?')] and LANG_COPY not in m.files and 'LANG' not in m.config  # Cancel
+m.answer=10; m.calls=[]; assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0
+assert m.files[LANG_COPY]==LANG_CARD['/mnt/mmc/.langs/lang/de.tsv'] and m.config['LANG']=='de' and any(c[0]=='stock_reboot' for c in m.calls)
+assert LANG_COPY+'.new' not in m.files; passed()
+# The next start, the card gone: stock's texts by key and English, Q2 Pod's by English; a text without a line, or
+# whose English changed, stays English.
+m=lang_machine({LANG_COPY:LANG_CARD['/mnt/mmc/.langs/lang/de.tsv']},{'LANG':'de'}); m.scope_tree={}
+m.handlers[int(manifest['patch_symbols']['stock_locale_tr_trampoline'],16)]='stock_locale_tr'
+stock_tr=lambda key: m.text(m.call(address=HOOKS['locale_info_tr'][0],args=(0x1234,m.string(key),0,0),gap=0))
+assert [stock_tr(k) for k in ('msg_saved','msg_gone','asset English')]==['Gespeichert','Gone','asset English']
+assert m.text(m.call(address=payload_syms['tr'],args=(m.string('Restart to apply?'),0,0,0),gap=0))=='Neu starten?'
+other=m.string('Cancel'); assert m.call(address=payload_syms['tr'],args=(other,0,0,0),gap=0)==other  # the same pointer
+m.stock={'msg_saved':'Saved!'}; assert stock_tr('msg_saved')=='Saved!'  # stock's English changed: its line no longer fits
+buttons,rows=lang_page(m); assert rows==[('unselect','English')],rows; passed()  # no card, no row to reach it by
+print('Languages: the row with a pack, the page, a pick, Cancel, the copy at the next start passed.')
 print('Boot settings: conditional row/order, restart, card removal and failed atomic writes passed.')
 
 from build import AUDIO_EXTENSION_CALLS
