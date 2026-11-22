@@ -1,12 +1,15 @@
 """language.c: the copy's lines and their English fallbacks, the card's language packs, Remove and sync."""
 import ctypes as C
+import importlib
 import struct
 
 import pytest
 
 from conftest import Config, Files
 
-COPY = '/mnt/data/q2-lang.tsv'
+langpack = importlib.import_module('tools.langpack')
+
+COPY = '/mnt/data/q2-lang-de.tsv'
 
 
 def lines(*rows, name='Deutsch'):
@@ -82,7 +85,7 @@ def test_english_without_a_copy(fw, lang):
 
 
 def test_lines_and_their_fallbacks(fw, lang):
-    Config(fw)
+    Config(fw, LANG='de')
     lang.en |= {'local_genre': 'Genres', 'playset_noplay': 'Require Output (Beta)', 'album': 'Album'}
     lang.files[COPY] = lines(
         ('Shuffle Songs', 'Shuffle Songs', 'Titel mischen'),
@@ -109,25 +112,51 @@ def test_lines_and_their_fallbacks(fw, lang):
 
 
 def test_a_duplicate_key_takes_the_line_for_stocks_english(fw, lang):
-    Config(fw)
+    Config(fw, LANG='de')
     lang.en['msg_delfile'] = 'Delete File?'
     lang.files[COPY] = lines(('msg_delfile', 'Are you sure you want to delete this file?', 'Wirklich löschen?'),
                              ('msg_delfile', 'Delete File?', 'Datei löschen?'))
     assert lang.stock('msg_delfile') == 'Datei löschen?'
 
 
-@pytest.mark.parametrize('a, b, same', [
-    ('%d of %d', '%d von %d', True), ('%s', '%d', False), ('%d', '', False), ('', '%d', False),
-    ('%5.1f dB', '%5.1f dB', True), ('%5.1f dB', '%.1f dB', False), ('100%%', '100 %%', True),
-    ('%lu', '%lu', True), ('%', '%', True), ('%s %d', '%d %s', False)])
-def test_conversions(fw, a, b, same):
+CONVERSIONS = [
+    ('%d of %d', '%d von %d'), ('%s', '%d'), ('%d', ''), ('', '%d'), ('%5.1f dB', '%5.1f dB'), ('%5.1f dB', '%.1f dB'),
+    ('100%%', '100 %%'), ('%lu', '%lu'), ('%', '%'), ('%s %d', '%d %s'), ('音量 50%（最大）', '50%'), ('%02x', '%02x'),
+    ('%lld', '%ld'), ('%hhd', '%hhd'), ('%.f', ''), ('%*d', '%*d'), ('%d%%', '%d %%'), ('%%%d', '%d'), ('%q', '')]
+
+
+@pytest.mark.parametrize('a, b', CONVERSIONS)
+def test_conversions_as_langpack_counts_them(fw, a, b):
+    """The Q2 skips exactly the lines langpack.py's check refuses for their conversions."""
     f = fw.fn('language__same_conversions', C.c_int, C.c_char_p, C.c_char_p)
-    assert bool(f(a.encode(), b.encode())) == same
+
+    def found(s):
+        return langpack.CONVERSION.findall(s.replace('%%', ''))
+    assert bool(f(a.encode(), b.encode())) == (found(a) == found(b))
+
+
+def test_conversions(fw):
+    f = fw.fn('language__same_conversions', C.c_int, C.c_char_p, C.c_char_p)
+    assert f(b'%d of %d', b'%d von %d') and not f(b'%s', b'%d') and f('音量 50%（最大）'.encode(), b'50%')
 
 
 def picks(fw):
     """How many tables the last scan found: lg's int after loaded, n and two pointers."""
     return struct.unpack_from('<i', bytes(fw.var('language__lg', C.c_char * 28)), 24)[0]
+
+
+def test_a_reset_or_a_bad_lang_is_english(fw, lang):
+    lang.files[COPY] = lines(('Saved', 'Saved', 'Gespeichert'))
+    lang.files['/mnt/data/q2-lang-..tsv'] = lines(('Saved', 'Saved', 'x'))
+    Config(fw)  # config.ini replaced: no LANG
+    assert lang.tr('Saved') == 'Saved'
+
+
+@pytest.mark.parametrize('value', ['..', 'de/../x', 'd', 'abcdefghijkl', 'fr'])
+def test_lang_names_only_a_code_with_its_copy(fw, lang, value):
+    lang.files[COPY] = lines(('Saved', 'Saved', 'Gespeichert'))
+    Config(fw, LANG=value)
+    assert lang.tr('Saved') == 'Saved'
 
 
 def test_the_row_needs_a_pack_with_a_table(fw, lang):
@@ -161,10 +190,14 @@ def test_remove_takes_the_copy(fw, lang):
     lang.pack('langs', {'de': lines()})
     lang.pack('other', {}, q2app='name=Other\n')
     lang.files[COPY] = lines(('a', 'a', 'b'))
+    lang.files['/mnt/data/q2-lang-fr.tsv'] = b'#'
+    lang.files['/mnt/data/config.ini'] = b'x'
+    lang.dirs['/mnt/data'] = ['config.ini', 'q2-lang-de.tsv', 'q2-lang-fr.tsv', 'q2-lang-.tsv', 'q2-lang-de.tsv.new']
     removing(b'.other')
     assert COPY in lang.files
     removing(b'.langs')
-    assert COPY not in lang.files
+    assert COPY not in lang.files and '/mnt/data/q2-lang-fr.tsv' not in lang.files
+    assert '/mnt/data/config.ini' in lang.files
     assert lang.written == []  # config.ini is the UI thread's
 
 
@@ -183,7 +216,63 @@ def test_sync_copies_a_changed_table(fw, lang):
 
 
 def test_sync_leaves_english(fw, lang):
-    Config(fw, LANG='de')  # LANG without a copy (Remove) is English
+    Config(fw, LANG='de')  # LANG without its copy (Remove) is English
     lang.pack('langs', {'de': lines()})
     fw.fn('language_sync', None)()
     assert COPY not in lang.files
+
+
+@pytest.fixture
+def picking(fw, lang):
+    """The page's tables read, the confirm answered yes, the restart counted."""
+    lang.pack('langs', {'de': lines(('Saved', 'Saved', 'Gespeichert')), 'fr': lines(name='Français')})
+    answer = [10]
+    fw.mock('navigator_to_with_context', lambda *_: answer[0])
+    lang.answer = answer
+    return lang
+
+
+def pick(fw, i):
+    fw.fn('language_offered', C.c_int)()
+    return fw.fn('language__lang_pick', C.c_int, C.c_long, C.c_void_p)(i, None)
+
+
+def test_a_pick_copies_then_names_then_restarts(fw, picking):
+    Config(fw)
+    pick(fw, 0)
+    assert picking.files[COPY] == picking.files['/mnt/mmc/.langs/lang/de.tsv'] and picking.written == [('LANG', 'de')]
+
+
+def test_a_pick_replaces_the_copy_in_use(fw, picking):
+    Config(fw, LANG='de')
+    picking.files[COPY] = b'# Deutsch\n'
+    pick(fw, 1)
+    assert '/mnt/data/q2-lang-fr.tsv' in picking.files and COPY not in picking.files
+    assert picking.written == [('LANG', 'fr')]
+
+
+def test_english_takes_the_copy_away(fw, picking):
+    Config(fw, LANG='de')
+    picking.files[COPY] = b'# Deutsch\n'
+    pick(fw, -1)
+    assert COPY not in picking.files and picking.written == [('LANG', '')]
+
+
+def test_the_language_in_use_or_a_no_is_no_change(fw, picking):
+    Config(fw, LANG='de')
+    picking.files[COPY] = b'# Deutsch\n'
+    pick(fw, 0)
+    picking.answer[0] = 0
+    pick(fw, 1)
+    pick(fw, 5)  # past the tables
+    assert picking.written == [] and set(picking.files) >= {COPY} and '/mnt/data/q2-lang-fr.tsv' not in picking.files
+
+
+def test_a_failed_copy_says_so_and_keeps_the_language(fw, picking):
+    Config(fw, LANG='de')
+    picking.files[COPY] = b'# Deutsch\n'
+    del picking.files['/mnt/mmc/.langs/lang/fr.tsv']  # gone since the page was built
+    fw.fn('language_offered', C.c_int)()
+    picking.dirs['/mnt/mmc/.langs/lang'] = ['de.tsv', 'fr.tsv']
+    fw.fn('language__lang_pick', C.c_int, C.c_long, C.c_void_p)(1, None)
+    assert picking.written == [] and COPY in picking.files  # and a toast says so
