@@ -138,6 +138,56 @@ void url_escape(const char *s, char *out, unsigned n) {
 }
 
 #ifndef PEQ_HOST
+/* A USB DAC's volume is in software, hciplayer's as Bluetooth's, only when the USB volume is
+ * variable (g_usbvol_mode) and the DAC has no volume control of its own: mclUsbAudioSetVol then
+ * finds none (USB_MIXER -2) and tells hciplayer {mcl-softvolflag\1}. Otherwise the DAC applies it.
+ */
+static int usb_soft(void) { return g_usbvol_mode && I(USB_MIXER, 0) == -2; }
+
+/* The output in use for q2video (radio_start) and librespot's sink (spotify.c): 0 for the
+ * headphone DAC, which keeps the volume set. Bluetooth's is hciplayer's soft volume, so the helper
+ * gets g_volume in vol (5 bytes) to apply it the same way, on hciplayer's own plug:bluealsa (the
+ * device demo writes to /mnt/data/asound.conf). A USB DAC is "usb", which the helper finds in
+ * /proc/asound/cards (plughw, for its rate): with g_volume when its volume is soft, else "h" and
+ * the volume, which the helper leaves to the DAC. */
+const char *output_device(char *vol) {
+    int way = mclGetOutputWay();
+    tk_snprintf(vol, 5, way == 2 && !usb_soft() ? "h%u" : "%u",
+                way == 1 ? headset_gain() : g_volume);
+    return way == 1 ? "plug:bluealsa" : way == 2 ? "usb" : 0;
+}
+
+/* The headphone output readied as stock's player_start readies it before each track (headset mode,
+ * DAC powered, PCM mode, unmuted, the volume); Bluetooth's way left alone. Shared with spotify.c.
+ */
+void dac_take(void) {
+    if (g_headset_output < 2)
+        config_outputchannel(g_headset_output, 2);
+    else if (I(g_dacoff_time, 0) < 0)
+        mclSetDacPwr(1);
+    mclSetPcmMode();
+    mclSetMute(0);
+    device_set_volume(g_volume, 1);
+}
+
+#define Q2VIDEO "/usr/bin/q2video" /* patch/video.c */
+/* A station's url in q2video -r on output_device, else on the headphone DAC's
+ * plughw:0,0 (the only card), readied first: its pid, 0 when it did not start. */
+int radio_start(const char *url) {
+    char vol[5];
+    const char *out = output_device(vol);
+    player_stop();        /* hciplayer holds the PCM even paused */
+    if (!out) dac_take(); /* without it the PCM takes the sound and the jack stays silent */
+    int pid = fork();
+    if (!pid) {
+        child_oom_first();
+        const char *dev = out ? out : "plughw:0,0", *v = out ? vol : (char *)0;
+        execl(Q2VIDEO, Q2VIDEO, "-r", dev, url, v, (char *)0);
+        child_exit(127);
+    }
+    return pid > 0 ? pid : 0;
+}
+
 static const char STARTERS[] =
     "#EXTM3U\n"
     "#EXTINF:-1,Radio Paradise\nhttp://stream.radioparadise.com/mp3-128\n"

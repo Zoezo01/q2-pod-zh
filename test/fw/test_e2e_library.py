@@ -1,7 +1,7 @@
 """End to end, from a card's files to what plays: Update Library and the folder markers (library_scope.c), the
 Library's lists (navigation.c, coverflow.c), a pick, the queue's order, Up Next and Play Next (playback.c, upnext.c),
 a restart's resume (navigation.c resume_poll, playback.c's snapshot), the gapless preload (playback.c), Crossfade's
-choice of fade (crossfade.c), an audiobook's chapters (chapters.c) and a book's page (books.c).
+choice of fade (crossfade.c) and an audiobook's chapters (chapters.c).
 
 The firmware runs through the entry points the build hooks into stock (tools/build.py HOOKS: a stock call the build
 hooks reaches the payload's hook here too), and each hook's trampoline reaches a small model of stock's own body. Only
@@ -1223,7 +1223,7 @@ def test_a_shuffle_restarted_with_memory_playback_plays_on_in_the_order_it_had(q
     assert [title_of(q, p) for p in q.opened[1:]] == rows[2:]  # the rest of the pass, then the next as it was drawn
 
 
-# Audiobooks: an M4B's chapters (ffmpeg's ffmetadata), a CUE book's place, and a book's page (books.c).
+# Audiobooks: an M4B's chapters (ffmpeg's ffmetadata) and a CUE book's place.
 NOVEL = '/mnt/mmc/Audiobooks/Novel/Novel.m4b'
 
 
@@ -1332,87 +1332,3 @@ def test_a_cue_books_place_is_the_files_and_resume_takes_it_back_into_the_chapte
     q.play_for(3)
     # the chapter holding the place, then into it once it plays (a new track waits a poll), and on from there
     assert q.opened[-1] == (SAGA, 600) and q.seeks == [100] and 100 < q.elapsed() <= 100 + 3
-
-
-BOOKS = '/mnt/mmc/Books'
-
-
-class Reader:
-    """Books' page as the paint hook draws it: the canvas's lines of text, each character 10 px wide."""
-    def __init__(self, q):
-        self.q, self.lines = q, []
-        self.lcd = C.create_string_buffer(0x200)
-        self.canvas = C.create_string_buffer(0x100)
-        struct.pack_into('<Q', self.canvas, O['CANVAS_LCD'], C.addressof(self.lcd))
-        q.fw.mock('canvas_measure_text', lambda *_: 10.0)
-        q.fw.mock('canvas_draw_text', lambda c, s, n, *_: self.lines.append(C.string_at(s, 4 * n).decode('utf-32-le')))
-
-    def bk(self, k):
-        """books.c's state: its page and its sheet, the first and fifth pointers."""
-        return C.c_void_p.from_address(C.addressof(self.q.fw.var('books__bk', C.c_char)) + 8 * k).value
-
-    def page(self):
-        """A paint of the reader: the lines it shows."""
-        self.lines = []
-        self.q.fw.fn('books_paint', None, C.c_void_p, C.c_void_p)(self.bk(4), self.canvas)
-        return self.lines
-
-    def key(self, key):
-        """A key, as ringnav() hands the reader its keys; Return as the page's key-up gets it, which leaves on the
-        next pass."""
-        if key == O['KEY_RETURN']:
-            fn, ctx = self.q.handlers[self.bk(0), O['EVT_KEY_UP']]
-            event = C.create_string_buffer(0x40)
-            struct.pack_into('<i', event, O['EVENT_KEY'], key)
-            C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_void_p)(fn)(ctx, event)
-            self.q.run_timers()
-        else:
-            self.q.fw.fn('books_key', C.c_int, C.c_void_p, C.c_uint)(self.bk(0), key)
-
-
-def open_books(q):
-    """Local Music → Books: its rows, each a book's title."""
-    q.fw.fn('books_open', None, C.c_char_p)(BOOKS.encode())
-    return [row[0] for row in q.rows_of(q.last('scroll_view_create'))]
-
-
-def lines_from(n, count):
-    """The book's lines n on, count of them: Tale's text is 'Line 001' to 'Line 100', a line each."""
-    return [f'Line {k:03}' for k in range(n, n + count)]
-
-
-def test_a_book_opens_again_after_a_restart_on_the_page_it_was_left_on(q2, restart):
-    tale = ''.join(line + '\n' for line in lines_from(1, 100)).encode()
-    files = {BOOKS + '/Novels/Tale.txt': tale, BOOKS + '/Notes.txt': b'A note.\n', BOOKS + '/cover.jpg': b'',
-             BOOKS + '/.hidden.txt': b''}
-    q = q2(files)
-    reader = Reader(q)
-    assert open_books(q) == ['Notes', 'Tale']  # its books and one folder down, by path; no picture, no dot file
-    books = q.last('window_create')
-    q.tap('Tale')
-    q.run_timers()
-    pages = [reader.page()]
-    assert pages[0] and pages[0] == lines_from(1, len(pages[0]))  # from its start, line by line
-    for _ in range(3):
-        reader.key(O['KEY_NEXT'])
-        page = reader.page()
-        after = int(pages[-1][-1].split()[1]) + 1
-        assert page and page == lines_from(after, len(page))  # on from the line after the last one shown
-        pages.append(page)
-    reader.key(O['KEY_PREV'])
-    left = reader.page()
-    assert left == pages[2]  # three pages on, one back
-    reader.key(O['KEY_RETURN'])  # to the list
-    reader.key(O['KEY_RETURN'])  # out of Books
-    assert books not in q.pages
-
-    q = restart(q)
-    reader = Reader(q)
-    assert open_books(q) == ['Notes', 'Tale']
-    q.tap('Tale')
-    q.run_timers()
-    assert reader.page() == left  # where it was left
-    reader.key(O['KEY_RETURN'])
-    q.tap('Notes')
-    q.run_timers()
-    assert reader.page() == ['A note.']  # each book its own place: this one never read

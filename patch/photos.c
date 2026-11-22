@@ -197,7 +197,7 @@ static void drop_photos(void) {
     ph.slide = ph.info = 0;
 }
 
-/* qsort's order for a list of strings; shared with books.c. */
+/* qsort's order for a list of strings. */
 int by_string(const void *a, const void *b) { return strcmp(*(char *const *)a, *(char *const *)b); }
 
 /* dir's photos (full paths) or, with albums, its subfolders that hold any (names), added to list
@@ -449,7 +449,7 @@ int text_differs(void *w, const char *s) {
 }
 
 /* The bottom caption of a page h high: above the rounded glass's bottom corners, dark under white
- * so it reads over any photo. Shared with books.c. */
+ * so it reads over any photo. */
 void *bottom_caption(void *parent, int h) {
     void *label = text(parent, CF_EDGE, h - 56, 375 - 2 * CF_EDGE, 36);
     widget_set_prop_int(label, "style:normal:bg_color", (int)0xb3000000u);

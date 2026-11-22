@@ -293,8 +293,8 @@ static int ple_pick(void *ctx, void *event) {
     return 0;
 }
 /* ponytail: Add Songs builds every row it lists at once, a list_item and an hscroll_label each, so
- * it lists the first PLE_ROWS matches, under ringnav's MAX_ENTRIES (512) as Books', Photos' and Up
- * Next's 500, then a row that opens Search for the rest. A table_client page would list every song.
+ * it lists the first PLE_ROWS matches, under ringnav's MAX_ENTRIES (512) as Photos' and Up Next's
+ * 500, then a row that opens Search for the rest. A table_client page would list every song.
  * An edit's first Add Songs, and the first after library_gen moves, still reads and name-sorts the
  * whole library on the UI thread, and the list is held until the editor closes. */
 #define PLE_ROWS 500

@@ -2410,7 +2410,9 @@ def test_the_library_s_rows_in_their_order(fw, ui, st, theme, lead):
 
 
 def test_the_library_adds_the_card_s_media_folders_and_upload(fw, ui):
-    win, view = library(fw, ui, folders=['/mnt/mmc/podcasts', '/mnt/mmc/AUDIOBOOKS', '/mnt/mmc/Music'], token=b'x')
+    # Books is a card app's: its folder is a folder like any other, with no row
+    win, view = library(fw, ui, folders=['/mnt/mmc/podcasts', '/mnt/mmc/AUDIOBOOKS', '/mnt/mmc/Books', '/mnt/mmc/Music'],
+                        token=b'x')
     rows = [c for c, _ in page_rows(ui, view)]
     assert rows[rows.index('Long Songs'):] == ['Long Songs', 'Podcasts', 'Audiobooks', 'Apps', 'Games', 'App Store',
                                                'Upload Scrobbles', 'Update Library']
@@ -3097,12 +3099,11 @@ def test_a_media_row_whose_folder_went_says_so(fw, ui, kind, name):
     assert ui.toasts == [f'No {name} folder on the card'] and not ui.went
 
 
-@pytest.mark.parametrize('kind, page', [(3, 'photos_page'), (4, 'books_page')])
-def test_photos_and_books_open_their_own_pages(fw, ui, kind, page):
-    Disk(fw, folders=['/mnt/mmc/photos', '/mnt/mmc/Books'])
+def test_photos_opens_its_own_page(fw, ui):
+    Disk(fw, folders=['/mnt/mmc/photos'])
     fw.mock('fw_pthread_create', lambda *_: 0)
-    call(fw, 'media_click', kind)
-    assert ui.name[ui.top()] == page and not ui.went
+    call(fw, 'media_click', 3)
+    assert ui.name[ui.top()] == 'photos_page' and not ui.went
 
 
 class Folder:

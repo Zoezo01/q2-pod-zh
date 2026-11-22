@@ -577,10 +577,8 @@ int stream_cache(int spotify); /* navigation.c: Streaming's Configuration, a cap
 void album_memory(void *r);
 void draw_centred(void *canvas, const unsigned *s, unsigned n, const void *r, unsigned px,
                   unsigned color);
-unsigned book_char(const unsigned char *t, unsigned n,
-                   unsigned *i); /* books.c: UTF-8, else Latin-1 */
-int utf8_text(const char *s);    /* xiph.c: valid UTF-8, a 4-byte character too */
-void utf8_mend(char *s);         /* xiph.c: s valid UTF-8, the bytes of no whole character gone */
+int utf8_text(const char *s); /* xiph.c: valid UTF-8, a 4-byte character too */
+void utf8_mend(char *s);      /* xiph.c: s valid UTF-8, the bytes of no whole character gone */
 /* Lyrics as lyrics.c's loader reads them: each line's start (ms, LRC_FAR unsynced), the order it
  * came in, its UTF-8 text and its word stamps (A2's <mm:ss.xx>), each the ms a word starts and its
  * byte offset in the text. */
@@ -639,15 +637,15 @@ int headset_gain(void);
 int spot_status(void), radio_status(void);
 unsigned spot_session(void), radio_session(void);
 void spot_set_playing(int playing), radio_set_playing(int playing);
-int radio_start(const char *url); /* books.c */
+int radio_start(const char *url); /* radio.c */
 /* peq_ui.c's T9 edit, named EDIT_NAME: navigation.c's search_key cancels it on Return while its
  * keyboard is up. */
 #define EDIT_NAME "q2_edit"
 void *edit_create(void *item, const char *input_type, int y, int h);
 void t9_box(void *page, void *edit,
             const char *tips);        /* classic_pages.c: a search box and its hint */
-const char *output_device(char *vol); /* books.c */
-void dac_take(void);                  /* books.c */
+const char *output_device(char *vol); /* radio.c */
+void dac_take(void);                  /* radio.c */
 /* navigation.c: the theme's font for role on w, or stock's */
 int theme_font(void *w, int role, int was);
 #define FONT_ROW (-2)           /* was: cache the answer in w's own "_font" prop */

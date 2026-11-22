@@ -169,8 +169,7 @@ extern void coverflow_home_top(void);
 extern void coverflow_home_row(void *surface, void *row, int id, int painting);
 extern void lockscreen_paint(void *w, void *canvas);
 extern void coverflow_paint(void *w, void *canvas), photos_paint(void *w, void *canvas),
-    photos_open(const char *root), books_paint(void *w, void *canvas), books_open(const char *root);
-extern int books_key(void *top, unsigned key);
+    photos_open(const char *root);
 extern void games_paint(void *w, void *canvas);
 extern void spot_poll(void), spot_paint(void *w, void *canvas), *spot_art(void);
 extern int un_hold(void *top);
@@ -367,7 +366,7 @@ void rearm(unsigned *timer, int (*fn)(const void *), unsigned ms) {
     *timer = timer_add(fn, (void *)0, ms);
 }
 
-/* A page's keyup (Books, Photos, Radio): Return runs its leave from the next loop pass. */
+/* A page's keyup (Photos, Radio): Return runs its leave from the next loop pass. */
 int return_key(void *event, unsigned *timer, int (*leave)(const void *)) {
     if (I(event, EVENT_KEY) != KEY_RETURN) return 0;
     rearm(timer, leave, 0);
@@ -2797,7 +2796,6 @@ int ringnav_paint(void *w, void *canvas) {
     }
     edit_paint(w, canvas);
     photos_paint(w, canvas);
-    books_paint(w, canvas);
     spot_paint(w, canvas);
     if (theme()->sb_w) {
         int table = 0;
@@ -7858,7 +7856,7 @@ int stream_config(void *ctx, void *event) {
 
 /* 1 + the MEDIA folder s names (up to its end or a '/'), 0 for none. MEDIA is letters only. */
 static int media_kind(const char *s) {
-    for (int k = 0; k < BOOKS; k++) {
+    for (int k = 0; k < PHOTOS; k++) {
         unsigned n = strlen(MEDIA[k]);
         if (!strncasecmp(s, MEDIA[k], n) && (!s[n] || s[n] == '/')) return k + 1;
     }
@@ -7911,12 +7909,11 @@ int media_click(void *ctx, void *event) {
     int kind = (int)(long)ctx;
     char root[sizeof st.media_root], t[48];
     if (!media_find(kind, root)) {
+        /* NOLINTNEXTLINE(clang-analyzer-security.ArrayBound): every caller's kind is a MEDIA's */
         tk_snprintf(t, sizeof t, "No %s folder on the card", MEDIA[kind - 1]);
         toast(t);
     } else if (kind == PHOTOS)
         photos_open(root);
-    else if (kind == BOOKS)
-        books_open(root);
     else {
         memcpy(st.media_root, root, sizeof root);
         st.media_open = 1;
@@ -9474,8 +9471,8 @@ int ringnav(void *ctx, void *event) {
         if (!kb) return result;
     }
     /* A double Centre turns the screen off on every listed page, also where the page takes Centre
-     * itself (the Books reader's caption), has no row selected or is still sliding in. A list's
-     * selected row times its own double press (center_timer). */
+     * itself, has no row selected or is still sliding in. A list's selected row times its own
+     * double press (center_timer). */
     if (key == KEY_CENTER && !st.center_timer) {
         unsigned now = (unsigned)time_now_ms();
         if (top == st.dc_top && now - st.dc_at < DOUBLE_CLICK_MS) {
@@ -9495,8 +9492,7 @@ int ringnav(void *ctx, void *event) {
         return dir && window_manager_is_animating(wm) ? hold_wheel(ctx, event, dir) : STOP;
     }
     coverflow_lost_touch();
-    if (!dir) coverflow_wheel_land();     /* Centre opens the album the caption names */
-    if (books_key(top, key)) return STOP; /* the reader's pages and caption */
+    if (!dir) coverflow_wheel_land(); /* Centre opens the album the caption names */
     void *w = surface_under(top, (void *)0, (void *)0, dir != 0);
     if (!is_home(top, w) || w != st.home_surface) st.home_surface = (void *)0;
     if (!w || !load(&g_menu, w, 1)) {

@@ -66,8 +66,8 @@
     <td><code>.m4b</code> audiobooks, including ones split by a CUE sheet, and podcasts resume where you stopped. The Podcasts app subscribes to shows, downloads episodes and has a sleep timer.</td>
   </tr>
   <tr valign="top">
-    <td><b>Photos and books</b></td>
-    <td>Folders at the card's root add JPEG and PNG photo albums, and <code>.txt</code> and <code>.epub</code> books.</td>
+    <td><b>Photos</b></td>
+    <td>A <code>Photos</code> folder at the card's root adds JPEG and PNG photo albums.</td>
   </tr>
   <tr valign="top">
     <td><b>Lock screen and boot logo</b></td>
@@ -291,7 +291,7 @@ The [user guide][guide] has the steps for each.
 
 Copy your music to the card over USB-C, then run **Library → Update Library → Scan music now** on the Q2.
 
-- **More than music:** these folders at the card's root each add their own Library entry: `Podcasts/`, `Audiobooks/`, `Photos/` and `Books/`. `EQ/` holds EQ presets to import. See the [user guide][guide] for supported formats.
+- **More than music:** these folders at the card's root each add their own Library entry: `Podcasts/`, `Audiobooks/` and `Photos/`. `EQ/` holds EQ presets to import. See the [user guide][guide] for supported formats.
 - **Playlists:** M3U playlists import from the `_explaylist_data/` folder at the card's root, the same folder stock uses. Q2 Pod keeps it as it is, so your stock playlists carry over.
 - **Long audiobooks:** a book too long for the Q2's memory (around 40 hours in one file) needs splitting into parts.
 - **Hiding a folder:** to keep a folder out of Songs, Albums, Artists, Cover Flow and library shuffle, put an empty file named `database.ignore` in it and run **Update Library** again. Its songs still play from Folder view and from playlists, and an empty `database.unignore` in a subfolder lets that subfolder back in ([details](docs/discovery.md)).

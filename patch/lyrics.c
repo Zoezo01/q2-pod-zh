@@ -22,6 +22,21 @@
  * ("<mm:ss.xx>" before a word, cut from the text) for iPod's lyrics page (lyrics.c), lose the
  * spaces at their ends, and blank ones go; a .lrc's synced lines replace stock's, read alike. */
 #define LYRIC_TAG_MAX 65536
+
+/* The character at t[*i] (of n), *i stepped past it: UTF-8, or else the one byte as Latin-1. */
+static unsigned utf8_char(const unsigned char *t, unsigned n, unsigned *i) {
+    unsigned c = t[*i], k = c >= 0xf8 ? 0 : c >= 0xf0 ? 3 : c >= 0xe0 ? 2 : c >= 0xc0 ? 1 : 0;
+    unsigned v = c & (0x3f >> k);
+    for (unsigned j = 1; j <= k; ++j) {
+        if (*i + j >= n || (t[*i + j] & 0xc0) != 0x80) {
+            k = 0;
+            break;
+        }
+        v = v << 6 | (t[*i + j] & 63);
+    }
+    *i += 1 + k;
+    return k ? v : c;
+}
 extern int stock_lyric_trampoline(void);
 
 /* A time at p between open and close: "[mm:ss]", "[mm:ss.xx]" or "[mm:ss:xx]" (A2's word stamps
@@ -308,7 +323,7 @@ void lyrics_publish(const lrc_line *l, unsigned n, const lrc_mark *m) {
     for (unsigned i = 0; i < n; ++i) {
         marks += l[i].marks;
         for (unsigned at = 0, len = strlen(l[i].text); at < len; ++chars)
-            book_char((const unsigned char *)l[i].text, len, &at);
+            utf8_char((const unsigned char *)l[i].text, len, &at);
     }
     ly_tab *t = n ? ly_alloc(n, marks, chars) : 0;
     for (unsigned i = 0, c = 0, k = 0; t && i < n; ++i) {
@@ -319,7 +334,7 @@ void lyrics_publish(const lrc_line *l, unsigned n, const lrc_mark *m) {
         for (unsigned at = 0, len = strlen((const char *)s);; ++o->n) {
             for (; w < end && w->at <= at; ++w) t->mark[k++] = (ly_mark){ w->ms, o->n };
             if (at >= len) break;
-            t->text[c++] = book_char(s, len, &at);
+            t->text[c++] = utf8_char(s, len, &at);
         }
         o->marks = k - o->mark;
         t->sum = ly_sum(t->sum, o->ms, t->text + o->text, o->n);

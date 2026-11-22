@@ -646,7 +646,7 @@ void coverflow_clean_end(void) {
 }
 
 /* A running worker cancelled and joined, and its poll timer stopped; 1 when one ran. Shared with
- * photos.c and books.c. */
+ * photos.c. */
 int worker_stop(unsigned long thread, int *running, volatile int *cancel, unsigned *timer) {
     int ran = *running;
     if (ran) {
@@ -1555,7 +1555,7 @@ void *text(void *parent, int x, int y, int w, int h) { /* shared with photos.c *
 }
 
 /* A black page named name, with its destroy (given the page) and Return handlers; 0 when none.
- * Shared with photos.c and books.c. */
+ * Shared with photos.c. */
 void *page_open(const char *name, int (*closed)(void *, void *), int (*keyup)(void *, void *)) {
     void *page = window_create(0, 0, 0, 0, 0);
     if (!page) return 0;
@@ -1724,8 +1724,8 @@ int clip_within(void *canvas, int *old, int *clip, int x, int y, int w, int h) {
     return clip[2] && clip[3];
 }
 
-/* Resume, play counts, Books' pages, the last album and Boot to: each file is written whole, to a
- * .tmp, synced and renamed. Shared with navigation.c and books.c. */
+/* Resume, play counts, the last album and Boot to: each file is written whole, to a .tmp, synced
+ * and renamed. Shared with navigation.c. */
 int blob_io(const char *path, const char *tmp, void *buf, unsigned size, int write) {
     void *f = fopen(write ? tmp : path, write ? "wb" : "rb");
     if (!f) return 0;

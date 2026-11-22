@@ -187,7 +187,7 @@ static unsigned spot_position(void) {
 
 /* librespot starts playing: what stock's AirPlay page (airplay_page_init, on_airplayset_onclick)
  * does for its receiver. Local music stops (hciplayer holds the PCM even paused), then dac_take
- * (books.c). Bluetooth and USB outputs are left alone: librespot's sink plays on them itself
+ * (radio.c). Bluetooth and USB outputs are left alone: librespot's sink plays on them itself
  * (spot_output). */
 static void spot_take(void) {
     headset_manual();

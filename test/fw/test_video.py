@@ -19,7 +19,7 @@ import host
 import video_host
 
 URL = 'http://radio.example/stream'
-JACK, BT, USB = 'plughw:0,0', 'plug:bluealsa', 'usb'  # the outputs demo names (books.c output_device)
+JACK, BT, USB = 'plughw:0,0', 'plug:bluealsa', 'usb'  # the outputs demo names (radio.c output_device)
 RADIO_STATE, RADIO_SOCK, SINK_SOCK = '/tmp/q2radio.state', '/tmp/q2radio.sock', '/tmp/q2sink.sock'
 MONO, SWAP = '/tmp/q2mono', '/tmp/q2swap'
 DEMO_FDS = (3, 5, 9)  # descriptors q2video inherits from demo, the first one past stdio's among them

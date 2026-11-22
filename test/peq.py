@@ -2582,105 +2582,6 @@ def scrobble_check(tmp):
     assert [v for _, _, v, _ in requests] == ['1'] * len(requests)
     print('Scrobble upload: config, batching, JSON and form escaping, Last.fm signatures, log rewrite and failures passed.')
 
-def books_check(tmp):
-    """Books (books.c): raw inflate against zlib and on garbage, XHTML to text, EPUB to text (stored
-    and deflated entries, namespaced OPF, %XX hrefs, DRM, malformed zips), UTF-8 with the Latin-1
-    fallback, and page layout forward and back."""
-    import random, zipfile, zlib
-    lib = compile_host(tmp, 'books.so', ROOT/'patch/books.c')
-    lib.book_inflate.argtypes = [C.c_char_p, C.c_uint, C.c_char_p, C.c_uint]
-    rng = random.Random(7)
-    words = [bytes(rng.choice(b'abcdefghij ') for _ in range(rng.randrange(1, 9))) for _ in range(200)]
-    samples = [b'', b'a', bytes(range(256)) * 40, b' '.join(rng.choice(words) for _ in range(30000)),
-               bytes(rng.randrange(256) for _ in range(5000))]
-    for data in samples:
-        for level, strategy in ((0, 0), (1, 0), (6, 0), (9, 0), (6, zlib.Z_FIXED), (6, zlib.Z_HUFFMAN_ONLY), (6, zlib.Z_RLE)):
-            c = zlib.compressobj(level, zlib.DEFLATED, -15, 9, strategy); packed = c.compress(data) + c.flush()
-            out = C.create_string_buffer(len(data) + 1)
-            assert lib.book_inflate(packed, len(packed), out, len(data)) == len(data) and out.raw[:len(data)] == data
-            if data: assert lib.book_inflate(packed, len(packed), out, len(data) - 1) == -1  # longer than its room
-            if data: assert lib.book_inflate(packed[:len(packed) // 2], len(packed) // 2, out, len(data)) == -1
-    out = C.create_string_buffer(1 << 16)
-    for _ in range(3000):  # garbage never reads or writes out of bounds, and ends
-        junk = bytes(rng.randrange(256) for _ in range(rng.randrange(1, 64)))
-        assert -1 <= lib.book_inflate(junk, len(junk), out, 1 << 16) <= 1 << 16
-    xhtml = lib.book_xhtml; xhtml.argtypes = [C.c_char_p]
-    def text(s):
-        b = C.create_string_buffer(s.encode()); n = xhtml(b); return b.raw[:n].decode()
-    assert text('<?xml version="1.0"?><!DOCTYPE html><html><head><title>T</title><style>p{}</style></head>'
-                '<body><h1>One</h1>\n  <p>A  <i>b</i>\tc&amp;d &lt;&#233;&#x1F600;&gt; &nbsp;e&bogus; &#xZZ;</p>'
-                '<!-- <p>hidden</p> --><script>x<y</script><p>f<br/>g</p><div><p>h</p></div>&quot;&apos;</body></html>') == \
-        'One\n\nA b c&d <\u00e9\U0001F600>  e&bogus; &#xZZ;\n\nf\ng\n\nh\n\n"\''
-    assert text('<p>no end') == 'no end' and text('<head>never closed') == '' and text('&#1114112;&#0;<') == '&#1114112;&#0;'
-    def epub(path, files, method=zipfile.ZIP_DEFLATED, container=True):
-        with zipfile.ZipFile(path, 'w', method) as z:
-            z.writestr(zipfile.ZipInfo('mimetype'), 'application/epub+zip')
-            if container:
-                z.writestr('META-INF/container.xml', '<?xml version="1.0"?><container><rootfiles>'
-                           '<rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>')
-            for n, d in files.items(): z.writestr(n, d)
-    opf = ('<opf:package><opf:manifest><opf:item id="c2" href="Text/two%20b.xhtml#top" media-type="application/xhtml+xml"/>'
-           "<opf:item href='Text/one.xhtml' id='c1'/><opf:item id=\"img\" href=\"cover.jpg\" media-type=\"image/jpeg\"/><opf:item id=\"empty\" href=\"e.xhtml\"/>"
-           '</opf:manifest><opf:spine><opf:itemref idref="img"/><opf:itemref idref="c1"/><opf:itemref idref="empty"/>'
-           '<opf:itemref idref="missing"/><opf:itemref idref="c2"/></opf:spine></opf:package>')
-    files = {'OEBPS/content.opf': opf, 'OEBPS/Text/one.xhtml': '<html><body><p>Hello caf\u00e9</p></body></html>' * 50,
-             'OEBPS/Text/two b.xhtml': '<p>Second</p>', 'OEBPS/e.xhtml': '<html><head><title>x</title></head></html>',
-             'OEBPS/cover.jpg': b'\xff\xd8\xff\xe0'}
-    convert = lib.book_convert; convert.argtypes = [C.c_char_p, C.c_char_p, C.POINTER(C.c_int)]
-    cancel = C.c_int(0); dst = tmp/'book.txt'
-    def run(src): return convert(str(src).encode(), str(dst).encode(), C.byref(cancel))
-    want = '\n\n'.join(['Hello caf\u00e9'] * 50) + '\f\nSecond'
-    for method in (zipfile.ZIP_DEFLATED, zipfile.ZIP_STORED):
-        epub(tmp/'a.epub', files, method); assert run(tmp/'a.epub') == 1 and dst.read_text() == want
-    # ../ and ./ in an href resolve against the OPF's folder
-    epub(tmp/'r.epub', {**files, 'OEBPS/content.opf': opf.replace("'Text/one.xhtml'", "'../OEBPS/./Text/one.xhtml'")})
-    assert run(tmp/'r.epub') == 1 and dst.read_text() == want
-    epub(tmp/'f.epub', {**files, 'META-INF/encryption.xml': '<CipherReference URI="OEBPS/Fonts/a.otf"/>'})
-    assert run(tmp/'f.epub') == 1  # obfuscated fonts alone
-    epub(tmp/'d.epub', {**files, 'META-INF/encryption.xml': '<CipherReference URI="OEBPS/Text/one.xhtml"/>'})
-    assert run(tmp/'d.epub') == 0
-    epub(tmp/'n.epub', files, container=False); assert run(tmp/'n.epub') == 0
-    whole = (tmp/'a.epub').read_bytes()
-    for cut in (0, 10, len(whole) // 2, len(whole) - 30):
-        (tmp/'t.epub').write_bytes(whole[:cut]); assert run(tmp/'t.epub') == 0
-    for _ in range(200):  # flipped bytes: a refusal or some text, never a crash
-        b = bytearray(whole); b[rng.randrange(len(b))] ^= 1 << rng.randrange(8); (tmp/'x.epub').write_bytes(b); run(tmp/'x.epub')
-    assert run(tmp/'none.epub') == 0
-    cancel.value = 1; assert run(tmp/'a.epub') == 0; cancel.value = 0
-    lib.book_char.argtypes = [C.c_char_p, C.c_uint, C.POINTER(C.c_uint)]
-    def chars(b):
-        i = C.c_uint(0); out = []
-        while i.value < len(b): out.append(lib.book_char(b, len(b), C.byref(i)))
-        return out
-    assert chars('a\u00e9\u20ac\U0001F600'.encode()) == [97, 0xe9, 0x20ac, 0x1f600]
-    assert chars(b'\xe9t\xc3') == [0xe9, ord('t'), 0xc3] and chars(b'\xe2\x82') == [0xe2, 0x82]
-    MEASURE = C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_uint); LINE = C.CFUNCTYPE(None, C.c_void_p, C.c_int, C.POINTER(C.c_uint), C.c_int)
-    lines = []
-    measure = MEASURE(lambda ctx, c: 10); line = LINE(lambda ctx, row, s, n: lines.append((row, ''.join(map(chr, s[:n])))))
-    lib.book_page.argtypes = [C.c_char_p, C.c_uint, C.c_uint, C.c_int, C.c_int, MEASURE, LINE, C.c_void_p]
-    lib.book_back.argtypes = [C.c_char_p, C.c_uint, C.c_uint, C.c_int, C.c_int, MEASURE, C.c_void_p]
-    def page(t, pos, rows=3, width=100):
-        lines.clear(); return lib.book_page(t, len(t), pos, rows, width, measure, line, None), [l for _, l in lines]
-    t = b'\n\xef\xbb\xbfThe quick brown fox\r\njumps over the lazy dog\n\nAndsuperlongwordhere end\fNext'
-    # Wraps at the last space (a space at the edge is used up), mid-word without one; the BOM and
-    # the top's line breaks are dropped; a \f ends the page; a page from it starts after it.
-    assert page(t, 0, rows=9) == (t.index(b'\f'), ['The quick', 'brown fox', 'jumps over', 'the lazy', 'dog', '', 'Andsuperlo', 'ngwordhere', 'end'])
-    assert page(t, t.index(b'\f'), rows=9) == (len(t), ['Next'])
-    assert page(t, 0) == (t.index(b'the'), ['The quick', 'brown fox', 'jumps over'])
-    # Back: in a text shorter than the look-back, exactly the page before; beyond it, a page that
-    # reaches the one asked about.
-    starts = [0]
-    while starts[-1] < len(t): starts.append(page(t, starts[-1])[0])
-    for a, b in zip(starts, starts[1:-1]): assert lib.book_back(t, len(t), b, 3, 100, measure, None) == a
-    assert lib.book_back(t, len(t), 0, 3, 100, measure, None) == 0
-    big = b'\n'.join(b' '.join(rng.choice(words) for _ in range(rng.randrange(1, 40))) for _ in range(800))
-    pos = 0
-    for _ in range(60):
-        pos = page(big, pos, rows=10, width=320)[0]
-        b = lib.book_back(big, len(big), pos, 10, 320, measure, None)
-        assert b < pos and page(big, b, rows=10, width=320)[0] >= pos and pos - b < 3072
-    print('Books: inflate, XHTML text, EPUB conversion and refusals, UTF-8 and page layout passed.')
-
 def games_check(tmp):
     """Games (games.c): every bundled Sudoku and 200 shuffled ones have one solution, clues stay,
     conflicts and completion; saves' magic and checksum; Vortex's paddle, bricks, lives, levels,
@@ -3642,7 +3543,6 @@ if __name__ == '__main__':
         player_check(tmp)
         visualizer_check(tmp)
         scrobble_check(tmp)
-        books_check(tmp)
         games_check(tmp)
         video_check(tmp)
         audio_writer_check(tmp)

@@ -328,9 +328,8 @@ const char *ipod_home_shortcut(void) {
     return names[shortcut_target()];
 }
 /* Podcasts and Audiobooks (docs/internals.md#podcasts-and-audiobooks): the card's top-level
- * folders of these names, case aside, browsed in folder_page from there; Photos opens photos.c,
- * Books books.c. */
-const char *const MEDIA[] = { "Podcasts", "Audiobooks", "Photos", "Books" };
+ * folders of these names, case aside, browsed in folder_page from there; Photos opens photos.c. */
+const char *const MEDIA[] = { "Podcasts", "Audiobooks", "Photos" };
 extern int rockbox_open(void *, void *);
 int rated_albums(void *, void *);
 int home_shortcut_open(void *ctx, void *event) {

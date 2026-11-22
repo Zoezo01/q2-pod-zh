@@ -1,5 +1,5 @@
 /* q2video, the sound helper (docs/internals.md#q2video): /usr/bin/q2video -r DEVICE URL [VOLUME]
- * plays Internet Radio (radio.c), started by demo (books.c radio_start). Stock ffmpeg decodes URL
+ * plays Internet Radio (radio.c), started by demo (radio.c radio_start). Stock ffmpeg decodes URL
  * to 48 kHz stereo on a pipe, restarted when it drops, and its report's ICY tags go to RADIO_STATE;
  * this plays the sound on ALSA DEVICE ("-" for none; VOLUME, Bluetooth's or a soft USB volume's
  * 0-100, scales it as hciplayer does there, and "h" before it marks a USB DAC that applies the

@@ -10,10 +10,9 @@ import pytest
 
 import host
 from conftest import O, SPOT_FAIL, SPOT_NOSOCK, SPOT_OK, Deques, Game, block, claim, high_halves, libc, text
-from test_books import execl, mixer  # noqa: F401  the child's execl calls; USB_MIXER, for a USB DAC's volume
 from test_coverflow import png  # an icon's header
 from test_netupdate import JOB_INSTALL, JOB_REMOVE, SH_CANCELLED, SH_CARD, SH_NET, SH_OK, Sh  # test_netupdate.py keeps netupdate.c's App Store mirror
-from test_radio import Rd  # test_radio.py keeps the mirror
+from test_radio import Rd, execl, mixer  # noqa: F401  the mirror; the child's execl calls; USB_MIXER, for a USB DAC's volume
 from test_tidal import Au, Queue, free_stubbed  # test_tidal.py keeps tidal.c's au mirror
 
 APPS_MAX = 64

@@ -3343,7 +3343,7 @@ def test_no_service_row_or_name_draws_no_service(fw):
     assert not canvas.images and not canvas.texts
 
 
-# The pages' pieces, shared with photos.c, books.c and navigation.c
+# The pages' pieces, shared with photos.c and navigation.c
 
 def bar_title(fw, ui, scratch, width):
     """Classic's bar title, width px: a caption of n characters measures 10 n px."""

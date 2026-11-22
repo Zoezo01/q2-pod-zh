@@ -93,11 +93,10 @@ int ringnav_localmusic(void *win, void *ctx) {
     widget_restack(stock[L_FREQUENT], n++);
     widget_restack(stock[L_HIRES], n++);
     widget_restack(library_row(view, "local_longsongs", long_songs, 0, "Long Songs", 1), n++);
-    /* Podcasts, Audiobooks, Photos and Books, each only with its folder. */
-    static const char *const icons[] = { "local_podcasts", "local_audiobooks", "local_photos",
-                                         "local_books" };
+    /* Podcasts, Audiobooks and Photos, each only with its folder. */
+    static const char *const icons[] = { "local_podcasts", "local_audiobooks", "local_photos" };
     char path[sizeof st.media_root];
-    for (int k = 0; k < BOOKS; k++)
+    for (int k = 0; k < PHOTOS; k++)
         if (media_find(k + 1, path))
             widget_restack(
                 library_row(view, icons[k], media_click, (void *)(long)(k + 1), MEDIA[k], 1), n++);

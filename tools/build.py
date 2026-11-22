@@ -757,7 +757,7 @@ LABELS = tuple((k.encode(), o.encode(), n.encode()) for k, o, n in (
 
 # Wi-Fi transfer's web page (stock thttpd on :8888): in English, an Upload Folder button, and a folder,
 # picked or dropped, keeps its tree: each file's folders are made with stock's create (a plain mkdir) before
-# it goes, as stock's upload only moves a file into an existing folder. The formats Q2 Pod's pages read, and videos, are allowed too.
+# it goes, as stock's upload only moves a file into an existing folder. The formats Q2 Pod's pages read, and videos and books, are allowed too.
 MKDIR_JS = r'''// Each folder of a folder upload is made once per batch, parents first; stock's create is a plain mkdir,
 // so a folder that exists fails harmlessly and a real failure shows as its files' upload error.
 // ponytail: the stock CGIs run mkdir and mv through system() in double quotes, so a name with " ` or $
@@ -1391,7 +1391,7 @@ FUNCTIONS = {
  'canvas_set_font': ('int', 'void *, const char *, unsigned'),
  'canvas_set_text_color': ('int', 'void *, unsigned'),
  'canvas_draw_text_in_rect': ('int', 'void *, const unsigned *, unsigned, const void *'),
- 'canvas_draw_text': ('int', 'void *, const unsigned *, unsigned, int, int'),  # Books (books.c)
+ 'canvas_draw_text': ('int', 'void *, const unsigned *, unsigned, int, int'),  # lyrics.c, navigation.c
  'canvas_measure_text': ('float', 'void *, const unsigned *, unsigned'),
  'canvas_fill_rounded_rect': ('int', 'void *, const void *, const void *, const void *, unsigned'),
  'canvas_stroke_rounded_rect': ('int', 'void *, const void *, const void *, const void *, unsigned, unsigned'),
@@ -1575,7 +1575,7 @@ FUNCTIONS = {
  'folder_reinit_navbarname': ('int', 'void'),
  'folder_refresh': ('int', 'void *'),
  'album_covermode': ('int', 'void *, void *'),  # album_page's list/grid switch's click (library_lists.c album_view_toggle)
- # q2video's start (books.c): the output in use, the music stopped, the DAC's power, and the standby timeouts held off
+ # q2video's start (radio.c radio_start): the output in use, the music stopped, the DAC's power, and the standby timeouts held off
  'mclGetOutputWay': ('int', 'void'),
  'mclGetLyricSize': ('int', 'void'),  # the playing track's lyric lines, 0 without
  'player_play_pause': ('int', 'void'),
@@ -1724,7 +1724,7 @@ CONTEXT_DATA = {'bt_showcoding': 4, 'g_memory_info': 3476, 'g_folder_path': 1024
                 'bt_connectstatus': 4,  # a link thread runs (1), ended (2), checked (3)
                 'bt_initstatus': 4}  # Bluetooth's start-up status: -102 is stock's "Bluetooth abnormal" (system.c reboot_record)
 # Windows the payload creates at runtime (window_create), so no rootfs asset names them.
-PAYLOAD_WINDOWS = {'playlistedit_page', 'chapters_page', 'coverflow_page', 'photos_page', 'books_page', 'games_page', 'cardapps_page', 'mostplayed_page', 'shuffle_page', 'upnext_page', 'ratings_page', 'era_page', 'era_albums_page', 'rated_page', 'longsongs_page', 'spotify_page',
+PAYLOAD_WINDOWS = {'playlistedit_page', 'chapters_page', 'coverflow_page', 'photos_page', 'games_page', 'cardapps_page', 'mostplayed_page', 'shuffle_page', 'upnext_page', 'ratings_page', 'era_page', 'era_albums_page', 'rated_page', 'longsongs_page', 'spotify_page',
                    'spotbrowse_page', 'radio_page', 'radionp_page', 'streamconf_page', 'tidal_downloads', 'apps_page',
                    'addon_page', 'app_songs', 'qrcode_page', 'battery_page'}
 ICONS = [f'menu_{c}{s}.png' for c in ('coverflow', 'rockbox') for s in ('', 'down')]
@@ -2289,11 +2289,11 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
     xx = 'release/assets/default/raw/images/xx/'
     icons = {n: ('menu_musicdown.png' if n.endswith('down.png') else 'menu_music.png',
                  (ROOT/'assets/icons'/n).read_bytes()) for n in ICONS}
-    drawn = ('podcasts', 'audiobooks', 'books')
+    drawn = ('podcasts', 'audiobooks')
     icons.update({f'local_{n}.png': (like, (ROOT/'assets/icons'/f'local_{n}.png').read_bytes() if n in drawn
                                      else cat(xx+like)) for n, like in dict(
         shuffle='playset_playmode.png', scrobble='wifiset_wifi.png', podcasts='netservice_dlna.png',
-        audiobooks='playset_foldercover.png', photos='playset_covermode.png', books='system_language.png',
+        audiobooks='playset_foldercover.png', photos='playset_covermode.png',
         longsongs='system_time.png', era='local_genre.png',
         store='system_update.png').items()})
     icons['local_games.png'] = ('system_language.png', (ROOT/'assets/icons/local_games.png').read_bytes())

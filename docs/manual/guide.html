@@ -202,7 +202,7 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3, .lead { b
 
     <li class="chap" data-n="7"><a class="t" href="#c7">Podcasts, Audiobooks and More</a><span class="n">{{p:c7}}</span></li>
     <li><a class="t" href="#pods">Podcasts and audiobooks</a><span class="n">{{p:pods}}</span></li>
-    <li><a class="t" href="#pbv">Photos, books and videos</a><span class="n">{{p:pbv}}</span></li>
+    <li><a class="t" href="#pbv">Photos and videos</a><span class="n">{{p:pbv}}</span></li>
     <li><a class="t" href="#games">Games</a><span class="n">{{p:games}}</span></li>
 
     <li class="chap" data-n="8"><a class="t" href="#c8">Bluetooth and AirPods</a><span class="n">{{p:c8}}</span></li>
@@ -366,7 +366,7 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3, .lead { b
     <li>Stream Spotify (Premium), AirPlay and Internet Radio, and install apps and updates over Wi-Fi</li>
     <li>Rate songs and albums, edit playlists, shuffle by song, album or folder, and crossfade between albums</li>
     <li>Read synced lyrics, download lyrics and covers, and send your listens to Last.fm or ListenBrainz</li>
-    <li>Resume podcasts and audiobooks where you stopped, and keep photos, books and games on the card</li>
+    <li>Resume podcasts and audiobooks where you stopped, and keep photos and games on the card</li>
     <li>Use AirPods stem controls, ear detection and two-way volume</li>
     <li>Look after the battery with an 80% charge limit, a Standby limit and a sleep timer, and keep the clock set through power-off</li>
   </ul>
@@ -449,7 +449,6 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3, .lead { b
     <tbody>
       <tr><td><code>Podcasts/</code>, <code>Audiobooks/</code></td><td>One folder per show or book; they resume and never count as plays</td><td>You</td></tr>
       <tr><td><code>Photos/</code></td><td><code>.jpg</code>, <code>.jpeg</code>, <code>.png</code> (JPEG up to 6 MB, PNG 1 MB); subfolders are albums</td><td>You</td></tr>
-      <tr><td><code>Books/</code></td><td><code>.txt</code>, <code>.epub</code> (no DRM); one level of subfolders</td><td>You</td></tr>
       <tr><td><code>EQ/</code></td><td>AutoEQ and Equalizer APO presets to import</td><td>You</td></tr>
       <tr><td><code>Radio/</code></td><td>Internet Radio playlists, <code>.m3u</code> and <code>.pls</code></td><td>Both</td></tr>
       <tr><td><code>lockscreenimage/</code></td><td>Up to 5 lock screen images</td><td>You</td></tr>
@@ -459,13 +458,13 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3, .lead { b
       <tr><td><code>.scrobbler.log</code>, <code>.sent</code></td><td>Every listen, in Rockbox’s format, and those already uploaded</td><td>Q2 Pod</td></tr>
       <tr><td><code>.ratings.tsv</code></td><td>A copy of your ratings, to read on a computer</td><td>Q2 Pod</td></tr>
       <tr><td><code>.coverflow/</code></td><td>Cover Flow’s artwork, and playlist pictures</td><td>Q2 Pod</td></tr>
-      <tr><td><code>.photos/</code>, <code>.books/</code></td><td>Photo thumbnails, and EPUBs converted to text</td><td>Q2 Pod</td></tr>
+      <tr><td><code>.photos/</code></td><td>Photo thumbnails</td><td>Q2 Pod</td></tr>
       <tr><td><code>.sldp/</code></td><td>Shanling’s own cover cache</td><td>Stock</td></tr>
       <tr><td><code>.spotify/</code></td><td>The Spotify add-on; <code>cache/</code> holds your login and downloads</td><td>You</td></tr>
       <tr><td><code>.tidal/</code></td><td>Tidal songs you’ve downloaded or played, to replay offline</td><td>Q2 Pod</td></tr>
     </tbody>
   </table>
-  <p>You can delete <code>.coverflow/</code>, <code>.photos/</code> and <code>.books/</code> to free space; Q2 Pod rebuilds them as needed. Cover Flow and Photos need 16 MB free. Don’t delete <code>.spotify/cache/</code> or <code>.tidal/</code>: that signs you out or removes offline songs. Their size is set in <a href="#stream-config">Streaming Configuration</a>.</p>
+  <p>You can delete <code>.coverflow/</code> and <code>.photos/</code> to free space; Q2 Pod rebuilds them as needed. Cover Flow and Photos need 16 MB free. Don’t delete <code>.spotify/cache/</code> or <code>.tidal/</code>: that signs you out or removes offline songs. Their size is set in <a href="#stream-config">Streaming Configuration</a>.</p>
   </div>
 
 </section>
@@ -488,7 +487,7 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3, .lead { b
       <tr><td>Playlists, Ratings</td><td>See <a href="#c4">Chapter 4</a></td></tr>
       <tr><td>Recently Added, Recent, Most Played, Hi-Res</td><td>Your newest songs, what you played lately, your 100 most played, and hi-res files</td></tr>
       <tr><td>Shuffle</td><td>Shuffle the whole library (<a href="#shuffle">Shuffling your library</a>)</td></tr>
-      <tr><td>Podcasts, Audiobooks, Photos, Books</td><td>Shown when the card has those folders (<a href="#c7">Chapter 7</a>)</td></tr>
+      <tr><td>Podcasts, Audiobooks, Photos</td><td>Shown when the card has those folders (<a href="#c7">Chapter 7</a>)</td></tr>
       <tr><td>Apps</td><td>Installed apps that open here, once there is one</td></tr>
       <tr><td>Games</td><td>Sudoku, Vortex, Solitaire, Snake and your installed games</td></tr>
       <tr><td>App Store, Upload Scrobbles, Update Library</td><td>See <a href="#apps">Installing apps</a>, <a href="#scrobble">Scrobbling</a> and <a href="#addmusic">Adding music</a></td></tr>
@@ -934,11 +933,10 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
 <!-- ============ 7 PODCASTS ETC ============ -->
 <section class="chapter" style="page: ch7">
   <div class="opener"><h1 id="c7">Podcasts, Audiobooks and More</h1><div class="num">7</div></div>
-  <p class="lead">Add a folder to the card and the Q2 adds it to the Library: spoken word that resumes, photos, books and games.</p>
+  <p class="lead">Add a folder to the card and the Q2 adds it to the Library: spoken word that resumes, photos and games.</p>
   <div class="icons">
     <figure><img src="../../assets/icons/local_podcasts.png" alt="">Podcasts</figure>
     <figure><img src="../../assets/icons/local_audiobooks.png" alt="">Audiobooks</figure>
-    <figure><img src="../../assets/icons/local_books.png" alt="">Books</figure>
     <figure><img src="../../assets/icons/local_games.png" alt="">Games</figure>
   </div>
 
@@ -967,13 +965,12 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
   </div>
 
   <div class="sec">
-  <h2 id="pbv">Photos, books and videos</h2>
-  <p>Put photos and books in <code>Photos</code> and <code>Books</code> at the card’s root (<a href="#card">formats</a>). Photos’ subfolders are albums; Books takes one level of subfolders.</p>
+  <h2 id="pbv">Photos and videos</h2>
+  <p>Put photos in <code>Photos</code> at the card’s root (<a href="#card">formats</a>). Its subfolders are albums.</p>
   <table class="three">
     <thead><tr><th>Screen</th><th>Wheel</th><th>Centre</th><th>Other</th></tr></thead>
     <tbody>
       <tr><td>Photo</td><td>Previous or next photo</td><td>Shows or hides “3 of 40” and the name</td><td>Return goes back</td></tr>
-      <tr><td>Book</td><td>Turns the pages</td><td>Shows or hides your progress</td><td>Books reopen where you left off</td></tr>
     </tbody>
   </table>
   <p>Other photo formats, such as WebP, are skipped.</p>

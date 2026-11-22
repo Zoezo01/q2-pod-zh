@@ -92,7 +92,7 @@ remains visible. Under **Rounded Corners** on a pressed list row (`s_btn_listite
 selection's inset pill instead (`pressed_pill`), and a pressed tile under half its row's width (the album
 grid's, the playlist page's pair) is the tile's selection card, `TILE_INSET` inside it with `SEL_RADIUS`
 corners (square under Square); other pressed widgets keep stock's box. The same hooks cover settings, streaming, dialogs, PEQ rows and media browser
-chrome. Photos, book content, EQ plots and visualizers keep their own drawing.
+chrome. Photos, EQ plots and visualizers keep their own drawing.
 
 ## Home
 
@@ -196,7 +196,7 @@ the bar and writes the time into `label_clock` (see
 [internals.md](internals.md#status-bar-ipod)); the widest text, `12:59 PM`, is 69 pixels in the
 stock font at 16 pixels.
 
-**Time in Title.** Display → Appearance's **Time in Title** switch (`IPOD TIMETITLE`, on unless chosen; Minimal's and Classic's presets turn it on, Modern's off) is the iPod's own. Under Minimal and Modern, off, `label_clock` names the page in front instead of the time, as an iPod's title bar does (`bar_title`): "Now Playing" or "Cover Flow", Home by `coverflow_home_title` as Classic's bar names it ("Q2 Pod", or nothing with Show Wordmark off: Home has no clock either way), else stock's title in the page's hidden navbar (`scrlabel_title`, or a settings page's unnamed first child). A page showing its navbar and a page with no title keep the clock, and a pop-up or keyboard leaves the bar as it is. A title past the clock's width ends in an ellipsis. Classic's bar names the page in a title of its own, and the switch decides only its clock ([Theme](#theme)). ponytail: the payload's other pages (Games, Photos, Books) have no navbar, so the bar stays on the clock there, most with a heading on the page; naming them means reading each page's caption.
+**Time in Title.** Display → Appearance's **Time in Title** switch (`IPOD TIMETITLE`, on unless chosen; Minimal's and Classic's presets turn it on, Modern's off) is the iPod's own. Under Minimal and Modern, off, `label_clock` names the page in front instead of the time, as an iPod's title bar does (`bar_title`): "Now Playing" or "Cover Flow", Home by `coverflow_home_title` as Classic's bar names it ("Q2 Pod", or nothing with Show Wordmark off: Home has no clock either way), else stock's title in the page's hidden navbar (`scrlabel_title`, or a settings page's unnamed first child). A page showing its navbar and a page with no title keep the clock, and a pop-up or keyboard leaves the bar as it is. A title past the clock's width ends in an ellipsis. Classic's bar names the page in a title of its own, and the switch decides only its clock ([Theme](#theme)). ponytail: the payload's other pages (Games, Photos) have no navbar, so the bar stays on the clock there, most with a heading on the page; naming them means reading each page's caption.
 
 **Codec.** The Bluetooth images are 42-pixel canvases with their ink at the right: the glyph takes
 10 pixels, while stock's codec badges take up to 40 (aptX HD). A new badge shows for a second
@@ -499,7 +499,7 @@ The payload's own pages (`page_list`) draw the same `list_into` at x 302 on ever
 that opens another page or screen: Spotify's menu, its Downloads hub and Storage Management, its
 albums, playlists, artists, saved playlists and download jobs, and Download Controls; a card app's
 lists, folders and phone-remote rows; Internet Radio's lists, Games, Photos, Ratings, Era's decades and
-albums; Books; and the equalizer's Balance, Preamp, Presets, band, Frequency, Gain and Q rows and the
+albums; and the equalizer's Balance, Preamp, Presets, band, Frequency, Gain and Q rows and the
 Presets menu, the value moved left of it (`patch/peq_ui.c` `INTO`). A 64 px row with an empty detail
 centres its caption beside it. Rows that act in place (play, toggle, cycle a value) have none; on/off
 rows (EQ Enabled, a band's Band, Spotify's Shuffle, Streaming Configuration's services) carry stock's

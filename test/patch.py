@@ -8192,7 +8192,7 @@ swap_values(m,120,8); passed()
 # Windows from the theme: what each kind's hint does to a window as it loads or opens.
 OTHER_HINT='htranslate(duration=270,easing=linear)'; FADE_HINT='fade(duration=300,easing=quadratic_out)'; ASSET_HINT=f"htranslate(duration={O['PAGE_SLIDE_MS']})"
 EXTRA=('playerqueue_page','playermore_page','playerjumpinfo_page')
-PAYLOAD=('shuffle_page','mostplayed_page','ratings_page','rated_page','era_page','era_albums_page','upnext_page','playlistedit_page','streamconf_page','games_page','books_page','apps_page')
+PAYLOAD=('shuffle_page','mostplayed_page','ratings_page','rated_page','era_page','era_albums_page','upnext_page','playlistedit_page','streamconf_page','games_page','apps_page')
 DIALOGS=('confirminfo_dialog','addplaylist_dialog','sortselect_dialog')
 # Classic's pages open as Minimal's: a stock page with a slide keeps the asset's, over Home or anything else, and nothing is written.
 for t in '01':
@@ -8646,76 +8646,6 @@ for fail_size in (5, 20):
     m.advance(0); assert m.freed==4 and not m.threads
     m.close(); assert m.freed==8
 passed()
-
-# Books (patch/books.c): Local Music's last row opens the card's Books folder (case aside): its own
-# .txt and .epub files and its subfolders', by path, named without the extension.
-import io, zipfile
-R='/mnt/mmc/books'
-para=lambda i: ' '.join(f'w{i}x{k}' for k in range(30))
-txt='﻿'+'\n\n'.join(para(i) for i in range(40))
-buf=io.BytesIO()
-with zipfile.ZipFile(buf,'w',zipfile.ZIP_DEFLATED) as z:
-    z.writestr('mimetype','application/epub+zip')
-    z.writestr('META-INF/container.xml','<container><rootfiles><rootfile full-path="content.opf"/></rootfiles></container>')
-    z.writestr('content.opf','<package><manifest><item id="a" href="a.xhtml"/><item id="b" href="b.xhtml"/></manifest>'
-               '<spine><itemref idref="a"/><itemref idref="b"/></spine></package>')
-    z.writestr('a.xhtml','<html><head><title>T</title></head><body><h1>Chapter 1</h1><p>Caf&#233; &amp; tea.</p></body></html>')
-    z.writestr('b.xhtml','<html><body><p>Chapter 2</p></body></html>')
-tree={'/mnt/mmc':[('Music',4),('books',4)],R:[('Zed.txt',8),('notes.md',8),('._Zed.txt',8),('Series',4)],R+'/Series':[('A Tale.EPUB',8)]}
-files={R+'/Zed.txt':bytearray(txt.encode()),R+'/Series/A Tale.EPUB':bytearray(buf.getvalue())}
-m=BooksMachine(tree,files)
-view=m.node('scroll_view','scroll_view_localmusic',[m.node('list_item') for _ in range(11)]); m.top=m.node('window','localmusic_page',[view])
-assert m.call(address=HOOKS['localmusic_page_init'][0],args=(m.top,5,0,0),gap=0,count=5_000_000)==0
-button=m.nodes[m.nodes[view]['children'][-4]]['children'][0]; icon,label,into=m.nodes[button]['children']
-assert m.nodes[icon]['image']=='local_books' and m.nodes[label]['text']=='Books' and len(m.nodes[view]['children'])==20
-library_geometry(m,m.nodes[view]['children'][-4])
-f,ctx=m.handler(button,O['EVT_CLICK']); assert m.call(address=f,args=(ctx,m.event,0,0),gap=0,count=5_000_000)==0
-page=m.page=m.top; assert m.nodes[page]['name']=='books_page' and m.nodes[page]['style:normal:bg_color']==-0x1000000
-books,reader=m.nodes[page]['children']; sheet,info=m.nodes[reader]['children']
-assert not m.nodes[reader]['visible'] and labels(books)==['Books','A Tale','Zed']; passed()
-# A .txt opens on its first page: up to ten white lines of the default font, the BOM dropped,
-# wrapped at spaces within the margins, every line clear of the glass's rounded corners.
-rows=m.nodes[m.find('scroll_view',books)]['children']
-def open_book(i):
-    f,ctx=m.handler(rows[i],O['EVT_CLICK']); m.call(address=f,args=(ctx,m.event,0,0),gap=0); m.advance(0)
-def page_lines():
-    m.lines=[]; m.call(address=HOOKS['widget_on_paint_border'][0],args=(sheet,m.canvas,0,0),gap=0,clear=False,count=50_000_000)
-    return m.lines
-open_book(1); assert m.nodes[reader]['visible'] and not m.nodes[books]['visible'] and not m.nodes[info]['visible']
-first=page_lines(); words=txt[1:].split()
-assert len(first)==10 and all(c==0xffffffff and font==('default',20) for _,_,_,c,font in first)
-assert ' '.join(t for t,*_ in first if t).split()==words[:len(' '.join(t for t,*_ in first).split())] and first[0][0].startswith('w0x0 ')
-for t,x,y,*_ in first:
-    top,bottom=30+y,30+y+26; inset=max(corner_inset(top),corner_inset(bottom))
-    assert inset<=x and x+BOOK_PITCH*len(t)<=375-inset and len(t)*BOOK_PITCH<=375-2*x,(t,x,y)
-assert [y for _,_,y,*_ in first]==[6+26*i for i in range(10)] and len(first[0][0])*BOOK_PITCH>375-2*24-BOOK_PITCH*6; passed()
-# The wheel turns the page (the next starts where this one ended), back again, and stops at the start.
-m.top=page; assert m.call()==11; second=page_lines()
-seen=' '.join(t for t,*_ in first+second).split(); assert seen==words[:len(seen)] and second[0][0]!=first[0][0]
-assert m.call(O['KEY_PREV'])==11 and page_lines()==first and m.call(O['KEY_PREV'])==11 and page_lines()==first; passed()
-# Centre shows how far in and the title on a band clear of the glass; Return keeps the page.
-m.call(); m.call(); third=page_lines()
-# The turned page is saved 2 s on, without Return: a power-off ends demo without one (books.c save_due).
-m.advance(2000); saved=bytes(m.files.get('/mnt/data/ringnav-books',b'')[:8])
-assert len(saved)==8 and struct.unpack('<II',saved)[0]==fnv(R+'/Zed.txt') and struct.unpack('<II',saved)[1]>0; passed()
-assert m.call(O['KEY_CENTER'])==11 and m.nodes[info]['visible'] and re.fullmatch(r'\d%  Zed',m.nodes[info]['text'])
-x,y,bw,bh=cf_geometry(m,info); inset=max(corner_inset(30+y),corner_inset(30+y+bh)); assert inset<=x and x+bw<=375-inset
-assert m.key()==11 and m.nodes[books]['visible'] and bytes(m.files['/mnt/data/ringnav-books'][:8])==saved
-assert m.nodes[m.find('scroll_view',books)]['_ringnav_index']==1
-open_book(1); assert page_lines()==third; passed()
-# An EPUB is made into text on the worker first ("Preparing…"), then read like a .txt: chapters
-# on new pages, head dropped, entities decoded.
-m.key(); open_book(0); assert m.nodes[info]['visible'] and m.nodes[info]['text']=='Preparing…' and len(m.threads)==1 and not page_lines()
-worker,arg=m.threads[0]; assert m.call(address=worker,args=(arg,0,0,0),gap=0,count=50_000_000)==0
-m.advance(250); cache=f'/mnt/mmc/.books/{fnv(R+"/Series/A Tale.EPUB"):08x}.txt'
-assert bytes(m.files[cache])=='Chapter 1\n\nCafé & tea.\f\nChapter 2'.encode() and not m.nodes[info]['visible']
-assert [t for t,*_ in page_lines()]==['Chapter 1','','Café & tea.'] and m.call()==11 and [t for t,*_ in page_lines()]==['Chapter 2']
-passed()
-# A broken EPUB says so; closing joins nothing and frees the window.
-m.key(); m.files[R+'/Series/A Tale.EPUB']=bytearray(b'PK junk'); m.files.pop(cache); open_book(0)
-worker,arg=m.threads[-1]; m.call(address=worker,args=(arg,0,0,0),gap=0,count=50_000_000); m.advance(250)
-assert m.nodes[info]['visible'] and m.nodes[info]['text']=="Can't open this book" and m.call()==11 and not page_lines()
-m.close(); passed()
 
 # Games (patch/games.c, iPod): the Library's Games row, always there, opens a chooser of Sudoku,
 # Vortex, Solitaire and Snake. A game's keys never reach stock's filter or the media keys; Return goes game -> chooser ->
@@ -12469,7 +12399,6 @@ for count,failed,title in ((0,False,'No embedded chapters'),(0,True,'Could not r
 # An empty page under Classic, one per module: the message stays as the first line, and the bar reads the page's name.
 for count_failed,title in (((0,False),'No embedded chapters'),((0,True),'Could not read chapters')):
     m=classic_light_new(ChapterMachine,count=count_failed[0],failed=count_failed[1]); ebar=page_bar(m); m.open_chapters(); m.advance(50); shows_empty(m,ebar,title,'Chapters'); passed()
-m=classic_light_new(BooksMachine,tree={'/mnt/mmc':[('books',4)],'/mnt/mmc/books':[]},files={}); ebar=page_bar(m); empty_row(m,-4); shows_empty(m,ebar,'No books','Books'); passed()
 m=classic_light_new(PhotosMachine,tree={'/mnt/mmc':[('photos',4)],'/mnt/mmc/photos':[]},data={}); ebar=page_bar(m); empty_row(m,-4); shows_empty(m,ebar,'No photos','Photos'); passed()
 m=classic_light_new(ShuffleMachine); ebar=page_bar(m); empty_row(m,11); shows_empty(m,ebar,'No plays yet','Most Played'); passed()
 m=classic_light_new(SpotMachine,files={}); ebar=page_bar(m); erows=stream_rows(m); f,ctx=m.handler(erows['Tidal Downloads'],O['EVT_CLICK']); m.call(address=f,args=(ctx,m.event,0,0),gap=0,count=5_000_000); shows_empty(m,ebar,'Download Playing Songs','Tidal Downloads'); passed()  # no songs: Download All's row alone, the bar the page's name
