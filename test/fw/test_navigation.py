@@ -2222,7 +2222,7 @@ def test_era_key_cmp_is_unsigned(fw, a, b, order):
 @pytest.mark.parametrize('decade, name', [(1960, b'60s'), (1990, b'90s'), (1900, b'00s'), (2000, b'2000s'), (2010, b'2010s')])
 def test_era_name(fw, decade, name):
     out = C.create_string_buffer(16)
-    assert fw.fn('library_lists__era_name', C.c_char_p, C.c_void_p, C.c_int)(out, decade) == name
+    assert fw.fn('library_lists__era_name', C.c_char_p, C.c_void_p, C.c_uint, C.c_int)(out, 16, decade) == name
 
 
 # Playlists and SQL rows.

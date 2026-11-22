@@ -567,9 +567,12 @@ static int era_closed(void *ctx, event_t *event) {
     if (ctx == era.albums) era.albums = 0, era_free();
     return 0;
 }
-/* "60s" to "90s", then "2000s" on. */
-static const char *era_name(char *buf, int decade) {
-    tk_snprintf(buf, 16, decade < 2000 ? "%02ds" : "%ds", decade < 2000 ? decade % 100 : decade);
+/* "60s" to "90s", then "2000s" on, in the language's words. */
+static const char *era_name(char *buf, unsigned size, int decade) {
+    if (decade < 2000)
+        tk_snprintf(buf, size, tr("%02ds"), decade % 100);
+    else
+        tk_snprintf(buf, size, tr("%ds"), decade);
     return buf;
 }
 
@@ -657,7 +660,7 @@ static int era_pick(void *ctx, event_t *event) {
 static int era_open_decade(void *ctx, event_t *event) {
     int k = (int)(long)ctx, from = era.decade[k];
     if (era.albums) return 0;
-    char sql[2048], name[16], detail[300];
+    char sql[2048], name[48], detail[300];
     tk_snprintf(sql, sizeof sql,
                 "%s" ERA_NAMES
                 "%s having release_year between %d and %d order by release_year,album "
@@ -675,7 +678,8 @@ static int era_open_decade(void *ctx, event_t *event) {
         era_free();
         return 0;
     }
-    widget_t *view = page_list(era.albums, era.albums, 0, era_name(name, from), (int)era.m + 2, 64);
+    widget_t *view =
+        page_list(era.albums, era.albums, 0, era_name(name, sizeof name, from), (int)era.m + 2, 64);
     tk_snprintf(detail, sizeof detail, era.m == 1 ? tr("%u album") : tr("%u albums"), era.m);
     page_row_detail(view, 0, tr("Play All"), detail, era_pick);
     page_row_detail(view, 1, tr("Shuffle"), tr("Every song, shuffled"), era_pick);
@@ -702,11 +706,12 @@ int era_menu(void *ctx, event_t *event) {
     }
     if (!(era.page = page_open("era_page", era_closed, page_keyup))) return 0;
     widget_t *view = page_list(era.page, era.page, 0, tr("Era"), era.n, 64);
-    char name[16], detail[64];
+    char name[48], detail[64];
     for (int i = 0; i < era.n; ++i) {
         tk_snprintf(detail, sizeof detail, era.count[i] == 1 ? tr("%u album") : tr("%u albums"),
                     (unsigned)era.count[i]);
-        page_row_detail_into(view, i, era_name(name, era.decade[i]), detail, era_open_decade);
+        page_row_detail_into(view, i, era_name(name, sizeof name, era.decade[i]), detail,
+                             era_open_decade);
     }
     return 0;
 }

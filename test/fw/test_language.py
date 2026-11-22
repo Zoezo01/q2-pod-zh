@@ -341,3 +341,14 @@ def test_a_cut_face_takes_a_letter_it_lacks_from_stock_s(fw):
                    ('other', 0x4e2d, 20)]  # Zhe: bold has Cyrillic, classic-light none
     assert asked == [(0x1234, b'default', 20), (0x1234, b'default', 24)]
 
+
+def test_an_era_and_a_playlist_s_delete_button_say_the_language_s_words(fw, lang):
+    """library_lists.c era_name's formats through tr(); playlists.c's tr_text a line of Q2 Pod's own."""
+    lang.files[COPY] = lines(('%02ds', '%02ds', '%02der'), ('%ds', '%ds', '%der'),
+                             ('Delete Playlist', 'Delete Playlist', 'Playlist löschen'))
+    Config(fw, LANG='de')
+    out = C.create_string_buffer(8)
+    era = fw.fn('library_lists__era_name', C.c_char_p, C.c_void_p, C.c_uint, C.c_int)
+    assert era(out, 8, 1960) == b'60er' and era(out, 8, 2010) == b'2010er'
+    assert lang.stock('Delete Playlist') == 'Playlist löschen'
+
