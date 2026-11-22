@@ -68,6 +68,7 @@ extern cf_page_t cf;
 #endif
 #define CF_WIDE_REACH 7 /* CF_REACH under a thumb theme, for the row at speed */
 #define CF_WIDE (2 * CF_WIDE_REACH + 1)
+#define TAIL_GLIDE 4 /* albums coverflow_tail and the scrub glide; farther, at once */
 /* textures going by letters: the covers on the screen and the ones ahead of the row, the letter's
  * and the letters' either side of it (fx_window); 100 KB each */
 #define FX_POOL 64
@@ -223,6 +224,7 @@ float cf_smooth(float x);
 int coverflow_bounded(void *w);
 int coverflow_jump(void *w, int from, int dir, unsigned *letter);
 int coverflow_letter_first(int i, unsigned *letter);
+unsigned coverflow_group(int i);
 int coverflow_letter_next(void *w, int from, int dir, int n, unsigned *letter);
 int covers_live(void);
 float ff_decay(float s);

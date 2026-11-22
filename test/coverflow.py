@@ -1108,7 +1108,7 @@ static void renderer(void) {
 
 int coverflow_hit(int, int, int);
 void coverflow_lost_touch(void);
-int coverflow_position_held(void), lettered(void *);
+int coverflow_position_held(void), lettered(void *), cf_fx_has(int);
 void coverflow_position_reset(void);
 static unsigned batch; /* the dispatch time of moves queued together, else 0 */
 static int touch_at(int type, int x, int y, unsigned t) { /* t: when the event was posted */
@@ -1274,6 +1274,22 @@ static void touches(widget *s, widget *covers_view) {
     /* A key with no finger seen lets go too. */
     touch_at(EVT_POINTER_DOWN, left + 80, bar, 300); assert(coverflow_position_held());
     coverflow_lost_touch(); assert(!coverflow_position_held());
+    /* Held after a far jump, a frame loads the shelf's covers by the frame's budget (Fast Navigation
+       off: FX_DECODES, 2), the rest the placeholder; the lift's frame loads them all. Light Mode's
+       flip empties the pool, so the jump's covers are cold. */
+    int fast = big_library, canvas[16] = {0}, have = 0;
+    big_library = 0, light = !light;
+    *(int *)(raw + SLIDE_INDEX) = 0, *(int *)(raw + SLIDE_OFFSET) = 0;
+    touch_at(EVT_POINTER_DOWN, left + art - 1, bar, 400);
+    assert(coverflow_position_held() && *(int *)(raw + SLIDE_INDEX) == n - 1);
+    coverflow_paint(s, canvas);
+    for (int j = -3; j <= 3; ++j) have += cf_fx_has((n - 1 + j) % n) != 0; /* CF_REACH either side */
+    assert(have <= 2);
+    touch_at(EVT_POINTER_UP_BEFORE, left + art - 1, bar, 420);
+    coverflow_paint(s, canvas);
+    for (int j = -3; j <= 3; ++j) assert(cf_fx_has((n - 1 + j) % n));
+    big_library = fast, light = !light;
+    coverflow_paint(s, canvas); /* back in the page's own colours */
     cf_position = 0;
     coverflow_position_reset();
     timer_fn = was;

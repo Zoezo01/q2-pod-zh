@@ -8,6 +8,7 @@
 #define CF_ONE 65536
 #define ART_SIZE 160
 #define RGBA(c) (0xff000000u | (c))
+#define TAIL_GLIDE 4
 
 static struct {
     void *slide, *covers, *albums;
@@ -74,10 +75,7 @@ static int carousel_glide(void *w, int goal, unsigned ms, int easing) {
     return ms != 0;
 }
 static int lettered(void *w) { return w == slide && is_lettered; }
-static int coverflow_letter_first(int i, unsigned *letter) {
-    *letter = 'A' + (unsigned)i / 100;
-    return i - i % 100;
-}
+static unsigned coverflow_group(int i) { return 'A' + (unsigned)i / 100; }
 static void coverflow_letter(void *w, unsigned letter, unsigned now) {
     assert(w == slide);
     ++letters, letter_shown = letter;
@@ -97,6 +95,13 @@ static int widget_invalidate_force(void *w, void *r) {
     return 0;
 }
 static int ipod_light(void) { return light; }
+static int pointer_pressed = 1; /* a finger on the screen, as the window manager sees it */
+static void *window_manager(void) { return covers; }
+static int window_manager_get_pointer_pressed(void *wm) {
+    assert(wm == covers);
+    return pointer_pressed;
+}
+void coverflow_position_lift(void);
 static int stock_canvas_set_fill_color(void *c, unsigned v) {
     fill = v;
     return 0;
@@ -261,10 +266,15 @@ static void scrub_checks(void) {
     assert(coverflow_position_touch(EVT_POINTER_MOVE_BEFORE, left + 159, mid));
     assert(glides == 4 && glide_ms == CF_TAP_MS && glide_goal == 100);
     I(slide, SLIDE_OFFSET) = 0, centre = 0, fraction = 0;
+    /* A press on album 0 while a glide runs off it, still on it: the glide turns back. */
+    P(slide, SLIDE_ANIMATOR) = (void *)1;
+    assert(coverflow_position_press(left, mid));
+    assert(glides == 5 && glide_ms == CF_TAP_MS && !glide_goal);
+    P(slide, SLIDE_ANIMATOR) = NULL;
     /* A sort without letters moves at once with none. 76 px of 151: album 201 of 400. */
     is_lettered = 0;
     assert(coverflow_position_touch(EVT_POINTER_MOVE_BEFORE, left + 80, mid));
-    assert(glides == 5 && !glide_ms && glide_goal == -201 * 100 && letters == 1);
+    assert(glides == 6 && !glide_ms && glide_goal == -201 * 100 && letters == 1);
     is_lettered = 1;
     /* Held, the thumb stands the strip's whole height, centred under the finger (76 px of travel
      * at 80 px in), not where the covers show (album 0, the stub's: x 0). */
@@ -305,6 +315,12 @@ static void scrub_checks(void) {
     assert(coverflow_position_press(left + 81, mid));
     coverflow_position_lift();
     assert(!position.held);
+    /* A release that went elsewhere: the next tick finds no finger down and lets go. */
+    assert(coverflow_position_press(left + 81, mid));
+    pointer_pressed = 0;
+    tick(clock_ms + 33);
+    assert(!position.held);
+    pointer_pressed = 1;
     /* The covers gone mid-scrub (a load, the panel): the next move lets go and moves nothing. */
     assert(coverflow_position_press(left + 79, mid));
     int moved = glides;

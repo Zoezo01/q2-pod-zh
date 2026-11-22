@@ -4,12 +4,10 @@
 #define POSITION_THUMB_W 9
 #define POSITION_THUMB_H 4
 #define POSITION_STRIP_H 8
-#define POSITION_HELD_H 8 /* the thumb's height while a finger holds the bar: the whole strip */
 #define POSITION_HOLD_MS 1000
 #define POSITION_FADE_MS 300
 #define POSITION_TICK_MS 33
 #define POSITION_REACH 12 /* px past each end of the track that still take the bar */
-#define POSITION_GLIDE 4  /* albums a scrub glides the covers; farther, they move at once */
 
 static struct {
     void *parent, *slide;
@@ -36,6 +34,8 @@ static int position_live(void) {
 /* A single temporary UI timer finishes the fade even when nothing else repaints the shelf.
  * It stops after the final clearing repaint, or as soon as its page is no longer live. */
 static int position_tick(const void *unused) {
+    if (position.held && !window_manager_get_pointer_pressed(window_manager()))
+        coverflow_position_lift(); /* its release went elsewhere */
     if (!position_live() || position.parent != cf.covers || position.slide != cf.slide) {
         position.timer = position.alpha = 0;
         return 0;
@@ -139,7 +139,7 @@ void coverflow_position_paint(void *w, void *canvas) {
     canvas_fill_rect(canvas, left, mid - 1, width, 2);
     /* A short flat grey pill, softened against the paper without a contrasting outline; held, it
      * stands the strip's whole height, so the finger's bar shows it has it. */
-    int h = position.held ? POSITION_HELD_H : POSITION_THUMB_H;
+    int h = position.held ? POSITION_STRIP_H : POSITION_THUMB_H;
     int tx = left + x, ty = mid - h / 2;
     unsigned ink = ipod_light() ? 0x808080 : 0xaaaaaa, alpha = position.alpha * 220 / 255;
     stock_canvas_set_fill_color(canvas, (RGBA(ink) & 0xffffffu) | alpha << 24);
@@ -172,20 +172,16 @@ static void position_seek(int t) {
     int stride = stride_of(s), cards = (int)widget_count_children(s), c, frac;
     if (t == position.album || stride <= 0 || !visual(s, cards, &c, &frac)) return;
     position.album = t;
-    if (t == c && !frac) return; /* there already */
+    if (t == c && !frac && !P(s, SLIDE_ANIMATOR)) return; /* there already, and not gliding away */
     int d = t - c, off = -I(s, SLIDE_OFFSET), q = (2 * off + stride) / (2 * stride);
     if ((2 * off + stride) % (2 * stride) < 0) --q; /* visual()'s floor */
-    if (d >= -POSITION_GLIDE && d <= POSITION_GLIDE) {
+    if (d >= -TAIL_GLIDE && d <= TAIL_GLIDE) {
         carousel_glide(s, -(q + d) * stride, CF_TAP_MS, SLIDE_EASING);
         return;
     }
     carousel_glide(s, -(q + d) * stride, 0, 0); /* at once: the index moves, its offset 0 */
     widget_invalidate_force(s, 0);
-    if (lettered(s)) {
-        unsigned letter;
-        coverflow_letter_first(t, &letter);
-        if (letter) coverflow_letter(s, letter, (unsigned)time_now_ms());
-    }
+    if (lettered(s)) coverflow_letter(s, coverflow_group(t), (unsigned)time_now_ms());
 }
 
 /* The finger x px from the track's left edge: the thumb centred there, held to the track, at once,
@@ -200,10 +196,10 @@ static void position_scrub(int x) {
 
 /* A press at (x, y) on the screen: answers whether the bar took it. */
 int coverflow_position_press(int x, int y) {
-    int left, bottom, mid, c, frac, xy[2] = { x, y };
+    int left, bottom, mid, xy[2] = { x, y };
     if (!position_live() || !cf.albums || !position_place(&left, &bottom, &mid)) return 0;
     int n = (int)deque_size(cf.albums), cards = (int)widget_count_children(cf.slide);
-    if (n <= 1 || cards < n || !visual(cf.slide, cards, &c, &frac)) return 0;
+    if (n <= 1 || cards < n) return 0;
     widget_to_local(cf.covers, xy);
     if (xy[1] < bottom || xy[1] >= I(cf.covers, W_H) || xy[0] < left - POSITION_REACH ||
         xy[0] >= left + ART_SIZE + POSITION_REACH)

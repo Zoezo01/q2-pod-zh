@@ -19,7 +19,6 @@ extern int stock_home_trampoline(void *win, void *ctx), stock_scan_all_trampolin
     stock_album_cover_trampoline(const char *, const char *, int, int);
 
 enum { PREPARING, COVERS, TRACKS };
-#define TAIL_GLIDE 4 /* albums coverflow_tail glides to; farther, it moves at once */
 cf_page_t cf __attribute__((section(".scratch")));
 
 static int pick(void *ctx, void *event);
@@ -1178,6 +1177,7 @@ static unsigned group(int i) {
     if (cf.sort != SORT_YEAR) return initial(i);
     return CF_YEAR | (years && cf.albums == years_of ? years[i] : 0u);
 }
+unsigned coverflow_group(int i) { return group(i); }
 
 /* Letters mean something on w: the whole library's covers, sorted by album or artist; years, by
  * year, with Fast Navigation on. */
@@ -2382,7 +2382,7 @@ static void fx_window(int c, int n, const unsigned **ring) {
             }
             unsigned t = (unsigned)time_now_ms();
             int spent = (int)(t - t0) + (h && (s < 0 || fx.ld[s].ok) ? fx.half_ms : fx.full_ms);
-            /* at rest the shelf's covers load at once; a scrub's jumps, by the frame's budget */
+            /* Off the thumb and the scrub, the shelf's covers load at once */
             if ((!th.on && !coverflow_position_held() && !up && m <= 2 * CF_REACH) ||
                 (big ? !any || spent <= budget : decodes-- > 0)) {
                 if (s >= 0)
