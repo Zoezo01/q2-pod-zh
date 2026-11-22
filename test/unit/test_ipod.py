@@ -71,7 +71,7 @@ def test_home_card():
     assert card[2]['name'] == 'btn_coverflow'
     image, label = card[3]
     assert image[2] == {'name': 'img_cover_flow', 'style:normal:bg_image': 'menu_coverflow', 'style:focused:bg_image': 'menu_coverflowdown', 'draw': 'menu_music'}
-    assert label[2] == {'name': 'label_cover_flow', 'text': 'Cover Flow'}  # not stock's img_coverflow and label_coverflow, which it binds and translates
+    assert label[2] == {'name': 'label_cover_flow', 'text': 'Cover Flow', 'tr_text': 'Cover Flow'}  # not stock's img_coverflow and label_coverflow, which it binds and translates
     assert m[3][1] == local_card() and len(m[3]) == 7
 
 
@@ -103,7 +103,7 @@ def test_ipod_home():
     assert [c[2]['name'] for c in carousel[3]] == ['btn_playing', 'btn_localmusic', 'btn_coverflow', 'btn_folder', 'btn_rockbox',
                                                    'btn_stream', 'btn_playset', 'btn_sysset']
     assert carousel[3][2][3][1][2]['text'] == 'Cover Flow' and carousel[3][4][3][1][2]['text'] == 'Rockbox'
-    assert carousel[3][1][3][1][2] == {'name': 'label_library', 'text': 'Library'}
+    assert carousel[3][1][3][1][2] == {'name': 'label_library', 'text': 'Library', 'tr_text': 'Library'}
     assert carousel[3][2][3][1][2]['name'] == 'label_cover_flow' and carousel[3][2][3][0][2]['draw'] == 'menu_music'  # ours, cloned; stock's card is gone
     assert [n[2]['name'] for n in rows[2][3]] == ['label_cover_flow', 'img_cover_flow'] and carousel[3][2][3][0][2]['name'] == 'img_cover_flow'
     for n in root[3][3:]:
@@ -687,7 +687,7 @@ def test_confirm_dialog():
     for i, (n, text) in enumerate(zip(root[3], ('Cancel', 'OK'))):
         assert n[0] == 'button' and n[1] == [0, ipod.CONFIRM_TOP + i * ipod.CONFIRM_ROW, 375, ipod.CONFIRM_ROW]
         assert 'other' not in n[2]
-        assert (n[2]['name'], n[2]['text'], n[2]['focusable']) == (('img_cancel', 'img_enter')[i], text, 'false')
+        assert (n[2]['name'], n[2]['text'], n[2]['tr_text'], n[2]['focusable']) == (('img_cancel', 'img_enter')[i], text, text, 'false')
         assert n[2]['style:normal:font_size'] == '20' and n[2]['style:normal:text_align_h'] == 'center'
         for state in ('normal', 'pressed', 'over', 'focused'):
             assert n[2][f'style:{state}:bg_color'] == ('#333333' if state == 'pressed' else '#00000000')

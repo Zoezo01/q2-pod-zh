@@ -943,6 +943,8 @@ def english_ui(rel, data):
             props['text'] = text.replace('，', ', ')
         else:
             props['text'] = ENGLISH_IN.get(rel, {}).get(text) or ENGLISH[text]
+            if rel != 'kb_default_t9.bin':  # a language pack's line for it (language.c); the keyboard's keys stay
+                props['tr_text'] = props['text']
     check(not any(CJK.search(n[2].get('text', '')) for n in walk(root)), f'Chinese left in {rel}')
     return encode(root)
 

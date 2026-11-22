@@ -310,10 +310,10 @@ def artist_tabs(root):
 # the Shortcut (rockbox) after Folder, each on its own icons; their
 # images (patch/coverflow.c binds them) are the click targets. Stock translates label_* by name and
 # ignores these, so their text is literal (the Shortcut's is set at runtime). Local Music's label is
-# literal too, "Library" in every language: stock would set label_localmusic's text to small_local
-# ("Local Songs"), a key only Home uses.
+# literal too, "Library": stock would set label_localmusic's text to small_local ("Local Songs"), a key only
+# Home uses. Each also has its English as tr_text, after it, which a language pack translates (language.c).
 HOME_PAGE = 'home_page.bin'
-LIBRARY = {'name': 'label_library', 'text': 'Library'}
+LIBRARY = {'name': 'label_library', 'text': 'Library', 'tr_text': 'Library'}
 
 
 def home_card(menu, at, row, text):
@@ -324,7 +324,7 @@ def home_card(menu, at, row, text):
             'Unexpected Local Music card')
     image[2]['name'] = 'img_' + HOME_OURS.get(row, row)
     label[2]['name'] = 'label_' + HOME_OURS.get(row, row)
-    label[2]['text'] = text
+    label[2]['text'] = label[2]['tr_text'] = text
     for key, value in image[2].items():  # assets/icons/menu_<row>*.png, added to the rootfs by build.py
         if key.endswith(':bg_image'): image[2][key] = value.replace('menu_music', 'menu_' + row)
     menu[3].insert(at, card)
@@ -342,8 +342,8 @@ HOME_SETS = ['playset', 'sysset']
 HOME_LITERAL = {'coverflow': 'Cover Flow', 'rockbox': 'Rockbox', 'settings': 'Settings'}
 # Stock's visitor translates label_localmusic, label_playset and label_sysset by name; renamed, they keep
 # these shorter literals.
-HOME_RENAMED = {'localmusic': LIBRARY, 'playset': {'name': 'label_playback', 'text': 'Playback'},
-                'sysset': {'name': 'label_system', 'text': 'System'}}
+HOME_RENAMED = {'localmusic': LIBRARY, 'playset': {'name': 'label_playback', 'text': 'Playback', 'tr_text': 'Playback'},
+                'sysset': {'name': 'label_system', 'text': 'System', 'tr_text': 'System'}}
 # Since stock V1.34 the visitor knows img_coverflow and label_coverflow too: its own Album Wall card's, which it
 # binds to that page and names so. Cover Flow's image and label are named apart, so stock binds and names neither.
 HOME_OURS = {'coverflow': 'cover_flow'}
@@ -365,7 +365,7 @@ def home_list(name, rows, g, extra=None, view_name=None):
         # Long translations ellipsize and scroll inside the shared text margins.
         label = {'name': 'label_' + HOME_OURS.get(row, row), 'style': 's_scrlabel_white20l', 'only_focus': 'true', 'ellipses': 'true'}
         if row in HOME_LITERAL:
-            label['text'] = HOME_LITERAL[row]
+            label['text'] = label['tr_text'] = HOME_LITERAL[row]
         label.update(HOME_RENAMED.get(row, {}))
         views.append(['view', [0, i * g.home_row, HOME_LIST_W, g.home_row], {'name': 'btn_' + row}, [
             ['hscroll_label', [HOME_TEXT_X, 0, HOME_LIST_W - HOME_TEXT_X - HOME_LABEL_END, g.home_row], label, []],
@@ -900,6 +900,7 @@ def quick_settings(root):
 CONFIRM = 'dialog/confirminfo_dialog.bin'
 CONFIRM_TILE = 80
 CONFIRM_TOP, CONFIRM_ROW = inc('CONFIRM_TOP'), 48  # Cancel and OK, under the prompt
+CONFIRM_TEXT = ('Cancel', 'OK')
 
 
 def confirm_dialog(root):
@@ -911,7 +912,7 @@ def confirm_dialog(root):
     # is the lists' own bar or card. Stock looks both up by name and binds the same callbacks.
     for i, n in enumerate(root[3]):
         n[0], n[1] = 'button', [0, CONFIRM_TOP + i * CONFIRM_ROW, 375, CONFIRM_ROW]
-        n[2] = {'name': n[2]['name'], 'text': ('Cancel', 'OK')[i], 'focusable': 'false',
+        n[2] = {'name': n[2]['name'], 'text': CONFIRM_TEXT[i], 'tr_text': CONFIRM_TEXT[i], 'focusable': 'false',
                 'style:normal:font_size': '20', 'style:normal:text_align_h': 'center'}
         # Every state, or AWTK's button/default shows its blue border (1px) and fill; a tap gets
         # the lists' pressed grey, the wheel the selection.

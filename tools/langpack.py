@@ -7,8 +7,9 @@ translation has to pass.
 
 en.tsv is every text the firmware asks for: each pair of BUILD's strings/en_US.bin (the table `relabel` in
 build.py writes: a u16 0 and a u16 pair count, a u32 offset to each key and each value in file order, then the
-strings), then Q2 Pod's own English, the literals patch/*.c hands to tr() or marks with N_(), each its own key.
-A line is `key<TAB>English<TAB>where` (`stock`, or the first file that says it), with \\n, \\t and \\\\ escaped
+strings), then Q2 Pod's own English, each its own key: the literals patch/*.c hands to tr() or marks with N_(),
+and the English the build gives assets as tr_text. A line is `key<TAB>English<TAB>where` (`stock`, `assets`, or
+the first file that says it), with \\n, \\t and \\\\ escaped
 as the Q2 reads them (patch/language.c).
 
 A translation is `key<TAB>English<TAB>text` lines under a first line `# ` and the language's own name. check
@@ -71,10 +72,24 @@ def own_strings(root=ROOT):
     return list(seen.items())
 
 
+def asset_strings():
+    """The English the build gives assets as their tr_text: build.py's english_ui (but the keyboard's keys) and
+    ipod.py's Home labels and confirm buttons."""
+    import build
+    import ipod
+    texts = [*build.ENGLISH.values(), *(v for rel, m in build.ENGLISH_IN.items() if rel != 'kb_default_t9.bin'
+                                        for v in m.values()),
+             *(row['text'] for row in ipod.HOME_RENAMED.values()), *ipod.HOME_LITERAL.values(), *ipod.CONFIRM_TEXT]
+    return list(dict.fromkeys(texts))
+
+
 def template(build, root=ROOT):
-    """en.tsv's lines: the build's table, then Q2 Pod's own English."""
+    """en.tsv's lines: the build's table, then Q2 Pod's own English, patch/'s and then the assets'."""
     rows = [(key, value, 'stock') for key, value in read_table((pathlib.Path(build)/'strings/en_US.bin').read_bytes())]
-    rows += [(text, text, where) for text, where in own_strings(root)]
+    own = own_strings(root)
+    rows += [(text, text, where) for text, where in own]
+    said = {text for text, _ in own}
+    rows += [(text, text, 'assets') for text in asset_strings() if text not in said]
     return ''.join('\t'.join(map(escape, row)) + '\n' for row in rows)
 
 

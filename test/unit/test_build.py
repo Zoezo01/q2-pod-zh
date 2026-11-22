@@ -331,6 +331,8 @@ def texts(data):
 def test_english_ui_shared_table():
     data = ipod.encode(ui(label('文件夹'), label('plain'), label('取消'), ['view', [0, 0, 1, 1], {}, []]))
     assert texts(build.english_ui('home_page.bin', data)) == ['Folder', 'plain', 'Cancel', None]
+    assert [n[2].get('tr_text') for n in ipod.walk(ipod.decode(build.english_ui('home_page.bin', data)))][1:] == [
+        'Folder', None, 'Cancel', None]  # a language pack's line for each English it wrote
 
 
 def test_english_ui_per_asset_wins():

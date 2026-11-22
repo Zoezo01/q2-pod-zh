@@ -63,12 +63,20 @@ def test_own_strings_of_this_tree():
     assert texts['Restart to apply?'] == 'language.c'
 
 
-def test_template(tmp_path):
+def test_asset_strings():
+    texts = langpack.asset_strings()
+    assert {'Library', 'Playback', 'System', 'Cover Flow', 'Settings', 'Cancel', 'OK', 'Albums', 'Battery Test'} <= set(texts)
+    assert 'abc' not in texts and '«»' not in texts and len(texts) == len(set(texts))
+
+
+def test_template(tmp_path, monkeypatch):
+    monkeypatch.setattr(langpack, 'asset_strings', lambda: ['Genre', 'Library'])
     root = tree(tmp_path, {'a.c': 'tr("Tab\\there"); tr("Genre");'})
     (tmp_path/'build/strings').mkdir(parents=True)
     (tmp_path/'build/strings/en_US.bin').write_bytes(table([('genre', 'Genre'), ('a\tb', 'x\ny')]))
     assert langpack.template(tmp_path/'build', root) == (
-        'genre\tGenre\tstock\na\\tb\tx\\ny\tstock\nTab\\there\tTab\\there\ta.c\nGenre\tGenre\ta.c\n')
+        'genre\tGenre\tstock\na\\tb\tx\\ny\tstock\nTab\\there\tTab\\there\ta.c\nGenre\tGenre\ta.c\n'
+        'Library\tLibrary\tassets\n')
 
 
 def test_read_lines():
