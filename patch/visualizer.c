@@ -140,7 +140,7 @@ void vis_reset(void) {
     memset(vz.lit, 0, sizeof vz.lit);
     memset(vz.ridge, 0, sizeof vz.ridge);
     vz.bass = 0;
-    memset(cz.last, 0, sizeof cz.last);
+    cz.last[0] = cz.last[1] = cz.last[2] = 1;
     cz.kick = 0;
 }
 
@@ -574,8 +574,8 @@ static float bell(float z, float w) {
  * mound the bass and its kicks lift, a second the mids lift, and ripples the mids and highs stir,
  * all drifting with time. Each line stays above the name's row, and its segments take one of six
  * shades by height, the accent's dark shade low to its bright tint high, a stroke a shade (as the
- * Halo's), and while a kick lifts it a faint wide stroke under the three brightest: the glow. The
- * field is separable, so each point is a few multiply-adds on tables of x and of line. */
+ * Halo's). The field is separable, so each point is a few multiply-adds on tables of x and of
+ * line. */
 static void contour(void *vg, unsigned tone) {
     static const unsigned alpha[6] = { 0x90, 0xb0, 0xd0, 0xe8, 0xff, 0xff };
     int n = (PAGE_W - 1) / CONTOUR_STEP + 2;
@@ -611,10 +611,9 @@ static void contour(void *vg, unsigned tone) {
         }
     }
     vgcanvas_set_line_cap(vg, "round");
-    /* the glow of shades 3 to 5 while a kick lifts it (its wide strokes cost the most to draw),
-     * then shades 0 to 5 */
-    for (int pass = cz.kick < 0.05f ? 3 : 0; pass < 9; ++pass) {
-        int glow = pass < 3, k = glow ? pass + 3 : pass - 3;
+    vgcanvas_set_line_width(vg, 1.25f);
+    /* shades 0 to 5, a stroke each */
+    for (int k = 0; k < 6; ++k) {
         vgcanvas_begin_path(vg);
         for (int l = 0; l < CONTOUR_LINES; ++l)
             for (int i = 0, on = 0; i < n - 1; ++i) {
@@ -628,9 +627,7 @@ static void contour(void *vg, unsigned tone) {
                 vgcanvas_line_to(vg, x1, cz.ridge[l][i + 1]);
                 on = 1;
             }
-        vgcanvas_set_line_width(vg, glow ? 4 + 3 * cz.kick : 1.25f);
-        vgcanvas_set_stroke_color(vg, rgba(mix(DARK(tone), BRIGHT(tone), 20 * k, 100),
-                                           glow ? 0x30 + (unsigned)(0x70 * cz.kick) : alpha[k]));
+        vgcanvas_set_stroke_color(vg, rgba(mix(DARK(tone), BRIGHT(tone), 20 * k, 100), alpha[k]));
         vgcanvas_stroke(vg);
     }
     vgcanvas_set_line_cap(vg, "butt");

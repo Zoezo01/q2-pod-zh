@@ -686,7 +686,7 @@ at the bottom for a second and a half:
 | **VU Meters**    | Rockbox VU Meter (analog) | Left and right needles over an arc from -20 to +3 VU, heavier and brighter past 0, with 300 ms ballistics and a peak LED                     |
 | **Halo**         | Apple's radial spectrum   | 64 mirrored bars around Now Playing's art in a circle, turning slowly, the bass pulsing the ring                                             |
 | **Pulsar**       | pulsr's ridge             | The spectrum's last 20 ticks as lines stacked up the page, each further back higher, flatter and darker, hidden behind the lines in front    |
-| **Contour**      | A topographic map         | 18 ridgelines over a moving landscape, dark low to bright high; each kick throws the peak up and flares its glow, the highs ripple           |
+| **Contour**      | A topographic map         | 18 ridgelines over a moving landscape, dark low to bright high; each kick throws the peak up, the highs ripple                               |
 
 Everything is anti-aliased vector drawing (AWTK's vgcanvas) within the 375x186 page: 16-pixel side
 margins (`NP_MARGIN`), labels in the stock grey `#AAAAAA`. It animates at `VIS_FPS` only while the

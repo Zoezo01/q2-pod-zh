@@ -519,10 +519,11 @@ def test_the_other_styles_stay_at_rest(fw, style):
     for now in (100, 140, 180):
         analyze(fw, style, 44100, now=now)
     moved = {'transform': v.re[0] != 123, 'levels': any(v.level), 'caps': any(v.peak), 'wave': any(v.wave[0]),
-             'needles': any(v.vu), 'leds': any(v.lit), 'pulse': v.bass != 0, 'lines': any(map(any, v.ridge))}
+             'needles': any(v.vu), 'leds': any(v.lit), 'pulse': v.bass != 0, 'lines': any(map(any, v.ridge)),
+             'kick': cz(fw).kick != 0}
     assert {k for k, m in moved.items() if m} == [{'transform', 'levels', 'caps'}, {'wave'}, {'needles', 'leds'},
                                                   {'transform', 'levels', 'pulse'},
-                                                  {'transform', 'levels', 'lines'}, {'transform', 'levels', 'pulse'}][style]
+                                                  {'transform', 'levels', 'lines'}, {'transform', 'levels', 'pulse', 'kick'}][style]
 
 
 def test_reset_puts_every_style_at_rest(fw):
@@ -1184,7 +1185,6 @@ def test_the_pulsar_hides_a_line_behind_one_in_front(fw):
     assert behind and not [p for p in behind if tall[0] + 1 < p[0] < tall[1] - 1]
 
 
-
 # The contour: ridgelines over a height field the bass lifts.
 
 def contour_marks(fw, width=375, kick=0.0, **fields):
@@ -1283,6 +1283,7 @@ def test_a_kick_split_over_two_frames_lifts_as_one_in_a_frame(fw, split):
     whole, shared = peak([]), peak([0.3 + split * 0.65])
     assert whole > 0.6 and shared > 0.8 * whole
 
+
 def test_a_kick_8_db_over_a_loud_bass_bed_lifts_fully_though_three_frames_share_its_rise(fw):
     """A full mix: the bass already loud, a kick 8 dB over it whose attack three frames share."""
     v = vz(fw)
@@ -1291,6 +1292,7 @@ def test_a_kick_8_db_over_a_loud_bass_bed_lifts_fully_though_three_frames_share_
         bass_hit(v, amp)
         analyze(fw, CONTOUR, 44100, dt=0.04, now=100 + 40 * tick)
     assert cz(fw).kick > 0.85
+
 
 def test_quiet_music_kicks_less(fw):
     """The same 10 dB kick, at full scale and 26 dB down."""
@@ -1310,40 +1312,34 @@ def test_reset_puts_the_kick_at_rest(fw):
     bass_hit(v, 0.95)
     analyze(fw, CONTOUR, 44100)
     fw.fn('vis_reset', None)()
-    assert cz(fw).kick == 0 and list(cz(fw).last) == [0, 0, 0]
+    assert cz(fw).kick == 0 and list(cz(fw).last) == [1, 1, 1]
 
 
-def glow_of(marks):
-    return [m for m in marks if m[0] > 2]  # the wide strokes
+def test_a_tap_into_the_contour_throws_no_kick(fw):
+    """A tap resets it in the middle of a loud bass: that bass is no rise over the levels before it."""
+    fw.fn('vis_reset', None)()
+    bass_hit(vz(fw), 0.95)
+    analyze(fw, CONTOUR, 44100)
+    assert cz(fw).kick < 0.1
 
 
-def lines_of(marks):
-    return [m for m in marks if m[0] <= 2]
+def test_a_kick_lifts_the_peak(fw):
+    def peak(kick):  # the middle ridgeline's highest point
+        contour_marks(fw, kick=kick, bass=0.5)
+        return min(cz(fw).ridge[CONTOUR_LINES // 2])
+    assert peak(1.0) < peak(0.0) - 25
 
 
-def test_a_kick_lifts_the_peak_and_flares_the_glow(fw):
-    def frame(kick):
-        marks = contour_marks(fw, kick=kick, bass=0.5)
-        return min(cz(fw).ridge[CONTOUR_LINES // 2]), [c >> 24 for _, c, _ in glow_of(marks)]
-    (rest, dim), (hit, bright) = frame(0.0), frame(1.0)
-    assert hit < rest - 25 and dim == [] and len(bright) == 3 and all(a > 0x30 for a in bright)
+@pytest.mark.parametrize('kick', [0.0, 1.0])
+def test_six_strokes_at_any_kick(fw, kick):
+    assert len(contour_marks(fw, kick=kick, level=[0.7] * HALO, bass=0.8)) == 6
 
 
-def test_without_a_kick_there_is_no_glow_only_the_six_shades(fw):
-    """The wide strokes cost the most to draw: only a kick, which they flare with, draws them."""
-    marks = contour_marks(fw, kick=0.0, level=[0.7] * HALO, bass=0.8)
-    assert glow_of(marks) == [] and len(marks) == 6
-    assert len(glow_of(contour_marks(fw, kick=0.04, level=[0.7] * HALO, bass=0.8))) == 0  # a kick's last tail
-    assert len(glow_of(contour_marks(fw, kick=0.1, level=[0.7] * HALO, bass=0.8))) == 3
-
-def test_the_contour_draws_its_lines_in_6_shades_dark_to_bright_over_a_glow(fw):
-    marks = contour_marks(fw, kick=1.0, level=[0.7] * HALO, bass=0.8)
-    glow, lines = glow_of(marks), lines_of(marks)
-    assert len(glow) == 3 and len(lines) == 6 and all(w > lw for w, _, _ in glow for lw, _, _ in lines)
-    assert all(c >> 24 <= 0xa0 for _, c, _ in glow)  # faint and wide, under the lines: 0x30 + 0x70 at a full kick
+def test_the_contour_draws_its_lines_in_6_shades_dark_to_bright(fw):
+    lines = contour_marks(fw, kick=1.0, level=[0.7] * HALO, bass=0.8)
+    assert all(w == 1.25 for w, _, _ in lines)
     shades = [rgb(c) for _, c, _ in lines]
     assert all(sum(channels(a)) < sum(channels(b)) for a, b in zip(shades, shades[1:]))
-    assert [rgb(c) for _, c, _ in glow] == shades[3:]  # the glow under the three brightest, in their shades
     points = (W - 1) // CONTOUR_STEP + 2  # every CONTOUR_STEP px, and the page's right edge
     assert sum(len(s) for _, _, s in lines) == CONTOUR_LINES * (points - 1)  # each segment in one shade
 
@@ -1353,13 +1349,13 @@ def test_the_contour_is_in_the_accent_s_palette(fw):
     tone = fw.fn('accent_tone', C.c_uint, C.c_int)(2)
     mix = fw.fn('mix', C.c_uint, C.c_uint, C.c_uint, C.c_int, C.c_int)
     lo, hi = mix(tone, 0, 55, 100), mix(tone, 0xffffff, 30, 100)  # visualizer.c DARK and BRIGHT
-    shades = [rgb(c) for _, c, _ in lines_of(contour_marks(fw))]
+    shades = [rgb(c) for _, c, _ in contour_marks(fw)]
     assert shades[0] != shades[-1]
     assert all(l <= x <= h for s in shades for l, x, h in zip(channels(lo), channels(s), channels(hi)))
 
 
 def test_at_rest_the_contour_lies_in_its_darkest_shades(fw):
-    lines = lines_of(contour_marks(fw))
+    lines = contour_marks(fw)
     assert [bool(s) for _, _, s in lines][2:] == [False] * 4 and lines[0][2]
 
 
@@ -1378,6 +1374,7 @@ def test_the_contour_stays_on_its_page_clear_of_the_name(fw, width):
     ys = [y for _, _, segs in marks for seg in segs for _, y in seg]
     assert min(xs) == pytest.approx(MARGIN) and max(xs) == pytest.approx(MARGIN + page)
     assert 0 <= min(ys) and max(ys) <= PAGE_H - 24  # the style's and the track's name below
+
 
 # The drawing itself, as vgcanvas is given it, in the slide area's coordinates.
 
