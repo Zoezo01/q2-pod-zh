@@ -1424,6 +1424,8 @@ FUNCTIONS = {
  'bidi_log2vis': ('int', 'void *, const unsigned *, unsigned'),
  'bidi_deinit': ('int', 'void *'),
  # A language pack's font for what no face has (script.c ringnav_font_glyph)
+ 'font_manager': ('font_manager_t *', 'void'),
+ 'font_manager_get_font': ('font_t *', 'font_manager_t *, const char *, unsigned'),  # (manager, a face's name, px): loaded once
  'font_stb_create': ('font_t *', 'const char *, const void *'),  # (name, the TTF's bytes, kept): 0x688e24 makes it non-mono
  'canvas_fill_rounded_rect': ('int', 'canvas_t *, const void *, const void *, const void *, unsigned'),
  'canvas_stroke_rounded_rect': ('int', 'canvas_t *, const void *, const void *, const void *, unsigned, unsigned'),

@@ -299,8 +299,8 @@ KEPT: list = []  # the callbacks the fake fonts point at, alive for the run
 
 
 def font(got, tag):
-    """A font_t whose get_glyph (+0x24) records (tag, character, size)."""
-    f = C.create_string_buffer(0x40)
+    """A font_t named tag (its name heads it) whose get_glyph (+0x24) records (tag, character, size)."""
+    f = C.create_string_buffer(tag.encode(), 0x40)
     KEPT.append(GLYPH(lambda _f, c, size, _g: got.append((tag, c, size)) or 0))
     C.c_void_p.from_buffer(f, 0x24).value = C.cast(KEPT[-1], C.c_void_p).value
     return f
@@ -323,3 +323,21 @@ def test_a_packs_font_draws_what_no_face_has(fw, lang, copied):
     assert got == [('stock', 65, 20), (to, 0x627, 20), (to, 0xfefb, 18), (to, 0x5d0, 20), (to, 0x200f, 20)]
     assert made == ([(b'q2-font', b'TTF')] if copied else [])  # read at the first, once
     assert glyph(None, 65, 20, g) == glyph(C.addressof(stock), 65, 20, None) == 0x10  # stock's bad params
+
+
+def test_a_cut_face_takes_a_letter_it_lacks_from_stock_s(fw):
+    """script.c ringnav_font_glyph: bold.ttf's and classic-light.ttf's missing characters come from
+    default.ttf; what they have, and other faces, stay theirs."""
+    got, asked = [], []
+    bold, light, default, other = (font(got, n) for n in ('bold', 'classic-light', 'default', 'other'))
+    fw.mock('font_manager', lambda *_: 0x1234)
+    fw.mock('font_manager_get_font', lambda m, name, size, *_: asked.append((m, C.string_at(name), size))
+            or C.addressof(default))
+    glyph = fw.fn('ringnav_font_glyph', C.c_int, C.c_void_p, C.c_uint, C.c_uint, C.c_void_p)
+    g = C.create_string_buffer(32)
+    for f, c, size in ((bold, 65, 20), (bold, 0x4e2d, 20), (light, 0x416, 24), (light, 65, 24), (other, 0x4e2d, 20)):
+        assert glyph(C.addressof(f), c, size, g) == 0
+    assert got == [('bold', 65, 20), ('default', 0x4e2d, 20), ('default', 0x416, 24), ('classic-light', 65, 24),
+                   ('other', 0x4e2d, 20)]  # Zhe: bold has Cyrillic, classic-light none
+    assert asked == [(0x1234, b'default', 20), (0x1234, b'default', 24)]
+

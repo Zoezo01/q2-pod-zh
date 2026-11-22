@@ -63,9 +63,21 @@ static struct {
     void *bytes; /* stb reads them as long as the font lives: for good */
 } gf;
 
+/* 1 iff font (font_t's name heads it) is a face the build cut to a few scripts and lacks chr: a
+ * painter or a label that names bold or classic-light outright, not through script_face (Classic's
+ * search tabs, the slider's caption, flat titles), shows a translation's letters in stock's face
+ * rather than blanks. */
+static int subset_lacks(const font_t *font, unsigned chr) {
+    const char *name = (const char *)font;
+    return !face_has(!strcmp(name, "bold")            ? FONT_BOLD
+                     : !strcmp(name, "classic-light") ? FONT_CLASSIC_LIGHT
+                                                      : FONT_DEFAULT,
+                     &chr, 1);
+}
+
 /* font_get_glyph, which the build jumps here from (a leaf: FONT_GLYPH_LEAF), the whole of it: the
- * font's get_glyph, the pack's font's for a character it is for. Bad params (0x10) as stock's for
- * no font, no get_glyph or no glyph. */
+ * font's get_glyph, the pack's font's for a character it is for, stock's default.ttf's for one a
+ * subset face lacks. Bad params (0x10) as stock's for no font, no get_glyph or no glyph. */
 int ringnav_font_glyph(font_t *font, unsigned chr, unsigned size, void *glyph) {
     if (in_ranges(chr, glyph_ranges, sizeof glyph_ranges / sizeof *glyph_ranges)) {
         if (!gf.tried) {
@@ -75,6 +87,9 @@ int ringnav_font_glyph(font_t *font, unsigned chr, unsigned size, void *glyph) {
             gf.font = gf.bytes ? font_stb_create("q2-font", gf.bytes) : (font_t *)0;
         }
         if (gf.font) font = gf.font;
+    } else if (font && subset_lacks(font, chr)) {
+        font_t *stock = font_manager_get_font(font_manager(), "default", size);
+        if (stock) font = stock;
     }
     int (*get)(font_t *, unsigned, unsigned, void *) = font ? P(font, FONT_GET_GLYPH) : (void *)0;
     return get && glyph ? get(font, chr, size, glyph) : 0x10;
