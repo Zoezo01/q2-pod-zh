@@ -184,7 +184,7 @@ The [user guide][guide] covers every control, EQ, Cover Flow and more tips.
   </tr>
   <tr valign="top">
     <td><b><a href="https://github.com/lampsonlnguyen/q2-books">Books</a></b></td>
-    <td>Read EPUB and TXT books from the card's <code>Books</code> folder, with CrossPoint Reader's layout and fonts, bookmarks and a dictionary, in <b>Library → Apps → Books</b>.</td>
+    <td>Read EPUB and TXT books from the card's <code>Books</code> folder, with CrossPoint Reader's layout and fonts, bookmarks and a dictionary, in <b>Library → Apps → Books</b>. It closes after two minutes untouched: turn on <b>Smart Awake</b> in Display to stay on a page longer.</td>
     <td></td>
   </tr>
   <tr valign="top">
