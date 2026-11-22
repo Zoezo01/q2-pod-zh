@@ -29,7 +29,7 @@ def dev_tag(number):
     for _ in range(3): n, d = divmod(n, 36); digits = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'[d] + digits
     return 'V' + digits + 'i'
 BASE = 0xb00000
-SCRATCH = 0xbd0000  # 832 KB of payload text below it
+SCRATCH = 0xbf0000  # 960 KB of payload text below it
 SCRATCH_MAX = 0x30000  # the most its state may fill, 192 KB: the segment is demo's last, the heap after it
 ROOTFS_FREE_MIN = 1 << 19  # bytes of stock's rootfs size a build must leave unused, 512 KiB (docs/building.md, Free space)
 RING_STEP = 48
