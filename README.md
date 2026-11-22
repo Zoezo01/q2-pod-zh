@@ -255,6 +255,11 @@ On the App Store's **Games** tab. Each plays in **Library → Games**.
     <td>Drive, walk and take taxi fares across the real Miami, staying ahead of the police.</td>
     <td></td>
   </tr>
+  <tr valign="top">
+    <td><b><a href="https://github.com/Carbon-66/Q2-ChallengerDeep">Challenger Deep</a></b></td>
+    <td>Sail a pirate ship and survive the deep.</td>
+    <td></td>
+  </tr>
 </table>
 
 </details>
