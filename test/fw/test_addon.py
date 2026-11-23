@@ -2,6 +2,7 @@
 timers, card games, the page they draw over Q2SPOT/1, their QR codes, library requests, and the database.ignore
 markers."""
 import ctypes as C
+import os
 import random
 import re
 import struct
@@ -305,10 +306,12 @@ DROP = [*((SYS_CHMOD, f, 0o600) for f in SECRETS), (SYS_CHOWN, b'/dev/fb0', 0, 2
 
 def syscalls(fw, fail=None):
     """cf_syscall's calls from now on as DROP lists them, each read as it is made (a path may be a stack buffer's);
-    the one numbered fail fails."""
+    the one numbered fail fails, and one after it ends the (forked) test's process with 97."""
     out: list[tuple] = []
     def syscall(nr, a, b, c, *_):
         nr = C.c_int(nr).value
+        if out and out[-1][0] == fail:
+            os._exit(97)
         if nr == SYS_CHMOD:
             out.append((nr, C.string_at(a), b))
         elif nr in (SYS_CHOWN, SYS_LCHOWN):
@@ -374,9 +377,17 @@ def test_a_runs_child_closes_demos_files_drops_root_then_runs_the_launcher_in_a_
 
 @pytest.mark.parametrize('fails', [SYS_SETGROUPS, SYS_SETGID, SYS_SETUID])
 def test_a_drop_that_doesn_t_take_ends_the_child_before_anything_runs(fw, fails):
-    _, calls, _ = woken(fw, b'name=A\n', APP_UID, fork=0, fail=fails)
-    at = next(i for i, (n, a) in enumerate(calls) if n == 'cf_syscall' and C.c_int(a[0]).value == fails)
-    assert calls[at + 1][0] == 'child_exit' and calls[at + 1][1][0] == 126  # the next drop and the exec never come
+    """In a real fork, where child_exit (_exit) doesn't return: past a noreturn call there is no path, and gcov would
+    count one. The child's counts go with it."""
+    child = os.fork()
+    if not child:
+        try:
+            fw.mock('child_exit', lambda status, *_: os._exit(status))
+            fw.mock('fw_execl', lambda *_: os._exit(99))  # the run, as root
+            woken(fw, b'name=A\n', APP_UID, fork=0, fail=fails)
+        finally:
+            os._exit(98)  # no child_exit
+    assert os.waitpid(child, 0)[1] == 126 << 8  # the next drop (97) and the exec (99) never came
 
 
 def test_an_app_the_card_doesn_t_hold_isn_t_woken(fw):
