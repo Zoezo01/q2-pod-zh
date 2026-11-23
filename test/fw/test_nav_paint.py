@@ -10,7 +10,7 @@ import struct
 import pytest
 
 import host
-from conftest import O, Files, block, in_fork, Config
+from conftest import O, Files, block, in_fork, Config, rgba, st
 from test_nav_loop import LIBC, Clock, Flip, Land  # coverflow.c's cf_flip_t, fl; coverflow_land.c's land
 
 W_X, W_Y, W_W, W_H, W_PARENT = O['W_X'], O['W_Y'], O['W_W'], O['W_H'], O['W_PARENT']
@@ -36,11 +36,6 @@ ROLE_BAR = _roles[1].split(', ').index('ROLE_BAR')
 _set = re.search(r'<geometry name="classic-light" ([^>]*)/>', (host.ROOT/'assets/themes/classic-light/theme.xml').read_text())
 assert _set
 GEOMETRY = {k: int(v) for k, v in re.findall(r'(\w+)="(\d+)"', _set[1])}
-
-
-def rgba(c, a=0xff):
-    """0xRRGGBB as a color_t, whose bytes are r, g, b, a."""
-    return a << 24 | (c & 255) << 16 | c & 0xff00 | c >> 16
 
 
 def rgb_of(color):
@@ -76,12 +71,6 @@ def layout(library):
     obj = library.parent/'navigation.o'
     return {'st': host.offsets(obj, 'scratch_t'), 'scheme': host.offsets(obj, 'scheme_t'),
             'theme': host.offsets(obj, 'theme_t'), 'vd': host.offsets(library.parent/'volume.o', 'vd')}
-
-
-@pytest.fixture
-def st(fw, layout):
-    base = C.addressof(fw.var('st', C.c_char))
-    return lambda name, ctype=C.c_int: ctype.from_address(base + layout['st'][name])
 
 
 @pytest.fixture
@@ -1353,12 +1342,12 @@ LABELS = dict(zip(ICONS, ['label_wifi', 'label_bt', 'label_lock', 'label_gain', 
                           'label_playset', 'label_sysset']))
 
 
-def quick_page(fw, world, images, light='0', pressed=None, **config):
-    theme(fw, CLASSIC, LIGHT=light, **config)
+def quick_page(fw, world, images, light='0', pressed=None, number=CLASSIC, size=60, **config):
+    theme(fw, number, LIGHT=light, **config)
     win = world.window('statusbar_dialog', 'dialog')
     icons = {}
     for i, (name, image) in enumerate(images.items()):
-        icons[name] = world.add(win, name, 'image', box=(30 + 80 * (i % 4), 40 + 100 * (i // 4), 60, 60), image=image)
+        icons[name] = world.add(win, name, 'image', box=(30 + 80 * (i % 4), 40 + 100 * (i // 4), size, size), image=image)
         world.add(win, LABELS[name], 'label', box=(0, 0, 80, 18), text='Label')
     if pressed:
         fw.var('quick_settings__quick', Quick).pressed = icons[pressed]

@@ -46,7 +46,7 @@ Read off a Q2 running stock V1.36's kernel (`/proc`, `/sys`, the device tree) an
 | Fuel gauge        | CellWise CW2015 (`cw2015_driver`)                                                                                                   | I²C 0 @ 0x62                   |
 | Touchscreen       | Hynitron CST8xx-family controller (IC type `0xb6`, firmware project 38 v2; `hyn,66xx`, `hyn_touch` V2.9, input `hyn_ts`)            | I²C 3 @ 0x5a                   |
 | Touch wheel       | A second Hynitron CST8xx-family controller (driver firmware IC type `0xb6`; `hyn,66xx`, `hyn_slider` V2.25, input `hyn_sliderbar`)  | I²C 2 @ 0x15                   |
-| Screen            | `lcd_h0209s` panel, 320 × 375, 32-bit framebuffer `jzfb` double-buffered (320 × 750 virtual), 9.3 MHz pixel clock                   |                                |
+| Screen            | `lcd_h0209s` panel, 320 × 375, 32-bit framebuffer `jzfb` double-buffered (320 × 750 virtual), 9.3 MHz pixel clock, 60 Hz refresh    |                                |
 | Buttons           | `md-gpio-keys` (`keyboard_gpio_add`), plus the AXP2101's power key                                                                  | GPIO                           |
 | Wi-Fi + Bluetooth | Realtek RTL8733BS (SDIO `0x024c:0xb733`, `8733bs`); Bluetooth over UART H5 (`hci_uart_h5`)                                          | MSC 3 (SDIO), UART             |
 | microSD           | X2000 SDHCI (ADMA), `mmcblk4`; cards run at SD High Speed (50 MHz bus), not UHS-I; exFAT or FAT32                                   | MSC 4                          |

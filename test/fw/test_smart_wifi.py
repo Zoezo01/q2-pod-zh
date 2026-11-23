@@ -12,8 +12,8 @@ from test_nav_painters import Ui, strings  # noqa: F401  the window stack
 from test_navigation import Sa
 from test_netupdate import JOB_INSTALL, NU_RUNNING, Nu, Sh
 from test_onlinematch import Al
-from test_radio import Rd
-from test_streaming import Sp, Td
+from test_radio import Rd, Sp
+from test_streaming import Td
 
 IDLE, POLL, CONNECT = O['SMART_IDLE_MS'], O['SMART_POLL_MS'], O['SMART_CONNECT_MS']
 TICK, RET_REPEAT = 500, 8  # the held press's timer; one that answers RET_REPEAT runs again, any other is removed

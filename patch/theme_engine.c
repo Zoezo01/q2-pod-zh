@@ -183,17 +183,15 @@ void light_apply(const int *tm) {
 __attribute__((noinline)) static void settings_read(void) {
     for (int i = 0; i < 4; ++i)
         *setting_values[i] = config_value("IPOD", setting_keys[i], setting_counts[i], 0);
-    st.shortcut = config_value("IPOD", "SHORTCUT", SETTING_N_SHORTCUT,
-                               SETTING_N_SHORTCUT); /* no key, see shortcut() */
+    /* Shortcut has no key, its default is none (see shortcut()); Rounded's is Round under Minimal;
+     * Light's is dark, 2 Auto; Time in Title's is the clock; the rest are off unless chosen. */
+    for (int i = 4; i < SETTING_OWN; ++i)
+        *setting_values[i] = config_value("IPOD", setting_keys[i], setting_counts[i],
+                                          i == 4   ? SETTING_N_SHORTCUT
+                                          : i == 5 ? !st.theme
+                                                   : i == 11);
     st.minimal_accent =
-        config_value("IPOD", "MINIMAL_ACCENT", ACCENT_N, 0);    /* Graphite, its preset */
-    st.rounded = config_value("IPOD", "ROUNDED", 2, !st.theme); /* Minimal's preset: Round */
-    st.light = config_value("IPOD", "LIGHT", 3, 0);             /* dark unless chosen; 2 Auto */
-    st.keep_lit = config_value("IPOD", "KEEPLIT", 2, 0);
-    st.np_centred = config_value("IPOD", "NPCENTRED", 2, 0);
-    st.keytone_hp = config_value("IPOD", "KEYTONEHP", 2, 0);
-    st.scrub_single = config_value("IPOD", "SCRUBSINGLE", 2, 0);
-    st.time_title = config_value("IPOD", "TIMETITLE", 2, 1); /* the clock unless chosen */
+        config_value("IPOD", "MINIMAL_ACCENT", ACCENT_N, 0); /* Graphite, its preset */
     /* the themes' own keys, after the thirteen, in table order */
     for (int k = 0; k < THEME_KEYS; ++k)
         st.own[k] = config_value("IPOD", theme_keys[k].key, theme_keys[k].n, theme_keys[k].def);

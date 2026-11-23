@@ -306,10 +306,9 @@ static const char *info_face(widget_t *w, int *px) {
     return face;
 }
 /* A label's box, face, size and colour, left unless it's centred. */
-static void info_label(widget_t *w, int x, int y, int ww, int h, int px, const char *face,
-                       const char *align) {
+static void info_label(widget_t *w, int x, int y, int ww, int h, int px, const char *align) {
     if (!w) return;
-    slider_label(w, x, y, ww, h, px, face);
+    slider_label(w, x, y, ww, h, px, "classic-light");
     widget_set_prop_str(w, "style:normal:text_align_h", align);
 }
 /* Stock's window, stock's widgets, in screen pixels: over the picture or the page, the status bar
@@ -336,16 +335,16 @@ static void info_screen(widget_t *win, widget_t *img, int id) {
      * icons of a full bar), in its ink: white, which Light Mode's style hook flips */
     if (date) {
         info_label(date, bar_title_x(), bar_title_y(), 375 / 2 - bar_title_x(), 25, INFO_DATE_PX,
-                   "classic-light", "left");
+                   "left");
         widget_set_prop_int(date, "_final_n", 0);
         widget_set_prop_int(date, "style:normal:text_color", (int)RGBA(0xffffff));
         widget_set_prop_str(date, "format", "MMM D, Y");
     }
     if (time) {
         if (large)
-            info_label(time, 16, 24, 343, 168, 166, "classic-light", "center");
+            info_label(time, 16, 24, 343, 168, 166, "center");
         else
-            info_label(time, 134, 44, 219, 116, 112, "classic-light", "center");
+            info_label(time, 134, 44, 219, 116, 112, "center");
     }
     /* the bar has the battery. Hidden, not emptied: stock's battery timer (0x53ed54) writes its
      * image again */
@@ -360,8 +359,8 @@ static void info_screen(widget_t *win, widget_t *img, int id) {
     if (cover) widget_move_resize(cover, 13, 13, 60, 60);
     widget_t *title = widget_lookup(win, "scrlabel_title", 1),
              *artist = widget_lookup(win, "scrlabel_artist", 1);
-    info_label(title, 85, 17, 245, 28, INFO_TITLE_PX, "classic-light", "left");
-    info_label(artist, 85, 44, 245, 22, INFO_ARTIST_PX, "classic-light", "left");
+    info_label(title, 85, 17, 245, 28, INFO_TITLE_PX, "left");
+    info_label(artist, 85, 44, 245, 22, INFO_ARTIST_PX, "left");
     if (artist) text_ink(artist, 0xc8ffffffu, 1);
     if (hint) { /* stock's 30 x 16 >>> flat, at 21 x 7, its white at 85% */
         widget_move_resize(hint, 177, 288, 21, 7);

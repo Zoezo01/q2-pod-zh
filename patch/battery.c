@@ -97,9 +97,6 @@ static void bh_text(char *s, unsigned size, unsigned i, int shown) {
 /* Row i's date, "11 Nov 2026" (year: the log's, in English) or "11 Nov" (the page's, its month
  * translated), when it is the first row or a day after the row before's; else "". */
 static void bh_day(char *s, unsigned size, unsigned i, int year) {
-    static const char months[12][4] = { N_("Jan"), N_("Feb"), N_("Mar"), N_("Apr"),
-                                        N_("May"), N_("Jun"), N_("Jul"), N_("Aug"),
-                                        N_("Sep"), N_("Oct"), N_("Nov"), N_("Dec") };
     int buf[11], was[11];
     const int *tm = bh_tm(i, buf), *before = i ? bh_tm(i - 1, was) : (void *)0;
     *s = 0;
@@ -107,9 +104,9 @@ static void bh_day(char *s, unsigned size, unsigned i, int year) {
         (before && before[3] == tm[3] && before[4] == tm[4] && before[5] == tm[5]))
         return;
     if (year)
-        tk_snprintf(s, size, "%d %s %d", tm[3], months[tm[4]], tm[5] + 1900);
+        tk_snprintf(s, size, "%d %s %d", tm[3], time_months[tm[4]], tm[5] + 1900);
     else
-        tk_snprintf(s, size, "%d %s", tm[3], tr(months[tm[4]]));
+        tk_snprintf(s, size, "%d %s", tm[3], tr(time_months[tm[4]]));
 }
 
 /* The log's text into out: each day's date over its rows, or, for a clock never set, a line that

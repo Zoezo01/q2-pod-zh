@@ -115,7 +115,7 @@ to Home. With OTG connected or no card in on entry, Folder keeps the storage sel
 Library’s Podcasts/Audiobooks shortcuts keep their usual Back navigation.
 The native stock handlers, translation keys, full-row tap targets and submenu animation remain intact.
 
-Minimal's rows are `HOME_ROW=39` high from `HOME_TOP=8`; Classic's are its set's `home_row` (32),
+Minimal's rows are `SET0.home_row` (39) high from `HOME_TOP=8`; Classic's are its set's `home_row` (32),
 both Home menus directly below the status bar, matching Library. Minimal's 6-pixel dot sits at x 25, clear of the
 bottom row's corner, and its labels start 8 pixels after it (x 39) and end 33 pixels before the row's
 edge. Both menus are 375 pixels wide in the asset; the payload lays them out (below). Long

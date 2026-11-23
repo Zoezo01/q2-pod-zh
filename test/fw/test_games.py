@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from conftest import O
+from conftest import O, Card, Config, Dirent, block, fnv1a, rgba
 
 SEED = 2166136261
 SUD, BEST, SOL, SNK = 0x31445553, 0x31585456, 0x314c4f53, 0x314b4e53
@@ -64,7 +64,7 @@ def test_structs_are_the_saves_sizes():
 def api(fw):
     ptr, i, u = C.c_void_p, C.c_int, C.c_uint
     fns = {'games_ok': (i, ptr, u, u), 'games_seal': (None, ptr, u, u), 'hash_bytes': (u, u, ptr, u),
-           'sud_puzzles': (i,), 'sud_puzzle': (None, i, ptr), 'sud_new': (None, ptr), 'sud_set': (i, ptr, i, i),
+           'sud_puzzle': (None, i, ptr), 'sud_new': (None, ptr), 'sud_set': (i, ptr, i, i),
            'sud_conflict': (i, ptr, i), 'sud_done': (i, ptr), 'vortex_new': (None, ptr), 'vortex_launch': (None, ptr),
            'vortex_step': (None, ptr, i), 'sol_new': (None, ptr), 'sol_draw': (i, ptr), 'sol_move': (i, ptr, i, i),
            'sol_home': (i, ptr, i), 'sol_won': (i, ptr), 'sol_finish': (None, ptr), 'snake_new': (None, ptr),
@@ -82,29 +82,7 @@ def seed(fw, n):
     fw.var('playback__rng', C.c_uint).value = n or 1
 
 
-def fnv1a(data, h=SEED):
-    for b in data:
-        h = (h ^ b) * 16777619 & 0xffffffff
-    return h
-
-
 libc = C.CDLL(None)
-libc.malloc.restype, libc.malloc.argtypes = C.c_void_p, [C.c_size_t]
-libc.free.argtypes = [C.c_void_p]
-
-
-class Exact:
-    """data in a malloc of exactly its size, so the sanitizer sees a read or write past it."""
-    def __init__(self, data):
-        self.n, self.p = len(data), libc.malloc(len(data) or 1)
-        C.memmove(self.p, bytes(data), len(data))
-
-    def __enter__(self):
-        return self.p
-
-    def __exit__(self, *_):
-        self.data = C.string_at(self.p, self.n)
-        libc.free(self.p)
 
 
 def solve(grid, limit=2):
@@ -176,8 +154,8 @@ def test_hash_bytes_hostile_sweep(fw):
     g, rng = api(fw), random.Random(1)
     for _ in range(2000):
         data = rng.randbytes(rng.randrange(0, 64))
-        with Exact(data) as p:
-            assert g.hash_bytes(SEED, p, len(data)) == fnv1a(data)
+        p = block(fw, data, len(data))
+        assert g.hash_bytes(SEED, p, len(data)) == fnv1a(data)
 
 
 @pytest.mark.parametrize('size', (12, 92, 336))
@@ -223,8 +201,8 @@ def test_games_ok_hostile_sweep(fw):
         if k % 16 == 15:
             data[rng.randrange(size)] ^= 1 << rng.randrange(8)
         want = data[:4] == SUD.to_bytes(4, 'little') and data[-4:] == fnv1a(data[:-4]).to_bytes(4, 'little')
-        with Exact(data) as p:
-            assert bool(g.games_ok(p, size, SUD)) == want
+        p = block(fw, bytes(data), len(data))
+        assert bool(g.games_ok(p, size, SUD)) == want
         accepted += want
     assert 350 < accepted < 500  # three in four of the sealed ones
 
@@ -233,7 +211,6 @@ def test_games_ok_hostile_sweep(fw):
 
 def test_the_bundled_puzzles_each_have_one_solution(fw):
     g = api(fw)
-    assert g.sud_puzzles() == 24
     out = (C.c_ubyte * 81)()
     seen = set()
     for k in range(24):
@@ -1085,48 +1062,13 @@ def test_food_lands_only_on_free_cells_and_reaches_them_all(fw):
 
 # The page: its save files, keys, timers. page_open and the list go to stubs, so a page is a number.
 
-class Card:
-    """blob_io's files: fopen, fread, fwrite and rename on a dict."""
-    def __init__(self, fw, files=None):
-        self.files, self.open, self.fail = dict(files or {}), {}, False
-        for name in 'fopen fread fwrite rename'.split():
-            fw.mock('fw_' + name, getattr(self, name))
-
-    def fopen(self, path, mode, *_):
-        name, write = C.string_at(path).decode(), C.string_at(mode)[:1] == b'w'
-        if not write and name not in self.files:
-            return 0
-        handle = 0x1000 + len(self.open)
-        self.open[handle] = [name, 0]
-        if write:
-            self.files[name] = b''
-        return handle
-
-    def fread(self, buf, size, n, f, *_):
-        name, at = self.open[f]
-        data = self.files[name][at:at + size * n]
-        C.memmove(buf, data, len(data))
-        self.open[f][1] += len(data)
-        return len(data) // size
-
-    def fwrite(self, buf, size, n, f, *_):
-        if self.fail:
-            return 0
-        self.files[self.open[f][0]] += C.string_at(buf, size * n)
-        return n
-
-    def rename(self, a, b, *_):
-        self.files[C.string_at(b).decode()] = self.files.pop(C.string_at(a).decode())
-        return 0
-
-
 PAGE, LATCH = 0x7000, 0xa4bbfa
 
 
 class Page:
     """The Games page open on stubs: a clock, a timer list and the card."""
     def __init__(self, fw, files=None):
-        self.fw, self.g, self.card = fw, api(fw), Card(fw, files)
+        self.fw, self.g, self.card = fw, api(fw), Card(fw, files, access=False)
         self.now, self.timers, self.toasts = 1000, [], []
         fw.mock('window_create', lambda *_: PAGE)
         fw.mock('widget_get_prop_int', lambda w, k, d, *_: 290 if C.string_at(k) == b'h' else d)
@@ -1451,7 +1393,7 @@ def test_closing_writes_a_dirty_game_silently_even_if_the_write_fails(fw):
     toasts = heard(fw)
     p.go(SUDOKU)
     p.s.dirty = 3
-    p.card.fail = True
+    p.card.fail_write = True
     p.close()
     assert toasts == []
 
@@ -1460,7 +1402,7 @@ def test_a_failed_save_says_so_when_it_can(fw):
     p = Page(fw)
     toasts = heard(fw)
     p.s.dirty = 1
-    p.card.fail = True
+    p.card.fail_write = True
     p.g.flush(1)
     assert toasts == [b"Couldn't save"] and not p.s.dirty
 
@@ -1869,10 +1811,6 @@ def press(handler, event=None):
     return C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_void_p)(fn)(ctx, event)
 
 
-class Dirent(C.Structure):  # test/fw/host.py's
-    _fields_ = [('ino', C.c_uint), ('off', C.c_uint), ('reclen', C.c_ushort), ('d_type', C.c_ubyte), ('d_name', C.c_char * 256)]
-
-
 def card_apps(fw, apps):
     """The card's folders, one .<id> a card app with its q2app as given ({id: text}), and a music folder: the
     files for Card."""
@@ -1962,7 +1900,7 @@ def test_a_record_that_can_t_be_written_says_so_and_still_shows(fw):
     toasts = heard(fw)
     p.go(VORTEX)
     p.s.vx.score = 50
-    p.card.fail = True
+    p.card.fail_write = True
     fw.fn('games__game_over', None)()
     assert toasts == [b"Couldn't save"] and p.s.record and p.s.best.score == 50
 
@@ -1970,11 +1908,6 @@ def test_a_record_that_can_t_be_written_says_so_and_still_shows(fw):
 # The sheet. games_paint draws on a canvas whose every call is recorded with the colour it reached stock in.
 
 CANVAS_LCD, LCD_FILL = O['CANVAS_LCD'], O['LCD_FILL_COLOR']
-
-
-def rgba(c, a=255):
-    """0xRRGGBB at alpha a as stock's colour word, bytes r, g, b, a (peq_ui.c's rgba)."""
-    return a << 24 | (c & 255) << 16 | c & 0xff00 | c >> 16 & 255
 
 
 def rgb(color):
@@ -2655,13 +2588,7 @@ def test_solitaire_paint_asks_before_a_new_deal_and_says_when_it_is_won(fw):
 
 
 def config(fw, **values):
-    """config.ini: a key's value, or the default."""
-    values = {k.encode(): v for k, v in values.items()}
-
-    def read(path, section, key, out, default, *_):
-        value = values.get(C.string_at(key), C.string_at(default))
-        C.memmove(out, value + b'\0', len(value) + 1)
-    fw.mock('toolsReadConfig', read)
+    Config(fw, **values)
 
 
 @pytest.mark.parametrize('mode', (b'0', b'1'))

@@ -8,7 +8,7 @@ import struct
 
 import pytest
 
-from conftest import O
+from conftest import Dirent, O
 
 KEY_CENTER, KEY_PREV, KEY_NEXT, KEY_RETURN = O['KEY_CENTER'], O['KEY_PREV'], O['KEY_NEXT'], O['KEY_RETURN']
 EVT_DESTROY, EVT_VALUE_CHANGED, EVT_CLICK, EVT_FOCUS, EVT_KEY_UP, EVT_IM_ACTION = (O[k] for k in (
@@ -54,10 +54,6 @@ class E3(C.Structure):
     _fields_ = [('view', C.c_void_p), ('save', C.c_uint), ('press', C.c_uint), ('press_at', C.c_uint),
                 *((k, C.c_int) for k in 'focus adjusting dragging dirty on h'.split()), ('gain', C.c_double * 3), ('status', C.c_char_p),
                 ('caption', C.c_int)]
-
-
-class Dirent(C.Structure):
-    _fields_ = [('ino', C.c_uint), ('off', C.c_uint), ('reclen', C.c_ushort), ('d_type', C.c_ubyte), ('d_name', C.c_char * 256)]
 
 
 def i32(v):

@@ -438,8 +438,8 @@ const char *eq_set(const peq_preset *p, int mode);
 void peq_boot(void); /* clear a previous session's Simple EQ comparison before restoring playback */
 extern int peq_chained; /* peq_ui.c: peq_stock_eq ran this boot */
 void peq_chain(void);   /* crossfade.c: peq_attach once a connect (ringnav_mode), while playing */
-int swap_on(void);
-int mono_on(void);   /* crossfade.c: Mono Audio's setting */
+/* crossfade.c: Mono Audio (0) and Swap L/R (1), as set */
+int opt_on(int k);
 #define NS_WARM 2000 /* nightshift.c: Night Shift's temperatures, K */
 #define NS_COOL 5000
 #define NS_STEP 100
@@ -477,6 +477,8 @@ void coverflow_letter_hold(widget_t *w, unsigned letter);
 /* A letter with this bit is the Year sort's year instead, in its low bits, 0 undated. */
 #define CF_YEAR 0x80000000u
 int blob_io(const char *path, const char *tmp, void *buf, unsigned size, int write);
+/* card_theme.c: 1 when path holds these n bytes, read at most max */
+int file_holds(const char *path, const void *b, unsigned n, unsigned max);
 #define BLOB_IO(file, buf, write) blob_io(file, file ".tmp", &(buf), sizeof(buf), write)
 int clip_within(canvas_t *canvas, int *old, int *clip, int x, int y, int w, int h);
 void play_folder(void *dq, int idx, int cls);
@@ -632,6 +634,7 @@ typedef struct {
     int x, y, w, h;
 } rect_t;
 /* navigation.c: a rounded box in color, or a square one when the canvas declines to round it */
+void screen_off(void);
 void fill_box(canvas_t *canvas, rect_t *r, unsigned color, unsigned radius);
 /* flat.c: the hold menu's card, which Cover Flow's flip panel wears under the flat look: HOLD_FOOT
  * of paper under its rows, and its ring no lower than QM_FOOT (the glass hides 38 px of the
@@ -841,6 +844,12 @@ const char *shelf_moving(void); /* netupdate.c: the app folder deleted or moved 
 int shelf_erase(int start);     /* netupdate.c: Spotify's erase, started or running */
 void stream_erased(void);       /* navigation.c: Configuration follows a finished erase */
 void album_lyrics_stop(void);   /* onlinematch.c: Download Album Lyrics before USB storage */
+
+int lib_db_open(void **db, const char *pragmas); /* playlists.c: open the library database */
+/* mp3_gapless.c: MPEG tables and a Layer III frame's bytes, shared with peq_player.c's frame checks
+ */
+extern const unsigned short mp3_rates[3], mp3_kbps[2][15];
+unsigned mp3_frame_bytes(unsigned version, unsigned br, unsigned hz, unsigned pad);
 
 /* 2038 (docs/internals.md#2038). glibc 2.28's time() truncates the kernel's 64-bit seconds to 32
  * bits, so read unsigned it is right until 2106; -1 still means it failed. */

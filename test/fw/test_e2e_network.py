@@ -19,8 +19,7 @@ import struct
 import pytest
 
 import host
-from conftest import O, Deques, block, high_halves, libc
-from test_addon import Dirent
+from conftest import O, Deques, Dirent, block, high_halves, libc
 from test_lyrics import Ly
 
 TAG = host.tools_build.VERSION

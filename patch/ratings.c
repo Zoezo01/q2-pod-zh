@@ -543,10 +543,9 @@ int rated_hold(widget_t *top) {
 }
 
 /* Albums: the rated albums as Coverflow (coverflow_rated), by most hearts unless sorted. */
-extern int coverflow_rated(int (*hearts)(void *));
-static int album_hearts(void *r) { return rate_kept(1, album_id(r)); }
+extern int coverflow_rated(void);
 int rated_albums(void *ctx, event_t *event) {
-    if (!coverflow_rated(album_hearts)) toast(tr("No rated albums yet"));
+    if (!coverflow_rated()) toast(tr("No rated albums yet"));
     return 0;
 }
 
@@ -705,8 +704,7 @@ static void rc_start(void) {
     rc.songs = rc.albums = 0, rc.table = rc.last = 0;
     rc.song = rc_rated(0, &rc.songs), rc.album = rc_rated(1, &rc.albums);
     rc.out = calloc(rc.cap = RC_GROW, 1);
-    if (!rc.song || !rc.album || !rc.out || sqlite3_open("/mnt/data/database.db", &rc.db) ||
-        sqlite3_exec(rc.db, "PRAGMA cache_size=64", 0, 0, 0)) {
+    if (!rc.song || !rc.album || !rc.out || lib_db_open(&rc.db, "PRAGMA cache_size=64")) {
         rc_end();
         return;
     }

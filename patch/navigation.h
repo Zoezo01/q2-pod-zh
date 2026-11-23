@@ -327,10 +327,12 @@ extern void *queue_now(unsigned *pos, unsigned *n);
 extern void *coverflow_tracks(widget_t *page);
 extern void *coverflow_album(widget_t *page);
 extern int coverflow_goto_album(void *r), coverflow_shows_album(void *r);
-extern void up_next(int (*keyup)(void *, event_t *));
+extern void up_next(void);
 
 /* navigation.c */
 void pod_settings(void);
+extern const char *const ink_state[];
+extern const unsigned standby_hours[4];
 #define COUNT "_ringnav_count"
 #define SEL "_ringnav_index"
 enum { SLIDER_LIGHT, SLIDER_MAX, SLIDER_BALANCE, SLIDER_BOOT }; /* st.slider_kind */
@@ -364,14 +366,15 @@ char *svc_find(char *hide, int i);
 void svc_hidden(char *s);
 int media_click(void *ctx, event_t *event);
 int stream_config(void *ctx, event_t *event);
-void bar_place(widget_t *w, int x, int y, int ww, int h);
+void bar_place(widget_t *w, int y, int h);
 void bar_rect(canvas_t *canvas, unsigned color, int x, int y, int w, int h);
-void dark_bar_rows(canvas_t *canvas, int y, int w, int h);
+void dark_bar_rows(canvas_t *canvas, int y, int h);
 void inset_top(canvas_t *canvas, const rect_t *r, int R, unsigned a);
 void lit_rows(canvas_t *canvas, const rect_t *c, int ends);
 const char *number_face(widget_t *label, int *px);
 int painting_in(widget_t *row);
 void paint_round_rows(canvas_t *canvas, const rect_t *r, const stops_t *s, int R);
+void round_fill(canvas_t *canvas, const rect_t *r, unsigned rgb, int R);
 int round_inset(int R, int i, int h);
 void round_ring(canvas_t *canvas, const rect_t *r, int R, unsigned c);
 void round_row(canvas_t *canvas, const rect_t *r, int R, int i, unsigned c);
@@ -499,6 +502,7 @@ unsigned qm_album_id(void *r);
 long clock_back(long long wall);
 int clock_due(const void *info);
 void clock_show(void);
+extern const char time_months[12][4]; /* clock.c: the English month names */
 int time_click(widget_t *target, event_t *event);
 int time_form(widget_t *top);
 void time_open(widget_t *win);
@@ -691,7 +695,7 @@ void kb_paint_key(widget_t *w, canvas_t *canvas);
 void msg_open(widget_t *win);
 void msg_paint(widget_t *w, canvas_t *canvas);
 void paint_field(widget_t *w, canvas_t *canvas, int x, int y, int fw);
-void paint_ramp(canvas_t *canvas, int y0, int y1, int top);
+void paint_ramp(canvas_t *canvas, int top);
 void pl_box_open(widget_t *win);
 void pl_box_paint(widget_t *w, canvas_t *canvas);
 void search_open(widget_t *win);
@@ -702,6 +706,7 @@ void slider_paint(widget_t *w, canvas_t *canvas);
 int search_del(widget_t *w);
 void search_over(widget_t *w, canvas_t *canvas);
 void slider_scrub(widget_t *w, canvas_t *canvas);
+int restart_asked(void); /* navigation.c: the Restart to apply? confirm, yes or no */
 
 /* playlists.c */
 /* Classic's Playlists (pl_dress): a page's add mode (ringnav_playlist), the button of a row that
@@ -714,6 +719,7 @@ void slider_scrub(widget_t *w, canvas_t *canvas);
 #define PL_MARKING "_pl_marks"
 #define PL_NONE "_pl_none"
 #define PL_ART "_pl_art"
+void *click_bound(widget_t *w, const void *fn); /* w's EVT_CLICK item bound to fn, or any if 0 */
 void qm_playlist_bind(widget_t *w, int depth, int (*pick)(void *, event_t *));
 void qm_select(void);
 int qm_playlist_gone(void *ctx, event_t *event);

@@ -15,7 +15,7 @@ import sys
 import tempfile
 sys.path.insert(0, sys.path[0] + '/../tools')
 from ipod import (decode, walk, imagemagick, png_header, HOME_TEXT_X, HOME_LIST_W, STATUS_MARGIN,
-                  HOME_LABEL_END, HOME_ROW, HOME_TOP, INC, inc, SETTINGS_SLIDERS, CLASSIC_LIGHT_FONT_NAME)
+                  HOME_LABEL_END, HOME_TOP, INC, inc, SETTINGS_SLIDERS, CLASSIC_LIGHT_FONT_NAME, SET0)
 
 argv = sys.argv[1:]
 themes = ['modern', 'minimal']
@@ -130,14 +130,14 @@ with tempfile.TemporaryDirectory(prefix='q2-ui-preview-') as tmp:
                     elif not full: image(a,asset(build,'images/xx/default_album_home.png'),width,30,375-width,290)
                     selected=1 if case!=2 else 0
                     for i,value in enumerate(labels):
-                        y=30+(0 if old else HOME_TOP)+i*HOME_ROW
+                        y=30+(0 if old else HOME_TOP)+i*SET0.home_row
                         if i==selected:
-                            if old: selection(a,y,HOME_ROW,375 if full else width,palette)
-                            else: a+=['-fill','white','-draw',f'circle {inc("HOME_DOT_X")+3},{y+HOME_ROW//2} {inc("HOME_DOT_X")+6},{y+HOME_ROW//2}']
+                            if old: selection(a,y,SET0.home_row,375 if full else width,palette)
+                            else: a+=['-fill','white','-draw',f'circle {inc("HOME_DOT_X")+3},{y+SET0.home_row//2} {inc("HOME_DOT_X")+6},{y+SET0.home_row//2}']
                         x0=inc('HOME_MODERN_TEXT_X') if old else HOME_TEXT_X
                         label_width=width-x0-(inc('CHEVRON_W')-10 if old else HOME_LABEL_END if full else inc('HOME_SPLIT_LABEL_END'))
-                        text(a,value,x0,y,label_width,HOME_ROW,color='#FFFFFF' if old or i==selected else '#AAAAAA')
-                        if old and i==selected: image(a,asset(build,'images/xx/list_into.png'),width-inc('CHEVRON_W')+inc('HOME_FULL_CHEVRON_SHIFT' if full else 'HOME_CHEVRON_SHIFT'),y+(HOME_ROW-50)//2,50,50)
+                        text(a,value,x0,y,label_width,SET0.home_row,color='#FFFFFF' if old or i==selected else '#AAAAAA')
+                        if old and i==selected: image(a,asset(build,'images/xx/list_into.png'),width-inc('CHEVRON_W')+inc('HOME_FULL_CHEVRON_SHIFT' if full else 'HOME_CHEVRON_SHIFT'),y+(SET0.home_row-50)//2,50,50)
                 elif case in (3,4,12):
                     nodes={n[2].get('name'):n for n in walk(decode((build/'ui/playing_page.bin').read_bytes()))}
                     art=dark if case==3 else (bright if case==12 else asset(build,'images/xx/default_album_flow.png'))

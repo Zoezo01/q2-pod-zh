@@ -862,7 +862,6 @@ static int dac_word(int pressed) { /* odd: a press's stamp; even: start_mute's m
     seen = at;
     return 1;
 }
-static int dac_told(void) { return dac_word(1); }
 /* The end of init (0x438a70), past stock's checks of the way and the fd: the ioctl is stock's own.
  * A mark still unread is a natural start ao_init's branch didn't take (DSD at either end, no PCM
  * open, the arm dropped): demo skipped its mute and sleep for it, so this is what stands in for
@@ -875,13 +874,13 @@ static int dac_told(void) { return dac_word(1); }
  * start with an offset that reopens keeps the cut, as it has since start_mute. */
 int dac_ioctl(int fd, unsigned request, void *arg) {
     int r = ioctl(fd, request, arg);
-    if (dac_told() || dac_word(0) || ao_wait) usleep(DAC_RELEASE_MS * 1000);
+    if (dac_word(1) || dac_word(0) || ao_wait) usleep(DAC_RELEASE_MS * 1000);
     return r;
 }
 /* seek (0x42b1c4), a start offset's or an mcl-seek's: demo stamps a user's, not A-B Repeat's loop.
  */
 void dac_unmute(int value) {
-    int wait = !OUTPUT_WAY && DAC_FD > 0 && dac_told();
+    int wait = !OUTPUT_WAY && DAC_FD > 0 && dac_word(1);
     DAC_HELPER(value);
     if (wait) usleep(DAC_RELEASE_MS * 1000);
 }
@@ -1232,10 +1231,6 @@ void mp3_seek(void *demuxer, float rel, float delay, int flags) {
  * False syncs don't chain. With under a buffer left, it's the file's end: a tag's or the last
  * frames, and what's left is too little to be noise. */
 static int frames_follow(int fd, unsigned head, unsigned hz) {
-    static const unsigned short kbps[2][15] = {
-        { 0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320 },
-        { 0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160 }
-    };
     static unsigned char b[4096];
     int got = read(fd, b, sizeof b), one = head >> 19 & 3;
     if (got < (int)sizeof b) return 1;
@@ -1245,14 +1240,13 @@ static int frames_follow(int fd, unsigned head, unsigned hz) {
             unsigned w = (unsigned)b[at] << 24 | b[at + 1] << 16 | b[at + 2] << 8 | b[at + 3],
                      br = w >> 12 & 15;
             if ((w ^ head) & 0xfffe0c00u || !br || br == 15) break;
-            at += (one == 3 ? 144000 : 72000) * kbps[one != 3][br] / hz + (w >> 9 & 1);
+            at += mp3_frame_bytes(one, br, hz, w >> 9 & 1);
         }
         if (n == 2) return 1;
     }
     return 0;
 }
 int forced_eof_c(char *mp, int pos) {
-    static const unsigned short rates[3] = { 44100, 48000, 32000 };
     unsigned char h[64];
     if (DSD_FILE == 1)
         return 1; /* stock's 0x42332c mutes it from length - 1, and this store is what ends that */
@@ -1277,7 +1271,7 @@ int forced_eof_c(char *mp, int pos) {
         unsigned frames = (unsigned)x[8] << 24 | x[9] << 16 | x[10] << 8 | x[11],
                  spf = version == 3 ? 1152 : 576;
         if (!frames || frames > 0xffffffffu / spf) return 0;
-        unsigned hz = rates[rate] >> (version == 3 ? 0 : version == 2 ? 1 : 2);
+        unsigned hz = mp3_rates[rate] >> (version == 3 ? 0 : version == 2 ? 1 : 2);
         if (pos <= (int)(frames * spf / hz) + 1) return 0;
         int follow = frames_follow(fd, head, hz);
         lseek64(fd, back, 0);

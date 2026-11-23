@@ -7,7 +7,7 @@ import ctypes as C
 
 import pytest
 
-from conftest import O, SPOT_NOSOCK, Files
+from conftest import O, SPOT_NOSOCK, Config, Files
 from test_streaming import (A_CAPS, A_DOWNLOAD, A_PLAY, A_PREVIEW, A_REMOVE, A_SIGNOUT, L_CONFIRM, L_DOWNLOADS, L_JOB,
                             L_LIST, L_REMOVE, L_SELECT, L_STORAGE, S_OLD, S_PAIR, S_WAIT, Br, Sp, Wk, track)
 
@@ -133,10 +133,7 @@ class Timers:
 
 def classic(fw):
     """Classic, theme 1, from the config; every other key its default."""
-    def read(path, section, key, out, default, *_):
-        v = b'1' if C.string_at(key) == b'THEME' else C.string_at(default)
-        C.memmove(out, v + b'\0', len(v) + 1)
-    fw.mock('toolsReadConfig', read)
+    Config(fw, THEME='1')
 
 
 # spot_poll: the hold on the player and the timers.
@@ -345,10 +342,7 @@ VOLUME = 40
 def outputs(fw, way, mono=False):
     fw.mock('mclGetOutputWay', lambda *_: way)
     fw.var('g_volume', C.c_ubyte).value = VOLUME
-    def read(path, section, key, out, default, *_):
-        v = b'1' if mono and C.string_at(key) == b'MONO' else C.string_at(default)
-        C.memmove(out, v + b'\0', len(v) + 1)
-    fw.mock('toolsReadConfig', read)
+    Config(fw, **({'MONO': '1'} if mono else {}))
 
 
 @pytest.mark.parametrize('way, mono, line', [

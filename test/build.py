@@ -366,7 +366,7 @@ def validate_assets(directory):
     import functools, json, re, struct, subprocess
     from build import sha, run, fileoff, symbols, BLUEALSA, AAC_44K1, GRADIENT_LEAF, WM_PAINT_LEAF, QUEUE_LEAF, HELPER, HELPER_LIKE, BOOT, BOOT_HOOK, REMOTE, REMOTE_HOOK, LOG_HOOK, WHEEL_LOG_HOOK, S90PLAY, S11LOGO, LOGO_HOOK, LOGO_LIGHT, BLUEALSA2, BT_KEEPALIVE, BLUETOOTHD, BT_GRACE, RTC_WRITE, WIFI_LPS, HOOKS, LOCK_CLOCK_12H, WATCHDOG, WATCHDOG_SLEEP, DROP_CACHES, STREAM_POLL_CALLS, DARK_POLLS, WHEEL_TS_READ, PDR
     from ipod import (ART_PLACEHOLDERS, sized_art, AUDIT, TOOLBAR_SWITCHES, BOTTOM, CONFIRM, VOLUME, BIGCOVER, BC_ART, BC_TITLE_PAD, QUICK_SETTINGS, QS_TOP, QS_LABEL_GAP, QS_LABEL_H,
-                      QS_LABEL_W, QS_ROW_GAP, QS_PITCH, QS_BAR, QS_TOUCH, QS_EDGE, QS_SUN, HOME_LABEL_END, HOME_LIST_W, HOME_TEXT_X, HOME_TOP, PITCH, ARTIST_PAGE, HOME_OURS, HOME_PAGE, HOME_ROW, HOME_ROWS, NAVBAR_ONLY, PLAYING_PAGE, SET_ROW, SET_ROWS, SET_TOP, UI_ASSETS,
+                      QS_LABEL_W, QS_ROW_GAP, QS_PITCH, QS_BAR, QS_TOUCH, QS_EDGE, QS_SUN, HOME_LABEL_END, HOME_LIST_W, HOME_TEXT_X, HOME_TOP, PITCH, ARTIST_PAGE, HOME_OURS, HOME_PAGE, HOME_ROWS, NAVBAR_ONLY, PLAYING_PAGE, SET_ROW, SET_ROWS, SET_TOP, UI_ASSETS,
                       NP_BAR, NP_TOUCH, NP_MARGIN, NP_POS_X, NP_TOP, STATUS_BAR, STATUS_HIDDEN, STATUS_LEFT, STATUS_MARGIN, STATUS_RIGHT, CLOCK_MIN, CLOCK_TEXT, corner_inset, corner_x,
                       STATUS_ICONS, status_icon, QUIET_ICONS, quiet_icon, SET_ICON, SET_STOCK_ICON, SETTINGS_ICONS, SETTINGS_SLIDERS, decode, slider_plain, imagemagick, inc, png_header, settings_icon, walk,
                       patch_asset, patch_code, patch_style, style_props, SLIDE, SET0, status_metrics, CLASSIC_LIGHT_FONT_SRC, NP_IPOD_TIME_WS)
@@ -646,8 +646,8 @@ def validate_assets(directory):
     gates = [fileoff(old, a) for a in (*(a for a, _, _ in (*words, *DAC_RELEASE, *PROBE_STOP, *STOP_SITES, STOP_FILL, *PRELOAD_CLOSE, FORCED_EOF, EXIT_HOLD, PRELOAD_PUBLISH, PRELOAD_FAILED, COLD_CLEAR, FLAC_GATE, SEEK_NOSYNC)), *ID3_CALLS, MP3_ALLOC, MP3_FILTER, MP3_READ,
                                        IDLE_WAIT[0], PAUSE_WAIT[0], CMD_DONE[0])]
     # The FLAC fast paths (tools/flac.py, on by default) patch hciplayer's sync calls and LPC/output pointers.
-    from flac import EXPERIMENTS, patch_words as flac_words
-    flac = flac_words(EXPERIMENTS, symbols(directory/'peq'/'peq.elf'))
+    from flac import patch_words as flac_words
+    flac = flac_words(True, symbols(directory/'peq'/'peq.elf'))
     gates += [fileoff(old, a) for a, _, _ in flac]
     # Lossy gapless: the window's room and the kept edit list.
     from peq import LAVF_PRIV, MOV_EDITS
@@ -883,7 +883,7 @@ def validate_assets(directory):
             # The Settings list: stock's Playback and System setting rows (stock binds them; their
             # labels are literal), hidden in the list's place until Home's Settings row slides it in.
             assert sl == 'list_view' and sp['name'] == 'list_view_homeset' and sp['visible'] == 'false'
-            assert sg == [0, HOME_TOP, HOME_LIST_W, 2*HOME_ROW] and [r[2]['name'] for r in ss[3]] == ['btn_playset', 'btn_sysset']
+            assert sg == [0, HOME_TOP, HOME_LIST_W, 2*SET0.home_row] and [r[2]['name'] for r in ss[3]] == ['btn_playset', 'btn_sysset']
             assert [r[3][1][2]['name'] for r in ss[3]] == ['img_playset', 'img_sysset'] and [r[3][0][2]['text'] for r in ss[3]] == ['Playback', 'System']
             # The art fills the right panel below the status bar; the payload fits and crops it.
             assert art[0] == 'image' and art[1] == [0, 0, 375, BOTTOM] and art[2]['draw_type'] == 'fill' and HOME_LIST_W == 375
@@ -897,7 +897,7 @@ def validate_assets(directory):
                 assert label[1][0] + label[1][2] == image[1][2] - HOME_LABEL_END and label[1][2] >= 100
                 assert label[2]['only_focus'] == 'true' and label[2]['ellipses'] == 'true'
             assert [r[3][0][2].get('text') for r in sv[3]] == [None, 'Library', 'Cover Flow', None, 'Rockbox', None, 'Settings']
-            assert lg == [0, HOME_TOP, HOME_LIST_W, 7*HOME_ROW] and HOME_TOP + 7*HOME_ROW <= BOTTOM - HOME_TOP
+            assert lg == [0, HOME_TOP, HOME_LIST_W, 7*SET0.home_row] and HOME_TOP + 7*SET0.home_row <= BOTTOM - HOME_TOP
             # Home: Carousel's: stock's carousel and arrows after the lists, hidden and taking no taps
             # until chosen (coverflow_home_layout); its cards stock's in their places, Library's label
             # literal, Coverflow's after it and the Shortcut's after Folder on their own images.
@@ -915,13 +915,13 @@ def validate_assets(directory):
             dot = inc('HOME_DOT_X'), inc('HOME_DOT')
             assert HOME_TEXT_X == sum(dot) + inc('HOME_DOT_GAP')
             # The dot and the labels clear the bottom row's corner.
-            assert dot[0] >= corner_x(SET0.bar + HOME_TOP + 6*HOME_ROW + (HOME_ROW - dot[1])//2, dot[1])
-            assert HOME_TEXT_X >= corner_x(SET0.bar + HOME_TOP + 6*HOME_ROW + 9, 20)
+            assert dot[0] >= corner_x(SET0.bar + HOME_TOP + 6*SET0.home_row + (SET0.home_row - dot[1])//2, dot[1])
+            assert HOME_TEXT_X >= corner_x(SET0.bar + HOME_TOP + 6*SET0.home_row + 9, 20)
             # Split (coverflow_home_layout) gives the menu half the screen, the art the rest;
             # Split's glyph ends 13px before the art, as in the Home concept.
             assert inc('HOME_SPLIT_W') == 375 // 2
             assert inc('CHEVRON_W') - 30 - inc('HOME_CHEVRON_SHIFT') == 13
-            assert inc('HOME_MODERN_TEXT_X') >= corner_x(SET0.bar + HOME_TOP + 6*HOME_ROW + 9, 20)
+            assert inc('HOME_MODERN_TEXT_X') >= corner_x(SET0.bar + HOME_TOP + 6*SET0.home_row + 9, 20)
             # Modern's labels stop short of Split's glyph (x 20 to 30 of list_into) and Full's.
             for row, shift in ((inc('HOME_SPLIT_W'), inc('HOME_CHEVRON_SHIFT')), (inc('HOME_MODERN_ROW'), inc('HOME_FULL_CHEVRON_SHIFT'))):
                 assert row - inc('HOME_MODERN_LABEL_END') + 5 <= row - inc('CHEVRON_W') + shift + 20

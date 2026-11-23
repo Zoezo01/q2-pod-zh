@@ -1407,7 +1407,6 @@ static int e3_single(const void *unused) {
 /* ringnav(), the page on top: Simple's wheel and Centre, and Advanced's tab bar, which the wheel
  * reaches past the list's first row. */
 int eq_key(widget_t *top, unsigned key) {
-    static const unsigned release[EVENT_KEY / 4 + 1] = { [EVENT_KEY / 4] = KEY_CENTER };
     if (!ui.page || top != ui.page) return 0;
     if (e3.caption && (key == KEY_NEXT || key == KEY_PREV)) {
         e3.caption = 0;
@@ -1434,7 +1433,7 @@ int eq_key(widget_t *top, unsigned key) {
     }
     if (key == KEY_CENTER) {
         int press = center_press(&e3.press, &e3.press_at, e3_single, 0);
-        if (press == 2 && g_backlight_status) on_wm_keyup_fun(0, (void *)release);
+        if (press == 2) screen_off();
         return press;
     }
     if (key != KEY_NEXT && key != KEY_PREV) return 0;

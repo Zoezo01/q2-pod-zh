@@ -132,14 +132,12 @@ void vol_paint(widget_t *top, canvas_t *canvas) {
         return;
     }
     if (flat) { /* no number */
-        static const stops_t rest = { 2, { 0, 100 }, { 0x6b6b6b, 0x6b6b6b } },
-                             lit = { 2, { 0, 100 }, { 0xffffff, 0xffffff } };
         rect_t track = { area.x + 40, area.y + area.h / 2 - 2, area.w - 92, 4 }, on = track;
         on.w = max > 0 ? track.w * clamp_step(0, max, level) / max : 0;
         if (on.w && on.w < 4) on.w = 4; /* the least it shows is its own round ends */
         flat_box(canvas, &area, TOAST_RGBA, 12);
-        paint_round_rows(canvas, &track, &rest, 2);
-        if (on.w) paint_round_rows(canvas, &on, &lit, 2);
+        round_fill(canvas, &track, 0x6b6b6b, 2);
+        if (on.w) round_fill(canvas, &on, 0xffffff, 2);
         paint_art(top, canvas, FLAT_ART "spk_quiet", area.x + 16, area.y + 17);
         paint_art(top, canvas, FLAT_ART "spk_loud", area.x + area.w - 38, area.y + 17);
         stock_canvas_set_fill_color(canvas, fill);

@@ -9,7 +9,7 @@ Usage: test/xfade_player.py BUILD_DIR"""
 import math, pathlib, struct, sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]/'tools'))
 from build import fileoff, symbols
-from mips import STUBS, HEAP, peq_lib, player, call as run
+from mips import STUBS, HEAP, helpers, peq_lib, player
 from peq import EQ_OPEN_SLOT, PLAYER_BASE
 from unicorn import UC_HOOK_CODE
 from unicorn.mips_const import *
@@ -29,10 +29,7 @@ for name, slot in peq_lib((out/'peq_imports.S').read_text()).items():
 assert len(imports) > 60, 'no peq_lib_* stubs found in peq_imports.S'
 heap, clock, pts, spare, sizes = [HEAP], [10**9], [-1.0], {}, {}
 
-def w(p, *v): u.mem_write(p, struct.pack('<' + 'I'*len(v), *v))
-def r(p): return struct.unpack('<I', u.mem_read(p, 4))[0]
-def a(n): return u.reg_read((UC_MIPS_REG_A0, UC_MIPS_REG_A1, UC_MIPS_REG_A2, UC_MIPS_REG_A3)[n])
-def f12(): return struct.unpack('<d', struct.pack('<Q', u.reg_read(UC_MIPS_REG_F12)))[0]
+w, r, a, f12, cstr, call = helpers(u)
 def f12s(): return struct.unpack('<f', struct.pack('<I', u.reg_read(UC_MIPS_REG_F12) & 0xffffffff))[0]
 def ret_d(x): u.reg_write(UC_MIPS_REG_F0, struct.unpack('<Q', struct.pack('<d', x))[0])
 def ret_f(x): u.reg_write(UC_MIPS_REG_F0, struct.unpack('<I', struct.pack('<f', x))[0])
@@ -42,7 +39,6 @@ def alloc(n, align=16):
     u.mem_write(p, bytes(n))
     sizes[p] = n
     return p
-def cstr(p): return bytes(u.mem_read(p, 256)).split(b'\0')[0]
 flag = alloc(4)  # /tmp/q2xfade, demo's int
 w(LENGTH, 10)
 sh = alloc(16)  # sh_audio with no codec: not DSD
@@ -82,7 +78,6 @@ def written_pts(u, address, size, _):
     u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA))
 u.hook_add(UC_HOOK_CODE, written_pts, begin=WRITTEN_PTS, end=WRITTEN_PTS)
 
-def call(fn, *args): return run(u, fn, *args)
 
 def track(rate, nch=2):
     """A filter instance negotiated for float nch channels at rate, as the player adds one per file."""

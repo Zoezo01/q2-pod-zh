@@ -61,7 +61,7 @@ def test_own_strings(tmp_path):
 
 def test_own_strings_of_this_tree():
     texts = dict(langpack.own_strings())
-    assert texts['Restart to apply?'] == 'language.c'
+    assert texts['Restart to apply?'] == 'navigation.c'
 
 
 def test_asset_strings():

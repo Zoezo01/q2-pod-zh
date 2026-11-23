@@ -853,6 +853,7 @@ static int sort_next(int dir) {
 }
 extern void album_plays(int (*album_of)(void *), unsigned *sum);
 extern void ringnav_sort_key(char *s);
+extern int rate_kept(int album, unsigned key); /* ratings.c: an album's kept hearts */
 #define ARTIST_KEY 96
 
 /* Unicode 16.0.0 number, punctuation and separator ranges. */
@@ -1186,11 +1187,10 @@ static unsigned initial(int i) {
 }
 
 /* Album i's group: its initial, or in Year its year, CF_YEAR alone when undated. */
-static unsigned group(int i) {
+unsigned coverflow_group(int i) {
     if (cf.sort != SORT_YEAR) return initial(i);
     return CF_YEAR | (years && cf.albums == years_of ? years[i] : 0u);
 }
-unsigned coverflow_group(int i) { return group(i); }
 
 /* Letters mean something on w: the whole library's covers, sorted by album or artist; years, by
  * year, with Fast Navigation on. */
@@ -1205,16 +1205,16 @@ int coverflow_jump(widget_t *w, int from, int dir, unsigned *letter) {
     int n = cf.albums ? (int)deque_size(cf.albums) : 0;
     *letter = 0;
     if (!lettered(w) || from < 0 || from >= n) return 1;
-    unsigned c = group(from);
+    unsigned c = coverflow_group(from);
     int to = from + dir;
     if (dir > 0) {
-        while (to < n && group(to) == c) ++to;
-        if (to < n) *letter = group(to);
+        while (to < n && coverflow_group(to) == c) ++to;
+        if (to < n) *letter = coverflow_group(to);
     } else {
-        while (to >= 0 && group(to) == c) --to;
+        while (to >= 0 && coverflow_group(to) == c) --to;
         if (to < 0) return from + 1; /* the last album, across the wrap */
-        c = group(to);
-        while (to > 0 && group(to - 1) == c) --to;
+        c = coverflow_group(to);
+        while (to > 0 && coverflow_group(to - 1) == c) --to;
         *letter = c;
     }
     return dir > 0 ? to - from : from - to;
@@ -1228,8 +1228,8 @@ int coverflow_letter_first(int i, unsigned *letter) {
     *letter = 0;
     if (n < 1) return i;
     i = i < n ? i : n - 1;
-    unsigned c = *letter = group(i);
-    while (i > 0 && group(i - 1) == c) --i;
+    unsigned c = *letter = coverflow_group(i);
+    while (i > 0 && coverflow_group(i - 1) == c) --i;
     return i;
 }
 
@@ -1261,13 +1261,11 @@ static int name_cmp(void *a, void *b) { return strcasecmp(album_name(a), album_n
 static int tie(int d, const row_t *p, const row_t *q) {
     return d ? d : (p->j > q->j) - (p->j < q->j);
 }
-static int by_name(const void *x, const void *y) {
+/* The comparator album_rows sorts by, set before each sort (on the UI thread). */
+static int (*row_key)(void *, void *);
+static int by_key(const void *x, const void *y) {
     const row_t *p = x, *q = y;
-    return tie(name_cmp(p->a, q->a), p, q);
-}
-static int by_album(const void *x, const void *y) {
-    const row_t *p = x, *q = y;
-    return tie(album_cmp(p->a, q->a), p, q);
+    return tie(row_key(p->a, q->a), p, q);
 }
 /* The first of v's n rows not before r by cmp. */
 static unsigned lower(row_t *v, unsigned n, void *r, int (*cmp)(void *, void *)) {
@@ -1281,13 +1279,13 @@ static unsigned lower(row_t *v, unsigned n, void *r, int (*cmp)(void *, void *))
     }
     return lo;
 }
-/* list's rows sorted by by, *m of them, Unknown (REC_ID -1) only if all; 0 out of memory. */
-static row_t *album_rows(void *list, unsigned *m, int (*by)(const void *, const void *), int all) {
+/* list's rows sorted by cmp, *m of them, Unknown (REC_ID -1) only if all; 0 out of memory. */
+static row_t *album_rows(void *list, unsigned *m, int (*cmp)(void *, void *), int all) {
     row_t *v = calloc(deque_size(list) + 1, sizeof *v);
     *m = 0;
     for (unsigned i = 0; v && i < deque_size(list); ++i)
         if (all || I(deque_at(list, i), REC_ID) != -1) v[*m].a = deque_at(list, i), v[(*m)++].j = i;
-    if (v) qsort(v, *m, sizeof *v, by);
+    if (v) row_key = cmp, qsort(v, *m, sizeof *v, by_key);
     return v;
 }
 /* The list row of r's album among album_rows' v, or -1: the Unknown row never matches. */
@@ -1296,12 +1294,11 @@ static int album_in(row_t *v, unsigned m, void *r) {
     return k < m && !album_cmp(v[k].a, r) ? (int)v[k].j : -1;
 }
 /* list less each row cmp finds the same as one before it, in a new deque (list goes): the Hide
- * Duplicate switches. by is cmp, ties in the list's order, so the first of each stays; the Unknown
- * row (REC_ID -1) is never dropped unless all. Out of memory, list. */
-static void *without_copies(void *list, int (*cmp)(void *, void *),
-                            int (*by)(const void *, const void *), int all) {
+ * Duplicate switches. Rows sort by cmp, ties in the list's order, so the first of each stays; the
+ * Unknown row (REC_ID -1) is never dropped unless all. Out of memory, list. */
+static void *without_copies(void *list, int (*cmp)(void *, void *), int all) {
     unsigned m, n = deque_size(list);
-    row_t *v = album_rows(list, &m, by, all);
+    row_t *v = album_rows(list, &m, cmp, all);
     unsigned char *copy = v ? calloc(n + 1, 1) : 0;
     if (!copy) return free(v), list;
     for (unsigned k = 1; k < m; ++k) copy[v[k].j] = !cmp(v[k - 1].a, v[k].a);
@@ -1322,14 +1319,10 @@ static int tags_cmp(void *a, void *b) {
     int d = name_cmp(a, b);
     return d ? d : strcasecmp(x ? x : "", y ? y : "");
 }
-static int by_tags(const void *x, const void *y) {
-    const row_t *p = x, *q = y;
-    return tie(tags_cmp(p->a, q->a), p, q);
-}
 /* list less its copies under Hide Duplicate Albums, else list: the library's covers, an artist's
  * and the rated ones (after their hearts, so a rated copy stays when the first isn't). */
 static void *album_copies(void *list) {
-    return pod_value(POD_CF_DUP_ALBUMS) ? without_copies(list, tags_cmp, by_tags, 0) : list;
+    return pod_value(POD_CF_DUP_ALBUMS) ? without_copies(list, tags_cmp, 0) : list;
 }
 /* cf.stock's album_rows while sorted() ranks it. */
 static row_t *stock_rows;
@@ -1407,7 +1400,7 @@ static void *music_albums(void *list, int artist) {
     void *rows = artist ? of_names(MUSIC_ALBUM_SQL, list, &n) : 0, *out;
     if (!rows) rows = staged(rank_query, MUSIC_ALBUM_SQL, &n);
     unsigned m;
-    row_t *v = album_rows(rows, &m, by_album, 0);
+    row_t *v = album_rows(rows, &m, album_cmp, 0);
     if (!v) return deque_destroy(rows), list;
     out = song_list();
     for (unsigned i = 0; i < deque_size(list); ++i) {
@@ -1434,7 +1427,7 @@ static void *split(void *stock, int artist) {
     void *rows = artist ? of_names(ALBUM_SQL, stock, &n) : 0, *out;
     if (!rows) rows = staged(rank_query, ALBUM_SQL, &n);
     unsigned m;
-    row_t *v = album_rows(rows, &m, by_name, 1);
+    row_t *v = album_rows(rows, &m, name_cmp, 1);
     if (!v) return deque_destroy(rows), stock;
     out = song_list();
     for (unsigned i = 0; i < deque_size(stock); ++i) {
@@ -1526,7 +1519,7 @@ static void *sorted(void) {
     unsigned *sum = v && played ? calloc(n + 1, sizeof *sum) : 0;
     char *keys = v && artist ? calloc(n + 1, ARTIST_KEY) : 0;
     int ranked = cf.sort != SORT_RATING && cf.sort != SORT_RANDOM; /* uses album_index */
-    stock_rows = v && ranked ? album_rows(cf.stock, &stock_n, by_album, 0) : 0;
+    stock_rows = v && ranked ? album_rows(cf.stock, &stock_n, album_cmp, 0) : 0;
     if (!v || (ranked && !stock_rows) || (played && !sum) || (artist && !keys)) {
         free(v), free(sum), free(keys), free(stock_rows), stock_rows = 0;
         cf.sort = SORT_ALBUM;
@@ -1543,7 +1536,7 @@ static void *sorted(void) {
         }
     }
     if (cf.sort == SORT_RATING)
-        for (unsigned i = 0; i < n; ++i) v[i].rank = 5u - (unsigned)cf.hearts(v[i].r);
+        for (unsigned i = 0; i < n; ++i) v[i].rank = 5u - (unsigned)rate_kept(1, album_id(v[i].r));
     else if (sum) {
         album_plays(album_index, sum);
         for (unsigned i = 0; i < n; ++i)
@@ -1570,7 +1563,7 @@ static void *sorted(void) {
 void coverflow_by_year(void *albums) {
     unsigned n = deque_size(albums), m = 0;
     char *taken = calloc(n + 1, 1);
-    row_t *v = taken ? album_rows(albums, &m, by_album, 0) : 0;
+    row_t *v = taken ? album_rows(albums, &m, album_cmp, 0) : 0;
     int found;
     if (!v) {
         free(taken);
@@ -2870,27 +2863,21 @@ static int round_stride(int off, int stride) {
 
 /* An artist's albums give past an end as iOS's rubber band, x * 0.55 / (1 + x * 0.55 / D) with
  * D 2/5 of a stride, so the centre never reaches past half a cover (visual() would wrap there);
- * not rubber: they stop at the end. */
-static int bound(int off, int stride, int rubber) {
+ * not rubber: they stop at the end. mode 0 clamps, 1 gives the rubber band, -1 bound's inverse past
+ * an end: a touch catching the rubber band (or a wheel bounce) drags on from where it shows, not
+ * from a band stretched again. */
+static int bound(int off, int stride, int mode) {
     widget_t *s = cf.slide;
     if (!coverflow_bounded(s)) return off;
     int i = I(s, SLIDE_INDEX), hi = i * stride,
         lo = (i + 1 - (int)widget_count_children(s)) * stride;
     int edge = off > hi ? hi : off < lo ? lo : off, x = off - edge, a = ABS(x), d = 2 * stride / 5;
-    if (!x || !rubber) return edge;
-    a = a * 11 * d / (a * 11 + 20 * d);
-    return edge + (x < 0 ? -a : a);
-}
-
-/* bound's inverse past an end: a touch catching the rubber band (or a wheel bounce) drags on from
- * where it shows, not from a band stretched again. */
-static int unbound(int off, int stride) {
-    widget_t *s = cf.slide;
-    if (!coverflow_bounded(s)) return off;
-    int i = I(s, SLIDE_INDEX), hi = i * stride,
-        lo = (i + 1 - (int)widget_count_children(s)) * stride;
-    int edge = off > hi ? hi : off < lo ? lo : off, x = off - edge, a = ABS(x), d = 2 * stride / 5;
-    if (!x || a >= d) return off;
+    if (!x || mode == 0) return edge;
+    if (mode > 0) {
+        a = a * 11 * d / (a * 11 + 20 * d);
+        return edge + (x < 0 ? -a : a);
+    }
+    if (a >= d) return off;
     a = 20 * d * a / (11 * (d - a));
     return edge + (x < 0 ? -a : a);
 }
@@ -2994,7 +2981,7 @@ static int touch(void *ctx, event_t *event) {
                            .caught = a != 0,
                            .x = x,
                            .y = y,
-                           .from = unbound(I(cf.slide, SLIDE_OFFSET), stride_of(cf.slide)) };
+                           .from = bound(I(cf.slide, SLIDE_OFFSET), stride_of(cf.slide), -1) };
         return 0;
     }
     if (coverflow_position_touch(type, x, y)) return 0;
@@ -3505,18 +3492,12 @@ static int song_cmp(void *a, void *b) {
     d = strcmp(P(a, REC_PATH) ? P(a, REC_PATH) : "", P(b, REC_PATH) ? P(b, REC_PATH) : "");
     return d ? d : I(a, REC_CUE_START) - I(b, REC_CUE_START);
 }
-static int by_song(const void *x, const void *y) {
-    const row_t *p = x, *q = y;
-    return tie(song_cmp(p->a, q->a), p, q);
-}
 /* r's tracks as Cover Flow lists and plays them: its covers, All albums, Go to Album and a cover's
  * hold menu (queue_menu.c), the first copy of each song alone under Hide Duplicate Songs; the
  * Unknown card (REC_ID -1), every untagged song of the card's, as it is. */
 void *coverflow_cover_tracks(void *r) {
     void *t = coverflow_album_tracks(r);
-    return pod_value(POD_CF_DUP_SONGS) && I(r, REC_ID) != -1
-               ? without_copies(t, song_cmp, by_song, 1)
-               : t;
+    return pod_value(POD_CF_DUP_SONGS) && I(r, REC_ID) != -1 ? without_copies(t, song_cmp, 1) : t;
 }
 
 /* A label's face at px, in every state the labels style: bold, the theme's (bold itself), by its
@@ -4061,16 +4042,16 @@ int coverflow_shows_album(void *r) {
     return cf.page && cf.scoped == ALBUM_TRACKS && !album_cmp(deque_at(cf.albums, 0), r);
 }
 
-/* Library Ratings' Albums (ratings.c): the albums hearts gives 1 to 5 hearts, as covers with the
+/* Library Ratings' Albums (ratings.c): the albums rate_kept gives 1 to 5 hearts, as covers with the
  * rated Sort card alone; 0 when none is. */
-int coverflow_rated(int (*hearts)(void *)) {
+int coverflow_rated(void) {
     int n;
     void *all = staged(albums, 0, &n), *rated = _create_deque("stSongInfo");
     if (n > 0) all = split(all, 0);
     all = music_albums(all, 0);
     deque_init(rated);
     for (unsigned i = 0; i < deque_size(all); ++i)
-        if (hearts(deque_at(all, i))) _deque_push_back(rated, deque_at(all, i));
+        if (rate_kept(1, album_id(deque_at(all, i)))) _deque_push_back(rated, deque_at(all, i));
     deque_destroy(all);
     rated = album_copies(rated);
     if (!deque_size(rated) || !scoped_open()) {
@@ -4081,7 +4062,7 @@ int coverflow_rated(int (*hearts)(void *)) {
     cf.all_sort = cf.sort, cf.all_stock = cf.stock, cf.all_albums = cf.albums;
     cf.sort = SORT_RATING; /* unless saved */
     BLOB_IO(RATED_SORT_FILE, cf.sort, 0);
-    cf.stock = rated, cf.albums = 0, cf.hearts = hearts;
+    cf.stock = rated, cf.albums = 0;
     cf.scoped = RATED_ALBUMS;
     load();
     return 1;
@@ -4673,15 +4654,6 @@ static int pane_caption(char *t, unsigned size) {
     return 0;
 }
 
-/* w's first child of type, or 0. */
-static widget_t *child_of_type(widget_t *w, const char *type) {
-    for (unsigned i = 0, n = widget_count_children(w); i < n; ++i) {
-        widget_t *c = widget_get_child(w, i);
-        if (!tk_strcmp(widget_get_type(c), type)) return c;
-    }
-    return (void *)0;
-}
-
 /* A Streaming row's image widget for the pane: a card app's own file, or the build's copy of a
  * fixed service's icon at the pane's size (tools/build.py), in t. */
 static const char *service_icon(widget_t *image, char *t, unsigned size) {
@@ -4864,8 +4836,8 @@ void coverflow_home_row(widget_t *surface, widget_t *row, int id, int painting) 
         kind = id == library_search() ? PANE_SHUFFLE : PANE_LIBRARY;
     else if (list == home.stream) {
         kind = PANE_SERVICE;
-        home.row_image = child_of_type(row, "image");
-        home.row_label = child_of_type(row, "hscroll_label");
+        home.row_image = widget_lookup_by_type(row, "image", 0);
+        home.row_label = widget_lookup_by_type(row, "hscroll_label", 0);
     } else {
         static const char *const names[] = { "img_playing",    "img_library",  0,
                                              "img_cover_flow", "img_folder",   0,
@@ -5198,10 +5170,10 @@ static void home_fill(widget_t *list, int service) {
         int h = service ? I(first, W_H) : I(b, W_H);
         widget_move_resize(b, 0, service ? 0 : I(b, W_Y), HOME_SPLIT_W, h);
         if (service) {
-            widget_t *label = child_of_type(b, "hscroll_label");
+            widget_t *label = widget_lookup_by_type(b, "hscroll_label", 0);
             unsigned bitmap[64]; /* bitmap_t */
             char t[72];
-            const char *icon = service_icon(child_of_type(b, "image"), t, sizeof t);
+            const char *icon = service_icon(widget_lookup_by_type(b, "image", 0), t, sizeof t);
             if (label) widget_move_resize(label, I(label, W_X), 0, I(label, W_W), I(b, W_H));
             /* the build's icons; a card app's file waits for the pane (pane_service) */
             if (!tk_str_start_with(icon, "file://")) widget_load_image(home.art, icon, bitmap);

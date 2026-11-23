@@ -6,7 +6,8 @@ import pytest
 
 import test_nav_hold as hold_
 from test_nav_hold import recs, ui  # noqa: F401 (fixtures)
-from test_nav_painters import MODERN, SETS, Canvas, Confirm, Scheme, Ui, g, layout, paint_bg, rgba, theme  # noqa: F401 (layout: a fixture)
+from conftest import rgba
+from test_nav_painters import MODERN, SETS, Canvas, Confirm, Scheme, Ui, g, layout, paint_bg, theme  # noqa: F401 (layout: a fixture)
 
 MODERN_SET = next((i for i, s in enumerate(SETS) if s.name == 'modern'), 0)
 

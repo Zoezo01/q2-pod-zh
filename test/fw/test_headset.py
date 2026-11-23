@@ -7,21 +7,13 @@ import struct
 
 import pytest
 
-from conftest import O, ROOT, Game, claim
-from test_radio import Rd  # test_radio.py keeps the mirror
+from conftest import O, ROOT, Config, Game, claim
+from test_radio import Hs, Rd, Sp  # test_radio.py keeps the mirror
 
 KEY_PLAY, KEY_BACK_BTN, KEY_FWD_BTN = O['KEY_PLAY'], O['KEY_BACK_BTN'], O['KEY_FWD_BTN']
 NEXT, PLAYPAUSE, PREV, STOP, PAUSE, PLAYCD, PAUSECD, PLAYKEY = 163, 164, 165, 166, 119, 200, 201, 207
 PLAYING, PAUSED, STOPPED = 2, 3, 1
 PAIRS, LINK_MAC, STOCK_STATUS = 0xa4c080, 0xa4c0d8, 0x4fc180  # pdeq_btpairlist, BTLINKMAC, stock's status callback
-
-
-class Hs(C.Structure):
-    _fields_ = [*((n, C.c_uint) for n in 'generation running head tail report'.split()), ('keys', C.c_int * 16),
-                *((n, C.c_uint) for n in ('worker_generation checked epoch paused_epoch paused_at recent_at recent_owner '
-                                          'recent_session last_at session linked_at eq_checked').split()),
-                *((n, C.c_int) for n in 'linked known ears want paused owner automatic last_key'.split()),
-                ('address', C.c_ubyte * 14), ('airpods', C.c_int)]
 
 
 def hs(fw):
@@ -370,12 +362,7 @@ def link(fw, player, resume='0'):
 
 
 def config(fw, **values):
-    values = {k.encode(): v.encode() for k, v in values.items()}
-
-    def read(path, section, key, out, default, *_):
-        v = values.get(C.string_at(key), C.string_at(default))
-        C.memmove(out, v + b'\0', len(v) + 1)
-    fw.mock('toolsReadConfig', read)
+    Config(fw, **values)
 
 
 def test_play_as_the_link_comes_up_is_dropped(fw):
@@ -413,20 +400,6 @@ def test_with_resume_on_connect_play_on_the_link_plays(fw):
 
 
 # Routing: radio, Spotify, then stock's player.
-
-class List(C.Structure):
-    _fields_ = [('buf', C.c_void_p), ('len', C.c_uint), ('n', C.c_int), ('truncated', C.c_int),
-                ('name', C.c_uint * 201), ('url', C.c_uint * 201)]
-
-
-class Sp(C.Structure):
-    _fields_ = [*((n, C.c_int) for n in ('launched', 'sock', 'playing', 'paused', 'local', 'active', 'played', 'dead')),
-                *((n, C.c_uint) for n in ('polled', 'idle_at', 'duration', 'position', 'cover', 'launch_at', 'alive_at')),
-                ('at', C.c_ulonglong), ('raw', C.c_char * 1536), ('state', C.c_char * 12), ('track', C.c_char * 64),
-                ('title', C.c_char * 256), ('artist', C.c_char * 256), ('album', C.c_char * 256), ('out', C.c_char * 24),
-                ('auth', C.c_int), ('loading', C.c_int), ('old', C.c_int), ('load_at', C.c_uint), ('log_from', C.c_long),
-                ('wanted', C.c_char * 64), ('from_', C.c_char * 64)]
-
 
 def radio(fw, pid=9):
     """Internet Radio (radio.c rd) playing its one station as q2video's pid, which quits when told ('q'); a start

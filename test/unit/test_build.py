@@ -1002,7 +1002,7 @@ def test_patch_bluealsa_leaves_the_a2dp_sink_to_its_options(silence):
     assert struct.unpack_from('<I', build.patch_bluealsa(raw), build.fileoff(raw, address))[0] == new  # sh to sb
     bad = bytearray(raw)
     struct.pack_into('<I', bad, build.fileoff(raw, address), old ^ 1)
-    with pytest.raises(ValueError, match='^Bluetooth profile default mismatch$'):
+    with pytest.raises(ValueError, match=r'^0x\w+: unexpected instruction \(Bluetooth profile default\)$'):
         build.patch_bluealsa(bytes(bad))
 
 
@@ -1017,7 +1017,7 @@ def test_patch_bluealsa_refuses_a_moved_caller(silence):
 def test_patch_bluealsa_refuses_a_moved_site(silence, site):
     raw = bytearray(bluealsa())
     struct.pack_into('<I', raw, build.fileoff(raw, build.BT_SILENCE_SITES[site][0]), 0xdead)
-    with pytest.raises(ValueError, match='^Bluetooth silence site mismatch$'):
+    with pytest.raises(ValueError, match=r'^0x\w+: unexpected instruction \(Bluetooth silence site\)$'):
         build.patch_bluealsa(bytes(raw))
 
 
@@ -1146,7 +1146,7 @@ def test_patch_m4b_cover_wants_the_m4a_branch(monkeypatch):
     lib = bytearray(taglib())
     struct.pack_into('<I', lib, build.fileoff(lib, SITE), 0x1040004b)
     monkeypatch.setattr(build, 'TAG_C_SHA', hashlib.sha256(lib).hexdigest())
-    with pytest.raises(ValueError, match='^Unexpected TagLib M4A cover branch$'):
+    with pytest.raises(ValueError, match=r'^0x\w+: unexpected instruction \(TagLib M4A cover branch\)$'):
         build.patch_m4b_cover(bytes(lib))
 
 

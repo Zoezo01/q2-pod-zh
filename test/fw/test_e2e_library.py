@@ -16,7 +16,7 @@ import struct
 import pytest
 
 import host
-from conftest import NAVIGATION_SOURCE, FNV_PRIME, O, Deques, fnv1a, high_halves, libc
+from conftest import NAVIGATION_SOURCE, FNV_PRIME, O, Deques, Dirent, fnv1a, high_halves, libc
 
 libc.munmap.argtypes = [C.c_void_p, C.c_size_t]
 FIXED = 0x100022  # MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE
@@ -97,10 +97,6 @@ def text_of(r, field):
 
 def int_of(r, field):
     return C.c_int.from_address(r + O['REC_' + field.upper()]).value
-
-
-class Dirent(C.Structure):  # test/fw/host.py's
-    _fields_ = [('ino', C.c_uint), ('off', C.c_uint), ('reclen', C.c_ushort), ('d_type', C.c_ubyte), ('d_name', C.c_char * 256)]
 
 
 class Disk:
@@ -995,8 +991,7 @@ def shuffle_albums(q):
 
 def up_next(q):
     """View Queue in a shuffle: Up Next's rows, each its title over its artist."""
-    page = q.fw.lib.navigation__page_closed, q.fw.lib.page_keyup
-    q.fw.fn('up_next', None, C.c_void_p, C.c_void_p)(*(C.cast(f, C.c_void_p) for f in page))
+    q.fw.fn('up_next', None)()
     return q.rows_of(q.last('scroll_view_create'))
 
 

@@ -6,7 +6,7 @@ import struct
 
 import pytest
 
-from conftest import O, Deques, Files, block, libc, text, opus
+from conftest import O, Deques, Files, block, libc, rgba, text, opus
 
 FAR = 0x7fffffff
 TAG_MAX = 65536
@@ -1110,10 +1110,6 @@ def test_an_ogg_whose_tags_taglib_would_hold_over_and_over_is_left_alone(fw, mcl
 
 # The page: stock's rows, their table, layout and paint.
 TEXT = 0xff123456  # the LCD's text colour before a row's paint
-
-
-def rgba(c, a=0xff):
-    return a << 24 | (c & 255) << 16 | c & 0xff00 | c >> 16
 
 
 def widget(w=0, h=0, parent=0):

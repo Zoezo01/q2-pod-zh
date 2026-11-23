@@ -136,8 +136,7 @@ static int query(const char *sql, int (*row)(void *, int, char **, char **), voi
     char page[sizeof PL_SONGS + 32];
     void *db = 0;
     pl_page_t p = { row, ctx, 100, PL_PAGE };
-    int bad = sqlite3_open("/mnt/data/database.db", &db) ||
-              sqlite3_exec(db, "PRAGMA cache_size=64", 0, 0, 0); /* era_sql's: a heap of KBs */
+    int bad = lib_db_open(&db, "PRAGMA cache_size=64"); /* era_sql's: a heap of KBs */
     while (!bad && p.rows == PL_PAGE) {
         tk_snprintf(page, sizeof page, sql, p.last);
         p.rows = 0;

@@ -219,7 +219,7 @@ class FwWorker(Worker):
         if result.returncode:
             shutil.rmtree(out)
             return None, rejected(result.stderr)
-        globalize(obj)
+        host.globalize(obj)
         return obj, ''
 
     def compile(self, mutant):
@@ -370,7 +370,7 @@ def coverage_build(worker):
     obj = COV/(stem + '.o')
     subprocess.run(['cc', *host.FLAGS, '--coverage', '-I', str(BASE), '-I', 'patch', '-c', worker.args.source, '-o',
         str(obj)], cwd=worker.root, check=True)
-    globalize(obj)
+    host.globalize(obj)
     (COV/'lib'/obj.name).unlink()
     (COV/'lib'/obj.name).symlink_to(obj)
     objects = [obj if o.name == obj.name else o for o in base_objects()]
@@ -381,12 +381,6 @@ def coverage_build(worker):
 
 def base_objects():
     return [BASE/(source.stem + '.o') for source in host.SOURCES]
-
-def globalize(obj):
-    """host.build's renames: each static a global <file>__<name>, so a test reaches it."""
-    local = [r[-1] for r in host.nm(obj) if len(r) == 3 and r[1] in 'tdbr' and re.fullmatch(r'[A-Za-z_]\w*', r[-1])]
-    renames = [f for name in local for f in ('--redefine-sym', f'{name}={obj.stem}__{name}', '--globalize-symbol', f'{obj.stem}__{name}')]
-    subprocess.run(['objcopy', *renames, str(obj)], check=True)
 
 def symbols(path):
     """Each defined symbol's name, type and size, which move with any compiler flag that changes the code."""
@@ -418,9 +412,6 @@ def main():
     parser.add_argument('--cflags', help='as the test builds the source, in one string')
     parser.add_argument('--fw', action='store_true', help='--test is a test/fw file: pytest runs it against host.py\'s library')
     parser.add_argument('--workers', type=int, default=4)
-    parser.add_argument('--timeout', type=float, help="seconds for each mutant; by default 20 times the original's, at "
-        "least 5. With --fw, seconds of CPU, by default 5 times the original's run, at least 10: pytest stops at the "
-        'first failure, so a mutant is no slower than the original')
     args = parser.parse_args()
     if not args.fw and args.cflags is None: parser.error('--cflags: a host suite builds the file itself')
     args.cflags = shlex.split(args.cflags or '')
@@ -459,10 +450,12 @@ def main():
         if args.fw and symbols(OBJECTS/'original'/(stem + '.o')) != symbols(BASE/(stem + '.o')):
             sys.exit(f'run.py compiles {args.source} unlike host.build')
         if args.fw: order = Order(using_worker(FwWorker.collect)())
-        status, code, seconds, passed = using_worker(kind.test)(original, args.timeout or 600)
+        status, code, seconds, passed = using_worker(kind.test)(original, 600)
         if status != 'survived' or args.fw and counted(passed) != len(order.names):
             sys.exit(f'the original fails its test: {status} {code} {passed}')
-        timeout = args.timeout or (max(10, 5 * seconds) if args.fw else max(5, 20 * seconds))
+        # Seconds for each mutant: 20 times the original's, at least 5. With --fw, seconds of CPU, 5 times the original's
+        # run, at least 10: pytest stops at the first failure, so a mutant is no slower than the original.
+        timeout = max(10, 5 * seconds) if args.fw else max(5, 20 * seconds)
         fw = {}
         if args.fw:
             # A killer moves to the front only if the original passes its tests backwards too: none leans on another.

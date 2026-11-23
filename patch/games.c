@@ -112,7 +112,6 @@ static const char puzzles[][42] = {
 };
 #define PUZZLES (int)(sizeof puzzles / sizeof *puzzles)
 
-int sud_puzzles(void) { return PUZZLES; }
 void sud_puzzle(int k, unsigned char *out) {
     for (int i = 0; i < 81; ++i) out[i] = (unsigned char)puzzles[k][i / 2] >> (i & 1 ? 0 : 4) & 15;
 }
@@ -944,10 +943,9 @@ static void popup(canvas_t *canvas, const char *title, const char *a, const char
     if (own) {
         unsigned paper = ipod_light() ? S->paper : 0, ink = ipod_light() ? S->ink : 0xffffff;
         rect_t r = { x, y, POP_W, h }, out = { x - 1, y - 1, POP_W + 2, h + 2 };
-        stops_t ring = { 2, { 0, 100 }, { S->bar_line, S->bar_line } };
         int sel = b ? top + choice * POP_ROW : h;
         ui_ink_raw(1);
-        paint_round_rows(canvas, &out, &ring, LETTER_RADIUS + 1);
+        round_fill(canvas, &out, S->bar_line, LETTER_RADIUS + 1);
         for (int i = 0; i < h; ++i) {
             unsigned c = i < POP_ROW    ? stops_row(&S->bar, i, POP_ROW)
                          : i == POP_ROW ? S->bar_line

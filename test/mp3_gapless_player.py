@@ -17,7 +17,7 @@ import tempfile
 import wave
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'tools'))
 from build import fileoff, jal, symbols
-from mips import load_elf, machine, stubs
+from mips import call as mips_call, helpers, load_elf, machine, stubs
 from peq import MP3_ALLOC, MP3_FILTER, MP3_CLOSE, MP3_READ, DEMUX_READ, MP3_FILL
 from unicorn import Uc, UC_ARCH_MIPS, UC_MODE_MIPS32, UC_MODE_LITTLE_ENDIAN, UC_HOOK_CODE
 from unicorn.mips_const import *
@@ -41,9 +41,7 @@ demux_left = 0
 imports_called = Counter()
 
 
-def w(p, *v): u.mem_write(p, struct.pack('<' + 'I'*len(v), *v))
-def r(p): return struct.unpack('<I', u.mem_read(p, 4))[0]
-def a(n): return u.reg_read((UC_MIPS_REG_A0, UC_MIPS_REG_A1, UC_MIPS_REG_A2, UC_MIPS_REG_A3)[n])
+w, r, a = helpers(u)[:3]
 
 
 def alloc(n):
@@ -111,13 +109,8 @@ u.hook_add(UC_HOOK_CODE, hook)
 
 
 def call(name, *args, sh=0):
-    for i, value in enumerate(args): u.reg_write((UC_MIPS_REG_A0, UC_MIPS_REG_A1, UC_MIPS_REG_A2, UC_MIPS_REG_A3)[i], value)
-    u.reg_write(UC_MIPS_REG_SP, 0x200f000)
     u.reg_write(UC_MIPS_REG_FP, sh)
-    u.reg_write(UC_MIPS_REG_RA, 0x2000000)
-    u.emu_start(syms[name], 0x2000000, count=1000000)
-    assert u.reg_read(UC_MIPS_REG_PC) == 0x2000000
-    return u.reg_read(UC_MIPS_REG_V0)
+    return mips_call(u, syms[name], *args, sp=0x200f000, count=1000000)
 
 
 h = bytearray(417)

@@ -187,10 +187,10 @@ void card_theme_poll(void) {
     if (said) ct.note = 0, toast(tr(said)); /* first: a toast's dialog polls here again */
 }
 
-/* 1 when path holds these n bytes. */
-static int same(const char *path, const char *b, unsigned n) {
+/* 1 when path holds these n bytes, read at most max. */
+int file_holds(const char *path, const void *b, unsigned n, unsigned max) {
     unsigned m = 0;
-    char *old = read_all(path, CT_MAX, &m);
+    char *old = read_all(path, max, &m);
     int is = old && m == n && !memcmp(old, b, n);
     free(old);
     return is;
@@ -213,7 +213,7 @@ void card_theme_sync(void) {
         } else {
             unlink(CT_SEEN);
             /* the same bytes are not written again each mount */
-            if (!same(CT_DST, b, n) && !same(CT_BAD, b, n)) {
+            if (!file_holds(CT_DST, b, n, CT_MAX) && !file_holds(CT_BAD, b, n, CT_MAX)) {
                 if (blob_io(CT_DST, CT_DST ".tmp", b, n, 1))
                     unlink(CT_BAD), unlink(CT_TRY), note = N_("Card theme saved. Restart to apply");
                 else

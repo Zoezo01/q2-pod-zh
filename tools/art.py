@@ -234,8 +234,9 @@ SPEAKER = 'M0 4.3H3L7.5 0.9V12.1L3 8.7H0Z'
 SPEAKER_BOX, WAVES_BOX = (0, 0, 8, 13), (0, 0, 18, 13)
 
 
-def wave(r, cx=7, cy=6.5, half=5.6):  # pragma: no mutate block
+def wave(r):  # pragma: no mutate block
     """An arc of radius r about the cone's tip, 96 degrees, or as much of it as keeps within half above and below."""
+    cx, cy, half = 7, 6.5, 5.6
     dy = min(r * math.sin(math.radians(48)), half)
     dx = math.sqrt(r * r - dy * dy)
     return f'M{cx + dx:.2f} {cy - dy:.2f}A{r} {r} 0 0 1 {cx + dx:.2f} {cy + dy:.2f}'
@@ -301,13 +302,9 @@ def station(stops, mast_stops, band_a, shadow_a, size):
     scale = size / 160
     placed = lambda d: [[(x * scale / 2, y * scale / 2) for x, y in poly] for poly in path(d)]
     box = (0, 0, size, size)
-    mast, down, sd, reach = placed(STATION_MAST), STATION_SHADOW[0] * scale, STATION_SHADOW[1] * scale, round(8 * scale)
+    mast, down, sd = placed(STATION_MAST), STATION_SHADOW[0] * scale, STATION_SHADOW[1] * scale
     held = coverage([[(x, y + down) for x, y in poly] for poly in mast], box)
-    kernel = [math.exp(-(k * k) / (2 * sd * sd)) for k in range(-reach, reach + 1)]
-    total = sum(kernel)
-    at = lambda v, x, y: v[max(0, min(size - 1, y)) * size + max(0, min(size - 1, x))]
-    across = [sum(w * at(held, x + k - reach, y) for k, w in enumerate(kernel)) / total for y in range(size) for x in range(size)]
-    shadow = [sum(w * at(across, x, y + k - reach) for k, w in enumerate(kernel)) / total for y in range(size) for x in range(size)]
+    shadow = blurred(held, size, size, sd)
     whole = [[(0, 0), (size, 0), (size, size), (0, size)]]
     fill, ink = gradient(stops, 0, size), gradient(mast_stops, *(y * scale for y in STATION_MAST_Y))
     return compose(box, [(whole, lambda x, y: (fill(y), 1)),
@@ -539,12 +536,15 @@ def qs_glyph(glyph, ink):
     polys += [q for a, b in segments for q in butt_stroke(moved([a, b]), 3)]
     polys += [poly for x, y, r in discs for poly in map(moved, path(circle(x, y, r)))]
     return [(polys, paint)]
+def faded(size, layers, opacity):
+    """layers composed on a size px square, a PNG on clear, at opacity."""
+    mark = bytearray(compose((0, 0, size, size), layers))
+    mark[3::4] = bytes(round(a * opacity) for a in mark[3::4])
+    return png(size, size, bytes(mark))
 @functools.lru_cache(maxsize=None)
 def qs_mark(glyph, opacity, ink):
     """One button's glyph, RGBA bytes on clear, at opacity."""
-    mark = bytearray(compose((0, 0, 60, 60), qs_glyph(glyph, ink)))
-    mark[3::4] = bytes(round(a * opacity) for a in mark[3::4])
-    return png(60, 60, bytes(mark))
+    return faded(60, qs_glyph(glyph, ink), opacity)
 def qs_lit():
     """QS_LIT: the names whose button is on, NUL-separated, for navigation.c."""
     return ''.join(f'drop_{n}\\0' for n, (_, lit, _) in QS_BUTTONS.items() if lit)
@@ -587,12 +587,7 @@ def tray_shadow():
     w, h = TRAY_SHADOW_BOX[2:]
     down, sd, alpha = TRAY_SHADOW
     held = coverage([[(x, y + down) for x, y in poly] for poly in path(TRAY)], TRAY_SHADOW_BOX)
-    reach = 3 * sd
-    kernel = [math.exp(-(k * k) / (2 * sd * sd)) for k in range(-reach, reach + 1)]
-    total = sum(kernel)
-    at = lambda v, x, y: v[y * w + x] if 0 <= x < w and 0 <= y < h else 0
-    across = [sum(c * at(held, x + k - reach, y) for k, c in enumerate(kernel)) / total for y in range(h) for x in range(w)]
-    soft = [sum(c * at(across, x, y + k - reach) for k, c in enumerate(kernel)) / total for y in range(h) for x in range(w)]
+    soft = blurred(held, w, h, sd)
     return b''.join(bytes((0, 0, 0, round(v * alpha))) for v in soft)
 @functools.cache
 def orb(side, usb):
@@ -692,10 +687,7 @@ def field():
     inner = path(rounded_path(1, 1, 30, 28, 14))[0]
     ring = [*body, body[0], inner[0], *inner[::-1], inner[0], body[0]]
     held = coverage([[(x, y + 2) for x, y in body]], box)  # the inset's hole, 2 rows down
-    kernel = [math.exp(-k * k / 2) for k in range(-3, 4)]
-    at = lambda v, x, y: v[max(0, min(h - 1, y)) * w + max(0, min(w - 1, x))]
-    across = [sum(a * at(held, x + i - 3, y) for i, a in enumerate(kernel)) / sum(kernel) for y in range(h) for x in range(w)]
-    soft = [sum(a * at(across, x, y + i - 3) for i, a in enumerate(kernel)) / sum(kernel) for y in range(h) for x in range(w)]
+    soft = blurred(held, w, h, 1)
     return compose(box, [([[(x, y + 1) for x, y in body]], lambda x, y: (0xffffff, 0x59 / 255)), ([body], lambda x, y: (0xffffff, 1)),
                          ([body], lambda x, y: (0, (1 - soft[int(y) * w + int(x)]) * 0x4d / 255)), ([ring], lambda x, y: (0, 0x2e / 255))])
 
@@ -899,9 +891,7 @@ def flat_glyph(glyph, ink, size=FLAT_BOX, k=1):
 @functools.lru_cache(maxsize=None)
 def flat_mark(glyph, opacity, ink, size=FLAT_BOX, k=1):
     """One glyph, a PNG on clear, at opacity."""
-    mark = bytearray(compose((0, 0, size, size), flat_glyph(glyph, ink, size, k)))
-    mark[3::4] = bytes(round(a * opacity) for a in mark[3::4])
-    return png(size, size, bytes(mark))
+    return faded(size, flat_glyph(glyph, ink, size, k), opacity)
 def clock_face(half):
     """Set Time's face without its hands, drawn on a -50..50 box: the disc, and 1 to 12 at r 39."""
     k = CLOCK_PX / 100

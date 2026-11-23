@@ -27,9 +27,9 @@ static unsigned kb_ramp(int y) {
     while (k < 4 && y >= rows[k + 1]) ++k;
     return mix(rgb[k], rgb[k + 1], y - rows[k], rows[k + 1] - rows[k]);
 }
-/* The ramp's screen rows y0 up to y1, where the canvas starts at screen row top. */
-void paint_ramp(canvas_t *canvas, int y0, int y1, int top) {
-    for (int y = y0; y < y1; ++y) bar_rect(canvas, RGBA(kb_ramp(y)), 0, y - top, 375, 1);
+/* The ramp's screen rows 60 up to 320, where the canvas starts at screen row top. */
+void paint_ramp(canvas_t *canvas, int top) {
+    for (int y = 60; y < 320; ++y) bar_rect(canvas, RGBA(kb_ramp(y)), 0, y - top, 375, 1);
 }
 /* A button of the keyboard's: its panel's page's row's. */
 int kb_key(widget_t *w) {
@@ -103,6 +103,7 @@ static void search_hint(widget_t *win) {
     cp.search_px = px;
     widget_set_prop_int(edit, style_key(key, "disable", "font_size"), px);
 }
+static const char *const empty[] = { "empty", "empty_focus", "empty_over" };
 /* The search field's box and its children's: over the keyboard with the keyboard up, in the strip
  * with it down, where stock's toolbar hides and only the Return key goes back. The toolbar's return
  * is the chevron's tap. */
@@ -121,7 +122,6 @@ static void search_layout(widget_t *win, int keyboard) {
     if (edit) {
         /* Stock's hint, wider than either field at the typed text's 26: an empty field's own size,
          * for its 38 characters in stock's face, 14.8 px across per px, in the fw - 32 left. */
-        static const char *const empty[] = { "empty", "empty_focus", "empty_over" };
         char key[STYLE_KEY];
         widget_move_resize(edit, 0, 0, fw, 30);
         for (unsigned k = 0; k < sizeof empty / sizeof *empty; ++k)
@@ -166,13 +166,11 @@ static void search_field_margin(widget_t *edit, int margin) {
     }
     text_ink(edit, 0xff111111u, INK_EDIT);
 }
-static void search_field_style(widget_t *edit) { search_field_margin(edit, 32); }
 /* A hint too wide for the room at the typed text's 26 takes a size of its own; none under 12, the
  * smallest worth reading, however long a playlist's name.
  * ponytail: stock's face averages 0.39 px a character per px; a hint of wide letters can still cut.
  */
 static void field_tips(widget_t *edit, const char *tips, int room) {
-    static const char *const empty[] = { "empty", "empty_focus", "empty_over" };
     char key[STYLE_KEY];
     int fit = room * 100 / (39 * (int)strlen(tips) + 1);
     if (fit < 12) fit = 12;
@@ -199,7 +197,7 @@ void t9_box(widget_t *page, widget_t *edit, const char *tips) {
     widget_set_visible(title, 0, 0);
     st.t9_back = image_create(page, 30, 0, 40, 30); /* ringnav_touch takes its press */
     widget_move_resize(edit, 72, 2, 244, 27);
-    search_field_style(edit);
+    search_field_margin(edit, 32);
     field_tips(edit, tips, 212);
     widget_on(edit, EVT_DESTROY, t9_gone, 0);
     st.t9_page = page;
@@ -215,7 +213,6 @@ static int pl_box_gone(void *win, event_t *event) {
  * dialog goes, as bar_title_sync doesn't name a dialog. */
 static int pl_box_due(const void *info) {
     (void)info;
-    static const char *const empty[] = { "empty", "empty_focus", "empty_over" };
     char key[STYLE_KEY];
     widget_t *win = st.pl_box;
     void *lists = P(p_deque_playlist, 0);
@@ -244,7 +241,6 @@ static int pl_box_due(const void *info) {
     return 0;
 }
 void pl_box_open(widget_t *win) {
-    static const char *const state[] = { "normal", "pressed", "over", "disable", "focused" };
     static const char *const prop_name[] = { "bg_color", "border_color", "round_radius" };
     char key[STYLE_KEY];
     widget_t *item = widget_lookup(win, "list_item_ssedit", 1)
@@ -252,9 +248,9 @@ void pl_box_open(widget_t *win) {
              *edit = widget_lookup(win, "ssedit", 1) ?: widget_lookup(win, "edit", 1),
              *back = widget_lookup(win, "img_return", 1);
     if (!item || !edit || !back) return;
-    for (unsigned s = 0; s < sizeof state / sizeof *state; ++s)
+    for (unsigned s = 0; s < 5; ++s)
         for (unsigned k = 0; k < sizeof prop_name / sizeof *prop_name; ++k)
-            widget_set_prop_int(item, style_key(key, state[s], prop_name[k]), 0);
+            widget_set_prop_int(item, style_key(key, ink_state[s], prop_name[k]), 0);
     widget_move_resize(item, 72, 28, 244, 30);
     widget_move_resize(edit, 0, 0, 244, 30);
     search_field_margin(edit, 15);
@@ -279,7 +275,7 @@ void pl_box_paint(widget_t *w, canvas_t *canvas) {
     unsigned fill = (unsigned)I(lcd, LCD_FILL_COLOR);
     for (int y = 0; y < 60; ++y)
         bar_rect(canvas, RGBA(mix(0xb4bdc9, 0x8b93a0, y, 60)), 0, y, 375, 1);
-    paint_ramp(canvas, 60, 320, 0);
+    paint_ramp(canvas, 0);
     paint_art(w, canvas, "classic_light_kb_back", 43, 33);
     paint_field_plain(w, canvas, 72, 28, 244);
     paint_bar(w, canvas);
@@ -290,18 +286,7 @@ void pl_box_paint(widget_t *w, canvas_t *canvas) {
 /* The dialog as it loads, before its init: every name stock looks up stays. It covers the bar, so
  * it paints the bar (search_paint); it's at 0, 0, so these boxes are the screen's. */
 void search_open(widget_t *win) {
-    static const char *const tab_state[] = { "normal",
-                                             "pressed",
-                                             "over",
-                                             "disable",
-                                             "focused",
-                                             "normal_of_active",
-                                             "pressed_of_active",
-                                             "over_of_active",
-                                             "disable_of_active",
-                                             "focused_of_active" },
-                             *const tabs[] = { "btn_track", "btn_artist", "btn_album",
-                                               "btn_genre" },
+    static const char *const tabs[] = { "btn_track", "btn_artist", "btn_album", "btn_genre" },
                              *const lists[] = { "scroll_view_track", "scroll_view_artist",
                                                 "scroll_view_album", "scroll_view_genre" },
                              *const messages[] = { "label_track_msg", "label_artist_msg",
@@ -324,14 +309,14 @@ void search_open(widget_t *win) {
     for (unsigned i = 0; i < sizeof tabs / sizeof *tabs; ++i) {
         if (!(c = widget_lookup(win, tabs[i], 1))) continue;
         widget_move_resize(c, (int)i * 327 / 4, 0, (int)(i + 1) * 327 / 4 - (int)i * 327 / 4, 30);
-        for (unsigned k = 0; k < sizeof tab_state / sizeof *tab_state; ++k) {
-            widget_set_prop_int(c, style_key(key, tab_state[k], "bg_color"), 0);
-            widget_set_prop_int(c, style_key(key, tab_state[k], "font_size"), 21);
-            widget_set_prop_str(c, style_key(key, tab_state[k], "font_name"), "classic-light");
+        for (unsigned k = 0; k < 10; ++k) {
+            widget_set_prop_int(c, style_key(key, ink_state[k], "bg_color"), 0);
+            widget_set_prop_int(c, style_key(key, ink_state[k], "font_size"), 21);
+            widget_set_prop_str(c, style_key(key, ink_state[k], "font_name"), "classic-light");
         }
         text_ink(c, 0xffffffffu, INK_TAB);
     }
-    if ((c = widget_lookup(win, "search_edit", 1))) search_field_style(c);
+    if ((c = widget_lookup(win, "search_edit", 1))) search_field_margin(c, 32);
     if ((c = widget_lookup(win, "img_search", 1))) image_base_set_image(c, "");
     if ((c = widget_lookup(win, "img_return", 1))) { /* the chevron's tap: the ramp draws it */
         widget_use_style(c, "default");
@@ -374,11 +359,11 @@ void search_paint(widget_t *w, canvas_t *canvas) {
     unsigned fill = (unsigned)I(lcd, LCD_FILL_COLOR);
     search_hint(w);
     if (st.kb_win) {
-        dark_bar_rows(canvas, 0, 375, 60);
+        dark_bar_rows(canvas, 0, 60);
         paint_art(w, canvas, "classic_light_kb_back", 42, 18);
         paint_field(w, canvas, 72, 15, 244);
     } else {
-        dark_bar_rows(canvas, 26, 375, search_strip_end() - 26);
+        dark_bar_rows(canvas, 26, search_strip_end() - 26);
         paint_field(w, canvas, 24, 33, 327);
         paint_bar(w, canvas);
     }
@@ -488,10 +473,8 @@ static void slider_switch_flat(canvas_t *canvas, widget_t *sw) {
     const char *image = widget_get_prop_str(sw, "image", "");
     /* stock's two names, switch_on and switch_off, first differ at [8] */
     int held = image[0] && image[8] == 'n';
-    stops_t rest = { 2, { 0, 100 }, { flat_rest[light], flat_rest[light] } },
-            cell = { 2, { 0, 100 }, { lit, lit } };
-    paint_round_rows(canvas, &track, &rest, 18);
-    paint_round_rows(canvas, held ? &right : &left, &cell, 18);
+    round_fill(canvas, &track, flat_rest[light], 18);
+    round_fill(canvas, held ? &right : &left, lit, 18);
     final_text(canvas, flat_face(), off, &left, 19, held ? ink : over);
     final_text(canvas, flat_face(), on, &right, 19, held ? over : ink);
 }
@@ -662,8 +645,7 @@ int msg_counting(void) { return cp.msg_counting == 1; } /* coverflow.c's library
  * has its own st. */
 void msg_open(widget_t *win) {
     static const char *const hide[] = { "img_animation", "label_msg", "label_scanfolder",
-                                        "img_usbmode", "scrlabel_info" },
-                             *const state[] = { "normal", "pressed", "over", "disable", "focused" };
+                                        "img_usbmode", "scrlabel_info" };
     const char *name = widget_get_prop_str(win, "name", "");
     char key[STYLE_KEY];
     int scan = !tk_strcmp(name, "updatemusic_dialog");
@@ -688,11 +670,11 @@ void msg_open(widget_t *win) {
     }
     st.msg_win = win, cp.msg_src = src, cp.msg_btn = btn, cp.msg_line = c;
     widget_move_resize(btn, 127, 248, 121, flat ? 36 : 34);
-    for (unsigned i = 0; i < sizeof state / sizeof *state; ++i) {
-        widget_set_prop_int(btn, style_key(key, state[i], "bg_color"), 0);
-        widget_set_prop_str(btn, style_key(key, state[i], "font_name"),
+    for (unsigned i = 0; i < 5; ++i) {
+        widget_set_prop_int(btn, style_key(key, ink_state[i], "bg_color"), 0);
+        widget_set_prop_str(btn, style_key(key, ink_state[i], "font_name"),
                             flat ? flat_face() : "classic-light");
-        widget_set_prop_int(btn, style_key(key, state[i], "font_size"),
+        widget_set_prop_int(btn, style_key(key, ink_state[i], "font_size"),
                             flat ? MSG_FLAT_BTN_PX : CONFIRM_CELL_PX);
     }
     text_ink(btn, 0xffffffffu, INK_BUTTON);
@@ -720,8 +702,8 @@ static void msg_paint_flat(widget_t *w, canvas_t *canvas, unsigned fill) {
              *below = widget_lookup(w, "msg_line", 1);
     char name[32];
     if (scan) msg_sync();
-    bar_place(heading, 16, top + 100, 343, MSG_HEAD_H);
-    bar_place(below, 16, top + 134, 343, MSG_FLAT_LINE_H);
+    bar_place(heading, top + 100, MSG_HEAD_H);
+    bar_place(below, top + 134, MSG_FLAT_LINE_H);
     msg_text(heading, flat_ink[light], INK_LABEL);
     msg_text(below, flat_quiet[light], INK_LABEL);
     bar_rect(canvas, RGBA(flat_page()), 0, 26 - dy, 375, 294);
@@ -732,15 +714,13 @@ static void msg_paint_flat(widget_t *w, canvas_t *canvas, unsigned fill) {
         unsigned on = flat_on();
         rect_t cancel = { 127, 248, 121, 36 },
                bar = { MSG_FLAT_X, MSG_FLAT_Y, MSG_FLAT_W, MSG_FLAT_H };
-        stops_t rest = { 2, { 0, 100 }, { flat_rest[light], flat_rest[light] } },
-                lit = { 2, { 0, 100 }, { on, on } };
         msg_text(cp.msg_btn, flat_ink[light], INK_BUTTON);
         if (cp.msg_part >= 0) {
-            paint_round_rows(canvas, &bar, &rest, 2);
+            round_fill(canvas, &bar, flat_rest[light], 2);
             bar.w = cp.msg_part && cp.msg_part < MSG_FLAT_H ? MSG_FLAT_H : cp.msg_part;
-            if (bar.w) paint_round_rows(canvas, &bar, &lit, 2);
+            if (bar.w) round_fill(canvas, &bar, on, 2);
         }
-        paint_round_rows(canvas, &cancel, &rest, 18);
+        round_fill(canvas, &cancel, flat_rest[light], 18);
     }
     stock_canvas_set_fill_color(canvas, fill);
 }
@@ -757,8 +737,8 @@ void msg_paint(widget_t *w, canvas_t *canvas) {
     widget_t *heading = widget_lookup(w, "msg_heading", 1),
              *below = widget_lookup(w, "msg_line", 1);
     if (scan) msg_sync();
-    bar_place(heading, 16, head, 343, MSG_HEAD_H);
-    bar_place(below, 16, line, 343, 20);
+    bar_place(heading, head, MSG_HEAD_H);
+    bar_place(below, line, 20);
     paint_page(w, canvas, 26 - dy);
     if (dy < 26) paint_bar(w, canvas); /* over the bar: bar_title_of has the scan's title */
     paint_art(w, canvas, scan ? "classic_light_orb_note" : "classic_light_orb_usb",

@@ -5,10 +5,12 @@ import ctypes as C
 
 import pytest
 
-from test_nav_paint import (ACCENTS, CLASSIC, CLASSIC_BLUE, GRAPHITE, LABELS, MODERN, RED, RED_PX, TIDAL, WHITE, Canvas, bitmaps,
-                            image_add, msg_paint, named, paint_bg, rgba, slider_paint, slider_scrub, SLIDER_PAGES, SLIDERS,
+from conftest import Config, rgba
+from test_nav_paint import (ACCENTS, CLASSIC, CLASSIC_BLUE, GRAPHITE, MODERN, RED, RED_PX, TIDAL, WHITE, bitmaps,
+                            image_add, msg_paint, named, slider_paint, slider_scrub, SLIDER_PAGES, SLIDERS,
                             layout, st, stock_h, theme, ui_load, world)  # noqa: F401 (fixtures, by name)
 from test_flat_pages import TimeCanvas, face, flip
+from test_nav_paint import quick_page as paint_quick_page
 import test_flat_pages as flat_pages
 import test_nav_loop as loop
 from test_nav_loop import keys, stock_bytes  # noqa: F401 (fixtures, by name)
@@ -63,23 +65,15 @@ def test_cover_flow_s_flip_panel_is_the_hold_menu_s_card(fw, light):
         fw.fn('coverflow__panel_paint', None, C.c_void_p, C.c_int)(canvas.addr, over)
     paper, line = fw.fn('flat_page', C.c_uint)(), 0xd1d1d6 if light == '1' else 0x38383a
     assert canvas.rects[0] == ((0, 0, 294, 285), paper | 0xff000000)  # the ground
-    assert canvas.row(30, 1, 293) == [painters.rgba(paper)] * 292 and canvas.row(56, 0, 294) == [painters.rgba(line)] * 294
+    assert canvas.row(30, 1, 293) == [rgba(paper)] * 292 and canvas.row(56, 0, 294) == [rgba(line)] * 294
     for y in (0, card + 1):  # the ring: inside the panel, so the turn carries it
-        assert canvas.row(y, 12, 282) == [painters.rgba(line)] * 270
+        assert canvas.row(y, 12, 282) == [rgba(line)] * 270
     assert canvas.row(card + 2, 0, 294) == [paper | 0xff000000] * 294
 
 
 def quick_page(fw, world, images, light='0', **config):
     """test_flat_pages' quick_page under Classic Modern."""
-    theme(fw, CLASSIC_MODERN, LIGHT=light, **config)
-    win = world.window('statusbar_dialog', 'dialog')
-    icons = {}
-    for i, (name, image) in enumerate(images.items()):
-        icons[name] = world.add(win, name, 'image', box=(30 + 80 * (i % 4), 40 + 100 * (i // 4), 54, 54), image=image)
-        world.add(win, LABELS[name], 'label', box=(0, 0, 80, 18), text='Label')
-    canvas = Canvas(fw)
-    paint_bg(fw, win, canvas)
-    return win, icons, canvas
+    return paint_quick_page(fw, world, images, light, number=CLASSIC_MODERN, size=54, **config)
 
 
 @pytest.mark.parametrize('light, ground', [('0', 0), ('1', 0xf2f2f7)])
@@ -155,7 +149,7 @@ def test_update_library_s_words_are_in_classic_s_face(fw, world, st):
 def test_set_date_s_fields_are_6_px_apart(fw, keys, number, xs):
     """Classic Modern's date.gap: the day where Classic's is, the month and the year 6 px apart; Modern keeps Classic's
     places. The selectors, the touch, are where the boxes are drawn."""
-    loop.Config(fw, THEME=number.encode())
+    Config(fw, THEME=number.encode())
     top, _ = loop.open_time(fw, loop.Ui(fw), at=(4, 2, 4, 21, 5))
     cells = [top.find(n) for n in loop.DATE]
     assert [w.box()[0] for w in cells] == xs
@@ -166,7 +160,7 @@ def test_set_date_s_fields_are_6_px_apart(fw, keys, number, xs):
 
 @LIGHTS
 def test_set_time_s_fields_keep_classic_s_places_and_the_flat_face(fw, keys, light):
-    loop.Config(fw, THEME=CLASSIC_MODERN.encode(), LIGHT=light.encode())
+    Config(fw, THEME=CLASSIC_MODERN.encode(), LIGHT=light.encode())
     top, _ = loop.open_time(fw, loop.Ui(fw), twelve=True, at=(4, 2, 4, 21, 5))
     top.find(b'slide_view').ints[b'value'] = 1
     top.ints[b'_edit_field'] = 3

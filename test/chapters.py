@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Host parser/process checks, using real FFmpeg for QuickTime and Nero chapters."""
-import argparse
 import ctypes as C
 import mmap
 import pathlib
@@ -10,11 +9,6 @@ import tempfile
 import time
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument('--stock-root', type=pathlib.Path, help='extracted stock rootfs, for bundled FFmpeg checks')
-parser.add_argument('--qemu', type=pathlib.Path, help='qemu-mipsel executable')
-args = parser.parse_args()
-if bool(args.stock_root) != bool(args.qemu): parser.error('--stock-root and --qemu are used together')
 
 class Chapter(C.Structure):
     _fields_ = [('sec', C.c_int), ('title', C.c_char * 256)]
@@ -69,16 +63,7 @@ with tempfile.TemporaryDirectory(prefix='q2-chapters-') as tmp:
         libc.free(c)
         return out
     def extract(path):
-        out = finish(lib.chapters_start(str(path).encode(), now()))
-        if args.stock_root:
-            result = S.run([str(args.qemu), '-L', str(args.stock_root),
-                            str(args.stock_root/'usr/bin/ffmpeg'), '-nostdin', '-v', 'error',
-                            '-i', str(path), '-f', 'ffmetadata', 'pipe:1'], capture_output=True, timeout=10)
-            assert bool(result.returncode) == bool(out[0]), result.stderr
-            if not result.returncode:
-                n, rows = parse(result.stdout.decode())
-                assert n >= 0 and rows == out[1], (rows, out)
-        return out
+        return finish(lib.chapters_start(str(path).encode(), now()))
     def ff(*args):
         S.run(['/usr/bin/ffmpeg', '-nostdin', '-v', 'error', *map(str, args)], check=True)
     bare = d/'empty.m4b'

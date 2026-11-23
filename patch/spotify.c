@@ -208,7 +208,7 @@ static void spot_output(void) {
     const char *dev = output_device(vol);
     if (dev)
         tk_snprintf(out, sizeof out, "%s %s\n", dev, vol);
-    else if (mono_on() || swap_on())
+    else if (opt_on(0) || opt_on(1))
         tk_snprintf(out, sizeof out, "plughw:0,0 h%s\n", vol);
     if (!strcmp(out, sp.out)) return;
     memcpy(sp.out, out, sizeof out);
@@ -261,13 +261,6 @@ static widget_t *browsing(void);
 static void spot_restarting(void);
 
 /* SPOT_LOG's length, 0 without one. */
-static long log_size(void) {
-    void *f = fopen(SPOT_LOG, "rb");
-    long n = f && !fseek(f, 0, 2) ? ftell(f) : 0;
-    if (f) fclose(f);
-    return n;
-}
-
 /* While a play loads: 1 once librespot has logged SPOT_REFUSED since sp.log_from, which moves on
  * (less a match's length, for a line cut between two reads). Only the last 4 KB new are read. */
 static int spot_refused(void) {
@@ -391,9 +384,8 @@ int spot_media(unsigned key) {
 /* A single centre press, DOUBLE_CLICK_MS on, never while scrubbing: it replays the release to stock
  * on_wm_keyup_fun, which turns the screen off, as Now Playing's np_single. */
 static int spot_single(const void *info) {
-    static const unsigned release[EVENT_KEY / 4 + 1] = { [EVENT_KEY / 4] = KEY_CENTER };
     ui.press = 0;
-    if (g_backlight_status) on_wm_keyup_fun((void *)0, (void *)release);
+    screen_off();
     return 0;
 }
 
@@ -1025,7 +1017,8 @@ static void got(void) {
             sp.loading = 1; /* not a timed-out play's 2, which spot_started takes as any track */
             sp.loading = !spot_started();
             sp.load_at = time_now_ms();
-            sp.log_from = log_size();
+            sp.log_from = file_size(SPOT_LOG);
+            if (sp.log_from < 0) sp.log_from = 0;
             spot_np();
         } else if (ok && act == A_REMOVE) {
             br.selected[0] = 0;

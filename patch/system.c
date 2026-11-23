@@ -397,10 +397,9 @@ static int rtc_alarm(unsigned at) { /* 0 clears it; one already set refuses anot
     return !fclose(f) && ok;
 }
 int ringnav_standby(void) {
-    static const unsigned hours[] = { 0, STANDBY_LIMIT_1, STANDBY_LIMIT_2, STANDBY_LIMIT_3 };
     pod_settings();
     unsigned start = st.standby_limit ? rtc_now() : 0;
-    unsigned alarm = start + hours[st.standby_limit] * 3600;
+    unsigned alarm = start + standby_hours[st.standby_limit] * 3600;
     int armed = start && rtc_alarm(0) && rtc_alarm(alarm);
     pw.suspended = 1;
     state_poll(); /* the record a resume that never comes leaves behind */
@@ -500,8 +499,8 @@ int told_once(const char *src, const char *seen, const char *tmp) {
     return 0;
 }
 static void *logo_sync(void *unused) {
-    unsigned n = 0, old_n;
-    unsigned char *b = 0, *old = 0;
+    unsigned n = 0;
+    unsigned char *b = 0;
     const char *err = logo_refused;
     if (access(LOGO_SRC, 0))
         unlink(LOGO_DST), err = 0;
@@ -521,14 +520,12 @@ static void *logo_sync(void *unused) {
         unlink(LOGO_ROT);
     }
     if (b && jpeg_size(b, n) == (320u << 16 | 375)) {
-        old = read_all(LOGO_DST, LOGO_MAX, &old_n);
-        if ((old && old_n == n && !memcmp(old, b, n)) ||
-            blob_io(LOGO_DST, LOGO_DST ".tmp", b, n, 1))
+        if (file_holds(LOGO_DST, b, n, LOGO_MAX) || blob_io(LOGO_DST, LOGO_DST ".tmp", b, n, 1))
             err = 0; /* the same bytes are not written again each boot */
         else
             unlink(LOGO_DST ".tmp"), err = N_("Could not save boot logo");
     }
-    free(b), free(old);
+    free(b);
     if (err == logo_refused && told_once(LOGO_SRC, LOGO_SEEN, LOGO_SEEN ".tmp"))
         err = 0; /* said at an earlier mount: once a file, not each power-on */
     else if (err != logo_refused)

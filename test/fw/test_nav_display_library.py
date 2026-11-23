@@ -9,8 +9,9 @@ import struct
 import pytest
 
 import host
-from conftest import NAVIGATION_SOURCE, O, Deques, Files, claim, high_halves, pod_value
+from conftest import NAVIGATION_SOURCE, O, Config, Deques, Files, claim, high_halves, pod_value
 from test_coverflow import SONGTABLE  # stock's songtable, as demo's CREATE TABLE text has it
+from test_navigation import clock
 
 W_PARENT, EVT_CLICK, EVENT_TYPE, EVENT_KEY, EVENT_X = O['W_PARENT'], O['EVT_CLICK'], O['EVENT_TYPE'], O['EVENT_KEY'], O['EVENT_X']
 STOP = 11
@@ -48,17 +49,6 @@ def st(fw, scratch):
     def field(name, ctype=C.c_int, i=0):
         return ctype.from_address(base + scratch[name] + i * C.sizeof(ctype))
     return field
-
-
-class Config:
-    """config.ini: a key's value, or the default."""
-    def __init__(self, fw, **values):
-        self.values = {k.encode(): v for k, v in values.items()}
-        fw.mock('toolsReadConfig', self.read)
-
-    def read(self, path, section, key, out, default, *_):
-        value = self.values.get(C.string_at(key), C.string_at(default))
-        C.memmove(out, value + b'\0', len(value) + 1)
 
 
 def writes(fw):
@@ -486,18 +476,6 @@ def test_classic_battery_takes_only_its_three_styles(fw):
     page = appearance(fw, ui, THEME=b'1')
     assert clicks_of(fw, ui, page, 'Battery', 3) == [('Percent', [('BATTERY', 1)]), ('Percent Inside', [('BATTERY', 3)]),
                                                      ('Icon', [('BATTERY', 0)])]
-
-
-@pytest.fixture
-def clock(fw):
-    """time and localtime_r: hour is what the clock says."""
-    state = {'hour': 12}
-    def local(now, out, *_):
-        C.c_int.from_address(out + 8).value = state['hour']
-        return out
-    fw.mock('fw_time', lambda *_: 1700000000)
-    fw.mock('fw_localtime_r', local)
-    return state
 
 
 @pytest.mark.parametrize('hour, day', [(12, 1), (22, 0)])
@@ -3316,8 +3294,7 @@ def test_the_albums_list_and_rated_albums_still_group_the_whole_library(fw, reco
     db = Songtable(fw, lib, records)
     Localclass(fw, lib, [records.song(id_=1, album=b'A Night at the Opera', kind=4)])(CLASS_ALBUMS)
     fw.mock('getAllAlbum', lambda *_: lib.staging().append(records.song(id_=3, album=b'Greatest Hits', kind=4)) or 1)
-    none = C.CFUNCTYPE(C.c_int, C.c_void_p)(lambda r: 0)  # no album has hearts
-    assert fw.fn('coverflow_rated', C.c_int, C.c_void_p)(C.cast(none, C.c_void_p)) == 0
+    assert fw.fn('coverflow_rated', C.c_int)() == 0  # no album has hearts: no ratings file
     assert len(db.sent) == 3 and not any(NAMED.search(sql) for sql in db.sent)
     assert 'from (select * from songtable where' in db.sent[0]  # the Albums list's, music alone
     assert {b'album 00', b'album 19', b'greatest hits'} <= {n.lower() for n in db.named}

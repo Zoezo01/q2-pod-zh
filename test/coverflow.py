@@ -76,7 +76,7 @@ slide_menu_set_value slide_menu_item_width list_view_create scroll_view_create l
 image_base_set_image widget_load_image widget_unload_image widget_set_name widget_use_style
 widget_set_text_utf8 widget_restack widget_animator_prop_create widget_animator_prop_set_params widget_animator_start widget_set_visible widget_get_prop_int widget_set_prop_int
 widget_get_prop_str widget_on widget_destroy_children widget_invalidate_force
-widget_count_children widget_get_child widget_lookup widget_move_resize widget_resize widget_get_canvas widget_get_visible
+widget_count_children widget_get_child widget_lookup widget_lookup_by_type widget_move_resize widget_resize widget_get_canvas widget_get_visible
 canvas_get_clip_rect canvas_set_clip_rect widget_set_sensitive widget_get_type tk_strcmp widget_animator_destroy
 timer_add timer_remove navigator_back_to_home navigator_back navigator_window_is_exist window_manager_close_window_force navigator_to_with_context bitmap_create_ex bitmap_destroy bitmap_unlock_buffer
 bitmap_lock_buffer_for_read bitmap_lock_buffer_for_write bitmap_get_line_length
@@ -327,6 +327,11 @@ static void *wm_stack[4]; /* the window manager's windows, bottom first: none un
 static int wm_n;
 unsigned widget_count_children(void *x) { return x == &wm_repaints ? (unsigned)wm_n : (unsigned)W(x)->nkids; }
 void *widget_get_child(void *x, unsigned i) { return x == &wm_repaints ? wm_stack[i] : &w[W(x)->kids[i]]; }
+void *widget_lookup_by_type(void *x, const char *t, int r) { /* direct children only: r 0 */
+    for (int i = 0; x && i < W(x)->nkids; ++i)
+        if (!strcmp(W(&w[W(x)->kids[i]])->type, t)) return &w[W(x)->kids[i]];
+    return 0;
+}
 static void *home_art, *home_list; /* iPod Home's art and list; none in the carousel tests */
 void *widget_lookup(void *x, const char *n, int r) {
     return !x ? 0 : !strcmp(n, "img_cover_flow") ? x : !strcmp(n, "img_homeart") ? home_art :
@@ -2390,9 +2395,11 @@ static void same_name(void) {
     rescan();
 }
 /* Spoken-audio folders and M4B files never make covers, including artist and rated views. */
-static int five_hearts(void *r) { return 5; }
+/* ratings.c's rate_kept: every album holds kept_hearts (5, or 0 for none) */
+static int kept_hearts = 5;
+int rate_kept(int album, unsigned key) { return kept_hearts; }
 static void audiobooks(void) {
-    extern int coverflow_rated(int (*hearts)(void *));
+    extern int coverflow_rated(void);
     int music = albums;
     static const char *const books[] = {
         "/mnt/mmc/Audiobooks/Novel/01.mp3", "/mnt/mmc/aUdIoBoOkS/02.flac",
@@ -2423,7 +2430,7 @@ static void audiobooks(void) {
     artist->at[artist->n++] = records[music + 4];
     assert(!coverflow_artist(artist) && artist->n == 2);
     free(artist);
-    assert(coverflow_rated(five_hearts));
+    assert(coverflow_rated());
     run();
     assert(slide()->nkids == music + 1);
     close_page();
@@ -4383,7 +4390,7 @@ static void arch(void) {
 }
 
 /* ---- Pages, the scoped pages' cards, Go to Album, the build's Cancel row. ---- */
-extern int coverflow_turning(void), coverflow_rated(int (*)(void *)), coverflow_goto_album(void *), coverflow_shows_album(void *);
+extern int coverflow_turning(void), coverflow_rated(void), coverflow_goto_album(void *), coverflow_shows_album(void *);
 extern void *coverflow_tracks(void *);
 extern void coverflow_by_year(void *);
 static int under(const widget *x, const widget *a) {
@@ -4532,7 +4539,6 @@ static void flip_turn(void) {
     *(const char **)(records[a] + REC_TITLE) = 0;
 }
 
-static int no_hearts(void *r) { return 0; }
 static int rated_sort(void) {
     int v = -1;
     FILE *f = fopen(PEQ_ROOT "/mnt/data/ringnav-ratedsort", "rb");
@@ -4573,9 +4579,11 @@ static void scoped_pages(void) {
     assert(force_closes == 1 && backs == 2);
     wm_n = 0;
     close_page();
-    assert(!coverflow_rated(no_hearts)); /* nothing rated: no page */
+    kept_hearts = 0;
+    assert(!coverflow_rated()); /* nothing rated: no page */
+    kept_hearts = 5;
     page = &w[nw + 1];
-    assert(coverflow_rated(five_hearts));
+    assert(coverflow_rated());
     run();
     s = slide();
     int n = s->nkids - 1, lib = saved_sort();
@@ -4601,7 +4609,7 @@ static void scoped_pages(void) {
     *(const char **)(gone + REC_ALBUM) = "Nowhere", *(const char **)(gone + REC_PATH) = "/x";
     assert(!coverflow_goto_album(gone)); /* no tracks: nothing opens */
     window_fail = 1;
-    assert(!coverflow_goto_album(records[0]) && !coverflow_rated(five_hearts)); /* no page to open */
+    assert(!coverflow_goto_album(records[0]) && !coverflow_rated()); /* no page to open */
     window_fail = 0;
     /* An artist page's albums with no memory to sort them keep their order. */
     void *mine = _create_deque(0);
@@ -5503,8 +5511,8 @@ static void unlettered_sorts(void) {
     while (saved_sort() != 0) press_sort();
     close_page();
     page = &w[nw + 1];
-    extern int coverflow_rated(int (*hearts)(void *));
-    assert(coverflow_rated(five_hearts)); /* scoped, in its own order: Rating first */
+    extern int coverflow_rated(void);
+    assert(coverflow_rated()); /* scoped, in its own order: Rating first */
     run();
     at_cap(0);
     close_page();
@@ -5513,7 +5521,7 @@ static void unlettered_sorts(void) {
     int album_sort = 0;
     assert(f && fwrite(&album_sort, sizeof album_sort, 1, f) == 1 && !fclose(f));
     page = &w[nw + 1];
-    assert(coverflow_rated(five_hearts));
+    assert(coverflow_rated());
     run();
     at_cap(0);
     close_page();
@@ -6384,6 +6392,7 @@ int sqlite3_open(const char *path, void **db) {
     return 0;
 }
 int sqlite3_close(void *db) { return 0; }
+int lib_db_open(void **db, const char *pragmas) { return sqlite3_open("/mnt/data/database.db", db) || sqlite3_exec(*db, pragmas, 0, 0, 0); }
 /* The messy library, test/fw/messy_playlists.py's shape made here in a loop: cd 1 20,000 untagged
    singles, each in its own folder; cd 2 5,000 songs of 500 albums, 4 KB album tags and 800-byte
    fileurls with non-UTF-8 bytes; cd 3 300 songs, 280 gone from the card, 20 in folders with a

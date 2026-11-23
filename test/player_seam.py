@@ -12,24 +12,17 @@ import array, math, pathlib, shutil, struct, subprocess, sys, tempfile
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from hci_emu import Emu as HciEmu
 
-AUTH = 0x430114  # the player's licence check
-
 
 class Emu(HciEmu):
     """Every PCM write kept as (rate, channels, format, bytes), and each drop's place among them."""
     def __init__(self, exe, root, aud, tmp):
         self.chunks, self.drops = [], []
-        super().__init__(exe, root, pathlib.Path(tmp).parent, fsmap={'/mnt/mmc': str(aud)})
-        self.hook_fn(AUTH, lambda e: 0)
-        self.alsa_active = True
+        super().__init__(exe, root, pathlib.Path(tmp).parent, fsmap={'/mnt/mmc': str(aud)}, auth_off=True)
         self.on_write = lambda e, data, n, p: self.chunks.append((p.rate, p.ch, p.fmt, data))
 
     def event(self, name, **kw):
         if name == 'pcm_drop': self.drops.append(len(self.chunks))
         super().event(name, **kw)
-
-    def run(self, seconds):
-        return super().run(until=(self.clock - 10**12) / 1e9 + seconds)
 
 
 SECONDS = 2
@@ -312,7 +305,7 @@ def generate(d):
 class Player:
     def __init__(self, exe, root, aud, tmp):
         self.e = Emu(exe, root, aud, tmp)
-        self.e.run(0.3)
+        self.e.run_for(0.3)
         self.seen = 0
 
     def play(self, name, next_name=None, seeks=(), during=None):
@@ -320,21 +313,21 @@ class Player:
         in them. seeks: (at seconds of played time, to seconds). during: a command for 0.3 s in."""
         e = self.e
         first = len(e.chunks)
-        e.send_cmd('{set-songurl\\/mnt/mmc/%s|ss=0|0|0|1|0|90}' % name)
-        e.run(0.05)
+        e.song(name)
+        e.run_for(0.05)
         if next_name:
-            e.send_cmd('{set-gapless\\/mnt/mmc/%s|ss=0|0|0|1|90}' % next_name)
+            e.gapless(next_name)
         if during:
-            e.run(0.3)
+            e.run_for(0.3)
             e.send_cmd(during)
         for at, to in seeks:
-            e.run(at)
+            e.run_for(at)
             e.send_cmd('{mcl-seek\\%d}' % to)
-            e.run(0.02)
+            e.run_for(0.02)
         idle = 0
         for _ in range(400):
             n = len(e.chunks)
-            e.run(0.25)
+            e.run_for(0.25)
             idle = idle + 1 if len(e.chunks) == n else 0
             if idle >= 8 and len(e.chunks) > first: break
         marks = [c for c in e.drops if c >= first]
@@ -430,7 +423,7 @@ def bluetooth(exe, root, aud, tmp):
     player = Player(exe, root, aud, tmp)
     for command in '{mcl-setoutputway\\1}', '{mcl-setvol\\100}', '{mcl-softvolflag\\1}':  # without a volume, silence
         player.e.send_cmd(command)
-        player.e.run(0.05)
+        player.e.run_for(0.05)
     frames = SAMPLES * 48000 // 44100
     ref, _ = player.play('a.flac', 'b.flac')
     out, _ = player.play('a.m4a', 'b.m4a')

@@ -56,8 +56,8 @@ static int un_closed(void *ctx, event_t *event) {
     un.page = 0;
     return 0;
 }
-void up_next(int (*keyup)(void *, event_t *)) {
-    if (un.page || !(un.page = page_open("upnext_page", un_closed, keyup))) return;
+void up_next(void) {
+    if (un.page || !(un.page = page_open("upnext_page", un_closed, page_keyup))) return;
     un_fill(-1);
 }
 /* A Play/Pause hold on a row (un_hold, deferred out of its dispatch): the row's track plays next

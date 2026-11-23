@@ -197,7 +197,7 @@ def function_macros(address):
     """Each stock function in address (name -> its C address) as a macro calling it there."""
     return [f'#define {name} (({ret} (*)({args})){address[name]})' for name, (ret, args) in FUNCTIONS.items() if name in address]
 
-def compile_common(out, binary, player=False, flac_experiments=()):  # pragma: no mutate block
+def compile_common(out, binary, player=False, flac_fast_paths=False):  # pragma: no mutate block
     got = {}
     for line in run('readelf', '-AW', binary).splitlines():
         words = line.split()
@@ -265,7 +265,8 @@ def compile_common(out, binary, player=False, flac_experiments=()):  # pragma: n
     flags = [*FLAGS, '-fno-math-errno', '-ffunction-sections', '-fdata-sections']
     if player: flags += ['-mnan=2008']
     objects = []
-    for name in (['peq.c', 'peq_player.c', 'mp3_gapless.c', 'lavf_gapless.c'] + [f'flac_{n}.c' for n in flac_experiments]) if player else UI_SOURCES:
+    from flac import SOURCES as FLAC_SOURCES
+    for name in (['peq.c', 'peq_player.c', 'mp3_gapless.c', 'lavf_gapless.c'] + (list(FLAC_SOURCES) if flac_fast_paths else [])) if player else UI_SOURCES:
         obj = out/(name+'.o')
         run('clang', *flags, '-I', out, '-c', ROOT/'patch'/name, '-o', obj)
         objects.append(obj)
@@ -273,7 +274,7 @@ def compile_common(out, binary, player=False, flac_experiments=()):  # pragma: n
     run('clang', *flags, '-c', out/'peq_imports.S', '-o', obj)
     return [*objects, obj]
 
-def patch_player(raw, out, flac_experiments=()):  # pragma: no mutate block
+def patch_player(raw, out, flac_fast_paths=False):  # pragma: no mutate block
     from flac import EXPORTS, patch_words
     check(sha(raw) == PLAYER_SHA, 'Unexpected hciplayer')
     out.mkdir(exist_ok=True)
@@ -284,18 +285,20 @@ def patch_player(raw, out, flac_experiments=()):  # pragma: no mutate block
     *texts, flags, eq_open = struct.unpack_from('<6I', raw, fileoff(raw, EQ_DESC))
     check(([cstr(t) for t in texts], flags, eq_open) == ([b'Equalizer audio filter', b'equalizer', b'Anders', b''], 1, EQ_OPEN),
           'EQ descriptor mismatch')
-    objects = compile_common(out, binary, True, flac_experiments=flac_experiments)
+    objects = compile_common(out, binary, True, flac_fast_paths=flac_fast_paths)
     script = out/'link.ld'
     script.write_text(f'SECTIONS {{ . = {PLAYER_BASE:#x}; .text : {{ *(.text*) }} .rodata : {{ *(.rodata*) }} '
                       '.data : { *(.data*) *(.sdata*) } .bss : { *(.bss*) *(.sbss*) } '
                       '__end = .; /DISCARD/ : { *(.comment) *(.note*) *(.pdr) *(.mdebug*) '
                       '*(.MIPS.abiflags) *(.reginfo) } }')
+    jal_hooks = (*DAC_RELEASE, PRELOAD_FAILED, FORCED_EOF, EXIT_HOLD, *STOP_SITES, COLD_CLEAR)
+    j_hooks = (*PROBE_STOP, PRELOAD_PUBLISH, STOP_FILL, *PRELOAD_CLOSE, FLAC_GATE, SEEK_NOSYNC)
     run('ld.lld', '-m', 'elf32ltsmip', '--gc-sections', '-T', script, '-e', 'peq_open', '--undefined=mp3_seek', '--undefined=id3_gain',
         '--undefined=mp3_private_alloc', '--undefined=mp3_filter_entry', '--undefined=mp3_close', '--undefined=mp3_read', '--undefined=mp3_fill',
         '--undefined=hci_idle_wait',
         '--undefined=hci_pause_wait', '--undefined=hci_command', '--undefined=rs_open', '--undefined=ao_init', '--undefined=ao_uninit',
-        *(f'--undefined={name}' for _, _, name in (*DAC_RELEASE, *PROBE_STOP, *STOP_SITES, STOP_FILL, *PRELOAD_CLOSE, FORCED_EOF, EXIT_HOLD, PRELOAD_PUBLISH, PRELOAD_FAILED, COLD_CLEAR, FLAC_GATE, SEEK_NOSYNC)),
-        *(f'--undefined={symbol}' for n in flac_experiments for symbol in EXPORTS[n]),
+        *(f'--undefined={name}' for _, _, name in (*jal_hooks, *j_hooks)),
+        *(f'--undefined={symbol}' for symbol in EXPORTS if flac_fast_paths),
         *objects, '-o', out/'peq.elf')
     run('llvm-objcopy', '-O', 'binary', out/'peq.elf', out/'peq.bin')
     ps = symbols(out/'peq.elf')
@@ -307,36 +310,13 @@ def patch_player(raw, out, flac_experiments=()):  # pragma: no mutate block
     patch_word(data, *PAUSE_WAIT, jal(ps['hci_pause_wait']), 'pause loop waits for a command')
     patch_word(data, *CMD_DONE, jal(ps['hci_command']), 'a command wakes the idle and pause loops')
     patch_word(data, *IDLE_WAIT, jal(ps['hci_idle_wait']), 'idle loop waits on the play flag')
-    for address, stock, patched in EQ_RATE_GATES:
-        patch_word(data, address, stock, patched, 'Equalizer rate gate')
-    for address, stock, patched in USB_BUFFER:
-        patch_word(data, address, stock, patched, 'USB DAC buffer')
-    for address, stock, name in DAC_RELEASE:
-        patch_word(data, address, stock, jal(ps[name]), 'DAC release wait')
-    for address, stock, name in PROBE_STOP:
-        patch_word(data, address, stock, j(ps[name]), 'Probe stop')
-    patch_word(data, PRELOAD_PUBLISH[0], PRELOAD_PUBLISH[1], j(ps[PRELOAD_PUBLISH[2]]), 'Preload publish')
-    patch_word(data, PRELOAD_FAILED[0], PRELOAD_FAILED[1], jal(ps[PRELOAD_FAILED[2]]), 'Preload failed')
-    for address, stock, patched in PRELOAD_FAIL_STORES:
-        patch_word(data, address, stock, patched, 'Preload failed')
-    patch_word(data, FORCED_EOF[0], FORCED_EOF[1], jal(ps[FORCED_EOF[2]]), 'Forced EOF')
-    patch_word(data, EXIT_HOLD[0], EXIT_HOLD[1], jal(ps[EXIT_HOLD[2]]), 'Exit hold')
-    for address, stock, name in STOP_SITES:
-        patch_word(data, address, stock, jal(ps[name]), 'Stop base')
-    for address, stock, patched in STOP_NOPS:
-        patch_word(data, address, stock, patched, 'Stop base')
-    patch_word(data, STOP_FILL[0], STOP_FILL[1], j(ps[STOP_FILL[2]]), 'Stop in a fill')
-    for address, stock, name in PRELOAD_CLOSE:
-        patch_word(data, address, stock, j(ps[name]), 'Preload close')
-    patch_word(data, COLD_CLEAR[0], COLD_CLEAR[1], jal(ps[COLD_CLEAR[2]]), 'Cold clear')
-    patch_word(data, FLAC_GATE[0], FLAC_GATE[1], j(ps[FLAC_GATE[2]]), 'FLAC gate')
-    patch_word(data, SEEK_NOSYNC[0], SEEK_NOSYNC[1], j(ps[SEEK_NOSYNC[2]]), 'Seek no sync')
-    for address, stock, patched in SEEK_WORDS:
-        patch_word(data, address, stock, patched, 'Seek no sync')
-    for address, stock, patched in FLAC_META_EOF:
-        patch_word(data, address, stock, patched, 'FLAC metadata at EOF')
-    for address, stock, patched in MEDIA_INFO_NULL:
-        patch_word(data, address, stock, patched, 'Music info with no stream')
+    for a, s, n in jal_hooks:
+        patch_word(data, a, s, jal(ps[n]), n)
+    for a, s, n in j_hooks:
+        patch_word(data, a, s, j(ps[n]), n)
+    for a, s, v in (*EQ_RATE_GATES, *USB_BUFFER, *PRELOAD_FAIL_STORES, *STOP_NOPS, *SEEK_WORDS, *FLAC_META_EOF,
+                    *MEDIA_INFO_NULL, LAVF_PRIV, MOV_EDITS):
+        patch_word(data, a, s, v, 'player word')
     patch_word(data, SEEK_SLOT, STOCK_SEEK, ps['mp3_seek'], 'Audio demuxer seek slot')
     patch_word(data, RS_OPEN_SLOT, RS_OPEN, ps['rs_open'], 'Resampler open slot')
     patch_word(data, AO_INIT_SLOT, AO_INIT, ps['ao_init'], 'Output init slot')
@@ -348,12 +328,10 @@ def patch_player(raw, out, flac_experiments=()):  # pragma: no mutate block
     patch_word(data, MP3_FILL, DEMUX_FILL, ps['mp3_fill'], 'MP3 tail tags')
     for address in ID3_CALLS:
         patch_word(data, address, jal(STOCK_ID3), jal(ps['id3_gain']), 'MP3 ReplayGain')
-    patch_word(data, *LAVF_PRIV, 'lavf gapless window')
-    patch_word(data, *MOV_EDITS, 'M4A edit list kept')
-    for address, stock, patched in patch_words(flac_experiments, ps):
+    for address, stock, patched in patch_words(flac_fast_paths, ps):
         patch_word(data, address, stock, patched, 'Experimental FLAC')
     append_payload(data, payload, PLAYER_BASE, max(len(payload), ps['__end']-PLAYER_BASE), 'player')
     data = zero_pdr(data, 'hciplayer')
     (out/'hciplayer').write_bytes(data)
     return dict(stock_sha256=PLAYER_SHA, sha256=sha(data), payload_sha256=sha(payload),
-                **({'flac_experiments': list(flac_experiments)} if flac_experiments else {}))
+                **({'flac_fast_paths': True} if flac_fast_paths else {}))

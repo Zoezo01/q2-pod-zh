@@ -10,11 +10,13 @@ import struct
 import pytest
 
 import host
-from conftest import O, SPOT_FAIL, SPOT_NOSOCK, SPOT_OK, Deques, Game, block, claim, high_halves, libc, text
+from conftest import O, SPOT_FAIL, SPOT_NOSOCK, SPOT_OK, Config, Deques, Dirent, Game, block, claim, high_halves, libc, text
+from fuzz import hostile
 from test_coverflow import png  # an icon's header
 from test_netupdate import JOB_INSTALL, JOB_REMOVE, SH_CANCELLED, SH_CARD, SH_NET, SH_OK, Sh  # test_netupdate.py keeps netupdate.c's App Store mirror
 from test_radio import Rd, execl, mixer  # noqa: F401  the mirror; the child's execl calls; USB_MIXER, for a USB DAC's volume
 from test_tidal import Au, Queue, free_stubbed  # test_tidal.py keeps tidal.c's au mirror
+from test_nav_loop import toasts
 
 APPS_MAX = 64
 REPLY_MAX = 64 << 10
@@ -45,9 +47,7 @@ class App(C.Structure):
 
 
 class Ap(C.Structure):
-    _fields_ = [('a', App * APPS_MAX), ('n', C.c_int), ('shown', C.c_int), ('order', C.c_int * APPS_MAX),
-                ('games', C.c_int), ('game', C.c_int * APPS_MAX), ('libs', C.c_int), ('lib', C.c_int * APPS_MAX),
-                ('nets', C.c_int), ('net', C.c_int * APPS_MAX)]
+    _fields_ = [('a', App * APPS_MAX), ('n', C.c_int), ('cnt', C.c_int * 4), ('rows', (C.c_int * APPS_MAX) * 4)]
 
 
 class Sm(C.Structure):
@@ -108,25 +108,6 @@ class Scope(C.Structure):
     _fields_ = [('rules', C.POINTER(Rule)), ('sql', C.c_void_p), ('bytes', C.c_uint), ('ready', C.c_int), ('failed', C.c_int)]
 
 
-class Dirent(C.Structure):  # test/fw/host.py's
-    _fields_ = [('ino', C.c_uint), ('off', C.c_uint), ('reclen', C.c_ushort), ('d_type', C.c_ubyte), ('d_name', C.c_char * 256)]
-
-
-def hostile(seed, samples, count=1500, alphabet=b'%\t\n=/. \r'):
-    """Random bytes, every truncation of the samples, and mutations of them."""
-    r = random.Random(seed)
-    for _ in range(count):
-        yield r.randbytes(r.randrange(120)).replace(b'\0', b'\n')
-    for s in samples:
-        for k in range(len(s)):
-            yield s[:k]
-    for _ in range(count):
-        b = bytearray(r.choice(samples))
-        for _ in range(r.randrange(1, 6)):
-            b[r.randrange(len(b))] = r.choice(alphabet)
-        yield bytes(b)
-
-
 class World:
     """The card, /tmp and the clocks: files by path, folders listed as given, every effect logged."""
     def __init__(self, fw, files=None, dirs=None, now=1000):
@@ -135,6 +116,7 @@ class World:
         self.owner = {}  # a path's st_uid, root's by default
         self.fail_write = lambda name: False
         fw.mock('tk_str_start_with', lambda s, p, *_: C.string_at(s).startswith(C.string_at(p)))
+        fw.mock('tk_str_end_with', lambda s, e, *_: C.string_at(s).endswith(C.string_at(e)))
         for stub, fn in (('fw_fopen', self.fopen), ('fw_fread', self.fread), ('fw_fseek', self.fseek), ('fw_fwrite', self.fwrite), ('fw_rename', self.rename),
                          ('fw_unlink', self.unlink), ('fw_system', self.system), ('fw_access', self.access), ('fw___xstat', self.stat),
                          ('fw_opendir', self.opendir), ('fw_readdir', self.readdir)):
@@ -446,7 +428,7 @@ def scan(fw):
 
 def names(fw, fn):
     get = fw.fn(fn, C.c_char_p, C.c_int)
-    return [get(k) for k in range(-1, ap(fw).shown + 1)]
+    return [get(k) for k in range(-1, ap(fw).cnt[0] + 1)]
 
 
 def test_scan_finds_apps_by_name(fw):
@@ -509,7 +491,7 @@ def test_a_hidden_app_has_no_streaming_row(fw):
     assert (ap(fw).a[1].id, ap(fw).a[1].hidden, ap(fw).a[1].present) == (b'airplay', 1, 1)
 
 
-ROWS = ROW_STREAMING, ROW_GAMES, ROW_LIBRARY = range(3)  # addon.c's, in the order Ap counts them: shown, games, libs
+ROWS = ROW_STREAMING, ROW_GAMES, ROW_LIBRARY = range(3)  # addon.c's, in the order Ap's cnt counts them: Streaming, games, libs
 ROW_NETWORK = 3
 
 
@@ -523,7 +505,7 @@ ROW_NETWORK = 3
 def test_a_manifest_says_where_its_row_is(fw, manifest, row):
     card(fw, one=manifest)
     scan(fw)
-    assert ap(fw).a[0].row == row and (ap(fw).shown, ap(fw).games, ap(fw).libs) == tuple(int(row == r) for r in ROWS)
+    assert ap(fw).a[0].row == row and (ap(fw).cnt[0], ap(fw).cnt[1], ap(fw).cnt[2]) == tuple(int(row == r) for r in ROWS)
 
 
 def test_wifi_and_network_keys(fw):
@@ -539,7 +521,7 @@ def test_wifi_and_network_keys(fw):
 @pytest.mark.parametrize('manifest', [b'name=N\nrow=setting\n', b'name=N\nrow=Settings\n'])
 def test_unknown_row_still_streaming(fw, manifest):
     card(fw, one=manifest)
-    assert fw.fn('addon_network', C.c_int)() == 0 and ap(fw).shown == 1
+    assert fw.fn('addon_network', C.c_int)() == 0 and ap(fw).cnt[0] == 1
 
 
 @pytest.mark.parametrize('manifest, wifi', [(b'wifi=1\n', 1), (b'wifi=1\r\n', 1), (b'wifi=0\n', 0), (b'wifi=yes\n', 0), (b'', 0)])
@@ -817,7 +799,7 @@ def test_the_features_are_published_at_every_scan(fw):
 
 
 def test_hostile_manifests(fw):
-    for raw in hostile(41, [b'name=Foo Bar\nsearch=Find\nqr=1\ngoto=1\n'], 600):
+    for raw in hostile(41, [b'name=Foo Bar\nsearch=Find\nqr=1\ngoto=1\n'], 600, b'%\t\n=/. \r', 120, b'\n'):
         world = card(fw, one=raw)
         ap(fw).n = 0
         n = scan(fw)
@@ -1023,7 +1005,7 @@ def test_a_list_of_exactly_the_limit_keeps_its_last_line(fw):
 def test_hostile_playlists(fw):
     world = World(fw)
     samples = [b'#EXTM3U\n\xef\xbb\xbf' + SONG + b'\r\n/tmp/x\n/mnt/mmc/../y\n#c\n']
-    for raw in hostile(42, samples, 800, b'\n\r#/.\xef\xbb\xbf'):
+    for raw in hostile(42, samples, 800, b'\n\r#/.\xef\xbb\xbf', 120, b'\n'):
         next_, want, _ = m3u(fw, raw, world)
         assert want == b'' or (want.startswith(b'/mnt/mmc/') and b'\n' not in want)
         world.lists.clear(), world.names.clear()
@@ -1577,7 +1559,7 @@ def test_an_app_removing_a_file_that_isnt_the_timer_leaves_it(fw):
 
 def test_hostile_sleep_files(fw):
     s = Sleep(fw)
-    for raw in hostile(43, [b'until 1000600\n', b'until 99999999999'], 800, b' 0159\n'):
+    for raw in hostile(43, [b'until 1000600\n', b'until 99999999999'], 800, b' 0159\n', 120, b'\n'):
         if raw.startswith(b'end'):  # reads the stock queue's position, at its address on the Q2
             continue
         s.read(raw)
@@ -1929,11 +1911,7 @@ SNAKE_SOCK = b'/tmp/q2-snake.input.sock'
 
 def settings(fw, **values):
     """config.ini as Q2 Pod reads its settings: these keys' values, every other its default."""
-    wanted = {k.encode(): v for k, v in values.items()}
-    def read(path, section, key, out, default, *_):
-        value = wanted.get(C.string_at(key), C.string_at(default))
-        C.memmove(out, value + b'\0', len(value) + 1)
-    fw.mock('toolsReadConfig', read)
+    Config(fw, **values)
 
 
 class CardGame:
@@ -5535,7 +5513,7 @@ PRESSES = {b'library': lambda fw, k: fw.fn('addon_lib_open', C.c_int, C.c_void_p
 @pytest.mark.parametrize('row', PRESSES)
 def test_an_app_s_library_or_games_row_opens_its_page(fw, row):
     p = Page(fw, b'name=Foo\nrow=%s\n' % row, opens=False)
-    assert ap(fw).shown == 0  # no Streaming row
+    assert ap(fw).cnt[0] == 0  # no Streaming row
     for k in (5, -1, 0):  # a row past the list opens nothing
         PRESSES[row](fw, k)
         assert bool(p.pg.page) == (k == 0)
@@ -5697,7 +5675,7 @@ def test_hostile_status_files(fw):
     lcd, canvas = block(fw, size=4096), block(fw, size=4096)
     C.c_void_p.from_address(canvas + CANVAS_LCD).value = lcd
     paint = fw.fn('addon_paint', None, C.c_void_p, C.c_void_p)
-    for raw in hostile(45, samples, 800, b'0af=z\n '):
+    for raw in hostile(45, samples, 800, b'0af=z\n ', 120, b'\n'):
         q.again(raw)
         if q.code:
             paint(q.qp.qr, canvas)  # a hidden widget isn't painted
@@ -6239,7 +6217,7 @@ def test_stocks_own_import_gets_the_whole_folder(fw):
 def test_hostile_requests(fw):
     q = Requests(fw, 'a.m3u')
     samples = [f'7\r\nscan\nimport {PL}\nadd {PL}\n'.encode(), f'8\nadd {LIB_DIR}{"n" * 80}.m3u\nimport {LIB_DIR}x/y\n'.encode()]
-    for k, raw in enumerate(hostile(46, samples, 800, b'\n\r /.\xff')):
+    for k, raw in enumerate(hostile(46, samples, 800, b'\n\r /.\xff', 120, b'\n')):
         libup(fw).state = L_IDLE
         q.world.names.clear()
         q.take(raw)
@@ -6362,7 +6340,7 @@ def test_an_app_whose_row_is_not_streaming_s_is_asked_for_its_request_too(fw, ro
     lib = Library(fw, 'a.m3u', gone=b'name=Gone\n', foo=b'name=Foo\nrow=%s\n' % row)
     del lib.world.files[b'/mnt/mmc/.gone/q2-gone']  # a slot before it whose app left the card: passed over
     scan(fw)
-    assert ap(fw).shown == 0
+    assert ap(fw).cnt[0] == 0
     lib.request(f'7\nimport {LIB_DIR}a.m3u\n'.encode())
     lib.poll()
     assert lib.imports == [[b'a.m3u']] and lib.answer() == b'7 ok\n'
@@ -6736,7 +6714,7 @@ def test_hostile_rules_files(fw):
     world = World(fw)
     samples = [b"0/mnt/mmc/A\n1/mnt/mmc/A/It's\n0/mnt/mmc/\xc3\xa9\n"]
     set_ = scope(fw)
-    for raw in hostile(47, samples, 800, b"'\n01/"):
+    for raw in hostile(47, samples, 800, b"'\n01/", 120, b'\n'):
         world.files[RULES] = raw
         world.names.clear()
         set_.ready = 0
@@ -6748,17 +6726,8 @@ def test_hostile_rules_files(fw):
 
 def shortcut(fw, value):
     """IPOD SHORTCUT in config.ini, every other key its default; Home's shortcut row's click."""
-    def read(path, section, key, out, default, *_):
-        v = value if C.string_at(key) == b'SHORTCUT' else C.string_at(default)
-        C.memmove(out, v + b'\0', len(v) + 1)
-    fw.mock('toolsReadConfig', read)
+    Config(fw, SHORTCUT=value)
     return fw.fn('home_shortcut_open', C.c_int, C.c_void_p, C.c_void_p)
-
-
-def toasts(fw):
-    out = []
-    fw.mock('navigator_to_with_context', lambda page, info, *_: out.append(C.string_at(info + 8)))  # toast's dialog
-    return out
 
 
 def test_the_groovebox_shortcut_starts_the_card_game_with_the_sound(fw):

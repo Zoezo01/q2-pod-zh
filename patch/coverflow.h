@@ -47,10 +47,9 @@ typedef struct {
      * in the library's order and sort their own order, one album's tracks alone
      * (coverflow_goto_album), or the playlists, albums holding their containers
      * (coverflow_playlists); all_albums, all_stock and all_sort the library's, back on close.
-     * No saved album; hearts gives a rated album's. */
+     * No saved album. */
     int scoped, all_sort;
     void *all_albums, *all_stock;
-    int (*hearts)(void *);
 } cf_page_t;
 extern cf_page_t cf;
 

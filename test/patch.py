@@ -1945,7 +1945,7 @@ m=Machine(); view,imgs=home_list(m); click_target(m,imgs[2])
 m.paint(view)
 assert m.selected(view)==0
 for i in range(1,7): assert m.call()==11 and m.selected(view)==i and m.get(view+O['SCROLL_Y'])==0
-m.paint(view); assert m.rounded[0]['rect']==(25,6*HOME_ROW+HOME_ROW//2-3,6,6)
+m.paint(view); assert m.rounded[0]['rect']==(25,6*SET0.home_row+SET0.home_row//2-3,6,6)
 assert m.call(gap=50)==11 and m.selected(view)==6   # bumped
 assert m.call(gap=O['EDGE_PAUSE_MS'])==11 and m.selected(view)==0
 assert m.call(O['KEY_PREV'],gap=50)==11 and m.selected(view)==0   # bumped
@@ -1963,7 +1963,7 @@ m.byte(syms['g_backlight_status'],0); m.paint(view); assert m.selected(view)==-1
 paint_bar(); assert ('widget_invalidate_force',view) not in [c[:2] for c in m.calls]
 m.touch(); m.byte(syms['g_backlight_status'],1)
 paint_bar(); assert ('widget_invalidate_force',view) in [c[:2] for c in m.calls]
-m.paint(view); assert m.selected(view)==0 and m.rounded[0]['rect']==(25,HOME_ROW//2-3,6,6)
+m.paint(view); assert m.selected(view)==0 and m.rounded[0]['rect']==(25,SET0.home_row//2-3,6,6)
 paint_bar(); assert ('widget_invalidate_force',view) not in [c[:2] for c in m.calls]; passed()
 
 # Chevrons: the stock list_into, where stock rows put img_into, on each visible row of a
@@ -1975,7 +1975,7 @@ m=Machine(); view,imgs=home_list(m); click_target(m,imgs[2]); m.clip=(0,0,375,32
 m.paint(view)
 half=O['CHEVRON_W']-25  # centre of the 50px image, as stock img_into
 bar=lambda: []
-assert m.rounded[0]['rect']==(25,HOME_ROW//2-3,6,6) and m.icons==bar()
+assert m.rounded[0]['rect']==(25,SET0.home_row//2-3,6,6) and m.icons==bar()
 assert loaded(m)==[] and m.clip==(0,0,375,320); passed()
 m.call(); m.paint(view); assert m.selected(view)==1 and m.rounded[0]['rect'][1]>0 and m.icons==bar(); passed()  # follows the bar
 # Drawn in touch mode too, with Home's bar, which touch never hides; none while stock
@@ -1985,8 +1985,8 @@ m.byte(syms['g_navbar_status'],1); m.paint(view); assert not m.icons and not loa
 # Modern: Home's accent bar spans the list and the chevron rides it alone.
 m=Machine(); m.config['THEME']='2'; view,imgs=home_list(m); click_target(m,imgs[2]); m.clip=(0,0,375,320)
 m.paint(view)
-cbar=lambda: [(HOME_LIST_W-half+O['HOME_CHEVRON_SHIFT'],m.sel()[1]+HOME_ROW//2,(0,0,HOME_LIST_W,7*HOME_ROW))]
-assert m.sel()==(0,0,HOME_LIST_W,HOME_ROW) and m.icons==cbar() and not m.rounded
+cbar=lambda: [(HOME_LIST_W-half+O['HOME_CHEVRON_SHIFT'],m.sel()[1]+SET0.home_row//2,(0,0,HOME_LIST_W,7*SET0.home_row))]
+assert m.sel()==(0,0,HOME_LIST_W,SET0.home_row) and m.icons==cbar() and not m.rounded
 assert m.bands[1][4]==color_t(ACCENTS[0][0]) and loaded(m)==['list_into'] and m.clip==(0,0,375,320)
 m.call(); m.paint(view); assert m.selected(view)==1 and m.sel()[1]>0 and m.icons==cbar(); passed()
 # Playlists: every row follows the scroll, clipped to the viewport; the half-width
@@ -2187,7 +2187,7 @@ m.call(address=HOOKS['widget_on_paint_border'][0],args=(m.art,m.canvas,0,0),gap=
 # The list paints only left of the panel; the placeholder (no size) fills the panel.
 m.word(m.canvas+O['CANVAS_X'],0); m.word(m.canvas+O['CANVAS_Y'],30+HOME_TOP)
 m.call(address=HOOKS['widget_on_paint_background'][0],args=(m.list,m.canvas,0,0),gap=0)
-assert m.clip==(0,30+HOME_TOP,SPLIT,7*HOME_ROW),m.clip
+assert m.clip==(0,30+HOME_TOP,SPLIT,7*SET0.home_row),m.clip
 m.call(address=HOOKS['widget_on_paint_border'][0],args=(m.list,m.canvas,0,0),gap=0); assert m.clip==(0,0,375,320)
 m.image_size=None
 m.u.mem_write(syms['g_lastcover_url'],b'/p/none\0')
@@ -5674,7 +5674,7 @@ passed()
 
 m=Machine(); style_color(m,red)
 # config_value passes its default in decimal: SHORTCUT's SETTING_N_SHORTCUT (12) is out of range, so no shortcut
-assert m.config_reads==[('/mnt/data/config.ini','IPOD',key,'0') for key in ('ACCENT','HOME','BATTERY','THEME')]+[('/mnt/data/config.ini','IPOD','SHORTCUT','12'),('/mnt/data/config.ini','IPOD','MINIMAL_ACCENT','0'),('/mnt/data/config.ini','IPOD','ROUNDED','1'),('/mnt/data/config.ini','IPOD','LIGHT','0'),('/mnt/data/config.ini','IPOD','KEEPLIT','0'),('/mnt/data/config.ini','IPOD','NPCENTRED','0'),('/mnt/data/config.ini','IPOD','KEYTONEHP','0'),('/mnt/data/config.ini','IPOD','SCRUBSINGLE','0'),('/mnt/data/config.ini','IPOD','TIMETITLE','1')]+[('/mnt/data/config.ini','IPOD',key,v) for key,v in (('STATUSBAR','0'),('SHOWQ2POD','1'),('CLASSIC_LIGHT_ACCENT','9'),('HOMELIB','1'),('ROWPREVIEW','1'),('ROWART','1'))]; passed()
+assert m.config_reads==[('/mnt/data/config.ini','IPOD',key,'0') for key in ('ACCENT','HOME','BATTERY','THEME')]+[('/mnt/data/config.ini','IPOD','SHORTCUT','12'),('/mnt/data/config.ini','IPOD','ROUNDED','1'),('/mnt/data/config.ini','IPOD','LIGHT','0'),('/mnt/data/config.ini','IPOD','KEEPLIT','0'),('/mnt/data/config.ini','IPOD','NPCENTRED','0'),('/mnt/data/config.ini','IPOD','KEYTONEHP','0'),('/mnt/data/config.ini','IPOD','SCRUBSINGLE','0'),('/mnt/data/config.ini','IPOD','TIMETITLE','1'),('/mnt/data/config.ini','IPOD','MINIMAL_ACCENT','0')]+[('/mnt/data/config.ini','IPOD',key,v) for key,v in (('STATUSBAR','0'),('SHOWQ2POD','1'),('CLASSIC_LIGHT_ACCENT','9'),('HOMELIB','1'),('ROWPREVIEW','1'),('ROWART','1'))]; passed()
 # theme()/scheme(): the active built-in and its scheme, settings read on first use. THEME out of
 # range is Minimal; Classic's stored Ivory and an out-of-range CLASSIC_LIGHT_ACCENT are Classic Blue, on Cobalt's
 # tones; Modern's stored Ivory and an out-of-range ACCENT are Graphite's scheme; a missing MINIMAL_ACCENT is Graphite, a stored Ivory
@@ -7472,6 +7472,23 @@ for kw,tone,want in (({'po':1},1,1),({'bal':1},1,1),({'way':1},1,1),({'way':2},1
     m=Machine(); m.config['KEYTONEHP']='1'; m=routed(audible(m,tone=tone),**kw)
     m.call(address=syms['buzzeer_switch'],args=(1,0,0,0)); assert buzzes(m)==want,(kw,tone)
 passed()
+# The click's own write (tone_worker). The cases above have no /dev/mcu, so they sound through stock's
+# command. With one, the worker hands the MCU what cmd_mcu write_str buzzer does: libhardware2's
+# mcu_write_data_timeout request with the string, its length with the NUL and cmd_mcu's timeout, twelve
+# bytes as the Q2's kernel reads them, then closes it, and stock's command never runs.
+class McuMachine(Machine):
+    def __init__(self):
+        super().__init__(); self.mcu=[]
+        for n in ('open','ioctl','close'): self.handlers[syms[n+'@GLIBC_2.0']]='mcu:'+n
+    def hook(self,u,address,size,unused):
+        name=self.handlers.get(address,''); a,b,c=[u.reg_read(r) for r in REGS[:3]]
+        if not name.startswith('mcu:'): return super().hook(u,address,size,unused)
+        if name=='mcu:open': assert (self.text(a),b)==('/dev/mcu',2); self.mcu.append('open'); ret=9
+        elif name=='mcu:ioctl': self.mcu.append((a,b,self.text(self.get(c)),self.get(c+4),self.get(c+8))); ret=7
+        else: self.mcu.append(('close',a)); ret=0
+        self.returns(ret,clobber=True)
+m=routed(audible(McuMachine())); m.call(address=syms['buzzeer_switch'],args=(1,0,0,0))
+assert m.mcu==['open',(9,0x80044d76,'buzzer',7,300000),('close',9)] and not buzzes(m); passed()
 # A reboot keeps the place (playback.c ringnav_reboot): Restart (device_reboot) and the firmware update's
 # dialog, which stops the player before it flashes, save as power-off does (save_memoryplay_info, which
 # ringnav_savequeue hooks) before stock runs, with the dialog's arguments; a stopped player (1) saves nothing.
@@ -7813,7 +7830,7 @@ def home_settings(full,modern=0):
             roww=O['HOME_MODERN_ROW'] if full else O['HOME_SPLIT_W']
             x,y,_=m.icons[0]
             shift=O['HOME_FULL_CHEVRON_SHIFT'] if full else O['HOME_CHEVRON_SHIFT']
-            assert x==roww-O['CHEVRON_W']+25+shift and y==m.sel()[1]+HOME_ROW//2
+            assert x==roww-O['CHEVRON_W']+25+shift and y==m.sel()[1]+SET0.home_row//2
             # Check the shipped glyph's ink, including its tapered ends, against the glass.
             for ix,iy in ink:
                 inset=corner_inset(30+y-25+iy)

@@ -14,7 +14,7 @@ import zipfile
 import pytest
 
 import host
-from conftest import O, block
+from conftest import Dirent, O, block
 
 # stock.h's Q2POD_TAG: tools/build.py's VERSION (host.py builds as a release, not --dev)
 TAG = host.tools_build.VERSION.encode()
@@ -1126,8 +1126,8 @@ def test_a_part_the_card_cant_give_back_is_a_card_error(fw):
 def fetch(fw, url=b'https://x', tag_size=64, file=None, start=0):
     tag, code = block(fw, size=tag_size), C.c_long(0)
     xfer = (C.c_int * 2)()
-    fn = fw.fn('netupdate__fetch', C.c_int, C.c_char_p, C.c_void_p, C.c_void_p, C.c_uint, C.POINTER(C.c_long), C.c_void_p, C.c_long)
-    err = fn(url, file, tag if not file else None, tag_size, C.byref(code), xfer, start)
+    fn = fw.fn('netupdate__fetch_on', C.c_int, C.c_void_p, C.c_char_p, C.c_void_p, C.c_void_p, C.c_uint, C.POINTER(C.c_long), C.c_void_p, C.c_long)
+    err = fn(None, url, file, tag if not file else None, tag_size, C.byref(code), xfer, start)
     return err, C.string_at(tag), code.value
 
 
@@ -1204,8 +1204,8 @@ class Hung:
 
 
 def head(fw, xfer):
-    fn = fw.fn('netupdate__fetch', C.c_int, C.c_char_p, C.c_void_p, C.c_void_p, C.c_uint, C.POINTER(C.c_long), C.c_void_p, C.c_long)
-    return fn(b'https://x', None, block(fw, size=64), 64, C.byref(C.c_long(0)), xfer, 0)
+    fn = fw.fn('netupdate__fetch_on', C.c_int, C.c_void_p, C.c_char_p, C.c_void_p, C.c_void_p, C.c_uint, C.POINTER(C.c_long), C.c_void_p, C.c_long)
+    return fn(None, b'https://x', None, block(fw, size=64), 64, C.byref(C.c_long(0)), xfer, 0)
 
 
 def test_a_cancel_ends_a_header_request_that_hangs_at_once(fw):
@@ -1940,8 +1940,6 @@ class Disk(Card):
         return len(self.listing) + 0x2fff
 
     def readdir(self, d, *_):
-        class Dirent(C.Structure):  # host.py's struct dirent
-            _fields_ = [('ino', C.c_uint), ('off', C.c_uint), ('reclen', C.c_ushort), ('d_type', C.c_ubyte), ('d_name', C.c_char * 256)]
         for name, kind in self.listing[d]:
             self.entry = Dirent(0, 0, 0, kind, name)
             return C.addressof(self.entry)

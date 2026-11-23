@@ -16,7 +16,7 @@ import typing
 import pytest
 
 import host
-from conftest import NAVIGATION_SOURCE, O, POD, c_enum, pod_value, Deques, Files, claim, high_halves, libc, ui_name, opus
+from conftest import NAVIGATION_SOURCE, O, POD, c_enum, pod_value, Deques, Files, claim, high_halves, libc, rgba, ui_name, opus
 
 STRINGS = dict(re.findall(r'^#define (\w+) "([^"]*)"', (host.ROOT/'patch/offsets.inc').read_text(), re.M))
 LIST_INTO_WHITE, BT_GLYPH = STRINGS['LIST_INTO_WHITE'], STRINGS['BT_GLYPH']
@@ -34,11 +34,6 @@ CLASSIC_SET = next(i for i, s in enumerate(SETS) if s.name == 'classic-light')
 
 def i32(v):
     return C.c_int(v).value
-
-
-def rgba(c, a=0xff):
-    """0xRRGGBB as the canvas takes it (theme.h RGBA): bytes r, g, b, a."""
-    return a << 24 | (c & 255) << 16 | c & 0xff00 | c >> 16 & 255
 
 
 def wide(s):

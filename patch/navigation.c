@@ -321,15 +321,6 @@ static int ramp(widget_t *top, widget_t *surface, unsigned scope, int ctx, int d
     return spin < first ? 1 : 2 + (spin - first) / more;
 }
 
-/* A tap target has an EVT_CLICK handler. V1.36 widget emitter @0x60; emitter_on_with_tag items are
- * {ctx, id, type @8, handler, tag, working @0x14, pending_remove @0x15, next @0x20}. */
-static int clickable(widget_t *w) {
-    void *emitter = P(w, W_EMITTER);
-    for (void *item = emitter ? P(emitter, 0) : (void *)0; item; item = P(item, EMIT_NEXT))
-        if (I(item, EMIT_TYPE) == EVT_CLICK && !B(item, EMIT_PENDING_REMOVE)) return 1;
-    return 0;
-}
-
 typedef struct {
     widget_t **at;
     int n, cap, budget;
@@ -340,7 +331,7 @@ typedef struct {
 static void collect(widget_t *w, entries_t *s, int depth) {
     if (!w || !widget_get_visible(w) || !widget_get_prop_bool(w, "enable", 1)) return;
     if (depth == 16 || s->n == s->cap || --s->budget < 0) return;
-    if (clickable(w)) {
+    if (click_bound(w, 0)) {
         s->at[s->n++] = w;
         return;
     }
@@ -637,11 +628,7 @@ int usable(void) {
     return !g_usbdet_value && confirm;
 }
 
-static int usb_prompt(void) {
-    widget_t *top = window_manager_get_top_window(window_manager());
-    return g_usblink_status == 2 && !g_usbdet_value && usable() && top &&
-           !tk_strcmp(widget_get_prop_str(top, "name", ""), "confirminfo_dialog");
-}
+static int usb_prompt(void) { return g_usblink_status == 2 && !g_usbdet_value && usable(); }
 
 int allowed_top(widget_t *top) {
     return top && context_id(widget_get_prop_str(top, "name", (void *)0)) >= 0;
@@ -740,8 +727,7 @@ unsigned local_hash(unsigned h) {
 }
 
 static void row_hash_text(const unsigned *s, unsigned *h) {
-    unsigned n = 0;
-    while (s[n]) ++n;
+    unsigned n = wide_len(s);
     /* Stock wchar_t is UTF-32; hash all four bytes, zero bytes inside a character included. */
     *h = hash_bytes(FNV_SEED, (const unsigned char *)s, 4 * n);
     if (!*h) *h = 1; /* zero denotes missing text */
@@ -1514,6 +1500,10 @@ void paint_round_rows(canvas_t *canvas, const rect_t *r, const stops_t *s, int R
     for (int i = 0; s->n >= 2 && i < r->h; ++i)
         round_row(canvas, r, R, i, 0xff000000u | stops_row(s, i, r->h));
 }
+/* paint_round_rows of one colour: the same rows, without a two-stop gradient of it. */
+void round_fill(canvas_t *canvas, const rect_t *r, unsigned rgb, int R) {
+    for (int i = 0; i < r->h; ++i) round_row(canvas, r, R, i, 0xff000000u | rgb);
+}
 /* A ring a pixel wide just inside r: what R's corners cover and R - 1's, a pixel in, don't. With
  * either out of the table, hard corners. */
 void round_ring(canvas_t *canvas, const rect_t *r, int R, unsigned c) {
@@ -1548,9 +1538,8 @@ void paint_panel(widget_t *w, canvas_t *canvas, const rect_t *r, const char *sha
     /* NOLINTNEXTLINE(clang-analyzer-core.NullPointerArithm) */
     unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
     paint_art(w, canvas, shadow, r->x - PANEL_PAD, r->y - PANEL_PAD + PANEL_DROP);
-    stops_t ring = { 2, { 0, 100 }, { S->bar_line, S->bar_line } };
     rect_t out = { r->x - 1, r->y - 1, r->w + 2, r->h + 2 };
-    paint_round_rows(canvas, &out, &ring, LETTER_RADIUS + 1);
+    round_fill(canvas, &out, S->bar_line, LETTER_RADIUS + 1);
     stops_t even = { 2, { 0, 100 }, { S->bar.rgb[0], S->bar.rgb[0] } };
     paint_round_rows(canvas, r, flat ? &even : &S->bar, LETTER_RADIUS);
     stock_canvas_set_fill_color(canvas, fill);
@@ -2289,9 +2278,7 @@ static void confirm_track(widget_t *w, canvas_t *canvas, int form) {
         inset_top(canvas, &t, 6, 0xdd);
     } else {
         bar_rect(canvas, RGBA(scheme()->paper), 0, BAR_ROWS, 375, 320 - BAR_ROWS);
-        widget_t *bar = *(void *const *)system_bar; /* over Quick Settings nothing else draws it */
-        if (bar) widget_paint(bar, canvas);
-        st.paint_w = w;
+        paint_bar(w, canvas); /* over Quick Settings nothing else draws it */
         if (light) {
             /* an inset shadow from the right (-3, 0, blur 3, spread -2) */
             static const unsigned char right[] = { 0x02, 0x06, 0x0e, 0x18 };
@@ -3248,44 +3235,46 @@ int ringnav_bt_connect_start(int pause) {
     int saved = media_owner() == 1 ? mclGetSavePlayStatus() : 0; /* 2 playing, 3 paused */
     return saved == 2 || saved == 3 ? player_save_start(saved == 3) : 0;
 }
+/* Standby limit's hours per choice: pod_text's row and ringnav_standby (system.c) sleep by it. */
+const unsigned standby_hours[] = { 0, STANDBY_LIMIT_1, STANDBY_LIMIT_2, STANDBY_LIMIT_3 };
 static void pod_text(int i) {
     static const char *const names[][4] = {
-        { "Charge Limit: Off", "Charge Limit: " STR(CHARGE_STOP) "%" },
+        { N_("Charge Limit (%u%%)") },
         { N_("Wake: Single Press"), N_("Wake: Double Press") },
         { N_("Artist View: Grid"), N_("Artist View: Cover Flow"), N_("Artist View: List") },
         { N_("Year Order: Newest First"), N_("Year Order: Oldest First") },
         { N_("Artists: Artist"), N_("Artists: Album Artist") },
-        { N_("Resume on Connect: Off"), N_("Resume on Connect: On") },
+        { N_("Resume on Connect") },
         { N_("Clock: Standard"), N_("Clock: Large") },
         { N_("Artist Album Order: Year"), N_("Artist Album Order: A–Z") },
-        { N_("Volume Guard: Off"), N_("Volume Guard: On") },
+        { N_("Volume Guard") },
         { N_("Hold Return: Recent"), N_("Hold Return: Home") },
         { N_("Standby Limit: Off"), N_("Standby Limit: %u h"), N_("Standby Limit: %u h"),
           N_("Standby Limit: %u h") },
-        { 0 }, /* Control Device Volume: a switch */
+        { N_("Control Device Volume") },
         { 0 }, /* Sort's from coverflow.c */
         { N_("Refresh Cover Flow") },
         { 0 }, /* EQ per Output: a switch */
-        { 0 }, /* Key Tone: a switch */
-        { 0 }, /* In-Vehicle Mode: a switch */
-        { 0 }, /* Smart Wi-Fi: a switch */
-        { 0 }, /* Enlarged Album Art: a switch */
-        { 0 }, /* Folder Album Cover: a switch */
-        { 0 }, /* Fast Navigation: a switch */
+        { N_("Key Tone") },
+        { N_("In-Vehicle Mode") },
+        { N_("Smart Wi-Fi") },
+        { N_("Enlarged Album Art") },
+        { N_("Folder Album Cover") },
+        { N_("Fast Navigation") },
         { N_("Playlist View: List"), N_("Playlist View: Cover Flow") },
-        { 0 }, /* Scan Song Durations: a switch */
-        { 0 }, /* Position Bar: a switch */
-        { 0 }, /* Hide Streaming: a switch */
-        { 0 }, /* Hide Folder: a switch */
+        { N_("Scan Song Durations") },
+        { N_("Position Bar") },
+        { N_("Hide Streaming") },
+        { N_("Hide Folder") },
         { N_("Update Notifications: Off"), N_("Update Notifications: On") },
         { N_("Album View: List"), N_("Album View: Grid") },
-        { 0 }, /* Hide Apps, Hide Games and Hide App Store: switches */
-        { 0 },
-        { 0 },
-        { 0 }, /* Receive Audio: a switch */
-        { 0 }, /* Log Failed Artwork: a switch */
-        { 0 }, /* Hide Duplicate Albums and Hide Duplicate Songs: switches */
-        { 0 },
+        { N_("Hide Apps") },
+        { N_("Hide Games") },
+        { N_("Hide App Store") },
+        { N_("Receive Audio") },
+        { N_("Log Failed Artwork") },
+        { N_("Hide Duplicate Albums") },
+        { N_("Hide Duplicate Songs") },
     };
     _Static_assert(sizeof names / sizeof *names == POD_COUNT, "a names entry per row");
     if (i == POD_CF_SORT) { /* the Sort card's words, as Cover Flow's page holds the row */
@@ -3300,30 +3289,7 @@ static void pod_text(int i) {
             : i == POD_FOLDERCOVER ? g_foldercover_flag != 0
             : pod_values[i]        ? *pod_values[i]
                                    : 0;
-    const char *toggle = i == POD_CHARGE           ? tr("Charge Limit (%u%%)")
-                         : i == POD_RESUME         ? tr("Resume on Connect")
-                         : i == POD_VOL_GUARD      ? tr("Volume Guard")
-                         : i == POD_BT_LINK        ? tr("Control Device Volume")
-                         : i == POD_KEYTONE        ? tr("Key Tone")
-                         : i == POD_CARMODE        ? tr("In-Vehicle Mode")
-                         : i == POD_SMART_WIFI     ? tr("Smart Wi-Fi")
-                         : i == POD_COVERMODE      ? tr("Enlarged Album Art")
-                         : i == POD_FOLDERCOVER    ? tr("Folder Album Cover")
-                         : i == POD_BIG_LIB        ? tr("Fast Navigation")
-                         : i == POD_SCAN_DURATIONS ? tr("Scan Song Durations")
-                         : i == POD_CF_POSITION    ? tr("Position Bar")
-                         : i == POD_HIDE_STREAM    ? tr("Hide Streaming")
-                         : i == POD_HIDE_FOLDER    ? tr("Hide Folder")
-                         : i == POD_HIDE_APPS      ? tr("Hide Apps")
-                         : i == POD_HIDE_GAMES     ? tr("Hide Games")
-                         : i == POD_HIDE_STORE     ? tr("Hide App Store")
-                         : i == POD_BT_RECEIVE     ? tr("Receive Audio")
-                         : i == POD_CF_ART_LOG     ? tr("Log Failed Artwork")
-                         : i == POD_CF_DUP_ALBUMS  ? tr("Hide Duplicate Albums")
-                         : i == POD_CF_DUP_SONGS   ? tr("Hide Duplicate Songs")
-                                                   : 0;
-    static const unsigned standby_hours[] = { 0, STANDBY_LIMIT_1, STANDBY_LIMIT_2,
-                                              STANDBY_LIMIT_3 };
+    const char *toggle = names[i][0] && !names[i][1] && i != POD_CF_REFRESH ? tr(names[i][0]) : 0;
     char room[128];
     const char *text = toggle ? toggle : tr(names[i][v]);
     if (i == POD_CHARGE || (i == POD_STANDBY && v))
@@ -3777,8 +3743,9 @@ static int slider_page(widget_t *top);
  * (an hscroll_label keeps 2 px each side of its box) and its row, set for bar_px. */
 int bar_title_x(void) { return st.bar_title ? I(st.bar_title, W_X) + 2 : 0; }
 int bar_title_y(void) { return st.bar_title ? I(st.bar_title, W_Y) : 0; }
-/* w at x, y on the screen, unless it's there. */
-void bar_place(widget_t *w, int x, int y, int ww, int h) {
+/* w at x 16, 343 wide, y on the screen, unless it's there. */
+void bar_place(widget_t *w, int y, int h) {
+    int x = 16, ww = 343;
     void *p = P(w, W_PARENT);
     x -= I(p, W_X), y -= I(p, W_Y);
     if (I(w, W_X) != x || I(w, W_Y) != y || I(w, W_W) != ww || I(w, W_H) != h)
@@ -4226,13 +4193,18 @@ static void np_cancel(void) {
  * Now Playing: keys, page and art
  **************************************************************************************************/
 
-/* A single centre press, DOUBLE_CLICK_MS on, never while scrubbing (with Single Press Scrub, a
- * double press): it replays the release to stock on_wm_keyup_fun, which turns the screen off (it
- * reads only the event's key). */
-static int np_single(const void *info) {
+/* A centre release replayed to stock on_wm_keyup_fun, which turns the screen off (it reads only the
+ * event's key). */
+void screen_off(void) {
     static const unsigned release[EVENT_KEY / 4 + 1] = { [EVENT_KEY / 4] = KEY_CENTER };
-    st.np_press = 0;
     if (g_backlight_status) on_wm_keyup_fun((void *)0, (void *)release);
+}
+
+/* A single centre press, DOUBLE_CLICK_MS on, never while scrubbing (with Single Press Scrub, a
+ * double press). */
+static int np_single(const void *info) {
+    st.np_press = 0;
+    screen_off();
     return 0;
 }
 
@@ -4761,21 +4733,21 @@ static int slider_switch_hit(void *win, event_t *event) {
 }
 /* A label's final ink, 0xAARRGGBB in its first n states, stored as what Light Mode's style hook
  * turns into it, so stored for this half. text_inks writes it again when the half changes. */
-static const char *const ink_state[] = { "normal",
-                                         "pressed",
-                                         "over",
-                                         "disable",
-                                         "focused",
-                                         "normal_of_active",
-                                         "pressed_of_active",
-                                         "over_of_active",
-                                         "disable_of_active",
-                                         "focused_of_active",
-                                         "error",
-                                         "empty",
-                                         "empty_focus",
-                                         "empty_over",
-                                         "changed" };
+const char *const ink_state[] = { "normal",
+                                  "pressed",
+                                  "over",
+                                  "disable",
+                                  "focused",
+                                  "normal_of_active",
+                                  "pressed_of_active",
+                                  "over_of_active",
+                                  "disable_of_active",
+                                  "focused_of_active",
+                                  "error",
+                                  "empty",
+                                  "empty_focus",
+                                  "empty_over",
+                                  "changed" };
 void text_ink(widget_t *w, unsigned color, int n) {
     char key[STYLE_KEY];
     unsigned ink = RGBA(flip_if(ipod_light(), color & 0xffffffu)) & 0xffffffu;
@@ -4947,15 +4919,15 @@ void final_text(canvas_t *canvas, const char *face, const unsigned *s, const voi
 /* The dark strip behind Classic's search field (once every dark bar's): its rows and its line,
  * the last of h rows from y: the scheme's dark half in either half, over the bar's own line, with
  * no second one; a flat Status Bar's plain black. Final colours. */
-void dark_bar_rows(canvas_t *canvas, int y, int w, int h) {
+void dark_bar_rows(canvas_t *canvas, int y, int h) {
     const theme_t *T = bar_theme();
     const scheme_t *S = &T->schemes[*T->accent_slot];
     if (T->painter[PAINT_BAR] != BAR_GLOSS) {
-        bar_rect(canvas, RGBA(BAR_COLOR), 0, y, w, h);
+        bar_rect(canvas, RGBA(BAR_COLOR), 0, y, 375, h);
         return;
     }
-    paint_stops(canvas, 0, y, w, h - 1, &S->bar);
-    bar_rect(canvas, RGBA(S->bar_line), 0, y + h - 1, w, 1);
+    paint_stops(canvas, 0, y, 375, h - 1, &S->bar);
+    bar_rect(canvas, RGBA(S->bar_line), 0, y + h - 1, 375, 1);
 }
 /* The info screen's dark tray: its rows, top light, ring and the light row under the ring. */
 void paint_tray(canvas_t *canvas, int x, int y, int w, int h) {
@@ -5429,14 +5401,14 @@ int ringnav_paint_bg(widget_t *w, canvas_t *canvas) {
     if (w && w == st.pl_box) pl_box_paint(w, canvas);
     if (w == st.t9_page && P(canvas, CANVAS_LCD)) {
         unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
-        dark_bar_rows(canvas, 0, 375, 34);
+        dark_bar_rows(canvas, 0, 34);
         paint_art(w, canvas, "classic_light_kb_back", 42, 4);
         paint_field(w, canvas, 72, 1, 244);
         stock_canvas_set_fill_color(canvas, fill);
     }
     if (w == st.kb_win && P(canvas, CANVAS_LCD)) {
         unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
-        paint_ramp(canvas, 60, 320, 60);
+        paint_ramp(canvas, 60);
         stock_canvas_set_fill_color(canvas, fill);
     }
     if (w == bar && P(canvas, CANVAS_LCD)) {
@@ -6230,17 +6202,21 @@ void theme_select(int t) {
     widget_invalidate_force(window_manager(), (void *)0);
 }
 int theme_restart(int t) { return geom_with(&themes[t], -1, 0, 1) != st.geom; }
-/* A choice that needs another geometry set: confirmed, the config takes value (a theme its presets
- * too, its own options' among them) and the Q2 restarts into it, ringnav_reboot saving the queue
- * first; the running state stays the booted set's theme until then, as theme_boot requires.
- * Cancelled, nothing is written and nothing changes. */
-void restart_confirm(int setting, int value) {
+/* The Restart to apply? confirm: 1 when the user says yes. */
+int restart_asked(void) {
     struct {
         int kind, ms;
         char text[0x400];
     } prompt = { 1, 0, "" };
     tk_snprintf(prompt.text, sizeof prompt.text, "%s", tr("Restart to apply?"));
-    if (navigator_to_with_context("dialog/confirminfo_dialog", &prompt) != 10) return;
+    return navigator_to_with_context("dialog/confirminfo_dialog", &prompt) == 10;
+}
+/* A choice that needs another geometry set: confirmed, the config takes value (a theme its presets
+ * too, its own options' among them) and the Q2 restarts into it, ringnav_reboot saving the queue
+ * first; the running state stays the booted set's theme until then, as theme_boot requires.
+ * Cancelled, nothing is written and nothing changes. */
+void restart_confirm(int setting, int value) {
+    if (!restart_asked()) return;
     const theme_t *T = theme();
     int was = *option_slot(T, setting);
     setting_put(&was, value, option_key(T, setting));
@@ -9151,13 +9127,25 @@ int ringnav_wm_paint(widget_t *wm) {
  * hciplayer holds their PCM, so the click has no other way out. Playback alone leaves it clicking.
  * Click With Headphones (IPOD KEYTONEHP, off) keeps the buzzer clicking there too, as stock does;
  * Key Tone off is still silent.
- * system() forks a shell and cmd_mcu for every click, so it runs on a worker, not the UI thread; a
- * click is dropped while the last one's worker runs.
- * With the screen off a pass clicks once (tone_dark; ringnav_sleep).
+ * Stock's system() forks a shell and cmd_mcu for every click. cmd_mcu's write_str is libhardware2's
+ * mcu_open, mcu_write_data_timeout and mcu_close: an open of /dev/mcu and one ioctl (MCU_WRITE)
+ * with the string, its length with the NUL and cmd_mcu's timeout, so the worker does those itself
+ * and the click follows its row without the two forks. Stock's command still runs when the open or
+ * the ioctl fails. A worker, not the UI thread, since the ioctl waits on the MCU; a click is
+ * dropped while the last one's worker runs. With the screen off a pass clicks once (tone_dark;
+ * ringnav_sleep).
  */
+#define MCU_WRITE 0x80044d76u /* mcu_write_data_timeout's request: {data, length, timeout} */
+#define MCU_TIMEOUT 300000    /* cmd_mcu write_str's */
 static volatile int tone_busy;
 static void *tone_worker(void *on) {
-    stock_buzzer_trampoline((int)(long)on);
+    static const struct {
+        const char *data;
+        int len, timeout;
+    } buzz = { "buzzer", 7, MCU_TIMEOUT };
+    int fd = open("/dev/mcu", 2 /* O_RDWR */), sent = fd >= 0 && ioctl(fd, MCU_WRITE, &buzz) >= 0;
+    if (fd >= 0) close(fd);
+    if (!sent) stock_buzzer_trampoline((int)(long)on);
     tone_busy = 0;
     return 0;
 }
@@ -9287,7 +9275,6 @@ static int edit_single(const void *info) {
 }
 
 static int edit_key(widget_t *top, unsigned key) {
-    static const unsigned release[EVENT_KEY / 4 + 1] = { [EVENT_KEY / 4] = KEY_CENTER };
     int qs = top && !tk_strcmp(widget_get_prop_str(top, "name", ""), "statusbar_dialog");
     int n = fields(top);
     if (!qs && !n && !slider_page(top)) return 0;
@@ -9297,7 +9284,7 @@ static int edit_key(widget_t *top, unsigned key) {
         if (!press)
             press = center_press(&st.edit_press, &st.edit_at, edit_single,
                                  0); /* after an overdue one */
-        if (press == 2 && g_backlight_status) on_wm_keyup_fun((void *)0, (void *)release);
+        if (press == 2) screen_off();
         return 1;
     }
     if (key != KEY_PREV && key != KEY_NEXT) return 0;
@@ -9630,10 +9617,9 @@ int ringnav(void *ctx, event_t *event) {
     if (key == KEY_CENTER && !st.center_timer) {
         unsigned now = (unsigned)time_now_ms();
         if (top == st.dc_top && now - st.dc_at < DOUBLE_CLICK_MS) {
-            static const unsigned release[EVENT_KEY / 4 + 1] = { [EVENT_KEY / 4] = KEY_CENTER };
             st.dc_top = (void *)0;
             drop_input();
-            if (g_backlight_status) on_wm_keyup_fun((void *)0, (void *)release);
+            screen_off();
             return STOP;
         }
         st.dc_top = top;

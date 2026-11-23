@@ -1,7 +1,6 @@
 """tools/theme.py: the Q2 theme XML reader, the schema and the generated theme table."""
 import math
 import dataclasses
-import itertools
 import re
 import shutil
 import xml.etree.ElementTree as ET
@@ -812,17 +811,6 @@ def test_geometry_sets_refuse_a_wide_value(monkeypatch):
     monkeypatch.setitem(theme.GEOMETRIES, 'wide', Geometry(name='wide', pitch=0x8000))
     with pytest.raises(ValueError, match='wide: pitch 32768 does not fit an immediate'):
         theme.geometry_sets([dict(theme.builtins()[0], geom_set='wide')])
-
-
-def combinations(t):
-    """Every value combination of t's options as {option: value}: a bound setting's names (narrowed by a values
-    mask) under its SETTINGS name, an own option's labels under its key."""
-    names = {macro: (name, v) for name, (macro, v) in theme.SETTINGS.items()}
-    axes = [(o['key'], o['names']) if o.get('key') else names[o['setting']] for o in t['opts']]
-    return [dict(zip([a for a, _ in axes], combo)) for combo in itertools.product(
-        *([x for i, x in enumerate(v) if not o['values'] or o['values'] >> i & 1] for (_, v), o in zip(axes, t['opts'])))]
-
-
 
 
 NB = '#08a6e7 0, #009ade 17, #008ade 38, #007dde 58, #006dd6 79, #0065d6 100'
