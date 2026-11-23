@@ -295,6 +295,11 @@ On the App Store's **Games** tab. Each plays in **Library → Games**.
     <td>A guitar game played to the music on your card: pick a song and a difficulty, and hit the notes coming down three lanes with Previous, Centre and Next.</td>
     <td></td>
   </tr>
+  <tr valign="top">
+    <td><b><a href="https://github.com/lampsonlnguyen/q2-pico8">PICO-8</a></b></td>
+    <td>Play PICO-8 games on a port of the FAKE-08 emulator.</td>
+    <td></td>
+  </tr>
 </table>
 
 </details>
