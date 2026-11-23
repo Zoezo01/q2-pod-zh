@@ -4368,21 +4368,23 @@ static void np_art_poll(void) {
  * g_forcerefresh_flag) is set; the art and "3 of 12" follow the queue each pass. After a skip, or
  * a change while dark, the page could keep the last song's title and heart until a tap; a forced
  * update heals it (the page's return to the front runs one, 0x53d9f0). Before each lit paint
- * (ringnav_wm_paint), with the page in front, the playing track and the player's parsed path,
- * title and artist (g_play_id3_info, filled before g_song_name) are compared with the last, and a
- * change forces the update: the first lit frame after a dark change, and the frame after a skip's
- * tags land, show the new song. Not while a scrub or a paused seek holds the bar, which the update
- * sets to the player's second. ponytail: inferred; which stock path misses the change is not
- * traced. A skip can force it twice (the queue moves before the tags). The rating badge follows
- * within its 500 ms tick (ratings.c rate_tick). */
+ * (ringnav_wm_paint), with the page in front, the playing track and the title and artist the
+ * update draws (g_song_name, g_song_artist, hashed whole: bounded, whatever stock wrote) are
+ * compared with the last, and a change forces the update: the first lit frame after a dark
+ * change, and the frame after a skip's tags land, show the new song. Not while a scrub or a
+ * paused seek holds the bar, which the update sets to the player's second. The album and "3 of
+ * 12" are synced first, so their writes land before the paint, not inside it, where an
+ * invalidate can be dropped. ponytail: inferred; which stock path misses the change is not
+ * traced. A skip can force it twice (the queue moves before the title is written). The rating
+ * badge follows within its 500 ms tick (ratings.c rate_tick). */
 static unsigned np_shown(void) {
-    const unsigned char *id3 = (const unsigned char *)g_play_id3_info;
-    return np_track() ^ fnv(fnv(fnv(FNV_SEED, id3), id3 + ID3_TITLE), id3 + ID3_ARTIST);
+    return np_track() ^ hash_bytes(hash_bytes(FNV_SEED, g_song_name, 512), g_song_artist, 256);
 }
 static void np_update_poll(void) {
     if (!st.np_win || !g_backlight_status || st.scrub || st.settle_timer ||
         window_manager_get_top_window(window_manager()) != st.np_win)
         return;
+    np_sync(st.np_win);
     unsigned key = np_shown();
     if (key == st.np_seen) return;
     st.np_seen = key;

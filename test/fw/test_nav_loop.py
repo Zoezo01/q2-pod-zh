@@ -10,7 +10,7 @@ import struct
 import pytest
 
 import host
-from conftest import NAVIGATION_SOURCE, O, Files, Game, claim, libc
+from conftest import NAVIGATION_SOURCE, O, Deques, Files, Game, claim, libc
 
 KEY_CENTER, KEY_PREV, KEY_NEXT, KEY_PLAY, KEY_RETURN = (O[k] for k in ('KEY_CENTER', 'KEY_PREV', 'KEY_NEXT', 'KEY_PLAY', 'KEY_RETURN'))
 KEY_BACK_BTN, KEY_FWD_BTN = O['KEY_BACK_BTN'], O['KEY_FWD_BTN']
@@ -1248,8 +1248,9 @@ NP_UPDATE = 0x53cf08  # Now Playing's update: (window, force); the title, artist
 
 
 class NowPlayingFront:
-    """Now Playing in front, lit, its page 0x5100, the parsed tags' path the test's; stock's update at its address
-    is an x86-64 jump to a Python stand-in, and it and the window manager's paint log what ran, in order."""
+    """Now Playing in front, lit, its page 0x5100; stock's update at its address
+    is an x86-64 jump to a Python stand-in, and it and the window manager's paint log what ran, in order.
+    The song is the title in g_song_name, which the update draws."""
     UPDATE = C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_int)
 
     def __init__(self, fw, st):
@@ -1262,13 +1263,13 @@ class NowPlayingFront:
         st('np_win', C.c_void_p).value = 0x5100
         self.top = 0x5100
         fw.mock('window_manager_get_top_window', lambda *_: self.top)
-        self.tags = fw.var('fw_ctx_g_play_id3_info', C.c_char * 2716)
+        self.name = fw.var('fw_ctx_g_song_name', C.c_char * 512)
         self.wm = Wm(fw)
         self.wm.paint = Wm.PAINT(lambda wm: self.log.append(('paint',)) or 0)
         struct.pack_into('<Q', self.wm.vtable, 0xc, C.cast(self.wm.paint, C.c_void_p).value)
 
-    def song(self, path):
-        self.tags.value = path  # player_get_id3info parsed the new song
+    def song(self, title):
+        self.name.value = title  # player_get_id3info wrote the new song's title
 
     def frame(self):
         self.log.clear()
@@ -1283,7 +1284,7 @@ class NowPlayingFront:
 @pytest.fixture
 def np_front(fw, st):
     front = NowPlayingFront(fw, st)
-    front.song(b'/mnt/mmc/a.flac')
+    front.song(b'A')
     front.frame()  # the page as it opened: this song drawn
     yield front
     front.close()
@@ -1296,29 +1297,75 @@ def test_a_skip_draws_the_new_songs_title_and_heart_in_the_frame_after_its_tags(
     """Stock's update writes them only forced or on a flag something else may have taken; the frame after the
     skip's tags land forces it, before the paint, once."""
     assert np_front.frame() == [PAINTED]  # nothing changed
-    np_front.song(b'/mnt/mmc/b.flac')
+    np_front.song(b'B')
     assert [np_front.frame(), np_front.frame()] == [[DRAWN, PAINTED], [PAINTED]]
 
 
 def test_a_cue_tracks_change_in_the_same_file_is_drawn_by_its_title(np_front):
-    """A CUE sheet's tracks share the file: stock copies each track's title into the parsed tags."""
-    title = O['ID3_TITLE']
-    C.memmove(C.addressof(np_front.tags) + title, b'Track 2\0', 8)
+    """A CUE sheet's tracks share the file: stock writes each track's own title."""
+    np_front.song(b'Track 2')
     assert np_front.frame() == [DRAWN, PAINTED]
+
+
+def queue_of(fw, *songs):
+    """Stock's play queue of songs, each (path, album)."""
+    rows, addrs = [], []
+    for path, album in songs:
+        rec, p, a = C.create_string_buffer(0x60), C.create_string_buffer(path), C.create_string_buffer(album)
+        struct.pack_into('<Q', rec, O['REC_PATH'], C.addressof(p))
+        struct.pack_into('<Q', rec, O['REC_ALBUM'], C.addressof(a))
+        rows.append((rec, p, a))
+        addrs.append(C.addressof(rec))
+    fw.keep = rows  # alive as long as the test
+    fw.var('fw_ctx_mcl_pdeqplaylist', C.c_uint).value = Deques(fw).new(addrs)
+
+
+def test_a_title_written_after_the_queue_moved_is_drawn_by_a_second_update(fw, np_front, mcl):
+    """The track moves first and stock writes its title a pass later: the key moves again, and the update runs again,
+    after the title changed."""
+    queue_of(fw, (b'/a', b'One'), (b'/b', b'Two'))
+    mcl.pos = 0
+    np_front.frame()
+    mcl.pos = 1
+    assert np_front.frame() == [DRAWN, PAINTED]
+    np_front.song(b'B')
+    assert [np_front.frame(), np_front.frame()] == [[DRAWN, PAINTED], [PAINTED]]
 
 
 def test_a_song_changed_while_dark_is_drawn_in_the_first_lit_frame(np_front):
     np_front.lit.value = 0
-    np_front.song(b'/mnt/mmc/b.flac')
+    np_front.song(b'B')
     assert np_front.frame() == []  # dark: no paint and no update
     np_front.lit.value = 1
     assert np_front.frame() == [DRAWN, PAINTED]
 
 
+def test_a_dark_frame_a_window_animation_paints_draws_nothing(fw, np_front):
+    fw.mock('window_manager_is_animating', lambda *_: 1)
+    np_front.lit.value = 0
+    np_front.song(b'B')
+    assert np_front.frame() == [PAINTED]
+
+
+def test_a_closed_page_is_not_updated(np_front, st):
+    st('np_win', C.c_void_p).value = 0
+    np_front.song(b'B')
+    assert np_front.frame() == [PAINTED]
+
+
+def test_the_album_and_place_are_written_before_the_paint(fw, np_front, st, mcl):
+    """np_sync's writes land before the paint, not inside it, where an invalidate can be dropped."""
+    queue_of(fw, (b'/a', b'Blue Train'))
+    mcl.pos = 0
+    st('np_album', C.c_void_p).value, st('np_pos', C.c_void_p).value = 0xa1, 0xa2
+    fw.mock('widget_set_text_utf8', lambda w, s, *_: np_front.log.append(('text', w, C.string_at(s))) and 0)
+    assert [e for e in np_front.frame() if e[0] != 'update'] == [('text', 0xa2, b'1 of 1'), ('text', 0xa1, b'Blue Train'), PAINTED]
+
+
 def test_now_playing_waits_while_behind_a_window_or_its_bar_is_held(np_front, st):
     """Another window in front (its return runs stock's forced update); a scrub or a paused seek's wait holds the
     bar, which the update would set to the player's second: drawn once they end."""
-    np_front.song(b'/mnt/mmc/b.flac')
+    np_front.song(b'B')
     np_front.top = 0x5200
     assert np_front.frame() == [PAINTED]
     np_front.top = 0x5100

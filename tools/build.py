@@ -1743,6 +1743,7 @@ CONTEXT_DATA = {'bt_showcoding': 4, 'g_memory_info': 3476, 'g_folder_path': 1024
                 'parse_cover_mutex': 24, 'g_playcover_mutex': 24, 'system_bar': 4, 'g_lastcover_url': 1024,
                 'g_dacoff_time': 4, 'p_vector_select_record': 4,
                 'g_play_id3_info': 2716,
+                'g_song_name': 512, 'g_song_artist': 256,  # the title and artist Now Playing's update draws
                 # Artists' source (PLAYSET ARTISTTYPE, the artist page's switch: 1 album artist);
                 # the battery level (0-100) and the charger's state (1, 2 charging), get_battery_capacity's
                 'artist_type': 4, 'g_power_capacity': 4, 'g_power_chargestate': 4,
