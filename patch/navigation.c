@@ -2057,6 +2057,9 @@ static int marq_moved(const void *info) {
     widget_on(label, EVT_DESTROY, marq_gone, (void *)0);
     hscroll_label_set_only_focus(label, 0);
     hscroll_label_start(label);
+    /* Running, stock paints it without its ellipsis, but its start paints nothing: a repaint of
+     * only part of it before it moves would show its text over the ellipsis. */
+    widget_invalidate_force(label, (void *)0);
     return 0;
 }
 

@@ -59,6 +59,8 @@ it runs, since stock's timer (`0x5fb7ac`) stops an unfocused `only_focus` label 
 once running, stock's paint (`0x5fbff0`) drops the ellipsis, so the selected title shows its start
 without one as it holds. A paint that moves the selection, to another widget or to another row in the
 same pooled widget, stops it from a timer. A title that fits costs one timer per selection.
+Stock's start paints nothing, so the label is invalidated whole as it starts: a repaint of only part
+of it before it moved showed its text over the ellipsis.
 ponytail: the first `hscroll_label` of the row is taken as its title, and a dark screen, a covered
 page or a touch's hidden selection stops it only at the end of its pass, not at once.
 
