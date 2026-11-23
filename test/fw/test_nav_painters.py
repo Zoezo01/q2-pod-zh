@@ -2432,7 +2432,7 @@ class Scan:
     def __init__(self, fw, readable=1, info=1, exists=1, **tags):
         self.tags = {'album': b'Record', 'songer': b'Band', 'style': b'Rock', 'name': b'Song', 'composer': b'Writer',
                      'albumsonger': b'The Band'} | tags
-        self.numbers = (1999, 7, 2)
+        self.numbers = (1999, 2, 7)  # year, disc, track: toolsGetMusicInfo's from +0x680
         self.sql: list = []
         Files(fw)
         fw.mock('toolsCheckItemExist', lambda *_: exists)
@@ -2642,7 +2642,7 @@ def playing(fw, mcl, low):
 def card_info(out):
     for at, value in ((0x280, b'Song'), (0x100, b'Band'), (O['MUSIC_INFO_ALBUM_ARTIST'], b'The Band')):
         C.memmove(out + at, value + b'\0', len(value) + 1)
-    C.memmove(out + 0x684, struct.pack('<ii', 4, 2), 8)
+    C.memmove(out + 0x684, struct.pack('<ii', 2, 4), 8)  # disc, track
     return 1
 
 

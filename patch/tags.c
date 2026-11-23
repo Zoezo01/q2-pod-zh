@@ -126,8 +126,9 @@ static void card_tags(char *id3, const char *path) {
         free(*field), *field = t;
         tk_snprintf(id3 + ID3_ALBUM + from[k], 0x100, "%s", t);
     }
-    if (I(info, 0x684) > 0) I(r, REC_TRACK) = I(info, 0x684);
-    if (I(info, 0x688) > 0) I(r, REC_DISC) = I(info, 0x688);
+    /* stock's layout, as ogg_music_info fills it: the disc at +0x684, the track at +0x688 */
+    if (I(info, 0x688) > 0) I(r, REC_TRACK) = I(info, 0x688);
+    if (I(info, 0x684) > 0) I(r, REC_DISC) = I(info, 0x684);
 }
 /* player_get_id3info's copy of the parsed path (ID3_PATH in tools/build.py), after the tags and
  * before Now Playing's lines. A CUE track's tags are its record's, the stock parser's TITLE and
@@ -282,8 +283,8 @@ int ringnav_scan_refresh(void *row, const char *table, int type) {
                                                  : '#';
     n += tk_snprintf(sql + n, sizeof sql - n,
                      ",Initial=%u,year=%d,track=%d,cd_num=%d where filename=", initial,
-                     cue ? I(row, 0x30) : I(info, 0x680), cue ? I(row, REC_TRACK) : I(info, 0x684),
-                     cue ? I(row, REC_DISC) : I(info, 0x688));
+                     cue ? I(row, 0x30) : I(info, 0x680), cue ? I(row, REC_TRACK) : I(info, 0x688),
+                     cue ? I(row, REC_DISC) : I(info, 0x684));
     if (n >= sizeof sql || !scan_quote(sql, sizeof sql, &n, name)) return exists;
     n += tk_snprintf(sql + n, sizeof sql - n, " and fileurl=");
     if (n >= sizeof sql || !scan_quote(sql, sizeof sql, &n, path)) return exists;
