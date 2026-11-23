@@ -16,6 +16,7 @@ from conftest import FNV_PRIME, O, Deques, Files, favdir_card, fnv1a, high_halve
 from conftest import Rows as HeldRows  # Rows here is Folder view's list
 from test_addon import Pg  # test_addon.py keeps the mirror
 from test_coverflow import SONGTABLE
+from test_nav_display_library import Ple  # playlists.c's editor state
 from test_navigation import Sa, listen_key  # test_navigation.py keeps the mirror
 from test_tidal import HEARTS, urls_play
 
@@ -3409,13 +3410,6 @@ def test_a_card_app_s_album_songs_are_in_track_order(fw, ui, song):
     card = Card(fw, ui, song, APP_SONGS)
     songs = fw.fn('app_album_songs', C.c_long, C.c_char_p)(APP)
     assert card.paths(ui.deques[songs]) == sorted(APP_SONGS)
-
-
-# The playlist editor's records.
-class Ple(C.Structure):
-    _fields_ = [*((k, C.c_void_p) for k in 'page view songs picker edit match'.split()),
-                *((k, C.c_int) for k in 'dest mode selected pending nmatch'.split()),
-                ('key', C.c_uint), ('timer', C.c_uint), ('gen', C.c_uint), ('name', C.c_char * 128), ('query', C.c_char * 128)]
 
 
 @pytest.mark.parametrize('query, titles', [(b'moon', [b'Blue Moon']), (b'ELVIS', [b'Blue Moon', b'02 Untitled']),

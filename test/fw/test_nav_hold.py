@@ -10,6 +10,7 @@ import pytest
 
 import host
 from conftest import O, Deques, Files, Rows, claim, favdir_card, fnv1a, high_halves, in_fork, ui_name
+from test_nav_display_library import Ple  # playlists.c's editor state
 from test_navigation import directory
 
 W_X, W_PARENT, W_EMITTER = O['W_X'], O['W_PARENT'], O['W_EMITTER']
@@ -447,13 +448,6 @@ def use_set(st, name):
 
 
 CLASSIC, MINIMAL = 'classic-light', 'ipod'
-
-
-# The playlist editor (ple_*).
-class Ple(C.Structure):
-    _fields_ = [*((k, C.c_void_p) for k in 'page view songs picker edit match'.split()),
-                *((k, C.c_int) for k in 'dest mode selected pending nmatch'.split()),
-                ('key', C.c_uint), ('timer', C.c_uint), ('gen', C.c_uint), ('name', C.c_char * 128), ('query', C.c_char * 128)]
 
 
 class Table:
