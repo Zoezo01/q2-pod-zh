@@ -280,6 +280,11 @@ On the App Store's **Games** tab. Each plays in **Library → Games**.
     <td>A one-button cricket batting game: chase a target over 1, 2 or 5 overs.</td>
     <td></td>
   </tr>
+  <tr valign="top">
+    <td><b><a href="https://github.com/Carbon-66/Q2-ChallengerDeep">Challenger Deep</a></b></td>
+    <td>Sail one of nine ships and sink wave after wave of pirate and navy ships, steering with the wheel and firing with Centre; its art and sound are read from your own copy of the iPod game Pirates of the Caribbean.</td>
+    <td></td>
+  </tr>
 </table>
 
 </details>
