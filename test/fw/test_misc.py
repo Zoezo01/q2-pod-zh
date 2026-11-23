@@ -1573,7 +1573,7 @@ def test_a_row_with_no_queue_only_closes(fw):
 def test_up_next_opens_one_page_at_a_time(fw):
     u = un(fw)
     u.page = 0x7000
-    fw.fn('up_next', None, C.c_void_p)(None)
+    fw.fn('up_next', None)()
     assert not fw.calls('window_create') and u.page == 0x7000
 
 

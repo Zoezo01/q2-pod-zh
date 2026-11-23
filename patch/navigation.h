@@ -327,7 +327,7 @@ extern void *queue_now(unsigned *pos, unsigned *n);
 extern void *coverflow_tracks(widget_t *page);
 extern void *coverflow_album(widget_t *page);
 extern int coverflow_goto_album(void *r), coverflow_shows_album(void *r);
-extern void up_next(int (*keyup)(void *, event_t *));
+extern void up_next(void);
 
 /* navigation.c */
 void pod_settings(void);

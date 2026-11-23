@@ -995,8 +995,7 @@ def shuffle_albums(q):
 
 def up_next(q):
     """View Queue in a shuffle: Up Next's rows, each its title over its artist."""
-    page = q.fw.lib.navigation__page_closed, q.fw.lib.page_keyup
-    q.fw.fn('up_next', None, C.c_void_p, C.c_void_p)(*(C.cast(f, C.c_void_p) for f in page))
+    q.fw.fn('up_next', None)()
     return q.rows_of(q.last('scroll_view_create'))
 
 

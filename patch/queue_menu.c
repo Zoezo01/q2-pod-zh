@@ -292,7 +292,7 @@ static int qm_run(const void *unused) {
             if (queue && at < deque_size(queue) &&
                 rec_hash(deque_at(queue, at)) == st.qm_forced_hash)
                 playback_move(at);
-            up_next(page_keyup);
+            up_next();
         } else
             navigator_to("playerqueue_page");
     } else if (a == QA_MORE && qm.qm_kind == QM_PLAYLIST) {
