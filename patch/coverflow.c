@@ -1186,11 +1186,10 @@ static unsigned initial(int i) {
 }
 
 /* Album i's group: its initial, or in Year its year, CF_YEAR alone when undated. */
-static unsigned group(int i) {
+unsigned coverflow_group(int i) {
     if (cf.sort != SORT_YEAR) return initial(i);
     return CF_YEAR | (years && cf.albums == years_of ? years[i] : 0u);
 }
-unsigned coverflow_group(int i) { return group(i); }
 
 /* Letters mean something on w: the whole library's covers, sorted by album or artist; years, by
  * year, with Fast Navigation on. */
@@ -1205,16 +1204,16 @@ int coverflow_jump(widget_t *w, int from, int dir, unsigned *letter) {
     int n = cf.albums ? (int)deque_size(cf.albums) : 0;
     *letter = 0;
     if (!lettered(w) || from < 0 || from >= n) return 1;
-    unsigned c = group(from);
+    unsigned c = coverflow_group(from);
     int to = from + dir;
     if (dir > 0) {
-        while (to < n && group(to) == c) ++to;
-        if (to < n) *letter = group(to);
+        while (to < n && coverflow_group(to) == c) ++to;
+        if (to < n) *letter = coverflow_group(to);
     } else {
-        while (to >= 0 && group(to) == c) --to;
+        while (to >= 0 && coverflow_group(to) == c) --to;
         if (to < 0) return from + 1; /* the last album, across the wrap */
-        c = group(to);
-        while (to > 0 && group(to - 1) == c) --to;
+        c = coverflow_group(to);
+        while (to > 0 && coverflow_group(to - 1) == c) --to;
         *letter = c;
     }
     return dir > 0 ? to - from : from - to;
@@ -1228,8 +1227,8 @@ int coverflow_letter_first(int i, unsigned *letter) {
     *letter = 0;
     if (n < 1) return i;
     i = i < n ? i : n - 1;
-    unsigned c = *letter = group(i);
-    while (i > 0 && group(i - 1) == c) --i;
+    unsigned c = *letter = coverflow_group(i);
+    while (i > 0 && coverflow_group(i - 1) == c) --i;
     return i;
 }
 
