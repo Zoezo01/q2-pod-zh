@@ -4740,21 +4740,21 @@ static int slider_switch_hit(void *win, event_t *event) {
 }
 /* A label's final ink, 0xAARRGGBB in its first n states, stored as what Light Mode's style hook
  * turns into it, so stored for this half. text_inks writes it again when the half changes. */
-static const char *const ink_state[] = { "normal",
-                                         "pressed",
-                                         "over",
-                                         "disable",
-                                         "focused",
-                                         "normal_of_active",
-                                         "pressed_of_active",
-                                         "over_of_active",
-                                         "disable_of_active",
-                                         "focused_of_active",
-                                         "error",
-                                         "empty",
-                                         "empty_focus",
-                                         "empty_over",
-                                         "changed" };
+const char *const ink_state[] = { "normal",
+                                  "pressed",
+                                  "over",
+                                  "disable",
+                                  "focused",
+                                  "normal_of_active",
+                                  "pressed_of_active",
+                                  "over_of_active",
+                                  "disable_of_active",
+                                  "focused_of_active",
+                                  "error",
+                                  "empty",
+                                  "empty_focus",
+                                  "empty_over",
+                                  "changed" };
 void text_ink(widget_t *w, unsigned color, int n) {
     char key[STYLE_KEY];
     unsigned ink = RGBA(flip_if(ipod_light(), color & 0xffffffu)) & 0xffffffu;

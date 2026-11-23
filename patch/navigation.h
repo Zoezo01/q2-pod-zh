@@ -331,6 +331,7 @@ extern void up_next(int (*keyup)(void *, event_t *));
 
 /* navigation.c */
 void pod_settings(void);
+extern const char *const ink_state[];
 extern const unsigned standby_hours[4];
 #define COUNT "_ringnav_count"
 #define SEL "_ringnav_index"

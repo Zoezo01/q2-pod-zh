@@ -244,7 +244,6 @@ static int pl_box_due(const void *info) {
     return 0;
 }
 void pl_box_open(widget_t *win) {
-    static const char *const state[] = { "normal", "pressed", "over", "disable", "focused" };
     static const char *const prop_name[] = { "bg_color", "border_color", "round_radius" };
     char key[STYLE_KEY];
     widget_t *item = widget_lookup(win, "list_item_ssedit", 1)
@@ -252,9 +251,9 @@ void pl_box_open(widget_t *win) {
              *edit = widget_lookup(win, "ssedit", 1) ?: widget_lookup(win, "edit", 1),
              *back = widget_lookup(win, "img_return", 1);
     if (!item || !edit || !back) return;
-    for (unsigned s = 0; s < sizeof state / sizeof *state; ++s)
+    for (unsigned s = 0; s < 5; ++s)
         for (unsigned k = 0; k < sizeof prop_name / sizeof *prop_name; ++k)
-            widget_set_prop_int(item, style_key(key, state[s], prop_name[k]), 0);
+            widget_set_prop_int(item, style_key(key, ink_state[s], prop_name[k]), 0);
     widget_move_resize(item, 72, 28, 244, 30);
     widget_move_resize(edit, 0, 0, 244, 30);
     search_field_margin(edit, 15);
@@ -290,18 +289,7 @@ void pl_box_paint(widget_t *w, canvas_t *canvas) {
 /* The dialog as it loads, before its init: every name stock looks up stays. It covers the bar, so
  * it paints the bar (search_paint); it's at 0, 0, so these boxes are the screen's. */
 void search_open(widget_t *win) {
-    static const char *const tab_state[] = { "normal",
-                                             "pressed",
-                                             "over",
-                                             "disable",
-                                             "focused",
-                                             "normal_of_active",
-                                             "pressed_of_active",
-                                             "over_of_active",
-                                             "disable_of_active",
-                                             "focused_of_active" },
-                             *const tabs[] = { "btn_track", "btn_artist", "btn_album",
-                                               "btn_genre" },
+    static const char *const tabs[] = { "btn_track", "btn_artist", "btn_album", "btn_genre" },
                              *const lists[] = { "scroll_view_track", "scroll_view_artist",
                                                 "scroll_view_album", "scroll_view_genre" },
                              *const messages[] = { "label_track_msg", "label_artist_msg",
@@ -324,10 +312,10 @@ void search_open(widget_t *win) {
     for (unsigned i = 0; i < sizeof tabs / sizeof *tabs; ++i) {
         if (!(c = widget_lookup(win, tabs[i], 1))) continue;
         widget_move_resize(c, (int)i * 327 / 4, 0, (int)(i + 1) * 327 / 4 - (int)i * 327 / 4, 30);
-        for (unsigned k = 0; k < sizeof tab_state / sizeof *tab_state; ++k) {
-            widget_set_prop_int(c, style_key(key, tab_state[k], "bg_color"), 0);
-            widget_set_prop_int(c, style_key(key, tab_state[k], "font_size"), 21);
-            widget_set_prop_str(c, style_key(key, tab_state[k], "font_name"), "classic-light");
+        for (unsigned k = 0; k < 10; ++k) {
+            widget_set_prop_int(c, style_key(key, ink_state[k], "bg_color"), 0);
+            widget_set_prop_int(c, style_key(key, ink_state[k], "font_size"), 21);
+            widget_set_prop_str(c, style_key(key, ink_state[k], "font_name"), "classic-light");
         }
         text_ink(c, 0xffffffffu, INK_TAB);
     }
@@ -662,8 +650,7 @@ int msg_counting(void) { return cp.msg_counting == 1; } /* coverflow.c's library
  * has its own st. */
 void msg_open(widget_t *win) {
     static const char *const hide[] = { "img_animation", "label_msg", "label_scanfolder",
-                                        "img_usbmode", "scrlabel_info" },
-                             *const state[] = { "normal", "pressed", "over", "disable", "focused" };
+                                        "img_usbmode", "scrlabel_info" };
     const char *name = widget_get_prop_str(win, "name", "");
     char key[STYLE_KEY];
     int scan = !tk_strcmp(name, "updatemusic_dialog");
@@ -688,11 +675,11 @@ void msg_open(widget_t *win) {
     }
     st.msg_win = win, cp.msg_src = src, cp.msg_btn = btn, cp.msg_line = c;
     widget_move_resize(btn, 127, 248, 121, flat ? 36 : 34);
-    for (unsigned i = 0; i < sizeof state / sizeof *state; ++i) {
-        widget_set_prop_int(btn, style_key(key, state[i], "bg_color"), 0);
-        widget_set_prop_str(btn, style_key(key, state[i], "font_name"),
+    for (unsigned i = 0; i < 5; ++i) {
+        widget_set_prop_int(btn, style_key(key, ink_state[i], "bg_color"), 0);
+        widget_set_prop_str(btn, style_key(key, ink_state[i], "font_name"),
                             flat ? flat_face() : "classic-light");
-        widget_set_prop_int(btn, style_key(key, state[i], "font_size"),
+        widget_set_prop_int(btn, style_key(key, ink_state[i], "font_size"),
                             flat ? MSG_FLAT_BTN_PX : CONFIRM_CELL_PX);
     }
     text_ink(btn, 0xffffffffu, INK_BUTTON);
