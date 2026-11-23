@@ -166,7 +166,6 @@ static void search_field_margin(widget_t *edit, int margin) {
     }
     text_ink(edit, 0xff111111u, INK_EDIT);
 }
-static void search_field_style(widget_t *edit) { search_field_margin(edit, 32); }
 /* A hint too wide for the room at the typed text's 26 takes a size of its own; none under 12, the
  * smallest worth reading, however long a playlist's name.
  * ponytail: stock's face averages 0.39 px a character per px; a hint of wide letters can still cut.
@@ -199,7 +198,7 @@ void t9_box(widget_t *page, widget_t *edit, const char *tips) {
     widget_set_visible(title, 0, 0);
     st.t9_back = image_create(page, 30, 0, 40, 30); /* ringnav_touch takes its press */
     widget_move_resize(edit, 72, 2, 244, 27);
-    search_field_style(edit);
+    search_field_margin(edit, 32);
     field_tips(edit, tips, 212);
     widget_on(edit, EVT_DESTROY, t9_gone, 0);
     st.t9_page = page;
@@ -319,7 +318,7 @@ void search_open(widget_t *win) {
         }
         text_ink(c, 0xffffffffu, INK_TAB);
     }
-    if ((c = widget_lookup(win, "search_edit", 1))) search_field_style(c);
+    if ((c = widget_lookup(win, "search_edit", 1))) search_field_margin(c, 32);
     if ((c = widget_lookup(win, "img_search", 1))) image_base_set_image(c, "");
     if ((c = widget_lookup(win, "img_return", 1))) { /* the chevron's tap: the ramp draws it */
         widget_use_style(c, "default");
