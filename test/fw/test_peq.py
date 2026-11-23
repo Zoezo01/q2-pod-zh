@@ -8,20 +8,12 @@ from types import SimpleNamespace
 
 import pytest
 from conftest import Card, block
+from test_peq_page import Band, EqState, Preset
 
 BANDS, CHANNELS = 30, 8
 EQ_OFF, EQ_3, EQ_PEQ = 0, 1, 2
 PK, LS, HS = 0, 1, 2
 r = C.byref
-
-
-class Band(C.Structure):
-    _fields_ = [('enabled', C.c_int), ('type', C.c_int), ('frequency', C.c_double), ('gain', C.c_double), ('q', C.c_double)]
-
-
-class Preset(C.Structure):
-    _fields_ = [('count', C.c_int), ('bypass', C.c_int), ('preamp', C.c_double), ('bands', Band * BANDS),
-                ('balance', C.c_double), ('automatic', C.c_int), ('spare', C.c_int)]
 
 
 class Coeff(C.Structure):
@@ -36,10 +28,6 @@ class Engine(C.Structure):
 class Dsp(C.Structure):
     _fields_ = [('current', Engine), ('next', Engine), ('pending', Engine)] + \
                [(k, C.c_int) for k in 'rate channels ramp ramp_length waiting'.split()]
-
-
-class EqState(C.Structure):
-    _fields_ = [('mode', C.c_int), ('hold', C.c_int), ('peq', Preset), ('eq3', Preset)]
 
 
 class Error(C.Structure):

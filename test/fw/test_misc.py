@@ -8,6 +8,7 @@ import subprocess
 
 import pytest
 from conftest import Card as BaseCard, block
+from test_peq_page import Band, E3, EqState, Preset, Ui
 
 pytestmark = pytest.mark.usefixtures('stock_gapless')  # Crossfade's page has stock's Gapless on, as stock's default
 
@@ -643,27 +644,6 @@ def test_a_mono_click_saves_and_tells_the_player(fw):
 BANDS = 30
 
 
-class Band(C.Structure):
-    _fields_ = [('enabled', C.c_int), ('type', C.c_int), ('frequency', C.c_double), ('gain', C.c_double), ('q', C.c_double)]
-
-
-class Preset(C.Structure):
-    _fields_ = [('count', C.c_int), ('bypass', C.c_int), ('preamp', C.c_double), ('bands', Band * BANDS),
-                ('balance', C.c_double), ('automatic', C.c_int), ('spare', C.c_int)]
-
-
-class EqState(C.Structure):
-    _fields_ = [('mode', C.c_int), ('hold', C.c_int), ('peq', Preset), ('eq3', Preset)]
-
-
-class Ui(C.Structure):
-    _fields_ = [*((k, C.c_void_p) for k in 'page view edit graph bar'.split()), ('timer', C.c_uint), ('keyboard_timer', C.c_uint),
-                *((k, C.c_int) for k in 'screen band step count previous rendered dirty pick adjust tries capacity file_page tab tabs from_simple'.split()),
-                ('typed', C.c_double), ('draft', Preset), ('candidate', Preset), ('named', Preset), ('names', C.c_void_p),
-                ('destination', C.c_char * 600), ('status', C.c_char * 256), ('name', C.c_char * 256), ('applied', C.c_char * 256),
-                ('curve', (C.c_float * 343) * 2), ('drag', C.c_int)]
-
-
 def ui(fw):
     return fw.var('peq_ui__ui', Ui)
 
@@ -1287,11 +1267,6 @@ def test_a_display_only_row_does_nothing(fw):
     u.screen, u.status = BAND, b'kept'
     act(fw, -1)
     assert u.screen == BAND and u.status == b'kept'
-
-
-class E3(C.Structure):
-    _fields_ = [('view', C.c_void_p), ('save', C.c_uint), ('press', C.c_uint), ('press_at', C.c_uint),
-                *((k, C.c_int) for k in 'focus adjusting dragging dirty on h'.split()), ('gain', C.c_double * 3), ('status', C.c_char_p), ('caption', C.c_int)]
 
 
 E3_TABS, E3_SWITCH, E3_PRESETS, E3_RESET, E3_LOW, E3_MID, E3_HIGH = range(7)
