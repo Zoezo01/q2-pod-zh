@@ -1,7 +1,7 @@
 # Changelog
 
 - **1.9.1**:
-  - Standby: going into Standby waits until the card is properly unmounted, instead of cutting its power with files still open, which could leave the card marked as not properly unmounted and lose what was still being written.
+  - Standby: going into Standby gives the card up to 2 seconds to finish and unmount before its power is cut, where it used to cut it at once with files still open, which could leave the card marked as not properly unmounted and lose what was still being written.
   - EQ: in **Advanced**, drag a band up or down on the curve to set its gain, as you drag Simple's sliders. Touch the ring of a band that's on. Choose **Apply changes** to hear it.
   - Bluetooth: **Receive Audio**, on the Bluetooth page, turned off makes the Q2 only send audio, so it plays to a speaker that can also send, such as an Amazon Echo. The Q2 could take the speaker for a phone and open its receiver page each time they connected, even after unpairing it. Turn Bluetooth off and on after changing it. On, as before, a phone can play to the Q2.
   - Playback: with the screen off, hold Next or Previous to fast-forward or rewind the playing song; let go and it plays on from there. A press still skips to the next or previous song.

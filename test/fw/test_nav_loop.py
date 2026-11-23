@@ -536,6 +536,32 @@ def test_card_mounted_reads_proc_mounts(fw, mounts, mounted):
     assert fw.fn('card_mounted', C.c_int)() == mounted
 
 
+@pytest.mark.parametrize('fails, mounted, tries', [(0, 1, 1), (99, 0, 1), (3, 1, 4), (99, 1, 20)])
+def test_standby_unmount_retries_then_remounts_read_only_and_detaches(fw, fails, mounted, tries):
+    """A sync, then stock's command each 100 ms while the card is still in /proc/mounts, up to 20 tries; then
+    the holders' record, the read-only remount, a sync and umount -l, whose result is returned."""
+    Mounts(fw, Files(fw), mounted)
+    log, left = [], [fails]
+    def system(cmd, *_):
+        cmd = C.string_at(cmd).decode()
+        log.append(cmd)
+        if cmd == 'umount /mnt/mmc':
+            left[0] -= 1
+            return int(left[0] >= 0)
+        return 7 if cmd == 'umount -l /mnt/mmc' else 0
+    fw.mock('fw_system', system)
+    fw.mock('fw_usleep', lambda us, *_: log.append(us))
+    result = fw.fn('ringnav_standby_umount', C.c_int, C.c_char_p)(b'umount /mnt/mmc')
+    expect = ['sync'] + [x for i in range(tries) for x in ([100000] if i else []) + ['umount /mnt/mmc']]
+    if tries < 20:
+        assert log == expect and result == 0
+    else:
+        assert log[:len(expect)] == expect and result == 7
+        busy, remount, sync, detach = log[len(expect):]
+        assert 'q2-card-busy' in busy and remount.startswith('mount -o remount,ro /mnt/mmc')
+        assert (sync, detach) == ('sync', 'umount -l /mnt/mmc')
+
+
 # The card's copy of the ratings (docs/internals.md#ratings).
 RC_FILE = '/mnt/mmc/.ratings.tsv'
 RC_HEADER = b'#song\thearts\tpath\tcue_start\n#album\thearts\tname\talbum_artist\tfolder\n'

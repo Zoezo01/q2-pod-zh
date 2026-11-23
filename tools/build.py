@@ -2246,7 +2246,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
     for address, name in STREAM_POLL_CALLS:
         patch_word(patched, address, 0x0320f809, jal(ps[name]), 'stream threads park while idle')
     patch_word(patched, STANDBY_UMOUNT, 0x0320f809, jal(ps['ringnav_standby_umount']),
-               "Standby's unmount waits for the card and leaves it clean")
+               "Standby's unmount waits for the card")
     check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, COVERINFO_CALL[0] + 4))[0] == COVERINFO_CALL[1],
           "online id3: expected the REC_COVER load in the cover call's delay slot")
     patch_word(patched, COVERINFO_CALL[0], 0x0320f809, jal(ps[COVERINFO_CALL[2]]), "a card app's cover by URL")

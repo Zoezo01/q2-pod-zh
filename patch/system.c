@@ -429,8 +429,9 @@ static void standby_poll(void) {
  * be written lost. STANDBY_UMOUNT (tools/build.py) has that call come here, with stock's command:
  * a sync, then the command again every UMOUNT_WAIT_US while /proc/mounts still has the card
  * (card_mounted), up to UMOUNT_TRIES. Still mounted, what holds it goes to UMOUNT_LOG (/mnt/data:
- * the card is going), the volume is remounted read-only, which writes everything out and marks a
- * FAT volume clean, and detached (umount -l), so the driver's removal finds nothing to write. */
+ * the card is going), the volume is remounted read-only, which writes it out and marks a FAT volume
+ * clean only when no file on it is open for writing (readers don't matter; with a writer the kernel
+ * refuses, EBUSY, and the refusal is in UMOUNT_LOG), and detached (umount -l). */
 #define UMOUNT_TRIES 20 /* tries, UMOUNT_WAIT_US apart: 2 s at most */
 #define UMOUNT_WAIT_US 100000
 #define UMOUNT_LOG "/mnt/data/q2-card-busy"
@@ -443,7 +444,10 @@ int ringnav_standby_umount(const char *cmd) {
     /* each process with a file or its directory on the card: pid, name, the links */
     system("for p in /proc/[0-9]*; do l=$(ls -l $p/fd $p/cwd 2>/dev/null | grep /mnt/mmc) && "
            "echo \"${p#/proc/} $(cat $p/comm) $l\"; done > " UMOUNT_LOG " 2>&1");
-    system("mount -o remount,ro /mnt/mmc");
+    system("mount -o remount,ro /mnt/mmc 2>>" UMOUNT_LOG);
+    /* ponytail: a file still open for writing after 2 s leaves the volume dirty, as stock did; stop
+     * that writer before the unmount if reports show it. */
+    system("sync"); /* the first sync is up to 2 s old; the remount may have been refused */
     return system("umount -l /mnt/mmc");
 }
 /* User boot logo (docs/boot.md): the card's LOGO_SRC is kept as LOGO_DST, which the splash shows at
