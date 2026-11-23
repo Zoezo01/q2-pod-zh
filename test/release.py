@@ -63,7 +63,6 @@ with tempfile.TemporaryDirectory() as tmp:
     changelog.write_text(f'- **{release.VERSION}**:\n  - A.\n    - B.\n- **V7.6R / V7.6I**: Old.\n')
     assert release.notes() == f'**{release.VERSION}**\n- A.\n  - B.'
     changelog.write_text(single)
-    (out/'SHA256SUMS').write_text(''.join(f'{v}  {k}\n' for k, v in assets.items()))
     for failure in ('upload', 'view', 'download', 'corrupt', None):
         calls = []
         def gh(*args):

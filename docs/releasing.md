@@ -18,7 +18,7 @@ Packaging requires a fresh output directory, builds the update twice, runs the s
 suite and asset checks on the first build, and compares the two builds' update.tar bytes. The checks
 are twenty suites, each a process of its own, all started at once: they take as long as the longest,
 the MIPS suite (about 3.5 minutes), and about 3.4 GB of memory between them. It writes
-update.tar, the manifest, SHA256SUMS, release notes and source revision/hash. A single direct build is never a release input. Upload sends the release notes as packaged (to fix them afterwards, use `gh release edit --notes-file`), re-checks them, the packaged bytes and the source hash
+update.tar, the manifest, release notes and source revision/hash. A single direct build is never a release input. Upload sends the release notes as packaged (to fix them afterwards, use `gh release edit --notes-file`), re-checks them, the packaged bytes and the source hash
 and refuses stale, missing or changed artifacts and published releases. An upload/download
 failure leaves the release unpublished; rerun upload to repair the draft. Packaging uses no
 GitHub credentials or network.

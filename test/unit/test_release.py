@@ -178,7 +178,6 @@ def test_package(repo, monkeypatch, tmp_path, capsys):
     assert p.validated == [out/'build']
     assert (out/release.ASSET).read_bytes() == b'tar'
     assert p.scripts == [([release.sys.executable, str(repo/'docs/manual/build.py'), str(out/release.GUIDE)], True)]
-    assert (out/'SHA256SUMS').read_text() == f'{sha(b"tar")}  update.tar\n'
     notes = f'**{release.VERSION}**\n- One.\n\nSHA-256:\n- update.tar ({release.TAG}): `{sha(b"tar")}`\n'
     assert (out/'release-notes.md').read_text() == notes
     record = json.loads((out/'release.json').read_text())
@@ -247,7 +246,6 @@ def packaged(root):
     (out/'build/update.tar').write_bytes(b'pod')
     (out/release.ASSET).write_bytes(b'pod')
     (out/release.GUIDE).write_bytes(b'%PDF')
-    (out/'SHA256SUMS').write_text(f'{sha(b"pod")}  {release.ASSET}\n')
     (out/'release-notes.md').write_bytes(b'notes\n')
     (out/'release.json').write_text(json.dumps(dict(tag=release.VERSION, revision='rev', source_sha256='source',
                                                     assets={release.ASSET: sha(b'pod')}, guide_sha256=sha(b'%PDF'),
@@ -415,15 +413,6 @@ def test_upload_wants_the_build_tree_unchanged(repo, monkeypatch):
     (out/'build/update.tar').write_bytes(b'other')
     gh = Gh(monkeypatch, out)
     with pytest.raises(ValueError, match='^Release update mismatch$'):
-        release.upload(out)
-    assert not gh.calls
-
-
-def test_upload_wants_matching_checksums(repo, monkeypatch):
-    out = packaged(repo)
-    (out/'SHA256SUMS').write_text('wrong\n')
-    gh = Gh(monkeypatch, out)
-    with pytest.raises(ValueError, match='^Release checksums mismatch$'):
         release.upload(out)
     assert not gh.calls
 
