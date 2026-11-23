@@ -1052,7 +1052,8 @@ def font_letters(data):
     """STOCK_LETTERS that stock's font (data) lacks, added: each a composite glyph of the plain base
     letter of its NFD (never stock's precomposed â ê ô ă, a different design from its ASCII and marks) and
     each mark, at an offset from the base's box; i under a mark above is dotless ı. A letter already in
-    the font is left alone. head keeps its stock timestamp, as in font_quotes."""
+    the font is left alone. head keeps its stock timestamp, as in font_quotes, and post keeps no glyph names (format
+    3.0), which stb_truetype, finding glyphs by cmap's ids, never reads."""
     # ponytail: marks sit at fixed offsets from the base's box (stb_truetype reads no GPOS), tuned on stock
     # V1.36's font; a new base font needs them looked at again.
     import unicodedata
@@ -1102,6 +1103,7 @@ def font_letters(data):
         for table in font['cmap'].tables:
             if table.isUnicode(): table.cmap[cp] = letter
     check(all(u in font.getBestCmap() for lo, hi in STOCK_LETTERS for u in range(lo, hi + 1)), "Font without its letters' parts")
+    font['post'].formatType = 3.0
     out = io.BytesIO()
     font.save(out, reorderTables=False)
     return out.getvalue()
@@ -1149,6 +1151,7 @@ def subset_font(src, family, ranges_macro, notice=None):
     play_mark(font)
     have.append(PLAY_MARK)
     options = subset.Options()
+    options.hinting = False  # stb_truetype, which draws the faces, runs no hints
     if notice: options.name_IDs.append(7)  # the trademark notice, as its licence asks
     sub = subset.Subsetter(options)
     sub.populate(unicodes=have)
@@ -1190,7 +1193,7 @@ def bold_font():
 CLASSIC_LIGHT_TTF = 'release/assets/default/raw/fonts/classic-light.ttf'
 # OFL 2 asks each copy to hold its licence, and the subsets' name tables don't: these ship beside the fonts
 FONT_NOTICES = ('LiberationSans-OFL.txt', 'GUST-FONT-LICENSE.txt', 'README-classic-light.txt')
-CLASSIC_LIGHT_NOTICE = ("Modified version of TeX Gyre Heros Bold 2.004: cut to part of its Latin, including Vietnamese's letters with tone marks, part of its Greek, and its punctuation, its layout features to frac, liga and locl, a play mark added at U+25B6, and renamed. "
+CLASSIC_LIGHT_NOTICE = ("Modified version of TeX Gyre Heros Bold 2.004: cut to part of its Latin, including Vietnamese's letters with tone marks, part of its Greek, and its punctuation, its layout features to frac, liga and locl, its hints removed, a play mark added at U+25B6, and renamed. "
                'The original: https://www.gust.org.pl/projects/e-foundry/tex-gyre/heros')
 
 def classic_light_font():

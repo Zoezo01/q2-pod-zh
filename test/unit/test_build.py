@@ -415,6 +415,8 @@ def test_bold_font():
     bounds = [int(v, 16) for v in m[1].split(',')]
     assert sorted(u for lo, hi in zip(bounds[::2], bounds[1::2]) for u in range(lo, hi + 1)) == have
     assert bounds[:2] == [0x20, 0x7e]  # runs, not single characters
+    assert not {'fpgm', 'prep', 'cvt '} & set(font.keys())  # no hints: stb_truetype runs none
+    assert not any(getattr(font['glyf'][g], 'program', None) and font['glyf'][g].program.getBytecode() for g in font.getGlyphOrder())
     assert [t for t in sorted(font.reader.tables, key=lambda t: font.reader.tables[t].offset)] == \
            [t for t in sorted(source.reader.tables, key=lambda t: source.reader.tables[t].offset) if t in font.reader.tables]
 
@@ -456,6 +458,7 @@ def test_classic_light_font():
     assert names[7] == str(source['name'].getName(7, 3, 1, 0x409))
     assert 'Modified version of TeX Gyre Heros Bold' in names[10] and 'gust.org.pl' in names[10]  # LPPL 6(a), 6(b), 6(d)2
     assert 'U+25B6' in names[10] and 'U+25B6' in (build.ROOT/'assets/fonts/README-classic-light.txt').read_text()  # 6(b): every change
+    assert 'hints removed' in names[10] and 'hints removed' in (build.ROOT/'assets/fonts/README-classic-light.txt').read_text()
     assert (build.ROOT/'assets/fonts/README-classic-light.txt').exists() and (build.ROOT/'assets/fonts/GUST-FONT-LICENSE.txt').exists()
     if 'CFF ' in font:
         assert 'TeXGyre' not in str(font['CFF '].cff.fontNames) + font['CFF '].cff.topDictIndex[0].FullName + font['CFF '].cff.topDictIndex[0].FamilyName
@@ -672,7 +675,8 @@ def letters_font(drop=(), move=None):
 
 def letter_parts(font, c):
     """c's glyph as (component, x, y) for each part, its letters by character."""
-    glyph, back = font['glyf'][font.getBestCmap()[ord(c)]], {f'u{ord(ch):04X}': ch for ch in LETTERS_FONT}
+    cmap = font.getBestCmap()  # by the font's own names: font_letters keeps none (post 3.0), so fontTools makes them up
+    glyph, back = font['glyf'][cmap[ord(c)]], {name: chr(u) for u, name in cmap.items()}
     return [(back[p.glyphName], p.x, p.y) for p in glyph.components]
 
 
@@ -687,11 +691,13 @@ def test_font_letters_maps_every_stock_letter_to_a_composite_of_its_own_glyphs()
     assert len(added) == 93 and after['maxp'].numGlyphs == before['maxp'].numGlyphs + 93
     for u in added:
         glyph = after['glyf'][cmap[u]]
-        assert cmap[u] == f'uni{u:04X}' and glyph.isComposite()
-        assert all(p.glyphName in before.getGlyphOrder() for p in glyph.components)
+        assert after.getGlyphID(cmap[u]) >= before['maxp'].numGlyphs and glyph.isComposite()  # a glyph of its own
+        assert all(after.getGlyphID(p.glyphName) < before['maxp'].numGlyphs for p in glyph.components)  # stock's glyphs, by id
         assert after['hmtx'][cmap[u]][1] == glyph.xMin
-    assert cmap[0x1ea1] == 'u1EA1' and not after['glyf']['u1EA1'].isComposite()  # ạ was there: left alone
-    assert after['cmap'].getcmap(1, 0).cmap == {0x61: 'u0061'}
+    assert len({after.getGlyphID(cmap[u]) for u in added}) == 93 and after['post'].formatType == 3  # a glyph each; no names
+    # By glyph ids, as in letter_parts
+    assert after.getGlyphID(cmap[0x1ea1]) == before.getGlyphID('u1EA1') and not after['glyf'][cmap[0x1ea1]].isComposite()  # ạ was there: left alone
+    assert {u: after.getGlyphID(n) for u, n in after['cmap'].getcmap(1, 0).cmap.items()} == {0x61: before.getGlyphID('u0061')}
     assert after['head'].modified == before['head'].modified == 0xb0000000 and after['head'].created == before['head'].created
 
 

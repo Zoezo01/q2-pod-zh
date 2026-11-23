@@ -7,6 +7,7 @@ fonts/classic-light.ttf in a Q2 Pod firmware image is a Modified Version of TeX 
 - cut to what it has of U+0020-U+052F, U+1EA0-U+1EF9 and U+2000-U+21FF: part of its Latin, including
   Vietnamese's letters with tone marks, part of its Greek, and its punctuation;
 - its layout features cut to frac, liga and locl;
+- its hints removed;
 - one glyph added at U+25B6, a play mark: a triangle tools/build.py draws (play_mark), which is not
   from TeX Gyre Heros;
 - renamed Q2 Pod Classic Light, in the name table and the CFF names, as GUST asks of derived fonts. Its
