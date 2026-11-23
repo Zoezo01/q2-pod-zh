@@ -502,6 +502,10 @@ def test_classic_light_font():
     assert (build.ROOT/'assets/fonts/README-classic-light.txt').exists() and (build.ROOT/'assets/fonts/GUST-FONT-LICENSE.txt').exists()
     if 'CFF ' in font:
         assert 'TeXGyre' not in str(font['CFF '].cff.fontNames) + font['CFF '].cff.topDictIndex[0].FullName + font['CFF '].cff.topDictIndex[0].FamilyName
+        hints = {'hstem', 'vstem', 'hstemhm', 'vstemhm', 'hintmask', 'cntrmask'}
+        for charstring in font['CFF '].cff.topDictIndex[0].CharStrings.values():
+            charstring.decompile()
+            assert not hints & set(charstring.program)  # stb_truetype runs no hints: none are kept
     assert re.fullmatch(r'#define CLASSIC_LIGHT_RANGES \{0x20,0x7e,[0-9a-fx,]+\}', ranges)
     assert 'CFF ' in font and 'glyf' not in font  # the chosen outline form
 
