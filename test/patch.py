@@ -4817,7 +4817,7 @@ row=lambda i: m.handler(m.nodes[m.find('scroll_view',albums)]['children'][i],O['
 f,ctx=row(0); m.call(address=f,args=(ctx,m.event,0,0),gap=0)
 assert m.plays[-1][2:]==(0,0xf001,2) and m.play_names==['a1','b1','b2']; passed()
 f,ctx=row(3); m.call(address=f,args=(ctx,m.event,0,0),gap=0); m.page=m.top
-assert m.nodes[m.top]['name']=='coverflow_page' and m.texts()[:2]==['Beta','b1'] and m.texts()[3]=='b2'; passed()  # an artist line under each
+assert m.nodes[m.top]['name']=='coverflow_page' and m.texts()[:5]==['Beta','b1','Beta Band','b2','Beta Band']; passed()  # the album artist under each
 # Shuffle plays the decade's songs alone: the records stock's select * fill makes of its one query's rows (the fill
 # stands in here, each row's id naming its record), the library itself never loaded.
 paths=('/mnt/mmc/Music/z4dmr4cvs8lw.flac','/mnt/mmc/Music/mhf1gqxzbiuf.flac')

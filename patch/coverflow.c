@@ -3329,8 +3329,10 @@ static const char *track_by(const char *aa, void *song, int centred) {
  * at the text's mid-line: each at most TITLE_RULE_W long, TITLE_RULE_GAP from the text, inside the
  * title's box. None for a side shorter than TITLE_RULE_MIN, a name that scrolls (wider than its
  * box less hscroll_label's two 2 px margins), or no canvas. White, which the style hook paints as
- * the half's ink, the name's. Placed again whenever cf.title's text changes. ponytail: measured in
- * the default face at cfs.name_px, as panel_fit measures; a CJK name's own face may run wider. */
+ * the half's ink, the name's. Placed again whenever cf.title's text changes. Measured in the
+ * default face at cfs.name_px, as panel_fit measures. ponytail: the logical string is measured, so
+ * a right-to-left name, drawn joined and mostly narrower, gets its rules further out than
+ * TITLE_RULE_GAP, or none. */
 #define TITLE_RULE_W 75
 #define TITLE_RULE_GAP 12
 #define TITLE_RULE_MIN 16
@@ -3696,6 +3698,9 @@ static int to_tracks(const void *unused) {
     widget_t *view = tall ? page_list(cf.page, cf.body, &cf.title, title, n, 64) : list(title, n);
     if (centred) widget_set_prop_int(cf.title, "style:normal:font_size", cfs.name_px);
     title_rules();
+    /* ponytail: every row is built at once, and in Minimal and Modern each gets a second label once
+     * any song has an artist or a length; a recycled pool of rows if a long album or the Unknown
+     * Album card drags or runs short of memory. */
     for (int i = 0; i < n; ++i) {
         char duration[24], detail[300];
         void *song = deque_at(cf.tracks, (unsigned)i);

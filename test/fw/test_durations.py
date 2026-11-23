@@ -7,6 +7,7 @@ import struct
 import pytest
 
 from conftest import O, Files, claim
+from test_coverflow import style  # noqa: F401
 from test_nav_library_pages import Config, LENGTHS, Probe, lengths, path_key, song, ui  # noqa: F401
 from test_playlist_art import real_sqlite
 
@@ -685,8 +686,9 @@ def rules(fw, ui, page):
 
 
 @pytest.mark.parametrize('theme', [0, 2])  # Minimal, Modern
-def test_a_centred_album_list_shows_each_song_s_artist_and_length(fw, ui, song, stock_clock, st, theme):
+def test_a_centred_album_list_shows_each_song_s_artist_and_length(fw, ui, song, stock_clock, st, style, theme):
     st('scan_durations').value, st('pod_read').value = 1, 1
+    C.c_short.from_address(C.addressof(fw.var('cfs', C.c_char)) + style['name_px']).value = 26
     tracks = [song(b'/m/a.flac', b'One', b'Band', track=1, end=200), song(b'/m/b.flac', b'Two', b'Band', track=2),
               song(b'/m/c.flac', b'Three', track=3, end=200)]
     page, rows, heights, c = album_list(fw, ui, song, tracks, theme)
@@ -696,18 +698,34 @@ def test_a_centred_album_list_shows_each_song_s_artist_and_length(fw, ui, song, 
     box = 375 - 2 * x
     side = (box - 40) // 2 - 12  # 'Blue', 40 px, centred; each rule 12 px from it
     assert rules(fw, ui, page) == [((x + side - 75, 24, 75, 1), -1), ((x + box - side, 24, 75, 1), -1)]
+    pair = [k for k in ui.kids[page] if ui.name.get(k, '').startswith('title_rule')]
+    assert len(pair) == 2  # one pair, made once
+    assert fw.calls('canvas_set_font')[-1][1][1:3] == (0, 26)  # the default face at cfs.name_px
     # a row's file gone: the title says so, and the rules move out to its width
     fw.mock('fw_access', lambda *_: -1)
     ui.handler(ui.kids[ui.view(page)][0], O['EVT_CLICK'])()
     assert ui.text[c.title] == 'Storage unavailable'
     side = (box - 190) // 2 - 12  # under 75: the rule runs from the box's edge
     assert rules(fw, ui, page) == [((x, 24, side, 1), -1), ((x + box - side, 24, side, 1), -1)]
+    # a wider translation, 380 px over the box: it scrolls, and the same two rules hide
+    fw.mock('canvas_measure_text', lambda c, s, n, *_: 20.0 * n)
+    ui.handler(ui.kids[ui.view(page)][0], O['EVT_CLICK'])()
+    assert rules(fw, ui, page) == [] and all(w in ui.hidden for w in pair)
+    assert [k for k in ui.kids[page] if ui.name.get(k, '').startswith('title_rule')] == pair
 
 
 @pytest.mark.parametrize('theme', [0, 2])
 def test_a_centred_album_list_with_no_artist_or_length_keeps_single_rows(fw, ui, song, stock_clock, st, theme):
     st('scan_durations').value = 0
     page, rows, heights, _ = album_list(fw, ui, song, [song(b'/m/a.flac', b'One', end=200)], theme)
+    assert rows == [('One', None)] and heights == {fw.fn('page_h', C.c_int, C.c_int)(48)}
+
+
+def test_a_song_with_no_artist_keeps_a_single_row(fw, ui, song, stock_clock, st):
+    st('scan_durations').value = 0
+    one = song(b'/m/a.flac', b'One')
+    C.c_uint64.from_address(one + O['REC_ARTIST']).value = 0  # NULL, not ''
+    _, rows, heights, _ = album_list(fw, ui, song, [one], 2)
     assert rows == [('One', None)] and heights == {fw.fn('page_h', C.c_int, C.c_int)(48)}
 
 
