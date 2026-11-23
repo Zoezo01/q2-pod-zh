@@ -1613,7 +1613,7 @@ class FolderTagsMachine(ScanMachine):
             elif name=='toolsGetMusicInfo':
                 self.reads+=1; assert (a,self.text(c))==(0,"/m/it's.flac"); ret=1
                 for off in (0,0x100,0x200,0x280,0x480,0x580): u.mem_write(b+off,(self.title if off==0x280 else "New artist's tags").encode()+b'\0')
-                for off,v in ((0x680,2026),(0x684,3),(0x688,2)): self.word(b+off,v)
+                for off,v in ((0x680,2026),(0x684,2),(0x688,3)): self.word(b+off,v)  # year, disc, track
             elif name=='toolsUpdateDbTable':
                 assert self.text(a)=='/mnt/data/database.db'; self.updates.append(self.text(b)); self.db.execute(self.text(b)); ret=1
         else: return super().hook(u,address,size,unused)

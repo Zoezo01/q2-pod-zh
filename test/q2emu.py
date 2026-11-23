@@ -2153,7 +2153,7 @@ class CoverflowMachine(QueueMachine):
             t=self.music_tags.get(self.text(c)); self.calls.append(('toolsGetMusicInfo',self.text(c)))
             if t:
                 for off,v in zip((0x280,0x100,0,0x580),t[:4]): u.mem_write(b+off,v.encode()+b'\0')
-                self.word(b+0x684,t[4]); self.word(b+0x688,t[5])
+                self.word(b+0x684,t[5]); self.word(b+0x688,t[4])  # disc, track
             ret=int(bool(t))
         elif name=='getAllAlbum':
             self.deqs[self.get(syms['tools_pdeq_directory'])][1]=[self.copy('stSongInfo',e) for e in self.albums]; ret=len(self.albums)
