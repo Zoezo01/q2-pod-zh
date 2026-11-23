@@ -261,13 +261,6 @@ static widget_t *browsing(void);
 static void spot_restarting(void);
 
 /* SPOT_LOG's length, 0 without one. */
-static long log_size(void) {
-    void *f = fopen(SPOT_LOG, "rb");
-    long n = f && !fseek(f, 0, 2) ? ftell(f) : 0;
-    if (f) fclose(f);
-    return n;
-}
-
 /* While a play loads: 1 once librespot has logged SPOT_REFUSED since sp.log_from, which moves on
  * (less a match's length, for a line cut between two reads). Only the last 4 KB new are read. */
 static int spot_refused(void) {
@@ -1025,7 +1018,8 @@ static void got(void) {
             sp.loading = 1; /* not a timed-out play's 2, which spot_started takes as any track */
             sp.loading = !spot_started();
             sp.load_at = time_now_ms();
-            sp.log_from = log_size();
+            sp.log_from = file_size(SPOT_LOG);
+            if (sp.log_from < 0) sp.log_from = 0;
             spot_np();
         } else if (ok && act == A_REMOVE) {
             br.selected[0] = 0;
