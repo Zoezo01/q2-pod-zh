@@ -7,7 +7,7 @@ import struct
 import subprocess
 
 import pytest
-from conftest import block
+from conftest import Card as BaseCard, block
 
 pytestmark = pytest.mark.usefixtures('stock_gapless')  # Crossfade's page has stock's Gapless on, as stock's default
 
@@ -52,58 +52,10 @@ def config(fw, values=None):
     return written
 
 
-class Card:
-    """fopen and friends on a dict."""
-    def __init__(self, fw, files=None):
-        self.files, self.open, self.unlinked, self.bad_rename, self.bad_close = dict(files or {}), {}, [], False, False
-        for name in 'fopen fread fwrite fseek ftell rename unlink'.split():
-            fw.mock('fw_' + name, getattr(self, name))
-        fw.mock('fw_fclose', lambda *_: self.bad_close)
-        fw.mock('fw_fflush', lambda *_: 0)
-        fw.mock('fw_fsync', lambda *_: 0)
-        fw.mock('fw_access', lambda path, *_: C.string_at(path).decode('latin1') not in self.files)
-
-    def fopen(self, path, mode, *_):
-        name, write = C.string_at(path).decode('latin1'), C.string_at(mode)[:1] == b'w'
-        if not write and name not in self.files:
-            return 0
-        handle = 0x1000 + len(self.open)
-        self.open[handle] = [name, 0]
-        if write:
-            self.files[name] = b''
-        return handle
-
-    def fread(self, buf, size, n, f, *_):
-        name, at = self.open[f]
-        data = self.files[name][at:at + size * n]
-        C.memmove(buf, data, len(data))
-        self.open[f][1] = at + len(data)
-        return len(data) // size
-
-    def fwrite(self, buf, size, n, f, *_):
-        self.files[self.open[f][0]] += C.string_at(buf, size * n)
-        return n
-
-    def fseek(self, f, off, whence, *_):
-        base = {0: 0, 1: self.open[f][1], 2: len(self.files[self.open[f][0]])}[whence]
-        if base + off < 0:
-            return -1
-        self.open[f][1] = base + off
-        return 0
-
-    def ftell(self, f, *_):
-        return self.open[f][1]
-
-    def rename(self, a, b, *_):
-        if self.bad_rename:
-            return -1
-        self.files[C.string_at(b).decode('latin1')] = self.files.pop(C.string_at(a).decode('latin1'))
-        return 0
-
-    def unlink(self, path, *_):
-        self.unlinked.append(C.string_at(path).decode())
-        self.files.pop(self.unlinked[-1], None)
-        return 0
+class Card(BaseCard):
+    """Names as latin1, as misc.c reads them."""
+    def name(self, path):
+        return C.string_at(path).decode('latin1')
 
 
 # Night Shift
@@ -925,7 +877,7 @@ def test_a_failed_rename_says_so(fw):
     u = ui(fw)
     u.edit, u.destination = 0x7000, f'{SAVED}/Rock.peq'.encode()
     card = Card(fw, {f'{SAVED}/Rock.peq': b'p'})
-    card.bad_rename = True
+    card.fail_rename = True
     typed(fw, b'Jazz')
     fw.fn('peq_ui__rename_preset', None)()
     assert u.status == b'Rename failed; preset kept'

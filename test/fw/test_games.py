@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from conftest import O
+from conftest import O, Card
 
 SEED = 2166136261
 SUD, BEST, SOL, SNK = 0x31445553, 0x31585456, 0x314c4f53, 0x314b4e53
@@ -1084,48 +1084,13 @@ def test_food_lands_only_on_free_cells_and_reaches_them_all(fw):
 
 # The page: its save files, keys, timers. page_open and the list go to stubs, so a page is a number.
 
-class Card:
-    """blob_io's files: fopen, fread, fwrite and rename on a dict."""
-    def __init__(self, fw, files=None):
-        self.files, self.open, self.fail = dict(files or {}), {}, False
-        for name in 'fopen fread fwrite rename'.split():
-            fw.mock('fw_' + name, getattr(self, name))
-
-    def fopen(self, path, mode, *_):
-        name, write = C.string_at(path).decode(), C.string_at(mode)[:1] == b'w'
-        if not write and name not in self.files:
-            return 0
-        handle = 0x1000 + len(self.open)
-        self.open[handle] = [name, 0]
-        if write:
-            self.files[name] = b''
-        return handle
-
-    def fread(self, buf, size, n, f, *_):
-        name, at = self.open[f]
-        data = self.files[name][at:at + size * n]
-        C.memmove(buf, data, len(data))
-        self.open[f][1] += len(data)
-        return len(data) // size
-
-    def fwrite(self, buf, size, n, f, *_):
-        if self.fail:
-            return 0
-        self.files[self.open[f][0]] += C.string_at(buf, size * n)
-        return n
-
-    def rename(self, a, b, *_):
-        self.files[C.string_at(b).decode()] = self.files.pop(C.string_at(a).decode())
-        return 0
-
-
 PAGE, LATCH = 0x7000, 0xa4bbfa
 
 
 class Page:
     """The Games page open on stubs: a clock, a timer list and the card."""
     def __init__(self, fw, files=None):
-        self.fw, self.g, self.card = fw, api(fw), Card(fw, files)
+        self.fw, self.g, self.card = fw, api(fw), Card(fw, files, access=False)
         self.now, self.timers, self.toasts = 1000, [], []
         fw.mock('window_create', lambda *_: PAGE)
         fw.mock('widget_get_prop_int', lambda w, k, d, *_: 290 if C.string_at(k) == b'h' else d)
@@ -1450,7 +1415,7 @@ def test_closing_writes_a_dirty_game_silently_even_if_the_write_fails(fw):
     toasts = heard(fw)
     p.go(SUDOKU)
     p.s.dirty = 3
-    p.card.fail = True
+    p.card.fail_write = True
     p.close()
     assert toasts == []
 
@@ -1459,7 +1424,7 @@ def test_a_failed_save_says_so_when_it_can(fw):
     p = Page(fw)
     toasts = heard(fw)
     p.s.dirty = 1
-    p.card.fail = True
+    p.card.fail_write = True
     p.g.flush(1)
     assert toasts == [b"Couldn't save"] and not p.s.dirty
 
@@ -1961,7 +1926,7 @@ def test_a_record_that_can_t_be_written_says_so_and_still_shows(fw):
     toasts = heard(fw)
     p.go(VORTEX)
     p.s.vx.score = 50
-    p.card.fail = True
+    p.card.fail_write = True
     fw.fn('games__game_over', None)()
     assert toasts == [b"Couldn't save"] and p.s.record and p.s.best.score == 50
 

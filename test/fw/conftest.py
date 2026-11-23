@@ -396,6 +396,70 @@ class Files:
         self.files[C.string_at(new).decode()] = self.files.pop(C.string_at(old).decode())
         return 0
 
+
+class Card:
+    """A card's files as a dict, written through: fopen creates the entry, fwrite appends to it, fclose is a flag.
+    fail_write, fail_rename, fail_sync, fail_close and fail_ferror make those calls fail; unlinked lists the paths removed.
+    access=False leaves fw_access to the test (games' listing asks the real one)."""
+    def __init__(self, fw, files=None, access=True):
+        self.files, self.open, self.unlinked = dict(files or {}), {}, []
+        self.fail_write = self.fail_rename = self.fail_sync = self.fail_close = self.fail_ferror = False
+        for name in 'fopen fread fwrite fseek ftell rename unlink'.split():
+            fw.mock('fw_' + name, getattr(self, name))
+        fw.mock('fw_fclose', lambda *_: self.fail_close)
+        fw.mock('fw_fflush', lambda *_: 0)
+        fw.mock('fw_fsync', lambda *_: self.fail_sync)
+        fw.mock('fw_ferror', lambda *_: self.fail_ferror)
+        if access:
+            fw.mock('fw_access', lambda path, *_: self.name(path) not in self.files)
+
+    def name(self, path):
+        return C.string_at(path).decode()
+
+    def fopen(self, path, mode, *_):
+        name, write = self.name(path), C.string_at(mode)[:1] == b'w'
+        if not write and name not in self.files:
+            return 0
+        handle = 0x1000 + len(self.open)
+        self.open[handle] = [name, 0]
+        if write:
+            self.files[name] = b''
+        return handle
+
+    def fread(self, buf, size, n, f, *_):
+        name, at = self.open[f]
+        data = self.files[name][at:at + size * n]
+        C.memmove(buf, data, len(data))
+        self.open[f][1] += len(data)
+        return len(data) // size
+
+    def fwrite(self, buf, size, n, f, *_):
+        if self.fail_write:
+            return 0
+        self.files[self.open[f][0]] += C.string_at(buf, size * n)
+        return n
+
+    def fseek(self, f, off, whence, *_):
+        base = {0: 0, 1: self.open[f][1], 2: len(self.files[self.open[f][0]])}[whence]
+        if base + off < 0:
+            return -1
+        self.open[f][1] = base + off
+        return 0
+
+    def ftell(self, f, *_):
+        return self.open[f][1]
+
+    def rename(self, a, b, *_):
+        if self.fail_rename:
+            return -1
+        self.files[self.name(b)] = self.files.pop(self.name(a))
+        return 0
+
+    def unlink(self, path, *_):
+        self.unlinked.append(self.name(path))
+        self.files.pop(self.unlinked[-1], None)
+        return 0
+
 def favdir_card(fw, files, app='jf', folder='Jellyfin'):
     """A card app .<app> whose q2app names favdir=<folder> (addon.c addon_fav_path): its q2app in files (a Files
     dict, by str path) and the card's root listing it, as opendir and readdir (host.py's struct dirent: d_name at

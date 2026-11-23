@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 
 import host
-from conftest import O, Config, Deques, Externpic, Files, ask_cover, claim, fnv1a, high_halves, in_fork
+from conftest import O, Config, Card as BaseCard, Deques, Externpic, Files, ask_cover, claim, fnv1a, high_halves, in_fork
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 CX, TOP, ART, ONE, MISS = 187, 13, 160, 65536, 99
@@ -1354,58 +1354,17 @@ def test_jump_the_utility_cards_and_other_orders_step_one_by_one(fw):
 
 # The files
 
-class Card:
-    """fopen and friends on a dict; a read past a file's end is short, as stdio's."""
+
+class Card(BaseCard):
+    """'a' opens create a missing file and keep what it holds; fputs writes like fwrite."""
     def __init__(self, fw, files=None):
-        self.files, self.open, self.seen = dict(files or {}), {}, []
-        self.fail_rename = self.fail_sync = False
-        for name in 'fopen fread fwrite fseek ftell rename unlink'.split():
-            fw.mock('fw_' + name, getattr(self, name))
-        fw.mock('fw_fclose', lambda *_: 0)
-        fw.mock('fw_fflush', lambda *_: 0)
-        fw.mock('fw_fsync', lambda *_: self.fail_sync)
-        fw.mock('fw_access', lambda path, *_: C.string_at(path).decode() not in self.files)
+        super().__init__(fw, files)
         fw.mock('fw_fputs', lambda s, f, *_: self.fwrite(s, 1, len(C.string_at(s)), f) and 0)
 
     def fopen(self, path, mode, *_):
-        name, kind = C.string_at(path).decode(), C.string_at(mode)[:1]
-        if kind == b'r' and name not in self.files:
-            return 0
-        handle = 0x1000 + len(self.open)
-        self.open[handle] = [name, 0]
-        if kind == b'w':
-            self.files[name] = b''
-        elif kind == b'a':
-            self.files.setdefault(name, b'')
-        return handle
-
-    def fread(self, buf, size, n, f, *_):
-        name, at = self.open[f]
-        data = self.files[name][at:at + size * n]
-        C.memmove(buf, data, len(data))
-        self.open[f][1] += len(data)
-        return len(data) // size
-
-    def fwrite(self, buf, size, n, f, *_):
-        self.files[self.open[f][0]] += C.string_at(buf, size * n)
-        return n
-
-    def fseek(self, f, off, whence, *_):
-        self.open[f][1] = off if whence == 0 else len(self.files[self.open[f][0]]) + off
-        return 0
-
-    def ftell(self, f, *_):
-        return self.open[f][1]
-
-    def rename(self, a, b, *_):
-        if self.fail_rename:
-            return -1
-        self.files[C.string_at(b).decode()] = self.files.pop(C.string_at(a).decode())
-        return 0
-
-    def unlink(self, path, *_):
-        self.files.pop(C.string_at(path).decode(), None)
-        return 0
+        if C.string_at(mode)[:1] == b'a':
+            self.files.setdefault(self.name(path), b'')
+        return super().fopen(path, mode, *_)
 
 
 def test_file_size(fw):

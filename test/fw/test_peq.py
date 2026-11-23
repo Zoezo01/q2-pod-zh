@@ -7,6 +7,7 @@ import re
 from types import SimpleNamespace
 
 import pytest
+from conftest import Card
 
 BANDS, CHANNELS = 30, 8
 EQ_OFF, EQ_3, EQ_PEQ = 0, 1, 2
@@ -1095,49 +1096,6 @@ def test_peq_number_hostile_sweep(fw):
 
 # The files: fopen and fread as far as peq.c sees them
 
-class Card:
-    def __init__(self, fw, files=None):
-        self.files, self.open, self.bad_fsync, self.bad_ferror, self.bad_fclose = dict(files or {}), {}, False, False, False
-        self.unlinked = []
-        for name in 'fopen fread fwrite rename unlink'.split():
-            fw.mock('fw_' + name, getattr(self, name))
-        fw.mock('fw_fclose', lambda *_: self.bad_fclose)
-        fw.mock('fw_fflush', lambda *_: 0)
-        fw.mock('fw_fsync', lambda *_: self.bad_fsync)
-        fw.mock('fw_ferror', lambda *_: self.bad_ferror)
-        fw.mock('fw_access', lambda path, *_: C.string_at(path).decode() not in self.files)
-
-    def fopen(self, path, mode, *_):
-        name, write = C.string_at(path).decode(), C.string_at(mode)[:1] == b'w'
-        if not write and name not in self.files:
-            return 0
-        handle = 0x1000 + len(self.open)
-        self.open[handle] = [name, 0]
-        if write:
-            self.files[name] = b''
-        return handle
-
-    def fread(self, buf, size, n, f, *_):
-        name, at = self.open[f]
-        data = self.files[name][at:at + size * n]
-        C.memmove(buf, data, len(data))
-        self.open[f][1] += len(data)
-        return len(data) // size
-
-    def fwrite(self, buf, size, n, f, *_):
-        self.files[self.open[f][0]] += C.string_at(buf, size * n)
-        return n
-
-    def rename(self, a, b, *_):
-        self.files[C.string_at(b).decode()] = self.files.pop(C.string_at(a).decode())
-        return 0
-
-    def unlink(self, path, *_):
-        self.unlinked.append(C.string_at(path).decode())
-        self.files.pop(self.unlinked[-1], None)
-        return 0
-
-
 ACTIVE = '/mnt/data/peq-active'
 
 
@@ -1175,7 +1133,7 @@ def test_peq_save_refuses_an_invalid_preset(fw):
 def test_a_failed_sync_leaves_the_old_file_and_no_temporary(fw):
     g = api(fw)
     card = Card(fw, {'/x/a': b'old'})
-    card.bad_fsync = True
+    card.fail_sync = True
     assert g.peq_save(b'/x/a', r(preset(g)), 1) == 0
     assert card.files == {'/x/a': b'old'} and card.unlinked == ['/x/a.tmp']
 
@@ -1233,9 +1191,9 @@ def test_peq_load_refuses_a_valid_file_with_bad_values(fw):
 def test_peq_load_a_read_error_or_failed_close_is_no_file(fw):
     g = api(fw)
     card = Card(fw, {'/a': magic(2) + bytes(preset(g))})
-    card.bad_ferror = True
+    card.fail_ferror = True
     assert not g.peq_load(b'/a', r(Preset()))
-    card.bad_ferror, card.bad_fclose = False, True
+    card.fail_ferror, card.fail_close = False, True
     assert not g.peq_load(b'/a', r(Preset()))
 
 
@@ -1407,7 +1365,7 @@ def test_import_no_file_says_so(fw):
 def test_import_a_read_error_says_so(fw):
     g = api(fw)
     card = Card(fw, {'/a': b'Preamp: 1 dB\n'})
-    card.bad_ferror = True
+    card.fail_ferror = True
     err = Error()
     assert not g.peq_import_file(b'/a', r(Preset()), r(err)) and b'read failed' in err.reason
 
