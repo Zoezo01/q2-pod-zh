@@ -718,6 +718,7 @@ void slider_scrub(widget_t *w, canvas_t *canvas);
 #define PL_MARKING "_pl_marks"
 #define PL_NONE "_pl_none"
 #define PL_ART "_pl_art"
+void *click_bound(widget_t *w, const void *fn); /* w's EVT_CLICK item bound to fn, or any if 0 */
 void qm_playlist_bind(widget_t *w, int depth, int (*pick)(void *, event_t *));
 void qm_select(void);
 int qm_playlist_gone(void *ctx, event_t *event);

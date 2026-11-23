@@ -573,11 +573,14 @@ int qm_playlist_gone(void *ctx, event_t *event) {
     return 0;
 }
 
-/* w's live EVT_CLICK handler fn, as its emitter holds it (ctx @0, fn @12), or 0. */
-static void *click_bound(widget_t *w, const void *fn) {
+/* w's live EVT_CLICK handler item, as its emitter holds it (ctx @0, fn @12): fn 0 takes any
+ * handler. A tap target has one. V1.36 widget emitter @0x60; emitter_on_with_tag items are {ctx,
+ * id, type @8, handler, tag, working @0x14, pending_remove @0x15, next @0x20}. */
+void *click_bound(widget_t *w, const void *fn) {
     void *emitter = w ? P(w, W_EMITTER) : (void *)0;
     for (void *item = emitter ? P(emitter, 0) : 0; item; item = P(item, EMIT_NEXT))
-        if (I(item, EMIT_TYPE) == EVT_CLICK && P(item, 12) == fn && !B(item, EMIT_PENDING_REMOVE))
+        if (I(item, EMIT_TYPE) == EVT_CLICK && (!fn || P(item, 12) == fn) &&
+            !B(item, EMIT_PENDING_REMOVE))
             return item;
     return (void *)0;
 }

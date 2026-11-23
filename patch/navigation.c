@@ -321,15 +321,6 @@ static int ramp(widget_t *top, widget_t *surface, unsigned scope, int ctx, int d
     return spin < first ? 1 : 2 + (spin - first) / more;
 }
 
-/* A tap target has an EVT_CLICK handler. V1.36 widget emitter @0x60; emitter_on_with_tag items are
- * {ctx, id, type @8, handler, tag, working @0x14, pending_remove @0x15, next @0x20}. */
-static int clickable(widget_t *w) {
-    void *emitter = P(w, W_EMITTER);
-    for (void *item = emitter ? P(emitter, 0) : (void *)0; item; item = P(item, EMIT_NEXT))
-        if (I(item, EMIT_TYPE) == EVT_CLICK && !B(item, EMIT_PENDING_REMOVE)) return 1;
-    return 0;
-}
-
 typedef struct {
     widget_t **at;
     int n, cap, budget;
@@ -340,7 +331,7 @@ typedef struct {
 static void collect(widget_t *w, entries_t *s, int depth) {
     if (!w || !widget_get_visible(w) || !widget_get_prop_bool(w, "enable", 1)) return;
     if (depth == 16 || s->n == s->cap || --s->budget < 0) return;
-    if (clickable(w)) {
+    if (click_bound(w, 0)) {
         s->at[s->n++] = w;
         return;
     }
