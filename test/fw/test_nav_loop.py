@@ -1381,13 +1381,20 @@ def test_no_window_manager_is_stocks_bad_params(fw):
 
 
 # Key Tone (buzzeer_switch).
+MCU, MCU_WRITE = 9, 0x80044d76  # /dev/mcu's descriptor here; libhardware2's mcu_write_data_timeout request
+
+
 class Buzzer:
-    """pthread_create runs the click's worker at once, or leaves it running, or fails."""
-    def __init__(self, fw, mode='run', lit=True):
-        self.mode = mode
+    """pthread_create runs the click's worker at once, or leaves it running, or fails. The worker's
+    /dev/mcu opens and takes the write, unless `mcu` names the call that fails ('open' or 'ioctl')."""
+    def __init__(self, fw, mode='run', lit=True, mcu=None):
+        self.mode, self.mcu, self.sent, self.closed = mode, mcu, [], []
         fw.var('g_keytone_flag', C.c_ubyte).value = 1
         fw.var('g_backlight_status', C.c_ubyte).value = lit
         fw.mock('fw_pthread_create', self.create)
+        fw.mock('fw_open', self.open)
+        fw.mock('fw_ioctl', self.ioctl)
+        fw.mock('fw_close', lambda fd, *_: self.closed.append(fd) if fd == MCU else 0)
         self.click = fw.fn('ringnav_buzzer', C.c_int, C.c_int)
         self.fw = fw
 
@@ -1398,14 +1405,42 @@ class Buzzer:
             C.CFUNCTYPE(C.c_void_p, C.c_void_p)(start)(arg)
         return 0
 
+    def open(self, path, flags, *_):
+        if C.string_at(path) != b'/dev/mcu':
+            return 0  # as the stub answers any other file
+        assert flags == 2  # O_RDWR, as mcu_open
+        return -1 if self.mcu == 'open' else MCU
+
+    def ioctl(self, fd, request, arg, *_):
+        class Write(C.Structure):  # mcu_write_data_timeout's: the data, its length, the timeout
+            _fields_ = [('data', C.c_char_p), ('len', C.c_int), ('timeout', C.c_int)]
+        if fd != MCU:
+            return 0
+        write = Write.from_address(arg)
+        self.sent.append((request & 0xffffffff, write.data, write.len, write.timeout))
+        return -1 if self.mcu == 'ioctl' else write.len
+
     def clicks(self):
+        """How many clicks the MCU was handed."""
+        return len(self.sent)
+
+    def stocks(self):
+        """Stock's own command, each with the argument its click had."""
         return [c[1][0] for c in self.fw.calls('stock_buzzer_trampoline')]
 
 
 def test_a_click_sounds_on_a_worker(fw):
     buzzer = Buzzer(fw)
     assert buzzer.click(1) == 0 and buzzer.click(0) == 0
-    assert buzzer.clicks() == [1, 0]
+    assert buzzer.sent == [(MCU_WRITE, b'buzzer', 7, 300000)] * 2  # cmd_mcu write_str buzzer's write
+    assert buzzer.closed == [MCU, MCU] and not buzzer.stocks()
+
+
+@pytest.mark.parametrize('fails', ['open', 'ioctl'])
+def test_a_click_the_mcu_wont_take_is_stocks_command(fw, fails):
+    buzzer = Buzzer(fw, mcu=fails)
+    buzzer.click(1)
+    assert buzzer.stocks() == [1] and buzzer.closed == [MCU] * (fails == 'ioctl')
 
 
 def test_a_click_while_one_sounds_is_dropped(fw):
@@ -1419,7 +1454,7 @@ def test_a_worker_that_cant_start_leaves_the_next_click_free(fw):
     buzzer.click(1)
     buzzer.mode = 'run'
     buzzer.click(1)
-    assert buzzer.clicks() == [1]
+    assert buzzer.clicks() == 1
 
 
 def test_key_tone_off_is_silent(fw):
@@ -1439,7 +1474,7 @@ def test_headphones_silence_the_speaker_unless_click_with_headphones(fw, listene
     else:
         fw.var(listener, C.c_ubyte).value = 1
     buzzer.click(1)
-    assert buzzer.clicks() == ([1] if keytone_hp == b'1' else [])
+    assert buzzer.clicks() == (keytone_hp == b'1')
 
 
 # Widgets: a tree the C walks through stock's accessors, each widget a zeroed block holding the fields
@@ -2835,10 +2870,10 @@ def test_a_dark_wheel_turn_keeps_stocks_pace(fw, stock_bytes, st):
 def test_dark_a_pass_clicks_once(fw, stock_bytes):
     loop, buzzer = Loop(fw, stock_bytes, lit=False), Buzzer(fw, lit=False)
     buzzer.click(1), buzzer.click(1)  # two ticks one idle slept through
-    assert buzzer.clicks() == [1]
+    assert buzzer.clicks() == 1
     loop()
     buzzer.click(1)
-    assert buzzer.clicks() == [1, 1]
+    assert buzzer.clicks() == 2
 
 
 def test_a_dark_click_that_cant_start_leaves_the_pass_its_click(fw, stock_bytes):
@@ -2847,7 +2882,7 @@ def test_a_dark_click_that_cant_start_leaves_the_pass_its_click(fw, stock_bytes)
     buzzer.click(1)
     buzzer.mode = 'run'
     buzzer.click(1)
-    assert buzzer.clicks() == [1]
+    assert buzzer.clicks() == 1
 
 
 class QuickHold:

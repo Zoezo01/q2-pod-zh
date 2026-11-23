@@ -9151,13 +9151,25 @@ int ringnav_wm_paint(widget_t *wm) {
  * hciplayer holds their PCM, so the click has no other way out. Playback alone leaves it clicking.
  * Click With Headphones (IPOD KEYTONEHP, off) keeps the buzzer clicking there too, as stock does;
  * Key Tone off is still silent.
- * system() forks a shell and cmd_mcu for every click, so it runs on a worker, not the UI thread; a
- * click is dropped while the last one's worker runs.
- * With the screen off a pass clicks once (tone_dark; ringnav_sleep).
+ * Stock's system() forks a shell and cmd_mcu for every click. cmd_mcu's write_str is libhardware2's
+ * mcu_open, mcu_write_data_timeout and mcu_close: an open of /dev/mcu and one ioctl (MCU_WRITE)
+ * with the string, its length with the NUL and cmd_mcu's timeout, so the worker does those itself
+ * and the click follows its row without the two forks. Stock's command still runs when the open or
+ * the ioctl fails. A worker, not the UI thread, since the ioctl waits on the MCU; a click is
+ * dropped while the last one's worker runs. With the screen off a pass clicks once (tone_dark;
+ * ringnav_sleep).
  */
+#define MCU_WRITE 0x80044d76u /* mcu_write_data_timeout's request: {data, length, timeout} */
+#define MCU_TIMEOUT 300000    /* cmd_mcu write_str's */
 static volatile int tone_busy;
 static void *tone_worker(void *on) {
-    stock_buzzer_trampoline((int)(long)on);
+    static const struct {
+        const char *data;
+        int len, timeout;
+    } buzz = { "buzzer", 7, MCU_TIMEOUT };
+    int fd = open("/dev/mcu", 2 /* O_RDWR */), sent = fd >= 0 && ioctl(fd, MCU_WRITE, &buzz) >= 0;
+    if (fd >= 0) close(fd);
+    if (!sent) stock_buzzer_trampoline((int)(long)on);
     tone_busy = 0;
     return 0;
 }

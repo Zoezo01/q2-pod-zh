@@ -7472,6 +7472,23 @@ for kw,tone,want in (({'po':1},1,1),({'bal':1},1,1),({'way':1},1,1),({'way':2},1
     m=Machine(); m.config['KEYTONEHP']='1'; m=routed(audible(m,tone=tone),**kw)
     m.call(address=syms['buzzeer_switch'],args=(1,0,0,0)); assert buzzes(m)==want,(kw,tone)
 passed()
+# The click's own write (tone_worker). The cases above have no /dev/mcu, so they sound through stock's
+# command. With one, the worker hands the MCU what cmd_mcu write_str buzzer does: libhardware2's
+# mcu_write_data_timeout request with the string, its length with the NUL and cmd_mcu's timeout, twelve
+# bytes as the Q2's kernel reads them, then closes it, and stock's command never runs.
+class McuMachine(Machine):
+    def __init__(self):
+        super().__init__(); self.mcu=[]
+        for n in ('open','ioctl','close'): self.handlers[syms[n+'@GLIBC_2.0']]='mcu:'+n
+    def hook(self,u,address,size,unused):
+        name=self.handlers.get(address,''); a,b,c=[u.reg_read(r) for r in REGS[:3]]
+        if not name.startswith('mcu:'): return super().hook(u,address,size,unused)
+        if name=='mcu:open': assert (self.text(a),b)==('/dev/mcu',2); self.mcu.append('open'); ret=9
+        elif name=='mcu:ioctl': self.mcu.append((a,b,self.text(self.get(c)),self.get(c+4),self.get(c+8))); ret=7
+        else: self.mcu.append(('close',a)); ret=0
+        self.returns(ret,clobber=True)
+m=routed(audible(McuMachine())); m.call(address=syms['buzzeer_switch'],args=(1,0,0,0))
+assert m.mcu==['open',(9,0x80044d76,'buzzer',7,300000),('close',9)] and not buzzes(m); passed()
 # A reboot keeps the place (playback.c ringnav_reboot): Restart (device_reboot) and the firmware update's
 # dialog, which stops the player before it flashes, save as power-off does (save_memoryplay_info, which
 # ringnav_savequeue hooks) before stock runs, with the dialog's arguments; a stopped player (1) saves nothing.
