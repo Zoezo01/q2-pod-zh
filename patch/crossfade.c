@@ -32,10 +32,9 @@ static struct {
     int ctx; /* the page's: 0 Crossfade, 1 Wheel sensitivity, 2 Resume Songs, 3 Night Shift */
     int sliding, unsaved, setting; /* a finger on the slider; a value it moved; refresh's own set */
     int rs_read, rs_min;
-    int mono_read, mono, swap_read, swap;
-    volatile int *flag, *mono_flag, *swap_flag, *press_file, *mute_file;
-    widget_t *swap_label;
-    widget_t *mono_label; /* the Mono Audio row's, while Playback is open */
+    int opt_read[2], opt[2]; /* Mono Audio (0) and Swap L/R (1) */
+    volatile int *flag, *opt_flag[2], *press_file, *mute_file;
+    widget_t *opt_label[2]; /* their rows', while Playback is open */
     widget_t *page, *sw, *view, *slider, *dec, *add, *label;
     unsigned press, press_at;
 } xf __attribute__((section(".scratch")));
@@ -186,53 +185,45 @@ void peq_chain(void) {
     if (!peq_chained && !g_equalizer_flag && mclGetPlayStatus() != 1) peq_attach();
 }
 
-/* Mono Audio (Q2POD MONO, read once): MONO_FILE holds it for hciplayer's filter and q2video, which
- * map it (peq_player.c, video.c), so a change is heard at once. The filter mixes after the EQ. */
-int mono_on(void) {
-    if (!xf.mono_read) xf.mono = config_value("Q2POD", "MONO", 2, 0), xf.mono_read = 1;
-    return xf.mono;
-}
-int swap_on(void) {
-    if (!xf.swap_read) xf.swap = config_value("Q2POD", "SWAPLR", 2, 0), xf.swap_read = 1;
-    return xf.swap;
+/* Mono Audio (k 0, Q2POD MONO) and Swap L/R (k 1, SWAPLR), read once each. MONO_FILE holds Mono
+ * Audio for hciplayer's filter and q2video, which map it (peq_player.c, video.c), so a change is
+ * heard at once. The filter mixes after the EQ. */
+static const char *const opt_key[2] = { "MONO", "SWAPLR" };
+int opt_on(int k) {
+    if (!xf.opt_read[k]) xf.opt[k] = config_value("Q2POD", opt_key[k], 2, 0), xf.opt_read[k] = 1;
+    return xf.opt[k];
 }
 void mono_sync(void) {
-    if (!xf.swap_flag && swap_on()) xf.swap_flag = shared_int(SWAP_FILE ".tmp", SWAP_FILE);
-    if (xf.swap_flag) *xf.swap_flag = swap_on();
-    if (xf.swap) peq_chain();
-    if (!xf.mono_flag && (!mono_on() || !(xf.mono_flag = shared_int(MONO_FILE ".tmp", MONO_FILE))))
+    if (!xf.opt_flag[1] && opt_on(1)) xf.opt_flag[1] = shared_int(SWAP_FILE ".tmp", SWAP_FILE);
+    if (xf.opt_flag[1]) *xf.opt_flag[1] = opt_on(1);
+    if (opt_on(1)) peq_chain();
+    if (!xf.opt_flag[0] &&
+        (!opt_on(0) || !(xf.opt_flag[0] = shared_int(MONO_FILE ".tmp", MONO_FILE))))
         return; /* no file reads as off */
-    *xf.mono_flag = mono_on();
-    if (xf.mono) peq_chain();
+    *xf.opt_flag[0] = opt_on(0);
+    if (opt_on(0)) peq_chain();
 }
 
-static void mono_text(widget_t *label) { list_toggle(label, tr("Mono Audio"), mono_on()); }
-
-/* Playback's row (navigation.c ringnav_audioset makes it): the label, kept for mono_click. */
-void mono_row(widget_t *label) {
-    xf.mono_label = label;
-    mono_text(label);
+static void opt_text(int k) {
+    list_toggle(xf.opt_label[k], k ? tr("Swap L/R") : tr("Mono Audio"), opt_on(k));
 }
-int mono_click(void *ctx, event_t *event) {
-    xf.mono = !mono_on();
-    write_int_config(xf.mono, "Q2POD", "MONO");
+
+/* Playback's rows (navigation.c ringnav_audioset makes them): the label, kept for opt_click. */
+static void opt_row(widget_t *label, int k) {
+    xf.opt_label[k] = label;
+    opt_text(k);
+}
+static int opt_click(int k) {
+    xf.opt[k] = !opt_on(k);
+    write_int_config(xf.opt[k], "Q2POD", opt_key[k]);
     mono_sync();
-    mono_text(xf.mono_label);
+    opt_text(k);
     return 0;
 }
-
-static void swap_text(void) { list_toggle(xf.swap_label, tr("Swap L/R"), swap_on()); }
-void swap_row(widget_t *label) {
-    xf.swap_label = label;
-    swap_text();
-}
-int swap_click(void *ctx, event_t *event) {
-    xf.swap = !swap_on();
-    write_int_config(xf.swap, "Q2POD", "SWAPLR");
-    mono_sync();
-    swap_text();
-    return 0;
-}
+void mono_row(widget_t *label) { opt_row(label, 0); }
+void swap_row(widget_t *label) { opt_row(label, 1); }
+int mono_click(void *ctx, event_t *event) { return opt_click(0); }
+int swap_click(void *ctx, event_t *event) { return opt_click(1); }
 
 /* Crossfade on: stock's Gapless on, as its row's click turns it on (0x4bd158): saved, set, and its
  * switch on the Playback page below shown on. */

@@ -208,7 +208,7 @@ static void spot_output(void) {
     const char *dev = output_device(vol);
     if (dev)
         tk_snprintf(out, sizeof out, "%s %s\n", dev, vol);
-    else if (mono_on() || swap_on())
+    else if (opt_on(0) || opt_on(1))
         tk_snprintf(out, sizeof out, "plughw:0,0 h%s\n", vol);
     if (!strcmp(out, sp.out)) return;
     memcpy(sp.out, out, sizeof out);

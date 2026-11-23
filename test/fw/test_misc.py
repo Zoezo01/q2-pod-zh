@@ -423,8 +423,11 @@ def test_utf8_char_hostile_sweep(fw):
 
 class Xf(C.Structure):
     _fields_ = [*((k, C.c_int) for k in 'read on seconds done'.split()), ('key', C.c_int * 8),
-                *((k, C.c_int) for k in 'stops counted ctx sliding unsaved setting rs_read rs_min mono_read mono swap_read swap'.split()),
-                *((k, C.c_void_p) for k in 'flag mono_flag swap_flag press_file mute_file swap_label mono_label page sw view slider dec add label'.split()),
+                *((k, C.c_int) for k in 'stops counted ctx sliding unsaved setting rs_read rs_min'.split()),
+                ('opt_read', C.c_int * 2), ('opt', C.c_int * 2),
+                ('flag', C.c_void_p), ('opt_flag', C.c_void_p * 2), ('press_file', C.c_void_p), ('mute_file', C.c_void_p),
+                ('opt_label', C.c_void_p * 2),
+                *((k, C.c_void_p) for k in 'page sw view slider dec add label'.split()),
                 ('press', C.c_uint), ('press_at', C.c_uint)]
 
 
@@ -669,7 +672,7 @@ def test_mono_on_writes_the_flag_the_player_maps(fw):
     fw.fn('mono_sync', None)()
     assert cells[0].value == 1
     x = xf(fw)
-    x.mono = 0
+    x.opt[0] = 0
     fw.fn('mono_sync', None)()
     assert cells[0].value == 0 and len(cells) == 1  # one file, kept
 
