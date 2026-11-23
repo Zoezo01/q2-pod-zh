@@ -9,7 +9,8 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]/'tools'))
 from build import segments  # noqa: E402
 from unicorn import Uc, UC_ARCH_MIPS, UC_MODE_MIPS32, UC_MODE_LITTLE_ENDIAN  # noqa: E402
 from unicorn.mips_const import (UC_CPU_MIPS32_24KF, UC_MIPS_REG_A0, UC_MIPS_REG_A1, UC_MIPS_REG_A2,  # noqa: E402
-                                UC_MIPS_REG_A3, UC_MIPS_REG_CP0_STATUS, UC_MIPS_REG_RA, UC_MIPS_REG_SP, UC_MIPS_REG_V0)
+                                UC_MIPS_REG_A3, UC_MIPS_REG_CP0_STATUS, UC_MIPS_REG_F12, UC_MIPS_REG_PC, UC_MIPS_REG_RA,
+                                UC_MIPS_REG_SP, UC_MIPS_REG_T9, UC_MIPS_REG_V0)
 
 # The player runners' (xfade_player.py, bt_resample.py) return address, import stubs, heap and stack top.
 DONE, STUBS, HEAP, STACK = 0x2000000, 0x2800000, 0x3000000, 0x40f0000
@@ -66,12 +67,23 @@ def player(raw):
     return u
 
 
-def call(u, fn, *args):
-    """fn(*args) on player()'s stack, returning to DONE: its v0."""
-    for i, value in enumerate(args): u.reg_write((UC_MIPS_REG_A0, UC_MIPS_REG_A1, UC_MIPS_REG_A2, UC_MIPS_REG_A3)[i], value)
-    u.reg_write(UC_MIPS_REG_SP, STACK), u.reg_write(UC_MIPS_REG_RA, DONE)
-    u.emu_start(fn, DONE, count=100_000_000)
+def call(u, fn, *args, sp=STACK, done=DONE, count=100_000_000):
+    """fn(*args) on sp (player()'s stack by default), returning to done: its v0."""
+    for i, value in enumerate(args): u.reg_write((UC_MIPS_REG_A0, UC_MIPS_REG_A1, UC_MIPS_REG_A2, UC_MIPS_REG_A3)[i], value & 0xffffffff)
+    u.reg_write(UC_MIPS_REG_SP, sp), u.reg_write(UC_MIPS_REG_RA, done), u.reg_write(UC_MIPS_REG_T9, fn)
+    u.emu_start(fn, done, count=count)
+    assert u.reg_read(UC_MIPS_REG_PC) == done, 'did not return'
     return u.reg_read(UC_MIPS_REG_V0)
+
+
+def helpers(u):
+    """w, r, a, f12, cstr and call on u: the closures the player runners share."""
+    def w(p, *v): u.mem_write(p, struct.pack('<' + 'I'*len(v), *v))
+    def r(p): return struct.unpack('<I', u.mem_read(p, 4))[0]
+    def a(n): return u.reg_read((UC_MIPS_REG_A0, UC_MIPS_REG_A1, UC_MIPS_REG_A2, UC_MIPS_REG_A3)[n])
+    def f12(): return struct.unpack('<d', struct.pack('<Q', u.reg_read(UC_MIPS_REG_F12)))[0]
+    def cstr(p): return bytes(u.mem_read(p, 256)).split(b'\0')[0]
+    return w, r, a, f12, cstr, lambda fn, *args: call(u, fn, *args)
 
 
 def peq_lib(imports_s):
