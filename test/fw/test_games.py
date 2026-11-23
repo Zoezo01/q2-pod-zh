@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from conftest import O, Card
+from conftest import O, Card, block
 
 SEED = 2166136261
 SUD, BEST, SOL, SNK = 0x31445553, 0x31585456, 0x314c4f53, 0x314b4e53
@@ -89,22 +89,6 @@ def fnv1a(data, h=SEED):
 
 
 libc = C.CDLL(None)
-libc.malloc.restype, libc.malloc.argtypes = C.c_void_p, [C.c_size_t]
-libc.free.argtypes = [C.c_void_p]
-
-
-class Exact:
-    """data in a malloc of exactly its size, so the sanitizer sees a read or write past it."""
-    def __init__(self, data):
-        self.n, self.p = len(data), libc.malloc(len(data) or 1)
-        C.memmove(self.p, bytes(data), len(data))
-
-    def __enter__(self):
-        return self.p
-
-    def __exit__(self, *_):
-        self.data = C.string_at(self.p, self.n)
-        libc.free(self.p)
 
 
 def solve(grid, limit=2):
@@ -176,8 +160,8 @@ def test_hash_bytes_hostile_sweep(fw):
     g, rng = api(fw), random.Random(1)
     for _ in range(2000):
         data = rng.randbytes(rng.randrange(0, 64))
-        with Exact(data) as p:
-            assert g.hash_bytes(SEED, p, len(data)) == fnv1a(data)
+        p = block(fw, data, len(data))
+        assert g.hash_bytes(SEED, p, len(data)) == fnv1a(data)
 
 
 @pytest.mark.parametrize('size', (12, 92, 336))
@@ -223,8 +207,8 @@ def test_games_ok_hostile_sweep(fw):
         if k % 16 == 15:
             data[rng.randrange(size)] ^= 1 << rng.randrange(8)
         want = data[:4] == SUD.to_bytes(4, 'little') and data[-4:] == fnv1a(data[:-4]).to_bytes(4, 'little')
-        with Exact(data) as p:
-            assert bool(g.games_ok(p, size, SUD)) == want
+        p = block(fw, bytes(data), len(data))
+        assert bool(g.games_ok(p, size, SUD)) == want
         accepted += want
     assert 350 < accepted < 500  # three in four of the sealed ones
 

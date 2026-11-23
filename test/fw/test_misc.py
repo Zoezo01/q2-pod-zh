@@ -16,27 +16,12 @@ FNV = 2166136261
 r = C.byref
 
 libc = C.CDLL(None)
-libc.malloc.restype, libc.malloc.argtypes = C.c_void_p, [C.c_size_t]
 libc.calloc.restype, libc.calloc.argtypes = C.c_void_p, [C.c_size_t, C.c_size_t]
-libc.free.argtypes = [C.c_void_p]
 
 
 def exact(ctype, n):
     """n zeroed ctypes in a calloc of exactly their size, so the sanitizer sees an overrun."""
     return (ctype * n).from_address(libc.calloc(n, C.sizeof(ctype)))
-
-
-# Not in conftest: it needs this file's libc, whose malloc returns a whole pointer.
-class Exact:
-    def __init__(self, data):
-        self.p = libc.malloc(len(data) or 1)
-        C.memmove(self.p, bytes(data), len(data))
-
-    def __enter__(self):
-        return self.p
-
-    def __exit__(self, *_):
-        libc.free(self.p)
 
 
 def config(fw, values=None):
@@ -348,9 +333,9 @@ def test_utf8_char_is_utf8_else_latin1(fw):
 
     def chars(data):
         i, out = C.c_uint(0), []
-        with Exact(data) as p:
-            while i.value < len(data):
-                out.append(f(p, len(data), r(i)))
+        p = block(fw, data, len(data))
+        while i.value < len(data):
+            out.append(f(p, len(data), r(i)))
         return out
     assert chars('aé€😀'.encode()) == [ord(c) for c in 'aé€😀']
     assert chars(b'\xe9a') == [0xe9, 0x61]  # Latin-1
@@ -365,10 +350,10 @@ def test_utf8_char_hostile_sweep(fw):
     for _ in range(2000):
         data = rng.randbytes(rng.randrange(1, 16))
         i = C.c_uint(0)
-        with Exact(data) as p:
-            while i.value < len(data):
-                before = i.value
-                assert f(p, len(data), r(i)) <= 0x1fffff and before < i.value <= len(data)
+        p = block(fw, data, len(data))
+        while i.value < len(data):
+            before = i.value
+            assert f(p, len(data), r(i)) <= 0x1fffff and before < i.value <= len(data)
 
 
 # Crossfade's page

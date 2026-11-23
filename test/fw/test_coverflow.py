@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 
 import host
-from conftest import O, Config, Card as BaseCard, Deques, Externpic, Files, ask_cover, claim, fnv1a, high_halves, in_fork
+from conftest import O, Config, Card as BaseCard, Deques, Externpic, Files, ask_cover, block, claim, fnv1a, high_halves, in_fork
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 CX, TOP, ART, ONE, MISS = 187, 13, 160, 65536, 99
@@ -95,7 +95,6 @@ def api(fw):
 
 
 libc = C.CDLL(None)
-libc.malloc.restype, libc.malloc.argtypes = C.c_void_p, [C.c_size_t]
 libc.calloc.restype, libc.calloc.argtypes = C.c_void_p, [C.c_size_t, C.c_size_t]
 libc.free.argtypes = [C.c_void_p]
 libc.qsort.argtypes = [C.c_void_p, C.c_size_t, C.c_size_t, C.c_void_p]
@@ -105,19 +104,6 @@ libc.mmap.restype, libc.mmap.argtypes = C.c_void_p, [C.c_void_p, C.c_size_t, C.c
 def exact(ctype, n):
     """n zeroed ctypes in a calloc of exactly their size, so the sanitizer sees an overrun; free with libc.free."""
     return (ctype * n).from_address(libc.calloc(n, C.sizeof(ctype)))
-
-
-# Not in conftest: it needs this file's libc, whose malloc returns a whole pointer.
-class Exact:
-    def __init__(self, data):
-        self.p = libc.malloc(len(data) or 1)
-        C.memmove(self.p, bytes(data), len(data))
-
-    def __enter__(self):
-        return self.p
-
-    def __exit__(self, *_):
-        libc.free(self.p)
 
 
 class Split:
@@ -1094,8 +1080,8 @@ def test_album_dir_hostile_sweep(fw):
     album_dir = fw.fn('album_dir', C.c_uint, C.c_void_p, C.c_int)
     for _ in range(2000):
         s = bytes(rng.choices(b'/CDcdDISKik 12_-a.', k=rng.randrange(0, 24)))
-        with Exact(s + b'\0') as p:
-            assert album_dir(p, 1) <= album_dir(p, 0) <= len(s), s
+        p = block(fw, s + b'\0', len(s + b'\0'))
+        assert album_dir(p, 1) <= album_dir(p, 0) <= len(s), s
 
 
 def records(rng):

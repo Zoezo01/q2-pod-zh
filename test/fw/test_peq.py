@@ -7,7 +7,7 @@ import re
 from types import SimpleNamespace
 
 import pytest
-from conftest import Card
+from conftest import Card, block
 
 BANDS, CHANNELS = 30, 8
 EQ_OFF, EQ_3, EQ_PEQ = 0, 1, 2
@@ -66,25 +66,6 @@ def api(fw):
            'peq__level': (None, ptr, d, d), 'peq__peak': (d, ptr, ptr, i), 'peq__live': (i, ptr, ptr),
            'peq__sample': (d, ptr, ptr, i, d, i), 'peq__prepare': (i, ptr, i, ptr)}
     return SimpleNamespace(**{k.replace('peq__', ''): fw.fn(k, v[0], *v[1:]) for k, v in fns.items()})
-
-
-libc = C.CDLL(None)
-libc.malloc.restype, libc.malloc.argtypes = C.c_void_p, [C.c_size_t]
-libc.free.argtypes = [C.c_void_p]
-
-
-# Not in conftest: it needs this file's libc, whose malloc returns a whole pointer.
-class Exact:
-    """data in a malloc of exactly its size, so the sanitizer sees a read past it."""
-    def __init__(self, data):
-        self.p = libc.malloc(len(data) or 1)
-        C.memmove(self.p, bytes(data), len(data))
-
-    def __enter__(self):
-        return self.p
-
-    def __exit__(self, *_):
-        libc.free(self.p)
 
 
 def preset(g, *bands, preamp=0.0, balance=0.0, automatic=2, bypass=0):
@@ -227,8 +208,8 @@ def test_peq_valid_hostile_sweep(fw):
                 setattr(b, rng.choice(('frequency', 'gain', 'q')), weird(rng))
             p.preamp = rng.choice((0.0, weird(rng)))
             p.count = rng.randrange(-1, 32)
-        with Exact(bytes(p)) as q:
-            got = g.peq_valid(q)
+        q = block(fw, bytes(p), len(bytes(p)))
+        got = g.peq_valid(q)
         assert bool(got) == oracle_valid(p), k
         valid += got
     assert 100 < valid < 1000
@@ -845,17 +826,17 @@ Filter: ON PEQ Fc 30,5 Hz Gain 1 dB Q 2 # trailing
 """
 
 
-def parse(g, text, size=None):
-    out, err = Preset(), Error()
+def parse(fw, text, size=None):
+    g, out, err = api(fw), Preset(), Error()
     out.count = -7
-    with Exact(text + b'\0') as p:
-        ok = g.peq_parse(p, len(text) if size is None else size, r(out), r(err))
+    p = block(fw, text + b'\0', len(text + b'\0'))
+    ok = g.peq_parse(p, len(text) if size is None else size, r(out), r(err))
     return (out if ok else None), err
 
 
 def test_parse_an_apo_file(fw):
     g = api(fw)
-    p, _ = parse(g, GOOD_TEXT)
+    p, _ = parse(fw, GOOD_TEXT)
     assert p.count == 3 and p.preamp == -6.5 and p.automatic == 2 and not p.bypass and p.balance == 0
     a, b, c = p.bands[0], p.bands[1], p.bands[2]
     assert (a.enabled, a.type, a.frequency, a.gain, a.q) == (1, PK, 1000, -3.5, 1.41)
@@ -865,110 +846,106 @@ def test_parse_an_apo_file(fw):
 
 
 def test_parse_no_preamp_is_auto(fw):
-    p, _ = parse(api(fw), b'Filter 1: ON PK Fc 100 Hz Gain 1 dB Q 1\n')
+    p, _ = parse(fw, b'Filter 1: ON PK Fc 100 Hz Gain 1 dB Q 1\n')
     assert p.automatic == 1 and p.preamp == 0
 
 
 @pytest.mark.parametrize('text', (b'', b'\n\n', b'# only a comment', b'\xef\xbb\xbf', b'\r\n', b'   \t  '))
 def test_parse_an_empty_file_is_an_empty_preset(fw, text):
-    p, _ = parse(api(fw), text)
+    p, _ = parse(fw, text)
     assert p.count == 0 and p.automatic == 1
 
 
 def test_parse_takes_a_bom_crlf_and_no_last_newline(fw):
-    p, _ = parse(api(fw), b'\xef\xbb\xbfPreamp: 1 dB\r\nFilter 1: ON PK Fc 100 Hz Gain 1 dB Q 1')
+    p, _ = parse(fw, b'\xef\xbb\xbfPreamp: 1 dB\r\nFilter 1: ON PK Fc 100 Hz Gain 1 dB Q 1')
     assert p.preamp == 1 and p.count == 1
 
 
 def test_parse_colons_stand_alone_or_stick(fw):
-    p, _ = parse(api(fw), b'Filter 1 : ON PK Fc 100 Hz Gain 1 dB Q 1\nFilter:ON PK Fc 200 Hz Gain 1 dB Q 1\nPreamp : 2 dB\n')
+    p, _ = parse(fw, b'Filter 1 : ON PK Fc 100 Hz Gain 1 dB Q 1\nFilter:ON PK Fc 200 Hz Gain 1 dB Q 1\nPreamp : 2 dB\n')
     assert p.count == 2 and p.preamp == 2
 
 
 def test_parse_preamps_add_up(fw):
-    p, _ = parse(api(fw), b'Preamp: -3 dB\nPreamp: -4 dB\n')
+    p, _ = parse(fw, b'Preamp: -3 dB\nPreamp: -4 dB\n')
     assert p.preamp == -7
 
 
 def test_parse_channel_preamps_become_the_louder_and_a_balance(fw):
-    p, _ = parse(api(fw), b'Channel: L\nPreamp: -3 dB\nChannel: R\nPreamp: -5 dB\nChannel: all\nPreamp: -1 dB\n')
+    p, _ = parse(fw, b'Channel: L\nPreamp: -3 dB\nChannel: R\nPreamp: -5 dB\nChannel: all\nPreamp: -1 dB\n')
     assert p.preamp == -4 and p.balance == -2  # the right is 2 dB lower
 
 
 def test_parse_a_left_cut_alone_is_a_positive_balance(fw):
-    p, _ = parse(api(fw), b'Channel: L\nPreamp: -3 dB\n')
+    p, _ = parse(fw, b'Channel: L\nPreamp: -3 dB\n')
     assert p.preamp == 0 and p.balance == 3
 
 
 @pytest.mark.parametrize('line, enabled', ((b'Channel: L', 2), (b'Channel: R', 3), (b'Channel: all', 1), (b'Channel: L R', 1)))
 def test_parse_a_filter_plays_on_its_channel(fw, line, enabled):
-    p, _ = parse(api(fw), line + b'\nFilter 1: ON PK Fc 100 Hz Gain 1 dB Q 1\n')
+    p, _ = parse(fw, line + b'\nFilter 1: ON PK Fc 100 Hz Gain 1 dB Q 1\n')
     assert p.bands[0].enabled == enabled
 
 
 @pytest.mark.parametrize('name, type_', ((b'PK', PK), (b'PEQ', PK), (b'LS', LS), (b'LSC', LS), (b'HS', HS), (b'HSC', HS)))
 def test_parse_each_filter_type(fw, name, type_):
-    p, _ = parse(api(fw), b'Filter 1: ON ' + name + b' Fc 100 Hz Gain 1 dB Q 1\n')
+    p, _ = parse(fw, b'Filter 1: ON ' + name + b' Fc 100 Hz Gain 1 dB Q 1\n')
     assert p.bands[0].type == type_
 
 
 @pytest.mark.parametrize('gain', (6.0, -6.0, 0.0))
 def test_parse_a_shelf_without_q_has_slope_0_9_as_apo(fw, gain):
-    p, _ = parse(api(fw), b'Filter 1: ON LS Fc 100 Hz Gain %g dB\n' % gain)
+    p, _ = parse(fw, b'Filter 1: ON LS Fc 100 Hz Gain %g dB\n' % gain)
     a = 10 ** (gain / 40)
     assert p.bands[0].q == pytest.approx(1 / math.sqrt((a + 1 / a) * (1 / .9 - 1) + 2))
 
 
 def test_parse_lsc_with_q_keeps_its_centre(fw):
-    p, _ = parse(api(fw), b'Filter 1: ON LSC Fc 100 Hz Gain 6 dB Q 2\n')
+    p, _ = parse(fw, b'Filter 1: ON LSC Fc 100 Hz Gain 6 dB Q 2\n')
     assert (p.bands[0].frequency, p.bands[0].q) == (100, 2)
 
 
 @pytest.mark.parametrize('name, down', ((b'LS', False), (b'HS', True)))
 def test_parse_ls_and_hs_with_q_move_the_corner_to_the_centre(fw, name, down):
-    p, _ = parse(api(fw), b'Filter 1: ON ' + name + b' Fc 1000 Hz Gain 6 dB Q 2\n')
+    p, _ = parse(fw, b'Filter 1: ON ' + name + b' Fc 1000 Hz Gain 6 dB Q 2\n')
     a = 10 ** (6 / 40)
     f = 10 ** (abs(6) / 80 * ((1 / 4 - 2) / (a + 1 / a) + 1))
     assert p.bands[0].frequency == pytest.approx(1000 / f if down else 1000 * f)
 
 
 def test_parse_a_corner_moved_past_the_range_clamps(fw):
-    p, _ = parse(api(fw), b'Filter 1: ON LS Fc 20000 Hz Gain 24 dB Q 0.5\nFilter 2: ON HS Fc 20 Hz Gain 24 dB Q 0.5\n')
+    p, _ = parse(fw, b'Filter 1: ON LS Fc 20000 Hz Gain 24 dB Q 0.5\nFilter 2: ON HS Fc 20 Hz Gain 24 dB Q 0.5\n')
     assert p.bands[0].frequency == 20000 and p.bands[1].frequency == 20
 
 
 def test_parse_an_off_filter_outside_the_ranges_is_a_blank_slot(fw):
-    p, _ = parse(api(fw), b'Filter 1: OFF PK Fc 0 Hz Gain 0 dB Q 0\n')
+    p, _ = parse(fw, b'Filter 1: OFF PK Fc 0 Hz Gain 0 dB Q 0\n')
     assert p.count == 0
 
 
 def test_parse_exactly_30_bands_then_no_more(fw):
-    g = api(fw)
     line = b'Filter: ON PK Fc 100 Hz Gain 1 dB Q 1\n'
-    assert parse(g, line * 30)[0].count == 30
-    p, err = parse(g, line * 31)
+    assert parse(fw, line * 30)[0].count == 30
+    p, err = parse(fw, line * 31)
     assert p is None and err.line == 31 and b'30' in err.reason
 
 
 def test_parse_limits_a_file_to_16384_bytes(fw):
-    g = api(fw)
-    assert parse(g, b'#' * 511 + b'\n' + (b'#' * 511 + b'\n') * 31)[0] is not None
-    assert parse(g, b'\n' * 16384)[0] is not None
-    p, err = parse(g, b'\n' * 16385)
+    assert parse(fw, b'#' * 511 + b'\n' + (b'#' * 511 + b'\n') * 31)[0] is not None
+    assert parse(fw, b'\n' * 16384)[0] is not None
+    p, err = parse(fw, b'\n' * 16385)
     assert p is None and err.line == 1
 
 
 def test_parse_limits_a_line_to_512_bytes(fw):
-    g = api(fw)
-    assert parse(g, b'#' * 512)[0] is not None
-    p, err = parse(g, b'\n' + b'#' * 513)
+    assert parse(fw, b'#' * 512)[0] is not None
+    p, err = parse(fw, b'\n' + b'#' * 513)
     assert p is None and err.line == 2
 
 
 def test_parse_16_tokens_then_no_more(fw):
-    g = api(fw)
-    assert parse(g, b'Channel: ' + b'L ' * 14)[0] is not None  # 16 tokens with the colon
-    assert parse(g, b'Channel: ' + b'L ' * 15)[1].line == 1
+    assert parse(fw, b'Channel: ' + b'L ' * 14)[0] is not None  # 16 tokens with the colon
+    assert parse(fw, b'Channel: ' + b'L ' * 15)[1].line == 1
 
 
 @pytest.mark.parametrize('text, line, word', (
@@ -994,12 +971,12 @@ def test_parse_16_tokens_then_no_more(fw):
     (b'Channel: L\nPreamp: -13 dB\n', 2, b'differ'),
 ))
 def test_parse_refuses_with_the_line_and_why(fw, text, line, word):
-    p, err = parse(api(fw), text)
+    p, err = parse(fw, text)
     assert p is None and err.line == line and word in err.reason
 
 
 def test_parse_an_embedded_nul_is_refused(fw):
-    p, err = parse(api(fw), b'Preamp: 1 dB\n\0\n')
+    p, err = parse(fw, b'Preamp: 1 dB\n\0\n')
     assert p is None and err.line == 2 and b'NUL' in err.reason
 
 
@@ -1008,13 +985,13 @@ def test_parse_a_failure_writes_nothing(fw):
     out = preset(g, preamp=-9)
     before = bytes(out)
     text = b'Filter 1: ON PK Fc 100 Hz Gain 1 dB Q 1\nbad\n'
-    with Exact(text + b'\0') as p:
-        assert not g.peq_parse(p, len(text), r(out), None)  # and no error record to fill
+    p = block(fw, text + b'\0', len(text + b'\0'))
+    assert not g.peq_parse(p, len(text), r(out), None)  # and no error record to fill
     assert bytes(out) == before
 
 
 def test_parse_reads_only_size_bytes(fw):
-    p, _ = parse(api(fw), b'Preamp: 1 dB\nbad\n', 13)
+    p, _ = parse(fw, b'Preamp: 1 dB\nbad\n', 13)
     assert p.preamp == 1
 
 
@@ -1039,7 +1016,7 @@ def test_parse_hostile_sweep(fw):
     g, rng = api(fw), random.Random(6)
     worked = 0
     for k in range(2000):
-        p, err = parse(g, garbage(rng))
+        p, err = parse(fw, garbage(rng))
         if p is None:
             assert err.line and err.reason
         else:
@@ -1085,8 +1062,8 @@ def test_peq_number_hostile_sweep(fw):
         except ValueError:
             want = None
         out = C.c_double(1.25)
-        with Exact(s + b'\0') as p:
-            got = g.peq_number(p, r(out))
+        p = block(fw, s + b'\0', len(s + b'\0'))
+        got = g.peq_number(p, r(out))
         assert bool(got) == (want is not None), s
         if got:
             good += 1
