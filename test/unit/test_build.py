@@ -171,12 +171,12 @@ def test_check_layout_payload_may_reach_its_scratch_page(size, refused):
         build.check_layout(bytes(size), ps)
 
 
-@pytest.mark.parametrize('end,refused', [(build.SCRATCH + 0x30000, False), (build.SCRATCH + 0x30001, True)])
-def test_check_layout_scratch_state_may_fill_192_kb(end, refused):
-    # Scratch state of exactly 192 KB is accepted, one byte more refused
+@pytest.mark.parametrize('end,refused', [(build.SCRATCH + 0x40000, False), (build.SCRATCH + 0x40001, True)])
+def test_check_layout_scratch_state_may_fill_256_kb(end, refused):
+    # Scratch state of exactly 256 KB is accepted, one byte more refused
     ps = {'__scratch_start': build.SCRATCH, '__scratch_end': end}
     if refused:
-        with pytest.raises(ValueError, match='^Scratch state exceeds its 192 KB$'):
+        with pytest.raises(ValueError, match='^Scratch state exceeds its 256 KB$'):
             build.check_layout(b'', ps)
     else:
         build.check_layout(b'', ps)
