@@ -637,11 +637,7 @@ int usable(void) {
     return !g_usbdet_value && confirm;
 }
 
-static int usb_prompt(void) {
-    widget_t *top = window_manager_get_top_window(window_manager());
-    return g_usblink_status == 2 && !g_usbdet_value && usable() && top &&
-           !tk_strcmp(widget_get_prop_str(top, "name", ""), "confirminfo_dialog");
-}
+static int usb_prompt(void) { return g_usblink_status == 2 && !g_usbdet_value && usable(); }
 
 int allowed_top(widget_t *top) {
     return top && context_id(widget_get_prop_str(top, "name", (void *)0)) >= 0;
