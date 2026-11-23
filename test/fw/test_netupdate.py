@@ -193,7 +193,8 @@ def test_no_list_is_no_apps(fw):
 
 def test_the_repo_ships_a_list_that_parses(fw):
     lines = [x for x in (SHELF.parent.parent/'sources.list').read_bytes().splitlines() if x.strip() and not x.startswith(b'#')]
-    assert b'[Games]' in lines and len(sources(fw, b'\n'.join(lines))) == len(lines) - 1  # every line an app but the section's
+    sections = sum(x.startswith(b'[') for x in lines)
+    assert b'[Games]' in lines and len(sources(fw, b'\n'.join(lines))) == len(lines) - sections  # every line an app but the sections'
 
 
 def test_hostile_sources(fw):
