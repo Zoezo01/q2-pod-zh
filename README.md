@@ -158,6 +158,11 @@ The [user guide][guide] covers every control, EQ, Cover Flow and more tips.
     <td></td>
   </tr>
   <tr valign="top">
+    <td><b><a href="https://github.com/lampsonlnguyen/q2-plex">Plex</a></b></td>
+    <td>Stream music from your Plex server, with search and a play queue.</td>
+    <td></td>
+  </tr>
+  <tr valign="top">
     <td><b><a href="https://github.com/m-d-e-v/q2-podcasts">Podcasts</a></b></td>
     <td>Subscribe to shows and download episodes, with a sleep timer.</td>
     <td></td>
@@ -268,6 +273,11 @@ On the App Store's **Games** tab. Each plays in **Library → Games**.
   <tr valign="top">
     <td><b><a href="https://github.com/Carbon-66/Q2-Miami">Q2A Miami</a></b></td>
     <td>Drive, walk and take taxi fares across the real Miami, staying ahead of the police.</td>
+    <td></td>
+  </tr>
+  <tr valign="top">
+    <td><b><a href="https://github.com/js-surya/q2-sixtrack">Six Track</a></b></td>
+    <td>A one-button cricket batting game: chase a target over 1, 2 or 5 overs.</td>
     <td></td>
   </tr>
 </table>
