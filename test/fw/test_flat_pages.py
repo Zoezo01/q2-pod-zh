@@ -13,6 +13,7 @@ from test_nav_paint import (ACCENTS, GRAPHITE, ICONS, LABELS, MINIMAL, MODERN, P
                             whole, on_page, slider_scrub, slider_paint, ui_load,
                             st, stock_h, theme, vol_paint, volume, world)  # noqa: F401 (fixtures, by name)
 from test_nav_painters import Quick as QuickInit
+from test_nav_paint import quick_page as paint_quick_page
 import test_nav_loop as loop
 from test_nav_loop import SELECTOR_INDEX, keys, stock_bytes  # noqa: F401 (fixtures, by name)
 from test_nav_display_library import POINTER_MOVE, SLIDE_PX, QuickPage, Stock, Ui, pressdown
@@ -49,17 +50,7 @@ def test_a_flat_page_s_ground_is_the_half_s_paper(fw, light, paper):
 
 
 def quick_page(fw, world, images, light='0', pressed=None, **config):
-    theme(fw, MODERN, LIGHT=light, **config)
-    win = world.window('statusbar_dialog', 'dialog')
-    icons = {}
-    for i, (name, image) in enumerate(images.items()):
-        icons[name] = world.add(win, name, 'image', box=(30 + 80 * (i % 4), 40 + 100 * (i // 4), 54, 54), image=image)
-        world.add(win, LABELS[name], 'label', box=(0, 0, 80, 18), text='Label')
-    if pressed:
-        fw.var('quick_settings__quick', Quick).pressed = icons[pressed]
-    canvas = Canvas(fw)
-    paint_bg(fw, win, canvas)
-    return win, icons, canvas
+    return paint_quick_page(fw, world, images, light, pressed, number=MODERN, size=54, **config)
 
 
 def face(canvas, icon_box, row=27):

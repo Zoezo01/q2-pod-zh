@@ -1342,12 +1342,12 @@ LABELS = dict(zip(ICONS, ['label_wifi', 'label_bt', 'label_lock', 'label_gain', 
                           'label_playset', 'label_sysset']))
 
 
-def quick_page(fw, world, images, light='0', pressed=None, **config):
-    theme(fw, CLASSIC, LIGHT=light, **config)
+def quick_page(fw, world, images, light='0', pressed=None, number=CLASSIC, size=60, **config):
+    theme(fw, number, LIGHT=light, **config)
     win = world.window('statusbar_dialog', 'dialog')
     icons = {}
     for i, (name, image) in enumerate(images.items()):
-        icons[name] = world.add(win, name, 'image', box=(30 + 80 * (i % 4), 40 + 100 * (i // 4), 60, 60), image=image)
+        icons[name] = world.add(win, name, 'image', box=(30 + 80 * (i % 4), 40 + 100 * (i // 4), size, size), image=image)
         world.add(win, LABELS[name], 'label', box=(0, 0, 80, 18), text='Label')
     if pressed:
         fw.var('quick_settings__quick', Quick).pressed = icons[pressed]
