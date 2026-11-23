@@ -490,8 +490,8 @@ void tidal_all(int press, char *out, unsigned size), tidal_poll(void), tidal_all
  * (ctx: its place by name). addon_forget and addon_quit: the Apps page replaces or removes the
  * files of the app in folder dir (".<id>"): asked to end and waited for on the Apps page's worker,
  * then, once replaced or removed, forgotten on the UI thread. */
-/* Card apps on the card at once: twice what the App Store lists (netupdate.c SH_MAX), for those put
- * there by hand. ponytail: a fixed table in .scratch, 532 bytes a slot over addon.c,
+/* Card apps on the card at once: 16 more than the App Store lists (netupdate.c SH_MAX), for those
+ * put there by hand. ponytail: a fixed table in .scratch, 532 bytes a slot over addon.c,
  * addon_library.c, addon_eq.c and navigation.h, its pages untouched until a slot is used; an app
  * past the last slot gets no row and nothing says so. A heap table that grows, if a card ever holds
  * more. */

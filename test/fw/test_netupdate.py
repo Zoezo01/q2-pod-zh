@@ -23,7 +23,7 @@ _n = int(TAG.replace(b'.', b'')) + 1
 NEWER = b'%d.%d.%d' % (_n // 100, _n // 10 % 10, _n % 10)
 OLDER = b'0.9.9'
 
-SH_MAX = 32
+SH_MAX = 48
 SH_CAP = 1 << 30
 SH_OK, SH_NET, SH_SPACE, SH_CARD, SH_MISSING, SH_BAD, SH_CANCELLED, SH_BUSY = range(8)
 NU_IDLE, NU_RUNNING, NU_DONE, NU_LATEST, NU_NET, NU_MISSING, NU_CARD, NU_CANCELLED, NU_BUSY, NU_SPACE, NU_BAD = range(11)
@@ -182,7 +182,7 @@ def test_two_q2_pod_repos_of_one_id_keep_the_first(fw):
 
 
 def test_the_table_is_never_overrun(fw):
-    text = b''.join(b'me/app%d\n' % i for i in range(40))
+    text = b''.join(b'me/app%d\n' % i for i in range(SH_MAX + 8))
     assert len(sources(fw, text)) == SH_MAX and len(sources(fw, text, 3)) == 3
 
 
@@ -3199,6 +3199,15 @@ def test_the_cards_custom_sources_follow_the_list_and_never_reach_its_copy(fw, m
         s.click(2)  # Mine
         assert s.run() == 0 and s.toasts[-1] == 'Mine is ready in Streaming' and card.files[CUSTOM] == mine
         assert card.files[SOURCES] == LISTED
+
+def test_a_list_of_33_keeps_them_all_and_the_cards_own_lines_after(fw):
+    """At 32 apps (the list's count in 1.9.1) a custom line got no slot, and a 33rd listed app was cut."""
+    Disk(fw, {CUSTOM: b'you/q2-mine Mine\n[Games]\nyou/q2-play Play\n'})
+    out, own = (App * SH_MAX)(), C.c_int()
+    listed = b''.join(b'me/q2-a%02d\n' % i for i in range(33))
+    n = fw.fn('netupdate__custom_sources', C.c_int, C.c_char_p, C.c_void_p, C.POINTER(C.c_int))(listed, out, C.byref(own))
+    assert own.value == 33 and [a.id for a in out[32:n]] == [b'a32', b'mine', b'play'] and out[34].game == b'\x01'
+
 
 @pytest.mark.parametrize('theme', (b'0', b'1', b'2'))  # Minimal, Classic, Modern
 def test_app_store_paints_a_rows_state_as_a_word_and_the_tabs_badges(fw, theme):

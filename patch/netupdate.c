@@ -23,7 +23,10 @@ const char *netupdate_tag(const char *location) {
 #define SH_DIR CARD "/.q2"
 #define STAGING SH_DIR "/staging"
 #define SH_CAP (1u << 30) /* the most an install may unpack */
-#define SH_MAX 32
+/* The App Store's apps, the list's and then the card's own (custom_sources). ponytail: a fixed
+ * table, 224 bytes an app in shelf_apps and again in sh.next; past 48 the card's lines go first,
+ * then the list's last, with nothing said. Raise it as the list nears it. */
+#define SH_MAX 48
 
 enum { SH_OK, SH_NET, SH_SPACE, SH_CARD, SH_MISSING, SH_BAD, SH_CANCELLED, SH_BUSY };
 /* repo: its GitHub owner/name; id: the repo's name less "q2-", for the card folder .<id>, the tag

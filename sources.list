@@ -3,6 +3,7 @@
 # older firmware skips the [Games] line and lists them all. The device fetches this file; see
 # docs/internals.md#q2-shelf.
 # Firmware before the tabs (1.8.7 and older) reads only the first 16 apps, so the games, last, are the first left out.
+# Firmware 1.9.0 and older reads only the first 32 entries, with a user's own lines after them.
 DiamondBond/q2-rockbox Rockbox
 DiamondBond/q2-rockbox-themes Rockbox Themes
 DiamondBond/q2-librespot Spotify
