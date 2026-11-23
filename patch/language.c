@@ -266,12 +266,7 @@ static int lang_pick(void *ctx, event_t *event) {
     char was[256], old[96], copy[96];
     int had = active(was, old, sizeof old);
     if (i >= lg.picks || !strcmp(was, i < 0 ? "" : lg.code[i])) return 0;
-    struct {
-        int kind, ms;
-        char text[0x400];
-    } prompt = { 1, 0, "" };
-    tk_snprintf(prompt.text, sizeof prompt.text, "%s", tr("Restart to apply?"));
-    if (navigator_to_with_context("dialog/confirminfo_dialog", &prompt) != 10) return 0;
+    if (!restart_asked()) return 0;
     if (i >= 0) {
         tk_snprintf(copy, sizeof copy, LANG_DATA "/q2-lang-%s.tsv", lg.code[i]);
         if (!copy_in(lg.file[i], copy, LANG_BYTES)) {

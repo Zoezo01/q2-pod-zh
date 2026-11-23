@@ -6197,17 +6197,21 @@ void theme_select(int t) {
     widget_invalidate_force(window_manager(), (void *)0);
 }
 int theme_restart(int t) { return geom_with(&themes[t], -1, 0, 1) != st.geom; }
-/* A choice that needs another geometry set: confirmed, the config takes value (a theme its presets
- * too, its own options' among them) and the Q2 restarts into it, ringnav_reboot saving the queue
- * first; the running state stays the booted set's theme until then, as theme_boot requires.
- * Cancelled, nothing is written and nothing changes. */
-void restart_confirm(int setting, int value) {
+/* The Restart to apply? confirm: 1 when the user says yes. */
+int restart_asked(void) {
     struct {
         int kind, ms;
         char text[0x400];
     } prompt = { 1, 0, "" };
     tk_snprintf(prompt.text, sizeof prompt.text, "%s", tr("Restart to apply?"));
-    if (navigator_to_with_context("dialog/confirminfo_dialog", &prompt) != 10) return;
+    return navigator_to_with_context("dialog/confirminfo_dialog", &prompt) == 10;
+}
+/* A choice that needs another geometry set: confirmed, the config takes value (a theme its presets
+ * too, its own options' among them) and the Q2 restarts into it, ringnav_reboot saving the queue
+ * first; the running state stays the booted set's theme until then, as theme_boot requires.
+ * Cancelled, nothing is written and nothing changes. */
+void restart_confirm(int setting, int value) {
+    if (!restart_asked()) return;
     const theme_t *T = theme();
     int was = *option_slot(T, setting);
     setting_put(&was, value, option_key(T, setting));

@@ -706,6 +706,7 @@ void slider_paint(widget_t *w, canvas_t *canvas);
 int search_del(widget_t *w);
 void search_over(widget_t *w, canvas_t *canvas);
 void slider_scrub(widget_t *w, canvas_t *canvas);
+int restart_asked(void); /* navigation.c: the Restart to apply? confirm, yes or no */
 
 /* playlists.c */
 /* Classic's Playlists (pl_dress): a page's add mode (ringnav_playlist), the button of a row that
