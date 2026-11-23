@@ -933,7 +933,7 @@ def patch_web(path, data):
     for old, new in WEB[path]:
         check(old in text, f'Unexpected {path}: {old[:40]!r}')
         text = text.replace(old, new)
-    check(not re.search('[　-鿿＀-￯]', text), f'Chinese left in {path}')
+    check(not CJK.search(text), f'Chinese left in {path}')
     return text.encode()
 
 # Stock's UI assets carry Chinese text (docs/internals.md#english), most of it designers' placeholders that
