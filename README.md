@@ -219,7 +219,7 @@ The [user guide][guide] covers every control, EQ, Cover Flow and more tips.
   </tr>
   <tr valign="top">
     <td><b><a href="https://github.com/DiamondBond/q2-langs">Languages</a></b></td>
-    <td>Q2 Pod in Deutsch, Español, Français, Italiano, Polski, Русский, Українська, 日本語, 한국어, ภาษาไทย, 简体中文 or 繁體中文, picked in <b>System settings → Language</b>; Arabic, Persian and Urdu titles show in any language.</td>
+    <td>Q2 Pod in 33 more languages (<a href="https://github.com/DiamondBond/q2-langs#languages">the list</a>), Arabic among them, picked in <b>System settings → Language</b>; Arabic, Persian and Urdu titles show in any language.</td>
     <td></td>
   </tr>
 </table>
