@@ -13,6 +13,7 @@
   - Library: the **Apps** icon is an outline, like Photos, Games and App Store beside it. In Minimal it now greys like them: it was paler, and in Light Mode its glyph could hardly be seen.
   - App Store: room for more apps, so apps you list yourself in `custom-sources.list` show again after the App Store's own, and can be updated and removed there.
   - Cover Flow: in Minimal and Modern, an album's songs show their artist under each title, with the length when **Scan Song Durations** is on, and a short line either side of the album's name sets it apart from the songs (after rafaelxaugusto's mockup).
+  - Now Playing: after a skip, or a song change while the screen was off, the new song's title, artist and heart show at once, with its cover. They could keep the last song's until you tapped the screen.
 - **1.9.0**:
   - Cover Flow: drag the **Position Bar** to move through your albums quickly. Touch anywhere along it, even after it has faded, and the covers go to the album under your finger and follow it; far jumps show the album's letter. The bar now stays on screen a second after you stop, instead of 0.8 seconds. Turn it on in **Display → Cover Flow**.
   - Ratings: hold Play/Pause on **Top Rated**, **Loved**, **All Rated** or **Disliked** in **Library → Ratings** to play that list shuffled. A hold on a song in the list still opens the song's options.

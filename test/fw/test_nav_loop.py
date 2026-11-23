@@ -10,7 +10,7 @@ import struct
 import pytest
 
 import host
-from conftest import NAVIGATION_SOURCE, O, Files, Game, claim
+from conftest import NAVIGATION_SOURCE, O, Files, Game, claim, libc
 
 KEY_CENTER, KEY_PREV, KEY_NEXT, KEY_PLAY, KEY_RETURN = (O[k] for k in ('KEY_CENTER', 'KEY_PREV', 'KEY_NEXT', 'KEY_PLAY', 'KEY_RETURN'))
 KEY_BACK_BTN, KEY_FWD_BTN = O['KEY_BACK_BTN'], O['KEY_FWD_BTN']
@@ -1242,6 +1242,90 @@ def test_a_game_in_front_keeps_the_loop_paced_and_one_behind_now_playing_doesnt(
     gm = fw.var('addon__gm', Game)
     gm.pid, gm.native = 78, native
     assert fw.fn('navigation__np_animating', C.c_int)() == (not native)
+
+
+NP_UPDATE = 0x53cf08  # Now Playing's update: (window, force); the title, artist, heart and lyric rows only forced or flagged
+
+
+class NowPlayingFront:
+    """Now Playing in front, lit, its page 0x5100, the parsed tags' path the test's; stock's update at its address
+    is an x86-64 jump to a Python stand-in, and it and the window manager's paint log what ran, in order."""
+    UPDATE = C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_int)
+
+    def __init__(self, fw, st):
+        self.st, self.log, self.saved = st, [], C.string_at(NP_UPDATE, 12)
+        self.update = self.UPDATE(lambda win, force: self.log.append(('update', win, force)) or 0)
+        claim(NP_UPDATE)
+        C.memmove(NP_UPDATE, b'\x48\xb8' + struct.pack('<Q', C.cast(self.update, C.c_void_p).value) + b'\xff\xe0', 12)
+        self.lit = fw.var('g_backlight_status', C.c_ubyte)
+        self.lit.value = 1
+        st('np_win', C.c_void_p).value = 0x5100
+        self.top = 0x5100
+        fw.mock('window_manager_get_top_window', lambda *_: self.top)
+        self.tags = fw.var('fw_ctx_g_play_id3_info', C.c_char * 2716)
+        self.wm = Wm(fw)
+        self.wm.paint = Wm.PAINT(lambda wm: self.log.append(('paint',)) or 0)
+        struct.pack_into('<Q', self.wm.vtable, 0xc, C.cast(self.wm.paint, C.c_void_p).value)
+
+    def song(self, path):
+        self.tags.value = path  # player_get_id3info parsed the new song
+
+    def frame(self):
+        self.log.clear()
+        self.wm.call(self.wm.p)
+        return self.log[:]
+
+    def close(self):
+        C.memmove(NP_UPDATE, self.saved, 12)
+        assert not libc.mprotect(NP_UPDATE & ~0xfff, 0x2000, 3)
+
+
+@pytest.fixture
+def np_front(fw, st):
+    front = NowPlayingFront(fw, st)
+    front.song(b'/mnt/mmc/a.flac')
+    front.frame()  # the page as it opened: this song drawn
+    yield front
+    front.close()
+
+
+DRAWN, PAINTED = ('update', 0x5100, 1), ('paint',)
+
+
+def test_a_skip_draws_the_new_songs_title_and_heart_in_the_frame_after_its_tags(np_front):
+    """Stock's update writes them only forced or on a flag something else may have taken; the frame after the
+    skip's tags land forces it, before the paint, once."""
+    assert np_front.frame() == [PAINTED]  # nothing changed
+    np_front.song(b'/mnt/mmc/b.flac')
+    assert [np_front.frame(), np_front.frame()] == [[DRAWN, PAINTED], [PAINTED]]
+
+
+def test_a_cue_tracks_change_in_the_same_file_is_drawn_by_its_title(np_front):
+    """A CUE sheet's tracks share the file: stock copies each track's title into the parsed tags."""
+    title = O['ID3_TITLE']
+    C.memmove(C.addressof(np_front.tags) + title, b'Track 2\0', 8)
+    assert np_front.frame() == [DRAWN, PAINTED]
+
+
+def test_a_song_changed_while_dark_is_drawn_in_the_first_lit_frame(np_front):
+    np_front.lit.value = 0
+    np_front.song(b'/mnt/mmc/b.flac')
+    assert np_front.frame() == []  # dark: no paint and no update
+    np_front.lit.value = 1
+    assert np_front.frame() == [DRAWN, PAINTED]
+
+
+def test_now_playing_waits_while_behind_a_window_or_its_bar_is_held(np_front, st):
+    """Another window in front (its return runs stock's forced update); a scrub or a paused seek's wait holds the
+    bar, which the update would set to the player's second: drawn once they end."""
+    np_front.song(b'/mnt/mmc/b.flac')
+    np_front.top = 0x5200
+    assert np_front.frame() == [PAINTED]
+    np_front.top = 0x5100
+    st('scrub').value = 1
+    assert np_front.frame() == [PAINTED]
+    st('scrub').value = 0
+    assert np_front.frame() == [DRAWN, PAINTED]
 
 
 def test_no_window_manager_is_stocks_bad_params(fw):
