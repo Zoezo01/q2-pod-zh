@@ -449,6 +449,15 @@ static void time_text(canvas_t *canvas, const char *s, const rect_t *r, unsigned
     }
 static const clock_part_t time_clock_flat[2][4] = { TIME_HANDS(0xffffff, 0x2c2c2e),
                                                     TIME_HANDS(0x1c1c1e, 0xe9e9ec) };
+/* A cell's text: AM or PM, the 12-hour hour, or the field's number in b (cap bytes). */
+static const char *cell_text(char *b, unsigned cap, const time_row_t *row, int f, int hour) {
+    if (f == TIME_AMPM) return hour < 12 ? tr("AM") : tr("PM");
+    if (f == 3 && row->n == 3)
+        tk_snprintf(b, cap, "%d", hour % 12 ?: 12);
+    else
+        tk_snprintf(b, cap, f ? "%02d" : "%d", time_value(f));
+    return b;
+}
 /* time_paint's, flat: grey boxes at rest, the cell that holds in what is on, the clock's flat face
  * or the date's tile with its month in what is on, and Save's pill. */
 static void time_paint_flat(widget_t *w, canvas_t *canvas) {
@@ -481,13 +490,7 @@ static void time_paint_flat(widget_t *w, canvas_t *canvas) {
         int f = row->first + i;
         rect_t r = { field_x(row, i), TIME_CELL_Y, f ? TIME_CELL_W : TIME_YEAR_W, TIME_CELL_H };
         flat_box(canvas, &r, RGBA(f == at ? on : rest), 10);
-        const char *t = b;
-        if (f == TIME_AMPM)
-            t = hour < 12 ? tr("AM") : tr("PM");
-        else if (f == 3 && row->n == 3)
-            tk_snprintf(b, sizeof b, "%d", hour % 12 ?: 12);
-        else
-            tk_snprintf(b, sizeof b, f ? "%02d" : "%d", time_value(f));
+        const char *t = cell_text(b, sizeof b, row, f, hour);
         time_text(canvas, t, &r, f == TIME_AMPM ? 23 : 27, f == at ? over : ink, 255);
     }
     if (row->sep_x) {
@@ -536,13 +539,7 @@ void time_paint(widget_t *w, canvas_t *canvas) {
         int f = row->first + i, cw = f ? TIME_CELL_W : TIME_YEAR_W;
         rect_t r = { row->x[i], TIME_CELL_Y, cw, TIME_CELL_H };
         paint_art(w, canvas, cells[!f][f == at], r.x - TIME_CELL_PAD, r.y - TIME_CELL_PAD);
-        const char *t = b;
-        if (f == TIME_AMPM)
-            t = hour < 12 ? tr("AM") : tr("PM");
-        else if (f == 3 && row->n == 3)
-            tk_snprintf(b, sizeof b, "%d", hour % 12 ?: 12);
-        else
-            tk_snprintf(b, sizeof b, f ? "%02d" : "%d", time_value(f));
+        const char *t = cell_text(b, sizeof b, row, f, hour);
         time_text(canvas, t, &r, f == TIME_AMPM ? 30 : 35, 0xffffff, 255);
     }
     if (row->sep_x) {
