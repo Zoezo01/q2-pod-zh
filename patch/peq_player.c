@@ -1232,10 +1232,6 @@ void mp3_seek(void *demuxer, float rel, float delay, int flags) {
  * False syncs don't chain. With under a buffer left, it's the file's end: a tag's or the last
  * frames, and what's left is too little to be noise. */
 static int frames_follow(int fd, unsigned head, unsigned hz) {
-    static const unsigned short kbps[2][15] = {
-        { 0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320 },
-        { 0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160 }
-    };
     static unsigned char b[4096];
     int got = read(fd, b, sizeof b), one = head >> 19 & 3;
     if (got < (int)sizeof b) return 1;
@@ -1245,14 +1241,13 @@ static int frames_follow(int fd, unsigned head, unsigned hz) {
             unsigned w = (unsigned)b[at] << 24 | b[at + 1] << 16 | b[at + 2] << 8 | b[at + 3],
                      br = w >> 12 & 15;
             if ((w ^ head) & 0xfffe0c00u || !br || br == 15) break;
-            at += (one == 3 ? 144000 : 72000) * kbps[one != 3][br] / hz + (w >> 9 & 1);
+            at += mp3_frame_bytes(one, br, hz, w >> 9 & 1);
         }
         if (n == 2) return 1;
     }
     return 0;
 }
 int forced_eof_c(char *mp, int pos) {
-    static const unsigned short rates[3] = { 44100, 48000, 32000 };
     unsigned char h[64];
     if (DSD_FILE == 1)
         return 1; /* stock's 0x42332c mutes it from length - 1, and this store is what ends that */
@@ -1277,7 +1272,7 @@ int forced_eof_c(char *mp, int pos) {
         unsigned frames = (unsigned)x[8] << 24 | x[9] << 16 | x[10] << 8 | x[11],
                  spf = version == 3 ? 1152 : 576;
         if (!frames || frames > 0xffffffffu / spf) return 0;
-        unsigned hz = rates[rate] >> (version == 3 ? 0 : version == 2 ? 1 : 2);
+        unsigned hz = mp3_rates[rate] >> (version == 3 ? 0 : version == 2 ? 1 : 2);
         if (pos <= (int)(frames * spf / hz) + 1) return 0;
         int follow = frames_follow(fd, head, hz);
         lseek64(fd, back, 0);

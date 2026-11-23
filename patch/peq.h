@@ -841,6 +841,10 @@ const char *shelf_moving(void); /* netupdate.c: the app folder deleted or moved 
 int shelf_erase(int start);     /* netupdate.c: Spotify's erase, started or running */
 void stream_erased(void);       /* navigation.c: Configuration follows a finished erase */
 void album_lyrics_stop(void);   /* onlinematch.c: Download Album Lyrics before USB storage */
+/* mp3_gapless.c: MPEG tables and a Layer III frame's bytes, shared with peq_player.c's frame checks
+ */
+extern const unsigned short mp3_rates[3], mp3_kbps[2][15];
+unsigned mp3_frame_bytes(unsigned version, unsigned br, unsigned hz, unsigned pad);
 
 /* 2038 (docs/internals.md#2038). glibc 2.28's time() truncates the kernel's 64-bit seconds to 32
  * bits, so read unsigned it is right until 2106; -1 still means it failed. */
