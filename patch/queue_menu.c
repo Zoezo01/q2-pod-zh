@@ -392,8 +392,6 @@ static int qm_pick(void *action, event_t *event) {
  * rows, and as many as keep its ring above QM_FOOT. No dim; hold_paint draws the panel or card. */
 #define QM_HEAD 44
 #define QM_ROWS 6
-/* the lowest row the card's ring may take: the glass hides 38 px of it, the ring is at 39 */
-#define QM_FOOT 308
 static int own_hold(void) { return classic_dialogs() || flat_dialogs(); }
 static void hold_open(widget_t *dialog, int n) {
     widget_t *nav = widget_lookup(dialog, "view_navbar", 1),

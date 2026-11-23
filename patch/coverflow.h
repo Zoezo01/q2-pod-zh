@@ -158,6 +158,7 @@ typedef struct {
     int dir;   /* 1 turning to the panel, -1 back, 0 at rest */
     int drawn; /* the e the frame holds */
     int light;
+    int card; /* the flat look's card's height (flip_open), 0 for Classic's panel */
 } cf_flip_t;
 extern cf_flip_t fl;
 

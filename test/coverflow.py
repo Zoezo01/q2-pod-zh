@@ -447,6 +447,7 @@ const unsigned flat_quiet[2]; /* the flat look's pane (flat_pages): no theme her
 void final_text(void *c, const char *face, const unsigned *s, const void *r, unsigned px, unsigned color) {}
 int ipod_light(void) { return light; }
 unsigned flat_page(void) { return light ? scheme()->paper : 0; }
+void hold_card_flat(canvas_t *c, const rect_t *r, int head, int over) {} /* flat.c's: no theme here takes it */
 static int square_art;
 int ipod_square_art(void) { return square_art; }
 int ipod_home_rockbox(void) { return 0; }

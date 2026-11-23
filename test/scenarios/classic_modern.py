@@ -124,6 +124,24 @@ for light, line in (('0', 0x38383a), ('1', 0xd1d1d6)):  # on Classic's paper
     m.paint(d); assert {b[4] for b in m.bands if b[1] == foot and b[2] > 100} == {color_t(line)}; passed()
 
 
+# Cover Flow's flip panel (coverflow.c flip_open, panel_paint): the hold menu's card a pixel inside the panel, on the shelf's
+# ground, six whole rows of Classic's 32 px over HOLD_FOOT of paper, its ring clear of the glass; the header's words stock's
+# raw white, which Light Mode's style hook flips on the paper.
+for light, line in (('0', 0x38383a), ('1', 0xd1d1d6)):
+    with as_cm(light): m = classic_light_new(FlipMachine)
+    m.open(); m.found = [m.song(f'T{i}') for i in range(9)]; m.tracks(0); m.advance(300)
+    panel = m.panel(); sheet = m.nodes[panel]['children'][0]; card = 56 + 6 * 32 + 10
+    assert m.boxes == [(0, 57, 294, 192), (0, 0, 294, 192)] and 26 + 9 + card + 1 <= 308, m.boxes
+    title, artist = [w for w in m.nodes[panel]['children'] if m.nodes[w]['type'] == 'hscroll_label']
+    assert [m.nodes[w]['style:normal:text_color'] & 0xffffffff for w in (title, artist)] == [0xffffffff, 0xc0ffffff]
+    m.bands = []
+    for w in (sheet, panel): m.call(address=HOOKS['widget_on_paint_border'][0], args=(w, m.canvas, 0, 0), gap=0, clear=False)
+    assert m.bands[0][:5] == (0, 0, 294, 285, color_t(PAPER[light])), m.bands[0]  # the ground
+    rows = {b[1]: b[4] for b in m.bands if b[0] == 1 and b[2] == 292}
+    assert rows[30] == color_t(PAPER[light]) and rows[56] == color_t(line), sorted(rows)
+    assert {b[4] for b in m.bands if b[1] in (0, card + 1) and b[2] > 100 and b[3] == 1} == {color_t(line)}; passed()
+
+
 # Home's Split where no cover shows (coverflow.c home_pane_paint, pane_art): Classic's pane, which follows the rows, flat in
 # the half's colour, each row's icon flat in the half's ink at Classic's places, the caption quiet at 17 px in the system's face.
 P = sys.modules['__main__']  # test/patch.py's PaneMachine

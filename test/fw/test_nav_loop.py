@@ -1691,7 +1691,7 @@ LIBC.calloc.restype, LIBC.calloc.argtypes = C.c_void_p, [C.c_size_t, C.c_size_t]
 class Flip(C.Structure):  # coverflow.c's cf_flip_t, fl
     _fields_ = [('frame', C.c_void_p), ('back', C.c_void_p), ('front', C.c_void_p), ('panel', C.c_void_p),
                 ('sheet', C.c_void_p), ('title', C.c_void_p), ('artist', C.c_void_p), ('timer', C.c_uint),
-                ('t0', C.c_uint), ('dir', C.c_int), ('drawn', C.c_int), ('light', C.c_int)]
+                ('t0', C.c_uint), ('dir', C.c_int), ('drawn', C.c_int), ('light', C.c_int), ('card', C.c_int)]
 
 
 def test_cover_flow_s_landing_takes_centre_and_ends_on_the_wheel_or_return(fw, keys):

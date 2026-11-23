@@ -341,8 +341,6 @@ enum { SLIDER_LIGHT, SLIDER_MAX, SLIDER_BALANCE, SLIDER_BOOT }; /* st.slider_kin
 #define CONFIRM_FLAT_H 36
 /* a confirm's form: none, the page, confirm_over's tray */
 enum { FORM_NONE, FORM_PAGE, FORM_TRAY };
-/* paper under the flat hold menu's rows: its card's corners clear the last row */
-#define HOLD_FOOT 10
 /* the toast's box, and the flat look's tray: the same in both halves */
 #define TOAST_RGBA 0xee2b2b2bu
 #define MCL(a) (*(volatile int *)(a))
@@ -483,7 +481,6 @@ void flat_box(canvas_t *canvas, rect_t *r, unsigned rgba, unsigned radius);
 void page_label(widget_t *w, int x, int y, int ww, int h, int px, const char *face, unsigned rgb);
 void confirm_track_flat(widget_t *w, canvas_t *canvas, int form);
 void confirm_lit(canvas_t *canvas, const rect_t *c);
-void hold_card_flat(canvas_t *canvas, const rect_t *card, int head, int over);
 void confirm_labels_flat(widget_t *w, canvas_t *canvas, int form);
 
 /* np_marks.c */

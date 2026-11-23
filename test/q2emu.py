@@ -3185,6 +3185,7 @@ int cf_frame_window(int);
 void cf_shelf_still(int);
 const scheme_t *scheme(void) { static scheme_t s = { .paper = %d }; return &s; }
 unsigned flat_page(void) { return ipod_light() ? scheme()->paper : 0; } /* flat.c's, no card page */
+void hold_card_flat(void *c, const void *r, int head, int over) {} /* flat.c's: no flip here */
 #define N %d
 static unsigned tex[N][160 * 160], frame[%d * %d];
 int main(void) {

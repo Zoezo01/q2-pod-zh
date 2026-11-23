@@ -633,6 +633,12 @@ typedef struct {
 } rect_t;
 /* navigation.c: a rounded box in color, or a square one when the canvas declines to round it */
 void fill_box(canvas_t *canvas, rect_t *r, unsigned color, unsigned radius);
+/* flat.c: the hold menu's card, which Cover Flow's flip panel wears under the flat look: HOLD_FOOT
+ * of paper under its rows, and its ring no lower than QM_FOOT (the glass hides 38 px of the
+ * screen's corners: the ring is at 39) */
+#define HOLD_FOOT 10
+#define QM_FOOT 308
+void hold_card_flat(canvas_t *canvas, const rect_t *card, int head, int over);
 /* const and pure below: each one's result rests on its arguments (and pure's, memory) alone, so
  * clang can keep one call for several (theme_engine.c and navigation.c define these). */
 unsigned mix(unsigned from, unsigned to, int j, int n) __attribute__((const));

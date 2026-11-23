@@ -43,13 +43,30 @@ def test_the_flat_look_s_words_are_in_the_theme_s_face(fw, number, face):
 
 @pytest.mark.parametrize('number, own', [(CLASSIC_MODERN, 1), (CLASSIC, 1), (MODERN, 0)])
 def test_classic_modern_keeps_classic_s_other_pages_and_dialogs(fw, number, own):
-    """Its QR page, lock screen, ratings, T9, flip, toast and hold menu are Classic's (classic_pages,
-    classic_dialogs), and a card game is told Classic's pop-up."""
+    """Its QR page, lock screen, ratings, T9, flip and toast are Classic's (classic_pages, classic_dialogs), the
+    flip's panel and the hold menu the flat card, and a card game is told Classic's pop-up."""
     theme(fw, number)
     assert fw.fn('addon__qr_light', C.c_int)() == own
     popup = C.create_string_buffer(512)
     fw.fn('popup_env', None, C.c_char_p, C.c_uint)(popup, 512)
     assert popup.value.split()[0] == (b'classic' if own else b'modern')
+
+
+@LIGHTS
+def test_cover_flow_s_flip_panel_is_the_hold_menu_s_card(fw, light):
+    """coverflow.c panel_paint with flip_open's card (six 32 px rows): the panel on the shelf's ground, the card a
+    pixel in, its paper, the line under the 57 px header and the ring, as the hold menu's."""
+    theme(fw, CLASSIC_MODERN, LIGHT=light)
+    card = fw.var('fl', loop.Flip).card = 56 + 6 * 32 + 10
+    canvas = painters.Canvas(fw)
+    for over in (0, 1):
+        fw.fn('coverflow__panel_paint', None, C.c_void_p, C.c_int)(canvas.addr, over)
+    paper, line = fw.fn('flat_page', C.c_uint)(), 0xd1d1d6 if light == '1' else 0x38383a
+    assert canvas.rects[0] == ((0, 0, 294, 285), paper | 0xff000000)  # the ground
+    assert canvas.row(30, 1, 293) == [painters.rgba(paper)] * 292 and canvas.row(56, 0, 294) == [painters.rgba(line)] * 294
+    for y in (0, card + 1):  # the ring: inside the panel, so the turn carries it
+        assert canvas.row(y, 12, 282) == [painters.rgba(line)] * 270
+    assert canvas.row(card + 2, 0, 294) == [paper | 0xff000000] * 294
 
 
 def quick_page(fw, world, images, light='0', **config):

@@ -17,6 +17,7 @@
   - Cover Flow: in Minimal and Modern, a short line either side of an album's name sets it apart from its songs, and with **Scan Song Durations** on each song's artist shows beside its length (after rafaelxaugusto's mockup).
   - Now Playing: after a skip, or a song change while the screen was off, the new song's title, artist and heart show at once, with its cover. They could keep the last song's until you tapped the screen.
   - Apps: card apps, card games and Spotify no longer run as the Q2's administrator (root), after MrRedflag's proposal. A fault in an app that others on your Wi-Fi can reach can no longer read your saved Wi-Fi passwords or change the system. An app that still needs root says so with `root=1` in its `q2app`.
+  - Cover Flow: in Classic Modern, the songs that open behind a cover are on the hold menu's round card, with its thin border, in place of Classic's blue panel.
 - **1.9.0**:
   - Cover Flow: drag the **Position Bar** to move through your albums quickly. Touch anywhere along it, even after it has faded, and the covers go to the album under your finger and follow it; far jumps show the album's letter. The bar now stays on screen a second after you stop, instead of 0.8 seconds. Turn it on in **Display → Cover Flow**.
   - Ratings: hold Play/Pause on **Top Rated**, **Loved**, **All Rated** or **Disliked** in **Library → Ratings** to play that list shuffled. A hold on a song in the list still opens the song's options.

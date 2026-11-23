@@ -2525,6 +2525,10 @@ static void fx_ring(int c, int n, const unsigned **ring) {
 #define PANEL_HEAD 57
 #define PANEL_MUTED 0xffaaaaaau /* stock's second line: the theme's muted, white when selected */
 #define PANEL_TWO 45 /* a playlist's rows, title over artist: five show, an album's seven */
+/* Under the flat look (flat_pages) the panel wears the hold menu's card (hold_card_flat) a pixel
+ * in, so the turn carries its ring: whole rows in CARD_ROWS, HOLD_FOOT of paper under them, the
+ * ring no lower than QM_FOOT; below it the shelf's ground. */
+#define CARD_ROWS (QM_FOOT - (320 - FLIP_H) - PANEL_Y - PANEL_HEAD - HOLD_FOOT)
 cf_flip_t fl __attribute__((section(".scratch")));
 
 /* The flip's turn, or the landing from its click until its motion ends (coverflow_land.c). */
@@ -2617,9 +2621,10 @@ static void flip_sides(void) {
     fl.light = ipod_light();
 }
 
-/* White on the header in either half: the grey Light Mode turns white. */
+/* White on the header in either half: the grey Light Mode turns white. On the card's paper stock's
+ * raw white, which Light Mode turns to the ink, as the hold card's title. */
 static void panel_ink(void) {
-    unsigned white = unflip(255) * 0x010101u;
+    unsigned white = fl.card ? 0xffffffu : unflip(255) * 0x010101u;
     widget_set_prop_int(fl.title, "style:normal:text_color", (int)(0xff000000u | white));
     widget_set_prop_int(fl.artist, "style:normal:text_color", (int)(0xc0000000u | white));
 }
@@ -2651,10 +2656,24 @@ void coverflow_panel_paint(canvas_t *canvas, int x, int y, int head, int h, int 
     canvas_fill_rect(canvas, x + BACK_W, y, 1, h);
 }
 
+/* The panel's paint (coverflow_panel_paint), or the card's on the shelf's ground (fl.card). */
+static void panel_paint(canvas_t *canvas, int over) {
+    rect_t card = { 1, 1, BACK_W - 2, fl.card };
+    if (!fl.card) {
+        coverflow_panel_paint(canvas, 0, 0, PANEL_HEAD, BACK_H, over);
+        return;
+    }
+    if (!over) {
+        stock_canvas_set_fill_color(canvas, (ipod_light() ? scheme()->paper : 0) | 0xff000000u);
+        canvas_fill_rect(canvas, 0, 0, BACK_W, BACK_H);
+    }
+    hold_card_flat(canvas, &card, PANEL_HEAD - 1, over);
+}
+
 /* ringnav_paint over the panel's widgets; 1 when w was the frame's. */
 static int flip_paint(widget_t *w, canvas_t *canvas) {
     if (w == fl.sheet || w == fl.panel) /* the sheet first in the panel, the panel last */
-        coverflow_panel_paint(canvas, 0, 0, PANEL_HEAD, BACK_H, w == fl.panel);
+        panel_paint(canvas, w == fl.panel);
     if (w != cf.covers) return 0;
     if (fl.light != ipod_light()) {
         flip_sides();
@@ -3630,8 +3649,10 @@ static int flip_open(void *r, int n) {
     fl.panel = widget_factory_create_widget(f, "view", cf.page, PANEL_X, PANEL_Y, BACK_W, BACK_H);
     fl.sheet = widget_factory_create_widget(f, "view", fl.panel, 0, 0, BACK_W, BACK_H);
     /* Font sizes are AWTK's, a face's whole height: 1.43 of its em in the theme's face. */
-    int pl = cf.scoped == PLAYLISTS, row = pl ? PANEL_TWO : theme()->page_row;
-    widget_t *view = rows_view(fl.panel, PANEL_HEAD, BACK_W, BACK_H - PANEL_HEAD, n, row);
+    int pl = cf.scoped == PLAYLISTS, row = pl ? PANEL_TWO : theme()->page_row,
+        rows = flat_pages() ? CARD_ROWS / row * row : BACK_H - PANEL_HEAD;
+    fl.card = flat_pages() ? PANEL_HEAD - 1 + rows + HOLD_FOOT : 0;
+    widget_t *view = rows_view(fl.panel, PANEL_HEAD, BACK_W, rows, n, row);
     char name[512];
     for (int i = 0; i < n; ++i) {
         void *t = deque_at(cf.tracks, (unsigned)i);
