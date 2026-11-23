@@ -308,14 +308,8 @@ const char *addon_network_icon(int k) {
 /* Whether an image's name is a card app's Streaming icon, file:///mnt/mmc/.<id>/icon*.png
  * (navigation.c ringnav_image_add: Minimal greys it as Streaming's own icons). */
 int addon_is_icon(const char *name) {
-    static const char *const ends[] = { "/icon.png", "/icon-40.png" };
-    unsigned n = name ? strlen(name) : 0;
-    if (!n || !tk_str_start_with(name, "file://" CARD "/.")) return 0;
-    for (unsigned i = 0; i < 2; ++i) {
-        unsigned k = strlen(ends[i]);
-        if (n > k && !strcmp(name + n - k, ends[i])) return 1;
-    }
-    return 0;
+    return name && tk_str_start_with(name, "file://" CARD "/.") &&
+           (tk_str_end_with(name, "/icon.png") || tk_str_end_with(name, "/icon-40.png"));
 }
 
 /* Whether an image's name is a card app's status bar icon, file:///mnt/mmc/.<id>/bar*.png
