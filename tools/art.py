@@ -301,13 +301,9 @@ def station(stops, mast_stops, band_a, shadow_a, size):
     scale = size / 160
     placed = lambda d: [[(x * scale / 2, y * scale / 2) for x, y in poly] for poly in path(d)]
     box = (0, 0, size, size)
-    mast, down, sd, reach = placed(STATION_MAST), STATION_SHADOW[0] * scale, STATION_SHADOW[1] * scale, round(8 * scale)
+    mast, down, sd = placed(STATION_MAST), STATION_SHADOW[0] * scale, STATION_SHADOW[1] * scale
     held = coverage([[(x, y + down) for x, y in poly] for poly in mast], box)
-    kernel = [math.exp(-(k * k) / (2 * sd * sd)) for k in range(-reach, reach + 1)]
-    total = sum(kernel)
-    at = lambda v, x, y: v[max(0, min(size - 1, y)) * size + max(0, min(size - 1, x))]
-    across = [sum(w * at(held, x + k - reach, y) for k, w in enumerate(kernel)) / total for y in range(size) for x in range(size)]
-    shadow = [sum(w * at(across, x, y + k - reach) for k, w in enumerate(kernel)) / total for y in range(size) for x in range(size)]
+    shadow = blurred(held, size, size, sd)
     whole = [[(0, 0), (size, 0), (size, size), (0, size)]]
     fill, ink = gradient(stops, 0, size), gradient(mast_stops, *(y * scale for y in STATION_MAST_Y))
     return compose(box, [(whole, lambda x, y: (fill(y), 1)),
@@ -587,12 +583,7 @@ def tray_shadow():
     w, h = TRAY_SHADOW_BOX[2:]
     down, sd, alpha = TRAY_SHADOW
     held = coverage([[(x, y + down) for x, y in poly] for poly in path(TRAY)], TRAY_SHADOW_BOX)
-    reach = 3 * sd
-    kernel = [math.exp(-(k * k) / (2 * sd * sd)) for k in range(-reach, reach + 1)]
-    total = sum(kernel)
-    at = lambda v, x, y: v[y * w + x] if 0 <= x < w and 0 <= y < h else 0
-    across = [sum(c * at(held, x + k - reach, y) for k, c in enumerate(kernel)) / total for y in range(h) for x in range(w)]
-    soft = [sum(c * at(across, x, y + k - reach) for k, c in enumerate(kernel)) / total for y in range(h) for x in range(w)]
+    soft = blurred(held, w, h, sd)
     return b''.join(bytes((0, 0, 0, round(v * alpha))) for v in soft)
 @functools.cache
 def orb(side, usb):
@@ -692,10 +683,7 @@ def field():
     inner = path(rounded_path(1, 1, 30, 28, 14))[0]
     ring = [*body, body[0], inner[0], *inner[::-1], inner[0], body[0]]
     held = coverage([[(x, y + 2) for x, y in body]], box)  # the inset's hole, 2 rows down
-    kernel = [math.exp(-k * k / 2) for k in range(-3, 4)]
-    at = lambda v, x, y: v[max(0, min(h - 1, y)) * w + max(0, min(w - 1, x))]
-    across = [sum(a * at(held, x + i - 3, y) for i, a in enumerate(kernel)) / sum(kernel) for y in range(h) for x in range(w)]
-    soft = [sum(a * at(across, x, y + i - 3) for i, a in enumerate(kernel)) / sum(kernel) for y in range(h) for x in range(w)]
+    soft = blurred(held, w, h, 1)
     return compose(box, [([[(x, y + 1) for x, y in body]], lambda x, y: (0xffffff, 0x59 / 255)), ([body], lambda x, y: (0xffffff, 1)),
                          ([body], lambda x, y: (0, (1 - soft[int(y) * w + int(x)]) * 0x4d / 255)), ([ring], lambda x, y: (0, 0x2e / 255))])
 
