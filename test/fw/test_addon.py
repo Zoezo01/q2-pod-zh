@@ -45,9 +45,7 @@ class App(C.Structure):
 
 
 class Ap(C.Structure):
-    _fields_ = [('a', App * APPS_MAX), ('n', C.c_int), ('shown', C.c_int), ('order', C.c_int * APPS_MAX),
-                ('games', C.c_int), ('game', C.c_int * APPS_MAX), ('libs', C.c_int), ('lib', C.c_int * APPS_MAX),
-                ('nets', C.c_int), ('net', C.c_int * APPS_MAX)]
+    _fields_ = [('a', App * APPS_MAX), ('n', C.c_int), ('cnt', C.c_int * 4), ('rows', (C.c_int * APPS_MAX) * 4)]
 
 
 class Sm(C.Structure):
@@ -446,7 +444,7 @@ def scan(fw):
 
 def names(fw, fn):
     get = fw.fn(fn, C.c_char_p, C.c_int)
-    return [get(k) for k in range(-1, ap(fw).shown + 1)]
+    return [get(k) for k in range(-1, ap(fw).cnt[0] + 1)]
 
 
 def test_scan_finds_apps_by_name(fw):
@@ -509,7 +507,7 @@ def test_a_hidden_app_has_no_streaming_row(fw):
     assert (ap(fw).a[1].id, ap(fw).a[1].hidden, ap(fw).a[1].present) == (b'airplay', 1, 1)
 
 
-ROWS = ROW_STREAMING, ROW_GAMES, ROW_LIBRARY = range(3)  # addon.c's, in the order Ap counts them: shown, games, libs
+ROWS = ROW_STREAMING, ROW_GAMES, ROW_LIBRARY = range(3)  # addon.c's, in the order Ap's cnt counts them: Streaming, games, libs
 ROW_NETWORK = 3
 
 
@@ -523,7 +521,7 @@ ROW_NETWORK = 3
 def test_a_manifest_says_where_its_row_is(fw, manifest, row):
     card(fw, one=manifest)
     scan(fw)
-    assert ap(fw).a[0].row == row and (ap(fw).shown, ap(fw).games, ap(fw).libs) == tuple(int(row == r) for r in ROWS)
+    assert ap(fw).a[0].row == row and (ap(fw).cnt[0], ap(fw).cnt[1], ap(fw).cnt[2]) == tuple(int(row == r) for r in ROWS)
 
 
 def test_wifi_and_network_keys(fw):
@@ -539,7 +537,7 @@ def test_wifi_and_network_keys(fw):
 @pytest.mark.parametrize('manifest', [b'name=N\nrow=setting\n', b'name=N\nrow=Settings\n'])
 def test_unknown_row_still_streaming(fw, manifest):
     card(fw, one=manifest)
-    assert fw.fn('addon_network', C.c_int)() == 0 and ap(fw).shown == 1
+    assert fw.fn('addon_network', C.c_int)() == 0 and ap(fw).cnt[0] == 1
 
 
 @pytest.mark.parametrize('manifest, wifi', [(b'wifi=1\n', 1), (b'wifi=1\r\n', 1), (b'wifi=0\n', 0), (b'wifi=yes\n', 0), (b'', 0)])
@@ -5535,7 +5533,7 @@ PRESSES = {b'library': lambda fw, k: fw.fn('addon_lib_open', C.c_int, C.c_void_p
 @pytest.mark.parametrize('row', PRESSES)
 def test_an_app_s_library_or_games_row_opens_its_page(fw, row):
     p = Page(fw, b'name=Foo\nrow=%s\n' % row, opens=False)
-    assert ap(fw).shown == 0  # no Streaming row
+    assert ap(fw).cnt[0] == 0  # no Streaming row
     for k in (5, -1, 0):  # a row past the list opens nothing
         PRESSES[row](fw, k)
         assert bool(p.pg.page) == (k == 0)
@@ -6362,7 +6360,7 @@ def test_an_app_whose_row_is_not_streaming_s_is_asked_for_its_request_too(fw, ro
     lib = Library(fw, 'a.m3u', gone=b'name=Gone\n', foo=b'name=Foo\nrow=%s\n' % row)
     del lib.world.files[b'/mnt/mmc/.gone/q2-gone']  # a slot before it whose app left the card: passed over
     scan(fw)
-    assert ap(fw).shown == 0
+    assert ap(fw).cnt[0] == 0
     lib.request(f'7\nimport {LIB_DIR}a.m3u\n'.encode())
     lib.poll()
     assert lib.imports == [[b'a.m3u']] and lib.answer() == b'7 ok\n'

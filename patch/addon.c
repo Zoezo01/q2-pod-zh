@@ -137,10 +137,8 @@ enum { ROW_STREAMING, ROW_GAMES, ROW_LIBRARY, ROW_NETWORK }; /* as addon_scan's 
 
 static struct {
     app_t a[APPS_MAX];
-    int n, shown, order[APPS_MAX]; /* order: Streaming's rows, the slots on the card by name */
-    int games, game[APPS_MAX];     /* Games' rows, by name too */
-    int libs, lib[APPS_MAX];       /* and the Library's */
-    int nets, net[APPS_MAX];       /* and System settings → Network's (row=network) */
+    int n, cnt[4],
+        rows[4][APPS_MAX]; /* by ROW_*: how many rows, and their slots on the card by name */
 } ap __attribute__((section(".scratch")));
 
 /* An id goes into shell commands: lowercase letters, digits and '-' only. */
@@ -259,45 +257,53 @@ static void slots_read(void) {
  * addon_name. */
 int addon_scan(void) {
     slots_read();
-    ap.shown = ap.games = ap.libs = ap.nets = 0;
+    memset(ap.cnt, 0, sizeof ap.cnt);
     for (int i = 0; i < ap.n; ++i) { /* by name: an insertion, APPS_MAX at most */
         if (!ap.a[i].present || ap.a[i].hidden) continue;
         int row = ap.a[i].row;
-        int *order = row == ROW_GAMES     ? ap.game
-                     : row == ROW_LIBRARY ? ap.lib
-                     : row == ROW_NETWORK ? ap.net
-                                          : ap.order;
-        int k = row == ROW_GAMES     ? ap.games++
-                : row == ROW_LIBRARY ? ap.libs++
-                : row == ROW_NETWORK ? ap.nets++
-                                     : ap.shown++;
+        int *order = ap.rows[row];
+        int k = ap.cnt[row]++;
         for (; k && strcasecmp(ap.a[order[k - 1]].name, ap.a[i].name) > 0; --k)
             order[k] = order[k - 1];
         order[k] = i;
     }
     blob_io(CAPS_FILE, CAPS_FILE ".tmp", ADDON_CAPS "\n", sizeof(ADDON_CAPS "\n") - 1, 1);
-    return ap.shown;
+    return ap.cnt[ROW_STREAMING];
 }
 
-const char *addon_name(int k) { return k >= 0 && k < ap.shown ? ap.a[ap.order[k]].name : 0; }
-const char *addon_id(int k) { return k >= 0 && k < ap.shown ? ap.a[ap.order[k]].id : 0; }
-const char *addon_icon(int k) { return k >= 0 && k < ap.shown ? ap.a[ap.order[k]].icon : 0; }
+const char *addon_name(int k) {
+    return k >= 0 && k < ap.cnt[ROW_STREAMING] ? ap.a[ap.rows[ROW_STREAMING][k]].name : 0;
+}
+const char *addon_id(int k) {
+    return k >= 0 && k < ap.cnt[ROW_STREAMING] ? ap.a[ap.rows[ROW_STREAMING][k]].id : 0;
+}
+const char *addon_icon(int k) {
+    return k >= 0 && k < ap.cnt[ROW_STREAMING] ? ap.a[ap.rows[ROW_STREAMING][k]].icon : 0;
+}
 /* Streaming's row k, as the last scan sorted them: its app's slot, which stays that app's, or -1
  * (home.c ringnav_stream gives it to the row). */
-int addon_slot(int k) { return k >= 0 && k < ap.shown ? ap.order[k] : -1; }
+int addon_slot(int k) {
+    return k >= 0 && k < ap.cnt[ROW_STREAMING] ? ap.rows[ROW_STREAMING][k] : -1;
+}
 /* Slot i's id while its app is on the card with a row, wherever the row is, else 0
  * (addon_library.c's requests: an app's row in the Library or Games asks as one on Streaming). */
 const char *addon_slot_id(int i) {
     return i >= 0 && i < ap.n && ap.a[i].present && !ap.a[i].hidden ? ap.a[i].id : 0;
 }
 /* Library's Apps rows (addon_apps): how many, the card read again, then one's name. */
-int addon_libs(void) { return addon_scan(), ap.libs; }
-const char *addon_lib_name(int k) { return k >= 0 && k < ap.libs ? ap.a[ap.lib[k]].name : 0; }
+int addon_libs(void) { return addon_scan(), ap.cnt[ROW_LIBRARY]; }
+const char *addon_lib_name(int k) {
+    return k >= 0 && k < ap.cnt[ROW_LIBRARY] ? ap.a[ap.rows[ROW_LIBRARY][k]].name : 0;
+}
 /* System settings → Network's card rows (netservice.c ringnav_netservice, row=network): how many,
  * the card read again, then one's name and icon. */
-int addon_network(void) { return addon_scan(), ap.nets; }
-const char *addon_network_name(int k) { return k >= 0 && k < ap.nets ? ap.a[ap.net[k]].name : 0; }
-const char *addon_network_icon(int k) { return k >= 0 && k < ap.nets ? ap.a[ap.net[k]].icon : 0; }
+int addon_network(void) { return addon_scan(), ap.cnt[ROW_NETWORK]; }
+const char *addon_network_name(int k) {
+    return k >= 0 && k < ap.cnt[ROW_NETWORK] ? ap.a[ap.rows[ROW_NETWORK][k]].name : 0;
+}
+const char *addon_network_icon(int k) {
+    return k >= 0 && k < ap.cnt[ROW_NETWORK] ? ap.a[ap.rows[ROW_NETWORK][k]].icon : 0;
+}
 
 /* Whether an image's name is a card app's Streaming icon, file:///mnt/mmc/.<id>/icon*.png
  * (navigation.c ringnav_image_add: Minimal greys it as Streaming's own icons). */
@@ -1015,9 +1021,11 @@ static struct {
     char vreq[8], vsent[16];
 } gm __attribute__((section(".scratch")));
 
-int addon_games(void) { return addon_scan(), ap.games; }
-int addon_games_last(void) { return ap.games; }
-const char *addon_game_name(int k) { return k >= 0 && k < ap.games ? ap.a[ap.game[k]].name : 0; }
+int addon_games(void) { return addon_scan(), ap.cnt[ROW_GAMES]; }
+int addon_games_last(void) { return ap.cnt[ROW_GAMES]; }
+const char *addon_game_name(int k) {
+    return k >= 0 && k < ap.cnt[ROW_GAMES] ? ap.a[ap.rows[ROW_GAMES][k]].name : 0;
+}
 int addon_game_front(void) { return gm.pid && !gm.native; }
 /* chord_gate's Centre drop skipped: a gameview game in front, or an eaten Centre, whose repeats and
  * release it would otherwise drop within CHORD_MS of an edge press, leaving the eat bit set */
@@ -2746,7 +2754,9 @@ int addon_open(void *ctx, event_t *event) {
     return 0;
 }
 /* Games' card row k (games.c pick_card_game): 1 when its game runs, or its page opened. */
-int addon_game_start(int k) { return k >= 0 && k < ap.games ? press(ap.game[k]) : 0; }
+int addon_game_start(int k) {
+    return k >= 0 && k < ap.cnt[ROW_GAMES] ? press(ap.rows[ROW_GAMES][k]) : 0;
+}
 /* An app's row on Library's Apps page (addon_apps; ctx: its place by name at the last scan). It
  * opens at once, with no wait for Smart Wi-Fi's link, as a Games row does: what such an app lists
  * is on the card, and the radio comes back for an app with a page once it runs (addon_running).
@@ -2756,7 +2766,7 @@ int addon_game_start(int k) { return k >= 0 && k < ap.games ? press(ap.game[k]) 
 int addon_lib_open(void *ctx, event_t *event) {
     (void)event;
     int k = (int)(long)ctx;
-    if (k >= 0 && k < ap.libs) press(ap.lib[k]);
+    if (k >= 0 && k < ap.cnt[ROW_LIBRARY]) press(ap.rows[ROW_LIBRARY][k]);
     return 0;
 }
 
@@ -2791,7 +2801,7 @@ int addon_apps_sync(void *win, event_t *event) {
     if (!win) apps_stale = 1, win = window_manager_get_top_window(window_manager());
     widget_t *row = win ? widget_lookup(win, "library_apps", 1) : (void *)0;
     if (!row && (!win || win != la.page)) return 0;
-    int n = apps_stale ? addon_libs() : ap.libs;
+    int n = apps_stale ? addon_libs() : ap.cnt[ROW_LIBRARY];
     apps_stale = 0;
     if (row) library_apps_show(row, n > 0);
     if (win == la.page) apps_rows(n);
@@ -2801,7 +2811,7 @@ int addon_apps_sync(void *win, event_t *event) {
 int addon_network_open(void *ctx, event_t *event) {
     (void)event;
     int k = (int)(long)ctx;
-    if (k >= 0 && k < ap.nets) press(ap.net[k]);
+    if (k >= 0 && k < ap.cnt[ROW_NETWORK]) press(ap.rows[ROW_NETWORK][k]);
     return 0;
 }
 
