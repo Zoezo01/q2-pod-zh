@@ -131,13 +131,12 @@ static int qm_query(void *r) {
                                      : class_query(qm.qm_cls, r);
 }
 
-static int dir_query(void *path) { return toolsLoadDirectory((const char *)path); }
 /* A folder's songs and, in stock's listing order, its subfolders' (dot folders such as .tidal
  * left out), so a folder of albums queues them all.
  * ponytail: one toolsLoadDirectory per folder on the UI thread; a big tree takes a while. */
 static void folder_tracks(const char *path, void *add, int depth) {
     int n;
-    void *rows = staged(dir_query, (void *)path, &n);
+    void *rows = staged(directory, (void *)path, &n);
     for (unsigned i = 0; i < deque_size(rows); ++i) {
         void *t = deque_at(rows, i);
         const char *name = P(t, REC_NAME);
