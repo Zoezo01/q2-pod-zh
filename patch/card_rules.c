@@ -2,7 +2,8 @@
  * page, hide, move, size, font and text lines, read in card_theme_parse's pass as the Studio's
  * reader reads them, card_widgets.inc standing in for its catalogue; applied once, as Now Playing
  * (its iPod layout) and the lock screen open, and at each layout of Home, under a theme that takes
- * a card theme's look (card_theme_load drops them under any other). */
+ * a card theme's look (card_theme_load drops them under any other). And its homeart line, Home's
+ * pictures in Split. */
 #include "navigation.h"
 
 enum { CR_HIDE = 1, CR_MOVE = 2, CR_SIZE = 4, CR_FONT = 8, CR_SQUARE = 16, CR_TEXT = 32 };
@@ -20,14 +21,19 @@ static const struct {
 static const char *const pages[] = { "playing_page", "saverscreen_page", "home_page" }; /* CARD_* */
 /* rows[HOME] on: Home's main list, in HOME_ROWS' order */
 #define HOME (ROWS - 7)
+/* a homeart picture, its number at sizeof - 7 */
+#define ART_URL "file://" PEQ_ROOT "/mnt/mmc/Q2Pod/images/art00.jpg"
 
 /* Each row's rules, the last line of each kind winning: flags its hide, move, size and words
  * (CR_*), font its px (0: none), box a move's x and y and a size's w and h, words a Home row's
- * (rows[HOME + i]); page: the parse's, its CARD_* + 1, 0 none. All zero: no rules. */
+ * (rows[HOME + i]); page: the parse's, its CARD_* + 1, 0 none. homeart's: secs a turn, art its
+ * JPEGs' numbers (1 on), arts how many; and its turn: slot the one checked + 1, shown its
+ * picture's number (0: refused), url its name. All zero: no rules. */
 static struct {
-    unsigned char flags[ROWS], font[ROWS], page;
-    short box[ROWS][4];
-    char words[ROWS - HOME][41];
+    unsigned char flags[ROWS], font[ROWS], page, arts, art[24], shown;
+    short box[ROWS][4], secs;
+    char words[ROWS - HOME][41], url[sizeof ART_URL];
+    unsigned slot;
 } cr __attribute__((section(".scratch")));
 int card_home __attribute__((section(".scratch")));
 
@@ -83,7 +89,9 @@ static int clean(char *to, const char *s, unsigned n) {
  * under it are skipped too. A size is held to the row's box (the art square, 40 up to its box's
  * smaller side; text 12 up to the box's sides); a font to 8..120, 0 or the row's own size clearing
  * it; a move is kept as written, held to the box as it applies; WORDS, the rest of the line, are
- * the row's when clean, else it has none. */
+ * the row's when clean, else it has none. And homeart SECONDS KINDS, on any page: SECONDS a whole
+ * number held to 3..600, KINDS 1 to 24 of j (a JPEG) and g (a GIF, never read), the turns going
+ * over the j letters, each keeping its number among them all. */
 void card_rule_line(const char *q) {
     static const struct {
         char verb[5];
@@ -109,6 +117,15 @@ void card_rule_line(const char *q) {
         return;
     }
     int v[2];
+    if (k == 3 && is(w[0], n[0], "homeart")) {
+        unsigned i = 0;
+        while (i < n[2] && (w[2][i] == 'j' || w[2][i] == 'g')) ++i;
+        if (!i || i < n[2] || i > 24 || !whole(w[1], n[1], v)) return;
+        cr.secs = (short)fit(v[0], 3, 600), cr.arts = 0;
+        for (unsigned j = 0; j < i; ++j)
+            if (w[2][j] == 'j') cr.art[cr.arts++] = (unsigned char)(j + 1);
+        return;
+    }
     for (unsigned j = 0; j < sizeof verbs / sizeof *verbs; ++j) {
         unsigned act = verbs[j].act, i = 0;
         if ((act == CR_TEXT ? k < 3 : k != verbs[j].words) || !is(w[0], n[0], verbs[j].verb))
@@ -150,14 +167,14 @@ void card_rules_clear(void) {
     st.card_rules = card_home = 0;
 }
 /* card_theme_load, the file applying: the pages that hold a rule, a bit per CARD_*, into
- * st.card_rules, which the hooks read first, and Home's into card_home, which coverflow.c reads; 0
- * for none. */
+ * st.card_rules, which the hooks read first, and Home's into card_home, which coverflow.c reads;
+ * both, 0 for none. */
 int card_rules_used(void) {
     st.card_rules = 0;
     for (unsigned i = 0; i < ROWS; ++i)
         if (cr.flags[i] | cr.font[i]) st.card_rules |= 1 << rows[i].page;
-    card_home = st.card_rules >> CARD_HOME & 1; /* CARD_HOME_ROWS */
-    return st.card_rules;
+    card_home = (st.card_rules >> CARD_HOME & 1) | (cr.arts ? CARD_HOME_ART : 0); /* CARD_HOME_* */
+    return st.card_rules | card_home;
 }
 
 static void hide(widget_t *w) {
@@ -247,4 +264,30 @@ int card_rule_px(widget_t *w, int def) {
  * so its glyph stays clear; not on Centred's page, whose art shows. */
 int card_rules_art_hidden(void) {
     return cr.flags[ART] & CR_HIDE && st.np_cover && !widget_get_visible(st.np_cover);
+}
+
+/* coverflow_home_art, on each paint of Home in Split while homeart names a JPEG (card_home): this
+ * turn's picture in *cover and its own key, or key while the turn's is refused. A turn is secs of
+ * the clock (time_now_ms), and the turns go round the JPEGs. As a turn starts its picture is
+ * checked, once: a JPEG frame header with each side at most 1024 (picture_size) and at most 1 MB,
+ * so nothing else reaches the decoder; and the last turn's, when another or none shows now, is
+ * unloaded by name, so one picture is held. */
+unsigned card_rules_art(const char **cover, unsigned key) {
+    unsigned slot = time_now_ms() / 1000 / (unsigned)cr.secs, item = cr.art[slot % cr.arts];
+    if (slot + 1 != cr.slot) {
+        char url[sizeof ART_URL] = ART_URL;
+        int w = 0, h = 0;
+        url[sizeof url - 7] = (char)('0' + item / 10);
+        url[sizeof url - 6] = (char)('0' + item % 10);
+        if (!(picture_size(url + 7, &w, &h) >> 4 == 0xc && w <= 1024 && h <= 1024 &&
+              (unsigned long)file_size(url + 7) <= 1 << 20))
+            item = 0;
+        if (cr.shown && cr.shown != item)
+            image_manager_unload_bitmap_by_name(image_manager(), cr.url);
+        memcpy(cr.url, url, sizeof url);
+        cr.slot = slot + 1, cr.shown = (unsigned char)item;
+    }
+    if (!cr.shown) return key;
+    *cover = cr.url;
+    return 1u << 31 | cr.shown;
 }

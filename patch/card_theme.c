@@ -1,7 +1,8 @@
 /* Card themes (docs/internals.md, Themes: Card themes): /Q2Pod/theme.txt, a Q2 Theme Studio file,
  * checked whole and copied to /mnt/data at a card mount (card_theme_sync, the boot logo's thread),
- * read from there once at the start, before the first frame: its accent, page colour and widget
- * rules (card_rules.c), under a theme that takes a card theme's colours, and its battery style.
+ * read from there once at the start, before the first frame: its accent, page colour, widget rules
+ * and Home's pictures (card_rules.c), under a theme that takes a card theme's colours, and its
+ * battery style.
  * Nothing applies live and nothing is written to config.ini or the card: the file is the switch. */
 #include "navigation.h"
 

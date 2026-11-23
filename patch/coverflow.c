@@ -4982,6 +4982,7 @@ void coverflow_home_art(widget_t *top) {
     unsigned key = hash_bytes(hash_bytes(fnv(FNV_SEED, (const unsigned char *)path), &type, 1),
                               (const unsigned char *)&album, sizeof(album)) ^
                    now_cover_written(cover);
+    if (card_home & CARD_HOME_ART) key = card_rules_art(&cover, key); /* a card theme's turn */
     if (key == home.key) return;
     home.key = key;
     home.pane = 0;

@@ -1,6 +1,7 @@
 """patch/card_rules.c: a card theme's widget rules, read as Q2 Theme Studio's reader reads them (patch/card_widgets.inc
 standing in for its catalogue), dropped wherever they don't apply, and applied to Now Playing (its iPod layout) and the
-lock screen as they open and to Home's rows at each layout, under Minimal and Modern."""
+lock screen as they open and to Home's rows at each layout, and homeart's pictures on Home in Split, under Minimal and
+Modern."""
 import ctypes as C
 import random
 import re
@@ -11,8 +12,11 @@ import pytest
 import host
 from conftest import O
 from test_card_theme import DST, INDEX, STYLES, TRY, card, parse, start, theme_file  # noqa: F401 (card: a fixture)
+from test_coverflow import Bitmaps, Home
 from test_coverflow import Ui as HomeUi
-from test_lockscreen import Bitmaps, Window
+from test_lockscreen import Bitmaps as LockBitmaps
+from test_lockscreen import Window
+from test_nav_loop import Clock, jpeg
 from test_nav_playing import MINIMAL, MODERN, Now, st, theme, ui  # noqa: F401 (st, ui: fixtures)
 
 HIDE, MOVE, SIZE, TEXT = 1, 2, 4, 32  # card_rules.c's CR_*
@@ -29,7 +33,7 @@ FAV_CLICK = 0x53c968  # Now Playing's heart: stock's My Fav toggle (ratings.c ra
 EVERY = theme_file(b'page playing_page', b'hide img_cover', b'move scrlabel_title 10 20', b'size label_ipod_album 100 30',
                    b'font scrlabel_artist 30', b'hide slider_play', b'page saverscreen_page', b'hide clock_time',
                    b'move img_slide 5 9', b'page home_page', b'hide btn_playing', b'text btn_folder Albums',
-                   b'font btn_settings 24', b'battery inside')
+                   b'font btn_settings 24', b'homeart 12 jgj', b'battery inside')
 
 
 def rules(*lines, page=b'playing_page'):
@@ -56,6 +60,13 @@ def whole_state(fw):
     return raw, fw.var('card_home', C.c_int).value, fw.fn('card_rules_used', C.c_int)()
 
 
+def art_state(fw, fields):
+    """homeart's as cr holds it: (seconds, its JPEGs' numbers), None with no JPEG."""
+    base = C.addressof(fw.var('card_rules__cr', C.c_char))
+    arts = C.c_ubyte.from_address(base + fields['arts']).value
+    return (C.c_short.from_address(base + fields['secs']).value, list(C.string_at(base + fields['art'], arts))) if arts else None
+
+
 def clean_text(text):
     """Q2 Theme Studio's cleanText (docs/core.js, cleanName in it): what it writes of a row's words."""
     def trim(t):
@@ -78,18 +89,23 @@ def studio_words(raw):
 
 
 def studio_rules(data):
-    """What Q2 Theme Studio's reader (docs/core.js parse, then clampBox, the font rule and cleanText of normalize) keeps
-    of a file's rule lines, card_widgets.inc for its catalogue: per row (flags, x, y, w, h, font, words), the move as
-    written (saturated at 30000), the size clamped, words only where cleanText leaves them; all 0 where it refuses the
-    file."""
-    kept = [(0, 0, 0, 0, 0, 0, '')] * len(ROWS)
+    """What Q2 Theme Studio's reader (docs/core.js parse, then clampBox, the font rule, cleanText and cleanArt of
+    normalize) keeps of a file's rule lines, card_widgets.inc for its catalogue: per row (flags, x, y, w, h, font, words),
+    the move as written (saturated at 30000), the size clamped, words only where cleanText leaves them; all 0 where it
+    refuses the file. And its homeart, as art_state has it."""
+    kept, art = [(0, 0, 0, 0, 0, 0, '')] * len(ROWS), None
     text = data.decode('latin-1').removeprefix('\xef\xbb\xbf')
     lines = [line.removesuffix('\r') for line in text.split('\n')]
     while lines and lines[-1] == '': lines.pop()
-    if len(lines) < 2 or lines[0] != 'q2theme 1' or lines[-1] != 'end': return kept
+    if len(lines) < 2 or lines[0] != 'q2theme 1' or lines[-1] != 'end': return kept, art
     page = None
     for line in lines[1:-1]:
         word, *rest = line.split(' ')
+        if word == 'homeart' and len(rest) == 2 and re.fullmatch('-?[0-9]+', rest[0]) and re.fullmatch('[jg]{1,24}', rest[1]):
+            seconds = min(max(int(rest[0]), 3), 600)  # but past JS's largest number: test_homeart_seconds
+            jpegs = [i + 1 for i, kind in enumerate(rest[1]) if kind == 'j']
+            art = (seconds, jpegs) if jpegs else None
+            continue
         if word == 'page':
             page = rest[0] if len(rest) == 1 and rest[0] in [p for _, p in PAGES.values()] else None
             continue
@@ -121,7 +137,7 @@ def studio_rules(data):
         else:
             flags |= HIDE
         kept[i] = flags, x, y, w, h, font, words
-    return kept
+    return kept, art
 
 
 # The parse
@@ -132,6 +148,7 @@ def test_rules_take_what_the_studios_reader_takes(fw, cr_fields):
     pages = ['playing_page', 'saverscreen_page', 'home_page', 'system_bar', 'Playing_page', 'playing_page ', '']
     numbers = ['0', '-0', '7', '-7', '12', '40', '186', '303', '0099', '-30000', '30001', '1' * 40, '-' + '9' * 40, '+5', '5a', '',
                '1.5', '-', '--3', '\xd9\xa3', ' 5']
+    kinds = ['j', 'jgj', 'gjg', 'g', 'gg', 'j' * 24, 'jg' * 12, 'j' * 25, 'jx', 'J', 'j\r', '']
     # a row's words, as UTF-8 read byte for byte: clean ones (24 characters, 40 bytes), then unclean ones and invalid UTF-8
     words = [w.encode().decode('latin-1') for w in ('Songs', 'Now Playing', 'M\xfasica', '\u97f3\u4e50 \u5e93', 'x' * 24, '\xe9' * 20,
                                                     'Ok \U0001f3b5', 'a  b', ' a', 'a ', 'a\tb', 'a\x85b', 'a\xa0b', 'x' * 25,
@@ -144,25 +161,38 @@ def test_rules_take_what_the_studios_reader_takes(fw, cr_fields):
         name = rng.choice(names)
         if rng.random() < 0.1:
             return rng.choice([f'page {rng.choice(pages[:3] * 6 + pages)}', 'page', 'page playing_page x'])
+        if rng.random() < 0.08:
+            return rng.choice([f'homeart {n()} {rng.choice(kinds[:7] * 3 + kinds)}'] * 4 +
+                              [f'homeart {n()}', f'homeart {n()} j g', f'Homeart 5 j', f'homeart  5 j', f'homeart 5 j '])
         if rng.random() < 0.6:
             return rng.choice([f'hide {name}', f'move {name} {n()} {n()}', f'size {name} {n()} {n()}', f'font {name} {n()}',
                                f'text {name} {t()}', f'text {name} {t()} {t()}'])
         return rng.choice([f'hide {name} {n()}', f'move {name} {n()}', f'size {name} {n()} {n()} {n()}', f'font {name}',
                            f'font  {name} {n()}', f'Hide {name}', f' hide {name}', f'hide {name} ', f'move\t{name} {n()} {n()}',
                            f'text {name}', f'text {name} ', f'text  {name} {t()}', f'text\t{name} {t()}', 'accent #c04a8a', 'end'])
-    ends, seen, refused = ['\n', '\n', '\n', '\r\n', '\r\r\n'], set(), 0
+    ends, seen, refused, arts = ['\n', '\n', '\n', '\r\n', '\r\r\n'], set(), 0, set()
     for _ in range(6000):
         head, tail = rng.choice(['q2theme 1'] * 9 + ['q2theme 2']), rng.choice(['end'] * 9 + ['End'])
         parts = [head, f'page {rng.choice(pages[:3])}', *(line() for _ in range(rng.randrange(12))), tail]
         data = ''.join(part + rng.choice(ends) for part in parts).encode('latin-1')
-        want = studio_rules(data)
+        want, art = studio_rules(data)
         refused += parse(fw, data) == 0
-        assert state(fw, cr_fields) == want, data
+        assert state(fw, cr_fields) == want and art_state(fw, cr_fields) == art, data
+        arts.add(art and (art[0], len(art[1]) > 1))
         seen |= {(i, f) for i, (flags, *_, font, _) in enumerate(want) for f in (HIDE, MOVE, SIZE, 8, TEXT)
                  if flags & f or (f == 8 and font)}
     takes = {(i, f) for i, (_, _, acts, *_) in enumerate(ROWS) for f, a in ((HIDE, 'CR_HIDE'), (MOVE, 'CR_MOVE'), (SIZE, 'CR_SIZE'),
                                                                            (8, 'CR_FONT'), (TEXT, 'CR_TEXT')) if a in acts}
     assert seen == takes and refused > 500  # each row's each rule, and refused files, met
+    assert {None, (3, True), (600, True), (12, True), (12, False)} <= arts  # and homeart, held at both ends
+
+
+@pytest.mark.parametrize('seconds, want', [(b'2', 3), (b'601', 600), (b'-0', 3), (b'9' * 400, 600), (b'-' + b'9' * 400, 3)])
+def test_homeart_seconds(fw, cr_fields, seconds, want):
+    """Held to 3..600, a number past JS's largest (about 1.8e308) too, which the Studio's Number makes Infinity and
+    cleanArt then reads as its 12."""
+    parse(fw, theme_file(b'homeart ' + seconds + b' j'))
+    assert art_state(fw, cr_fields) == (want, [1])
 
 
 def test_a_malformed_page_line_ends_the_page(fw, cr_fields):
@@ -220,7 +250,8 @@ def test_rules_are_dropped_wherever_the_file_doesnt_apply(fw, card, t, tried):
 
 
 @pytest.mark.parametrize('file, used, home', [(rules(b'hide img_cover'), 1, 0),  # Now Playing's bit
-                                             (rules(b'text btn_folder Albums', page=b'home_page'), 4, 1)])  # Home's, its rows'
+                                             (rules(b'text btn_folder Albums', page=b'home_page'), 5, 1),  # Home's, its rows'
+                                             (theme_file(b'homeart 5 gj'), 2, 2)])  # its art's
 def test_rules_alone_are_counted_by_the_guard(fw, card, file, used, home):
     card.files[DST] = file
     start(fw, THEME=INDEX['minimal'])
@@ -368,7 +399,7 @@ LOCK = [('img_screensaver', (0, 0, 375, 320)), ('view_timeinfo', (0, 65, 375, 10
 def lock(fw, card, *lines, t='minimal', **config):
     card.files[DST] = rules(*lines, page=b'saverscreen_page')
     start(fw, THEME=INDEX[t], **config)
-    Bitmaps(fw)
+    LockBitmaps(fw)
     fw.var('fw_ctx_g_screensaver_picture', C.c_char * 256).value = b'screensaver_default'
     fw.mock('stock_saver_trampoline', lambda *_: 31)
     win = Window(fw, [])
@@ -527,12 +558,143 @@ def test_no_home_rule_lays_home_out_as_with_no_rule(fw, home, card, t, file):
     home(t=t)  # a file with no rule
 
     def layout():
-        before = len(fw.calls())
+        fw.var('fw_log_n', C.c_int).value = 0  # the log of stub calls holds 8192
         fw.fn('coverflow_home_layout', None)()
-        return [(name, arguments(name, a)) for name, a in fw.calls()[before:] if name != 'timer_remove']  # the last timer's id
+        assert len(fw.calls()) < 8192
+        return [(name, arguments(name, a)) for name, a in fw.calls() if name != 'timer_remove']  # the last timer's id
     alone = layout()
     assert {C.string_at(a[1]) for name, a in alone if name == 'widget_lookup'} == {b'btn_folder', b'btn_rockbox', b'btn_stream',
                                                                                      b'label_rockbox'}
     card.files[DST] = file
     fw.fn('card_theme_load', None)()
     assert fw.var('card_home', C.c_int).value == 0 and layout() == alone
+
+
+# Home's art
+PICTURE = '/mnt/mmc/Q2Pod/images/art%02d.%s'
+PNG = b'\x89PNG\r\n\x1a\n\0\0\0\rIHDR' + struct.pack('>II', 64, 64) + bytes(9)
+
+
+def picture(w=64, h=64, size=0, marker=0xc0):
+    data = jpeg(w, h, marker)
+    return data + bytes(max(0, size - len(data)))
+
+
+class Art:
+    """Home in Split under homeart, the card's pictures (art number: bytes, which a decode answers with a 64 px
+    picture), the clock at a turn's start; paint() paints Home and answers the art it shows, its number (0: none): the
+    last one loaded, under its key. events: the card's art files opened, and their loads and unloads by name, as they
+    happen (the names are a stack buffer's, or one the next turn writes)."""
+    def __init__(self, fw, home, line, pictures, t='minimal'):
+        self.fw, self.h, self.events = fw, home(line, t=t), []
+        for n, data in pictures.items():
+            self.h.card.files[PICTURE % (n, 'jpg')] = data
+        self.clock = Clock(fw, 0)
+        self.bitmaps = Bitmaps(fw, {'file://' + PICTURE % (n, 'jpg'): (64, 64, (C.c_uint * 4096)()) for n in pictures})
+        self.home = fw.var('coverflow__home', Home)
+        fw.mock('fw_fopen', lambda path, *rest: self.note('open', path) or self.h.card.fopen(path, *rest))
+        fw.mock('widget_load_image', lambda w, url, *rest: self.note('load', url) or self.bitmaps.load(w, url, *rest))
+        fw.mock('image_manager_unload_bitmap_by_name', lambda m, name, *_: self.note('unload', name) or 0)
+
+    def note(self, what, name):
+        name = C.string_at(name).decode()
+        if 'Q2Pod/images' in name:
+            self.events.append((what, name[-9:]))
+
+    def paint(self, at=None):
+        if at is not None:
+            self.clock.now = at
+        self.fw.fn('coverflow_home_art', None, C.c_void_p)(self.h.win)
+        loaded = [url for url in self.bitmaps.loads if 'Q2Pod/images' in url]
+        n = int(loaded[-1][-6:-4]) if loaded else 0
+        return n if n and self.home.key == 1 << 31 | n else 0
+
+    def reads(self):
+        return [name for what, name in self.events if what == 'open']
+
+
+@pytest.fixture
+def art(fw, home):
+    return lambda line, pictures, **keys: Art(fw, home, line, pictures, **keys)
+
+
+def test_homeart_keeps_positional_numbers_over_jpegs(fw, art, cr_fields):
+    """Each j keeps its number among all the letters; a g is never opened."""
+    a = art(b'homeart 5 jgjg', {1: picture(), 2: picture(), 3: picture()})
+    assert art_state(fw, cr_fields) == (5, [1, 3])
+    assert [a.paint(t) for t in (0, 4999, 5000, 10000, 15000)] == [1, 1, 3, 1, 3]
+    assert set(a.reads()) == {'art01.jpg', 'art03.jpg'}
+
+
+@pytest.mark.parametrize('data, shown', [
+    (picture(1024, 1024, 1 << 20), True),  # at both caps
+    (picture(1024, 1024, 1 << 20, marker=0xc2), True),  # progressive
+    (picture(1025, 64), False), (picture(64, 1025), False),
+    (picture(size=(1 << 20) + 1), False),  # over 1 MB
+    (picture(marker=0xc4), False),  # no frame header: a JPEG it can't size
+    (PNG, False), (b'GIF89a' + bytes(40), False), (None, False),  # not a JPEG, or no file
+], ids=['caps', 'progressive', 'wide', 'tall', 'heavy', 'unsized', 'png', 'gif', 'none'])
+def test_art_refuses_what_it_cant_size_or_holds_too_big(fw, art, data, shown):
+    """A refused turn shows what Home shows with no homeart: the art is never decoded."""
+    a = art(b'homeart 5 j', {} if data is None else {1: data})
+    assert a.paint(0) == shown
+    if not shown:
+        loads = a.bitmaps.loads[:]
+        fw.var('card_home', C.c_int).value, a.home.key = 0, 0
+        a.bitmaps.loads.clear()
+        a.paint()
+        assert loads == a.bitmaps.loads
+
+
+def test_art_turns_unload_the_last(fw, art):
+    """At most one of the card's pictures is held: a turn that shows another, or none (refused), unloads the last by
+    name; one picture over turns stays loaded."""
+    def held():
+        names = set()
+        for what, name in a.events:
+            if what == 'load':
+                names.add(name)
+            elif what == 'unload':
+                names.discard(name)
+        return names
+    a = art(b'homeart 3 jjj', {1: picture(), 2: picture(), 3: picture(2000)})
+    for t, shown in ((0, 1), (1000, 1), (3000, 2), (6000, 0), (9000, 1), (12000, 2)):
+        assert a.paint(t) == shown and held() == ({f'art{shown:02}.jpg'} if shown else set()), t
+
+
+def test_one_picture_over_turns_stays_loaded(fw, art):
+    a = art(b'homeart 3 j', {1: picture()})
+    assert [a.paint(t) for t in (0, 3000, 6000)] == [1, 1, 1]
+    assert [what for what, _ in a.events if what != 'open'] == ['unload', 'load']  # coverflow_home_art's, before its load
+
+
+@pytest.mark.parametrize('data', [picture(), picture(2000)], ids=['kept', 'refused'])
+def test_art_reads_the_card_once_a_turn(fw, art, data):
+    """Home paints at least once a second; its picture is sized once a turn, kept or refused."""
+    a = art(b'homeart 10 j', {1: data})
+    a.paint(0)
+    once = len(a.reads())
+    for t in range(500, 10000, 500):
+        a.paint(t)
+    assert once and len(a.reads()) == once
+    a.paint(10000)
+    assert len(a.reads()) == 2 * once
+
+
+@pytest.mark.parametrize('t, file', [('minimal', rules(b'hide btn_playing', page=b'home_page')), ('modern', NOT_HOME),
+                                     ('classic-light', EVERY), ('classic-modern', EVERY)])
+def test_no_homeart_paints_home_as_with_none(fw, home, card, t, file):
+    """Home's paint with no homeart applying (Home's rows alone, rules for other pages, or every kind of line under
+    Classic and Classic Modern, which drop them) makes the stock calls it makes with no file: card_home shuts the
+    hook."""
+    h = home(t=t)
+    Bitmaps(fw)
+
+    def paint():
+        fw.var('coverflow__home', Home).key, fw.var('fw_log_n', C.c_int).value = 0, 0
+        fw.fn('coverflow_home_art', None, C.c_void_p)(h.win)
+        return [(name, arguments(name, a)) for name, a in fw.calls() if name != 'timer_remove']  # the last timer's id
+    alone = paint()
+    card.files[DST] = file
+    fw.fn('card_theme_load', None)()
+    assert not fw.var('card_home', C.c_int).value & 2 and paint() == alone and alone

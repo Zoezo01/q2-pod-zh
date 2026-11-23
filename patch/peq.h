@@ -774,10 +774,12 @@ int ipod_square_art(void);   /* navigation.c: Classic, and Modern under Square *
 /* card_rules.c: a card theme's rules for a page, on its window as it opens */
 enum { CARD_PLAYING, CARD_LOCK, CARD_HOME };
 void card_rules_apply(widget_t *win, int page);
-/* and Home's, for coverflow.c, which reads card_home first (CARD_HOME_ROWS: a Home row's rule) */
-enum { CARD_HOME_ROWS = 1 };
+/* and Home's, for coverflow.c, which reads card_home first (CARD_HOME_ROWS: a Home row's rule,
+ * CARD_HOME_ART: homeart names a JPEG) */
+enum { CARD_HOME_ROWS = 1, CARD_HOME_ART = 2 };
 extern int card_home;
 void card_rules_home(widget_t *list);
+unsigned card_rules_art(const char **cover, unsigned key);
 #define SPOT_GREY 0xffaaaaaau
 void radio_search(void);      /* radio.c */
 void toast(const char *text); /* navigation.c */
