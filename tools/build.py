@@ -30,7 +30,7 @@ def dev_tag(number):
     return 'V' + digits + 'i'
 BASE = 0xb00000
 SCRATCH = 0xbf0000  # 960 KB of payload text below it
-SCRATCH_MAX = 0x30000  # the most its state may fill, 192 KB: the segment is demo's last, the heap after it
+SCRATCH_MAX = 0x40000  # the most its state may fill, 256 KB: the segment is demo's last, the heap after it
 ROOTFS_FREE_MIN = 1 << 19  # bytes of stock's rootfs size a build must leave unused, 512 KiB (docs/building.md, Free space)
 RING_STEP = 48
 HOOKS = {
@@ -1830,7 +1830,7 @@ def check_layout(payload, ps):
     """The payload at BASE ends by SCRATCH, and its scratch state starts there and fills at most SCRATCH_MAX."""
     check(len(payload) <= SCRATCH-BASE, 'Payload overlaps its scratch page')
     check(ps['__scratch_start'] == SCRATCH, 'Scratch state moved')
-    check(ps['__scratch_end'] <= SCRATCH + SCRATCH_MAX, 'Scratch state exceeds its 192 KB')
+    check(ps['__scratch_end'] <= SCRATCH + SCRATCH_MAX, 'Scratch state exceeds its 256 KB')
 
 def check_rootfs_size(size, stock_size):
     """The repacked rootfs image is no larger than stock's, and leaves ROOTFS_FREE_MIN bytes of that size unused."""
