@@ -563,6 +563,16 @@ def stock_stub(address, result, log):
     C.memmove(address, code, len(code))
 
 
+def rgba(c, a=0xff):
+    """0xRRGGBB at alpha a as a color_t, whose bytes are r, g, b, a."""
+    return a << 24 | (c & 255) << 16 | c & 0xff00 | c >> 16 & 255
+
+
+def channels_low_first(c):
+    """A colour word's (c & 255, c >> 8 & 255, c >> 16 & 255): the byte order test_nav_paint's channels is not."""
+    return c & 255, c >> 8 & 255, c >> 16 & 255
+
+
 class Config:
     """config.ini, its value or the default."""
     def __init__(self, fw, **values):

@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from conftest import O, Card, Config, block
+from conftest import Card, Config, O, block, rgba
 
 SEED = 2166136261
 SUD, BEST, SOL, SNK = 0x31445553, 0x31585456, 0x314c4f53, 0x314b4e53
@@ -1918,11 +1918,6 @@ def test_a_record_that_can_t_be_written_says_so_and_still_shows(fw):
 # The sheet. games_paint draws on a canvas whose every call is recorded with the colour it reached stock in.
 
 CANVAS_LCD, LCD_FILL = O['CANVAS_LCD'], O['LCD_FILL_COLOR']
-
-
-def rgba(c, a=255):
-    """0xRRGGBB at alpha a as stock's colour word, bytes r, g, b, a (peq_ui.c's rgba)."""
-    return a << 24 | (c & 255) << 16 | c & 0xff00 | c >> 16 & 255
 
 
 def rgb(color):

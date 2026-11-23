@@ -9,7 +9,7 @@ import pytest
 
 import host
 from conftest import POD, text, Game, opus, pod_value, stock_stub
-from conftest import FNV_PRIME, O, Deques, Files, claim, fnv1a, in_fork  # noqa: F401
+from conftest import FNV_PRIME, O, Deques, Files, channels_low_first, claim, fnv1a, in_fork, rgba  # noqa: F401
 
 STOCK_RED = O['STOCK_RED']
 PAPER, INK = O['LIGHT_PAPER'], O['LIGHT_INK']
@@ -58,14 +58,6 @@ class Config:
 def strings(fw):
     """Stock's AWTK string helpers, which the C leans on."""
     fw.mock('tk_str_start_with', lambda s, prefix, *_: C.string_at(s).startswith(C.string_at(prefix)))
-
-
-def rgba(c, a=0xff):
-    return a << 24 | (c & 255) << 16 | c & 0xff00 | c >> 16
-
-
-def channels(color):
-    return color & 255, color >> 8 & 255, color >> 16 & 255
 
 
 # The clock.
@@ -195,7 +187,7 @@ def red_map(fw):
 
 
 def close(color, want, slack=3):
-    return all(abs(a - b) <= slack for a, b in zip(channels(color), want))
+    return all(abs(a - b) <= slack for a, b in zip(channels_low_first(color), want))
 
 
 def test_red_maps_to_the_tone_exactly(fw):
@@ -232,16 +224,16 @@ def test_a_blend_keeps_its_share_of_the_tone(fw, t, k):
 @pytest.mark.parametrize('t, k', BLENDS)
 def test_crimson_is_the_identity(fw, t, k):
     c = sum(round(v) << 8 * i for i, v in enumerate(blended(t, k, STOCK_RED))) | 0xff000000
-    assert close(red_map(fw)(c, STOCK_RED, 0xffffff, 0), channels(c))
+    assert close(red_map(fw)(c, STOCK_RED, 0xffffff, 0), channels_low_first(c))
 
 
 @pytest.mark.parametrize('glyph, want', [(0x000000, (0, 0, 0)), (0x123456, (0x12, 0x34, 0x56)), (0xff0000, (255, 0, 0))])
 def test_white_becomes_the_glyph(fw, glyph, want):
-    assert channels(red_map(fw)(rgba(0xffffff), 0x1e90ff, glyph, 0)) == want
+    assert channels_low_first(red_map(fw)(rgba(0xffffff), 0x1e90ff, glyph, 0)) == want
 
 
 def test_a_grey_takes_its_share_of_the_glyph(fw):
-    assert channels(red_map(fw)(rgba(0x808080), 0x1e90ff, 0xff0000, 0)) == (128, 0, 0)
+    assert channels_low_first(red_map(fw)(rgba(0x808080), 0x1e90ff, 0xff0000, 0)) == (128, 0, 0)
 
 
 def test_light_red_is_the_tone(fw):

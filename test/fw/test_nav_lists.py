@@ -12,7 +12,7 @@ from collections import Counter
 import pytest
 
 import host
-from conftest import NAVIGATION_SOURCE, O, Deques, claim, pod_value, ui_name
+from conftest import NAVIGATION_SOURCE, O, Deques, claim, pod_value, rgba, ui_name
 from test_coverflow import COVERS, TRACKS, Home, Rec, cf, deque_of  # coverflow.c's home struct, its page and an album
 from test_nav_display_library import Ple  # playlists.c's editor state
 from test_navigation import Config
@@ -1953,10 +1953,6 @@ def gradient(fw, canvas, r, top, bottom, hi, radius):
     for color, x, y, w, h in canvas.fills:
         rows.setdefault(y, []).append((color, x, w))
     return rows
-
-
-def rgba(c, a=0xff):
-    return a << 24 | (c & 255) << 16 | c & 0xff00 | c >> 16
 
 
 def test_a_square_gradient_runs_top_to_bottom_under_its_highlight(fw):

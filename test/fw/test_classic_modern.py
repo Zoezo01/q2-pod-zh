@@ -5,9 +5,9 @@ import ctypes as C
 
 import pytest
 
-from conftest import Config
+from conftest import Config, rgba
 from test_nav_paint import (ACCENTS, CLASSIC, CLASSIC_BLUE, GRAPHITE, LABELS, MODERN, RED, RED_PX, TIDAL, WHITE, Canvas, bitmaps,
-                            image_add, msg_paint, named, paint_bg, rgba, slider_paint, slider_scrub, SLIDER_PAGES, SLIDERS,
+                            image_add, msg_paint, named, paint_bg, slider_paint, slider_scrub, SLIDER_PAGES, SLIDERS,
                             layout, st, stock_h, theme, ui_load, world)  # noqa: F401 (fixtures, by name)
 from test_flat_pages import TimeCanvas, face, flip
 import test_flat_pages as flat_pages
@@ -64,9 +64,9 @@ def test_cover_flow_s_flip_panel_is_the_hold_menu_s_card(fw, light):
         fw.fn('coverflow__panel_paint', None, C.c_void_p, C.c_int)(canvas.addr, over)
     paper, line = fw.fn('flat_page', C.c_uint)(), 0xd1d1d6 if light == '1' else 0x38383a
     assert canvas.rects[0] == ((0, 0, 294, 285), paper | 0xff000000)  # the ground
-    assert canvas.row(30, 1, 293) == [painters.rgba(paper)] * 292 and canvas.row(56, 0, 294) == [painters.rgba(line)] * 294
+    assert canvas.row(30, 1, 293) == [rgba(paper)] * 292 and canvas.row(56, 0, 294) == [rgba(line)] * 294
     for y in (0, card + 1):  # the ring: inside the panel, so the turn carries it
-        assert canvas.row(y, 12, 282) == [painters.rgba(line)] * 270
+        assert canvas.row(y, 12, 282) == [rgba(line)] * 270
     assert canvas.row(card + 2, 0, 294) == [paper | 0xff000000] * 294
 
 

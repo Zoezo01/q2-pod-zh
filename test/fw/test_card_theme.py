@@ -10,13 +10,13 @@ import pytest
 
 import fuzz
 import host
-from conftest import O, Config, block
+from conftest import O, Config, block, rgba
 from test_coverflow import ART, decoded, tex_rig
 from test_coverflow import bitmap as cover
 from test_coverflow import rgba as cover_pixels
 from test_nav_display_library import Ui, appearance, button_of, row_of, writes
 from test_nav_loop import Card, Clock, Mounts, logo_poll, toasts
-from test_nav_paint import WHITE, Canvas, bitmaps, image_add, paint_bg, px, strings, style_color, system_bar, world  # noqa: F401 (bitmaps, world: fixtures)
+from test_nav_paint import WHITE, Canvas, bitmaps, channels, image_add, paint_bg, px, rgb_of, strings, style_color, system_bar, world  # noqa: F401 (bitmaps, world: fixtures)
 
 SRC, DST = '/mnt/mmc/Q2Pod/theme.txt', '/mnt/data/q2pod-theme'
 BAD, TRY, SEEN = DST + '.bad', DST + '.try', DST + '.seen'
@@ -46,10 +46,6 @@ def ct(fw, ct_fields):
 
 def parse(fw, data):
     return fw.fn('card_theme__card_theme_parse', C.c_int, C.c_void_p, C.c_uint)(block(fw, data), len(data))
-
-
-def rgba(c, a=0xff):
-    return a << 24 | (c & 255) << 16 | (c & 0xff00) | c >> 16
 
 
 def mix(a, b, j, n):
@@ -722,10 +718,6 @@ def paper_ink(fw, scheme_at):
     return C.c_uint.from_address(s + scheme_at['paper']).value, C.c_uint.from_address(s + scheme_at['ink']).value
 
 
-def channels(c):
-    return c >> 16 & 255, c >> 8 & 255, c & 255
-
-
 @pytest.mark.parametrize('theme', ['minimal', 'modern'])
 @pytest.mark.parametrize('light', [0, 1, 2])
 @pytest.mark.parametrize('bg, half', [(MIDNIGHT, 0), (PAPER, 1)])
@@ -777,10 +769,6 @@ def test_a_page_alone_keeps_the_presets_tones_and_flags(fw, library, card, schem
         to = fw.fn('flip_rgb', C.c_uint, C.c_uint)(fw.fn('accent_tone', C.c_uint, C.c_int)(2))  # the preset's tone, no card
         accent_map, red_map = fw.fn('accent_map', C.c_uint, C.c_uint, C.c_int, C.c_int), fw.fn('red_map', C.c_uint, C.c_uint, C.c_uint, C.c_uint, C.c_int)
         assert accent_map(rgba(to), a, 2) == red_map(rgba(to), to, 0xffffff, 1) != rgba(to)  # mapped, as in Light Mode
-
-
-def rgb_of(color):
-    return (color & 255) << 16 | color & 0xff00 | color >> 16 & 255
 
 
 def quiet_on(c, quiet):

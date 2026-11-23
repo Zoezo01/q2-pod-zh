@@ -10,7 +10,7 @@ import struct
 import pytest
 
 import host
-from conftest import O, Files, block, in_fork, Config
+from conftest import O, Files, block, in_fork, Config, rgba
 from test_nav_loop import LIBC, Clock, Flip, Land  # coverflow.c's cf_flip_t, fl; coverflow_land.c's land
 
 W_X, W_Y, W_W, W_H, W_PARENT = O['W_X'], O['W_Y'], O['W_W'], O['W_H'], O['W_PARENT']
@@ -36,11 +36,6 @@ ROLE_BAR = _roles[1].split(', ').index('ROLE_BAR')
 _set = re.search(r'<geometry name="classic-light" ([^>]*)/>', (host.ROOT/'assets/themes/classic-light/theme.xml').read_text())
 assert _set
 GEOMETRY = {k: int(v) for k, v in re.findall(r'(\w+)="(\d+)"', _set[1])}
-
-
-def rgba(c, a=0xff):
-    """0xRRGGBB as a color_t, whose bytes are r, g, b, a."""
-    return a << 24 | (c & 255) << 16 | c & 0xff00 | c >> 16
 
 
 def rgb_of(color):
