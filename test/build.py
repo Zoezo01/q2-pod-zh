@@ -591,14 +591,14 @@ def validate_assets(directory):
     assert named['label_lyricmsg']['self_layout'] == 'default(x=0,y=73,w=100%,h=28)'
     # Curly quotes draw the straight glyphs, ♡ takes ♥'s box and advance, and the letters stock lacks are
     # added (font_letters); other tables keep their stock bytes (head: its checksum), but for the added
-    # glyphs' counts in hhea and maxp and their names in post.
+    # glyphs' counts in hhea and maxp, and post, which keeps no names.
     from build import QUOTES, STOCK_LETTERS
     from fontTools.ttLib import TTFont
     old, new = (TTFont(io.BytesIO(read(i, FONT))) for i in ('stock.squashfs', 'rootfs.squashfs'))
-    assert all(new.getBestCmap()[c] == old.getBestCmap()[q] for c, q in QUOTES.items())
+    assert all(new.getGlyphID(new.getBestCmap()[c]) == old.getGlyphID(old.getBestCmap()[q]) for c, q in QUOTES.items())
     full, empty = (new.getBestCmap()[c] for c in (0x2665, 0x2661))
     g = new['glyf']
-    assert new['hmtx'][empty] == new['hmtx'][full] == (old['hmtx'][full][0] + 32, g[full].xMin)
+    assert new['hmtx'][empty] == new['hmtx'][full] == (old['hmtx'][old.getBestCmap()[0x2665]][0] + 32, g[full].xMin)
     assert abs(g[empty].xMin - g[full].xMin) <= 1 and abs(g[empty].xMax - g[full].xMax) <= 1
     assert abs(g[empty].yMin - g[full].yMin) <= 1 and abs(g[empty].yMax - g[full].yMax) <= 1
     letters = [u for lo, hi in STOCK_LETTERS for u in range(lo, hi + 1) if u not in old.getBestCmap()]
@@ -608,7 +608,10 @@ def validate_assets(directory):
     assert all(new.reader[t] == old.reader[t] for t in old.reader.keys() if t not in ('cmap', 'head', 'glyf', 'loca', 'hmtx', 'hhea', 'maxp', 'post'))
     for t, grown in (('hhea', {'numberOfHMetrics'}), ('maxp', {'numGlyphs', 'maxComponentDepth', 'maxComponentElements', 'maxCompositeContours', 'maxCompositePoints'})):
         assert {k: v for k, v in vars(new[t]).items() if k not in grown} == {k: v for k, v in vars(old[t]).items() if k not in grown}
-    assert new.getGlyphOrder()[:len(old.getGlyphOrder())] == old.getGlyphOrder()  # post: names added, none changed
+    # post 3.0: no glyph names, which stb_truetype never reads; stock's mapped glyphs keep their ids, the added ones follow
+    assert new['post'].formatType == 3 and all(new.getGlyphID(new.getBestCmap()[u]) == old.getGlyphID(name)
+                                               for u, name in old.getBestCmap().items() if u not in QUOTES)
+    assert all(new.getGlyphID(new.getBestCmap()[u]) >= old['maxp'].numGlyphs for u in letters)
     # The crash watchdog only sleeps longer; check_mem_thd returns on entry, so it never drops caches.
     old, new = read('stock.squashfs', WATCHDOG), read('rootfs.squashfs', WATCHDOG)
     assert new == old.replace(*WATCHDOG_SLEEP) and new != old
