@@ -3250,42 +3250,42 @@ int ringnav_bt_connect_start(int pause) {
 }
 static void pod_text(int i) {
     static const char *const names[][4] = {
-        { "Charge Limit: Off", "Charge Limit: " STR(CHARGE_STOP) "%" },
+        { N_("Charge Limit (%u%%)") },
         { N_("Wake: Single Press"), N_("Wake: Double Press") },
         { N_("Artist View: Grid"), N_("Artist View: Cover Flow"), N_("Artist View: List") },
         { N_("Year Order: Newest First"), N_("Year Order: Oldest First") },
         { N_("Artists: Artist"), N_("Artists: Album Artist") },
-        { N_("Resume on Connect: Off"), N_("Resume on Connect: On") },
+        { N_("Resume on Connect") },
         { N_("Clock: Standard"), N_("Clock: Large") },
         { N_("Artist Album Order: Year"), N_("Artist Album Order: A–Z") },
-        { N_("Volume Guard: Off"), N_("Volume Guard: On") },
+        { N_("Volume Guard") },
         { N_("Hold Return: Recent"), N_("Hold Return: Home") },
         { N_("Standby Limit: Off"), N_("Standby Limit: %u h"), N_("Standby Limit: %u h"),
           N_("Standby Limit: %u h") },
-        { 0 }, /* Control Device Volume: a switch */
+        { N_("Control Device Volume") },
         { 0 }, /* Sort's from coverflow.c */
         { N_("Refresh Cover Flow") },
         { 0 }, /* EQ per Output: a switch */
-        { 0 }, /* Key Tone: a switch */
-        { 0 }, /* In-Vehicle Mode: a switch */
-        { 0 }, /* Smart Wi-Fi: a switch */
-        { 0 }, /* Enlarged Album Art: a switch */
-        { 0 }, /* Folder Album Cover: a switch */
-        { 0 }, /* Fast Navigation: a switch */
+        { N_("Key Tone") },
+        { N_("In-Vehicle Mode") },
+        { N_("Smart Wi-Fi") },
+        { N_("Enlarged Album Art") },
+        { N_("Folder Album Cover") },
+        { N_("Fast Navigation") },
         { N_("Playlist View: List"), N_("Playlist View: Cover Flow") },
-        { 0 }, /* Scan Song Durations: a switch */
-        { 0 }, /* Position Bar: a switch */
-        { 0 }, /* Hide Streaming: a switch */
-        { 0 }, /* Hide Folder: a switch */
+        { N_("Scan Song Durations") },
+        { N_("Position Bar") },
+        { N_("Hide Streaming") },
+        { N_("Hide Folder") },
         { N_("Update Notifications: Off"), N_("Update Notifications: On") },
         { N_("Album View: List"), N_("Album View: Grid") },
-        { 0 }, /* Hide Apps, Hide Games and Hide App Store: switches */
-        { 0 },
-        { 0 },
-        { 0 }, /* Receive Audio: a switch */
-        { 0 }, /* Log Failed Artwork: a switch */
-        { 0 }, /* Hide Duplicate Albums and Hide Duplicate Songs: switches */
-        { 0 },
+        { N_("Hide Apps") },
+        { N_("Hide Games") },
+        { N_("Hide App Store") },
+        { N_("Receive Audio") },
+        { N_("Log Failed Artwork") },
+        { N_("Hide Duplicate Albums") },
+        { N_("Hide Duplicate Songs") },
     };
     _Static_assert(sizeof names / sizeof *names == POD_COUNT, "a names entry per row");
     if (i == POD_CF_SORT) { /* the Sort card's words, as Cover Flow's page holds the row */
@@ -3300,28 +3300,7 @@ static void pod_text(int i) {
             : i == POD_FOLDERCOVER ? g_foldercover_flag != 0
             : pod_values[i]        ? *pod_values[i]
                                    : 0;
-    const char *toggle = i == POD_CHARGE           ? tr("Charge Limit (%u%%)")
-                         : i == POD_RESUME         ? tr("Resume on Connect")
-                         : i == POD_VOL_GUARD      ? tr("Volume Guard")
-                         : i == POD_BT_LINK        ? tr("Control Device Volume")
-                         : i == POD_KEYTONE        ? tr("Key Tone")
-                         : i == POD_CARMODE        ? tr("In-Vehicle Mode")
-                         : i == POD_SMART_WIFI     ? tr("Smart Wi-Fi")
-                         : i == POD_COVERMODE      ? tr("Enlarged Album Art")
-                         : i == POD_FOLDERCOVER    ? tr("Folder Album Cover")
-                         : i == POD_BIG_LIB        ? tr("Fast Navigation")
-                         : i == POD_SCAN_DURATIONS ? tr("Scan Song Durations")
-                         : i == POD_CF_POSITION    ? tr("Position Bar")
-                         : i == POD_HIDE_STREAM    ? tr("Hide Streaming")
-                         : i == POD_HIDE_FOLDER    ? tr("Hide Folder")
-                         : i == POD_HIDE_APPS      ? tr("Hide Apps")
-                         : i == POD_HIDE_GAMES     ? tr("Hide Games")
-                         : i == POD_HIDE_STORE     ? tr("Hide App Store")
-                         : i == POD_BT_RECEIVE     ? tr("Receive Audio")
-                         : i == POD_CF_ART_LOG     ? tr("Log Failed Artwork")
-                         : i == POD_CF_DUP_ALBUMS  ? tr("Hide Duplicate Albums")
-                         : i == POD_CF_DUP_SONGS   ? tr("Hide Duplicate Songs")
-                                                   : 0;
+    const char *toggle = names[i][0] && !names[i][1] && i != POD_CF_REFRESH ? tr(names[i][0]) : 0;
     static const unsigned standby_hours[] = { 0, STANDBY_LIMIT_1, STANDBY_LIMIT_2,
                                               STANDBY_LIMIT_3 };
     char room[128];
