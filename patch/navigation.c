@@ -3752,8 +3752,9 @@ static int slider_page(widget_t *top);
  * (an hscroll_label keeps 2 px each side of its box) and its row, set for bar_px. */
 int bar_title_x(void) { return st.bar_title ? I(st.bar_title, W_X) + 2 : 0; }
 int bar_title_y(void) { return st.bar_title ? I(st.bar_title, W_Y) : 0; }
-/* w at x, y on the screen, unless it's there. */
-void bar_place(widget_t *w, int x, int y, int ww, int h) {
+/* w at x 16, 343 wide, y on the screen, unless it's there. */
+void bar_place(widget_t *w, int y, int h) {
+    int x = 16, ww = 343;
     void *p = P(w, W_PARENT);
     x -= I(p, W_X), y -= I(p, W_Y);
     if (I(w, W_X) != x || I(w, W_Y) != y || I(w, W_W) != ww || I(w, W_H) != h)
@@ -4922,15 +4923,15 @@ void final_text(canvas_t *canvas, const char *face, const unsigned *s, const voi
 /* The dark strip behind Classic's search field (once every dark bar's): its rows and its line,
  * the last of h rows from y: the scheme's dark half in either half, over the bar's own line, with
  * no second one; a flat Status Bar's plain black. Final colours. */
-void dark_bar_rows(canvas_t *canvas, int y, int w, int h) {
+void dark_bar_rows(canvas_t *canvas, int y, int h) {
     const theme_t *T = bar_theme();
     const scheme_t *S = &T->schemes[*T->accent_slot];
     if (T->painter[PAINT_BAR] != BAR_GLOSS) {
-        bar_rect(canvas, RGBA(BAR_COLOR), 0, y, w, h);
+        bar_rect(canvas, RGBA(BAR_COLOR), 0, y, 375, h);
         return;
     }
-    paint_stops(canvas, 0, y, w, h - 1, &S->bar);
-    bar_rect(canvas, RGBA(S->bar_line), 0, y + h - 1, w, 1);
+    paint_stops(canvas, 0, y, 375, h - 1, &S->bar);
+    bar_rect(canvas, RGBA(S->bar_line), 0, y + h - 1, 375, 1);
 }
 /* The info screen's dark tray: its rows, top light, ring and the light row under the ring. */
 void paint_tray(canvas_t *canvas, int x, int y, int w, int h) {
@@ -5404,14 +5405,14 @@ int ringnav_paint_bg(widget_t *w, canvas_t *canvas) {
     if (w && w == st.pl_box) pl_box_paint(w, canvas);
     if (w == st.t9_page && P(canvas, CANVAS_LCD)) {
         unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
-        dark_bar_rows(canvas, 0, 375, 34);
+        dark_bar_rows(canvas, 0, 34);
         paint_art(w, canvas, "classic_light_kb_back", 42, 4);
         paint_field(w, canvas, 72, 1, 244);
         stock_canvas_set_fill_color(canvas, fill);
     }
     if (w == st.kb_win && P(canvas, CANVAS_LCD)) {
         unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
-        paint_ramp(canvas, 60, 320, 60);
+        paint_ramp(canvas, 60);
         stock_canvas_set_fill_color(canvas, fill);
     }
     if (w == bar && P(canvas, CANVAS_LCD)) {

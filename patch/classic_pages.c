@@ -27,9 +27,9 @@ static unsigned kb_ramp(int y) {
     while (k < 4 && y >= rows[k + 1]) ++k;
     return mix(rgb[k], rgb[k + 1], y - rows[k], rows[k + 1] - rows[k]);
 }
-/* The ramp's screen rows y0 up to y1, where the canvas starts at screen row top. */
-void paint_ramp(canvas_t *canvas, int y0, int y1, int top) {
-    for (int y = y0; y < y1; ++y) bar_rect(canvas, RGBA(kb_ramp(y)), 0, y - top, 375, 1);
+/* The ramp's screen rows 60 up to 320, where the canvas starts at screen row top. */
+void paint_ramp(canvas_t *canvas, int top) {
+    for (int y = 60; y < 320; ++y) bar_rect(canvas, RGBA(kb_ramp(y)), 0, y - top, 375, 1);
 }
 /* A button of the keyboard's: its panel's page's row's. */
 int kb_key(widget_t *w) {
@@ -278,7 +278,7 @@ void pl_box_paint(widget_t *w, canvas_t *canvas) {
     unsigned fill = (unsigned)I(lcd, LCD_FILL_COLOR);
     for (int y = 0; y < 60; ++y)
         bar_rect(canvas, RGBA(mix(0xb4bdc9, 0x8b93a0, y, 60)), 0, y, 375, 1);
-    paint_ramp(canvas, 60, 320, 0);
+    paint_ramp(canvas, 0);
     paint_art(w, canvas, "classic_light_kb_back", 43, 33);
     paint_field_plain(w, canvas, 72, 28, 244);
     paint_bar(w, canvas);
@@ -362,11 +362,11 @@ void search_paint(widget_t *w, canvas_t *canvas) {
     unsigned fill = (unsigned)I(lcd, LCD_FILL_COLOR);
     search_hint(w);
     if (st.kb_win) {
-        dark_bar_rows(canvas, 0, 375, 60);
+        dark_bar_rows(canvas, 0, 60);
         paint_art(w, canvas, "classic_light_kb_back", 42, 18);
         paint_field(w, canvas, 72, 15, 244);
     } else {
-        dark_bar_rows(canvas, 26, 375, search_strip_end() - 26);
+        dark_bar_rows(canvas, 26, search_strip_end() - 26);
         paint_field(w, canvas, 24, 33, 327);
         paint_bar(w, canvas);
     }
@@ -705,8 +705,8 @@ static void msg_paint_flat(widget_t *w, canvas_t *canvas, unsigned fill) {
              *below = widget_lookup(w, "msg_line", 1);
     char name[32];
     if (scan) msg_sync();
-    bar_place(heading, 16, top + 100, 343, MSG_HEAD_H);
-    bar_place(below, 16, top + 134, 343, MSG_FLAT_LINE_H);
+    bar_place(heading, top + 100, MSG_HEAD_H);
+    bar_place(below, top + 134, MSG_FLAT_LINE_H);
     msg_text(heading, flat_ink[light], INK_LABEL);
     msg_text(below, flat_quiet[light], INK_LABEL);
     bar_rect(canvas, RGBA(flat_page()), 0, 26 - dy, 375, 294);
@@ -740,8 +740,8 @@ void msg_paint(widget_t *w, canvas_t *canvas) {
     widget_t *heading = widget_lookup(w, "msg_heading", 1),
              *below = widget_lookup(w, "msg_line", 1);
     if (scan) msg_sync();
-    bar_place(heading, 16, head, 343, MSG_HEAD_H);
-    bar_place(below, 16, line, 343, 20);
+    bar_place(heading, head, MSG_HEAD_H);
+    bar_place(below, line, 20);
     paint_page(w, canvas, 26 - dy);
     if (dy < 26) paint_bar(w, canvas); /* over the bar: bar_title_of has the scan's title */
     paint_art(w, canvas, scan ? "classic_light_orb_note" : "classic_light_orb_usb",

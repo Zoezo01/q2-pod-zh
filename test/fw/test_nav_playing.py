@@ -2983,7 +2983,7 @@ def test_a_key_without_a_label_shows_its_glyph_centred(fw, st, ui, name, art, w,
 def test_the_keyboards_ramp_darkens_down_the_screen(fw, st):
     theme(fw, st, CLASSIC)
     canvas = Canvas(fw)
-    fw.fn('paint_ramp', None, C.c_void_p, C.c_int, C.c_int, C.c_int)(canvas.p, 60, 320, 60)
+    fw.fn('paint_ramp', None, C.c_void_p, C.c_int)(canvas.p, 60)
     assert [r[:4] for r in canvas.rects] == [(0, y - 60, 375, 1) for y in range(60, 320)]
     light = [sum(channels(r[4])) for r in canvas.rects]
     assert light == sorted(light, reverse=True) and light[0] > light[-1]
