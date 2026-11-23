@@ -2748,6 +2748,22 @@ def test_power_off_saves_the_second_it_is_at(polled):
     assert struct.unpack('<4I', polled.disk.files[CHECKPOINT])[3] == 14
 
 
+@pytest.mark.parametrize('status, sec, moved, resumed', [(1, 0, 0, 14), (3, 0, 0, 0), (1, 20, 0, 20), (1, 0, 1, 0)])
+def test_the_power_off_second_outlasts_the_stop_after_it(polled, status, sec, moved, resumed):
+    """into_poweroff saves, then player_stop zeroes the time, and the UI passes go on: the charging screen with a cable
+    in, a firmware update's dialog. Stopped there, the saved second stays the place. Paused at 0:00, a stop that keeps
+    its time (a queue's end) and another track are places of their own."""
+    polled.after(1000, sec=14)
+    polled.fw.mock('stock_savequeue_trampoline', lambda *_: 3)
+    assert polled.fw.fn('ringnav_savequeue', C.c_int)() == 3
+    if moved:
+        polled.next(1)
+    polled.status, at = status, polled.mcl.pos
+    for _ in range(10):
+        polled.after(6000, sec=sec)
+    assert restore(polled) == at and polled.fw.calls('mclSetStartSeekTime')[-1][1][0] == resumed
+
+
 def snapshot_of(paths, cut=0):
     """A sealed version 3 snapshot of paths in queue order, the first playing, cut bytes short of its table."""
     n = len(paths)
