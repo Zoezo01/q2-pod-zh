@@ -2,7 +2,7 @@
 demuxers and decoders. libasound is a model (hooked exports), threads are green (switched at blocking syscalls and a
 real-time quantum), the clock is virtual, and a test drives the player through its command socket as demo does.
 libmad's long straight-line synth overflows Unicorn's translator, so its blocks are split where it's mapped."""
-import errno, os, pathlib, re, struct, subprocess, sys
+import errno, os, pathlib, re, shutil, struct, subprocess, sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]/'tools'))
 from build import segments
 from unicorn import *
@@ -12,6 +12,7 @@ A = (UC_MIPS_REG_A0, UC_MIPS_REG_A1, UC_MIPS_REG_A2, UC_MIPS_REG_A3)
 PAGE = 4096
 TP_SLOT = 0x7000
 STUB_RET = 0x7ffe0000
+AUTH = 0x430114  # the player's licence check
 
 
 def dynsyms(path):
@@ -120,8 +121,15 @@ def mad_splits(path):
     return out
 
 
+def scratch(build, work, root, aud):
+    """A fresh scratch folder: the stock libraries unpacked into root, and the audio folder made."""
+    shutil.rmtree(work, ignore_errors=True)
+    aud.mkdir(parents=True)
+    subprocess.run(['unsquashfs', '-no-progress', '-d', root, '-f', build/'stock.squashfs', 'lib', 'usr/lib'], check=True, stdout=subprocess.DEVNULL)
+
+
 class Emu:
-    def __init__(self, exe, root, work, env=(), fsmap=None, log=None, verbose=False, argv=('hciplayer', '-ao', 'alsa')):
+    def __init__(self, exe, root, work, env=(), fsmap=None, log=None, verbose=False, argv=('hciplayer', '-ao', 'alsa'), auth_off=False):
         self.exe, self.root = pathlib.Path(exe), pathlib.Path(root)
         self.fsmap = fsmap or {}
         self.verbose = verbose
@@ -155,6 +163,9 @@ class Emu:
         self.ioctls = []
         self.hooks = {}
         self.load(argv, env)
+        if auth_off:  # the licence check passes, and ALSA is modelled from the start
+            self.hook_fn(AUTH, lambda e: 0)
+            self.alsa_active = True
 
     # ---- memory
     def ensure(self, addr, size):
@@ -283,6 +294,20 @@ class Emu:
         self.cmdq.append(text.encode())
         self.event('cmd', text=text)
         self._kick()
+    def song(self, name, keep=1):
+        self.send_cmd('{set-songurl\\/mnt/mmc/%s|ss=0|0|0|%d|0|90}' % (name, keep))
+    def gapless(self, name):
+        self.send_cmd('{set-gapless\\/mnt/mmc/%s|ss=0|0|0|1|90}' % name)
+    def run_for(self, seconds):
+        """Run for seconds of virtual time from now."""
+        self.run(until=(self.clock - 10**12) / 1e9 + seconds)
+    def until(self, done, limit, step=0.02):
+        """Run in steps until done() or limit virtual seconds on; done() at the end."""
+        end = self.clock + int(limit * 10**9)
+        while self.clock < end:
+            if done(): return True
+            self.run_for(step)
+        return done()
 
     def _kick(self):
         if self.cmdq:

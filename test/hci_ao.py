@@ -11,12 +11,12 @@ Usage: test/hci_ao.py BUILD_DIR [PLAYER]  (PLAYER: another hciplayer, to see old
 import array, math, os, pathlib, shutil, signal, struct, subprocess, sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]/'tools'))  # before test/build.py
 from build import symbols
-from hci_emu import Emu, PCM
+from hci_emu import Emu, PCM, scratch
 
 build = pathlib.Path(sys.argv[1]).resolve()
 player = pathlib.Path(sys.argv[2]).resolve() if len(sys.argv) > 2 else build/'peq'/'hciplayer'
 work, root, aud = build/'hci_ao', build/'hci_ao'/'root', build/'hci_ao'/'aud'
-AUTH, WAY = 0x430114, 0xb11e54
+WAY = 0xb11e54
 ps = symbols(build/'peq'/'peq.elf')
 TONE, SECONDS = 660, 1.5
 FILES = {'a44.flac': (44100, 2, 's16', 'flac'), 'b44.flac': (44100, 2, 's16', 'flac'), 'b48.flac': (48000, 2, 's16', 'flac'),
@@ -34,9 +34,7 @@ LONG = {'f44.flac': 5.5, 'g44.flac': 3, 'h48.flac': 3, 't100.flac': 0.1, 't400.f
 
 def setup():
     
-    shutil.rmtree(work, ignore_errors=True)
-    aud.mkdir(parents=True)
-    subprocess.run(['unsquashfs', '-no-progress', '-d', root, '-f', build/'stock.squashfs', 'lib', 'usr/lib'], check=True, stdout=subprocess.DEVNULL)
+    scratch(build, work, root, aud)
     for name, (rate, ch, fmt, codec) in FILES.items():
         depth = ['-sample_fmt', fmt, '-bits_per_raw_sample', '24'] if fmt == 's32' else ['-sample_fmt', fmt] if codec == 'flac' else []
         subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'lavfi', '-i', f'sine=f={TONE}:r={rate}:d={LONG.get(name, SECONDS)}', '-af', 'volume=5.66', '-ac', str(ch),
@@ -165,11 +163,9 @@ class Player:
         KernelEmu.streams = []
         KernelEmu.transport = transport
         KernelEmu.reads = 0
-        self.e = e = KernelEmu(player, root, work, log=work/'player.log', fsmap={'/mnt/mmc': str(aud)})
-        e.hook_fn(AUTH, lambda e: 0)
+        self.e = e = KernelEmu(player, root, work, log=work/'player.log', fsmap={'/mnt/mmc': str(aud)}, auth_off=True)
         for name in 'mnt_data_peq-active', 'tmp_q2xfade', 'tmp_q2press':
             (e.tmp/name).unlink(missing_ok=True)
-        e.alsa_active = True
         self.excess, self.jumped, self.looks = None, 0, 0
         e.watch_fn(ps['ao_write'], self.first_write)
         self.run(0.3)
@@ -182,17 +178,13 @@ class Player:
             self.jumped += 1
             self.excess = None
     def run(self, s):
-        self.e.run(until=(self.e.clock - 10**12) / 1e9 + s)  # hci_emu's until: seconds from boot
+        self.e.run_for(s)
     def until(self, done, limit):
-        end = self.e.clock + int(limit * 10**9)
-        while self.e.clock < end:
-            if done(): return True
-            self.run(0.02)
-        return False
+        return self.e.until(done, limit)
     def song(self, name, keep=1):
-        self.e.send_cmd('{set-songurl\\/mnt/mmc/%s|ss=0|0|0|%d|0|90}' % (name, keep))
+        self.e.song(name, keep)
     def gapless(self, name):
-        self.e.send_cmd('{set-gapless\\/mnt/mmc/%s|ss=0|0|0|1|90}' % name)
+        self.e.gapless(name)
     def ended(self):
         return self.e.r32(ps['ao_natural']) != 0
     def mark(self):
