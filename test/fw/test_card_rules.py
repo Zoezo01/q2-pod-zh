@@ -1,6 +1,6 @@
 """patch/card_rules.c: a card theme's widget rules, read as Q2 Theme Studio's reader reads them (patch/card_widgets.inc
 standing in for its catalogue), dropped wherever they don't apply, and applied to Now Playing (its iPod layout) and the
-lock screen as they open, under Minimal and Modern."""
+lock screen as they open and to Home's rows at each layout, under Minimal and Modern."""
 import ctypes as C
 import random
 import re
@@ -11,21 +11,25 @@ import pytest
 import host
 from conftest import O
 from test_card_theme import DST, INDEX, STYLES, TRY, card, parse, start, theme_file  # noqa: F401 (card: a fixture)
+from test_coverflow import Ui as HomeUi
 from test_lockscreen import Bitmaps, Window
 from test_nav_playing import MINIMAL, MODERN, Now, st, theme, ui  # noqa: F401 (st, ui: fixtures)
 
-HIDE, MOVE, SIZE = 1, 2, 4  # card_rules.c's CR_*
-PAGES = {'CARD_PLAYING': (0, 'playing_page'), 'CARD_LOCK': (1, 'saverscreen_page')}
+HIDE, MOVE, SIZE, TEXT = 1, 2, 4, 32  # card_rules.c's CR_*
+PAGES = {'CARD_PLAYING': (0, 'playing_page'), 'CARD_LOCK': (1, 'saverscreen_page'), 'CARD_HOME': (2, 'home_page')}
 ROWS = [(PAGES[m[1]], m[2], set(m[3].split(' | ')), int(m[4]), tuple(int(v) for v in m.groups()[4:])) for m in re.finditer(
     r'^CARD_WIDGET\((CARD_\w+), "(\w+)", ([A-Z_ |]+), (\d+), (-?\d+), (-?\d+), (-?\d+), (-?\d+)\)$',
     host.ROOT.joinpath('patch/card_widgets.inc').read_text(), re.M)]
+HOME = next(i for i, (pg, *_) in enumerate(ROWS) if pg[1] == 'home_page')  # card_rules.c's: Home's rows, the last
 VERBS = {'hide': (1, 'CR_HIDE'), 'move': (3, 'CR_MOVE'), 'size': (3, 'CR_SIZE'), 'font': (2, 'CR_FONT')}
+JS_SPACE = '\t\n\v\f\r \xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff'  # JS's \s, all trim() strips
 W_EMITTER, EMIT_TYPE, EVT_CLICK = O['W_EMITTER'], O['EMIT_TYPE'], O['EVT_CLICK']
 FAV_CLICK = 0x53c968  # Now Playing's heart: stock's My Fav toggle (ratings.c rate_bind)
 # Every kind of line, on both pages: what the gate must drop whole.
 EVERY = theme_file(b'page playing_page', b'hide img_cover', b'move scrlabel_title 10 20', b'size label_ipod_album 100 30',
                    b'font scrlabel_artist 30', b'hide slider_play', b'page saverscreen_page', b'hide clock_time',
-                   b'move img_slide 5 9', b'battery inside')
+                   b'move img_slide 5 9', b'page home_page', b'hide btn_playing', b'text btn_folder Albums',
+                   b'font btn_settings 24', b'battery inside')
 
 
 def rules(*lines, page=b'playing_page'):
@@ -38,24 +42,47 @@ def cr_fields(library):
 
 
 def state(fw, fields):
-    """cr per row: (flags, x, y, w, h, font)."""
+    """cr per row: (flags, x, y, w, h, font, words)."""
     base, n = C.addressof(fw.var('card_rules__cr', C.c_char)), len(ROWS)
     flags, font = C.string_at(base + fields['flags'], n), C.string_at(base + fields['font'], n)
     box = (C.c_short * (4 * n)).from_address(base + fields['box'])
-    return [(flags[i], *box[4 * i:4 * i + 4], font[i]) for i in range(n)]
+    words = [C.string_at(base + fields['words'] + 41 * (i - HOME)).decode() if flags[i] & TEXT else '' for i in range(n)]
+    return [(flags[i], *box[4 * i:4 * i + 4], font[i], words[i]) for i in range(n)]
 
 
 def whole_state(fw):
-    """All of the rules' state: cr's bytes, and st.card_rules."""
+    """All of the rules' state: cr's bytes, card_home, and st.card_rules."""
     raw = C.string_at(C.addressof(fw.var('card_rules__cr', C.c_char)), fw.sizes['card_rules__cr'])
-    return raw, fw.fn('card_rules_used', C.c_int)()
+    return raw, fw.var('card_home', C.c_int).value, fw.fn('card_rules_used', C.c_int)()
+
+
+def clean_text(text):
+    """Q2 Theme Studio's cleanText (docs/core.js, cleanName in it): what it writes of a row's words."""
+    def trim(t):
+        return re.sub(f'^[{JS_SPACE}]+|[{JS_SPACE}]+$', '', t)
+    plain = trim(trim(re.sub('[\x00-\x1f\x7f-\x9f\u2028\u2029]', '', re.sub(f'[{JS_SPACE}]+', ' ', text)))[:40])
+    plain = trim(plain[:24])
+    while len(plain.encode()) > 40:
+        plain = trim(plain[:-1])
+    return plain
+
+
+def studio_words(raw):
+    """A text line's words as Q2 Pod keeps them: as written where the Studio's cleanText leaves them so, which is how it
+    writes them, else none (invalid UTF-8 too)."""
+    try:
+        words = raw.encode('latin-1').decode()
+    except UnicodeDecodeError:
+        return ''
+    return words if words and clean_text(words) == words else ''
 
 
 def studio_rules(data):
-    """What Q2 Theme Studio's reader (docs/core.js parse, then clampBox and the font rule of normalize) keeps of a
-    file's rule lines, card_widgets.inc for its catalogue: per row (flags, x, y, w, h, font), the move as written
-    (saturated at 30000), the size clamped; all 0 where it refuses the file."""
-    kept = [(0, 0, 0, 0, 0, 0)] * len(ROWS)
+    """What Q2 Theme Studio's reader (docs/core.js parse, then clampBox, the font rule and cleanText of normalize) keeps
+    of a file's rule lines, card_widgets.inc for its catalogue: per row (flags, x, y, w, h, font, words), the move as
+    written (saturated at 30000), the size clamped, words only where cleanText leaves them; all 0 where it refuses the
+    file."""
+    kept = [(0, 0, 0, 0, 0, 0, '')] * len(ROWS)
     text = data.decode('latin-1').removeprefix('\xef\xbb\xbf')
     lines = [line.removesuffix('\r') for line in text.split('\n')]
     while lines and lines[-1] == '': lines.pop()
@@ -66,12 +93,20 @@ def studio_rules(data):
         if word == 'page':
             page = rest[0] if len(rest) == 1 and rest[0] in [p for _, p in PAGES.values()] else None
             continue
+        def row(act):
+            return next((i for i, (pg, name, acts, *_) in enumerate(ROWS) if pg[1] == page and name == rest[0] and act in acts), None)
+        if word == 'text':  # at least a word after the row's name, all of them the row's
+            i = row('CR_TEXT') if len(rest) > 1 else None
+            if i is not None:
+                words = studio_words(' '.join(rest[1:]))
+                kept[i] = (kept[i][0] & ~TEXT | (TEXT if words else 0), *kept[i][1:6], words)
+            continue
         count, act = VERBS.get(word, (None, None))
         if len(rest) != count: continue
-        i = next((i for i, (pg, name, acts, *_) in enumerate(ROWS) if pg[1] == page and name == rest[0] and act in acts), None)
+        i = row(act)
         if i is None or not all(re.fullmatch('-?[0-9]+', v) for v in rest[1:]): continue
         v = [max(-30000, min(30000, int(v))) for v in rest[1:]]
-        flags, x, y, w, h, font = kept[i]
+        flags, x, y, w, h, font, words = kept[i]
         _, _, acts, default, box = ROWS[i]
         if word == 'font':
             font = min(max(v[0], 8), 120) if v[0] else 0
@@ -85,40 +120,48 @@ def studio_rules(data):
             x, y, flags = v[0], v[1], flags | MOVE
         else:
             flags |= HIDE
-        kept[i] = flags, x, y, w, h, font
+        kept[i] = flags, x, y, w, h, font, words
     return kept
 
 
 # The parse
 def test_rules_take_what_the_studios_reader_takes(fw, cr_fields):
     rng = random.Random(3)
-    names = [name for _, name, *_ in ROWS] + ['img_more', 'btn_settings', 'view_eqchip', 'label_clock', 'Img_cover', 'img_cover\t',
+    names = [name for _, name, *_ in ROWS] + ['img_more', 'btn_eq', 'view_eqchip', 'label_clock', 'Img_cover', 'img_cover\t',
                                               'img_cover\r', '']
     pages = ['playing_page', 'saverscreen_page', 'home_page', 'system_bar', 'Playing_page', 'playing_page ', '']
     numbers = ['0', '-0', '7', '-7', '12', '40', '186', '303', '0099', '-30000', '30001', '1' * 40, '-' + '9' * 40, '+5', '5a', '',
                '1.5', '-', '--3', '\xd9\xa3', ' 5']
+    # a row's words, as UTF-8 read byte for byte: clean ones (24 characters, 40 bytes), then unclean ones and invalid UTF-8
+    words = [w.encode().decode('latin-1') for w in ('Songs', 'Now Playing', 'M\xfasica', '\u97f3\u4e50 \u5e93', 'x' * 24, '\xe9' * 20,
+                                                    'Ok \U0001f3b5', 'a  b', ' a', 'a ', 'a\tb', 'a\x85b', 'a\xa0b', 'x' * 25,
+                                                    '\xe9' * 20 + 'a', 'a\x7fb', 'a\u3000b', '\ufeffa', 'a\u2028b', 'a\u1680b', '\x01')]
+    words += ['\xff', 'a\xe2\x80', '\xc0\xa0', '\xed\xa0\x80']
 
     def line():
         n = lambda: rng.choice(numbers[:9] * 3 + numbers)  # noqa: E731
+        t = lambda: rng.choice(words[:7] * 3 + words)  # noqa: E731
         name = rng.choice(names)
         if rng.random() < 0.1:
-            return rng.choice([f'page {rng.choice(pages[:2] * 6 + pages)}', 'page', 'page playing_page x'])
+            return rng.choice([f'page {rng.choice(pages[:3] * 6 + pages)}', 'page', 'page playing_page x'])
         if rng.random() < 0.6:
-            return rng.choice([f'hide {name}', f'move {name} {n()} {n()}', f'size {name} {n()} {n()}', f'font {name} {n()}'])
+            return rng.choice([f'hide {name}', f'move {name} {n()} {n()}', f'size {name} {n()} {n()}', f'font {name} {n()}',
+                               f'text {name} {t()}', f'text {name} {t()} {t()}'])
         return rng.choice([f'hide {name} {n()}', f'move {name} {n()}', f'size {name} {n()} {n()} {n()}', f'font {name}',
                            f'font  {name} {n()}', f'Hide {name}', f' hide {name}', f'hide {name} ', f'move\t{name} {n()} {n()}',
-                           'accent #c04a8a', 'end'])
+                           f'text {name}', f'text {name} ', f'text  {name} {t()}', f'text\t{name} {t()}', 'accent #c04a8a', 'end'])
     ends, seen, refused = ['\n', '\n', '\n', '\r\n', '\r\r\n'], set(), 0
     for _ in range(6000):
         head, tail = rng.choice(['q2theme 1'] * 9 + ['q2theme 2']), rng.choice(['end'] * 9 + ['End'])
-        parts = [head, f'page {rng.choice(pages[:2])}', *(line() for _ in range(rng.randrange(12))), tail]
+        parts = [head, f'page {rng.choice(pages[:3])}', *(line() for _ in range(rng.randrange(12))), tail]
         data = ''.join(part + rng.choice(ends) for part in parts).encode('latin-1')
         want = studio_rules(data)
         refused += parse(fw, data) == 0
         assert state(fw, cr_fields) == want, data
-        seen |= {(i, f) for i, (flags, *_, font) in enumerate(want) for f in (HIDE, MOVE, SIZE, 8) if flags & f or (f == 8 and font)}
-    takes = {(i, f) for i, (_, _, acts, *_) in enumerate(ROWS) for f, a in ((HIDE, 'CR_HIDE'), (MOVE, 'CR_MOVE'),
-                                                                           (SIZE, 'CR_SIZE'), (8, 'CR_FONT')) if a in acts}
+        seen |= {(i, f) for i, (flags, *_, font, _) in enumerate(want) for f in (HIDE, MOVE, SIZE, 8, TEXT)
+                 if flags & f or (f == 8 and font)}
+    takes = {(i, f) for i, (_, _, acts, *_) in enumerate(ROWS) for f, a in ((HIDE, 'CR_HIDE'), (MOVE, 'CR_MOVE'), (SIZE, 'CR_SIZE'),
+                                                                           (8, 'CR_FONT'), (TEXT, 'CR_TEXT')) if a in acts}
     assert seen == takes and refused > 500  # each row's each rule, and refused files, met
 
 
@@ -143,13 +186,13 @@ def test_a_font_is_cleared_by_0_or_its_own_size_and_held_to_8_to_120(fw, cr_fiel
 
 # The gate
 def hooks_silent(fw):
-    """Every hook, with no rule for it: no stock call, no widget written."""
+    """Every hook, with no rule for it: no stock call, no widget written, and coverflow.c's Home hooks shut."""
     before, win = len(fw.calls()), C.create_string_buffer(0x400)
     for page in PAGES.values():
         fw.fn('card_rules_apply', None, C.c_void_p, C.c_int)(C.addressof(win), page[0])
     assert fw.fn('card_rule_px', C.c_int, C.c_void_p, C.c_int)(C.addressof(win), 15) == 15
     assert fw.fn('card_rules_art_hidden', C.c_int)() == 0
-    return fw.calls()[before:] == []
+    return fw.calls()[before:] == [] and fw.var('card_home', C.c_int).value == 0
 
 
 @pytest.mark.parametrize('file, t', [(None, 'minimal'), (None, 'modern'), (EVERY, 'classic-light'), (EVERY, 'classic-modern')])
@@ -171,15 +214,17 @@ def test_rules_are_dropped_wherever_the_file_doesnt_apply(fw, card, t, tried):
     elif tried:
         card.files[TRY] = tried
     start(fw, THEME=INDEX[t], BATTERY=0)
-    raw, used = whole_state(fw)
-    assert raw == bytes(len(raw)) and used == 0 and hooks_silent(fw)
+    raw, home, used = whole_state(fw)
+    assert raw == bytes(len(raw)) and home == used == 0 and hooks_silent(fw)
     assert fw.fn('ipod_battery', C.c_int)() == (0 if tried else STYLES.index('inside'))
 
 
-def test_rules_alone_are_counted_by_the_guard(fw, card):
-    card.files[DST] = rules(b'hide img_cover')
+@pytest.mark.parametrize('file, used, home', [(rules(b'hide img_cover'), 1, 0),  # Now Playing's bit
+                                             (rules(b'text btn_folder Albums', page=b'home_page'), 4, 1)])  # Home's, its rows'
+def test_rules_alone_are_counted_by_the_guard(fw, card, file, used, home):
+    card.files[DST] = file
     start(fw, THEME=INDEX['minimal'])
-    assert card.files[TRY] == b'1' and whole_state(fw)[1] == 1  # Now Playing's bit
+    assert card.files[TRY] == b'1' and whole_state(fw)[1:] == (home, used)
 
 
 # Now Playing, as tools/ipod.py lays it out on the ipod set: (parent, name, box)
@@ -342,3 +387,152 @@ def test_lock_rules_run_after_big_clock(fw, card, t):
     moves = [(name, args[:4]) for name, args in win.calls('widget_move_resize')]
     assert moves[-2:] == [('view_timeinfo', (0, 320 - 103, 375, 103)), ('img_slide', (0, 0, 30, 16))]
     assert ('view_timeinfo', (0, 14, 375, 150)) in moves[:-2]  # Large's place first
+
+
+# Home
+HOME_ROWS = [name for pg, name, *_ in ROWS if pg[1] == 'home_page']
+SIZES = ('style:normal:font_size', 'style:focused:font_size', 'style:disable:font_size', '_card_px')
+ROCKBOX = b'/mnt/mmc/.rockbox/rockbox'
+NOT_HOME = theme_file(b'page playing_page', b'hide img_cover', b'font scrlabel_title 30', b'page saverscreen_page',
+                      b'hide clock_time')
+
+
+def arguments(stub, regs):
+    """A stub's arguments out of its six registers (the rest hold whatever the caller left), but a void * (stat's
+    buffer, on the caller's stack, which ASan moves each call)."""
+    args = {f'fw_{k}': v for k, v in host.tools_peq.LIBC.items()}.get(stub) or host.tools_build.FUNCTIONS.get(stub, ('', ''))
+    return tuple(r for r, t in zip(regs, args[1].split(', ')) if t not in ('', 'void', 'void *'))
+
+
+class HomePage:
+    """Home's window as tools/ipod.py lays it out on the ipod set, opened by coverflow_home under theme t with a card
+    theme of Home lines: the art and the main list, each of its rows (HOME_ROWS) a view holding its label, which reads
+    the row's name, and its tap image. rockbox: the card has Rockbox (Shortcut: Rockbox shows the Shortcut row)."""
+    def __init__(self, fw, card, *lines, t='minimal', **config):
+        card.files[DST] = rules(*lines, page=b'home_page')
+        self.fw, self.card, self.rockbox = fw, card, False
+        fw.mock('fw___xstat', self.stat)
+        start(fw, THEME=INDEX[t], **config)
+        self.ui = ui = HomeUi(fw)
+        self.win = ui.make(0, 'window', 0, 30, 375, 290)
+        ui.make(self.win, 'image', 0, 0, 375, 290, name='img_homeart')
+        self.view = ui.make(ui.make(self.win, 'list_view', 0, 0, 188, 273, name='list_view_home'), 'scroll_view', 0, 0, 188, 273)
+        self.rows, self.labels = {}, {}
+        for i, name in enumerate(HOME_ROWS):
+            self.rows[name] = ui.make(self.view, 'view', 0, 39 * i, 188, 39, name=name)
+            self.labels[name] = ui.make(self.rows[name], 'hscroll_label', 20, 0, 150, 39, name='label_' + name[4:])
+            ui[self.labels[name]].text = name
+            ui.make(self.rows[name], 'image', 0, 0, 188, 39, name='img_' + name[4:])
+        ui.top = self.win
+        fw.mock('stock_home_trampoline', lambda *_: 0)
+        fw.fn('coverflow_home', C.c_int, C.c_void_p, C.c_void_p)(self.win, 0)
+
+    def stat(self, version, path, info, *_):
+        if self.rockbox and C.string_at(path) == ROCKBOX:
+            (C.c_uint * 36).from_address(info)[5] = 0o100000  # a regular file
+            return 0
+        return self.card.stat(version, path, info)
+
+    def order(self):
+        return [self.ui[w].name for w in self.ui[self.view].kids]
+
+    def text(self, name):
+        return self.ui[self.labels[name]].text
+
+    def fonts(self, name):
+        return {k: v for k, v in self.ui[self.labels[name]].props.items() if k in SIZES}
+
+
+@pytest.fixture
+def home(fw, card):
+    return lambda *lines, **keys: HomePage(fw, card, *lines, **keys)
+
+
+@pytest.mark.parametrize('t', ['minimal', 'modern'])
+def test_hidden_rows_go_last_in_order_and_take_no_taps(fw, home, t):
+    """A rule's hides and Home's own (the Shortcut row with no Rockbox on the card, Hide Folder) go last, in HOME_ROWS'
+    order, the rest in it; that holds at the next layout, Rockbox there now. Today's restack alone puts the Shortcut row
+    at its fixed index, among rows a rule sent last."""
+    h = home(b'hide btn_playing', b'hide btn_stream', t=t, SHORTCUT=0, HIDEFOLDER=1)
+    hidden = ['btn_playing', 'btn_folder', 'btn_rockbox', 'btn_stream']
+    assert h.order() == ['btn_localmusic', 'btn_coverflow', 'btn_settings', *hidden]
+    for name, row in h.rows.items():
+        assert h.ui[row].visible == h.ui[row].sensitive == (name not in hidden), name
+    assert {w for w, v, *_ in (a for _, a in fw.calls('widget_set_opacity')) if not v} >= {h.rows['btn_playing'], h.rows['btn_stream']}
+    h.rockbox = True
+    fw.fn('coverflow_home_layout', None)()
+    assert h.order() == ['btn_localmusic', 'btn_coverflow', 'btn_rockbox', 'btn_settings', 'btn_playing', 'btn_folder', 'btn_stream']
+    assert h.ui[h.rows['btn_rockbox']].visible and h.ui[h.rows['btn_rockbox']].sensitive
+
+
+def test_home_words_come_before_home_width(fw, home):
+    """A row's words are on its label before home_width lays the label out, so theme_font picks its face for them."""
+    h = home(b'text btn_playing Songs', b'text btn_folder Albums')
+    label = h.labels['btn_playing']
+    calls = [(name, args[0]) for name, args in fw.calls() if name in ('widget_set_text_utf8', 'widget_move_resize')]
+    assert h.text('btn_playing') == 'Songs' and h.text('btn_folder') == 'Albums' and h.text('btn_coverflow') == 'btn_coverflow'
+    assert calls.index(('widget_set_text_utf8', label)) < calls.index(('widget_move_resize', label))
+
+
+def test_settings_takes_words_never_a_hide(fw, home, cr_fields):
+    """Settings is always on Home: its hide is no rule, its words and font are."""
+    h = home(b'hide btn_settings', b'text btn_settings Setup', b'font btn_settings 24')
+    row = h.rows['btn_settings']
+    assert h.ui[row].visible and h.ui[row].sensitive and h.text('btn_settings') == 'Setup'
+    assert h.fonts('btn_settings') == dict.fromkeys(SIZES, 24) and state(fw, cr_fields)[ROWS.index(ROWS[-1])][0] == TEXT
+
+
+def test_the_shortcut_row_takes_no_words(fw, home, cr_fields):
+    """Its label is the Shortcut's, written at each layout: no words, but its font and hide."""
+    h = home(b'text btn_rockbox Mine', b'font btn_rockbox 24', SHORTCUT=6)  # Games
+    assert h.text('btn_rockbox') == 'Games' and h.fonts('btn_rockbox') == dict.fromkeys(SIZES, 24)
+    assert state(fw, cr_fields)[HOME + HOME_ROWS.index('btn_rockbox')][0] == 0
+
+
+@pytest.mark.parametrize('words, taken', [
+    (b'Songs', True), (b'Now Playing', True), ('音乐 \U0001f3b5'.encode(), True), (b'x' * 24, True),
+    ('\xe9'.encode() * 20, True),  # 40 bytes
+    (b'x' * 25, False),  # a 25th character
+    ('\xe9'.encode() * 20 + b'a', False),  # a 41st byte
+    (b'Now  Playing', False), (b' Songs', False), (b'Songs ', False), (b'So\tngs', False), (b'So\x7fngs', False),
+    (b'So\xc2\x85ngs', False),  # a C1 control
+    (b'Now\xc2\xa0Playing', False), ('Now　Playing'.encode(), False),  # spaces the Studio writes as ' '
+    (b'So\xffngs', False), (b'Songs\xe2\x80', False), (b'\xc0\xa0', False),  # not UTF-8
+])
+def test_text_is_taken_only_clean(home, words, taken):
+    h = home(b'text btn_playing ' + words)
+    assert h.text('btn_playing') == (words.decode() if taken else 'btn_playing')
+
+
+@pytest.mark.parametrize('t', ['minimal', 'modern'])
+def test_home_fonts_are_held_to_the_rows_height(home, t):
+    h = home(b'font btn_playing 60', b'font btn_folder 24', b'font btn_coverflow 18', t=t)  # 18: the row's own, none
+    assert h.fonts('btn_playing') == dict.fromkeys(SIZES, 39) and h.fonts('btn_folder') == dict.fromkeys(SIZES, 24)
+    assert h.fonts('btn_coverflow') == {}
+
+
+@pytest.mark.parametrize('lines, px', [((), 18), ((b'font btn_folder 24',), 24), ((b'font btn_folder 60',), 39)])
+def test_minimal_home_capitals_take_the_rows_font(fw, home, lines, px):
+    h = home(*lines)
+    canvas = Canvas(fw)
+    fw.fn('navigation__paint_caps', None, C.c_void_p, C.c_void_p)(h.labels['btn_folder'], C.addressof(canvas.raw))
+    assert canvas.drawn and {(y, size) for _, y, size in canvas.drawn} == {((39 - px) // 2, px)}
+
+
+@pytest.mark.parametrize('t, file', [('minimal', NOT_HOME), ('modern', NOT_HOME), ('classic-light', EVERY), ('classic-modern', EVERY)])
+def test_no_home_rule_lays_home_out_as_with_no_rule(fw, home, card, t, file):
+    """Home's layout with no rule for it (rules for other pages, or a file of every kind under Classic and Classic
+    Modern, which drop it) makes the stock calls it makes with no rule at all, which look up only the rows it lays out
+    itself: card_home shuts coverflow.c's hook."""
+    home(t=t)  # a file with no rule
+
+    def layout():
+        before = len(fw.calls())
+        fw.fn('coverflow_home_layout', None)()
+        return [(name, arguments(name, a)) for name, a in fw.calls()[before:] if name != 'timer_remove']  # the last timer's id
+    alone = layout()
+    assert {C.string_at(a[1]) for name, a in alone if name == 'widget_lookup'} == {b'btn_folder', b'btn_rockbox', b'btn_stream',
+                                                                                     b'label_rockbox'}
+    card.files[DST] = file
+    fw.fn('card_theme_load', None)()
+    assert fw.var('card_home', C.c_int).value == 0 and layout() == alone

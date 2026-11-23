@@ -1,11 +1,11 @@
 /* A card theme's widget rules (docs/internals.md, Themes: Card themes): a Q2 Theme Studio file's
- * page, hide, move, size and font lines, read in card_theme_parse's pass as the Studio's reader
- * reads them, card_widgets.inc standing in for its catalogue; applied once, as Now Playing (its
- * iPod layout) and the lock screen open, under a theme that takes a card theme's look
- * (card_theme_load drops them under any other). */
+ * page, hide, move, size, font and text lines, read in card_theme_parse's pass as the Studio's
+ * reader reads them, card_widgets.inc standing in for its catalogue; applied once, as Now Playing
+ * (its iPod layout) and the lock screen open, and at each layout of Home, under a theme that takes
+ * a card theme's look (card_theme_load drops them under any other). */
 #include "navigation.h"
 
-enum { CR_HIDE = 1, CR_MOVE = 2, CR_SIZE = 4, CR_FONT = 8, CR_SQUARE = 16 };
+enum { CR_HIDE = 1, CR_MOVE = 2, CR_SIZE = 4, CR_FONT = 8, CR_SQUARE = 16, CR_TEXT = 32 };
 #define CARD_WIDGET(page, name, acts, font, x0, y0, x1, y1)                                        \
     { name, page, acts, font, { x0, y0, x1, y1 } },
 static const struct {
@@ -17,15 +17,19 @@ static const struct {
 };
 #define ROWS (sizeof rows / sizeof *rows)
 #define ART 0 /* rows[ART], the art: its glyph and spinner follow it */
-static const char *const pages[] = { "playing_page", "saverscreen_page" }; /* CARD_* */
+static const char *const pages[] = { "playing_page", "saverscreen_page", "home_page" }; /* CARD_* */
+/* rows[HOME] on: Home's main list, in HOME_ROWS' order */
+#define HOME (ROWS - 7)
 
-/* Each row's rules, the last line of each kind winning: flags its hide, move and size (CR_*), font
- * its px (0: none), box a move's x and y and a size's w and h; page: the parse's, its CARD_* + 1,
- * 0 none. All zero: no rules. */
+/* Each row's rules, the last line of each kind winning: flags its hide, move, size and words
+ * (CR_*), font its px (0: none), box a move's x and y and a size's w and h, words a Home row's
+ * (rows[HOME + i]); page: the parse's, its CARD_* + 1, 0 none. All zero: no rules. */
 static struct {
     unsigned char flags[ROWS], font[ROWS], page;
     short box[ROWS][4];
+    char words[ROWS - HOME][41];
 } cr __attribute__((section(".scratch")));
+int card_home __attribute__((section(".scratch")));
 
 /* v held to lo..hi, lo when hi is less */
 static int fit(int v, int lo, int hi) {
@@ -46,14 +50,40 @@ static int whole(const char *w, unsigned n, int *v) {
     return 1;
 }
 
-/* card_theme_parse, each line at q: page NAME, hide W, move W X Y, size W W H and font W PX, as the
- * Studio's reader takes them: words at each single space (its split(' ')) to the line's end (an
- * LF, or a CR and its LF), each verb its exact count of words, W a row of the page the last page
- * line named that takes the verb, X, Y, W, H and PX whole numbers; anything else is skipped. A page
- * line out of shape names no page, so the lines under it are skipped too. A size is held to the
- * row's box (the art square, 40 up to its box's smaller side; text 12 up to the box's sides); a
- * font to 8..120, 0 or the row's own size clearing it; a move is kept as written, held to the box
- * as it applies. */
+/* n bytes at s into to (41 bytes), a row's words: 1 only when they are as the Studio's cleanText
+ * leaves words, which is how it writes them: valid UTF-8, none of the controls it drops (C0, DEL,
+ * C1, U+2028 and U+2029) or the other spaces it makes one ' ' (JS's \s), no space at either end or
+ * beside another, at most 24 characters and 40 bytes. Else 0: Q2 Pod doesn't clean them. */
+static int clean(char *to, const char *s, unsigned n) {
+    /* what cleanText drops or makes a space, but the space */
+    static const unsigned short out[][2] = { { 0, 0x1f },        { 0x7f, 0xa0 },
+                                             { 0x1680, 0x1680 }, { 0x2000, 0x200a },
+                                             { 0x2028, 0x2029 }, { 0x202f, 0x202f },
+                                             { 0x205f, 0x205f }, { 0x3000, 0x3000 },
+                                             { 0xfeff, 0xfeff } };
+    unsigned chars = 0;
+    if (!n || n > 40 || *s == ' ' || s[n - 1] == ' ') return 0;
+    memcpy(to, s, n), to[n] = 0;
+    if (!utf8_text(to)) return 0;
+    for (const unsigned char *p = (const unsigned char *)to; *p; ++chars) {
+        unsigned c = *p++, k = (c >= 0xc0) + (c >= 0xe0) + (c >= 0xf0), v = k ? c & (0x3f >> k) : c;
+        while (k--) v = v << 6 | (*p++ & 63);
+        if (v == ' ' && *p == ' ') return 0;
+        for (unsigned j = 0; j < sizeof out / sizeof *out; ++j)
+            if (v >= out[j][0] && v <= out[j][1]) return 0;
+    }
+    return chars <= 24;
+}
+
+/* card_theme_parse, each line at q: page NAME, hide W, move W X Y, size W W H, font W PX and text W
+ * WORDS, as the Studio's reader takes them: words at each single space (its split(' ')) to the
+ * line's end (an LF, or a CR and its LF), each verb its exact count of words (text at least
+ * three), W a row of the page the last page line named that takes the verb, X, Y, W, H and PX
+ * whole numbers; anything else is skipped. A page line out of shape names no page, so the lines
+ * under it are skipped too. A size is held to the row's box (the art square, 40 up to its box's
+ * smaller side; text 12 up to the box's sides); a font to 8..120, 0 or the row's own size clearing
+ * it; a move is kept as written, held to the box as it applies; WORDS, the rest of the line, are
+ * the row's when clean, else it has none. */
 void card_rule_line(const char *q) {
     static const struct {
         char verb[5];
@@ -61,7 +91,8 @@ void card_rule_line(const char *q) {
     } verbs[] = { { "hide", 2, CR_HIDE },
                   { "move", 4, CR_MOVE },
                   { "size", 4, CR_SIZE },
-                  { "font", 3, CR_FONT } };
+                  { "font", 3, CR_FONT },
+                  { "text", 3, CR_TEXT } };
     const char *w[4] = { 0 };
     unsigned n[4] = { 0 }, k = 0;
     for (const char *p = q;; ++p) {
@@ -80,12 +111,18 @@ void card_rule_line(const char *q) {
     int v[2];
     for (unsigned j = 0; j < sizeof verbs / sizeof *verbs; ++j) {
         unsigned act = verbs[j].act, i = 0;
-        if (k != verbs[j].words || !is(w[0], n[0], verbs[j].verb)) continue;
+        if ((act == CR_TEXT ? k < 3 : k != verbs[j].words) || !is(w[0], n[0], verbs[j].verb))
+            continue;
         while (i < ROWS && (rows[i].page + 1 != cr.page || !(rows[i].acts & act) ||
                             !is(w[1], n[1], rows[i].name)))
             ++i;
-        if (i == ROWS || (k > 2 && !whole(w[2], n[2], v)) || (k > 3 && !whole(w[3], n[3], v + 1)))
+        if (i == ROWS) return;
+        if (act == CR_TEXT) { /* WORDS: from w[2] to the line's end, q - 1 */
+            cr.flags[i] &= (unsigned char)~CR_TEXT;
+            if (clean(cr.words[i - HOME], w[2], (unsigned)(q - 1 - w[2]))) cr.flags[i] |= CR_TEXT;
             return;
+        }
+        if ((k > 2 && !whole(w[2], n[2], v)) || (k > 3 && !whole(w[3], n[3], v + 1))) return;
         if (act == CR_FONT) {
             int px = v[0] ? fit(v[0], 8, 120) : 0;
             cr.font[i] = (unsigned char)(px == rows[i].font ? 0 : px);
@@ -110,14 +147,16 @@ void card_rule_line(const char *q) {
 /* card_theme_parse's start, and card_theme_load wherever the file's rules don't apply: none. */
 void card_rules_clear(void) {
     memset(&cr, 0, sizeof cr);
-    st.card_rules = 0;
+    st.card_rules = card_home = 0;
 }
 /* card_theme_load, the file applying: the pages that hold a rule, a bit per CARD_*, into
- * st.card_rules, which the hooks read first; 0 for none. */
+ * st.card_rules, which the hooks read first, and Home's into card_home, which coverflow.c reads; 0
+ * for none. */
 int card_rules_used(void) {
     st.card_rules = 0;
     for (unsigned i = 0; i < ROWS; ++i)
         if (cr.flags[i] | cr.font[i]) st.card_rules |= 1 << rows[i].page;
+    card_home = st.card_rules >> CARD_HOME & 1; /* CARD_HOME_ROWS */
     return st.card_rules;
 }
 
@@ -126,6 +165,15 @@ static void hide(widget_t *w) {
     widget_set_visible(w, 0, 0);
     widget_set_opacity(w, 0);   /* unpainted (widget_paint) when stock shows it again */
     widget_set_sensitive(w, 0); /* a hidden widget keeps its taps */
+}
+/* px (0: none) as label w's text size, held to its height: on every state (the labels are
+ * disabled) and in _card_px for paint_caps */
+static void font(widget_t *w, int px) {
+    static const char *const sizes[] = { "style:normal:font_size", "style:focused:font_size",
+                                         "style:disable:font_size", "_card_px" };
+    int h = I(w, W_H);
+    for (unsigned s = 0; px && s < sizeof sizes / sizeof *sizes; ++s)
+        widget_set_prop_int(w, sizes[s], px < h ? px : h);
 }
 /* w centred on art's box, dx, dy across from art's parent to w's */
 static void centre(widget_t *w, widget_t *art, int dx, int dy) {
@@ -142,8 +190,6 @@ static void centre(widget_t *w, widget_t *art, int dx, int dy) {
  * The art's glyph (its tap) and spinner follow it: centred on it again, the spinner a child of the
  * window, and the glyph hidden with it. */
 void card_rules_apply(widget_t *win, int page) {
-    static const char *const sizes[] = { "style:normal:font_size", "style:focused:font_size",
-                                         "style:disable:font_size", "_card_px" };
     if (!win || !(st.card_rules >> page & 1) || (page == CARD_PLAYING && np_layout() != NP_IPOD))
         return;
     for (unsigned i = 0; i < ROWS; ++i) {
@@ -157,8 +203,7 @@ void card_rules_apply(widget_t *win, int page) {
         if (f & (CR_MOVE | CR_SIZE))
             widget_move_resize(w, fit(f & CR_MOVE ? r[0] : I(w, W_X), b[0], b[2] - ww),
                                fit(f & CR_MOVE ? r[1] : I(w, W_Y), b[1], b[3] - h), ww, h);
-        for (unsigned s = 0; px && s < sizeof sizes / sizeof *sizes; ++s)
-            widget_set_prop_int(w, sizes[s], px < h ? px : h);
+        font(w, px);
         if (f & CR_HIDE) hide(w);
         if (i != ART) continue;
         widget_t *glyph = widget_lookup(win, "img_playstate", 1);
@@ -171,8 +216,29 @@ void card_rules_apply(widget_t *win, int page) {
     }
 }
 
-/* paint_caps, for Minimal's capitals over label w (Now Playing's album): the px a font rule gave
- * it, 0 when a rule hid it, else def. */
+/* coverflow_home_layout, while a Home row has a rule (card_home), after its own hides and the
+ * Shortcut row's label and before home_width lays the labels out for their words: list's rows in
+ * HOME_ROWS' order, then each hidden one last (Folder, the Shortcut and Streaming hidden there, or
+ * by a rule), so the order holds across layouts; a rule's words and font on a row's label (its
+ * first child), and its hide on the row. */
+void card_rules_home(widget_t *list) {
+    widget_t *row[ROWS - HOME];
+    for (unsigned i = 0; i < ROWS - HOME; ++i) {
+        unsigned f = cr.flags[HOME + i];
+        row[i] = widget_lookup(list, rows[HOME + i].name, 1); /* not the Carousel's cards */
+        widget_t *label = row[i] ? widget_get_child(row[i], 0) : (void *)0;
+        if (!label) continue;
+        widget_restack(row[i], i);
+        if (f & CR_TEXT) widget_set_text_utf8(label, cr.words[i]);
+        font(label, cr.font[HOME + i]);
+        if (f & CR_HIDE) hide(row[i]);
+    }
+    for (unsigned i = 0; i < ROWS - HOME; ++i)
+        if (row[i] && !widget_get_visible(row[i])) widget_restack(row[i], ROWS - HOME - 1);
+}
+
+/* paint_caps, for Minimal's capitals over label w (Now Playing's album, Home's labels): the px a
+ * font rule gave it, 0 when a rule hid it, else def. */
 int card_rule_px(widget_t *w, int def) {
     if (!st.card_rules) return def;
     return widget_get_visible(w) ? widget_get_prop_int(w, "_card_px", def) : 0;

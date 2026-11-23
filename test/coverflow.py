@@ -451,6 +451,8 @@ void hold_card_flat(canvas_t *c, const rect_t *r, int head, int over) {} /* flat
 static int square_art;
 int ipod_square_art(void) { return square_art; }
 int ipod_home_rockbox(void) { return 0; }
+int card_home; /* card_rules.c's: no card theme here */
+void card_rules_home(void *list) {}
 const char *ipod_home_shortcut(void) { return "Rockbox"; }
 int home_shortcut_open(void *x, void *e) { return 0; }
 int widget_move_resize(void *x, int left, int top, int ww, int h) {

@@ -3,10 +3,12 @@
  * x1, y1): its page, its name there, the rules it takes, the Studio's default text size (0: no
  * font rule), and the box a move or size keeps it in, in its parent's coordinates: the parent's
  * laid-out size on the ipod geometry set, or less on purpose; 0s where it takes neither. The art
- * comes first (card_rules.c's ART). Left out on purpose: the heart's hide (its rating badge would
- * stay), icon sizes (Modern's marks draw at their own), the times' and the bar's moves (np_beside
- * reads their rows), the dots' (np_full and the visualizer lay them out), the lock clock's size and
- * font (big_clock lays it out), img_more (Tidal's only way to More), tint, the status bar, Home. */
+ * comes first (card_rules.c's ART), Home's rows last (its HOME). Left out on purpose: the heart's
+ * hide (its rating badge would stay), icon sizes (Modern's marks draw at their own), the times' and
+ * the bar's moves (np_beside reads their rows), the dots' (np_full and the visualizer lay them out),
+ * the lock clock's size and font (big_clock lays it out), img_more (Tidal's only way to More),
+ * tint, the status bar, the Shortcut row's text (its label is the Shortcut's, written at each
+ * layout) and the Settings row's hide (Home's way to Settings). */
 CARD_WIDGET(CARD_PLAYING, "img_cover", CR_HIDE | CR_MOVE | CR_SIZE | CR_SQUARE, 0, 0, 0, 375, 186)
 CARD_WIDGET(CARD_PLAYING, "scrlabel_title", CR_HIDE | CR_MOVE | CR_SIZE | CR_FONT, 22, 0, 0, 375, 186)
 CARD_WIDGET(CARD_PLAYING, "scrlabel_artist", CR_HIDE | CR_MOVE | CR_SIZE | CR_FONT, 18, 0, 0, 375, 186)
@@ -29,3 +31,12 @@ CARD_WIDGET(CARD_LOCK, "view_playinfo", CR_HIDE | CR_MOVE, 0, 0, 0, 375, 320)
 CARD_WIDGET(CARD_LOCK, "scrlabel_title", CR_HIDE, 0, 0, 0, 0, 0)
 CARD_WIDGET(CARD_LOCK, "scrlabel_artist", CR_HIDE, 0, 0, 0, 0, 0)
 CARD_WIDGET(CARD_LOCK, "img_slide", CR_HIDE | CR_MOVE, 0, 0, 0, 375, 320)
+/* Home's main list, in HOME_ROWS' order (tools/ipod.py); their default Minimal's capitals
+ * (HOME_CAPS_PX), as the Studio previews them */
+CARD_WIDGET(CARD_HOME, "btn_playing", CR_HIDE | CR_FONT | CR_TEXT, 18, 0, 0, 0, 0)
+CARD_WIDGET(CARD_HOME, "btn_localmusic", CR_HIDE | CR_FONT | CR_TEXT, 18, 0, 0, 0, 0)
+CARD_WIDGET(CARD_HOME, "btn_coverflow", CR_HIDE | CR_FONT | CR_TEXT, 18, 0, 0, 0, 0)
+CARD_WIDGET(CARD_HOME, "btn_folder", CR_HIDE | CR_FONT | CR_TEXT, 18, 0, 0, 0, 0)
+CARD_WIDGET(CARD_HOME, "btn_rockbox", CR_HIDE | CR_FONT, 18, 0, 0, 0, 0)
+CARD_WIDGET(CARD_HOME, "btn_stream", CR_HIDE | CR_FONT | CR_TEXT, 18, 0, 0, 0, 0)
+CARD_WIDGET(CARD_HOME, "btn_settings", CR_FONT | CR_TEXT, 18, 0, 0, 0, 0)

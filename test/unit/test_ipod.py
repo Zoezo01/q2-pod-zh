@@ -338,13 +338,22 @@ def test_card_widgets_match_the_layout(page):
     """patch/card_widgets.inc, a card theme's rows (the Studio's catalogue on Q2 Pod): a Now Playing row is a widget
     of the set-0 page, its box its parent's laid-out size (view_album fills slide_view; the place ends at More) and
     holding the widget, its text size the built one (the album's Minimal's capitals); a lock row is a widget
-    lockscreen.c looks up, its box the screen. A box exactly where a move or size is taken."""
+    lockscreen.c looks up, its box the screen; Home's rows are the main list's, last and in its order (card_rules.c's
+    HOME), each a view whose first child is its label, at Minimal's capitals' size. A box exactly where a move or size
+    is taken."""
     root, n = page
     parent = {c[2].get('name'): node[2].get('name') for node in ipod.walk(root) for c in node[3]}
     lock = (ipod.ROOT/'patch/lockscreen.c').read_text()
-    assert len(CARD_WIDGETS) == 20 and CARD_WIDGETS[0][1] == 'img_cover'  # card_rules.c's ART
+    home = {view[2]['name']: view for view in ipod.home_list('home', ipod.HOME_ROWS, ipod.SET0)[3][0][3]}
+    assert len(CARD_WIDGETS) == 27 and CARD_WIDGETS[0][1] == 'img_cover'  # card_rules.c's ART
+    assert [name for page_id, name, *_ in CARD_WIDGETS[-7:] if page_id == 'CARD_HOME'] == list(home)  # its HOME
     for page_id, name, acts, font, box in CARD_WIDGETS:
         assert (box != [0] * 4) == bool(acts & {'CR_MOVE', 'CR_SIZE'}) and bool(font) == ('CR_FONT' in acts), name
+        if page_id == 'CARD_HOME':
+            assert home[name][3][0][0] == 'hscroll_label' and font == ipod.O['HOME_CAPS_PX'], name
+            # the Shortcut row's label is the Shortcut's; Settings is always there
+            assert acts == {'CR_HIDE', 'CR_FONT', 'CR_TEXT'} - {{'btn_rockbox': 'CR_TEXT', 'btn_settings': 'CR_HIDE'}.get(name)}, name
+            continue
         if page_id == 'CARD_LOCK':
             assert f'"{name}"' in lock and box in ([0] * 4, [0, 0, 375, 320]), name
             continue

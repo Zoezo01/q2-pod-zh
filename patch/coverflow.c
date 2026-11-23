@@ -5112,6 +5112,7 @@ void coverflow_home_layout(void) {
             widget_set_text_utf8(widget_lookup(home.carousel[0], "label_rockbox", 1),
                                  tr(ipod_home_shortcut()));
     }
+    if (card_home & CARD_HOME_ROWS) card_rules_home(home.list); /* a card theme's, before widths */
     int split = HOME_SPLIT_W, outer = full ? 375 : split, inner = !full ? split : T->home_full_row,
         x = T->home_text_x, end = T->home_label_end[full];
     home_width(home.list, outer, inner, x, end, 0);

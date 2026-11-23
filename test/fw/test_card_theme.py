@@ -196,7 +196,8 @@ def test_fuzz_card_theme(fw, ct):
     seeds = [AUBERGINE, b'\xef\xbb\xbf' + AUBERGINE.replace(b'\n', b'\r\n'), theme_file(b'battery both', b'accent #FFFFFF'),
              theme_file(), theme_file(b'page playing_page', b'hide img_cover', b'move scrlabel_title -12 99999',
                                       b'size label_ipod_album 100 30', b'font scrlabel_artist 30', b'page saverscreen_page',
-                                      b'move img_slide 5 9', b'hide clock_time')]
+                                      b'move img_slide 5 9', b'hide clock_time', b'page home_page', b'hide btn_playing',
+                                      'text btn_folder Álbumes'.encode(), b'font btn_settings 24')]
     for data in fuzz.cases('card_theme', seeds):
         assert parse(fw, data) in (0, 1)
         accent, bg, battery = ct('accent').value, ct('bg').value, ct('battery', C.c_int).value

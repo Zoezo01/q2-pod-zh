@@ -772,8 +772,12 @@ unsigned flat_page(void);    /* flat.c: the page's ground, 0xRRGGBB, 0 unless th
 unsigned unflip(unsigned v); /* theme_engine.c: the grey Light Mode's flip turns into v */
 int ipod_square_art(void);   /* navigation.c: Classic, and Modern under Square */
 /* card_rules.c: a card theme's rules for a page, on its window as it opens */
-enum { CARD_PLAYING, CARD_LOCK };
+enum { CARD_PLAYING, CARD_LOCK, CARD_HOME };
 void card_rules_apply(widget_t *win, int page);
+/* and Home's, for coverflow.c, which reads card_home first (CARD_HOME_ROWS: a Home row's rule) */
+enum { CARD_HOME_ROWS = 1 };
+extern int card_home;
+void card_rules_home(widget_t *list);
 #define SPOT_GREY 0xffaaaaaau
 void radio_search(void);      /* radio.c */
 void toast(const char *text); /* navigation.c */

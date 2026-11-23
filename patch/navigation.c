@@ -1987,8 +1987,9 @@ static void paint_caps(widget_t *w, canvas_t *canvas) {
     unsigned color = RGBA(SUDO_MUTED);
     for (widget_t *p = w; p; p = P(p, W_PARENT))
         if (p == st.sel_widget) color = 0xffffffff;
-    draw_spaced(canvas, widget_get_text(w), 0, (I(w, W_H) - HOME_CAPS_PX) / 2, HOME_CAPS_PX, color,
-                I(w, W_W));
+    /* a card theme's rule: its size */
+    int px = st.card_rules >> CARD_HOME & 1 ? card_rule_px(w, HOME_CAPS_PX) : HOME_CAPS_PX;
+    draw_spaced(canvas, widget_get_text(w), 0, (I(w, W_H) - px) / 2, px, color, I(w, W_W));
 }
 
 /* The selected row's long title scrolls, as an iPod's does, MARQUEE_PASSES times as soon as the
