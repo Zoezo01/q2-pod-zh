@@ -1260,13 +1260,11 @@ static int name_cmp(void *a, void *b) { return strcasecmp(album_name(a), album_n
 static int tie(int d, const row_t *p, const row_t *q) {
     return d ? d : (p->j > q->j) - (p->j < q->j);
 }
-static int by_name(const void *x, const void *y) {
+/* The comparator album_rows sorts by, set before each sort (on the UI thread). */
+static int (*row_key)(void *, void *);
+static int by_key(const void *x, const void *y) {
     const row_t *p = x, *q = y;
-    return tie(name_cmp(p->a, q->a), p, q);
-}
-static int by_album(const void *x, const void *y) {
-    const row_t *p = x, *q = y;
-    return tie(album_cmp(p->a, q->a), p, q);
+    return tie(row_key(p->a, q->a), p, q);
 }
 /* The first of v's n rows not before r by cmp. */
 static unsigned lower(row_t *v, unsigned n, void *r, int (*cmp)(void *, void *)) {
@@ -1280,13 +1278,13 @@ static unsigned lower(row_t *v, unsigned n, void *r, int (*cmp)(void *, void *))
     }
     return lo;
 }
-/* list's rows sorted by by, *m of them, Unknown (REC_ID -1) only if all; 0 out of memory. */
-static row_t *album_rows(void *list, unsigned *m, int (*by)(const void *, const void *), int all) {
+/* list's rows sorted by cmp, *m of them, Unknown (REC_ID -1) only if all; 0 out of memory. */
+static row_t *album_rows(void *list, unsigned *m, int (*cmp)(void *, void *), int all) {
     row_t *v = calloc(deque_size(list) + 1, sizeof *v);
     *m = 0;
     for (unsigned i = 0; v && i < deque_size(list); ++i)
         if (all || I(deque_at(list, i), REC_ID) != -1) v[*m].a = deque_at(list, i), v[(*m)++].j = i;
-    if (v) qsort(v, *m, sizeof *v, by);
+    if (v) row_key = cmp, qsort(v, *m, sizeof *v, by_key);
     return v;
 }
 /* The list row of r's album among album_rows' v, or -1: the Unknown row never matches. */
@@ -1295,12 +1293,11 @@ static int album_in(row_t *v, unsigned m, void *r) {
     return k < m && !album_cmp(v[k].a, r) ? (int)v[k].j : -1;
 }
 /* list less each row cmp finds the same as one before it, in a new deque (list goes): the Hide
- * Duplicate switches. by is cmp, ties in the list's order, so the first of each stays; the Unknown
- * row (REC_ID -1) is never dropped unless all. Out of memory, list. */
-static void *without_copies(void *list, int (*cmp)(void *, void *),
-                            int (*by)(const void *, const void *), int all) {
+ * Duplicate switches. Rows sort by cmp, ties in the list's order, so the first of each stays; the
+ * Unknown row (REC_ID -1) is never dropped unless all. Out of memory, list. */
+static void *without_copies(void *list, int (*cmp)(void *, void *), int all) {
     unsigned m, n = deque_size(list);
-    row_t *v = album_rows(list, &m, by, all);
+    row_t *v = album_rows(list, &m, cmp, all);
     unsigned char *copy = v ? calloc(n + 1, 1) : 0;
     if (!copy) return free(v), list;
     for (unsigned k = 1; k < m; ++k) copy[v[k].j] = !cmp(v[k - 1].a, v[k].a);
@@ -1321,14 +1318,10 @@ static int tags_cmp(void *a, void *b) {
     int d = name_cmp(a, b);
     return d ? d : strcasecmp(x ? x : "", y ? y : "");
 }
-static int by_tags(const void *x, const void *y) {
-    const row_t *p = x, *q = y;
-    return tie(tags_cmp(p->a, q->a), p, q);
-}
 /* list less its copies under Hide Duplicate Albums, else list: the library's covers, an artist's
  * and the rated ones (after their hearts, so a rated copy stays when the first isn't). */
 static void *album_copies(void *list) {
-    return pod_value(POD_CF_DUP_ALBUMS) ? without_copies(list, tags_cmp, by_tags, 0) : list;
+    return pod_value(POD_CF_DUP_ALBUMS) ? without_copies(list, tags_cmp, 0) : list;
 }
 /* cf.stock's album_rows while sorted() ranks it. */
 static row_t *stock_rows;
@@ -1406,7 +1399,7 @@ static void *music_albums(void *list, int artist) {
     void *rows = artist ? of_names(MUSIC_ALBUM_SQL, list, &n) : 0, *out;
     if (!rows) rows = staged(rank_query, MUSIC_ALBUM_SQL, &n);
     unsigned m;
-    row_t *v = album_rows(rows, &m, by_album, 0);
+    row_t *v = album_rows(rows, &m, album_cmp, 0);
     if (!v) return deque_destroy(rows), list;
     out = song_list();
     for (unsigned i = 0; i < deque_size(list); ++i) {
@@ -1433,7 +1426,7 @@ static void *split(void *stock, int artist) {
     void *rows = artist ? of_names(ALBUM_SQL, stock, &n) : 0, *out;
     if (!rows) rows = staged(rank_query, ALBUM_SQL, &n);
     unsigned m;
-    row_t *v = album_rows(rows, &m, by_name, 1);
+    row_t *v = album_rows(rows, &m, name_cmp, 1);
     if (!v) return deque_destroy(rows), stock;
     out = song_list();
     for (unsigned i = 0; i < deque_size(stock); ++i) {
@@ -1525,7 +1518,7 @@ static void *sorted(void) {
     unsigned *sum = v && played ? calloc(n + 1, sizeof *sum) : 0;
     char *keys = v && artist ? calloc(n + 1, ARTIST_KEY) : 0;
     int ranked = cf.sort != SORT_RATING && cf.sort != SORT_RANDOM; /* uses album_index */
-    stock_rows = v && ranked ? album_rows(cf.stock, &stock_n, by_album, 0) : 0;
+    stock_rows = v && ranked ? album_rows(cf.stock, &stock_n, album_cmp, 0) : 0;
     if (!v || (ranked && !stock_rows) || (played && !sum) || (artist && !keys)) {
         free(v), free(sum), free(keys), free(stock_rows), stock_rows = 0;
         cf.sort = SORT_ALBUM;
@@ -1569,7 +1562,7 @@ static void *sorted(void) {
 void coverflow_by_year(void *albums) {
     unsigned n = deque_size(albums), m = 0;
     char *taken = calloc(n + 1, 1);
-    row_t *v = taken ? album_rows(albums, &m, by_album, 0) : 0;
+    row_t *v = taken ? album_rows(albums, &m, album_cmp, 0) : 0;
     int found;
     if (!v) {
         free(taken);
@@ -3498,18 +3491,12 @@ static int song_cmp(void *a, void *b) {
     d = strcmp(P(a, REC_PATH) ? P(a, REC_PATH) : "", P(b, REC_PATH) ? P(b, REC_PATH) : "");
     return d ? d : I(a, REC_CUE_START) - I(b, REC_CUE_START);
 }
-static int by_song(const void *x, const void *y) {
-    const row_t *p = x, *q = y;
-    return tie(song_cmp(p->a, q->a), p, q);
-}
 /* r's tracks as Cover Flow lists and plays them: its covers, All albums, Go to Album and a cover's
  * hold menu (queue_menu.c), the first copy of each song alone under Hide Duplicate Songs; the
  * Unknown card (REC_ID -1), every untagged song of the card's, as it is. */
 void *coverflow_cover_tracks(void *r) {
     void *t = coverflow_album_tracks(r);
-    return pod_value(POD_CF_DUP_SONGS) && I(r, REC_ID) != -1
-               ? without_copies(t, song_cmp, by_song, 1)
-               : t;
+    return pod_value(POD_CF_DUP_SONGS) && I(r, REC_ID) != -1 ? without_copies(t, song_cmp, 1) : t;
 }
 
 /* A label's face at px, in every state the labels style: bold, the theme's (bold itself), by its

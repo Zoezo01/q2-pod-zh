@@ -74,8 +74,8 @@ def api(fw):
            'coverflow_hit': (i, i, i, i), 'coverflow_render': (None, ptr, i, i, ptr), 'pose': (None, i, ptr),
            'project': (i, ptr, i), 'unproject': (i, ptr, i, ptr, ptr), 'coverflow__slot': (i, i, i, i),
            'coverflow__lower': (u, ptr, u, ptr, ptr), 'coverflow__album_in': (i, ptr, u, ptr), 'coverflow__album_index': (i, ptr),
-           'coverflow__name_cmp': (i, ptr, ptr), 'coverflow__tie': (i, i, ptr, ptr), 'coverflow__by_name': (i, ptr, ptr),
-           'coverflow__by_album': (i, ptr, ptr), 'album_cmp': (i, ptr, ptr), 'album_id': (u, ptr), 'album_dir': (u, C.c_char_p, i),
+           'coverflow__name_cmp': (i, ptr, ptr), 'coverflow__tie': (i, i, ptr, ptr), 'coverflow__by_key': (i, ptr, ptr),
+           'album_cmp': (i, ptr, ptr), 'album_id': (u, ptr), 'album_dir': (u, C.c_char_p, i),
            'folder_cmp': (i, ptr, ptr), 'coverflow__cover_artist': (C.c_char_p, ptr), 'coverflow__initial': (u, i),
            'coverflow_jump': (i, ptr, i, i, ptr), 'coverflow__bound': (i, i, i, i),
            'coverflow__release': (None, i), 'coverflow__touch': (i, ptr, ptr), 'stride_of': (i, ptr),
@@ -1187,9 +1187,10 @@ def test_a_tie_goes_by_the_list_s_order(fw):
 def test_by_name_and_by_album_sort_with_ties_in_order(fw):
     g = api(fw)
     recs = [Rec('b', '/1/x'), Rec('A', '/2/x'), Rec('a', '/1/x'), Rec('B', '/1/x')]
-    for fn, want in ((fw.lib.coverflow__by_name, [1, 2, 0, 3]), (fw.lib.coverflow__by_album, [2, 1, 0, 3])):
+    for cmp, want in ((fw.lib.coverflow__name_cmp, [1, 2, 0, 3]), (fw.lib.album_cmp, [2, 1, 0, 3])):
         v = rows(*recs)
-        libc.qsort(v, 4, C.sizeof(Row), C.cast(fn, C.c_void_p))
+        set_row_key(fw, cmp)
+        libc.qsort(v, 4, C.sizeof(Row), C.cast(fw.lib.coverflow__by_key, C.c_void_p))
         assert [row.j for row in v] == want
 
 
@@ -1208,9 +1209,15 @@ def test_lower_is_the_first_not_before(fw, values):
         assert g.lower(v, len(values), probe + 1000, cmp) == want, probe
 
 
+def set_row_key(fw, cmp):
+    """album_rows' comparator: coverflow.c's row_key, which by_key sorts the rows by."""
+    fw.var('coverflow__row_key', C.c_void_p).value = C.cast(cmp, C.c_void_p).value
+
+
 def sorted_rows(fw, recs):
     v = rows(*recs)
-    libc.qsort(v, len(recs), C.sizeof(Row), C.cast(fw.lib.coverflow__by_album, C.c_void_p))
+    set_row_key(fw, fw.lib.album_cmp)
+    libc.qsort(v, len(recs), C.sizeof(Row), C.cast(fw.lib.coverflow__by_key, C.c_void_p))
     return v
 
 
