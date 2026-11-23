@@ -862,7 +862,6 @@ static int dac_word(int pressed) { /* odd: a press's stamp; even: start_mute's m
     seen = at;
     return 1;
 }
-static int dac_told(void) { return dac_word(1); }
 /* The end of init (0x438a70), past stock's checks of the way and the fd: the ioctl is stock's own.
  * A mark still unread is a natural start ao_init's branch didn't take (DSD at either end, no PCM
  * open, the arm dropped): demo skipped its mute and sleep for it, so this is what stands in for
@@ -875,13 +874,13 @@ static int dac_told(void) { return dac_word(1); }
  * start with an offset that reopens keeps the cut, as it has since start_mute. */
 int dac_ioctl(int fd, unsigned request, void *arg) {
     int r = ioctl(fd, request, arg);
-    if (dac_told() || dac_word(0) || ao_wait) usleep(DAC_RELEASE_MS * 1000);
+    if (dac_word(1) || dac_word(0) || ao_wait) usleep(DAC_RELEASE_MS * 1000);
     return r;
 }
 /* seek (0x42b1c4), a start offset's or an mcl-seek's: demo stamps a user's, not A-B Repeat's loop.
  */
 void dac_unmute(int value) {
-    int wait = !OUTPUT_WAY && DAC_FD > 0 && dac_told();
+    int wait = !OUTPUT_WAY && DAC_FD > 0 && dac_word(1);
     DAC_HELPER(value);
     if (wait) usleep(DAC_RELEASE_MS * 1000);
 }
