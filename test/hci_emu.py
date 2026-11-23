@@ -654,10 +654,9 @@ class Emu:
     def sys_prlimit64(self, pid, res, new, old):
         if old: self.u.mem_write(old, struct.pack('<QQ', 8 << 20, 1 << 40))
         return 0
-    def sys_ugetrlimit(self, res, old, *_):
+    def sys_getrlimit(self, res, old, *_):
         self.u.mem_write(old, struct.pack('<II', 8 << 20, 0x7fffffff))
         return 0
-    def sys_getrlimit(self, res, old, *_): return self.sys_ugetrlimit(res, old)
     def sys_sysinfo(self, buf, *_):
         self.u.mem_write(buf, bytes(64)); return 0
     def sys_prctl(self, *_): return 0
@@ -771,7 +770,6 @@ class Emu:
         return 0
     def sys_listen(self, *_): return 0
     def sys_setsockopt(self, *_): return 0
-    def sys_getsockopt(self, *_): return 0
     def sys_shutdown(self, *_): return 0
     def sys_connect(self, *_): return 0
     def sys_accept(self, fd, addr, alen, _):
@@ -806,10 +804,7 @@ class Emu:
     def sys_getdents64(self, *_): return 0
     def sys_rmdir(self, *_): return 0
     def sys_mkdir(self, *_): return 0
-    def sys_unlink(self, *_): return 0
-    def sys_rename(self, *_): return 0
     def sys_fsync(self, *_): return 0
-    def sys_select(self, *_): return 0
     def sys__newselect(self, nfds, r, w, e):
         tv = self.arg(4)
         if self.cmdq:
