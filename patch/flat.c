@@ -6,8 +6,8 @@
 /* Final colours, [0] dark, [1] light: a control at rest, the ink, a quiet line */
 const unsigned flat_rest[2] = { 0x2c2c2e, 0xe9e9ec }, flat_ink[2] = { 0xffffff, 0x1c1c1e },
                flat_quiet[2] = { 0x98989d, 0x6e6e73 };
-/* A page's ground: the half's paper, as the theme's lists have it */
-unsigned flat_page(void) { return ipod_light() ? scheme()->paper : 0; }
+/* A page's ground: the half's paper (a card theme's page), as the theme's lists have it */
+unsigned flat_page(void) { return ipod_paper() ? scheme()->paper : 0; }
 /* What is on, final: the theme's selection bar, its middle row (paint_selection's SEL_BAR), so a
  * lit button matches the row that is chosen. A neutral accent's bar (Graphite's dark grey) is
  * about a button's grey at rest: it takes its red tone, the silver, as Classic's lit tiles do.

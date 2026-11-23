@@ -1,8 +1,8 @@
 /* Card themes (docs/internals.md, Themes: Card themes): /Q2Pod/theme.txt, a Q2 Theme Studio file,
  * checked whole and copied to /mnt/data at a card mount (card_theme_sync, the boot logo's thread),
- * read from there once at the start, before the first frame: its accent, under a theme that takes a
- * card theme's colours, and its battery style. Nothing applies live and nothing is written to
- * config.ini or the card: the file is the switch. */
+ * read from there once at the start, before the first frame: its accent and page colour, under a
+ * theme that takes a card theme's colours, and its battery style. Nothing applies live and nothing
+ * is written to config.ini or the card: the file is the switch. */
 #include "navigation.h"
 
 #define CT_SRC "/mnt/mmc/Q2Pod/theme.txt"
@@ -12,12 +12,13 @@
 #define CT_SEEN CT_DST ".seen" /* the card file last refused: size, mtime (told_once) */
 #define CT_MAX 16384
 #define CT_TRY_MS 15000
-/* accent: 1 << 24 | its 0xRRGGBB, 0 none; battery: 1 + st.battery's value, 0 none; try_at: the
- * start's time while CT_TRY counts it; note: a toast, load's or the worker's (power_poll shows
- * load's on its first pass, before logo_poll starts the worker); row: the live scheme row (base)
- * with tones, the accent's. */
+/* accent, bg (the page colour; its half is st.card_page): 1 << 24 | its 0xRRGGBB, 0 none; battery:
+ * 1 + st.battery's value, 0 none; try_at: the start's time while CT_TRY counts it; note: a toast,
+ * load's or the worker's (power_poll shows load's on its first pass, before logo_poll starts the
+ * worker); row: the live scheme row (base) with tones, the accent's, and paper and ink, the
+ * page's. */
 static struct {
-    unsigned accent, try_at, tones[5];
+    unsigned accent, bg, try_at, tones[5];
     int battery;
     const char *note;
     const scheme_t *base;
@@ -45,22 +46,29 @@ static int line(const char *q, const char *s) {
     unsigned k = strlen(s);
     return !strncmp(q, s, k) && eol(q + k);
 }
-/* text (n bytes) into ct when whole: the lines as Q2 Theme Studio writes them, "accent #rrggbb"
- * (hex in either case) and "battery icon|percent|both|inside", each ending the line (CRLF too), the
- * last of each; any other line (name, color bg, a newer verb, one with a tab, another space or a
- * CR that isn't before its LF) is skipped, as the Studio's reader skips it. 0 when refused. */
+/* 1 << 24 | the colour when the line at q is verb (its k bytes) and six hex digits, either case,
+ * ending the line; else 0 */
+static unsigned colour(const char *q, const char *verb, unsigned k) {
+    unsigned rgb = 0, at = k;
+    if (strncmp(q, verb, k)) return 0;
+    for (int d; (d = hex(q[k])) >= 0; ++k) rgb = rgb << 4 | (unsigned)d;
+    return k == at + 6 && eol(q + k) ? 1u << 24 | rgb : 0;
+}
+/* text (n bytes) into ct when whole: the lines as Q2 Theme Studio writes them, "accent #rrggbb",
+ * "color bg #rrggbb" (hex in either case) and "battery icon|percent|both|inside", each ending the
+ * line (CRLF too), the last of each; any other line (name, a newer verb, one with a tab, another
+ * space or a CR that isn't before its LF) is skipped, as the Studio's reader skips it. 0 when
+ * refused. */
 static int card_theme_parse(char *text, unsigned n) {
     static const char *const styles[] = { "battery icon", "battery percent", "battery both",
                                           "battery inside" };
     const char *q = whole(text, n);
-    ct.accent = ct.battery = 0;
+    ct.accent = ct.bg = ct.battery = st.card_page = 0;
     if (!q) return 0;
     while (*q) {
-        unsigned rgb = 0, k = 8;
-        if (!strncmp(q, "accent #", 8)) {
-            for (int d; (d = hex(q[k])) >= 0; ++k) rgb = rgb << 4 | (unsigned)d;
-            if (k == 14 && eol(q + k)) ct.accent = 1u << 24 | rgb;
-        }
+        unsigned a = colour(q, "accent #", 8), b = colour(q, "color bg #", 10);
+        if (a) ct.accent = a;
+        if (b) ct.bg = b;
         for (int m = 0; m < 4; ++m)
             if (line(q, styles[m])) ct.battery = m + 1;
         while (*q && *q++ != '\n') {}
@@ -68,73 +76,93 @@ static int card_theme_parse(char *text, unsigned n) {
     return 1;
 }
 
-/* settings_read, once, before the first frame: the /mnt/data copy (the card may mount later).
- * CT_TRY counts the starts that never got through the copy's first seconds; at two the copy is set
- * aside and this start runs without it. A start that can't keep count runs without it too. Then the
- * accent, darkened until white text on it reaches 3:1 (WCAG's relative luminance at most 0.3: each
- * channel's sRGB curve taken as 0.8 x^2 + 0.2 x^3, within 0.013, and 0.29 for the margin), and its
- * tones by Q2 Theme Studio's rule. */
-void card_theme_load(void) {
-    unsigned n = 0;
-    char *b = read_all(CT_DST, CT_MAX, &n);
-    if (b) card_theme_parse(b, n);
-    free(b);
-    if (!themes[st.theme].card_colors) ct.accent = 0; /* Classic: only a battery style is a use */
-    if (!(ct.accent | ct.battery)) return;
-    char raw[4];
-    char starts = state_read(CT_TRY, raw, sizeof raw) ? raw[1] : '0';
-    if (starts >= '2') {
-        unlink(CT_TRY);
-        rename(CT_DST, CT_BAD);
-        ct.note = N_("Card theme turned off after a failed start");
-        ct.accent = ct.battery = 0;
-        return;
-    }
-    ++starts;
-    if (!blob_io(CT_TRY, CT_TRY ".tmp", &starts, 1, 1)) {
-        unlink(CT_TRY ".tmp");
-        ct.accent = ct.battery = 0;
-        return;
-    }
-    ct.try_at = time_now_ms() | 1;
-    unsigned c = ct.accent & 0xffffff;
+/* c mixed 1/16 a step toward to (black or white) until its luminance, in 1/10000 of 255^2 (WCAG's
+ * relative luminance, each channel's sRGB curve taken as 0.8 x^2 + 0.2 x^3, within 0.013), is at
+ * most limit (toward black) or at least it (toward white). */
+static unsigned readable(unsigned c, unsigned to, unsigned limit) {
     for (;;) {
         unsigned lum = 0;
         for (int k = 0; k < 3; ++k) {
             unsigned v = c >> (16 - 8 * k) & 255;
             lum += (const unsigned short[]){ 2126, 7152, 722 }[k] * (v * v * (1020 + v) / 1275);
         }
-        if (lum <= 2900u * 255 * 255) break;
-        c = mix(c, 0, 1, 16);
+        if (to ? lum >= limit * 255 * 255 : lum <= limit * 255 * 255) return c;
+        c = mix(c, to, 1, 16);
     }
-    ct.tones[0] = ct.tones[1] = c;
-    ct.tones[2] = ct.tones[4] = mix(c, 0xffffff, 12, 100);
-    ct.tones[3] = neutral(ct.tones[2]) ? 0xd8d8d8 : ct.tones[2]; /* Graphite's silver */
+}
+/* settings_read, once, before the first frame: the /mnt/data copy (the card may mount later).
+ * CT_TRY counts the starts that never got through the copy's first seconds; at two the copy is set
+ * aside and this start runs without it. A start that can't keep count runs without it too. Then the
+ * accent, darkened until white text on it reaches 3:1 (luminance at most 0.3, 0.29 for the
+ * margin), and its tones by Q2 Theme Studio's rule; and the page: light at the Studio's luma of
+ * 125, and deepened (a dark page) or paled (a light one) until the half's quiet line (flat_quiet)
+ * reads 3:1 on it (luminance at most 0.0719 or at least 0.5711; 0.07 and 0.583 for the margin). */
+void card_theme_load(void) {
+    unsigned n = 0;
+    char *b = read_all(CT_DST, CT_MAX, &n);
+    if (b) card_theme_parse(b, n);
+    free(b);
+    if (!themes[st.theme].card_colors) ct.accent = ct.bg = 0; /* Classic: only a battery style */
+    if (!(ct.accent | ct.bg | ct.battery)) return;
+    char raw[4];
+    char starts = state_read(CT_TRY, raw, sizeof raw) ? raw[1] : '0';
+    if (starts >= '2') {
+        unlink(CT_TRY);
+        rename(CT_DST, CT_BAD);
+        ct.note = N_("Card theme turned off after a failed start");
+        ct.accent = ct.bg = ct.battery = 0;
+        return;
+    }
+    ++starts;
+    if (!blob_io(CT_TRY, CT_TRY ".tmp", &starts, 1, 1)) {
+        unlink(CT_TRY ".tmp");
+        ct.accent = ct.bg = ct.battery = 0;
+        return;
+    }
+    ct.try_at = time_now_ms() | 1;
+    if (ct.accent) {
+        unsigned c = readable(ct.accent & 0xffffff, 0, 2900);
+        ct.tones[0] = ct.tones[1] = c;
+        ct.tones[2] = ct.tones[4] = mix(c, 0xffffff, 12, 100);
+        ct.tones[3] = neutral(ct.tones[2]) ? 0xd8d8d8 : ct.tones[2]; /* Graphite's silver */
+    }
+    if (ct.bg) {
+        unsigned c = ct.bg & 0xffffff;
+        int light = ((c >> 16) * 299 + (c >> 8 & 255) * 587 + (c & 255) * 114) / 1000 >= 125;
+        st.card_page = 1 + light;
+        ct.bg = 1u << 24 | (light ? readable(c, 0xffffff, 5830) : readable(c, 0, 700));
+    }
     if (ct.battery) st.battery = ct.battery - 1;
 }
 
-/* s, a row of the live theme, or, while the card theme sets the accent (load keeps one only under
- * a theme that takes a card theme's colours, and a Theme pick across that restarts, which the build
- * checks), a copy of it with the accent's tones and no flags (not Ivory's card, not Crimson's
- * reds); made again when s changes (a Theme pick between Minimal and Modern, another accent).
+/* s, a row of the live theme, or, while the card theme sets the accent or the page (load keeps them
+ * only under a theme that takes a card theme's colours, and a Theme pick across that restarts,
+ * which the build checks), a copy of it: with an accent, its tones and no flags (not Ivory's card,
+ * not Crimson's reds); with a page, its colour as the paper and its ink (LIGHT_INK on a light page,
+ * white on a dark one); made again when s changes (a Theme pick between Minimal and Modern,
+ * another accent).
  * ponytail: one copy, which holds because a theme with the flag has one array of rows for both
  * halves; the build refuses the flag on a theme with two. */
 const scheme_t *card_theme_row(const scheme_t *s) {
-    if (!ct.accent) return s;
+    if (!(ct.accent | ct.bg)) return s;
     if (ct.base != s) {
         ct.row = *s;
-        ct.row.tones = ct.tones;
-        ct.row.flags = 0;
+        if (ct.accent) ct.row.tones = ct.tones, ct.row.flags = 0;
+        if (ct.bg)
+            ct.row.paper = ct.bg & 0xffffff,
+            ct.row.ink = st.card_page > 1 ? LIGHT_INK * 0x010101u : 0xffffff;
         ct.base = s;
     }
     return &ct.row;
 }
 
-/* Whether the card theme sets Display row i: Accent while load kept one (only under a theme that
- * takes its colours), Battery in every theme. Its value is settings_read's: st.battery holds the
- * style, BATTERY untouched. */
+/* Whether the card theme sets Display row i: Accent and Light Mode while load kept an accent or a
+ * page (only under a theme that takes its colours), Battery in every theme. Its value is
+ * settings_read's: st.battery holds the style, BATTERY untouched. */
 int card_theme_sets(int i) {
-    return i == SETTING_ACCENT ? ct.accent != 0 : i == SETTING_BATTERY && ct.battery;
+    return i == SETTING_ACCENT  ? ct.accent != 0
+           : i == SETTING_LIGHT ? ct.bg != 0
+                                : i == SETTING_BATTERY && ct.battery;
 }
 
 /* The count off: the copy has run CT_TRY_MS, or the run ends cleanly (ringnav_clean_end:

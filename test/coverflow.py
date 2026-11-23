@@ -411,9 +411,10 @@ static theme_t shim_themes[3] = {
       .home_label_end = { HOME_MODERN_LABEL_END, HOME_MODERN_LABEL_END }, .cf = CF_STYLE0 } };
 static short stub_bar_h = 30;
 const theme_t *theme(void) { return &shim_themes[classic]; }
+static unsigned card_page; /* a coloured paper (a card theme's page), 0 the theme's grey */
 const scheme_t *scheme(void) { /* light is only asked of it in its light half */
     static scheme_t s;
-    s.paper = classic == 1 ? 0xffffffu : LIGHT_PAPER * 0x010101u;
+    s.paper = card_page ? card_page : classic == 1 ? 0xffffffu : LIGHT_PAPER * 0x010101u;
     return &s;
 }
 int client_h(void) { return 320 - stub_bar_h; }
@@ -445,6 +446,7 @@ void draw_centred(void *c, const unsigned *s, unsigned n, const void *r, unsigne
 const unsigned flat_quiet[2]; /* the flat look's pane (flat_pages): no theme here takes it */
 void final_text(void *c, const char *face, const unsigned *s, const void *r, unsigned px, unsigned color) {}
 int ipod_light(void) { return light; }
+unsigned flat_page(void) { return light ? scheme()->paper : 0; }
 static int square_art;
 int ipod_square_art(void) { return square_art; }
 int ipod_home_rockbox(void) { return 0; }
@@ -1666,7 +1668,10 @@ static void classic_light_shelf(void) {
     coverflow_render(f, PITCH, 0, ring);
     assert(F(0, 0) == 0xffffffffu && F(CF_CX, top) == colours[3]);
     assert(abs(ch(F(CF_CX, top + 160), 2) - 255 * 65 / 100) <= 3 && F(CF_CX, top + 160 + 46) == 0xffffffffu);
-    light = 0;
+    card_page = 0x101820; /* a coloured paper, each channel its own: red low, as the textures */
+    coverflow_render(f, PITCH, 0, ring);
+    assert(F(0, 0) == 0xff201810u && F(CF_CX, top + 160 + 46) == 0xff201810u);
+    card_page = 0, light = 0;
     close_page();
     classic = 0, square_art = 0;
     open_page(); /* Minimal's values again */

@@ -27,8 +27,8 @@ int groovebox_available(void) { return bin_available(GROOVEBOX_BIN); }
 
 /* Light Mode (docs/ipod.md#light-mode): a neutral colour, its channels within LIGHT_SPREAD, flipped
  * per channel from black to the light half's paper and white to its ink (LIGHT_PAPER and LIGHT_INK
- * unless the scheme sets them); any other hue, and the alpha byte, as they are. Either byte order
- * (color_t or 0xRRGGBB): the paper and ink are grey. */
+ * unless the scheme sets them), each channel to the paper's own; any other hue, and the alpha byte,
+ * as they are. flip takes a color_t, flip_rgb a 0xRRGGBB. */
 int neutral(unsigned c) {
     unsigned hi = 0, lo = 255;
     for (int s = 0; s < 24; s += 8) {
@@ -38,32 +38,37 @@ int neutral(unsigned c) {
     }
     return hi - lo <= LIGHT_SPREAD;
 }
+/* v from paper (0) to ink (255), either lighter: Q2 Theme Studio's flip, truncated as it is */
 unsigned flip_v(unsigned v, unsigned paper, unsigned ink) {
-    return paper - v * (paper - ink) / 255;
+    return (unsigned)((int)paper + (int)v * ((int)ink - (int)paper) / 255);
 }
 static const scheme_t *light_row(void);
-unsigned flip(unsigned c) {
+/* c's channels each against the paper's own: rgb, c is a 0xRRGGBB, else a color_t (red low).
+ * Inlined into both: -Oz would call it, and ui_ink flips every colour a light page draws. */
+static inline __attribute__((always_inline)) unsigned flip_in(unsigned c, int rgb) {
     if (!neutral(c)) return c;
-    /* greys, so either byte order */
     const scheme_t *S = light_row();
-    unsigned paper = S->paper & 255, ink = S->ink & 255;
-    unsigned out = c & 0xff000000u;
-    for (int s = 0; s < 24; s += 8) out |= flip_v(c >> s & 255, paper, ink) << s;
+    unsigned ink = S->ink & 255, out = c & 0xff000000u;
+    for (int s = 0; s < 24; s += 8)
+        out |= flip_v(c >> s & 255, S->paper >> (rgb ? s : 16 - s) & 255, ink) << s;
     return out;
 }
-unsigned flip_if(int on, unsigned c) { return on ? flip(c) : c; }
-/* The grey whose flip is v, by the half's paper and ink; v itself when dark. */
+unsigned flip(unsigned c) { return flip_in(c, 0); }
+unsigned flip_rgb(unsigned c) { return flip_in(c, 1); }
+unsigned flip_if(int on, unsigned c) { return on ? flip_rgb(c) : c; }
+/* The grey whose flip is v, by the paper's mean channel and the ink; v itself unflipped. */
 unsigned unflip(unsigned v) {
-    if (!ipod_light()) return v;
+    if (!ipod_paper()) return v;
     const scheme_t *S = light_row();
-    unsigned paper = S->paper & 255, ink = S->ink & 255;
-    return v < ink ? 255 : v > paper ? 0 : (paper - v) * 255 / (paper - ink);
+    int p = (int)((S->paper >> 16) + (S->paper >> 8 & 255) + (S->paper & 255)) / 3,
+        u = ((int)v - p) * 255 / ((int)(S->ink & 255) - p);
+    return (unsigned)(u < 0 ? 0 : u > 255 ? 255 : u);
 }
 
 /* Every colour the payload draws passes here (peq.h wraps the canvas setters), as stock's pass
  * the style and image hooks: flipped in Light Mode. A clear colour stays 0: stock tests for it
  * (Now Playing's slider draws no dragger under a #00000000 border). */
-unsigned ui_ink(unsigned c) { return !st.raw_ink && ipod_light() && c >> 24 ? flip(c) : c; }
+unsigned ui_ink(unsigned c) { return !st.raw_ink && ipod_paper() && c >> 24 ? flip(c) : c; }
 /* Sets whether ui_ink leaves colours alone (final colours follow); the last setting, to restore. */
 unsigned ui_ink_raw(unsigned raw) {
     unsigned old = st.raw_ink;
@@ -166,7 +171,7 @@ int clock_night(void) {
     return tm && !light_day(tm);
 }
 void light_apply(const int *tm) {
-    if (st.light != 2 || light_day(tm) == st.light_day) return;
+    if (st.light != 2 || st.card_page || light_day(tm) == st.light_day) return;
     st.light_day = !st.light_day;
     np_fill(0);
     text_inks(window_manager());
@@ -217,12 +222,15 @@ const theme_t *theme(void) {
     accent();
     return &themes[st.theme];
 }
-/* 1 for scheme v's light half: its mode, else Light Mode (Auto: light_day), which reads 0 where the
- * theme does not declare it (setting()'s rule). The dark row's mode: both carry it. */
+/* 1 for scheme v's light half: its mode, else a card theme's page (its half, Light Mode aside),
+ * else Light Mode (Auto: light_day), which reads 0 where the theme does not declare it (setting()'s
+ * rule). The dark row's mode: both carry it. */
 static int light_on(const theme_t *T, int v) {
     int m = T->schemes[v].mode;
     return m == SCHEME_LIGHT || (m == SCHEME_DERIVE && !(T->undeclared >> SETTING_LIGHT & 1) &&
-                                 (st.light == 2 ? st.light_day : st.light));
+                                 (st.card_page    ? st.card_page > 1
+                                  : st.light == 2 ? st.light_day
+                                                  : st.light));
 }
 /* The half Light Mode picks; Minimal's and Modern's two halves are one row. */
 const scheme_t *scheme(void) {
@@ -230,12 +238,14 @@ const scheme_t *scheme(void) {
     const theme_t *T = &themes[st.theme];
     return card_theme_row(&(light_on(T, v) ? T->light : T->schemes)[v]);
 }
-/* scheme() for code that runs only in the light half (flip, red_map's light term), so after
- * ipod_light()'s accent(): the light row without a second accent() and light_on() on these
- * per-colour paths (a Classic folder paint sets ~470 colours). */
+/* scheme() for code that runs only where the flip is on (flip, red_map's light term), so after
+ * ipod_light()'s accent(): the light row, or the card theme's copy of it while it sets a page
+ * (card_theme_row), without a second accent() and light_on() on these per-colour paths (a Classic
+ * folder paint sets ~470 colours). */
 static const scheme_t *light_row(void) {
     const theme_t *T = &themes[st.theme];
-    return &T->light[*T->accent_slot];
+    const scheme_t *s = &T->light[*T->accent_slot];
+    return st.card_page ? card_theme_row(s) : s;
 }
 /* An option the theme does not declare reads 0, its stored key untouched (ponytail: 0 is every
  * hidden option's value today; a theme hiding Home or Battery needs a value per bit). */
@@ -384,8 +394,8 @@ unsigned accent_tone(int tone) {
  * Crimson is the identity. Light Mode (light) puts the red share over paper instead: a tint over
  * black becomes the same tint of tone over the light half's paper, its grey part flipped. */
 unsigned red_map(unsigned c, unsigned tone, unsigned glyph, int light) {
-    int paper = light ? (int)(light_row()->paper & 255) : 0,
-        ink = light ? (int)(light_row()->ink & 255) : 0;
+    unsigned paper = light ? light_row()->paper : 0;
+    int ink = light ? (int)(light_row()->ink & 255) : 0;
     static const int red[3] = { STOCK_RED >> 16, STOCK_RED >> 8 & 255, STOCK_RED & 255 };
     const int sum = red[0] + red[1] + red[2];
     int ch[3] = { c & 255, c >> 8 & 255, c >> 16 & 255 }, s = ch[0] + ch[1] + ch[2], d = 0, dd = 0;
@@ -401,8 +411,9 @@ unsigned red_map(unsigned c, unsigned tone, unsigned glyph, int light) {
     for (int i = 0; i < 3; ++i) {
         int miss = ch[i] - (t * red[i] / 4096 + k);
         if (miss > RED_TOLERANCE || miss < -RED_TOLERANCE) return c;
-        int v = t * (int)(tone >> (16 - 8 * i) & 255) / 4096 +
-                (light ? (t < 4096 ? 4096 - t : 0) * paper / 4096 - k * (paper - ink) / 255
+        int p = (int)(paper >> (16 - 8 * i) & 255),
+            v = t * (int)(tone >> (16 - 8 * i) & 255) / 4096 +
+                (light ? (t < 4096 ? 4096 - t : 0) * p / 4096 - k * (p - ink) / 255
                        : k * (int)(glyph >> (16 - 8 * i) & 255) / 255);
         out |= (unsigned)(v < 0 ? 0 : v > 255 ? 255 : v) << 8 * i;
     }
@@ -412,12 +423,12 @@ unsigned accent_map(unsigned c, int preset, int tone) {
     const theme_t *T = theme(); /* once: this runs per colour */
     const scheme_t *S = card_theme_row(&T->schemes[preset]);
     const unsigned *a = S->tones;
-    int light = ipod_light();
+    int light = ipod_paper();
     if (light && (!(c >> 24) || neutral(c))) return ui_ink(c);
-    unsigned to = light ? flip(tone_of(a, tone)) : a[tone];
+    unsigned to = light ? flip_rgb(tone_of(a, tone)) : a[tone];
     /* Crimson's reds; a card accent's own tone, itself a blend of stock red, stays */
     if ((!light && S->flags & SCHEME_RAW_RED) ||
-        (S != &T->schemes[preset] && !((c ^ RGBA(to)) & 0xffffff)))
+        (a != T->schemes[preset].tones && !((c ^ RGBA(to)) & 0xffffff)))
         return c;
     return red_map(c, to, 0xffffff, light);
 }

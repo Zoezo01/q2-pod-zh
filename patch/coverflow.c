@@ -1993,7 +1993,7 @@ static void column(shelf_t *f, int col, const unsigned *tex, int h, int bright, 
 void cf_column(unsigned *d, int pitch, short *solid, int col, const unsigned *tex, int h,
                int bright, int inset) {
     static shelf_t f;
-    cf_paper = ipod_light() ? scheme()->paper : 0;
+    cf_paper = RGBA(flat_page()) & 0xffffff;
     f.d = d, f.pitch = pitch, f.solid_top[col] = solid[0], f.solid_bottom[col] = solid[1];
     column(&f, col, tex, h, bright, inset);
     solid[0] = f.solid_top[col], solid[1] = f.solid_bottom[col];
@@ -2104,7 +2104,7 @@ static int slot(int frac, int k, int i) {
 void coverflow_render(unsigned *d, int pitch, int frac, const unsigned *const *ring) {
     if (!cfs.eye) cf_restyle(); /* once, for callers which render without opening the page */
     cf_corners();
-    cf_paper = ipod_light() ? scheme()->paper : 0;
+    cf_paper = RGBA(flat_page()) & 0xffffff; /* the texels' order, red low */
     shelf_t f;
     f.d = d, f.pitch = pitch;
     for (int x = 0; x < CF_VIEW_W; ++x) f.solid_top[x] = f.solid_bottom[x] = 0;
@@ -2182,7 +2182,7 @@ int cf_decode(const char *url, unsigned *out, int unload, unsigned bar) {
     if (data) {
         const unsigned char *o = at[format];
         unsigned stride = bitmap_get_line_length(bitmap), side = w > h ? w : h, xoff[ART_SIZE];
-        unsigned paper = ipod_light() ? scheme()->paper & 255 : 0;
+        unsigned paper = RGBA(flat_page());
         for (unsigned x = 0; x < ART_SIZE; ++x) { /* ~0u: a bar; left of the image wraps to one */
             unsigned sx = x * side / ART_SIZE - (side - w) / 2;
             xoff[x] = sx < w ? sx * 4 : ~0u;
@@ -2198,8 +2198,9 @@ int cf_decode(const char *url, unsigned *out, int unload, unsigned bar) {
                 unsigned a = px[o[3]], r = px[o[0]], g = px[o[1]], b = px[o[2]], k = 255 - a;
                 /* over the page: black, or Light Mode's paper (the placeholder's corners) */
                 if (a < 255)
-                    r = (r * a + paper * k) / 255, g = (g * a + paper * k) / 255,
-                    b = (b * a + paper * k) / 255;
+                    r = (r * a + (paper & 255) * k) / 255,
+                    g = (g * a + (paper >> 8 & 255) * k) / 255,
+                    b = (b * a + (paper >> 16 & 255) * k) / 255;
                 *out++ = 0xff000000u | r | g << 8 | b << 16;
             }
         }
@@ -4232,7 +4233,7 @@ void home_sharpen(unsigned *t, int n, int step) { /* test/coverflow.py */
 }
 
 /* The decoded image (data, stride, channel order o, w x h) box filtered to aw x ah texels at out,
- * ostride texels a row, over the grey paper (a byte). Alpha-weighted sums, so only the average
+ * ostride texels a row, over paper (a texel, red low). Alpha-weighted sums, so only the average
  * divides; at most 4 x 4 samples a texel, so a huge embedded cover filters as quickly as a small
  * one. */
 static void box_filter(const unsigned char *data, unsigned stride, const unsigned char *o,
@@ -4254,9 +4255,11 @@ static void box_filter(const unsigned char *data, unsigned stride, const unsigne
                     unsigned k = px[o[3]];
                     r += px[o[0]] * k, g += px[o[1]] * k, b += px[o[2]] * k, a += k;
                 }
-            unsigned bg = paper * (n - a);
+            unsigned m = n - a;
             /* NOLINTNEXTLINE(clang-analyzer-core.DivideZero): n >= 255: x1 > x0, y1 > y0 */
-            *px_out++ = 0xff000000u | (r + bg) / n | (g + bg) / n << 8 | (b + bg) / n << 16;
+            *px_out++ = 0xff000000u | (r + (paper & 255) * m) / n |
+                        (g + (paper >> 8 & 255) * m) / n << 8 |
+                        (b + (paper >> 16 & 255) * m) / n << 16;
         }
     }
 }
@@ -4286,8 +4289,7 @@ static int home_tex(const char *url) {
         data = home.tex ? bitmap_lock_buffer_for_read(bitmap) : 0;
     }
     if (data) {
-        unsigned stride = bitmap_get_line_length(bitmap),
-                 paper = ipod_light() ? scheme()->paper & 255 : 0;
+        unsigned stride = bitmap_get_line_length(bitmap), paper = RGBA(flat_page()) & 0xffffff;
         int ts = aw + 3;                   /* home.tex's row, its border included */
         unsigned *tex = home.tex + ts + 1; /* texel 0, 0 */
         box_filter(data, stride, at[format], w, h, tex, ts, aw, ah, paper);
@@ -4471,7 +4473,7 @@ void coverflow_slant(widget_t *w, canvas_t *canvas, unsigned paper) {
         int aw = (int)(t * bw / fit), ah = (int)(t * bh / fit);
         for (int i = 0; i < t * t; ++i) tex[i] = 0xff000000u | paper * 0x010101u;
         box_filter(data, stride, at[format], bw, bh, tex + (t - ah) / 2 * t + (t - aw) / 2, t, aw,
-                   ah, paper);
+                   ah, paper * 0x010101u);
         slant_render(d, (int)(bitmap_get_line_length(slant.frame) / 4), side, rows, tex, t, paper);
         bitmap_unlock_buffer(slant.frame);
         slant.key = key;

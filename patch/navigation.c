@@ -5408,7 +5408,7 @@ int ringnav_paint_bg(widget_t *w, canvas_t *canvas) {
         } else {
             /* Modern in Light Mode: an iPod's grey bar (its scheme's bar_light), flat (final
              * colour) */
-            int grey = S->bar_light && ipod_light();
+            int grey = S->bar_light && ipod_light() && !st.card_page; /* or the card's page */
             stock_canvas_set_fill_color(canvas,
                                         grey ? RGBA(S->bar_light) : ui_ink(RGBA(BAR_COLOR)));
             canvas_fill_rect(canvas, 0, 0, I(w, W_W), I(w, W_H));
@@ -5520,7 +5520,7 @@ unsigned *ringnav_style_color(unsigned *color, void *style, const char *name, un
             *color = (*color & 0xff000000u) | S->muted;
     }
     int a = accent();
-    if (S->flags & SCHEME_RAW_RED && !ipod_light()) return color;
+    if (S->flags & SCHEME_RAW_RED && !ipod_paper()) return color;
     unsigned c = accent_map(*color, a, TONE_LIGHT);
     if (c != *color && name && tk_str_end_with(name, "text_color"))
         c = accent_map(*color, a, TONE_RED);
@@ -5690,7 +5690,7 @@ int ringnav_image_add(void *manager, const char *name, void *bitmap) {
     const char *s = name;
     int dark = s && tk_str_start_with(s, CONFIRM_IMAGE);
     int control = s && tk_str_start_with(s, DROPDOWN_IMAGE) && !tk_str_start_with(s, DROPDOWN_SUN);
-    int paper = ipod_light(); /* Light Mode: tone_of's tones, flipped as drawn */
+    int paper = ipod_paper(); /* Light Mode, a card page: tone_of's tones, flipped as drawn */
     unsigned tone = dark ? CONFIRM_SURFACE : flip_if(paper, tone_of(tones_of(preset), TONE_RED)),
              glyph = 0xffffff, light = flip_if(paper, tone_of(tones_of(preset), TONE_LIGHT));
     if (control && bright_tone(tone)) glyph = CONFIRM_SURFACE;
@@ -5876,7 +5876,8 @@ int ringnav_image_add(void *manager, const char *name, void *bitmap) {
     }
     /* Light Mode: a theme image without colour that is mostly glyph (marks, chevrons, spinners)
      * flips as the colours do. One with a grey or dark disc or plate (LIGHT_SURFACE) keeps its
-     * white glyph, an image the accent mapped is final, and switch_off keeps its white knob as
+     * white glyph (on a card theme's dark page it flips too: its black takes the page, its white
+     * stays), an image the accent mapped is final, and switch_off keeps its white knob as
      * switch_on does. Quick Settings' inactive discs (DROPDOWN_IMAGE, unmapped) flip whole: a
      * light disc under a dark glyph, as the active ones stand out in the accent. Premultiplied
      * pixels (bitmap_t flags @0xc) flip their straight colour. The lock screen's hint lies on a
@@ -5893,7 +5894,7 @@ int ringnav_image_add(void *manager, const char *name, void *bitmap) {
                              : (void *)0;
     if (ink) {
         const unsigned char *o = at[format];
-        unsigned fp = sc->paper & 255, fi = sc->ink & 255;
+        unsigned fp = sc->paper, fi = sc->ink & 255; /* o[c]: r, g, b, so fp's bytes high first */
         int w = I(bitmap, 0), h = I(bitmap, 4), stride = bitmap_get_line_length(bitmap);
         int premul = *(unsigned short *)((char *)bitmap + 0xc) & BITMAP_PREMULTI, solid = 0,
             hue = 0;
@@ -5908,11 +5909,15 @@ int ringnav_image_add(void *manager, const char *name, void *bitmap) {
                 solid += (premul ? (r * 299 + g * 587 + b * 114) / a * 255 / 1000
                                  : (r * 299 + g * 587 + b * 114) / 1000) < LIGHT_GLYPH;
             }
-        for (int y = 0; !hue && (control || solid * LIGHT_SURFACE < w * h) && y < h; ++y)
+        /* a dark card page (st.card_page 1) flips the plated ones too */
+        for (int y = 0;
+             !hue && (control || st.card_page == 1 || solid * LIGHT_SURFACE < w * h) && y < h; ++y)
             for (unsigned char *p = ink + y * stride, *end = p + 4 * w; p < end; p += 4)
-                for (int c = 0, a = p[o[3]]; c < 3 && a; ++c)
-                    p[o[c]] = (unsigned char)(premul ? flip_v(p[o[c]] * 255u / a, fp, fi) * a / 255
-                                                     : flip_v(p[o[c]], fp, fi));
+                for (int c = 0, a = p[o[3]]; c < 3 && a; ++c) {
+                    unsigned pc = fp >> (16 - 8 * c) & 255;
+                    p[o[c]] = (unsigned char)(premul ? flip_v(p[o[c]] * 255u / a, pc, fi) * a / 255
+                                                     : flip_v(p[o[c]], pc, fi));
+                }
         bitmap_unlock_buffer(bitmap);
     }
     /* A theme's art placeholder size (Classic's 38): stock's grey tiles, as tall as the row (Folder
@@ -5940,18 +5945,19 @@ static void setting_text(int i) {
     int a = accent();
     const scheme_t *S = scheme();
     /* the card theme's rows (card_theme_sets) name it, not a stored value */
-    const char *const names[] = { card_theme_sets(SETTING_ACCENT) ? N_("Accent: Card Theme")
-                                  : S->label                      ? (const char *)0
-                                                                  : accent_names[a],
-                                  home[st.home],
-                                  card_theme_sets(SETTING_BATTERY) ? N_("Battery: Card Theme")
-                                                                   : battery[st.battery],
-                                  (const char *)0,
-                                  (const char *)0,
-                                  (const char *)0,
-                                  light[st.light],
-                                  (const char *)0,
-                                  (const char *)0 };
+    const char *const names[] = {
+        card_theme_sets(SETTING_ACCENT) ? N_("Accent: Card Theme")
+        : S->label                      ? (const char *)0
+                                        : accent_names[a],
+        home[st.home],
+        card_theme_sets(SETTING_BATTERY) ? N_("Battery: Card Theme") : battery[st.battery],
+        (const char *)0,
+        (const char *)0,
+        (const char *)0,
+        card_theme_sets(SETTING_LIGHT) ? N_("Light Mode: Card Theme") : light[st.light],
+        (const char *)0,
+        (const char *)0
+    };
     char text[192];
     if (i == 0 && S->label) {
         tk_snprintf(text, sizeof text, tr("Accent: %s"), tr(S->label));

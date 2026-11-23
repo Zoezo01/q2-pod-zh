@@ -67,8 +67,9 @@ typedef struct {
     unsigned bar_line2;  /* BAR_GLOSS: the light half's row above it, final, 0 none */
     unsigned paper, ink; /* this half's, greys 0xRRGGBB: the light half's are the flip's ends
                             (LIGHT_PAPER and LIGHT_INK unless set), the dark half's 0x000000 and
-                            0xffffff. A one-array theme's row holds the light half's: only
-                            ipod_light()-gated code reads them there */
+                            0xffffff. A one-array theme's row holds the light half's, or in the
+                            card theme's copy its page and ink (card_theme_row): only
+                            ipod_paper()-gated code reads them there */
     const char *label;   /* a theme's own scheme's name ("Classic Blue"); NULL: accent_names[v] */
 } scheme_t;
 typedef struct {

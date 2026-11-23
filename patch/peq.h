@@ -748,6 +748,7 @@ int ipod_battery(void);        /* theme_engine.c: IPOD BATTERY, 0 Icon, else a p
 int title_gone(void *w, event_t *event); /* ... and looks for its source again at the next sync */
 int bar_title_fits(widget_t *label);     /* label's text fits the bar's title box */
 int ipod_light(void);                    /* theme_engine.c: Light Mode */
+unsigned flat_page(void);    /* flat.c: the page's ground, 0xRRGGBB, 0 unless the flip is on */
 unsigned unflip(unsigned v); /* theme_engine.c: the grey Light Mode's flip turns into v */
 int ipod_square_art(void);   /* navigation.c: Classic, and Modern under Square */
 #define SPOT_GREY 0xffaaaaaau

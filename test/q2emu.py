@@ -1233,6 +1233,7 @@ class SearchNavigationMachine(PullMachine,NavigationMachine):
 # mclLoadPlayList, mclNextSong and key filters run for real.
 from build import SHUFFLE_CALL, fileoff
 class QueueMachine(Machine):
+    budget=120000  # its constructor's paint, a folder list, flips every colour in Modern's Light Mode: about 104k
     def __init__(self,page='allmusic_page',rows=20,queue=3,pos=0,mode=0,cls=0xf001):
         super().__init__()
         self.deqs={}; self.toasts=[]; self.sent=[]; self.picks=[]; self.airplay=0
@@ -3183,6 +3184,7 @@ float cf_thumb_hold(int, float, int);
 int cf_frame_window(int);
 void cf_shelf_still(int);
 const scheme_t *scheme(void) { static scheme_t s = { .paper = %d }; return &s; }
+unsigned flat_page(void) { return ipod_light() ? scheme()->paper : 0; } /* flat.c's, no card page */
 #define N %d
 static unsigned tex[N][160 * 160], frame[%d * %d];
 int main(void) {

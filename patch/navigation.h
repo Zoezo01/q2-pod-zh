@@ -244,6 +244,7 @@ typedef struct {
         geom;            /* the geometry set theme_boot wrote; 0, SET0, until then */
     int own[THEME_KEYS]; /* the themes' own keys' values (theme_keys[], tools/theme.py), read after
                             the thirteen */
+    int card_page;       /* a card theme's page (card_theme_load): 0 none, 1 dark, 2 light */
     unsigned keep_lit_at;
     widget_t *sel_accent; /* the row on a coloured selection, for Light Mode's ink */
     int style_depth;      /* nested style hooks (a mutable style's fallback) map nothing */
@@ -473,7 +474,6 @@ const char *quick_wheel_toggle(widget_t *top);
 /* flat.c */
 extern const unsigned flat_rest[2],
     flat_ink[2]; /* final, [0] dark, [1] light; flat_quiet: theme.h */
-unsigned flat_page(void);
 unsigned flat_on(void);
 const char *flat_face(void);
 enum { BAR_PLAIN, BAR_SUNS, BAR_SPEAKERS }; /* flat_bar's marks */
@@ -560,6 +560,12 @@ int accent(void);
 unsigned accent_map(unsigned c, int preset, int tone);
 const int *clock_now(int *buf);
 unsigned flip(unsigned c) __attribute__((pure));
+unsigned flip_rgb(unsigned c) __attribute__((pure));
+/* Whether the flip is on: the light half, or a card theme's page in either. Inline: ui_ink asks
+ * for every colour drawn. */
+static inline __attribute__((always_inline)) int ipod_paper(void) {
+    return st.card_page || ipod_light();
+}
 unsigned flip_v(unsigned v, unsigned paper, unsigned ink);
 int ipod_home(void);
 const char *ipod_home_shortcut(void);
