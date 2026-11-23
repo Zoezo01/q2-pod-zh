@@ -219,7 +219,7 @@ class FwWorker(Worker):
         if result.returncode:
             shutil.rmtree(out)
             return None, rejected(result.stderr)
-        globalize(obj)
+        host.globalize(obj)
         return obj, ''
 
     def compile(self, mutant):
@@ -370,7 +370,7 @@ def coverage_build(worker):
     obj = COV/(stem + '.o')
     subprocess.run(['cc', *host.FLAGS, '--coverage', '-I', str(BASE), '-I', 'patch', '-c', worker.args.source, '-o',
         str(obj)], cwd=worker.root, check=True)
-    globalize(obj)
+    host.globalize(obj)
     (COV/'lib'/obj.name).unlink()
     (COV/'lib'/obj.name).symlink_to(obj)
     objects = [obj if o.name == obj.name else o for o in base_objects()]
@@ -381,12 +381,6 @@ def coverage_build(worker):
 
 def base_objects():
     return [BASE/(source.stem + '.o') for source in host.SOURCES]
-
-def globalize(obj):
-    """host.build's renames: each static a global <file>__<name>, so a test reaches it."""
-    local = [r[-1] for r in host.nm(obj) if len(r) == 3 and r[1] in 'tdbr' and re.fullmatch(r'[A-Za-z_]\w*', r[-1])]
-    renames = [f for name in local for f in ('--redefine-sym', f'{name}={obj.stem}__{name}', '--globalize-symbol', f'{obj.stem}__{name}')]
-    subprocess.run(['objcopy', *renames, str(obj)], check=True)
 
 def symbols(path):
     """Each defined symbol's name, type and size, which move with any compiler flag that changes the code."""
