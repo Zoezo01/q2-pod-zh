@@ -785,7 +785,9 @@ NPCENTRED`, off; `playset_covermode`): `ringnav_ui_load`, hooked on every window
   `playset_covermode`): letters held until the lift and years on a fast spin, and the half copies
   they read, a "Scan Song Durations" switch (`Q2POD SCANDURATIONS`, off; `playset_covermode`;
   durations.c), a "Position Bar" switch (`Q2POD CFPOSITION`, off; `playset_covermode`;
-  coverflow_position.c), and a "Log Failed Artwork" switch (`Q2POD CFARTLOG`, off;
+  coverflow_position.c), "Hide Duplicate Albums" and "Hide Duplicate Songs" switches (`Q2POD
+  CFDUPALBUMS`, `CFDUPSONGS`, off; `playset_covermode`; [internals.md](internals.md#coverflow)),
+  and a "Log Failed Artwork" switch (`Q2POD CFARTLOG`, off;
   `playset_covermode`; build_art, [internals.md](internals.md#coverflow)).
 - Controls: Wheel Sensitivity, which opens its slider page; "Hold Return: Recent"
   (`Q2POD HOLDRETURN`, [Hold Return](#hold-return), `playset_folderjump`); a "Single Press Scrub" switch (`IPOD SCRUBSINGLE`, off; `np_key`): on Now Playing a single

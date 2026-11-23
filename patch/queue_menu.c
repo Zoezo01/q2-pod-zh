@@ -174,10 +174,11 @@ static void qm_tracks(void *r, void *add) {
 }
 
 /* The row's tracks: the song itself, or what stock would play for the row; an Albums row's own
- * album alone (getMusicByAlbum finds every album of the name), in album order, as Coverflow's. */
+ * album alone (getMusicByAlbum finds every album of the name), in album order, as Coverflow's; a
+ * cover's as its tracks list them (Hide Duplicate Songs). */
 void *qm_collect(void *r) {
-    if (qm.qm_kind == QM_COVERALBUM || (qm.qm_kind == QM_ALBUM && qm.qm_cls == CLASS_ALBUMS))
-        return coverflow_album_tracks(r);
+    if (qm.qm_kind == QM_COVERALBUM) return coverflow_cover_tracks(r);
+    if (qm.qm_kind == QM_ALBUM && qm.qm_cls == CLASS_ALBUMS) return coverflow_album_tracks(r);
     void *add = song_list();
     if (qm.qm_kind == QM_SONG || qm.qm_kind == QM_COVERFLOW || qm.qm_kind == QM_PLAYING)
         _deque_push_back(add, r);

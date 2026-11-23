@@ -1295,6 +1295,42 @@ static int album_in(row_t *v, unsigned m, void *r) {
     unsigned k = lower(v, m, r, album_cmp);
     return k < m && !album_cmp(v[k].a, r) ? (int)v[k].j : -1;
 }
+/* list less each row cmp finds the same as one before it, in a new deque (list goes): the Hide
+ * Duplicate switches. by is cmp, ties in the list's order, so the first of each stays; the Unknown
+ * row (REC_ID -1) is never dropped unless all. Out of memory, list. */
+static void *without_copies(void *list, int (*cmp)(void *, void *),
+                            int (*by)(const void *, const void *), int all) {
+    unsigned m, n = deque_size(list);
+    row_t *v = album_rows(list, &m, by, all);
+    unsigned char *copy = v ? calloc(n + 1, 1) : 0;
+    if (!copy) return free(v), list;
+    for (unsigned k = 1; k < m; ++k) copy[v[k].j] = !cmp(v[k - 1].a, v[k].a);
+    void *out = song_list();
+    for (unsigned i = 0; i < n; ++i)
+        if (!copy[i]) _deque_push_back(out, deque_at(list, i));
+    free(v), free(copy);
+    deque_destroy(list);
+    return out;
+}
+/* Hide Duplicate Albums: the name, then the artist album_key takes (its cover's), ASCII case aside:
+ * a copy in another folder with no album artist, or one tagged with an album artist the other
+ * lacks, is a second card album_cmp keeps. ponytail: a song of a hidden card matches no cover
+ * (album_cmp), so the covers neither open on it nor follow it (coverflow_tail); tags_cmp there
+ * would find its card. */
+static int tags_cmp(void *a, void *b) {
+    const char *x = P(a, REC_ARTIST), *y = P(b, REC_ARTIST);
+    int d = name_cmp(a, b);
+    return d ? d : strcasecmp(x ? x : "", y ? y : "");
+}
+static int by_tags(const void *x, const void *y) {
+    const row_t *p = x, *q = y;
+    return tie(tags_cmp(p->a, q->a), p, q);
+}
+/* list less its copies under Hide Duplicate Albums, else list: the library's covers, an artist's
+ * and the rated ones (after their hearts, so a rated copy stays when the first isn't). */
+static void *album_copies(void *list) {
+    return pod_value(POD_CF_DUP_ALBUMS) ? without_copies(list, tags_cmp, by_tags, 0) : list;
+}
 /* cf.stock's album_rows while sorted() ranks it. */
 static row_t *stock_rows;
 static unsigned stock_n;
@@ -3158,6 +3194,8 @@ static struct {
     void *song;
     int at;
 } tail __attribute__((section(".scratch")));
+/* Hide Duplicate Albums as cf.stock was built: a change builds it again at the next open. */
+static int stock_dups;
 static void load_albums(unsigned t0) {
     int on_sort = cf.on_sort; /* taken whatever this load shows */
     cf.on_sort = 0;
@@ -3175,7 +3213,8 @@ static void load_albums(unsigned t0) {
         widget_factory_create_widget(widget_factory(), "view", cf.page, 0, 0, 375, client_h());
     int n = 0;
     unsigned gen = library_gen;
-    if (cf.albums_gen != gen && !cf.scoped) drop_albums();
+    if ((cf.albums_gen != gen || stock_dups != pod_value(POD_CF_DUP_ALBUMS)) && !cf.scoped)
+        drop_albums();
     if (cf.scoped)
         n = (int)deque_size(cf.scoped == RATED_ALBUMS ? cf.stock : cf.albums);
     else if (cf.stock)
@@ -3187,10 +3226,10 @@ static void load_albums(unsigned t0) {
         if (n > 0) {
             void *v = split(cf.stock, 0);
             cf_trace(t0, "split albums=", deque_size(v), 0);
-            cf.stock = music_albums(v, 0);
+            cf.stock = album_copies(music_albums(v, 0));
             cf_trace(t0, "music_albums albums=", deque_size(cf.stock), 0);
         }
-        cf.albums_gen = gen;
+        cf.albums_gen = gen, stock_dups = pod_value(POD_CF_DUP_ALBUMS);
         n = (int)deque_size(cf.stock);
     }
     if (cf.albums && !cf.scoped && (cf.sort == SORT_YEAR || cf.sort == SORT_ARTIST) &&
@@ -3435,6 +3474,31 @@ void *coverflow_album_tracks(void *r) {
     int n;
     return in_order(staged_music(albums, r, &n), r);
 }
+/* Hide Duplicate Songs: the disc, the number and the title tag (ASCII case aside), so an album
+ * held twice (a FLAC and an MP3 copy tagged alike, one card) lists each song once. A song with no
+ * title is never a copy (its path and CUE start tell it apart): disc folders' 01.flac are two. */
+static int song_cmp(void *a, void *b) {
+    const char *x = P(a, REC_TITLE), *y = P(b, REC_TITLE);
+    int d = I(a, REC_DISC) - I(b, REC_DISC);
+    if (!d) d = I(a, REC_TRACK) - I(b, REC_TRACK);
+    if (!d) d = strcasecmp(x ? x : "", y ? y : "");
+    if (d || (x && *x)) return d;
+    d = strcmp(P(a, REC_PATH) ? P(a, REC_PATH) : "", P(b, REC_PATH) ? P(b, REC_PATH) : "");
+    return d ? d : I(a, REC_CUE_START) - I(b, REC_CUE_START);
+}
+static int by_song(const void *x, const void *y) {
+    const row_t *p = x, *q = y;
+    return tie(song_cmp(p->a, q->a), p, q);
+}
+/* r's tracks as Cover Flow lists and plays them: its covers, All albums, Go to Album and a cover's
+ * hold menu (queue_menu.c), the first copy of each song alone under Hide Duplicate Songs; the
+ * Unknown card (REC_ID -1), every untagged song of the card's, as it is. */
+void *coverflow_cover_tracks(void *r) {
+    void *t = coverflow_album_tracks(r);
+    return pod_value(POD_CF_DUP_SONGS) && I(r, REC_ID) != -1
+               ? without_copies(t, song_cmp, by_song, 1)
+               : t;
+}
 
 /* A label's face at px, in every state the labels style: bold, the theme's (bold itself), by its
  * text as theme_font has it; else stock's regular, as the theme's rows' second lines. */
@@ -3669,7 +3733,7 @@ static int to_tracks(const void *unused) {
             cf.saved_album = album_key(r);
             BLOB_IO(LAST_ALBUM, cf.saved_album, 1); /* a power-off on the tracks keeps it too */
         }
-        cf.tracks = coverflow_album_tracks(r);
+        cf.tracks = coverflow_cover_tracks(r);
         n = (int)deque_size(cf.tracks);
     }
     cf.screen = TRACKS;
@@ -3725,7 +3789,7 @@ static int play_all(const void *unused) {
     cf.timer = 0;
     void *all = song_list();
     for (unsigned i = 0; i < deque_size(cf.albums); ++i) {
-        void *t = coverflow_album_tracks(deque_at(cf.albums, i));
+        void *t = coverflow_cover_tracks(deque_at(cf.albums, i));
         for (unsigned j = 0; j < deque_size(t); ++j) _deque_push_back(all, deque_at(t, j));
         deque_destroy(t);
     }
@@ -3932,7 +3996,7 @@ int coverflow_artist(void *albums) {
     if (!deque_size(albums)) return 0;
     void *music = _create_deque("stSongInfo");
     deque_init_copy(music, albums);
-    music = music_albums(music, 1);
+    music = album_copies(music_albums(music, 1));
     if (!deque_size(music) || !scoped_open()) {
         deque_destroy(music);
         return 0;
@@ -3987,6 +4051,7 @@ int coverflow_rated(int (*hearts)(void *)) {
     for (unsigned i = 0; i < deque_size(all); ++i)
         if (hearts(deque_at(all, i))) _deque_push_back(rated, deque_at(all, i));
     deque_destroy(all);
+    rated = album_copies(rated);
     if (!deque_size(rated) || !scoped_open()) {
         deque_destroy(rated);
         return 0;
@@ -4847,8 +4912,9 @@ static int home_counts(const void *unused) {
     if (pane && (gen != home.asked || (!home.counted && !answered))) {
         home.asked = gen;
         /* Coverflow's own list when it has one */
-        home.got_albums =
-            cf.stock && !cf.scoped && cf.albums_gen == gen ? (int)deque_size(cf.stock) : -1;
+        home.got_albums = cf.stock && !cf.scoped && cf.albums_gen == gen && !stock_dups
+                              ? (int)deque_size(cf.stock)
+                              : -1;
         home.counting = 1;
         if (!pthread_create(&home.count_thread, 0, count_worker, 0)) return 8;
         home.counting = 0;

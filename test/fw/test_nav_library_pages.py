@@ -336,6 +336,26 @@ def test_a_record_reads_back_whole(fw, song):
     assert name(out, 64, tagged) == b'One' and name(out, 64, untagged) == b'02 Two'
 
 
+@pytest.mark.parametrize('on', [0, 1])
+def test_hide_duplicate_songs_lists_a_disc_s_number_and_title_once(fw, song, on):
+    """A cover's tracks in album order (disc, number, path); on (CFDUPSONGS), a track with an earlier one's disc, number
+    and title tag, ASCII case aside, goes. Untitled songs are never copies (disc folders' 01.flac), and the Unknown
+    card, every untagged song in the library, is left as it is."""
+    Config(fw, **({'CFDUPSONGS': b'1'} if on else {}))
+    q = Deques(fw)
+    t = [song(b'/m/A/01 One.mp3', b'one', album=b'A', track=1), song(b'/m/A/01 One.flac', b'One', album=b'A', track=1),
+         song(b'/m/A/02 Two.flac', b'Two', album=b'A', track=2), song(b'/m/A/CD1/01.flac', album=b'A'),
+         song(b'/m/A/CD2/01.flac', album=b'A'), song(b'/m/A/01 One.flac', b'One', album=b'A', track=1, disc=2),
+         song(b'/m/A/03 Two.flac', b'Two', album=b'A', track=3)]
+    staging = fw.var('fw_ctx_tools_pdeq_directory', C.c_uint)
+    fw.mock('getMusicByAlbum', lambda *_: q[staging.value].extend(t) or len(t))
+    tracks = fw.fn('coverflow_cover_tracks', C.c_void_p, C.c_void_p)
+    order = [3, 4, 1, 0, 2, 6, 5]
+    assert q[tracks(t[1])] == [t[k] for k in order if not (on and k == 0)]
+    assert q[tracks(song(id_=-1))] == [t[k] for k in order]  # the Unknown card: all of them, either way
+    assert len(q.lists) == 2
+
+
 def listen_key(path, cue=0):
     """A play count's key (docs/internals.md#most-played): the path's FNV-1a with its separator, a CUE track's
     start mixed in; never 0."""
