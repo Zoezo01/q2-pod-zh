@@ -95,6 +95,12 @@ MUSIC_WHERE=re.search(r'#define MUSIC_WHERE "(.*)" LIBRARY_SCOPE_TOKEN',INC)[1]+
 
 # Q2_TRACE=FILE logs every draw and widget-property call, each hook's return and each passed case, by value.
 TRACE=open(os.environ['Q2_TRACE'],'w') if os.environ.get('Q2_TRACE') else None
+# Q2_CARD_THEME=FILE gives each Classic and Classic Modern machine FILE as its card theme (read_all's answer for the
+# copy): those themes take none of a card theme's look, so with a FILE that sets no battery style a run's Q2_TRACE
+# is the run's without one.
+CARD_THEME=pathlib.Path(os.environ['Q2_CARD_THEME']).read_bytes() if os.environ.get('Q2_CARD_THEME') else None
+CARD_READS=[]  # each read served: the count goes to stderr at the end, 0 meaning the run proved nothing
+if CARD_THEME: __import__('atexit').register(lambda: print(len(CARD_READS),'card theme reads served',file=sys.stderr))
 def trace(*fields):
     if TRACE: TRACE.write('\t'.join(fields)+'\n')
 TRACE_ARGS={'canvas_get_clip_rect':'_','canvas_set_clip_rect':'_r','canvas_set_global_alpha':'_i','canvas_translate':'_ii','canvas_offline_create':'iii',
@@ -316,6 +322,9 @@ class Machine:
         if address==syms['widget_animator_scroll_set_params']:
             assert u.reg_read(UC_MIPS_REG_A0) not in self.slides, 'retarget must pause first'
             self.calls.append(('widget_animator_scroll_set_params',*[u.reg_read(r) for r in REGS[:3]]))
+        if CARD_THEME and address==payload_syms['read_all'] and self.config.get('THEME') in ('1','3') and self.text(u.reg_read(UC_MIPS_REG_A0))=='/mnt/data/q2pod-theme':
+            p=0x11f0000; u.mem_write(p,CARD_THEME+b'\0'); self.word(u.reg_read(UC_MIPS_REG_A2),len(CARD_THEME))  # not alloc's: a test's own pointers stay where they were
+            CARD_READS.append(p); return self.returns(p)
         if address not in self.handlers: return
         name=self.handlers[address]
         if not name.startswith('stock_') and address!=payload_syms['peq_lib_localtime_r']:
