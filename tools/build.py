@@ -1297,6 +1297,27 @@ def fileoff(b, a):
     for _, (t, o, v, _, f, _, _, _) in segments(b):
         if t == 1 and v <= a < v+f: return o+a-v
     raise ValueError(f'Unmapped address {a:x}')
+def zero_pdr(b, name):
+    """An executable or shared library (ELF32, little-endian) with its .pdr section zeroed, the same descriptors as
+    demo's PDR; anything else as it is. The size and every other byte stay the same. ponytail: kernel modules keep
+    theirs (187,104 bytes in stock's 24); 5.10's module loader skips unallocated sections, so they could be zeroed
+    once the Q2's kernel is shown to do the same."""
+    if b[:6] != b'\x7fELF\1\1' or struct.unpack_from('<H', b, 16)[0] not in (2, 3): return b
+    shoff, = struct.unpack_from('<I', b, 32)
+    size, num, names = struct.unpack_from('<HHH', b, 46)
+    if not num: return b
+    check(size == 40, f'{name}: unexpected ELF section header size')
+    sections = [struct.unpack_from('<10I', b, shoff+i*size) for i in range(num)]
+    pdr = [s for s in sections if b.startswith(b'.pdr\0', sections[names][4]+s[0])]
+    if not pdr: return b
+    _, kind, flags, _, off, length, *_ = pdr[0]
+    segs = segments(b)
+    used = [(0, max([52] + [o+32 for o, _ in segs])), (shoff, shoff+num*size), *((p[1], p[1]+p[4]) for _, p in segs),
+            *((s[4], s[4]+s[5]) for s in sections if s is not pdr[0] and s[1] != 8)]  # the headers; 8: SHT_NOBITS
+    check(len(pdr) == 1 and kind == 1 and not flags & 2 and off+length <= len(b) and
+          all(end <= off or off+length <= at for at, end in used),
+          f'{name}: .pdr is not a section of its own outside every segment')
+    return b[:off] + bytes(length) + b[off+length:]
 
 # Every saved g_time_zone index, in stock's order (0-26) then the additions: its label and TZ. Labels
 # are literal, short enough for the 246 px row at 24 px; the offset is the standard one. The
@@ -2120,7 +2141,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
     from peq import patch_player
     raw_player = cat('usr/bin/hciplayer')
     audio = patch_player(raw_player, out/'peq', flac_experiments)
-    bluealsa = patch_bluealsa(cat(BLUEALSA))
+    bluealsa = zero_pdr(patch_bluealsa(cat(BLUEALSA)), BLUEALSA)
     (out/'bluealsa').write_bytes(bluealsa)
     (out/'watchdog').write_bytes(cat(WATCHDOG).replace(*WATCHDOG_SLEEP))
     for address, old, new in ARTIST_ALBUMS:
@@ -2325,7 +2346,17 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
     # Pseudo-file round trip preserves every original inode's metadata and hardlinks.
     pseudo = out/'root.pseudo'
     run('unsquashfs','-pf',pseudo,sq)
-    p = pseudo.read_bytes()
+    p = bytearray(pseudo.read_bytes())
+    # Stock's other executables and libraries carry .pdr too: zeroed where the pseudo file holds their bytes, which an
+    # R line's length and offset give, counted from the end of the marker.
+    marker = b'# START OF DATA - DO NOT MODIFY\n#\n'
+    data = p.index(marker) + len(marker)
+    rows = list(re.finditer(rb'^(\S+) R \d+ \d+ \d+ \d+ (\d+) (\d+) \d+$', bytes(p[:data]), re.M))
+    check(rows, 'No stock file data in root.pseudo')
+    for m in rows:
+        at, size = data+int(m[3]), int(m[2])
+        p[at:at+size] = zero_pdr(p[at:at+size], m[1].decode())
+    p = bytes(p)
     # mksquashfs takes "/" from the source dir, not the pseudo file; carry stock values over.
     root = need(re.search(rb'^/ D (\d+) (\d+) (\d+) (\d+)$',p,re.M), 'Missing root pseudo inode')
     t,mode,uid,gid = (x.decode() for x in root.groups())
@@ -2350,7 +2381,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
     (out/'bluealsa2').write_bytes(bluealsa2.replace(*BT_KEEPALIVE))
     bluetoothd = cat(BLUETOOTHD)
     check(bluetoothd.count(BT_GRACE[0]) == 1, 'Unexpected bluetoothd')
-    (out/'bluetoothd').write_bytes(bluetoothd.replace(*BT_GRACE))
+    (out/'bluetoothd').write_bytes(zero_pdr(bluetoothd.replace(*BT_GRACE), BLUETOOTHD))
     for path, hook in ((SD_MOUNT, SD_MOUNT_HOOK), (WIFI_CONNECT, WPA_HOOK), (PASSWD, PASSWD_HOOK), (GROUP, GROUP_HOOK)):
         script = cat(path)
         check(script.count(hook[0]) == 1, f'Unexpected {path}')
@@ -2438,7 +2469,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
         line = need(re.search(rb'^'+re.escape(path.encode())+rb' R .+\n', p, re.M), f'Missing stock inode {path}')
         removed.append(line.group().split()[:6])
         p = p[:line.start()]+p[line.end():]
-    for path, fix, name in ((TAG_C, patch_m4b_cover, 'libtag_c.so.2.0.1'), (FONT, lambda d: font_letters(font_quotes(d)), 'default.ttf'),
+    for path, fix, name in ((TAG_C, lambda d: zero_pdr(patch_m4b_cover(d), TAG_C), 'libtag_c.so.2.0.1'), (FONT, lambda d: font_letters(font_quotes(d)), 'default.ttf'),
                             *((p, lambda d, p=p: patch_web(p, d), p.rsplit('/', 1)[-1]) for p in WEB)):
         original = cat(path)
         data = fix(original)
