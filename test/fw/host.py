@@ -127,6 +127,17 @@ def headers(out):
     tools_theme.emit(themes, out)
 
 
+def flags():
+    """conftest.py's library fixture's extra cc flags for fw.so, from the same variables, so every build of it
+    (video_host.py's too) is alike."""
+    extra = []
+    if os.environ.get('Q2_FW_SANITIZE'):
+        extra += ['-fsanitize=address,undefined', '-fno-sanitize-recover=undefined', '-fno-sanitize=alignment']
+    if os.environ.get('Q2_FW_COVERAGE'):
+        extra += ['--coverage']
+    return extra
+
+
 def build(out, extra=()):
     """Compile everything into out/fw.so, extra going to cc (test/fw/conftest.py's coverage and sanitizers).
     Every static gains a global <file>__<name> a test can reach."""

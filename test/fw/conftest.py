@@ -84,11 +84,7 @@ def high_halves(n):
 def library(tmp_path_factory):
     if os.environ.get('Q2_FW_LIBRARY'):  # one already built: test/cmut/run.py links each mutant's
         return pathlib.Path(os.environ['Q2_FW_LIBRARY'])
-    extra = []
-    if os.environ.get('Q2_FW_SANITIZE'):
-        extra += ['-fsanitize=address,undefined', '-fno-sanitize-recover=undefined', '-fno-sanitize=alignment']
-    if os.environ.get('Q2_FW_COVERAGE'):
-        extra += ['--coverage']
+    extra = host.flags()
     if not os.environ.get('PYTEST_XDIST_WORKER'):
         return host.build(tmp_path_factory.mktemp('fw'), extra)
     # pytest-xdist's workers (-n) share one build, in the folder above their own: the first to ask makes it and the

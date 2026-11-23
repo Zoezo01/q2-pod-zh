@@ -21,7 +21,6 @@ the stubs; its _exit comes back to the parent's fork, which then answers the pid
 answers 0 makes the caller itself the child, as ever. Finding that frame takes x86-64's layout (its
 CFA two words above the frame pointer), so the harness refuses to compile for anything else."""
 import json
-import os
 import re
 import subprocess
 
@@ -98,15 +97,7 @@ int fw_video_writer(void) {
 '''
 
 
-def flags():
-    """conftest.py's extra cc flags for fw.so, from the same variables, so both libraries build alike. A copy of
-    conftest's library fixture, which builds them inline: a change to one goes in both."""
-    extra = []
-    if os.environ.get('Q2_FW_SANITIZE'):
-        extra += ['-fsanitize=address,undefined', '-fno-sanitize-recover=undefined', '-fno-sanitize=alignment']
-    if os.environ.get('Q2_FW_COVERAGE'):
-        extra += ['--coverage']
-    return extra
+flags = host.flags  # conftest.py's extra cc flags for fw.so: the same ones, so both libraries build alike
 
 
 def declared(aux):
