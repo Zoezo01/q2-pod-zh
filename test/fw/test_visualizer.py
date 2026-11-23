@@ -26,6 +26,7 @@ class Vz(C.Structure):
     _fields_ = [('re', C.c_float * N), ('im', C.c_float * N), ('pcm', (C.c_float * 2) * N), ('hann', C.c_float * N),
                 ('level', C.c_float * HALO), ('peak', C.c_float * BARS), ('fall', C.c_float * BARS),
                 ('wave', (C.c_float * W) * 2), ('vu', C.c_float * 2), ('spin', C.c_float), ('bass', C.c_float),
+                ('top', C.c_float),
                 ('held', C.c_uint * BARS), ('lit', C.c_uint * 2), ('bin_rate', C.c_uint), ('w', C.c_int), ('bin', C.c_int * 65),
                 ('ridge', (C.c_float * HALO) * ROWS), ('row', C.c_int),
                 *((k, C.c_void_p) for k in 'win slide page art cover tap'.split()),
@@ -519,7 +520,7 @@ def test_the_other_styles_stay_at_rest(fw, style):
     for now in (100, 140, 180):
         analyze(fw, style, 44100, now=now)
     moved = {'transform': v.re[0] != 123, 'levels': any(v.level), 'caps': any(v.peak), 'wave': any(v.wave[0]),
-             'needles': any(v.vu), 'leds': any(v.lit), 'pulse': v.bass != 0, 'lines': any(map(any, v.ridge)),
+             'needles': any(v.vu), 'leds': any(v.lit), 'pulse': v.bass != 0, 'lines': any(map(any, v.ridge)) or v.top != 0,
              'kick': cz(fw).kick != 0}
     assert {k for k, m in moved.items() if m} == [{'transform', 'levels', 'caps'}, {'wave'}, {'needles', 'leds'},
                                                   {'transform', 'levels', 'pulse'},
@@ -535,7 +536,7 @@ def test_reset_puts_every_style_at_rest(fw):
     v.bass = 0.5  # the halo's pulse
     fw.fn('vis_reset', None)()
     assert max(v.level) == max(v.peak) == max(v.vu) == 0 and max(v.wave[0]) == 0 and list(v.lit) == [0, 0]
-    assert v.bass == 0 and not any(map(any, v.ridge))
+    assert v.bass == v.top == 0 and not any(map(any, v.ridge))
 
 
 # The tap: VIS_N frames VIS_LATENCY_MS behind the last write.
@@ -1161,12 +1162,36 @@ def test_the_pulsar_cuts_a_line_a_tick_tilted_and_flat_at_the_ends(fw):
     for b in range(HALO):
         v.level[b] = 0.8
     analyze(fw, PULSAR, 0)  # nothing heard: the levels fall a tick's VIS_DECAY, to 0.736
+    tilt = 2 * 0.135 / FLOOR_DB
+    top = 0.736 + tilt * 31.5  # the running peak, from rest: the loudest band, the top one tilted
     want = []
     for b in range(HALO):
-        x, lift = axis(b), min(1, max(0, (0.736 + 2 * 0.135 / FLOOR_DB * (b - 31.5) - 0.5) / 0.4)) ** 2
+        x, lift = axis(b), min(1, max(0, (0.736 + tilt * (b - 31.5) - (top + 2 / FLOOR_DB - 0.4)) / 0.4)) ** 2
         edge = min(x, 1 - x) / 0.22
         want.append(lift * (0.5 - 0.5 * math.cos(math.pi * edge) if edge < 1 else 1))
-    assert v.row == 1 and list(v.ridge[1]) == pytest.approx(want, abs=1e-5) and want[0] == 0 == want[-1]
+    assert v.row == 1 and v.top == pytest.approx(top) and want[0] == 0 == want[-1]
+    assert list(v.ridge[1]) == pytest.approx(want, abs=1e-5)
+
+
+def test_the_pulsar_draws_a_quiet_recording_as_tall_as_a_loud_one(fw):
+    """Its scale follows a running peak: 12 dB down, the same line; the peak falls 6 dB a second, never under 40 dB
+    down, and a silent band stays flat."""
+    v = vz(fw)
+    lines = []
+    for down in (0, 12 / FLOOR_DB):
+        v.top = 0
+        for b in range(HALO):
+            v.level[b] = 0.9 - down - 0.004 * abs(b - 30)
+        analyze(fw, PULSAR, 0)
+        lines.append(list(v.ridge[v.row]))
+    assert max(lines[0]) > 0.5 and lines[1] == pytest.approx(lines[0], abs=1e-5)
+    v.top = 0.9
+    for b in range(HALO):
+        v.level[b] = 0
+    analyze(fw, PULSAR, 0, dt=0.5)
+    assert v.top == pytest.approx(0.9 - 3 / FLOOR_DB)
+    analyze(fw, PULSAR, 0, dt=10)
+    assert v.top == pytest.approx(1 - 40 / FLOOR_DB) and not any(v.ridge[v.row])
 
 
 def test_the_pulsar_hides_a_line_behind_one_in_front(fw):
