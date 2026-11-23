@@ -535,12 +535,15 @@ def qs_glyph(glyph, ink):
     polys += [q for a, b in segments for q in butt_stroke(moved([a, b]), 3)]
     polys += [poly for x, y, r in discs for poly in map(moved, path(circle(x, y, r)))]
     return [(polys, paint)]
+def faded(size, layers, opacity):
+    """layers composed on a size px square, a PNG on clear, at opacity."""
+    mark = bytearray(compose((0, 0, size, size), layers))
+    mark[3::4] = bytes(round(a * opacity) for a in mark[3::4])
+    return png(size, size, bytes(mark))
 @functools.lru_cache(maxsize=None)
 def qs_mark(glyph, opacity, ink):
     """One button's glyph, RGBA bytes on clear, at opacity."""
-    mark = bytearray(compose((0, 0, 60, 60), qs_glyph(glyph, ink)))
-    mark[3::4] = bytes(round(a * opacity) for a in mark[3::4])
-    return png(60, 60, bytes(mark))
+    return faded(60, qs_glyph(glyph, ink), opacity)
 def qs_lit():
     """QS_LIT: the names whose button is on, NUL-separated, for navigation.c."""
     return ''.join(f'drop_{n}\\0' for n, (_, lit, _) in QS_BUTTONS.items() if lit)
@@ -887,9 +890,7 @@ def flat_glyph(glyph, ink, size=FLAT_BOX, k=1):
 @functools.lru_cache(maxsize=None)
 def flat_mark(glyph, opacity, ink, size=FLAT_BOX, k=1):
     """One glyph, a PNG on clear, at opacity."""
-    mark = bytearray(compose((0, 0, size, size), flat_glyph(glyph, ink, size, k)))
-    mark[3::4] = bytes(round(a * opacity) for a in mark[3::4])
-    return png(size, size, bytes(mark))
+    return faded(size, flat_glyph(glyph, ink, size, k), opacity)
 def clock_face(half):
     """Set Time's face without its hands, drawn on a -50..50 box: the disc, and 1 to 12 at r 39."""
     k = CLOCK_PX / 100
