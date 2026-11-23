@@ -4614,7 +4614,7 @@ assert [c[0] for c in calls]==['window_manager_close_window_force','navigator_ba
 m=CoverflowMachine(); old=m.open(); m.tracks(); m.mock('navigator_back','window_manager_close_window_force',prefix='c:')
 assert m.call(address=payload_syms['coverflow_goto_album'],args=(m.albums[1],0,0,0),gap=0)==1
 m.page=m.top; assert m.page!=old and [c[2] for c in m.calls if c[0]=='window_manager_close_window_force']==[old]
-assert not m.find('slide_menu') and m.texts()[:5]==['Album 1','T1','Artist','T2','Artist']  # each song's artist under it
+assert not m.find('slide_menu') and m.texts()[:3]==['Album 1','T1','T2']  # no lengths: one line a song, no artist
 assert m.call(address=payload_syms['coverflow_shows_album'],args=(m.albums[1],0,0,0),gap=0)==1
 assert m.call(address=payload_syms['coverflow_shows_album'],args=(m.albums[0],0,0,0),gap=0)==0
 f,ctx=m.handler(m.page,O['EVT_KEY_UP']); assert m.call(O['KEY_RETURN'],address=f,args=(ctx,m.event,0,0),gap=0)==11
@@ -4817,7 +4817,7 @@ row=lambda i: m.handler(m.nodes[m.find('scroll_view',albums)]['children'][i],O['
 f,ctx=row(0); m.call(address=f,args=(ctx,m.event,0,0),gap=0)
 assert m.plays[-1][2:]==(0,0xf001,2) and m.play_names==['a1','b1','b2']; passed()
 f,ctx=row(3); m.call(address=f,args=(ctx,m.event,0,0),gap=0); m.page=m.top
-assert m.nodes[m.top]['name']=='coverflow_page' and m.texts()[:5]==['Beta','b1','Beta Band','b2','Beta Band']; passed()  # the album artist under each
+assert m.nodes[m.top]['name']=='coverflow_page' and m.texts()[:3]==['Beta','b1','b2']; passed()
 # Shuffle plays the decade's songs alone: the records stock's select * fill makes of its one query's rows (the fill
 # stands in here, each row's id naming its record), the library itself never loaded.
 paths=('/mnt/mmc/Music/z4dmr4cvs8lw.flac','/mnt/mmc/Music/mhf1gqxzbiuf.flac')

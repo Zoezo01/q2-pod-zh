@@ -721,20 +721,30 @@ def test_a_centred_album_list_with_no_artist_or_length_keeps_single_rows(fw, ui,
     assert rows == [('One', None)] and heights == {fw.fn('page_h', C.c_int, C.c_int)(48)}
 
 
-def test_a_song_with_no_artist_keeps_a_single_row(fw, ui, song, stock_clock, st):
-    st('scan_durations').value = 0
-    one = song(b'/m/a.flac', b'One')
+def test_a_song_with_no_artist_shows_its_length_alone(fw, ui, song, stock_clock, st):
+    st('scan_durations').value, st('pod_read').value = 1, 1
+    one = song(b'/m/a.flac', b'One', end=200)
     C.c_uint64.from_address(one + O['REC_ARTIST']).value = 0  # NULL, not ''
     _, rows, heights, _ = album_list(fw, ui, song, [one], 2)
-    assert rows == [('One', None)] and heights == {fw.fn('page_h', C.c_int, C.c_int)(48)}
+    assert rows == [('One', '03:20')] and heights == {fw.fn('page_h', C.c_int, C.c_int)(64)}
+
+
+# Without lengths the rows stay one line, as many songs on a screen as before: no artist, the rules still drawn.
+@pytest.mark.parametrize('theme', [0, 2])
+def test_without_lengths_the_rows_stay_one_line_with_no_artist(fw, ui, song, stock_clock, st, theme):
+    st('scan_durations').value = 0
+    tracks = [song(b'/m/a.flac', b'One', b'Band', end=200), song(b'/m/b.flac', b'Two', b'Band')]
+    page, rows, heights, _ = album_list(fw, ui, song, tracks, theme, b'Band')
+    assert rows == [('One', None), ('Two', None)] and heights == {fw.fn('page_h', C.c_int, C.c_int)(48)}
+    assert len(rules(fw, ui, page)) == 2
 
 
 @pytest.mark.parametrize('album_artist,want', [(None, ['X', 'Y']), (b'', ['X', 'Y']), (b'Various', ['Various', 'Various'])])
 def test_a_compilation_shows_each_song_s_artist_unless_the_album_has_one(fw, ui, song, stock_clock, st, album_artist, want):
-    st('scan_durations').value = 0
-    tracks = [song(b'/m/a.flac', b'One', b'X'), song(b'/m/b.flac', b'Two', b'Y')]
+    st('scan_durations').value, st('pod_read').value = 1, 1
+    tracks = [song(b'/m/a.flac', b'One', b'X', end=200), song(b'/m/b.flac', b'Two', b'Y', end=200)]
     _, rows, heights, _ = album_list(fw, ui, song, tracks, 2, album_artist)
-    assert [d for _, d in rows] == want and heights == {fw.fn('page_h', C.c_int, C.c_int)(64)}
+    assert [d for _, d in rows] == [f'{w} · 03:20' for w in want] and heights == {fw.fn('page_h', C.c_int, C.c_int)(64)}
 
 
 @pytest.mark.parametrize('title,canvas', [(b'A' * 34, True), (b'Blue', False)])  # scrolls, or no canvas: no rules

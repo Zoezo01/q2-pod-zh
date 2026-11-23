@@ -3744,34 +3744,34 @@ static int to_tracks(const void *unused) {
         widget_set_visible(cf.covers, 0, 0);
         widget_set_sensitive(cf.covers, 0);
     }
-    /* the album over its tracks, all centred, but under a theme's own rows; there each track's
-     * artist (the album artist when the album has one) leads its line, before any length */
+    /* the album over its tracks, all centred, but under a theme's own rows; there, in a list with
+     * lengths, each track's artist (the album artist when the album has one) leads its line */
     int centred = theme()->page_title_h;
     const char *aa = centred ? P(r, REC_ALBUM_ARTIST) : "";
     if (!aa) aa = "";
     /* one row height a list, as stock's layouter forces item_height on every row: 64 px with a
-     * line under each title once any track has a length or, centred, an artist, an unknown's left
-     * empty */
+     * line under each title once any track has a length, an unknown's left empty but for its
+     * artist; without lengths the rows stay one line, so a screen holds as many songs */
     int tall = 0;
-    for (int i = 0; i < n && !tall; ++i) {
-        void *song = deque_at(cf.tracks, (unsigned)i);
+    for (int i = 0; i < n && !tall; ++i)
         /* NOLINTNEXTLINE(bugprone-signed-char-misuse): only tested for 0, an empty text */
-        tall = *duration_text(name, sizeof name, song) || *track_by(aa, song, centred);
-    }
+        tall = *duration_text(name, sizeof name, deque_at(cf.tracks, (unsigned)i));
     const char *title = P(r, cf.scoped == PLAYLISTS ? REC_TITLE : REC_ALBUM);
     widget_t *view = tall ? page_list(cf.page, cf.body, &cf.title, title, n, 64) : list(title, n);
     if (centred) widget_set_prop_int(cf.title, "style:normal:font_size", cfs.name_px);
     title_rules();
-    /* ponytail: every row is built at once, and in Minimal and Modern each gets a second label once
-     * any song has an artist or a length; a recycled pool of rows if a long album or the Unknown
-     * Album card drags or runs short of memory. */
+    /* ponytail: every row is built at once, each with a second label once any song has a length; a
+     * recycled pool of rows if a long album or the Unknown Album card drags or runs short of
+     * memory. */
     for (int i = 0; i < n; ++i) {
         char duration[24], detail[300];
         void *song = deque_at(cf.tracks, (unsigned)i);
         const char *by = track_by(aa, song, centred), *line = duration;
         duration_text(duration, sizeof duration, song);
-        if (*by) tk_snprintf(detail, sizeof detail, "%s%s%s", by, *duration ? " · " : "", duration);
-        if (*by) line = detail;
+        if (*by && tall) {
+            tk_snprintf(detail, sizeof detail, "%s%s%s", by, *duration ? " · " : "", duration);
+            line = detail;
+        }
         widget_t *row =
             page_row_detail(view, i, track_name(name, sizeof name, song), tall ? line : 0, play);
         if (centred) widget_use_style(widget_get_child(row, 0), "s_scrlabel_white20c");
