@@ -1,6 +1,7 @@
 /* iPod Now Playing's fourth page (docs/ipod.md#visualizer): the music as heard, read from
- * hciplayer's tap (peq.h), in one of four styles after Rockbox's FFT, Oscilloscope and VU Meter
- * plugins; a tap moves to the next style. */
+ * hciplayer's tap (peq.h), in one of six styles after Rockbox's FFT, Oscilloscope and VU Meter
+ * plugins, Apple's radial spectrum, pulsr's ridge and a contour map; a tap moves to the next
+ * style. */
 #include "peq.h"
 #include "offsets.inc"
 
@@ -12,9 +13,19 @@
 #define PAGE_W (vz.w - 2 * VIS_X) /* this page's: the slide's width, 375 or the centred page's 225 */
 #define VIS_H 186            /* tools/ipod.py NP_SLIDE_H, the page's height, from the lyrics' top */
 #define VIS_ART 88           /* the Halo's centre */
+#define VIS_ROWS 20          /* the Pulsar's lines, a tick each */
+#define CONTOUR_LINES 18     /* the contour's ridgelines */
+#define CONTOUR_STEP 10      /* px between a ridgeline's points */
+#define CONTOUR_N ((VIS_W - 1) / CONTOUR_STEP + 2) /* its points: every step and the right edge */
 /* clang-format on */
 #define TAU 6.2831853f
-enum { SPECTRUM, SCOPE, METERS, HALO, STYLES };
+/* The Pulsar's lines rise from RIDGE_FLOOR (30 dB under a full-scale sine, VIS_FLOOR_DB) to full
+ * height at RIDGE_TOP (6 dB under). ponytail: a fixed scale, so a quiet recording draws low lines;
+ * pulsr follows a running peak instead, the upgrade if that shows. */
+#define RIDGE_FLOOR 0.5f
+#define RIDGE_TOP 0.9f
+#define RIDGE_TILT (2 * 0.135f / VIS_FLOOR_DB) /* 2 dB an octave, 0.135 a band */
+enum { SPECTRUM, SCOPE, METERS, HALO, PULSAR, CONTOUR, STYLES };
 
 static struct {
     float re[VIS_N], im[VIS_N], pcm[VIS_N][2], hann[VIS_N]; /* hann[VIS_N / 2] is 0 until filled */
@@ -22,8 +33,10 @@ static struct {
     unsigned held[VIS_BARS], lit[2], bin_rate;
     int w;                 /* the page's width (visualizer_attach) */
     int bin[VIS_HALO + 1]; /* each band's first FFT bin at bin_rate */
+    float ridge[VIS_ROWS][VIS_HALO];
+    int row; /* the newest line in ridge */
 #ifndef PEQ_HOST
-    void *win, *slide, *page, *art, *cover;
+    widget_t *win, *slide, *page, *art, *cover;
     vis_tap *tap;
     unsigned timer, last, named, heard; /* heard: the last tick with audio */
     unsigned retry;                     /* a paint missed while not settled looks again (look) */
@@ -34,6 +47,14 @@ static struct {
                 * track's name shows, and its change repaints */
 #endif
 } vz __attribute__((section(".scratch")));
+
+/* The contour's kick: the bass's last three levels, and the lift its rises give, which falls away
+ * in a quarter second; then its frame: each point's y and its height's shade, 0 to 5. */
+static struct {
+    float last[3], kick;
+    float ridge[CONTOUR_LINES][CONTOUR_N];
+    unsigned char shade[CONTOUR_LINES][CONTOUR_N];
+} cz __attribute__((section(".scratch")));
 
 /* In-place radix-2 FFT of n complex values, n a power of two. */
 static void fft(float *re, float *im, int n) {
@@ -103,6 +124,9 @@ void vis_bands(const float (*pcm)[2], unsigned rate, float *level) {
 
 static float bar(int i) { return (vz.level[2 * i] + vz.level[2 * i + 1]) / 2; }
 
+/* Where the Pulsar draws band b, 0 to 1 across: pulsr's axis, the bass and mids given more room. */
+static float axis(int b) { return (float)pow((double)b / (VIS_HALO - 1), 0.75); }
+
 /* VU position 0 to 1 of a level in VU (dB): proportional to voltage, +3 at the end, as the meter's
  * scale. */
 static float vu_at(float vu) { return (float)pow(10, (vu - 3) / 20); }
@@ -114,13 +138,16 @@ void vis_reset(void) {
     memset(vz.wave, 0, sizeof vz.wave);
     memset(vz.vu, 0, sizeof vz.vu);
     memset(vz.lit, 0, sizeof vz.lit);
+    memset(vz.ridge, 0, sizeof vz.ridge);
     vz.bass = 0;
+    cz.last[0] = cz.last[1] = cz.last[2] = 1;
+    cz.kick = 0;
 }
 
 /* Only the visible style consumes analysis work; scope and meters do not need an FFT. */
 void vis_analyze(int style, unsigned rate, float dt, unsigned now) {
     float target[VIS_HALO] = { 0 };
-    if (style == SPECTRUM || style == HALO) {
+    if (style == SPECTRUM || style == HALO || style == PULSAR || style == CONTOUR) {
         if (rate) vis_bands(vz.pcm, rate, target);
         for (int b = 0; b < VIS_HALO; ++b) {
             float fall = vz.level[b] - VIS_DECAY * dt;
@@ -161,9 +188,42 @@ void vis_analyze(int style, unsigned rate, float dt, unsigned now) {
             vz.vu[ch] += ((to > 1 ? 1 : to) - vz.vu[ch]) * dt / (dt + 0.065f);
             if (peak >= (float)pow(10, VIS_LED_DB / 20.0)) vz.lit[ch] = now + VIS_HOLD_MS;
         }
-    if (style == HALO) {
+    if (style == HALO || style == CONTOUR) {
         float bass = (vz.level[0] + vz.level[2] + vz.level[4] + vz.level[6]) / 4;
         vz.bass += (bass - vz.bass) * 0.5f;
+    }
+    /* A new line: the bands, tilted to the treble, RIDGE_FLOOR to RIDGE_TOP squared, tapered to
+     * flat over each end's 22% by a raised cosine. */
+    if (style == PULSAR) {
+        float *line = vz.ridge[vz.row = (vz.row + 1) % VIS_ROWS];
+        for (int b = 0; b < VIS_HALO; ++b) {
+            float x = axis(b), edge = (x < 1 - x ? x : 1 - x) / 0.22f,
+                  v = (vz.level[b] + RIDGE_TILT * (b - 31.5f) - RIDGE_FLOOR) /
+                      (RIDGE_TOP - RIDGE_FLOOR);
+            v = v < 0 ? 0 : v > 1 ? 1 : v;
+            line[b] = v * v * (edge < 1 ? 0.5f - 0.5f * cosf(TAU / 2 * edge) : 1);
+        }
+    }
+    if (style == CONTOUR) {
+        /* A kick is the bass's rise, unsmoothed, 40 to 120 Hz, over the lowest of its last three
+         * frames, so an attack two or three frames share counts whole: 8.5 dB is a full lift
+         * (levels span VIS_FLOOR_DB). Under -15 dB it fades out, so quiet music kicks less, and a
+         * held bassline lifts nothing. It lifts at once and falls away in about a quarter second.
+         */
+        float raw = 0;
+        for (int b = 0; b < 12; ++b) raw += target[b] / 12;
+        float floor = cz.last[0];
+        for (int i = 1; i < 3; ++i)
+            if (cz.last[i] < floor) floor = cz.last[i];
+        float gate = (raw - 0.35f) / 0.4f, hit = (raw - floor) * VIS_FLOOR_DB / 8.5f,
+              fall = cz.kick * (1 - dt * 5) - dt * 1.5f;
+        hit *= gate < 0 ? 0 : gate > 1 ? 1 : gate;
+        hit = hit > 1 ? 1 : hit;
+        cz.last[2] = cz.last[1];
+        cz.last[1] = cz.last[0];
+        cz.last[0] = raw;
+        cz.kick = hit > fall ? hit : fall;
+        if (cz.kick < 0) cz.kick = 0;
     }
 }
 
@@ -296,7 +356,7 @@ static void arm(void) {
     vz.timer = timer_add(tick, 0, 1000 / VIS_FPS);
 }
 
-static void line(void *vg, float x0, float y0, float x1, float y1) {
+static void line(vgcanvas_t *vg, float x0, float y0, float x1, float y1) {
     vgcanvas_begin_path(vg);
     vgcanvas_move_to(vg, x0, y0);
     vgcanvas_line_to(vg, x1, y1);
@@ -305,7 +365,7 @@ static void line(void *vg, float x0, float y0, float x1, float y1) {
 
 /* A rounded rectangle as a sub-path of the current path. Stock vgcanvas_rounded_rect begins a new
  * path itself, so in one path of 32 bars only the last survived; its arcs and lines do not. */
-static void capsule(void *vg, float x, float y, float w, float h, float r) {
+static void capsule(vgcanvas_t *vg, float x, float y, float w, float h, float r) {
     if (r > h / 2) r = h / 2;
     vgcanvas_move_to(vg, x, y + r);
     vgcanvas_arc(vg, x + r, y + r, r, TAU / 2, TAU * 3 / 4, 0);
@@ -315,7 +375,7 @@ static void capsule(void *vg, float x, float y, float w, float h, float r) {
     vgcanvas_close_path(vg);
 }
 
-static void disc(void *vg, float x, float y, float r, unsigned color) {
+static void disc(vgcanvas_t *vg, float x, float y, float r, unsigned color) {
     vgcanvas_begin_path(vg);
     vgcanvas_arc(vg, x, y, r, 0, TAU, 0);
     vgcanvas_set_fill_color(vg, color);
@@ -326,7 +386,7 @@ static void disc(void *vg, float x, float y, float r, unsigned color) {
  * its bright tint at full height, a cap on each peak, and a faint reflection under the baseline. */
 #define BASE 142
 #define TALL 126
-static void spectrum(void *vg, unsigned tone) {
+static void spectrum(vgcanvas_t *vg, unsigned tone) {
     float pitch = (float)PAGE_W / VIS_BARS, w = pitch * 0.66f;
     /* Three fills for all the bars: the bars (one gradient, in page coordinates, serves them all),
      * their reflections and their caps. A fill each costs a frame. */
@@ -352,7 +412,7 @@ static void spectrum(void *vg, unsigned tone) {
 
 /* Rockbox's oscilloscope: the right channel a faint accent line, the left over it with a glow, a
  * wide faint stroke under a fine bright one; a point every 2 px, which the anti-aliasing hides. */
-static void scope(void *vg, unsigned tone) {
+static void scope(vgcanvas_t *vg, unsigned tone) {
     static const struct {
         float width;
         unsigned alpha;
@@ -376,7 +436,7 @@ static void scope(void *vg, unsigned tone) {
 
 /* Rockbox's analog VU meters, left and right, in the accent's palette: an arc from -20 to +3 VU,
  * heavier and brighter past 0, ticks and labels, the needle on its pivot and a peak LED. */
-static void meters(void *vg, void *canvas, unsigned tone, unsigned now) {
+static void meters(vgcanvas_t *vg, canvas_t *canvas, unsigned tone, unsigned now) {
     static const signed char marks[] = { -20, -10, -7, -5, -3, -2, -1, 0, 1, 2, 3 };
     static const char *const labels[] = { "-20", "-10", "", "-5", "-3", "", "", "0", "", "", "+3" };
     /* 80 degrees of arc: the end labels of the two meters stay apart, and the face centres on the
@@ -430,7 +490,7 @@ static void meters(void *vg, void *canvas, unsigned tone, unsigned now) {
 
 /* Apple's radial spectrum: VIS_HALO bars, mirrored left and right, radiating from Now Playing's art
  * in a circle, turning slowly, with the bass pulsing the ring. */
-static void halo(void *vg, unsigned tone) {
+static void halo(vgcanvas_t *vg, unsigned tone) {
     float cx = vz.w / 2.0f, cy = VIS_H / 2.0f, art = VIS_ART / 2.0f, r0 = art + 7 + 5 * vz.bass;
     vgcanvas_set_line_width(vg, art * 0.42f + 2); /* round the art: black over its corners */
     vgcanvas_begin_path(vg);
@@ -461,6 +521,118 @@ static void halo(void *vg, unsigned tone) {
     vgcanvas_set_line_cap(vg, "butt");
 }
 
+/* pulsr's ridge (github.com/1337raspberry/pulsr): the last VIS_ROWS lines stacked back up the page,
+ * the newest in front, each further back higher, flatter and darker. A line hides where one in
+ * front stands over it, 2 px clear (a floating horizon), so nothing is filled. */
+static void pulsar(vgcanvas_t *vg, unsigned tone) {
+    float hor[VIS_HALO], at[VIS_HALO];
+    for (int i = 0; i < VIS_HALO; ++i) hor[i] = VIS_H, at[i] = VIS_X + PAGE_W * axis(i);
+    vgcanvas_set_line_width(vg, 1.5f);
+    for (int r = 0; r < VIS_ROWS; ++r) { /* front to back, 4 lines a shade */
+        const float *v = vz.ridge[(vz.row + VIS_ROWS - r) % VIS_ROWS];
+        float d = (float)r / (VIS_ROWS - 1), base = 150 - 110 * d, rise = 100 - 60 * d, x0 = at[0],
+              y0 = base - v[0] * rise;
+        int pen = y0 <= hor[0];
+        if (r % 4 == 0) vgcanvas_begin_path(vg);
+        if (pen) vgcanvas_move_to(vg, x0, y0);
+        for (int i = 1; i < VIS_HALO; ++i) {
+            float x1 = at[i], y1 = base - v[i] * rise, d0 = y0 - hor[i - 1], d1 = y1 - hor[i];
+            if ((d1 <= 0) != pen) { /* over the horizon or under it, where it crosses */
+                float t = d0 / (d0 - d1), x = x0 + t * (x1 - x0), y = y0 + t * (y1 - y0);
+                if (pen)
+                    vgcanvas_line_to(vg, x, y);
+                else
+                    vgcanvas_move_to(vg, x, y);
+                pen = !pen;
+            }
+            if (pen) vgcanvas_line_to(vg, x1, y1);
+            if (y0 - 2 < hor[i - 1]) hor[i - 1] = y0 - 2;
+            x0 = x1, y0 = y1;
+        }
+        if (y0 - 2 < hor[VIS_HALO - 1]) hor[VIS_HALO - 1] = y0 - 2;
+        if (r % 4 == 3) {
+            vgcanvas_set_stroke_color(vg, rgba(mix(tone, 0, 20 * (r / 4), 100), 255));
+            vgcanvas_stroke(vg);
+        }
+    }
+}
+
+/* The levels' mean over bands [from, to). */
+static float bands_mean(int from, int to) {
+    float sum = 0;
+    for (int b = from; b < to; ++b) sum += vz.level[b];
+    return sum / (to - from);
+}
+
+/* A bell 1 at z = 0, about exp(-z * z / w) near it: stock imports no expf. */
+static float bell(float z, float w) {
+    float s = 1 + z * z / (2 * w);
+    return 1 / (s * s);
+}
+
+/* A contour map of the music: CONTOUR_LINES ridgelines across the page over a height field, a
+ * mound the bass and its kicks lift, a second the mids lift, and ripples the mids and highs stir,
+ * all drifting with time. Each line stays above the name's row, and its segments take one of six
+ * shades by height, the accent's dark shade low to its bright tint high, a stroke a shade (as the
+ * Halo's). The field is separable, so each point is a few multiply-adds on tables of x and of
+ * line. */
+static void contour(void *vg, unsigned tone) {
+    static const unsigned alpha[6] = { 0x90, 0xb0, 0xd0, 0xe8, 0xff, 0xff };
+    int n = (PAGE_W - 1) / CONTOUR_STEP + 2;
+    float t = vz.spin * 6, mid = bands_mean(16, 40), high = bands_mean(40, VIS_HALO),
+          lift = 0.15f + 0.6f * vz.bass + 0.9f * cz.kick, px = 0.56f + 0.12f * sinf(t * 0.3f),
+          qx = 0.3f + 0.12f * sinf(t * 0.21f + 1);
+    /* along x: the two mounds, and the three ripples' sines and cosines (sin(ku + p) is
+     * sin ku cos p + cos ku sin p, p a line's) */
+    float gx[CONTOUR_N], bx[CONTOUR_N], wave[3][2][CONTOUR_N];
+    static const float freq[3] = { 11, 19, 5 };
+    for (int i = 0; i < n; ++i) {
+        float u = i < n - 1 ? (float)(i * CONTOUR_STEP) / PAGE_W : 1;
+        gx[i] = bell(u - px, 0.045f);
+        bx[i] = bell(u - qx, 0.025f);
+        for (int r = 0; r < 3; ++r)
+            wave[r][0][i] = sinf(freq[r] * u), wave[r][1][i] = cosf(freq[r] * u);
+    }
+    for (int l = 0; l < CONTOUR_LINES; ++l) {
+        float d = (float)l / (CONTOUR_LINES - 1), base = 30 + d * (VIS_H - 62),
+              gy = lift * bell(d - 0.55f, 0.06f), by = 0.9f * mid * bell(d - 0.35f, 0.03f),
+              phase[3] = { t + 14 * d, 23 * d - 1.6f * t, 0.6f * t - 9 * d },
+              amp[3] = { 0.45f + 0.6f * mid, 0.15f + 0.5f * high, 0.5f }, sp[3], cp[3];
+        for (int r = 0; r < 3; ++r)
+            sp[r] = sinf(phase[r]) * amp[r], cp[r] = cosf(phase[r]) * amp[r];
+        for (int i = 0; i < n; ++i) {
+            float x = gx[i] * gy + bx[i] * by, h = x * 1.4f / (x + 0.6f), ripple = 0;
+            for (int r = 0; r < 3; ++r) ripple += wave[r][0][i] * cp[r] + wave[r][1][i] * sp[r];
+            if (h > 0.98f) h = 0.98f; /* soft to here */
+            float y = base - (64 + 16 * cz.kick) * h - 8 * ripple * (0.45f + h);
+            int shade = (int)(h * 6);
+            cz.ridge[l][i] = y < 2 ? 2 : y > VIS_H - 26 ? VIS_H - 26 : y; /* the name's row below */
+            cz.shade[l][i] = (unsigned char)(shade > 5 ? 5 : shade);
+        }
+    }
+    vgcanvas_set_line_cap(vg, "round");
+    vgcanvas_set_line_width(vg, 1.25f);
+    /* shades 0 to 5, a stroke each */
+    for (int k = 0; k < 6; ++k) {
+        vgcanvas_begin_path(vg);
+        for (int l = 0; l < CONTOUR_LINES; ++l)
+            for (int i = 0, on = 0; i < n - 1; ++i) {
+                if (cz.shade[l][i] != k) {
+                    on = 0;
+                    continue;
+                }
+                float x0 = VIS_X + (float)(i * CONTOUR_STEP),
+                      x1 = i + 1 < n - 1 ? x0 + CONTOUR_STEP : VIS_X + PAGE_W;
+                if (!on) vgcanvas_move_to(vg, x0, cz.ridge[l][i]);
+                vgcanvas_line_to(vg, x1, cz.ridge[l][i + 1]);
+                on = 1;
+            }
+        vgcanvas_set_stroke_color(vg, rgba(mix(DARK(tone), BRIGHT(tone), 20 * k, 100), alpha[k]));
+        vgcanvas_stroke(vg);
+    }
+    vgcanvas_set_line_cap(vg, "butt");
+}
+
 /* A paint missed while not settled: once settled, the page paints again. */
 static int look(const void *unused) {
     if (on_page() && !settled()) return 8; /* RET_REPEAT: an overlay can outlast one retry. */
@@ -473,8 +645,9 @@ static int look(const void *unused) {
  * over the slide area, and for 1.5 s after a change the style's name, fading over its last half
  * second. Drawing on the window, clipped to the slide area, not on the page: the slide_view clips
  * the page it was given at run time to a sliver. Painting starts the timer. */
-void visualizer_paint(void *w, void *canvas) {
-    static const char *const names[] = { "频谱", "示波器", "VU 表", "光环" };
+void visualizer_paint(widget_t *w, canvas_t *canvas) {
+    static const char *const names[] = { "频谱", "示波器", "VU 表",
+                                         "光环", "脉冲星", "轮廓" };
     if (!w) return;
     if (w == vz.page) { /* the page paints first, its canvas x 0 only when still */
         vz.page_x = I(canvas, CANVAS_X) - vz.ox;
@@ -497,7 +670,7 @@ void visualizer_paint(void *w, void *canvas) {
     I(canvas, CANVAS_X) +=
         x; /* the slide area's origin, for the vector drawing and the text alike */
     I(canvas, CANVAS_Y) += y;
-    void *vg = canvas_get_vgcanvas(canvas);
+    vgcanvas_t *vg = canvas_get_vgcanvas(canvas);
     unsigned tone = accent_tone(2), now = time_now_ms();
     if (vg) {
         vgcanvas_save(vg);
@@ -508,8 +681,12 @@ void visualizer_paint(void *w, void *canvas) {
             scope(vg, tone);
         else if (vz.style == METERS)
             meters(vg, canvas, tone, now);
-        else
+        else if (vz.style == HALO)
             halo(vg, tone);
+        else if (vz.style == PULSAR)
+            pulsar(vg, tone);
+        else
+            contour(vg, tone);
         vgcanvas_restore(vg);
     }
     unsigned shown = now - vz.named;
@@ -517,8 +694,8 @@ void visualizer_paint(void *w, void *canvas) {
         caption(canvas, names[vz.style], 0, VIS_H - 22, vz.w, 20, 14,
                 rgba(0xaaaaaa, shown < 1000 ? 255 : 255 * (1500 - shown) / 500));
     else if (vz.quiet) { /* the track: title · artist, or the title alone, trimmed to fit */
-        void *tl = widget_lookup(vz.win, "scrlabel_title", 1),
-             *al = widget_lookup(vz.win, "scrlabel_artist", 1);
+        widget_t *tl = widget_lookup(vz.win, "scrlabel_title", 1),
+                 *al = widget_lookup(vz.win, "scrlabel_artist", 1);
         const unsigned *t = tl ? widget_get_text(tl) : 0, *a = al ? widget_get_text(al) : 0;
         unsigned text[160], n = 0, title;
         while (t && *t && n < 100) text[n++] = *t++;
@@ -537,7 +714,7 @@ void visualizer_paint(void *w, void *canvas) {
     canvas_set_clip_rect(canvas, old);
 }
 
-static int next_style(void *ctx, void *event) {
+static int next_style(void *ctx, event_t *event) {
     vz.style = (vz.style + 1) % STYLES;
     vis_reset();
     vz.named = time_now_ms() | 1; /* never 0, which is none */
@@ -546,12 +723,12 @@ static int next_style(void *ctx, void *event) {
     return 0;
 }
 
-static int slid(void *ctx, void *event) {
+static int slid(void *ctx, event_t *event) {
     arm();
     return 0;
 }
 
-static int gone(void *win, void *event) {
+static int gone(void *win, event_t *event) {
     if (win == vz.win) {
         stop_timer(&vz.timer);
         stop_timer(&vz.retry);
@@ -561,9 +738,9 @@ static int gone(void *win, void *event) {
 }
 
 /* ringnav_playing: the page joins the slide_view's art, lyrics and info pages, and its dots. */
-void visualizer_attach(void *win) {
-    void *slide = widget_lookup(win, "slide_view", 1),
-         *dots = widget_lookup(win, "slide_indicator1", 1);
+void visualizer_attach(widget_t *win) {
+    widget_t *slide = widget_lookup(win, "slide_view", 1),
+             *dots = widget_lookup(win, "slide_indicator1", 1);
     if (!slide) return;
     vz.style = config_value("IPOD", "VIS", STYLES, 0);
     vz.win = win;
@@ -572,7 +749,7 @@ void visualizer_attach(void *win) {
     vz.w = I(slide, W_W) > 0 && I(slide, W_W) <= 375 ? I(slide, W_W) : 375;
     /* Classic's slide starts higher, its lyrics down it as far (tools/ipod.py NP_IPOD_LIFT): the
      * page starts where they do, so it stays where the others have it on screen */
-    void *lrc = widget_lookup(slide, "view_lrc", 1);
+    widget_t *lrc = widget_lookup(slide, "view_lrc", 1);
     int top = lrc ? I(lrc, W_Y) : 0;
     vz.page = list_item_create(slide, 0, top, vz.w, VIS_H);
     widget_use_style(vz.page, "s_listitem_black");
@@ -580,7 +757,8 @@ void visualizer_attach(void *win) {
     /* The art is the window's child, over the slide area's centre, for the same reason as the
      * drawing. */
     vz.ox = 0, vz.oy = top;
-    for (void *p = slide; p && p != win; p = P(p, W_PARENT)) vz.ox += I(p, W_X), vz.oy += I(p, W_Y);
+    for (widget_t *p = slide; p && p != win; p = P(p, W_PARENT))
+        vz.ox += I(p, W_X), vz.oy += I(p, W_Y);
     vz.art = image_create(win, vz.ox + (vz.w - VIS_ART) / 2, vz.oy + (VIS_H - VIS_ART) / 2, VIS_ART,
                           VIS_ART);
     widget_set_sensitive(vz.art, 0);

@@ -412,12 +412,7 @@ def test_with_resume_on_connect_play_on_the_link_plays(fw):
     assert player.toggles() == 1
 
 
-# Routing: video, radio, Spotify, then stock's player.
-
-class Vid(C.Structure):
-    _fields_ = [*((k, C.c_int) for k in 'paused volume gain pid sock seek'.split()),
-                *((k, C.c_uint) for k in 'polled control_at seek_at key at paused_at'.split())]
-
+# Routing: radio, Spotify, then stock's player.
 
 class List(C.Structure):
     _fields_ = [('buf', C.c_void_p), ('len', C.c_uint), ('n', C.c_int), ('truncated', C.c_int),
@@ -489,36 +484,6 @@ def test_a_card_game_with_the_sound_lets_a_headset_pause_what_plays(fw, how):
     assert player.toggles() == 1 and player.status == PAUSED
 
 
-def test_a_playing_video_takes_the_keys(fw):
-    player = Player(fw)
-    fw.var('books__vid', Vid).pid = 4321
-    fw.mock('fw_socket', lambda *_: 7)
-    fw.fn('media_key', None, C.c_uint)(KEY_PLAY)
-    assert player.toggles() == 0 and fw.fn('media_owner', C.c_int)() == 4
-
-
-def test_a_video_pauses_and_resumes_by_the_ears(fw):
-    player = Player(fw)
-    vid = fw.var('books__vid', Vid)
-    vid.pid = 4321
-    fw.mock('fw_socket', lambda *_: 7)
-    ears(fw, player, 3, 1)
-    assert vid.paused == 1 and player.toggles() == 0
-    ears(fw, player, 3)
-    assert vid.paused == 0
-
-
-def test_another_video_cancels_the_resume(fw):
-    player = Player(fw)
-    vid = fw.var('books__vid', Vid)
-    vid.pid = 4321
-    fw.mock('fw_socket', lambda *_: 7)
-    ears(fw, player, 3, 1)
-    vid.pid = 4322  # another video since, paused: another session
-    ears(fw, player, 3)
-    assert vid.paused == 1 and sent(fw) == [b'a']
-
-
 def test_a_radio_stops_and_starts_again_by_the_ears(fw):
     player = Player(fw)
     rd, keep = radio(fw)
@@ -547,7 +512,7 @@ def test_spotify_resumes_by_the_ears_only_on_its_track(fw, track, want):
     assert sent(fw) == want and player.toggles() == 0
 
 
-@pytest.mark.parametrize('running', [dict(video=4321), dict(radio=9), dict(spotify=1)])
+@pytest.mark.parametrize('running', [dict(radio=9), dict(spotify=1)])
 @pytest.mark.parametrize('page', ['tidal_album', 'tidal_'])
 def test_tidal_on_top_keeps_the_keys_with_stock_s_player(fw, page, running):
     player = Player(fw)
@@ -582,10 +547,8 @@ def test_a_focused_page_whose_player_isn_t_running_leaves_the_key_to_the_one_pla
     assert sent(fw) == [command] and player.toggles() == 0
 
 
-def players(fw, video=0, radio=0, spotify=0):
-    """Which players run: video (books.c vid.pid), radio (radio.c rd.active, rd.pid; q2video quits when told),
-    Spotify (spotify.c sp.active)."""
-    fw.var('books__vid', Vid).pid = video
+def players(fw, radio=0, spotify=0):
+    """Which players run: radio (radio.c rd.active, rd.pid; q2video quits when told), Spotify (spotify.c sp.active)."""
     rd = fw.var('radio__rd', Rd)
     rd.pid, rd.active = radio, bool(radio)
     sp = fw.var('spotify__sp', Sp)
@@ -599,10 +562,9 @@ def sent(fw):
     return [C.string_at(a[1], a[2]) for _, a in fw.calls('fw_sendto')]
 
 
-@pytest.mark.parametrize('video, radio, spotify, owner', [(0, 0, 0, 1), (0, 0, 1, 2), (0, 9, 1, 3), (5, 9, 1, 4),
-                                                          (5, 0, 0, 4), (0, 9, 0, 3)])
-def test_the_owner_is_video_then_radio_then_spotify_then_stock(fw, video, radio, spotify, owner):
-    players(fw, video, radio, spotify)
+@pytest.mark.parametrize('radio, spotify, owner', [(0, 0, 1), (0, 1, 2), (9, 1, 3), (9, 0, 3)])
+def test_the_owner_is_radio_then_spotify_then_stock(fw, radio, spotify, owner):
+    players(fw, radio, spotify)
     assert fw.fn('media_owner', C.c_int)() == owner
 
 
@@ -634,9 +596,9 @@ def test_headphones_required_with_none_skips_no_track(fw, key, skip, forbidden):
     assert len(fw.calls(skip)) == (not forbidden)
 
 
-def test_a_focused_spotify_page_takes_the_keys_from_a_video(fw):
+def test_a_focused_spotify_page_takes_the_keys_from_a_radio(fw):
     player = Player(fw)
-    players(fw, video=5, spotify=1)
+    players(fw, radio=9, spotify=1)
     top_window(fw, 'spotify_page')
     fw.fn('media_key', None, C.c_uint)(KEY_FWD_BTN)
     assert sent(fw) == [b'n'] and player.toggles() == 0
@@ -650,28 +612,18 @@ def test_a_playing_radio_takes_the_keys(fw):
 
 
 def commands(fw):
-    """Each datagram to the players' sockets as (path, data), read in the call: video_key's is on its stack."""
+    """Each datagram to the players' sockets as (path, data), read in the call: its address is on dgram_send's stack."""
     out = []
     fw.mock('fw_sendto', lambda s, data, n, flags, to, *_: out.append((C.string_at(to + 2), C.string_at(data, n))) or n)
     return out
 
 
-@pytest.mark.parametrize('other', [dict(radio=9), dict(spotify=1)])
-def test_a_video_takes_the_keys_before_a_radio_or_spotify(fw, other):
+def test_a_radio_takes_the_keys_before_spotify(fw):
     Player(fw)
-    players(fw, video=5, **other)
+    players(fw, radio=9, spotify=1)
     out = commands(fw)
     fw.fn('media_key', None, C.c_uint)(KEY_PLAY)
-    assert out == [(b'/tmp/q2video.sock', b'p')]
-
-
-def test_a_focused_radio_page_takes_the_keys_from_a_video(fw):
-    Player(fw)
-    players(fw, video=5)
-    rd, keep = radio(fw)
-    page = top_window(fw, 'radio_page')
-    fw.fn('media_key', None, C.c_uint)(KEY_PLAY)
-    assert sent(fw) == [b'q'] and rd.pid == 0 and fw.var('books__vid', Vid).paused == 0
+    assert out == [(b'/tmp/q2radio.sock', b'q')]
 
 
 @pytest.mark.parametrize('playing, command', [(0, b's'), (1, b'P')])

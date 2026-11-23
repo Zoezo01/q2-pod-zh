@@ -8,7 +8,7 @@
  * failed): one word, so the UI thread can't see the flag before the value. search_px:
  * search_edit's size in its disabled state, 0 until set. */
 static struct {
-    void *msg_src, *msg_line, *msg_btn;
+    widget_t *msg_src, *msg_line, *msg_btn;
     int msg_total;
     volatile int msg_counting;
     short msg_part;
@@ -28,16 +28,16 @@ static unsigned kb_ramp(int y) {
     return mix(rgb[k], rgb[k + 1], y - rows[k], rows[k + 1] - rows[k]);
 }
 /* The ramp's screen rows y0 up to y1, where the canvas starts at screen row top. */
-void paint_ramp(void *canvas, int y0, int y1, int top) {
+void paint_ramp(canvas_t *canvas, int y0, int y1, int top) {
     for (int y = y0; y < y1; ++y) bar_rect(canvas, RGBA(kb_ramp(y)), 0, y - top, 375, 1);
 }
 /* A button of the keyboard's: its panel's page's row's. */
-int kb_key(void *w) {
+int kb_key(widget_t *w) {
     if (!st.kb_win || !w) return 0;
     for (int i = 0; i < 4 && w; ++i) w = P(w, W_PARENT);
     return w == st.kb_win;
 }
-void kb_paint_key(void *w, void *canvas) {
+void kb_paint_key(widget_t *w, canvas_t *canvas) {
     static const stops_t plain = { 5,
                                    { 0, 6, 45, 85, 100 },
                                    { 0xfbfbfb, 0xf4f4f4, 0xeeeef0, 0xe3e4e6, 0xdadbdd } },
@@ -77,7 +77,7 @@ void kb_paint_key(void *w, void *canvas) {
     stock_canvas_set_fill_color(canvas, fill);
 }
 /* The field's image: 15 px caps round a stretched column, the row under it included. */
-static void paint_field_plain(void *w, void *canvas, int x, int y, int fw) {
+static void paint_field_plain(widget_t *w, canvas_t *canvas, int x, int y, int fw) {
     unsigned bitmap[64]; /* bitmap_t */
     if (widget_load_image(w, "classic_light_field", bitmap)) return;
     rect_t left = { 0, 0, 15, 31 }, mid = { 15, 0, 2, 31 }, right = { 17, 0, 15, 31 };
@@ -88,14 +88,14 @@ static void paint_field_plain(void *w, void *canvas, int x, int y, int fw) {
     canvas_draw_image(canvas, bitmap, &right, &to_right);
 }
 /* ... with the glass in it. */
-void paint_field(void *w, void *canvas, int x, int y, int fw) {
+void paint_field(widget_t *w, canvas_t *canvas, int x, int y, int fw) {
     paint_field_plain(w, canvas, x, y, fw);
     paint_art(w, canvas, "classic_light_field_glass", x + 10, y + 7);
 }
 /* Stock's search_edit is disabled, so it paints in that state, hint and query alike: the hint's
  * size (search_layout's) only while it's empty. Written once per change: this is on the paint. */
-static void search_hint(void *win) {
-    void *edit = widget_lookup(win, "search_edit", 1);
+static void search_hint(widget_t *win) {
+    widget_t *edit = widget_lookup(win, "search_edit", 1);
     const unsigned *text = edit ? widget_get_text(edit) : (void *)0;
     int px = text && *text ? 26 : st.kb_win ? 14 : 19;
     char key[STYLE_KEY];
@@ -106,11 +106,12 @@ static void search_hint(void *win) {
 /* The search field's box and its children's: over the keyboard with the keyboard up, in the strip
  * with it down, where stock's toolbar hides and only the Return key goes back. The toolbar's return
  * is the chevron's tap. */
-static void search_layout(void *win, int keyboard) {
+static void search_layout(widget_t *win, int keyboard) {
     cp.search_px = 0; /* search_hint's size follows the field */
-    void *nav = widget_lookup(win, "view_navbar", 1),
-         *item = widget_lookup(win, "list_item_search", 1),
-         *edit = widget_lookup(win, "search_edit", 1), *glass = widget_lookup(win, "img_search", 1);
+    widget_t *nav = widget_lookup(win, "view_navbar", 1),
+             *item = widget_lookup(win, "list_item_search", 1),
+             *edit = widget_lookup(win, "search_edit", 1),
+             *glass = widget_lookup(win, "img_search", 1);
     int fw = keyboard ? 244 : 327;
     if (nav) {
         widget_set_visible(nav, keyboard, 0);
@@ -129,28 +130,28 @@ static void search_layout(void *win, int keyboard) {
     if (glass) widget_move_resize(glass, 0, 0, 32, 30);
     widget_invalidate_force(win, (void *)0);
 }
-static int kb_gone(void *win, void *event) {
+static int kb_gone(void *win, event_t *event) {
     if (win != st.kb_win) return 0;
     st.kb_win = (void *)0;
     if (st.search_win) search_layout(st.search_win, 0);
     return 0;
 }
-void kb_open(void *win) {
+void kb_open(widget_t *win) {
     static const char *const state[] = { "normal", "disable", "focused" };
     char key[STYLE_KEY];
-    void *cand = widget_lookup(win, "candidates", 1);
+    widget_t *cand = widget_lookup(win, "candidates", 1);
     for (unsigned i = 0; cand && i < sizeof state / sizeof *state; ++i)
         widget_set_prop_int(cand, style_key(key, state[i], "bg_color"), 0);
     st.kb_win = win;
     widget_on(win, EVT_DESTROY, kb_gone, win);
     if (st.search_win) search_layout(st.search_win, 1);
 }
-static int search_gone(void *win, void *event) {
+static int search_gone(void *win, event_t *event) {
     if (win == st.search_win) st.search_win = st.search_tabs = (void *)0;
     return 0;
 }
 /* An edit clear, in the field's dark text, over paint_field's image, its text margin in from it. */
-static void search_field_margin(void *edit, int margin) {
+static void search_field_margin(widget_t *edit, int margin) {
     static const char *const edit_state[] = { "normal", "focused",    "disable",
                                               "error",  "empty",      "empty_focus",
                                               "over",   "empty_over", "changed" };
@@ -165,12 +166,12 @@ static void search_field_margin(void *edit, int margin) {
     }
     text_ink(edit, 0xff111111u, INK_EDIT);
 }
-static void search_field_style(void *edit) { search_field_margin(edit, 32); }
+static void search_field_style(widget_t *edit) { search_field_margin(edit, 32); }
 /* A hint too wide for the room at the typed text's 26 takes a size of its own; none under 12, the
  * smallest worth reading, however long a playlist's name.
  * ponytail: stock's face averages 0.39 px a character per px; a hint of wide letters can still cut.
  */
-static void field_tips(void *edit, const char *tips, int room) {
+static void field_tips(widget_t *edit, const char *tips, int room) {
     static const char *const empty[] = { "empty", "empty_focus", "empty_over" };
     char key[STYLE_KEY];
     int fit = room * 100 / (39 * (int)strlen(tips) + 1);
@@ -179,7 +180,7 @@ static void field_tips(void *edit, const char *tips, int room) {
     for (unsigned k = 0; fit < 26 && k < sizeof empty / sizeof *empty; ++k)
         widget_set_prop_int(edit, style_key(key, empty[k], "font_size"), fit);
 }
-static int t9_gone(void *ctx, void *event) {
+static int t9_gone(void *ctx, event_t *event) {
     st.t9_page = st.t9_back = (void *)0;
     return 0;
 }
@@ -189,10 +190,10 @@ static int t9_gone(void *ctx, void *event) {
  * box's foot clears T9's top, page y 30, so the keyboard doesn't move the page. Its hint has the
  * 212 px past the glass, as Search's does.
  */
-void t9_box(void *page, void *edit, const char *tips) {
+void t9_box(widget_t *page, widget_t *edit, const char *tips) {
     widget_set_prop_str(edit, "tips", tips);
     if (!classic_pages()) return;
-    void *title = text(page, 0, 0, 375, 28);
+    widget_t *title = text(page, 0, 0, 375, 28);
     widget_set_text_utf8(title, "搜索");
     widget_set_name(title, PAGE_TITLE);
     widget_set_visible(title, 0, 0);
@@ -206,7 +207,7 @@ void t9_box(void *page, void *edit, const char *tips) {
 /* New Playlist and Rename, stock's dialogs as they load under Classic: the keyboard's page under
  * the status bar, which says what's asked, the white chevron over stock's Return, a field with no
  * glass, its hint a page's muted. Every name stock looks up stays. */
-static int pl_box_gone(void *win, void *event) {
+static int pl_box_gone(void *win, event_t *event) {
     if (win == st.pl_box) st.pl_box = (void *)0;
     return 0;
 }
@@ -216,9 +217,11 @@ static int pl_box_due(const void *info) {
     (void)info;
     static const char *const empty[] = { "empty", "empty_focus", "empty_over" };
     char key[STYLE_KEY];
-    void *win = st.pl_box, *lists = P(p_deque_playlist, 0);
+    widget_t *win = st.pl_box;
+    void *lists = P(p_deque_playlist, 0);
     if (!win) return 0;
-    void *edit = widget_lookup(win, "ssedit", 1), *r = (void *)0;
+    widget_t *edit = widget_lookup(win, "ssedit", 1);
+    void *r = (void *)0;
     const char *title = "新建播放列表", *tips = "播放列表名称";
     if (!edit) {
         edit = widget_lookup(win, "edit", 1);
@@ -240,14 +243,14 @@ static int pl_box_due(const void *info) {
     }
     return 0;
 }
-void pl_box_open(void *win) {
+void pl_box_open(widget_t *win) {
     static const char *const state[] = { "normal", "pressed", "over", "disable", "focused" };
     static const char *const prop_name[] = { "bg_color", "border_color", "round_radius" };
     char key[STYLE_KEY];
-    void *item =
-             widget_lookup(win, "list_item_ssedit", 1) ?: widget_lookup(win, "list_item_edit", 1),
-         *edit = widget_lookup(win, "ssedit", 1) ?: widget_lookup(win, "edit", 1),
-         *back = widget_lookup(win, "img_return", 1);
+    widget_t *item = widget_lookup(win, "list_item_ssedit", 1)
+                         ?: widget_lookup(win, "list_item_edit", 1),
+             *edit = widget_lookup(win, "ssedit", 1) ?: widget_lookup(win, "edit", 1),
+             *back = widget_lookup(win, "img_return", 1);
     if (!item || !edit || !back) return;
     for (unsigned s = 0; s < sizeof state / sizeof *state; ++s)
         for (unsigned k = 0; k < sizeof prop_name / sizeof *prop_name; ++k)
@@ -264,13 +267,13 @@ void pl_box_open(void *win) {
 /* The status bar itself, in the paint of a window w that covers it: a dialog at 0, 0, which the
  * window manager paints over the bar, or a full-screen window, which gets none. It is the real
  * bar, so it has the theme's and Status Bar's look, battery and icons in either half. */
-void paint_bar(void *w, void *canvas) {
-    void *bar = *(void *const *)system_bar;
+void paint_bar(widget_t *w, canvas_t *canvas) {
+    widget_t *bar = *(void *const *)system_bar;
     if (bar) widget_paint(bar, canvas);
     st.paint_w = w; /* the bar's last child otherwise */
 }
 /* The dialog's own paint, under its children; the bar goes after the page, as Search's. */
-void pl_box_paint(void *w, void *canvas) {
+void pl_box_paint(widget_t *w, canvas_t *canvas) {
     void *lcd = P(canvas, CANVAS_LCD);
     if (!lcd) return;
     unsigned fill = (unsigned)I(lcd, LCD_FILL_COLOR);
@@ -286,7 +289,7 @@ void pl_box_paint(void *w, void *canvas) {
 #define SEARCH_HISTORY_Y 71
 /* The dialog as it loads, before its init: every name stock looks up stays. It covers the bar, so
  * it paints the bar (search_paint); it's at 0, 0, so these boxes are the screen's. */
-void search_open(void *win) {
+void search_open(widget_t *win) {
     static const char *const tab_state[] = { "normal",
                                              "pressed",
                                              "over",
@@ -307,9 +310,9 @@ void search_open(void *win) {
                              *const label_state[] = { "normal", "disable", "focused" },
                              *const full[] = { "view_album", "view_genre" };
     char key[STYLE_KEY];
-    void *c, *control = widget_lookup(win, "tab_control", 1),
-             *group = widget_lookup(win, "tab_button_group", 1),
-             *pages = widget_lookup(win, "pages", 1);
+    widget_t *c, *control = widget_lookup(win, "tab_control", 1),
+                 *group = widget_lookup(win, "tab_button_group", 1),
+                 *pages = widget_lookup(win, "pages", 1);
     if (!control || !group || !pages) return;
     /* tab_control stays under the field, whose taps stock binds */
     widget_move_resize(control, 0, 64, 375, 256);
@@ -345,7 +348,7 @@ void search_open(void *win) {
      * tabs don't (search_results), so they sit in the tabs' place, right under the field's strip.
      * Stock never moves them, and neither has a self_layout to put them back. */
     if ((c = widget_lookup(win, "view", 1))) {
-        void *list = widget_lookup(c, "list_view", 1);
+        widget_t *list = widget_lookup(c, "list_view", 1);
         widget_move_resize(c, 0, SEARCH_HISTORY_Y, 375, 320 - SEARCH_HISTORY_Y);
         if (list) widget_resize(list, 375, 320 - SEARCH_HISTORY_Y - 50);
     }
@@ -365,7 +368,7 @@ static int search_strip_end(void) {
 }
 /* The dialog's own paint, under its children: the dark bar's rows behind the field. The bar goes
  * first: the window manager paints a dialog over it. With the keyboard up there's no bar. */
-void search_paint(void *w, void *canvas) {
+void search_paint(widget_t *w, canvas_t *canvas) {
     void *lcd = P(canvas, CANVAS_LCD);
     if (!lcd) return;
     unsigned fill = (unsigned)I(lcd, LCD_FILL_COLOR);
@@ -384,8 +387,8 @@ void search_paint(void *w, void *canvas) {
 /* Stock's init names the tabs from its translations (its widget_foreach's visitor, 0x49c25c:
  * search_track, songer, album, genre), which other pages' words share; the bin's words go back on
  * under the theme's dialog. */
-extern int stock_search_init_trampoline(void *win, void *ctx);
-int ringnav_search_init(void *win, void *ctx) {
+extern int stock_search_init_trampoline(widget_t *win, void *ctx);
+int ringnav_search_init(widget_t *win, void *ctx) {
     static const __WCHAR_TYPE__ names[4][8] = { L"Songs", L"表演者", L"专辑", L"流派" };
     int result = stock_search_init_trampoline(win, ctx);
     if (win == st.search_win)
@@ -397,14 +400,14 @@ int ringnav_search_init(void *win, void *ctx) {
  * (s_btn_delete_navbar). Their styles' opaque black border, unseen on stock's black, turns white in
  * Light Mode, a frame broken at its round corners over the selection: neither paints its border
  * (ringnav_paint). 1 the X, 2 the trash, else 0. */
-int search_del(void *w) {
+int search_del(widget_t *w) {
     if (!w || !st.search_win || window_of(w) != st.search_win) return 0;
     const char *s = widget_get_prop_str(w, "style", "");
     return !tk_strcmp(s, "s_btn_cancel_navbar") ? 1 : !tk_strcmp(s, "s_btn_delete_navbar") ? 2 : 0;
 }
 /* The X in stock's image's place, the theme's own mark as paint_tick's: 3 px runs, 15 x 13, about a
  * row label's cap height, in the selection's text on the selected row, else the ink. */
-void search_x(void *w, void *canvas) {
+void search_x(widget_t *w, canvas_t *canvas) {
     void *lcd = P(canvas, CANVAS_LCD);
     if (!lcd) return;
     const scheme_t *S = scheme();
@@ -418,7 +421,7 @@ void search_x(void *w, void *canvas) {
     stock_canvas_set_fill_color(canvas, fill);
 }
 /* The strip's row below it, over the rows. */
-void search_over(void *w, void *canvas) {
+void search_over(widget_t *w, canvas_t *canvas) {
     if (!w || w != st.search_win || st.kb_win || !P(canvas, CANVAS_LCD)) return;
     unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
     scrub_row(canvas, 0x55000000u, 0, search_strip_end(), 375);
@@ -426,7 +429,7 @@ void search_over(void *w, void *canvas) {
 }
 /* The tabs, in the group's coordinates: the choice control's track, the lit tab, the labels'
  * shadows under stock's labels. */
-void search_tabs_paint(void *group, void *canvas) {
+void search_tabs_paint(widget_t *group, canvas_t *canvas) {
     static const stops_t light = { 4,
                                    { 0, 35, 70, 100 },
                                    { 0x7b90a9, 0x8597ae, 0x8a9bb1, 0x8e9fb4 } };
@@ -443,7 +446,7 @@ void search_tabs_paint(void *group, void *canvas) {
         inset_top(canvas, &track, 6, 0xaa);
     round_ring(canvas, &track, 6, paper ? 0x1a000000u : 0x88000000u);
     for (unsigned i = 0, n = widget_count_children(group); i < n && i < 4; ++i) {
-        void *tab = widget_get_child(group, i);
+        widget_t *tab = widget_get_child(group, i);
         int x = (int)i * 327 / 4, w = (int)(i + 1) * 327 / 4 - x, fpx = 21;
         const unsigned *s = widget_get_text(tab);
         /* the lit tab fills its slot: rounded as the track at the track's ends, square beside
@@ -471,7 +474,7 @@ static const stops_t slider_band = { 8,
                      slider_lit = { 3, { 0, 45, 100 }, { 0xf7ffff, 0xeceeef, 0xc6cbcf } };
 /* The flat look's Off and On: the two halves of one pill at rest, the one that holds in what is on,
  * its word white (the ink on a bright fill), the other's in the half's ink. */
-static void slider_switch_flat(void *canvas, void *sw) {
+static void slider_switch_flat(canvas_t *canvas, widget_t *sw) {
     static const unsigned off[] = { 'O', 'f', 'f', 0 }, on[] = { 'O', 'n', 0 };
     int light = ipod_light();
     unsigned lit = flat_on(), ink = 0xff000000u | flat_ink[light];
@@ -489,12 +492,15 @@ static void slider_switch_flat(void *canvas, void *sw) {
 }
 /* The page, in the window's coordinates, under its children: the flat look's the half's paper and
  * the switch, its bar slider_scrub's and its words labels of their own. */
-void slider_paint(void *w, void *canvas) {
-    void *lcd = P(canvas, CANVAS_LCD), *s = st.slider_w, *sw = st.slider_sw;
+void slider_paint(widget_t *w, canvas_t *canvas) {
+    void *lcd = P(canvas, CANVAS_LCD);
+    widget_t *s = st.slider_w;
+    widget_t *sw = st.slider_sw;
     if (!lcd) return;
     unsigned fill = (unsigned)I(lcd, LCD_FILL_COLOR);
     int maxvol = st.slider_kind == SLIDER_MAX, px;
-    void *number = widget_lookup(w, "label_balance", 1); /* stock writes its text after the load */
+    widget_t *number =
+        widget_lookup(w, "label_balance", 1); /* stock writes its text after the load */
     if (number && number_face(number, &px) != st.number_face) slider_number(number);
     if (!sw && st.slider_kind == SLIDER_BOOT)
         sw = st.slider_sw = widget_lookup(w, "img_bootswitch", 1);
@@ -533,7 +539,7 @@ void slider_paint(void *w, void *canvas) {
  * the first and last. The flat look's is flat_bar's on its rows 17 to 52, its fill never less than
  * its own round end: Brightness's suns, the volumes' speakers, none on Balance, Crossfade and the
  * rest. Stock hides the slider's view while Default Volume's switch is off, and the bar with it. */
-void slider_scrub(void *w, void *canvas) {
+void slider_scrub(widget_t *w, canvas_t *canvas) {
     if (!w || w != st.slider_w || !P(canvas, CANVAS_LCD)) return;
     unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
     if (flat_pages()) {
@@ -579,7 +585,7 @@ static const unsigned char msg_track[MSG_BAR_H] = { 0x87, 0x5c, 0x4d, 0x3d, 0x3d
 #define MSG_FLAT_Y 222
 #define MSG_FLAT_W 200
 #define MSG_FLAT_H 4
-static int msg_gone(void *win, void *event) {
+static int msg_gone(void *win, event_t *event) {
     if (win == st.usb_win) st.usb_win = (void *)0;
     if (win == st.msg_win) {
         stop_timer(&cp.msg_timer);
@@ -648,14 +654,14 @@ int msg_counting(void) { return cp.msg_counting == 1; } /* coverflow.c's library
 /* Stock's window as it loads, before its init. Every look-up stock makes by name still finds its
  * widget, and btn_no keeps its binding. A cable can open USB's page over the scan's dialog, so each
  * has its own st. */
-void msg_open(void *win) {
+void msg_open(widget_t *win) {
     static const char *const hide[] = { "img_animation", "label_msg", "label_scanfolder",
                                         "img_usbmode", "scrlabel_info" },
                              *const state[] = { "normal", "pressed", "over", "disable", "focused" };
     const char *name = widget_get_prop_str(win, "name", "");
     char key[STYLE_KEY];
     int scan = !tk_strcmp(name, "updatemusic_dialog");
-    void *c, *src = widget_lookup(win, "label_msg", 1), *btn = widget_lookup(win, "btn_no", 1);
+    widget_t *c, *src = widget_lookup(win, "label_msg", 1), *btn = widget_lookup(win, "btn_no", 1);
     if (scan ? !src || !btn : tk_strcmp(name, "usbmode_page") != 0) return;
     for (unsigned i = 0; i < sizeof hide / sizeof *hide; ++i)
         if ((c = widget_lookup(win, hide[i], 1))) widget_set_visible(c, 0, 0);
@@ -696,15 +702,16 @@ void msg_open(void *win) {
     cp.msg_timer = timer_add(msg_poll, (void *)0, 200);
 }
 /* w's text in a final colour, when it isn't: the half can change under an open page. */
-static void msg_text(void *w, unsigned rgb, int n) {
+static void msg_text(widget_t *w, unsigned rgb, int n) {
     unsigned color = 0xff000000u | rgb;
     if ((unsigned)widget_get_prop_int(w, "_final", 0) != color) text_ink(w, color, n);
 }
 /* msg_paint's, flat: the page, the mark 100 rows over the heading, the line; the scan's bar, its
  * least its own round ends, and Cancel's pill. */
-static void msg_paint_flat(void *w, void *canvas, unsigned fill) {
+static void msg_paint_flat(widget_t *w, canvas_t *canvas, unsigned fill) {
     int scan = w == st.msg_win, dy = I(w, W_Y), top = scan ? 46 : 82, light = ipod_light();
-    void *heading = widget_lookup(w, "msg_heading", 1), *below = widget_lookup(w, "msg_line", 1);
+    widget_t *heading = widget_lookup(w, "msg_heading", 1),
+             *below = widget_lookup(w, "msg_line", 1);
     char name[32];
     if (scan) msg_sync();
     bar_place(heading, 16, top + 100, 343, MSG_HEAD_H);
@@ -732,7 +739,7 @@ static void msg_paint_flat(void *w, void *canvas, unsigned fill) {
     stock_canvas_set_fill_color(canvas, fill);
 }
 /* Under the window's children. */
-void msg_paint(void *w, void *canvas) {
+void msg_paint(widget_t *w, canvas_t *canvas) {
     void *lcd = P(canvas, CANVAS_LCD);
     if (!lcd) return;
     if (flat_pages()) {
@@ -741,7 +748,8 @@ void msg_paint(void *w, void *canvas) {
     }
     unsigned fill = (unsigned)I(lcd, LCD_FILL_COLOR);
     int scan = w == st.msg_win, dy = I(w, W_Y), head = scan ? 159 : 228, line = scan ? 188 : 255;
-    void *heading = widget_lookup(w, "msg_heading", 1), *below = widget_lookup(w, "msg_line", 1);
+    widget_t *heading = widget_lookup(w, "msg_heading", 1),
+             *below = widget_lookup(w, "msg_line", 1);
     if (scan) msg_sync();
     bar_place(heading, 16, head, 343, MSG_HEAD_H);
     bar_place(below, 16, line, 343, 20);

@@ -1349,7 +1349,7 @@ BROWSE = '/tmp/q2-librespot.browse.sock'
 CONTROL = '/tmp/q2-librespot.sock'
 RUN = '/bin/sh /mnt/mmc/.spotify/run'
 KEY_PLAY = O['KEY_PLAY']
-DAC = ('config_outputchannel', 'mclSetDacPwr', 'mclSetPcmMode', 'mclSetMute', 'device_set_volume')  # books.c's dac_take
+DAC = ('config_outputchannel', 'mclSetDacPwr', 'mclSetPcmMode', 'mclSetMute', 'device_set_volume')  # radio.c's dac_take
 TRACKS = [('1', 'Song 1', 'Artist A', 'Album A', 200000), ('2', 'Song 2', 'Artist B', 'Album B', 180000)]
 
 

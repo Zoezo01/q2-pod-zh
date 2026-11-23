@@ -648,7 +648,7 @@ typedef struct {
     char url[];
 } au_job;
 
-/* Something other than stock's player plays: Spotify, a station or a video (a paused one doesn't
+/* Something other than stock's player plays: Spotify or a station (a paused one doesn't
  * count), or a card game has the sound. The trampoline passes ringnav_start_player's checks, so a
  * job started meanwhile (the app's wait) mustn't take the PCM from it; one that didn't wait
  * goes as before. Stock's own player isn't asked: an earlier URL still inside stock's start lands

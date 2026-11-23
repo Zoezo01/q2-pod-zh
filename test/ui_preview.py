@@ -160,7 +160,7 @@ with tempfile.TemporaryDirectory(prefix='q2-ui-preview-') as tmp:
                     rect(a,21,by,333,bh,'#1C1C1C'); rect(a,21,by,132,bh,'#FFFFFF' if case in (4,12) else f'#{palette[2]:06x}')
                     text(a,'1:23',46,295,80,16,14,'#AAAAAA'); text(a,'-2:34',249,295,80,16,14,'#AAAAAA')
                 elif case<8:
-                    rows = [('Podcasts','local_podcasts'),('Games','local_games'),('Audiobooks','local_audiobooks'),('Videos','local_videos')]
+                    rows = [('Podcasts','local_podcasts'),('Games','local_games'),('Audiobooks','local_audiobooks'),('Photos','local_photos')]
                     if case==6: rows=[('Albums','list_folder'),('音楽 - 長いフォルダー名','list_folder'),('A very long track title','local_frequentplay'),('Live recordings','list_folder')]
                     if case==7: rows=[('Backlight','display_backlight'),('Theme: Classic','system_display'),('Accent: '+name,'system_display'),('Home: Full','playset_covermode')] if old else \
                         [('Backlight','display_backlight'),('Theme: Minimal','system_display'),('Home: Split','playset_covermode'),('Battery: Icon','system_powermanager')]

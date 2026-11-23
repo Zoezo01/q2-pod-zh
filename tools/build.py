@@ -11,7 +11,7 @@ ZIP_SHA = '4e298cab6c12d86cfc55565645f7e3ae11d3fb44677a93ca13991e7184ecec4e'
 # 钉住（重新打的 ZIP 永远对不上官方那个）。
 TAR_SHA = '7f57884420e324ac3263571d96a35f04bbef79f35dac34162655c5822bdaa684'
 DEMO_SHA = 'e65d638d6e70332b4c3193af8ac2044941ec0157d20e41e40233aac5b0c2c59f'
-VERSION = '1.8.9'  # major.minor.patch, single digits, shown as is (About and release tag)
+VERSION = '1.9.0'  # major.minor.patch, single digits, shown as is (About and release tag)
 BETA = 0  # a pre-release's beta number (1-9), 0 for the release itself
 # 本分支的 Release 由自己发：网络更新读这个仓库的 releases/latest，release_zh.py 也往这里传。
 # 所以 Release 的 tag 必须正好等于 RELEASE_TAG（A 线是裸 VERSION，之后是 VERSION 点位），
@@ -56,7 +56,7 @@ REPO = 'Zoezo01/q2-pod-zh'  # whose releases Network Update fetches (--update-re
 # 1.8.7 这条线字母重新从 A 起：A 并入上游 1.8.5（语言/状态栏/USB/About）、1.8.6（性能）与 1.8.7（文件拆分），
 # 中文版不打 LANGUAGE_EN，语言保持简体中文；经典百分比对齐暂用上游实现，我们 V182C 的版本备份在
 # tag zh/batt-ours-v184b 与 .workbuddy/backup/statusbar-ours-v184b.txt，实机对比后再决定。
-LETTER = 'D'  # 1.8.9 线第四个包：修 V189C 转轮失灵（i2f 误包 float 三元式，goal 永远不动）
+LETTER = 'A'  # 1.9.0 线首个包：上游位置条拖动、视频/阅读器转卡带应用、Pulsar/Contour 可视化合并
 TAG = 'V' + VERSION.replace('.', '') + LETTER
 RELEASE_TAG = VERSION if LETTER == 'A' else f'{VERSION}.{ord(LETTER) - 64}'  # 1.8.3, 1.8.3.2, 1.8.3.3…
 
@@ -73,6 +73,7 @@ def dev_tag(number):
 BASE = 0xb00000
 SCRATCH = 0xc00000  # 1 MB of payload text below it (upstream's 0xbd0000 had 4.9 KB left)
 SCRATCH_MAX = 0x30000  # the most its state may fill, 192 KB: the segment is demo's last, the heap after it
+ROOTFS_FREE_MIN = 1 << 19  # bytes of stock's rootfs size a build must leave unused, 512 KiB (docs/building.md, Free space)
 RING_STEP = 48
 HOOKS = {
     # USB charging is inhibited before insertion and guarded through enumeration/disconnect.
@@ -132,9 +133,9 @@ HOOKS = {
     'folder_back': (0x512778, 'ringnav_folder_back', 'folder_back'),
     # Folder's roots: OTG only with a drive plugged in (g_otg_status)
     'folder_load_top': (0x511ff8, 'ringnav_folder_top', 'folder_top'),
-    # Videos from Folder view: a video row plays in q2video, not as a song (navigation.c)
+    # Folder view's row click: a folder entered pushes its list in (navigation.c)
     'folder_click': (0x532414, 'ringnav_folder_click', 'folder_click'),
-    # Videos: no input reaches the UI while q2video plays
+    # Every input event, before the window manager: the wheel, chord and wake gates, a card game's input (navigation.c)
     'window_manager_dispatch_input_event': (0x680a4c, 'ringnav_input', 'input'),
     # SyncLink's (Eddict Player's) play/pause, previous and next pass the Buttons lock (#113)
     'main_loop_post_key_event': (0x69ebac, 'ringnav_post_key', 'post_key'),
@@ -149,6 +150,8 @@ HOOKS = {
     # Power gains Charge limit; Playback gains Artists (Album Artist)
     'systemset_sysset_page_init': (0x4d3ba8, 'ringnav_systemset', 'systemset'),
     'systemset_display_page_init': (0x4c7168, 'ringnav_display', 'display'),
+    # Network: card apps whose q2app says row=network (a VPN) after stock's rows (addon.c)
+    'systemset_netservice_page_init': (0x4cd50c, 'ringnav_netservice', 'netservice'),
     # Lock screen (patch/lockscreen.c): the built-in wallpapers in the picture list, the Lock screen
     # page's Clock row and the built-ins' thumbnails, and the lock window's wallpaper and Large clock
     'get_screensaver_image': (0x505698, 'lockscreen_images', 'saverlist'),
@@ -258,15 +261,15 @@ GP = 0xa3aae0
 # vtable, then tail-calls get_gradient (+0x18); its first two words (beqz a0; nop) become the jump
 # and the payload does the whole of it. The third word is pinned too, so the layout is the audited one.
 GRADIENT_LEAF = ('style_get_gradient', 0x65d4ac, 'ringnav_style_gradient', (0x10800009, 0, 0x8c820000))
-# Videos: window_manager_paint is a leaf too (null-checks the manager and its vtable at +0x94, then
-# tail-calls paint, +0xc); the payload does the whole of it and skips it while q2video plays.
+# window_manager_paint is a leaf too (null-checks the manager and its vtable at +0x94, then
+# tail-calls paint, +0xc); the payload does the whole of it and skips it while a card game has the screen.
 WM_PAINT_LEAF = ('window_manager_paint', 0x680a1c, 'ringnav_wm_paint', (0x10800009, 0, 0x8c820094))
 # The UI loop's input queue has one way in, main_loop_queue_event, a leaf too (null-checks the loop, its
 # queue_event slot at +0x18 and the request, then tail-calls the slot); the payload does the whole of it
 # and keeps the touch thread's empty events out of the queue (playback.c ringnav_queue_event).
 QUEUE_LEAF = ('main_loop_queue_event', 0x65c418, 'ringnav_queue_event', (0x10800008, 0, 0x8c990018))
-# Videos' player (patch/video.c): a separate executable against the rootfs's own libraries,
-# with display_logo's inode metadata.
+# Internet Radio's player and Spotify's sink (patch/video.c): a separate executable against the
+# rootfs's own libraries, with display_logo's inode metadata.
 HELPER, HELPER_LIKE = 'usr/bin/q2video', 'usr/bin/display_logo'
 HELPER_LIBS = ['lib/libc-2.28.so', 'lib/libpthread-2.28.so', 'usr/lib/libasound.so.2.0.0']
 # Rockbox dual boot (docs/boot.md#rockbox): S90play starts Rockbox whenever the card has it, as an
@@ -793,7 +796,7 @@ LABELS = tuple((k.encode(), o.encode(), n.encode()) for k, o, n in (
 
 # Wi-Fi transfer's web page (stock thttpd on :8888): in English, an Upload Folder button, and a folder,
 # picked or dropped, keeps its tree: each file's folders are made with stock's create (a plain mkdir) before
-# it goes, as stock's upload only moves a file into an existing folder. The formats Q2 Pod's pages read are allowed too.
+# it goes, as stock's upload only moves a file into an existing folder. The formats Q2 Pod's pages read, and videos and books, are allowed too.
 MKDIR_JS = r'''// Each folder of a folder upload is made once per batch, parents first; stock's create is a plain mkdir,
 // so a folder that exists fails harmlessly and a real failure shows as its files' upload error.
 // ponytail: the stock CGIs run mkdir and mv through system() in double quotes, so a name with " ` or $
@@ -819,7 +822,7 @@ WEB = {
     ('山灵音乐', 'Shanling Q2'),
     ('支持音频格式:ISO,DFF,DSF,APE,FLAC,AIF,AIFF,WAV,M4A,AAC,MP2,AC3,DTS,MP3,OGG,WMA,CUE,M3U,M3U8<br/>图片格式:PNG,JPG,JPEG<br/>歌词格式:LRC<br/>固件升级包:BIN',
      'Audio: ISO, DFF, DSF, APE, FLAC, AIF, AIFF, WAV, M4A, M4B, AAC, MP2, AC3, DTS, MP3, OGG, WMA, CUE, M3U, M3U8<br/>'
-     'Pictures: PNG, JPG, JPEG<br/>Lyrics: LRC<br/>Videos: MP4, M4V, MKV, AVI, MOV, MPG<br/>Books: TXT, EPUB<br/>Firmware: BIN'),
+     'Pictures: PNG, JPG, JPEG<br/>Lyrics: LRC<br/>Videos: MP4, M4V, MKV, WEBM, AVI, MOV, MPG, MPEG, WMV, FLV, TS, M2TS, 3GP, OGV<br/>Books: TXT, EPUB<br/>Firmware: BIN'),
     ('''上传文件
           <input id="fileupload" type="file" name="files[]" multiple>
         </button>''', '''Upload Files
@@ -832,7 +835,7 @@ WEB = {
     ('创建文件夹', 'New Folder'), ('返回上一级', 'Up'), ('正在进行文件上传', 'Uploading'), ('新建文件夹', 'New Folder'),
     ('请输入要创建的文件夹的名称:', 'Folder name:'), ('取消', 'Cancel'), ('移动项目', 'Move'), ('请输入此项的新位置:', 'New location:')],
   'usr/share/web/js/index.js': [
-    ('"LRC","BIN"];', '"LRC","BIN","M4B","MP4","M4V","MKV","AVI","MOV","MPG","TXT","EPUB"];'),
+    ('"LRC","BIN"];', '"LRC","BIN","M4B","MP4","M4V","MKV","WEBM","AVI","MOV","MPG","MPEG","WMV","FLV","TS","M2TS","3GP","OGV","TXT","EPUB"];'),
     ('function _showError(', MKDIR_JS),
     ('''  $("#upload-file").click(function(event) {
     $("#fileupload").click();
@@ -1367,93 +1370,93 @@ FUNCTIONS = {
  'getAllPlayList': ('int', 'void'),  # every playlist's header, into tools_pdeq_directory (coverflow.c's playlists)
  'checkPlayListExist': ('int', 'void *, int'),
  'toolsSetTimeZone': ('int', 'const char *'),
- 'widget_on': ('unsigned', 'void *, unsigned, int (*)(void *, void *), void *'),
- 'widget_set_visible': ('int', 'void *, int, int'),
- 'widget_set_opacity': ('int', 'void *, unsigned'),
- 'widget_set_enable': ('int', 'void *, int'),
+ 'widget_on': ('unsigned', 'widget_t *, unsigned, int (*)(void *, event_t *), void *'),
+ 'widget_set_visible': ('int', 'widget_t *, int, int'),
+ 'widget_set_opacity': ('int', 'widget_t *, unsigned'),
+ 'widget_set_enable': ('int', 'widget_t *, int'),
  # Crossfade's page (crossfade.c): stock's Boot volume slider, its value a double
- 'slider_set_min': ('int', 'void *, double'), 'slider_set_max': ('int', 'void *, double'),
- 'slider_set_step': ('int', 'void *, double'), 'slider_set_value': ('int', 'void *, double'),
- 'widget_set_text_utf8': ('int', 'void *, const char *'),
- 'text_selector_count_options': ('unsigned', 'void *'),
- 'text_selector_set_selected_index': ('int', 'void *, unsigned'),
- 'widget_use_style': ('int', 'void *, const char *'),
- 'widget_set_name': ('int', 'void *, const char *'),
- 'widget_set_sensitive': ('int', 'void *, int'),
- 'widget_to_local': ('int', 'void *, void *'),
- 'widget_dispatch_event_to_target_recursive': ('int', 'void *, void *'),
- 'label_create': ('void *', 'void *, int, int, int, int'),
- 'label_resize_to_content': ('int', 'void *, unsigned, unsigned, unsigned, unsigned'),  # Classic's toast (navigation.c toast_paint)
- 'stock_search': ('int', 'void *, void *'),
- 'widget_set_children_layout': ('int', 'void *, const char *'),
- 'widget_get_canvas': ('void *', 'void *'),  # the lyrics page measures its lines (lyrics.c)
- 'widget_resize': ('int', 'void *, int, int'),
- 'widget_layout_children': ('int', 'void *'),
- 'widget_lookup': ('void *', 'void *, const char *, int'),
- 'scroll_bar_scroll_to': ('int', 'void *, int, unsigned'),
+ 'slider_set_min': ('int', 'widget_t *, double'), 'slider_set_max': ('int', 'widget_t *, double'),
+ 'slider_set_step': ('int', 'widget_t *, double'), 'slider_set_value': ('int', 'widget_t *, double'),
+ 'widget_set_text_utf8': ('int', 'widget_t *, const char *'),
+ 'text_selector_count_options': ('unsigned', 'widget_t *'),
+ 'text_selector_set_selected_index': ('int', 'widget_t *, unsigned'),
+ 'widget_use_style': ('int', 'widget_t *, const char *'),
+ 'widget_set_name': ('int', 'widget_t *, const char *'),
+ 'widget_set_sensitive': ('int', 'widget_t *, int'),
+ 'widget_to_local': ('int', 'widget_t *, void *'),
+ 'widget_dispatch_event_to_target_recursive': ('int', 'widget_t *, event_t *'),
+ 'label_create': ('widget_t *', 'widget_t *, int, int, int, int'),
+ 'label_resize_to_content': ('int', 'widget_t *, unsigned, unsigned, unsigned, unsigned'),  # Classic's toast (navigation.c toast_paint)
+ 'stock_search': ('int', 'void *, event_t *'),
+ 'widget_set_children_layout': ('int', 'widget_t *, const char *'),
+ 'widget_get_canvas': ('canvas_t *', 'widget_t *'),  # the lyrics page measures its lines (lyrics.c)
+ 'widget_resize': ('int', 'widget_t *, int, int'),
+ 'widget_layout_children': ('int', 'widget_t *'),
+ 'widget_lookup': ('widget_t *', 'widget_t *, const char *, int'),
+ 'scroll_bar_scroll_to': ('int', 'widget_t *, int, unsigned'),
  'navigator_back_to_home': ('int', 'void'),
  'navigator_switch_to_with_context': ('int', 'const char *, const void *, int'),
- 'window_manager': ('void *', 'void'),
- 'window_manager_get_top_window': ('void *', 'void *'),
- 'window_manager_is_animating': ('int', 'void *'),
- 'window_manager_get_pointer_pressed': ('int', 'void *'),
+ 'window_manager': ('widget_t *', 'void'),
+ 'window_manager_get_top_window': ('widget_t *', 'widget_t *'),
+ 'window_manager_is_animating': ('int', 'widget_t *'),
+ 'window_manager_get_pointer_pressed': ('int', 'widget_t *'),
  'main_loop': ('void *', 'void'),  # +LOOP_PRESSED: the touch thread's own down flag (navigation.c stale_note)
- 'widget_get_visible': ('int', 'void *'),
- 'widget_get_prop_bool': ('int', 'void *, const char *, int'),
- 'widget_get_prop_int': ('int', 'void *, const char *, int'),
+ 'widget_get_visible': ('int', 'widget_t *'),
+ 'widget_get_prop_bool': ('int', 'widget_t *, const char *, int'),
+ 'widget_get_prop_int': ('int', 'widget_t *, const char *, int'),
  'style_get_int': ('int', 'void *, const char *, int'),
- 'widget_get_prop_str': ('const char *', 'void *, const char *, const char *'),
- 'widget_get_text': ('const unsigned *', 'void *'),
- 'widget_get_text_utf8': ('int', 'void *, char *, unsigned'),
- 'widget_get_type': ('const char *', 'void *'),
- 'widget_count_children': ('unsigned', 'void *'),
- 'widget_get_child': ('void *', 'void *, unsigned'),
- 'widget_set_prop_int': ('int', 'void *, const char *, int'),
- 'widget_set_prop_str': ('int', 'void *, const char *, const char *'),
- 'pages_set_active_by_name': ('int', 'void *, const char *'),
- 'edit_set_select': ('int', 'void *, unsigned, unsigned'),
- 'widget_invalidate_force': ('int', 'void *, void *'),
- 'widget_animator_start': ('int', 'void *'),
- 'widget_animator_prop_create': ('void *', 'void *, unsigned, unsigned, int, const char *'),  # Home's Settings slide
- 'widget_animator_prop_set_params': ('int', 'void *, double, double'),
- 'widget_animator_scroll_set_params': ('int', 'void *, int, int, int, int'),
- 'slide_menu_set_value': ('int', 'void *, int'),
- 'slide_menu_item_width': ('int', 'void *'),
- 'slide_menu_on_scroll_done': ('int', 'void *, void *'),
- 'widget_animator_scroll_create': ('void *', 'void *, unsigned, unsigned, int'),
- 'widget_animator_on': ('unsigned', 'void *, unsigned, int (*)(void *, void *), void *'),
- 'widget_set_focused': ('int', 'void *, int'),
- 'input_method': ('void *', 'void'),
- 'input_method_request': ('int', 'void *, void *'),
- 'widget_animator_pause': ('int', 'void *'),
- 'widget_animator_destroy': ('int', 'void *'),
+ 'widget_get_prop_str': ('const char *', 'widget_t *, const char *, const char *'),
+ 'widget_get_text': ('const unsigned *', 'widget_t *'),
+ 'widget_get_text_utf8': ('int', 'widget_t *, char *, unsigned'),
+ 'widget_get_type': ('const char *', 'widget_t *'),
+ 'widget_count_children': ('unsigned', 'widget_t *'),
+ 'widget_get_child': ('widget_t *', 'widget_t *, unsigned'),
+ 'widget_set_prop_int': ('int', 'widget_t *, const char *, int'),
+ 'widget_set_prop_str': ('int', 'widget_t *, const char *, const char *'),
+ 'pages_set_active_by_name': ('int', 'widget_t *, const char *'),
+ 'edit_set_select': ('int', 'widget_t *, unsigned, unsigned'),
+ 'widget_invalidate_force': ('int', 'widget_t *, void *'),
+ 'widget_animator_start': ('int', 'widget_animator_t *'),
+ 'widget_animator_prop_create': ('widget_animator_t *', 'widget_t *, unsigned, unsigned, int, const char *'),  # Home's Settings slide
+ 'widget_animator_prop_set_params': ('int', 'widget_animator_t *, double, double'),
+ 'widget_animator_scroll_set_params': ('int', 'widget_animator_t *, int, int, int, int'),
+ 'slide_menu_set_value': ('int', 'widget_t *, int'),
+ 'slide_menu_item_width': ('int', 'widget_t *'),
+ 'slide_menu_on_scroll_done': ('int', 'void *, event_t *'),
+ 'widget_animator_scroll_create': ('widget_animator_t *', 'widget_t *, unsigned, unsigned, int'),
+ 'widget_animator_on': ('unsigned', 'widget_animator_t *, unsigned, int (*)(void *, event_t *), void *'),
+ 'widget_set_focused': ('int', 'widget_t *, int'),
+ 'input_method': ('input_method_t *', 'void'),
+ 'input_method_request': ('int', 'input_method_t *, widget_t *'),
+ 'widget_animator_pause': ('int', 'widget_animator_t *'),
+ 'widget_animator_destroy': ('int', 'widget_animator_t *'),
  'easing_get': ('void *', 'int'),  # Coverflow's glides set a reused animator's easing
- 'canvas_get_clip_rect': ('int', 'void *, void *'),
- 'canvas_set_clip_rect': ('int', 'void *, const void *'),
- 'canvas_set_fill_color': ('int', 'void *, unsigned'),
- 'canvas_set_stroke_color': ('int', 'void *, unsigned'),
- 'canvas_stroke_rect': ('int', 'void *, int, int, int, int'),
- 'canvas_fill_rect': ('int', 'void *, int, int, int, int'),
- 'canvas_draw_icon': ('int', 'void *, void *, int, int'),
- 'canvas_set_font': ('int', 'void *, const char *, unsigned'),
- 'canvas_set_text_color': ('int', 'void *, unsigned'),
- 'canvas_draw_text_in_rect': ('int', 'void *, const unsigned *, unsigned, const void *'),
- 'canvas_draw_text': ('int', 'void *, const unsigned *, unsigned, int, int'),  # Books (books.c)
- 'canvas_measure_text': ('float', 'void *, const unsigned *, unsigned'),
- 'canvas_fill_rounded_rect': ('int', 'void *, const void *, const void *, const void *, unsigned'),
- 'canvas_stroke_rounded_rect': ('int', 'void *, const void *, const void *, const void *, unsigned, unsigned'),
+ 'canvas_get_clip_rect': ('int', 'canvas_t *, void *'),
+ 'canvas_set_clip_rect': ('int', 'canvas_t *, const void *'),
+ 'canvas_set_fill_color': ('int', 'canvas_t *, unsigned'),
+ 'canvas_set_stroke_color': ('int', 'canvas_t *, unsigned'),
+ 'canvas_stroke_rect': ('int', 'canvas_t *, int, int, int, int'),
+ 'canvas_fill_rect': ('int', 'canvas_t *, int, int, int, int'),
+ 'canvas_draw_icon': ('int', 'canvas_t *, void *, int, int'),
+ 'canvas_set_font': ('int', 'canvas_t *, const char *, unsigned'),
+ 'canvas_set_text_color': ('int', 'canvas_t *, unsigned'),
+ 'canvas_draw_text_in_rect': ('int', 'canvas_t *, const unsigned *, unsigned, const void *'),
+ 'canvas_draw_text': ('int', 'canvas_t *, const unsigned *, unsigned, int, int'),  # lyrics.c, navigation.c
+ 'canvas_measure_text': ('float', 'canvas_t *, const unsigned *, unsigned'),
+ 'canvas_fill_rounded_rect': ('int', 'canvas_t *, const void *, const void *, const void *, unsigned'),
+ 'canvas_stroke_rounded_rect': ('int', 'canvas_t *, const void *, const void *, const void *, unsigned, unsigned'),
  # The PEQ curve (peq_ui.c) and the visualizer (visualizer.c): AWTK's software nanovg, float_t float, color_t by value
- 'canvas_get_vgcanvas': ('void *', 'void *'),
- 'vgcanvas_save': ('int', 'void *'), 'vgcanvas_restore': ('int', 'void *'),
- 'vgcanvas_translate': ('int', 'void *, float, float'),
- 'vgcanvas_begin_path': ('int', 'void *'), 'vgcanvas_close_path': ('int', 'void *'),
- 'vgcanvas_move_to': ('int', 'void *, float, float'), 'vgcanvas_line_to': ('int', 'void *, float, float'),
- 'vgcanvas_arc': ('int', 'void *, float, float, float, float, float, int'),
- 'vgcanvas_fill': ('int', 'void *'), 'vgcanvas_stroke': ('int', 'void *'),
- 'vgcanvas_set_fill_color': ('int', 'void *, unsigned'), 'vgcanvas_set_stroke_color': ('int', 'void *, unsigned'),
- 'vgcanvas_set_fill_linear_gradient': ('int', 'void *, float, float, float, float, unsigned, unsigned'),
- 'vgcanvas_set_line_width': ('int', 'void *, float'), 'vgcanvas_set_line_cap': ('int', 'void *, const char *'),
- 'pointer_event_init': ('void *', 'void *, int, void *, int, int'),
+ 'canvas_get_vgcanvas': ('vgcanvas_t *', 'canvas_t *'),
+ 'vgcanvas_save': ('int', 'vgcanvas_t *'), 'vgcanvas_restore': ('int', 'vgcanvas_t *'),
+ 'vgcanvas_translate': ('int', 'vgcanvas_t *, float, float'),
+ 'vgcanvas_begin_path': ('int', 'vgcanvas_t *'), 'vgcanvas_close_path': ('int', 'vgcanvas_t *'),
+ 'vgcanvas_move_to': ('int', 'vgcanvas_t *, float, float'), 'vgcanvas_line_to': ('int', 'vgcanvas_t *, float, float'),
+ 'vgcanvas_arc': ('int', 'vgcanvas_t *, float, float, float, float, float, int'),
+ 'vgcanvas_fill': ('int', 'vgcanvas_t *'), 'vgcanvas_stroke': ('int', 'vgcanvas_t *'),
+ 'vgcanvas_set_fill_color': ('int', 'vgcanvas_t *, unsigned'), 'vgcanvas_set_stroke_color': ('int', 'vgcanvas_t *, unsigned'),
+ 'vgcanvas_set_fill_linear_gradient': ('int', 'vgcanvas_t *, float, float, float, float, unsigned, unsigned'),
+ 'vgcanvas_set_line_width': ('int', 'vgcanvas_t *, float'), 'vgcanvas_set_line_cap': ('int', 'vgcanvas_t *, const char *'),
+ 'pointer_event_init': ('event_t *', 'void *, int, widget_t *, int, int'),
  'time_now_ms': ('unsigned', 'void'),
  'sleep_ms': ('int', 'unsigned'),
  'timer_add': ('unsigned', 'int (*)(const void *), void *, unsigned'),
@@ -1463,40 +1466,40 @@ FUNCTIONS = {
  'tk_sha256_init': ('int', 'void *'),
  'tk_sha256_hash': ('int', 'void *, const void *, unsigned'),
  'tk_sha256_done': ('int', 'void *, unsigned char *'),
- 'slide_menu_scroll_to_next': ('int', 'void *'),
- 'slide_menu_scroll_to_prev': ('int', 'void *'),
- 'table_client_stop_animator_scroll': ('int', 'void *'),
- 'table_client_set_yoffset': ('int', 'void *, int'),
- 'table_row_of': ('void *', 'void *'),  # the table row holding a widget, or 0
- 'widget_dispatch_simple_event': ('int', 'void *, unsigned'),
- 'scroll_view_set_offset': ('int', 'void *, int, int'),
- 'scroll_view_scroll_to': ('int', 'void *, int, int, int'),
- 'table_client_scroll_to': ('int', 'void *, int'),
- 'table_client_get_virtual_h': ('int', 'void *'),
- 'scroll_view_scroll_delta_to': ('int', 'void *, int, int, int'),
- 'widget_destroy_children': ('int', 'void *'),
- 'widget_destroy': ('int', 'void *'),  # Streaming's Baidu Netdisk row (home.c ringnav_stream)
- 'list_item_create': ('void *', 'void *, int, int, int, int'),
- 'hscroll_label_create': ('void *', 'void *, int, int, int, int'),
- 'set_hscroll_label_attribute': ('void', 'void *'),
- 'hscroll_label_set_only_focus': ('int', 'void *, int'),
- 'hscroll_label_set_only_parent_focus': ('int', 'void *, int'),
- 'hscroll_label_set_ellipses': ('int', 'void *, int'),
- 'hscroll_label_set_xoffset': ('int', 'void *, int'),
- 'hscroll_label_start': ('int', 'void *'),
- 'hscroll_label_stop': ('int', 'void *'),
- 'widget_add_timer': ('unsigned', 'void *, int (*)(const void *), unsigned'),
- 'widget_set_text': ('int', 'void *, const unsigned *'),
- 'widget_off_by_func': ('int', 'void *, unsigned, void *, void *'),
- 'widget_off_by_ctx': ('int', 'void *, void *'),  # Home's Library list (home.c library_rows)
- 'on_home_music_onclick': ('int', 'void *, void *'),  # stock's Library card, which Home's Full keeps (coverflow.c home_library)
- 'on_home_stream_onclick': ('int', 'void *, void *'),  # stock's Streaming card, the same (coverflow.c home_streaming)
- 'window_close': ('int', 'void *'),
- 'dialog_quit': ('int', 'void *, unsigned'),  # quick settings' close, as its swipe up ends (0x4a1fd8)
- 'window_manager_close_window_force': ('int', 'void *, void *'),
+ 'slide_menu_scroll_to_next': ('int', 'widget_t *'),
+ 'slide_menu_scroll_to_prev': ('int', 'widget_t *'),
+ 'table_client_stop_animator_scroll': ('int', 'widget_t *'),
+ 'table_client_set_yoffset': ('int', 'widget_t *, int'),
+ 'table_row_of': ('widget_t *', 'widget_t *'),  # the table row holding a widget, or 0
+ 'widget_dispatch_simple_event': ('int', 'widget_t *, unsigned'),
+ 'scroll_view_set_offset': ('int', 'widget_t *, int, int'),
+ 'scroll_view_scroll_to': ('int', 'widget_t *, int, int, int'),
+ 'table_client_scroll_to': ('int', 'widget_t *, int'),
+ 'table_client_get_virtual_h': ('int', 'widget_t *'),
+ 'scroll_view_scroll_delta_to': ('int', 'widget_t *, int, int, int'),
+ 'widget_destroy_children': ('int', 'widget_t *'),
+ 'widget_destroy': ('int', 'widget_t *'),  # Streaming's Baidu Netdisk row (home.c ringnav_stream)
+ 'list_item_create': ('widget_t *', 'widget_t *, int, int, int, int'),
+ 'hscroll_label_create': ('widget_t *', 'widget_t *, int, int, int, int'),
+ 'set_hscroll_label_attribute': ('void', 'widget_t *'),
+ 'hscroll_label_set_only_focus': ('int', 'widget_t *, int'),
+ 'hscroll_label_set_only_parent_focus': ('int', 'widget_t *, int'),
+ 'hscroll_label_set_ellipses': ('int', 'widget_t *, int'),
+ 'hscroll_label_set_xoffset': ('int', 'widget_t *, int'),
+ 'hscroll_label_start': ('int', 'widget_t *'),
+ 'hscroll_label_stop': ('int', 'widget_t *'),
+ 'widget_add_timer': ('unsigned', 'widget_t *, int (*)(const void *), unsigned'),
+ 'widget_set_text': ('int', 'widget_t *, const unsigned *'),
+ 'widget_off_by_func': ('int', 'widget_t *, unsigned, void *, void *'),
+ 'widget_off_by_ctx': ('int', 'widget_t *, void *'),  # Home's Library list (home.c library_rows)
+ 'on_home_music_onclick': ('int', 'void *, event_t *'),  # stock's Library card, which Home's Full keeps (coverflow.c home_library)
+ 'on_home_stream_onclick': ('int', 'void *, event_t *'),  # stock's Streaming card, the same (coverflow.c home_streaming)
+ 'window_close': ('int', 'widget_t *'),
+ 'dialog_quit': ('int', 'widget_t *, unsigned'),  # quick settings' close, as its swipe up ends (0x4a1fd8)
+ 'window_manager_close_window_force': ('int', 'widget_t *, widget_t *'),
  'navigator_to': ('int', 'const char *'),
  'navigator_to_with_context': ('int', 'const char *, const void *'),
- 'window_manager_get_input_device_status': ('char *', 'void *'),
+ 'window_manager_get_input_device_status': ('char *', 'widget_t *'),
  'airplayGetFlag': ('int', 'void'),
  'tk_snprintf': ('int', 'char *, unsigned, const char *, ...'),
  'toolsTimeItoa': ('int', 'char *, int'),
@@ -1550,36 +1553,36 @@ FUNCTIONS = {
  'mclGetPlayM3uFlag': ('int', 'void'),  # stock ignores Folder Skip on an M3U (playback.c change_restarts)
  'config_playmode': ('int', 'int, int'),
  'toolsRandnum': ('int', 'int'),
- 'widget_restack': ('int', 'void *, unsigned'),
- 'widget_index_of': ('int', 'void *'),  # Centred Now Playing's column back in its place (np_lyrics.c np_full)
+ 'widget_restack': ('int', 'widget_t *, unsigned'),
+ 'widget_index_of': ('int', 'widget_t *'),  # Centred Now Playing's column back in its place (np_lyrics.c np_full)
  'toolsThumbSpecCover': ('int', 'const char *, const char *, int, int'),
  'toolsGetAlbumCover': ('int', 'const char *, const char *, int, int'),
  'toolsGetExternCover': ('int', 'const char *, const char *, int, int'),
- 'window_create': ('void *', 'void *, int, int, int, int'),
- 'widget_factory': ('void *', 'void'),
- 'widget_factory_create_widget': ('void *', 'void *, const char *, void *, int, int, int, int'),
- 'image_create': ('void *', 'void *, int, int, int, int'),
- 'image_set_draw_type': ('int', 'void *, int'),
- 'image_base_set_image': ('int', 'void *, const char *'),
- 'widget_load_image': ('int', 'void *, const char *, void *'),
- 'widget_unload_image': ('int', 'void *, void *'),
- 'list_view_create': ('void *', 'void *, int, int, int, int'),
- 'scroll_view_create': ('void *', 'void *, int, int, int, int'),
+ 'window_create': ('widget_t *', 'widget_t *, int, int, int, int'),
+ 'widget_factory': ('widget_factory_t *', 'void'),
+ 'widget_factory_create_widget': ('widget_t *', 'widget_factory_t *, const char *, widget_t *, int, int, int, int'),
+ 'image_create': ('widget_t *', 'widget_t *, int, int, int, int'),
+ 'image_set_draw_type': ('int', 'widget_t *, int'),
+ 'image_base_set_image': ('int', 'widget_t *, const char *'),
+ 'widget_load_image': ('int', 'widget_t *, const char *, void *'),
+ 'widget_unload_image': ('int', 'widget_t *, void *'),
+ 'list_view_create': ('widget_t *', 'widget_t *, int, int, int, int'),
+ 'scroll_view_create': ('widget_t *', 'widget_t *, int, int, int, int'),
  'navigator_back': ('int', 'void'),
  'write_int_config': ('int', 'int, const char *, const char *'),
  'toolsWriteConfig': ('int', 'const char *, const char *, const char *, const char *'),
  'toolsReadConfig': ('int', 'const char *, const char *, const char *, char *, const char *'),
  'toolsCopyFile': ('int', 'const char *, const char *'),  # the bytes read, -1 when either can't open (system.c)
- 'button_create': ('void *', 'void *, int, int, int, int'),
- 'widget_move_resize': ('int', 'void *, int, int, int, int'),
+ 'button_create': ('widget_t *', 'widget_t *, int, int, int, int'),
+ 'widget_move_resize': ('int', 'widget_t *, int, int, int, int'),
  # The artist page's toolbar (navigation.c artist_bar): its tabs move down under it
- 'widget_set_self_layout_params': ('int', 'void *, const char *, const char *, const char *, const char *'),
- 'widget_layout': ('int', 'void *'),
+ 'widget_set_self_layout_params': ('int', 'widget_t *, const char *, const char *, const char *, const char *'),
+ 'widget_layout': ('int', 'widget_t *'),
  'tk_str_end_with': ('int', 'const char *, const char *'),
  'tk_str_start_with': ('int', 'const char *, const char *'),
- 'image_manager': ('void *', 'void'),
- 'image_manager_unload_all': ('int', 'void *'),
- 'image_manager_unload_bitmap_by_name': ('int', 'void *, const char *'),
+ 'image_manager': ('image_manager_t *', 'void'),
+ 'image_manager_unload_all': ('int', 'image_manager_t *'),
+ 'image_manager_unload_bitmap_by_name': ('int', 'image_manager_t *, const char *'),
  'bitmap_get_line_length': ('unsigned', 'void *'),
  'bitmap_lock_buffer_for_write': ('unsigned char *', 'void *'),
  'bitmap_unlock_buffer': ('int', 'void *'),
@@ -1590,19 +1593,19 @@ FUNCTIONS = {
  # rotate.c reads both as stock's own rotate does
  'bitmap_get_physical_line_length': ('unsigned', 'void *'),
  'bitmap_get_physical_height': ('unsigned', 'void *'),
- 'canvas_draw_image': ('int', 'void *, void *, const void *, const void *'),
- 'widget_paint': ('int', 'void *, void *'),  # the system bar, under a dialog that covers it (classic_pages.c search_paint)
+ 'canvas_draw_image': ('int', 'canvas_t *, void *, const void *, const void *'),
+ 'widget_paint': ('int', 'widget_t *, canvas_t *'),  # the system bar, under a dialog that covers it (classic_pages.c search_paint)
  # Cover Flow's flip paints the tracks panel to a bitmap as stock's window snapshots do (coverflow.c flip_capture)
- 'canvas_offline_create': ('void *', 'unsigned, unsigned, unsigned'),
- 'canvas_offline_begin_draw': ('int', 'void *'),
- 'canvas_offline_end_draw': ('int', 'void *'),
- 'canvas_offline_destroy': ('int', 'void *'),
- 'canvas_translate': ('int', 'void *, int, int'),
- 'widget_vtable_on_paint_self': ('int', 'void *, void *'),  # native foreground for fallback weight
- 'widget_on_paint_children': ('int', 'void *, void *'),  # a wallpaper thumbnail's check badge (lockscreen.c)
- 'slide_menu_set_spacer': ('int', 'void *, int'),
- 'playing_timer_start': ('int', 'void *'),
- 'playing_timer_clear': ('int', 'void *'),
+ 'canvas_offline_create': ('canvas_t *', 'unsigned, unsigned, unsigned'),
+ 'canvas_offline_begin_draw': ('int', 'canvas_t *'),
+ 'canvas_offline_end_draw': ('int', 'canvas_t *'),
+ 'canvas_offline_destroy': ('int', 'canvas_t *'),
+ 'canvas_translate': ('int', 'canvas_t *, int, int'),
+ 'widget_vtable_on_paint_self': ('int', 'widget_t *, canvas_t *'),  # native foreground for fallback weight
+ 'widget_on_paint_children': ('int', 'widget_t *, canvas_t *'),  # a wallpaper thumbnail's check badge (lockscreen.c)
+ 'slide_menu_set_spacer': ('int', 'widget_t *, int'),
+ 'playing_timer_start': ('int', 'widget_t *'),
+ 'playing_timer_clear': ('int', 'widget_t *'),
  'player_seek_time': ('int', 'int'),
  'player_playtime': ('int', 'void'),
  'prev_quick_click': ('int', 'void'), 'next_quick_click': ('int', 'void'),
@@ -1612,17 +1615,17 @@ FUNCTIONS = {
  'buzzeer_switch': ('int', 'int'),  # the stock key click; it reads g_keytone_flag
  # Require Output (g_block_withoutphone_flag) with no output: toasts (0) and returns 1, as before each stock start
  'check_forbid_play_no_headset': ('int', 'int'),
- 'on_wm_keyup_fun': ('int', 'void *, void *'),  # stock key-up: np_single replays a centre release
+ 'on_wm_keyup_fun': ('int', 'void *, event_t *'),  # stock key-up: np_single replays a centre release
  'get_wifisignal': ('int', 'void'),  # the status bar's Wi-Fi bars, 1-4; -1 when not connected
  'fwupdate_tf': ('int', 'void'),  # System Update's TF card update: battery check, confirm, flash
- 'widget_set_tr_text': ('int', 'void *, const char *'),
+ 'widget_set_tr_text': ('int', 'widget_t *, const char *'),
  # Podcasts and Audiobooks (navigation.c): folder_page's reload of g_folder_path, title and list rebuild
  'folder_reload_data': ('int', 'void'),
  'folder_reset_variable': ('int', 'void'),  # a fresh visit: layer 0, no path, enter history or CUE
  'folder_reinit_navbarname': ('int', 'void'),
- 'folder_refresh': ('int', 'void *'),
- 'album_covermode': ('int', 'void *, void *'),  # album_page's list/grid switch's click (library_lists.c album_view_toggle)
- # Videos (books.c): stop the music, the DAC's power, and the screen and standby timeouts held off
+ 'folder_refresh': ('int', 'widget_t *'),
+ 'album_covermode': ('int', 'void *, event_t *'),  # album_page's list/grid switch's click (library_lists.c album_view_toggle)
+ # q2video's start (radio.c radio_start): the output in use, the music stopped, the DAC's power, and the standby timeouts held off
  'mclGetOutputWay': ('int', 'void'),
  'mclGetLyricSize': ('int', 'void'),  # the playing track's lyric lines, 0 without
  'player_play_pause': ('int', 'void'),
@@ -1664,8 +1667,8 @@ FUNCTIONS = {
  'album_row': ('int', 'void *, int, char **, char **'),
  'db_song_row_callback': ('int', 'void *, int, char **, char **'),  # select * rows of songtable: a song record each (songs_by_path)
  'albumcoverinfo_init': ('int', 'void *'),  # a list's cover tasks, each a copy of its row's name and path
- 'class_icon': ('int', 'void *, int'),  # Artists, Composers and Genres rows' img_icon (CLASS_ICON)
- 'np_info': ('int', 'void *'),  # Now Playing's info page labels (ringnav_np_info)
+ 'class_icon': ('int', 'widget_t *, int'),  # Artists, Composers and Genres rows' img_icon (CLASS_ICON)
+ 'np_info': ('int', 'widget_t *'),  # Now Playing's info page labels (ringnav_np_info)
  'ab_x': ('int', 'int'),  # an A-B marker's x for a point (ringnav_ab_x)
  'getFormatString': ('int', 'const char *, char *, int'),  # a string's label in the language: key, out, size
  # Lyrics and cover search (onlinematch.c): demo's cJSON, a node's valuestring at +16
@@ -1771,7 +1774,7 @@ CONTEXT_DATA = {'bt_showcoding': 4, 'g_memory_info': 3476, 'g_folder_path': 1024
                 'bt_connectstatus': 4,  # a link thread runs (1), ended (2), checked (3)
                 'bt_initstatus': 4}  # Bluetooth's start-up status: -102 is stock's "Bluetooth abnormal" (system.c reboot_record)
 # Windows the payload creates at runtime (window_create), so no rootfs asset names them.
-PAYLOAD_WINDOWS = {'playlistedit_page', 'chapters_page', 'coverflow_page', 'photos_page', 'books_page', 'games_page', 'cardapps_page', 'mostplayed_page', 'shuffle_page', 'upnext_page', 'ratings_page', 'era_page', 'era_albums_page', 'rated_page', 'longsongs_page', 'spotify_page',
+PAYLOAD_WINDOWS = {'playlistedit_page', 'chapters_page', 'coverflow_page', 'photos_page', 'games_page', 'cardapps_page', 'mostplayed_page', 'shuffle_page', 'upnext_page', 'ratings_page', 'era_page', 'era_albums_page', 'rated_page', 'longsongs_page', 'spotify_page',
                    'spotbrowse_page', 'radio_page', 'radionp_page', 'streamconf_page', 'tidal_downloads', 'apps_page',
                    'addon_page', 'app_songs', 'qrcode_page', 'battery_page'}
 ICONS = [f'menu_{c}{s}.png' for c in ('coverflow', 'rockbox') for s in ('', 'down')]
@@ -1804,7 +1807,7 @@ FLAGS = ['--target=mipsel-linux-gnu','-march=mips32r2','-mabi=32','-mfp64',
          '-Wshadow','-Wimplicit-int-conversion','-Wconditional-uninitialized','-Wmissing-variable-declarations',
          '-Wvla','-Wundef']
 # navigation.c and the files split out of it (patch/navigation.h), each its own object, linked in this order.
-NAVIGATION = ['navigation.c', 'theme_engine.c', 'playlists.c', 'classic_pages.c', 'home.c', 'np_bar.c', 'volume.c', 'smart_wifi.c', 'system.c', 'usb_charge.c', 'tags.c', 'scrobble_ui.c', 'library_lists.c', 'durations.c', 'script.c', 'coverflow_position.c', 'ratings.c', 'scan_folders.c', 'folder_delete.c', 'battery.c', 'np_lyrics.c', 'quick_settings.c', 'flat.c', 'clock.c', 'queue_menu.c', 'np_marks.c', 'rotate.c']
+NAVIGATION = ['navigation.c', 'theme_engine.c', 'playlists.c', 'classic_pages.c', 'home.c', 'np_bar.c', 'volume.c', 'smart_wifi.c', 'system.c', 'usb_charge.c', 'tags.c', 'scrobble_ui.c', 'library_lists.c', 'durations.c', 'script.c', 'coverflow_position.c', 'ratings.c', 'scan_folders.c', 'folder_delete.c', 'battery.c', 'np_lyrics.c', 'quick_settings.c', 'flat.c', 'clock.c', 'queue_menu.c', 'np_marks.c', 'rotate.c', 'netservice.c', 'addon_bar.c']
 
 def compile_payload(out):  # pragma: no mutate block
     """Compile and link the payload."""
@@ -1835,6 +1838,13 @@ def check_layout(payload, ps):
     check(len(payload) <= SCRATCH-BASE, 'Payload overlaps its scratch page')
     check(ps['__scratch_start'] == SCRATCH, 'Scratch state moved')
     check(ps['__scratch_end'] <= SCRATCH + SCRATCH_MAX, 'Scratch state exceeds its 192 KB')
+
+def check_rootfs_size(size, stock_size):
+    """The repacked rootfs image is no larger than stock's, and leaves ROOTFS_FREE_MIN bytes of that size unused."""
+    check(size <= stock_size, 'Repacked rootfs exceeds stock size')
+    free = stock_size - size
+    check(free >= ROOTFS_FREE_MIN, f'Repacked rootfs leaves {free:,} bytes of stock size free, '
+                                   f'{ROOTFS_FREE_MIN - free:,} short of ROOTFS_FREE_MIN ({ROOTFS_FREE_MIN:,})')
 
 def compile_helper(out, cat, src, name, rels):
     """Link patch/{src}.c and start.c as name against the stock rootfs's libraries rels."""
@@ -2336,12 +2346,12 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
     xx = 'release/assets/default/raw/images/xx/'
     icons = {n: ('menu_musicdown.png' if n.endswith('down.png') else 'menu_music.png',
                  (ROOT/'assets/icons'/n).read_bytes()) for n in ICONS}
-    drawn = ('podcasts', 'audiobooks', 'books', 'videos')
+    drawn = ('podcasts', 'audiobooks')
     icons.update({f'local_{n}.png': (like, (ROOT/'assets/icons'/f'local_{n}.png').read_bytes() if n in drawn
                                      else cat(xx+like)) for n, like in dict(
         shuffle='playset_playmode.png', scrobble='wifiset_wifi.png', podcasts='netservice_dlna.png',
-        audiobooks='playset_foldercover.png', photos='playset_covermode.png', books='system_language.png',
-        videos='system_display.png', longsongs='system_time.png', era='local_genre.png',
+        audiobooks='playset_foldercover.png', photos='playset_covermode.png',
+        longsongs='system_time.png', era='local_genre.png',
         store='system_update.png').items()})
     icons['local_games.png'] = ('system_language.png', (ROOT/'assets/icons/local_games.png').read_bytes())
     icons['local_apps.png'] = ('system_language.png', (ROOT/'assets/icons/stream_app.png').read_bytes())  # 52 px, Library's Apps
@@ -2454,8 +2464,8 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
     check(inodes(newsq) == sorted([i for i in inodes(sq) if i not in removed]+added),
           'Repacked rootfs metadata differs from stock')
     blobs['recovery-update/rootfs.squashfs'] = newsq.read_bytes()
-    # Stock image proves this size fits; do not enlarge beyond its padded size.
-    check(len(blobs['recovery-update/rootfs.squashfs']) <= sq.stat().st_size, 'Repacked rootfs exceeds stock size')
+    # Stock image proves this size fits; do not enlarge beyond its padded size, and keep the floor free under it.
+    check_rootfs_size(len(blobs['recovery-update/rootfs.squashfs']), sq.stat().st_size)
     blobs['firmware_v20.info'] = (f'Shanling Q2\n{version}\n'+''.join(
         hashlib.md5(blobs[n]).hexdigest()+'  '+n+'\n' for n in [
             'recovery-update/xImage','recovery-update/rootfs.squashfs'])).encode()

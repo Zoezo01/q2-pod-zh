@@ -188,6 +188,23 @@ def test_check_layout_wants_the_scratch_state_at_its_page():
         build.check_layout(b'', {'__scratch_start': build.SCRATCH + 4, '__scratch_end': build.SCRATCH + 4})
 
 
+STOCK_ROOTFS = 50_688_000  # V1.36's rootfs.squashfs as packaged
+
+
+@pytest.mark.parametrize('size,message', [
+    (STOCK_ROOTFS - 524_288, None),
+    (STOCK_ROOTFS - 524_287, r'leaves 524,287 bytes of stock size free, 1 short of ROOTFS_FREE_MIN \(524,288\)'),
+    (STOCK_ROOTFS, r'leaves 0 bytes of stock size free, 524,288 short of ROOTFS_FREE_MIN \(524,288\)'),
+    (STOCK_ROOTFS + 1, 'exceeds stock size')])
+def test_check_rootfs_size_keeps_512_kib_of_stock_size_free(size, message):
+    # Exactly ROOTFS_FREE_MIN left is accepted, one byte less refused; over stock's size refused as before the floor
+    if message:
+        with pytest.raises(ValueError, match=rf'^Repacked rootfs {message}$'):
+            build.check_rootfs_size(size, STOCK_ROOTFS)
+    else:
+        build.check_rootfs_size(size, STOCK_ROOTFS)
+
+
 @pytest.mark.parametrize('label,minutes', [('GMT+0 London', 0), ('GMT-3:30 St. John\'s', -210), ('GMT+12:45 Chatham', 765),
                                            ('GMT-12 Baker Island', -720), ('GMT+5:30 Kolkata', 330)])
 def test_timezone_offset(label, minutes):

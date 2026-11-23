@@ -7,11 +7,13 @@
  * the library generation Most Played's kept tracks are of (~library_gen once stale); the Library
  * Shuffle menu's page, kept across picks. */
 static struct {
-    void *td_page, *td_list, *td_all;
+    widget_t *td_page;
+    void *td_list;
+    widget_t *td_all;
     unsigned td_timer;
     int td_asking;
     unsigned mp_gen;
-    void *sp_page;
+    widget_t *sp_page;
 } ll __attribute__((section(".scratch")));
 
 extern int coverflow_goto_album(void *r);
@@ -116,7 +118,7 @@ static int shuffle_groups(void *ctx, void *event) {
 /* The Library's Shuffle row opens these three actions on one page. A pick starts playback and
  * leaves the page open, as Most Played's rows do. Album and folder shuffles queue and group the
  * whole library, hence the note. */
-static int sp_pick(void *ctx, void *event) {
+static int sp_pick(void *ctx, event_t *event) {
     if ((long)ctx)
         shuffle_groups((void *)((long)ctx - 1), 0);
     else
@@ -124,20 +126,20 @@ static int sp_pick(void *ctx, void *event) {
     return 0;
 }
 
-static int sp_closed(void *ctx, void *event) {
+static int sp_closed(void *ctx, event_t *event) {
     ll.sp_page = 0;
     return 0;
 }
 
-int shuffle_menu(void *ctx, void *event) {
+int shuffle_menu(void *ctx, event_t *event) {
     if (ll.sp_page || !(ll.sp_page = page_open("shuffle_page", sp_closed, page_keyup))) return 0;
-    void *view = page_list(ll.sp_page, ll.sp_page, 0, "随机播放", 3, 48);
+    widget_t *view = page_list(ll.sp_page, ll.sp_page, 0, "随机播放", 3, 48);
     page_row_detail(view, 0, "随机播放歌曲", 0, sp_pick);
     page_row_detail(view, 1, "随机播放专辑", 0, sp_pick);
     page_row_detail(view, 2, "随机播放文件夹", 0, sp_pick);
     /* With the title in the bar: centred at the page's foot, its box clear of the glass. */
-    void *note = theme()->page_title_h ? text(ll.sp_page, 20, 200, 335, 24)
-                                       : text(ll.sp_page, 46, 262, 283, 24);
+    widget_t *note = theme()->page_title_h ? text(ll.sp_page, 20, 200, 335, 24)
+                                           : text(ll.sp_page, 46, 262, 283, 24);
     widget_set_prop_int(note, "style:normal:text_color", (int)0xffaaaaaau);
     widget_set_text_utf8(note, "专辑和文件夹随机排序需要片刻");
     theme_font(note, ROLE_INFO, FONT_ROW);
@@ -146,7 +148,7 @@ int shuffle_menu(void *ctx, void *event) {
 }
 
 /* Most Played's row: the ranked list from that track, as a library (not folder) queue. */
-static int mp_play(void *ctx, void *event) {
+static int mp_play(void *ctx, event_t *event) {
     play_folder(st.mp_list, (int)(long)ctx, 0xf001);
     return 0;
 }
@@ -268,7 +270,7 @@ void mp_counted(void *r, unsigned key, unsigned evicted) {
     }
 }
 
-static int mp_closed(void *ctx, void *event) {
+static int mp_closed(void *ctx, event_t *event) {
     st.mp_page = 0;
     return 0;
 }
@@ -279,7 +281,7 @@ static int mp_closed(void *ctx, void *event) {
  * ponytail: the first open after boot or a library change still hashes every song's path, and a
  * song first counted from stock's folder browser shows without its artist until then (no library
  * tags). */
-int most_played(void *ctx, void *event) {
+int most_played(void *ctx, event_t *event) {
     if (st.mp_page || !(st.mp_page = page_open("mostplayed_page", mp_closed, page_keyup))) return 0;
     int n, idx[PLAYS_TOP];
     unsigned score[PLAYS_TOP], gen = library_gen;
@@ -294,7 +296,7 @@ int most_played(void *ctx, void *event) {
     if (st.mp_list && st.mp_list != from) deque_destroy(st.mp_list);
     deque_destroy(from);
     st.mp_list = ranked;
-    void *view = page_list_or(st.mp_page, st.mp_page, "播放最多", "暂无播放记录", top, 64);
+    widget_t *view = page_list_or(st.mp_page, st.mp_page, "播放最多", "暂无播放记录", top, 64);
     char name[512], detail[300];
     for (int i = 0; i < top; i++) { /* the artist, if tagged, and the play count, under the title */
         void *t = deque_at(st.mp_list, (unsigned)i);
@@ -326,7 +328,7 @@ static int td_named(const void *a, const void *b) {
     return strcmp(x ? x : "", y ? y : "");
 }
 /* A song's row: on Tidal Downloads the songs follow Download All's row. */
-static int td_play(void *ctx, void *event) {
+static int td_play(void *ctx, event_t *event) {
     int i = (int)(long)ctx - (ll.td_all != 0);
     void *t = deque_at(ll.td_list, (unsigned)i);
     if (t && !access(P(t, REC_PATH), 0)) play_folder(ll.td_list, i, 0xf001);
@@ -340,7 +342,7 @@ static void td_all_text(int press) {
     tidal_all(press, s, sizeof s);
     if (ll.td_all) widget_set_text_utf8(ll.td_all, s);
 }
-static int td_all(void *ctx, void *event) {
+static int td_all(void *ctx, event_t *event) {
     td_all_text(1);
     return 0;
 }
@@ -382,7 +384,7 @@ static void song_label(const char *f, int tidal, char *out, unsigned size) {
 static int td_show(const void *unused);
 /* Clear All Downloads…, then on its confirmation Cancel or Remove (row 2: tidal_clear), each
  * through td_show, from a timer, as a row's click may not rebuild the list it is in. */
-static int td_clear(void *ctx, void *event) {
+static int td_clear(void *ctx, event_t *event) {
     if (ll.td_asking && (long)ctx == 2) tidal_clear();
     ll.td_asking = !ll.td_asking;
     rearm(&ll.td_timer, td_show, 0);
@@ -390,11 +392,12 @@ static int td_clear(void *ctx, void *event) {
 }
 /* The page's songs, read again; Tidal's (tidal 1) start with Download All's row and end with Clear
  * All Downloads…, as Spotify's Storage Management does. Returns the list. */
-static void *songs_rows(const char *dir, const char *title, int tidal, int album) {
+static widget_t *songs_rows(const char *dir, const char *title, int tidal, int album) {
     if (ll.td_list) deque_destroy(ll.td_list);
     ll.td_list = card_songs(dir, album);
     int n = (int)deque_size(ll.td_list);
-    void *view = page_list_or(ll.td_page, ll.td_page, title, "暂无下载", n + tidal + (tidal && n), 48);
+    widget_t *view = page_list_or(ll.td_page, ll.td_page, title, "暂无下载",
+                                  n + tidal + (tidal && n), 48);
     char name[256];
     if (tidal) {
         ll.td_all = widget_get_child(page_row_detail(view, 0, "", 0, td_all), 0);
@@ -414,21 +417,21 @@ static int td_show(const void *unused) {
     if (!ll.td_page) return 0;
     unsigned n = deque_size(ll.td_list);
     if (!ll.td_asking) {
-    void *view = songs_rows(TIDAL_DIR, "Tidal 下载", 1, 0);
+        widget_t *view = songs_rows(TIDAL_DIR, "Tidal 下载", 1, 0);
         if ((n = deque_size(ll.td_list))) ringnav_select(view, (int)n + 1, (int)n + 2);
         return 0;
     }
     char note[32];
     ll.td_all = 0; /* its row goes with the list */
     tk_snprintf(note, sizeof note, n == 1 ? "%u track" : "%u tracks", n);
-    void *view = page_list(ll.td_page, ll.td_page, 0, "移除下载？", 3, 64);
+    widget_t *view = page_list(ll.td_page, ll.td_page, 0, "移除下载？", 3, 64);
     page_row_detail(view, 0, note, "保留设置", 0);
     page_row_detail(view, 1, "取消", "", td_clear);
     page_row_detail(view, 2, "移除", "", td_clear);
     ringnav_select(view, 1, 3);
     return 0;
 }
-static int td_closed(void *ctx, void *event) {
+static int td_closed(void *ctx, event_t *event) {
     ll.td_page = 0;
     ll.td_all = 0;
     ll.td_asking = 0;
@@ -438,7 +441,7 @@ static int td_closed(void *ctx, void *event) {
     return 0;
 }
 /* Return on the confirmation is its Cancel. */
-static int td_keyup(void *ctx, void *event) {
+static int td_keyup(void *ctx, event_t *event) {
     if (!ll.td_asking || I(event, EVENT_KEY) != KEY_RETURN) return page_keyup(ctx, event);
     td_clear((void *)1, event);
     return STOP;
@@ -450,7 +453,7 @@ static int songs_page(const char *window, const char *dir, const char *title, in
     songs_rows(dir, title, tidal, album);
     return 0;
 }
-int tidal_downloads(void *ctx, void *event) {
+int tidal_downloads(void *ctx, event_t *event) {
     (void)ctx, (void)event;
     return songs_page("tidal_downloads", TIDAL_DIR, "Tidal 下载", 1, 0);
 }
@@ -506,7 +509,7 @@ typedef struct {
     int year;
 } era_t;
 static struct {
-    void *page, *albums; /* the decades page, a decade's page */
+    widget_t *page, *albums; /* the decades page, a decade's page */
     int decade[ERA_DECADES], count[ERA_DECADES], n;
     era_t *v; /* the open decade's albums, oldest first, room for cap */
     unsigned m, cap;
@@ -558,7 +561,7 @@ static void era_free(void) {
     free(era.v);
     era.v = 0, era.m = era.cap = 0;
 }
-static int era_closed(void *ctx, void *event) {
+static int era_closed(void *ctx, event_t *event) {
     if (ctx == era.page) era.page = 0;
     if (ctx == era.albums) era.albums = 0, era_free();
     return 0;
@@ -624,7 +627,7 @@ static void *era_shuffle_songs(void) {
 }
 /* Play All from the first song as a library queue, as Coverflow's All albums; Shuffle is Shuffle
  * Songs over them; an album opens its tracks in Coverflow. */
-static int era_pick(void *ctx, void *event) {
+static int era_pick(void *ctx, event_t *event) {
     int i = (int)(long)ctx;
     if (i < 2) {
         void *all = i ? era_shuffle_songs() : era_songs();
@@ -650,7 +653,7 @@ static int era_pick(void *ctx, void *event) {
     if ((unsigned)(i - 2) < era.m) deque_destroy(songs);
     return 0;
 }
-static int era_open_decade(void *ctx, void *event) {
+static int era_open_decade(void *ctx, event_t *event) {
     int k = (int)(long)ctx, from = era.decade[k];
     if (era.albums) return 0;
     char sql[2048], name[16], detail[300];
@@ -671,8 +674,8 @@ static int era_open_decade(void *ctx, void *event) {
         era_free();
         return 0;
     }
-    void *view = page_list(era.albums, era.albums, 0, era_name(name, from), (int)era.m + 2, 64);
-    tk_snprintf(detail, sizeof detail, "%u 张专辑", era.m);
+    widget_t *view = page_list(era.albums, era.albums, 0, era_name(name, from), (int)era.m + 2, 64);
+    tk_snprintf(detail, sizeof detail, era.m == 1 ? "%u 张专辑" : "%u 张专辑s", era.m);
     page_row_detail(view, 0, "全部播放", detail, era_pick);
     page_row_detail(view, 1, "随机播放", "全部歌曲，随机播放", era_pick);
     for (unsigned i = 0; i < era.m; ++i) {
@@ -682,7 +685,7 @@ static int era_open_decade(void *ctx, void *event) {
     }
     return 0;
 }
-int era_menu(void *ctx, void *event) {
+int era_menu(void *ctx, event_t *event) {
     if (era.page) return 0;
     era.n = 0;
     if (!era_sql("select year/10*10,count(*) from (select " ALBUM_YEAR
@@ -697,7 +700,7 @@ int era_menu(void *ctx, void *event) {
         return 0;
     }
     if (!(era.page = page_open("era_page", era_closed, page_keyup))) return 0;
-    void *view = page_list(era.page, era.page, 0, "年代", era.n, 64);
+    widget_t *view = page_list(era.page, era.page, 0, "年代", era.n, 64);
     char name[16], detail[32];
     for (int i = 0; i < era.n; ++i) {
         tk_snprintf(detail, sizeof detail, "%d 张专辑",
@@ -715,7 +718,8 @@ typedef struct {
 } length_t;
 static struct {
     unsigned timer;
-    void *songs, *title;
+    void *songs;
+    widget_t *title;
 } ls __attribute__((section(".scratch")));
 
 static int by_length(const void *a, const void *b) {
@@ -737,7 +741,7 @@ static void ls_show(void) {
     if (n) qsort(v, n, sizeof *v, by_length);
     for (unsigned i = 0; i < n; i++) _deque_push_back(list, deque_at(songs, v[i].key));
     st.rt_list = list;
-    void *view = page_list(st.rt_page, st.rt_page, 0, "长曲目", n ? (int)n : 1, 64);
+    widget_t *view = page_list(st.rt_page, st.rt_page, 0, "长曲目", n ? (int)n : 1, 64);
     char name[512], detail[300], t[16];
     for (unsigned i = 0; i < n; i++) {
         void *r = deque_at(list, i);
@@ -755,7 +759,7 @@ static void ls_show(void) {
 
 /* The page gone: what was probed is kept. Its list is ratings.c's slot, whose rows play it
  * (rt_play). */
-static int ls_page_closed(void *ctx, void *event) {
+static int ls_page_closed(void *ctx, event_t *event) {
     rt_closed(ctx, event);
     stop_timer(&ls.timer);
     if (!st.scan_durations) durations_cancel(); /* switch off: the pass is the page's own */
@@ -771,7 +775,7 @@ static int ls_done(const void *unused) {
     return 0;
 }
 
-static int ls_cancel(void *ctx, void *event) {
+static int ls_cancel(void *ctx, event_t *event) {
     durations_cancel(); /* publish completed jobs when the worker exits */
     return 0;
 }
@@ -788,7 +792,7 @@ static int ls_poll(const void *unused) {
 /* Long Songs' row: every song measured first, whatever Scan Song Durations is, unless a whole pass
  * already covered this library or every song already has a length; a pass running is observed,
  * never duplicated. */
-int long_songs(void *ctx, void *event) {
+int long_songs(void *ctx, event_t *event) {
     if (st.rt_page || !(st.rt_page = page_open("longsongs_page", ls_page_closed, page_keyup)))
         return 0;
     int n;
@@ -850,7 +854,7 @@ int ringnav_fill_songs(int (*row)(void *, const char *, const char *, const char
  * rebuild: the value and the key alone, which Albums' next open builds from. */
 void album_view_toggle(void) {
     int was = I(album_modetype, 0);
-    void *page = widget_lookup(window_manager(), "album_page", 0);
+    widget_t *page = widget_lookup(window_manager(), "album_page", 0);
     if (page) album_covermode(page, (void *)0);
     if (I(album_modetype, 0) != was) return;
     I(album_modetype, 0) = !was;

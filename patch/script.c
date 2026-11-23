@@ -9,7 +9,7 @@
 
 /* Retain a theme's bold intent when its selected face falls back to stock's full Unicode font.
  * Shared by Cover Flow captions, its track panel, themed rows and Now Playing titles. */
-void font_weight_mark(void *w, int bold) {
+void font_weight_mark(widget_t *w, int bold) {
     bold = bold != 0;
     if (w && widget_get_prop_int(w, WEIGHT_PROP, 0) != bold)
         widget_set_prop_int(w, WEIGHT_PROP, bold);
@@ -18,7 +18,7 @@ void font_weight_mark(void *w, int bold) {
 /* The existing border hook runs after native self painting. Repeat only marked labels' own
  * foreground one pixel right, keeping their native shaping, marquee, clip and style. Calling
  * the vtable self painter does not dispatch paint events or re-enter border painting. */
-void font_weight_paint(void *w, void *canvas) {
+void font_weight_paint(widget_t *w, canvas_t *canvas) {
     if (!w || !canvas || !widget_get_prop_int(w, WEIGHT_PROP, 0)) return;
     const unsigned *text = widget_get_text(w);
     if (!text || !*text) return;

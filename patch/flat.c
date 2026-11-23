@@ -27,7 +27,7 @@ const char *flat_face(void) {
 /* A round box in a final colour: stock's, one call, as a row at a time costs a page's other parts
  * their share of a paint. Light Mode's ink is held off it, as flipping a colour back is not exact.
  */
-void flat_box(void *canvas, rect_t *r, unsigned rgba, unsigned radius) {
+void flat_box(canvas_t *canvas, rect_t *r, unsigned rgba, unsigned radius) {
     unsigned raw = ui_ink_raw(1);
     fill_box(canvas, r, rgba, radius);
     ui_ink_raw(raw);
@@ -36,7 +36,7 @@ void flat_box(void *canvas, rect_t *r, unsigned rgba, unsigned radius) {
  * round end), and its marks in its ends (BAR_SUNS, BAR_SPEAKERS, or none): the near one on the
  * fill, white, or dark on a bright fill, and the far one quiet until the fill reaches it, then the
  * near one's ink. */
-void flat_bar(void *w, void *canvas, const rect_t *r, int part, unsigned rest, int marks) {
+void flat_bar(widget_t *w, canvas_t *canvas, const rect_t *r, int part, unsigned rest, int marks) {
     static const struct {
         const char *near, *far;
         signed char nx, ny, fx, fy; /* the near one's place from r's corner, the far one's in */
@@ -69,7 +69,7 @@ void flat_bar(void *w, void *canvas, const rect_t *r, int part, unsigned rest, i
 }
 /* A page's label on the half's paper: slider_label's box and face, its ink the dark half's
  * 0xRRGGBB, no longer final, so Light Mode's style hook turns it with the page. */
-void page_label(void *w, int x, int y, int ww, int h, int px, const char *face, unsigned rgb) {
+void page_label(widget_t *w, int x, int y, int ww, int h, int px, const char *face, unsigned rgb) {
     slider_label(w, x, y, ww, h, px, face);
     widget_set_prop_int(w, "_final_n", 0);
     widget_set_prop_int(w, "style:normal:text_color", (int)(0xff000000u | (RGBA(rgb) & 0xffffffu)));
@@ -80,9 +80,9 @@ void page_label(void *w, int x, int y, int ww, int h, int px, const char *face, 
 /* confirm_track's, flat: Form A's paper, or the tray, the toast's box, then each cell at rest, the
  * pages' grey, or a lighter one on the tray's dark box. */
 #define CONFIRM_TRAY_REST 0x48484a
-void confirm_track_flat(void *w, void *canvas, int form) {
-    void *lcd = P(canvas, CANVAS_LCD),
-         *cell[2] = { widget_lookup(w, "img_cancel", 0), widget_lookup(w, "img_enter", 0) };
+void confirm_track_flat(widget_t *w, canvas_t *canvas, int form) {
+    void *lcd = P(canvas, CANVAS_LCD);
+    widget_t *cell[2] = { widget_lookup(w, "img_cancel", 0), widget_lookup(w, "img_enter", 0) };
     if (!lcd || !cell[0] || !cell[1]) return;
     unsigned fill = (unsigned)I(lcd, LCD_FILL_COLOR);
     int light = ipod_light();
@@ -92,8 +92,8 @@ void confirm_track_flat(void *w, void *canvas, int form) {
         rect_t tray = { 38, 248, 299, 56 };
         flat_box(canvas, &tray, TOAST_RGBA, 12);
     } else {
-        bar_rect(canvas, RGBA(scheme()->paper), 0, BAR_ROWS, 375, 320 - BAR_ROWS);
-        void *bar = *(void *const *)system_bar; /* over Quick Settings nothing else draws it */
+        bar_rect(canvas, RGBA(flat_page()), 0, BAR_ROWS, 375, 320 - BAR_ROWS);
+        widget_t *bar = *(void *const *)system_bar; /* over Quick Settings nothing else draws it */
         if (bar) widget_paint(bar, canvas);
         st.paint_w = w;
     }
@@ -104,15 +104,15 @@ void confirm_track_flat(void *w, void *canvas, int form) {
     stock_canvas_set_fill_color(canvas, fill);
 }
 /* The flat look's cell that holds, flat in what is on, from paint_selection's confirm branch. */
-void confirm_lit(void *canvas, const rect_t *c) {
+void confirm_lit(canvas_t *canvas, const rect_t *c) {
     unsigned on = flat_on();
     stops_t lit = { 2, { 0, 100 }, { on, on } };
     paint_round_rows(canvas, c, &lit, 18);
 }
 /* confirm_labels', flat: no shadow; on the cell that holds white, or the ink on a bright fill; on
  * the other the half's ink, or white on the tray's dark box. */
-void confirm_labels_flat(void *w, void *canvas, int form) {
-    void *cell[2] = { widget_lookup(w, "img_cancel", 0), widget_lookup(w, "img_enter", 0) };
+void confirm_labels_flat(widget_t *w, canvas_t *canvas, int form) {
+    widget_t *cell[2] = { widget_lookup(w, "img_cancel", 0), widget_lookup(w, "img_enter", 0) };
     int light = ipod_light(), lit = st.sel_w == w ? st.sel_row : -1;
     if (!cell[0] || !cell[1]) return;
     unsigned over = bright_tone(flat_on()) ? flat_ink[1] : 0xffffff,
@@ -130,7 +130,7 @@ void confirm_labels_flat(void *w, void *canvas, int form) {
  * rows of it, the height of its corners, so the last row's band stays inside them. over: 0 before
  * the dialog's children (the card, and a line under its header), 1 after them (a hairline round the
  * card, a pixel outside it, over whatever lies there). Final colours. */
-void hold_card_flat(void *canvas, const rect_t *card, int head, int over) {
+void hold_card_flat(canvas_t *canvas, const rect_t *card, int head, int over) {
     unsigned line = ipod_light() ? 0xd1d1d6 : 0x38383a, paper = flat_page();
     if (over) {
         rect_t ring = { card->x - 1, card->y - 1, card->w + 2, card->h + 2 };

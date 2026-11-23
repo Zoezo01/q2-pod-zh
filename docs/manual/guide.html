@@ -202,7 +202,7 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3, .lead { b
 
     <li class="chap" data-n="7"><a class="t" href="#c7">Podcasts, Audiobooks and More</a><span class="n">{{p:c7}}</span></li>
     <li><a class="t" href="#pods">Podcasts and audiobooks</a><span class="n">{{p:pods}}</span></li>
-    <li><a class="t" href="#pbv">Photos, books and videos</a><span class="n">{{p:pbv}}</span></li>
+    <li><a class="t" href="#pbv">Photos and videos</a><span class="n">{{p:pbv}}</span></li>
     <li><a class="t" href="#games">Games</a><span class="n">{{p:games}}</span></li>
 
     <li class="chap" data-n="8"><a class="t" href="#c8">Bluetooth and AirPods</a><span class="n">{{p:c8}}</span></li>
@@ -281,7 +281,6 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3, .lead { b
     <tbody>
       <tr><td>Menus and lists</td><td>Opens the highlighted item</td><td>Turns the screen off</td><td>Turns the Q2 off</td></tr>
       <tr><td>Now Playing</td><td>Turns the screen off</td><td>Starts seeking (<a href="#np">Now Playing</a>)</td><td>Turns the Q2 off</td></tr>
-      <tr><td>Video</td><td>Starts or stops seeking, 10 s a tick</td><td>Does nothing more</td><td>Turns the Q2 off</td></tr>
     </tbody>
   </table>
   <p>With <b>Single Press Scrub</b> on (<a href="#settings-controls">Controls</a>), Now Playing’s press and double-press swap, so it works as other pages do.</p>
@@ -367,7 +366,7 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3, .lead { b
     <li>Stream Spotify (Premium), AirPlay and Internet Radio, and install apps and updates over Wi-Fi</li>
     <li>Rate songs and albums, edit playlists, shuffle by song, album or folder, and crossfade between albums</li>
     <li>Read synced lyrics, download lyrics and covers, and send your listens to Last.fm or ListenBrainz</li>
-    <li>Resume podcasts and audiobooks where you stopped, and keep photos, books, videos and games on the card</li>
+    <li>Resume podcasts and audiobooks where you stopped, and keep photos and games on the card</li>
     <li>Use AirPods stem controls, ear detection and two-way volume</li>
     <li>Look after the battery with an 80% charge limit, a Standby limit and a sleep timer, and keep the clock set through power-off</li>
   </ul>
@@ -450,8 +449,6 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3, .lead { b
     <tbody>
       <tr><td><code>Podcasts/</code>, <code>Audiobooks/</code></td><td>One folder per show or book; they resume and never count as plays</td><td>You</td></tr>
       <tr><td><code>Photos/</code></td><td><code>.jpg</code>, <code>.jpeg</code>, <code>.png</code> (JPEG up to 6 MB, PNG 1 MB); subfolders are albums</td><td>You</td></tr>
-      <tr><td><code>Books/</code></td><td><code>.txt</code>, <code>.epub</code> (no DRM); one level of subfolders</td><td>You</td></tr>
-      <tr><td><code>Videos/</code></td><td><code>.mp4</code>, <code>.m4v</code>, <code>.mkv</code>, <code>.avi</code>, <code>.mov</code>, <code>.mpg</code>; one level of subfolders</td><td>You</td></tr>
       <tr><td><code>EQ/</code></td><td>AutoEQ and Equalizer APO presets to import</td><td>You</td></tr>
       <tr><td><code>Radio/</code></td><td>Internet Radio playlists, <code>.m3u</code> and <code>.pls</code></td><td>Both</td></tr>
       <tr><td><code>lockscreenimage/</code></td><td>Up to 5 lock screen images</td><td>You</td></tr>
@@ -461,13 +458,13 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3, .lead { b
       <tr><td><code>.scrobbler.log</code>, <code>.sent</code></td><td>Every listen, in Rockbox’s format, and those already uploaded</td><td>Q2 Pod</td></tr>
       <tr><td><code>.ratings.tsv</code></td><td>A copy of your ratings, to read on a computer</td><td>Q2 Pod</td></tr>
       <tr><td><code>.coverflow/</code></td><td>Cover Flow’s artwork, and playlist pictures</td><td>Q2 Pod</td></tr>
-      <tr><td><code>.photos/</code>, <code>.books/</code></td><td>Photo thumbnails, and EPUBs converted to text</td><td>Q2 Pod</td></tr>
+      <tr><td><code>.photos/</code></td><td>Photo thumbnails</td><td>Q2 Pod</td></tr>
       <tr><td><code>.sldp/</code></td><td>Shanling’s own cover cache</td><td>Stock</td></tr>
       <tr><td><code>.spotify/</code></td><td>The Spotify add-on; <code>cache/</code> holds your login and downloads</td><td>You</td></tr>
       <tr><td><code>.tidal/</code></td><td>Tidal songs you’ve downloaded or played, to replay offline</td><td>Q2 Pod</td></tr>
     </tbody>
   </table>
-  <p>You can delete <code>.coverflow/</code>, <code>.photos/</code> and <code>.books/</code> to free space; Q2 Pod rebuilds them as needed. Cover Flow and Photos need 16 MB free. Don’t delete <code>.spotify/cache/</code> or <code>.tidal/</code>: that signs you out or removes offline songs. Their size is set in <a href="#stream-config">Streaming Configuration</a>.</p>
+  <p>You can delete <code>.coverflow/</code> and <code>.photos/</code> to free space; Q2 Pod rebuilds them as needed. Cover Flow and Photos need 16 MB free. Don’t delete <code>.spotify/cache/</code> or <code>.tidal/</code>: that signs you out or removes offline songs. Their size is set in <a href="#stream-config">Streaming Configuration</a>.</p>
   </div>
 
 </section>
@@ -490,7 +487,7 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3, .lead { b
       <tr><td>Playlists, Ratings</td><td>See <a href="#c4">Chapter 4</a></td></tr>
       <tr><td>Recently Added, Recent, Most Played, Hi-Res</td><td>Your newest songs, what you played lately, your 100 most played, and hi-res files</td></tr>
       <tr><td>Shuffle</td><td>Shuffle the whole library (<a href="#shuffle">Shuffling your library</a>)</td></tr>
-      <tr><td>Podcasts, Audiobooks, Photos, Books, Videos</td><td>Shown when the card has those folders (<a href="#c7">Chapter 7</a>)</td></tr>
+      <tr><td>Podcasts, Audiobooks, Photos</td><td>Shown when the card has those folders (<a href="#c7">Chapter 7</a>)</td></tr>
       <tr><td>Apps</td><td>Installed apps that open here, once there is one</td></tr>
       <tr><td>Games</td><td>Sudoku, Vortex, Solitaire, Snake and your installed games</td></tr>
       <tr><td>App Store, Upload Scrobbles, Update Library</td><td>See <a href="#apps">Installing apps</a>, <a href="#scrobble">Scrobbling</a> and <a href="#addmusic">Adding music</a></td></tr>
@@ -569,7 +566,7 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3, .lead { b
   </ul>
   <div class="sub">
   <h3>Visualizer</h3>
-  <p>Swipe Now Playing to its fourth page for <b>Spectrum</b>, <b>Oscilloscope</b>, <b>VU Meters</b> or <b>Halo</b>. Tap to switch; your choice is kept. It follows what you hear, EQ included.</p>
+  <p>Swipe Now Playing to its fourth page for <b>Spectrum</b>, <b>Oscilloscope</b>, <b>VU Meters</b>, <b>Halo</b>, <b>Pulsar</b> or <b>Contour</b>. Tap to switch; your choice is kept. It follows what you hear, EQ included.</p>
   </div>
   </div>
 
@@ -593,7 +590,7 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3, .lead { b
     </tbody>
   </table>
   <ul>
-    <li><b>Library → Ratings</b> lists <b>Top Rated</b> (4 and 5 hearts), <b>Loved</b> (5), <b>All Rated</b> and <b>Disliked</b> (1). A row plays the list from that song. Home’s <b>Favorites</b> shortcut lists the Loved songs.</li>
+    <li><b>Library → Ratings</b> lists <b>Top Rated</b> (4 and 5 hearts), <b>Loved</b> (5), <b>All Rated</b> and <b>Disliked</b> (1). A row plays the list from that song; hold Play/Pause on one of these lists to shuffle it. Home’s <b>Favorites</b> shortcut lists the Loved songs.</li>
     <li><b>Library → Ratings → Albums</b> shows your rated albums in Cover Flow. Its <b>Sort</b> card cycles Rating, Album, Artist, Year and Most Played.</li>
     <li>Ratings survive Update Library, but not moving, renaming or retagging the file or album.</li>
     <li>The card keeps a copy as <code>.ratings.tsv</code>, to read on a computer. Editing it changes nothing on the Q2.</li>
@@ -936,12 +933,10 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
 <!-- ============ 7 PODCASTS ETC ============ -->
 <section class="chapter" style="page: ch7">
   <div class="opener"><h1 id="c7">Podcasts, Audiobooks and More</h1><div class="num">7</div></div>
-  <p class="lead">Add a folder to the card and the Q2 adds it to the Library: spoken word that resumes, photos, books, videos and games.</p>
+  <p class="lead">Add a folder to the card and the Q2 adds it to the Library: spoken word that resumes, photos and games.</p>
   <div class="icons">
     <figure><img src="../../assets/icons/local_podcasts.png" alt="">Podcasts</figure>
     <figure><img src="../../assets/icons/local_audiobooks.png" alt="">Audiobooks</figure>
-    <figure><img src="../../assets/icons/local_books.png" alt="">Books</figure>
-    <figure><img src="../../assets/icons/local_videos.png" alt="">Videos</figure>
     <figure><img src="../../assets/icons/local_games.png" alt="">Games</figure>
   </div>
 
@@ -970,17 +965,16 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
   </div>
 
   <div class="sec">
-  <h2 id="pbv">Photos, books and videos</h2>
-  <p>Put them in <code>Photos</code>, <code>Books</code> and <code>Videos</code> at the card’s root (<a href="#card">formats</a>). Photos’ subfolders are albums; the others take one level of subfolders.</p>
+  <h2 id="pbv">Photos and videos</h2>
+  <p>Put photos in <code>Photos</code> at the card’s root (<a href="#card">formats</a>). Its subfolders are albums.</p>
   <table class="three">
     <thead><tr><th>Screen</th><th>Wheel</th><th>Centre</th><th>Other</th></tr></thead>
     <tbody>
       <tr><td>Photo</td><td>Previous or next photo</td><td>Shows or hides “3 of 40” and the name</td><td>Return goes back</td></tr>
-      <tr><td>Book</td><td>Turns the pages</td><td>Shows or hides your progress</td><td>Books reopen where you left off</td></tr>
-      <tr><td>Video</td><td>Volume</td><td>Starts or stops seeking, 10 s a tick</td><td>Play/Pause pauses, Next and Previous skip, Return exits</td></tr>
     </tbody>
   </table>
-  <p>Video sound plays on the headphone jack, Bluetooth or a USB DAC; music stops meanwhile. Videos near the screen’s 375 × 320 play smoothest. Other photo formats, such as WebP, are skipped.</p>
+  <p>Other photo formats, such as WebP, are skipped.</p>
+  <p><b>Videos</b> is an app: install it from Library → App Store (<a href="#apps">Installing apps</a>), then open it from Library → Apps. It plays the videos in the card’s <code>Videos</code> folder.</p>
   </div>
 
   <div class="sec">
@@ -1014,7 +1008,7 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
 
   <div class="sec">
   <h2 id="bt">Bluetooth headphones</h2>
-  <p>Hold Bluetooth in quick settings to open its settings and pair headphones. The codec (AAC, LDAC…) shows briefly in the status bar as they connect. Music, Spotify, Internet Radio and video sound all play over Bluetooth.</p>
+  <p>Hold Bluetooth in quick settings to open its settings and pair headphones. The codec (AAC, LDAC…) shows briefly in the status bar as they connect. Music, Spotify and Internet Radio all play over Bluetooth.</p>
   <table>
     <thead><tr><th>LDAC quality</th><th>Bitrate</th></tr></thead>
     <tbody>
@@ -1040,7 +1034,7 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
     <thead><tr><th>To</th><th>Do this</th></tr></thead>
     <tbody>
       <tr><td>Play or pause</td><td>Press the stem once.</td></tr>
-      <tr><td>Skip forward or back</td><td>Double- or triple-press the stem: songs, stations for Internet Radio, or seek steps for video.</td></tr>
+      <tr><td>Skip forward or back</td><td>Double- or triple-press the stem: songs, or stations for Internet Radio.</td></tr>
       <tr><td>Pause</td><td>Take a bud out. Put it back to resume.</td></tr>
     </tbody>
   </table>
@@ -1109,7 +1103,7 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
     <tbody>
       <tr><td>Brightness, Screen Off Time</td><td>How bright the screen is, and how long it stays lit. Music keeps playing after it goes dark.</td></tr>
       <tr><td>Smart Awake</td><td>Off by default. On: while a song plays, the screen stays lit on the lyrics, info and visualizer pages and on full-screen art, so you can read along. An App Store game also stays open and lit. Elsewhere, Screen Off Time applies.</td></tr>
-      <tr><td>Night Shift</td><td>Off, On or Auto (19:00 to 7:00): warmer colours, easier on the eyes at night. Turn the wheel or drag for 5000K to 2000K, 3400K by default. Videos stay untinted.</td></tr>
+      <tr><td>Night Shift</td><td>Off, On or Auto (19:00 to 7:00): warmer colours, easier on the eyes at night. Turn the wheel or drag for 5000K to 2000K, 3400K by default.</td></tr>
       <tr><td>Lock Screen</td><td>See <a href="#lock">Lock Screen</a>, at the end of this chapter.</td></tr>
       <tr><td>Appearance, Cover Flow</td><td>Menus: see <a href="#appearance">Appearance</a> and <a href="#cfset">Cover Flow settings</a>.</td></tr>
     </tbody>
@@ -1128,7 +1122,7 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
       <tr><td>Artist View</td><td>An artist’s albums as Cover Flow (default), a Grid or a List of names. As Cover Flow, an <b>All albums</b> card plays them all, and Return goes back to Artists.</td></tr>
       <tr><td>Playlist View</td><td>List (default), or Cover Flow: playlists as covers (<a href="#playlists">Playlists</a>).</td></tr>
       <tr><td>Fast Navigation</td><td>Off by default. On: turning fast goes by years in the Year sort too, and the large letter stays until you lift your thumb. It keeps small copies of the covers on the card.</td></tr>
-      <tr><td>Position Bar</td><td>Off by default. On: a thin bar shows where you are.</td></tr>
+      <tr><td>Position Bar</td><td>Off by default. On: a thin bar shows where you are. Drag it to move through your albums.</td></tr>
       <tr><td>Scan Song Durations</td><td>Off by default. On: each <b>Scan music now</b> or <b>Scan specified folders</b> measures new and changed songs’ lengths in the background, and Cover Flow’s song lists show them. Run Scan music now once after turning it on. A large library takes a while, and stays out of Standby meanwhile.</td></tr>
       <tr><td>Refresh Cover Flow</td><td>Makes all the artwork again the next time Cover Flow opens, Library’s album covers and playlist pictures too: use it after changing covers or tags.</td></tr>
     </tbody>

@@ -139,8 +139,9 @@ for light in '01':
     on = on_of(m, light, '4')
     assert set(under) == {color_t(FLAT_REST[light])} and set(lit) == {color_t(on)} and not rest
     assert [n for n, _ in qs_arts(m)] == ['flat_drop_dim', 'flat_drop_bright_q' + 'dl'[int(light)]] and m.lcd_colors() == LCD_COLORS; passed()
-# Max Volume: the speakers, no triangle and no band's repaint on a step.
+# Max Volume: the speakers, the number over the bar, no triangle and no band's repaint on a step.
 m = slider_flat('maxvol_page', 'slider_maxvol', 'view_maxvol', 'label_vol', ('img_volleft', 'img_volright'), max=100, value=50)
+assert wbox(m, m.label) == (0, 85, 375, 34) and m.nodes[m.label]['visible'] == 1
 assert wbox(m, m.slider) == (33, 115, 309, 70) and not [h for h in m.nodes[m.slider].get('handlers', []) if h[0] == O['EVT_VALUE_CHANGING']]
 scrub_bands(m); assert [n for n, _ in qs_arts(m)] == ['flat_spk_quiet', 'flat_spk_loud_qd']; passed()
 # Balance: the number over the bar, L and R at its ends in the bold face, quiet; no marks in the bar.

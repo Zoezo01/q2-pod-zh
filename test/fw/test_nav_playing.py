@@ -165,7 +165,7 @@ class Ui:
         m('time_now_ms', lambda *_: self.now)
         m('fw___xstat', lambda *_: -1)  # no Rockbox on the card
         m('hscroll_label_create', lambda parent, x, y, w, h, *_: self.widget(parent, '', x, y, w, h))
-        m('image_create', lambda parent, x, y, w, h, *_: self.widget(parent, '', x, y, w, h))
+        m('image_create', lambda parent, x, y, w, h, *_: self.widget(parent, '', C.c_int(x).value, C.c_int(y).value, w, h))
         m('widget_factory_create_widget', lambda f, kind, parent, *_: self.widget(parent, ''))
 
     def cstr(self, value):
@@ -382,6 +382,66 @@ class Bar:
 @pytest.fixture
 def ui(fw):
     return Ui(fw)
+
+
+def test_status_bar_shows_a_card_app_s_icon_left_of_wifi(fw, st, ui):
+    from test_addon import ap  # addon.c's table: an app running whose status file says bar=1
+    theme(fw, st)
+    bar = Bar(fw, ui)
+    a = ap(fw).a[0]
+    ap(fw).n, a.present, a.launched = 1, 1, 1
+    a.name, a.baricon, a.barw = b'Tunnel', b'file:///mnt/mmc/.vpn/bar.png', 16
+    bar.sync()
+    icon = ui.lookup(bar.row, 'img_addon', 0)
+    assert icon and ui.shown.get(icon, 1) == 1 and ui.strs[icon, b'image'].value == b'file:///mnt/mmc/.vpn/bar.png'
+    assert ui.box(icon)[2:] == (16, ui.box(bar.wifi)[3])  # its own width, Wi-Fi's height
+    assert [a[1] for _, a in fw.calls('widget_restack') if a[0] == icon] == [ui.kids[bar.row].index(bar.wifi)]
+    ui.timers.clear()
+    st.bar_timer = 0  # no repaint waiting
+    a.baricon = b'file:///mnt/mmc/.vpn/bar-off.png'  # bar=off: the greyed icon, in place
+    bar.sync()
+    assert ui.strs[icon, b'image'].value == b'file:///mnt/mmc/.vpn/bar-off.png' and ui.timers  # and the bar again
+    a.baricon = b''  # its status file says bar=0
+    bar.sync()
+    assert ui.lookup(bar.row, 'img_addon', 0) == icon and ui.shown[icon] == 0  # made once, hidden
+
+
+def card_app_icon(fw, w=16):
+    """addon.c's table: an app running whose status file names a w px bar icon."""
+    from test_addon import ap
+    a = ap(fw).a[0]
+    ap(fw).n, a.present, a.launched = 1, 1, 1
+    a.name, a.baricon, a.barw = b'Tunnel', b'file:///mnt/mmc/.vpn/bar.png', w
+
+
+def card_app_shown(ui, bar):
+    icon = ui.lookup(bar.row, 'img_addon', 0)
+    return bool(icon) and ui.shown.get(icon, 1) == 1
+
+
+# The app's icon never runs into the clock (BATT_ROOM): Classic's group with Wi-Fi 18, Bluetooth 14, the play state 22
+# and its 29 px battery reaches 83 in Icon, 91 in Percent (37 px of digits), each before the icon's own width + 4.
+# Classic reads a stored Icon + Percent as Percent Inside, so its fall to Percent Inside is Status Bar: Classic's
+# (STATUSBAR=3) on Minimal or Modern, whose row leaves the play state out: Wi-Fi and the 27 px battery reach 86 with
+# 100%, 47 inside.
+@pytest.mark.parametrize('t, look, mode, bt, playing, shown, kept', [
+    (CLASSIC, 0, 0, 1, 2, False, 0),  # Icon, everything showing: 103, hidden
+    (CLASSIC, 0, 0, 0, 2, True, 0),  # Icon without Bluetooth: 89, shown
+    (CLASSIC, 0, 1, 0, 2, True, 0),  # Percent without Bluetooth: 97 with the digits, 89 as the icon: the number goes
+    (CLASSIC, 0, 1, 1, 2, False, 1),  # Percent, everything: 91 alone, 103 even as the icon: the number stays
+    (CLASSIC, 0, 3, 1, 2, False, 3),  # Percent Inside, everything: the icon's 83, 103: the number kept, the icon hides
+    (CLASSIC, 0, 3, 0, 2, True, 3),  # Percent Inside without Bluetooth: 89, shown
+    (MINIMAL, 3, 2, 0, 2, True, 3)])  # Icon + Percent: 106 with the icon, 67 inside: the number goes inside
+def test_a_card_app_s_bar_icon_shows_only_where_the_row_has_room(fw, st, ui, t, look, mode, bt, playing, shown, kept):
+    theme(fw, st, t, BATTERY=mode, STATUSBAR=look)
+    bar = Bar(fw, ui)
+    crowded(fw, ui, bar)
+    ui.shown[bar.bt] = bt
+    fw.mock('mclGetPlayStatus', lambda *_: playing)
+    st.pct_digit, st.pct_sign = 8, 13
+    card_app_icon(fw)
+    bar.sync()
+    assert card_app_shown(ui, bar) == shown and st.batt_mode == kept
 
 
 def slot_width(ui, bar):

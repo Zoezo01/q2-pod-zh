@@ -24,6 +24,11 @@ SHELF_180 = {'cf.eye': 94, 'cf.tilt': 89, 'cf.x1': 116, 'cf.xs': 34, 'cf.z1': 77
 # stubs are defined once
 CF_SOURCES = '#include "coverflow.c"\n#include "coverflow_thumb.c"\n#include "coverflow_letters.c"\n#include "coverflow_loader.c"\n#include "coverflow_land.c"\n#include "playlist_art.c"\n#include "coverflow_position.c"\n'
 SHIM_H = r"""
+/* The shim's stock objects are records of its own behind void *: patch/stock_types.h's names are void here,
+ * so every stub keeps the signature it was written with. tools/tidy.sh and the Q2's build hold the types. */
+#define Q2_STOCK_TYPES_H
+typedef void widget_t, event_t, canvas_t, vgcanvas_t, widget_animator_t, widget_factory_t, image_manager_t,
+    input_method_t;
 extern char system_bar[];
 #include <dirent.h>
 #include <errno.h>
@@ -744,10 +749,11 @@ static int year_old;
 /* navigation.c's Fast Navigation: letters, years and half copies; main turns it on for their tests */
 static int big_library;
 static int artist_view;
-/* navigation.c's settings: those above, the rest (Artist Album Order, Cover Flow's position, Hide ...
-   on Home) off */
+static int cf_position; /* Cover Flow's Position Bar */
+/* navigation.c's settings: those above, the rest (Artist Album Order, Hide ... on Home) off */
 int pod_value(int i) {
-    return i == POD_YEAR_OLD ? year_old : i == POD_BIG_LIB ? big_library : i == POD_ARTIST_CF ? artist_view : 0;
+    return i == POD_YEAR_OLD ? year_old : i == POD_BIG_LIB ? big_library : i == POD_ARTIST_CF ? artist_view
+           : i == POD_CF_POSITION ? cf_position : 0;
 }
 /* Stock's row maker for a ranking query (split_row's first four columns): the album named by v[1]
    as a row of its own, added to the staged deque. */
@@ -1107,6 +1113,8 @@ static void renderer(void) {
 
 int coverflow_hit(int, int, int);
 void coverflow_lost_touch(void);
+int coverflow_position_held(void), lettered(void *), cf_fx_has(int);
+void coverflow_position_reset(void);
 static unsigned batch; /* the dispatch time of moves queued together, else 0 */
 static int touch_at(int type, int x, int y, unsigned t) { /* t: when the event was posted */
     int e[16] = {0};
@@ -1232,6 +1240,66 @@ static void touches(widget *s, widget *covers_view) {
     int album = *(int *)(raw + SLIDE_INDEX);
     run(); assert(!strcmp(title(), names[album]) && !covers_view->visible);
     key(KEY_RETURN); assert(covers_view->visible);
+    /* The position bar's scrub (coverflow_position.c): with Position Bar on, a press in the footer
+       under the captions takes the bar, and the covers go to the album under the finger, a tap's
+       glide a few albums on, farther at once; off, the same press is the covers' as before. */
+    int *box = (int *)covers_view->raw, (*was)(const void *) = timer_fn; /* W_X, W_Y, W_W, W_H */
+    int art = 160, left = box[0] + (box[2] - art) / 2, travel = art - 9, bottom = 0; /* ART_SIZE, the thumb's 9 */
+    for (int i = 0; i < covers_view->nkids; ++i) /* the last caption's lower edge */
+        if (!strcmp(w[covers_view->kids[i]].type, "hscroll_label")) {
+            int *l = (int *)w[covers_view->kids[i]].raw;
+            bottom = l[1] + l[3] > bottom ? l[1] + l[3] : bottom;
+        }
+    int bar = box[1] + (bottom + box[3]) / 2, g = glides, one = (travel + (n - 1) / 2) / (n - 1);
+    assert(n > 2 + 4 && bottom && bar < box[1] + box[3]); /* the last album is farther than a glide */
+    int kept = *(int *)(raw + SLIDE_INDEX); /* the album the page keeps, put back at the end */
+    *(int *)(raw + SLIDE_INDEX) = 0, *(int *)(raw + SLIDE_OFFSET) = 0;
+    touch_at(EVT_POINTER_DOWN, left + art - 1, bar, 0);
+    assert(!coverflow_position_held());
+    touch_at(EVT_POINTER_UP_BEFORE, left + art - 1, bar, 50);
+    assert(*(int *)(raw + SLIDE_INDEX) == 0 && glides == g);
+    cf_position = 1;
+    int before = letters;
+    touch_at(EVT_POINTER_DOWN, left + art - 1, bar, 100); /* the right end: the last album */
+    assert(coverflow_position_held() && *(int *)(raw + SLIDE_INDEX) == n - 1 && glides == g);
+    assert(!lettered(s) || letters == before + 1);
+    touch_at(EVT_POINTER_MOVE_BEFORE, left - 12, bar + 40, 120); /* past the left end: the first */
+    assert(*(int *)(raw + SLIDE_INDEX) == 0 && !offset(s) && glides == g);
+    touch_at(EVT_POINTER_MOVE_BEFORE, left + 4 + one, bar, 140); /* the thumb's centre on album 1 */
+    assert(glides == g + 1 && glide_goal == -CF_STRIDE && glide_ms == CF_TAP_MS && glide_easing == SLIDE_EASING);
+    touch_at(EVT_POINTER_UP_BEFORE, left + 30, bar, 160); /* the release lets go, nothing more */
+    assert(!coverflow_position_held() && glides == g + 1);
+    glide_end(s); assert(*(int *)(raw + SLIDE_INDEX) == 1 && !strcmp(album_caption(covers_view), names[1]));
+    /* A press on the covers lets go of a scrub whose release never came, and drags them. */
+    touch_at(EVT_POINTER_DOWN, left + 80, bar, 200); assert(coverflow_position_held());
+    touch_at(EVT_POINTER_DOWN, 200, 100, 220); assert(!coverflow_position_held());
+    touch_at(EVT_POINTER_MOVE_BEFORE, 180, 100, 240); touch_at(EVT_POINTER_MOVE_BEFORE, 130, 100, 260);
+    assert(offset(s) != 0);
+    coverflow_lost_touch(); glide_end(s);
+    /* A key with no finger seen lets go too. */
+    touch_at(EVT_POINTER_DOWN, left + 80, bar, 300); assert(coverflow_position_held());
+    coverflow_lost_touch(); assert(!coverflow_position_held());
+    /* Held after a far jump, a frame loads the shelf's covers by the frame's budget (Fast Navigation
+       off: FX_DECODES, 2), the rest the placeholder; the lift's frame loads them all. Light Mode's
+       flip empties the pool, so the jump's covers are cold. */
+    int fast = big_library, canvas[16] = {0}, have = 0;
+    big_library = 0, light = !light;
+    *(int *)(raw + SLIDE_INDEX) = 0, *(int *)(raw + SLIDE_OFFSET) = 0;
+    touch_at(EVT_POINTER_DOWN, left + art - 1, bar, 400);
+    assert(coverflow_position_held() && *(int *)(raw + SLIDE_INDEX) == n - 1);
+    coverflow_paint(s, canvas);
+    for (int j = -3; j <= 3; ++j) have += cf_fx_has((n - 1 + j) % n) != 0; /* CF_REACH either side */
+    assert(have <= 2);
+    touch_at(EVT_POINTER_UP_BEFORE, left + art - 1, bar, 420);
+    coverflow_paint(s, canvas);
+    for (int j = -3; j <= 3; ++j) assert(cf_fx_has((n - 1 + j) % n));
+    big_library = fast, light = !light;
+    coverflow_paint(s, canvas); /* back in the page's own colours */
+    cf_position = 0;
+    coverflow_position_reset();
+    timer_fn = was;
+    *(int *)(raw + SLIDE_INDEX) = kept, glide_goal = 0;
+    glide_end(s);
 }
 
 /* A theme's corner radius takes effect at the next page open (cf_restyle refills cf_inset). */

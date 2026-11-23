@@ -16,9 +16,13 @@ harpmudd/q2-lma Live Music Archive
 group-a-study/q2-airplay AirPlay
 lampsonlnguyen/q2-utilities-app Utilities
 lampsonlnguyen/q2-weather Weather
+lampsonlnguyen/q2-books Books
+# DiamondBond/q2-eq-studio EQ Studio
+# DiamondBond/q2-mixtape Mixtape
+DiamondBond/q2-groovebox Groovebox
+DiamondBond/q2-videos Videos
 [Games]
 DiamondBond/q2-fidget Buddy
-DiamondBond/q2-groovebox Groovebox
 lampsonlnguyen/q2-arcade Arcade Games
 lampsonlnguyen/q2-2048 2048
 lampsonlnguyen/q2-dino-runner Dino Runner
@@ -26,3 +30,7 @@ lampsonlnguyen/q2-flappybird Flappy Bird
 SlayTheEarth/q2-boy Pocket Boy
 # lampsonlnguyen/q2-simon-says Simon Says
 Carbon-66/q2-classicube ClassiCube
+Carbon-66/q2-doom Doom
+Carbon-66/q2-wings Wings
+Carbon-66/q2-miami Q2A Miami
+Carbon-66/q2-challengerdeep Challenger Deep

@@ -1362,3 +1362,123 @@ def test_unsaved_gains_wait_for_the_next_pass(fw):
     card.fail_writes = True
     fw.fn('eq_output', None, C.c_char_p)(b'usb')
     assert owner(card) == '3.5mm' and p.e3.dirty
+
+
+# A card app's EQ (addon_eq.c): its request in /tmp/q2-<id>.eq, the answer in .eq.done.
+
+EQ_REQ, EQ_DONE = '/tmp/q2-foo.eq', '/tmp/q2-foo.eq.done'
+
+
+def ask(fw, card, raw):
+    """App foo's request, as its poll reads it; its answer, or None."""
+    card.files[EQ_REQ] = raw
+    fw.fn('addon_eq_poll', None, C.c_int, C.c_char_p)(0, b'foo')
+    return card.files.get(EQ_DONE)
+
+
+def test_a_card_app_s_preset_plays_at_once_and_is_answered_with_what_plays(fw):
+    card = Card(fw, {ACTIVE: saved(state(fw, EQ_3, gains=(3, 0, 0)))})
+    text = (b'Preamp: -3 dB\nChannel: L\nFilter 1: ON PK Fc 1000 Hz Gain 6 dB Q 1.41\n'
+            b'Filter 2: OFF HSC Fc 8000 Hz Gain -2.5 dB Q 0.7\n')
+    assert ask(fw, card, b'a1\n' + text) == b'a1 ok\nmode peq\n' + text
+    s = card.state()
+    assert s.mode == EQ_PEQ and s.peq.count == 2 and s.peq.bands[0].enabled == 2 and s.peq.automatic == 2
+    assert s.eq3.bands[0].gain == 3 and fw.calls('stock_eq_trampoline')
+
+
+def test_a_preset_that_doesn_t_parse_is_answered_with_its_line_and_changes_nothing(fw):
+    card = Card(fw, {ACTIVE: saved(state(fw, EQ_3))})
+    before = card.files[ACTIVE]
+    raw = b'a2\nPreamp: -3 dB\nFilter: ON XX Fc 1000 Hz Gain 6 dB Q 1\n'
+    assert ask(fw, card, raw) == b'a2 error line 2: unsupported filter type\n'
+    assert card.files[ACTIVE] == before and not fw.calls('stock_eq_trampoline')
+
+
+def test_off_keeps_the_peq_and_on_plays_it(fw):
+    card = Card(fw, {ACTIVE: saved(state(fw, EQ_PEQ, peq=peak(fw, 6)))})
+    assert ask(fw, card, b'b1\noff') == b'b1 ok\nmode off\nFilter 1: ON PK Fc 1000 Hz Gain 6 dB Q 1\n'
+    assert card.state().mode == EQ_OFF and card.state().peq.bands[0].gain == 6
+    assert ask(fw, card, b'b2\non\r\n').startswith(b'b2 ok\nmode peq\n') and card.state().mode == EQ_PEQ
+
+
+@pytest.mark.parametrize('flag, word', [(1, b'3eq'), (0, b'off')])  # clear: boot left the switch off
+def test_get_changes_nothing_and_says_what_plays(fw, flag, word):
+    card = Card(fw, {ACTIVE: saved(state(fw, EQ_3, peq=peak(fw, 6)))})
+    fw.var('g_equalizer_flag', C.c_ubyte).value = flag
+    assert ask(fw, card, b'c1\nget\n') == b'c1 ok\nmode ' + word + b'\nFilter 1: ON PK Fc 1000 Hz Gain 6 dB Q 1\n'
+    assert len(fw.calls('fw_rename')) == 1 and not fw.calls('stock_eq_trampoline')  # the answer's alone
+
+
+def test_a_seq_is_acted_on_once_after_demo_restarts_too(fw):
+    card = Card(fw, {ACTIVE: saved(state(fw, EQ_3))})
+    assert ask(fw, card, b'd1\noff').startswith(b'd1 ok\nmode off\n')
+    card.files[ACTIVE] = saved(state(fw, EQ_3))  # 3EQ on again from the Q2
+    calls = len(fw.calls('stock_eq_trampoline'))
+    ask(fw, card, b'd1\noff')
+    C.memset(C.addressof(fw.var('addon_eq__eq_seen', C.c_uint * 64)), 0, 4 * 64)  # demo restarted, /tmp kept
+    ask(fw, card, b'd1\noff')
+    assert card.state().mode == EQ_3 and len(fw.calls('stock_eq_trampoline')) == calls
+    assert ask(fw, card, b'd2\noff').startswith(b'd2 ok\n') and card.state().mode == EQ_OFF
+
+
+@pytest.mark.parametrize('raw, answered', [(b'get', False), (b'\nget', False), (b'a b\nget', False),
+                                           (b'x' * 24 + b'\nget', False), (b'x' * 23 + b'\nget', True)])
+def test_a_first_line_that_isn_t_a_seq_is_never_answered(fw, raw, answered):
+    card = Card(fw, {ACTIVE: saved(state(fw))})
+    assert (ask(fw, card, raw) is not None) == answered
+
+
+def eq_text(fw, p):
+    out = C.create_string_buffer(4096)
+    n = fw.fn('addon_eq__eq_text', C.c_int, C.c_void_p, C.c_void_p, C.c_uint)(r(p), C.addressof(out), 4096)
+    return out.raw[:n]
+
+
+def parsed(fw, text):
+    p = Preset()
+    assert fw.fn('peq_parse', C.c_int, C.c_char_p, C.c_uint, C.c_void_p, C.c_void_p)(text, len(text), r(p), C.create_string_buffer(16)), text
+    return p
+
+
+@pytest.mark.parametrize('automatic, preamp, balance', [(1, -2.7, 0), (0, 0, 0), (2, -4.5, 0), (2, -1, 2.5), (2, 0.25, -3)])
+def test_the_answer_s_text_reads_back_as_the_same_preset(fw, automatic, preamp, balance):
+    p = default(fw)
+    bands = [Band(2, 0, 1234.5678, -0.1, 0.7071067811865476), Band(3, 1, 105, 6, 0.7), Band(0, 0, 20000, 24, 10),
+             Band(1, 2, 8000, -2.5, 1.41), Band(2, 2, 20, -24, 0.1)]  # L, R, an OFF under R, both, L
+    p.count, p.bypass, p.automatic, p.preamp, p.balance = len(bands), 0, automatic, preamp, balance
+    for i, b in enumerate(bands):
+        p.bands[i] = b
+    text = eq_text(fw, p)
+    back = parsed(fw, text)
+    assert [bytes(b) for b in back.bands[:back.count]] == [bytes(b) for b in bands] and back.balance == balance
+    assert (back.automatic, b'Preamp' in text) == ((2, True) if automatic == 2 else (1, False))
+    assert automatic != 2 or back.preamp == preamp
+
+
+def test_auto_with_a_balance_reads_back_picked_at_its_48_khz_cut(fw):
+    p = peak(fw, 6)
+    p.balance = 1.5
+    back = parsed(fw, eq_text(fw, p))
+    cut = fw.fn('peq_auto', C.c_double, C.c_void_p, C.c_int)(r(p), 48000)
+    assert back.automatic == 2 and back.preamp == cut < 0 and back.balance == 1.5
+
+
+def test_a_card_app_s_preset_replaces_the_open_page_s_unapplied_edits_and_its_switch_keeps_them(fw):
+    card = Card(fw, {ACTIVE: saved(state(fw, EQ_PEQ, peq=peak(fw, 6)))})
+    p = Page(fw, card).advanced()
+    p.click('Reset to defaults')
+    ask(fw, card, b'e1\nFilter 1: ON PK Fc 500 Hz Gain -3 dB Q 2\n')
+    p.settle()
+    assert not p.ui.dirty and p.ui.draft.bands[0].frequency == 500 and p.captions()[0] == 'Nothing to apply'
+    p.click('Reset to defaults')
+    ask(fw, card, b'e2\noff')
+    p.settle()
+    assert p.ui.dirty and p.ui.draft.bands[0].gain == 0 and p.captions()[2] == 'Enabled Off'
+
+
+def test_a_card_app_s_change_waits_out_an_edit_but_get_doesn_t(fw):
+    p = adjust(fw)
+    before = p.card.files[ACTIVE]
+    assert ask(fw, p.card, b'f1\noff') == b'f1 error The EQ page on the Q2 is editing a value\n'
+    assert p.card.files[ACTIVE] == before and not p.pending('render')
+    assert ask(fw, p.card, b'f2\nget').startswith(b'f2 ok\nmode peq\n')

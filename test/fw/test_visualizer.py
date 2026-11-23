@@ -10,14 +10,16 @@ import pytest
 
 from conftest import O
 
-N, HALO, BARS, W = 1024, 64, 32, 343
-SPECTRUM, SCOPE, METERS, HALO_STYLE = range(4)
+N, HALO, BARS, W, ROWS = 1024, 64, 32, 343, 20
+SPECTRUM, SCOPE, METERS, HALO_STYLE, PULSAR, CONTOUR = range(6)
 DECAY, HOLD_MS, GRAVITY, FLOOR_DB, VU_REF_DB, LED_DB, FPS = 1.6, 400, 3.0, 60, -14, -1, 25
 RET_REMOVE, RET_REPEAT = 7, 8
 EVT_DESTROY, EVT_VALUE_CHANGED, EVT_CLICK = O['EVT_DESTROY'], O['EVT_VALUE_CHANGED'], O['EVT_CLICK']
 W_X, W_Y, W_W, W_PARENT = O['W_X'], O['W_Y'], O['W_W'], O['W_PARENT']
 RING, TAP_SIZE = 65536, 24 + 65536 * 8
-NAMES = ['Spectrum', 'Oscilloscope', 'VU Meters', 'Halo']
+NAMES = ['Spectrum', 'Oscilloscope', 'VU Meters', 'Halo', 'Pulsar', 'Contour']
+CONTOUR_LINES, CONTOUR_STEP = 18, 10
+CONTOUR_N = (W - 1) // CONTOUR_STEP + 2  # a ridgeline's points at the widest page
 
 
 class Vz(C.Structure):
@@ -25,6 +27,7 @@ class Vz(C.Structure):
                 ('level', C.c_float * HALO), ('peak', C.c_float * BARS), ('fall', C.c_float * BARS),
                 ('wave', (C.c_float * W) * 2), ('vu', C.c_float * 2), ('spin', C.c_float), ('bass', C.c_float),
                 ('held', C.c_uint * BARS), ('lit', C.c_uint * 2), ('bin_rate', C.c_uint), ('w', C.c_int), ('bin', C.c_int * 65),
+                ('ridge', (C.c_float * HALO) * ROWS), ('row', C.c_int),
                 *((k, C.c_void_p) for k in 'win slide page art cover tap'.split()),
                 *((k, C.c_uint) for k in 'timer last named heard retry'.split()),
                 *((k, C.c_int) for k in 'ox oy page_x style quiet'.split())]
@@ -508,7 +511,7 @@ def test_only_the_visible_style_does_its_work(fw):
     assert v.re[0] == 123 and max(v.level) == 0 and v.bin_rate == 0
 
 
-@pytest.mark.parametrize('style', range(4))
+@pytest.mark.parametrize('style', range(6))
 def test_the_other_styles_stay_at_rest(fw, style):
     v = vz(fw)
     sine(v, 0.95, k=2)  # 86 Hz: the bass bands read it too
@@ -516,21 +519,23 @@ def test_the_other_styles_stay_at_rest(fw, style):
     for now in (100, 140, 180):
         analyze(fw, style, 44100, now=now)
     moved = {'transform': v.re[0] != 123, 'levels': any(v.level), 'caps': any(v.peak), 'wave': any(v.wave[0]),
-             'needles': any(v.vu), 'leds': any(v.lit), 'pulse': v.bass != 0}
+             'needles': any(v.vu), 'leds': any(v.lit), 'pulse': v.bass != 0, 'lines': any(map(any, v.ridge)),
+             'kick': cz(fw).kick != 0}
     assert {k for k, m in moved.items() if m} == [{'transform', 'levels', 'caps'}, {'wave'}, {'needles', 'leds'},
-                                                  {'transform', 'levels', 'pulse'}][style]
+                                                  {'transform', 'levels', 'pulse'},
+                                                  {'transform', 'levels', 'lines'}, {'transform', 'levels', 'pulse', 'kick'}][style]
 
 
 def test_reset_puts_every_style_at_rest(fw):
     v = vz(fw)
     sine(v, 1)
-    for style in range(4):
+    for style in range(6):
         analyze(fw, style, 44100)
     analyze(fw, METERS, 44100, now=100)
     v.bass = 0.5  # the halo's pulse
     fw.fn('vis_reset', None)()
     assert max(v.level) == max(v.peak) == max(v.vu) == 0 and max(v.wave[0]) == 0 and list(v.lit) == [0, 0]
-    assert v.bass == 0
+    assert v.bass == 0 and not any(map(any, v.ridge))
 
 
 # The tap: VIS_N frames VIS_LATENCY_MS behind the last write.
@@ -921,7 +926,7 @@ def test_classic_s_centred_page_starts_where_its_lyrics_do(fw):
     assert page == (0, 18, 225, 186) and (now.v.w, now.v.oy) == (225, 78)
 
 
-@pytest.mark.parametrize('saved, style', [('3', HALO_STYLE), ('1', SCOPE), ('7', SPECTRUM), ('x', SPECTRUM)])
+@pytest.mark.parametrize('saved, style', [('3', HALO_STYLE), ('4', PULSAR), ('5', CONTOUR), ('1', SCOPE), ('7', SPECTRUM), ('x', SPECTRUM)])
 def test_the_style_is_ipod_vis(fw, saved, style):
     assert Now(fw, style=saved).v.style == style
 
@@ -937,12 +942,12 @@ def test_a_tap_moves_to_the_next_style_and_saves_it(fw):
     tap = now.handler(now.v.page, EVT_CLICK)
     styles, saved = [], []
     fw.mock('write_int_config', lambda value, section, key, *_: saved.append((value, C.string_at(section), C.string_at(key))))
-    for _ in range(5):
+    for _ in range(6):
         now.v.level[0] = 0.5
         tap()
         styles.append(now.v.style)
-    assert styles == [1, 2, 3, 0, 1] and saved == [(s, b'IPOD', b'VIS') for s in styles]
-    assert now.v.named == now.now | 1 and now.v.level[0] == 0 and now.invalidated() == 5
+    assert styles == [1, 2, 3, 4, 5, 0] and saved == [(s, b'IPOD', b'VIS') for s in styles]
+    assert now.v.named == now.now | 1 and now.v.level[0] == 0 and now.invalidated() == 6
 
 
 def test_painting_the_window_on_the_page_starts_its_timer_once(fw):
@@ -1144,6 +1149,231 @@ def test_the_halo_draws_64_bars_in_6_shades_dark_to_bright(fw):
     assert len(fw.calls('vgcanvas_line_to')) - lines == HALO  # each bar in one shade's path
     shades = [rgb(a[1]) for _, a in fw.calls('vgcanvas_set_stroke_color')][strokes + 2:]
     assert len(shades) == 6 and all(sum(channels(a)) < sum(channels(b)) for a, b in zip(shades, shades[1:]))
+
+
+def axis(b):
+    """The Pulsar's band b, 0 to 1 across: pulsr's axis."""
+    return (b / (HALO - 1)) ** 0.75
+
+
+def test_the_pulsar_cuts_a_line_a_tick_tilted_and_flat_at_the_ends(fw):
+    v = vz(fw)
+    for b in range(HALO):
+        v.level[b] = 0.8
+    analyze(fw, PULSAR, 0)  # nothing heard: the levels fall a tick's VIS_DECAY, to 0.736
+    want = []
+    for b in range(HALO):
+        x, lift = axis(b), min(1, max(0, (0.736 + 2 * 0.135 / FLOOR_DB * (b - 31.5) - 0.5) / 0.4)) ** 2
+        edge = min(x, 1 - x) / 0.22
+        want.append(lift * (0.5 - 0.5 * math.cos(math.pi * edge) if edge < 1 else 1))
+    assert v.row == 1 and list(v.ridge[1]) == pytest.approx(want, abs=1e-5) and want[0] == 0 == want[-1]
+
+
+def test_the_pulsar_hides_a_line_behind_one_in_front(fw):
+    """A front line standing tall in the middle, the rest flat: the line behind it draws only past its sides."""
+    now = Now(fw, style='4')
+    paint(fw, now.win, Canvas(fw))  # the first paint starts the timer, from rest
+    now.v.row = 0
+    for b in range(24, 40):
+        now.v.ridge[0][b] = 1.0
+    pen = Pen(fw)
+    paint(fw, now.win, Canvas(fw))
+    strokes = [m for m in pen.marks() if m[0] == 'stroke']
+    assert len(strokes) == ROWS // 4
+    behind = [a for sub in strokes[0][1][1:] for _, a in sub]  # the first shade's lines after the front's one
+    tall = (MARGIN + axis(24) * (375 - 2 * MARGIN), MARGIN + axis(39) * (375 - 2 * MARGIN))
+    assert behind and not [p for p in behind if tall[0] + 1 < p[0] < tall[1] - 1]
+
+
+# The contour: ridgelines over a height field the bass lifts.
+
+def contour_marks(fw, width=375, kick=0.0, **fields):
+    """The contour's strokes in a frame drawn with that kick: (width, colour, its segments as ((x0, y0), (x1, y1)))."""
+    now, pen, _ = styled(fw, CONTOUR, width=width, **fields)
+    cz(fw).kick = kick  # after the first paint, whose start from rest resets it
+    pen.since = len(pen.log)
+    paint(fw, now.win, Canvas(fw))
+    out = []
+    for kind, path, state in pen.marks():
+        assert kind == 'stroke'
+        segs = []
+        for sub in path:
+            pts = [a[:2] for op, a in sub]
+            assert [op for op, _ in sub] == ['move'] + ['line'] * (len(sub) - 1)
+            segs += list(zip(pts, pts[1:]))
+        out.append((state['line_width'], state['stroke_color'], segs))
+    return out
+
+
+class Cz(C.Structure):
+    _fields_ = [('last', C.c_float * 3), ('kick', C.c_float), ('ridge', (C.c_float * CONTOUR_N) * CONTOUR_LINES),
+                ('shade', (C.c_ubyte * CONTOUR_N) * CONTOUR_LINES)]
+
+
+def cz(fw):
+    return fw.var('visualizer__cz', Cz)
+
+
+def bass_hit(v, amp):
+    sine(v, amp, k=2)  # 86 Hz: the bass bands
+
+
+def test_a_kick_lifts_the_contour_at_once(fw):
+    v = vz(fw)
+    for tick in range(10):
+        silence(v)
+        analyze(fw, CONTOUR, 44100, now=100 + 40 * tick)
+    assert cz(fw).kick == 0
+    bass_hit(v, 0.95)
+    analyze(fw, CONTOUR, 44100, now=600)
+    assert cz(fw).kick > 0.8
+
+
+def test_the_kick_settles_within_a_third_of_a_second_under_a_steady_bass(fw):
+    """A bassline held at one level is no kick: the lift falls away and stays down."""
+    v = vz(fw)
+    bass_hit(v, 0.95)
+    kicks = []
+    for tick in range(25):
+        analyze(fw, CONTOUR, 44100, dt=0.04, now=100 + 40 * tick)
+        kicks.append(cz(fw).kick)
+    assert kicks[0] > 0.8 and kicks[8] < 0.1 and max(kicks[9:]) < 0.1
+
+
+def test_each_kick_of_a_beat_lifts_it_again(fw):
+    """Kicks every half second over a steady bassline: each one lifts it, and it falls between them."""
+    v = vz(fw)
+    peaks, lows = [], []
+    for beat in range(4):
+        seen = []
+        for tick in range(12):  # 480 ms a beat; the kick is the first 80 ms
+            for i in range(N):
+                s = 0.3 * math.sin(2 * math.pi * 3 * i / N)  # the bassline, steady
+                if tick < 2:
+                    s += 0.65 * math.sin(2 * math.pi * 2 * i / N)
+                v.pcm[i][0] = v.pcm[i][1] = s
+            analyze(fw, CONTOUR, 44100, dt=0.04, now=100 + 40 * (12 * beat + tick))
+            seen.append(cz(fw).kick)
+        peaks.append(max(seen[:3]))
+        lows.append(min(seen[6:]))
+    assert all(p > 0.6 for p in peaks[1:]) and all(lo < 0.15 for lo in lows)
+
+
+def test_a_falling_bass_leaves_the_kick_at_rest_not_below(fw):
+    v = vz(fw)
+    for tick, amp in enumerate([0.95] * 12 + [0.94, 0.93, 0.92, 0.9, 0.5, 0.2, 0.05, 0.01]):  # gently, then fast
+        bass_hit(v, amp)
+        analyze(fw, CONTOUR, 44100, dt=0.04, now=100 + 40 * tick)
+        assert cz(fw).kick >= 0
+
+
+@pytest.mark.parametrize('split', [0.5, 0.3])
+def test_a_kick_split_over_two_frames_lifts_as_one_in_a_frame(fw, split):
+    """A kick's attack that two frames share (part in one, the rest in the next) lifts about as high."""
+    def peak(steps):
+        fw.fn('vis_reset', None)()
+        v = vz(fw)
+        kicks = []
+        for tick, amp in enumerate([0.3] * 8 + steps + [0.95] * 2):
+            for i in range(N):
+                v.pcm[i][0] = v.pcm[i][1] = 0.3 * math.sin(2 * math.pi * 3 * i / N) + amp * math.sin(2 * math.pi * 2 * i / N)
+            analyze(fw, CONTOUR, 44100, dt=0.04, now=100 + 40 * tick)
+            kicks.append(cz(fw).kick)
+        return max(kicks)
+    whole, shared = peak([]), peak([0.3 + split * 0.65])
+    assert whole > 0.6 and shared > 0.8 * whole
+
+
+def test_a_kick_8_db_over_a_loud_bass_bed_lifts_fully_though_three_frames_share_its_rise(fw):
+    """A full mix: the bass already loud, a kick 8 dB over it whose attack three frames share."""
+    v = vz(fw)
+    bed = 0.3
+    for tick, amp in enumerate([bed] * 8 + [bed * 1.45, bed * 2.0, bed * 2.5]):
+        bass_hit(v, amp)
+        analyze(fw, CONTOUR, 44100, dt=0.04, now=100 + 40 * tick)
+    assert cz(fw).kick > 0.85
+
+
+def test_quiet_music_kicks_less(fw):
+    """The same 10 dB kick, at full scale and 26 dB down."""
+    def kick(amp):
+        fw.fn('vis_reset', None)()
+        v = vz(fw)
+        for tick in range(6):
+            bass_hit(v, amp / 3.16 if tick < 5 else amp)
+            analyze(fw, CONTOUR, 44100, dt=0.04, now=100 + 40 * tick)
+        return cz(fw).kick
+    loud, quiet = kick(0.95), kick(0.05)
+    assert loud > 0.6 and 0 < quiet < loud * 0.7
+
+
+def test_reset_puts_the_kick_at_rest(fw):
+    v = vz(fw)
+    bass_hit(v, 0.95)
+    analyze(fw, CONTOUR, 44100)
+    fw.fn('vis_reset', None)()
+    assert cz(fw).kick == 0 and list(cz(fw).last) == [1, 1, 1]
+
+
+def test_a_tap_into_the_contour_throws_no_kick(fw):
+    """A tap resets it in the middle of a loud bass: that bass is no rise over the levels before it."""
+    fw.fn('vis_reset', None)()
+    bass_hit(vz(fw), 0.95)
+    analyze(fw, CONTOUR, 44100)
+    assert cz(fw).kick < 0.1
+
+
+def test_a_kick_lifts_the_peak(fw):
+    def peak(kick):  # the middle ridgeline's highest point
+        contour_marks(fw, kick=kick, bass=0.5)
+        return min(cz(fw).ridge[CONTOUR_LINES // 2])
+    assert peak(1.0) < peak(0.0) - 25
+
+
+@pytest.mark.parametrize('kick', [0.0, 1.0])
+def test_six_strokes_at_any_kick(fw, kick):
+    assert len(contour_marks(fw, kick=kick, level=[0.7] * HALO, bass=0.8)) == 6
+
+
+def test_the_contour_draws_its_lines_in_6_shades_dark_to_bright(fw):
+    lines = contour_marks(fw, kick=1.0, level=[0.7] * HALO, bass=0.8)
+    assert all(w == 1.25 for w, _, _ in lines)
+    shades = [rgb(c) for _, c, _ in lines]
+    assert all(sum(channels(a)) < sum(channels(b)) for a, b in zip(shades, shades[1:]))
+    points = (W - 1) // CONTOUR_STEP + 2  # every CONTOUR_STEP px, and the page's right edge
+    assert sum(len(s) for _, _, s in lines) == CONTOUR_LINES * (points - 1)  # each segment in one shade
+
+
+def test_the_contour_is_in_the_accent_s_palette(fw):
+    """As the other styles: the accent's dark shade up to its bright tint, through its own tone."""
+    tone = fw.fn('accent_tone', C.c_uint, C.c_int)(2)
+    mix = fw.fn('mix', C.c_uint, C.c_uint, C.c_uint, C.c_int, C.c_int)
+    lo, hi = mix(tone, 0, 55, 100), mix(tone, 0xffffff, 30, 100)  # visualizer.c DARK and BRIGHT
+    shades = [rgb(c) for _, c, _ in contour_marks(fw)]
+    assert shades[0] != shades[-1]
+    assert all(l <= x <= h for s in shades for l, x, h in zip(channels(lo), channels(s), channels(hi)))
+
+
+def test_at_rest_the_contour_lies_in_its_darkest_shades(fw):
+    lines = contour_marks(fw)
+    assert [bool(s) for _, _, s in lines][2:] == [False] * 4 and lines[0][2]
+
+
+def test_the_bass_lifts_the_contour_s_peak(fw):
+    def peak(bass):  # the middle ridgeline's highest point
+        styled(fw, CONTOUR, bass=bass)
+        return min(cz(fw).ridge[CONTOUR_LINES // 2])
+    assert peak(1.0) < peak(0.0) - 30
+
+
+@pytest.mark.parametrize('width', [375, 225])
+def test_the_contour_stays_on_its_page_clear_of_the_name(fw, width):
+    page = width - 2 * MARGIN
+    marks = contour_marks(fw, width=width, level=[1.0] * HALO, bass=1.0)
+    xs = [x for _, _, segs in marks for seg in segs for x, _ in seg]
+    ys = [y for _, _, segs in marks for seg in segs for _, y in seg]
+    assert min(xs) == pytest.approx(MARGIN) and max(xs) == pytest.approx(MARGIN + page)
+    assert 0 <= min(ys) and max(ys) <= PAGE_H - 24  # the style's and the track's name below
 
 
 # The drawing itself, as vgcanvas is given it, in the slide area's coordinates.
@@ -1431,9 +1661,9 @@ def test_the_bass_widens_and_lights_the_halo_s_ring(fw):
     assert 0 < a0 < 255 and a2 == 255 and abs(a1 - (a0 + 255) / 2) <= 1
 
 
-@pytest.mark.parametrize('style', range(4))
+@pytest.mark.parametrize('style', range(6))
 def test_the_style_s_name_shows_then_fades_over_its_last_half_second(fw, style):
-    now = Now(fw, style=str((style - 1) % 4), now=100001)
+    now = Now(fw, style=str((style - 1) % 6), now=100001)
     now.handler(now.v.page, EVT_CLICK)()
     seen = []
     after = (0, 999, 1000, 1001, 1250, 1499, 1500)

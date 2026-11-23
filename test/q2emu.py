@@ -1407,18 +1407,7 @@ class LookupMachine(QueueMachine):
             ret=self.selected
         self.returns(ret,clobber=True)
 
-class FolderClickMachine(LookupMachine):
-    def __init__(self,*a):
-        super().__init__(*a); self.videos=[]
-        self.handlers[payload_syms['books_video']]='lookup:books_video'; self.handlers[syms['folder_enter']]='lookup:folder_enter'
-    def hook(self,u,address,size,unused):
-        name=self.handlers.get(address,'')
-        if name=='lookup:books_video':
-            path=self.text(u.reg_read(UC_MIPS_REG_A0)); self.videos.append(path); self.returns(int(path.endswith('.mp4')),clobber=True); return
-        if name=='lookup:folder_enter': self.returns(8,clobber=True); return
-        return super().hook(u,address,size,unused)
-
-SONG_MENU=['下一首播放','加入播放队列','加入收藏','加入播放列表','前往专辑','前往表演者']
+SONG_MENU=['Play Next','Add to Queue','Add to Favourites','Add to Playlist','Go to Album','Go to Artist']
 
 def playing_menu(**kw):
     m=QueueMachine(page='playing_page',pos=1,**kw)
@@ -2873,7 +2862,7 @@ def at_theme(t,cls,*a,**kw):  # a cls machine that reads THEME t and the light h
     try: return cls(*a,**kw)
     finally: CONFIG.pop('THEME'); CONFIG.pop('LIGHT')
 
-class FolderPush(FolderClickMachine):  # stock's click and Back as their step of the layer
+class FolderPush(LookupMachine):  # stock's click and Back as their step of the layer
     step=0
     def hook(self,u,address,size,unused):
         if self.handlers.get(address,'')!='stock_folder_step': return super().hook(u,address,size,unused)
@@ -4074,9 +4063,9 @@ def photos_at(tree,data):
     f,ctx=m.handler(m.nodes[m.nodes[v]['children'][-4]]['children'][0],O['EVT_CLICK']); assert m.call(address=f,args=(ctx,m.event,0,0),gap=0,count=5_000_000)==0
     m.page=m.top; return m
 
-class BooksMachine(DepthMachine):
+class CardMachine(DepthMachine):
     """The card as a tree of {path: [(name, d_type)]} and files as {path: bytearray}, with stdio
-    handles over them, and a fixed-pitch font: every character BOOK_PITCH wide."""
+    handles over them, and a fixed-pitch font: every character CHAR_PITCH wide."""
     def __init__(self,tree,files):
         super().__init__()
         self.tree=tree; self.files=files; self.handles={}; self.dirs={}; self.lines=[]
@@ -4140,7 +4129,7 @@ class BooksMachine(DepthMachine):
         elif name=='strlen': ret=len(self.raw(a))  # bytes: a buffer may end inside a UTF-8 character
         elif name=='strstr':
             i=self.raw(a).find(self.raw(b)); ret=a+i if i>=0 else 0
-        elif name=='canvas_measure_text': u.reg_write(UC_MIPS_REG_F0,struct.unpack('<I',struct.pack('<f',(getattr(self,'char_em',0)*self.font[1] or BOOK_PITCH)*c))[0])
+        elif name=='canvas_measure_text': u.reg_write(UC_MIPS_REG_F0,struct.unpack('<I',struct.pack('<f',(getattr(self,'char_em',0)*self.font[1] or CHAR_PITCH)*c))[0])
         elif name=='mclGetOutputWay': ret=self.way
         elif name=='open': ret=0xffffffff  # the child's oom_score_adj write: refused here, so nothing is written
         elif name=='fork': ret=self.forked
@@ -4164,13 +4153,13 @@ class BooksMachine(DepthMachine):
             u.reg_write(UC_MIPS_REG_V0,0);u.reg_write(UC_MIPS_REG_SP,0x7000f000);u.reg_write(UC_MIPS_REG_PC,0x1000000);return
         self.returns(ret,clobber=True)
 
-BOOK_PITCH=9
+CHAR_PITCH=9
 
 # Spotify (patch/spotify.c, docs/internals.md#spotify): librespot from the card's .spotify folder, its
 # state from the q2-librespot fork's --status-file, its commands to --control-socket.
 STATE,SOCK='/tmp/q2-librespot.state','/tmp/q2-librespot.sock'
-class SpotMachine(BooksMachine):
-    """BooksMachine's card and files, plus librespot's side: system() starts, the monotonic clock is
+class SpotMachine(CardMachine):
+    """CardMachine's card and files, plus librespot's side: system() starts, the monotonic clock is
     self.now, the player's status, and the thumbnailer (a .jpg it makes is a file)."""
     def __init__(self,files):
         super().__init__({},files)
@@ -4847,7 +4836,7 @@ def stock_keyups():
     # updatemusic_dialog, the library scan's: Return and the wheel end there; stock's Centre too, which SCAN_CENTRE sends on
     assert keyups(True,0x4a2a94)=={prev:stop,nxt:stop,ret:stop} and keyups(False,0x4a2a94)=={**wheel,ret:stop}
 
-class TagMachine(BooksMachine):
+class TagMachine(CardMachine):
     def __init__(self,files):
         super().__init__({},files); self.stock_artist=b''
         self.handlers.pop(syms['toolsGetMusicInfo'],None)  # run the hook; only stock's body is mocked
@@ -5332,8 +5321,8 @@ class HeadsetMachine(Machine):
     def __init__(self,owner=1):
         super().__init__(); self.owner=owner; self.playing=True; self.session=42; self.actions=[]; self.saved=0
         self.handlers[syms['mclGetSavePlayStatus']]='hs:saved'
-        for name in ('spot_status','radio_status','video_status','spot_session','radio_session','video_session',
-                     'spot_set_playing','radio_set_playing','video_set_playing','spot_media','radio_media','video_key'):
+        for name in ('spot_status','radio_status','spot_session','radio_session',
+                     'spot_set_playing','radio_set_playing','spot_media','radio_media'):
             self.handlers[payload_syms[name]]='hs:'+name
         self.handlers[syms['mclGetPlayStatus']]='hs:local_status'
         self.handlers[syms['player_play_pause']]='hs:local_toggle'
@@ -5343,7 +5332,7 @@ class HeadsetMachine(Machine):
         name=self.handlers.get(address,'')
         if not name.startswith('hs:'): return super().hook(u,address,size,unused)
         name=name[3:]; a=u.reg_read(REGS[0]); ret=0
-        owner=4 if name.startswith('video') else 3 if name.startswith('radio') else 2 if name.startswith('spot') else 1
+        owner=3 if name.startswith('radio') else 2 if name.startswith('spot') else 1
         if name=='saved': ret=self.saved
         elif name.endswith('_status'): ret=(2 if self.playing else 3) if self.owner==owner else 0
         elif name.endswith('_session'): ret=self.session

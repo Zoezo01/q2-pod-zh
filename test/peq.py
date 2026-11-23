@@ -408,6 +408,11 @@ def headroom_check(lib, ui):
 
 # Host stand-ins for the stock services peq_platform.h maps on the device.
 SHIM_H = r"""
+/* The shim's stock objects are records of its own behind void *: patch/stock_types.h's names are void here,
+ * so every stub keeps the signature it was written with. tools/tidy.sh and the Q2's build hold the types. */
+#define Q2_STOCK_TYPES_H
+typedef void widget_t, event_t, canvas_t, vgcanvas_t, widget_animator_t, widget_factory_t, image_manager_t,
+    input_method_t;
 #include <assert.h>
 #include <dirent.h>
 #include <sys/stat.h>
@@ -2582,105 +2587,6 @@ def scrobble_check(tmp):
     assert [v for _, _, v, _ in requests] == ['1'] * len(requests)
     print('Scrobble upload: config, batching, JSON and form escaping, Last.fm signatures, log rewrite and failures passed.')
 
-def books_check(tmp):
-    """Books (books.c): raw inflate against zlib and on garbage, XHTML to text, EPUB to text (stored
-    and deflated entries, namespaced OPF, %XX hrefs, DRM, malformed zips), UTF-8 with the Latin-1
-    fallback, and page layout forward and back."""
-    import random, zipfile, zlib
-    lib = compile_host(tmp, 'books.so', ROOT/'patch/books.c')
-    lib.book_inflate.argtypes = [C.c_char_p, C.c_uint, C.c_char_p, C.c_uint]
-    rng = random.Random(7)
-    words = [bytes(rng.choice(b'abcdefghij ') for _ in range(rng.randrange(1, 9))) for _ in range(200)]
-    samples = [b'', b'a', bytes(range(256)) * 40, b' '.join(rng.choice(words) for _ in range(30000)),
-               bytes(rng.randrange(256) for _ in range(5000))]
-    for data in samples:
-        for level, strategy in ((0, 0), (1, 0), (6, 0), (9, 0), (6, zlib.Z_FIXED), (6, zlib.Z_HUFFMAN_ONLY), (6, zlib.Z_RLE)):
-            c = zlib.compressobj(level, zlib.DEFLATED, -15, 9, strategy); packed = c.compress(data) + c.flush()
-            out = C.create_string_buffer(len(data) + 1)
-            assert lib.book_inflate(packed, len(packed), out, len(data)) == len(data) and out.raw[:len(data)] == data
-            if data: assert lib.book_inflate(packed, len(packed), out, len(data) - 1) == -1  # longer than its room
-            if data: assert lib.book_inflate(packed[:len(packed) // 2], len(packed) // 2, out, len(data)) == -1
-    out = C.create_string_buffer(1 << 16)
-    for _ in range(3000):  # garbage never reads or writes out of bounds, and ends
-        junk = bytes(rng.randrange(256) for _ in range(rng.randrange(1, 64)))
-        assert -1 <= lib.book_inflate(junk, len(junk), out, 1 << 16) <= 1 << 16
-    xhtml = lib.book_xhtml; xhtml.argtypes = [C.c_char_p]
-    def text(s):
-        b = C.create_string_buffer(s.encode()); n = xhtml(b); return b.raw[:n].decode()
-    assert text('<?xml version="1.0"?><!DOCTYPE html><html><head><title>T</title><style>p{}</style></head>'
-                '<body><h1>One</h1>\n  <p>A  <i>b</i>\tc&amp;d &lt;&#233;&#x1F600;&gt; &nbsp;e&bogus; &#xZZ;</p>'
-                '<!-- <p>hidden</p> --><script>x<y</script><p>f<br/>g</p><div><p>h</p></div>&quot;&apos;</body></html>') == \
-        'One\n\nA b c&d <\u00e9\U0001F600>  e&bogus; &#xZZ;\n\nf\ng\n\nh\n\n"\''
-    assert text('<p>no end') == 'no end' and text('<head>never closed') == '' and text('&#1114112;&#0;<') == '&#1114112;&#0;'
-    def epub(path, files, method=zipfile.ZIP_DEFLATED, container=True):
-        with zipfile.ZipFile(path, 'w', method) as z:
-            z.writestr(zipfile.ZipInfo('mimetype'), 'application/epub+zip')
-            if container:
-                z.writestr('META-INF/container.xml', '<?xml version="1.0"?><container><rootfiles>'
-                           '<rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>')
-            for n, d in files.items(): z.writestr(n, d)
-    opf = ('<opf:package><opf:manifest><opf:item id="c2" href="Text/two%20b.xhtml#top" media-type="application/xhtml+xml"/>'
-           "<opf:item href='Text/one.xhtml' id='c1'/><opf:item id=\"img\" href=\"cover.jpg\" media-type=\"image/jpeg\"/><opf:item id=\"empty\" href=\"e.xhtml\"/>"
-           '</opf:manifest><opf:spine><opf:itemref idref="img"/><opf:itemref idref="c1"/><opf:itemref idref="empty"/>'
-           '<opf:itemref idref="missing"/><opf:itemref idref="c2"/></opf:spine></opf:package>')
-    files = {'OEBPS/content.opf': opf, 'OEBPS/Text/one.xhtml': '<html><body><p>Hello caf\u00e9</p></body></html>' * 50,
-             'OEBPS/Text/two b.xhtml': '<p>Second</p>', 'OEBPS/e.xhtml': '<html><head><title>x</title></head></html>',
-             'OEBPS/cover.jpg': b'\xff\xd8\xff\xe0'}
-    convert = lib.book_convert; convert.argtypes = [C.c_char_p, C.c_char_p, C.POINTER(C.c_int)]
-    cancel = C.c_int(0); dst = tmp/'book.txt'
-    def run(src): return convert(str(src).encode(), str(dst).encode(), C.byref(cancel))
-    want = '\n\n'.join(['Hello caf\u00e9'] * 50) + '\f\nSecond'
-    for method in (zipfile.ZIP_DEFLATED, zipfile.ZIP_STORED):
-        epub(tmp/'a.epub', files, method); assert run(tmp/'a.epub') == 1 and dst.read_text() == want
-    # ../ and ./ in an href resolve against the OPF's folder
-    epub(tmp/'r.epub', {**files, 'OEBPS/content.opf': opf.replace("'Text/one.xhtml'", "'../OEBPS/./Text/one.xhtml'")})
-    assert run(tmp/'r.epub') == 1 and dst.read_text() == want
-    epub(tmp/'f.epub', {**files, 'META-INF/encryption.xml': '<CipherReference URI="OEBPS/Fonts/a.otf"/>'})
-    assert run(tmp/'f.epub') == 1  # obfuscated fonts alone
-    epub(tmp/'d.epub', {**files, 'META-INF/encryption.xml': '<CipherReference URI="OEBPS/Text/one.xhtml"/>'})
-    assert run(tmp/'d.epub') == 0
-    epub(tmp/'n.epub', files, container=False); assert run(tmp/'n.epub') == 0
-    whole = (tmp/'a.epub').read_bytes()
-    for cut in (0, 10, len(whole) // 2, len(whole) - 30):
-        (tmp/'t.epub').write_bytes(whole[:cut]); assert run(tmp/'t.epub') == 0
-    for _ in range(200):  # flipped bytes: a refusal or some text, never a crash
-        b = bytearray(whole); b[rng.randrange(len(b))] ^= 1 << rng.randrange(8); (tmp/'x.epub').write_bytes(b); run(tmp/'x.epub')
-    assert run(tmp/'none.epub') == 0
-    cancel.value = 1; assert run(tmp/'a.epub') == 0; cancel.value = 0
-    lib.book_char.argtypes = [C.c_char_p, C.c_uint, C.POINTER(C.c_uint)]
-    def chars(b):
-        i = C.c_uint(0); out = []
-        while i.value < len(b): out.append(lib.book_char(b, len(b), C.byref(i)))
-        return out
-    assert chars('a\u00e9\u20ac\U0001F600'.encode()) == [97, 0xe9, 0x20ac, 0x1f600]
-    assert chars(b'\xe9t\xc3') == [0xe9, ord('t'), 0xc3] and chars(b'\xe2\x82') == [0xe2, 0x82]
-    MEASURE = C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_uint); LINE = C.CFUNCTYPE(None, C.c_void_p, C.c_int, C.POINTER(C.c_uint), C.c_int)
-    lines = []
-    measure = MEASURE(lambda ctx, c: 10); line = LINE(lambda ctx, row, s, n: lines.append((row, ''.join(map(chr, s[:n])))))
-    lib.book_page.argtypes = [C.c_char_p, C.c_uint, C.c_uint, C.c_int, C.c_int, MEASURE, LINE, C.c_void_p]
-    lib.book_back.argtypes = [C.c_char_p, C.c_uint, C.c_uint, C.c_int, C.c_int, MEASURE, C.c_void_p]
-    def page(t, pos, rows=3, width=100):
-        lines.clear(); return lib.book_page(t, len(t), pos, rows, width, measure, line, None), [l for _, l in lines]
-    t = b'\n\xef\xbb\xbfThe quick brown fox\r\njumps over the lazy dog\n\nAndsuperlongwordhere end\fNext'
-    # Wraps at the last space (a space at the edge is used up), mid-word without one; the BOM and
-    # the top's line breaks are dropped; a \f ends the page; a page from it starts after it.
-    assert page(t, 0, rows=9) == (t.index(b'\f'), ['The quick', 'brown fox', 'jumps over', 'the lazy', 'dog', '', 'Andsuperlo', 'ngwordhere', 'end'])
-    assert page(t, t.index(b'\f'), rows=9) == (len(t), ['Next'])
-    assert page(t, 0) == (t.index(b'the'), ['The quick', 'brown fox', 'jumps over'])
-    # Back: in a text shorter than the look-back, exactly the page before; beyond it, a page that
-    # reaches the one asked about.
-    starts = [0]
-    while starts[-1] < len(t): starts.append(page(t, starts[-1])[0])
-    for a, b in zip(starts, starts[1:-1]): assert lib.book_back(t, len(t), b, 3, 100, measure, None) == a
-    assert lib.book_back(t, len(t), 0, 3, 100, measure, None) == 0
-    big = b'\n'.join(b' '.join(rng.choice(words) for _ in range(rng.randrange(1, 40))) for _ in range(800))
-    pos = 0
-    for _ in range(60):
-        pos = page(big, pos, rows=10, width=320)[0]
-        b = lib.book_back(big, len(big), pos, 10, 320, measure, None)
-        assert b < pos and page(big, b, rows=10, width=320)[0] >= pos and pos - b < 3072
-    print('Books: inflate, XHTML text, EPUB conversion and refusals, UTF-8 and page layout passed.')
-
 def games_check(tmp):
     """Games (games.c): every bundled Sudoku and 200 shuffled ones have one solution, clues stay,
     conflicts and completion; saves' magic and checksum; Vortex's paddle, bricks, lives, levels,
@@ -2905,22 +2811,8 @@ def games_check(tmp):
     print('Games: Sudoku uniqueness, clues, conflicts, completion and saves; Vortex paddle, bricks, lives, levels, speed, tunnelling and determinism; Solitaire deal, draw, moves, finish and random play; Snake turns, growth, walls, self collision and food placement passed.')
 
 def video_check(tmp):
-    """Videos' player (video.c): ffmpeg's argv for the Q2's framebuffer, frame pacing and BT volume."""
+    """q2video (video.c): the Bluetooth volume, Mono Audio and the swap on its samples, and radio's tags."""
     lib = compile_host(tmp, 'q2video.so', ROOT/'patch/video.c')
-    def argv(at, audio):
-        a, ss = (C.c_char_p * 27)(), C.create_string_buffer(16)
-        lib.ffmpeg_argv(a, ss, at, b'/mnt/mmc/Videos/a b.mp4', audio)
-        return [x.decode() for x in a[:a[:].index(None)]]
-    # /dev/fb0 is 320x375 BGRA (display_logo, soc_fb.ko): fitted into the landscape 375x320 view and
-    # turned clockwise, as the boot logo.
-    head = ['/usr/bin/ffmpeg', '-nostdin', '-loglevel', 'quiet', '-ss', '30', '-i', '/mnt/mmc/Videos/a b.mp4',
-            '-map', '0:v:0', '-vf', 'scale=375:320:force_original_aspect_ratio=decrease:flags=fast_bilinear,format=bgra,'
-            'pad=375:320:(ow-iw)/2:(oh-ih)/2,transpose=clock', '-r', '25', '-f', 'rawvideo', 'pipe:3']
-    assert argv(30, 1) == head + ['-map', '0:a:0', '-ac', '2', '-ar', '48000', '-f', 's16le', 'pipe:4']
-    assert argv(30, 0) == head
-    # Frame n shows from n/25 s of the clock, and is dropped a whole frame late.
-    lib.frame_due.argtypes = [C.c_int, C.c_longlong]
-    assert [lib.frame_due(1, t) for t in (0, 39, 40, 79, 80)] == [0, 0, 1, 1, 2] and lib.frame_due(0, 0) == 1
     # Bluetooth: hciplayer's soft volume curve in 1/65536, clamped to 0-100, and the samples scaled by it.
     assert [lib.bt_gain(v) for v in (-5, 0, 1, 25, 49, 50, 75, 99, 100, 120)] == \
         [0, 0, 131, 3276, 6422, 6553, 36044, 64356, 65536, 65536]
@@ -2934,49 +2826,6 @@ def video_check(tmp):
     pcm = (C.c_short * 4)(32767, -32768, 1000, -3000)
     lib.swap(pcm, 2); assert list(pcm) == [-32768, 32767, -3000, 1000]
     lib.mono(pcm, 2); lib.swap(pcm, 2); assert list(pcm) == [-1, -1, -1000, -1000]
-    # The length from ffmpeg -i's report, for the position bar.
-    assert lib.duration(b'Input #0, mov\n  Duration: 01:02:03.45, start: 0.0\n') == 3723
-    assert lib.duration(b'  Duration: N/A, bitrate: N/A') == 0 and lib.duration(b'') == 0
-    # The picture's size from the same report's first video stream, and whether ten of its frames fit the memory free.
-    w, h = C.c_int(), C.c_int()
-    def size(report):
-        return (w.value, h.value) if lib.picture(report, C.byref(w), C.byref(h)) else None
-    assert size(b'  Duration: 00:01:00.00\n    Stream #0:0(und): Video: h264 (High) (avc1 / 0x31637661), '
-                b'yuv420p(tv, bt709), 1920x1080 [SAR 1:1 DAR 16:9], 30 fps\n') == (1920, 1080)
-    assert size(b'    Stream #0:0: Video: hevc (Main 10) (hvc1 / 0x31637668), '
-                b'yuv420p10le(tv, bt2020nc/bt2020/arib-std-b67), 3840x2160, 45000 kb/s') == (3840, 2160)
-    assert size(b'    title : a film, 640x480\n    Stream #0:0: Audio: aac, 48000 Hz, stereo') is None
-    assert size(b'    Stream #0:0: Video: h264, none, 0x0\n    Stream #0:1: Video: mjpeg, yuvj420p, 500x500') is None
-    assert size(b'') is None
-    lib.too_large.argtypes = [C.c_int, C.c_int, C.c_uint]
-    assert [lib.too_large(*s, 40000) for s in ((640, 360), (1280, 720), (1920, 1080), (2560, 1440), (3840, 2160))] == \
-        [0, 0, 0, 1, 1]
-    assert lib.too_large(1920, 1080, 30375) == 0 and lib.too_large(1920, 1080, 30374) == 1
-    assert lib.too_large(3840, 2160, 0) == 0 and lib.too_large(0, 2160, 1) == 0 and lib.too_large(3840, -1, 1) == 0
-    assert lib.too_large(2**31 - 1, 2**31 - 1, 2**32 - 1) == 1  # no overflow on a size no picture has
-    # A quit's place, kept for next time, but 0 within 30 s of either end; an unknown length keeps it.
-    assert [lib.resume_at(p, 600) for p in (0, 29, 30, 300, 570, 571, 600)] == [0, 0, 30, 300, 570, 0, 0]
-    assert lib.resume_at(5000, 0) == 5000
-    for paused in (0, 1):
-        assert lib.video_pause(paused, ord('a')) == 1
-        assert lib.video_pause(paused, ord('r')) == 0
-        assert lib.video_pause(paused, ord('p')) == 1-paused
-        assert lib.video_pause(paused, ord('f')) == paused
-    # The bar: along the bottom of the picture as seen, 40 px in from its ends and 23-30 px up, white
-    # for the share given and black after; the picture is turned clockwise, so the bar runs down
-    # columns 22-29 (picture x = panel y), from the top. Nothing else changes.
-    def bar(n, total, line=1300):  # a padded line, as fix.line_length may be
-        f = (C.c_ubyte * (line * 375))(*([0x55] * (line * 375)))
-        lib.overlay(f, line, n, total)
-        return [[f[y * line + x * 4 + b] for x in range(320) for b in range(4)] for y in range(375)], f
-    p, f = bar(1, 4)
-    for y in range(375):
-        for x in range(320 * 4):
-            want = 0x55 if not (22 * 4 <= x < 30 * 4 and 40 <= y < 335) else 0xff if y < 40 + 295 // 4 else 0
-            assert p[y][x] == want, (x, y)
-    assert all(f[y * 1300 + c] == 0x55 for y in range(375) for c in range(1280, 1300))
-    assert [r[88] for r in bar(7, 5)[0][40:335]] == [0xff] * 295  # clamped to all
-    assert [r[88] for r in bar(-3, 5)[0][40:335]] == [0] * 295 and bar(1, 0)[0][100][88] == 0x55
     # Internet Radio (-r): the ICY tags in stock ffmpeg 4.2's report, in its input dump or as updates.
     out = C.create_string_buffer(16)
     def meta(line, key, n=16):
@@ -2993,7 +2842,7 @@ def video_check(tmp):
     assert tag(b'      SUBTITLE        : Live', b'TITLE') == 0 and tag(b'      title           : x', b'TITLE') == 0
     assert tag(b'      TITLES          : x', b'TITLE') == 0 and tag(b'      TITLE', b'TITLE') == 0
     assert tag('      TITLE           : 夜の歌夜'.encode(), b'TITLE', 11) == '夜の歌'  # 10 bytes: not a third of 夜
-    print('Videos: ffmpeg argv, frame pacing, Bluetooth volume, length, picture size and bar passed; radio tags passed.')
+    print('q2video: Bluetooth volume, Mono Audio and swap passed; radio tags passed.')
 
 
 def audio_writer_check(tmp):
@@ -3699,7 +3548,6 @@ if __name__ == '__main__':
         player_check(tmp)
         visualizer_check(tmp)
         scrobble_check(tmp)
-        books_check(tmp)
         games_check(tmp)
         video_check(tmp)
         audio_writer_check(tmp)

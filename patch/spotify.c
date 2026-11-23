@@ -1,7 +1,7 @@
 /* Spotify (docs/internals.md#spotify): librespot, built from the q2-librespot fork, runs from the
  * card's SPOT_DIR as a Spotify Connect receiver beside the stock player. It writes its state, the
  * track and position to SPOT_STATE (and the cover to SPOT_COVER), takes commands on SPOT_SOCK and
- * answers the browser on SPOT_BROWSE; this file is the other end. Like Videos' q2video, while it
+ * answers the browser on SPOT_BROWSE; this file is the other end. Like Internet Radio, while it
  * plays it holds the standby timers and the DAC, which it sets up as stock's AirPlay receiver does,
  * and it hands the DAC over with local music both ways. Streaming's Spotify row opens the browser,
  * whose Now Playing is the page for it. */
@@ -122,8 +122,8 @@ static struct {
 
 /* The page, while open. */
 static struct {
-    void *page, *info, *msg, *art, *bar, *glyph, *title, *artist, *album, *elapsed, *remain, *note,
-        *sub;
+    widget_t *page, *info, *msg, *art, *bar, *glyph, *title, *artist, *album, *elapsed, *remain,
+        *note, *sub;
     unsigned timer, leave, scrub_at, shown, playing, press, press_at,
         bar_drawn;             /* bar_drawn: its state + 1 */
     int scrub, scrub_ms, ipod; /* ipod: Classic's layout (stream_ipod) */
@@ -187,7 +187,7 @@ static unsigned spot_position(void) {
 
 /* librespot starts playing: what stock's AirPlay page (airplay_page_init, on_airplayset_onclick)
  * does for its receiver. Local music stops (hciplayer holds the PCM even paused), then dac_take
- * (books.c). Bluetooth and USB outputs are left alone: librespot's sink plays on them itself
+ * (radio.c). Bluetooth and USB outputs are left alone: librespot's sink plays on them itself
  * (spot_output). */
 static void spot_take(void) {
     headset_manual();
@@ -201,8 +201,8 @@ static void spot_take(void) {
  * is gone for the headphone DAC (aplay on plughw:0,0), except with Mono Audio on: q2video mixes it,
  * so the DAC is plughw:0,0 with an h volume (the DAC applies it). Written aside and renamed, when
  * it changes; a running q2video gets v and the volume, as radio's does. ponytail: a new device, or
- * Mono Audio's switch on the DAC, waits for the sink's next start (pause and play), as Videos and
- * Internet Radio keep theirs till they end. */
+ * Mono Audio's switch on the DAC, waits for the sink's next start (pause and play), as Internet
+ * Radio keeps its own till it ends. */
 static void spot_output(void) {
     char vol[5], out[sizeof sp.out] = "", v[2] = { 'v', (char)headset_gain() };
     const char *dev = output_device(vol);
@@ -257,7 +257,7 @@ static void scrub_commit(void) {
 }
 
 static void spot_refresh(void);
-static void *browsing(void);
+static widget_t *browsing(void);
 static void spot_restarting(void);
 
 /* SPOT_LOG's length, 0 without one. */
@@ -401,7 +401,7 @@ static int spot_single(const void *info) {
  * a second one starts a scrub, else it turns the screen off. While scrubbing one press seeks it at
  * once, the wheel moves it SPOT_STEP_MS a tick, and SCRUB_MS without a tick seeks there
  * (spot_poll). Otherwise the wheel stays stock's volume. */
-int spot_key(void *top, unsigned key) {
+int spot_key(widget_t *top, unsigned key) {
     if (!ui.page || top != ui.page || sp.loading || sp.auth < 0 || !sp.track[0] || !sp.duration)
         return 0;
     if (key == KEY_CENTER) {
@@ -451,7 +451,7 @@ static void spot_refresh(void) {
         widget_set_text_utf8(ui.sub, sub);
         return;
     }
-    void *fields[] = { ui.title, ui.artist, ui.album };
+    widget_t *fields[] = { ui.title, ui.artist, ui.album };
     const char *values[] = { sp.title, sp.artist, sp.album };
     for (unsigned i = 0; i < 3; ++i)
         if (text_differs(fields[i], values[i])) {
@@ -505,7 +505,7 @@ static int tick(const void *unused) {
 
 /* ringnav_paint, every widget after stock painted it: the bar, as Now Playing's capsule (the
  * accent's light tone), and the play state in the top row. */
-void spot_paint(void *w, void *canvas) {
+void spot_paint(widget_t *w, canvas_t *canvas) {
     if (!ui.page || !w || !P(canvas, CANVAS_LCD) || (w != ui.bar && w != ui.glyph)) return;
     unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
     unsigned tone = rgba(accent_tone(2), 255);
@@ -540,7 +540,7 @@ static int leave(const void *unused) {
 }
 
 /* Return: a scrub seeks first, as on Now Playing; then back to the browser. */
-static int keyup(void *ctx, void *event) {
+static int keyup(void *ctx, event_t *event) {
     if (I(event, EVENT_KEY) != KEY_RETURN) return 0;
     if (ui.scrub)
         scrub_commit();
@@ -549,7 +549,7 @@ static int keyup(void *ctx, void *event) {
     return 11; /* RET_STOP */
 }
 
-static int closed(void *ctx, void *event) {
+static int closed(void *ctx, event_t *event) {
     stop_timer(&ui.timer);
     stop_timer(&ui.leave);
     stop_timer(&ui.press);
@@ -558,8 +558,9 @@ static int closed(void *ctx, void *event) {
     return 0;
 }
 
-void *label(void *parent, int x, int y, int w, int h, const char *style, int px, unsigned color) {
-    void *l = text(parent, x, y, w, h);
+widget_t *label(widget_t *parent, int x, int y, int w, int h, const char *style, int px,
+                unsigned color) {
+    widget_t *l = text(parent, x, y, w, h);
     widget_use_style(l, style);
     widget_set_prop_int(l, "style:normal:font_size", px);
     widget_set_prop_int(l, "style:normal:text_color", (int)color);
@@ -569,11 +570,12 @@ void *label(void *parent, int x, int y, int w, int h, const char *style, int px,
 /* The Now Playing page: the browser's row, a track it started, or without librespot on the card. */
 static void spot_np(void) {
     if (ui.page || !(ui.page = page_open("spotify_page", closed, keyup))) return;
-    void *f = widget_factory(), *page = ui.page;
+    widget_factory_t *f = widget_factory();
+    widget_t *page = ui.page;
     int h = widget_get_prop_int(page, "h", client_h());
     ui.info = widget_factory_create_widget(f, "view", page, 0, 0, 375, h);
     ui.msg = widget_factory_create_widget(f, "view", page, 0, 0, 375, h);
-    void *name = label(ui.info, 16, 12, 200, 16, "s_scrlabel_white20l", 16, SPOT_GREY);
+    widget_t *name = label(ui.info, 16, 12, 200, 16, "s_scrlabel_white20l", 16, SPOT_GREY);
     widget_set_text_utf8(name, "Spotify");
     ui.glyph = widget_factory_create_widget(f, "view", ui.info, 337, 13, 14, 14); /* NP's top row */
     ui.art = image_create(ui.info, SPOT_ART_X, SPOT_ART_Y, SPOT_ART_PX, SPOT_ART_PX);
@@ -585,7 +587,7 @@ static void spot_np(void) {
                       NP_META_PX, 0xff000000u | NP_ARTIST_RGB);
     ui.album = label(ui.info, SPOT_TEXT_X, SPOT_ART_Y + 103, SPOT_TEXT_W, 22, "s_scrlabel_white20l",
                      NP_META_PX, 0xff000000u | NP_ALBUM_RGB);
-    void *fields[] = { ui.title, ui.artist, ui.album };
+    widget_t *fields[] = { ui.title, ui.artist, ui.album };
     for (unsigned i = 0; i < 3; ++i) {
         hscroll_label_set_only_focus(fields[i], 0);
         hscroll_label_set_ellipses(fields[i], 0);
@@ -597,7 +599,7 @@ static void spot_np(void) {
     ui.remain = label(ui.info, 375 - SPOT_TIME_X - 80, SPOT_TIMES_Y, 80, 16, "s_scrlabel_white20r",
                       14, SPOT_GREY);
     /* Classic: the local page's places, its title bar naming the page and showing the play state */
-    void *rows[4] = { ui.title, ui.artist, ui.album, 0 };
+    widget_t *rows[4] = { ui.title, ui.artist, ui.album, 0 };
     ui.ipod = stream_ipod(ui.art, rows, ui.elapsed, ui.remain, ui.bar, 0);
     if (ui.ipod) widget_set_visible(name, 0, 0), widget_set_visible(ui.glyph, 0, 0);
     ui.note =
@@ -649,7 +651,7 @@ static struct {
 
 /* The page, while open. act: what the request in flight is for (A_*). */
 static struct {
-    void *page, *view, *edit;
+    widget_t *page, *view, *edit;
     unsigned timer, go, leave, poll_at,
         until; /* until: no socket before it is librespot starting */
     int depth, act, next, arg, playing, rows[11], caps_checked, downloads, can_download;
@@ -658,7 +660,7 @@ static struct {
     level_t *lv; /* SPOT_DEPTH of them, calloc'd */
 } br __attribute__((section(".scratch")));
 
-static void *browsing(void) { return br.page; }
+static widget_t *browsing(void) { return br.page; }
 /* librespot killed: no socket for a while is it starting again, as after a sign-out. */
 static void spot_restarting(void) { br.until = time_now_ms() + SPOT_SIGNOUT_MS; }
 
@@ -769,12 +771,12 @@ static void fetch(level_t *l) {
     request(l->op, tail, A_FETCH);
 }
 
-static int clicked(void *ctx, void *event);
+static int clicked(void *ctx, event_t *event);
 
 /* A list's row after its items: More…, or Sign out. */
 static int more(const level_t *l) { return l->f[3][0] || !strcmp(l->op, "account"); }
 
-static void *row(int i, const char *caption, const char *detail) {
+static widget_t *row(int i, const char *caption, const char *detail) {
     return page_row_detail(br.view, i, caption, detail, clicked);
 }
 
@@ -785,7 +787,7 @@ static int opens(const char *kind) {
 }
 
 /* A row that opens a list, with its chevron. */
-static void *into(int i, const char *caption, const char *detail) {
+static widget_t *into(int i, const char *caption, const char *detail) {
     return page_row_detail_into(br.view, i, caption, detail, clicked);
 }
 
@@ -1051,21 +1053,21 @@ static void later(int next, int arg) {
     if (br.page) rearm(&br.go, go, 0); /* not once closed: the box's blur can come after */
 }
 
-static int clicked(void *ctx, void *event) {
+static int clicked(void *ctx, event_t *event) {
     later(G_ROW, (int)(long)ctx);
     return 0;
 }
 
 /* The search box's OK, or its keyboard closed with text: its categories, Return going back to the
  * menu. An empty OK closes the keyboard with no other event, so it is taken here too. */
-static int searched(void *ctx, void *event) {
+static int searched(void *ctx, event_t *event) {
     if (widget_get_text_utf8(br.edit, br.term, sizeof br.term)) br.term[0] = 0;
     later(br.term[0] ? G_SEARCH : G_SHOW, 0);
     return 0;
 }
 
 /* The box left without a search: the menu as it was. */
-static int search_left(void *ctx, void *event) {
+static int search_left(void *ctx, event_t *event) {
     if (!br.go) later(G_SHOW, 0);
     return 0;
 }
@@ -1234,9 +1236,9 @@ static int br_leave(const void *unused) {
 }
 
 /* Return: the search box shut, else a level back, the base back to Streaming. */
-static int br_keyup(void *ctx, void *event) { return return_key(event, &br.leave, br_leave); }
+static int br_keyup(void *ctx, event_t *event) { return return_key(event, &br.leave, br_leave); }
 
-static int br_closed(void *ctx, void *event) {
+static int br_closed(void *ctx, event_t *event) {
     fetch_cancel();
     stop_timer(&br.timer);
     stop_timer(&br.go);
@@ -1251,7 +1253,7 @@ static int br_closed(void *ctx, void *event) {
  * browser; without librespot on the card, Now Playing says so. While Smart Wi-Fi brings the radio
  * back, librespot starts once the link is up (smart_hold), as it never retries a Connect login or
  * mDNS that failed at its start. */
-int spot_open(void *ctx, void *event) {
+int spot_open(void *ctx, event_t *event) {
     if (access(SPOT_BIN, 0) && !sp.launched) return spot_np(), 0;
     if (!sp.launched && smart_hold(spot_open, ctx, 0)) return 0;
     spot_launch();
@@ -1268,7 +1270,7 @@ int spot_open(void *ctx, void *event) {
 
 /* ringnav_keylong: Play/Pause held on a track row adds it to Spotify's queue, on a playlist row
  * downloads it, the reply toasted; 1 when it was one. */
-int spot_hold(void *w) {
+int spot_hold(widget_t *w) {
     level_t *l = br.page && w == br.page ? top() : 0;
     int i = l && l->kind == L_LIST && l->state == S_READY && br.view
                 ? widget_get_prop_int(br.view, "_ringnav_index", -1)
@@ -1286,7 +1288,7 @@ int spot_hold(void *w) {
 int spot_running(void) { return sp.launched; }
 
 /* iPod's Now Playing corners (navigation.c paint_cover) round the art too. */
-void *spot_art(void) { return ui.art; }
+widget_t *spot_art(void) { return ui.art; }
 
 static struct {
     unsigned until;

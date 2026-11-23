@@ -372,7 +372,7 @@ def validate_assets(directory):
         want = struct.pack('<III', 0x8f99a914, 0x0320f809, 0x8fa40000 | slot)
         assert demo[off:off+12] == want
     # Every hook and leaf jumps to its payload function (build.py pins the leaves' words): the
-    # leaves are window_manager_paint (Videos), style_get_gradient and main_loop_queue_event.
+    # leaves are window_manager_paint (card games), style_get_gradient and main_loop_queue_event.
     for address, name in [*(h[:2] for h in HOOKS.values()), WM_PAINT_LEAF[1:3], GRADIENT_LEAF[1:3], QUEUE_LEAF[1:3]]:
         off = fileoff(stock, address)
         assert demo[off:off+8] == j(symbols(directory/'patch.elf')[name]).to_bytes(4, 'little') + bytes(4)
@@ -476,7 +476,7 @@ def validate_assets(directory):
         runtime = imagemagick('-size', f'{SET_ICON}x{SET_ICON}', '-depth', '8', 'rgba:-', '-define', 'png:color-type=6', 'png:-', data=bytes(px))
         values = mean(runtime, '#000000')  # Minimal's black list: neutral grey
         assert max(values) - min(values) < 0.001, name
-    # Videos' player: an ELF with the stock binaries' ABI flags (nan2008, o32, mips32r2).
+    # q2video: an ELF with the stock binaries' ABI flags (nan2008, o32, mips32r2).
     helper = read('rootfs.squashfs', HELPER)
     assert sha(helper) == manifest['q2video_sha256'] and helper[:4] == b'\x7fELF'
     assert helper[36:40] == read('stock.squashfs', HELPER_LIKE)[36:40]

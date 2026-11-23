@@ -1899,9 +1899,9 @@ def test_the_chooser_lists_its_games_then_the_card_s_by_name_and_each_row_opens_
     toasts, tried = heard(fw), []
     fw.mock('fw_access', lambda path, *_: tried.append(C.string_at(path)) or len(tried) == 1)  # Blocks' isn't there
     press(rows[4])  # Blocks, the card's first by name
-    assert tried == [b'/mnt/mmc/.blocks/q2-blocks'] and not fw.fn('addon_game_on', C.c_int)() and len(toasts) == 1
+    assert tried == [b'/mnt/mmc/.blocks/q2-blocks'] and not fw.fn('addon_game_front', C.c_int)() and len(toasts) == 1
     press(rows[5])  # Zork, its second, over the whole screen
-    assert fw.fn('addon_game_on', C.c_int)() == 4242 and tried[-1] == b'/mnt/mmc/.zork/q2-zork'
+    assert fw.fn('addon_game_front', C.c_int)() == 1 and tried[-1] == b'/mnt/mmc/.zork/q2-zork'
     assert p.s.screen == CHOOSER and not p.timers
     for row, game in zip(rows, (SUDOKU, VORTEX, SOLITAIRE, SNAKE)):
         press(row)  # from the next loop pass
@@ -1925,11 +1925,11 @@ def test_a_game_on_screen_takes_no_tap_for_the_chooser_hidden_under_it(fw):
     for row in rows:  # and a tap that reached a row anyway starts nothing
         press(row)
     assert p.s.screen == p.s.target == SUDOKU and len(p.timers) == timers
-    assert not fw.fn('addon_game_on', C.c_int)()
+    assert not fw.fn('addon_game_front', C.c_int)()
     p.go(CHOOSER)
     assert sensitive == {chooser: 1}
     press(rows[4])
-    assert fw.fn('addon_game_on', C.c_int)() == 4242
+    assert fw.fn('addon_game_front', C.c_int)() == 1
 
 
 def test_return_in_the_chooser_goes_back_to_the_library_from_the_next_pass(fw):

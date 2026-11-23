@@ -12,7 +12,7 @@ import host
 from conftest import O, SPOT_FAIL, SPOT_NOSOCK, SPOT_OK, Deques, Game, block, claim, high_halves, libc, text
 from test_coverflow import png  # an icon's header
 from test_netupdate import JOB_INSTALL, JOB_REMOVE, SH_CANCELLED, SH_CARD, SH_NET, SH_OK, Sh  # test_netupdate.py keeps netupdate.c's App Store mirror
-from test_radio import Rd  # test_radio.py keeps the mirror
+from test_radio import Rd, execl, mixer  # noqa: F401  the mirror; the child's execl calls; USB_MIXER, for a USB DAC's volume
 from test_tidal import Au, Queue, free_stubbed  # test_tidal.py keeps tidal.c's au mirror
 
 APPS_MAX = 64
@@ -36,14 +36,17 @@ LIBRARY = 0xf001  # stock's library class, which a local queue plays under
 
 class App(C.Structure):
     _fields_ = [('id', C.c_char * 16), ('name', C.c_char * 32), ('tips', C.c_char * 32), ('bin', C.c_char * 48), ('run', C.c_char * 48),
-                ('pid', C.c_char * 32), ('state', C.c_char * 40), ('browse', C.c_char * 48), ('icon', C.c_char * 56), ('more', C.c_char * 48),
-                *((n, C.c_int) for n in ('qr', 'game', 'audio', 'hidden', 'present', 'launched', 'hold', 'relaunch', 'restart', 'nostop', 'row')),
-                *((n, C.c_uint) for n in ('polled', 'launch_at', 'restart_at', 'play'))]
+                ('pid', C.c_char * 32), ('state', C.c_char * 40), ('browse', C.c_char * 48), ('icon', C.c_char * 64), ('more', C.c_char * 48),
+                *((n, C.c_int) for n in ('qr', 'game', 'audio', 'view', 'hidden', 'present', 'launched', 'hold', 'relaunch', 'restart', 'nostop',
+                                         'nowifi', 'row', 'wifi', 'wifi_off')),
+                *((n, C.c_uint) for n in ('polled', 'launch_at', 'restart_at', 'play')), ('baricon', C.c_char * 56),
+                ('barword', C.c_char * 12), ('barw', C.c_int)]
 
 
 class Ap(C.Structure):
     _fields_ = [('a', App * APPS_MAX), ('n', C.c_int), ('shown', C.c_int), ('order', C.c_int * APPS_MAX),
-                ('games', C.c_int), ('game', C.c_int * APPS_MAX), ('libs', C.c_int), ('lib', C.c_int * APPS_MAX)]
+                ('games', C.c_int), ('game', C.c_int * APPS_MAX), ('libs', C.c_int), ('lib', C.c_int * APPS_MAX),
+                ('nets', C.c_int), ('net', C.c_int * APPS_MAX)]
 
 
 class Sm(C.Structure):
@@ -64,7 +67,7 @@ class Req(C.Structure):
 
 class Lv(C.Structure):
     _fields_ = [*((n, C.c_int) for n in ('state', 'n', 'sel', 'live', 'retry', 'nosock', 'slow', 'art', 'find', 'sort')),
-                *((n, C.c_uint) for n in ('since', 'base', 'id', 'hash')),
+                *((n, C.c_uint) for n in ('since', 'base', 'id', 'hash', 'key')),
                 ('title', C.c_char * 128), ('note', C.c_char * 128), ('op', C.c_char * 16), ('args', C.c_char * 400)]
 
 
@@ -75,12 +78,13 @@ class Pg(C.Structure):
                 ('f', C.POINTER(C.c_char_p)), ('pages', C.c_int), ('paging', C.c_int), ('moved', C.c_byte),
                 ('sec', C.c_void_p), ('nsec', C.c_byte), ('cur', C.c_byte), ('sx', C.c_int), ('sy', C.c_int),
                 *((n, C.c_byte) for n in ('sdown', 'sclaim')), ('art_lo', C.c_int), ('art_hi', C.c_int),
-                ('sort', C.c_char_p * 6), ('field', C.c_int)]
+                ('sort', C.c_char_p * 6), ('field', C.c_int), ('up', C.c_int)]
 
 
 class Qp(C.Structure):
     _fields_ = [*((n, C.c_void_p) for n in ('page', 'qr', 'col', 'msg', 'addr', 'pin', 'note', 'say', 'sub')),
-                *((n, C.c_uint) for n in ('timer', 'leave', 'seen')), ('state', C.c_void_p), ('size', C.c_int), ('hex', C.c_void_p)]
+                *((n, C.c_uint) for n in ('timer', 'leave', 'seen')), ('state', C.c_void_p), ('size', C.c_int), ('hex', C.c_void_p),
+                ('pinl', C.c_void_p)]
 
 
 class Taken(C.Structure):
@@ -318,6 +322,9 @@ def test_a_slot_stays_its_apps_and_slots_run_out(fw):
     assert not table[APPS_MAX + 1] and ap(fw).n == APPS_MAX
 
 
+MOUNTED = b'/dev/mmcblk4p1 /mnt/mmc exfat rw 0 0\n'
+
+
 def card(fw, **apps):
     """A card of apps: each a manifest's text, or (manifest, extra files)."""
     files, names = {}, []
@@ -329,6 +336,7 @@ def card(fw, **apps):
         files[f'/mnt/mmc/.{name}/q2app'.encode()] = manifest
         files[f'/mnt/mmc/.{name}/q2-{name}'.encode()] = b'ELF'
         files.update({f'/mnt/mmc/.{name}/{e}'.encode(): png(40, 40) if e.endswith('.png') else b'' for e in extra})
+    files[b'/proc/mounts'] = MOUNTED  # the card is in (card_mounted)
     return World(fw, files, {b'/mnt/mmc': names})
 
 
@@ -369,6 +377,32 @@ def test_a_manifest_can_drop_the_stop_row_and_take_now_playings_more(fw, manifes
     assert (ap(fw).a[0].nostop, ap(fw).a[0].more) == (nostop, more)
 
 
+@pytest.mark.parametrize('manifest, nowifi, counts', [
+    (b'name=N\nwifi=0\n', 1, 0), (b'name=N\r\nwifi=0\r\n', 1, 0),  # a Windows editor's line ends
+    (b'name=N\n', 0, 1), (b'name=N\nwifi=00\n', 0, 1), (b'name=N\nwifi=off\n', 0, 1),  # as text: only 0
+    (b'name=N\nwifi=1\n', 0, 0),  # it uses the network, but follows the link (addon_wifi.c): it doesn't hold it
+])
+def test_a_manifest_can_say_its_app_never_uses_the_network(fw, manifest, nowifi, counts):
+    """wifi=0: Smart Wi-Fi's addon_running never counts the app, started or restarting, and its page open is no
+    network page's (addon_offline, which smart_wifi.c's net_page_open asks)."""
+    card(fw, one=manifest, two=b'name=Two\n')
+    scan(fw)
+    one, two = ap(fw).a[0], ap(fw).a[1]
+    running, offline = fw.fn('addon_running', C.c_int), fw.fn('addon_offline', C.c_int)
+    assert one.nowifi == nowifi and two.nowifi == 0 and running() == 0 and offline() == 0
+    one.launched = 1
+    assert running() == counts
+    one.launched, one.restart = 0, 1  # Retry's restart
+    assert running() == counts
+    two.launched = 1  # another app still counts
+    assert running() == 1
+    pg = fw.var('addon__pg', Pg)
+    pg.page, pg.a = 1, 0  # its page open
+    assert offline() == nowifi
+    pg.a = 1
+    assert offline() == 0
+
+
 def test_a_hidden_app_has_no_streaming_row(fw):
     card(fw, one=b'name=One\n', airplay=b'name=AirPlay\nhidden=1\n')  # opened by id instead (addon_open_id)
     assert scan(fw) == 1 and names(fw, 'addon_id') == [None, b'one', None]
@@ -376,6 +410,7 @@ def test_a_hidden_app_has_no_streaming_row(fw):
 
 
 ROWS = ROW_STREAMING, ROW_GAMES, ROW_LIBRARY = range(3)  # addon.c's, in the order Ap counts them: shown, games, libs
+ROW_NETWORK = 3
 
 
 @pytest.mark.parametrize('manifest, row', [
@@ -389,6 +424,211 @@ def test_a_manifest_says_where_its_row_is(fw, manifest, row):
     card(fw, one=manifest)
     scan(fw)
     assert ap(fw).a[0].row == row and (ap(fw).shown, ap(fw).games, ap(fw).libs) == tuple(int(row == r) for r in ROWS)
+
+
+def test_wifi_and_network_keys(fw):
+    card(fw, vpn=b'name=Tunnel\nqr=1\nwifi=1\nrow=network\r\n', foo=b'name=Foo\n')
+    assert fw.fn('addon_network', C.c_int)() == 1
+    name = fw.fn('addon_network_name', C.c_char_p, C.c_int)
+    assert [name(k) for k in (-1, 0, 1)] == [None, b'Tunnel', None]
+    assert names(fw, 'addon_name') == [None, b'Foo', None]  # not on Streaming
+    a = ap(fw).a[[ap(fw).a[i].id for i in range(2)].index(b'vpn')]
+    assert (a.row, a.wifi, a.wifi_off) == (ROW_NETWORK, 1, 0)
+
+
+@pytest.mark.parametrize('manifest', [b'name=N\nrow=setting\n', b'name=N\nrow=Settings\n'])
+def test_unknown_row_still_streaming(fw, manifest):
+    card(fw, one=manifest)
+    assert fw.fn('addon_network', C.c_int)() == 0 and ap(fw).shown == 1
+
+
+@pytest.mark.parametrize('manifest, wifi', [(b'wifi=1\n', 1), (b'wifi=1\r\n', 1), (b'wifi=0\n', 0), (b'wifi=yes\n', 0), (b'', 0)])
+def test_only_wifi_1_follows_the_link(fw, manifest, wifi):
+    card(fw, one=b'name=N\n' + manifest)
+    scan(fw)
+    assert ap(fw).a[0].wifi == wifi
+
+
+def test_caps_has_wifi_and_network(fw):
+    world = card(fw, one=b'name=N\n')
+    scan(fw)
+    words = world.files[b'/tmp/q2-addon.caps'].split()
+    assert b'wifi' in words and b'network' in words
+
+
+def test_a_wifi_app_does_not_hold_the_radio(fw):
+    world = card(fw, vpn=b'name=Tunnel\nwifi=1\n', foo=b'name=Foo\n')
+    scan(fw)
+    running = fw.fn('addon_running', C.c_int)
+    fw.fn('addon_wifi_start', None)()
+    vpn = [ap(fw).a[i] for i in range(2) if ap(fw).a[i].id == b'vpn'][0]
+    assert vpn.launched == 1 and world.of('system') == [(b'/bin/sh /mnt/mmc/.vpn/run',)]
+    assert running() == 0
+    fw.fn('addon_wifi_start', None)()  # already running: no second start
+    assert len(world.of('system')) == 1
+    foo = [ap(fw).a[i] for i in range(2) if ap(fw).a[i].id == b'foo'][0]
+    foo.launched = 1
+    assert running() == 1
+
+
+def test_a_user_stop_marks_a_wifi_app_off_until_released(fw):
+    world = card(fw, vpn=b'name=Tunnel\nwifi=1\n')
+    scan(fw)
+    fw.fn('addon_wifi_start', None)()
+    fw.fn('addon_stop', None)()  # Stop Streaming Services
+    a = ap(fw).a[0]
+    assert (a.launched, a.wifi_off) == (0, 1)
+    fw.fn('addon_wifi_start', None)()
+    assert len(world.of('system')) == 2  # the start and the stop: no second start
+    fw.fn('addon_wifi_release', None)()
+    fw.fn('addon_wifi_start', None)()
+    assert a.wifi_off == 0 and a.launched == 1 and len(world.of('system')) == 3
+
+
+def test_the_follower_stop_leaves_wifi_off_clear(fw):
+    world = card(fw, vpn=b'name=Tunnel\nwifi=1\n', foo=b'name=Foo\n')
+    scan(fw)
+    fw.fn('addon_wifi_start', None)()
+    for i in range(2):
+        if ap(fw).a[i].id == b'foo':
+            ap(fw).a[i].launched = 1
+    world.files[b'/tmp/q2-vpn'] = b'1'
+    fw.fn('addon_wifi_stop', None)()
+    vpn, foo = sorted((ap(fw).a[i] for i in range(2)), key=lambda a: a.id != b'vpn')
+    assert (vpn.launched, vpn.wifi_off, foo.launched) == (0, 0, 1)  # a plain app is not the follower's
+
+
+def test_the_app_store_says_a_network_app_is_in_network_settings(fw):
+    # netupdate.c's "<name> is ready in <where>" after an install: ROW_NETWORK had no entry
+    card(fw, vpn=b'name=Tunnel\nrow=network\n')
+    assert fw.fn('addon_where', C.c_char_p, C.c_char_p)(b'vpn') == b'Network settings'
+
+
+def test_network_rows_are_by_name_with_the_52_px_icon_first(fw):
+    card(fw, zeta=(b'name=Zeta\nrow=network\n', ('icon.png', 'icon-40.png')), alpha=b'name=Alpha\nrow=network\n')
+    name, icon = fw.fn('addon_network_name', C.c_char_p, C.c_int), fw.fn('addon_network_icon', C.c_char_p, C.c_int)
+    assert fw.fn('addon_network', C.c_int)() == 2
+    assert [name(k) for k in range(-1, 3)] == [None, b'Alpha', b'Zeta', None]
+    assert [icon(k) for k in range(2)] == [b'stream_app', b'file:///mnt/mmc/.zeta/icon.png']
+
+
+def bar_app(fw, world, name, size=(16, 16), state=b'bar=1\n', icon='bar.png'):
+    """App name on the card with an icon file of size, running, its status file state; polled."""
+    if size:
+        world.files[f'/mnt/mmc/.{name}/{icon}'.encode()] = png(*size)
+    scan(fw)
+    a = [ap(fw).a[i] for i in range(ap(fw).n) if ap(fw).a[i].id == name.encode()][0]
+    a.launched, a.launch_at = 1, world.ms
+    world.files[f'/tmp/q2-{name}'.encode()] = b'1'
+    world.files[f'/tmp/q2-{name}.state'.encode()] = state
+    world.ms += 1000
+    fw.fn('addon__poll_one', None, C.POINTER(App))(C.pointer(a))
+    return a
+
+
+def bar_icon(fw):
+    return fw.fn('addon_bar_icon', C.c_char_p)()
+
+
+def test_bar_icon_while_state_says_so(fw):
+    world = card(fw, foo=b'name=Foo\n')
+    a = bar_app(fw, world, 'foo')
+    assert bar_icon(fw) == b'file:///mnt/mmc/.foo/bar.png'
+    world.files[b'/tmp/q2-foo.state'] = b'qr=x\nbar=0\n'
+    world.ms += 1000
+    fw.fn('addon__poll_one', None, C.POINTER(App))(C.pointer(a))
+    assert bar_icon(fw) is None
+    world.files[b'/tmp/q2-foo.state'] = b'bar=1\n'
+    world.ms += 1000
+    fw.fn('addon__poll_one', None, C.POINTER(App))(C.pointer(a))
+    assert bar_icon(fw) == b'file:///mnt/mmc/.foo/bar.png'
+    a.launched = 0  # stopped
+    assert bar_icon(fw) is None
+
+
+@pytest.mark.parametrize('size', [(16, 21), (41, 16), None])
+def test_bar_icon_too_big_or_missing_is_none(fw, size):
+    world = card(fw, foo=b'name=Foo\n')
+    bar_app(fw, world, 'foo', size)
+    assert bar_icon(fw) is None
+
+
+def test_bar_icon_at_its_limits(fw):
+    world = card(fw, foo=b'name=Foo\n')
+    bar_app(fw, world, 'foo', (40, 20))
+    assert bar_icon(fw) == b'file:///mnt/mmc/.foo/bar.png'
+
+
+def test_the_bar_is_repainted_when_its_icon_comes_or_goes(fw):
+    # the bar's own paint picks the icon (bar_sync); an app starting, stopping or flipping bar= repaints nothing else
+    bar = C.c_void_p(0x5000)
+    fw.var('fw_ctx_system_bar', C.c_void_p).value = bar.value
+    world = card(fw, foo=b'name=Foo\n')
+    a = bar_app(fw, world, 'foo')
+    repaints = lambda: [c for c in fw.calls('widget_invalidate_force') if c[1][0] == bar.value]
+    fw.fn('addon_poll', None)()
+    assert len(repaints()) == 1
+    fw.fn('addon_poll', None)()
+    assert len(repaints()) == 1  # no change, no repaint
+    a.launched = 0  # stopped, as the Wi-Fi follower stops it
+    fw.fn('addon_poll', None)()
+    assert len(repaints()) == 2
+
+
+def test_the_bar_is_repainted_when_its_icon_changes_word(fw):
+    # bar=on -> bar=off rewrites the app's icon in place: the same pointer, another picture
+    bar = C.c_void_p(0x5000)
+    fw.var('fw_ctx_system_bar', C.c_void_p).value = bar.value
+    world = card(fw, vpn=b'name=Tunnel\n')
+    world.files[b'/mnt/mmc/.vpn/bar-off.png'] = png(16, 16)
+    a = bar_app(fw, world, 'vpn', state=b'bar=on\n', icon='bar-on.png')
+    repaints = lambda: [c for c in fw.calls('widget_invalidate_force') if c[1][0] == bar.value]
+    fw.fn('addon_poll', None)()
+    assert len(repaints()) == 1
+    world.files[b'/tmp/q2-vpn.state'] = b'bar=off\n'
+    world.ms += 1000
+    fw.fn('addon__poll_one', None, C.POINTER(App))(C.pointer(a))
+    fw.fn('addon_poll', None)()
+    assert bar_icon(fw) == b'file:///mnt/mmc/.vpn/bar-off.png' and len(repaints()) == 2
+
+
+def test_a_bar_word_picks_its_icon(fw):
+    # bar=<word> shows bar-<word>.png: a VPN's connected and greyed icons, switched as its state changes
+    world = card(fw, vpn=b'name=Tunnel\n')
+    world.files[b'/mnt/mmc/.vpn/bar-off.png'] = png(16, 16)
+    a = bar_app(fw, world, 'vpn', state=b'bar=on\n', icon='bar-on.png')
+    assert bar_icon(fw) == b'file:///mnt/mmc/.vpn/bar-on.png'
+    for state, icon in ((b'qr=x\nbar=off\r\n', b'file:///mnt/mmc/.vpn/bar-off.png'), (b'bar=on\n', b'file:///mnt/mmc/.vpn/bar-on.png'),
+                        (b'bar=gone\n', None), (b'bar=0\n', None), (b'', None)):
+        world.files[b'/tmp/q2-vpn.state'] = state
+        world.ms += 1000
+        fw.fn('addon__poll_one', None, C.POINTER(App))(C.pointer(a))
+        assert bar_icon(fw) == icon, state
+
+
+@pytest.mark.parametrize('word', [b'../x', b'On', b'a' * 9, b'a b', b'x.y'])
+def test_a_bar_word_outside_its_letters_is_none(fw, word):
+    world = card(fw, vpn=b'name=Tunnel\n')
+    world.files[b'/mnt/mmc/.vpn/bar-' + word + b'.png'] = png(16, 16)
+    bar_app(fw, world, 'vpn', size=None, state=b'bar=' + word + b'\n')
+    assert bar_icon(fw) is None
+
+
+def test_the_bar_icon_s_width_is_its_own(fw):
+    world = card(fw, vpn=b'name=Tunnel\n')
+    bar_app(fw, world, 'vpn', size=(16, 16))
+    width = fw.fn('addon_bar_width', C.c_int)
+    assert width() == 16
+    world2 = card(fw, wide=b'name=Wide\n')
+    a = bar_app(fw, world2, 'wide', size=(40, 20))
+    assert a.barw == 40
+
+
+def test_bar_icon_first_by_name(fw):
+    world = card(fw, zz=b'name=Zed\n', aa=b'name=alpha\n')
+    bar_app(fw, world, 'zz')
+    bar_app(fw, world, 'aa')
+    assert bar_icon(fw) == b'file:///mnt/mmc/.aa/bar.png'
 
 
 def test_library_s_apps_are_by_name(fw):
@@ -472,7 +712,7 @@ def test_more_apps_than_slots(fw):
 def test_the_features_are_published_at_every_scan(fw):
     world = card(fw)
     scan(fw)
-    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections art window urls sort field more fav now fieldtext wake audio2 dim\n'
+    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections art window urls sort field more fav now fieldtext wake audio2 dim gameview eq screen volume wifi network bar switch\n'
     assert world.of('rename') == [(b'/tmp/q2-addon.caps.tmp', b'/tmp/q2-addon.caps')]
 
 
@@ -1411,6 +1651,13 @@ def test_an_app_stopped_for_usb_starts_when_the_card_is_back(fw):
     assert a.relaunch == 0 and a.launched == 1
 
 
+def test_a_running_app_s_eq_request_is_answered_in_its_poll(fw):
+    world, a = running(fw)
+    world.files[b'/tmp/q2-foo.eq'] = b's1\nget\n'
+    addon_poll(fw, world)
+    assert world.written[b'/tmp/q2-eq.tmp'].startswith(b's1 ok\nmode off\n')  # test_peq_page.py has the rest
+
+
 def test_polls_are_paced(fw):
     world = World(fw)
     a = ap(fw).a[0]
@@ -1560,9 +1807,9 @@ class CardGame:
     socket caught, toasts read, and the UI loop's addon_poll."""
     PID = 4242
 
-    def __init__(self, fw, **games):
+    def __init__(self, fw, world=None, **games):
         self.fw = fw
-        self.world = card(fw, **(games or {'snake': b'name=Snake\ngame=1\n'}))
+        self.world = world or card(fw, **(games or {'snake': b'name=Snake\ngame=1\n'}))  # world: a Page's, for its screen rows
         self.sent, self.toasts, self.status, self.exited = [], [], 0, False
         fw.mock('fw_fork', lambda *_: self.PID)
         fw.mock('fw_socket', lambda *_: 9)
@@ -1582,7 +1829,7 @@ class CardGame:
         return self.fw.fn('addon_game_start', C.c_int, C.c_int)(k)
 
     def on(self):
-        return self.fw.fn('addon_game_on', C.c_int)()
+        return self.fw.var('addon__gm', Game).pid
 
     def event(self, type, a, b=0):
         e = block(self.fw, size=0x40)
@@ -1606,6 +1853,200 @@ class CardGame:
 
 SWITCH = b'name=Switch\ngame=1\naudio=2\n'
 SOUND = b'/tmp/q2-switch.audio'
+VIEW = b'/tmp/q2-switch.view'
+QUIT = b'/tmp/q2-switch.quit'
+
+
+def game_with_view(fw):
+    g = CardGame(fw, switch=SWITCH + b'gameview=1\n')
+    current = [1]
+    names = [C.create_string_buffer(n) for n in (b'games_page', b'playing_page', b'home_page', b'playermore_page')]  # 4: a page over Now Playing
+    fw.mock('window_manager_get_top_window', lambda *_: current[0])
+    fw.mock('widget_get_prop_str', lambda w, *_: C.addressof(names[w - 1]))
+    fw.mock('navigator_window_is_exist', lambda name, *_: C.string_at(name) == b'playing_page' and current[0] in (2, 4))
+    fw.var('g_backlight_status', C.c_ubyte).value = 1
+    fw.mock('navigator_switch_to_with_context', lambda *_: current.__setitem__(0, 2) or 0)
+    fw.mock('navigator_back', lambda *_: current.__setitem__(0, 1) or 0)
+    return g, current
+
+
+def ringnav_key(fw, kind, code):
+    event = block(fw, size=0x40)
+    C.c_int.from_address(event).value = kind
+    C.c_int.from_address(event + 0x18).value = code
+    fw.fn('ringnav_input', C.c_int, C.c_void_p, C.c_void_p)(0, event)
+
+
+@pytest.mark.parametrize('how', ['return', 'over', 'home', 'cancel', 'crash'])
+def test_game_can_give_now_playing_the_screen_and_keys(fw, how):
+    g, current = game_with_view(fw)
+    g.world.files[VIEW] = b'open'
+    g.world.files[QUIT] = b'off'
+    assert g.start() == 1 and VIEW not in g.world.files and QUIT not in g.world.files
+    playback = [171, 222, 223]
+    for key in playback:
+        assert g.key(KEY_DOWN, key) == 1 and g.key(KEY_UP, key) == 1
+    assert [m for _, m in g.sent] == [f'k {edge} {key}'.encode() for key in playback for edge in ('d', 'u')]
+    game_front = fw.fn('addon_game_front', C.c_int)
+    assert game_front() == 1
+    g.world.files[VIEW] = b'now\n'  # a line end allowed
+    g.poll(500)
+    assert g.world.files[VIEW] == b'open' and current[0] == 2
+    assert g.on() == g.PID and game_front() == 0
+    assert fw.var('wheel_raw', C.c_int).value == 0
+    travel = fw.var('wheel_travel', C.c_int)
+    travel.value = 7
+    g.poll()
+    assert travel.value == 7  # Now Playing's lyrics and Cover Flow take it
+    assert fw.calls('reset_poweroptions_timer')[-1][1][:3] == (1, 0, 0)  # the screen and Auto power-off on their timers
+    for key in playback:
+        assert g.key(KEY_DOWN, key) == 0 and g.key(KEY_UP, key) == 0
+    assert len(g.sent) == 6
+    if how == 'return':  # Now Playing's own Return: stock's, and the page closes
+        assert g.key(KEY_DOWN, RETURN) == 0 and g.key(KEY_UP, RETURN) == 0 and len(g.sent) == 6
+        current[0] = 1
+        fw.var('g_backlight_status', C.c_ubyte).value = 0
+        g.poll()
+        assert game_front() == 0  # dark: the first lit pass hands it back
+        fw.var('g_backlight_status', C.c_ubyte).value = 1
+        g.poll()
+    elif how == 'over':  # a page over Now Playing keeps it, then its Back
+        current[0] = 4
+        g.poll()
+        assert game_front() == 0 and g.world.files[VIEW] == b'open'
+        current[0] = 1
+        g.poll()
+    elif how == 'home':  # Hold Return: Home from a page over Now Playing closes it and the games page
+        assert g.key(KEY_DOWN, RETURN) == 0  # held as it closes
+        current[0] = 3
+        g.poll()
+        assert g.key(KEY_DOWN, RETURN) == 0 and g.key(KEY_UP, RETURN) == 0 and len(g.sent) == 6  # stock's to its release
+        assert g.key(KEY_DOWN, RETURN) == 1 and g.sent[-1][1] == b'k d 170'
+        g.key(KEY_UP, RETURN)
+    elif how == 'cancel':
+        del g.world.files[VIEW]
+        fw.var('g_backlight_status', C.c_ubyte).value = 0
+        g.poll(500)
+        assert game_front() == 0  # dark: in front, nothing would light it
+        fw.var('g_backlight_status', C.c_ubyte).value = 1
+        g.poll(500)
+    else:
+        g.exited = True
+        g.poll()
+    assert current[0] == (3 if how == 'home' else 1) and VIEW not in g.world.files
+    assert game_front() == (how != 'crash') and fw.var('wheel_raw', C.c_int).value == (how != 'crash')
+    if how != 'crash':
+        fw.var('wheel_raw', C.c_int).value = 0  # lyric_poll's hand-back as Now Playing went
+        g.poll()
+        assert fw.var('wheel_raw', C.c_int).value == 1
+
+
+def test_game_view_waits_for_the_game_to_give_back_the_audio(fw):
+    g, current = game_with_view(fw)
+    assert g.start() == 1
+    g.world.files[SOUND] = b'game'
+    g.world.files[VIEW] = b'now'
+    g.poll(500)
+    assert current[0] == 1 and g.world.files[VIEW] == b'now'
+    g.world.files[SOUND] = b'music'
+    g.poll(500)
+    assert current[0] == 2 and g.world.files[VIEW] == b'open' and SOUND not in g.world.files
+
+
+@pytest.mark.parametrize('code', [CENTRE, RETURN])
+def test_a_key_held_into_now_playings_open_is_no_pages(fw, code):
+    g, current = game_with_view(fw)
+    assert g.start() == 1
+    assert g.key(KEY_DOWN, code) == 1
+    g.world.files[VIEW] = b'now'
+    g.poll(500)
+    assert current[0] == 2
+    sent = len(g.sent)
+    assert g.key(KEY_DOWN, code) == 1 and g.key(KEY_UP, code) == 1 and len(g.sent) == sent
+    assert g.key(KEY_DOWN, code) == 0  # the next press is Now Playing's
+
+
+@pytest.mark.parametrize('off', [False, True])
+def test_game_force_close_uses_both_buttons_and_can_be_disabled(fw, off):
+    g, _ = game_with_view(fw)
+    assert g.start() == 1
+
+    def key(kind, code):
+        ringnav_key(fw, kind, code)
+
+    g.world.ms += 1
+    key(KEY_DOWN, RETURN)
+    g.poll(1800)
+    assert not g.kills() and g.sent[-1][1] == b'k d 170'
+    key(KEY_UP, RETURN)
+    g.world.ms += 200  # past a hold's ghost
+    key(KEY_DOWN, RETURN)
+    key(KEY_DOWN, CENTRE)
+    assert g.sent[-1][1] == b'k d 218'  # the stock Centre chord filter wasn't run
+    g.poll(1199)
+    assert not g.kills()
+    if off:
+        g.world.files[QUIT] = b'off'  # made in the hold's last pass, it still counts
+    g.poll(1)
+    assert g.kills() == ([] if off else [b'kill 4242'])
+    if not off:
+        g.exited = True
+        g.poll()
+        assert g.key(KEY_UP, RETURN) == g.key(KEY_UP, CENTRE) == 1
+
+
+def test_a_gameview_game_keeps_returns_ghost_filter(fw):
+    g, _ = game_with_view(fw)
+    assert g.start() == 1
+    g.world.ms += 1
+    ringnav_key(fw, KEY_DOWN, RETURN)
+    g.world.ms += 800
+    ringnav_key(fw, KEY_UP, RETURN)
+    g.world.ms += 100
+    sent = len(g.sent)
+    ringnav_key(fw, KEY_DOWN, RETURN)
+    assert len(g.sent) == sent  # the hold's ghost, dropped as for any game
+
+
+def test_a_centre_dropped_on_now_playing_stays_dropped_after_the_hand_back(fw):
+    g, current = game_with_view(fw)
+    assert g.start() == 1
+    g.world.files[VIEW] = b'now'
+    g.poll(500)
+    sent = len(g.sent)
+    g.world.ms += 1
+    ringnav_key(fw, KEY_DOWN, RETURN)
+    g.world.ms += 100
+    ringnav_key(fw, KEY_DOWN, CENTRE)  # with an edge key: chord_gate's
+    current[0] = 3  # Hold Return: Home
+    g.poll()
+    ringnav_key(fw, KEY_DOWN, CENTRE)  # its repeat
+    ringnav_key(fw, KEY_UP, CENTRE)
+    assert fw.fn('addon_game_front', C.c_int)() == 1 and len(g.sent) == sent
+
+
+def test_now_playing_over_a_game_is_no_idle_and_its_back_restarts_the_count(fw):
+    g, current = game_with_view(fw)
+    assert g.start() == 1
+    g.world.files[VIEW] = b'now'
+    g.poll(500)
+    g.poll(130000)
+    assert not g.kills()
+    current[0] = 1
+    g.poll()
+    assert not g.kills()
+
+
+def test_a_return_held_on_now_playing_as_the_game_ends_is_not_the_next_games(fw):
+    g, _ = game_with_view(fw)
+    assert g.start() == 1
+    g.world.files[VIEW] = b'now'
+    g.poll(500)
+    assert g.key(KEY_DOWN, RETURN) == 0
+    g.exited = True
+    g.poll()
+    g.exited = False
+    assert g.start() == 1 and g.key(KEY_DOWN, RETURN) == 1
 
 
 def switched(fw, playing=2):
@@ -1841,6 +2282,187 @@ def test_a_game_that_never_asks_never_touches_the_panel(fw):
     g.status, g.exited = 0, True
     g.poll()
     assert backlight(fw) == []
+
+
+VOLUME = b'/tmp/q2-snake.volume'
+
+
+def loud(fw, level=30, most=100, way=0):
+    """A game with the sound (audio=1) running at volume level under the Maximum volume most, on output way."""
+    g = CardGame(fw, snake=b'name=Snake\ngame=1\naudio=1\n')
+    fw.mock('mclGetOutputWay', lambda *_: way)
+    fw.var('g_volume', C.c_ubyte).value, fw.var('g_maxvolume', C.c_ubyte).value = level, most
+    g.world.files[VOLUME] = b'99'  # an earlier run's
+    assert g.start() == 1 and VOLUME not in g.world.files
+    g.poll()  # the level it started at: nothing to tell
+    assert g.sent == [] and fw.var('g_volume', C.c_ubyte).value == level
+    return g
+
+
+def volumes(fw):
+    """Each level set since the game's fork, as its dac_take set the DAC's before: device_set_volume's level and
+    notify, then what was saved and where."""
+    log = fw.calls()
+    start = max(k for k, (name, _) in enumerate(log) if name == 'fw_fork')
+    saved = [(a[0], C.string_at(a[1]), C.string_at(a[2])) for _, a in fw.calls('write_int_config')]
+    return [a[:2] for name, a in log[start:] if name == 'device_set_volume'], saved
+
+
+def test_a_game_with_the_sound_asks_for_the_volume(fw):
+    g = loud(fw)
+    g.world.files[VOLUME] = b'?\n'
+    g.poll()  # every pass, not every ADDON_POLL_MS
+    assert g.sent == [(SNAKE_SOCK, b'v 30')] and volumes(fw) == ([], [])
+    g.poll(500)
+    assert len(g.sent) == 1 and g.world.files[VOLUME] == b'?\n'  # answered once, the file left
+
+
+@pytest.mark.parametrize('text', [b'41', b'41\n', b'41\r\n'])
+def test_a_game_with_the_sound_sets_the_volume_as_the_wheel_does(fw, text):
+    g = loud(fw)
+    g.world.files[VOLUME] = text
+    g.poll()
+    assert fw.var('g_volume', C.c_ubyte).value == 41 and g.sent == [(SNAKE_SOCK, b'v 41')]
+    assert volumes(fw) == ([(41, 1)], [(41, b'PLAYSET', b'VOLUME')])
+
+
+@pytest.mark.parametrize('most, asked, level', [(60, b'80', 60), (60, b'60', 60), (60, b'59', 59), (100, b'150', 100), (100, b'100', 100),
+                                                (100, b'999999', 100), (100, b'0', 0), (0, b'5', 0), (120, b'110', 100)])
+def test_a_level_is_never_over_100_nor_the_maximum_volume(fw, most, asked, level):
+    g = loud(fw, most=most)
+    g.world.files[VOLUME] = asked
+    g.poll()
+    assert fw.var('g_volume', C.c_ubyte).value == level and g.sent == [(SNAKE_SOCK, b'v %d' % level)]
+    assert volumes(fw) == ([(level, 1)], [(level, b'PLAYSET', b'VOLUME')])
+
+
+@pytest.mark.parametrize('text', [b'', b'\n', b'41x', b'x41', b'-1', b'+41', b' 41', b'4 1', b'4\n1', b'??', b'? 41', b'v 41', b'41.5', b'1234567'])
+def test_a_volume_request_that_means_nothing_is_ignored(fw, text):
+    """Six bytes are read: a longer file is cut there, and what follows a number's digits makes it none."""
+    g = loud(fw)
+    g.world.files[VOLUME] = text
+    g.poll()
+    g.poll(500)
+    ignored = text != b'1234567'  # its first six digits: a number over the limit, clamped
+    assert (g.sent == []) == ignored and (volumes(fw) == ([], [])) == ignored and g.world.files[VOLUME] == text
+
+
+def test_the_same_volume_request_is_acted_on_once(fw):
+    g = loud(fw)
+    g.world.files[VOLUME] = b'41'
+    for _ in range(40):  # past ADDON_POLL_MS too
+        g.poll()
+    g.world.files[VOLUME] = b'41\n'  # written again, the same level
+    g.poll()
+    assert volumes(fw)[0] == [(41, 1)] and len(g.sent) == 1
+    g.world.files[VOLUME] = b'40'
+    g.poll()
+    g.world.files[VOLUME] = b'41'  # another since: asked for again
+    g.poll()
+    assert volumes(fw)[0] == [(41, 1), (40, 1), (41, 1)] and [m for _, m in g.sent] == [b'v 41', b'v 40', b'v 41']
+
+
+@pytest.mark.parametrize('way, usbvol, control, told', [
+    (0, 0, 0, b'v 41'),      # the jack: the DAC applies it
+    (1, 0, 0, b'v 41 41'),   # Bluetooth: hciplayer's soft volume is the game's to apply
+    (2, 1, -2, b'v 41 41'),  # a variable USB volume on a DAC with no control: soft too
+    (2, 1, 0, b'v 41 h41'),  # the DAC's own control applies it: to show only
+    (2, 0, -2, b'v 41 h41'),  # a fixed USB volume
+])
+def test_the_volume_s_datagram_says_what_the_second_argument_would_be_now(fw, mixer, way, usbvol, control, told):
+    fw.var('g_usbvol_mode', C.c_ubyte).value = usbvol
+    mixer.value = control
+    g = loud(fw, way=way)
+    g.world.files[VOLUME] = b'41'
+    g.poll()
+    assert g.sent == [(SNAKE_SOCK, told)]
+    g.world.files[VOLUME] = b'?'
+    g.poll()
+    assert g.sent[1:] == [(SNAKE_SOCK, told)]
+
+
+def test_a_volume_change_by_other_means_is_told_every_half_second(fw):
+    g = loud(fw)
+    level = fw.var('g_volume', C.c_ubyte)
+    level.value = 35  # a headset's key
+    g.poll(483)
+    assert g.sent == []  # compared every ADDON_POLL_MS
+    g.poll(1)
+    assert g.sent == [(SNAKE_SOCK, b'v 35')]
+    g.poll(500)
+    assert len(g.sent) == 1  # told once
+    fw.mock('mclGetOutputWay', lambda *_: 1)  # the output too: Bluetooth now
+    g.poll(500)
+    assert g.sent[1:] == [(SNAKE_SOCK, b'v 35 35')] and volumes(fw) == ([], [])
+
+
+def test_a_change_by_other_means_removes_the_request_so_its_level_can_be_asked_again(fw):
+    g = loud(fw)
+    level = fw.var('g_volume', C.c_ubyte)
+    g.world.files[VOLUME] = b'41'
+    g.poll()
+    g.poll(500)
+    assert VOLUME in g.world.files  # nothing changed since: it stands
+    level.value = 42
+    g.poll(500)
+    assert g.sent[-1] == (SNAKE_SOCK, b'v 42') and VOLUME not in g.world.files and level.value == 42  # not set back
+    g.world.files[VOLUME] = b'41'
+    g.poll()
+    assert level.value == 41 and g.sent[-1] == (SNAKE_SOCK, b'v 41') and volumes(fw)[0] == [(41, 1), (41, 1)]
+
+
+@pytest.mark.parametrize('manifest', [b'name=Snake\ngame=1\n', b'name=Snake\ngame=1\naudio=2\n'])
+def test_a_game_without_the_sound_never_has_its_volume_file_read(fw, manifest):
+    g = CardGame(fw, snake=manifest)
+    fw.var('g_volume', C.c_ubyte).value, fw.var('g_maxvolume', C.c_ubyte).value = 30, 100
+    assert g.start() == 1
+    g.world.files[VOLUME] = b'41'
+    opened = []
+    real = g.world.fopen
+    fw.mock('fw_fopen', lambda path, mode, *_: opened.append(C.string_at(path)) or real(path, mode))
+    g.poll()
+    g.poll(500)
+    assert VOLUME not in opened and g.sent == [] and fw.var('g_volume', C.c_ubyte).value == 30
+    if manifest.endswith(b'audio=2\n'):  # once it holds the sound, as an audio=1 game
+        g.world.files[b'/tmp/q2-snake.audio'] = b'game'
+        g.poll(500)
+        g.poll()
+        assert fw.var('g_volume', C.c_ubyte).value == 41 and g.sent == [(SNAKE_SOCK, b'v 41')]
+        g.world.files[b'/tmp/q2-snake.audio'] = b'music'
+        g.poll(500)
+        g.world.files[VOLUME] = b'50'  # the music's again: left unread
+        g.poll(500)
+        assert fw.var('g_volume', C.c_ubyte).value == 41 and len(g.sent) == 1
+    g.status, g.exited = 0, True
+    g.poll()
+    assert VOLUME not in g.world.files  # removed at its end, read or not
+
+
+@pytest.mark.parametrize('status', [0, 11])  # its own end, a SIGSEGV
+def test_a_game_s_volume_file_goes_at_its_end(fw, status):
+    g = loud(fw)
+    g.world.files[VOLUME] = b'41'
+    g.poll()
+    g.status, g.exited = status, True
+    g.poll()
+    assert VOLUME not in g.world.files and fw.var('g_volume', C.c_ubyte).value == 41  # the level stays
+
+
+@pytest.mark.parametrize('asks', [True, False])
+def test_a_game_s_next_run_starts_with_nothing_asked_or_told(fw, asks):
+    g = loud(fw)
+    level = fw.var('g_volume', C.c_ubyte)
+    g.world.files[VOLUME] = b'41'
+    g.poll()
+    g.status, g.exited = 0, True
+    g.poll()
+    level.value, g.exited = 30, False  # turned down on Now Playing meanwhile
+    assert g.start() == 1
+    if asks:
+        g.world.files[VOLUME] = b'41'  # the last run's level, before its first pass
+    g.poll()
+    g.poll(500)
+    assert level.value == (41 if asks else 30) and [m for _, m in g.sent[1:]] == ([b'v 41'] if asks else [])
 
 
 def test_card_games_are_games_rows_by_name_not_streaming_rows(fw):
@@ -2153,6 +2775,14 @@ def test_a_page_opens_on_the_apps_menu_and_starts_it(fw):
     assert p.world.of('system') == [(b'/bin/sh /mnt/mmc/.foo/run',)]
 
 
+def test_a_page_opened_on_a_running_app_starts_nothing(fw):
+    p = Page(fw)
+    fw.fn('addon__closed', C.c_int, C.c_void_p, C.c_void_p)(p.page, None)
+    fw.fn('addon_open', C.c_int, C.c_void_p, C.c_void_p)(0, None)
+    assert p.pg.page == p.page and p.request().endswith(b'\tmenu\n')
+    assert p.world.of('system') == [(b'/bin/sh /mnt/mmc/.foo/run',)]  # its one start
+
+
 def test_rows_show_with_a_trailing_more_when_theres_a_cursor(fw):
     p = Page(fw)
     p.answer(rows=[item(1), item(2)])
@@ -2189,6 +2819,56 @@ def test_an_action_sends_its_context_toasts_and_asks_again(fw):
     assert p.request().endswith(b'\top1\ta%25b\n') and p.pg.act == 1
     p.answer(msg=b'Done')
     assert p.toasts == [b'Done'] and p.request().endswith(b'\tmenu\n') and p.top.state == K_LOAD
+
+
+def test_a_switch_row_draws_settings_switch_and_presses_as_an_action(fw):
+    # kind switch: the title with the settings rows' switch (navigation.c list_toggle), on while its
+    # subtitle is "on"; a press sends its op and context as an action's does
+    p = Page(fw)
+    p.answer(rows=[(b'switch', b'power', b'Tunnel', b'on', b'', b''), (b'switch', b'auto', b'Start with Wi-Fi', b'off', b'x', b'')])
+    images = [C.string_at(a[1]) for _, a in fw.calls('image_base_set_image')]
+    assert images == [b'switch_on', b'switch_off']
+    texts = [C.string_at(a[1]) for _, a in fw.calls('widget_set_text_utf8')]
+    assert b'Tunnel' in texts and b'Start with Wi-Fi' in texts and b'on' not in texts  # the state isn't shown as text
+    p.click(1)
+    assert p.request().endswith(b'\tauto\tx\n') and p.pg.act == 1
+    p.answer(msg=b'')
+    assert p.request().endswith(b'\tmenu\n')
+
+
+def test_a_switch_moves_when_a_refresh_changes_its_state_and_shows_no_text(fw):
+    # a press, then the list again with the switch flipped: the same rows, written in place (relabel),
+    # must move the switch, never write "on"/"off" (or Working...) as the row's text.
+    p = Page(fw)
+    texts = []  # read as written: the next answer frees the reply the rows' texts point into
+    fw.mock('widget_set_text_utf8', lambda w, t, *_: texts.append(C.string_at(t)))
+    p.answer(msg=b'refresh', rows=[(b'switch', b'power', b'Tunnel', b'on', b'', b''), item(2, b'info')])
+    images = lambda: [C.string_at(a[1]) for _, a in fw.calls('image_base_set_image')]
+    assert images()[-1] == b'switch_on'
+    p.click(0)
+    p.answer(msg=b'Tunnel off')
+    p.answer(msg=b'refresh', rows=[(b'switch', b'power', b'Tunnel', b'off', b'', b''), item(2, b'info')])
+    assert images()[-1] == b'switch_off'
+    assert texts and not {b'on', b'off', 'Working…'.encode()} & set(texts)
+
+
+def test_a_classic_switch_row_reads_on_or_off_and_says_working_on_its_title(fw, settings_read):
+    # Classic (set_text): the switch is On or Off as the row's value (navigation.c value_row); Working… goes over
+    # the title, the state never written as text
+    boot(fw, settings_read, b'1')
+    rows = [(b'switch', b'power', b'Tunnel', b'on', b'', b''), (b'switch', b'auto', b'Start with Wi-Fi', b'off', b'', b'')]
+    p = Page(fw)
+    p.answer(msg=b'refresh', rows=rows)
+    texts = [C.string_at(a[1]) for _, a in fw.calls('widget_set_text_utf8')]
+    assert texts[-2:] == [b'Start with Wi-Fi', b'Off'] and b'On' in texts and not {b'on', b'off'} & set(texts)
+    assert fw.calls('image_base_set_image') == []  # no switch image
+    items, kids, written, _ = row_walk(p, rows)
+    p.click(0)
+    p.world.ms += 400
+    p.tick()
+    assert written == [(kids[items[0]][0], 'Working…'.encode())]
+    p.answer(msg=b'Tunnel off')
+    assert written[1:] == [(kids[items[0]][0], b'Tunnel')] and p.toasts == [b'Tunnel off']
 
 
 def test_an_action_refused_toasts_why(fw):
@@ -3070,6 +3750,38 @@ def test_a_refresh_in_place_keeps_the_covers_and_a_new_cover_rebuilds(fw):
     assert p.top.art == 2 and len(fw.calls('list_item_create')) > drawn
 
 
+def test_a_cover_that_comes_under_the_same_refresh_draws_the_list_again(fw):
+    """addon.c got: the shown reply again is still counted for covers, a file written after the app answered."""
+    p = live(fw, rows_of(0, 3))
+    drawn = len(fw.calls('list_item_create'))
+    p.world.files[art_path(b'op1', b'')] = jpeg()
+    p.sel = 2
+    refresh(p, rows_of(0, 3))
+    assert p.top.art == 1 and len(fw.calls('list_item_create')) == drawn + 3 and p.top.sel == 2  # its row kept
+    drawn += 3
+    refresh(p, rows_of(0, 3))
+    assert len(fw.calls('list_item_create')) == drawn  # as many covers as drawn: nothing
+    del p.world.files[art_path(b'op1', b'')]
+    refresh(p, rows_of(0, 3))
+    assert p.top.art == 0 and len(fw.calls('list_item_create')) == drawn + 3  # and one that went
+
+
+@pytest.mark.parametrize('how', ['not live', 'the search box open', 'pages appended'])
+def test_the_same_reply_counts_covers_only_for_a_live_list_on_show_in_one_page(fw, how):
+    p = live(fw, rows_of(0, 3)) if how != 'not live' else Page(fw)
+    if how == 'not live':
+        p.answer(rows=rows_of(0, 3))
+    drawn = len(fw.calls('list_item_create'))
+    p.world.files[art_path(b'op1', b'')] = jpeg()
+    if how == 'the search box open':
+        p.pg.view = None
+    if how == 'pages appended':
+        p.pg.pages = 2
+    p.fw.fn('addon__fetch', None, C.POINTER(Lv))(p.pg.lv)  # asked again, whatever asks
+    p.answer(msg=b'refresh' if how != 'not live' else b'', rows=rows_of(0, 3))
+    assert p.top.art == 0 and len(fw.calls('list_item_create')) == drawn and p.top.state == K_READY
+
+
 def test_a_search_box_s_redraw_stays_queued_over_a_refresh(fw):
     p = live(fw, rows_of(0, 5))
     p.world.ms += 2000
@@ -3095,6 +3807,425 @@ def test_a_held_play_sends_a_rows_hold_op(fw):
     p.sel = 3
     assert hold(p.page) == 0
     assert hold(None) == 0
+
+
+# A screen row: the app's binary over the whole screen, as a card game's row runs a game.
+FOO_BIN, FOO_SOCK = b'/mnt/mmc/.foo/q2-foo', b'/tmp/q2-foo.input.sock'
+SCREEN = (b'screen', b'file%25 1.mkv', b'A film', b'23 min left', b'films%09new', b'mark')
+SEEN = (b'screen', b'file%25 1.mkv', b'A film', b'Watched', b'films%09new', b'mark')
+
+
+@pytest.mark.parametrize('manifest, way, argv, handed', [
+    (b'name=Foo\naudio=1\n', 0, [FOO_BIN, FOO_BIN, b'plughw:0,0'], 1),  # the sound, as an audio=1 game's
+    (b'name=Foo\naudio=1\n', 1, [FOO_BIN, FOO_BIN, b'plug:bluealsa', b'40'], 1),
+    (b'name=Foo\n', 0, [FOO_BIN, FOO_BIN], 0), (b'name=Foo\naudio=2\n', 0, [FOO_BIN, FOO_BIN], 0),
+])
+def test_a_screen_row_s_child_runs_the_app_s_binary_with_the_row_s_uri_and_context(fw, manifest, way, argv, handed):
+    p = Page(fw, manifest)
+    p.answer(rows=[item(1), SCREEN])
+    fw.mock('mclGetOutputWay', lambda *_: way)
+    fw.var('g_volume', C.c_ubyte).value = 40
+    fw.mock('fw_fork', lambda *_: 0)  # the child
+    env, calls = [], execl(fw)
+    fw.mock('fw_setenv', lambda name, value, over, *_: env.append((C.string_at(name), C.string_at(value), over)) or 0)
+    p.click(1)
+    assert calls == [argv] and len(fw.calls('player_stop')) == handed and len(fw.calls('mclSetMute')) == (handed and not way)
+    order = [n for n, _ in fw.calls()]
+    assert not handed or order.index('player_stop') < order.index('fw_fork')  # handed over before the fork
+    assert env[0][0] == b'Q2_POPUP' and env[1:] == [(b'Q2_URI', b'file% 1.mkv', 1), (b'Q2_CONTEXT', b'films\tnew', 1)]  # as sent, unescaped
+    assert order.index('fw_setenv') > order.index('fw_close') and order.index('fw_execl') > len(order) - 1 - order[::-1].index('fw_setenv')
+
+
+def test_a_screen_row_runs_as_a_game_does_its_page_left_as_it_was(fw):
+    p = Page(fw, b'name=Foo\naudio=1\n')
+    p.answer(rows=[item(1), SCREEN])
+    g = CardGame(fw, world=p.world)
+    asked, drawn = p.req.id, len(fw.calls('list_item_create'))
+    p.click(1)
+    gm = fw.var('addon__gm', Game)
+    assert (gm.pid, gm.audio, gm.screen, gm.path) == (g.PID, 1, 1, FOO_SOCK) and fw.var('wheel_raw', C.c_int).value == 1
+    assert fw.fn('addon_game_front', C.c_int)() == 1 and fw.fn('addon_game_audio', C.c_int)() == 1
+    assert g.key(KEY_DOWN, CENTRE) == 1 and g.key(KEY_DOWN, O['KEY_PLAY']) == 1  # the sound's keys too
+    assert g.sent == [(FOO_SOCK, b'k d 218'), (FOO_SOCK, b'k d %d' % O['KEY_PLAY'])]
+    g.poll()
+    g.poll(500)
+    assert (p.top.state, p.top.n, p.pg.depth, p.req.id) == (K_READY, 2, 1, asked) and len(fw.calls('list_item_create')) == drawn
+    assert g.key(KEY_DOWN, RETURN) == 1  # Return's hold ends it, as a game
+    g.poll(701)
+    assert g.kills()[1:] == [b'kill %d' % g.PID]  # after its launcher's start
+
+
+def test_a_screen_row_with_empty_fields_sets_both_empty_and_is_asked_again(fw):
+    p = Page(fw)
+    p.answer(rows=[(b'screen', b'', b'Resume', b'', b'', b'')])
+    env = []
+    fw.mock('fw_setenv', lambda name, value, over, *_: env.append((C.string_at(name), C.string_at(value), over)) or 0)
+    calls = execl(fw)
+    fw.mock('fw_fork', lambda *_: 0)  # the child
+    p.click(0)
+    assert env[1:] == [(b'Q2_URI', b'', 1), (b'Q2_CONTEXT', b'', 1)] and len(calls) == 1
+    g = CardGame(fw, world=p.world)  # the parent's side
+    p.click(0)
+    assert fw.var('addon__gm', Game).screen == 1
+    asked = p.req.id
+    ended(g)
+    assert p.req.id == asked + 1
+
+
+def test_a_held_play_on_a_screen_row_still_sends_its_op(fw):
+    p = Page(fw)
+    p.answer(rows=[SCREEN])
+    assert fw.fn('addon_hold', C.c_int, C.c_void_p)(p.page) == 1
+    assert p.request().endswith(b'\tmark\tfilms%09new\n') and p.pg.act == 1 and not fw.calls('fw_fork')
+
+
+def ended(g, status=0):
+    g.status, g.exited = status, True
+    g.poll()
+    assert g.on() == 0
+
+
+def test_a_screen_run_s_end_asks_a_live_level_again_in_place(fw):
+    p = live(fw, [item(1), SCREEN])
+    g = CardGame(fw, world=p.world)
+    p.sel = 1
+    p.click(1)
+    asked, drawn = p.req.id, len(fw.calls('list_item_create'))
+    ended(g)
+    assert p.top.state == K_READY and p.req.id == asked + 1 and p.request().endswith(b'\tmenu\n')  # at once, no Loading… page
+    p.answer(msg=b'refresh', rows=[item(1), SEEN])
+    assert p.cell(1, 3) == b'Watched' and len(fw.calls('list_item_create')) == drawn and p.top.sel == 1  # written in place
+
+
+@pytest.mark.parametrize('row, manifest', [(1, b'name=Foo\n'), (None, b'name=Foo\ngame=1\nrow=games\n')], ids=['a screen run', 'a game'])
+def test_a_live_level_is_not_asked_while_a_run_is_in_front(fw, row, manifest):
+    """addon.c tick: nobody sees the page, and its app would list for the whole run. A game behind Now Playing is not
+    in front: its app's page, opened from there, is asked as any."""
+    p = Page(fw, manifest, opens=row is not None)
+    fw.mock('window_manager_get_top_window', lambda *_: p.page)
+    fw.var('g_backlight_status', C.c_ubyte).value = 1
+    g = CardGame(fw, world=p.world)
+    if row is None:  # the game's own page, as Now Playing's ⋯ opens it
+        assert fw.fn('addon__page_at', C.c_int, C.c_int, C.c_char_p, C.c_char_p, C.c_char_p, C.c_int)(0, b'menu', b'', b'Foo', 0) == 1
+    p.answer(msg=b'refresh', rows=[item(1), SCREEN])
+    assert g.start() == 1 if row is None else p.click(row) is None and g.on() == g.PID
+    asked = p.req.id
+    for _ in range(3):
+        p.world.ms += 2000
+        p.tick()
+    assert p.req.id == asked and not p.req.running
+    fw.var('addon__gm', Game).native = 1  # Now Playing has the screen, then the page over it
+    p.tick()
+    assert p.req.id == asked + 1 and p.req.running == 1 and p.request().endswith(b'\tmenu\n')
+
+
+@pytest.mark.parametrize('status', [11, 15, 9, 127 << 8])  # a crash, Return's hold, its kill, a failed exec
+def test_a_screen_run_s_end_asks_however_it_ended(fw, status):
+    p = Page(fw)
+    p.answer(rows=[SCREEN])
+    g = CardGame(fw, world=p.world)
+    p.click(0)
+    asked = p.req.id
+    ended(g, status)
+    assert p.req.id == asked + 1 and p.top.state == K_LOAD
+
+
+def test_a_live_level_showing_an_error_is_reloaded_not_asked_in_place(fw):
+    p = live(fw, [SCREEN])
+    g = CardGame(fw, world=p.world)
+    p.click(0)
+    p.top.state = K_ERROR  # as a reply under the run left it
+    ended(g)
+    assert p.top.state == K_LOAD and p.request().endswith(b'\tmenu\n')
+
+
+def test_a_screen_run_s_end_reloads_any_other_level_with_its_row_kept(fw):
+    p = Page(fw)
+    p.answer(rows=[item(1, b'list')])
+    p.click(0)  # a level of its own
+    p.answer(rows=[item(2), item(3), SCREEN])
+    g = CardGame(fw, world=p.world)
+    p.sel = 2
+    p.click(2)
+    asked = p.req.id
+    ended(g)
+    assert (p.pg.depth, p.top.state, p.top.sel) == (2, K_LOAD, 2) and p.req.id == asked + 1 and p.request().endswith(b'\top1\n')
+    sel = selects(fw)
+    p.sel = 0  # the Loading… page's
+    p.answer(rows=[item(2), item(3), SEEN])
+    assert p.top.state == K_READY and p.cell(2, 3) == b'Watched' and sel[-1] == 2
+
+
+def test_a_screen_run_s_end_asks_for_the_first_page_not_the_one_on_its_way(fw):
+    p = Page(fw)
+    p.answer(msg=b'pages', cursor=b'c1', rows=[SCREEN])
+    assert p.pg.paging == 1 and p.request().endswith(b'\tmenu\tc1\n')
+    g = CardGame(fw, world=p.world)
+    p.click(0)
+    ended(g)
+    assert p.pg.paging == 0 and p.request().endswith(b'\tmenu\n') and p.top.id == p.req.id
+    p.answer(rows=[SEEN])
+    assert p.top.state == K_READY and p.top.n == 1 and p.cell(0, 3) == b'Watched'
+
+
+def test_a_screen_run_s_end_puts_back_the_row_an_unanswered_action_wrote_over(fw):
+    p = live(fw, [row_of(b'a', b'One', b'detail'), SCREEN])
+    g = CardGame(fw, world=p.world)
+    texts = []
+    fw.mock('widget_set_text_utf8', lambda w, s, *_: texts.append(C.string_at(s)))
+    p.click(0)
+    p.world.ms += 400
+    p.tick()
+    assert texts == ['Working…'.encode()] and p.pg.busy == 1
+    p.click(1)
+    ended(g)
+    assert texts[-1] == b'detail' and (p.pg.busy, p.pg.act) == (0, 0) and p.request().endswith(b'\tmenu\n')
+
+
+@pytest.mark.parametrize('after', ['closed', 'another app'])
+def test_a_screen_run_whose_page_has_gone_asks_nothing_at_its_end(fw, after):
+    p = Page(fw)
+    p.answer(rows=[SCREEN])
+    g = CardGame(fw, world=p.world)
+    p.click(0)
+    assert g.on() == g.PID
+    fw.fn('addon__closed', C.c_int, C.c_void_p, C.c_void_p)(p.page, None)
+    if after == 'another app':  # its page, the same window's address
+        p.world.files.update({b'/mnt/mmc/.bar/q2app': b'name=Bar\n', b'/mnt/mmc/.bar/q2-bar': b'ELF', b'/tmp/q2-bar': b'1'})
+        p.world.dirs[b'/mnt/mmc'].append(b'.bar')
+        scan(fw)
+        fw.fn('addon_open', C.c_int, C.c_void_p, C.c_void_p)(1, None)  # Bar's slot
+        p.answer(rows=[item(1)])
+        assert p.pg.a == 1 and p.pg.page == p.page and p.top.state == K_READY
+    asked = p.req.id
+    ended(g)
+    assert p.req.id == asked and not (p.req.running or p.req.done)
+    assert p.pg.page is None if after == 'closed' else p.top.state == K_READY
+
+
+def test_a_screen_run_s_end_starts_an_app_that_ended_itself_under_it(fw):
+    p = Page(fw)
+    p.answer(rows=[SCREEN])
+    g = CardGame(fw, world=p.world)
+    p.click(0)
+    gone_idle(p)
+    ended(g)
+    assert p.top.state == K_LOAD and p.request().endswith(b'\tmenu\n')
+    p.answer(**NONE)
+    assert p.world.of('system') == [FOO_RUN, FOO_RUN] and p.top.state == K_WAIT
+    p.world.ms += 500
+    p.tick()
+    p.answer(rows=[SEEN])
+    assert p.top.state == K_READY and p.cell(0, 3) == b'Watched'
+
+
+@pytest.mark.parametrize('code', [RETURN, CENTRE])
+def test_the_release_of_a_press_that_ended_a_screen_run_is_not_the_page_s(fw, code):
+    p = Page(fw)
+    p.answer(rows=[SCREEN])
+    g = CardGame(fw, world=p.world)
+    p.click(0)
+    assert g.key(KEY_DOWN, code) == 1  # "k d CODE": the run leaves on the press
+    ended(g)
+    assert g.key(KEY_DOWN, code) == 1 and g.key(KEY_UP, code) == 1  # its repeat and its release: eaten, not the page's
+    assert g.key(KEY_DOWN, code) == 0 and g.key(KEY_UP, code) == 0  # the next press is stock's
+    assert g.sent == [(FOO_SOCK, b'k d %d' % code)]
+
+
+@pytest.mark.parametrize('began, after', [(12, 31), (30, 31), (31, 31), (200, 200)])
+def test_a_finger_down_at_a_run_s_end_pulls_nothing_down(fw, began, after):
+    """Stock's pull-down goes by the last press it saw (g_pressdown_y), which a touch under the run never was."""
+    p = Page(fw)
+    p.answer(rows=[SCREEN])
+    g = CardGame(fw, world=p.world)
+    p.click(0)
+    start = C.c_int.from_address(C.addressof(fw.var('fw_ctx_g_pressdown_y', C.c_char)))
+    start.value = began
+    assert g.touch(O['EVT_POINTER_FIRST'], 10, 20) == 1  # "t d": the run leaves on it
+    ended(g)
+    assert start.value == after
+
+
+@pytest.mark.parametrize('code', [RETURN, CENTRE])
+def test_a_key_released_before_the_run_s_end_leaves_nothing_to_eat(fw, code):
+    p = Page(fw)
+    p.answer(rows=[SCREEN])
+    g = CardGame(fw, world=p.world)
+    p.click(0)
+    assert g.key(KEY_DOWN, code) == 1 and g.key(KEY_UP, code) == 1
+    ended(g)
+    assert g.key(KEY_DOWN, code) == 0  # stock's: the page's
+
+
+def test_return_s_hold_released_before_the_run_s_end_leaves_nothing_to_eat(fw):
+    """The hold's own eaten release clears the key too, so the end finds nothing down."""
+    p = Page(fw)
+    p.answer(rows=[SCREEN])
+    g = CardGame(fw, world=p.world)
+    p.click(0)
+    assert g.key(KEY_DOWN, RETURN) == 1
+    g.poll(701)  # its TERM
+    assert g.key(KEY_UP, RETURN) == 1  # eaten, the run still there
+    ended(g, 15)
+    assert g.key(KEY_DOWN, RETURN) == 0
+
+
+def test_a_game_s_end_asks_nothing_of_the_app_s_page_open(fw):
+    """Only a screen row's run: a game started by a row of Games, its app's page open (Now Playing's ⋯), leaves it."""
+    p = Page(fw, b'name=Foo\ngame=1\nrow=games\n', opens=False)
+    g = CardGame(fw, world=p.world)
+    assert g.start() == 1 and fw.var('addon__gm', Game).screen == 0
+    assert fw.fn('addon__page_at', C.c_int, C.c_int, C.c_char_p, C.c_char_p, C.c_char_p, C.c_int)(0, b'menu', b'', b'Foo', 0) == 1
+    p.answer(rows=[item(1)])
+    asked = p.req.id
+    ended(g)
+    assert p.req.id == asked and p.top.state == K_READY
+
+
+@pytest.mark.parametrize('rows, was, now', [
+    ([item(9), *rows_of(0, 3)], 1, 2),  # a row inserted above
+    (rows_of(1, 2), 2, 1),  # one removed above: the last row, past the new list's end
+    ([item(0), item(2), item(3)], 1, 1),  # the selected row itself gone: its index, as before
+    ([item(9), item(0), row_of(b'op1', b'Renamed', b''), item(2)], 1, 2),  # its texts are not what it is
+    ([item(9), item(0), item(1, b'list'), item(2)], 1, 1),  # another kind is another row
+    ([item(9), item(0), item(1, ctx=b'x'), item(2)], 1, 1),  # and another context
+    ([item(9), item(0), row_of(b'op', ctx=b'1'), item(2)], 1, 1),  # each field ends where it ends
+])
+def test_a_refresh_with_other_rows_selects_the_row_that_was_selected(fw, rows, was, now):
+    """addon.c keep_sel and find_sel: the selection is a row (its kind, uri and context), not an index."""
+    p = live(fw, rows_of(0, 3))
+    p.sel = was
+    sel = selects(fw)
+    refresh(p, rows)
+    assert p.top.sel == now and (sel[-1:] == [now] or now == was)
+
+
+def test_of_two_equal_rows_the_selected_one_stays_else_the_first_is_found(fw):
+    twice = [item(0), item(1), item(2), item(1)]
+    p = live(fw, twice)
+    p.sel = 3
+    refresh(p, [*twice, item(4)])
+    assert p.top.sel == 3  # the row at its index is still it
+    refresh(p, [item(9), *twice, item(4)])
+    assert p.top.sel == 2  # moved: the first equal to it, the one it was now at 4
+
+
+def test_the_same_refresh_neither_redraws_nor_selects(fw):
+    p = live(fw, rows_of(0, 3))
+    p.sel = 2
+    drawn, sel = len(fw.calls('list_item_create')), selects(fw)
+    refresh(p, rows_of(0, 3))
+    assert len(fw.calls('list_item_create')) == drawn and sel == []
+    refresh(p, [item(0), row_of(b'op1', b'Renamed'), item(2)])  # written in place
+    assert len(fw.calls('list_item_create')) == drawn and sel == []
+
+
+CONTINUE = (b'list', b'continue', b'Continue Watching', b'', b'', b'')
+
+
+@pytest.mark.parametrize('lively', [False, True])
+@pytest.mark.parametrize('before, after, was, now', [
+    ([item(1), SCREEN, item(2)], [CONTINUE, item(1), SEEN, item(2)], 1, 2),  # a row came above it
+    ([CONTINUE, item(1), SCREEN, item(2)], [item(1), SEEN, item(2)], 2, 1),  # and went
+])
+def test_a_screen_run_s_end_selects_the_row_it_ran_from_wherever_it_is_now(fw, lively, before, after, was, now):
+    p = live(fw, before) if lively else Page(fw)
+    if not lively:
+        p.answer(rows=before)
+    g = CardGame(fw, world=p.world)
+    p.sel = was
+    p.click(was)
+    ended(g)
+    if not lively:
+        p.sel = 0  # the Loading… page's
+    sel = selects(fw)
+    p.answer(msg=b'refresh' if lively else b'', rows=after)
+    assert p.top.state == K_READY and p.top.sel == now and sel[-1] == now
+
+
+@pytest.mark.parametrize('lively', [False, True])
+def test_an_action_s_reload_selects_the_row_pressed_wherever_it_is_now(fw, lively):
+    p = live(fw, rows_of(0, 3)) if lively else Page(fw)
+    if not lively:
+        p.answer(rows=rows_of(0, 3))
+    p.sel = 2
+    p.click(2)
+    p.answer()  # the action's reply: the level is asked again
+    if not lively:
+        p.sel = 0  # the Loading… page's
+    sel = selects(fw)
+    p.answer(msg=b'refresh' if lively else b'', rows=[item(9), *rows_of(0, 3)])
+    assert p.top.sel == 3 and sel[-1] == 3
+
+
+def test_back_selects_the_row_that_opened_the_level_wherever_it_is_now(fw):
+    p = Page(fw)
+    p.answer(rows=[item(0), item(1, b'list')])
+    p.sel = 1
+    p.click(1)
+    p.answer(rows=[item(5)])
+    p.back()
+    p.answer(rows=[item(9), item(0), item(1, b'list')])
+    assert p.pg.depth == 1 and p.top.sel == 2
+
+
+def test_the_trailing_row_is_kept_by_its_index_alone(fw):
+    p = Page(fw)
+    p.answer(cursor=b'c', rows=rows_of(0, 2))
+    p.sel = 2  # More…
+    p.click(2)
+    assert p.pg.depth == 2 and (p.pg.lv[0].sel, p.pg.lv[0].key) == (2, 0)
+    p.back()
+    p.answer(cursor=b'c', rows=[item(9), *rows_of(0, 2)])
+    assert p.top.sel == 2
+
+
+def test_a_row_of_a_later_page_waits_for_its_page_not_an_equal_row_of_the_first(fw):
+    """addon.c find_sel: an index past the first page of a list with more to come stays append's to select."""
+    p = Page(fw)
+    p.answer(msg=b'pages', cursor=b'c', rows=[item(0), item(1, b'list')])
+    p.answer(msg=b'pages', rows=[item(1, b'list'), item(2)])
+    assert p.top.n == 4
+    p.sel = 2  # the second page's, equal to the first's
+    p.click(2)
+    p.answer(rows=[item(5)])
+    p.back()
+    p.answer(msg=b'pages', cursor=b'c', rows=[item(0), item(1, b'list')])
+    assert p.top.sel == 2
+
+
+def test_a_window_selects_its_own_row_not_the_one_kept(fw):
+    """addon.c page_to: a page row's press chooses the row itself, whatever an earlier reload kept."""
+    p = windowed(fw)
+    p.answer(rows=[item(2), item(3), NEXT])
+    p.sel = 1
+    p.click(1)
+    p.answer()  # op3's action: the level reloads, op3 kept
+    p.answer(rows=[item(2), item(3), NEXT])
+    p.click(2)
+    p.answer(rows=[(b'page', b'prev', b'Previous page', b'', b'', b''), item(4), item(3), NEXT])
+    assert p.top.sel == 1  # the row after the first, though op3 is in this window too
+
+
+@pytest.mark.parametrize('why, said', [('store', [b'Wait until the App Store finishes']), ('gone', [b"It isn't on the card"]),
+                                       ('fork', [b"It couldn't start"]), ('running', [])])
+def test_a_screen_row_that_cannot_start_says_why_as_a_game_s_row_does(fw, why, said):
+    p = Page(fw)
+    p.answer(rows=[SCREEN])
+    fw.mock('fw_fork', lambda *_: -1 if why == 'fork' else 77)
+    gm = fw.var('addon__gm', Game)
+    if why == 'store':
+        table = C.addressof(C.c_char.in_dll(fw.lib, 'shelf_apps'))
+        fw.var('shelf_n', C.c_int).value = fw.fn('shelf_sources', C.c_int, C.c_char_p, C.c_void_p, C.c_int)(b'me/foo', table, 1)
+        sh = fw.var('netupdate__sh', Sh)
+        sh.running, sh.job, sh.app = 1, JOB_INSTALL, 0  # installing app 0, foo
+    elif why == 'gone':
+        del p.world.files[FOO_BIN]
+    elif why == 'running':
+        gm.pid = 5  # a game behind Now Playing
+    p.click(0)
+    assert p.toasts == said and gm.pid == (5 if why == 'running' else 0) and len(fw.calls('fw_fork')) == (why == 'fork')
+    assert p.top.state == K_READY and fw.var('wheel_raw', C.c_int).value == 0  # the page as it was
 
 
 def edit_box(fw):
@@ -3216,6 +4347,148 @@ def test_a_level_asked_while_the_app_restarts_still_waits(fw):
     p.ap.a[0].restart = 1
     p.answer(fail=SPOT_NOSOCK, raw=b'')
     assert p.top.state == K_WAIT
+
+
+# An app that ended itself under its page (idle) is started again by the page's next request for a level (revive).
+FOO_RUN = (b'/bin/sh /mnt/mmc/.foo/run',)
+NONE = dict(fail=SPOT_NOSOCK, raw=b'')  # a request that found no socket
+
+
+def gone_idle(p, rows=None):
+    """The app answered its page (rows, unless it has), then ended itself: its loop's pid file gone, and its poll
+    has let it go (poll_one)."""
+    if rows is not None:
+        p.answer(rows=rows)
+    del p.world.files[b'/tmp/q2-foo']
+    addon_poll(p.fw, p.world, 20000)
+    assert (p.ap.a[0].launched, p.pg.up) == (0, 1) and p.world.of('system') == [FOO_RUN]
+
+
+def test_a_level_that_finds_its_app_ended_starts_it_again_and_waits_as_for_a_start(fw):
+    p = Page(fw)
+    gone_idle(p, [item(1, b'list')])
+    p.click(0)  # a level not shown yet
+    p.answer(**NONE)
+    assert p.world.of('system') == [FOO_RUN, FOO_RUN] and (p.ap.a[0].launched, p.ap.a[0].launch_at, p.pg.up) == (1, p.world.ms, 0)
+    assert p.top.state == K_WAIT and p.pg.again == p.world.ms + 500 and p.toasts == []
+    assert fw.fn('addon_wake', C.c_int, C.c_char_p)(b'foo') == 1 and len(p.world.of('system')) == 2  # a song's wake waits on this start
+    p.world.ms += 500
+    p.tick()
+    p.answer(**NONE)  # not up yet: asked again, nothing started
+    assert p.top.state == K_WAIT and len(p.world.of('system')) == 2
+    p.world.ms += 500
+    p.tick()
+    p.answer(rows=[item(3)])
+    assert p.top.state == K_READY and p.cell(0, 2) == b'Row 3' and p.pg.up == 1  # and once more, should it end again
+
+
+def test_an_app_gone_since_its_last_poll_is_started_again_too(fw):
+    """Still launched until poll_one's next look: its loop's pid file gone is what says it ended."""
+    p = Page(fw)
+    p.answer(rows=[item(1, b'list')])
+    del p.world.files[b'/tmp/q2-foo']
+    p.world.ms += 20000
+    p.click(0)
+    p.answer(**NONE)
+    assert p.ap.a[0].launched == 1 and p.world.of('system') == [FOO_RUN, FOO_RUN] and p.top.state == K_WAIT
+
+
+def test_a_live_level_stays_shown_while_its_app_starts_again(fw):
+    p = live(fw, [item(1)])
+    gone_idle(p)
+    drawn = len(fw.calls('list_item_create'))
+    p.tick()  # its time long past
+    p.answer(**NONE)
+    assert p.world.of('system') == [FOO_RUN, FOO_RUN] and p.top.state == K_READY and p.pg.again == p.world.ms + 500
+    p.world.ms += 500
+    p.tick()
+    assert p.req.running == 1 and p.request().endswith(b'\tmenu\n')
+    p.answer(msg=b'refresh', rows=[item(1)])
+    assert p.top.state == K_READY and p.top.live == 1 and len(fw.calls('list_item_create')) == drawn
+
+
+def test_an_app_that_does_not_come_back_shows_its_error_and_is_started_once(fw):
+    p = Page(fw)
+    gone_idle(p, [item(1, b'list')])
+    p.click(0)
+    p.answer(**NONE)
+    p.world.ms += 9499
+    p.tick()
+    assert p.top.slow == 1 and p.drawn == 1  # Stop Foo, as on any slow start
+    p.tick()
+    p.answer(**NONE)  # ADDON_START_MS is not over
+    assert p.top.state == K_WAIT
+    p.world.ms += 501
+    p.tick()
+    p.answer(**NONE)
+    assert (p.top.state, p.top.note, p.top.retry, p.top.nosock) == (K_ERROR, b"Foo isn't running", 1, 1)
+    assert p.world.of('system') == [FOO_RUN, FOO_RUN]
+    p.click(0)  # Retry starts it, as it did
+    assert p.world.of('system') == [FOO_RUN] * 3 and p.top.state == K_LOAD
+    p.world.ms += 10000
+    p.answer(**NONE)
+    assert p.top.state == K_ERROR and p.world.of('system') == [FOO_RUN] * 3  # the page itself starts it no more
+
+
+@pytest.mark.parametrize('why', ['never answered', 'its loop runs', 'USB storage starts it', 'the App Store has it', 'gone from the card'])
+def test_only_an_app_that_answered_and_ended_itself_is_started_again(fw, why):
+    """addon.c revive: every other missing socket is the error page it was, and Retry's restart of a running app."""
+    p = Page(fw)
+    a = p.ap.a[0]
+    if why != 'never answered':
+        p.answer(rows=[item(1, b'list')])
+        p.click(0)
+    p.world.ms += 20000
+    if why == 'its loop runs':  # its socket gone, its pid file there
+        assert a.launched == 1
+    else:
+        del p.world.files[b'/tmp/q2-foo']
+        a.launched = 0
+    if why == 'USB storage starts it':  # addon_card_away stopped it: poll_one starts it once the card is back
+        a.relaunch = 1
+    elif why == 'the App Store has it':  # replacing its files: launch refuses
+        table = C.addressof(C.c_char.in_dll(fw.lib, 'shelf_apps'))
+        fw.var('shelf_n', C.c_int).value = fw.fn('shelf_sources', C.c_int, C.c_char_p, C.c_void_p, C.c_int)(b'me/foo', table, 1)
+        sh = fw.var('netupdate__sh', Sh)
+        sh.running, sh.job, sh.app = 1, JOB_INSTALL, 0
+    elif why == 'gone from the card':
+        del p.world.files[FOO_BIN]
+    p.answer(**NONE)
+    assert (p.top.state, p.top.note, p.top.retry) == (K_ERROR, b"Foo isn't running", 1) and p.world.of('system') == [FOO_RUN]
+    assert (a.launched, a.relaunch) == (why == 'its loop runs', why == 'USB storage starts it')
+    if why == 'its loop runs':
+        p.click(0)  # Retry
+        assert a.restart == 1 and p.world.of('system')[-1][0].startswith(b'kill ')
+
+
+def test_an_action_starts_nothing_but_its_level_asked_again_does(fw):
+    p = Page(fw)
+    gone_idle(p, [item(1)])
+    p.click(0)
+    p.answer(**NONE)
+    assert p.toasts == [b"Foo isn't running"] and p.world.of('system') == [FOO_RUN] and p.top.state == K_LOAD
+    p.answer(**NONE)  # the level as the action left it
+    assert p.world.of('system') == [FOO_RUN, FOO_RUN] and p.top.state == K_WAIT
+
+
+def test_a_stop_op_that_finds_no_socket_starts_nothing(fw):
+    """The app was asked to end: its level's reload shows the error page, as it did."""
+    p = Page(fw)
+    gone_idle(p, [(b'action', b'stop', b'Stop Foo', b'', b'', b'')])
+    p.click(0)
+    p.answer(**NONE)
+    p.answer(**NONE)
+    assert p.top.state == K_ERROR and p.world.of('system') == [FOO_RUN] and p.backs == 0
+
+
+def test_a_field_s_text_that_finds_no_socket_starts_nothing(fw):
+    p = Page(fw, NOSTOP)
+    gone_idle(p, [USER, PASSWORD])
+    field(p, 1)
+    p.answer(**NONE)
+    assert p.top.state == K_ERROR and p.top.note == b"Foo isn't running" and p.world.of('system') == [FOO_RUN]
+    p.click(0)  # Retry: the level, never the text
+    assert SECRET not in p.request() and p.request().endswith(b'\tmenu\n') and p.world.of('system') == [FOO_RUN, FOO_RUN]
 
 
 def test_a_request_with_no_worker_is_wiped_before_it_is_let_go(fw):
@@ -3486,7 +4759,7 @@ def test_top_app_and_cell(fw):
 
 @pytest.mark.parametrize('kind,uri,yes', [
     (b'list', b'x', 1), (b'remote', b'', 1), (b'local', b'/mnt/mmc/a/', 1), (b'local', b'/mnt/mmc/a.flac', 0), (b'local', b'', 0),
-    (b'action', b'x/', 0), (b'info', b'', 0), (b'', b'', 0),
+    (b'action', b'x/', 0), (b'info', b'', 0), (b'', b'', 0), (b'screen', b'/mnt/mmc/a/', 0),
 ])
 def test_a_row_that_opens(fw, kind, uri, yes):
     p = Page(fw)
@@ -3843,6 +5116,19 @@ def test_a_page_the_app_store_is_replacing_waits_for_it(fw, job, stage, running,
     assert p.world.of('system') == []  # the app isn't started in its folder either way
 
 
+def test_a_network_row_the_app_store_is_replacing_waits_for_it(fw):
+    # Network's row presses as Streaming's does: a remove's files going, no page and the App Store's toast
+    p = Page(fw, b'name=Foo\nrow=network\n', opens=False)
+    assert fw.fn('addon_network', C.c_int)() == 1
+    table = C.addressof(C.c_char.in_dll(fw.lib, 'shelf_apps'))
+    fw.var('shelf_n', C.c_int).value = fw.fn('shelf_sources', C.c_int, C.c_char_p, C.c_void_p, C.c_int)(b'me/foo', table, 1)
+    sh = fw.var('netupdate__sh', Sh)
+    sh.running, sh.job, sh.app, sh.stage = 1, JOB_REMOVE, 0, 4
+    fw.fn('addon_network_open', C.c_int, C.c_void_p, C.c_void_p)(0, None)
+    assert not p.pg.page and not p.pg.lv and p.toasts == [b'Wait until the App Store finishes']
+    assert p.world.of('system') == []
+
+
 @pytest.mark.parametrize('manifest,path,logs', [
     (b'name=Foo\nscrobble=0\n', b'/mnt/mmc/.foo/a.flac', 0),
     (b'name=Foo\r\nscrobble=0\r\n', b'/mnt/mmc/.foo/a.flac', 0),  # a Windows editor's line ends
@@ -4089,6 +5375,7 @@ def test_an_app_gone_from_the_card_says_so(fw):
 
 
 PRESSES = {b'library': lambda fw, k: fw.fn('addon_lib_open', C.c_int, C.c_void_p, C.c_void_p)(k, None),
+           b'network': lambda fw, k: fw.fn('addon_network_open', C.c_int, C.c_void_p, C.c_void_p)(k, None),
            b'games': lambda fw, k: fw.fn('addon_game_start', C.c_int, C.c_int)(k)}
 
 
@@ -4110,7 +5397,8 @@ def test_an_install_s_toast_leaves_the_open_page_s_rows_on_their_apps(fw, row):
     p = Page(fw, b'name=Foo\nrow=%s\n' % row, opens=False)  # the page built, Foo its only app row
     p.world.files.update({b'/mnt/mmc/.bar/q2app': b'name=Bar\nrow=%s\n' % row, b'/mnt/mmc/.bar/q2-bar': b'ELF'})
     p.world.dirs[b'/mnt/mmc'].append(b'.bar')
-    where = {b'streaming': b'Streaming', b'library': b"Library's Apps", b'games': b"Library's Games"}[row]
+    where = {b'streaming': b'Streaming', b'library': b"Library's Apps", b'games': b"Library's Games",
+             b'network': b'Network settings'}[row]
     assert fw.fn('addon_where', C.c_char_p, C.c_char_p)(b'bar') == where
     PRESSES.get(row, lambda fw, k: fw.fn('addon_open', C.c_int, C.c_void_p, C.c_void_p)(k, None))(fw, 0)
     assert p.top.title == b'Foo'
@@ -4173,6 +5461,14 @@ def test_a_code_shows_with_its_address_and_spaced_pin(fw):
     q = Qr(fw, qr_state())
     assert q.code == 1 and C.string_at(q.qp.hex) == HEX21 and q.qp.size == 21
     assert b'192.168.1.2:8080' in q.texts and b'548 001' in q.texts and b'Hi' in q.texts
+
+
+def test_no_pin_hides_its_caption(fw):
+    # an app whose sign-in needs no PIN (one approved in the account, say) has no "PIN" over nothing
+    q = Qr(fw, qr_state(pin=b''))
+    assert q.code == 1 and q.shown.get(q.qp.pinl) == 0
+    q.again(qr_state())
+    assert q.shown.get(q.qp.pinl) == 1 and b'548 001' in q.texts
 
 
 def test_a_pin_of_another_length_shows_as_it_is(fw):
@@ -5602,3 +6898,38 @@ def test_a_card_apps_first_song_waits_while_a_game_has_the_sound(fw, audio, time
     fw.fn('addon__stream_poll', None, C.c_void_p)(app)
     s = sm(fw)
     assert s.state == S_WAIT and len(fw.calls('timer_add')) == timers and s.timer == (5 if timers else 0)
+
+
+@pytest.mark.parametrize('theme, want', [(b'0', b'icon-minimal.png'), (b'2', b'icon.png'), (b'1', b'icon.png')])
+def test_a_theme_named_icon_is_taken_under_that_theme(fw, settings_read, theme, want):
+    # icon-<theme>.png and icon-40-<theme>.png (theme()->name, lower case) before the plain ones: an app
+    # drawn for Minimal's grey discs, its own icon elsewhere. Read at each scan, so a theme change shows
+    # at the next. Network rows take the 52 px first, as with the plain names.
+    boot(fw, settings_read, theme)
+    card(fw, vpn=(b'name=Tunnel\nrow=network\n', ('icon.png', 'icon-40.png', 'icon-minimal.png', 'icon-40-minimal.png')))
+    assert fw.fn('addon_network', C.c_int)() == 1
+    assert fw.fn('addon_network_icon', C.c_char_p, C.c_int)(0) == b'file:///mnt/mmc/.vpn/' + want
+
+
+def test_a_theme_name_s_space_is_a_dash(fw, settings_read):
+    # Classic Modern's icon is icon-classic-modern.png: a file name with no space in it
+    boot(fw, settings_read, b'3')
+    card(fw, vpn=(b'name=Tunnel\nrow=network\n', ('icon.png', 'icon-classic-modern.png')))
+    assert fw.fn('addon_network', C.c_int)() == 1
+    assert fw.fn('addon_network_icon', C.c_char_p, C.c_int)(0) == b'file:///mnt/mmc/.vpn/icon-classic-modern.png'
+
+
+def test_a_15_letter_id_s_classic_modern_icon_keeps_its_whole_name(fw, settings_read):
+    # file:///mnt/mmc/.<id>/icon-40-classic-modern.png is 59 bytes for the longest id: cut short, the row names no file
+    boot(fw, settings_read, b'3')
+    card(fw, abcdefghijklmno=(b'name=Long\n', ('icon-40-classic-modern.png',)))
+    scan(fw)
+    assert ap(fw).a[0].icon == b'file:///mnt/mmc/.abcdefghijklmno/icon-40-classic-modern.png'
+
+
+def test_a_theme_icon_alone_is_taken_too(fw, settings_read):
+    # an app with only its 40 px Minimal icon: that, under Minimal, before the plain 52 px
+    boot(fw, settings_read, b'0')
+    card(fw, vpn=(b'name=Tunnel\nrow=network\n', ('icon.png', 'icon-40-minimal.png')))
+    assert fw.fn('addon_network', C.c_int)() == 1
+    assert fw.fn('addon_network_icon', C.c_char_p, C.c_int)(0) == b'file:///mnt/mmc/.vpn/icon-40-minimal.png'

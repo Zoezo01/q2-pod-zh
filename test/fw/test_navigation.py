@@ -1329,7 +1329,7 @@ def folder_tracks(fw, tree, path):
 
 
 def test_a_folder_queues_its_songs_and_its_subfolders(fw):
-    tree = Tree(fw, {b'/m': [(b'a.flac', 8), (b'sub', 4), (b'.tidal', 4), (b'clip.mp4', 8), (b'b.flac', 8)],
+    tree = Tree(fw, {b'/m': [(b'a.flac', 8), (b'sub', 4), (b'.tidal', 4), (b'b.flac', 8)],
                      b'/m/sub': [(b'c.flac', 8)], b'/m/.tidal': [(b'no.flac', 8)]})
     assert folder_tracks(fw, tree, b'/m') == [b'/m/a.flac', b'/m/sub/c.flac', b'/m/b.flac']
 
@@ -2806,6 +2806,17 @@ def test_a_late_edge_press_leaves_centres_hold(fw, st):
     assert not fw.calls('timer_remove') and st('centre_hold', C.c_uint).value == 77
 
 
+def test_an_edge_press_ends_centres_click(fw, st):
+    claim(O['BOOT_KEY_GUARD'])
+    gate = Gate(fw, 'chord_gate')
+    gate(DOWN, KEY_CENTER), gate(DOWN, KEY_PLAY, 30)
+    assert gate(UP, KEY_CENTER, 50) == 0  # the window manager has its release, ringnav stops it
+    assert fw.fn('ringnav', C.c_int, C.c_void_p, C.c_void_p)(None, event(UP, KEY_CENTER)) == 11
+    assert not fw.calls('stock_keyup_trampoline') and st('centre_rim').value == 0
+    gate(UP, KEY_PLAY, 10), gate(DOWN, KEY_CENTER, 1000), gate(DOWN, KEY_PLAY, 600)
+    assert st('centre_rim').value == 0  # a late edge press leaves the click
+
+
 def test_a_ghost_after_return_held_is_dropped_whole(fw):
     gate = Gate(fw, 'chord_gate')
     gate(DOWN, KEY_RETURN), gate(UP, KEY_RETURN, 700)
@@ -2968,13 +2979,6 @@ def test_artist_songs_of_the_unknown_artist(fw):
 def test_a_badge_is_stocks_none(fw):
     out = C.create_string_buffer(16)
     assert fw.fn('ringnav_badge', C.c_int, C.c_char_p, C.c_void_p, C.c_int)(b'/a.flac', out, 16) == 0 and out.value == b'null'
-
-
-@pytest.mark.parametrize('path, videos', [(b'/mnt/mmc/Videos', 1), (b'/mnt/mmc/VIDEOS/x', 1), (b'/mnt/mmc/Videosx', 0), (b'/mnt/mmc/Music', 0), (b'/mnt/usb/Videos', 0)])
-def test_folder_videos(fw, path, videos):
-    strings(fw)
-    C.memmove(C.addressof(fw.var('fw_ctx_g_folder_path', C.c_char)), path + b'\0', len(path) + 1)
-    assert fw.fn('folder_videos', C.c_int)() == videos
 
 
 @pytest.mark.parametrize('table, exists', [(None, 1), (b'playlist', 1), (b'songtable', 0), (b'playlist', 0)])

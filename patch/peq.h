@@ -3,6 +3,7 @@
 
 #define STR_(x) #x
 #define STR(x) STR_(x) /* a macro's value as a string literal */
+#include "stock_types.h"
 
 #ifdef PEQ_HOST
 #ifndef _GNU_SOURCE
@@ -43,33 +44,34 @@ void crash_note(const char *path, const char *file, const char *log, unsigned ev
  * back from the LCD, which has passed already. */
 unsigned ui_ink(unsigned rgba);
 unsigned ui_ink_raw(unsigned raw);
-static inline int stock_canvas_set_fill_color(void *c, unsigned x) {
+static inline int stock_canvas_set_fill_color(canvas_t *c, unsigned x) {
     return canvas_set_fill_color(c, x);
 }
-static inline int stock_canvas_set_text_color(void *c, unsigned x) {
+static inline int stock_canvas_set_text_color(canvas_t *c, unsigned x) {
     return canvas_set_text_color(c, x);
 }
-static inline int stock_canvas_set_stroke_color(void *c, unsigned x) {
+static inline int stock_canvas_set_stroke_color(canvas_t *c, unsigned x) {
     return canvas_set_stroke_color(c, x);
 }
-static inline int ink_canvas_fill_rounded_rect(void *c, const void *r, const void *g,
+static inline int ink_canvas_fill_rounded_rect(canvas_t *c, const void *r, const void *g,
                                                const void *color, unsigned radius) {
     unsigned v = ui_ink(*(const unsigned *)color);
     return canvas_fill_rounded_rect(c, r, g, &v, radius);
 }
-static inline int ink_canvas_stroke_rounded_rect(void *c, const void *r, const void *g,
+static inline int ink_canvas_stroke_rounded_rect(canvas_t *c, const void *r, const void *g,
                                                  const void *color, unsigned radius, unsigned w) {
     unsigned v = ui_ink(*(const unsigned *)color);
     return canvas_stroke_rounded_rect(c, r, g, &v, radius, w);
 }
-static inline int ink_vgcanvas_set_fill_color(void *vg, unsigned x) {
+static inline int ink_vgcanvas_set_fill_color(vgcanvas_t *vg, unsigned x) {
     return vgcanvas_set_fill_color(vg, ui_ink(x));
 }
-static inline int ink_vgcanvas_set_stroke_color(void *vg, unsigned x) {
+static inline int ink_vgcanvas_set_stroke_color(vgcanvas_t *vg, unsigned x) {
     return vgcanvas_set_stroke_color(vg, ui_ink(x));
 }
-static inline int ink_vgcanvas_set_fill_linear_gradient(void *vg, float sx, float sy, float ex,
-                                                        float ey, unsigned from, unsigned to) {
+static inline int ink_vgcanvas_set_fill_linear_gradient(vgcanvas_t *vg, float sx, float sy,
+                                                        float ex, float ey, unsigned from,
+                                                        unsigned to) {
     return vgcanvas_set_fill_linear_gradient(vg, sx, sy, ex, ey, ui_ink(from), ui_ink(to));
 }
 #undef canvas_set_fill_color
@@ -297,11 +299,11 @@ typedef struct {
 
 /* The payload's shared helpers: coverflow.c's pages, hashes and worker, photos.c's, navigation.c's.
  */
-void *text(void *parent, int x, int y, int w, int h);
+widget_t *text(widget_t *parent, int x, int y, int w, int h);
 /* coverflow.c's flip panel, which navigation.c's hold menu wears under Classic */
 #define PANEL_X 40 /* the panel's first column: Cover Flow's axis less half of it */
 #define BACK_W 294 /* its width and its rows' */
-void coverflow_panel_paint(void *canvas, int x, int y, int head, int h, int over);
+void coverflow_panel_paint(canvas_t *canvas, int x, int y, int head, int h, int over);
 /* The landing's path (coverflow_land.c): the cubic ease-out, and the face's four corners. */
 float land_ease(float x);
 void land_quad(const int from[4], const int to[3], int ms, int len, int travel, float q[8],
@@ -317,56 +319,57 @@ typedef struct {
     unsigned paper; /* opaque */
 } land_t;
 int land_frame(unsigned *d, int pitch, int ms, const land_t *L, int box[4], int *veil);
-void panel_font(void *label, int px, int bold);
-void *page_open(const char *name, int (*closed)(void *, void *), int (*keyup)(void *, void *));
-void motion_open(void *page,
+void panel_font(widget_t *label, int px, int bold);
+widget_t *page_open(const char *name, int (*closed)(void *, event_t *),
+                    int (*keyup)(void *, event_t *));
+void motion_open(widget_t *page,
                  const char *name); /* navigation.c: page_open's page takes the theme's hint */
-void *page_title(void *body, const char *caption, int n);
-void page_empty(void *body, const char *name);
+widget_t *page_title(widget_t *body, const char *caption, int n);
+void page_empty(widget_t *body, const char *name);
 #define PAGE_TITLE "_page_title" /* the caption the bar reads (navigation.c page_caption) */
 #define PAGE_TALL "_page_tall"   /* a two-line row, its separators' (paint_separators) */
 int page_h(int h);
 int page_x(void);
-void page_retitle(void *page, void *title, const char *caption);
-void *page_list(void *page, void *body, void **title, const char *caption, int n, int item_h);
-void *page_list_or(void *page, void *body, const char *name, const char *none, int n, int item_h);
-int page_push(void *view, int dir);
-void *page_row_detail(void *view, int index, const char *caption, const char *detail,
-                      int (*click)(void *, void *));
-void *page_row_detail_into(void *view, int index, const char *caption, const char *detail,
-                           int (*click)(void *, void *));
-void page_row_into(void *view, int index, const char *caption, int (*click)(void *, void *));
-void row_into(void *item, int h);
-void list_toggle(void *label, const char *title, int on); /* navigation.c: a row's switch */
+void page_retitle(widget_t *page, widget_t *title, const char *caption);
+widget_t *page_list(widget_t *page, widget_t *body, widget_t **title, const char *caption, int n,
+                    int item_h);
+widget_t *page_list_or(widget_t *page, widget_t *body, const char *name, const char *none, int n,
+                       int item_h);
+int page_push(widget_t *view, int dir);
+widget_t *page_row_detail(widget_t *view, int index, const char *caption, const char *detail,
+                          int (*click)(void *, event_t *));
+widget_t *page_row_detail_into(widget_t *view, int index, const char *caption, const char *detail,
+                               int (*click)(void *, event_t *));
+void page_row_into(widget_t *view, int index, const char *caption, int (*click)(void *, event_t *));
+void row_into(widget_t *item, int h);
+void list_toggle(widget_t *label, const char *title, int on); /* navigation.c: a row's switch */
 /* navigation.c: Classic's value */
-void list_value(void *label, const char *title, const char *value);
+void list_value(widget_t *label, const char *title, const char *value);
 char *csv_find(char *list, const char *item); /* navigation.c: comma lists */
 int csv_toggle(char *list, unsigned size, const char *item);
-void *bottom_caption(void *parent, int h);
-int text_differs(void *w, const char *s);
+int text_differs(widget_t *w, const char *s);
 void *song_list(void);                              /* coverflow.c: an empty stSongInfo deque */
 long file_size(const char *path);                   /* coverflow.c: -1 when it can't be opened */
 int picture_size(const char *path, int *w, int *h); /* coverflow.c */
 void *read_all(const char *path, unsigned max, unsigned *size); /* scrobble.c */
-int visual(void *s, int n, int *c, int *frac);
+int visual(widget_t *s, int n, int *c, int *frac);
 int thumb(const char *src, const char *dst, int w, int h);
 extern volatile unsigned ff_kills; /* coverflow.c: ffmpeg runs killed or never started */
 int card_space(const char *dir);
 int card_room(const char *dir, unsigned mb, unsigned pct);
-int by_string(const void *a, const void *b);
 unsigned hash_bytes(unsigned h, const unsigned char *s, unsigned n);
 unsigned fnv(unsigned h, const unsigned char *s);
 void stop_timer(unsigned *timer), rearm(unsigned *timer, int (*fn)(const void *), unsigned ms);
-int return_key(void *event, unsigned *timer,
+int return_key(event_t *event, unsigned *timer,
                int (*leave)(const void *)); /* a page's keyup: Return */
 int center_press(unsigned *timer, unsigned *at, int (*single)(const void *), int scrubbing);
 int config_value(const char *section, const char *key, int n,
                  int def); /* theme_engine.c: a config.ini decimal */
-int image_show(void *img, const char *url, unsigned *size);
+int image_show(widget_t *img, const char *url, unsigned *size);
 int album_cmp(void *a, void *b);
-int spoken(const char *path);     /* navigation.c: under Podcasts or Audiobooks, or an M4B */
-void peq_attach(void);            /* peq_ui.c */
-void peq_page_replace(void *old); /* peq_ui.c: the open EQ page closed for a new one */
+int spoken(const char *path);         /* navigation.c: under Podcasts or Audiobooks, or an M4B */
+void peq_attach(void);                /* peq_ui.c */
+void peq_page_replace(widget_t *old); /* peq_ui.c: the open EQ page closed for a new one */
 /* navigation.c: the settings rows pod_rows builds (pod_values and its Q2POD keys); pod_value(i) is
  * one's value (only rows with a pod_values entry), read once from config.ini. */
 enum {
@@ -418,6 +421,8 @@ int pod_value(int i);
  */
 void eq_output(const char *key), eq_output_forget(void);
 void ringnav_eq_output_toggle(void); /* and its row's click */
+/* and a card app's (addon_eq.c): p playing, as Apply, else mode (EQ_PEQ, EQ_OFF), as the switch */
+const char *eq_set(const peq_preset *p, int mode);
 void peq_boot(void); /* clear a previous session's Simple EQ comparison before restoring playback */
 extern int peq_chained; /* peq_ui.c: peq_stock_eq ran this boot */
 void peq_chain(void);   /* crossfade.c: peq_attach once a connect (ringnav_mode), while playing */
@@ -428,11 +433,11 @@ int mono_on(void);   /* crossfade.c: Mono Audio's setting */
 #define NS_STEP 100
 #define NS_DEFAULT 3400
 int night_on(void), night_kelvin(void); /* night_on: 0 Off, 1 On, 2 Auto */
-void night_set(int on, int kelvin), night_save(void), night_paint(void *canvas),
+void night_set(int on, int kelvin), night_save(void), night_paint(canvas_t *canvas),
     night_clock(int dark);
 int clock_night(void); /* theme_engine.c: Night Shift's Auto hours now */
 int worker_stop(unsigned long thread, int *running, volatile int *cancel, unsigned *timer);
-void ringnav_select(void *w, int id, int rows);
+void ringnav_select(widget_t *w, int id, int rows);
 int library_scanning(void); /* coverflow.c: a library scan's thread runs */
 int library_counting(void); /* coverflow.c: a song count reads songtable */
 /* coverflow.c: the library's generation, one up each rewrite (Most Played's too); an album row's
@@ -453,14 +458,14 @@ int has_key(const unsigned *keys, unsigned n, unsigned key);
 unsigned key_at(const unsigned *keys, unsigned n, unsigned key);
 unsigned album_id(void *r), album_dir(const char *p, int disc);
 /* navigation.c: Cover Flow's glide and its letter */
-int carousel_glide(void *w, int goal, unsigned ms, int easing);
-void coverflow_letter(void *w, unsigned letter, unsigned now);
-void coverflow_letter_hold(void *w, unsigned letter);
+int carousel_glide(widget_t *w, int goal, unsigned ms, int easing);
+void coverflow_letter(widget_t *w, unsigned letter, unsigned now);
+void coverflow_letter_hold(widget_t *w, unsigned letter);
 /* A letter with this bit is the Year sort's year instead, in its low bits, 0 undated. */
 #define CF_YEAR 0x80000000u
 int blob_io(const char *path, const char *tmp, void *buf, unsigned size, int write);
 #define BLOB_IO(file, buf, write) blob_io(file, file ".tmp", &(buf), sizeof(buf), write)
-int clip_within(void *canvas, int *old, int *clip, int x, int y, int w, int h);
+int clip_within(canvas_t *canvas, int *old, int *clip, int x, int y, int w, int h);
 void play_folder(void *dq, int idx, int cls);
 int app_urls_play(const char *path); /* tidal.c: a card app's Q2URLS/1 queue, played */
 int app_lyrics(const char *id, char *out, unsigned size); /* tidal.c: an app track's .lrc path */
@@ -477,36 +482,56 @@ void tidal_all(int press, char *out, unsigned size), tidal_poll(void), tidal_all
     tidal_all_show(void), tidal_card_away(void);
 #define SPOT_DIR "/mnt/mmc/.spotify" /* librespot and its launcher, spotify.c's */
 /* addon.c: card apps, each a card folder .<id> holding its manifest q2app, its
- * launcher run, its binary q2-<id> and its icons. addon_scan finds them again (how many slots: a
+ * launcher run, its binary q2-<id> and its icons. addon_scan finds them again (how many rows: a
  * slot's index stays its app's), addon_name, addon_id and addon_icon (an image name: file://… or
- * the shared stream_app) are one's while it is on the card (else 0), addon_open its Streaming row's
- * click (ctx: the slot). An app whose q2app says row=library is a row on Library's Apps page
+ * the shared stream_app) are one's while it is on the card (else 0), addon_slot its slot (else -1),
+ * and addon_open its Streaming row's click (ctx: that slot, which a later scan's sort leaves on its
+ * app). An app whose q2app says row=library is a row on Library's Apps page
  * (addon_apps) instead: addon_libs (how many, a scan), addon_lib_name and addon_lib_open, its click
  * (ctx: its place by name). addon_forget and addon_quit: the Apps page replaces or removes the
  * files of the app in folder dir (".<id>"): asked to end and waited for on the Apps page's worker,
  * then, once replaced or removed, forgotten on the UI thread. */
 /* Card apps on the card at once: twice what the App Store lists (netupdate.c SH_MAX), for those put
- * there by hand. ponytail: a fixed table in .scratch, 520 bytes a slot over addon.c,
- * addon_library.c and navigation.h, its pages untouched until a slot is used; an app past the last
- * slot gets no row and nothing says so. A heap table that grows, if a card ever holds more. */
+ * there by hand. ponytail: a fixed table in .scratch, 532 bytes a slot over addon.c,
+ * addon_library.c, addon_eq.c and navigation.h, its pages untouched until a slot is used; an app
+ * past the last slot gets no row and nothing says so. A heap table that grows, if a card ever holds
+ * more. */
 #define APPS_MAX 64
-int addon_scan(void), addon_open(void *ctx, void *event), addon_hold(void *top);
+int addon_scan(void), addon_open(void *ctx, event_t *event), addon_hold(widget_t *top);
 int addon_games_last(void); /* the card's games as the last addon_scan found them */
 #define GAMES_BUILTIN 4     /* games.c's Sudoku, Vortex, Solitaire and Snake */
 const char *addon_name(int a), *addon_id(int a), *addon_icon(int a);
+int addon_slot(int a);
 const char *addon_slot_id(int i); /* slot i's app's id while it has a row anywhere, else 0 */
-int addon_libs(void), addon_lib_open(void *ctx, void *event);
+int addon_libs(void), addon_lib_open(void *ctx, event_t *event);
 const char *addon_lib_name(int k);
-int addon_apps(void *ctx, void *event), addon_apps_sync(void *win, void *event);
-void library_apps_show(void *row, int on); /* home.c: the Library's Apps row */
+int addon_apps(void *ctx, event_t *event), addon_apps_sync(void *win, event_t *event);
+void library_apps_show(widget_t *row, int on); /* home.c: the Library's Apps row */
+/* addon.c: System settings → Network's rows for apps whose q2app says row=network, as the Library's
+ * above: addon_network (how many, a scan), addon_network_name, addon_network_icon,
+ * addon_network_open (ctx: its place by name). */
+int addon_network(void), addon_network_open(void *ctx, event_t *event);
+const char *addon_network_name(int k), *addon_network_icon(int k);
+/* addon.c: the wifi=1 apps, for addon_wifi.c's link follower: each started (but those the user
+ * stopped), each stopped, and the user's stops forgotten. */
+void addon_wifi_start(void), addon_wifi_stop(void), addon_wifi_release(void);
+void addon_wifi_poll(void); /* addon_wifi.c: once per addon_poll pass */
+/* addon.c: a running app's status bar icon, the one its status file's bar= names (bar.png for 1,
+ * bar-<word>.png for a word; white, which Light Mode turns to the bar's ink), or 0 */
+const char *addon_bar_icon(void);
+int addon_bar_width(void);       /* addon.c: that icon's width, 0 for none */
 int card_path(const char *path); /* on the card, no ".." segment: what an app or server may name */
-int addon_is_icon(const char *name); /* a card app's Streaming icon, by its file:// name */
-void addon_poll(void), addon_stop(void), addon_paint(void *w, void *canvas), addon_card_away(void);
+int addon_is_icon(const char *name);     /* a card app's Streaming icon, by its file:// name */
+int addon_is_bar_icon(const char *name); /* and its status bar icon */
+void addon_poll(void), addon_stop(void), addon_paint(widget_t *w, canvas_t *canvas),
+    addon_card_away(void);
 void addon_forget(const char *dir), addon_quit(const char *dir);
 /* addon.c's card games (q2app game=1, or any app whose row=games), Games' rows after its own: how
  * many (a scan), one's name, its press (a game's start over the screen, another app's page: 1 when
- * it runs or opened), whether a game runs, and ringnav_input's events for it */
-int addon_games(void), addon_game_start(int k), addon_game_on(void);
+ * it runs or opened), whether it is in front (addon_game_front: not behind Now Playing), whether
+ * chord_gate leaves Centre to it (addon_game_keys), and ringnav_input's events for it */
+int addon_games(void), addon_game_start(int k);
+int addon_game_front(void), addon_game_keys(void);
 int addon_game_audio(
     void); /* a card game with audio=1 runs: the sound and the media keys are its */
 int addon_game_open(const char *id); /* Home's Shortcut: the card game with this id, -1 none */
@@ -515,12 +540,13 @@ const char *addon_game_name(int k);
  * most */
 #define POPUP_ENV 512
 void popup_env(char *out, unsigned size);
-int addon_game_input(void *e);
+int addon_game_input(event_t *e);
 /* where app id's row is, as the screen names it: "Streaming", "Library's Games" or "Library" */
 const char *addon_where(const char *id);
 void ringnav_wdt_long(void);   /* system.c: the watchdog's long count for a long pass */
 int ringnav_smart_awake(void); /* navigation.c: Smart Awake (IPOD KEEPLIT) is on */
 void library_poll(void); /* addon_library.c: an app's library update request, once per addon_poll */
+void addon_eq_poll(int slot, const char *id); /* addon_eq.c: app id's EQ request, in its poll */
 /* spotify.c's Q2SPOT/1 framing (docs/librespot.md), which the card apps speak too */
 int spot_escape(const char *s, char *out, unsigned size);
 int spot_put(char *out, unsigned size, const char *s); /* "\t" and s escaped appended */
@@ -543,7 +569,7 @@ int addon_more(void); /* addon.c: Now Playing's ⋯ opens the playing queue's ap
 void addon_open_id(const char *id); /* a card app's page by its id, hidden or not */
 /* airplay.c: the q2-airplay app's side (docs/internals.md#airplay-sender) */
 void airplay_poll(void);
-int airplay_more(void *view); /* whether it added its row */
+int airplay_more(widget_t *view); /* whether it added its row */
 int airplay_on(void), airplay_lyrics(int *ms);
 /* addon.c: a heart's press, appended to the app's fav.log for it to send (docs/librespot.md);
  * addon_fav_path's for a song in a card folder an app's q2app names as favdir, else nothing to do.
@@ -556,12 +582,10 @@ int addon_wake(const char *id), addon_answers(const char *id);
 extern unsigned auto_nexts;    /* playback.c ringnav_next: tracks that ended by themselves */
 int stream_cache(int spotify); /* navigation.c: Streaming's Configuration, a cap of 512 << it MB */
 void album_memory(void *r);
-void draw_centred(void *canvas, const unsigned *s, unsigned n, const void *r, unsigned px,
+void draw_centred(canvas_t *canvas, const unsigned *s, unsigned n, const void *r, unsigned px,
                   unsigned color);
-unsigned book_char(const unsigned char *t, unsigned n,
-                   unsigned *i); /* books.c: UTF-8, else Latin-1 */
-int utf8_text(const char *s);    /* xiph.c: valid UTF-8, a 4-byte character too */
-void utf8_mend(char *s);         /* xiph.c: s valid UTF-8, the bytes of no whole character gone */
+int utf8_text(const char *s); /* xiph.c: valid UTF-8, a 4-byte character too */
+void utf8_mend(char *s);      /* xiph.c: s valid UTF-8, the bytes of no whole character gone */
 /* Lyrics as lyrics.c's loader reads them: each line's start (ms, LRC_FAR unsynced), the order it
  * came in, its UTF-8 text and its word stamps (A2's <mm:ss.xx>), each the ms a word starts and its
  * byte offset in the text. */
@@ -582,9 +606,9 @@ typedef struct {
  * lyrics_sec its whole second (off the page), lyrics_line the playing line there (-1 before the
  * first), repainting it while page shows; lyrics_paint draws a row's line. */
 void lyrics_publish(const lrc_line *l, unsigned n, const lrc_mark *m);
-int lyrics_rows(void *lrc), lyrics_fit(void *lrc), lyrics_on(void *lrc), lyrics_now(void),
-    lyrics_sec(void), lyrics_line(void *lrc, int ms, int page);
-void lyrics_paint(void *row, void *canvas), lyrics_gone(void);
+int lyrics_rows(widget_t *lrc), lyrics_fit(widget_t *lrc), lyrics_on(widget_t *lrc),
+    lyrics_now(void), lyrics_sec(void), lyrics_line(widget_t *lrc, int ms, int page);
+void lyrics_paint(widget_t *row, canvas_t *canvas), lyrics_gone(void);
 unsigned
 accent_tone(int tone); /* iPod: the Accent's ACCENTS column (Minimal's own: MINIMAL_FILL) */
 unsigned rgba(unsigned rgb, unsigned alpha);
@@ -592,12 +616,13 @@ typedef struct {
     int x, y, w, h;
 } rect_t;
 /* navigation.c: a rounded box in color, or a square one when the canvas declines to round it */
-void fill_box(void *canvas, rect_t *r, unsigned color, unsigned radius);
+void fill_box(canvas_t *canvas, rect_t *r, unsigned color, unsigned radius);
 /* const and pure below: each one's result rests on its arguments (and pure's, memory) alone, so
  * clang can keep one call for several (theme_engine.c and navigation.c define these). */
 unsigned mix(unsigned from, unsigned to, int j, int n) __attribute__((const));
-void caption(void *canvas, const char *s, int x, int y, int w, int h, unsigned px, unsigned color);
-void peq_paint(void *w, void *canvas);
+void caption(canvas_t *canvas, const char *s, int x, int y, int w, int h, unsigned px,
+             unsigned color);
+void peq_paint(widget_t *w, canvas_t *canvas);
 /* spotify.c's, shared with radio.c */
 unsigned long long now_ms(void); /* CLOCK_MONOTONIC */
 void field(const char *raw, const char *key, char *out, unsigned n);
@@ -609,7 +634,8 @@ struct unix_addr { /* sockaddr_un */
 };
 void dgram_send(int *sock, const char *path, const char *c, unsigned n);
 int hex(char c); /* a hex digit's value, -1 for any other character; headset.c's too */
-void *label(void *parent, int x, int y, int w, int h, const char *style, int px, unsigned color);
+widget_t *label(widget_t *parent, int x, int y, int w, int h, const char *style, int px,
+                unsigned color);
 void spot_yield(void), spot_stop(void), radio_stop(void);
 void headset_volume_reset(void);
 void headset_poll(void), headset_eq_poll(void), headset_manual(void);
@@ -624,30 +650,30 @@ int library_fill_active(void), library_fill_start(void);
 void library_fill_text(char *out, unsigned n);
 int media_owner(void), media_playing(void), media_focused(void);
 void media_set_playing(int playing), media_key(unsigned key);
-void video_key(unsigned key);
 int radio_media(unsigned key), spot_media(unsigned key);
 int headset_gain(void);
-int spot_status(void), radio_status(void), video_status(void);
-unsigned spot_session(void), radio_session(void), video_session(void);
-void spot_set_playing(int playing), radio_set_playing(int playing), video_set_playing(int playing);
-int video_start(const char *file, int radio); /* books.c */
+int spot_status(void), radio_status(void);
+unsigned spot_session(void), radio_session(void);
+void spot_set_playing(int playing), radio_set_playing(int playing);
+int radio_start(const char *url); /* radio.c */
 /* peq_ui.c's T9 edit, named EDIT_NAME: navigation.c's search_key cancels it on Return while its
  * keyboard is up. */
 #define EDIT_NAME "q2_edit"
-void *edit_create(void *item, const char *input_type, int y, int h);
-void t9_box(void *page, void *edit,
+widget_t *edit_create(widget_t *item, const char *input_type, int y, int h);
+void t9_box(widget_t *page, widget_t *edit,
             const char *tips);        /* classic_pages.c: a search box and its hint */
-const char *output_device(char *vol); /* books.c */
-void dac_take(void);                  /* books.c */
+const char *output_device(char *vol); /* radio.c */
+void dac_take(void);                  /* radio.c */
 /* navigation.c: the theme's font for role on w, or stock's */
-int theme_font(void *w, int role, int was);
-#define FONT_ROW (-2)           /* was: cache the answer in w's own "_font" prop */
-void marq_restart(void *row);   /* navigation.c: its title changed, its marquee re-armed */
-void list_stop_scroll(void *w); /* navigation.c: its scroll animation stopped */
+int theme_font(widget_t *w, int role, int was);
+#define FONT_ROW (-2)               /* was: cache the answer in w's own "_font" prop */
+void marq_restart(widget_t *row);   /* navigation.c: its title changed, its marquee re-armed */
+void list_stop_scroll(widget_t *w); /* navigation.c: its scroll animation stopped */
 /* script.c: per-script display (docs/internals.md#themes, Scripts) */
 /* w keeps the theme's bold intent where its text fell back to stock's face */
-void font_weight_mark(void *w, int bold);
-void font_weight_paint(void *w, void *canvas); /* a marked label's foreground again 1 px right */
+void font_weight_mark(widget_t *w, int bold);
+void font_weight_paint(widget_t *w,
+                       canvas_t *canvas); /* a marked label's foreground again 1 px right */
 int script_face(int face, const unsigned *s, int n, int *px); /* the FONT_* that draws s */
 /* canvas text's face, 0: the system font; *px, unless 0: the px to draw it at */
 const char *theme_face(const unsigned *s, int n, int *px);
@@ -679,17 +705,17 @@ static inline unsigned script_upper(unsigned c) {
         return (c - 1) | 1; /* pairs, the capital odd */
     return c == 0x4cf ? 0x4c0 : c;
 }
-void bar_title_sync(void *win); /* navigation.c: Classic's bar title names win */
-void bar_title_name(void *win); /* navigation.c: names win by its name, on top or not */
-void np_mark_add(void *const *image, unsigned n); /* np_marks.c: the flat look takes them */
+void bar_title_sync(widget_t *win); /* navigation.c: Classic's bar title names win */
+void bar_title_name(widget_t *win); /* navigation.c: names win by its name, on top or not */
+void np_mark_add(widget_t *const *image, unsigned n); /* np_marks.c: the flat look takes them */
 /* navigation.c: Classic's Spotify and Internet Radio Now Playing, laid out as the local page, 0
  * under the other themes; Classic's bar on a canvas (its scrub cue with mark), 0 where none. */
-int stream_ipod(void *art, void *const text[4], void *elapsed, void *remain, void *bar,
-                void *heart);
+int stream_ipod(widget_t *art, widget_t *const text[4], widget_t *elapsed, widget_t *remain,
+                widget_t *bar, widget_t *heart);
 /* navigation.c: Classic's times and bar fitted to a track sec long (the bar 0: the radio's); 1 when
  * they moved. Not in a paint. */
-int ipod_times(void *elapsed, void *remain, void *bar, int sec);
-int ipod_bar(void *canvas, int x, int y, int bw, int on, int mark);
+int ipod_times(widget_t *elapsed, widget_t *remain, widget_t *bar, int sec);
+int ipod_bar(canvas_t *canvas, int x, int y, int bw, int on, int mark);
 /* navigation.c's and clock.c's painters for Classic's info screen (lockscreen.c); colours are
  * final. */
 typedef struct {
@@ -699,47 +725,50 @@ typedef struct {
     unsigned char hand; /* 1 the hour's angle, 2 the minute's */
     short pts[5][2];    /* tenths, pointing at 12 */
 } clock_part_t;
-void paint_clock(void *w, void *canvas, int x, int y, int size, const char *art, int h, int m,
-                 const clock_part_t *parts, int n);
-void paint_page(void *w, void *canvas, int y);
-void paint_art(void *w, void *canvas, const char *name, int x, int y);
-void paint_bar(void *w, void *canvas); /* classic_pages.c: the status bar, on a window over it */
+void paint_clock(widget_t *w, canvas_t *canvas, int x, int y, int size, const char *art, int h,
+                 int m, const clock_part_t *parts, int n);
+void paint_page(widget_t *w, canvas_t *canvas, int y);
+void paint_art(widget_t *w, canvas_t *canvas, const char *name, int x, int y);
+void paint_bar(widget_t *w,
+               canvas_t *canvas); /* classic_pages.c: the status bar, on a window over it */
 int bar_title_x(void);
 int bar_title_y(void);
-void paint_tray(void *canvas, int x, int y, int w, int h);
-void text_shadow(void *canvas, const char *face, const unsigned *s, const void *r, unsigned px,
+void paint_tray(canvas_t *canvas, int x, int y, int w, int h);
+void text_shadow(canvas_t *canvas, const char *face, const unsigned *s, const void *r, unsigned px,
                  unsigned alpha);
-void final_text(void *canvas, const char *face, const unsigned *s, const void *r, unsigned px,
+void final_text(canvas_t *canvas, const char *face, const unsigned *s, const void *r, unsigned px,
                 unsigned color);
 unsigned bar_battery_key(void);
 int clock_minutes(void), bar_status(void);
-void slider_label(void *w, int x, int y, int ww, int h, int px, const char *face);
-void text_ink(void *w, unsigned color, int n); /* a label's final 0xAARRGGBB, in either half */
-void slider_number(void *label), slider_tray_dirty(void *page),
-    slider_centre_hint(void *page, int night);
-void switch_row(void *win, void *view); /* the toolbar's, as a row */
-void stock_more_speed(void *win);
-void stock_more_into(void *win);
-void info_poll(void);      /* lockscreen.c: the info screen's timer, with the screen lit */
-int xfade_page(void *top); /* crossfade.c */
-int ipod_battery(void);    /* theme_engine.c: IPOD BATTERY, 0 Icon, else a percentage */
-int title_gone(void *w, void *event); /* ... and looks for its source again at the next sync */
-int bar_title_fits(void *label);      /* label's text fits the bar's title box */
-int ipod_light(void);                 /* theme_engine.c: Light Mode */
-unsigned unflip(unsigned v);          /* theme_engine.c: the grey Light Mode's flip turns into v */
-int ipod_square_art(void);            /* navigation.c: Classic, and Modern under Square */
+void slider_label(widget_t *w, int x, int y, int ww, int h, int px, const char *face);
+void text_ink(widget_t *w, unsigned color, int n); /* a label's final 0xAARRGGBB, in either half */
+void slider_number(widget_t *label), slider_tray_dirty(widget_t *page),
+    slider_centre_hint(widget_t *page, int night);
+void switch_row(widget_t *win, widget_t *view); /* the toolbar's, as a row */
+void stock_more_speed(widget_t *win);
+void stock_more_into(widget_t *win);
+void info_poll(void);          /* lockscreen.c: the info screen's timer, with the screen lit */
+int xfade_page(widget_t *top); /* crossfade.c */
+int ipod_battery(void);        /* theme_engine.c: IPOD BATTERY, 0 Icon, else a percentage */
+int title_gone(void *w, event_t *event); /* ... and looks for its source again at the next sync */
+int bar_title_fits(widget_t *label);     /* label's text fits the bar's title box */
+int ipod_light(void);                    /* theme_engine.c: Light Mode */
+unsigned unflip(unsigned v); /* theme_engine.c: the grey Light Mode's flip turns into v */
+int ipod_square_art(void);   /* navigation.c: Classic, and Modern under Square */
 #define SPOT_GREY 0xffaaaaaau
 void radio_search(void);      /* radio.c */
 void toast(const char *text); /* navigation.c */
 /* smart_wifi.c: its radio woken, 1 while its link comes up; its radio off; an action
  * held for that link (fn(ctx, 0) once it is up, if page, or any page when 0, is still in use) */
 int smart_wifi_wait(void), smart_wifi_off(void);
-int smart_hold(int (*fn)(void *, void *), void *ctx, const char *page);
-int need_link(int (*fn)(void *, void *), void *ctx); /* smart_hold, else "请先连接 Wi-Fi" */
+int smart_hold(int (*fn)(void *, event_t *), void *ctx, const char *page);
+int need_link(int (*fn)(void *, event_t *),
+              void *ctx); /* smart_hold, else "Connect to Wi-Fi first" */
 /* the work smart_wifi.c keeps the radio on for: spotify.c's, scrobble.c's, tidal.c's, addon.c's,
  * netupdate.c's and onlinematch.c's */
 int spot_running(void), scrobble_busy(void), tidal_busy(void), addon_running(void),
     netupdate_busy(void), album_lyrics_busy(void);
+int addon_offline(void);               /* addon.c: the card app's page open is a wifi=0 app's */
 void netupdate_poll(void);             /* power_poll: a newer release told on Home (netupdate.c) */
 const char *coverflow_sort_name(void); /* coverflow.c */
 void coverflow_sort_step(void), coverflow_refresh_art(void);
@@ -750,27 +779,28 @@ void coverflow_clean_end(void); /* coverflow.c: a clean end mid-build strikes no
  * Playlist (edit 0) or Select Playlists… (1) on that page. */
 int coverflow_playlists(void *lists);
 int coverflow_playlist_queue(void); /* the queue a playlist's cover played, no load since */
-void *coverflow_playlist(void *page), *coverflow_playlists_close(void);
-void playlist_open(void *win, int cd_num);
+void *coverflow_playlist(widget_t *page);
+widget_t *coverflow_playlists_close(void);
+void playlist_open(widget_t *win, int cd_num);
 unsigned playlist_index(int cd_num);
 void playlists_edit(int edit);
 int rockbox_available(void);   /* theme_engine.c: a regular Rockbox binary on the card */
 int groovebox_available(void); /* theme_engine.c: the Groovebox card app's binary on the card */
 #define SHORTCUT_GROOVEBOX 10  /* IPOD SHORTCUT's Groovebox, after the ten stock-era values */
 #define SHORTCUT_NONE 11       /* IPOD SHORTCUT's None: Home has no Shortcut row */
-int page_keyup(void *ctx, void *event); /* navigation.c: Return leaves a payload page */
-int ringnav_localclass(int cls);        /* navigation.c: load_localclass_list's hook */
-int shelf_open(void *ctx, void *event); /* netupdate.c: Library's App Store page */
-void shelf_tab(int tab);                /* netupdate.c: the App Store's open tab, 0 Apps, 1 Games */
-int shelf_key(void *top, unsigned key); /* netupdate.c: Previous and Next switch its tabs */
+int page_keyup(void *ctx, event_t *event); /* navigation.c: Return leaves a payload page */
+int ringnav_localclass(int cls);           /* navigation.c: load_localclass_list's hook */
+int shelf_open(void *ctx, event_t *event); /* netupdate.c: Library's App Store page */
+void shelf_tab(int tab); /* netupdate.c: the App Store's open tab, 0 Apps, 1 Games */
+int shelf_key(widget_t *top, unsigned key); /* netupdate.c: Previous and Next switch its tabs */
 /* app_store.c: the App Store's tabs and rows, drawn in ringnav_paint (store_paint) */
-void *store_tabs(void *page, void *view);
-void store_tabs_set(void *strip, int tab, const int *updates);
-void store_state(void *item, int state);
-void store_paint(void *w, void *canvas);
+widget_t *store_tabs(widget_t *page, widget_t *view);
+void store_tabs_set(widget_t *strip, int tab, const int *updates);
+void store_state(widget_t *item, int state);
+void store_paint(widget_t *w, canvas_t *canvas);
 /* games.c: s in the theme's face at px, h rows from y: align 0 from x, 1 centred on it, 2 ending at
  * it; Minimal's capitals spaced. Its width. */
-int text_at(void *canvas, const char *s, int x, int y, int h, unsigned px, unsigned color,
+int text_at(canvas_t *canvas, const char *s, int x, int y, int h, unsigned px, unsigned color,
             int align);
 enum { LEFT, MID, RIGHT };      /* text_at's align */
 const char *shelf_busy(void);   /* netupdate.c: the app folder a job replaces */

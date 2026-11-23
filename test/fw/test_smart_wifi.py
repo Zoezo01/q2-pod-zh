@@ -6,7 +6,7 @@ import ctypes as C
 import pytest
 
 from conftest import O
-from test_addon import Ap, card  # each file keeps its own state's mirror
+from test_addon import Ap, Pg, card  # each file keeps its own state's mirror
 from test_nav_library_pages import Up
 from test_nav_painters import Ui, strings  # noqa: F401  the window stack
 from test_navigation import Sa
@@ -152,6 +152,22 @@ def card_app(q):
     ap.n, ap.a[0].launched = 1, 1
 
 
+def offline_app(q, page=False):
+    """A card app whose q2app says wifi=0, running, its page open or not."""
+    card_app(q)
+    q.fw.var('addon__ap', Ap).a[0].nowifi = 1
+    if page:
+        q.fw.var('addon__pg', Pg).page = q.ui.window('addon_page').addr
+
+
+def link_app(q, page=False):
+    """A card app whose q2app says wifi=1 (addon_wifi.c follows the link with it), running, its page open or not."""
+    card_app(q)
+    q.fw.var('addon__ap', Ap).a[0].wifi = 1
+    if page:
+        q.fw.var('addon__pg', Pg).page = q.ui.window('addon_page').addr
+
+
 # What needs the network, and what is like it but doesn't.
 NEEDS = [('a USB cable in', flag('g_usbdet_value', 1), True),
          ('AirPlay on', flag('g_airplayflag', 1), True),
@@ -167,6 +183,11 @@ NEEDS = [('a USB cable in', flag('g_usbdet_value', 1), True),
          ('a station playing', state('radio__rd', Rd, active=1, pid=77), True),
          ('a station stopped', state('radio__rd', Rd, active=1), False),
          ('a card app running', card_app, True),
+         ('a card app that says wifi=0 running', offline_app, False),
+         ('its page open', lambda q: offline_app(q, page=True), False),
+         ('its page open over Streaming', lambda q: (q.ui.window('stream_page'), offline_app(q, page=True)), True),
+         ('a card app that says wifi=1 running', link_app, False),  # it follows the link; it doesn't hold it
+         ("a wifi=1 app's page open", lambda q: link_app(q, page=True), True),  # its page uses the network
          ('a scrobble upload', state('scrobble__up', Up, running=1), True),
          ('Network Update downloading', state('netupdate__nu', Nu, state=NU_RUNNING), True),
          ('an Apps job', state('netupdate__sh', Sh, job=JOB_INSTALL), True),
@@ -223,7 +244,8 @@ def test_what_needs_the_network_keeps_the_radio_on_and_nothing_else_does(q2, use
 
 
 @pytest.mark.parametrize('use,wakes', [(pages('addon_page'), True), (flag('g_usbdet_value', 1), True),
-                                       (pages('tidal_downloads'), False)], ids=['a card app\'s page', 'a cable', 'Tidal Downloads'])
+                                       (pages('tidal_downloads'), False), (lambda q: offline_app(q, page=True), False)],
+                         ids=['a card app\'s page', 'a cable', 'Tidal Downloads', 'a wifi=0 app\'s page'])
 def test_a_use_brings_the_radio_back_at_the_next_poll_unsaved(q2, use, wakes):
     q2.idle()
     use(q2)

@@ -25,7 +25,7 @@ demo's `platform_init` starts `checkappprocess.sh &`, the watchdog: it checks wi
 `/dev/fb0` is 320x375 (portrait), 32 bpp, red at bit 16 (BGRA in memory), with two pages: `module_driver/soc_fb.sh` loads `soc_fb.ko` with `layer0_frames=2` and `is_rotated=0`, and the driver makes `yres_virtual` = `yres` x frames. Landscape content is stored turned 90° clockwise, as the stock splash is.
 
 - `display_logo` opens the framebuffer through `libhardware2` (`fb_open`, `fb_enable`), refuses a depth under 18 bpp, writes each pixel as `0xff000000 | R << 16 | G << 8 | B` and pans to page 0 (`fb_pan_display(fd, info, 0)`). It does not scale.
-- demo's AWTK flush thread draws one page while the other is shown and swaps them with `FBIOPAN_DISPLAY`, then `FBIO_WAITFORVSYNC`. Q2 Pod's video player shares the same two pages ([internals.md](internals.md#videos)).
+- demo's AWTK flush thread draws one page while the other is shown and swaps them with `FBIOPAN_DISPLAY`, then `FBIO_WAITFORVSYNC`.
 
 ## Rockbox
 
@@ -99,7 +99,7 @@ magick assets/boot-logo.jpg -negate -colorspace sRGB -type TrueColor -strip -int
 - **Orientation: rotate upright artwork 90° clockwise before fitting it.** The stock JPEG is stored sideways because of the framebuffer orientation. The supplied logo therefore reads sideways in the stored JPEG and appears upright on the device. The card also takes an upright 375x320 JPEG and turns it for you.
 - **Canvas: exactly 320x375 pixels, black.** `display_logo` does not scale the image. Fit the rotated artwork within both dimensions, preserve its aspect ratio, and centre it horizontally and vertically without cropping. The build rejects any other size, and the card any other than 320x375 or upright 375x320.
 - **Format: 8-bit, three-component baseline JPEG (RGB/YCbCr).** No PNG, alpha, grayscale or CMYK. The stock renderer assumes three decoded bytes per pixel; the builder rejects incompatible frame headers.
-- **Keep it small.** On the card, at most 512 KB. In a build, JPEG data barely compresses and the repacked rootfs must stay within the stock image size (50,442,240 bytes). A rebuilt rootfs with `assets/boot-logo.jpg` (about 7 KB) leaves about 2.8 MB of slack, so any logo within the card's 512 KB fits; if the build ever fails with `Repacked rootfs exceeds stock size`, re-save at lower quality.
+- **Keep it small.** On the card, at most 512 KB. In a build, JPEG data barely compresses, and the repacked rootfs must leave `ROOTFS_FREE_MIN` of the stock image's 50,688,000 bytes unused ([Free space](building.md#tests)); a custom logo counts toward it. If the build fails with `Repacked rootfs leaves … bytes of stock size free` or `Repacked rootfs exceeds stock size`, re-save at lower quality.
 
 The default is an outlined URW Gothic Book wordmark on black, in warm off-white (#F2F2F0), about 140x72 pixels. The Q keeps its sweeping tail, while the 2 is widened for a balanced base. Below it, widely spaced POD in muted warm grey (#BDBDB8) has a tiny centre button inside the O, a subtle reference to the Q2's click wheel. The group is centred at about 47% of the screen height, because perfect centring looks low. There are no gradients or glows. All lettering is converted to paths, so no fonts are required to render it. Its upright source is `assets/boot-logo.svg` (375x320). To reproduce the firmware JPEG with librsvg and ImageMagick:
 

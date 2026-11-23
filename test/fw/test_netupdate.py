@@ -146,10 +146,15 @@ def test_q2_pods_own_repos_by_any_owner(fw):
     b'me/q2-' + b'a' * 16,                   # an id is 15 at most
     b'me/q2-x ' + b'n' * 32,                 # a name, 31
     b'me/rockbox', b'me/q2-spotify', b'me/themes',          # another repo's "spotify" isn't Q2 Pod's
-    b'me/q2-books', b'me/coverflow', b'me/q2-downpic', b'me/photos', b'me/q2', b'me/sldp', b'me/q2-tidal',
+    b'me/coverflow', b'me/q2-downpic', b'me/photos', b'me/q2', b'me/sldp', b'me/q2-tidal',
 ])
 def test_a_bad_line_is_passed_over_and_the_next_read(fw, line):
     assert [a[2] for a in sources(fw, line + b'\nme/good\n')] == [b'good']
+
+
+def test_books_is_an_ordinary_card_app_id(fw):
+    # .books is a card app's folder, not one of the firmware's own
+    assert sources(fw, b'owner/q2-books Books\n') == [(b'owner/q2-books', b'Books', b'books', b'.books', b'.books/q2-books', b'')]
 
 
 def test_the_longest_allowed_of_each(fw):
@@ -3323,7 +3328,7 @@ def test_a_press_held_for_wifi_through_a_real_click_follows_its_app(fw):
     class Sw(C.Structure):
         _fields_ = [('at', C.c_uint), ('busy_at', C.c_uint), ('woke_at', C.c_uint), ('hold_timer', C.c_uint),
                     ('off', C.c_int), ('quiet', C.c_int), ('armed', C.c_int), ('up', C.c_int), ('held', C.c_int),
-                    ('lone', C.c_int), ('hold_fn', C.c_void_p), ('hold_ctx', C.c_void_p), ('hold_win', C.c_void_p), ('cap_win', C.c_void_p),
+                    ('lone', C.c_int), ('hold_fn', C.c_void_p), ('hold_ctx', C.c_void_p), ('hold_win', C.c_void_p),
                     ('hold_name', C.c_char * 32)]
     card = Disk(fw, {SOURCES: b'me/q2-foo Foo\n[Games]\nyou/q2-bar Bar\n'})
     store_net(fw)

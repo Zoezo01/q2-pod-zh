@@ -10,7 +10,7 @@ import struct
 import pytest
 
 import host
-from conftest import NAVIGATION_SOURCE, O, Files, claim
+from conftest import NAVIGATION_SOURCE, O, Files, Game, claim
 
 KEY_CENTER, KEY_PREV, KEY_NEXT, KEY_PLAY, KEY_RETURN = (O[k] for k in ('KEY_CENTER', 'KEY_PREV', 'KEY_NEXT', 'KEY_PLAY', 'KEY_RETURN'))
 KEY_BACK_BTN, KEY_FWD_BTN = O['KEY_BACK_BTN'], O['KEY_FWD_BTN']
@@ -1206,11 +1206,6 @@ def test_now_playing_animates_while_its_lyrics_glide_or_its_marquee_moves(fw, st
     assert fw.fn('navigation__np_animating', C.c_int)() == animating
 
 
-class Vid(C.Structure):  # books.c's q2video player, as test_headset.py mirrors it
-    _fields_ = [*((k, C.c_int) for k in 'paused volume gain pid sock seek'.split()),
-                *((k, C.c_uint) for k in 'polled control_at seek_at key at paused_at'.split())]
-
-
 class Wm:
     """The window manager: its vtable's paint (+0xc) at +0x94, a Python stand-in that counts."""
     PAINT = C.CFUNCTYPE(C.c_int, C.c_void_p)
@@ -1232,15 +1227,21 @@ def test_dark_the_window_manager_paints_only_an_animation(fw, lit, animating, pa
     assert wm.call(wm.p) == 0 and len(wm.painted) == painted
 
 
-@pytest.mark.parametrize('away', ['video', 'game'])
-def test_a_player_or_game_on_the_framebuffer_keeps_the_ui_off_it(fw, away):
+@pytest.mark.parametrize('native', [0, 1])
+def test_a_game_on_the_framebuffer_keeps_the_ui_off_it(fw, native):
     fw.var('g_backlight_status', C.c_ubyte).value = 1
-    if away == 'video':
-        fw.var('books__vid', Vid).pid = 77
-    else:
-        fw.var('addon__gm', C.c_int).value = 78  # addon.c's gm, its pid first
+    gm = fw.var('addon__gm', Game)
+    gm.pid, gm.native = 78, native
     wm = Wm(fw)
-    assert wm.call(wm.p) == 0 and wm.painted == []
+    assert wm.call(wm.p) == 0 and wm.painted == ([wm.p] if native else [])  # Now Playing over the game paints
+
+
+@pytest.mark.parametrize('native', [0, 1])
+def test_a_game_in_front_keeps_the_loop_paced_and_one_behind_now_playing_doesnt(fw, native):
+    keep = now_playing_top(fw, b'home_page')
+    gm = fw.var('addon__gm', Game)
+    gm.pid, gm.native = 78, native
+    assert fw.fn('navigation__np_animating', C.c_int)() == (not native)
 
 
 def test_no_window_manager_is_stocks_bad_params(fw):
@@ -2920,17 +2921,6 @@ def test_a_finger_is_noted_for_stale_heal(fw, stock_bytes, st, kind):
     assert keys.stock == [(kind, 120)]
 
 
-def test_a_playing_video_takes_key_releases_and_nothing_reaches_the_ui(fw, stock_bytes, st):
-    keys = Input(fw, stock_bytes)
-    fw.var('books__vid', Vid).pid = 77
-    fw.var('g_volume', C.c_ubyte).value, fw.var('g_maxvolume', C.c_ubyte).value = 30, 100
-    keys(DOWN, KEY_PLAY), keys(UP, KEY_PLAY, 10)
-    keys.frame.value = keys.clock.now
-    keys(DOWN, KEY_NEXT), keys(UP, KEY_NEXT, 10)
-    assert keys.stock == [] and fw.var('g_volume', C.c_ubyte).value == 31  # the player's volume step
-    assert st('last_input', C.c_uint).value == keys.clock.now
-
-
 def test_a_card_game_takes_its_keys_but_not_the_musics(fw, stock_bytes):
     keys = Input(fw, stock_bytes)
     fw.var('addon__gm', C.c_int).value = 78
@@ -3088,14 +3078,6 @@ def test_homes_list_wraps_past_a_hidden_shortcut_row(fw, keys):
     assert sv.ints[SEL] == 5
     keys(KEY_NEXT, O['EDGE_PAUSE_MS'])
     assert sv.ints[SEL] == 0
-
-
-def test_play_follows_a_playing_video(fw, keys):
-    ui = Ui(fw)
-    list_page(ui)
-    vid = fw.var('books__vid', Vid)
-    vid.pid = 77
-    assert keys(KEY_PLAY) == STOP and vid.paused == 1 and not fw.calls('player_play_pause')
 
 
 @pytest.mark.parametrize('age, skipped', [(0, 1), (3000, 1), (3001, 0)])

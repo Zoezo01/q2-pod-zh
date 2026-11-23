@@ -583,6 +583,17 @@ def test_light_mode_flips_a_glyph_image(fw, bitmaps, premul):
     assert bm.rows() == [[(INK, INK, INK, 255), (*flipped, 0x80), CLEAR]]
 
 
+@pytest.mark.parametrize('light', ['0', '1'])
+def test_a_card_app_s_white_bar_icon_takes_the_bar_s_ink_in_light_mode(fw, bitmaps, light):
+    """Classic's light bar: a white icon left white would vanish there. Its Streaming icon keeps its colours."""
+    theme(fw, CLASSIC, LIGHT=light)
+    icon, row = bitmaps(fw, [[WHITE, CLEAR]]), bitmaps(fw, [[WHITE, CLEAR]])
+    image_add(fw, b'file:///mnt/mmc/.vpn/bar-on.png', icon)
+    image_add(fw, b'file:///mnt/mmc/.vpn/icon.png', row)
+    assert (icon.get(0, 0)[:3] != (255, 255, 255)) == (light == '1') and icon.get(1, 0) == CLEAR
+    assert row.rows() == [[WHITE, CLEAR]]
+
+
 def test_light_mode_keeps_a_dark_disc_s_white_glyph(fw, bitmaps):
     """Mostly dark (a disc or plate): the white glyph on it stays white."""
     theme(fw, MODERN, ACCENT=str(TIDAL), LIGHT='1')

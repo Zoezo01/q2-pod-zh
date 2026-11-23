@@ -13,9 +13,9 @@
 unsigned queue_hash(void *q);                              /* navigation.c */
 const char *track_name(char *buf, unsigned size, void *t); /* coverflow.c */
 static struct {
-    void *page;                 /* Up Next's page, one at a time */
+    widget_t *page;             /* Up Next's page, one at a time */
     unsigned idx[UP_NEXT_ROWS]; /* its rows' queue indices */
-    void *view;                 /* its list */
+    widget_t *view;             /* its list */
     unsigned n, hash, row;      /* its rows, the queue_hash they were taken from, a hold's */
 } un __attribute__((section(".scratch")));
 
@@ -26,7 +26,7 @@ static struct {
  * then stale. ponytail: a snapshot taken on open (and again on a hold's move, un_move), capped at
  * UP_NEXT_ROWS; the page does not follow the playing track, and a queue replaced while it is open
  * (a folder play's next folder) leaves a row's tap naming another track; a hold checks. */
-static int un_play(void *ctx, void *event) {
+static int un_play(void *ctx, event_t *event) {
     void *q = P(mcl_pdeqplaylist, 0);
     unsigned at = un.idx[(long)ctx];
     int keeps = q && playback_keeps(q, (int)at);
@@ -41,7 +41,7 @@ static void un_fill(int sel) {
     void *q = P(mcl_pdeqplaylist, 0);
     unsigned *idx = un.idx, n = un.n = playback_upcoming(idx, UP_NEXT_ROWS);
     un.hash = q ? queue_hash(q) : 0;
-    void *view = un.view =
+    widget_t *view = un.view =
         page_list_or(un.page, un.page, "查看队列", "暂无待播歌曲", n, 64);
     char name[512];
     for (unsigned i = 0; i < n; i++) { /* the title over the artist, if tagged */
@@ -52,11 +52,11 @@ static void un_fill(int sel) {
     if (sel >= 0 && n) ringnav_select(view, sel, (int)n);
 }
 /* The page gone: the next View Queue opens a new one. */
-static int un_closed(void *ctx, void *event) {
+static int un_closed(void *ctx, event_t *event) {
     un.page = 0;
     return 0;
 }
-void up_next(int (*keyup)(void *, void *)) {
+void up_next(int (*keyup)(void *, event_t *)) {
     if (un.page || !(un.page = page_open("upnext_page", un_closed, keyup))) return;
     un_fill(-1);
 }
@@ -75,7 +75,7 @@ static int un_move(const void *unused) {
     if (stale) toast("队列已更改");
     return 0;
 }
-int un_hold(void *top) {
+int un_hold(widget_t *top) {
     int row = top && top == un.page ? widget_get_prop_int(un.view, SEL, -1) : -1;
     if (row < 0 || !timer_add(un_move, (void *)0, 0)) return 0;
     un.row = (unsigned)row;

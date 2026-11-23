@@ -2408,6 +2408,30 @@ def test_the_covers_follow_the_queue_s_album_from_its_last_alone(fw, mcl, centre
     assert s.goals == want and len(fw.calls('slide_menu_set_value')) == len(moved)
 
 
+class Position(C.Structure):  # coverflow_position.c's position
+    _fields_ = [('parent', C.c_void_p), ('slide', C.c_void_p), ('pos', C.c_float), ('x', C.c_int), ('r', C.c_int * 4),
+                ('dirty', C.c_int), ('moved', C.c_uint), ('timer', C.c_uint), ('alpha', C.c_uint), ('held', C.c_int),
+                ('album', C.c_int), ('finger', C.c_int)]
+
+
+# A finger scrubbing the position bar holds the covers as a finger on them does: the queue's next album waits for the lift.
+def test_the_covers_wait_for_a_scrub_s_lift_to_follow_the_queue(fw, mcl):
+    q = Deques(fw)
+    albums = [Rec(a, path=f'/m/{a}/1.flac') for a in 'ABCDEF']
+    s = Shelf(fw, n=len(albums) + 1, index=0, scoped=0)
+    cf(fw).albums = q.new([r.p for r in albums])
+    fw.var('fw_ctx_mcl_pdeqplaylist', C.c_void_p).value = q.new([albums[0].p, albums[2].p])
+    tail, position = fw.fn('coverflow_tail', None), fw.var('coverflow_position__position', Position)
+    tail()  # first sight: album A
+    mcl.pos = 1
+    position.held = 1
+    tail()
+    assert not s.goals
+    position.held = 0
+    tail()
+    assert s.goals == [-220]
+
+
 def test_a_tap_in_the_flat_fallback_opens_the_centre_cover_alone(fw):
     s = Shelf(fw, n=4, index=1, scoped=0)
     deque_of(fw, [Rec(), Rec(), Rec()])
@@ -3319,7 +3343,7 @@ def test_no_service_row_or_name_draws_no_service(fw):
     assert not canvas.images and not canvas.texts
 
 
-# The pages' pieces, shared with photos.c, books.c and navigation.c
+# The pages' pieces, shared with photos.c and navigation.c
 
 def bar_title(fw, ui, scratch, width):
     """Classic's bar title, width px: a caption of n characters measures 10 n px."""

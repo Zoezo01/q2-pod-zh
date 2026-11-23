@@ -20,8 +20,9 @@
 static struct {
     unsigned at, busy_at, woke_at, hold_timer;
     int off, quiet, armed, up, held, lone;
-    int (*hold_fn)(void *, void *);
-    void *hold_ctx, *hold_win, *cap_win;
+    int (*hold_fn)(void *, event_t *);
+    void *hold_ctx;
+    widget_t *hold_win;
     char hold_name[32];
 } sw __attribute__((section(".scratch")));
 
@@ -95,7 +96,7 @@ static int cap_gone(void *win, void *event) {
 
 /* systemset_wifi_page_init: the Wi-Fi page builds its switch from g_wififlag, so the radio comes
  * back first and the page shows the user's setting. */
-int ringnav_wifi_page(void *win, void *ctx) {
+int ringnav_wifi_page(widget_t *win, void *ctx) {
     smart_wake();
     int ret = stock_wifi_page_trampoline(win, ctx);
     sw.cap_win = win;
@@ -115,10 +116,12 @@ static int net_page_open(void) {
         "wifitransport_page",  "editwifi_dialog", "kbwifiadd_dialog", "kbwifipass_dialog",
         "onlinematching_page", "tidal_"
     };
-    void *wm = window_manager();
+    widget_t *wm = window_manager();
     for (unsigned i = 0, n = widget_count_children(wm); i < n; ++i) {
         const char *name = widget_get_prop_str(widget_get_child(wm, i), "name", "");
         if (!tk_strcmp(name, "tidal_downloads")) continue; /* the card's tracks */
+        /* a card app's page whose q2app says wifi=0 */
+        if (!tk_strcmp(name, "addon_page") && addon_offline()) continue;
         for (unsigned k = 0; k < sizeof pages / sizeof *pages; ++k)
             if (tk_str_start_with(name, pages[k])) return 1;
     }
@@ -215,10 +218,10 @@ void smart_wifi_release(void) {
 
 /* The page in use: the top window, past stock's self-closing overlays: toasts (msginfo_dialog, ours
  * or stock's) and the volume (volume_dialog, which a wheel turn opens over a toast). */
-static void *page_in_use(void) {
-    void *wm = window_manager();
+static widget_t *page_in_use(void) {
+    widget_t *wm = window_manager();
     for (int i = (int)widget_count_children(wm) - 1; i >= 0; --i) {
-        void *w = widget_get_child(wm, i);
+        widget_t *w = widget_get_child(wm, i);
         const char *name = widget_get_prop_str(w, "name", "");
         if (tk_strcmp(name, "msginfo_dialog") && tk_strcmp(name, "volume_dialog")) return w;
     }
@@ -228,10 +231,10 @@ static void *page_in_use(void) {
 static int hold_link(const void *unused) {
     /* A page closing mid-slide is still the top window (iPod): the next tick looks again. */
     if (window_manager_is_animating(window_manager())) return 8; /* RET_REPEAT */
-    void *win = sw.hold_win;
+    widget_t *win = sw.hold_win;
     int held = page_in_use() == win; /* compared first: a closed page is never read */
     if (held && smart_wifi_wait()) return 8;
-    int (*fn)(void *, void *) = sw.hold_fn;
+    int (*fn)(void *, event_t *) = sw.hold_fn;
     sw.hold_fn = 0;
     sw.hold_timer = 0;
     if (held && !tk_strcmp(widget_get_prop_str(win, "name", ""), sw.hold_name)) {
@@ -249,8 +252,8 @@ static int hold_link(const void *unused) {
  * 0: it runs now, as without Smart Wi-Fi: the radio as the user left it, the link up, another page,
  * or no timer. One waits at a time: a press while one waits takes its place, link or not, so it
  * never runs beside the held one. fn reads no event. */
-int smart_hold(int (*fn)(void *, void *), void *ctx, const char *page) {
-    void *win = page_in_use();
+int smart_hold(int (*fn)(void *, event_t *), void *ctx, const char *page) {
+    widget_t *win = page_in_use();
     const char *name = win ? widget_get_prop_str(win, "name", "") : "";
     if (sw.held || !win || (page && tk_strcmp(name, page)) || strlen(name) >= sizeof sw.hold_name)
         return 0;
@@ -269,7 +272,7 @@ int smart_hold(int (*fn)(void *, void *), void *ctx, const char *page) {
  * for Smart Wi-Fi's link (smart_hold) or, with none coming, "请先连接 Wi-Fi". Held first,
  * so a second press after the link is up but before the held one runs joins it rather than running
  * beside it (and cancelling it). */
-int need_link(int (*fn)(void *, void *), void *ctx) {
+int need_link(int (*fn)(void *, event_t *), void *ctx) {
     if (smart_hold(fn, ctx, 0)) return 0;
     if (get_wifisignal() > 0) return 1;
     toast("请先连接 Wi-Fi");
@@ -281,25 +284,25 @@ int need_link(int (*fn)(void *, void *), void *ctx) {
  * More's online lyrics and cover match. None reads its event, and the rows are found again by name
  * (stock names each row's list_item and button by its index and reads only that name), so nothing
  * pressed is kept but the page. */
-static int row_of(void *button) {
+static int row_of(widget_t *button) {
     const char *name = widget_get_prop_str(button, "name", "");
     return name[0] >= '0' && name[0] <= '9' && !name[1] ? name[0] - '0' : -1;
 }
-static void *held_row(void *view, void *ctx) {
+static widget_t *held_row(widget_t *view, void *ctx) {
     char name[2] = { (char)('0' + (int)(long)ctx), 0 };
     return view ? widget_lookup(view, name, 1) : (void *)0; /* its list_item */
 }
-static int stream_row_again(void *ctx, void *unused) {
+static int stream_row_again(void *ctx, event_t *unused) {
     /* in the rows' own view: Home's Library list, beside its Streaming list, names its rows so too
      */
-    void *row = held_row(widget_lookup(sw.hold_win, "scroll_view_streamsset", 1), ctx);
+    widget_t *row = held_row(widget_lookup(sw.hold_win, "scroll_view_streamsset", 1), ctx);
     return row ? stock_stream_row_trampoline(row, (void *)0) : 0;
 }
-static int netservice_row_again(void *ctx, void *unused) {
-    void *row = held_row(sw.hold_win, ctx);
+static int netservice_row_again(void *ctx, event_t *unused) {
+    widget_t *row = held_row(sw.hold_win, ctx);
     return row ? stock_netservice_row_trampoline(row, (void *)0) : 0;
 }
-static int online_match_again(void *win, void *unused) {
+static int online_match_again(void *win, event_t *unused) {
     return stock_online_match_trampoline(win);
 }
 
@@ -308,7 +311,7 @@ static int online_match_again(void *win, void *unused) {
  * stream_rows), both waking the radio. ponytail: on Home it runs while Home is still the page in
  * use, as Spotify's row does, the Streaming list gone to another of Home's lists or not; drop it
  * there too if that surprises. */
-int ringnav_stream_row(void *button, void *event) {
+int ringnav_stream_row(widget_t *button, event_t *event) {
     int row = row_of(button);
     return row >= 0 && smart_hold(stream_row_again, (void *)(long)row, 0)
                ? 0
@@ -317,7 +320,7 @@ int ringnav_stream_row(void *button, void *event) {
 
 /* Network service's rows (0x4cce64): DLNA (0) and AirPlay (1) switch at once (stock starts their
  * services once the link is up); Wi-Fi transfer (2) opens its page with the link. */
-int ringnav_netservice_row(void *button, void *event) {
+int ringnav_netservice_row(widget_t *button, event_t *event) {
     return row_of(button) == 2 && smart_hold(netservice_row_again, (void *)2, "netservice_page")
                ? 0
                : stock_netservice_row_trampoline(button, event);

@@ -148,7 +148,37 @@ form_body() {
   head -c "$n"
 }
 
+# Only the transfer page may change the card. thttpd answers any request that reaches this port, and a
+# browser sends one wherever a page points it: with Wi-Fi transfer on, any site open in a browser on the
+# same network could delete or add files (a plain <img src=".../delete?path=/mnt/mmc/Music"> needs no
+# script), and a site that points a name of its own at the Q2 (DNS rebinding) could read the replies too.
+# thttpd gives a CGI the request's Host (cut at its first ':', so without the port) and its Referer, though
+# not its Origin; those two are enough:
+# - the Host is an address in numbers, never a name a site could point here.
+#   A browser sends a Host of digits and dots, or one that begins with '[', only for a URL that holds an
+#   address rather than a name, so the groups' values and what follows the '[' go unchecked;
+# - a change (create, delete, upload: anything but list and download) is a POST whose Referer is this
+#   page: this Host, this port. thttpd also hands a CGI a HEAD, a PUT and a DELETE.
+# The page sends both on every request. A link, or another site's image or form, does not; neither does
+# a browser set never to send a Referer, nor the IPv6 form of the address, whose Host thttpd cuts inside
+# the brackets: listing and downloads still work there.
+host_ok() { # no HTTP_HOST (not a browser), four groups of digits between dots, or thttpd's cut of an [IPv6] one
+  case ${HTTP_HOST:-} in
+    ''|\[*) return 0;;
+    *[!0-9.]*|.*|*.|*..*|*.*.*.*.*) return 1;;
+    *.*.*.*) return 0;;
+  esac
+  return 1
+}
+from_page() { # a POST from the transfer page this server served
+  [ "${REQUEST_METHOD:-}" = POST ] && [ -n "${HTTP_HOST:-}" ] || return 1
+  case ${HTTP_REFERER:-} in "http://$HTTP_HOST:${SERVER_PORT:-}/"*) return 0;; esac
+  return 1
+}
+
 name=${SCRIPT_NAME##*/}; name=${name%.cgi}
+host_ok || fail 403 Forbidden
+case $name in list|download) ;; *) from_page || fail 403 Forbidden;; esac
 
 case $name in
   list)

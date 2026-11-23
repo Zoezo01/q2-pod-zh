@@ -14,6 +14,7 @@ import pytest
 import host
 from conftest import FNV_PRIME, O, Deques, Files, favdir_card, fnv1a, high_halves, in_fork, libc, ui_name, stock_stub
 from conftest import Rows as HeldRows  # Rows here is Folder view's list
+from test_addon import Pg  # test_addon.py keeps the mirror
 from test_coverflow import SONGTABLE
 from test_navigation import Sa  # test_navigation.py keeps the mirror
 from test_tidal import HEARTS, urls_play
@@ -779,6 +780,40 @@ def test_a_ratings_list_closes_with_its_page(fw, ui, song, st):
     assert not st('rt_page', C.c_void_p).value and not st('rt_list', C.c_void_p).value
     call(fw, 'rated_open', 1)  # and opens again
     assert 'Loved' in ui.shown(ui.top())
+
+
+def shuffle_rated(fw, ui, library, held, close=False):
+    """rated_hold's pass for list held (Top Rated, Loved, All Rated, Disliked), the Ratings menu open (or closed
+    since the hold): test_nav_hold.py holds the menu's rows."""
+    call(fw, 'ratings_menu')
+    if close:
+        ui.close(ui.top())
+    fields = host.offsets(library.parent/'ratings.o', 'ra')
+    C.c_int.from_address(C.addressof(fw.var('ratings__ra', C.c_char)) + fields['rt_held']).value = held
+    fw.fn('ratings__rt_shuffle', C.c_int, C.c_void_p)(None)
+
+
+@pytest.mark.parametrize('held, want', [(0, 'fav four'), (1, 'fav'), (2, 'fav four three one'), (3, 'one')])
+def test_a_held_ratings_list_plays_its_songs_shuffled(fw, ui, song, mcl, library, held, want):
+    rated = Rated(fw, ui, song)
+    shuffle_rated(fw, ui, library, held)
+    (queue, at, cls), = ui.played
+    assert queue == [getattr(rated, n) for n in want.split()] and 0 <= at < len(queue) and cls == LIBRARY
+    assert len(ui.windows) == 1 and not ui.toasts  # Now Playing over the menu, which stays
+
+
+def test_a_held_ratings_list_with_no_songs_says_so(fw, ui, song, mcl, library):
+    Library(fw, ui, [song(b'/m/a.flac', b'A')])
+    Files(fw)
+    fw.mock('getAllFav', lambda *_: 0)
+    shuffle_rated(fw, ui, library, 0)
+    assert ui.toasts == ['No songs yet'] and not ui.played
+
+
+def test_a_ratings_menu_closed_before_its_shuffle_plays_nothing(fw, ui, song, mcl, library):
+    Rated(fw, ui, song)
+    shuffle_rated(fw, ui, library, 0, close=True)
+    assert not ui.played and not ui.toasts
 
 
 def test_no_rated_albums_says_so(fw, ui, song):
@@ -2375,9 +2410,11 @@ def test_the_library_s_rows_in_their_order(fw, ui, st, theme, lead):
 
 
 def test_the_library_adds_the_card_s_media_folders_and_upload(fw, ui):
-    win, view = library(fw, ui, folders=['/mnt/mmc/podcasts', '/mnt/mmc/VIDEOS', '/mnt/mmc/Music'], token=b'x')
+    # Books is a card app's: its folder is a folder like any other, with no row
+    win, view = library(fw, ui, folders=['/mnt/mmc/podcasts', '/mnt/mmc/AUDIOBOOKS', '/mnt/mmc/Books', '/mnt/mmc/Music'],
+                        token=b'x')
     rows = [c for c, _ in page_rows(ui, view)]
-    assert rows[rows.index('Long Songs'):] == ['Long Songs', 'Podcasts', 'Videos', 'Apps', 'Games', 'App Store',
+    assert rows[rows.index('Long Songs'):] == ['Long Songs', 'Podcasts', 'Audiobooks', 'Apps', 'Games', 'App Store',
                                                'Upload Scrobbles', 'Update Library']
 
 
@@ -2394,8 +2431,8 @@ def row_click(ui, view, caption):
 def test_apps_lists_the_card_apps_whose_row_is_the_library_s_by_name_above_games(fw, ui):
     """row=library puts an app on Library's Apps page, not at the Library's root; each row presses as the app's
     Library row did."""
-    win, view = library(fw, ui, folders=['/mnt/mmc/Videos'], token=b'x', files={**deezer(), **BLOCKS, **TOOLS, **TAPE})
-    assert page_rows(ui, view)[-7:] == [(c, True) for c in ('长曲目', '视频', '应用', '游戏', '应用商店',
+    win, view = library(fw, ui, folders=['/mnt/mmc/Podcasts'], token=b'x', files={**deezer(), **BLOCKS, **TOOLS, **TAPE})
+    assert page_rows(ui, view)[-7:] == [(c, True) for c in ('长曲目', 'Podcasts', '应用', 'Games', '应用商店',
                                                              'Upload Scrobbles', 'Update Library')]
     item, = [item for item in ui.kids[view] if row_text(ui, item) == 'Apps']
     assert [ui.image[w] for w in ui.subtree(item) if w in ui.image] == ['local_apps', 'list_into']
@@ -2600,6 +2637,86 @@ def test_home_s_streaming_list_is_streaming_s_rows(fw, ui):
     fw.fn('stream_rows', None, C.c_void_p)(win)
     assert [c for c, _ in page_rows(ui, view)][-1] == 'Configuration' and log[0] == win
     assert [c[1][:2] for c in fw.calls('widget_off_by_ctx')] == [(win, win)]
+
+
+AMPACHE = {'/mnt/mmc/.amp/q2app': b'name=Ampache\n', '/mnt/mmc/.amp/q2-amp': b'ELF'}  # sorts before Deezer
+AIRPLAY = {'/mnt/mmc/.airplay/q2app': b'name=AirPlay\nhidden=1\n', '/mnt/mmc/.airplay/q2-airplay': b'ELF'}  # no row
+
+
+def home_split(fw, ui):
+    """Home in Split with Library on Home: one window holding its Library list, built as on the way to the App
+    Store, and its Streaming list, open, each filled by its page's constructor (home.c library_rows, stream_rows).
+    The window, and the Streaming list's view."""
+    views = {}
+    home = ui.new('window_create', 0, 0, 0, 0, 0)
+    for name, rows, fill in (('scroll_view_localmusic', [(c, None, str(i)) for i, c in enumerate(LIBRARY_STOCK)],
+                              'library_rows'), ('scroll_view_streamsset', STREAM_STOCK, 'stream_rows')):
+        listed = ui.new('list_view_create', home, 0, 0, 187, 290)
+        views[name] = ui.new('scroll_view_create', listed, 0, 0, 187, 290)
+        ui.name[views[name]] = name
+        for row in rows:
+            stock_row(ui, views[name], *row)
+        fw.fn(fill, None, C.c_void_p)(listed)
+    return home, views['scroll_view_streamsset']
+
+
+def press_row(fw, ui, view, caption):
+    """view's row reading caption pressed: the title of the app page it opened and the page's note (None: no page),
+    the page closed again."""
+    item = next(item for item in ui.kids[view] if row_text(ui, item) == caption)
+    button, = ui.kids[item]
+    ui.handler(button, EVT_CLICK)()
+    pg = fw.var('addon__pg', Pg)
+    if not pg.page:
+        return None
+    opened = (pg.lv[0].title, pg.lv[0].note)
+    ui.close(pg.page)
+    return opened
+
+
+@in_fork
+@pytest.mark.parametrize('job', ['install', 'remove'])
+@pytest.mark.parametrize('sort', ['the job ends on Home', 'Home is back on top', 'the AirPlay row', 'none'])
+def test_streaming_rows_open_their_own_apps_after_an_app_store_job(fw, ui, sort, job):
+    """A Streaming row holds its app, not its place by name: Ampache, sorting first, installed or removed while
+    the rows are open, then the card's apps sorted again, and each row still opens its own app (the removed one's
+    page says it has gone). What sorts: the job's end with Home on top, its Library list built (addon_apps_sync);
+    Home back on top after the App Store (that, then Classic's pane, home_pane_read); the AirPlay row opening its
+    app by id over Streaming's page (addon_open_id). With none, Streaming's page on top at the job's end sorts
+    nothing, so those two cases hold either way."""
+    logs = [(C.c_long * 3)(), (C.c_long * 3)()]  # kept: the stubs write to them
+    stock_stub(O['LOCALMUSIC_BG'], 0, logs[0])
+    stock_stub(O['STREAM_BG'], 0, logs[1])
+    disk = Disk(fw, {**deezer(), **AIRPLAY, **(AMPACHE if job == 'remove' else {})}).files
+    Config(fw)
+    fw.mock('stock_localmusic_trampoline', lambda *_: 9)
+    fw.mock('stock_stream_trampoline', lambda *_: 7)
+    fw.mock('fw_pthread_create', lambda *_: 0)  # an app page's request: its worker never runs
+    if sort in ('the job ends on Home', 'Home is back on top'):
+        top, view = home_split(fw, ui)
+    else:
+        top, view = stock_page(ui, 'scroll_view_streamsset', *STREAM_STOCK)
+        fw.fn('ringnav_stream', C.c_int, C.c_void_p, C.c_void_p)(top, None)
+    if job == 'install':
+        disk.update(AMPACHE)
+    else:
+        for path in AMPACHE:
+            del disk[path]
+    sync = lambda w: CLICK(ui.fn('addon_apps_sync'))(w, 0)
+    if sort == 'Home is back on top':
+        store = ui.new('window_create', 0, 0, 0, 0, 0)
+        sync(0)  # the job's end, the App Store on top
+        ui.close(store)
+        sync(top)  # Return: Home on top again
+        home_pane(fw)
+    else:
+        sync(0)  # the job's end, top on top
+    if sort == 'the AirPlay row':
+        fw.fn('addon_open_id', None, C.c_char_p)(b'airplay')
+        ui.close(fw.var('addon__pg', Pg).page)  # back on Streaming
+    assert press_row(fw, ui, view, 'Deezer') == (b'Deezer', b'')
+    if job == 'remove':
+        assert press_row(fw, ui, view, 'Ampache') == (b'Ampache', b"Ampache isn't on the card")
 
 
 ABOUT = [('Model', 'Q2'), ('FW. Version', 'V100I'), ('Storage', '-'), ('Remaining', '-'),
@@ -2968,26 +3085,25 @@ def test_library_count_is_the_query_s_number(fw):
     assert count(b'select count(*) from songtable') == -1
 
 
-# Podcasts, Audiobooks and Videos: Folder view at the card's folder.
+# Podcasts and Audiobooks: Folder view at the card's folder.
 def test_a_media_row_opens_folder_view_at_its_folder(fw, ui, st):
     Disk(fw, folders=['/mnt/mmc/PODCASTS', '/mnt/mmc/Music'])
     call(fw, 'media_click', 1)
     assert ui.went == ['folder_page'] and st('media_root', C.c_char * 32).value == b'/mnt/mmc/PODCASTS'
 
 
-@pytest.mark.parametrize('kind, name', [(1, 'Podcasts'), (5, 'Videos')])
+@pytest.mark.parametrize('kind, name', [(1, 'Podcasts'), (2, 'Audiobooks')])
 def test_a_media_row_whose_folder_went_says_so(fw, ui, kind, name):
     Disk(fw, {'/mnt/mmc/Podcasts': b'a file, not a folder'}, folders=['/mnt/mmc/Music'])
     call(fw, 'media_click', kind)
     assert ui.toasts == [f'No {name} folder on the card'] and not ui.went
 
 
-@pytest.mark.parametrize('kind, page', [(3, 'photos_page'), (4, 'books_page')])
-def test_photos_and_books_open_their_own_pages(fw, ui, kind, page):
-    Disk(fw, folders=['/mnt/mmc/photos', '/mnt/mmc/Books'])
+def test_photos_opens_its_own_page(fw, ui):
+    Disk(fw, folders=['/mnt/mmc/photos'])
     fw.mock('fw_pthread_create', lambda *_: 0)
-    call(fw, 'media_click', kind)
-    assert ui.name[ui.top()] == page and not ui.went
+    call(fw, 'media_click', 3)
+    assert ui.name[ui.top()] == 'photos_page' and not ui.went
 
 
 class Folder:
@@ -3064,7 +3180,7 @@ def test_back_below_the_root_is_stock_s(fw, ui, st):
     assert folder.layer.value == 3 and st('media_root', C.c_char * 32).value == b'/mnt/mmc/Podcasts'
 
 
-def test_classic_s_folder_levels_slide_in(fw, ui, song):
+def test_classic_s_folder_levels_slide_in(fw, ui):
     Config(fw, THEME=b'1')  # its levels move in place
     folder = Folder(fw, ui)
     table = ui.new('list_view_create', folder.win, 0, 0, 375, 300)
@@ -3073,9 +3189,8 @@ def test_classic_s_folder_levels_slide_in(fw, ui, song):
     fw.mock('widget_animator_prop_create', lambda w, *_: w)
     folder.layer.value = 4
     folder.back()
-    rows = Rows(fw, ui, [song(b'/mnt/mmc/A/B', kind=4)])
     fw.mock('stock_folder_click_trampoline', lambda *_: setattr(folder.layer, 'value', folder.layer.value + 1) or 2)
-    rows.click(0)
+    assert fw.fn('ringnav_folder_click', C.c_int, C.c_void_p, C.c_void_p)(None, None) == 2
     folder.layer.value = 1
     folder.back()  # out of Folder view: no level to slide
     # Back's level comes in from the left, a deeper one from the right: each starts a width off, animated to 0
@@ -3092,34 +3207,6 @@ def test_the_storage_list_drops_otg_without_a_drive(fw, ui, otg, roots):
     fw.mock('fw_deque_pop_back', lambda q, *_: ui.deques[q].pop() and 0)
     fw.fn('ringnav_folder_top', None)()
     assert len(ui.deques[showlist]) == roots
-
-
-class Rows:
-    """Folder view's list (p_deque_showlist) and stock's row lookup: a click's target is row i."""
-    def __init__(self, fw, ui, records):
-        fw.var('fw_ctx_p_deque_showlist', C.c_uint).value = ui.deques.new(records)
-        self.row, self.event = C.create_string_buffer(0x100), C.create_string_buffer(0x40)
-        fw.mock('table_row_of', lambda target, *_: C.addressof(self.row))
-        fw.mock('stock_folder_click_trampoline', lambda *_: 2)
-        self.fw = fw
-
-    def click(self, i):
-        struct.pack_into('<i', self.row, O['ROW_INDEX'], i)
-        return self.fw.fn('ringnav_folder_click', C.c_int, C.c_void_p, C.c_void_p)(None, C.addressof(self.event))
-
-
-def test_a_video_in_folder_view_plays_as_a_video(fw, ui, song):
-    Files(fw)
-    rows = Rows(fw, ui, [song(b'/mnt/mmc/Videos/a.mp4'), song(b'/mnt/mmc/Videos/b.flac')])
-    fw.mock('fw_fork', lambda *_: 4242)
-    assert rows.click(0) == 0 and fw.calls('fw_fork') and not fw.calls('stock_folder_click_trampoline')
-    assert rows.click(1) == 2 and len(fw.calls('stock_folder_click_trampoline')) == 1
-
-
-def test_select_mode_leaves_a_video_to_stock(fw, ui, song):
-    rows = Rows(fw, ui, [song(b'/mnt/mmc/Videos/a.mp4')])
-    fw.var('g_navbar_status', C.c_ubyte).value = 1
-    assert rows.click(0) == 2 and not fw.calls('fw_fork')
 
 
 # A spoken CUE track's saved place.
@@ -3197,14 +3284,13 @@ def collect(fw, ui, qm, kind, r, cls=0):
     return [field(t, 'path') for t in ui.deques[fw.fn('qm_collect', C.c_long, C.c_void_p)(r)]]
 
 
-def test_a_song_row_s_tracks_are_the_song_but_a_video(fw, ui, song, qm):
+def test_a_song_row_s_tracks_are_the_song(fw, ui, song, qm):
     assert collect(fw, ui, qm, QM_SONG_, song(b'/m/a.flac')) == [b'/m/a.flac']
-    assert collect(fw, ui, qm, QM_SONG_, song(b'/m/clip.mp4')) == []
 
 
 def test_a_folder_row_s_tracks_take_in_its_subfolders(fw, ui, song, qm):
     tree = {b'/mnt/mmc/Music/Album': [song(b'/mnt/mmc/Music/Album/1.flac'), song(name=b'CD2', kind=4),
-                                     song(name=b'.hidden', kind=4), song(b'/mnt/mmc/Music/Album/v.mp4')],
+                                     song(name=b'.hidden', kind=4)],
             b'/mnt/mmc/Music/Album/CD2': [song(b'/mnt/mmc/Music/Album/CD2/2.flac')],
             b'/mnt/mmc/Music/Album/.hidden': [song(b'/mnt/mmc/Music/Album/.hidden/3.flac')]}
     fw.mock('toolsLoadDirectory', lambda path, *_: ui.deques[fw.var('fw_ctx_tools_pdeq_directory', C.c_uint).value]

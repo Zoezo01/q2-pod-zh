@@ -10,3 +10,16 @@ def test_function_macros_call_each_stock_function_at_its_address():
     assert got == ['#define _create_vector ((void * (*)(const char *))0x401000u)',
                    '#define vector_init ((void (*)(void *))0x402000u)']
     assert len(peq.function_macros(dict.fromkeys(build.FUNCTIONS, '0'))) == len(build.FUNCTIONS)
+
+
+def test_stock_functions_take_stock_types():
+    # patch/stock_types.h: a FUNCTIONS entry added the old way, or put back to void * by a merge, fails here
+    objects = ('widget_', 'canvas_', 'vgcanvas_', 'window_', 'dialog_', 'slider_', 'slide_menu_', 'scroll_',
+               'table_client_', 'text_selector_', 'hscroll_label_', 'label_', 'list_view_', 'list_item_', 'image_',
+               'button_', 'edit_', 'pages_', 'input_method_')
+    for name, (ret, args) in build.FUNCTIONS.items():
+        assert 'int (*)(void *, void *)' not in args, name  # a handler is given its event
+        if name.startswith(objects) and name != 'slide_menu_on_scroll_done':  # that one is stock's (ctx, event)
+            assert not args.startswith('void *'), name
+        if name.endswith('_create') or name in ('window_manager', 'widget_factory', 'image_manager', 'input_method'):
+            assert ret != 'void *', name

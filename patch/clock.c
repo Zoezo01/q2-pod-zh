@@ -2,7 +2,7 @@
  * form with its clock face. */
 #include "navigation.h"
 extern int stock_timezone_trampoline(void);
-extern void stock_timezone_row_trampoline(void *, int);
+extern void stock_timezone_row_trampoline(widget_t *, int);
 
 static const char *const tz_names[] = TIMEZONE_NAMES;
 #define TZ_COUNT (sizeof tz_names / sizeof *tz_names)
@@ -48,11 +48,11 @@ static void tz_now(unsigned char *rows) {
 
 /* Stock's Time Zone caption, between rows 0 and 1, sits 20 px down its item and over row 1: Classic
  * gives it the item, the set's row. */
-static void zone_caption(void *item) {
+static void zone_caption(widget_t *item) {
     if (!classic_pages()) return;
-    void *list = P(item, W_PARENT); /* item is its last child, the caption's the one before */
+    widget_t *list = P(item, W_PARENT); /* item is its last child, the caption's the one before */
     int n = list ? widget_count_children(list) : 0;
-    void *cap = n > 1 ? widget_get_child(list, n - 2) : (void *)0;
+    widget_t *cap = n > 1 ? widget_get_child(list, n - 2) : (void *)0;
     cap = cap && widget_count_children(cap) ? widget_get_child(cap, 0) : (void *)0;
     if (cap && !tk_strcmp(widget_get_type(cap), "hscroll_label")) {
         widget_move_resize(cap, 0, 0, 375, geom_val(V_SET_ROW));
@@ -63,16 +63,16 @@ static void zone_caption(void *item) {
  * daylight saving reads as its clocks do; stock names, ticks and clicks by the index it is given.
  * Focus-only, a label too long for the row keeps its ellipsis instead of scrolling once as the
  * page opens. */
-void ringnav_timezone_row(void *item, int i) {
+void ringnav_timezone_row(widget_t *item, int i) {
     static const char *const cities[] = TIMEZONE_CITIES;
     static unsigned char rows[TZ_COUNT];
     if (i == 1) tz_now(rows); /* stock builds rows 0, 1, 2, ... */
     int zone = i > 0 && i <= (int)TZ_COUNT ? rows[i - 1] : -1;
     stock_timezone_row_trampoline(item, zone < 0 ? i : zone + 1);
     if (i == 1) zone_caption(item);
-    void *row = widget_get_child(item, widget_count_children(item) - 1); /* stock's button */
+    widget_t *row = widget_get_child(item, widget_count_children(item) - 1); /* stock's button */
     for (unsigned c = 0; row && c < widget_count_children(row); ++c) {
-        void *label = widget_get_child(row, c);
+        widget_t *label = widget_get_child(row, c);
         if (tk_strcmp(widget_get_type(label), "hscroll_label")) continue;
         hscroll_label_set_only_focus(label, 1);
         if (zone < 0) continue;
@@ -114,10 +114,10 @@ void clock_show(void) {
     unsigned key = ok ? ((unsigned)(tm[2] * 60 + tm[1]) + 1) | (unsigned)full << 11 |
                             (unsigned)!!st.bar_title << 12 /* it changes the 12-hour form below */
                       : ~0u;                               /* 0 before the first */
-    void *bar = *(void *const *)system_bar;
-    void *label = key == st.clock_key || !bar || st.bar_titled
-                      ? (void *)0
-                      : widget_lookup(bar, "label_clock", 1);
+    widget_t *bar = *(void *const *)system_bar;
+    widget_t *label = key == st.clock_key || !bar || st.bar_titled
+                          ? (void *)0
+                          : widget_lookup(bar, "label_clock", 1);
     if (!label) return;
     st.clock_key = key;
     char s[16] = "--:--";
@@ -152,8 +152,8 @@ int clock_minutes(void) {
 /* target's click, to stock. Set date and time's OK sets the clock (stock) and stays; it goes back
  * to the Time page instead, as Return does, after a tap (ringnav_dispatch) or Centre's click
  * (edit_single). */
-int time_click(void *target, void *event) {
-    void *page = window_manager_get_top_window(window_manager());
+int time_click(widget_t *target, event_t *event) {
+    widget_t *page = window_manager_get_top_window(window_manager());
     int ok = page && !tk_strcmp(widget_get_prop_str(page, "name", ""), "manualtime_page") &&
              !tk_strcmp(widget_get_prop_str(target, "name", ""), "btn_enter");
     int result = stock_dispatch_trampoline(target, event);
@@ -163,7 +163,7 @@ int time_click(void *target, void *event) {
 }
 
 /* The own pages' Set Date and Set Time, either look's: no OK stop, and AM/PM a field in 12-hour. */
-int time_form(void *top) {
+int time_form(widget_t *top) {
     return top && own_pages() &&
            !tk_strcmp(widget_get_prop_str(top, "name", ""), "manualtime_page");
 }
@@ -206,7 +206,7 @@ static const char time_months[12][4] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun
 /* The open form's selectors, by field, AM/PM's none, and its slide view: found after stock's init,
  * so a paint needs no lookup. */
 static struct {
-    void *sel[6], *slide;
+    widget_t *sel[6], *slide;
     int was[5]; /* each selector's index as last seen: time_changed, a drag's change */
 } tf;
 /* What option 0 of each stock selector means. */
@@ -226,15 +226,15 @@ static int field_x(const time_row_t *row, int i) {
 static const char *time_month(void) { return time_months[clamp_step(time_value(1) - 1, 11, 0)]; }
 
 /* The bar's title reads the page's own label (bar_title_sync). */
-static void time_title(void *win) {
-    void *label = (void *)0;
+static void time_title(widget_t *win) {
+    widget_t *label = (void *)0;
     char s[16];
     bar_title_of(win, &label);
     if (!label) return;
     tk_snprintf(s, sizeof s, "%s %d, %d", time_month(), time_value(2), time_value(0));
     widget_set_text_utf8(label, s);
 }
-static int time_changed(void *win, void *event) {
+static int time_changed(void *win, event_t *event) {
     (void)event;
     int first = -1;
     for (int f = 4; f >= 0; --f) {
@@ -255,9 +255,9 @@ static int time_changed(void *win, void *event) {
 }
 
 /* The wheel on field f, or a tap on AM/PM. A 12-hour hour stays in its half; AM/PM crosses it. */
-void time_wheel(void *top, int f, int dir) {
+void time_wheel(widget_t *top, int f, int dir) {
     int half = f == TIME_AMPM || (f == 3 && fields(top) == 6);
-    void *sel = field_widget(top, half ? 3 : f);
+    widget_t *sel = field_widget(top, half ? 3 : f);
     if (!sel) return;
     int index = I(sel, SELECTOR_INDEX), next;
     if (f == TIME_AMPM)
@@ -275,7 +275,7 @@ void time_wheel(void *top, int f, int dir) {
     time_title(top);
     field_set(top, f);
 }
-static int time_ampm(void *win, void *event) {
+static int time_ampm(void *win, event_t *event) {
     (void)event;
     time_wheel(win, TIME_AMPM, 1);
     return 0;
@@ -283,9 +283,9 @@ static int time_ampm(void *win, void *event) {
 
 /* Stock's window as it loads, before its init, so that init's own setting of the selectors places
  * them at this size. */
-void time_open(void *win) {
+void time_open(widget_t *win) {
     static const char *const hide[] = { "img_dot", "slide_indicator" };
-    void *c, *ok = field_widget(win, fields(win));
+    widget_t *c, *ok = field_widget(win, fields(win));
     memset(&tf, 0, sizeof tf);
     for (unsigned i = 0; i < sizeof hide / sizeof *hide; ++i)
         if ((c = widget_lookup(win, hide[i], 1))) widget_set_visible(c, 0, 0);
@@ -300,7 +300,7 @@ void time_open(void *win) {
             /* a drag steps a row, TIME_CELL_H / 3; stock's release adds its speed times this */
             widget_set_prop_int(c, "yspeed_scale", 0);
         }
-        void *page = field_widget(win, row->first);
+        widget_t *page = field_widget(win, row->first);
         page = page ? P(page, W_PARENT) : (void *)0;
         if (page && (c = widget_lookup(page, "view_back", 0))) widget_set_visible(c, 0, 0);
         if (t && page && row->n == 3) { /* AM/PM's cell takes a tap */
@@ -325,12 +325,12 @@ void time_open(void *win) {
 
 /* After stock's init: it rebuilds the label the title goes in, and its own handlers, first in line,
  * have clamped the day by the time these read it. */
-extern int stock_manualtime_trampoline(void *win, void *ctx);
-int ringnav_manualtime(void *win, void *ctx) {
+extern int stock_manualtime_trampoline(widget_t *win, void *ctx);
+int ringnav_manualtime(widget_t *win, void *ctx) {
     int result = stock_manualtime_trampoline(win, ctx);
     if (time_form(win)) {
         for (int f = 0; f < 5; ++f) {
-            void *sel = tf.sel[f] = field_widget(win, f);
+            widget_t *sel = tf.sel[f] = field_widget(win, f);
             if (sel) widget_on(sel, EVT_VALUE_CHANGED, time_changed, win);
             tf.was[f] = sel ? I(sel, SELECTOR_INDEX) : 0;
         }
@@ -356,7 +356,7 @@ static int clock_sin(int deg) {
  * each row two end spans of single pixels by their coverage and a run between them. */
 #define CLOCK_SUB 4
 #define CLOCK_ROWS 64 /* the tallest shape, and its cut */
-static void clock_fill(void *canvas, const int *p, int n, unsigned rgb) {
+static void clock_fill(canvas_t *canvas, const int *p, int n, unsigned rgb) {
     int top = p[1], foot = p[1], los[CLOCK_ROWS * CLOCK_SUB], his[CLOCK_ROWS * CLOCK_SUB];
     unsigned color = RGBA(rgb);
     for (int i = 1; i < n; ++i) {
@@ -407,8 +407,8 @@ static void clock_fill(void *canvas, const int *p, int n, unsigned rgb) {
 }
 /* The clock art at x, y and size px square with its parts over it, each at its hand's angle for
  * h:m (peq.h clock_part_t). The fill is restored. */
-void paint_clock(void *w, void *canvas, int x, int y, int size, const char *art, int h, int m,
-                 const clock_part_t *parts, int n) {
+void paint_clock(widget_t *w, canvas_t *canvas, int x, int y, int size, const char *art, int h,
+                 int m, const clock_part_t *parts, int n) {
     void *lcd = P(canvas, CANVAS_LCD);
     if (!lcd) return;
     unsigned fill = (unsigned)I(lcd, LCD_FILL_COLOR);
@@ -438,7 +438,7 @@ static const clock_part_t time_clock[] = {
 };
 
 /* Text in final colours, as Light Mode's text setter flips what it's given. */
-static void time_text(void *canvas, const unsigned *s, unsigned n, const rect_t *r, unsigned px,
+static void time_text(canvas_t *canvas, const unsigned *s, unsigned n, const rect_t *r, unsigned px,
                       unsigned rgb, unsigned alpha) {
     draw_centred(canvas, s, n, r, px, alpha << 24 | (RGBA(flip_if(ipod_light(), rgb)) & 0xffffff));
 }
@@ -470,7 +470,7 @@ static const clock_part_t time_clock_flat[2][4] = { TIME_HANDS(0xffffff, 0x2c2c2
                                                     TIME_HANDS(0x1c1c1e, 0xe9e9ec) };
 /* time_paint's, flat: grey boxes at rest, the cell that holds in what is on, the clock's flat face
  * or the date's tile with its month in what is on, and Save's pill. */
-static void time_paint_flat(void *w, void *canvas) {
+static void time_paint_flat(widget_t *w, canvas_t *canvas) {
     static const unsigned colon = ':', save[] = { 0x4fdd, 0x5b58, 0 };
     rect_t tile = { TIME_TILE_X, TIME_TILE_Y, TIME_TILE_W, TIME_TILE_H },
            pill = { TIME_SAVE_X, TIME_SAVE_Y, TIME_SAVE_W, TIME_SAVE_H };
@@ -521,7 +521,7 @@ static void time_paint_flat(void *w, void *canvas) {
     stock_canvas_set_fill_color(canvas, fill);
 }
 /* The page, in the window's coordinates, under its children. */
-void time_paint(void *w, void *canvas) {
+void time_paint(widget_t *w, canvas_t *canvas) {
     static const unsigned colon = ':', save[] = { 0x4fdd, 0x5b58, 0 };
     if (flat_pages()) {
         time_paint_flat(w, canvas);

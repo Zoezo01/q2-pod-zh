@@ -788,6 +788,38 @@ def test_system_settings_adds_its_rows_and_hides_five(fw):
     assert opened == ['systemset/datetime_page', 'systemset/fwupdate_page', 'systemset/reset_page', 'systemset/about_page']
 
 
+class Network:
+    """System settings → Network: stock's rows (DLNA, AirPlay, Wi-Fi File Transfer) and what ringnav_netservice adds."""
+    def __init__(self, fw, ui):
+        self.win = ui.window('netservice_page')
+        self.view = ui.add('scroll_view', self.win, name='scroll_view_netservice')
+        for i in range(3):
+            ui.add('list_item', self.view, name=f'stock_{i}')
+        fw.fn('ringnav_netservice', C.c_int, C.c_void_p, C.c_void_p)(self.win.addr, None)
+
+
+def test_card_apps_with_a_network_row_follow_stocks_network_rows(fw):
+    from test_addon import card  # the card's apps: q2app, the binary, icons
+    ui = Ui(fw)
+    Config(fw)
+    card(fw, zeta=b'name=Zeta\nrow=network\n', alpha=b'name=Alpha\nrow=network\n', foo=b'name=Foo\n')
+    page = Network(fw, ui)
+    assert titles(page.view) == ['stock_0', 'stock_1', 'stock_2', 'Alpha', 'Zeta']
+    # each opens its app's page by its place (test_addon.py PRESSES: the press itself)
+    open_fn = C.cast(fw.lib.addon_network_open, C.c_void_p).value
+    for k, title in enumerate(('Alpha', 'Zeta')):
+        button = button_of(page.view, title)
+        assert [(fn, ctx) for w, evt, fn, ctx in ui.handlers if w == button.addr] == [(open_fn, k)]
+    # and System settings is as without them
+    assert 'Alpha' not in titles(Settings(fw, ui).view)
+
+
+def test_network_without_card_apps_is_stocks(fw):
+    ui = Ui(fw)
+    Config(fw)
+    assert titles(Network(fw, ui).view) == ['stock_0', 'stock_1', 'stock_2']
+
+
 @pytest.mark.parametrize('keytone', [0, 1])
 def test_controls_opens_display_as_its_own_page(fw, keytone):
     ui = Ui(fw)

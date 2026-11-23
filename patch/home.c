@@ -3,9 +3,9 @@
 
 /* A Library row titled text; into: one that opens another list, with stock's own list_into
  * trailing image as the stock Local Music categories place it. Returns the row's list_item. */
-static void *library_row(void *view, const char *icon, int (*click)(void *, void *), void *ctx,
-                         const char *text, int into) {
-    void *label = list_row_core(view, icon, click, ctx, into ? 210 : 260, into);
+static widget_t *library_row(widget_t *view, const char *icon, int (*click)(void *, event_t *),
+                             void *ctx, const char *text, int into) {
+    widget_t *label = list_row_core(view, icon, click, ctx, into ? 210 : 260, into);
     widget_set_text_utf8(label, text);
     return P(P(label, W_PARENT), W_PARENT);
 }
@@ -31,15 +31,15 @@ enum {
 /* Every Library row, stock's and the added ones: its label takes the list titles' role. In a set
  * without Library icons (Classic) it also drops its icon and starts its label at the set's
  * text inset on screen, its right edge kept. */
-static void library_look(void *view) {
+static void library_look(widget_t *view) {
     const theme_t *T = theme();
     int bare = !geom_val(V_LIB_ART);
     if (!bare && !T->font[ROLE_TITLE] && !T->font_px[ROLE_TITLE]) return;
     for (unsigned i = 0, n = widget_count_children(view); i < n; ++i) {
-        void *row = widget_get_child(view, i);
-        void *button = widget_count_children(row) ? widget_get_child(row, 0) : (void *)0;
+        widget_t *row = widget_get_child(view, i);
+        widget_t *button = widget_count_children(row) ? widget_get_child(row, 0) : (void *)0;
         for (unsigned j = 0, k = button ? widget_count_children(button) : 0; j < k; ++j) {
-            void *c = widget_get_child(button, j);
+            widget_t *c = widget_get_child(button, j);
             if (tk_strcmp(widget_get_type(c), "hscroll_label")) {
                 if (bare) widget_set_visible(c, 0, 0);
                 continue;
@@ -66,11 +66,11 @@ int library_search(void) { return !geom_val(V_LIB_ART); }
  * comes back on top (one handler, should stock build the page twice) or an App Store job ends. The
  * added rows' buttons have no name, so stock's row click (atoi of the name, 0x53510c) never sees
  * them. */
-int ringnav_localmusic(void *win, void *ctx) {
+int ringnav_localmusic(widget_t *win, void *ctx) {
     int result = stock_localmusic_trampoline(win, ctx);
-    void *view = win ? widget_lookup(win, "scroll_view_localmusic", 1) : (void *)0;
+    widget_t *view = win ? widget_lookup(win, "scroll_view_localmusic", 1) : (void *)0;
     if (!view || widget_count_children(view) != L_STOCK) return result;
-    void *stock[L_STOCK];
+    widget_t *stock[L_STOCK];
     for (int i = 0; i < L_STOCK; i++) stock[i] = widget_get_child(view, i);
     unsigned n = 0; /* each row moves to n as it comes, so Update Library, left, ends last */
     if (library_search())
@@ -93,16 +93,15 @@ int ringnav_localmusic(void *win, void *ctx) {
     widget_restack(stock[L_FREQUENT], n++);
     widget_restack(stock[L_HIRES], n++);
     widget_restack(library_row(view, "local_longsongs", long_songs, 0, "长曲目", 1), n++);
-    /* Podcasts, Audiobooks, Photos, Books and Videos, each only with its folder. */
-    static const char *const icons[] = { "local_podcasts", "local_audiobooks", "local_photos",
-                                         "local_books", "local_videos" };
+    /* Podcasts, Audiobooks and Photos, each only with its folder. */
+    static const char *const icons[] = { "local_podcasts", "local_audiobooks", "local_photos" };
     char path[sizeof st.media_root];
-    for (int k = 0; k < VIDEOS; k++)
+    for (int k = 0; k < PHOTOS; k++)
         if (media_find(k + 1, path))
             widget_restack(
                 library_row(view, icons[k], media_click, (void *)(long)(k + 1), MEDIA_LABELS[k], 1), n++);
     if (!pod_value(POD_HIDE_APPS)) {
-        void *apps = library_row(view, "local_apps", addon_apps, 0, "应用", 1);
+        widget_t *apps = library_row(view, "local_apps", addon_apps, 0, "应用", 1);
         widget_set_name(apps, "library_apps");
         widget_set_visible(apps, addon_libs() > 0, 0);
         widget_restack(apps, n++);
@@ -123,8 +122,8 @@ int ringnav_localmusic(void *win, void *ctx) {
 /* The Library's Apps row shown (on) or not, the list's selection kept on its row: navigation.c's
  * load drops a live list's selection when its count of shown rows changes, so the index and the
  * count it keeps move with the row. */
-void library_apps_show(void *row, int on) {
-    void *view = P(row, W_PARENT);
+void library_apps_show(widget_t *row, int on) {
+    widget_t *view = P(row, W_PARENT);
     if (!widget_get_visible(row) == !on) return;
     int sel = widget_get_prop_int(view, SEL, -1), count = widget_get_prop_int(view, COUNT, -1);
     int at = 0; /* the shown rows before it */
@@ -142,21 +141,21 @@ void library_apps_show(void *row, int on) {
  * and finds the rows' view by name, so list, which holds one of that name, stands in. What else it
  * sets on the window goes again, list being none: the play gif's timer and its handlers, Apps'
  * among them. */
-void library_rows(void *list) {
+void library_rows(widget_t *list) {
     ringnav_localmusic(list, (void *)0);
-    ((int (*)(void *, void *))LOCALMUSIC_BG)(list, (void *)0);
+    ((int (*)(void *, event_t *))LOCALMUSIC_BG)(list, (void *)0);
     widget_off_by_ctx(list, list);
 }
 
 /* Streaming's AirPlay row: stock's own receiver (Shairport 1.1.1, AirPlay 1), whose switch is on
  * System settings' Network service page; that page, one press from Streaming. */
-static int airplay_open(void *ctx, void *event) {
+static int airplay_open(void *ctx, event_t *event) {
     navigator_to("systemset/netservice_page");
     return 0;
 }
 
 /* Whether w, or a widget in it, shows the image name. */
-static int shows_image(void *w, const char *name) {
+static int shows_image(widget_t *w, const char *name) {
     if (!tk_strcmp(widget_get_prop_str(w, "image", ""), name)) return 1;
     for (unsigned i = 0, n = widget_count_children(w); i < n; ++i)
         if (shows_image(widget_get_child(w, i), name)) return 1;
@@ -185,7 +184,7 @@ void home_pane_read(int *services, int *games, int *free_tenths) {
 }
 
 /* A Streaming row tagged as service i (svc), hidden when STREAMHIDE holds it. */
-static void svc_row(void *row, int i, char *hide) {
+static void svc_row(widget_t *row, int i, char *hide) {
     prop(row, SVC_PROP, i + 1);
     if (svc_find(hide, i)) widget_set_visible(row, 0, 0);
 }
@@ -196,21 +195,21 @@ static void svc_row(void *row, int i, char *hide) {
  * App Store or the user put them there), Tidal Downloads, Internet Radio (radio.c), AirPlay
  * and Configuration. Their buttons have no name, so stock's row click never sees them. Smart
  * Wi-Fi's radio comes back first. */
-int ringnav_stream(void *win, void *ctx) {
+int ringnav_stream(widget_t *win, void *ctx) {
     smart_wake();
     int result = stock_stream_trampoline(win, ctx);
-    void *view = win ? widget_lookup(win, "scroll_view_streamsset", 1) : (void *)0;
+    widget_t *view = win ? widget_lookup(win, "scroll_view_streamsset", 1) : (void *)0;
+    for (int i = view ? (int)widget_count_children(view) : 0; i-- > 0;)
+        if (shows_image(widget_get_child(view, (unsigned)i), "list_baidu"))
+            widget_destroy(widget_get_child(view, (unsigned)i));
     if (view) {
         char hide[SVC_HIDE];
         int i = 1;
-        st.svc_n = addon_scan(); /* at most APPS_MAX */
-        svc_hidden(hide);
-        for (unsigned c = 0, stock = widget_count_children(view); c < stock; ++c)
             if (shows_image(widget_get_child(view, c), "list_tidal"))
                 svc_row(widget_get_child(view, c), 0, hide);
         svc_row(library_row(view, "stream_spotify", spot_open, 0, "Spotify", 1), i++, hide);
         for (int k = 0; k < st.svc_n; ++k)
-            svc_row(library_row(view, addon_icon(k), addon_open, (void *)(long)k, addon_name(k), 1),
+                                addon_name(k), 1),
                     i++, hide);
         svc_row(library_row(view, "list_tidal", tidal_downloads, 0, "Tidal 下载", 1), i++,
                 hide);
@@ -225,9 +224,9 @@ int ringnav_stream(void *win, void *ctx) {
  * library_rows: stock's constructor takes a window and finds the rows' view by name, so list, which
  * holds one of that name, stands in; it finds no view_navbar there. What it sets on a window goes
  * again: its play gif's timer and its handlers. */
-void stream_rows(void *list) {
+void stream_rows(widget_t *list) {
     ringnav_stream(list, (void *)0);
-    ((int (*)(void *, void *))STREAM_BG)(list, (void *)0);
+    ((int (*)(void *, event_t *))STREAM_BG)(list, (void *)0);
     widget_off_by_ctx(list, list);
     library_look(widget_lookup(list, "scroll_view_streamsset", 1));
 }

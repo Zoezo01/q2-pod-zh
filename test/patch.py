@@ -935,18 +935,6 @@ assert m.closed==['playermore_page','artistinfo_page','albuminfo_page'] and m.ba
 assert m.opened==[('localmusic/artistinfo_page',0xf001,m.items(m.get(syms['mcl_pdeqplaylist']))[1])]
 assert m.u.mem_read(syms['g_songerinfo_flag'],1)==b'\1'; passed()
 
-# Folder view's row click (ringnav_folder_click over stock's 0x532414): a video file goes to books_video,
-# as Library's Videos row plays it, and stock never queues it as a song; a song row, a video books_video
-# refuses and any row in select mode stay stock's (folder_enter's 8, then the queue and Now Playing).
-for selected,name,navbar,played in ((1,'clip.mp4',0,True),(1,'clip.mp4',1,True),(0,'Row 0',0,False)):  # select mode selects
-    m=FolderClickMachine(['home_page','folder_page'],selected,False); m.byte(syms['g_navbar_status'],navbar)
-    m.items(m.get(syms['p_deque_showlist']))[1]=m.song('clip.mp4')
-    w=m.node('button','row'); m.word(w+O['ROW_INDEX'],selected); m.word(m.event+O['EVENT_TARGET'],w)
-    m.call(address=payload_syms['ringnav_folder_click'],args=(w,m.event,0,0),gap=0)
-    assert m.videos==([] if navbar else ['/p/'+name]),(name,navbar,m.videos)
-    assert played==(not any(o[0]=='playing_page' for o in m.opened)),(name,navbar)
-passed()
-
 # Now Playing targets the queue even when the last browsed list has unrelated rows.
 for state in (3,2):  # paused and playing both expose the same actions
     m=playing_menu(); m.handlers.pop(syms['mclGetPlayStatus'],None); m.word(0xa50084,state)
@@ -1422,17 +1410,6 @@ for cls,artist_type,page,query in ((0xff01,1,'album_page',('getMusicByAlbumAndAl
     assert page!='folder_page' or [m.text(c[1]) for c in m.calls if c[0]=='toolsLoadDirectory']==['/mnt/sd/Music/Row 0','/mnt/sd/Music/Row 0/dir']
     assert m.names(m.get(syms['tools_pdeq_directory']))==['staged'] and m.pool()==list(range(len(want)))
     passed()
-# Videos never enter an audio queue, including through a folder's hold menu.
-for action in (0,1):
-    m=QueueMachine(page='folder_page'); m.word(m.row(0)+O['REC_TYPE'],4)
-    m.found=[m.song('film.mp4'),m.song('song.flac'),m.song('film.MKV')]
-    assert m.run(action) is None
-    assert m.names()==(['A','song.flac','B','C'] if action==0 else ['A','B','C','song.flac']); passed()
-m=QueueMachine(page='folder_page'); m.word(m.row(0)+O['REC_PATH'],m.string('/mnt/mmc/Videos/film.mp4'))
-m.press(100); m.hold(); assert m.nodes[m.top]['name']=='folder_page' and m.names()==['A','B','C']; passed()
-m=QueueMachine(page='folder_page'); m.word(m.row(0)+O['REC_TYPE'],4)
-m.word(m.row(0)+O['REC_PATH'],m.string('/mnt/mmc/Videos/Album.mp4'))
-m.press(100); assert m.hold()==11 and m.nodes[m.top]['name']=='sortselect_dialog'; passed()
 # Artist, composer and genre rows, and their album lists, use batch_add_file's per-class queries.
 for cls,artist_type,query in ((0xf004,0,('getMusicBySonger','Artist',None)),(0xf004,1,('getMusicByAlbumArtist','Artist',None)),
         (0xf005,0,('getMusicByComposer','Comp',None)),(0xf006,0,('getMusicByGenre','Pop',None)),
@@ -2183,16 +2160,6 @@ assert m.names()==m.before_queue
 songs=m.get(payload_syms['ple']+8); loads=m.get(payload_syms['playback_loads'])
 m.call(address=syms['mclLoadPlayList'],args=(songs,0,0xff13,0),gap=0)
 assert m.names()==['B','A','C'] and m.get(payload_syms['playback_loads'])==loads+1; passed()  # a card app's stream counts loads
-# A Videos folder's listed videos never join a queue (#128): stock loads a copy without them, its start
-# on the same song, or the next after a video; the caller's list stays whole. Videos alone leave an empty queue.
-for names,at,queued,pos in ((('a.mp3','v.mp4','b.flac','w.MKV'),2,['a.mp3','b.flac'],1),
-                            (('a.mp3','v.mp4','b.flac'),1,['a.mp3','b.flac'],1),
-                            (('v.mp4','a.mp3'),0,['a.mp3'],0),(('a.mp3','b.flac'),1,['a.mp3','b.flac'],1),
-                            (('v.mp4','w.mkv'),1,[],0)):
-    m=QueueMachine(); src=m.deque([m.song(n) for n in names])
-    m.call(address=syms['mclLoadPlayList'],args=(src,at,1,0),gap=0)
-    assert m.names()==queued and m.get(O['MCL_POS'])==pos and len(m.items(src))==len(names),(names,m.names(),m.get(O['MCL_POS']))
-    passed()
 # Explicit stock loading order also reaches export and later playback loads through the shared query hook.
 m=LibraryQueryMachine(); m.db.execute('create table playlist(id,cd_num)')
 m.db.executemany('insert into playlist values(?,?)',[(103,0),(101,0),(102,0),(100,0),(104,1)])
@@ -8248,7 +8215,7 @@ swap_values(m,120,8); passed()
 # Windows from the theme: what each kind's hint does to a window as it loads or opens.
 OTHER_HINT='htranslate(duration=270,easing=linear)'; FADE_HINT='fade(duration=300,easing=quadratic_out)'; ASSET_HINT=f"htranslate(duration={O['PAGE_SLIDE_MS']})"
 EXTRA=('playerqueue_page','playermore_page','playerjumpinfo_page')
-PAYLOAD=('shuffle_page','mostplayed_page','ratings_page','rated_page','era_page','era_albums_page','upnext_page','playlistedit_page','streamconf_page','games_page','books_page','apps_page')
+PAYLOAD=('shuffle_page','mostplayed_page','ratings_page','rated_page','era_page','era_albums_page','upnext_page','playlistedit_page','streamconf_page','games_page','apps_page')
 DIALOGS=('confirminfo_dialog','addplaylist_dialog','sortselect_dialog')
 # Classic's pages open as Minimal's: a stock page with a slide keeps the asset's, over Home or anything else, and nothing is written.
 for t in '01':
@@ -8703,81 +8670,11 @@ for fail_size in (5, 20):
     m.close(); assert m.freed==8
 passed()
 
-# Books (patch/books.c): Local Music's last row opens the card's Books folder (case aside): its own
-# .txt and .epub files and its subfolders', by path, named without the extension.
-import io, zipfile
-R='/mnt/mmc/books'
-para=lambda i: ' '.join(f'w{i}x{k}' for k in range(30))
-txt='﻿'+'\n\n'.join(para(i) for i in range(40))
-buf=io.BytesIO()
-with zipfile.ZipFile(buf,'w',zipfile.ZIP_DEFLATED) as z:
-    z.writestr('mimetype','application/epub+zip')
-    z.writestr('META-INF/container.xml','<container><rootfiles><rootfile full-path="content.opf"/></rootfiles></container>')
-    z.writestr('content.opf','<package><manifest><item id="a" href="a.xhtml"/><item id="b" href="b.xhtml"/></manifest>'
-               '<spine><itemref idref="a"/><itemref idref="b"/></spine></package>')
-    z.writestr('a.xhtml','<html><head><title>T</title></head><body><h1>Chapter 1</h1><p>Caf&#233; &amp; tea.</p></body></html>')
-    z.writestr('b.xhtml','<html><body><p>Chapter 2</p></body></html>')
-tree={'/mnt/mmc':[('Music',4),('books',4)],R:[('Zed.txt',8),('notes.md',8),('._Zed.txt',8),('Series',4)],R+'/Series':[('A Tale.EPUB',8)]}
-files={R+'/Zed.txt':bytearray(txt.encode()),R+'/Series/A Tale.EPUB':bytearray(buf.getvalue())}
-m=BooksMachine(tree,files)
-view=m.node('scroll_view','scroll_view_localmusic',[m.node('list_item') for _ in range(11)]); m.top=m.node('window','localmusic_page',[view])
-assert m.call(address=HOOKS['localmusic_page_init'][0],args=(m.top,5,0,0),gap=0,count=5_000_000)==0
-button=m.nodes[m.nodes[view]['children'][-4]]['children'][0]; icon,label,into=m.nodes[button]['children']
-assert m.nodes[icon]['image']=='local_books' and m.nodes[label]['text']=='Books' and len(m.nodes[view]['children'])==20
-library_geometry(m,m.nodes[view]['children'][-4])
-f,ctx=m.handler(button,O['EVT_CLICK']); assert m.call(address=f,args=(ctx,m.event,0,0),gap=0,count=5_000_000)==0
-page=m.page=m.top; assert m.nodes[page]['name']=='books_page' and m.nodes[page]['style:normal:bg_color']==-0x1000000
-books,reader=m.nodes[page]['children']; sheet,info=m.nodes[reader]['children']
-assert not m.nodes[reader]['visible'] and labels(books)==['Books','A Tale','Zed']; passed()
-# A .txt opens on its first page: up to ten white lines of the default font, the BOM dropped,
-# wrapped at spaces within the margins, every line clear of the glass's rounded corners.
-rows=m.nodes[m.find('scroll_view',books)]['children']
-def open_book(i):
-    f,ctx=m.handler(rows[i],O['EVT_CLICK']); m.call(address=f,args=(ctx,m.event,0,0),gap=0); m.advance(0)
-def page_lines():
-    m.lines=[]; m.call(address=HOOKS['widget_on_paint_border'][0],args=(sheet,m.canvas,0,0),gap=0,clear=False,count=50_000_000)
-    return m.lines
-open_book(1); assert m.nodes[reader]['visible'] and not m.nodes[books]['visible'] and not m.nodes[info]['visible']
-first=page_lines(); words=txt[1:].split()
-assert len(first)==10 and all(c==0xffffffff and font==('default',20) for _,_,_,c,font in first)
-assert ' '.join(t for t,*_ in first if t).split()==words[:len(' '.join(t for t,*_ in first).split())] and first[0][0].startswith('w0x0 ')
-for t,x,y,*_ in first:
-    top,bottom=30+y,30+y+26; inset=max(corner_inset(top),corner_inset(bottom))
-    assert inset<=x and x+BOOK_PITCH*len(t)<=375-inset and len(t)*BOOK_PITCH<=375-2*x,(t,x,y)
-assert [y for _,_,y,*_ in first]==[6+26*i for i in range(10)] and len(first[0][0])*BOOK_PITCH>375-2*24-BOOK_PITCH*6; passed()
-# The wheel turns the page (the next starts where this one ended), back again, and stops at the start.
-m.top=page; assert m.call()==11; second=page_lines()
-seen=' '.join(t for t,*_ in first+second).split(); assert seen==words[:len(seen)] and second[0][0]!=first[0][0]
-assert m.call(O['KEY_PREV'])==11 and page_lines()==first and m.call(O['KEY_PREV'])==11 and page_lines()==first; passed()
-# Centre shows how far in and the title on a band clear of the glass; Return keeps the page.
-m.call(); m.call(); third=page_lines()
-# The turned page is saved 2 s on, without Return: a power-off ends demo without one (books.c save_due).
-m.advance(2000); saved=bytes(m.files.get('/mnt/data/ringnav-books',b'')[:8])
-assert len(saved)==8 and struct.unpack('<II',saved)[0]==fnv(R+'/Zed.txt') and struct.unpack('<II',saved)[1]>0; passed()
-assert m.call(O['KEY_CENTER'])==11 and m.nodes[info]['visible'] and re.fullmatch(r'\d%  Zed',m.nodes[info]['text'])
-x,y,bw,bh=cf_geometry(m,info); inset=max(corner_inset(30+y),corner_inset(30+y+bh)); assert inset<=x and x+bw<=375-inset
-assert m.key()==11 and m.nodes[books]['visible'] and bytes(m.files['/mnt/data/ringnav-books'][:8])==saved
-assert m.nodes[m.find('scroll_view',books)]['_ringnav_index']==1
-open_book(1); assert page_lines()==third; passed()
-# An EPUB is made into text on the worker first ("Preparing…"), then read like a .txt: chapters
-# on new pages, head dropped, entities decoded.
-m.key(); open_book(0); assert m.nodes[info]['visible'] and m.nodes[info]['text']=='Preparing…' and len(m.threads)==1 and not page_lines()
-worker,arg=m.threads[0]; assert m.call(address=worker,args=(arg,0,0,0),gap=0,count=50_000_000)==0
-m.advance(250); cache=f'/mnt/mmc/.books/{fnv(R+"/Series/A Tale.EPUB"):08x}.txt'
-assert bytes(m.files[cache])=='Chapter 1\n\nCafé & tea.\f\nChapter 2'.encode() and not m.nodes[info]['visible']
-assert [t for t,*_ in page_lines()]==['Chapter 1','','Café & tea.'] and m.call()==11 and [t for t,*_ in page_lines()]==['Chapter 2']
-passed()
-# A broken EPUB says so; closing joins nothing and frees the window.
-m.key(); m.files[R+'/Series/A Tale.EPUB']=bytearray(b'PK junk'); m.files.pop(cache); open_book(0)
-worker,arg=m.threads[-1]; m.call(address=worker,args=(arg,0,0,0),gap=0,count=50_000_000); m.advance(250)
-assert m.nodes[info]['visible'] and m.nodes[info]['text']=="Can't open this book" and m.call()==11 and not page_lines()
-m.close(); passed()
-
 # Games (patch/games.c, iPod): the Library's Games row, always there, opens a chooser of Sudoku,
 # Vortex, Solitaire and Snake. A game's keys never reach stock's filter or the media keys; Return goes game -> chooser ->
 # Library. Vortex's frame timer and raw wheel run only while it plays: Play/Pause, the screen going
 # off and leaving each stop them, and closing frees the state.
-CONFIG['SHORTCUT']='6'; m=BooksMachine({},{}); del CONFIG['SHORTCUT']
+CONFIG['SHORTCUT']='6'; m=CardMachine({},{}); del CONFIG['SHORTCUT']
 G_SCREEN,G_PICKING,G_PAUSED,G_CELL,G_CUR,G_VX=36,44,56,76,157,164
 def games_open():
     view=m.node('scroll_view','scroll_view_localmusic',[m.node('list_item') for _ in range(11)]); m.top=m.node('window','localmusic_page',[view])
@@ -8915,95 +8812,6 @@ key(O['KEY_RETURN']); m.advance(0); pick(0); key(O['KEY_RETURN']); m.advance(0);
 key(O['KEY_RETURN']); m.advance(0); pick(1); assert len(frames())==1
 m.close(); assert m.get(payload_syms['g'])==0 and not frames() and m.get(payload_syms['wheel_raw'])==0; passed()
 
-# Videos (patch/books.c, docs/internals.md#videos): the card's Videos folder (case aside) lists its and
-# its subfolders' video files as Books does; a row stops the music and starts /usr/bin/q2video with
-# the headphone DAC's PCM and the path as plain argv, never through a shell.
-R='/mnt/mmc/VIDEOS'
-tree={'/mnt/mmc':[('Music',4),('VIDEOS',4)],R:[('b.MKV',8),('a.mp4',8),('notes.txt',8),('._a.mp4',8),('Trip',4)],R+'/Trip':[('c.avi',8)]}
-m=BooksMachine(tree,{})
-view=m.node('scroll_view','scroll_view_localmusic',[m.node('list_item') for _ in range(11)]); m.top=m.node('window','localmusic_page',[view])
-assert m.call(address=HOOKS['localmusic_page_init'][0],args=(m.top,5,0,0),gap=0,count=5_000_000)==0
-button=m.nodes[m.nodes[view]['children'][-4]]['children'][0]; icon,label,into=m.nodes[button]['children']
-assert m.nodes[icon]['image']=='local_videos' and m.nodes[label]['text']=='Videos' and len(m.nodes[view]['children'])==20
-f,ctx=m.handler(button,O['EVT_CLICK']); m.calls=[]
-assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and [m.text(c[1]) for c in m.calls if c[0]=='navigator_to']==['folder_page']; m.page=m.node('window','folder_page'); passed()
-# Folder view's video (books_video) starts the same q2video, with no Videos page open; anything else is left to stock.
-for path,ok in ((R+'/b.MKV',1),(R+'/notes.txt',0),(R+'/._a.mp4',0)):
-    v=BooksMachine(tree,{}); assert v.call(address=payload_syms['books_video'],args=(v.string(path),0,0,0),gap=0)==ok,path
-    v=BooksMachine(tree,{}); v.forked=0; v.call(address=payload_syms['books_video'],args=(v.string(path),0,0,0),gap=0)  # the child
-    assert v.execs==([('/usr/bin/q2video','/usr/bin/q2video','plughw:0,0',path,0)] if ok else []),path
-passed()
-def play(path):  # Folder view's row (books_video), with the child run as the fork's
-    m.calls=[]; m.call(address=payload_syms['books_video'],args=(m.string(path),0,0,0),gap=0)
-    return [c[0] for c in m.calls]
-# The headphone output is readied as stock's player_start readies it (config_outputchannel, PCM
-# mode, unmuted, the volume) before q2video starts; a DAC check_dacoff_state powered off comes on with it. Bluetooth (way 1) plays on hciplayer's
-# plug:bluealsa with the volume for the helper's soft volume. A USB DAC (2) plays on "usb" (q2video
-# finds its card), through plughw: with the volume marked h (the DAC's own control, or a fixed USB volume),
-# or plain when the USB volume is variable and the DAC has no control (USB_MIXER -2: hciplayer's soft volume).
-m.forked=0; m.word(syms['g_dacoff_time'],0xffffffff); m.byte(syms['g_headset_output'],1); names=play(R+'/b.MKV')
-take=[n for n in names if n in ('player_stop','config_outputchannel','mclSetPcmMode','mclSetMute','device_set_volume','fork')]
-assert take==['player_stop','config_outputchannel','mclSetPcmMode','mclSetMute','device_set_volume','fork'] and m.execs[-1][2:5]==('plughw:0,0',R+'/b.MKV',0)
-assert ('config_outputchannel',1,2) in [c[:3] for c in m.calls]
-m.word(syms['g_dacoff_time'],5); m.byte(syms['g_volume'],42)
-m.way=1; names=play(R+'/Trip/c.avi'); assert 'mclSetDacPwr' not in names and 'config_outputchannel' not in names and m.execs[-1][2:]==('plug:bluealsa',R+'/Trip/c.avi',('42',0))
-m.way=2; m.byte(syms['g_usbvol_mode'],0); m.word(O['USB_MIXER'],0xfffffffe)
-assert 'mclSetDacPwr' not in play(R+'/Trip/c.avi') and m.execs[-1][2:]==('usb',R+'/Trip/c.avi',('h42',0))
-m.byte(syms['g_usbvol_mode'],1); m.word(O['USB_MIXER'],0); play(R+'/Trip/c.avi'); assert m.execs[-1][2:]==('usb',R+'/Trip/c.avi',('h42',0))
-m.word(O['USB_MIXER'],0xfffffffe); play(R+'/Trip/c.avi'); assert m.execs[-1][2:]==('usb',R+'/Trip/c.avi',('42',0))
-passed()
-# Playing: no key or touch reaches the UI; a key's release goes to the player's socket as a datagram:
-# Play/Pause pauses, the side buttons seek, Return quits.
-m.way=0; m.forked=4242; play(R+'/Trip/c.avi')
-# The helper starts at the output's level: the first poll sends nothing (no volume bar flash); a change sends v then g.
-def vpoll(): m.now+=500; m.sent=[]; m.call(address=payload_syms['video_poll'],args=(0,0,0,0),gap=0,clear=False); return [x[1] for x in m.sent]
-assert vpoll()==[]; m.byte(syms['g_volume'],43); assert vpoll()==['v+','g+']; passed()
-inp=HOOKS['window_manager_dispatch_input_event'][0]; m.handlers[inp+12]='stock_input'
-def event(kind,key=0):
-    m.calls=[]; m.sent=[]
-    assert m.call(key,address=inp,args=(m.wm,m.event,0,0),event_type=kind,gap=0,clear=False)==0
-    return [c[0] for c in m.calls if c[0]!='time_now_ms']  # the hook times the idle, not input
-for key,c in ((O['KEY_PLAY'],'p'),(O['KEY_FWD_BTN'],'f'),(O['KEY_BACK_BTN'],'b'),(O['KEY_RETURN'],'q')):
-    assert 'stock_input' not in event(O['EVT_KEY_UP'],key) and m.sent==[(7,c,1,0x40,1,'/tmp/q2video.sock',110)]
-assert event(0x110,O['KEY_CENTER'])==[] and event(O['EVT_POINTER_DOWN'])==[] and not m.sent; passed()
-# The wheel is the volume, as stock's volume dialog steps it: 1 a tick through device_set_volume, saved as
-# PLAYSET VOLUME, up to g_maxvolume (and 100) and down to 0; each tick sends v and the volume, at an end too.
-def key(k):
-    names=event(O['EVT_KEY_UP'],k); assert 'stock_input' not in names and m.sent[0][2]==len(m.sent[0][1])
-    assert len(m.sent)==(2 if m.sent[0][1].startswith('v') else 1)
-    if len(m.sent)==2: assert m.sent[1][1]=='g'+m.sent[0][1][1]
-    vol=[c[1:3] for c in m.calls if c[0]=='device_set_volume']; saved=[(c[1],m.text(c[2]),m.text(c[3])) for c in m.calls if c[0]=='write_int_config']
-    assert len(vol)==len(saved)<=1 and all(v==(s[0],1) and s[1:]==('PLAYSET','VOLUME') for v,s in zip(vol,saved))
-    return m.sent[0][1],vol and vol[0][0]
-m.byte(syms['g_volume'],50); m.byte(syms['g_maxvolume'],52)
-assert [key(O['KEY_NEXT']) for _ in range(3)]==[('v\x33',51),('v\x34',52),('v\x34',[])] and m.u.mem_read(syms['g_volume'],1)[0]==52
-m.byte(syms['g_maxvolume'],100); m.byte(syms['g_volume'],100); assert key(O['KEY_NEXT'])==('v\x64',[])
-m.byte(syms['g_volume'],1); assert [key(O['KEY_PREV']) for _ in range(2)]==[('v\0',0),('v\0',[])]; passed()
-# Centre toggles the wheel to seeking (s, then f and b, no volume) and back (v); seeking also ends
-# SCRUB_MS after the last tick, on the UI loop's poll.
-m.handlers[HOOKS['main_loop_sleep_default'][0]+12]='stock_sleep'
-def poll(ms):
-    m.now+=ms; m.call(address=HOOKS['main_loop_sleep_default'][0],args=(0x1234,0,0,0),gap=0,clear=False)
-m.byte(syms['g_volume'],30)
-assert key(O['KEY_CENTER'])==('s',[]) and key(O['KEY_NEXT'])==('f',[]) and key(O['KEY_PREV'])==('b',[])
-poll(O['SCRUB_MS']-1); assert key(O['KEY_NEXT'])==('f',[]) and key(O['KEY_FWD_BTN'])==('f',[]) and key(O['KEY_PLAY'])==('p',[])
-poll(O['SCRUB_MS']-1); assert key(O['KEY_NEXT'])==('f',[]); poll(O['SCRUB_MS']); assert key(O['KEY_NEXT'])==('v\x1f',31)
-assert key(O['KEY_CENTER'])==('s',[]) and key(O['KEY_CENTER'])==('v\x1f',[]) and key(O['KEY_PREV'])==('v\x1e',30); passed()
-# Nor does the window manager paint over it; the screen, standby and DAC power-off timeouts are held off.
-vt=m.alloc(16); m.word(m.wm+0x94,vt); m.word(vt+0xc,0x400100); m.handlers[0x400100]='wm_vt_paint'
-def wm_paint():
-    m.calls=[]; m.call(address=WM_PAINT_LEAF[1],args=(m.wm,0,0,0),gap=0,clear=False); return [c[0] for c in m.calls]
-assert wm_paint()==[]
-sleep_hook=HOOKS['main_loop_sleep_default'][0]; m.handlers[sleep_hook+12]='stock_sleep'
-m.calls=[]; m.call(address=sleep_hook,args=(0x1234,0,0,0),gap=0,clear=False)
-assert ('reset_poweroptions_timer',1,1,1) in [c[:4] for c in m.calls] and m.get(syms['g_dacoff_time'])==0 and 'widget_invalidate_force' not in [c[0] for c in m.calls]
-# Its end: the socket closes, the whole screen repaints once, and the UI has its input and paint again.
-m.waited=4242; m.calls=[]; m.call(address=sleep_hook,args=(0x1234,0,0,0),gap=0,clear=False)
-assert ('close',7) in [c[:2] for c in m.calls] and ('widget_invalidate_force',m.wm,0) in [c[:3] for c in m.calls]
-assert 'stock_input' in event(O['EVT_KEY_UP'],O['KEY_RETURN']) and not m.sent and wm_paint()==['wm_vt_paint']
-m.calls=[]; m.call(address=sleep_hook,args=(0x1234,0,0,0),gap=0,clear=False); assert 'waitpid' not in [c[0] for c in m.calls]
-passed()
-
 # The reentrant clock import resolves tzset's lazy GOT slot once (no shared buffer written), then
 # calls localtime_r with the caller's buffer, preserving both arguments and the return address.
 from build import run
@@ -9102,7 +8910,7 @@ assert 'config_outputchannel' not in names and 'reset_poweroptions_timer' in nam
 # Bluetooth's way is left alone: a DAC check_dacoff_state powered off is only powered on.
 m.state('paused'); m.poll(); m.byte(syms['g_headset_output'],2); m.word(syms['g_dacoff_time'],0xffffffff); m.state('playing'); m.poll()
 assert 'config_outputchannel' not in [c[0] for c in m.calls] and ('mclSetDacPwr',1) in [c[:2] for c in m.calls]; passed()
-# The card's aplay.sh plays where Videos would: no SPOT_OUT on the headphone DAC; Bluetooth's
+# The card's aplay.sh plays where a station would: no SPOT_OUT on the headphone DAC; Bluetooth's
 # plug:bluealsa and the volume, rewritten when it changes, which a running q2video sink also gets.
 OUT='/tmp/q2-librespot.out'; assert OUT not in m.files
 m.way=1; m.byte(syms['g_volume'],42); m.poll(); assert m.files[OUT]==b'plug:bluealsa 42\n' and m.sent[-1][1::4]==('v*','/tmp/q2sink.sock')
@@ -9901,7 +9709,7 @@ passed()
 CAPS='/tmp/q2-addon.caps'
 m=AppMachine(); stream_rows(m); caps=bytes(m.files[CAPS])
 assert caps.endswith(b'\n') and caps.count(b'\n')==1,caps
-assert set(caps.split())=={b'playlist',b'progress',b'pages',b'library',b'goto',b'sleep',b'game',b'audio',b'sections',b'art',b'window',b'urls',b'sort',b'field',b'more',b'fav',b'now',b'fieldtext',b'wake',b'audio2',b'dim'},caps
+assert set(caps.split())=={b'playlist',b'progress',b'pages',b'library',b'goto',b'sleep',b'game',b'audio',b'sections',b'art',b'window',b'urls',b'sort',b'field',b'more',b'fav',b'now',b'fieldtext',b'wake',b'audio2',b'dim',b'gameview',b'eq',b'screen',b'volume',b'wifi',b'network',b'bar',b'switch'},caps
 m.files[CAPS]=bytearray(b'stale\n'); stream_rows(m); assert m.files[CAPS]==caps; passed()
 # Classic, Home's Split: the Streaming row slides Streaming's rows in, as the Library's: the page's own constructor fills the
 # list, what it sets on a window goes again, every row (stock's 70 px Tidal row and the added ones) takes Home's width and height,
@@ -9953,7 +9761,7 @@ for i,(icon,text) in enumerate(zip(want,['TIDAL','Spotify','A long name for a ca
             near=[(at(x0,y0),(256-fx)*(256-fy)),(at(x1,y0),fx*(256-fy)),(at(x0,y1),(256-fx)*fy),(at(x1,y1),fx*fy)]
             a=sum(p[3]*k for p,k in near); want_px=bytes(sum(p[c]*p[3]*k for p,k in near)//a if a else 0 for c in range(3))+bytes([a>>16])
             assert out[(y*96+x)*4:(y*96+x)*4+4]==want_px,(x,y,out[(y*96+x)*4:(y*96+x)*4+4],want_px)
-    if i==2: assert caption[0].endswith('…') and BOOK_PITCH*len(caption[0])<=182 and caption[0].startswith('A long'),caption
+    if i==2: assert caption[0].endswith('…') and CHAR_PITCH*len(caption[0])<=182 and caption[0].startswith('A long'),caption
     else: assert caption==[text],(i,caption)
 cost=[0]; hook=m.u.hook_add(UC_HOOK_CODE,lambda *a: cost.__setitem__(0,cost[0]+1),begin=BASE,end=SCRATCH-1)
 stream_shows(m); m.u.hook_del(hook); assert cost[0]<100000,cost
@@ -10018,10 +9826,10 @@ m.click(page['Configuration']); m.page=m.top; m.row(6); assert m.config['STREAMH
 # the wheel back.
 m=AppMachine(); card_app(m,'fidget','name=Buddy\ngame=1\n'); assert 'Buddy' not in stream_rows(m)
 def fn(name,*args): return m.call(address=payload_syms[name],args=(args+(0,0,0,0))[:4],gap=0,clear=False,count=5_000_000)
-assert fn('addon_games')==1 and m.text(fn('addon_game_name',0))=='Buddy' and fn('addon_game_on')==0
+assert fn('addon_games')==1 and m.text(fn('addon_game_name',0))=='Buddy' and fn('addon_game_front')==0
 m.forked=0; m.execs=[]; fn('addon_game_start',0); assert m.execs[-1][:2]==('/mnt/mmc/.fidget/q2-fidget',)*2  # the child
 assert m.env[0]=='Q2_POPUP' and m.env[1].split()[0] in ('minimal','modern','classic') and m.env[2]==1  # the theme's pop-up, set before its exec
-m.forked=4243; assert fn('addon_game_start',0)==1 and fn('addon_game_on')==4243 and m.get(payload_syms['wheel_raw'])==1
+m.forked=4243; assert fn('addon_game_start',0)==1 and fn('addon_game_front')==1 and m.get(payload_syms['wheel_raw'])==1
 inp=HOOKS['window_manager_dispatch_input_event'][0]; m.handlers[inp+12]='stock_input'; GS='/tmp/q2-fidget.input.sock'
 def game_event(kind,key=0,x=0,y=0,stock=False):
     m.calls=[]; m.sent=[]; m.word(m.event+O['EVENT_X'],x); m.word(m.event+O['EVENT_Y'],y)
@@ -10035,7 +9843,7 @@ for k in ('KEY_PLAY','KEY_BACK_BTN','KEY_FWD_BTN'):
 for kind,want in ((O['EVT_POINTER_DOWN']-1,'d'),(O['EVT_POINTER_MOVE_BEFORE']-1,'m'),(O['EVT_POINTER_UP_BEFORE']-1,'u'),(O['EVT_POINTER_ABORT'],'u')):
     assert game_event(kind,x=120,y=88)==[(f't {want} 88 199',GS)],kind  # the panel's (x, y) turned into the view's
 m.word(payload_syms['wheel_travel'],0xffffffdb); m.sent=[]; m.waited=0; fn('addon_poll')
-assert [t[1] for t in m.sent]==['w -37'] and m.get(payload_syms['wheel_travel'])==0 and fn('addon_game_on')==4243
+assert [t[1] for t in m.sent]==['w -37'] and m.get(payload_syms['wheel_travel'])==0 and fn('addon_game_front')==1
 def poll(m):  # one pass: how many kills it sent (their text's stack buffer is reused by then)
     m.calls=[]; m.call(address=payload_syms['addon_poll'],args=(0,0,0,0),gap=0,clear=False,count=5_000_000)
     return [c[0] for c in m.calls].count('system')
@@ -10046,7 +9854,7 @@ for _ in range(12): m.now+=50; game_event(O['EVT_KEY_DOWN'],O['KEY_RETURN'])  # 
 assert poll(m)==0
 m.now+=101; assert poll(m)==1 and poll(m)==0  # 701: the stamps are odd (| 1), 0 being none
 m.now+=3000; assert poll(m)==1
-m.waited=4243; poll(m); assert fn('addon_game_on')==0 and m.get(payload_syms['wheel_raw'])==0
+m.waited=4243; poll(m); assert fn('addon_game_front')==0 and m.get(payload_syms['wheel_raw'])==0
 assert game_event(O['EVT_KEY_DOWN'],O['KEY_RETURN'])==[] and game_event(O['EVT_KEY_UP'],O['KEY_RETURN'])==[]
 assert game_event(O['EVT_KEY_UP'],O['KEY_RETURN'],stock=True)==[]
 # Released before then: the game's Return, nothing ended.
@@ -10064,14 +9872,14 @@ m.waited=4243; poll(m); game_event(O['EVT_KEY_UP'],O['KEY_RETURN'],stock=False);
 # holds it open and lit.
 m.now+=90_000; game_event(O['EVT_KEY_UP'],O['KEY_CENTER']); m.now+=60_000; assert poll(m)==0
 m.now+=60_000; assert poll(m)==1
-m.waited=4243; poll(m); assert fn('addon_game_on')==0
+m.waited=4243; poll(m); assert fn('addon_game_front')==0
 def idle(m):
     m.now+=120_000; m.waited=0; return poll(m)>0
 CONFIG['KEEPLIT']='1'; a=AppMachine(); del CONFIG['KEEPLIT']; card_app(a,'fidget','name=Buddy\ngame=1\n'); a.forked=4243
 assert a.call(address=payload_syms['addon_games'],args=(0,0,0,0),gap=0,clear=False,count=5_000_000)==1
 assert a.call(address=payload_syms['addon_game_start'],args=(0,0,0,0),gap=0,clear=False,count=5_000_000)==1
 assert not idle(a) and not idle(a) and any(c[0]=='reset_poweroptions_timer' for c in a.calls); passed()
-# A card game with the sound (q2app audio=1): the output is handed over before the fork as for a video (player_stop,
+# A card game with the sound (q2app audio=1): the output is handed over before the fork as for a station (player_stop,
 # the jack readied by dac_take) and the binary gets q2video's arguments: the device, and on Bluetooth or USB the
 # volume (h: the DAC's own); Play/Pause and the side buttons reach it; the DAC stays on and nothing ends it for
 # idling; the Shortcut opens it by id, -1 for an id no card game has.
@@ -10086,7 +9894,7 @@ take=[n for n in names if n in ('player_stop','config_outputchannel','mclSetPcmM
 assert take==['player_stop','config_outputchannel','mclSetPcmMode','mclSetMute','device_set_volume','fork'] and g.execs[-1]==(GB,GB,'plughw:0,0','',0)
 names=start(1); assert 'player_stop' in names and 'config_outputchannel' not in names and g.execs[-1]==(GB,GB,'plug:bluealsa','42',0)
 g.byte(syms['g_usbvol_mode'],0); g.word(O['USB_MIXER'],0xfffffffe); start(2); assert g.execs[-1]==(GB,GB,'usb','h42',0)
-g.way=0; g.forked=4243; assert gn('addon_game_start',0)==1 and gn('addon_game_on')==4243 and gn('addon_game_audio')==1
+g.way=0; g.forked=4243; assert gn('addon_game_start',0)==1 and gn('addon_game_front')==1 and gn('addon_game_audio')==1
 g.handlers[inp+12]='stock_input'
 def gevent(kind,key):
     g.calls=[]; g.sent=[]; g.word(g.event+O['EVENT_X'],0); g.word(g.event+O['EVENT_Y'],0)
@@ -10098,9 +9906,9 @@ assert gevent(O['EVT_KEY_DOWN'],O['KEY_BACK_BTN'])==[('k d 222',GS2)] and gevent
 assert gevent(O['EVT_KEY_LONG'],O['KEY_PLAY'])==[]  # eaten: no Play-hold action of stock's
 g.word(syms['g_dacoff_time'],5); g.now+=120_001; g.waited=0; assert poll(g)==0 and g.get(syms['g_dacoff_time'])==0
 g.now+=120_001; assert poll(g)==0 and any(c[0]=='reset_poweroptions_timer' for c in g.calls)
-g.waited=4243; poll(g); assert gn('addon_game_on')==0 and gn('addon_game_audio')==0
-g.waited=0; assert signed(gn('addon_game_open',g.string('nothere')))==-1 and gn('addon_game_on')==0
-assert gn('addon_game_open',g.string('groovebox'))==1 and gn('addon_game_on')==4243; passed()
+g.waited=4243; poll(g); assert gn('addon_game_front')==0 and gn('addon_game_audio')==0
+g.waited=0; assert signed(gn('addon_game_open',g.string('nothere')))==-1 and gn('addon_game_front')==0
+assert gn('addon_game_open',g.string('groovebox'))==1 and gn('addon_game_front')==1; passed()
 # Stock's Baidu Netdisk row (a Chinese cloud drive; list_baidu's icon) is gone from Streaming, destroyed; its
 # TIDAL row stays first.
 m=AppMachine(); view=m.node('scroll_view','scroll_view_streamsset')
@@ -10563,8 +10371,11 @@ assert m.labels()==['Loading…']; m.advance(2900); assert m.labels()==['Loading
 m.advance(400); assert m.labels()==['Loading…','Stop Soulseek'],m.labels()  # the page's next 250 ms tick
 m.systems=[]; m.row(0); assert m.systems==[SKILL] and m.toasts[-1][3]=='Soulseek stopped' and 'navigator_back' in [c[0] for c in m.calls]
 m.close(); passed()
-# An app that isn't running (it stopped by itself) has nothing to stop: Retry alone, which starts it.
-m=SlskMachine(); m.open(); m.answer('ok','refresh','',SMENU); m.serve=None; m.advance(10000); m.poll(); m.worker()
+# An app that stopped by itself is started again by its page's next ask, the level on show kept (addon.c
+# revive). One that doesn't come back has nothing to stop: Retry alone, which starts it.
+m=SlskMachine(); m.open(); m.answer('ok','refresh','',SMENU); m.serve=None; m.systems=[]; m.advance(10000); m.poll(); m.worker()
+assert m.systems==['/bin/sh /mnt/mmc/.soulseek/run'] and m.labels()==SLABELS,(m.systems,m.labels())
+m.advance(10000); m.poll(); m.worker(); assert m.systems==['/bin/sh /mnt/mmc/.soulseek/run'],m.systems
 assert m.labels()==["Soulseek isn't running",'Retry'],m.labels()
 m.systems=[]; m.row(0); assert m.systems==['/bin/sh /mnt/mmc/.soulseek/run'],m.systems; m.close(); passed()
 
@@ -11307,14 +11118,14 @@ m=ShelfMachine({LIST:bytearray((ROOT/'sources.list').read_bytes()),SPOT_TAG:byte
                 '/proc/mounts':bytearray(b'/dev/mmcblk0p1 /mnt/mmc vfat rw 0 0\n')})  # the card, for card_mounted before a remove
 m.rockbox_mode=0; m.wifi=-1; apps_open(m)
 BLANK=m.labels()[2]; assert BLANK in ('',' ')  # Check for Updates' blank detail: ' ' under a theme's separators
-assert m.labels()==['App Store','Check for Updates',BLANK,'Rockbox','Install','Spotify','Installed','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Jellyfin','Install','Podcasts','Install','Live Music Archive','Install','AirPlay','Install','Utilities','Install','Weather','Install'] and not m.threads; passed()  # the Apps tab: no themes without Rockbox
+assert m.labels()==['App Store','Check for Updates',BLANK,'Rockbox','Install','Spotify','Installed','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Jellyfin','Install','Podcasts','Install','Live Music Archive','Install','AirPlay','Install','Utilities','Install','Weather','Install','Books','Install','Groovebox','Install','Videos','Install'] and not m.threads; passed()  # the Apps tab: no themes without Rockbox
 tab=lambda key: m.call(address=payload_syms['shelf_key'],args=(m.page,O[key],0,0),gap=0,count=5_000_000)
-assert tab('KEY_FWD_BTN')==1 and m.labels()==['App Store','Check for Updates',BLANK,'Buddy','Install','Groovebox','Install','Arcade Games','Install','2048','Install','Dino Runner','Install','Flappy Bird','Install','Pocket Boy','Install','ClassiCube','Install']
+assert tab('KEY_FWD_BTN')==1 and m.labels()==['App Store','Check for Updates',BLANK,'Buddy','Install','Arcade Games','Install','2048','Install','Dino Runner','Install','Flappy Bird','Install','Pocket Boy','Install','ClassiCube','Install','Doom','Install','Wings','Install','Q2A Miami','Install','Challenger Deep','Install']
 assert tab('KEY_BACK_BTN')==1 and m.labels()[3:5]==['Rockbox','Install'] and tab('KEY_CENTER')==0; passed()  # Next opens Games, Previous Apps
 m.close(); m.wifi=3; m.rockbox_mode=0o100755; m.dirs['/mnt/mmc/.spotify']=[]; apps_open(m)
-assert m.labels()==['App Store','Check for Updates','Checking…','Rockbox','Update','Rockbox Themes','Install','Spotify','Installed','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Jellyfin','Install','Podcasts','Install','Live Music Archive','Install','AirPlay','Install','Utilities','Install','Weather','Install']
+assert m.labels()==['App Store','Check for Updates','Checking…','Rockbox','Update','Rockbox Themes','Install','Spotify','Installed','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Jellyfin','Install','Podcasts','Install','Live Music Archive','Install','AirPlay','Install','Utilities','Install','Weather','Install','Books','Install','Groovebox','Install','Videos','Install']
 m.reply=(ROOT/'test/shelf/q2-librespot.json').read_bytes(); shelf_job(m)
-assert m.opts[10002]=='https://github.com/Carbon-66/q2-classicube/releases/latest' and m.opts[10018]=='Q2Pod' and m.opts[44]==1  # the last of twenty-one, a game's: its redirect, headers only, no API request
+assert m.opts[10002]=='https://github.com/Carbon-66/q2-challengerdeep/releases/latest' and m.opts[10018]=='Q2Pod' and m.opts[44]==1  # the last of twenty-seven, a game's: its redirect, headers only, no API request
 assert m.opts[10065]=='/etc/scrobble-ca.pem' and m.opts[64]==1 and m.opts[81]==2 and m.opts[20108]
 assert m.labels()[8]=='Update' and m.labels()[2]=='Checked just now' and '/tmp/q2-shelf.json' not in m.files  # q2-v1.8 against the latest q2-v1.9
 assert m.toasts[-1][3]=='2 apps can be updated'; passed()  # the opening check's end, the page on top: Rockbox, there by hand, and Spotify
@@ -11336,7 +11147,7 @@ m.close(); m.wifi=3; m.now+=11*60*1000; apps_open(m); assert len(m.threads)==5
 m.row(2); assert m.toasts[-1][3]=='Stopped checking for updates'; shelf_job(m); assert len(m.threads)==5 and m.toasts[-1][3]=='Stopped checking for updates'; passed()
 m.close(); m.rockbox_mode=0; m.dirs.pop('/mnt/mmc/.spotify'); m.reply=(ROOT/'test/shelf/q2-rockbox.json').read_bytes()
 toasts=len(m.toasts); apps_open(m); shelf_job(m); assert len(m.toasts)==toasts  # the opening check: nothing to update, nothing said
-assert m.labels()==['App Store','Check for Updates','Checked just now','Rockbox','Install','Spotify','Install','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Jellyfin','Install','Podcasts','Install','Live Music Archive','Install','AirPlay','Install','Utilities','Install','Weather','Install']  # not stopped: checked again
+assert m.labels()==['App Store','Check for Updates','Checked just now','Rockbox','Install','Spotify','Install','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Jellyfin','Install','Podcasts','Install','Live Music Archive','Install','AirPlay','Install','Utilities','Install','Weather','Install','Books','Install','Groovebox','Install','Videos','Install']  # not stopped: checked again
 m.row(1); assert m.labels()[4]=='Starts at power-on. Press again to install' and len(m.threads)==6
 m.row(1); assert len(m.threads)==7 and m.labels()[4]=='Checking…'; m.row(1); shelf_job(m); assert m.toasts[-1][3]=='Download cancelled'
 m.free=10<<20; m.row(1); m.row(1); shelf_job(m)  # the zip (13018581 bytes) and 64 MB left over
@@ -11350,7 +11161,7 @@ assert m.moves[-2:]==['/mnt/mmc/.q2/apps/rockbox.files','/mnt/mmc/.q2/apps/rockb
 assert m.files['/mnt/mmc/.rockbox/rockbox']==b'ELF3.2' and m.files['/mnt/mmc/.rockbox/fonts/a b.fnt']==b'f'
 assert m.files['/mnt/mmc/.q2/apps/rockbox.files']==b'.rockbox/rockbox\n.rockbox/codecs/flac.codec\n.rockbox/fonts/a b.fnt\n'
 assert not [f for f in m.files if '.q2/staging' in f] and 'sync' in m.systems; passed()
-assert m.labels()==['App Store','Check for Updates','Checked just now','Rockbox','Installed','Rockbox Themes','Install','Spotify','Install','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Jellyfin','Install','Podcasts','Install','Live Music Archive','Install','AirPlay','Install','Utilities','Install','Weather','Install']; passed()  # the rows built again
+assert m.labels()==['App Store','Check for Updates','Checked just now','Rockbox','Installed','Rockbox Themes','Install','Spotify','Install','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Jellyfin','Install','Podcasts','Install','Live Music Archive','Install','AirPlay','Install','Utilities','Install','Weather','Install','Books','Install','Groovebox','Install','Videos','Install']; passed()  # the rows built again
 m.listing='        1  10-06-2026 13:18   .rockbox/../../x\n'; m.files.pop('/mnt/mmc/.q2/apps/rockbox.tag'); m.row(1); shelf_job(m)
 assert m.toasts[-1][3]=='The download is not a usable app' and m.files['/mnt/mmc/.rockbox/rockbox']==b'ELF3.2'; passed()
 m.close(); passed()
@@ -12481,7 +12292,7 @@ m.word(r+O['REC_PATH'],m.string('/mnt/mmc/cue.m4b')); m.word(r+O['REC_CUE_START'
 playing(m,0,200,pos=0,n=110); assert m.places()==[(fnv('/mnt/mmc/cue.m4b'),261)] and not m.seeks; passed()  # its file's place
 
 # Mock only player endpoints, exercising the actual routing and ear/AVRCP state machine.
-for owner in (1,2,3,4):
+for owner in (1,2,3):
     m=HeadsetMachine(owner); m.byte(syms['g_backlight_status'],0)
     m.ears(3); assert m.playing and not m.actions
     m.ears(2); assert not m.playing and m.actions==[(owner,'pause')]
@@ -12611,7 +12422,6 @@ for count,failed,title in ((0,False,'No embedded chapters'),(0,True,'Could not r
 # An empty page under Classic, one per module: the message stays as the first line, and the bar reads the page's name.
 for count_failed,title in (((0,False),'No embedded chapters'),((0,True),'Could not read chapters')):
     m=classic_light_new(ChapterMachine,count=count_failed[0],failed=count_failed[1]); ebar=page_bar(m); m.open_chapters(); m.advance(50); shows_empty(m,ebar,title,'Chapters'); passed()
-m=classic_light_new(BooksMachine,tree={'/mnt/mmc':[('books',4)],'/mnt/mmc/books':[]},files={}); ebar=page_bar(m); empty_row(m,-4); shows_empty(m,ebar,'No books','Books'); passed()
 m=classic_light_new(PhotosMachine,tree={'/mnt/mmc':[('photos',4)],'/mnt/mmc/photos':[]},data={}); ebar=page_bar(m); empty_row(m,-4); shows_empty(m,ebar,'No photos','Photos'); passed()
 m=classic_light_new(ShuffleMachine); ebar=page_bar(m); empty_row(m,11); shows_empty(m,ebar,'No plays yet','Most Played'); passed()
 m=classic_light_new(SpotMachine,files={}); ebar=page_bar(m); erows=stream_rows(m); f,ctx=m.handler(erows['Tidal Downloads'],O['EVT_CLICK']); m.call(address=f,args=(ctx,m.event,0,0),gap=0,count=5_000_000); shows_empty(m,ebar,'Download Playing Songs','Tidal Downloads'); passed()  # no songs: Download All's row alone, the bar the page's name

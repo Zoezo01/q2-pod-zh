@@ -161,7 +161,7 @@ static const char *library_missing(char *why, unsigned size) {
 }
 
 /* Whether the scan or the import may run now: nothing plays (media_playing: the player, Spotify,
- * radio, a video; or AirPlay, or the Bluetooth receiver, as ringnav_sleep's quiet check has it;
+ * radio; or AirPlay, or the Bluetooth receiver, as ringnav_sleep's quiet check has it;
  * stock's scan dialog stops the player), no scan runs, and every open window, the window manager's
  * children less the status bar, is one known to hold no library records: Home, Streaming and its
  * Configuration, a card app's page and its QR code, Now Playing, and System and Playback settings'
@@ -185,9 +185,9 @@ static int library_safe(void) {
     if (media_playing() || airplayGetFlag() == 2 || (signed char)bt__recv_pageflag == 2 ||
         library_scanning())
         return 0;
-    void *wm = window_manager(), *bar = *(void *const *)system_bar;
+    widget_t *wm = window_manager(), *bar = *(void *const *)system_bar;
     for (unsigned i = 0, n = widget_count_children(wm); i < n; ++i) {
-        void *w = widget_get_child(wm, i);
+        widget_t *w = widget_get_child(wm, i);
         const char *name = widget_get_prop_str(w, "name", "");
         unsigned k = 0;
         while (k < sizeof safe / sizeof *safe && tk_strcmp(name, safe[k])) ++k;

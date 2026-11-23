@@ -10,7 +10,6 @@ import pytest
 
 import host
 from conftest import O, Deques, Files, Game, claim, high_halves, in_fork, libc, stock_stub
-from test_books import Vid
 from test_radio import Rd, Sp  # test_radio.py keeps the mirror
 from test_streaming import Td
 
@@ -598,16 +597,15 @@ def test_a_start_meanwhile_ends_the_wait_and_its_song_alone_plays(fw, queue, mcl
 
 # The URL goes to stock's player past ringnav_start_player, which moves Spotify and a station off the PCM and refuses
 # under a card game's sound: one started during the wait keeps it, and the song is dropped.
-@pytest.mark.parametrize('what', ['radio', 'game', 'spotify', 'video'])
+@pytest.mark.parametrize('what', ['radio', 'game', 'spotify'])
 @in_fork
 def test_something_else_started_during_the_wait_keeps_the_sound(fw, queue, mcl, what):
     w = Wake(fw, queue, mcl, running=False, answers_at=10 ** 6)
-    rd, gm, sp, vid = fw.var('radio__rd', Rd), fw.var('addon__gm', Game), fw.var('spotify__sp', Sp), fw.var('books__vid', Vid)
+    rd, gm, sp = fw.var('radio__rd', Rd), fw.var('addon__gm', Game), fw.var('spotify__sp', Sp)
     on = {'radio': lambda: setattr(rd, 'active', 1) or setattr(rd, 'pid', 4321),
           'game': lambda: setattr(gm, 'pid', 4321) or setattr(gm, 'audio', 1),
-          'spotify': lambda: setattr(sp, 'active', 1) or setattr(sp, 'playing', 1),
-          'video': lambda: setattr(vid, 'pid', 4321)}
-    w.later = on[what]  # a station, a game with audio=1, Spotify or a video starts while the song waits
+          'spotify': lambda: setattr(sp, 'active', 1) or setattr(sp, 'playing', 1)}
+    w.later = on[what]  # a station, a game with audio=1 or Spotify starts while the song waits
     w.run(w.start(0))
     assert w.slept == 100000 and w.played == [] and w.ran == [b'/bin/sh /mnt/mmc/.a/run']
 

@@ -92,7 +92,7 @@ remains visible. Under **Rounded Corners** on a pressed list row (`s_btn_listite
 selection's inset pill instead (`pressed_pill`), and a pressed tile under half its row's width (the album
 grid's, the playlist page's pair) is the tile's selection card, `TILE_INSET` inside it with `SEL_RADIUS`
 corners (square under Square); other pressed widgets keep stock's box. The same hooks cover settings, streaming, dialogs, PEQ rows and media browser
-chrome. Photos, video, book content, EQ plots and visualizers keep their own drawing.
+chrome. Photos, EQ plots and visualizers keep their own drawing.
 
 ## Home
 
@@ -185,7 +185,7 @@ EQ, Bluetooth, SyncLink and Wi-Fi widgets and sets their images and text, but
 never their geometry. Minimal's `system_bar.bin` (iPod) therefore keeps the play state
 and EQ in `view_left`, as stock does, and puts Bluetooth/codec, Wi-Fi and the
 battery in `view_right`; Classic's bar, its set's own copy, has them all on the right
-([Theme](#theme)), and the layout below is Minimal's. EQ uses an explicit 16 px font and a 28 px cell: its text is 24 px wide in the shipped font, so stock's 20 px cell clips it. A `Q2` mark at the left inset appears only when both playback state and EQ are hidden. The payload draws it (`paint_caps`) and stock's label's own ink is clear: Minimal's in its spaced grey capitals, any other theme's as the label's own 18 px text, white through Light Mode's ink, so white on a dark bar and the half's ink (`#161616`) on a light one, whichever look Status Bar gives the bar. Stock's label drew it pale on Modern's Light Mode bar. Stock's tick also hides `img_state` whenever its own player is stopped, as it is under Spotify, radio or a video; `ringnav_showface` runs `bar_state_sync`, the play state and the `Q2` label alone, straight after the tick, so the payload's play state is back before any paint, dark or not (no file reads; a relayout waits for the paint); the codec badge, accent and Rockbox check wait for paint (`bar_sync`). A new battery level or charge state repaints the bar from the tick while lit ([Status bar](internals.md#status-bar-ipod)). Correcting it at paint time instead relaid the row twice a second, and EQ was drawn for a frame in the play icon's place. When `bar_sync` changes `img_state` while another window paints (Now Playing paints every 250 ms, so it usually sees a Play/Pause first), it arms a 0 ms timer that runs `widget_invalidate_force` on the bar after the frame: an invalidate made mid-paint is dropped with that frame's dirty rects, and `img_state` keeps its dirty flag (`+0x24` bit `0x200`), which makes stock `widget_invalidate` return early, so the 1 s tick's own invalidates skipped it until something else repainted the bar (#116). `bar_sync` updates its visibility without moving the centred clock. The volume icon and number and SyncLink move to `x = -200`, where they
+([Theme](#theme)), and the layout below is Minimal's. EQ uses an explicit 16 px font and a 28 px cell: its text is 24 px wide in the shipped font, so stock's 20 px cell clips it. A `Q2` mark at the left inset appears only when both playback state and EQ are hidden. The payload draws it (`paint_caps`) and stock's label's own ink is clear: Minimal's in its spaced grey capitals, any other theme's as the label's own 18 px text, white through Light Mode's ink, so white on a dark bar and the half's ink (`#161616`) on a light one, whichever look Status Bar gives the bar. Stock's label drew it pale on Modern's Light Mode bar. Stock's tick also hides `img_state` whenever its own player is stopped, as it is under Spotify or radio; `ringnav_showface` runs `bar_state_sync`, the play state and the `Q2` label alone, straight after the tick, so the payload's play state is back before any paint, dark or not (no file reads; a relayout waits for the paint); the codec badge, accent and Rockbox check wait for paint (`bar_sync`). A new battery level or charge state repaints the bar from the tick while lit ([Status bar](internals.md#status-bar-ipod)). Correcting it at paint time instead relaid the row twice a second, and EQ was drawn for a frame in the play icon's place. When `bar_sync` changes `img_state` while another window paints (Now Playing paints every 250 ms, so it usually sees a Play/Pause first), it arms a 0 ms timer that runs `widget_invalidate_force` on the bar after the frame: an invalidate made mid-paint is dropped with that frame's dirty rects, and `img_state` keeps its dirty flag (`+0x24` bit `0x200`), which makes stock `widget_invalidate` return early, so the 1 s tick's own invalidates skipped it until something else repainted the bar (#116). `bar_sync` updates its visibility without moving the centred clock. The volume icon and number and SyncLink move to `x = -200`, where they
 draw off-screen. Both groups sit 54 pixels
 from the edges (`STATUS_MARGIN`): the 50 where the 16-pixel icons clear the top corners
 ([Rounded corners](#rounded-corners)) plus 2 (`STATUS_PAD`) so they don't crowd the glass. A new
@@ -196,7 +196,7 @@ the bar and writes the time into `label_clock` (see
 [internals.md](internals.md#status-bar-ipod)); the widest text, `12:59 PM`, is 69 pixels in the
 stock font at 16 pixels.
 
-**Time in Title.** Display → Appearance's **Time in Title** switch (`IPOD TIMETITLE`, on unless chosen; Minimal's and Classic's presets turn it on, Modern's off) is the iPod's own. Under Minimal and Modern, off, `label_clock` names the page in front instead of the time, as an iPod's title bar does (`bar_title`): "Now Playing" or "Cover Flow", Home by `coverflow_home_title` as Classic's bar names it ("Q2 Pod", or nothing with Show Wordmark off: Home has no clock either way), else stock's title in the page's hidden navbar (`scrlabel_title`, or a settings page's unnamed first child). A page showing its navbar and a page with no title keep the clock, and a pop-up or keyboard leaves the bar as it is. A title past the clock's width ends in an ellipsis. Classic's bar names the page in a title of its own, and the switch decides only its clock ([Theme](#theme)). ponytail: the payload's other pages (Games, Photos, Books) have no navbar, so the bar stays on the clock there, most with a heading on the page; naming them means reading each page's caption.
+**Time in Title.** Display → Appearance's **Time in Title** switch (`IPOD TIMETITLE`, on unless chosen; Minimal's and Classic's presets turn it on, Modern's off) is the iPod's own. Under Minimal and Modern, off, `label_clock` names the page in front instead of the time, as an iPod's title bar does (`bar_title`): "Now Playing" or "Cover Flow", Home by `coverflow_home_title` as Classic's bar names it ("Q2 Pod", or nothing with Show Wordmark off: Home has no clock either way), else stock's title in the page's hidden navbar (`scrlabel_title`, or a settings page's unnamed first child). A page showing its navbar and a page with no title keep the clock, and a pop-up or keyboard leaves the bar as it is. A title past the clock's width ends in an ellipsis. Classic's bar names the page in a title of its own, and the switch decides only its clock ([Theme](#theme)). ponytail: the payload's other pages (Games, Photos) have no navbar, so the bar stays on the clock there, most with a heading on the page; naming them means reading each page's caption.
 
 **Codec.** The Bluetooth images are 42-pixel canvases with their ink at the right: the glyph takes
 10 pixels, while stock's codec badges take up to 40 (aptX HD). A new badge shows for a second
@@ -499,7 +499,7 @@ The payload's own pages (`page_list`) draw the same `list_into` at x 302 on ever
 that opens another page or screen: Spotify's menu, its Downloads hub and Storage Management, its
 albums, playlists, artists, saved playlists and download jobs, and Download Controls; a card app's
 lists, folders and phone-remote rows; Internet Radio's lists, Games, Photos, Ratings, Era's decades and
-albums; Books; and the equalizer's Balance, Preamp, Presets, band, Frequency, Gain and Q rows and the
+albums; and the equalizer's Balance, Preamp, Presets, band, Frequency, Gain and Q rows and the
 Presets menu, the value moved left of it (`patch/peq_ui.c` `INTO`). A 64 px row with an empty detail
 centres its caption beside it. Rows that act in place (play, toggle, cycle a value) have none; on/off
 rows (EQ Enabled, a band's Band, Spotify's Shuffle, Streaming Configuration's services) carry stock's
@@ -675,7 +675,7 @@ page back. See [internals.md](internals.md#scrub-ipod) and [Word-timed lyrics](i
 ### Visualizer
 
 The slide_view gains a fourth page, after the art, lyrics and info pages, and the page dots a fourth
-dot. It shows the music as heard, EQ included, in one of four styles on black, tinted with the
+dot. It shows the music as heard, EQ included, in one of six styles on black, tinted with the
 accent's light tone; a tap moves to the next, saved as `IPOD/VIS` in `config.ini`, and its name shows
 at the bottom for a second and a half:
 
@@ -685,6 +685,8 @@ at the bottom for a second and a half:
 | **Oscilloscope** | Rockbox Oscilloscope      | The left channel in the accent with a glow, the right a faint accent line; it starts on a rising zero crossing, so the wave stands still     |
 | **VU Meters**    | Rockbox VU Meter (analog) | Left and right needles over an arc from -20 to +3 VU, heavier and brighter past 0, with 300 ms ballistics and a peak LED                     |
 | **Halo**         | Apple's radial spectrum   | 64 mirrored bars around Now Playing's art in a circle, turning slowly, the bass pulsing the ring                                             |
+| **Pulsar**       | pulsr's ridge             | The spectrum's last 20 ticks as lines stacked up the page, each further back higher, flatter and darker, hidden behind the lines in front    |
+| **Contour**      | A topographic map         | 18 ridgelines over a moving landscape, dark low to bright high; each kick throws the peak up, the highs ripple                               |
 
 Everything is anti-aliased vector drawing (AWTK's vgcanvas) within the 375x186 page: 16-pixel side
 margins (`NP_MARGIN`), labels in the stock grey `#AAAAAA`. It animates at `VIS_FPS` only while the
@@ -932,7 +934,7 @@ Quick Settings' inactive discs (`drop_*`) flip whole, to light discs under dark 
 active ones keep the accent. An image the accent mapped is final, and `switch_off` keeps its white
 knob, as `switch_on` does. Cover Flow's frame composites over paper instead of black, its side covers and reflections fading to paper. Solitaire's face-up cards stay light with black suits (`unflipped`). The status bar's stock
 black border is cleared so it does not flip to a paper line; Minimal's bar is paper, Classic's its gloss's light half. Album art,
-photos, wallpapers and videos are never changed.
+photos and wallpapers are never changed.
 
 ponytail: a non-square or transparent cover in Cover Flow keeps black bars and a black background
 inside its square (`cf_decode`).

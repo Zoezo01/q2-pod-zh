@@ -3,14 +3,14 @@
 
 /* The dialog vol_paint last drew, its value and the redraw timer; the page dots it hid. */
 static struct {
-    void *vol_dialog, *vol_dots;
+    widget_t *vol_dialog, *vol_dots;
     int vol_drawn;
     unsigned vol_timer;
 } vd __attribute__((section(".scratch")));
 
 /* A volume bar's end where the time it replaces sits: the speaker image name (tools/art.py) from x,
  * or ending at x when right, centred on bar's rows. */
-static void vol_end(void *top, void *canvas, const char *name, int x, int right,
+static void vol_end(widget_t *top, canvas_t *canvas, const char *name, int x, int right,
                     const rect_t *bar) {
     unsigned bitmap[64]; /* bitmap_t: width @0, height @4 */
     if (widget_load_image(top, name, bitmap)) return;
@@ -22,7 +22,7 @@ static void vol_end(void *top, void *canvas, const char *name, int x, int right,
 /* Classic's page dots back where the volume's number was (vol_paint), if their window still holds
  * them. */
 static void dots_back(void) {
-    void *dots = st.np_win ? widget_lookup(st.np_win, "slide_indicator1", 1) : (void *)0;
+    widget_t *dots = st.np_win ? widget_lookup(st.np_win, "slide_indicator1", 1) : (void *)0;
     if (dots && dots == vd.vol_dots) {
         widget_set_visible(dots, 1, 0);
         widget_invalidate_force(st.np_win, (void *)0);
@@ -34,8 +34,8 @@ static void dots_back(void) {
  * whole. Stock's own invalidation of the hidden slider does not reliably reach the screen, so the
  * bar would stop following the wheel after a tick or two. */
 static int vol_poll(const void *info) {
-    void *top = window_manager_get_top_window(window_manager());
-    void *vol = top && top == vd.vol_dialog ? widget_lookup(top, "slider_vol", 1) : (void *)0;
+    widget_t *top = window_manager_get_top_window(window_manager());
+    widget_t *vol = top && top == vd.vol_dialog ? widget_lookup(top, "slider_vol", 1) : (void *)0;
     if (!vol) {
         vd.vol_timer = 0;
         vd.vol_dialog = (void *)0;
@@ -60,24 +60,26 @@ static int vol_poll(const void *info) {
  * bar between two white speakers. Over the flat look's Quick Settings it is that page's bar
  * (quick_vol_flat). slider_vol and label_vol are hidden, and slider_vol is moved onto the area
  * drawn, so stock's partial repaints land on it; vol_poll catches the changes those miss. */
-void vol_paint(void *top, void *canvas) {
-    void *wm = window_manager(), *lcd = P(canvas, CANVAS_LCD);
+void vol_paint(widget_t *top, canvas_t *canvas) {
+    widget_t *wm = window_manager();
+    void *lcd = P(canvas, CANVAS_LCD);
     if (!lcd || tk_strcmp(widget_get_prop_str(top, "name", ""), "volume_dialog")) return;
     unsigned n = widget_count_children(wm);
-    void *vol = widget_lookup(top, "slider_vol", 1), *label = widget_lookup(top, "label_vol", 1);
+    widget_t *vol = widget_lookup(top, "slider_vol", 1),
+             *label = widget_lookup(top, "label_vol", 1);
     if (n < 2 || !vol) return;
     int np = widget_get_child(wm, n - 2) == st.np_win && st.np_slider && st.np_elapsed;
     const theme_t *T = theme();
     int gloss = !np && T->painter[PAINT_VOLUME] == VOL_CLASSIC_LIGHT,
         flat = !np && T->painter[PAINT_VOLUME] == VOL_FLAT;
     /* over the flat Quick Settings: its bar's card, how far down from the dialog */
-    void *qs = !np && flat_pages() ? widget_get_child(wm, n - 2) : (void *)0;
+    widget_t *qs = !np && flat_pages() ? widget_get_child(wm, n - 2) : (void *)0;
     if (qs && tk_strcmp(widget_get_prop_str(qs, "name", ""), "statusbar_dialog")) qs = (void *)0;
     int qs_dy = qs ? I(qs, W_Y) - I(top, W_Y) : 0;
     rect_t area, bar, text, lo, hi;
     int beside = 0;
     if (np) {
-        void *slider = st.np_slider, *times = st.np_elapsed;
+        widget_t *slider = st.np_slider, *times = st.np_elapsed;
         int dy = I(st.np_win, W_Y) - I(top, W_Y), y = dy + I(slider, W_Y),
             bh = widget_get_prop_int(slider, "bar_size", 8), ty = dy + I(times, W_Y);
         bar = (rect_t){ I(slider, W_X), y + (I(slider, W_H) - bh) / 2, I(slider, W_W), bh };
@@ -171,7 +173,7 @@ void vol_paint(void *top, void *canvas) {
         /* The volume as a percentage where the page dots are: they are hidden, not papered over,
          * since the art's reflection runs under them, and vol_poll (the restore's only way back, so
          * not without it) repaints the page without them: a paint's own invalidate is lost. */
-        void *dots = widget_lookup(st.np_win, "slide_indicator1", 1);
+        widget_t *dots = widget_lookup(st.np_win, "slide_indicator1", 1);
         if (!dots || !vd.vol_timer) return;
         if (dots != vd.vol_dots) {
             if (!widget_get_visible(dots)) return; /* another's hiding (none today) stays its */

@@ -3,7 +3,7 @@ from q2emu import *
 
 # Ears are counted: the report's primary/secondary slots swap. One worn AirPod out pauses and back
 # (now the other slot) resumes; a swap alone does nothing; a manual command still cancels resume.
-for owner in (1,2,3,4):
+for owner in (1,2,3):
     m=HeadsetMachine(owner); m.ears(1); m.ears(2); assert m.playing and not m.actions
     m.ears(0); assert not m.playing and m.actions==[(owner,'pause')]
     m.ears(2); assert m.playing and m.actions[-1]==(owner,'play')
@@ -86,25 +86,6 @@ assert m.labels()[2:4]==['Spotify Cache: 2 GB','Erase Spotify Data']; passed()
 # entry; the two streaming Now Playing pages and a card app's QR code page (no list) handle their own keys.
 pages=set(re.findall(r'page_open\("(\w+)"',''.join(p.read_text() for p in (ROOT/'patch').glob('*.c'))))
 assert pages-set(re.findall(r'"(\w+)"',(ROOT/'patch/contexts.inc').read_text()))=={'radionp_page','spotify_page','qrcode_page'}; passed()
-m=BooksMachine({},{}); vid=payload_syms['vid']; m.word(vid+12,4242); m.word(vid+16,7)
-for playing,command in ((0,'a'),(1,'r')):
-    m.sent=[]; endpoint(m,'video_set_playing',playing); endpoint(m,'video_set_playing',playing)
-    assert [x[1] for x in m.sent]==[command,command] and endpoint(m,'video_status')==(2 if playing else 3)
-ready_gain(m,1,32); m.now+=1500; m.sent=[]; endpoint(m,'video_poll')
-assert [x[1] for x in m.sent]==['v'+chr(32),'g'+chr(100)]
-ready_gain(m,0,32); m.now+=500; m.sent=[]; endpoint(m,'video_poll'); assert m.sent[-1][1]=='g'+chr(32)
-m.files['/tmp/q2video.state']=bytearray(struct.pack('<i',1)); m.now+=500; endpoint(m,'video_poll'); assert endpoint(m,'video_status')==3
-passed()
-# Manual video pause must take effect before the helper's next state report.
-m=BooksMachine({},{}); m.word(payload_syms['vid']+12,4242); m.word(payload_syms['vid']+16,7)
-endpoint(m,'headset_ears',7); endpoint(m,'video_key',O['KEY_PLAY'])
-assert endpoint(m,'video_status')==3
-endpoint(m,'headset_ears',6); endpoint(m,'headset_ears',7)
-assert endpoint(m,'video_status')==3
-m.files['/tmp/q2video.state']=bytearray(struct.pack('<i',0)); m.now+=400; endpoint(m,'video_poll')
-assert endpoint(m,'video_status')==3  # stale helper state cannot undo the manual pause
-endpoint(m,'video_key',O['KEY_PLAY']); assert endpoint(m,'video_status')==2
-passed()
 # Stock Tidal shares the native queue controls and session cancellation.
 m=HeadsetMachine(); m.word(O['MCL_TYPE'],2); m.ears(3); m.ears(1); assert not m.playing
 m.ears(3); assert m.playing; m.command(163); assert m.actions[-1]==(1,'local_next'); passed()
@@ -164,7 +145,7 @@ for off,owner,saved,want in ((0,1,3,[0]),(0,2,0,[0]),(1,1,2,[0]),(1,1,3,[1]),(1,
     if not off: m.config['RESUME']='1'
     m.fn('ringnav_bt_connect_start')
     assert [c[1] for c in m.calls if c[0]=='player_save_start']==want; passed()
-print('Real Spotify/radio/video play-state APIs, helper gain updates and stock Tidal routing passed.')
+print('Real Spotify/radio play-state APIs, helper gain updates and stock Tidal routing passed.')
 
 # Now Playing's info page: its one fill (NP_INFO_CALL) goes through ringnav_np_info after stock's, which
 # writes "Label:value" and the bare folder: ": " after each label, units spaced, the folder labelled

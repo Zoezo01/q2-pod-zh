@@ -90,7 +90,7 @@ static int upload_wait(const void *unused) {
     return 0;
 }
 
-int upload_scrobbles(void *ctx, void *event) {
+int upload_scrobbles(void *ctx, event_t *event) {
     if (!need_link(upload_scrobbles, ctx)) return 0; /* held for Smart Wi-Fi's link, or none */
     int started = scrobble_start();
     if (!started && sa.running) sa.running = 0, started = 1; /* the automatic one: report it */

@@ -321,7 +321,7 @@ def test_photo_place_any_size_fits_its_box_and_keeps_its_shape(fw):
 def test_by_string_is_strcmp_s_order(fw):
     words = [b'b', b'a', b'B', b'ab', b'', b'a b']
     arr = (C.c_char_p * len(words))(*words)
-    cmp = fw.fn('by_string', C.c_int, C.c_void_p, C.c_void_p)
+    cmp = fw.fn('photos__by_string', C.c_int, C.c_void_p, C.c_void_p)
     for i in range(len(words)):
         for j in range(len(words)):
             got = cmp(C.addressof(arr) + 8 * i, C.addressof(arr) + 8 * j)

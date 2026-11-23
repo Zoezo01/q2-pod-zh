@@ -327,15 +327,14 @@ const char *ipod_home_shortcut(void) {
     _Static_assert(SHORTCUT_NONE + 1 == SETTING_N_SHORTCUT, "None is the last");
     return names[shortcut_target()];
 }
-/* Podcasts, Audiobooks and Videos (docs/internals.md#podcasts-and-audiobooks): the card's top-level
- * folders of these names, case aside, browsed in folder_page from there; Photos opens photos.c,
- * Books books.c. */
+/* Podcasts and Audiobooks (docs/internals.md#podcasts-and-audiobooks): the card's top-level
+ * folders of these names, case aside, browsed in folder_page from there; Photos opens photos.c. */
 /* MEDIA matches the card's folder names, so it stays English; MEDIA_LABELS is what the row says. */
-const char *const MEDIA[] = { "Podcasts", "Audiobooks", "Photos", "Books", "Videos" };
-const char *const MEDIA_LABELS[] = { "播客", "有声读物", "照片", "图书", "视频" };
-extern int rockbox_open(void *, void *);
-int rated_albums(void *, void *);
-int home_shortcut_open(void *ctx, void *event) {
+const char *const MEDIA[] = { "Podcasts", "Audiobooks", "Photos" };
+const char *const MEDIA_LABELS[] = { "播客", "有声读物", "照片" };
+extern int rockbox_open(void *, event_t *);
+int rated_albums(void *, event_t *);
+int home_shortcut_open(void *ctx, event_t *event) {
     int s = shortcut_target();
     if (!s) return rockbox_open(ctx, event);
     if (s == SHORTCUT_GROOVEBOX) {            /* the card game by id, as its Games row starts it */
