@@ -374,6 +374,7 @@ void lit_rows(canvas_t *canvas, const rect_t *c, int ends);
 const char *number_face(widget_t *label, int *px);
 int painting_in(widget_t *row);
 void paint_round_rows(canvas_t *canvas, const rect_t *r, const stops_t *s, int R);
+void round_fill(canvas_t *canvas, const rect_t *r, unsigned rgb, int R);
 int round_inset(int R, int i, int h);
 void round_ring(canvas_t *canvas, const rect_t *r, int R, unsigned c);
 void round_row(canvas_t *canvas, const rect_t *r, int R, int i, unsigned c);

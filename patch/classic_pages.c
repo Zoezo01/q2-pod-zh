@@ -476,10 +476,8 @@ static void slider_switch_flat(canvas_t *canvas, widget_t *sw) {
     const char *image = widget_get_prop_str(sw, "image", "");
     /* stock's two names, switch_on and switch_off, first differ at [8] */
     int held = image[0] && image[8] == 'n';
-    stops_t rest = { 2, { 0, 100 }, { flat_rest[light], flat_rest[light] } },
-            cell = { 2, { 0, 100 }, { lit, lit } };
-    paint_round_rows(canvas, &track, &rest, 18);
-    paint_round_rows(canvas, held ? &right : &left, &cell, 18);
+    round_fill(canvas, &track, flat_rest[light], 18);
+    round_fill(canvas, held ? &right : &left, lit, 18);
     final_text(canvas, flat_face(), off, &left, 19, held ? ink : over);
     final_text(canvas, flat_face(), on, &right, 19, held ? over : ink);
 }
@@ -719,15 +717,13 @@ static void msg_paint_flat(widget_t *w, canvas_t *canvas, unsigned fill) {
         unsigned on = flat_on();
         rect_t cancel = { 127, 248, 121, 36 },
                bar = { MSG_FLAT_X, MSG_FLAT_Y, MSG_FLAT_W, MSG_FLAT_H };
-        stops_t rest = { 2, { 0, 100 }, { flat_rest[light], flat_rest[light] } },
-                lit = { 2, { 0, 100 }, { on, on } };
         msg_text(cp.msg_btn, flat_ink[light], INK_BUTTON);
         if (cp.msg_part >= 0) {
-            paint_round_rows(canvas, &bar, &rest, 2);
+            round_fill(canvas, &bar, flat_rest[light], 2);
             bar.w = cp.msg_part && cp.msg_part < MSG_FLAT_H ? MSG_FLAT_H : cp.msg_part;
-            if (bar.w) paint_round_rows(canvas, &bar, &lit, 2);
+            if (bar.w) round_fill(canvas, &bar, on, 2);
         }
-        paint_round_rows(canvas, &cancel, &rest, 18);
+        round_fill(canvas, &cancel, flat_rest[light], 18);
     }
     stock_canvas_set_fill_color(canvas, fill);
 }

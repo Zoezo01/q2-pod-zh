@@ -1514,6 +1514,10 @@ void paint_round_rows(canvas_t *canvas, const rect_t *r, const stops_t *s, int R
     for (int i = 0; s->n >= 2 && i < r->h; ++i)
         round_row(canvas, r, R, i, 0xff000000u | stops_row(s, i, r->h));
 }
+/* paint_round_rows of one colour: the same rows, without a two-stop gradient of it. */
+void round_fill(canvas_t *canvas, const rect_t *r, unsigned rgb, int R) {
+    for (int i = 0; i < r->h; ++i) round_row(canvas, r, R, i, 0xff000000u | rgb);
+}
 /* A ring a pixel wide just inside r: what R's corners cover and R - 1's, a pixel in, don't. With
  * either out of the table, hard corners. */
 void round_ring(canvas_t *canvas, const rect_t *r, int R, unsigned c) {
@@ -1548,9 +1552,8 @@ void paint_panel(widget_t *w, canvas_t *canvas, const rect_t *r, const char *sha
     /* NOLINTNEXTLINE(clang-analyzer-core.NullPointerArithm) */
     unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
     paint_art(w, canvas, shadow, r->x - PANEL_PAD, r->y - PANEL_PAD + PANEL_DROP);
-    stops_t ring = { 2, { 0, 100 }, { S->bar_line, S->bar_line } };
     rect_t out = { r->x - 1, r->y - 1, r->w + 2, r->h + 2 };
-    paint_round_rows(canvas, &out, &ring, LETTER_RADIUS + 1);
+    round_fill(canvas, &out, S->bar_line, LETTER_RADIUS + 1);
     stops_t even = { 2, { 0, 100 }, { S->bar.rgb[0], S->bar.rgb[0] } };
     paint_round_rows(canvas, r, flat ? &even : &S->bar, LETTER_RADIUS);
     stock_canvas_set_fill_color(canvas, fill);
