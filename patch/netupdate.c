@@ -486,16 +486,11 @@ static int fetch_on(void **keep, const char *url, void *file, char *tag, unsigne
     return err;
 }
 
-static int fetch(const char *url, void *file, char *tag, unsigned n, long *code, volatile int *xfer,
-                 long from) {
-    return fetch_on(0, url, file, tag, n, code, xfer, from);
-}
-
 /* url's body (1 MB at most) through the file tmp, NUL-terminated; 0 unless a whole 200. */
 static char *get_by(const char *url, long *code, const char *tmp, volatile int *xfer) {
     unsigned n = 0;
     void *f = fopen(tmp, "wb");
-    int err = !f || fetch(url, f, 0, 0, code, xfer, 0);
+    int err = !f || fetch_on(0, url, f, 0, 0, code, xfer, 0);
     err = (f && fclose(f)) || err;
     char *body = err || *code != 200 ? 0 : read_all(tmp, 1u << 20, &n);
     unlink(tmp);
@@ -520,7 +515,7 @@ static int update(void) {
     char tag[64] = "", url[256], want[65], got[65];
     unsigned size = 0, n = 0;
     long code = 0;
-    if (fetch(NU_REPO, 0, tag, sizeof tag, &code, &nu.cancel, 0) || code != 302 || !*tag)
+    if (fetch_on(0, NU_REPO, 0, tag, sizeof tag, &code, &nu.cancel, 0) || code != 302 || !*tag)
         return nu.cancel ? NU_CANCELLED : NU_NET; /* a cancel ends this request itself */
     /* Tags are single-digit x.y.z, so strcmp orders them: nothing older than this build, which
      * stock's updater would flash. Q2POD_TAG is empty in --dev builds, which take any tag.
@@ -560,7 +555,7 @@ static int update(void) {
         if (!f) return NU_CARD;
         nu.base = (int)((unsigned)(have >> 10) * 100 / ((size >> 10) + 1)); /* KB: 32-bit math */
         nu.percent = 0, nu.stage = 1;
-        int err = fetch(url, f, 0, 0, &code, &nu.cancel, have), bad = ferror(f);
+        int err = fetch_on(0, url, f, 0, 0, &code, &nu.cancel, have), bad = ferror(f);
         bad =
             fflush(f) || fsync(fileno(f)) || bad; /* a part cut short too: it is carried on from */
         bad = fclose(f) || bad;
@@ -723,7 +718,7 @@ int ringnav_fwupdate(widget_t *win, void *ctx) {
 static void *nc_worker(void *unused) {
     char tag[64] = "";
     long code = 0;
-    int ok = !fetch(NU_REPO, 0, tag, sizeof tag, &code, 0, 0) && code == 302 && *tag;
+    int ok = !fetch_on(0, NU_REPO, 0, tag, sizeof tag, &code, 0, 0) && code == 302 && *tag;
     if (ok) tk_snprintf(nc.tag, sizeof nc.tag, "%s", strcmp(tag, Q2POD_TAG) > 0 ? tag : "");
     nc.ok = ok;
     nc.busy = 0;
@@ -965,7 +960,7 @@ static int install(int i) {
     void *f = fopen(part, "wb");
     if (!f) return SH_CARD;
     sh.stage = 1;
-    int err = fetch(url, f, 0, 0, &code, &sh.cancel, 0), bad = ferror(f);
+    int err = fetch_on(0, url, f, 0, 0, &code, &sh.cancel, 0), bad = ferror(f);
     bad = fclose(f) || bad;
     r = sh.cancel ? SH_CANCELLED : bad ? SH_CARD : err ? SH_NET : code != 200 ? SH_MISSING : SH_OK;
     if (!r) sh.stage = 2, r = shelf_list(i, &total);

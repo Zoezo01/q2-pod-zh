@@ -1126,8 +1126,8 @@ def test_a_part_the_card_cant_give_back_is_a_card_error(fw):
 def fetch(fw, url=b'https://x', tag_size=64, file=None, start=0):
     tag, code = block(fw, size=tag_size), C.c_long(0)
     xfer = (C.c_int * 2)()
-    fn = fw.fn('netupdate__fetch', C.c_int, C.c_char_p, C.c_void_p, C.c_void_p, C.c_uint, C.POINTER(C.c_long), C.c_void_p, C.c_long)
-    err = fn(url, file, tag if not file else None, tag_size, C.byref(code), xfer, start)
+    fn = fw.fn('netupdate__fetch_on', C.c_int, C.c_void_p, C.c_char_p, C.c_void_p, C.c_void_p, C.c_uint, C.POINTER(C.c_long), C.c_void_p, C.c_long)
+    err = fn(None, url, file, tag if not file else None, tag_size, C.byref(code), xfer, start)
     return err, C.string_at(tag), code.value
 
 
@@ -1204,8 +1204,8 @@ class Hung:
 
 
 def head(fw, xfer):
-    fn = fw.fn('netupdate__fetch', C.c_int, C.c_char_p, C.c_void_p, C.c_void_p, C.c_uint, C.POINTER(C.c_long), C.c_void_p, C.c_long)
-    return fn(b'https://x', None, block(fw, size=64), 64, C.byref(C.c_long(0)), xfer, 0)
+    fn = fw.fn('netupdate__fetch_on', C.c_int, C.c_void_p, C.c_char_p, C.c_void_p, C.c_void_p, C.c_uint, C.POINTER(C.c_long), C.c_void_p, C.c_long)
+    return fn(None, b'https://x', None, block(fw, size=64), 64, C.byref(C.c_long(0)), xfer, 0)
 
 
 def test_a_cancel_ends_a_header_request_that_hangs_at_once(fw):
