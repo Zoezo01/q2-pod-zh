@@ -40,7 +40,7 @@ class App(C.Structure):
                 *((n, C.c_int) for n in ('qr', 'game', 'audio', 'view', 'hidden', 'present', 'launched', 'hold', 'relaunch', 'restart', 'nostop',
                                          'nowifi', 'row', 'wifi', 'wifi_off')),
                 *((n, C.c_uint) for n in ('polled', 'launch_at', 'restart_at', 'play')), ('baricon', C.c_char * 56),
-                ('barword', C.c_char * 12), ('barw', C.c_int)]
+                ('barword', C.c_char * 12), ('barw', C.c_int), ('root', C.c_int)]
 
 
 class Ap(C.Structure):
@@ -131,6 +131,7 @@ class World:
     def __init__(self, fw, files=None, dirs=None, now=1000):
         self.fw, self.files, self.dirs, self.now, self.ms = fw, dict(files or {}), dict(dirs or {}), now, 1000
         self.log, self.at, self.names, self.written, self.lists, self.mtime = [], {}, {}, {}, {}, {}
+        self.owner = {}  # a path's st_uid, root's by default
         self.fail_write = lambda name: False
         fw.mock('tk_str_start_with', lambda s, p, *_: C.string_at(s).startswith(C.string_at(p)))
         for stub, fn in (('fw_fopen', self.fopen), ('fw_fread', self.fread), ('fw_fseek', self.fseek), ('fw_fwrite', self.fwrite), ('fw_rename', self.rename),
@@ -195,6 +196,7 @@ class World:
             return -1
         st = C.cast(info, C.POINTER(C.c_uint))
         st[5] = 0o100644 if name in self.files else 0o040755
+        st[7] = self.owner.get(name, 0)
         st[16] = self.mtime.get(name, 1)
 
     def opendir(self, path, *_):
@@ -288,6 +290,93 @@ def test_a_url_queue_s_app_starts_when_it_isn_t_running(fw, files, launched, sin
         setattr(a.contents, pending, 1)
     assert fw.fn('addon_wake', C.c_int, C.c_char_p)(b'a') == waits
     assert world.of('system') == ([RUN] if started else [])
+
+
+# Card apps without root (app_user.c): under a card mounted for APP_UID, an app runs as APP_UID, in groups video and
+# audio, after the secrets and the screen are set; root=1, or a card mounted as stock mounts it, keeps root as before.
+APP_UID, SYS_CHMOD, SYS_SETUID, SYS_SETGID, SYS_SETGROUPS, SYS_CHOWN = 1000, 4015, 4023, 4046, 4081, 4202
+SECRETS = [b'/mnt/data/wpa_supplicant.conf', b'/mnt/data/tidal.conf', b'/mnt/data/baidu_token.conf', b'/mnt/data/q2remote.key']
+DROP = [*((SYS_CHMOD, f, 0o600) for f in SECRETS), (SYS_CHOWN, b'/dev/fb0', 0, 28), (SYS_CHMOD, b'/dev/fb0', 0o660),
+        (SYS_CHOWN, b'/dev/shanling_dac', 0, 29), (SYS_CHMOD, b'/dev/shanling_dac', 0o660),
+        (SYS_SETGROUPS, 2, [28, 29]), (SYS_SETGID, APP_UID), (SYS_SETUID, APP_UID)]
+
+
+def syscalls(calls):
+    """cf_syscall's calls among calls as DROP lists them."""
+    out: list[tuple] = []
+    for name, a in calls:
+        nr = C.c_int(a[0]).value
+        if name != 'cf_syscall':
+            continue
+        if nr == SYS_CHMOD:
+            out.append((nr, C.string_at(a[1]), a[2]))
+        elif nr == SYS_CHOWN:
+            out.append((nr, C.string_at(a[1]), a[2], a[3]))
+        elif nr == SYS_SETGROUPS:
+            out.append((nr, a[1], list((C.c_uint * a[1]).from_address(a[2]))))
+        else:
+            out.append((nr, a[1]))
+    return out
+
+
+def owned(fw):
+    """The paths chowned to APP_UID from now on (app_own), read as each call is made: a stack buffer's."""
+    paths = []
+    def syscall(nr, a, b, c, *_):
+        if C.c_int(nr).value == 4016 and b == APP_UID:  # lchown
+            paths.append(C.string_at(a))
+        return 0
+    fw.mock('cf_syscall', syscall)
+    return paths
+
+
+@pytest.mark.parametrize('manifest, root', [
+    (b'name=A\n', 0), (b'name=A\nroot=0\n', 0), (b'name=A\nroot=yes\n', 0), (b'name=A\nroot=1\n', 1), (b'name=A\r\nroot=1\r\n', 1),
+])
+def test_an_app_keeps_root_only_when_its_q2app_says_root_1(fw, manifest, root):
+    card(fw, a=manifest)
+    scan(fw)
+    assert ap(fw).a[0].root == root
+
+
+def woken(fw, manifest, owner, fork):
+    """The app a's run started (addon_wake) under a card owned by owner, fork returning fork: the world and the calls."""
+    world = card(fw, a=manifest)
+    world.owner[b'/mnt/mmc'] = owner
+    scan(fw)
+    fw.mock('fw_fork', lambda *_: fork)
+    assert fw.fn('addon_wake', C.c_int, C.c_char_p)(b'a') == 1
+    return world, fw.calls()
+
+
+@pytest.mark.parametrize('manifest, owner, user', [
+    (b'name=A\n', APP_UID, True),  # the default
+    (b'name=A\nroot=1\n', APP_UID, False),  # system(), as before
+    (b'name=A\n', 0, False),  # q2mount's option refused: an app as APP_UID couldn't write the card
+])
+def test_a_run_starts_as_app_uid_unless_root_1_or_the_card_isn_t_mounted_for_it(fw, manifest, owner, user):
+    world, _ = woken(fw, manifest, owner, fork=4242)
+    assert world.of('system') == ([] if user else [RUN])
+    assert [(a[0], a[2]) for _, a in fw.calls('fw_waitpid')] == ([(4242, 0)] if user else [])  # waited for, as system() waits
+
+
+def test_a_runs_child_closes_demos_files_drops_root_then_runs_the_launcher_in_a_shell(fw):
+    _, calls = woken(fw, b'name=A\n', APP_UID, fork=0)
+    order = [n for n, _ in calls]
+    fork, execl = order.index('fw_fork'), order.index('fw_execl')
+    closes = [i for i, n in enumerate(order) if fork < i < execl and n == 'fw_close']
+    assert [calls[i][1][0] for i in closes] == list(range(3, 1024))
+    assert syscalls(calls[fork:execl]) == DROP and closes[-1] < order.index('cf_syscall')
+    assert [C.string_at(p) if p else p for p in calls[execl][1][:5]] == [b'/bin/sh', b'sh', b'-c', RUN[0], 0]
+    assert order[execl + 1] == 'child_exit' and calls[execl + 1][1][0] == 127  # its exec failed
+
+
+@pytest.mark.parametrize('fails', [SYS_SETGROUPS, SYS_SETGID, SYS_SETUID])
+def test_a_drop_that_doesn_t_take_ends_the_child_before_anything_runs(fw, fails):
+    fw.mock('cf_syscall', lambda nr, *_: -1 if C.c_int(nr).value == fails else 0)
+    _, calls = woken(fw, b'name=A\n', APP_UID, fork=0)
+    at = next(i for i, (n, a) in enumerate(calls) if n == 'cf_syscall' and C.c_int(a[0]).value == fails)
+    assert calls[at + 1][0] == 'child_exit' and calls[at + 1][1][0] == 126  # the next drop and the exec never come
 
 
 def test_an_app_the_card_doesn_t_hold_isn_t_woken(fw):
@@ -1924,8 +2013,10 @@ def test_game_can_give_now_playing_the_screen_and_keys(fw, how):
     game_front = fw.fn('addon_game_front', C.c_int)
     assert game_front() == 1
     g.world.files[VIEW] = b'now\n'  # a line end allowed
+    chowned = owned(fw)
     g.poll(500)
     assert g.world.files[VIEW] == b'open' and current[0] == 2
+    assert chowned == [VIEW]  # the game's to remove (sticky /tmp)
     assert g.on() == g.PID and game_front() == 0
     assert fw.var('wheel_raw', C.c_int).value == 0
     travel = fw.var('wheel_travel', C.c_int)
@@ -2225,9 +2316,11 @@ def test_headphones_required_is_left_to_stock_s_resume(fw):
 def test_the_sound_s_request(fw, text, takes):
     g, gm = switched(fw)
     g.world.files[SOUND] = text
+    chowned = owned(fw)
     g.poll(500)
     assert gm.audio == takes and len(fw.calls('player_save_stop')) == takes
     assert (SOUND in g.world.files) == (text != b'music\n')
+    assert chowned == [SOUND] * takes  # the answer: the game's to replace
 
 
 @pytest.mark.parametrize('manifest', [b'name=Snake\ngame=1\n', b'name=Snake\ngame=1\naudio=1\n', b'name=Snake\ngame=1\naudio=3\n'])
@@ -2523,6 +2616,19 @@ def test_the_shortcut_finds_a_game_whose_row_is_elsewhere(fw):
     opened = fw.fn('addon_game_open', C.c_int, C.c_char_p)
     assert opened(b'tools') == -1 and not g.on()  # in Games, but no game
     assert opened(b'snake') == 1 and g.on() == g.PID
+
+
+@pytest.mark.parametrize('manifest, drops', [(b'name=Snake\ngame=1\n', True), (b'name=Snake\ngame=1\nroot=1\n', False)])
+def test_a_games_child_drops_root_after_closing_demos_files_unless_root_1(fw, manifest, drops):
+    g = CardGame(fw, snake=manifest)
+    g.world.owner[b'/mnt/mmc'] = APP_UID
+    fw.mock('fw_fork', lambda *_: 0)
+    g.start()
+    calls = fw.calls()
+    order = [n for n, _ in calls]
+    fork, execl = order.index('fw_fork'), order.index('fw_execl')
+    assert syscalls(calls[fork:execl]) == (DROP if drops else [])
+    assert not drops or max(i for i in range(fork, execl) if order[i] == 'fw_close') < order.index('cf_syscall', fork)
 
 
 def test_a_game_runs_over_the_screen_taking_the_wheels_raw_travel(fw):

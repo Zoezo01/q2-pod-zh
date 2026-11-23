@@ -407,6 +407,33 @@ BLUETOOTHD = 'usr/bin/bluetoothd'
 BT_GRACE = tuple(bytes.fromhex(f'5c0403ae {li} 25300002 180002ae 25202002 0c82998f d4393927 b2fe1104 580403ae')
                  for li in ('1e000324', '01000324'))
 SCROBBLE_CA = 'etc/scrobble-ca.pem'
+# Card apps without root (patch/app_user.c, docs/internals.md#card-apps): APP_UID runs them, and the card is mounted for
+# it so they can still write it. q2mount mounts it for the mdev script (boot, a card put in, Standby's resume) and for USB
+# storage's end; a mount that refuses the option is done as stock does it, ntfs-3g then mount, without one.
+APP_UID = 1000
+Q2MOUNT = 'usr/bin/q2mount'
+Q2MOUNT_SH = f'''#!/bin/sh
+# The card at /mnt/mmc for card apps (uid {APP_UID}: tools/build.py), else as stock mounts it
+o=uid={APP_UID},gid={APP_UID}
+ntfs-3g -o $o "$1" /mnt/mmc 2>/dev/null || ntfs-3g "$1" /mnt/mmc 2>/dev/null ||
+    mount -o $o "$1" /mnt/mmc 2>/dev/null || mount "$1" /mnt/mmc
+'''.encode()
+# The mdev script: q2mount first, then stock's own lines if it fails (its $? the ntfs-3g's, as before).
+SD_MOUNT = 'etc/mdev/add_removesd.sh'
+SD_MOUNT_HOOK = (b'\tntfs-3g /dev/$MDEV /mnt/mmc\n', b'\t/usr/bin/q2mount /dev/$MDEV || ntfs-3g /dev/$MDEV /mnt/mmc\n')
+# usbmode_exit snprintfs this ntfs-3g line (its only reference, the addiu at CARD_MOUNT_REF) for system(), and its own
+# plain mount only when that fails: q2mount's line takes the same 20 bytes.
+CARD_MOUNT_FMT, CARD_MOUNT_REF = 0x7870e8, (0x5429dc, 0x24a570e8)  # addiu $a1, $a1, 0x70e8
+CARD_MOUNT_LINE = (b'ntfs-3g %s /mnt/mmc\0', b'/usr/bin/q2mount %s\0')
+# Stock's Wi-Fi passwords, root's alone: wpa_supplicant (v2.9, update_config=1) saves each join as a .tmp it renames,
+# so the file takes its launcher's umask. wifi_connect.sh, the only one (demo runs it at each link-up), gives it 077 and
+# tightens the file a Reset's template copy left.
+WIFI_CONNECT = 'usr/bin/wifi_connect.sh'
+WPA_HOOK = (b'\twpa_supplicant -Dnl80211', b'\tumask 077\n\tchmod 600 $WPA_CONF\n\twpa_supplicant -Dnl80211')
+# APP_UID's name, in video and audio: dbus-daemon (libdbus 1.12) takes a peer's groups from getpwuid and getgrouplist,
+# not from the socket, so bluealsa.conf's group="audio" lets a card app play over Bluetooth only with these.
+PASSWD, PASSWD_HOOK = 'etc/passwd', (b'/var/run/dbus:/bin/sh\n', f'/var/run/dbus:/bin/sh\napp:x:{APP_UID}:{APP_UID}:card apps:/tmp:/bin/false\n'.encode())
+GROUP, GROUP_HOOK = 'etc/group', (b'\nvideo:x:28:\naudio:x:29:\n', b'\nvideo:x:28:app\naudio:x:29:app\n')
 AAC_44K1 = 0x317b8
 # After its options, stock's main turns both A2DP profiles on whatever -p said: sh 0x101 over a2dp_source and a2dp_sink.
 # sb leaves a2dp_source on and a2dp_sink to -p, which the launcher passes unless Receive Audio is off.
@@ -1943,6 +1970,7 @@ def stock_header(context, ranges, themes, dev=0, repo=REPO):
     names = ''.join(n.removesuffix('.png') + '\\0' for n in SETTINGS_ICONS)
     header.append(f'#define SETTINGS_ICON_NAMES "{names}"')
     header.append(f'#define ROCKBOX_FLAG "{ROCKBOX_FLAG}"')  # Home's Rockbox row, for S90play
+    header.append(f'#define APP_UID {APP_UID}')  # card apps' uid (app_user.c), the card's at each mount
     # About: the stock firmware's version on its own row, and this build's on the CFW. Version row.
     header += [f'#define STOCK_VERSION "{STOCK_VERSION}"', f'#define Q2POD_VERSION "{VERSION}{f" dev {dev}" if dev else f" beta {BETA}" if BETA else ""}"',
                f'#define Q2POD_TAG "{"" if dev else VERSION}"',  # netupdate.c: the release tag, none when --dev
@@ -2207,6 +2235,11 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
     check(struct.unpack_from('<I', patched, fileoff(patched, FOLDER_RM_FMT[0]))[0] == FOLDER_RM_FMT[1],
           'Unexpected folder delete')
     patch_word(patched, FOLDER_RM_CALL, 0x0320f809, jal(ps['ringnav_folder_rm']), "a folder's delete quotes its path")
+    check(struct.unpack_from('<I', patched, fileoff(patched, CARD_MOUNT_REF[0]))[0] == CARD_MOUNT_REF[1],
+          "Unexpected USB storage's card mount")
+    at = fileoff(patched, CARD_MOUNT_FMT)
+    check(patched[at:at+20] == CARD_MOUNT_LINE[0], "Unexpected USB storage's card mount line")
+    patched[at:at+20] = CARD_MOUNT_LINE[1]  # the card mounted for card apps (q2mount)
     check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, SONG_UNKNOWN_CALL-8))[0] == 0x8f99a924,
           "song bind: expected getFormatString import")  # lw t9, -0x56f8(gp)
     patch_word(patched, SONG_UNKNOWN_CALL, 0x0320f809, jal(ps['ringnav_song_unknown']), "a song row's empty artist")
@@ -2318,6 +2351,10 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
     bluetoothd = cat(BLUETOOTHD)
     check(bluetoothd.count(BT_GRACE[0]) == 1, 'Unexpected bluetoothd')
     (out/'bluetoothd').write_bytes(bluetoothd.replace(*BT_GRACE))
+    for path, hook in ((SD_MOUNT, SD_MOUNT_HOOK), (WIFI_CONNECT, WPA_HOOK), (PASSWD, PASSWD_HOOK), (GROUP, GROUP_HOOK)):
+        script = cat(path)
+        check(script.count(hook[0]) == 1, f'Unexpected {path}')
+        (out/path.rsplit('/', 1)[-1]).write_bytes(script.replace(*hook))
     logo_data = logo.read_bytes()
     check(jpeg_size(logo_data) == (320, 375), 'Logo must be 320x375 like the stock splash')
     # Package exactly the validated bytes, even if the input is edited during compression.
@@ -2330,6 +2367,8 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
                       (BLUEALSA.encode(), out/'bluealsa'), (WATCHDOG.encode(), out/'watchdog'),
                       (S90PLAY.encode(), out/'S90play'), (S11LOGO.encode(), out/'S11logo'),
                       (BLUEALSA2.encode(), out/'bluealsa2'), (BLUETOOTHD.encode(), out/'bluetoothd'), (DEFAULT_CONFIG.encode(), out/'config.ini'),
+                      (SD_MOUNT.encode(), out/'add_removesd.sh'), (WIFI_CONNECT.encode(), out/'wifi_connect.sh'),
+                      (PASSWD.encode(), out/'passwd'), (GROUP.encode(), out/'group'),
                       (LOGO.encode(), logo)):
         p = swap_inode(p, path, src)
     # New inodes, each with its stock image's metadata: Home's Coverflow and Shortcut card icons (menu_music's,
@@ -2375,6 +2414,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
                                'etc/init.d/S12usbcharge': ('etc/init.d/S20urandom', (ROOT/'patch/usb_charge.sh').read_bytes()),
                                HELPER: (HELPER_LIKE, compile_helper(out, cat, 'video', 'q2video', HELPER_LIBS)),
                                SCROBBLE_CA: ('etc/hosts', (ROOT/'assets/scrobble-ca.pem').read_bytes()),
+                               Q2MOUNT: ('etc/init.d/S20urandom', Q2MOUNT_SH),  # an executable script's (wifi_connect.sh's is swapped)
                                BOOT: (HELPER_LIKE, compile_helper(out, cat, 'boot', 'q2boot', HELPER_LIBS[:1])),
                                **({LOGO_LIGHT: (xx+'list_tidal.png', light)} if light else {}),  # the swapped logo.jpg has no stock inode left
                                BOLD_TTF: (FONT, bold),

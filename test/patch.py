@@ -9280,6 +9280,11 @@ m=lyric_save(); assert lyric_drop(m,'01 Yellow.lrc')==':' and m.unlinked==['/mnt
 m=lyric_save(); assert lyric_drop(m,'x$(touch p)`id`".lrc')==':' and m.unlinked==['/mnt/mmc/.downpic/x$(touch p)`id`".lrc']; passed()
 m=lyric_save(); assert lyric_drop(m,'../../x.lrc')==':' and lyric_drop(m,'y'*0x201)==':' and not m.unlinked  # a '/', or too long
 assert lyric_drop(m,'y'*0x200)==':' and m.unlinked==['/mnt/mmc/.downpic/'+'y'*0x200]; passed()  # the longest that fits
+# USB storage's end mounts the card as the mdev script does (build.py CARD_MOUNT_FMT): q2mount's line in stock's ntfs-3g
+# line's 20 bytes, read through its one addiu, and stock's plain mount after it for when q2mount fails.
+from build import CARD_MOUNT_FMT, CARD_MOUNT_REF
+assert m.text(CARD_MOUNT_FMT)=='/usr/bin/q2mount %s' and m.text(CARD_MOUNT_FMT+20)=='mount %s /mnt/mmc'
+assert m.get(CARD_MOUNT_REF[0])==CARD_MOUNT_REF[1]; passed()
 # Now Playing's cover thread showing that pick (ringnav_cover_copy, at COVER_PICK_CALL): stock's snprintf of
 # cp -f "/mnt/mmc/.downpic/<file name>.jpg" '/tmp/externpic.jpg' for system() becomes the copy, through .part.
 from build import COVER_PICK_CALL

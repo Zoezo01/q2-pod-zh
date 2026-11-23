@@ -246,7 +246,7 @@ static void spot_launch(void) {
     if (sp.launched || access(SPOT_BIN, 0)) return;
     sp.launched = 1;
     sp.idle_at = sp.launch_at = time_now_ms();
-    system(SPOT_RUN);
+    app_system(SPOT_RUN); /* as card apps run: APP_UID */
 }
 
 static void scrub_commit(void) {

@@ -184,7 +184,7 @@ LIBC = {
 }
 
 # The payload's C beside navigation.c (build.py compile_payload), in link order; test/fw builds the same set.
-UI_SOURCES = ['peq.c', 'peq_ui.c', 'coverflow.c', 'coverflow_thumb.c', 'coverflow_letters.c', 'coverflow_loader.c', 'coverflow_land.c', 'playlist_art.c', 'library_scope.c', 'scrobble.c', 'photos.c', 'games.c', 'visualizer.c', 'playback.c', 'upnext.c', 'spotify.c', 'addon.c', 'addon_library.c', 'addon_eq.c', 'addon_wifi.c', 'radio.c', 'tidal.c', 'netupdate.c', 'app_store.c', 'onlinematch.c', 'crossfade.c', 'nightshift.c', 'headset.c', 'lockscreen.c', 'chapters.c', 'lyrics.c', 'xiph.c', 'airplay.c']
+UI_SOURCES = ['peq.c', 'peq_ui.c', 'coverflow.c', 'coverflow_thumb.c', 'coverflow_letters.c', 'coverflow_loader.c', 'coverflow_land.c', 'playlist_art.c', 'library_scope.c', 'scrobble.c', 'photos.c', 'games.c', 'visualizer.c', 'playback.c', 'upnext.c', 'spotify.c', 'addon.c', 'addon_library.c', 'addon_eq.c', 'addon_wifi.c', 'app_user.c', 'radio.c', 'tidal.c', 'netupdate.c', 'app_store.c', 'onlinematch.c', 'crossfade.c', 'nightshift.c', 'headset.c', 'lockscreen.c', 'chapters.c', 'lyrics.c', 'xiph.c', 'airplay.c']
 
 # Stock functions the payload uses as values, not only calls: they keep stock's own address.
 STOCK_BY_ADDRESS = {'btrecvA2dpFunc', 'db_song_row_callback', 'taglib_file_new', 'stock_search',

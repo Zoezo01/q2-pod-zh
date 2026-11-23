@@ -326,6 +326,42 @@ def logo_check():
     print('Boot logo: the saved card logo, else the light splash under Light Mode, else the built-in one, passed.')
 logo_check()
 
+def mount_check():
+    """q2mount (build.py Q2MOUNT_SH) and the mdev script's line before stock's under the host sh, ntfs-3g and mount
+    stand-ins on PATH: the card for APP_UID, else as stock mounts it, and a failure that leaves stock's lines to run."""
+    import os, subprocess, tempfile, pathlib
+    from build import Q2MOUNT_SH, SD_MOUNT_HOOK, APP_UID
+    with tempfile.TemporaryDirectory(prefix='q2-mount-') as tmp:
+        tmp = pathlib.Path(tmp)
+        (tmp/'bin').mkdir()
+        log = tmp/'log'
+        for name, takes in (('ntfs-3g', '$NTFS'), ('mount', '$FAT')):  # the card's kind; OPT=0: the driver refuses -o
+            (tmp/'bin'/name).write_text(f'#!/bin/sh\necho "{name} $*" >> {log}\n[ "$1" = -o ] && [ "$OPT" = 0 ] && exit 1\n[ "{takes}" = 1 ]\n')
+            (tmp/'bin'/name).chmod(0o755)
+        (tmp/'q2mount').write_bytes(Q2MOUNT_SH)
+        (tmp/'q2mount').chmod(0o755)
+        def mounted(script, **card):
+            log.write_text('')
+            env = {**os.environ, 'PATH': f'{tmp}/bin:{os.environ["PATH"]}', 'NTFS': '0', 'FAT': '0', 'OPT': '1', **card}
+            status = subprocess.run(['sh', '-c', script], env=env).returncode
+            return status, log.read_text().splitlines()
+        o, dev = f'-o uid={APP_UID},gid={APP_UID}', '/dev/mmcblk0p1'
+        q2mount = f'{tmp}/q2mount {dev}'
+        assert mounted(q2mount, NTFS='1') == (0, [f'ntfs-3g {o} {dev} /mnt/mmc'])
+        assert mounted(q2mount, NTFS='1', OPT='0') == (0, [f'ntfs-3g {o} {dev} /mnt/mmc', f'ntfs-3g {dev} /mnt/mmc'])
+        assert mounted(q2mount, FAT='1') == (0, [f'ntfs-3g {o} {dev} /mnt/mmc', f'ntfs-3g {dev} /mnt/mmc', f'mount {o} {dev} /mnt/mmc'])
+        assert mounted(q2mount, FAT='1', OPT='0')[1][-2:] == [f'mount {o} {dev} /mnt/mmc', f'mount {dev} /mnt/mmc']
+        status, tried = mounted(q2mount)  # nothing mounts: nonzero, so stock's own lines run after it
+        assert status and len(tried) == 4
+        # The mdev script's add: q2mount, then stock's ntfs-3g and mount only if it failed, its $? the ntfs-3g's
+        stock = '\tntfs-3g /dev/$MDEV /mnt/mmc\n\tif [ $? -ne 0 ];then\n\t\tmount /dev/$MDEV /mnt/mmc\n\tfi\n'
+        hooked = 'MDEV=mmcblk0p1\n' + stock.replace(*(h.decode() for h in SD_MOUNT_HOOK)).replace('/usr/bin/q2mount', f'{tmp}/q2mount')
+        assert mounted(hooked, FAT='1')[1] == mounted(q2mount, FAT='1')[1]  # q2mount mounted it: stock's lines don't run
+        (tmp/'q2mount').write_text('#!/bin/sh\nexit 1\n')  # one that can't mount: stock's lines, as before
+        assert mounted(hooked, FAT='1')[1] == [f'ntfs-3g {dev} /mnt/mmc', f'mount {dev} /mnt/mmc']
+    print('Card mount: for the card apps\' uid, else as stock mounts it, and stock\'s own lines after a failed q2mount, passed.')
+mount_check()
+
 def validate_assets(directory):
     import functools, json, re, struct, subprocess
     from build import sha, run, fileoff, symbols, BLUEALSA, AAC_44K1, GRADIENT_LEAF, WM_PAINT_LEAF, QUEUE_LEAF, HELPER, HELPER_LIKE, BOOT, BOOT_HOOK, REMOTE, REMOTE_HOOK, LOG_HOOK, WHEEL_LOG_HOOK, S90PLAY, S11LOGO, LOGO_HOOK, LOGO_LIGHT, BLUEALSA2, BT_KEEPALIVE, BLUETOOTHD, BT_GRACE, RTC_WRITE, WIFI_LPS, HOOKS, LOCK_CLOCK_12H, WATCHDOG, WATCHDOG_SLEEP, DROP_CACHES, STREAM_POLL_CALLS, DARK_POLLS, WHEEL_TS_READ, PDR
@@ -499,6 +535,17 @@ def validate_assets(directory):
         assert absent.returncode != 0, 'release rootfs contains q2remote'
     assert read('rootfs.squashfs', S90PLAY) == expected_start
     assert read('rootfs.squashfs', S11LOGO) == read('stock.squashfs', S11LOGO).replace(*LOGO_HOOK)  # the card's logo, if saved
+    # Card apps without root (build.py APP_UID): q2mount, executable, from the mdev script and USB storage's end, and
+    # wpa_supplicant's saves 600
+    from build import SD_MOUNT, SD_MOUNT_HOOK, WIFI_CONNECT, WPA_HOOK, PASSWD, PASSWD_HOOK, GROUP, GROUP_HOOK, Q2MOUNT, Q2MOUNT_SH, CARD_MOUNT_FMT, CARD_MOUNT_LINE
+    assert read('rootfs.squashfs', SD_MOUNT) == read('stock.squashfs', SD_MOUNT).replace(*SD_MOUNT_HOOK)
+    assert read('rootfs.squashfs', WIFI_CONNECT) == read('stock.squashfs', WIFI_CONNECT).replace(*WPA_HOOK)
+    for path, hook in ((PASSWD, PASSWD_HOOK), (GROUP, GROUP_HOOK)):  # APP_UID in audio for bluealsa's dbus policy
+        assert read('rootfs.squashfs', path) == read('stock.squashfs', path).replace(*hook)
+    assert read('rootfs.squashfs', Q2MOUNT) == Q2MOUNT_SH
+    mode = next(l for l in run('unsquashfs', '-lls', directory/'rootfs.squashfs', Q2MOUNT).splitlines() if l.endswith('/'+Q2MOUNT)).split()[0]
+    assert mode.startswith('-rwx') and mode[9] == 'x', mode
+    assert demo[fileoff(demo, CARD_MOUNT_FMT):][:20] == CARD_MOUNT_LINE[1]
     assert read('rootfs.squashfs', BLUEALSA2) == read('stock.squashfs', BLUEALSA2).replace(*BT_KEEPALIVE)  # keep-alive 5 s, Receive Audio
     daemon = read('stock.squashfs', BLUETOOTHD)  # a connection the other side opens: 30 s to 1 s
     assert read('rootfs.squashfs', BLUETOOTHD) == daemon.replace(*BT_GRACE) != daemon

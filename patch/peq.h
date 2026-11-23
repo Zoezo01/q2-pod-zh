@@ -38,6 +38,15 @@ void reboot_record(void *caller); /* a Bluetooth abnormal reboot's q2-crash.log 
 int card_mounted(void);           /* /proc/mounts has the card (system.c) */
 /* The crash log's record of a long job's current file and demo's memory (tags.c) */
 void crash_note(const char *path, const char *file, const char *log, unsigned every, unsigned *n);
+/* The o32 syscall nr(a, b, c): its result, or -1 when the kernel reports an error
+ * (coverflow_loader.c) */
+int cf_syscall(int nr, long a, long b, long c);
+/* Card apps without root (app_user.c): the card mounted for APP_UID; the drop, in a forked child;
+ * system() as APP_UID */
+int app_card(void);
+void app_user(void);
+void app_system(const char *cmd);
+void app_own(const char *path);
 #ifdef canvas_set_fill_color
 /* Light Mode: every colour the payload draws passes ui_ink (theme_engine.c) on its way to these
  * stock setters, as stock's own colours pass the style and image hooks. stock_* sets a colour read

@@ -191,6 +191,19 @@ def test_the_row_starts_librespot_once(fw):
     assert lib.ran == ['/bin/sh /mnt/mmc/.spotify/run'] and lib.sp.launch_at == lib.clock.now
 
 
+def test_librespot_starts_as_card_apps_do_under_a_card_mounted_for_them(fw):
+    """app_user.c's system() as APP_UID (test_addon.py has the drop), not stock's as root."""
+    def stat(version, path, info, *_):
+        C.cast(info, C.POINTER(C.c_uint))[7] = 1000  # st_uid
+    fw.mock('fw___xstat', stat)
+    fw.mock('fw_access', lambda *_: 0)
+    fw.mock('fw_fork', lambda *_: 0)
+    fw.fn('spotify__spot_launch', None)()
+    (_, execl), = fw.calls('fw_execl')
+    assert [C.string_at(p) for p in execl[:4]] == [b'/bin/sh', b'sh', b'-c', b'/bin/sh /mnt/mmc/.spotify/run']
+    assert not fw.calls('fw_system') and C.c_int(fw.calls('cf_syscall')[-1][1][0]).value == 4023  # setuid, last
+
+
 def test_polls_are_paced(fw):
     lib = Librespot(fw)
     lib.poll(state=b'state=paused\n')

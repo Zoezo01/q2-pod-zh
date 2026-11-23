@@ -9,9 +9,9 @@
  *            favdir (a card folder whose songs' hearts it is told of, addon_fav_path), hidden
  *            (1: no row, its page opened by id: addon_open_id, as AirPlay's is), row (where
  *            its row is: library, games, network or streaming; without it, Games for a game and
- *            Streaming for any other) and wifi (0: it never uses the network, so Smart Wi-Fi keeps
+ *            Streaming for any other), wifi (0: it never uses the network, so Smart Wi-Fi keeps
  *            no radio on for it: addon_running, addon_offline; 1: it follows the Wi-Fi link,
- *            addon_wifi.c);
+ *            addon_wifi.c) and root (1: it runs as root; without it, as APP_UID, app_user.c);
  *   run      its launcher, which copies the app to /tmp and runs it there in a restart loop, so
  *            the card is never kept busy, leaving the loop's pid in /tmp/q2-<id>;
  *   q2-<id>  the app;
@@ -131,6 +131,7 @@ typedef struct {
      * (bar.png for 1, bar-<word>.png else) if one fits BAR_ICON_W x BAR_ICON_H; else "" */
     char baricon[56], barword[12];
     int barw; /* the icon's width, for its slot in the bar */
+    int root; /* q2app's root=1: it runs as root, not as APP_UID (app_user.c) */
 } app_t;
 enum { ROW_STREAMING, ROW_GAMES, ROW_LIBRARY, ROW_NETWORK }; /* as addon_scan's rows[] names them */
 
@@ -204,6 +205,7 @@ static void slots_read(void) {
         a->audio = sound <= 2 ? (int)sound : 0;
         a->view = number(raw, "gameview") == 1;
         a->hidden = number(raw, "hidden") == 1;
+        a->root = number(raw, "root") == 1;
         /* its row where row says, else as firmware without the key lists it: Games for a game,
          * Streaming for any other */
         static const char *const rows[] = { "streaming", "games", "library", "network" };
@@ -331,7 +333,10 @@ static void launch(app_t *a) {
     if (busy && !strcmp(busy + 1, a->id)) return; /* the Apps page is replacing its files */
     a->launched = 1;
     a->launch_at = time_now_ms();
-    system(a->run); /* exits at once when the app runs already */
+    if (a->root) /* exits at once when the app runs already */
+        system(a->run);
+    else
+        app_system(a->run);
 }
 
 /* On the card and not running: its page starts it (page_at), and once more when it ended itself
@@ -1080,6 +1085,7 @@ static void game_view(void) {
     tk_snprintf(tmp, sizeof tmp, "%s.tmp", path);
     char open[] = "open";
     if (!blob_io(path, tmp, open, sizeof open - 1, 1)) return;
+    app_own(path); /* the game removes it to cancel */
     widget_t *wm = window_manager();
     gm.native = 1;
     /* a key held into the open: its repeats and release are no page's */
@@ -1145,7 +1151,7 @@ static void game_sound(void) {
     tk_snprintf(line, sizeof line, "%s%s%s\n", dev ? dev : "plughw:0,0", dev ? " " : "",
                 dev ? vol : "");
     tk_snprintf(tmp, sizeof tmp, "%s.tmp", f);
-    blob_io(f, tmp, line, strlen(line), 1);
+    if (blob_io(f, tmp, line, strlen(line), 1)) app_own(f); /* the game's "music" replaces it */
 }
 
 /* game_poll's, every ADDON_POLL_MS and every pass while dimmed: the game's /tmp/q2-<id>.dim there
@@ -1198,10 +1204,11 @@ static int game_start(app_t *a, const char *uri, const char *ctx) {
         dev = output_device(vol);
         if (!dev) dac_take();
     }
-    int pid = fork();
+    int user = !a->root && app_card(), pid = fork();
     if (!pid) {
         child_oom_first();
         for (int fd = 3; fd < 1024; ++fd) close(fd); /* demo's: the watchdog, the screen, sockets */
+        if (user) app_user();
         /* the child's alone: demo's environment stays as it was. ponytail: a fork while another
          * thread holds libc's environment lock (stock's toolsSetTimeZone) hangs the child here;
          * Return's hold ends it */
