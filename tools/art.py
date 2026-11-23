@@ -834,9 +834,11 @@ def pane_glyph(name, size):
     cx, cy, k = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2, size / max(max(xs) - min(xs), max(ys) - min(ys))
     return ''.join('M' + 'L'.join(f'{(x - cx) * k:.2f} {(y - cy) * k:.2f}' for x, y in poly) + 'Z' for poly in polys)
 # A glyph about 0, 0: fill, shapes, a shape's later subpaths its holes; line, open paths stroked w wide (FLAT_WEIGHT
-# without one) with round ends; dots, filled discs (x, y, r); faint, lines at FLAT_FAINT of the ink.
-FLAT_WEIGHT, FLAT_FAINT, FLAT_DIM, FLAT_BOX = 2.6, .3, .45, 54
-BARS = ('M-7.5 9V4', 'M0 9V-2.5', 'M7.5 9V-9')
+# without one) with round ends; dots, filled discs (x, y, r).
+FLAT_WEIGHT, FLAT_DIM, FLAT_BOX = 2.6, .45, 54
+def sine(a):
+    """Two waves of a sine a high either side of 0, x -13 to 13, as a path."""
+    return 'M' + 'L'.join(f'{x / 4:.2f} {-a * math.sin(x / 4 * 2 * math.pi / 13):.2f}' for x in range(-52, 53))
 NP_HEADS = ('M8.5 -10.2 13.5 -6 8.5 -1.8Z', 'M8.5 1.8 13.5 6 8.5 10.2Z')
 NP_LOOP = ('M-11 -1V-2.5A3.5 3.5 0 0 1 -7.5 -6H9', 'M11 1V2.5A3.5 3.5 0 0 1 7.5 6H-9')
 NP_TURNS = ('M8.5 -10.2 13.5 -6 8.5 -1.8Z', 'M-8.5 1.8 -13.5 6 -8.5 10.2Z')
@@ -851,8 +853,8 @@ FLAT_GLYPHS: dict[str, dict] = {
                 line=('M0 10V-8.4', 'M0 6 -6.6 1.2V-3.2', 'M0 2.4 6.6 -2.4V-6'), dots=((-6.6, -4.4, 2.5), (0, 10.4, 3)), w=2.3),
     'sl': dict(line=('M-8 -11V11', 'M0 -11V11', 'M8 -11V11'), dots=((-8, 4, 3.5), (0, -4.5, 3.5), (8, 5.5, 3.5)), w=2.3),
     'gear': dict(fill=(pane_glyph('gear', 27),)),  # Home's Settings gear
-    # gain, three bars: all of them high, the first alone low; the output, headphones, its label saying which
-    'gain': dict(line=BARS, w=3.6), 'gain_low': dict(line=BARS[:1], faint=BARS[1:], w=3.6),
+    # gain, a wave: tall high, small low; the output, headphones, its label saying which
+    'gain': dict(line=(sine(8),), w=2.3), 'gain_low': dict(line=(sine(3),), w=2.3),
     'phones': dict(fill=(rounded_path(-11.2, 1.5, 5.4, 9.5, 2.2), rounded_path(5.8, 1.5, 5.4, 9.5, 2.2)), line=('M-9 3.5v-3a9 9 0 0 1 18 0v3',), w=2.4),
     'sun': dict(dots=((0, 0, 4.2),), w=2,
                 line=tuple(f'M{7.2 * math.cos(a * math.pi / 4):.2f} {7.2 * math.sin(a * math.pi / 4):.2f}L{10 * math.cos(a * math.pi / 4):.2f} {10 * math.sin(a * math.pi / 4):.2f}' for a in range(8))),
@@ -893,7 +895,7 @@ def flat_glyph(glyph, ink, size=FLAT_BOX, k=1):
     lines = lambda ds: stroke([at(poly) for d in ds for poly in path(d)], g.get('w', FLAT_WEIGHT) * k, closed=False)
     polys = [at(holed(d)) for d in g.get('fill', ())] + lines(g.get('line', ()))
     polys += [at(poly) for x, y, r in g.get('dots', ()) for poly in path(circle(x, y, r))]
-    return [(polys, lambda x, y: (ink, 1)), (lines(g.get('faint', ())), lambda x, y: (ink, FLAT_FAINT))]
+    return [(polys, lambda x, y: (ink, 1))]
 @functools.lru_cache(maxsize=None)
 def flat_mark(glyph, opacity, ink, size=FLAT_BOX, k=1):
     """One glyph, a PNG on clear, at opacity."""

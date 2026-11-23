@@ -95,11 +95,12 @@ def test_each_now_playing_state_reads_apart(half):
     assert sum(shapes[names.index(f'flat_np_heart_on_{half}')]) > sum(shapes[names.index(f'flat_np_heart_off_{half}')])  # filled
 
 
-def test_a_disabled_button_is_dimmed_and_low_gain_has_faint_bars():
+def test_a_disabled_button_is_dimmed_and_low_gain_is_the_smaller_wave():
     assert max(ink('flat_drop_highgaindisable')[1]) == round(255 * art.FLAT_DIM)
-    _, low = ink('flat_drop_lowgain')
-    _, high = ink('flat_drop_highgain')
-    assert round(255 * art.FLAT_FAINT) in low and sum(low) < sum(high)
+    def rows(name):
+        w, h, at = pixels(flat()[name])
+        return sum(any(at(x, y)[3] for x in range(w)) for y in range(h))
+    assert rows('flat_drop_lowgain') < rows('flat_drop_highgain')
 
 
 def test_a_glyph_sits_in_the_middle_and_the_gear_keeps_its_hole():
