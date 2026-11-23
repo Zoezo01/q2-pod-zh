@@ -242,21 +242,22 @@ int language_offered(void) {
     return lg.picks > 0;
 }
 
-/* src (max bytes at most) into dst whole, through a .new and a rename, so a cut leaves the old
- * copy or none. */
-static int copy_in(const char *src, const char *dst, unsigned max) {
+/* b (n bytes) into dst whole, through a .new and a rename, so a cut leaves the old copy or none. */
+static int copy_buf(const char *dst, void *b, unsigned n) {
     char tmp[100];
-    unsigned n = 0;
     tk_snprintf(tmp, sizeof tmp, "%s.new", dst);
-    char *b = read_all(src, max, &n);
-    void *f = b ? fopen(tmp, "wb") : 0;
-    int ok = f && fwrite(b, 1, n, f) == n;
-    if (f && (fflush(f) || fsync(fileno(f)))) ok = 0;
-    if (f && fclose(f)) ok = 0;
-    free(b);
-    if (ok && !rename(tmp, dst)) return 1;
-    if (f) unlink(tmp);
+    if (blob_io(dst, tmp, b, n, 1)) return 1;
+    unlink(tmp);
     return 0;
+}
+
+/* src (max bytes at most) into dst whole, as copy_buf. */
+static int copy_in(const char *src, const char *dst, unsigned max) {
+    unsigned n = 0;
+    char *b = read_all(src, max, &n);
+    int ok = b && copy_buf(dst, b, n);
+    free(b);
+    return ok;
 }
 
 /* A pick: the new table's copy, then LANG, then the old copy gone, so a cut keeps the old
@@ -312,12 +313,11 @@ static int file_in(const char *dir, void *ctx) {
 /* The first lang folder's name (the table or the font) copied to dst when it differs; none on the
  * card changes nothing: the copy is the Q2's. */
 static void refresh(lang_find_t *f, const char *dst, unsigned max) {
-    unsigned a = 0, b = 0;
+    unsigned a = 0;
     lang_apps(file_in, f);
-    char *card = *f->file ? read_all(f->file, max, &a) : 0,
-         *have = card ? read_all(dst, max, &b) : 0;
-    if (card && (!have || a != b || memcmp(card, have, a))) copy_in(f->file, dst, max);
-    free(card), free(have);
+    char *card = *f->file ? read_all(f->file, max, &a) : 0;
+    if (card && !file_holds(dst, card, a, max)) copy_buf(dst, card, a);
+    free(card);
 }
 
 /* The card mounted (system.c's logo thread) or an app installed (netupdate.c's worker): the table
