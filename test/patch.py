@@ -1945,7 +1945,7 @@ m=Machine(); view,imgs=home_list(m); click_target(m,imgs[2])
 m.paint(view)
 assert m.selected(view)==0
 for i in range(1,7): assert m.call()==11 and m.selected(view)==i and m.get(view+O['SCROLL_Y'])==0
-m.paint(view); assert m.rounded[0]['rect']==(25,6*HOME_ROW+HOME_ROW//2-3,6,6)
+m.paint(view); assert m.rounded[0]['rect']==(25,6*SET0.home_row+SET0.home_row//2-3,6,6)
 assert m.call(gap=50)==11 and m.selected(view)==6   # bumped
 assert m.call(gap=O['EDGE_PAUSE_MS'])==11 and m.selected(view)==0
 assert m.call(O['KEY_PREV'],gap=50)==11 and m.selected(view)==0   # bumped
@@ -1963,7 +1963,7 @@ m.byte(syms['g_backlight_status'],0); m.paint(view); assert m.selected(view)==-1
 paint_bar(); assert ('widget_invalidate_force',view) not in [c[:2] for c in m.calls]
 m.touch(); m.byte(syms['g_backlight_status'],1)
 paint_bar(); assert ('widget_invalidate_force',view) in [c[:2] for c in m.calls]
-m.paint(view); assert m.selected(view)==0 and m.rounded[0]['rect']==(25,HOME_ROW//2-3,6,6)
+m.paint(view); assert m.selected(view)==0 and m.rounded[0]['rect']==(25,SET0.home_row//2-3,6,6)
 paint_bar(); assert ('widget_invalidate_force',view) not in [c[:2] for c in m.calls]; passed()
 
 # Chevrons: the stock list_into, where stock rows put img_into, on each visible row of a
@@ -1975,7 +1975,7 @@ m=Machine(); view,imgs=home_list(m); click_target(m,imgs[2]); m.clip=(0,0,375,32
 m.paint(view)
 half=O['CHEVRON_W']-25  # centre of the 50px image, as stock img_into
 bar=lambda: []
-assert m.rounded[0]['rect']==(25,HOME_ROW//2-3,6,6) and m.icons==bar()
+assert m.rounded[0]['rect']==(25,SET0.home_row//2-3,6,6) and m.icons==bar()
 assert loaded(m)==[] and m.clip==(0,0,375,320); passed()
 m.call(); m.paint(view); assert m.selected(view)==1 and m.rounded[0]['rect'][1]>0 and m.icons==bar(); passed()  # follows the bar
 # Drawn in touch mode too, with Home's bar, which touch never hides; none while stock
@@ -1985,8 +1985,8 @@ m.byte(syms['g_navbar_status'],1); m.paint(view); assert not m.icons and not loa
 # Modern: Home's accent bar spans the list and the chevron rides it alone.
 m=Machine(); m.config['THEME']='2'; view,imgs=home_list(m); click_target(m,imgs[2]); m.clip=(0,0,375,320)
 m.paint(view)
-cbar=lambda: [(HOME_LIST_W-half+O['HOME_CHEVRON_SHIFT'],m.sel()[1]+HOME_ROW//2,(0,0,HOME_LIST_W,7*HOME_ROW))]
-assert m.sel()==(0,0,HOME_LIST_W,HOME_ROW) and m.icons==cbar() and not m.rounded
+cbar=lambda: [(HOME_LIST_W-half+O['HOME_CHEVRON_SHIFT'],m.sel()[1]+SET0.home_row//2,(0,0,HOME_LIST_W,7*SET0.home_row))]
+assert m.sel()==(0,0,HOME_LIST_W,SET0.home_row) and m.icons==cbar() and not m.rounded
 assert m.bands[1][4]==color_t(ACCENTS[0][0]) and loaded(m)==['list_into'] and m.clip==(0,0,375,320)
 m.call(); m.paint(view); assert m.selected(view)==1 and m.sel()[1]>0 and m.icons==cbar(); passed()
 # Playlists: every row follows the scroll, clipped to the viewport; the half-width
@@ -2187,7 +2187,7 @@ m.call(address=HOOKS['widget_on_paint_border'][0],args=(m.art,m.canvas,0,0),gap=
 # The list paints only left of the panel; the placeholder (no size) fills the panel.
 m.word(m.canvas+O['CANVAS_X'],0); m.word(m.canvas+O['CANVAS_Y'],30+HOME_TOP)
 m.call(address=HOOKS['widget_on_paint_background'][0],args=(m.list,m.canvas,0,0),gap=0)
-assert m.clip==(0,30+HOME_TOP,SPLIT,7*HOME_ROW),m.clip
+assert m.clip==(0,30+HOME_TOP,SPLIT,7*SET0.home_row),m.clip
 m.call(address=HOOKS['widget_on_paint_border'][0],args=(m.list,m.canvas,0,0),gap=0); assert m.clip==(0,0,375,320)
 m.image_size=None
 m.u.mem_write(syms['g_lastcover_url'],b'/p/none\0')
@@ -7830,7 +7830,7 @@ def home_settings(full,modern=0):
             roww=O['HOME_MODERN_ROW'] if full else O['HOME_SPLIT_W']
             x,y,_=m.icons[0]
             shift=O['HOME_FULL_CHEVRON_SHIFT'] if full else O['HOME_CHEVRON_SHIFT']
-            assert x==roww-O['CHEVRON_W']+25+shift and y==m.sel()[1]+HOME_ROW//2
+            assert x==roww-O['CHEVRON_W']+25+shift and y==m.sel()[1]+SET0.home_row//2
             # Check the shipped glyph's ink, including its tapered ends, against the glass.
             for ix,iy in ink:
                 inset=corner_inset(30+y-25+iy)

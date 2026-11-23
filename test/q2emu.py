@@ -2011,7 +2011,7 @@ class ScrollEndMachine(CoverQueueMachine):
         if address!=syms['toolsGetSysMemFree']: return super().hook(u,address,size,unused)
         self.returns(1<<20)
 
-from ipod import HOME_TEXT_X, HOME_LIST_W, HOME_OURS, HOME_PAGE, HOME_ROW, HOME_ROWS, HOME_TOP, decode
+from ipod import HOME_TEXT_X, HOME_LIST_W, HOME_OURS, HOME_PAGE, SET0, HOME_ROWS, HOME_TOP, decode
 
 home_hook=HOOKS['home_page_init']
 
