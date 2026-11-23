@@ -4667,15 +4667,6 @@ static int pane_caption(char *t, unsigned size) {
     return 0;
 }
 
-/* w's first child of type, or 0. */
-static widget_t *child_of_type(widget_t *w, const char *type) {
-    for (unsigned i = 0, n = widget_count_children(w); i < n; ++i) {
-        widget_t *c = widget_get_child(w, i);
-        if (!tk_strcmp(widget_get_type(c), type)) return c;
-    }
-    return (void *)0;
-}
-
 /* A Streaming row's image widget for the pane: a card app's own file, or the build's copy of a
  * fixed service's icon at the pane's size (tools/build.py), in t. */
 static const char *service_icon(widget_t *image, char *t, unsigned size) {
@@ -4858,8 +4849,8 @@ void coverflow_home_row(widget_t *surface, widget_t *row, int id, int painting) 
         kind = id == library_search() ? PANE_SHUFFLE : PANE_LIBRARY;
     else if (list == home.stream) {
         kind = PANE_SERVICE;
-        home.row_image = child_of_type(row, "image");
-        home.row_label = child_of_type(row, "hscroll_label");
+        home.row_image = widget_lookup_by_type(row, "image", 0);
+        home.row_label = widget_lookup_by_type(row, "hscroll_label", 0);
     } else {
         static const char *const names[] = { "img_playing",    "img_library",  0,
                                              "img_cover_flow", "img_folder",   0,
@@ -5192,10 +5183,10 @@ static void home_fill(widget_t *list, int service) {
         int h = service ? I(first, W_H) : I(b, W_H);
         widget_move_resize(b, 0, service ? 0 : I(b, W_Y), HOME_SPLIT_W, h);
         if (service) {
-            widget_t *label = child_of_type(b, "hscroll_label");
+            widget_t *label = widget_lookup_by_type(b, "hscroll_label", 0);
             unsigned bitmap[64]; /* bitmap_t */
             char t[72];
-            const char *icon = service_icon(child_of_type(b, "image"), t, sizeof t);
+            const char *icon = service_icon(widget_lookup_by_type(b, "image", 0), t, sizeof t);
             if (label) widget_move_resize(label, I(label, W_X), 0, I(label, W_W), I(b, W_H));
             /* the build's icons; a card app's file waits for the pane (pane_service) */
             if (!tk_str_start_with(icon, "file://")) widget_load_image(home.art, icon, bitmap);

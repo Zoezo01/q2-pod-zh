@@ -76,7 +76,7 @@ slide_menu_set_value slide_menu_item_width list_view_create scroll_view_create l
 image_base_set_image widget_load_image widget_unload_image widget_set_name widget_use_style
 widget_set_text_utf8 widget_restack widget_animator_prop_create widget_animator_prop_set_params widget_animator_start widget_set_visible widget_get_prop_int widget_set_prop_int
 widget_get_prop_str widget_on widget_destroy_children widget_invalidate_force
-widget_count_children widget_get_child widget_lookup widget_move_resize widget_resize widget_get_canvas widget_get_visible
+widget_count_children widget_get_child widget_lookup widget_lookup_by_type widget_move_resize widget_resize widget_get_canvas widget_get_visible
 canvas_get_clip_rect canvas_set_clip_rect widget_set_sensitive widget_get_type tk_strcmp widget_animator_destroy
 timer_add timer_remove navigator_back_to_home navigator_back navigator_window_is_exist window_manager_close_window_force navigator_to_with_context bitmap_create_ex bitmap_destroy bitmap_unlock_buffer
 bitmap_lock_buffer_for_read bitmap_lock_buffer_for_write bitmap_get_line_length
@@ -327,6 +327,11 @@ static void *wm_stack[4]; /* the window manager's windows, bottom first: none un
 static int wm_n;
 unsigned widget_count_children(void *x) { return x == &wm_repaints ? (unsigned)wm_n : (unsigned)W(x)->nkids; }
 void *widget_get_child(void *x, unsigned i) { return x == &wm_repaints ? wm_stack[i] : &w[W(x)->kids[i]]; }
+void *widget_lookup_by_type(void *x, const char *t, int r) { /* direct children only: r 0 */
+    for (int i = 0; x && i < W(x)->nkids; ++i)
+        if (!strcmp(W(&w[W(x)->kids[i]])->type, t)) return &w[W(x)->kids[i]];
+    return 0;
+}
 static void *home_art, *home_list; /* iPod Home's art and list; none in the carousel tests */
 void *widget_lookup(void *x, const char *n, int r) {
     return !x ? 0 : !strcmp(n, "img_cover_flow") ? x : !strcmp(n, "img_homeart") ? home_art :

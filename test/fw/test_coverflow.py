@@ -2582,6 +2582,7 @@ class Ui:
         fw.mock('widget_set_prop_int', lambda w, k, v, *_: self[w].props.__setitem__(self.str(k), C.c_int(v).value))
         fw.mock('widget_get_prop_int', lambda w, k, d, *_: self[w].props.get(self.str(k), C.c_int(d).value))
         fw.mock('widget_lookup', lambda w, name, *_: self.lookup(w, self.str(name)))
+        fw.mock('widget_lookup_by_type', lambda w, t, *_: next((k for k in self[w].kids if self[k].type == self.str(t)), 0))
         fw.mock('widget_get_type', lambda w, *_: self.cstr(self[w].type))
         fw.mock('widget_restack', lambda w, i, *_: self.restack(w, i))
         fw.mock('widget_invalidate_force', lambda w, r, *_: self.dirty.append((w, rect(r) if r else None)))

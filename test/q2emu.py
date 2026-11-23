@@ -501,6 +501,13 @@ class Machine:
                     if found: return found
                 return 0
             ret=lookup(a) if a and (a!=self.wm or a in self.nodes) else 0  # a window manager that is no node has no windows to find (Album View)
+        elif name=='widget_lookup_by_type':  # AWTK's: the first child of a type, at any depth if c
+            def by_type(w):
+                for child in self.nodes[w]['children']:
+                    found=child if self.nodes[child].get('type')==self.text(b) else by_type(child) if c else 0
+                    if found: return found
+                return 0
+            ret=by_type(a) if a in self.nodes else 0
         elif name=='scroll_bar_cast': ret=a
         elif name=='scroll_bar_is_mobile': ret=n.get('type')=='scroll_bar_m'
         elif name=='widget_set_opacity': self.byte(a+0x34,b); ret=0

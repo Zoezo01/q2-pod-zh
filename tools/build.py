@@ -1419,6 +1419,7 @@ FUNCTIONS = {
  'widget_resize': ('int', 'widget_t *, int, int'),
  'widget_layout_children': ('int', 'widget_t *'),
  'widget_lookup': ('widget_t *', 'widget_t *, const char *, int'),
+ 'widget_lookup_by_type': ('widget_t *', 'widget_t *, const char *, int'),
  'scroll_bar_scroll_to': ('int', 'widget_t *, int, unsigned'),
  'navigator_back_to_home': ('int', 'void'),
  'navigator_switch_to_with_context': ('int', 'const char *, const void *, int'),
