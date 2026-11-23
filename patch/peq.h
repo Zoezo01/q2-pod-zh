@@ -411,6 +411,10 @@ enum {
     POD_HIDE_STORE,
     POD_BT_RECEIVE, /* Bluetooth's Receive Audio (headset_bt_service; the bluealsa2 launcher) */
     POD_CF_ART_LOG, /* Display's Log Failed Artwork: coverflow.c build_art */
+    /* Display's Hide Duplicate Albums and Hide Duplicate Songs: coverflow.c music_albums and
+     * coverflow_cover_tracks */
+    POD_CF_DUP_ALBUMS,
+    POD_CF_DUP_SONGS,
     POD_COUNT
 };
 int pod_value(int i);
@@ -450,6 +454,7 @@ int thread_lower(int idle);   /* coverflow_loader.c: a worker's nice 19 and its 
 /* coverflow.c: the o32 statx syscall, as demo imports none */
 int ringnav_statx(int dirfd, const char *path, int flags, unsigned mask, void *buf);
 void *coverflow_album_tracks(void *r);
+void *coverflow_cover_tracks(void *r); /* as Cover Flow lists them: Hide Duplicate Songs */
 /* coverflow.c: qsort's order of unsigned keys; whether key is in keys[0..n), sorted so, and the
  * first there not below it (n for none) */
 int key_cmp(const void *a, const void *b);

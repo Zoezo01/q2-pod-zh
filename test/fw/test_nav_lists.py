@@ -1835,6 +1835,7 @@ def test_the_selected_rows_long_title_scrolls(fw, ui, st):
     assert [a[0] for _, a in fw.calls('hscroll_label_start')] == [marquee.label.at]
     assert marquee.label.byte(O['HSCROLL_LOOP']) == 1
     assert (marquee.label.at, 0) in [a[:2] for _, a in fw.calls('hscroll_label_set_only_focus')]
+    assert ui.invalidated == [marquee.label.at]  # all of it, without its ellipsis, before it moves
 
 
 @pytest.mark.parametrize('text_w, only_focus', [(300 - 4, 1), (400, 0)])

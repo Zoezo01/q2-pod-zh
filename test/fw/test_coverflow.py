@@ -2328,6 +2328,31 @@ def test_split_makes_a_name_s_row_one_card_per_album_in_its_place(fw):
     assert len(q.lists) == 1  # the copy, the query's rows and the split all gone
 
 
+@pytest.mark.parametrize('on', [0, 1])
+def test_hide_duplicate_albums_keeps_the_first_card_of_a_name_and_artist(fw, on):
+    """album_cmp keeps a name's albums in other folders apart, each a card; on (CFDUPALBUMS), a card named as one before
+    it by the same artist, ASCII case aside, goes: the first stays where it was."""
+    Config(fw, **({'CFDUPALBUMS': '1'} if on else {}))
+    q = Deques(fw)
+    albums = [(1, 'Abbey', 'Beatles', '/m/A/1.flac'), (2, 'abbey', 'BEATLES', '/m/B/1.mp3'), (3, 'Abbey', 'Other', '/m/C/1.flac'),
+              (4, 'Help', 'Beatles', '/m/H/1.flac'), (5, 'Abbey', 'Beatles', '/m/D/1.flac')]
+    made = [Rec(a, p, artist=s, id=i) for i, a, s, p in albums]
+    listed = q.new([rec.p for rec in made])
+    Query(fw, q, [(i, a, s, p, None) for i, a, s, p in albums])
+    staging = fw.var('fw_ctx_tools_pdeq_directory', C.c_void_p)
+
+    def album_row(a, n, v, c, *_):  # with the artist, which Query's rows leave out
+        cols = (C.c_char_p * 4).from_address(v)
+        made.append(Rec(cols[1], cols[3], artist=cols[2], id=int(cols[0] or 0)))
+        q[staging.value].append(made[-1].p)
+    fw.mock('album_row', album_row)
+    music = fw.fn('coverflow__music_albums', C.c_void_p, C.c_void_p, C.c_int)(listed, 0)
+    out = fw.fn('coverflow__album_copies', C.c_void_p, C.c_void_p)(music)
+    paths = [field(p, 0x0c) for p in q[out]]
+    assert paths == (['/m/A/1.flac', '/m/C/1.flac', '/m/H/1.flac'] if on else [x[3] for x in albums])
+    assert len(q.lists) == 1  # the list, the query's rows and the copy before the duplicates went
+
+
 def test_album_only_keeps_the_album_s_tracks_in_order_and_where_the_track_went(fw):
     q = Deques(fw)
     recs = [Rec('A', '/m/A/1.flac'), Rec('B', '/m/B/1.flac'), Rec('a', '/m/A/2.flac'), Rec('A', '/m/X/1.flac'),

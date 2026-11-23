@@ -6056,10 +6056,10 @@ assert m.icons_set==['system_display','switch_off','display_backlight','list_int
 f,ctx=m.handler(m.nodes[kids[5]]['children'][0],O['EVT_CLICK']); m.calls=[]
 assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and m.opened[-1]==('systemset/display_page',None) and m.get(payload_syms['display_sub'])==0; passed()
 # Cover Flow: Artist View, Playlist View, Sort, Refresh Cover Flow, Fast Navigation, Scan Song Durations, Position Bar,
-# Log Failed Artwork; Controls, System's
+# Hide Duplicate Albums, Hide Duplicate Songs, Log Failed Artwork; Controls, System's
 # row: the wheel, the buttons and what they do.
-cfv=display_page(m,2); cf,cf_pl,cf_sort,cf_refresh,cf_big,cf_durations,cf_position,cf_art_log=m.nodes[cfv]['children']
-assert m.icons_set==['playset_covermode']*3+['system_update','playset_covermode','switch_off','playset_covermode','switch_on','playset_covermode','switch_off','playset_covermode','switch_off'],m.icons_set  # Scan Song Durations: SEED's on
+cfv=display_page(m,2); cf,cf_pl,cf_sort,cf_refresh,cf_big,cf_durations,cf_position,cf_dup_albums,cf_dup_songs,cf_art_log=m.nodes[cfv]['children']
+assert m.icons_set==['playset_covermode']*3+['system_update','playset_covermode','switch_off','playset_covermode','switch_on','playset_covermode','switch_off','playset_covermode','switch_off','playset_covermode','switch_off','playset_covermode','switch_off'],m.icons_set  # Scan Song Durations: SEED's on
 ctl=display_page(m,3); wheel,hold,scrub_one,tone,hp,lock,wake,guard=m.nodes[ctl]['children']
 assert [row_text(r) for r in (hold,scrub_one)]==['Hold Return: Recent','Single Press Scrub']; passed()
 view=display_page(m,1); rows=setting_rows(m,view)
@@ -11444,12 +11444,12 @@ assert icons==['system_display','playset_folderjump','playset_covermode','system
 guard=lambda: m.get(payload_syms['wheel_guard'])
 assert guard()==0 and click(7)==[(1,'Q2POD','VOLGUARD')] and texts()[7]=='Volume Guard' and guard()==1
 assert click(7)==[(0,'Q2POD','VOLGUARD')] and texts()[7]=='Volume Guard' and guard()==0; passed()
-# Fast Navigation (Display, Cover Flow's page, the fourth row from its end): off by default; the row saves BIGLIBRARY, and Cover
+# Fast Navigation (Display, Cover Flow's page, the sixth row from its end): off by default; the row saves BIGLIBRARY, and Cover
 # Flow reads it at once (pod_value(POD_BIG_LIB): letters, years and half copies); a stored value other than 1 is off.
 bm,brows,btexts,bicons,bclick=settings_page('display','scroll_view_display',stock_rows=3,sub=2)
-assert btexts()[-4]=='Fast Navigation' and bicons[-4]=='playset_covermode',(btexts(),bicons)
+assert btexts()[-6]=='Fast Navigation' and bicons[-6]=='playset_covermode',(btexts(),bicons)
 big=lambda bm: bm.call(address=payload_syms['pod_value'],args=(POD['POD_BIG_LIB'],0,0,0),gap=0)
-k=len(brows)-4
+k=len(brows)-6
 assert big(bm)==0 and bclick(k)==[(1,'Q2POD','BIGLIBRARY')] and btexts()[k]=='Fast Navigation' and big(bm)==1
 assert bclick(k)==[(0,'Q2POD','BIGLIBRARY')] and btexts()[k]=='Fast Navigation' and big(bm)==0; passed()
 for v,on in (('1',1),('2',0),('0',0)):
@@ -11458,18 +11458,30 @@ for v,on in (('1',1),('2',0),('0',0)):
 passed()
 # The independent duration switch is off, persists on/off, and cancels on off.
 dm,drows,dtexts,dicons,dclick=settings_page('display','scroll_view_display',{'SCANDURATIONS':'0'},stock_rows=3,sub=2)
-assert dtexts()[-3]=='Scan Song Durations'
-assert dclick(len(drows)-3)==[(1,'Q2POD','SCANDURATIONS')]
-assert dclick(len(drows)-3)==[(0,'Q2POD','SCANDURATIONS')]; passed()
+assert dtexts()[-5]=='Scan Song Durations'
+assert dclick(len(drows)-5)==[(1,'Q2POD','SCANDURATIONS')]
+assert dclick(len(drows)-5)==[(0,'Q2POD','SCANDURATIONS')]; passed()
 # The browsing-position indicator is optional, off by default, and persists independently.
 pm,prows,ptexts,picons,pclick=settings_page('display','scroll_view_display',stock_rows=3,sub=2)
-assert ptexts()[-2]=='Position Bar'
+assert ptexts()[-4]=='Position Bar'
 position_on=lambda pm: pm.call(address=payload_syms['pod_value'],args=(POD['POD_CF_POSITION'],0,0,0),gap=0)
-assert position_on(pm)==0 and pclick(len(prows)-2)==[(1,'Q2POD','CFPOSITION')] and position_on(pm)==1
-assert pclick(len(prows)-2)==[(0,'Q2POD','CFPOSITION')] and position_on(pm)==0
+assert position_on(pm)==0 and pclick(len(prows)-4)==[(1,'Q2POD','CFPOSITION')] and position_on(pm)==1
+assert pclick(len(prows)-4)==[(0,'Q2POD','CFPOSITION')] and position_on(pm)==0
 for v,on in (('1',1),('2',0),('0',0)):
     pm,*_=settings_page('display','scroll_view_display',{'CFPOSITION':v},stock_rows=3,sub=2)
     assert position_on(pm)==on,v
+passed()
+# Hide Duplicate Albums and Hide Duplicate Songs (Cover Flow's third and second rows from its end; music_albums and
+# coverflow_cover_tracks): off by default, each saves its key, read at once; a stored value other than 1 is off.
+dup=lambda um,pod: um.call(address=payload_syms['pod_value'],args=(POD[pod],0,0,0),gap=0)
+for k,row,key,pod in ((3,'Hide Duplicate Albums','CFDUPALBUMS','POD_CF_DUP_ALBUMS'),(2,'Hide Duplicate Songs','CFDUPSONGS','POD_CF_DUP_SONGS')):
+    um,urows,utexts,uicons,uclick=settings_page('display','scroll_view_display',stock_rows=3,sub=2)
+    assert utexts()[-k]==row and uicons[-k]=='playset_covermode',(utexts(),uicons)
+    assert dup(um,pod)==0 and uclick(len(urows)-k)==[(1,'Q2POD',key)] and dup(um,pod)==1
+    assert uclick(len(urows)-k)==[(0,'Q2POD',key)] and dup(um,pod)==0
+    for v,on in (('1',1),('2',0),('0',0)):
+        um,*_=settings_page('display','scroll_view_display',{key:v},stock_rows=3,sub=2)
+        assert dup(um,pod)==on,(key,v)
 passed()
 # Log Failed Artwork (Cover Flow's last row; build_art names an album whose ffmpeg was stopped in q2-crash.log): off by
 # default, saves CFARTLOG, read at once; a stored value other than 1 is off.

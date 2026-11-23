@@ -2057,6 +2057,9 @@ static int marq_moved(const void *info) {
     widget_on(label, EVT_DESTROY, marq_gone, (void *)0);
     hscroll_label_set_only_focus(label, 0);
     hscroll_label_start(label);
+    /* Running, stock paints it without its ellipsis, but its start paints nothing: a repaint of
+     * only part of it before it moves would show its text over the ellipsis. */
+    widget_invalidate_force(label, (void *)0);
     return 0;
 }
 
@@ -3123,6 +3126,9 @@ static int bt_receive __attribute__((section(".scratch")));
 static int hide_lib[3] __attribute__((section(".scratch")));
 /* Display's Log Failed Artwork (CFARTLOG): coverflow.c build_art. */
 static int cf_art_log __attribute__((section(".scratch")));
+/* Display's Hide Duplicate Albums and Hide Duplicate Songs (CFDUPALBUMS, CFDUPSONGS): coverflow.c
+ * music_albums and coverflow_cover_tracks. */
+static int cf_dups[2] __attribute__((section(".scratch")));
 static int *const pod_values[] = { &st.charge_limit,
                                    &st.wake_double,
                                    &st.artist_cf,
@@ -3155,7 +3161,9 @@ static int *const pod_values[] = { &st.charge_limit,
                                    &hide_lib[1],
                                    &hide_lib[2],
                                    &bt_receive,
-                                   &cf_art_log };
+                                   &cf_art_log,
+                                   &cf_dups[0],
+                                   &cf_dups[1] };
 _Static_assert(POD_LOCKCLOCK == 6, "lockscreen.c passes pod_rows 6");
 _Static_assert(POD_REMIND_DAILY == 26, "netupdate.c passes pod_rows 26");
 _Static_assert(sizeof pod_values / sizeof *pod_values == POD_COUNT, "a pod_values per row");
@@ -3191,7 +3199,9 @@ static const char *const pod_keys[] = { "CHARGELIMIT",
                                         "HIDEGAMES",
                                         "HIDESTORE",
                                         "BTRECEIVE",
-                                        "CFARTLOG" };
+                                        "CFARTLOG",
+                                        "CFDUPALBUMS",
+                                        "CFDUPSONGS" };
 _Static_assert(sizeof pod_keys / sizeof *pod_keys == POD_COUNT, "a pod_keys entry per row");
 /* a row's choices: Artist albums three, Standby limit four, every other row two */
 static int pod_choices(unsigned i) { return i == POD_ARTIST_CF ? 3 : i == POD_STANDBY ? 4 : 2; }
@@ -3271,6 +3281,8 @@ static void pod_text(int i) {
         { 0 },
         { 0 }, /* Receive Audio: a switch */
         { 0 }, /* Log Failed Artwork: a switch */
+        { 0 }, /* Hide Duplicate Albums and Hide Duplicate Songs: switches */
+        { 0 },
     };
     _Static_assert(sizeof names / sizeof *names == POD_COUNT, "a names entry per row");
     if (i == POD_CF_SORT) { /* the Sort card's words, as Cover Flow's page holds the row */
@@ -3304,6 +3316,8 @@ static void pod_text(int i) {
                          : i == POD_HIDE_STORE     ? tr("Hide App Store")
                          : i == POD_BT_RECEIVE     ? tr("Receive Audio")
                          : i == POD_CF_ART_LOG     ? tr("Log Failed Artwork")
+                         : i == POD_CF_DUP_ALBUMS  ? tr("Hide Duplicate Albums")
+                         : i == POD_CF_DUP_SONGS   ? tr("Hide Duplicate Songs")
                                                    : 0;
     static const unsigned standby_hours[] = { 0, STANDBY_LIMIT_1, STANDBY_LIMIT_2,
                                               STANDBY_LIMIT_3 };
@@ -6400,6 +6414,8 @@ int ringnav_display(widget_t *win, void *ctx) {
         pod_rows(win, "scroll_view_display", POD_BIG_LIB, 1, cf_icons + 3);
         pod_rows(win, "scroll_view_display", POD_SCAN_DURATIONS, 1, cf_icons + 3);
         pod_rows(win, "scroll_view_display", POD_CF_POSITION, 1, cf_icons + 3);
+        pod_rows(win, "scroll_view_display", POD_CF_DUP_ALBUMS, 1, cf_icons + 3);
+        pod_rows(win, "scroll_view_display", POD_CF_DUP_SONGS, 1, cf_icons + 3);
         pod_rows(win, "scroll_view_display", POD_CF_ART_LOG, 1, cf_icons + 3);
         return result;
     }

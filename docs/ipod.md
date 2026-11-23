@@ -59,6 +59,8 @@ it runs, since stock's timer (`0x5fb7ac`) stops an unfocused `only_focus` label 
 once running, stock's paint (`0x5fbff0`) drops the ellipsis, so the selected title shows its start
 without one as it holds. A paint that moves the selection, to another widget or to another row in the
 same pooled widget, stops it from a timer. A title that fits costs one timer per selection.
+Stock's start paints nothing, so the label is invalidated whole as it starts: a repaint of only part
+of it before it moved showed its text over the ellipsis.
 ponytail: the first `hscroll_label` of the row is taken as its title, and a dark screen, a covered
 page or a touch's hidden selection stops it only at the end of its pass, not at once.
 
@@ -783,7 +785,9 @@ NPCENTRED`, off; `playset_covermode`): `ringnav_ui_load`, hooked on every window
   `playset_covermode`): letters held until the lift and years on a fast spin, and the half copies
   they read, a "Scan Song Durations" switch (`Q2POD SCANDURATIONS`, off; `playset_covermode`;
   durations.c), a "Position Bar" switch (`Q2POD CFPOSITION`, off; `playset_covermode`;
-  coverflow_position.c), and a "Log Failed Artwork" switch (`Q2POD CFARTLOG`, off;
+  coverflow_position.c), "Hide Duplicate Albums" and "Hide Duplicate Songs" switches (`Q2POD
+  CFDUPALBUMS`, `CFDUPSONGS`, off; `playset_covermode`; [internals.md](internals.md#coverflow)),
+  and a "Log Failed Artwork" switch (`Q2POD CFARTLOG`, off;
   `playset_covermode`; build_art, [internals.md](internals.md#coverflow)).
 - Controls: Wheel Sensitivity, which opens its slider page; "Hold Return: Recent"
   (`Q2POD HOLDRETURN`, [Hold Return](#hold-return), `playset_folderjump`); a "Single Press Scrub" switch (`IPOD SCRUBSINGLE`, off; `np_key`): on Now Playing a single
