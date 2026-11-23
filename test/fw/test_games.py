@@ -64,7 +64,7 @@ def test_structs_are_the_saves_sizes():
 def api(fw):
     ptr, i, u = C.c_void_p, C.c_int, C.c_uint
     fns = {'games_ok': (i, ptr, u, u), 'games_seal': (None, ptr, u, u), 'hash_bytes': (u, u, ptr, u),
-           'sud_puzzles': (i,), 'sud_puzzle': (None, i, ptr), 'sud_new': (None, ptr), 'sud_set': (i, ptr, i, i),
+           'sud_puzzle': (None, i, ptr), 'sud_new': (None, ptr), 'sud_set': (i, ptr, i, i),
            'sud_conflict': (i, ptr, i), 'sud_done': (i, ptr), 'vortex_new': (None, ptr), 'vortex_launch': (None, ptr),
            'vortex_step': (None, ptr, i), 'sol_new': (None, ptr), 'sol_draw': (i, ptr), 'sol_move': (i, ptr, i, i),
            'sol_home': (i, ptr, i), 'sol_won': (i, ptr), 'sol_finish': (None, ptr), 'snake_new': (None, ptr),
@@ -233,7 +233,6 @@ def test_games_ok_hostile_sweep(fw):
 
 def test_the_bundled_puzzles_each_have_one_solution(fw):
     g = api(fw)
-    assert g.sud_puzzles() == 24
     out = (C.c_ubyte * 81)()
     seen = set()
     for k in range(24):

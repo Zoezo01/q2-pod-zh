@@ -112,7 +112,6 @@ static const char puzzles[][42] = {
 };
 #define PUZZLES (int)(sizeof puzzles / sizeof *puzzles)
 
-int sud_puzzles(void) { return PUZZLES; }
 void sud_puzzle(int k, unsigned char *out) {
     for (int i = 0; i < 81; ++i) out[i] = (unsigned char)puzzles[k][i / 2] >> (i & 1 ? 0 : 4) & 15;
 }

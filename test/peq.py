@@ -2625,7 +2625,6 @@ def games_check(tmp):
                     rows[r] ^= b; cols[c] ^= b; boxes[x] ^= b; g[i] = 0
         go(); return found
     out = (C.c_ubyte * 81)()
-    assert lib.sud_puzzles() == 24
     for k in range(24):
         lib.sud_puzzle(k, out); assert len(solutions(out)) == 1, k
     seed = C.c_uint.in_dll(lib, 'games_seed'); s = Sudoku()
