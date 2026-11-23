@@ -3318,6 +3318,51 @@ void coverflow_play(int row) {
     if (cls == 0xf001) cover_load = playback_loads; /* its load, play_folder's */
 }
 
+/* A centred track list's artist for song: aa, the album artist, when set, else the song's own;
+ * "" for none, and under a theme's own rows (centred 0). */
+static const char *track_by(const char *aa, void *song, int centred) {
+    const char *by = *aa || !centred ? aa : P(song, REC_ARTIST);
+    return by ? by : "";
+}
+
+/* Minimal's and Modern's album name over its songs (a page_title_h), between two short 1 px rules
+ * at the text's mid-line: each at most TITLE_RULE_W long, TITLE_RULE_GAP from the text, inside the
+ * title's box. None for a side shorter than TITLE_RULE_MIN, a name that scrolls (wider than its
+ * box less hscroll_label's two 2 px margins), or no canvas. White, which the style hook paints as
+ * the half's ink, the name's. Placed again whenever cf.title's text changes. ponytail: measured in
+ * the default face at cfs.name_px, as panel_fit measures; a CJK name's own face may run wider. */
+#define TITLE_RULE_W 75
+#define TITLE_RULE_GAP 12
+#define TITLE_RULE_MIN 16
+static void title_rules(void) {
+    if (!theme()->page_title_h) return;
+    canvas_t *canvas = widget_get_canvas(cf.title);
+    const unsigned *s = widget_get_text(cf.title);
+    int box = I(cf.title, W_W), w = 0;
+    unsigned n = 0;
+    while (s && s[n]) ++n;
+    if (canvas && n) {
+        canvas_set_font(canvas, (const char *)0, cfs.name_px);
+        w = (int)(canvas_measure_text(canvas, s, n) + 0.5f);
+    }
+    int side = (box - w) / 2 - TITLE_RULE_GAP, len = side < TITLE_RULE_W ? side : TITLE_RULE_W,
+        show = w > 0 && w + 4 <= box && len >= TITLE_RULE_MIN, x = I(cf.title, W_X);
+    for (int i = 0; i < 2; ++i) {
+        const char *name = i ? "title_rule_r" : "title_rule_l";
+        widget_t *rule = widget_lookup(cf.body, name, 0);
+        if (!rule && !show) continue;
+        if (!rule) {
+            rule = widget_factory_create_widget(widget_factory(), "view", cf.body, 0, 0, 0, 0);
+            widget_set_name(rule, name);
+            widget_set_prop_int(rule, "style:normal:bg_color", (int)0xffffffffu);
+        }
+        widget_set_visible(rule, show, 0);
+        if (show)
+            widget_move_resize(rule, i ? x + box - side : x + side - len, I(cf.title, W_H) / 2, len,
+                               1);
+    }
+}
+
 static int play(void *ctx, event_t *event) {
     unsigned t0 = (unsigned)time_now_ms();
     if (coverflow_landing()) return 0; /* picked already: its press runs */
@@ -3325,6 +3370,7 @@ static int play(void *ctx, event_t *event) {
     void *t = deque_at(cf.tracks, (unsigned)i);
     if (!t || access(P(t, REC_PATH), 0)) {
         page_retitle(cf.page, cf.title, tr("Storage unavailable"));
+        title_rules();
         return 0;
     }
     if (!land_start(t, i, t0)) coverflow_play(i);
@@ -3632,25 +3678,35 @@ static int to_tracks(const void *unused) {
         widget_set_visible(cf.covers, 0, 0);
         widget_set_sensitive(cf.covers, 0);
     }
-    /* one row height a list, as stock's layouter forces item_height on every row: 64 px with a
-     * length's line under each title once any track has one, an unknown's left empty */
-    int timed = 0;
-    for (int i = 0; i < n && !timed; ++i)
-        /* NOLINTNEXTLINE(bugprone-signed-char-misuse): only tested for 0, an empty text */
-        timed = *duration_text(name, sizeof name, deque_at(cf.tracks, (unsigned)i));
-    const char *title = P(r, cf.scoped == PLAYLISTS ? REC_TITLE : REC_ALBUM);
-    widget_t *view = timed ? page_list(cf.page, cf.body, &cf.title, title, n, 64) : list(title, n);
-    /* the album over its tracks, all centred, but under a theme's own rows */
+    /* the album over its tracks, all centred, but under a theme's own rows; there each track's
+     * artist (the album artist when the album has one) leads its line, before any length */
     int centred = theme()->page_title_h;
-    if (centred) widget_set_prop_int(cf.title, "style:normal:font_size", cfs.name_px);
-    for (int i = 0; i < n; ++i) {
-        char duration[24];
+    const char *aa = centred ? P(r, REC_ALBUM_ARTIST) : "";
+    if (!aa) aa = "";
+    /* one row height a list, as stock's layouter forces item_height on every row: 64 px with a
+     * line under each title once any track has a length or, centred, an artist, an unknown's left
+     * empty */
+    int tall = 0;
+    for (int i = 0; i < n && !tall; ++i) {
         void *song = deque_at(cf.tracks, (unsigned)i);
+        /* NOLINTNEXTLINE(bugprone-signed-char-misuse): only tested for 0, an empty text */
+        tall = *duration_text(name, sizeof name, song) || *track_by(aa, song, centred);
+    }
+    const char *title = P(r, cf.scoped == PLAYLISTS ? REC_TITLE : REC_ALBUM);
+    widget_t *view = tall ? page_list(cf.page, cf.body, &cf.title, title, n, 64) : list(title, n);
+    if (centred) widget_set_prop_int(cf.title, "style:normal:font_size", cfs.name_px);
+    title_rules();
+    for (int i = 0; i < n; ++i) {
+        char duration[24], detail[300];
+        void *song = deque_at(cf.tracks, (unsigned)i);
+        const char *by = track_by(aa, song, centred), *line = duration;
         duration_text(duration, sizeof duration, song);
-        widget_t *row = page_row_detail(view, i, track_name(name, sizeof name, song),
-                                        timed ? duration : 0, play);
+        if (*by) tk_snprintf(detail, sizeof detail, "%s%s%s", by, *duration ? " · " : "", duration);
+        if (*by) line = detail;
+        widget_t *row =
+            page_row_detail(view, i, track_name(name, sizeof name, song), tall ? line : 0, play);
         if (centred) widget_use_style(widget_get_child(row, 0), "s_scrlabel_white20c");
-        if (centred && timed)
+        if (centred && tall)
             widget_set_prop_str(widget_get_child(row, 1), "style:normal:text_align_h", "center");
     }
     page_push(view, cf.text_albums && cf.scoped == ARTIST_ALBUMS); /* from a list, not the covers */
