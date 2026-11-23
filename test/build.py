@@ -424,6 +424,14 @@ def validate_assets(directory):
     STOCK_NAMED_ICONS = ('menu_coverflow.png', 'menu_coverflowdown.png')
     def read(image, rel):
         return subprocess.check_output(['unsquashfs', '-cat', str(directory/image), rel])
+    # Stock's other executables and libraries ship their .pdr zeroed too (build.py zero_pdr), each otherwise stock's;
+    # hciplayer's, patched, too.
+    from build import zero_pdr
+    for rel in ('usr/sbin/wpa_supplicant', 'release/bin/libawtk.so', 'usr/lib/libavcodec.so.58.54.100'):
+        old = read('stock.squashfs', rel)
+        assert read('rootfs.squashfs', rel) == zero_pdr(old, rel) != old, rel
+    player = read('rootfs.squashfs', 'usr/bin/hciplayer')
+    assert zero_pdr(player, 'hciplayer') == player
     # Every stock UI asset with Chinese text is given in English (english_ui), the edited ones after their edit.
     ui = 'release/assets/default/raw/ui/'
     chinese = {l.removeprefix('squashfs-root/'+ui) for l in run('unsquashfs', '-l', directory/'stock.squashfs').splitlines()
@@ -460,7 +468,7 @@ def validate_assets(directory):
     for name in STOCK_NAMED_ICONS:  # stock V1.36's Album Wall card icons have Cover Flow's names: ours take their place
         assert name in ICONS and changed[xx+name] == dict(original_sha256=sha(read('stock.squashfs', xx+name)), sha256=sha((ROOT/'assets/icons'/name).read_bytes()))
     tag_old, tag_new = read('stock.squashfs', TAG_C), read('rootfs.squashfs', TAG_C)
-    assert tag_new == patch_m4b_cover(tag_old)
+    assert tag_new == zero_pdr(patch_m4b_cover(tag_old), TAG_C)
     assert changed[TAG_C] == dict(original_sha256=sha(tag_old), sha256=sha(tag_new))
     for path in WEB:  # Wi-Fi transfer's page: English, folder uploads
         old, new = read('stock.squashfs', path), read('rootfs.squashfs', path)
@@ -548,7 +556,7 @@ def validate_assets(directory):
     assert demo[fileoff(demo, CARD_MOUNT_FMT):][:20] == CARD_MOUNT_LINE[1]
     assert read('rootfs.squashfs', BLUEALSA2) == read('stock.squashfs', BLUEALSA2).replace(*BT_KEEPALIVE)  # keep-alive 5 s, Receive Audio
     daemon = read('stock.squashfs', BLUETOOTHD)  # a connection the other side opens: 30 s to 1 s
-    assert read('rootfs.squashfs', BLUETOOTHD) == daemon.replace(*BT_GRACE) != daemon
+    assert read('rootfs.squashfs', BLUETOOTHD) == zero_pdr(daemon.replace(*BT_GRACE), BLUETOOTHD) != zero_pdr(daemon, BLUETOOTHD)
     # bluealsa: AAC capability, the A2DP Sink default, the two DROP jumps, the silence sites, and one appended LOAD payload.
     from build import BT_DROP, BT_DROP_HANDLER, BT_DROP_PAYLOAD, BT_SILENCE_SITES, BT_SINK_DEFAULT, patch_bluealsa, segments
     old, new = read('stock.squashfs', BLUEALSA), read('rootfs.squashfs', BLUEALSA)
@@ -557,8 +565,9 @@ def validate_assets(directory):
     for address, size in ((BT_DROP, 8), (BT_DROP_HANDLER, 8), (BT_SINK_DEFAULT[0], 4), *((a, 4) for a, *_ in BT_SILENCE_SITES)):
         off = fileoff(old, address)
         allowed.update(range(off, off+size))
-    assert {i for i in range(len(old)) if old[i] != new[i]} <= allowed
-    assert new == patch_bluealsa(old)
+    bare = zero_pdr(old, BLUEALSA)
+    assert {i for i in range(len(old)) if bare[i] != new[i]} <= allowed
+    assert new == zero_pdr(patch_bluealsa(old), BLUEALSA)
     assert segments(new)[-1][1][2] == BT_DROP_PAYLOAD
     assert new[AAC_44K1] == 0 and manifest['bluealsa_sha256'] == sha(new)
     from bluealsa import check as check_bluetooth_drop

@@ -1,7 +1,7 @@
 """Checked Q2 V1.36 PEQ hooks and target ABI imports; no vendor code is distributed."""
 import re
 import struct
-from build import ROOT, FLAGS, GP, FUNCTIONS, GLOBALS, PRIVATE_FUNCTIONS, append_payload, check, fileoff, run, sha, symbols, jal, j
+from build import ROOT, FLAGS, GP, FUNCTIONS, GLOBALS, PRIVATE_FUNCTIONS, append_payload, check, fileoff, run, sha, symbols, jal, j, zero_pdr
 from ipod import patch_word
 
 PLAYER_SHA = 'f02ccc4579f0447ee5472dbfa13aab1929704ab154b4e6192e26a7082c780a3e'
@@ -353,6 +353,7 @@ def patch_player(raw, out, flac_experiments=()):  # pragma: no mutate block
     for address, stock, patched in patch_words(flac_experiments, ps):
         patch_word(data, address, stock, patched, 'Experimental FLAC')
     append_payload(data, payload, PLAYER_BASE, max(len(payload), ps['__end']-PLAYER_BASE), 'player')
+    data = zero_pdr(data, 'hciplayer')
     (out/'hciplayer').write_bytes(data)
     return dict(stock_sha256=PLAYER_SHA, sha256=sha(data), payload_sha256=sha(payload),
                 **({'flac_experiments': list(flac_experiments)} if flac_experiments else {}))

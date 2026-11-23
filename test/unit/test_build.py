@@ -124,6 +124,46 @@ def test_fileoff_refuses_what_the_file_does_not_hold(address):
         build.fileoff(two_loads(), address)
 
 
+def sectioned(e_type=3, name=b'.pdr', kind=1, flags=0, offset=0x100, filesz=0x100, twice=False, shnum=5, shentsize=40):
+    """An ELF32 whose LOAD segment holds file offsets 0 to filesz, then sections .text, .bss (NOBITS at .pdr's offset,
+    as a linker leaves it), name (0x40 bytes of 0x5a at offset; kind and flags its type and flags) and .shstrtab, named
+    name as well if twice; shnum and shentsize are its header's."""
+    names = b'\0.text\0.bss\0' + name + b'\0.shstrtab\0'
+    data = program((1, 0, 0, 0, filesz, filesz + 0x400, 7, 0x1000), size=0x300)
+    data[:6] = b'\x7fELF\1\1'  # 32-bit, little-endian
+    struct.pack_into('<H', data, 16, e_type)
+    data[0x80:0x100] = b'\x11' * 0x80
+    data[offset:offset + 0x40] = b'\x5a' * 0x40
+    data[0x140:0x140 + len(names)] = names
+    struct.pack_into('<I', data, 32, 0x180)
+    struct.pack_into('<HHH', data, 46, shentsize, shnum, 4)
+    for i, row in enumerate([(0,) * 10, (1, 1, 6, 0x80, 0x80, 0x80, 0, 0, 4, 0), (7, 8, 3, 0x100, 0x100, 0x400, 0, 0, 16, 0),
+                             (12, kind, flags, 0, offset, 0x40, 0, 0, 4, 0),
+                             (12 if twice else 13 + len(name), 3, 0, 0, 0x140, len(names), 0, 0, 1, 0)]):
+        struct.pack_into('<10I', data, 0x180 + 40 * i, *row)
+    return bytes(data)
+
+
+@pytest.mark.parametrize('data,zeroed', [(sectioned(), True), (sectioned(e_type=2), True), (sectioned(flags=1), True),
+                                         (sectioned(e_type=1), False), (sectioned(name=b'.pdx'), False), (sectioned(shnum=0, shentsize=0), False),
+                                         (b'\x7fELF\2\1' + sectioned()[6:], False), (b'\x89PNG\r\n\x1a\n' + bytes(56), False)])
+def test_zero_pdr(data, zeroed):
+    # A library's or an executable's .pdr, writable or not: those 0x40 bytes alone become zeros. A kernel module, no .pdr,
+    # no section headers, an ELF64, not an ELF: as it is
+    assert build.zero_pdr(data, 'x') == (data[:0x100] + bytes(0x40) + data[0x140:] if zeroed else data)
+
+
+@pytest.mark.parametrize('data,message', [*((d, r'\.pdr is not a section of its own outside every segment') for d in (
+    sectioned(filesz=0x120), sectioned(flags=2), sectioned(kind=8), sectioned(offset=0x140), sectioned(offset=0x180),
+    sectioned(offset=0x34), sectioned(twice=True), sectioned(offset=0x2e0)[:0x300])),
+    (sectioned(shentsize=56), 'unexpected ELF section header size')])
+def test_zero_pdr_refuses_anything_but_a_pdr_of_its_own_outside_every_segment(data, message):
+    # Inside the LOAD segment, allocated, NOBITS, over .shstrtab, the section headers or the program headers, a second
+    # .pdr, past the file's end; section headers of another size: the build stops
+    with pytest.raises(ValueError, match=rf'^x: {message}$'):
+        build.zero_pdr(data, 'x')
+
+
 def appendable(size=0x10001):
     """A LOAD from offset 0 (its paddr 0, as some linkers leave it), a dynamic segment inside it, and the final PT_NULL slot."""
     return program((1, 0, 0x400000, 0, 0x800, 0x1000, 5, 0x1000), (2, 0x700, 0x400700, 0x400700, 0x80, 0x80, 6, 4), NULL, size=size)
