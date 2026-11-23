@@ -193,9 +193,10 @@ static const time_row_t time_rows[] = {
     { "classic_light_tray_108", 211, 259, 3, 2, { 214, 271 } },
     { "classic_light_tray_165", 183, 231, 3, 3, { 186, 243, 300 } },
 };
-static const char time_months[12][4] = { N_("Jan"), N_("Feb"), N_("Mar"), N_("Apr"),
-                                         N_("May"), N_("Jun"), N_("Jul"), N_("Aug"),
-                                         N_("Sep"), N_("Oct"), N_("Nov"), N_("Dec") };
+const char time_months[12][4] = {
+    N_("Jan"), N_("Feb"), N_("Mar"), N_("Apr"), N_("May"), N_("Jun"),
+    N_("Jul"), N_("Aug"), N_("Sep"), N_("Oct"), N_("Nov"), N_("Dec")
+};
 /* The open form's selectors, by field, AM/PM's none, and its slide view: found after stock's init,
  * so a paint needs no lookup. */
 static struct {

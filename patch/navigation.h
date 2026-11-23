@@ -502,6 +502,7 @@ unsigned qm_album_id(void *r);
 long clock_back(long long wall);
 int clock_due(const void *info);
 void clock_show(void);
+extern const char time_months[12][4]; /* clock.c: the English month names */
 int time_click(widget_t *target, event_t *event);
 int time_form(widget_t *top);
 void time_open(widget_t *win);
