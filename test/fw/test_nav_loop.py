@@ -536,17 +536,21 @@ def test_card_mounted_reads_proc_mounts(fw, mounts, mounted):
     assert fw.fn('card_mounted', C.c_int)() == mounted
 
 
-@pytest.mark.parametrize('fails, mounted, tries', [(0, 1, 1), (99, 0, 1), (3, 1, 4), (99, 1, 20)])
-def test_standby_unmount_retries_then_remounts_read_only_and_detaches(fw, fails, mounted, tries):
-    """A sync, then stock's command each 100 ms while the card is still in /proc/mounts, up to 20 tries; then
-    the holders' record, the read-only remount, a sync and umount -l, whose result is returned."""
-    Mounts(fw, Files(fw), mounted)
+@pytest.mark.parametrize('fails, mounted, gone, tries', [(0, 1, 0, 1), (99, 0, 0, 1), (3, 1, 0, 4), (99, 1, 3, 3),
+                                                        (99, 1, 0, 20)])
+def test_standby_unmount_retries_then_remounts_read_only_and_detaches(fw, fails, mounted, gone, tries):
+    """A sync, then stock's command each 100 ms while the card is still in /proc/mounts (gone: the try it leaves
+    after), up to 20 tries; then the holders' record, the read-only remount, a sync and umount -l, whose result is
+    returned."""
+    mounts = Mounts(fw, Files(fw), mounted)
     log, left = [], [fails]
     def system(cmd, *_):
         cmd = C.string_at(cmd).decode()
         log.append(cmd)
         if cmd == 'umount /mnt/mmc':
             left[0] -= 1
+            if fails - left[0] == gone:
+                mounts.set(False)
             return int(left[0] >= 0)
         return 7 if cmd == 'umount -l /mnt/mmc' else 0
     fw.mock('fw_system', system)
@@ -558,7 +562,7 @@ def test_standby_unmount_retries_then_remounts_read_only_and_detaches(fw, fails,
     else:
         assert log[:len(expect)] == expect and result == 7
         busy, remount, sync, detach = log[len(expect):]
-        assert 'q2-card-busy' in busy and remount.startswith('mount -o remount,ro /mnt/mmc')
+        assert 'q2-card-busy' in busy and remount == 'mount -o remount,ro /mnt/mmc 2>>/mnt/data/q2-card-busy'
         assert (sync, detach) == ('sync', 'umount -l /mnt/mmc')
 
 
