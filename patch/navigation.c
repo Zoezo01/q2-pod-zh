@@ -8724,10 +8724,13 @@ static void bt_volume_poll(void) {
  * off, unless Wake's second press may be coming); stock then finds its 8 ms gone, sleeps 0 and
  * keeps its own bookkeeping. A dark wheel turn keeps stock's pace, DARK_TURN_MS on from each tick
  * (tick_gate): an idling pass dispatched every tick it had slept through at once, so a dark turn
- * clicked in bursts and stepped the volume in jumps (#303). ponytail: a turn's first ticks still
- * wait out one idle and arrive together, to one click (tone_dark). Ending the idle on a key
- * instead is select() on a datagram socket that ringnav_queue_event sends to, a send on every
- * input thread; build it if the first tick's wait ever shows. The first pass with it back on
+ * clicked in bursts and stepped the volume in jumps (#303). Every idle here is loop_wait
+ * (playback.c), which a key ends at once, and a touch too with the screen on, so no input waits
+ * one out; a timer or an idle another thread queues still does. For IDLE_MS after an input that
+ * reached ringnav_input the dark pass is not the long one either, so a timer that input started
+ * is at most SCREEN_OFF_SLEEP_MS late. ponytail: with the screen off and quiet, what is not a key
+ * (a cable, a headset, a cast starting) is seen up to DARK_IDLE_SLEEP_MS late, the pace stock's
+ * own pollers have then (DARK_POLL_US). The first pass with it back on
  * repaints every window once, so nothing drawn while dark, or only partly, stays on screen until
  * the next input; after a centre press woke it, it also restarts Wake's window for a dropped press
  * (woke_at). With the screen on, a pass idles IDLE_SLEEP_MS once input and window animations have
@@ -8823,7 +8826,8 @@ int ringnav_sleep(void *loop) {
                     (signed char)bt__recv_pageflag != 2 && time_now_ms() - st.wake_at >= WAKE_MS;
         dark_quiet = quiet;
         if ((unsigned)time_now_ms() - st.tick_at >= DARK_TURN_MS)
-            sleep_ms(quiet ? DARK_IDLE_SLEEP_MS : SCREEN_OFF_SLEEP_MS);
+            loop_wait(quiet && time_now_ms() - st.last_input >= IDLE_MS ? DARK_IDLE_SLEEP_MS
+                                                                        : SCREEN_OFF_SLEEP_MS);
     } else if (st.dark) {
         dark_quiet = 0;
         wheel_guard_reset();
@@ -8834,7 +8838,7 @@ int ringnav_sleep(void *loop) {
     } else if (time_now_ms() - st.last_input >= IDLE_MS &&
                !window_manager_is_animating(window_manager()) && !np_animating() &&
                !coverflow_turning())
-        sleep_ms(IDLE_SLEEP_MS);
+        loop_wait(IDLE_SLEEP_MS);
     tone_dark = 0; /* after the polls: a click of theirs is this pass's too */
     return stock_sleep_trampoline(loop);
 }

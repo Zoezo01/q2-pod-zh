@@ -1672,6 +1672,26 @@ def test_the_touch_threads_empty_events_are_not_queued(fw):
     assert loop.send(O['KEY_NEXT']) == 0 and loop.events == [(O['EVT_KEY_DOWN'], O['KEY_NEXT'])]
 
 
+# The UI loop's idle (loop_wait) ends at an input: here the futex returns at once, so sleep_ms is the idle.
+@pytest.mark.parametrize('kind, lit, wakes', [
+    (O['EVT_KEY_DOWN'], 0, True), (O['EVT_KEY_UP'], 0, True),  # a key, the screen off too
+    (O['EVT_POINTER_FIRST'], 1, True), (O['EVT_POINTER_ABORT'], 1, True),  # a touch, the screen on
+    (O['EVT_POINTER_FIRST'], 0, False),  # a touch on a dark screen
+    (0x200, 1, False)])  # what another thread queues for the UI
+def test_an_input_ends_the_loops_idle(fw, kind, lit, wakes):
+    loop, wait = Loop(fw), fw.fn('loop_wait', None, C.c_uint)
+    fw.var('g_backlight_status', C.c_ubyte).value = lit
+    idles = lambda: [args[0] for _, args in fw.calls('sleep_ms')]
+    wait(25)
+    assert idles() == [25]  # nothing queued: the idle runs
+    loop.send(O['KEY_NEXT'], kind=kind)
+    assert loop.events == [(kind, O['KEY_NEXT'])]  # queued before the wake
+    wait(25)
+    assert idles() == [25] * (2 - wakes)  # an input since the last wait: no idle
+    wait(25)
+    assert idles() == [25] * (3 - wakes)  # and the pass after idles again
+
+
 def test_no_loop_or_poster_is_stocks_bad_params(fw):
     assert Loop(fw, poster=False).send() == 0x10  # RET_BAD_PARAMS
     queue = fw.fn('ringnav_queue_event', C.c_int, C.c_void_p, C.c_void_p)

@@ -488,6 +488,7 @@ int app_fav(void);         /* tidal.c: Now Playing's heart on an app's streamed 
 void app_fav_load(void);   /* tidal.c: a queue loading clears an app song's heart */
 int app_urls_at(void);     /* tidal.c: the song playing's n in a now=1 URL queue playing; -1 none */
 int directory(void *path); /* playback.c: toolsLoadDirectory, for staged */
+void loop_wait(unsigned ms);        /* playback.c: the UI loop's idle, ended early by an input */
 #define TIDAL_DIR "/mnt/mmc/.tidal" /* tidal.c's cache, Tidal Downloads' list */
 void tidal_clear(void);
 /* Download All (tidal.c): Tidal Downloads' first row's caption, a press starting or ending it; its

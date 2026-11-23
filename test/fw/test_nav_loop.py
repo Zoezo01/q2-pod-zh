@@ -2878,6 +2878,13 @@ def test_dark_but_busy_the_loop_idles_short(fw, stock_bytes, st, why):
     assert loop() == [O['SCREEN_OFF_SLEEP_MS']] and loop.dark_quiet() == 0
 
 
+def test_dark_and_quiet_the_idle_is_short_after_an_input(fw, stock_bytes, st):
+    loop = Loop(fw, stock_bytes, lit=False)
+    st('last_input', C.c_uint).value = loop.clock.now  # ringnav_input's stamp
+    assert loop(O['IDLE_MS'] - 1) == [O['SCREEN_OFF_SLEEP_MS']] and loop.dark_quiet() == 1
+    assert loop(1) == [O['DARK_IDLE_SLEEP_MS']]
+
+
 def test_a_dark_wheel_turn_keeps_stocks_pace(fw, stock_bytes, st):
     loop = Loop(fw, stock_bytes, lit=False)
     st('tick_at', C.c_uint).value = loop.clock.now  # tick_gate's stamp, this very millisecond

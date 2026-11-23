@@ -24,6 +24,8 @@
   - Library: **Scan Folders** keeps each song's track and disc numbers. It used to swap them for the songs already in the library, so a two-disc album then played its discs' songs in turn (the first of each disc, then the second of each) until the next Update Library.
   - Playback: with **Memory Playback** on **Location**, or In-Vehicle Mode, the song comes back where it was after a Shut Down with a charger plugged in, or after a firmware update. It used to start again from 0:00.
   - Key Tone: each click now goes straight to the Q2's buzzer instead of starting two small programs first, so less stands between the wheel and its click.
+  - Controls: a button, a turn of the wheel or a touch is acted on the moment it arrives. After 2 seconds without input, and with the screen off, Q2 Pod checks for input less often to save battery, so the first press or turn after a pause could wait up to a quarter of a second.
+  - Battery: with the screen off and nothing playing, Q2 Pod now wakes once a second where it woke 4 times.
 - **1.9.0**:
   - Cover Flow: drag the **Position Bar** to move through your albums quickly. Touch anywhere along it, even after it has faded, and the covers go to the album under your finger and follow it; far jumps show the album's letter. The bar now stays on screen a second after you stop, instead of 0.8 seconds. Turn it on in **Display → Cover Flow**.
   - Ratings: hold Play/Pause on **Top Rated**, **Loved**, **All Rated** or **Disliked** in **Library → Ratings** to play that list shuffled. A hold on a song in the list still opens the song's options.
