@@ -6389,6 +6389,7 @@ int sqlite3_open(const char *path, void **db) {
     return 0;
 }
 int sqlite3_close(void *db) { return 0; }
+int lib_db_open(void **db, const char *pragmas) { return sqlite3_open("/mnt/data/database.db", db) || sqlite3_exec(*db, pragmas, 0, 0, 0); }
 /* The messy library, test/fw/messy_playlists.py's shape made here in a loop: cd 1 20,000 untagged
    singles, each in its own folder; cd 2 5,000 songs of 500 albums, 4 KB album tags and 800-byte
    fileurls with non-UTF-8 bytes; cd 3 300 songs, 280 gone from the card, 20 in folders with a

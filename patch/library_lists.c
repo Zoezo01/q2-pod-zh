@@ -521,8 +521,7 @@ int era_sql(const char *sql, int (*row)(void *, int, char **, char **), void *ct
     /* Era uses SQLite directly rather than the stock library query wrappers. */
     char *expanded = library_scope_query(sql); /* none: the whole library, as library_query */
     /* Keep a full-library grouping query from competing with the player's song records for RAM. */
-    int bad = sqlite3_open("/mnt/data/database.db", &db) ||
-              sqlite3_exec(db, "PRAGMA cache_size=64;PRAGMA temp_store=FILE", 0, 0, 0) ||
+    int bad = lib_db_open(&db, "PRAGMA cache_size=64;PRAGMA temp_store=FILE") ||
               sqlite3_exec(db, expanded ? expanded : sql, row, ctx, 0);
     if (db) sqlite3_close(db);
     free(expanded);

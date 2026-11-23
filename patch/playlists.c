@@ -52,6 +52,11 @@ int stock_db_open(const char *path, void **db) {
     if (!bad) sqlite3_exec(*db, "PRAGMA busy_timeout=500", 0, 0, 0);
     return bad;
 }
+/* The library database on a connection of the caller's, with its pragmas run (one exec); nonzero
+ * when it won't open or a pragma fails. */
+int lib_db_open(void **db, const char *pragmas) {
+    return sqlite3_open("/mnt/data/database.db", db) || sqlite3_exec(*db, pragmas, 0, 0, 0);
+}
 /* The database for a write that waits out a reader, playlist_art.c's worker reading the table,
  * instead of failing with SQLITE_BUSY; nonzero when it won't open. */
 static int pl_db(void **db) { return stock_db_open("/mnt/data/database.db", db); }

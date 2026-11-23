@@ -841,6 +841,8 @@ const char *shelf_moving(void); /* netupdate.c: the app folder deleted or moved 
 int shelf_erase(int start);     /* netupdate.c: Spotify's erase, started or running */
 void stream_erased(void);       /* navigation.c: Configuration follows a finished erase */
 void album_lyrics_stop(void);   /* onlinematch.c: Download Album Lyrics before USB storage */
+
+int lib_db_open(void **db, const char *pragmas); /* playlists.c: open the library database */
 /* mp3_gapless.c: MPEG tables and a Layer III frame's bytes, shared with peq_player.c's frame checks
  */
 extern const unsigned short mp3_rates[3], mp3_kbps[2][15];
