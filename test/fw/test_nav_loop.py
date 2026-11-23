@@ -1335,7 +1335,7 @@ def queue_of(fw, *songs):
         struct.pack_into('<Q', rec, O['REC_ALBUM'], C.addressof(a))
         rows.append((rec, p, a))
         addrs.append(C.addressof(rec))
-    fw.keep = rows  # alive as long as the test
+    fw.keep.append(rows)  # alive as long as the test, beside the mocks fw.mock keeps there
     fw.var('fw_ctx_mcl_pdeqplaylist', C.c_uint).value = Deques(fw).new(addrs)
 
 
