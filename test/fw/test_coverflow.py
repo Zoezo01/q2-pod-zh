@@ -77,7 +77,7 @@ def api(fw):
            'coverflow__name_cmp': (i, ptr, ptr), 'coverflow__tie': (i, i, ptr, ptr), 'coverflow__by_name': (i, ptr, ptr),
            'coverflow__by_album': (i, ptr, ptr), 'album_cmp': (i, ptr, ptr), 'album_id': (u, ptr), 'album_dir': (u, C.c_char_p, i),
            'folder_cmp': (i, ptr, ptr), 'coverflow__cover_artist': (C.c_char_p, ptr), 'coverflow__initial': (u, i),
-           'coverflow_jump': (i, ptr, i, i, ptr), 'coverflow__bound': (i, i, i, i), 'coverflow__unbound': (i, i, i),
+           'coverflow_jump': (i, ptr, i, i, ptr), 'coverflow__bound': (i, i, i, i),
            'coverflow__release': (None, i), 'coverflow__touch': (i, ptr, ptr), 'stride_of': (i, ptr),
            'coverflow__stamp': (u, ptr), 'coverflow__lift': (None, i, u), 'coverflow__sort_saved': (i,),
            'coverflow_sort_name': (C.c_char_p,), 'coverflow_sort_step': (None,), 'coverflow__sort_next': (i, i),
@@ -878,7 +878,7 @@ def test_stride_is_an_item_and_its_spacer(fw):
 
 def test_the_library_s_covers_are_unbounded(fw):
     s = Shelf(fw, scoped=0)
-    assert s.g.bound(9999, 110, 1) == 9999 and s.g.unbound(-9999, 110) == -9999
+    assert s.g.bound(9999, 110, 1) == 9999 and s.g.bound(-9999, 110, -1) == -9999
 
 
 def test_bound_stops_at_the_ends_without_rubber(fw):
@@ -906,13 +906,13 @@ def test_unbound_undoes_the_rubber_band(fw):
     for x in range(1, 300, 3):
         shown = s.g.bound(110 + x, 110, 1)  # both truncate, so the finger lies between two shown pixels' inverses
         if shown > 110 and shown + 1 - 110 < 44:
-            assert s.g.unbound(shown, 110) <= 110 + x <= s.g.unbound(shown + 1, 110) + 1, x
+            assert s.g.bound(shown, 110, -1) <= 110 + x <= s.g.bound(shown + 1, 110, -1) + 1, x
 
 
 def test_unbound_inside_or_past_the_band_s_limit_is_itself(fw):
     s = Shelf(fw, n=4, index=1)
-    assert s.g.unbound(50, 110) == 50
-    assert s.g.unbound(110 + 44, 110) == 110 + 44  # a is d: the formula would divide by nothing
+    assert s.g.bound(50, 110, -1) == 50
+    assert s.g.bound(110 + 44, 110, -1) == 110 + 44  # a is d: the formula would divide by nothing
 
 
 @pytest.mark.parametrize('offset, want', ((40, 0), (60, 110), (-40, 0), (-60, -110), (0, 0)))

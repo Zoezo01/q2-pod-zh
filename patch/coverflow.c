@@ -2870,27 +2870,21 @@ static int round_stride(int off, int stride) {
 
 /* An artist's albums give past an end as iOS's rubber band, x * 0.55 / (1 + x * 0.55 / D) with
  * D 2/5 of a stride, so the centre never reaches past half a cover (visual() would wrap there);
- * not rubber: they stop at the end. */
-static int bound(int off, int stride, int rubber) {
+ * not rubber: they stop at the end. mode 0 clamps, 1 gives the rubber band, -1 bound's inverse past
+ * an end: a touch catching the rubber band (or a wheel bounce) drags on from where it shows, not
+ * from a band stretched again. */
+static int bound(int off, int stride, int mode) {
     widget_t *s = cf.slide;
     if (!coverflow_bounded(s)) return off;
     int i = I(s, SLIDE_INDEX), hi = i * stride,
         lo = (i + 1 - (int)widget_count_children(s)) * stride;
     int edge = off > hi ? hi : off < lo ? lo : off, x = off - edge, a = ABS(x), d = 2 * stride / 5;
-    if (!x || !rubber) return edge;
-    a = a * 11 * d / (a * 11 + 20 * d);
-    return edge + (x < 0 ? -a : a);
-}
-
-/* bound's inverse past an end: a touch catching the rubber band (or a wheel bounce) drags on from
- * where it shows, not from a band stretched again. */
-static int unbound(int off, int stride) {
-    widget_t *s = cf.slide;
-    if (!coverflow_bounded(s)) return off;
-    int i = I(s, SLIDE_INDEX), hi = i * stride,
-        lo = (i + 1 - (int)widget_count_children(s)) * stride;
-    int edge = off > hi ? hi : off < lo ? lo : off, x = off - edge, a = ABS(x), d = 2 * stride / 5;
-    if (!x || a >= d) return off;
+    if (!x || mode == 0) return edge;
+    if (mode > 0) {
+        a = a * 11 * d / (a * 11 + 20 * d);
+        return edge + (x < 0 ? -a : a);
+    }
+    if (a >= d) return off;
     a = 20 * d * a / (11 * (d - a));
     return edge + (x < 0 ? -a : a);
 }
@@ -2994,7 +2988,7 @@ static int touch(void *ctx, event_t *event) {
                            .caught = a != 0,
                            .x = x,
                            .y = y,
-                           .from = unbound(I(cf.slide, SLIDE_OFFSET), stride_of(cf.slide)) };
+                           .from = bound(I(cf.slide, SLIDE_OFFSET), stride_of(cf.slide), -1) };
         return 0;
     }
     if (coverflow_position_touch(type, x, y)) return 0;
