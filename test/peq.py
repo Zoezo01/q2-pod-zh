@@ -10,35 +10,10 @@ import tempfile
 import sys; sys.path.insert(0, sys.path[0] + '/../tools')  # tools/ first
 from build import FUNCTIONS, ROOT
 from peq import LIBC
+sys.path.insert(0, str(ROOT/'test/fw'))  # the EQ structs, one copy: test/fw/test_peq.py's
+from test_peq import Band, Coeff, Dsp as DSP, Engine, EqState as State, EQ_OFF, EQ_3, EQ_PEQ, Error, Preset, V2  # noqa: E402
 
 PROTOTYPES = {**FUNCTIONS, **LIBC}  # the stock calls the host shims stand in for
-
-class Band(C.Structure):
-    _fields_ = [('enabled', C.c_int), ('type', C.c_int), ('frequency', C.c_double),
-                ('gain', C.c_double), ('q', C.c_double)]
-
-class Preset(C.Structure):
-    _fields_ = [('count', C.c_int), ('bypass', C.c_int), ('preamp', C.c_double), ('bands', Band * 30),
-                ('balance', C.c_double), ('automatic', C.c_int), ('spare', C.c_int)]
-V2 = Preset.automatic.offset  # a preset as 1.3.5 saved it
-
-class State(C.Structure):
-    _fields_ = [('mode', C.c_int), ('hold', C.c_int), ('peq', Preset), ('eq3', Preset)]
-EQ_OFF, EQ_3, EQ_PEQ = range(3)
-
-class Error(C.Structure):
-    _fields_ = [('line', C.c_uint), ('reason', C.c_char_p)]
-
-class Coeff(C.Structure):
-    _fields_ = [(k, C.c_double) for k in ('b0', 'b1', 'b2', 'a1', 'a2')]
-
-class Engine(C.Structure):
-    _fields_ = [('c', Coeff * 30), ('z', ((C.c_double * 2) * 30) * 8),
-                ('gain', C.c_double * 8), ('bypass', C.c_int), ('used', C.c_int), ('only', C.c_int * 30)]
-
-class DSP(C.Structure):
-    _fields_ = [('current', Engine), ('next', Engine), ('pending', Engine),
-                *[(k, C.c_int) for k in ('rate', 'channels', 'ramp', 'ramp_length', 'waiting')]]
 
 def compile_host(tmp, name, *sources):
     path = tmp/name
