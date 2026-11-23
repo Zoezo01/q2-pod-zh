@@ -3248,6 +3248,8 @@ int ringnav_bt_connect_start(int pause) {
     int saved = media_owner() == 1 ? mclGetSavePlayStatus() : 0; /* 2 playing, 3 paused */
     return saved == 2 || saved == 3 ? player_save_start(saved == 3) : 0;
 }
+/* Standby limit's hours per choice: pod_text's row and ringnav_standby (system.c) sleep by it. */
+const unsigned standby_hours[] = { 0, STANDBY_LIMIT_1, STANDBY_LIMIT_2, STANDBY_LIMIT_3 };
 static void pod_text(int i) {
     static const char *const names[][4] = {
         { N_("Charge Limit (%u%%)") },
@@ -3301,8 +3303,6 @@ static void pod_text(int i) {
             : pod_values[i]        ? *pod_values[i]
                                    : 0;
     const char *toggle = names[i][0] && !names[i][1] && i != POD_CF_REFRESH ? tr(names[i][0]) : 0;
-    static const unsigned standby_hours[] = { 0, STANDBY_LIMIT_1, STANDBY_LIMIT_2,
-                                              STANDBY_LIMIT_3 };
     char room[128];
     const char *text = toggle ? toggle : tr(names[i][v]);
     if (i == POD_CHARGE || (i == POD_STANDBY && v))

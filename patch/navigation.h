@@ -331,6 +331,7 @@ extern void up_next(int (*keyup)(void *, event_t *));
 
 /* navigation.c */
 void pod_settings(void);
+extern const unsigned standby_hours[4];
 #define COUNT "_ringnav_count"
 #define SEL "_ringnav_index"
 enum { SLIDER_LIGHT, SLIDER_MAX, SLIDER_BALANCE, SLIDER_BOOT }; /* st.slider_kind */

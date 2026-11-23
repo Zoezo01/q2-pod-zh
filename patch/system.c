@@ -397,10 +397,9 @@ static int rtc_alarm(unsigned at) { /* 0 clears it; one already set refuses anot
     return !fclose(f) && ok;
 }
 int ringnav_standby(void) {
-    static const unsigned hours[] = { 0, STANDBY_LIMIT_1, STANDBY_LIMIT_2, STANDBY_LIMIT_3 };
     pod_settings();
     unsigned start = st.standby_limit ? rtc_now() : 0;
-    unsigned alarm = start + hours[st.standby_limit] * 3600;
+    unsigned alarm = start + standby_hours[st.standby_limit] * 3600;
     int armed = start && rtc_alarm(0) && rtc_alarm(alarm);
     pw.suspended = 1;
     state_poll(); /* the record a resume that never comes leaves behind */
