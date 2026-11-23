@@ -7,7 +7,7 @@ import pytest
 
 from conftest import Dirent, SPOT_FAIL, SPOT_NOSOCK, SPOT_OK, block, text
 from fuzz import hostile
-from test_radio import Fx, Sp, fx
+from test_radio import Sp, fx
 
 REPLY_MAX = 64 << 10
 RADIO_MAX = 200

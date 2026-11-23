@@ -7,7 +7,7 @@ import struct
 import pytest
 
 from conftest import O, Deques, libc
-from test_misc import Xf, xf  # test_misc.py keeps the mirror
+from test_misc import xf  # test_misc.py keeps the mirror
 
 XFADE, PRESS, MUTE, SWAP = '/tmp/q2xfade', '/tmp/q2press', '/tmp/q2mute', '/tmp/q2swap'
 XF_STOPS = 16  # peq.h: the fade's ms in the low bits, the count of stops above, as the filter reads them

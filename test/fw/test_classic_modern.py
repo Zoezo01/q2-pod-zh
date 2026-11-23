@@ -6,8 +6,8 @@ import ctypes as C
 import pytest
 
 from conftest import Config, rgba
-from test_nav_paint import (ACCENTS, CLASSIC, CLASSIC_BLUE, GRAPHITE, LABELS, MODERN, RED, RED_PX, TIDAL, WHITE, Canvas, bitmaps,
-                            image_add, msg_paint, named, paint_bg, slider_paint, slider_scrub, SLIDER_PAGES, SLIDERS,
+from test_nav_paint import (ACCENTS, CLASSIC, CLASSIC_BLUE, GRAPHITE, MODERN, RED, RED_PX, TIDAL, WHITE, bitmaps,
+                            image_add, msg_paint, named, slider_paint, slider_scrub, SLIDER_PAGES, SLIDERS,
                             layout, st, stock_h, theme, ui_load, world)  # noqa: F401 (fixtures, by name)
 from test_flat_pages import TimeCanvas, face, flip
 from test_nav_paint import quick_page as paint_quick_page

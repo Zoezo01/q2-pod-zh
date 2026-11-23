@@ -7,7 +7,7 @@ import struct
 import pytest
 
 from conftest import O, Config, rgba
-from test_nav_paint import (ACCENTS, GRAPHITE, ICONS, LABELS, MINIMAL, MODERN, PAPER, RED, RED_PX, TIDAL, WHITE, Canvas, Quick, bitmaps,
+from test_nav_paint import (ACCENTS, GRAPHITE, ICONS, LABELS, MINIMAL, MODERN, PAPER, RED, RED_PX, TIDAL, WHITE, Canvas, bitmaps,
                             channels, fill_props, image_add, layout, luma, paint_bg, quick_window, rgb_of, scheme, scrub,
                             SLIDER_PAGES, SLIDERS, USB_LUN, Files, added, count, inside, msg_paint, named, poll,
                             whole, on_page, slider_scrub, slider_paint, ui_load,

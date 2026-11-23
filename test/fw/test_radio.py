@@ -86,7 +86,7 @@ def fx(fw):
 
 
 class Hs(C.Structure):
-    """headset.c's state (test_headset.py's mirror): epoch moves with each manual command (headset_manual)."""
+    """headset.c's state: epoch moves with each manual command (headset_manual)."""
     _fields_ = [*((n, C.c_uint) for n in 'generation running head tail report'.split()), ('keys', C.c_int * 16),
                 *((n, C.c_uint) for n in ('worker_generation checked epoch paused_epoch paused_at recent_at recent_owner '
                                           'recent_session last_at session linked_at eq_checked').split()),
@@ -95,7 +95,7 @@ class Hs(C.Structure):
 
 
 class Sp(C.Structure):
-    """spotify.c's state (test_streaming.py's mirror): playing while librespot plays."""
+    """spotify.c's state: playing while librespot plays."""
     _fields_ = [*((n, C.c_int) for n in ('launched', 'sock', 'playing', 'paused', 'local', 'active', 'played', 'dead')),
                 *((n, C.c_uint) for n in ('polled', 'idle_at', 'duration', 'position', 'cover', 'launch_at', 'alive_at')),
                 ('at', C.c_ulonglong), ('raw', C.c_char * 1536), ('state', C.c_char * 12), ('track', C.c_char * 64),
