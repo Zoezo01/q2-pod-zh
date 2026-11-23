@@ -109,8 +109,8 @@ def studio_rules(data):
         if word == 'page':
             page = rest[0] if len(rest) == 1 and rest[0] in [p for _, p in PAGES.values()] else None
             continue
-        def row(act):
-            return next((i for i, (pg, name, acts, *_) in enumerate(ROWS) if pg[1] == page and name == rest[0] and act in acts), None)
+        def row(*act):
+            return next((i for i, (pg, name, acts, *_) in enumerate(ROWS) if pg[1] == page and name == rest[0] and acts & {*act}), None)
         if word == 'text':  # at least a word after the row's name, all of them the row's
             i = row('CR_TEXT') if len(rest) > 1 else None
             if i is not None:
@@ -119,7 +119,7 @@ def studio_rules(data):
             continue
         count, act = VERBS.get(word, (None, None))
         if len(rest) != count: continue
-        i = row(act)
+        i = row(act, 'CR_MOVE') if word == 'size' else row(act)  # a size on a row that moves: its box
         if i is None or not all(re.fullmatch('-?[0-9]+', v) for v in rest[1:]): continue
         v = [max(-30000, min(30000, int(v))) for v in rest[1:]]
         flags, x, y, w, h, font, words = kept[i]
@@ -127,6 +127,8 @@ def studio_rules(data):
         if word == 'font':
             font = min(max(v[0], 8), 120) if v[0] else 0
             font = 0 if font == default else font
+        elif word == 'size' and 'CR_SIZE' not in acts:
+            w, h, flags = v[0], v[1], flags | SIZE
         elif word == 'size':
             least, bw, bh = 12 if 'CR_FONT' in acts else 40, box[2] - box[0], box[3] - box[1]
             if 'CR_SQUARE' in acts:
@@ -183,6 +185,7 @@ def test_rules_take_what_the_studios_reader_takes(fw, cr_fields):
                  if flags & f or (f == 8 and font)}
     takes = {(i, f) for i, (_, _, acts, *_) in enumerate(ROWS) for f, a in ((HIDE, 'CR_HIDE'), (MOVE, 'CR_MOVE'), (SIZE, 'CR_SIZE'),
                                                                            (8, 'CR_FONT'), (TEXT, 'CR_TEXT')) if a in acts}
+    takes |= {(i, SIZE) for i, (_, _, acts, *_) in enumerate(ROWS) if 'CR_MOVE' in acts}  # the box a row that moves is centred in
     assert seen == takes and refused > 500  # each row's each rule, and refused files, met
     assert {None, (3, True), (600, True), (12, True), (12, False)} <= arts  # and homeart, held at both ends
 
@@ -326,6 +329,18 @@ def test_a_size_alone_keeps_the_widget_in_its_box(page):
     p = page(b'size scrlabel_title 300 9', b'size label_ipod_album 400 400')
     assert p.box('scrlabel_title') == (75, 18, 300, 12)  # 12 high at least; pushed left to hold 300 in 375
     assert p.box('label_ipod_album') == (0, 0, 375, 186)
+
+
+def test_a_size_it_cant_take_centres_it_in_the_studios_box(page):
+    """The Studio moves a row it sizes to fit that size: one that keeps its own sits centred where it drew it."""
+    p = page(b'move img_playmode 247 106', b'size img_playmode 80 80', b'size img_fav 80 80')
+    assert p.box('img_playmode') == (262, 121, 50, 50)
+    assert p.box('img_fav') == (318, 136, 50, 50)  # centred on its own place's 80 x 80, held to the 186 high box
+
+
+def test_the_lock_song_card_sized_by_the_studio_stays_centred(fw, card):
+    win = lock(fw, card, b'move view_playinfo 0 190', b'size view_playinfo 375 80')
+    assert [args[:4] for name, args in win.calls('widget_move_resize') if name == 'view_playinfo'][-1] == (20, 190, 335, 80)
 
 
 def test_the_art_stays_square_and_takes_its_glyph_and_spinner(page):
@@ -632,8 +647,9 @@ def test_homeart_keeps_positional_numbers_over_jpegs(fw, art, cr_fields):
     (picture(1025, 64), False), (picture(64, 1025), False),
     (picture(size=(1 << 20) + 1), False),  # over 1 MB
     (picture(marker=0xc4), False),  # no frame header: a JPEG it can't size
+    (picture(0, 64), False),  # a frame with no width
     (PNG, False), (b'GIF89a' + bytes(40), False), (None, False),  # not a JPEG, or no file
-], ids=['caps', 'progressive', 'wide', 'tall', 'heavy', 'unsized', 'png', 'gif', 'none'])
+], ids=['caps', 'progressive', 'wide', 'tall', 'heavy', 'unsized', 'empty', 'png', 'gif', 'none'])
 def test_art_refuses_what_it_cant_size_or_holds_too_big(fw, art, data, shown):
     """A refused turn shows what Home shows with no homeart: the art is never decoded."""
     a = art(b'homeart 5 j', {} if data is None else {1: data})

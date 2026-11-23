@@ -87,7 +87,8 @@ static int clean(char *to, const char *s, unsigned n) {
  * three), W a row of the page the last page line named that takes the verb, X, Y, W, H and PX
  * whole numbers; anything else is skipped. A page line out of shape names no page, so the lines
  * under it are skipped too. A size is held to the row's box (the art square, 40 up to its box's
- * smaller side; text 12 up to the box's sides); a font to 8..120, 0 or the row's own size clearing
+ * smaller side; text 12 up to the box's sides), and kept as written on a row that moves but keeps
+ * its own size, the box it's centred in; a font to 8..120, 0 or the row's own size clearing
  * it; a move is kept as written, held to the box as it applies; WORDS, the rest of the line, are
  * the row's when clean, else it has none. And homeart SECONDS KINDS, on any page: SECONDS a whole
  * number held to 3..600, KINDS 1 to 24 of j (a JPEG) and g (a GIF, never read), the turns going
@@ -130,7 +131,8 @@ void card_rule_line(const char *q) {
         unsigned act = verbs[j].act, i = 0;
         if ((act == CR_TEXT ? k < 3 : k != verbs[j].words) || !is(w[0], n[0], verbs[j].verb))
             continue;
-        while (i < ROWS && (rows[i].page + 1 != cr.page || !(rows[i].acts & act) ||
+        unsigned takes = act == CR_SIZE ? CR_SIZE | CR_MOVE : act; /* a size on a row that moves */
+        while (i < ROWS && (rows[i].page + 1 != cr.page || !(rows[i].acts & takes) ||
                             !is(w[1], n[1], rows[i].name)))
             ++i;
         if (i == ROWS) return;
@@ -145,7 +147,7 @@ void card_rule_line(const char *q) {
             cr.font[i] = (unsigned char)(px == rows[i].font ? 0 : px);
             return;
         }
-        if (act == CR_SIZE) {
+        if (act == CR_SIZE && rows[i].acts & CR_SIZE) {
             const short *b = rows[i].box;
             int bw = b[2] - b[0], bh = b[3] - b[1], least = rows[i].acts & CR_FONT ? 12 : 40;
             if (rows[i].acts & CR_SQUARE)
@@ -200,10 +202,12 @@ static void centre(widget_t *w, widget_t *art, int dx, int dy) {
 }
 /* ringnav_playing, before rate_bind (so the heart's rating badge goes where the heart is), and
  * lockscreen_init, after big_clock: page's rules on its window, once; Now Playing's only in its
- * iPod layout (Centred's stock page has the same names). A size is the rule's; a move, or the place
- * a size alone leaves, is held to the row's box, its parent's laid-out size (the art's parent is
- * still 100x100 here, before the first layout); a font is held to the label's height, on every
- * state (the labels are disabled) and in _card_px for paint_caps; a hide is unseen and untouchable.
+ * iPod layout (Centred's stock page has the same names). A size is the rule's, or, on a row that
+ * keeps its own, the box the Studio drew it in (its move fits that size), the widget centred in
+ * it; a move, or the place a size alone leaves, is held to the row's box, its parent's laid-out
+ * size (the art's parent is still 100x100 here, before the first layout); a font is held to the
+ * label's height, on every state (the labels are disabled) and in _card_px for paint_caps; a hide
+ * is unseen and untouchable.
  * The art's glyph (its tap) and spinner follow it: centred on it again, the spinner a child of the
  * window, and the glyph hidden with it. */
 void card_rules_apply(widget_t *win, int page) {
@@ -216,10 +220,14 @@ void card_rules_apply(widget_t *win, int page) {
             (f || px) && rows[i].page == page ? widget_lookup(win, rows[i].name, 1) : (void *)0;
         if (!w) continue;
         const short *b = rows[i].box, *r = cr.box[i];
-        int ww = f & CR_SIZE ? r[2] : I(w, W_W), h = f & CR_SIZE ? r[3] : I(w, W_H);
+        int ww = I(w, W_W), h = I(w, W_H), x = f & CR_MOVE ? r[0] : I(w, W_X),
+            y = f & CR_MOVE ? r[1] : I(w, W_Y);
+        if (f & CR_SIZE && rows[i].acts & CR_SIZE)
+            ww = r[2], h = r[3];
+        else if (f & CR_SIZE) /* a size it can't take: centred in the Studio's box */
+            x += (r[2] - ww) / 2, y += (r[3] - h) / 2;
         if (f & (CR_MOVE | CR_SIZE))
-            widget_move_resize(w, fit(f & CR_MOVE ? r[0] : I(w, W_X), b[0], b[2] - ww),
-                               fit(f & CR_MOVE ? r[1] : I(w, W_Y), b[1], b[3] - h), ww, h);
+            widget_move_resize(w, fit(x, b[0], b[2] - ww), fit(y, b[1], b[3] - h), ww, h);
         font(w, px);
         if (f & CR_HIDE) hide(w);
         if (i != ART) continue;
@@ -279,7 +287,7 @@ unsigned card_rules_art(const char **cover, unsigned key) {
         int w = 0, h = 0;
         url[sizeof url - 7] = (char)('0' + item / 10);
         url[sizeof url - 6] = (char)('0' + item % 10);
-        if (!(picture_size(url + 7, &w, &h) >> 4 == 0xc && w <= 1024 && h <= 1024 &&
+        if (!(picture_size(url + 7, &w, &h) >> 4 == 0xc && w && h && w <= 1024 && h <= 1024 &&
               (unsigned long)file_size(url + 7) <= 1 << 20))
             item = 0;
         if (cr.shown && cr.shown != item)
