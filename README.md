@@ -290,6 +290,11 @@ On the App Store's **Games** tab. Each plays in **Library → Games**.
     <td>Sail one of nine ships and sink wave after wave of pirate and navy ships, steering with the wheel and firing with Centre; its art and sound are read from your own copy of the iPod game Pirates of the Caribbean.</td>
     <td></td>
   </tr>
+  <tr valign="top">
+    <td><b><a href="https://github.com/Carbon-66/Q2-Hero">Q2 Hero</a></b></td>
+    <td>A guitar game played to the music on your card: pick a song and a difficulty, and hit the notes coming down three lanes with Previous, Centre and Next.</td>
+    <td></td>
+  </tr>
 </table>
 
 </details>
