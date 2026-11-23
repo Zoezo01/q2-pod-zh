@@ -103,6 +103,7 @@ static void search_hint(widget_t *win) {
     cp.search_px = px;
     widget_set_prop_int(edit, style_key(key, "disable", "font_size"), px);
 }
+static const char *const empty[] = { "empty", "empty_focus", "empty_over" };
 /* The search field's box and its children's: over the keyboard with the keyboard up, in the strip
  * with it down, where stock's toolbar hides and only the Return key goes back. The toolbar's return
  * is the chevron's tap. */
@@ -121,7 +122,6 @@ static void search_layout(widget_t *win, int keyboard) {
     if (edit) {
         /* Stock's hint, wider than either field at the typed text's 26: an empty field's own size,
          * for its 38 characters in stock's face, 14.8 px across per px, in the fw - 32 left. */
-        static const char *const empty[] = { "empty", "empty_focus", "empty_over" };
         char key[STYLE_KEY];
         widget_move_resize(edit, 0, 0, fw, 30);
         for (unsigned k = 0; k < sizeof empty / sizeof *empty; ++k)
@@ -171,7 +171,6 @@ static void search_field_margin(widget_t *edit, int margin) {
  * ponytail: stock's face averages 0.39 px a character per px; a hint of wide letters can still cut.
  */
 static void field_tips(widget_t *edit, const char *tips, int room) {
-    static const char *const empty[] = { "empty", "empty_focus", "empty_over" };
     char key[STYLE_KEY];
     int fit = room * 100 / (39 * (int)strlen(tips) + 1);
     if (fit < 12) fit = 12;
@@ -214,7 +213,6 @@ static int pl_box_gone(void *win, event_t *event) {
  * dialog goes, as bar_title_sync doesn't name a dialog. */
 static int pl_box_due(const void *info) {
     (void)info;
-    static const char *const empty[] = { "empty", "empty_focus", "empty_over" };
     char key[STYLE_KEY];
     widget_t *win = st.pl_box;
     void *lists = P(p_deque_playlist, 0);
