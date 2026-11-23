@@ -5,7 +5,6 @@ import base64
 import ctypes as C
 import os
 import pathlib
-import shutil
 import struct
 import subprocess
 import tempfile
@@ -30,8 +29,8 @@ class Lib(C.CDLL):
 def lib():
     cache = pathlib.Path(os.environ.get('XDG_CACHE_HOME') or pathlib.Path.home()/'.cache')
     cache.mkdir(parents=True, exist_ok=True)
-    d = pathlib.Path(tempfile.mkdtemp(prefix='q2-xiph-', dir=cache))
-    try:
+    with tempfile.TemporaryDirectory(prefix='q2-xiph-', dir=cache) as tmp:
+        d = pathlib.Path(tmp)
         subprocess.run(['clang', '-shared', '-fPIC', '-DPEQ_HOST', '-Wall', '-Wextra', '-Werror',
                         str(ROOT/'patch/xiph.c'), '-o', str(d/'xiph.so')], check=True)
         so = Lib(str(d/'xiph.so'))
@@ -39,8 +38,6 @@ def lib():
         so.utf8_latin1.argtypes = [C.c_char_p, C.c_char_p]
         so.dir = d
         yield so
-    finally:
-        shutil.rmtree(d)
 
 
 def ogg(packets, segs=255, alone=(0, 1)):
