@@ -8,26 +8,16 @@ SYMBOLS = {'flac_sync_check': 0x00b01234, 'flac_lpc32': 0x00b12340, 'flac_lpc64'
 
 
 def test_patch_words_none():
-    assert flac.patch_words((), {}) == ()
+    assert flac.patch_words(False, {}) == ()
 
 
-def test_patch_words_sync():
-    assert flac.patch_words(('sync',), SYMBOLS) == tuple(
+def test_patch_words_all_in_order():
+    words = flac.patch_words(True, SYMBOLS)
+    assert words[:5] == tuple(
         (site, 0x0c10adc4, build.jal(0xb01234)) for site in (0x5b69c4, 0x5b6a78, 0x5b6c60, 0x5b6cc0, 0x5b6d30))
-
-
-def test_patch_words_lpc():
-    assert flac.patch_words(('lpc',), SYMBOLS) == (
+    assert words[5:9] == (
         (0x40a1dc, 0x3c02005c, 0x3c0200b1), (0x40a1e4, 0x2442aedc, 0x34422340),
         (0x40a1ec, 0x3c02005c, 0x3c0200b2), (0x40a1f0, 0x2442b05c, 0x34422340))
-
-
-def test_patch_words_output_order():
-    words = flac.patch_words(('output',), SYMBOLS)
-    assert [w[0] for w in words] == [0x40a2b4, 0x40a2b8, 0x40a24c, 0x40a250, 0x40a2e8, 0x40a2ec, 0x40a280, 0x40a284]
-    assert words[0][2] == 0x3c0200b3 and words[-1][2] == 0x34420000
-
-
-def test_patch_words_all_three_in_order():
-    words = flac.patch_words(flac.EXPERIMENTS, SYMBOLS)
+    assert [w[0] for w in words[9:]] == [0x40a2b4, 0x40a2b8, 0x40a24c, 0x40a250, 0x40a2e8, 0x40a2ec, 0x40a280, 0x40a284]
+    assert words[9][2] == 0x3c0200b3 and words[-1][2] == 0x34420000
     assert len(words) == 5 + 4 + 8 and words[0][0] == 0x5b69c4 and words[5][0] == 0x40a1dc and words[9][0] == 0x40a2b4

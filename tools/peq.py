@@ -197,7 +197,7 @@ def function_macros(address):
     """Each stock function in address (name -> its C address) as a macro calling it there."""
     return [f'#define {name} (({ret} (*)({args})){address[name]})' for name, (ret, args) in FUNCTIONS.items() if name in address]
 
-def compile_common(out, binary, player=False, flac_experiments=()):  # pragma: no mutate block
+def compile_common(out, binary, player=False, flac_fast_paths=False):  # pragma: no mutate block
     got = {}
     for line in run('readelf', '-AW', binary).splitlines():
         words = line.split()
@@ -265,7 +265,8 @@ def compile_common(out, binary, player=False, flac_experiments=()):  # pragma: n
     flags = [*FLAGS, '-fno-math-errno', '-ffunction-sections', '-fdata-sections']
     if player: flags += ['-mnan=2008']
     objects = []
-    for name in (['peq.c', 'peq_player.c', 'mp3_gapless.c', 'lavf_gapless.c'] + [f'flac_{n}.c' for n in flac_experiments]) if player else UI_SOURCES:
+    from flac import SOURCES as FLAC_SOURCES
+    for name in (['peq.c', 'peq_player.c', 'mp3_gapless.c', 'lavf_gapless.c'] + (list(FLAC_SOURCES) if flac_fast_paths else [])) if player else UI_SOURCES:
         obj = out/(name+'.o')
         run('clang', *flags, '-I', out, '-c', ROOT/'patch'/name, '-o', obj)
         objects.append(obj)
@@ -273,7 +274,7 @@ def compile_common(out, binary, player=False, flac_experiments=()):  # pragma: n
     run('clang', *flags, '-c', out/'peq_imports.S', '-o', obj)
     return [*objects, obj]
 
-def patch_player(raw, out, flac_experiments=()):  # pragma: no mutate block
+def patch_player(raw, out, flac_fast_paths=False):  # pragma: no mutate block
     from flac import EXPORTS, patch_words
     check(sha(raw) == PLAYER_SHA, 'Unexpected hciplayer')
     out.mkdir(exist_ok=True)
@@ -284,7 +285,7 @@ def patch_player(raw, out, flac_experiments=()):  # pragma: no mutate block
     *texts, flags, eq_open = struct.unpack_from('<6I', raw, fileoff(raw, EQ_DESC))
     check(([cstr(t) for t in texts], flags, eq_open) == ([b'Equalizer audio filter', b'equalizer', b'Anders', b''], 1, EQ_OPEN),
           'EQ descriptor mismatch')
-    objects = compile_common(out, binary, True, flac_experiments=flac_experiments)
+    objects = compile_common(out, binary, True, flac_fast_paths=flac_fast_paths)
     script = out/'link.ld'
     script.write_text(f'SECTIONS {{ . = {PLAYER_BASE:#x}; .text : {{ *(.text*) }} .rodata : {{ *(.rodata*) }} '
                       '.data : { *(.data*) *(.sdata*) } .bss : { *(.bss*) *(.sbss*) } '
@@ -295,7 +296,7 @@ def patch_player(raw, out, flac_experiments=()):  # pragma: no mutate block
         '--undefined=hci_idle_wait',
         '--undefined=hci_pause_wait', '--undefined=hci_command', '--undefined=rs_open', '--undefined=ao_init', '--undefined=ao_uninit',
         *(f'--undefined={name}' for _, _, name in (*DAC_RELEASE, *PROBE_STOP, *STOP_SITES, STOP_FILL, *PRELOAD_CLOSE, FORCED_EOF, EXIT_HOLD, PRELOAD_PUBLISH, PRELOAD_FAILED, COLD_CLEAR, FLAC_GATE, SEEK_NOSYNC)),
-        *(f'--undefined={symbol}' for n in flac_experiments for symbol in EXPORTS[n]),
+        *(f'--undefined={symbol}' for symbol in EXPORTS if flac_fast_paths),
         *objects, '-o', out/'peq.elf')
     run('llvm-objcopy', '-O', 'binary', out/'peq.elf', out/'peq.bin')
     ps = symbols(out/'peq.elf')
@@ -350,10 +351,10 @@ def patch_player(raw, out, flac_experiments=()):  # pragma: no mutate block
         patch_word(data, address, jal(STOCK_ID3), jal(ps['id3_gain']), 'MP3 ReplayGain')
     patch_word(data, *LAVF_PRIV, 'lavf gapless window')
     patch_word(data, *MOV_EDITS, 'M4A edit list kept')
-    for address, stock, patched in patch_words(flac_experiments, ps):
+    for address, stock, patched in patch_words(flac_fast_paths, ps):
         patch_word(data, address, stock, patched, 'Experimental FLAC')
     append_payload(data, payload, PLAYER_BASE, max(len(payload), ps['__end']-PLAYER_BASE), 'player')
     data = zero_pdr(data, 'hciplayer')
     (out/'hciplayer').write_bytes(data)
     return dict(stock_sha256=PLAYER_SHA, sha256=sha(data), payload_sha256=sha(payload),
-                **({'flac_experiments': list(flac_experiments)} if flac_experiments else {}))
+                **({'flac_fast_paths': True} if flac_fast_paths else {}))

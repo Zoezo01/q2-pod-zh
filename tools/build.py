@@ -2009,8 +2009,6 @@ def stock_header(context, ranges, themes, dev=0, repo=REPO):
     return '\n'.join(header)+'\n'
 
 def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragma: no mutate block
-    from flac import EXPERIMENTS
-    flac_experiments = () if stock_flac else EXPERIMENTS
     check(dev or version_ok(VERSION, BETA), f'VERSION must be three single digits (x.y.z) and BETA 0-9: {VERSION}, {BETA}')
     version = TAG
     check(re.fullmatch(r'[A-Za-z0-9-]+/[A-Za-z0-9._-]+', repo), f'{repo}: not a GitHub owner/name')  # a C string
@@ -2143,7 +2141,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
                'wallpaper list accepts built-in wallpapers')
     from peq import patch_player
     raw_player = cat('usr/bin/hciplayer')
-    audio = patch_player(raw_player, out/'peq', flac_experiments)
+    audio = patch_player(raw_player, out/'peq', not stock_flac)
     bluealsa = zero_pdr(patch_bluealsa(cat(BLUEALSA)), BLUEALSA)
     (out/'bluealsa').write_bytes(bluealsa)
     (out/'watchdog').write_bytes(cat(WATCHDOG).replace(*WATCHDOG_SLEEP))
