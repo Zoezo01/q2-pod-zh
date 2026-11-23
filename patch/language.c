@@ -242,11 +242,12 @@ int language_offered(void) {
     return lg.picks > 0;
 }
 
-/* b (n bytes) into dst whole, through a .new and a rename, so a cut leaves the old copy or none. */
+/* b (n bytes) into dst whole, through a .new and a rename, so a cut leaves the old copy or none; an
+ * empty b too, which blob_io's one-item write counts as failed. */
 static int copy_buf(const char *dst, void *b, unsigned n) {
     char tmp[100];
     tk_snprintf(tmp, sizeof tmp, "%s.new", dst);
-    if (blob_io(dst, tmp, b, n, 1)) return 1;
+    if (blob_io(dst, tmp, b, n, 1) || (!n && !rename(tmp, dst))) return 1;
     unlink(tmp);
     return 0;
 }

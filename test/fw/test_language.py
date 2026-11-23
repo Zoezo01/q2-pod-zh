@@ -258,6 +258,14 @@ def test_a_pick_replaces_the_copy_in_use(fw, picking):
     assert picking.written == [('LANG', 'fr')]
 
 
+def test_an_empty_table_is_copied_empty(fw, picking):
+    Config(fw)
+    fw.fn('language_offered', C.c_int)()
+    picking.files['/mnt/mmc/.langs/lang/fr.tsv'] = b''  # emptied since the page was built
+    fw.fn('language__lang_pick', C.c_int, C.c_long, C.c_void_p)(1, None)
+    assert picking.files['/mnt/data/q2-lang-fr.tsv'] == b'' and picking.written == [('LANG', 'fr')]
+
+
 def test_english_takes_the_copy_away(fw, picking):
     Config(fw, LANG='de')
     picking.files[COPY] = b'# Deutsch\n'

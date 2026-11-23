@@ -378,7 +378,7 @@ class Files:
 
     def fwrite(self, data, size, count, f, *_):
         self.open[f][2] += C.string_at(data, size * count)
-        return count
+        return count if size else 0  # glibc: no item of size 0 is written
 
     def fclose(self, f, *_):
         path, _, written = self.open.pop(f)
@@ -433,7 +433,7 @@ class Card:
         if self.fail_write:
             return 0
         self.files[self.open[f][0]] += C.string_at(buf, size * n)
-        return n
+        return n if size else 0  # glibc: no item of size 0 is written
 
     def fseek(self, f, off, whence, *_):
         base = {0: 0, 1: self.open[f][1], 2: len(self.files[self.open[f][0]])}[whence]
