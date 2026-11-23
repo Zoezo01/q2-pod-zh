@@ -1397,6 +1397,8 @@ void playback_save(void) {
         sec = s.resume_elapsed;
     else if (sec > 0)
         s.resume_wait = 0;
+    else if (pos == s.saved_pos && mclGetPlayStatus() == 1)
+        sec = s.saved_elapsed; /* stopped: player_stop zeroed the time, the saved second stays */
     if (sec < 0) sec = 0;
     if (!s.dirty && !s.save_failed && sec == s.saved_elapsed && pos == s.saved_pos) return;
     /* Failed checkpoints stay pending; the UI loop retries at most every five seconds. */
