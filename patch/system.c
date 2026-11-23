@@ -421,6 +421,31 @@ static void standby_poll(void) {
     pw.standby_off = 0;
     if (!g_usbdet_value && mclGetPlayStatus() != 2) navigator_to("poweroff_page");
 }
+/* Standby's card unmount (docs/internals.md#standby-limit): device_standby runs
+ * system("umount /mnt/mmc") 100 ms after it stops the player, ignores the result and removes the
+ * card's driver (rmmod soc_msc) next. A file still open on the card (the player letting go of its
+ * track, a cover read, an app's download) fails that umount, and the driver's removal leaves the
+ * volume marked dirty: the resume's "Volume was not properly unmounted", and whatever was still to
+ * be written lost. STANDBY_UMOUNT (tools/build.py) has that call come here, with stock's command:
+ * a sync, then the command again every UMOUNT_WAIT_US while /proc/mounts still has the card
+ * (card_mounted), up to UMOUNT_TRIES. Still mounted, what holds it goes to UMOUNT_LOG (/mnt/data:
+ * the card is going), the volume is remounted read-only, which writes everything out and marks a
+ * FAT volume clean, and detached (umount -l), so the driver's removal finds nothing to write. */
+#define UMOUNT_TRIES 20 /* tries, UMOUNT_WAIT_US apart: 2 s at most */
+#define UMOUNT_WAIT_US 100000
+#define UMOUNT_LOG "/mnt/data/q2-card-busy"
+int ringnav_standby_umount(const char *cmd) {
+    system("sync");
+    for (int i = 0; i < UMOUNT_TRIES; ++i) {
+        if (i) usleep(UMOUNT_WAIT_US);
+        if (!system(cmd) || !card_mounted()) return 0;
+    }
+    /* each process with a file or its directory on the card: pid, name, the links */
+    system("for p in /proc/[0-9]*; do l=$(ls -l $p/fd $p/cwd 2>/dev/null | grep /mnt/mmc) && "
+           "echo \"${p#/proc/} $(cat $p/comm) $l\"; done > " UMOUNT_LOG " 2>&1");
+    system("mount -o remount,ro /mnt/mmc");
+    return system("umount -l /mnt/mmc");
+}
 /* User boot logo (docs/boot.md): the card's LOGO_SRC is kept as LOGO_DST, which the splash shows at
  * power-on, each time the card is mounted (boot, the end of USB storage). A 375x320 one is turned
  * upright by stock ffmpeg; anything but a 320x375 baseline JPEG is refused and LOGO_DST kept. No

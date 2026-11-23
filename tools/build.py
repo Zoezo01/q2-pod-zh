@@ -730,6 +730,9 @@ BT_INPUT = ((0x639320, 0x3c1c0040, 0x03e00008), (0x639324, 0x279c17c0, 0x0000102
 # (jalr $25) becomes jal to its payload function (tidal.c), which parks the thread: Tidal's wakes once
 # per track URL asked for, Baidu's never.
 STREAM_POLL_CALLS = ((0x4805b8, 'ringnav_baidu_poll'), (0x4871a4, 'ringnav_tidal_poll'))
+# device_standby's system("umount /mnt/mmc"), whose result stock ignores before rmmod soc_msc: its
+# jalr goes to system.c's ringnav_standby_umount, the command still in $a0 from the delay slot.
+STANDBY_UMOUNT = 0x502438
 # get_onlineid3info's player_set_coverinfo(REC_COVER, REC_NAME, type) for a 0xf1 record: its jalr, the
 # REC_COVER load in its delay slot, and the stub that adds the record ($s1) for tidal.c app_coverinfo
 COVERINFO_CALL = (0x493708, 0x8e240028, 'app_coverinfo_call')
@@ -2242,6 +2245,8 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
         patch_word(patched, address, old, new, "a headset's keys are read once, by the headset worker")
     for address, name in STREAM_POLL_CALLS:
         patch_word(patched, address, 0x0320f809, jal(ps[name]), 'stream threads park while idle')
+    patch_word(patched, STANDBY_UMOUNT, 0x0320f809, jal(ps['ringnav_standby_umount']),
+               "Standby's unmount waits for the card and leaves it clean")
     check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, COVERINFO_CALL[0] + 4))[0] == COVERINFO_CALL[1],
           "online id3: expected the REC_COVER load in the cover call's delay slot")
     patch_word(patched, COVERINFO_CALL[0], 0x0320f809, jal(ps[COVERINFO_CALL[2]]), "a card app's cover by URL")
