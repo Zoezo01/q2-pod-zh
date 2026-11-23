@@ -449,12 +449,11 @@ static int single(const void *info) {
  * page, and the wheel sets the length, down to Off. Wheel sensitivity: the wheel a ten a tick
  * (not through +/-, which stock may have disabled), Centre to edit_key, which goes back. */
 int xfade_key(widget_t *top, unsigned key) {
-    static const unsigned release[EVENT_KEY / 4 + 1] = { [EVENT_KEY / 4] = KEY_CENTER };
     if (!xf.page || top != xf.page) return 0;
     if (key == KEY_CENTER) {
         if (!switched()) return 0;
         int press = center_press(&xf.press, &xf.press_at, single, 0);
-        if (press == 2 && g_backlight_status) on_wm_keyup_fun((void *)0, (void *)release);
+        if (press == 2) screen_off();
         return press;
     }
     if (key != KEY_NEXT && key != KEY_PREV) return 0;

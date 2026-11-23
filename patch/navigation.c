@@ -4193,13 +4193,18 @@ static void np_cancel(void) {
  * Now Playing: keys, page and art
  **************************************************************************************************/
 
-/* A single centre press, DOUBLE_CLICK_MS on, never while scrubbing (with Single Press Scrub, a
- * double press): it replays the release to stock on_wm_keyup_fun, which turns the screen off (it
- * reads only the event's key). */
-static int np_single(const void *info) {
+/* A centre release replayed to stock on_wm_keyup_fun, which turns the screen off (it reads only the
+ * event's key). */
+void screen_off(void) {
     static const unsigned release[EVENT_KEY / 4 + 1] = { [EVENT_KEY / 4] = KEY_CENTER };
-    st.np_press = 0;
     if (g_backlight_status) on_wm_keyup_fun((void *)0, (void *)release);
+}
+
+/* A single centre press, DOUBLE_CLICK_MS on, never while scrubbing (with Single Press Scrub, a
+ * double press). */
+static int np_single(const void *info) {
+    st.np_press = 0;
+    screen_off();
     return 0;
 }
 
@@ -9270,7 +9275,6 @@ static int edit_single(const void *info) {
 }
 
 static int edit_key(widget_t *top, unsigned key) {
-    static const unsigned release[EVENT_KEY / 4 + 1] = { [EVENT_KEY / 4] = KEY_CENTER };
     int qs = top && !tk_strcmp(widget_get_prop_str(top, "name", ""), "statusbar_dialog");
     int n = fields(top);
     if (!qs && !n && !slider_page(top)) return 0;
@@ -9280,7 +9284,7 @@ static int edit_key(widget_t *top, unsigned key) {
         if (!press)
             press = center_press(&st.edit_press, &st.edit_at, edit_single,
                                  0); /* after an overdue one */
-        if (press == 2 && g_backlight_status) on_wm_keyup_fun((void *)0, (void *)release);
+        if (press == 2) screen_off();
         return 1;
     }
     if (key != KEY_PREV && key != KEY_NEXT) return 0;
@@ -9613,10 +9617,9 @@ int ringnav(void *ctx, event_t *event) {
     if (key == KEY_CENTER && !st.center_timer) {
         unsigned now = (unsigned)time_now_ms();
         if (top == st.dc_top && now - st.dc_at < DOUBLE_CLICK_MS) {
-            static const unsigned release[EVENT_KEY / 4 + 1] = { [EVENT_KEY / 4] = KEY_CENTER };
             st.dc_top = (void *)0;
             drop_input();
-            if (g_backlight_status) on_wm_keyup_fun((void *)0, (void *)release);
+            screen_off();
             return STOP;
         }
         st.dc_top = top;

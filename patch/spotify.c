@@ -384,9 +384,8 @@ int spot_media(unsigned key) {
 /* A single centre press, DOUBLE_CLICK_MS on, never while scrubbing: it replays the release to stock
  * on_wm_keyup_fun, which turns the screen off, as Now Playing's np_single. */
 static int spot_single(const void *info) {
-    static const unsigned release[EVENT_KEY / 4 + 1] = { [EVENT_KEY / 4] = KEY_CENTER };
     ui.press = 0;
-    if (g_backlight_status) on_wm_keyup_fun((void *)0, (void *)release);
+    screen_off();
     return 0;
 }
 

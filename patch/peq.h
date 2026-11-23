@@ -634,6 +634,7 @@ typedef struct {
     int x, y, w, h;
 } rect_t;
 /* navigation.c: a rounded box in color, or a square one when the canvas declines to round it */
+void screen_off(void);
 void fill_box(canvas_t *canvas, rect_t *r, unsigned color, unsigned radius);
 /* flat.c: the hold menu's card, which Cover Flow's flip panel wears under the flat look: HOLD_FOOT
  * of paper under its rows, and its ring no lower than QM_FOOT (the glass hides 38 px of the

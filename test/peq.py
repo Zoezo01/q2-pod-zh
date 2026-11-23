@@ -704,7 +704,7 @@ const char *shim_title(void) { /* past the list, 48 high with one row */
 int shim_list_height(void) { return w[2].h; } /* the list view is the page's first child */
 /* The Simple tab: its view the page's child with a press handler, the tab bar the 48px one. Centre's
  * single press runs at once; a double press is the screen's. */
-static int screen_off;
+static int offs;
 static int child(int bar) {
     for (int i = count; i > 1; --i) if (w[i].parent == 1 && w[i].down && (w[i].h == 48) == bar) return i;
     return 0;
@@ -713,7 +713,8 @@ void stop_timer(unsigned *t) { if (*t) timer_remove(*t); *t = 0; }
 int center_press(unsigned *timer, unsigned *at, int (*single)(const void *), int scrubbing) {
     single(0); return 1;
 }
-int on_wm_keyup_fun(void *a, void *b) { return ++screen_off; }
+int on_wm_keyup_fun(void *a, void *b) { return ++offs; }
+void screen_off(void) { on_wm_keyup_fun(0, 0); }
 int widget_to_local(void *x, void *xy) { return 0; }
 int eq_key(void *top, unsigned key);
 int shim_e3_open(void) { return shim_open(); } /* the EQ page opens on Simple */
@@ -754,7 +755,7 @@ const char *shim_text(int i, int *r, unsigned *px, unsigned *color) {
     memcpy(r, texts[i].r, sizeof texts[i].r); *px = texts[i].px; *color = texts[i].color; return texts[i].s;
 }
 int shim_backs(void) { return backs; }
-int shim_screen_off(void) { return screen_off; }
+int shim_screen_off(void) { return offs; }
 unsigned shim_list_bg(void) { return (unsigned)w[2].bg; }
 """
 
