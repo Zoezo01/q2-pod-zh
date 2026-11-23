@@ -7,9 +7,10 @@
  * mounted without that (q2mount's option refused), apps run as root as before, so they can still
  * write it.
  * ponytail: this guards against a buggy app, not a hostile one: root=1 is the app's own word, an
- * app can rewrite what root runs from the card (.rockbox/rockbox, a root=1 app's run), and root
- * kills the pid an app's own pid file names (addon.c stop_cmd). An app that ran as root earlier in
- * the same boot leaves /tmp files it can no longer replace until a restart clears /tmp. */
+ * app can rewrite what root runs or flashes from the card (.rockbox/rockbox, a root=1 app's run,
+ * Network Update's update.tar), and root kills the pid an app's own pid file names (addon.c
+ * stop_cmd). An app that ran as root earlier in the same boot leaves /tmp files it can no longer
+ * replace until a restart clears /tmp. */
 #include "offsets.inc"
 #include "peq.h"
 #include "stock.h" /* APP_UID (tools/build.py) */
@@ -22,7 +23,7 @@
 #define SYS_SETGROUPS 4081
 #define SYS_CHOWN 4202
 #define GID_VIDEO 28 /* the stock rootfs's /etc/group */
-#define GID_AUDIO 29 /* /dev/snd's (etc/mdev.conf) */
+#define GID_AUDIO 29 /* the ALSA nodes', the DAC's */
 
 /* No mdev rule makes these: root:root 660. The DAC's is an audio=1 game's on the jack, its mute
  * and PCM mode cleared after the PCM's open (docs/librespot.md). */
@@ -52,6 +53,16 @@ void app_user(void) {
         cf_syscall(SYS_CHMOD, (long)secrets[i], 0600, 0); /* one not there yet is left */
     dev_group("/dev/fb0", GID_VIDEO);
     dev_group("/dev/shanling_dac", GID_AUDIO);
+    /* etc/mdev.conf's root:audio rules for these name snd/, which a rule with a / may never match
+     * (the subsystem is sound/), and a USB DAC's come at its plug */
+    char node[48];
+    void *d = opendir("/dev/snd");
+    for (struct dirent *e; d && (e = readdir(d));)
+        if (e->d_name[0] != '.') {
+            tk_snprintf(node, sizeof node, "/dev/snd/%s", e->d_name);
+            dev_group(node, GID_AUDIO);
+        }
+    if (d) closedir(d);
     if (cf_syscall(SYS_SETGROUPS, 2, (long)groups, 0) || cf_syscall(SYS_SETGID, APP_UID, 0, 0) ||
         cf_syscall(SYS_SETUID, APP_UID, 0, 0))
         child_exit(126);
