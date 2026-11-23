@@ -16,6 +16,7 @@ from conftest import NAVIGATION_SOURCE, O, Deques, claim, pod_value, ui_name
 from test_coverflow import COVERS, TRACKS, Home, Rec, cf, deque_of  # coverflow.c's home struct, its page and an album
 from test_nav_display_library import Ple  # playlists.c's editor state
 from test_navigation import Config
+from conftest import Config as AllKeysConfig  # reads every key, an empty default too
 
 W_PARENT, W_EMITTER = O['W_PARENT'], O['W_EMITTER']
 KEY_NEXT, KEY_PREV, KEY_CENTER = O['KEY_NEXT'], O['KEY_PREV'], O['KEY_CENTER']
@@ -532,11 +533,7 @@ def chosen(fw, ui, page, row):
 def theme(fw, index, **keys):
     """config.ini's IPOD THEME (0 Minimal, 1 Classic, 2 Modern) and any other keys given; the rest
     missing, so their defaults."""
-    values = {b'THEME': str(index).encode(), **{k.encode(): str(v).encode() for k, v in keys.items()}}
-    def read(path, section, name, out, default, *_):
-        value = values.get(C.string_at(name), C.string_at(default))
-        C.memmove(out, value + b'\0', len(value) + 1)
-    fw.mock('toolsReadConfig', read)
+    AllKeysConfig(fw, THEME=index, **keys)
 
 
 def test_a_recreated_page_glides_to_the_row_last_chosen_in_it(fw, ui):

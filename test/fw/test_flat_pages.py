@@ -560,7 +560,7 @@ class TimeCanvas(loop.Canvas):
 
 @pytest.mark.parametrize('edited', range(len(loop.DATE)))
 def test_modern_paints_the_date_page_flat(fw, keys, edited):
-    loop.Config(fw, THEME=b'2')
+    Config(fw, THEME=b'2')
     top, _ = loop.open_time(fw, loop.Ui(fw), at=(4, 2, 4, 21, 5))
     top.ints[b'_edit_field'] = edited
     canvas = TimeCanvas(fw)
@@ -575,7 +575,7 @@ def test_modern_paints_the_date_page_flat(fw, keys, edited):
 
 @pytest.mark.parametrize('twelve, hour, shown', [(True, 21, ['9', '05', 'PM']), (False, 21, ['21', '05'])])
 def test_modern_paints_the_time_page_flat(fw, keys, twelve, hour, shown):
-    loop.Config(fw, THEME=b'2')
+    Config(fw, THEME=b'2')
     top, _ = loop.open_time(fw, loop.Ui(fw), twelve=twelve, at=(4, 2, 4, hour, 5))
     top.find(b'slide_view').ints[b'value'] = 1
     top.ints[b'_edit_field'] = 3
@@ -593,7 +593,7 @@ def test_modern_paints_the_time_page_flat(fw, keys, twelve, hour, shown):
 def test_modern_s_date_page_in_the_light_half_is_final(fw, keys):
     """The boxes in their final colours, Light Mode's ink held off them (flat_box): the tile and Save at the light
     half's rest, the field being set in what is on, as Quick Settings has them."""
-    loop.Config(fw, THEME=b'2', LIGHT=b'1')
+    Config(fw, THEME=b'2', LIGHT=b'1')
     top, _ = loop.open_time(fw, loop.Ui(fw), at=(4, 2, 4, 21, 5))
     top.ints[b'_edit_field'] = 1
     canvas = TimeCanvas(fw)
@@ -609,7 +609,7 @@ def test_modern_s_date_page_in_the_light_half_is_final(fw, keys):
 def test_modern_set_time_walks_its_fields_then_saves(fw, keys, twelve, last):
     """Classic's model under Modern: Centre walks every field, AM/PM the sixth in 12-hour, and the next Centre saves,
     with no stop on OK; the side buttons stop at the last field."""
-    loop.Config(fw, THEME=b'2')
+    Config(fw, THEME=b'2')
     ui = loop.Ui(fw)
     top, _ = loop.open_time(fw, ui, twelve=twelve)
     assert fw.fn('fields', C.c_int, C.c_void_p)(top.p) == last + 1

@@ -9,7 +9,7 @@ import pytest
 
 import host
 import art as tools_art  # tools/, on the path host.py set: the art's own sizes
-from conftest import NAVIGATION_SOURCE, O, Deques, Externpic, ask_cover, in_fork, ui_name
+from conftest import NAVIGATION_SOURCE, O, Config, Deques, Externpic, ask_cover, in_fork, ui_name
 
 THEMES = host.tools_theme.builtins()
 SETS = host.tools_theme.geometry_sets(THEMES)
@@ -66,17 +66,6 @@ def bbox(rects):
     xs, ys = [r[0] for r in rects], [r[1] for r in rects]
     x1, y1 = max(r[0] + r[2] for r in rects), max(r[1] + r[3] for r in rects)
     return min(xs), min(ys), x1 - min(xs), y1 - min(ys)
-
-
-class Config:
-    """config.ini's [IPOD] keys: a key's value, else the caller's default."""
-    def __init__(self, fw, **values):
-        self.values = {k.encode(): str(v).encode() for k, v in values.items()}
-        fw.mock('toolsReadConfig', self.read)
-
-    def read(self, path, section, key, out, default, *_):
-        value = self.values.get(C.string_at(key), C.string_at(default))
-        C.memmove(out, value + b'\0', len(value) + 1)
 
 
 @pytest.fixture(scope='module')

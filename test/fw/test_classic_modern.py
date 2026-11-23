@@ -5,6 +5,7 @@ import ctypes as C
 
 import pytest
 
+from conftest import Config
 from test_nav_paint import (ACCENTS, CLASSIC, CLASSIC_BLUE, GRAPHITE, LABELS, MODERN, RED, RED_PX, TIDAL, WHITE, Canvas, bitmaps,
                             image_add, msg_paint, named, paint_bg, rgba, slider_paint, slider_scrub, SLIDER_PAGES, SLIDERS,
                             layout, st, stock_h, theme, ui_load, world)  # noqa: F401 (fixtures, by name)
@@ -155,7 +156,7 @@ def test_update_library_s_words_are_in_classic_s_face(fw, world, st):
 def test_set_date_s_fields_are_6_px_apart(fw, keys, number, xs):
     """Classic Modern's date.gap: the day where Classic's is, the month and the year 6 px apart; Modern keeps Classic's
     places. The selectors, the touch, are where the boxes are drawn."""
-    loop.Config(fw, THEME=number.encode())
+    Config(fw, THEME=number.encode())
     top, _ = loop.open_time(fw, loop.Ui(fw), at=(4, 2, 4, 21, 5))
     cells = [top.find(n) for n in loop.DATE]
     assert [w.box()[0] for w in cells] == xs
@@ -166,7 +167,7 @@ def test_set_date_s_fields_are_6_px_apart(fw, keys, number, xs):
 
 @LIGHTS
 def test_set_time_s_fields_keep_classic_s_places_and_the_flat_face(fw, keys, light):
-    loop.Config(fw, THEME=CLASSIC_MODERN.encode(), LIGHT=light.encode())
+    Config(fw, THEME=CLASSIC_MODERN.encode(), LIGHT=light.encode())
     top, _ = loop.open_time(fw, loop.Ui(fw), twelve=True, at=(4, 2, 4, 21, 5))
     top.find(b'slide_view').ints[b'value'] = 1
     top.ints[b'_edit_field'] = 3

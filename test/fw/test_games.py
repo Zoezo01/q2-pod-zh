@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from conftest import O, Card, block
+from conftest import O, Card, Config, block
 
 SEED = 2166136261
 SUD, BEST, SOL, SNK = 0x31445553, 0x31585456, 0x314c4f53, 0x314b4e53
@@ -2603,13 +2603,7 @@ def test_solitaire_paint_asks_before_a_new_deal_and_says_when_it_is_won(fw):
 
 
 def config(fw, **values):
-    """config.ini: a key's value, or the default."""
-    values = {k.encode(): v for k, v in values.items()}
-
-    def read(path, section, key, out, default, *_):
-        value = values.get(C.string_at(key), C.string_at(default))
-        C.memmove(out, value + b'\0', len(value) + 1)
-    fw.mock('toolsReadConfig', read)
+    Config(fw, **values)
 
 
 @pytest.mark.parametrize('mode', (b'0', b'1'))

@@ -10,7 +10,7 @@ import urllib.parse
 import pytest
 
 import ipod
-from conftest import O, Files, block, claim
+from conftest import O, Config, Files, block, claim
 
 RADIO = '/mnt/mmc/Radio'
 FAVS, LAST, STATE = f'{RADIO}/favourites.m3u', f'{RADIO}/.last', '/tmp/q2radio.state'
@@ -363,10 +363,7 @@ def title(p):
 
 def classic(fw):
     """The Classic theme (THEME=1 in the config)."""
-    def read(path, section, key, out, default, *_):
-        v = b'1' if C.string_at(key) == b'THEME' else C.string_at(default)
-        C.memmove(out, v + b'\0', len(v) + 1)
-    fw.mock('toolsReadConfig', read)
+    Config(fw, THEME='1')
 
 
 # The menu and the built-in lists.

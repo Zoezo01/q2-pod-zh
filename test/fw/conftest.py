@@ -566,7 +566,7 @@ def stock_stub(address, result, log):
 class Config:
     """config.ini, its value or the default."""
     def __init__(self, fw, **values):
-        self.values = {k.encode(): v.encode() for k, v in values.items()}
+        self.values = {k.encode(): v if isinstance(v, bytes) else str(v).encode() for k, v in values.items()}
         fw.mock('toolsReadConfig', self.read)
 
     def read(self, path, section, key, out, default, *_):

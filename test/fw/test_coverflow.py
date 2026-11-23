@@ -2470,12 +2470,7 @@ SPLIT_W, BACK_W = 187, 294
 
 def themed(fw, theme, **keys):
     """config.ini's [IPOD] keys as navigation.c reads them at its first theme(): Theme, and any others."""
-    values = {b'THEME': str(theme).encode(), **{k.encode(): v.encode() for k, v in keys.items()}}
-
-    def read(path, section, key, out, default, *_):
-        value = values.get(C.string_at(key), C.string_at(default))
-        C.memmove(out, value + b'\0', len(value) + 1)
-    fw.mock('toolsReadConfig', read)
+    Config(fw, THEME=theme, **keys)
     fw.mock('fw___xstat', lambda *_: -1)  # no Rockbox on the card
     fw.mock('tk_str_start_with', lambda s, prefix, *_: C.string_at(s).startswith(C.string_at(prefix)))
     return THEMES[theme]

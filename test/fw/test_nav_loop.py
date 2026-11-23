@@ -10,7 +10,7 @@ import struct
 import pytest
 
 import host
-from conftest import NAVIGATION_SOURCE, O, Deques, Files, Game, claim, libc
+from conftest import NAVIGATION_SOURCE, O, Config, Deques, Files, Game, claim, libc
 
 KEY_CENTER, KEY_PREV, KEY_NEXT, KEY_PLAY, KEY_RETURN = (O[k] for k in ('KEY_CENTER', 'KEY_PREV', 'KEY_NEXT', 'KEY_PLAY', 'KEY_RETURN'))
 KEY_BACK_BTN, KEY_FWD_BTN = O['KEY_BACK_BTN'], O['KEY_FWD_BTN']
@@ -28,17 +28,6 @@ def define(name):
 
 WDT_START, WDT_STOP, WDT_FEED = (define(k) for k in ('WDT_START', 'WDT_STOP', 'WDT_FEED'))  # the watchdog's ioctls
 SHORT_LIST_MAX, LIST_FIRST_MS = define('SHORT_LIST_MAX'), define('LIST_FIRST_MS')
-
-
-class Config:
-    """config.ini: a key's value, or the default stock passes."""
-    def __init__(self, fw, **values):
-        self.values = {k.encode(): v for k, v in values.items()}
-        fw.mock('toolsReadConfig', self.read)
-
-    def read(self, path, section, key, out, default, *_):
-        value = self.values.get(C.string_at(key), C.string_at(default))
-        C.memmove(out, value + b'\0', len(value) + 1)
 
 
 class Clock:

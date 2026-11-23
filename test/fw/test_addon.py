@@ -10,7 +10,7 @@ import struct
 import pytest
 
 import host
-from conftest import O, SPOT_FAIL, SPOT_NOSOCK, SPOT_OK, Deques, Game, block, claim, high_halves, libc, text
+from conftest import O, SPOT_FAIL, SPOT_NOSOCK, SPOT_OK, Config, Deques, Game, block, claim, high_halves, libc, text
 from test_coverflow import png  # an icon's header
 from test_netupdate import JOB_INSTALL, JOB_REMOVE, SH_CANCELLED, SH_CARD, SH_NET, SH_OK, Sh  # test_netupdate.py keeps netupdate.c's App Store mirror
 from test_radio import Rd, execl, mixer  # noqa: F401  the mirror; the child's execl calls; USB_MIXER, for a USB DAC's volume
@@ -1928,11 +1928,7 @@ SNAKE_SOCK = b'/tmp/q2-snake.input.sock'
 
 def settings(fw, **values):
     """config.ini as Q2 Pod reads its settings: these keys' values, every other its default."""
-    wanted = {k.encode(): v for k, v in values.items()}
-    def read(path, section, key, out, default, *_):
-        value = wanted.get(C.string_at(key), C.string_at(default))
-        C.memmove(out, value + b'\0', len(value) + 1)
-    fw.mock('toolsReadConfig', read)
+    Config(fw, **values)
 
 
 class CardGame:
@@ -6747,10 +6743,7 @@ def test_hostile_rules_files(fw):
 
 def shortcut(fw, value):
     """IPOD SHORTCUT in config.ini, every other key its default; Home's shortcut row's click."""
-    def read(path, section, key, out, default, *_):
-        v = value if C.string_at(key) == b'SHORTCUT' else C.string_at(default)
-        C.memmove(out, v + b'\0', len(v) + 1)
-    fw.mock('toolsReadConfig', read)
+    Config(fw, SHORTCUT=value)
     return fw.fn('home_shortcut_open', C.c_int, C.c_void_p, C.c_void_p)
 
 

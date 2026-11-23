@@ -10,11 +10,11 @@ import pytest
 
 import fuzz
 import host
-from conftest import O, block
+from conftest import O, Config, block
 from test_coverflow import ART, decoded, tex_rig
 from test_coverflow import bitmap as cover
 from test_coverflow import rgba as cover_pixels
-from test_nav_display_library import Config, Ui, appearance, button_of, row_of, writes
+from test_nav_display_library import Ui, appearance, button_of, row_of, writes
 from test_nav_loop import Card, Clock, Mounts, logo_poll, toasts
 from test_nav_paint import WHITE, Canvas, bitmaps, image_add, paint_bg, px, strings, style_color, system_bar, world  # noqa: F401 (bitmaps, world: fixtures)
 

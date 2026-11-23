@@ -7,7 +7,7 @@ import struct
 
 import pytest
 
-from conftest import O, ROOT, Game, claim
+from conftest import O, ROOT, Config, Game, claim
 from test_radio import Rd  # test_radio.py keeps the mirror
 
 KEY_PLAY, KEY_BACK_BTN, KEY_FWD_BTN = O['KEY_PLAY'], O['KEY_BACK_BTN'], O['KEY_FWD_BTN']
@@ -370,12 +370,7 @@ def link(fw, player, resume='0'):
 
 
 def config(fw, **values):
-    values = {k.encode(): v.encode() for k, v in values.items()}
-
-    def read(path, section, key, out, default, *_):
-        v = values.get(C.string_at(key), C.string_at(default))
-        C.memmove(out, v + b'\0', len(v) + 1)
-    fw.mock('toolsReadConfig', read)
+    Config(fw, **values)
 
 
 def test_play_as_the_link_comes_up_is_dropped(fw):

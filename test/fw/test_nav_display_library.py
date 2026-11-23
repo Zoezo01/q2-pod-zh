@@ -9,7 +9,7 @@ import struct
 import pytest
 
 import host
-from conftest import NAVIGATION_SOURCE, O, Deques, Files, claim, high_halves, pod_value
+from conftest import NAVIGATION_SOURCE, O, Config, Deques, Files, claim, high_halves, pod_value
 from test_coverflow import SONGTABLE  # stock's songtable, as demo's CREATE TABLE text has it
 
 W_PARENT, EVT_CLICK, EVENT_TYPE, EVENT_KEY, EVENT_X = O['W_PARENT'], O['EVT_CLICK'], O['EVENT_TYPE'], O['EVENT_KEY'], O['EVENT_X']
@@ -48,17 +48,6 @@ def st(fw, scratch):
     def field(name, ctype=C.c_int, i=0):
         return ctype.from_address(base + scratch[name] + i * C.sizeof(ctype))
     return field
-
-
-class Config:
-    """config.ini: a key's value, or the default."""
-    def __init__(self, fw, **values):
-        self.values = {k.encode(): v for k, v in values.items()}
-        fw.mock('toolsReadConfig', self.read)
-
-    def read(self, path, section, key, out, default, *_):
-        value = self.values.get(C.string_at(key), C.string_at(default))
-        C.memmove(out, value + b'\0', len(value) + 1)
 
 
 def writes(fw):
