@@ -3295,7 +3295,7 @@ static void pod_text(int i) {
 }
 /* 补全封面与歌词's press, once Smart Wi-Fi's link is up (need_link may replay it). A second press
  * while it runs stops it at the next item. */
-static int fill_go(void *ctx, void *unused) {
+static int fill_go(void *ctx, event_t *unused) {
     (void)ctx, (void)unused;
     if (!library_fill_start())
         toast("卡上没有可补全的歌曲");
@@ -3364,13 +3364,13 @@ static int pod_click(void *ctx, event_t *event) {
     return 0;
 }
 /* The fill's row is rebuilt with its page: a stale label pointer would write into a dead node. */
-static int fill_gone(void *ctx, void *event) {
+static int fill_gone(void *ctx, event_t *event) {
     (void)ctx, (void)event;
     st.pod_label[POD_LIBRARY_FILL] = 0;
     return 0;
 }
 void pod_rows(widget_t *win, const char *view_name, int first, int n, const char *const *icons) {
-    pod_settings();
+    widget_t *view = win ? widget_lookup(win, view_name, 1) : (void *)0;
     for (int i = 0; view && i < n; ++i) {
         st.pod_label[first + i] = list_row(view, icons[i], pod_click, (void *)(long)(first + i));
         pod_text(first + i);

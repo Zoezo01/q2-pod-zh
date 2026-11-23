@@ -80,17 +80,19 @@ static int cap_text(const unsigned *t) {
 /* Painted per frame from the paint leaf, before the label's own draw: stock rebinds the
  * rows (widget_use_style clears per-widget overrides), so a set-and-forget size flickers
  * back to stock's between binds — pinned here, it never does. */
+static widget_t *cap_win; /* the Wi-Fi page, kept past struct smart_wifi's upstream shape */
+
 void wifi_cap_paint(void *w) {
     static const char *const sizes[] = { "style:normal:font_size", "style:focused:font_size",
                                          "style:disable:font_size" };
-    if (!sw.cap_win || !cap_text(widget_get_text(w))) return;
+    if (!cap_win || !cap_text(widget_get_text(w))) return;
     for (unsigned i = 0; i < sizeof sizes / sizeof *sizes; ++i)
         widget_set_prop_int(w, sizes[i], CAP_PX);
 }
 
-static int cap_gone(void *win, void *event) {
+static int cap_gone(void *win, event_t *event) {
     (void)event;
-    if (sw.cap_win == win) sw.cap_win = (void *)0;
+    if (cap_win == win) cap_win = (void *)0;
     return 0;
 }
 
@@ -99,7 +101,7 @@ static int cap_gone(void *win, void *event) {
 int ringnav_wifi_page(widget_t *win, void *ctx) {
     smart_wake();
     int ret = stock_wifi_page_trampoline(win, ctx);
-    sw.cap_win = win;
+    cap_win = win;
     widget_on(win, EVT_DESTROY, cap_gone, win);
     return ret;
 }

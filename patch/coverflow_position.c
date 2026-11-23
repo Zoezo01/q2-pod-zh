@@ -58,39 +58,15 @@ static int position_tick(const void *unused) {
     return 8; /* RET_REPEAT */
 }
 
-/* pos in album units to 1/4096ths, rounded away from zero at the half. A float multiply and
- * cvt.w.s only: no int-to-float conversion, so no doubles. */
-static int position_q(float pos) {
-    float t = pos * 4096.0f;
-    return (int)(t + (t < 0 ? -.5f : .5f));
-}
-
-/* n / d for a 32-bit d, by hand: the payload's __udivdi3 is a GOT slot the machine leaves
- * unresolved. The quotients here are at most travel, a few hundred. */
-static unsigned long long position_div(unsigned long long n, unsigned d) {
-    unsigned long long q = 0, r = 0;
-    for (int i = 63; i >= 0; --i) {
-        r = (r << 1) | ((n >> i) & 1u);
-        if (r >= d) r -= d, q |= 1ull << i;
-    }
-    return q;
-}
-
-/* Pixel offset of the thumb's left edge, from q = album position in 1/4096ths. Wrap in the
- * slide's order first, then hold the last album's position on an extra Sort/All Albums card.
- * Integer throughout: LLVM's int-to-float conversions for this function went through doubles
- * (-mfp64 O32), which the test emulator doesn't run. 32-bit at 1/4096 of an album is exact for
- * every library this player can hold (a card tops out at 65,000 songs). */
-static int coverflow_position_offset(int q, int albums, int cards, int travel) {
+/* Pixel offset of the thumb's left edge. Wrap in the slide's order first, then hold the last
+ * album's position on an extra Sort/All Albums card. Float arithmetic avoids a fixed-point
+ * album count overflowing on a large library. */
+static int coverflow_position_offset(float pos, int albums, int cards, int travel) {
     if (albums <= 1 || cards < albums || travel < 0) return -1;
-    int span = cards * 4096, k = q + 4096 / 2, wrap = k / span; /* half an album, not half a card */
-    if (k % span && k < 0) --wrap; /* floor, as cf_floor: a bounce past the first album wraps back */
-    q -= wrap * span;
-    if (q < 0) q = 0; /* a bounded list's bounce or rubber band past its first album */
-    int last = (albums - 1) * 4096;
-    if (q > last) q = last;
-    return (int)position_div((unsigned long long)q * (unsigned)travel + (unsigned)last / 2,
-                             (unsigned)last);
+    pos -= (float)cf_floor((pos + .5f) / (float)cards) * (float)cards; /* where visual() wraps */
+    if (pos < 0) pos = 0; /* a bounded list's bounce or rubber band past its first album */
+    if (pos > (float)(albums - 1)) pos = (float)(albums - 1);
+    return (int)(pos * (float)travel / (float)(albums - 1) + .5f);
 }
 
 /* The album whose thumb is x px along the track's travel, of albums: coverflow_position_offset's
@@ -139,13 +115,13 @@ void coverflow_position_paint(widget_t *w, canvas_t *canvas) {
     if (w == cf.slide) {
         if (position.parent != cf.covers || position.slide != cf.slide) {
             position_reset(0);
-            position.parent = cf.covers, position.slide = cf.slide, position.pos = posq;
+            position.parent = cf.covers, position.slide = cf.slide, position.pos = pos;
         }
         position.r[0] = left, position.r[1] = y;
         position.r[2] = width, position.r[3] = POSITION_STRIP_H;
-        if (posq != position.pos) {
+        if (pos != position.pos) {
             unsigned old_alpha = position.alpha;
-            position.pos = posq, position.moved = (unsigned)time_now_ms(), position.alpha = 255;
+            position.pos = pos, position.moved = (unsigned)time_now_ms(), position.alpha = 255;
             if (!position.timer &&
                 !(position.timer = timer_add(position_tick, 0, POSITION_TICK_MS)))
                 position.alpha = 0; /* a failed timer must not leave an indicator stuck onscreen */
