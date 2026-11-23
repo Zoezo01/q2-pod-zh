@@ -4,14 +4,6 @@ import pytest
 import ipod
 
 
-def w(name, *children, kind='view', at=None, **props):
-    return [kind, at or [0, 0, 10, 10], {'name': name, **props}, list(children)]
-
-
-def named(root):
-    return {n[2].get('name'): n for n in ipod.walk(root)}
-
-
 @pytest.fixture
 def corner(monkeypatch):
     """A 5px glass corner, whose 3-4-5 rows come out whole, with 1px of slack."""
