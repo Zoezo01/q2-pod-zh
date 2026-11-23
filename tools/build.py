@@ -2450,6 +2450,9 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
     blobs['recovery-update/rootfs.squashfs'] = newsq.read_bytes()
     # Stock image proves this size fits; do not enlarge beyond its padded size, and keep the floor free under it.
     check_rootfs_size(len(blobs['recovery-update/rootfs.squashfs']), sq.stat().st_size)
+    # Each budget's room, printed with the summary, so a change that eats into one shows before a check refuses it.
+    room = dict(payload_room=SCRATCH - BASE - len(payload), state_room=SCRATCH + SCRATCH_MAX - ps['__scratch_end'],
+                rootfs_room=sq.stat().st_size - len(blobs['recovery-update/rootfs.squashfs']) - ROOTFS_FREE_MIN)
     blobs['firmware_v20.info'] = (f'Shanling Q2\n{version}\n'+''.join(
         hashlib.md5(blobs[n]).hexdigest()+'  '+n+'\n' for n in [
             'recovery-update/xImage','recovery-update/rootfs.squashfs'])).encode()
@@ -2468,7 +2471,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
         tools={t:run(t,'--version').splitlines()[0] for t in ['clang','ld.lld','llvm-objcopy']} |
               {'imagemagick': imagemagick('-version', data=b'').decode().splitlines()[0]})
     (out/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
-    print(json.dumps({k:manifest[k] for k in ['update_sha256','patch_bytes','version']},indent=2))
+    print(json.dumps({k:manifest[k] for k in ['update_sha256','patch_bytes','version']} | room,indent=2))
 
 if __name__ == '__main__':
     ap=argparse.ArgumentParser(description=__doc__)
