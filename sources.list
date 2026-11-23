@@ -24,7 +24,6 @@ DiamondBond/q2-mixtape Mixtape
 DiamondBond/q2-groovebox Groovebox
 DiamondBond/q2-videos Videos
 js-surya/q2-tailscale Tailscale
-# DiamondBond/q2-langs Languages
 [Games]
 DiamondBond/q2-fidget Buddy
 lampsonlnguyen/q2-arcade Arcade Games
@@ -40,3 +39,7 @@ Carbon-66/q2-miami Q2A Miami
 js-surya/q2-sixtrack Six Track
 Carbon-66/q2-challengerdeep Challenger Deep
 # lampsonlnguyen/q2-pico8 PICO-8
+# Languages last, behind [Apps]: firmware 1.9.0 and older, which has no language support, never reads it.
+# Held until 1.9.1 is published; then uncomment both lines.
+# [Apps]
+# DiamondBond/q2-langs Languages

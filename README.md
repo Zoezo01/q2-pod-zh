@@ -217,6 +217,11 @@ The [user guide][guide] covers every control, EQ, Cover Flow and more tips.
     <td>Puts the Q2 on your tailnet, so its apps reach your own music server from anywhere: sign in with a QR code, MagicDNS names, Taildrop to the card, in <b>System settings → Network → Tailscale</b>.</td>
     <td></td>
   </tr>
+  <tr valign="top">
+    <td><b><a href="https://github.com/DiamondBond/q2-langs">Languages</a></b></td>
+    <td>Q2 Pod in Deutsch, Español, Français, Italiano, Polski, Русский, Українська, 日本語, 한국어, ภาษาไทย, 简体中文 or 繁體中文, picked in <b>System settings → Language</b>; Arabic, Persian and Urdu titles show in any language.</td>
+    <td></td>
+  </tr>
 </table>
 
 <details>
