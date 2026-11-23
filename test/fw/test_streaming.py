@@ -6,6 +6,7 @@ import random
 import pytest
 
 from conftest import Dirent, SPOT_FAIL, SPOT_NOSOCK, SPOT_OK, block, text
+from fuzz import hostile
 from test_radio import Fx, Sp, fx
 
 REPLY_MAX = 64 << 10
@@ -47,21 +48,6 @@ class Td(C.Structure):
                 ('of', C.c_uint), ('job_all', C.c_int), ('tried', C.c_ubyte), ('misses', C.c_ubyte), ('fav', C.c_ubyte),
                 ('starting', C.c_ubyte), ('dropped', C.c_ubyte), ('asked', C.c_char * 48),
                 ('since', C.c_uint), ('full', C.c_ubyte)]  # the oldest st_mtime of Download All's songs, saved or passed; 0 before; trim kept its songs
-
-
-def hostile(seed, samples, count=2000, alphabet=b'%\t\n0aF'):
-    """Random bytes, every truncation of the samples, and mutations of them."""
-    r = random.Random(seed)
-    for _ in range(count):
-        yield r.randbytes(r.randrange(120))
-    for s in samples:
-        for k in range(len(s)):
-            yield s[:k]
-    for _ in range(count):
-        b = bytearray(r.choice(samples))
-        for _ in range(r.randrange(1, 6)):
-            b[r.randrange(len(b))] = r.choice(alphabet)
-        yield bytes(b)
 
 
 def escape(fw, s, size):
@@ -172,7 +158,7 @@ def test_what_is_escaped_comes_back(fw):
 
 def test_hostile_replies(fw):
     samples = [HEAD + ROW * 3, b'Q2SPOT/1\n7\tlogin\tOpen%20Spotify\t\n', HEAD + b'a%25\t%0A\t%41\t\t\t\n']
-    for data in hostile(5, samples):
+    for data in hostile(5, samples, 2000, b'%\t\n0aF', 120):
         data = data if data[:9] == b'Q2SPOT/1\n' else b'Q2SPOT/1\n' + data
         data = data.split(b'\0')[0]
         for rows in (0, 2, SPOT_ROWS):
@@ -1054,7 +1040,7 @@ def test_it_is_cut_at_a_whole_character_at_every_size(fw):
 
 
 def test_hostile_names(fw):
-    for s in hostile(7, ['Ærøskøbing / 好'.encode(), b'a:b*c'], 1000, b'\xc3\xa9\xe2/:'):
+    for s in hostile(7, ['Ærøskøbing / 好'.encode(), b'a:b*c'], 1000, b'\xc3\xa9\xe2/:', 120):
         s = s.split(b'\0')[0]
         for n in (10, 30, 256):
             name = tidal_name(fw, n, s, s)
@@ -1355,7 +1341,7 @@ RADIO = [b'#EXTM3U\n#EXTINF:-1,A, B\r\nhttp://a/1?x=1\r\n\r\n  https://b/2\n', b
 
 
 def test_hostile_radio_lists(fw):
-    for raw in hostile(8, RADIO, 1500, b'#=,:/"\n\r \t'):
+    for raw in hostile(8, RADIO, 1500, b'#=,:/"\n\r \t', 120):
         raw = raw.split(b'\0')[0]
         for name, value in stations(fw, raw, 8) + picks(fw, raw, 1, 8) + picks(fw, raw, 0, 8):
             assert name is not None and value is not None

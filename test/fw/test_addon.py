@@ -10,7 +10,8 @@ import struct
 import pytest
 
 import host
-from conftest import Config, Deques, Dirent, Game, O, SPOT_FAIL, SPOT_NOSOCK, SPOT_OK, block, claim, high_halves, libc, text
+from conftest import O, SPOT_FAIL, SPOT_NOSOCK, SPOT_OK, Config, Deques, Dirent, Game, block, claim, high_halves, libc, text
+from fuzz import hostile
 from test_coverflow import png  # an icon's header
 from test_netupdate import JOB_INSTALL, JOB_REMOVE, SH_CANCELLED, SH_CARD, SH_NET, SH_OK, Sh  # test_netupdate.py keeps netupdate.c's App Store mirror
 from test_radio import Rd, execl, mixer  # noqa: F401  the mirror; the child's execl calls; USB_MIXER, for a USB DAC's volume
@@ -105,21 +106,6 @@ Rule._fields_ = [('next', C.POINTER(Rule)), ('length', C.c_uint), ('visible', C.
 
 class Scope(C.Structure):
     _fields_ = [('rules', C.POINTER(Rule)), ('sql', C.c_void_p), ('bytes', C.c_uint), ('ready', C.c_int), ('failed', C.c_int)]
-
-
-def hostile(seed, samples, count=1500, alphabet=b'%\t\n=/. \r'):
-    """Random bytes, every truncation of the samples, and mutations of them."""
-    r = random.Random(seed)
-    for _ in range(count):
-        yield r.randbytes(r.randrange(120)).replace(b'\0', b'\n')
-    for s in samples:
-        for k in range(len(s)):
-            yield s[:k]
-    for _ in range(count):
-        b = bytearray(r.choice(samples))
-        for _ in range(r.randrange(1, 6)):
-            b[r.randrange(len(b))] = r.choice(alphabet)
-        yield bytes(b)
 
 
 class World:
@@ -813,7 +799,7 @@ def test_the_features_are_published_at_every_scan(fw):
 
 
 def test_hostile_manifests(fw):
-    for raw in hostile(41, [b'name=Foo Bar\nsearch=Find\nqr=1\ngoto=1\n'], 600):
+    for raw in hostile(41, [b'name=Foo Bar\nsearch=Find\nqr=1\ngoto=1\n'], 600, b'%\t\n=/. \r', 120, b'\n'):
         world = card(fw, one=raw)
         ap(fw).n = 0
         n = scan(fw)
@@ -1019,7 +1005,7 @@ def test_a_list_of_exactly_the_limit_keeps_its_last_line(fw):
 def test_hostile_playlists(fw):
     world = World(fw)
     samples = [b'#EXTM3U\n\xef\xbb\xbf' + SONG + b'\r\n/tmp/x\n/mnt/mmc/../y\n#c\n']
-    for raw in hostile(42, samples, 800, b'\n\r#/.\xef\xbb\xbf'):
+    for raw in hostile(42, samples, 800, b'\n\r#/.\xef\xbb\xbf', 120, b'\n'):
         next_, want, _ = m3u(fw, raw, world)
         assert want == b'' or (want.startswith(b'/mnt/mmc/') and b'\n' not in want)
         world.lists.clear(), world.names.clear()
@@ -1573,7 +1559,7 @@ def test_an_app_removing_a_file_that_isnt_the_timer_leaves_it(fw):
 
 def test_hostile_sleep_files(fw):
     s = Sleep(fw)
-    for raw in hostile(43, [b'until 1000600\n', b'until 99999999999'], 800, b' 0159\n'):
+    for raw in hostile(43, [b'until 1000600\n', b'until 99999999999'], 800, b' 0159\n', 120, b'\n'):
         if raw.startswith(b'end'):  # reads the stock queue's position, at its address on the Q2
             continue
         s.read(raw)
@@ -5689,7 +5675,7 @@ def test_hostile_status_files(fw):
     lcd, canvas = block(fw, size=4096), block(fw, size=4096)
     C.c_void_p.from_address(canvas + CANVAS_LCD).value = lcd
     paint = fw.fn('addon_paint', None, C.c_void_p, C.c_void_p)
-    for raw in hostile(45, samples, 800, b'0af=z\n '):
+    for raw in hostile(45, samples, 800, b'0af=z\n ', 120, b'\n'):
         q.again(raw)
         if q.code:
             paint(q.qp.qr, canvas)  # a hidden widget isn't painted
@@ -6231,7 +6217,7 @@ def test_stocks_own_import_gets_the_whole_folder(fw):
 def test_hostile_requests(fw):
     q = Requests(fw, 'a.m3u')
     samples = [f'7\r\nscan\nimport {PL}\nadd {PL}\n'.encode(), f'8\nadd {LIB_DIR}{"n" * 80}.m3u\nimport {LIB_DIR}x/y\n'.encode()]
-    for k, raw in enumerate(hostile(46, samples, 800, b'\n\r /.\xff')):
+    for k, raw in enumerate(hostile(46, samples, 800, b'\n\r /.\xff', 120, b'\n')):
         libup(fw).state = L_IDLE
         q.world.names.clear()
         q.take(raw)
@@ -6728,7 +6714,7 @@ def test_hostile_rules_files(fw):
     world = World(fw)
     samples = [b"0/mnt/mmc/A\n1/mnt/mmc/A/It's\n0/mnt/mmc/\xc3\xa9\n"]
     set_ = scope(fw)
-    for raw in hostile(47, samples, 800, b"'\n01/"):
+    for raw in hostile(47, samples, 800, b"'\n01/", 120, b'\n'):
         world.files[RULES] = raw
         world.names.clear()
         set_.ready = 0

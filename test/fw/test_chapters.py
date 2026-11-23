@@ -1,11 +1,11 @@
 """patch/chapters.c: ffmpeg's ffmetadata into chapters, its pipe, and an MP4's sample count before a play."""
 import ctypes as C
-import random
 import struct
 
 import pytest
 
 from conftest import block
+from fuzz import hostile
 
 MAX = 512
 BYTES = 256 * 1024
@@ -163,24 +163,9 @@ def seeds():
     return [two, REAL, two.replace(b'\n', b'\r\n')]
 
 
-def hostile(seed, samples, count=2000):
-    """Random bytes, every truncation of the samples, and mutations of them."""
-    r = random.Random(seed)
-    for _ in range(count):
-        yield r.randbytes(r.randrange(300))
-    for s in samples:
-        for k in range(len(s)):
-            yield s[:k]
-    for _ in range(count):
-        b = bytearray(r.choice(samples))
-        for _ in range(r.randrange(1, 6)):
-            b[r.randrange(len(b))] = r.choice(b'\\\n\r[]=/0159\x00\xff\xc3')
-        yield bytes(b)
-
-
 def test_hostile_ffmetadata(fw):
     head = b';FFMETADATA1\n'
-    for raw in hostile(1, seeds()):
+    for raw in hostile(1, seeds(), 2000, b'\\\n\r[]=/0159\x00\xff\xc3', 300):
         n = parsed(fw, raw if raw[:13] == head else head + raw)
         if n == -1:
             continue
@@ -530,7 +515,7 @@ def test_hostile_mp4(fw):
     samples = [book(table(1000), table(5, b'stz2')), table(1), box(b'moov', box(b'trak', table(3)))]
     card = Card(fw, {})
     bytes_of = fw.fn('mp4_index_bytes', C.c_ulonglong, C.c_char_p)
-    for data in hostile(2, samples, 1500):
+    for data in hostile(2, samples, 1500, b'\\\n\r[]=/0159\x00\xff\xc3', 300):
         card.files[b'a.m4b'] = data
         card.open.clear()
         card.reads = 0

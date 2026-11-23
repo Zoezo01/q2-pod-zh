@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from conftest import Card, Config, Dirent, O, block, fnv1a, rgba
+from conftest import O, Card, Config, Dirent, block, fnv1a, rgba
 
 SEED = 2166136261
 SUD, BEST, SOL, SNK = 0x31445553, 0x31585456, 0x314c4f53, 0x314b4e53
