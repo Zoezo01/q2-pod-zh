@@ -16,7 +16,7 @@
 #define LANG_BYTES (1u << 20)              /* a table's most */
 #define LANG_FONT LANG_DATA "/q2-font.ttf" /* script.c's GLYPH_FONT, a pack's lang/font.ttf */
 #define LANG_FONT_BYTES (4u << 20)
-#define LANG_PICKS 24 /* the page's tables */
+#define LANG_PICKS 48 /* the page's tables */
 
 extern const char *stock_locale_tr_trampoline(void *, const char *);
 extern int stock_language_trampoline(widget_t *, void *), ringnav_reboot(void);

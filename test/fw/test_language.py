@@ -174,6 +174,12 @@ def test_the_row_needs_a_pack_with_a_table(fw, lang):
     assert offered() == 1 and picks(fw) == 3  # de, zh_CN and notes
 
 
+
+def test_every_table_of_a_big_pack_is_listed(fw, lang):
+    Config(fw)
+    lang.pack('langs', {'l' + chr(97 + i // 26) + chr(97 + i % 26): lines() for i in range(40)})
+    assert fw.fn('language_offered', C.c_int)() == 1 and picks(fw) == 40
+
 def test_the_page_reads_names(fw, lang):
     Config(fw)
     lang.pack('langs', {'de': lines(), 'zh_CN': lines(name='简体中文') + b'x' * 5000, 'fr': b'# Fran\xc3\xa7ais\r\nk\te\tt\n'})
