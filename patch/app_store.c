@@ -188,7 +188,7 @@ static void paint_strip(widget_t *w, canvas_t *canvas) {
  * accent (Minimal: white) and the others muted; on the selected row, the row's ink (lit_ink). The
  * accent goes through Light Mode's flip, which keeps a colour and turns a neutral accent dark. */
 static void paint_row(widget_t *w, canvas_t *canvas, int state) {
-    static const char *const words[3] = { "INSTALL", "UPDATE", "INSTALLED" };
+    static const char *const words[3] = { "安装", "更新", "已安装" };
     int h = I(w, W_H), card = theme()->painter[PAINT_SELECTION] == SEL_CARD,
         lit = st.sel_w == P(w, W_PARENT) && st.sel_row == I(w, W_Y) / h, raw = 0;
     unsigned ink = state != 1 ? SUDO_MUTED : card ? 0xffffff : accent_tone(0);

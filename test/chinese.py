@@ -70,7 +70,7 @@ def check(directory):
                   '请等应用商店完成', '卡上没有它', '无法启动'):
         assert label.encode() + b'\0' in payload, label
     # The localized labels must never replace the names of SD card directories.
-    for folder in ('Podcasts', 'Audiobooks', 'Photos', 'Books', 'Videos'):
+    for folder in ('Podcasts', 'Audiobooks', 'Photos'):  # Books and Videos are card apps now
         assert folder.encode() + b'\0' in payload, folder
     print(f'Chinese build checks passed: {len(chars)} glyphs, Home, confirmation, '
           'payload labels and original media directory names.')

@@ -17,7 +17,7 @@ RET_REMOVE, RET_REPEAT = 7, 8
 EVT_DESTROY, EVT_VALUE_CHANGED, EVT_CLICK = O['EVT_DESTROY'], O['EVT_VALUE_CHANGED'], O['EVT_CLICK']
 W_X, W_Y, W_W, W_PARENT = O['W_X'], O['W_Y'], O['W_W'], O['W_PARENT']
 RING, TAP_SIZE = 65536, 24 + 65536 * 8
-NAMES = ['Spectrum', 'Oscilloscope', 'VU Meters', 'Halo', 'Pulsar', 'Contour']
+NAMES = ['频谱', '示波器', 'VU 表', '光环', '脉冲星', '轮廓']
 CONTOUR_LINES, CONTOUR_STEP = 18, 10
 CONTOUR_N = (W - 1) // CONTOUR_STEP + 2  # a ridgeline's points at the widest page
 
@@ -1685,9 +1685,9 @@ def test_the_style_s_name_and_the_track_s_take_one_place(fw):
     named = Canvas(fw)
     paint(fw, now.win, named)
     now.now += 5000
-    track = quiet_paint(fw, now, 'Song', 'Band', full=True)
+    track = quiet_paint(fw, now, 'Song', 'Group', full=True)
     (name,), (title,) = named.drawn, track.drawn
-    assert (name['text'], title['text']) == ('Oscilloscope', 'Song · Band')
+    assert (name['text'], title['text']) == ('Oscilloscope', 'Song · Group')
     for d in (name, title):
         x, y, w, h = d['rect']
         assert x + w / 2 == now.v.w / 2 and PAGE_H / 2 < y and y + h <= PAGE_H
@@ -1890,7 +1890,7 @@ def quiet_paint(fw, now, title, artist, width_px=7, quiet=1, full=False):
 
 def test_at_rest_the_track_shows_as_title_and_artist(fw):
     now = Now(fw)
-    assert quiet_paint(fw, now, 'Song', 'Band') == ['Song · Band']
+    assert quiet_paint(fw, now, 'Song', 'Group') == ['Song · Group']
 
 
 def test_a_track_too_long_for_both_shows_its_title(fw):
@@ -1911,14 +1911,14 @@ def test_no_track_no_text(fw):
 
 def test_playing_no_track_name(fw):
     now = Now(fw)
-    assert quiet_paint(fw, now, 'Song', 'Band', quiet=0) == []
+    assert quiet_paint(fw, now, 'Song', 'Group', quiet=0) == []
 
 
 @pytest.mark.parametrize('title, artist, shown', [
-    ('Song', '', 'Song'), ('', 'Band', 'Band'), ('Song', None, 'Song'), (None, 'Band', 'Band'),
+    ('Song', '', 'Song'), ('', 'Group', 'Group'), ('Song', None, 'Song'), (None, 'Group', 'Group'),
     ('S' * 20, 'B' * 26, 'S' * 20 + ' · ' + 'B' * 26),  # exactly the page's width: whole
     ('T' * 49, 'A', 'T' * 49),  # the title alone exactly fits
-    ('', 'A' * 60, 'A' * 48 + '…'), ('T' * 300, 'Band', 'T' * 48 + '…'), ('S', 'A' * 300, 'S'), ('', 'A' * 300, 'A' * 48 + '…')])
+    ('', 'A' * 60, 'A' * 48 + '…'), ('T' * 300, 'Group', 'T' * 48 + '…'), ('S', 'A' * 300, 'S'), ('', 'A' * 300, 'A' * 48 + '…')])
 def test_the_track_s_name_fits_the_page(fw, title, artist, shown):
     """title · artist, the title alone if both don't fit, cut to fit with an ellipsis; no separator without
     both; no such label is no text."""
@@ -1926,7 +1926,7 @@ def test_the_track_s_name_fits_the_page(fw, title, artist, shown):
 
 
 def test_a_text_too_wide_for_even_a_letter_is_an_ellipsis(fw):
-    assert quiet_paint(fw, Now(fw), 'Song', 'Band', width_px=1000) == ['…']
+    assert quiet_paint(fw, Now(fw), 'Song', 'Group', width_px=1000) == ['…']
 
 
 def test_the_track_s_name_is_measured_in_the_font_it_is_drawn_in(fw):

@@ -2943,7 +2943,7 @@ void list_value(widget_t *label, const char *title, const char *value) {
 #define SWITCH_ROW "_switch_row"
 static void switch_text(widget_t *win, widget_t *label) {
     widget_t *sw = widget_lookup(win, "img_switch", 1);
-    list_toggle(label, widget_lookup(win, "view_sleep", 1) ? "Sleep Timer" : "Lock Screen",
+    list_toggle(label, widget_lookup(win, "view_sleep", 1) ? "睡眠定时" : "锁屏",
                 sw && !tk_strcmp(widget_get_prop_str(sw, "image", ""), "switch_on"));
 }
 static int switch_due(const void *info) {
@@ -6494,7 +6494,7 @@ static void setting_row(widget_t *view, int i) {
  * and have no chevron, since they change in place. ponytail: stock's page opened over itself; its
  * own rows' state is never touched on a sub-page. */
 int ringnav_display(widget_t *win, void *ctx) {
-    static const char *const titles[] = { 0, "Appearance", "Cover Flow", "Controls", "Theme" },
+    static const char *const titles[] = { 0, "外观", "Cover Flow", "控制", "主题" },
                              *const sub_icons[] = { 0, "system_display", "playset_covermode",
                                                     "playset_folderjump" };
     static const char *const cf_icons[] = { "playset_covermode", "playset_covermode",
@@ -7599,7 +7599,7 @@ int ringnav_art_header(char *buf, unsigned size, const char *fmt, const char *al
  * (g_class_type), on top, whichever of the two list pages shows it, polled every EMPTY_POLL_MS
  * until it opens or stops being on top. */
 static int empty_toast(const void *unused) {
-    static const char *const none[] = { "No albums", "No artists", "No composers", "No genres" };
+    static const char *const none[] = { "暂无专辑", "暂无表演者", "暂无作曲家", "暂无流派" };
     widget_t *wm = window_manager(), *top = window_manager_get_top_window(wm);
     const char *name = top ? widget_get_prop_str(top, "name", "") : "";
     int mine = (!tk_strcmp(name, "album_page") || !tk_strcmp(name, "localclass_page")) &&
