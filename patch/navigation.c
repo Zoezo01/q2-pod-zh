@@ -4363,6 +4363,32 @@ static void np_art_poll(void) {
     if (key != st.np_art) np_art_load(key, file);
 }
 
+/* Stock's update (0x53cf08, from the page's 250 ms timer) writes the title, artist, heart and
+ * lyric rows only when forced or while a one-shot flag it clears (g_autochange_flag on a change,
+ * g_forcerefresh_flag) is set; the art and "3 of 12" follow the queue each pass. After a skip, or
+ * a change while dark, the page could keep the last song's title and heart until a tap; a forced
+ * update heals it (the page's return to the front runs one, 0x53d9f0). Before each lit paint
+ * (ringnav_wm_paint), with the page in front, the playing track and the player's parsed path,
+ * title and artist (g_play_id3_info, filled before g_song_name) are compared with the last, and a
+ * change forces the update: the first lit frame after a dark change, and the frame after a skip's
+ * tags land, show the new song. Not while a scrub or a paused seek holds the bar, which the update
+ * sets to the player's second. ponytail: inferred; which stock path misses the change is not
+ * traced. A skip can force it twice (the queue moves before the tags). The rating badge follows
+ * within its 500 ms tick (ratings.c rate_tick). */
+static unsigned np_shown(void) {
+    const unsigned char *id3 = (const unsigned char *)g_play_id3_info;
+    return np_track() ^ fnv(fnv(fnv(FNV_SEED, id3), id3 + ID3_TITLE), id3 + ID3_ARTIST);
+}
+static void np_update_poll(void) {
+    if (!st.np_win || !g_backlight_status || st.scrub || st.settle_timer ||
+        window_manager_get_top_window(window_manager()) != st.np_win)
+        return;
+    unsigned key = np_shown();
+    if (key == st.np_seen) return;
+    st.np_seen = key;
+    ((int (*)(widget_t *, int))0x53cf08)(st.np_win, 1);
+}
+
 /* Classic's Spotify or Internet Radio Now Playing closing: its art's slanted frame goes with it.
  * Only the latest page's art: an old page destroyed after a new one set its own leaves that be. */
 static int stream_gone(void *ctx, event_t *event) {
@@ -4448,6 +4474,7 @@ int ringnav_playing(widget_t *win, void *ctx) {
     for (unsigned i = 0; lyric && i < sizeof touch / sizeof *touch; ++i)
         widget_on(lyric, touch[i], np_lyric_touch, (void *)0);
     st.np_hash = 0;
+    st.np_seen = np_shown(); /* stock's init drew it */
     const char *file;
     unsigned art = np_art(&file);
     np_art_load(art, file); /* not left to stock's init, which can show none or another song's */
@@ -9089,6 +9116,7 @@ int ringnav_input(widget_t *wm, event_t *e) {
  * pass repaints the whole screen (ringnav_sleep; docs/internals.md Battery). */
 int ringnav_wm_paint(widget_t *wm) {
     if (wm && !g_backlight_status && !window_manager_is_animating(wm)) return 0; /* RET_OK */
+    np_update_poll(); /* before the paint, so the frame that shows it is right */
     int away = addon_game_front();
     void *vt = wm && !away ? P(wm, 0x94) : (void *)0;
     int (*paint)(widget_t *) = vt ? (int (*)(widget_t *))P(vt, 0xc) : (int (*)(widget_t *))0;
