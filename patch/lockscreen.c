@@ -410,7 +410,7 @@ static void info_paint(widget_t *w, canvas_t *canvas) {
 }
 
 /* saverscreen_page_init: stock builds the lock window; a built-in picture then paints in place of
- * stock's (lockscreen_paint), and Large lays the clock out again. */
+ * stock's (lockscreen_paint), Large lays the clock out again, and a card theme's rules apply. */
 int lockscreen_init(widget_t *win, void *ctx) {
     int result = stock_saver_trampoline(win, ctx);
     widget_t *img = widget_lookup(win, "img_screensaver", 1);
@@ -437,6 +437,7 @@ int lockscreen_init(widget_t *win, void *ctx) {
         info_screen(win, img, id);
     else if (pod_value(POD_LOCKCLOCK))
         big_clock(win);
+    card_rules_apply(win, CARD_LOCK); /* after big_clock's layout */
     return result;
 }
 

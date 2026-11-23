@@ -1965,15 +1965,17 @@ static void paint_caps(widget_t *w, canvas_t *canvas) {
     if (st.np_album && w == P(st.np_album, W_PARENT)) {
         if (!T->caps_np) return;
         widget_t *a = st.np_album;
+        /* a card theme's rule: its size, or none drawn for a hidden album */
+        int px = st.card_rules >> CARD_PLAYING & 1 ? card_rule_px(a, NP_CAPS_PX) : NP_CAPS_PX;
         int old[4], clip[4];
-        if (!clip_within(canvas, old, clip, I(canvas, CANVAS_X) + I(a, W_X),
-                         I(canvas, CANVAS_Y) + I(a, W_Y), I(a, W_W), I(a, W_H)))
+        if (!px || !clip_within(canvas, old, clip, I(canvas, CANVAS_X) + I(a, W_X),
+                                I(canvas, CANVAS_Y) + I(a, W_Y), I(a, W_W), I(a, W_H)))
             return;
         canvas_set_clip_rect(canvas, clip);
         int room = I(a, W_W) - NP_CAPS_INSET;
         st.np_over = draw_spaced(canvas, widget_get_text(a), I(a, W_X) + NP_CAPS_INSET - st.np_off,
-                                 I(a, W_Y) + (I(a, W_H) - NP_CAPS_PX) / 2, NP_CAPS_PX,
-                                 RGBA(NP_ALBUM_RGB), room + st.np_off) -
+                                 I(a, W_Y) + (I(a, W_H) - px) / 2, px, RGBA(NP_ALBUM_RGB),
+                                 room + st.np_off) -
                      SUDO_TRACK - room;
         canvas_set_clip_rect(canvas, old);
         if (st.np_over > 0 && !st.np_marquee)
@@ -4468,6 +4470,7 @@ int ringnav_playing(widget_t *win, void *ctx) {
     st.lyric_held = 0;
     int result = stock_playing_trampoline(win, ctx);
     if (!win || result == STOP) return result;
+    card_rules_apply(win, CARD_PLAYING); /* before rate_bind: a moved heart takes its badge */
     rate_bind(win);
     /* np_gone leaves a replaced page's state alone: its Genre line is that page's. */
     stop_timer(&st.genre_timer);

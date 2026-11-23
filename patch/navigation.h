@@ -246,6 +246,7 @@ typedef struct {
     int own[THEME_KEYS]; /* the themes' own keys' values (theme_keys[], tools/theme.py), read after
                             the thirteen */
     int card_page;       /* a card theme's page (card_theme_load): 0 none, 1 dark, 2 light */
+    int card_rules;      /* the pages a card theme's rules reach (card_rules_used): 1 << CARD_* */
     unsigned keep_lit_at;
     widget_t *sel_accent; /* the row on a coloured selection, for Light Mode's ink */
     int style_depth;      /* nested style hooks (a mutable style's fallback) map nothing */
@@ -589,6 +590,12 @@ int card_theme_sets(int i);
 void card_theme_ran(void);
 void card_theme_poll(void);
 void card_theme_sync(void);
+/* card_rules.c (card_rules_apply: peq.h) */
+void card_rule_line(const char *q);
+void card_rules_clear(void);
+int card_rules_used(void);
+int card_rule_px(widget_t *w, int def);
+int card_rules_art_hidden(void);
 
 static inline const unsigned *tones_of(int v) {
     const theme_t *T = theme();

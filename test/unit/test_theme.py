@@ -463,6 +463,20 @@ def test_card_colors_needs_one_scheme_array_for_both_halves():
         theme.validate({**classic, 'card_colors': 1}, 't.xml')
 
 
+@pytest.mark.parametrize('geom, offered', [('ipod', None), ('wide', None), ('ipod', ['ipod', 'wide'])])
+def test_card_colors_needs_the_ipod_set_alone(monkeypatch, geom, offered):
+    """A card theme's rules hold card_widgets.inc's boxes, the ipod set's: a theme that can boot another set can't
+    take them."""
+    monkeypatch.setitem(theme.GEOMETRIES, 'wide', Geometry(name='wide'))
+    minimal = theme.builtins()[0]
+    t = {**minimal, 'geom_set': geom, 'opts': [*minimal['opts'], {'key': 'X', 'sets': offered, 'def': 0, 'names': ['Off', 'On']}]}
+    if (geom, offered) == ('ipod', None):
+        theme.validate(t, 't.xml')
+    else:
+        with pytest.raises(theme.ThemeError, match='card.theme.colors needs geometry set ipod alone$'):
+            theme.validate(t, 't.xml')
+
+
 def test_classic_light_battery_offers_icon_percent_and_inside():
     # icon (0) never gates; Percent Inside (3) is exempt under BATT_CLASSIC_LIGHT; Percent (1) at the bar's 21 px, 37 px
     # for 100%, with Wi-Fi, the play state and Bluetooth still ends before Classic's centred clock (91 px of 93), and
@@ -689,7 +703,7 @@ def test_coverflow_swing_near_edge_clears_the_eye_mid_step():
 
 def test_coverflow_caption_follows_the_bar(monkeypatch):
     monkeypatch.setitem(theme.GEOMETRIES, 'tall', Geometry(name='tall', bar=34))
-    t = {**theme.builtins()[0], 'geom_set': 'tall'}
+    t = {**theme.builtins()[0], 'geom_set': 'tall', 'card_colors': 0}
     with pytest.raises(theme.ThemeError, match='text_y \\+ 60 = 287 exceeds the client height 286'):
         theme.validate({**t, 'cf.text_y': 227}, 't.xml')
     theme.validate({**t, 'cf.text_y': 226}, 't.xml')
@@ -1104,6 +1118,7 @@ def test_builtins_rejects_a_shared_own_key(tmp_path):
         (tmp_path/folder).mkdir(exist_ok=True)
         (tmp_path/folder/'theme.xml').write_text(
             f'<theme format="1" id="{folder}" name="{folder}" index="{index}" extends="modern"><geometry name="pico"/><geometry set="pico"/>'
+            '<view name="card"><element name="theme" colors="0"/></view>'
             f'<option setting="accent" key="ACCENT" default="graphite"/><option key="ART" label="{label}"{presets}>{V.replace("ipod", "pico")}</option></theme>')
     put('a', 2, 'Art', ' preset="On"'); put('b', 3, 'Art', ' preset="Off" keep="On"')
     assert list(theme.theme_keys(theme.builtins(tmp_path))) == ['STATUSBAR', 'SHOWQ2POD', 'ART']  # one key, one slot each
@@ -1188,7 +1203,7 @@ def test_builtins_rejects_a_shared_set_name(tmp_path):
         (tmp_path/folder).mkdir(exist_ok=True)
         (tmp_path/folder/'theme.xml').write_text(
             f'<theme format="1" id="{folder}" name="{folder}" index="{index}" extends="modern">'
-            f'<geometry name="pico" bar="{bar}"/><geometry set="pico"/>'
+            f'<geometry name="pico" bar="{bar}"/><geometry set="pico"/><view name="card"><element name="theme" colors="0"/></view>'
             '<option setting="accent" key="ACCENT" default="graphite"/></theme>')
     put('a', 2, 26); put('b', 3, 26)
     assert [theme.geometry(t).name for t in theme.builtins(tmp_path)[2:]] == ['pico', 'pico']

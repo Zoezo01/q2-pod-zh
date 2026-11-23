@@ -329,6 +329,36 @@ def test_playing_page_moves_controls_beside_the_art(page):
                                                               'label_ipod_album', 'img_playmode', 'img_fav']
 
 
+CARD_WIDGETS = [(m[1], m[2], set(m[3].split(' | ')), int(m[4]), [int(v) for v in m.groups()[4:]]) for m in re.finditer(
+    r'^CARD_WIDGET\((CARD_\w+), "(\w+)", ([A-Z_ |]+), (\d+), (-?\d+), (-?\d+), (-?\d+), (-?\d+)\)$',
+    (ipod.ROOT/'patch/card_widgets.inc').read_text(), re.M)]
+
+
+def test_card_widgets_match_the_layout(page):
+    """patch/card_widgets.inc, a card theme's rows (the Studio's catalogue on Q2 Pod): a Now Playing row is a widget
+    of the set-0 page, its box its parent's laid-out size (view_album fills slide_view; the place ends at More) and
+    holding the widget, its text size the built one (the album's Minimal's capitals); a lock row is a widget
+    lockscreen.c looks up, its box the screen. A box exactly where a move or size is taken."""
+    root, n = page
+    parent = {c[2].get('name'): node[2].get('name') for node in ipod.walk(root) for c in node[3]}
+    lock = (ipod.ROOT/'patch/lockscreen.c').read_text()
+    assert len(CARD_WIDGETS) == 20 and CARD_WIDGETS[0][1] == 'img_cover'  # card_rules.c's ART
+    for page_id, name, acts, font, box in CARD_WIDGETS:
+        assert (box != [0] * 4) == bool(acts & {'CR_MOVE', 'CR_SIZE'}) and bool(font) == ('CR_FONT' in acts), name
+        if page_id == 'CARD_LOCK':
+            assert f'"{name}"' in lock and box in ([0] * 4, [0, 0, 375, 320]), name
+            continue
+        x, y, w, h = n[name][1]
+        if box != [0] * 4:
+            up = 'slide_view' if parent[name] == 'view_album' else parent[name]
+            room = n[up][1][2:] if name != 'label_ipod_pos' else [n['img_more'][1][0], n[up][1][3]]
+            assert box == [0, 0, *room] and x + w <= box[2] and y + h <= box[3], name
+        built = n[name][2].get('style:normal:font_size')
+        if built:
+            assert font == (ipod.O['NP_CAPS_PX'] if name == 'label_ipod_album' else int(built)), name
+    assert parent['label_ipod_pos'] == 'view_buttons' and n['slide_view'][1][2:] == [375, 186]
+
+
 def test_playing_page_text_column(page):
     _, n = page
     y = ipod.NP_ART_Y

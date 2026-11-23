@@ -158,7 +158,7 @@ SCHEMA = {k.path: k for k in (
     Key('playing.scrubber.stops', 'np_track', 'stops', 0, 0, (), 'live', True),  # Classic's track, final (paint_scrubber); (): stock's bar
     Key('playing.scrubber.fill', 'np_fill', 'stops', 0, 0, (), 'live'),  # its played part under the theme's own scheme (ipod_bar); (): the scheme's band
     key('playing.art.square', 'art_square', 'bool'),
-    key('card.theme.colors', 'card_colors', 'bool'),  # takes a card theme's accent (patch/card_theme.c)
+    key('card.theme.colors', 'card_colors', 'bool'),  # takes a card theme's look (patch/card_theme.c, card_rules.c)
     key('list.row.font', 'font[ROLE_TITLE]', 'enum'),
     key('list.row.meta_font', 'font[ROLE_META]', 'enum'),
     key('list.row.title_px', 'font_px[ROLE_TITLE]', 'int', 64),
@@ -1056,6 +1056,9 @@ def validate(t, name):
         for s in o['sets']:  # theme_t has one bar; the caption check above then holds for every set
             if sets(t)[s].bar != bar:
                 err(f"{o['key']}: set {s} has a {sets(t)[s].bar} px bar, the theme's is {bar}")
+    # a card theme's rules come with the flag, and their boxes (patch/card_widgets.inc) are the ipod set's
+    if t['card_colors'] and {t['geom_set'], *(s for o in t['opts'] for s in o.get('sets') or ())} != {SET0.name}:
+        err(f'card.theme.colors needs geometry set {SET0.name} alone')
 
 
 def accent_default(t):

@@ -315,7 +315,8 @@ void paint_rows_bar(canvas_t *canvas, int x, int y, int w, int h, int fill_w) {
 }
 /* The Theme's progress bar over the asset's (Minimal's square 4px line): its np_bar, Modern's
  * NP_BAR_CLASSIC capsule or Classic's NP_BAR_IPOD (paint_scrubber draws it), and stock's play-state
- * glyph, which Minimal and Classic hide (playing.state.opacity). */
+ * glyph, which Minimal and Classic hide (playing.state.opacity), as does a card theme's rule hiding
+ * the art. */
 void np_theme(void) {
     static const char *const radius[] = { "style:normal:round_radius", "style:pressed:round_radius",
                                           "style:over:round_radius", "style:disable:round_radius",
@@ -326,7 +327,7 @@ void np_theme(void) {
     for (unsigned i = 0; st.np_slider && i < sizeof radius / sizeof *radius; ++i)
         widget_set_prop_int(st.np_slider, radius[i], h / 2);
     if (st.np_slider) widget_set_prop_int(st.np_slider, "bar_size", h);
-    if (glyph) widget_set_opacity(glyph, T->np_state_op);
+    if (glyph) widget_set_opacity(glyph, card_rules_art_hidden() ? 0 : T->np_state_op);
     /* Minimal: the album is paint_caps' capitals. */
     if (st.np_album) widget_set_opacity(st.np_album, T->np_album_op);
     np_marks_page(st.np_win); /* the flat look's marks, as the page opens or the theme changes */
