@@ -15,8 +15,6 @@
  * behavior. The 64-bit MIPS multiply/accumulate chain wraps in HI:LO exactly as
  * stock does, but avoids moving HI:LO to/from general registers for every tap.
  *
- * test/flac_lpc.py compares the emitted MIPS against the stock binary, including
- * 24-bit input, extreme overflow, odd tails, unsupported orders and the o32 ABI.
  * Instruction-count reductions are not CPU-cycle or battery measurements.
  */
 typedef unsigned u32;

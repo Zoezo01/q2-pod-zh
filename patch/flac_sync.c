@@ -24,9 +24,6 @@
  * The fast path keeps a MIPS memory-order barrier before reading the stop
  * words, and preserves stock's ==1 tests and short circuit. A request arriving
  * after its word was read is seen at the next residual, just as stock.
- *
- * test/flac_sync.py executes the actual stock functions and residual decoder,
- * including consumer interleavings, before this experiment is used on device.
  */
 int flac_sync_check(void) {
     if (*(volatile unsigned char *)0xb11e68u != 1) return ((int (*)(void))0x42b710u)();
