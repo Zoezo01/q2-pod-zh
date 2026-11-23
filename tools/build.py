@@ -1783,6 +1783,10 @@ OBSOLETE = ['usr/lib/libdbus-1.so.3.19.8', *(f'usr/lib/lib{n}-2.0.so.0.5400.3' f
             ('gio', 'glib', 'gmodule', 'gobject', 'gthread')),
             *(f'usr/bin/{n}' for n in ('strace', 'strace-log-merge', 'sqlite3', 'hcidump'))]
 
+# Left out, though each makes the payload smaller, because LLVM can miscompile with them on MIPS:
+# -mllvm -disable-mips-df-succbb-search=false (16 KB) can copy the instruction after an atomic's LL/SC loop into its
+# SC-retry delay slot, which runs it again each time an SC fails; -mllvm -enable-tail-merge=true (8 KB) adds jumps
+# LLVM treats as overwriting $at while the merged code still reads it, so a later pass can drop the value.
 FLAGS = ['--target=mipsel-linux-gnu','-march=mips32r2','-mabi=32','-mfp64',
          '-mno-abicalls','-fno-pic','-G0','-ffreestanding','-fno-builtin',
          '-fno-stack-protector','-fno-unwind-tables','-fno-asynchronous-unwind-tables',
