@@ -19,6 +19,7 @@
   - Apps: card apps, card games and Spotify no longer run as the Q2's administrator (root), after MrRedflag's proposal. A fault in an app that others on your Wi-Fi can reach can no longer read your saved Wi-Fi passwords or change the system. An app that still needs root says so with `root=1` in its `q2app`.
   - Cover Flow: in Classic Modern, the songs that open behind a cover are on the hold menu's round card, with its thin border, in place of Classic's blue panel.
   - Quick Settings: in Modern and Classic Modern, the Gain button shows a wave, tall for High and small for Low, in place of bars that looked like a signal meter.
+  - Wi-Fi File Transfer: MOBI and PRC books upload too, beside EPUB and TXT, for an app that reads them.
 - **1.9.0**:
   - Cover Flow: drag the **Position Bar** to move through your albums quickly. Touch anywhere along it, even after it has faded, and the covers go to the album under your finger and follow it; far jumps show the album's letter. The bar now stays on screen a second after you stop, instead of 0.8 seconds. Turn it on in **Display → Cover Flow**.
   - Ratings: hold Play/Pause on **Top Rated**, **Loved**, **All Rated** or **Disliked** in **Library → Ratings** to play that list shuffled. A hold on a song in the list still opens the song's options.

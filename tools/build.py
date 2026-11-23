@@ -831,7 +831,7 @@ WEB = {
     ('山灵音乐', 'Shanling Q2'),
     ('支持音频格式:ISO,DFF,DSF,APE,FLAC,AIF,AIFF,WAV,M4A,AAC,MP2,AC3,DTS,MP3,OGG,WMA,CUE,M3U,M3U8<br/>图片格式:PNG,JPG,JPEG<br/>歌词格式:LRC<br/>固件升级包:BIN',
      'Audio: ISO, DFF, DSF, APE, FLAC, AIF, AIFF, WAV, M4A, M4B, AAC, MP2, AC3, DTS, MP3, OGG, WMA, CUE, M3U, M3U8<br/>'
-     'Pictures: PNG, JPG, JPEG<br/>Lyrics: LRC<br/>Videos: MP4, M4V, MKV, WEBM, AVI, MOV, MPG, MPEG, WMV, FLV, TS, M2TS, 3GP, OGV<br/>Books: TXT, EPUB<br/>Firmware: BIN'),
+     'Pictures: PNG, JPG, JPEG<br/>Lyrics: LRC<br/>Videos: MP4, M4V, MKV, WEBM, AVI, MOV, MPG, MPEG, WMV, FLV, TS, M2TS, 3GP, OGV<br/>Books: TXT, EPUB, MOBI, PRC<br/>Firmware: BIN'),
     ('''上传文件
           <input id="fileupload" type="file" name="files[]" multiple>
         </button>''', '''Upload Files
@@ -844,7 +844,7 @@ WEB = {
     ('创建文件夹', 'New Folder'), ('返回上一级', 'Up'), ('正在进行文件上传', 'Uploading'), ('新建文件夹', 'New Folder'),
     ('请输入要创建的文件夹的名称:', 'Folder name:'), ('取消', 'Cancel'), ('移动项目', 'Move'), ('请输入此项的新位置:', 'New location:')],
   'usr/share/web/js/index.js': [
-    ('"LRC","BIN"];', '"LRC","BIN","M4B","MP4","M4V","MKV","WEBM","AVI","MOV","MPG","MPEG","WMV","FLV","TS","M2TS","3GP","OGV","TXT","EPUB"];'),
+    ('"LRC","BIN"];', '"LRC","BIN","M4B","MP4","M4V","MKV","WEBM","AVI","MOV","MPG","MPEG","WMV","FLV","TS","M2TS","3GP","OGV","TXT","EPUB","MOBI","PRC"];'),
     ('function _showError(', MKDIR_JS),
     ('''  $("#upload-file").click(function(event) {
     $("#fileupload").click();
