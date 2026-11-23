@@ -10,6 +10,7 @@ import pytest
 
 import host
 from conftest import O, Deques, Files, Rows, claim, favdir_card, fnv1a, high_halves, in_fork, ui_name
+from test_navigation import directory
 
 W_X, W_PARENT, W_EMITTER = O['W_X'], O['W_PARENT'], O['W_EMITTER']
 EMIT_TYPE, EMIT_PENDING_REMOVE, EMIT_NEXT = O['EMIT_TYPE'], O['EMIT_PENDING_REMOVE'], O['EMIT_NEXT']
@@ -453,11 +454,6 @@ class Ple(C.Structure):
     _fields_ = [*((k, C.c_void_p) for k in 'page view songs picker edit match'.split()),
                 *((k, C.c_int) for k in 'dest mode selected pending nmatch'.split()),
                 ('key', C.c_uint), ('timer', C.c_uint), ('gen', C.c_uint), ('name', C.c_char * 128), ('query', C.c_char * 128)]
-
-
-def directory(fw):
-    """The deque stock's queries fill: staged() puts its own there for each query (Deques masks the high half)."""
-    return fw.var('fw_ctx_tools_pdeq_directory', C.c_uint).value
 
 
 class Table:

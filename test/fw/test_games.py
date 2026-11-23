@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from conftest import Card, Config, O, block, rgba
+from conftest import Card, Config, O, block, fnv1a, rgba
 
 SEED = 2166136261
 SUD, BEST, SOL, SNK = 0x31445553, 0x31585456, 0x314c4f53, 0x314b4e53
@@ -80,12 +80,6 @@ def api(fw):
 
 def seed(fw, n):
     fw.var('playback__rng', C.c_uint).value = n or 1
-
-
-def fnv1a(data, h=SEED):
-    for b in data:
-        h = (h ^ b) * 16777619 & 0xffffffff
-    return h
 
 
 libc = C.CDLL(None)

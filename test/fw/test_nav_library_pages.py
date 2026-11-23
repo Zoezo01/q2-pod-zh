@@ -16,7 +16,7 @@ from conftest import FNV_PRIME, O, Deques, Files, favdir_card, fnv1a, high_halve
 from conftest import Rows as HeldRows  # Rows here is Folder view's list
 from test_addon import Pg  # test_addon.py keeps the mirror
 from test_coverflow import SONGTABLE
-from test_navigation import Sa  # test_navigation.py keeps the mirror
+from test_navigation import Sa, listen_key  # test_navigation.py keeps the mirror
 from test_tidal import HEARTS, urls_play
 
 KEY_RETURN, KEY_CENTER, KEY_PREV, KEY_NEXT, KEY_PLAY = (O[k] for k in ('KEY_RETURN', 'KEY_CENTER', 'KEY_PREV', 'KEY_NEXT', 'KEY_PLAY'))
@@ -354,15 +354,6 @@ def test_hide_duplicate_songs_lists_a_disc_s_number_and_title_once(fw, song, on)
     assert q[tracks(t[1])] == [t[k] for k in order if not (on and k == 0)]
     assert q[tracks(song(id_=-1))] == [t[k] for k in order]  # the Unknown card: all of them, either way
     assert len(q.lists) == 2
-
-
-def listen_key(path, cue=0):
-    """A play count's key (docs/internals.md#most-played): the path's FNV-1a with its separator, a CUE track's
-    start mixed in; never 0."""
-    key = fnv1a(path) * FNV_PRIME & 0xffffffff
-    if cue:
-        key = fnv1a(struct.pack('<i', cue), key)
-    return key or 1
 
 
 def file_key(path):

@@ -11,6 +11,7 @@ import pytest
 import host
 from conftest import NAVIGATION_SOURCE, O, Config, Deques, Files, claim, high_halves, pod_value
 from test_coverflow import SONGTABLE  # stock's songtable, as demo's CREATE TABLE text has it
+from test_navigation import clock
 
 W_PARENT, EVT_CLICK, EVENT_TYPE, EVENT_KEY, EVENT_X = O['W_PARENT'], O['EVT_CLICK'], O['EVENT_TYPE'], O['EVENT_KEY'], O['EVENT_X']
 STOP = 11
@@ -475,18 +476,6 @@ def test_classic_battery_takes_only_its_three_styles(fw):
     page = appearance(fw, ui, THEME=b'1')
     assert clicks_of(fw, ui, page, 'Battery', 3) == [('Percent', [('BATTERY', 1)]), ('Percent Inside', [('BATTERY', 3)]),
                                                      ('Icon', [('BATTERY', 0)])]
-
-
-@pytest.fixture
-def clock(fw):
-    """time and localtime_r: hour is what the clock says."""
-    state = {'hour': 12}
-    def local(now, out, *_):
-        C.c_int.from_address(out + 8).value = state['hour']
-        return out
-    fw.mock('fw_time', lambda *_: 1700000000)
-    fw.mock('fw_localtime_r', local)
-    return state
 
 
 @pytest.mark.parametrize('hour, day', [(12, 1), (22, 0)])

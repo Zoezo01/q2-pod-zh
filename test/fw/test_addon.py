@@ -15,6 +15,7 @@ from test_coverflow import png  # an icon's header
 from test_netupdate import JOB_INSTALL, JOB_REMOVE, SH_CANCELLED, SH_CARD, SH_NET, SH_OK, Sh  # test_netupdate.py keeps netupdate.c's App Store mirror
 from test_radio import Rd, execl, mixer  # noqa: F401  the mirror; the child's execl calls; USB_MIXER, for a USB DAC's volume
 from test_tidal import Au, Queue, free_stubbed  # test_tidal.py keeps tidal.c's au mirror
+from test_nav_loop import toasts
 
 APPS_MAX = 64
 REPLY_MAX = 64 << 10
@@ -6745,12 +6746,6 @@ def shortcut(fw, value):
     """IPOD SHORTCUT in config.ini, every other key its default; Home's shortcut row's click."""
     Config(fw, SHORTCUT=value)
     return fw.fn('home_shortcut_open', C.c_int, C.c_void_p, C.c_void_p)
-
-
-def toasts(fw):
-    out = []
-    fw.mock('navigator_to_with_context', lambda page, info, *_: out.append(C.string_at(info + 8)))  # toast's dialog
-    return out
 
 
 def test_the_groovebox_shortcut_starts_the_card_game_with_the_sound(fw):

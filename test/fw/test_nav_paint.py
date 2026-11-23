@@ -10,7 +10,7 @@ import struct
 import pytest
 
 import host
-from conftest import O, Files, block, in_fork, Config, rgba
+from conftest import O, Files, block, in_fork, Config, rgba, st
 from test_nav_loop import LIBC, Clock, Flip, Land  # coverflow.c's cf_flip_t, fl; coverflow_land.c's land
 
 W_X, W_Y, W_W, W_H, W_PARENT = O['W_X'], O['W_Y'], O['W_W'], O['W_H'], O['W_PARENT']
@@ -71,12 +71,6 @@ def layout(library):
     obj = library.parent/'navigation.o'
     return {'st': host.offsets(obj, 'scratch_t'), 'scheme': host.offsets(obj, 'scheme_t'),
             'theme': host.offsets(obj, 'theme_t'), 'vd': host.offsets(library.parent/'volume.o', 'vd')}
-
-
-@pytest.fixture
-def st(fw, layout):
-    base = C.addressof(fw.var('st', C.c_char))
-    return lambda name, ctype=C.c_int: ctype.from_address(base + layout['st'][name])
 
 
 @pytest.fixture
