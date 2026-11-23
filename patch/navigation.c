@@ -740,8 +740,7 @@ unsigned local_hash(unsigned h) {
 }
 
 static void row_hash_text(const unsigned *s, unsigned *h) {
-    unsigned n = 0;
-    while (s[n]) ++n;
+    unsigned n = wide_len(s);
     /* Stock wchar_t is UTF-32; hash all four bytes, zero bytes inside a character included. */
     *h = hash_bytes(FNV_SEED, (const unsigned char *)s, 4 * n);
     if (!*h) *h = 1; /* zero denotes missing text */
