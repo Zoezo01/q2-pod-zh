@@ -89,8 +89,8 @@ items=m.nodes[view]['children']
 for item in items:
     label=m.nodes[item]['children'][0]; assert cf_geometry(m,label)[::2]==(E,375-2*E)
 h=cf_geometry(m,items[0])[3]; rows=(290-48)//h; base=48+(rows-1)*h  # the list's own row height, title and detail
-(_,cap_y,_,cap_h),(_,det_y,_,det_h)=(cf_geometry(m,w) for w in m.nodes[items[0]]['children'][:2])
-assert clear(E,base+cap_y+(cap_h-20)//2,375-2*E,20) and clear(E,base+det_y+(det_h-16)//2,375-2*E,16)  # the lowest full row
+for w,px in zip(m.nodes[items[0]]['children'],(20,16)):  # the title, and a length's line when there is one
+    _,y,_,lh=cf_geometry(m,w); assert clear(E,base+y+(lh-px)//2,375-2*E,px)  # in the lowest full row
 passed()
 
 # Cover Flow's caption, Classic: album and artist both in its face at 27 px, their middles on screen rows 262 and 286, each box holding the font; the artist the album's ink in
