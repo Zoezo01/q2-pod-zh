@@ -6,6 +6,7 @@ import random
 import pytest
 
 from conftest import Dirent, SPOT_FAIL, SPOT_NOSOCK, SPOT_OK, block, text
+from test_radio import Fx, Sp, fx
 
 REPLY_MAX = 64 << 10
 RADIO_MAX = 200
@@ -15,15 +16,6 @@ L_BASE, L_LIST, L_CATS, L_CONFIRM, L_DOWNLOADS, L_JOB, L_STORAGE, L_SELECT, L_RE
 S_LOAD, S_READY, S_ERROR, S_PAIR, S_OLD, S_WAIT = range(6)
 A_FETCH, A_PLAY, A_ENQUEUE, A_SET, A_SIGNOUT, A_DOWNLOAD, A_CAPS, A_REMOVE, A_PREVIEW = range(9)
 KEY_PLAY, KEY_BACK_BTN, KEY_FWD_BTN = 171, 222, 223
-
-
-class Sp(C.Structure):
-    _fields_ = [*((n, C.c_int) for n in ('launched', 'sock', 'playing', 'paused', 'local', 'active', 'played', 'dead')),
-                *((n, C.c_uint) for n in ('polled', 'idle_at', 'duration', 'position', 'cover', 'launch_at', 'alive_at')),
-                ('at', C.c_ulonglong), ('raw', C.c_char * 1536), ('state', C.c_char * 12), ('track', C.c_char * 64),
-                ('title', C.c_char * 256), ('artist', C.c_char * 256), ('album', C.c_char * 256), ('out', C.c_char * 24),
-                ('auth', C.c_int), ('loading', C.c_int), ('old', C.c_int), ('load_at', C.c_uint), ('log_from', C.c_long),
-                ('wanted', C.c_char * 64), ('from_', C.c_char * 64)]
 
 
 class Level(C.Structure):
@@ -55,11 +47,6 @@ class Td(C.Structure):
                 ('of', C.c_uint), ('job_all', C.c_int), ('tried', C.c_ubyte), ('misses', C.c_ubyte), ('fav', C.c_ubyte),
                 ('starting', C.c_ubyte), ('dropped', C.c_ubyte), ('asked', C.c_char * 48),
                 ('since', C.c_uint), ('full', C.c_ubyte)]  # the oldest st_mtime of Download All's songs, saved or passed; 0 before; trim kept its songs
-
-
-class Fx(C.Structure):
-    _fields_ = [('thread', C.c_ulong), ('running', C.c_int), ('cancel', C.c_int), ('done', C.c_int), ('code', C.c_long),
-                ('body', C.c_void_p), ('n', C.c_uint), ('url', C.c_char * 320)]
 
 
 def hostile(seed, samples, count=2000, alphabet=b'%\t\n0aF'):
@@ -1265,10 +1252,6 @@ def test_a_url_too_long_for_the_job_is_not_downloaded(fw):
     p = Play(fw)
     p.fn(b'https://cdn/' + b'a' * 2048 + b'.flac', b'1')
     assert len(p.played) == 1 and not fw.calls('fw_pthread_create')
-
-
-def fx(fw):
-    return fw.var('radio__fx', Fx)
 
 
 def fetch_got(fw, data, size=1):
