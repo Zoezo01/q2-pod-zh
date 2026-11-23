@@ -260,7 +260,6 @@ static void spot_refresh(void);
 static widget_t *browsing(void);
 static void spot_restarting(void);
 
-/* SPOT_LOG's length, 0 without one. */
 /* While a play loads: 1 once librespot has logged SPOT_REFUSED since sp.log_from, which moves on
  * (less a match's length, for a line cut between two reads). Only the last 4 KB new are read. */
 static int spot_refused(void) {
