@@ -2289,9 +2289,7 @@ static void confirm_track(widget_t *w, canvas_t *canvas, int form) {
         inset_top(canvas, &t, 6, 0xdd);
     } else {
         bar_rect(canvas, RGBA(scheme()->paper), 0, BAR_ROWS, 375, 320 - BAR_ROWS);
-        widget_t *bar = *(void *const *)system_bar; /* over Quick Settings nothing else draws it */
-        if (bar) widget_paint(bar, canvas);
-        st.paint_w = w;
+        paint_bar(w, canvas); /* over Quick Settings nothing else draws it */
         if (light) {
             /* an inset shadow from the right (-3, 0, blur 3, spread -2) */
             static const unsigned char right[] = { 0x02, 0x06, 0x0e, 0x18 };

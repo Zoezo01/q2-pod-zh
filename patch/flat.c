@@ -93,9 +93,7 @@ void confirm_track_flat(widget_t *w, canvas_t *canvas, int form) {
         flat_box(canvas, &tray, TOAST_RGBA, 12);
     } else {
         bar_rect(canvas, RGBA(flat_page()), 0, BAR_ROWS, 375, 320 - BAR_ROWS);
-        widget_t *bar = *(void *const *)system_bar; /* over Quick Settings nothing else draws it */
-        if (bar) widget_paint(bar, canvas);
-        st.paint_w = w;
+        paint_bar(w, canvas); /* over Quick Settings nothing else draws it */
     }
     for (int k = 0; k < 2; ++k) {
         rect_t r = { I(cell[k], W_X), I(cell[k], W_Y), I(cell[k], W_W), I(cell[k], W_H) };
