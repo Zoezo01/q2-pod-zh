@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Drive a --dev Q2 over Wi-Fi (Q2_HOST, and Q2_KEY or a key file; see docs/remote.md)."""
 import argparse
+import bisect
 import concurrent.futures
 import contextlib
 import functools
@@ -388,7 +389,6 @@ def reboot(wait):
 
 def symbol_table(path):
     """(sorted addresses, names) of path's defined functions, dynamic and static."""
-    import bisect, subprocess
     table = {}
     for flags in (["-D"], []):
         out = subprocess.run(["llvm-nm", *flags, "--defined-only", path], capture_output=True, text=True).stdout
@@ -397,7 +397,7 @@ def symbol_table(path):
             if len(w) == 3 and w[1] in "tTwW":
                 table[int(w[0], 16)] = w[2]
     keys = sorted(table)
-    return keys, [table[k] for k in keys], bisect.bisect_right
+    return keys, [table[k] for k in keys]
 
 
 def cache_file(cache, base):
@@ -441,8 +441,8 @@ def profile(seconds, all_threads, build):
                     cands = [(local, lo - off)]
                 for f, bias in cands:
                     if f not in tables: tables[f] = symbol_table(str(f))
-                    keys, names, bis = tables[f]
-                    i = bis(keys, addr - bias) - 1
+                    keys, names = tables[f]
+                    i = bisect.bisect_right(keys, addr - bias) - 1
                     if i >= 0 and addr - bias - keys[i] < 0x20000:
                         return f"{names[i]}+{addr - bias - keys[i]:#x}"[:60]
                 return f"{base}+{addr - lo + off:#x}"
