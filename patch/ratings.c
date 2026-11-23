@@ -543,10 +543,9 @@ int rated_hold(widget_t *top) {
 }
 
 /* Albums: the rated albums as Coverflow (coverflow_rated), by most hearts unless sorted. */
-extern int coverflow_rated(int (*hearts)(void *));
-static int album_hearts(void *r) { return rate_kept(1, album_id(r)); }
+extern int coverflow_rated(void);
 int rated_albums(void *ctx, event_t *event) {
-    if (!coverflow_rated(album_hearts)) toast(tr("No rated albums yet"));
+    if (!coverflow_rated()) toast(tr("No rated albums yet"));
     return 0;
 }
 

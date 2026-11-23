@@ -3316,8 +3316,7 @@ def test_the_albums_list_and_rated_albums_still_group_the_whole_library(fw, reco
     db = Songtable(fw, lib, records)
     Localclass(fw, lib, [records.song(id_=1, album=b'A Night at the Opera', kind=4)])(CLASS_ALBUMS)
     fw.mock('getAllAlbum', lambda *_: lib.staging().append(records.song(id_=3, album=b'Greatest Hits', kind=4)) or 1)
-    none = C.CFUNCTYPE(C.c_int, C.c_void_p)(lambda r: 0)  # no album has hearts
-    assert fw.fn('coverflow_rated', C.c_int, C.c_void_p)(C.cast(none, C.c_void_p)) == 0
+    assert fw.fn('coverflow_rated', C.c_int)() == 0  # no album has hearts: no ratings file
     assert len(db.sent) == 3 and not any(NAMED.search(sql) for sql in db.sent)
     assert 'from (select * from songtable where' in db.sent[0]  # the Albums list's, music alone
     assert {b'album 00', b'album 19', b'greatest hits'} <= {n.lower() for n in db.named}

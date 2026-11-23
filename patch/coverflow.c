@@ -853,6 +853,7 @@ static int sort_next(int dir) {
 }
 extern void album_plays(int (*album_of)(void *), unsigned *sum);
 extern void ringnav_sort_key(char *s);
+extern int rate_kept(int album, unsigned key); /* ratings.c: an album's kept hearts */
 #define ARTIST_KEY 96
 
 /* Unicode 16.0.0 number, punctuation and separator ranges. */
@@ -1535,7 +1536,7 @@ static void *sorted(void) {
         }
     }
     if (cf.sort == SORT_RATING)
-        for (unsigned i = 0; i < n; ++i) v[i].rank = 5u - (unsigned)cf.hearts(v[i].r);
+        for (unsigned i = 0; i < n; ++i) v[i].rank = 5u - (unsigned)rate_kept(1, album_id(v[i].r));
     else if (sum) {
         album_plays(album_index, sum);
         for (unsigned i = 0; i < n; ++i)
@@ -4041,16 +4042,16 @@ int coverflow_shows_album(void *r) {
     return cf.page && cf.scoped == ALBUM_TRACKS && !album_cmp(deque_at(cf.albums, 0), r);
 }
 
-/* Library Ratings' Albums (ratings.c): the albums hearts gives 1 to 5 hearts, as covers with the
+/* Library Ratings' Albums (ratings.c): the albums rate_kept gives 1 to 5 hearts, as covers with the
  * rated Sort card alone; 0 when none is. */
-int coverflow_rated(int (*hearts)(void *)) {
+int coverflow_rated(void) {
     int n;
     void *all = staged(albums, 0, &n), *rated = _create_deque("stSongInfo");
     if (n > 0) all = split(all, 0);
     all = music_albums(all, 0);
     deque_init(rated);
     for (unsigned i = 0; i < deque_size(all); ++i)
-        if (hearts(deque_at(all, i))) _deque_push_back(rated, deque_at(all, i));
+        if (rate_kept(1, album_id(deque_at(all, i)))) _deque_push_back(rated, deque_at(all, i));
     deque_destroy(all);
     rated = album_copies(rated);
     if (!deque_size(rated) || !scoped_open()) {
@@ -4061,7 +4062,7 @@ int coverflow_rated(int (*hearts)(void *)) {
     cf.all_sort = cf.sort, cf.all_stock = cf.stock, cf.all_albums = cf.albums;
     cf.sort = SORT_RATING; /* unless saved */
     BLOB_IO(RATED_SORT_FILE, cf.sort, 0);
-    cf.stock = rated, cf.albums = 0, cf.hearts = hearts;
+    cf.stock = rated, cf.albums = 0;
     cf.scoped = RATED_ALBUMS;
     load();
     return 1;
