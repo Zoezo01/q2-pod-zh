@@ -480,7 +480,7 @@ def status_metrics(g, font):
             'clock': [(375 - CLOCK_MIN) // 2, label_y, CLOCK_MIN, h]}
 
 
-def time_widths(font, px=NP_IPOD_TIME_PX):
+def time_widths(font):
     """Classic's time boxes beside the bar, one a track length class (NP_IPOD_TIME_TEXT), in status_metrics'
     model: the remaining time's longest text, every digit the face's widest. The elapsed time is never wider."""
     from fontTools.ttLib import TTFont
@@ -488,7 +488,7 @@ def time_widths(font, px=NP_IPOD_TIME_PX):
     cmap = f.getBestCmap()
     adv = lambda c: f['hmtx'][cmap[ord(c)]][0]
     wide = max('0123456789', key=adv)
-    return [math.ceil(sum(adv(c) for c in t.replace('0', wide)) * px / (f['hhea'].ascent - f['hhea'].descent))
+    return [math.ceil(sum(adv(c) for c in t.replace('0', wide)) * NP_IPOD_TIME_PX / (f['hhea'].ascent - f['hhea'].descent))
             for t in NP_IPOD_TIME_TEXT]
 
 
