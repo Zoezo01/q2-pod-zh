@@ -2665,10 +2665,6 @@ def test_a_passing_dark_press_clears_the_resume_guard(fw, st):
     assert cleared == b'\0' and st('woke_at', C.c_uint).value == 5000 and st('dark').value == 3
 
 
-class Posted(C.Structure):
-    _fields_ = [('key', C.c_uint), ('from_', C.c_uint), ('to', C.c_uint)]
-
-
 def key_event(key, at):
     event = C.create_string_buffer(0x40)
     struct.pack_into('<I', event, O['EVENT_KEY'], key)
