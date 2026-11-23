@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 
 import host
-from conftest import O, Config, Card as BaseCard, Deques, Externpic, Files, ask_cover, block, claim, fnv1a, high_halves, in_fork
+from conftest import Card as BaseCard, Config, Deques, Dirent, Externpic, Files, O, ask_cover, block, claim, fnv1a, high_halves, in_fork
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 CX, TOP, ART, ONE, MISS = 187, 13, 160, 65536, 99
@@ -59,10 +59,6 @@ class Pose(C.Structure):
 
 class Job(C.Structure):
     _fields_ = [('track', C.c_char_p), ('key', C.c_uint), ('shared', C.c_int)]
-
-
-class Dirent(C.Structure):
-    _fields_ = [('ino', C.c_uint), ('off', C.c_uint), ('reclen', C.c_ushort), ('d_type', C.c_ubyte), ('d_name', C.c_char * 256)]
 
 
 def api(fw):

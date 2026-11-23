@@ -14,7 +14,7 @@ import zipfile
 import pytest
 
 import host
-from conftest import O, block
+from conftest import Dirent, O, block
 
 # stock.h's Q2POD_TAG: tools/build.py's VERSION (host.py builds as a release, not --dev)
 TAG = host.tools_build.VERSION.encode()
@@ -1940,8 +1940,6 @@ class Disk(Card):
         return len(self.listing) + 0x2fff
 
     def readdir(self, d, *_):
-        class Dirent(C.Structure):  # host.py's struct dirent
-            _fields_ = [('ino', C.c_uint), ('off', C.c_uint), ('reclen', C.c_ushort), ('d_type', C.c_ubyte), ('d_name', C.c_char * 256)]
         for name, kind in self.listing[d]:
             self.entry = Dirent(0, 0, 0, kind, name)
             return C.addressof(self.entry)

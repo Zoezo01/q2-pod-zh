@@ -10,7 +10,7 @@ import struct
 import pytest
 
 import host
-from conftest import O, SPOT_FAIL, SPOT_NOSOCK, SPOT_OK, Config, Deques, Game, block, claim, high_halves, libc, text
+from conftest import Config, Deques, Dirent, Game, O, SPOT_FAIL, SPOT_NOSOCK, SPOT_OK, block, claim, high_halves, libc, text
 from test_coverflow import png  # an icon's header
 from test_netupdate import JOB_INSTALL, JOB_REMOVE, SH_CANCELLED, SH_CARD, SH_NET, SH_OK, Sh  # test_netupdate.py keeps netupdate.c's App Store mirror
 from test_radio import Rd, execl, mixer  # noqa: F401  the mirror; the child's execl calls; USB_MIXER, for a USB DAC's volume
@@ -105,10 +105,6 @@ Rule._fields_ = [('next', C.POINTER(Rule)), ('length', C.c_uint), ('visible', C.
 
 class Scope(C.Structure):
     _fields_ = [('rules', C.POINTER(Rule)), ('sql', C.c_void_p), ('bytes', C.c_uint), ('ready', C.c_int), ('failed', C.c_int)]
-
-
-class Dirent(C.Structure):  # test/fw/host.py's
-    _fields_ = [('ino', C.c_uint), ('off', C.c_uint), ('reclen', C.c_ushort), ('d_type', C.c_ubyte), ('d_name', C.c_char * 256)]
 
 
 def hostile(seed, samples, count=1500, alphabet=b'%\t\n=/. \r'):

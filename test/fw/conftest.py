@@ -582,3 +582,7 @@ class Config:
     def read(self, path, section, key, out, default, *_):
         value = self.values.get(C.string_at(key), C.string_at(default))
         C.memmove(out, value + b'\0', len(value) + 1)
+
+
+class Dirent(C.Structure):  # host.py's struct dirent
+    _fields_ = [('ino', C.c_uint), ('off', C.c_uint), ('reclen', C.c_ushort), ('d_type', C.c_ubyte), ('d_name', C.c_char * 256)]

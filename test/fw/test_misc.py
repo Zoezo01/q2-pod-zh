@@ -7,7 +7,7 @@ import struct
 import subprocess
 
 import pytest
-from conftest import Card as BaseCard, block
+from conftest import Card as BaseCard, Dirent, block
 from test_peq_page import Band, E3, EqState, Preset, Ui
 
 pytestmark = pytest.mark.usefixtures('stock_gapless')  # Crossfade's page has stock's Gapless on, as stock's default
@@ -729,8 +729,6 @@ def test_a_bad_draft_draws_flat(fw):
 
 
 def files(fw, names, types=None):
-    class Dirent(C.Structure):
-        _fields_ = [('ino', C.c_uint), ('off', C.c_uint), ('reclen', C.c_ushort), ('d_type', C.c_ubyte), ('d_name', C.c_char * 256)]
     entries = [Dirent(0, 0, 0, types.get(n, 8) if types else 8, n) for n in names]
     it = iter(entries)
     fw.mock('fw_opendir', lambda *_: 0x3000)

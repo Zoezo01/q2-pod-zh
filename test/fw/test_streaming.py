@@ -5,7 +5,7 @@ import random
 
 import pytest
 
-from conftest import SPOT_FAIL, SPOT_NOSOCK, SPOT_OK, block, text
+from conftest import Dirent, SPOT_FAIL, SPOT_NOSOCK, SPOT_OK, block, text
 
 REPLY_MAX = 64 << 10
 RADIO_MAX = 200
@@ -60,10 +60,6 @@ class Td(C.Structure):
 class Fx(C.Structure):
     _fields_ = [('thread', C.c_ulong), ('running', C.c_int), ('cancel', C.c_int), ('done', C.c_int), ('code', C.c_long),
                 ('body', C.c_void_p), ('n', C.c_uint), ('url', C.c_char * 320)]
-
-
-class Dirent(C.Structure):  # test/fw/host.py's
-    _fields_ = [('ino', C.c_uint), ('off', C.c_uint), ('reclen', C.c_ushort), ('d_type', C.c_ubyte), ('d_name', C.c_char * 256)]
 
 
 def hostile(seed, samples, count=2000, alphabet=b'%\t\n0aF'):

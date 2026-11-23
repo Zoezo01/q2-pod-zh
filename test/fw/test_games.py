@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from conftest import Card, Config, O, block, fnv1a, rgba
+from conftest import Card, Config, Dirent, O, block, fnv1a, rgba
 
 SEED = 2166136261
 SUD, BEST, SOL, SNK = 0x31445553, 0x31585456, 0x314c4f53, 0x314b4e53
@@ -1809,10 +1809,6 @@ def handlers(fw, event, widget=None):
 def press(handler, event=None):
     fn, ctx = handler
     return C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_void_p)(fn)(ctx, event)
-
-
-class Dirent(C.Structure):  # test/fw/host.py's
-    _fields_ = [('ino', C.c_uint), ('off', C.c_uint), ('reclen', C.c_ushort), ('d_type', C.c_ubyte), ('d_name', C.c_char * 256)]
 
 
 def card_apps(fw, apps):
