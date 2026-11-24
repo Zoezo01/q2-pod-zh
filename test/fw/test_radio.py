@@ -204,7 +204,7 @@ class Player:
         fw.mock('fw_fork', self.fork)
         fw.mock('fw_socket', lambda *_: 9)
         fw.mock('fw_waitpid', self.waitpid)
-        fw.mock('fw_system', lambda cmd, *_: self.killed.append(C.string_at(cmd).decode()))
+        fw.mock('chapter_kill', lambda pid, sig, *_: self.killed.append((pid, sig)))
         fw.mock('fw_sendto', self.sendto)
 
     def fork(self, *_):
@@ -540,7 +540,7 @@ def test_a_q2video_that_won_t_quit_is_killed_after_1_5_s(fw):
     player = play(fw, p)
     player.ends = False
     media(fw, KEY_PLAY)
-    assert player.killed == ['kill -9 4242'] and rd(fw).pid == 0
+    assert player.killed == [(4242, 9)] and rd(fw).pid == 0
     sleeps = [a[0] for _, a in fw.calls('sleep_ms')]
     assert set(sleeps) == {20} and 1500 <= 20 * len(sleeps) <= 1520
 
@@ -571,7 +571,7 @@ def test_a_killed_q2video_is_waited_for(fw):
     player = play(fw, p)
     player.ends = False
     media(fw, KEY_PLAY)
-    assert player.killed == ['kill -9 4242'] and player.reaped == [4242]
+    assert player.killed == [(4242, 9)] and player.reaped == [4242]
 
 
 @pytest.mark.parametrize('stall, killed', [(1499, False), (1500, True)])

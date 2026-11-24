@@ -1030,15 +1030,10 @@ int addon_game_front(void) { return gm.pid && !gm.native; }
 int addon_game_keys(void) { return (gm.view && addon_game_front()) || (gm.eat & GAME_CENTER); }
 int addon_game_audio(void) { return gm.pid && gm.audio; }
 
-static void game_kill(const char *how) {
-    char cmd[24];
-    tk_snprintf(cmd, sizeof cmd, "kill %s%d", how, gm.pid); /* demo imports no kill() */
-    system(cmd);
-}
 static void game_end(void) {
     if (gm.term) return; /* game_poll KILLs it GAME_KILL_MS on */
     gm.term = (unsigned)time_now_ms() | 1;
-    game_kill("");
+    chapter_kill(gm.pid, 15);
 }
 
 /* netupdate.c's toast once app id is installed: where its row is, as the screen names it. The
@@ -1397,7 +1392,7 @@ static void game_poll(void) {
         gm.held = 0;
         if (!gm.view || access(quit, 0)) gm.eat = gm.view ? GAME_CHORD : GAME_RETURN, game_end();
     }
-    if (gm.term && (int)(now - gm.term) >= GAME_KILL_MS) gm.term = now | 1, game_kill("-9 ");
+    if (gm.term && (int)(now - gm.term) >= GAME_KILL_MS) gm.term = now | 1, chapter_kill(gm.pid, 9);
     /* decided afresh each pass: lyric_poll may have handed it back */
     if (!gm.native) wheel_raw = 1;
     int travel = gm.native ? 0 : __sync_lock_test_and_set(&wheel_travel, 0);

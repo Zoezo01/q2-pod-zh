@@ -359,10 +359,7 @@ static void radio_halt(void) {
     while (!(done = waitpid(rd.pid, &status, 1)) && time_now_ms() - start < RADIO_QUIT_MS)
         sleep_ms(20);
     if (!done) {
-        char kill[24]; /* this helper only: librespot's sink is a q2video too (demo imports no kill)
-                        */
-        tk_snprintf(kill, sizeof kill, "kill -9 %d", rd.pid);
-        system(kill);
+        chapter_kill(rd.pid, 9);
         waitpid(rd.pid, &status, 0);
     }
     rd.pid = 0;

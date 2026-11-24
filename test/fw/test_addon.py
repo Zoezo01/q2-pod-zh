@@ -118,7 +118,7 @@ class World:
         fw.mock('tk_str_start_with', lambda s, p, *_: C.string_at(s).startswith(C.string_at(p)))
         fw.mock('tk_str_end_with', lambda s, e, *_: C.string_at(s).endswith(C.string_at(e)))
         for stub, fn in (('fw_fopen', self.fopen), ('fw_fread', self.fread), ('fw_fseek', self.fseek), ('fw_fwrite', self.fwrite), ('fw_rename', self.rename),
-                         ('fw_unlink', self.unlink), ('fw_system', self.system), ('fw_access', self.access), ('fw___xstat', self.stat),
+                         ('fw_unlink', self.unlink), ('fw_system', self.system), ('chapter_kill', self.chapter_kill), ('fw_access', self.access), ('fw___xstat', self.stat),
                          ('fw_opendir', self.opendir), ('fw_readdir', self.readdir)):
             fw.mock(stub, fn)
         fw.mock('fw_time', lambda *_: self.now)
@@ -168,6 +168,9 @@ class World:
 
     def system(self, cmd, *_):
         self.log.append(('system', C.string_at(cmd)))
+
+    def chapter_kill(self, pid, sig, *_):
+        self.log.append(('chapter_kill', pid, sig))
 
     def access(self, p, *_):
         name = C.string_at(p)
@@ -1973,7 +1976,7 @@ class CardGame:
         addon_poll(self.fw, self.world, ms)
 
     def kills(self):
-        return [c[0] for c in self.world.of('system')]
+        return self.world.of('chapter_kill')
 
 
 SWITCH = b'name=Switch\ngame=1\naudio=2\n'
@@ -2115,7 +2118,7 @@ def test_game_force_close_uses_both_buttons_and_can_be_disabled(fw, off):
     if off:
         g.world.files[QUIT] = b'off'  # made in the hold's last pass, it still counts
     g.poll(1)
-    assert g.kills() == ([] if off else [b'kill 4242'])
+    assert g.kills() == ([] if off else [(4242, 15)])
     if not off:
         g.exited = True
         g.poll()
@@ -2741,7 +2744,7 @@ def held(g):
     g.poll(699)
     assert g.kills() == []
     g.poll(1)
-    assert g.kills() == [b'kill 4242']
+    assert g.kills() == [(4242, 15)]
     return g.world.ms
 
 
@@ -2765,9 +2768,9 @@ def test_a_game_still_there_three_seconds_after_its_term_is_killed(fw):
     g = CardGame(fw)
     term = held(g)
     g.poll(2999)
-    assert g.kills() == [b'kill 4242'] and g.world.ms == term + 2999
+    assert g.kills() == [(4242, 15)] and g.world.ms == term + 2999
     g.poll(1)
-    assert g.kills() == [b'kill 4242', b'kill -9 4242']
+    assert g.kills() == [(4242, 15), (4242, 9)]
 
 
 def test_the_wheels_travel_reaches_the_game_once_a_pass(fw):
@@ -2789,7 +2792,7 @@ def test_a_game_left_idle_two_minutes_is_ended(fw):
     g.poll(119999)
     assert g.kills() == []
     g.poll(1)
-    assert g.kills() == [b'kill 4242']
+    assert g.kills() == [(4242, 15)]
 
 
 def test_smart_awake_keeps_an_idle_game(fw):
@@ -3996,7 +3999,7 @@ def test_a_screen_row_runs_as_a_game_does_its_page_left_as_it_was(fw):
     assert (p.top.state, p.top.n, p.pg.depth, p.req.id) == (K_READY, 2, 1, asked) and len(fw.calls('list_item_create')) == drawn
     assert g.key(KEY_DOWN, RETURN) == 1  # Return's hold ends it, as a game
     g.poll(701)
-    assert g.kills()[1:] == [b'kill %d' % g.PID]  # after its launcher's start
+    assert g.kills() == [(g.PID, 15)]
 
 
 def test_a_screen_row_with_empty_fields_sets_both_empty_and_is_asked_again(fw):

@@ -9182,7 +9182,7 @@ assert m.key(O['KEY_PLAY'])!=11 and not forks(); passed()
 # A q2video that does not quit within RADIO_QUIT_MS is killed.
 m.top=page; m.row(1); m.waited=0; m.top=m.node('window','home_page')
 m.handlers[syms['waitpid@GLIBC_2.0']]='s:waitpid'  # WNOHANG polls say running; the blocking wait reaps
-t0=m.now; assert m.key(O['KEY_PLAY'])==11 and 1500<=m.now-t0<=1540 and m.systems[-1]=='kill -9 %d'%m.forked
+m.record_syscalls(); t0=m.now; assert m.key(O['KEY_PLAY'])==11 and 1500<=m.now-t0<=1540 and m.syscalls[-1][:3]==(4037,m.forked,9)  # kill(2)
 m.handlers[syms['waitpid@GLIBC_2.0']]='b:waitpid@GLIBC_2.0'; passed()
 # One that gives up says so.
 assert m.key(O['KEY_PLAY'])==11; m.files[RSTATE]=bytearray(b'state=error\n'); m.waited=4343; m.poll()
@@ -9853,9 +9853,10 @@ for kind,want in ((O['EVT_POINTER_DOWN']-1,'d'),(O['EVT_POINTER_MOVE_BEFORE']-1,
     assert game_event(kind,x=120,y=88)==[(f't {want} 88 199',GS)],kind  # the panel's (x, y) turned into the view's
 m.word(payload_syms['wheel_travel'],0xffffffdb); m.sent=[]; m.waited=0; fn('addon_poll')
 assert [t[1] for t in m.sent]==['w -37'] and m.get(payload_syms['wheel_travel'])==0 and fn('addon_game_front')==1
-def poll(m):  # one pass: how many kills it sent (their text's stack buffer is reused by then)
-    m.calls=[]; m.call(address=payload_syms['addon_poll'],args=(0,0,0,0),gap=0,clear=False,count=5_000_000)
-    return [c[0] for c in m.calls].count('system')
+def poll(m):  # one pass: how many kills it sent (kill(2), o32 4037, to the game's pid)
+    if not hasattr(m,'syscalls'): m.record_syscalls()
+    m.calls=[]; sent=len(m.syscalls); m.call(address=payload_syms['addon_poll'],args=(0,0,0,0),gap=0,clear=False,count=5_000_000)
+    return [s[:2] for s in m.syscalls[sent:]].count((4037,m.forked))
 # Return held 700 ms ends it, timed here from its down (stock makes the long press after this hook); one
 # that ignores the TERM is KILLed 3 s on; the held Return's release, after it has gone, stays out of Games.
 assert game_event(O['EVT_KEY_DOWN'],O['KEY_RETURN'])==[('k d 170',GS)]
