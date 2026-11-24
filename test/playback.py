@@ -527,7 +527,7 @@ checks+=1
 for failure in ('alloc','open','write','close','rename'):
     m=PlaybackMachine(); m.options(4,5,0)
     previous=m.files['/mnt/data/ringnav-queue']; m.advance_song(0)
-    m.fail=failure; m.fn('playback_poll')
+    m.fail=failure; m.now+=5000; m.fn('playback_poll')  # a new track's save waits out the 5 s since the last snapshot
     attempts=(m.allocations,m.write_opens)
     assert m.files['/mnt/data/ringnav-queue']==previous
     for delta in (1,100,1000,3000,898,25000):

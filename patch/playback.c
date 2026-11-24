@@ -45,7 +45,7 @@ typedef struct {
     unsigned resume_key, resume_pos;
     entry *order, *cycle;
     unsigned *groups, *seen, *history;
-    unsigned poll_stamp;
+    unsigned poll_stamp, snap_at; /* snap_at: the last snapshot write's (playback_poll) */
 } playback;
 static playback s __attribute__((section(".scratch")));
 /* Each queue entry's identity (its path's hash and CUE start) as the last rebuild took the queue,
@@ -939,6 +939,7 @@ static void play_now(unsigned next) {
         s.order[i] = t;
     }
     s.seen[next] = 0;
+    s.dirty = 1; /* the order changed: saved at once (playback_poll) */
 }
 /* replay: Repeat Song's own replay at a song's end, which stays in its round.
  * ponytail: a manual Next at a round's end may start a new round with the playing song, which plays
@@ -953,6 +954,7 @@ static void commit(unsigned next, int replay) {
         make_order(s.cycle);
         i = order_find(0, next);
         from = 0; /* a new round: what it draws ahead of the pick was jumped over */
+        s.dirty = 1;
     }
     if (i < s.n) {
         /* Shuffle Off / Songs in Album: the entries jumped over stay skipped, so behind the cursor
@@ -966,7 +968,7 @@ static void commit(unsigned next, int replay) {
     s.seen[next] = 1;
     history(next);
     s.next_valid = 0;
-    s.dirty = 1;
+    if (s.dirty != 1) s.dirty = 2; /* the place alone: playback_poll may hold it */
 }
 /* player_start_queue: stock's View Queue row (and its queue delete, DLNA and URL plays) start queue
  * index at. In advanced play the pick is committed first: a shuffle's through Play Next's path, so
@@ -1143,11 +1145,12 @@ int ringnav_prev(void) {
     if (i < s.n && i > s.cursor && (s.shuffle || s.repeat != 5)) {
         move_back(i, s.cursor);
         i = s.cursor;
+        s.dirty = 1; /* the order changed: saved at once */
     }
     if (i < s.n) s.cursor = i;
     s.seen[at] = 1;
     s.next_valid = 0;
-    s.dirty = 1;
+    if (s.dirty != 1) s.dirty = 2; /* the place alone: playback_poll may hold it */
     return mclStartPlayer();
 }
 /* Would this manual Next/Prev start the playing file again? With more tracks stock moves on, Repeat
@@ -1504,6 +1507,7 @@ void playback_save(void) {
         return;
     }
     s.dirty = 1;
+    s.snap_at = s.stamp;
     unsigned size = sizeof(snapshot) + (n * 3 + hn + npend) * 4;
     for (unsigned i = 0; i < n; ++i) {
         const char *path = P(deque_at(queue(), i), REC_PATH);
@@ -1872,7 +1876,15 @@ void playback_poll(void) {
     /* playback_save writes only what changed, at most every 5 s. A track that just plays on
      * writes its elapsed second every 30 s instead (a synced flash write each); a new track, a
      * pause or a seek go within 5 s, a failed write retries every 30 s, and power-off saves
-     * exactly (ringnav_savequeue). */
+     * exactly (ringnav_savequeue). A change to the queue or its order is saved on the next pass;
+     * so is advanced play's track change (dirty 2: the place alone, in an order that stays), unless
+     * a snapshot was written in the last 5 s: then it waits for the 5 s, so quick skips are two
+     * whole snapshots, not one each. A clean end and Standby write it (playback_flush).
+     * ponytail: an end that isn't clean (a crash, the watchdog) within those 5 s comes back at the
+     * place of the last snapshot, the skips since lost; a save a skip would lift it, at a whole
+     * snapshot each. Standby's flush comes after stock stopped the player, so a skip held then is
+     * saved at its song's second 0. */
+    if (s.dirty == 2 && now - s.snap_at < 5000) return;
     if (!(s.dirty && !s.save_failed)) {
         if (now - s.stamp < (s.save_failed ? 30000u : 5000u) || now - s.poll_stamp < 5000) return;
         s.poll_stamp = now;
@@ -1883,6 +1895,11 @@ void playback_poll(void) {
             return;
     }
     playback_save(), s.stamp = now;
+}
+
+/* A save still held (playback_poll), written now: at a clean end and before Standby's suspend. */
+void playback_flush(void) {
+    if (s.dirty) playback_save();
 }
 
 int ringnav_savequeue(void) {

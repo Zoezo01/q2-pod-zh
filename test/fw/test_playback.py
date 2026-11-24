@@ -34,7 +34,7 @@ class State(C.Structure):
                 fields('saved_elapsed save_failed resume_pending resume_elapsed resume_wait') +
                 fields('saved_pos saved_sum saved_queue', C.c_uint) + fields('next_valid next_value') +
                 fields('next_pos resume_key resume_pos', C.c_uint) + fields('order cycle', C.POINTER(Entry)) +
-                fields('groups seen history', C.POINTER(C.c_uint)) + [('poll_stamp', C.c_uint)])
+                fields('groups seen history', C.POINTER(C.c_uint)) + fields('poll_stamp snap_at', C.c_uint))
 
 
 class Player:
@@ -2046,9 +2046,9 @@ def saved(fw, mcl):
     return Saved(fw, mcl)
 
 
-def full_queue(saved, shuffle=1, repeat=REPEAT_ALL):
+def full_queue(saved, shuffle=1, repeat=REPEAT_ALL, n=9):
     rows = saved.load([saved.song(b'/m/%c/%02d.flac' % (65 + i % 3, i), b'%c' % (65 + i % 3), track=i, cue=(i, i * 2))
-                       for i in range(9)], 4)
+                       for i in range(n)], 4)
     saved.mcl.type = LIBRARY
     saved.deques[saved.library][:] = rows
     saved.rng(0xbeef)
@@ -2639,13 +2639,13 @@ def test_a_mangled_checkpoint_never_breaks_the_restore(saved):
 
 # The save's schedule, once a UI pass.
 class Polled(Saved):
-    def __init__(self, fw, mcl):
+    def __init__(self, fw, mcl, n=9):
         super().__init__(fw, mcl)
         self.now, self.status = 100000, 2
         fw.mock('time_now_ms', lambda *_: self.now)
         fw.mock('mclGetPlayStatus', lambda *_: self.status)
         self.poll = fw.fn('playback_poll', None)
-        full_queue(self)
+        full_queue(self, n=n)
         self.sec, self.s.dirty = 10, 1
         self.poll()
         self.wrote()
@@ -2698,6 +2698,140 @@ def test_a_failed_write_retries_after_30_s(polled):
     polled.disk.fail_rename = False
     assert not polled.after(29000) and polled.s.save_failed == 1
     assert polled.after(1100) and polled.s.save_failed == 0
+
+
+
+class Skips(Polled):
+    """Advanced play over 40 songs, nothing pending, quiet for a while; writes: each file a save renamed into
+    place, with its size, and each fsync (blob_io's, one a write)."""
+    def __init__(self, fw, mcl):
+        super().__init__(fw, mcl, n=40)
+        self.s.npend = 0
+        self.after(6000)
+        self.writes, self.syncs = [], []
+        rename = self.disk.rename
+        fw.mock('fw_rename', lambda old, new, *_: self.writes.append(
+            (C.string_at(new).decode(), len(self.disk.files.get(C.string_at(old).decode(), b'')))) or rename(old, new))
+        fw.mock('fw_fsync', lambda *_: self.syncs.append(1) and 0)
+
+    def snapshots(self):
+        return [w for w in self.writes if w[0] == QUEUE_FILE]
+
+    def skip(self, ms=1):
+        assert self.next(0) >= 0
+        self.after(ms, sec=0)
+
+
+@pytest.fixture
+def skips(fw, mcl):
+    return Skips(fw, mcl)
+
+
+def test_ten_quick_skips_are_a_save_at_once_and_one_when_the_5_s_are_up(skips):
+    """The first track change after a quiet time saves on the next pass, as ever; the ones within 5 s of that
+    save wait for the 5 s and go as one, the place the last reached."""
+    skips.skip()
+    assert len(skips.snapshots()) == 1 and snapshot(skips.queue_file())['pos'] == skips.mcl.pos
+    for _ in range(9):
+        skips.skip(400)  # a Next every 400 ms
+    assert len(skips.snapshots()) == 1
+    skips.after(5000 - 9 * 400 - 1, sec=0)  # 1 ms short of 5 s since the save
+    assert len(skips.snapshots()) == 1
+    skips.after(1, sec=0)
+    assert len(skips.snapshots()) == 2 and snapshot(skips.queue_file())['pos'] == skips.mcl.pos
+    assert [skips.after(1000) for _ in range(4)] == [False] * 4  # nothing more to save
+
+
+def test_a_lone_skip_after_a_checkpoint_still_saves_at_once(skips):
+    """The 5 s count from the last snapshot, not from the elapsed second's checkpoint a moment before."""
+    skips.status = 3  # a pause: its checkpoint
+    assert skips.after(6000) and not skips.snapshots()
+    skips.status = 2
+    skips.skip()
+    assert len(skips.snapshots()) == 1
+
+
+@pytest.mark.parametrize('end', ['clean_end', 'standby', 'stopped_reboot'])
+def test_a_skip_still_held_is_saved_at_each_clean_end_and_before_standby(fw, skips, end):
+    skips.skip()
+    skips.skip(400)  # held
+    assert len(skips.snapshots()) == 1
+    if end == 'standby':
+        seen = []
+        fw.mock('stock_standby_trampoline', lambda *_: seen.append(len(skips.snapshots())) or 0)
+        fw.fn('ringnav_standby', C.c_int)()
+        assert seen == [2]  # on the flash before the suspend
+    elif end == 'stopped_reboot':  # Restart with the player stopped: stock's save skips it
+        skips.status = 1
+        fw.fn('ringnav_reboot', C.c_int)()
+    else:  # power-off's, Rockbox's, a firmware update's
+        fw.fn('ringnav_clean_end', None)()
+    assert len(skips.snapshots()) == 2 and snapshot(skips.queue_file())['pos'] == skips.mcl.pos
+
+
+@pytest.mark.parametrize('change', ['play_next', 'new_round', 'previous_moves_back'])
+def test_a_change_of_order_inside_the_5_s_saves_at_once(skips, change):
+    """Only the place moving along an order that stays is held: a Play Next pick reaches into the order, a new
+    round draws one, a Previous to a song played before that order was drawn moves it back in it."""
+    skips.skip()
+    if change == 'play_next':
+        skips.s.pend[0], skips.s.npend = skips.up_next()[5], 1
+    else:
+        while skips.s.cursor < skips.s.n - 1:
+            skips.skip(50)
+        skips.after(1)
+    if change == 'previous_moves_back':
+        skips.skip()  # the new round, saved at once
+        skips.after(1000)
+        order, saved = skips.order(), len(skips.snapshots())
+        assert skips.prev() >= 0
+        skips.after(1)
+        assert skips.order() != order and len(skips.snapshots()) == saved + 1  # moved back: at once
+        assert snapshot(skips.queue_file())['pos'] == skips.mcl.pos
+        return
+    held = len(skips.snapshots())
+    assert held == 1
+    skips.skip()
+    assert len(skips.snapshots()) == 2 and snapshot(skips.queue_file())['pos'] == skips.mcl.pos
+
+
+def test_nothing_is_written_while_a_skip_is_held_however_the_second_moves(skips):
+    """No checkpoint either, the second playing on or paused inside the hold: at its end one snapshot at the new
+    place with the paused second, and its checkpoint naming that snapshot."""
+    skips.skip()
+    skips.skip(400)  # held
+    writes = len(skips.writes)
+    skips.after(1000, sec=3)
+    skips.status = 3  # a pause inside the hold
+    for _ in range(3):
+        assert not skips.after(1000, sec=7) and len(skips.writes) == writes
+    skips.after(1000, sec=7)
+    shot = snapshot(skips.queue_file())
+    assert [w[0] for w in skips.writes[writes:]] == [QUEUE_FILE, CHECKPOINT]
+    assert (shot['pos'], shot['elapsed']) == (skips.mcl.pos, 7)
+    check = struct.unpack('<4I', skips.disk.files[CHECKPOINT])
+    assert check[1:] == (shot['checksum'], skips.mcl.pos, 7)
+
+
+def test_a_quick_previous_is_held_with_the_skips(skips):
+    """Back along the order, nothing moved in it: the place alone, held as a Next is."""
+    skips.skip()
+    skips.skip(400)
+    order = skips.order()
+    assert skips.prev() >= 0
+    skips.after(400)
+    assert skips.order() == order and len(skips.snapshots()) == 1
+    skips.after(5000)
+    assert len(skips.snapshots()) == 2 and snapshot(skips.queue_file())['pos'] == skips.mcl.pos
+
+
+def test_ten_quick_skips_write_counts(skips):
+    """The numbers the commit gives: bytes and fsyncs for ten Nexts 400 ms apart, until all is saved."""
+    for _ in range(10):
+        skips.skip(400)
+    skips.after(6000, sec=0)
+    # each snapshot is followed by its checkpoint, 16 bytes; before the hold, ten of each (20 fsyncs)
+    assert len(skips.snapshots()) == 2 and len(skips.writes) == len(skips.syncs) == 4
 
 
 # Odds and ends of the player's day.

@@ -25,6 +25,7 @@ void xfade_boot(void);                   /* crossfade.c */
 void mono_sync(void);                    /* crossfade.c */
 int playback_resumed(void *r);
 void playback_save(void);
+void playback_flush(void); /* a held save, now: clean ends and Standby (system.c) */
 void playback_clear(void);
 /* mclLoadPlayList's loads so far: a queue loaded later is another one (addon.c stream_queue) */
 extern unsigned playback_loads;
