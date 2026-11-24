@@ -2533,9 +2533,7 @@ def tm_hand(tm_run,deg):
             along.append((px+.5-cx)*ux+(y+.5-cy)*uy); side.append(abs((px+.5-cx)*uy-(y+.5-cy)*ux))
     return min(along),max(along),max(side)
 
-from ipod import corner_inset
 
-from ipod import corner_inset
 
 from fontTools.ttLib import TTFont
 from ipod import CLASSIC_LIGHT_FONT_SRC
@@ -2544,7 +2542,6 @@ def opaque(m,y,h=30): return [b for b in m.bands if b[4]>>24==0xff and y<=b[1]<y
 
 def fill_at(m,x,y): return [b[4] for b in m.bands if b[:4]==(x,y,1,1)]
 
-from ipod import corner_x
 
 def panel_frame(bands,x,y,w,h,light):  # the flip panel's border (coverflow_panel_paint): one flat opaque colour a half, a pixel outside the panel all round,
     c=color_t(0xb4b9c0 if light=='1' else 0x333333); sides=[b[:4] for b in bands if b[4]==c]  # so its left and right columns and its top and bottom rows match
@@ -2594,11 +2591,8 @@ def half_turn(m,hour): m.clock=(hour,0); m.call(address=payload_syms['clock_due'
 def hold_inks(m,d):  # its title's white, final in either half
     m.nodes[m.wm]={'children':[d]}; return m.nodes[named(m,d,'scrlabel_title')]['style:normal:text_color']
 
-from ipod import corner_inset
 
-from fontTools.ttLib import TTFont
 
-from ipod import BC_ART
 
 def diamond(x):
     M,top=O['NP_SCRUB_MARK'],(44-O['NP_BAR_IPOD'])//2
@@ -2955,7 +2949,6 @@ def ratings_albums(m):
     m.call(address=f,args=(ctx,m.event,0,0),gap=0,count=50_000_000); m.advance(0)
     return menu_page
 
-from ipod import corner_inset
 def cf_geometry(m,w): return tuple(signed(m.get(w+O[k])) for k in ('W_X','W_Y','W_W','W_H'))
 
 # Execute stock sibling selection and playback scheduling; mock filesystem enumeration,
@@ -3252,7 +3245,6 @@ int main(void) {
 
 ps=payload_syms
 
-from theme import builtins as theme_builtins
 
 def columns(px,n=160):
     """An n x n image by rows, red low, as a texture holds it: by columns (texel x, y at x * n + y), the screen's BGRA8888."""
@@ -3541,7 +3533,6 @@ def setting_rows(m,view):  # Accent, Home, Battery, Theme: as ringnav_display's 
     kids=m.nodes[view]['children']
     return [next(r for r in kids if lab(r).startswith(k)) for k in ('Accent','Home','Battery','Theme')]
 
-from build import segments
 from ipod import AUDIT, VALUE_NAMES
 
 SITES={int(a,16):g['value'] for g in AUDIT['immediates'] if isinstance(g['value'],str) for a,_ in g['sites']}
@@ -3599,7 +3590,6 @@ def rockbox(card):
     assert m.call(address=payload_syms['rockbox_open'],args=(0,m.event,0,0),gap=0)==0
     return m,[c[0] for c in m.calls]
 
-from ipod import corner_inset
 class SettingsMachine(Machine):
     def hook(self,u,address,size,x):
         name=self.handlers.get(address,'')
@@ -3652,7 +3642,6 @@ def stacked_row(m,view):
     item=m.node('list_item',children=[b]); m.word(item+O['W_H'],78); m.nodes[view]['children'].insert(1,item)
     return item,title,detail
 
-from fontTools.ttLib import TTFont
 
 def row_labels(m,k):
     n=m.nodes[k]
@@ -3838,9 +3827,7 @@ def shuffle_note(m,row=0):  # row: Shuffle's (Classic's Library has Search first
     note=m.nodes[m.top]['children'][-1]; assert m.nodes[note]['text']=='Albums and folders take a moment to shuffle' and m.nodes[note]['style:normal:font_size']==16
     return note
 
-from ipod import corner_inset
 
-from fontTools.ttLib import TTFont
 
 def classic_light_home(mode='0'):
     CONFIG['HOME']=mode; m=classic_light_new(ShuffleMachine); del CONFIG['HOME']; classic_light_on(m)
