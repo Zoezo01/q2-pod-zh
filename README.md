@@ -144,7 +144,7 @@ The [user guide][guide] covers every control, EQ, Cover Flow and more tips.
     <td></td>
   </tr>
   <tr valign="top">
-    <td><b><a href="https://github.com/group-a-study/q2-filebrowser">File Browser</a></b></td>
+    <td><b><a href="https://github.com/DiamondBond/q2-filebrowser">File Browser</a></b></td>
     <td>Browse the card and upload files from a phone or computer on the same Wi-Fi, in <b>Library → Apps → File Browser</b>.</td>
     <td></td>
   </tr>
@@ -174,7 +174,7 @@ The [user guide][guide] covers every control, EQ, Cover Flow and more tips.
     <td><a href="https://github.com/harpmudd/q2-lma/raw/main/docs/guide/LMA-Mini-Guide.pdf">Guide</a></td>
   </tr>
   <tr valign="top">
-    <td><b><a href="https://github.com/group-a-study/q2-airplay">AirPlay</a></b></td>
+    <td><b><a href="https://github.com/DiamondBond/q2-airplay">AirPlay</a></b></td>
     <td>Send what the Q2 plays to AirPlay speakers: choose <b>AirPlay</b> at the top of Now Playing's <b>⋯</b>.</td>
     <td></td>
   </tr>
