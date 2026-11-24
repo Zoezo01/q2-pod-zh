@@ -785,6 +785,7 @@ void switch_row(widget_t *win, widget_t *view); /* the toolbar's, as a row */
 void stock_more_speed(widget_t *win);
 void stock_more_into(widget_t *win);
 void info_poll(void);          /* lockscreen.c: the info screen's timer, with the screen lit */
+unsigned np_art_key(void);     /* navigation.c: the playing track and its cover file, 0 none */
 int xfade_page(widget_t *top); /* crossfade.c */
 int ipod_battery(void);        /* theme_engine.c: IPOD BATTERY, 0 Icon, else a percentage */
 int title_gone(void *w, event_t *event); /* ... and looks for its source again at the next sync */

@@ -4319,6 +4319,12 @@ static unsigned np_art(const char **file) {
                        written
                  : 0;
 }
+/* np_art's key alone: the playing track and its cover file, 0 while the player has none. At a
+ * Glance's blur is made again when it moves (lock_glance.c). */
+unsigned np_art_key(void) {
+    const char *file;
+    return np_art(&file);
+}
 /* The art np_art_load last loaded is this song's (coverflow_land.c's landing hands over to it). */
 int np_art_ready(void) {
     const char *file;

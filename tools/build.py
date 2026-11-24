@@ -1552,6 +1552,7 @@ FUNCTIONS = {
  'dialog_quit': ('int', 'widget_t *, unsigned'),  # quick settings' close, as its swipe up ends (0x4a1fd8)
  'window_manager_close_window_force': ('int', 'widget_t *, widget_t *'),
  'disable_fb': ('int', 'void'),  # FBIOBLANK powerdown (lockscreen.c lockscreen_dark)
+ 'saver_unlock': ('int', 'widget_t *, void *'),  # the lock window's slide handler, its window as ctx (lock_glance.c glance_open)
  'navigator_to': ('int', 'const char *'),
  'navigator_to_with_context': ('int', 'const char *, const void *'),
  'window_manager_get_input_device_status': ('char *', 'widget_t *'),
@@ -1770,6 +1771,7 @@ PRIVATE_FUNCTIONS = {
     "screensaver_rows": HOOKS['screensaver_rows'][0],  # the Lock screen page's rows and picture grid
     "folder_click": HOOKS['folder_click'][0],  # folder_page's row click (folder_enter, then a file's queue)
     "saver_cover": HOOKS['saver_cover'][0],  # the lock window's img_playcover from the playing track
+    "saver_unlock": 0x53ec68,  # the lock window's app_gesture slide (event 0x2004): ends its timer, window_close
     "np_info": 0x53bc78,  # Now Playing's info page labels, from the track (NP_INFO_CALL)
     "ab_x": 0x53b9d8,  # an A-B marker's x, on the boot set's np_bar_x and np_bar_w (AB_X_CALLS)
     "fwupdate_tf": 0x4c7eb4,  # systemset_fwupdate_page's row 0 click (0x4c84cc): stock's TF card update
