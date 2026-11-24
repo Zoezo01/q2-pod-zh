@@ -144,8 +144,19 @@ MOTION_TODAY = {**{f'motion.{k}.{a}': 0 for k in ('page', 'playing', 'coverflow'
                 'recall_ms': 300, 'bump_px': 6}
 
 
+# At a Glance's lock screen: Minimal's lock.glance, every theme's by extends, in tools/theme.py's order.
+GLANCE = {f'glance.{k}': v for k, v in (
+    ('x', 36), ('right', 339), ('time_y', 16), ('time_px', 44), ('ampm_px', 17), ('date_y', 25), ('date_gap', 19), ('date_px', 15),
+    ('big_y', 50), ('big_px', 104), ('big_ampm_px', 24), ('big_day_y', 168), ('big_day_px', 18), ('card_y', 76), ('card_h', 150),
+    ('cover_y', 8), ('cover_px', 124), ('text_x', 174), ('title_y', 12), ('title_px', 20), ('artist_y', 38), ('artist_px', 16),
+    ('album_y', 60), ('album_px', 15), ('place_y', 104), ('place_px', 14), ('text_a', 209), ('day_a', 220), ('shade_h', 88),
+    ('shade_a', 88), ('track_y', 234), ('track_h', 48), ('knob_w', 66), ('knob_h', 40), ('knob_in', 4), ('grab', 26), ('done', 625),
+    ('rim_a', 51), ('track_a', 48), ('words_px', 24), ('words_a', 140), ('words_fade', 90), ('shine_from', 60), ('shine_ms', 50),
+    ('shine_step', 7), ('shine_run', 420), ('blur_px', 495), ('dim', 178), ('hold_ms', 1000), ('hold_slop', 14), ('hold_w', 220),
+    ('hold_h', 80), ('big_hold_y', 44), ('big_hold_h', 126), ('fade_ms', 160), ('open_ms', 16),
+    ('knob', 0xf4f4f4), ('knob_edge', 0x8a8a8a), ('knob_low', 0xd6d6d6), ('arrow', 0x6b6b6b), ('shine_w', (96, 60, 28)), ('shine_a', (64, 80, 112)))}
 MINIMAL = {
-    **MOTION_TODAY,
+    **MOTION_TODAY, **GLANCE,
     'page_row': 48, 'page_detail': 64, 'page_title_h': 48, 'page_x': 36, 'page_cap_y': 4, 'page_cap_h': 32, 'page_det_y': 36, 'page_det_h': 24,
     'id': 'minimal', 'index': 0, 'name': 'Minimal', 'accents': 0x1ff, 'accent_key': 'MINIMAL_ACCENT',
     'painter[PAINT_SELECTION]': 0, 'painter[PAINT_BAR]': 0, 'painter[PAINT_BATTERY]': 0, 'chevron_home': 0, 'chevron_sel': 0, 'caps_mark': 1, 'caps_home': 1, 'caps_np': 1,
@@ -502,7 +513,8 @@ def test_resolve_takes_a_long_name():
 MINIMAL_FIELDS = [('name', '"Minimal"'), ('painter[PAINT_SELECTION]', 'SEL_CARD'), ('painter[PAINT_BAR]', 'BAR_FLAT'), ('painter[PAINT_BATTERY]', 'BATT_STOCK'), ('chevron_home', 0), ('chevron_sel', 0), ('art_x', 0), ('art_text_x', 0), ('art_text_end', 0), ('art_placeholder', 0), ('row_text_end', 0), ('sep', '{{0}, {0}}'), ('font[ROLE_TALL]', 'FONT_DEFAULT'), ('font_px[ROLE_TALL]', 0), ('chevron_x', 0), ('home_chevron_x', 0), ('letter_raw', 0), ('letter_px', 0), ('caps_mark', 1),
                   ('caps_home', 1), ('caps_np', 1), ('icons_mono', 1), ('icons_badge_muted', 1), ('icons_addon_mono', 1), ('icons_badge_ink', 0),
                   ('font[ROLE_NP]', 'FONT_DEFAULT'), ('font_px[ROLE_NP]', 0), ('font[ROLE_INFO]', 'FONT_DEFAULT'), ('font_px[ROLE_INFO]', 0), ('np_info_value', '{0, 0}'), ('np_album_op', 0), ('np_state_op', 0), ('home_top', 8), ('home_full_row', 375),
-                  ('home_text_x', 39), ('home_label_end[0]', 8), ('home_label_end[1]', 33), ('font[ROLE_HOME]', 'FONT_DEFAULT'), ('font_px[ROLE_HOME]', 0), ('home_pane', '{{0}, {0}}'), ('pane_shadow', 0), ('pane_shadow_w', 0), ('pane_shadow_a', '{0}'), ('pane_light_a', 0), ('pane_icon_x', 0), ('pane_icon_y', 0), ('pane_note_x', 0), ('pane_note_y', 0), ('pane_count_y', 0), ('pane_count_w', 0), ('pane_count_px', 0), ('pane_svc_x', 0), ('pane_svc_y', 0), ('pane_svc_px', 0), ('set_top', 8), ('set_text', 0), ('painter[PAINT_SCRUB]', 'SCRUB_STOCK'), ('painter[PAINT_VOLUME]', 'VOL_STOCK'), ('painter[PAINT_CONFIRM]', 'CONFIRM_STOCK'), ('painter[PAINT_PAGES]', 'PAGES_STOCK'), ('art_final', 0), ('page_fill', '{0, 0}'), ('qs_ground', 0), ('date_gap', 0), ('np_rows[0]', '{0}'), ('np_rows[1]', '{0}'), ('np_rows[2]', '{0}'), ('np_rows[3]', '{0}'), ('np_bar', 4),
+                  ('home_text_x', 39), ('home_label_end[0]', 8), ('home_label_end[1]', 33), ('font[ROLE_HOME]', 'FONT_DEFAULT'), ('font_px[ROLE_HOME]', 0), ('home_pane', '{{0}, {0}}'), ('pane_shadow', 0), ('pane_shadow_w', 0), ('pane_shadow_a', '{0}'), ('pane_light_a', 0), ('pane_icon_x', 0), ('pane_icon_y', 0), ('pane_note_x', 0), ('pane_note_y', 0), ('pane_count_y', 0), ('pane_count_w', 0), ('pane_count_px', 0), ('pane_svc_x', 0), ('pane_svc_y', 0), ('pane_svc_px', 0), ('set_top', 8), ('set_text', 0), ('painter[PAINT_SCRUB]', 'SCRUB_STOCK'), ('painter[PAINT_VOLUME]', 'VOL_STOCK'), ('painter[PAINT_CONFIRM]', 'CONFIRM_STOCK'), ('painter[PAINT_PAGES]', 'PAGES_STOCK'), ('art_final', 0), ('page_fill', '{0, 0}'), ('qs_ground', 0), ('date_gap', 0),
+                  *((k, '{%s}' % ', '.join(map(str, v)) if isinstance(v, tuple) else v) for k, v in GLANCE.items()), ('np_rows[0]', '{0}'), ('np_rows[1]', '{0}'), ('np_rows[2]', '{0}'), ('np_rows[3]', '{0}'), ('np_bar', 4),
                   ('np_scrub', 8), ('np_track', '{{0}, {0}}'), ('np_fill', '{0}'), ('art_square', 0), ('card_colors', 1), ('font[ROLE_TITLE]', 'FONT_DEFAULT'), ('font[ROLE_META]', 'FONT_DEFAULT'),
                   ('font_px[ROLE_TITLE]', 0), ('font_px[ROLE_META]', 0), ('font[ROLE_BAR]', 'FONT_DEFAULT'), ('font_px[ROLE_BAR]', 0),
                   ('batt', '{0}'), ('batt_line', '{0, 0}'), ('batt_empty', '{0}'), ('batt_low', 0), ('batt_low_w', 0), ('batt_edge', 0), ('batt_corner_a', 0), ('batt_foot_a', 0), ('batt_shade_a', 0), ('batt_soft_a', 0), ('batt_soft_top_a', 0), ('batt_emboss_a', 0), ('batt_emboss_nub_a', 0), ('bar_bt_dy', 0), ('bar_wifi_dy', 0), ('sb_w', 0), ('sb_right', 0), ('sb_top', 0), ('sb_bottom', 0), ('sb_min', 0), ('sb_thumb', '{0, 0}'),
@@ -1404,6 +1416,16 @@ def test_scrollbar_clears_the_glass(ends, message):
 def test_scrollbar_rejects(attrs, message):
     t = resolved(f'<view name="list"><element name="scrollbar" w="4" right="2" {attrs}/></view>')
     assert error(theme.validate, t, 't.xml') == f't.xml:1: {message}'
+
+
+def test_at_a_glance_is_stated_once_and_every_theme_s_alike():
+    """lock.glance is Minimal's alone: every built-in theme takes the same values by extends, so At a Glance looks
+    the same in each, and every value is stated (none is a default's 0)."""
+    glance = [{k.field: t[k.field] for k in theme.SCHEMA.values() if k.path.startswith('lock.glance.')} for t in theme.builtins()]
+    assert len(glance) == 4 and all(g == glance[0] for g in glance)
+    assert all(glance[0].values()) and glance[0]['glance.done'] == 625 and glance[0]['glance.shine_w'] == (96, 60, 28)
+    for f in ('classic-light', 'modern', 'classic-modern'):
+        assert '<view name="lock"' not in (theme.ROOT/f'assets/themes/{f}/theme.xml').read_text()
 
 
 def test_scrollbar_at_the_glass_or_absent_passes():

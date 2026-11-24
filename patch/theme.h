@@ -121,6 +121,24 @@ typedef struct {
         land_hold;
     short name_px, artist_px, text_y, artist_y;
 } cf_style_t;
+/* lock.glance: At a Glance's lock screen (lock_glance.c), every theme's alike (tools/theme.py
+ * GLANCE_INTS): px on the screen, but cover_y and the song's lines' *_y, in its card at card_y;
+ * *_a alphas of 255; done per mille of the knob's travel; dim of 256; ms; colours 0xRRGGBB as they
+ * look in either half; the shine's bands, outermost first, px wide (shine_w, 0 ends them) and alpha
+ */
+typedef struct {
+    short x, right, time_y, time_px, ampm_px, date_y, date_gap, date_px;
+    short big_y, big_px, big_ampm_px, big_day_y, big_day_px;
+    short card_y, card_h, cover_y, cover_px, text_x;
+    short title_y, title_px, artist_y, artist_px, album_y, album_px, place_y, place_px;
+    short text_a, day_a, shade_h, shade_a;
+    short track_y, track_h, knob_w, knob_h, knob_in, grab, done, rim_a, track_a;
+    short words_px, words_a, words_fade, shine_from, shine_ms, shine_step, shine_run;
+    short blur_px, dim, hold_ms, hold_slop, hold_w, hold_h, big_hold_y, big_hold_h, fade_ms,
+        open_ms;
+    unsigned knob, knob_edge, knob_low, arrow;
+    unsigned char shine_w[32], shine_a[32];
+} glance_t;
 typedef struct {
     unsigned addr;
     unsigned char group;
@@ -225,6 +243,7 @@ typedef struct {
      * detail row's caption and detail boxes */
     short page_row, page_detail, page_title_h, page_x, page_cap_y, page_cap_h, page_det_y,
         page_det_h;
+    glance_t glance; /* lock.glance */
 } theme_t;
 const theme_t *theme(void); /* accent(); return &themes[st.theme]; */
 /* Classic's own pages: Quick Settings, sliders, rating, dialogs' pages, T9 and Search, Set Time,

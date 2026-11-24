@@ -51,4 +51,20 @@
              row_width="40" row_key="72" jump_ms="700" jump_ticks="5" jump_at="32" jump_pace="140"
              big_jump_at="75" big_jump_ms="240" enter_albums="8" slide_ms="160" fold_near="50"/>
   </view>
+  <!-- The Lock Screen's At a Glance layout (patch/lock_glance.c): every theme's, Classic's and Modern's by extends, so
+       it looks the same in each, Light Mode or not. The time top left and the date top right; the song's card with its
+       square cover; slide to unlock, its knob, words and shine; the blurred cover behind it all; the clock held
+       hold_ms to flip to the picture, through black over fade_ms each way. -->
+  <view name="lock">
+    <element name="glance" x="36" right="339" time_y="16" time_px="44" ampm_px="17" date_y="25" date_gap="19"
+             date_px="15" big_y="50" big_px="104" big_ampm_px="24" big_day_y="168" big_day_px="18" card_y="76"
+             card_h="150" cover_y="8" cover_px="124" text_x="174" title_y="12" title_px="20" artist_y="38"
+             artist_px="16" album_y="60" album_px="15" place_y="104" place_px="14" text_a="209" day_a="220"
+             shade_h="88" shade_a="88" track_y="234" track_h="48" knob_w="66" knob_h="40" knob_in="4" grab="26"
+             done="625" rim_a="51" track_a="48" words_px="24" words_a="140" words_fade="90" shine_from="60"
+             shine_ms="50" shine_step="7" shine_run="420" blur_px="495" dim="178" hold_ms="1000" hold_slop="14"
+             hold_w="220" hold_h="80" big_hold_y="44" big_hold_h="126" fade_ms="160" open_ms="16"
+             knob="#f4f4f4" knob_edge="#8a8a8a" knob_low="#d6d6d6" arrow="#6b6b6b"
+             shine_w="96 60 28" shine_a="64 80 112"/>
+  </view>
 </theme>

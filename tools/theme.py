@@ -82,6 +82,33 @@ def key(path, field, type, hi=None, final=False):
     return Key(path, field, type, 0, hi, 0, 'live', final)
 
 
+# lock.glance: At a Glance's lock screen (lock_glance.c), every theme's alike: each int key's highest value. px on the
+# screen, but cover_y and the song's lines' *_y, in its card at card_y; *_a alphas of 255; done per mille of the knob's
+# travel; dim of 256; ms.
+GLANCE_INTS = {
+    'x': 375, 'right': 375,  # the left and right edges everything lines up on
+    'time_y': 320, 'time_px': 160, 'ampm_px': 64,  # the time, top left, and its AM or PM
+    'date_y': 320, 'date_gap': 64, 'date_px': 64,  # the weekday, top right, and the date date_gap under it
+    'big_y': 320, 'big_px': 160, 'big_ampm_px': 64, 'big_day_y': 320, 'big_day_px': 64,  # the large clock, on black
+    'card_y': 320, 'card_h': 320,  # the song's card (stock's view_playinfo)
+    'cover_y': 320, 'cover_px': 320, 'text_x': 375,  # its square cover at x, and its lines' left edge
+    'title_y': 320, 'title_px': 64, 'artist_y': 320, 'artist_px': 64, 'album_y': 320, 'album_px': 64,
+    'place_y': 320, 'place_px': 64,  # elapsed / length and "N of M"
+    'text_a': 255, 'day_a': 255,  # the album, place and count's white; the large clock's date's
+    'shade_h': 320, 'shade_a': 255,  # over a picture, a shade under the time, shade_a at the top
+    'track_y': 320, 'track_h': 320, 'knob_w': 375, 'knob_h': 320, 'knob_in': 64,  # slide to unlock
+    'grab': 64, 'done': 1000,  # px round the knob a finger may land; past done it unlocks
+    'rim_a': 255, 'track_a': 255,  # the track's white rim and black fill
+    'words_px': 64, 'words_a': 255, 'words_fade': 375,  # its words, fading out over the knob's first words_fade px
+    'shine_from': 375, 'shine_ms': 1000, 'shine_step': 64, 'shine_run': 2000,  # the shine: a step each shine_ms
+    'blur_px': 1000, 'dim': 256,  # the blurred cover: a square this wide behind the screen, its brightness
+    'hold_ms': 5000, 'hold_slop': 64, 'hold_w': 375, 'hold_h': 320,  # the clock held to flip, in its box
+    'big_hold_y': 320, 'big_hold_h': 320,  # ... the large clock's rows
+    'fade_ms': 2000, 'open_ms': 1000}  # each half of the flip's fade; the unlock after the knob's release
+GLANCE_COLORS = ('knob', 'knob_edge', 'knob_low', 'arrow')  # as they look, in either half
+GLANCE_BANDS = ('shine_w', 'shine_a')  # the shine's bands, outermost first: px wide, alpha
+
+
 # theme_t declaration order; the scheme.* keys are scheme_t's.
 SCHEMA = {k.path: k for k in (
     key('list.selection.painter', 'painter[PAINT_SELECTION]', 'enum'),
@@ -147,6 +174,9 @@ SCHEMA = {k.path: k for k in (
     key('pages.own.fill', 'page_fill', 'color', final=True),  # Classic's own full-screen pages (the lock screen's info page); 0: Home's pane's
     key('pages.quick.light_ground', 'qs_ground', 'color'),  # the flat Quick Settings' ground round its cards in the light half; 0: the paper
     key('pages.date.gap', 'date_gap', 'int', 20),  # the flat Set Date's px between its fields, the day where Classic's is; 0: Classic's places
+    *(key(f'lock.glance.{a}', f'glance.{a}', 'int', hi) for a, hi in GLANCE_INTS.items()),
+    *(key(f'lock.glance.{a}', f'glance.{a}', 'color') for a in GLANCE_COLORS),
+    *(Key(f'lock.glance.{a}', f'glance.{a}', 'alphas', 0, 0, (), 'live') for a in GLANCE_BANDS),
     # the rows painter's pixel rows, top to bottom (final colours): the track, the played part over it; the volume
     # panel away from Now Playing and a card app's progress (paint_rows_bar)
     Key('playing.scrubber.dark_track', 'np_rows[0]', 'rows', 0, 0, (), 'live'),
