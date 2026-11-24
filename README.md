@@ -112,7 +112,8 @@ The [user guide][guide] covers every control, EQ, Cover Flow and more tips.
 - **Over Wi-Fi:** **System settings → System Update → Network update**.
 - **By hand:** repeat the [install steps](#install) with the newest release.
 
-## Apps
+<details>
+<summary><h2>Apps</h2></summary>
 
 **Library → App Store** installs, updates and removes these over Wi-Fi:
 
@@ -301,6 +302,8 @@ On the App Store's **Games** tab. Each plays in **Library → Games**.
     <td></td>
   </tr>
 </table>
+
+</details>
 
 </details>
 
