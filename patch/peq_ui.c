@@ -76,6 +76,7 @@ static struct {
     int screen, band, step, count, previous, rendered, dirty, pick, adjust, tries;
     int capacity, file_page;
     int tab, tabs;   /* tabs: the wheel is on the tab bar, over Advanced's list */
+    int channel;     /* the open band's channels as its switch turned it off; 0: none yet, Both */
     int from_simple; /* Advanced's Stock presets screen, opened from Simple's Presets */
     double typed;
     peq_preset draft, candidate, named; /* named: the preset applied under applied's name */
@@ -595,7 +596,7 @@ const char *eq_set(const peq_preset *p, int mode) {
     s.hold = 0;
     if (!eq_commit(&s)) return "Couldn't save the EQ";
     if (ui.page) {
-        if (p) ui.dirty = 0;
+        if (p) ui.dirty = ui.channel = 0; /* another preset: none of the open band's */
         page_load();
         if (!ui.timer) ui.timer = timer_add(render, 0, 1);
     }
@@ -676,9 +677,13 @@ static int action(void *ctx, event_t *event) {
             snprintf(ui.status, sizeof(ui.status), "%s", tr("Switch failed; EQ unchanged"));
     } else if (id == PER_OUTPUT)
         ringnav_eq_output_toggle();
-    else if (id == ENABLE)
-        b->enabled = !b->enabled;
-    else if (id == TYPE)
+    else if (id == ENABLE) {
+        /* Off, then on again on the channels it had. ponytail: an off band's enabled holds no
+         * channel, so leaving its screen or saving forgets them; a field of its own in peq_band
+         * if that matters. */
+        if (b->enabled) ui.channel = b->enabled;
+        b->enabled = b->enabled ? 0 : ui.channel ? ui.channel : 1;
+    } else if (id == TYPE)
         b->type = (b->type + 1) % 3;
     else if (id == CHANNEL && b->enabled)
         b->enabled = b->enabled % 3 + 1; /* both, left, right */
@@ -717,6 +722,7 @@ static int action(void *ctx, event_t *event) {
         int file = ui.file_page * FILE_PAGE + id;
         if (ui.screen == HOME && id < PEQ_BANDS) {
             ui.band = id;
+            ui.channel = 0;
             ui.screen = BAND;
         } else if (ui.screen == PICK && id < picks[ui.pick - BALANCE].rows) {
             /* Preamp's Auto row: the band-edit cut, which later band edits then keep up to date. */
@@ -725,7 +731,7 @@ static int action(void *ctx, event_t *event) {
                             : picks[ui.pick - BALANCE].first + picks[ui.pick - BALANCE].step * id;
             if (ui.pick == PREAMP) ui.draft.automatic = id ? 2 : 1, remember_preamp();
             if (ui.pick == GAIN && !b->enabled)
-                b->enabled = 1; /* picking a gain is using the band */
+                b->enabled = ui.channel ? ui.channel : 1; /* picking a gain is using the band */
             ui.dirty = 1;
             ui.screen = ui.pick == GAIN ? BAND : HOME;
         } else if (ui.screen == STOCKS && id < STOCK_N) {

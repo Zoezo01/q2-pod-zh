@@ -11,6 +11,7 @@
   - Languages: with a Chinese language pack, the keyboard starts in pinyin, and one key goes round pinyin, lower case and capitals (**abc**, **ABC**, **中**). An app's sign-in fields keep the letters.
   - Cover Flow: turning the covers takes less of the processor. Each cover's picture is now held in the order the screen draws it, column by column, so drawing one reads memory in a straight run.
   - App Store: removing an app no longer deletes a file off the card that the app's list of files names. The list is kept on the card, where any app can write to it.
+  - EQ: a band set to **Left** or **Right** stays on that channel when you turn it off and on again on its screen, by its **Band** switch or by picking a **Gain**. It came back as **Both**.
 - **1.9.1**:
   - Standby: going into Standby gives the card up to 2 seconds to finish and unmount before its power is cut, where it used to cut it at once with files still open, which could leave the card marked as not properly unmounted and lose what was still being written.
   - EQ: in **Advanced**, drag a band up or down on the curve to set its gain, as you drag Simple's sliders. Touch the ring of a band that's on. Choose **Apply changes** to hear it.

@@ -44,7 +44,7 @@ class EqState(C.Structure):
 
 class Ui(C.Structure):
     _fields_ = [*((k, C.c_void_p) for k in 'page view edit graph bar'.split()), ('timer', C.c_uint), ('keyboard_timer', C.c_uint),
-                *((k, C.c_int) for k in 'screen band step count previous rendered dirty pick adjust tries capacity file_page tab tabs from_simple'.split()),
+                *((k, C.c_int) for k in 'screen band step count previous rendered dirty pick adjust tries capacity file_page tab tabs channel from_simple'.split()),
                 ('typed', C.c_double), ('draft', Preset), ('candidate', Preset), ('named', Preset), ('names', C.c_void_p),
                 ('destination', C.c_char * 600), ('status', C.c_char * 256), ('name', C.c_char * 256), ('applied', C.c_char * 256),
                 ('curve', (C.c_float * GRAPH_W) * 2), ('drag', C.c_int)]
@@ -650,6 +650,45 @@ def test_a_band_s_screen(fw):
     assert p.captions()[:2] == ['Band Off', 'Type Low shelf']  # an off band has no channels
     p.ret()
     assert p.ui.screen == HOME and '1  Low shelf 1000 Hz Off' in p.captions()
+
+
+def test_a_band_turned_off_and_on_keeps_its_channels(fw):
+    p = page(fw, state(fw, EQ_PEQ, peq=peak(fw, 6))).advanced()
+    p.click('1  ')
+    p.click('Channels')
+    p.click('Channels')
+    assert 'Channels Right' in p.captions()
+    p.click('Band')
+    p.click('Band')
+    assert p.captions()[:2] == ['Band On', 'Channels Right'] and p.ui.draft.bands[0].enabled == 3
+    p.click('Band')
+    p.ret()
+    p.click('2  ')  # an off band, opened next: it takes nothing from the last one's
+    p.click('Band')
+    assert p.captions()[:2] == ['Band On', 'Channels Both']
+
+
+def test_a_gain_picked_for_an_off_band_turns_it_on_with_its_channels(fw):
+    p = page(fw, state(fw, EQ_PEQ, peq=peak(fw, 6))).advanced()
+    p.click('1  ')
+    p.click('Channels')
+    p.click('Channels')
+    p.click('Band')
+    p.click('Gain')
+    p.click('+3.0 dB')
+    assert p.captions()[:2] == ['Band On', 'Channels Right']
+
+
+def test_a_card_app_s_preset_under_an_open_band_takes_none_of_its_channels(fw):
+    p = page(fw, state(fw, EQ_PEQ, peq=peak(fw, 6))).advanced()
+    p.click('1  ')
+    p.click('Channels')
+    p.click('Channels')
+    p.click('Band')
+    assert ask(fw, p.card, b'a1\nFilter 1: OFF PK Fc 2000 Hz Gain 6 dB Q 1\n').startswith(b'a1 ok')
+    p.settle()
+    p.click('Band')
+    assert p.captions()[:2] == ['Band On', 'Channels Both']
 
 
 def test_a_band_past_the_count_joins_the_preset(fw):
