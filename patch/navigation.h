@@ -717,7 +717,7 @@ void search_over(widget_t *w, canvas_t *canvas);
 void slider_scrub(widget_t *w, canvas_t *canvas);
 int restart_asked(void); /* navigation.c: the Restart to apply? confirm, yes or no */
 /* playlists.c: a confirm whose second cell says verb; tray 1 the row action's tray, 0 the page */
-int confirm_over(void *prompt, const char *verb, int tray);
+int confirm_over(const char *text, const char *verb, int tray);
 
 /* playlists.c */
 /* Classic's Playlists (pl_dress): a page's add mode (ringnav_playlist), the button of a row that

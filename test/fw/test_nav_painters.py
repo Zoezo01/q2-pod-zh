@@ -1190,7 +1190,7 @@ def test_a_row_actions_question_is_the_tray_its_cell_the_verb(fw, st):
 
     fw.mock('navigator_to_with_context', open_dialog)
     verb = C.create_string_buffer(b'Delete')
-    assert fw.fn('confirm_over', C.c_int, C.c_void_p, C.c_char_p, C.c_int)(None, verb, 1) == 1
+    assert fw.fn('confirm_over', C.c_int, C.c_char_p, C.c_char_p, C.c_int)(b'', verb, 1) == 1
     text, shown, images, cells, inks = seen['tray']
     assert text == 'Delete' and not shown  # the cell says what it's for; no question
     (ix, iy, iw, ih), = images  # the tray's shadow at its art's size, centred, the cells on it

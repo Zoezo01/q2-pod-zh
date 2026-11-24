@@ -6241,14 +6241,7 @@ void theme_select(int t) {
 }
 int theme_restart(int t) { return geom_with(&themes[t], -1, 0, 1) != st.geom; }
 /* The Restart to apply? confirm: 1 when the user says yes. */
-int restart_asked(void) {
-    struct {
-        int kind, ms;
-        char text[0x400];
-    } prompt = { 1, 0, "" };
-    tk_snprintf(prompt.text, sizeof prompt.text, "%s", tr("Restart to apply?"));
-    return confirm_over(&prompt, tr("Restart"), 0) == 10;
-}
+int restart_asked(void) { return confirm_over(tr("Restart to apply?"), tr("Restart"), 0) == 10; }
 /* A choice that needs another geometry set: confirmed, the config takes value (a theme its presets
  * too, its own options' among them) and the Q2 restarts into it, ringnav_reboot saving the queue
  * first; the running state stays the booted set's theme until then, as theme_boot requires.
