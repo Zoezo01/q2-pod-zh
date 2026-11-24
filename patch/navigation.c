@@ -7494,7 +7494,8 @@ int ringnav_art_header(char *buf, unsigned size, const char *fmt, const char *al
  * again and the toast says so over the list it came from. Stock opened a black page, and an empty
  * Albums grid's Return then did nothing until a restart (Hold Return: Home, back_to_home, still
  * left it); the cause was not found in the window manager's close path, so the page goes before a
- * Return can reach it, with the forced close that path uses. The page is its class's
+ * Return can reach it, with the forced close that path uses (its toast: "Update Library first" when
+ * the library holds no song at all, else the class's "No …"). The page is its class's
  * (g_class_type), on top, whichever of the two list pages shows it, polled every EMPTY_POLL_MS
  * until it opens or stops being on top. */
 static int empty_toast(const void *unused) {
@@ -7509,7 +7510,13 @@ static int empty_toast(const void *unused) {
         return 0;
     }
     if (mine) window_manager_close_window_force(wm, top);
-    toast(tr(none[st.empty_kind]));
+    /* Albums and Artists leave out audiobooks and podcasts, so only a library with no song of any
+     * kind (never scanned, or its table not there: -1) is told to update; one probe row, whatever
+     * the library's size.
+     * ponytail: a failed read (-1) counts as no songs, so a database busy under a scan says Update
+     * Library first; era_sql returning sqlite's code would tell busy from no table. */
+    toast(library_count("select 1 from songtable limit 1") > 0 ? tr(none[st.empty_kind])
+                                                               : tr("Update Library first"));
     return 0;
 }
 

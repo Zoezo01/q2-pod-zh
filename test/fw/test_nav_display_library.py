@@ -2812,9 +2812,22 @@ def test_artists_follow_the_artist_pages_own_setting(fw, records, artist_type):
     assert fw.var('navigation__library_music', C.c_int).value == 0  # put back
 
 
+def songs_in_library(fw, n):
+    """The library database as the empty list's song probe sees it: n songs of any kind, asked for as one row."""
+    def run(db, sql, callback, ctx, *_):
+        cells = (C.c_char_p * 1)(b'1')
+        call = C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_int, C.POINTER(C.c_char_p), C.c_void_p)(callback)
+        return call(ctx, 1, cells, None) if n and callback else 0
+    fw.mock('sqlite3_open', lambda path, db, *_: C.c_void_p.from_address(db).__setattr__('value', 0xdb) or 0)
+    fw.mock('sqlite3_exec', run)
+
+
 @pytest.mark.parametrize('cls, words', [(CLASS_ALBUMS, 'No albums'), (0xf004, 'No artists'), (0xf005, 'No composers'),
                                         (0xf006, 'No genres')])
-def test_an_empty_class_list_closes_its_page_once_open_and_says_so(fw, st, records, cls, words):
+@pytest.mark.parametrize('songs', [0, 1])
+def test_an_empty_class_list_closes_its_page_once_open_and_says_so(fw, st, records, cls, words, songs):
+    """No song of any kind: Update Library first. Songs but none for this list (a card of audiobooks): its word."""
+    songs_in_library(fw, songs)
     ui = Ui(fw)
     lib = Library(fw)
     prompts = Prompts(fw)
@@ -2828,10 +2841,11 @@ def test_an_empty_class_list_closes_its_page_once_open_and_says_so(fw, st, recor
     page.props['stage'] = O['WINDOW_STAGE_OPENED']
     run(load.timers[-1][0])
     assert [a[1] for _, a in fw.calls('window_manager_close_window_force')] == [page.addr]
-    assert [p[3] for p in prompts.seen] == [words]
+    assert [p[3] for p in prompts.seen] == [words if songs else 'Update Library first']
 
 
 def test_an_empty_list_whose_page_never_showed_only_says_so(fw, st, records):
+    songs_in_library(fw, 1)
     ui = Ui(fw)
     lib = Library(fw)
     prompts = Prompts(fw)
@@ -2845,6 +2859,7 @@ def test_an_empty_list_whose_page_never_showed_only_says_so(fw, st, records):
 
 @pytest.mark.parametrize('page, shows', [('album_page', CLASS_ALBUMS), ('localclass_page', 0xf004)])
 def test_an_empty_list_leaves_a_list_page_showing_another_class(fw, st, records, page, shows):
+    songs_in_library(fw, 1)
     ui = Ui(fw)
     lib = Library(fw)
     prompts = Prompts(fw)
@@ -2856,6 +2871,18 @@ def test_an_empty_list_leaves_a_list_page_showing_another_class(fw, st, records,
     # the page on top lists another class: it stays, unpolled, and the toast says what was empty
     assert not fw.calls('window_manager_close_window_force') and len(load.timers) == 1
     assert [p[3] for p in prompts.seen] == ['No composers']
+
+
+def test_an_empty_list_in_an_unscanned_library_says_to_update(fw, st, records):
+    """A library whose table can't be read (never scanned) holds no song: the failed probe says Update Library first."""
+    fw.mock('sqlite3_open', lambda *_: 14)
+    ui = Ui(fw)
+    prompts = Prompts(fw)
+    load = Localclass(fw, Library(fw), [])
+    load(0xf005)
+    ui.window('localmusic_page')
+    run(load.timers[-1][0])
+    assert [p[3] for p in prompts.seen] == ['Update Library first']
 
 
 def test_songs_load_straight_into_the_showlist(fw, records):

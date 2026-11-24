@@ -528,7 +528,8 @@ int era_sql(const char *sql, int (*row)(void *, int, char **, char **), void *ct
     return !bad;
 }
 /* Home pane's counts: sql's one number, -1 when it can't be had. On coverflow.c count_worker's
- * thread: era_sql opens its own connection, and the device's libsqlite3 is THREADSAFE=1. */
+ * thread, and on the UI thread for navigation.c's empty_toast: era_sql opens its own connection,
+ * and the device's libsqlite3 is THREADSAFE=1. */
 static int count_row(void *ctx, int n, char **v, char **c) {
     if (n == 1 && v[0]) *(int *)ctx = atoi(v[0]);
     return 0;

@@ -31,6 +31,7 @@
   - Languages: a translated line is left in English when its format codes differ from the English line's, as with a stray `% S` or a code cut short at the end of the line. Such a line could crash the player.
   - Classic: the bar's title has more room, so **Update Library** and the titles of **Internet Radio**, **Rated Albums** and **Configuration** show whole instead of ending in an ellipsis.
   - Minimal: the USB Storage page says **Eject before disconnecting**, as the other themes do.
+  - Library: on a card that was never scanned, **Albums**, **Artists**, **Composers** and **Genres** say **Update Library first**. They said **No albums** and the like, as if the scan had found none.
 - **1.9.1**:
   - Standby: going into Standby gives the card up to 2 seconds to finish and unmount before its power is cut, where it used to cut it at once with files still open, which could leave the card marked as not properly unmounted and lose what was still being written.
   - EQ: in **Advanced**, drag a band up or down on the curve to set its gain, as you drag Simple's sliders. Touch the ring of a band that's on. Choose **Apply changes** to hear it.
