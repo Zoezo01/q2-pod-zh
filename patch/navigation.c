@@ -611,14 +611,14 @@ static void home_step(widget_t *w, int dir, unsigned now, int jump) {
  **************************************************************************************************/
 
 int usable(void) {
-    if (!g_backlight_status || g_lockscreen_pageflag || g_testmode_flag || g_guideflag ||
-        g_poweroff_state > 1)
-        return 0;
+    if (!g_backlight_status || g_testmode_flag || g_guideflag || g_poweroff_state > 1) return 0;
     widget_t *top = window_manager_get_top_window(window_manager());
     int confirm = top && !tk_strcmp(widget_get_prop_str(top, "name", ""), "confirminfo_dialog");
     /* A held power key sets g_poweroff_state to 1 while its Shut Down? prompt is up
-     * (on_wm_keylong_fun); 2 is the power-off page itself. */
+     * (on_wm_keylong_fun); 2 is the power-off page itself. Over the lock screen too: the prompt
+     * takes the wheel and Centre there as anywhere. */
     if (g_poweroff_state) return confirm;
+    if (g_lockscreen_pageflag) return 0;
     if (g_usblink_status != 2) return 1;
     /* USB mode's exit asks whether to scan in a confirm dialog before it leaves the mode: once the
      * cable is out, that prompt takes the wheel and Centre. */
@@ -9146,12 +9146,25 @@ int ringnav_input(widget_t *wm, event_t *e) {
         st.touch_x = I(e, EVENT_X);
         st.touch_y = I(e, EVENT_Y);
     }
+    /* The lock screen's volume panel (the wheel's, stock's volume_dialog) is a full-screen window
+     * over the slider: a finger down anywhere puts it away, and stock's lock window then has the
+     * same touch, so it may go on to slide. */
+    if (type == EVT_POINTER_FIRST && g_lockscreen_pageflag) {
+        widget_t *front = window_manager_get_top_window(wm);
+        if (front && !tk_strcmp(widget_get_prop_str(front, "name", ""), "volume_dialog"))
+            window_close(front);
+    }
     if ((type == EVT_KEY_DOWN || type == EVT_KEY_UP || type == EVT_KEY_LONG) &&
         (key == KEY_PREV || key == KEY_NEXT || key == KEY_CENTER) && usb_prompt()) {
         reset_poweroptions_timer(1, 1, 1);
         if (type == EVT_KEY_UP) ringnav(0, e);
         return 0;
     }
+    /* Return on the lit lock screen does nothing: stock's lock window took it as Back
+     * (on_common_keyup) and closed, unlocking past the slider. Shut Down? over it keeps Return. */
+    if ((type == EVT_KEY_DOWN || type == EVT_KEY_UP || type == EVT_KEY_LONG) && key == KEY_RETURN &&
+        g_lockscreen_pageflag && g_backlight_status && !g_poweroff_state)
+        return 0;
     widget_t *top = window_manager_get_top_window(wm);
     if (type == EVT_KEY_UP && (key == KEY_PREV || key == KEY_NEXT) && usable() &&
         window_manager_is_animating(wm) && top &&

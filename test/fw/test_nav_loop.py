@@ -3316,6 +3316,49 @@ def test_a_touch_on_a_prompt_starts_below_the_pull_downs_band(fw, stock_bytes, f
     assert keys(O['EVT_POINTER_FIRST'], 0, y=y) == 7 and start.value == want
 
 
+def lock_screen(fw, stock_bytes, *fronts, power=0):
+    """The lit lock screen (stock's saverscreen_page), with windows over it."""
+    ui = Ui(fw)
+    ui.window('saverscreen_page')
+    over = [ui.window(name, 'dialog') for name in fronts]
+    keys = Input(fw, stock_bytes, ui)
+    fw.var('g_lockscreen_pageflag', C.c_ubyte).value = 1
+    fw.var('g_backlight_status', C.c_ubyte).value = 1
+    fw.var('g_poweroff_state', C.c_ubyte).value = power
+    return ui, over, keys
+
+
+def test_return_on_the_lit_lock_screen_does_nothing(fw, stock_bytes):
+    """Stock's lock window took Return as Back and closed, past the slider."""
+    _, _, keys = lock_screen(fw, stock_bytes)
+    keys(DOWN, KEY_RETURN), keys(LONG, KEY_RETURN, 10), keys(UP, KEY_RETURN, 10)
+    assert keys.stock == []
+
+
+def test_return_over_the_lock_screens_shut_down_is_the_prompts(fw, stock_bytes):
+    _, _, keys = lock_screen(fw, stock_bytes, 'confirminfo_dialog', power=1)
+    keys(DOWN, KEY_RETURN), keys(UP, KEY_RETURN, 10)
+    assert keys.stock == [(DOWN, KEY_RETURN), (UP, KEY_RETURN)]
+
+
+@pytest.mark.parametrize('power, want', [(1, 1), (0, 0)])
+def test_shut_down_over_the_lock_screen_takes_the_wheel_and_centre(fw, stock_bytes, power, want):
+    """usable() said no on the lock flag before it looked for the held power key's prompt."""
+    lock_screen(fw, stock_bytes, 'confirminfo_dialog', power=power)
+    assert fw.fn('usable', C.c_int)() == want
+
+
+@pytest.mark.parametrize('lock, closes', [(1, True), (0, False)])
+def test_a_touch_on_the_lock_screen_puts_the_volume_away_and_goes_on(fw, stock_bytes, lock, closes):
+    """The wheel's volume panel sits over the slider; the same touch may then slide."""
+    _, (vol,), keys = lock_screen(fw, stock_bytes, 'volume_dialog')
+    fw.var('g_lockscreen_pageflag', C.c_ubyte).value = lock
+    closed = []
+    fw.mock('window_close', lambda w, *_: closed.append(w) or 0)
+    keys(O['EVT_POINTER_FIRST'], 0, x=40, y=290)
+    assert closed == ([vol.p] if closes else []) and keys.stock == [(O['EVT_POINTER_FIRST'], 40)]
+
+
 @pytest.mark.parametrize('lit', [0, 1])
 def test_a_tick_before_the_volume_dialog_takes_keys_steps_it_and_opens_no_other(fw, keys, lit):
     """The dialog is in front from navigator_to on, the window manager's key target only from its open event (#303)."""
