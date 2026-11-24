@@ -1069,9 +1069,11 @@ class Canvas:
     def art(self, name):
         return [dst for n, dst in self.arts if n == name]
 
-    def rows(self, x=None, w=None):
-        """The one-pixel-high fills, by row: {y: color}, those at x, w wide if given."""
-        return {y: c for fx, y, fw_, h, c in self.fills if h == 1 and (x is None or fx == x) and (w is None or fw_ == w)}
+    def rows(self, x=None, w=None, tall=False):
+        """The one-pixel-high fills, by row: {y: color}, those at x, w wide if given; tall: each row of a taller fill
+        too (paint_stops fills stops all one colour at once)."""
+        return {y + k: c for fx, y, fw_, h, c in self.fills if (h == 1 or tall) and (x is None or fx == x) and (w is None or fw_ == w)
+                for k in range(h)}
 
 
 def paint_bg(fw, w, canvas, stock=0):
@@ -1838,8 +1840,9 @@ def test_classic_s_bar_is_its_gloss_over_its_line(fw, world, scheme, light):
     bar = system_bar(fw, world)
     canvas = Canvas(fw)
     paint_bg(fw, bar, canvas)
-    rows = canvas.rows(x=0, w=375)
+    rows = canvas.rows(x=0, w=375, tall=True)
     assert sorted(rows) == list(range(26))
+    assert len(canvas.rows(x=0, w=375)) == (1 if light == '0' else 26)  # the dark gloss is one colour: one fill
     assert rows[25] == rgba(scheme('bar_line'))
     if light == '1':
         assert rows[24] == rgba(scheme('bar_line2')) and luma(rgb_of(rows[0])) > luma(rgb_of(rows[23]))  # lit from above
@@ -1964,7 +1967,7 @@ def test_the_t9_page_has_the_dark_strip_and_its_field(fw, world, st):
     fw.fn('t9_box', None, C.c_void_p, C.c_void_p, C.c_char_p)(page, edit, b'Search Songs')
     canvas = Canvas(fw)
     paint_bg(fw, page, canvas)
-    rows = sorted(canvas.rows(x=0, w=375))
+    rows = sorted(canvas.rows(x=0, w=375, tall=True))
     x, y, w, h = field_image(canvas)
     ex, ey, ew, eh = world.at(edit)
     assert rows == list(range(rows[-1] + 1)) and y + h <= len(rows)  # from the page's top, past the field
@@ -2505,7 +2508,7 @@ def test_search_s_dark_strip_ends_under_the_tabs_or_under_the_field(fw, world, s
     """From under the bar, round the field; with results it holds the tabs and ends where their pages start, with
     the history it ends as far under the field as it starts above (SEARCH_HISTORY_Y's 7 rows either side)."""
     win, bar, canvas = search_paint(fw, world, st, results)
-    rows = sorted(canvas.rows(x=0, w=375))
+    rows = sorted(canvas.rows(x=0, w=375, tall=True))
     top, end = rows[0], rows[-1] + 1
     x, y, w, h = field_image(canvas)
     assert rows == list(range(top, end)) and top == world.at(bar)[3] and top < y and y + h < end
@@ -2522,7 +2525,7 @@ def test_with_the_keyboard_up_search_s_strip_is_the_top_of_the_screen(fw, world,
     """Down to the keyboard, round the field, which moves over the keyboard; the chevron over Return's tap."""
     win, bar, canvas = search_paint(fw, world, st, keyboard=True)
     kb = st('kb_win', C.c_void_p).value
-    rows = sorted(canvas.rows(x=0, w=375))
+    rows = sorted(canvas.rows(x=0, w=375, tall=True))
     assert rows == list(range(world.at(kb)[1]))
     x, y, w, h = field_image(canvas)
     item = world.at(named(world, win, 'list_item_search'))

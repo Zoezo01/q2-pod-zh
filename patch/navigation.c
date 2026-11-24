@@ -1453,12 +1453,16 @@ unsigned stops_row(const stops_t *s, int j, int h) {
 }
 /* An N-stop gradient s over x, y, w, h in one-pixel bands; pixel row j sits j / (h - 1) of the way
  * down, mixed between the stops around it. A screen-colour painter's: its colours are final, never
- * flipped. As many stops as rows: each row its own. Fewer than two stops draw nothing. */
+ * flipped. As many stops as rows: each row its own. Fewer than two stops draw nothing. Stops all
+ * one colour (a flat ground) are one opaque rect of the box: every row is that colour (mix of a
+ * colour with itself is it), so the pixels are the rows'. */
 void paint_stops(canvas_t *canvas, int x, int y, int w, int h, const stops_t *s) {
     if (s->n < 2) return;
-    for (int j = 0; j < h; ++j) {
+    int k = 1;
+    while (k < s->n && s->rgb[k] == s->rgb[0]) ++k;
+    for (int j = 0, step = k == s->n ? h : 1; j < h; j += step) {
         stock_canvas_set_fill_color(canvas, RGBA(stops_row(s, j, h)));
-        canvas_fill_rect(canvas, x, y + j, w, 1);
+        canvas_fill_rect(canvas, x, y + j, w, step);
     }
 }
 /* How far a rounded box's row i starts in from its side: a hard corner. */

@@ -764,6 +764,28 @@ def solid(row):
     return len(set(row[2])) == 1 and row[2][0]
 
 
+@pytest.mark.parametrize('rgb, h', [((0x1c1c1c, 0x1c1c1c), 320), ((0x1c1c1c,) * 3, 7), ((0x1c1c1c, 0x2c2c2c), 320),
+                                    ((0x1c1c1c, 0x1c1c1c, 0x2c2c2c), 7), ((0x1c1c1c, 0x2c2c2c, 0x1c1c1c), 7),
+                                    ((0x1c1c1c, 0x1c1c1c), 0), ((0x1c1c1c,), 5)])
+def test_stops_of_one_colour_are_one_fill_of_the_box(fw, layout, rgb, h):
+    """paint_stops: a rect a row down a ramp; stops all one colour (Quick Settings' and Home's pane's ground, Classic's
+    bar) one opaque rect of the whole box, the same pixels; no rows, or under two stops, nothing."""
+    _, at = layout
+    stops = C.create_string_buffer(at['rgb'] + 4 * 13)
+    struct.pack_into('B', stops, at['n'], len(rgb))
+    for i, c in enumerate(rgb):
+        struct.pack_into('B', stops, at['pos'] + i, 100 * i // max(len(rgb) - 1, 1))
+        struct.pack_into('<I', stops, at['rgb'] + 4 * i, c)
+    canvas = Canvas(fw)
+    fw.fn('paint_stops', None, C.c_void_p, C.c_int, C.c_int, C.c_int, C.c_int, C.c_void_p)(canvas.addr, 3, 4, 50, h, stops)
+    if len(rgb) < 2 or not h:
+        assert canvas.rects == []
+    elif len(set(rgb)) == 1:
+        assert canvas.rects == [((3, 4, 50, h), rgba(rgb[0]))]
+    else:
+        assert [r[0] for r in canvas.rects] == [(3, 4 + j, 50, 1) for j in range(h)]
+
+
 def mix(a, b, j, n):
     """0xRRGGBB j/n of the way from a to b, per channel."""
     return sum((((a >> s & 255) * (n - j) + (b >> s & 255) * j) // n) << s for s in (0, 8, 16))

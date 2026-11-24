@@ -37,6 +37,7 @@
   - Volume: the volume bar shows a small triangle at your **Max Volume** limit, as an iPod's does. With no limit set, nothing shows.
   - Power: while the Sleep Timer runs, Power's row shows the time left, as in **Sleep Timer: 45 min**, or **Sleep Timer: 1:30** from an hour on.
   - Cover Flow: a cover's picture is held in the screen's own colour order, so drawing a frame no longer converts every pixel.
+  - Display: Quick Settings, Home's pane and Classic's dark bars draw a plain ground in one step, not row by row.
 - **1.9.1**:
   - Standby: going into Standby gives the card up to 2 seconds to finish and unmount before its power is cut, where it used to cut it at once with files still open, which could leave the card marked as not properly unmounted and lose what was still being written.
   - EQ: in **Advanced**, drag a band up or down on the curve to set its gain, as you drag Simple's sliders. Touch the ring of a band that's on. Choose **Apply changes** to hear it.
