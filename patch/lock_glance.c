@@ -267,7 +267,7 @@ static void sync(int force) {
     gl.mode = mode;
     if (changed || minute != gl.minute) clock_place();
     if (song) {
-        int had = gl.blur_name[0];
+        int had = gl.blur_name[0] != 0;
         const char *name = gl.cover ? widget_get_prop_str(gl.cover, "image", "") : "";
         /* another song, or its cover file written since (np_art_key holds the file's size and
          * time): the blur kept from before, whose file name every song's cover shares, is made
