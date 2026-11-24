@@ -13,6 +13,7 @@
   - App Store: removing an app no longer deletes a file off the card that the app's list of files names. The list is kept on the card, where any app can write to it.
   - EQ: a band set to **Left** or **Right** stays on that channel when you turn it off and on again on its screen, by its **Band** switch or by picking a **Gain**. It came back as **Both**.
   - Sound: seeking in a VBR MP3 made with error protection (CRC) lands on the time asked for. Q2 Pod did not find such a file's seek table and went by its average bitrate, which in a long mix could land minutes off.
+  - EQ: **Import from SD /EQ** no longer lists the `._` files a Mac leaves on the card beside each file it copies.
 - **1.9.1**:
   - Standby: going into Standby gives the card up to 2 seconds to finish and unmount before its power is cut, where it used to cut it at once with files still open, which could leave the card marked as not properly unmounted and lose what was still being written.
   - EQ: in **Advanced**, drag a band up or down on the curve to set its gain, as you drag Simple's sliders. Touch the ring of a band that's on. Choose **Apply changes** to hear it.

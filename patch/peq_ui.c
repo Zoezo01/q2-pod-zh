@@ -433,6 +433,8 @@ static void list_files(const char *folder, const char *extension) {
         unsigned n = strlen(name), e = strlen(extension);
         if (entry->d_type != 8 && entry->d_type != 0) continue;
         if (n <= e || n >= 256 || strcmp(name + n - e, extension)) continue;
+        if (name[0] == '.' && name[1] == '_')
+            continue; /* macOS's ._ copy beside each file: not a preset */
         if (ui.count == ui.capacity) {
             int capacity = ui.capacity ? ui.capacity * 2 : FILE_PAGE;
             void *names = calloc(capacity, 256);
