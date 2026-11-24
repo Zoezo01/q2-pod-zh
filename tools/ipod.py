@@ -317,7 +317,6 @@ def artist_tabs(root):
 # The card labels are the Chinese interface's, as the row names of 1.6: 音乐.
 HOME_PAGE = 'home_page.bin'
 LIBRARY = {'name': 'label_library', 'text': '音乐', 'tr_text': 'Library'}
->>>>>>> 1.9.1
 
 
 def home_card(menu, at, row, text):
@@ -348,7 +347,6 @@ HOME_LITERAL = {'coverflow': 'Cover Flow', 'rockbox': 'Rockbox', 'settings': '�
 # these shorter literals.
 HOME_RENAMED = {'localmusic': LIBRARY, 'playset': {'name': 'label_playback', 'text': '播放设置', 'tr_text': 'Playback'},
                 'sysset': {'name': 'label_system', 'text': '系统设置', 'tr_text': 'System'}}
->>>>>>> 1.9.1
 # Since stock V1.34 the visitor knows img_coverflow and label_coverflow too: its own Album Wall card's, which it
 # binds to that page and names so. Cover Flow's image and label are named apart, so stock binds and names neither.
 HOME_OURS = {'coverflow': 'cover_flow'}
@@ -956,7 +954,6 @@ def confirm_dialog(root):
     for i, n in enumerate(root[3]):
         n[0], n[1] = 'button', [0, CONFIRM_TOP + i * CONFIRM_ROW, 375, CONFIRM_ROW]
         n[2] = {'name': n[2]['name'], 'text': ('取消', '确定')[i], 'tr_text': CONFIRM_TEXT[i], 'focusable': 'false',
->>>>>>> 1.9.1
                 'style:normal:font_size': '20', 'style:normal:text_align_h': 'center'}
         # Every state, or AWTK's button/default shows its blue border (1px) and fill; a tap gets
         # the lists' pressed grey, the wheel the selection.

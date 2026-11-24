@@ -309,7 +309,6 @@ static void library_step(void) {
     if (bad == why)
         tk_snprintf(shown, sizeof shown, "无法导入 %s", why + sizeof LIB_MISSING - 1);
     toast(!bad ? "歌单已更新" : bad == why ? shown : "没有存储卡");
->>>>>>> 1.9.1
 }
 
 /* addon_poll's, once a pass, every LIB_POLL_MS. A stock dialog it opens (Update Library, a

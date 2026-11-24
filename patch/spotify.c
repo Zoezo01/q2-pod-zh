@@ -438,7 +438,6 @@ static void spot_refresh(void) {
         else if (sp.loading) sub = "正在开始播放";
         else if (sp.old) note = "请更新卡上的 Spotify", sub = "请参照 Q2 Pod 指南";
         else if (sp.auth > 0) note = "暂无播放内容", sub = "请在 Spotify 中选择音乐";
->>>>>>> 1.9.1
         widget_set_text_utf8(ui.note, note);
         widget_set_text_utf8(ui.sub, sub);
         return;
@@ -662,7 +661,6 @@ static int has_track(void) { return sp.track[0] && strcmp(sp.state, "none"); }
 static const char *const MENU[] = { "正在播放", "喜欢的歌曲", "播放列表", "专辑", "表演者",
                                     "搜索", "播放队列", "播放设置", "账号", "已下载歌曲", "下载" };
 static const char *const CATS[] = { "歌曲", "专辑", "表演者", "播放列表" };
->>>>>>> 1.9.1
 
 static void request(const char *op, const char *tail, int act);
 
@@ -793,7 +791,6 @@ static void show(void) {
         fetch(l);
     if (l->state == S_LOAD || l->state == S_WAIT) {
         page_list(br.page, br.page, 0, "加载中…", 0, 48);
->>>>>>> 1.9.1
         return;
     }
     if (l->state == S_ERROR) {
@@ -806,7 +803,6 @@ static void show(void) {
         br.view = page_list(br.page, br.page, 0, "Spotify", n = 2, 64);
         row(0, "正在播放", "");
         row(1, "请更新卡上的 Spotify", "即可在 Q2 上浏览");
->>>>>>> 1.9.1
     } else if (l->kind == L_BASE) {
         br.playing = has_track();
         for (int r = M_PLAYING; r <= M_DOWNLOADS; ++r)
@@ -850,22 +846,18 @@ static void show(void) {
     } else if (l->kind == L_JOB) {
         static const char *const actions[] = { N_("暂停"), N_("继续"), N_("取消下载"),
                                                N_("重试失败项"), N_("更新下载") };
->>>>>>> 1.9.1
->>>>>>> 1.9.1
         br.view = page_list(br.page, br.page, 0, l->title, n = 5, 48);
         for (int i = 0; i < n; ++i) row(i, tr(actions[i]), 0);
     } else if (l->kind == L_CONFIRM) {
         br.view = page_list(br.page, br.page, 0, "退出 Spotify 账号？", n = 2, 48);
         row(0, "取消", 0);
         row(1, "退出账号", 0);
->>>>>>> 1.9.1
     } else {
         int download = (br.can_download && !strcmp(l->op, "playlist")) ||
                        (br.downloads && !strcmp(l->op, "liked"));
         int manage = br.downloads && !strcmp(l->op, "collection");
         if (!(n = l->n + more(l) + download + manage + (l->kind == L_SELECT))) {
             page_list(br.page, br.page, 0, "暂无内容", 0, 48);
->>>>>>> 1.9.1
             return;
         }
         br.view = page_list(br.page, br.page, 0, l->title, n, 64);
@@ -884,7 +876,6 @@ static void show(void) {
         if (download) row(n - 1, !strcmp(l->op, "liked") ? "下载喜欢的歌曲" : "下载歌单", "供离线收听");
         if (manage) into(n - 1, "下载管理", "更新、重试、暂停、继续或取消");
         if (l->kind == L_SELECT) row(n - 1, "移除所选…", "确认受影响的曲目数");
->>>>>>> 1.9.1
     }
     if (n) ringnav_select(br.view, l->sel < n ? l->sel : n - 1, n);
 }
@@ -961,7 +952,6 @@ static void got(void) {
     const char *msg = wk.fail == SPOT_NOSOCK      ? "Spotify 未运行"
                       : n >= 0 && f[2][0] ? f[2]
                                                : "Spotify 未响应";
->>>>>>> 1.9.1
     int ok = !strcmp(status, "ok"), login = !strcmp(status, "login");
     if (login || (ok && act == A_SIGNOUT)) {
         sp.auth = -1;
@@ -1108,7 +1098,6 @@ static int go(const void *unused) {
                 br.view = 0; /* the box alone: the keyboard leaves no room for the rows */
             br.edit = edit_create(br.page, "text", 2, 26);
             t9_box(br.page, br.edit, "搜索 Spotify");
->>>>>>> 1.9.1
             widget_on(br.edit, EVT_VALUE_CHANGED, searched, 0);
             widget_on(br.edit, EVT_IM_ACTION, searched, 0);
             widget_on(br.edit, EVT_BLUR, search_left, 0);
@@ -1129,7 +1118,6 @@ static int go(const void *unused) {
         tk_snprintf(br.remove_kind, sizeof br.remove_kind, "%s", i == 0 ? "collections" : i == 1 ? "tracks" : "all");
         if (i == 2) remove_request(0);
         else push(L_SELECT, i ? "downloaded" : "collections", "", "", i ? "选择歌曲" : "选择歌单");
->>>>>>> 1.9.1
     } else if (l->kind == L_REMOVE) {
         if (i == 2)
             remove_request(1);
@@ -1148,7 +1136,6 @@ static int go(const void *unused) {
         show();
     } else if (!strcmp(l->op, "collection") && i == l->n + more(l)) {
         push(L_JOB, "", l->args, "", "下载管理");
->>>>>>> 1.9.1
     } else if (!strcmp(l->op, "liked") && br.downloads && i == l->n + more(l)) {
         request("downloadliked", "", A_DOWNLOAD);
     } else if (l->kind == L_CONFIRM) {

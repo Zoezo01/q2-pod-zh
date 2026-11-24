@@ -267,7 +267,6 @@ int smart_hold(int (*fn)(void *, event_t *), void *ctx, const char *page) {
     sw.hold_win = win;
     tk_snprintf(sw.hold_name, sizeof sw.hold_name, "%s", name);
     toast("正在连接 Wi-Fi\xe2\x80\xa6");
->>>>>>> 1.9.1
     return 1;
 }
 
@@ -279,7 +278,6 @@ int need_link(int (*fn)(void *, event_t *), void *ctx) {
     if (smart_hold(fn, ctx, 0)) return 0;
     if (get_wifisignal() > 0) return 1;
     toast("请先连接 Wi-Fi");
->>>>>>> 1.9.1
     return 0;
 }
 

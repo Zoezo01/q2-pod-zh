@@ -482,7 +482,6 @@ const char *quick_wheel_toggle(widget_t *top) {
     quick.wheel = 1 + volume;
     write_int_config(volume, "Q2POD", "QSVOLUME");
     return volume ? "滚轮：音量" : "滚轮：亮度";
->>>>>>> 1.9.1
 }
 
 /* Stock's swipe down opens Quick Settings at g_dropdown_menu_state 1 and starts its slide only on

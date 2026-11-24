@@ -91,7 +91,6 @@ _Static_assert(sizeof accents / sizeof *accents == ACCENT_N, "one accent per ACC
 const char *const accent_names[] = { "强调色：石墨",  "强调色：绯红", "强调色：潮汐",
                                      "强调色：香槟", "强调色：钴蓝",  "强调色：橘橙",
                                      "强调色：梅紫",      "强调色：象牙白",   "强调色：青绿" };
->>>>>>> 1.9.1
 _Static_assert(sizeof accent_names / sizeof *accent_names == ACCENT_N, "one name per ACCENTS row");
 _Static_assert(sizeof st.setting_label / sizeof *st.setting_label == SETTING_OWN + THEME_KEYS,
                "one label per Display row");
@@ -333,7 +332,6 @@ const char *ipod_home_shortcut(void) {
                                          "播放列表",
                                          "播客",
                                          "有声读物",
->>>>>>> 1.9.1
                                          [SHORTCUT_GROOVEBOX] = "Groovebox" };
     _Static_assert(sizeof names / sizeof *names == SHORTCUT_NONE, "one per shortcut but None");
     _Static_assert(SHORTCUT_NONE + 1 == SETTING_N_SHORTCUT, "None is the last");
@@ -344,8 +342,6 @@ const char *ipod_home_shortcut(void) {
  * The Library's rows (home.c) show them translated. */
 const char *const MEDIA[] = { "Podcasts", "Audiobooks", "Photos" };
 const char *const MEDIA_LABELS[] = { "播客", "有声读物", "照片" };
->>>>>>> 1.9.1
->>>>>>> 1.9.1
 extern int rockbox_open(void *, event_t *);
 int rated_albums(void *, event_t *);
 int home_shortcut_open(void *ctx, event_t *event) {
@@ -355,7 +351,6 @@ int home_shortcut_open(void *ctx, event_t *event) {
         if (addon_game_open("groovebox") < 0) /* no card game has the id: the folder, or a slot */
             toast(groovebox_available() ? "Groovebox 无法从存储卡启动"
                                         : "存储卡上没有 Groovebox");
->>>>>>> 1.9.1
         return 0;
     }
     if (s == 4) return rated_albums(ctx, event);

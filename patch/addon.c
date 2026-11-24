@@ -197,7 +197,6 @@ static void slots_read(void) {
         if (!a->name[0]) tk_snprintf(a->name, sizeof a->name, "%s", a->id);
         field(raw, "search", a->tips, sizeof a->tips);
         if (!a->tips[0]) tk_snprintf(a->tips, sizeof a->tips, "搜索");
->>>>>>> 1.9.1
         a->qr = number(raw, "qr") == 1;
         a->game = number(raw, "game") == 1;
         unsigned long long sound = number(raw, "audio"); /* 2: the game's or the music's */
@@ -1045,7 +1044,6 @@ static void game_end(void) {
 const char *addon_where(const char *id) {
     static const char *const where[] = { "流媒体", "游戏", "资料库的应用",
                                          "网络设置" };
->>>>>>> 1.9.1
     slots_read();
     for (int i = 0; i < ap.n; ++i)
         if (ap.a[i].present && !strcmp(ap.a[i].id, id)) return tr(where[ap.a[i].row]);
@@ -1191,7 +1189,6 @@ static int game_start(app_t *a, const char *uri, const char *ctx) {
     const char *busy = shelf_busy();
     if (busy && !strcmp(busy + 1, a->id)) return toast("请等应用商店完成"), 0;
     if (access(a->bin, 0)) return toast("卡上没有它"), 0;
->>>>>>> 1.9.1
     char vol[5], pop[POPUP_ENV];
     const char *dev = 0;
     popup_env(pop, sizeof pop); /* the theme's pop-up, for its own menus */
@@ -1226,7 +1223,6 @@ static int game_start(app_t *a, const char *uri, const char *ctx) {
         child_exit(127);
     }
     if (pid < 0) return toast("无法启动"), 0;
->>>>>>> 1.9.1
     gm.pid = pid;
     gm.audio = a->audio == 1;
     gm.swap = a->audio == 2;
@@ -1382,7 +1378,6 @@ static void game_poll(void) {
         widget_invalidate_force(window_manager(), 0);
         if (gm.screen) screen_back(gm.screen - 1);
         if (status == 127 << 8) toast("无法启动"); /* the child's execl failed */
->>>>>>> 1.9.1
         return;
     }
     unsigned now = (unsigned)time_now_ms();
@@ -1767,8 +1762,6 @@ static int stoppable(void) {
 static void stop_row(int i) {
     char t[48];
     tk_snprintf(t, sizeof t, "停止 %s", app()->name);
->>>>>>> 1.9.1
->>>>>>> 1.9.1
     page_row_detail(pg.view, i, t, 0, clicked);
 }
 
@@ -1906,7 +1899,6 @@ static void row(lv_t *l, int i) {
             art_row(i, pg.paging ? "加载中…" : "更多…", "", 0, 0);
         else
             page_row_detail(pg.view, i, pg.paging ? "加载中…" : "更多…", "", clicked);
->>>>>>> 1.9.1
         return;
     }
     widget_t *item;
@@ -2109,7 +2101,6 @@ static void busy_row(int on) {
     widget_t *item = widget_get_child(pg.view, (unsigned)i);
     retext(item, widget_get_child(item, (unsigned)k - 2), (unsigned)k,
            on ? "处理中…" : cell(i, k));
->>>>>>> 1.9.1
     pg.busy = on;
 }
 
@@ -2131,8 +2122,6 @@ static void show(void) {
         l->slow = (int)(time_now_ms() - l->since) >= SLOW_MS && stoppable(); /* since: now + 1 */
         widget_t *v =
             page_list(pg.page, pg.page, 0, l->state == K_WAIT ? t : "加载中…", n = l->slow, 48);
->>>>>>> 1.9.1
->>>>>>> 1.9.1
         if (n) pg.view = v, stop_row(0);
     } else if (l->state == K_ERROR) {
         n = 1 + (app()->nostop || stoppable());
@@ -2141,7 +2130,6 @@ static void show(void) {
                         0, clicked);
         if (app()->nostop)
             page_row_detail(pg.view, 1, "取消", 0, clicked);
->>>>>>> 1.9.1
         else if (n > 1)
             stop_row(1);
         page_push(pg.view, pg.moved), pg.moved = 0;
@@ -2341,8 +2329,6 @@ static void got(void) {
     unsigned now = time_now_ms();
     char why[48];
     tk_snprintf(why, sizeof why, req.fail == SPOT_NOSOCK ? "%s 未运行" : "%s 未响应",
->>>>>>> 1.9.1
->>>>>>> 1.9.1
                 app()->name);
     if (act) busy_row(0); /* before the toast, whose loop can pop the level */
     pg.act = 0;
@@ -2460,9 +2446,6 @@ static int searched(void *ctx, event_t *event) {
         memset(t, 0, sizeof t);
         if (!pg.go) /* its loop would run the go the first call armed, under this handler */
             toast(tr("搜索词太长"));
->>>>>>> 1.9.1
->>>>>>> 1.9.1
->>>>>>> 1.9.1
     }
     tk_snprintf(pg.term, sizeof pg.term, "%s", t);
     memset(t, 0, sizeof t);
@@ -2607,8 +2590,6 @@ static int go(const void *unused) {
     } else if (l->state == K_ERROR ? i == 1 : l->state != K_READY && l->slow) { /* Stop <name> */
         char t[48];
         tk_snprintf(t, sizeof t, "%s 已停止", app()->name);
->>>>>>> 1.9.1
->>>>>>> 1.9.1
         app_stop(app(), 0);
         app()->wifi_off = app()->wifi;
         toast(t);
@@ -2741,7 +2722,6 @@ static int page_at(int k, const char *op, const char *args, const char *title, i
     if (missing) {
         l->state = K_ERROR;
         tk_snprintf(l->note, sizeof l->note, "存储卡上没有 %s", a->name);
->>>>>>> 1.9.1
     }
     pg.timer = timer_add(tick, 0, 250);
     show();
@@ -2796,7 +2776,6 @@ static int apps_closed(void *ctx, event_t *event) {
 static void apps_rows(int n) {
     if (n == la.n) return;
     widget_t *view = page_list_or(la.page, la.page, "应用", "暂无应用", la.n = n, 48);
->>>>>>> 1.9.1
     for (int k = 0; k < n; ++k) page_row_into(view, k, addon_lib_name(k), addon_lib_open);
 }
 int addon_apps(void *ctx, event_t *event) {
@@ -3020,7 +2999,6 @@ static void qr_refresh(void) {
     if (!code) {
         set(qp.say, !n ? "未运行" : addr[0] ? "暂无二维码" : "请将 Q2 连接到 Wi-Fi");
         set(qp.sub, !n ? "请重新打开" : addr[0] ? "请稍候" : "然后返回此页面");
->>>>>>> 1.9.1
         return;
     }
     if (strlen(pin) == 6) /* 548 001 */
@@ -3124,10 +3102,6 @@ static void qr_open(const char *state, const char *title) {
     qp.pinl =
         qr_label(qp.col, x, r[4][0], short_w, r[4][1], "s_scrlabel_white20l", r[4][2], SPOT_GREY);
     widget_set_text_utf8(qp.pinl, "配对码");
->>>>>>> 1.9.1
->>>>>>> 1.9.1
->>>>>>> 1.9.1
->>>>>>> 1.9.1
     qp.pin =
         qr_label(qp.col, x, r[5][0], short_w, r[5][1], "s_scrlabel_white20l", r[5][2], 0xffffffffu);
     qp.note = qr_label(qp.col, cl ? 24 : 0, r[6][0], cl ? 330 : w, r[6][1], "s_scrlabel_white20l",

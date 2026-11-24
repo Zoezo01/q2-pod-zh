@@ -427,7 +427,6 @@ enum {
     /* 中文分支自有的行一律排在 upstream 成员之后：上游的 POD_* 索引、它的 _Static_assert 和
      * netupdate.c 里 pod_rows 的硬编码就不用每次合并都跟着挪。pod_keys 按名字读写，顺序无关。 */
     POD_LIBRARY_FILL, /* 补全封面与歌词, an action: onlinematch.c's library_fill_* over the card */
->>>>>>> 1.9.1
     POD_COUNT
 };
 int pod_value(int i);

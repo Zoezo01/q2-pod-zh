@@ -304,7 +304,6 @@ void durations_poll(void) {
         if (duration_run() && fresh && usable() && !g_poweroff_state && !st.toasts &&
             !pointer_down())
             toast("正在测量歌曲时长\xe2\x80\xa6");
->>>>>>> 1.9.1
         return;
     }
     if (!__atomic_load_n(&ds.due, __ATOMIC_ACQUIRE) || library_scanning()) return;

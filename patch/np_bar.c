@@ -145,7 +145,6 @@ static widget_t *page_of(widget_t *top) {
 void bar_title(widget_t *bar, widget_t *top) {
     static const unsigned
         cover_flow[] = { 'C', 'o', 'v', 'e', 'r', ' ', 'F', 'l', 'o', 'w', 0 }, none = 0;
->>>>>>> 1.9.1
     widget_t *page = page_of(top);
     static int bare; /* a page with no clock in front (above); the last one's with none found */
     if (page) {
@@ -211,7 +210,6 @@ void bar_title(widget_t *bar, widget_t *top) {
         st.bar_titled = 1; /* the clock makes way, as under a title */
         st.clock_key = 0;
         widget_set_text(clock, &none);
->>>>>>> 1.9.1
         return;
     }
     void *nav = widget_lookup(top, "view_navbar", 0), *t = (void *)0;

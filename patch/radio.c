@@ -475,7 +475,6 @@ static const char *fav_toggle(const list_t *l, int i) {
     return !ok         ? "无法保存收藏"
            : found < 0 ? "已加入收藏"
                        : "已取消收藏";
->>>>>>> 1.9.1
 }
 
 /* The Now Playing page from rd: the station, the StreamTitle as artist - title, the stream, and the
@@ -507,7 +506,6 @@ static void np_refresh(void) {
                     rd.error);
     else if (!rd.since)
         tk_snprintf(t, sizeof t, "连接中…");
->>>>>>> 1.9.1
     else
         tk_snprintf(t, sizeof t, rd.bitrate[0] ? "%s  %s kbps" : "%s", rd.codec, rd.bitrate);
     set(np.info, t);
@@ -556,7 +554,6 @@ static void np_open(void) {
     widget_t *page = np.page;
     widget_t *name = label(page, 16, 12, 200, 16, "s_scrlabel_white20l", 16, SPOT_GREY);
     widget_set_text_utf8(name, "网络电台");
->>>>>>> 1.9.1
     widget_t *art = image_create(page, SPOT_ART_X, SPOT_ART_Y, SPOT_ART_PX, SPOT_ART_PX);
     image_set_draw_type(art, IMAGE_DRAW_SCALE_DOWN);
     image_base_set_image(art, "stream_radio");
@@ -599,7 +596,6 @@ static int searched(void *ctx, event_t *event) {
     if (widget_get_text_utf8(ui.edit, q, sizeof q) || !q[0]) {
         const unsigned *text = widget_get_text(ui.edit);
         if (text && text[0]) toast("搜索内容过长");
->>>>>>> 1.9.1
         return later(A_SHOW, 0), 0;
     }
     snprintf(ui.caption, sizeof ui.caption, "%s", q);
@@ -624,7 +620,6 @@ void radio_search(void) {
         ui.view = 0; /* the box alone: the keyboard leaves no room for the rows */
     ui.edit = edit_create(ui.page, "text", 2, 26);
     t9_box(ui.page, ui.edit, "搜索电台");
->>>>>>> 1.9.1
     widget_on(ui.edit, EVT_VALUE_CHANGED, searched, 0);
     widget_on(ui.edit, EVT_IM_ACTION, searched, 0);
     widget_on(ui.edit, EVT_BLUR, search_left, 0);
@@ -635,7 +630,6 @@ void radio_search(void) {
 static void show(int level) {
     static const char *const menu[] = { "正在播放", "收藏", "精选",
                                         "热门电台", "按国家", "按流派" };
->>>>>>> 1.9.1
     if (ui.view && !ui.note) ui.sel[ui.level] = widget_get_prop_int(ui.view, "_ringnav_index", 0);
     ui.level = level;
     ui.note = 0;
@@ -645,7 +639,6 @@ static void show(int level) {
         for (int r = rd.list.n || !access(RADIO_LAST, 0) ? R_PLAYING : R_FAVS; r <= R_GENRE; ++r)
             ui.rows[n++] = r;
         ui.view = page_list(ui.page, ui.page, 0, "网络电台", n, 48);
->>>>>>> 1.9.1
         for (int i = 0; i < n; ++i) /* Now Playing plays; the rest open lists */
             if (ui.rows[i] == R_PLAYING)
                 page_row_detail(ui.view, i, tr(menu[ui.rows[i]]), 0, menu_click);
@@ -657,7 +650,6 @@ static void show(int level) {
         const char *caption = level == PICK ? ui.genre ? "流派" : "国家" : ui.caption;
         ui.view = page_list(ui.page, ui.page, 0, caption, n, 48);
         if (!n && level == STATIONS) page_empty(ui.page, ui.favs ? "收藏" : "网络电台");
->>>>>>> 1.9.1
         for (int i = 0; i < n; ++i)
             if (level == PICK)
                 page_row_into(ui.view, i, name_of(l, i), pick_click);
@@ -673,7 +665,6 @@ static void note(const char *caption) {
     ui.note = 1;
     ui.view = ui.edit = 0;
     page_list_or(ui.page, ui.page, "网络电台", caption, 0, 48);
->>>>>>> 1.9.1
 }
 
 static void fetch_cancel(void) {
@@ -695,7 +686,6 @@ static void fetch(const char *path, int want, int az) {
     tk_snprintf(fx.url, sizeof fx.url, RADIO_API "%s", path);
     if ((ui.wifi = smart_wifi_wait()))
         note("正在连接 Wi-Fi…");
->>>>>>> 1.9.1
     else
         fetch_run();
 }
@@ -708,7 +698,6 @@ static void fetch_run(void) {
     fx.running = get_wifisignal() > 0 && (fx.body = calloc(FETCH_MAX, 1)) &&
                  !pthread_create(&fx.thread, 0, fetch_worker, 0);
     note(fx.running ? "加载中…" : get_wifisignal() > 0 ? "电台目录不可用" : "未连接 Wi-Fi");
->>>>>>> 1.9.1
 }
 
 static unsigned fetch_got(const char *data, unsigned size, unsigned n, void *unused) {
@@ -754,7 +743,6 @@ static int tick(const void *unused) {
             note("暂无电台");
     } else
         note(get_wifisignal() > 0 ? "电台目录不可用" : "未连接 Wi-Fi");
->>>>>>> 1.9.1
     free(fx.body);
     fx.body = 0;
     return 8;
@@ -773,8 +761,6 @@ static int go(const void *unused) {
     } else if (ui.next == R_FEATURED) {
         list_set(&ui.list, STARTERS, sizeof STARTERS - 1, 0, 0);
         tk_snprintf(ui.caption, sizeof ui.caption, "精选");
->>>>>>> 1.9.1
->>>>>>> 1.9.1
         show(STATIONS);
     } else if (ui.next == A_SHOW) {
         show(ui.level);
@@ -784,7 +770,6 @@ static int go(const void *unused) {
         fetch(path, STATIONS, 0); /* Search and Top Stations stay by votes */
     } else if (ui.next == R_TOP) {
         tk_snprintf(ui.caption, sizeof ui.caption, "热门电台");
->>>>>>> 1.9.1
         fetch("/m3u/stations/topvote/100?hidebroken=true", STATIONS, 0);
     } else if (ui.next != A_PICK) {
         ui.genre = ui.next == R_GENRE;

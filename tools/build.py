@@ -73,7 +73,6 @@ def dev_tag(number):
 BASE = 0xb00000
 SCRATCH = 0xbf0000  # 960 KB of payload text below it
 SCRATCH_MAX = 0x40000  # the most its state may fill, 256 KB: the segment is demo's last, the heap after it
->>>>>>> 1.9.1
 ROOTFS_FREE_MIN = 1 << 19  # bytes of stock's rootfs size a build must leave unused, 512 KiB (docs/building.md, Free space)
 RING_STEP = 48
 HOOKS = {

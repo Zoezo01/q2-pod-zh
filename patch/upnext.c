@@ -43,7 +43,6 @@ static void un_fill(int sel) {
     un.hash = q ? queue_hash(q) : 0;
     widget_t *view = un.view =
         page_list_or(un.page, un.page, "查看队列", "暂无待播歌曲", n, 64);
->>>>>>> 1.9.1
     char name[512];
     for (unsigned i = 0; i < n; i++) { /* the title over the artist, if tagged */
         void *t = deque_at(q, idx[i]);
@@ -74,7 +73,6 @@ static int un_move(const void *unused) {
     int stale = queue_hash(q) != un.hash || i == n || (i && playback_move(at) < 0);
     un_fill(0);
     if (stale) toast("队列已更改");
->>>>>>> 1.9.1
     return 0;
 }
 int un_hold(widget_t *top) {

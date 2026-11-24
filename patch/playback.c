@@ -477,7 +477,6 @@ int ringnav_speed(int mode) {
         unlink(tmp);
         playback_speed_start();
         toast("无法保存文件夹播放速度");
->>>>>>> 1.9.1
         return stock_speed_trampoline(g_playspeed_mode);
     }
     g_playspeed_mode = (unsigned char)mode;
@@ -1811,7 +1810,6 @@ void playback_poll(void) {
     if (restart_ask) {
         restart_ask = 0;
         toast("再按一次从头播放");
->>>>>>> 1.9.1
     }
     follow_queue(); /* before Crossfade reads the next track */
     xfade_poll(playback_next(), !s.active && M(MCL_MODE) == 2);

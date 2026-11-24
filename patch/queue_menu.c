@@ -278,7 +278,6 @@ static int qm_run(const void *unused) {
     unsigned aid = r ? qm_album_id(r) : 0; /* an album's own Favourites and Rate */
     if (r && a >= 100) {
         if (!playback_set(qm.qm_choice - 1, a - 100)) toast("队列未更改");
->>>>>>> 1.9.1
         qm.qm_choice = 0;
     } else if (r && a == QA_CHAPTERS) {
         chapters_open(r);
@@ -306,7 +305,6 @@ static int qm_run(const void *unused) {
             stock_dispatch_trampoline(more, pointer_event_init(click, EVT_CLICK, more, 0, 0));
     } else if (r && (a == QA_NEXT_GROUP || a == QA_PREV_GROUP)) {
         if (!playback_group_skip(a == QA_NEXT_GROUP)) toast("没有其他分组");
->>>>>>> 1.9.1
     } else if (aid && a == QA_RATE) {
         rate_show(window_manager_get_top_window(window_manager()), rate_kept(1, aid), aid);
     } else if (aid && (a == QA_FAV || a == QA_UNFAV)) {
@@ -354,14 +352,12 @@ static int qm_run(const void *unused) {
             deque_destroy(songs);
         } else
             toast("队列未更改");
->>>>>>> 1.9.1
     } else if (r && a == QA_FOLDER) {
         st.go_layer = song_folder(r, st.go_folder);
         if (st.go_layer)
             navigator_to("folder_page"); /* its init, ringnav_folder, opens there */
         else
             toast("找不到文件夹");
->>>>>>> 1.9.1
         st.go_layer = 0; /* never left for a later Folder visit */
     } else if (r && a >= QA_ALBUM)
         qm_goto(r, a == QA_ALBUM);
@@ -369,7 +365,6 @@ static int qm_run(const void *unused) {
         void *add = r ? qm_collect(r) : (void *)0;
         if (!add || !(a == QA_SHUFFLE ? shuffle_play(add) : qm_apply(add, a == QA_NEXT)))
             toast("队列未更改");
->>>>>>> 1.9.1
         if (add) deque_destroy(add);
     }
     return 0;
@@ -472,7 +467,6 @@ static int qm_open(const void *unused) {
                                                     "单曲循环", "文件夹循环",
                                                     "全部循环" } };
         static const char *const groups[] = { "专辑", "文件夹" };
->>>>>>> 1.9.1
         int kind = qm.qm_choice - 1,
             count = kind == 0   ? 5
                     : kind == 1 ? 6
@@ -482,7 +476,6 @@ static int qm_open(const void *unused) {
                                    : kind == 1 ? repeat[folder]
                                                : groups;
         qm_title(dialog, kind == 0 ? "随机播放" : kind == 1 ? "重复播放" : "分组方式");
->>>>>>> 1.9.1
         widget_destroy_children(view);
         int painted = own_hold(), row = painted ? theme()->page_row : QM_ROW,
             w = painted ? BACK_W : 375;
@@ -590,8 +583,6 @@ static int qm_open(const void *unused) {
                                         "新建播放列表",
                                         "选择播放列表…" };
     char rated[32];
->>>>>>> 1.9.1
->>>>>>> 1.9.1
     /* stock sortselect row styles */
     int painted = own_hold(), pitch = painted ? theme()->page_row : QM_ROW;
     for (int i = 0; i < n; ++i) {
@@ -612,9 +603,6 @@ static int qm_open(const void *unused) {
                    : acts[i] == QA_NEXT_GROUP && playback_option(2) ? tr("下一个文件夹")
                    : acts[i] == QA_PREV_GROUP && playback_option(2) ? tr("上一个文件夹")
                                                                     : tr(rows[acts[i] - 1]));
->>>>>>> 1.9.1
->>>>>>> 1.9.1
->>>>>>> 1.9.1
         if (painted) hold_label(item, label);
         widget_on(item, EVT_CLICK, qm_pick, (void *)(long)acts[i]);
     }

@@ -128,8 +128,6 @@ void clock_show(void) {
     else if (ok)
         tk_snprintf(s, sizeof s, tm[2] < 12 ? "%d:%02d 上午" : "%d:%02d 下午",
                     (tm[2] + 11) % 12 + 1, tm[1]);
->>>>>>> 1.9.1
->>>>>>> 1.9.1
     widget_set_text_utf8(label, s);
     /* The clock's own 16 px, in every state the bar's children read (disable's style says 20),
      * and against stock V1.36's 21 px page-title writes: the time reads like the word beside it. */
@@ -322,7 +320,6 @@ void time_open(widget_t *win) {
         else
             widget_move_resize(ok, 0, 244, 375, 26);
         widget_set_text_utf8(ok, "保存");
->>>>>>> 1.9.1
         widget_set_opacity(ok, 0);
     }
     st.slider_win = win;
@@ -449,8 +446,6 @@ static void time_text(canvas_t *canvas, const char *s, const rect_t *r, unsigned
                       unsigned alpha) {
     caption(canvas, s, r->x, r->y, r->w, r->h, px,
             alpha << 24 | (RGBA(flip_if(ipod_light(), rgb)) & 0xffffff));
->>>>>>> 1.9.1
->>>>>>> 1.9.1
 }
 /* The flat look's Set Time hands in the half's ink, [0] dark and [1] light (flat_ink), and the
  * pivot's dot in its face's grey (flat_rest). */
@@ -475,8 +470,6 @@ static const char *cell_text(char *b, unsigned cap, const time_row_t *row, int f
 /* time_paint's, flat: grey boxes at rest, the cell that holds in what is on, the clock's flat face
  * or the date's tile with its month in what is on, and Save's pill. */
 static void time_paint_flat(widget_t *w, canvas_t *canvas) {
->>>>>>> 1.9.1
->>>>>>> 1.9.1
     rect_t tile = { TIME_TILE_X, TIME_TILE_Y, TIME_TILE_W, TIME_TILE_H },
            pill = { TIME_SAVE_X, TIME_SAVE_Y, TIME_SAVE_W, TIME_SAVE_H };
     void *lcd = P(canvas, CANVAS_LCD);
@@ -508,8 +501,6 @@ static void time_paint_flat(widget_t *w, canvas_t *canvas) {
         flat_box(canvas, &r, RGBA(f == at ? on : rest), 10);
         const char *t = cell_text(b, sizeof b, row, f, hour);
         time_text(canvas, t, &r, f == TIME_AMPM ? 23 : 27, f == at ? over : ink, 255);
->>>>>>> 1.9.1
->>>>>>> 1.9.1
     }
     if (row->sep_x) {
         rect_t r = { row->sep_x, TIME_CELL_Y, 12, TIME_CELL_H };
@@ -517,14 +508,10 @@ static void time_paint_flat(widget_t *w, canvas_t *canvas) {
     }
     flat_box(canvas, &pill, RGBA(rest), 18);
     time_text(canvas, "保存", &pill, CONFIRM_FLAT_PX, ink, 255);
->>>>>>> 1.9.1
->>>>>>> 1.9.1
     stock_canvas_set_fill_color(canvas, fill);
 }
 /* The page, in the window's coordinates, under its children. */
 void time_paint(widget_t *w, canvas_t *canvas) {
->>>>>>> 1.9.1
->>>>>>> 1.9.1
     if (flat_pages()) {
         time_paint_flat(w, canvas);
         return;
@@ -563,8 +550,6 @@ void time_paint(widget_t *w, canvas_t *canvas) {
         paint_art(w, canvas, cells[!f][f == at], r.x - TIME_CELL_PAD, r.y - TIME_CELL_PAD);
         const char *t = cell_text(b, sizeof b, row, f, hour);
         time_text(canvas, t, &r, f == TIME_AMPM ? 30 : 35, 0xffffff, 255);
->>>>>>> 1.9.1
->>>>>>> 1.9.1
     }
     if (row->sep_x) {
         rect_t r = { row->sep_x, TIME_CELL_Y, 12, TIME_CELL_H };
@@ -573,7 +558,5 @@ void time_paint(widget_t *w, canvas_t *canvas) {
     rect_t label = { 0, 244, 375, 26 }, under = { 0, 245, 375, 26 };
     time_text(canvas, "保存", &under, 24, 0, 0x59);
     time_text(canvas, "保存", &label, 24, 0xffffff, 0xb8);
->>>>>>> 1.9.1
->>>>>>> 1.9.1
     stock_canvas_set_fill_color(canvas, fill);
 }

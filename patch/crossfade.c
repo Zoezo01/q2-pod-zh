@@ -54,9 +54,6 @@ static void row_text(widget_t *label) {
     char t[96];
     tk_snprintf(t, sizeof t, tr("交叉淡化：关闭"), xf.seconds);
     widget_set_text_utf8(label, xf.on ? t : tr("交叉淡化：%d 秒"));
->>>>>>> 1.9.1
->>>>>>> 1.9.1
->>>>>>> 1.9.1
 }
 
 /* Playback's row (navigation.c ringnav_audioset makes it): the label, named for refresh(). */
@@ -69,8 +66,6 @@ void xfade_row(widget_t *label) {
 static void wheel_text(widget_t *label) {
     char t[32];
     tk_snprintf(t, sizeof t, "滚轮灵敏度：%d%%", wheel_pct());
->>>>>>> 1.9.1
->>>>>>> 1.9.1
     widget_set_text_utf8(label, t);
 }
 
@@ -98,9 +93,6 @@ static void rs_text(widget_t *label) {
     char t[96];
     tk_snprintf(t, sizeof t, tr("断点续播：关闭"), resume_min());
     widget_set_text_utf8(label, resume_min() ? t : tr("断点续播：%d 分钟"));
->>>>>>> 1.9.1
->>>>>>> 1.9.1
->>>>>>> 1.9.1
 }
 
 /* Playback's row (navigation.c ringnav_audioset makes it): the label, named for refresh(). */
@@ -115,9 +107,6 @@ static void night_text(widget_t *label) {
     widget_set_text_utf8(label, night_on() == 2 ? tr("夜览：自动")
                                 : night_on()    ? t
                                                 : tr("夜览：%dK"));
->>>>>>> 1.9.1
->>>>>>> 1.9.1
->>>>>>> 1.9.1
 }
 
 /* Display's row (navigation.c ringnav_display makes it): the label, named for refresh(). */
@@ -217,10 +206,6 @@ void mono_sync(void) {
 
 static void opt_text(int k) {
     list_toggle(xf.opt_label[k], k ? "左右声道互换" : "单声道音频", opt_on(k));
->>>>>>> 1.9.1
->>>>>>> 1.9.1
->>>>>>> 1.9.1
->>>>>>> 1.9.1
 }
 
 /* Playback's rows (navigation.c ringnav_audioset makes them): the label, kept for opt_click. */
@@ -233,10 +218,6 @@ static int opt_click(int k) {
     write_int_config(xf.opt[k], "Q2POD", opt_key[k]);
     mono_sync();
     opt_text(k);
->>>>>>> 1.9.1
->>>>>>> 1.9.1
->>>>>>> 1.9.1
->>>>>>> 1.9.1
     return 0;
 }
 void mono_row(widget_t *label) { opt_row(label, 0); }
@@ -259,7 +240,6 @@ static int gapless_click(void *ctx, event_t *event) {
     settings();
     if (!xf.on || !*(volatile unsigned char *)MCL_GAPLESS) return 0;
     toast("交叉淡化需要无缝播放");
->>>>>>> 1.9.1
     return 11; /* RET_STOP */
 }
 /* Playback's view (navigation.c ringnav_audioset): stock's Gapless row's button, the switch's. */
@@ -319,10 +299,6 @@ static void refresh(int save) {
     } else {
         tk_snprintf(t, sizeof t, "%d 秒", xf.seconds);
         if (!xf.on) shown = "关闭";
->>>>>>> 1.9.1
->>>>>>> 1.9.1
->>>>>>> 1.9.1
->>>>>>> 1.9.1
         image_base_set_image(xf.sw, xf.on ? "switch_on" : "switch_off");
     }
     widget_set_text_utf8(xf.label, shown);
@@ -443,7 +419,6 @@ int xfade_open(void *ctx, event_t *event) {
                                 : mode == 2 ? "断点续播"
                                 : wheel     ? "滚轮灵敏度"
                                             : "交叉淡化");
->>>>>>> 1.9.1
     /* Stock shows and enables it only while Boot volume's switch is on: disabled, touch misses the
      * slider and +/- (#140). */
     widget_set_visible(xf.view, 1, 0);

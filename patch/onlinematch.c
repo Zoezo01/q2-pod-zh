@@ -267,8 +267,6 @@ void album_note(char *out, unsigned n, const lyr_job *job) {
             snprintf(item, sizeof item, tr(what[i]), count[i]),
                 at += (unsigned)snprintf(out + at, n - at, "%s%s", first ? "，" : "：卡上没有歌曲", item),
                 first = 0;
->>>>>>> 1.9.1
->>>>>>> 1.9.1
 }
 
 #ifndef PEQ_HOST
@@ -541,7 +539,6 @@ static void al_show(void) {
         snprintf(s, sizeof s, "正在取消…");
     else
         snprintf(s, sizeof s, "正在下载 %d / %d", al.job.done + (al.job.done < al.job.total), al.job.total);
->>>>>>> 1.9.1
     widget_set_text_utf8(al.label, s);
 }
 
@@ -609,7 +606,6 @@ static int al_click(void *ctx, event_t *event) {
     if (!k) {
         free(t);
         toast("卡上没有该专辑的歌曲");
->>>>>>> 1.9.1
         return 0;
     }
     memset(&al.job, 0, sizeof al.job);
@@ -618,7 +614,6 @@ static int al_click(void *ctx, event_t *event) {
         al.thread = 0, al.running = 0;
         free(t), al.tracks = 0;
         toast("无法开始下载");
->>>>>>> 1.9.1
         return 0;
     }
     timer_add(al_wait, (void *)0, 500);

@@ -193,7 +193,6 @@ void t9_box(widget_t *page, widget_t *edit, const char *tips) {
     if (!classic_pages()) return;
     widget_t *title = text(page, 0, 0, 375, 28);
     widget_set_text_utf8(title, "搜索");
->>>>>>> 1.9.1
     widget_set_name(title, PAGE_TITLE);
     widget_set_visible(title, 0, 0);
     st.t9_back = image_create(page, 30, 0, 40, 30); /* ringnav_touch takes its press */
@@ -224,7 +223,6 @@ static int pl_box_due(const void *info) {
     if (!edit) {
         edit = widget_lookup(win, "edit", 1);
         title = "重命名";
->>>>>>> 1.9.1
         if (lists && (unsigned)I(PL_RENAME_ROW, 0) < deque_size(lists))
             r = deque_at(lists, (unsigned)I(PL_RENAME_ROW, 0));
         tips = r ? P(r, REC_TITLE) ?: title : title;
@@ -377,8 +375,6 @@ void search_paint(widget_t *w, canvas_t *canvas) {
 extern int stock_search_init_trampoline(widget_t *win, void *ctx);
 int ringnav_search_init(widget_t *win, void *ctx) {
     static const char *const names[] = { N_("Songs"), N_("表演者"), N_("专辑"), N_("流派") };
->>>>>>> 1.9.1
->>>>>>> 1.9.1
     int result = stock_search_init_trampoline(win, ctx);
     unsigned name[32];
     if (win == st.search_win)
@@ -601,9 +597,6 @@ static int msg_sync(void) {
         widget_get_text_utf8(cp.msg_btn, now, sizeof now);
         const char *cancel = "取消";
         if (tk_strcmp(now, cancel)) widget_set_text_utf8(cp.msg_btn, cancel);
->>>>>>> 1.9.1
->>>>>>> 1.9.1
->>>>>>> 1.9.1
         *now = 0;
     }
     widget_get_text_utf8(cp.msg_src, now, sizeof now);
@@ -617,7 +610,6 @@ static int msg_sync(void) {
         cp.msg_part = (short)(bar * count / total);
         if (cp.msg_part > bar * 99 / 100) cp.msg_part = (short)(bar * 99 / 100);
         tk_snprintf(line, sizeof line, "%d / %d 首", count, total);
->>>>>>> 1.9.1
         widget_set_text_utf8(cp.msg_line, line);
     } else
         widget_set_text_utf8(cp.msg_line, now);
@@ -666,7 +658,6 @@ void msg_open(widget_t *win) {
     c = text(win, 16, 0, 343, 24);
     widget_set_name(c, "msg_heading");
     widget_set_text_utf8(c, scan ? "正在更新本地音乐" : "已连接");
->>>>>>> 1.9.1
     slider_label(c, 16, 0, 343, MSG_HEAD_H, flat ? MSG_FLAT_HEAD_PX : MSG_HEAD_PX,
                  flat ? flat_face() : "classic-light");
     c = text(win, 16, 0, 343, line_h);
@@ -675,7 +666,6 @@ void msg_open(widget_t *win) {
     if (!scan) {
         st.usb_win = win;
         if (g_usbmode != 1) widget_set_text_utf8(c, "断开前请先弹出");
->>>>>>> 1.9.1
         return;
     }
     st.msg_win = win, cp.msg_src = src, cp.msg_btn = btn, cp.msg_line = c;

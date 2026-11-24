@@ -524,7 +524,6 @@ static void *logo_sync(void *unused) {
             err = 0; /* the same bytes are not written again each boot */
         else
             unlink(LOGO_DST ".tmp"), err = "无法保存开机图";
->>>>>>> 1.9.1
     }
     free(b);
     if (err == logo_refused && told_once(LOGO_SRC, LOGO_SEEN, LOGO_SEEN ".tmp"))

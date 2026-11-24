@@ -555,7 +555,6 @@ static void flush(int loud) {
         games_seal(&g->sol, sizeof g->sol, SOL_MAGIC), ok &= BLOB_IO(GAMES_SOLITAIRE, g->sol, 1);
     g->dirty = 0;
     if (!ok && loud) toast("无法保存");
->>>>>>> 1.9.1
 }
 
 static int save_due(const void *unused) {
@@ -586,7 +585,6 @@ static void game_over(void) {
     games_seal(b, sizeof *b, snake ? SNAKE_MAGIC : BEST_MAGIC);
     if (!(snake ? BLOB_IO(GAMES_SNAKE, g->sn_best, 1) : BLOB_IO(GAMES_VORTEX, g->best, 1)))
         toast("无法保存");
->>>>>>> 1.9.1
 }
 
 /* Snake's steps, each its period of the time passed (2 a frame at most); 1 when it ended. */
@@ -661,8 +659,6 @@ static void run(void) {
 
 static const char *const game_names[] = { N_("游戏"), N_("数独"), "旋涡", N_("纸牌"),
                                           N_("贪吃蛇") };
->>>>>>> 1.9.1
->>>>>>> 1.9.1
 /* The chooser or the game target, from the next loop pass. */
 static int show(const void *unused) {
     g->timer = 0;
@@ -880,9 +876,6 @@ static unsigned unflipped(unsigned v) { return unflip(v) * 0x010101u; }
  * decoded to code points: App Store's Chinese state words and tabs would paint as their bytes
  * otherwise. A theme with capitals on Home (Minimal) takes ASCII's here too, SUDO_TRACK apart.
  * Returns its width. Shared with app_store.c.
->>>>>>> 1.9.1
->>>>>>> 1.9.1
->>>>>>> 1.9.1
  */
 int text_at(canvas_t *canvas, const char *s, int x, int y, int h, unsigned px, unsigned color,
             int align) {
@@ -890,9 +883,6 @@ int text_at(canvas_t *canvas, const char *s, int x, int y, int h, unsigned px, u
     int cw[40], w = 0, caps = theme()->caps_home, fpx = (int)px;
     for (unsigned k = 0; caps && k < n; ++k)
         if (wide[k] >= 'a' && wide[k] <= 'z') wide[k] -= 32;
->>>>>>> 1.9.1
->>>>>>> 1.9.1
->>>>>>> 1.9.1
     if (!n) return 0;
     unsigned step = caps ? 1 : n; /* capitals a letter at a time, to space them */
     int track = caps ? SUDO_TRACK : 0;
@@ -1046,7 +1036,6 @@ static void paused_popup(canvas_t *canvas, int over) {
         popup(canvas, g->record ? "新纪录！" : "游戏结束", "中心键：再玩一次", 0, 0);
     else if (g->paused)
         popup(canvas, "已暂停", "播放/暂停键：继续", 0, 0);
->>>>>>> 1.9.1
 }
 
 /* Clues on grey, entries plain in the tone, a conflict red and underlined, the cursor framed, and
@@ -1103,7 +1092,6 @@ static void sudoku_paint(canvas_t *canvas, unsigned tone) {
         popup(canvas, "开始新游戏？", "中心键：是  返回键：否", 0, 0);
     else if (sud_done(s))
         popup(canvas, "解答完成！", "播放/暂停键：新游戏", 0, 0);
->>>>>>> 1.9.1
 }
 
 static void arc(vgcanvas_t *vg, float cx, float cy, int r, int a0, int a1, int width,
@@ -1179,7 +1167,6 @@ static void vortex_paint(canvas_t *canvas, unsigned tone) {
     hud(canvas, "最高", g->best.score, 375 - HUD_X, 6, 1, ink, dim);
     hud(canvas, "关卡", (unsigned)v->level + 1, HUD_X + 24, g->h - 30, 0, ink, dim); /* in from the glass */
     if (!g->paused && v->state == AIM) text_at(canvas, "Centre", 187, (int)cy - 12, 24, 16, dim, MID);
->>>>>>> 1.9.1
     ui_ink_raw(0);
     paused_popup(canvas, v->state == OVER);
 }
@@ -1283,7 +1270,6 @@ static void solitaire_paint(canvas_t *canvas, unsigned tone) {
         popup(canvas, "开始新游戏？", "中心键：是  返回键：否", 0, 0);
     else if (sol_won(s))
         popup(canvas, "你赢了！", "播放/暂停键：新游戏", 0, 0);
->>>>>>> 1.9.1
 }
 
 #define SN_LCD 0xc3cdb4 /* the theme's own Snake: an old LCD's field and its dark dots */
@@ -1331,7 +1317,6 @@ static void snake_paint(canvas_t *canvas, unsigned tone) {
     ui_ink_raw(0);
     hud(canvas, "得分", (unsigned)s->score, HUD_X, 6, 0, rgba(0xffffff, 255), SPOT_GREY);
     hud(canvas, "最高", g->sn_best.score, 375 - HUD_X, 6, 1, rgba(0xffffff, 255), SPOT_GREY);
->>>>>>> 1.9.1
     paused_popup(canvas, s->state == OVER);
 }
 
@@ -1385,7 +1370,6 @@ int games_open(void *ctx, event_t *event) {
     page_row_into(g->view, 1, "旋涡", pick_game);
     page_row_into(g->view, 2, "纸牌", pick_game);
     page_row_into(g->view, 3, "贪吃蛇", pick_game);
->>>>>>> 1.9.1
     for (int k = 0; k < cards; ++k)
         page_row_into(g->view, 4 + k, addon_game_name(k), pick_card_game);
     if (!BLOB_IO(GAMES_SUDOKU, g->sud, 0) || !games_ok(&g->sud, sizeof g->sud, SUD_MAGIC) ||

@@ -78,7 +78,6 @@ int rate_keep(int album, unsigned key, int n) {
 /* Report only failures from rate_keep. */
 int rate_saved(int k) {
     if (k <= 0) toast(k ? "评价未保存" : "评价记录已满");
->>>>>>> 1.9.1
     return k > 0;
 }
 
@@ -87,7 +86,6 @@ int rate_saved(int k) {
 int fav_told(void *r, int on) {
     if (!r || addon_fav_path(P(r, REC_PATH), on)) return 1;
     toast("收藏未发送到应用");
->>>>>>> 1.9.1
     return 0;
 }
 
@@ -224,8 +222,6 @@ static widget_t *rate_panel(widget_t *win) {
 static void rate_paint(void) {
     widget_t *panel = rate_panel(st.rate_on);
     char t[24] = "未评价";
->>>>>>> 1.9.1
->>>>>>> 1.9.1
     int gloss = classic_pages();
     for (int i = 0; i < 5; i++) {
         widget_t *heart = widget_get_child(panel, (unsigned)i + 1);
@@ -242,10 +238,6 @@ static void rate_paint(void) {
     else
         tk_snprintf(t, sizeof t, gloss ? "%d 颗心" : "%d / 5", ra.rate_pick);
     widget_set_text_utf8(widget_get_child(panel, 0), caption);
->>>>>>> 1.9.1
->>>>>>> 1.9.1
->>>>>>> 1.9.1
->>>>>>> 1.9.1
 }
 
 /* What's under the picker takes a touch again, or doesn't. */
@@ -272,7 +264,6 @@ static void rate_close(int save) {
         void *a = window_manager_get_top_window(window_manager()) == win ? qm_record() : (void *)0;
         if (!a || qm_album_id(a) != ra.rate_album) {
             toast("专辑已变更");
->>>>>>> 1.9.1
             return;
         }
         if (rate_saved(rate_keep(1, ra.rate_album, n)) && (n == 5 || ra.rate_was == 5))
@@ -383,7 +374,6 @@ static int rate_fav_click(void *ctx, event_t *event) {
     if (app == -2) toast("收藏未保存");
     if (app == -3)
         toast("此应用不支持收藏"); /* an app's song without an item: not Tidal's */
->>>>>>> 1.9.1
     if (app != -1) return 0;
     FAV_CLICK(ctx, event);
     ratings_copy_due();
@@ -479,7 +469,6 @@ static void rate_all(void *songs, unsigned char *h) {
 /* Top Rated (4-5 hearts), Loved (5), All Rated (1-5) and Disliked (1): most hearts first, then
  * the library's title order, each row's hearts under its title. */
 static const char *const rt_names[] = { "最高评价", "最爱歌曲", "全部已评价", "不喜欢" };
->>>>>>> 1.9.1
 #define RT_ALBUMS 2 /* the Ratings menu's Albums row, after Loved */
 /* List k's songs, each one's hearts in *of (calloc'd, the caller's to free). */
 static void *rated_songs(int k, unsigned char **of) {
@@ -523,7 +512,6 @@ static int rated_open(void *ctx, event_t *event) {
     }
     if (!count)
         page_row_detail(view, 0, "暂无歌曲", "长按“正在播放”中的爱心以评价", 0);
->>>>>>> 1.9.1
     free(of);
     return 0;
 }
@@ -556,9 +544,6 @@ int rated_hold(widget_t *top) {
 extern int coverflow_rated(void);
 int rated_albums(void *ctx, event_t *event) {
     if (!coverflow_rated()) toast(tr("暂无已评价专辑"));
->>>>>>> 1.9.1
->>>>>>> 1.9.1
->>>>>>> 1.9.1
     return 0;
 }
 
@@ -569,9 +554,6 @@ int ratings_menu(void *ctx, event_t *event) {
     widget_t *view = page_list(ra.rt_menu, ra.rt_menu, 0, tr("评价"), 5, 48);
     for (int i = 0; i < 5; i++)
         page_row_into(view, i, i == RT_ALBUMS ? tr("专辑") : tr(rt_names[i - (i > RT_ALBUMS)]),
->>>>>>> 1.9.1
->>>>>>> 1.9.1
->>>>>>> 1.9.1
                       i == RT_ALBUMS ? rated_albums : rated_open);
     return 0;
 }

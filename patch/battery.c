@@ -89,8 +89,6 @@ static void bh_text(char *s, unsigned size, unsigned i, int shown) {
     else if (tm)
         tk_snprintf(s, size, "%u%% | %s %d:%02d", pct, tm[2] < 12 ? "上午" : "下午",
                     (tm[2] + 11) % 12 + 1, tm[1]);
->>>>>>> 1.9.1
->>>>>>> 1.9.1
     else if (at >= from)
         tk_snprintf(s, size, "%u%% | +%u:%02u", pct, m / 60, m % 60);
     else /* the clock lost after the start */
@@ -101,8 +99,6 @@ static void bh_text(char *s, unsigned size, unsigned i, int shown) {
 static void bh_day(char *s, unsigned size, unsigned i, int year) {
     static const char months[12][8] = { "1月", "2月", "3月", "4月", "5月", "6月",
                                         "7月", "8月", "9月", "10月", "11月", "12月" };
->>>>>>> 1.9.1
->>>>>>> 1.9.1
     int buf[11], was[11];
     const int *tm = bh_tm(i, buf), *before = i ? bh_tm(i - 1, was) : (void *)0;
     *s = 0;
@@ -113,8 +109,6 @@ static void bh_day(char *s, unsigned size, unsigned i, int year) {
         tk_snprintf(s, size, "%s%d日 %d", months[tm[4]], tm[3], tm[5] + 1900);
     else
         tk_snprintf(s, size, "%s%d日", months[tm[4]], tm[3]);
->>>>>>> 1.9.1
->>>>>>> 1.9.1
 }
 
 /* The log's text into out: each day's date over its rows, or, for a clock never set, a line that
@@ -148,7 +142,6 @@ static int bh_export(void *ctx, event_t *event) {
         unlink(BH_LOG ".tmp"), toast("保存失败");
     else
         toast("已保存到 battery-log.txt");
->>>>>>> 1.9.1
     return 0;
 }
 
@@ -170,7 +163,6 @@ static void bh_fill(void) {
     bh.graph = 0;
     widget_t *view = bh.view = page_list_or(bh.page, bh.page, "电池历史", "拔掉充电线后开始记录",
                                             n ? (int)n + 1 : 0, 48);
->>>>>>> 1.9.1
     if (!n) return;
     widget_t *list = P(view, W_PARENT);
     int rh = page_h(48), head = 2 * rh, y = I(list, W_Y),
@@ -180,7 +172,6 @@ static void bh_fill(void) {
     widget_resize(view, 375, h);
     bh.graph = widget_factory_create_widget(widget_factory(), "view", bh.page, 0, y, 375, head);
     page_row_detail(view, 0, "导出日志", 0, bh_export);
->>>>>>> 1.9.1
     for (unsigned i = 0; i < n; ++i) {
         char day[32], s[96]; /* room for a translated month and AM or PM */
         bh_text(s, sizeof s, i, 1);

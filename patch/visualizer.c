@@ -655,7 +655,6 @@ static int look(const void *unused) {
 void visualizer_paint(widget_t *w, canvas_t *canvas) {
     static const char *const names[] = { "频谱", "示波器", "VU 表",
                                          "光环", "脉冲星", "轮廓" };
->>>>>>> 1.9.1
     if (!w) return;
     if (w == vz.page) { /* the page paints first, its canvas x 0 only when still */
         vz.page_x = I(canvas, CANVAS_X) - vz.ox;

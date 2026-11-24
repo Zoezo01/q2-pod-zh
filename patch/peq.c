@@ -77,8 +77,6 @@ int peq_parse(const char *text, unsigned size, peq_preset *out, peq_error *error
     int scope = 1;          /* APO Channel: 1 both, 2 left, 3 right, as peq_band.enabled */
     double side[4] = { 0 }; /* Preamp under Channel: L or R */
     if (size > PEQ_FILE_LIMIT) return error_at(error, 1, N_("文件超过 16384 字节"));
->>>>>>> 1.9.1
->>>>>>> 1.9.1
     if (size >= 3 && (unsigned char)text[0] == 239 && (unsigned char)text[1] == 187 &&
         (unsigned char)text[2] == 191)
         pos = 3;
@@ -89,7 +87,6 @@ int peq_parse(const char *text, unsigned size, peq_preset *out, peq_error *error
         while (pos < size && text[pos] != '\n') {
             if (length == PEQ_LINE_LIMIT) return error_at(error, line, "行超过 512 字节");
             if (!text[pos]) return error_at(error, line, "包含 NUL 字符");
->>>>>>> 1.9.1
             buf[length++] = text[pos++];
         }
         if (pos < size) ++pos;
@@ -99,7 +96,6 @@ int peq_parse(const char *text, unsigned size, peq_preset *out, peq_error *error
         while (*s && *s != '#') {
             if (*s == ' ' || *s == '\t' || *s == '\r') { ++s; continue; }
             if (n == 16) return error_at(error, line, "不支持的滤波器格式");
->>>>>>> 1.9.1
             /* A colon is a separate token, even in "Filter 1:" and "Preamp:". */
             if (*s == ':') {
                 t[n++] = ":";
@@ -112,7 +108,6 @@ int peq_parse(const char *text, unsigned size, peq_preset *out, peq_error *error
             if (*s) *s++ = 0;
             if (delimiter == ':') {
                 if (n == 16) return error_at(error, line, "不支持的滤波器格式");
->>>>>>> 1.9.1
                 t[n++] = ":";
             }
             if (delimiter == '#') break;
@@ -126,7 +121,6 @@ int peq_parse(const char *text, unsigned size, peq_preset *out, peq_error *error
                 return error_at(error, line, "前级增益超出 -60..24 dB 或数值无效");
             if (scope == 1) p.preamp += gain;
             else side[scope] += gain;
->>>>>>> 1.9.1
             preamp_line = line;
             continue;
         }
@@ -138,7 +132,6 @@ int peq_parse(const char *text, unsigned size, peq_preset *out, peq_error *error
                 else if (!strcmp(t[i], "R")) r = 1;
                 else if (!strcmp(t[i], "all")) l = r = 1;
                 else return error_at(error, line, "仅支持声道 L、R 和 all");
->>>>>>> 1.9.1
             }
             scope = l && r ? 1 : l ? 2 : 3;
             continue;
@@ -181,8 +174,6 @@ int peq_parse(const char *text, unsigned size, peq_preset *out, peq_error *error
                 return error_at(error, line, N_("应为 Q <number>"));
         } else if (!b.type)
             return error_at(error, line, N_("峰值滤波器需要 Q"));
->>>>>>> 1.9.1
->>>>>>> 1.9.1
         if (b.type && valid_band(&b)) {
             /* Match Equalizer APO: no Q means slope 0.9 at Fc; LS/HS with Q shift the corner to the
              * centre. */
@@ -202,7 +193,6 @@ int peq_parse(const char *text, unsigned size, peq_preset *out, peq_error *error
             return error_at(error, line, "范围：20..20000 Hz、-24..24 dB、Q 0.1..10");
         }
         if (p.count == PEQ_BANDS) return error_at(error, line, "超过 30 个频段");
->>>>>>> 1.9.1
         p.bands[p.count++] = b;
     }
     /* Per-channel preamps become the louder one's common preamp plus a balance that turns the other
@@ -211,7 +201,6 @@ int peq_parse(const char *text, unsigned size, peq_preset *out, peq_error *error
     p.balance = side[3] - side[2];
     if (!between(p.preamp, -60, 24)) return error_at(error, preamp_line, "前级增益总和超出 -60..24 dB");
     if (!between(p.balance, -12, 12)) return error_at(error, preamp_line, "左右声道前级增益相差超过 12 dB");
->>>>>>> 1.9.1
     p.automatic = preamp_line ? 2 : 1; /* the file's preamp, as if picked; without one, Auto */
     *out = p;                          /* Commit only after the complete file validates. */
     return 1;
@@ -226,7 +215,6 @@ int peq_import_file(const char *path, peq_preset *out, peq_error *error) {
     int bad = ferror(f);
     if (fclose(f)) bad = 1;
     int ok = bad ? error_at(error, 1, "文件读取失败") : peq_parse(text, n, out, error);
->>>>>>> 1.9.1
     free(text);
     return ok;
 }

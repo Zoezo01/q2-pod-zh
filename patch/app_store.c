@@ -131,7 +131,6 @@ static void paint_strip(widget_t *w, canvas_t *canvas) {
     int h = I(w, W_H), tab = widget_get_prop_int(w, "_tab", 0),
         n[2] = { widget_get_prop_int(w, "_b0", 0), widget_get_prop_int(w, "_b1", 0) };
     static const char *const names[2] = { "应用", "游戏" };
->>>>>>> 1.9.1
     canvas_set_fill_color(canvas, rgba(0, 255)); /* the paper */
     canvas_fill_rect(canvas, 0, 0, 375, h);
     if (T->painter[PAINT_SELECTION] == SEL_CARD) { /* Minimal: the names, the open one dotted */
@@ -148,8 +147,6 @@ static void paint_strip(widget_t *w, canvas_t *canvas) {
         if (n[0] + n[1]) {
             char s[64];
             snprintf(s, sizeof s, "%d 个可更新", n[0] + n[1]);
->>>>>>> 1.9.1
->>>>>>> 1.9.1
             text_at(canvas, s, 375 - 20, 0, h, 12, rgba(SUDO_MUTED, 255), RIGHT);
         }
         return;
@@ -193,7 +190,6 @@ static void paint_strip(widget_t *w, canvas_t *canvas) {
  * accent goes through Light Mode's flip, which keeps a colour and turns a neutral accent dark. */
 static void paint_row(widget_t *w, canvas_t *canvas, int state) {
     static const char *const words[3] = { "安装", "更新", "已安装" };
->>>>>>> 1.9.1
     int h = I(w, W_H), card = theme()->painter[PAINT_SELECTION] == SEL_CARD,
         lit = st.sel_w == P(w, W_PARENT) && st.sel_row == I(w, W_Y) / h, raw = 0;
     unsigned ink = state != 1 ? SUDO_MUTED : card ? 0xffffff : accent_tone(0);

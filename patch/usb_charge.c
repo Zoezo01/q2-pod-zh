@@ -110,7 +110,6 @@ static int dac_mode(void) { return g_usbdac_chargeflag == 1 ? 1 : usb_charge.nev
 static void dac_text(void) {
     char text[96];
     tk_snprintf(text, sizeof text, tr("USB DAC 充电：%s"), tr(dac_names[dac_mode()]));
->>>>>>> 1.9.1
     row_label(usb_charge.row, text);
 }
 static int dac_click(void *ctx, event_t *event) {

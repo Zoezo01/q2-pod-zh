@@ -172,7 +172,6 @@ static void ple_move(int at, int dir) {
         ple_show();
     } else
         toast("无法保存播放列表");
->>>>>>> 1.9.1
 }
 /* phase: press, release, or native delivery/long press. A repeat never moves twice. */
 int ple_key(unsigned key, int phase) {
@@ -244,13 +243,11 @@ static int ple_run(const void *unused) {
             void *r = ple.match[action - 1];
             if (checkPlayListExist(r, ple.dest))
                 toast("已在播放列表中");
->>>>>>> 1.9.1
             else {
                 int before = (int)deque_size(ple.songs);
                 void *one = _create_deque("stSongInfo");
                 if (!one) {
                     toast("无法保存播放列表");
->>>>>>> 1.9.1
                     return 0;
                 }
                 deque_init(one);
@@ -268,7 +265,6 @@ static int ple_run(const void *unused) {
                 int added = (int)deque_size(ple.songs) > before;
                 if (added) ple_tick(widget_get_child(ple.view, (unsigned)action));
                 toast(added ? "已加入播放列表" : "无法保存播放列表");
->>>>>>> 1.9.1
             }
             return 0; /* picker stays on its selected song */
         }
@@ -290,7 +286,6 @@ static int ple_run(const void *unused) {
                 ple_reload();
             else
                 toast("无法保存播放列表");
->>>>>>> 1.9.1
         }
         ple.mode = 0;
     }
@@ -328,7 +323,6 @@ static void ple_search_show(void) {
     ple.edit = edit_create(ple.page, "text", 2, 26);
     widget_set_name(ple.edit, "search_edit");
     t9_box(ple.page, ple.edit, "搜索歌曲");
->>>>>>> 1.9.1
     if (*ple.query) widget_set_text_utf8(ple.edit, ple.query);
     widget_on(ple.edit, EVT_IM_ACTION, ple_searched, 0);
     widget_set_focused(ple.edit, 1);
@@ -364,9 +358,6 @@ static void ple_show(void) {
         unsigned mask = 0, *in = ple.nmatch ? rec_index(ple.songs, &mask) : 0;
         if (!ple.nmatch)
             page_row_detail(ple.view, 1, "无匹配歌曲", 0, 0);
->>>>>>> 1.9.1
->>>>>>> 1.9.1
->>>>>>> 1.9.1
         else
             for (int i = 0; i < shown; i++) {
                 widget_t *row = page_row_detail(
@@ -374,7 +365,6 @@ static void ple_show(void) {
                 if (in && rec_find(ple.songs, in, mask, ple.match[i])) ple_tick(row);
             }
         if (rest) page_row_detail(ple.view, shown + 1, "搜索更多歌曲", 0, ple_more);
->>>>>>> 1.9.1
         free(in);
     } else
         for (int i = 0; i < n; i++) {
@@ -382,8 +372,6 @@ static void ple_show(void) {
                 mode == 0 && i < 2 ? (i ? tr("完成") : tr("添加歌曲"))
                 : mode == 2        ? tr(actions[i])
                 : mode == 3 ? (i ? tr("取消") : tr("从播放列表移除"))
->>>>>>> 1.9.1
->>>>>>> 1.9.1
                             : track_name(name, sizeof name,
                                          deque_at(ple.songs, (unsigned)(i - (mode == 0 ? 2 : 0))));
             page_row_detail(ple.view, i, caption, 0, ple_pick);
@@ -486,9 +474,6 @@ int ringnav_playlist_delete(widget_t *win, event_t *event) {
     } prompt = { 1, 0, "" };
     tk_snprintf(prompt.text, sizeof prompt.text, "%s", "删除播放列表？");
     if (confirm_over(&prompt, "删除") != 10) return 0;
->>>>>>> 1.9.1
->>>>>>> 1.9.1
->>>>>>> 1.9.1
     char sql[256];
     if (pl_db(&db)) goto done;
     if (sqlite3_exec(db, "begin immediate", 0, 0, 0)) goto done;
@@ -508,7 +493,6 @@ done:
         navigator_back();
     }
     toast(ok ? "播放列表已删除" : "无法删除播放列表");
->>>>>>> 1.9.1
     return 0;
 }
 
@@ -522,7 +506,6 @@ int ringnav_playlistsmore(widget_t *win, void *ctx) {
          * language pack's line for it). */
         widget_t *del = widget_lookup(win, "label_del", 1);
         if (del) widget_set_tr_text(del, "删除播放列表");
->>>>>>> 1.9.1
         /* A row like this page's stock Rename and Delete: a 375 px list_item, the set's pitch high
          * (SET0 72), holding a 335 px s_btn_listitem, its body high (68), its 52px icon at x 10 and
          * its 20px label at x 72. Edit Playlist follows the Delete row at the same spacing. */
@@ -540,7 +523,6 @@ int ringnav_playlistsmore(widget_t *win, void *ctx) {
         widget_use_style(label, "s_scrlabel_white20l");
         set_hscroll_label_attribute(label);
         widget_set_text_utf8(label, "编辑播放列表");
->>>>>>> 1.9.1
         /* A set without settings icons: none here either, the text at its column */
         widget_t *const rows[][2] = { { widget_lookup(win, "img_rename", 1),
                                         widget_lookup(win, "label_rename", 1) },
@@ -577,7 +559,6 @@ int qm_playlist_pick(void *ctx, event_t *event) {
     char click[0x30];
     if (!qm_record()) {
         toast("队列未更改");
->>>>>>> 1.9.1
         return 0; /* a STOP would leave the list's scroll_view holding its grab */
     }
     qm_select();
@@ -693,9 +674,6 @@ static void pl_row(widget_t *item) {
     while (s && *s && (*s < '0' || *s > '9')) ++s;
     while (s && *s >= '0' && *s <= '9') songs = songs * 10 + (*s++ - '0');
     tk_snprintf(count, sizeof count, "%u 首", songs);
->>>>>>> 1.9.1
->>>>>>> 1.9.1
->>>>>>> 1.9.1
     widget_set_text_utf8(second, count);
     hscroll_label_set_only_focus(title, 1);
     theme_font(title, ROLE_TALL, FONT_ROW);
@@ -816,16 +794,12 @@ static void pl_rows(widget_t *win) {
                 : marking ? "选择播放列表"
                           : "播放列表",
                 marks);
->>>>>>> 1.9.1
->>>>>>> 1.9.1
->>>>>>> 1.9.1
     bar_title_sync(win);
     widget_t *none = widget_lookup(win, PL_NONE, 0);
     if (!none && !n) {
         none = text(win, 0, 124, 375, 32);
         widget_set_name(none, PL_NONE);
         widget_set_text_utf8(none, "暂无播放列表");
->>>>>>> 1.9.1
         theme_font(none, ROLE_TITLE, FONT_ROW);
         widget_set_prop_int(none, "style:normal:text_color", (int)SPOT_GREY);
     }
@@ -1046,7 +1020,6 @@ static void pl_dress(widget_t *win, int first) {
         pl_action(view, "导出", PL_EXPORT, 0, -1);
         pl_action(view, "删除", PL_DELETE, 0, -1);
         pl_action(view, "完成", PL_DONE, 0, -1);
->>>>>>> 1.9.1
     }
     pl_rows(win);
     if (first && !add) { /* stock binds it with ctx win (0x4b6024) */
