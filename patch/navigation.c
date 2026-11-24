@@ -998,7 +998,6 @@ static int scroll_end(menu_t *m, int height) {
     if (m->kind == 2) return (m->rows + m->cols - 1) / m->cols * m->row - height;
     return m->kind == 1 ? I(m->w, VIEW_CONTENT_H) - height : 0;
 }
-static int max_top(menu_t *m) { return scroll_end(m, sel_height(m)); }
 
 static int speed_stop(widget_t *e) {
     return !tk_strcmp(widget_get_type(e), "image") &&
@@ -1094,7 +1093,7 @@ void reveal(menu_t *m, int id, int immediate) {
     /* The first row brings in whatever heads the list above it (the EQ page's graph) when both
      * fit, rather than stopping a margin into it. Kind 1's ids are its row order. */
     if (m->kind == 1 && id == 0 && y + h + margin <= height) want = 0;
-    want = clamp_step(want, max_top(m), 0);
+    want = clamp_step(want, scroll_end(m, sel_height(m)), 0);
     const theme_t *T = theme();
     if (immediate || !T->recall_ms) {
         wheel_offset(m, want);
@@ -1231,7 +1230,7 @@ static int confirm_center(const void *info) {
  * Stock setters retain ownership of thumb position. A transparent bar is still a bar.
  * The native same-value path shows immediately, waits 300 ms and fades over 500 ms. */
 static void native_scrollbar(menu_t *m) {
-    if (m->kind == 3 || max_top(m) <= 0) return;
+    if (m->kind == 3 || scroll_end(m, sel_height(m)) <= 0) return;
     widget_t *parent = P(m->w, W_PARENT);
     if (!parent) return;
     const char *type = widget_get_type(parent);
