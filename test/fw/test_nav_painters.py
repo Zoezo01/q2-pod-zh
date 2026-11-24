@@ -129,6 +129,7 @@ class Ui:
         m('widget_get_child', lambda w, i, *_: self.nodes[w].children[i & 0xffffffff].addr
           if w in self.nodes and (i & 0xffffffff) < len(self.nodes[w].children) else 0)
         m('widget_lookup', self.lookup)
+        m('widget_lookup_by_type', self.lookup_by_type)
         m('widget_get_visible', lambda w, *_: self.nodes[w].visible if w in self.nodes else 0)
         m('widget_set_visible', lambda w, v, *_: setattr(self.nodes[w], 'visible', int(bool(i32(v)))))
         m('widget_move_resize', lambda w, x, y, ww, h, *_: self.nodes[w].move(i32(x), i32(y), i32(ww), i32(h)))
@@ -181,6 +182,13 @@ class Ui:
         node = self.nodes.get(w)
         value = node.props.get(C.string_at(name).decode()) if node else None
         return value if isinstance(value, int) else i32(default)
+
+    def lookup_by_type(self, w, kind, recursive, *_):
+        node, key = self.nodes.get(w), C.string_at(kind).decode()
+        if node is None:
+            return 0
+        found = node.walk() if i32(recursive) else iter(node.children)
+        return next((c.addr for c in found if c.kind == key), 0)
 
     def lookup(self, w, name, recursive, *_):
         node, key = self.nodes.get(w), C.string_at(name).decode()
