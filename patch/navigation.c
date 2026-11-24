@@ -1133,6 +1133,24 @@ static void select_row(widget_t *w, int id, int rows, int show) {
 
 void ringnav_select(widget_t *w, int id, int rows) { select_row(w, id, rows, 1); }
 
+/* A row, by its widget, kept lit after its page's rows were laid out again with another count
+ * (lockscreen.c: Layout's row adds or takes Clock's), which load would otherwise send back to the
+ * top. Only on the top window's own surface; here, as load and select are. */
+void ringnav_keep_row(widget_t *row) {
+    widget_t *w = row ? surface((void *)0, (void *)0) : (void *)0;
+    if (!w || window_of(row) != window_manager_get_top_window(window_manager()) ||
+        !load(&g_menu, w, 0))
+        return;
+    for (int i = 0; i < g_menu.n; ++i)
+        for (widget_t *p = g_menu.at[i]; p && p != w; p = P(p, W_PARENT))
+            if (p == row) {
+                select(&g_menu, g_menu.id[i]);
+                stop_scroll(&g_menu);
+                widget_invalidate_force(w, 0);
+                return;
+            }
+}
+
 /* A row picked as its page goes (coverflow_land.c's landing): lit, though a tap's touch mode hid
  * the selection, and left where it is: a tap on the panel's last row, a few pixels of it shown,
  * would scroll the list under the landing's capture, and the turn would start a row off. Here, as
@@ -3142,6 +3160,8 @@ static int cf_art_log __attribute__((section(".scratch")));
 /* Display's Hide Duplicate Albums and Hide Duplicate Songs (CFDUPALBUMS, CFDUPSONGS): coverflow.c
  * music_albums and coverflow_cover_tracks. */
 static int cf_dups[2] __attribute__((section(".scratch")));
+/* The Lock Screen's Layout (LOCKLAYOUT): lockscreen.c reads it as each lock window opens. */
+static int lock_layout __attribute__((section(".scratch")));
 static const struct {
     int *value;
     const char *key;
@@ -3180,7 +3200,8 @@ static const struct {
              { &bt_receive, "BTRECEIVE" },
              { &cf_art_log, "CFARTLOG" },
              { &cf_dups[0], "CFDUPALBUMS" },
-             { &cf_dups[1], "CFDUPSONGS" } };
+             { &cf_dups[1], "CFDUPSONGS" },
+             { &lock_layout, "LOCKLAYOUT" } };
 _Static_assert(sizeof pods / sizeof *pods == POD_COUNT, "a pods row per row");
 /* a row's choices: Artist albums three, Standby limit four, every other row two */
 static int pod_choices(unsigned i) { return i == POD_ARTIST_CF ? 3 : i == POD_STANDBY ? 4 : 2; }
@@ -3265,6 +3286,7 @@ static void pod_text(int i) {
         { N_("Log Failed Artwork") },
         { N_("Hide Duplicate Albums") },
         { N_("Hide Duplicate Songs") },
+        { N_("Layout: Default"), N_("Layout: At a Glance") },
     };
     _Static_assert(sizeof names / sizeof *names == POD_COUNT, "a names entry per row");
     if (i == POD_CF_SORT) { /* the Sort card's words, as Cover Flow's page holds the row */
@@ -3339,6 +3361,9 @@ static int pod_click(void *ctx, event_t *event) {
         if (i == POD_SCAN_DURATIONS && !*value) durations_cancel();
         if (i == POD_CF_POSITION) coverflow_position_reset();
         if (i == POD_HIDE_STREAM || i == POD_HIDE_FOLDER) coverflow_home_layout();
+        /* Layout: the Lock Screen page's rows again (Clock is Default's); the next lock window
+         * takes it */
+        if (i == POD_LOCKLAYOUT) lockscreen_layout_turned(window_of(st.pod_label[i]));
         st.charge_at = 0;
         /* Control Device Volume: off, stock's gain back at once; on, bt_volume_poll's next pass
          * sends the Q2's level to the device. */

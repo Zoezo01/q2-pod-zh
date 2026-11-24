@@ -470,19 +470,31 @@ int lockscreen_cover(widget_t *win) {
     return result;
 }
 
+/* Layout's list item, and the page whose rows go again a loop pass after its click. */
+static widget_t *layout_row __attribute__((section(".scratch")));
+static widget_t *rows_win __attribute__((section(".scratch")));
+
 /* The Lock screen page's list (stock 0x4cff00), rebuilt whole when its switch turns: Time show and
- * About, then the picture grid with the switch on. Clock (navigation.c's POD_LOCKCLOCK) follows
- * Time show, 78 high as stock's rows, and the built-ins' thumbnails are found for lockscreen_paint.
+ * About, then the picture grid with the switch on. Clock (navigation.c's POD_LOCKCLOCK, Default's
+ * alone) and Layout (POD_LOCKLAYOUT) follow Time show, 78 high as stock's rows, and the built-ins'
+ * thumbnails are found for lockscreen_paint.
  */
-int lockscreen_rows(widget_t *win) {
+static widget_t *pod_row(widget_t *win, widget_t *view, int pod, int at) {
     static const char *const icons[] = { 0 };
-    int result = stock_saverrows_trampoline(win);
-    widget_t *view = widget_lookup(win, "scroll_view", 1);
-    if (!view || widget_count_children(view) < 2) return result;
-    pod_rows(win, "scroll_view", POD_LOCKCLOCK, 1, icons);
+    pod_rows(win, "scroll_view", pod, 1, icons);
     widget_t *row = widget_get_child(view, widget_count_children(view) - 1);
     widget_resize(row, I(row, W_W), 78);
-    widget_restack(row, 1);
+    widget_restack(row, at);
+    return row;
+}
+int lockscreen_rows(widget_t *win) {
+    int result = stock_saverrows_trampoline(win);
+    widget_t *view = widget_lookup(win, "scroll_view", 1);
+    layout_row = 0;
+    if (!view || widget_count_children(view) < 2) return result;
+    int at = 1;
+    if (!pod_value(POD_LOCKLAYOUT)) pod_row(win, view, POD_LOCKCLOCK, at++);
+    layout_row = pod_row(win, view, POD_LOCKLAYOUT, at);
     void *list = PICTURES;
     for (unsigned i = 0, n = list ? deque_size(list) : 0; i < n; ++i) {
         int id = wall_id(deque_at(list, i));
@@ -496,6 +508,22 @@ int lockscreen_rows(widget_t *win) {
     }
     switch_row(win, view);
     return result;
+}
+static int rows_again(const void *info) {
+    widget_t *win = rows_win;
+    (void)info;
+    rows_win = 0;
+    if (win && win == window_manager_get_top_window(window_manager())) {
+        lockscreen_rows(win);
+        ringnav_keep_row(layout_row); /* the wheel stays on Layout, not the top row */
+    }
+    return 0; /* RET_OK: a timer's end */
+}
+/* pod_click on Layout's row: the rows again with Clock's or without, a loop pass later, not inside
+ * the row's own click. */
+void lockscreen_layout_turned(widget_t *win) {
+    rows_win = win;
+    timer_add(rows_again, (void *)0, 0);
 }
 
 /* ringnav_paint (the border hook, after stock painted the widget) calls this for every widget:

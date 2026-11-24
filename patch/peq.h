@@ -431,6 +431,7 @@ enum {
      * coverflow_cover_tracks */
     POD_CF_DUP_ALBUMS,
     POD_CF_DUP_SONGS,
+    POD_LOCKLAYOUT, /* the Lock Screen's Layout: 1 At a Glance (lock_glance.c), else Default */
     POD_COUNT
 };
 int pod_value(int i);
@@ -786,6 +787,8 @@ void stock_more_speed(widget_t *win);
 void stock_more_into(widget_t *win);
 void info_poll(void);          /* lockscreen.c: the info screen's timer, with the screen lit */
 unsigned np_art_key(void);     /* navigation.c: the playing track and its cover file, 0 none */
+void ringnav_keep_row(widget_t *row); /* navigation.c: row lit again after its list was rebuilt */
+void lockscreen_layout_turned(widget_t *win); /* lockscreen.c: Layout's row was clicked */
 int xfade_page(widget_t *top); /* crossfade.c */
 int ipod_battery(void);        /* theme_engine.c: IPOD BATTERY, 0 Icon, else a percentage */
 int title_gone(void *w, event_t *event); /* ... and looks for its source again at the next sync */
