@@ -51,12 +51,6 @@ static cast_tap *air_map(void) {
     return air.t = p == (void *)-1 ? 0 : p;
 }
 
-/* The app's state while it runs; CAST_OFF once it stopped beating. */
-static int air_state(void) {
-    cast_tap *t = air.t;
-    return t && CAST_CLOCK(now_ns()) - t->want < CAST_STALE ? t->state : CAST_OFF;
-}
-
 int airplay_on(void) { return air.on; }
 
 /* An open volume dialog's bar to v, as Bluetooth's volume poll sets it. */
@@ -166,7 +160,8 @@ static void air_track(cast_tap *t) {
 /* Every UI pass (ringnav_sleep). */
 void airplay_poll(void) {
     cast_tap *t = air_map();
-    int s = air_state();
+    /* The app's state while it runs; CAST_OFF once it stopped beating. */
+    int s = t && CAST_CLOCK(now_ns()) - t->want < CAST_STALE ? t->state : CAST_OFF;
     if (t) {
         t->status = mclGetPlayStatus();
         t->volume = air.on ? g_volume : -1; /* the speaker's once it plays, never the earphones' */
