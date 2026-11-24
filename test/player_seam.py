@@ -35,7 +35,12 @@ CHAIN_LINKS = {96000: 192000, 48480: 144480, 113760: 209760}  # a first link's f
 SHORT = 50, 500, 8000, 22000
 
 
-def ffmpeg(*args): subprocess.check_call(['ffmpeg', '-v', 'error', '-y', *map(str, args)])
+def ffmpeg(*args):
+    args = [*map(str, args)]
+    # An edit's duration is in the movie's timescale, which the edits below take for the audio's rate: a newer FFmpeg's
+    # choice, where an older one writes 1000 a second. The HE-AAC copies (-c copy) keep FFmpeg's own.
+    if args[-1].endswith('.m4a') and '-c:a' in args: args[-1:-1] = '-movie_timescale', '44100'
+    subprocess.check_call(['ffmpeg', '-v', 'error', '-y', *args])
 
 
 def source(path, seed, rate, samples=None):
