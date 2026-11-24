@@ -1852,9 +1852,9 @@ def test_a_ring_list_bumps_at_its_end_then_carries_over_after_a_pause(fw, keys):
     assert sv.ints[SEL] == 4  # and back round the top
 
 
-def test_a_list_that_isnt_a_ring_stops_at_its_end(fw, keys):
+def test_a_list_that_loads_more_at_its_end_stops_there(fw, keys):
     ui = Ui(fw)
-    sv = list_page(ui, 'about_page')
+    sv = list_page(ui, 'tidal_viewall_page')
     select(fw, sv, 4)
     for _ in range(3):
         keys(KEY_NEXT, 1000)
@@ -3278,7 +3278,7 @@ def test_return_on_homes_list_selects_now_playing_then_opens_it(fw, keys):
 
 
 def test_homes_list_bumps_and_wraps_as_a_ring_list(fw, keys):
-    """docs/ipod.md#home: though contexts.inc doesn't mark home_page a ring."""
+    """docs/ipod.md#home: as every list does."""
     ui = Ui(fw)
     sv = list_page(ui, 'home_page', rows=6)
     select(fw, sv, 5)

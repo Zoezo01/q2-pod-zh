@@ -809,19 +809,16 @@ assert m.call(gap=O['EDGE_PAUSE_MS'])==11 and m.selected(w)==0 and m.get(w+O['TA
 assert any(c[0]=='table_client_set_yoffset' for c in m.calls)
 passed()
 
-# The Library's Albums grid (album_page, 0xf003) carries over at its ends as Artists do; an album's
-# songs (0xff10) on the same page keep hard ends. The class is set before the list loads, as the
+# The Library's Albums grid (album_page, 0xf003) carries over at its ends as Artists do, and so do an album's
+# songs (0xff10) on the same page. The class is set before the list loads, as the
 # Library sets it: changing it under a live list reloads the list and drops the bump.
-for cls,wraps in ((0xf003,True),(0xff10,False)):
+for cls in (0xf003,0xff10):
     m=Machine(); m.word(syms['g_class_type'],cls)
     w,es=m.page_list(6,height=96,extent=288,name='album_page'); m.paint(w)
     for _ in range(5): assert m.call()==11
     assert m.call(gap=100)==11 and m.selected(w)==5
     m.paint(w,gap=0)
-    if wraps:
-        assert m.call(gap=O['EDGE_PAUSE_MS'])==11 and m.selected(w)==0,(cls,m.selected(w))
-    else:
-        assert m.call(gap=O['EDGE_PAUSE_MS'])==11 and m.selected(w)==5,(cls,m.selected(w))
+    assert m.call(gap=O['EDGE_PAUSE_MS'])==11 and m.selected(w)==0,(cls,m.selected(w))
     passed()
 # Library -> Albums as a grid (album_page, album_modetype 1, stock's PLAYSET ALBUMTYPE): stock's table rows hold three
 # album tiles, album row*3+cell of the showlist, and on_load_data (0x4a5658) hides a last row's missing ones. The wheel
@@ -877,15 +874,16 @@ for _ in range(20): m.call()
 assert m.selected(w)==20
 m.page_list(3,name='albuminfo_page'); m.nodes[m.top]['anim_hint']='htranslate'; m.albums=12; cards=len(m.rounded); m.paint(w,gap=0)
 assert m.selected(w)==20 and len(m.rounded)>cards and m.rounded[-1]['rect'][0]==14+118*2+ti,m.rounded[cards:]; passed()
-# Other settings, dynamic pages and other grids keep hard ends; one-row lists never wrap.
-for name in ('display_page','playerqueue_page'):
+# A list that loads more at its end (stock's Tidal lists whose scroll-end handler fetches the next page) keeps hard ends;
+# one-row lists never wrap.
+for name in ('tidal_viewall_page','tidal_search_dialog'):
     m,w,es=walk(6,5,height=96,extent=288,name=name)
     assert m.call(gap=100)==11 and m.selected(w)==5
     m.paint(w,gap=0); assert m.sel()==(0,48,240,48)
     assert m.call(gap=100)==11 and m.selected(w)==5
     passed()
-# The hold menu and Now Playing's More page carry over as Library lists do.
-for name in ('playermore_page','sortselect_dialog','playset_page','sysset_page'):
+# Every other list carries over as Library lists do: the hold menu, Now Playing's More page, settings, View Queue.
+for name in ('playermore_page','sortselect_dialog','playset_page','sysset_page','display_page','playerqueue_page'):
     m,w,es=walk(6,5,height=96,extent=288,name=name)
     assert m.call(gap=100)==11 and m.selected(w)==5
     assert m.call(gap=O['EDGE_PAUSE_MS'])==11 and m.selected(w)==0,(name,m.selected(w))
@@ -6940,7 +6938,8 @@ for classic in (0,2,0,2,0,2):  # each a Theme pick, from Minimal: no restart
     assert after==accent
     assert [geometry(m,i)[1] for i in shown]==[SET['ROW']*k for k in range(len(shown))]
     for i in shown: check_row(m,i,0)
-    for _ in range(len(shown)): m.call(O['KEY_PREV'])
+    m.paint(view)
+    for _ in range(m.selected(view)): m.call(O['KEY_PREV'])  # to the top and no further: one more carries over to the last row
     for _ in range(shown.index(after)): m.call()
     m.paint(view); assert m.selected(view)==shown.index(after)
     assert m.confirm()==11 and m.dispatched()[0][1]==button(after)
@@ -7556,8 +7555,8 @@ assert turn(m,w,(100,100,100))==[1,2,3] and turn(m,w,(100,100,100),PREV)==[2,1,0
 assert m.call(PREV,gap=100)==11 and m.selected(w)==0
 m.paint(w,gap=0); assert m.sel()==(0,6,240,48)   # bumped down at the top, on the first tick
 assert m.call(PREV,gap=O['EDGE_PAUSE_MS'])==11 and m.selected(w)==5; passed()
-# Settings keep hard ends: no bump and no wrap, however long the pause.
-m,w,es=ring('display_page')
+# A list that loads more at its end keeps hard ends: no bump and no wrap, however long the pause.
+m,w,es=ring('tidal_mycollection_page')
 for gap in (100,O['EDGE_PAUSE_MS'],1000):
     assert m.call(gap=gap)==11 and m.selected(w)==5
     m.paint(w,gap=0); assert m.sel()==(0,48,240,48)

@@ -218,10 +218,10 @@ menu_t g_menu __attribute__((section(".scratch")));
  * Contexts, panes and timers
  **************************************************************************************************/
 
-/* Audited top windows, each tagged with its content-identity class and whether its row list is
- * one of the audited local row lists that carry over at the ends. The index is remembered
- * instead of the name pointer: AWTK owns and frees the window's name string. */
-enum { RING = 1, DRILL = 2, BUTTONS = 4, CHOICE = 8 };
+/* Audited top windows, each tagged with its content-identity class and its flags
+ * (contexts.inc). The index is remembered instead of the name pointer: AWTK owns and frees the
+ * window's name string. */
+enum { MORE = 1, DRILL = 2, BUTTONS = 4, CHOICE = 8 };
 const context_t contexts[] = {
 #include "contexts.inc"
 };
@@ -233,17 +233,14 @@ int context_id(const char *name) {
     return -1;
 }
 
-/* The audited local row lists built from the compact assets: the file and music views. Grids
- * (album_page, but its Albums list below), other dynamic pages and the home carousel
- * keep hard ends; iPod Home's lists wrap at once (home_menu). */
-/* By the top window's name, not m->ctx: a dynamic page (the hold menu) has no memory context.
- * album_page also holds an album's songs (0xff10), which keep hard ends. */
+/* One rule for list ends: every list of two rows or more carries over after the pause, but a
+ * confirm's buttons (BUTTONS) and a list that loads more at its end (MORE), where the next rows
+ * are still to come. By the top window's name, not m->ctx: a dynamic page (the hold menu) has no
+ * memory context. */
 static int ring_list(const menu_t *m) {
     widget_t *top = window_manager_get_top_window(window_manager());
-    const char *name = top ? widget_get_prop_str(top, "name", (void *)0) : (void *)0;
-    int ctx = context_id(name), ring = ctx >= 0 && (contexts[ctx].flags & RING);
-    if (ctx >= 0 && !tk_strcmp(name, "album_page")) ring = I(g_class_type, 0) == CLASS_ALBUMS;
-    return m->w && ring && m->rows >= 2;
+    int ctx = context_id(top ? widget_get_prop_str(top, "name", (void *)0) : (void *)0);
+    return m->w && ctx >= 0 && !(contexts[ctx].flags & (BUTTONS | MORE)) && m->rows >= 2;
 }
 
 /* The view kinds load() actually navigates: a vertical scroll view, a table client, a slide
@@ -9810,8 +9807,7 @@ int ringnav(void *ctx, event_t *event) {
                               id < 0 ? 0 : dir * step);
         if (next == 0 || next == g_menu.rows - 1) drop_wheel();
         if (next == id) {
-            int home = home_menu(top) && g_menu.rows >= 2;
-            if (!(home || ring_list(&g_menu)) || id < 0) {
+            if (!ring_list(&g_menu) || id < 0) {
                 stop_scroll(&g_menu);
                 widget_invalidate_force(w, (void *)0); /* a wheel wake still clears touch hiding */
                 return STOP;

@@ -56,7 +56,7 @@ for table in (False,True):
     for count in (0,1,16,17):
         m=Machine()
         if table:
-            # A dynamic page keeps hard ends, so this stays an acceleration check.
+            # Ticks 50 ms apart never wrap at the end, so this stays an acceleration check.
             w,rs,es=m.table_page(n=min(count,4),name='playerqueue_page',rebind=True)
             m.word(w+O['TABLE_ROWS'],count)
         else: w,es=m.page_list(count,extent=count*48)
