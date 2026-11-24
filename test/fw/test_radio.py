@@ -10,7 +10,7 @@ import urllib.parse
 import pytest
 
 import ipod
-from conftest import O, Config, Files, block, claim
+from conftest import O, Config, Files, block, claim, dir_readdir
 
 RADIO = '/mnt/mmc/Radio'
 FAVS, LAST, STATE = f'{RADIO}/favourites.m3u', f'{RADIO}/.last', '/tmp/q2radio.state'
@@ -173,13 +173,7 @@ class Card(Files):
         return 0x3100 + len(self.ents)
 
     def readdir(self, d, *_):
-        if not self.dirs[d]:
-            return 0
-        ent = C.create_string_buffer(268)
-        name = self.dirs[d].pop(0).encode()
-        C.memmove(C.addressof(ent) + 11, name, len(name))
-        self.ents.append(ent)
-        return C.addressof(ent)
+        return dir_readdir(self, d)
 
 
 class Clock:

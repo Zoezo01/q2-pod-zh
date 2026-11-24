@@ -603,3 +603,14 @@ class Config:
 
 class Dirent(C.Structure):  # host.py's struct dirent
     _fields_ = [('ino', C.c_uint), ('off', C.c_uint), ('reclen', C.c_ushort), ('d_type', C.c_ubyte), ('d_name', C.c_char * 256)]
+
+
+def dir_readdir(self, d, *_):
+    """A test card's readdir: the next name of self.dirs[d] as a dirent, 0 once it is spent."""
+    if not self.dirs[d]:
+        return 0
+    ent = C.create_string_buffer(268)  # host.py's struct dirent: d_name at 11
+    name = self.dirs[d].pop(0).encode()
+    C.memmove(C.addressof(ent) + 11, name, len(name))
+    self.ents.append(ent)
+    return C.addressof(ent)

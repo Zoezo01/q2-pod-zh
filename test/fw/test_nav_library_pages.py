@@ -12,7 +12,7 @@ import struct
 import pytest
 
 import host
-from conftest import FNV_PRIME, O, Deques, Files, favdir_card, fnv1a, high_halves, in_fork, libc, ui_name, stock_stub
+from conftest import FNV_PRIME, O, Deques, Files, dir_readdir, favdir_card, fnv1a, high_halves, in_fork, libc, ui_name, stock_stub
 from conftest import Rows as HeldRows  # Rows here is Folder view's list
 from test_addon import Pg  # test_addon.py keeps the mirror
 from test_coverflow import SONGTABLE
@@ -1879,13 +1879,7 @@ class Card(Files):
         return 0x3100 + len(self.ents)
 
     def readdir(self, d, *_):
-        if not self.dirs[d]:
-            return 0
-        ent = C.create_string_buffer(268)
-        name = self.dirs[d].pop(0).encode()
-        C.memmove(C.addressof(ent) + 11, name, len(name))
-        self.ents.append(ent)
-        return C.addressof(ent)
+        return dir_readdir(self, d)
 
     def paths(self, queue):
         return [field(r, 'path') for r in queue]

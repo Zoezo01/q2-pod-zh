@@ -9,7 +9,7 @@ import re
 import pytest
 
 import host
-from conftest import O, Deques, Files, Game, claim, high_halves, in_fork, libc, stock_stub
+from conftest import O, Deques, Files, Game, claim, dir_readdir, high_halves, in_fork, libc, stock_stub
 from test_radio import Rd, Sp  # test_radio.py keeps the mirror
 from test_streaming import Td
 
@@ -52,13 +52,7 @@ class Card(Files):
         return 0x3100 + self.handles
 
     def readdir(self, d, *_):
-        if not self.dirs[d]:
-            return 0
-        ent = C.create_string_buffer(268)  # host.py's struct dirent: d_name at 11
-        name = self.dirs[d].pop(0).encode()
-        C.memmove(C.addressof(ent) + 11, name, len(name))
-        self.ents.append(ent)
-        return C.addressof(ent)
+        return dir_readdir(self, d)
 
     def stat(self, version, path, st, *_):
         path = C.string_at(path).decode()
