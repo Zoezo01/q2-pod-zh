@@ -614,3 +614,11 @@ def dir_readdir(self, d, *_):
     C.memmove(C.addressof(ent) + 11, name, len(name))
     self.ents.append(ent)
     return C.addressof(ent)
+
+
+def card_fread(owner, buf, size, n, f, *_):
+    """A fake card's fread: the bytes of owner.names[f] from owner.at[f], into buf."""
+    piece = owner.files[owner.names[f]][owner.at[f]:owner.at[f] + size * n]
+    C.memmove(buf, piece, len(piece))
+    owner.at[f] += len(piece)
+    return len(piece) // size

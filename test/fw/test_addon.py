@@ -10,7 +10,7 @@ import struct
 import pytest
 
 import host
-from conftest import O, SPOT_FAIL, SPOT_NOSOCK, SPOT_OK, Config, Deques, Dirent, Game, block, claim, high_halves, libc, text
+from conftest import O, SPOT_FAIL, SPOT_NOSOCK, SPOT_OK, Config, Deques, Dirent, Game, block, card_fread, claim, high_halves, libc, text
 from fuzz import hostile
 from test_coverflow import png  # an icon's header
 from test_netupdate import JOB_INSTALL, JOB_REMOVE, SH_CANCELLED, SH_CARD, SH_NET, SH_OK, Sh  # test_netupdate.py keeps netupdate.c's App Store mirror
@@ -142,10 +142,7 @@ class World:
         return f
 
     def fread(self, buf, size, n, f, *_):
-        piece = self.files[self.names[f]][self.at[f]:self.at[f] + size * n]
-        C.memmove(buf, piece, len(piece))
-        self.at[f] += len(piece)
-        return len(piece) // size
+        return card_fread(self, buf, size, n, f)
 
     def fseek(self, f, off, *_):
         self.at[f] = off

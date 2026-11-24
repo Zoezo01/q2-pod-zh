@@ -14,7 +14,7 @@ import zipfile
 import pytest
 
 import host
-from conftest import Config, Dirent, O, block
+from conftest import Config, Dirent, O, block, card_fread
 
 # stock.h's Q2POD_TAG: tools/build.py's VERSION (host.py builds as a release, not --dev)
 TAG = host.tools_build.VERSION.encode()
@@ -589,10 +589,7 @@ class Card:
                 self.written[name] = b''
             return f
         def fread(buf, size, n, f, *_):
-            piece = self.files[self.names[f]][self.at[f]:self.at[f] + size * n]
-            C.memmove(buf, piece, len(piece))
-            self.at[f] += len(piece)
-            return len(piece) // size
+            return card_fread(self, buf, size, n, f)
         def fseek(f, at, whence, *_):
             self.at[f] = len(self.files[self.names[f]]) if whence == 2 else at
         def fwrite(buf, size, n, f, *_):

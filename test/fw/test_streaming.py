@@ -5,7 +5,7 @@ import random
 
 import pytest
 
-from conftest import Dirent, SPOT_FAIL, SPOT_NOSOCK, SPOT_OK, block, text
+from conftest import Dirent, SPOT_FAIL, SPOT_NOSOCK, SPOT_OK, block, card_fread, text
 from fuzz import hostile
 from test_radio import Sp, fx
 
@@ -229,10 +229,7 @@ class Files:
             self.names[f], self.at[f] = name, 0
             return f
         def fread(buf, size, n, f, *_):
-            piece = self.files[self.names[f]][self.at[f]:self.at[f] + size * n]
-            C.memmove(buf, piece, len(piece))
-            self.at[f] += len(piece)
-            return len(piece) // size
+            return card_fread(self, buf, size, n, f)
         def fseek(f, at, whence, *_):
             self.at[f] = len(self.files[self.names[f]]) if whence == 2 else at
         fw.mock('fw_fopen', fopen)
