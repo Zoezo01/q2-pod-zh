@@ -201,7 +201,8 @@ typedef struct {
     unsigned char slider_kind;
     unsigned np_hash; /* of the album text, position and queue length shown, 0 to refresh */
     unsigned np_art;  /* the track and player cover img_cover last took (np_art_poll) */
-    unsigned np_seen; /* the track and tags the page's update last drew (np_update_poll) */
+    unsigned np_seen; /* the track and tags the page's update last drew (np_update_poll), 0 forces
+                         the next one */
     int np_left;
     /* Minimal's album marquee: np_off px scrolled of the np_over px the album overflows its label.
      */

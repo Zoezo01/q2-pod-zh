@@ -1670,6 +1670,7 @@ def test_now_playings_heart_is_drawn_after_a_favourite_from_its_menu(hold, recs,
     try:
         wm = NL.Wm(fw)
         wm.call(wm.p)  # the page as it opened: its song drawn
+        assert forced == [1]
         hold.hold()
         hold.menu()
         hold.pick(row)
