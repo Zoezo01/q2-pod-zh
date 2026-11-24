@@ -546,6 +546,29 @@ def test_a_long_preset_name_ellipsises_right_aligned_clear_of_its_caption(fw):
     assert x > 118 and x + w == 316  # past Classic's 27 px caption; ends where the other values do
 
 
+def test_a_file_s_name_too_long_for_its_row_ellipsises_in_the_box_a_plain_row_s_text_has(fw):
+    cut, focus, style = [], [], {}
+    fw.mock('hscroll_label_set_ellipses', lambda w, on, *_: cut.append((w, i32(on))))
+    fw.mock('hscroll_label_set_only_focus', lambda w, on, *_: focus.append((w, i32(on))))
+    fw.mock('widget_use_style', lambda w, name, *_: style.__setitem__(w, C.string_at(name).decode()))
+    name = 'LETSHUOER DEFIANT-to-iBASSO Exemplar'
+    p = page(fw, files={f'{SAVED}/{name}.peq': b'x', f'{IMPORT}/{name}.txt': b'Preamp: -3 dB\n'}).advanced()
+    p.click('Presets')
+    p.click('Save editor preset')
+    plain = p.children(p.rows()[0][1])[0]  # Save as Manual 01: a row's plain label
+    x, _, w, _ = struct.unpack_from('<4i', p.blocks[plain], 0)
+    assert style[plain] == 's_label_white20l'
+    p.ret()
+    for file in f'{name}.peq', f'{name}.txt':  # Presets' list, then Import from SD /EQ's
+        if file.endswith('.txt'):
+            p.click('Import from SD /EQ')
+        (label,) = p.children([item for t, item in p.rows() if t == file][0])
+        assert style[label] == 's_scrlabel_white20l'
+        assert (label, 1) in cut and (label, 1) in focus  # only_focus: still until the marquee starts it, selected
+        # stock's hscroll_label keeps 2 px each side: its text has the plain label's box, so a name that fits stays put
+        assert struct.unpack_from('<4i', p.blocks[label], 0)[::2] == (x - 2, w + 4)
+
+
 # The curve.
 
 def grid(canvas):

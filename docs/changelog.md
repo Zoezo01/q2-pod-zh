@@ -24,6 +24,7 @@
   - Lyrics: the lyrics in a song's tag are read to their first 64 KB. A tag with megabytes of text on one line could stall or crash the player.
   - Apps: stopping an app signals only the one process its pid file names. Any other text in that file went to `kill` as arguments.
   - Prompts: a prompt's second button says what it does, in every theme: **Shut Down** on **Shut Down?**, **Restart** on **Restart to apply?** and **Delete** on **Delete File**. It said **OK**.
+  - EQ: on **Import from SD /EQ**, a preset file's long name ends in an ellipsis and scrolls while it is selected.
 - **1.9.1**:
   - Standby: going into Standby gives the card up to 2 seconds to finish and unmount before its power is cut, where it used to cut it at once with files still open, which could leave the card marked as not properly unmounted and lose what was still being written.
   - EQ: in **Advanced**, drag a band up or down on the curve to set its gain, as you drag Simple's sliders. Touch the ring of a band that's on. Choose **Apply changes** to hear it.
