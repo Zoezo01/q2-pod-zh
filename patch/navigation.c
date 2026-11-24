@@ -818,7 +818,9 @@ static int position(menu_t *m) {
 
 /* Remember where the user was. Widget props die with a recreated page; this survives it.
  * Non-virtual lists also remember the row's first two text values, so a reordered list restores
- * the same item and duplicate names can be told apart by their second line. */
+ * the same item and duplicate names can be told apart by their second line. A fixed menu is
+ * never remembered: opened forward it starts at its top, as the iPod's do, and a Return shows the
+ * live window, whose view keeps its row. */
 static void select(menu_t *m, int id) {
     if (st.center_timer && (m->w != st.center_surface || id != st.center_id)) cancel_center();
     if (st.reveal_surface == m->w) st.reveal_surface = (void *)0;
@@ -833,7 +835,7 @@ static void select(menu_t *m, int id) {
                 hash2 = r.two;
             }
         }
-        if (ctx >= 0) {
+        if (ctx >= 0 && contexts[ctx].kind != CTX_FIXED) {
             int p = position(m);
             if (p < 0) p = POS_MEM - 1;
             for (; p > 0; --p) st.pos[p] = st.pos[p - 1];

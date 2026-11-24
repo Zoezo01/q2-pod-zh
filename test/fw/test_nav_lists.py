@@ -668,6 +668,28 @@ def test_a_picker_opens_on_its_current_option(fw, ui):
     assert again.selected == 2
 
 
+@pytest.mark.parametrize('name', ['sysset_page', 'display_page', 'localmusic_page', 'rated_page', 'longsongs_page'])
+def test_a_fixed_menu_opened_forward_starts_at_its_top(fw, ui, name):
+    """The iPod's rule: a settings menu (and Library, Most Played, Ratings' lists, Long Songs) opened again starts on
+    its first row, so Loved never opens on a row left in Top Rated (both rated_page); the page a Return shows keeps its
+    row, as it keeps its view."""
+    page = chosen(fw, ui, Page(ui, titles(20), name=name), 5)
+    again = Page(ui, titles(20), name=name)
+    paint(fw, again)
+    assert again.selected == 0
+    chosen(fw, ui, again, 3)
+    ui.top = page.win  # Return: the window under it, its view as it was
+    paint(fw, page)
+    assert page.selected == 5
+    if name == 'longsongs_page':  # its measured list replaces "Measuring songs…" in the same window
+        later = Page(ui, ['Cancel'], name=name)
+        paint(fw, later)
+        later.win.children.remove(later.view)
+        later.view = scroll_list(ui, later.win, titles(20))
+        paint(fw, later)
+        assert later.selected == 0
+
+
 def test_a_sliding_page_arrives_on_its_row_without_a_glide(fw, ui):
     chosen(fw, ui, Page(ui, titles(40)), 25)
     ui.glides.clear()

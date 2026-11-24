@@ -234,12 +234,12 @@ for virtual in (False,True):
         assert m.selected(w)==9 and m.get(w+off)==(432 if height<48 else 480-height)
         m.paint(w); assert not m.moved(); passed()
 # Entering a tall row from either direction reveals its title, including after recreation.
-m=Machine(); w,es=m.page_list(3,height=96,extent=400)
+m=Machine(); w,es=m.page_list(3,height=96,extent=400,name='allmusic_page')
 m.word(es[1]+O['W_H'],140); m.word(es[2]+O['W_Y'],188)
 m.call(); assert m.selected(w)==1 and m.get(w+O['SCROLL_Y'])==48
 m.call(); m.call(O['KEY_PREV'])
 assert m.selected(w)==1 and m.get(w+O['SCROLL_Y'])==48
-w,es=m.page_list(3,height=96,extent=400)
+w,es=m.page_list(3,height=96,extent=400,name='allmusic_page')
 m.word(es[1]+O['W_H'],140); m.word(es[2]+O['W_Y'],188)
 m.paint(w); assert m.selected(w)==1 and m.get(w+O['SCROLL_Y'])==48; passed()
 # Row 0 brings back what heads the list above it (the EQ page's graph) when both fit; a head too tall for that
@@ -350,11 +350,11 @@ for pointer_down in (False,True):
     for virtual in (False,True):
         m=Machine()
         if virtual: w,rs,es=m.table_page(n=20)
-        else: w,es=m.page_list(20)
+        else: w,es=m.page_list(20,name='allmusic_page')
         m.paint(w)
         for _ in range(12): m.call()
         if virtual: w,rs,es=m.table_page(rebind=True)
-        else: w,es=m.page_list(20)
+        else: w,es=m.page_list(20,name='allmusic_page')
         off=O['TABLE_TOP'] if virtual else O['SCROLL_Y']
         if pointer_down:
             m.touch()

@@ -4,8 +4,8 @@
  * dialog or page with no list: its own buttons are the rows. CHOICE marks a picker, which opens on
  * its checked option.
  * The builder rejects any name that is not a window name in the stock rootfs. CTX_DYNAMIC pages
- * never import another page's row; CTX_FIXED menus restore by window name alone; CTX_FOLDER and
- * CTX_LOCAL add a content fingerprint. */
+ * never import another page's row; CTX_FIXED menus are never remembered: opened forward they
+ * start at their top; CTX_FOLDER and CTX_LOCAL add a content fingerprint. */
 { "audiosetting_page", CTX_FIXED, 0 },
 { "netdiskdownload_page", CTX_DYNAMIC, 0 },
 { "netdiskfolder_page", CTX_DYNAMIC, 0 },

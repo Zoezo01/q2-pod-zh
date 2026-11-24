@@ -480,17 +480,17 @@ def walk(n,steps,texts=(),extent=1000,**kw):
     for _ in range(steps): assert m.call()==11
     assert m.selected(w)==steps
     return m,w,es
-m,w,es=walk(10,5); assert m.get(w+O['SCROLL_Y'])==204
-w2,es2=m.page_list(10,extent=1000)
+m,w,es=walk(10,5,name='allmusic_page'); assert m.get(w+O['SCROLL_Y'])==204
+w2,es2=m.page_list(10,extent=1000,name='allmusic_page')
 assert m.paint(w2)==0 and m.selected(w2)==5 and m.get(w2+O['SCROLL_Y'])==204
 assert m.sel()==(0,36,240,48)
 assert m.confirm()==11 and m.dispatched()[0][1]==es2[5]; passed()
 # The theme's recall: Minimal glides its 300 ms; Classic's list shows the remembered row at once.
 for setup,ms in (([],300),([classic_light],0)):
     SETUP[:]=setup
-    try: rm,_,_=walk(10,5)
+    try: rm,_,_=walk(10,5,name='allmusic_page')
     finally: SETUP.clear()
-    rw,_=rm.page_list(10,extent=1000); rm.calls=[]
+    rw,_=rm.page_list(10,extent=1000,name='allmusic_page'); rm.calls=[]
     assert rm.paint(rw)==0 and rm.selected(rw)==5 and rm.get(rw+O['SCROLL_Y'])==204
     assert rm.moved()[0][0]==('scroll_view_scroll_delta_to' if ms else 'scroll_view_set_offset') and rm.nodes[rw].get('glide_ms',0)==ms
 passed()
@@ -498,25 +498,34 @@ passed()
 # Memory is per audited context: visiting another page leaves it alone.
 w3,es3=m.page_list(10,extent=1000,name='display_page')
 assert m.paint(w3)==0 and m.selected(w3)==0
-w4,es4=m.page_list(10,extent=1000)
+w4,es4=m.page_list(10,extent=1000,name='allmusic_page')
 assert m.paint(w4)==0 and m.selected(w4)==5; passed()
+# A fixed menu opened forward starts at its top, the iPod's rule; a picker opens on its checked option, and a Return
+# shows the page under it on the row it was left on.
+fm,f0,_=walk(10,5); under=fm.top
+f1,_=fm.page_list(10,extent=1000)
+assert fm.paint(f1)==0 and fm.selected(f1)==0
+pw,pes=fm.page_list(6,extent=1000,name='playmode_page'); fm.nodes[pes[2]]['children']=[fm.node('image',image='select')]
+assert fm.paint(pw)==0 and fm.selected(pw)==2
+fm.top=under; fm.word(fm.wm+O['W_KEY_TARGET'],under)
+assert fm.paint(f0)==0 and fm.selected(f0)==5; passed()
 
 # A stale remembered row is ignored when the new list is shorter.
-w5,es5=m.page_list(2,extent=300)
+w5,es5=m.page_list(2,extent=300,name='allmusic_page')
 assert m.paint(w5)==0 and m.selected(w5)==0
 assert m.confirm()==11 and m.dispatched()[0][1]==es5[0]; passed()
 
 # A settled swipe stores the row the user sees, not the pre-swipe selection.
-m=Machine(); w,es=m.page_list(10,extent=1000)
+m=Machine(); w,es=m.page_list(10,extent=1000,name='allmusic_page')
 m.paint(w); m.touch(); m.word(w+O['SCROLL_Y'],240); m.word(w+O['VIEW_ANIMATOR'],0x1234)
 m.paint(w); assert m.selected(w)==0
 m.word(w+O['VIEW_ANIMATOR'],0); m.paint(w); assert m.selected(w)==5
-w2,es2=m.page_list(10,extent=1000)
+w2,es2=m.page_list(10,extent=1000,name='allmusic_page')
 assert m.paint(w2)==0 and m.selected(w2)==5 and m.get(w2+O['SCROLL_Y'])==204; passed()
 
 # Position memory follows row text across a recreation, not just the index.
-m,w,es=walk(6,4,[f'track {i}' for i in range(6)])
-w2,es2=m.page_list(6,extent=1000); m.label(es2,[f'track {i}' for i in (4,0,1,2,3,5)])
+m,w,es=walk(6,4,[f'track {i}' for i in range(6)],name='allmusic_page')
+w2,es2=m.page_list(6,extent=1000,name='allmusic_page'); m.label(es2,[f'track {i}' for i in (4,0,1,2,3,5)])
 assert m.paint(w2)==0 and m.selected(w2)==0
 assert m.confirm()==11 and m.dispatched()[0][1]==es2[0]; passed()
 # The same recall with (rows, detents, texts before, texts after recreation, recalled row).
@@ -532,21 +541,21 @@ for n,steps,before,after,want in (
              ['Intro','Intro',('Intro','Artist A'),('Intro','Artist B')],3),
         # A subtitle missing from the recreated rows never blocks the primary match.
         (4,1,['Intro',('Intro','Artist B'),'Intro','Intro'],['Intro',None,None,'Intro'],0)):
-    m,w,es=walk(n,steps,before)
-    w2,es2=m.page_list(n,extent=1000); m.label(es2,after)
+    m,w,es=walk(n,steps,before,name='allmusic_page')
+    w2,es2=m.page_list(n,extent=1000,name='allmusic_page'); m.label(es2,after)
     assert m.paint(w2)==0 and m.selected(w2)==want
     passed()
 
 import scenarios.nav_recall
 
 # An interrupted recall glide keeps the remembered row instead of adopting a visible one.
-m,w,es=walk(10,5); w2,es2=m.page_list(10,extent=1000); m.glide=False
+m,w,es=walk(10,5,name='allmusic_page'); w2,es2=m.page_list(10,extent=1000,name='allmusic_page'); m.glide=False
 assert m.touch()==0
 m.paint(w2); assert m.selected(w2)==5
-w3,es3=m.page_list(10,extent=1000)
+w3,es3=m.page_list(10,extent=1000,name='allmusic_page')
 assert m.paint(w3)==0 and m.selected(w3)==5; passed()
 # A wheel detent after recreation interrupts recall and sets the offset immediately.
-m,w,es=walk(10,5); w2,es2=m.page_list(10,extent=1000); m.glide=False
+m,w,es=walk(10,5,name='allmusic_page'); w2,es2=m.page_list(10,extent=1000,name='allmusic_page'); m.glide=False
 assert m.call()==11 and m.selected(w2)==6
 assert m.moved()[-1][0]=='scroll_view_set_offset' and m.moved()[-1][3]==252; passed()
 
@@ -664,9 +673,9 @@ for home in (False,True):
 
 # Centre consumes a touch interruption once; its second release must not stop the recall
 # glide again and replace the armed row with a different visible row.
-m=Machine(); w,es=m.page_list(10); m.paint(w)
+m=Machine(); w,es=m.page_list(10,name='allmusic_page'); m.paint(w)
 for _ in range(5): m.call()
-w,es=m.page_list(10); m.touch(); m.glide=False
+w,es=m.page_list(10,name='allmusic_page'); m.touch(); m.glide=False
 assert m.release()==11 and m.selected(w)==5
 assert m.release(100)==0 and m.screens==[0]
 m.advance(300)
@@ -1934,7 +1943,7 @@ for on,tab,page,want in ((1,1,'artistinfo_page',[1]),(2,1,'artistinfo_page',[1])
     passed()
 import scenarios.artist_albums
 # A sliding page's first paint is its snapshot, so a recalled row is revealed at once, not by a glide.
-m,w,es=walk(10,5); w2,es2=m.page_list(10,extent=1000); m.nodes[m.top]['anim_hint']=HINT
+m,w,es=walk(10,5,name='allmusic_page'); w2,es2=m.page_list(10,extent=1000,name='allmusic_page'); m.nodes[m.top]['anim_hint']=HINT
 assert m.paint(w2)==0 and m.selected(w2)==5 and m.get(w2+O['SCROLL_Y'])==204
 assert [c[0] for c in m.moved()]==['scroll_view_set_offset']; passed()
 

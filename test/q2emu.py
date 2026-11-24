@@ -830,7 +830,7 @@ class Machine:
     def list_surface(self,virtual,n=20,rebind=True):
         """A plain list of n 48px rows or a four-row virtual table; optionally rebound."""
         if not virtual:
-            w,es=self.page_list(n,extent=n*48)
+            w,es=self.page_list(n,extent=n*48,name='allmusic_page')  # a content list: it remembers its row
             return w,None
         w,rs,es=self.table_page(rebind=rebind)
         return w,rs

@@ -3,7 +3,7 @@ from q2emu import *
 
 # Run the actual stock label text accessor, including value_wstr and the label vtable.
 # U+0100 and U+0200 share a low zero byte; titles/subtitles must use complete code points.
-m=Machine(); w,es=m.page_list(4,extent=1000)
+m=Machine(); w,es=m.page_list(4,extent=1000,name='allmusic_page')
 del m.handlers[syms['widget_get_text']]
 m.handlers[syms['strcmp@GLIBC_2.0']]='tk_strcmp'
 def stock_text(e,text):
@@ -18,7 +18,7 @@ del m.handlers[syms['widget_get_prop_str']]
 assert m.call(address=syms['widget_get_prop_str'],args=(es[0],m.string('text'),0,0))==0
 m.mock('widget_get_prop_str')
 m.paint(w); m.call(); assert m.selected(w)==1
-w2,es2=m.page_list(4,extent=1000)
+w2,es2=m.page_list(4,extent=1000,name='allmusic_page')
 for i,e in enumerate(es2):
     stock_text(e,'\u0100 Intro')
     sub=m.node('label'); stock_text(sub,['\u0100','\U0001f600','音楽','\u0200'][i])
