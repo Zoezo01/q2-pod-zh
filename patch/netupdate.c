@@ -974,7 +974,7 @@ static int install(int i) {
     if (!r) {
         sh.stage = 3;
         if (is(i, "spotify"))
-            system(SPOT_KILL);   /* librespot runs from .spotify, if started since */
+            spot_kill("", "");   /* librespot runs from .spotify, if started since */
         addon_quit(apps[i].dir); /* a card app, the same: its files closed first */
         app_file(path, sizeof path, i, ".tag");
         r = shelf_place(i);

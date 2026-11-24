@@ -3571,7 +3571,7 @@ class RockboxMachine(Machine):
         name=self.handlers.get(address,'')
         if not name.startswith('r:'): return super().hook(u,address,size,unused)
         name=name[2:].split('@')[0]; a=u.reg_read(UC_MIPS_REG_A0); self.calls.append((name,a))
-        self.returns(0x2000000 if name=='fopen' else 0)
+        self.returns(0x2000000 if name=='fopen' and self.text(a)=='/tmp/q2pod-rockbox' else 0)  # any other file is missing
 def rockbox(card):
     m=RockboxMachine(); m.rockbox_mode=0o100755 if card else 0
     for n in ('fopen@GLIBC_2.2','fclose@GLIBC_2.2','system@GLIBC_2.0'): m.handlers[syms[n]]='r:'+n

@@ -8583,7 +8583,7 @@ int rockbox_open(void *ctx, event_t *event) {
         (unsigned)btctl_transport_get_volume() <= 127)
         btctl_transport_set_volume(((g_maxvolume < 100 ? g_maxvolume : 100) * 127 + 50) / 100);
     ringnav_clean_end(); /* the watchdog would outlive demo's kill; nothing to report */
-    system("killall checkappprocess.sh; killall -9 hciplayer; " SPOT_KILL "; sync; kill -9 $PPID");
+    spot_kill("killall checkappprocess.sh; killall -9 hciplayer; ", "; sync; kill -9 $PPID");
     return 0;
 }
 

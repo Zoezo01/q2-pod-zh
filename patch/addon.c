@@ -322,10 +322,16 @@ int addon_is_bar_icon(const char *name) {
 }
 
 /* A pid file whose loop is gone (crashed, or killed) is removed, so no wait spends its limit on it.
- * ponytail: trusts the pid in the file; a loop that died without removing it, its pid since reused,
- * would TERM that process. A flock in run would close this. */
+ * The file is the app's (a non-root user's): only its one decimal pid above 1 reaches kill
+ * (pid_of), as an int, never the file's words (-9 -1, 1, 0 would signal everything); else it is
+ * removed. ponytail: trusts the pid in the file; a loop that died without removing it, its pid
+ * since reused, would TERM that process. A flock in run would close this. */
 static void stop_cmd(const char *pid, char *cmd, unsigned n) {
-    snprintf(cmd, n, "kill $(cat %s) 2>/dev/null || rm -f %s", pid, pid);
+    int p = pid_of(pid);
+    if (p)
+        snprintf(cmd, n, "kill %d 2>/dev/null || rm -f %s", p, pid);
+    else
+        snprintf(cmd, n, "rm -f %s", pid);
 }
 
 static void launch(app_t *a) {
@@ -1492,11 +1498,8 @@ void addon_stop(void) {
 /* An app's loop runs: its pid file names a process that is there (/proc/<pid>; demo imports no
  * kill()). A pid file alone may be a dead loop's, kept in /tmp across a restart of demo. */
 static int loop_alive(const app_t *a) {
-    char raw[16], proc[24];
-    if (!state_read(a->pid, raw, sizeof raw)) return 0;
-    int pid = 0;
-    for (const char *c = raw + 1; *c >= '0' && *c <= '9' && pid < 10000000; ++c) /* past its '\n' */
-        pid = pid * 10 + *c - '0';
+    char proc[24];
+    int pid = pid_of(a->pid);
     tk_snprintf(proc, sizeof proc, "/proc/%d", pid);
     return pid > 0 && !access(proc, 0);
 }

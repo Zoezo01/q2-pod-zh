@@ -2792,7 +2792,7 @@ def test_an_about_page_that_is_not_stock_s_is_left(fw, ui):
 
 
 def test_usb_mode_ends_the_card_s_apps_before_stock_unmounts_it(fw):
-    disk = Disk(fw, {**deezer(), '/tmp/q2-deez': b'1'})  # its pid file: running
+    disk = Disk(fw, {**deezer(), '/tmp/q2-deez': b'1234'})  # its pid file: running
     fw.fn('addon_scan', C.c_int)()
     order = []
     fw.mock('fw_system', lambda cmd, *_: order.append('stop'))

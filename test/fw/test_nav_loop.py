@@ -885,9 +885,11 @@ def test_no_rockbox_toasts_and_stays(fw, st):
 def test_rockbox_leaves_its_flag_and_ends_demo(fw, power):
     card = rockbox(fw)
     power('wdt').value = 6
+    ran = []
+    fw.mock('fw_system', lambda cmd, *_: ran.append(C.string_at(cmd)))  # the command is built on rockbox_open's stack
     fw.fn('rockbox_open', C.c_int, C.c_void_p, C.c_void_p)(None, None)
     assert host.tools_build.ROCKBOX_FLAG in card.files  # S90play runs Rockbox on it
-    cmd = C.string_at(fw.calls('fw_system')[-1][1][0])
+    cmd = ran[-1]
     assert cmd.endswith(b'kill -9 $PPID') and b'checkappprocess.sh' in cmd and b'hciplayer' in cmd
     assert fw.calls('save_memoryplay_info')  # the queue kept as power-off keeps it
     assert power('ended').value == 1 and (6, WDT_STOP) in [(c[1][0], c[1][1] & 0xffffffff) for c in fw.calls('fw_ioctl')]

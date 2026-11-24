@@ -27,7 +27,7 @@ class Link:
         return self.world.of('system').count(RUN)
 
     def stops(self):
-        return sum(1 for c in self.world.of('system') if c[0].startswith(b'kill $(cat /tmp/q2-vpn)'))
+        return sum(1 for c in self.world.of('system') if c[0].startswith(b'kill 1234 '))
 
 
 def vpn_app(fw, **more):
@@ -41,7 +41,7 @@ def vpn(fw):
 
 def running(world, link):
     """The follower's start took: the loop's pid file is there."""
-    world.files[b'/tmp/q2-vpn'] = b'1'
+    world.files[b'/tmp/q2-vpn'] = b'1234'
 
 
 def test_link_up_launches(fw):
@@ -255,10 +255,10 @@ def test_a_link_back_while_the_app_is_still_ending_waits_for_it(fw):
     link.poll(0, 100)
     link.poll(0, DOWN_MS)
     assert link.stops() == 1
-    world.files[b'/proc/1'] = b''  # the loop still running
+    world.files[b'/proc/1234'] = b''  # the loop still running
     link.poll(1, 500)  # back; the old loop not gone yet
     assert link.starts() == 1
-    del world.files[b'/tmp/q2-vpn'], world.files[b'/proc/1']  # now it is
+    del world.files[b'/tmp/q2-vpn'], world.files[b'/proc/1234']  # now it is
     link.poll(1, 500)
     assert link.starts() == 2 and vpn(fw).launched == 1
 

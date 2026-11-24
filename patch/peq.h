@@ -277,8 +277,8 @@ void mute_stamp(void);
 #define SPOT_OUT "/tmp/q2-librespot.out" /* the output for the card's aplay.sh, none on the DAC */
 #define SPOT_DOWNLOAD                                                                              \
     "/tmp/q2-librespot.download" /* backend download progress, independent of playback */
-#define SPOT_KILL                                                                                  \
-    "kill -9 $(cat /tmp/q2-librespot); killall -9 librespot aplay; "                               \
+#define SPOT_KILL_REST                                                                             \
+    "killall -9 librespot aplay; "                                                                 \
     "rm -f /tmp/q2-librespot /tmp/q2-librespot.state " SPOT_OUT " " SPOT_DOWNLOAD
 double decibels(double power); /* 10 log10 */
 
@@ -659,6 +659,8 @@ unsigned long long now_ms(void); /* CLOCK_MONOTONIC */
 void field(const char *raw, const char *key, char *out, unsigned n);
 unsigned long long number(const char *raw, const char *key);
 unsigned state_read(const char *path, char *raw, unsigned size);
+int pid_of(const char *path);
+void spot_kill(const char *before, const char *after);
 struct unix_addr { /* sockaddr_un */
     unsigned short family;
     char path[108];

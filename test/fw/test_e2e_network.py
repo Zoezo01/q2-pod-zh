@@ -695,7 +695,7 @@ class CardApps:
     def __init__(self, w):
         self.w, self.started = w, {}
         w.shell.hook(r'/bin/sh /mnt/mmc/\.([a-z0-9-]+)/run', self.run)
-        w.shell.hook(r'kill \$\(cat (/tmp/q2-[a-z0-9-]+)\) 2>/dev/null \|\| rm -f \1', lambda m: w.card.drop(m[1]))
+        w.shell.hook(r'kill [0-9]+ 2>/dev/null \|\| rm -f (/tmp/q2-[a-z0-9-]+)', lambda m: w.card.drop(m[1]))
 
     def run(self, m):
         if f'/tmp/q2-{m[1]}' not in self.w.card.files:
@@ -1107,7 +1107,7 @@ def test_the_app_store_updates_an_app_stopping_it_first_and_keeping_what_it_save
     card = w.card.tree()
     assert card['.foo/q2-foo'] == b'binary 2' and card['.foo/lib.so'] == b'new' and card['.foo/settings.cfg'] == b'volume=3'
     assert card['.q2/apps/foo.tag'] == b'1.1' and '.foo/lib.so' in card['.q2/apps/foo.files'].decode().split('\n')
-    stop = w.log.index(('system', 'kill $(cat /tmp/q2-foo) 2>/dev/null || rm -f /tmp/q2-foo'))
+    stop = w.log.index(('system', 'kill 321 2>/dev/null || rm -f /tmp/q2-foo'))
     first = next(i for i, e in enumerate(w.log) if e[0] == 'rename' and e[2].startswith('/mnt/mmc/.foo/'))
     assert stop < first and '/tmp/q2-foo' not in w.card.files
     assert streaming(w) == ['Foo']

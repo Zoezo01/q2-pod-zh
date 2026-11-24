@@ -2851,7 +2851,7 @@ def test_a_remove_leaves_nothing_an_app_saves_on_its_way_out(fw, save_ms):
         app_saves()
 
     def system(cmd):
-        if cmd.startswith(b'kill $(cat /tmp/q2-foo)'):
+        if cmd.startswith(b'kill 4321 '):
             term.append(now[0])
         return card.shell(cmd)
     card.system = system
@@ -3033,7 +3033,7 @@ def test_the_themes_pressed_once_rockbox_left_the_card_ask_for_it(fw):
 
 
 def test_spotify_installs_with_librespot_stopped_and_its_cache_kept(fw):
-    kill = b'kill -9 $(cat /tmp/q2-librespot)'
+    kill = b'killall -9 librespot aplay'
     card = Disk(fw, {SOURCES: b'x/q2-librespot Spotify\n', b'/mnt/mmc/.spotify/cache/x': b'mine', b'/mnt/mmc/.spotify/.cache-size': b'2G'})
     store_net(fw, {'.spotify/librespot': b'bin', '.spotify/run': b'sh', '.spotify/cache/x': b'theirs', '.spotify/.cache-size': b'0'},
               listed=b'x/q2-librespot Spotify\n')

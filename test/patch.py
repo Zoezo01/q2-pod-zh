@@ -6591,10 +6591,10 @@ m,view,rows=display({'BATTERY':'3'}); assert m.nodes[m.nodes[m.nodes[rows[2]]['c
 # Home's Rockbox row (docs/boot.md#rockbox-from-home): its click saves the queue as power-off does,
 # stops the player, leaves S90play's flag and kills demo; without Rockbox on the card it says so.
 m,names=rockbox(True)
-texts={c[0]:m.text(c[1]) for c in m.calls if c[0] in ('fopen','system')}
-assert texts=={'fopen':'/tmp/q2pod-rockbox',
-               'system':'killall checkappprocess.sh; killall -9 hciplayer; kill -9 $(cat /tmp/q2-librespot); '
-                         'killall -9 librespot aplay; rm -f /tmp/q2-librespot /tmp/q2-librespot.state /tmp/q2-librespot.out /tmp/q2-librespot.download; sync; kill -9 $PPID'}
+texts=[m.text(c[1]) for c in m.calls if c[0] in ('fopen','system')]  # the mark, Spotify's pid file (none), the shell
+assert texts==['/tmp/q2pod-rockbox','/tmp/q2-librespot',
+               'killall checkappprocess.sh; killall -9 hciplayer; '
+                         'killall -9 librespot aplay; rm -f /tmp/q2-librespot /tmp/q2-librespot.state /tmp/q2-librespot.out /tmp/q2-librespot.download; sync; kill -9 $PPID']
 assert [n for n in names if n in ('fclose','save_memoryplay_info','player_stop','system')]==['fclose','save_memoryplay_info','player_stop','system']; passed()
 m,names=rockbox(False)
 assert not {'fopen','player_stop','system'} & set(names)
@@ -10345,15 +10345,15 @@ m.on_sleep=lambda: m.files.pop(SPID,None) if m.now>=t0+300 else None; t0=m.now; 
 tramp=int(manifest['patch_symbols']['stock_usbmode_trampoline'],16); m.handlers[tramp]='stock_usbmode'; m.u.hook_add(UC_HOOK_CODE,m.hook,begin=tramp,end=tramp)
 m.call(address=HOOKS['usbmode_page_init'][0],args=(0x55,0x66,0,0),gap=0,count=5_000_000); m.on_sleep=None
 names=[c[0] for c in m.calls]
-assert m.systems==['kill $(cat /tmp/q2-soulseek) 2>/dev/null || rm -f /tmp/q2-soulseek'] and names.index('stock_usbmode')>names.index('sleep_ms') and SPID not in m.files,(m.systems,names[-12:])
-m.open_pages={'usbmode_page'}; m.poll(); assert m.systems==['kill $(cat /tmp/q2-soulseek) 2>/dev/null || rm -f /tmp/q2-soulseek']
+assert m.systems==['kill 123 2>/dev/null || rm -f /tmp/q2-soulseek'] and names.index('stock_usbmode')>names.index('sleep_ms') and SPID not in m.files,(m.systems,names[-12:])
+m.open_pages={'usbmode_page'}; m.poll(); assert m.systems==['kill 123 2>/dev/null || rm -f /tmp/q2-soulseek']
 m.open_pages=set(); m.poll(); assert m.systems[-1]=='/bin/sh /mnt/mmc/.soulseek/run'; passed()
 # Stop Streaming Services stops it too.
-m.systems=[]; run(m,'addon_stop'); assert m.systems==['kill $(cat /tmp/q2-soulseek) 2>/dev/null || rm -f /tmp/q2-soulseek']; passed()
+m.systems=[]; m.files[SPID]=bytearray(b'123'); run(m,'addon_stop'); assert m.systems==['kill 123 2>/dev/null || rm -f /tmp/q2-soulseek']; passed()
 # Requests no longer answered while the app may still run (its socket gone, or the app frozen): the
 # error page offers Stop Soulseek beside Retry. It ends the app through its loop, which a frozen app
 # can't refuse as it could its own stop, toasts and leaves the page; nothing starts it again.
-SKILL='kill $(cat /tmp/q2-soulseek) 2>/dev/null || rm -f /tmp/q2-soulseek'
+SKILL='kill 123 2>/dev/null || rm -f /tmp/q2-soulseek'
 m=slsk_gone(); assert m.labels()==["Soulseek isn't running",'Retry','Stop Soulseek'],m.labels()
 m.systems=[]; m.row(1)
 assert m.systems==[SKILL] and m.toasts[-1][3]=='Soulseek stopped' and 'navigator_back' in [c[0] for c in m.calls],(m.systems,m.toasts[-1:])
@@ -10410,7 +10410,7 @@ m.answer('ok','refresh','',FMENU); assert m.top==m.page and m.labels()==FLABELS;
 m.calls=[]; m.pick(3); m.answer('ok','File Browser off','',[])
 assert m.requests[-1]==('stop',) and m.toasts[-1][3]=='File Browser off' and 'navigator_back' in [c[0] for c in m.calls]; m.close()
 # Stop Streaming Services stops it too.
-m.systems=[]; run(m,'addon_stop'); assert m.systems==['kill $(cat /tmp/q2-filebrowser) 2>/dev/null || rm -f /tmp/q2-filebrowser']; passed()
+m.systems=[]; run(m,'addon_stop'); assert m.systems==['kill 9 2>/dev/null || rm -f /tmp/q2-filebrowser']; passed()
 
 # Go to Album or Go to Artist on a song in a card app's folder (queue_menu.c qm_goto, addon.c
 # addon_goto): with goto=1 in its manifest, its page opens on the song's album or artist, op "goto"
@@ -10775,7 +10775,7 @@ m.destroy(songs); m.top=m.page; m.advance(2000); m.answer('ok','refresh','',[('l
 m.plays=[]; m.pick(0); assert [p[2:4] for p in m.plays]==[(1,0xf001)] and m.play_names==list(sorted(names)),(m.plays,m.play_names); passed()
 # Stop Streaming Services, USB storage and Rockbox stop it as the other apps (it writes to the card).
 m.close(); m.files[DZPID]=bytearray(b'7'); m.systems=[]; run(m,'addon_stop')
-assert 'kill $(cat /tmp/q2-deezer) 2>/dev/null || rm -f /tmp/q2-deezer' in m.systems,m.systems; passed()
+assert 'kill 7 2>/dev/null || rm -f /tmp/q2-deezer' in m.systems,m.systems; passed()
 # Two apps running, each .play left in /tmp (q2-deezer's and q2-subsonic's, kept while each runs): only a change
 # to an app's own starts a session, so the newer one plays once and neither takes the queue back at each poll.
 card_app(m,'subsonic','name=Subsonic\n'); m.files['/tmp/q2-subsonic']=bytearray(b'4343'); n=len(m.plays)

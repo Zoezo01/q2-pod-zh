@@ -169,8 +169,8 @@ class Librespot:
         return [a[:3] for _, a in self.fw.calls('reset_poweroptions_timer')]
 
     def stopped(self):
-        """spot_stop's commands run: the launcher's loop by its pid, librespot and aplay, and their files removed."""
-        return [c for c in self.ran if 'kill -9 $(cat /tmp/q2-librespot)' in c and 'killall -9 librespot aplay' in c
+        """spot_stop's commands run: the launcher's loop by its pid (kill -9 <pid> when its file holds one), librespot and aplay, and their files removed."""
+        return [c for c in self.ran if 'killall -9 librespot aplay' in c
                 and all(f in c.split('rm -f', 1)[-1] for f in (STATE, OUT, DOWNLOAD))]
 
 
@@ -285,6 +285,15 @@ def test_local_music_playing_takes_the_keys_back_until_librespot_plays_again(fw)
     assert (lib.sp.local, lib.sp.active) == (1, 0)
     lib.poll(state=b'state=playing\ntrack=1\n')
     assert (lib.sp.local, lib.sp.active) == (0, 1)
+
+
+@pytest.mark.parametrize('raw, head', [(b'4321\n', 'kill -9 4321; '), (b' 4321 ', 'kill -9 4321; '), (b'-1', ''), (b'-9 -1', ''),
+                                      (b'1', ''), (b'0', ''), (b'4321 -1', ''), (b'', '')])
+def test_the_stop_kills_only_the_one_pid_in_the_pid_file(fw, raw, head):
+    lib = Librespot(fw)
+    lib.card.files['/tmp/q2-librespot'] = raw
+    fw.fn('spot_stop', None)()
+    assert lib.ran[-1].startswith(head + 'killall -9 librespot aplay') and '$(cat' not in lib.ran[-1]
 
 
 @pytest.mark.parametrize('played, idle_ms', [(True, 30000), (False, 150000)])

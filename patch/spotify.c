@@ -172,6 +172,21 @@ unsigned state_read(const char *path, char *raw, unsigned size) {
     return n;
 }
 
+/* A pid file's pid: its one decimal number, spaces, tabs and newlines around it allowed, above 1;
+ * else 0 (no file, a sign, a second word, 0, 1, 10,000,000 or more). The file is an app's, a
+ * non-root user's, and root's kill takes this int, never its words. */
+int pid_of(const char *path) {
+    char raw[24];
+    int p = 0;
+    state_read(path, raw, sizeof raw);
+    const char *c = raw;
+    while (*c == ' ' || *c == '\t' || *c == '\n') ++c;
+    const char *d = c;
+    for (; *c >= '0' && *c <= '9' && p < 10000000; ++c) p = p * 10 + *c - '0';
+    while (*c == ' ' || *c == '\t' || *c == '\n') ++c;
+    return c == d || *c || p < 2 || p >= 10000000 ? 0 : p;
+}
+
 /* The state file into raw; 1 when it changed. Gone (librespot not up yet) reads as no session. */
 static int spot_read(char *raw, unsigned size) {
     state_read(SPOT_STATE, raw, size);
@@ -277,12 +292,22 @@ static int spot_refused(void) {
     return strstr(buf, SPOT_REFUSED) != 0;
 }
 
+/* before, then librespot and its loop killed (the loop's pid file names a pid above 1, else only
+ * killall), its files removed, then after: one shell command, as the callers ran it. */
+void spot_kill(const char *before, const char *after) {
+    char cmd[320], head[24] = "";
+    int p = pid_of("/tmp/q2-librespot");
+    if (p) tk_snprintf(head, sizeof head, "kill -9 %d; ", p);
+    tk_snprintf(cmd, sizeof cmd, "%s%s" SPOT_KILL_REST "%s", before, head, after);
+    system(cmd);
+}
+
 /* SPOT_IDLE_MS after playback ended with the browser shut, or Streaming's Stop Streaming Services
  * row: librespot and its restart loop killed, as Home's Rockbox row does, and the keys local
  * music's. Streaming's Spotify row starts it again. */
 void spot_stop(void) {
     int sock = sp.sock;
-    system(SPOT_KILL);
+    spot_kill("", "");
     memset(&sp, 0, sizeof sp);
     sp.sock = sock;
 }
