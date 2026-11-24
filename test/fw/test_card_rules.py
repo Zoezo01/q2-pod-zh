@@ -435,6 +435,16 @@ def test_lock_rules_run_after_big_clock(fw, card, t):
     assert ('view_timeinfo', (0, 14, 375, 150)) in moves[:-2]  # Large's place first
 
 
+@pytest.mark.parametrize('t', ['minimal', 'modern'])
+def test_at_a_glance_takes_no_lock_rules(fw, card, t):
+    """At a Glance is every theme's alike: a card theme's lock rules are Default's alone."""
+    win = lock(fw, card, b'move img_slide -9 0', b'move view_playinfo 0 9', b'hide img_screensaver', t=t, LOCKLAYOUT=1)
+    moves = [(name, args[:4]) for name, args in win.calls('widget_move_resize')]
+    assert ('img_slide', (0, 0, 30, 16)) not in moves and moves[-1] != ('view_playinfo', (0, 9, 335, 80))
+    assert ('view_playinfo', (0, 76, 375, 150)) in moves
+    assert ('img_screensaver', 0) not in [(name, args[0]) for name, args in win.calls('widget_set_visible')]
+
+
 # Home
 HOME_ROWS = [name for pg, name, *_ in ROWS if pg[1] == 'home_page']
 SIZES = ('style:normal:font_size', 'style:focused:font_size', 'style:disable:font_size', '_card_px')

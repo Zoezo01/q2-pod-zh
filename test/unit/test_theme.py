@@ -146,8 +146,9 @@ MOTION_TODAY = {**{f'motion.{k}.{a}': 0 for k in ('page', 'playing', 'coverflow'
 
 # At a Glance's lock screen: Minimal's lock.glance, every theme's by extends, in tools/theme.py's order.
 GLANCE = {f'glance.{k}': v for k, v in (
-    ('x', 36), ('right', 339), ('time_y', 16), ('time_px', 44), ('ampm_px', 17), ('date_y', 25), ('date_gap', 19), ('date_px', 15),
-    ('big_y', 50), ('big_px', 104), ('big_ampm_px', 24), ('big_day_y', 168), ('big_day_px', 18), ('card_y', 76), ('card_h', 150),
+    ('x', 36), ('right', 339), ('time_y', 16), ('time_px', 44), ('ampm_y', 40), ('ampm_px', 17), ('date_y', 25), ('date_gap', 19),
+    ('date_px', 15), ('big_y', 50), ('big_px', 104), ('big_ampm_y', 122), ('big_ampm_px', 24), ('big_day_y', 168), ('big_day_px', 18),
+    ('card_y', 76), ('card_h', 150),
     ('cover_y', 8), ('cover_px', 124), ('text_x', 174), ('title_y', 12), ('title_px', 20), ('artist_y', 38), ('artist_px', 16),
     ('album_y', 60), ('album_px', 15), ('place_y', 104), ('place_px', 14), ('text_a', 209), ('day_a', 220), ('shade_h', 88),
     ('shade_a', 88), ('track_y', 234), ('track_h', 48), ('knob_w', 66), ('knob_h', 40), ('knob_in', 4), ('grab', 26), ('done', 625),

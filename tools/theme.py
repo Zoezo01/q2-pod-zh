@@ -87,9 +87,10 @@ def key(path, field, type, hi=None, final=False):
 # travel; dim of 256; ms.
 GLANCE_INTS = {
     'x': 375, 'right': 375,  # the left and right edges everything lines up on
-    'time_y': 320, 'time_px': 160, 'ampm_px': 64,  # the time, top left, and its AM or PM
+    'time_y': 320, 'time_px': 160, 'ampm_y': 320, 'ampm_px': 64,  # the time, top left, and its AM or PM
     'date_y': 320, 'date_gap': 64, 'date_px': 64,  # the weekday, top right, and the date date_gap under it
-    'big_y': 320, 'big_px': 160, 'big_ampm_px': 64, 'big_day_y': 320, 'big_day_px': 64,  # the large clock, on black
+    'big_y': 320, 'big_px': 160, 'big_ampm_y': 320, 'big_ampm_px': 64,  # the large clock, on black
+    'big_day_y': 320, 'big_day_px': 64,  # ... and its date
     'card_y': 320, 'card_h': 320,  # the song's card (stock's view_playinfo)
     'cover_y': 320, 'cover_px': 320, 'text_x': 375,  # its square cover at x, and its lines' left edge
     'title_y': 320, 'title_px': 64, 'artist_y': 320, 'artist_px': 64, 'album_y': 320, 'album_px': 64,

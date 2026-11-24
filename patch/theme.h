@@ -127,8 +127,8 @@ typedef struct {
  * look in either half; the shine's bands, outermost first, px wide (shine_w, 0 ends them) and alpha
  */
 typedef struct {
-    short x, right, time_y, time_px, ampm_px, date_y, date_gap, date_px;
-    short big_y, big_px, big_ampm_px, big_day_y, big_day_px;
+    short x, right, time_y, time_px, ampm_y, ampm_px, date_y, date_gap, date_px;
+    short big_y, big_px, big_ampm_y, big_ampm_px, big_day_y, big_day_px;
     short card_y, card_h, cover_y, cover_px, text_x;
     short title_y, title_px, artist_y, artist_px, album_y, album_px, place_y, place_px;
     short text_a, day_a, shade_h, shade_a;

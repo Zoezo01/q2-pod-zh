@@ -308,6 +308,7 @@ int lockscreen_dark(void) {
 }
 
 void info_poll(void) {
+    glance_poll();
     if (!lk.info || lk.timer || !g_backlight_status) return;
     lk.shown = info_state();
     rearm(&lk.timer, info_tick, 1000);
@@ -429,12 +430,15 @@ static void info_paint(widget_t *w, canvas_t *canvas) {
 }
 
 /* saverscreen_page_init: stock builds the lock window; a built-in picture then paints in place of
- * stock's (lockscreen_paint), Large lays the clock out again, and a card theme's rules apply. */
+ * stock's (lockscreen_paint), Large lays the clock out again, and a card theme's rules apply. At a
+ * Glance (Layout's other choice) lays the window out itself, in every theme, and takes no card
+ * theme's rules. */
 int lockscreen_init(widget_t *win, void *ctx) {
     int result = stock_saver_trampoline(win, ctx);
     widget_t *img = widget_lookup(win, "img_screensaver", 1);
     int id = wall_id(PICTURE);
-    int info = img && classic_pages();
+    int glance = img && pod_value(POD_LOCKLAYOUT);
+    int info = img && classic_pages() && !glance;
     lk.built_in = id >= 0;
     if (img && id >= 0) {
         image_base_set_image(img, ""); /* nothing to look up on every paint */
@@ -452,6 +456,14 @@ int lockscreen_init(widget_t *win, void *ctx) {
         }
         widget_on(img, EVT_DESTROY, forget, img);
     }
+    if (glance) {
+        /* a picture of the user's, or a built-in but Black; stock's default counts as none */
+        int picture =
+            id >= 0 ? id != WALLS - 1 : *PICTURE && tk_strcmp(PICTURE, "screensaver_default");
+        if (id < 0 && !picture) image_base_set_image(img, ""); /* the clock on black */
+        glance_init(win, img, picture, id >= 0 ? lk.full : (void *)0);
+        return result;
+    }
     if (info)
         info_screen(win, img, id);
     else if (pod_value(POD_LOCKCLOCK))
@@ -467,6 +479,7 @@ int lockscreen_cover(widget_t *win) {
     int result = stock_savercover_trampoline(win);
     widget_t *img = widget_lookup(win, "img_playcover", 1);
     if (img) widget_invalidate_force(img, 0);
+    if (img) glance_cover(img);
     return result;
 }
 
@@ -532,7 +545,7 @@ void lockscreen_layout_turned(widget_t *win) {
  */
 void lockscreen_paint(widget_t *w, canvas_t *canvas) {
     void *bm = 0;
-    if (!w) return;
+    if (!w || glance_paint(w, canvas)) return;
     if (w == lk.img && lk.built_in) bm = lk.full;
     for (int i = 0; !bm && i < WALLS; ++i)
         if (w == lk.thumb[i])

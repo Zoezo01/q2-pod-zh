@@ -785,10 +785,14 @@ void slider_number(widget_t *label), slider_tray_dirty(widget_t *page),
 void switch_row(widget_t *win, widget_t *view); /* the toolbar's, as a row */
 void stock_more_speed(widget_t *win);
 void stock_more_into(widget_t *win);
-void info_poll(void);          /* lockscreen.c: the info screen's timer, with the screen lit */
-unsigned np_art_key(void);     /* navigation.c: the playing track and its cover file, 0 none */
+void info_poll(void);      /* lockscreen.c: the info screen's timer, with the screen lit */
+unsigned np_art_key(void); /* navigation.c: the playing track and its cover file, 0 none */
 void ringnav_keep_row(widget_t *row); /* navigation.c: row lit again after its list was rebuilt */
 void lockscreen_layout_turned(widget_t *win); /* lockscreen.c: Layout's row was clicked */
+/* lock_glance.c: At a Glance's lock window, from lockscreen.c */
+void glance_init(widget_t *win, widget_t *img, int picture, void *full);
+void glance_poll(void), glance_cover(widget_t *cover);
+int glance_paint(widget_t *w, canvas_t *canvas);
 int xfade_page(widget_t *top); /* crossfade.c */
 int ipod_battery(void);        /* theme_engine.c: IPOD BATTERY, 0 Icon, else a percentage */
 int title_gone(void *w, event_t *event); /* ... and looks for its source again at the next sync */
