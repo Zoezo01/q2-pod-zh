@@ -457,10 +457,11 @@ done:
     return result;
 }
 
-/* A row action's confirm: under Classic its tray, the second cell saying verb. The prompt's
- * own text isn't read. */
-static int confirm_over(void *prompt, const char *verb) {
+/* A confirm whose second cell says verb, under a theme that dresses it the tray (a row action's:
+ * the prompt's own text isn't read) or the page. */
+int confirm_over(void *prompt, const char *verb, int tray) {
     st.confirm_verb = verb;
+    st.confirm_tray = tray;
     int answer = navigator_to_with_context("dialog/confirminfo_dialog", prompt);
     st.confirm_verb = (const char *)0;
     st.confirm_win = (void *)0;
@@ -477,7 +478,7 @@ int ringnav_playlist_delete(widget_t *win, event_t *event) {
         char text[0x400];
     } prompt = { 1, 0, "" };
     tk_snprintf(prompt.text, sizeof prompt.text, "%s", tr("Delete Playlist?"));
-    if (confirm_over(&prompt, tr("Delete")) != 10) return 0;
+    if (confirm_over(&prompt, tr("Delete"), 1) != 10) return 0;
     char sql[256];
     if (pl_db(&db)) goto done;
     if (sqlite3_exec(db, "begin immediate", 0, 0, 0)) goto done;

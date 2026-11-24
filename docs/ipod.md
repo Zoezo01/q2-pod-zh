@@ -707,7 +707,10 @@ never scrolls, and its clickable descendants are the rows in UI order. The wheel
 them with hard ends, Centre clicks the selected one after the usual double-press window, and the
 bar is drawn in the dialog's background: the button's own rectangle for a button narrower than half
 the dialog (the confirm pair), the full width otherwise. A new dialog starts on its first button,
-Cancel on the confirm pair.
+Cancel on the confirm pair. The confirm's second button names what it does: Shut Down on Shut Down?,
+Restart on Restart to apply?, Delete on Delete Playlist? and on stock's song and album deletes (Local
+Music's and Now Playing's, the ones with Also delete source file); stock's other prompts (its playlist Add
+and Delete, Remove from Playlist, the Line Out warning) say OK.
 
 The confirm pair (`img_cancel`, `img_enter`) is two full-width 48-pixel text rows under the prompt,
 **Cancel** at y 208 and **OK** at y 256 (`tools/ipod.py`, after maks112v/qpod), instead of stock's

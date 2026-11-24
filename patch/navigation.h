@@ -166,8 +166,10 @@ typedef struct {
     widget_t *bar_bt, *bar_wifi, *bar_pct, *bar_slot, *bar_icon, *bar_idle, *bar_state, *bar_eq,
         *bar_title, *title_win, *title_lbl,
         *action_view; /* Songs' action bar on title_win, under a set with action_row */
-    /* The row action's confirm on show (confirm_over): its second cell's verb, and its window */
+    /* The confirm on show that confirm_over opened: its second cell's verb, whether it is the
+     * tray, and its window */
     const char *confirm_verb;
+    int confirm_tray;
     widget_t *confirm_win;
     int codec, codec_step, batt_mode;
     unsigned codec_timer, batt_key, bar_timer;
@@ -708,6 +710,8 @@ int search_del(widget_t *w);
 void search_over(widget_t *w, canvas_t *canvas);
 void slider_scrub(widget_t *w, canvas_t *canvas);
 int restart_asked(void); /* navigation.c: the Restart to apply? confirm, yes or no */
+/* playlists.c: a confirm whose second cell says verb; tray 1 the row action's tray, 0 the page */
+int confirm_over(void *prompt, const char *verb, int tray);
 
 /* playlists.c */
 /* Classic's Playlists (pl_dress): a page's add mode (ringnav_playlist), the button of a row that

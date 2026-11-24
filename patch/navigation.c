@@ -2113,15 +2113,42 @@ unsigned ringnav_hscroll_lull(widget_t *w, int (*lulled)(const void *), unsigned
 /* Classic's dialogs (CONFIRM_CLASSIC_LIGHT), in screen pixels and final colours. A dialog
  * is full-screen (0, 0, 375, 320) and its background clear, so the bar and the page show through.
  */
-/* The confirm's form: the tray for the prompt confirm_over asked for, the page for any other. The
- * first confirm painted after the call takes the flag, so a prompt stock opens over it (a held
- * power key) stays a question. None where the theme leaves its prompts stock's. */
+/* The confirm's form: the tray for the prompt confirm_over asked it for, the page for any other.
+ * The first confirm painted after the call takes its verb and form, so a prompt stock opens over it
+ * (a held power key) keeps its own. None where the theme leaves its prompts stock's. */
 static int confirm_form(widget_t *win) {
-    if (theme()->painter[PAINT_CONFIRM] == CONFIRM_STOCK || P(win, W_PARENT) != window_manager() ||
+    if (P(win, W_PARENT) != window_manager() ||
         tk_strcmp(widget_get_prop_str(win, "name", ""), "confirminfo_dialog"))
         return FORM_NONE;
     if (st.confirm_verb && !st.confirm_win) st.confirm_win = win;
-    return st.confirm_verb && win == st.confirm_win ? FORM_TRAY : FORM_PAGE;
+    if (theme()->painter[PAINT_CONFIRM] == CONFIRM_STOCK) return FORM_NONE;
+    return st.confirm_tray && win == st.confirm_win ? FORM_TRAY : FORM_PAGE;
+}
+/* The confirm's second cell names what it does, in every theme: the verb confirm_over gave,
+ * Shut Down?'s (the top window while g_poweroff_state is 1: a held power key opens it over any
+ * prompt, which keeps its own word) or a delete's (stock's context kind 3, the only one with
+ * msg_delcheckbutton: Local Music's album, all-songs and album-info deletes, Now Playing's). Any
+ * other keeps the asset's tr_text, OK as the pack has it, and a prompt that was top when the power
+ * key set the state gets it back.
+ * ponytail: stock's kind-1 prompts (its playlist Add and Delete, Remove from Playlist) and the
+ * Line Out warning open with nothing to tell them by but their translated text; a hook on their
+ * callers would name theirs. Runs in paints, so only if it differs. */
+static void confirm_verb(widget_t *w) {
+    widget_t *ok = widget_lookup(w, "img_enter", 0);
+    const char *down = tr("Shut Down"),
+               *verb =
+                   w == st.confirm_win ? st.confirm_verb
+                   : g_poweroff_state == 1 && w == window_manager_get_top_window(window_manager())
+                       ? down
+                   : widget_lookup(w, "msg_delcheckbutton", 0) ? tr("Delete")
+                                                               : (const char *)0;
+    char now[64] = "";
+    if (!ok) return;
+    widget_get_text_utf8(ok, now, sizeof now);
+    if (verb && strncmp(now, verb, sizeof now - 1))
+        widget_set_text_utf8(ok, verb);
+    else if (!verb && !tk_strcmp(now, down))
+        widget_set_tr_text(ok, widget_get_prop_str(ok, "tr_text", "OK"));
 }
 /* An inset shadow from above (0, 2, blur 2): of its alpha a, what a gaussian leaves on each row. */
 void inset_top(canvas_t *canvas, const rect_t *r, int R, unsigned a) {
@@ -2198,7 +2225,6 @@ static void confirm_dress(widget_t *w, canvas_t *canvas, int form) {
     int flat = flat_dialogs(), cell_h = flat ? CONFIRM_FLAT_H : 30, gap = flat ? 8 : 0;
     if (!cell[0] || !cell[1] || I(cell[0], W_H) == cell_h) return;
     widget_set_prop_int(w, "style:normal:bg_color", 0);
-    if (form == FORM_TRAY) widget_set_text_utf8(cell[1], st.confirm_verb);
     int line = 0, width[2];
     for (unsigned i = 0, n = widget_count_children(w); i < n; ++i) {
         widget_t *c = widget_get_child(w, i);
@@ -5091,6 +5117,7 @@ int bright_tone(unsigned tone) {
 static void confirm_prompt(widget_t *w, canvas_t *canvas) {
     if (tk_strcmp(widget_get_prop_str(w, "name", ""), "confirminfo_dialog")) return;
     int form = confirm_form(w);
+    confirm_verb(w); /* before the dressing, which measures the cells */
     if (form) {
         confirm_dress(w, canvas, form);
         return;
@@ -6213,7 +6240,7 @@ int restart_asked(void) {
         char text[0x400];
     } prompt = { 1, 0, "" };
     tk_snprintf(prompt.text, sizeof prompt.text, "%s", tr("Restart to apply?"));
-    return navigator_to_with_context("dialog/confirminfo_dialog", &prompt) == 10;
+    return confirm_over(&prompt, tr("Restart"), 0) == 10;
 }
 /* A choice that needs another geometry set: confirmed, the config takes value (a theme its presets
  * too, its own options' among them) and the Q2 restarts into it, ringnav_reboot saving the queue

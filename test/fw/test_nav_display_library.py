@@ -550,14 +550,18 @@ def test_status_bar_steps_its_looks_and_repaints_the_bar_without_a_restart(fw, s
 
 
 class Prompts:
-    """navigator_to_with_context's dialogs: (page, kind, ms, text); answer is what the confirm returns (10 OK)."""
-    def __init__(self, fw, answer=0):
-        self.seen, self.answer = [], answer
+    """navigator_to_with_context's dialogs: (page, kind, ms, text); answer is what the confirm returns (10 OK). Given
+    st, verbs holds each one's second cell's word (confirm_over's), None for OK."""
+    def __init__(self, fw, answer=0, st=None):
+        self.seen, self.answer, self.st, self.verbs = [], answer, st, []
         fw.mock('navigator_to_with_context', self.show)
 
     def show(self, name, info, *_):
         kind, ms = struct.unpack('<ii', C.string_at(info, 8))
         self.seen.append((C.string_at(name).decode(), kind, ms, C.string_at(info + 8).decode()))
+        if self.st:
+            verb = self.st('confirm_verb', C.c_char_p).value
+            self.verbs.append(verb and verb.decode())
         return self.answer
 
 
@@ -567,10 +571,11 @@ def test_row_art_needs_a_restart_into_its_other_set(fw, st, geometry, answer):
     st('geom').value = names['GEOM_CLASSIC_LIGHT']  # Row Art On's set, as booted
     ui = Ui(fw)
     page = appearance(fw, ui, THEME=b'1')
-    prompts = Prompts(fw, answer)
+    prompts = Prompts(fw, answer, st)
     label = button_of(page.view(), 'Row Art').labels()[0]
     ui.click(label.parent)
     assert prompts.seen == [('dialog/confirminfo_dialog', 1, 0, 'Restart to apply?')]
+    assert prompts.verbs == ['Restart']  # its second cell says what it does
     # the running state keeps the booted set's value either way; confirmed, the config takes Off and the Q2 restarts
     assert row_of(label) == ('Row Art', 'On') and st('own', i=KEYS.index('ROWART')).value == 1
     assert writes(fw) == ([('ROWART', 0)] if answer else [])
@@ -650,9 +655,9 @@ def test_picking_classic_asks_to_restart_and_saves_its_preset_alone(fw, st, answ
     ui = Ui(fw)
     page = appearance(fw, ui, **{k: b'%d' % v for k, v in stored.items()})
     themes_page(fw, ui, page)
-    prompts = Prompts(fw, answer)
+    prompts = Prompts(fw, answer, st)
     pick(ui, page, classic)
-    assert [p[3] for p in prompts.seen] == ['Restart to apply?']
+    assert [p[3] for p in prompts.seen] == ['Restart to apply?'] and prompts.verbs == ['Restart']
     # confirmed, THEME and what Classic's preset changes are saved; Light Mode's Auto is kept
     saved = writes(fw)
     assert saved == ([('THEME', CLASSIC)] + preset_writes(classic, stored) if answer else [])

@@ -136,6 +136,7 @@ class Ui:
         m('widget_get_text', self.get_text)
         m('widget_set_text', self.set_wide)
         m('widget_set_text_utf8', lambda w, s, *_: self.set_text(self.nodes[w], C.string_at(s).decode()))
+        m('widget_get_text_utf8', self.get_utf8)
         m('image_base_set_image', lambda w, s, *_: self.nodes[w].props.__setitem__('image', C.string_at(s).decode()))
         m('widget_set_name', lambda w, s, *_: setattr(self.nodes[w], 'name', C.string_at(s).decode()))
         m('widget_use_style', lambda w, s, *_: self.nodes[w].props.__setitem__('style', C.string_at(s).decode()))
@@ -195,6 +196,11 @@ class Ui:
     def get_text(self, w, *_):
         node = self.nodes.get(w)
         return C.addressof(node.wide) if node is not None and node.wide is not None else 0
+
+    def get_utf8(self, w, out, size, *_):
+        text = self.text(self.nodes[w]).encode()[:i32(size) - 1] if w in self.nodes else b''
+        C.memmove(out, text + b'\0', len(text) + 1)
+        return 0
 
     def set_wide(self, w, s, *_):
         chars = []
@@ -1012,7 +1018,7 @@ class Confirm:
             self.check = ui.add('check_button', self.win, (40, 124, 295, 40), 'msg_delcheckbutton', value=check)
             ui.set_text(self.check, 'Also delete source file')
         self.cancel = ui.add('button', self.win, (40, 250, 140, 50), 'img_cancel').clickable()
-        self.enter = ui.add('button', self.win, (195, 250, 140, 50), 'img_enter').clickable()
+        self.enter = ui.add('button', self.win, (195, 250, 140, 50), 'img_enter', tr_text=cells[1]).clickable()
         ui.set_text(self.cancel, cells[0])
         ui.set_text(self.enter, cells[1])
         self.canvas = Canvas(fw)
@@ -1153,14 +1159,16 @@ def test_a_row_actions_question_is_the_tray_its_cell_the_verb(fw, st):
         canvas = confirm.paint()
         seen['tray'] = (ui.text(confirm.enter), confirm.lines[0].visible, list(canvas.images),
                         [confirm.cancel.box, confirm.enter.box], {t: c for t, r, c in canvas.texts[1::2]})
-        over = Confirm(fw, ui, ['Shut down?'])  # a prompt stock opens over it stays a question
+        g(fw, 'g_poweroff_state', 1)  # a held power key: stock opens Shut Down? over it, a question
+        over = Confirm(fw, ui, ['Shut down?'])
         over.paint()
+        g(fw, 'g_poweroff_state', 0)
         seen['over'] = (ui.text(over.enter), over.lines[0].visible, over.lines[0].box, over.enter.box)
         return 1
 
     fw.mock('navigator_to_with_context', open_dialog)
     verb = C.create_string_buffer(b'Delete')
-    assert fw.fn('playlists__confirm_over', C.c_int, C.c_void_p, C.c_char_p)(None, verb) == 1
+    assert fw.fn('confirm_over', C.c_int, C.c_void_p, C.c_char_p, C.c_int)(None, verb, 1) == 1
     text, shown, images, cells, inks = seen['tray']
     assert text == 'Delete' and not shown  # the cell says what it's for; no question
     (ix, iy, iw, ih), = images  # the tray's shadow at its art's size, centred, the cells on it
@@ -1168,7 +1176,7 @@ def test_a_row_actions_question_is_the_tray_its_cell_the_verb(fw, st):
     assert all(ix <= x and x + w <= ix + iw and iy <= y and y + h <= iy + ih for x, y, w, h in cells)
     assert inks['Cancel'] == inks['Delete']  # lit or not, both cells' text alike
     text, shown, (lx, ly, lw, lh), (_, y, _, _) = seen['over']
-    assert text == 'OK' and shown and ly + lh <= y  # its prompt asked, the cells under it
+    assert text == 'Shut Down' and shown and ly + lh <= y  # its own verb, its prompt asked, the cells under it
     after = Confirm(fw, ui, ['Shut down?'])  # the row action answered: the next confirm is a question
     after.paint()
     assert ui.text(after.enter) == 'OK' and after.lines[0].visible
@@ -1180,6 +1188,61 @@ def test_minimal_leaves_stocks_confirm(fw, st):
     box = confirm.cancel.box
     confirm.paint()
     assert confirm.cancel.box == box and 'style:normal:bg_color' not in confirm.win.props
+    g(fw, 'g_poweroff_state', 1)  # a held power key's Shut Down? names its verb, undressed
+    down = Confirm(fw, confirm.ui, ['Shut Down?'])
+    down.paint()
+    g(fw, 'g_poweroff_state', 0)
+    assert confirm.ui.text(down.enter) == 'Shut Down' and down.enter.box == (195, 250, 140, 50)
+
+
+@pytest.mark.parametrize('minimal', [0, 1])
+def test_a_confirms_second_cell_is_its_verb(fw, st, minimal):
+    """Restart to apply? says Restart, Shut Down? Shut Down and Delete File Delete, Minimal's full-width rows too;
+    the cell is measured with its verb."""
+    ui = Ui(fw) if minimal else classic(fw, st)
+    if minimal:
+        theme(fw, MINIMAL)
+    seen = {}
+
+    def open_dialog(name, prompt, *_):
+        confirm = Confirm(fw, ui, ['Restart to apply?'])
+        confirm.paint()
+        seen['restart'] = (ui.text(confirm.enter), confirm.lines[0].visible, confirm.enter.box[2])
+        return 10
+
+    fw.mock('navigator_to_with_context', open_dialog)
+    assert fw.fn('restart_asked', C.c_int)() == 1
+    text, shown, width = seen['restart']
+    assert text == 'Restart' and shown  # the page, not the tray: its question asked
+    g(fw, 'g_poweroff_state', 1)
+    down = Confirm(fw, ui, ['Shut Down?'])
+    down.paint()
+    g(fw, 'g_poweroff_state', 0)
+    delete = Confirm(fw, ui, ['Delete this song?'], check=0)
+    delete.paint()
+    assert (ui.text(down.enter), ui.text(delete.enter)) == ('Shut Down', 'Delete')
+    if minimal:  # no cell moved: only its text (the build's asset makes them 375 x 48 rows, tools/ipod.py)
+        assert down.enter.box == delete.enter.box == (195, 250, 140, 50)
+    else:  # a longer verb, a wider cell
+        assert down.enter.box[2] > width > delete.enter.box[2]
+
+
+def test_shut_down_names_only_its_own_prompt(fw, st):
+    """g_poweroff_state 1 names the top window's cell alone: a prompt under Shut Down? keeps OK, and one that was top
+    when the power key set the state reads OK again, as its tr_text has it, once the state clears."""
+    ui = classic(fw, st)
+    fw.mock('widget_set_tr_text', lambda w, s, *_: ui.set_text(ui.nodes[w], C.string_at(s).decode()) or 0)
+    under = Confirm(fw, ui, ['Remove from playlist?'])
+    g(fw, 'g_poweroff_state', 1)
+    Confirm(fw, ui, ['Shut Down?']).paint()  # over it, top
+    under.paint()
+    assert ui.text(under.enter) == 'OK'
+    ui.top = under.win  # top when the state was set, before Shut Down? opened
+    under.paint()
+    assert ui.text(under.enter) == 'Shut Down'
+    g(fw, 'g_poweroff_state', 0)
+    under.paint()
+    assert ui.text(under.enter) == 'OK'
 
 
 # The toast and the update's dialog: a box sized to its lines.
