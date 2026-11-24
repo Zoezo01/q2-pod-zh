@@ -716,8 +716,13 @@ static int rebuild(int keep) {
         seen[at] = 1;
     } else if (s.cursor >= n) /* the playing last row deleted: the cursor stays inside the order */
         s.cursor = n ? n - 1 : 0;
-    /* Generate the following cycle on commit, never in the preload/peek path. */
-    make_order(cycle);
+    /* Generate the following cycle on commit, never in the preload/peek path. Shuffle Off's is the
+     * order just sorted, which only an edit's pin (keep 2) has changed since: a copy, not a second
+     * sort of the whole queue. */
+    if (s.shuffle || keep == 2)
+        make_order(cycle);
+    else
+        memcpy(cycle, order, n * sizeof *cycle);
     s.dirty = 1;
     return 1;
 }

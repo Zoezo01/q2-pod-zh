@@ -16,6 +16,7 @@
   - EQ: **Import from SD /EQ** no longer lists the `._` files a Mac leaves on the card beside each file it copies.
   - App Store: installing an app makes no folder off the card. The list of the files an install unpacked is kept on the card while it runs, and a line changed there to point off the card had its folders made.
   - Playlists, EQ and Spotify: **Remove song?** in **Edit Playlist**, the EQ's delete and replace prompts and Spotify's **Remove Downloads?** open on **Cancel**, as the other prompts do, so a second press of Centre removes nothing.
+  - Playback: with Shuffle off and a Repeat option set, a long queue starts a little sooner: its order is sorted once, not twice.
 - **1.9.1**:
   - Standby: going into Standby gives the card up to 2 seconds to finish and unmount before its power is cut, where it used to cut it at once with files still open, which could leave the card marked as not properly unmounted and lose what was still being written.
   - EQ: in **Advanced**, drag a band up or down on the curve to set its gain, as you drag Simple's sliders. Touch the ring of a band that's on. Choose **Apply changes** to hear it.

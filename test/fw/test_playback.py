@@ -414,6 +414,26 @@ def test_an_ordered_queue_plays_album_by_album_in_track_order(player):
     assert keys == sorted(keys)
 
 
+def test_shuffle_off_sorts_its_order_once(fw, player):
+    """The next pass's order is this pass's, copied: a load reads the queue for one order sort, not two."""
+    player.load(player.albums(4, 4, 4))
+    read = []
+    fw.mock('fw_deque_at', lambda q, i, *_: read.append(i) or player.deques[q][i])
+    assert player.set(1, ONE_PASS) == 1
+    load = list(read)
+    del read[:]
+    fw.fn('playback__make_order', None, C.POINTER(Entry))(player.s.cycle)  # one order sort's reads
+    assert len(read) > 8 and sum(load[i:i + len(read)] == read for i in range(len(load))) == 1
+    assert player.cycle() == player.order()
+
+
+def test_a_shuffles_next_pass_is_drawn_anew(player):
+    player.load(player.albums(12))
+    player.rng(7)
+    assert player.set(0, 1) == 1 and player.set(1, REPEAT_ALL) == 1
+    assert sorted(player.cycle()) == list(range(12)) and player.cycle() != player.order()
+
+
 def test_folders_group_as_album_tags_do_not(player):
     rows = [player.song(b'/m/a/1.flac', b'X'), player.song(b'/m/b/1.flac', b'X'), player.song(b'/m/a/2.flac', b'Y')]
     player.load(rows)
@@ -1078,6 +1098,16 @@ def test_an_edit_after_a_queue_jump_back_does_not_replay_the_songs_before_the_ta
     queue_insert(fw, player, album_songs(player, b'Z', (1,)), 6)
     up = player.up_next()
     assert 0 not in up and {2, 3, 4, 5, 6} <= set(up)
+
+
+def test_an_edit_in_shuffle_off_leaves_the_next_pass_sorted(fw, player):
+    """Repeat All, album B's first song playing, Add to Queue of a third song of album A: this pass plays it after
+    the song playing, where the edit's pin puts it; the next pass is the sort again, A whole and then B."""
+    player.load(album_songs(player, b'A', (1, 2)) + album_songs(player, b'B', (1, 2)), 2)
+    assert player.set(0, 0) == 1 and player.set(1, REPEAT_ALL) == 1
+    queue_insert(fw, player, album_songs(player, b'A', (3,)), 0)
+    assert player.order() == [0, 1, 2, 4, 3] and player.cycle() == [0, 1, 4, 2, 3]
+    assert player.run(7) == [4, 3, 0, 1, 4, 2, 3]
 
 
 def test_shuffle_songs_with_repeat_album_leaves_the_other_albums_songs_owed(fw, player):
