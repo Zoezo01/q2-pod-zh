@@ -5,7 +5,8 @@
  * runs without root and can't read the player's /proc/<pid>/fd, so this is how it knows. Written
  * whole (blob_io, tmpfs) or removed only on a change, looked at every PLAYING_POLL_MS from
  * addon_poll; the first look after a start writes or removes it, so a crashed run's file never
- * stands. */
+ * stands. ponytail: a look that finds the player stopped between two songs removes the file until
+ * the next look, half a second; hold the removal as addon.c's NOW_STOP_MS does if an app minds. */
 #include "offsets.inc"
 #include "peq.h"
 
