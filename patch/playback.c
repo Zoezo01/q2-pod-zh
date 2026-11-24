@@ -711,7 +711,8 @@ static int rebuild(int keep) {
             for (unsigned i = 0; i < s.cursor; ++i) seen[order[i].index] = 1;
         }
         seen[at] = 1;
-    }
+    } else if (s.cursor >= n) /* the playing last row deleted: the cursor stays inside the order */
+        s.cursor = n ? n - 1 : 0;
     /* Generate the following cycle on commit, never in the preload/peek path. */
     make_order(cycle);
     s.dirty = 1;

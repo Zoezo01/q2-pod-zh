@@ -805,6 +805,40 @@ def test_stocks_delete_of_the_last_row_while_it_plays(fw, player, key):
         assert player.next(0) == -1 and fw.calls('mclStop')
 
 
+def test_a_pick_after_deleting_the_playing_last_row_plays_on(fw, player):
+    """View Queue: the last row picked, then deleted while it plays, leaves stock's position past the queue. The
+    cursor stays inside the order at its end: Next ends the queue there, as at its own end, and a pick of an
+    earlier row plays the rows after it."""
+    start = fw.fn('ringnav_start_queue', C.c_int, C.c_int)
+    album(player, 4)
+    start(3)
+    player.mcl.pos = 3
+    delete(player, 3)
+    fw.fn('playback_poll', None)()
+    assert player.s.cursor < player.s.n and player.next(0) == -1
+    start(1)
+    player.mcl.pos = 1
+    assert tracks(player, player.run(4)) == [3]
+
+
+def test_deletes_after_the_playing_last_row_keep_the_cursor_inside_the_order(fw, player):
+    """Play Next X, then the last row picked and deleted while it plays, then two rows more: the cursor stays
+    inside the shrinking order, where a pick of X makes play_now shift its entries (it shifted them up to a cursor
+    past the order's end, writing past its allocation)."""
+    start = fw.fn('ringnav_start_queue', C.c_int, C.c_int)
+    album(player, 4)
+    queue_insert(fw, player, [player.song(b'/m/X/01.flac', b'X', track=1)], 1)
+    start(4)
+    player.mcl.pos = 4
+    for row in (4, 3, 2):
+        delete(player, row)
+        fw.fn('playback_poll', None)()
+        assert player.s.cursor < player.s.n
+    start(1)
+    player.mcl.pos = 1
+    assert player.run(4) == []
+
+
 def test_stocks_delete_off_the_ui_thread_waits_for_its_pass(fw, player):
     poll = fw.fn('playback_poll', None)
     album(player, 5)
