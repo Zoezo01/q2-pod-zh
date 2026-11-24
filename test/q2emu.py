@@ -2447,8 +2447,6 @@ class ABMachine(QueueMachine):
         if self.handlers.get(address)!='ab:x': return super().hook(u,address,size,unused)
         self.calls.append(('ab_x',u.reg_read(UC_MIPS_REG_A0))); self.returns(self.ab,clobber=True)
 
-from ipod import VALUE_NAMES
-
 CL_BAR_LINE={'1':0x5a595a,'0':0x333333}
 
 class UiLoad:  # the stock loader answers root
