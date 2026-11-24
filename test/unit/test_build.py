@@ -528,7 +528,7 @@ def test_both_faces_are_given_a_play_mark_on_the_middle_of_their_capitals(face):
     assert xs[0] == xs[1] and ys[1] == (ys[0] + ys[2]) // 2  # an upright edge on the left, its point level with the middle
     assert abs(ys[0] + ys[2] - cap) <= 1  # on the capitals' middle
     assert abs((ys[2] - ys[0]) / cap - .78) < .005 and abs((xs[2] - xs[0]) / cap - .70) < .005
-    # at a Classic row's title px, bold standing in at FACE_FALLBACK_PCT of it (script.c fallback_px),
+    # at a Classic row's title px, bold standing in at FACE_FALLBACK_PCT of it (script.c),
     # the upright edge lies on a pixel's, so it is drawn sharp
     px = next(t for t in theme.builtins() if t['id'] == 'classic-light')['font_px[ROLE_TITLE]']
     pct = re.search(r'#define FACE_FALLBACK_PCT (\d+)', (build.ROOT/'patch/script.c').read_text())

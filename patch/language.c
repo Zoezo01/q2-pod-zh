@@ -51,9 +51,8 @@ static int in(const char *set, char c) {
         if (*set == c) return 1;
     return 0;
 }
-static int dig(char c) { return c >= '0' && c <= '9'; }
 static const char *num(const char *e) {
-    while (dig(*e)) ++e;
+    while (*e >= '0' && *e <= '9') ++e;
     return e;
 }
 /* Past a positional "n$" (n above 0) at e, else e. */
