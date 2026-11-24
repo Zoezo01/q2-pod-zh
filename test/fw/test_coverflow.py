@@ -2834,8 +2834,8 @@ def test_the_streaming_row_opens_the_page_in_full(fw, stock_bg):
 
 @pytest.mark.parametrize('home', ('0', '1', '2'))
 @pytest.mark.parametrize('theme', (MINIMAL, CLASSIC, MODERN))
-@pytest.mark.parametrize('shortcut, shown, label', (('0', 0, 'Rockbox'), ('6', 1, 'Games'), ('11', 0, 'Favorites'),
-                                                    ('12', 1, 'Favorites')))
+@pytest.mark.parametrize('shortcut, shown, label', (('0', 0, 'Rockbox'), ('6', 1, 'Games'), ('11', 0, 'Favourites'),
+                                                    ('12', 1, 'Favourites')))
 def test_the_shortcut_row_sits_after_folder_unless_rockbox_is_missing_or_none(fw, theme, home, shortcut, shown, label):
     # None hides the row in every layout and theme; the carousel's card stays, naming the default as with no choice
     themed(fw, theme, SHORTCUT=shortcut, HOME=home)

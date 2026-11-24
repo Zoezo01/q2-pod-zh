@@ -327,7 +327,7 @@ const char *ipod_home_shortcut(void) {
     static const char *const names[] = { "Rockbox",
                                          N_("Artists"),
                                          N_("Albums"),
-                                         N_("Favorites"),
+                                         N_("Favourites"),
                                          N_("Rated Albums"),
                                          N_("Shuffle"),
                                          N_("Games"),

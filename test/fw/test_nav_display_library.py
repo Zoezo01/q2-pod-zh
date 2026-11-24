@@ -380,9 +380,9 @@ def test_appearance_lists_theme_then_minimals_options_in_its_order(fw):
     read = readings(page.view())
     # the running theme's name, and Accent at Minimal's own default, under its own key
     assert read['Theme'] == t['name'] and read['Accent'] == accent_name(t, host.tools_theme.accent_default(t))
-    # nothing stored: the payload's own defaults (dark, Minimal round, Split, the clock in the title); no Rockbox: Favorites
+    # nothing stored: the payload's own defaults (dark, Minimal round, Split, the clock in the title); no Rockbox: Favourites
     assert (read['Light Mode'], read['Rounded Corners'], read['Home'], read['Shortcut'], read['Time in Title']) == \
-        ('Off', 'On' if t['name'] == 'Minimal' else 'Off', 'Split', 'Favorites', 'On')
+        ('Off', 'On' if t['name'] == 'Minimal' else 'Off', 'Split', 'Favourites', 'On')
     assert (read['Show Wordmark'], read['Hide Streaming'], read['Hide Folder']) == ('On', 'Off', 'Off')
     assert (read['Hide Apps'], read['Hide Games'], read['Hide App Store'], read['Hide Hi-Res']) == ('Off',) * 4
 
@@ -409,7 +409,7 @@ def test_classic_appearance_rows_read_title_and_value_and_its_own_options(fw):
     assert own and [read[o['label']] for o in own] == [o['names'][o['def']] for o in own]  # each at its default
     # nothing stored: the payload's own defaults, Battery's Icon one of Classic's two
     assert (read['Light Mode'], read['Home'], read['Shortcut'], read['Battery'], read['Time in Title']) == \
-        ('Off', 'Split', 'Favorites', 'Icon', 'On')
+        ('Off', 'Split', 'Favourites', 'Icon', 'On')
 
 
 def clicks_of(fw, ui, page, title, n):
@@ -453,8 +453,8 @@ def test_shortcut_cycles_in_its_menu_order(fw):
     ui = Ui(fw)
     page = appearance(fw, ui, SHORTCUT=b'0')
     seen = clicks_of(fw, ui, page, 'Shortcut', 11)
-    # Rockbox, Favorites, Shuffle, Rated Albums, Playlists, Artists, Albums, Games, Podcasts, Audiobooks, None, Rockbox
-    assert [v for v, _ in seen] == ['Favorites', 'Shuffle', 'Rated Albums', 'Playlists', 'Artists', 'Albums', 'Games',
+    # Rockbox, Favourites, Shuffle, Rated Albums, Playlists, Artists, Albums, Games, Podcasts, Audiobooks, None, Rockbox
+    assert [v for v, _ in seen] == ['Favourites', 'Shuffle', 'Rated Albums', 'Playlists', 'Artists', 'Albums', 'Games',
                                     'Podcasts', 'Audiobooks', 'None', 'Rockbox']
     assert [w for _, w in seen] == [[('SHORTCUT', v)] for v in (3, 5, 4, 7, 1, 2, 6, 8, 9, 11, 0)]
 
