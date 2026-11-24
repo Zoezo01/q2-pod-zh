@@ -527,6 +527,7 @@ class Wake:
         fw.mock('fw_socket', lambda *_: 5)
         fw.mock('fw_fcntl', lambda *_: 0)
         fw.mock('fw_connect', self.connect)
+        fw.mock('fw_clock_gettime', lambda which, ts, *_: C.memset(ts, 0, 16) and 0)  # now_ms reads 0: no wait
         fw.mock('fw_usleep', self.usleep)
         self.later = None  # what happens while the job waits, once
         for k in range(len(WAKE)):

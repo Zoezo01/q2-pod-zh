@@ -386,6 +386,7 @@ def test_an_app_answers_when_its_socket_takes_a_connection(fw, connect, up):
     fw.mock('fw_select', lambda *a: log.append(('select',)) or 1)
     fw.mock('fw_send', lambda *a: log.append(('send',)) or 0)
     fw.mock('fw_close', lambda fd, *_: log.append(('close', fd)))
+    fw.mock('fw_clock_gettime', lambda which, ts, *_: C.memset(ts, 0, 16) and 0)  # now_ms reads 0: no wait
     assert fw.fn('addon_answers', C.c_int, C.c_char_p)(b'a') == up
     assert log == [('socket', (1, 2, 0)), ('fcntl', (5, 4, 0x80)), ('connect', b'/tmp/q2-a.browse.sock'), ('close', 5)]
 
