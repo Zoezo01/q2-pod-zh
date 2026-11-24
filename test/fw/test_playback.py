@@ -997,6 +997,27 @@ def test_an_edit_while_a_play_next_song_plays_keeps_the_album_it_came_into(fw, p
     assert want <= set(paths([player.deques[player.handle][i] for i in player.run(8)]))
 
 
+@pytest.mark.parametrize('shuffle', [0, 2])  # Off, Songs in Album
+def test_an_edit_after_a_queue_jump_leaves_the_songs_it_jumped_over_skipped(fw, player, shuffle):
+    """A jump to a later queue row skips the entries between; an edit draws the order again and they stay skipped."""
+    start = fw.fn('ringnav_start_queue', C.c_int, C.c_int)
+    fw.mock('stock_start_queue_trampoline', lambda at, *_: 20 + at)
+    player.load(album_songs(player, b'A', (1, 2)) + album_songs(player, b'B', (1, 2)) + album_songs(player, b'C', (1, 2)))
+    assert player.set(0, shuffle) == 1
+    start(4)
+    player.mcl.pos = 4
+    queue_insert(fw, player, album_songs(player, b'Z', (1,)), 0)
+    assert not {1, 2, 3} & set(player.up_next())
+
+
+def test_an_added_song_of_an_album_already_played_plays_right_after_the_song_playing(fw, player):
+    """Off: album B's first song playing, Add to Queue of A's: A sorts before, it plays next, B's rest after it."""
+    player.load(album_songs(player, b'A', (1, 2)) + album_songs(player, b'B', (1, 2)), 2)
+    assert player.set(0, 0) == 1
+    queue_insert(fw, player, album_songs(player, b'A', (3,)), 0)
+    assert paths([player.deques[player.handle][i] for i in player.up_next()]) == [b'/m/A/03.flac', b'/m/B/02.flac']
+
+
 def test_an_edit_under_shuffle_albums_still_plays_the_album_out_first(fw, player):
     """Shuffle Albums draws the albums again at an edit; the rest of the album playing still comes first."""
     rows, tried = player.albums(3, 3, 3), 0

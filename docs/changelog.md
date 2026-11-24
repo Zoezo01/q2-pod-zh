@@ -3,6 +3,7 @@
 - **1.9.2**:
   - Now Playing: the heart fills or empties as soon as you choose **Add to Favourites** or **Remove from Favourites** on the hold menu. It kept its old look until the next song, so tapping it then undid the change.
   - Playback: **Previous** then **Next** comes back to the song you left after changing Shuffle, Repeat or Group by, or at the start of a new Repeat All round, and the songs not yet played still play. Next could jump past them, or stop the queue under Play All. **Previous Album** at those moments no longer skips the albums between.
+  - Playback: with Shuffle Off or Songs in Album, a song added with **Add to Queue** plays even when its album has already played, and the rest of the album you were in still plays after a **Play Next** song from another album and a later edit. With Shuffle Albums, a repeat of an earlier song of the album playing plays too. They could be skipped, and under Play All never play.
 - **1.9.1**:
   - Standby: going into Standby gives the card up to 2 seconds to finish and unmount before its power is cut, where it used to cut it at once with files still open, which could leave the card marked as not properly unmounted and lose what was still being written.
   - EQ: in **Advanced**, drag a band up or down on the curve to set its gain, as you drag Simple's sliders. Touch the ring of a band that's on. Choose **Apply changes** to hear it.
@@ -29,7 +30,6 @@
   - Key Tone: each click now goes straight to the Q2's buzzer instead of starting two small programs first, so less stands between the wheel and its click.
   - Controls: a button, a turn of the wheel or a touch is acted on the moment it arrives. After 2 seconds without input, and with the screen off, Q2 Pod checks for input less often to save battery, so the first press or turn after a pause could wait up to a quarter of a second.
   - Battery: with the screen off and nothing playing, Q2 Pod now wakes once a second where it woke 4 times.
-  - Playback: with Shuffle Off, Songs in Album or Albums, a song added with **Add to Queue** plays even when its album has already played, and after a **Play Next** song from another album, the rest of the album you were in still plays when you add, Play Next or delete another song meanwhile. They could be skipped, and under Play All never play.
 - **1.9.0**:
   - Cover Flow: drag the **Position Bar** to move through your albums quickly. Touch anywhere along it, even after it has faded, and the covers go to the album under your finger and follow it; far jumps show the album's letter. The bar now stays on screen a second after you stop, instead of 0.8 seconds. Turn it on in **Display → Cover Flow**.
   - Ratings: hold Play/Pause on **Top Rated**, **Loved**, **All Rated** or **Disliked** in **Library → Ratings** to play that list shuffled. A hold on a song in the list still opens the song's options.

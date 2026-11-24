@@ -757,7 +757,7 @@ static int follow_queue(void) {
     unsigned at = (unsigned)M(MCL_POS);
     /* the playing entry gone, stock's position names the one after it: Previous comes back here */
     if (at < m && (!s.hn || s.history[s.hn - 1] != at)) history(at);
-    s.active = rebuild(2);
+    s.active = rebuild(2); /* 2: an edit, the played entries stay first */
     return 0;
 }
 int playback_option(int kind) {
@@ -942,7 +942,14 @@ static void commit(unsigned next) {
         make_order(s.cycle);
         i = order_find(0, next);
     }
-    if (i < s.n) s.cursor = i;
+    if (i < s.n) {
+        /* Shuffle Off / Songs in Album: the entries jumped over stay skipped, so behind the cursor
+         * means seen (an edit's rebuild(2) relies on it). A group shuffle's pick leaves them owed:
+         * Previous gives them back. */
+        if (s.shuffle < 3)
+            for (unsigned j = s.cursor + 1; j < i; ++j) s.seen[s.order[j].index] = 1;
+        s.cursor = i;
+    }
     s.seen[next] = 1;
     history(next);
     s.next_valid = 0;
@@ -1346,7 +1353,7 @@ void playback_insert(unsigned at, unsigned n, int next) {
     s.n += n;
     for (unsigned i = 0; i < s.hn; ++i)
         if (s.history[i] >= at) s.history[i] += n;
-    s.active = rebuild(2);
+    s.active = rebuild(2); /* 2: an edit, the played entries stay first */
     for (unsigned i = 0; i < s.npend; ++i)
         if (s.pend[i] >= at) s.pend[i] += n;
     /* Play Next again before the last one finished: the new tracks go first, in order */
