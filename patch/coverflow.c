@@ -1873,6 +1873,9 @@ static int cf_top256 __attribute__((section(".scratch")));
 #define CF_SWING_T (CF_ONE * 45 / 100)
 /* the horizon every cover shares, and a cover h high (1/256 px)'s top row on it */
 #define CF_TOP256(h) (cf_top256 - (h) * cfs.horizon / 100)
+/* A cover drawn off the shelf's line (back_pose): its top at cf_lift_y - h cf_lift_hz / 256, both
+ * 1/256 px; cf_lift_hz 0, the shelf's. */
+int cf_lift_y, cf_lift_hz;
 
 int cf_floor(float x) {
     int i = (int)x;
@@ -2018,7 +2021,8 @@ static unsigned cf_paper;
 static void column(shelf_t *f, int col, const unsigned *tex, int h, int bright, int inset) {
     if (h < 16) return;
     unsigned *d = f->d + col;
-    int top = CF_TOP256(h), bottom = top + h, step = (ART_SIZE << 20) / (h >> 4);
+    int top = cf_lift_hz ? cf_lift_y - h * cf_lift_hz / 256 : CF_TOP256(h), bottom = top + h,
+        step = (ART_SIZE << 20) / (h >> 4);
     int ins = h * inset / (ART_SIZE * 256), clipped_top = top + ins, clipped_bottom = bottom - ins;
     int solid_top = f->solid_top[col], solid_bottom = f->solid_bottom[col];
     int y = clipped_top >> 8, end = (clipped_bottom + 255) >> 8,
@@ -2151,7 +2155,7 @@ static void draw_cover(shelf_t *f, int t, const unsigned *tex) {
     pose_t p;
     int side = t < 0 ? -1 : 1;
     arch_pose(t * side, &p);
-    draw_posed(f, &p, side, tex);
+    if (!back_pose(f, t, &p, tex)) draw_posed(f, &p, side, tex);
 }
 
 /* A cover whose near and far edges have left its pose, between xl and xr (1/16 px right of the
@@ -2854,8 +2858,8 @@ void coverflow_paint(widget_t *w, canvas_t *canvas) {
 #endif
     int still = !th.on && !P(w, SLIDE_ANIMATOR) && !touched();
     if (!fx.drawn || c != fx.c || frac != fx.frac || lead != fx.lead || arch != fx.arch ||
-        mode != fx.mode || still != fx_still || mode == FX_FOLD ||
-        mode == FX_ENTRY) { /* the fold: the clock, the entry: passes */
+        mode != fx.mode || still != fx_still || mode == FX_FOLD || mode == FX_ENTRY ||
+        back_frame()) { /* the fold and the way back: the clock, the entry: passes */
         unsigned *d = (unsigned *)bitmap_lock_buffer_for_write(fx.frame);
         if (!d) return;
         cf_still = still;
@@ -3437,6 +3441,7 @@ void coverflow_play(int row) {
     int cls = cf.scoped == PLAYLISTS ? 0xf001 : 0xff10;
     play_folder(cf.tracks, row, cls);
     if (cls == 0xf001) cover_load = playback_loads; /* its load, play_folder's */
+    back_arm();
 }
 
 /* Minimal's and Modern's album name over its songs (a page_title_h), between two short 1 px rules
@@ -3633,7 +3638,6 @@ int flip_capture(void) {
     return fb != 0;
 }
 
-static void flip_done(void);
 static int flip_tick(const void *unused);
 static void flip_start(int dir) {
     fl.dir = dir, fl.drawn = -1;
@@ -3758,7 +3762,7 @@ static int flip_close(const void *unused) {
     return 0;
 }
 
-static void flip_done(void) {
+void flip_done(void) {
     int to_panel = fl.dir > 0;
     fl.dir = 0;
     if (to_panel) {

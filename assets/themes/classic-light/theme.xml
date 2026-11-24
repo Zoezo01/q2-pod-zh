@@ -61,8 +61,11 @@
     <element name="caption" name_px="27" artist_px="27" text_y="220" artist_y="26"/>
     <!-- The landing: a song picked on the flip panel flies its cover to Now Playing. No press, it plays at once;
          400 ms in all over 55% of the way, the panel fading out from 0 for 110 ms and Now Playing in from 90 ms for
-         100, the landed art held 2000 ms at most for Now Playing's own. ms 0: none. -->
-    <element name="land" press="0" ms="400" travel="55" out_at="0" out_ms="110" np_at="90" np_ms="100" hold="2000"/>
+         100, the landed art held 2000 ms at most for Now Playing's own. ms 0: none. Return from Now Playing goes back to the
+         shelf: the cover flies from Now Playing's art to the centre from 250 ms, the side covers slide in from 143% of a
+         cover outwards, 100 ms apart an album out, each over 600 ms. back_ms 0: none. -->
+    <element name="land" press="0" ms="400" travel="55" out_at="0" out_ms="110" np_at="90" np_ms="100" hold="2000"
+             back_ms="600" back_at="250" back_step="100" back_out="143"/>
   </view>
   <view name="bar">
     <element name="title" font="classic-light" font_size="21" caps="0"/>

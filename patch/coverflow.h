@@ -265,6 +265,12 @@ void land_paint(widget_t *w, canvas_t *canvas);
 void land_art(widget_t *w, canvas_t *canvas);
 void land_drop(void);
 int land_key(unsigned key);
+/* coverflow_land.c: the way back from Now Playing to the shelf */
+void back_arm(void);
+int back_frame(void);
+int back_pose(shelf_t *f, int t, pose_t *p, const unsigned *tex);
+extern int cf_lift_y, cf_lift_hz;
+void flip_done(void); /* coverflow.c: the panel's turn over; at rest, the panel shut */
 
 /* Optional browsing position, and its scrub by touch. */
 void coverflow_position_paint(widget_t *w, canvas_t *canvas);

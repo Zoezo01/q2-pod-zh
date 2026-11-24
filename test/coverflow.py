@@ -975,6 +975,7 @@ void coverflow_paint(void *, void *);
    frames as drawn. */
 extern cf_style_t cfs;
 void cf_restyle(void);
+void cf_back_test(int on, int ms, int x, int y), cf_shelf_still(int still);
 int fx_base(void);
 static void (*const bgra_render)(unsigned *, int, int, const unsigned *const[7]) = coverflow_render;
 static void texel_render(unsigned *d, int pitch, int frac, const unsigned *const ring[7]) {
@@ -1697,6 +1698,27 @@ static void classic_light_shelf(void) {
     coverflow_render(f, PITCH, ONE / 2 - 1, ring);
     coverflow_render(g, PITCH, -ONE / 2, next);
     assert(differ(f, g, 6) < 200);
+    /* The way back from Now Playing (back_pose), the art's keystone at 20, 30: at ms 0 the centre cover stands there,
+       its near (left) edge whole from the art's top, the side covers slid out; at its end the still shelf, pixel for
+       pixel, as the motion hands over to it. */
+    cf_style_t *cb = &shim_themes[1].cf;
+    cb->land_back_ms = 600, cb->land_back_at = 250, cb->land_back_step = 100, cb->land_back_out = 143;
+    cf_shelf_still(1); /* as coverflow_paint draws it: nothing else moves */
+    coverflow_render(f, PITCH, 0, ring);
+    cf_back_test(1, 0, 20, 30);
+    memcpy(g, f, sizeof g), coverflow_render(g, PITCH, 0, ring); /* f's guard pixels */
+#define G(x, y) g[(y) * PITCH + (x)]
+    assert(G(21, 31) == colours[3] && G(21, 30 + 176) == colours[3] && G(19, 120) != colours[3]);
+    assert(G(196, 120) == colours[3] && G(196, 30 + 8) != colours[3]); /* the far edge shorter: SLANT_FAR */
+    cf_back_test(1, 550, 20, 30);
+    memcpy(g, f, sizeof g), coverflow_render(g, PITCH, 0, ring); /* f's guard pixels */
+    assert(memcmp(f, g, sizeof f));
+    cf_back_test(1, 900, 20, 30); /* back_len: the third cover out, 300 + 600 */
+    memcpy(g, f, sizeof g), coverflow_render(g, PITCH, 0, ring); /* f's guard pixels */
+    assert(!memcmp(f, g, sizeof f));
+    cf_back_test(0, 0, 0, 0), cf_shelf_still(0);
+    cb->land_back_ms = cb->land_back_at = cb->land_back_step = cb->land_back_out = 0;
+#undef G
     /* The light half: the shelf is the scheme's paper, and the reflection fades into it. */
     light = 1;
     coverflow_render(f, PITCH, 0, ring);

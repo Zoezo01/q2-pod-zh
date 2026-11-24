@@ -116,9 +116,12 @@ typedef struct {
     short arch_at, arch_full, arch_span, arch_in, arch_out, arch_tau;
     /* coverflow.land (Classic): a song picked on the flip panel flies its cover to Now Playing.
      * land_ms 0: none. press ms of the panel's press, travel % of the way, out_at/out_ms and
-     * np_at/np_ms the fades, hold ms at most the landed art waits for Now Playing's own. */
+     * np_at/np_ms the fades, hold ms at most the landed art waits for Now Playing's own. The way
+     * back from Now Playing (back_ms 0: none): each cover's run back_ms, the centre's from Now
+     * Playing's art after back_at ms, a side cover's from back_out % of a cover outwards after
+     * back_step ms an album out. */
     short land_press, land_ms, land_travel, land_out_at, land_out_ms, land_np_at, land_np_ms,
-        land_hold;
+        land_hold, land_back_ms, land_back_at, land_back_step, land_back_out;
     short name_px, artist_px, text_y, artist_y;
 } cf_style_t;
 typedef struct {
