@@ -3729,7 +3729,7 @@ m=LyricMachine({}); assert m.load()==-1 and m.asked==['LYRICS','UNSYNCEDLYRICS']
 for kw in ({'cls':0xf1},{'cls':0xf2},{'kind':4}):
     m=LyricMachine({'LYRICS':'x'},**kw); assert m.load()==-1 and m.tag_calls==['stock'] and not m.lines,kw; passed()
 m=LyricMachine({'LYRICS':'x'},bound=False); assert m.load()==-1 and not m.asked and not m.lines and m.tag_calls[-1]=='free'; passed()
-m=LyricMachine({'LYRICS':('a'*99+'\n')*700}); assert m.load()==1 and len(m.lines)==656 and m.lines[-1]==(FAR,'a'*99); passed()  # 64 KB
+m=LyricMachine({'LYRICS':('a'*99+'\n')*700}); assert m.load()==1 and len(m.lines)==655 and m.lines[-1]==(FAR,'a'*99); passed()  # 64 KB
 # A tag in LRC form (q2-deezer's synced lyrics): each stamped line at its stamp's whole seconds, as stock's
 # .lrc parser keeps them, in time order, a line with two stamps twice; "[ar:...]" and the lines before the
 # first stamp, and the unstamped ones after it, left out, and so is a stamp alone.

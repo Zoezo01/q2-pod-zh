@@ -21,6 +21,7 @@
   - Prompts: four of stock's messages get the space they lacked, as in **Line Out sets max volume, continue?** and **Storage is full. Some songs couldn't be added.**
   - Settings: the **Shortcut** row's value reads **Favourites**, the spelling every other screen uses.
   - Apps: a search that is too long says **Search is too long**. It said **Too long**, which a name or password box still says.
+  - Lyrics: the lyrics in a song's tag are read to their first 64 KB. A tag with megabytes of text on one line could stall or crash the player.
 - **1.9.1**:
   - Standby: going into Standby gives the card up to 2 seconds to finish and unmount before its power is cut, where it used to cut it at once with files still open, which could leave the card marked as not properly unmounted and lose what was still being written.
   - EQ: in **Advanced**, drag a band up or down on the curve to set its gain, as you drag Simple's sliders. Touch the ring of a band that's on. Choose **Apply changes** to hear it.
