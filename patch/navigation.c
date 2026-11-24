@@ -7127,6 +7127,13 @@ char *play_key(void) {
     return (char *)0;
 }
 
+/* A Play/Pause hold taken: its press is the latch, and the key is swallowed. */
+int hold_taken(const void *key) {
+    if (key) st.qm_press = *(const unsigned long long *)((const char *)key + INPUT_KEY_TIME);
+    drop_input();
+    return 1;
+}
+
 /* Any Play/Pause release ends the latch; only the held press itself is swallowed. */
 static int hold_released(void) {
     char *k = play_key();
@@ -8321,9 +8328,7 @@ int ringnav_keylong(void *ctx, event_t *event) {
     if (!taken && qm_hold()) return STOP;
     /* Stock has no Play/Pause hold, so its release would play or pause: Classic's does nothing. */
     if (taken || (usable() && classic_pages())) {
-        char *key = play_key();
-        if (key) st.qm_press = *(unsigned long long *)(key + INPUT_KEY_TIME);
-        drop_input();
+        hold_taken(play_key());
         if (fav) toast(fav);
         return STOP;
     }

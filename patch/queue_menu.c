@@ -681,9 +681,7 @@ static int qm_list_hold(unsigned at, char *key, void *cover) {
     st.qm_idx = at;
     st.qm_rows = deque_size(lists);
     qm.qm_hash = rec_hash(r);
-    st.qm_press = *(unsigned long long *)(key + INPUT_KEY_TIME);
-    drop_input();
-    return 1;
+    return hold_taken(key);
 }
 
 /* The hold: the same gates and row as a centre press, over the stock showlist or Coverflow's
@@ -696,9 +694,7 @@ int qm_hold(void) {
     int playing = !tk_strcmp(name, "playing_page");
     if (st.rate_on && top == st.rate_on) { /* the picker's: the hold and its release do nothing */
         char *key = play_key();
-        if (key) st.qm_press = *(unsigned long long *)(key + INPUT_KEY_TIME);
-        drop_input();
-        return 1;
+        return hold_taken(key);
     }
     if (st.qm_dialog || qm.qm_timer || st.qm_playlist || !usable() ||
         (!playing && !allowed_top(top)) || window_manager_is_animating(wm) || pointer_down() ||
@@ -718,9 +714,7 @@ int qm_hold(void) {
         st.qm_rows = n;
         qm.qm_hash = rec_hash(r);
         qm.qm_queue_hash = queue_hash(q);
-        st.qm_press = *(unsigned long long *)(key + INPUT_KEY_TIME);
-        drop_input();
-        return 1;
+        return hold_taken(key);
     }
     int kind = contexts[context_id(name)].kind;
     void *album = coverflow_album(top), *cover = coverflow_playlist(top);
@@ -732,9 +726,7 @@ int qm_hold(void) {
         qm.qm_kind = QM_COVERALBUM;
         qm.qm_cls = CLASS_ALBUMS;
         qm.qm_hash = rec_hash(album);
-        st.qm_press = *(unsigned long long *)((char *)key + INPUT_KEY_TIME);
-        drop_input();
-        return 1;
+        return hold_taken(key);
     }
     void *list = page_tracks(top);
     int coverflow = list != 0;
@@ -777,7 +769,5 @@ int qm_hold(void) {
     st.qm_rows = (unsigned)g_menu.rows;
     qm.qm_hash = rec_hash(r);
     qm.qm_browse = browse_hash();
-    st.qm_press = *(unsigned long long *)((char *)key + INPUT_KEY_TIME);
-    drop_input();
-    return 1;
+    return hold_taken(key);
 }
