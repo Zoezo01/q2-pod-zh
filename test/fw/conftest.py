@@ -512,9 +512,9 @@ def scratch(library):
 
 @pytest.fixture
 def st(fw, scratch):
-    """navigation.c's state by field: st('rt_page', C.c_void_p).value."""
+    """navigation.c's state by field: st('rt_page', C.c_void_p).value; st('setting_label', i=3) a pointer array's cell."""
     base = C.addressof(fw.var('st', C.c_char))
-    return lambda name, ctype=C.c_int: ctype.from_address(base + scratch[name])
+    return lambda name, ctype=C.c_int, i=0: ctype.from_address(base + scratch[name] + i * C.sizeof(ctype))
 
 
 @pytest.fixture(scope='module')

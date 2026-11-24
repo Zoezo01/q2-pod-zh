@@ -43,15 +43,6 @@ def geometry(library):
     return tables(library)
 
 
-@pytest.fixture
-def st(fw, scratch):
-    """navigation.c's st by field: st('theme').value; st('setting_label', i=3) a pointer array's cell."""
-    base = C.addressof(fw.var('st', C.c_char))
-    def field(name, ctype=C.c_int, i=0):
-        return ctype.from_address(base + scratch[name] + i * C.sizeof(ctype))
-    return field
-
-
 def writes(fw):
     """write_int_config's (key, value) pairs in order."""
     return [(C.string_at(a[2]).decode(), C.c_int(a[0]).value) for _, a in fw.calls('write_int_config')]
