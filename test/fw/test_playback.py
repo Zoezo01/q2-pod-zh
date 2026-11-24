@@ -1010,6 +1010,33 @@ def test_an_edit_after_a_queue_jump_leaves_the_songs_it_jumped_over_skipped(fw, 
     assert not {1, 2, 3} & set(player.up_next())
 
 
+@pytest.mark.parametrize('shuffle', [0, 2])  # Off, Songs in Album
+def test_an_edit_after_a_queue_jump_back_does_not_replay_the_songs_before_the_target(fw, player, shuffle):
+    """A jump back to an earlier row starts a new round; what the new order draws ahead of the pick stays skipped."""
+    start = fw.fn('ringnav_start_queue', C.c_int, C.c_int)
+    fw.mock('stock_start_queue_trampoline', lambda at, *_: 20 + at)
+    player.load(album_songs(player, b'A', (1, 2)) + album_songs(player, b'B', (1, 2)) + album_songs(player, b'C', (1, 2)), 4)
+    assert player.set(0, shuffle) == 1
+    start(1)
+    player.mcl.pos = 1
+    queue_insert(fw, player, album_songs(player, b'Z', (1,)), 6)
+    up = player.up_next()
+    assert 0 not in up and {2, 3, 4, 5, 6} <= set(up)
+
+
+def test_shuffle_songs_with_repeat_album_leaves_the_other_albums_songs_owed(fw, player):
+    """A natural next inside the playing album walks past other albums' songs without playing them; a later Play All
+    still has them in Up Next."""
+    player.load(player.albums(10, 10))
+    player.rng(7)
+    assert player.set(0, 1) == 1 and player.set(1, REPEAT_GROUP) == 1  # Shuffle Songs, Repeat Album
+    played = {player.mcl.pos} | set(player.run(4))
+    album = player.album(player.mcl.pos)
+    assert {player.album(i) for i in played} == {album}
+    assert player.set(1, ONE_PASS) == 1
+    assert {i for i in range(20) if player.album(i) != album} <= set(player.up_next())
+
+
 def test_an_added_song_of_an_album_already_played_plays_right_after_the_song_playing(fw, player):
     """Off: album B's first song playing, Add to Queue of A's: A sorts before, it plays next, B's rest after it."""
     player.load(album_songs(player, b'A', (1, 2)) + album_songs(player, b'B', (1, 2)), 2)

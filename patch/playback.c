@@ -935,19 +935,21 @@ static void play_now(unsigned next) {
 static void commit(unsigned next) {
     s.resume_key = s.resume_pending = 0;
     if (pend_take(next)) play_now(next);
-    unsigned i = order_find(s.cursor + 1, next);
+    unsigned i = order_find(s.cursor + 1, next), from = s.cursor + 1;
     if ((i == s.n || s.seen[next]) && !(s.repeat == 3 && next == (unsigned)M(MCL_POS))) {
         memcpy(s.order, s.cycle, s.n * sizeof *s.order);
         memset(s.seen, 0, s.n * sizeof *s.seen);
         make_order(s.cycle);
         i = order_find(0, next);
+        from = 0; /* a new round: what it draws ahead of the pick was jumped over */
     }
     if (i < s.n) {
         /* Shuffle Off / Songs in Album: the entries jumped over stay skipped, so behind the cursor
          * means seen (an edit's rebuild(2) relies on it). A group shuffle's pick leaves them owed:
-         * Previous gives them back. */
-        if (s.shuffle < 3)
-            for (unsigned j = s.cursor + 1; j < i; ++j) s.seen[s.order[j].index] = 1;
+         * Previous gives them back.
+         * ponytail: so an edit later plays a same-album one after the pick. */
+        if (s.shuffle == 0 || s.shuffle == 2)
+            for (unsigned j = from; j < i; ++j) s.seen[s.order[j].index] = 1;
         s.cursor = i;
     }
     s.seen[next] = 1;
@@ -1125,6 +1127,8 @@ int ringnav_prev(void) {
     /* Played before this order was drawn (the last round, a Shuffle or Repeat change), it can lie
      * past the track left: it moves just ahead of it, so Next comes back there. A plain ordered
      * Repeat All round is left as it was: the last song stays at the end for the loop. */
+    /* ponytail: Shuffle Songs then Shuffle Off under Repeat All lands in the exemption too, and its
+     * Previous-then-Next still skips (docs/internals.md). */
     if (i < s.n && i > s.cursor && (s.shuffle || s.repeat != 5)) {
         move_back(i, s.cursor);
         i = s.cursor;
