@@ -628,6 +628,16 @@ int ringnav_netservice(void *win, void *ctx);
 
 /* addon_bar.c: a card app's status bar icon, shown while room (bar_sync) */
 void bar_addon_sync(int room);
+/* samplerate.c: Show Sample Rate's setting (pod_values), its text now, a fresh read, and the bar's
+ * label, its right edge at right (the bar's x) and shown only within room px */
+extern int sr_setting;
+int sr_now(int mode, char *buf, unsigned size);
+void sr_forget(void);
+void bar_rate_sync(int left, int x, int room);
+int bar_rate_stale(void); /* the rate now differs from what the bar last took: repaint it */
+/* tools/ipod.py's widest clock (CLOCK_TEXT, 70) centred on the 375 px bar, less CLOCK_GAP (4):
+ * where the left group's text must end */
+#define RATE_CLOCK_LEFT (375 / 2 - 70 / 2 - 4)
 
 /* smart_wifi.c */
 void smart_wake(void); /* Smart Wi-Fi's radio back now, if it had it off */

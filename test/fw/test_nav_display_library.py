@@ -311,10 +311,10 @@ STATE = {'THEME': 'theme', 'LIGHT': 'light', 'ACCENT': 'accent', 'ROUNDED': 'rou
 
 
 def appearance_titles(t):
-    """Appearance's rows under theme t: Theme, t's options in its theme.xml's order, then the Home switches every
-    theme has."""
+    """Appearance's rows under theme t: Theme, t's options in its theme.xml's order, the Home switches every theme
+    has, then Show Sample Rate."""
     return ['Theme'] + [o['label'] if o['setting'] == 'SETTING_OWN' else PAYLOAD[o['setting']][0] for o in t['opts']] + \
-        ['Hide Streaming', 'Hide Folder', 'Hide Apps', 'Hide Games', 'Hide App Store', 'Hide Hi-Res']
+        ['Hide Streaming', 'Hide Folder', 'Hide Apps', 'Hide Games', 'Hide App Store', 'Hide Hi-Res', 'Show Sample Rate']
 
 
 def stored_key(t, o):
@@ -367,7 +367,7 @@ def test_appearance_lists_theme_then_minimals_options_in_its_order(fw):
     assert titles(page.view()) == appearance_titles(t)
     # no set_text: a row reads "Title: value", a switch its On or Off
     switches = [PAYLOAD[o['setting']][0] for o in t['opts'] if o['setting'] in PAYLOAD and PAYLOAD[o['setting']][2]] + \
-        ['Hide Streaming', 'Hide Folder', 'Hide Apps', 'Hide Games', 'Hide App Store', 'Hide Hi-Res']
+        ['Hide Streaming', 'Hide Folder', 'Hide Apps', 'Hide Games', 'Hide App Store', 'Hide Hi-Res', 'Show Sample Rate']
     assert switches and [row[0] for row in rows(page.view()) if row[1] is not None] == switches
     read = readings(page.view())
     # the running theme's name, and Accent at Minimal's own default, under its own key

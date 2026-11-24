@@ -195,7 +195,7 @@ static char sr_synced[16]
 /* ringnav_showface, each second: whether the rate now differs from what the bar last took, so a
  * still page repaints its bar for it (the bar paints by itself only at the clock's minute). */
 int bar_rate_stale(void) {
-    char text[16];
+    char text[16] = { 0 };
     sr_now(pod_value(POD_SAMPLERATE), text, sizeof text);
     return strcmp(text, sr_synced) != 0;
 }
@@ -203,7 +203,7 @@ int bar_rate_stale(void) {
 void bar_rate_sync(int left, int x, int room) {
     static widget_t *label __attribute__((section(".scratch")));
     static int aligned __attribute__((section(".scratch"))); /* 1 left, 2 right, 0 not yet */
-    char text[16];
+    char text[16] = { 0 }; /* whole, as memcpy copies all of it into sr_synced */
     int n = sr_now(pod_value(POD_SAMPLERATE), text, sizeof text), w = n ? sr_text_width(text) : 0;
     int on = n && w <= room, changed = 0, at = left ? x : x - w;
     memcpy(sr_synced, text, sizeof sr_synced);
