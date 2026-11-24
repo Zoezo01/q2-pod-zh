@@ -2705,17 +2705,18 @@ def test_the_playlist_box_s_page_darkens_down_to_the_keyboard(fw, world, st, wit
 SLIDER_LIGHT, SLIDER_MAX, SLIDER_BALANCE, SLIDER_BOOT = range(4)
 SLIDER_PAGES = ['backlight_page', 'maxvol_page', 'balance_page', 'bootvol_page']
 SLIDERS = ['slider_backlight', 'slider_maxvol', 'slider_balance', 'slider_bootvol']
+NUMBERS = ['label_backlight', 'label_vol', 'label_balance', 'label_vol']  # [SLIDER_*]: the value's label
 
 
-def slider_page(fw, world, st, kind, value=50, band=True, number=None):
-    """Stock's slider page of kind as Classic loads it (slider_open), its band's view shown or not: (window,
+def slider_page(fw, world, st, kind, value=50, band=True, number=None, look=CLASSIC, **config):
+    """Stock's slider page of kind as look loads it (slider_open), its band's view shown or not: (window,
     slider)."""
-    theme(fw, CLASSIC)
+    theme(fw, look, **config)
     win = world.window(SLIDER_PAGES[kind])
     view = world.add(win, 'view_slider', box=(0, 120, 375, 60))
     slider = world.add(view, SLIDERS[kind], 'slider', box=(81, 15, 204, 30), min=0, max=100, value=value)
     if number is not None:
-        world.add(win, 'label_balance', 'label', text=number)
+        world.add(win, NUMBERS[kind], 'label', text=number)
     ui_load(fw, st, SLIDER_PAGES[kind].encode(), win)
     world[view].visible = band
     return win, slider
@@ -2857,8 +2858,8 @@ def whole(fw):
     flag.value = saved
 
 
-def scan_dialog(fw, world, st, text='Scanned 0', create=0):
-    theme(fw, CLASSIC)
+def scan_dialog(fw, world, st, text='Scanned 0', create=0, look=CLASSIC, **config):
+    theme(fw, look, **config)
     win = world.window('updatemusic_dialog', 'dialog')
     for name in ('img_animation', 'label_scanfolder'):
         world.add(win, name, 'image')
@@ -3046,8 +3047,8 @@ def test_a_message_window_under_the_bar_draws_no_bar_of_its_own(fw, world, st, w
 USB_LUN = '/sys/kernel/config/usb_gadget/storage_demo/functions/mass_storage.msg/lun.0/file'
 
 
-def usb_page(fw, world, st, number=CLASSIC, mode=0):
-    theme(fw, number)
+def usb_page(fw, world, st, look=CLASSIC, mode=0, **config):
+    theme(fw, look, **config)
     fw.var('g_usbmode', C.c_ubyte).value = mode
     win = world.window('usbmode_page')
     world.add(win, 'img_usbmode', 'image')

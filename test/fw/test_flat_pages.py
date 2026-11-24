@@ -10,7 +10,7 @@ from conftest import O, Config, rgba
 from test_nav_paint import (ACCENTS, GRAPHITE, ICONS, LABELS, MINIMAL, MODERN, PAPER, RED, RED_PX, TIDAL, WHITE, Canvas, bitmaps,
                             channels, fill_props, image_add, layout, luma, paint_bg, quick_window, rgb_of, scheme, scrub,
                             SLIDER_PAGES, SLIDERS, USB_LUN, Files, added, count, inside, msg_paint, named, poll,
-                            whole, on_page, slider_scrub, slider_paint, ui_load,
+                            whole, on_page, slider_scrub, slider_paint, ui_load, NUMBERS, slider_page, scan_dialog, usb_page,
                             st, stock_h, theme, vol_paint, volume, world)  # noqa: F401 (fixtures, by name)
 from test_nav_painters import Quick as QuickInit
 from test_nav_paint import quick_page as paint_quick_page
@@ -328,20 +328,6 @@ def test_over_modern_s_other_windows_the_volume_is_the_flat_panel(fw, world, st,
 # The slider pages (slider_open, slider_paint, slider_scrub) in the flat look.
 
 SLIDER_LIGHT, SLIDER_MAX, SLIDER_BALANCE, SLIDER_BOOT = range(4)
-NUMBERS = ['label_backlight', 'label_vol', 'label_balance', 'label_vol']  # [SLIDER_*]: the value's label
-
-
-def flat_slider(fw, world, st, kind, value=50, band=True, number=None, **config):
-    """test_nav_paint's slider_page under Modern: (window, slider)."""
-    theme(fw, MODERN, ACCENT=str(TIDAL), **config)
-    win = world.window(SLIDER_PAGES[kind])
-    view = world.add(win, 'view_slider', box=(0, 120, 375, 60))
-    slider = world.add(view, SLIDERS[kind], 'slider', box=(81, 15, 204, 30), min=0, max=100, value=value)
-    if number is not None:
-        world.add(win, NUMBERS[kind], 'label', text=number)
-    ui_load(fw, st, SLIDER_PAGES[kind].encode(), win)
-    world[view].visible = band
-    return win, slider
 
 
 @pytest.mark.parametrize('kind, ends', [(SLIDER_MAX, ('spk_quiet', 'spk_loud_qd')), (SLIDER_BOOT, ('spk_quiet', 'spk_loud_qd')),
@@ -349,7 +335,7 @@ def flat_slider(fw, world, st, kind, value=50, band=True, number=None, **config)
 def test_each_flat_slider_page_s_bar_has_its_marks(fw, world, st, kind, ends):
     """In the bar's ends, the near one on the fill and the far one quiet (the dark half's, here); none on Balance.
     The page under it draws no image."""
-    win, slider = flat_slider(fw, world, st, kind)
+    win, slider = slider_page(fw, world, st, kind, look=MODERN, ACCENT=str(TIDAL))
     canvas = slider_scrub(fw, slider)
     assert [n for n, _ in canvas.arts] == ['flat_' + e for e in ends]
     if ends:
@@ -360,7 +346,7 @@ def test_each_flat_slider_page_s_bar_has_its_marks(fw, world, st, kind, ends):
 
 
 def test_a_flat_slider_page_s_caption_is_a_quiet_line_that_turns_with_the_half(fw, world, st):
-    win, slider = flat_slider(fw, world, st, SLIDER_MAX)
+    win, slider = slider_page(fw, world, st, SLIDER_MAX, look=MODERN, ACCENT=str(TIDAL))
     canvas = slider_paint(fw, win)
     caption = named(world, win, 'caption')
     props = world[caption].props
@@ -373,14 +359,14 @@ def test_a_flat_slider_page_s_caption_is_a_quiet_line_that_turns_with_the_half(f
 
 @pytest.mark.parametrize('light', ['0', '1'])
 def test_a_flat_slider_page_is_the_half_s_paper(fw, world, st, light):
-    win, _ = flat_slider(fw, world, st, SLIDER_LIGHT, LIGHT=light)
+    win, _ = slider_page(fw, world, st, SLIDER_LIGHT, LIGHT=light, look=MODERN, ACCENT=str(TIDAL))
     canvas = slider_paint(fw, win)
     assert canvas.fills == [(0, 0, 375, 294, rgba(fw.fn('flat_page', C.c_uint)()))] and canvas.fill == 0xff123456
 
 
 def test_a_hidden_band_draws_no_flat_bar(fw, world, st):
     """Stock hides the slider's view while Default Volume is off: the slider never paints, and the page has none of it."""
-    win, _ = flat_slider(fw, world, st, SLIDER_MAX, band=False)
+    win, _ = slider_page(fw, world, st, SLIDER_MAX, band=False, look=MODERN, ACCENT=str(TIDAL))
     canvas = slider_paint(fw, win)
     assert canvas.arts == [] and len(canvas.fills) == 1 and world[named(world, win, 'caption')].visible  # the caption still
 
@@ -388,7 +374,7 @@ def test_a_hidden_band_draws_no_flat_bar(fw, world, st):
 @pytest.mark.parametrize('kind, text', [(SLIDER_LIGHT, '4'), (SLIDER_MAX, '80'), (SLIDER_BALANCE, 'L 3'), (SLIDER_BOOT, '50')])
 def test_the_flat_value_s_label_is_over_the_bar_and_turns_with_the_half(fw, world, st, kind, text):
     """Every page's value, as stock's page showed it (#476)."""
-    win, slider = flat_slider(fw, world, st, kind, number='')
+    win, slider = slider_page(fw, world, st, kind, number='', look=MODERN, ACCENT=str(TIDAL))
     label = named(world, win, NUMBERS[kind])
     world.set_text(label, text)
     slider_paint(fw, win)
@@ -400,7 +386,7 @@ def test_the_flat_value_s_label_is_over_the_bar_and_turns_with_the_half(fw, worl
 
 @pytest.mark.parametrize('image, held', [('switch_on', 1), ('switch_off', 0)])
 def test_default_volume_s_flat_switch_is_a_pill_with_the_half_that_holds_lit(fw, world, st, image, held):
-    win, _ = flat_slider(fw, world, st, SLIDER_BOOT)
+    win, _ = slider_page(fw, world, st, SLIDER_BOOT, look=MODERN, ACCENT=str(TIDAL))
     world.add(win, 'img_bootswitch', 'image', image=image)
     canvas = slider_paint(fw, win)
     on = rgba(fw.fn('flat_on', C.c_uint)())
@@ -413,7 +399,7 @@ def test_default_volume_s_flat_switch_is_a_pill_with_the_half_that_holds_lit(fw,
 @pytest.mark.parametrize('value', [0, 50, 100])
 def test_the_flat_slider_s_bar_is_quick_settings_bar_on_its_own_rows(fw, world, st, value):
     """The slider's width, 36 rows in the middle of its touch; its fill never less than its round end."""
-    _, slider = flat_slider(fw, world, st, SLIDER_BALANCE, value)
+    _, slider = slider_page(fw, world, st, SLIDER_BALANCE, value, look=MODERN, ACCENT=str(TIDAL))
     canvas = slider_scrub(fw, slider)
     w, h = world.at(slider)[2:]
     lit, rest = lit_of(fw, canvas)
@@ -475,22 +461,8 @@ def test_classic_s_status_bar_keeps_its_images_final_under_modern(fw, bitmaps, l
 
 # The message screens (msg_open, msg_paint) in the flat look: Update Library's dialog and USB mode's page.
 
-def flat_scan(fw, world, st, text='Scanned 0', **config):
-    """test_nav_paint's scan_dialog under Modern: (dialog, the count's threads)."""
-    theme(fw, MODERN, ACCENT=str(TIDAL), **config)
-    win = world.window('updatemusic_dialog', 'dialog')
-    for name in ('img_animation', 'label_scanfolder'):
-        world.add(win, name, 'image')
-    world.add(win, 'label_msg', 'label', text=text)
-    world.add(win, 'btn_no', 'button', box=(100, 250, 175, 40), text='Stop')
-    threads = []
-    fw.mock('fw_pthread_create', lambda t, attr, fn, arg, *_: threads.append(fn) or 0)
-    ui_load(fw, st, b'updatemusic_dialog', win)
-    return win, threads
-
-
 def test_the_flat_scan_dialog_is_a_heading_a_line_and_cancel_s_pill(fw, world, st):
-    win, threads = flat_scan(fw, world, st)
+    win, threads = scan_dialog(fw, world, st, look=MODERN, ACCENT=str(TIDAL))
     heading, line, btn = (named(world, win, n) for n in ('msg_heading', 'msg_line', 'btn_no'))
     assert world[heading].text and world.at(heading)[3] > world.at(line)[3] == 22
     assert world.at(btn) == (127, 248, 121, 36) and world[btn].props['style:normal:font_name'] == 'bold'
@@ -504,7 +476,7 @@ def test_the_flat_scan_dialog_is_a_heading_a_line_and_cancel_s_pill(fw, world, s
 
 def test_the_flat_scan_s_bar_is_thin_and_fills_to_its_part(fw, world, st, whole):
     whole.value = 1
-    win, threads = flat_scan(fw, world, st, 'Scanned 352')
+    win, threads = scan_dialog(fw, world, st, 'Scanned 352', look=MODERN, ACCENT=str(TIDAL))
     before = msg_paint(fw, win)
     count(fw, threads, 704)
     assert poll(world) == 8 and world[named(world, win, 'msg_line')].text == '352 of 704 songs'
@@ -517,20 +489,9 @@ def test_the_flat_scan_s_bar_is_thin_and_fills_to_its_part(fw, world, st, whole)
     assert target == win and all(inside(f[:4], box) for f in bar) and inside(world.at(named(world, win, 'msg_line')), box)
 
 
-def flat_usb(fw, world, st, **config):
-    """test_nav_paint's usb_page under Modern, with its config."""
-    theme(fw, MODERN, **config)
-    fw.var('g_usbmode', C.c_ubyte).value = 0
-    win = world.window('usbmode_page')
-    world.add(win, 'img_usbmode', 'image')
-    world.add(win, 'scrlabel_info', 'hscroll_label', box=(20, 200, 335, 30), text='USB Connected')
-    ui_load(fw, st, b'usbmode_page', win)
-    return win
-
-
 @pytest.mark.parametrize('light, ink, quiet', [('0', 0xffffff, 0x98989d), ('1', 0x1c1c1e, 0x6e6e73)])
 def test_a_flat_message_page_is_the_half_s_paper_under_its_ink(fw, world, st, light, ink, quiet):
-    win = flat_usb(fw, world, st, LIGHT=light)
+    win = usb_page(fw, world, st, look=MODERN, LIGHT=light)
     canvas = msg_paint(fw, win)
     final = lambda n: world[named(world, win, n)].props['_final'] & 0xffffffff
     assert canvas.fills[0][4] == rgba(fw.fn('flat_page', C.c_uint)()) and canvas.art(f'flat_msg_usb_{"l" if light == "1" else "d"}')
@@ -541,7 +502,7 @@ def test_modern_s_usb_page_says_connected_eject_and_then_ok_to_disconnect(fw, wo
     """Modern takes the own pages' words: Connected over Eject before disconnecting, stock's line hidden; the eject
     turns the heading to OK to Disconnect and empties the line, as Classic's."""
     files = Files(fw, {USB_LUN: b'/dev/mmcblk0p1\n'})
-    win = flat_usb(fw, world, st)
+    win = usb_page(fw, world, st, look=MODERN)
     text = lambda n: world[named(world, win, n)].text
     assert (text('msg_heading'), text('msg_line')) == ('Connected', 'Eject before disconnecting')
     assert world[named(world, win, 'scrlabel_info')].visible == 0
