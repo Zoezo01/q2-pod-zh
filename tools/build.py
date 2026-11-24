@@ -421,10 +421,12 @@ ntfs-3g -o $o "$1" /mnt/mmc 2>/dev/null || ntfs-3g "$1" /mnt/mmc 2>/dev/null ||
 # The mdev script: q2mount first, then stock's own lines if it fails (its $? the ntfs-3g's, as before).
 SD_MOUNT = 'etc/mdev/add_removesd.sh'
 SD_MOUNT_HOOK = (b'\tntfs-3g /dev/$MDEV /mnt/mmc\n', b'\t/usr/bin/q2mount /dev/$MDEV || ntfs-3g /dev/$MDEV /mnt/mmc\n')
-# usbmode_exit snprintfs this ntfs-3g line (its only reference, the addiu at CARD_MOUNT_REF) for system(), and its own
-# plain mount only when that fails: q2mount's line takes the same 20 bytes.
+# usbmode_exit snprintfs this ntfs-3g line (the addiu at CARD_MOUNT_REF) for system(), and its own plain mount only
+# when that fails: q2mount's line takes the same 20 bytes. Its tail "mnt/mmc" (0x7870f4) is also the folder the TF card
+# update unpacks update.tar into (the addiu at 0x499574), so q2mount's line keeps it and runs q2mount by name (PATH has
+# /usr/bin, as for stock's ntfs-3g); q2mount reads only $1.
 CARD_MOUNT_FMT, CARD_MOUNT_REF = 0x7870e8, (0x5429dc, 0x24a570e8)  # addiu $a1, $a1, 0x70e8
-CARD_MOUNT_LINE = (b'ntfs-3g %s /mnt/mmc\0', b'/usr/bin/q2mount %s\0')
+CARD_MOUNT_LINE = (b'ntfs-3g %s /mnt/mmc\0', b'q2mount %s /mnt/mmc\0')
 # Stock's Wi-Fi passwords, root's alone: wpa_supplicant (v2.9, update_config=1) saves each join as a .tmp it renames,
 # so the file takes its launcher's umask. wifi_connect.sh, the only one (demo runs it at each link-up), gives it 077 and
 # tightens the file a Reset's template copy left.
@@ -2266,6 +2268,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
     at = fileoff(patched, CARD_MOUNT_FMT)
     check(patched[at:at+20] == CARD_MOUNT_LINE[0], "Unexpected USB storage's card mount line")
     patched[at:at+20] = CARD_MOUNT_LINE[1]  # the card mounted for card apps (q2mount)
+    check(patched[at+12:at+20] == b'mnt/mmc\0', "the TF card update's folder (0x7870f4) overwritten")
     check(word(raw_demo, SONG_UNKNOWN_CALL-8) == 0x8f99a924,
           "song bind: expected getFormatString import")  # lw t9, -0x56f8(gp)
     patch_word(patched, SONG_UNKNOWN_CALL, 0x0320f809, jal(ps['ringnav_song_unknown']), "a song row's empty artist")
