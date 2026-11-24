@@ -10450,7 +10450,7 @@ assert not m.systems and m.top!=m.page; passed()
 # "until <time>" or "end"; Q2 Pod keeps the timer and pauses whatever plays when it is due, or as the
 # local track ends, then removes the file (the app's sign it is done). The app removing it cancels;
 # playback stopping lets "end" go without pausing.
-unlinked=lambda m: m.unlinked
+unlinked=lambda m: [p for p in m.unlinked if p!='/tmp/q2-playing']  # addon_playing.c's file goes as playback stops
 m=pod_sleep(); m.files[SLEEP]=bytearray(b'until 86460\n')  # time() is 86400: a minute on
 assert not paused(m.poll()); assert not paused(m.poll(30000))
 names=m.poll(31000); assert paused(names)==1 and unlinked(m)==[SLEEP],(names,unlinked(m))
