@@ -3059,7 +3059,7 @@ def cl_confirm_failed():
 fm,fd=cl_confirm_failed(); fm.paint(fd); assert not [b for b in fm.bands if b[:2] in ((0,26),(0,30))]; passed()
 # Form A over Quick Settings: stock's bar goes over the paper, as nothing else draws it there. A prompt too wide for its box breaks at a space or comma, the rest on a label of its own a row
 # down, both drawing in their face; one that fits stays whole.
-fa,fd,*_,fp=cl_confirm(); fa.mock('widget_paint'); bar=fa.node('window','system_bar'); fa.word(syms['system_bar'],bar); fa.nodes[fp]['text']='Line Out sets max volume,continue?'; fa.char_px=12; fa.paint(fd)
+fa,fd,*_,fp=cl_confirm(); fa.mock('widget_paint'); bar=fa.node('window','system_bar'); fa.word(syms['system_bar'],bar); fa.nodes[fp]['text']='Line Out sets max volume, continue?'; fa.char_px=12; fa.paint(fd)
 assert [c[1:3] for c in fa.calls if c[0]=='widget_paint']==[(bar,fa.canvas)]
 rest=[c for c in fa.nodes[fd]['children'] if fa.nodes[c].get('type')=='hscroll_label' and c!=fp]
 assert fa.nodes[fp]['text']=='Line Out sets max volume,' and len(rest)==1 and fa.nodes[rest[0]]['text']=='continue?',(fa.nodes[fp]['text'],rest)

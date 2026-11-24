@@ -803,6 +803,11 @@ LABELS = tuple((k.encode(), o.encode(), n.encode()) for k, o, n in (
     ('screenlock_info3', '3.Maximum of 5 images in folder.', '3. Up to 5 pictures.'),
     ('about_sn', 'Serial number', 'Serial Number'), ('about_version', 'FW. Version', 'Version'),
     ('list_baidu', 'Baidu Netdisk(BETA)', 'Baidu Netdisk'), ('msg_poweroff', 'Confirm Shutdown?', 'Shut Down?'),
+    ('msg_lowarn', 'Line Out sets max volume,continue?', 'Line Out sets max volume, continue?'),
+    ('msg_noheadset', 'Playback is disabled without headphones.Please insert headphones.',
+     'Playback is disabled without headphones. Please insert headphones.'),
+    ('msg_no_storage', "Storage is full.Some songs couldn't be added.", "Storage is full. Some songs couldn't be added."),
+    ('msg_actionnotsupport', 'Non-local songs,not currently supported', 'Non-local songs, not currently supported'),
     ('system_prove', '技术证明', 'Certification'),  # About's regulatory row, Chinese in stock's English
     ('genre', 'Genres', 'Genre'), ('player_era', 'Era', 'Year'), ('batch_addplaylist', 'Add to playlist', 'Add to Playlist'),
     ('msg_importplaylist', 'Import Playlist?', 'Import Playlists?'),  # it imports the whole folder
