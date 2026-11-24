@@ -159,7 +159,8 @@ class Packaging:
             (directory/'update.tar').write_bytes(repeat if directory.name.endswith('-repeat') else b'tar')
         def script(args, check):
             self.scripts.append((args, check))
-            pathlib.Path(args[2]).write_bytes(b'%PDF')
+            for name in release.GUIDES:  # build.py writes the .epub and .md beside the .pdf
+                (pathlib.Path(args[2]).parent/name).write_bytes(name.encode())
         monkeypatch.setattr(release, 'run', run)
         monkeypatch.setattr(release, 'build', builder)
         monkeypatch.setattr(release, 'validate', self.validated.append)
@@ -177,12 +178,12 @@ def test_package(repo, monkeypatch, tmp_path, capsys):
     assert p.builds == [(pathlib.Path('stock.zip'), out/'build', logo), (pathlib.Path('stock.zip'), out/'build-repeat', logo)]
     assert p.validated == [out/'build']
     assert (out/release.ASSET).read_bytes() == b'tar'
-    assert p.scripts == [([release.sys.executable, str(repo/'docs/manual/build.py'), str(out/release.GUIDE)], True)]
+    assert p.scripts == [([release.sys.executable, str(repo/'docs/manual/build.py'), str(out/release.GUIDES[0])], True)]
     notes = f'**{release.VERSION}**\n- One.\n\nSHA-256:\n- update.tar ({release.TAG}): `{sha(b"tar")}`\n'
     assert (out/'release-notes.md').read_text() == notes
     record = json.loads((out/'release.json').read_text())
     assert record == dict(tag=release.VERSION, revision='rev', source_sha256='source', assets={'update.tar': sha(b'tar')},
-                          guide_sha256=sha(b'%PDF'), notes_sha256=sha(notes.encode()))
+                          guide={name: sha(name.encode()) for name in release.GUIDES}, notes_sha256=sha(notes.encode()))
     assert (out/'release.json').read_text().endswith('}\n') and '\n  "tag"' in (out/'release.json').read_text()
     assert capsys.readouterr().out == f'Validated and reproducible: {out}\n'
 
@@ -245,10 +246,12 @@ def packaged(root):
     (out/'build').mkdir(parents=True)
     (out/'build/update.tar').write_bytes(b'pod')
     (out/release.ASSET).write_bytes(b'pod')
-    (out/release.GUIDE).write_bytes(b'%PDF')
+    for name in release.GUIDES:
+        (out/name).write_bytes(name.encode())
     (out/'release-notes.md').write_bytes(b'notes\n')
     (out/'release.json').write_text(json.dumps(dict(tag=release.VERSION, revision='rev', source_sha256='source',
-                                                    assets={release.ASSET: sha(b'pod')}, guide_sha256=sha(b'%PDF'),
+                                                    assets={release.ASSET: sha(b'pod')},
+                                                    guide={name: sha(name.encode()) for name in release.GUIDES},
                                                     notes_sha256=sha(b'notes\n'))))
     return out
 
@@ -267,11 +270,11 @@ class Gh:
             return self.tag
         if 'view' in args:  # GitHub's record of the upload, unless a test changes it
             data = (self.out/release.ASSET).read_bytes()
-            return json.dumps({'assets': [{'name': release.GUIDE, 'size': 4, 'digest': 'sha256:' + sha(b'%PDF')},
-                                          {'name': release.ASSET, 'size': len(data), 'digest': 'sha256:' + sha(data), **(self.record or {})}]})
+            return json.dumps({'assets': [{'name': release.ASSET, 'size': len(data), 'digest': 'sha256:' + sha(data),
+                                           **(self.record or {})}]})
         if 'download' in args:
             target = pathlib.Path(args[-1])
-            for name in (release.ASSET, release.GUIDE):
+            for name in [release.ASSET] if args[5] == release.VERSION else release.GUIDES:
                 (target/name).write_bytes(b'bad' if name == self.corrupt else (self.out/name).read_bytes())
         return ''
 
@@ -286,9 +289,9 @@ def test_upload_draft(repo, monkeypatch, capsys):
                            f'refs/tags/{release.VERSION}^{{}}')
     assert gh.calls[2] == (*prefix, 'create', release.VERSION, '--draft', '--target', 'rev', '--title', release.VERSION,
                            '--notes-file', out/'release-notes.md')
-    assert gh.calls[3] == (*prefix, 'upload', release.VERSION, out/release.ASSET, out/release.GUIDE, '--clobber')
-    assert gh.calls[4] == (*prefix, 'view', release.VERSION, '--json', 'assets')
-    assert gh.calls[5][:6] == (*prefix, 'download', release.VERSION) and gh.calls[5][6] == '--dir' and len(gh.calls) == 6
+    assert gh.calls[3] == (*prefix, 'upload', release.VERSION, out/release.ASSET, '--clobber')
+    assert gh.calls[4][:6] == (*prefix, 'download', release.VERSION) and gh.calls[4][6] == '--dir'
+    assert gh.calls[5] == (*prefix, 'view', release.VERSION, '--json', 'assets') and len(gh.calls) == 6
     assert (out/'release-notes.md').read_bytes() == b'notes\n'  # sent as packaged
     assert capsys.readouterr().out == f'Verified draft: https://github.com/{release.REPO}/releases/tag/{release.VERSION}\n'
 
@@ -307,12 +310,19 @@ def test_upload_sends_the_packaged_notes(repo, monkeypatch, tmp_path):
     assert (out/'release-notes.md').read_text() == body and '- One.' in body
 
 
-def test_upload_publish(repo, monkeypatch, capsys):
+@pytest.mark.parametrize('releases', [[], [{'tagName': release.GUIDE_TAG, 'isDraft': False}]])
+def test_upload_publish(repo, monkeypatch, capsys, releases):
+    # Publishing also puts the guide in its own release, made once as a pre-release, never Latest.
     monkeypatch.setattr(release, 'BETA', 0)
     out = packaged(repo)
-    gh = Gh(monkeypatch, out)
+    gh = Gh(monkeypatch, out, json.dumps(releases))
     release.upload(out, publish=True)
-    assert gh.calls[-1] == ('gh', '--repo', release.REPO, 'release', 'edit', release.VERSION, '--draft=false')
+    prefix = ('gh', '--repo', release.REPO, 'release')
+    made = [(*prefix, 'create', release.GUIDE_TAG, '--prerelease', '--latest=false', '--title', 'User Guide', '--notes',
+             gh.calls[6][-1])] if not releases else []
+    assert gh.calls[6:-2] == [*made, (*prefix, 'upload', release.GUIDE_TAG, *(out/name for name in release.GUIDES), '--clobber')]
+    assert gh.calls[-2][:6] == (*prefix, 'download', release.GUIDE_TAG)
+    assert gh.calls[-1] == (*prefix, 'edit', release.VERSION, '--draft=false')
     assert capsys.readouterr().out.startswith('Published: https://github.com/')
 
 
@@ -369,7 +379,7 @@ def test_upload_checks_githubs_record_of_the_tar(repo, monkeypatch, record):
     assert not any('--draft=false' in c for c in gh.calls)
 
 
-@pytest.mark.parametrize('name', [release.ASSET, release.GUIDE])
+@pytest.mark.parametrize('name', [release.ASSET, *release.GUIDES])
 def test_upload_checks_what_landed(repo, monkeypatch, name):
     monkeypatch.setattr(release, 'BETA', 0)
     out = packaged(repo)
@@ -384,7 +394,7 @@ def test_upload_checks_what_landed(repo, monkeypatch, name):
     (dict(source_sha256='other'), '^Wrong release source/tag$'),
     (dict(assets={release.ASSET: 'x', 'extra.zip': 'y'}), '^The release is update.tar alone$'),
     (dict(assets={release.ASSET: 'x'}), '^Release update mismatch$'),
-    (dict(guide_sha256='x'), '^User guide mismatch$'),
+    (dict(guide={release.GUIDES[0]: 'x'}), '^User guide mismatch$'),
     (dict(notes_sha256='x'), '^Release notes mismatch, '),
 ])
 def test_upload_checks_the_record_first(repo, monkeypatch, change, message):

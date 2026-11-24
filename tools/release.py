@@ -16,8 +16,9 @@ from build import ROOT, REPO, VERSION, BETA, TAG, ZIP_SHA, DEMO_SHA, build, chec
 # Network Update (patch/netupdate.c) finds the asset of this name in the release, for its size and
 # digest, and fetches releases/download/<tag>/<ASSET>, so the name can't carry the version.
 ASSET = 'update.tar'
-# Rebuilt from docs/manual every release; the README links releases/latest/download/<GUIDE>.
-GUIDE = 'Q2-Pod-User-Guide.pdf'
+# Rebuilt from docs/manual every release, for a release of their own, tagged GUIDE_TAG, which the README links.
+GUIDES = ['Q2-Pod-User-Guide.pdf', 'Q2-Pod-User-Guide.epub', 'Q2-Pod-User-Guide.md']
+GUIDE_TAG = 'guide'
 
 
 def notes():
@@ -93,14 +94,24 @@ def package(stock, out):
     check(data == (out/'build-repeat/update.tar').read_bytes(), 'Non-reproducible update')
     (out/ASSET).write_bytes(data)
     checksums = {ASSET: sha(data)}
-    subprocess.run([sys.executable, str(ROOT/'docs/manual/build.py'), str(out/GUIDE)], check=True)
+    subprocess.run([sys.executable, str(ROOT/'docs/manual/build.py'), str(out/GUIDES[0])], check=True)
     check(source == source_sha256() and revision == run('git', '-C', ROOT, 'rev-parse', 'HEAD').strip(),
           'Source changed during release build')
     (out/'release-notes.md').write_text(release_body(text, checksums))
     record = dict(tag=VERSION, revision=revision, source_sha256=source, assets=checksums,
-                  guide_sha256=sha((out/GUIDE).read_bytes()), notes_sha256=sha((out/'release-notes.md').read_bytes()))
+                  guide={name: sha((out/name).read_bytes()) for name in GUIDES},
+                  notes_sha256=sha((out/'release-notes.md').read_bytes()))
     (out/'release.json').write_text(json.dumps(record, indent=2)+'\n')
     print(f'Validated and reproducible: {out}')
+
+
+def landed(gh, tag, names, out):
+    """Upload these files of out to the release, then download them back to check what landed."""
+    run(*gh, 'upload', tag, *(out/name for name in names), '--clobber')
+    with tempfile.TemporaryDirectory(prefix='q2-release-verify-') as tmp:
+        run(*gh, 'download', tag, '--dir', tmp)
+        for name in names:
+            check((pathlib.Path(tmp)/name).read_bytes() == (out/name).read_bytes(), f'Remote asset mismatch: {name}')
 
 
 def upload(out, publish=False):
@@ -112,7 +123,7 @@ def upload(out, publish=False):
     data = (out/ASSET).read_bytes()
     check(sha(data) == record['assets'][ASSET] and data == (out/'build/update.tar').read_bytes(),
           'Release update mismatch')
-    check(sha((out/GUIDE).read_bytes()) == record['guide_sha256'], 'User guide mismatch')
+    check(record.get('guide') == {name: sha((out/name).read_bytes()) for name in GUIDES}, 'User guide mismatch')
     # The notes packaged from the changelog then, which the source hash doesn't cover.
     check(sha((out/'release-notes.md').read_bytes()) == record.get('notes_sha256'),
           'Release notes mismatch, or release.json is from an older package: package again')
@@ -129,18 +140,18 @@ def upload(out, publish=False):
           f'Tag {VERSION} is on another commit: gh release delete {VERSION} --cleanup-tag, or delete the tag')
     run(*gh, 'edit' if existing else 'create', VERSION, '--draft', '--target', record['revision'], '--title', VERSION,
         '--notes-file', out/'release-notes.md')
-    files = [ASSET, GUIDE]
-    run(*gh, 'upload', VERSION, *(out/name for name in files), '--clobber')
+    landed(gh, VERSION, [ASSET], out)
     # Network Update installs from GitHub's own record of update.tar: its size and its digest.
     assets = json.loads(run(*gh, 'view', VERSION, '--json', 'assets'))['assets']
     tar = next((a for a in assets if a['name'] == ASSET), {})
     check(tar.get('size') == len(data) and tar.get('digest') == f'sha256:{sha(data)}',
           f"GitHub's record of {ASSET} has no matching size and digest: Network Update would refuse it")
-    with tempfile.TemporaryDirectory(prefix='q2-release-verify-') as tmp:
-        run(*gh, 'download', VERSION, '--dir', tmp)
-        for name in files:
-            check((pathlib.Path(tmp)/name).read_bytes() == (out/name).read_bytes(), f'Remote asset mismatch: {name}')
     if publish:
+        # The guide's own release, a pre-release so it is never Latest, which Network Update offers.
+        if not any(r['tagName'] == GUIDE_TAG for r in releases):
+            run(*gh, 'create', GUIDE_TAG, '--prerelease', '--latest=false', '--title', 'User Guide', '--notes',
+                'The Q2 Pod user guide for the latest release, as PDF, EPUB and Markdown. Updates are in the numbered releases.')
+        landed(gh, GUIDE_TAG, GUIDES, out)
         run(*gh, 'edit', VERSION, '--draft=false')
     print(f'{"Published" if publish else "Verified draft"}: https://github.com/{REPO}/releases/tag/{VERSION}')
 
