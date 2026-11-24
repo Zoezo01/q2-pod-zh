@@ -2644,9 +2644,10 @@ def held(top):
 def named(title):
     """The date a title names: its month, by name, and its numbers."""
     text = title.utf8.decode()
-    months = [m for m in range(1, 13) if calendar.month_abbr[m] in text]
+    months = [m for m in range(1, 13) if f'{m}月' in text]  # the tile's month, in Chinese
     assert len(months) == 1, text
-    return months[0], sorted(int(n) for n in re.findall(r'\d+', text))
+    rest = text.replace(f'{months[0]}月', ' ')  # the month's own digits are not the day's
+    return months[0], sorted(int(n) for n in re.findall(r'\d+', rest))
 
 
 def test_classic_titles_the_page_with_the_date_its_selectors_hold(fw, keys, classic):
@@ -2792,7 +2793,7 @@ def test_classic_paints_the_date_page(fw, keys, classic, edited):
     time_paint(fw, top, canvas)
     cells = [top.find(n) for n in DATE]
     assert [[int(t) for t in in_box(canvas, w)] for w in cells] == [[w.int(SELECTOR_INDEX) + first] for w, first in zip(cells, DATE.values())]
-    assert calendar.month_abbr[held(top)[0]] in [t for t, _ in canvas.texts]  # the tile's month
+    assert f'{held(top)[0]}月' in [t for t, _ in canvas.texts]  # the tile's month
     lit = [(art, x) for art, x, _ in canvas.placed if art and '_lit_' in art]
     assert len(lit) == 1
     art, x = lit[0]

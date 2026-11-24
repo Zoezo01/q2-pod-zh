@@ -30,7 +30,7 @@ TEST_DIR = pathlib.Path(__file__).resolve().parent
 if str(TEST_DIR) not in sys.path:
     sys.path.insert(0, str(TEST_DIR))
 
-from i18n_zh import ZH, ZH_BYTES, ZH_SKIP_MODULES, ZH_SKIP_TESTS  # noqa: E402
+from i18n_zh import ZH, ZH_BYTES, ZH_PATTERNS, ZH_SKIP_MODULES, ZH_SKIP_TESTS  # noqa: E402
 
 # Our own infrastructure, plus the Chinese-only suite: rewriting them would
 # change the mechanism itself and the one test that asserts Chinese directly.
@@ -60,6 +60,11 @@ def rewrite_tree(tree: ast.Module, module: str | None = None) -> ast.Module:
         value = node.value
         if isinstance(value, str):
             new = ZH.get(value)
+            if new is None:  # a counted message: map by pattern, its numbers carried over
+                for pat, rep in ZH_PATTERNS:
+                    if pat.match(value):
+                        new = pat.sub(rep, value)
+                        break
         elif isinstance(value, bytes):
             new = ZH_BYTES.get(value)
         else:

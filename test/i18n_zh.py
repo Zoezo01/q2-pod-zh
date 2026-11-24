@@ -461,6 +461,38 @@ ZH_GENERATED = {
 # codepoint array, theme names) plus its corrections. Run gen_zh_expect.py to
 # refresh the block above; it never touches what follows.
 ZH_OVERRIDES = {
+    # 1.9.1: the EQ picker's words and the auto-rate line's prefix.
+    'Centre': '中间',
+    'Auto (': '自动 (',
+    'Peaking': '峰值',
+    'Low shelf': '低架滤波',
+    'High shelf': '高架滤波',
+    'Band': '频段',
+    # 1.9.1: the switches' halves and the boot logo's refusal (the generator skipped Off/On as ambiguous).
+    'Off': '关',
+    'On': '开',
+    'Boot logo must be a 320x375 JPEG': '开机图片必须是 320x375 的 JPEG',
+    'Invalid card logo, ignoring it': '卡上开机图片无效，已忽略',
+    # 1.9.1: Tidal's download-all answers and the boot/location rows.
+    'Downloaded %u of %u song': '已下载 %u / %u 首',
+    'Downloaded %u of %u songs': '已下载 %u / %u 首',
+    'Tidal Cache full: %u of %u song saved': 'Tidal 缓存已满：已保存 %u / %u 首',
+    'Tidal Cache full: %u of %u songs saved': 'Tidal 缓存已满：已保存 %u / %u 首',
+    'Downloading %u of %u. Press to stop': '正在下载 %u / %u，按中键停止',
+    'Download Playing Songs': '下载正在播放的歌曲',
+    'Play a Tidal album or playlist first': '请先播放一个 Tidal 专辑或播放列表',
+    'Boot to: Rockbox': '默认启动：Rockbox',
+    'Boot to: Q2 Pod': '默认启动：Q2 Pod',
+    'Location: %s': '位置：%s',
+    'Library & Folders': '资料库与文件夹',
+    'Wait until the App Store finishes': '请等应用商店完成',
+    'Set by the card theme': '由卡主题设定',
+    'Configuration': '流媒体设置',
+    'CFW. Version': '自制固件版本',
+    'Done': '完成',
+    'space': '空格',
+    'Jan': '1月', 'Feb': '2月', 'Mar': '3月', 'Apr': '4月', 'May': '5月', 'Jun': '6月',
+    'Jul': '7月', 'Aug': '8月', 'Sep': '9月', 'Oct': '10月', 'Nov': '11月', 'Dec': '12月',
     # 1.9.1: the card theme's readings.
     'Accent: Card Theme': '强调色：卡主题',
     'Battery: Card Theme': '电池：卡主题',
@@ -752,7 +784,7 @@ ZH_OVERRIDES = {
 # a test's setup, or guess wrong. Add here any pair that turns a passing test
 # red, or that needs a screen-specific expectation instead.
 ZH_SKIP = {
-    'On', 'Off', 'Theme', 'Resume',
+    'Theme', 'Resume',
 }
 
 # Whole test modules whose English literals are data (Vorbis tags, generated C
@@ -777,6 +809,15 @@ ZH_SKIP_TESTS = {
 }
 
 ZH = {**ZH_GENERATED, **ZH_OVERRIDES}
+
+# Messages with counts: the test's concrete literal carries numbers a dict cannot key.
+import re  # noqa: E402
+ZH_PATTERNS = [(re.compile(r'^Downloaded (\d+) of (\d+) songs?$'), r'已下载 \1 / \2 首'),
+               (re.compile(r'^Tidal Cache full: (\d+) of (\d+) songs? saved$'), r'Tidal 缓存已满：已保存 \1 / \2 首'),
+               (re.compile(r'^Location: (.*)$'), r'位置: \1'),
+               (re.compile(r'^L (-?[\d.]+) dB$'), r'左 \1 dB'),
+               (re.compile(r'^R (-?[\d.]+) dB$'), r'右 \1 dB'),
+               (re.compile(r'^(\d+) of (\d+)$'), r'\1 / \2')]  # the row joins with stock's ASCII colon
 for _k in ZH_SKIP:
     ZH.pop(_k, None)
 # The firmware tests compare ctypes bytes, the tools tests compare str.

@@ -558,7 +558,7 @@ def test_modern_paints_the_date_page_flat(fw, keys, edited):
     loop.time_paint(fw, top, canvas)
     cells = [top.find(n) for n in loop.DATE]
     assert [[int(t) for t in loop.in_box(canvas, w)] for w in cells] == [[w.int(SELECTOR_INDEX) + first] for w, first in zip(cells, loop.DATE.values())]
-    assert calendar.month_abbr[loop.held(top)[0]] in [t for t, _ in canvas.texts]  # the tile's month
+    assert f'{loop.held(top)[0]}月' in [t for t, _ in canvas.texts]  # the tile's month
     faces = [canvas.over(w) for w in cells]
     assert len(set(faces)) == 2 and faces.count(faces[edited]) == 1  # the edited field's cell alone holds
     assert canvas.art == [] and canvas.fill() == 0xff123456  # the tile and the cells are boxes, not images

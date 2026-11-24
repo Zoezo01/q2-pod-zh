@@ -867,7 +867,8 @@ class Power:
         fw.fn('ringnav_powermanager', C.c_int, C.c_void_p, C.c_void_p)(self.win.addr, None)
 
     def boot(self):
-        labels = [i.labels()[0] for i in self.view.children if i.labels()[0].text.startswith('Boot to: ')]
+        labels = [i.labels()[0] for i in self.view.children
+                  if i.labels()[0].text.startswith(('Boot to: ', '默认启动：'))]  # 中文行用全角冒号
         return labels[0] if labels else None
 
 
@@ -879,13 +880,13 @@ class Power:
 def test_boot_to_reads_what_the_boot_script_would(fw, saved, shown):
     ui = Ui(fw)
     page = Power(fw, ui, {} if saved is None else {BOOT: saved})
-    assert page.boot().text == f'Boot to: {shown}'
+    assert page.boot().text == f'默认启动：{shown}'  # f-string: the table cannot rewrite it
 
 
 def test_boot_to_a_file_that_fails_to_read_is_rockbox(fw):
     ui = Ui(fw)
     fw.mock('fw_ferror', lambda *_: 1)
-    assert Power(fw, ui, {BOOT: b'q2pod'}).boot().text == 'Boot to: Rockbox'
+    assert Power(fw, ui, {BOOT: b'q2pod'}).boot().text == '默认启动：Rockbox'
 
 
 def test_no_rockbox_no_boot_row(fw):
@@ -998,7 +999,7 @@ def test_info_units_only_after_a_number(fw, stock, shown):
 
 
 @pytest.mark.parametrize('stock, location, shown', [
-    ('Location:/mnt/mmc/A', b'Location', 'Location: /mnt/mmc/A'),  # already named
+    ('Location:/mnt/mmc/A', b'Location', 'Location' + ': /mnt/mmc/A'),  # already named: stock's own text, kept as it came
     ('/mnt/mmc/A', b'Ort', 'Ort: /mnt/mmc/A'),  # the language's word
     ('/mnt/mmc/A', b'(player_location)', 'Location: /mnt/mmc/A'),  # a missing string reads "(key)"
     ('/mnt/mmc/A', b'', 'Location: /mnt/mmc/A'),
