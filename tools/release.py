@@ -150,7 +150,8 @@ def upload(out, publish=False):
         # The guide's own release, a pre-release so it is never Latest, which Network Update offers.
         if not any(r['tagName'] == GUIDE_TAG for r in releases):
             run(*gh, 'create', GUIDE_TAG, '--prerelease', '--latest=false', '--title', 'User Guide', '--notes',
-                'The Q2 Pod user guide for the latest release, as PDF, EPUB and Markdown. Updates are in the numbered releases.')
+                'The Q2 Pod user guide for the latest release, as PDF, EPUB and Markdown.\n\n'
+                f'To install or update Q2 Pod, get update.tar from the [latest release](https://github.com/{REPO}/releases/latest).')
         landed(gh, GUIDE_TAG, GUIDES, out)
         run(*gh, 'edit', VERSION, '--draft=false')
     print(f'{"Published" if publish else "Verified draft"}: https://github.com/{REPO}/releases/tag/{VERSION}')
