@@ -13,7 +13,7 @@ import pytest
 
 import host
 import test_playlist_art
-from conftest import O, Card as BaseCard, Config, Deques, Dirent, Externpic, Files, ask_cover, block, claim, fnv1a, high_halves, in_fork, libc
+from conftest import O, Card as BaseCard, Config, Deques, Dirent, Externpic, Files, ask_cover, block, claim, fnv1a, high_halves, in_fork, libc, ogg as ogg_file
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 CX, TOP, ART, ONE, MISS = 187, 13, 160, 65536, 99
@@ -2320,16 +2320,8 @@ OGG_TAGS_MAX = xiph_h('OGG_TAGS_MAX')
 
 def ogg(size):
     """An Ogg Vorbis file's first two packets, the comment header (packet 1, what OGG_TAGS_MAX measures) size bytes
-    long with its '\\x03vorbis' start (no CRC: xiph.c reads none)."""
-    pages, seq = [], 0
-    for packet in (b'\x01vorbis' + bytes(23), b'\x03vorbis' + bytes(size - 7)):
-        lacing = [255] * (len(packet) // 255) + [len(packet) % 255]
-        for at in range(0, len(lacing), 255):
-            part = lacing[at:at + 255]
-            pages.append(b'OggS\0' + bytes([at > 0]) + bytes(8) + struct.pack('<III', 1, seq, 0) + bytes([len(part)]) +
-                         bytes(part) + packet[at * 255:at * 255 + sum(part)])
-            seq += 1
-    return b''.join(pages)
+    long with its '\\x03vorbis' start."""
+    return ogg_file(b'\x01vorbis' + bytes(23), b'\x03vorbis' + bytes(size - 7))
 
 
 @pytest.mark.parametrize('track, size, stock', ((b'/m/a.ogg', OGG_TAGS_MAX + 1, False), (b'/m/a.OGG', OGG_TAGS_MAX + 1, False),

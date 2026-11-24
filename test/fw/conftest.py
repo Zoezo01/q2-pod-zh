@@ -554,10 +554,10 @@ def lists(fw, lists_fields):
     return lambda name, ctype=C.c_int: ctype.from_address(base + lists_fields[name])
 
 
-def opus(tags):
-    """An Ogg Opus file: OpusHead, then tags as packet 1 on pages of its own (no CRC: xiph.c reads none)."""
+def ogg(*packets):
+    """An Ogg file of these packets, each on pages of its own (no CRC: xiph.c reads none)."""
     pages, seq = [], 0
-    for packet in (b'OpusHead' + bytes([1, 2]) + struct.pack('<HIhB', 312, 48000, 0, 0), tags):
+    for packet in packets:
         lacing = [255] * (len(packet) // 255) + [len(packet) % 255]
         for at in range(0, len(lacing), 255):
             part = lacing[at:at + 255]
@@ -565,6 +565,11 @@ def opus(tags):
                          bytes(part) + packet[at * 255:at * 255 + sum(part)])
             seq += 1
     return b''.join(pages)
+
+
+def opus(tags):
+    """An Ogg Opus file: OpusHead, then tags as packet 1."""
+    return ogg(b'OpusHead' + bytes([1, 2]) + struct.pack('<HIhB', 312, 48000, 0, 0), tags)
 
 
 def stock_stub(address, result, log):
