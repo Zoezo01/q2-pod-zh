@@ -414,10 +414,11 @@ enum {
                          pod_rows 26 */
     POD_ALBUM_GRID,   /* Library & Folders' Album View: stock's value and PLAYSET key
                          (album_view_toggle) */
-    POD_HIDE_APPS,    /* Appearance's Hide Apps, Hide Games and Hide App Store: Library's rows
-                         (home.c ringnav_localmusic) */
+    POD_HIDE_APPS,    /* Appearance's Hide Apps, Hide Games, Hide App Store and Hide Hi-Res:
+                         Library's rows (home.c ringnav_localmusic) */
     POD_HIDE_GAMES,
     POD_HIDE_STORE,
+    POD_HIDE_HIRES,
     POD_BT_RECEIVE, /* Bluetooth's Receive Audio (headset_bt_service; the bluealsa2 launcher) */
     POD_CF_ART_LOG, /* Display's Log Failed Artwork: coverflow.c build_art */
     /* Display's Hide Duplicate Albums and Hide Duplicate Songs: coverflow.c music_albums and

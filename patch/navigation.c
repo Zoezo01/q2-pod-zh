@@ -3111,9 +3111,9 @@ int ringnav_keylock_rows(widget_t *win) {
 static int bt_vol_link __attribute__((section(".scratch")));
 /* Bluetooth's Receive Audio (BTRECEIVE), on unless the key is 0: headset.c headset_bt_service. */
 static int bt_receive __attribute__((section(".scratch")));
-/* Appearance's Hide Apps, Hide Games and Hide App Store (HIDEAPPS, HIDEGAMES, HIDESTORE): Library's
- * rows, gone at its next open (home.c ringnav_localmusic). */
-static int hide_lib[3] __attribute__((section(".scratch")));
+/* Appearance's Hide Apps, Hide Games, Hide App Store and Hide Hi-Res (HIDEAPPS, HIDEGAMES,
+ * HIDESTORE, HIDEHIRES): Library's rows, gone at its next open (home.c ringnav_localmusic). */
+static int hide_lib[4] __attribute__((section(".scratch")));
 /* Display's Log Failed Artwork (CFARTLOG): coverflow.c build_art. */
 static int cf_art_log __attribute__((section(".scratch")));
 /* Display's Hide Duplicate Albums and Hide Duplicate Songs (CFDUPALBUMS, CFDUPSONGS): coverflow.c
@@ -3150,6 +3150,7 @@ static int *const pod_values[] = { &st.charge_limit,
                                    &hide_lib[0],
                                    &hide_lib[1],
                                    &hide_lib[2],
+                                   &hide_lib[3],
                                    &bt_receive,
                                    &cf_art_log,
                                    &cf_dups[0],
@@ -3188,6 +3189,7 @@ static const char *const pod_keys[] = { "CHARGELIMIT",
                                         "HIDEAPPS",
                                         "HIDEGAMES",
                                         "HIDESTORE",
+                                        "HIDEHIRES",
                                         "BTRECEIVE",
                                         "CFARTLOG",
                                         "CFDUPALBUMS",
@@ -3271,6 +3273,7 @@ static void pod_text(int i) {
         { N_("Hide Apps") },
         { N_("Hide Games") },
         { N_("Hide App Store") },
+        { N_("Hide Hi-Res") },
         { N_("Receive Audio") },
         { N_("Log Failed Artwork") },
         { N_("Hide Duplicate Albums") },
@@ -6406,7 +6409,7 @@ int ringnav_display(widget_t *win, void *ctx) {
         for (int k = 0; k < T->n_opts; ++k) setting_row(view, T->opts[k].setting);
         pod_rows(win, "scroll_view_display", POD_HIDE_STREAM, 2, home_icons);
         pod_rows(win, "scroll_view_display", POD_HIDE_APPS, 2, home_icons);
-        pod_rows(win, "scroll_view_display", POD_HIDE_STORE, 1, home_icons);
+        pod_rows(win, "scroll_view_display", POD_HIDE_STORE, 2, home_icons);
         return result;
     }
     wheel_row(list_row_into(view, "system_display", xfade_open, (void *)1));

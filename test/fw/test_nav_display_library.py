@@ -322,7 +322,7 @@ def appearance_titles(t):
     """Appearance's rows under theme t: Theme, t's options in its theme.xml's order, then the Home switches every
     theme has."""
     return ['Theme'] + [o['label'] if o['setting'] == 'SETTING_OWN' else PAYLOAD[o['setting']][0] for o in t['opts']] + \
-        ['Hide Streaming', 'Hide Folder', 'Hide Apps', 'Hide Games', 'Hide App Store']
+        ['Hide Streaming', 'Hide Folder', 'Hide Apps', 'Hide Games', 'Hide App Store', 'Hide Hi-Res']
 
 
 def stored_key(t, o):
@@ -375,7 +375,7 @@ def test_appearance_lists_theme_then_minimals_options_in_its_order(fw):
     assert titles(page.view()) == appearance_titles(t)
     # no set_text: a row reads "Title: value", a switch its On or Off
     switches = [PAYLOAD[o['setting']][0] for o in t['opts'] if o['setting'] in PAYLOAD and PAYLOAD[o['setting']][2]] + \
-        ['Hide Streaming', 'Hide Folder', 'Hide Apps', 'Hide Games', 'Hide App Store']
+        ['Hide Streaming', 'Hide Folder', 'Hide Apps', 'Hide Games', 'Hide App Store', 'Hide Hi-Res']
     assert switches and [row[0] for row in rows(page.view()) if row[1] is not None] == switches
     read = readings(page.view())
     # the running theme's name, and Accent at Minimal's own default, under its own key
@@ -384,11 +384,11 @@ def test_appearance_lists_theme_then_minimals_options_in_its_order(fw):
     assert (read['Light Mode'], read['Rounded Corners'], read['Home'], read['Shortcut'], read['Time in Title']) == \
         ('Off', 'On' if t['name'] == 'Minimal' else 'Off', 'Split', 'Favorites', 'On')
     assert (read['Show Wordmark'], read['Hide Streaming'], read['Hide Folder']) == ('On', 'Off', 'Off')
-    assert (read['Hide Apps'], read['Hide Games'], read['Hide App Store']) == ('Off', 'Off', 'Off')
+    assert (read['Hide Apps'], read['Hide Games'], read['Hide App Store'], read['Hide Hi-Res']) == ('Off',) * 4
 
 
 @pytest.mark.parametrize('title, key', [('Hide Apps', 'HIDEAPPS'), ('Hide Games', 'HIDEGAMES'),
-                                        ('Hide App Store', 'HIDESTORE')])
+                                        ('Hide App Store', 'HIDESTORE'), ('Hide Hi-Res', 'HIDEHIRES')])
 def test_a_library_hide_switch_saves_its_key(fw, title, key):
     ui = Ui(fw)
     page = appearance(fw, ui)

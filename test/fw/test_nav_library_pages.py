@@ -2563,6 +2563,17 @@ def test_each_hide_switch_takes_its_row_off_the_library(fw, ui, key, gone):
     assert (gone == 'Apps') == (not [h for h in ui.handlers if h[0] == win and h[1] == EVT_WINDOW_FOREGROUND])
 
 
+@pytest.mark.parametrize('config, shown', [({}, True), ({'HIDEHIRES': b'1'}, False)])
+def test_hide_hi_res_hides_stock_s_row_and_leaves_the_others_in_order(fw, ui, config, shown):
+    win, view = library(fw, ui, files=TAPE, **config)
+    rows = page_rows(ui, view)
+    assert [(c, v) for c, v in rows if c == 'Hi-Res'] == [('Hi-Res', shown)]
+    assert [c for c, _ in rows][rows.index(('Genre', True)):][:6] == ['Genre', 'Era', 'Playlist', 'Ratings', 'My Fav', 'Recently Added']
+    assert rows[[c for c, _ in rows].index('Frequent') + 1] == ('Hi-Res', shown)
+    names = {row_text(ui, i): ui.name[ui.kids[i][0]] for i in ui.kids[view] if row_text(ui, i) in LIBRARY_STOCK}
+    assert names['Hi-Res'] == '5' and names['Playlist'] == '10'  # stock's click reads the name, not the place
+
+
 def test_the_app_store_row_opens_the_store_s_page_and_games_its_chooser(fw, ui):
     win, view = library(fw, ui)
     assert row_click(ui, view, 'App Store') == [(ui.fn('shelf_open'), 0)]

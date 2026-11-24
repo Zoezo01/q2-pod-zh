@@ -92,6 +92,7 @@ int ringnav_localmusic(widget_t *win, void *ctx) {
                    n++);
     widget_set_visible(stock[L_FREQUENT], 0, 0); /* Most Played is its list, from every listen */
     widget_restack(stock[L_FREQUENT], n++);
+    if (pod_value(POD_HIDE_HIRES)) widget_set_visible(stock[L_HIRES], 0, 0); /* kept, as My Fav */
     widget_restack(stock[L_HIRES], n++);
     widget_restack(library_row(view, "local_longsongs", long_songs, 0, tr("Long Songs"), 1), n++);
     /* Podcasts, Audiobooks and Photos, each only with its folder. */
