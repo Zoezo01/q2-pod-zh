@@ -761,10 +761,6 @@ static int arcade_key(unsigned key, int over) {
     return 1;
 }
 
-static void vortex_key(unsigned key) {
-    if (!arcade_key(key, g->vx.state == OVER) && key == KEY_CENTER) vortex_launch(&g->vx);
-}
-
 /* The side keys steer Snake; the wheel picks Continue/Quit in the menu and is ignored otherwise. */
 static void snake_key(unsigned key) {
     int wheel = key == KEY_NEXT || key == KEY_PREV;
@@ -831,8 +827,8 @@ int games_key(widget_t *top, unsigned key) {
         solitaire_key(key);
     else if (g->screen == SNAKE)
         snake_key(key);
-    else
-        vortex_key(key);
+    else if (!arcade_key(key, g->vx.state == OVER) && key == KEY_CENTER)
+        vortex_launch(&g->vx);
     /* a moved cursor is kept on leaving; a key the game ignored paints nothing */
     g->dirty |= (g->sud.cur != was.sud.cur) | (g->sol.cur != was.sol.cur) << 1;
     /* NOLINTNEXTLINE(bugprone-suspicious-memory-comparison): was copies *g; worst case a repaint */
