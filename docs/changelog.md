@@ -1,5 +1,7 @@
 # Changelog
 
+- **1.9.3**:
+  - Apps: File Browser's **Edit Tags** lists the song playing at the top again. Since 1.9.1 apps run without root and couldn't see which song the player had open; Q2 Pod now tells them (File Browser 1.5 and later).
 - **1.9.2**:
   - Now Playing: the heart fills or empties as soon as you choose **Add to Favourites** or **Remove from Favourites** on the hold menu. It kept its old look until the next song, so tapping it then undid the change.
   - Playback: **Previous** then **Next** comes back to the song you left after changing Shuffle, Repeat or Group by, or at the start of a new shuffled Repeat All round, and the songs not yet played still play. Next could jump past them, or stop the queue under Play All. **Previous Album** at those moments no longer skips the albums between.
