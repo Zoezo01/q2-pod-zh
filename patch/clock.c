@@ -7,12 +7,11 @@ extern void stock_timezone_row_trampoline(widget_t *, int);
 static const char *const tz_names[] = TIMEZONE_NAMES;
 #define TZ_COUNT (sizeof tz_names / sizeof *tz_names)
 
-static void clock_zone(void);
 int ringnav_timezone(void) {
     unsigned n = g_time_zone;
     int result = n < TZ_COUNT ? toolsSetTimeZone(tz_names[n]) : stock_timezone_trampoline();
-    tzset(); /* localtime_r does not reload TZ itself */
-    clock_zone();
+    tzset();                          /* localtime_r does not reload TZ itself */
+    if (st.clock_timer) clock_show(); /* the bar runs; boot's call comes before it */
     return result;
 }
 
@@ -129,9 +128,6 @@ void clock_show(void) {
         tk_snprintf(s, sizeof s, tm[2] < 12 ? tr("%d:%02d AM") : tr("%d:%02d PM"),
                     (tm[2] + 11) % 12 + 1, tm[1]);
     widget_set_text_utf8(label, s);
-}
-static void clock_zone(void) {
-    if (st.clock_timer) clock_show(); /* the bar runs; boot's call comes before it */
 }
 
 /* Minutes since midnight now, or -1 when the clock can't be read. */
