@@ -933,11 +933,14 @@ static void play_now(unsigned next) {
     }
     s.seen[next] = 0;
 }
-static void commit(unsigned next) {
+/* replay: Repeat Song's own replay at a song's end, which stays in its round.
+ * ponytail: a manual Next at a round's end may start a new round with the playing song, which plays once more, as
+ * under Repeat All; skipping it needs upcoming, Up Next and the preload to agree */
+static void commit(unsigned next, int replay) {
     s.resume_key = s.resume_pending = 0;
     if (pend_take(next)) play_now(next);
     unsigned i = order_find(s.cursor + 1, next), from = s.cursor + 1;
-    if ((i == s.n || s.seen[next]) && !(s.repeat == 3 && next == (unsigned)M(MCL_POS))) {
+    if ((i == s.n || s.seen[next]) && !replay) {
         memcpy(s.order, s.cycle, s.n * sizeof *s.order);
         memset(s.seen, 0, s.n * sizeof *s.seen);
         make_order(s.cycle);
@@ -975,7 +978,7 @@ int ringnav_start_queue(int at) {
     if (s.active && x < s.n && x != (unsigned)M(MCL_POS) && queue() && deque_size(queue()) == s.n) {
         close_preload();
         if (s.shuffle == 1 && pend_find(x) == s.npend) play_now(x);
-        commit(x);
+        commit(x, 0);
     }
     return stock_start_queue_trampoline(at);
 }
@@ -1082,7 +1085,7 @@ static int next_song(int automatic) {
         mclStop();
         return -1;
     }
-    commit((unsigned)next);
+    commit((unsigned)next, automatic && s.repeat == 3);
     if (automatic && M(MCL_PRELOAD) == 1 && M(MCL_PREPOS) == next)
         return stock_next_trampoline(automatic); /* stock consumes the preloaded decoder */
     close_preload();
@@ -1293,7 +1296,7 @@ int playback_group_skip(int forward) {
         for (unsigned i = 0; i < s.n; ++i)
             if (s.groups[i] == group) s.seen[i] = 1;
         s.npend = 0;
-        commit(next);
+        commit(next, 0);
     } else {
         unsigned h = s.hn;
         while (h && s.groups[s.history[h - 1]] == group) --h;

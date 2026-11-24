@@ -545,6 +545,27 @@ def test_repeat_song_repeats_automatically_and_next_moves_on(player):
     assert player.next(0) >= 0 and player.mcl.pos == player.order()[player.s.cursor] != at
 
 
+def test_repeat_song_next_at_a_rounds_end_moves_on(player):
+    """Shuffle Songs and Repeat Song, the round played out and the next one drawn to start with the playing song:
+    Next starts that round, so the song plays once more, and the Next after it moves on, as under Repeat All."""
+    plan(player, [0, 1, 2], cursor=2, seen=(0, 1, 2), cycle=[2, 0, 1], repeat=REPEAT_SONG, shuffle=1)
+    player.s.history[0], player.s.hn = 2, 1
+    played = []
+    for _ in range(3):
+        assert player.next(0) >= 0
+        played.append(player.mcl.pos)
+    assert played == [2, 0, 1]
+
+
+def test_repeat_songs_own_replays_keep_their_round(player):
+    """Repeat Song's replay of the song at its end stays in its round: the round's order isn't drawn again."""
+    player.load(player.albums(6))
+    player.rng(7)
+    assert player.set(0, 1) == 1 and player.set(1, REPEAT_SONG) == 1
+    order, at = player.order(), player.mcl.pos
+    assert player.run(3) == [at] * 3 and player.order() == order
+
+
 def test_play_one_song_stops_after_it(player):
     player.load(player.albums(2, 2))
     assert player.set(1, ONE_SONG) == 1
