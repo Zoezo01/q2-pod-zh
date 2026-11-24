@@ -407,16 +407,10 @@ static int rate_gone(void *win, event_t *event) {
  * tells a hold from a tap, and the badge sits on the heart's top right. */
 void rate_bind(widget_t *win) {
     widget_t *fav = widget_lookup(win, "img_fav", 1);
-    void *emitter = fav ? P(fav, W_EMITTER) : (void *)0;
     stop_timer(&ra.rate_tick);
     stop_timer(&ra.rate_hold);
-    ra.rate_ctx = (void *)0;
-    for (void *item = emitter ? P(emitter, 0) : 0; item; item = P(item, EMIT_NEXT))
-        if (I(item, EMIT_TYPE) == EVT_CLICK && P(item, 12) == (void *)FAV_CLICK &&
-            !B(item, EMIT_PENDING_REMOVE)) {
-            ra.rate_ctx = P(item, 0);
-            break;
-        }
+    void *item = click_bound(fav, (void *)FAV_CLICK);
+    ra.rate_ctx = item ? P(item, 0) : (void *)0;
     if (!ra.rate_ctx) return;
     st.rate_win = win;
     ra.rate_fav = fav;
