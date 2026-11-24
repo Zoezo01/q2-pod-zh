@@ -122,6 +122,7 @@ static void ple_reload(void) {
 /* The Add Songs picker's Search row filters by title, artist or album, ASCII case-insensitively.
  * ple.match holds the matching records only; the picker keeps every song, so clearing the query
  * restores the list without re-staging it. */
+static int ple_has(const char *text, const char *query) { return text && strcasestr(text, query); }
 static void ple_filter(void) {
     free(ple.match);
     ple.match = 0;
@@ -134,7 +135,7 @@ static void ple_filter(void) {
         const char *fields[] = { track_name(name, sizeof name, r), P(r, REC_ARTIST),
                                  P(r, REC_ALBUM) };
         for (unsigned f = 0; f < sizeof fields / sizeof *fields; ++f)
-            if (fields[f] && strcasestr(fields[f], ple.query)) {
+            if (ple_has(fields[f], ple.query)) {
                 ple.match[ple.nmatch++] = r;
                 break;
             }
