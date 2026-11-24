@@ -61,7 +61,7 @@ python3 test/mp3_gapless_player.py BUILD   # the built gapless hooks, then stock
 python3 test/build.py                      # JPEG headers, dev tags, and the boot scripts (S90play's dual boot and crash log, S11logo's splash) under the host sh; no ZIP or emulator
 python3 test/build.py 'Q2 Firmware V1.36.zip'   # packaging checks (custom logo, quoted paths)
 python3 test/build.py --build BUILD         # a finished build's payloads and packaging
-python3 test/remote.py                     # q2remote protocol, auth, event and framebuffer checks
+python3 test/remote.py                     # q2remote's host shell, auth, shots and --prof
 bash test/wifi_transfer_cgi.sh             # Wi-Fi transfer's file manager (assets/web/q2cgi) under the host's busybox ash (the Q2's is 1.31.1): no ZIP or build; on a tmpfs at /mnt/mmc (one already there, or its own as root); --fat for a FAT32 image and its short-name cases (root). GitHub runs it on every pull request
 python3 test/playback.py /tmp/q2-build     # grouped traversal, snapshots and the wheel's ticks (cc)
 python3 test/patch.py /tmp/q2-build        # the patched MIPS payload, wheel and UI scenarios (cc)
