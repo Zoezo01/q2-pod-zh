@@ -28,10 +28,6 @@
 /* Each app's request as last read, its first EQ_SEQ bytes hashed; 0 none. */
 static unsigned eq_seen[APPS_MAX] __attribute__((section(".scratch")));
 
-static int alnum(char c) {
-    return (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
-}
-
 /* body is word, a line end after it or none */
 static int is(const char *body, const char *word) {
     unsigned k = strlen(word);
@@ -90,7 +86,10 @@ void addon_eq_poll(int slot, const char *id) {
     if (!n || key == eq_seen[slot] || !(raw = calloc(1, EQ_RAW))) return; /* no memory: next poll */
     eq_seen[slot] = key;
     n = state_read(path, raw, EQ_RAW);
-    while (k < EQ_SEQ - 1 && alnum(raw[1 + k])) ++k;
+    while (k < EQ_SEQ - 1 &&
+           ((raw[1 + k] >= '0' && raw[1 + k] <= '9') || (raw[1 + k] >= 'A' && raw[1 + k] <= 'Z') ||
+            (raw[1 + k] >= 'a' && raw[1 + k] <= 'z')))
+        ++k;
     snprintf(seq, sizeof seq, "%.*s", (int)k, raw + 1);
     snprintf(done, sizeof done, "%s.done", path);
     state_read(done, old, sizeof old);
