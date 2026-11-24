@@ -4480,7 +4480,7 @@ def test_a_search_text_too_long_to_send_whole_is_dropped_and_says_so(fw):
     for _ in range(2):
         fw.fn('addon__searched', C.c_int, C.c_void_p, C.c_void_p)(None, None)
     fw.fn('addon__go', C.c_int, C.c_void_p)(None)
-    assert len(fw.calls('fw_pthread_create')) == calls and p.toasts == [b'Too long']
+    assert len(fw.calls('fw_pthread_create')) == calls and p.toasts == [b'Search is too long']
     assert p.pg.depth == 1 and p.top.op != b'search' and text[:63] not in p.top.title
 
 

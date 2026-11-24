@@ -2447,7 +2447,7 @@ static int searched(void *ctx, event_t *event) {
     if (strlen(t) >= sizeof pg.term) { /* none of it goes: the box closes, the level stays */
         memset(t, 0, sizeof t);
         if (!pg.go) /* its loop would run the go the first call armed, under this handler */
-            toast(tr("Too long"));
+            toast(pg.field ? tr("Too long") : tr("Search is too long"));
     }
     tk_snprintf(pg.term, sizeof pg.term, "%s", t);
     memset(t, 0, sizeof t);
