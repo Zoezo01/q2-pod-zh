@@ -5375,7 +5375,8 @@ m.advance(60); frames0=len(m.frames); destroyed=len(m.destroyed); assert m.key()
 assert m.key()==11  # a second Return is nothing
 back=[]
 for t in (45,45,45,45,45): m.advance(t); back.append(m.frame())
-assert len({bytes(f) for f in back})==5,'five distinct frames back'
+assert px_at(back[0],187,150)==0xff203040 and px_at(back[1],187,150)!=0xff203040 and len({bytes(f) for f in back})==5,'back eased out: past edge on within 90 ms'
+assert px_at(back[-1],187,150)==px_at(forward[0],187,150),'back at the cover'
 m.advance(50)
 assert not m.panel() and m.nodes[m.slide]['visible'] and m.nodes[m.covers()]['sensitive']==1 and all(m.nodes[w]['visible'] for w in m.nodes[m.covers()]['children'])
 assert len(m.destroyed)==destroyed+1 and flip_held(m)==held and not [t for t in m.timers.values() if t[1] in (payload_syms['flip_tick'],)]
