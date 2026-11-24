@@ -794,6 +794,8 @@ static void pl_rows(widget_t *win) {
                 : marking ? "选择播放列表"
                           : "播放列表",
                 marks);
+    if (nav && widget_count_children(nav))
+        widget_set_text_utf8(widget_get_child(nav, 0), words);
     bar_title_sync(win);
     widget_t *none = widget_lookup(win, PL_NONE, 0);
     if (!none && !n) {

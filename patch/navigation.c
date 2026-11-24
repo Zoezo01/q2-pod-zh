@@ -3013,16 +3013,17 @@ void row_label(widget_t *label, const char *text) {
      * English across the row and leave the whole text in the value's column. */
     static const char colon[] = "：";
     const char *value = text;
-    while (*value && !(value[0] == ':' && value[1] == ' ')) ++value;
-    char head[128];
-    const char *title = "强调色";
-    unsigned n = (unsigned)(value - text);
+    while (*value && !(value[0] == colon[0] && value[1] == colon[1] && value[2] == colon[2]))
+        ++value;
+    char title[40] = "强调色";
     if (*value) {
-        if (n >= sizeof head) n = sizeof head - 1;
-        memcpy(head, text, n);
-        head[n] = 0;
-        title = head;
-    }
+        unsigned n = (unsigned)(value - text);
+        if (n >= sizeof title) n = sizeof title - 1;
+        memcpy(title, text, n);
+        title[n] = 0;
+        value += 3; /* the colon's three UTF-8 bytes */
+    } else
+        value = text; /* a bare value: it reads 强调色, in the value's column */
     list_value(label, title, value);
 }
 

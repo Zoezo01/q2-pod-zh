@@ -83,12 +83,11 @@ static void bh_text(char *s, unsigned size, unsigned i, int shown) {
     const int *tm = bh_tm(i, buf);
     unsigned at = bh.rec.row[i].at, from = bh.rec.row[0].at, m = (at - from) / 60,
              pct = bh.rec.row[i].pct;
-    const char *half = tm && tm[2] < 12 ? N_("AM") : N_("PM");
+    const char *half = tm && tm[2] < 12 ? "上午" : "下午";
     if (tm && g_time24h_flag)
         tk_snprintf(s, size, "%u%% | %02d:%02d", pct, tm[2], tm[1]);
     else if (tm)
-        tk_snprintf(s, size, "%u%% | %s %d:%02d", pct, tm[2] < 12 ? "上午" : "下午",
-                    (tm[2] + 11) % 12 + 1, tm[1]);
+        tk_snprintf(s, size, "%u%% | %s %d:%02d", pct, half, (tm[2] + 11) % 12 + 1, tm[1]);
     else if (at >= from)
         tk_snprintf(s, size, "%u%% | +%u:%02u", pct, m / 60, m % 60);
     else /* the clock lost after the start */
