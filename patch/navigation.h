@@ -360,7 +360,6 @@ void paint_panel(widget_t *w, canvas_t *canvas, const rect_t *r, const char *sha
 unsigned stops_row(const stops_t *s, int j, int h) __attribute__((pure));
 int bar_repaint(const void *info);
 void clock_text(widget_t *label, int negative, int t);
-void label_font(widget_t *w, int bold);
 widget_t *list_row(widget_t *view, const char *icon, int (*click)(void *, event_t *), void *ctx);
 int language_offered(void); /* language.c */
 widget_t *list_row_core(widget_t *view, const char *icon, int (*click)(void *, event_t *),

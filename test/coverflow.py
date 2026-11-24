@@ -358,6 +358,14 @@ const unsigned *widget_get_text(void *w) { return 0; }
 int canvas_set_font(void *c, const char *f, unsigned px) { return 0; }
 float canvas_measure_text(void *c, const unsigned *s, unsigned n) { return 0; }
 const char *theme_face(const unsigned *s, int n, int *px) { return 0; }
+void face_states(void *w, const char *f, int px) {
+    static const char *const names[] = { "style:normal:font_name", "style:focused:font_name", "style:disable:font_name" },
+                             *const sizes[] = { "style:normal:font_size", "style:focused:font_size", "style:disable:font_size" };
+    for (unsigned i = 0; i < 3; ++i) {
+        widget_set_prop_str(w, names[i], f);
+        if (px) widget_set_prop_int(w, sizes[i], px);
+    }
+}
 void font_weight_mark(void *w, int bold) {}
 void home_pane_read(int *services, int *games, int *free_tenths) { *services = 5; *games = 4; *free_tenths = 412; }
 extern volatile unsigned library_gen;

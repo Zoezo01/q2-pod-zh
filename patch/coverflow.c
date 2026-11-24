@@ -3587,16 +3587,9 @@ void *coverflow_cover_tracks(void *r) {
 /* A label's face at px, in every state the labels style: bold, the theme's (bold itself), by its
  * text as theme_font has it; else stock's regular, as the theme's rows' second lines. */
 void panel_font(widget_t *label, int px, int bold) { /* shared with navigation.c */
-    static const char *const names[] = { "style:normal:font_name", "style:focused:font_name",
-                                         "style:disable:font_name" },
-                             *const sizes[] = { "style:normal:font_size", "style:focused:font_size",
-                                                "style:disable:font_size" };
     const char *face = bold ? theme_face(widget_get_text(label), -1, &px) : (const char *)0;
     font_weight_mark(label, bold && !face && caption_bold());
-    for (unsigned i = 0; i < sizeof names / sizeof *names; ++i) {
-        widget_set_prop_str(label, names[i], face ? face : "default");
-        widget_set_prop_int(label, sizes[i], px);
-    }
+    face_states(label, face ? face : "default", px);
 }
 
 static widget_t *panel_label(widget_t *parent, int x, int y, int w, int h, const char *s, int px,

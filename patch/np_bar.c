@@ -187,7 +187,7 @@ void bar_title(widget_t *bar, widget_t *top) {
         if (!st.bar_titled) return;
         st.bar_titled = 0;
         st.clock_key = 0; /* clock_show writes it again */
-        if (bar_bold) label_font(label, 0);
+        if (bar_bold) face_states(label, "default", 0);
         font_weight_mark(label, 0); /* a CJK title's mark, under bar_bold 0 too */
         bar_bold = 0;
         rearm(&st.clock_timer, clock_due, 0);

@@ -4045,11 +4045,16 @@ void clock_text(widget_t *label, int negative, int t) {
     widget_set_text_utf8(label, s);
 }
 
-void label_font(widget_t *w, int bold) {
-    static const char *const font[] = { "style:normal:font_name", "style:focused:font_name",
-                                        "style:disable:font_name" };
-    for (unsigned i = 0; i < sizeof font / sizeof *font; ++i)
-        widget_set_prop_str(w, font[i], bold ? "bold" : "default");
+/* A label's face in every state the labels style: the face, and px when it is not 0. */
+void face_states(widget_t *w, const char *face, int px) {
+    static const char *const names[] = { "style:normal:font_name", "style:focused:font_name",
+                                         "style:disable:font_name" },
+                             *const sizes[] = { "style:normal:font_size", "style:focused:font_size",
+                                                "style:disable:font_size" };
+    for (unsigned i = 0; i < sizeof names / sizeof *names; ++i) {
+        widget_set_prop_str(w, names[i], face);
+        if (px) widget_set_prop_int(w, sizes[i], px);
+    }
 }
 /* The theme's font for role on w: its face (bold.ttf, classic-light.ttf: tools/build.py) when that
  * face has every character of w's text (BOLD_RANGES, CLASSIC_LIGHT_RANGES), else the next bold one
@@ -4060,10 +4065,6 @@ void label_font(widget_t *w, int bold) {
  * it), and a role the theme leaves to the style writes nothing. */
 static const char *const font_faces[] = { "default", "bold", "classic-light" }; /* [FONT_*] */
 int theme_font(widget_t *w, int role, int was) {
-    static const char *const names[] = { "style:normal:font_name", "style:focused:font_name",
-                                         "style:disable:font_name" },
-                             *const sizes[] = { "style:normal:font_size", "style:focused:font_size",
-                                                "style:disable:font_size" };
     const theme_t *T = theme();
     int face = w ? T->font[role] : FONT_DEFAULT, px = T->font_px[role], row = was == FONT_ROW;
     int wanted_bold = face != FONT_DEFAULT;
@@ -4082,11 +4083,8 @@ int theme_font(widget_t *w, int role, int was) {
     font_weight_mark(w, wanted_bold && face == FONT_DEFAULT);
     int answer = face | px << 2, kept = row ? answer | role << 16 : answer;
     if (!w || kept == was) return answer;
-    for (unsigned i = 0; i < sizeof names / sizeof *names; ++i) {
-        /* NOLINTNEXTLINE(clang-analyzer-security.ArrayBound): face is a FONT_* (theme.py FONTS) */
-        widget_set_prop_str(w, names[i], font_faces[face]);
-        if (px) widget_set_prop_int(w, sizes[i], px);
-    }
+    /* NOLINTNEXTLINE(clang-analyzer-security.ArrayBound): face is a FONT_* (theme.py FONTS) */
+    face_states(w, font_faces[face], px);
     if (row) widget_set_prop_int(w, "_font", kept);
     return answer;
 }

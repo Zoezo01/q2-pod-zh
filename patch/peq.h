@@ -701,6 +701,8 @@ const char *output_device(char *vol); /* radio.c */
 void dac_take(void);                  /* radio.c */
 /* navigation.c: the theme's font for role on w, or stock's */
 int theme_font(widget_t *w, int role, int was);
+void face_states(widget_t *w, const char *face,
+                 int px);           /* navigation.c: the face in every label state */
 #define FONT_ROW (-2)               /* was: cache the answer in w's own "_font" prop */
 void marq_restart(widget_t *row);   /* navigation.c: its title changed, its marquee re-armed */
 void list_stop_scroll(widget_t *w); /* navigation.c: its scroll animation stopped */
