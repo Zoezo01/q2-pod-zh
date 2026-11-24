@@ -206,12 +206,6 @@ static int watch(watched *w, const char *path, int rate, unsigned frames) {
     return w->f && *w->f > 0 ? *w->f : 0;
 }
 
-/* demo's fade for the next change. */
-static int xfade_ms(int rate, unsigned frames) {
-    static watched w = { 0, ~0u };
-    return watch(&w, XFADE_FILE, rate, frames);
-}
-
 /* n frames between a and the ring's frame at (of cap), into the ring if put: two spans where it
  * wraps. */
 static void ring_copy(float *a, unsigned at, unsigned n, unsigned cap, int nch, int put) {
@@ -225,7 +219,9 @@ static void ring_copy(float *a, unsigned at, unsigned n, unsigned cap, int nch, 
 
 /* Frames of a (interleaved, nch) put out in place: all of them, or fewer while the hold fills. */
 static unsigned crossfade(player_state *s, float *a, unsigned frames, int nch, int rate) {
-    int said = xfade_ms(rate, frames), ms = said & XF_MS, stopped = said >> XF_STOPS != xf.stops;
+    static watched fade = { 0, ~0u }; /* demo's fade for the next change */
+    int said = watch(&fade, XFADE_FILE, rate, frames), ms = said & XF_MS,
+        stopped = said >> XF_STOPS != xf.stops;
     if (!ms && !xf.len) return frames; /* no fade or held tail: skip clock and position queries */
     unsigned cap = XF_FLOATS / (unsigned)nch;
     long long now = now_ns();
