@@ -286,6 +286,27 @@ static int info_tick(const void *info) {
     lk.shown = now;
     return 8; /* RET_REPEAT */
 }
+/* screen_action(0)'s disable_fb (tools/build.py LOCK_DARK_CALL). With the lock screen on and no
+ * lock window up, the framebuffer is cleared first: stock's wake unblanks the panel on whatever the
+ * framebuffer holds and opens the lock window after, so the page left at screen-off showed until
+ * the lock window was painted. Both pages go black, so that moment is black. Stock's wake order is
+ * untouched, and the wake's repaint of every window redraws what a wake without a lock window
+ * needs. */
+int lockscreen_dark(void) {
+    int fd = g_screensaver_mode && !g_lockscreen_pageflag ? open("/dev/fb0", 2) : -1; /* O_RDWR */
+    if (fd >= 0) {
+        unsigned v[40] = { 0 };                                   /* fb_var_screeninfo: 160 bytes */
+        if (!ioctl(fd, 0x4600, v) && v[2] && v[3] && v[6] >= 8) { /* FBIOGET_VSCREENINFO */
+            unsigned len =
+                v[2] * v[3] * (v[6] / 8);        /* xres_virtual, yres_virtual, bits_per_pixel */
+            void *p = mmap(0, len, 3, 1, fd, 0); /* PROT_READ | PROT_WRITE, MAP_SHARED */
+            if (p != (void *)-1) memset(p, 0, len), munmap(p, len);
+        }
+        close(fd);
+    }
+    return disable_fb();
+}
+
 void info_poll(void) {
     if (!lk.info || lk.timer || !g_backlight_status) return;
     lk.shown = info_state();

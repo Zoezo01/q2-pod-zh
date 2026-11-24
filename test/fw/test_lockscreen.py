@@ -1569,3 +1569,42 @@ def test_the_info_screen_repaints_on_each_percent_and_on_charging(fw, clock, st,
     playing.charging(True)
     assert tick(0) == RET_REPEAT and len(invalidated(fw)) == 2
     assert tick(0) == RET_REPEAT and len(invalidated(fw)) == 2
+
+
+# Screen-off (lockscreen_dark, screen_action(0)'s disable_fb): black under the next lock screen.
+
+def screen_off(fw, mode, locked, fb_bytes=32):
+    """lockscreen_dark over a fake framebuffer of fb_bytes (4 x 2 x 32 bpp), first all 0xff: its answer, the
+    framebuffer after and the stubbed calls made, in order."""
+    fb = block(fw, size=fb_bytes)
+    C.memset(fb, 0xff, fb_bytes)
+    fw.var('g_screensaver_mode', C.c_ubyte).value = mode
+    fw.var('g_lockscreen_pageflag', C.c_ubyte).value = locked
+    order = []
+
+    def ioctl(fd, req, arg, *_):
+        v = (C.c_uint * 40).from_address(arg)
+        v[2], v[3], v[6] = 4, 2, 32  # xres_virtual, yres_virtual, bits_per_pixel
+        order.append('ioctl')
+        return 0
+    fw.mock('fw_open', lambda *_: order.append('open') or 7)
+    fw.mock('fw_ioctl', ioctl)
+    fw.mock('fw_mmap', lambda *_: order.append('mmap') or fb)
+    fw.mock('fw_munmap', lambda *_: order.append('munmap') or 0)
+    fw.mock('fw_close', lambda *_: order.append('close') or 0)
+    fw.mock('disable_fb', lambda *_: order.append('disable_fb') or 5)
+    ret = fw.fn('lockscreen_dark', C.c_int)()
+    return ret, C.string_at(fb, fb_bytes), order
+
+
+def test_screen_off_with_the_lock_screen_on_clears_the_framebuffer_first(fw):
+    ret, fb, order = screen_off(fw, 1, 0)
+    assert ret == 5 and fb == bytes(32)
+    assert order == ['open', 'ioctl', 'mmap', 'munmap', 'close', 'disable_fb']
+
+
+@pytest.mark.parametrize('mode, locked', [(0, 0), (1, 1)])
+def test_screen_off_without_a_lock_screen_to_come_is_stocks_alone(fw, mode, locked):
+    """The lock screen off, or its window already up: the framebuffer keeps the page."""
+    ret, fb, order = screen_off(fw, mode, locked)
+    assert ret == 5 and fb == b'\xff' * 32 and order == ['disable_fb']

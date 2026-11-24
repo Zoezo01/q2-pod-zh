@@ -250,6 +250,7 @@ demo	0x4fdcbc	0x4	checkBluetoothStatus	1st of 3 calls to player_save_start, afte
 demo	0x4fe1e4	0x4	config_bt_init	the only call to initBluetoothParam; tools/build.py BT_PARAMS
 demo	0x5000f0	0x4	remove_file	the only call to snprintf, after "sync"; tools/build.py FOLDER_RM_CALL, FOLDER_RM_FMT
 demo	0x5000f4	0x4	remove_file	`addiu $6, $6, 0x2ff8, forming "rm -rf "%s""`, the delay slot of the only call to snprintf, after "sync"; tools/build.py FOLDER_RM_CALL, FOLDER_RM_FMT
+demo	0x501ff0	0x4	screen_action	the call to disable_fb that turns the screen off; patch/lockscreen.c lockscreen_dark, tools/build.py LOCK_DARK_CALL
 demo	0x5024b4	0x4	device_standby	the only call to awake_screen, after "rmmod soc_msc"; tools/build.py STANDBY_WAKE
 demo	0x502bd0	0x4	update_firmware	`addiu $5, $5, -0x1300, forming "V1.36"`, the delay slot of 2nd of 2 calls to strcmp, after "Shanling Q2"; tools/build.py build
 demo	0x5030f8	0x4	check_otginfo	`addiu $5, $5, -0x1300, forming "V1.36"`, the delay slot of the only call to strcmp, after "http://openwin.shanling.com:9000/IOtaServer/otaserver?para0=ShanlingQ2_pro&para1=ShanlingQ2_ota"; tools/build.py build
