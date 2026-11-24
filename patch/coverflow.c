@@ -1258,9 +1258,7 @@ int coverflow_jump(widget_t *w, int from, int dir, unsigned *letter) {
     } else {
         while (to >= 0 && coverflow_group(to) == c) --to;
         if (to < 0) return from + 1; /* the last album, across the wrap */
-        c = coverflow_group(to);
-        while (to > 0 && coverflow_group(to - 1) == c) --to;
-        *letter = c;
+        to = coverflow_letter_first(to, letter);
     }
     return dir > 0 ? to - from : from - to;
 }
