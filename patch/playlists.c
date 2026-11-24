@@ -122,7 +122,6 @@ static void ple_reload(void) {
 /* The Add Songs picker's Search row filters by title, artist or album, ASCII case-insensitively.
  * ple.match holds the matching records only; the picker keeps every song, so clearing the query
  * restores the list without re-staging it. */
-static int ple_has(const char *text, const char *query) { return text && strcasestr(text, query); }
 static void ple_filter(void) {
     free(ple.match);
     ple.match = 0;
@@ -135,7 +134,7 @@ static void ple_filter(void) {
         const char *fields[] = { track_name(name, sizeof name, r), P(r, REC_ARTIST),
                                  P(r, REC_ALBUM) };
         for (unsigned f = 0; f < sizeof fields / sizeof *fields; ++f)
-            if (ple_has(fields[f], ple.query)) {
+            if (fields[f] && strcasestr(fields[f], ple.query)) {
                 ple.match[ple.nmatch++] = r;
                 break;
             }
@@ -690,9 +689,6 @@ static void pl_row(widget_t *item) {
  * does) and it finds its widget by handler, as nothing stock names. The row is the action, whatever
  * scrolled: no index reaches stock. */
 static void pl_rows(widget_t *win);
-static int pl_page(widget_t *win) {
-    return win && !tk_strcmp(widget_get_prop_str(win, "name", ""), "playlist_page");
-}
 static widget_t *pl_target(widget_t *parent, unsigned fn) {
     for (unsigned i = 0, n = parent ? widget_count_children(parent) : 0; i < n; ++i)
         if (click_bound(widget_get_child(parent, i), (void *)fn))
@@ -714,7 +710,7 @@ static int pl_due(const void *info) {
     int action = (int)(long)P(info, TIMER_CTX);
     char click[0x30];
     pl_timer = 0;
-    if (!pl_page(win)) return 0;
+    if (!(win && !tk_strcmp(widget_get_prop_str(win, "name", ""), "playlist_page"))) return 0;
     widget_t *w = pl_find(win, action);
     /* Import writes every song of every list it reads: the art's build steps aside (its reads
      * would make each insert wait), and the rebuild that follows asks again */
