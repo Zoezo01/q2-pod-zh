@@ -380,7 +380,10 @@ static void ple_show(void) {
     /* only the selected row's long title moves, as Songs' */
     for (int i = 0; !geom_val(V_TOOLBAR) && i < (int)widget_count_children(ple.view); ++i)
         hscroll_label_set_only_focus(widget_get_child(widget_get_child(ple.view, i), 0), 1);
-    if (n) ringnav_select(ple.view, mode == 0 ? ple.selected + 2 < n ? ple.selected + 2 : 0 : 0, n);
+    /* the song the list was on; Remove song? on its Cancel, as every confirm opens */
+    if (n)
+        ringnav_select(ple.view,
+                       mode == 0 ? ple.selected + 2 < n ? ple.selected + 2 : 0 : mode == 3, n);
 }
 static int ple_open(void *ctx, event_t *event) {
     if (ple.page) return 0;

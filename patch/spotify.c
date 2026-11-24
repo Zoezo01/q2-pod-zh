@@ -922,6 +922,7 @@ static void push(int kind, const char *op, const char *args, const char *cursor,
     /* The arguments may point into the top level, including the slot reused at the depth limit. */
     level_t next = { 0 };
     next.kind = kind;
+    next.sel = kind == L_REMOVE; /* Remove Downloads? on its Cancel, under the count */
     next.state = (kind == L_LIST || kind == L_SELECT) ? S_LOAD : S_READY;
     tk_snprintf(next.op, sizeof next.op, "%s", op);
     tk_snprintf(next.args, sizeof next.args, "%s", args);

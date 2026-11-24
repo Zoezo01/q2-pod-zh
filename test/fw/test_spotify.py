@@ -1086,6 +1086,8 @@ def test_clear_all_previews_every_download_then_removes_them(fw):
     assert b.request().endswith(b'\tremove\tall\t\n') and b.br.act == A_PREVIEW
     b.answer(msg=b'All 120 tracks')
     assert b.top.kind == L_REMOVE and b.captions()[0] == 'All 120 tracks'
+    picked = [C.c_int(a[2]).value for _, a in fw.calls('widget_set_prop_int') if C.string_at(a[1]) == b'_ringnav_index']
+    assert picked[-1] == 1  # the confirm opens on Cancel, not on the count's row, which does nothing
     b.click(2)  # Remove
     assert b.request().endswith(b'\tremove\tall\t\tconfirm\n')
 

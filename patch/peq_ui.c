@@ -845,6 +845,9 @@ static int render(const void *unused) {
         /* clang-format off */
         offset = offset < 0 ? 0 : offset > (last + 1) * rh - rows ? (last + 1) * rh - rows : offset;
         /* clang-format on */
+    } else if (ui.screen == CONFIRM) {
+        /* Cancel, as every confirm opens: a second Centre deletes or replaces nothing */
+        selection = 1;
     }
     ui.rendered = ui.screen;
     ui.edit = 0;
@@ -997,7 +1000,7 @@ static int render(const void *unused) {
     }
     widget_set_prop_int(view, "virtual_h", head + n * rh);
     /* ringnav keeps the selection above on a view whose row count it already knows. */
-    if (ui.screen == PICK) widget_set_prop_int(view, "_ringnav_count", n);
+    if (ui.screen == PICK || ui.screen == CONFIRM) widget_set_prop_int(view, "_ringnav_count", n);
     if (head + n * rh <
         rows) { /* short lists: shrink so the list's white background never shows below the rows */
         widget_resize(list, 375, head + n * rh);
