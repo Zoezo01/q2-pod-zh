@@ -151,11 +151,6 @@ char *art_path(char *out, unsigned key, const char *suffix) {
     tk_snprintf(out, 512, ART_DIR "/%08x.jpg%s", key, suffix);
     return out;
 }
-/* Asks the image cache for a cover only once its file exists, the worker having written it. V1.32's
- * cache kept a failed load until a reboot; V1.36's keeps none, so this only spares the failed
- * loads. url is "file://" + the path. */
-static int art_exists(const char *url) { return !access(url + 7, 0); }
-
 /* name's key when it is "<key>.jpg" as art_path spells it: a cover or a "no art" marker. */
 static int art_name(const char *name, unsigned *key) {
     *key = 0;
@@ -181,7 +176,7 @@ int key_cmp(const void *a, const void *b) {
  * with the dentry cache cold (after a reboot) a lookup scans the folder from where the last one
  * ended, so in another order than the covers were built in (Random, a changed Sort) a lookup
  * scanned about half of it, and one for an album not built yet all of it. ponytail: a readdir
- * makes no dentries, so after a reboot a cover's first art_exists, as it comes on screen, still
+ * makes no dentries, so after a reboot a cover's first check, as it comes on screen, still
  * scans: one lookup a cover shown, not one an album at open. With Fast Navigation the half-copy
  * walk (coverflow_halves) still looks up each album's .half, and the file of each marker and of
  * each cover still waiting for a half, cold, once a boot. */
@@ -2361,7 +2356,10 @@ static int art_url(char *url, unsigned a) {
     if (!r) return 0;
     if (cf.scoped == PLAYLISTS) return playlist_art(I(r, REC_DISC), P(r, REC_TITLE), 0, url, 600);
     art_path(url + 7, album_key(r), "");
-    return art_exists(url);
+    /* Asks the image cache for a cover only once its file exists, the worker having written it.
+     * V1.32's cache kept a failed load until a reboot; V1.36's keeps none, so this only spares the
+     * failed loads. url is "file://" + the path. */
+    return !access(url + 7, 0);
 }
 
 /* Album a's art into pool slot i: its half copy when half will do and it has one (never a
@@ -3441,13 +3439,6 @@ void coverflow_play(int row) {
     if (cls == 0xf001) cover_load = playback_loads; /* its load, play_folder's */
 }
 
-/* A centred track list's artist for song: aa, the album artist, when set, else the song's own;
- * "" for none, and under a theme's own rows (centred 0). */
-static const char *track_by(const char *aa, void *song, int centred) {
-    const char *by = *aa || !centred ? aa : P(song, REC_ARTIST);
-    return by ? by : "";
-}
-
 /* Minimal's and Modern's album name over its songs (a page_title_h), between two short 1 px rules
  * at the text's mid-line: each at most TITLE_RULE_W long, TITLE_RULE_GAP from the text, inside the
  * title's box. None for a side shorter than TITLE_RULE_MIN, a name that scrolls (wider than its
@@ -3846,7 +3837,10 @@ static int to_tracks(const void *unused) {
     for (int i = 0; i < n; ++i) {
         char duration[24], detail[300];
         void *song = deque_at(cf.tracks, (unsigned)i);
-        const char *by = track_by(aa, song, centred), *line = duration;
+        /* A centred track list's artist for song: aa, the album artist, when set, else the song's
+         * own; "" for none, and under a theme's own rows (centred 0). */
+        const char *by = *aa || !centred ? aa : P(song, REC_ARTIST), *line = duration;
+        by = by ? by : "";
         duration_text(duration, sizeof duration, song);
         if (*by && tall) {
             tk_snprintf(detail, sizeof detail, "%s%s%s", by, *duration ? " · " : "", duration);
