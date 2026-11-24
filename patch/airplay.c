@@ -71,6 +71,7 @@ static void air_dialog(int v) {
 /* The speaker's volume, from the app: its own as it said, or the one it last had from the Q2. */
 static int air_speaker(cast_tap *t) {
     air.spk_seq = t ? t->spk_seq : 0;
+    volume_save_flush(); /* the wheel's last level may still be held: read it, not the one before */
     return t && t->spk_seq && t->spk >= 0 && t->spk <= 100
                ? t->spk
                : config_value("Q2POD", "AIRVOL", 101, AIR_VOLUME);

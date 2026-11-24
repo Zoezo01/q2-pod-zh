@@ -272,6 +272,8 @@ static void state_poll(void) {
 /* A clean end: power-off, Restart, a firmware update, Rockbox. Nothing to report at the next boot.
  */
 void ringnav_clean_end(void) {
+    /* every call's: an update's dialog is a clean end as it opens, and its reboot one more */
+    volume_save_flush();
     if (pw.ended) return;
     pw.ended = 1;
     wdt_set(0);
@@ -401,6 +403,7 @@ int ringnav_standby(void) {
     unsigned start = st.standby_limit ? rtc_now() : 0;
     unsigned alarm = start + standby_hours[st.standby_limit] * 3600;
     int armed = start && rtc_alarm(0) && rtc_alarm(alarm);
+    volume_save_flush(); /* the battery may not last the suspend */
     pw.suspended = 1;
     state_poll(); /* the record a resume that never comes leaves behind */
     wdt_set(0);   /* it would count through the suspend */

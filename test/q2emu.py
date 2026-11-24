@@ -1703,7 +1703,7 @@ a_mac,b_mac='AA:AA:AA:AA:AA:AA','BB:BB:BB:BB:BB:BB'
 # and stock gain; device_set_volume itself executes its native output routing.
 class OutputVolumeMachine(Machine):
     def __init__(self,config=()):
-        super().__init__(); self.way=0; self.config.update(config)
+        super().__init__(); self.way=0; self.config.update(config); self.present.add('/mnt/data/config.ini')
         self.byte(syms['g_volume'],20); self.byte(syms['g_maxvolume'],100)
         self.handlers.pop(syms['write_int_config'])
         for name,label in (('mclSetOutputWay','output'),('write_int_config','write_config')):

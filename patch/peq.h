@@ -673,6 +673,7 @@ widget_t *label(widget_t *parent, int x, int y, int w, int h, const char *style,
                 unsigned color);
 void spot_yield(void), spot_stop(void), radio_stop(void);
 void headset_volume_reset(void);
+void volume_save_flush(void); /* navigation.c: a held volume save, written now */
 void headset_poll(void), headset_eq_poll(void), headset_manual(void);
 int media_owner(void), media_playing(void), media_focused(void);
 void media_set_playing(int playing), media_key(unsigned key);

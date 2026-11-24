@@ -8651,15 +8651,50 @@ static int np_animating(void) {
                               (st.np_marquee && st.np_off > 0 && st.np_off < st.np_over)));
 }
 
-/* Keep stock VOLUME for wired/USB and boot; Bluetooth saves its own level. Smart Wi-Fi's own
- * toggles of the Wi-Fi switch save nothing (smart_config). */
+/* A volume's save waits until the level has been still for VOLUME_SAVE_MS (volume_save_poll, every
+ * UI pass): stock saves each step, and a save rewrites config.ini whole on the flash and runs a
+ * system("sync") shell on the UI thread (docs/internals.md#settings-writer), so a turn of the
+ * wheel was a save a tick, and a headset's held key one each bt_volume_poll. One is held, under
+ * the key it was routed to as it came; a save for another volume key writes the held one first, so
+ * each lands under its own key and in order. volume_save_flush writes it now: before a saved level
+ * is read back (ringnav_output, airplay.c), Standby's suspend and a clean end; with no config.ini
+ * (Reset Settings Only removed it before its reboot) it drops it, as stock's writer would make a
+ * file of that one key (the full factory reset removes it too). ponytail: the save is written on a
+ * UI pass about VOLUME_SAVE_MS after the last change, so a stall of the UI, a crash or the
+ * watchdog's restart right after a change leaves it unwritten, and an unclean end starts with the
+ * level from before (louder, if the volume was just turned down); writing the level without the
+ * whole settings file (a small file of its own) would lift it. */
+#define VOLUME_SAVE_MS 3000 /* over BT_VOLUME_SLOW_MS, so a key held dark is one save too */
+static struct {
+    int key, value; /* key: 0 none held, 1 PLAYSET VOLUME, 2 PLAYSET BT_VOLUME, 3 Q2POD AIRVOL */
+    unsigned at;
+} vsave __attribute__((section(".scratch")));
+void volume_save_flush(void) {
+    int key = vsave.key;
+    if (!key) return;
+    vsave.key = 0;
+    if (access("/mnt/data/config.ini", 0)) return;
+    const char *name = key == 1 ? "VOLUME" : key == 2 ? "BT_VOLUME" : "AIRVOL";
+    stock_write_config_trampoline(vsave.value, key == 3 ? "Q2POD" : "PLAYSET", name);
+}
+static void volume_save_poll(void) {
+    if (vsave.key && (unsigned)time_now_ms() - vsave.at >= VOLUME_SAVE_MS) volume_save_flush();
+}
+
+/* Keep stock VOLUME for wired/USB and boot; Bluetooth saves its own level, and an AirPlay speaker
+ * its own while it plays (airplay.c). Smart Wi-Fi's own toggles of the Wi-Fi switch save nothing
+ * (smart_config). */
 int ringnav_write_config(int value, const char *section, const char *key) {
     if (smart_config(section, key)) return 0;
-    if (!tk_strcmp(section, "PLAYSET") && !tk_strcmp(key, "VOLUME") && airplay_on())
-        section = "Q2POD", key = "AIRVOL"; /* an AirPlay speaker's, while it plays (airplay.c) */
-    else if (!tk_strcmp(section, "PLAYSET") && !tk_strcmp(key, "VOLUME") && mclGetOutputWay() == 1)
-        key = "BT_VOLUME";
-    return stock_write_config_trampoline(value, section, key);
+    int volume = 0; /* vsave's key */
+    if (!tk_strcmp(section, "PLAYSET") && !tk_strcmp(key, "VOLUME"))
+        volume = airplay_on() ? 3 : mclGetOutputWay() == 1 ? 2 : 1;
+    else if (!tk_strcmp(section, "Q2POD") && !tk_strcmp(key, "AIRVOL"))
+        volume = 3; /* airplay.c's own, as a speaker stops */
+    if (!volume) return stock_write_config_trampoline(value, section, key);
+    if (vsave.key != volume) volume_save_flush();
+    vsave.key = volume, vsave.value = value, vsave.at = (unsigned)time_now_ms();
+    return 0;
 }
 
 int ringnav_output(int way) {
@@ -8668,6 +8703,7 @@ int ringnav_output(int way) {
     if (changed &&
         !airplay_on()) { /* a speaker's level stays its own; airplay.c swaps back at its end */
         write_int_config(g_volume, "PLAYSET", "VOLUME");
+        volume_save_flush();
         int v = config_value("PLAYSET", way == 1 ? "BT_VOLUME" : "VOLUME", 101, g_volume);
         if (v > g_maxvolume) v = g_maxvolume;
         g_volume = (unsigned char)v;
@@ -8852,6 +8888,7 @@ int ringnav_sleep(void *loop) {
     headset_poll();
     headset_eq_poll();
     bt_volume_poll();
+    volume_save_poll();
     spot_poll();
     radio_poll();
     tidal_poll();
