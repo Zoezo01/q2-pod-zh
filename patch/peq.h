@@ -543,7 +543,8 @@ const char *addon_network_name(int k), *addon_network_icon(int k);
 /* addon.c: the wifi=1 apps, for addon_wifi.c's link follower: each started (but those the user
  * stopped), each stopped, and the user's stops forgotten. */
 void addon_wifi_start(void), addon_wifi_stop(void), addon_wifi_release(void);
-void addon_wifi_poll(void); /* addon_wifi.c: once per addon_poll pass */
+void addon_wifi_poll(void);    /* addon_wifi.c: once per addon_poll pass */
+void addon_playing_poll(void); /* addon_playing.c: once per addon_poll pass */
 /* addon.c: a running app's status bar icon, the one its status file's bar= names (bar.png for 1,
  * bar-<word>.png for a word; white, which Light Mode turns to the bar's ink), or 0 */
 const char *addon_bar_icon(void);

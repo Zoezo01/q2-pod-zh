@@ -101,7 +101,7 @@
 #define ADDON_CAPS                                                                                 \
     "playlist progress pages library goto sleep game audio sections art window urls sort field "   \
     "more fav now fieldtext wake audio2 dim gameview eq screen volume wifi network bar switch "    \
-    "playkept"
+    "playkept playing"
 #define ADDON_SECTIONS 8  /* sections an app's first page may have */
 #define SWIPE_CLAIM_PX 24 /* a sideways move this far, twice as far as up or down, is a swipe's */
 #define SWIPE_PX 60       /* and this far at the lift, more than up or down, changes section */
@@ -1462,6 +1462,7 @@ void addon_poll(void) {
     now_poll();
     library_poll();
     addon_wifi_poll();
+    addon_playing_poll();
     /* the status bar picks its icon as it paints (bar_sync): an app starting, stopping or changing
      * its bar= repaints nothing else, so the bar is repainted when the icon changes */
     static char bar_was[sizeof ap.a[0].baricon] __attribute__((section(".scratch")));
