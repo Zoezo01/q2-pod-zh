@@ -8628,7 +8628,7 @@ static int np_animating(void) {
                               (st.np_marquee && st.np_off > 0 && st.np_off < st.np_over)));
 }
 
-/* A volume's save waits until the level has been still for VOLUME_SAVE_MS (checked on every
+/* A volume's save waits until the level has been still for VOLUME_SAVE_MS (volume_save_poll, every
  * UI pass): stock saves each step, and a save rewrites config.ini whole on the flash and runs a
  * system("sync") shell on the UI thread (docs/internals.md#settings-writer), so a turn of the
  * wheel was a save a tick, and a headset's held key one each bt_volume_poll. One is held, under
@@ -8654,6 +8654,10 @@ void volume_save_flush(void) {
     const char *name = key == 1 ? "VOLUME" : key == 2 ? "BT_VOLUME" : "AIRVOL";
     stock_write_config_trampoline(vsave.value, key == 3 ? "Q2POD" : "PLAYSET", name);
 }
+static void volume_save_poll(void) {
+    if (vsave.key && (unsigned)time_now_ms() - vsave.at >= VOLUME_SAVE_MS) volume_save_flush();
+}
+
 /* Keep stock VOLUME for wired/USB and boot; Bluetooth saves its own level, and an AirPlay speaker
  * its own while it plays (airplay.c). Smart Wi-Fi's own toggles of the Wi-Fi switch save nothing
  * (smart_config). */
@@ -8861,7 +8865,7 @@ int ringnav_sleep(void *loop) {
     headset_poll();
     headset_eq_poll();
     bt_volume_poll();
-    if (vsave.key && (unsigned)time_now_ms() - vsave.at >= VOLUME_SAVE_MS) volume_save_flush();
+    volume_save_poll();
     spot_poll();
     radio_poll();
     tidal_poll();
