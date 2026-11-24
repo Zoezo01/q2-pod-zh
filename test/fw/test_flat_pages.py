@@ -9,13 +9,13 @@ import pytest
 from conftest import O, Config, rgba
 from test_nav_paint import (ACCENTS, GRAPHITE, ICONS, LABELS, MODERN, PAPER, RED, RED_PX, TIDAL, WHITE, Canvas, bitmaps,
                             channels, fill_props, image_add, layout, luma, paint_bg, quick_window, rgb_of, scheme, scrub,
-                            USB_LUN, Files, added, count, inside, msg_paint, named, poll,
-                            whole, on_page, slider_scrub, slider_paint, NUMBERS, slider_page, scan_dialog, usb_page,
+                            SLIDER_PAGES, SLIDERS, USB_LUN, Files, added, count, inside, msg_paint, named, poll,
+                            whole, on_page, slider_scrub, slider_paint, ui_load, NUMBERS, slider_page, scan_dialog, usb_page,
                             st, stock_h, theme, vol_paint, volume, world)  # noqa: F401 (fixtures, by name)
 from test_nav_painters import Quick as QuickInit
 from test_nav_paint import quick_page as paint_quick_page
 import test_nav_loop as loop
-from test_nav_loop import SELECTOR_INDEX, keys  # noqa: F401 (fixtures, by name)
+from test_nav_loop import SELECTOR_INDEX, keys, stock_bytes  # noqa: F401 (fixtures, by name)
 from test_nav_display_library import POINTER_MOVE, SLIDE_PX, QuickPage, Stock, Ui, pressdown
 MODERN_ACCENTS = [0, 1, 2, 3, 4, 5, 6, 8]  # Modern's colorSchemes, by ACCENT
 

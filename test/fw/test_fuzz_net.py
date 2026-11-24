@@ -6,7 +6,7 @@ import urllib.parse
 
 import fuzz
 from conftest import block
-from test_radio import CURLE_WRITE_ERROR, CURLOPT_WRITEFUNCTION, FETCH_MAX, STATIONS, List, fx, m3u, pls
+from test_radio import CURLE_WRITE_ERROR, CURLINFO_RESPONSE_CODE, CURLOPT_WRITEFUNCTION, FETCH_MAX, STATIONS, List, fx, m3u, pls
 from test_scrobble import ACCOUNT, HEADER, LOG, Card, Net, Upload, config, line
 
 RADIO_MAX = 200  # the stations, countries or genres a list holds

@@ -11,7 +11,7 @@ import sys; sys.path.insert(0, sys.path[0] + '/../tools')  # tools/ first
 from build import FUNCTIONS, ROOT
 from peq import LIBC
 sys.path.insert(0, str(ROOT/'test/fw'))  # the EQ structs, one copy: test/fw/test_peq.py's
-from test_peq import Band, Dsp as DSP, Engine, EqState as State, EQ_OFF, EQ_3, EQ_PEQ, Error, Preset, V2  # noqa: E402
+from test_peq import Band, Coeff, Dsp as DSP, Engine, EqState as State, EQ_OFF, EQ_3, EQ_PEQ, Error, Preset, V2  # noqa: E402
 
 PROTOTYPES = {**FUNCTIONS, **LIBC}  # the stock calls the host shims stand in for
 
