@@ -203,7 +203,6 @@ static inline int arc_out(int r, int y) {
 #define VOL_PANEL_PX 20 /* the panel's number */
 #define VOL_PANEL_TRACK 0x5a5a5a
 /* The centred 16px clock and battery clear the rounded glass; widths are checked with the stock font. */
-#define CLOCK_EDGE 57
 #define STATUS_GAP 4
 #define BATT_PCT_W 42
 #define BATT_PCT_PX 16

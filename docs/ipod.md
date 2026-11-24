@@ -409,7 +409,7 @@ and Now Playing's top and bottom rows take their insets from it; settings notes 
 hidden navbar end their text clear of the top-right corner. With the defaults: status bar 52
 pixels plus `STATUS_PAD` (2), the clock at least 57, Home dot 25 and text 39, "3 of 12" 16, Now Playing icons
 ending at 353, the bar 21 and the times 46 pixels from the edges. The runtime layouts' values
-(`SET_*`, `CF_*`, `CLOCK_EDGE`, `HOME_FULL_ROW` in `patch/offsets.inc`) are checked against the
+(`SET_*`, `CF_*`, `HOME_FULL_ROW` in `patch/offsets.inc`) are checked against the
 same calibration by the tests.
 
 `test/build.py` fails a build when any fixed text or icon in a changed asset reaches
