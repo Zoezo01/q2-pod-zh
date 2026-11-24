@@ -13,6 +13,7 @@ STOCK = ('img_screensaver', 'view_timeinfo', 'clock_time', 'clock_date', 'label_
          'view_shade', 'view_playinfo', 'img_playcover', 'scrlabel_title', 'scrlabel_artist', 'img_slide')
 HIDDEN = ('view_timeinfo', 'clock_time', 'clock_date', 'label_battery', 'img_battery', 'pgbar_battery', 'view_shade', 'img_slide')
 ADDED = ('album', 'place', 'count', 'time', 'ampm', 'day', 'date')  # the labels it adds, in the order it makes them
+VIEWS = ('slider', 'veil')  # and its views
 EVT_DESTROY = O['EVT_DESTROY']
 RET_OK, RET_REPEAT = 0, 8
 
@@ -36,19 +37,21 @@ class Glance:
     ADDED, and the queue: `queue` songs, at `pos`, each on `album` (its record's own tag: the player has parsed no
     other file's)."""
     def __init__(self, fw, mcl, picture=b'screensaver_default', theme='0', queue=0, pos=0, album=b'Blue Train',
-                 played=(65, 200), **config):
+                 played=(65, 200), lit=1, **config):
         self.fw, self.mcl, self.low = fw, mcl, Low()
         Config(fw, LOCKLAYOUT='1', THEME=theme, **config)
         fw.var('fw_ctx_g_screensaver_picture', C.c_char * 256).value = picture
-        fw.var('g_backlight_status', C.c_ubyte).value = 1
+        fw.var('g_backlight_status', C.c_ubyte).value = lit
+        self.timers = Timers(fw)
         self.deques, self.album = Deques(fw), album
         self.queue(queue, pos)
         self.played = played
         fw.mock('mclGetPlayTime', self.play_time)
         fw.mock('stock_saver_trampoline', lambda *_: 31)
         self.win = Window(fw, STOCK)
-        self.made = 0
+        self.made, self.views = 0, {}
         fw.mock('hscroll_label_create', lambda *_: self.new())
+        fw.mock('widget_factory_create_widget', lambda f, kind, parent, x, y, w, *_: self.view(C.string_at(kind), x, y, w))
         self.texts = {}
         fw.mock('widget_set_text_utf8', lambda w, s, *_: self.texts.__setitem__(w, C.string_at(s).decode()))
         fw.mock('widget_get_text_utf8', self.get_text)
@@ -81,6 +84,14 @@ class Glance:
         self.made += 1
         return self.win.add(name, 10, 10)
 
+    def view(self, kind, x, y, w):
+        """widget_factory_create_widget's view, named by VIEWS in turn; its x, y and width (its height is past
+        the six registers a mock sees)."""
+        assert kind == b'view'
+        name = VIEWS[len(self.views)]
+        self.views[name] = (x, y, w)
+        return self.win.add(name, w, 48)
+
     def __getitem__(self, name):
         return self.win[name]
 
@@ -92,9 +103,31 @@ class Glance:
         return self.texts.get(self.win[name])
 
 
+class Timers:
+    """timer_add's timers, each its own id from 1: (id, fn, ms) as added; timer_remove's ids."""
+    def __init__(self, fw):
+        self.added, self.removed = [], []
+        fw.mock('timer_add', lambda fn, ctx, ms, *_: self.added.append((len(self.added) + 1, fn, ms)) or len(self.added))
+        fw.mock('timer_remove', lambda i, *_: self.removed.append(i))
+
+    def of(self, fw, name):
+        """The ids added for lock_glance's static `name`, in order."""
+        at = C.cast(getattr(fw.lib, f'lock_glance__{name}'), C.c_void_p).value
+        return [i for i, fn, _ in self.added if fn == at]
+
+
 def tick(fw):
     """lock_glance's one-second look, run once: what it answers."""
     return fw.fn('lock_glance__tick', C.c_int, C.c_void_p)(0)
+
+
+def shine(fw):
+    """The shine's step, run once."""
+    return fw.fn('lock_glance__shine', C.c_int, C.c_void_p)(0)
+
+
+def poll(fw):
+    fw.fn('info_poll', None)()
 
 
 class Lcd:
@@ -104,9 +137,15 @@ class Lcd:
         self.canvas = block(fw, size=0x100)
         self.lcd = block(fw, size=0x200)
         C.c_void_p.from_address(self.canvas + O['CANVAS_LCD']).value = self.lcd
-        self.boxes = []
+        self.boxes, self.texts, self.clips, self.inks = [], [], [], []
         fw.mock('canvas_fill_rounded_rect', lambda c, r, g, color, radius, *_: self.boxes.append(
             (tuple((C.c_int * 4).from_address(r)), C.c_uint.from_address(color).value, radius)) and 0)
+        fw.mock('canvas_get_clip_rect', lambda c, r, *_: C.memmove(r, (C.c_int * 4)(0, 0, 375, 320), 16) and 0)
+        fw.mock('canvas_set_clip_rect', lambda c, r, *_: self.clips.append(tuple((C.c_int * 4).from_address(r))))
+        fw.mock('canvas_measure_text', lambda *_: 150.0)
+        fw.mock('canvas_set_text_color', lambda c, color, *_: self.inks.append(color & 0xffffffff))
+        fw.mock('canvas_draw_text', lambda c, s, n, x, y, *_: self.texts.append(
+            (''.join(map(chr, (C.c_uint * n).from_address(s))), x, y, self.inks[-1] if self.inks else None)))
 
     def paint(self, fw, w):
         fw.fn('lockscreen_paint', None, C.c_void_p, C.c_void_p)(w, self.canvas)
@@ -390,6 +429,82 @@ def test_no_blur_without_a_song(fw, mcl, now):
     assert cover.loads == 0 and bitmaps.made == {}
 
 
+# Slide to unlock.
+
+TRACK = (36, 234, 303)  # its view's x, y and width, 48 high
+KNOB = [((0, 0, 303, 48), 0x33ffffff, 11), ((1, 1, 301, 46), 0x30000000, 10),  # the rim, the track
+        ((4, 4, 66, 40), 0xff8a8a8a, 8), ((5, 5, 64, 38), 0xfff4f4f4, 7),  # the knob's edge and face
+        ((6, 24, 62, 18), 0xffd6d6d6, 6), ((6, 24, 62, 6), 0xffd6d6d6, 0)]  # its lower half
+ARROW = [((23, 21, 16, 6), 0xff6b6b6b, 0)] + [((39 + i, 15 + i, 1, 19 - 2 * i), 0xff6b6b6b, 0) for i in range(10)]
+WORDS_X = 72 + (303 - 72 - 4 - 150) // 2  # right of the knob's rest, the words 150 px wide (canvas_measure_text)
+
+
+@pytest.mark.parametrize('theme', THEMES)
+def test_the_slider_is_every_theme_s_alike(fw, mcl, now, theme):
+    g = Glance(fw, mcl, theme=theme, queue=1)
+    assert g.views['slider'] == TRACK
+    lcd = Lcd(fw)
+    lcd.paint(fw, g['slider'])
+    assert lcd.boxes == KNOB + ARROW
+    assert lcd.texts == [('slide to unlock', WORDS_X, 12, 0x8cffffff)]  # dim white
+
+
+@pytest.mark.parametrize('theme', THEMES)
+def test_light_mode_leaves_the_slider_s_look(fw, mcl, now, theme):
+    seen = []
+    for light in '01':
+        g = Glance(fw, mcl, theme=theme, queue=1, LIGHT=light)
+        lcd = Lcd(fw)
+        lcd.paint(fw, g['slider'])
+        seen.append((lcd.boxes, lcd.texts))
+    assert seen[0] == seen[1] == (KNOB + ARROW, [('slide to unlock', WORDS_X, 12, 0x8cffffff)])
+
+
+def test_the_shine_crosses_the_words_in_three_bands(fw, mcl, now):
+    """Each step moves the shine 7 px, one every 50 ms; its bands, 96, 60 and 28 px wide, show the words brighter,
+    each inside the words only, the innermost brightest; past the words it rests a while, then starts again."""
+    g = Glance(fw, mcl, queue=1)
+    lcd = Lcd(fw)
+    (_, _, ms), = [t for t in g.timers.added if t[0] in g.timers.of(fw, 'shine')]
+    assert ms == 50
+    for _ in range(20):
+        assert shine(fw) == RET_REPEAT  # 140 px on: the middle at the words' 80th px
+    assert ('widget_invalidate_force', g['slider']) in [(n, a[0]) for n, a in fw.calls() if n == 'widget_invalidate_force']
+    lcd.paint(fw, g['slider'])
+    middle = WORDS_X - 60 + 140
+    assert lcd.clips[0::2] == [(middle - w // 2, 0, w, 48) for w in (96, 60, 28)]  # each band's clip, then the old back
+    assert lcd.clips[1::2] == [(0, 0, 375, 320)] * 3
+    assert [t[3] >> 24 for t in lcd.texts] == [0x8c, 64, 80, 112]
+    for _ in range(40):
+        shine(fw)  # 420 px a run: 60 steps
+    lcd2 = Lcd(fw)
+    lcd2.paint(fw, g['slider'])
+    assert lcd2.clips == [] and len(lcd2.texts) == 1  # back before the words
+
+
+def test_the_shine_stops_dark_and_starts_lit(fw, mcl, now):
+    """A lock window opens with the screen still dark: the shine's timer starts all the same; its first dark step
+    ends it while the one-second look lives on, and the first loop pass lit starts it again."""
+    g = Glance(fw, mcl, queue=1, lit=0)
+    assert len(g.timers.of(fw, 'shine')) == 1 and len(g.timers.of(fw, 'tick')) == 1
+    assert shine(fw) == RET_OK
+    poll(fw)
+    assert len(g.timers.of(fw, 'shine')) == 1  # still dark
+    fw.var('g_backlight_status', C.c_ubyte).value = 1
+    poll(fw)
+    assert len(g.timers.of(fw, 'shine')) == 2 and len(g.timers.of(fw, 'tick')) == 1  # the tick was still running
+    poll(fw)
+    assert len(g.timers.of(fw, 'shine')) == 2
+
+
+def test_the_window_s_end_stops_the_shine(fw, mcl, now):
+    g = Glance(fw, mcl, queue=1)
+    (_, forget), = [h for h in handlers(fw, EVT_DESTROY) if h[0] == g['img_screensaver']][-1:]
+    forget()
+    assert set(g.timers.of(fw, 'shine') + g.timers.of(fw, 'tick')) <= set(g.timers.removed)
+    assert shine(fw) == RET_OK
+
+
 @pytest.mark.parametrize('layout', [None, '0'])
 def test_default_adds_nothing(fw, layout):
     """Layout Default (no LOCKLAYOUT, or 0) is stock's lock window as it was: no label of At a Glance's."""
@@ -398,4 +513,4 @@ def test_default_adds_nothing(fw, layout):
     fw.mock('stock_saver_trampoline', lambda *_: 31)
     Window(fw, STOCK)
     fw.fn('lockscreen_init', C.c_int, C.c_void_p, C.c_void_p)(0x7700, 0x7800)
-    assert fw.calls('hscroll_label_create') == []
+    assert fw.calls('hscroll_label_create') == [] and fw.calls('widget_factory_create_widget') == []

@@ -27,6 +27,10 @@ static struct {
     void *full; /* the built-in picture lockscreen.c rendered, 0 for none */
     int picture, mode, minute, queue;
     unsigned timer;
+    /* slide to unlock: its view, the knob's px along the track, the shine's px along its run */
+    widget_t *slider;
+    int knob, shine;
+    unsigned shine_timer;
     /* the playing cover blurred, GL_W x GL_H, kept between windows: made for np_art_key() blur_key
      * from the image blur_name ("": none made yet) */
     void *blur;
@@ -41,9 +45,11 @@ static int forget(void *ctx, event_t *event) {
     (void)event;
     if (ctx != gl.img) return 0;
     gl.win = gl.img = gl.card = gl.cover = gl.title = gl.artist = gl.album = gl.place = 0;
-    gl.count = gl.time = gl.ampm = gl.day = gl.date = 0;
+    gl.count = gl.time = gl.ampm = gl.day = gl.date = gl.slider = 0;
     gl.full = 0;
+    gl.knob = 0;
     stop_timer(&gl.timer);
+    stop_timer(&gl.shine_timer);
     return 0;
 }
 
@@ -260,6 +266,21 @@ static void sync(int force) {
     if (changed) widget_invalidate_force(gl.win, 0);
 }
 
+/* The shine that crosses "slide to unlock": a step of shine_step px each shine_ms while the screen
+ * is lit, the slider alone repainted. It stops with the screen, and glance_poll starts it again. */
+static unsigned shine_ms(void) { return style()->shine_ms > 0 ? (unsigned)style()->shine_ms : 1; }
+static int shine(const void *info) {
+    const glance_t *g = style();
+    (void)info;
+    if (!g_backlight_status || !gl.slider) {
+        gl.shine_timer = 0;
+        return 0; /* RET_OK: a timer's end */
+    }
+    gl.shine = (gl.shine + g->shine_step) % (g->shine_run > 0 ? g->shine_run : 1);
+    widget_invalidate_force(gl.slider, 0);
+    return 8; /* RET_REPEAT */
+}
+
 /* A look each second with the screen lit. With it dark the timer stops, for the battery, and
  * glance_poll starts it again at the first loop pass lit. */
 static int tick(const void *info) {
@@ -271,8 +292,12 @@ static int tick(const void *info) {
     sync(0);
     return 8; /* RET_REPEAT */
 }
+/* info_poll's, each loop pass: each timer looked at on its own, as a lock window opens with the
+ * screen still dark, and the shine's first step can end it while the slower tick lives on. */
 void glance_poll(void) {
-    if (!gl.img || !g_backlight_status || gl.timer) return;
+    if (!gl.img || !g_backlight_status) return;
+    if (!gl.shine_timer) rearm(&gl.shine_timer, shine, shine_ms());
+    if (gl.timer) return;
     sync(0);
     rearm(&gl.timer, tick, 1000);
 }
@@ -321,7 +346,11 @@ void glance_init(widget_t *win, widget_t *img, int picture, void *full) {
     put(gl.count, g->right - 90, g->place_y, 90, 22, g->place_px, "default", "right", a);
     gl.time = new_label(top), gl.ampm = new_label(top), gl.day = new_label(top);
     gl.date = new_label(top);
+    gl.slider = widget_factory_create_widget(widget_factory(), "view", top, g->x, g->track_y,
+                                             g->right - g->x, g->track_h);
+    gl.knob = gl.shine = 0;
     gl.mode = -1, gl.queue = -1;
+    rearm(&gl.shine_timer, shine, shine_ms());
     sync(1);
     rearm(&gl.timer, tick, 1000);
 }
@@ -334,16 +363,10 @@ void glance_cover(widget_t *cover) {
     sync(1);
 }
 
-/* lockscreen_paint, for every widget: 1 when w is one of At a Glance's and painted here. The
- * picture: the blurred cover with a song (black while it can't be made); without one the built-in
- * or the user's own picture (stock drew that) with a shade under the time and date fading out, or
- * black. */
-int glance_paint(widget_t *w, canvas_t *canvas) {
-    if (!w || !gl.img || w != gl.img) return 0;
-    void *lcd = canvas ? P(canvas, CANVAS_LCD) : 0;
-    if (!lcd) return 1;
-    const glance_t *g = style();
-    unsigned fill = (unsigned)I(lcd, LCD_FILL_COLOR);
+/* The picture: the blurred cover with a song (black while it can't be made); without one the
+ * built-in or the user's own picture (stock drew that) with a shade under the time and date fading
+ * out, or black. */
+static void paint_picture(canvas_t *canvas, const glance_t *g) {
     int r[4] = { 0, 0, GL_W, GL_H };
     face(gl.title, g->title_px); /* the artist and the album stay in stock's face, any script */
     if (gl.mode == GL_SONG && gl.blur && gl.blur_name[0])
@@ -356,6 +379,66 @@ int glance_paint(widget_t *w, canvas_t *canvas) {
         for (int i = 0; i < g->shade_h / 2; ++i)
             box(canvas, 0, i * 2, GL_W, 2,
                 (unsigned)(g->shade_a - i * 2 * g->shade_a / g->shade_h) << 24, 0);
+}
+
+/* The slider: its see-through track, the knob where the finger has it, the words right of the
+ * knob's rest, dim white fading as the knob leaves, and over them the shine: the same words
+ * brighter inside its bands, the innermost brightest; then the knob's arrow, a shaft and a head. */
+static void paint_slider(canvas_t *canvas, const glance_t *g) {
+    static const unsigned words[] = { 's', 'l', 'i', 'd', 'e', ' ', 't', 'o',
+                                      ' ', 'u', 'n', 'l', 'o', 'c', 'k' };
+    unsigned n = sizeof words / sizeof *words;
+    int tw = g->right - g->x, th = g->track_h, kw = g->knob_w, kh = g->knob_h;
+    int x = g->knob_in + gl.knob, y = (th - kh) / 2;
+    box(canvas, 0, 0, tw, th, (unsigned)g->rim_a << 24 | 0xffffffu, 11); /* its rim */
+    box(canvas, 1, 1, tw - 2, th - 2, (unsigned)g->track_a << 24, 10);
+    box(canvas, x, y, kw, kh, 0xff000000u | g->knob_edge, 8);
+    box(canvas, x + 1, y + 1, kw - 2, kh - 2, 0xff000000u | g->knob, 7);
+    box(canvas, x + 2, y + kh / 2, kw - 4, kh / 2 - 2, 0xff000000u | g->knob_low, 6);
+    box(canvas, x + 2, y + kh / 2, kw - 4, 6, 0xff000000u | g->knob_low, 0);
+    int fade =
+        g->words_fade <= 0 || gl.knob >= g->words_fade ? 0 : 255 - gl.knob * 255 / g->words_fade;
+    unsigned ink = (unsigned)I(P(canvas, CANVAS_LCD), LCD_TEXT_COLOR);
+    canvas_set_font(canvas, (void *)0, (unsigned)g->words_px);
+    int text = (int)(canvas_measure_text(canvas, words, n) + 0.5f);
+    int room = g->knob_in + kw + 2;
+    int tx = room + (tw - room - g->knob_in - text) / 2, ty = (th - g->words_px) / 2;
+    if (fade) {
+        /* white as it is to look: Light Mode flips painted text too (box) */
+        unsigned white = RGBA(flip_if(ipod_light(), 0xffffffu)) & 0xffffffu;
+        canvas_set_text_color(canvas, (unsigned)(g->words_a * fade / 255) << 24 | white);
+        canvas_draw_text(canvas, words, n, tx, ty);
+        int at = tx - g->shine_from + gl.shine; /* the shine's middle; past the words it rests */
+        for (int b = 0; b < (int)sizeof g->shine_w && g->shine_w[b]; ++b) {
+            int bw = g->shine_w[b], bx = at - bw / 2, old[4], clip[4];
+            if (bx < tx) bw -= tx - bx, bx = tx;
+            if (bx + bw > tx + text) bw = tx + text - bx;
+            if (bw <= 0 || !clip_within(canvas, old, clip, I(canvas, CANVAS_X) + bx,
+                                        I(canvas, CANVAS_Y), bw, th))
+                continue;
+            canvas_set_clip_rect(canvas, clip);
+            canvas_set_text_color(canvas, (unsigned)(g->shine_a[b] * fade / 255) << 24 | white);
+            canvas_draw_text(canvas, words, n, tx, ty);
+            canvas_set_clip_rect(canvas, old);
+        }
+    }
+    stock_canvas_set_text_color(canvas, ink);
+    int cx = x + kw / 2, cy = y + kh / 2;
+    box(canvas, cx - 14, cy - 3, 16, 6, 0xff000000u | g->arrow, 0);
+    for (int i = 0; i < 10; ++i)
+        box(canvas, cx + 2 + i, cy - 9 + i, 1, 19 - 2 * i, 0xff000000u | g->arrow, 0);
+}
+
+/* lockscreen_paint, for every widget: 1 when w is one of At a Glance's and painted here. */
+int glance_paint(widget_t *w, canvas_t *canvas) {
+    if (!w || !gl.img || (w != gl.img && w != gl.slider)) return 0;
+    void *lcd = canvas ? P(canvas, CANVAS_LCD) : 0;
+    if (!lcd) return 1;
+    unsigned fill = (unsigned)I(lcd, LCD_FILL_COLOR);
+    if (w == gl.img)
+        paint_picture(canvas, style());
+    else
+        paint_slider(canvas, style());
     stock_canvas_set_fill_color(canvas, fill);
     return 1;
 }
