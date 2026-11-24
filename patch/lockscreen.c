@@ -459,7 +459,7 @@ int lockscreen_rows(widget_t *win) {
     int result = stock_saverrows_trampoline(win);
     widget_t *view = widget_lookup(win, "scroll_view", 1);
     if (!view || widget_count_children(view) < 2) return result;
-    pod_rows(win, "scroll_view", 6 /* POD_LOCKCLOCK */, 1, icons);
+    pod_rows(win, "scroll_view", POD_LOCKCLOCK, 1, icons);
     widget_t *row = widget_get_child(view, widget_count_children(view) - 1);
     widget_resize(row, I(row, W_W), 78);
     widget_restack(row, 1);

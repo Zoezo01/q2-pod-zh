@@ -714,7 +714,7 @@ int ringnav_fwupdate(widget_t *win, void *ctx) {
             show(tr("Downloading…"));
         else if (*nc.tag)
             named(); /* else stock's name, as it built the row */
-        pod_rows(win, "scroll_view_fwupdate", 26 /* POD_REMIND_DAILY */, 1, icons);
+        pod_rows(win, "scroll_view_fwupdate", POD_REMIND_DAILY, 1, icons);
     }
     return result;
 }

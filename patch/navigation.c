@@ -3187,8 +3187,6 @@ static const struct {
              { &cf_art_log, "CFARTLOG" },
              { &cf_dups[0], "CFDUPALBUMS" },
              { &cf_dups[1], "CFDUPSONGS" } };
-_Static_assert(POD_LOCKCLOCK == 6, "lockscreen.c passes pod_rows 6");
-_Static_assert(POD_REMIND_DAILY == 26, "netupdate.c passes pod_rows 26");
 _Static_assert(sizeof pods / sizeof *pods == POD_COUNT, "a pods row per row");
 /* a row's choices: Artist albums three, Standby limit four, every other row two */
 static int pod_choices(unsigned i) { return i == POD_ARTIST_CF ? 3 : i == POD_STANDBY ? 4 : 2; }
