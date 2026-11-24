@@ -674,8 +674,29 @@ static int rebuild(int keep) {
     unsigned at = (unsigned)M(MCL_POS), k = 0;
     if (at < n) {
         if (!keep) history(at);
-        if (s.shuffle == 1) {
-            /* Shuffle All pins the current occurrence between visited and remaining entries. */
+        if (s.shuffle >= 3) {
+            /* Finish the current category before the other shuffled categories; keep its
+             * track order, even when the playing track is halfway through that category. */
+            for (unsigned i = 0; i < n; ++i)
+                if (groups[order[i].index] == groups[at]) cycle[k++] = order[i];
+            for (unsigned i = 0; i < n; ++i)
+                /* NOLINTNEXTLINE(clang-analyzer-security.ArrayBound): order permutes 0..n-1 */
+                if (groups[order[i].index] != groups[at]) cycle[k++] = order[i];
+            memcpy(order, cycle, n * sizeof *order);
+        }
+        if (s.shuffle == 2 || s.shuffle == 4) {
+            unsigned first = 0, current = 0;
+            while (first < n && groups[order[first].index] != groups[at]) ++first;
+            while (current < n && order[current].index != at) ++current;
+            entry playing = order[current];
+            for (; current > first; --current) order[current] = order[current - 1];
+            order[first] = playing;
+        }
+        if (s.shuffle == 1 || keep == 2) {
+            /* Shuffle All, and an edit's new order (keep 2: Add to Queue, Play Next, a delete),
+             * pin the current occurrence between visited and remaining entries, so nothing
+             * unplayed is left behind the cursor. */
+            k = 0;
             for (unsigned i = 0; i < n; ++i)
                 if (order[i].index != at && seen[order[i].index]) cycle[k++] = order[i];
             s.cursor = k;
@@ -685,24 +706,6 @@ static int rebuild(int keep) {
                 if (order[i].index != at && !seen[order[i].index]) cycle[k++] = order[i];
             memcpy(order, cycle, n * sizeof *order);
         } else {
-            if (s.shuffle >= 3) {
-                /* Finish the current category before the other shuffled categories; keep its
-                 * track order, even when the playing track is halfway through that category. */
-                for (unsigned i = 0; i < n; ++i)
-                    if (groups[order[i].index] == groups[at]) cycle[k++] = order[i];
-                for (unsigned i = 0; i < n; ++i)
-                    /* NOLINTNEXTLINE(clang-analyzer-security.ArrayBound): order permutes 0..n-1 */
-                    if (groups[order[i].index] != groups[at]) cycle[k++] = order[i];
-                memcpy(order, cycle, n * sizeof *order);
-            }
-            if (s.shuffle == 2 || s.shuffle == 4) {
-                unsigned first = 0, current = 0;
-                while (first < n && groups[order[first].index] != groups[at]) ++first;
-                while (current < n && order[current].index != at) ++current;
-                entry playing = order[current];
-                for (; current > first; --current) order[current] = order[current - 1];
-                order[first] = playing;
-            }
             for (unsigned i = 0; i < n; ++i)
                 if (order[i].index == at) {
                     s.cursor = i;
@@ -754,7 +757,7 @@ static int follow_queue(void) {
     unsigned at = (unsigned)M(MCL_POS);
     /* the playing entry gone, stock's position names the one after it: Previous comes back here */
     if (at < m && (!s.hn || s.history[s.hn - 1] != at)) history(at);
-    s.active = rebuild(1);
+    s.active = rebuild(2);
     return 0;
 }
 int playback_option(int kind) {
@@ -1320,7 +1323,7 @@ void playback_insert(unsigned at, unsigned n, int next) {
     s.n += n;
     for (unsigned i = 0; i < s.hn; ++i)
         if (s.history[i] >= at) s.history[i] += n;
-    s.active = rebuild(1);
+    s.active = rebuild(2);
     for (unsigned i = 0; i < s.npend; ++i)
         if (s.pend[i] >= at) s.pend[i] += n;
     /* Play Next again before the last one finished: the new tracks go first, in order */

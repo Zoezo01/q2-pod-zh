@@ -898,6 +898,54 @@ def paths(records):
     return [C.string_at(struct.unpack_from('<Q', C.string_at(r, O['REC_SIZE']), O['REC_PATH'])[0]) for r in records]
 
 
+def album_songs(player, album, tracks):
+    return [player.song(b'/m/%s/%02d.flac' % (album, t), album, track=t) for t in tracks]
+
+
+@pytest.mark.parametrize('shuffle', [0, 3])  # Off, Albums
+def test_add_to_queue_of_a_played_albums_song_plays_it(fw, player, shuffle):
+    """An album's last song playing in an ordered mode, Add to Queue of its first: the new order sorts the copy
+    before the song playing, where only played songs stand, and it plays after it."""
+    player.load(album_songs(player, b'A', (1, 2)))
+    assert player.set(0, shuffle) == 1 and player.run(1) == [1]
+    queue_insert(fw, player, album_songs(player, b'A', (1,)), 0)
+    assert player.run(4) == [2]
+
+
+@pytest.mark.parametrize('second', ['add', 'play next', 'delete'])
+@pytest.mark.parametrize('shuffle', [0, 2])  # Off, Songs in Album
+def test_an_edit_while_a_play_next_song_plays_keeps_the_album_it_came_into(fw, player, shuffle, second):
+    """Album A's first song playing, Play Next of another album's: it plays, then the rest of A. Another edit while
+    it plays (Add to Queue, Play Next, View Queue's delete of A3) draws the order again, the rest of A sorted before
+    it, and A's rest still plays."""
+    player.load(album_songs(player, b'A', (1, 2, 3)))
+    assert player.set(0, shuffle) == 1
+    queue_insert(fw, player, album_songs(player, b'X', (1,)), 1)
+    assert player.run(1) == [1]
+    want = {b'/m/A/02.flac', b'/m/A/03.flac'}
+    if second == 'delete':
+        delete(player, 3)
+        fw.fn('playback_poll', None)()
+        want.discard(b'/m/A/03.flac')
+    else:
+        queue_insert(fw, player, album_songs(player, b'Y', (1,)), second == 'play next')
+    assert want <= set(paths([player.deques[player.handle][i] for i in player.run(8)]))
+
+
+def test_an_edit_under_shuffle_albums_still_plays_the_album_out_first(fw, player):
+    """Shuffle Albums draws the albums again at an edit; the rest of the album playing still comes first."""
+    rows, tried = player.albums(3, 3, 3), 0
+    for seed in range(1, 9):
+        player.clear(), player.load(rows), player.rng(seed)
+        assert player.set(0, 3) == 1
+        before, album = player.up_next(), player.album(player.mcl.pos)
+        rest = next((k for k, i in enumerate(before) if player.album(i) != album), len(before))
+        tried += rest > 0
+        queue_insert(fw, player, album_songs(player, b'Z', (1,)), 0)
+        assert player.up_next()[:rest] == before[:rest]
+    assert tried >= 4
+
+
 def test_queue_insert_shifts_the_shuffle_pool_and_last_index(fw, player, mcl):
     rows = player.load(player.albums(5), 1)
     mcl.lastpos = 3
