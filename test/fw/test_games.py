@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from conftest import O, Card, Config, Dirent, block, fnv1a, libc, rgba
+from conftest import O, Card, Config, Dirent, block, channels_low_first as rgb, fnv1a, libc, rgba
 
 SEED = 2166136261
 SUD, BEST, SOL, SNK = 0x31445553, 0x31585456, 0x314c4f53, 0x314b4e53
@@ -1904,10 +1904,6 @@ def test_a_record_that_can_t_be_written_says_so_and_still_shows(fw):
 # The sheet. games_paint draws on a canvas whose every call is recorded with the colour it reached stock in.
 
 CANVAS_LCD, LCD_FILL = O['CANVAS_LCD'], O['LCD_FILL_COLOR']
-
-
-def rgb(color):
-    return color & 255, color >> 8 & 255, color >> 16 & 255
 
 
 def alpha(color):

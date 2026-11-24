@@ -12,6 +12,7 @@ import pytest
 import art as tools_art  # tools/, which host puts on the path
 import ipod as tools_ipod
 from conftest import O, block, Config, channels_low_first
+from conftest import channels_low_first as rgb
 
 WALLS = [b'q2pod:' + n for n in (b'aurora', b'sunrise', b'graphite', b'tide', b'ember', b'black')]
 AURORA, SUNRISE, GRAPHITE, TIDE, EMBER, BLACK = range(6)
@@ -47,11 +48,6 @@ def render(fw, wall, w, h, stride=None, fill=0x5a5a5a5a):
     px[:] = [fill] * (stride * h)
     ok = fw.fn('wall_render', C.c_int, C.c_void_p, C.c_int, C.c_int, C.c_int, C.c_int)(p, stride, w, h, wall)
     return ok, [list(px[y * stride:(y + 1) * stride]) for y in range(h)]
-
-
-def rgb(px):
-    """RGBA8888 as the bitmap holds it, red in the low byte."""
-    return px & 255, px >> 8 & 255, px >> 16 & 255
 
 
 # The wallpapers.

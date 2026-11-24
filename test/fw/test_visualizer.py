@@ -9,6 +9,7 @@ import struct
 import pytest
 
 from conftest import O
+from test_nav_paint import channels, rgb_of as rgb
 
 N, HALO, BARS, W, ROWS = 1024, 64, 32, 343, 20
 SPECTRUM, SCOPE, METERS, HALO_STYLE, PULSAR, CONTOUR = range(6)
@@ -1087,15 +1088,6 @@ def test_no_style_name_before_a_tap_even_just_after_boot(fw):
     canvas = Canvas(fw)
     paint(fw, now.win, canvas)
     assert canvas.texts == [] and fw.calls('vgcanvas_save')
-
-
-def rgb(c):
-    """color_t, red in the low byte, as 0xRRGGBB."""
-    return (c & 255) << 16 | c & 0xff00 | c >> 16 & 255
-
-
-def channels(c):
-    return [c >> s & 255 for s in (16, 8, 0)]
 
 
 def test_the_spectrum_s_32_bars_run_from_a_dark_shade_to_a_bright_tint(fw):
