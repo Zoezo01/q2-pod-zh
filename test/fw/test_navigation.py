@@ -2833,16 +2833,11 @@ def test_a_ghost_after_return_held_is_dropped_whole(fw):
     assert gate(DOWN, KEY_RETURN, 20) == 0
 
 
-def test_a_return_press_after_the_ghost_window_passes(fw):
+@pytest.mark.parametrize('held, again', [(700, 136), (100, 10)], ids=['past_the_ghost_window', 'short_return'])
+def test_a_return_press_after_the_ghost_window_or_a_short_return_leaves_no_ghost(fw, held, again):
     gate = Gate(fw, 'chord_gate')
-    gate(DOWN, KEY_RETURN), gate(UP, KEY_RETURN, 700)
-    assert gate(DOWN, KEY_RETURN, 136) == 0  # the release is stamped now | 1
-
-
-def test_a_short_return_leaves_no_ghost(fw):
-    gate = Gate(fw, 'chord_gate')
-    gate(DOWN, KEY_RETURN), gate(UP, KEY_RETURN, 100)
-    assert gate(DOWN, KEY_RETURN, 10) == 0
+    gate(DOWN, KEY_RETURN), gate(UP, KEY_RETURN, held)
+    assert gate(DOWN, KEY_RETURN, again) == 0  # the release is stamped now | 1
 
 
 @pytest.mark.parametrize('kind', [0x100, 0x10c])

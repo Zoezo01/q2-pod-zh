@@ -1532,16 +1532,11 @@ def test_a_request_this_app_cant_mean_is_dropped(fw, raw):
     assert s.world.of('unlink') == [(b'/tmp/q2-foo.sleep',)]
 
 
-def test_a_time_just_past_pauses_at_once(fw):
+@pytest.mark.parametrize('ago, paused', [(59, 1), (60, 0)], ids=['just_past_pauses_at_once', 'stale_is_let_go'])
+def test_a_time_a_minute_back_pauses_only_just_past(fw, ago, paused):
     s = Sleep(fw)
-    s.read(b'until %d' % (s.world.now - 59))
-    assert s.paused() == 1 and sl(fw).owner == 0
-
-
-def test_a_stale_time_is_let_go(fw):
-    s = Sleep(fw)
-    s.read(b'until %d' % (s.world.now - 60))
-    assert s.paused() == 0 and sl(fw).owner == 0
+    s.read(b'until %d' % (s.world.now - ago))
+    assert s.paused() == paused and sl(fw).owner == 0
 
 
 def test_the_same_file_read_again_changes_nothing(fw):

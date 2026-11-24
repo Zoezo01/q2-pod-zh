@@ -240,26 +240,15 @@ def test_spotify_still_read_as_playing_after_an_ear_pause_keeps_the_resume(fw):
     assert sent(fw) == [b's', b'P']
 
 
-def test_a_second_bud_out_while_spotify_still_reads_as_playing_keeps_the_count_worn(fw):
+@pytest.mark.parametrize('out', [1, 0], ids=['one_bud_out', 'both_out'])
+def test_a_bud_out_while_spotify_still_reads_as_playing_keeps_the_count_worn(fw, out):
     player = Player(fw)
     sp = spotify(fw)
-    ears(fw, player, 3, 1)  # two were worn
-    ears(fw, player, 0, step=1100)  # the other out, its state file still saying playing: paused again
+    ears(fw, player, 3, out)  # both were worn, then the ears report what is still in
+    ears(fw, player, 0, step=1100)  # its state file still says playing: paused again
     sp.playing = 0
     ears(fw, player, 1)
     assert sent(fw) == [b's', b's']  # one back isn't as many as were worn
-    ears(fw, player, 3)
-    assert sent(fw) == [b's', b's', b'P']
-
-
-def test_both_out_while_spotify_still_reads_as_playing_resume_with_both_back(fw):
-    player = Player(fw)
-    sp = spotify(fw)
-    ears(fw, player, 3, 0)
-    ears(fw, player, 0, step=1100)  # its state file still says playing, with nothing to hear: paused again
-    sp.playing = 0
-    ears(fw, player, 1)
-    assert sent(fw) == [b's', b's']
     ears(fw, player, 3)
     assert sent(fw) == [b's', b's', b'P']
 

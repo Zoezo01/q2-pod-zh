@@ -588,18 +588,12 @@ def test_twin_titles_without_a_second_line_take_the_nearer(fw, ui):
     assert again.selected == 27
 
 
-def test_a_list_with_no_row_of_that_name_keeps_the_place(fw, ui):
+@pytest.mark.parametrize('count, selected', [(40, 25), (10, 0)], ids=['no_row_of_that_name', 'shorter_list'])
+def test_a_list_with_no_row_of_that_name_or_shorter_does_not_restore(fw, ui, count, selected):
     chosen(fw, ui, Page(ui, titles(40)), 25)
-    again = Page(ui, titles(40, start=100))
+    again = Page(ui, titles(count, start=100))
     paint(fw, again)
-    assert again.selected == 25
-
-
-def test_a_shorter_list_does_not_restore_past_its_end(fw, ui):
-    chosen(fw, ui, Page(ui, titles(40)), 25)
-    again = Page(ui, titles(10, start=100))
-    paint(fw, again)
-    assert again.selected == 0
+    assert again.selected == selected
 
 
 def test_another_list_of_the_same_page_starts_at_its_top(fw, ui):

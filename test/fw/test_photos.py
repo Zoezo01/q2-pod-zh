@@ -963,15 +963,9 @@ def test_return_from_an_album_s_grid_goes_back_to_the_albums(fw):
     assert visible(fw, page.ph.albums) == 1 and visible(fw, page.ph.grid) == 0 and fw.calls('navigator_back') == []
 
 
-def test_return_from_a_grid_without_albums_leaves(fw):
-    page = Page(fw, Card(fw, files('a.jpg')))
-    keyup(page)
-    page.fire()
-    assert len(fw.calls('navigator_back')) == 1
-
-
-def test_return_from_the_albums_leaves(fw):
-    page = Page(fw, Card(fw, files('Trip/1.jpg')))
+@pytest.mark.parametrize('name', ['a.jpg', 'Trip/1.jpg'], ids=['grid_without_albums', 'albums'])
+def test_return_from_a_grid_or_the_albums_leaves(fw, name):
+    page = Page(fw, Card(fw, files(name)))
     keyup(page)
     page.fire()
     assert len(fw.calls('navigator_back')) == 1
