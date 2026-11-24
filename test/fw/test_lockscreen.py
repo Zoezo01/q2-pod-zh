@@ -13,6 +13,7 @@ import art as tools_art  # tools/, which host puts on the path
 import ipod as tools_ipod
 from conftest import O, block, Config, channels_low_first
 from conftest import channels_low_first as rgb
+from test_radio import heap
 
 WALLS = [b'q2pod:' + n for n in (b'aurora', b'sunrise', b'graphite', b'tide', b'ember', b'black')]
 AURORA, SUNRISE, GRAPHITE, TIDE, EMBER, BLACK = range(6)
@@ -325,17 +326,10 @@ def test_the_right_edge_carries_on_the_picture_at_any_width(fw, wall):
         assert abs(step(w - 1) - step(w - 6)) < 1, (k, step(w - 1), step(w - 6))
 
 
-class Mallinfo2(C.Structure):
-    _fields_ = [(name, C.c_size_t) for name in
-                'arena ordblks smblks hblks hblkhd usmblks fsmblks uordblks fordblks keepcost'.split()]
-
-
 def test_a_render_frees_its_grid(fw):
     """wall_render's grid (the field every 5 pixels, a float a channel) is its own: none of it stays allocated,
     however many pictures and thumbnails are drawn."""
-    libc = C.CDLL(None)
-    libc.mallinfo2.restype = Mallinfo2
-    held = lambda: libc.mallinfo2().uordblks + libc.mallinfo2().hblkhd  # noqa: E731
+    held = heap
     run = fw.fn('wall_render', C.c_int, C.c_void_p, C.c_int, C.c_int, C.c_int, C.c_int)
     dst = block(fw, size=375 * 320 * 4)
     assert run(dst, 375, 375, 320, AURORA) == 1
