@@ -50,6 +50,7 @@ int shim_join(pthread_t, void **);
 #define statfs shim_statfs
 #define __xstat shim_xstat /* o32's stat: st_size word 12, st_mtime word 16 */
 #define tk_snprintf snprintf
+void toolsTimeItoa(char *, int);
 extern void *shim_queue;
 extern unsigned char shim_covertype;
 extern char shim_lastcover[1024], shim_id3[2716];
@@ -138,10 +139,14 @@ int coverflow_artist(void *albums);
 const char *track_name(char *, unsigned, void *);
 
 /* Cache boundary: the duration service has its own tests, test/fw/test_durations.py. */
-int duration_seconds(void *song) { return -1; }
+static int dur_sec = -1, dur_scan; /* every song's measured length, and Scan Song Durations */
+static void *dur_skip; /* the one song with none */
+int duration_seconds(void *song) { return song == dur_skip ? -1 : dur_sec; }
+void toolsTimeItoa(char *out, int sec) { sprintf(out, "%d:%02d", sec / 60, sec % 60); }
 void durations_scanned(void) {}
 const char *duration_text(char *text, unsigned size, void *song) {
     if (size) text[0] = 0;
+    if (dur_scan && duration_seconds(song) > 0) toolsTimeItoa(text, duration_seconds(song));
     return text;
 }
 
@@ -4507,6 +4512,26 @@ static void flip_turn(void) {
     clock_ms += 270;
     assert(tick(0) == 0 && !coverflow_turning() && frames == 1);
     assert(s->visible && label_in(cv, 0)->visible && cv->visible && !cv->numb && !coverflow_tracks(page));
+    /* The header's second line adds the songs' total time, when the switch is on and every song has a length. */
+    static char sub[160];
+    static const struct { int scan, sec; const char *want; } totals[] = {
+        { 1, 200, "Artist · 3:20" }, { 1, -1, "Artist" }, { 0, 200, "Artist" }
+    };
+    for (int i = 0; i < 3; ++i) {
+        dur_scan = totals[i].scan, dur_sec = totals[i].sec;
+        w[s->kids[a]].click(w[s->kids[a]].ctx, 0);
+        to_tracks = timer_fn;
+        timer_fn = 0, to_tracks(0);
+        clock_ms += 270;
+        assert(tick(0) == 0);
+        snprintf(sub, sizeof sub, "%s", label_in(panel_of(), 1)->text);
+        assert(!strcmp(sub, totals[i].want));
+        key(KEY_RETURN);
+        clock_ms += 270;
+        assert(tick(0) == 0 && !coverflow_turning());
+    }
+    dur_scan = 0, dur_sec = -1;
+    panel = panel_of();
     /* No room for the turn: the text list; none for the turn back: straight to the covers. */
     frame_fail = 1;
     w[s->kids[a]].click(w[s->kids[a]].ctx, 0);
@@ -7223,6 +7248,21 @@ static void flip_playlist(void) {
     ++playback_loads; /* any other queue started: stock's load (ringnav_load) counts it */
     assert(!coverflow_playlist_queue());
     close_page();
+    /* Every song measured, Scan Song Durations on: the total joins the count; one unmeasured, none. */
+    for (int i = 0; i < 2; ++i) {
+        dur_scan = 1, dur_sec = 200, dur_skip = i ? records[5] : 0;
+        page = &w[nw + 1];
+        assert(coverflow_playlists(d));
+        top_window = page;
+        w[slide()->kids[0]].click(w[slide()->kids[0]].ctx, 0);
+        run();
+        for (int j = 0; j < page->nkids; ++j)
+            if (box(&w[page->kids[j]])[2] == 294) panel = &w[page->kids[j]];
+        for (int j = 0, k = 0; j < panel->nkids; ++j)
+            if (!strcmp(w[panel->kids[j]].type, "hscroll_label") && k++ == 1) assert(!strcmp(w[panel->kids[j]].text, i ? "7 songs" : "7 songs · 23:20"));
+        close_page();
+    }
+    dur_scan = 0, dur_sec = -1, dur_skip = 0;
     /* a podcast in it is left out of the turned panel and its count, as its own list leaves it out */
     const char **path = (const char **)(records[4] + REC_PATH), *was_path = *path;
     *path = "/mnt/mmc/Podcasts/Show/ep.mp3";

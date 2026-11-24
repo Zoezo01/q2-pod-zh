@@ -3635,12 +3635,16 @@ static int flip_open(void *r, int n) {
     fl.card = flat_pages() ? PANEL_HEAD - 1 + rows + HOLD_FOOT : 0;
     widget_t *view = rows_view(fl.panel, PANEL_HEAD, BACK_W, rows, n, row);
     char name[512];
+    int total = 0, timed = n > 0; /* the header's total: only when every song has a length */
     for (int i = 0; i < n; ++i) {
         void *t = deque_at(cf.tracks, (unsigned)i);
         widget_t *item = list_item_create(view, 0, i * row, BACK_W, row);
         widget_use_style(item, "s_listitem_black");
         char duration[24];
         duration_text(duration, sizeof duration, t);
+        int sec =
+            *duration ? duration_seconds(t) : 0; /* empty: switch off, unmeasured or unreadable */
+        timed &= sec > 0, total += sec;
         int time_w = strlen(duration) > 5 ? 88 : 66; /* h:mm:ss */
         widget_t *title = panel_label(item, 12, 0, *duration ? 260 - time_w : 270, pl ? 26 : row,
                                       track_name(name, sizeof name, t), 25, 1);
@@ -3659,12 +3663,18 @@ static int flip_open(void *r, int n) {
         widget_on(item, EVT_CLICK, play, (void *)(long)i);
     }
     /* cf.title: where a row's "Storage unavailable" goes */
-    char songs[64];
+    char songs[64], sub[300];
+    const char *by = pl ? songs_text(songs, sizeof songs, (unsigned)n) : cover_artist(r);
+    if (timed && by) { /* ponytail: a long artist's ellipsis hides the total; a separate label would
+                          keep it */
+        char time[16];
+        toolsTimeItoa(time, total);
+        tk_snprintf(sub, sizeof sub, "%s · %s", by, time);
+        by = sub;
+    }
     cf.title = fl.title =
         panel_label(fl.panel, 12, 1, 270, 33, pl ? P(r, REC_TITLE) : album_name(r), 31, 1);
-    fl.artist =
-        panel_label(fl.panel, 12, 30, 270, 20,
-                    pl ? songs_text(songs, sizeof songs, (unsigned)n) : cover_artist(r), 18, 0);
+    fl.artist = panel_label(fl.panel, 12, 30, 270, 20, by, 18, 0);
     panel_ink();
     widget_set_sensitive(cf.covers, 0);
     flip_shelf(0);
