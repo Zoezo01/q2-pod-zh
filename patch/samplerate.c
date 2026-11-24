@@ -186,9 +186,50 @@ static int sr_text_width(const char *s) {
     return w;
 }
 
+/* Whether bar x a..b is clear of everything else the bar shows now: each visible thing in it, at
+ * any depth (the play state, EQ, the clock or the title, Bluetooth and its codec badge, Wi-Fi, a
+ * card app's icon, the battery, and whatever a later build adds). An image or view is its box; a
+ * label is its text, estimated from the characters as sr_text_width is, at its own size and
+ * alignment (the clock's box is wider than its text, centred). A box near the bar's width is a
+ * background. skip is the rate's own label. */
+static int sr_clear(widget_t *parent, int ox, int a, int b, widget_t *skip, int bar_w) {
+    for (unsigned i = 0, n = widget_count_children(parent); i < n; ++i) {
+        widget_t *c = widget_get_child(parent, i);
+        if (!c || c == skip || !widget_get_visible(c)) continue;
+        int cx = ox + I(c, W_X), cw = I(c, W_W);
+        if (widget_count_children(c)) {
+            if (!sr_clear(c, cx, a, b, skip, bar_w)) return 0;
+            continue;
+        }
+        if (cw <= 0 || cw >= bar_w * 9 / 10) continue;
+        int x0 = cx, x1 = cx + cw;
+        const char *type = widget_get_type(c);
+        if (type && (!strcmp(type, "label") || !strcmp(type, "hscroll_label"))) {
+            char s[64];
+            int tw = cw; /* stock writes nothing unless all of it fits: then its whole box */
+            if (!widget_get_text_utf8(c, s, sizeof s)) {
+                if (!*s) continue;
+                int px = widget_get_prop_int(c, "style:normal:font_size", 20);
+                tw = (int)strlen(s) * px * 5 / 8 + 2; /* bytes: a wider guess for UTF-8 */
+                if (tw > cw) tw = cw;
+            }
+            const char *al = widget_get_prop_str(c, "style:normal:text_align_h", (const char *)0),
+                       *name = widget_get_prop_str(c, "name", "");
+            int centre = al ? !strcmp(al, "center") : !strcmp(name, "label_clock"),
+                right = al ? !strcmp(al, "right") : !strcmp(name, "label_battery");
+            x0 = centre ? cx + (cw - tw) / 2 : right ? cx + cw - tw : cx;
+            x1 = x0 + tw;
+        }
+        if (x0 < b && x1 > a) return 0;
+    }
+    return 1;
+}
+
 /* bar_sync, each bar paint: the text starting at x (left: after the play state and EQ) or ending at
- * x (else: left of the right-hand group), shown only while it fits room; made the first time there
- * is one. A change repaints the bar after the frame, as addon_bar.c's icon does. */
+ * x (else: left of the right-hand group), shown only while it fits room and stays STATUS_GAP clear
+ * of everything else the bar shows (sr_clear), so it gives way rather than cover anything; made
+ * the first time there is one. A change repaints the bar after the frame, as addon_bar.c's icon
+ * does. */
 static char sr_synced[16]
     __attribute__((section(".scratch"))); /* the text bar_rate_sync last took */
 
@@ -205,9 +246,11 @@ void bar_rate_sync(int left, int x, int room) {
     static int aligned __attribute__((section(".scratch"))); /* 1 left, 2 right, 0 not yet */
     char text[16] = { 0 }; /* whole, as memcpy copies all of it into sr_synced */
     int n = sr_now(pod_value(POD_SAMPLERATE), text, sizeof text), w = n ? sr_text_width(text) : 0;
-    int on = n && w <= room, changed = 0, at = left ? x : x - w;
+    int changed = 0, at = left ? x : x - w;
     memcpy(sr_synced, text, sizeof sr_synced);
-    widget_t *row = P(st.bar_slot, W_PARENT);
+    widget_t *row = P(st.bar_slot, W_PARENT), *bar = P(row, W_PARENT);
+    int on = n && w <= room &&
+             sr_clear(bar, 0, at - STATUS_GAP, at + w + STATUS_GAP, label, I(bar, W_W));
     if (!label) {
         if (!on) return;
         label = label_create(P(row, W_PARENT), at, I(row, W_Y), w, I(row, W_H));
