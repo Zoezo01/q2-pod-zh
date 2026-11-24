@@ -688,6 +688,39 @@ def test_previous_at_a_rounds_start_leaves_no_song_behind(player):
     assert tried >= 4
 
 
+def test_previous_at_an_ordered_rounds_start_keeps_the_last_song_for_the_loop(player):
+    """Shuffle Off and Repeat All: Previous at the new round's first song goes back to the last, and Next then plays
+    the round through, the last song included: last, 0, 1, ..., last."""
+    player.load(player.albums(4), 1)  # index 1 is the album's first song in the order
+    assert player.set(0, 0) == 1 and player.set(1, REPEAT_ALL) == 1
+    round_ = [player.mcl.pos] + player.run(3)
+    assert len(set(round_)) == 4 and player.run(1) == round_[:1]
+    assert player.prev() == 0 and player.mcl.pos == round_[-1]
+    heard = [player.mcl.pos]
+    for _ in range(4):
+        assert player.next(0) >= 0
+        heard.append(player.mcl.pos)
+    assert heard == round_[-1:] + round_
+
+
+def test_a_group_skip_back_at_an_ordered_rounds_start_keeps_the_last_album_for_the_loop(fw, player):
+    """Shuffle Off and Repeat All, as Previous: the group skip leaves the round's order as it was."""
+    skip = fw.fn('playback_group_skip', C.c_int, C.c_int)
+    player.load(player.albums(2, 2), 0)
+    assert player.set(0, 0) == 1 and player.set(1, REPEAT_ALL) == 1
+    round_ = player.order()
+    player.mcl.pos = round_[0]
+    player.clear()
+    assert player.set(0, 0) == 1 and player.set(1, REPEAT_ALL) == 1
+    assert player.run(4) == round_[1:] + round_[:1]
+    assert skip(0) == 1 and player.mcl.pos == round_[2]
+    heard = []
+    for _ in range(5):
+        assert player.next(0) >= 0
+        heard.append(player.mcl.pos)
+    assert heard == round_[3:] + round_
+
+
 def test_previous_at_the_start_stays(player):
     player.load(player.albums(3), 1)
     assert player.set(0, 1) == 1

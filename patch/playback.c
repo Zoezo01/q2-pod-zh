@@ -1113,8 +1113,9 @@ int ringnav_prev(void) {
     M(MCL_POS) = (int)at;
     unsigned i = order_find(0, at);
     /* Played before this order was drawn (the last round, a Shuffle or Repeat change), it can lie
-     * past the track left: it moves just ahead of it, so Next comes back there. */
-    if (i < s.n && i > s.cursor) {
+     * past the track left: it moves just ahead of it, so Next comes back there. A plain ordered
+     * Repeat All round is left as it was: the last song stays at the end for the loop. */
+    if (i < s.n && i > s.cursor && (s.shuffle || s.repeat != 5)) {
         move_back(i, s.cursor);
         i = s.cursor;
     }
@@ -1292,8 +1293,9 @@ int playback_group_skip(int forward) {
             }
         if (next == s.n) return 0;
         /* As Previous: drawn since (a new round, a Shuffle or Repeat change), the group can lie
-         * past the track left; it moves in front of it, so the groups between still play. */
-        if (s.cursor > left) {
+         * past the track left; it moves in front of it, so the groups between still play. A plain
+         * ordered Repeat All round is left as it was. */
+        if (s.cursor > left && (s.shuffle || s.repeat != 5)) {
             for (unsigned i = s.cursor, to = left; i < s.n; ++i)
                 if (s.groups[s.order[i].index] == group) move_back(i, to++);
             s.cursor = left;
