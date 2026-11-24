@@ -947,7 +947,6 @@ def check_title_bounds(m, button, drill=False):
     margin=m.u.mem_read(layout+O['DEFAULT_LAYOUT_X_MARGIN'],1)[0]
     gap=m.u.mem_read(layout+O['DEFAULT_LAYOUT_SPACING'],1)[0]
     widths={c:m.get(c+O['W_W']) for c in children}
-    title_width=m.get(title+O['W_W'])
     title_yh=(m.get(title+O['W_Y']),m.get(title+O['W_H']))
     attributes={k:v for k,v in m.nodes[title].items() if k=='style' or 'hscroll' in k}
     for artwork in (0,1):

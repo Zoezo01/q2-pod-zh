@@ -5094,7 +5094,6 @@ def test_a_progress_row_does_nothing(fw):
 
 def test_a_progress_bar_paints_its_share(fw):
     p = Page(fw)
-    world = p.world
     lcd, canvas, bar = block(fw, size=4096), block(fw, size=4096), block(fw, size=4096)
     C.c_void_p.from_address(canvas + CANVAS_LCD).value = lcd
     C.c_int.from_address(bar + W_W).value, C.c_int.from_address(bar + W_H).value = 300, 8
