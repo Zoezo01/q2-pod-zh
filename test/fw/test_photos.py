@@ -9,7 +9,7 @@ import struct
 import pytest
 
 from conftest import FNV_PRIME, O, Config, Files, block, fnv1a, libc
-from test_coverflow import segment
+from test_coverflow import segment, statuses as ffmpeg
 
 ROOT = '/mnt/mmc/Photos'
 CACHE = '/mnt/mmc/.photos'
@@ -485,16 +485,6 @@ def test_a_photo_marked_bad_is_not_tried_again(fw):
     thumbs = Thumbs(fw, card)
     worker_state(fw, [path])
     assert build(fw) == PH_BAD and thumbs.made == []
-
-
-def ffmpeg(fw, status):
-    """ffmpeg starts and ends with status: 1 << 8 its own failure, 9 killed."""
-    fw.mock('fw_fork', lambda *_: 1234)
-
-    def wait(pid, out, *_):
-        C.c_int.from_address(out).value = status
-        return pid
-    fw.mock('fw_waitpid', wait)
 
 
 def test_a_photo_nothing_decodes_gets_the_bad_marker(fw):
