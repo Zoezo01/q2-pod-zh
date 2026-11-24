@@ -3161,6 +3161,7 @@ static int retitle(const void *unused) {
     return 0;
 }
 
+static void home_show(widget_t *w, int on);
 /* One child per album plus the cards (CARDS), moved by the wheel and by touch on the covers' view
  * (touch); the slide_menu itself takes no touch. With depth it spans the frame, so every step
  * repaints all of it, and its cfs.view_h square items with a negative spacer move one album per
@@ -3211,8 +3212,7 @@ static void covers(int dir) {
         changed(0, 0);
         widget_on(cf.covers, EVT_POINTER_DOWN, touch, 0); /* the rest: open_page */
     }
-    widget_set_visible(cf.covers, 1, 0);
-    widget_set_sensitive(cf.covers, 1);
+    home_show(cf.covers, 1);
     widget_invalidate_force(cf.page, 0);
 }
 
@@ -3827,12 +3827,9 @@ static int to_tracks(const void *unused) {
     }
     cf.screen = TRACKS;
     if (flip_open(r, n)) return 0;
-    if (cf.covers) { /* none in the text list; stock's hit test skips insensitive, not hidden,
-                      * widgets, and the covers' view over the list would take its taps and swipes
-                      */
-        widget_set_visible(cf.covers, 0, 0);
-        widget_set_sensitive(cf.covers, 0);
-    }
+    /* none in the text list; stock's hit test skips insensitive, not hidden, widgets, and the
+     * covers' view over the list would take its taps and swipes */
+    if (cf.covers) home_show(cf.covers, 0);
     /* the album over its tracks, all centred, but under a theme's own rows; there, in a list with
      * lengths, each track's artist (the album artist when the album has one) leads its line */
     int centred = theme()->page_title_h;
