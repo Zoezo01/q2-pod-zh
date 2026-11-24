@@ -517,10 +517,8 @@ void slider_paint(widget_t *w, canvas_t *canvas) {
             paint_art(w, canvas, "classic_light_sun_small", 48, 144);
             paint_art(w, canvas, "classic_light_sun_big", 311, 141);
         }
-        for (int i = 0; maxvol && i < 6; ++i) { /* a triangle at the fill's end, tip up */
-            int half = i ? i : 1;
-            bar_rect(canvas, 0xffffffffu, 81 + slider_part(s, 204) - half, 155 + i, 2 * half, 1);
-        }
+        if (maxvol) /* a triangle at the fill's end, tip up */
+            vol_mark(canvas, 0xffffffffu, 81 + slider_part(s, 204), 155);
     }
     text_shadow(canvas, "classic-light", (const unsigned *)st.slider_hint,
                 &(rect_t){ 0, 229, 375, 32 }, 31, 0x59);

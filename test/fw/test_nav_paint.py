@@ -2003,8 +2003,9 @@ def test_the_rating_box_is_classic_s_panel(fw, world, st):
 
 # The volume (stock's dialog/volume_dialog over another window).
 
-def volume(fw, world, st, level=37, maximum=100, under='home_page', np=False, beside=False):
-    """The dialog over a window (Now Playing's with np): (dialog, slider_vol, label_vol)."""
+def volume(fw, world, st, level=37, maximum=100, under='home_page', np=False, beside=False, limit=100):
+    """The dialog over a window (Now Playing's with np), Max Volume at limit: (dialog, slider_vol, label_vol)."""
+    fw.var('g_maxvolume', C.c_ubyte).value = limit
     below = world.window(under, top=False)
     if np:
         slider = world.add(below, 'slider_play', 'slider', box=(66, 245, 243, 20), bar_size=4)
@@ -2047,6 +2048,85 @@ def test_the_volume_with_no_range_is_empty(fw, world, st):
     canvas = Canvas(fw)
     vol_paint(fw, dialog, canvas)
     assert len(canvas.rounded) == 2 and canvas.texts[0][0] == '5'
+
+
+def mark(x, y):
+    """Max Volume's triangle, tip up at x from row y: its six rows (x, y, w, h)."""
+    return [(x - h, y + i, 2 * h, 1) for i, h in enumerate((1, 1, 2, 3, 4, 5))]
+
+
+# Each look of the volume but flat Quick Settings' (test_flat_pages.py): its theme, where volume() puts the dialog,
+# and its bar's x, width and first row under it. volume()'s Now Playing slider is 243 px from 66, 20 high from 245,
+# its bar the theme's (np_theme): Classic's NP_BAR_IPOD, Modern's NP_BAR_CLASSIC and Minimal's 4 px, centred.
+NP_BARS = {CLASSIC: O['NP_BAR_IPOD'], MODERN: O['NP_BAR_CLASSIC'], MINIMAL: 4}
+VOL_LOOKS = {'classic np': (CLASSIC, dict(under='playing_page', np=True, beside=True), (66, 243, 245 + 20)),
+             'minimal np': (MINIMAL, dict(under='playing_page', np=True), (66, 243, 245 + 8 + 4)),
+             'modern np': (MODERN, dict(under='playing_page', np=True), (66, 243, 245 + 6 + 8)),
+             'classic panel': (CLASSIC, {}, (68, 243, 271 + 17)),
+             'flat panel': (MODERN, {}, (28 + 40, 375 - 2 * 28 - 92, 256 + 48 // 2 + 2)),
+             'minimal panel': (MINIMAL, {}, (O['VOL_PANEL_X'] + O['VOL_PANEL_PAD'],
+                                             375 - 2 * O['VOL_PANEL_X'] - 2 * O['VOL_PANEL_PAD'] - O['VOL_PANEL_TEXT'],
+                                             O['VOL_PANEL_Y'] + (O['VOL_PANEL_H'] + O['VOL_PANEL_BAR']) // 2))}
+
+
+def limit_paints(fw, world, st, look, light, level, limit):
+    """A look's dialog painted with no limit, then under limit: (canvas, canvas, the area stock's slider is on)."""
+    which, where, _ = VOL_LOOKS[look]
+    theme(fw, which, LIGHT=light)
+    dialog, vol, _ = volume(fw, world, st, level, **where)
+    if where:
+        world.set(st('np_slider', C.c_void_p).value, 'bar_size', NP_BARS[which])
+    free = Canvas(fw)
+    vol_paint(fw, dialog, free)
+    fw.var('g_maxvolume', C.c_ubyte).value = limit
+    canvas = Canvas(fw)  # each Canvas takes the mocks over
+    vol_paint(fw, dialog, canvas)
+    return free, canvas, world.at(vol)
+
+
+@pytest.mark.parametrize('light', ['0', '1'])
+@pytest.mark.parametrize('look', list(VOL_LOOKS))
+def test_the_volume_bar_marks_max_volume_under_the_limit_s_place(fw, world, st, look, light):
+    """As an iPod's: Max Volume's triangle, tip up under the bar where a fill of the limit ends, in the ink of the
+    bar's ground (Classic's half's; white, as the setter shows it, on the dark bands and panels); all else as with
+    no limit."""
+    free, canvas, _ = limit_paints(fw, world, st, look, light, 30, 60)
+    x, w, y = VOL_LOOKS[look][2]
+    extra = added(canvas, free)
+    assert [f[:4] for f in extra] == mark(x + w * 60 // 100, y)
+    classic = rgba(0xffffff if light == '0' else 0)
+    want = {'classic np': classic, 'classic panel': classic, 'flat panel': rgba(0xffffff)}.get(
+        look, fw.fn('ui_ink', C.c_uint, C.c_uint)(rgba(0xffffff)))
+    assert {f[4] for f in extra} == {want}
+    assert len(canvas.fills) == len(free.fills) + 6
+    assert (canvas.rounded, canvas.texts, canvas.arts) == (free.rounded, free.texts, free.arts)
+    assert canvas.fill == 0xff123456
+
+
+@pytest.mark.parametrize('limit', [0, 1, 99])
+@pytest.mark.parametrize('look', list(VOL_LOOKS))
+def test_the_limit_s_mark_stays_inside_what_the_volume_repaints(fw, world, st, look, limit):
+    """At either end the mark, still under the fill's end, lies inside the area the overlay moves stock's slider onto
+    (what its repaints cover), off the number and Classic's times."""
+    free, canvas, (ax, ay, aw, ah) = limit_paints(fw, world, st, look, '0', limit, limit)
+    x, w, y = VOL_LOOKS[look][2]
+    assert [f[:4] for f in added(canvas, free)] == mark(x + w * limit // 100, y)
+    # the number, centred in its box, as wide as its digits at most 0.7 of its size each (default.ttf's are 0.45)
+    words = [(tx + (tw - len(t) * px * 7 // 10) // 2, ty, len(t) * px * 7 // 10, th)
+             for t, (tx, ty, tw, th), _, (_, px) in canvas.texts] + [(16, 247, 46, 16), (313, 247, 46, 16)] * (
+                 look == 'classic np')
+    for x, y, w, h, _ in added(canvas, free):
+        assert ax <= x and x + w <= ax + aw and ay <= y and y + h <= ay + ah, (x, y, w, h)
+        assert not any(tx < x + w and x < tx + tw and ty < y + h and y < ty + th for tx, ty, tw, th in words)
+
+
+def test_the_volume_with_no_limit_draws_no_mark(fw, world, st):
+    """The limit at the slider's max (none set, or AirPlay's 100 while a speaker plays) marks nothing."""
+    theme(fw, MINIMAL)
+    dialog, *_ = volume(fw, world, st, 40, maximum=80, limit=80)
+    canvas = Canvas(fw)
+    vol_paint(fw, dialog, canvas)
+    assert canvas.fills == []
 
 
 def added(after, before):

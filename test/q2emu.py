@@ -223,6 +223,7 @@ class Machine:
         for name,size in CONTEXT_DATA.items(): self.u.mem_write(syms[name],bytes(size))
         self.word(syms['g_class_type'],0xf001)
         self.byte(syms['g_backlight_status'],1)
+        self.byte(syms['g_maxvolume'],100)  # as stock boots: no Max Volume limit, so no mark under a volume bar
     def probe_canvas(self, lcd_type=1, vg=0, rect=(10,10,100,40), color=None):
         """Real stock canvas code runs; mock only the services it reaches."""
         for n in ('canvas_fill_rounded_rect','canvas_stroke_rounded_rect','canvas_set_fill_color'):

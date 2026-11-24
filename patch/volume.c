@@ -19,6 +19,22 @@ static void vol_end(widget_t *top, canvas_t *canvas, const char *name, int x, in
     canvas_draw_image(canvas, bitmap, &src, &dst);
 }
 
+/* Max Volume's triangle, tip up at x, its six rows from y: the Max Volume page's (classic_pages.c
+ * slider_paint) and the limit's on the volume bar (limit_mark). */
+void vol_mark(canvas_t *canvas, unsigned color, int x, int y) {
+    for (int i = 0; i < 6; ++i) {
+        int half = i ? i : 1;
+        bar_rect(canvas, color, x - half, y + i, 2 * half, 1);
+    }
+}
+
+/* Under a bar from x, w wide, from row y: the triangle where a fill of g_maxvolume (Max Volume, to
+ * which the wheel and a headset's volume are held) ends. None at max:
+ * none with no limit, nor while AirPlay lifts it to 100 (airplay.c). */
+void limit_mark(canvas_t *canvas, unsigned color, int x, int w, int y, int max) {
+    if (g_maxvolume < max) vol_mark(canvas, color, x + w * g_maxvolume / max, y);
+}
+
 /* Classic's page dots back where the volume's number was (vol_paint), if their window still holds
  * them. */
 static void dots_back(void) {
@@ -124,6 +140,7 @@ void vol_paint(widget_t *top, canvas_t *canvas) {
         int L = ipod_light(), bx = 68, bw = 243, y = 271;
         paint_panel(top, canvas, &area, "classic_light_panel_shadow", 0);
         paint_rows_bar(canvas, bx, y, bw, 17, max > 0 ? bw * clamp_step(0, max, level) / max : 0);
+        limit_mark(canvas, RGBA(scheme()->ink), bx, bw, y + 17, max);
         paint_art(top, canvas, L ? "classic_light_spk_quiet_l" : "classic_light_spk_quiet_d", 52,
                   y + 2);
         paint_art(top, canvas, L ? "classic_light_spk_loud_l" : "classic_light_spk_loud_d", 317,
@@ -138,6 +155,7 @@ void vol_paint(widget_t *top, canvas_t *canvas) {
         flat_box(canvas, &area, TOAST_RGBA, 12);
         round_fill(canvas, &track, 0x6b6b6b, 2);
         if (on.w) round_fill(canvas, &on, 0xffffff, 2);
+        limit_mark(canvas, RGBA(0xffffff), track.x, track.w, track.y + track.h, max);
         paint_art(top, canvas, FLAT_ART "spk_quiet", area.x + 16, area.y + 17);
         paint_art(top, canvas, FLAT_ART "spk_loud", area.x + area.w - 38, area.y + 17);
         stock_canvas_set_fill_color(canvas, fill);
@@ -164,6 +182,10 @@ void vol_paint(widget_t *top, canvas_t *canvas) {
         /* Over Now Playing it is the progress bar's own: the accent's fill */
         if (w) fill_box(canvas, &on, RGBA(np ? accent_tone(TONE_LIGHT) : 0xffffff), bar.h / 2);
     }
+    /* Classic's times' paper under the bar, else the band's or panel's white, as the setter shows
+     * it */
+    limit_mark(canvas, beside ? RGBA(scheme()->ink) : ui_ink(0xffffffffu), bar.x, bar.w,
+               bar.y + bar.h, max);
     stock_canvas_set_fill_color(canvas, fill);
     if (beside) {
         vol_end(top, canvas, "classic_light_vol_lo", lo.x + lo.w, 1, &bar);

@@ -34,6 +34,7 @@
   - Library: on a card that was never scanned, **Albums**, **Artists**, **Composers** and **Genres** say **Update Library first**. They said **No albums** and the like, as if the scan had found none.
   - Volume: turning the volume no longer saves the setting at every step. It is saved once, a moment after you stop, and before the Q2 turns off or goes to Standby.
   - Artwork: an ffmpeg that hangs on a bad cover, photo or boot logo is stopped after 10 seconds (20 for a photo). Leaving Cover Flow, Photos or a playlist while one hung could freeze the Q2 until it restarted itself.
+  - Volume: the volume bar shows a small triangle at your **Max Volume** limit, as an iPod's does. With no limit set, nothing shows.
 - **1.9.1**:
   - Standby: going into Standby gives the card up to 2 seconds to finish and unmount before its power is cut, where it used to cut it at once with files still open, which could leave the card marked as not properly unmounted and lose what was still being written.
   - EQ: in **Advanced**, drag a band up or down on the curve to set its gain, as you drag Simple's sliders. Touch the ring of a band that's on. Choose **Apply changes** to hear it.

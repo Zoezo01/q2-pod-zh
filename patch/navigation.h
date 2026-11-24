@@ -617,6 +617,8 @@ int upload_scrobbles(void *ctx, event_t *event);
 
 /* volume.c */
 void vol_paint(widget_t *top, canvas_t *canvas);
+void vol_mark(canvas_t *canvas, unsigned color, int x, int y);
+void limit_mark(canvas_t *canvas, unsigned color, int x, int w, int y, int max);
 
 /* netservice.c: System settings → Network's card app rows */
 int ringnav_netservice(void *win, void *ctx);
