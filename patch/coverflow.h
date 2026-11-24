@@ -197,11 +197,11 @@ void slant_render(unsigned *d, int pitch, int side, int rows, const unsigned *te
 unsigned album_key(void *r);
 unsigned tags_key(const char *artist, const char *album);
 unsigned album_ident(const char *album, const char *album_artist, const char *path);
-int album_art(const char *track, const char *dst, int shared);
+int album_art(const char *track, const char *dst, int shared, unsigned *left);
 void art_note(const char *note, unsigned key, const char *track);
 void art_strike(const char *note);
-int ff_wait(int pid, const char *tmp, const char *dst, int *exited);
-int ff_thumb(const char *src, const char *dst, int w, int h);
+int ff_wait(int pid, const char *tmp, const char *dst, int *exited, unsigned *left);
+int ff_thumb(const char *src, const char *dst, int w, int h, unsigned *left);
 char *art_path(char *out, unsigned key, const char *suffix);
 int cf_decode(const char *url, unsigned *out, int unload, unsigned bar);
 void cf_transpose(unsigned *t, int n);

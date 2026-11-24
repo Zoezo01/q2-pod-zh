@@ -130,6 +130,7 @@ static struct {
     char art_track[64],
         art_tried[64]; /* art_tried: the track whose cover failed, tried art_tries times */
     int art_tries;
+    unsigned art_left; /* ms of ffmpeg its cover has left (UI_FF_WAIT_MS a track) */
 } ui __attribute__((section(".scratch")));
 
 /* c to the datagram socket at path, *sock opened on first use. Shared with radio.c. */
@@ -486,10 +487,11 @@ static void spot_refresh(void) {
     /* ponytail: the cover is sized on the UI thread, one decode a track; a worker if it stutters */
     /* A cover that fails (written after its state line, or bad) is tried again on the next 3 ticks.
      */
-    if (tk_strcmp(ui.art_tried, sp.track)) ui.art_tries = 0;
+    if (tk_strcmp(ui.art_tried, sp.track)) ui.art_tries = 0, ui.art_left = UI_FF_WAIT_MS;
     if (sp.cover && tk_strcmp(ui.art_track, sp.track) && ui.art_tries < 4) {
         int px = I(ui.art, W_W); /* Classic's slanted art is wider */
-        if (thumb(SPOT_COVER, SPOT_ART, px, px) && image_show(ui.art, "file://" SPOT_ART, 0))
+        if (thumb_within(SPOT_COVER, SPOT_ART, px, px, &ui.art_left) &&
+            image_show(ui.art, "file://" SPOT_ART, 0))
             tk_snprintf(ui.art_track, sizeof ui.art_track, "%s", sp.track);
         else {
             tk_snprintf(ui.art_tried, sizeof ui.art_tried, "%s", sp.track);

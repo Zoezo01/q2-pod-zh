@@ -510,7 +510,7 @@ static void *logo_sync(void *unused) {
     else if ((b = read_all(LOGO_SRC, LOGO_MAX, &n)) && jpeg_size(b, n) == (375u << 16 | 320)) {
         free(b),
             b = 0; /* landscape: ffmpeg turns it a quarter clockwise (coverflow.c's ff_thumb) */
-        int status, pid = fork();
+        int pid = fork();
         if (!pid) {
             child_oom_first();
             execl("/usr/bin/ffmpeg", "/usr/bin/ffmpeg", "-nostdin", "-v", "quiet", "-i", LOGO_SRC,
@@ -518,8 +518,11 @@ static void *logo_sync(void *unused) {
                   LOGO_ROT, (char *)0);
             child_exit(127);
         }
-        if (pid > 0 && waitpid(pid, &status, 0) == pid && !status)
-            b = read_all(LOGO_ROT, LOGO_MAX, &n);
+        unsigned left = FF_WAIT_MS;
+        int status = ff_reap(pid, &left); /* -1: a refused fork */
+        if (!status) b = read_all(LOGO_ROT, LOGO_MAX, &n);
+        if (status == 9)
+            err = 0; /* killed (hung, or memory short): the file's no fault, the old stays */
         unlink(LOGO_ROT);
     }
     if (b && jpeg_size(b, n) == (320u << 16 | 375)) {

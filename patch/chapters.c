@@ -8,7 +8,7 @@
 #define CH_CLOEXEC O_CLOEXEC
 #else
 /* demo has no imports for these three libc calls; use Linux o32, as spot_shut does. */
-int chapter_pipe2(int *p, int flags), chapter_kill(int pid, int sig);
+int chapter_pipe2(int *p, int flags);
 int chapter_execv(const char *path, char *const *args);
 __asm__(".set push\n.set noreorder\n"
         ".globl chapter_pipe2\nchapter_pipe2:\nli $v0,4328\nsyscall\n"

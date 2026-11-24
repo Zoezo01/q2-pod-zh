@@ -81,7 +81,7 @@ widget_count_children widget_get_child widget_lookup widget_lookup_by_type widge
 canvas_get_clip_rect canvas_set_clip_rect widget_set_sensitive widget_get_type tk_strcmp widget_animator_destroy
 timer_add timer_remove navigator_back_to_home navigator_back navigator_window_is_exist window_manager_close_window_force navigator_to_with_context bitmap_create_ex bitmap_destroy bitmap_unlock_buffer
 bitmap_lock_buffer_for_read bitmap_lock_buffer_for_write bitmap_get_line_length
-canvas_draw_image slide_menu_set_spacer window_manager window_manager_get_top_window window_manager_is_animating time_now_ms
+canvas_draw_image slide_menu_set_spacer window_manager window_manager_get_top_window window_manager_is_animating time_now_ms sleep_ms
 widget_to_local widget_animator_pause window_manager_get_pointer_pressed image_manager image_manager_unload_bitmap_by_name image_manager_unload_all
 on_home_music_onclick on_home_stream_onclick widget_layout widget_destroy widget_paint canvas_translate widget_set_prop_str
 canvas_offline_create canvas_offline_begin_draw canvas_offline_end_draw canvas_offline_destroy
@@ -294,6 +294,7 @@ void *window_manager_get_top_window(void *wm) { return top_window; }
 int window_manager_is_animating(void *wm) { return animating; }
 static unsigned clock_ms, pressed = 1, paused;
 unsigned time_now_ms(void) { return clock_ms; }
+int sleep_ms(unsigned ms) { return usleep(ms * 1000); } /* ff_reap's, on the real clock */
 int window_manager_get_pointer_pressed(void *wm) { return pressed; }
 int widget_animator_pause(void *a) { ++paused; return 0; }
 static int animators_gone;

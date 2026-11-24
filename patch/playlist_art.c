@@ -219,10 +219,11 @@ static unsigned quad(unsigned k, unsigned i) {
 }
 
 /* at.tmp.jpg, whole, as at.jpg, its small copy at_s.jpg named first, so at.jpg means both. */
-static int publish(const char *at) {
+static int publish(const char *at, unsigned *left) {
     char big[540], tmp[540], small[540], stmp[540];
     named(tmp, at, ".tmp.jpg"), named(stmp, at, "_s.tmp.jpg");
-    int ok = thumb(tmp, stmp, PL_SMALL, PL_SMALL) && !rename(stmp, named(small, at, "_s.jpg"));
+    int ok = thumb_within(tmp, stmp, PL_SMALL, PL_SMALL, left) &&
+             !rename(stmp, named(small, at, "_s.jpg"));
     if (ok && !rename(tmp, named(big, at, ".jpg"))) return 1;
     if (ok) unlink(small);
     unlink(tmp), unlink(stmp);
@@ -237,13 +238,13 @@ static void mark(const char *at) {
 }
 
 /* The 2x2 of k 160 px covers into at.tmp.jpg; one cover alone, whole. */
-static int tile(char (*cover)[540], unsigned k, const char *at) {
+static int tile(char (*cover)[540], unsigned k, const char *at, unsigned *left) {
     char tmp[540], ff[548];
-    if (k == 1) return thumb(cover[0], named(tmp, at, ".tmp.jpg"), ART_SIZE, ART_SIZE);
+    if (k == 1) return thumb_within(cover[0], named(tmp, at, ".tmp.jpg"), ART_SIZE, ART_SIZE, left);
     const char *in[4] = { cover[quad(k, 0)], cover[quad(k, 1)], cover[quad(k, 2)],
                           cover[quad(k, 3)] };
     tk_snprintf(ff, sizeof ff, "%s.ff", named(tmp, at, ".tmp.jpg"));
-    int exited, pid = fork();
+    int exited, pid = *left >= 20 ? fork() : -1; /* none with its time spent: as a kill */
     if (!pid) {
         child_oom_first();
         execl(ART_FFMPEG, ART_FFMPEG, "-nostdin", "-v", "quiet", "-xerror", "-i", in[0], "-i",
@@ -251,7 +252,7 @@ static int tile(char (*cover)[540], unsigned k, const char *at) {
               "-pix_fmt", "yuvj420p", "-q:v", "3", "-f", "mjpeg", "-y", ff, (char *)0);
         child_exit(127);
     }
-    return ff_wait(pid, ff, tmp, &exited);
+    return ff_wait(pid, ff, tmp, &exited, left);
 }
 
 /* The 2x2 of s's albums, named at: the first four with art in song id order, so songs added after
@@ -281,15 +282,18 @@ static int four(pl_songs_t *s, const char *at, unsigned kills) {
         if (tries++ == PL_TRIES) break;
         tk_snprintf(cover[k], 540, "%s_%u.tmp.jpg", at, k);
         art_note(PL_BUILDING, a->key, a->url); /* an album that kills demo is struck, not retried */
-        int got = !pl.cancel && album_art(a->url, cover[k], 0); /* a clean end since: not begun */
+        unsigned left = FF_WAIT_MS; /* each album's own, as Cover Flow's: a hung one costs one */
+        int got =
+            !pl.cancel && album_art(a->url, cover[k], 0, &left); /* a clean end since: not begun */
         unlink(PL_BUILDING);
         if (got)
             temp |= 1u << k++;
         else if (unlink(cover[k]), pl.cancel || access(ART_DIR, 0))
             break; /* stopped, or the card is gone */
     }
-    /* stopped (the page closed, a join waits): nothing named, no marker */
-    int made = k && !pl.cancel && tile(cover, k, at) && publish(at);
+    /* stopped (the page closed, a join waits): nothing named, no marker; the 2x2 its own time */
+    unsigned left = FF_WAIT_MS;
+    int made = k && !pl.cancel && tile(cover, k, at, &left) && publish(at, &left);
     if (!made && !pl.cancel && kills == ff_kills && !access(ART_DIR, 0)) mark(at);
     for (unsigned i = 0; i < 4; ++i)
         if (temp & 1u << i) unlink(cover[i]);
@@ -304,7 +308,7 @@ static int four(pl_songs_t *s, const char *at, unsigned kills) {
 static int pl_build(pl_job_t *j) {
     char src[600], at[512], path[540];
     if (access(ART_DIR, 0) || !card_space(ART_DIR)) return 0;
-    unsigned kills = ff_kills, pic = picture(j->name, src);
+    unsigned kills = ff_kills, pic = picture(j->name, src), left = FF_WAIT_MS; /* its picture's */
     long n = pic ? file_size(named(path, stem(at, "plc", j->cd_num, pic), ".jpg")) : 0;
     if (n > 0) return 0;
     int w = 0, h = 0;
@@ -314,8 +318,8 @@ static int pl_build(pl_job_t *j) {
     } else if (n < 0) {
         /* by ffmpeg alone: any file the user drops there, which stock's decoder in demo could die
          * on at every open */
-        if (ff_thumb(src, named(path, at, ".tmp.jpg"), ART_SIZE, ART_SIZE) && !pl.cancel &&
-            publish(at))
+        if (ff_thumb(src, named(path, at, ".tmp.jpg"), ART_SIZE, ART_SIZE, &left) && !pl.cancel &&
+            publish(at, &left))
             return 1;
         unlink(path);
         if (pl.cancel || access(src, 4) || access(ART_DIR, 0) || kills != ff_kills)

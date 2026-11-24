@@ -26,7 +26,8 @@ class Ui(C.Structure):
     _fields_ = [*((n, C.c_void_p) for n in 'page info msg art bar glyph title artist album elapsed remain note sub'.split()),
                 *((n, C.c_uint) for n in 'timer leave scrub_at shown playing press press_at bar_drawn'.split()),
                 *((n, C.c_int) for n in ('scrub', 'scrub_ms', 'ipod')),
-                ('art_track', C.c_char * 64), ('art_tried', C.c_char * 64), ('art_tries', C.c_int)]
+                ('art_track', C.c_char * 64), ('art_tried', C.c_char * 64), ('art_tries', C.c_int),
+                ('art_left', C.c_uint)]
 
 
 class Clock:
@@ -576,6 +577,33 @@ def test_a_cover_that_fails_is_tried_on_the_next_3_ticks_then_left(fw):
     np.sp.track = b'spotify:track:2'
     np.tick()
     assert len(thumbs.asked) == 5
+
+
+def test_a_hung_cover_ffmpeg_holds_the_ui_3_s_once_a_track(fw):
+    """The cover is sized on the UI thread: a hung ffmpeg is killed at UI_FF_WAIT_MS (3 s), and the track's later
+    tries start none, their time spent; the next track has 3 s again."""
+    Thumbs(fw, ok=0)
+    np = Np(fw, **TRACK | dict(cover=1))
+    forks, killed = [], []
+    fw.mock('fw_access', lambda *_: 0)
+    fw.mock('fw_fork', lambda *_: forks.append(np.clock.now) or 4242)
+    fw.mock('chapter_kill', lambda pid, sig, *_: killed.append(np.clock.now))
+
+    def wait(pid, status, *_):
+        if not killed:
+            return 0
+        C.c_int.from_address(status).value = 9
+        return pid
+    fw.mock('fw_waitpid', wait)
+    start = np.clock.now
+    np.tick()
+    assert len(forks) == 1 and killed == [start + 3000] and np.clock.now <= start + 3020
+    for _ in range(3):
+        np.tick()
+    assert len(forks) == 1  # the track's 3 s are spent
+    np.sp.track, killed[:] = b'spotify:track:2', []
+    np.tick()
+    assert len(forks) == 2
 
 
 def test_the_bar_repaints_only_when_its_width_or_the_scrub_s_colour_moves(fw):

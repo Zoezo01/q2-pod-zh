@@ -314,6 +314,26 @@ def test_no_fork_keeps_the_old_logo(fw, power):
     assert logo_sync(fw, power) and card.files[LOGO_DST] == old and not fw.calls('fw_waitpid')
 
 
+def test_a_hung_turn_is_killed_at_the_limit_and_the_logo_thread_ends(fw, power):
+    """An ffmpeg that never ends is killed at FF_WAIT_MS (10 s): the old logo stays, nothing is said (the file was
+    not refused: "must be a 320x375 JPEG" would be untrue) and logo_busy clears, so the next mount copies again."""
+    old = jpeg(320, 375, tag=b'old')
+    card = Card(fw, {LOGO_SRC: jpeg(375, 320), LOGO_DST: old})
+    card.rot, clock, killed = jpeg(320, 375, tag=b'turned'), Clock(fw, now=0), []
+    fw.mock('sleep_ms', lambda ms, *_: setattr(clock, 'now', clock.now + ms))
+    fw.mock('chapter_kill', lambda pid, sig, *_: killed.append((pid, sig)))
+
+    def wait(pid, status, *_):
+        if not killed:
+            return 0  # still running (a blocking wait too: answered, so an endless one fails rather than hangs)
+        card.status = 9
+        return card.wait(pid, status)
+    fw.mock('fw_waitpid', wait)
+    power('logo_busy').value = 1
+    assert logo_sync(fw, power) is None and card.files[LOGO_DST] == old and killed == [(card.pid, 9)]
+    assert 10000 <= clock.now <= 10020 and power('logo_busy').value == 0 and LOGO_ROT not in card.files
+
+
 def test_the_child_runs_ffmpeg_on_the_card_logo(fw, power):
     card = Card(fw, {LOGO_SRC: jpeg(375, 320)})
     card.pid = 0

@@ -41,6 +41,10 @@ char *tidal_name(char *out, unsigned n, const char *key, const char *artist, con
 extern int stock_tidal_trampoline(const char *url);
 
 #define TIDAL_STOP_MS 3000 /* stopped this long, the player was stopped, not between tracks */
+/* tag()'s remux, killed after this (ff_reap): it copies a whole song on the card (a 24-bit album
+ * track, 100 MB and more) on the download thread. ponytail: a guess, 5 minutes; FF_WAIT_MS is a
+ * picture's. */
+#define TIDAL_TAG_MS 300000
 #define TIDAL_FFMPEG "/usr/bin/ffmpeg"
 #define TIDAL_COVER "/tmp/.tidal_cover.jpg" /* the running download's cover, the worker's alone */
 #define TIDAL_TAG 200                       /* a tag's bytes, with "artist=" and its NUL */
@@ -159,7 +163,7 @@ static int synced(const char *path) {
  * rewrites the whole file once more on the card. */
 static void tag(const char *tmp, char (*tags)[TIDAL_TAG], int pic) {
     char out[sizeof td.path + 12];
-    int flac = strstr(tmp, ".flac.tmp") != 0, status = -1;
+    int flac = strstr(tmp, ".flac.tmp") != 0;
     tk_snprintf(out, sizeof out, "%s.tag.tmp", tmp);
     int pid = fork();
     if (!pid) {
@@ -175,10 +179,8 @@ static void tag(const char *tmp, char (*tags)[TIDAL_TAG], int pic) {
                   "-f", flac ? "flac" : "ipod", "-y", out, (char *)0);
         child_exit(127);
     }
-    while (pid > 0 && waitpid(pid, &status, 0) < 0 &&
-           *__errno_location() == 4) { /* EINTR: reap it */
-    }
-    if (!status && file_size(out) > 0 && synced(out) && !rename(out, tmp)) return;
+    unsigned left = TIDAL_TAG_MS; /* a hung remux is killed: a failure, as any */
+    if (!ff_reap(pid, &left) && file_size(out) > 0 && synced(out) && !rename(out, tmp)) return;
     if (!access(out, 0)) unlink(out);
 }
 

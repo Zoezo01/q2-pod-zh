@@ -12,6 +12,7 @@ from types import SimpleNamespace
 import pytest
 
 import host
+import test_playlist_art
 from conftest import O, Card as BaseCard, Config, Deques, Dirent, Externpic, Files, ask_cover, block, claim, fnv1a, high_halves, in_fork
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -78,7 +79,7 @@ def api(fw):
            'coverflow__stamp': (u, ptr), 'coverflow__lift': (None, i, u), 'coverflow__sort_saved': (i,),
            'coverflow_sort_name': (C.c_char_p,), 'coverflow_sort_step': (None,), 'coverflow__sort_next': (i, i),
            'blob_io': (i, C.c_char_p, C.c_char_p, ptr, u, i), 'file_size': (C.c_long, C.c_char_p),
-           'coverflow__ff_run': (i, C.c_char_p, C.c_char_p, i, i, ptr), 'coverflow__build_art': (None, ptr),
+           'coverflow__ff_run': (i, C.c_char_p, C.c_char_p, i, i, ptr, ptr), 'coverflow__build_art': (None, ptr),
            'coverflow__worker': (ptr, ptr), 'art_strike': (None, C.c_char_p), 'coverflow_clean_end': (None,),
            'thumb': (i, C.c_char_p, C.c_char_p, i, i),
            'coverflow__grid_cover': (i, C.c_char_p, C.c_char_p, i, i, i), 'coverflow_album_cover': (i, C.c_char_p, C.c_char_p, i, i),
@@ -1400,6 +1401,9 @@ def test_blob_io_a_failed_flush_or_close_is_a_failed_write_too(fw, step):
     assert g.blob_io(b'/a', b'/a.tmp', buf, 4, 1) == 0 and card.files['/a'] == b'old!'
 
 
+FF_WAIT_MS = 10000
+
+
 def statuses(fw, status):
     fw.mock('fw_fork', lambda *_: 1234)
 
@@ -1415,7 +1419,7 @@ def test_ff_run_a_run_that_reached_ffmpeg_s_own_exit(fw, status, exited):
     Card(fw, {'/d.ff': b'jpg'})
     statuses(fw, status)
     got = C.c_int(-1)
-    ok = g.ff_run(b'/s', b'/d', 160, 160, r(got))
+    ok = g.ff_run(b'/s', b'/d', 160, 160, r(got), budget())
     assert got.value == exited and ok == (status == 0)
     assert fw.var('ff_kills', C.c_uint).value == (0 if exited else 1)
 
@@ -1424,17 +1428,17 @@ def test_ff_run_success_renames_the_picture_into_place(fw):
     g = api(fw)
     card = Card(fw, {'/d.ff': b'jpg'})
     statuses(fw, 0)
-    assert g.ff_run(b'/s', b'/d', 160, 160, r(C.c_int())) == 1 and card.files == {'/d': b'jpg'}
+    assert g.ff_run(b'/s', b'/d', 160, 160, r(C.c_int()), budget()) == 1 and card.files == {'/d': b'jpg'}
 
 
 def test_ff_run_an_empty_or_failed_output_leaves_the_destination_alone(fw):
     g = api(fw)
     card = Card(fw, {'/d.ff': b'', '/d': b'old'})
     statuses(fw, 0)
-    assert g.ff_run(b'/s', b'/d', 160, 160, r(C.c_int())) == 0 and card.files == {'/d': b'old'}
+    assert g.ff_run(b'/s', b'/d', 160, 160, r(C.c_int()), budget()) == 0 and card.files == {'/d': b'old'}
     card.files['/d.ff'] = b'partial'
     statuses(fw, 9)
-    assert g.ff_run(b'/s', b'/d', 160, 160, r(C.c_int())) == 0 and card.files == {'/d': b'old'}
+    assert g.ff_run(b'/s', b'/d', 160, 160, r(C.c_int()), budget()) == 0 and card.files == {'/d': b'old'}
 
 
 def test_ff_run_a_refused_fork_counts_as_killed(fw):
@@ -1442,7 +1446,7 @@ def test_ff_run_a_refused_fork_counts_as_killed(fw):
     Card(fw)
     fw.mock('fw_fork', lambda *_: -1)
     got = C.c_int(-1)
-    assert g.ff_run(b'/s', b'/d', 160, 160, r(got)) == 0 and got.value == 0
+    assert g.ff_run(b'/s', b'/d', 160, 160, r(got), budget()) == 0 and got.value == 0
     assert fw.var('ff_kills', C.c_uint).value == 1
 
 
@@ -1461,7 +1465,247 @@ def test_ff_run_a_signal_mid_wait_waits_again(fw):
         C.c_int.from_address(out).value = 0
         return pid
     fw.mock('fw_waitpid', wait)
-    assert g.ff_run(b'/s', b'/d', 160, 160, r(C.c_int())) == 1 and len(tries) == 2
+    assert g.ff_run(b'/s', b'/d', 160, 160, r(C.c_int()), budget()) == 1 and len(tries) == 2
+
+
+
+def budget(ms=FF_WAIT_MS):
+    """A request's ffmpeg time, as ff_run takes it."""
+    return r(C.c_uint(ms))
+
+
+class Hung:
+    """ffmpeg's child on a damaged file, ending by itself at exits_at ms (None: never), on a clock sleep_ms moves:
+    a look (WNOHANG) answers 0 until then; chapter_kill's SIGKILL ends it (status 9), unless stuck (in the card's
+    I/O: it never ends). A blocking wait is answered 0 and counted, so a wait without a limit fails the test."""
+    def __init__(self, fw, exits_at=None, status=0, stuck=False):
+        self.now, self.exits_at, self.status, self.stuck = 0, exits_at, status, stuck
+        self.killed, self.blocked, self.forks = [], 0, 0
+        fw.mock('fw_fork', self.fork)
+        fw.mock('time_now_ms', lambda *_: self.now)
+        fw.mock('sleep_ms', lambda ms, *_: setattr(self, 'now', self.now + ms))
+        fw.mock('chapter_kill', self.kill)
+        fw.mock('fw_waitpid', self.wait)
+
+    def fork(self, *_):
+        self.dead, self.forks = 0, self.forks + 1
+        return 1234
+
+    def kill(self, pid, sig, *_):
+        self.killed.append((pid, sig))
+        self.dead = not self.stuck
+
+    def wait(self, pid, out, options, *_):
+        ended = self.exits_at is not None and self.now >= self.exits_at
+        if not (self.dead or ended):
+            self.blocked += options != 1
+            return 0
+        C.c_int.from_address(out).value = 9 if self.dead else self.status
+        return pid
+
+
+def test_ff_run_a_hung_ffmpeg_is_killed_at_the_limit_and_fails(fw):
+    g = api(fw)
+    card = Card(fw, {'/d.ff': b'part'})
+    hung = Hung(fw)
+    got, left = C.c_int(-1), C.c_uint(FF_WAIT_MS)
+    assert g.ff_run(b'/s', b'/d', 160, 160, r(got), r(left)) == 0 and hung.killed == [(1234, 9)] and not hung.blocked
+    assert FF_WAIT_MS <= hung.now <= FF_WAIT_MS + 20 and got.value == 0 and card.files == {} and left.value == 0
+    assert fw.var('ff_kills', C.c_uint).value == 1  # as the kernel's kill: no "no art" marker follows
+
+
+def test_ff_run_a_killed_child_that_never_dies_is_given_up_after_a_second(fw):
+    """A child in the card's I/O (a failing card) outlives SIGKILL: after FF_GRACE_MS of looks it is left unreaped
+    and the run counts as killed, rather than a blocking reap holding the caller."""
+    g = api(fw)
+    Card(fw)
+    hung = Hung(fw, stuck=True)
+    got = C.c_int(-1)
+    assert g.ff_run(b'/s', b'/d', 160, 160, r(got), budget()) == 0 and hung.killed == [(1234, 9)]
+    assert not hung.blocked and hung.now <= FF_WAIT_MS + 1000 + 20 and got.value == 0
+    assert fw.var('ff_kills', C.c_uint).value == 1
+
+
+@pytest.mark.parametrize('ms', [0, 19])  # under a poll's 20 ms: a start would only be killed at its first look
+def test_ff_run_with_its_request_s_time_spent_starts_no_ffmpeg(fw, ms):
+    g = api(fw)
+    Card(fw)
+    hung = Hung(fw)
+    got = C.c_int(-1)
+    assert g.ff_run(b'/s', b'/d', 160, 160, r(got), budget(ms)) == 0 and hung.forks == 0 and got.value == 0
+    assert fw.var('ff_kills', C.c_uint).value == 1  # a kill's failure: no marker
+
+
+@pytest.mark.parametrize('clock', ['back', 'stuck'])
+def test_ff_run_a_clock_stepped_back_or_stuck_mid_wait_still_kills_within_the_limit(fw, clock):
+    """time_now_ms is stock's CLOCK_MONOTONIC; still, a clock set back 50 s mid-wait reads as past the limit (the
+    difference is unsigned), and one that stops is caught by each look counting its 20 ms sleep. Without that
+    count the stuck clock is let go only after ten times the sleeps, and the test fails."""
+    g = api(fw)
+    Card(fw)
+    hung = Hung(fw)
+    hung.now, sleeps = 50000, []
+
+    def sleep(ms, *_):
+        sleeps.append(ms)
+        if clock == 'back':
+            hung.now = 0 if len(sleeps) == 5 else hung.now + ms
+        elif len(sleeps) > 10 * FF_WAIT_MS // 20:
+            hung.now += FF_WAIT_MS  # the guard's stand-in, so a wait without the count ends rather than hangs
+    fw.mock('sleep_ms', sleep)
+    assert g.ff_run(b'/s', b'/d', 160, 160, r(C.c_int()), budget()) == 0 and hung.killed == [(1234, 9)]
+    assert sum(sleeps) <= FF_WAIT_MS + 20
+
+
+@pytest.mark.parametrize('at', [20, FF_WAIT_MS - 20])
+def test_ff_run_an_ffmpeg_that_ends_within_the_limit_is_not_killed(fw, at):
+    g = api(fw)
+    card = Card(fw, {'/d.ff': b'jpg'})
+    hung = Hung(fw, exits_at=at)
+    left = C.c_uint(FF_WAIT_MS)
+    assert g.ff_run(b'/s', b'/d', 160, 160, r(C.c_int()), r(left)) == 1 and not hung.killed and card.files == {'/d': b'jpg'}
+    assert left.value == FF_WAIT_MS - at  # what it ran is taken from the request's time
+
+
+def test_build_art_a_hung_ffmpeg_leaves_no_marker_so_the_next_open_retries(fw):
+    g = api(fw)
+    card = Card(fw, {'/m/a.mp3': b''})
+    builder(fw, card, ff=0)
+    hung = Hung(fw)
+    g.build_art(r(job(b'/m/a.mp3')))
+    assert hung.killed and art(0xabc) not in card.files
+
+
+BESIDE = ('cover.jpg', 'folder.jpg', 'cover.png', 'folder.png', 'cover.webp', 'folder.webp')
+
+
+def test_build_art_an_album_whose_every_file_hangs_costs_one_budget_not_seven(fw):
+    """Six cover files beside the track and the track itself, each hanging ffmpeg, were seven 10 s runs, 70 s, all
+    of which a join after Cover Flow's close waited out: the album has one FF_WAIT_MS for all of them, so one run
+    starts and is killed, and the later names start none (each is still looked at)."""
+    g = api(fw)
+    card = Card(fw, {'/m/a.mp3': b'', **{'/m/' + n: b'x' for n in BESIDE}})
+    builder(fw, card)  # stock decodes none of them
+    hung = Hung(fw)
+    g.build_art(r(job(b'/m/a.mp3')))
+    assert hung.forks == 1 and hung.killed == [(1234, 9)] and hung.now <= FF_WAIT_MS + 20
+    assert art(0xabc) not in card.files  # a kill: retried at the next open
+
+
+def test_build_art_a_folder_image_stock_reads_still_counts_after_the_budget_is_spent(fw):
+    """cover.jpg hangs ffmpeg and spends the album's time; folder.jpg, which stock decodes in demo with no ffmpeg,
+    is still read and is the album's art."""
+    g = api(fw)
+    card = Card(fw, {'/m/a.mp3': b'', '/m/cover.jpg': b'x', '/m/folder.jpg': b'x'})
+    builder(fw, card)
+
+    def stock(src, dst, *_):
+        if C.string_at(src) != b'/m/folder.jpg':
+            return 0
+        card.files[C.string_at(dst).decode()] = b'art'
+        return 1
+    fw.mock('toolsThumbSpecCover', stock)
+    hung = Hung(fw)
+    g.build_art(r(job(b'/m/a.mp3')))
+    assert hung.forks == 1 and hung.killed and card.files[art(0xabc)] == b'art'
+
+
+PL_AT = '/mnt/mmc/.coverflow/pl_3_00000001'
+
+
+def pl_runs(fw, card, plan, cancel_at=None):
+    """Each ffmpeg a playlist job starts takes 1000 ms of a clock sleep_ms moves; plan[i] is the i-th run's end:
+    'none' (exit 1, no picture), 'cover' (album k's picture), 'tile' (the 2x2). cancel_at: the run during which the
+    page closes (pl.cancel)."""
+    st = dict(now=0, at=0, run=-1, k=0)
+    pl = fw.var('playlist_art__pl', test_playlist_art.Pl)
+    pl.cancel = 0
+
+    def fork(*_):
+        st['run'] += 1
+        st['at'] = st['now']
+        if st['run'] == cancel_at:
+            pl.cancel = 1
+        return 1234
+
+    def wait(pid, out, *_):
+        if st['now'] - st['at'] < 1000:
+            return 0
+        what = plan[st['run']]
+        if what == 'cover':
+            card.files[f"{PL_AT}_{st['k']}.tmp.jpg.ff"] = b'jpg'
+            st['k'] += 1
+        elif what == 'tile':
+            card.files[PL_AT + '.tmp.jpg.ff'] = b'2x2'
+        C.c_int.from_address(out).value = 1 << 8 if what == 'none' else 0
+        return pid
+    fw.mock('fw_fork', fork)
+    fw.mock('fw_waitpid', wait)
+    fw.mock('time_now_ms', lambda *_: st['now'])
+    fw.mock('sleep_ms', lambda ms, *_: st.__setitem__('now', st['now'] + ms))
+    fw.mock('chapter_kill', lambda *_: pytest.fail('a healthy run killed'))
+    fw.mock('toolsGetAlbumCover', lambda *_: 0)
+    fw.mock('toolsThumbSpecCover', lambda src, dst, *_: card.files.__setitem__(C.string_at(dst).decode(), b's') or 1)
+    return st, pl
+
+
+def pl_albums(fw, card, n):
+    tracks = [(str(100 + i), f'/m/{i}/a.flac', f'Album {i}', 'Artist', '') for i in range(n)]
+    card.files.update({t[1]: b'' for t in tracks})
+    return test_playlist_art.songs(fw, tracks, collect=1)
+
+
+def test_a_playlist_of_artless_albums_then_four_with_art_still_gets_its_2x2(fw):
+    """Twelve albums without art (a quick failing ffmpeg each, here 1 s) before four with art: each album try has
+    its own FF_WAIT_MS, as a Cover Flow album has, and the 2x2 its own, so none is starved by the others."""
+    card = Card(fw, {'/mnt/mmc/.coverflow': b''})
+    s = pl_albums(fw, card, 16)
+    st, _ = pl_runs(fw, card, ['none'] * 12 + ['cover'] * 4 + ['tile'])
+    four = fw.fn('playlist_art__four', C.c_int, C.c_void_p, C.c_char_p, C.c_uint)
+    assert four(C.byref(s), PL_AT.encode(), fw.var('ff_kills', C.c_uint).value) == 1
+    assert st['run'] == 16 and card.files[PL_AT + '.jpg'] == b'2x2' and PL_AT + '_s.jpg' in card.files
+
+
+def test_a_playlist_job_cancelled_mid_way_stops_before_the_2x2(fw):
+    card = Card(fw, {'/mnt/mmc/.coverflow': b''})
+    s = pl_albums(fw, card, 6)
+    st, pl = pl_runs(fw, card, ['cover'] * 6 + ['tile'], cancel_at=1)
+    four = fw.fn('playlist_art__four', C.c_int, C.c_void_p, C.c_char_p, C.c_uint)
+    assert four(C.byref(s), PL_AT.encode(), fw.var('ff_kills', C.c_uint).value) == 0
+    assert st['run'] == 1 and pl.cancel == 1  # no further album, no 2x2
+    assert not any(p.startswith(PL_AT) for p in card.files)  # nothing named, no marker
+
+
+def test_build_art_a_cancelled_worker_writes_no_marker(fw):
+    """Cover Flow closed mid-album: the album gets no verdict, even one its ffmpeg gave as the picture's fault."""
+    g = api(fw)
+    card = Card(fw, {'/m/a.mp3': b''})
+    builder(fw, card, ff=1 << 8)
+    c = cf(fw)
+    c.cancel = 0
+    fw.mock('fw_fork', lambda *_: setattr(c, 'cancel', 1) or 1234)
+    g.build_art(r(job(b'/m/a.mp3')))
+    assert c.cancel == 1 and art(0xabc) not in card.files
+
+
+def test_player_cover_with_every_candidate_hanging_holds_its_lock_one_budget(fw):
+    """Now Playing's art runs under stock's g_playcover_mutex, which Cover Flow's worker waits for: six hanging cover
+    files and the track are one FF_WAIT_MS in all."""
+    g = api(fw)
+    Card(fw, {'/m/a.flac': b'', **{'/m/' + n: b'x' for n in BESIDE}})
+    fw.mock('toolsGetExternCover', lambda *_: 0)
+    hung = Hung(fw)
+    assert g.coverflow_player_cover(b'/m/a.flac', b'/d', 240, 240) == 0
+    assert hung.forks == 1 and hung.killed == [(1234, 9)] and hung.now <= FF_WAIT_MS + 20
+
+
+def test_grid_cover_a_hung_ffmpeg_is_not_a_miss(fw):
+    g = api(fw)
+    ogg_rig(fw)
+    hung = Hung(fw)
+    g.coverflow_grid_cover(b'/m/a.ogg', b'/d', 1, 1)
+    g.coverflow_grid_cover(b'/m/a.ogg', b'/d', 1, 1)
+    assert len(hung.killed) == 2  # each ask its own budget: tried again, as a slow card may manage it then
 
 
 def art(key, suffix=''):
@@ -1648,7 +1892,7 @@ def test_a_clean_end_mid_build_stops_the_worker_before_the_next_album_s_note(fw,
     c = cf(fw)
     c.jobs, c.total, c.done, c.cancel = C.addressof(jobs), 2, 0, 0
     assert g.worker(None) is None and c.done == (during == 'cover')
-    assert set(card.files) == {'/m/a.mp3', '/m/b.mp3'} | ({art(0xa)} if during == 'cover' else set())
+    assert set(card.files) == {'/m/a.mp3', '/m/b.mp3'}  # a stopped mid-album gets no verdict either
 
 
 def png(w, h):

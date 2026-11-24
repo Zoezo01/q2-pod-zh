@@ -516,6 +516,33 @@ def test_a_photo_nothing_decodes_gets_the_bad_marker(fw):
     assert (path, 0) in card.asked and {m for p, m in card.asked if p.startswith(CACHE)} == {0}  # still there? F_OK
 
 
+@pytest.mark.parametrize('ends_at, made', [(15000, True), (None, False)])
+def test_a_full_size_photo_has_ph_ff_wait_ms_not_a_cover_s_ten_seconds(fw, ends_at, made):
+    """A camera photo stock refuses goes whole to ffmpeg, which may take longer than a cover's FF_WAIT_MS (10 s): one
+    still decoding at 15 s is waited for; one still running at PH_FF_WAIT_MS (20 s) is killed, with no marker."""
+    path = f'{ROOT}/a.jpg'
+    card = Card(fw, {path: head(1)})
+    Thumbs(fw, card, bad={path})
+    now, killed = [0], []
+    fw.mock('fw_fork', lambda *_: 1234)
+    fw.mock('time_now_ms', lambda *_: now[0])
+    fw.mock('sleep_ms', lambda ms, *_: now.__setitem__(0, now[0] + ms))
+    fw.mock('chapter_kill', lambda pid, sig, *_: killed.append((pid, sig)))
+
+    def wait(pid, out, *_):
+        if not killed and (ends_at is None or now[0] < ends_at):
+            return 0
+        if not killed:
+            card.files[cached(path, '.tmp') + '.ff'] = b'jpeg'
+        C.c_int.from_address(out).value = 9 if killed else 0
+        return pid
+    fw.mock('fw_waitpid', wait)
+    worker_state(fw, [path])
+    got = build(fw)
+    assert (got != PH_BAD) == made and (cached(path) in card.files) == made and cached(path, '.bad') not in card.files
+    assert killed == ([] if made else [(1234, 9)]) and (made or 20000 <= now[0] <= 20020)
+
+
 @pytest.mark.parametrize('killed', (1, 0))
 def test_a_photo_whose_ffmpeg_was_killed_or_never_started_gets_no_marker(fw, killed):
     """ffmpeg's child is the OOM killer's pick when memory is short (#216), and a big picture's only decoder, or its

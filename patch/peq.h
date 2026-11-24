@@ -17,7 +17,9 @@
 #include <string.h>
 #include <math.h>
 #include <unistd.h>
+#include <signal.h>
 #define child_exit _exit
+#define chapter_kill kill
 static inline void child_oom_first(void) {
     int fd = open("/proc/self/oom_score_adj", O_WRONLY);
     if (fd >= 0) write(fd, "1000", 4), close(fd);
@@ -30,6 +32,7 @@ static inline void crash_note(const char *path, const char *file, const char *lo
 #include "peq_platform.h"
 #define PEQ_ROOT "" /* host tests pass a scratch directory */
 void child_exit(int status) __attribute__((noreturn));
+int chapter_kill(int pid, int sig); /* chapters.c: kill(2), which demo does not import */
 void child_oom_first(
     void); /* between fork and exec: the OOM killer takes this child, not demo (#169) */
 void ringnav_clean_end(
@@ -359,11 +362,13 @@ int csv_toggle(char *list, unsigned size, const char *item);
 int text_differs(widget_t *w, const char *s);
 void *song_list(void);                              /* coverflow.c: an empty stSongInfo deque */
 long file_size(const char *path);                   /* coverflow.c: -1 when it can't be opened */
+int ff_reap(int pid, unsigned *left);               /* coverflow.c: a child reaped within *left */
 int picture_size(const char *path, int *w, int *h); /* coverflow.c */
 void *read_all(const char *path, unsigned max, unsigned *size); /* scrobble.c */
 int sfnt_whole(const unsigned char *b, unsigned n);             /* script.c */
 int visual(widget_t *s, int n, int *c, int *frac);
 int thumb(const char *src, const char *dst, int w, int h);
+int thumb_within(const char *src, const char *dst, int w, int h, unsigned *left);
 extern volatile unsigned ff_kills; /* coverflow.c: ffmpeg runs killed or never started */
 int card_space(const char *dir);
 int card_room(const char *dir, unsigned mb, unsigned pct);

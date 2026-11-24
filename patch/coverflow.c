@@ -235,13 +235,48 @@ long file_size(const char *path) {
 /* Runs that never reached ffmpeg's own exit, from any thread (counted atomically, so none is
  * lost); build_art and photos.c compare before and after. */
 volatile unsigned ff_kills __attribute__((section(".scratch")));
+/* Child pid's wait status, -1 when there is none to reap, what it ran taken from *left: the ms its
+ * request (one picture, every ffmpeg tried for it) has left. One still running when that is spent
+ * is killed (SIGKILL: status 9). Polled every 20 ms, radio_halt's way; the clock (time_now_ms,
+ * stock's CLOCK_MONOTONIC) is read only once the child has not ended at the first look, and each
+ * poll counts at least the 20 ms slept before it, so no clock makes the wait endless. A killed
+ * child still not reaped after FF_GRACE_MS of polls (uninterruptible I/O on a failing card) is
+ * given up as killed and left unreaped: a zombie once its I/O ends, the lesser harm than holding
+ * the caller. Shared with system.c's logo and tidal.c's tagger. ponytail: those children are not
+ * capped, one a request at most, each holding its memory while stuck and a zombie until demo
+ * exits; a short list of held pids, reaped without blocking at each run, and no new run while it
+ * is full, would lift that. */
+int ff_reap(int pid, unsigned *left) {
+    int status = -1, got, killed = 0;
+    unsigned start = 0, polls = 0, ran = 0;
+    while (pid > 0 && (got = waitpid(pid, &status, 1)) != pid) { /* WNOHANG */
+        if (got < 0 && *__errno_location() != 4) {               /* not EINTR: none to reap */
+            status = -1;
+            break;
+        }
+        if (got < 0) continue;
+        unsigned now = time_now_ms();
+        if (!polls++) start = now;
+        ran = now - start > 20 * (polls - 1) ? now - start : 20 * (polls - 1);
+        if (killed && ++killed > FF_GRACE_MS / 20) {
+            status = 9; /* killed, not yet dead: left unreaped */
+            break;
+        }
+        if (!killed && ran >= *left) chapter_kill(pid, 9), killed = 1;
+        sleep_ms(20);
+    }
+    if (polls) { /* the last sleep too */
+        unsigned now = time_now_ms() - start;
+        ran = now > 20 * polls ? now : 20 * polls;
+    }
+    *left = ran < *left ? *left - ran : 0;
+    return status;
+}
+
 /* The wait for ffmpeg's child pid, writing tmp, which is renamed onto dst on success; shared with
  * playlist_art.c's 2x2. */
-int ff_wait(int pid, const char *tmp, const char *dst, int *exited) {
-    int status = -1;
-    while (pid > 0 && waitpid(pid, &status, 0) < 0 &&
-           *__errno_location() == 4) { /* EINTR: reap it */
-    }
+int ff_wait(int pid, const char *tmp, const char *dst, int *exited, unsigned *left) {
+    int status = ff_reap(pid, left);
     /* WIFEXITED, less execl's failure (127: out of memory, as ffmpeg is stock's); never for -1 */
     *exited = !(status & 0x7f) && ((status >> 8) & 0xff) != 127;
     if (!*exited) __atomic_fetch_add(&ff_kills, 1, __ATOMIC_RELAXED);
@@ -257,12 +292,13 @@ int ff_wait(int pid, const char *tmp, const char *dst, int *exited) {
  * one; either is removed and dst is left alone, as stock's caches take any file for art.
  * -xerror stops at a picture's first decode error rather than demuxing the rest of the file.
  * *exited: ffmpeg ran to its own exit (no refused fork, no kill), so a failure is the picture's.
+ * With under a poll's 20 ms left no ffmpeg starts: a refused fork's failure, a kill's.
  * ponytail: a process per cover; a resident decoder if first builds drag. */
-static int ff_run(const char *src, const char *dst, int w, int h, int *exited) {
+static int ff_run(const char *src, const char *dst, int w, int h, int *exited, unsigned *left) {
     char vf[80], tmp[1040];
     tk_snprintf(vf, sizeof(vf), "scale=%d:%d:force_original_aspect_ratio=decrease", w, h);
     tk_snprintf(tmp, sizeof(tmp), "%s.ff", dst);
-    int pid = fork();
+    int pid = *left >= 20 ? fork() : -1; /* less than a poll's: spent */
     if (!pid) {
         child_oom_first(); /* its one picture can need tens of MB (#169) */
         execl(ART_FFMPEG, ART_FFMPEG, "-nostdin", "-v", "quiet", "-xerror", "-i", src, "-frames:v",
@@ -270,13 +306,13 @@ static int ff_run(const char *src, const char *dst, int w, int h, int *exited) {
               (char *)0);
         child_exit(127);
     }
-    return ff_wait(pid, tmp, dst, exited);
+    return ff_wait(pid, tmp, dst, exited, left);
 }
 
 /* shared with playlist_art.c, for a playlist's own picture, which stock's decoder never sees */
-int ff_thumb(const char *src, const char *dst, int w, int h) {
+int ff_thumb(const char *src, const char *dst, int w, int h, unsigned *left) {
     int exited;
-    return ff_run(src, dst, w, h, &exited);
+    return ff_run(src, dst, w, h, &exited, left);
 }
 
 static unsigned be16(const unsigned char *p) { return p[0] << 8 | p[1]; }
@@ -325,17 +361,23 @@ static int big_picture(const char *path) {
            ((kind == PICTURE_PNG || kind == 0xc2) && (w > 1024 || h > 1024));
 }
 
-/* stock's thumbnailer, under the lock every stock caller holds, else ffmpeg; shared with photos.c.
- * A picture stock would decode whole in demo goes to ffmpeg alone, whose child the kernel kills
+/* stock's thumbnailer, under the lock every stock caller holds, else ffmpeg within *left (ff_reap);
+ * shared with photos.c (PH_FF_WAIT_MS a photo) and spotify.c (UI_FF_WAIT_MS a track's art). A
+ * picture stock would decode whole in demo goes to ffmpeg alone, whose child the kernel kills
  * first. */
-int thumb(const char *src, const char *dst, int w, int h) {
-    int ok = 0;
+int thumb_within(const char *src, const char *dst, int w, int h, unsigned *left) {
+    int ok = 0, exited;
     if (!big_picture(src)) {
         pthread_mutex_lock((void *)parse_cover_mutex);
         ok = toolsThumbSpecCover(src, dst, w, h) == 1;
         pthread_mutex_unlock((void *)parse_cover_mutex);
     }
-    return ok || (!access(src, 4) && ff_thumb(src, dst, w, h)); /* none for a missing file */
+    return ok || (!access(src, 4) && ff_run(src, dst, w, h, &exited, left)); /* none if missing */
+}
+/* one picture of its own, FF_WAIT_MS */
+int thumb(const char *src, const char *dst, int w, int h) {
+    unsigned left = FF_WAIT_MS;
+    return thumb_within(src, dst, w, h, &left);
 }
 
 /* Which albums share a folder with another album (job_t.shared), one byte per album; 0 without
@@ -380,8 +422,8 @@ __attribute__((noinline)) static unsigned char *folders_shared(void *albums, uns
 
 /* The cover and folder images beside track through fit (none when shared: a folder shared with
  * other albums, whose cover.jpg would be theirs too). */
-static int beside_art(const char *track, const char *dst, int w, int h, int shared,
-                      int (*fit)(const char *, const char *, int, int)) {
+static int beside_art(const char *track, const char *dst, int w, int h, int shared, unsigned *left,
+                      int (*fit)(const char *, const char *, int, int, unsigned *)) {
     char src[1024];
     const char *slash = strrchr(track, '/');
     int folder = slash ? (int)(slash - track) : 0, ok = 0;
@@ -390,7 +432,7 @@ static int beside_art(const char *track, const char *dst, int w, int h, int shar
     for (unsigned i = 0; i < sizeof(names) / sizeof(*names) && !ok && !shared; ++i) {
         if (snprintf(src, sizeof(src), "%.*s/%s", folder, track, names[i]) >= (int)sizeof src)
             continue; /* cut: a prefix of the name, another file's at best */
-        ok = !access(src, 4) && fit(src, dst, w, h);
+        ok = !access(src, 4) && fit(src, dst, w, h, left);
     }
     return ok;
 }
@@ -413,9 +455,10 @@ static int marked_empty(const char *track) {
  * same-named album's embedded-only WebP or large PNG shows no art here; a per-track probe cache
  * if that matters. */
 int coverflow_player_cover(const char *track, const char *dst, int w, int h) {
+    unsigned left = FF_WAIT_MS; /* the lock is held FF_WAIT_MS at most for every ffmpeg in all */
     return toolsGetExternCover(track, dst, w, h) == 1 ||
-           beside_art(track, dst, w, h, 0, ff_thumb) ||
-           (!marked_empty(track) && ff_thumb(track, dst, w, h));
+           beside_art(track, dst, w, h, 0, &left, ff_thumb) ||
+           (!marked_empty(track) && ff_thumb(track, dst, w, h, &left));
 }
 
 /* parse_albumcovertask_thd's embedded-art calls (Albums grids; Folder view's folder and track
@@ -440,7 +483,8 @@ static int grid_cover(const char *track, const char *dst, int w, int h, int albu
         if (miss[i] == key) return 0;
     if (album && toolsGetExternCover(track, dst, w, h) == 1) return 1;
     pthread_mutex_unlock((void *)parse_cover_mutex);
-    int exited, ok = ff_run(track, dst, w, h, &exited);
+    unsigned left = FF_WAIT_MS;
+    int exited, ok = ff_run(track, dst, w, h, &exited, &left);
     pthread_mutex_lock((void *)parse_cover_mutex);
     if (!ok && exited && miss && !access(track, 4)) miss[n++ % 1024] = key;
     return ok;
@@ -551,7 +595,7 @@ int coverflow_folder_cover(const char *track, const char *dst, int w, int h) {
 /* A track's album art at dst, ART_SIZE: embedded art, then beside_art, then ffmpeg's read of the
  * embedded art, last as it costs a process for every album without art; shared with
  * playlist_art.c. */
-int album_art(const char *track, const char *dst, int shared) {
+int album_art(const char *track, const char *dst, int shared, unsigned *left) {
     /* toolsGetAlbumCover goes through the shared /tmp/.tmp_picture, which stock guards with
      * either lock (parse_albumcovertask_thd, player_parsecover_thd); hold both, as before
      * ringnav_album_cover had its own for the file. Stock never nests them, so this order
@@ -561,8 +605,8 @@ int album_art(const char *track, const char *dst, int shared) {
     int ok = toolsGetAlbumCover(track, dst, ART_SIZE, ART_SIZE) == 1;
     pthread_mutex_unlock((void *)g_playcover_mutex);
     pthread_mutex_unlock((void *)parse_cover_mutex);
-    return ok || beside_art(track, dst, ART_SIZE, ART_SIZE, shared, thumb) ||
-           ff_thumb(track, dst, ART_SIZE, ART_SIZE);
+    return ok || beside_art(track, dst, ART_SIZE, ART_SIZE, shared, left, thumb_within) ||
+           ff_thumb(track, dst, ART_SIZE, ART_SIZE, left);
 }
 
 /* head and track appended to the card's q2-crash.log, synced (art_strike says why) */
@@ -582,9 +626,10 @@ static void build_art(const job_t *j) {
     if (access(j->track, 0)) return; /* storage gone: no marker, the next open retries */
     art_path(dst, j->key, "");
     art_path(tmp, j->key, ".tmp");
-    unsigned kills = ff_kills;
-    if (album_art(j->track, tmp, j->shared) && !rename(tmp, dst)) return;
+    unsigned kills = ff_kills, left = FF_WAIT_MS; /* the album's every ffmpeg, so a join's wait */
+    if (album_art(j->track, tmp, j->shared, &left) && !rename(tmp, dst)) return;
     unlink(tmp);
+    if (cf.cancel) return; /* stopped mid-album: no verdict, the next open retries */
     /* No marker when an ffmpeg run meanwhile never reached its own exit (a refused fork, or killed:
      * the kernel takes it first when memory runs out, #169; another thread's run counts too, a
      * retry at worst) or storage is gone: the next open retries. */
