@@ -13,8 +13,8 @@
 /* ponytail: Play Next's pending list holds 64 queue indices; a new one past that drops the oldest
  * (the last). Raise it, a fixed array in the struct, if more are wanted. */
 #define PEND_LIMIT 64
-/* ponytail: a larger queue is not kept across a reboot, as the snapshot is the whole queue,
- * rewritten each track change; save the order once and positions after to lift it. */
+/* ponytail: a larger queue is not kept across a reboot, as advanced play's snapshot is the whole
+ * queue, rewritten each track change; save its order once and positions after to lift it. */
 #define SAVE_LIMIT 999
 extern int stock_load_trampoline(void *, int, int), stock_next_trampoline(int),
     stock_prev_trampoline(void), stock_mode_trampoline(int), stock_preload_trampoline(void),
@@ -534,6 +534,8 @@ static void release(void) {
     s.n = s.hn = s.cursor = s.npend = 0;
     s.resume_key = s.resume_pending = s.resume_wait = s.save_failed = 0;
     unlink(QUEUE_FILE);
+    unlink(CHECKPOINT_FILE); /* or it would fit the same queue picked again at the same row */
+    s.saved_queue = 0;
     s.dirty = 1; /* the next save writes a plain snapshot whole */
 }
 /* Albums as Coverflow tells them apart (album_cmp: tagged albums first), or folders. */
@@ -1444,12 +1446,13 @@ typedef struct {
     unsigned magic, version, size, checksum, n, pos, elapsed, shuffle, repeat, folder, cursor, hn,
         npend, type;
 } snapshot;
-/* Elapsed time for the snapshot whose checksum is snapshot, at pos. */
+/* Elapsed time for the snapshot whose checksum is snapshot, at pos: the snapshot's own track, or
+ * the one a plain queue has reached since. */
 typedef struct {
     unsigned checksum, snapshot, pos, elapsed;
 } checkpoint;
-static int save_elapsed(int sec) {
-    checkpoint c = { 0, s.saved_sum, s.saved_pos, (unsigned)sec };
+static int save_elapsed(unsigned pos, int sec) {
+    checkpoint c = { 0, s.saved_sum, pos, (unsigned)sec };
     c.checksum = hash_bytes(FNV_SEED, (const unsigned char *)&c.snapshot, 3 * 4);
     return BLOB_IO(CHECKPOINT_FILE, c, 1);
 }
@@ -1491,8 +1494,13 @@ void playback_save(void) {
     /* Failed checkpoints stay pending; the UI loop retries at most every five seconds. */
     s.save_failed = 1;
     s.stamp = time_now_ms();
-    if (!s.dirty && pos == s.saved_pos) {
-        if (save_elapsed(sec)) s.saved_elapsed = sec, s.save_failed = 0;
+    /* A plain queue's track change moves nothing but the position, which the checkpoint holds: the
+     * snapshot written when the queue last changed (saved_queue, its hash) stays as it is. Advanced
+     * play's moves the cursor, the played marks and the history too.
+     * ponytail: firmware before this takes a checkpoint at another track for a stale one, so after
+     * a downgrade a plain queue comes back at the track its snapshot was written on. */
+    if (!s.dirty && (pos == s.saved_pos || (plain && s.saved_queue))) {
+        if (save_elapsed(pos, sec)) s.saved_elapsed = sec, s.saved_pos = pos, s.save_failed = 0;
         return;
     }
     s.dirty = 1;
@@ -1552,7 +1560,7 @@ void playback_save(void) {
         s.saved_sum = sum;
         s.saved_queue = qsum;
         s.dirty = 0;
-        s.save_failed = !save_elapsed(sec);
+        s.save_failed = !save_elapsed(pos, sec);
     }
 }
 typedef struct {
@@ -1620,10 +1628,13 @@ int ringnav_memory(void *out) {
         ok = 0;
     if (fclose(f)) ok = 0;
     checkpoint c;
-    if (ok && BLOB_IO(CHECKPOINT_FILE, c, 0) && c.snapshot == h.checksum && c.pos == h.pos &&
-        c.elapsed <= 0x7fffffff &&
-        hash_bytes(FNV_SEED, (const unsigned char *)&c.snapshot, 3 * 4) == c.checksum)
+    if (ok && BLOB_IO(CHECKPOINT_FILE, c, 0) && c.snapshot == h.checksum &&
+        (c.pos == h.pos || (h.version == 4 && c.pos < h.n)) && c.elapsed <= 0x7fffffff &&
+        hash_bytes(FNV_SEED, (const unsigned char *)&c.snapshot, 3 * 4) == c.checksum) {
         h.elapsed = c.elapsed;
+        if (h.version == 4)
+            h.pos = h.cursor = c.pos; /* a plain queue's track since (playback_save) */
+    }
     /* Validate the entire snapshot before queries or mutations. */
     unsigned *indices = (unsigned *)(buf ? buf + header_size : 0);
     unsigned char *p = buf ? buf + header_size + (h.n * 3 + h.hn + h.npend) * 4 : 0;

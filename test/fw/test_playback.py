@@ -2224,6 +2224,95 @@ def test_a_plain_queue_restores_without_advanced_play(saved):
     assert saved.s.active == 0 and saved.deques[saved.handle] == rows and saved.deques[saved.out] == rows
 
 
+def test_a_plain_queues_track_change_writes_only_the_checkpoint(saved):
+    """The snapshot holds the queue and is written when that changes; a new track is the checkpoint's 16 bytes,
+    which the restore takes for the track, while it names one of the queue's, and the second."""
+    plain_queue(saved)
+    saved.sec = 10
+    saved.save()
+    body = saved.queue_file()
+    saved.mcl.pos, saved.sec = 2, 40
+    saved.save()
+    check = saved.disk.files[CHECKPOINT]
+    assert saved.queue_file() == body and struct.unpack('<4I', check)[2:] == (2, 40)
+    assert restore(saved) == 2 and saved.fw.calls('mclSetStartSeekTime')[-1][1][0] == 40
+    past = struct.pack('<3I', struct.unpack('<4I', check)[1], 3, 40)  # a track past the queue: the snapshot's own
+    saved.disk.files.update({QUEUE_FILE: body, CHECKPOINT: struct.pack('<I', fnv1a(past)) + past})
+    assert restore(saved) == 1 and saved.fw.calls('mclSetStartSeekTime')[-1][1][0] == 10
+
+
+def test_advanced_plays_track_change_writes_the_snapshot(saved):
+    """Its order's cursor, played marks and history move with the track: the checkpoint's track alone is not enough."""
+    full_queue(saved)
+    saved.sec, saved.s.dirty = 10, 1
+    saved.save()
+    body, pos = saved.queue_file(), saved.mcl.pos
+    assert saved.next(0) >= 0 and saved.mcl.pos != pos
+    saved.save()
+    now = saved.mcl.pos
+    assert saved.queue_file() != body and snapshot(saved.queue_file())['pos'] == now
+    check = bytearray(saved.disk.files[CHECKPOINT])
+    check[8:12] = struct.pack('<I', pos)  # the checkpoint of another track
+    check[0:4] = struct.pack('<I', fnv1a(bytes(check[4:])))
+    saved.disk.files[CHECKPOINT] = bytes(check)
+    assert restore(saved) == now
+
+
+def test_a_snapshot_dropped_while_memory_playback_was_off_is_written_again(saved):
+    """Memory Playback off, the queue picked again (a load drops the snapshot), on: the snapshot is written whole,
+    not its checkpoint alone."""
+    plain_queue(saved)
+    saved.save()
+    saved.fw.var('g_memory_play', C.c_ubyte).value = 0
+    saved.clear()  # as ringnav_load's release()
+    saved.save()
+    assert QUEUE_FILE not in saved.disk.files
+    saved.fw.var('g_memory_play', C.c_ubyte).value = 2
+    saved.mcl.pos = 2
+    saved.save()
+    assert snapshot(saved.queue_file())['pos'] == 2
+
+
+def test_a_dropped_snapshot_takes_its_checkpoint_with_it(saved):
+    """The same queue picked again at the same row saves the same bytes, which a checkpoint of its last play, at a
+    later track, would fit."""
+    plain_queue(saved)
+    saved.save()
+    saved.mcl.pos, saved.sec = 2, 40
+    saved.save()
+    assert CHECKPOINT in saved.disk.files
+    saved.clear()  # as ringnav_load's release()
+    assert CHECKPOINT not in saved.disk.files and QUEUE_FILE not in saved.disk.files
+
+
+def test_a_plain_track_change_is_one_checkpoint_then_every_30_s(fw, mcl):
+    polled = Polled(fw, mcl)
+    polled.clear()
+    plain_queue(polled)
+    polled.after(1, sec=0)
+    body = polled.queue_file()
+    writes = []
+    rename = polled.disk.rename
+    fw.mock('fw_rename', lambda old, new, *_: writes.append(C.string_at(new)) or rename(old, new))
+    polled.mcl.pos = 2
+    wrote = [polled.after(1000, sec=s) for s in range(1, 13)]  # the new track's first 12 s
+    assert polled.queue_file() == body and writes == [CHECKPOINT.encode()], (wrote, writes)
+    assert struct.unpack('<4I', polled.disk.files[CHECKPOINT])[2] == 2
+    del writes[:]
+    wrote = [polled.after(6000) for _ in range(5)]
+    assert writes == [CHECKPOINT.encode()], (wrote, writes)
+
+
+def test_advanced_plays_checkpoint_of_another_track_gives_no_second(saved):
+    full_queue(saved)
+    saved.sec, saved.s.dirty = 10, 1
+    saved.save()
+    pos = saved.mcl.pos
+    other = struct.pack('<3I', struct.unpack_from('<I', saved.queue_file(), 12)[0], (pos + 1) % 9, 77)
+    saved.disk.files[CHECKPOINT] = struct.pack('<I', fnv1a(other)) + other
+    assert restore(saved) == pos and saved.fw.calls('mclSetStartSeekTime')[-1][1][0] == 10
+
+
 def test_a_plain_queue_is_kept_only_for_memory_playback(saved):
     plain_queue(saved)
     saved.fw.var('g_memory_play', C.c_ubyte).value = 0
