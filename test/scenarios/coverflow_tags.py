@@ -85,10 +85,12 @@ for w,px in ((name,O['CF_NAME_PX']),(artist,O['CF_ARTIST_PX'])):
     x,top,wd,h=cf_geometry(m,w); assert clear(x,top+(h-px)//2,wd,px)
 view=m.tracks(); lv=m.get(view+O['W_PARENT']); title=next(w for w in m.nodes[m.get(lv+O['W_PARENT'])]['children'] if m.nodes[w]['type']=='hscroll_label')
 assert cf_geometry(m,title)[::2]==(E,375-2*E) and clear(E,14,375-2*E,20)
-rows=(290-48)//48
-for item in m.nodes[view]['children']:
+items=m.nodes[view]['children']
+for item in items:
     label=m.nodes[item]['children'][0]; assert cf_geometry(m,label)[::2]==(E,375-2*E)
-assert clear(E,48+(rows-1)*48+14,375-2*E,20)  # the lowest visible row
+h=cf_geometry(m,items[0])[3]; rows=(290-48)//h; base=48+(rows-1)*h  # the list's own row height, title and detail
+for w,px in zip(m.nodes[items[0]]['children'],(20,16)):  # the title, and a length's line when there is one
+    _,y,_,lh=cf_geometry(m,w); assert clear(E,base+y+(lh-px)//2,375-2*E,px)  # in the lowest full row
 passed()
 
 # Cover Flow's caption, Classic: album and artist both in its face at 27 px, their middles on screen rows 262 and 286, each box holding the font; the artist the album's ink in

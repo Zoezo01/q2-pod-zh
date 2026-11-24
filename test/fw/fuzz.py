@@ -40,3 +40,20 @@ def cases(name, seeds):
         yield bytes(data)
     if os.environ.get('Q2_FUZZ_LOG'):
         with open(os.environ['Q2_FUZZ_LOG'], 'a') as log: log.write(f'{name}\t{COUNT}\n')
+
+
+def hostile(seed, samples, count, alphabet, longest, nul=None):
+    """Random bytes up to longest long (NUL made nul, when given), every truncation of the samples, and mutations of
+    them: count of each, the mutations' bytes drawn from alphabet."""
+    r = random.Random(seed)
+    for _ in range(count):
+        b = r.randbytes(r.randrange(longest))
+        yield b if nul is None else b.replace(b'\0', nul)
+    for s in samples:
+        for k in range(len(s)):
+            yield s[:k]
+    for _ in range(count):
+        b = bytearray(r.choice(samples))
+        for _ in range(r.randrange(1, 6)):
+            b[r.randrange(len(b))] = r.choice(alphabet)
+        yield bytes(b)

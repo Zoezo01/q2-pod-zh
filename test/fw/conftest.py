@@ -3,7 +3,9 @@
 Q2_FW_SANITIZE=1 builds it with AddressSanitizer and UBSan: run pytest with LD_PRELOAD set to
 `cc -print-file-name=libasan.so` and ASAN_OPTIONS=detect_leaks=0. Q2_FW_COVERAGE=1 builds it for gcov.
 Q2_FW_STRICT=1 fails a test that reached a stub tools/ doesn't declare, unmocked (host.Fw.unknown):
-its 0 is a guess at what stock would answer."""
+its 0 is a guess at what stock would answer. Q2_FW_PSEUDO=1 gives every text tr() knows (langpack.py's
+own_strings) a translation three times its bytes, and Q2_FW_PSEUDO=lang/xx.tsv a pack's table, so a run with
+Q2_FW_SANITIZE finds what a long one, or a multibyte one, overflows; tests that read English fail, as they should, and only a sanitizer's report is news."""
 import ctypes as C
 import fcntl
 import functools
@@ -82,11 +84,7 @@ def high_halves(n):
 def library(tmp_path_factory):
     if os.environ.get('Q2_FW_LIBRARY'):  # one already built: test/cmut/run.py links each mutant's
         return pathlib.Path(os.environ['Q2_FW_LIBRARY'])
-    extra = []
-    if os.environ.get('Q2_FW_SANITIZE'):
-        extra += ['-fsanitize=address,undefined', '-fno-sanitize-recover=undefined', '-fno-sanitize=alignment']
-    if os.environ.get('Q2_FW_COVERAGE'):
-        extra += ['--coverage']
+    extra = host.flags()
     if not os.environ.get('PYTEST_XDIST_WORKER'):
         return host.build(tmp_path_factory.mktemp('fw'), extra)
     # pytest-xdist's workers (-n) share one build, in the folder above their own: the first to ask makes it and the
@@ -110,11 +108,40 @@ def fw(library, tmp_path):
     loaded.mock('tk_sha256_init', lambda ctx, *_: sums.__setitem__(ctx, hashlib.sha256()))
     loaded.mock('tk_sha256_hash', lambda ctx, data, n, *_: sums[ctx].update(C.string_at(data, n)))
     loaded.mock('tk_sha256_done', lambda ctx, out, *_: C.memmove(out, sums.pop(ctx).digest(), 32) and 0)
+    if os.environ.get('Q2_FW_PSEUDO'):
+        pseudo(loaded)
     yield loaded
     unknown = loaded.unknown()
     loaded.close()
     if unknown and os.environ.get('Q2_FW_STRICT'):
         pytest.fail(f'unmocked stubs with no known return type: {", ".join(unknown)}')
+
+
+@functools.cache
+def pseudo_lines(table):
+    """(key, English, text) as language.c keeps them, in its order (by_key: strcmp of the key, then the English):
+    a .tsv's lines, unescaped, or each of Q2 Pod's own texts with a pseudo translation."""
+    sys.path.insert(0, str(ROOT/'tools'))
+    import langpack
+    if table.endswith('.tsv'):
+        def undo(s):
+            return re.sub(r'\\([nt\\])', lambda m: {'n': '\n', 't': '\t', '\\': '\\'}[m[1]], s).encode()
+        rows = {tuple(map(undo, r)) for r in langpack.read_lines(pathlib.Path(table).read_text(encoding='utf-8'))}
+    else:
+        rows = {(t, t, b'[' + t + b' ' + b'~' * (2 * len(t)) + b']') for t in (s.encode() for s, _ in langpack.own_strings())}
+    return sorted(rows)
+
+
+def pseudo(loaded):
+    """language.c's table as a copy's load leaves it (lg: loaded, n, raw, line)."""
+    lines = pseudo_lines(os.environ['Q2_FW_PSEUDO'])
+    keep = [C.create_string_buffer(b) for row in lines for b in row]
+    line = (C.c_char_p * len(keep))(*[C.cast(k, C.c_char_p) for k in keep])
+    loaded.keep += [keep, line]
+    lg = C.addressof(loaded.var('language__lg', C.c_char * 32))
+    C.memmove(lg, struct.pack('<iI', 1, len(lines)), 8)
+    C.c_void_p.from_address(lg + 8).value = C.addressof(line)
+    C.c_void_p.from_address(lg + 16).value = C.addressof(line)
 
 
 def text(value):
@@ -351,7 +378,7 @@ class Files:
 
     def fwrite(self, data, size, count, f, *_):
         self.open[f][2] += C.string_at(data, size * count)
-        return count
+        return count if size else 0  # glibc: no item of size 0 is written
 
     def fclose(self, f, *_):
         path, _, written = self.open.pop(f)
@@ -363,6 +390,70 @@ class Files:
         if self.fail_rename:
             return -1
         self.files[C.string_at(new).decode()] = self.files.pop(C.string_at(old).decode())
+        return 0
+
+
+class Card:
+    """A card's files as a dict, written through: fopen creates the entry, fwrite appends to it, fclose is a flag.
+    fail_write, fail_rename, fail_sync, fail_close and fail_ferror make those calls fail; unlinked lists the paths removed.
+    access=False leaves fw_access to the test (games' listing asks the real one)."""
+    def __init__(self, fw, files=None, access=True):
+        self.files, self.open, self.unlinked = dict(files or {}), {}, []
+        self.fail_write = self.fail_rename = self.fail_sync = self.fail_close = self.fail_ferror = False
+        for name in 'fopen fread fwrite fseek ftell rename unlink'.split():
+            fw.mock('fw_' + name, getattr(self, name))
+        fw.mock('fw_fclose', lambda *_: self.fail_close)
+        fw.mock('fw_fflush', lambda *_: 0)
+        fw.mock('fw_fsync', lambda *_: self.fail_sync)
+        fw.mock('fw_ferror', lambda *_: self.fail_ferror)
+        if access:
+            fw.mock('fw_access', lambda path, *_: self.name(path) not in self.files)
+
+    def name(self, path):
+        return C.string_at(path).decode()
+
+    def fopen(self, path, mode, *_):
+        name, write = self.name(path), C.string_at(mode)[:1] == b'w'
+        if not write and name not in self.files:
+            return 0
+        handle = 0x1000 + len(self.open)
+        self.open[handle] = [name, 0]
+        if write:
+            self.files[name] = b''
+        return handle
+
+    def fread(self, buf, size, n, f, *_):
+        name, at = self.open[f]
+        data = self.files[name][at:at + size * n]
+        C.memmove(buf, data, len(data))
+        self.open[f][1] += len(data)
+        return len(data) // size
+
+    def fwrite(self, buf, size, n, f, *_):
+        if self.fail_write:
+            return 0
+        self.files[self.open[f][0]] += C.string_at(buf, size * n)
+        return n if size else 0  # glibc: no item of size 0 is written
+
+    def fseek(self, f, off, whence, *_):
+        base = {0: 0, 1: self.open[f][1], 2: len(self.files[self.open[f][0]])}[whence]
+        if base + off < 0:
+            return -1
+        self.open[f][1] = base + off
+        return 0
+
+    def ftell(self, f, *_):
+        return self.open[f][1]
+
+    def rename(self, a, b, *_):
+        if self.fail_rename:
+            return -1
+        self.files[self.name(b)] = self.files.pop(self.name(a))
+        return 0
+
+    def unlink(self, path, *_):
+        self.unlinked.append(self.name(path))
+        self.files.pop(self.unlinked[-1], None)
         return 0
 
 def favdir_card(fw, files, app='jf', folder='Jellyfin'):
@@ -468,12 +559,26 @@ def stock_stub(address, result, log):
     C.memmove(address, code, len(code))
 
 
+def rgba(c, a=0xff):
+    """0xRRGGBB at alpha a as a color_t, whose bytes are r, g, b, a."""
+    return a << 24 | (c & 255) << 16 | c & 0xff00 | c >> 16 & 255
+
+
+def channels_low_first(c):
+    """A colour word's (c & 255, c >> 8 & 255, c >> 16 & 255): the byte order test_nav_paint's channels is not."""
+    return c & 255, c >> 8 & 255, c >> 16 & 255
+
+
 class Config:
     """config.ini, its value or the default."""
     def __init__(self, fw, **values):
-        self.values = {k.encode(): v.encode() for k, v in values.items()}
+        self.values = {k.encode(): v if isinstance(v, bytes) else str(v).encode() for k, v in values.items()}
         fw.mock('toolsReadConfig', self.read)
 
     def read(self, path, section, key, out, default, *_):
         value = self.values.get(C.string_at(key), C.string_at(default))
         C.memmove(out, value + b'\0', len(value) + 1)
+
+
+class Dirent(C.Structure):  # host.py's struct dirent
+    _fields_ = [('ino', C.c_uint), ('off', C.c_uint), ('reclen', C.c_ushort), ('d_type', C.c_ubyte), ('d_name', C.c_char * 256)]

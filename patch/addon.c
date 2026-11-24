@@ -9,9 +9,9 @@
  *            favdir (a card folder whose songs' hearts it is told of, addon_fav_path), hidden
  *            (1: no row, its page opened by id: addon_open_id, as AirPlay's is), row (where
  *            its row is: library, games, network or streaming; without it, Games for a game and
- *            Streaming for any other) and wifi (0: it never uses the network, so Smart Wi-Fi keeps
+ *            Streaming for any other), wifi (0: it never uses the network, so Smart Wi-Fi keeps
  *            no radio on for it: addon_running, addon_offline; 1: it follows the Wi-Fi link,
- *            addon_wifi.c);
+ *            addon_wifi.c) and root (1: it runs as root; without it, as APP_UID, app_user.c);
  *   run      its launcher, which copies the app to /tmp and runs it there in a restart loop, so
  *            the card is never kept busy, leaving the loop's pid in /tmp/q2-<id>;
  *   q2-<id>  the app;
@@ -100,7 +100,8 @@
 /* This firmware's card-app features, space-separated; a feature adds its word. */
 #define ADDON_CAPS                                                                                 \
     "playlist progress pages library goto sleep game audio sections art window urls sort field "   \
-    "more fav now fieldtext wake audio2 dim gameview eq screen volume wifi network bar switch"
+    "more fav now fieldtext wake audio2 dim gameview eq screen volume wifi network bar switch "    \
+    "playkept"
 #define ADDON_SECTIONS 8  /* sections an app's first page may have */
 #define SWIPE_CLAIM_PX 24 /* a sideways move this far, twice as far as up or down, is a swipe's */
 #define SWIPE_PX 60       /* and this far at the lift, more than up or down, changes section */
@@ -125,24 +126,23 @@ typedef struct {
     int wifi;     /* q2app's wifi=1: started with the Wi-Fi link, stopped once it is gone */
     int wifi_off; /* a wifi app the user stopped (or that ended itself): not started again until
                    * Wi-Fi is back after being gone 10 s or more (addon_wifi_release) */
-    unsigned polled, launch_at, restart_at, play; /* play: its .play as read last, hashed */
+    unsigned polled, launch_at, restart_at, play; /* play: its .play as read last (play_read) */
     /* its status file's bar= (bar_read): the word as read last, and file:// of the icon it names
      * (bar.png for 1, bar-<word>.png else) if one fits BAR_ICON_W x BAR_ICON_H; else "" */
     char baricon[56], barword[12];
     int barw; /* the icon's width, for its slot in the bar */
+    int root; /* q2app's root=1: it runs as root, not as APP_UID (app_user.c) */
 } app_t;
 enum { ROW_STREAMING, ROW_GAMES, ROW_LIBRARY, ROW_NETWORK }; /* as addon_scan's rows[] names them */
 
 static struct {
     app_t a[APPS_MAX];
-    int n, shown, order[APPS_MAX]; /* order: Streaming's rows, the slots on the card by name */
-    int games, game[APPS_MAX];     /* Games' rows, by name too */
-    int libs, lib[APPS_MAX];       /* and the Library's */
-    int nets, net[APPS_MAX];       /* and System settings → Network's (row=network) */
+    int n, cnt[4],
+        rows[4][APPS_MAX]; /* by ROW_*: how many rows, and their slots on the card by name */
 } ap __attribute__((section(".scratch")));
 
 /* An id goes into shell commands: lowercase letters, digits and '-' only. */
-static int valid_id(const char *s) {
+int valid_id(const char *s) {
     unsigned k = 0;
     for (; s[k]; ++k)
         if (k + 1 >= APP_ID ||
@@ -151,12 +151,29 @@ static int valid_id(const char *s) {
     return k > 0;
 }
 
+#define PLAY_RAW 192 /* an app's .play as far as it is read */
+/* An app's .play into raw, PLAY_RAW bytes: the bytes read, and *h their hash | 1 (0: none). */
+static unsigned play_read(const char *id, char *raw, unsigned *h) {
+    char path[48];
+    tk_snprintf(path, sizeof path, "/tmp/q2-%s.play", id);
+    unsigned got = state_read(path, raw, PLAY_RAW);
+    *h = got ? hash_bytes(FNV_SEED, (const unsigned char *)raw, strlen(raw)) | 1 : 0;
+    return got;
+}
+
 static app_t *slot(const char *id) {
     for (int i = 0; i < ap.n; ++i)
         if (!strcmp(ap.a[i].id, id)) return &ap.a[i];
     if (ap.n == APPS_MAX) return 0;
     app_t *a = &ap.a[ap.n++];
     tk_snprintf(a->id, sizeof a->id, "%s", id);
+    /* A .play /tmp kept from before demo started (a crash, a round trip to Rockbox) is taken as
+     * seen, not played again: the slot is made before this demo can start its app, and kept for
+     * demo's life, so a .play the app writes later is a new session (stream_poll).
+     * ponytail: an app that outlived demo and writes a new .play before this first scan has it
+     * taken as seen too; telling them apart needs the file's mtime against demo's start. */
+    char raw[PLAY_RAW];
+    play_read(id, raw, &a->play);
     tk_snprintf(a->bin, sizeof a->bin, CARD "/.%s/q2-%s", id, id);
     tk_snprintf(a->run, sizeof a->run, "/bin/sh " CARD "/.%s/run", id);
     tk_snprintf(a->pid, sizeof a->pid, "/tmp/q2-%s", id);
@@ -180,12 +197,14 @@ static void slots_read(void) {
         if (!a->name[0]) tk_snprintf(a->name, sizeof a->name, "%s", a->id);
         field(raw, "search", a->tips, sizeof a->tips);
         if (!a->tips[0]) tk_snprintf(a->tips, sizeof a->tips, "搜索");
+>>>>>>> 1.9.1
         a->qr = number(raw, "qr") == 1;
         a->game = number(raw, "game") == 1;
         unsigned long long sound = number(raw, "audio"); /* 2: the game's or the music's */
         a->audio = sound <= 2 ? (int)sound : 0;
         a->view = number(raw, "gameview") == 1;
         a->hidden = number(raw, "hidden") == 1;
+        a->root = number(raw, "root") == 1;
         /* its row where row says, else as firmware without the key lists it: Games for a game,
          * Streaming for any other */
         static const char *const rows[] = { "streaming", "games", "library", "network" };
@@ -239,57 +258,59 @@ static void slots_read(void) {
  * addon_name. */
 int addon_scan(void) {
     slots_read();
-    ap.shown = ap.games = ap.libs = ap.nets = 0;
+    memset(ap.cnt, 0, sizeof ap.cnt);
     for (int i = 0; i < ap.n; ++i) { /* by name: an insertion, APPS_MAX at most */
         if (!ap.a[i].present || ap.a[i].hidden) continue;
         int row = ap.a[i].row;
-        int *order = row == ROW_GAMES     ? ap.game
-                     : row == ROW_LIBRARY ? ap.lib
-                     : row == ROW_NETWORK ? ap.net
-                                          : ap.order;
-        int k = row == ROW_GAMES     ? ap.games++
-                : row == ROW_LIBRARY ? ap.libs++
-                : row == ROW_NETWORK ? ap.nets++
-                                     : ap.shown++;
+        int *order = ap.rows[row];
+        int k = ap.cnt[row]++;
         for (; k && strcasecmp(ap.a[order[k - 1]].name, ap.a[i].name) > 0; --k)
             order[k] = order[k - 1];
         order[k] = i;
     }
     blob_io(CAPS_FILE, CAPS_FILE ".tmp", ADDON_CAPS "\n", sizeof(ADDON_CAPS "\n") - 1, 1);
-    return ap.shown;
+    return ap.cnt[ROW_STREAMING];
 }
 
-const char *addon_name(int k) { return k >= 0 && k < ap.shown ? ap.a[ap.order[k]].name : 0; }
-const char *addon_id(int k) { return k >= 0 && k < ap.shown ? ap.a[ap.order[k]].id : 0; }
-const char *addon_icon(int k) { return k >= 0 && k < ap.shown ? ap.a[ap.order[k]].icon : 0; }
+const char *addon_name(int k) {
+    return k >= 0 && k < ap.cnt[ROW_STREAMING] ? ap.a[ap.rows[ROW_STREAMING][k]].name : 0;
+}
+const char *addon_id(int k) {
+    return k >= 0 && k < ap.cnt[ROW_STREAMING] ? ap.a[ap.rows[ROW_STREAMING][k]].id : 0;
+}
+const char *addon_icon(int k) {
+    return k >= 0 && k < ap.cnt[ROW_STREAMING] ? ap.a[ap.rows[ROW_STREAMING][k]].icon : 0;
+}
 /* Streaming's row k, as the last scan sorted them: its app's slot, which stays that app's, or -1
  * (home.c ringnav_stream gives it to the row). */
-int addon_slot(int k) { return k >= 0 && k < ap.shown ? ap.order[k] : -1; }
+int addon_slot(int k) {
+    return k >= 0 && k < ap.cnt[ROW_STREAMING] ? ap.rows[ROW_STREAMING][k] : -1;
+}
 /* Slot i's id while its app is on the card with a row, wherever the row is, else 0
  * (addon_library.c's requests: an app's row in the Library or Games asks as one on Streaming). */
 const char *addon_slot_id(int i) {
     return i >= 0 && i < ap.n && ap.a[i].present && !ap.a[i].hidden ? ap.a[i].id : 0;
 }
 /* Library's Apps rows (addon_apps): how many, the card read again, then one's name. */
-int addon_libs(void) { return addon_scan(), ap.libs; }
-const char *addon_lib_name(int k) { return k >= 0 && k < ap.libs ? ap.a[ap.lib[k]].name : 0; }
+int addon_libs(void) { return addon_scan(), ap.cnt[ROW_LIBRARY]; }
+const char *addon_lib_name(int k) {
+    return k >= 0 && k < ap.cnt[ROW_LIBRARY] ? ap.a[ap.rows[ROW_LIBRARY][k]].name : 0;
+}
 /* System settings → Network's card rows (netservice.c ringnav_netservice, row=network): how many,
  * the card read again, then one's name and icon. */
-int addon_network(void) { return addon_scan(), ap.nets; }
-const char *addon_network_name(int k) { return k >= 0 && k < ap.nets ? ap.a[ap.net[k]].name : 0; }
-const char *addon_network_icon(int k) { return k >= 0 && k < ap.nets ? ap.a[ap.net[k]].icon : 0; }
+int addon_network(void) { return addon_scan(), ap.cnt[ROW_NETWORK]; }
+const char *addon_network_name(int k) {
+    return k >= 0 && k < ap.cnt[ROW_NETWORK] ? ap.a[ap.rows[ROW_NETWORK][k]].name : 0;
+}
+const char *addon_network_icon(int k) {
+    return k >= 0 && k < ap.cnt[ROW_NETWORK] ? ap.a[ap.rows[ROW_NETWORK][k]].icon : 0;
+}
 
 /* Whether an image's name is a card app's Streaming icon, file:///mnt/mmc/.<id>/icon*.png
  * (navigation.c ringnav_image_add: Minimal greys it as Streaming's own icons). */
 int addon_is_icon(const char *name) {
-    static const char *const ends[] = { "/icon.png", "/icon-40.png" };
-    unsigned n = name ? strlen(name) : 0;
-    if (!n || !tk_str_start_with(name, "file://" CARD "/.")) return 0;
-    for (unsigned i = 0; i < 2; ++i) {
-        unsigned k = strlen(ends[i]);
-        if (n > k && !strcmp(name + n - k, ends[i])) return 1;
-    }
-    return 0;
+    return name && tk_str_start_with(name, "file://" CARD "/.") &&
+           (tk_str_end_with(name, "/icon.png") || tk_str_end_with(name, "/icon-40.png"));
 }
 
 /* Whether an image's name is a card app's status bar icon, file:///mnt/mmc/.<id>/bar*.png
@@ -313,7 +334,10 @@ static void launch(app_t *a) {
     if (busy && !strcmp(busy + 1, a->id)) return; /* the Apps page is replacing its files */
     a->launched = 1;
     a->launch_at = time_now_ms();
-    system(a->run); /* exits at once when the app runs already */
+    if (a->root) /* exits at once when the app runs already */
+        system(a->run);
+    else
+        app_system(a->run);
 }
 
 /* On the card and not running: its page starts it (page_at), and once more when it ended itself
@@ -655,11 +679,9 @@ static void *stream_queue(void) {
 }
 
 static void stream_poll(app_t *a) {
-    char path[48], raw[192];
-    tk_snprintf(path, sizeof path, "/tmp/q2-%s.play", a->id);
-    unsigned got = state_read(path, raw, sizeof raw);
+    char path[48], raw[PLAY_RAW];
+    unsigned h, got = play_read(a->id, raw, &h);
     if (!got) return;
-    unsigned h = hash_bytes(FNV_SEED, (const unsigned char *)raw, strlen(raw));
     /* a new session: this app's .play changed. Another app's, left in /tmp while it runs, never
      * takes the queue back. */
     if (h != a->play) {
@@ -994,9 +1016,11 @@ static struct {
     char vreq[8], vsent[16];
 } gm __attribute__((section(".scratch")));
 
-int addon_games(void) { return addon_scan(), ap.games; }
-int addon_games_last(void) { return ap.games; }
-const char *addon_game_name(int k) { return k >= 0 && k < ap.games ? ap.a[ap.game[k]].name : 0; }
+int addon_games(void) { return addon_scan(), ap.cnt[ROW_GAMES]; }
+int addon_games_last(void) { return ap.cnt[ROW_GAMES]; }
+const char *addon_game_name(int k) {
+    return k >= 0 && k < ap.cnt[ROW_GAMES] ? ap.a[ap.rows[ROW_GAMES][k]].name : 0;
+}
 int addon_game_front(void) { return gm.pid && !gm.native; }
 /* chord_gate's Centre drop skipped: a gameview game in front, or an eaten Centre, whose repeats and
  * release it would otherwise drop within CHORD_MS of an edge press, leaving the eat bit set */
@@ -1021,10 +1045,11 @@ static void game_end(void) {
 const char *addon_where(const char *id) {
     static const char *const where[] = { "流媒体", "游戏", "资料库的应用",
                                          "网络设置" };
+>>>>>>> 1.9.1
     slots_read();
     for (int i = 0; i < ap.n; ++i)
-        if (ap.a[i].present && !strcmp(ap.a[i].id, id)) return where[ap.a[i].row];
-    return where[ROW_STREAMING];
+        if (ap.a[i].present && !strcmp(ap.a[i].id, id)) return tr(where[ap.a[i].row]);
+    return tr(where[ROW_STREAMING]);
 }
 
 static void game_file(char *out, const char *ext) {
@@ -1064,6 +1089,7 @@ static void game_view(void) {
     tk_snprintf(tmp, sizeof tmp, "%s.tmp", path);
     char open[] = "open";
     if (!blob_io(path, tmp, open, sizeof open - 1, 1)) return;
+    app_own(path); /* the game removes it to cancel */
     widget_t *wm = window_manager();
     gm.native = 1;
     /* a key held into the open: its repeats and release are no page's */
@@ -1129,7 +1155,7 @@ static void game_sound(void) {
     tk_snprintf(line, sizeof line, "%s%s%s\n", dev ? dev : "plughw:0,0", dev ? " " : "",
                 dev ? vol : "");
     tk_snprintf(tmp, sizeof tmp, "%s.tmp", f);
-    blob_io(f, tmp, line, strlen(line), 1);
+    if (blob_io(f, tmp, line, strlen(line), 1)) app_own(f); /* the game's "music" replaces it */
 }
 
 /* game_poll's, every ADDON_POLL_MS and every pass while dimmed: the game's /tmp/q2-<id>.dim there
@@ -1165,6 +1191,7 @@ static int game_start(app_t *a, const char *uri, const char *ctx) {
     const char *busy = shelf_busy();
     if (busy && !strcmp(busy + 1, a->id)) return toast("请等应用商店完成"), 0;
     if (access(a->bin, 0)) return toast("卡上没有它"), 0;
+>>>>>>> 1.9.1
     char vol[5], pop[POPUP_ENV];
     const char *dev = 0;
     popup_env(pop, sizeof pop); /* the theme's pop-up, for its own menus */
@@ -1182,10 +1209,11 @@ static int game_start(app_t *a, const char *uri, const char *ctx) {
         dev = output_device(vol);
         if (!dev) dac_take();
     }
-    int pid = fork();
+    int user = !a->root && app_card(), pid = fork();
     if (!pid) {
         child_oom_first();
         for (int fd = 3; fd < 1024; ++fd) close(fd); /* demo's: the watchdog, the screen, sockets */
+        if (user) app_user();
         /* the child's alone: demo's environment stays as it was. ponytail: a fork while another
          * thread holds libc's environment lock (stock's toolsSetTimeZone) hangs the child here;
          * Return's hold ends it */
@@ -1198,6 +1226,7 @@ static int game_start(app_t *a, const char *uri, const char *ctx) {
         child_exit(127);
     }
     if (pid < 0) return toast("无法启动"), 0;
+>>>>>>> 1.9.1
     gm.pid = pid;
     gm.audio = a->audio == 1;
     gm.swap = a->audio == 2;
@@ -1353,6 +1382,7 @@ static void game_poll(void) {
         widget_invalidate_force(window_manager(), 0);
         if (gm.screen) screen_back(gm.screen - 1);
         if (status == 127 << 8) toast("无法启动"); /* the child's execl failed */
+>>>>>>> 1.9.1
         return;
     }
     unsigned now = (unsigned)time_now_ms();
@@ -1737,6 +1767,8 @@ static int stoppable(void) {
 static void stop_row(int i) {
     char t[48];
     tk_snprintf(t, sizeof t, "停止 %s", app()->name);
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
     page_row_detail(pg.view, i, t, 0, clicked);
 }
 
@@ -1874,6 +1906,7 @@ static void row(lv_t *l, int i) {
             art_row(i, pg.paging ? "加载中…" : "更多…", "", 0, 0);
         else
             page_row_detail(pg.view, i, pg.paging ? "加载中…" : "更多…", "", clicked);
+>>>>>>> 1.9.1
         return;
     }
     widget_t *item;
@@ -2076,6 +2109,7 @@ static void busy_row(int on) {
     widget_t *item = widget_get_child(pg.view, (unsigned)i);
     retext(item, widget_get_child(item, (unsigned)k - 2), (unsigned)k,
            on ? "处理中…" : cell(i, k));
+>>>>>>> 1.9.1
     pg.busy = on;
 }
 
@@ -2097,6 +2131,8 @@ static void show(void) {
         l->slow = (int)(time_now_ms() - l->since) >= SLOW_MS && stoppable(); /* since: now + 1 */
         widget_t *v =
             page_list(pg.page, pg.page, 0, l->state == K_WAIT ? t : "加载中…", n = l->slow, 48);
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
         if (n) pg.view = v, stop_row(0);
     } else if (l->state == K_ERROR) {
         n = 1 + (app()->nostop || stoppable());
@@ -2105,6 +2141,7 @@ static void show(void) {
                         0, clicked);
         if (app()->nostop)
             page_row_detail(pg.view, 1, "取消", 0, clicked);
+>>>>>>> 1.9.1
         else if (n > 1)
             stop_row(1);
         page_push(pg.view, pg.moved), pg.moved = 0;
@@ -2304,6 +2341,8 @@ static void got(void) {
     unsigned now = time_now_ms();
     char why[48];
     tk_snprintf(why, sizeof why, req.fail == SPOT_NOSOCK ? "%s 未运行" : "%s 未响应",
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
                 app()->name);
     if (act) busy_row(0); /* before the toast, whose loop can pop the level */
     pg.act = 0;
@@ -2419,7 +2458,11 @@ static int searched(void *ctx, event_t *event) {
     if (widget_get_text_utf8(pg.edit, t, sizeof t)) t[0] = 0;
     if (strlen(t) >= sizeof pg.term) { /* none of it goes: the box closes, the level stays */
         memset(t, 0, sizeof t);
-        if (!pg.go) toast("搜索词太长"); /* its loop would run the go the first call armed, under this handler */
+        if (!pg.go) /* its loop would run the go the first call armed, under this handler */
+            toast(tr("搜索词太长"));
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
     }
     tk_snprintf(pg.term, sizeof pg.term, "%s", t);
     memset(t, 0, sizeof t);
@@ -2564,6 +2607,8 @@ static int go(const void *unused) {
     } else if (l->state == K_ERROR ? i == 1 : l->state != K_READY && l->slow) { /* Stop <name> */
         char t[48];
         tk_snprintf(t, sizeof t, "%s 已停止", app()->name);
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
         app_stop(app(), 0);
         app()->wifi_off = app()->wifi;
         toast(t);
@@ -2674,7 +2719,7 @@ static int page_at(int k, const char *op, const char *args, const char *title, i
     /* A page is refused when the folder is being deleted or moved into, and while an update
      * downloads for an app that is not running: launch() would be refused too, a dead page. */
     if (busy && !strcmp(busy + 1, b->id) && (shelf_moving() || !b->launched || access(b->pid, 0)))
-        return toast("Wait until the App Store finishes"), 1;
+        return toast(tr("Wait until the App Store finishes")), 1;
     if (pg.page || !(pg.lv = calloc(ADDON_DEPTH, sizeof *pg.lv))) return 0;
     if (!(pg.f = calloc(4 + 6 * ADDON_ROWS * ADDON_PAGES, sizeof *pg.f)) ||
         !(pg.page = page_open("addon_page", closed, keyup)))
@@ -2696,6 +2741,7 @@ static int page_at(int k, const char *op, const char *args, const char *title, i
     if (missing) {
         l->state = K_ERROR;
         tk_snprintf(l->note, sizeof l->note, "存储卡上没有 %s", a->name);
+>>>>>>> 1.9.1
     }
     pg.timer = timer_add(tick, 0, 250);
     show();
@@ -2720,7 +2766,9 @@ int addon_open(void *ctx, event_t *event) {
     return 0;
 }
 /* Games' card row k (games.c pick_card_game): 1 when its game runs, or its page opened. */
-int addon_game_start(int k) { return k >= 0 && k < ap.games ? press(ap.game[k]) : 0; }
+int addon_game_start(int k) {
+    return k >= 0 && k < ap.cnt[ROW_GAMES] ? press(ap.rows[ROW_GAMES][k]) : 0;
+}
 /* An app's row on Library's Apps page (addon_apps; ctx: its place by name at the last scan). It
  * opens at once, with no wait for Smart Wi-Fi's link, as a Games row does: what such an app lists
  * is on the card, and the radio comes back for an app with a page once it runs (addon_running).
@@ -2730,7 +2778,7 @@ int addon_game_start(int k) { return k >= 0 && k < ap.games ? press(ap.game[k]) 
 int addon_lib_open(void *ctx, event_t *event) {
     (void)event;
     int k = (int)(long)ctx;
-    if (k >= 0 && k < ap.libs) press(ap.lib[k]);
+    if (k >= 0 && k < ap.cnt[ROW_LIBRARY]) press(ap.rows[ROW_LIBRARY][k]);
     return 0;
 }
 
@@ -2748,6 +2796,7 @@ static int apps_closed(void *ctx, event_t *event) {
 static void apps_rows(int n) {
     if (n == la.n) return;
     widget_t *view = page_list_or(la.page, la.page, "应用", "暂无应用", la.n = n, 48);
+>>>>>>> 1.9.1
     for (int k = 0; k < n; ++k) page_row_into(view, k, addon_lib_name(k), addon_lib_open);
 }
 int addon_apps(void *ctx, event_t *event) {
@@ -2765,7 +2814,7 @@ int addon_apps_sync(void *win, event_t *event) {
     if (!win) apps_stale = 1, win = window_manager_get_top_window(window_manager());
     widget_t *row = win ? widget_lookup(win, "library_apps", 1) : (void *)0;
     if (!row && (!win || win != la.page)) return 0;
-    int n = apps_stale ? addon_libs() : ap.libs;
+    int n = apps_stale ? addon_libs() : ap.cnt[ROW_LIBRARY];
     apps_stale = 0;
     if (row) library_apps_show(row, n > 0);
     if (win == la.page) apps_rows(n);
@@ -2775,7 +2824,7 @@ int addon_apps_sync(void *win, event_t *event) {
 int addon_network_open(void *ctx, event_t *event) {
     (void)event;
     int k = (int)(long)ctx;
-    if (k >= 0 && k < ap.nets) press(ap.net[k]);
+    if (k >= 0 && k < ap.cnt[ROW_NETWORK]) press(ap.rows[ROW_NETWORK][k]);
     return 0;
 }
 
@@ -2971,6 +3020,7 @@ static void qr_refresh(void) {
     if (!code) {
         set(qp.say, !n ? "未运行" : addr[0] ? "暂无二维码" : "请将 Q2 连接到 Wi-Fi");
         set(qp.sub, !n ? "请重新打开" : addr[0] ? "请稍候" : "然后返回此页面");
+>>>>>>> 1.9.1
         return;
     }
     if (strlen(pin) == 6) /* 548 001 */
@@ -3063,7 +3113,7 @@ static void qr_open(const char *state, const char *title) {
                 : widget_factory_create_widget(f, "view", page, QR_COL, 40, w, QR_PX);
     widget_set_text_utf8(
         qr_label(qp.col, x, r[0][0], short_w, r[0][1], "s_scrlabel_white20l", r[0][2], 0xffffffffu),
-        "用手机");
+        cl ? "用手机" : "用手机");
     widget_set_text_utf8(
         qr_label(qp.col, x, r[1][0], short_w, r[1][1], "s_scrlabel_white20l", r[1][2], 0xffffffffu),
         "相机扫描");
@@ -3074,6 +3124,10 @@ static void qr_open(const char *state, const char *title) {
     qp.pinl =
         qr_label(qp.col, x, r[4][0], short_w, r[4][1], "s_scrlabel_white20l", r[4][2], SPOT_GREY);
     widget_set_text_utf8(qp.pinl, "配对码");
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
     qp.pin =
         qr_label(qp.col, x, r[5][0], short_w, r[5][1], "s_scrlabel_white20l", r[5][2], 0xffffffffu);
     qp.note = qr_label(qp.col, cl ? 24 : 0, r[6][0], cl ? 330 : w, r[6][1], "s_scrlabel_white20l",

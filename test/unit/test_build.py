@@ -124,6 +124,46 @@ def test_fileoff_refuses_what_the_file_does_not_hold(address):
         build.fileoff(two_loads(), address)
 
 
+def sectioned(e_type=3, name=b'.pdr', kind=1, flags=0, offset=0x100, filesz=0x100, twice=False, shnum=5, shentsize=40):
+    """An ELF32 whose LOAD segment holds file offsets 0 to filesz, then sections .text, .bss (NOBITS at .pdr's offset,
+    as a linker leaves it), name (0x40 bytes of 0x5a at offset; kind and flags its type and flags) and .shstrtab, named
+    name as well if twice; shnum and shentsize are its header's."""
+    names = b'\0.text\0.bss\0' + name + b'\0.shstrtab\0'
+    data = program((1, 0, 0, 0, filesz, filesz + 0x400, 7, 0x1000), size=0x300)
+    data[:6] = b'\x7fELF\1\1'  # 32-bit, little-endian
+    struct.pack_into('<H', data, 16, e_type)
+    data[0x80:0x100] = b'\x11' * 0x80
+    data[offset:offset + 0x40] = b'\x5a' * 0x40
+    data[0x140:0x140 + len(names)] = names
+    struct.pack_into('<I', data, 32, 0x180)
+    struct.pack_into('<HHH', data, 46, shentsize, shnum, 4)
+    for i, row in enumerate([(0,) * 10, (1, 1, 6, 0x80, 0x80, 0x80, 0, 0, 4, 0), (7, 8, 3, 0x100, 0x100, 0x400, 0, 0, 16, 0),
+                             (12, kind, flags, 0, offset, 0x40, 0, 0, 4, 0),
+                             (12 if twice else 13 + len(name), 3, 0, 0, 0x140, len(names), 0, 0, 1, 0)]):
+        struct.pack_into('<10I', data, 0x180 + 40 * i, *row)
+    return bytes(data)
+
+
+@pytest.mark.parametrize('data,zeroed', [(sectioned(), True), (sectioned(e_type=2), True), (sectioned(flags=1), True),
+                                         (sectioned(e_type=1), False), (sectioned(name=b'.pdx'), False), (sectioned(shnum=0, shentsize=0), False),
+                                         (b'\x7fELF\2\1' + sectioned()[6:], False), (b'\x89PNG\r\n\x1a\n' + bytes(56), False)])
+def test_zero_pdr(data, zeroed):
+    # A library's or an executable's .pdr, writable or not: those 0x40 bytes alone become zeros. A kernel module, no .pdr,
+    # no section headers, an ELF64, not an ELF: as it is
+    assert build.zero_pdr(data, 'x') == (data[:0x100] + bytes(0x40) + data[0x140:] if zeroed else data)
+
+
+@pytest.mark.parametrize('data,message', [*((d, r'\.pdr is not a section of its own outside every segment') for d in (
+    sectioned(filesz=0x120), sectioned(flags=2), sectioned(kind=8), sectioned(offset=0x140), sectioned(offset=0x180),
+    sectioned(offset=0x34), sectioned(twice=True), sectioned(offset=0x2e0)[:0x300])),
+    (sectioned(shentsize=56), 'unexpected ELF section header size')])
+def test_zero_pdr_refuses_anything_but_a_pdr_of_its_own_outside_every_segment(data, message):
+    # Inside the LOAD segment, allocated, NOBITS, over .shstrtab, the section headers or the program headers, a second
+    # .pdr, past the file's end; section headers of another size: the build stops
+    with pytest.raises(ValueError, match=rf'^x: {message}$'):
+        build.zero_pdr(data, 'x')
+
+
 def appendable(size=0x10001):
     """A LOAD from offset 0 (its paddr 0, as some linkers leave it), a dynamic segment inside it, and the final PT_NULL slot."""
     return program((1, 0, 0x400000, 0, 0x800, 0x1000, 5, 0x1000), (2, 0x700, 0x400700, 0x400700, 0x80, 0x80, 6, 4), NULL, size=size)
@@ -171,12 +211,12 @@ def test_check_layout_payload_may_reach_its_scratch_page(size, refused):
         build.check_layout(bytes(size), ps)
 
 
-@pytest.mark.parametrize('end,refused', [(build.SCRATCH + 0x30000, False), (build.SCRATCH + 0x30001, True)])
-def test_check_layout_scratch_state_may_fill_192_kb(end, refused):
-    # Scratch state of exactly 192 KB is accepted, one byte more refused
+@pytest.mark.parametrize('end,refused', [(build.SCRATCH + 0x40000, False), (build.SCRATCH + 0x40001, True)])
+def test_check_layout_scratch_state_may_fill_256_kb(end, refused):
+    # Scratch state of exactly 256 KB is accepted, one byte more refused
     ps = {'__scratch_start': build.SCRATCH, '__scratch_end': end}
     if refused:
-        with pytest.raises(ValueError, match='^Scratch state exceeds its 192 KB$'):
+        with pytest.raises(ValueError, match='^Scratch state exceeds its 256 KB$'):
             build.check_layout(b'', ps)
     else:
         build.check_layout(b'', ps)
@@ -331,6 +371,8 @@ def texts(data):
 def test_english_ui_shared_table():
     data = ipod.encode(ui(label('文件夹'), label('plain'), label('取消'), ['view', [0, 0, 1, 1], {}, []]))
     assert texts(build.english_ui('home_page.bin', data)) == ['Folder', 'plain', 'Cancel', None]
+    assert [n[2].get('tr_text') for n in ipod.walk(ipod.decode(build.english_ui('home_page.bin', data)))][1:] == [
+        'Folder', None, 'Cancel', None]  # a language pack's line for each English it wrote
 
 
 def test_english_ui_per_asset_wins():
@@ -413,6 +455,8 @@ def test_bold_font():
     bounds = [int(v, 16) for v in m[1].split(',')]
     assert sorted(u for lo, hi in zip(bounds[::2], bounds[1::2]) for u in range(lo, hi + 1)) == have
     assert bounds[:2] == [0x20, 0x7e]  # runs, not single characters
+    assert not {'fpgm', 'prep', 'cvt '} & set(font.keys())  # no hints: stb_truetype runs none
+    assert not any(getattr(font['glyf'][g], 'program', None) and font['glyf'][g].program.getBytecode() for g in font.getGlyphOrder())
     assert [t for t in sorted(font.reader.tables, key=lambda t: font.reader.tables[t].offset)] == \
            [t for t in sorted(source.reader.tables, key=lambda t: source.reader.tables[t].offset) if t in font.reader.tables]
 
@@ -454,9 +498,14 @@ def test_classic_light_font():
     assert names[7] == str(source['name'].getName(7, 3, 1, 0x409))
     assert 'Modified version of TeX Gyre Heros Bold' in names[10] and 'gust.org.pl' in names[10]  # LPPL 6(a), 6(b), 6(d)2
     assert 'U+25B6' in names[10] and 'U+25B6' in (build.ROOT/'assets/fonts/README-classic-light.txt').read_text()  # 6(b): every change
+    assert 'hints removed' in names[10] and 'hints removed' in (build.ROOT/'assets/fonts/README-classic-light.txt').read_text()
     assert (build.ROOT/'assets/fonts/README-classic-light.txt').exists() and (build.ROOT/'assets/fonts/GUST-FONT-LICENSE.txt').exists()
     if 'CFF ' in font:
         assert 'TeXGyre' not in str(font['CFF '].cff.fontNames) + font['CFF '].cff.topDictIndex[0].FullName + font['CFF '].cff.topDictIndex[0].FamilyName
+        hints = {'hstem', 'vstem', 'hstemhm', 'vstemhm', 'hintmask', 'cntrmask'}
+        for charstring in font['CFF '].cff.topDictIndex[0].CharStrings.values():
+            charstring.decompile()
+            assert not hints & set(charstring.program)  # stb_truetype runs no hints: none are kept
     assert re.fullmatch(r'#define CLASSIC_LIGHT_RANGES \{0x20,0x7e,[0-9a-fx,]+\}', ranges)
     assert 'CFF ' in font and 'glyf' not in font  # the chosen outline form
 
@@ -670,7 +719,8 @@ def letters_font(drop=(), move=None):
 
 def letter_parts(font, c):
     """c's glyph as (component, x, y) for each part, its letters by character."""
-    glyph, back = font['glyf'][font.getBestCmap()[ord(c)]], {f'u{ord(ch):04X}': ch for ch in LETTERS_FONT}
+    cmap = font.getBestCmap()  # by the font's own names: font_letters keeps none (post 3.0), so fontTools makes them up
+    glyph, back = font['glyf'][cmap[ord(c)]], {name: chr(u) for u, name in cmap.items()}
     return [(back[p.glyphName], p.x, p.y) for p in glyph.components]
 
 
@@ -685,11 +735,13 @@ def test_font_letters_maps_every_stock_letter_to_a_composite_of_its_own_glyphs()
     assert len(added) == 93 and after['maxp'].numGlyphs == before['maxp'].numGlyphs + 93
     for u in added:
         glyph = after['glyf'][cmap[u]]
-        assert cmap[u] == f'uni{u:04X}' and glyph.isComposite()
-        assert all(p.glyphName in before.getGlyphOrder() for p in glyph.components)
+        assert after.getGlyphID(cmap[u]) >= before['maxp'].numGlyphs and glyph.isComposite()  # a glyph of its own
+        assert all(after.getGlyphID(p.glyphName) < before['maxp'].numGlyphs for p in glyph.components)  # stock's glyphs, by id
         assert after['hmtx'][cmap[u]][1] == glyph.xMin
-    assert cmap[0x1ea1] == 'u1EA1' and not after['glyf']['u1EA1'].isComposite()  # ạ was there: left alone
-    assert after['cmap'].getcmap(1, 0).cmap == {0x61: 'u0061'}
+    assert len({after.getGlyphID(cmap[u]) for u in added}) == 93 and after['post'].formatType == 3  # a glyph each; no names
+    # By glyph ids, as in letter_parts
+    assert after.getGlyphID(cmap[0x1ea1]) == before.getGlyphID('u1EA1') and not after['glyf'][cmap[0x1ea1]].isComposite()  # ạ was there: left alone
+    assert {u: after.getGlyphID(n) for u, n in after['cmap'].getcmap(1, 0).cmap.items()} == {0x61: before.getGlyphID('u0061')}
     assert after['head'].modified == before['head'].modified == 0xb0000000 and after['head'].created == before['head'].created
 
 
@@ -899,6 +951,7 @@ def bluealsa():
         struct.pack_into('<I', raw, build.fileoff(raw, caller - 8), 0x0c105174)
     for address, old, _, _ in build.BT_SILENCE_SITES:
         struct.pack_into('<I', raw, build.fileoff(raw, address), old)
+    struct.pack_into('<I', raw, build.fileoff(raw, build.BT_SINK_DEFAULT[0]), build.BT_SINK_DEFAULT[1])
     return bytes(raw)
 
 
@@ -943,6 +996,16 @@ def test_patch_bluealsa_hooks(silence):
         assert struct.unpack_from('<I', out, build.fileoff(raw, address))[0] == new
 
 
+def test_patch_bluealsa_leaves_the_a2dp_sink_to_its_options(silence):
+    raw = bluealsa()
+    address, old, new = build.BT_SINK_DEFAULT
+    assert struct.unpack_from('<I', build.patch_bluealsa(raw), build.fileoff(raw, address))[0] == new  # sh to sb
+    bad = bytearray(raw)
+    struct.pack_into('<I', bad, build.fileoff(raw, address), old ^ 1)
+    with pytest.raises(ValueError, match=r'^0x\w+: unexpected instruction \(Bluetooth profile default\)$'):
+        build.patch_bluealsa(bytes(bad))
+
+
 def test_patch_bluealsa_refuses_a_moved_caller(silence):
     raw = bytearray(bluealsa())
     struct.pack_into('<I', raw, build.fileoff(raw, 0x418114 - 8), 0)
@@ -954,7 +1017,7 @@ def test_patch_bluealsa_refuses_a_moved_caller(silence):
 def test_patch_bluealsa_refuses_a_moved_site(silence, site):
     raw = bytearray(bluealsa())
     struct.pack_into('<I', raw, build.fileoff(raw, build.BT_SILENCE_SITES[site][0]), 0xdead)
-    with pytest.raises(ValueError, match='^Bluetooth silence site mismatch$'):
+    with pytest.raises(ValueError, match=r'^0x\w+: unexpected instruction \(Bluetooth silence site\)$'):
         build.patch_bluealsa(bytes(raw))
 
 
@@ -1083,7 +1146,7 @@ def test_patch_m4b_cover_wants_the_m4a_branch(monkeypatch):
     lib = bytearray(taglib())
     struct.pack_into('<I', lib, build.fileoff(lib, SITE), 0x1040004b)
     monkeypatch.setattr(build, 'TAG_C_SHA', hashlib.sha256(lib).hexdigest())
-    with pytest.raises(ValueError, match='^Unexpected TagLib M4A cover branch$'):
+    with pytest.raises(ValueError, match=r'^0x\w+: unexpected instruction \(TagLib M4A cover branch\)$'):
         build.patch_m4b_cover(bytes(lib))
 
 

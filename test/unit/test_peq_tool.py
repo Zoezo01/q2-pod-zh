@@ -21,5 +21,6 @@ def test_stock_functions_take_stock_types():
         assert 'int (*)(void *, void *)' not in args, name  # a handler is given its event
         if name.startswith(objects) and name != 'slide_menu_on_scroll_done':  # that one is stock's (ctx, event)
             assert not args.startswith('void *'), name
-        if name.endswith('_create') or name in ('window_manager', 'widget_factory', 'image_manager', 'input_method'):
+        if name.endswith('_create') or name in ('window_manager', 'widget_factory', 'image_manager', 'input_method',
+                                                 'font_manager'):
             assert ret != 'void *', name

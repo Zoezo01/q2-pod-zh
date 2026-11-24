@@ -11,7 +11,7 @@ ZIP_SHA = '4e298cab6c12d86cfc55565645f7e3ae11d3fb44677a93ca13991e7184ecec4e'
 # 钉住（重新打的 ZIP 永远对不上官方那个）。
 TAR_SHA = '7f57884420e324ac3263571d96a35f04bbef79f35dac34162655c5822bdaa684'
 DEMO_SHA = 'e65d638d6e70332b4c3193af8ac2044941ec0157d20e41e40233aac5b0c2c59f'
-VERSION = '1.9.0'  # major.minor.patch, single digits, shown as is (About and release tag)
+VERSION = '1.9.1'  # major.minor.patch, single digits, shown as is (About and release tag)
 BETA = 0  # a pre-release's beta number (1-9), 0 for the release itself
 # 本分支的 Release 由自己发：网络更新读这个仓库的 releases/latest，release_zh.py 也往这里传。
 # 所以 Release 的 tag 必须正好等于 RELEASE_TAG（A 线是裸 VERSION，之后是 VERSION 点位），
@@ -71,8 +71,9 @@ def dev_tag(number):
     for _ in range(3): n, d = divmod(n, 36); digits = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'[d] + digits
     return 'V' + digits + 'i'
 BASE = 0xb00000
-SCRATCH = 0xc00000  # 1 MB of payload text below it (upstream's 0xbd0000 had 4.9 KB left)
-SCRATCH_MAX = 0x30000  # the most its state may fill, 192 KB: the segment is demo's last, the heap after it
+SCRATCH = 0xbf0000  # 960 KB of payload text below it
+SCRATCH_MAX = 0x40000  # the most its state may fill, 256 KB: the segment is demo's last, the heap after it
+>>>>>>> 1.9.1
 ROOTFS_FREE_MIN = 1 << 19  # bytes of stock's rootfs size a build must leave unused, 512 KiB (docs/building.md, Free space)
 RING_STEP = 48
 HOOKS = {
@@ -149,6 +150,9 @@ HOOKS = {
     'toolsGetAlbumCover': (0x5d709c, 'ringnav_album_cover', 'album_cover'),
     # Power gains Charge limit; Playback gains Artists (Album Artist)
     'systemset_sysset_page_init': (0x4d3ba8, 'ringnav_systemset', 'systemset'),
+    # Languages (language.c): every stock text a key asks for, the card's translation first; the Language page's rows
+    'locale_info_tr': (0x65c1f4, 'ringnav_locale_tr', 'locale_tr'),
+    'systemset_language_page_init': (0x4cadec, 'ringnav_language', 'language'),
     'systemset_display_page_init': (0x4c7168, 'ringnav_display', 'display'),
     # Network: card apps whose q2app says row=network (a VPN) after stock's rows (addon.c)
     'systemset_netservice_page_init': (0x4cd50c, 'ringnav_netservice', 'netservice'),
@@ -268,6 +272,15 @@ WM_PAINT_LEAF = ('window_manager_paint', 0x680a1c, 'ringnav_wm_paint', (0x108000
 # queue_event slot at +0x18 and the request, then tail-calls the slot); the payload does the whole of it
 # and keeps the touch thread's empty events out of the queue (playback.c ringnav_queue_event).
 QUEUE_LEAF = ('main_loop_queue_event', 0x65c418, 'ringnav_queue_event', (0x10800008, 0, 0x8c990018))
+# font_get_glyph, a leaf too (null-checks the font and its get_glyph at +0x24, and the glyph, then tail-calls
+# get_glyph): every glyph drawn or measured. The payload does the whole of it, a language pack's font giving
+# GLYPH_FALLBACK's characters (script.c ringnav_font_glyph).
+FONT_GLYPH_LEAF = ('font_get_glyph', 0x6548e0, 'ringnav_font_glyph', (0x10800008, 0, 0x8c990024))
+# Right-to-left scripts (Hebrew to Arabic Extended-A, both blocks of presentation forms) and the zero-width,
+# joining and direction controls FriBidi leaves in a visual string (U+FEFF its lam-alef filler): no face here
+# has one (font_quotes checks default.ttf), so a language pack's font draws them.
+GLYPH_FALLBACK = ((0x0590, 0x08ff), (0x200b, 0x200f), (0x2066, 0x2069), (0xfb1d, 0xfdff), (0xfe70, 0xfeff))
+GLYPH_FALLBACK_MACRO = '#define GLYPH_FALLBACK_RANGES {' + ','.join(f'0x{u:x}' for r in GLYPH_FALLBACK for u in r) + '}'
 # Internet Radio's player and Spotify's sink (patch/video.c): a separate executable against the
 # rootfs's own libraries, with display_logo's inode metadata.
 HELPER, HELPER_LIKE = 'usr/bin/q2video', 'usr/bin/display_logo'
@@ -425,7 +438,10 @@ BLUEALSA = 'usr/bin/bluealsa'
 # Its launcher: keep the A2DP transport open 5 s after hciplayer closes the PCM (a stop, a skip, a cold start), so
 # a track change doesn't restart the stream (true-wireless buds started one ear first).
 BLUEALSA2 = 'usr/bin/bluealsa2'
-BT_KEEPALIVE = (b'bluealsa -c LDAC', b'bluealsa --keep-alive=5 -c LDAC')
+# Bluetooth → Receive Audio off (Q2POD BTRECEIVE=0) leaves out A2DP Sink, so a device that both plays and sends
+# (an Amazon Echo) can only take the Q2's audio; read at each start, which openBluetooth runs at every Bluetooth on.
+BT_KEEPALIVE = (b'bluealsa -c LDAC', b"grep -qx BTRECEIVE=0 /mnt/data/config.ini 2>/dev/null || sink='-p a2dp-sink'\n"
+                b'bluealsa --keep-alive=5 $sink -c LDAC')
 # The Bluetooth daemon, BlueZ 5.66: avdtp_new's "stream_setup = TRUE; dc_timeout = DISCONNECT_TIMEOUT", for a connection
 # the other side opens. BlueZ's timeout is 1 s and stock's build has 30, so a car that leaves the stream to the Q2
 # was silent for 30 s. Back to 1, here only; see docs/internals.md, Bluetooth stream setup.
@@ -434,7 +450,39 @@ BLUETOOTHD = 'usr/bin/bluetoothd'
 BT_GRACE = tuple(bytes.fromhex(f'5c0403ae {li} 25300002 180002ae 25202002 0c82998f d4393927 b2fe1104 580403ae')
                  for li in ('1e000324', '01000324'))
 SCROBBLE_CA = 'etc/scrobble-ca.pem'
+# Card apps without root (patch/app_user.c, docs/internals.md#card-apps): APP_UID runs them, and the card is mounted for
+# it so they can still write it. q2mount mounts it for the mdev script (boot, a card put in, Standby's resume) and for USB
+# storage's end; a mount that refuses the option is done as stock does it, ntfs-3g then mount, without one.
+APP_UID = 1000
+Q2MOUNT = 'usr/bin/q2mount'
+Q2MOUNT_SH = f'''#!/bin/sh
+# The card at /mnt/mmc for card apps (uid {APP_UID}: tools/build.py), else as stock mounts it
+o=uid={APP_UID},gid={APP_UID}
+ntfs-3g -o $o "$1" /mnt/mmc 2>/dev/null || ntfs-3g "$1" /mnt/mmc 2>/dev/null ||
+    mount -o $o "$1" /mnt/mmc 2>/dev/null || mount "$1" /mnt/mmc
+'''.encode()
+# The mdev script: q2mount first, then stock's own lines if it fails (its $? the ntfs-3g's, as before).
+SD_MOUNT = 'etc/mdev/add_removesd.sh'
+SD_MOUNT_HOOK = (b'\tntfs-3g /dev/$MDEV /mnt/mmc\n', b'\t/usr/bin/q2mount /dev/$MDEV || ntfs-3g /dev/$MDEV /mnt/mmc\n')
+# usbmode_exit snprintfs this ntfs-3g line (the addiu at CARD_MOUNT_REF) for system(), and its own plain mount only
+# when that fails: q2mount's line takes the same 20 bytes. Its tail "mnt/mmc" (0x7870f4) is also the folder the TF card
+# update unpacks update.tar into (the addiu at 0x499574), so q2mount's line keeps it and runs q2mount by name (PATH has
+# /usr/bin, as for stock's ntfs-3g); q2mount reads only $1.
+CARD_MOUNT_FMT, CARD_MOUNT_REF = 0x7870e8, (0x5429dc, 0x24a570e8)  # addiu $a1, $a1, 0x70e8
+CARD_MOUNT_LINE = (b'ntfs-3g %s /mnt/mmc\0', b'q2mount %s /mnt/mmc\0')
+# Stock's Wi-Fi passwords, root's alone: wpa_supplicant (v2.9, update_config=1) saves each join as a .tmp it renames,
+# so the file takes its launcher's umask. wifi_connect.sh, the only one (demo runs it at each link-up), gives it 077 and
+# tightens the file a Reset's template copy left.
+WIFI_CONNECT = 'usr/bin/wifi_connect.sh'
+WPA_HOOK = (b'\twpa_supplicant -Dnl80211', b'\tumask 077\n\tchmod 600 $WPA_CONF\n\twpa_supplicant -Dnl80211')
+# APP_UID's name, in video and audio: dbus-daemon (libdbus 1.12) takes a peer's groups from getpwuid and getgrouplist,
+# not from the socket, so bluealsa.conf's group="audio" lets a card app play over Bluetooth only with these.
+PASSWD, PASSWD_HOOK = 'etc/passwd', (b'/var/run/dbus:/bin/sh\n', f'/var/run/dbus:/bin/sh\napp:x:{APP_UID}:{APP_UID}:card apps:/tmp:/bin/false\n'.encode())
+GROUP, GROUP_HOOK = 'etc/group', (b'\nvideo:x:28:\naudio:x:29:\n', b'\nvideo:x:28:app\naudio:x:29:app\n')
 AAC_44K1 = 0x317b8
+# After its options, stock's main turns both A2DP profiles on whatever -p said: sh 0x101 over a2dp_source and a2dp_sink.
+# sb leaves a2dp_source on and a2dp_sink to -p, which the launcher passes unless Receive Audio is off.
+BT_SINK_DEFAULT = (0x403f1c, 0xa4451580, 0xa0451580)
 # DROP is acknowledged before the encoder handles its signal. Flush in the control
 # thread instead, so a delayed signal cannot discard the next track's first PCM.
 BT_DROP = 0x40cb50
@@ -569,6 +617,9 @@ BT_PARAMS = (0x4fe1e4, 0x0411f5ef)  # config_bt_init's reset moves before the co
 # autoLinkBluetooth's bal checkPairDev also skips while the link list holds a connected link.
 BT_STATUS = (0x4fa700, 0x0320f809)
 BT_AUTOLINK = (0x4fbf2c, 0x0411fd04)
+# checkBluetoothStatus' two bal getBtService, after the Q2's link and after the other side's: jal headset_bt_service,
+# which with Receive Audio off makes a device that plays and sends one the Q2 sends to (docs/internals.md).
+BT_SERVICE = ((0x4fd764, 0x0411f6a0), (0x4fd9fc, 0x0411f5fa))
 # player_parsecover_thd's jalr toolsGetExternCover (lw $t9 at 0x51dcbc; Now Playing's folder art, after its
 # embedded art failed) becomes jal coverflow_player_cover, which gives ffmpeg what stock's decoder refuses.
 PLAYER_COVER = (0x51dccc, 0x0320f809)
@@ -721,6 +772,9 @@ BT_INPUT = ((0x639320, 0x3c1c0040, 0x03e00008), (0x639324, 0x279c17c0, 0x0000102
 # (jalr $25) becomes jal to its payload function (tidal.c), which parks the thread: Tidal's wakes once
 # per track URL asked for, Baidu's never.
 STREAM_POLL_CALLS = ((0x4805b8, 'ringnav_baidu_poll'), (0x4871a4, 'ringnav_tidal_poll'))
+# device_standby's system("umount /mnt/mmc"), whose result stock ignores before rmmod soc_msc: its
+# jalr goes to system.c's ringnav_standby_umount, the command still in $a0 from the delay slot.
+STANDBY_UMOUNT = 0x502438
 # get_onlineid3info's player_set_coverinfo(REC_COVER, REC_NAME, type) for a 0xf1 record: its jalr, the
 # REC_COVER load in its delay slot, and the stub that adds the record ($s1) for tidal.c app_coverinfo
 COVERINFO_CALL = (0x493708, 0x8e240028, 'app_coverinfo_call')
@@ -822,7 +876,7 @@ WEB = {
     ('山灵音乐', 'Shanling Q2'),
     ('支持音频格式:ISO,DFF,DSF,APE,FLAC,AIF,AIFF,WAV,M4A,AAC,MP2,AC3,DTS,MP3,OGG,WMA,CUE,M3U,M3U8<br/>图片格式:PNG,JPG,JPEG<br/>歌词格式:LRC<br/>固件升级包:BIN',
      'Audio: ISO, DFF, DSF, APE, FLAC, AIF, AIFF, WAV, M4A, M4B, AAC, MP2, AC3, DTS, MP3, OGG, WMA, CUE, M3U, M3U8<br/>'
-     'Pictures: PNG, JPG, JPEG<br/>Lyrics: LRC<br/>Videos: MP4, M4V, MKV, WEBM, AVI, MOV, MPG, MPEG, WMV, FLV, TS, M2TS, 3GP, OGV<br/>Books: TXT, EPUB<br/>Firmware: BIN'),
+     'Pictures: PNG, JPG, JPEG<br/>Lyrics: LRC<br/>Videos: MP4, M4V, MKV, WEBM, AVI, MOV, MPG, MPEG, WMV, FLV, TS, M2TS, 3GP, OGV<br/>Books: TXT, EPUB, MOBI, PRC<br/>Firmware: BIN'),
     ('''上传文件
           <input id="fileupload" type="file" name="files[]" multiple>
         </button>''', '''Upload Files
@@ -835,7 +889,7 @@ WEB = {
     ('创建文件夹', 'New Folder'), ('返回上一级', 'Up'), ('正在进行文件上传', 'Uploading'), ('新建文件夹', 'New Folder'),
     ('请输入要创建的文件夹的名称:', 'Folder name:'), ('取消', 'Cancel'), ('移动项目', 'Move'), ('请输入此项的新位置:', 'New location:')],
   'usr/share/web/js/index.js': [
-    ('"LRC","BIN"];', '"LRC","BIN","M4B","MP4","M4V","MKV","WEBM","AVI","MOV","MPG","MPEG","WMV","FLV","TS","M2TS","3GP","OGV","TXT","EPUB"];'),
+    ('"LRC","BIN"];', '"LRC","BIN","M4B","MP4","M4V","MKV","WEBM","AVI","MOV","MPG","MPEG","WMV","FLV","TS","M2TS","3GP","OGV","TXT","EPUB","MOBI","PRC"];'),
     ('function _showError(', MKDIR_JS),
     ('''  $("#upload-file").click(function(event) {
     $("#fileupload").click();
@@ -924,7 +978,7 @@ def patch_web(path, data):
     for old, new in WEB[path]:
         check(old in text, f'Unexpected {path}: {old[:40]!r}')
         text = text.replace(old, new)
-    check(not re.search('[　-鿿＀-￯]', text), f'Chinese left in {path}')
+    check(not CJK.search(text), f'Chinese left in {path}')
     return text.encode()
 
 # Stock's UI assets carry Chinese text (docs/internals.md#english), most of it designers' placeholders that
@@ -990,6 +1044,8 @@ def english_ui(rel, data):
             props['text'] = text.replace('，', ', ')
         else:
             props['text'] = ENGLISH_IN.get(rel, {}).get(text) or ENGLISH[text]
+            if rel != 'kb_default_t9.bin':  # a language pack's line for it (language.c); the keyboard's keys stay
+                props['tr_text'] = props['text']
     check(not any(CJK.search(n[2].get('text', '')) for n in walk(root)), f'Chinese left in {rel}')
     return encode(root)
 
@@ -1013,6 +1069,7 @@ def font_quotes(data):
             check(all(c in table.cmap for c in QUOTES.values()), 'Font without straight quotes')
             table.cmap.update({c: table.cmap[q] for c, q in QUOTES.items()})
     glyf, hmtx, cmap = font['glyf'], font['hmtx'], font.getBestCmap()
+    check(not any(a <= u <= b for u in cmap for a, b in GLYPH_FALLBACK), 'Font maps a GLYPH_FALLBACK character')
     full, empty = glyf[cmap[0x2665]], glyf[cmap[0x2661]]
     check(not empty.isComposite() and empty.xMin == 2 and empty.yMax == 159, 'Unexpected ♡ glyph')
     sx, sy = (full.xMax - full.xMin) / (empty.xMax - empty.xMin), (full.yMax - full.yMin) / (empty.yMax - empty.yMin)
@@ -1051,7 +1108,8 @@ def font_letters(data):
     """STOCK_LETTERS that stock's font (data) lacks, added: each a composite glyph of the plain base
     letter of its NFD (never stock's precomposed â ê ô ă, a different design from its ASCII and marks) and
     each mark, at an offset from the base's box; i under a mark above is dotless ı. A letter already in
-    the font is left alone. head keeps its stock timestamp, as in font_quotes."""
+    the font is left alone. head keeps its stock timestamp, as in font_quotes, and post keeps no glyph names (format
+    3.0), which stb_truetype, finding glyphs by cmap's ids, never reads."""
     # ponytail: marks sit at fixed offsets from the base's box (stb_truetype reads no GPOS), tuned on stock
     # V1.36's font; a new base font needs them looked at again.
     import unicodedata
@@ -1101,6 +1159,7 @@ def font_letters(data):
         for table in font['cmap'].tables:
             if table.isUnicode(): table.cmap[cp] = letter
     check(all(u in font.getBestCmap() for lo, hi in STOCK_LETTERS for u in range(lo, hi + 1)), "Font without its letters' parts")
+    font['post'].formatType = 3.0
     out = io.BytesIO()
     font.save(out, reorderTables=False)
     return out.getvalue()
@@ -1148,6 +1207,7 @@ def subset_font(src, family, ranges_macro, notice=None):
     play_mark(font)
     have.append(PLAY_MARK)
     options = subset.Options()
+    options.hinting = False  # stb_truetype, which draws the faces, runs no hints
     if notice: options.name_IDs.append(7)  # the trademark notice, as its licence asks
     sub = subset.Subsetter(options)
     sub.populate(unicodes=have)
@@ -1189,7 +1249,7 @@ def bold_font():
 CLASSIC_LIGHT_TTF = 'release/assets/default/raw/fonts/classic-light.ttf'
 # OFL 2 asks each copy to hold its licence, and the subsets' name tables don't: these ship beside the fonts
 FONT_NOTICES = ('LiberationSans-OFL.txt', 'GUST-FONT-LICENSE.txt', 'README-classic-light.txt')
-CLASSIC_LIGHT_NOTICE = ("Modified version of TeX Gyre Heros Bold 2.004: cut to part of its Latin, including Vietnamese's letters with tone marks, part of its Greek, and its punctuation, its layout features to frac, liga and locl, a play mark added at U+25B6, and renamed. "
+CLASSIC_LIGHT_NOTICE = ("Modified version of TeX Gyre Heros Bold 2.004: cut to part of its Latin, including Vietnamese's letters with tone marks, part of its Greek, and its punctuation, its layout features to frac, liga and locl, its hints removed, a play mark added at U+25B6, and renamed. "
                'The original: https://www.gust.org.pl/projects/e-foundry/tex-gyre/heros')
 
 def classic_light_font():
@@ -1296,6 +1356,28 @@ def fileoff(b, a):
     for _, (t, o, v, _, f, _, _, _) in segments(b):
         if t == 1 and v <= a < v+f: return o+a-v
     raise ValueError(f'Unmapped address {a:x}')
+def word(d, a): return struct.unpack_from('<I', d, fileoff(d, a))[0]
+def zero_pdr(b, name):
+    """An executable or shared library (ELF32, little-endian) with its .pdr section zeroed, the same descriptors as
+    demo's PDR; anything else as it is. The size and every other byte stay the same. ponytail: kernel modules keep
+    theirs (187,104 bytes in stock's 24); 5.10's module loader skips unallocated sections, so they could be zeroed
+    once the Q2's kernel is shown to do the same."""
+    if b[:6] != b'\x7fELF\1\1' or struct.unpack_from('<H', b, 16)[0] not in (2, 3): return b
+    shoff, = struct.unpack_from('<I', b, 32)
+    size, num, names = struct.unpack_from('<HHH', b, 46)
+    if not num: return b
+    check(size == 40, f'{name}: unexpected ELF section header size')
+    sections = [struct.unpack_from('<10I', b, shoff+i*size) for i in range(num)]
+    pdr = [s for s in sections if b.startswith(b'.pdr\0', sections[names][4]+s[0])]
+    if not pdr: return b
+    _, kind, flags, _, off, length, *_ = pdr[0]
+    segs = segments(b)
+    used = [(0, max([52] + [o+32 for o, _ in segs])), (shoff, shoff+num*size), *((p[1], p[1]+p[4]) for _, p in segs),
+            *((s[4], s[4]+s[5]) for s in sections if s is not pdr[0] and s[1] != 8)]  # the headers; 8: SHT_NOBITS
+    check(len(pdr) == 1 and kind == 1 and not flags & 2 and off+length <= len(b) and
+          all(end <= off or off+length <= at for at, end in used),
+          f'{name}: .pdr is not a section of its own outside every segment')
+    return b[:off] + bytes(length) + b[off+length:]
 
 # Every saved g_time_zone index, in stock's order (0-26) then the additions: its label and TZ. Labels
 # are literal, short enough for the 246 px row at 24 px; the offset is the standard one. The
@@ -1393,6 +1475,7 @@ FUNCTIONS = {
  'widget_resize': ('int', 'widget_t *, int, int'),
  'widget_layout_children': ('int', 'widget_t *'),
  'widget_lookup': ('widget_t *', 'widget_t *, const char *, int'),
+ 'widget_lookup_by_type': ('widget_t *', 'widget_t *, const char *, int'),
  'scroll_bar_scroll_to': ('int', 'widget_t *, int, unsigned'),
  'navigator_back_to_home': ('int', 'void'),
  'navigator_switch_to_with_context': ('int', 'const char *, const void *, int'),
@@ -1443,6 +1526,16 @@ FUNCTIONS = {
  'canvas_draw_text_in_rect': ('int', 'canvas_t *, const unsigned *, unsigned, const void *'),
  'canvas_draw_text': ('int', 'canvas_t *, const unsigned *, unsigned, int, int'),  # lyrics.c, navigation.c
  'canvas_measure_text': ('float', 'canvas_t *, const unsigned *, unsigned'),
+ # AWTK's bidi, as its widgets draw text (bidi_text.c, navigation.c draw_in_face)
+ 'canvas_draw_text_bidi_in_rect': ('int', 'canvas_t *, const unsigned *, unsigned, const void *, const char *, int'),
+ 'bidi_type_from_name': ('int', 'const char *'),
+ 'bidi_init': ('void *', 'void *, int, int, int'),
+ 'bidi_log2vis': ('int', 'void *, const unsigned *, unsigned'),
+ 'bidi_deinit': ('int', 'void *'),
+ # A language pack's font for what no face has (script.c ringnav_font_glyph)
+ 'font_manager': ('font_manager_t *', 'void'),
+ 'font_manager_get_font': ('font_t *', 'font_manager_t *, const char *, unsigned'),  # (manager, a face's name, px): loaded once
+ 'font_stb_create': ('font_t *', 'const char *, const void *'),  # (name, the TTF's bytes, kept): 0x688e24 makes it non-mono
  'canvas_fill_rounded_rect': ('int', 'canvas_t *, const void *, const void *, const void *, unsigned'),
  'canvas_stroke_rounded_rect': ('int', 'canvas_t *, const void *, const void *, const void *, unsigned, unsigned'),
  # The PEQ curve (peq_ui.c) and the visualizer (visualizer.c): AWTK's software nanovg, float_t float, color_t by value
@@ -1633,6 +1726,7 @@ FUNCTIONS = {
  'getBtLinkSize': ('int', 'void'), 'getBtLinkItem': ('int', 'int, int *, char *'),
  'getBtLinkStatus': ('int', 'char *'), 'addBtLinkItem': ('void', 'char *, int'),
  'updateBtLinkStatus': ('int', 'int, char *'), 'checkPairDev': ('int', 'char *'),
+ 'getBtService': ('int', 'char *'),
  'btctl_create_daemon_thread': ('int', 'void *'),
  'initBluetoothParam': ('void', 'void'),
  'btctl_set_prompt_callback': ('void', 'void *, void *'),
@@ -1758,6 +1852,7 @@ CONTEXT_DATA = {'bt_showcoding': 4, 'g_memory_info': 3476, 'g_folder_path': 1024
                 'parse_cover_mutex': 24, 'g_playcover_mutex': 24, 'system_bar': 4, 'g_lastcover_url': 1024,
                 'g_dacoff_time': 4, 'p_vector_select_record': 4,
                 'g_play_id3_info': 2716,
+                'g_song_name': 512, 'g_song_artist': 256,  # the title and artist Now Playing's update draws
                 # Artists' source (PLAYSET ARTISTTYPE, the artist page's switch: 1 album artist);
                 # the battery level (0-100) and the charger's state (1, 2 charging), get_battery_capacity's
                 'artist_type': 4, 'g_power_capacity': 4, 'g_power_chargestate': 4,
@@ -1798,6 +1893,10 @@ OBSOLETE = ['usr/lib/libdbus-1.so.3.19.8', *(f'usr/lib/lib{n}-2.0.so.0.5400.3' f
             ('gio', 'glib', 'gmodule', 'gobject', 'gthread')),
             *(f'usr/bin/{n}' for n in ('strace', 'strace-log-merge', 'sqlite3', 'hcidump'))]
 
+# Left out, though each makes the payload smaller, because LLVM can miscompile with them on MIPS:
+# -mllvm -disable-mips-df-succbb-search=false (16 KB) can copy the instruction after an atomic's LL/SC loop into its
+# SC-retry delay slot, which runs it again each time an SC fails; -mllvm -enable-tail-merge=true (8 KB) adds jumps
+# LLVM treats as overwriting $at while the merged code still reads it, so a later pass can drop the value.
 FLAGS = ['--target=mipsel-linux-gnu','-march=mips32r2','-mabi=32','-mfp64',
          '-mno-abicalls','-fno-pic','-G0','-ffreestanding','-fno-builtin',
          '-fno-stack-protector','-fno-unwind-tables','-fno-asynchronous-unwind-tables',
@@ -1807,7 +1906,7 @@ FLAGS = ['--target=mipsel-linux-gnu','-march=mips32r2','-mabi=32','-mfp64',
          '-Wshadow','-Wimplicit-int-conversion','-Wconditional-uninitialized','-Wmissing-variable-declarations',
          '-Wvla','-Wundef']
 # navigation.c and the files split out of it (patch/navigation.h), each its own object, linked in this order.
-NAVIGATION = ['navigation.c', 'theme_engine.c', 'playlists.c', 'classic_pages.c', 'home.c', 'np_bar.c', 'volume.c', 'smart_wifi.c', 'system.c', 'usb_charge.c', 'tags.c', 'scrobble_ui.c', 'library_lists.c', 'durations.c', 'script.c', 'coverflow_position.c', 'ratings.c', 'scan_folders.c', 'folder_delete.c', 'battery.c', 'np_lyrics.c', 'quick_settings.c', 'flat.c', 'clock.c', 'queue_menu.c', 'np_marks.c', 'rotate.c', 'netservice.c', 'addon_bar.c']
+NAVIGATION = ['navigation.c', 'theme_engine.c', 'playlists.c', 'classic_pages.c', 'home.c', 'np_bar.c', 'volume.c', 'smart_wifi.c', 'system.c', 'usb_charge.c', 'tags.c', 'scrobble_ui.c', 'library_lists.c', 'durations.c', 'script.c', 'coverflow_position.c', 'ratings.c', 'scan_folders.c', 'folder_delete.c', 'battery.c', 'np_lyrics.c', 'quick_settings.c', 'flat.c', 'clock.c', 'queue_menu.c', 'np_marks.c', 'rotate.c', 'netservice.c', 'addon_bar.c', 'side_seek.c', 'language.c', 'bidi_text.c', 'card_theme.c', 'card_rules.c']
 
 def compile_payload(out):  # pragma: no mutate block
     """Compile and link the payload."""
@@ -1816,6 +1915,10 @@ def compile_payload(out):  # pragma: no mutate block
     nav = [out/f'{name[:-2]}.o' for name in NAVIGATION]
     for name, o in zip(NAVIGATION, nav):
         run('clang',*FLAGS,'-I',out,'-c',ROOT/'patch'/name,'-o',o)
+    # A stock function used as a value takes its stub's address, not stock's, unless peq.py's STOCK_BY_ADDRESS names it.
+    for o in [*nav, *extra]:
+        for line in run('readelf','-rW',o).splitlines():
+            if 'stock_call_' in line: check('R_MIPS_26' in line, f'{o.name} uses {line.split()[-1]} as a value: add it to STOCK_BY_ADDRESS')
     asm = ['.set noreorder', '.text']
     resume = {x: address for address, _, x in HOOKS.values() if x}
     for x, address in resume.items():
@@ -1823,12 +1926,12 @@ def compile_payload(out):  # pragma: no mutate block
                 f'ori $gp, $gp, {GP & 65535}', f'j 0x{address + 12:x}', 'nop']
     (out/'trampoline.S').write_text('\n'.join(asm)+'\n')
     run('clang',*FLAGS,'-c',out/'trampoline.S','-o',out/'trampoline.o')
-    run('ld.lld','-m','elf32ltsmip','--gc-sections','-T',ROOT/'patch/link.ld','-e','ringnav',
+    run('ld.lld','-m','elf32ltsmip','--gc-sections','-O2','--icf=safe','-T',ROOT/'patch/link.ld','-e','ringnav',
         *[f'--undefined={name}' for _, name, _ in HOOKS.values()], f'--undefined={GRADIENT_LEAF[2]}', '--undefined=ringnav_lrc_open',
-        f'--undefined={WM_PAINT_LEAF[2]}', f'--undefined={QUEUE_LEAF[2]}', '--undefined=ringnav_audio_extension', '--undefined=start_mute', '--undefined=start_sleep', '--undefined=ringnav_genre_copy', '--undefined=ringnav_lyric_save', '--undefined=ringnav_lyric_drop', '--undefined=ringnav_cover_copy','--undefined=ringnav_folder_rm','--undefined=ringnav_bootmode', '--undefined=lockscreen_access','--undefined=ringnav_ts_read',
+        f'--undefined={WM_PAINT_LEAF[2]}', f'--undefined={QUEUE_LEAF[2]}', f'--undefined={FONT_GLYPH_LEAF[2]}', '--undefined=ringnav_audio_extension', '--undefined=start_mute', '--undefined=start_sleep', '--undefined=ringnav_genre_copy', '--undefined=ringnav_lyric_save', '--undefined=ringnav_lyric_drop', '--undefined=ringnav_cover_copy','--undefined=ringnav_folder_rm','--undefined=ringnav_bootmode', '--undefined=lockscreen_access','--undefined=ringnav_ts_read',
         '--undefined=ringnav_baidu_poll', '--undefined=ringnav_tidal_poll', '--undefined=addon_m3u_dir', f'--undefined={COVERINFO_CALL[2]}',
         '--undefined=coverflow_player_cover', '--undefined=coverflow_grid_cover', '--undefined=coverflow_album_cover', '--undefined=coverflow_folder_cover', '--undefined=headset_bt_init',
-        '--undefined=headset_status_register', '--undefined=headset_bt_autolink', *[f'--undefined={guard[2]}' for guard in PNG_GUARDS],
+        '--undefined=headset_status_register', '--undefined=headset_bt_autolink', '--undefined=headset_bt_service', *[f'--undefined={guard[2]}' for guard in PNG_GUARDS],
         *nav,out/'trampoline.o',*extra,'-o',out/'patch.elf')
     run('llvm-objcopy','-O','binary',out/'patch.elf',out/'patch.bin')
     return symbols(out/'patch.elf')
@@ -1837,7 +1940,7 @@ def check_layout(payload, ps):
     """The payload at BASE ends by SCRATCH, and its scratch state starts there and fills at most SCRATCH_MAX."""
     check(len(payload) <= SCRATCH-BASE, 'Payload overlaps its scratch page')
     check(ps['__scratch_start'] == SCRATCH, 'Scratch state moved')
-    check(ps['__scratch_end'] <= SCRATCH + SCRATCH_MAX, 'Scratch state exceeds its 192 KB')
+    check(ps['__scratch_end'] <= SCRATCH + SCRATCH_MAX, 'Scratch state exceeds its 256 KB')
 
 def check_rootfs_size(size, stock_size):
     """The repacked rootfs image is no larger than stock's, and leaves ROOTFS_FREE_MIN bytes of that size unused."""
@@ -1877,16 +1980,14 @@ TAG_C_SHA = 'b00f06c20b33b1238d095fcbcd9e9e04594e715b44e8a9e1a0aa9e3962e8b2b1'
 
 def patch_m4b_cover(raw):
     """Extend the pinned TagLib cover dispatcher with its existing MP4 extractor: tools/m4b_cover.S."""
-    from ipod import branch
+    from ipod import branch, patch_word
     check(sha(raw) == TAG_C_SHA, 'Unexpected TagLib cover library')
     image = bytearray(raw)
     base, site = 0x30000, 0x125ac
     payload = assemble('m4b_cover', base, f'-DBASE={base:#x}')[0]
     append_payload(image, payload, base, len(payload), 'TagLib cover')
     struct.pack_into('<I', image, segments(image)[-1][0] + 24, 5)  # immutable code/data
-    check(struct.unpack_from('<I', raw, fileoff(raw, site))[0] == 0x1040004a,
-          'Unexpected TagLib M4A cover branch')
-    struct.pack_into('<I', image, fileoff(raw, site), branch(0x10000000, site, base))
+    patch_word(image, site, 0x1040004a, branch(0x10000000, site, base), 'TagLib M4A cover branch')
     return bytes(image)
 
 def assemble(src, base, *defines):
@@ -1907,11 +2008,14 @@ def bt_silence():
 def patch_bluealsa(raw):
     """Offer AAC at 48 kHz only. A headset that opens the stream itself (AirPods out of the case)
     picks 44.1 kHz, and bluealsa, still fed 48 kHz, drops about 8% of the AAC frames."""
+    from ipod import patch_word
     image = bytearray(raw)
     image[AAC_44K1] = 0
+    address, old, new = BT_SINK_DEFAULT
+    patch_word(image, address, old, new, 'Bluetooth profile default')
     # tools/bt_drop.S: DROP's flush in the control thread, and the rewind for each audited caller.
     for caller, _ in BT_PCM_CALLERS:
-        check(struct.unpack_from('<I', raw, fileoff(raw, caller-8))[0] == 0x0c105174,
+        check(word(raw, caller-8) == 0x0c105174,
               'Bluetooth PCM caller mismatch')
     callers = ';'.join(f'caller {caller:#x}' + (f', {offset:#x}' if offset is not None else '')
                        for caller, offset in BT_PCM_CALLERS)
@@ -1924,9 +2028,8 @@ def patch_bluealsa(raw):
     # Never flush the new track's FIFO from this asynchronously handled signal.
     struct.pack_into('<2I', image, fileoff(raw, BT_DROP_HANDLER), j(dsym['reset']), 0)
     for address, old, op, target in BT_SILENCE_SITES:
-        check(struct.unpack_from('<I', raw, fileoff(raw, address))[0] == old, 'Bluetooth silence site mismatch')
         new = {'j': j, 'jal': jal}[op](sym[target]) if op else target
-        struct.pack_into('<I', image, fileoff(raw, address), new)
+        patch_word(image, address, old, new, 'Bluetooth silence site')
     return bytes(image)
 
 STOCK_VERSION = 'V1.36'
@@ -1946,6 +2049,7 @@ def stock_header(context, ranges, themes, dev=0, repo=REPO):
     names = ''.join(n.removesuffix('.png') + '\\0' for n in SETTINGS_ICONS)
     header.append(f'#define SETTINGS_ICON_NAMES "{names}"')
     header.append(f'#define ROCKBOX_FLAG "{ROCKBOX_FLAG}"')  # Home's Rockbox row, for S90play
+    header.append(f'#define APP_UID {APP_UID}')  # card apps' uid (app_user.c), the card's at each mount
     # About: the stock firmware's version on its own row, and this build's on the CFW. Version row.
     header += [f'#define STOCK_VERSION "{STOCK_VERSION}"', f'#define Q2POD_VERSION "{VERSION}{f" dev {dev}" if dev else f" beta {BETA}" if BETA else ""}"',
                f'#define Q2POD_TAG "{"" if dev else RELEASE_TAG}"',  # netupdate.c: the release tag, none when --dev
@@ -1960,8 +2064,6 @@ def stock_header(context, ranges, themes, dev=0, repo=REPO):
     return '\n'.join(header)+'\n'
 
 def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragma: no mutate block
-    from flac import EXPERIMENTS
-    flac_experiments = () if stock_flac else EXPERIMENTS
     check(dev or version_ok(VERSION, BETA), f'VERSION must be three single digits (x.y.z) and BETA 0-9: {VERSION}, {BETA}')
     version = TAG
     check(re.fullmatch(r'[A-Za-z0-9-]+/[A-Za-z0-9._-]+', repo), f'{repo}: not a GitHub owner/name')  # a C string
@@ -1995,11 +2097,11 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
     (out/'libc-2.28.so').write_bytes(cat('lib/libc-2.28.so'))
     # peq.h tls_untimed writes OpenSSL 1.1.1f's SSL_CTX->param (0x100) and its ->flags (0xc) itself,
     # as demo imports neither accessor: their first instructions must still read those fields.
-    for lib, fn, at, word in (('libssl.so.1.1', 'SSL_CTX_get0_param', 4, 0x8c820100),         # lw v0, 0x100(a0)
+    for lib, fn, at, want in (('libssl.so.1.1', 'SSL_CTX_get0_param', 4, 0x8c820100),         # lw v0, 0x100(a0)
                               ('libcrypto.so.1.1', 'X509_VERIFY_PARAM_set_flags', 0, 0x8c86000c)):  # lw a2, 0xc(a0)
         data = cat('usr/lib/'+lib); (out/lib).write_bytes(data)
         address = symbols(out/lib)[fn+'@@OPENSSL_1_1_0']  # its text LOAD maps file offset 0 at 0
-        check(struct.unpack_from('<I', data, address + at)[0] == word, f'{lib}: {fn} layout changed')
+        check(struct.unpack_from('<I', data, address + at)[0] == want, f'{lib}: {fn} layout changed')
     # Every allowlisted context must be a window name. The runtime name is the root "name"
     # property of the UI asset, not the asset path, so check the stock rootfs assets directly:
     # a prefix-trimmed typo cannot silently disable a screen this way.
@@ -2043,7 +2145,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
     from theme import builtins, emit, geometry_sets
     themes = builtins()
     (out/'stock.h').write_text(stock_header({name: f'0x{syms[name]:x}u' for name in CONTEXT_DATA},
-                                            [bold_ranges, classic_light_ranges], themes, dev, repo))
+                                            [bold_ranges, classic_light_ranges, GLYPH_FALLBACK_MACRO], themes, dev, repo))
     set_pages, redirects = {}, {}
     ui = 'release/assets/default/raw/ui/'
     for i, g in enumerate(geometry_sets(themes)[1:], 1):
@@ -2070,24 +2172,24 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
         gp = ((prolog[0] & 65535) << 16) + (low if low < 32768 else low - 65536) + address
         check(gp == GP, f'{name}: unexpected GOT base')
         jump(off, replacement)
-    for name, address, replacement, words in (WM_PAINT_LEAF, GRADIENT_LEAF, QUEUE_LEAF):
+    for name, address, replacement, words in (WM_PAINT_LEAF, GRADIENT_LEAF, QUEUE_LEAF, FONT_GLYPH_LEAF):
         off = fileoff(patched, address)
         check(syms[name] == address and struct.unpack_from('<III', patched, off) == words, f'{name}: unexpected code')
         jump(off, replacement)
     # style_get_color's own bal style_get_gradient, returning to STYLE_COLOR_GRADIENT_RET, stays unmapped.
     ret = inc('STYLE_COLOR_GRADIENT_RET')
-    check(struct.unpack_from('<I', patched, fileoff(patched, ret - 8))[0] == branch(0x04110000, ret - 8, GRADIENT_LEAF[1]),
+    check(word(patched, ret - 8) == branch(0x04110000, ret - 8, GRADIENT_LEAF[1]),
           'style_get_color: unexpected gradient call')
     # tidal_start reads the song id from $s2: set to the thread's own copy at 0x48721c, freed after
     # its only mcl_tidalStartPlayer call (lw t9; jalr; move a0, s7).
-    check(struct.unpack_from('<I', patched, fileoff(patched, 0x48721c))[0] == 0x00409025 and
+    check(word(patched, 0x48721c) == 0x00409025 and
           struct.unpack_from('<III', patched, fileoff(patched, 0x487b28)) == (0x8f99ab18, 0x0320f809, 0x02e02025),
           'Tidal URL thread: unexpected song id register')
     # tidal_start goes back to TIDAL_ALL_RET with $gp from the thread's frame (0x20($sp), as 0x487b34 reloads it)
     # and passes the first reply's file from $s4 (0x4872fc: addiu $s4, $sp, 0x1ae8).
     check(struct.unpack_from('<5I', patched, fileoff(patched, inc('TIDAL_ALL_RET'))) == TIDAL_ALL_RET_WORDS and
-          struct.unpack_from('<I', patched, fileoff(patched, 0x487b34))[0] == 0x8fbc0020 and
-          struct.unpack_from('<I', patched, fileoff(patched, 0x4872fc))[0] == 0x27b41ae8,
+          word(patched, 0x487b34) == 0x8fbc0020 and
+          word(patched, 0x4872fc) == 0x27b41ae8,
           'Tidal URL thread: unexpected ending')
     # ringnav_mode leaves advanced play on for player_initconfig's call, which returns to INITCONFIG_MODE_RET.
     ret = inc('INITCONFIG_MODE_RET')
@@ -2101,8 +2203,8 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
                'wallpaper list accepts built-in wallpapers')
     from peq import patch_player
     raw_player = cat('usr/bin/hciplayer')
-    audio = patch_player(raw_player, out/'peq', flac_experiments)
-    bluealsa = patch_bluealsa(cat(BLUEALSA))
+    audio = patch_player(raw_player, out/'peq', not stock_flac)
+    bluealsa = zero_pdr(patch_bluealsa(cat(BLUEALSA)), BLUEALSA)
     (out/'bluealsa').write_bytes(bluealsa)
     (out/'watchdog').write_bytes(cat(WATCHDOG).replace(*WATCHDOG_SLEEP))
     for address, old, new in ARTIST_ALBUMS:
@@ -2128,37 +2230,37 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
     patch_word(patched, *START_SLEEP_CALL, jal(ps['start_sleep']), 'natural start: no sleep before the end')
     for address, old, new, fn in HOLD_KEYS:
         patch_word(patched, address, old, new or jal(ps[fn]), 'Play/Pause and Return hold time')
-    check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, 0x51dcbc))[0] == 0x8f99b770,
+    check(word(raw_demo, 0x51dcbc) == 0x8f99b770,
           'player cover: expected toolsGetExternCover import')
     patch_word(patched, *PLAYER_COVER, jal(ps['coverflow_player_cover']), 'Now Playing art through ffmpeg')
-    check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, 0x5c8d60))[0] == 0x8f99fabc,
+    check(word(raw_demo, 0x5c8d60) == 0x8f99fabc,
           "stock's database open: unexpected GOT load")
     patch_word(patched, *STOCK_DB_OPEN, jal(ps['stock_db_open']), "stock's database waits out a reader")
-    check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, 0x51f5c8))[0] == 0x8f99f680,
+    check(word(raw_demo, 0x51f5c8) == 0x8f99f680,
           'id3 path: expected strcpy import')
     patch_word(patched, *ID3_PATH, jal(ps['ringnav_id3_path']), "a CUE track's file tags")
-    check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, 0x53d6d4))[0] == 0x8f99c14c,
+    check(word(raw_demo, 0x53d6d4) == 0x8f99c14c,
           'lyric follow: expected scroll_view_scroll_to import')
     patch_word(patched, *LYRIC_FOLLOW, jal(ps['ringnav_lyric_follow']), 'lyric rows whole at the top')
-    check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, 0x5fb954))[0] == 0x8f99a858,
+    check(word(raw_demo, 0x5fb954) == 0x8f99a858,
           'hscroll lull: expected widget_add_timer import')
     patch_word(patched, *HSCROLL_LULL, jal(ps['ringnav_hscroll_lull']), 'a scrolling label holds at its start')
     patch_word(patched, *HSCROLL_ONCE, 'a single pass holds its end')
-    check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, HSCROLL_GAP[0] - 4))[0] == 0x8f99aebc,
+    check(word(raw_demo, HSCROLL_GAP[0] - 4) == 0x8f99aebc,
           'hscroll gap: expected widget_set_prop_int')
     patch_word(patched, *HSCROLL_GAP, 'a scrolling label ends its pass at its end')
     for address in ALBUM_LABELS:
-        check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, address - 4))[0] == 0x8f99ac00,
+        check(word(raw_demo, address - 4) == 0x8f99ac00,
               'album labels: expected set_hscroll_label_attribute')
         patch_word(patched, address, 0x0320f809, jal(ps['ringnav_album_label']), "Albums' artist line and grid titles stay still")
-    for word in FOCUS_RESTORE:
-        patch_word(patched, *word, "stock's focus stays off a reloaded page's rows")
+    for entry in FOCUS_RESTORE:
+        patch_word(patched, *entry, "stock's focus stays off a reloaded page's rows")
     patch_word(patched, *LYRIC_ROWS, jal(ps['ringnav_lyric_rows']), 'lyrics keep their place on a refresh')
-    check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, 0x5bc304))[0] == 0x8f99f5ac,
+    check(word(raw_demo, 0x5bc304) == 0x8f99f5ac,
           'lyric file: expected fopen import')
     patch_word(patched, *LYRIC_OPEN, jal(ps['ringnav_lrc_open']), 'lyric files read as tags are')
     for call, load, fn in GRID_COVER:
-        check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, load))[0] == 0x8f99b76c,
+        check(word(raw_demo, load) == 0x8f99b76c,
               'grid cover: expected toolsGetAlbumCover import')
         patch_word(patched, call, 0x0320f809, jal(ps[fn]), 'Ogg art in Albums and Folder view')
     for call, before, guard, ending, words in PNG_GUARDS:
@@ -2170,7 +2272,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
           'toolsGrayPngConvRgbPng: unexpected frame or ending')
     patch_word(patched, *BT_CONNECT_START, jal(ps['ringnav_bt_connect_start']),
                'Bluetooth: Resume on connect')
-    check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, BT_INIT[0] - 4))[0] == 0x8f99f61c,
+    check(word(raw_demo, BT_INIT[0] - 4) == 0x8f99f61c,
           'Bluetooth init: expected btctl_create_daemon_thread import')
     patch_word(patched, *BT_INIT, jal(ps['headset_bt_init']), 'Bluetooth callbacks before control thread')
     patch_word(patched, *BT_PARAMS, 0, 'Bluetooth state initialized before control thread')
@@ -2178,9 +2280,11 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
           (0x8f99fc1c, 0x0320f809, 0x2484c180), 'Bluetooth status: expected btctl_device_status_callback(0x4fc180)')
     patch_word(patched, *BT_STATUS, jal(ps['headset_status_register']), 'Bluetooth: incoming link during a connect')
     patch_word(patched, *BT_AUTOLINK, jal(ps['headset_bt_autolink']), 'Bluetooth: auto-link keeps an incoming link')
+    for site in BT_SERVICE:
+        patch_word(patched, *site, jal(ps['headset_bt_service']), 'Bluetooth: Receive Audio off sends')
     patch_word(patched, *SCAN_REFRESH, jal(ps['ringnav_scan_refresh']), 'folder scan refreshes existing tags')
     patch_word(patched, *TAG_TEXT, jal(ps['ringnav_gbk_tag']), 'tag text GBK only when it reads as GBK')
-    check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, GENRE_COPY[0] - 4))[0] == 0x8f99f680,
+    check(word(raw_demo, GENRE_COPY[0] - 4) == 0x8f99f680,
           'genre copy: expected strcpy import')
     patch_word(patched, *GENRE_COPY, jal(ps['ringnav_genre_copy']),
                'long genre tags stay inside the style field')
@@ -2189,7 +2293,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
                    jal(ps['ringnav_cue_text']), 'CUE text read as UTF-8, GBK or Windows-1252')
     patch_word(patched, DIALOG_CLOSE, branch(0x04110000, DIALOG_CLOSE, syms['idle_add']),
                jal(ps['ringnav_dialog_close']), "a modal dialog's close skips one already gone")
-    check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, SCAN_DIRS[0] + 4))[0] == 0x24a59870,
+    check(word(raw_demo, SCAN_DIRS[0] + 4) == 0x24a59870,
           'library scan: expected the "." exclusion')
     patch_word(patched, *SCAN_DIRS, jal(ps['ringnav_scan_dir']), 'the library scan skips hidden folders')
     for address, old, new in DROP_CACHES:
@@ -2198,35 +2302,43 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
         patch_word(patched, address, old, new, "a headset's keys are read once, by the headset worker")
     for address, name in STREAM_POLL_CALLS:
         patch_word(patched, address, 0x0320f809, jal(ps[name]), 'stream threads park while idle')
-    check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, COVERINFO_CALL[0] + 4))[0] == COVERINFO_CALL[1],
+    patch_word(patched, STANDBY_UMOUNT, 0x0320f809, jal(ps['ringnav_standby_umount']),
+               "Standby's unmount waits for the card")
+    check(word(raw_demo, COVERINFO_CALL[0] + 4) == COVERINFO_CALL[1],
           "online id3: expected the REC_COVER load in the cover call's delay slot")
     patch_word(patched, COVERINFO_CALL[0], 0x0320f809, jal(ps[COVERINFO_CALL[2]]), "a card app's cover by URL")
     for address, name in DARK_POLLS:
         patch_word(patched, address, 0x0320f809, jal(ps[name]), 'stock polls idle while dark')
-    check(struct.unpack_from('<I', patched, fileoff(patched, LYRIC_SAVE_FMT[0]))[0] == LYRIC_SAVE_FMT[1],
+    check(word(patched, LYRIC_SAVE_FMT[0]) == LYRIC_SAVE_FMT[1],
           'Unexpected Download Cover & Lyrics save')
     patch_word(patched, LYRIC_SAVE_CALL, 0x0320f809, jal(ps['ringnav_lyric_save']), 'lyrics saved beside the song')
-    check(struct.unpack_from('<I', patched, fileoff(patched, LYRIC_DROP_FMT[0]))[0] == LYRIC_DROP_FMT[1],
+    check(word(patched, LYRIC_DROP_FMT[0]) == LYRIC_DROP_FMT[1],
           'Unexpected Download Cover & Lyrics removal')
     patch_word(patched, LYRIC_DROP_CALL, 0x0320f809, jal(ps['ringnav_lyric_drop']), "no lyrics removes .downpic's copy")
-    check(struct.unpack_from('<I', patched, fileoff(patched, COVER_PICK_FMT[0]))[0] == COVER_PICK_FMT[1],
+    check(word(patched, COVER_PICK_FMT[0]) == COVER_PICK_FMT[1],
           "Unexpected Now Playing's picked cover copy")
     patch_word(patched, COVER_PICK_CALL, 0x0320f809, jal(ps['ringnav_cover_copy']), "Now Playing copies a picked cover")
-    check(struct.unpack_from('<I', patched, fileoff(patched, FOLDER_RM_FMT[0]))[0] == FOLDER_RM_FMT[1],
+    check(word(patched, FOLDER_RM_FMT[0]) == FOLDER_RM_FMT[1],
           'Unexpected folder delete')
     patch_word(patched, FOLDER_RM_CALL, 0x0320f809, jal(ps['ringnav_folder_rm']), "a folder's delete quotes its path")
-    check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, SONG_UNKNOWN_CALL-8))[0] == 0x8f99a924,
+    check(word(patched, CARD_MOUNT_REF[0]) == CARD_MOUNT_REF[1],
+          "Unexpected USB storage's card mount")
+    at = fileoff(patched, CARD_MOUNT_FMT)
+    check(patched[at:at+20] == CARD_MOUNT_LINE[0], "Unexpected USB storage's card mount line")
+    patched[at:at+20] = CARD_MOUNT_LINE[1]  # the card mounted for card apps (q2mount)
+    check(patched[at+12:at+20] == b'mnt/mmc\0', "the TF card update's folder (0x7870f4) overwritten")
+    check(word(raw_demo, SONG_UNKNOWN_CALL-8) == 0x8f99a924,
           "song bind: expected getFormatString import")  # lw t9, -0x56f8(gp)
     patch_word(patched, SONG_UNKNOWN_CALL, 0x0320f809, jal(ps['ringnav_song_unknown']), "a song row's empty artist")
-    check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, TABLE_LOAD_CALL-0x14))[0] == 0x8e9900e4,
+    check(word(raw_demo, TABLE_LOAD_CALL-0x14) == 0x8e9900e4,
           "table load: expected on_load_data's callback")  # lw t9, 0xe4(s4)
     patch_word(patched, TABLE_LOAD_CALL, 0x0320f809, jal(ps['ringnav_table_load']), "a bound table row's faces")
-    for word in FOLDER_NAME:
-        patch_word(patched, *word, 'folder names are literal text')
+    for entry in FOLDER_NAME:
+        patch_word(patched, *entry, 'folder names are literal text')
     # The GOT loads Q2 Pod writes (FOLDER_NAME's, and tools/ipod.py's two): no stock word beside one names its slot, and
     # V1.36 moved two of the three to other functions' slots. Each slot holds its function, or the build stops.
     for load, name in ((FOLDER_NAME[1][2], 'tk_strncpy'), (CLOSE_LOAD, 'navigator_close'), (DUMMY_LOAD, 'dummy_destroy')):
-        check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, GP + ((load & 0xffff) ^ 0x8000) - 0x8000))[0] == syms[name],
+        check(word(raw_demo, GP + ((load & 0xffff) ^ 0x8000) - 0x8000) == syms[name],
               f"{name}: the GOT load written for it names another slot")
     patch_word(patched, NP_INFO_CALL, branch(0x04110000, NP_INFO_CALL, PRIVATE_FUNCTIONS['np_info']),
                jal(ps['ringnav_np_info']), "Now Playing's info lines")
@@ -2236,15 +2348,15 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
     for address, old, new in LDAC_HQ:
         patch_word(patched, address, old, new, 'LDAC HQ sends 990 kbps')
     patch_word(patched, WHEEL_TS_READ[0], WHEEL_TS_READ[1], jal(ps['ringnav_ts_read']), 'wheel ticks')
-    check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, GP - 0x7f44))[0] == 0xa50000 and
-          all(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, a))[0] == w for a, w in NET_TYPE_READS),
+    check(word(raw_demo, GP - 0x7f44) == 0xa50000 and
+          all(word(raw_demo, a) == w for a, w in NET_TYPE_READS),
           'networkStart/networkStop: unexpected network type gate')
     for address in AUDIO_EXTENSION_CALLS:
-        check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, address-8))[0] == 0x8f99fa14,
+        check(word(raw_demo, address-8) == 0x8f99fa14,
               'audio extension: expected strstr import')
         patch_word(patched, address, 0x0320f809, jal(ps['ringnav_audio_extension']),
                    'recognize M4B alongside existing audio extensions')
-    check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, M3U_DIR_CALL-4))[0] == 0x8f99bb64,
+    check(word(raw_demo, M3U_DIR_CALL-4) == 0x8f99bb64,
           'playlist import: expected toolsGetDirectoryM3u8 call')  # lw t9, -0x452c(gp)
     patch_word(patched, M3U_DIR_CALL, 0x0320f809, jal(ps['addon_m3u_dir']), "card apps import only their own playlists")
     for address in SORT_TRIMS:
@@ -2255,18 +2367,18 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
     for row in ALBUM_ART_ROW:
         patch_word(patched, *row, 'same-named albums apart in art')
     for address, load in COVER_PUSH:
-        check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, load))[0] == 0x8f99f7f8,
+        check(word(raw_demo, load) == 0x8f99f7f8,
               'cover push: expected _deque_push_back import')  # lw t9, -0x8cc(gp)
         patch_word(patched, address, 0x0320f809, jal(ps['ringnav_cover_push']), "a cover task's name and path freed once copied")
     patch_word(patched, CLASS_ICON, branch(0x04110000, CLASS_ICON, syms['class_icon']),
                jal(ps['ringnav_class_icon']), 'Artists rows without the head picture')
-    for word in COVER_PAUSE:
-        patch_word(patched, *word, 'album grids never pause the cover worker')
-    for word in TIDAL_PAGE_DONE:
-        patch_word(patched, *word, 'Tidal lists load every page')
+    for entry in COVER_PAUSE:
+        patch_word(patched, *entry, 'album grids never pause the cover worker')
+    for entry in TIDAL_PAGE_DONE:
+        patch_word(patched, *entry, 'Tidal lists load every page')
     patch_word(patched, *TIDAL_NO_URL, 'the Tidal URL thread answers without a URL too')
-    for word in ARTIST_COVER_ROW:
-        patch_word(patched, *word, "an artist's albums request the covers in view")
+    for entry in ARTIST_COVER_ROW:
+        patch_word(patched, *entry, "an artist's albums request the covers in view")
     # Local art completion: pass the worker's copied key, then validate the row under aclist_mutex.
     patch_word(patched, 0x4f84bc, 0x8f99b760, 0x27a61688, 'cover completion key')
     patch_word(patched, 0x4f84c0, 0x0411ff44, jal(ps['ringnav_cover_done']),
@@ -2300,7 +2412,17 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
     # Pseudo-file round trip preserves every original inode's metadata and hardlinks.
     pseudo = out/'root.pseudo'
     run('unsquashfs','-pf',pseudo,sq)
-    p = pseudo.read_bytes()
+    p = bytearray(pseudo.read_bytes())
+    # Stock's other executables and libraries carry .pdr too: zeroed where the pseudo file holds their bytes, which an
+    # R line's length and offset give, counted from the end of the marker.
+    marker = b'# START OF DATA - DO NOT MODIFY\n#\n'
+    data = p.index(marker) + len(marker)
+    rows = list(re.finditer(rb'^(\S+) R \d+ \d+ \d+ \d+ (\d+) (\d+) \d+$', bytes(p[:data]), re.M))
+    check(rows, 'No stock file data in root.pseudo')
+    for m in rows:
+        at, size = data+int(m[3]), int(m[2])
+        p[at:at+size] = zero_pdr(p[at:at+size], m[1].decode())
+    p = bytes(p)
     # mksquashfs takes "/" from the source dir, not the pseudo file; carry stock values over.
     root = need(re.search(rb'^/ D (\d+) (\d+) (\d+) (\d+)$',p,re.M), 'Missing root pseudo inode')
     t,mode,uid,gid = (x.decode() for x in root.groups())
@@ -2325,7 +2447,11 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
     (out/'bluealsa2').write_bytes(bluealsa2.replace(*BT_KEEPALIVE))
     bluetoothd = cat(BLUETOOTHD)
     check(bluetoothd.count(BT_GRACE[0]) == 1, 'Unexpected bluetoothd')
-    (out/'bluetoothd').write_bytes(bluetoothd.replace(*BT_GRACE))
+    (out/'bluetoothd').write_bytes(zero_pdr(bluetoothd.replace(*BT_GRACE), BLUETOOTHD))
+    for path, hook in ((SD_MOUNT, SD_MOUNT_HOOK), (WIFI_CONNECT, WPA_HOOK), (PASSWD, PASSWD_HOOK), (GROUP, GROUP_HOOK)):
+        script = cat(path)
+        check(script.count(hook[0]) == 1, f'Unexpected {path}')
+        (out/path.rsplit('/', 1)[-1]).write_bytes(script.replace(*hook))
     logo_data = logo.read_bytes()
     check(jpeg_size(logo_data) == (320, 375), 'Logo must be 320x375 like the stock splash')
     # Package exactly the validated bytes, even if the input is edited during compression.
@@ -2338,6 +2464,8 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
                       (BLUEALSA.encode(), out/'bluealsa'), (WATCHDOG.encode(), out/'watchdog'),
                       (S90PLAY.encode(), out/'S90play'), (S11LOGO.encode(), out/'S11logo'),
                       (BLUEALSA2.encode(), out/'bluealsa2'), (BLUETOOTHD.encode(), out/'bluetoothd'), (DEFAULT_CONFIG.encode(), out/'config.ini'),
+                      (SD_MOUNT.encode(), out/'add_removesd.sh'), (WIFI_CONNECT.encode(), out/'wifi_connect.sh'),
+                      (PASSWD.encode(), out/'passwd'), (GROUP.encode(), out/'group'),
                       (LOGO.encode(), logo)):
         p = swap_inode(p, path, src)
     # New inodes, each with its stock image's metadata: Home's Coverflow and Shortcut card icons (menu_music's,
@@ -2383,6 +2511,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
                                'etc/init.d/S12usbcharge': ('etc/init.d/S20urandom', (ROOT/'patch/usb_charge.sh').read_bytes()),
                                HELPER: (HELPER_LIKE, compile_helper(out, cat, 'video', 'q2video', HELPER_LIBS)),
                                SCROBBLE_CA: ('etc/hosts', (ROOT/'assets/scrobble-ca.pem').read_bytes()),
+                               Q2MOUNT: ('etc/init.d/S20urandom', Q2MOUNT_SH),  # an executable script's (wifi_connect.sh's is swapped)
                                BOOT: (HELPER_LIKE, compile_helper(out, cat, 'boot', 'q2boot', HELPER_LIBS[:1])),
                                **({LOGO_LIGHT: (xx+'list_tidal.png', light)} if light else {}),  # the swapped logo.jpg has no stock inode left
                                BOLD_TTF: (FONT, bold),
@@ -2406,7 +2535,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
         line = need(re.search(rb'^'+re.escape(path.encode())+rb' R .+\n', p, re.M), f'Missing stock inode {path}')
         removed.append(line.group().split()[:6])
         p = p[:line.start()]+p[line.end():]
-    for path, fix, name in ((TAG_C, patch_m4b_cover, 'libtag_c.so.2.0.1'), (FONT, lambda d: font_letters(font_quotes(d)), 'default.ttf'),
+    for path, fix, name in ((TAG_C, lambda d: zero_pdr(patch_m4b_cover(d), TAG_C), 'libtag_c.so.2.0.1'), (FONT, lambda d: font_letters(font_quotes(d)), 'default.ttf'),
                             *((p, lambda d, p=p: patch_web(p, d), p.rsplit('/', 1)[-1]) for p in WEB)):
         original = cat(path)
         data = fix(original)
@@ -2466,6 +2595,9 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
     blobs['recovery-update/rootfs.squashfs'] = newsq.read_bytes()
     # Stock image proves this size fits; do not enlarge beyond its padded size, and keep the floor free under it.
     check_rootfs_size(len(blobs['recovery-update/rootfs.squashfs']), sq.stat().st_size)
+    # Each budget's room, printed with the summary, so a change that eats into one shows before a check refuses it.
+    room = dict(payload_room=SCRATCH - BASE - len(payload), state_room=SCRATCH + SCRATCH_MAX - ps['__scratch_end'],
+                rootfs_room=sq.stat().st_size - len(blobs['recovery-update/rootfs.squashfs']) - ROOTFS_FREE_MIN)
     blobs['firmware_v20.info'] = (f'Shanling Q2\n{version}\n'+''.join(
         hashlib.md5(blobs[n]).hexdigest()+'  '+n+'\n' for n in [
             'recovery-update/xImage','recovery-update/rootfs.squashfs'])).encode()
@@ -2485,7 +2617,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
         tools={t:run(t,'--version').splitlines()[0] for t in ['clang','ld.lld','llvm-objcopy']} |
               {'imagemagick': imagemagick('-version', data=b'').decode().splitlines()[0]})
     (out/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
-    print(json.dumps({k:manifest[k] for k in ['update_sha256','patch_bytes','version']},indent=2))
+    print(json.dumps({k:manifest[k] for k in ['update_sha256','patch_bytes','version']} | room,indent=2))
 
 if __name__ == '__main__':
     ap=argparse.ArgumentParser(description=__doc__)

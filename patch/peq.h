@@ -38,6 +38,15 @@ void reboot_record(void *caller); /* a Bluetooth abnormal reboot's q2-crash.log 
 int card_mounted(void);           /* /proc/mounts has the card (system.c) */
 /* The crash log's record of a long job's current file and demo's memory (tags.c) */
 void crash_note(const char *path, const char *file, const char *log, unsigned every, unsigned *n);
+/* The o32 syscall nr(a, b, c): its result, or -1 when the kernel reports an error
+ * (coverflow_loader.c) */
+int cf_syscall(int nr, long a, long b, long c);
+/* Card apps without root (app_user.c): the card mounted for APP_UID; the drop, in a forked child;
+ * system() as APP_UID */
+int app_card(void);
+void app_user(void);
+void app_system(const char *cmd);
+void app_own(const char *path);
 #ifdef canvas_set_fill_color
 /* Light Mode: every colour the payload draws passes ui_ink (theme_engine.c) on its way to these
  * stock setters, as stock's own colours pass the style and image hooks. stock_* sets a colour read
@@ -409,9 +418,16 @@ enum {
                          (home.c ringnav_localmusic) */
     POD_HIDE_GAMES,
     POD_HIDE_STORE,
+    POD_BT_RECEIVE, /* Bluetooth's Receive Audio (headset_bt_service; the bluealsa2 launcher) */
+    POD_CF_ART_LOG, /* Display's Log Failed Artwork: coverflow.c build_art */
+    /* Display's Hide Duplicate Albums and Hide Duplicate Songs: coverflow.c music_albums and
+     * coverflow_cover_tracks */
+    POD_CF_DUP_ALBUMS,
+    POD_CF_DUP_SONGS,
     /* 中文分支自有的行一律排在 upstream 成员之后：上游的 POD_* 索引、它的 _Static_assert 和
      * netupdate.c 里 pod_rows 的硬编码就不用每次合并都跟着挪。pod_keys 按名字读写，顺序无关。 */
     POD_LIBRARY_FILL, /* 补全封面与歌词, an action: onlinematch.c's library_fill_* over the card */
+>>>>>>> 1.9.1
     POD_COUNT
 };
 int pod_value(int i);
@@ -426,8 +442,8 @@ const char *eq_set(const peq_preset *p, int mode);
 void peq_boot(void); /* clear a previous session's Simple EQ comparison before restoring playback */
 extern int peq_chained; /* peq_ui.c: peq_stock_eq ran this boot */
 void peq_chain(void);   /* crossfade.c: peq_attach once a connect (ringnav_mode), while playing */
-int swap_on(void);
-int mono_on(void);   /* crossfade.c: Mono Audio's setting */
+/* crossfade.c: Mono Audio (0) and Swap L/R (1), as set */
+int opt_on(int k);
 #define NS_WARM 2000 /* nightshift.c: Night Shift's temperatures, K */
 #define NS_COOL 5000
 #define NS_STEP 100
@@ -451,6 +467,7 @@ int thread_lower(int idle);   /* coverflow_loader.c: a worker's nice 19 and its 
 /* coverflow.c: the o32 statx syscall, as demo imports none */
 int ringnav_statx(int dirfd, const char *path, int flags, unsigned mask, void *buf);
 void *coverflow_album_tracks(void *r);
+void *coverflow_cover_tracks(void *r); /* as Cover Flow lists them: Hide Duplicate Songs */
 /* coverflow.c: qsort's order of unsigned keys; whether key is in keys[0..n), sorted so, and the
  * first there not below it (n for none) */
 int key_cmp(const void *a, const void *b);
@@ -464,6 +481,8 @@ void coverflow_letter_hold(widget_t *w, unsigned letter);
 /* A letter with this bit is the Year sort's year instead, in its low bits, 0 undated. */
 #define CF_YEAR 0x80000000u
 int blob_io(const char *path, const char *tmp, void *buf, unsigned size, int write);
+/* card_theme.c: 1 when path holds these n bytes, read at most max */
+int file_holds(const char *path, const void *b, unsigned n, unsigned max);
 #define BLOB_IO(file, buf, write) blob_io(file, file ".tmp", &(buf), sizeof(buf), write)
 int clip_within(canvas_t *canvas, int *old, int *clip, int x, int y, int w, int h);
 void play_folder(void *dq, int idx, int cls);
@@ -473,6 +492,9 @@ int app_fav(void);         /* tidal.c: Now Playing's heart on an app's streamed 
 void app_fav_load(void);   /* tidal.c: a queue loading clears an app song's heart */
 int app_urls_at(void);     /* tidal.c: the song playing's n in a now=1 URL queue playing; -1 none */
 int directory(void *path); /* playback.c: toolsLoadDirectory, for staged */
+void loop_wait(unsigned ms); /* playback.c: the UI loop's idle, ended early by an input */
+void loop_wake(
+    void); /* playback.c: ends that idle; any thread's, once its input is where a pass finds it */
 #define TIDAL_DIR "/mnt/mmc/.tidal" /* tidal.c's cache, Tidal Downloads' list */
 void tidal_clear(void);
 /* Download All (tidal.c): Tidal Downloads' first row's caption, a press starting or ending it; its
@@ -491,8 +513,8 @@ void tidal_all(int press, char *out, unsigned size), tidal_poll(void), tidal_all
  * (ctx: its place by name). addon_forget and addon_quit: the Apps page replaces or removes the
  * files of the app in folder dir (".<id>"): asked to end and waited for on the Apps page's worker,
  * then, once replaced or removed, forgotten on the UI thread. */
-/* Card apps on the card at once: twice what the App Store lists (netupdate.c SH_MAX), for those put
- * there by hand. ponytail: a fixed table in .scratch, 532 bytes a slot over addon.c,
+/* Card apps on the card at once: 16 more than the App Store lists (netupdate.c SH_MAX), for those
+ * put there by hand. ponytail: a fixed table in .scratch, 532 bytes a slot over addon.c,
  * addon_library.c, addon_eq.c and navigation.h, its pages untouched until a slot is used; an app
  * past the last slot gets no row and nothing says so. A heap table that grows, if a card ever holds
  * more. */
@@ -584,6 +606,9 @@ int stream_cache(int spotify); /* navigation.c: Streaming's Configuration, a cap
 void album_memory(void *r);
 void draw_centred(canvas_t *canvas, const unsigned *s, unsigned n, const void *r, unsigned px,
                   unsigned color);
+/* bidi_text.c: right-to-left text as AWTK's widgets draw it (visual order, Arabic shaped) */
+int bidi_rtl(const unsigned *s, unsigned n);
+int bidi_visual(const unsigned *s, unsigned n, unsigned *out);
 int utf8_text(const char *s); /* xiph.c: valid UTF-8, a 4-byte character too */
 void utf8_mend(char *s);      /* xiph.c: s valid UTF-8, the bytes of no whole character gone */
 /* Lyrics as lyrics.c's loader reads them: each line's start (ms, LRC_FAR unsynced), the order it
@@ -615,13 +640,22 @@ unsigned rgba(unsigned rgb, unsigned alpha);
 typedef struct {
     int x, y, w, h;
 } rect_t;
+void screen_off(void); /* navigation.c: Centre's release replayed to stock, the screen off */
 /* navigation.c: a rounded box in color, or a square one when the canvas declines to round it */
 void fill_box(canvas_t *canvas, rect_t *r, unsigned color, unsigned radius);
+/* flat.c: the hold menu's card, which Cover Flow's flip panel wears under the flat look: HOLD_FOOT
+ * of paper under its rows, and its ring no lower than QM_FOOT (the glass hides 38 px of the
+ * screen's corners: the ring is at 39) */
+#define HOLD_FOOT 10
+#define QM_FOOT 308
+void hold_card_flat(canvas_t *canvas, const rect_t *card, int head, int over);
 /* const and pure below: each one's result rests on its arguments (and pure's, memory) alone, so
  * clang can keep one call for several (theme_engine.c and navigation.c define these). */
 unsigned mix(unsigned from, unsigned to, int j, int n) __attribute__((const));
 void caption(canvas_t *canvas, const char *s, int x, int y, int w, int h, unsigned px,
              unsigned color);
+/* s's characters into to, at most room - 1 and a 0; how many (lyrics.c; a painter's tr() text) */
+unsigned wide_text(unsigned *to, unsigned room, const char *s);
 void peq_paint(widget_t *w, canvas_t *canvas);
 /* spotify.c's, shared with radio.c */
 unsigned long long now_ms(void); /* CLOCK_MONOTONIC */
@@ -753,11 +787,29 @@ int ipod_battery(void);        /* theme_engine.c: IPOD BATTERY, 0 Icon, else a p
 int title_gone(void *w, event_t *event); /* ... and looks for its source again at the next sync */
 int bar_title_fits(widget_t *label);     /* label's text fits the bar's title box */
 int ipod_light(void);                    /* theme_engine.c: Light Mode */
+unsigned flat_page(void);    /* flat.c: the page's ground, 0xRRGGBB, 0 unless the flip is on */
 unsigned unflip(unsigned v); /* theme_engine.c: the grey Light Mode's flip turns into v */
 int ipod_square_art(void);   /* navigation.c: Classic, and Modern under Square */
+/* card_rules.c: a card theme's rules for a page, on its window as it opens */
+enum { CARD_PLAYING, CARD_LOCK, CARD_HOME };
+void card_rules_apply(widget_t *win, int page);
+/* and Home's, for coverflow.c, which reads card_home first (CARD_HOME_ROWS: a Home row's rule,
+ * CARD_HOME_ART: homeart names a JPEG) */
+enum { CARD_HOME_ROWS = 1, CARD_HOME_ART = 2 };
+extern int card_home;
+void card_rules_home(widget_t *list);
+unsigned card_rules_art(const char **cover, unsigned key);
 #define SPOT_GREY 0xffaaaaaau
 void radio_search(void);      /* radio.c */
 void toast(const char *text); /* navigation.c */
+/* language.c: Q2 Pod's English in the language picked (the same pointer when it has no line; a
+ * format keeps its checks), N_ marking a static table's English for the pack's list (translated
+ * where it is shown), and the card's languages kept in step */
+const char *tr(const char *en) __attribute__((format_arg(1)));
+#define N_(en) en
+void language_sync(void);
+void language_removing(const char *dir);
+int valid_id(const char *s); /* addon.c: a card app's id */
 /* smart_wifi.c: its radio woken, 1 while its link comes up; its radio off; an action
  * held for that link (fn(ctx, 0) once it is up, if page, or any page when 0, is still in use) */
 int smart_wifi_wait(void), smart_wifi_off(void);
@@ -808,6 +860,12 @@ const char *shelf_moving(void); /* netupdate.c: the app folder deleted or moved 
 int shelf_erase(int start);     /* netupdate.c: Spotify's erase, started or running */
 void stream_erased(void);       /* navigation.c: Configuration follows a finished erase */
 void album_lyrics_stop(void);   /* onlinematch.c: Download Album Lyrics before USB storage */
+
+int lib_db_open(void **db, const char *pragmas); /* playlists.c: open the library database */
+/* mp3_gapless.c: MPEG tables and a Layer III frame's bytes, shared with peq_player.c's frame checks
+ */
+extern const unsigned short mp3_rates[3], mp3_kbps[2][15];
+unsigned mp3_frame_bytes(unsigned version, unsigned br, unsigned hz, unsigned pad);
 
 /* 2038 (docs/internals.md#2038). glibc 2.28's time() truncates the kernel's 64-bit seconds to 32
  * bits, so read unsigned it is right until 2106; -1 still means it failed. */

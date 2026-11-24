@@ -261,6 +261,7 @@ static int to_grid(const void *unused) {
                                               : "照片",
                                  n);
     if (!n) page_empty(ph.grid, "照片");
+>>>>>>> 1.9.1
     if (!theme()->page_title_h) title_gone(0, 0), bar_title_sync(ph.page); /* no more the albums' */
     /* A bare scroll view: a list_view would lay its children out as full-width rows. */
     int rows = (n + PH_COLS - 1) / PH_COLS;
@@ -297,12 +298,13 @@ static void info(void) {
     if (!ph.info || ph.current >= ph.n) return;
     int s = ph.state[ph.current];
     const char *name = strrchr(ph.path[ph.current], '/') + 1; /* a full path */
-    char caption[300];
+    char caption[384]; /* a file name's 255 bytes and "%d of %d" in any language */
     if (!s || s == PH_BAD)
         tk_snprintf(caption, sizeof caption, "%s",
                     s ? "无法打开此照片" : "加载中…");
+>>>>>>> 1.9.1
     else
-        tk_snprintf(caption, sizeof caption, "%d of %d  %s", ph.current + 1, ph.n, name);
+        tk_snprintf(caption, sizeof caption, tr("%d of %d  %s"), ph.current + 1, ph.n, name);
     if (text_differs(ph.info, caption)) { /* a decode redraws the same */
         widget_set_text_utf8(ph.info, caption);
         widget_set_prop_int(ph.info, "xoffset",
@@ -529,5 +531,6 @@ void photos_open(const char *root) {
     ph.screen = ALBUMS;
     widget_t *view = page_list(page, ph.albums, 0, "照片", ph.nalbums + 1, 48);
     page_row_into(view, 0, "所有照片", open_album);
+>>>>>>> 1.9.1
     for (int k = 0; k < ph.nalbums; ++k) page_row_into(view, k + 1, ph.album[k], open_album);
 }

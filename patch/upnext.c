@@ -43,6 +43,7 @@ static void un_fill(int sel) {
     un.hash = q ? queue_hash(q) : 0;
     widget_t *view = un.view =
         page_list_or(un.page, un.page, "查看队列", "暂无待播歌曲", n, 64);
+>>>>>>> 1.9.1
     char name[512];
     for (unsigned i = 0; i < n; i++) { /* the title over the artist, if tagged */
         void *t = deque_at(q, idx[i]);
@@ -56,8 +57,8 @@ static int un_closed(void *ctx, event_t *event) {
     un.page = 0;
     return 0;
 }
-void up_next(int (*keyup)(void *, event_t *)) {
-    if (un.page || !(un.page = page_open("upnext_page", un_closed, keyup))) return;
+void up_next(void) {
+    if (un.page || !(un.page = page_open("upnext_page", un_closed, page_keyup))) return;
     un_fill(-1);
 }
 /* A Play/Pause hold on a row (un_hold, deferred out of its dispatch): the row's track plays next
@@ -73,6 +74,7 @@ static int un_move(const void *unused) {
     int stale = queue_hash(q) != un.hash || i == n || (i && playback_move(at) < 0);
     un_fill(0);
     if (stale) toast("队列已更改");
+>>>>>>> 1.9.1
     return 0;
 }
 int un_hold(widget_t *top) {

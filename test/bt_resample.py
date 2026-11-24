@@ -15,7 +15,7 @@ Usage: test/bt_resample.py BUILD_DIR"""
 import math, pathlib, re, struct, sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]/'tools'))
 from build import fileoff, jal, symbols
-from mips import DONE, STUBS, HEAP, STACK, peq_lib, player, stubs, call as run
+from mips import DONE, STUBS, HEAP, STACK, helpers, peq_lib, player, stubs
 from peq import RS_OPEN_SLOT, RS_OPEN, AO_INIT_SLOT, AO_INIT, AO_UNINIT_SLOT, DAC_RELEASE
 from unicorn import UC_HOOK_CODE, UC_HOOK_INTR
 from unicorn.mips_const import *
@@ -40,16 +40,12 @@ class dev:  # what the stubs below see of the PCM (mute: MUTE_FILE's word, None 
 heap, clock, freed, dac_log, pause_rc, press = [HEAP], [10**9], set(), [], [0], [None]  # press: PRESS_FILE's word
 real = {}  # imports the stock-init sections answer, by name
 
-def w(p, *v): u.mem_write(p, struct.pack('<' + 'I'*len(v), *v))
-def r(p): return struct.unpack('<I', u.mem_read(p, 4))[0]
-def a(n): return u.reg_read((UC_MIPS_REG_A0, UC_MIPS_REG_A1, UC_MIPS_REG_A2, UC_MIPS_REG_A3)[n])
-def f12(): return struct.unpack('<d', struct.pack('<Q', u.reg_read(UC_MIPS_REG_F12)))[0]
+w, r, a, f12, cstr, call = helpers(u)
 def alloc(n, align=16):
     p = (heap[0] + align - 1) & ~(align - 1)
     heap[0] = p + n
     u.mem_write(p, bytes(n))
     return p
-def cstr(p): return bytes(u.mem_read(p, 256)).split(b'\0')[0]
 MATH = {'sin': math.sin, 'cos': math.cos, 'exp': math.exp, 'floor': math.floor, 'ceil': math.ceil,
         'sqrt': math.sqrt, 'fabs': abs, 'log': math.log}
 
@@ -107,7 +103,6 @@ def libc(u, address, size, _):
     u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA))
 u.hook_add(UC_HOOK_CODE, libc, begin=STUBS, end=STUBS + 0xfff)
 
-def call(fn, *args): return run(u, fn, *args)
 
 def instance(rate, output_rate, open_fn):
     """lavcresample uses S16 stereo; LDAC's following format filter converts that to S32."""

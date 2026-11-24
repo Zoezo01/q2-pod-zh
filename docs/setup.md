@@ -52,4 +52,4 @@ Or, with Q2 Pod on Wi-Fi: **Library → App Store → Rockbox** installs it (pre
   - **Windows:** right-click the card in File Explorer, then **Properties → Tools → Check**. Or, in a Command Prompt run as administrator, `chkdsk X: /f` with the card's drive letter.
   - **macOS:** open **Disk Utility**, select the card and click **First Aid**.
   - **Linux:** with the card unmounted, `sudo fsck.exfat -y /dev/sdX1` for an exFAT card or `sudo fsck.fat -a /dev/sdX1` for FAT32. `lsblk -f` shows the card's name and which of the two it is.
-- **Anything else:** see **Troubleshooting the Q2 and your library**, **Troubleshooting Cover Flow, sound and streaming** and **Getting help** in Chapter 11 of the [user guide](https://github.com/DiamondBond/q2-pod/releases/latest/download/Q2-Pod-User-Guide.pdf).
+- **Anything else:** see **Problems with the Q2 and your library**, **Problems with Cover Flow, sound and streaming** and **Help** in Chapter 11 of the [user guide](https://github.com/DiamondBond/q2-pod/releases/latest/download/Q2-Pod-User-Guide.pdf).

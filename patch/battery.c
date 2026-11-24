@@ -76,17 +76,21 @@ static const int *bh_tm(unsigned i, int *buf) {
     return bh.rec.row[i].at >= CLOCK_SET ? localtime_r(&t, buf) : (void *)0;
 }
 /* Row i as "99% | 12:00": the clock's time, 12-hour as the status bar's unless 24-hour is on, or
- * "+1:23", the hours and minutes since the start, for a clock never set. */
-static void bh_text(char *s, unsigned size, unsigned i) {
+ * "+1:23", the hours and minutes since the start, for a clock never set. shown: the page's, its
+ * AM or PM translated; the log's stay English. */
+static void bh_text(char *s, unsigned size, unsigned i, int shown) {
     int buf[11];
     const int *tm = bh_tm(i, buf);
     unsigned at = bh.rec.row[i].at, from = bh.rec.row[0].at, m = (at - from) / 60,
              pct = bh.rec.row[i].pct;
+    const char *half = tm && tm[2] < 12 ? N_("AM") : N_("PM");
     if (tm && g_time24h_flag)
         tk_snprintf(s, size, "%u%% | %02d:%02d", pct, tm[2], tm[1]);
     else if (tm)
         tk_snprintf(s, size, "%u%% | %s %d:%02d", pct, tm[2] < 12 ? "上午" : "下午",
                     (tm[2] + 11) % 12 + 1, tm[1]);
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
     else if (at >= from)
         tk_snprintf(s, size, "%u%% | +%u:%02u", pct, m / 60, m % 60);
     else /* the clock lost after the start */
@@ -97,6 +101,8 @@ static void bh_text(char *s, unsigned size, unsigned i) {
 static void bh_day(char *s, unsigned size, unsigned i, int year) {
     static const char months[12][8] = { "1月", "2月", "3月", "4月", "5月", "6月",
                                         "7月", "8月", "9月", "10月", "11月", "12月" };
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
     int buf[11], was[11];
     const int *tm = bh_tm(i, buf), *before = i ? bh_tm(i - 1, was) : (void *)0;
     *s = 0;
@@ -107,6 +113,8 @@ static void bh_day(char *s, unsigned size, unsigned i, int year) {
         tk_snprintf(s, size, "%s%d日 %d", months[tm[4]], tm[3], tm[5] + 1900);
     else
         tk_snprintf(s, size, "%s%d日", months[tm[4]], tm[3]);
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
 }
 
 /* The log's text into out: each day's date over its rows, or, for a clock never set, a line that
@@ -119,7 +127,7 @@ unsigned battery_log(char *out, unsigned size) {
     for (unsigned i = 0; i < bh.rec.n && (len = strlen(out)) < size; ++i) {
         char day[32], row[48];
         bh_day(day, sizeof day, i, 1);
-        bh_text(row, sizeof row, i);
+        bh_text(row, sizeof row, i, 0);
         tk_snprintf(out + len, size - len, *day ? "%s%s\n%s\n" : "%s%s%s\n",
                     len && *day ? "\n" : "", day, row);
     }
@@ -140,6 +148,7 @@ static int bh_export(void *ctx, event_t *event) {
         unlink(BH_LOG ".tmp"), toast("保存失败");
     else
         toast("已保存到 battery-log.txt");
+>>>>>>> 1.9.1
     return 0;
 }
 
@@ -161,6 +170,7 @@ static void bh_fill(void) {
     bh.graph = 0;
     widget_t *view = bh.view = page_list_or(bh.page, bh.page, "电池历史", "拔掉充电线后开始记录",
                                             n ? (int)n + 1 : 0, 48);
+>>>>>>> 1.9.1
     if (!n) return;
     widget_t *list = P(view, W_PARENT);
     int rh = page_h(48), head = 2 * rh, y = I(list, W_Y),
@@ -170,9 +180,10 @@ static void bh_fill(void) {
     widget_resize(view, 375, h);
     bh.graph = widget_factory_create_widget(widget_factory(), "view", bh.page, 0, y, 375, head);
     page_row_detail(view, 0, "导出日志", 0, bh_export);
+>>>>>>> 1.9.1
     for (unsigned i = 0; i < n; ++i) {
-        char day[16], s[64];
-        bh_text(s, sizeof s, i);
+        char day[32], s[96]; /* room for a translated month and AM or PM */
+        bh_text(s, sizeof s, i, 1);
         bh_day(day, sizeof day, i, 0);
         if (*day) tk_snprintf(s + strlen(s), sizeof s - strlen(s), " %s", day);
         page_row_detail(view, (int)i + 1, s, 0, bh_row);

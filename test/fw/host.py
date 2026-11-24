@@ -65,7 +65,7 @@ def platform_header():
 
 def stock_header(themes):
     lines = [f'extern unsigned char fw_ctx_{name}[{size}];' for name, size in CONTEXT.items()]
-    ranges = [tools_build.bold_font()[1], tools_build.classic_light_font()[1]]
+    ranges = [tools_build.bold_font()[1], tools_build.classic_light_font()[1], tools_build.GLYPH_FALLBACK_MACRO]
     context = {name: f'fw_ctx_{name}' for name in tools_build.CONTEXT_DATA}
     return '\n'.join(lines) + '\n' + tools_build.stock_header(context, ranges, themes, repo='owner/repo')
 
@@ -127,6 +127,24 @@ def headers(out):
     tools_theme.emit(themes, out)
 
 
+def globalize(obj):
+    """Each static of obj a global <file>__<name>, so a test reaches it: objcopy renames them in place."""
+    local = [r[-1] for r in nm(obj) if len(r) == 3 and r[1] in 'tdbr' and re.fullmatch(r'[A-Za-z_]\w*', r[-1])]
+    renames = [f for name in local for f in ('--redefine-sym', f'{name}={obj.stem}__{name}', '--globalize-symbol', f'{obj.stem}__{name}')]
+    subprocess.run(['objcopy', *renames, str(obj)], check=True)
+
+
+def flags():
+    """conftest.py's library fixture's extra cc flags for fw.so, from the same variables, so every build of it
+    (video_host.py's too) is alike."""
+    extra = []
+    if os.environ.get('Q2_FW_SANITIZE'):
+        extra += ['-fsanitize=address,undefined', '-fno-sanitize-recover=undefined', '-fno-sanitize=alignment']
+    if os.environ.get('Q2_FW_COVERAGE'):
+        extra += ['--coverage']
+    return extra
+
+
 def build(out, extra=()):
     """Compile everything into out/fw.so, extra going to cc (test/fw/conftest.py's coverage and sanitizers).
     Every static gains a global <file>__<name> a test can reach."""
@@ -138,9 +156,7 @@ def build(out, extra=()):
         rows = nm(obj)
         defined |= {r[-1] for r in rows if len(r) == 3 and r[1] in 'TDBRVWC'}
         undefined |= {r[-1] for r in rows if len(r) == 2 and r[0] == 'U'}
-        local = [r[-1] for r in rows if len(r) == 3 and r[1] in 'tdbr' and re.fullmatch(r'[A-Za-z_]\w*', r[-1])]
-        renames = [f for name in local for f in ('--redefine-sym', f'{name}={obj.stem}__{name}', '--globalize-symbol', f'{obj.stem}__{name}')]
-        subprocess.run(['objcopy', *renames, str(obj)], check=True)
+        globalize(obj)
     system = {'__stack_chk_fail', '_GLOBAL_OFFSET_TABLE_', *PURE}
     system |= {n for n in undefined if n.startswith(('__gcov', '__asan', '__ubsan', '__lsan'))}
     data = {f'fw_ctx_{name}': size for name, size in CONTEXT.items()} | {name: 1 for name in tools_build.GLOBALS}

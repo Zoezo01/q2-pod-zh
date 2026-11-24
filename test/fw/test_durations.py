@@ -7,6 +7,7 @@ import struct
 import pytest
 
 from conftest import O, Files, claim
+from test_coverflow import style  # noqa: F401
 from test_nav_library_pages import Config, LENGTHS, Probe, lengths, path_key, song, ui  # noqa: F401
 from test_playlist_art import real_sqlite
 
@@ -642,3 +643,122 @@ def test_a_track_list_with_any_length_gives_every_row_the_detail_height(fw, ui, 
               if C.string_at(a[1]) == b'style:normal:text_align_h' and C.string_at(a[2]) == b'center'}
     details = [ui.kids[w][1] for w in items if len(ui.kids[w]) > 1]
     assert len(details) == (2 if want[0][1] else 0) and all(d in centre for d in details)  # under its centred title
+
+
+# Minimal's and Modern's album over its songs: each row's artist (the album artist when the album has one, else the
+# song's own) then its length, and two short rules either side of the name; Classic's rows as before, no rules.
+def album_list(fw, ui, song, tracks, theme, album_artist=None, title=b'Blue', canvas=True):
+    from test_coverflow import Cf, themed
+    Files(fw)
+    themed(fw, theme)
+    directory = fw.var('fw_ctx_tools_pdeq_directory', C.c_uint)
+    fw.mock('getMusicByAlbum', lambda *_: ui.deques[directory.value].extend(tracks) or len(tracks))
+    fw.mock('widget_get_canvas', lambda *_: 0x1000 if canvas else 0)
+    held = []  # each title's wide text, as widget_get_text answers it
+
+    def wide(w, *_):
+        held.append((C.c_uint * (len(ui.text.get(w, '')) + 1))(*map(ord, ui.text.get(w, ''))))
+        return C.addressof(held[-1])
+    fw.mock('widget_get_text', wide)
+    fw.mock('canvas_measure_text', lambda c, s, n, *_: 10.0 * n)  # a character 10 px
+    page = ui.new('window_create', 0, 0, 0, 0, 0)
+    c = fw.var('cf', Cf)
+    c.page, c.body, c.scoped, c.album = page, page, 2, 0
+    album = song(album=title, id_=-1)
+    keep = C.create_string_buffer(album_artist or b'')
+    if album_artist is not None:
+        C.c_uint64.from_address(album + O['REC_ALBUM_ARTIST']).value = C.addressof(keep)
+    c.albums = ui.deques.new([album])
+    fw.fn('coverflow__to_tracks', C.c_int, C.c_void_p)(None)
+    items = ui.kids[ui.view(page)]
+    heights = {struct.unpack_from('<4i', ui.blocks[w])[3] for w in items}
+    return page, ui.rows(page), heights, c
+
+
+def rules(fw, ui, page):
+    """The title rules shown, as (x, y, w, h) from their last move, and each one's colour."""
+    named = {ui.name.get(k): k for k in ui.kids[page] if ui.name.get(k, '').startswith('title_rule')}
+    moves = {}
+    for _, a in fw.calls('widget_move_resize'):
+        if a[0] in named.values():
+            moves[a[0]] = tuple(C.c_int(v).value for v in a[1:5])
+    return [(moves[w], ui.props[(w, 'style:normal:bg_color')]) for n, w in sorted(named.items()) if w not in ui.hidden]
+
+
+@pytest.mark.parametrize('theme', [0, 2])  # Minimal, Modern
+def test_a_centred_album_list_shows_each_song_s_artist_and_length(fw, ui, song, stock_clock, st, style, theme):
+    st('scan_durations').value, st('pod_read').value = 1, 1
+    C.c_short.from_address(C.addressof(fw.var('cfs', C.c_char)) + style['name_px']).value = 26
+    tracks = [song(b'/m/a.flac', b'One', b'Band', track=1, end=200), song(b'/m/b.flac', b'Two', b'Band', track=2),
+              song(b'/m/c.flac', b'Three', track=3, end=200)]
+    page, rows, heights, c = album_list(fw, ui, song, tracks, theme)
+    assert rows == [('One', 'Band · 03:20'), ('Two', 'Band'), ('Three', '03:20')]
+    assert heights == {fw.fn('page_h', C.c_int, C.c_int)(64)}
+    x = fw.fn('page_x', C.c_int)()
+    box = 375 - 2 * x
+    side = (box - 40) // 2 - 12  # 'Blue', 40 px, centred; each rule 12 px from it
+    assert rules(fw, ui, page) == [((x + side - 75, 24, 75, 1), -1), ((x + box - side, 24, 75, 1), -1)]
+    pair = [k for k in ui.kids[page] if ui.name.get(k, '').startswith('title_rule')]
+    assert len(pair) == 2  # one pair, made once
+    assert fw.calls('canvas_set_font')[-1][1][1:3] == (0, 26)  # the default face at cfs.name_px
+    # a row's file gone: the title says so, and the rules move out to its width
+    fw.mock('fw_access', lambda *_: -1)
+    ui.handler(ui.kids[ui.view(page)][0], O['EVT_CLICK'])()
+    assert ui.text[c.title] == 'Storage unavailable'
+    side = (box - 190) // 2 - 12  # under 75: the rule runs from the box's edge
+    assert rules(fw, ui, page) == [((x, 24, side, 1), -1), ((x + box - side, 24, side, 1), -1)]
+    # a wider translation, 380 px over the box: it scrolls, and the same two rules hide
+    fw.mock('canvas_measure_text', lambda c, s, n, *_: 20.0 * n)
+    ui.handler(ui.kids[ui.view(page)][0], O['EVT_CLICK'])()
+    assert rules(fw, ui, page) == [] and all(w in ui.hidden for w in pair)
+    assert [k for k in ui.kids[page] if ui.name.get(k, '').startswith('title_rule')] == pair
+
+
+@pytest.mark.parametrize('theme', [0, 2])
+def test_a_centred_album_list_with_no_artist_or_length_keeps_single_rows(fw, ui, song, stock_clock, st, theme):
+    st('scan_durations').value = 0
+    page, rows, heights, _ = album_list(fw, ui, song, [song(b'/m/a.flac', b'One', end=200)], theme)
+    assert rows == [('One', None)] and heights == {fw.fn('page_h', C.c_int, C.c_int)(48)}
+
+
+def test_a_song_with_no_artist_shows_its_length_alone(fw, ui, song, stock_clock, st):
+    st('scan_durations').value, st('pod_read').value = 1, 1
+    one = song(b'/m/a.flac', b'One', end=200)
+    C.c_uint64.from_address(one + O['REC_ARTIST']).value = 0  # NULL, not ''
+    _, rows, heights, _ = album_list(fw, ui, song, [one], 2)
+    assert rows == [('One', '03:20')] and heights == {fw.fn('page_h', C.c_int, C.c_int)(64)}
+
+
+# Without lengths the rows stay one line, as many songs on a screen as before: no artist, the rules still drawn.
+@pytest.mark.parametrize('theme', [0, 2])
+def test_without_lengths_the_rows_stay_one_line_with_no_artist(fw, ui, song, stock_clock, st, theme):
+    st('scan_durations').value = 0
+    tracks = [song(b'/m/a.flac', b'One', b'Band', end=200), song(b'/m/b.flac', b'Two', b'Band')]
+    page, rows, heights, _ = album_list(fw, ui, song, tracks, theme, b'Band')
+    assert rows == [('One', None), ('Two', None)] and heights == {fw.fn('page_h', C.c_int, C.c_int)(48)}
+    assert len(rules(fw, ui, page)) == 2
+
+
+@pytest.mark.parametrize('album_artist,want', [(None, ['X', 'Y']), (b'', ['X', 'Y']), (b'Various', ['Various', 'Various'])])
+def test_a_compilation_shows_each_song_s_artist_unless_the_album_has_one(fw, ui, song, stock_clock, st, album_artist, want):
+    st('scan_durations').value, st('pod_read').value = 1, 1
+    tracks = [song(b'/m/a.flac', b'One', b'X', end=200), song(b'/m/b.flac', b'Two', b'Y', end=200)]
+    _, rows, heights, _ = album_list(fw, ui, song, tracks, 2, album_artist)
+    assert [d for _, d in rows] == [f'{w} · 03:20' for w in want] and heights == {fw.fn('page_h', C.c_int, C.c_int)(64)}
+
+
+@pytest.mark.parametrize('title,canvas', [(b'A' * 34, True), (b'Blue', False)])  # scrolls, or no canvas: no rules
+def test_no_title_rules_for_a_name_that_scrolls_or_no_canvas(fw, ui, song, stock_clock, st, title, canvas):
+    st('scan_durations').value = 0
+    page, *_ = album_list(fw, ui, song, [song(b'/m/a.flac', b'One', b'X')], 2, title=title, canvas=canvas)
+    assert not rules(fw, ui, page)
+
+
+@pytest.mark.parametrize('theme', [1, 3])  # Classic, Classic Modern
+@pytest.mark.parametrize('switch,want,h', [(1, [('One', '03:20'), ('Two', '')], 64), (0, [('One', None), ('Two', None)], 48)])
+def test_classic_s_album_list_shows_no_artist_and_no_rules(fw, ui, song, stock_clock, st, theme, switch, want, h):
+    st('scan_durations').value, st('pod_read').value = switch, 1
+    tracks = [song(b'/m/a.flac', b'One', b'Band', track=1, end=200), song(b'/m/b.flac', b'Two', b'Band', track=2)]
+    page, rows, heights, _ = album_list(fw, ui, song, tracks, theme, b'Band')
+    assert rows == want and heights == {fw.fn('page_h', C.c_int, C.c_int)(h)}
+    assert not fw.calls('widget_get_canvas') and not rules(fw, ui, page)

@@ -270,6 +270,43 @@ static void wl_note_tick(unsigned now, unsigned before) {
  * second ends it. Here, at the press, so a stalled UI doesn't move it. ponytail: a real turn with
  * two rim presses within WHEEL_ARM_MS in one touch stops until its lift; nothing else ever limits a
  * turn. */
+/* The UI loop's idle (navigation.c ringnav_sleep) ends at an input. loop_woken is a futex word:
+ * ringnav_queue_event sets it and wakes the UI thread once a key (a wheel tick is two) or, with the
+ * screen on, a touch is in the queue, so the pass that follows dispatches it. Whatever else a
+ * thread queues waits the idle out, as it always did, so the loop passes no more often than before
+ * unless there is input. An input queued since the last wait finds the word set, and that wait is
+ * skipped. demo imports no futex(), so the o32 syscall itself (4238), private to the process as
+ * hciplayer's are (peq_player.c): FUTEX_WAIT 128 with a relative {s, ns} on the monotonic clock,
+ * FUTEX_WAKE 129. A wait that returns early with the word clear (a signal, a kernel that refuses
+ * it) hands the rest to sleep_ms, so an idle is never shorter than it was without input.
+ * loop_wake is the set and the wake, headset.c's worker's too: its keys reach the UI through
+ * headset_poll, not the queue. ponytail: a thread stopped between the set and the wake for longer
+ * than a pass wakes the next idle with the word already clear, and that one idle is sleep_ms's,
+ * which no input ends; wait on the futex again there if it ever shows. */
+static volatile int loop_woken __attribute__((section(".scratch")));
+int loop_futex(volatile int *word, int op, int value, const long *timeout);
+#ifndef PEQ_HOST
+__asm__(".globl loop_futex\nloop_futex:\nli $v0, 4238\nsyscall\njr $ra\nnop\n");
+#else
+__attribute__((weak)) int loop_futex(volatile int *word, int op, int value, const long *timeout) {
+    return 0; /* the tests': it returns at once, so they see sleep_ms take the idle */
+}
+#endif
+void loop_wake(void) {
+    loop_woken = 1;
+    loop_futex(&loop_woken, 129, 1, 0);
+}
+void loop_wait(unsigned ms) {
+    if (!loop_woken) {
+        const long timeout[2] = { (long)(ms / 1000), (long)(ms % 1000) * 1000000 };
+        unsigned at = (unsigned)time_now_ms();
+        loop_futex(&loop_woken, 128, 0, timeout);
+        unsigned gone = (unsigned)time_now_ms() - at;
+        if (!loop_woken && gone < ms) sleep_ms(ms - gone);
+    }
+    loop_woken = 0;
+}
+
 int ringnav_queue_event(void *loop, const unsigned *r) {
     int (*post)(void *, const void *) =
         loop ? *(int (**)(void *, const void *))((char *)loop + LOOP_POST) : 0;
@@ -286,7 +323,11 @@ int ringnav_queue_event(void *loop, const unsigned *r) {
             wl_note_stop();
         }
     }
-    return r[0] ? post(loop, r) : 0;
+    int ret = r[0] ? post(loop, r) : 0;
+    if (r[0] == EVT_KEY_DOWN || r[0] == EVT_KEY_UP ||
+        (g_backlight_status && r[0] >= EVT_POINTER_FIRST && r[0] <= EVT_POINTER_ABORT))
+        loop_wake(); /* after the post: the pass this wakes finds the event */
+    return ret;
 }
 
 volatile int wheel_raw __attribute__((section(".scratch")));
@@ -436,6 +477,7 @@ int ringnav_speed(int mode) {
         unlink(tmp);
         playback_speed_start();
         toast("无法保存文件夹播放速度");
+>>>>>>> 1.9.1
         return stock_speed_trampoline(g_playspeed_mode);
     }
     g_playspeed_mode = (unsigned char)mode;
@@ -1400,6 +1442,8 @@ void playback_save(void) {
         sec = s.resume_elapsed;
     else if (sec > 0)
         s.resume_wait = 0;
+    else if (pos == s.saved_pos && mclGetPlayStatus() == 1)
+        sec = s.saved_elapsed; /* stopped: player_stop zeroed the time, the saved second stays */
     if (sec < 0) sec = 0;
     if (!s.dirty && !s.save_failed && sec == s.saved_elapsed && pos == s.saved_pos) return;
     /* Failed checkpoints stay pending; the UI loop retries at most every five seconds. */
@@ -1767,6 +1811,7 @@ void playback_poll(void) {
     if (restart_ask) {
         restart_ask = 0;
         toast("再按一次从头播放");
+>>>>>>> 1.9.1
     }
     follow_queue(); /* before Crossfade reads the next track */
     xfade_poll(playback_next(), !s.active && M(MCL_MODE) == 2);

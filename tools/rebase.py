@@ -771,7 +771,7 @@ def pins(text, old, new, hashes):
 def read_tree():  # pragma: no mutate block
     return {rel: (ROOT/rel).read_text() for rel in tracked()}
 
-def apply(old, new, write=True, out=sys.stdout):  # pragma: no mutate block
+def apply(old, new):  # pragma: no mutate block
     """Rewrite every tracked file; returns how many notes it left."""
     maps = open_maps(old, new)
     hashes = (old.hashes(), new.hashes())
@@ -787,32 +787,32 @@ def apply(old, new, write=True, out=sys.stdout):  # pragma: no mutate block
             now, notes = rewrite(text, lits, verdict, maps)
             now, more = pins(now, old, new, hashes)
             notes += more
-        for line, literal, what in sorted(notes): print(f'{rel}:{line}: {literal} {what}', file=out)
+        for line, literal, what in sorted(notes): print(f'{rel}:{line}: {literal} {what}')
         failed += len(notes)
         if now != text:
             changed += 1
-            if write: (ROOT/rel).write_text(now)
-    print(f'{changed} files {"rewritten" if write else "would change"}, {failed} notes', file=out)
+            (ROOT/rel).write_text(now)
+    print(f'{changed} files rewritten, {failed} notes')
     return failed
 
-def check_tree(old, new, out=sys.stdout):  # pragma: no mutate block
+def check_tree(old, new):  # pragma: no mutate block
     """Print each literal still on the old layout; returns how many."""
     maps = open_maps(old, new)
     texts = read_tree()
     tables = {rel: read_stock_map(texts.pop(rel)) for rel in TABLES if rel in texts}
     count = 0
     for rel, (version, _, _) in tables.items():
-        if version != new.version: print(f'{rel}: its addresses are {version}\'s', file=out); count += 1
+        if version != new.version: print(f'{rel}: its addresses are {version}\'s'); count += 1
     for rel, line, literal, binary, how in stale(texts, maps, {b: view(mp.a) for b, mp in maps.items()}, {b: view(mp.b) for b, mp in maps.items()}):
-        print(f'{rel}:{line}: {literal} is {binary}\'s in {old.version} ({how}: {maps[binary].a.where(int(literal, 16))})', file=out)
+        print(f'{rel}:{line}: {literal} is {binary}\'s in {old.version} ({how}: {maps[binary].a.where(int(literal, 16))})')
         count += 1
     for rel, (_, names, _) in tables.items():
         for binary, rows in names.items():
             elf = maps[binary].b
             for x, size, name in rows:
                 if elf.section(x) is None or (elf.text <= x < elf.end and x & 3):
-                    print(f'{rel}: {name} at {x:#x} is not in {new.version}\'s {binary}', file=out); count += 1
-    print(f'{count} stock addresses left on {old.version}\'s layout' if count else f'No stock address left on {old.version}\'s layout', file=out)
+                    print(f'{rel}: {name} at {x:#x} is not in {new.version}\'s {binary}'); count += 1
+    print(f'{count} stock addresses left on {old.version}\'s layout' if count else f'No stock address left on {old.version}\'s layout')
     return count
 
 def kernel(blob):  # pragma: no mutate block
@@ -831,8 +831,8 @@ def config_keys(text):
         elif '=' in line: out.append(f'{section} {line.split("=")[0].strip()}')
     return out
 
-def report(old, new, out=sys.stdout):  # pragma: no mutate block
-    p = lambda *a: print(*a, file=out)
+def report(old, new):  # pragma: no mutate block
+    p = print
     p(f'# {old.version} ({old.sha[:12]}) -> {new.version} ({new.sha[:12]})\n')
     ra, rb = old.tree(), new.tree()
     fa = {str(f.relative_to(ra)) for f in ra.rglob('*') if f.is_file() or f.is_symlink()}
@@ -954,11 +954,9 @@ def main(argv=None):  # pragma: no mutate block
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('command', choices=('report', 'apply', 'check', 'refs'))
     ap.add_argument('args', nargs='+', metavar='ZIP', help='OLD.zip NEW.zip, or for refs: ZIP BINARY and addresses or strings')
-    ap.add_argument('--dry-run', action='store_true', help='apply: print what would change and write nothing')
-    ap.add_argument('--work', type=pathlib.Path, default=pathlib.Path(tempfile.gettempdir()), help='where to extract (default: the temporary directory)')
     a = ap.parse_args(argv)
     try:
-        with tempfile.TemporaryDirectory(prefix='q2-rebase-', dir=a.work) as work:
+        with tempfile.TemporaryDirectory(prefix='q2-rebase-') as work:
             check(ROOT not in pathlib.Path(work).resolve().parents, 'Extract outside the repo')
             if a.command == 'refs':
                 check(len(a.args) >= 3 and a.args[1] in BINARIES, 'refs ZIP BINARY WHAT...')
@@ -969,7 +967,7 @@ def main(argv=None):  # pragma: no mutate block
             check(len(a.args) == 2, f'{a.command} OLD.zip NEW.zip')
             old, new = Stock(a.args[0], work), Stock(a.args[1], work)
             if a.command == 'report': report(old, new); return 0
-            if a.command == 'apply': apply(old, new, not a.dry_run); return 0
+            if a.command == 'apply': apply(old, new); return 0
             return 1 if check_tree(old, new) else 0
     except (OSError, ValueError, KeyError, zipfile.BadZipFile, subprocess.CalledProcessError) as exc:
         ap.error(str(exc))

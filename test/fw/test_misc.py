@@ -7,7 +7,8 @@ import struct
 import subprocess
 
 import pytest
-from conftest import block
+from conftest import Card as BaseCard, Dirent, block
+from test_peq_page import Band, E3, EqState, Preset, Ui
 
 pytestmark = pytest.mark.usefixtures('stock_gapless')  # Crossfade's page has stock's Gapless on, as stock's default
 
@@ -16,27 +17,12 @@ FNV = 2166136261
 r = C.byref
 
 libc = C.CDLL(None)
-libc.malloc.restype, libc.malloc.argtypes = C.c_void_p, [C.c_size_t]
 libc.calloc.restype, libc.calloc.argtypes = C.c_void_p, [C.c_size_t, C.c_size_t]
-libc.free.argtypes = [C.c_void_p]
 
 
 def exact(ctype, n):
     """n zeroed ctypes in a calloc of exactly their size, so the sanitizer sees an overrun."""
     return (ctype * n).from_address(libc.calloc(n, C.sizeof(ctype)))
-
-
-# Not in conftest: it needs this file's libc, whose malloc returns a whole pointer.
-class Exact:
-    def __init__(self, data):
-        self.p = libc.malloc(len(data) or 1)
-        C.memmove(self.p, bytes(data), len(data))
-
-    def __enter__(self):
-        return self.p
-
-    def __exit__(self, *_):
-        libc.free(self.p)
 
 
 def config(fw, values=None):
@@ -52,58 +38,10 @@ def config(fw, values=None):
     return written
 
 
-class Card:
-    """fopen and friends on a dict."""
-    def __init__(self, fw, files=None):
-        self.files, self.open, self.unlinked, self.bad_rename, self.bad_close = dict(files or {}), {}, [], False, False
-        for name in 'fopen fread fwrite fseek ftell rename unlink'.split():
-            fw.mock('fw_' + name, getattr(self, name))
-        fw.mock('fw_fclose', lambda *_: self.bad_close)
-        fw.mock('fw_fflush', lambda *_: 0)
-        fw.mock('fw_fsync', lambda *_: 0)
-        fw.mock('fw_access', lambda path, *_: C.string_at(path).decode('latin1') not in self.files)
-
-    def fopen(self, path, mode, *_):
-        name, write = C.string_at(path).decode('latin1'), C.string_at(mode)[:1] == b'w'
-        if not write and name not in self.files:
-            return 0
-        handle = 0x1000 + len(self.open)
-        self.open[handle] = [name, 0]
-        if write:
-            self.files[name] = b''
-        return handle
-
-    def fread(self, buf, size, n, f, *_):
-        name, at = self.open[f]
-        data = self.files[name][at:at + size * n]
-        C.memmove(buf, data, len(data))
-        self.open[f][1] = at + len(data)
-        return len(data) // size
-
-    def fwrite(self, buf, size, n, f, *_):
-        self.files[self.open[f][0]] += C.string_at(buf, size * n)
-        return n
-
-    def fseek(self, f, off, whence, *_):
-        base = {0: 0, 1: self.open[f][1], 2: len(self.files[self.open[f][0]])}[whence]
-        if base + off < 0:
-            return -1
-        self.open[f][1] = base + off
-        return 0
-
-    def ftell(self, f, *_):
-        return self.open[f][1]
-
-    def rename(self, a, b, *_):
-        if self.bad_rename:
-            return -1
-        self.files[C.string_at(b).decode('latin1')] = self.files.pop(C.string_at(a).decode('latin1'))
-        return 0
-
-    def unlink(self, path, *_):
-        self.unlinked.append(C.string_at(path).decode())
-        self.files.pop(self.unlinked[-1], None)
-        return 0
+class Card(BaseCard):
+    """Names as latin1, as misc.c reads them."""
+    def name(self, path):
+        return C.string_at(path).decode('latin1')
 
 
 # Night Shift
@@ -396,9 +334,9 @@ def test_utf8_char_is_utf8_else_latin1(fw):
 
     def chars(data):
         i, out = C.c_uint(0), []
-        with Exact(data) as p:
-            while i.value < len(data):
-                out.append(f(p, len(data), r(i)))
+        p = block(fw, data, len(data))
+        while i.value < len(data):
+            out.append(f(p, len(data), r(i)))
         return out
     assert chars('aé€😀'.encode()) == [ord(c) for c in 'aé€😀']
     assert chars(b'\xe9a') == [0xe9, 0x61]  # Latin-1
@@ -413,18 +351,21 @@ def test_utf8_char_hostile_sweep(fw):
     for _ in range(2000):
         data = rng.randbytes(rng.randrange(1, 16))
         i = C.c_uint(0)
-        with Exact(data) as p:
-            while i.value < len(data):
-                before = i.value
-                assert f(p, len(data), r(i)) <= 0x1fffff and before < i.value <= len(data)
+        p = block(fw, data, len(data))
+        while i.value < len(data):
+            before = i.value
+            assert f(p, len(data), r(i)) <= 0x1fffff and before < i.value <= len(data)
 
 
 # Crossfade's page
 
 class Xf(C.Structure):
     _fields_ = [*((k, C.c_int) for k in 'read on seconds done'.split()), ('key', C.c_int * 8),
-                *((k, C.c_int) for k in 'stops counted ctx sliding unsaved setting rs_read rs_min mono_read mono swap_read swap'.split()),
-                *((k, C.c_void_p) for k in 'flag mono_flag swap_flag press_file mute_file swap_label mono_label page sw view slider dec add label'.split()),
+                *((k, C.c_int) for k in 'stops counted ctx sliding unsaved setting rs_read rs_min'.split()),
+                ('opt_read', C.c_int * 2), ('opt', C.c_int * 2),
+                ('flag', C.c_void_p), ('opt_flag', C.c_void_p * 2), ('press_file', C.c_void_p), ('mute_file', C.c_void_p),
+                ('opt_label', C.c_void_p * 2),
+                *((k, C.c_void_p) for k in 'page sw view slider dec add label'.split()),
                 ('press', C.c_uint), ('press_at', C.c_uint)]
 
 
@@ -669,7 +610,7 @@ def test_mono_on_writes_the_flag_the_player_maps(fw):
     fw.fn('mono_sync', None)()
     assert cells[0].value == 1
     x = xf(fw)
-    x.mono = 0
+    x.opt[0] = 0
     fw.fn('mono_sync', None)()
     assert cells[0].value == 0 and len(cells) == 1  # one file, kept
 
@@ -701,27 +642,6 @@ def test_a_mono_click_saves_and_tells_the_player(fw):
 # The EQ page: its files and rules
 
 BANDS = 30
-
-
-class Band(C.Structure):
-    _fields_ = [('enabled', C.c_int), ('type', C.c_int), ('frequency', C.c_double), ('gain', C.c_double), ('q', C.c_double)]
-
-
-class Preset(C.Structure):
-    _fields_ = [('count', C.c_int), ('bypass', C.c_int), ('preamp', C.c_double), ('bands', Band * BANDS),
-                ('balance', C.c_double), ('automatic', C.c_int), ('spare', C.c_int)]
-
-
-class EqState(C.Structure):
-    _fields_ = [('mode', C.c_int), ('hold', C.c_int), ('peq', Preset), ('eq3', Preset)]
-
-
-class Ui(C.Structure):
-    _fields_ = [*((k, C.c_void_p) for k in 'page view edit graph bar'.split()), ('timer', C.c_uint), ('keyboard_timer', C.c_uint),
-                *((k, C.c_int) for k in 'screen band step count previous rendered dirty pick adjust tries capacity file_page tab tabs from_simple'.split()),
-                ('typed', C.c_double), ('draft', Preset), ('candidate', Preset), ('named', Preset), ('names', C.c_void_p),
-                ('destination', C.c_char * 600), ('status', C.c_char * 160), ('name', C.c_char * 256), ('applied', C.c_char * 256),
-                ('curve', (C.c_float * 343) * 2)]
 
 
 def ui(fw):
@@ -809,8 +729,6 @@ def test_a_bad_draft_draws_flat(fw):
 
 
 def files(fw, names, types=None):
-    class Dirent(C.Structure):
-        _fields_ = [('ino', C.c_uint), ('off', C.c_uint), ('reclen', C.c_ushort), ('d_type', C.c_ubyte), ('d_name', C.c_char * 256)]
     entries = [Dirent(0, 0, 0, types.get(n, 8) if types else 8, n) for n in names]
     it = iter(entries)
     fw.mock('fw_opendir', lambda *_: 0x3000)
@@ -922,7 +840,7 @@ def test_a_failed_rename_says_so(fw):
     u = ui(fw)
     u.edit, u.destination = 0x7000, f'{SAVED}/Rock.peq'.encode()
     card = Card(fw, {f'{SAVED}/Rock.peq': b'p'})
-    card.bad_rename = True
+    card.fail_rename = True
     typed(fw, b'Jazz')
     fw.fn('peq_ui__rename_preset', None)()
     assert u.status == b'Rename failed; preset kept'
@@ -1349,11 +1267,6 @@ def test_a_display_only_row_does_nothing(fw):
     assert u.screen == BAND and u.status == b'kept'
 
 
-class E3(C.Structure):
-    _fields_ = [('view', C.c_void_p), ('save', C.c_uint), ('press', C.c_uint), ('press_at', C.c_uint),
-                *((k, C.c_int) for k in 'focus adjusting dragging dirty on h'.split()), ('gain', C.c_double * 3), ('status', C.c_char_p), ('caption', C.c_int)]
-
-
 E3_TABS, E3_SWITCH, E3_PRESETS, E3_RESET, E3_LOW, E3_MID, E3_HIGH = range(7)
 
 
@@ -1573,7 +1486,7 @@ def test_a_row_with_no_queue_only_closes(fw):
 def test_up_next_opens_one_page_at_a_time(fw):
     u = un(fw)
     u.page = 0x7000
-    fw.fn('up_next', None, C.c_void_p)(None)
+    fw.fn('up_next', None)()
     assert not fw.calls('window_create') and u.page == 0x7000
 
 

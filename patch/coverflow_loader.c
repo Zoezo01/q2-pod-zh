@@ -71,9 +71,8 @@ static void half_make(unsigned key, unsigned *tex) {
 __asm__(".globl cf_syscall\ncf_syscall:\n.set push\n.set noreorder\nmove $v0, $a0\nmove $a0, $a1\n"
         "move $a1, $a2\nmove $a2, $a3\nsyscall\nbnez $a3, 1f\nnop\njr $ra\nnop\n1:\njr $ra\n"
         "li $v0, -1\n.set pop\n");
-extern int cf_syscall(int nr, int a, int b, int c);
 #else
-__attribute__((weak)) int cf_syscall(int nr, int a, int b, int c) { return -1; } /* the tests' */
+__attribute__((weak)) int cf_syscall(int nr, long a, long b, long c) { return -1; } /* the tests' */
 #endif
 #define SYS_SETPRIORITY 4097 /* o32; 4096 is getpriority */
 #define SYS_GETTID 4222

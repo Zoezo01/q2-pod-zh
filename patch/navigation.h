@@ -204,6 +204,7 @@ typedef struct {
     unsigned char slider_kind;
     unsigned np_hash; /* of the album text, position and queue length shown, 0 to refresh */
     unsigned np_art;  /* the track and player cover img_cover last took (np_art_poll) */
+    unsigned np_seen; /* the track and tags the page's update last drew (np_update_poll) */
     int np_left;
     /* Minimal's album marquee: np_off px scrolled of the np_over px the album overflows its label.
      */
@@ -249,6 +250,8 @@ typedef struct {
         geom;            /* the geometry set theme_boot wrote; 0, SET0, until then */
     int own[THEME_KEYS]; /* the themes' own keys' values (theme_keys[], tools/theme.py), read after
                             the thirteen */
+    int card_page;       /* a card theme's page (card_theme_load): 0 none, 1 dark, 2 light */
+    int card_rules;      /* the pages a card theme's rules reach (card_rules_used): 1 << CARD_* */
     unsigned keep_lit_at;
     widget_t *sel_accent; /* the row on a coloured selection, for Light Mode's ink */
     int style_depth;      /* nested style hooks (a mutable style's fallback) map nothing */
@@ -329,10 +332,12 @@ extern void *queue_now(unsigned *pos, unsigned *n);
 extern void *coverflow_tracks(widget_t *page);
 extern void *coverflow_album(widget_t *page);
 extern int coverflow_goto_album(void *r), coverflow_shows_album(void *r);
-extern void up_next(int (*keyup)(void *, event_t *));
+extern void up_next(void);
 
 /* navigation.c */
 void pod_settings(void);
+extern const char *const ink_state[];
+extern const unsigned standby_hours[4];
 #define COUNT "_ringnav_count"
 #define SEL "_ringnav_index"
 enum { SLIDER_LIGHT, SLIDER_MAX, SLIDER_BALANCE, SLIDER_BOOT }; /* st.slider_kind */
@@ -344,8 +349,6 @@ enum { SLIDER_LIGHT, SLIDER_MAX, SLIDER_BALANCE, SLIDER_BOOT }; /* st.slider_kin
 #define CONFIRM_FLAT_H 36
 /* a confirm's form: none, the page, confirm_over's tray */
 enum { FORM_NONE, FORM_PAGE, FORM_TRAY };
-/* paper under the flat hold menu's rows: its card's corners clear the last row */
-#define HOLD_FOOT 10
 /* the toast's box, and the flat look's tray: the same in both halves */
 #define TOAST_RGBA 0xee2b2b2bu
 #define MCL(a) (*(volatile int *)(a))
@@ -359,6 +362,7 @@ int bar_repaint(const void *info);
 void clock_text(widget_t *label, int negative, int t);
 void label_font(widget_t *w, int bold);
 widget_t *list_row(widget_t *view, const char *icon, int (*click)(void *, event_t *), void *ctx);
+int language_offered(void); /* language.c */
 widget_t *list_row_core(widget_t *view, const char *icon, int (*click)(void *, event_t *),
                         void *ctx, int w, int into);
 int media_find(int kind, char *path);
@@ -367,14 +371,15 @@ char *svc_find(char *hide, int i);
 void svc_hidden(char *s);
 int media_click(void *ctx, event_t *event);
 int stream_config(void *ctx, event_t *event);
-void bar_place(widget_t *w, int x, int y, int ww, int h);
+void bar_place(widget_t *w, int y, int h);
 void bar_rect(canvas_t *canvas, unsigned color, int x, int y, int w, int h);
-void dark_bar_rows(canvas_t *canvas, int y, int w, int h);
+void dark_bar_rows(canvas_t *canvas, int y, int h);
 void inset_top(canvas_t *canvas, const rect_t *r, int R, unsigned a);
 void lit_rows(canvas_t *canvas, const rect_t *c, int ends);
 const char *number_face(widget_t *label, int *px);
 int painting_in(widget_t *row);
 void paint_round_rows(canvas_t *canvas, const rect_t *r, const stops_t *s, int R);
+void round_fill(canvas_t *canvas, const rect_t *r, unsigned rgb, int R);
 int round_inset(int R, int i, int h);
 void round_ring(canvas_t *canvas, const rect_t *r, int R, unsigned c);
 void round_row(canvas_t *canvas, const rect_t *r, int R, int i, unsigned c);
@@ -477,7 +482,6 @@ const char *quick_wheel_toggle(widget_t *top);
 /* flat.c */
 extern const unsigned flat_rest[2],
     flat_ink[2]; /* final, [0] dark, [1] light; flat_quiet: theme.h */
-unsigned flat_page(void);
 unsigned flat_on(void);
 const char *flat_face(void);
 enum { BAR_PLAIN, BAR_SUNS, BAR_SPEAKERS }; /* flat_bar's marks */
@@ -486,7 +490,6 @@ void flat_box(canvas_t *canvas, rect_t *r, unsigned rgba, unsigned radius);
 void page_label(widget_t *w, int x, int y, int ww, int h, int px, const char *face, unsigned rgb);
 void confirm_track_flat(widget_t *w, canvas_t *canvas, int form);
 void confirm_lit(canvas_t *canvas, const rect_t *c);
-void hold_card_flat(canvas_t *canvas, const rect_t *card, int head, int over);
 void confirm_labels_flat(widget_t *w, canvas_t *canvas, int form);
 
 /* np_marks.c */
@@ -504,6 +507,7 @@ unsigned qm_album_id(void *r);
 long clock_back(long long wall);
 int clock_due(const void *info);
 void clock_show(void);
+extern const char time_months[12][4]; /* clock.c: the English month names */
 int time_click(widget_t *target, event_t *event);
 int time_form(widget_t *top);
 void time_open(widget_t *win);
@@ -564,6 +568,12 @@ int accent(void);
 unsigned accent_map(unsigned c, int preset, int tone);
 const int *clock_now(int *buf);
 unsigned flip(unsigned c) __attribute__((pure));
+unsigned flip_rgb(unsigned c) __attribute__((pure));
+/* Whether the flip is on: the light half, or a card theme's page in either. Inline: ui_ink asks
+ * for every colour drawn. */
+static inline __attribute__((always_inline)) int ipod_paper(void) {
+    return st.card_page || ipod_light();
+}
 unsigned flip_v(unsigned v, unsigned paper, unsigned ink);
 int ipod_home(void);
 const char *ipod_home_shortcut(void);
@@ -582,7 +592,24 @@ extern const char *const accent_names[];
 extern const char *const np_pages[];
 extern const int setting_counts[];
 extern int *const setting_values[];
-static inline const unsigned *tones_of(int v) { return theme()->schemes[v].tones; }
+/* card_theme.c */
+void card_theme_load(void);
+const scheme_t *card_theme_row(const scheme_t *s);
+int card_theme_sets(int i);
+void card_theme_ran(void);
+void card_theme_poll(void);
+void card_theme_sync(void);
+/* card_rules.c (card_rules_apply: peq.h) */
+void card_rule_line(const char *q);
+void card_rules_clear(void);
+int card_rules_used(void);
+int card_rule_px(widget_t *w, int def);
+int card_rules_art_hidden(void);
+
+static inline const unsigned *tones_of(int v) {
+    const theme_t *T = theme();
+    return card_theme_row(&T->schemes[v])->tones;
+}
 static inline const unsigned *tones(void) { return tones_of(accent()); }
 
 /* scrobble_ui.c */
@@ -616,6 +643,10 @@ void battery_paint(widget_t *w, canvas_t *canvas);
 
 /* system.c */
 void power_poll(void);
+int told_once(const char *src, const char *seen, const char *tmp);
+
+/* side_seek.c: a dark hold of Previous or Next (ple_key's phases) */
+int side_seek(unsigned key, int phase);
 
 /* usb_charge.c: wrappers for charging, configuration loading and USB gadget dispatch. */
 int ringnav_usb_charge(int on), usb_charge_held(void), usb_charge_wanted(void);
@@ -670,7 +701,7 @@ void kb_paint_key(widget_t *w, canvas_t *canvas);
 void msg_open(widget_t *win);
 void msg_paint(widget_t *w, canvas_t *canvas);
 void paint_field(widget_t *w, canvas_t *canvas, int x, int y, int fw);
-void paint_ramp(canvas_t *canvas, int y0, int y1, int top);
+void paint_ramp(canvas_t *canvas, int top);
 void pl_box_open(widget_t *win);
 void pl_box_paint(widget_t *w, canvas_t *canvas);
 void search_open(widget_t *win);
@@ -681,6 +712,7 @@ void slider_paint(widget_t *w, canvas_t *canvas);
 int search_del(widget_t *w);
 void search_over(widget_t *w, canvas_t *canvas);
 void slider_scrub(widget_t *w, canvas_t *canvas);
+int restart_asked(void); /* navigation.c: the Restart to apply? confirm, yes or no */
 
 /* playlists.c */
 /* Classic's Playlists (pl_dress): a page's add mode (ringnav_playlist), the button of a row that
@@ -693,6 +725,7 @@ void slider_scrub(widget_t *w, canvas_t *canvas);
 #define PL_MARKING "_pl_marks"
 #define PL_NONE "_pl_none"
 #define PL_ART "_pl_art"
+void *click_bound(widget_t *w, const void *fn); /* w's EVT_CLICK item bound to fn, or any if 0 */
 void qm_playlist_bind(widget_t *w, int depth, int (*pick)(void *, event_t *));
 void qm_select(void);
 int qm_playlist_gone(void *ctx, event_t *event);

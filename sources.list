@@ -3,6 +3,7 @@
 # older firmware skips the [Games] line and lists them all. The device fetches this file; see
 # docs/internals.md#q2-shelf.
 # Firmware before the tabs (1.8.7 and older) reads only the first 16 apps, so the games, last, are the first left out.
+# Firmware 1.9.0 and older reads only the first 32 entries, with a user's own lines after them.
 DiamondBond/q2-rockbox Rockbox
 DiamondBond/q2-rockbox-themes Rockbox Themes
 DiamondBond/q2-librespot Spotify
@@ -11,16 +12,18 @@ group-a-study/q2-soulseek Soulseek
 group-a-study/q2-filebrowser File Browser
 andsuor/q2-subsonic Subsonic
 A4Link/q2-jellyfin Jellyfin
+lampsonlnguyen/q2-plex Plex
 m-d-e-v/q2-podcasts Podcasts
 harpmudd/q2-lma Live Music Archive
 group-a-study/q2-airplay AirPlay
 lampsonlnguyen/q2-utilities-app Utilities
 lampsonlnguyen/q2-weather Weather
 lampsonlnguyen/q2-books Books
-# DiamondBond/q2-eq-studio EQ Studio
-# DiamondBond/q2-mixtape Mixtape
+DiamondBond/q2-eq-studio EQ Studio
+DiamondBond/q2-mixtape Mixtape
 DiamondBond/q2-groovebox Groovebox
 DiamondBond/q2-videos Videos
+js-surya/q2-tailscale Tailscale
 [Games]
 DiamondBond/q2-fidget Buddy
 lampsonlnguyen/q2-arcade Arcade Games
@@ -33,4 +36,11 @@ Carbon-66/q2-classicube ClassiCube
 Carbon-66/q2-doom Doom
 Carbon-66/q2-wings Wings
 Carbon-66/q2-miami Q2A Miami
+js-surya/q2-sixtrack Six Track
 Carbon-66/q2-challengerdeep Challenger Deep
+Carbon-66/q2-hero Q2 Hero
+lampsonlnguyen/q2-pico8 PICO-8
+# Languages last, behind [Apps]: firmware 1.9.0 and older, which has no language support, never reads it.
+# Held until 1.9.1 is published; then uncomment both lines.
+# [Apps]
+# DiamondBond/q2-langs Languages

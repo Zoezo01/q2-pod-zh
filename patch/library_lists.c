@@ -102,6 +102,7 @@ static int shuffle_songs(void *ctx, void *event) {
     int n;
     void *all = staged(songs_unsorted, (void *)1, &n);
     if (!shuffle_play(all)) toast("请先更新本地音乐库");
+>>>>>>> 1.9.1
     deque_destroy(all);
     return 0;
 }
@@ -111,6 +112,7 @@ static int shuffle_groups(void *ctx, void *event) {
     void *all = staged(songs_unsorted, (void *)1, &n);
     if (!playback_groups(all, (int)(long)ctx))
         toast(deque_size(all) ? "歌曲过多，无法随机播放" : "请先更新本地音乐库");
+>>>>>>> 1.9.1
     deque_destroy(all);
     return 0;
 }
@@ -137,11 +139,13 @@ int shuffle_menu(void *ctx, event_t *event) {
     page_row_detail(view, 0, "随机播放歌曲", 0, sp_pick);
     page_row_detail(view, 1, "随机播放专辑", 0, sp_pick);
     page_row_detail(view, 2, "随机播放文件夹", 0, sp_pick);
+>>>>>>> 1.9.1
     /* With the title in the bar: centred at the page's foot, its box clear of the glass. */
     widget_t *note = theme()->page_title_h ? text(ll.sp_page, 20, 200, 335, 24)
                                            : text(ll.sp_page, 46, 262, 283, 24);
     widget_set_prop_int(note, "style:normal:text_color", (int)0xffaaaaaau);
     widget_set_text_utf8(note, "专辑和文件夹随机排序需要片刻");
+>>>>>>> 1.9.1
     theme_font(note, ROLE_INFO, FONT_ROW);
     widget_set_prop_int(note, "style:normal:font_size", 16);
     return 0;
@@ -296,14 +300,22 @@ int most_played(void *ctx, event_t *event) {
     if (st.mp_list && st.mp_list != from) deque_destroy(st.mp_list);
     deque_destroy(from);
     st.mp_list = ranked;
-    widget_t *view = page_list_or(st.mp_page, st.mp_page, "播放最多", "暂无播放记录", top, 64);
-    char name[512], detail[300];
+    widget_t *view =
+        page_list_or(st.mp_page, st.mp_page, tr("播放最多"), tr("暂无播放记录"), top, 64);
+    char name[512], detail[300], count[64];
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
     for (int i = 0; i < top; i++) { /* the artist, if tagged, and the play count, under the title */
         void *t = deque_at(st.mp_list, (unsigned)i);
         const char *artist = P(t, REC_ARTIST);
         unsigned plays = (score[i] - 1) / PLAYS_SLOTS, a = artist && *artist;
-        tk_snprintf(detail, sizeof detail, a ? "%s · 播放 %u 次" : "%s播放 %u 次", a ? artist : "",
-                    plays, plays == 1 ? "" : "s");
+        tk_snprintf(count, sizeof count, "%u 次播放", plays);
+        tk_snprintf(detail, sizeof detail, a ? "%s · %s" : "%s%s", a ? artist : "", count);
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
         page_row_detail(view, i, track_name(name, sizeof name, t), detail, mp_play);
     }
     return 0;
@@ -338,7 +350,7 @@ static int td_play(void *ctx, event_t *event) {
  * tidal.c's, written again after a press, which starts or ends it, and as it moves on
  * (tidal_poll). The press may toast, and the page close under that. */
 static void td_all_text(int press) {
-    char s[64];
+    char s[160]; /* tidal.c's sentence, in any language */
     tidal_all(press, s, sizeof s);
     if (ll.td_all) widget_set_text_utf8(ll.td_all, s);
 }
@@ -397,6 +409,7 @@ static widget_t *songs_rows(const char *dir, const char *title, int tidal, int a
     ll.td_list = card_songs(dir, album);
     int n = (int)deque_size(ll.td_list);
     widget_t *view = page_list_or(ll.td_page, ll.td_page, title, "暂无下载",
+>>>>>>> 1.9.1
                                   n + tidal + (tidal && n), 48);
     char name[256];
     if (tidal) {
@@ -408,6 +421,7 @@ static widget_t *songs_rows(const char *dir, const char *title, int tidal, int a
         page_row_detail(view, i + tidal, name, 0, td_play);
     }
     if (tidal && n) page_row_detail(view, n + 1, "清除全部下载…", 0, td_clear);
+>>>>>>> 1.9.1
     return view;
 }
 /* Clear All Downloads' confirmation in the list's place, as Spotify's Remove Downloads?, on Cancel;
@@ -418,16 +432,18 @@ static int td_show(const void *unused) {
     unsigned n = deque_size(ll.td_list);
     if (!ll.td_asking) {
         widget_t *view = songs_rows(TIDAL_DIR, "Tidal 下载", 1, 0);
+>>>>>>> 1.9.1
         if ((n = deque_size(ll.td_list))) ringnav_select(view, (int)n + 1, (int)n + 2);
         return 0;
     }
-    char note[32];
+    char note[64];
     ll.td_all = 0; /* its row goes with the list */
     tk_snprintf(note, sizeof note, n == 1 ? "%u track" : "%u tracks", n);
     widget_t *view = page_list(ll.td_page, ll.td_page, 0, "移除下载？", 3, 64);
     page_row_detail(view, 0, note, "保留设置", 0);
     page_row_detail(view, 1, "取消", "", td_clear);
     page_row_detail(view, 2, "移除", "", td_clear);
+>>>>>>> 1.9.1
     ringnav_select(view, 1, 3);
     return 0;
 }
@@ -456,6 +472,7 @@ static int songs_page(const char *window, const char *dir, const char *title, in
 int tidal_downloads(void *ctx, event_t *event) {
     (void)ctx, (void)event;
     return songs_page("tidal_downloads", TIDAL_DIR, "Tidal 下载", 1, 0);
+>>>>>>> 1.9.1
 }
 /* A card app's local row (addon.c): a folder ("/" last) lists its songs; a song plays its folder
  * from it, as Tidal Downloads does. album: the folder is an album's, listed and played in track
@@ -482,6 +499,7 @@ int songs_open(const char *path, const char *title, int album) {
         play_folder(songs, at, 0xf001); /* playing_page copies the queue at once */
     else
         toast("卡上已不存在");
+>>>>>>> 1.9.1
     deque_destroy(songs);
     return 0;
 }
@@ -520,8 +538,7 @@ int era_sql(const char *sql, int (*row)(void *, int, char **, char **), void *ct
     /* Era uses SQLite directly rather than the stock library query wrappers. */
     char *expanded = library_scope_query(sql); /* none: the whole library, as library_query */
     /* Keep a full-library grouping query from competing with the player's song records for RAM. */
-    int bad = sqlite3_open("/mnt/data/database.db", &db) ||
-              sqlite3_exec(db, "PRAGMA cache_size=64;PRAGMA temp_store=FILE", 0, 0, 0) ||
+    int bad = lib_db_open(&db, "PRAGMA cache_size=64;PRAGMA temp_store=FILE") ||
               sqlite3_exec(db, expanded ? expanded : sql, row, ctx, 0);
     if (db) sqlite3_close(db);
     free(expanded);
@@ -566,9 +583,16 @@ static int era_closed(void *ctx, event_t *event) {
     if (ctx == era.albums) era.albums = 0, era_free();
     return 0;
 }
-/* "60s" to "90s", then "2000s" on. */
-static const char *era_name(char *buf, int decade) {
-    tk_snprintf(buf, 16, decade < 2000 ? "%02d 年代" : "%d 年代", decade < 2000 ? decade % 100 : decade);
+/* "60s" to "90s", then "2000s" on, in the language's words. */
+static const char *era_name(char *buf, unsigned size, int decade) {
+    if (decade < 2000)
+        tk_snprintf(buf, size, "%02d 年代", decade % 100);
+    else
+        tk_snprintf(buf, size, "%d 年代", decade);
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
     return buf;
 }
 
@@ -632,11 +656,12 @@ static int era_pick(void *ctx, event_t *event) {
     if (i < 2) {
         void *all = i ? era_shuffle_songs() : era_songs();
         if (!all) {
-            toast("Era unavailable"); /* as a decade's albums: not a card that's away */
+            toast(tr("Era unavailable")); /* as a decade's albums: not a card that's away */
             return 0;
         }
         if (!deque_size(all) || access(P(deque_at(all, 0), REC_PATH), 0))
             toast("存储不可用");
+>>>>>>> 1.9.1
         else if (i)
             shuffle_play(all);
         else
@@ -650,13 +675,14 @@ static int era_pick(void *ctx, event_t *event) {
         toast("年代不可用");
     else if (!r || !coverflow_goto_album(r))
         toast("找不到该专辑");
+>>>>>>> 1.9.1
     if ((unsigned)(i - 2) < era.m) deque_destroy(songs);
     return 0;
 }
 static int era_open_decade(void *ctx, event_t *event) {
     int k = (int)(long)ctx, from = era.decade[k];
     if (era.albums) return 0;
-    char sql[2048], name[16], detail[300];
+    char sql[2048], name[48], detail[300];
     tk_snprintf(sql, sizeof sql,
                 "%s" ERA_NAMES
                 "%s having release_year between %d and %d order by release_year,album "
@@ -667,17 +693,21 @@ static int era_open_decade(void *ctx, event_t *event) {
     era.cap = era.v ? (unsigned)era.count[k] : 0;
     if (!era.v || !era_sql(sql, era_album_row, 0)) { /* as era_menu: not a decade of no albums */
         era_free();
-        toast("Era unavailable");
+        toast(tr("Era unavailable"));
         return 0;
     }
     if (!(era.albums = page_open("era_albums_page", era_closed, page_keyup))) {
         era_free();
         return 0;
     }
-    widget_t *view = page_list(era.albums, era.albums, 0, era_name(name, from), (int)era.m + 2, 64);
-    tk_snprintf(detail, sizeof detail, era.m == 1 ? "%u 张专辑" : "%u 张专辑s", era.m);
-    page_row_detail(view, 0, "全部播放", detail, era_pick);
-    page_row_detail(view, 1, "随机播放", "全部歌曲，随机播放", era_pick);
+    widget_t *view =
+        page_list(era.albums, era.albums, 0, era_name(name, sizeof name, from), (int)era.m + 2, 64);
+    tk_snprintf(detail, sizeof detail, era.m == 1 ? tr("%u 张专辑") : tr("%u 张专辑s"), era.m);
+    page_row_detail(view, 0, tr("全部播放"), detail, era_pick);
+    page_row_detail(view, 1, tr("随机播放"), tr("全部歌曲，随机播放"), era_pick);
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
     for (unsigned i = 0; i < era.m; ++i) {
         tk_snprintf(detail, sizeof detail, *era.v[i].artist ? "%s \xe2\x80\xa2 %d" : "%s%d",
                     era.v[i].artist, era.v[i].year);
@@ -701,11 +731,15 @@ int era_menu(void *ctx, event_t *event) {
     }
     if (!(era.page = page_open("era_page", era_closed, page_keyup))) return 0;
     widget_t *view = page_list(era.page, era.page, 0, "年代", era.n, 64);
-    char name[16], detail[32];
+    char name[48], detail[64];
     for (int i = 0; i < era.n; ++i) {
-        tk_snprintf(detail, sizeof detail, "%d 张专辑",
-                    era.count[i]);
-        page_row_detail_into(view, i, era_name(name, era.decade[i]), detail, era_open_decade);
+        tk_snprintf(detail, sizeof detail, "%u 张专辑", (unsigned)era.count[i]);
+        page_row_detail_into(view, i, era_name(name, sizeof name, era.decade[i]), detail,
+                             era_open_decade);
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
     }
     return 0;
 }
@@ -742,6 +776,7 @@ static void ls_show(void) {
     for (unsigned i = 0; i < n; i++) _deque_push_back(list, deque_at(songs, v[i].key));
     st.rt_list = list;
     widget_t *view = page_list(st.rt_page, st.rt_page, 0, "长曲目", n ? (int)n : 1, 64);
+>>>>>>> 1.9.1
     char name[512], detail[300], t[16];
     for (unsigned i = 0; i < n; i++) {
         void *r = deque_at(list, i);
@@ -752,6 +787,7 @@ static void ls_show(void) {
         page_row_detail(view, (int)i, track_name(name, sizeof name, r), detail, rt_play);
     }
     if (!n) page_row_detail(view, 0, "暂无超过十分钟的歌曲", 0, 0);
+>>>>>>> 1.9.1
     free(v);
     deque_destroy(songs);
     ls.songs = 0;
@@ -785,6 +821,8 @@ static int ls_poll(const void *unused) {
     if (!durations_busy(&done, &total)) return ls_done(0);
     char t[64];
     tk_snprintf(t, sizeof t, "正在检测时长… %d/%d", done, total);
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
     page_retitle(st.rt_page, ls.title, t);
     return 8; /* RET_REPEAT */
 }
@@ -801,6 +839,7 @@ int long_songs(void *ctx, event_t *event) {
         page_row_detail(
             page_list(st.rt_page, st.rt_page, &ls.title, "正在检测时长…", 1, 48), 0,
             "取消", 0, ls_cancel);
+>>>>>>> 1.9.1
         ls.timer = timer_add(ls_poll, (void *)0, 250);
     } else
         ls_show();

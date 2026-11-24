@@ -76,13 +76,13 @@ int np_sync(widget_t *top) {
     unsigned at, n;
     void *r = queue_now(&at, &n);
     const char *album = now_tag(r, REC_ALBUM);
-    char s[24] = "";
+    char s[48] = "";
     unsigned pos[2] = { at, n };
     unsigned h = hash_bytes(fnv(FNV_SEED, (const unsigned char *)album), (const unsigned char *)pos,
                             sizeof pos);
     if (h != st.np_hash) {
         st.np_hash = h;
-        if (r) tk_snprintf(s, sizeof s, "%d of %d", at + 1, n);
+        if (r) tk_snprintf(s, sizeof s, tr("%d of %d"), at + 1, n);
         widget_set_text_utf8(st.np_pos, s);
         widget_set_text_utf8(st.np_album, album ? album : "");
         st.np_off = 0;
@@ -145,6 +145,7 @@ static widget_t *page_of(widget_t *top) {
 void bar_title(widget_t *bar, widget_t *top) {
     static const unsigned
         cover_flow[] = { 'C', 'o', 'v', 'e', 'r', ' ', 'F', 'l', 'o', 'w', 0 }, none = 0;
+>>>>>>> 1.9.1
     widget_t *page = page_of(top);
     static int bare; /* a page with no clock in front (above); the last one's with none found */
     if (page) {
@@ -210,6 +211,7 @@ void bar_title(widget_t *bar, widget_t *top) {
         st.bar_titled = 1; /* the clock makes way, as under a title */
         st.clock_key = 0;
         widget_set_text(clock, &none);
+>>>>>>> 1.9.1
         return;
     }
     void *nav = widget_lookup(top, "view_navbar", 0), *t = (void *)0;
@@ -423,7 +425,8 @@ void paint_rows_bar(canvas_t *canvas, int x, int y, int w, int h, int fill_w) {
 }
 /* The Theme's progress bar over the asset's (Minimal's square 4px line): its np_bar, Modern's
  * NP_BAR_CLASSIC capsule or Classic's NP_BAR_IPOD (paint_scrubber draws it), and stock's play-state
- * glyph, which Minimal and Classic hide (playing.state.opacity). */
+ * glyph, which Minimal and Classic hide (playing.state.opacity), as does a card theme's rule hiding
+ * the art. */
 void np_theme(void) {
     static const char *const radius[] = { "style:normal:round_radius", "style:pressed:round_radius",
                                           "style:over:round_radius", "style:disable:round_radius",
@@ -434,7 +437,7 @@ void np_theme(void) {
     for (unsigned i = 0; st.np_slider && i < sizeof radius / sizeof *radius; ++i)
         widget_set_prop_int(st.np_slider, radius[i], h / 2);
     if (st.np_slider) widget_set_prop_int(st.np_slider, "bar_size", h);
-    if (glyph) widget_set_opacity(glyph, T->np_state_op);
+    if (glyph) widget_set_opacity(glyph, card_rules_art_hidden() ? 0 : T->np_state_op);
     /* Minimal: the album is paint_caps' capitals. */
     if (st.np_album) widget_set_opacity(st.np_album, T->np_album_op);
     np_marks_page(st.np_win); /* the flat look's marks, as the page opens or the theme changes */

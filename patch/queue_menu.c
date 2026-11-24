@@ -131,13 +131,12 @@ static int qm_query(void *r) {
                                      : class_query(qm.qm_cls, r);
 }
 
-static int dir_query(void *path) { return toolsLoadDirectory((const char *)path); }
 /* A folder's songs and, in stock's listing order, its subfolders' (dot folders such as .tidal
  * left out), so a folder of albums queues them all.
  * ponytail: one toolsLoadDirectory per folder on the UI thread; a big tree takes a while. */
 static void folder_tracks(const char *path, void *add, int depth) {
     int n;
-    void *rows = staged(dir_query, (void *)path, &n);
+    void *rows = staged(directory, (void *)path, &n);
     for (unsigned i = 0; i < deque_size(rows); ++i) {
         void *t = deque_at(rows, i);
         const char *name = P(t, REC_NAME);
@@ -174,10 +173,11 @@ static void qm_tracks(void *r, void *add) {
 }
 
 /* The row's tracks: the song itself, or what stock would play for the row; an Albums row's own
- * album alone (getMusicByAlbum finds every album of the name), in album order, as Coverflow's. */
+ * album alone (getMusicByAlbum finds every album of the name), in album order, as Coverflow's; a
+ * cover's as its tracks list them (Hide Duplicate Songs). */
 void *qm_collect(void *r) {
-    if (qm.qm_kind == QM_COVERALBUM || (qm.qm_kind == QM_ALBUM && qm.qm_cls == CLASS_ALBUMS))
-        return coverflow_album_tracks(r);
+    if (qm.qm_kind == QM_COVERALBUM) return coverflow_cover_tracks(r);
+    if (qm.qm_kind == QM_ALBUM && qm.qm_cls == CLASS_ALBUMS) return coverflow_album_tracks(r);
     void *add = song_list();
     if (qm.qm_kind == QM_SONG || qm.qm_kind == QM_COVERFLOW || qm.qm_kind == QM_PLAYING)
         _deque_push_back(add, r);
@@ -278,6 +278,7 @@ static int qm_run(const void *unused) {
     unsigned aid = r ? qm_album_id(r) : 0; /* an album's own Favourites and Rate */
     if (r && a >= 100) {
         if (!playback_set(qm.qm_choice - 1, a - 100)) toast("队列未更改");
+>>>>>>> 1.9.1
         qm.qm_choice = 0;
     } else if (r && a == QA_CHAPTERS) {
         chapters_open(r);
@@ -291,7 +292,7 @@ static int qm_run(const void *unused) {
             if (queue && at < deque_size(queue) &&
                 rec_hash(deque_at(queue, at)) == st.qm_forced_hash)
                 playback_move(at);
-            up_next(page_keyup);
+            up_next();
         } else
             navigator_to("playerqueue_page");
     } else if (a == QA_MORE && qm.qm_kind == QM_PLAYLIST) {
@@ -305,6 +306,7 @@ static int qm_run(const void *unused) {
             stock_dispatch_trampoline(more, pointer_event_init(click, EVT_CLICK, more, 0, 0));
     } else if (r && (a == QA_NEXT_GROUP || a == QA_PREV_GROUP)) {
         if (!playback_group_skip(a == QA_NEXT_GROUP)) toast("没有其他分组");
+>>>>>>> 1.9.1
     } else if (aid && a == QA_RATE) {
         rate_show(window_manager_get_top_window(window_manager()), rate_kept(1, aid), aid);
     } else if (aid && (a == QA_FAV || a == QA_UNFAV)) {
@@ -352,12 +354,14 @@ static int qm_run(const void *unused) {
             deque_destroy(songs);
         } else
             toast("队列未更改");
+>>>>>>> 1.9.1
     } else if (r && a == QA_FOLDER) {
         st.go_layer = song_folder(r, st.go_folder);
         if (st.go_layer)
             navigator_to("folder_page"); /* its init, ringnav_folder, opens there */
         else
             toast("找不到文件夹");
+>>>>>>> 1.9.1
         st.go_layer = 0; /* never left for a later Folder visit */
     } else if (r && a >= QA_ALBUM)
         qm_goto(r, a == QA_ALBUM);
@@ -365,6 +369,7 @@ static int qm_run(const void *unused) {
         void *add = r ? qm_collect(r) : (void *)0;
         if (!add || !(a == QA_SHUFFLE ? shuffle_play(add) : qm_apply(add, a == QA_NEXT)))
             toast("队列未更改");
+>>>>>>> 1.9.1
         if (add) deque_destroy(add);
     }
     return 0;
@@ -391,8 +396,6 @@ static int qm_pick(void *action, event_t *event) {
  * rows, and as many as keep its ring above QM_FOOT. No dim; hold_paint draws the panel or card. */
 #define QM_HEAD 44
 #define QM_ROWS 6
-/* the lowest row the card's ring may take: the glass hides 38 px of it, the ring is at 39 */
-#define QM_FOOT 308
 static int own_hold(void) { return classic_dialogs() || flat_dialogs(); }
 static void hold_open(widget_t *dialog, int n) {
     widget_t *nav = widget_lookup(dialog, "view_navbar", 1),
@@ -469,6 +472,7 @@ static int qm_open(const void *unused) {
                                                     "单曲循环", "文件夹循环",
                                                     "全部循环" } };
         static const char *const groups[] = { "专辑", "文件夹" };
+>>>>>>> 1.9.1
         int kind = qm.qm_choice - 1,
             count = kind == 0   ? 5
                     : kind == 1 ? 6
@@ -478,6 +482,7 @@ static int qm_open(const void *unused) {
                                    : kind == 1 ? repeat[folder]
                                                : groups;
         qm_title(dialog, kind == 0 ? "随机播放" : kind == 1 ? "重复播放" : "分组方式");
+>>>>>>> 1.9.1
         widget_destroy_children(view);
         int painted = own_hold(), row = painted ? theme()->page_row : QM_ROW,
             w = painted ? BACK_W : 375;
@@ -486,7 +491,7 @@ static int qm_open(const void *unused) {
             widget_use_style(item, "s_listitem_black");
             widget_t *label = hscroll_label_create(item, 30, 0, 310, row);
             widget_use_style(label, "s_scrlabel_white24l");
-            widget_set_text_utf8(label, names[i]);
+            widget_set_text_utf8(label, tr(names[i]));
             if (painted) hold_label(item, label);
             if (i == playback_option(kind))
                 image_base_set_image(image_create(item, w - 35, 0, 24, row), "select");
@@ -585,6 +590,8 @@ static int qm_open(const void *unused) {
                                         "新建播放列表",
                                         "选择播放列表…" };
     char rated[32];
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
     /* stock sortselect row styles */
     int painted = own_hold(), pitch = painted ? theme()->page_row : QM_ROW;
     for (int i = 0; i < n; ++i) {
@@ -594,17 +601,20 @@ static int qm_open(const void *unused) {
         widget_use_style(label, "s_scrlabel_white24l");
         if (acts[i] == QA_RATE) {
             int h = aid ? album_hearts : checkFavExist(r) ? 5 : rate_kept(0, listen_key(r));
-            const char *row = aid ? "专辑评价" : "评价";
+            const char *row = aid ? tr("专辑评价") : tr("评价");
             char hs[16];
             tk_snprintf(rated, sizeof rated, h ? "%s  %s" : "%s", row, hearts_text(hs, h));
         }
-        widget_set_text_utf8(label,
-                             acts[i] == QA_RATE ? rated
-                             : acts[i] == QA_GROUP
-                                 ? (playback_option(2) ? "分组：文件夹" : "分组：专辑")
-                             : acts[i] == QA_NEXT_GROUP && playback_option(2) ? "下一个文件夹"
-                             : acts[i] == QA_PREV_GROUP && playback_option(2) ? "上一个文件夹"
-                                                                              : rows[acts[i] - 1]);
+        widget_set_text_utf8(
+            label, acts[i] == QA_RATE ? rated
+                   : acts[i] == QA_GROUP
+                       ? (playback_option(2) ? tr("分组：文件夹") : tr("分组：专辑"))
+                   : acts[i] == QA_NEXT_GROUP && playback_option(2) ? tr("下一个文件夹")
+                   : acts[i] == QA_PREV_GROUP && playback_option(2) ? tr("上一个文件夹")
+                                                                    : tr(rows[acts[i] - 1]));
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
         if (painted) hold_label(item, label);
         widget_on(item, EVT_CLICK, qm_pick, (void *)(long)acts[i]);
     }

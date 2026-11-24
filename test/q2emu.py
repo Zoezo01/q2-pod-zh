@@ -95,13 +95,19 @@ MUSIC_WHERE=re.search(r'#define MUSIC_WHERE "(.*)" LIBRARY_SCOPE_TOKEN',INC)[1]+
 
 # Q2_TRACE=FILE logs every draw and widget-property call, each hook's return and each passed case, by value.
 TRACE=open(os.environ['Q2_TRACE'],'w') if os.environ.get('Q2_TRACE') else None
+# Q2_CARD_THEME=FILE gives each Classic and Classic Modern machine FILE as its card theme (read_all's answer for the
+# copy): those themes take none of a card theme's look, so with a FILE that sets no battery style a run's Q2_TRACE
+# is the run's without one.
+CARD_THEME=pathlib.Path(os.environ['Q2_CARD_THEME']).read_bytes() if os.environ.get('Q2_CARD_THEME') else None
+CARD_READS=[]  # each read served: the count goes to stderr at the end, 0 meaning the run proved nothing
+if CARD_THEME: __import__('atexit').register(lambda: print(len(CARD_READS),'card theme reads served',file=sys.stderr))
 def trace(*fields):
     if TRACE: TRACE.write('\t'.join(fields)+'\n')
 TRACE_ARGS={'canvas_get_clip_rect':'_','canvas_set_clip_rect':'_r','canvas_set_global_alpha':'_i','canvas_translate':'_ii','canvas_offline_create':'iii',
     **dict.fromkeys(('canvas_offline_begin_draw','canvas_offline_end_draw','canvas_offline_destroy'),'_'),
     **dict.fromkeys(('canvas_set_fill_color','canvas_set_stroke_color','canvas_set_text_color'),'_x'),
     **dict.fromkeys(('canvas_fill_rect','canvas_stroke_rect'),'_iiii'),'canvas_draw_icon':'_xii','canvas_set_font':'_si',
-    'canvas_draw_text_in_rect':'_wr','canvas_draw_text':'_wii','canvas_measure_text':'_w','canvas_draw_image':'_xrr',
+    'canvas_draw_text_in_rect':'_wr','canvas_draw_text_bidi_in_rect':'_wrsi','canvas_draw_text':'_wii','canvas_measure_text':'_w','canvas_draw_image':'_xrr',
     'canvas_fill_rounded_rect':'_rrdi','canvas_stroke_rounded_rect':'_rrdii',
     **{'vg:vgcanvas_'+n:c for n,c in (('save','_'),('restore','_'),('begin_path','_'),('close_path','_'),('fill','_'),
        ('stroke','_'),('translate','_ff'),('move_to','_ff'),('line_to','_ff'),('arc','_fffffi'),('set_fill_color','_x'),
@@ -163,6 +169,7 @@ class Machine:
         if patched:  # a file and a clock; test/playback.py tests them
             self.handlers[payload_syms['press_stamp']]='stock_press_stamp'
             self.handlers[payload_syms['mute_stamp']]='stock_mute_stamp'
+            self.handlers[payload_syms['loop_futex']]='stock_loop_futex'  # the loop's wait and its wake (playback.c): answered 0 at once, so sleep_ms takes the idle
         for name in FUNCTIONS: self.handlers[syms[name]]=name
         # canvas_get_vgcanvas runs stock, down to the mocked lcd_get_vgcanvas, as the rounded wrappers need
         for name in ('slide_menu_item_width','slide_menu_on_scroll_done','canvas_get_vgcanvas',
@@ -316,6 +323,9 @@ class Machine:
         if address==syms['widget_animator_scroll_set_params']:
             assert u.reg_read(UC_MIPS_REG_A0) not in self.slides, 'retarget must pause first'
             self.calls.append(('widget_animator_scroll_set_params',*[u.reg_read(r) for r in REGS[:3]]))
+        if CARD_THEME and address==payload_syms['read_all'] and self.config.get('THEME') in ('1','3') and self.text(u.reg_read(UC_MIPS_REG_A0))=='/mnt/data/q2pod-theme':
+            p=0x11f0000; u.mem_write(p,CARD_THEME+b'\0'); self.word(u.reg_read(UC_MIPS_REG_A2),len(CARD_THEME))  # not alloc's: a test's own pointers stay where they were
+            CARD_READS.append(p); return self.returns(p)
         if address not in self.handlers: return
         name=self.handlers[address]
         if not name.startswith('stock_') and address!=payload_syms['peq_lib_localtime_r']:
@@ -492,6 +502,13 @@ class Machine:
                     if found: return found
                 return 0
             ret=lookup(a) if a and (a!=self.wm or a in self.nodes) else 0  # a window manager that is no node has no windows to find (Album View)
+        elif name=='widget_lookup_by_type':  # AWTK's: the first child of a type, at any depth if c
+            def by_type(w):
+                for child in self.nodes[w]['children']:
+                    found=child if self.nodes[child].get('type')==self.text(b) else by_type(child) if c else 0
+                    if found: return found
+                return 0
+            ret=by_type(a) if a in self.nodes else 0
         elif name=='scroll_bar_cast': ret=a
         elif name=='scroll_bar_is_mobile': ret=n.get('type')=='scroll_bar_m'
         elif name=='widget_set_opacity': self.byte(a+0x34,b); ret=0
@@ -1224,6 +1241,7 @@ class SearchNavigationMachine(PullMachine,NavigationMachine):
 # mclLoadPlayList, mclNextSong and key filters run for real.
 from build import SHUFFLE_CALL, fileoff
 class QueueMachine(Machine):
+    budget=120000  # its constructor's paint, a folder list, flips every colour in Modern's Light Mode: about 104k
     def __init__(self,page='allmusic_page',rows=20,queue=3,pos=0,mode=0,cls=0xf001):
         super().__init__()
         self.deqs={}; self.toasts=[]; self.sent=[]; self.picks=[]; self.airplay=0
@@ -2001,7 +2019,7 @@ class ScrollEndMachine(CoverQueueMachine):
         if address!=syms['toolsGetSysMemFree']: return super().hook(u,address,size,unused)
         self.returns(1<<20)
 
-from ipod import HOME_TEXT_X, HOME_LIST_W, HOME_OURS, HOME_PAGE, HOME_ROW, HOME_ROWS, HOME_TOP, decode
+from ipod import HOME_TEXT_X, HOME_LIST_W, HOME_OURS, HOME_PAGE, SET0, HOME_ROWS, HOME_TOP, decode
 
 home_hook=HOOKS['home_page_init']
 
@@ -2143,7 +2161,7 @@ class CoverflowMachine(QueueMachine):
             t=self.music_tags.get(self.text(c)); self.calls.append(('toolsGetMusicInfo',self.text(c)))
             if t:
                 for off,v in zip((0x280,0x100,0,0x580),t[:4]): u.mem_write(b+off,v.encode()+b'\0')
-                self.word(b+0x684,t[4]); self.word(b+0x688,t[5])
+                self.word(b+0x684,t[5]); self.word(b+0x688,t[4])  # disc, track
             ret=int(bool(t))
         elif name=='getAllAlbum':
             self.deqs[self.get(syms['tools_pdeq_directory'])][1]=[self.copy('stSongInfo',e) for e in self.albums]; ret=len(self.albums)
@@ -3174,6 +3192,8 @@ float cf_thumb_hold(int, float, int);
 int cf_frame_window(int);
 void cf_shelf_still(int);
 const scheme_t *scheme(void) { static scheme_t s = { .paper = %d }; return &s; }
+unsigned flat_page(void) { return ipod_light() ? scheme()->paper : 0; } /* flat.c's, no card page */
+void hold_card_flat(void *c, const void *r, int head, int over) {} /* flat.c's: no flip here */
 #define N %d
 static unsigned tex[N][160 * 160], frame[%d * %d];
 int main(void) {

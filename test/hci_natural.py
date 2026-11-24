@@ -11,12 +11,12 @@ Usage: test/hci_natural.py BUILD_DIR [PLAYER]  (PLAYER: another hciplayer, to se
 import array, math, pathlib, random, shutil, struct, subprocess, sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from unicorn.mips_const import UC_MIPS_REG_A0, UC_MIPS_REG_RA, UC_MIPS_REG_S2, UC_MIPS_REG_V1
-from hci_emu import Emu
+from hci_emu import Emu, scratch
 
 build = pathlib.Path(sys.argv[1]).resolve()
 player = pathlib.Path(sys.argv[2]).resolve() if len(sys.argv) > 2 else build/'peq'/'hciplayer'
 work, root, aud = build/'hci_natural', build/'hci_natural'/'root', build/'hci_natural'/'aud'
-AUTH, STOP, NEXT = 0x430114, 0xb11e70, 0xb11de8  # the licence check; the stop flag; the preload's state
+STOP, NEXT = 0xb11e70, 0xb11de8  # the stop flag; the preload's state
 TOUCH_NOTSUPPORT, COLD_PATH = 0x423548, 0x421a9c
 LAVF_CHECK, LAVF_PREFERRED, FREE_PRELOAD = 0x4aeb84, 0x4af55c, 0x42aa0c  # lavf's check; from the preferred one, stock's first try; the thread's free of its context
 SECONDS, RATE = 5, 44100
@@ -33,9 +33,7 @@ ELF = build/'peq'/'peq.elf'
 
 
 def setup():
-    shutil.rmtree(work, ignore_errors=True)
-    aud.mkdir(parents=True)
-    subprocess.run(['unsquashfs', '-no-progress', '-d', root, '-f', build/'stock.squashfs', 'lib', 'usr/lib'], check=True, stdout=subprocess.DEVNULL)
+    scratch(build, work, root, aud)
     for seed, name in enumerate('abc', 1):
         subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'lavfi', '-i', f'anoisesrc=d={SECONDS}:c=pink:r={RATE}:seed={seed}:a=0.4',
                         '-ac', '2', '-c:a', 'pcm_s16le', aud/f'{name}.wav'], check=True)
@@ -121,31 +119,25 @@ def setup():
 
 class Player:
     def __init__(self):
-        self.e = e = Emu(player, root, work, log=work/'player.log', fsmap={'/mnt/mmc': str(aud)})
-        e.hook_fn(AUTH, lambda e: 0)
+        self.e = e = Emu(player, root, work, log=work/'player.log', fsmap={'/mnt/mmc': str(aud)}, auth_off=True)
         for name in 'mnt_data_peq-active', 'tmp_q2xfade':
             (e.tmp/name).unlink(missing_ok=True)
         self.pcm = bytearray()
         e.on_write = lambda e, data, n, p: self.pcm.extend(data)
-        e.alsa_active = True
         self.run(0.3)
     def run(self, s):
-        self.e.run(until=self.now() + s)
+        self.e.run_for(s)
     def now(self):
         return (self.e.clock - 10**12) / 1e9
     def frames(self):
         return len(self.pcm) // 4
     def song(self, name):
-        self.e.send_cmd('{set-songurl\\/mnt/mmc/%s|ss=0|0|0|1|0|90}' % name)
+        self.e.song(name)
     def gapless(self, name):
-        self.e.send_cmd('{set-gapless\\/mnt/mmc/%s|ss=0|0|0|1|90}' % name)
+        self.e.gapless(name)
     def until(self, done, limit, step=0.02):
         """Run in small steps until done() or limit virtual seconds on; False if it never came."""
-        end = self.now() + limit
-        while self.now() < end:
-            if done(): return True
-            self.run(step)
-        return done()
+        return self.e.until(done, limit, step)
     def events(self, *names):
         return [(n, k) for _, n, k in self.e.events if n in names]
     def opened(self, name):

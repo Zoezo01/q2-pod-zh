@@ -2,7 +2,7 @@
 """Exercise the shipped LDAC encoder's intermediate rates and bluealsa's Auto dispatch."""
 import pathlib, subprocess, sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'tools'))
-from mips import machine, read, word
+from mips import call as mips_call, machine, read, word
 from unicorn import UC_HOOK_CODE
 from unicorn.mips_const import *
 
@@ -11,14 +11,7 @@ def image(name):
     return subprocess.check_output(['unsquashfs', '-cat', str(directory/'rootfs.squashfs'), name])
 
 def call(u, address, *args):
-    for register, value in zip((UC_MIPS_REG_A0, UC_MIPS_REG_A1, UC_MIPS_REG_A2, UC_MIPS_REG_A3), args):
-        u.reg_write(register, value & 0xffffffff)
-    u.reg_write(UC_MIPS_REG_T9, address)
-    u.reg_write(UC_MIPS_REG_SP, 0x200f000)
-    u.reg_write(UC_MIPS_REG_RA, 0x200ff00)
-    u.emu_start(address, 0x200ff00, count=10000)
-    assert u.reg_read(UC_MIPS_REG_PC) == 0x200ff00
-    return u.reg_read(UC_MIPS_REG_V0)
+    return mips_call(u, address, *args, sp=0x200f000, done=0x200ff00, count=10000)
 
 encoder = machine(image('usr/lib/libldacBT.so.2.0.19'), 0x2000000)
 handle = 0x2001000

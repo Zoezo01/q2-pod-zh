@@ -23,7 +23,10 @@ const char *netupdate_tag(const char *location) {
 #define SH_DIR CARD "/.q2"
 #define STAGING SH_DIR "/staging"
 #define SH_CAP (1u << 30) /* the most an install may unpack */
-#define SH_MAX 32
+/* The App Store's apps, the list's and then the card's own (custom_sources). ponytail: a fixed
+ * table, 224 bytes an app in shelf_apps and again in sh.next; past 48 the card's lines go first,
+ * then the list's last, with nothing said. Raise it as the list nears it. */
+#define SH_MAX 48
 
 enum { SH_OK, SH_NET, SH_SPACE, SH_CARD, SH_MISSING, SH_BAD, SH_CANCELLED, SH_BUSY };
 /* repo: its GitHub owner/name; id: the repo's name less "q2-", for the card folder .<id>, the tag
@@ -483,16 +486,11 @@ static int fetch_on(void **keep, const char *url, void *file, char *tag, unsigne
     return err;
 }
 
-static int fetch(const char *url, void *file, char *tag, unsigned n, long *code, volatile int *xfer,
-                 long from) {
-    return fetch_on(0, url, file, tag, n, code, xfer, from);
-}
-
 /* url's body (1 MB at most) through the file tmp, NUL-terminated; 0 unless a whole 200. */
 static char *get_by(const char *url, long *code, const char *tmp, volatile int *xfer) {
     unsigned n = 0;
     void *f = fopen(tmp, "wb");
-    int err = !f || fetch(url, f, 0, 0, code, xfer, 0);
+    int err = !f || fetch_on(0, url, f, 0, 0, code, xfer, 0);
     err = (f && fclose(f)) || err;
     char *body = err || *code != 200 ? 0 : read_all(tmp, 1u << 20, &n);
     unlink(tmp);
@@ -517,7 +515,7 @@ static int update(void) {
     char tag[64] = "", url[256], want[65], got[65];
     unsigned size = 0, n = 0;
     long code = 0;
-    if (fetch(NU_REPO, 0, tag, sizeof tag, &code, &nu.cancel, 0) || code != 302 || !*tag)
+    if (fetch_on(0, NU_REPO, 0, tag, sizeof tag, &code, &nu.cancel, 0) || code != 302 || !*tag)
         return nu.cancel ? NU_CANCELLED : NU_NET; /* a cancel ends this request itself */
     /* Tags are single-digit x.y.z, so strcmp orders them: nothing older than this build, which
      * stock's updater would flash. Q2POD_TAG is empty in --dev builds, which take any tag.
@@ -557,7 +555,7 @@ static int update(void) {
         if (!f) return NU_CARD;
         nu.base = (int)((unsigned)(have >> 10) * 100 / ((size >> 10) + 1)); /* KB: 32-bit math */
         nu.percent = 0, nu.stage = 1;
-        int err = fetch(url, f, 0, 0, &code, &nu.cancel, have), bad = ferror(f);
+        int err = fetch_on(0, url, f, 0, 0, &code, &nu.cancel, have), bad = ferror(f);
         bad =
             fflush(f) || fsync(fileno(f)) || bad; /* a part cut short too: it is carried on from */
         bad = fclose(f) || bad;
@@ -611,9 +609,10 @@ static void show(const char *text) {
 
 /* The row at rest: the newer release a check found, else its own name. */
 static void named(void) {
-    char s[32];
+    char s[96];
     if (!nc.busy && *nc.tag)
         tk_snprintf(s, sizeof s, "升级到 %s", nc.tag), show(s);
+>>>>>>> 1.9.1
     else if (nu.label)
         widget_set_tr_text(nu.label, "中文固件更新");
 }
@@ -624,8 +623,9 @@ static int wait_done(const void *unused) {
         [NU_MISSING] = "此版本暂无更新", [NU_CARD] = "无法写入存储卡",
         [NU_CANCELLED] = "已取消下载", [NU_BUSY] = "GitHub 繁忙，请稍后再试",
         [NU_BAD] = "下载已损坏，请重试",
+>>>>>>> 1.9.1
     };
-    char s[32];
+    char s[112];
     if (nu.state == NU_RUNNING) {
         reset_poweroptions_timer(1, 1, 0); /* standby, auto power-off; not the screen's */
         int percent = nu.base + nu.percent * (100 - nu.base) / 100; /* of the whole tar */
@@ -635,6 +635,7 @@ static int wait_done(const void *unused) {
              : nu.stage == 2 ? "正在校验…"
              : nu.stage && percent ? s
                                    : "检查中…");
+>>>>>>> 1.9.1
         return 8; /* RET_REPEAT */
     }
     pthread_join(nu.thread, 0);
@@ -644,12 +645,14 @@ static int wait_done(const void *unused) {
     named();
     if (state == NU_SPACE)
         tk_snprintf(s, sizeof s, "存储卡还需 %u MB 空间", nu.need), toast(s);
+>>>>>>> 1.9.1
     else if (state != NU_DONE)
-        toast(said[state]);
+        toast(tr(said[state]));
     else if (nu.label)
         fwupdate_tf(); /* stock's TF card update: its battery check and confirm */
     else
         toast("中文固件已下载，请使用 TF 卡升级");
+>>>>>>> 1.9.1
     return 0;
 }
 
@@ -657,11 +660,15 @@ static int wait_done(const void *unused) {
 static int online_click(void *ctx, event_t *event) {
     if (nu.state == NU_RUNNING) {
         nu.cancel = 1;
-        show("正在取消…");
+        show(tr("正在取消…"));
+        /* NOLINTNEXTLINE(bugprone-branch-clone): empty, as need_link's below: each says why */
     } else if (nu.state != NU_IDLE) {
         /* ended, not yet joined by wait_done */
     } else if (I(g_power_capacity, 0) < NU_BATTERY && !g_usbdet_value) {
-        toast("请先充电后再更新"); /* before the download, as stock's updater after it */
+        /* before the download, as stock's updater after it */
+        toast(tr("请先充电后再更新"));
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
     } else if (!need_link(online_click, ctx)) {
         /* held for Smart Wi-Fi's link (a press while it waits takes its place), or none */
     } else {
@@ -672,6 +679,7 @@ static int online_click(void *ctx, event_t *event) {
             toast("无法开始下载");
         } else {
             show("检查中…");
+>>>>>>> 1.9.1
             timer_add(wait_done, (void *)0, 500);
         }
     }
@@ -705,6 +713,7 @@ int ringnav_fwupdate(widget_t *win, void *ctx) {
         widget_on(nu.label, EVT_DESTROY, label_gone, nu.label);
         if (nu.state == NU_RUNNING)
             show("正在下载…");
+>>>>>>> 1.9.1
         else if (*nc.tag)
             named(); /* else stock's name, as it built the row */
         pod_rows(win, "scroll_view_fwupdate", 26 /* POD_REMIND_DAILY */, 1, icons);
@@ -715,7 +724,7 @@ int ringnav_fwupdate(widget_t *win, void *ctx) {
 static void *nc_worker(void *unused) {
     char tag[64] = "";
     long code = 0;
-    int ok = !fetch(NU_REPO, 0, tag, sizeof tag, &code, 0, 0) && code == 302 && *tag;
+    int ok = !fetch_on(0, NU_REPO, 0, tag, sizeof tag, &code, 0, 0) && code == 302 && *tag;
     if (ok) tk_snprintf(nc.tag, sizeof nc.tag, "%s", strcmp(tag, Q2POD_TAG) > 0 ? tag : "");
     nc.ok = ok;
     nc.busy = 0;
@@ -731,7 +740,7 @@ static void *nc_worker(void *unused) {
 void netupdate_poll(void) {
     unsigned now = time_now_ms();
     unsigned long tid;
-    char s[80];
+    char s[224];
     if (!*Q2POD_TAG) return;
     if (!pod_value(POD_REMIND_DAILY)) { /* not while a check thread owns the tag, as named() */
         if (!nc.busy) *nc.tag = 0, nc.at = 0; /* back On: check at once */
@@ -747,6 +756,7 @@ void netupdate_poll(void) {
             memcpy(nc.told, nc.tag, sizeof nc.told);
             BLOB_IO(NU_TOLD, nc.told, 1);
             tk_snprintf(s, sizeof s, "Q2 Pod %s 已发布，请用网络更新升级", nc.tag);
+>>>>>>> 1.9.1
             toast(s);
             return;
         }
@@ -959,7 +969,7 @@ static int install(int i) {
     void *f = fopen(part, "wb");
     if (!f) return SH_CARD;
     sh.stage = 1;
-    int err = fetch(url, f, 0, 0, &code, &sh.cancel, 0), bad = ferror(f);
+    int err = fetch_on(0, url, f, 0, 0, &code, &sh.cancel, 0), bad = ferror(f);
     bad = fclose(f) || bad;
     r = sh.cancel ? SH_CANCELLED : bad ? SH_CARD : err ? SH_NET : code != 200 ? SH_MISSING : SH_OK;
     if (!r) sh.stage = 2, r = shelf_list(i, &total);
@@ -976,6 +986,7 @@ static int install(int i) {
         char tmp[100];
         snprintf(tmp, sizeof tmp, "%s.tmp", path);
         if (!r && !blob_io(path, tmp, tag, strlen(tag), 1)) r = SH_CARD;
+        if (!r) language_sync(); /* a language pack's update, copied for the next start */
     }
     system("rm -rf " STAGING);
     return r;
@@ -1010,6 +1021,7 @@ static void *sh_worker(void *unused) {
              * removed */
             if (card_mounted()) {
                 if (is(i, "rockbox") && t >= 0) shelf_remove(t); /* no themes without Rockbox */
+                language_removing(apps[i].dir); /* a language pack: English from the next start */
                 shelf_remove(i);
             } else
                 sh.result = SH_CARD; /* the bare mount point: nothing removed */
@@ -1054,9 +1066,10 @@ static int sh_updatable(int i) { return sh_shown(i) && sh_state(i) == ST_UPDATE;
 static void sh_text(int r) {
     static const char *const stages[] = { "检查中…", "下载中", "解包中…", "安装中…",
                                           "移除中…" };
+>>>>>>> 1.9.1
     int i = sh.map[r], armed = sh.armed == r + 1,
         busy = (sh.job == JOB_INSTALL || sh.job == JOB_REMOVE) && sh.app == i;
-    char s[40];
+    char s[96];
     const char *t = s;
     unsigned min =
         i == ROW_CHECK ? (unsigned)(boot_ms() - sh.checked) / 60000 : 0; /* no __udivdi3 */
@@ -1075,15 +1088,19 @@ static void sh_text(int r) {
         t = "正在取消…";
     else if (busy && sh.stage == 1 && sh.percent)
         snprintf(s, sizeof s, "正在下载 %d%%", sh.percent);
+>>>>>>> 1.9.1
     else if (busy)
-        t = stages[sh.stage];
+        t = tr(stages[sh.stage]);
     else if (armed && sh_state(i) == ST_INSTALLED)
-        t = "再按一次以移除";
+        t = tr("再按一次以移除");
     else if (armed) /* docs/boot.md#rockbox */
-        t = "开机自动启动，可在“默认启动”中更改。再按一次以安装";
-    else /* its GitHub owner, as an app's developer */
-        snprintf(s, sizeof s, "%.*s", (int)(strstr(apps[i].repo, "/") - apps[i].repo),
-                 apps[i].repo);
+        t = tr("开机自动启动，可在“默认启动”中更改。再按一次以安装");
+    else { /* its GitHub owner, as an app's developer: 39 bytes at most, as GitHub's names are */
+        int k = (int)(strstr(apps[i].repo, "/") - apps[i].repo);
+        snprintf(s, sizeof s, "%.*s", k < 39 ? k : 39, apps[i].repo);
+    }
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
     widget_set_text_utf8(widget_get_child(sh.row[r], 1), t);
     if (i != ROW_CHECK) store_state(sh.row[r], busy || armed ? -1 : sh_state(i));
 }
@@ -1096,7 +1113,7 @@ static void sh_refresh(void) {
 /* A check's toast: how many apps' rows offer Update (sh_updatable); with none, from Check for
  * Updates (manual), why it failed or that none have. */
 static void sh_told(int manual, const char *failed) {
-    char s[40];
+    char s[96];
     int n = 0;
     for (int i = 0; i < shelf_n; ++i) n += sh_updatable(i);
     if (n)
@@ -1105,6 +1122,9 @@ static void sh_told(int manual, const char *failed) {
         toast(failed);
     else if (manual)
         toast("所有应用都是最新版本");
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
 }
 
 static int sh_wait(const void *unused) {
@@ -1112,8 +1132,9 @@ static int sh_wait(const void *unused) {
         [SH_NET] = "无法连接 GitHub",           [SH_CARD] = "无法写入存储卡",
         [SH_MISSING] = "此版本暂无更新", [SH_BAD] = "下载内容不是可用的应用",
         [SH_CANCELLED] = "已取消下载",     [SH_BUSY] = "GitHub 繁忙，请稍后再试",
+>>>>>>> 1.9.1
     };
-    char s[64];
+    char s[192];
     if (sh.running) {
         if (sh.job != JOB_CHECK) reset_poweroptions_timer(1, 1, 0); /* standby, auto power-off */
         sh_refresh();
@@ -1139,22 +1160,25 @@ static int sh_wait(const void *unused) {
         addon_apps_sync(0, 0); /* Library's Apps row or page, if on top */
     if (job == JOB_CHECK && !sh.cancel && sh.page &&
         window_manager_get_top_window(window_manager()) == sh.page) /* not left or covered */
-        sh_told(manual, r ? said[r] : 0);
+        sh_told(manual, r ? tr(said[r]) : 0);
     else if (job == JOB_INSTALL && r == SH_SPACE)
         snprintf(s, sizeof s, "还需 %u MB 空间", sh.need), toast(s);
+>>>>>>> 1.9.1
     else if ((job == JOB_INSTALL || job == JOB_REMOVE) && r)
-        toast(said[r]);
+        toast(tr(said[r]));
     else if (job == JOB_INSTALL && is(i, "rockbox"))
-        toast("Rockbox 已就绪，可在主菜单找到");
+        toast(tr("Rockbox 已就绪，可在主菜单找到"));
     else if (job == JOB_INSTALL && is(i, "themes"))
-        toast("Rockbox 主题已就绪，可在 Rockbox 的主题设置中选择");
-    else if (job == JOB_INSTALL)
-        snprintf(s, sizeof s, "%s 已就绪，可在%s中找到", apps[i].name, addon_where(apps[i].id)),
+        toast(tr("Rockbox 主题已就绪，可在 Rockbox 的主题设置中选择"));
+    else if (job == JOB_INSTALL) /* addon_where's place, translated there */
+        snprintf(s, sizeof s, tr("%s 已就绪，可在%s中找到"), apps[i].name, addon_where(apps[i].id)),
             toast(s);
     else if (job == JOB_REMOVE)
-        snprintf(s, sizeof s, "%s 已移除", apps[i].name), toast(s);
-    else if (job == JOB_ERASE)
-        stream_erased(), toast("Spotify 登录信息与缓存已清除"); /* rows first: toast blocks */
+        snprintf(s, sizeof s, tr("%s 已移除"), apps[i].name), toast(s);
+    else if (job == JOB_ERASE) /* rows first: toast blocks */
+        stream_erased(), toast(tr("Spotify 登录信息与缓存已清除"));
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
     return 0;
 }
 
@@ -1166,6 +1190,7 @@ static void sh_start(int job, int i) {
     if (pthread_create(&sh.thread, 0, sh_worker, 0)) {
         sh.job = sh.running = 0;
         toast("无法开始下载");
+>>>>>>> 1.9.1
     } else
         timer_add(sh_wait, (void *)0, 500);
 }
@@ -1193,11 +1218,13 @@ static int sh_click(void *ctx, event_t *event) {
     } else if (sh.job == JOB_CHECK) { /* needs no answer: stopped, so the next press acts */
         sh.cancel = 1;
         toast("已停止检查更新");
+>>>>>>> 1.9.1
     } else if (sh.job) {
         if (sh.job == JOB_INSTALL && sh.app == i && sh.stage < 3)
             sh.cancel = 1; /* not once moving */
         else if (sh.job != JOB_INSTALL || sh.app != i)
             toast("请等待当前任务完成");
+>>>>>>> 1.9.1
     } else if (i != ROW_CHECK && sh_state(i) == ST_INSTALLED) {
         if (!armed)
             sh.armed = r + 1;
@@ -1211,6 +1238,7 @@ static int sh_click(void *ctx, event_t *event) {
         sh_start(JOB_CHECK, 0), sh.manual = 1;
     else if (is(i, "themes") && !rockbox_available())
         toast("请先安装 Rockbox");
+>>>>>>> 1.9.1
     else if (is(i, "rockbox") && sh_state(i) == ST_INSTALL && !armed)
         sh.armed = r + 1;
     else
@@ -1238,12 +1266,14 @@ static void sh_rows(void) {
         memcpy(sh.map, map, sizeof map);
         sh.rows = 0;
         widget_t *view = page_list(sh.page, sh.page, 0, "应用商店", n, 64);
+>>>>>>> 1.9.1
         sh.strip = store_tabs(sh.page, view);
         for (int r = 0; r < n; ++r) {
             int i = map[r];
             /* sh_text writes the detail: a blank one, or a theme would centre the name over it */
             sh.row[r] =
                 page_row_detail(view, r, i == ROW_CHECK ? "检查更新" : apps[i].name,
+>>>>>>> 1.9.1
                                 theme()->sep[0].n ? " " : "", sh_click);
         }
         sh.rows = n;
@@ -1276,6 +1306,7 @@ int shelf_erase(int start) {
         sh.cancel = 1, toast("已停止检查更新");
     else if (start && sh.job)
         toast("请等待当前任务完成");
+>>>>>>> 1.9.1
     else if (start)
         sh_start(JOB_ERASE, -1);
     return sh.job == JOB_ERASE;

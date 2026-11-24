@@ -14,7 +14,7 @@ import zipfile
 import pytest
 
 import host
-from conftest import O, block
+from conftest import Dirent, O, block
 
 # stock.h's Q2POD_TAG: tools/build.py's VERSION (host.py builds as a release, not --dev)
 TAG = host.tools_build.VERSION.encode()
@@ -23,7 +23,7 @@ _n = int(TAG.replace(b'.', b'')) + 1
 NEWER = b'%d.%d.%d' % (_n // 100, _n // 10 % 10, _n % 10)
 OLDER = b'0.9.9'
 
-SH_MAX = 32
+SH_MAX = 48
 SH_CAP = 1 << 30
 SH_OK, SH_NET, SH_SPACE, SH_CARD, SH_MISSING, SH_BAD, SH_CANCELLED, SH_BUSY = range(8)
 NU_IDLE, NU_RUNNING, NU_DONE, NU_LATEST, NU_NET, NU_MISSING, NU_CARD, NU_CANCELLED, NU_BUSY, NU_SPACE, NU_BAD = range(11)
@@ -182,7 +182,7 @@ def test_two_q2_pod_repos_of_one_id_keep_the_first(fw):
 
 
 def test_the_table_is_never_overrun(fw):
-    text = b''.join(b'me/app%d\n' % i for i in range(40))
+    text = b''.join(b'me/app%d\n' % i for i in range(SH_MAX + 8))
     assert len(sources(fw, text)) == SH_MAX and len(sources(fw, text, 3)) == 3
 
 
@@ -1126,8 +1126,8 @@ def test_a_part_the_card_cant_give_back_is_a_card_error(fw):
 def fetch(fw, url=b'https://x', tag_size=64, file=None, start=0):
     tag, code = block(fw, size=tag_size), C.c_long(0)
     xfer = (C.c_int * 2)()
-    fn = fw.fn('netupdate__fetch', C.c_int, C.c_char_p, C.c_void_p, C.c_void_p, C.c_uint, C.POINTER(C.c_long), C.c_void_p, C.c_long)
-    err = fn(url, file, tag if not file else None, tag_size, C.byref(code), xfer, start)
+    fn = fw.fn('netupdate__fetch_on', C.c_int, C.c_void_p, C.c_char_p, C.c_void_p, C.c_void_p, C.c_uint, C.POINTER(C.c_long), C.c_void_p, C.c_long)
+    err = fn(None, url, file, tag if not file else None, tag_size, C.byref(code), xfer, start)
     return err, C.string_at(tag), code.value
 
 
@@ -1204,8 +1204,8 @@ class Hung:
 
 
 def head(fw, xfer):
-    fn = fw.fn('netupdate__fetch', C.c_int, C.c_char_p, C.c_void_p, C.c_void_p, C.c_uint, C.POINTER(C.c_long), C.c_void_p, C.c_long)
-    return fn(b'https://x', None, block(fw, size=64), 64, C.byref(C.c_long(0)), xfer, 0)
+    fn = fw.fn('netupdate__fetch_on', C.c_int, C.c_void_p, C.c_char_p, C.c_void_p, C.c_void_p, C.c_uint, C.POINTER(C.c_long), C.c_void_p, C.c_long)
+    return fn(None, b'https://x', None, block(fw, size=64), 64, C.byref(C.c_long(0)), xfer, 0)
 
 
 def test_a_cancel_ends_a_header_request_that_hangs_at_once(fw):
@@ -1940,8 +1940,6 @@ class Disk(Card):
         return len(self.listing) + 0x2fff
 
     def readdir(self, d, *_):
-        class Dirent(C.Structure):  # host.py's struct dirent
-            _fields_ = [('ino', C.c_uint), ('off', C.c_uint), ('reclen', C.c_ushort), ('d_type', C.c_ubyte), ('d_name', C.c_char * 256)]
         for name, kind in self.listing[d]:
             self.entry = Dirent(0, 0, 0, kind, name)
             return C.addressof(self.entry)
@@ -3199,6 +3197,15 @@ def test_the_cards_custom_sources_follow_the_list_and_never_reach_its_copy(fw, m
         s.click(2)  # Mine
         assert s.run() == 0 and s.toasts[-1] == 'Mine 已就绪，可在流媒体中找到' and card.files[CUSTOM] == mine
         assert card.files[SOURCES] == LISTED
+
+def test_a_list_of_33_keeps_them_all_and_the_cards_own_lines_after(fw):
+    """At 32 apps (the list's count in 1.9.1) a custom line got no slot, and a 33rd listed app was cut."""
+    Disk(fw, {CUSTOM: b'you/q2-mine Mine\n[Games]\nyou/q2-play Play\n'})
+    out, own = (App * SH_MAX)(), C.c_int()
+    listed = b''.join(b'me/q2-a%02d\n' % i for i in range(33))
+    n = fw.fn('netupdate__custom_sources', C.c_int, C.c_char_p, C.c_void_p, C.POINTER(C.c_int))(listed, out, C.byref(own))
+    assert own.value == 33 and [a.id for a in out[32:n]] == [b'a32', b'mine', b'play'] and out[34].game == b'\x01'
+
 
 @pytest.mark.parametrize('theme', (b'0', b'1', b'2'))  # Minimal, Classic, Modern
 def test_app_store_paints_a_rows_state_as_a_word_and_the_tabs_badges(fw, theme):

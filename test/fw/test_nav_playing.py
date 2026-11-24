@@ -9,7 +9,7 @@ import pytest
 
 import host
 import art as tools_art  # tools/, on the path host.py set: the art's own sizes
-from conftest import NAVIGATION_SOURCE, O, Deques, Externpic, ask_cover, in_fork, ui_name
+from conftest import NAVIGATION_SOURCE, O, Config, Deques, Externpic, ask_cover, channels_low_first, in_fork, rgba, ui_name
 
 THEMES = host.tools_theme.builtins()
 SETS = host.tools_theme.geometry_sets(THEMES)
@@ -32,11 +32,6 @@ CODEC_REACH = [int(v) for v in re.findall(r'\d+', host.ROOT.joinpath('patch/offs
 BT_GLYPH = b'bar_btcon'
 # the named periods of navigation.h and its units (NAVIGATION_SOURCE), as their comments state the behaviour by them
 NAV = {k: int(v) for k, v in re.findall(r'^#define (\w+) (\d+)\b', NAVIGATION_SOURCE, re.M)}
-
-
-def rgba(c, a=0xff):
-    """theme.h's RGBA: 0xRRGGBB as the canvas's 0xAABBGGRR."""
-    return a << 24 | (c & 255) << 16 | c & 0xff00 | c >> 16
 
 
 def wide(s):
@@ -66,17 +61,6 @@ def bbox(rects):
     xs, ys = [r[0] for r in rects], [r[1] for r in rects]
     x1, y1 = max(r[0] + r[2] for r in rects), max(r[1] + r[3] for r in rects)
     return min(xs), min(ys), x1 - min(xs), y1 - min(ys)
-
-
-class Config:
-    """config.ini's [IPOD] keys: a key's value, else the caller's default."""
-    def __init__(self, fw, **values):
-        self.values = {k.encode(): str(v).encode() for k, v in values.items()}
-        fw.mock('toolsReadConfig', self.read)
-
-    def read(self, path, section, key, out, default, *_):
-        value = self.values.get(C.string_at(key), C.string_at(default))
-        C.memmove(out, value + b'\0', len(value) + 1)
 
 
 @pytest.fixture(scope='module')
@@ -2654,7 +2638,7 @@ def test_a_slider_page_takes_classics_shape_and_every_stock_name_still_finds_its
     assert within(slider, view) and within(ui.box(caption), view)
     assert slider[1] + slider[3] <= ui.box(caption)[1] and ui.box(caption)[::2] == (0, 375)  # under it, centred across
     assert {ui.ints[page.slider, f'style:{s}:icon'.encode()] for s in ('normal', 'pressed', 'over', 'disable', 'focused')} == {0}
-    assert ui.text(caption) == read_wide(C.addressof(fw.var('navigation__slider_caption', C.c_uint)))
+    assert ui.text(caption) == 'Press Centre When Finished' == read_wide(st.slider_hint)  # what Classic draws
     assert ui.prop(caption, b'style:normal:font_name') == b'classic-light'
     assert (st.slider_win, st.slider_w, st.slider_kind) == (page.win, page.slider, list(SLIDERS).index(name))
 
@@ -2926,10 +2910,6 @@ def mid_row(canvas, w):
     return [r[4] for r in canvas.rects if r[2] == w and r[3] == 1 and r[0] == 0 and r[1] == 25][-1]
 
 
-def channels(c):
-    return c & 255, c >> 8 & 255, c >> 16 & 255
-
-
 def label(canvas):
     """A key's label as drawn twice, its shadow then its ink: (text, shadow's offset down, shadow lighter, px)."""
     (text, shadow, _, under, _), (again, rect, (_, px), ink, _) = canvas.texts
@@ -2950,11 +2930,11 @@ def test_the_keys_faces_and_labels(fw, st, ui):
     assert label(fn)[0] == '123'
     assert label(done)[0] and label(space)[0] and label(done)[0] != label(space)[0]  # their own words, no text of theirs
     assert label(space)[1] > 0 and label(space)[2]  # space's ink is dark, as a character's
-    r, g, b = channels(mid_row(done, 60))
+    r, g, b = channels_low_first(mid_row(done, 60))
     assert b > r + 60  # the enter key's blue
-    pr, pg, pb = channels(mid_row(plain, 60))
+    pr, pg, pb = channels_low_first(mid_row(plain, 60))
     assert min(pr, pg, pb) > 200 and max(pr, pg, pb) - min(pr, pg, pb) < 8  # near white
-    fr, fg, fb = channels(mid_row(fn, 60))
+    fr, fg, fb = channels_low_first(mid_row(fn, 60))
     assert max(fr, fg, fb) < min(pr, pg, pb) and fb >= fr  # a darker slate
 
 
@@ -2972,9 +2952,9 @@ def test_a_key_without_a_label_shows_its_glyph_centred(fw, st, ui, name, art, w,
 def test_the_keyboards_ramp_darkens_down_the_screen(fw, st):
     theme(fw, st, CLASSIC)
     canvas = Canvas(fw)
-    fw.fn('paint_ramp', None, C.c_void_p, C.c_int, C.c_int, C.c_int)(canvas.p, 60, 320, 60)
+    fw.fn('paint_ramp', None, C.c_void_p, C.c_int)(canvas.p, 60)
     assert [r[:4] for r in canvas.rects] == [(0, y - 60, 375, 1) for y in range(60, 320)]
-    light = [sum(channels(r[4])) for r in canvas.rects]
+    light = [sum(channels_low_first(r[4])) for r in canvas.rects]
     assert light == sorted(light, reverse=True) and light[0] > light[-1]
 
 

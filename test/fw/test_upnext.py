@@ -116,7 +116,7 @@ class Page:
         return 290 if name == b'h' else self.props.get((w, name), C.c_int(default).value)
 
     def open(self):
-        self.fw.fn('up_next', None, C.c_void_p)(None)
+        self.fw.fn('up_next', None)()
 
     def close(self):
         """The page destroyed: the destroy handler page_open hooked on it, upnext.c's own close."""

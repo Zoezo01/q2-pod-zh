@@ -11,7 +11,7 @@ import pytest
 
 import art as tools_art  # tools/, which host puts on the path
 import ipod as tools_ipod
-from conftest import O, block, Config
+from conftest import O, block, Config, channels_low_first
 
 WALLS = [b'q2pod:' + n for n in (b'aurora', b'sunrise', b'graphite', b'tide', b'ember', b'black')]
 AURORA, SUNRISE, GRAPHITE, TIDE, EMBER, BLACK = range(6)
@@ -1227,18 +1227,14 @@ def info_paint(fw, picture=WALLS[TIDE], shown=1, names=INFO, **config):
     return win, art, canvas
 
 
-def channels(color):
-    return color & 255, color >> 8 & 255, color >> 16 & 255
-
-
 def dark(color):
     """Black or near it, at any strength: each channel under a quarter."""
-    return color >> 24 and max(channels(color)) < 0x40
+    return color >> 24 and max(channels_low_first(color)) < 0x40
 
 
 def light(color):
     """White or near it, at any strength: each channel over three quarters."""
-    return color >> 24 and min(channels(color)) >= 0xc0
+    return color >> 24 and min(channels_low_first(color)) >= 0xc0
 
 
 BAR_H = 26  # the status bar's rows, which the real bar paints (paint_bar)

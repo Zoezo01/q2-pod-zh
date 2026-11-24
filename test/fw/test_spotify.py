@@ -7,7 +7,7 @@ import ctypes as C
 
 import pytest
 
-from conftest import O, SPOT_NOSOCK, Files
+from conftest import O, SPOT_NOSOCK, Config, Files
 from test_streaming import (A_CAPS, A_DOWNLOAD, A_PLAY, A_PREVIEW, A_REMOVE, A_SIGNOUT, L_CONFIRM, L_DOWNLOADS, L_JOB,
                             L_LIST, L_REMOVE, L_SELECT, L_STORAGE, S_OLD, S_PAIR, S_WAIT, Br, Sp, Wk, track)
 
@@ -133,10 +133,7 @@ class Timers:
 
 def classic(fw):
     """Classic, theme 1, from the config; every other key its default."""
-    def read(path, section, key, out, default, *_):
-        v = b'1' if C.string_at(key) == b'THEME' else C.string_at(default)
-        C.memmove(out, v + b'\0', len(v) + 1)
-    fw.mock('toolsReadConfig', read)
+    Config(fw, THEME='1')
 
 
 # spot_poll: the hold on the player and the timers.
@@ -189,6 +186,19 @@ def test_the_row_starts_librespot_once(fw):
     lib = Librespot(fw)
     fw.fn('spotify__spot_launch', None)()
     assert lib.ran == ['/bin/sh /mnt/mmc/.spotify/run'] and lib.sp.launch_at == lib.clock.now
+
+
+def test_librespot_starts_as_card_apps_do_under_a_card_mounted_for_them(fw):
+    """app_user.c's system() as APP_UID (test_addon.py has the drop), not stock's as root."""
+    def stat(version, path, info, *_):
+        C.cast(info, C.POINTER(C.c_uint))[7] = 1000  # st_uid
+    fw.mock('fw___xstat', stat)
+    fw.mock('fw_access', lambda *_: 0)
+    fw.mock('fw_fork', lambda *_: 0)
+    fw.fn('spotify__spot_launch', None)()
+    (_, execl), = fw.calls('fw_execl')
+    assert [C.string_at(p) for p in execl[:4]] == [b'/bin/sh', b'sh', b'-c', b'/bin/sh /mnt/mmc/.spotify/run']
+    assert not fw.calls('fw_system') and C.c_int(fw.calls('cf_syscall')[-1][1][0]).value == 4023  # setuid, last
 
 
 def test_polls_are_paced(fw):
@@ -332,10 +342,7 @@ VOLUME = 40
 def outputs(fw, way, mono=False):
     fw.mock('mclGetOutputWay', lambda *_: way)
     fw.var('g_volume', C.c_ubyte).value = VOLUME
-    def read(path, section, key, out, default, *_):
-        v = b'1' if mono and C.string_at(key) == b'MONO' else C.string_at(default)
-        C.memmove(out, v + b'\0', len(v) + 1)
-    fw.mock('toolsReadConfig', read)
+    Config(fw, **({'MONO': '1'} if mono else {}))
 
 
 @pytest.mark.parametrize('way, mono, line', [

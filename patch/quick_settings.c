@@ -5,7 +5,7 @@
 extern int stock_quicksettings_trampoline(widget_t *, void *);
 
 static void quick_lock_text(widget_t *win) {
-    widget_set_text_utf8(widget_lookup(win, "label_lock", 1), lock_names[lock_choice()]);
+    widget_set_text_utf8(widget_lookup(win, "label_lock", 1), tr(lock_names[lock_choice()]));
     image_base_set_image(widget_lookup(win, "img_lock", 1),
                          g_keylock_flag ? "drop_keylockopen" : "drop_keylock");
 }
@@ -250,8 +250,8 @@ void quick_page(widget_t *win, canvas_t *canvas) {
         for (int k = 0; k < 3; ++k)
             if (icon == quick.pressed) c[k] = mix(c[k], 0, 1, 6);
         rect_t r = { I(icon, W_X), I(icon, W_Y), 60, 60 }, in = { r.x + 1, r.y + 1, 58, 58 };
-        stops_t line = { 2, { 0, 100 }, { c[2], c[2] } }, face = { 2, { 0, 100 }, { c[0], c[1] } };
-        paint_round_rows(canvas, &r, &line, 12);
+        stops_t face = { 2, { 0, 100 }, { c[0], c[1] } };
+        round_fill(canvas, &r, c[2], 12);
         paint_round_rows(canvas, &in, &face, 11);
         tk_snprintf(name, sizeof name, "classic_light_%s%s", image, ink);
         paint_art(win, canvas, name, r.x, r.y);
@@ -346,10 +346,9 @@ static void quick_page_flat(widget_t *win, canvas_t *canvas) {
     unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR), on = flat_on();
     unsigned ground = light && theme()->qs_ground ? theme()->qs_ground : flat_page();
     rect_t buttons = { 18, 20, 339, 196 }, bar = qs_bar_card;
-    stops_t card = { 2, { 0, 100 }, { qs_card[light], qs_card[light] } };
     bar_rect(canvas, RGBA(ground), 0, 0, I(win, W_W), I(win, W_H));
-    paint_round_rows(canvas, &buttons, &card, 26);
-    paint_round_rows(canvas, &bar, &card, 26);
+    round_fill(canvas, &buttons, qs_card[light], 26);
+    round_fill(canvas, &bar, qs_card[light], 26);
     for (unsigned i = 0; i < sizeof quick_icons / sizeof *quick_icons; ++i) {
         widget_t *icon = widget_lookup(win, quick_icons[i], 1);
         widget_t *label = widget_lookup(win, quick_labels[i], 1);
@@ -361,8 +360,7 @@ static void quick_page_flat(widget_t *win, canvas_t *canvas) {
         const char *ink = (lit ? bright_tone(c) : light) ? "_l" : "";
         if (icon == quick.pressed) c = mix(c, 0, 1, 6);
         rect_t r = { I(icon, W_X), I(icon, W_Y), 54, 54 };
-        stops_t face = { 2, { 0, 100 }, { c, c } };
-        paint_round_rows(canvas, &r, &face, 27);
+        round_fill(canvas, &r, c, 27);
         tk_snprintf(name, sizeof name, FLAT_ART "%s%s", image, ink);
         paint_art(win, canvas, name, r.x, r.y);
         if (label) quick_label_flat(canvas, label, r.x - (QS_FLAT_W - 54) / 2, r.y + 57);
@@ -389,9 +387,8 @@ static void quick_scrub_flat(widget_t *w, canvas_t *canvas) {
  * is half covered. */
 void quick_vol_flat(widget_t *w, canvas_t *canvas, int dy, int level, int max) {
     rect_t card = qs_bar_card, r = { QS_BAR_X, QS_BAR_Y + dy, QS_BAR_W, QS_BAR_H };
-    stops_t face = { 2, { 0, 100 }, { qs_card[ipod_light()], qs_card[ipod_light()] } };
     card.y += dy;
-    paint_round_rows(canvas, &card, &face, 26);
+    round_fill(canvas, &card, qs_card[ipod_light()], 26);
     flat_bar(w, canvas, &r,
              QS_BAR_H + (max > 0 ? (QS_BAR_W - QS_BAR_H) * clamp_step(0, max, level) / max : 0),
              qs_rest[ipod_light()], BAR_SPEAKERS);
@@ -485,6 +482,7 @@ const char *quick_wheel_toggle(widget_t *top) {
     quick.wheel = 1 + volume;
     write_int_config(volume, "Q2POD", "QSVOLUME");
     return volume ? "滚轮：音量" : "滚轮：亮度";
+>>>>>>> 1.9.1
 }
 
 /* Stock's swipe down opens Quick Settings at g_dropdown_menu_state 1 and starts its slide only on

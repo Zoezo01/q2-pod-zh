@@ -89,6 +89,7 @@
 #define LCD_BGRA8888 3
 #define CANVAS_ALIGN_V 0x30     /* canvas_set_text_align @0x64770c; middle = 1 */
 #define CANVAS_ALIGN_H 0x34     /* center = 1 */
+#define FONT_GET_GLYPH 0x24     /* font_t's get_glyph, font_get_glyph @0x6548e0 calls it */
 #define FILL_RGB 0x2b2b2b /* the stock dark surface, under the letter and volume overlays */
 /* iPod accents, in the order of the Accent setting (IPOD/ACCENT in config.ini; 0 is the default):
  * { selection top, bottom, light tone, red tone, highlight }, 0xRRGGBB. Equal stops keep
@@ -422,19 +423,22 @@ static inline int arc_out(int r, int y) {
 #define WAKE_MS 500 /* Wake: Double press, the screen-off double press; looser, done blind in a hand */
 #define SCRUB_MS 3000
 /* With the screen off the UI loop idles this long a turn instead of stock's 8 ms, about 10 turns a
- * second; screen-off keys (volume, play/pause, wake) wait at most this much longer. */
+ * second; a key ends the idle at once (loop_wait), a timer waits at most this much longer. */
 #define SCREEN_OFF_SLEEP_MS 100
 /* Stock's player status sync (5 a second) and Tidal's stream poll sleep at least this long a turn
  * while ringnav_sleep finds the Q2 dark and quiet (ringnav_dark_usleep), its cover pollers (20 and
  * 10) whenever it is dark (ringnav_dark_cover_usleep); DARK_POLLS in tools/build.py. */
 #define DARK_POLL_US 1000000
 /* Screen off, nothing playing (media_playing) and the DAC already off (check_dacoff_state, about 31
- * s after playback stops; g_dacoff_time -1): the turn idles DARK_IDLE_SLEEP_MS, about 4 turns a
- * second, so a Q2 left dark without Standby stops waking the CPU for nothing. The first key waits
- * at most that; Wake's second press is timed at the screen-off pace. */
-#define DARK_IDLE_SLEEP_MS 250
-/* A wheel turn with the screen off idles neither for this long after a tick (ringnav_sleep). A
- * calibration knob: a turn slower than a tick in this long waits out a dark pass for each. */
+ * s after playback stops; g_dacoff_time -1): the turn idles DARK_IDLE_SLEEP_MS, a turn a second as
+ * stock's pollers then (DARK_POLL_US), so a Q2 left dark without Standby stops waking the CPU for
+ * nothing. A key ends the idle at once (loop_wait); for IDLE_MS after one, and for Wake's second
+ * press, the turn idles SCREEN_OFF_SLEEP_MS. A calibration knob: what no key announces (a cable, a
+ * headset, a cast starting) is seen up to this late. */
+#define DARK_IDLE_SLEEP_MS 1000
+/* A wheel turn with the screen off idles neither for this long after a tick (ringnav_sleep): a
+ * tick ends a dark idle anyway (loop_wait), and this keeps the passes between a turn's ticks at
+ * stock's pace too. A calibration knob. */
 #define DARK_TURN_MS 500
 /* Bluetooth absolute volume is read back this often with the screen off and no volume limit to
  * hold, or after the headset refused it (bt_volume_poll); 400 ms otherwise. A headset's own volume
@@ -442,7 +446,7 @@ static inline int arc_out(int r, int y) {
 #define BT_VOLUME_SLOW_MS 2000
 #define BT_VOLUME_LIMIT_MS 1000
 /* Screen on, once IDLE_MS pass without input or a window animation, each turn idles IDLE_SLEEP_MS
- * (about 30 passes a second; the first input after waits at most that). */
+ * (about 30 passes a second; the first input after ends the idle, loop_wait). */
 #define IDLE_MS 2000
 #define IDLE_SLEEP_MS 25
 /* Charge limit: the charger stops at CHARGE_STOP percent and starts again at CHARGE_RESUME,

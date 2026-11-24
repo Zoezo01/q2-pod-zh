@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 
 import host
-from conftest import O, Deques, Externpic, Files, ask_cover, claim, fnv1a, high_halves, in_fork
+from conftest import O, Card as BaseCard, Config, Deques, Dirent, Externpic, Files, ask_cover, block, claim, fnv1a, high_halves, in_fork
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 CX, TOP, ART, ONE, MISS = 187, 13, 160, 65536, 99
@@ -32,7 +32,7 @@ class Cf(C.Structure):
                 ('jobs', C.c_void_p), ('thread', C.c_ulong), ('timer', C.c_uint), ('title_timer', C.c_uint), ('titled', C.c_int),
                 ('saved_album', C.c_uint), ('albums_gen', C.c_uint),
                 *((k, C.c_int) for k in 'screen album running text_albums done total cancel scoped all_sort'.split()),
-                *((k, C.c_void_p) for k in 'all_albums all_stock hearts'.split())]
+                *((k, C.c_void_p) for k in 'all_albums all_stock'.split())]
 
 
 class Touch(C.Structure):
@@ -61,10 +61,6 @@ class Job(C.Structure):
     _fields_ = [('track', C.c_char_p), ('key', C.c_uint), ('shared', C.c_int)]
 
 
-class Dirent(C.Structure):
-    _fields_ = [('ino', C.c_uint), ('off', C.c_uint), ('reclen', C.c_ushort), ('d_type', C.c_ubyte), ('d_name', C.c_char * 256)]
-
-
 def api(fw):
     ptr, i, u = C.c_void_p, C.c_int, C.c_uint
     fns = {'coverflow__bspline_w': (None, u, ptr), 'home_sharpen': (None, ptr, i, i), 'coverflow__home_fit': (None, u, u, ptr, ptr),
@@ -74,10 +70,10 @@ def api(fw):
            'coverflow_hit': (i, i, i, i), 'coverflow_render': (None, ptr, i, i, ptr), 'pose': (None, i, ptr),
            'project': (i, ptr, i), 'unproject': (i, ptr, i, ptr, ptr), 'coverflow__slot': (i, i, i, i),
            'coverflow__lower': (u, ptr, u, ptr, ptr), 'coverflow__album_in': (i, ptr, u, ptr), 'coverflow__album_index': (i, ptr),
-           'coverflow__name_cmp': (i, ptr, ptr), 'coverflow__tie': (i, i, ptr, ptr), 'coverflow__by_name': (i, ptr, ptr),
-           'coverflow__by_album': (i, ptr, ptr), 'album_cmp': (i, ptr, ptr), 'album_id': (u, ptr), 'album_dir': (u, C.c_char_p, i),
+           'coverflow__name_cmp': (i, ptr, ptr), 'coverflow__tie': (i, i, ptr, ptr), 'coverflow__by_key': (i, ptr, ptr),
+           'album_cmp': (i, ptr, ptr), 'album_id': (u, ptr), 'album_dir': (u, C.c_char_p, i),
            'folder_cmp': (i, ptr, ptr), 'coverflow__cover_artist': (C.c_char_p, ptr), 'coverflow__initial': (u, i),
-           'coverflow_jump': (i, ptr, i, i, ptr), 'coverflow__bound': (i, i, i, i), 'coverflow__unbound': (i, i, i),
+           'coverflow_jump': (i, ptr, i, i, ptr), 'coverflow__bound': (i, i, i, i),
            'coverflow__release': (None, i), 'coverflow__touch': (i, ptr, ptr), 'stride_of': (i, ptr),
            'coverflow__stamp': (u, ptr), 'coverflow__lift': (None, i, u), 'coverflow__sort_saved': (i,),
            'coverflow_sort_name': (C.c_char_p,), 'coverflow_sort_step': (None,), 'coverflow__sort_next': (i, i),
@@ -95,7 +91,6 @@ def api(fw):
 
 
 libc = C.CDLL(None)
-libc.malloc.restype, libc.malloc.argtypes = C.c_void_p, [C.c_size_t]
 libc.calloc.restype, libc.calloc.argtypes = C.c_void_p, [C.c_size_t, C.c_size_t]
 libc.free.argtypes = [C.c_void_p]
 libc.qsort.argtypes = [C.c_void_p, C.c_size_t, C.c_size_t, C.c_void_p]
@@ -105,19 +100,6 @@ libc.mmap.restype, libc.mmap.argtypes = C.c_void_p, [C.c_void_p, C.c_size_t, C.c
 def exact(ctype, n):
     """n zeroed ctypes in a calloc of exactly their size, so the sanitizer sees an overrun; free with libc.free."""
     return (ctype * n).from_address(libc.calloc(n, C.sizeof(ctype)))
-
-
-# Not in conftest: it needs this file's libc, whose malloc returns a whole pointer.
-class Exact:
-    def __init__(self, data):
-        self.p = libc.malloc(len(data) or 1)
-        C.memmove(self.p, bytes(data), len(data))
-
-    def __enter__(self):
-        return self.p
-
-    def __exit__(self, *_):
-        libc.free(self.p)
 
 
 class Split:
@@ -878,7 +860,7 @@ def test_stride_is_an_item_and_its_spacer(fw):
 
 def test_the_library_s_covers_are_unbounded(fw):
     s = Shelf(fw, scoped=0)
-    assert s.g.bound(9999, 110, 1) == 9999 and s.g.unbound(-9999, 110) == -9999
+    assert s.g.bound(9999, 110, 1) == 9999 and s.g.bound(-9999, 110, -1) == -9999
 
 
 def test_bound_stops_at_the_ends_without_rubber(fw):
@@ -906,13 +888,13 @@ def test_unbound_undoes_the_rubber_band(fw):
     for x in range(1, 300, 3):
         shown = s.g.bound(110 + x, 110, 1)  # both truncate, so the finger lies between two shown pixels' inverses
         if shown > 110 and shown + 1 - 110 < 44:
-            assert s.g.unbound(shown, 110) <= 110 + x <= s.g.unbound(shown + 1, 110) + 1, x
+            assert s.g.bound(shown, 110, -1) <= 110 + x <= s.g.bound(shown + 1, 110, -1) + 1, x
 
 
 def test_unbound_inside_or_past_the_band_s_limit_is_itself(fw):
     s = Shelf(fw, n=4, index=1)
-    assert s.g.unbound(50, 110) == 50
-    assert s.g.unbound(110 + 44, 110) == 110 + 44  # a is d: the formula would divide by nothing
+    assert s.g.bound(50, 110, -1) == 50
+    assert s.g.bound(110 + 44, 110, -1) == 110 + 44  # a is d: the formula would divide by nothing
 
 
 @pytest.mark.parametrize('offset, want', ((40, 0), (60, 110), (-40, 0), (-60, -110), (0, 0)))
@@ -1094,8 +1076,8 @@ def test_album_dir_hostile_sweep(fw):
     album_dir = fw.fn('album_dir', C.c_uint, C.c_void_p, C.c_int)
     for _ in range(2000):
         s = bytes(rng.choices(b'/CDcdDISKik 12_-a.', k=rng.randrange(0, 24)))
-        with Exact(s + b'\0') as p:
-            assert album_dir(p, 1) <= album_dir(p, 0) <= len(s), s
+        p = block(fw, s + b'\0', len(s + b'\0'))
+        assert album_dir(p, 1) <= album_dir(p, 0) <= len(s), s
 
 
 def records(rng):
@@ -1187,9 +1169,10 @@ def test_a_tie_goes_by_the_list_s_order(fw):
 def test_by_name_and_by_album_sort_with_ties_in_order(fw):
     g = api(fw)
     recs = [Rec('b', '/1/x'), Rec('A', '/2/x'), Rec('a', '/1/x'), Rec('B', '/1/x')]
-    for fn, want in ((fw.lib.coverflow__by_name, [1, 2, 0, 3]), (fw.lib.coverflow__by_album, [2, 1, 0, 3])):
+    for cmp, want in ((fw.lib.coverflow__name_cmp, [1, 2, 0, 3]), (fw.lib.album_cmp, [2, 1, 0, 3])):
         v = rows(*recs)
-        libc.qsort(v, 4, C.sizeof(Row), C.cast(fn, C.c_void_p))
+        set_row_key(fw, cmp)
+        libc.qsort(v, 4, C.sizeof(Row), C.cast(fw.lib.coverflow__by_key, C.c_void_p))
         assert [row.j for row in v] == want
 
 
@@ -1208,9 +1191,15 @@ def test_lower_is_the_first_not_before(fw, values):
         assert g.lower(v, len(values), probe + 1000, cmp) == want, probe
 
 
+def set_row_key(fw, cmp):
+    """album_rows' comparator: coverflow.c's row_key, which by_key sorts the rows by."""
+    fw.var('coverflow__row_key', C.c_void_p).value = C.cast(cmp, C.c_void_p).value
+
+
 def sorted_rows(fw, recs):
     v = rows(*recs)
-    libc.qsort(v, len(recs), C.sizeof(Row), C.cast(fw.lib.coverflow__by_album, C.c_void_p))
+    set_row_key(fw, fw.lib.album_cmp)
+    libc.qsort(v, len(recs), C.sizeof(Row), C.cast(fw.lib.coverflow__by_key, C.c_void_p))
     return v
 
 
@@ -1347,57 +1336,17 @@ def test_jump_the_utility_cards_and_other_orders_step_one_by_one(fw):
 
 # The files
 
-class Card:
-    """fopen and friends on a dict; a read past a file's end is short, as stdio's."""
+
+class Card(BaseCard):
+    """'a' opens create a missing file and keep what it holds; fputs writes like fwrite."""
     def __init__(self, fw, files=None):
-        self.files, self.open, self.seen = dict(files or {}), {}, []
-        self.fail_rename = self.fail_sync = False
-        for name in 'fopen fread fwrite fseek ftell rename unlink'.split():
-            fw.mock('fw_' + name, getattr(self, name))
-        fw.mock('fw_fclose', lambda *_: 0)
-        fw.mock('fw_fflush', lambda *_: 0)
-        fw.mock('fw_fsync', lambda *_: self.fail_sync)
-        fw.mock('fw_access', lambda path, *_: C.string_at(path).decode() not in self.files)
+        super().__init__(fw, files)
+        fw.mock('fw_fputs', lambda s, f, *_: self.fwrite(s, 1, len(C.string_at(s)), f) and 0)
 
     def fopen(self, path, mode, *_):
-        name, kind = C.string_at(path).decode(), C.string_at(mode)[:1]
-        if kind == b'r' and name not in self.files:
-            return 0
-        handle = 0x1000 + len(self.open)
-        self.open[handle] = [name, 0]
-        if kind == b'w':
-            self.files[name] = b''
-        elif kind == b'a':
-            self.files.setdefault(name, b'')
-        return handle
-
-    def fread(self, buf, size, n, f, *_):
-        name, at = self.open[f]
-        data = self.files[name][at:at + size * n]
-        C.memmove(buf, data, len(data))
-        self.open[f][1] += len(data)
-        return len(data) // size
-
-    def fwrite(self, buf, size, n, f, *_):
-        self.files[self.open[f][0]] += C.string_at(buf, size * n)
-        return n
-
-    def fseek(self, f, off, whence, *_):
-        self.open[f][1] = off if whence == 0 else len(self.files[self.open[f][0]]) + off
-        return 0
-
-    def ftell(self, f, *_):
-        return self.open[f][1]
-
-    def rename(self, a, b, *_):
-        if self.fail_rename:
-            return -1
-        self.files[C.string_at(b).decode()] = self.files.pop(C.string_at(a).decode())
-        return 0
-
-    def unlink(self, path, *_):
-        self.files.pop(C.string_at(path).decode(), None)
-        return 0
+        if C.string_at(mode)[:1] == b'a':
+            self.files.setdefault(self.name(path), b'')
+        return super().fopen(path, mode, *_)
 
 
 def test_file_size(fw):
@@ -1586,6 +1535,32 @@ def test_build_art_a_killed_ffmpeg_leaves_no_marker_so_the_next_open_retries(fw)
     j = job(b'/m/a.mp3')
     g.build_art(r(j))
     assert art(0xabc) not in card.files
+
+
+@pytest.mark.parametrize('on', [0, 1])
+def test_build_art_log_failed_artwork_names_a_killed_ffmpeg_s_album_at_each_build(fw, on):
+    """On: each build whose ffmpeg was stopped appends the heading and the track; still no marker, so the next open
+    tries again and logs again. Off: q2-crash.log untouched."""
+    g = api(fw)
+    Config(fw, CFARTLOG=str(on))
+    card = Card(fw, {'/m/a.mp3': b'', '/m/cover.jpg': b'x', CRASH_LOG: b'== date\n'})
+    builder(fw, card, ff=9)
+    for _ in range(2):
+        g.build_art(r(job(b'/m/a.mp3')))
+    assert art(0xabc) not in card.files
+    assert card.files[CRASH_LOG] == b'== date\n' + b'== cover flow art stopped\n/m/a.mp3\n' * 2 * on
+
+
+@pytest.mark.parametrize('gone', [0, 1])
+def test_build_art_log_failed_artwork_logs_no_ffmpeg_that_exited_nor_a_gone_card(fw, gone):
+    g = api(fw)
+    Config(fw, CFARTLOG='1')
+    card = Card(fw, {'/m/a.mp3': b''})
+    builder(fw, card, ff=9 if gone else 0)
+    if gone:  # the card goes while ffmpeg runs, which then dies with it
+        fw.mock('fw_waitpid', lambda pid, out, *_: (card.files.pop('/m/a.mp3'), setattr(C.c_int.from_address(out), 'value', 9), pid)[2])
+    g.build_art(r(job(b'/m/a.mp3')))
+    assert CRASH_LOG not in card.files and (art(0xabc) in card.files) != gone  # exited, no art: the marker
 
 
 def test_build_art_with_the_storage_gone_touches_nothing(fw):
@@ -2301,6 +2276,31 @@ def test_split_makes_a_name_s_row_one_card_per_album_in_its_place(fw):
     assert len(q.lists) == 1  # the copy, the query's rows and the split all gone
 
 
+@pytest.mark.parametrize('on', [0, 1])
+def test_hide_duplicate_albums_keeps_the_first_card_of_a_name_and_artist(fw, on):
+    """album_cmp keeps a name's albums in other folders apart, each a card; on (CFDUPALBUMS), a card named as one before
+    it by the same artist, ASCII case aside, goes: the first stays where it was."""
+    Config(fw, **({'CFDUPALBUMS': '1'} if on else {}))
+    q = Deques(fw)
+    albums = [(1, 'Abbey', 'Beatles', '/m/A/1.flac'), (2, 'abbey', 'BEATLES', '/m/B/1.mp3'), (3, 'Abbey', 'Other', '/m/C/1.flac'),
+              (4, 'Help', 'Beatles', '/m/H/1.flac'), (5, 'Abbey', 'Beatles', '/m/D/1.flac')]
+    made = [Rec(a, p, artist=s, id=i) for i, a, s, p in albums]
+    listed = q.new([rec.p for rec in made])
+    Query(fw, q, [(i, a, s, p, None) for i, a, s, p in albums])
+    staging = fw.var('fw_ctx_tools_pdeq_directory', C.c_void_p)
+
+    def album_row(a, n, v, c, *_):  # with the artist, which Query's rows leave out
+        cols = (C.c_char_p * 4).from_address(v)
+        made.append(Rec(cols[1], cols[3], artist=cols[2], id=int(cols[0] or 0)))
+        q[staging.value].append(made[-1].p)
+    fw.mock('album_row', album_row)
+    music = fw.fn('coverflow__music_albums', C.c_void_p, C.c_void_p, C.c_int)(listed, 0)
+    out = fw.fn('coverflow__album_copies', C.c_void_p, C.c_void_p)(music)
+    paths = [field(p, 0x0c) for p in q[out]]
+    assert paths == (['/m/A/1.flac', '/m/C/1.flac', '/m/H/1.flac'] if on else [x[3] for x in albums])
+    assert len(q.lists) == 1  # the list, the query's rows and the copy before the duplicates went
+
+
 def test_album_only_keeps_the_album_s_tracks_in_order_and_where_the_track_went(fw):
     q = Deques(fw)
     recs = [Rec('A', '/m/A/1.flac'), Rec('B', '/m/B/1.flac'), Rec('a', '/m/A/2.flac'), Rec('A', '/m/X/1.flac'),
@@ -2466,12 +2466,7 @@ SPLIT_W, BACK_W = 187, 294
 
 def themed(fw, theme, **keys):
     """config.ini's [IPOD] keys as navigation.c reads them at its first theme(): Theme, and any others."""
-    values = {b'THEME': str(theme).encode(), **{k.encode(): v.encode() for k, v in keys.items()}}
-
-    def read(path, section, key, out, default, *_):
-        value = values.get(C.string_at(key), C.string_at(default))
-        C.memmove(out, value + b'\0', len(value) + 1)
-    fw.mock('toolsReadConfig', read)
+    Config(fw, THEME=theme, **keys)
     fw.mock('fw___xstat', lambda *_: -1)  # no Rockbox on the card
     fw.mock('tk_str_start_with', lambda s, prefix, *_: C.string_at(s).startswith(C.string_at(prefix)))
     return THEMES[theme]
@@ -2530,6 +2525,7 @@ class Ui:
         fw.mock('widget_set_prop_int', lambda w, k, v, *_: self[w].props.__setitem__(self.str(k), C.c_int(v).value))
         fw.mock('widget_get_prop_int', lambda w, k, d, *_: self[w].props.get(self.str(k), C.c_int(d).value))
         fw.mock('widget_lookup', lambda w, name, *_: self.lookup(w, self.str(name)))
+        fw.mock('widget_lookup_by_type', lambda w, t, *_: next((k for k in self[w].kids if self[k].type == self.str(t)), 0))
         fw.mock('widget_get_type', lambda w, *_: self.cstr(self[w].type))
         fw.mock('widget_restack', lambda w, i, *_: self.restack(w, i))
         fw.mock('widget_invalidate_force', lambda w, r, *_: self.dirty.append((w, rect(r) if r else None)))

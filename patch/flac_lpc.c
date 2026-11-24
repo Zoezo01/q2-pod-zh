@@ -15,8 +15,6 @@
  * behavior. The 64-bit MIPS multiply/accumulate chain wraps in HI:LO exactly as
  * stock does, but avoids moving HI:LO to/from general registers for every tap.
  *
- * test/flac_lpc.py compares the emitted MIPS against the stock binary, including
- * 24-bit input, extreme overflow, odd tails, unsupported orders and the o32 ABI.
  * Instruction-count reductions are not CPU-cycle or battery measurements.
  */
 typedef unsigned u32;
@@ -36,21 +34,6 @@ typedef signed i32;
     }
 LPC32(1) LPC32(2) LPC32(3) LPC32(4) LPC32(5) LPC32(6)
 LPC32(7) LPC32(8) LPC32(9) LPC32(10) LPC32(11) LPC32(12)
-
-#define CASE(N) case N: lpc32_##N(data, co, sh, len); return;
-void flac_lpc32(i32 *restrict data, const i32 *restrict co, int order, int sh, int len) {
-    /* clang-format on */
-    if ((unsigned)sh > 31) goto fallback;
-    switch (order) {
-        /* clang-format off */
-        CASE(1) CASE(2) CASE(3) CASE(4) CASE(5) CASE(6)
-        CASE(7) CASE(8) CASE(9) CASE(10) CASE(11) CASE(12)
-        /* clang-format on */
-    }
-fallback:
-    ((void (*)(i32 *, const i32 *, int, int, int))0x5baedc)(data, co, order, sh, len);
-}
-#undef CASE
 
 /* clang-format off */
 #define LPC64(N)                                                                            \
@@ -72,17 +55,18 @@ fallback:
 LPC64(1) LPC64(2) LPC64(3) LPC64(4) LPC64(5) LPC64(6)
 LPC64(7) LPC64(8) LPC64(9) LPC64(10) LPC64(11) LPC64(12)
 
-#define CASE(N) case N: lpc64_##N(data, co, sh, len); return;
-void flac_lpc64(i32 *restrict data, const i32 *restrict co, int order, int sh, int len) {
-    /* clang-format on */
-    if ((unsigned)sh > 31) goto fallback;
-    switch (order) {
-        /* clang-format off */
-        CASE(1) CASE(2) CASE(3) CASE(4) CASE(5) CASE(6)
-        CASE(7) CASE(8) CASE(9) CASE(10) CASE(11) CASE(12)
-        /* clang-format on */
+#define CASE(W, N) case N: lpc##W##_##N(data, co, sh, len); return;
+#define DISPATCH(W, STOCK)                                                                      \
+    void flac_lpc##W(i32 *restrict data, const i32 *restrict co, int order, int sh, int len) {  \
+        if ((unsigned)sh > 31) goto fallback;                                                   \
+        switch (order) {                                                                        \
+            CASE(W, 1) CASE(W, 2) CASE(W, 3) CASE(W, 4) CASE(W, 5) CASE(W, 6)                   \
+            CASE(W, 7) CASE(W, 8) CASE(W, 9) CASE(W, 10) CASE(W, 11) CASE(W, 12)                \
+        }                                                                                       \
+    fallback:                                                                                   \
+        ((void (*)(i32 *, const i32 *, int, int, int))STOCK)(data, co, order, sh, len);         \
     }
-fallback:
-    ((void (*)(i32 *, const i32 *, int, int, int))0x5bb05c)(data, co, order, sh, len);
-}
+DISPATCH(32, 0x5baedc)
+DISPATCH(64, 0x5bb05c)
+#undef DISPATCH
 #undef CASE

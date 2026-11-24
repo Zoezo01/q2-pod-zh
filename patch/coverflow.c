@@ -566,9 +566,18 @@ int album_art(const char *track, const char *dst, int shared) {
            ff_thumb(track, dst, ART_SIZE, ART_SIZE);
 }
 
+/* head and track appended to the card's q2-crash.log, synced (art_strike says why) */
+static void crash_log(const char *head, const char *track) {
+    void *f = fopen(CRASH_LOG, "a");
+    if (f) fputs(head, f), fputs(track, f), fputs("\n", f), fflush(f), fsync(fileno(f)), fclose(f);
+}
+
 /* One album's art, written to .tmp and renamed. An empty file marks "no art", so the placeholder
  * shows and the album is not retried until Refresh Coverflow; a run ffmpeg did not finish leaves
- * none. ponytail: an album whose ffmpeg is killed every time costs one kill per open. */
+ * none, and with Log Failed Artwork on, its track in q2-crash.log, at every open.
+ * ponytail: an album whose ffmpeg is killed every time costs one kill per open; ff_kills is any
+ * thread's, so the log can name an album whose picture was fine (a per-run flag from ff_thumb if
+ * that misleads). */
 static void build_art(const job_t *j) {
     char dst[512], tmp[512];
     if (access(j->track, 0)) return; /* storage gone: no marker, the next open retries */
@@ -580,7 +589,12 @@ static void build_art(const job_t *j) {
     /* No marker when an ffmpeg run meanwhile never reached its own exit (a refused fork, or killed:
      * the kernel takes it first when memory runs out, #169; another thread's run counts too, a
      * retry at worst) or storage is gone: the next open retries. */
-    if (kills != ff_kills || access(j->track, 0)) return;
+    if (kills != ff_kills) {
+        if (pod_value(POD_CF_ART_LOG) && !access(j->track, 0))
+            crash_log("== cover flow art stopped\n", j->track);
+        return;
+    }
+    if (access(j->track, 0)) return;
     void *f = fopen(dst, "w");
     if (f) fclose(f);
 }
@@ -625,15 +639,13 @@ void art_strike(const char *file) {
         unsigned key;
         char track[512];
     } note = { 0 };
-    char path[512], line[560];
+    char path[512];
     void *f = fopen(file, "rb");
     unsigned got = f ? fread(&note, 1, sizeof note - 1, f) : 0;
     if (f) fclose(f);
     if (got >= sizeof note.key && access(art_path(path, note.key, ""), 0)) {
         if ((f = fopen(path, "w"))) fclose(f);
-        int n = snprintf(line, sizeof line, "== cover flow skipped\n%s\n", note.track);
-        if ((f = fopen(CRASH_LOG, "a")))
-            fwrite(line, 1, n, f), fflush(f), fsync(fileno(f)), fclose(f);
+        crash_log("== cover flow skipped\n", note.track);
     }
     unlink(file);
 }
@@ -830,6 +842,7 @@ static const char *year_sql(void) {
 static const char *const sort_names[] = {
     "排序：专辑", "排序：表演者", "排序：最近添加", "排序：最多播放", "排序：随机", "排序：评价",
     "排序：年份"
+>>>>>>> 1.9.1
 };
 /* The order step after cf.sort (dir 1), or cf.sort itself (0), in the page's own orders; an
  * order not among them is the first (Album, or the rated albums' Rating). */
@@ -841,6 +854,7 @@ static int sort_next(int dir) {
 }
 extern void album_plays(int (*album_of)(void *), unsigned *sum);
 extern void ringnav_sort_key(char *s);
+extern int rate_kept(int album, unsigned key); /* ratings.c: an album's kept hearts */
 #define ARTIST_KEY 96
 
 /* Unicode 16.0.0 number, punctuation and separator ranges. */
@@ -1174,11 +1188,10 @@ static unsigned initial(int i) {
 }
 
 /* Album i's group: its initial, or in Year its year, CF_YEAR alone when undated. */
-static unsigned group(int i) {
+unsigned coverflow_group(int i) {
     if (cf.sort != SORT_YEAR) return initial(i);
     return CF_YEAR | (years && cf.albums == years_of ? years[i] : 0u);
 }
-unsigned coverflow_group(int i) { return group(i); }
 
 /* Letters mean something on w: the whole library's covers, sorted by album or artist; years, by
  * year, with Fast Navigation on. */
@@ -1193,16 +1206,16 @@ int coverflow_jump(widget_t *w, int from, int dir, unsigned *letter) {
     int n = cf.albums ? (int)deque_size(cf.albums) : 0;
     *letter = 0;
     if (!lettered(w) || from < 0 || from >= n) return 1;
-    unsigned c = group(from);
+    unsigned c = coverflow_group(from);
     int to = from + dir;
     if (dir > 0) {
-        while (to < n && group(to) == c) ++to;
-        if (to < n) *letter = group(to);
+        while (to < n && coverflow_group(to) == c) ++to;
+        if (to < n) *letter = coverflow_group(to);
     } else {
-        while (to >= 0 && group(to) == c) --to;
+        while (to >= 0 && coverflow_group(to) == c) --to;
         if (to < 0) return from + 1; /* the last album, across the wrap */
-        c = group(to);
-        while (to > 0 && group(to - 1) == c) --to;
+        c = coverflow_group(to);
+        while (to > 0 && coverflow_group(to - 1) == c) --to;
         *letter = c;
     }
     return dir > 0 ? to - from : from - to;
@@ -1216,8 +1229,8 @@ int coverflow_letter_first(int i, unsigned *letter) {
     *letter = 0;
     if (n < 1) return i;
     i = i < n ? i : n - 1;
-    unsigned c = *letter = group(i);
-    while (i > 0 && group(i - 1) == c) --i;
+    unsigned c = *letter = coverflow_group(i);
+    while (i > 0 && coverflow_group(i - 1) == c) --i;
     return i;
 }
 
@@ -1249,13 +1262,11 @@ static int name_cmp(void *a, void *b) { return strcasecmp(album_name(a), album_n
 static int tie(int d, const row_t *p, const row_t *q) {
     return d ? d : (p->j > q->j) - (p->j < q->j);
 }
-static int by_name(const void *x, const void *y) {
+/* The comparator album_rows sorts by, set before each sort (on the UI thread). */
+static int (*row_key)(void *, void *);
+static int by_key(const void *x, const void *y) {
     const row_t *p = x, *q = y;
-    return tie(name_cmp(p->a, q->a), p, q);
-}
-static int by_album(const void *x, const void *y) {
-    const row_t *p = x, *q = y;
-    return tie(album_cmp(p->a, q->a), p, q);
+    return tie(row_key(p->a, q->a), p, q);
 }
 /* The first of v's n rows not before r by cmp. */
 static unsigned lower(row_t *v, unsigned n, void *r, int (*cmp)(void *, void *)) {
@@ -1269,19 +1280,50 @@ static unsigned lower(row_t *v, unsigned n, void *r, int (*cmp)(void *, void *))
     }
     return lo;
 }
-/* list's rows sorted by by, *m of them, Unknown (REC_ID -1) only if all; 0 out of memory. */
-static row_t *album_rows(void *list, unsigned *m, int (*by)(const void *, const void *), int all) {
+/* list's rows sorted by cmp, *m of them, Unknown (REC_ID -1) only if all; 0 out of memory. */
+static row_t *album_rows(void *list, unsigned *m, int (*cmp)(void *, void *), int all) {
     row_t *v = calloc(deque_size(list) + 1, sizeof *v);
     *m = 0;
     for (unsigned i = 0; v && i < deque_size(list); ++i)
         if (all || I(deque_at(list, i), REC_ID) != -1) v[*m].a = deque_at(list, i), v[(*m)++].j = i;
-    if (v) qsort(v, *m, sizeof *v, by);
+    if (v) row_key = cmp, qsort(v, *m, sizeof *v, by_key);
     return v;
 }
 /* The list row of r's album among album_rows' v, or -1: the Unknown row never matches. */
 static int album_in(row_t *v, unsigned m, void *r) {
     unsigned k = lower(v, m, r, album_cmp);
     return k < m && !album_cmp(v[k].a, r) ? (int)v[k].j : -1;
+}
+/* list less each row cmp finds the same as one before it, in a new deque (list goes): the Hide
+ * Duplicate switches. Rows sort by cmp, ties in the list's order, so the first of each stays; the
+ * Unknown row (REC_ID -1) is never dropped unless all. Out of memory, list. */
+static void *without_copies(void *list, int (*cmp)(void *, void *), int all) {
+    unsigned m, n = deque_size(list);
+    row_t *v = album_rows(list, &m, cmp, all);
+    unsigned char *copy = v ? calloc(n + 1, 1) : 0;
+    if (!copy) return free(v), list;
+    for (unsigned k = 1; k < m; ++k) copy[v[k].j] = !cmp(v[k - 1].a, v[k].a);
+    void *out = song_list();
+    for (unsigned i = 0; i < n; ++i)
+        if (!copy[i]) _deque_push_back(out, deque_at(list, i));
+    free(v), free(copy);
+    deque_destroy(list);
+    return out;
+}
+/* Hide Duplicate Albums: the name, then the artist album_key takes (its cover's), ASCII case aside:
+ * a copy in another folder with no album artist, or one tagged with an album artist the other
+ * lacks, is a second card album_cmp keeps. ponytail: a song of a hidden card matches no cover
+ * (album_cmp), so the covers neither open on it nor follow it (coverflow_tail); tags_cmp there
+ * would find its card. */
+static int tags_cmp(void *a, void *b) {
+    const char *x = P(a, REC_ARTIST), *y = P(b, REC_ARTIST);
+    int d = name_cmp(a, b);
+    return d ? d : strcasecmp(x ? x : "", y ? y : "");
+}
+/* list less its copies under Hide Duplicate Albums, else list: the library's covers, an artist's
+ * and the rated ones (after their hearts, so a rated copy stays when the first isn't). */
+static void *album_copies(void *list) {
+    return pod_value(POD_CF_DUP_ALBUMS) ? without_copies(list, tags_cmp, 0) : list;
 }
 /* cf.stock's album_rows while sorted() ranks it. */
 static row_t *stock_rows;
@@ -1359,7 +1401,7 @@ static void *music_albums(void *list, int artist) {
     void *rows = artist ? of_names(MUSIC_ALBUM_SQL, list, &n) : 0, *out;
     if (!rows) rows = staged(rank_query, MUSIC_ALBUM_SQL, &n);
     unsigned m;
-    row_t *v = album_rows(rows, &m, by_album, 0);
+    row_t *v = album_rows(rows, &m, album_cmp, 0);
     if (!v) return deque_destroy(rows), list;
     out = song_list();
     for (unsigned i = 0; i < deque_size(list); ++i) {
@@ -1386,7 +1428,7 @@ static void *split(void *stock, int artist) {
     void *rows = artist ? of_names(ALBUM_SQL, stock, &n) : 0, *out;
     if (!rows) rows = staged(rank_query, ALBUM_SQL, &n);
     unsigned m;
-    row_t *v = album_rows(rows, &m, by_name, 1);
+    row_t *v = album_rows(rows, &m, name_cmp, 1);
     if (!v) return deque_destroy(rows), stock;
     out = song_list();
     for (unsigned i = 0; i < deque_size(stock); ++i) {
@@ -1478,7 +1520,7 @@ static void *sorted(void) {
     unsigned *sum = v && played ? calloc(n + 1, sizeof *sum) : 0;
     char *keys = v && artist ? calloc(n + 1, ARTIST_KEY) : 0;
     int ranked = cf.sort != SORT_RATING && cf.sort != SORT_RANDOM; /* uses album_index */
-    stock_rows = v && ranked ? album_rows(cf.stock, &stock_n, by_album, 0) : 0;
+    stock_rows = v && ranked ? album_rows(cf.stock, &stock_n, album_cmp, 0) : 0;
     if (!v || (ranked && !stock_rows) || (played && !sum) || (artist && !keys)) {
         free(v), free(sum), free(keys), free(stock_rows), stock_rows = 0;
         cf.sort = SORT_ALBUM;
@@ -1495,7 +1537,7 @@ static void *sorted(void) {
         }
     }
     if (cf.sort == SORT_RATING)
-        for (unsigned i = 0; i < n; ++i) v[i].rank = 5u - (unsigned)cf.hearts(v[i].r);
+        for (unsigned i = 0; i < n; ++i) v[i].rank = 5u - (unsigned)rate_kept(1, album_id(v[i].r));
     else if (sum) {
         album_plays(album_index, sum);
         for (unsigned i = 0; i < n; ++i)
@@ -1522,7 +1564,7 @@ static void *sorted(void) {
 void coverflow_by_year(void *albums) {
     unsigned n = deque_size(albums), m = 0;
     char *taken = calloc(n + 1, 1);
-    row_t *v = taken ? album_rows(albums, &m, by_album, 0) : 0;
+    row_t *v = taken ? album_rows(albums, &m, album_cmp, 0) : 0;
     int found;
     if (!v) {
         free(taken);
@@ -1981,7 +2023,7 @@ static void column(shelf_t *f, int col, const unsigned *tex, int h, int bright, 
 void cf_column(unsigned *d, int pitch, short *solid, int col, const unsigned *tex, int h,
                int bright, int inset) {
     static shelf_t f;
-    cf_paper = ipod_light() ? scheme()->paper : 0;
+    cf_paper = RGBA(flat_page()) & 0xffffff;
     f.d = d, f.pitch = pitch, f.solid_top[col] = solid[0], f.solid_bottom[col] = solid[1];
     column(&f, col, tex, h, bright, inset);
     solid[0] = f.solid_top[col], solid[1] = f.solid_bottom[col];
@@ -2092,7 +2134,7 @@ static int slot(int frac, int k, int i) {
 void coverflow_render(unsigned *d, int pitch, int frac, const unsigned *const *ring) {
     if (!cfs.eye) cf_restyle(); /* once, for callers which render without opening the page */
     cf_corners();
-    cf_paper = ipod_light() ? scheme()->paper : 0;
+    cf_paper = RGBA(flat_page()) & 0xffffff; /* the texels' order, red low */
     shelf_t f;
     f.d = d, f.pitch = pitch;
     for (int x = 0; x < CF_VIEW_W; ++x) f.solid_top[x] = f.solid_bottom[x] = 0;
@@ -2170,7 +2212,7 @@ int cf_decode(const char *url, unsigned *out, int unload, unsigned bar) {
     if (data) {
         const unsigned char *o = at[format];
         unsigned stride = bitmap_get_line_length(bitmap), side = w > h ? w : h, xoff[ART_SIZE];
-        unsigned paper = ipod_light() ? scheme()->paper & 255 : 0;
+        unsigned paper = RGBA(flat_page());
         for (unsigned x = 0; x < ART_SIZE; ++x) { /* ~0u: a bar; left of the image wraps to one */
             unsigned sx = x * side / ART_SIZE - (side - w) / 2;
             xoff[x] = sx < w ? sx * 4 : ~0u;
@@ -2186,8 +2228,9 @@ int cf_decode(const char *url, unsigned *out, int unload, unsigned bar) {
                 unsigned a = px[o[3]], r = px[o[0]], g = px[o[1]], b = px[o[2]], k = 255 - a;
                 /* over the page: black, or Light Mode's paper (the placeholder's corners) */
                 if (a < 255)
-                    r = (r * a + paper * k) / 255, g = (g * a + paper * k) / 255,
-                    b = (b * a + paper * k) / 255;
+                    r = (r * a + (paper & 255) * k) / 255,
+                    g = (g * a + (paper >> 8 & 255) * k) / 255,
+                    b = (b * a + (paper >> 16 & 255) * k) / 255;
                 *out++ = 0xff000000u | r | g << 8 | b << 16;
             }
         }
@@ -2476,6 +2519,10 @@ static void fx_ring(int c, int n, const unsigned **ring) {
 #define PANEL_HEAD 57
 #define PANEL_MUTED 0xffaaaaaau /* stock's second line: the theme's muted, white when selected */
 #define PANEL_TWO 45 /* a playlist's rows, title over artist: five show, an album's seven */
+/* Under the flat look (flat_pages) the panel wears the hold menu's card (hold_card_flat) a pixel
+ * in, so the turn carries its ring: whole rows in CARD_ROWS, HOLD_FOOT of paper under them, the
+ * ring no lower than QM_FOOT; below it the shelf's ground. */
+#define CARD_ROWS (QM_FOOT - (320 - FLIP_H) - PANEL_Y - PANEL_HEAD - HOLD_FOOT)
 cf_flip_t fl __attribute__((section(".scratch")));
 
 /* The flip's turn, or the landing from its click until its motion ends (coverflow_land.c). */
@@ -2568,9 +2615,10 @@ static void flip_sides(void) {
     fl.light = ipod_light();
 }
 
-/* White on the header in either half: the grey Light Mode turns white. */
+/* White on the header in either half: the grey Light Mode turns white. On the card's paper stock's
+ * raw white, which Light Mode turns to the ink, as the hold card's title. */
 static void panel_ink(void) {
-    unsigned white = unflip(255) * 0x010101u;
+    unsigned white = fl.card ? 0xffffffu : unflip(255) * 0x010101u;
     widget_set_prop_int(fl.title, "style:normal:text_color", (int)(0xff000000u | white));
     widget_set_prop_int(fl.artist, "style:normal:text_color", (int)(0xc0000000u | white));
 }
@@ -2602,10 +2650,24 @@ void coverflow_panel_paint(canvas_t *canvas, int x, int y, int head, int h, int 
     canvas_fill_rect(canvas, x + BACK_W, y, 1, h);
 }
 
+/* The panel's paint (coverflow_panel_paint), or the card's on the shelf's ground (fl.card). */
+static void panel_paint(canvas_t *canvas, int over) {
+    rect_t card = { 1, 1, BACK_W - 2, fl.card };
+    if (!fl.card) {
+        coverflow_panel_paint(canvas, 0, 0, PANEL_HEAD, BACK_H, over);
+        return;
+    }
+    if (!over) {
+        stock_canvas_set_fill_color(canvas, (ipod_light() ? scheme()->paper : 0) | 0xff000000u);
+        canvas_fill_rect(canvas, 0, 0, BACK_W, BACK_H);
+    }
+    hold_card_flat(canvas, &card, PANEL_HEAD - 1, over);
+}
+
 /* ringnav_paint over the panel's widgets; 1 when w was the frame's. */
 static int flip_paint(widget_t *w, canvas_t *canvas) {
     if (w == fl.sheet || w == fl.panel) /* the sheet first in the panel, the panel last */
-        coverflow_panel_paint(canvas, 0, 0, PANEL_HEAD, BACK_H, w == fl.panel);
+        panel_paint(canvas, w == fl.panel);
     if (w != cf.covers) return 0;
     if (fl.light != ipod_light()) {
         flip_sides();
@@ -2803,27 +2865,21 @@ static int round_stride(int off, int stride) {
 
 /* An artist's albums give past an end as iOS's rubber band, x * 0.55 / (1 + x * 0.55 / D) with
  * D 2/5 of a stride, so the centre never reaches past half a cover (visual() would wrap there);
- * not rubber: they stop at the end. */
-static int bound(int off, int stride, int rubber) {
+ * not rubber: they stop at the end. mode 0 clamps, 1 gives the rubber band, -1 bound's inverse past
+ * an end: a touch catching the rubber band (or a wheel bounce) drags on from where it shows, not
+ * from a band stretched again. */
+static int bound(int off, int stride, int mode) {
     widget_t *s = cf.slide;
     if (!coverflow_bounded(s)) return off;
     int i = I(s, SLIDE_INDEX), hi = i * stride,
         lo = (i + 1 - (int)widget_count_children(s)) * stride;
     int edge = off > hi ? hi : off < lo ? lo : off, x = off - edge, a = ABS(x), d = 2 * stride / 5;
-    if (!x || !rubber) return edge;
-    a = a * 11 * d / (a * 11 + 20 * d);
-    return edge + (x < 0 ? -a : a);
-}
-
-/* bound's inverse past an end: a touch catching the rubber band (or a wheel bounce) drags on from
- * where it shows, not from a band stretched again. */
-static int unbound(int off, int stride) {
-    widget_t *s = cf.slide;
-    if (!coverflow_bounded(s)) return off;
-    int i = I(s, SLIDE_INDEX), hi = i * stride,
-        lo = (i + 1 - (int)widget_count_children(s)) * stride;
-    int edge = off > hi ? hi : off < lo ? lo : off, x = off - edge, a = ABS(x), d = 2 * stride / 5;
-    if (!x || a >= d) return off;
+    if (!x || mode == 0) return edge;
+    if (mode > 0) {
+        a = a * 11 * d / (a * 11 + 20 * d);
+        return edge + (x < 0 ? -a : a);
+    }
+    if (a >= d) return off;
     a = 20 * d * a / (11 * (d - a));
     return edge + (x < 0 ? -a : a);
 }
@@ -2927,7 +2983,7 @@ static int touch(void *ctx, event_t *event) {
                            .caught = a != 0,
                            .x = x,
                            .y = y,
-                           .from = unbound(I(cf.slide, SLIDE_OFFSET), stride_of(cf.slide)) };
+                           .from = bound(I(cf.slide, SLIDE_OFFSET), stride_of(cf.slide), -1) };
         return 0;
     }
     if (coverflow_position_touch(type, x, y)) return 0;
@@ -2971,9 +3027,9 @@ static void cover(widget_t *img, unsigned i, int near) {
 /* Classic's caption: both lines in its face, Now Playing's title's. */
 static int caption_bold(void) { return theme()->font[ROLE_TITLE] == FONT_CLASSIC_LIGHT; }
 
-/* A playlist's count: "1 song", "N songs"; buf holds 24. */
-static const char *songs_text(char *buf, unsigned k) {
-    tk_snprintf(buf, 24, "%u song%s", k, k == 1 ? "" : "s");
+/* A playlist's count, in buf of size: "1 song", "N songs". */
+static const char *songs_text(char *buf, unsigned size, unsigned k) {
+    tk_snprintf(buf, size, k == 1 ? tr("%u song") : tr("%u songs"), k);
     return buf;
 }
 
@@ -2985,12 +3041,16 @@ void titles(unsigned c) {
     cf.titled = (int)c + 1;
     void *r = c + CARDS < n ? deque_at(cf.albums, c) : (void *)0;
     const char *name = r ? P(r, REC_ALBUM) : 0, *by = r ? cover_artist(r) : "";
-    char songs[24];
+    char songs[64];
     if (r && cf.scoped == PLAYLISTS)
-        name = P(r, REC_TITLE), by = songs_text(songs, playlist_songs(I(r, REC_DISC)));
+        name = P(r, REC_TITLE),
+        by = songs_text(songs, sizeof songs, playlist_songs(I(r, REC_DISC)));
     widget_set_text_utf8(cf.name, r                            ? name ?: ""
-                                  : cf.scoped == ARTIST_ALBUMS ? "全部专辑"
-                                                               : sort_names[cf.sort]);
+                                  : cf.scoped == ARTIST_ALBUMS ? tr("全部专辑")
+                                                               : tr(sort_names[cf.sort]));
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
     widget_set_text_utf8(cf.artist, by); /* NULL leaves the old one */
     if (caption_bold()) {                /* by its text */
         theme_font(cf.name, ROLE_NP, FONT_ROW);
@@ -3033,6 +3093,7 @@ static void covers(int dir) {
     if (cf.text_albums) {
         unsigned n = deque_size(cf.albums);
         widget_t *view = list("专辑", (int)n);
+>>>>>>> 1.9.1
         for (unsigned i = 0; i < n; ++i)
             page_row_into(view, (int)i, P(deque_at(cf.albums, i), REC_ALBUM), pick);
         page_push(view, dir);
@@ -3097,6 +3158,8 @@ static int poll(const void *unused) {
     if (cf.done == cf.total) return to_covers(0); /* stop() joins the thread's last steps */
     char progress[64];
     tk_snprintf(progress, sizeof(progress), "正在准备封面… %d/%d", cf.done,
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
                 cf.total);
     page_retitle(cf.page, cf.title, progress);
     cf.timer = timer_add(poll, 0, 250);
@@ -3145,6 +3208,8 @@ static struct {
     void *song;
     int at;
 } tail __attribute__((section(".scratch")));
+/* Hide Duplicate Albums as cf.stock was built: a change builds it again at the next open. */
+static int stock_dups;
 static void load_albums(unsigned t0) {
     int on_sort = cf.on_sort; /* taken whatever this load shows */
     cf.on_sort = 0;
@@ -3162,7 +3227,8 @@ static void load_albums(unsigned t0) {
         widget_factory_create_widget(widget_factory(), "view", cf.page, 0, 0, 375, client_h());
     int n = 0;
     unsigned gen = library_gen;
-    if (cf.albums_gen != gen && !cf.scoped) drop_albums();
+    if ((cf.albums_gen != gen || stock_dups != pod_value(POD_CF_DUP_ALBUMS)) && !cf.scoped)
+        drop_albums();
     if (cf.scoped)
         n = (int)deque_size(cf.scoped == RATED_ALBUMS ? cf.stock : cf.albums);
     else if (cf.stock)
@@ -3174,10 +3240,10 @@ static void load_albums(unsigned t0) {
         if (n > 0) {
             void *v = split(cf.stock, 0);
             cf_trace(t0, "split albums=", deque_size(v), 0);
-            cf.stock = music_albums(v, 0);
+            cf.stock = album_copies(music_albums(v, 0));
             cf_trace(t0, "music_albums albums=", deque_size(cf.stock), 0);
         }
-        cf.albums_gen = gen;
+        cf.albums_gen = gen, stock_dups = pod_value(POD_CF_DUP_ALBUMS);
         n = (int)deque_size(cf.stock);
     }
     if (cf.albums && !cf.scoped && (cf.sort == SORT_YEAR || cf.sort == SORT_ARTIST) &&
@@ -3197,6 +3263,7 @@ static void load_albums(unsigned t0) {
         drop_albums();      /* only a real list is kept */
         cf.screen = COVERS; /* Return goes Home */
         list("请先更新本地音乐库", 0);
+>>>>>>> 1.9.1
         return;
     }
     unsigned count = deque_size(cf.albums);
@@ -3246,6 +3313,7 @@ static void load_albums(unsigned t0) {
         cf.running = 1;
         cf.screen = PREPARING;
         page_row_detail(list("", 1), 0, "取消", 0, cancel_row);
+>>>>>>> 1.9.1
         poll(0);
     } else
         to_covers(0);
@@ -3305,13 +3373,64 @@ void coverflow_play(int row) {
     if (cls == 0xf001) cover_load = playback_loads; /* its load, play_folder's */
 }
 
+/* A centred track list's artist for song: aa, the album artist, when set, else the song's own;
+ * "" for none, and under a theme's own rows (centred 0). */
+static const char *track_by(const char *aa, void *song, int centred) {
+    const char *by = *aa || !centred ? aa : P(song, REC_ARTIST);
+    return by ? by : "";
+}
+
+/* Minimal's and Modern's album name over its songs (a page_title_h), between two short 1 px rules
+ * at the text's mid-line: each at most TITLE_RULE_W long, TITLE_RULE_GAP from the text, inside the
+ * title's box. None for a side shorter than TITLE_RULE_MIN, a name that scrolls (wider than its
+ * box less hscroll_label's two 2 px margins), or no canvas. White, which the style hook paints as
+ * the half's ink, the name's. Placed again whenever cf.title's text changes. Measured in the
+ * default face at cfs.name_px, as panel_fit measures. ponytail: the logical string is measured, so
+ * a right-to-left name, drawn joined and mostly narrower, gets its rules further out than
+ * TITLE_RULE_GAP, or none. */
+#define TITLE_RULE_W 75
+#define TITLE_RULE_GAP 12
+#define TITLE_RULE_MIN 16
+static void title_rules(void) {
+    if (!theme()->page_title_h) return;
+    canvas_t *canvas = widget_get_canvas(cf.title);
+    const unsigned *s = widget_get_text(cf.title);
+    int box = I(cf.title, W_W), w = 0;
+    unsigned n = 0;
+    while (s && s[n]) ++n;
+    if (canvas && n) {
+        canvas_set_font(canvas, (const char *)0, cfs.name_px);
+        w = (int)(canvas_measure_text(canvas, s, n) + 0.5f);
+    }
+    int side = (box - w) / 2 - TITLE_RULE_GAP, len = side < TITLE_RULE_W ? side : TITLE_RULE_W,
+        show = w > 0 && w + 4 <= box && len >= TITLE_RULE_MIN, x = I(cf.title, W_X);
+    for (int i = 0; i < 2; ++i) {
+        const char *name = i ? "title_rule_r" : "title_rule_l";
+        widget_t *rule = widget_lookup(cf.body, name, 0);
+        if (!rule && !show) continue;
+        if (!rule) {
+            rule = widget_factory_create_widget(widget_factory(), "view", cf.body, 0, 0, 0, 0);
+            widget_set_name(rule, name);
+            widget_set_prop_int(rule, "style:normal:bg_color", (int)0xffffffffu);
+        }
+        widget_set_visible(rule, show, 0);
+        if (show)
+            widget_move_resize(rule, i ? x + box - side : x + side - len, I(cf.title, W_H) / 2, len,
+                               1);
+    }
+}
+
 static int play(void *ctx, event_t *event) {
     unsigned t0 = (unsigned)time_now_ms();
     if (coverflow_landing()) return 0; /* picked already: its press runs */
     int i = (int)(long)ctx;
     void *t = deque_at(cf.tracks, (unsigned)i);
     if (!t || access(P(t, REC_PATH), 0)) {
-        page_retitle(cf.page, cf.title, "存储不可用");
+        page_retitle(cf.page, cf.title, tr("存储不可用"));
+        title_rules();
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
         return 0;
     }
     if (!land_start(t, i, t0)) coverflow_play(i);
@@ -3373,6 +3492,25 @@ extern void *staged_music(int (*query)(void *), void *arg, int *count);
 void *coverflow_album_tracks(void *r) {
     int n;
     return in_order(staged_music(albums, r, &n), r);
+}
+/* Hide Duplicate Songs: the disc, the number and the title tag (ASCII case aside), so an album
+ * held twice (a FLAC and an MP3 copy tagged alike, one card) lists each song once. A song with no
+ * title is never a copy (its path and CUE start tell it apart): disc folders' 01.flac are two. */
+static int song_cmp(void *a, void *b) {
+    const char *x = P(a, REC_TITLE), *y = P(b, REC_TITLE);
+    int d = I(a, REC_DISC) - I(b, REC_DISC);
+    if (!d) d = I(a, REC_TRACK) - I(b, REC_TRACK);
+    if (!d) d = strcasecmp(x ? x : "", y ? y : "");
+    if (d || (x && *x)) return d;
+    d = strcmp(P(a, REC_PATH) ? P(a, REC_PATH) : "", P(b, REC_PATH) ? P(b, REC_PATH) : "");
+    return d ? d : I(a, REC_CUE_START) - I(b, REC_CUE_START);
+}
+/* r's tracks as Cover Flow lists and plays them: its covers, All albums, Go to Album and a cover's
+ * hold menu (queue_menu.c), the first copy of each song alone under Hide Duplicate Songs; the
+ * Unknown card (REC_ID -1), every untagged song of the card's, as it is. */
+void *coverflow_cover_tracks(void *r) {
+    void *t = coverflow_album_tracks(r);
+    return pod_value(POD_CF_DUP_SONGS) && I(r, REC_ID) != -1 ? without_copies(t, song_cmp, 1) : t;
 }
 
 /* A label's face at px, in every state the labels style: bold, the theme's (bold itself), by its
@@ -3505,8 +3643,10 @@ static int flip_open(void *r, int n) {
     fl.panel = widget_factory_create_widget(f, "view", cf.page, PANEL_X, PANEL_Y, BACK_W, BACK_H);
     fl.sheet = widget_factory_create_widget(f, "view", fl.panel, 0, 0, BACK_W, BACK_H);
     /* Font sizes are AWTK's, a face's whole height: 1.43 of its em in the theme's face. */
-    int pl = cf.scoped == PLAYLISTS, row = pl ? PANEL_TWO : theme()->page_row;
-    widget_t *view = rows_view(fl.panel, PANEL_HEAD, BACK_W, BACK_H - PANEL_HEAD, n, row);
+    int pl = cf.scoped == PLAYLISTS, row = pl ? PANEL_TWO : theme()->page_row,
+        rows = flat_pages() ? CARD_ROWS / row * row : BACK_H - PANEL_HEAD;
+    fl.card = flat_pages() ? PANEL_HEAD - 1 + rows + HOLD_FOOT : 0;
+    widget_t *view = rows_view(fl.panel, PANEL_HEAD, BACK_W, rows, n, row);
     char name[512];
     for (int i = 0; i < n; ++i) {
         void *t = deque_at(cf.tracks, (unsigned)i);
@@ -3533,10 +3673,13 @@ static int flip_open(void *r, int n) {
     }
     /* cf.title: where a row's "存储不可用" goes */
     char songs[24];
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
     cf.title = fl.title =
         panel_label(fl.panel, 12, 1, 270, 33, pl ? P(r, REC_TITLE) : album_name(r), 31, 1);
-    fl.artist = panel_label(fl.panel, 12, 30, 270, 20,
-                            pl ? songs_text(songs, (unsigned)n) : cover_artist(r), 18, 0);
+    fl.artist =
+        panel_label(fl.panel, 12, 30, 270, 20,
+                    pl ? songs_text(songs, sizeof songs, (unsigned)n) : cover_artist(r), 18, 0);
     panel_ink();
     widget_set_sensitive(cf.covers, 0);
     flip_shelf(0);
@@ -3607,7 +3750,7 @@ static int to_tracks(const void *unused) {
             cf.saved_album = album_key(r);
             BLOB_IO(LAST_ALBUM, cf.saved_album, 1); /* a power-off on the tracks keeps it too */
         }
-        cf.tracks = coverflow_album_tracks(r);
+        cf.tracks = coverflow_cover_tracks(r);
         n = (int)deque_size(cf.tracks);
     }
     cf.screen = TRACKS;
@@ -3618,25 +3761,38 @@ static int to_tracks(const void *unused) {
         widget_set_visible(cf.covers, 0, 0);
         widget_set_sensitive(cf.covers, 0);
     }
-    /* one row height a list, as stock's layouter forces item_height on every row: 64 px with a
-     * length's line under each title once any track has one, an unknown's left empty */
-    int timed = 0;
-    for (int i = 0; i < n && !timed; ++i)
-        /* NOLINTNEXTLINE(bugprone-signed-char-misuse): only tested for 0, an empty text */
-        timed = *duration_text(name, sizeof name, deque_at(cf.tracks, (unsigned)i));
-    const char *title = P(r, cf.scoped == PLAYLISTS ? REC_TITLE : REC_ALBUM);
-    widget_t *view = timed ? page_list(cf.page, cf.body, &cf.title, title, n, 64) : list(title, n);
-    /* the album over its tracks, all centred, but under a theme's own rows */
+    /* the album over its tracks, all centred, but under a theme's own rows; there, in a list with
+     * lengths, each track's artist (the album artist when the album has one) leads its line */
     int centred = theme()->page_title_h;
+    const char *aa = centred ? P(r, REC_ALBUM_ARTIST) : "";
+    if (!aa) aa = "";
+    /* one row height a list, as stock's layouter forces item_height on every row: 64 px with a
+     * line under each title once any track has a length, an unknown's left empty but for its
+     * artist; without lengths the rows stay one line, so a screen holds as many songs */
+    int tall = 0;
+    for (int i = 0; i < n && !tall; ++i)
+        /* NOLINTNEXTLINE(bugprone-signed-char-misuse): only tested for 0, an empty text */
+        tall = *duration_text(name, sizeof name, deque_at(cf.tracks, (unsigned)i));
+    const char *title = P(r, cf.scoped == PLAYLISTS ? REC_TITLE : REC_ALBUM);
+    widget_t *view = tall ? page_list(cf.page, cf.body, &cf.title, title, n, 64) : list(title, n);
     if (centred) widget_set_prop_int(cf.title, "style:normal:font_size", cfs.name_px);
+    title_rules();
+    /* ponytail: every row is built at once, each with a second label once any song has a length; a
+     * recycled pool of rows if a long album or the Unknown Album card drags or runs short of
+     * memory. */
     for (int i = 0; i < n; ++i) {
-        char duration[24];
+        char duration[24], detail[300];
         void *song = deque_at(cf.tracks, (unsigned)i);
+        const char *by = track_by(aa, song, centred), *line = duration;
         duration_text(duration, sizeof duration, song);
-        widget_t *row = page_row_detail(view, i, track_name(name, sizeof name, song),
-                                        timed ? duration : 0, play);
+        if (*by && tall) {
+            tk_snprintf(detail, sizeof detail, "%s%s%s", by, *duration ? " · " : "", duration);
+            line = detail;
+        }
+        widget_t *row =
+            page_row_detail(view, i, track_name(name, sizeof name, song), tall ? line : 0, play);
         if (centred) widget_use_style(widget_get_child(row, 0), "s_scrlabel_white20c");
-        if (centred && timed)
+        if (centred && tall)
             widget_set_prop_str(widget_get_child(row, 1), "style:normal:text_align_h", "center");
     }
     page_push(view, cf.text_albums && cf.scoped == ARTIST_ALBUMS); /* from a list, not the covers */
@@ -3650,7 +3806,7 @@ static int play_all(const void *unused) {
     cf.timer = 0;
     void *all = song_list();
     for (unsigned i = 0; i < deque_size(cf.albums); ++i) {
-        void *t = coverflow_album_tracks(deque_at(cf.albums, i));
+        void *t = coverflow_cover_tracks(deque_at(cf.albums, i));
         for (unsigned j = 0; j < deque_size(t); ++j) _deque_push_back(all, deque_at(t, j));
         deque_destroy(t);
     }
@@ -3658,6 +3814,7 @@ static int play_all(const void *unused) {
         play_folder(all, 0, 0xf001);
     else
         widget_set_text_utf8(cf.name, "存储不可用");
+>>>>>>> 1.9.1
     deque_destroy(all);
     return 0;
 }
@@ -3697,7 +3854,7 @@ static int sort_saved(void) {
 
 /* Display settings' Coverflow Sort: its label ("排序：专辑"), and a press's next order, saved,
  * which Coverflow takes at its next open (load). */
-const char *coverflow_sort_name(void) { return sort_names[sort_saved()]; }
+const char *coverflow_sort_name(void) { return tr(sort_names[sort_saved()]); }
 void coverflow_sort_step(void) {
     int sort = sort_saved();
     unsigned i = 0;
@@ -3857,7 +4014,7 @@ int coverflow_artist(void *albums) {
     if (!deque_size(albums)) return 0;
     void *music = _create_deque("stSongInfo");
     deque_init_copy(music, albums);
-    music = music_albums(music, 1);
+    music = album_copies(music_albums(music, 1));
     if (!deque_size(music) || !scoped_open()) {
         deque_destroy(music);
         return 0;
@@ -3901,17 +4058,18 @@ int coverflow_shows_album(void *r) {
     return cf.page && cf.scoped == ALBUM_TRACKS && !album_cmp(deque_at(cf.albums, 0), r);
 }
 
-/* Library Ratings' Albums (ratings.c): the albums hearts gives 1 to 5 hearts, as covers with the
+/* Library Ratings' Albums (ratings.c): the albums rate_kept gives 1 to 5 hearts, as covers with the
  * rated Sort card alone; 0 when none is. */
-int coverflow_rated(int (*hearts)(void *)) {
+int coverflow_rated(void) {
     int n;
     void *all = staged(albums, 0, &n), *rated = _create_deque("stSongInfo");
     if (n > 0) all = split(all, 0);
     all = music_albums(all, 0);
     deque_init(rated);
     for (unsigned i = 0; i < deque_size(all); ++i)
-        if (hearts(deque_at(all, i))) _deque_push_back(rated, deque_at(all, i));
+        if (rate_kept(1, album_id(deque_at(all, i)))) _deque_push_back(rated, deque_at(all, i));
     deque_destroy(all);
+    rated = album_copies(rated);
     if (!deque_size(rated) || !scoped_open()) {
         deque_destroy(rated);
         return 0;
@@ -3920,7 +4078,7 @@ int coverflow_rated(int (*hearts)(void *)) {
     cf.all_sort = cf.sort, cf.all_stock = cf.stock, cf.all_albums = cf.albums;
     cf.sort = SORT_RATING; /* unless saved */
     BLOB_IO(RATED_SORT_FILE, cf.sort, 0);
-    cf.stock = rated, cf.albums = 0, cf.hearts = hearts;
+    cf.stock = rated, cf.albums = 0;
     cf.scoped = RATED_ALBUMS;
     load();
     return 1;
@@ -4219,7 +4377,7 @@ void home_sharpen(unsigned *t, int n, int step) { /* test/coverflow.py */
 }
 
 /* The decoded image (data, stride, channel order o, w x h) box filtered to aw x ah texels at out,
- * ostride texels a row, over the grey paper (a byte). Alpha-weighted sums, so only the average
+ * ostride texels a row, over paper (a texel, red low). Alpha-weighted sums, so only the average
  * divides; at most 4 x 4 samples a texel, so a huge embedded cover filters as quickly as a small
  * one. */
 static void box_filter(const unsigned char *data, unsigned stride, const unsigned char *o,
@@ -4241,9 +4399,11 @@ static void box_filter(const unsigned char *data, unsigned stride, const unsigne
                     unsigned k = px[o[3]];
                     r += px[o[0]] * k, g += px[o[1]] * k, b += px[o[2]] * k, a += k;
                 }
-            unsigned bg = paper * (n - a);
+            unsigned m = n - a;
             /* NOLINTNEXTLINE(clang-analyzer-core.DivideZero): n >= 255: x1 > x0, y1 > y0 */
-            *px_out++ = 0xff000000u | (r + bg) / n | (g + bg) / n << 8 | (b + bg) / n << 16;
+            *px_out++ = 0xff000000u | (r + (paper & 255) * m) / n |
+                        (g + (paper >> 8 & 255) * m) / n << 8 |
+                        (b + (paper >> 16 & 255) * m) / n << 16;
         }
     }
 }
@@ -4273,8 +4433,7 @@ static int home_tex(const char *url) {
         data = home.tex ? bitmap_lock_buffer_for_read(bitmap) : 0;
     }
     if (data) {
-        unsigned stride = bitmap_get_line_length(bitmap),
-                 paper = ipod_light() ? scheme()->paper & 255 : 0;
+        unsigned stride = bitmap_get_line_length(bitmap), paper = RGBA(flat_page()) & 0xffffff;
         int ts = aw + 3;                   /* home.tex's row, its border included */
         unsigned *tex = home.tex + ts + 1; /* texel 0, 0 */
         box_filter(data, stride, at[format], w, h, tex, ts, aw, ah, paper);
@@ -4458,7 +4617,7 @@ void coverflow_slant(widget_t *w, canvas_t *canvas, unsigned paper) {
         int aw = (int)(t * bw / fit), ah = (int)(t * bh / fit);
         for (int i = 0; i < t * t; ++i) tex[i] = 0xff000000u | paper * 0x010101u;
         box_filter(data, stride, at[format], bw, bh, tex + (t - ah) / 2 * t + (t - aw) / 2, t, aw,
-                   ah, paper);
+                   ah, paper * 0x010101u);
         slant_render(d, (int)(bitmap_get_line_length(slant.frame) / 4), side, rows, tex, t, paper);
         bitmap_unlock_buffer(slant.frame);
         slant.key = key;
@@ -4503,21 +4662,13 @@ static int pane_caption(char *t, unsigned size) {
         return pane_count(t, size, (unsigned)home.services, "1 项服务", "%u 项服务");
     case PANE_SETTINGS:
         return home.free_tenths ? tk_snprintf(t, size, "可用 %u.%u GB", home.free_tenths / 10,
+>>>>>>> 1.9.1
                                               home.free_tenths % 10)
                                 : 0;
     default:
         break;
     }
     return 0;
-}
-
-/* w's first child of type, or 0. */
-static widget_t *child_of_type(widget_t *w, const char *type) {
-    for (unsigned i = 0, n = widget_count_children(w); i < n; ++i) {
-        widget_t *c = widget_get_child(w, i);
-        if (!tk_strcmp(widget_get_type(c), type)) return c;
-    }
-    return (void *)0;
 }
 
 /* A Streaming row's image widget for the pane: a card app's own file, or the build's copy of a
@@ -4664,11 +4815,20 @@ void home_pane_paint(canvas_t *canvas, int x, int y, int w, int h) {
                        y + (note ? T->pane_note_y : T->pane_icon_y), src[2], src[3] };
         canvas_draw_image(canvas, bitmap, src, dst);
     }
-    char t[32];
-    int len = pane_caption(t, sizeof t);
-    if (len > 0) /* caption() decodes the UTF-8: the Hanzi would paint as its bytes, one each */
-        caption(canvas, t, x, y + T->pane_count_y, T->pane_count_w, 24, T->pane_count_px,
-                flat ? (0xff000000u | flat_quiet[light]) : RGBA(light ? 0u : 0xffffffu));
+    char t[80]; /* "%u Services" in any language */
+    if (pane_caption(t, sizeof t) > 0) {
+        unsigned s[40], len = wide_text(s, 40, t);
+        int box[4] = { x, y + T->pane_count_y, T->pane_count_w, 24 }; /* rect_t */
+        if (flat)
+            final_text(canvas, (const char *)0, s, box, T->pane_count_px,
+                       0xff000000u | flat_quiet[light]);
+        else
+            draw_centred(canvas, s, len, box, T->pane_count_px, RGBA(light ? 0u : 0xffffffu));
+    }
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
     stock_canvas_set_fill_color(canvas, fill);
 }
 
@@ -4697,8 +4857,8 @@ void coverflow_home_row(widget_t *surface, widget_t *row, int id, int painting) 
         kind = id == library_search() ? PANE_SHUFFLE : PANE_LIBRARY;
     else if (list == home.stream) {
         kind = PANE_SERVICE;
-        home.row_image = child_of_type(row, "image");
-        home.row_label = child_of_type(row, "hscroll_label");
+        home.row_image = widget_lookup_by_type(row, "image", 0);
+        home.row_label = widget_lookup_by_type(row, "hscroll_label", 0);
     } else {
         static const char *const names[] = { "img_playing",    "img_library",  0,
                                              "img_cover_flow", "img_folder",   0,
@@ -4766,8 +4926,9 @@ static int home_counts(const void *unused) {
     if (pane && (gen != home.asked || (!home.counted && !answered))) {
         home.asked = gen;
         /* Coverflow's own list when it has one */
-        home.got_albums =
-            cf.stock && !cf.scoped && cf.albums_gen == gen ? (int)deque_size(cf.stock) : -1;
+        home.got_albums = cf.stock && !cf.scoped && cf.albums_gen == gen && !stock_dups
+                              ? (int)deque_size(cf.stock)
+                              : -1;
         home.counting = 1;
         if (!pthread_create(&home.count_thread, 0, count_worker, 0)) return 8;
         home.counting = 0;
@@ -4814,6 +4975,7 @@ void coverflow_home_art(widget_t *top) {
     unsigned key = hash_bytes(hash_bytes(fnv(FNV_SEED, (const unsigned char *)path), &type, 1),
                               (const unsigned char *)&album, sizeof(album)) ^
                    now_cover_written(cover);
+    if (card_home & CARD_HOME_ART) key = card_rules_art(&cover, key); /* a card theme's turn */
     if (key == home.key) return;
     home.key = key;
     home.pane = 0;
@@ -4936,14 +5098,15 @@ void coverflow_home_layout(void) {
         }
     widget_t *rockbox = widget_lookup(home.win, "btn_rockbox", 1);
     if (rockbox) {
-        widget_set_text_utf8(widget_lookup(home.win, "label_rockbox", 1), ipod_home_shortcut());
+        widget_set_text_utf8(widget_lookup(home.win, "label_rockbox", 1), tr(ipod_home_shortcut()));
         /* ponytail: the Shortcut card stays when the row hides (Shortcut: Rockbox, no Rockbox on
          * the card; its tap says so), as the slide_menu lays out hidden cards too; removing it
          * would mean re-adding it once the card has Rockbox */
         if (home.carousel[0])
             widget_set_text_utf8(widget_lookup(home.carousel[0], "label_rockbox", 1),
-                                 ipod_home_shortcut());
+                                 tr(ipod_home_shortcut()));
     }
+    if (card_home & CARD_HOME_ROWS) card_rules_home(home.list); /* a card theme's, before widths */
     int split = HOME_SPLIT_W, outer = full ? 375 : split, inner = !full ? split : T->home_full_row,
         x = T->home_text_x, end = T->home_label_end[full];
     home_width(home.list, outer, inner, x, end, 0);
@@ -5028,10 +5191,10 @@ static void home_fill(widget_t *list, int service) {
         int h = service ? I(first, W_H) : I(b, W_H);
         widget_move_resize(b, 0, service ? 0 : I(b, W_Y), HOME_SPLIT_W, h);
         if (service) {
-            widget_t *label = child_of_type(b, "hscroll_label");
+            widget_t *label = widget_lookup_by_type(b, "hscroll_label", 0);
             unsigned bitmap[64]; /* bitmap_t */
             char t[72];
-            const char *icon = service_icon(child_of_type(b, "image"), t, sizeof t);
+            const char *icon = service_icon(widget_lookup_by_type(b, "image", 0), t, sizeof t);
             if (label) widget_move_resize(label, I(label, W_X), 0, I(label, W_W), I(b, W_H));
             /* the build's icons; a card app's file waits for the pane (pane_service) */
             if (!tk_str_start_with(icon, "file://")) widget_load_image(home.art, icon, bitmap);
@@ -5101,6 +5264,7 @@ const char *coverflow_home_title(void) {
            : open == home.lib    ? "音乐"
            : open == home.stream ? "流媒体"
                                  : "设置";
+>>>>>>> 1.9.1
 }
 
 /* home_page_init: stock binds the name-matched img_* cards, then the Coverflow card binds here,

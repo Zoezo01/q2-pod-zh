@@ -32,10 +32,9 @@ static struct {
     int ctx; /* the page's: 0 Crossfade, 1 Wheel sensitivity, 2 Resume Songs, 3 Night Shift */
     int sliding, unsaved, setting; /* a finger on the slider; a value it moved; refresh's own set */
     int rs_read, rs_min;
-    int mono_read, mono, swap_read, swap;
-    volatile int *flag, *mono_flag, *swap_flag, *press_file, *mute_file;
-    widget_t *swap_label;
-    widget_t *mono_label; /* the Mono Audio row's, while Playback is open */
+    int opt_read[2], opt[2]; /* Mono Audio (0) and Swap L/R (1) */
+    volatile int *flag, *opt_flag[2], *press_file, *mute_file;
+    widget_t *opt_label[2]; /* their rows', while Playback is open */
     widget_t *page, *sw, *view, *slider, *dec, *add, *label;
     unsigned press, press_at;
 } xf __attribute__((section(".scratch")));
@@ -52,9 +51,12 @@ static void settings(void) {
 }
 
 static void row_text(widget_t *label) {
-    char t[32] = "交叉淡化：关闭";
-    if (xf.on) tk_snprintf(t, sizeof t, "交叉淡化：%d 秒", xf.seconds);
-    widget_set_text_utf8(label, t);
+    char t[96];
+    tk_snprintf(t, sizeof t, tr("交叉淡化：关闭"), xf.seconds);
+    widget_set_text_utf8(label, xf.on ? t : tr("交叉淡化：%d 秒"));
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
 }
 
 /* Playback's row (navigation.c ringnav_audioset makes it): the label, named for refresh(). */
@@ -67,6 +69,8 @@ void xfade_row(widget_t *label) {
 static void wheel_text(widget_t *label) {
     char t[32];
     tk_snprintf(t, sizeof t, "滚轮灵敏度：%d%%", wheel_pct());
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
     widget_set_text_utf8(label, t);
 }
 
@@ -91,9 +95,12 @@ int resume_min(void) {
 }
 
 static void rs_text(widget_t *label) {
-    char t[32] = "断点续播：关闭";
-    if (resume_min()) tk_snprintf(t, sizeof t, "断点续播：%d 分钟", resume_min());
-    widget_set_text_utf8(label, t);
+    char t[96];
+    tk_snprintf(t, sizeof t, tr("断点续播：关闭"), resume_min());
+    widget_set_text_utf8(label, resume_min() ? t : tr("断点续播：%d 分钟"));
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
 }
 
 /* Playback's row (navigation.c ringnav_audioset makes it): the label, named for refresh(). */
@@ -103,12 +110,14 @@ void resume_row(widget_t *label) {
 }
 
 static void night_text(widget_t *label) {
-    char t[32] = "夜览：关";
-    if (night_on() == 2)
-        tk_snprintf(t, sizeof t, "夜览：自动");
-    else if (night_on())
-        tk_snprintf(t, sizeof t, "夜览：%dK", night_kelvin());
-    widget_set_text_utf8(label, t);
+    char t[96];
+    tk_snprintf(t, sizeof t, tr("夜览：关"), night_kelvin());
+    widget_set_text_utf8(label, night_on() == 2 ? tr("夜览：自动")
+                                : night_on()    ? t
+                                                : tr("夜览：%dK"));
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
 }
 
 /* Display's row (navigation.c ringnav_display makes it): the label, named for refresh(). */
@@ -187,53 +196,53 @@ void peq_chain(void) {
     if (!peq_chained && !g_equalizer_flag && mclGetPlayStatus() != 1) peq_attach();
 }
 
-/* Mono Audio (Q2POD MONO, read once): MONO_FILE holds it for hciplayer's filter and q2video, which
- * map it (peq_player.c, video.c), so a change is heard at once. The filter mixes after the EQ. */
-int mono_on(void) {
-    if (!xf.mono_read) xf.mono = config_value("Q2POD", "MONO", 2, 0), xf.mono_read = 1;
-    return xf.mono;
-}
-int swap_on(void) {
-    if (!xf.swap_read) xf.swap = config_value("Q2POD", "SWAPLR", 2, 0), xf.swap_read = 1;
-    return xf.swap;
+/* Mono Audio (k 0, Q2POD MONO) and Swap L/R (k 1, SWAPLR), read once each. MONO_FILE holds Mono
+ * Audio for hciplayer's filter and q2video, which map it (peq_player.c, video.c), so a change is
+ * heard at once. The filter mixes after the EQ. */
+static const char *const opt_key[2] = { "MONO", "SWAPLR" };
+int opt_on(int k) {
+    if (!xf.opt_read[k]) xf.opt[k] = config_value("Q2POD", opt_key[k], 2, 0), xf.opt_read[k] = 1;
+    return xf.opt[k];
 }
 void mono_sync(void) {
-    if (!xf.swap_flag && swap_on()) xf.swap_flag = shared_int(SWAP_FILE ".tmp", SWAP_FILE);
-    if (xf.swap_flag) *xf.swap_flag = swap_on();
-    if (xf.swap) peq_chain();
-    if (!xf.mono_flag && (!mono_on() || !(xf.mono_flag = shared_int(MONO_FILE ".tmp", MONO_FILE))))
+    if (!xf.opt_flag[1] && opt_on(1)) xf.opt_flag[1] = shared_int(SWAP_FILE ".tmp", SWAP_FILE);
+    if (xf.opt_flag[1]) *xf.opt_flag[1] = opt_on(1);
+    if (opt_on(1)) peq_chain();
+    if (!xf.opt_flag[0] &&
+        (!opt_on(0) || !(xf.opt_flag[0] = shared_int(MONO_FILE ".tmp", MONO_FILE))))
         return; /* no file reads as off */
-    *xf.mono_flag = mono_on();
-    if (xf.mono) peq_chain();
+    *xf.opt_flag[0] = opt_on(0);
+    if (opt_on(0)) peq_chain();
 }
 
-static void mono_text(widget_t *label) { list_toggle(label, "单声道音频", mono_on()); }
-
-/* Playback's row (navigation.c ringnav_audioset makes it): the label, kept for mono_click. */
-void mono_row(widget_t *label) {
-    xf.mono_label = label;
-    mono_text(label);
+static void opt_text(int k) {
+    list_toggle(xf.opt_label[k], k ? "左右声道互换" : "单声道音频", opt_on(k));
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
 }
-int mono_click(void *ctx, event_t *event) {
-    xf.mono = !mono_on();
-    write_int_config(xf.mono, "Q2POD", "MONO");
+
+/* Playback's rows (navigation.c ringnav_audioset makes them): the label, kept for opt_click. */
+static void opt_row(widget_t *label, int k) {
+    xf.opt_label[k] = label;
+    opt_text(k);
+}
+static int opt_click(int k) {
+    xf.opt[k] = !opt_on(k);
+    write_int_config(xf.opt[k], "Q2POD", opt_key[k]);
     mono_sync();
-    mono_text(xf.mono_label);
+    opt_text(k);
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
     return 0;
 }
-
-static void swap_text(void) { list_toggle(xf.swap_label, "左右声道互换", swap_on()); }
-void swap_row(widget_t *label) {
-    xf.swap_label = label;
-    swap_text();
-}
-int swap_click(void *ctx, event_t *event) {
-    xf.swap = !swap_on();
-    write_int_config(xf.swap, "Q2POD", "SWAPLR");
-    mono_sync();
-    swap_text();
-    return 0;
-}
+void mono_row(widget_t *label) { opt_row(label, 0); }
+void swap_row(widget_t *label) { opt_row(label, 1); }
+int mono_click(void *ctx, event_t *event) { return opt_click(0); }
+int swap_click(void *ctx, event_t *event) { return opt_click(1); }
 
 /* Crossfade on: stock's Gapless on, as its row's click turns it on (0x4bd158): saved, set, and its
  * switch on the Playback page below shown on. */
@@ -250,6 +259,7 @@ static int gapless_click(void *ctx, event_t *event) {
     settings();
     if (!xf.on || !*(volatile unsigned char *)MCL_GAPLESS) return 0;
     toast("交叉淡化需要无缝播放");
+>>>>>>> 1.9.1
     return 11; /* RET_STOP */
 }
 /* Playback's view (navigation.c ringnav_audioset): stock's Gapless row's button, the switch's. */
@@ -296,22 +306,26 @@ static void refresh(int save) {
     if ((row = widget_lookup(window_manager(), NS_ROW, 1))) night_text(row);
     if (!xf.page) return;
     char t[16];
+    const char *shown = t; /* a number, or a word translated */
     if (xf.ctx == 1)
         tk_snprintf(t, sizeof t, "%d%%", wheel_pct());
-    else if (xf.ctx == 2)
-        tk_snprintf(t, sizeof t, xf.rs_min ? "%d 分钟" : "关闭", xf.rs_min);
-    else if (xf.ctx == 3) {
-        tk_snprintf(t, sizeof t,
-                    night_on() == 2 ? "自动"
-                    : night_on()    ? "%dK"
-                                    : "关闭",
-                    night_kelvin());
+    else if (xf.ctx == 2) {
+        tk_snprintf(t, sizeof t, "%d 分钟", xf.rs_min);
+        if (!xf.rs_min) shown = "关闭";
+    } else if (xf.ctx == 3) {
+        tk_snprintf(t, sizeof t, "%dK", night_kelvin());
+        shown = night_on() == 2 ? "自动" : night_on() ? t : "关闭";
         image_base_set_image(xf.sw, night_on() ? "switch_on" : "switch_off");
     } else {
-        tk_snprintf(t, sizeof t, xf.on ? "%d 秒" : "关闭", xf.seconds);
+        tk_snprintf(t, sizeof t, "%d 秒", xf.seconds);
+        if (!xf.on) shown = "关闭";
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
         image_base_set_image(xf.sw, xf.on ? "switch_on" : "switch_off");
     }
-    widget_set_text_utf8(xf.label, t);
+    widget_set_text_utf8(xf.label, shown);
     if (switched()) slider_tray_dirty(xf.page);
     if (widget_get_prop_int(xf.slider, "value", 0) != value()) {
         xf.setting = 1; /* its value-changed is no release */
@@ -429,6 +443,7 @@ int xfade_open(void *ctx, event_t *event) {
                                 : mode == 2 ? "断点续播"
                                 : wheel     ? "滚轮灵敏度"
                                             : "交叉淡化");
+>>>>>>> 1.9.1
     /* Stock shows and enables it only while Boot volume's switch is on: disabled, touch misses the
      * slider and +/- (#140). */
     widget_set_visible(xf.view, 1, 0);
@@ -459,12 +474,11 @@ static int single(const void *info) {
  * page, and the wheel sets the length, down to Off. Wheel sensitivity: the wheel a ten a tick
  * (not through +/-, which stock may have disabled), Centre to edit_key, which goes back. */
 int xfade_key(widget_t *top, unsigned key) {
-    static const unsigned release[EVENT_KEY / 4 + 1] = { [EVENT_KEY / 4] = KEY_CENTER };
     if (!xf.page || top != xf.page) return 0;
     if (key == KEY_CENTER) {
         if (!switched()) return 0;
         int press = center_press(&xf.press, &xf.press_at, single, 0);
-        if (press == 2 && g_backlight_status) on_wm_keyup_fun((void *)0, (void *)release);
+        if (press == 2) screen_off();
         return press;
     }
     if (key != KEY_NEXT && key != KEY_PREV) return 0;

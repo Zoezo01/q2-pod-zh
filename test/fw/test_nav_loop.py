@@ -10,7 +10,7 @@ import struct
 import pytest
 
 import host
-from conftest import NAVIGATION_SOURCE, O, Files, Game, claim
+from conftest import NAVIGATION_SOURCE, O, Config, Deques, Files, Game, claim, libc
 
 KEY_CENTER, KEY_PREV, KEY_NEXT, KEY_PLAY, KEY_RETURN = (O[k] for k in ('KEY_CENTER', 'KEY_PREV', 'KEY_NEXT', 'KEY_PLAY', 'KEY_RETURN'))
 KEY_BACK_BTN, KEY_FWD_BTN = O['KEY_BACK_BTN'], O['KEY_FWD_BTN']
@@ -28,17 +28,6 @@ def define(name):
 
 WDT_START, WDT_STOP, WDT_FEED = (define(k) for k in ('WDT_START', 'WDT_STOP', 'WDT_FEED'))  # the watchdog's ioctls
 SHORT_LIST_MAX, LIST_FIRST_MS = define('SHORT_LIST_MAX'), define('LIST_FIRST_MS')
-
-
-class Config:
-    """config.ini: a key's value, or the default stock passes."""
-    def __init__(self, fw, **values):
-        self.values = {k.encode(): v for k, v in values.items()}
-        fw.mock('toolsReadConfig', self.read)
-
-    def read(self, path, section, key, out, default, *_):
-        value = self.values.get(C.string_at(key), C.string_at(default))
-        C.memmove(out, value + b'\0', len(value) + 1)
 
 
 class Clock:
@@ -534,6 +523,36 @@ def test_a_good_logo_or_none_between_lets_the_bad_one_be_reported_again(fw, powe
 def test_card_mounted_reads_proc_mounts(fw, mounts, mounted):
     Files(fw, {} if mounts is None else {'/proc/mounts': mounts})
     assert fw.fn('card_mounted', C.c_int)() == mounted
+
+
+@pytest.mark.parametrize('fails, mounted, gone, tries', [(0, 1, 0, 1), (99, 0, 0, 1), (3, 1, 0, 4), (99, 1, 3, 3),
+                                                        (99, 1, 0, 20)])
+def test_standby_unmount_retries_then_remounts_read_only_and_detaches(fw, fails, mounted, gone, tries):
+    """A sync, then stock's command each 100 ms while the card is still in /proc/mounts (gone: the try it leaves
+    after), up to 20 tries; then the holders' record, the read-only remount, a sync and umount -l, whose result is
+    returned."""
+    mounts = Mounts(fw, Files(fw), mounted)
+    log, left = [], [fails]
+    def system(cmd, *_):
+        cmd = C.string_at(cmd).decode()
+        log.append(cmd)
+        if cmd == 'umount /mnt/mmc':
+            left[0] -= 1
+            if fails - left[0] == gone:
+                mounts.set(False)
+            return int(left[0] >= 0)
+        return 7 if cmd == 'umount -l /mnt/mmc' else 0
+    fw.mock('fw_system', system)
+    fw.mock('fw_usleep', lambda us, *_: log.append(us))
+    result = fw.fn('ringnav_standby_umount', C.c_int, C.c_char_p)(b'umount /mnt/mmc')
+    expect = ['sync'] + [x for i in range(tries) for x in ([100000] if i else []) + ['umount /mnt/mmc']]
+    if tries < 20:
+        assert log == expect and result == 0
+    else:
+        assert log[:len(expect)] == expect and result == 7
+        busy, remount, sync, detach = log[len(expect):]
+        assert 'q2-card-busy' in busy and remount == 'mount -o remount,ro /mnt/mmc 2>>/mnt/data/q2-card-busy'
+        assert (sync, detach) == ('sync', 'umount -l /mnt/mmc')
 
 
 # The card's copy of the ratings (docs/internals.md#ratings).
@@ -1244,19 +1263,157 @@ def test_a_game_in_front_keeps_the_loop_paced_and_one_behind_now_playing_doesnt(
     assert fw.fn('navigation__np_animating', C.c_int)() == (not native)
 
 
+NP_UPDATE = 0x53cf08  # Now Playing's update: (window, force); the title, artist, heart and lyric rows only forced or flagged
+
+
+class NowPlayingFront:
+    """Now Playing in front, lit, its page 0x5100; stock's update at its address
+    is an x86-64 jump to a Python stand-in, and it and the window manager's paint log what ran, in order.
+    The song is the title in g_song_name, which the update draws."""
+    UPDATE = C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_int)
+
+    def __init__(self, fw, st):
+        self.st, self.log, self.saved = st, [], C.string_at(NP_UPDATE, 12)
+        self.update = self.UPDATE(lambda win, force: self.log.append(('update', win, force)) or 0)
+        claim(NP_UPDATE)
+        C.memmove(NP_UPDATE, b'\x48\xb8' + struct.pack('<Q', C.cast(self.update, C.c_void_p).value) + b'\xff\xe0', 12)
+        self.lit = fw.var('g_backlight_status', C.c_ubyte)
+        self.lit.value = 1
+        st('np_win', C.c_void_p).value = 0x5100
+        self.top = 0x5100
+        fw.mock('window_manager_get_top_window', lambda *_: self.top)
+        self.name = fw.var('fw_ctx_g_song_name', C.c_char * 512)
+        self.wm = Wm(fw)
+        self.wm.paint = Wm.PAINT(lambda wm: self.log.append(('paint',)) or 0)
+        struct.pack_into('<Q', self.wm.vtable, 0xc, C.cast(self.wm.paint, C.c_void_p).value)
+
+    def song(self, title):
+        self.name.value = title  # player_get_id3info wrote the new song's title
+
+    def frame(self):
+        self.log.clear()
+        self.wm.call(self.wm.p)
+        return self.log[:]
+
+    def close(self):
+        C.memmove(NP_UPDATE, self.saved, 12)
+        assert not libc.mprotect(NP_UPDATE & ~0xfff, 0x2000, 3)
+
+
+@pytest.fixture
+def np_front(fw, st):
+    front = NowPlayingFront(fw, st)
+    front.song(b'A')
+    front.frame()  # the page as it opened: this song drawn
+    yield front
+    front.close()
+
+
+DRAWN, PAINTED = ('update', 0x5100, 1), ('paint',)
+
+
+def test_a_skip_draws_the_new_songs_title_and_heart_in_the_frame_after_its_tags(np_front):
+    """Stock's update writes them only forced or on a flag something else may have taken; the frame after the
+    skip's tags land forces it, before the paint, once."""
+    assert np_front.frame() == [PAINTED]  # nothing changed
+    np_front.song(b'B')
+    assert [np_front.frame(), np_front.frame()] == [[DRAWN, PAINTED], [PAINTED]]
+
+
+def test_a_cue_tracks_change_in_the_same_file_is_drawn_by_its_title(np_front):
+    """A CUE sheet's tracks share the file: stock writes each track's own title."""
+    np_front.song(b'Track 2')
+    assert np_front.frame() == [DRAWN, PAINTED]
+
+
+def queue_of(fw, *songs):
+    """Stock's play queue of songs, each (path, album)."""
+    rows, addrs = [], []
+    for path, album in songs:
+        rec, p, a = C.create_string_buffer(0x60), C.create_string_buffer(path), C.create_string_buffer(album)
+        struct.pack_into('<Q', rec, O['REC_PATH'], C.addressof(p))
+        struct.pack_into('<Q', rec, O['REC_ALBUM'], C.addressof(a))
+        rows.append((rec, p, a))
+        addrs.append(C.addressof(rec))
+    fw.keep.append(rows)  # alive as long as the test, beside the mocks fw.mock keeps there
+    fw.var('fw_ctx_mcl_pdeqplaylist', C.c_uint).value = Deques(fw).new(addrs)
+
+
+def test_a_title_written_after_the_queue_moved_is_drawn_by_a_second_update(fw, np_front, mcl):
+    """The track moves first and stock writes its title a pass later: the key moves again, and the update runs again,
+    after the title changed."""
+    queue_of(fw, (b'/a', b'One'), (b'/b', b'Two'))
+    mcl.pos = 0
+    np_front.frame()
+    mcl.pos = 1
+    assert np_front.frame() == [DRAWN, PAINTED]
+    np_front.song(b'B')
+    assert [np_front.frame(), np_front.frame()] == [[DRAWN, PAINTED], [PAINTED]]
+
+
+def test_a_song_changed_while_dark_is_drawn_in_the_first_lit_frame(np_front):
+    np_front.lit.value = 0
+    np_front.song(b'B')
+    assert np_front.frame() == []  # dark: no paint and no update
+    np_front.lit.value = 1
+    assert np_front.frame() == [DRAWN, PAINTED]
+
+
+def test_a_dark_frame_a_window_animation_paints_draws_nothing(fw, np_front):
+    fw.mock('window_manager_is_animating', lambda *_: 1)
+    np_front.lit.value = 0
+    np_front.song(b'B')
+    assert np_front.frame() == [PAINTED]
+
+
+def test_a_closed_page_is_not_updated(np_front, st):
+    st('np_win', C.c_void_p).value = 0
+    np_front.song(b'B')
+    assert np_front.frame() == [PAINTED]
+
+
+def test_the_album_and_place_are_written_before_the_paint(fw, np_front, st, mcl):
+    """np_sync's writes land before the paint, not inside it, where an invalidate can be dropped."""
+    queue_of(fw, (b'/a', b'Blue Train'))
+    mcl.pos = 0
+    st('np_album', C.c_void_p).value, st('np_pos', C.c_void_p).value = 0xa1, 0xa2
+    fw.mock('widget_set_text_utf8', lambda w, s, *_: np_front.log.append(('text', w, C.string_at(s))) and 0)
+    assert [e for e in np_front.frame() if e[0] != 'update'] == [('text', 0xa2, b'1 of 1'), ('text', 0xa1, b'Blue Train'), PAINTED]
+
+
+def test_now_playing_waits_while_behind_a_window_or_its_bar_is_held(np_front, st):
+    """Another window in front (its return runs stock's forced update); a scrub or a paused seek's wait holds the
+    bar, which the update would set to the player's second: drawn once they end."""
+    np_front.song(b'B')
+    np_front.top = 0x5200
+    assert np_front.frame() == [PAINTED]
+    np_front.top = 0x5100
+    st('scrub').value = 1
+    assert np_front.frame() == [PAINTED]
+    st('scrub').value = 0
+    assert np_front.frame() == [DRAWN, PAINTED]
+
+
 def test_no_window_manager_is_stocks_bad_params(fw):
     fw.var('g_backlight_status', C.c_ubyte).value = 1
     assert Wm(fw).call(None) == 0x10
 
 
 # Key Tone (buzzeer_switch).
+MCU, MCU_WRITE = 9, 0x80044d76  # /dev/mcu's descriptor here; libhardware2's mcu_write_data_timeout request
+
+
 class Buzzer:
-    """pthread_create runs the click's worker at once, or leaves it running, or fails."""
-    def __init__(self, fw, mode='run', lit=True):
-        self.mode = mode
+    """pthread_create runs the click's worker at once, or leaves it running, or fails. The worker's
+    /dev/mcu opens and takes the write, unless `mcu` names the call that fails ('open' or 'ioctl')."""
+    def __init__(self, fw, mode='run', lit=True, mcu=None):
+        self.mode, self.mcu, self.sent, self.closed = mode, mcu, [], []
         fw.var('g_keytone_flag', C.c_ubyte).value = 1
         fw.var('g_backlight_status', C.c_ubyte).value = lit
         fw.mock('fw_pthread_create', self.create)
+        fw.mock('fw_open', self.open)
+        fw.mock('fw_ioctl', self.ioctl)
+        fw.mock('fw_close', lambda fd, *_: self.closed.append(fd) if fd == MCU else 0)
         self.click = fw.fn('ringnav_buzzer', C.c_int, C.c_int)
         self.fw = fw
 
@@ -1267,14 +1424,42 @@ class Buzzer:
             C.CFUNCTYPE(C.c_void_p, C.c_void_p)(start)(arg)
         return 0
 
+    def open(self, path, flags, *_):
+        if C.string_at(path) != b'/dev/mcu':
+            return 0  # as the stub answers any other file
+        assert flags == 2  # O_RDWR, as mcu_open
+        return -1 if self.mcu == 'open' else MCU
+
+    def ioctl(self, fd, request, arg, *_):
+        class Write(C.Structure):  # mcu_write_data_timeout's: the data, its length, the timeout
+            _fields_ = [('data', C.c_char_p), ('len', C.c_int), ('timeout', C.c_int)]
+        if fd != MCU:
+            return 0
+        write = Write.from_address(arg)
+        self.sent.append((request & 0xffffffff, write.data, write.len, write.timeout))
+        return -1 if self.mcu == 'ioctl' else write.len
+
     def clicks(self):
+        """How many clicks the MCU was handed."""
+        return len(self.sent)
+
+    def stocks(self):
+        """Stock's own command, each with the argument its click had."""
         return [c[1][0] for c in self.fw.calls('stock_buzzer_trampoline')]
 
 
 def test_a_click_sounds_on_a_worker(fw):
     buzzer = Buzzer(fw)
     assert buzzer.click(1) == 0 and buzzer.click(0) == 0
-    assert buzzer.clicks() == [1, 0]
+    assert buzzer.sent == [(MCU_WRITE, b'buzzer', 7, 300000)] * 2  # cmd_mcu write_str buzzer's write
+    assert buzzer.closed == [MCU, MCU] and not buzzer.stocks()
+
+
+@pytest.mark.parametrize('fails', ['open', 'ioctl'])
+def test_a_click_the_mcu_wont_take_is_stocks_command(fw, fails):
+    buzzer = Buzzer(fw, mcu=fails)
+    buzzer.click(1)
+    assert buzzer.stocks() == [1] and buzzer.closed == [MCU] * (fails == 'ioctl')
 
 
 def test_a_click_while_one_sounds_is_dropped(fw):
@@ -1288,7 +1473,7 @@ def test_a_worker_that_cant_start_leaves_the_next_click_free(fw):
     buzzer.click(1)
     buzzer.mode = 'run'
     buzzer.click(1)
-    assert buzzer.clicks() == [1]
+    assert buzzer.clicks() == 1
 
 
 def test_key_tone_off_is_silent(fw):
@@ -1308,7 +1493,7 @@ def test_headphones_silence_the_speaker_unless_click_with_headphones(fw, listene
     else:
         fw.var(listener, C.c_ubyte).value = 1
     buzzer.click(1)
-    assert buzzer.clicks() == ([1] if keytone_hp == b'1' else [])
+    assert buzzer.clicks() == (keytone_hp == b'1')
 
 
 # Widgets: a tree the C walks through stock's accessors, each widget a zeroed block holding the fields
@@ -1560,7 +1745,7 @@ LIBC.calloc.restype, LIBC.calloc.argtypes = C.c_void_p, [C.c_size_t, C.c_size_t]
 class Flip(C.Structure):  # coverflow.c's cf_flip_t, fl
     _fields_ = [('frame', C.c_void_p), ('back', C.c_void_p), ('front', C.c_void_p), ('panel', C.c_void_p),
                 ('sheet', C.c_void_p), ('title', C.c_void_p), ('artist', C.c_void_p), ('timer', C.c_uint),
-                ('t0', C.c_uint), ('dir', C.c_int), ('drawn', C.c_int), ('light', C.c_int)]
+                ('t0', C.c_uint), ('dir', C.c_int), ('drawn', C.c_int), ('light', C.c_int), ('card', C.c_int)]
 
 
 def test_cover_flow_s_landing_takes_centre_and_ends_on_the_wheel_or_return(fw, keys):
@@ -2693,6 +2878,19 @@ def test_dark_but_busy_the_loop_idles_short(fw, stock_bytes, st, why):
     assert loop() == [O['SCREEN_OFF_SLEEP_MS']] and loop.dark_quiet() == 0
 
 
+def test_dark_and_quiet_the_idle_is_short_after_an_input(fw, stock_bytes, st):
+    loop = Loop(fw, stock_bytes, lit=False)
+    st('last_input', C.c_uint).value = loop.clock.now  # ringnav_input's stamp
+    assert loop(O['IDLE_MS'] - 1) == [O['SCREEN_OFF_SLEEP_MS']] and loop.dark_quiet() == 1
+    assert loop(1) == [O['DARK_IDLE_SLEEP_MS']]
+
+
+def test_dark_and_quiet_a_touch_leaves_the_long_idle(fw, stock_bytes, st):
+    loop = Loop(fw, stock_bytes, lit=False)
+    st('last_input', C.c_uint).value = st('touch_at', C.c_uint).value = loop.clock.now  # a touch's two stamps
+    assert loop(1) == [O['DARK_IDLE_SLEEP_MS']]
+
+
 def test_a_dark_wheel_turn_keeps_stocks_pace(fw, stock_bytes, st):
     loop = Loop(fw, stock_bytes, lit=False)
     st('tick_at', C.c_uint).value = loop.clock.now  # tick_gate's stamp, this very millisecond
@@ -2704,10 +2902,10 @@ def test_a_dark_wheel_turn_keeps_stocks_pace(fw, stock_bytes, st):
 def test_dark_a_pass_clicks_once(fw, stock_bytes):
     loop, buzzer = Loop(fw, stock_bytes, lit=False), Buzzer(fw, lit=False)
     buzzer.click(1), buzzer.click(1)  # two ticks one idle slept through
-    assert buzzer.clicks() == [1]
+    assert buzzer.clicks() == 1
     loop()
     buzzer.click(1)
-    assert buzzer.clicks() == [1, 1]
+    assert buzzer.clicks() == 2
 
 
 def test_a_dark_click_that_cant_start_leaves_the_pass_its_click(fw, stock_bytes):
@@ -2716,7 +2914,7 @@ def test_a_dark_click_that_cant_start_leaves_the_pass_its_click(fw, stock_bytes)
     buzzer.click(1)
     buzzer.mode = 'run'
     buzzer.click(1)
-    assert buzzer.clicks() == [1]
+    assert buzzer.clicks() == 1
 
 
 class QuickHold:

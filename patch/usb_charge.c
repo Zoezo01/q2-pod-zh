@@ -105,11 +105,12 @@ int usb_charge_wanted(void) {
  * rejects a DAC drawing charge while it connects. A click applies at once, asking for charging as
  * charge_poll hands it back; Charge Limit's hold still wins. The DAC screen's switch shows here
  * when Power comes back to the front. */
-static const char *const dac_names[] = { "关", "开", "从不" };
+static const char *const dac_names[] = { N_("关"), N_("开"), N_("从不") };
 static int dac_mode(void) { return g_usbdac_chargeflag == 1 ? 1 : usb_charge.never ? 2 : 0; }
 static void dac_text(void) {
-    char text[32];
-    tk_snprintf(text, sizeof text, "USB DAC 充电：%s", dac_names[dac_mode()]);
+    char text[96];
+    tk_snprintf(text, sizeof text, tr("USB DAC 充电：%s"), tr(dac_names[dac_mode()]));
+>>>>>>> 1.9.1
     row_label(usb_charge.row, text);
 }
 static int dac_click(void *ctx, event_t *event) {

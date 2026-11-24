@@ -96,7 +96,6 @@ def package(stock, out):
     subprocess.run([sys.executable, str(ROOT/'docs/manual/build.py'), str(out/GUIDE)], check=True)
     check(source == source_sha256() and revision == run('git', '-C', ROOT, 'rev-parse', 'HEAD').strip(),
           'Source changed during release build')
-    (out/'SHA256SUMS').write_text(''.join(f'{digest}  {name}\n' for name, digest in checksums.items()))
     (out/'release-notes.md').write_text(release_body(text, checksums))
     record = dict(tag=VERSION, revision=revision, source_sha256=source, assets=checksums,
                   guide_sha256=sha((out/GUIDE).read_bytes()), notes_sha256=sha((out/'release-notes.md').read_bytes()))
@@ -117,8 +116,6 @@ def upload(out, publish=False):
     # The notes packaged from the changelog then, which the source hash doesn't cover.
     check(sha((out/'release-notes.md').read_bytes()) == record.get('notes_sha256'),
           'Release notes mismatch, or release.json is from an older package: package again')
-    sums = f'{record["assets"][ASSET]}  {ASSET}\n'
-    check((out/'SHA256SUMS').read_text() == sums, 'Release checksums mismatch')
     gh = ['gh', '--repo', REPO, 'release']
     # Listing distinguishes an absent tag from an authentication/network failure.
     releases = json.loads(run(*gh, 'list', '--limit', '1000', '--json', 'tagName,isDraft'))

@@ -853,10 +853,10 @@ def test_symbol_table(monkeypatch):
         calls.append((args, kwargs))
         return types.SimpleNamespace(stdout=outputs[args[1]])
     monkeypatch.setattr(subprocess, 'run', run)
-    keys, names, bisect_right = q.symbol_table('/x')
+    keys, names = q.symbol_table('/x')
     assert keys == [0x1000, 0x2000, 0x3000, 0x4000]
     assert names == ['dynamic', 'weak_static', 'local', 'lower']
-    assert bisect_right(keys, 0x2000) == 2
+    assert bisect.bisect_right(keys, 0x2000) == 2
     assert calls == [(['llvm-nm', '-D', '--defined-only', '/x'], dict(capture_output=True, text=True)),
                      (['llvm-nm', '--defined-only', '/x'], dict(capture_output=True, text=True))]
 
@@ -874,10 +874,10 @@ MAPS = '''1234
 @pytest.fixture
 def prof(monkeypatch, tmp_path):
     monkeypatch.setenv('HOME', str(tmp_path))
-    tables = {'demo': ([0x400100, 0x400200], ['stock_a', 'stock_b'], bisect.bisect_right),
-              'patch.elf': ([0x400000], ['patch_entry'], bisect.bisect_right),
-              'libc.so': ([0x1000, 0xb011], ['libc_f', 'libc_g'], bisect.bisect_right)}
-    monkeypatch.setattr(q, 'symbol_table', lambda path: tables.get(pathlib.Path(path).name, ([], [], bisect.bisect_right)))
+    tables = {'demo': ([0x400100, 0x400200], ['stock_a', 'stock_b']),
+              'patch.elf': ([0x400000], ['patch_entry']),
+              'libc.so': ([0x1000, 0xb011], ['libc_f', 'libc_g'])}
+    monkeypatch.setattr(q, 'symbol_table', lambda path: tables.get(pathlib.Path(path).name, ([], [])))
     pulled = []
     def pull(path, local):
         pulled.append((path, local))
@@ -950,7 +950,7 @@ short line
 
 def test_profile_stock_demo_without_a_build(prof, tmp_path, capsys):
     # The library is mapped at 0x400000 from file offset 0x1000: 0x400104 is its 0x1104.
-    calls, pulled = prof('1234 R 400104 400104\n', {'demo': ([0x1100], ['s'], bisect.bisect_right)})
+    calls, pulled = prof('1234 R 400104 400104\n', {'demo': ([0x1100], ['s'])})
     q.profile(1, False, None)
     assert pulled == [('/release/bin/demo', str(tmp_path/'.cache/q2-prof/demo'))]
     assert '     1  s\n' in capsys.readouterr().out
@@ -968,7 +968,7 @@ def test_profile_keeps_a_cached_library(prof, tmp_path, capsys):
 
 def test_profile_stops_at_six_frames(prof, tmp_path, capsys):
     (tmp_path/'build').mkdir()
-    tables = {'patch.elf': ([0x400000 + i * 16 for i in range(9)], [f'f{i}' for i in range(9)], bisect.bisect_right)}
+    tables = {'patch.elf': ([0x400000 + i * 16 for i in range(9)], [f'f{i}' for i in range(9)])}
     prof('1234 R ' + ' '.join(hex(0x400000 + i * 16)[2:] for i in range(9)) + '\n', tables)
     q.profile(1, False, str(tmp_path/'build'))
     assert '     1  f0  <- f1  <- f2  <- f3  <- f4  <- f5\n' in capsys.readouterr().out
@@ -976,8 +976,8 @@ def test_profile_stops_at_six_frames(prof, tmp_path, capsys):
 
 def test_profile_symbol_range_ends_at_0x20000(prof, tmp_path, capsys):
     (tmp_path/'build').mkdir()
-    prof('1234 R 41ffff 420000 400000\n', {'patch.elf': ([0x400000], ['near'], bisect.bisect_right),
-                                            'demo': ([0x400000], ['near_demo'], bisect.bisect_right)})
+    prof('1234 R 41ffff 420000 400000\n', {'patch.elf': ([0x400000], ['near']),
+                                            'demo': ([0x400000], ['near_demo'])})
     q.profile(1, False, str(tmp_path/'build'))
     assert '     1  near  <- demo  <- near\n' in capsys.readouterr().out
 
@@ -991,7 +991,7 @@ def test_profile_a_map_ends_before_its_last_address(prof, tmp_path, capsys):
 
 def test_profile_address_in_the_later_of_two_adjacent_maps(prof, monkeypatch, capsys):
     maps = '1234\n1234\n10000000-10001000 r-xp 00000000 08:01 2 /lib/one.so\n10001000-10002000 r-xp 00000000 08:01 3 /lib/two.so\n'
-    calls, _ = prof('', {'one.so': ([0], ['in_one'], bisect.bisect_right), 'two.so': ([0], ['in_two'], bisect.bisect_right)})
+    calls, _ = prof('', {'one.so': ([0], ['in_one']), 'two.so': ([0], ['in_two'])})
     replies = [(maps.encode(), 0), (b'1234 R 10001000 10001000\n', 0)]
     monkeypatch.setattr(q, 'run', lambda *a, **k: replies.pop(0))
     q.profile(1, False, None)
@@ -1000,7 +1000,7 @@ def test_profile_address_in_the_later_of_two_adjacent_maps(prof, monkeypatch, ca
 
 def test_profile_truncates_long_names(prof, tmp_path, capsys):
     (tmp_path/'build').mkdir()
-    prof('1234 R 400000 400000\n', {'patch.elf': ([0x400000], ['n' * 80], bisect.bisect_right)})
+    prof('1234 R 400000 400000\n', {'patch.elf': ([0x400000], ['n' * 80])})
     q.profile(1, False, str(tmp_path/'build'))
     assert f'     1  {"n" * 60}\n' in capsys.readouterr().out
 
@@ -1009,23 +1009,22 @@ def test_profile_counts_and_keeps_the_top_15(prof, tmp_path, capsys):
     (tmp_path/'build').mkdir()
     addresses = [0x400000 + i * 16 for i in range(16)]
     samples = ''.join(f'1234 R {a:x} {a:x}\n' for a in addresses) + f'1234 R {addresses[0]:x} {addresses[0]:x}\n'
-    prof(samples, {'patch.elf': (addresses, [f'f{i}' for i in range(16)], bisect.bisect_right)})
+    prof(samples, {'patch.elf': (addresses, [f'f{i}' for i in range(16)])})
     q.profile(1, False, str(tmp_path/'build'))
     lines = capsys.readouterr().out.splitlines()
     assert lines[0] == '== thread 1234 running: 17 of 100 samples' and lines[1] == '     2  f0' and len(lines) == 16
 
 
 def test_profile_address_before_every_symbol_keeps_its_module(prof, capsys):
-    prof('1234 R 10004000 10004000\n', {'libc.so': ([0x100000], ['far'], bisect.bisect_right)})
+    prof('1234 R 10004000 10004000\n', {'libc.so': ([0x100000], ['far'])})
     q.profile(1, False, None)
     assert '     1  libc.so\n' in capsys.readouterr().out
 
 
 def test_profile_far_symbol_is_not_used(prof, tmp_path, capsys):
     (tmp_path/'build').mkdir()
-    bisect_right = bisect.bisect_right
-    prof('1234 R 4fffff 420000 41ffff\n', {'patch.elf': ([0x400000], ['near'], bisect_right),
-                                           'demo': ([0x400000], ['near_demo'], bisect_right)})
+    prof('1234 R 4fffff 420000 41ffff\n', {'patch.elf': ([0x400000], ['near']),
+                                           'demo': ([0x400000], ['near_demo'])})
     q.profile(1, False, str(tmp_path/'build'))
     assert '     1  demo  <- near\n' in capsys.readouterr().out
 

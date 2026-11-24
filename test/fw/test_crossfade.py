@@ -7,7 +7,7 @@ import struct
 import pytest
 
 from conftest import O, Deques, libc
-from test_misc import Xf  # test_misc.py keeps the mirror
+from test_misc import xf  # test_misc.py keeps the mirror
 
 XFADE, PRESS, MUTE, SWAP = '/tmp/q2xfade', '/tmp/q2press', '/tmp/q2mute', '/tmp/q2swap'
 XF_STOPS = 16  # peq.h: the fade's ms in the low bits, the count of stops above, as the filter reads them
@@ -18,10 +18,6 @@ CENTER, NEXT, PREV = O['KEY_CENTER'], O['KEY_NEXT'], O['KEY_PREV']
 HANDLER = C.CFUNCTYPE(C.c_int, C.c_long, C.c_long)  # an AWTK event handler: (ctx, event)
 libc.munmap.argtypes = [C.c_void_p, C.c_size_t]
 pytestmark = pytest.mark.usefixtures('stock_gapless')  # Crossfade has stock's Gapless on, as stock's default
-
-
-def xf(fw):
-    return fw.var('crossfade__xf', Xf)
 
 
 class Config:

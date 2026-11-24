@@ -326,11 +326,47 @@ def logo_check():
     print('Boot logo: the saved card logo, else the light splash under Light Mode, else the built-in one, passed.')
 logo_check()
 
+def mount_check():
+    """q2mount (build.py Q2MOUNT_SH) and the mdev script's line before stock's under the host sh, ntfs-3g and mount
+    stand-ins on PATH: the card for APP_UID, else as stock mounts it, and a failure that leaves stock's lines to run."""
+    import os, subprocess, tempfile, pathlib
+    from build import Q2MOUNT_SH, SD_MOUNT_HOOK, APP_UID
+    with tempfile.TemporaryDirectory(prefix='q2-mount-') as tmp:
+        tmp = pathlib.Path(tmp)
+        (tmp/'bin').mkdir()
+        log = tmp/'log'
+        for name, takes in (('ntfs-3g', '$NTFS'), ('mount', '$FAT')):  # the card's kind; OPT=0: the driver refuses -o
+            (tmp/'bin'/name).write_text(f'#!/bin/sh\necho "{name} $*" >> {log}\n[ "$1" = -o ] && [ "$OPT" = 0 ] && exit 1\n[ "{takes}" = 1 ]\n')
+            (tmp/'bin'/name).chmod(0o755)
+        (tmp/'q2mount').write_bytes(Q2MOUNT_SH)
+        (tmp/'q2mount').chmod(0o755)
+        def mounted(script, **card):
+            log.write_text('')
+            env = {**os.environ, 'PATH': f'{tmp}/bin:{os.environ["PATH"]}', 'NTFS': '0', 'FAT': '0', 'OPT': '1', **card}
+            status = subprocess.run(['sh', '-c', script], env=env).returncode
+            return status, log.read_text().splitlines()
+        o, dev = f'-o uid={APP_UID},gid={APP_UID}', '/dev/mmcblk0p1'
+        q2mount = f'{tmp}/q2mount {dev}'
+        assert mounted(q2mount, NTFS='1') == (0, [f'ntfs-3g {o} {dev} /mnt/mmc'])
+        assert mounted(q2mount, NTFS='1', OPT='0') == (0, [f'ntfs-3g {o} {dev} /mnt/mmc', f'ntfs-3g {dev} /mnt/mmc'])
+        assert mounted(q2mount, FAT='1') == (0, [f'ntfs-3g {o} {dev} /mnt/mmc', f'ntfs-3g {dev} /mnt/mmc', f'mount {o} {dev} /mnt/mmc'])
+        assert mounted(q2mount, FAT='1', OPT='0')[1][-2:] == [f'mount {o} {dev} /mnt/mmc', f'mount {dev} /mnt/mmc']
+        status, tried = mounted(q2mount)  # nothing mounts: nonzero, so stock's own lines run after it
+        assert status and len(tried) == 4
+        # The mdev script's add: q2mount, then stock's ntfs-3g and mount only if it failed, its $? the ntfs-3g's
+        stock = '\tntfs-3g /dev/$MDEV /mnt/mmc\n\tif [ $? -ne 0 ];then\n\t\tmount /dev/$MDEV /mnt/mmc\n\tfi\n'
+        hooked = 'MDEV=mmcblk0p1\n' + stock.replace(*(h.decode() for h in SD_MOUNT_HOOK)).replace('/usr/bin/q2mount', f'{tmp}/q2mount')
+        assert mounted(hooked, FAT='1')[1] == mounted(q2mount, FAT='1')[1]  # q2mount mounted it: stock's lines don't run
+        (tmp/'q2mount').write_text('#!/bin/sh\nexit 1\n')  # one that can't mount: stock's lines, as before
+        assert mounted(hooked, FAT='1')[1] == [f'ntfs-3g {dev} /mnt/mmc', f'mount {dev} /mnt/mmc']
+    print('Card mount: for the card apps\' uid, else as stock mounts it, and stock\'s own lines after a failed q2mount, passed.')
+mount_check()
+
 def validate_assets(directory):
     import functools, json, re, struct, subprocess
     from build import sha, run, fileoff, symbols, BLUEALSA, AAC_44K1, GRADIENT_LEAF, WM_PAINT_LEAF, QUEUE_LEAF, HELPER, HELPER_LIKE, BOOT, BOOT_HOOK, REMOTE, REMOTE_HOOK, LOG_HOOK, WHEEL_LOG_HOOK, S90PLAY, S11LOGO, LOGO_HOOK, LOGO_LIGHT, BLUEALSA2, BT_KEEPALIVE, BLUETOOTHD, BT_GRACE, RTC_WRITE, WIFI_LPS, HOOKS, LOCK_CLOCK_12H, WATCHDOG, WATCHDOG_SLEEP, DROP_CACHES, STREAM_POLL_CALLS, DARK_POLLS, WHEEL_TS_READ, PDR
     from ipod import (ART_PLACEHOLDERS, sized_art, AUDIT, TOOLBAR_SWITCHES, BOTTOM, CONFIRM, VOLUME, BIGCOVER, BC_ART, BC_TITLE_PAD, QUICK_SETTINGS, QS_TOP, QS_LABEL_GAP, QS_LABEL_H,
-                      QS_LABEL_W, QS_ROW_GAP, QS_PITCH, QS_BAR, QS_TOUCH, QS_EDGE, QS_SUN, HOME_LABEL_END, HOME_LIST_W, HOME_TEXT_X, HOME_TOP, PITCH, ARTIST_PAGE, HOME_OURS, HOME_PAGE, HOME_ROW, HOME_ROWS, NAVBAR_ONLY, PLAYING_PAGE, SET_ROW, SET_ROWS, SET_TOP, UI_ASSETS,
+                      QS_LABEL_W, QS_ROW_GAP, QS_PITCH, QS_BAR, QS_TOUCH, QS_EDGE, QS_SUN, HOME_LABEL_END, HOME_LIST_W, HOME_TEXT_X, HOME_TOP, PITCH, ARTIST_PAGE, HOME_OURS, HOME_PAGE, HOME_ROWS, NAVBAR_ONLY, PLAYING_PAGE, SET_ROW, SET_ROWS, SET_TOP, UI_ASSETS,
                       NP_BAR, NP_TOUCH, NP_MARGIN, NP_POS_X, NP_TOP, STATUS_BAR, STATUS_HIDDEN, STATUS_LEFT, STATUS_MARGIN, STATUS_RIGHT, CLOCK_MIN, CLOCK_TEXT, corner_inset, corner_x,
                       STATUS_ICONS, status_icon, QUIET_ICONS, quiet_icon, SET_ICON, SET_STOCK_ICON, SETTINGS_ICONS, SETTINGS_SLIDERS, decode, slider_plain, imagemagick, inc, png_header, settings_icon, walk,
                       patch_asset, patch_code, patch_style, style_props, SLIDE, SET0, status_metrics, CLASSIC_LIGHT_FONT_SRC, NP_IPOD_TIME_WS)
@@ -388,6 +424,14 @@ def validate_assets(directory):
     STOCK_NAMED_ICONS = ('menu_coverflow.png', 'menu_coverflowdown.png')
     def read(image, rel):
         return subprocess.check_output(['unsquashfs', '-cat', str(directory/image), rel])
+    # Stock's other executables and libraries ship their .pdr zeroed too (build.py zero_pdr), each otherwise stock's;
+    # hciplayer's, patched, too.
+    from build import zero_pdr
+    for rel in ('usr/sbin/wpa_supplicant', 'release/bin/libawtk.so', 'usr/lib/libavcodec.so.58.54.100'):
+        old = read('stock.squashfs', rel)
+        assert read('rootfs.squashfs', rel) == zero_pdr(old, rel) != old, rel
+    player = read('rootfs.squashfs', 'usr/bin/hciplayer')
+    assert zero_pdr(player, 'hciplayer') == player
     # Every stock UI asset with Chinese text is given in English (english_ui), the edited ones after their edit.
     ui = 'release/assets/default/raw/ui/'
     chinese = {l.removeprefix('squashfs-root/'+ui) for l in run('unsquashfs', '-l', directory/'stock.squashfs').splitlines()
@@ -424,7 +468,7 @@ def validate_assets(directory):
     for name in STOCK_NAMED_ICONS:  # stock V1.36's Album Wall card icons have Cover Flow's names: ours take their place
         assert name in ICONS and changed[xx+name] == dict(original_sha256=sha(read('stock.squashfs', xx+name)), sha256=sha((ROOT/'assets/icons'/name).read_bytes()))
     tag_old, tag_new = read('stock.squashfs', TAG_C), read('rootfs.squashfs', TAG_C)
-    assert tag_new == patch_m4b_cover(tag_old)
+    assert tag_new == zero_pdr(patch_m4b_cover(tag_old), TAG_C)
     assert changed[TAG_C] == dict(original_sha256=sha(tag_old), sha256=sha(tag_new))
     for path in WEB:  # Wi-Fi transfer's page: English, folder uploads
         old, new = read('stock.squashfs', path), read('rootfs.squashfs', path)
@@ -499,19 +543,31 @@ def validate_assets(directory):
         assert absent.returncode != 0, 'release rootfs contains q2remote'
     assert read('rootfs.squashfs', S90PLAY) == expected_start
     assert read('rootfs.squashfs', S11LOGO) == read('stock.squashfs', S11LOGO).replace(*LOGO_HOOK)  # the card's logo, if saved
-    assert read('rootfs.squashfs', BLUEALSA2) == read('stock.squashfs', BLUEALSA2).replace(*BT_KEEPALIVE)  # keep-alive 5 s
+    # Card apps without root (build.py APP_UID): q2mount, executable, from the mdev script and USB storage's end, and
+    # wpa_supplicant's saves 600
+    from build import SD_MOUNT, SD_MOUNT_HOOK, WIFI_CONNECT, WPA_HOOK, PASSWD, PASSWD_HOOK, GROUP, GROUP_HOOK, Q2MOUNT, Q2MOUNT_SH, CARD_MOUNT_FMT, CARD_MOUNT_LINE
+    assert read('rootfs.squashfs', SD_MOUNT) == read('stock.squashfs', SD_MOUNT).replace(*SD_MOUNT_HOOK)
+    assert read('rootfs.squashfs', WIFI_CONNECT) == read('stock.squashfs', WIFI_CONNECT).replace(*WPA_HOOK)
+    for path, hook in ((PASSWD, PASSWD_HOOK), (GROUP, GROUP_HOOK)):  # APP_UID in audio for bluealsa's dbus policy
+        assert read('rootfs.squashfs', path) == read('stock.squashfs', path).replace(*hook)
+    assert read('rootfs.squashfs', Q2MOUNT) == Q2MOUNT_SH
+    mode = next(l for l in run('unsquashfs', '-lls', directory/'rootfs.squashfs', Q2MOUNT).splitlines() if l.endswith('/'+Q2MOUNT)).split()[0]
+    assert mode.startswith('-rwx') and mode[9] == 'x', mode
+    assert demo[fileoff(demo, CARD_MOUNT_FMT):][:20] == CARD_MOUNT_LINE[1]
+    assert read('rootfs.squashfs', BLUEALSA2) == read('stock.squashfs', BLUEALSA2).replace(*BT_KEEPALIVE)  # keep-alive 5 s, Receive Audio
     daemon = read('stock.squashfs', BLUETOOTHD)  # a connection the other side opens: 30 s to 1 s
-    assert read('rootfs.squashfs', BLUETOOTHD) == daemon.replace(*BT_GRACE) != daemon
-    # bluealsa: AAC capability, the two DROP jumps, the silence sites, and one appended LOAD payload.
-    from build import BT_DROP, BT_DROP_HANDLER, BT_DROP_PAYLOAD, BT_SILENCE_SITES, patch_bluealsa, segments
+    assert read('rootfs.squashfs', BLUETOOTHD) == zero_pdr(daemon.replace(*BT_GRACE), BLUETOOTHD) != zero_pdr(daemon, BLUETOOTHD)
+    # bluealsa: AAC capability, the A2DP Sink default, the two DROP jumps, the silence sites, and one appended LOAD payload.
+    from build import BT_DROP, BT_DROP_HANDLER, BT_DROP_PAYLOAD, BT_SILENCE_SITES, BT_SINK_DEFAULT, patch_bluealsa, segments
     old, new = read('stock.squashfs', BLUEALSA), read('rootfs.squashfs', BLUEALSA)
     header = segments(old)[-1][0]
     allowed = {AAC_44K1, *range(header, header+32)}
-    for address, size in ((BT_DROP, 8), (BT_DROP_HANDLER, 8), *((a, 4) for a, *_ in BT_SILENCE_SITES)):
+    for address, size in ((BT_DROP, 8), (BT_DROP_HANDLER, 8), (BT_SINK_DEFAULT[0], 4), *((a, 4) for a, *_ in BT_SILENCE_SITES)):
         off = fileoff(old, address)
         allowed.update(range(off, off+size))
-    assert {i for i in range(len(old)) if old[i] != new[i]} <= allowed
-    assert new == patch_bluealsa(old)
+    bare = zero_pdr(old, BLUEALSA)
+    assert {i for i in range(len(old)) if bare[i] != new[i]} <= allowed
+    assert new == zero_pdr(patch_bluealsa(old), BLUEALSA)
     assert segments(new)[-1][1][2] == BT_DROP_PAYLOAD
     assert new[AAC_44K1] == 0 and manifest['bluealsa_sha256'] == sha(new)
     from bluealsa import check as check_bluetooth_drop
@@ -535,14 +591,14 @@ def validate_assets(directory):
     assert named['label_lyricmsg']['self_layout'] == 'default(x=0,y=73,w=100%,h=28)'
     # Curly quotes draw the straight glyphs, ♡ takes ♥'s box and advance, and the letters stock lacks are
     # added (font_letters); other tables keep their stock bytes (head: its checksum), but for the added
-    # glyphs' counts in hhea and maxp and their names in post.
+    # glyphs' counts in hhea and maxp, and post, which keeps no names.
     from build import QUOTES, STOCK_LETTERS
     from fontTools.ttLib import TTFont
     old, new = (TTFont(io.BytesIO(read(i, FONT))) for i in ('stock.squashfs', 'rootfs.squashfs'))
-    assert all(new.getBestCmap()[c] == old.getBestCmap()[q] for c, q in QUOTES.items())
+    assert all(new.getGlyphID(new.getBestCmap()[c]) == old.getGlyphID(old.getBestCmap()[q]) for c, q in QUOTES.items())
     full, empty = (new.getBestCmap()[c] for c in (0x2665, 0x2661))
     g = new['glyf']
-    assert new['hmtx'][empty] == new['hmtx'][full] == (old['hmtx'][full][0] + 32, g[full].xMin)
+    assert new['hmtx'][empty] == new['hmtx'][full] == (old['hmtx'][old.getBestCmap()[0x2665]][0] + 32, g[full].xMin)
     assert abs(g[empty].xMin - g[full].xMin) <= 1 and abs(g[empty].xMax - g[full].xMax) <= 1
     assert abs(g[empty].yMin - g[full].yMin) <= 1 and abs(g[empty].yMax - g[full].yMax) <= 1
     letters = [u for lo, hi in STOCK_LETTERS for u in range(lo, hi + 1) if u not in old.getBestCmap()]
@@ -552,7 +608,10 @@ def validate_assets(directory):
     assert all(new.reader[t] == old.reader[t] for t in old.reader.keys() if t not in ('cmap', 'head', 'glyf', 'loca', 'hmtx', 'hhea', 'maxp', 'post'))
     for t, grown in (('hhea', {'numberOfHMetrics'}), ('maxp', {'numGlyphs', 'maxComponentDepth', 'maxComponentElements', 'maxCompositeContours', 'maxCompositePoints'})):
         assert {k: v for k, v in vars(new[t]).items() if k not in grown} == {k: v for k, v in vars(old[t]).items() if k not in grown}
-    assert new.getGlyphOrder()[:len(old.getGlyphOrder())] == old.getGlyphOrder()  # post: names added, none changed
+    # post 3.0: no glyph names, which stb_truetype never reads; stock's mapped glyphs keep their ids, the added ones follow
+    assert new['post'].formatType == 3 and all(new.getGlyphID(new.getBestCmap()[u]) == old.getGlyphID(name)
+                                               for u, name in old.getBestCmap().items() if u not in QUOTES)
+    assert all(new.getGlyphID(new.getBestCmap()[u]) >= old['maxp'].numGlyphs for u in letters)
     # The crash watchdog only sleeps longer; check_mem_thd returns on entry, so it never drops caches.
     old, new = read('stock.squashfs', WATCHDOG), read('rootfs.squashfs', WATCHDOG)
     assert new == old.replace(*WATCHDOG_SLEEP) and new != old
@@ -587,8 +646,8 @@ def validate_assets(directory):
     gates = [fileoff(old, a) for a in (*(a for a, _, _ in (*words, *DAC_RELEASE, *PROBE_STOP, *STOP_SITES, STOP_FILL, *PRELOAD_CLOSE, FORCED_EOF, EXIT_HOLD, PRELOAD_PUBLISH, PRELOAD_FAILED, COLD_CLEAR, FLAC_GATE, SEEK_NOSYNC)), *ID3_CALLS, MP3_ALLOC, MP3_FILTER, MP3_READ,
                                        IDLE_WAIT[0], PAUSE_WAIT[0], CMD_DONE[0])]
     # The FLAC fast paths (tools/flac.py, on by default) patch hciplayer's sync calls and LPC/output pointers.
-    from flac import EXPERIMENTS, patch_words as flac_words
-    flac = flac_words(EXPERIMENTS, symbols(directory/'peq'/'peq.elf'))
+    from flac import patch_words as flac_words
+    flac = flac_words(True, symbols(directory/'peq'/'peq.elf'))
     gates += [fileoff(old, a) for a, _, _ in flac]
     # Lossy gapless: the window's room and the kept edit list.
     from peq import LAVF_PRIV, MOV_EDITS
@@ -824,7 +883,7 @@ def validate_assets(directory):
             # The Settings list: stock's Playback and System setting rows (stock binds them; their
             # labels are literal), hidden in the list's place until Home's Settings row slides it in.
             assert sl == 'list_view' and sp['name'] == 'list_view_homeset' and sp['visible'] == 'false'
-            assert sg == [0, HOME_TOP, HOME_LIST_W, 2*HOME_ROW] and [r[2]['name'] for r in ss[3]] == ['btn_playset', 'btn_sysset']
+            assert sg == [0, HOME_TOP, HOME_LIST_W, 2*SET0.home_row] and [r[2]['name'] for r in ss[3]] == ['btn_playset', 'btn_sysset']
             assert [r[3][1][2]['name'] for r in ss[3]] == ['img_playset', 'img_sysset'] and [r[3][0][2]['text'] for r in ss[3]] == ['Playback', 'System']
             # The art fills the right panel below the status bar; the payload fits and crops it.
             assert art[0] == 'image' and art[1] == [0, 0, 375, BOTTOM] and art[2]['draw_type'] == 'fill' and HOME_LIST_W == 375
@@ -838,7 +897,7 @@ def validate_assets(directory):
                 assert label[1][0] + label[1][2] == image[1][2] - HOME_LABEL_END and label[1][2] >= 100
                 assert label[2]['only_focus'] == 'true' and label[2]['ellipses'] == 'true'
             assert [r[3][0][2].get('text') for r in sv[3]] == [None, 'Library', 'Cover Flow', None, 'Rockbox', None, 'Settings']
-            assert lg == [0, HOME_TOP, HOME_LIST_W, 7*HOME_ROW] and HOME_TOP + 7*HOME_ROW <= BOTTOM - HOME_TOP
+            assert lg == [0, HOME_TOP, HOME_LIST_W, 7*SET0.home_row] and HOME_TOP + 7*SET0.home_row <= BOTTOM - HOME_TOP
             # Home: Carousel's: stock's carousel and arrows after the lists, hidden and taking no taps
             # until chosen (coverflow_home_layout); its cards stock's in their places, Library's label
             # literal, Coverflow's after it and the Shortcut's after Folder on their own images.
@@ -856,13 +915,13 @@ def validate_assets(directory):
             dot = inc('HOME_DOT_X'), inc('HOME_DOT')
             assert HOME_TEXT_X == sum(dot) + inc('HOME_DOT_GAP')
             # The dot and the labels clear the bottom row's corner.
-            assert dot[0] >= corner_x(SET0.bar + HOME_TOP + 6*HOME_ROW + (HOME_ROW - dot[1])//2, dot[1])
-            assert HOME_TEXT_X >= corner_x(SET0.bar + HOME_TOP + 6*HOME_ROW + 9, 20)
+            assert dot[0] >= corner_x(SET0.bar + HOME_TOP + 6*SET0.home_row + (SET0.home_row - dot[1])//2, dot[1])
+            assert HOME_TEXT_X >= corner_x(SET0.bar + HOME_TOP + 6*SET0.home_row + 9, 20)
             # Split (coverflow_home_layout) gives the menu half the screen, the art the rest;
             # Split's glyph ends 13px before the art, as in the Home concept.
             assert inc('HOME_SPLIT_W') == 375 // 2
             assert inc('CHEVRON_W') - 30 - inc('HOME_CHEVRON_SHIFT') == 13
-            assert inc('HOME_MODERN_TEXT_X') >= corner_x(SET0.bar + HOME_TOP + 6*HOME_ROW + 9, 20)
+            assert inc('HOME_MODERN_TEXT_X') >= corner_x(SET0.bar + HOME_TOP + 6*SET0.home_row + 9, 20)
             # Modern's labels stop short of Split's glyph (x 20 to 30 of list_into) and Full's.
             for row, shift in ((inc('HOME_SPLIT_W'), inc('HOME_CHEVRON_SHIFT')), (inc('HOME_MODERN_ROW'), inc('HOME_FULL_CHEVRON_SHIFT'))):
                 assert row - inc('HOME_MODERN_LABEL_END') + 5 <= row - inc('CHEVRON_W') + shift + 20

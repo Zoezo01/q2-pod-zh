@@ -52,6 +52,11 @@ int stock_db_open(const char *path, void **db) {
     if (!bad) sqlite3_exec(*db, "PRAGMA busy_timeout=500", 0, 0, 0);
     return bad;
 }
+/* The library database on a connection of the caller's, with its pragmas run (one exec); nonzero
+ * when it won't open or a pragma fails. */
+int lib_db_open(void **db, const char *pragmas) {
+    return sqlite3_open("/mnt/data/database.db", db) || sqlite3_exec(*db, pragmas, 0, 0, 0);
+}
 /* The database for a write that waits out a reader, playlist_art.c's worker reading the table,
  * instead of failing with SQLITE_BUSY; nonzero when it won't open. */
 static int pl_db(void **db) { return stock_db_open("/mnt/data/database.db", db); }
@@ -167,6 +172,7 @@ static void ple_move(int at, int dir) {
         ple_show();
     } else
         toast("无法保存播放列表");
+>>>>>>> 1.9.1
 }
 /* phase: press, release, or native delivery/long press. A repeat never moves twice. */
 int ple_key(unsigned key, int phase) {
@@ -238,11 +244,13 @@ static int ple_run(const void *unused) {
             void *r = ple.match[action - 1];
             if (checkPlayListExist(r, ple.dest))
                 toast("已在播放列表中");
+>>>>>>> 1.9.1
             else {
                 int before = (int)deque_size(ple.songs);
                 void *one = _create_deque("stSongInfo");
                 if (!one) {
                     toast("无法保存播放列表");
+>>>>>>> 1.9.1
                     return 0;
                 }
                 deque_init(one);
@@ -260,6 +268,7 @@ static int ple_run(const void *unused) {
                 int added = (int)deque_size(ple.songs) > before;
                 if (added) ple_tick(widget_get_child(ple.view, (unsigned)action));
                 toast(added ? "已加入播放列表" : "无法保存播放列表");
+>>>>>>> 1.9.1
             }
             return 0; /* picker stays on its selected song */
         }
@@ -281,6 +290,7 @@ static int ple_run(const void *unused) {
                 ple_reload();
             else
                 toast("无法保存播放列表");
+>>>>>>> 1.9.1
         }
         ple.mode = 0;
     }
@@ -318,6 +328,7 @@ static void ple_search_show(void) {
     ple.edit = edit_create(ple.page, "text", 2, 26);
     widget_set_name(ple.edit, "search_edit");
     t9_box(ple.page, ple.edit, "搜索歌曲");
+>>>>>>> 1.9.1
     if (*ple.query) widget_set_text_utf8(ple.edit, ple.query);
     widget_on(ple.edit, EVT_IM_ACTION, ple_searched, 0);
     widget_set_focused(ple.edit, 1);
@@ -353,6 +364,9 @@ static void ple_show(void) {
         unsigned mask = 0, *in = ple.nmatch ? rec_index(ple.songs, &mask) : 0;
         if (!ple.nmatch)
             page_row_detail(ple.view, 1, "无匹配歌曲", 0, 0);
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
         else
             for (int i = 0; i < shown; i++) {
                 widget_t *row = page_row_detail(
@@ -360,13 +374,16 @@ static void ple_show(void) {
                 if (in && rec_find(ple.songs, in, mask, ple.match[i])) ple_tick(row);
             }
         if (rest) page_row_detail(ple.view, shown + 1, "搜索更多歌曲", 0, ple_more);
+>>>>>>> 1.9.1
         free(in);
     } else
         for (int i = 0; i < n; i++) {
             const char *caption =
-                mode == 0 && i < 2 ? (i ? "完成" : "添加歌曲")
-                : mode == 2        ? actions[i]
-                : mode == 3 ? (i ? "取消" : "从播放列表移除")
+                mode == 0 && i < 2 ? (i ? tr("完成") : tr("添加歌曲"))
+                : mode == 2        ? tr(actions[i])
+                : mode == 3 ? (i ? tr("取消") : tr("从播放列表移除"))
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
                             : track_name(name, sizeof name,
                                          deque_at(ple.songs, (unsigned)(i - (mode == 0 ? 2 : 0))));
             page_row_detail(ple.view, i, caption, 0, ple_pick);
@@ -466,8 +483,12 @@ int ringnav_playlist_delete(widget_t *win, event_t *event) {
     struct {
         int kind, ms;
         char text[0x400];
-    } prompt = { 1, 0, "删除播放列表？" };
+    } prompt = { 1, 0, "" };
+    tk_snprintf(prompt.text, sizeof prompt.text, "%s", "删除播放列表？");
     if (confirm_over(&prompt, "删除") != 10) return 0;
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
     char sql[256];
     if (pl_db(&db)) goto done;
     if (sqlite3_exec(db, "begin immediate", 0, 0, 0)) goto done;
@@ -487,6 +508,7 @@ done:
         navigator_back();
     }
     toast(ok ? "播放列表已删除" : "无法删除播放列表");
+>>>>>>> 1.9.1
     return 0;
 }
 
@@ -496,9 +518,11 @@ int ringnav_playlistsmore(widget_t *win, void *ctx) {
         widget_set_prop_int(win, "_playlist", (int)ctx);
         /* Stock's row says Delete Song; this page deletes the whole playlist. Rename only this
          * label, as Now Playing's Delete Song still deletes the song. As its translation key, so a
-         * re-translation keeps it (no language has the key, so it reads as given). */
+         * re-translation keeps it (stock's tables lack the key, so it reads as given or as a
+         * language pack's line for it). */
         widget_t *del = widget_lookup(win, "label_del", 1);
         if (del) widget_set_tr_text(del, "删除播放列表");
+>>>>>>> 1.9.1
         /* A row like this page's stock Rename and Delete: a 375 px list_item, the set's pitch high
          * (SET0 72), holding a 335 px s_btn_listitem, its body high (68), its 52px icon at x 10 and
          * its 20px label at x 72. Edit Playlist follows the Delete row at the same spacing. */
@@ -516,6 +540,7 @@ int ringnav_playlistsmore(widget_t *win, void *ctx) {
         widget_use_style(label, "s_scrlabel_white20l");
         set_hscroll_label_attribute(label);
         widget_set_text_utf8(label, "编辑播放列表");
+>>>>>>> 1.9.1
         /* A set without settings icons: none here either, the text at its column */
         widget_t *const rows[][2] = { { widget_lookup(win, "img_rename", 1),
                                         widget_lookup(win, "label_rename", 1) },
@@ -552,6 +577,7 @@ int qm_playlist_pick(void *ctx, event_t *event) {
     char click[0x30];
     if (!qm_record()) {
         toast("队列未更改");
+>>>>>>> 1.9.1
         return 0; /* a STOP would leave the list's scroll_view holding its grab */
     }
     qm_select();
@@ -565,11 +591,14 @@ int qm_playlist_gone(void *ctx, event_t *event) {
     return 0;
 }
 
-/* w's live EVT_CLICK handler fn, as its emitter holds it (ctx @0, fn @12), or 0. */
-static void *click_bound(widget_t *w, const void *fn) {
+/* w's live EVT_CLICK handler item, as its emitter holds it (ctx @0, fn @12): fn 0 takes any
+ * handler. A tap target has one. V1.36 widget emitter @0x60; emitter_on_with_tag items are {ctx,
+ * id, type @8, handler, tag, working @0x14, pending_remove @0x15, next @0x20}. */
+void *click_bound(widget_t *w, const void *fn) {
     void *emitter = w ? P(w, W_EMITTER) : (void *)0;
     for (void *item = emitter ? P(emitter, 0) : 0; item; item = P(item, EMIT_NEXT))
-        if (I(item, EMIT_TYPE) == EVT_CLICK && P(item, 12) == fn && !B(item, EMIT_PENDING_REMOVE))
+        if (I(item, EMIT_TYPE) == EVT_CLICK && (!fn || P(item, 12) == fn) &&
+            !B(item, EMIT_PENDING_REMOVE))
             return item;
     return (void *)0;
 }
@@ -637,7 +666,7 @@ void pl_fit(widget_t *button) {
 static widget_t *pl_art_image(widget_t *button);
 static void pl_row(widget_t *item) {
     const theme_t *T = theme();
-    char count[32];
+    char count[64];
     widget_t *button = widget_get_child(item, 0), *info = widget_lookup(button, "view_info", 0);
     widget_t *art = pl_art_image(button);
     int h = T->page_detail, add = widget_get_prop_int(window_of(item), PL_MODE, 0);
@@ -664,6 +693,9 @@ static void pl_row(widget_t *item) {
     while (s && *s && (*s < '0' || *s > '9')) ++s;
     while (s && *s >= '0' && *s <= '9') songs = songs * 10 + (*s++ - '0');
     tk_snprintf(count, sizeof count, "%u 首", songs);
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
     widget_set_text_utf8(second, count);
     hscroll_label_set_only_focus(title, 1);
     theme_font(title, ROLE_TALL, FONT_ROW);
@@ -748,7 +780,7 @@ static void pl_rows(widget_t *win) {
         marks = 0, was = widget_get_prop_int(win, PL_MARKING, 0),
         n = lists ? (int)deque_size(lists) : 0, count = (int)widget_count_children(view);
     for (int i = 0; marking && i < n; ++i) marks += batch_get_selectitem(i) == 1;
-    char words[48];
+    char words[96];
     widget_t *row[PL_N] = { 0 };
     int show[PL_N] = { marking,   !marking, !marking && n > 0, marking || !n, marks > 0,
                        marks > 0, marking };
@@ -773,8 +805,9 @@ static void pl_rows(widget_t *win) {
         widget_set_text_utf8(widget_get_child(widget_get_child(row[PL_SELECT_ALL], 0), 0),
                              B(G_ALLSELECT_FLAG, 0) ? "取消全选" : "全选");
     for (int i = PL_EXPORT; marks && i <= PL_DELETE && row[i]; ++i) {
-        tk_snprintf(words, sizeof words, "%s %d 张播放列表%s", i == PL_EXPORT ? "导出" : "删除", marks,
-                    i == PL_EXPORT ? "\xe2\x80\xa6" : "");
+        tk_snprintf(words, sizeof words,
+                    i == PL_EXPORT ? "导出 %d 张播放列表…" : "删除 %d 张播放列表…",
+                    marks);
         widget_set_text_utf8(widget_get_child(widget_get_child(row[i], 0), 0), words);
     }
     /* the bar reads the toolbar's first label, which stock writes with the last list opened */
@@ -783,13 +816,16 @@ static void pl_rows(widget_t *win) {
                 : marking ? "选择播放列表"
                           : "播放列表",
                 marks);
-    if (nav && widget_count_children(nav)) widget_set_text_utf8(widget_get_child(nav, 0), words);
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
     bar_title_sync(win);
     widget_t *none = widget_lookup(win, PL_NONE, 0);
     if (!none && !n) {
         none = text(win, 0, 124, 375, 32);
         widget_set_name(none, PL_NONE);
         widget_set_text_utf8(none, "暂无播放列表");
+>>>>>>> 1.9.1
         theme_font(none, ROLE_TITLE, FONT_ROW);
         widget_set_prop_int(none, "style:normal:text_color", (int)SPOT_GREY);
     }
@@ -1010,6 +1046,7 @@ static void pl_dress(widget_t *win, int first) {
         pl_action(view, "导出", PL_EXPORT, 0, -1);
         pl_action(view, "删除", PL_DELETE, 0, -1);
         pl_action(view, "完成", PL_DONE, 0, -1);
+>>>>>>> 1.9.1
     }
     pl_rows(win);
     if (first && !add) { /* stock binds it with ctx win (0x4b6024) */

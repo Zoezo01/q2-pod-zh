@@ -11,4 +11,6 @@ typedef struct widget_animator widget_animator_t; /* a glide or a fade in progre
 typedef struct widget_factory widget_factory_t;   /* widget_factory()'s */
 typedef struct image_manager image_manager_t;     /* image_manager()'s */
 typedef struct input_method input_method_t;       /* input_method()'s */
+typedef struct font font_t; /* a face, as font_stb_create makes it (script.c's glyphs) */
+typedef struct font_manager font_manager_t; /* font_manager()'s */
 #endif

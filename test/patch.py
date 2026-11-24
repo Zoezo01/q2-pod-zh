@@ -1629,7 +1629,7 @@ class FolderTagsMachine(ScanMachine):
             elif name=='toolsGetMusicInfo':
                 self.reads+=1; assert (a,self.text(c))==(0,"/m/it's.flac"); ret=1
                 for off in (0,0x100,0x200,0x280,0x480,0x580): u.mem_write(b+off,(self.title if off==0x280 else "New artist's tags").encode()+b'\0')
-                for off,v in ((0x680,2026),(0x684,3),(0x688,2)): self.word(b+off,v)
+                for off,v in ((0x680,2026),(0x684,2),(0x688,3)): self.word(b+off,v)  # year, disc, track
             elif name=='toolsUpdateDbTable':
                 assert self.text(a)=='/mnt/data/database.db'; self.updates.append(self.text(b)); self.db.execute(self.text(b)); ret=1
         else: return super().hook(u,address,size,unused)
@@ -1961,7 +1961,7 @@ m=Machine(); view,imgs=home_list(m); click_target(m,imgs[2])
 m.paint(view)
 assert m.selected(view)==0
 for i in range(1,7): assert m.call()==11 and m.selected(view)==i and m.get(view+O['SCROLL_Y'])==0
-m.paint(view); assert m.rounded[0]['rect']==(25,6*HOME_ROW+HOME_ROW//2-3,6,6)
+m.paint(view); assert m.rounded[0]['rect']==(25,6*SET0.home_row+SET0.home_row//2-3,6,6)
 assert m.call(gap=50)==11 and m.selected(view)==6   # bumped
 assert m.call(gap=O['EDGE_PAUSE_MS'])==11 and m.selected(view)==0
 assert m.call(O['KEY_PREV'],gap=50)==11 and m.selected(view)==0   # bumped
@@ -1979,7 +1979,7 @@ m.byte(syms['g_backlight_status'],0); m.paint(view); assert m.selected(view)==-1
 paint_bar(); assert ('widget_invalidate_force',view) not in [c[:2] for c in m.calls]
 m.touch(); m.byte(syms['g_backlight_status'],1)
 paint_bar(); assert ('widget_invalidate_force',view) in [c[:2] for c in m.calls]
-m.paint(view); assert m.selected(view)==0 and m.rounded[0]['rect']==(25,HOME_ROW//2-3,6,6)
+m.paint(view); assert m.selected(view)==0 and m.rounded[0]['rect']==(25,SET0.home_row//2-3,6,6)
 paint_bar(); assert ('widget_invalidate_force',view) not in [c[:2] for c in m.calls]; passed()
 
 # Chevrons: the stock list_into, where stock rows put img_into, on each visible row of a
@@ -1991,7 +1991,7 @@ m=Machine(); view,imgs=home_list(m); click_target(m,imgs[2]); m.clip=(0,0,375,32
 m.paint(view)
 half=O['CHEVRON_W']-25  # centre of the 50px image, as stock img_into
 bar=lambda: []
-assert m.rounded[0]['rect']==(25,HOME_ROW//2-3,6,6) and m.icons==bar()
+assert m.rounded[0]['rect']==(25,SET0.home_row//2-3,6,6) and m.icons==bar()
 assert loaded(m)==[] and m.clip==(0,0,375,320); passed()
 m.call(); m.paint(view); assert m.selected(view)==1 and m.rounded[0]['rect'][1]>0 and m.icons==bar(); passed()  # follows the bar
 # Drawn in touch mode too, with Home's bar, which touch never hides; none while stock
@@ -2001,8 +2001,8 @@ m.byte(syms['g_navbar_status'],1); m.paint(view); assert not m.icons and not loa
 # Modern: Home's accent bar spans the list and the chevron rides it alone.
 m=Machine(); m.config['THEME']='2'; view,imgs=home_list(m); click_target(m,imgs[2]); m.clip=(0,0,375,320)
 m.paint(view)
-cbar=lambda: [(HOME_LIST_W-half+O['HOME_CHEVRON_SHIFT'],m.sel()[1]+HOME_ROW//2,(0,0,HOME_LIST_W,7*HOME_ROW))]
-assert m.sel()==(0,0,HOME_LIST_W,HOME_ROW) and m.icons==cbar() and not m.rounded
+cbar=lambda: [(HOME_LIST_W-half+O['HOME_CHEVRON_SHIFT'],m.sel()[1]+SET0.home_row//2,(0,0,HOME_LIST_W,7*SET0.home_row))]
+assert m.sel()==(0,0,HOME_LIST_W,SET0.home_row) and m.icons==cbar() and not m.rounded
 assert m.bands[1][4]==color_t(ACCENTS[0][0]) and loaded(m)==['list_into'] and m.clip==(0,0,375,320)
 m.call(); m.paint(view); assert m.selected(view)==1 and m.sel()[1]>0 and m.icons==cbar(); passed()
 # Playlists: every row follows the scroll, clipped to the viewport; the half-width
@@ -2208,7 +2208,7 @@ m.call(address=HOOKS['widget_on_paint_border'][0],args=(m.art,m.canvas,0,0),gap=
 # The list paints only left of the panel; the placeholder (no size) fills the panel.
 m.word(m.canvas+O['CANVAS_X'],0); m.word(m.canvas+O['CANVAS_Y'],30+HOME_TOP)
 m.call(address=HOOKS['widget_on_paint_background'][0],args=(m.list,m.canvas,0,0),gap=0)
-assert m.clip==(0,30+HOME_TOP,SPLIT,7*HOME_ROW),m.clip
+assert m.clip==(0,30+HOME_TOP,SPLIT,7*SET0.home_row),m.clip
 m.call(address=HOOKS['widget_on_paint_border'][0],args=(m.list,m.canvas,0,0),gap=0); assert m.clip==(0,0,375,320)
 m.image_size=None
 m.u.mem_write(syms['g_lastcover_url'],b'/p/none\0')
@@ -4637,7 +4637,7 @@ assert [c[0] for c in calls]==['window_manager_close_window_force','navigator_ba
 m=CoverflowMachine(); old=m.open(); m.tracks(); m.mock('navigator_back','window_manager_close_window_force',prefix='c:')
 assert m.call(address=payload_syms['coverflow_goto_album'],args=(m.albums[1],0,0,0),gap=0)==1
 m.page=m.top; assert m.page!=old and [c[2] for c in m.calls if c[0]=='window_manager_close_window_force']==[old]
-assert not m.find('slide_menu') and m.texts()[:3]==['Album 1','T1','T2']
+assert not m.find('slide_menu') and m.texts()[:3]==['Album 1','T1','T2']  # no lengths: one line a song, no artist
 assert m.call(address=payload_syms['coverflow_shows_album'],args=(m.albums[1],0,0,0),gap=0)==1
 assert m.call(address=payload_syms['coverflow_shows_album'],args=(m.albums[0],0,0,0),gap=0)==0
 f,ctx=m.handler(m.page,O['EVT_KEY_UP']); assert m.call(O['KEY_RETURN'],address=f,args=(ctx,m.event,0,0),gap=0)==11
@@ -5697,7 +5697,7 @@ passed()
 
 m=Machine(); style_color(m,red)
 # config_value passes its default in decimal: SHORTCUT's SETTING_N_SHORTCUT (12) is out of range, so no shortcut
-assert m.config_reads==[('/mnt/data/config.ini','IPOD',key,'0') for key in ('ACCENT','HOME','BATTERY','THEME')]+[('/mnt/data/config.ini','IPOD','SHORTCUT','12'),('/mnt/data/config.ini','IPOD','MINIMAL_ACCENT','0'),('/mnt/data/config.ini','IPOD','ROUNDED','1'),('/mnt/data/config.ini','IPOD','LIGHT','0'),('/mnt/data/config.ini','IPOD','KEEPLIT','0'),('/mnt/data/config.ini','IPOD','NPCENTRED','0'),('/mnt/data/config.ini','IPOD','KEYTONEHP','0'),('/mnt/data/config.ini','IPOD','SCRUBSINGLE','0'),('/mnt/data/config.ini','IPOD','TIMETITLE','1')]+[('/mnt/data/config.ini','IPOD',key,v) for key,v in (('STATUSBAR','0'),('SHOWQ2POD','1'),('CLASSIC_LIGHT_ACCENT','9'),('HOMELIB','1'),('ROWPREVIEW','1'),('ROWART','1'))]; passed()
+assert m.config_reads==[('/mnt/data/config.ini','IPOD',key,'0') for key in ('ACCENT','HOME','BATTERY','THEME')]+[('/mnt/data/config.ini','IPOD','SHORTCUT','12'),('/mnt/data/config.ini','IPOD','ROUNDED','1'),('/mnt/data/config.ini','IPOD','LIGHT','0'),('/mnt/data/config.ini','IPOD','KEEPLIT','0'),('/mnt/data/config.ini','IPOD','NPCENTRED','0'),('/mnt/data/config.ini','IPOD','KEYTONEHP','0'),('/mnt/data/config.ini','IPOD','SCRUBSINGLE','0'),('/mnt/data/config.ini','IPOD','TIMETITLE','1'),('/mnt/data/config.ini','IPOD','MINIMAL_ACCENT','0')]+[('/mnt/data/config.ini','IPOD',key,v) for key,v in (('STATUSBAR','0'),('SHOWQ2POD','1'),('CLASSIC_LIGHT_ACCENT','9'),('HOMELIB','1'),('ROWPREVIEW','1'),('ROWART','1'))]; passed()
 # theme()/scheme(): the active built-in and its scheme, settings read on first use. THEME out of
 # range is Minimal; Classic's stored Ivory and an out-of-range CLASSIC_LIGHT_ACCENT are Classic Blue, on Cobalt's
 # tones; Modern's stored Ivory and an out-of-range ACCENT are Graphite's scheme; a missing MINIMAL_ACCENT is Graphite, a stored Ivory
@@ -6078,10 +6078,11 @@ keep_lit=kids[2]
 assert m.icons_set==['system_display','switch_off','display_backlight','list_into','system_display','list_into','playset_covermode','list_into']
 f,ctx=m.handler(m.nodes[kids[5]]['children'][0],O['EVT_CLICK']); m.calls=[]
 assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and m.opened[-1]==('systemset/display_page',None) and m.get(payload_syms['display_sub'])==0; passed()
-# Cover Flow: Artist View, Playlist View, Sort, Refresh Cover Flow, Fast Navigation; Controls, System's
+# Cover Flow: Artist View, Playlist View, Sort, Refresh Cover Flow, Fast Navigation, Scan Song Durations, Position Bar,
+# Hide Duplicate Albums, Hide Duplicate Songs, Log Failed Artwork; Controls, System's
 # row: the wheel, the buttons and what they do.
-cfv=display_page(m,2); cf,cf_pl,cf_sort,cf_refresh,cf_big,cf_durations,cf_position=m.nodes[cfv]['children']
-assert m.icons_set==['playset_covermode']*3+['system_update','playset_covermode','switch_off','playset_covermode','switch_on','playset_covermode','switch_off'],m.icons_set  # Scan Song Durations: SEED's on
+cfv=display_page(m,2); cf,cf_pl,cf_sort,cf_refresh,cf_big,cf_durations,cf_position,cf_dup_albums,cf_dup_songs,cf_art_log=m.nodes[cfv]['children']
+assert m.icons_set==['playset_covermode']*3+['system_update','playset_covermode','switch_off','playset_covermode','switch_on','playset_covermode','switch_off','playset_covermode','switch_off','playset_covermode','switch_off','playset_covermode','switch_off'],m.icons_set  # Scan Song Durations: SEED's on
 ctl=display_page(m,3); wheel,hold,scrub_one,tone,hp,lock,wake,guard=m.nodes[ctl]['children']
 assert [row_text(r) for r in (hold,scrub_one)]==['Hold Return: Recent','Single Press Scrub']; passed()
 view=display_page(m,1); rows=setting_rows(m,view)
@@ -7494,6 +7495,23 @@ for kw,tone,want in (({'po':1},1,1),({'bal':1},1,1),({'way':1},1,1),({'way':2},1
     m=Machine(); m.config['KEYTONEHP']='1'; m=routed(audible(m,tone=tone),**kw)
     m.call(address=syms['buzzeer_switch'],args=(1,0,0,0)); assert buzzes(m)==want,(kw,tone)
 passed()
+# The click's own write (tone_worker). The cases above have no /dev/mcu, so they sound through stock's
+# command. With one, the worker hands the MCU what cmd_mcu write_str buzzer does: libhardware2's
+# mcu_write_data_timeout request with the string, its length with the NUL and cmd_mcu's timeout, twelve
+# bytes as the Q2's kernel reads them, then closes it, and stock's command never runs.
+class McuMachine(Machine):
+    def __init__(self):
+        super().__init__(); self.mcu=[]
+        for n in ('open','ioctl','close'): self.handlers[syms[n+'@GLIBC_2.0']]='mcu:'+n
+    def hook(self,u,address,size,unused):
+        name=self.handlers.get(address,''); a,b,c=[u.reg_read(r) for r in REGS[:3]]
+        if not name.startswith('mcu:'): return super().hook(u,address,size,unused)
+        if name=='mcu:open': assert (self.text(a),b)==('/dev/mcu',2); self.mcu.append('open'); ret=9
+        elif name=='mcu:ioctl': self.mcu.append((a,b,self.text(self.get(c)),self.get(c+4),self.get(c+8))); ret=7
+        else: self.mcu.append(('close',a)); ret=0
+        self.returns(ret,clobber=True)
+m=routed(audible(McuMachine())); m.call(address=syms['buzzeer_switch'],args=(1,0,0,0))
+assert m.mcu==['open',(9,0x80044d76,'buzzer',7,300000),('close',9)] and not buzzes(m); passed()
 # A reboot keeps the place (playback.c ringnav_reboot): Restart (device_reboot) and the firmware update's
 # dialog, which stops the player before it flashes, save as power-off does (save_memoryplay_info, which
 # ringnav_savequeue hooks) before stock runs, with the dialog's arguments; a stopped player (1) saves nothing.
@@ -7835,7 +7853,7 @@ def home_settings(full,modern=0):
             roww=O['HOME_MODERN_ROW'] if full else O['HOME_SPLIT_W']
             x,y,_=m.icons[0]
             shift=O['HOME_FULL_CHEVRON_SHIFT'] if full else O['HOME_CHEVRON_SHIFT']
-            assert x==roww-O['CHEVRON_W']+25+shift and y==m.sel()[1]+HOME_ROW//2
+            assert x==roww-O['CHEVRON_W']+25+shift and y==m.sel()[1]+SET0.home_row//2
             # Check the shipped glyph's ink, including its tapered ends, against the glass.
             for ix,iy in ink:
                 inset=corner_inset(30+y-25+iy)
@@ -9302,6 +9320,12 @@ m=lyric_save(); assert lyric_drop(m,'01 Yellow.lrc')==':' and m.unlinked==['/mnt
 m=lyric_save(); assert lyric_drop(m,'x$(touch p)`id`".lrc')==':' and m.unlinked==['/mnt/mmc/.downpic/x$(touch p)`id`".lrc']; passed()
 m=lyric_save(); assert lyric_drop(m,'../../x.lrc')==':' and lyric_drop(m,'y'*0x201)==':' and not m.unlinked  # a '/', or too long
 assert lyric_drop(m,'y'*0x200)==':' and m.unlinked==['/mnt/mmc/.downpic/'+'y'*0x200]; passed()  # the longest that fits
+# USB storage's end mounts the card as the mdev script does (build.py CARD_MOUNT_FMT): q2mount's line in stock's ntfs-3g
+# line's 20 bytes, its tail still the TF card update's folder (0x7870f4), and stock's plain mount after it for when
+# q2mount fails.
+from build import CARD_MOUNT_FMT, CARD_MOUNT_REF
+assert m.text(CARD_MOUNT_FMT)=='q2mount %s /mnt/mmc' and m.text(0x7870f4)=='mnt/mmc' and m.text(CARD_MOUNT_FMT+20)=='mount %s /mnt/mmc'
+assert m.get(CARD_MOUNT_REF[0])==CARD_MOUNT_REF[1]; passed()
 # Now Playing's cover thread showing that pick (ringnav_cover_copy, at COVER_PICK_CALL): stock's snprintf of
 # cp -f "/mnt/mmc/.downpic/<file name>.jpg" '/tmp/externpic.jpg' for system() becomes the copy, through .part.
 from build import COVER_PICK_CALL
@@ -9709,7 +9733,7 @@ passed()
 CAPS='/tmp/q2-addon.caps'
 m=AppMachine(); stream_rows(m); caps=bytes(m.files[CAPS])
 assert caps.endswith(b'\n') and caps.count(b'\n')==1,caps
-assert set(caps.split())=={b'playlist',b'progress',b'pages',b'library',b'goto',b'sleep',b'game',b'audio',b'sections',b'art',b'window',b'urls',b'sort',b'field',b'more',b'fav',b'now',b'fieldtext',b'wake',b'audio2',b'dim',b'gameview',b'eq',b'screen',b'volume',b'wifi',b'network',b'bar',b'switch'},caps
+assert set(caps.split())=={b'playlist',b'progress',b'pages',b'library',b'goto',b'sleep',b'game',b'audio',b'sections',b'art',b'window',b'urls',b'sort',b'field',b'more',b'fav',b'now',b'fieldtext',b'wake',b'audio2',b'dim',b'gameview',b'eq',b'screen',b'volume',b'wifi',b'network',b'bar',b'switch',b'playkept'},caps
 m.files[CAPS]=bytearray(b'stale\n'); stream_rows(m); assert m.files[CAPS]==caps; passed()
 # Classic, Home's Split: the Streaming row slides Streaming's rows in, as the Library's: the page's own constructor fills the
 # list, what it sets on a window goes again, every row (stock's 70 px Tidal row and the added ones) takes Home's width and height,
@@ -11118,14 +11142,14 @@ m=ShelfMachine({LIST:bytearray((ROOT/'sources.list').read_bytes()),SPOT_TAG:byte
                 '/proc/mounts':bytearray(b'/dev/mmcblk0p1 /mnt/mmc vfat rw 0 0\n')})  # the card, for card_mounted before a remove
 m.rockbox_mode=0; m.wifi=-1; apps_open(m)
 BLANK=m.labels()[2]; assert BLANK in ('',' ')  # Check for Updates' blank detail: ' ' under a theme's separators
-assert m.labels()==['App Store','Check for Updates',BLANK,'Rockbox','Install','Spotify','Installed','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Jellyfin','Install','Podcasts','Install','Live Music Archive','Install','AirPlay','Install','Utilities','Install','Weather','Install','Books','Install','Groovebox','Install','Videos','Install'] and not m.threads; passed()  # the Apps tab: no themes without Rockbox
+assert m.labels()==['App Store','Check for Updates',BLANK,'Rockbox','Install','Spotify','Installed','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Jellyfin','Install','Plex','Install','Podcasts','Install','Live Music Archive','Install','AirPlay','Install','Utilities','Install','Weather','Install','Books','Install','EQ Studio','Install','Mixtape','Install','Groovebox','Install','Videos','Install','Tailscale','Install'] and not m.threads; passed()  # the Apps tab: no themes without Rockbox
 tab=lambda key: m.call(address=payload_syms['shelf_key'],args=(m.page,O[key],0,0),gap=0,count=5_000_000)
-assert tab('KEY_FWD_BTN')==1 and m.labels()==['App Store','Check for Updates',BLANK,'Buddy','Install','Arcade Games','Install','2048','Install','Dino Runner','Install','Flappy Bird','Install','Pocket Boy','Install','ClassiCube','Install','Doom','Install','Wings','Install','Q2A Miami','Install','Challenger Deep','Install']
+assert tab('KEY_FWD_BTN')==1 and m.labels()==['App Store','Check for Updates',BLANK,'Buddy','Install','Arcade Games','Install','2048','Install','Dino Runner','Install','Flappy Bird','Install','Pocket Boy','Install','ClassiCube','Install','Doom','Install','Wings','Install','Q2A Miami','Install','Six Track','Install','Challenger Deep','Install','Q2 Hero','Install','PICO-8','Install']
 assert tab('KEY_BACK_BTN')==1 and m.labels()[3:5]==['Rockbox','Install'] and tab('KEY_CENTER')==0; passed()  # Next opens Games, Previous Apps
 m.close(); m.wifi=3; m.rockbox_mode=0o100755; m.dirs['/mnt/mmc/.spotify']=[]; apps_open(m)
-assert m.labels()==['App Store','Check for Updates','Checking…','Rockbox','Update','Rockbox Themes','Install','Spotify','Installed','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Jellyfin','Install','Podcasts','Install','Live Music Archive','Install','AirPlay','Install','Utilities','Install','Weather','Install','Books','Install','Groovebox','Install','Videos','Install']
+assert m.labels()==['App Store','Check for Updates','Checking…','Rockbox','Update','Rockbox Themes','Install','Spotify','Installed','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Jellyfin','Install','Plex','Install','Podcasts','Install','Live Music Archive','Install','AirPlay','Install','Utilities','Install','Weather','Install','Books','Install','EQ Studio','Install','Mixtape','Install','Groovebox','Install','Videos','Install','Tailscale','Install']
 m.reply=(ROOT/'test/shelf/q2-librespot.json').read_bytes(); shelf_job(m)
-assert m.opts[10002]=='https://github.com/Carbon-66/q2-challengerdeep/releases/latest' and m.opts[10018]=='Q2Pod' and m.opts[44]==1  # the last of twenty-seven, a game's: its redirect, headers only, no API request
+assert m.opts[10002]=='https://github.com/lampsonlnguyen/q2-pico8/releases/latest' and m.opts[10018]=='Q2Pod' and m.opts[44]==1  # the last of thirty-four, a game's: its redirect, headers only, no API request
 assert m.opts[10065]=='/etc/scrobble-ca.pem' and m.opts[64]==1 and m.opts[81]==2 and m.opts[20108]
 assert m.labels()[8]=='Update' and m.labels()[2]=='Checked just now' and '/tmp/q2-shelf.json' not in m.files  # q2-v1.8 against the latest q2-v1.9
 assert m.toasts[-1][3]=='2 apps can be updated'; passed()  # the opening check's end, the page on top: Rockbox, there by hand, and Spotify
@@ -11147,7 +11171,7 @@ m.close(); m.wifi=3; m.now+=11*60*1000; apps_open(m); assert len(m.threads)==5
 m.row(2); assert m.toasts[-1][3]=='Stopped checking for updates'; shelf_job(m); assert len(m.threads)==5 and m.toasts[-1][3]=='Stopped checking for updates'; passed()
 m.close(); m.rockbox_mode=0; m.dirs.pop('/mnt/mmc/.spotify'); m.reply=(ROOT/'test/shelf/q2-rockbox.json').read_bytes()
 toasts=len(m.toasts); apps_open(m); shelf_job(m); assert len(m.toasts)==toasts  # the opening check: nothing to update, nothing said
-assert m.labels()==['App Store','Check for Updates','Checked just now','Rockbox','Install','Spotify','Install','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Jellyfin','Install','Podcasts','Install','Live Music Archive','Install','AirPlay','Install','Utilities','Install','Weather','Install','Books','Install','Groovebox','Install','Videos','Install']  # not stopped: checked again
+assert m.labels()==['App Store','Check for Updates','Checked just now','Rockbox','Install','Spotify','Install','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Jellyfin','Install','Plex','Install','Podcasts','Install','Live Music Archive','Install','AirPlay','Install','Utilities','Install','Weather','Install','Books','Install','EQ Studio','Install','Mixtape','Install','Groovebox','Install','Videos','Install','Tailscale','Install']  # not stopped: checked again
 m.row(1); assert m.labels()[4]=='Starts at power-on. Press again to install' and len(m.threads)==6
 m.row(1); assert len(m.threads)==7 and m.labels()[4]=='Checking…'; m.row(1); shelf_job(m); assert m.toasts[-1][3]=='Download cancelled'
 m.free=10<<20; m.row(1); m.row(1); shelf_job(m)  # the zip (13018581 bytes) and 64 MB left over
@@ -11161,7 +11185,7 @@ assert m.moves[-2:]==['/mnt/mmc/.q2/apps/rockbox.files','/mnt/mmc/.q2/apps/rockb
 assert m.files['/mnt/mmc/.rockbox/rockbox']==b'ELF3.2' and m.files['/mnt/mmc/.rockbox/fonts/a b.fnt']==b'f'
 assert m.files['/mnt/mmc/.q2/apps/rockbox.files']==b'.rockbox/rockbox\n.rockbox/codecs/flac.codec\n.rockbox/fonts/a b.fnt\n'
 assert not [f for f in m.files if '.q2/staging' in f] and 'sync' in m.systems; passed()
-assert m.labels()==['App Store','Check for Updates','Checked just now','Rockbox','Installed','Rockbox Themes','Install','Spotify','Install','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Jellyfin','Install','Podcasts','Install','Live Music Archive','Install','AirPlay','Install','Utilities','Install','Weather','Install','Books','Install','Groovebox','Install','Videos','Install']; passed()  # the rows built again
+assert m.labels()==['App Store','Check for Updates','Checked just now','Rockbox','Installed','Rockbox Themes','Install','Spotify','Install','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Jellyfin','Install','Plex','Install','Podcasts','Install','Live Music Archive','Install','AirPlay','Install','Utilities','Install','Weather','Install','Books','Install','EQ Studio','Install','Mixtape','Install','Groovebox','Install','Videos','Install','Tailscale','Install']; passed()  # the rows built again
 m.listing='        1  10-06-2026 13:18   .rockbox/../../x\n'; m.files.pop('/mnt/mmc/.q2/apps/rockbox.tag'); m.row(1); shelf_job(m)
 assert m.toasts[-1][3]=='The download is not a usable app' and m.files['/mnt/mmc/.rockbox/rockbox']==b'ELF3.2'; passed()
 m.close(); passed()
@@ -11466,12 +11490,12 @@ assert icons==['system_display','playset_folderjump','playset_covermode','system
 guard=lambda: m.get(payload_syms['wheel_guard'])
 assert guard()==0 and click(7)==[(1,'Q2POD','VOLGUARD')] and texts()[7]=='Volume Guard' and guard()==1
 assert click(7)==[(0,'Q2POD','VOLGUARD')] and texts()[7]=='Volume Guard' and guard()==0; passed()
-# Fast Navigation (Display, Cover Flow's page, its last row): off by default; the row saves BIGLIBRARY, and Cover
+# Fast Navigation (Display, Cover Flow's page, the sixth row from its end): off by default; the row saves BIGLIBRARY, and Cover
 # Flow reads it at once (pod_value(POD_BIG_LIB): letters, years and half copies); a stored value other than 1 is off.
 bm,brows,btexts,bicons,bclick=settings_page('display','scroll_view_display',stock_rows=3,sub=2)
-assert btexts()[-3]=='Fast Navigation' and bicons[-3]=='playset_covermode',(btexts(),bicons)
+assert btexts()[-6]=='Fast Navigation' and bicons[-6]=='playset_covermode',(btexts(),bicons)
 big=lambda bm: bm.call(address=payload_syms['pod_value'],args=(POD['POD_BIG_LIB'],0,0,0),gap=0)
-k=len(brows)-3
+k=len(brows)-6
 assert big(bm)==0 and bclick(k)==[(1,'Q2POD','BIGLIBRARY')] and btexts()[k]=='Fast Navigation' and big(bm)==1
 assert bclick(k)==[(0,'Q2POD','BIGLIBRARY')] and btexts()[k]=='Fast Navigation' and big(bm)==0; passed()
 for v,on in (('1',1),('2',0),('0',0)):
@@ -11480,18 +11504,41 @@ for v,on in (('1',1),('2',0),('0',0)):
 passed()
 # The independent duration switch is off, persists on/off, and cancels on off.
 dm,drows,dtexts,dicons,dclick=settings_page('display','scroll_view_display',{'SCANDURATIONS':'0'},stock_rows=3,sub=2)
-assert dtexts()[-2]=='Scan Song Durations'
-assert dclick(len(drows)-2)==[(1,'Q2POD','SCANDURATIONS')]
-assert dclick(len(drows)-2)==[(0,'Q2POD','SCANDURATIONS')]; passed()
+assert dtexts()[-5]=='Scan Song Durations'
+assert dclick(len(drows)-5)==[(1,'Q2POD','SCANDURATIONS')]
+assert dclick(len(drows)-5)==[(0,'Q2POD','SCANDURATIONS')]; passed()
 # The browsing-position indicator is optional, off by default, and persists independently.
 pm,prows,ptexts,picons,pclick=settings_page('display','scroll_view_display',stock_rows=3,sub=2)
-assert ptexts()[-1]=='Position Bar'
+assert ptexts()[-4]=='Position Bar'
 position_on=lambda pm: pm.call(address=payload_syms['pod_value'],args=(POD['POD_CF_POSITION'],0,0,0),gap=0)
-assert position_on(pm)==0 and pclick(len(prows)-1)==[(1,'Q2POD','CFPOSITION')] and position_on(pm)==1
-assert pclick(len(prows)-1)==[(0,'Q2POD','CFPOSITION')] and position_on(pm)==0
+assert position_on(pm)==0 and pclick(len(prows)-4)==[(1,'Q2POD','CFPOSITION')] and position_on(pm)==1
+assert pclick(len(prows)-4)==[(0,'Q2POD','CFPOSITION')] and position_on(pm)==0
 for v,on in (('1',1),('2',0),('0',0)):
     pm,*_=settings_page('display','scroll_view_display',{'CFPOSITION':v},stock_rows=3,sub=2)
     assert position_on(pm)==on,v
+passed()
+# Hide Duplicate Albums and Hide Duplicate Songs (Cover Flow's third and second rows from its end; music_albums and
+# coverflow_cover_tracks): off by default, each saves its key, read at once; a stored value other than 1 is off.
+dup=lambda um,pod: um.call(address=payload_syms['pod_value'],args=(POD[pod],0,0,0),gap=0)
+for k,row,key,pod in ((3,'Hide Duplicate Albums','CFDUPALBUMS','POD_CF_DUP_ALBUMS'),(2,'Hide Duplicate Songs','CFDUPSONGS','POD_CF_DUP_SONGS')):
+    um,urows,utexts,uicons,uclick=settings_page('display','scroll_view_display',stock_rows=3,sub=2)
+    assert utexts()[-k]==row and uicons[-k]=='playset_covermode',(utexts(),uicons)
+    assert dup(um,pod)==0 and uclick(len(urows)-k)==[(1,'Q2POD',key)] and dup(um,pod)==1
+    assert uclick(len(urows)-k)==[(0,'Q2POD',key)] and dup(um,pod)==0
+    for v,on in (('1',1),('2',0),('0',0)):
+        um,*_=settings_page('display','scroll_view_display',{key:v},stock_rows=3,sub=2)
+        assert dup(um,pod)==on,(key,v)
+passed()
+# Log Failed Artwork (Cover Flow's last row; build_art names an album whose ffmpeg was stopped in q2-crash.log): off by
+# default, saves CFARTLOG, read at once; a stored value other than 1 is off.
+lm,lrows,ltexts,licons,lclick=settings_page('display','scroll_view_display',stock_rows=3,sub=2)
+assert ltexts()[-1]=='Log Failed Artwork' and licons[-1]=='playset_covermode',(ltexts(),licons)
+art_log=lambda lm: lm.call(address=payload_syms['pod_value'],args=(POD['POD_CF_ART_LOG'],0,0,0),gap=0)
+assert art_log(lm)==0 and lclick(len(lrows)-1)==[(1,'Q2POD','CFARTLOG')] and art_log(lm)==1
+assert lclick(len(lrows)-1)==[(0,'Q2POD','CFARTLOG')] and art_log(lm)==0
+for v,on in (('1',1),('2',0),('0',0)):
+    lm,*_=settings_page('display','scroll_view_display',{'CFARTLOG':v},stock_rows=3,sub=2)
+    assert art_log(lm)==on,v
 passed()
 # Buttons Lock opens stock's page, as its row on System did. Key Tone, System's stock row before
 # (0x4cc49c): its byte and key; Click With Headphones shows while it is on, and saves IPOD KEYTONEHP.

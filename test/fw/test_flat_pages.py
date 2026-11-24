@@ -6,13 +6,14 @@ import struct
 
 import pytest
 
-from conftest import O, Config
-from test_nav_paint import (ACCENTS, GRAPHITE, ICONS, LABELS, MINIMAL, MODERN, PAPER, RED, RED_PX, TIDAL, WHITE, Canvas, Quick, bitmaps,
-                            channels, fill_props, image_add, layout, luma, paint_bg, quick_window, rgb_of, rgba, scheme, scrub,
+from conftest import O, Config, rgba
+from test_nav_paint import (ACCENTS, GRAPHITE, ICONS, LABELS, MINIMAL, MODERN, PAPER, RED, RED_PX, TIDAL, WHITE, Canvas, bitmaps,
+                            channels, fill_props, image_add, layout, luma, paint_bg, quick_window, rgb_of, scheme, scrub,
                             SLIDER_PAGES, SLIDERS, USB_LUN, Files, added, count, inside, msg_paint, named, poll,
                             whole, on_page, slider_scrub, slider_paint, ui_load,
                             st, stock_h, theme, vol_paint, volume, world)  # noqa: F401 (fixtures, by name)
 from test_nav_painters import Quick as QuickInit
+from test_nav_paint import quick_page as paint_quick_page
 import test_nav_loop as loop
 from test_nav_loop import SELECTOR_INDEX, keys, stock_bytes  # noqa: F401 (fixtures, by name)
 from test_nav_display_library import POINTER_MOVE, SLIDE_PX, QuickPage, Stock, Ui, pressdown
@@ -49,17 +50,7 @@ def test_a_flat_page_s_ground_is_the_half_s_paper(fw, light, paper):
 
 
 def quick_page(fw, world, images, light='0', pressed=None, **config):
-    theme(fw, MODERN, LIGHT=light, **config)
-    win = world.window('statusbar_dialog', 'dialog')
-    icons = {}
-    for i, (name, image) in enumerate(images.items()):
-        icons[name] = world.add(win, name, 'image', box=(30 + 80 * (i % 4), 40 + 100 * (i // 4), 54, 54), image=image)
-        world.add(win, LABELS[name], 'label', box=(0, 0, 80, 18), text='Label')
-    if pressed:
-        fw.var('quick_settings__quick', Quick).pressed = icons[pressed]
-    canvas = Canvas(fw)
-    paint_bg(fw, win, canvas)
-    return win, icons, canvas
+    return paint_quick_page(fw, world, images, light, pressed, number=MODERN, size=54, **config)
 
 
 def face(canvas, icon_box, row=27):
@@ -560,7 +551,7 @@ class TimeCanvas(loop.Canvas):
 
 @pytest.mark.parametrize('edited', range(len(loop.DATE)))
 def test_modern_paints_the_date_page_flat(fw, keys, edited):
-    loop.Config(fw, THEME=b'2')
+    Config(fw, THEME=b'2')
     top, _ = loop.open_time(fw, loop.Ui(fw), at=(4, 2, 4, 21, 5))
     top.ints[b'_edit_field'] = edited
     canvas = TimeCanvas(fw)
@@ -575,7 +566,7 @@ def test_modern_paints_the_date_page_flat(fw, keys, edited):
 
 @pytest.mark.parametrize('twelve, hour, shown', [(True, 21, ['9', '05', 'PM']), (False, 21, ['21', '05'])])
 def test_modern_paints_the_time_page_flat(fw, keys, twelve, hour, shown):
-    loop.Config(fw, THEME=b'2')
+    Config(fw, THEME=b'2')
     top, _ = loop.open_time(fw, loop.Ui(fw), twelve=twelve, at=(4, 2, 4, hour, 5))
     top.find(b'slide_view').ints[b'value'] = 1
     top.ints[b'_edit_field'] = 3
@@ -593,7 +584,7 @@ def test_modern_paints_the_time_page_flat(fw, keys, twelve, hour, shown):
 def test_modern_s_date_page_in_the_light_half_is_final(fw, keys):
     """The boxes in their final colours, Light Mode's ink held off them (flat_box): the tile and Save at the light
     half's rest, the field being set in what is on, as Quick Settings has them."""
-    loop.Config(fw, THEME=b'2', LIGHT=b'1')
+    Config(fw, THEME=b'2', LIGHT=b'1')
     top, _ = loop.open_time(fw, loop.Ui(fw), at=(4, 2, 4, 21, 5))
     top.ints[b'_edit_field'] = 1
     canvas = TimeCanvas(fw)
@@ -609,7 +600,7 @@ def test_modern_s_date_page_in_the_light_half_is_final(fw, keys):
 def test_modern_set_time_walks_its_fields_then_saves(fw, keys, twelve, last):
     """Classic's model under Modern: Centre walks every field, AM/PM the sixth in 12-hour, and the next Centre saves,
     with no stop on OK; the side buttons stop at the last field."""
-    loop.Config(fw, THEME=b'2')
+    Config(fw, THEME=b'2')
     ui = loop.Ui(fw)
     top, _ = loop.open_time(fw, ui, twelve=twelve)
     assert fw.fn('fields', C.c_int, C.c_void_p)(top.p) == last + 1

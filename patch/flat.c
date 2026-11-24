@@ -6,8 +6,8 @@
 /* Final colours, [0] dark, [1] light: a control at rest, the ink, a quiet line */
 const unsigned flat_rest[2] = { 0x2c2c2e, 0xe9e9ec }, flat_ink[2] = { 0xffffff, 0x1c1c1e },
                flat_quiet[2] = { 0x98989d, 0x6e6e73 };
-/* A page's ground: the half's paper, as the theme's lists have it */
-unsigned flat_page(void) { return ipod_light() ? scheme()->paper : 0; }
+/* A page's ground: the half's paper (a card theme's page), as the theme's lists have it */
+unsigned flat_page(void) { return ipod_paper() ? scheme()->paper : 0; }
 /* What is on, final: the theme's selection bar, its middle row (paint_selection's SEL_BAR), so a
  * lit button matches the row that is chosen. A neutral accent's bar (Graphite's dark grey) is
  * about a button's grey at rest: it takes its red tone, the silver, as Classic's lit tiles do.
@@ -45,10 +45,9 @@ void flat_bar(widget_t *w, canvas_t *canvas, const rect_t *r, int part, unsigned
     unsigned on = flat_on();
     const char *dark = bright_tone(on) ? "_l" : "";
     rect_t f = { r->x, r->y, part < r->h ? r->h : part, r->h };
-    stops_t under = { 2, { 0, 100 }, { rest, rest } }, lit = { 2, { 0, 100 }, { on, on } };
     char name[32];
-    paint_round_rows(canvas, r, &under, 18);
-    if (part > 0) paint_round_rows(canvas, &f, &lit, 18);
+    round_fill(canvas, r, rest, 18);
+    if (part > 0) round_fill(canvas, &f, on, 18);
     if (marks != BAR_SUNS && marks != BAR_SPEAKERS) return;
     /* ponytail: the near mark is the fill's ink even with no fill; every caller fills at least the
      * round end, a mark quiet in the half there would take images of its own */
@@ -87,27 +86,23 @@ void confirm_track_flat(widget_t *w, canvas_t *canvas, int form) {
     unsigned fill = (unsigned)I(lcd, LCD_FILL_COLOR);
     int light = ipod_light();
     unsigned grey = form == FORM_TRAY ? CONFIRM_TRAY_REST : flat_rest[light];
-    stops_t rest = { 2, { 0, 100 }, { grey, grey } };
     if (form == FORM_TRAY) {
         rect_t tray = { 38, 248, 299, 56 };
         flat_box(canvas, &tray, TOAST_RGBA, 12);
     } else {
         bar_rect(canvas, RGBA(flat_page()), 0, BAR_ROWS, 375, 320 - BAR_ROWS);
-        widget_t *bar = *(void *const *)system_bar; /* over Quick Settings nothing else draws it */
-        if (bar) widget_paint(bar, canvas);
-        st.paint_w = w;
+        paint_bar(w, canvas); /* over Quick Settings nothing else draws it */
     }
     for (int k = 0; k < 2; ++k) {
         rect_t r = { I(cell[k], W_X), I(cell[k], W_Y), I(cell[k], W_W), I(cell[k], W_H) };
-        paint_round_rows(canvas, &r, &rest, 18);
+        round_fill(canvas, &r, grey, 18);
     }
     stock_canvas_set_fill_color(canvas, fill);
 }
 /* The flat look's cell that holds, flat in what is on, from paint_selection's confirm branch. */
 void confirm_lit(canvas_t *canvas, const rect_t *c) {
     unsigned on = flat_on();
-    stops_t lit = { 2, { 0, 100 }, { on, on } };
-    paint_round_rows(canvas, c, &lit, 18);
+    round_fill(canvas, c, on, 18);
 }
 /* confirm_labels', flat: no shadow; on the cell that holds white, or the ink on a bright fill; on
  * the other the half's ink, or white on the tray's dark box. */
@@ -137,7 +132,6 @@ void hold_card_flat(canvas_t *canvas, const rect_t *card, int head, int over) {
         round_ring(canvas, &ring, 11, 0xff000000u | line);
         return;
     }
-    stops_t face = { 2, { 0, 100 }, { paper, paper } };
-    paint_round_rows(canvas, card, &face, 10);
+    round_fill(canvas, card, paper, 10);
     bar_rect(canvas, RGBA(line), card->x, card->y + head - 1, card->w, 1);
 }

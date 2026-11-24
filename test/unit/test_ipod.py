@@ -71,7 +71,7 @@ def test_home_card():
     assert card[2]['name'] == 'btn_coverflow'
     image, label = card[3]
     assert image[2] == {'name': 'img_cover_flow', 'style:normal:bg_image': 'menu_coverflow', 'style:focused:bg_image': 'menu_coverflowdown', 'draw': 'menu_music'}
-    assert label[2] == {'name': 'label_cover_flow', 'text': 'Cover Flow'}  # not stock's img_coverflow and label_coverflow, which it binds and translates
+    assert label[2] == {'name': 'label_cover_flow', 'text': 'Cover Flow', 'tr_text': 'Cover Flow'}  # not stock's img_coverflow and label_coverflow, which it binds and translates
     assert m[3][1] == local_card() and len(m[3]) == 7
 
 
@@ -103,7 +103,7 @@ def test_ipod_home():
     assert [c[2]['name'] for c in carousel[3]] == ['btn_playing', 'btn_localmusic', 'btn_coverflow', 'btn_folder', 'btn_rockbox',
                                                    'btn_stream', 'btn_playset', 'btn_sysset']
     assert carousel[3][2][3][1][2]['text'] == 'Cover Flow' and carousel[3][4][3][1][2]['text'] == 'Rockbox'
-    assert carousel[3][1][3][1][2] == {'name': 'label_library', 'text': 'Library'}
+    assert carousel[3][1][3][1][2] == {'name': 'label_library', 'text': 'Library', 'tr_text': 'Library'}
     assert carousel[3][2][3][1][2]['name'] == 'label_cover_flow' and carousel[3][2][3][0][2]['draw'] == 'menu_music'  # ours, cloned; stock's card is gone
     assert [n[2]['name'] for n in rows[2][3]] == ['label_cover_flow', 'img_cover_flow'] and carousel[3][2][3][0][2]['name'] == 'img_cover_flow'
     for n in root[3][3:]:
@@ -328,6 +328,45 @@ def test_playing_page_moves_controls_beside_the_art(page):
     assert n['img_playmode'][1] == [x - ipod.NP_ICON - 6, y, ipod.NP_ICON, ipod.NP_ICON]
     assert [c[2].get('name') for c in n['view_album'][3]] == ['img_cover', 'img_playstate', 'scrlabel_title', 'scrlabel_artist',
                                                               'label_ipod_album', 'img_playmode', 'img_fav']
+
+
+CARD_WIDGETS = [(m[1], m[2], set(m[3].split(' | ')), int(m[4]), [int(v) for v in m.groups()[4:]]) for m in re.finditer(
+    r'^CARD_WIDGET\((CARD_\w+), "(\w+)", ([A-Z_ |]+), (\d+), (-?\d+), (-?\d+), (-?\d+), (-?\d+)\)$',
+    (ipod.ROOT/'patch/card_widgets.inc').read_text(), re.M)]
+
+
+def test_card_widgets_match_the_layout(page):
+    """patch/card_widgets.inc, a card theme's rows (the Studio's catalogue on Q2 Pod): a Now Playing row is a widget
+    of the set-0 page, its box its parent's laid-out size (view_album fills slide_view; the place ends at More) and
+    holding the widget, its text size the built one (the album's Minimal's capitals); a lock row is a widget
+    lockscreen.c looks up, its box the screen; Home's rows are the main list's, last and in its order (card_rules.c's
+    HOME), each a view whose first child is its label, at Minimal's capitals' size. A box exactly where a move or size
+    is taken."""
+    root, n = page
+    parent = {c[2].get('name'): node[2].get('name') for node in ipod.walk(root) for c in node[3]}
+    lock = (ipod.ROOT/'patch/lockscreen.c').read_text()
+    home = {view[2]['name']: view for view in ipod.home_list('home', ipod.HOME_ROWS, ipod.SET0)[3][0][3]}
+    assert len(CARD_WIDGETS) == 27 and CARD_WIDGETS[0][1] == 'img_cover'  # card_rules.c's ART
+    assert [name for page_id, name, *_ in CARD_WIDGETS[-7:] if page_id == 'CARD_HOME'] == list(home)  # its HOME
+    for page_id, name, acts, font, box in CARD_WIDGETS:
+        assert (box != [0] * 4) == bool(acts & {'CR_MOVE', 'CR_SIZE'}) and bool(font) == ('CR_FONT' in acts), name
+        if page_id == 'CARD_HOME':
+            assert home[name][3][0][0] == 'hscroll_label' and font == ipod.O['HOME_CAPS_PX'], name
+            # the Shortcut row's label is the Shortcut's; Settings is always there
+            assert acts == {'CR_HIDE', 'CR_FONT', 'CR_TEXT'} - {{'btn_rockbox': 'CR_TEXT', 'btn_settings': 'CR_HIDE'}.get(name)}, name
+            continue
+        if page_id == 'CARD_LOCK':
+            assert f'"{name}"' in lock and box in ([0] * 4, [0, 0, 375, 320]), name
+            continue
+        x, y, w, h = n[name][1]
+        if box != [0] * 4:
+            up = 'slide_view' if parent[name] == 'view_album' else parent[name]
+            room = n[up][1][2:] if name != 'label_ipod_pos' else [n['img_more'][1][0], n[up][1][3]]
+            assert box == [0, 0, *room] and x + w <= box[2] and y + h <= box[3], name
+        built = n[name][2].get('style:normal:font_size')
+        if built:
+            assert font == (ipod.O['NP_CAPS_PX'] if name == 'label_ipod_album' else int(built)), name
+    assert parent['label_ipod_pos'] == 'view_buttons' and n['slide_view'][1][2:] == [375, 186]
 
 
 def test_playing_page_text_column(page):
@@ -688,7 +727,7 @@ def test_confirm_dialog():
     for i, (n, text) in enumerate(zip(root[3], ('Cancel', 'OK'))):
         assert n[0] == 'button' and n[1] == [0, ipod.CONFIRM_TOP + i * ipod.CONFIRM_ROW, 375, ipod.CONFIRM_ROW]
         assert 'other' not in n[2]
-        assert (n[2]['name'], n[2]['text'], n[2]['focusable']) == (('img_cancel', 'img_enter')[i], text, 'false')
+        assert (n[2]['name'], n[2]['text'], n[2]['tr_text'], n[2]['focusable']) == (('img_cancel', 'img_enter')[i], text, text, 'false')
         assert n[2]['style:normal:font_size'] == '20' and n[2]['style:normal:text_align_h'] == 'center'
         for state in ('normal', 'pressed', 'over', 'focused'):
             assert n[2][f'style:{state}:bg_color'] == ('#333333' if state == 'pressed' else '#00000000')

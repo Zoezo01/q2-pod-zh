@@ -2,6 +2,7 @@
 timers, card games, the page they draw over Q2SPOT/1, their QR codes, library requests, and the database.ignore
 markers."""
 import ctypes as C
+import os
 import random
 import re
 import struct
@@ -9,11 +10,13 @@ import struct
 import pytest
 
 import host
-from conftest import O, SPOT_FAIL, SPOT_NOSOCK, SPOT_OK, Deques, Game, block, claim, high_halves, libc, text
+from conftest import O, SPOT_FAIL, SPOT_NOSOCK, SPOT_OK, Config, Deques, Dirent, Game, block, claim, high_halves, libc, text
+from fuzz import hostile
 from test_coverflow import png  # an icon's header
 from test_netupdate import JOB_INSTALL, JOB_REMOVE, SH_CANCELLED, SH_CARD, SH_NET, SH_OK, Sh  # test_netupdate.py keeps netupdate.c's App Store mirror
 from test_radio import Rd, execl, mixer  # noqa: F401  the mirror; the child's execl calls; USB_MIXER, for a USB DAC's volume
 from test_tidal import Au, Queue, free_stubbed  # test_tidal.py keeps tidal.c's au mirror
+from test_nav_loop import toasts
 
 APPS_MAX = 64
 REPLY_MAX = 64 << 10
@@ -40,13 +43,11 @@ class App(C.Structure):
                 *((n, C.c_int) for n in ('qr', 'game', 'audio', 'view', 'hidden', 'present', 'launched', 'hold', 'relaunch', 'restart', 'nostop',
                                          'nowifi', 'row', 'wifi', 'wifi_off')),
                 *((n, C.c_uint) for n in ('polled', 'launch_at', 'restart_at', 'play')), ('baricon', C.c_char * 56),
-                ('barword', C.c_char * 12), ('barw', C.c_int)]
+                ('barword', C.c_char * 12), ('barw', C.c_int), ('root', C.c_int)]
 
 
 class Ap(C.Structure):
-    _fields_ = [('a', App * APPS_MAX), ('n', C.c_int), ('shown', C.c_int), ('order', C.c_int * APPS_MAX),
-                ('games', C.c_int), ('game', C.c_int * APPS_MAX), ('libs', C.c_int), ('lib', C.c_int * APPS_MAX),
-                ('nets', C.c_int), ('net', C.c_int * APPS_MAX)]
+    _fields_ = [('a', App * APPS_MAX), ('n', C.c_int), ('cnt', C.c_int * 4), ('rows', (C.c_int * APPS_MAX) * 4)]
 
 
 class Sm(C.Structure):
@@ -107,32 +108,15 @@ class Scope(C.Structure):
     _fields_ = [('rules', C.POINTER(Rule)), ('sql', C.c_void_p), ('bytes', C.c_uint), ('ready', C.c_int), ('failed', C.c_int)]
 
 
-class Dirent(C.Structure):  # test/fw/host.py's
-    _fields_ = [('ino', C.c_uint), ('off', C.c_uint), ('reclen', C.c_ushort), ('d_type', C.c_ubyte), ('d_name', C.c_char * 256)]
-
-
-def hostile(seed, samples, count=1500, alphabet=b'%\t\n=/. \r'):
-    """Random bytes, every truncation of the samples, and mutations of them."""
-    r = random.Random(seed)
-    for _ in range(count):
-        yield r.randbytes(r.randrange(120)).replace(b'\0', b'\n')
-    for s in samples:
-        for k in range(len(s)):
-            yield s[:k]
-    for _ in range(count):
-        b = bytearray(r.choice(samples))
-        for _ in range(r.randrange(1, 6)):
-            b[r.randrange(len(b))] = r.choice(alphabet)
-        yield bytes(b)
-
-
 class World:
     """The card, /tmp and the clocks: files by path, folders listed as given, every effect logged."""
     def __init__(self, fw, files=None, dirs=None, now=1000):
         self.fw, self.files, self.dirs, self.now, self.ms = fw, dict(files or {}), dict(dirs or {}), now, 1000
         self.log, self.at, self.names, self.written, self.lists, self.mtime = [], {}, {}, {}, {}, {}
+        self.owner = {}  # a path's st_uid, root's by default
         self.fail_write = lambda name: False
         fw.mock('tk_str_start_with', lambda s, p, *_: C.string_at(s).startswith(C.string_at(p)))
+        fw.mock('tk_str_end_with', lambda s, e, *_: C.string_at(s).endswith(C.string_at(e)))
         for stub, fn in (('fw_fopen', self.fopen), ('fw_fread', self.fread), ('fw_fseek', self.fseek), ('fw_fwrite', self.fwrite), ('fw_rename', self.rename),
                          ('fw_unlink', self.unlink), ('fw_system', self.system), ('fw_access', self.access), ('fw___xstat', self.stat),
                          ('fw_opendir', self.opendir), ('fw_readdir', self.readdir)):
@@ -195,6 +179,7 @@ class World:
             return -1
         st = C.cast(info, C.POINTER(C.c_uint))
         st[5] = 0o100644 if name in self.files else 0o040755
+        st[7] = self.owner.get(name, 0)
         st[16] = self.mtime.get(name, 1)
 
     def opendir(self, path, *_):
@@ -221,7 +206,7 @@ def ap(fw):
 
 
 def valid_id(fw, s):
-    return fw.fn('addon__valid_id', C.c_int, C.c_void_p)(block(fw, s))
+    return fw.fn('valid_id', C.c_int, C.c_void_p)(block(fw, s))
 
 
 @pytest.mark.parametrize('s,ok', [
@@ -290,6 +275,103 @@ def test_a_url_queue_s_app_starts_when_it_isn_t_running(fw, files, launched, sin
     assert world.of('system') == ([RUN] if started else [])
 
 
+# Card apps without root (app_user.c): under a card mounted for APP_UID, an app runs as APP_UID, in groups video and
+# audio, after the secrets and the screen are set; root=1, or a card mounted as stock mounts it, keeps root as before.
+APP_UID, SYS_CHMOD, SYS_LCHOWN, SYS_SETUID, SYS_SETGID, SYS_SETGROUPS, SYS_CHOWN = 1000, 4015, 4016, 4023, 4046, 4081, 4202
+SND = [b'controlC0', b'pcmC0D0p']  # /dev/snd's nodes, given to audio (mdev's rules may miss them)
+SECRETS = [b'/mnt/data/wpa_supplicant.conf', b'/mnt/data/tidal.conf', b'/mnt/data/baidu_token.conf', b'/mnt/data/q2remote.key']
+DROP = [*((SYS_CHMOD, f, 0o600) for f in SECRETS), (SYS_CHOWN, b'/dev/fb0', 0, 28), (SYS_CHMOD, b'/dev/fb0', 0o660),
+        (SYS_CHOWN, b'/dev/shanling_dac', 0, 29), (SYS_CHMOD, b'/dev/shanling_dac', 0o660),
+        *((op, b'/dev/snd/' + n, *a) for n in SND for op, *a in ((SYS_CHOWN, 0, 29), (SYS_CHMOD, 0o660))),
+        (SYS_SETGROUPS, 2, [28, 29]), (SYS_SETGID, APP_UID), (SYS_SETUID, APP_UID)]
+
+
+def syscalls(fw, fail=None):
+    """cf_syscall's calls from now on as DROP lists them, each read as it is made (a path may be a stack buffer's);
+    the one numbered fail fails, and one after it ends the (forked) test's process with 97."""
+    out: list[tuple] = []
+    def syscall(nr, a, b, c, *_):
+        nr = C.c_int(nr).value
+        if out and out[-1][0] == fail:
+            os._exit(97)
+        if nr == SYS_CHMOD:
+            out.append((nr, C.string_at(a), b))
+        elif nr in (SYS_CHOWN, SYS_LCHOWN):
+            out.append((nr, C.string_at(a), b, c))
+        elif nr == SYS_SETGROUPS:
+            out.append((nr, a, list((C.c_uint * a).from_address(b))))
+        else:
+            out.append((nr, a))
+        return -1 if nr == fail else 0
+    fw.mock('cf_syscall', syscall)
+    return out
+
+
+def owned(fw):
+    """The paths lchowned to APP_UID from now on (app_own)."""
+    made = syscalls(fw)
+    return lambda: [c[1] for c in made if c[0] == SYS_LCHOWN and c[2] == APP_UID]
+
+
+@pytest.mark.parametrize('manifest, root', [
+    (b'name=A\n', 0), (b'name=A\nroot=0\n', 0), (b'name=A\nroot=yes\n', 0), (b'name=A\nroot=1\n', 1), (b'name=A\r\nroot=1\r\n', 1),
+])
+def test_an_app_keeps_root_only_when_its_q2app_says_root_1(fw, manifest, root):
+    card(fw, a=manifest)
+    scan(fw)
+    assert ap(fw).a[0].root == root
+
+
+def woken(fw, manifest, owner, fork, fail=None):
+    """The app a's run started (addon_wake) under a card owned by owner, fork returning fork and the syscall numbered
+    fail failing: the world, the calls and cf_syscall's."""
+    world = card(fw, a=manifest)
+    world.owner[b'/mnt/mmc'] = owner
+    world.dirs[b'/dev/snd'] = [b'.', b'..', *SND]
+    scan(fw)
+    fw.mock('fw_fork', lambda *_: fork)
+    made = syscalls(fw, fail)
+    assert fw.fn('addon_wake', C.c_int, C.c_char_p)(b'a') == 1
+    return world, fw.calls(), made
+
+
+@pytest.mark.parametrize('manifest, owner, user', [
+    (b'name=A\n', APP_UID, True),  # the default
+    (b'name=A\nroot=1\n', APP_UID, False),  # system(), as before
+    (b'name=A\n', 0, False),  # q2mount's option refused: an app as APP_UID couldn't write the card
+])
+def test_a_run_starts_as_app_uid_unless_root_1_or_the_card_isn_t_mounted_for_it(fw, manifest, owner, user):
+    world, _, _ = woken(fw, manifest, owner, fork=4242)
+    assert world.of('system') == ([] if user else [RUN])
+    assert [(a[0], a[2]) for _, a in fw.calls('fw_waitpid')] == ([(4242, 0)] if user else [])  # waited for, as system() waits
+
+
+def test_a_runs_child_closes_demos_files_drops_root_then_runs_the_launcher_in_a_shell(fw):
+    _, calls, made = woken(fw, b'name=A\n', APP_UID, fork=0)
+    order = [n for n, _ in calls]
+    fork, execl = order.index('fw_fork'), order.index('fw_execl')
+    closes = [i for i, n in enumerate(order) if fork < i < execl and n == 'fw_close']
+    assert [calls[i][1][0] for i in closes] == list(range(3, 1024))
+    assert made == DROP and closes[-1] < order.index('cf_syscall') and order[execl - 1] == 'cf_syscall'
+    assert [C.string_at(p) if p else p for p in calls[execl][1][:5]] == [b'/bin/sh', b'sh', b'-c', RUN[0], 0]
+    assert order[execl + 1] == 'child_exit' and calls[execl + 1][1][0] == 127  # its exec failed
+
+
+@pytest.mark.parametrize('fails', [SYS_SETGROUPS, SYS_SETGID, SYS_SETUID])
+def test_a_drop_that_doesn_t_take_ends_the_child_before_anything_runs(fw, fails):
+    """In a real fork, where child_exit (_exit) doesn't return: past a noreturn call there is no path, and gcov would
+    count one. The child's counts go with it."""
+    child = os.fork()
+    if not child:
+        try:
+            fw.mock('child_exit', lambda status, *_: os._exit(status))
+            fw.mock('fw_execl', lambda *_: os._exit(99))  # the run, as root
+            woken(fw, b'name=A\n', APP_UID, fork=0, fail=fails)
+        finally:
+            os._exit(98)  # no child_exit
+    assert os.waitpid(child, 0)[1] == 126 << 8  # the next drop (97) and the exec (99) never came
+
+
 def test_an_app_the_card_doesn_t_hold_isn_t_woken(fw):
     slots(fw, b'a')
     assert fw.fn('addon_wake', C.c_int, C.c_char_p)(b'b') == 0
@@ -346,7 +428,7 @@ def scan(fw):
 
 def names(fw, fn):
     get = fw.fn(fn, C.c_char_p, C.c_int)
-    return [get(k) for k in range(-1, ap(fw).shown + 1)]
+    return [get(k) for k in range(-1, ap(fw).cnt[0] + 1)]
 
 
 def test_scan_finds_apps_by_name(fw):
@@ -409,7 +491,7 @@ def test_a_hidden_app_has_no_streaming_row(fw):
     assert (ap(fw).a[1].id, ap(fw).a[1].hidden, ap(fw).a[1].present) == (b'airplay', 1, 1)
 
 
-ROWS = ROW_STREAMING, ROW_GAMES, ROW_LIBRARY = range(3)  # addon.c's, in the order Ap counts them: shown, games, libs
+ROWS = ROW_STREAMING, ROW_GAMES, ROW_LIBRARY = range(3)  # addon.c's, in the order Ap's cnt counts them: Streaming, games, libs
 ROW_NETWORK = 3
 
 
@@ -423,7 +505,7 @@ ROW_NETWORK = 3
 def test_a_manifest_says_where_its_row_is(fw, manifest, row):
     card(fw, one=manifest)
     scan(fw)
-    assert ap(fw).a[0].row == row and (ap(fw).shown, ap(fw).games, ap(fw).libs) == tuple(int(row == r) for r in ROWS)
+    assert ap(fw).a[0].row == row and (ap(fw).cnt[0], ap(fw).cnt[1], ap(fw).cnt[2]) == tuple(int(row == r) for r in ROWS)
 
 
 def test_wifi_and_network_keys(fw):
@@ -439,7 +521,7 @@ def test_wifi_and_network_keys(fw):
 @pytest.mark.parametrize('manifest', [b'name=N\nrow=setting\n', b'name=N\nrow=Settings\n'])
 def test_unknown_row_still_streaming(fw, manifest):
     card(fw, one=manifest)
-    assert fw.fn('addon_network', C.c_int)() == 0 and ap(fw).shown == 1
+    assert fw.fn('addon_network', C.c_int)() == 0 and ap(fw).cnt[0] == 1
 
 
 @pytest.mark.parametrize('manifest, wifi', [(b'wifi=1\n', 1), (b'wifi=1\r\n', 1), (b'wifi=0\n', 0), (b'wifi=yes\n', 0), (b'', 0)])
@@ -712,12 +794,12 @@ def test_more_apps_than_slots(fw):
 def test_the_features_are_published_at_every_scan(fw):
     world = card(fw)
     scan(fw)
-    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections art window urls sort field more fav now fieldtext wake audio2 dim gameview eq screen volume wifi network bar switch\n'
+    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections art window urls sort field more fav now fieldtext wake audio2 dim gameview eq screen volume wifi network bar switch playkept\n'
     assert world.of('rename') == [(b'/tmp/q2-addon.caps.tmp', b'/tmp/q2-addon.caps')]
 
 
 def test_hostile_manifests(fw):
-    for raw in hostile(41, [b'name=Foo Bar\nsearch=Find\nqr=1\ngoto=1\n'], 600):
+    for raw in hostile(41, [b'name=Foo Bar\nsearch=Find\nqr=1\ngoto=1\n'], 600, b'%\t\n=/. \r', 120, b'\n'):
         world = card(fw, one=raw)
         ap(fw).n = 0
         n = scan(fw)
@@ -923,7 +1005,7 @@ def test_a_list_of_exactly_the_limit_keeps_its_last_line(fw):
 def test_hostile_playlists(fw):
     world = World(fw)
     samples = [b'#EXTM3U\n\xef\xbb\xbf' + SONG + b'\r\n/tmp/x\n/mnt/mmc/../y\n#c\n']
-    for raw in hostile(42, samples, 800, b'\n\r#/.\xef\xbb\xbf'):
+    for raw in hostile(42, samples, 800, b'\n\r#/.\xef\xbb\xbf', 120, b'\n'):
         next_, want, _ = m3u(fw, raw, world)
         assert want == b'' or (want.startswith(b'/mnt/mmc/') and b'\n' not in want)
         world.lists.clear(), world.names.clear()
@@ -1011,9 +1093,11 @@ class Stream:
     """Stream mode end to end: card apps whose .play names a folder (or playlist) they fill; stock's listing of a
     folder (toolsLoadDirectory); Now Playing loading into stock's queue what play_folder hands it, which
     playback_loads counts, as playback_groups does; and the UI loop's passes, addon_poll and then its timers."""
-    def __init__(self, fw, mcl, songs, **apps):
+    def __init__(self, fw, mcl, songs, left=b'', **apps):
         self.fw, self.mcl, self.songs = fw, mcl, songs
         self.world = card(fw, **(apps or {'foo': b'name=Foo\n'}))
+        if left:  # foo's .play, kept in /tmp from before demo started
+            self.play(left)
         scan(fw)
         for i in range(ap(fw).n):  # each started, its loop running
             ap(fw).a[i].launched = 1
@@ -1239,6 +1323,38 @@ def test_another_apps_play_file_left_in_tmp_never_takes_the_queue_back(fw, mcl, 
     assert s.queued() == [one, b'/mnt/mmc/.foo/s/02.flac'] and len(s.loads) == 3
 
 
+def test_a_play_file_left_from_before_q2_pod_started_is_not_played_again(fw, mcl, songs):
+    s = Stream(fw, mcl, songs, left=b'1 ' + SESSION + b'\n')  # a crash, or back from Rockbox, /tmp kept
+    s.land(SESSION + b'/01.flac')
+    s.step()
+    s.step()
+    assert s.loads == [] and s.queued() == [] and not fw.calls('toolsLoadDirectory')
+    scan(fw)  # a rescan (the card mounted, USB storage, the App Store) doesn't make it new
+    s.step()
+    assert s.loads == [] and s.playing() is None
+    s.play(b'2 ' + SESSION + b'\n')  # the app's next session plays
+    s.step()
+    assert s.loads == [(LIBRARY, 1)] and s.queued() == [SESSION + b'/01.flac']
+
+
+def test_a_play_file_an_app_leaves_when_it_stops_keeps_its_queue_followed(fw, mcl, songs):
+    s = started(fw, mcl, songs)
+    app = ap(fw).a[0]
+    app.launched = 0  # it stopped, its .play left in place
+    del s.world.files[app.pid]
+    s.land(SESSION + b'/02.flac')
+    s.step()
+    scan(fw)
+    app.launched = 1  # started again
+    s.world.files[app.pid] = b'1'
+    s.step()
+    s.step()
+    assert len(s.loads) == 1 and s.queued() == [SESSION + b'/01 - One [1].flac', SESSION + b'/02.flac']
+    mcl.pos = 1
+    s.step()
+    assert s.playing() == SESSION + b'/02.flac\n'
+
+
 def playlist(fw, mcl, songs, *entries):
     s = Stream(fw, mcl, songs)
     s.world.files[PLAYLIST] = b'#EXTM3U\n' + b''.join(e + b'\n' for e in entries)
@@ -1443,7 +1559,7 @@ def test_an_app_removing_a_file_that_isnt_the_timer_leaves_it(fw):
 
 def test_hostile_sleep_files(fw):
     s = Sleep(fw)
-    for raw in hostile(43, [b'until 1000600\n', b'until 99999999999'], 800, b' 0159\n'):
+    for raw in hostile(43, [b'until 1000600\n', b'until 99999999999'], 800, b' 0159\n', 120, b'\n'):
         if raw.startswith(b'end'):  # reads the stock queue's position, at its address on the Q2
             continue
         s.read(raw)
@@ -1795,11 +1911,7 @@ SNAKE_SOCK = b'/tmp/q2-snake.input.sock'
 
 def settings(fw, **values):
     """config.ini as Q2 Pod reads its settings: these keys' values, every other its default."""
-    wanted = {k.encode(): v for k, v in values.items()}
-    def read(path, section, key, out, default, *_):
-        value = wanted.get(C.string_at(key), C.string_at(default))
-        C.memmove(out, value + b'\0', len(value) + 1)
-    fw.mock('toolsReadConfig', read)
+    Config(fw, **values)
 
 
 class CardGame:
@@ -1890,8 +2002,10 @@ def test_game_can_give_now_playing_the_screen_and_keys(fw, how):
     game_front = fw.fn('addon_game_front', C.c_int)
     assert game_front() == 1
     g.world.files[VIEW] = b'now\n'  # a line end allowed
+    chowned = owned(fw)
     g.poll(500)
     assert g.world.files[VIEW] == b'open' and current[0] == 2
+    assert chowned() == [VIEW]  # the game's to remove (sticky /tmp)
     assert g.on() == g.PID and game_front() == 0
     assert fw.var('wheel_raw', C.c_int).value == 0
     travel = fw.var('wheel_travel', C.c_int)
@@ -2191,9 +2305,11 @@ def test_headphones_required_is_left_to_stock_s_resume(fw):
 def test_the_sound_s_request(fw, text, takes):
     g, gm = switched(fw)
     g.world.files[SOUND] = text
+    chowned = owned(fw)
     g.poll(500)
     assert gm.audio == takes and len(fw.calls('player_save_stop')) == takes
     assert (SOUND in g.world.files) == (text != b'music\n')
+    assert chowned() == [SOUND] * takes  # the answer: the game's to replace
 
 
 @pytest.mark.parametrize('manifest', [b'name=Snake\ngame=1\n', b'name=Snake\ngame=1\naudio=1\n', b'name=Snake\ngame=1\naudio=3\n'])
@@ -2489,6 +2605,21 @@ def test_the_shortcut_finds_a_game_whose_row_is_elsewhere(fw):
     opened = fw.fn('addon_game_open', C.c_int, C.c_char_p)
     assert opened(b'tools') == -1 and not g.on()  # in Games, but no game
     assert opened(b'snake') == 1 and g.on() == g.PID
+
+
+@pytest.mark.parametrize('manifest, drops', [(b'name=Snake\ngame=1\n', True), (b'name=Snake\ngame=1\nroot=1\n', False)])
+def test_a_games_child_drops_root_after_closing_demos_files_unless_root_1(fw, manifest, drops):
+    g = CardGame(fw, snake=manifest)
+    g.world.owner[b'/mnt/mmc'] = APP_UID
+    g.world.dirs[b'/dev/snd'] = [b'.', b'..', *SND]
+    fw.mock('fw_fork', lambda *_: 0)
+    made = syscalls(fw)
+    g.start()
+    calls = fw.calls()
+    order = [n for n, _ in calls]
+    fork, execl = order.index('fw_fork'), order.index('fw_execl')
+    assert made == (DROP if drops else []) and 'cf_syscall' not in order[:fork] + order[execl:]
+    assert not drops or max(i for i in range(fork, execl) if order[i] == 'fw_close') < order.index('cf_syscall', fork)
 
 
 def test_a_game_runs_over_the_screen_taking_the_wheels_raw_travel(fw):
@@ -5382,7 +5513,7 @@ PRESSES = {b'library': lambda fw, k: fw.fn('addon_lib_open', C.c_int, C.c_void_p
 @pytest.mark.parametrize('row', PRESSES)
 def test_an_app_s_library_or_games_row_opens_its_page(fw, row):
     p = Page(fw, b'name=Foo\nrow=%s\n' % row, opens=False)
-    assert ap(fw).shown == 0  # no Streaming row
+    assert ap(fw).cnt[0] == 0  # no Streaming row
     for k in (5, -1, 0):  # a row past the list opens nothing
         PRESSES[row](fw, k)
         assert bool(p.pg.page) == (k == 0)
@@ -5544,7 +5675,7 @@ def test_hostile_status_files(fw):
     lcd, canvas = block(fw, size=4096), block(fw, size=4096)
     C.c_void_p.from_address(canvas + CANVAS_LCD).value = lcd
     paint = fw.fn('addon_paint', None, C.c_void_p, C.c_void_p)
-    for raw in hostile(45, samples, 800, b'0af=z\n '):
+    for raw in hostile(45, samples, 800, b'0af=z\n ', 120, b'\n'):
         q.again(raw)
         if q.code:
             paint(q.qp.qr, canvas)  # a hidden widget isn't painted
@@ -6086,7 +6217,7 @@ def test_stocks_own_import_gets_the_whole_folder(fw):
 def test_hostile_requests(fw):
     q = Requests(fw, 'a.m3u')
     samples = [f'7\r\nscan\nimport {PL}\nadd {PL}\n'.encode(), f'8\nadd {LIB_DIR}{"n" * 80}.m3u\nimport {LIB_DIR}x/y\n'.encode()]
-    for k, raw in enumerate(hostile(46, samples, 800, b'\n\r /.\xff')):
+    for k, raw in enumerate(hostile(46, samples, 800, b'\n\r /.\xff', 120, b'\n')):
         libup(fw).state = L_IDLE
         q.world.names.clear()
         q.take(raw)
@@ -6209,7 +6340,7 @@ def test_an_app_whose_row_is_not_streaming_s_is_asked_for_its_request_too(fw, ro
     lib = Library(fw, 'a.m3u', gone=b'name=Gone\n', foo=b'name=Foo\nrow=%s\n' % row)
     del lib.world.files[b'/mnt/mmc/.gone/q2-gone']  # a slot before it whose app left the card: passed over
     scan(fw)
-    assert ap(fw).shown == 0
+    assert ap(fw).cnt[0] == 0
     lib.request(f'7\nimport {LIB_DIR}a.m3u\n'.encode())
     lib.poll()
     assert lib.imports == [[b'a.m3u']] and lib.answer() == b'7 ok\n'
@@ -6583,7 +6714,7 @@ def test_hostile_rules_files(fw):
     world = World(fw)
     samples = [b"0/mnt/mmc/A\n1/mnt/mmc/A/It's\n0/mnt/mmc/\xc3\xa9\n"]
     set_ = scope(fw)
-    for raw in hostile(47, samples, 800, b"'\n01/"):
+    for raw in hostile(47, samples, 800, b"'\n01/", 120, b'\n'):
         world.files[RULES] = raw
         world.names.clear()
         set_.ready = 0
@@ -6595,17 +6726,8 @@ def test_hostile_rules_files(fw):
 
 def shortcut(fw, value):
     """IPOD SHORTCUT in config.ini, every other key its default; Home's shortcut row's click."""
-    def read(path, section, key, out, default, *_):
-        v = value if C.string_at(key) == b'SHORTCUT' else C.string_at(default)
-        C.memmove(out, v + b'\0', len(v) + 1)
-    fw.mock('toolsReadConfig', read)
+    Config(fw, SHORTCUT=value)
     return fw.fn('home_shortcut_open', C.c_int, C.c_void_p, C.c_void_p)
-
-
-def toasts(fw):
-    out = []
-    fw.mock('navigator_to_with_context', lambda page, info, *_: out.append(C.string_at(info + 8)))  # toast's dialog
-    return out
 
 
 def test_the_groovebox_shortcut_starts_the_card_game_with_the_sound(fw):

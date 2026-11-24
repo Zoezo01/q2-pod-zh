@@ -63,22 +63,28 @@ static int mp3_extension(const unsigned char *h, unsigned size, unsigned at, uns
     return 1;
 }
 
+/* MPEG audio's sample rate by index, and bitrate in kbps by [MPEG-2 or 2.5][index]. */
+const unsigned short mp3_rates[3] = { 44100, 48000, 32000 };
+const unsigned short mp3_kbps[2][15] = {
+    { 0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320 },
+    { 0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160 }
+};
+
+/* A Layer III frame's bytes: 1152 samples in MPEG-1 (version 3), else 576, plus the padding bit. */
+unsigned mp3_frame_bytes(unsigned version, unsigned br, unsigned hz, unsigned pad) {
+    return (version == 3 ? 144000 : 72000) * mp3_kbps[version != 3][br] / hz + pad;
+}
+
 /* The first frame's size, 0 unless h holds the whole of a Layer III frame. */
 static unsigned mp3_frame(const unsigned char *h, unsigned n, unsigned *hz, unsigned *spf,
                           unsigned *mono) {
-    static const unsigned rates[] = { 44100, 48000, 32000 };
-    static const unsigned bitrates[2][15] = {
-        { 0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320 },
-        { 0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160 }
-    };
     if (n < 4 || h[0] != 255 || (h[1] & 224) != 224) return 0;
     unsigned version = h[1] >> 3 & 3, r = h[2] >> 2 & 3, br = h[2] >> 4;
     if (version == 1 || (h[1] & 6) != 2 || r == 3 || !br || br == 15) return 0;
-    *hz = rates[r] >> (version == 3 ? 0 : version == 2 ? 1 : 2);
+    *hz = mp3_rates[r] >> (version == 3 ? 0 : version == 2 ? 1 : 2);
     *spf = version == 3 ? 1152 : 576;
     *mono = (h[3] & 192) == 192;
-    unsigned size =
-        (version == 3 ? 144000 : 72000) * bitrates[version != 3][br] / *hz + (h[2] >> 1 & 1);
+    unsigned size = mp3_frame_bytes(version, br, *hz, h[2] >> 1 & 1);
     return n < size ? 0 : size;
 }
 

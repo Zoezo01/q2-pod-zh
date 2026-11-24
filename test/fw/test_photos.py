@@ -8,7 +8,7 @@ import struct
 
 import pytest
 
-from conftest import FNV_PRIME, O, Files, block, fnv1a
+from conftest import FNV_PRIME, O, Config, Files, block, fnv1a
 
 ROOT = '/mnt/mmc/Photos'
 CACHE = '/mnt/mmc/.photos'
@@ -995,10 +995,7 @@ SCREEN_W, SCREEN_H = 375, 320
 def classic(fw):
     """THEME 1, Classic: the bar holds a page's title (page_title_h 0) and lists slide in place. Before anything reads
     the theme."""
-    def read(path, section, key, out, default, *_):
-        v = b'1' if C.string_at(key) == b'THEME' else C.string_at(default)
-        C.memmove(out, v + b'\0', len(v) + 1)
-    fw.mock('toolsReadConfig', read)
+    Config(fw, THEME='1')
 
 
 def classic_bar(fw, page):

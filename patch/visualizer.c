@@ -19,17 +19,20 @@
 #define CONTOUR_N ((VIS_W - 1) / CONTOUR_STEP + 2) /* its points: every step and the right edge */
 /* clang-format on */
 #define TAU 6.2831853f
-/* The Pulsar's lines rise from RIDGE_FLOOR (30 dB under a full-scale sine, VIS_FLOOR_DB) to full
- * height at RIDGE_TOP (6 dB under). ponytail: a fixed scale, so a quiet recording draws low lines;
- * pulsr follows a running peak instead, the upgrade if that shows. */
-#define RIDGE_FLOOR 0.5f
-#define RIDGE_TOP 0.9f
+/* The Pulsar's lines rise over the 24 dB under a running peak, as pulsr's do: the peak jumps to the
+ * loudest band, falls 6 dB a second and never under 40 dB below a full-scale sine, and full height
+ * is 2 dB over it, so a quiet recording rises as a loud one does. */
+#define RIDGE_SPAN (24.0f / VIS_FLOOR_DB)
+#define RIDGE_ROOM (2.0f / VIS_FLOOR_DB)
+#define RIDGE_FALL (6.0f / VIS_FLOOR_DB)       /* a second */
+#define RIDGE_LOW (1 - 40.0f / VIS_FLOOR_DB)   /* the peak's least */
 #define RIDGE_TILT (2 * 0.135f / VIS_FLOOR_DB) /* 2 dB an octave, 0.135 a band */
 enum { SPECTRUM, SCOPE, METERS, HALO, PULSAR, CONTOUR, STYLES };
 
 static struct {
     float re[VIS_N], im[VIS_N], pcm[VIS_N][2], hann[VIS_N]; /* hann[VIS_N / 2] is 0 until filled */
-    float level[VIS_HALO], peak[VIS_BARS], fall[VIS_BARS], wave[2][VIS_W], vu[2], spin, bass;
+    float level[VIS_HALO], peak[VIS_BARS], fall[VIS_BARS], wave[2][VIS_W], vu[2], spin, bass,
+        top; /* top: the Pulsar's running peak */
     unsigned held[VIS_BARS], lit[2], bin_rate;
     int w;                 /* the page's width (visualizer_attach) */
     int bin[VIS_HALO + 1]; /* each band's first FFT bin at bin_rate */
@@ -139,7 +142,7 @@ void vis_reset(void) {
     memset(vz.vu, 0, sizeof vz.vu);
     memset(vz.lit, 0, sizeof vz.lit);
     memset(vz.ridge, 0, sizeof vz.ridge);
-    vz.bass = 0;
+    vz.bass = vz.top = 0;
     cz.last[0] = cz.last[1] = cz.last[2] = 1;
     cz.kick = 0;
 }
@@ -192,14 +195,18 @@ void vis_analyze(int style, unsigned rate, float dt, unsigned now) {
         float bass = (vz.level[0] + vz.level[2] + vz.level[4] + vz.level[6]) / 4;
         vz.bass += (bass - vz.bass) * 0.5f;
     }
-    /* A new line: the bands, tilted to the treble, RIDGE_FLOOR to RIDGE_TOP squared, tapered to
-     * flat over each end's 22% by a raised cosine. */
+    /* A new line: the bands, tilted to the treble, over the RIDGE_SPAN under the running peak and
+     * squared, tapered to flat over each end's 22% by a raised cosine. A silent band stays flat. */
     if (style == PULSAR) {
-        float *line = vz.ridge[vz.row = (vz.row + 1) % VIS_ROWS];
+        float *line = vz.ridge[vz.row = (vz.row + 1) % VIS_ROWS], top = vz.top - RIDGE_FALL * dt;
+        for (int b = 0; b < VIS_HALO; ++b)
+            if (vz.level[b] + RIDGE_TILT * (b - 31.5f) > top)
+                top = vz.level[b] + RIDGE_TILT * (b - 31.5f);
+        vz.top = top = top < RIDGE_LOW ? RIDGE_LOW : top;
+        float low = top + RIDGE_ROOM - RIDGE_SPAN;
         for (int b = 0; b < VIS_HALO; ++b) {
             float x = axis(b), edge = (x < 1 - x ? x : 1 - x) / 0.22f,
-                  v = (vz.level[b] + RIDGE_TILT * (b - 31.5f) - RIDGE_FLOOR) /
-                      (RIDGE_TOP - RIDGE_FLOOR);
+                  v = vz.level[b] ? (vz.level[b] + RIDGE_TILT * (b - 31.5f) - low) / RIDGE_SPAN : 0;
             v = v < 0 ? 0 : v > 1 ? 1 : v;
             line[b] = v * v * (edge < 1 ? 0.5f - 0.5f * cosf(TAU / 2 * edge) : 1);
         }
@@ -648,6 +655,7 @@ static int look(const void *unused) {
 void visualizer_paint(widget_t *w, canvas_t *canvas) {
     static const char *const names[] = { "频谱", "示波器", "VU 表",
                                          "光环", "脉冲星", "轮廓" };
+>>>>>>> 1.9.1
     if (!w) return;
     if (w == vz.page) { /* the page paints first, its canvas x 0 only when still */
         vz.page_x = I(canvas, CANVAS_X) - vz.ox;
@@ -691,7 +699,7 @@ void visualizer_paint(widget_t *w, canvas_t *canvas) {
     }
     unsigned shown = now - vz.named;
     if (vz.named && shown < 1500)
-        caption(canvas, names[vz.style], 0, VIS_H - 22, vz.w, 20, 14,
+        caption(canvas, tr(names[vz.style]), 0, VIS_H - 22, vz.w, 20, 14,
                 rgba(0xaaaaaa, shown < 1000 ? 255 : 255 * (1500 - shown) / 500));
     else if (vz.quiet) { /* the track: title · artist, or the title alone, trimmed to fit */
         widget_t *tl = widget_lookup(vz.win, "scrlabel_title", 1),

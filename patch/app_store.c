@@ -131,6 +131,7 @@ static void paint_strip(widget_t *w, canvas_t *canvas) {
     int h = I(w, W_H), tab = widget_get_prop_int(w, "_tab", 0),
         n[2] = { widget_get_prop_int(w, "_b0", 0), widget_get_prop_int(w, "_b1", 0) };
     static const char *const names[2] = { "应用", "游戏" };
+>>>>>>> 1.9.1
     canvas_set_fill_color(canvas, rgba(0, 255)); /* the paper */
     canvas_fill_rect(canvas, 0, 0, 375, h);
     if (T->painter[PAINT_SELECTION] == SEL_CARD) { /* Minimal: the names, the open one dotted */
@@ -140,12 +141,15 @@ static void paint_strip(widget_t *w, canvas_t *canvas) {
                 rect_t dot = { x - 14, h / 2 - 2, 5, 5 };
                 fill_box(canvas, &dot, rgba(0xffffff, 255), 3);
             }
-            text_at(canvas, names[i], x, 0, h, 17, rgba(i == tab ? 0xffffff : 0x5c5c5c, 255), LEFT);
+            text_at(canvas, tr(names[i]), x, 0, h, 17, rgba(i == tab ? 0xffffff : 0x5c5c5c, 255),
+                    LEFT);
             x = GAMES_X;
         }
         if (n[0] + n[1]) {
-            char s[24];
+            char s[64];
             snprintf(s, sizeof s, "%d 个可更新", n[0] + n[1]);
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
             text_at(canvas, s, 375 - 20, 0, h, 12, rgba(SUDO_MUTED, 255), RIGHT);
         }
         return;
@@ -178,7 +182,7 @@ static void paint_strip(widget_t *w, canvas_t *canvas) {
         unsigned c = i == tab ? ink : classic ? 0xffffff : band;
         ui_ink_raw((i == tab || !classic) && raw);
         rect_t r = { cx - half / 2, y, half, SEG_H };
-        caption(canvas, names[i], r.x, r.y, r.w, r.h, face_px(classic ? 17 : 16), rgba(c, 255));
+        caption(canvas, tr(names[i]), r.x, r.y, r.w, r.h, face_px(classic ? 17 : 16), rgba(c, 255));
         ui_ink_raw(0);
         if (n[i]) badge(canvas, SEG_X + half * (i + 1) - 10, y + SEG_H / 2, n[i], i == tab);
     }
@@ -189,12 +193,13 @@ static void paint_strip(widget_t *w, canvas_t *canvas) {
  * accent goes through Light Mode's flip, which keeps a colour and turns a neutral accent dark. */
 static void paint_row(widget_t *w, canvas_t *canvas, int state) {
     static const char *const words[3] = { "安装", "更新", "已安装" };
+>>>>>>> 1.9.1
     int h = I(w, W_H), card = theme()->painter[PAINT_SELECTION] == SEL_CARD,
         lit = st.sel_w == P(w, W_PARENT) && st.sel_row == I(w, W_Y) / h, raw = 0;
     unsigned ink = state != 1 ? SUDO_MUTED : card ? 0xffffff : accent_tone(0);
     if (lit) row_look(&ink, &raw);
     if (raw) ui_ink_raw(1);
-    text_at(canvas, words[state], card ? 375 - 16 : 375 - 20, 0, h, face_px(12), rgba(ink, 255),
+    text_at(canvas, tr(words[state]), card ? 375 - 16 : 375 - 20, 0, h, face_px(12), rgba(ink, 255),
             RIGHT);
     if (raw) ui_ink_raw(0);
 }

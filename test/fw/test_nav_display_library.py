@@ -9,8 +9,9 @@ import struct
 import pytest
 
 import host
-from conftest import NAVIGATION_SOURCE, O, Deques, Files, claim, high_halves
+from conftest import NAVIGATION_SOURCE, O, Config, Deques, Files, claim, high_halves, pod_value
 from test_coverflow import SONGTABLE  # stock's songtable, as demo's CREATE TABLE text has it
+from test_navigation import clock
 
 W_PARENT, EVT_CLICK, EVENT_TYPE, EVENT_KEY, EVENT_X = O['W_PARENT'], O['EVT_CLICK'], O['EVENT_TYPE'], O['EVENT_KEY'], O['EVENT_X']
 STOP = 11
@@ -48,17 +49,6 @@ def st(fw, scratch):
     def field(name, ctype=C.c_int, i=0):
         return ctype.from_address(base + scratch[name] + i * C.sizeof(ctype))
     return field
-
-
-class Config:
-    """config.ini: a key's value, or the default."""
-    def __init__(self, fw, **values):
-        self.values = {k.encode(): v for k, v in values.items()}
-        fw.mock('toolsReadConfig', self.read)
-
-    def read(self, path, section, key, out, default, *_):
-        value = self.values.get(C.string_at(key), C.string_at(default))
-        C.memmove(out, value + b'\0', len(value) + 1)
 
 
 def writes(fw):
@@ -488,18 +478,6 @@ def test_classic_battery_takes_only_its_three_styles(fw):
                                                      ('Icon', [('BATTERY', 0)])]
 
 
-@pytest.fixture
-def clock(fw):
-    """time and localtime_r: hour is what the clock says."""
-    state = {'hour': 12}
-    def local(now, out, *_):
-        C.c_int.from_address(out + 8).value = state['hour']
-        return out
-    fw.mock('fw_time', lambda *_: 1700000000)
-    fw.mock('fw_localtime_r', local)
-    return state
-
-
 @pytest.mark.parametrize('hour, day', [(12, 1), (22, 0)])
 def test_light_modes_auto_applies_from_its_click(fw, st, clock, hour, day):
     ui = Ui(fw)
@@ -756,8 +734,31 @@ def test_cover_flow_page_holds_artist_view_playlists_sort_refresh_and_large_libr
     ui.click(button_of(page.view(), 'Cover Flow'))
     assert page.title() == 'Cover Flow'
     found = titles(page.view())
-    assert len(found) == 7 and found[:2] == ['Artist View', 'Playlist View'] and found[2] == 'Sort'
-    assert found[3:] == ['Refresh Cover Flow', 'Fast Navigation', 'Scan Song Durations', 'Position Bar']
+    assert len(found) == 10 and found[:2] == ['Artist View', 'Playlist View'] and found[2] == 'Sort'
+    assert found[3:] == ['Refresh Cover Flow', 'Fast Navigation', 'Scan Song Durations', 'Position Bar', 'Hide Duplicate Albums',
+                         'Hide Duplicate Songs', 'Log Failed Artwork']
+
+
+@pytest.mark.parametrize('stored, on', [(None, 0), (b'1', 1), (b'2', 0)])
+def test_log_failed_artwork_is_off_unless_1_and_its_row_saves_cfartlog(fw, stored, on):
+    ui = Ui(fw)
+    page = display(fw, ui, **({'CFARTLOG': stored} if stored else {}))
+    ui.click(button_of(page.view(), 'Cover Flow'))
+    assert pod_value(fw, 'POD_CF_ART_LOG') == on
+    ui.click(button_of(page.view(), 'Log Failed Artwork'))
+    assert writes(fw) == [('CFARTLOG', 1 - on)] and pod_value(fw, 'POD_CF_ART_LOG') == 1 - on
+
+
+@pytest.mark.parametrize('row, key, pod', [('Hide Duplicate Albums', 'CFDUPALBUMS', 'POD_CF_DUP_ALBUMS'),
+                                           ('Hide Duplicate Songs', 'CFDUPSONGS', 'POD_CF_DUP_SONGS')])
+@pytest.mark.parametrize('stored, on', [(None, 0), (b'1', 1), (b'2', 0)])
+def test_the_hide_duplicate_switches_are_off_unless_1_and_save_their_key(fw, row, key, pod, stored, on):
+    ui = Ui(fw)
+    page = display(fw, ui, **({key: stored} if stored else {}))
+    ui.click(button_of(page.view(), 'Cover Flow'))
+    assert pod_value(fw, pod) == on
+    ui.click(button_of(page.view(), row))
+    assert writes(fw) == [(key, 1 - on)] and pod_value(fw, pod) == 1 - on
 
 
 class Settings:
@@ -899,7 +900,7 @@ def test_boot_to_flips_and_saves_through_a_temporary_file(fw):
     assert label.text == 'Boot to: Q2 Pod' and page.files.files == {BOOT: b'q2pod'}
     ui.click(label.parent)
     assert label.text == 'Boot to: Rockbox' and page.files.files == {BOOT: b'rockbox'}
-    assert {C.string_at(a[0]).decode() for _, a in fw.calls('fw_fopen')} >= {BOOT + '.tmp'}
+    assert {C.string_at(a[0]) for _, a in fw.calls('fw_fopen')} >= {(BOOT + '.tmp').encode()}
 
 
 def test_boot_to_not_saved_says_so_and_stays(fw):
@@ -3293,8 +3294,7 @@ def test_the_albums_list_and_rated_albums_still_group_the_whole_library(fw, reco
     db = Songtable(fw, lib, records)
     Localclass(fw, lib, [records.song(id_=1, album=b'A Night at the Opera', kind=4)])(CLASS_ALBUMS)
     fw.mock('getAllAlbum', lambda *_: lib.staging().append(records.song(id_=3, album=b'Greatest Hits', kind=4)) or 1)
-    none = C.CFUNCTYPE(C.c_int, C.c_void_p)(lambda r: 0)  # no album has hearts
-    assert fw.fn('coverflow_rated', C.c_int, C.c_void_p)(C.cast(none, C.c_void_p)) == 0
+    assert fw.fn('coverflow_rated', C.c_int)() == 0  # no album has hearts: no ratings file
     assert len(db.sent) == 3 and not any(NAMED.search(sql) for sql in db.sent)
     assert 'from (select * from songtable where' in db.sent[0]  # the Albums list's, music alone
     assert {b'album 00', b'album 19', b'greatest hits'} <= {n.lower() for n in db.named}

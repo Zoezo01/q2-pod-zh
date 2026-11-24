@@ -16,7 +16,8 @@ from conftest import FNV_PRIME, O, Deques, Files, favdir_card, fnv1a, high_halve
 from conftest import Rows as HeldRows  # Rows here is Folder view's list
 from test_addon import Pg  # test_addon.py keeps the mirror
 from test_coverflow import SONGTABLE
-from test_navigation import Sa  # test_navigation.py keeps the mirror
+from test_nav_display_library import Ple  # playlists.c's editor state
+from test_navigation import Sa, listen_key  # test_navigation.py keeps the mirror
 from test_tidal import HEARTS, urls_play
 
 KEY_RETURN, KEY_CENTER, KEY_PREV, KEY_NEXT, KEY_PLAY = (O[k] for k in ('KEY_RETURN', 'KEY_CENTER', 'KEY_PREV', 'KEY_NEXT', 'KEY_PLAY'))
@@ -336,13 +337,24 @@ def test_a_record_reads_back_whole(fw, song):
     assert name(out, 64, tagged) == b'One' and name(out, 64, untagged) == b'02 Two'
 
 
-def listen_key(path, cue=0):
-    """A play count's key (docs/internals.md#most-played): the path's FNV-1a with its separator, a CUE track's
-    start mixed in; never 0."""
-    key = fnv1a(path) * FNV_PRIME & 0xffffffff
-    if cue:
-        key = fnv1a(struct.pack('<i', cue), key)
-    return key or 1
+@pytest.mark.parametrize('on', [0, 1])
+def test_hide_duplicate_songs_lists_a_disc_s_number_and_title_once(fw, song, on):
+    """A cover's tracks in album order (disc, number, path); on (CFDUPSONGS), a track with an earlier one's disc, number
+    and title tag, ASCII case aside, goes. Untitled songs are never copies (disc folders' 01.flac), and the Unknown
+    card, every untagged song in the library, is left as it is."""
+    Config(fw, **({'CFDUPSONGS': b'1'} if on else {}))
+    q = Deques(fw)
+    t = [song(b'/m/A/01 One.mp3', b'one', album=b'A', track=1), song(b'/m/A/01 One.flac', b'One', album=b'A', track=1),
+         song(b'/m/A/02 Two.flac', b'Two', album=b'A', track=2), song(b'/m/A/CD1/01.flac', album=b'A'),
+         song(b'/m/A/CD2/01.flac', album=b'A'), song(b'/m/A/01 One.flac', b'One', album=b'A', track=1, disc=2),
+         song(b'/m/A/03 Two.flac', b'Two', album=b'A', track=3)]
+    staging = fw.var('fw_ctx_tools_pdeq_directory', C.c_uint)
+    fw.mock('getMusicByAlbum', lambda *_: q[staging.value].extend(t) or len(t))
+    tracks = fw.fn('coverflow_cover_tracks', C.c_void_p, C.c_void_p)
+    order = [3, 4, 1, 0, 2, 6, 5]
+    assert q[tracks(t[1])] == [t[k] for k in order if not (on and k == 0)]
+    assert q[tracks(song(id_=-1))] == [t[k] for k in order]  # the Unknown card: all of them, either way
+    assert len(q.lists) == 2
 
 
 def file_key(path):
@@ -3398,13 +3410,6 @@ def test_a_card_app_s_album_songs_are_in_track_order(fw, ui, song):
     card = Card(fw, ui, song, APP_SONGS)
     songs = fw.fn('app_album_songs', C.c_long, C.c_char_p)(APP)
     assert card.paths(ui.deques[songs]) == sorted(APP_SONGS)
-
-
-# The playlist editor's records.
-class Ple(C.Structure):
-    _fields_ = [*((k, C.c_void_p) for k in 'page view songs picker edit match'.split()),
-                *((k, C.c_int) for k in 'dest mode selected pending nmatch'.split()),
-                ('key', C.c_uint), ('timer', C.c_uint), ('gen', C.c_uint), ('name', C.c_char * 128), ('query', C.c_char * 128)]
 
 
 @pytest.mark.parametrize('query, titles', [(b'moon', [b'Blue Moon']), (b'ELVIS', [b'Blue Moon', b'02 Untitled']),

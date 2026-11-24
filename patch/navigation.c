@@ -321,15 +321,6 @@ static int ramp(widget_t *top, widget_t *surface, unsigned scope, int ctx, int d
     return spin < first ? 1 : 2 + (spin - first) / more;
 }
 
-/* A tap target has an EVT_CLICK handler. V1.36 widget emitter @0x60; emitter_on_with_tag items are
- * {ctx, id, type @8, handler, tag, working @0x14, pending_remove @0x15, next @0x20}. */
-static int clickable(widget_t *w) {
-    void *emitter = P(w, W_EMITTER);
-    for (void *item = emitter ? P(emitter, 0) : (void *)0; item; item = P(item, EMIT_NEXT))
-        if (I(item, EMIT_TYPE) == EVT_CLICK && !B(item, EMIT_PENDING_REMOVE)) return 1;
-    return 0;
-}
-
 typedef struct {
     widget_t **at;
     int n, cap, budget;
@@ -340,7 +331,7 @@ typedef struct {
 static void collect(widget_t *w, entries_t *s, int depth) {
     if (!w || !widget_get_visible(w) || !widget_get_prop_bool(w, "enable", 1)) return;
     if (depth == 16 || s->n == s->cap || --s->budget < 0) return;
-    if (clickable(w)) {
+    if (click_bound(w, 0)) {
         s->at[s->n++] = w;
         return;
     }
@@ -637,11 +628,7 @@ int usable(void) {
     return !g_usbdet_value && confirm;
 }
 
-static int usb_prompt(void) {
-    widget_t *top = window_manager_get_top_window(window_manager());
-    return g_usblink_status == 2 && !g_usbdet_value && usable() && top &&
-           !tk_strcmp(widget_get_prop_str(top, "name", ""), "confirminfo_dialog");
-}
+static int usb_prompt(void) { return g_usblink_status == 2 && !g_usbdet_value && usable(); }
 
 int allowed_top(widget_t *top) {
     return top && context_id(widget_get_prop_str(top, "name", (void *)0)) >= 0;
@@ -740,8 +727,7 @@ unsigned local_hash(unsigned h) {
 }
 
 static void row_hash_text(const unsigned *s, unsigned *h) {
-    unsigned n = 0;
-    while (s[n]) ++n;
+    unsigned n = wide_len(s);
     /* Stock wchar_t is UTF-32; hash all four bytes, zero bytes inside a character included. */
     *h = hash_bytes(FNV_SEED, (const unsigned char *)s, 4 * n);
     if (!*h) *h = 1; /* zero denotes missing text */
@@ -1350,6 +1336,7 @@ static int pull_event(void *page, event_t *event) {
     if (!prompt) prompt = band_create(page, PULL_PROMPT, 0, 44);
     if (prompt) {
         widget_set_text_utf8(prompt, ready ? "松开搜索" : "下拉搜索");
+>>>>>>> 1.9.1
         widget_set_visible(prompt, dy > 0, 0);
     }
     return STOP;
@@ -1514,6 +1501,10 @@ void paint_round_rows(canvas_t *canvas, const rect_t *r, const stops_t *s, int R
     for (int i = 0; s->n >= 2 && i < r->h; ++i)
         round_row(canvas, r, R, i, 0xff000000u | stops_row(s, i, r->h));
 }
+/* paint_round_rows of one colour: the same rows, without a two-stop gradient of it. */
+void round_fill(canvas_t *canvas, const rect_t *r, unsigned rgb, int R) {
+    for (int i = 0; i < r->h; ++i) round_row(canvas, r, R, i, 0xff000000u | rgb);
+}
 /* A ring a pixel wide just inside r: what R's corners cover and R - 1's, a pixel in, don't. With
  * either out of the table, hard corners. */
 void round_ring(canvas_t *canvas, const rect_t *r, int R, unsigned c) {
@@ -1548,9 +1539,8 @@ void paint_panel(widget_t *w, canvas_t *canvas, const rect_t *r, const char *sha
     /* NOLINTNEXTLINE(clang-analyzer-core.NullPointerArithm) */
     unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
     paint_art(w, canvas, shadow, r->x - PANEL_PAD, r->y - PANEL_PAD + PANEL_DROP);
-    stops_t ring = { 2, { 0, 100 }, { S->bar_line, S->bar_line } };
     rect_t out = { r->x - 1, r->y - 1, r->w + 2, r->h + 2 };
-    paint_round_rows(canvas, &out, &ring, LETTER_RADIUS + 1);
+    round_fill(canvas, &out, S->bar_line, LETTER_RADIUS + 1);
     stops_t even = { 2, { 0, 100 }, { S->bar.rgb[0], S->bar.rgb[0] } };
     paint_round_rows(canvas, r, flat ? &even : &S->bar, LETTER_RADIUS);
     stock_canvas_set_fill_color(canvas, fill);
@@ -1586,7 +1576,9 @@ static unsigned article(const char *s) {
 }
 
 /* Text centred in r in the default font at px, in color; text color and alignment are restored,
- * the font is not (stock sets it before its own text). Shared with peq_ui.c and visualizer.c. */
+ * the font is not (stock sets it before its own text). Shared with peq_ui.c and visualizer.c.
+ * Right-to-left text goes through AWTK's bidi, as the label it may shadow draws it (bidi_text.c).
+ */
 static void draw_in_face(canvas_t *canvas, const char *face, const unsigned *s, unsigned n,
                          const void *r, unsigned px, unsigned color) {
     unsigned text = (unsigned)I(P(canvas, CANVAS_LCD), LCD_TEXT_COLOR);
@@ -1594,7 +1586,10 @@ static void draw_in_face(canvas_t *canvas, const char *face, const unsigned *s, 
     canvas_set_font(canvas, face, px);
     canvas_set_text_color(canvas, color);
     I(canvas, CANVAS_ALIGN_V) = I(canvas, CANVAS_ALIGN_H) = 1;
-    canvas_draw_text_in_rect(canvas, s, n, r);
+    if (bidi_rtl(s, n))
+        canvas_draw_text_bidi_in_rect(canvas, s, n, r, (const char *)0, 0);
+    else
+        canvas_draw_text_in_rect(canvas, s, n, r);
     I(canvas, CANVAS_ALIGN_V) = align_v;
     I(canvas, CANVAS_ALIGN_H) = align_h;
     stock_canvas_set_text_color(canvas, text);
@@ -1871,12 +1866,27 @@ static void paint_cover(widget_t *w, canvas_t *canvas) {
 
 /* Minimal's small capitals (Sudo's): s from x, y (the text's top) in the default font at px,
  * upper-cased (script_upper), SUDO_TRACK px apart, cut off at x + max; returns the whole
- * text's width, a trailing SUDO_TRACK included. The text color is restored, the font is not. */
+ * text's width, a trailing SUDO_TRACK included. The text color is restored, the font is not.
+ * Right-to-left text (an Arabic album) is drawn whole in visual order instead (bidi_text.c): joined
+ * letters can't be spaced apart, and have no capitals; the clip cuts it off at x + max. */
+#define SPACED_RTL_MAX 256
 static int draw_spaced(canvas_t *canvas, const unsigned *s, int x, int y, unsigned px,
                        unsigned color, int max) {
     unsigned text = (unsigned)I(P(canvas, CANVAS_LCD), LCD_TEXT_COLOR);
     canvas_set_font(canvas, (void *)0, px);
     canvas_set_text_color(canvas, color);
+    unsigned n = s ? wide_len(s) : 0, vis[SPACED_RTL_MAX];
+    if (n <= SPACED_RTL_MAX && bidi_visual(s, n, vis)) {
+        int w = (int)(canvas_measure_text(canvas, vis, n) + 0.5f), old[4], clip[4];
+        if (max > 0 && clip_within(canvas, old, clip, I(canvas, CANVAS_X) + x,
+                                   I(canvas, CANVAS_Y) + y, max, 2 * (int)px)) {
+            canvas_set_clip_rect(canvas, clip);
+            canvas_draw_text(canvas, vis, n, x, y);
+            canvas_set_clip_rect(canvas, old);
+        }
+        stock_canvas_set_text_color(canvas, text);
+        return w + SUDO_TRACK;
+    }
     int at = 0;
     for (; s && *s; ++s) {
         unsigned c = script_upper(*s);
@@ -1945,15 +1955,17 @@ static void paint_caps(widget_t *w, canvas_t *canvas) {
     if (st.np_album && w == P(st.np_album, W_PARENT)) {
         if (!T->caps_np) return;
         widget_t *a = st.np_album;
+        /* a card theme's rule: its size, or none drawn for a hidden album */
+        int px = st.card_rules >> CARD_PLAYING & 1 ? card_rule_px(a, NP_CAPS_PX) : NP_CAPS_PX;
         int old[4], clip[4];
-        if (!clip_within(canvas, old, clip, I(canvas, CANVAS_X) + I(a, W_X),
-                         I(canvas, CANVAS_Y) + I(a, W_Y), I(a, W_W), I(a, W_H)))
+        if (!px || !clip_within(canvas, old, clip, I(canvas, CANVAS_X) + I(a, W_X),
+                                I(canvas, CANVAS_Y) + I(a, W_Y), I(a, W_W), I(a, W_H)))
             return;
         canvas_set_clip_rect(canvas, clip);
         int room = I(a, W_W) - NP_CAPS_INSET;
         st.np_over = draw_spaced(canvas, widget_get_text(a), I(a, W_X) + NP_CAPS_INSET - st.np_off,
-                                 I(a, W_Y) + (I(a, W_H) - NP_CAPS_PX) / 2, NP_CAPS_PX,
-                                 RGBA(NP_ALBUM_RGB), room + st.np_off) -
+                                 I(a, W_Y) + (I(a, W_H) - px) / 2, px, RGBA(NP_ALBUM_RGB),
+                                 room + st.np_off) -
                      SUDO_TRACK - room;
         canvas_set_clip_rect(canvas, old);
         if (st.np_over > 0 && !st.np_marquee)
@@ -1965,8 +1977,9 @@ static void paint_caps(widget_t *w, canvas_t *canvas) {
     unsigned color = RGBA(SUDO_MUTED);
     for (widget_t *p = w; p; p = P(p, W_PARENT))
         if (p == st.sel_widget) color = 0xffffffff;
-    draw_spaced(canvas, widget_get_text(w), 0, (I(w, W_H) - HOME_CAPS_PX) / 2, HOME_CAPS_PX, color,
-                I(w, W_W));
+    /* a card theme's rule: its size */
+    int px = st.card_rules >> CARD_HOME & 1 ? card_rule_px(w, HOME_CAPS_PX) : HOME_CAPS_PX;
+    draw_spaced(canvas, widget_get_text(w), 0, (I(w, W_H) - px) / 2, px, color, I(w, W_W));
 }
 
 /* The selected row's long title scrolls, as an iPod's does, MARQUEE_PASSES times as soon as the
@@ -2037,6 +2050,9 @@ static int marq_moved(const void *info) {
     widget_on(label, EVT_DESTROY, marq_gone, (void *)0);
     hscroll_label_set_only_focus(label, 0);
     hscroll_label_start(label);
+    /* Running, stock paints it without its ellipsis, but its start paints nothing: a repaint of
+     * only part of it before it moves would show its text over the ellipsis. */
+    widget_invalidate_force(label, (void *)0);
     return 0;
 }
 
@@ -2266,9 +2282,7 @@ static void confirm_track(widget_t *w, canvas_t *canvas, int form) {
         inset_top(canvas, &t, 6, 0xdd);
     } else {
         bar_rect(canvas, RGBA(scheme()->paper), 0, BAR_ROWS, 375, 320 - BAR_ROWS);
-        widget_t *bar = *(void *const *)system_bar; /* over Quick Settings nothing else draws it */
-        if (bar) widget_paint(bar, canvas);
-        st.paint_w = w;
+        paint_bar(w, canvas); /* over Quick Settings nothing else draws it */
         if (light) {
             /* an inset shadow from the right (-3, 0, blur 3, spread -2) */
             static const unsigned char right[] = { 0x02, 0x06, 0x0e, 0x18 };
@@ -2896,6 +2910,7 @@ static void value_row(widget_t *label, const char *title, const char *value, int
 void list_toggle(widget_t *label, const char *title, int on) {
     if (theme()->set_text) {
         value_row(label, title, on ? "打开" : "关闭", TOGGLE_VALUE_W);
+>>>>>>> 1.9.1
         return;
     }
     widget_t *button = P(label, W_PARENT);
@@ -2944,6 +2959,7 @@ void list_value(widget_t *label, const char *title, const char *value) {
 static void switch_text(widget_t *win, widget_t *label) {
     widget_t *sw = widget_lookup(win, "img_switch", 1);
     list_toggle(label, widget_lookup(win, "view_sleep", 1) ? "睡眠定时" : "锁屏",
+>>>>>>> 1.9.1
                 sw && !tk_strcmp(widget_get_prop_str(sw, "image", ""), "switch_on"));
 }
 static int switch_due(const void *info) {
@@ -3000,15 +3016,17 @@ void row_label(widget_t *label, const char *text) {
      * English across the row and leave the whole text in the value's column. */
     static const char colon[] = "：";
     const char *value = text;
-    while (*value && !(value[0] == colon[0] && value[1] == colon[1] && value[2] == colon[2]))
-        ++value;
-    char title[40] = "强调色";
+    while (*value && !(value[0] == ':' && value[1] == ' ')) ++value;
+    char head[128];
+    const char *title = "强调色";
+    unsigned n = (unsigned)(value - text);
     if (*value) {
-        unsigned n = (unsigned)(value - text);
-        if (n >= sizeof title) n = sizeof title - 1;
-        memcpy(title, text, n);
-        title[n] = 0;
-        value += 3; /* the colon's three UTF-8 bytes */
+        if (n >= sizeof head) n = sizeof head - 1;
+        memcpy(head, text, n);
+        head[n] = 0;
+        title = head;
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
     }
     list_value(label, title, value);
 }
@@ -3046,6 +3064,7 @@ int csv_toggle(char *list, unsigned size, const char *item) {
 /* Stock modes, only with the screen off: 1 locks wheel volume, 2 the buttons, 3 both.
  * KEY_LOCKOUT is the separate, temporary debounce after a button press. */
 const char *const lock_names[] = { "关闭", "全部锁定", "仅按键", "仅音量" };
+>>>>>>> 1.9.1
 int lock_choice(void) {
     if (g_keylock_flag && (g_keylock_mode < 1 || g_keylock_mode > 3)) {
         g_keylock_mode = 3; /* an unknown mode locks Everything */
@@ -3078,7 +3097,7 @@ int ringnav_keylock_rows(widget_t *win) {
     for (int i = 0; i < 4; ++i) {
         widget_t *label =
             list_row(view, i == choice ? "select" : "unselect", lock_pick, (void *)(long)i);
-        widget_set_text_utf8(label, lock_names[i]);
+        widget_set_text_utf8(label, tr(lock_names[i]));
     }
     return 0;
 }
@@ -3103,9 +3122,16 @@ int ringnav_keylock_rows(widget_t *win) {
  */
 /* Bluetooth's Control Device Volume on: the Q2's volume is the device's own (bt_audio_ready). */
 static int bt_vol_link __attribute__((section(".scratch")));
+/* Bluetooth's Receive Audio (BTRECEIVE), on unless the key is 0: headset.c headset_bt_service. */
+static int bt_receive __attribute__((section(".scratch")));
 /* Appearance's Hide Apps, Hide Games and Hide App Store (HIDEAPPS, HIDEGAMES, HIDESTORE): Library's
  * rows, gone at its next open (home.c ringnav_localmusic). */
 static int hide_lib[3] __attribute__((section(".scratch")));
+/* Display's Log Failed Artwork (CFARTLOG): coverflow.c build_art. */
+static int cf_art_log __attribute__((section(".scratch")));
+/* Display's Hide Duplicate Albums and Hide Duplicate Songs (CFDUPALBUMS, CFDUPSONGS): coverflow.c
+ * music_albums and coverflow_cover_tracks. */
+static int cf_dups[2] __attribute__((section(".scratch")));
 static int *const pod_values[] = { &st.charge_limit,
                                    &st.wake_double,
                                    &st.artist_cf,
@@ -3137,7 +3163,13 @@ static int *const pod_values[] = { &st.charge_limit,
                                    &hide_lib[0],
                                    &hide_lib[1],
                                    &hide_lib[2],
+                                   &bt_receive,
+                                   &cf_art_log,
+                                   &cf_dups[0],
+                                   &cf_dups[1],
                                    0 }; /* POD_LIBRARY_FILL: 中文分支自有 action，排在末尾，无值 */
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
 _Static_assert(POD_LOCKCLOCK == 6, "lockscreen.c passes pod_rows 6");
 _Static_assert(POD_REMIND_DAILY == 26, "netupdate.c passes pod_rows 26");
 _Static_assert(sizeof pod_values / sizeof *pod_values == POD_COUNT, "a pod_values per row");
@@ -3172,16 +3204,25 @@ static const char *const pod_keys[] = { "CHARGELIMIT",
                                         "HIDEAPPS",
                                         "HIDEGAMES",
                                         "HIDESTORE",
+                                        "BTRECEIVE",
+                                        "CFARTLOG",
+                                        "CFDUPALBUMS",
+                                        "CFDUPSONGS",
                                         0 }; /* POD_LIBRARY_FILL: 中文分支自有 action，无 key */
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
 _Static_assert(sizeof pod_keys / sizeof *pod_keys == POD_COUNT, "a pod_keys entry per row");
 /* a row's choices: Artist albums three, Standby limit four, every other row two */
 static int pod_choices(unsigned i) { return i == POD_ARTIST_CF ? 3 : i == POD_STANDBY ? 4 : 2; }
 void pod_settings(void) {
     if (st.pod_read) return;
     for (unsigned i = 0; i < sizeof pod_keys / sizeof *pod_keys; ++i)
-        if (pod_keys[i]) /* 表演者专辑默认 Cover Flow，每日提醒默认开 */
-            *pod_values[i] = config_value("Q2POD", pod_keys[i], pod_choices(i),
-                                          i == POD_ARTIST_CF || i == POD_REMIND_DAILY);
+        if (pod_keys[i]) /* 表演者专辑默认 Cover Flow，每日提醒与接收音频默认开 */
+            *pod_values[i] =
+                config_value("Q2POD", pod_keys[i], pod_choices(i),
+                             i == POD_ARTIST_CF || i == POD_REMIND_DAILY || i == POD_BT_RECEIVE);
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
     st.pod_read = 1;
 }
 /* A pod_rows row's value (POD_*, one with a pod_values entry), read once from config.ini. */
@@ -3214,42 +3255,49 @@ int ringnav_bt_connect_start(int pause) {
     int saved = media_owner() == 1 ? mclGetSavePlayStatus() : 0; /* 2 playing, 3 paused */
     return saved == 2 || saved == 3 ? player_save_start(saved == 3) : 0;
 }
+/* Standby limit's hours per choice: pod_text's row and ringnav_standby (system.c) sleep by it. */
+const unsigned standby_hours[] = { 0, STANDBY_LIMIT_1, STANDBY_LIMIT_2, STANDBY_LIMIT_3 };
 static void pod_text(int i) {
     static const char *const names[][4] = {
-        { "充电上限：关闭", "充电上限：" STR(CHARGE_STOP) "%" },
+        { "充电上限 (%u%%)" },
         { "唤醒：单击", "唤醒：双击" },
         { "表演者专辑：网格", "表演者专辑：Cover Flow", "表演者专辑：列表" },
         { "年份顺序：从新到旧", "年份顺序：从旧到新" },
         { "表演者分类：曲目表演者", "表演者分类：专辑表演者" },
-        { "连接后续播：关闭", "连接后续播：打开" },
+        { "连接后续播" },
         { "时钟：标准", "时钟：大字" },
         { "表演者专辑排序：年份", "表演者专辑排序：名称" },
-        { "音量防误触：关闭", "音量防误触：打开" },
+        { "音量防误触" },
         { "长按返回：最近页面", "长按返回：主菜单" },
-        { "待机时限：关闭", "待机时限：" STR(STANDBY_LIMIT_1) " 小时",
-          "待机时限：" STR(STANDBY_LIMIT_2) " 小时",
-          "待机时限：" STR(STANDBY_LIMIT_3) " 小时" },
-        { 0 }, /* Control Device Volume: a switch */
-        { 0 }, /* Coverflow Sort's from coverflow.c */
+        { "待机时限：关闭", "待机时限：%u 小时", "待机时限：%u 小时",
+          "待机时限：%u 小时" },
+        { "联动设备音量" },
+        { 0 }, /* Sort's from coverflow.c */
         { "刷新 Cover Flow" },
         { 0 }, /* EQ per Output: a switch */
-        { 0 }, /* Key Tone: a switch */
-        { 0 }, /* In-Vehicle Mode: a switch */
-        { 0 }, /* Smart Wi-Fi: a switch */
-        { 0 }, /* Enlarged Album Art: a switch */
-        { 0 }, /* Folder Album Cover: a switch */
-        { 0 }, /* Fast Navigation: a switch */
+        { "按键音" },
+        { "车载模式" },
+        { "Smart Wi-Fi" },
+        { "放大专辑封面" },
+        { "文件夹专辑封面" },
+        { "快速导航" },
         { "播放列表视图：列表", "播放列表视图：Cover Flow" },
-        { 0 }, /* Scan Song Durations: a switch */
-        { 0 }, /* Position Bar: a switch */
-        { 0 }, /* Hide Streaming on Home: a switch */
-        { 0 }, /* Hide Folder on Home: a switch */
+        { "检测歌曲时长" },
+        { "位置条" },
+        { "主页隐藏流媒体" },
+        { "主页隐藏文件夹" },
         { "更新通知：关闭", "更新通知：打开" },
         { "专辑视图：列表", "专辑视图：网格" },
-        { 0 }, /* 隐藏应用 / 隐藏游戏 / 隐藏应用商店：开关 */
-        { 0 },
-        { 0 },
+        { "隐藏应用" },
+        { "隐藏游戏" },
+        { "隐藏应用商店" },
+        { "接收音频" },
+        { "记录失败封面" },
+        { "隐藏重复专辑" },
+        { "隐藏重复歌曲" },
         { "补全封面与歌词" }, /* 中文分支自有 action：行上会显示补全过程 */
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
     };
     _Static_assert(sizeof names / sizeof *names == POD_COUNT, "a names entry per row");
     if (i == POD_CF_SORT) { /* the Sort card's words, as Cover Flow's page holds the row */
@@ -3264,29 +3312,18 @@ static void pod_text(int i) {
             : i == POD_FOLDERCOVER ? g_foldercover_flag != 0
             : pod_values[i]        ? *pod_values[i]
                                    : 0;
-    /* The stock rows among these say their own name through widget_set_tr_text below; the rest are ours. */
-    const char *toggle = i == POD_CHARGE           ? "充电上限 (" STR(CHARGE_STOP) "%)"
-                         : i == POD_RESUME         ? "连接后续播"
-                         : i == POD_VOL_GUARD      ? "音量防误触"
-                         : i == POD_BT_LINK        ? "联动设备音量"
-                         : i == POD_KEYTONE        ? "按键音"
-                         : i == POD_CARMODE        ? "车载模式"
-                         : i == POD_SMART_WIFI     ? "Smart Wi-Fi"
-                         : i == POD_COVERMODE      ? "放大专辑封面"
-                         : i == POD_FOLDERCOVER    ? "文件夹专辑封面"
-                         : i == POD_BIG_LIB        ? "快速导航"
-                         : i == POD_SCAN_DURATIONS ? "检测歌曲时长"
-                         : i == POD_CF_POSITION    ? "位置条"
-                         : i == POD_HIDE_STREAM    ? "主页隐藏流媒体"
-                         : i == POD_HIDE_FOLDER    ? "主页隐藏文件夹"
-                         : i == POD_HIDE_APPS      ? "隐藏应用"
-                         : i == POD_HIDE_GAMES     ? "隐藏游戏"
-                         : i == POD_HIDE_STORE     ? "隐藏应用商店"
-                                                   : 0;
+    const char *toggle = names[i][0] && !names[i][1] && i != POD_CF_REFRESH ? names[i][0] : 0;
+    char room[128];
+    const char *text = toggle ? toggle : names[i][v];
+    if (i == POD_CHARGE || (i == POD_STANDBY && v))
+        tk_snprintf(room, sizeof room, text, i == POD_CHARGE ? CHARGE_STOP : standby_hours[v]),
+            text = room;
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
     if (toggle)
-        list_toggle(st.pod_label[i], toggle, v);
+        list_toggle(st.pod_label[i], text, v);
     else
-        widget_set_text_utf8(st.pod_label[i], names[i][v]);
+        widget_set_text_utf8(st.pod_label[i], text);
     /* Stock's rows, so stock's translations */
     if (i == POD_KEYTONE) widget_set_tr_text(st.pod_label[i], "system_keytone");
     if (i == POD_CARMODE) widget_set_tr_text(st.pod_label[i], "system_carmode");
@@ -3323,7 +3360,9 @@ static int pod_click(void *ctx, event_t *event) {
             library_fill_cancel();
         else if (need_link(fill_go, ctx))
             fill_go(0, 0); /* held for Smart Wi-Fi's link, or none */
-        pod_text(i);
+        toast("下次进入时将重建 Cover Flow 封面");
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
     } else if (i == POD_ARTISTS) {
         int v = I(artist_type, 0) != 1;
         I(artist_type, 0) = v;
@@ -3359,6 +3398,8 @@ static int pod_click(void *ctx, event_t *event) {
          * sends the Q2's level to the device. */
         if (i == POD_BT_LINK && mclGetOutputWay() == 1)
             headset_volume_reset(), device_set_volume(g_volume, 0);
+        /* Receive Audio: the direction at the next link, bluealsa's sink at Bluetooth's next on */
+        if (i == POD_BT_RECEIVE) toast(tr("Turn Bluetooth off and on to apply"));
     }
     pod_text(i);
     return 0;
@@ -3394,24 +3435,26 @@ int ringnav_powermanager(widget_t *win, void *ctx) {
     if (view) /* battery.c's page */
         widget_set_text_utf8(list_row_into(view, "system_powermanager", battery_history, 0),
                              "电池历史");
+>>>>>>> 1.9.1
     boot_row(view);
     return result;
 }
 /* The Bluetooth page's list (stock's local builder, btmenu_rows), rebuilt whole on every search and
  * link change: its rows, five with Bluetooth on (one, the switch, off), then the device lists.
- * With Bluetooth on, Resume on connect and Control Device Volume follow the fourth, Bluetooth
- * Headset Volume Control (bt_adjvol), each time, iconless and 78 high as stock's rows. */
+ * With Bluetooth on, Resume on connect, Control Device Volume and Receive Audio follow the fourth,
+ * Bluetooth Headset Volume Control (bt_adjvol), each time, iconless and 78 high as stock's rows. */
 int ringnav_btrows(widget_t *win, void *ctx) {
     static const char *const icons[] = { 0 };
     int result = stock_btrows_trampoline(win, ctx);
     if (!g_bluetoothflag) return result;
     pod_rows(win, "scroll_view_bluetooth", POD_RESUME, 1, icons);
     pod_rows(win, "scroll_view_bluetooth", POD_BT_LINK, 1, icons);
+    pod_rows(win, "scroll_view_bluetooth", POD_BT_RECEIVE, 1, icons);
     widget_t *view = win ? widget_lookup(win, "scroll_view_bluetooth", 1) : (void *)0;
     unsigned n = view ? widget_count_children(view) : 0;
-    if (n < 2) return result;
-    for (unsigned k = 0; k < 2; ++k) {
-        widget_t *row = widget_get_child(view, n - 2 + k);
+    if (n < 3) return result;
+    for (unsigned k = 0; k < 3; ++k) {
+        widget_t *row = widget_get_child(view, n - 3 + k);
         widget_resize(row, I(row, W_W), 78);
         widget_restack(row, 4 + k);
     }
@@ -3469,7 +3512,7 @@ static const unsigned char sysset_order[] = {
     9 /* Controls */,
     4 /* Power */,
     10 /* Date and time */,
-    0 /* Language, hidden */,
+    0 /* Language, with a language pack */,
     11 /* Update */,
     12 /* Reset */,
     5 /* Wheel Function, hidden */,
@@ -3517,9 +3560,11 @@ static int root_dir(char *path) {
            (info[5] & 0170000) == 0040000;
 }
 static void root_text(const char *name) {
-    char t[280];
-    tk_snprintf(t, sizeof t, "文件夹起点：%s", name[0] ? name : "存储卡");
-    widget_set_text_utf8(st.root_label, t);
+    char t[320];
+    if (name[0]) tk_snprintf(t, sizeof t, "文件夹起点：%s", name);
+    widget_set_text_utf8(st.root_label, name[0] ? t : "文件夹起点：存储卡");
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
 }
 /* Centre or tap: the next root, saved; Folder opens there from its next visit. */
 static int root_click(void *ctx, event_t *event) {
@@ -3560,7 +3605,7 @@ int ringnav_audioset(widget_t *win, void *ctx) {
     if (sub) {
         widget_t *nav = widget_lookup(win, "view_navbar", 1),
                  *title = nav ? widget_get_child(nav, 0) : (void *)0;
-        if (title) widget_set_text_utf8(title, "Library & Folders");
+        if (title) widget_set_text_utf8(title, tr("Library & Folders"));
         pod_rows(win, "scroll_view_playset", POD_YEAR_OLD, 2, icons);
         pod_rows(win, "scroll_view_playset", POD_ARTIST_AZ, 1, icons);
         char name[256];
@@ -3579,6 +3624,7 @@ int ringnav_audioset(widget_t *win, void *ctx) {
     swap_row(list_row(view, "playset_balance", swap_click, 0));
     widget_set_text_utf8(list_row_into(view, "playset_folderjump", library_open, 0),
                          "资料库与文件夹");
+>>>>>>> 1.9.1
     widget_set_tr_text(
         list_row_into(view, "playset_maxvol", to_page, (void *)"playset/maxvol_page"),
         "playset_maxvol");
@@ -3918,8 +3964,9 @@ static int slider_page(widget_t *top);
  * (an hscroll_label keeps 2 px each side of its box) and its row, set for bar_px. */
 int bar_title_x(void) { return st.bar_title ? I(st.bar_title, W_X) + 2 : 0; }
 int bar_title_y(void) { return st.bar_title ? I(st.bar_title, W_Y) : 0; }
-/* w at x, y on the screen, unless it's there. */
-void bar_place(widget_t *w, int x, int y, int ww, int h) {
+/* w at x 16, 343 wide, y on the screen, unless it's there. */
+void bar_place(widget_t *w, int y, int h) {
+    int x = 16, ww = 343;
     void *p = P(w, W_PARENT);
     x -= I(p, W_X), y -= I(p, W_Y);
     if (I(w, W_X) != x || I(w, W_Y) != y || I(w, W_W) != ww || I(w, W_H) != h)
@@ -4394,13 +4441,18 @@ static void np_cancel(void) {
  * Now Playing: keys, page and art
  **************************************************************************************************/
 
-/* A single centre press, DOUBLE_CLICK_MS on, never while scrubbing (with Single Press Scrub, a
- * double press): it replays the release to stock on_wm_keyup_fun, which turns the screen off (it
- * reads only the event's key). */
-static int np_single(const void *info) {
+/* A centre release replayed to stock on_wm_keyup_fun, which turns the screen off (it reads only the
+ * event's key). */
+void screen_off(void) {
     static const unsigned release[EVENT_KEY / 4 + 1] = { [EVENT_KEY / 4] = KEY_CENTER };
-    st.np_press = 0;
     if (g_backlight_status) on_wm_keyup_fun((void *)0, (void *)release);
+}
+
+/* A single centre press, DOUBLE_CLICK_MS on, never while scrubbing (with Single Press Scrub, a
+ * double press). */
+static int np_single(const void *info) {
+    st.np_press = 0;
+    screen_off();
     return 0;
 }
 
@@ -4548,6 +4600,34 @@ static void np_art_poll(void) {
     if (key != st.np_art) np_art_load(key, file);
 }
 
+/* Stock's update (0x53cf08, from the page's 250 ms timer) writes the title, artist, heart and
+ * lyric rows only when forced or while a one-shot flag it clears (g_autochange_flag on a change,
+ * g_forcerefresh_flag) is set; the art and "3 of 12" follow the queue each pass. After a skip, or
+ * a change while dark, the page could keep the last song's title and heart until a tap; a forced
+ * update heals it (the page's return to the front runs one, 0x53d9f0). Before each lit paint
+ * (ringnav_wm_paint), with the page in front, the playing track and the title and artist the
+ * update draws (g_song_name, g_song_artist, hashed whole: bounded, whatever stock wrote) are
+ * compared with the last, and a change forces the update: the first lit frame after a dark
+ * change, and the frame after a skip's tags land, show the new song. Not while a scrub or a
+ * paused seek holds the bar, which the update sets to the player's second. The album and "3 of
+ * 12" are synced first, so their writes land before the paint, not inside it, where an
+ * invalidate can be dropped. ponytail: inferred; which stock path misses the change is not
+ * traced. A skip can force it twice (the queue moves before the title is written). The rating
+ * badge follows within its 500 ms tick (ratings.c rate_tick). */
+static unsigned np_shown(void) {
+    return np_track() ^ hash_bytes(hash_bytes(FNV_SEED, g_song_name, 512), g_song_artist, 256);
+}
+static void np_update_poll(void) {
+    if (!st.np_win || !g_backlight_status || st.scrub || st.settle_timer ||
+        window_manager_get_top_window(window_manager()) != st.np_win)
+        return;
+    np_sync(st.np_win);
+    unsigned key = np_shown();
+    if (key == st.np_seen) return;
+    st.np_seen = key;
+    ((int (*)(widget_t *, int))0x53cf08)(st.np_win, 1);
+}
+
 /* Classic's Spotify or Internet Radio Now Playing closing: its art's slanted frame goes with it.
  * Only the latest page's art: an old page destroyed after a new one set its own leaves that be. */
 static int stream_gone(void *ctx, event_t *event) {
@@ -4611,6 +4691,7 @@ int ringnav_playing(widget_t *win, void *ctx) {
     st.lyric_held = 0;
     int result = stock_playing_trampoline(win, ctx);
     if (!win || result == STOP) return result;
+    card_rules_apply(win, CARD_PLAYING); /* before rate_bind: a moved heart takes its badge */
     rate_bind(win);
     /* np_gone leaves a replaced page's state alone: its Genre line is that page's. */
     stop_timer(&st.genre_timer);
@@ -4633,6 +4714,7 @@ int ringnav_playing(widget_t *win, void *ctx) {
     for (unsigned i = 0; lyric && i < sizeof touch / sizeof *touch; ++i)
         widget_on(lyric, touch[i], np_lyric_touch, (void *)0);
     st.np_hash = 0;
+    st.np_seen = np_shown(); /* stock's init drew it */
     const char *file;
     unsigned art = np_art(&file);
     np_art_load(art, file); /* not left to stock's init, which can show none or another song's */
@@ -4899,21 +4981,21 @@ static int slider_switch_hit(void *win, event_t *event) {
 }
 /* A label's final ink, 0xAARRGGBB in its first n states, stored as what Light Mode's style hook
  * turns into it, so stored for this half. text_inks writes it again when the half changes. */
-static const char *const ink_state[] = { "normal",
-                                         "pressed",
-                                         "over",
-                                         "disable",
-                                         "focused",
-                                         "normal_of_active",
-                                         "pressed_of_active",
-                                         "over_of_active",
-                                         "disable_of_active",
-                                         "focused_of_active",
-                                         "error",
-                                         "empty",
-                                         "empty_focus",
-                                         "empty_over",
-                                         "changed" };
+const char *const ink_state[] = { "normal",
+                                  "pressed",
+                                  "over",
+                                  "disable",
+                                  "focused",
+                                  "normal_of_active",
+                                  "pressed_of_active",
+                                  "over_of_active",
+                                  "disable_of_active",
+                                  "focused_of_active",
+                                  "error",
+                                  "empty",
+                                  "empty_focus",
+                                  "empty_over",
+                                  "changed" };
 void text_ink(widget_t *w, unsigned color, int n) {
     char key[STYLE_KEY];
     unsigned ink = RGBA(flip_if(ipod_light(), color & 0xffffffu)) & 0xffffffu;
@@ -4955,13 +5037,23 @@ void slider_number(widget_t *label) {
 }
 /* Stock's window as it loads, before its init. Every look-up it makes by name still finds its
  * widget: edit_key clicks img_dec and img_add, hidden here. */
-static const __WCHAR_TYPE__ slider_caption[] = L"完成后按中键";
+/* The caption's text, which Classic's painter draws (slider_hint): a copy of our own, so stock
+ * setting the widget's text can't move it. */
+static void slider_caption(widget_t *c, const char *s) {
+    static unsigned text[112] __attribute__((section(".scratch")));
+    wide_text(text, sizeof text / sizeof *text, s);
+    st.slider_hint = (const __WCHAR_TYPE__ *)text;
+    widget_set_text(c, text);
+}
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
 /* Crossfade's and Night Shift's Centre stays on the page (crossfade.c): what it does there. */
 void slider_centre_hint(widget_t *page, int night) {
     widget_t *c = page && page == st.slider_win ? widget_lookup(page, "caption", 1) : (void *)0;
     if (!c) return;
-    st.slider_hint = night ? L"按中键切换模式" : L"按中键打开或关闭";
-    widget_set_text(c, (const unsigned *)st.slider_hint);
+    slider_caption(c, night ? "按中键切换模式" : "按中键打开或关闭");
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
 }
 static void slider_open(widget_t *win) {
     static const char *const sliders[] = { "slider_backlight", "slider_maxvol", "slider_balance",
@@ -5002,7 +5094,6 @@ static void slider_open(widget_t *win) {
     st.slider_w = s;
     st.slider_kind = (unsigned char)kind;
     st.slider_sw = (void *)0; /* stock's init makes it, after this: slider_paint finds it */
-    st.slider_hint = slider_caption;
     widget_on(win, EVT_DESTROY, slider_gone, win);
     if (maxvol && !flat) { /* the triangle reaches past the slider's rect */
         widget_on(s, EVT_VALUE_CHANGING, slider_moved, win);
@@ -5010,7 +5101,7 @@ static void slider_open(widget_t *win) {
     }
     c = flat ? text(win, 16, 196, 343, 22) : text(win, 0, 228, 375, 32);
     widget_set_name(c, "caption");
-    widget_set_text(c, (const unsigned *)slider_caption);
+    slider_caption(c, tr("Press Centre When Finished"));
     if (flat)
         page_label(c, 16, 196, 343, 22, 17, "default", flat_quiet[0]);
     else
@@ -5042,7 +5133,6 @@ static void slider_open(widget_t *win) {
 }
 /* The Off and On tray on its shadow, the recessed track, the lit cell in the scheme's selection. */
 void slider_switch(widget_t *w, canvas_t *canvas, widget_t *sw) {
-    static const unsigned off[] = { 'O', 'f', 'f' }, on[] = { 'O', 'n' };
     rect_t tray = { 125, 28, 125, 44 }, track = { 138, 37, 100, 26 };
     rect_t left = { 138, 37, 50, 26 }, right = { 188, 37, 50, 26 };
     const char *image = widget_get_prop_str(sw, "image", "");
@@ -5055,8 +5145,8 @@ void slider_switch(widget_t *w, canvas_t *canvas, widget_t *sw) {
     paint_art(w, canvas, "classic_light_track_inset", 138, 37);
     paint_round_rows(canvas, cell, &scheme()->sel, 6);
     paint_art(w, canvas, "classic_light_lit_edge", cell->x - 1, 36);
-    draw_centred(canvas, off, 3, &left, 21, white);
-    draw_centred(canvas, on, 2, &right, 21, white);
+    caption(canvas, tr("Off"), left.x, left.y, left.w, left.h, 21, white);
+    caption(canvas, tr("On"), right.x, right.y, right.w, right.h, 21, white);
 }
 /* The page at (0, y, 375, 294): flat in the theme's page_fill, or the half's Home pane colour
  * (theme home_pane), final. */
@@ -5080,15 +5170,15 @@ void final_text(canvas_t *canvas, const char *face, const unsigned *s, const voi
 /* The dark strip behind Classic's search field (once every dark bar's): its rows and its line,
  * the last of h rows from y: the scheme's dark half in either half, over the bar's own line, with
  * no second one; a flat Status Bar's plain black. Final colours. */
-void dark_bar_rows(canvas_t *canvas, int y, int w, int h) {
+void dark_bar_rows(canvas_t *canvas, int y, int h) {
     const theme_t *T = bar_theme();
     const scheme_t *S = &T->schemes[*T->accent_slot];
     if (T->painter[PAINT_BAR] != BAR_GLOSS) {
-        bar_rect(canvas, RGBA(BAR_COLOR), 0, y, w, h);
+        bar_rect(canvas, RGBA(BAR_COLOR), 0, y, 375, h);
         return;
     }
-    paint_stops(canvas, 0, y, w, h - 1, &S->bar);
-    bar_rect(canvas, RGBA(S->bar_line), 0, y + h - 1, w, 1);
+    paint_stops(canvas, 0, y, 375, h - 1, &S->bar);
+    bar_rect(canvas, RGBA(S->bar_line), 0, y + h - 1, 375, 1);
 }
 /* The info screen's dark tray: its rows, top light, ring and the light row under the ring. */
 void paint_tray(canvas_t *canvas, int x, int y, int w, int h) {
@@ -5126,12 +5216,14 @@ static int usb_poll(const void *info) {
     if (n || !st.usb_lun) return 8; /* RET_REPEAT */
     if ((c = widget_lookup(win, "msg_heading", 1))) {
         widget_set_text_utf8(c, "可以断开连接");
+>>>>>>> 1.9.1
         widget_set_text_utf8(widget_lookup(win, "msg_line", 1), "");
     } else if ((c = widget_lookup(win, "scrlabel_info", 1))) {
         widget_t *ok =
             hscroll_label_create(P(c, W_PARENT), I(c, W_X), I(c, W_Y), I(c, W_W), I(c, W_H));
         widget_use_style(ok, "s_scrlabel_white24c");
         widget_set_text_utf8(ok, "可以断开连接");
+>>>>>>> 1.9.1
         widget_set_visible(c, 0, 0);
     }
     widget_invalidate_force(win, (void *)0);
@@ -5363,6 +5455,8 @@ const char *bar_title_of(widget_t *win, widget_t **label) {
     if (!tk_strcmp(name, "usbmode_page") || !tk_strcmp(name, "saverscreen_page")) return "";
     if (!tk_strcmp(name, "search_dialog")) return "搜索"; /* stock's toolbar has no label */
     if (!tk_strcmp(name, "updatemusic_dialog")) return "更新曲库"; /* the row that opens it */
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
     widget_t *nav = widget_lookup(win, "view_navbar", 1);
     if (nav) {
         for (int i = 0, k = widget_count_children(nav); i < k && !*label; ++i) {
@@ -5466,6 +5560,7 @@ void bar_title_sync(widget_t *win) {
         if (st.title_lbl) widget_get_text_utf8(st.title_lbl, s, sizeof s);
         t = !tk_strcmp(s, "Channel Balance") ? "声道平衡" /* English's only */
             : !tk_strcmp(s, "(null)")        ? ""        /* stock's "%s" of a NULL name: no title */
+>>>>>>> 1.9.1
                                              : s;
     }
     bar_title_write(t);
@@ -5483,7 +5578,7 @@ void bar_title_name(widget_t *win) {
  * the first line, and the bar reads name, the page's, from the hidden label. */
 void page_empty(widget_t *body, const char *name) {
     if (theme()->page_title_h) return;
-    char message[64];
+    char message[192];
     widget_t *caption = widget_get_child(body, 0);
     if (widget_get_text_utf8(caption, message, sizeof message)) return;
     widget_set_name(page_title(body, message, 0), "");
@@ -5568,14 +5663,14 @@ int ringnav_paint_bg(widget_t *w, canvas_t *canvas) {
     if (w && w == st.pl_box) pl_box_paint(w, canvas);
     if (w == st.t9_page && P(canvas, CANVAS_LCD)) {
         unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
-        dark_bar_rows(canvas, 0, 375, 34);
+        dark_bar_rows(canvas, 0, 34);
         paint_art(w, canvas, "classic_light_kb_back", 42, 4);
         paint_field(w, canvas, 72, 1, 244);
         stock_canvas_set_fill_color(canvas, fill);
     }
     if (w == st.kb_win && P(canvas, CANVAS_LCD)) {
         unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
-        paint_ramp(canvas, 60, 320, 60);
+        paint_ramp(canvas, 60);
         stock_canvas_set_fill_color(canvas, fill);
     }
     if (w == bar && P(canvas, CANVAS_LCD)) {
@@ -5594,7 +5689,7 @@ int ringnav_paint_bg(widget_t *w, canvas_t *canvas) {
         } else {
             /* Modern in Light Mode: an iPod's grey bar (its scheme's bar_light), flat (final
              * colour) */
-            int grey = S->bar_light && ipod_light();
+            int grey = S->bar_light && ipod_light() && !st.card_page; /* or the card's page */
             stock_canvas_set_fill_color(canvas,
                                         grey ? RGBA(S->bar_light) : ui_ink(RGBA(BAR_COLOR)));
             canvas_fill_rect(canvas, 0, 0, I(w, W_W), I(w, W_H));
@@ -5706,7 +5801,7 @@ unsigned *ringnav_style_color(unsigned *color, void *style, const char *name, un
             *color = (*color & 0xff000000u) | S->muted;
     }
     int a = accent();
-    if (S->flags & SCHEME_RAW_RED && !ipod_light()) return color;
+    if (S->flags & SCHEME_RAW_RED && !ipod_paper()) return color;
     unsigned c = accent_map(*color, a, TONE_LIGHT);
     if (c != *color && name && tk_str_end_with(name, "text_color"))
         c = accent_map(*color, a, TONE_RED);
@@ -5876,7 +5971,7 @@ int ringnav_image_add(void *manager, const char *name, void *bitmap) {
     const char *s = name;
     int dark = s && tk_str_start_with(s, CONFIRM_IMAGE);
     int control = s && tk_str_start_with(s, DROPDOWN_IMAGE) && !tk_str_start_with(s, DROPDOWN_SUN);
-    int paper = ipod_light(); /* Light Mode: tone_of's tones, flipped as drawn */
+    int paper = ipod_paper(); /* Light Mode, a card page: tone_of's tones, flipped as drawn */
     unsigned tone = dark ? CONFIRM_SURFACE : flip_if(paper, tone_of(tones_of(preset), TONE_RED)),
              glyph = 0xffffff, light = flip_if(paper, tone_of(tones_of(preset), TONE_LIGHT));
     if (control && bright_tone(tone)) glyph = CONFIRM_SURFACE;
@@ -6062,7 +6157,8 @@ int ringnav_image_add(void *manager, const char *name, void *bitmap) {
     }
     /* Light Mode: a theme image without colour that is mostly glyph (marks, chevrons, spinners)
      * flips as the colours do. One with a grey or dark disc or plate (LIGHT_SURFACE) keeps its
-     * white glyph, an image the accent mapped is final, and switch_off keeps its white knob as
+     * white glyph (on a card theme's dark page it flips too: its black takes the page, its white
+     * stays), an image the accent mapped is final, and switch_off keeps its white knob as
      * switch_on does. Quick Settings' inactive discs (DROPDOWN_IMAGE, unmapped) flip whole: a
      * light disc under a dark glyph, as the active ones stand out in the accent. Premultiplied
      * pixels (bitmap_t flags @0xc) flip their straight colour. The lock screen's hint lies on a
@@ -6079,7 +6175,7 @@ int ringnav_image_add(void *manager, const char *name, void *bitmap) {
                              : (void *)0;
     if (ink) {
         const unsigned char *o = at[format];
-        unsigned fp = sc->paper & 255, fi = sc->ink & 255;
+        unsigned fp = sc->paper, fi = sc->ink & 255; /* o[c]: r, g, b, so fp's bytes high first */
         int w = I(bitmap, 0), h = I(bitmap, 4), stride = bitmap_get_line_length(bitmap);
         int premul = *(unsigned short *)((char *)bitmap + 0xc) & BITMAP_PREMULTI, solid = 0,
             hue = 0;
@@ -6094,11 +6190,15 @@ int ringnav_image_add(void *manager, const char *name, void *bitmap) {
                 solid += (premul ? (r * 299 + g * 587 + b * 114) / a * 255 / 1000
                                  : (r * 299 + g * 587 + b * 114) / 1000) < LIGHT_GLYPH;
             }
-        for (int y = 0; !hue && (control || solid * LIGHT_SURFACE < w * h) && y < h; ++y)
+        /* a dark card page (st.card_page 1) flips the plated ones too */
+        for (int y = 0;
+             !hue && (control || st.card_page == 1 || solid * LIGHT_SURFACE < w * h) && y < h; ++y)
             for (unsigned char *p = ink + y * stride, *end = p + 4 * w; p < end; p += 4)
-                for (int c = 0, a = p[o[3]]; c < 3 && a; ++c)
-                    p[o[c]] = (unsigned char)(premul ? flip_v(p[o[c]] * 255u / a, fp, fi) * a / 255
-                                                     : flip_v(p[o[c]], fp, fi));
+                for (int c = 0, a = p[o[3]]; c < 3 && a; ++c) {
+                    unsigned pc = fp >> (16 - 8 * c) & 255;
+                    p[o[c]] = (unsigned char)(premul ? flip_v(p[o[c]] * 255u / a, pc, fi) * a / 255
+                                                     : flip_v(p[o[c]], pc, fi));
+                }
         bitmap_unlock_buffer(bitmap);
     }
     /* A theme's art placeholder size (Classic's 38): stock's grey tiles, as tall as the row (Folder
@@ -6123,36 +6223,48 @@ static void setting_text(int i) {
                                                   "电池显示：图标内百分比" },
                              *const light[] = { "浅色模式：关", "浅色模式：开",
                                                 "浅色模式：自动" };
+>>>>>>> 1.9.1
     int a = accent();
     const scheme_t *S = scheme();
-    const char *const names[] = { S->label ? (const char *)0 : accent_names[a],
-                                  home[st.home],
-                                  battery[st.battery],
-                                  (const char *)0,
-                                  (const char *)0,
-                                  (const char *)0,
-                                  light[st.light],
-                                  (const char *)0,
-                                  (const char *)0 };
-    char text[64];
+    /* the card theme's rows (card_theme_sets) name it, not a stored value */
+    const char *const names[] = {
+        card_theme_sets(SETTING_ACCENT) ? N_("Accent: Card Theme")
+        : S->label                      ? (const char *)0
+                                        : accent_names[a],
+        home[st.home],
+        card_theme_sets(SETTING_BATTERY) ? N_("Battery: Card Theme") : battery[st.battery],
+        (const char *)0,
+        (const char *)0,
+        (const char *)0,
+        card_theme_sets(SETTING_LIGHT) ? N_("Light Mode: Card Theme") : light[st.light],
+        (const char *)0,
+        (const char *)0
+    };
+    char text[192];
     if (i == 0 && S->label) {
         tk_snprintf(text, sizeof text, "强调色：%s", S->label);
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
         row_label(st.setting_label[0], text);
         return;
     }
     if (i == 3 || i == 4 || i >= SETTING_OWN) {
         if (i == 3)
             tk_snprintf(text, sizeof text, "主题：%s", theme()->name);
+        else if (i == 4 && shortcut() == SHORTCUT_NONE)
+            tk_snprintf(text, sizeof text, "快捷入口：无");
         else if (i == 4)
-            tk_snprintf(text, sizeof text, "快捷入口：%s",
-                        shortcut() == SHORTCUT_NONE ? "无" : ipod_home_shortcut());
+            tk_snprintf(text, sizeof text, "快捷入口：%s", ipod_home_shortcut());
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
         else {
             const theme_key_t *K = &theme_keys[i - SETTING_OWN];
+            const char *value = tr(K->names[st.own[i - SETTING_OWN]]);
             if (theme()->set_text) { /* the label and the value's name, unsplit */
-                list_value(st.setting_label[i], K->label, K->names[st.own[i - SETTING_OWN]]);
+                list_value(st.setting_label[i], tr(K->label), value);
                 return;
             }
-            tk_snprintf(text, sizeof text, "%s: %s", K->label, K->names[st.own[i - SETTING_OWN]]);
+            tk_snprintf(text, sizeof text, "%s: %s", tr(K->label), value);
         }
         row_label(st.setting_label[i], text);
         return;
@@ -6161,11 +6273,12 @@ static void setting_text(int i) {
                                            "智能常亮",           "居中正在播放",
                                            "戴耳机时按键音", "单按拖动",
                                            "标题栏显示时间" };
+>>>>>>> 1.9.1
     if (i == 5 || i >= 7) {
-        list_toggle(st.setting_label[i], toggles[i - 5], *setting_values[i]);
+        list_toggle(st.setting_label[i], tr(toggles[i - 5]), *setting_values[i]);
         return;
     }
-    row_label(st.setting_label[i], names[i]);
+    row_label(st.setting_label[i], tr(names[i]));
 }
 
 static int settings_list(widget_t *w) {
@@ -6216,6 +6329,10 @@ static void theme_preset(const theme_t *T, int live) {
 void restart_confirm(int setting, int value);
 static int setting_click(void *ctx, event_t *event) {
     int i = (int)(long)ctx;
+    if (card_theme_sets(i)) { /* nothing to cycle or save while the card theme sets it */
+        toast(tr("Set by the card theme"));
+        return 0;
+    }
     const theme_t *T = theme();
     int *value = option_slot(T, i), was = *value;
     const char *key = option_key(T, i);
@@ -6353,16 +6470,23 @@ void theme_select(int t) {
     widget_invalidate_force(window_manager(), (void *)0);
 }
 int theme_restart(int t) { return geom_with(&themes[t], -1, 0, 1) != st.geom; }
+/* The Restart to apply? confirm: 1 when the user says yes. */
+int restart_asked(void) {
+    struct {
+        int kind, ms;
+        char text[0x400];
+    } prompt = { 1, 0, "" };
+    tk_snprintf(prompt.text, sizeof prompt.text, "%s", tr("Restart to apply?"));
+    return navigator_to_with_context("dialog/confirminfo_dialog", &prompt) == 10;
+}
 /* A choice that needs another geometry set: confirmed, the config takes value (a theme its presets
  * too, its own options' among them) and the Q2 restarts into it, ringnav_reboot saving the queue
  * first; the running state stays the booted set's theme until then, as theme_boot requires.
  * Cancelled, nothing is written and nothing changes. */
 void restart_confirm(int setting, int value) {
-    struct {
-        int kind, ms;
-        char text[0x400];
-    } prompt = { 1, 0, "重启以应用？" };
-    if (navigator_to_with_context("dialog/confirminfo_dialog", &prompt) != 10) return;
+    if (!restart_asked()) return;
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
     const theme_t *T = theme();
     int was = *option_slot(T, setting);
     setting_put(&was, value, option_key(T, setting));
@@ -6406,7 +6530,7 @@ int ringnav_np_info(widget_t *win) {
     char where[64] = "";
     getFormatString("player_location", where, sizeof where);
     const char *loc =
-        *where && *where != '(' ? where : "Location"; /* a missing string reads "(key)" */
+        *where && *where != '(' ? where : tr("Location"); /* a missing string reads "(key)" */
     for (unsigned i = 0; i < sizeof names / sizeof *names; ++i) {
         widget_t *label = win ? widget_lookup(win, names[i], 1) : (void *)0;
         char s[1024], out[1024 + sizeof where + 8];
@@ -6422,6 +6546,7 @@ int ringnav_np_info(widget_t *win) {
             continue;
         while (*v == ' ') ++v;
         if (!strcmp(v, "Unknown Artist")) v = "未知";
+>>>>>>> 1.9.1
         const char *unit = *units[i] ? units[i] + 1 : units[i];
         int len = (int)strlen(v), u = (int)strlen(unit);
         int split = u && len > u && !strcmp(v + len - u, unit) && v[len - u - 1] >= '0' &&
@@ -6495,6 +6620,7 @@ static void setting_row(widget_t *view, int i) {
  * own rows' state is never touched on a sub-page. */
 int ringnav_display(widget_t *win, void *ctx) {
     static const char *const titles[] = { 0, "外观", "Cover Flow", "控制", "主题" },
+>>>>>>> 1.9.1
                              *const sub_icons[] = { 0, "system_display", "playset_covermode",
                                                     "playset_folderjump" };
     static const char *const cf_icons[] = { "playset_covermode", "playset_covermode",
@@ -6513,14 +6639,14 @@ int ringnav_display(widget_t *win, void *ctx) {
         night_row(list_row_into(view, "display_backlight", xfade_open, (void *)3));
         for (int i = DISPLAY_APPEARANCE; i <= DISPLAY_COVERFLOW; ++i)
             widget_set_text_utf8(list_row_into(view, sub_icons[i], display_open, (void *)(long)i),
-                                 titles[i]);
+                                 tr(titles[i]));
         reorder(view, main_order, sizeof main_order);
         return result;
     }
     widget_destroy_children(view);
     widget_t *nav = widget_lookup(win, "view_navbar", 1),
              *title = nav ? widget_get_child(nav, 0) : 0;
-    if (title) widget_set_text_utf8(title, titles[sub]);
+    if (title) widget_set_text_utf8(title, tr(titles[sub]));
     if (sub == DISPLAY_THEMES) { /* the built-ins */
         accent();
         for (int i = 0; i < THEME_N; ++i) {
@@ -6539,6 +6665,9 @@ int ringnav_display(widget_t *win, void *ctx) {
         pod_rows(win, "scroll_view_display", POD_BIG_LIB, 1, cf_icons + 3);
         pod_rows(win, "scroll_view_display", POD_SCAN_DURATIONS, 1, cf_icons + 3);
         pod_rows(win, "scroll_view_display", POD_CF_POSITION, 1, cf_icons + 3);
+        pod_rows(win, "scroll_view_display", POD_CF_DUP_ALBUMS, 1, cf_icons + 3);
+        pod_rows(win, "scroll_view_display", POD_CF_DUP_SONGS, 1, cf_icons + 3);
+        pod_rows(win, "scroll_view_display", POD_CF_ART_LOG, 1, cf_icons + 3);
         return result;
     }
     if (sub == DISPLAY_APPEARANCE) {
@@ -6566,17 +6695,19 @@ int ringnav_display(widget_t *win, void *ctx) {
 #define BOOT_TARGET "/mnt/data/boot-target"
 static int boot_rockbox __attribute__((section(".scratch")));
 static void boot_text(widget_t *label) {
-    widget_set_text_utf8(label, boot_rockbox ? "Boot to: Rockbox" : "Boot to: Q2 Pod");
+    widget_set_text_utf8(label, boot_rockbox ? tr("Boot to: Rockbox") : tr("Boot to: Q2 Pod"));
 }
 static int boot_click(void *label, event_t *event) {
     if (!rockbox_available()) {
         toast("卡内未安装 Rockbox");
+>>>>>>> 1.9.1
         return 0;
     }
     const char *value = boot_rockbox ? "q2pod" : "rockbox";
     if (!blob_io(BOOT_TARGET, BOOT_TARGET ".tmp", (void *)value, strlen(value), 1)) {
         unlink(BOOT_TARGET ".tmp");
         toast("无法保存启动选项");
+>>>>>>> 1.9.1
         return 0;
     }
     boot_rockbox = !boot_rockbox;
@@ -6615,13 +6746,14 @@ int ringnav_systemset(widget_t *win, void *ctx) {
         widget_set_text_utf8(
             list_row_into(view, "playset_folderjump", display_open, (void *)DISPLAY_CONTROLS),
             "控制");
+>>>>>>> 1.9.1
         for (unsigned i = 0; i < 4; ++i)
             widget_set_tr_text(list_row_into(view, moved[i][0], to_page, (void *)moved[i][1]),
                                moved[i][0]);
         for (unsigned i = 5; i <= 8; ++i) widget_set_visible(widget_get_child(view, i), 0, 0);
-        /* Language: Q2 Pod's pages and labels are English only, so stock's other languages read
-         * half-blank; hidden until they are translated (docs/internals.md, English). */
-        widget_set_visible(widget_get_child(view, 0), 0, 0);
+        /* Language: only while the card has a language pack's tables, which its page lists
+         * (language.c); stock's own tables leave Q2 Pod's pages English. */
+        if (!language_offered()) widget_set_visible(widget_get_child(view, 0), 0, 0);
     }
     reorder(view, sysset_order, sizeof sysset_order);
     return result;
@@ -7600,6 +7732,7 @@ int ringnav_art_header(char *buf, unsigned size, const char *fmt, const char *al
  * until it opens or stops being on top. */
 static int empty_toast(const void *unused) {
     static const char *const none[] = { "暂无专辑", "暂无表演者", "暂无作曲家", "暂无流派" };
+>>>>>>> 1.9.1
     widget_t *wm = window_manager(), *top = window_manager_get_top_window(wm);
     const char *name = top ? widget_get_prop_str(top, "name", "") : "";
     int mine = (!tk_strcmp(name, "album_page") || !tk_strcmp(name, "localclass_page")) &&
@@ -7609,7 +7742,7 @@ static int empty_toast(const void *unused) {
         return 0;
     }
     if (mine) window_manager_close_window_force(wm, top);
-    toast(none[st.empty_kind]);
+    toast(tr(none[st.empty_kind]));
     return 0;
 }
 
@@ -7900,6 +8033,7 @@ static int chapter_poll(const void *unused) {
         int sec = c->sec - st.ch_cue;
         if (st.ch_end && c->sec >= st.ch_end) break;
         if (!*c->title) tk_snprintf(c->title, sizeof c->title, "第 %d 章", i + 1);
+>>>>>>> 1.9.1
         if (st.ch_cue && sec <= 0) {
             n = 0;
             sec = 0;
@@ -7908,9 +8042,9 @@ static int chapter_poll(const void *unused) {
         st.ch->rows[n++].sec = sec;
     }
     st.ch->count = n;
-    widget_t *view =
-        page_list_or(st.ch_page, st.ch_page, "Chapters",
-                     st.ch->failed ? "Could not read chapters" : "No embedded chapters", n, 64);
+    widget_t *view = page_list_or(
+        st.ch_page, st.ch_page, tr("Chapters"),
+        st.ch->failed ? tr("Could not read chapters") : tr("No embedded chapters"), n, 64);
     int sec = 0, total, current = 0;
     player_playtime_and_length(&sec, &total);
     for (int i = 0; i < n; ++i) {
@@ -7927,6 +8061,7 @@ void chapters_open(void *r) {
     if (st.ch || !chapter_file(r)) return;
     if (!mp4_fits(P(r, REC_PATH))) {
         toast("这本书太长，Q2 无法显示章节");
+>>>>>>> 1.9.1
         return;
     }
     st.ch_track = np_track();
@@ -7935,6 +8070,7 @@ void chapters_open(void *r) {
     st.ch = chapters_start(P(r, REC_PATH), time_now_ms());
     if (!st.ch) {
         toast("无法读取章节");
+>>>>>>> 1.9.1
         return;
     }
     st.ch_page = page_open("chapters_page", page_closed, page_keyup);
@@ -7953,6 +8089,7 @@ void chapters_open(void *r) {
         return;
     }
     page_list(st.ch_page, st.ch_page, 0, "正在加载章节…", 0, 64);
+>>>>>>> 1.9.1
 }
 
 /* Streaming's Configuration (docs/internals.md#streaming-configuration): Tidal's and Spotify's
@@ -7976,15 +8113,18 @@ int stream_cache(int spotify) {
 /* Row i's caption: a cache row's size, or Erase Spotify Data's state. */
 static void sc_text(int i) {
     static const char *const sizes[] = { "512 MB", "1 GB", "2 GB", "4 GB", "8 GB" };
-    char s[40];
+    char s[96];
     if (i < 2)
-        tk_snprintf(s, sizeof s, "%s 缓存：%s", i ? "Spotify" : "Tidal", sizes[stream_cache(i)]);
+        tk_snprintf(s, sizeof s, i ? "Spotify 缓存：%s" : "Tidal 缓存：%s",
+                    sizes[stream_cache(i)]);
     /* NOLINTNEXTLINE(clang-analyzer-security.ArrayBound): i < 3: the cache rows and Erase's */
     widget_set_text_utf8(widget_get_child(st.sc_row[i], 0),
                          i < 2            ? s
                          : shelf_erase(0) ? "正在清除…"
                          : st.sc_armed    ? "再按一次以清除登录信息与缓存"
                                           : "清除 Spotify 数据");
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
 }
 
 /* netupdate.c's erase ended: .cache-size went with it, so Spotify's row reads 2 GB again. */
@@ -8001,11 +8141,13 @@ static const char *const svc_fixed[][2] = { { "TIDAL", "TIDAL" },
                                             { "SPOTIFY", "Spotify" },
                                             { "DOWNLOADS", "Tidal 下载" },
                                             { "RADIO", "网络电台" },
+>>>>>>> 1.9.1
                                             { "AIRPLAY", "AirPlay" } };
 /* Service i's key (label 0) or row label (1), as Streaming last listed them. */
 static const char *svc(int i, int label) {
     if (i >= 2 && i < 2 + st.svc_n) return label ? addon_name(i - 2) : addon_id(i - 2);
-    return svc_fixed[i < 2 ? i : i - st.svc_n][label];
+    const char *s = svc_fixed[i < 2 ? i : i - st.svc_n][label];
+    return label ? tr(s) : s;
 }
 void svc_hidden(char *s) {
     s[0] = 0; /* as root_read: a missing key leaves s alone */
@@ -8027,6 +8169,7 @@ static int svc_toggle(int i) {
     int hidden = csv_toggle(hide, ROOT_MAX, key);
     if (hidden < 0) {
         toast("无法保存设置");
+>>>>>>> 1.9.1
         return 0;
     }
     toolsWriteConfig("/mnt/data/config.ini", "Q2POD", "STREAMHIDE", hide);
@@ -8068,12 +8211,14 @@ static int sc_click(void *ctx, event_t *event) {
         return 0;
     }
     if (i == 1 && shelf_erase(0)) return toast("请等待当前任务完成"), 0; /* it rm -rfs */
+>>>>>>> 1.9.1
     char path[48], tmp[52], s[8];
     int n = tk_snprintf(s, sizeof s, "%uM", 512u << (stream_cache(i) + 1) % 5);
     tk_snprintf(path, sizeof path, "%s/.cache-size", sc_dirs[i]);
     tk_snprintf(tmp, sizeof tmp, "%s.tmp", path);
     mkdir(sc_dirs[i], 0755);
     if (!blob_io(path, tmp, s, (unsigned)n, 1)) toast("无法保存设置");
+>>>>>>> 1.9.1
     sc_text(i);
     return 0;
 }
@@ -8082,10 +8227,11 @@ int stream_config(void *ctx, event_t *event) {
     if (st.sc_page || !(st.sc_page = page_open("streamconf_page", page_closed, page_keyup)))
         return 0;
     int n = SVC_FIXED + st.svc_n;
-    widget_t *view = page_list(st.sc_page, st.sc_page, 0, "Configuration", 5 + n, 48);
+    widget_t *view = page_list(st.sc_page, st.sc_page, 0, tr("Configuration"), 5 + n, 48);
     for (int i = 0; i < 3; ++i)
         st.sc_row[i] = page_row_detail(view, i, "", 0, sc_click), sc_text(i);
     page_row_detail(view, 3, "停止流媒体服务", 0, sc_click);
+>>>>>>> 1.9.1
     /* a gap before the toggles, clear as the rows (the theme's default list_item fills) */
     int rh = page_h(48);
     widget_use_style(list_item_create(view, 0, 4 * rh, 375, rh), "s_listitem_black");
@@ -8155,10 +8301,12 @@ int media_find(int kind, char *path) {
  * card may have changed since; without it, a toast. */
 int media_click(void *ctx, event_t *event) {
     int kind = (int)(long)ctx;
-    char root[sizeof st.media_root], t[48];
+    char root[sizeof st.media_root], t[128];
     if (!media_find(kind, root)) {
         /* NOLINTNEXTLINE(clang-analyzer-security.ArrayBound): every caller's kind is a MEDIA's */
-        tk_snprintf(t, sizeof t, "No %s folder on the card", MEDIA_LABELS[kind - 1]);
+        tk_snprintf(t, sizeof t, "卡上没有 %s 文件夹", MEDIA_LABELS[kind - 1]);
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
         toast(t);
     } else if (kind == PHOTOS)
         photos_open(root);
@@ -8323,7 +8471,7 @@ int ringnav_about(widget_t *win, void *ctx) {
         widget_set_text_utf8(widget_get_child(widget_get_child(widget_get_child(view, 1), 0), 1),
                              STOCK_VERSION);
         widget_t *button = list_button(view);
-        about_label(button, 10, 166, "s_scrlabel_white24l", "CFW. Version");
+        about_label(button, 10, 166, "s_scrlabel_white24l", tr("CFW. Version"));
         about_label(button, 176, 149, "s_scrlabel_white20r", Q2POD_VERSION);
         widget_restack(P(button, W_PARENT), 2);
         /* Classic's row face is wider than stock's: the MAC address, the one 17-character
@@ -8414,7 +8562,9 @@ static int home_cf_hold(widget_t *top) {
  * Play Next (un_hold), on a Ratings list's row Shuffle (rated_hold), the release latched as the
  * queue menu's. */
 int ringnav_keylong(void *ctx, event_t *event) {
-    if (event && ple_key((unsigned)I(event, EVENT_KEY), 3)) return STOP;
+    if (event &&
+        (ple_key((unsigned)I(event, EVENT_KEY), 3) || side_seek((unsigned)I(event, EVENT_KEY), 3)))
+        return STOP;
     if (!event || I(event, EVENT_KEY) != KEY_PLAY) return stock_keylong_trampoline(ctx, event);
     widget_t *top = window_manager_get_top_window(window_manager());
     const char *fav = radio_hold(top);
@@ -8713,6 +8863,7 @@ int rockbox_open(void *ctx, event_t *event) {
     void *flag = !rockbox_available() ? (void *)0 : fopen(ROCKBOX_FLAG, "w");
     if (!flag) {
         toast("卡内未安装 Rockbox");
+>>>>>>> 1.9.1
         return 0;
     }
     fclose(flag);
@@ -8874,10 +9025,15 @@ static void bt_volume_poll(void) {
  * off, unless Wake's second press may be coming); stock then finds its 8 ms gone, sleeps 0 and
  * keeps its own bookkeeping. A dark wheel turn keeps stock's pace, DARK_TURN_MS on from each tick
  * (tick_gate): an idling pass dispatched every tick it had slept through at once, so a dark turn
- * clicked in bursts and stepped the volume in jumps (#303). ponytail: a turn's first ticks still
- * wait out one idle and arrive together, to one click (tone_dark). Ending the idle on a key
- * instead is select() on a datagram socket that ringnav_queue_event sends to, a send on every
- * input thread; build it if the first tick's wait ever shows. The first pass with it back on
+ * clicked in bursts and stepped the volume in jumps (#303). Every idle here is loop_wait
+ * (playback.c), which a key ends at once, and a touch too with the screen on, so no input waits
+ * one out; a timer or an idle another thread queues still does. For IDLE_MS after a key that
+ * reached ringnav_input the dark pass is not the long one either, so a timer that key started is
+ * at most SCREEN_OFF_SLEEP_MS late; a touch is not counted (its stamp is st.touch_at too), so
+ * something resting on a dark screen leaves the long idle alone. A Bluetooth headset's key or ear
+ * report ends the idle too (headset.c's worker). ponytail: with the screen off and quiet, what is
+ * none of these (a cable, a headset plugged in, a cast starting) is seen up to DARK_IDLE_SLEEP_MS
+ * late, the pace stock's own pollers have then (DARK_POLL_US). The first pass with it back on
  * repaints every window once, so nothing drawn while dark, or only partly, stays on screen until
  * the next input; after a centre press woke it, it also restarts Wake's window for a dropped press
  * (woke_at). With the screen on, a pass idles IDLE_SLEEP_MS once input and window animations have
@@ -8975,7 +9131,10 @@ int ringnav_sleep(void *loop) {
                     (signed char)bt__recv_pageflag != 2 && time_now_ms() - st.wake_at >= WAKE_MS;
         dark_quiet = quiet;
         if ((unsigned)time_now_ms() - st.tick_at >= DARK_TURN_MS)
-            sleep_ms(quiet ? DARK_IDLE_SLEEP_MS : SCREEN_OFF_SLEEP_MS);
+            loop_wait(
+                quiet && (time_now_ms() - st.last_input >= IDLE_MS || st.last_input == st.touch_at)
+                    ? DARK_IDLE_SLEEP_MS
+                    : SCREEN_OFF_SLEEP_MS);
     } else if (st.dark) {
         dark_quiet = 0;
         wheel_guard_reset();
@@ -8986,7 +9145,7 @@ int ringnav_sleep(void *loop) {
     } else if (time_now_ms() - st.last_input >= IDLE_MS &&
                !window_manager_is_animating(window_manager()) && !np_animating() &&
                !coverflow_turning())
-        sleep_ms(IDLE_SLEEP_MS);
+        loop_wait(IDLE_SLEEP_MS);
     tone_dark = 0; /* after the polls: a click of theirs is this pass's too */
     return stock_sleep_trampoline(loop);
 }
@@ -9266,6 +9425,7 @@ int ringnav_input(widget_t *wm, event_t *e) {
  * pass repaints the whole screen (ringnav_sleep; docs/internals.md Battery). */
 int ringnav_wm_paint(widget_t *wm) {
     if (wm && !g_backlight_status && !window_manager_is_animating(wm)) return 0; /* RET_OK */
+    np_update_poll(); /* before the paint, so the frame that shows it is right */
     int away = addon_game_front();
     void *vt = wm && !away ? P(wm, 0x94) : (void *)0;
     int (*paint)(widget_t *) = vt ? (int (*)(widget_t *))P(vt, 0xc) : (int (*)(widget_t *))0;
@@ -9278,13 +9438,25 @@ int ringnav_wm_paint(widget_t *wm) {
  * hciplayer holds their PCM, so the click has no other way out. Playback alone leaves it clicking.
  * Click With Headphones (IPOD KEYTONEHP, off) keeps the buzzer clicking there too, as stock does;
  * Key Tone off is still silent.
- * system() forks a shell and cmd_mcu for every click, so it runs on a worker, not the UI thread; a
- * click is dropped while the last one's worker runs.
- * With the screen off a pass clicks once (tone_dark; ringnav_sleep).
+ * Stock's system() forks a shell and cmd_mcu for every click. cmd_mcu's write_str is libhardware2's
+ * mcu_open, mcu_write_data_timeout and mcu_close: an open of /dev/mcu and one ioctl (MCU_WRITE)
+ * with the string, its length with the NUL and cmd_mcu's timeout, so the worker does those itself
+ * and the click follows its row without the two forks. Stock's command still runs when the open or
+ * the ioctl fails. A worker, not the UI thread, since the ioctl waits on the MCU; a click is
+ * dropped while the last one's worker runs. With the screen off a pass clicks once (tone_dark;
+ * ringnav_sleep).
  */
+#define MCU_WRITE 0x80044d76u /* mcu_write_data_timeout's request: {data, length, timeout} */
+#define MCU_TIMEOUT 300000    /* cmd_mcu write_str's */
 static volatile int tone_busy;
 static void *tone_worker(void *on) {
-    stock_buzzer_trampoline((int)(long)on);
+    static const struct {
+        const char *data;
+        int len, timeout;
+    } buzz = { "buzzer", 7, MCU_TIMEOUT };
+    int fd = open("/dev/mcu", 2 /* O_RDWR */), sent = fd >= 0 && ioctl(fd, MCU_WRITE, &buzz) >= 0;
+    if (fd >= 0) close(fd);
+    if (!sent) stock_buzzer_trampoline((int)(long)on);
     tone_busy = 0;
     return 0;
 }
@@ -9311,7 +9483,7 @@ int ringnav_buzzer(int on) {
  * scrub, the volume and every other key keep the stock click. */
 int ringnav_keydown(void *ctx, event_t *event) {
     unsigned key = event ? (unsigned)I(event, EVENT_KEY) : 0;
-    if (ple_key(key, 1)) return STOP;
+    if (ple_key(key, 1) || side_seek(key, 1)) return STOP;
     widget_t *top = window_manager_get_top_window(window_manager());
     unsigned char tone = g_keytone_flag;
     widget_t *row = (void *)0;
@@ -9414,7 +9586,6 @@ static int edit_single(const void *info) {
 }
 
 static int edit_key(widget_t *top, unsigned key) {
-    static const unsigned release[EVENT_KEY / 4 + 1] = { [EVENT_KEY / 4] = KEY_CENTER };
     int qs = top && !tk_strcmp(widget_get_prop_str(top, "name", ""), "statusbar_dialog");
     int n = fields(top);
     if (!qs && !n && !slider_page(top)) return 0;
@@ -9424,7 +9595,7 @@ static int edit_key(widget_t *top, unsigned key) {
         if (!press)
             press = center_press(&st.edit_press, &st.edit_at, edit_single,
                                  0); /* after an overdue one */
-        if (press == 2 && g_backlight_status) on_wm_keyup_fun((void *)0, (void *)release);
+        if (press == 2) screen_off();
         return 1;
     }
     if (key != KEY_PREV && key != KEY_NEXT) return 0;
@@ -9560,6 +9731,10 @@ int ringnav(void *ctx, event_t *event) {
     }
     unsigned key = (unsigned)I(event, EVENT_KEY);
     if (ple_key(key, 2)) return STOP;
+    if (side_seek(key, 2)) { /* stock's filter still ends the press: its click latch, the timer */
+        if (!usb_prompt()) stock_keyup_trampoline(ctx, event);
+        return STOP;
+    }
     /* This release's press was silenced by ringnav_keydown: a row change below clicks instead. */
     int owned = st.tone_key == key;
     st.tone_key = 0;
@@ -9753,10 +9928,9 @@ int ringnav(void *ctx, event_t *event) {
     if (key == KEY_CENTER && !st.center_timer) {
         unsigned now = (unsigned)time_now_ms();
         if (top == st.dc_top && now - st.dc_at < DOUBLE_CLICK_MS) {
-            static const unsigned release[EVENT_KEY / 4 + 1] = { [EVENT_KEY / 4] = KEY_CENTER };
             st.dc_top = (void *)0;
             drop_input();
-            if (g_backlight_status) on_wm_keyup_fun((void *)0, (void *)release);
+            screen_off();
             return STOP;
         }
         st.dc_top = top;

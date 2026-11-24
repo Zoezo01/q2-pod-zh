@@ -278,6 +278,7 @@ void ringnav_clean_end(void) {
     durations_shutdown(1);
     unlink(STATE_FILE);
     unlink(STALL_FILE); /* one the thread hadn't removed yet: S90play's next demo never would */
+    card_theme_ran();
     coverflow_clean_end();
 }
 /* Reboot record (docs/internals.md#bluetooth-boot-reconnect): when its Bluetooth controller never
@@ -396,10 +397,9 @@ static int rtc_alarm(unsigned at) { /* 0 clears it; one already set refuses anot
     return !fclose(f) && ok;
 }
 int ringnav_standby(void) {
-    static const unsigned hours[] = { 0, STANDBY_LIMIT_1, STANDBY_LIMIT_2, STANDBY_LIMIT_3 };
     pod_settings();
     unsigned start = st.standby_limit ? rtc_now() : 0;
-    unsigned alarm = start + hours[st.standby_limit] * 3600;
+    unsigned alarm = start + standby_hours[st.standby_limit] * 3600;
     int armed = start && rtc_alarm(0) && rtc_alarm(alarm);
     pw.suspended = 1;
     state_poll(); /* the record a resume that never comes leaves behind */
@@ -420,6 +420,35 @@ static void standby_poll(void) {
     pw.standby_off = 0;
     if (!g_usbdet_value && mclGetPlayStatus() != 2) navigator_to("poweroff_page");
 }
+/* Standby's card unmount (docs/internals.md#standby-limit): device_standby runs
+ * system("umount /mnt/mmc") 100 ms after it stops the player, ignores the result and removes the
+ * card's driver (rmmod soc_msc) next. A file still open on the card (the player letting go of its
+ * track, a cover read, an app's download) fails that umount, and the driver's removal leaves the
+ * volume marked dirty: the resume's "Volume was not properly unmounted", and whatever was still to
+ * be written lost. STANDBY_UMOUNT (tools/build.py) has that call come here, with stock's command:
+ * a sync, then the command again every UMOUNT_WAIT_US while /proc/mounts still has the card
+ * (card_mounted), up to UMOUNT_TRIES. Still mounted, what holds it goes to UMOUNT_LOG (/mnt/data:
+ * the card is going), the volume is remounted read-only, which writes it out and marks a FAT volume
+ * clean only when no file on it is open for writing (readers don't matter; with a writer the kernel
+ * refuses, EBUSY, and the refusal is in UMOUNT_LOG), and detached (umount -l). */
+#define UMOUNT_TRIES 20 /* tries, UMOUNT_WAIT_US apart: 2 s at most */
+#define UMOUNT_WAIT_US 100000
+#define UMOUNT_LOG "/mnt/data/q2-card-busy"
+int ringnav_standby_umount(const char *cmd) {
+    system("sync");
+    for (int i = 0; i < UMOUNT_TRIES; ++i) {
+        if (i) usleep(UMOUNT_WAIT_US);
+        if (!system(cmd) || !card_mounted()) return 0;
+    }
+    /* each process with a file or its directory on the card: pid, name, the links */
+    system("for p in /proc/[0-9]*; do l=$(ls -l $p/fd $p/cwd 2>/dev/null | grep /mnt/mmc) && "
+           "echo \"${p#/proc/} $(cat $p/comm) $l\"; done > " UMOUNT_LOG " 2>&1");
+    system("mount -o remount,ro /mnt/mmc 2>>" UMOUNT_LOG);
+    /* ponytail: a file still open for writing after 2 s leaves the volume dirty, as stock did; stop
+     * that writer before the unmount if reports show it. */
+    system("sync"); /* the first sync is up to 2 s old; the remount may have been refused */
+    return system("umount -l /mnt/mmc");
+}
 /* User boot logo (docs/boot.md): the card's LOGO_SRC is kept as LOGO_DST, which the splash shows at
  * power-on, each time the card is mounted (boot, the end of USB storage). A 375x320 one is turned
  * upright by stock ffmpeg; anything but a 320x375 baseline JPEG is refused and LOGO_DST kept. No
@@ -430,7 +459,8 @@ static void standby_poll(void) {
 #define LOGO_ROT "/tmp/boot-logo.jpg"
 #define LOGO_MAX (512 * 1024)
 #define LOGO_SEEN "/mnt/data/boot-logo.bad" /* the refused card file: size, mtime */
-static const char logo_refused[] = "Boot logo must be a 320x375 JPEG";
+/* logo_sync's texts, a thread's: translated where logo_poll toasts them */
+static const char logo_refused[] = N_("Boot logo must be a 320x375 JPEG");
 /* tools/build.py's jpeg_size: w << 16 | h of a baseline 8-bit three-component JPEG, the only kind
  * stock display_logo draws right; 0 for anything else. */
 static unsigned jpeg_size(const unsigned char *b, unsigned n) {
@@ -455,9 +485,22 @@ static unsigned jpeg_size(const unsigned char *b, unsigned n) {
     }
     return 0;
 }
+/* 1 when the refused file src was told of at an earlier mount, as seen (size and mtime) records;
+ * else it is recorded now, through tmp. A failed stat records nothing.
+ * ponytail: the key is size + mtime (2 s on FAT), so another bad file of the same size and time
+ * stays silent; the record is written before the toast shows, so a power cut or a missed 2 s toast
+ * leaves the file recorded as told. */
+int told_once(const char *src, const char *seen, const char *tmp) {
+    unsigned sb[36], was[2], key[2];
+    if (__xstat(3, src, sb)) return 0;
+    key[0] = sb[12], key[1] = sb[16]; /* size, mtime */
+    if (blob_io(seen, tmp, was, sizeof was, 0) && !memcmp(was, key, sizeof key)) return 1;
+    blob_io(seen, tmp, key, sizeof key, 1);
+    return 0;
+}
 static void *logo_sync(void *unused) {
-    unsigned n = 0, old_n;
-    unsigned char *b = 0, *old = 0;
+    unsigned n = 0;
+    unsigned char *b = 0;
     const char *err = logo_refused;
     if (access(LOGO_SRC, 0))
         unlink(LOGO_DST), err = 0;
@@ -477,28 +520,20 @@ static void *logo_sync(void *unused) {
         unlink(LOGO_ROT);
     }
     if (b && jpeg_size(b, n) == (320u << 16 | 375)) {
-        old = read_all(LOGO_DST, LOGO_MAX, &old_n);
-        if ((old && old_n == n && !memcmp(old, b, n)) ||
-            blob_io(LOGO_DST, LOGO_DST ".tmp", b, n, 1))
+        if (file_holds(LOGO_DST, b, n, LOGO_MAX) || blob_io(LOGO_DST, LOGO_DST ".tmp", b, n, 1))
             err = 0; /* the same bytes are not written again each boot */
         else
             unlink(LOGO_DST ".tmp"), err = "无法保存开机图";
+>>>>>>> 1.9.1
     }
-    free(b), free(old);
-    unsigned sb[36], seen[2], key[2];
-    if (err == logo_refused &&
-        !__xstat(3, LOGO_SRC, sb)) { /* LOGO_SEEN names the file last refused */
-        /* ponytail: the key is size + mtime (2 s on FAT), so another bad file of the same size and
-         * time stays silent; the record is written before the toast shows, so a power cut or a
-         * missed 2 s toast leaves the file recorded as told. A failed stat records nothing. */
-        key[0] = sb[12], key[1] = sb[16]; /* size, mtime */
-        if (BLOB_IO(LOGO_SEEN, seen, 0) && !memcmp(seen, key, sizeof key))
-            err = 0; /* said at an earlier mount: once a file, not each power-on */
-        else
-            BLOB_IO(LOGO_SEEN, key, 1);
-    } else if (err != logo_refused)
+    free(b);
+    if (err == logo_refused && told_once(LOGO_SRC, LOGO_SEEN, LOGO_SEEN ".tmp"))
+        err = 0; /* said at an earlier mount: once a file, not each power-on */
+    else if (err != logo_refused)
         unlink(LOGO_SEEN); /* a good logo, or none: the same bad file put back is told again */
     pw.logo_err = err;
+    language_sync(); /* the card's language pack, as its logo */
+    card_theme_sync();
     pw.logo_busy = 0;
     return 0;
 }
@@ -514,7 +549,7 @@ int card_mounted(void) {
 static void logo_poll(void) {
     unsigned now = time_now_ms();
     const char *said = pw.logo_err;
-    if (said) pw.logo_err = 0, toast(said); /* first: a toast's dialog polls here again */
+    if (said) pw.logo_err = 0, toast(tr(said)); /* first: a toast's dialog polls here again */
     /* Mount edges (boot, USB storage's end) come lit; dark it keeps its edge for the first lit
      * poll. */
     if (!g_backlight_status || pw.logo_busy || (pw.logo_at && now - pw.logo_at < CHARGE_POLL_MS))
@@ -541,6 +576,7 @@ void power_poll(void) {
     coverflow_tail();
     charge_poll();
     standby_poll();
+    card_theme_poll();
     logo_poll();
     ratings_copy_poll();
     wdt_poll();

@@ -27,8 +27,8 @@ int groovebox_available(void) { return bin_available(GROOVEBOX_BIN); }
 
 /* Light Mode (docs/ipod.md#light-mode): a neutral colour, its channels within LIGHT_SPREAD, flipped
  * per channel from black to the light half's paper and white to its ink (LIGHT_PAPER and LIGHT_INK
- * unless the scheme sets them); any other hue, and the alpha byte, as they are. Either byte order
- * (color_t or 0xRRGGBB): the paper and ink are grey. */
+ * unless the scheme sets them), each channel to the paper's own; any other hue, and the alpha byte,
+ * as they are. flip takes a color_t, flip_rgb a 0xRRGGBB. */
 int neutral(unsigned c) {
     unsigned hi = 0, lo = 255;
     for (int s = 0; s < 24; s += 8) {
@@ -38,32 +38,37 @@ int neutral(unsigned c) {
     }
     return hi - lo <= LIGHT_SPREAD;
 }
+/* v from paper (0) to ink (255), either lighter: Q2 Theme Studio's flip, truncated as it is */
 unsigned flip_v(unsigned v, unsigned paper, unsigned ink) {
-    return paper - v * (paper - ink) / 255;
+    return (unsigned)((int)paper + (int)v * ((int)ink - (int)paper) / 255);
 }
 static const scheme_t *light_row(void);
-unsigned flip(unsigned c) {
+/* c's channels each against the paper's own: rgb, c is a 0xRRGGBB, else a color_t (red low).
+ * Inlined into both: -Oz would call it, and ui_ink flips every colour a light page draws. */
+static inline __attribute__((always_inline)) unsigned flip_in(unsigned c, int rgb) {
     if (!neutral(c)) return c;
-    /* greys, so either byte order */
     const scheme_t *S = light_row();
-    unsigned paper = S->paper & 255, ink = S->ink & 255;
-    unsigned out = c & 0xff000000u;
-    for (int s = 0; s < 24; s += 8) out |= flip_v(c >> s & 255, paper, ink) << s;
+    unsigned ink = S->ink & 255, out = c & 0xff000000u;
+    for (int s = 0; s < 24; s += 8)
+        out |= flip_v(c >> s & 255, S->paper >> (rgb ? s : 16 - s) & 255, ink) << s;
     return out;
 }
-unsigned flip_if(int on, unsigned c) { return on ? flip(c) : c; }
-/* The grey whose flip is v, by the half's paper and ink; v itself when dark. */
+unsigned flip(unsigned c) { return flip_in(c, 0); }
+unsigned flip_rgb(unsigned c) { return flip_in(c, 1); }
+unsigned flip_if(int on, unsigned c) { return on ? flip_rgb(c) : c; }
+/* The grey whose flip is v, by the paper's mean channel and the ink; v itself unflipped. */
 unsigned unflip(unsigned v) {
-    if (!ipod_light()) return v;
+    if (!ipod_paper()) return v;
     const scheme_t *S = light_row();
-    unsigned paper = S->paper & 255, ink = S->ink & 255;
-    return v < ink ? 255 : v > paper ? 0 : (paper - v) * 255 / (paper - ink);
+    int p = (int)((S->paper >> 16) + (S->paper >> 8 & 255) + (S->paper & 255)) / 3,
+        u = ((int)v - p) * 255 / ((int)(S->ink & 255) - p);
+    return (unsigned)(u < 0 ? 0 : u > 255 ? 255 : u);
 }
 
 /* Every colour the payload draws passes here (peq.h wraps the canvas setters), as stock's pass
  * the style and image hooks: flipped in Light Mode. A clear colour stays 0: stock tests for it
  * (Now Playing's slider draws no dragger under a #00000000 border). */
-unsigned ui_ink(unsigned c) { return !st.raw_ink && ipod_light() && c >> 24 ? flip(c) : c; }
+unsigned ui_ink(unsigned c) { return !st.raw_ink && ipod_paper() && c >> 24 ? flip(c) : c; }
 /* Sets whether ui_ink leaves colours alone (final colours follow); the last setting, to restore. */
 unsigned ui_ink_raw(unsigned raw) {
     unsigned old = st.raw_ink;
@@ -86,6 +91,7 @@ _Static_assert(sizeof accents / sizeof *accents == ACCENT_N, "one accent per ACC
 const char *const accent_names[] = { "强调色：石墨",  "强调色：绯红", "强调色：潮汐",
                                      "强调色：香槟", "强调色：钴蓝",  "强调色：橘橙",
                                      "强调色：梅紫",      "强调色：象牙白",   "强调色：青绿" };
+>>>>>>> 1.9.1
 _Static_assert(sizeof accent_names / sizeof *accent_names == ACCENT_N, "one name per ACCENTS row");
 _Static_assert(sizeof st.setting_label / sizeof *st.setting_label == SETTING_OWN + THEME_KEYS,
                "one label per Display row");
@@ -164,7 +170,7 @@ int clock_night(void) {
     return tm && !light_day(tm);
 }
 void light_apply(const int *tm) {
-    if (st.light != 2 || light_day(tm) == st.light_day) return;
+    if (st.light != 2 || st.card_page || light_day(tm) == st.light_day) return;
     st.light_day = !st.light_day;
     np_fill(0);
     text_inks(window_manager());
@@ -176,20 +182,19 @@ void light_apply(const int *tm) {
 __attribute__((noinline)) static void settings_read(void) {
     for (int i = 0; i < 4; ++i)
         *setting_values[i] = config_value("IPOD", setting_keys[i], setting_counts[i], 0);
-    st.shortcut = config_value("IPOD", "SHORTCUT", SETTING_N_SHORTCUT,
-                               SETTING_N_SHORTCUT); /* no key, see shortcut() */
+    /* Shortcut has no key, its default is none (see shortcut()); Rounded's is Round under Minimal;
+     * Light's is dark, 2 Auto; Time in Title's is the clock; the rest are off unless chosen. */
+    for (int i = 4; i < SETTING_OWN; ++i)
+        *setting_values[i] = config_value("IPOD", setting_keys[i], setting_counts[i],
+                                          i == 4   ? SETTING_N_SHORTCUT
+                                          : i == 5 ? !st.theme
+                                                   : i == 11);
     st.minimal_accent =
-        config_value("IPOD", "MINIMAL_ACCENT", ACCENT_N, 0);    /* Graphite, its preset */
-    st.rounded = config_value("IPOD", "ROUNDED", 2, !st.theme); /* Minimal's preset: Round */
-    st.light = config_value("IPOD", "LIGHT", 3, 0);             /* dark unless chosen; 2 Auto */
-    st.keep_lit = config_value("IPOD", "KEEPLIT", 2, 0);
-    st.np_centred = config_value("IPOD", "NPCENTRED", 2, 0);
-    st.keytone_hp = config_value("IPOD", "KEYTONEHP", 2, 0);
-    st.scrub_single = config_value("IPOD", "SCRUBSINGLE", 2, 0);
-    st.time_title = config_value("IPOD", "TIMETITLE", 2, 1); /* the clock unless chosen */
+        config_value("IPOD", "MINIMAL_ACCENT", ACCENT_N, 0); /* Graphite, its preset */
     /* the themes' own keys, after the thirteen, in table order */
     for (int k = 0; k < THEME_KEYS; ++k)
         st.own[k] = config_value("IPOD", theme_keys[k].key, theme_keys[k].n, theme_keys[k].def);
+    card_theme_load(); /* its battery style a value as stored ones are, BATTERY untouched */
     /* A stored value outside an option's values reads as its default (Classic's Ivory: Classic
      * Blue), the key untouched. A payload key is every theme's: only the live theme's reading
      * counts. */
@@ -214,25 +219,30 @@ const theme_t *theme(void) {
     accent();
     return &themes[st.theme];
 }
-/* 1 for scheme v's light half: its mode, else Light Mode (Auto: light_day), which reads 0 where the
- * theme does not declare it (setting()'s rule). The dark row's mode: both carry it. */
+/* 1 for scheme v's light half: its mode, else a card theme's page (its half, Light Mode aside),
+ * else Light Mode (Auto: light_day), which reads 0 where the theme does not declare it (setting()'s
+ * rule). The dark row's mode: both carry it. */
 static int light_on(const theme_t *T, int v) {
     int m = T->schemes[v].mode;
     return m == SCHEME_LIGHT || (m == SCHEME_DERIVE && !(T->undeclared >> SETTING_LIGHT & 1) &&
-                                 (st.light == 2 ? st.light_day : st.light));
+                                 (st.card_page    ? st.card_page > 1
+                                  : st.light == 2 ? st.light_day
+                                                  : st.light));
 }
 /* The half Light Mode picks; Minimal's and Modern's two halves are one row. */
 const scheme_t *scheme(void) {
     int v = accent();
     const theme_t *T = &themes[st.theme];
-    return &(light_on(T, v) ? T->light : T->schemes)[v];
+    return card_theme_row(&(light_on(T, v) ? T->light : T->schemes)[v]);
 }
-/* scheme() for code that runs only in the light half (flip, red_map's light term), so after
- * ipod_light()'s accent(): the light row without a second accent() and light_on() on these
- * per-colour paths (a Classic folder paint sets ~470 colours). */
+/* scheme() for code that runs only where the flip is on (flip, red_map's light term), so after
+ * ipod_light()'s accent(): the light row, or the card theme's copy of it while it sets a page
+ * (card_theme_row), without a second accent() and light_on() on these per-colour paths (a Classic
+ * folder paint sets ~470 colours). */
 static const scheme_t *light_row(void) {
     const theme_t *T = &themes[st.theme];
-    return &T->light[*T->accent_slot];
+    const scheme_t *s = &T->light[*T->accent_slot];
+    return st.card_page ? card_theme_row(s) : s;
 }
 /* An option the theme does not declare reads 0, its stored key untouched (ponytail: 0 is every
  * hidden option's value today; a theme hiding Home or Battery needs a value per bit). */
@@ -311,6 +321,7 @@ int ipod_home_rockbox(void) {
            : s == SHORTCUT_GROOVEBOX ? st.home_groovebox
                                      : s || st.home_rockbox;
 }
+/* The Shortcut's name, in English: coverflow.c's pane compares it, and tr() shows it. */
 const char *ipod_home_shortcut(void) {
     static const char *const names[] = { "Rockbox",
                                          "表演者",
@@ -322,16 +333,19 @@ const char *ipod_home_shortcut(void) {
                                          "播放列表",
                                          "播客",
                                          "有声读物",
+>>>>>>> 1.9.1
                                          [SHORTCUT_GROOVEBOX] = "Groovebox" };
     _Static_assert(sizeof names / sizeof *names == SHORTCUT_NONE, "one per shortcut but None");
     _Static_assert(SHORTCUT_NONE + 1 == SETTING_N_SHORTCUT, "None is the last");
     return names[shortcut_target()];
 }
 /* Podcasts and Audiobooks (docs/internals.md#podcasts-and-audiobooks): the card's top-level
- * folders of these names, case aside, browsed in folder_page from there; Photos opens photos.c. */
-/* MEDIA matches the card's folder names, so it stays English; MEDIA_LABELS is what the row says. */
+ * folders of these names, case aside, browsed in folder_page from there; Photos opens photos.c.
+ * The Library's rows (home.c) show them translated. */
 const char *const MEDIA[] = { "Podcasts", "Audiobooks", "Photos" };
 const char *const MEDIA_LABELS[] = { "播客", "有声读物", "照片" };
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
 extern int rockbox_open(void *, event_t *);
 int rated_albums(void *, event_t *);
 int home_shortcut_open(void *ctx, event_t *event) {
@@ -341,6 +355,7 @@ int home_shortcut_open(void *ctx, event_t *event) {
         if (addon_game_open("groovebox") < 0) /* no card game has the id: the folder, or a slot */
             toast(groovebox_available() ? "Groovebox 无法从存储卡启动"
                                         : "存储卡上没有 Groovebox");
+>>>>>>> 1.9.1
         return 0;
     }
     if (s == 4) return rated_albums(ctx, event);
@@ -381,8 +396,8 @@ unsigned accent_tone(int tone) {
  * Crimson is the identity. Light Mode (light) puts the red share over paper instead: a tint over
  * black becomes the same tint of tone over the light half's paper, its grey part flipped. */
 unsigned red_map(unsigned c, unsigned tone, unsigned glyph, int light) {
-    int paper = light ? (int)(light_row()->paper & 255) : 0,
-        ink = light ? (int)(light_row()->ink & 255) : 0;
+    unsigned paper = light ? light_row()->paper : 0;
+    int ink = light ? (int)(light_row()->ink & 255) : 0;
     static const int red[3] = { STOCK_RED >> 16, STOCK_RED >> 8 & 255, STOCK_RED & 255 };
     const int sum = red[0] + red[1] + red[2];
     int ch[3] = { c & 255, c >> 8 & 255, c >> 16 & 255 }, s = ch[0] + ch[1] + ch[2], d = 0, dd = 0;
@@ -398,8 +413,9 @@ unsigned red_map(unsigned c, unsigned tone, unsigned glyph, int light) {
     for (int i = 0; i < 3; ++i) {
         int miss = ch[i] - (t * red[i] / 4096 + k);
         if (miss > RED_TOLERANCE || miss < -RED_TOLERANCE) return c;
-        int v = t * (int)(tone >> (16 - 8 * i) & 255) / 4096 +
-                (light ? (t < 4096 ? 4096 - t : 0) * paper / 4096 - k * (paper - ink) / 255
+        int p = (int)(paper >> (16 - 8 * i) & 255),
+            v = t * (int)(tone >> (16 - 8 * i) & 255) / 4096 +
+                (light ? (t < 4096 ? 4096 - t : 0) * p / 4096 - k * (p - ink) / 255
                        : k * (int)(glyph >> (16 - 8 * i) & 255) / 255);
         out |= (unsigned)(v < 0 ? 0 : v > 255 ? 255 : v) << 8 * i;
     }
@@ -407,9 +423,14 @@ unsigned red_map(unsigned c, unsigned tone, unsigned glyph, int light) {
 }
 unsigned accent_map(unsigned c, int preset, int tone) {
     const theme_t *T = theme(); /* once: this runs per colour */
-    const unsigned *a = T->schemes[preset].tones;
-    if (ipod_light())
-        return !(c >> 24) || neutral(c) ? ui_ink(c)
-                                        : red_map(c, flip(tone_of(a, tone)), 0xffffff, 1);
-    return T->schemes[preset].flags & SCHEME_RAW_RED ? c : red_map(c, a[tone], 0xffffff, 0);
+    const scheme_t *S = card_theme_row(&T->schemes[preset]);
+    const unsigned *a = S->tones;
+    int light = ipod_paper();
+    if (light && (!(c >> 24) || neutral(c))) return ui_ink(c);
+    unsigned to = light ? flip_rgb(tone_of(a, tone)) : a[tone];
+    /* Crimson's reds; a card accent's own tone, itself a blend of stock red, stays */
+    if ((!light && S->flags & SCHEME_RAW_RED) ||
+        (a != T->schemes[preset].tones && !((c ^ RGBA(to)) & 0xffffff)))
+        return c;
+    return red_map(c, to, 0xffffff, light);
 }

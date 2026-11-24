@@ -4,14 +4,6 @@ import pytest
 import ipod
 
 
-def w(name, *children, kind='view', at=None, **props):
-    return [kind, at or [0, 0, 10, 10], {'name': name, **props}, list(children)]
-
-
-def named(root):
-    return {n[2].get('name'): n for n in ipod.walk(root)}
-
-
 @pytest.fixture
 def corner(monkeypatch):
     """A 5px glass corner, whose 3-4-5 rows come out whole, with 1px of slack."""
@@ -35,17 +27,17 @@ CLEAR = {f'style:{s}:{p}': '#00000000' for s in ('normal', 'disable', 'focused')
 
 def home_row(i, row, label):
     """Row i: its label after the selection dot, under a full-row tap image."""
-    h, x = ipod.HOME_ROW, ipod.HOME_TEXT_X
+    h, x = ipod.SET0.home_row, ipod.HOME_TEXT_X
     return ['view', [0, i * h, 375, h], {'name': 'btn_' + row}, [
         ['hscroll_label', [x, 0, 375 - x - ipod.HOME_LABEL_END, h], {**LABEL, **label}, []],
         ['image', [0, 0, 375, h], {'name': label['name'].replace('label_', 'img_') if row == 'coverflow' else 'img_' + row, 'clickable': 'true'}, []]]]
 
 
 def test_home_list():
-    h = ipod.HOME_ROW
+    h = ipod.SET0.home_row
     rows = [home_row(0, 'playing', {'name': 'label_playing'}),
-            home_row(1, 'localmusic', {'name': 'label_library', 'text': 'Library'}),
-            home_row(2, 'coverflow', {'name': 'label_cover_flow', 'text': 'Cover Flow'})]
+            home_row(1, 'localmusic', {'name': 'label_library', 'text': 'Library', 'tr_text': 'Library'}),
+            home_row(2, 'coverflow', {'name': 'label_cover_flow', 'text': 'Cover Flow', 'tr_text': 'Cover Flow'})]
     scroll = ['scroll_view', [0, 0, 375, 3 * h],
               {'name': 'scroll_view_home', 'self_layout': 'default(x=0,y=0,w=100%,h=100%)', 'yslidable': 'true'}, rows]
     assert ipod.home_list('home', ['playing', 'localmusic', 'coverflow'], ipod.SET0, {'visible': 'false'}) == [
@@ -54,6 +46,6 @@ def test_home_list():
 
 def test_home_list_settings_rows():
     view = ipod.home_list('homeset', ['playset', 'sysset'], ipod.SET0)
-    assert view[2] == {'name': 'list_view_homeset', 'item_height': str(ipod.HOME_ROW), **CLEAR}
-    assert view[3][0][3] == [home_row(0, 'playset', {'name': 'label_playback', 'text': 'Playback'}),
-                             home_row(1, 'sysset', {'name': 'label_system', 'text': 'System'})]
+    assert view[2] == {'name': 'list_view_homeset', 'item_height': str(ipod.SET0.home_row), **CLEAR}
+    assert view[3][0][3] == [home_row(0, 'playset', {'name': 'label_playback', 'text': 'Playback', 'tr_text': 'Playback'}),
+                             home_row(1, 'sysset', {'name': 'label_system', 'text': 'System', 'tr_text': 'System'})]

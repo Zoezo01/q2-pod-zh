@@ -67,8 +67,9 @@ typedef struct {
     unsigned bar_line2;  /* BAR_GLOSS: the light half's row above it, final, 0 none */
     unsigned paper, ink; /* this half's, greys 0xRRGGBB: the light half's are the flip's ends
                             (LIGHT_PAPER and LIGHT_INK unless set), the dark half's 0x000000 and
-                            0xffffff. A one-array theme's row holds the light half's: only
-                            ipod_light()-gated code reads them there */
+                            0xffffff. A one-array theme's row holds the light half's, or in the
+                            card theme's copy its page and ink (card_theme_row): only
+                            ipod_paper()-gated code reads them there */
     const char *label;   /* a theme's own scheme's name ("Classic Blue"); NULL: accent_names[v] */
 } scheme_t;
 typedef struct {
@@ -154,8 +155,8 @@ typedef struct {
     unsigned char bump_px;    /* the wheel's bump at a list's end */
     unsigned char painter[PAINTER_N];
     unsigned char chevron_home, chevron_sel, set_text, caps_mark, caps_home, caps_np, icons_mono,
-        icons_badge_muted, icons_addon_mono, icons_badge_ink, art_final, np_album_op,
-        np_state_op;                             /* flags 0/1; *_op 0/255 */
+        icons_badge_muted, icons_addon_mono, icons_badge_ink, art_final, np_album_op, np_state_op,
+        card_colors; /* flags 0/1; *_op 0/255; card_colors: takes a card theme's */
     unsigned char font[ROLE_N], font_px[ROLE_N]; /* FONT_*; px 0: the style's size */
     stops_t batt;       /* BATT_CLASSIC_LIGHT: the level's stops, a hue in both halves */
     stops_t batt_empty; /* BATT_CLASSIC_LIGHT: the rows past the level */

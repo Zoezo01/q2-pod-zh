@@ -84,9 +84,12 @@ static int upload_wait(const void *unused) {
     int sent = 0, done = scrobble_poll(&sent);
     if (!done) return 8; /* RET_REPEAT */
     if (done > 0) sa.pending = 0, sa.misses = 0;
-    char s[48];
-    tk_snprintf(s, sizeof s, done < 0 ? "上传失败，已发送 %d 条" : "已上传 %d 条听歌记录", sent);
-    toast(done > 0 && !sent ? "没有待上传记录" : s);
+    char s[96]; /* in any language */
+    tk_snprintf(s, sizeof s, done < 0 ? tr("上传失败，已发送 %d 条") : tr("已上传 %d 条听歌记录"),
+                sent);
+    toast(done > 0 && !sent ? tr("没有待上传记录") : s);
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
     return 0;
 }
 
@@ -96,5 +99,6 @@ int upload_scrobbles(void *ctx, event_t *event) {
     if (!started && sa.running) sa.running = 0, started = 1; /* the automatic one: report it */
     if (started > 0) timer_add(upload_wait, (void *)0, 500);
     toast(started > 0 ? "正在上传听歌记录" : !started ? "正在上传中" : "上传失败");
+>>>>>>> 1.9.1
     return 0;
 }

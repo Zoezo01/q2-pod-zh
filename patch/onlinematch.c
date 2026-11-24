@@ -181,6 +181,7 @@ enum { LJ_DONE, LJ_OFFLINE, LJ_CARD, LJ_CANCELLED };
 /* clang-format on */
 #ifdef PEQ_HOST
 #define LJ_RETRY_US 1000 /* test/peq.py: no real wait */
+#define tr(en) (en)      /* test/peq.py builds this file alone: English */
 #else
 #define LJ_RETRY_US 2000000 /* before a retry: twice the moment LRCLIB's busy reply asks for */
 #endif
@@ -247,16 +248,27 @@ int album_lyrics(lyr_job *job, const lyr_track *t, int n,
 
 /* The toast that sums up job, into out. */
 void album_note(char *out, unsigned n, const lyr_job *job) {
-    static const char *const head[] = { "专辑歌词", "LRCLIB 无响应", "无法写入存储卡",
-                                        "已取消" };
-    static const char *const what[] = { "已保存", "未找到", "已有歌词", "失败" };
+    static const char *const head[] = { N_("专辑歌词"), N_("LRCLIB 无响应"),
+                                        N_("无法写入存储卡"), N_("已取消") };
+    static const char *const what[] = { N_("已保存"), N_("未找到"),
+                                        N_("已有歌词"), N_("失败") };
     const int count[] = { job->saved, job->none, job->had, job->failed };
     int answered = job->saved || job->none, any = answered || job->had || job->failed;
-    unsigned at = (unsigned)snprintf(out, n, "%s", job->state == LJ_OFFLINE && !answered ? "无法连接 LRCLIB"
-                                                                                         : head[job->state]);
+    if (!any && job->state == LJ_DONE) {
+        snprintf(out, n, "%s", tr("无法连接 LRCLIB"));
+        return;
+    }
+    unsigned at = (unsigned)snprintf(
+        out, n, "%s",
+        job->state == LJ_OFFLINE && !answered ? tr("：") : tr(head[job->state]));
+    char item[96]; /* a count in any language */
     for (int i = 0, first = 1; i < 4 && at < n && (job->state != LJ_OFFLINE || answered); ++i)
-        if (count[i]) at += (unsigned)snprintf(out + at, n - at, "%s%d %s", first ? "：" : "，", count[i], what[i]), first = 0;
-    if (!any && job->state == LJ_DONE && at < n) snprintf(out + at, n - at, "：卡上没有歌曲");
+        if (count[i])
+            snprintf(item, sizeof item, tr(what[i]), count[i]),
+                at += (unsigned)snprintf(out + at, n - at, "%s%s", first ? "，" : "：卡上没有歌曲", item),
+                first = 0;
+>>>>>>> 1.9.1
+>>>>>>> 1.9.1
 }
 
 #ifndef PEQ_HOST
@@ -485,7 +497,7 @@ int ringnav_cover_copy(char *cmd, unsigned n, const char *fmt, const char *from,
  * album, found as that search finds them, on a thread of its own that outlives the page. */
 extern widget_t *list_row(widget_t *view, const char *icon, int (*click)(void *, event_t *),
                           void *ctx);
-static const char AL_TITLE[] = "Download Album Lyrics";
+static const char AL_TITLE[] = N_("Download Album Lyrics");
 static struct {
     lyr_job job;
     lyr_track *tracks;
@@ -519,22 +531,23 @@ static void *al_playing(void) {
 
 /* The row's label: its title, or the job's progress. */
 static void al_show(void) {
-    char s[48];
+    char s[96]; /* in any language */
     if (!al.label) return;
     if (!al.thread) {
-        widget_set_text_utf8(al.label, AL_TITLE);
+        widget_set_text_utf8(al.label, tr(AL_TITLE));
         return;
     }
     if (al.job.cancel)
         snprintf(s, sizeof s, "正在取消…");
     else
         snprintf(s, sizeof s, "正在下载 %d / %d", al.job.done + (al.job.done < al.job.total), al.job.total);
+>>>>>>> 1.9.1
     widget_set_text_utf8(al.label, s);
 }
 
 /* The worker joined, its tracks freed and, with say, its job summed up in a toast; once. */
 static void al_finish(int say) {
-    char note[96];
+    char note[256]; /* album_note's sentence in any language */
     if (!al.thread) return;
     pthread_join(al.thread, 0);
     al.thread = 0;
@@ -596,6 +609,7 @@ static int al_click(void *ctx, event_t *event) {
     if (!k) {
         free(t);
         toast("卡上没有该专辑的歌曲");
+>>>>>>> 1.9.1
         return 0;
     }
     memset(&al.job, 0, sizeof al.job);
@@ -604,6 +618,7 @@ static int al_click(void *ctx, event_t *event) {
         al.thread = 0, al.running = 0;
         free(t), al.tracks = 0;
         toast("无法开始下载");
+>>>>>>> 1.9.1
         return 0;
     }
     timer_add(al_wait, (void *)0, 500);
