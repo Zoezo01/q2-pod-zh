@@ -793,8 +793,9 @@ void lockscreen_layout_turned(widget_t *win); /* lockscreen.c: Layout's row was 
 void glance_init(widget_t *win, widget_t *img, int picture, void *full);
 void glance_poll(void), glance_cover(widget_t *cover);
 int glance_paint(widget_t *w, canvas_t *canvas);
-int xfade_page(widget_t *top); /* crossfade.c */
-int ipod_battery(void);        /* theme_engine.c: IPOD BATTERY, 0 Icon, else a percentage */
+int lockscreen_touch(widget_t *wm, event_t *e, unsigned type); /* ... and from ringnav_input */
+int xfade_page(widget_t *top);                                 /* crossfade.c */
+int ipod_battery(void); /* theme_engine.c: IPOD BATTERY, 0 Icon, else a percentage */
 int title_gone(void *w, event_t *event); /* ... and looks for its source again at the next sync */
 int bar_title_fits(widget_t *label);     /* label's text fits the bar's title box */
 int ipod_light(void);                    /* theme_engine.c: Light Mode */

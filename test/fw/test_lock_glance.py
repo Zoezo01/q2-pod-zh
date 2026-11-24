@@ -1,5 +1,6 @@
 """lock_glance.c (docs/internals.md#lock-screen): the Lock Screen's At a Glance layout on stock's lock window, the
-same in every theme: its widgets' boxes and what it paints."""
+same in every theme: its widgets' boxes and what it paints, the blurred cover, slide to unlock and its shine, the
+knob under a finger and the unlock through stock's handler, and the clock's hold that flips the view."""
 import ctypes as C
 
 import pytest
@@ -49,6 +50,9 @@ class Glance:
         fw.mock('mclGetPlayTime', self.play_time)
         fw.mock('stock_saver_trampoline', lambda *_: 31)
         self.win = Window(fw, STOCK)
+        self.shown = {}  # what widget_set_visible set; every widget is shown until then
+        fw.mock('widget_set_visible', lambda w, v, *_: self.shown.__setitem__(w, v))
+        fw.mock('widget_get_visible', lambda w, *_: self.shown.get(w, 1))
         self.made, self.views = 0, {}
         fw.mock('hscroll_label_create', lambda *_: self.new())
         fw.mock('widget_factory_create_widget', lambda f, kind, parent, x, y, w, *_: self.view(C.string_at(kind), x, y, w))
@@ -503,6 +507,225 @@ def test_the_window_s_end_stops_the_shine(fw, mcl, now):
     forget()
     assert set(g.timers.of(fw, 'shine') + g.timers.of(fw, 'tick')) <= set(g.timers.removed)
     assert shine(fw) == RET_OK
+
+
+# A finger: the knob, the unlock, the clock's hold and the flip.
+
+DOWN, MOVE, UP, ABORT = O['EVT_POINTER_FIRST'], 0x101, 0x103, O['EVT_POINTER_ABORT']
+KNOB_X, KNOB_Y = 40, 238  # the knob's top left on the screen: the track's, 4 px in
+TRAVEL = 303 - 66 - 8  # its run along the track
+
+
+def touch(fw, kind, x, y, wm=0x4400):
+    """A pointer event at the screen's (x, y), as the panel gives it (a quarter turn: x up from the screen's bottom,
+    y across): lockscreen_touch's answer."""
+    e = C.create_string_buffer(0x40)
+    C.c_int.from_address(C.addressof(e) + O['EVENT_X']).value = 319 - y
+    C.c_int.from_address(C.addressof(e) + O['EVENT_Y']).value = x
+    return fw.fn('lockscreen_touch', C.c_int, C.c_void_p, C.c_void_p, C.c_uint)(wm, C.addressof(e), kind)
+
+
+def knob(fw, g):
+    """The knob's x on the screen, as the slider paints it."""
+    lcd = Lcd(fw)
+    lcd.paint(fw, g['slider'])
+    return TRACK[0] + lcd.boxes[2][0][0]
+
+
+def run(fw, g, name, last=True):
+    """Run lock_glance's timer `name`, the last added: its answer."""
+    i = g.timers.of(fw, name)[-1 if last else 0]
+    fn = next(f for t, f, _ in g.timers.added if t == i)
+    return C.CFUNCTYPE(C.c_int, C.c_void_p)(fn)(0)
+
+
+def fronted(fw, front=0x7700):
+    fw.mock('window_manager_get_top_window', lambda *_: front)
+
+
+def test_the_knob_follows_the_finger_and_springs_back_short_of_the_end(fw, mcl, now):
+    g = Glance(fw, mcl, queue=1)
+    fronted(fw)
+    assert touch(fw, DOWN, KNOB_X + 33, 258) == 1
+    assert touch(fw, MOVE, KNOB_X + 33 + 100, 250) == 1 and knob(fw, g) == KNOB_X + 100
+    assert touch(fw, MOVE, KNOB_X + 33 + 400, 250) == 1 and knob(fw, g) == KNOB_X + TRAVEL  # no further than its end
+    assert touch(fw, MOVE, 0, 250) == 1 and knob(fw, g) == KNOB_X
+    touch(fw, MOVE, KNOB_X + 33 + 142, 250)
+    assert touch(fw, UP, KNOB_X + 33 + 142, 250) == 1 and knob(fw, g) == KNOB_X  # 142 of 229: short
+    assert g.timers.of(fw, 'unlock') == [] and fw.calls('saver_unlock') == []
+
+
+@pytest.mark.parametrize('end', [UP, ABORT])
+def test_let_go_past_five_eighths_unlocks_through_stock_s_own_handler(fw, mcl, now, end):
+    """Past 62.5% of its run (143 px of 229) the knob goes to the end and stock's slide handler (saver_unlock,
+    0x53ec68) closes the window a moment later, outside the touch's dispatch; a finger run off the glass is the same."""
+    g = Glance(fw, mcl, queue=1)
+    fronted(fw)
+    touch(fw, DOWN, KNOB_X + 10, 250)
+    touch(fw, MOVE, KNOB_X + 10 + TRAVEL * 5 // 8, 250)
+    touch(fw, end, KNOB_X + 10 + TRAVEL * 5 // 8, 250)
+    assert knob(fw, g) == KNOB_X + TRAVEL and fw.calls('saver_unlock') == []
+    (i, _, ms), = [t for t in g.timers.added if t[0] in g.timers.of(fw, 'unlock')]
+    assert ms == 16 and run(fw, g, 'unlock') == RET_OK
+    assert [args[:2] for _, args in fw.calls('saver_unlock')] == [(0x7700, 0)]
+    assert touch(fw, DOWN, KNOB_X + TRAVEL + 10, 250) == 1 and touch(fw, UP, 40, 250) == 1  # unlocking: taken, nothing moves
+    assert knob(fw, g) == KNOB_X + TRAVEL and len(g.timers.of(fw, 'unlock')) == 1
+
+
+def test_wake_stays_while_the_knob_is_held(fw, mcl, now):
+    Glance(fw, mcl, queue=1)
+    fronted(fw)
+    touch(fw, DOWN, KNOB_X + 10, 250)
+    assert [args[:3] for _, args in fw.calls('reset_poweroptions_timer')] == [(1, 1, 1)]
+
+
+@pytest.mark.parametrize('x, y, grabbed', [(KNOB_X - 26, 250, True), (KNOB_X - 27, 250, False), (KNOB_X + 66 + 25, 250, True),
+                                           (KNOB_X + 66 + 26, 250, False), (60, KNOB_Y - 26, True), (60, KNOB_Y - 27, False),
+                                           (60, KNOB_Y + 40 + 25, True), (60, KNOB_Y + 40 + 26, False)])
+def test_a_finger_may_land_26_px_round_the_knob(fw, mcl, now, x, y, grabbed):
+    g = Glance(fw, mcl, queue=1)
+    fronted(fw)
+    assert touch(fw, DOWN, x, y) == 1
+    touch(fw, MOVE, x + 50, y)
+    assert knob(fw, g) == KNOB_X + (50 if grabbed else 0)
+
+
+@pytest.mark.parametrize('front, taken', [(0x7700, 1), ('volume_dialog', 1), ('confirminfo_dialog', 0), (0, 0)])
+def test_its_window_or_the_volume_over_it_takes_the_touch(fw, mcl, now, front, taken):
+    """The volume panel over the slider: ringnav_input put it away on the down, and the touch goes on. A prompt over
+    the lock screen (Shut Down?) keeps its own touches."""
+    Glance(fw, mcl, queue=1)
+    if isinstance(front, str):
+        name = C.create_string_buffer(front.encode())
+        fw.mock('widget_get_prop_str', lambda w, key, d, *_: C.addressof(name) if w == 0x9900 and C.string_at(key) == b'name' else d)
+        front = 0x9900
+    fronted(fw, front)
+    assert touch(fw, DOWN, KNOB_X + 10, 250) == taken
+
+
+def test_default_takes_no_touch(fw):
+    Config(fw)
+    fw.var('fw_ctx_g_screensaver_picture', C.c_char * 256).value = b'screensaver_default'
+    fw.mock('stock_saver_trampoline', lambda *_: 31)
+    Window(fw, STOCK)
+    fw.fn('lockscreen_init', C.c_int, C.c_void_p, C.c_void_p)(0x7700, 0x7800)
+    fronted(fw)
+    assert touch(fw, DOWN, KNOB_X + 10, 250) == 0
+
+
+class Ms:
+    """time_now_ms."""
+    def __init__(self, fw, now=5000):
+        self.now = now
+        fw.mock('time_now_ms', lambda *_: self.now)
+
+
+def test_the_clock_held_a_second_flips_to_the_picture_through_black_and_back(fw, mcl, now):
+    ms = Ms(fw)
+    g = Glance(fw, mcl, queue=1)
+    fronted(fw)
+    assert touch(fw, DOWN, 100, 40) == 1  # on the time, top left
+    (_, _, hold), = [t for t in g.timers.added if t[0] in g.timers.of(fw, 'turn')]
+    assert hold == 1000
+    assert run(fw, g, 'turn') == RET_OK
+    (_, _, step), = [t for t in g.timers.added if t[0] in g.timers.of(fw, 'fade_step')]
+    assert step == 16
+    veil = []
+    fw.mock('canvas_set_fill_color', lambda c, color, *_: veil.append(color & 0xffffffff))
+    lcd = Lcd(fw)
+
+    def frame(at):
+        ms.now = 5000 + at
+        answer = run(fw, g, 'fade_step')
+        veil.clear()
+        lcd.paint(fw, g['veil'])
+        return answer, (veil[0] >> 24 if veil and fw.calls('canvas_fill_rect') else 0)
+    assert frame(80) == (RET_REPEAT, 127) and g.boxes()['time'][:2] == (36, 16)  # darkening the song's view
+    assert frame(200) == (RET_REPEAT, 255 - 40 * 255 // 160) and g.boxes()['time'][1] == 50  # turned: the clock on black
+    assert [a[0] for n, a in g.win.calls('widget_set_visible') if n == 'view_playinfo'][-1] == 0  # no song in it
+    assert frame(330)[0] == RET_OK
+    veil.clear()
+    lcd.paint(fw, g['veil'])
+    assert veil[1:] == []  # lifted: nothing but the fill put back
+    touch(fw, UP, 100, 40)
+    assert touch(fw, DOWN, 187, 100) == 1  # the large clock, held, flips back
+    run(fw, g, 'turn')
+    for at in (80, 200, 330):
+        frame(at + 330)
+    assert g.boxes()['time'][:2] == (36, 16)
+
+
+def test_a_late_fade_step_still_turns(fw, mcl, now):
+    """A step that comes after the whole fade's time (a busy loop) turns the view all the same, and ends it."""
+    ms = Ms(fw)
+    g = Glance(fw, mcl, queue=1)
+    fronted(fw)
+    touch(fw, DOWN, 100, 40)
+    run(fw, g, 'turn')
+    ms.now += 900
+    assert run(fw, g, 'fade_step') == RET_OK and g.boxes()['time'][1] == 50
+
+
+def test_the_picture_s_view_is_the_picture_and_the_slider_alone(fw, mcl, now):
+    """Flipped with a picture chosen, the screen is that picture (the shade under the time) and the slider: no song."""
+    ms = Ms(fw)
+    Bitmaps(fw)
+    seen = draws(fw)
+    g = Glance(fw, mcl, picture=WALLS[AURORA], queue=1)
+    fronted(fw)
+    touch(fw, DOWN, 100, 40)
+    run(fw, g, 'turn')
+    ms.now += 200
+    run(fw, g, 'fade_step')
+    lcd = Lcd(fw)
+    lcd.paint(fw, g['img_screensaver'])
+    assert len(seen) == 1 and len(lcd.boxes) == 44 and g.boxes()['time'][:2] == (36, 16)
+    assert [a[0] for n, a in g.win.calls('widget_set_visible') if n == 'view_playinfo'][-1] == 0
+    assert g.made == len(ADDED)  # no song line of its own over the slider
+
+
+@pytest.mark.parametrize('queue, x, y', [(0, 100, 40), (1, 300, 40), (1, 100, 120), (1, KNOB_X + 10, 250)])
+def test_the_hold_is_the_clock_s_with_a_queue_alone(fw, mcl, now, queue, x, y):
+    g = Glance(fw, mcl, queue=queue)
+    fronted(fw)
+    touch(fw, DOWN, x, y)
+    assert g.timers.of(fw, 'turn') == []
+
+
+@pytest.mark.parametrize('dx, dy, flips', [(14, 0, True), (15, 0, False), (0, -15, False), (-14, 14, True)])
+def test_a_finger_moving_off_the_clock_lets_the_hold_go(fw, mcl, now, dx, dy, flips):
+    Ms(fw)
+    g = Glance(fw, mcl, queue=1)
+    fronted(fw)
+    touch(fw, DOWN, 100, 40)
+    touch(fw, MOVE, 100 + dx, 40 + dy)
+    run(fw, g, 'turn')
+    assert bool(g.timers.of(fw, 'fade_step')) == flips
+
+
+def test_a_finger_let_go_before_the_second_flips_nothing(fw, mcl, now):
+    g = Glance(fw, mcl, queue=1)
+    fronted(fw)
+    touch(fw, DOWN, 100, 40)
+    hold = g.timers.of(fw, 'turn')
+    touch(fw, UP, 100, 40)
+    assert set(hold) <= set(g.timers.removed)
+
+
+def test_the_queue_s_end_turns_back_to_the_picture_s_own_view(fw, mcl, now):
+    """Flipped, then the queue goes: nothing to flip from; when one comes the song shows."""
+    ms = Ms(fw)
+    g = Glance(fw, mcl, queue=1)
+    fronted(fw)
+    touch(fw, DOWN, 100, 40)
+    run(fw, g, 'turn')
+    ms.now += 200
+    run(fw, g, 'fade_step')
+    g.queue(0)
+    tick(fw)
+    g.queue(1)
+    tick(fw)
+    assert [a[0] for n, a in g.win.calls('widget_set_visible') if n == 'view_playinfo'][-1] == 1
 
 
 @pytest.mark.parametrize('layout', [None, '0'])

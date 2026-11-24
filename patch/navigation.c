@@ -9185,6 +9185,12 @@ int ringnav_input(widget_t *wm, event_t *e) {
         if (front && !tk_strcmp(widget_get_prop_str(front, "name", ""), "volume_dialog"))
             window_close(front);
     }
+    /* At a Glance's lock window takes its touches itself (lock_glance.c), the volume panel's too,
+     * so the touch that put it away may go on to slide; stock never sees them. A prompt over the
+     * lock screen (Shut Down?) keeps its own. */
+    if (type >= EVT_POINTER_FIRST && type <= EVT_POINTER_ABORT && g_lockscreen_pageflag &&
+        lockscreen_touch(wm, e, type))
+        return 0;
     if ((type == EVT_KEY_DOWN || type == EVT_KEY_UP || type == EVT_KEY_LONG) &&
         (key == KEY_PREV || key == KEY_NEXT || key == KEY_CENTER) && usb_prompt()) {
         reset_poweroptions_timer(1, 1, 1);

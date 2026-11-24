@@ -3,8 +3,10 @@
  * widgets, laid out again through the theme engine (theme()->glance, lock.glance in Minimal's
  * theme.xml, every theme's alike): the time top left and the date top right; with a queue, stock's
  * song card across the screen with its cover square, the song's own lines under the title and
- * artist; without one, the chosen picture, or on black the time large in the middle. lockscreen.c
- * hands the window over (glance_init) and calls the rest. */
+ * artist, the playing cover blurred behind it all; without one, the chosen picture, or on black the
+ * time large in the middle; and slide to unlock, the one thing a finger moves. With a queue the
+ * clock held turns the song's view to the picture's and back. lockscreen.c hands the window over
+ * (glance_init) and calls the rest; ringnav_input hands it the touches (lockscreen_touch). */
 #include "peq.h"
 #include "offsets.inc"
 #include "stock.h"
@@ -27,10 +29,18 @@ static struct {
     void *full; /* the built-in picture lockscreen.c rendered, 0 for none */
     int picture, mode, minute, queue;
     unsigned timer;
-    /* slide to unlock: its view, the knob's px along the track, the shine's px along its run */
+    /* slide to unlock: its view, the knob's px along the track, the shine's px along its run; a
+     * finger on the knob (drag, drag_dx its x less the knob's), and unlocking under way (step) */
     widget_t *slider;
-    int knob, shine;
+    int knob, shine, drag, drag_dx, step;
     unsigned shine_timer;
+    /* the clock held with a queue turns the song's view to the picture's and back (flip): hold
+     * while a finger rests there since (hold_x, hold_y); then the veil, a view over everything,
+     * darkens the old view, the view changes under it (turned), and it lifts off the new one, fade
+     * its black's alpha */
+    widget_t *veil;
+    int flip, hold, hold_x, hold_y, fade, turned;
+    unsigned hold_timer, fade_timer, fade_at;
     /* the playing cover blurred, GL_W x GL_H, kept between windows: made for np_art_key() blur_key
      * from the image blur_name ("": none made yet) */
     void *blur;
@@ -45,11 +55,13 @@ static int forget(void *ctx, event_t *event) {
     (void)event;
     if (ctx != gl.img) return 0;
     gl.win = gl.img = gl.card = gl.cover = gl.title = gl.artist = gl.album = gl.place = 0;
-    gl.count = gl.time = gl.ampm = gl.day = gl.date = gl.slider = 0;
+    gl.count = gl.time = gl.ampm = gl.day = gl.date = gl.slider = gl.veil = 0;
     gl.full = 0;
-    gl.knob = 0;
+    gl.knob = gl.drag = gl.step = gl.hold = gl.fade = 0;
     stop_timer(&gl.timer);
     stop_timer(&gl.shine_timer);
+    stop_timer(&gl.hold_timer);
+    stop_timer(&gl.fade_timer);
     return 0;
 }
 
@@ -237,13 +249,15 @@ static void song_lines(void) {
     if (gl.count) widget_set_text_utf8(gl.count, s);
 }
 
-/* What the screen shows now: the song with a queue (stock shows its card then), else the chosen
- * picture, else the clock on black. A change lays the clock out again and repaints. */
+/* What the screen shows now: the song with a queue (stock shows its card then) unless flipped,
+ * else the chosen picture, else the clock on black. The picture's view shows only the picture (or
+ * the clock) and the slider. A change lays the clock out again and repaints. */
 static void sync(int force) {
     if (!gl.img) return;
     unsigned pos = 0, n = 0;
     queue_now(&pos, &n);
-    int queue = gl.card && n > 0, song = queue;
+    int queue = gl.card && n > 0, song = queue && !gl.flip;
+    if (!queue) gl.flip = 0; /* nothing to flip from */
     if (gl.card && widget_get_visible(gl.card) != song) widget_set_visible(gl.card, song, 0);
     if (queue != gl.queue) gl.queue = queue, force = 1;
     int mode = song ? GL_SONG : gl.picture ? GL_PICTURE : GL_CLOCK;
@@ -305,7 +319,8 @@ void glance_poll(void) {
 /* lockscreen_init under At a Glance, after stock built the window: img its picture, picture 1 for
  * the user's own or a built-in but Black, full the built-in's rendering. Stock's clocks, battery,
  * shade and slide hint hide; its song card (stock shows it only with a queue) takes the screen's
- * width under the time; the time, date and the song's other lines are added. */
+ * width under the time; the time, date, the song's other lines, the slider and the flip's veil are
+ * added. */
 void glance_init(widget_t *win, widget_t *img, int picture, void *full) {
     const glance_t *g = style();
     static const char *const hidden[] = { "view_timeinfo", "clock_time",  "clock_date",
@@ -337,8 +352,8 @@ void glance_init(widget_t *win, widget_t *img, int picture, void *full) {
     }
     int tx = g->text_x, tw = g->right - tx;
     unsigned a = (unsigned)g->text_a;
-    /* each box 6 px over its font at least, 22 high at least: a label draws nothing in one shorter
-     * than its font; the place and count 90 wide, at either end */
+    /* the title and artist 6 px over their fonts, the rest 22 high (a label draws nothing in a box
+     * shorter than its font); the place and count 90 wide, at either end */
     put(gl.title, tx, g->title_y, tw, g->title_px + 6, g->title_px, "classic-light", "left", 0xff);
     put(gl.artist, tx, g->artist_y, tw, g->artist_px + 6, g->artist_px, "default", "left", 0xff);
     put(gl.album, tx, g->album_y, tw, 22, g->album_px, "default", "left", a);
@@ -348,7 +363,10 @@ void glance_init(widget_t *win, widget_t *img, int picture, void *full) {
     gl.date = new_label(top);
     gl.slider = widget_factory_create_widget(widget_factory(), "view", top, g->x, g->track_y,
                                              g->right - g->x, g->track_h);
-    gl.knob = gl.shine = 0;
+    /* the flip's veil, over everything, last: it takes no touch */
+    gl.veil = widget_factory_create_widget(widget_factory(), "view", top, 0, 0, GL_W, GL_H);
+    if (gl.veil) widget_set_sensitive(gl.veil, 0);
+    gl.knob = gl.shine = gl.drag = gl.step = gl.hold = gl.fade = 0;
     gl.mode = -1, gl.queue = -1;
     rearm(&gl.shine_timer, shine, shine_ms());
     sync(1);
@@ -429,16 +447,131 @@ static void paint_slider(canvas_t *canvas, const glance_t *g) {
         box(canvas, cx + 2 + i, cy - 9 + i, 1, 19 - 2 * i, 0xff000000u | g->arrow, 0);
 }
 
-/* lockscreen_paint, for every widget: 1 when w is one of At a Glance's and painted here. */
+/* lockscreen_paint, for every widget: 1 when w is one of At a Glance's and painted here. The veil
+ * is the flip's black, at its alpha, over the whole window. */
 int glance_paint(widget_t *w, canvas_t *canvas) {
-    if (!w || !gl.img || (w != gl.img && w != gl.slider)) return 0;
+    if (!w || !gl.img || (w != gl.img && w != gl.slider && w != gl.veil)) return 0;
     void *lcd = canvas ? P(canvas, CANVAS_LCD) : 0;
     if (!lcd) return 1;
     unsigned fill = (unsigned)I(lcd, LCD_FILL_COLOR);
     if (w == gl.img)
         paint_picture(canvas, style());
-    else
+    else if (w == gl.slider)
         paint_slider(canvas, style());
+    else if (gl.fade > 0) { /* black as it is: stock's setter, Light Mode's ink held off */
+        stock_canvas_set_fill_color(canvas, (unsigned)(gl.fade > 255 ? 255 : gl.fade) << 24);
+        canvas_fill_rect(canvas, 0, 0, GL_W, GL_H);
+    }
     stock_canvas_set_fill_color(canvas, fill);
+    return 1;
+}
+
+/* The flip, a step each 16 ms: the veil darkens the old view over fade_ms, the view
+ * turns once at the darkest, and the veil lifts off the new one over fade_ms. Never the window's
+ * own opacity, which let the page under the lock window show through. */
+static int fade_step(const void *info) {
+    const glance_t *g = style();
+    unsigned ms = g->fade_ms > 0 ? (unsigned)g->fade_ms : 1, t = time_now_ms() - gl.fade_at;
+    (void)info;
+    if (!gl.img || !gl.veil) {
+        gl.fade_timer = 0, gl.fade = 0;
+        return 0; /* RET_OK: a timer's end */
+    }
+    if (t >= ms && !gl.turned) { /* the turn, once, at the darkest, however late the step */
+        gl.turned = 1;
+        gl.flip = !gl.flip;
+        sync(1);
+    }
+    if (t < ms)
+        gl.fade = (int)(t * 255 / ms);
+    else if (t < 2 * ms)
+        gl.fade = 255 - (int)((t - ms) * 255 / ms);
+    else {
+        gl.fade = 0;
+        gl.fade_timer = 0;
+        widget_invalidate_force(gl.win, 0);
+        return 0;
+    }
+    widget_invalidate_force(gl.win, 0);
+    return 8; /* RET_REPEAT */
+}
+/* The clock held hold_ms with a queue: the other view, through black. */
+static int turn(const void *info) {
+    (void)info;
+    gl.hold_timer = 0;
+    if (!gl.hold || !gl.img || gl.queue != 1) return 0;
+    gl.hold = 0;
+    reset_poweroptions_timer(1, 1, 1);
+    if (!gl.veil) { /* no veil: the turn alone */
+        gl.flip = !gl.flip;
+        sync(1);
+        return 0;
+    }
+    gl.fade_at = time_now_ms();
+    gl.turned = 0;
+    gl.fade = 1;
+    stop_timer(&gl.fade_timer);
+    gl.fade_timer = timer_add(fade_step, (void *)0, 16);
+    return 0;
+}
+/* Unlock: stock's own handler for its lock window's slide (saver_unlock: it ends the window's timer
+ * and closes it, and the window's close clears g_lockscreen_pageflag), called a moment after the
+ * touch, outside its dispatch. */
+static int unlock(const void *info) {
+    (void)info; /* a timer hands its own record, not the context */
+    if (gl.win) saver_unlock(gl.win, (void *)0);
+    return 0; /* RET_OK: this timer's end */
+}
+
+#define GL_POINTER_MOVE 0x101 /* the window manager's move; EVT_POINTER_FIRST is its down */
+/* ringnav_input, for a pointer event with the lock screen up: 1 when At a Glance's lock window, or
+ * the volume panel over it (ringnav_input closed it on the down), is in front, and stock never
+ * sees it; 0 for anything else, a prompt over the lock screen (Shut Down?) or Default's window.
+ * Only the knob takes a finger, within grab px of it: it follows the finger along the track,
+ * springs back when let go short of done per mille of its travel, and past it unlocks. The clock
+ * held hold_ms with a queue flips the view; a finger moving hold_slop px lets it go. */
+int lockscreen_touch(widget_t *wm, event_t *e, unsigned type) {
+    if (!gl.img || !gl.slider || !e) return 0;
+    widget_t *front = window_manager_get_top_window(wm);
+    if (front != gl.win &&
+        (!front || tk_strcmp(widget_get_prop_str(front, "name", ""), "volume_dialog")))
+        return 0;
+    const glance_t *g = style();
+    /* an input event's place is the panel's, a quarter turn from the screen's: x up the screen
+     * from its bottom edge, y across it */
+    int x = I(e, EVENT_Y), y = GL_H - 1 - I(e, EVENT_X);
+    int travel = g->right - g->x - g->knob_w - 2 * g->knob_in;
+    if (gl.step) return 1; /* unlocking */
+    if (travel < 1) travel = 1;
+    if (type == EVT_POINTER_FIRST) {
+        int kx = g->x + g->knob_in + gl.knob, ky = g->track_y + (g->track_h - g->knob_h) / 2;
+        gl.drag = x >= kx - g->grab && x < kx + g->knob_w + g->grab && y >= ky - g->grab &&
+                  y < ky + g->knob_h + g->grab;
+        gl.drag_dx = x - kx;
+        if (gl.drag) reset_poweroptions_timer(1, 1, 1);
+        /* the clock, top left, or large in the middle with no picture */
+        gl.hold = !gl.drag && gl.queue == 1 &&
+                  (gl.mode == GL_CLOCK ? y >= g->big_hold_y && y < g->big_hold_y + g->big_hold_h
+                                       : x < g->hold_w && y < g->hold_h);
+        gl.hold_x = x, gl.hold_y = y;
+        stop_timer(&gl.hold_timer);
+        if (gl.hold) gl.hold_timer = timer_add(turn, (void *)0, (unsigned)g->hold_ms);
+    } else if (type == GL_POINTER_MOVE && gl.hold) {
+        int dx = x - gl.hold_x, dy = y - gl.hold_y;
+        if (dx > g->hold_slop || -dx > g->hold_slop || dy > g->hold_slop || -dy > g->hold_slop)
+            gl.hold = 0;
+    } else if (type == GL_POINTER_MOVE && gl.drag) {
+        int at = x - gl.drag_dx - g->x - g->knob_in;
+        gl.knob = at < 0 ? 0 : at > travel ? travel : at;
+    } else if (type != GL_POINTER_MOVE) {
+        /* up, or the touch was lost: either way a knob past done is a slide meant */
+        int done = gl.drag && gl.knob >= travel * g->done / 1000;
+        gl.hold = 0;
+        stop_timer(&gl.hold_timer);
+        gl.drag = 0;
+        gl.knob = done ? travel : 0;
+        if (done) gl.step = 1, timer_add(unlock, (void *)0, (unsigned)g->open_ms);
+    }
+    widget_invalidate_force(gl.slider, 0);
     return 1;
 }
