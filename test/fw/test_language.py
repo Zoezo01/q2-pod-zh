@@ -147,7 +147,11 @@ def test_a_duplicate_key_takes_the_line_for_stocks_english(fw, lang):
 CONVERSIONS = [
     ('%d of %d', '%d von %d'), ('%s', '%d'), ('%d', ''), ('', '%d'), ('%5.1f dB', '%5.1f dB'), ('%5.1f dB', '%.1f dB'),
     ('100%%', '100 %%'), ('%lu', '%lu'), ('%', '%'), ('%s %d', '%d %s'), ('音量 50%（最大）', '50%'), ('%02x', '%02x'),
-    ('%lld', '%ld'), ('%hhd', '%hhd'), ('%.f', ''), ('%*d', '%*d'), ('%d%%', '%d %%'), ('%%%d', '%d'), ('%q', '')]
+    ('%lld', '%ld'), ('%hhd', '%hhd'), ('%.f', ''), ('%*d', '%*d'), ('%d%%', '%d %%'), ('%%%d', '%d'), ('%q', ''),
+    ('%d%%', '%d% Stufe'), ('%d', '%d %1$s'), ('', "%'d"), ('%1$s', '%1$s'), ('%d', '%Id'), ('%.d', '%.d'),
+    ('%d', '%Zd'), ('%s', '%S'), ('%m', '%m'), ('%m', ''), ('%5%%d', '%d'), ('%5%%d', '%5%%d'), ('%*1$d', '%*d'),
+    ('%d', '%٣d %d'), ('%d', '%1٣$d %d'), ('%d', '%.３d %d'), ('%*音', '%*香'), ('%1$音', '%1$香'), ('%*ä', '%*å'),
+    ('50%', '%50'), ('50', '50%'), ('', '%5'), ('%d', '%d%'), ('音量 50%（最大）', '50%'), ('', '%99999999999d')]
 
 
 @pytest.mark.parametrize('a, b', CONVERSIONS)
@@ -155,14 +159,54 @@ def test_conversions_as_langpack_counts_them(fw, a, b):
     """The Q2 skips exactly the lines langpack.py's check refuses for their conversions."""
     f = fw.fn('language__same_conversions', C.c_int, C.c_char_p, C.c_char_p)
 
-    def found(s):
-        return langpack.CONVERSION.findall(s.replace('%%', ''))
-    assert bool(f(a.encode(), b.encode())) == (found(a) == found(b))
+    assert bool(f(a.encode(), b.encode())) == (langpack.conversions(a) == langpack.conversions(b))
 
 
 def test_conversions(fw):
     f = fw.fn('language__same_conversions', C.c_int, C.c_char_p, C.c_char_p)
-    assert f(b'%d of %d', b'%d von %d') and not f(b'%s', b'%d') and f('音量 50%（最大）'.encode(), b'50%')
+    assert f(b'%d of %d', b'%d von %d') and not f(b'%s', b'%d') and not f('音量 50%（最大）'.encode(), b'50%')
+    assert f('音量 50%（最大）'.encode(), '50%（最大）'.encode()) and f(b'50%', b'%50') and not f(b'50', b'50%')
+    assert not f(b'Wheel Sensitivity: %d%%', b'Rad: %d% Stufe') and not f(b'%d', b'%d %1$s') and not f(b'', b"%'d")
+
+
+def test_conversions_as_glibc_counts_them(fw):
+    """Whenever the Q2 says two formats hold the same conversions, glibc's parse_printf_format reads the
+    same arguments from both, and langpack.py answers as the Q2 does. The alphabet holds only what glibc 2.28
+    reads as the host's newer one does (the host's own additions, as %b and the w lengths, are left out).
+    ponytail: strings of up to nine pieces, positions and widths of one digit."""
+    import random
+    libc = C.CDLL(None)
+    if not hasattr(libc, 'parse_printf_format'):
+        pytest.skip('this libc has no parse_printf_format')
+    f = fw.fn('language__same_conversions', C.c_int, C.c_char_p, C.c_char_p)
+
+    def args(fmt):
+        t = (C.c_int * 32)()
+        n = libc.parse_printf_format(fmt, len(fmt), t)
+        return list(t[:min(n, 32)])
+    rnd = random.Random(2828)
+    parts = list('%%%%  -+#0\'I123$**..hhllLqjzZt') + list('diouxXeEfFgGaAcspnCSm%') + ['ab', '音', 'k ']
+    parts += list('٣３香ä')  # non-ASCII digits and letters are no digits or letters to glibc
+    texts = [''.join(rnd.choice(parts) for _ in range(rnd.randint(0, 9))).encode() for _ in range(3000)]
+    texts += [b'%d', b'%d%%', b'%s', b'%1$s %2$d', b'%*d', b'%.d', b'%d %S', b'%m', b'%5%%d', b'%d%% %d']
+    pairs = [(rnd.choice(texts), rnd.choice(texts)) for _ in range(9000)] + [(t, t + b' %d') for t in texts[:500]]
+    same = 0
+    for a, b in pairs:
+        c = f(a, b)
+        assert bool(c) == (langpack.conversions(a.decode()) == langpack.conversions(b.decode())), (a, b)
+        if c:
+            same += 1
+            if b'' not in langpack.conversions(a.decode()):  # glibc fails a cut-short spec's whole call
+                assert args(a) == args(b), (a, b)
+    assert same > 200
+
+
+def test_a_long_run_of_digits_is_read_at_once():
+    import time
+    t = time.time()
+    for text in ('%' + '1' * 60000 + 'x', '%' + '0' * 60000 + 'd', '%1' + '0' * 60000, '%.' + '9' * 60000 + '$'):
+        langpack.conversions(text)
+    assert time.time() - t < 1
 
 
 def picks(fw):

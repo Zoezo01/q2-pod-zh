@@ -51,31 +51,47 @@ static int in(const char *set, char c) {
         if (*set == c) return 1;
     return 0;
 }
-static int digit(char c) { return (c >= '0' && c <= '9') || c == '*'; }
+static int dig(char c) { return c >= '0' && c <= '9'; }
+static const char *num(const char *e) {
+    while (dig(*e)) ++e;
+    return e;
+}
+/* Past a positional "n$" (n above 0) at e, else e. */
+static const char *pos(const char *e) {
+    const char *z = e, *p;
+    while (*z == '0') ++z;
+    p = num(z);
+    return *p == '$' && p > z ? p + 1 : e;
+}
 
-/* The next printf conversion in s, as tools/langpack.py's CONVERSION: flags, width, precision,
- * length, then a conversion's letter; "%%" and a '%' with no letter are none. Where it starts, its
- * length in *n; 0 past the last. */
+/* The next printf conversion in s, as tools/langpack.py's conversions(): the spec glibc reads, "%",
+ * a positional "n$", flags, width, precision, length, then a conversion's letter. "%%" (and "%5%")
+ * and a spec with an unknown letter are none, unless a '*' or "n$" in it takes an argument. A spec
+ * the string's end cuts short (glibc fails the whole call) is one conversion, *n 0, equal to any
+ * other such end. Where it starts, its length in *n; 0 past the last. */
 static const char *conversion(const char *s, unsigned *n) {
     for (; *s; ++s) {
         if (*s != '%') continue;
-        if (s[1] == '%') {
-            ++s;
-            continue;
-        }
-        const char *e = s + 1;
-        while (*e && in("-+ #0", *e)) ++e;
-        while (digit(*e)) ++e;
-        if (*e == '.' && digit(e[1]))
-            for (++e; digit(*e); ++e) {}
+        const char *e = pos(s + 1), *p;
+        while (*e && in("-+ #0'I", *e)) ++e;
+        e = *e == '*' ? pos(e + 1) : num(e);
+        if (*e == '.') ++e, e = *e == '*' ? pos(e + 1) : num(e);
         if ((*e == 'h' || *e == 'l') && e[1] == *e)
             e += 2;
-        else if (*e && in("hlLqjzt", *e))
+        else if (*e && in("hlLqjzZt", *e))
             ++e;
-        if (*e && in("diouxXeEfFgGaAcspn", *e)) {
+        if (!*e) { /* cut short: glibc fails the whole call; one conversion of its own kind */
+            *n = 0;
+            return s;
+        }
+        for (p = s; p < e && *p != '*' && *p != '$'; ++p) {}
+        /* a '*' or an "n$" takes its argument whatever follows; the letter, none to take, only when
+         * known */
+        if (p < e || (*e != '%' && in("diouxXeEfFgGaAcspnCSm", *e))) {
             *n = (unsigned)(e + 1 - s);
             return s;
         }
+        s = e;
     }
     return 0;
 }
@@ -87,6 +103,7 @@ static int same_conversions(const char *a, const char *b) {
         a = conversion(a, &m), b = conversion(b, &n);
         if (!a || !b) return a == b;
         if (m != n || memcmp(a, b, m)) return 0;
+        if (!m) return 1; /* the ends, the last of each */
         a += m, b += n;
     }
 }
