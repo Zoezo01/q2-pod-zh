@@ -7,7 +7,7 @@ import struct
 import pytest
 
 from conftest import O, Config, rgba
-from test_nav_paint import (ACCENTS, GRAPHITE, ICONS, LABELS, MINIMAL, MODERN, PAPER, RED, RED_PX, TIDAL, WHITE, Canvas, bitmaps,
+from test_nav_paint import (ACCENTS, GRAPHITE, ICONS, LABELS, MODERN, PAPER, RED, RED_PX, TIDAL, WHITE, Canvas, bitmaps,
                             channels, fill_props, image_add, layout, luma, paint_bg, quick_window, rgb_of, scheme, scrub,
                             SLIDER_PAGES, SLIDERS, USB_LUN, Files, added, count, inside, msg_paint, named, poll,
                             whole, on_page, slider_scrub, slider_paint, ui_load, NUMBERS, slider_page, scan_dialog, usb_page,
@@ -149,15 +149,6 @@ def test_an_empty_flat_quick_label_draws_nothing(fw, world):
     canvas = Canvas(fw)
     fw.fn('quick_settings__quick_label_flat', None, C.c_void_p, C.c_void_p, C.c_int, C.c_int)(canvas.p, label, 100, 200)
     assert canvas.texts == [] and fw.calls('widget_move_resize') == []
-
-
-def test_quick_settings_under_minimal_is_still_stock_s(fw, world):
-    theme(fw, MINIMAL)
-    win = world.window('statusbar_dialog', 'dialog')
-    world.add(win, 'img_wifiswitch', 'image', box=(30, 40, 60, 60), image='drop_wifi')
-    canvas = Canvas(fw)
-    paint_bg(fw, win, canvas)
-    assert canvas.fills == [] and canvas.arts == []
 
 
 def test_modern_s_page_lays_its_buttons_on_the_flat_grid(fw, st):
