@@ -974,7 +974,7 @@ static void texel_render(unsigned *d, int pitch, int frac, const unsigned *const
 #define coverflow_render texel_render
 #define ONE 65536
 #define PITCH (CF_VIEW_W + 5) /* guard columns, and guard rows below, to catch clipping errors */
-static unsigned frame[(CF_VIEW_H + 3) * PITCH], flat[7][160 * 160], art[160 * 160];
+static unsigned frame[(CF_VIEW_H + 3) * PITCH], flat[7][160 * 160], art[160 * 160], art_tex[160 * 160]; /* art by rows; art_tex the texture of it, by columns */
 static const unsigned colours[7] = { 0xff0000ffu, 0xff00ff00u, 0xffff0000u, 0xff00ffffu, 0xffffff00u, 0xffff00ffu, 0xff0080ffu };
 /* A thumb theme's ring, wide's fifteen (cover j - 7 at wide[j]): the seven flat colours round and
    round, as a small library repeats; the seven's ring. */
@@ -1026,9 +1026,10 @@ static void renderer(void) {
         ring[j] = flat[j];
     }
     for (int i = 0; i < 160 * 160; ++i) art[i] = 0xff000000u | (unsigned)(i * 2654435761u >> 8 & 0xffffff);
+    for (int i = 0; i < 160 * 160; ++i) art_tex[i % 160 * 160 + i / 160] = art[i];
     /* At rest the selected cover is the texture itself, 160 px square at CF_TOP, centred, full
        brightness; the neighbours at CF_BRIGHT1, then CF_BRIGHT2, the third out too (CF_THIRD). */
-    const unsigned *rest[7] = { flat[0], flat[1], flat[2], art, flat[4], flat[5], flat[6] };
+    const unsigned *rest[7] = { flat[0], flat[1], flat[2], art_tex, flat[4], flat[5], flat[6] };
     /* Classic under Square: the corners are the cover too, and a change back rounds them again. */
     square_art = 1;
     render(0, rest);
@@ -1056,7 +1057,7 @@ static void renderer(void) {
     }
     static unsigned without[(CF_VIEW_H + 3) * PITCH];
     memcpy(without, frame, sizeof(frame));
-    const unsigned *inner[7] = { 0, flat[1], flat[2], art, flat[4], flat[5], 0 };
+    const unsigned *inner[7] = { 0, flat[1], flat[2], art_tex, flat[4], flat[5], 0 };
     render(0, inner);
     assert(memcmp(without, frame, sizeof(frame))); /* the third out stays at rest, as in the row */
     /* Everything, reflections included, fits the frame with room to spare. */
@@ -1327,7 +1328,7 @@ static void touches(widget *s, widget *covers_view) {
 
 /* A theme's corner radius takes effect at the next page open (cf_restyle refills cf_inset). */
 static void restyle(void) {
-    const unsigned *rest[7] = { flat[0], flat[1], flat[2], art, flat[4], flat[5], flat[6] };
+    const unsigned *rest[7] = { flat[0], flat[1], flat[2], art_tex, flat[4], flat[5], flat[6] };
     theme_t *t = (theme_t *)theme();
     close_page(); t->cf.radius = 0; open_page();
     render(0, rest);
@@ -1342,7 +1343,7 @@ static void restyle(void) {
 /* Minimal's frames, dark and light, at rest and mid-turn: the same bytes whatever other themes add. */
 static void pinned(void) {
     const unsigned *ring[7];
-    for (int j = 0; j < 7; ++j) ring[j] = j == 3 ? art : flat[j];
+    for (int j = 0; j < 7; ++j) ring[j] = j == 3 ? art_tex : flat[j];
     unsigned hash = 2166136261u;
     for (light = 0; light < 2; ++light)
         for (int frac = -ONE / 2; frac < ONE / 2; frac += ONE / 5) {
@@ -1377,7 +1378,7 @@ static void flip_frames(void) {
     open_page();
     int H = cs->view_h, top = cs->top;
     for (int y = 0; y < H; ++y) for (int x = 0; x < 375; ++x) sides[y * 375 + x] = 0xff000000u | (unsigned)x;
-    for (int i = 0; i < 160 * 160; ++i) front[i] = 0xff000000u | (unsigned)(i % 160) << 8 | (unsigned)(i / 160) << 16, flatf[i] = 0xff0000ffu;
+    for (int i = 0; i < 160 * 160; ++i) front[i] = 0xff000000u | (unsigned)(i / 160) << 8 | (unsigned)(i % 160) << 16, flatf[i] = 0xff0000ffu; /* by columns */
     for (int i = 0; i < 285 * 294; ++i) back[i] = 0xff000000u | (unsigned)(i % 294) << 8 | (unsigned)(i / 294) << 16, flatb[i] = 0xff00ff00u;
     static unsigned plain[294 * 375];
     for (int i = 0; i < 294 * 375; ++i) plain[i] = 0xffff0000u;
@@ -1407,7 +1408,7 @@ static void flip_frames(void) {
     }
     /* The cover where the shelf has it, 1:1; the back reading right, 1:1 at the panel's place. */
     coverflow_flip_render(f, 375, 0, tex);
-    for (int y = 0; y < 160; ++y) for (int x = 0; x < 160; ++x) assert(f[(top + y) * 375 + 107 + x] == front[y * 160 + x]);
+    for (int y = 0; y < 160; ++y) for (int x = 0; x < 160; ++x) assert(f[(top + y) * 375 + 107 + x] == front[x * 160 + y]);
     assert((f[(top + 5) * 375 + 106] & 0xffffffu) == 106);
     coverflow_flip_render(f, 375, 65536, tex);
     for (int y = 0; y < 285; ++y) for (int x = 0; x < 294; ++x) assert(f[(9 + y) * 375 + 40 + x] == back[y * 294 + x]);
@@ -1886,7 +1887,7 @@ static void classic_light_follow(void) {
 static void bgra_frames(void) {
     static unsigned raw[(CF_VIEW_H + 3) * PITCH];
     const unsigned *ring[7];
-    for (int j = 0; j < 7; ++j) ring[j] = j == 3 ? art : flat[j];
+    for (int j = 0; j < 7; ++j) ring[j] = j == 3 ? art_tex : flat[j];
     for (light = 0; light < 2; ++light) {
         bgra_render(raw, PITCH, ONE / 5, ring);
         render(ONE / 5, ring);
@@ -1940,7 +1941,7 @@ static void ref_column(const cf_style_t *c, unsigned paper, unsigned *d0, int pi
                 int from = y << 8 > clipped_top ? y << 8 : clipped_top, to = (y + 1) << 8 < clipped_bottom ? (y + 1) << 8 : clipped_bottom;
                 cov = (unsigned)(to - from);
             }
-            ref_put(px, ref_shade(tex[row * ART_SIZE], (unsigned)bright) + wash, cov);
+            ref_put(px, ref_shade(tex[row], (unsigned)bright) + wash, cov);
         }
     }
     int reflect = h * c->reflect / ART_SIZE, stop = (bottom + reflect + 255) >> 8;
@@ -1955,7 +1956,7 @@ static void ref_column(const cf_style_t *c, unsigned paper, unsigned *d0, int pi
         int mirrored = dist * step >> 8 >> 16;
         int row = ART_SIZE - 1 - (mirrored >= ART_SIZE ? ART_SIZE - 1 : mirrored);
         unsigned cov = (unsigned)(((y + 1) << 8) - from) * (256u - (unsigned)(dist * fade >> 16)) >> 8;
-        ref_put(px, ref_shade(tex[row * ART_SIZE], dim) + wash, cov);
+        ref_put(px, ref_shade(tex[row], dim) + wash, cov);
     }
     int s0 = (clipped_top + 255) >> 8, s1 = clipped_bottom >> 8;
     s0 = s0 < 0 ? 0 : s0, s1 = s1 > c->view_h ? c->view_h : s1;
@@ -1984,7 +1985,7 @@ static void column_fuzz(void) {
             for (int n = 0; n < N; ++n) {
                 int col = (int)(RND() % CF_VIEW_W), h = (int)(RND() % (3 * 40960)), bright = RND() & 1 ? 256 : (int)(RND() % 256) + 1;
                 int inset = RND() % 3 ? 0 : (int)(RND() % 4000);
-                const unsigned *t = tex + RND() % 160;
+                const unsigned *t = tex + RND() % 160 * 160;
                 short sa[2] = { 0, 0 }, sb[2];
                 if (RND() % 3) {
                     int s0 = (int)(RND() % (c->view_h + 1)), s1 = (int)(RND() % (c->view_h + 1));
@@ -2902,7 +2903,7 @@ static void thumb_wheel(void) {
         const unsigned *iring[15], *one[15] = { 0 };
         for (int i = 0; i < 15; ++i) {
             iring[i] = idx[i];
-            for (int k = 0; k < 160 * 160; ++k) idx[i][k] = 0xff000000u | (unsigned)(i + 1) << 8 | (unsigned)(k % 160);
+            for (int k = 0; k < 160 * 160; ++k) idx[i][k] = 0xff000000u | (unsigned)(i + 1) << 8 | (unsigned)(k / 160); /* its column */
         }
         int hz = shim_themes[1].cf.top + 160 * shim_themes[1].cf.horizon / 100, same = 0, near = 0, far = 0;
         cf_thumb_lead(0);
@@ -3096,7 +3097,7 @@ static void held_row(void) {
     const cf_style_t fixture = shim_themes[1].cf;
     #define ART(a) (abs(a) <= 21 ? art[(a) + 21] : 0) /* album a */
     for (int i = 0; i < 43; ++i)
-        for (int k = 0; k < 160 * 160; ++k) art[i][k] = 0xff000000u | ((unsigned)(i * 160 * 160 + k) * 2654435761u >> 8 & 0xffffff);
+        for (int k = 0; k < 160 * 160; ++k) art[i][k % 160 * 160 + k / 160] = 0xff000000u | ((unsigned)(i * 160 * 160 + k) * 2654435761u >> 8 & 0xffffff);
     square_art = 1, classic = 1;
     for (int ti = 0; ti < 3; ++ti) {
         shim_themes[1].cf = shipped[ti];
@@ -3322,7 +3323,7 @@ static void fold_frames(void) {
     const unsigned *ring[15];
     for (int i = 0; i < 15; ++i) {
         ring[i] = art[i];
-        for (int k = 0; k < 160 * 160; ++k) art[i][k] = 0xff000000u | ((unsigned)(i * 160 * 160 + k) * 2654435761u >> 8 & 0xffffff);
+        for (int k = 0; k < 160 * 160; ++k) art[i][k % 160 * 160 + k / 160] = 0xff000000u | ((unsigned)(i * 160 * 160 + k) * 2654435761u >> 8 & 0xffffff);
     }
     square_art = 1, classic = 1;
     for (int ti = 0; ti < 3; ++ti) {
@@ -3456,7 +3457,7 @@ static void enter_frames(void) {
     const cf_style_t fixture = shim_themes[1].cf;
     #define ART(a) (abs(a) <= 21 ? art[(a) + 21] : 0) /* album a from frac's centre */
     for (int i = 0; i < 43; ++i)
-        for (int k = 0; k < 160 * 160; ++k) art[i][k] = 0xff000000u | ((unsigned)(i * 160 * 160 + k) * 2654435761u >> 8 & 0xffffff);
+        for (int k = 0; k < 160 * 160; ++k) art[i][k % 160 * 160 + k / 160] = 0xff000000u | ((unsigned)(i * 160 * 160 + k) * 2654435761u >> 8 & 0xffffff);
     square_art = 1, classic = 1;
     for (int ti = 0; ti < 3; ++ti) {
         shim_themes[1].cf = shipped[ti];
@@ -3674,7 +3675,7 @@ static void rest_pinned(void) {
     static unsigned f[300 * PITCH], art[15][160 * 160];
     const cf_style_t fixture = shim_themes[1].cf;
     for (int i = 0; i < 15; ++i)
-        for (int k = 0; k < 160 * 160; ++k) art[i][k] = 0xff000000u | ((unsigned)(i * 160 * 160 + k) * 2654435761u >> 8 & 0xffffff);
+        for (int k = 0; k < 160 * 160; ++k) art[i][k % 160 * 160 + k / 160] = 0xff000000u | ((unsigned)(i * 160 * 160 + k) * 2654435761u >> 8 & 0xffffff);
     const unsigned *ring[15];
     for (int j = 0; j < 15; ++j) ring[j] = art[j];
     classic = 1;
@@ -3747,7 +3748,7 @@ static void edge_drawn(void) {
     static const int row_out_min[3] = CF_ROW_OUT_MIN; /* tools/theme.py's, each theme's */
     const cf_style_t fixture = shim_themes[1].cf;
     for (int i = 0; i < 64; ++i)
-        for (int k = 0; k < 160 * 160; ++k) edge_art[i][k] = 0xff000000u | ((unsigned)(i * 160 * 160 + k) * 2654435761u >> 8 & 0xffffff);
+        for (int k = 0; k < 160 * 160; ++k) edge_art[i][k % 160 * 160 + k / 160] = 0xff000000u | ((unsigned)(i * 160 * 160 + k) * 2654435761u >> 8 & 0xffffff);
     square_art = 1, classic = 1;
     for (int ti = 0; ti < 3; ++ti) {
         shim_themes[1].cf = shipped[ti];
@@ -5718,7 +5719,7 @@ static int halves(int remove) { /* the half copies on the card; removed, if aske
     if (d) closedir(d);
     return k;
 }
-static void cover_tex(int a, unsigned *tex) { /* album a's cover as decode() makes it of the shim's */
+static void cover_tex(int a, unsigned *tex) { /* album a's cover of the shim's, by rows (decode() makes its texture by columns) */
     static unsigned char px[160 * 160 * 4];
     char path[600];
     unsigned seed = 0;
@@ -5994,7 +5995,7 @@ static void half_art(void) {
     for (int k = 0; k < 15; ++k) {
         assert(read_half(((w0 + k - 7) % n + n) % n, half));
         for (int y = 0; y < 160; ++y)
-            for (int x = 0; x < 160; ++x) wide[k][y * 160 + x] = half[y / 2 * 80 + x / 2];
+            for (int x = 0; x < 160; ++x) wide[k][x * 160 + y] = half[y / 2 * 80 + x / 2];
         ring[k] = wide[k];
     }
     coverflow_render(f, PITCH, qf, ring + 4);
@@ -7985,7 +7986,7 @@ static void land_playlist(void) {
     w[view->kids[0]].click(w[view->kids[0]].ctx, 0);
     decode_ms = 0;
     assert(coverflow_landing() && land_tex && !coverflow_playlist_queue() && timer_ms == 1);
-    for (int i = 0; i < 160 * 160; ++i) assert(texel(((unsigned *)land_tex)[i]) == want[i]);
+    for (int i = 0; i < 160 * 160; ++i) assert(texel(((unsigned *)land_tex)[i]) == want[i % 160 * 160 + i / 160]); /* the landing's by rows, a texture by columns */
     int (*press)(const void *) = timer_fn;
     press(0);
     assert(played_cls == 0xf001 && coverflow_playlist_queue() && coverflow_landing());

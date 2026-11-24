@@ -57,6 +57,8 @@ extern cf_page_t cf;
 #define ART_DIR PEQ_ROOT "/mnt/mmc/.coverflow"
 #define PL_BUILDING ART_DIR "/pl-building" /* playlist_art.c's art_note */
 #define ART_SIZE 160                       /* a texture's side, texels */
+/* A texture is held by columns, texel x, y at x * ART_SIZE + y: column() walks down one, and reads
+ * adjacent words. */
 #define CF_TEXELS (ART_SIZE * ART_SIZE)
 #define CF_ONE 65536
 #define CF_REACH 3 /* ring slots either side of the centre that can show (fading in) or preload */
@@ -202,6 +204,7 @@ int ff_wait(int pid, const char *tmp, const char *dst, int *exited);
 int ff_thumb(const char *src, const char *dst, int w, int h);
 char *art_path(char *out, unsigned key, const char *suffix);
 int cf_decode(const char *url, unsigned *out, int unload, unsigned bar);
+void cf_transpose(unsigned *t, int n);
 /* the texture pool (fx_window): the shelf's slots, then the placeholder */
 int fx_base(void);
 #define FX_PLACEHOLDER (fx.tex + fx_base() * CF_TEXELS)

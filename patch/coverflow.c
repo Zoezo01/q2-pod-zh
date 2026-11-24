@@ -1951,8 +1951,9 @@ HOT void put(unsigned *px, unsigned colour, unsigned cov) {
 /* What dimming washes towards: black, or Light Mode's paper (set per frame). */
 static unsigned cf_paper;
 
-/* One texture column (texels ART_SIZE apart) h high (1/256 px) on the horizon at frame column col,
- * its partial end rows by coverage, then its reflection fading out below. */
+/* One texture column (its texels adjacent: coverflow.h's CF_TEXELS) h high (1/256 px) on the
+ * horizon at frame column col, its partial end rows by coverage, then its reflection fading out
+ * below. */
 static void column(shelf_t *f, int col, const unsigned *tex, int h, int bright, int inset) {
     if (h < 16) return;
     unsigned *d = f->d + col;
@@ -1979,9 +1980,9 @@ static void column(shelf_t *f, int col, const unsigned *tex, int h, int bright, 
                 int from = y << 8 > clipped_top ? y << 8 : clipped_top,
                     to = (y + 1) << 8 < clipped_bottom ? (y + 1) << 8 : clipped_bottom;
                 cov = (unsigned)(to - from);
-                t = tex[(v < 0 ? 0 : v >> 16 >= ART_SIZE ? ART_SIZE - 1 : v >> 16) * ART_SIZE];
+                t = tex[v < 0 ? 0 : v >> 16 >= ART_SIZE ? ART_SIZE - 1 : v >> 16];
             } else
-                t = tex[(v >> 16) * ART_SIZE];
+                t = tex[v >> 16];
             put(px, whole ? t : shade(t, (unsigned)bright) + wash, cov); /* put ignores t's alpha */
         }
     }
@@ -2000,7 +2001,7 @@ static void column(shelf_t *f, int col, const unsigned *tex, int h, int bright, 
         int row = ART_SIZE - 1 - (mirrored >= ART_SIZE ? ART_SIZE - 1 : mirrored);
         unsigned cov =
             (unsigned)(((y + 1) << 8) - from) * (256u - (unsigned)(dist * fade >> 16)) >> 8;
-        put(px, shade(tex[row * ART_SIZE], dim) + wash, cov);
+        put(px, shade(tex[row], dim) + wash, cov);
     }
     /* The rows this body covers whole are opaque now: join them to the known span, or keep the
      * longer of the two. */
@@ -2080,7 +2081,8 @@ void draw_posed(shelf_t *f, const pose_t *p, int side, const unsigned *tex) {
         if (col < 0 || col >= CF_VIEW_W || !unproject(p, (2 * v + 1 - 2 * CF_CX) * 8, &u, &h))
             continue;
         int k = cf_texel(u + CF_HALF16, 2 * CF_HALF16, q);
-        column(f, col, tex + (side > 0 ? k : ART_SIZE - 1 - k), h, p->bright, cf_inset[k]);
+        column(f, col, tex + (side > 0 ? k : ART_SIZE - 1 - k) * ART_SIZE, h, p->bright,
+               cf_inset[k]);
     }
 }
 
@@ -2103,7 +2105,8 @@ void draw_quad(shelf_t *f, int xl, int xr, int hl, int hr, const unsigned *tex, 
         float p = (float)dx / (float)(xr - xl);
         int k = cf_texel(left ? xr - xl - dx : dx, xr - xl, q);
         k = left ? ART_SIZE - 1 - k : k;
-        column(f, col, tex + k, (int)((float)hl + (float)(hr - hl) * p), bright, cf_inset[k]);
+        column(f, col, tex + k * ART_SIZE, (int)((float)hl + (float)(hr - hl) * p), bright,
+               cf_inset[k]);
     }
 }
 
@@ -2197,7 +2200,7 @@ unsigned *fx_buf(int i) { /* slot i's texture */
 
 /* A decoded image copied into a texture: fitted whole and centred, nearest sampled to ART_SIZE,
  * over bar (a grey level: 0 black, the shelf's), so a non-square cover shows uncropped between
- * bars, as Now Playing shows it.
+ * bars, as Now Playing shows it. By columns (CF_TEXELS): column() walks down one.
  * Only 32-bit formats (BITMAP_RGBA_AT); stock decodes covers to RGBA8888 with straight alpha,
  * composited over the page (black or Light Mode's paper). The image manager's copy is only read,
  * and a cover's load is dropped again at once, as stock does. */
@@ -2220,7 +2223,7 @@ int cf_decode(const char *url, unsigned *out, int unload, unsigned bar) {
             unsigned sy = y * side / ART_SIZE - (side - h) / 2; /* wraps above the image */
             for (unsigned x = 0; x < ART_SIZE; ++x) {
                 if (sy >= h || xoff[x] == ~0u) {
-                    *out++ = 0xff000000u | bar * 0x010101u;
+                    out[x * ART_SIZE + y] = 0xff000000u | bar * 0x010101u;
                     continue;
                 }
                 const unsigned char *px = data + sy * stride + xoff[x];
@@ -2230,13 +2233,22 @@ int cf_decode(const char *url, unsigned *out, int unload, unsigned bar) {
                     r = (r * a + (paper & 255) * k) / 255,
                     g = (g * a + (paper >> 8 & 255) * k) / 255,
                     b = (b * a + (paper >> 16 & 255) * k) / 255;
-                *out++ = 0xff000000u | r | g << 8 | b << 16;
+                out[x * ART_SIZE + y] = 0xff000000u | r | g << 8 | b << 16;
             }
         }
         bitmap_unlock_buffer(bitmap);
     }
     if (unload) widget_unload_image(cf.page, bitmap);
     return data != 0;
+}
+
+/* The n x n square t turned about its diagonal, in place: rows to columns and back. */
+void cf_transpose(unsigned *t, int n) {
+    for (int y = 0; y < n; ++y)
+        for (int x = y + 1; x < n; ++x) {
+            unsigned a = t[y * n + x];
+            t[y * n + x] = t[x * n + y], t[x * n + y] = a;
+        }
 }
 
 static void fx_close(void) {
@@ -2582,9 +2594,12 @@ void coverflow_flip_render(unsigned *d, int pitch, int e, const unsigned *const 
         int ins = back ? 0 : h * cf_inset[col] / (ART_SIZE * 256), from = y0 + ins, to = y1 - ins;
         int first = from >> 8, last = (to - 1) >> 8, y = first < 0 ? 0 : first;
         unsigned *o = d + y * pitch + x;
+        /* the texel column: the back is a capture, by rows; the front a texture, by columns */
+        const unsigned *tc = back ? t + col : t + col * ART_SIZE;
+        int down = back ? aw : 1;
         for (; y <= last && y < FLIP_H; ++y, o += pitch) {
             int v = (((y << 8) + 128 - y0) >> 4) * step >> 20; /* texel row */
-            unsigned px = t[(v < 0 ? 0 : v >= ah ? ah - 1 : v) * aw + col];
+            unsigned px = tc[(v < 0 ? 0 : v >= ah ? ah - 1 : v) * down];
             px = back ? px | 0xff000000u : bgra(px); /* the back is the screen's already */
             if (y != first && y != last) {
                 *o = px;

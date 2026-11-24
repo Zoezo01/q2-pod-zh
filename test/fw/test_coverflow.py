@@ -534,14 +534,14 @@ def test_hit_names_the_cover_drawn_there(fw):
 def test_the_centre_cover_comes_out_texel_for_texel(fw):
     g = api(fw)
     tex = exact(C.c_uint, ART * ART)
-    tex[:] = [0xff000000 | x | y << 8 | 0x55 << 16 for y in range(ART) for x in range(ART)]
+    tex[:] = [0xff000000 | x | y << 8 | 0x55 << 16 for x in range(ART) for y in range(ART)]  # a texture: by columns
     d = exact(C.c_uint, VIEW_W * VIEW_H)
     ring = Ring()
     ring[3] = C.addressof(tex)
     g.coverflow_render(d, VIEW_W, 0, ring.at)
     for y in range(12, ART - 12):
         for x in range(ART):
-            assert d[(TOP + y) * VIEW_W + CX - 80 + x] == bgra(tex[y * ART + x]), (x, y)
+            assert d[(TOP + y) * VIEW_W + CX - 80 + x] == bgra(tex[x * ART + y]), (x, y)
     for t in (tex, d):
         libc.free(C.addressof(t))
 
@@ -549,7 +549,7 @@ def test_the_centre_cover_comes_out_texel_for_texel(fw):
 def test_the_reflection_mirrors_the_cover_and_fades_out_in_46_px(fw):
     g = api(fw)
     tex = exact(C.c_uint, ART * ART)
-    tex[:] = [0xff000000 | (y + 60) for y in range(ART) for x in range(ART)]
+    tex[:] = [0xff000000 | (y + 60) for x in range(ART) for y in range(ART)]
     d = exact(C.c_uint, VIEW_W * VIEW_H)
     ring = Ring()
     ring[3] = C.addressof(tex)
@@ -580,9 +580,9 @@ def test_every_pixel_of_a_frame_is_opaque_and_stays_in_the_frame(fw):
 def test_covers_mirror_when_the_frame_does(fw):
     g = api(fw)
     tex = exact(C.c_uint, ART * ART)
-    tex[:] = [0xff000000 | (x + 40) | (y + 40) << 8 for y in range(ART) for x in range(ART)]
+    tex[:] = [0xff000000 | (x + 40) | (y + 40) << 8 for x in range(ART) for y in range(ART)]
     flip = exact(C.c_uint, ART * ART)
-    flip[:] = [0xff000000 | (ART - 1 - x + 40) | (y + 40) << 8 for y in range(ART) for x in range(ART)]
+    flip[:] = [0xff000000 | (ART - 1 - x + 40) | (y + 40) << 8 for x in range(ART) for y in range(ART)]
     a, b = exact(C.c_uint, VIEW_W * VIEW_H), exact(C.c_uint, VIEW_W * VIEW_H)
     ring = Ring()
     ring[2] = C.addressof(tex)
@@ -626,7 +626,7 @@ def test_decode_a_square_cover_is_copied(fw):
     pixels = rgba(ART, ART, lambda x, y: (x, y, 7, 255))
     bitmap(fw, ART, ART, pixels)
     ok, out = decoded(fw)
-    assert ok == 1 and all(out[y * ART + x] == 0xff070000 | y << 8 | x for y in range(ART) for x in range(ART))
+    assert ok == 1 and all(out[x * ART + y] == 0xff070000 | y << 8 | x for y in range(ART) for x in range(ART))  # by columns
     assert fw.calls('widget_unload_image')
 
 
@@ -634,24 +634,24 @@ def test_decode_a_wide_cover_sits_between_black_bars(fw):
     pixels = rgba(320, 160, lambda x, y: (200, 0, 0, 255))
     bitmap(fw, 320, 160, pixels)
     _, out = decoded(fw)
-    column = [out[y * ART + 80] for y in range(ART)]
+    column = [out[80 * ART + y] for y in range(ART)]
     assert column == [0xff000000] * 40 + [0xff0000c8] * 80 + [0xff000000] * 40
     _, out = decoded(fw, bar=0xf4)  # the landing's: Now Playing's paper
-    assert [out[y * ART + 80] for y in range(ART)] == [0xfff4f4f4] * 40 + [0xff0000c8] * 80 + [0xfff4f4f4] * 40
+    assert [out[80 * ART + y] for y in range(ART)] == [0xfff4f4f4] * 40 + [0xff0000c8] * 80 + [0xfff4f4f4] * 40
 
 
 def test_decode_a_tall_cover_too(fw):
     pixels = rgba(80, 160, lambda x, y: (0, 200, 0, 255))
     bitmap(fw, 80, 160, pixels)
     _, out = decoded(fw)
-    assert list(out[80 * ART:81 * ART]) == [0xff000000] * 40 + [0xff00c800] * 80 + [0xff000000] * 40
+    assert [out[x * ART + 80] for x in range(ART)] == [0xff000000] * 40 + [0xff00c800] * 80 + [0xff000000] * 40
 
 
 def test_decode_scales_by_the_nearest_texel_from_a_larger_one(fw):
     pixels = rgba(320, 320, lambda x, y: (x // 2, y // 2, 0, 255))
     bitmap(fw, 320, 320, pixels)
     _, out = decoded(fw)
-    assert all(out[y * ART + x] == 0xff000000 | y << 8 | x for y in (0, 80, 159) for x in (0, 80, 159))
+    assert all(out[x * ART + y] == 0xff000000 | y << 8 | x for y in (0, 80, 159) for x in (0, 80, 159))
 
 
 def test_decode_blends_a_transparent_pixel_over_the_black_page(fw):
@@ -677,7 +677,7 @@ def test_decode_honours_the_stride(fw):
         data[y * (ART * 4 + 8):y * (ART * 4 + 8) + ART * 4] = bytes((1, y, 3, 255)) * ART
     pixels = (C.c_ubyte * len(data)).from_buffer(data)
     bitmap(fw, ART, ART, pixels, stride=ART * 4 + 8)
-    assert decoded(fw)[1][159 * ART] == 0xff030001 | 159 << 8
+    assert decoded(fw)[1][159] == 0xff030001 | 159 << 8  # texel 0, 159
 
 
 @pytest.mark.parametrize('w, h, format', ((0, 160, 1), (160, 0, 1), (4097, 160, 1), (160, 4097, 1), (160, 160, 0), (160, 160, 5)))
@@ -3802,3 +3802,10 @@ def test_the_landing_s_art_is_drawn_in_the_art_s_own_paint(fw, mcl):
     art(land.art, C.addressof(run.canvas))
     assert fills()[-1] == (0, 0, 178, 218) and land.got == 2
     assert rects == [[list(land.box), [0, 0, 178, 218]]] and list(land.box) == [16, 22, 178, 218]
+
+
+@pytest.mark.parametrize('n', (1, 2, 5, 80, 160))
+def test_transpose_turns_rows_to_columns(fw, n):
+    t = (C.c_uint * (n * n))(*range(n * n))
+    fw.fn('cf_transpose', None, C.c_void_p, C.c_int)(t, n)
+    assert list(t) == [x * n + y for y in range(n) for x in range(n)]

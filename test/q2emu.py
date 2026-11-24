@@ -3234,14 +3234,18 @@ ps=payload_syms
 
 from theme import builtins as theme_builtins
 
-def fitted(px,w,h):
+def columns(px,n=160):
+    """An n x n image by rows as a texture holds it: by columns (texel x, y at x * n + y)."""
+    return b''.join(px[4*(y*n+x):4*(y*n+x)+4] for x in range(n) for y in range(n))
+
+def fitted(px,w,h):  # cf_decode's texture of a w x h image
     side=max(w,h); out=[]
     for y in range(160):
         sy=y*side//160-(side-h)//2
         for x in range(160):
             sx=x*side//160-(side-w)//2
             out.append(px[(sy*w+sx)*4:(sy*w+sx)*4+4] if 0<=sx<w and 0<=sy<h else struct.pack('<I',0xff000000))
-    return b''.join(out)
+    return columns(b''.join(out))
 
 class Starved(DepthMachine):
     def hook(self,u,address,size,unused):
@@ -3369,9 +3373,9 @@ class HalfMachine(FileMocks,DepthMachine):
             path=self.text(a); self.opened.append(path)
             self.files.setdefault(path,cover_pixels(300+len(self.files),80*80)[:100 if self.cut else None])
         self.returns(self.file_op(u,name,a,b,c,d),clobber=True)
-def spread(h):  # a half copy's texels, each two by two
+def spread(h):  # a half copy's texels (the file's, by rows), each two by two, as a texture
     rows=[b''.join(h[4*(y*80+x):4*(y*80+x)+4]*2 for x in range(80)) for y in range(80)]
-    return b''.join(r+r for r in rows)
+    return columns(b''.join(r+r for r in rows))
 
 class PlArtMachine(Machine):
     def __init__(self):

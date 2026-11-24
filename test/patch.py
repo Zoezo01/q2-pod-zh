@@ -4932,7 +4932,7 @@ assert struct.unpack('<H',bytes(m.u.mem_read(m.frames[0]+0xe,2)))[0]==O['LCD_BGR
 # The placeholder first (fx_open), then the ring round album 0 of three, nearest first, which repeats as
 # the slide_menu wraps: 0, 1, 2, 0, 1, 2, 0 from -3, each album decoded once.
 assert len(m.loads)==4 and m.loads[0]=='default_album_flow' and all(u.startswith('file://') for u in m.loads[1:]) and m.unloads==3
-tex_of={u:bytes(m.u.mem_read(m.pixels[u],160*160*4)) for u in m.pixels}
+tex_of={u:columns(bytes(m.u.mem_read(m.pixels[u],160*160*4))) for u in m.pixels}  # 160 square: decoded as they are, by columns
 ring_tex=[tex_of[m.loads[1+(i+2)%3]] for i in range(15)]  # its wide ring: album i - 7
 assert host_render(ring_tex,[(0,(1<<15)-1)],still=True)[0]==m.draws[0][5]; passed()
 # Classic's shelf on the page, both halves: its own frame height, its stride kept, drawn 1:1 from
@@ -4947,7 +4947,7 @@ for light,paper in (('0',0),('1',0xff)):
     assert signed(c.get(cs+O['SLIDE_SPACER']))+cl_style['cf.view_h']==cl_style['cf.stride']
     paint(c); assert c.draws[0][2]==c.draws[0][3]==(0,0,O['CF_VIEW_W'],cl_style['cf.view_h'])
     frame_bytes=c.draws[0][5]; assert frame_bytes[0:3]==bytes([paper])*3
-    c_tex={u:bytes(c.u.mem_read(c.pixels[u],160*160*4)) for u in c.pixels}  # its ring of 15 loads nearest first: album 0, 1, 2
+    c_tex={u:columns(bytes(c.u.mem_read(c.pixels[u],160*160*4))) for u in c.pixels}  # its ring of 15 loads nearest first: album 0, 1, 2
     assert host_render([c_tex[c.loads[1+(i+2)%3]] for i in range(15)],[(0,(1<<15)-1)],{**cl_style,'cf.radius':0},paper=0xffffff if light=='1' else None,still=True)[0]==frame_bytes  # square art
     passed()
 # ... and mid-step, along coverflow.shelf.swing's path: the payload's arithmetic, the host's frames.
@@ -4963,7 +4963,7 @@ for (frac,_),host in zip(cases,want):
 for size in ((200,100),(60,150)):
     n=DepthMachine(); n.art_size=size; n.open(); paint(n)
     tex={u:fitted(bytes(n.u.mem_read(n.pixels[u],size[0]*size[1]*4)),*size) for u in n.loads[1:]}
-    tex['default_album_flow']=bytes(n.u.mem_read(n.pixels['default_album_flow'],160*160*4))
+    tex['default_album_flow']=columns(bytes(n.u.mem_read(n.pixels['default_album_flow'],160*160*4)))
     ring_tex=[tex[n.loads[1+(i+2)%3]] for i in range(15)]
     assert host_render(ring_tex,[(0,(1<<15)-1)],still=True)[0]==n.draws[0][5],size; passed()
 # A repaint in place draws again without rendering; a quarter turn renders from the live offset.

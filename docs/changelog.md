@@ -9,6 +9,7 @@
   - Cover Flow: under Classic and Classic Modern, a turned-over album or playlist shows its songs' total time after the artist or the song count, when **Scan Song Durations** is on and every song has a measured length.
   - Appearance: a **Hide Hi-Res** switch, after **Hide App Store**, takes the **Hi-Res** row out of the Library.
   - Languages: with a Chinese language pack, the keyboard starts in pinyin, and one key goes round pinyin, lower case and capitals (**abc**, **ABC**, **中**). An app's sign-in fields keep the letters.
+  - Cover Flow: turning the covers takes less of the processor. Each cover's picture is now held in the order the screen draws it, column by column, so drawing one reads memory in a straight run.
 - **1.9.1**:
   - Standby: going into Standby gives the card up to 2 seconds to finish and unmount before its power is cut, where it used to cut it at once with files still open, which could leave the card marked as not properly unmounted and lose what was still being written.
   - EQ: in **Advanced**, drag a band up or down on the curve to set its gain, as you drag Simple's sliders. Touch the ring of a band that's on. Choose **Apply changes** to hear it.

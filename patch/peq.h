@@ -321,7 +321,7 @@ void land_quad(const int from[4], const int to[3], int ms, int len, int travel, 
  * (coverflow_land.c land_frame). from is the panel's box (x, y, w, h), to the art's (x, y, side),
  * in the frame's coordinates; the ms are the motion's, the covers' fade's and Now Playing's. The
  * pixels are the screen's BGRA: shelf the side covers' frame (CF_VIEW_W wide, or 0), back BACK_W x
- * BACK_H (0 once face up), front ART_SIZE square. */
+ * BACK_H (0 once face up), front ART_SIZE square, by rows. */
 typedef struct {
     int from[4], to[3], len, travel, out_at, out_ms, np_at, np_ms;
     const unsigned *shelf, *back, *front;
