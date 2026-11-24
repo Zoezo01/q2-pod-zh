@@ -496,6 +496,7 @@ void np_mark_add(widget_t *const *image, unsigned n);
 void np_marks_page(widget_t *win);
 void np_marks(widget_t *w, canvas_t *canvas);
 
+int to_page(void *ctx, event_t *event); /* navigation.c: a row that opens the page ctx names */
 int hold_taken(const void *key); /* navigation.c: a Play/Pause hold taken: latch and swallow */
 /* queue_menu.c */
 int qm_hold(void);

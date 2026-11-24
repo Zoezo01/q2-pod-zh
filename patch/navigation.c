@@ -3449,8 +3449,8 @@ static const unsigned char library_order[] = {
 /* Connections, personalisation and daily controls, then device maintenance; About stays last.
  * Stock's Wheel Function, In-Vehicle, General and System stay hidden, its page left whole: the
  * wheel is Q2 Pod's (tools/build.py WHEEL_MODE), Power and Controls have In-Vehicle's, Key tone's
- * and Buttons lock's rows (pod_click, keylock_open), and the rows stock moved to System are here,
- * as they were (ringnav_systemset). */
+ * and Buttons lock's rows (pod_click, and the keylock page row), and the rows stock moved to System
+ * are here, as they were (ringnav_systemset). */
 static const unsigned char sysset_order[] = {
     1 /* Wireless */,
     2 /* Network */,
@@ -3521,7 +3521,7 @@ static int root_click(void *ctx, event_t *event) {
 }
 
 /* A row that opens the stock page ctx names, as stock's own rows do. */
-static int to_page(void *ctx, event_t *event) {
+int to_page(void *ctx, event_t *event) {
     navigator_to((const char *)ctx);
     return 0;
 }
@@ -6350,10 +6350,6 @@ int ringnav_np_info(widget_t *win) {
 
 /* The Display sub-page the next display_page is to be (DISPLAY_*), 0 for Display itself. */
 enum { DISPLAY_APPEARANCE = 1, DISPLAY_COVERFLOW, DISPLAY_CONTROLS, DISPLAY_THEMES };
-static int keylock_open(void *ctx, event_t *event) {
-    navigator_to("systemset/keylock_page");
-    return 0;
-}
 static int display_sub __attribute__((section(".scratch")));
 static int display_open(void *ctx, event_t *event) {
     display_sub = (int)(long)ctx;
@@ -6453,7 +6449,9 @@ int ringnav_display(widget_t *win, void *ctx) {
     pod_rows(win, "scroll_view_display", POD_KEYTONE, 1, tone_icon);
     setting_row(view, 9); /* Click With Headphones shows while Key Tone is on */
     widget_set_visible(P(P(st.setting_label[9], W_PARENT), W_PARENT), g_keytone_flag != 0, 0);
-    widget_set_tr_text(list_row_into(view, "system_keylock", keylock_open, 0), "system_keylock");
+    widget_set_tr_text(
+        list_row_into(view, "system_keylock", to_page, (void *)"systemset/keylock_page"),
+        "system_keylock");
     pod_rows(win, "scroll_view_display", POD_WAKE, 1, lock_icon);
     pod_rows(win, "scroll_view_display", POD_VOL_GUARD, 1, lock_icon);
     return result;
