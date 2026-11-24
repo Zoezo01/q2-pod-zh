@@ -220,9 +220,15 @@ def in_fork(test):
             os._exit(1 if failure else 0)
         os.close(write)
         failure = b''
-        while chunk := os.read(read, 65536):
-            failure += chunk
-        os.close(read)
+        try:
+            while chunk := os.read(read, 65536):
+                failure += chunk
+        except BaseException:  # pytest-timeout's alarm, which the child never gets: it would run on, unwatched
+            os.kill(child, 9)
+            os.waitpid(child, 0)
+            raise
+        finally:
+            os.close(read)
         status = os.waitpid(child, 0)[1]
         if status:
             pytest.fail(f'child status {status:#x}\n' + failure.decode())
