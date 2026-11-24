@@ -6,6 +6,7 @@
 
 <p align="center">
   <a href="https://github.com/DiamondBond/q2-pod/releases/latest"><img alt="Download the latest release" src="https://img.shields.io/badge/download-2F6FDE?style=flat-square" height="26"></a>
+  <a href="https://diamondbond.github.io/q2-pod/"><img alt="Website" src="https://img.shields.io/badge/website-3D424B?style=flat-square" height="26"></a>
   <a href="#install"><img alt="Install" src="https://img.shields.io/badge/install-3D424B?style=flat-square" height="26"></a>
   <a href="https://github.com/DiamondBond/q2-pod/releases/tag/guide"><img alt="User guide" src="https://img.shields.io/badge/user%20guide-3D424B?style=flat-square" height="26"></a>
   <a href="docs/changelog.md"><img alt="Changelog" src="https://img.shields.io/badge/changelog-3D424B?style=flat-square" height="26"></a>
