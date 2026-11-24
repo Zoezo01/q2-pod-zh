@@ -225,8 +225,10 @@ The [user guide][guide] covers every control, EQ, Cover Flow and more tips.
   </tr>
 </table>
 
+</details>
+
 <details>
-<summary><h3>Games</h3></summary>
+<summary><h2>Games</h2></summary>
 
 On the App Store's **Games** tab. Each plays in **Library → Games**.
 
@@ -302,8 +304,6 @@ On the App Store's **Games** tab. Each plays in **Library → Games**.
     <td></td>
   </tr>
 </table>
-
-</details>
 
 </details>
 
