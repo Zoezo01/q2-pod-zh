@@ -56,7 +56,7 @@ REPO = 'Zoezo01/q2-pod-zh'  # whose releases Network Update fetches (--update-re
 # 1.8.7 这条线字母重新从 A 起：A 并入上游 1.8.5（语言/状态栏/USB/About）、1.8.6（性能）与 1.8.7（文件拆分），
 # 中文版不打 LANGUAGE_EN，语言保持简体中文；经典百分比对齐暂用上游实现，我们 V182C 的版本备份在
 # tag zh/batt-ours-v184b 与 .workbuddy/backup/statusbar-ours-v184b.txt，实机对比后再决定。
-LETTER = 'A'  # 1.9.0 线首个包：上游位置条拖动、视频/阅读器转卡带应用、Pulsar/Contour 可视化合并
+LETTER = 'A'  # 1.9.1 线首个包：卡主题、语言应用、隐藏重复专辑/歌曲、EQ 曲线拖动、熄屏快进快退合并
 TAG = 'V' + VERSION.replace('.', '') + LETTER
 RELEASE_TAG = VERSION if LETTER == 'A' else f'{VERSION}.{ord(LETTER) - 64}'  # 1.8.3, 1.8.3.2, 1.8.3.3…
 
