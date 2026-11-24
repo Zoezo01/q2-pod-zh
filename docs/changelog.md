@@ -26,6 +26,7 @@
   - Key Tone: each click now goes straight to the Q2's buzzer instead of starting two small programs first, so less stands between the wheel and its click.
   - Controls: a button, a turn of the wheel or a touch is acted on the moment it arrives. After 2 seconds without input, and with the screen off, Q2 Pod checks for input less often to save battery, so the first press or turn after a pause could wait up to a quarter of a second.
   - Battery: with the screen off and nothing playing, Q2 Pod now wakes once a second where it woke 4 times.
+  - Playback: **Previous** then **Next** comes back to the song you left after changing Shuffle, Repeat or Group by, or at the start of a new Repeat All round, and the songs not yet played still play. Next could jump past them, or stop the queue under Play All. **Previous Album** at those moments no longer skips the albums between.
 - **1.9.0**:
   - Cover Flow: drag the **Position Bar** to move through your albums quickly. Touch anywhere along it, even after it has faded, and the covers go to the album under your finger and follow it; far jumps show the album's letter. The bar now stays on screen a second after you stop, instead of 0.8 seconds. Turn it on in **Display → Cover Flow**.
   - Ratings: hold Play/Pause on **Top Rated**, **Loved**, **All Rated** or **Disliked** in **Library → Ratings** to play that list shuffled. A hold on a song in the list still opens the song's options.
