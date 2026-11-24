@@ -577,6 +577,8 @@ static int shim_page_row = 48;
 void shim_theme_rows(int h) { shim_page_row = h; }
 int page_h(int h) { return h == 48 ? shim_page_row : h; }
 int page_x(void) { return shim_page_row == 48 ? 36 : 20; }
+int card_room(const char *dir, unsigned mb, unsigned pct) { return 1; }
+void ringnav_wdt_long(void) {}
 int theme_font(void *x, int role, int was) { if (shim_page_row != 48) w[(long)x].px = 27; return 0; }
 /* The label starting with text on a row, or index i of the row reading it: x, px (0: the style's), height. */
 int shim_label(const char *text, int i, int what) {
@@ -1055,7 +1057,7 @@ def editor_check(lib, tmp):
         assert ui.shim_click(f'Headphone {min(start + 127, 8849):04}.txt'.encode(), 2)
         assert not ui.shim_click(f'Headphone {start + 128:04}.txt'.encode(), 2)
         assert title() == f'Presets {start // 128 + 1}/70'
-        assert ui.shim_selection() == ui.shim_offset() == 0
+        assert ui.shim_selection() == 1 and ui.shim_offset() == 0  # the first file: Import all is a tick up
         if start < 8832: click('Next page')
     assert not ui.shim_click(b'Next page', 2)
     click('Headphone 8849.txt')

@@ -972,7 +972,7 @@ def test_an_import_with_a_bad_line_says_which(fw):
     p = page(fw, files={f'{IMPORT}/x.txt': b'Preamp: -3 dB\nnonsense\n'}).advanced()
     p.click('Presets')
     p.click('Import from SD /EQ')
-    assert p.captions() == ['x.txt'] and p.title() == 'Presets'
+    assert p.captions() == ['Import all', 'x.txt'] and p.title() == 'Presets'
     p.click('x.txt')
     assert p.title() == 'Line 2: unsupported command' and f'{SAVED}/x.peq' not in p.card.files
 
@@ -981,7 +981,62 @@ def test_an_import_list_leaves_out_macos_sidecar_files(fw):
     p = page(fw, files={f'{IMPORT}/x.txt': b'Preamp: -3 dB\n', f'{IMPORT}/._x.txt': b'\x00\x05\x16\x07'}).advanced()
     p.click('Presets')
     p.click('Import from SD /EQ')
-    assert p.captions() == ['x.txt']
+    assert p.captions() == ['Import all', 'x.txt']
+
+
+def room(fw, free=64 << 20):
+    fw.mock('fw_statfs', lambda path, out, *_: (C.c_uint.from_address(out + 4).__setattr__('value', 1),
+                                                C.c_uint.from_address(out + 28).__setattr__('value', free), 0)[2])
+
+
+def importing(fw, files):
+    room(fw)
+    p = page(fw, files={f'{IMPORT}/{n}': b for n, b in files.items()}).advanced()
+    p.click('Presets')
+    p.click('Import from SD /EQ')
+    return p
+
+
+def test_import_all_saves_the_new_names_and_counts_the_rest(fw):
+    good = b'Preamp: -3 dB\nFilter 1: ON PK Fc 500 Hz Gain -3 dB Q 2\n'
+    p = page(fw, files={f'{IMPORT}/a.txt': good, f'{IMPORT}/b.txt': b'nonsense\n', f'{IMPORT}/c.txt': good,
+                        f'{SAVED}/c.peq': b'mine'})
+    room(fw)
+    p = p.advanced()
+    p.click('Presets')
+    p.click('Import from SD /EQ')
+    assert p.captions()[0] == 'Import all'
+    p.click('Import all')
+    assert f'{SAVED}/a.peq' in p.card.files and f'{SAVED}/b.peq' not in p.card.files
+    assert p.card.files[f'{SAVED}/c.peq'] == b'mine' and p.ui.screen == IMPORTS
+    assert not [n for n in p.card.files if n.endswith('.tmp')]
+    assert p.title() == 'Imported 1; 1 already saved; 1 failed'
+
+
+def test_import_all_writes_at_most_the_page_shown(fw):
+    good = b'Preamp: -3 dB\n'
+    p = importing(fw, {f'{k:03}.txt': good for k in range(130)})
+    assert p.captions()[:2] == ['Import this page', 'Next page']
+    assert p.props[(p.ui.view, '_ringnav_index')] == 1  # the first file: Import all is a tick up
+    syncs = []
+    fw.mock('fw_fsync', lambda *_: syncs.append(1) or 0)
+    p.click('Import this page')
+    assert len(syncs) == 128 and p.title() == 'Imported 128; 0 already saved; 0 failed'
+    assert f'{SAVED}/127.peq' in p.card.files and f'{SAVED}/128.peq' not in p.card.files
+    p.click('Next page')
+    assert p.captions()[:2] == ['Import this page', 'Previous page']
+    assert p.props[(p.ui.view, '_ringnav_index')] == 1
+    p.click('Import this page')
+    assert p.title() == 'Imported 2; 0 already saved; 0 failed' and f'{SAVED}/129.peq' in p.card.files
+
+
+def test_import_all_stops_when_the_card_is_nearly_full(fw):
+    good = b'Preamp: -3 dB\n'
+    p = importing(fw, {'a.txt': good, 'b.txt': good})
+    room(fw, 1 << 19)
+    p.click('Import all')
+    assert not [n for n in p.card.files if n.startswith(SAVED)]
+    assert p.title() == 'Imported 0; 0 already saved; 0 failed; storage full'
 
 
 def test_no_imports_says_why(fw):

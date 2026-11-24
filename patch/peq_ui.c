@@ -61,7 +61,7 @@ enum {
 /* clang-format off */
 enum { BACK = 1000, APPLY, RESET, BYPASS, PER_OUTPUT, MENU, IMPORT, SAVE, ENABLE, TYPE, RAISE, LOWER, TYPED, CHANNEL, STEP,
        YES, CANCEL, DELETE, BALANCE, PREAMP, GAIN, /* these three open the picker, in picks[] order */
-       FREQUENCY, QUALITY, /* and these two the value menu */ KEYBOARD, STOCK, FILE_PREV, FILE_NEXT, RENAME, NAMED };
+       FREQUENCY, QUALITY, /* and these two the value menu */ KEYBOARD, STOCK, FILE_PREV, FILE_NEXT, RENAME, NAMED, IMPORT_ALL };
 /* clang-format on */
 #define FILE_PAGE 128
 #define GRAPH_W (375 - 2 * PEQ_GRAPH_X)
@@ -466,6 +466,44 @@ static void list_files(const char *folder, const char *extension) {
         snprintf(ui.status, sizeof(ui.status), "%s", tr("No presets found"));
 }
 
+/* The import list's page, one file at a time as a single click does, but a name already saved is
+ * skipped (peq_save without replace, never the confirm) and every file that cannot be read or
+ * written is counted. It stops with the card's room: /mnt/data is also stock's library database.
+ * First built by Travis Cole (kelp/q2-pod fe5b3210).
+ * ponytail: the loop holds the UI thread for the page's writes, at most FILE_PAGE (128) files, each
+ * a ~1 kB temp file, fsync and rename on the synchronous UBIFS mount, so the wheel is dead for the
+ * page; ringnav_wdt_long gives it WDT_LONG_MS (15 min), where the plain WDT_MS (60 s) would
+ * reboot at about 470 ms a file. A worker with a progress row would lift it. */
+static void import_all(void) {
+    ringnav_wdt_long();
+    unsigned made = 0, kept = 0, bad = 0, start = ui.file_page * FILE_PAGE;
+    int full = 0;
+    mkdir(PEQ_SAVED, 0700);
+    for (int i = 0; i < FILE_PAGE && start + i < (unsigned)ui.count; ++i) {
+        char path[600];
+        peq_error error;
+        const char *name = ui.names[start + i];
+        if (!card_room(PEQ_SAVED, 1, 0)) {
+            full = 1;
+            break;
+        }
+        snprintf(path, sizeof(path), PEQ_IMPORT "/%s", name);
+        snprintf(ui.destination, sizeof(ui.destination), PEQ_SAVED "/%.*s.peq",
+                 (int)strlen(name) - 4, name);
+        int saved = peq_import_file(path, &ui.candidate, &error)
+                        ? peq_save(ui.destination, &ui.candidate, 0)
+                        : 0;
+        if (saved == 1)
+            ++made;
+        else if (saved == 2)
+            ++kept;
+        else
+            ++bad;
+    }
+    snprintf(ui.status, sizeof(ui.status), tr("Imported %u; %u already saved; %u failed%s"), made,
+             kept, bad, full ? tr("; storage full") : "");
+}
+
 /* File name in ui.destination: sizeof skips PEQ_SAVED and its "/". */
 static const char *deleting(void) { return ui.destination + sizeof(PEQ_SAVED); }
 
@@ -735,6 +773,8 @@ static int action(void *ctx, event_t *event) {
                      deleting());
     } else if (id == CANCEL)
         ui.screen = ui.previous;
+    else if (id == IMPORT_ALL)
+        import_all();
     else if (id < 256) {
         int file = ui.file_page * FILE_PAGE + id;
         if (ui.screen == HOME && id < PEQ_BANDS) {
@@ -843,7 +883,9 @@ static int render(const void *unused) {
     int head = graph * graph_head(), rh = page_h(48);
     /* Whole rows only, so the last row is never clipped. */
     int rows = (height - 48) / rh * rh;
-    if (ui.view && ui.rendered == ui.screen) {
+    int fresh = !(ui.view && ui.rendered == ui.screen),
+        reset_back = ui.screen == HOME && ui.rendered == CONFIRM && ui.previous == HOME;
+    if (!fresh) {
         selection = widget_get_prop_int(ui.view, "_ringnav_index", 0);
         offset = widget_get_prop_int(ui.view, "yoffset", 0);
     } else if (ui.screen ==
@@ -864,9 +906,7 @@ static int render(const void *unused) {
         /* Cancel, as every confirm opens: a second Centre deletes or replaces nothing */
         selection = 1;
     }
-    /* back from the Reset confirm: on the Reset to defaults row, where the user was */
-    int reset_back = ui.screen == HOME && ui.rendered == CONFIRM && ui.previous == HOME;
-    if (reset_back) selection = 1;
+    if (reset_back) selection = 1; /* the Reset to defaults row, where the user was */
     ui.rendered = ui.screen;
     ui.edit = 0;
     widget_destroy_children(ui.page);
@@ -1013,6 +1053,11 @@ static int render(const void *unused) {
             ui.file_page = last, offset = 0;
             widget_set_prop_int(view, "_ringnav_index", 0); /* set above, from the page that went */
         }
+        /* Import all is one tick up from the first file, so a stray Centre imports one file */
+        if (fresh && ui.screen == IMPORTS && ui.count)
+            widget_set_prop_int(view, "_ringnav_index", 1);
+        if (ui.screen == IMPORTS && ui.count)
+            row(view, n++, last ? tr("Import this page") : tr("Import all"), IMPORT_ALL);
         if (ui.file_page) row(view, n++, tr("Previous page"), FILE_PREV);
         if (ui.file_page < last) row(view, n++, tr("Next page"), FILE_NEXT);
         for (int i = 0, start = ui.file_page * FILE_PAGE; i < FILE_PAGE && start + i < ui.count;
