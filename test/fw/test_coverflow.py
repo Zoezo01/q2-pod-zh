@@ -2369,12 +2369,7 @@ def test_each_songtable_writer_moves_the_generation_round_stock_s_write(fw, writ
 
 def py_key(artist, album):
     """album_key: FNV-1a of the artist, then of the album, each closed by a multiply (fnv's separator)."""
-    h = FNV
-    for s in (artist, album):
-        for b in s:
-            h = (h ^ b) * 16777619 % 2**32
-        h = h * 16777619 % 2**32
-    return h
+    return fnv1a(album, fnv1a(artist) * 16777619 % 2**32) * 16777619 % 2**32
 
 
 FX_POOL = int(host.tools_build.need(re.search(r'^#define FX_POOL (\d+)', (ROOT/'patch/coverflow.h').read_text(), re.M), 'No FX_POOL')[1])
