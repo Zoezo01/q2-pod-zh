@@ -699,14 +699,6 @@ static void fx_arm(widget_t *w, int dir) {
     prop(w, FX, st.fx_token);
 }
 
-/* A boundary detent arms only while the selection stays on that row; leaving it or reversing
- * makes the next boundary detent bump again. Every stopped detent re-arms, so a continuing spin
- * hard-stops at the end; only a detent after a pause of EDGE_PAUSE_MS carries over. */
-static int edge_wraps(const menu_t *m, int id, int dir, unsigned now) {
-    return id >= 0 && fx_live(m->w) && st.edge_id == id && st.edge_dir == dir &&
-           now - st.edge_time >= EDGE_PAUSE_MS;
-}
-
 /* FNV-1a of the first two non-empty text properties in a small row subtree: the item's own name
  * and an optional subtitle, in pre-order. Each stays 0 while its text has not been seen. No stock
  * list row carries a stable id: emitter tags and pointer props are unused by the app rows (only
@@ -3742,21 +3734,19 @@ void bar_place(widget_t *w, int y, int h) {
     if (I(w, W_X) != x || I(w, W_Y) != y || I(w, W_W) != ww || I(w, W_H) != h)
         widget_move_resize(w, x, y, ww, h);
 }
-/* Charging, as the bar says it: stock's icon is bar_charge whenever a cable is in, the charge
- * enable held off or not (usb_charge.c's guard, Charge Limit), so a held one is not charging. */
-static int bar_charging(void) {
-    const char *icon = st.bar_icon ? widget_get_prop_str(st.bar_icon, "image", "") : "";
-    return icon && !tk_strcmp(icon, "bar_charge") && !usb_charge_held();
-}
 /* The battery view_battery shows: the level from label_battery's "88%" (stock zeroes
  * progress_battery while charging), then under Classic full on power (get_battery_capacity's
  * status 2 and stock's cable flag, memory both, as stock shows the plain icon then), charging
- * (bar_charging) and low (bar_lowcharge, or under 15% on a cable that charges nothing), as stock
+ * (the bar's icon) and low (bar_lowcharge, or under 15% on a cable that charges nothing), as stock
  * picks the icon. Reads stock's widgets, no I/O. */
 static unsigned battery_now(int classic_light) {
     const char *icon = widget_get_prop_str(st.bar_icon, "image", "");
     const unsigned *t = widget_get_text(st.bar_pct);
-    int level = 0, charging = bar_charging();
+    /* Charging, as the bar says it: stock's icon is bar_charge whenever a cable is in, the charge
+     * enable held off or not (usb_charge.c's guard, Charge Limit), so a held one is not charging.
+     */
+    const char *bicon = st.bar_icon ? widget_get_prop_str(st.bar_icon, "image", "") : "";
+    int level = 0, charging = bicon && !tk_strcmp(bicon, "bar_charge") && !usb_charge_held();
     while (t && *t >= '0' && *t <= '9') level = level * 10 + (int)(*t++ - '0');
     int held = !charging && icon && !tk_strcmp(icon, "bar_charge");
     return (unsigned)(level > 100 ? 100 : level) << 3 |
@@ -6972,13 +6962,6 @@ static int set_row_h(widget_t *button, int h) {
     return h;
 }
 
-/* Streaming's list: settings rows at the set's stream_row (52 under the classic-light set), matched
- * by name, at layout time only. Its list on Home's window matches too, but its buttons are Home's
- * by then (coverflow.c home_fill), so set_button leaves them alone. */
-static int stream_list(widget_t *view) {
-    return view && !tk_strcmp(widget_get_prop_str(view, "name", ""), "scroll_view_streamsset");
-}
-
 /* The list_view layouter's vtable slot. A list whose asset default_item_height is the set's
  * settings row (only the iPod settings pages) gets settings rows: items stock made SET_STOCK_ROW
  * high take it before the stock layout stacks them and sizes the scroll view, then each row is
@@ -6991,7 +6974,13 @@ static int stream_list(widget_t *view) {
 int ipod_list_layout(void *layout, widget_t *view) {
     widget_t *list = view ? P(view, W_PARENT) : (void *)0;
     int settings = settings_list(list);
-    int row = stream_list(view) ? geom_val(V_STREAM_ROW) : settings ? geom_val(V_SET_ROW) : 0;
+    /* Streaming's list: settings rows at the set's stream_row (52 under the classic-light set),
+     * matched by name, at layout time only. Its list on Home's window matches too, but its buttons
+     * are Home's by then (coverflow.c home_fill), so set_button leaves them alone. */
+    int row = view && !tk_strcmp(widget_get_prop_str(view, "name", ""), "scroll_view_streamsset")
+                  ? geom_val(V_STREAM_ROW)
+              : settings ? geom_val(V_SET_ROW)
+                         : 0;
     if (settings) settings_layout(list);
     unsigned n = row ? widget_count_children(view) : 0;
     for (unsigned i = 0; i < n; ++i) {
@@ -8640,7 +8629,7 @@ static int np_animating(void) {
                               (st.np_marquee && st.np_off > 0 && st.np_off < st.np_over)));
 }
 
-/* A volume's save waits until the level has been still for VOLUME_SAVE_MS (volume_save_poll, every
+/* A volume's save waits until the level has been still for VOLUME_SAVE_MS (checked on every
  * UI pass): stock saves each step, and a save rewrites config.ini whole on the flash and runs a
  * system("sync") shell on the UI thread (docs/internals.md#settings-writer), so a turn of the
  * wheel was a save a tick, and a headset's held key one each bt_volume_poll. One is held, under
@@ -8666,10 +8655,6 @@ void volume_save_flush(void) {
     const char *name = key == 1 ? "VOLUME" : key == 2 ? "BT_VOLUME" : "AIRVOL";
     stock_write_config_trampoline(vsave.value, key == 3 ? "Q2POD" : "PLAYSET", name);
 }
-static void volume_save_poll(void) {
-    if (vsave.key && (unsigned)time_now_ms() - vsave.at >= VOLUME_SAVE_MS) volume_save_flush();
-}
-
 /* Keep stock VOLUME for wired/USB and boot; Bluetooth saves its own level, and an AirPlay speaker
  * its own while it plays (airplay.c). Smart Wi-Fi's own toggles of the Wi-Fi switch save nothing
  * (smart_config). */
@@ -8877,7 +8862,7 @@ int ringnav_sleep(void *loop) {
     headset_poll();
     headset_eq_poll();
     bt_volume_poll();
-    volume_save_poll();
+    if (vsave.key && (unsigned)time_now_ms() - vsave.at >= VOLUME_SAVE_MS) volume_save_flush();
     spot_poll();
     radio_poll();
     tidal_poll();
@@ -9806,7 +9791,12 @@ int ringnav(void *ctx, event_t *event) {
                 widget_invalidate_force(w, (void *)0); /* a wheel wake still clears touch hiding */
                 return STOP;
             }
-            if (!edge_wraps(&g_menu, id, dir, now)) {
+            /* A boundary detent arms only while the selection stays on that row; leaving it or
+             * reversing makes the next boundary detent bump again. Every stopped detent re-arms, so
+             * a continuing spin hard-stops at the end; only a detent after a pause of EDGE_PAUSE_MS
+             * carries over. */
+            if (!(id >= 0 && fx_live(g_menu.w) && st.edge_id == id && st.edge_dir == dir &&
+                  now - st.edge_time >= EDGE_PAUSE_MS)) {
                 st.edge_id = id;
                 st.edge_dir = dir;
                 st.edge_time = now;
