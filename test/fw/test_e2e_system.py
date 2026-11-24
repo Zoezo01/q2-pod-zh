@@ -1141,7 +1141,7 @@ def test_the_state_record_says_what_the_q2_does_and_a_power_off_removes_it(q2):
     q2.loop()
     assert q2.flash.files[STATE] == b'screen:off power:running cable:out battery:64 play:stopped out:jack\n'
     q2.loop()
-    assert [path for path, _ in q2.disk.written].count(STATE) == 1  # rewritten only on a change
+    assert [path for path, _ in q2.disk.written].count(STATE + '.tmp') == 1  # rewritten only on a change
     q2.status, q2.way = PLAYING, 1
     lit(q2)
     assert q2.flash.files[STATE] == b'screen:on power:running cable:out battery:64 play:playing out:bluetooth\n'
@@ -1150,6 +1150,21 @@ def test_the_state_record_says_what_the_q2_does_and_a_power_off_removes_it(q2):
     assert STATE not in q2.flash.files and events == [(9, WDT_STOP, None)]  # a clean end: nothing to report
     q2.loop()
     assert STATE not in q2.flash.files and events == [(9, WDT_STOP, None)]  # nothing fed or recorded after
+
+
+def test_a_state_record_not_written_whole_leaves_the_last_one(q2):
+    watchdog(q2)
+    q2.fw.var('fw_ctx_g_power_capacity', C.c_int).value = 64
+    q2.loop()
+    old = q2.flash.files[STATE]
+    q2.fw.mock('fw_fwrite', lambda *_: 0)  # the flash full, or the power gone, mid-write
+    q2.fw.var('fw_ctx_g_power_capacity', C.c_int).value = 63
+    opened = len(q2.fw.calls('fw_fopen'))
+    for _ in range(4):
+        q2.loop()
+    assert q2.flash.files[STATE] == old
+    tries = [c for c in q2.fw.calls('fw_fopen')[opened:] if C.string_at(c[1][0]) == (STATE + '.tmp').encode()]
+    assert len(tries) == 1  # once a change, not once a pass
 
 
 # The headset (docs/internals.md#headset-controls-and-volume).

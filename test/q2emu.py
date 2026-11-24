@@ -4720,7 +4720,7 @@ class ResumeMachine(QueueMachine):
         if name=='fopen':
             path,mode=self.text(a),self.text(b)
             # the boot logo's lit-only mount poll; dark, any open counts
-            self.opens+=path!=RECORD and (path!='/proc/mounts' or not self.u.mem_read(syms['g_backlight_status'],1)[0])
+            self.opens+=path not in (RECORD,RECORD+'.tmp') and (path!='/proc/mounts' or not self.u.mem_read(syms['g_backlight_status'],1)[0])
             if mode=='rb' and path not in self.files: ret=0
             else: ret=0x2000000+len(self.calls); self.open[ret]=[path,mode,0,b'' if mode=='wb' else self.files.get(path,b'')]
         elif name=='fread':
@@ -4733,7 +4733,7 @@ class ResumeMachine(QueueMachine):
             if mode in ('wb','ab'): self.files[path]=data
         elif name=='access': ret=0 if self.text(a) in self.files else -1
         elif name=='time': ret=self.epoch
-        elif name=='rename': self.renames+=1; self.files[self.text(b)]=self.files.pop(self.text(a))
+        elif name=='rename': self.renames+=self.text(b)!=RECORD; self.files[self.text(b)]=self.files.pop(self.text(a))
         elif name=='player_playtime_and_length':
             if self.play[1]: self.word(a,self.play[0]); self.word(b,self.play[1]); ret=1
             else: ret=-1
@@ -5073,9 +5073,11 @@ class PowerMachine(ResumeMachine):
     def hook(self,u,address,size,unused):
         name=self.handlers.get(address,''); a=u.reg_read(REGS[0])
         if name.startswith('r:fclose') and self.open.get(a,[0,0])[1]=='w':
-            path,_,_,data=self.open.pop(a); self.files[path]=data; (self.records if path==RECORD else self.writes).append((path,data)); self.calls.append(('fclose',a,0,0))
+            path,_,_,data=self.open.pop(a); self.files[path]=data; self.writes.append((path,data)); self.calls.append(('fclose',a,0,0))
             self.returns(0); return
-        if name.startswith(('p:fflush','p:fileno','p:fsync')) and (a==RECORD_FD or self.open.get(a,[''])[0]==RECORD):
+        if name.startswith('r:rename') and self.text(u.reg_read(REGS[1]))==RECORD:  # the record, written whole (blob_io)
+            super().hook(u,address,size,unused); self.records.append((RECORD,self.files[RECORD])); return
+        if name.startswith(('p:fflush','p:fileno','p:fsync')) and (a==RECORD_FD or self.open.get(a,[''])[0]==RECORD+'.tmp'):
             self.returns(RECORD_FD if name.startswith('p:fileno') else 0); return  # the record's sync, apart from the marker's
         if name.startswith('r:fopen') and self.text(u.reg_read(REGS[1]))=='w':
             ret=0x2000000+len(self.calls); self.open[ret]=[self.text(a),'w',0,b'']; self.calls.append(('fopen',a,0,0))

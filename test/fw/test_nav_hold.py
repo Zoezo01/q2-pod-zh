@@ -3200,11 +3200,14 @@ def test_the_state_record_is_written_only_when_it_changes(fw, ui):
     assert len(fw.calls('fw_fopen')) == 2
 
 
-def test_a_record_that_cant_be_written_is_tried_again(fw, ui):
+def test_a_record_that_cant_be_written_is_tried_again_at_the_next_change(fw, ui):
+    """Once a change, not once a pass: a full flash would otherwise have its .tmp truncated and synced each pass."""
     state = State(fw, ui)
     fw.mock('fw_fopen', lambda *_: 0)
     state.poll()
     state.card = Card(fw)
+    assert state.poll() == ''
+    state.status = 3
     assert state.poll().startswith('screen:on')
 
 

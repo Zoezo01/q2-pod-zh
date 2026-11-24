@@ -245,7 +245,7 @@ static void wdt_poll(void) {
     if (pw.wdt > 0 && !pthread_create(&tid, 0, stall_watch, 0)) pthread_detach(tid);
 }
 /* The state record (docs/internals.md#watchdog): /mnt/data/q2-state says what the Q2 is doing, one
- * line rewritten and synced whenever it changes: the screen, Standby's suspend, the cable, the
+ * line rewritten whole (blob_io) whenever it changes: the screen, Standby's suspend, the cable, the
  * battery, playback and its output. A clean end removes it; one still there at boot means a
  * forced restart (or the battery), and S90play puts it in q2-crash.log (docs/boot.md). */
 #define STATE_FILE "/mnt/data/q2-state"
@@ -261,12 +261,7 @@ static void state_poll(void) {
                      g_usbdet_value ? "in" : "out", pct > 100 ? 100 : pct, play[ps < 4 ? ps : 0],
                      out[ow < 3 ? ow : 0]);
     if (!tk_strcmp(s, pw.state)) return;
-    void *f = fopen(STATE_FILE, "w");
-    if (!f) return;
-    fwrite(s, 1, n, f);
-    fflush(f);
-    fsync(fileno(f));
-    fclose(f);
+    blob_io(STATE_FILE, STATE_FILE ".tmp", s, (unsigned)n, 1); /* once a change: not each pass */
     memcpy(pw.state, s, n + 1);
 }
 /* A clean end: power-off, Restart, a firmware update, Rockbox. Nothing to report at the next boot.
