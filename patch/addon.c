@@ -534,7 +534,6 @@ static int scanning(void) {
 }
 
 static int stream_start(const void *unused) {
-    (void)unused;
     sm.timer = 0;
     if (sm.m3u && playback_loads != sm.loads) sm.state = S_DONE; /* the user played a queue since */
     if (sm.state != S_WAIT) return 0;
@@ -658,7 +657,6 @@ static void now_poll(void) {
 /* A URL queue's start, on a timer as stream_start's (a window opens); then the session is done:
  * the queue is stock's, and the app hears back only through its .now (now_start). */
 static int urls_start(const void *unused) {
-    (void)unused;
     sm.timer = 0;
     if (playback_loads != sm.loads) sm.state = S_DONE; /* the user played a queue since */
     if (sm.state != S_WAIT || scanning()) return 0;    /* looked at again after the scan */
@@ -2430,7 +2428,6 @@ static void later(int next, int arg) {
 }
 
 static int clicked(void *ctx, event_t *event) {
-    (void)event;
     /* Loading… does nothing: dropped here, as by go() its page may have put a row at its index */
     if (pg.paging && (int)(long)ctx == top()->n) return 0;
     later(G_ROW, (int)(long)ctx);
@@ -2446,7 +2443,6 @@ static int clicked(void *ctx, event_t *event) {
  * silently. */
 static int searched(void *ctx, event_t *event) {
     char t[256] = "";
-    (void)ctx, (void)event;
     if (widget_get_text_utf8(pg.edit, t, sizeof t)) t[0] = 0;
     if (strlen(t) >= sizeof pg.term) { /* none of it goes: the box closes, the level stays */
         memset(t, 0, sizeof t);
@@ -2460,7 +2456,6 @@ static int searched(void *ctx, event_t *event) {
 }
 
 static int search_left(void *ctx, event_t *event) {
-    (void)ctx, (void)event;
     if (!pg.go) later(G_SHOW, 0);
     return 0;
 }
@@ -2473,7 +2468,6 @@ static int search_left(void *ctx, event_t *event) {
  * ponytail: touch only. The wheel moves the selection, as on every list, so the sections past the
  * first are reached by a swipe alone; bind a key here if that is ever asked for. */
 static int swipe(void *ctx, event_t *event) {
-    (void)ctx;
     int type = I(event, EVENT_TYPE);
     if (type == EVT_POINTER_ABORT || pg.nsec < 2 || pg.depth != 1 || pg.edit) {
         pg.sdown = pg.sclaim = 0;
@@ -2536,7 +2530,6 @@ static void search_box(int field) {
 /* A title bar icon's tap, ctx its G_ code, on a timer as a row's: what it opens replaces the page
  * the icon is in. */
 static int bar_tapped(void *ctx, event_t *event) {
-    (void)event;
     later((int)(long)ctx, 0);
     return 0;
 }
@@ -2575,7 +2568,6 @@ static void field_sent(lv_t *l) {
 
 /* A row's choice, on a timer: a row's click may not rebuild the list it is in. */
 static int go(const void *unused) {
-    (void)unused;
     lv_t *l = top();
     int i = pg.arg;
     char a[sizeof l->args] = "";
@@ -2640,7 +2632,6 @@ static int go(const void *unused) {
 /* The page's timer: a finished request taken; a starting app, or a live level on top, asked
  * again. */
 static int tick(const void *unused) {
-    (void)unused;
     lv_t *l = top();
     unsigned now = time_now_ms();
     if (req_done())
@@ -2660,7 +2651,6 @@ static int tick(const void *unused) {
 }
 
 static int leave(const void *unused) {
-    (void)unused;
     pg.leave = 0;
     if (pg.edit) /* the search box emptied, so no search; its blur shuts the keyboard, then the box
                   */
@@ -2672,13 +2662,9 @@ static int leave(const void *unused) {
     return 0;
 }
 
-static int keyup(void *ctx, event_t *event) {
-    (void)ctx;
-    return return_key(event, &pg.leave, leave);
-}
+static int keyup(void *ctx, event_t *event) { return return_key(event, &pg.leave, leave); }
 
 static int closed(void *ctx, event_t *event) {
-    (void)event;
     if (ctx != pg.page) return 0; /* a page addon_goto replaced, its state gone already */
     req_cancel();
     stop_timer(&pg.timer);
@@ -2747,7 +2733,6 @@ static int press(int slot) {
  * sorts the apps again while the row is open (an App Store job's end, Home's pane, the AirPlay row)
  * leaves it on its app, and a removed app's row says it isn't on the card. */
 int addon_open(void *ctx, event_t *event) {
-    (void)event;
     int i = (int)(long)ctx;
     if (smart_hold(addon_open, ctx, 0)) return 0; /* the app starts once Smart Wi-Fi's link is up */
     if (i >= 0 && i < ap.n) press(i);
@@ -2764,7 +2749,6 @@ int addon_game_start(int k) {
  * link; holding the row as Streaming's (smart_hold) would cost every open up to SMART_CONNECT_MS
  * wherever there is no network. A q2app key for the wait, if an app ever needs the link first. */
 int addon_lib_open(void *ctx, event_t *event) {
-    (void)event;
     int k = (int)(long)ctx;
     if (k >= 0 && k < ap.cnt[ROW_LIBRARY]) press(ap.rows[ROW_LIBRARY][k]);
     return 0;
@@ -2809,7 +2793,6 @@ int addon_apps_sync(void *win, event_t *event) {
 }
 /* An app's Network row (ctx: its place by name at the last scan): as a Library row's. */
 int addon_network_open(void *ctx, event_t *event) {
-    (void)event;
     int k = (int)(long)ctx;
     if (k >= 0 && k < ap.cnt[ROW_NETWORK]) press(ap.rows[ROW_NETWORK][k]);
     return 0;
@@ -3028,25 +3011,19 @@ static void qr_refresh(void) {
 }
 
 static int qr_tick(const void *unused) {
-    (void)unused;
     if (g_backlight_status) qr_refresh();
     return 8; /* RET_REPEAT */
 }
 
 static int qr_leave(const void *unused) {
-    (void)unused;
     qp.leave = 0;
     navigator_back();
     return 0;
 }
 
-static int qr_keyup(void *ctx, event_t *event) {
-    (void)ctx;
-    return return_key(event, &qp.leave, qr_leave);
-}
+static int qr_keyup(void *ctx, event_t *event) { return return_key(event, &qp.leave, qr_leave); }
 
 static int qr_closed(void *ctx, event_t *event) {
-    (void)ctx, (void)event;
     stop_timer(&qp.timer);
     stop_timer(&qp.leave);
     free(qp.hex);

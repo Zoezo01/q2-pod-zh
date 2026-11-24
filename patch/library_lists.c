@@ -455,7 +455,6 @@ static int songs_page(const char *window, const char *dir, const char *title, in
     return 0;
 }
 int tidal_downloads(void *ctx, event_t *event) {
-    (void)ctx, (void)event;
     return songs_page("tidal_downloads", TIDAL_DIR, tr("Tidal Downloads"), 1, 0);
 }
 /* A card app's local row (addon.c): a folder ("/" last) lists its songs; a song plays its folder

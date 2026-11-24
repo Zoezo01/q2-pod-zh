@@ -1321,14 +1321,12 @@ extern int hci_futex(volatile int *addr, int op, int value, const void *timeout)
 __asm__(".globl hci_futex\nhci_futex:\nli $v0, 4238\nsyscall\njr $ra\nnop\n");
 static const long wait_s[2] = { WAIT_S, 0 };
 int hci_idle_wait(unsigned us) {
-    (void)us;
     hci_futex((volatile int *)PLAY_FLAG, 128, 0, wait_s); /* FUTEX_WAIT_PRIVATE while 0 */
     return 0;
 }
 static volatile int cmd_gen;
 static int cmd_seen;
 int hci_pause_wait(unsigned us) {
-    (void)us;
     int g = __atomic_load_n(&cmd_gen, __ATOMIC_ACQUIRE);
     if (g == cmd_seen) {
         hci_futex(&cmd_gen, 128, g, wait_s); /* FUTEX_WAIT_PRIVATE while unchanged */

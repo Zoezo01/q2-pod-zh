@@ -12,7 +12,6 @@
 static widget_t *np_mark[NP_MARKS];
 static unsigned np_marked; /* how many: with none a paint looks no further */
 static int np_mark_gone(void *w, event_t *event) {
-    (void)event;
     for (unsigned i = 0; i < NP_MARKS; ++i)
         if (np_mark[i] == w) np_mark[i] = (void *)0, --np_marked;
     return 0;

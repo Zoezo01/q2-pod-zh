@@ -277,7 +277,6 @@ static unsigned info_state(void) {
  * change. With it off the timer stops, for the battery, and info_poll starts it again at the first
  * loop pass with it lit, the pass that repaints the whole screen. */
 static int info_tick(const void *info) {
-    (void)info;
     if (!g_backlight_status) {
         lk.timer = 0;
         return 0; /* RET_OK: a timer's end */

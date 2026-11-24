@@ -95,7 +95,6 @@ void ringnav_timezone_row(widget_t *item, int i) {
  * pass after the bar first paints or paints with a new 24-hour setting (ringnav_paint_bg).
  * ponytail: a network time sync while lit shows at the next minute. */
 int clock_due(const void *info) {
-    (void)info;
     st.clock_timer = 0;
     clock_show();
     return 0;
@@ -227,7 +226,6 @@ static void time_title(widget_t *win) {
     widget_set_text_utf8(label, s);
 }
 static int time_changed(void *win, event_t *event) {
-    (void)event;
     int first = -1;
     for (int f = 4; f >= 0; --f) {
         int now = tf.sel[f] ? I(tf.sel[f], SELECTOR_INDEX) : 0;
@@ -268,7 +266,6 @@ void time_wheel(widget_t *top, int f, int dir) {
     field_set(top, f);
 }
 static int time_ampm(void *win, event_t *event) {
-    (void)event;
     time_wheel(win, TIME_AMPM, 1);
     return 0;
 }

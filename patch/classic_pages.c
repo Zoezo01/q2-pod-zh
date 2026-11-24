@@ -215,7 +215,6 @@ static int pl_box_gone(void *win, event_t *event) {
 /* Next pass: stock's init, which writes its own hint, has returned; the bar title stays until the
  * dialog goes, as bar_title_sync doesn't name a dialog. */
 static int pl_box_due(const void *info) {
-    (void)info;
     char key[STYLE_KEY];
     widget_t *win = st.pl_box;
     void *lists = P(p_deque_playlist, 0);
@@ -618,7 +617,6 @@ static int msg_sync(void) {
 }
 /* Stock's hidden label repaints nothing, so this does, at the rate stock writes it. */
 static int msg_poll(const void *info) {
-    (void)info;
     /* the line and the bar */
     if (msg_sync())
         widget_invalidate_force(st.msg_win, flat_pages() ? &(rect_t){ 16, 180, 343, 46 }

@@ -8,7 +8,6 @@
  * inside single quotes, each ' as '\''. A path that does not fit n removes nothing. */
 int ringnav_folder_rm(char *cmd, unsigned n, const char *fmt, const char *path) {
     unsigned at = 8; /* rm -rf ' */
-    (void)fmt;
     memcpy(cmd, "rm -rf '", at);
     for (; *path; ++path) {
         unsigned k = *path == '\'' ? 4 : 1;

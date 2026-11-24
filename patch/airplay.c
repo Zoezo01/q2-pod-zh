@@ -203,7 +203,6 @@ int airplay_lyrics(int *ms) {
 
 /* The app's page, from its hidden slot, once Smart Wi-Fi's link is up. */
 static int air_open(void *ctx, event_t *event) {
-    (void)event;
     if (!smart_hold(air_open, ctx, 0)) air.asked = 1, addon_open_id(AIR_ID);
     return 0;
 }

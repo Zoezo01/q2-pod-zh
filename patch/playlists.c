@@ -726,7 +726,6 @@ static int pl_due(const void *info) {
 }
 /* The latest row clicked in a pass is the one that runs. */
 static int pl_click(void *action, event_t *event) {
-    (void)event;
     stop_timer(&pl_timer);
     pl_timer = timer_add(pl_due, action, 0);
     return 0;
@@ -988,7 +987,6 @@ void playlists_edit(int edit) {
 
 /* Stock leaves its mode set for a page gone in it (held Return, to Home); its art's builds stop. */
 static int pl_gone(void *win, event_t *event) {
-    (void)event;
     if (win == pl_cf_win) {
         stop_timer(&pl_cf_timer);
         pl_cf_win = 0;

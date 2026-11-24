@@ -450,7 +450,6 @@ int ringnav_lyric_save(char *cmd, unsigned n, const char *fmt, const char *tmp, 
     char lrc[0x200 + 8], shadow[sizeof lrc]; /* as long as lrc_copy's .part takes */
     void *r = lrc_song(name);
     int named = downpic(shadow, sizeof shadow, name);
-    (void)fmt;
     if (r && lrc_path(lrc, sizeof lrc, P(r, REC_PATH), ".lrc") && lrc_copy(tmp, lrc)) {
         if (named) unlink(shadow);
     } else if (named)
@@ -464,7 +463,6 @@ int ringnav_lyric_save(char *cmd, unsigned n, const char *fmt, const char *tmp, 
  * removes nothing, as in ringnav_lyric_save. */
 int ringnav_lyric_drop(char *cmd, unsigned n, const char *fmt, const char *name) {
     char shadow[sizeof DOWNPIC + 0x200];
-    (void)fmt;
     if (downpic(shadow, sizeof shadow, name)) unlink(shadow);
     return snprintf(cmd, n, ":");
 }
@@ -474,7 +472,6 @@ int ringnav_lyric_drop(char *cmd, unsigned n, const char *fmt, const char *name)
  * name, as root, and a name with a $ never showed its pick. That snprintf (COVER_PICK_CALL) jumps
  * here: the file is copied here and cmd is ":". */
 int ringnav_cover_copy(char *cmd, unsigned n, const char *fmt, const char *from, const char *to) {
-    (void)fmt;
     lrc_copy(from, to);
     return snprintf(cmd, n, ":");
 }

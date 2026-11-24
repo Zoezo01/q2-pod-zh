@@ -1995,7 +1995,6 @@ static void paint_caps(widget_t *w, canvas_t *canvas) {
  * one widget (paint_selection; a paint would drop hscroll_label_stop's invalidate, so marq_moved
  * stops it from a timer). */
 static int marq_gone(void *ctx, event_t *event) {
-    (void)ctx, (void)event;
     st.marq_label = (void *)0;
     return 0;
 }
@@ -2034,7 +2033,6 @@ void marq_restart(widget_t *row) {
     if (row == st.marq_row) st.marq_row = (void *)0;
 }
 static int marq_moved(const void *info) {
-    (void)info;
     st.marq_timer = 0;
     marq_stop();
     st.marq_passes = 0;
@@ -2103,7 +2101,6 @@ static int hscroll_lull_end(const void *info) {
     return ret;
 }
 unsigned ringnav_hscroll_lull(widget_t *w, int (*lulled)(const void *), unsigned ms) {
-    (void)ms;
     hscroll_lulled = lulled;
     return widget_add_timer(w, hscroll_lull_end,
                             B(w, HSCROLL_YOYO) && B(w, HSCROLL_LOOP) ? 0 : MARQUEE_HOLD_MS);
@@ -2986,7 +2983,6 @@ static void switch_text(widget_t *win, widget_t *label) {
                 sw && !tk_strcmp(widget_get_prop_str(sw, "image", ""), "switch_on"));
 }
 static int switch_due(const void *info) {
-    (void)info;
     widget_t *win = window_manager_get_top_window(window_manager());
     widget_t *sw = win ? widget_lookup(win, "img_switch", 1) : (void *)0;
     char click[0x30];
@@ -2997,7 +2993,6 @@ static int switch_due(const void *info) {
     return 0;
 }
 static int switch_click(void *ctx, event_t *event) {
-    (void)ctx, (void)event;
     timer_add(switch_due, (void *)0, 0);
     return 0;
 }
@@ -3724,7 +3719,6 @@ static int bar_state_sync(widget_t *bar) {
  * the bar: Now Playing, painting every 250 ms, sees a Play/Pause first and left a stale icon
  * (#116). Repaint the bar once, after the frame. */
 int bar_repaint(const void *info) {
-    (void)info;
     st.bar_timer = 0;
     widget_invalidate_force(*(void *const *)system_bar, (void *)0);
     return 0;
@@ -4926,7 +4920,6 @@ void slider_switch(widget_t *w, canvas_t *canvas, widget_t *sw) {
 /* The page at (0, y, 375, 294): flat in the theme's page_fill, or the half's Home pane colour
  * (theme home_pane), final. */
 void paint_page(widget_t *w, canvas_t *canvas, int y) {
-    (void)w;
     const theme_t *T = theme();
     unsigned light = (unsigned)ipod_light(), c = T->page_fill[light];
     bar_rect(canvas, RGBA(c ? c : T->home_pane[light].rgb[0]), 0, y, 375, 294);
@@ -5282,7 +5275,6 @@ static void action_row(widget_t *view) {
 }
 
 static int title_due(const void *info) {
-    (void)info;
     widget_invalidate_force(st.bar_title, (void *)0);
     return 0;
 }
@@ -6186,7 +6178,6 @@ static int genre_over(void) {
     return I(s, HSCROLL_TEXT_W) + 4 - I(s, W_W); /* stock's two 2 px margins, as marq_moved */
 }
 static int genre_step(const void *info) {
-    (void)info;
     st.genre_timer = 0;
     int over = genre_over();
     if (over <= 0) return 0;

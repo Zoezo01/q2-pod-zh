@@ -41,7 +41,6 @@ int ipod_times(widget_t *elapsed, widget_t *remain, widget_t *bar, int sec) {
  * lost with the frame's dirty rects (#116). Minimal's and Modern's sit in the rect the slider's and
  * the elapsed time's repaint takes each second; only times beside the bar (np_beside) need it. */
 int remain_due(const void *info) {
-    (void)info;
     st.np_remain_timer = 0;
     if (st.np_remain) widget_invalidate_force(st.np_remain, (void *)0);
     return 0;
@@ -58,7 +57,6 @@ int np_beside(void) {
 /* Classic's times and bar fitted to the playing track's length (the slider's max), off the paint
  * whose np_sync found them stale. */
 int np_fit_due(const void *info) {
-    (void)info;
     st.np_fit_timer = 0;
     if (np_beside())
         ipod_times(st.np_elapsed, st.np_remain, st.np_slider,
