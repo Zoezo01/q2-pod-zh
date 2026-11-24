@@ -1437,7 +1437,8 @@ static void flip_frames(void) {
     assert(coverflow_flip_eased(-5, 1) == 0 && coverflow_flip_eased(0, 1) == 0 && coverflow_flip_eased(270, 1) == 65536 && coverflow_flip_eased(300, 1) == 65536);
     assert(coverflow_flip_eased(0, -1) == 65536 && coverflow_flip_eased(270, -1) == 0);
     assert(coverflow_flip_eased(16, 1) > 2 * 16 * 65536 / 270 && coverflow_flip_eased(16, -1) < 65536 - 2 * 16 * 65536 / 270);
-    for (int ms = 0; ms <= 270; ++ms) { assert(coverflow_flip_eased(ms + 1, 1) >= coverflow_flip_eased(ms, 1)); assert(coverflow_flip_eased(ms, 1) + coverflow_flip_eased(ms, -1) == 65536); }
+    for (int ms = 0; ms <= 270; ++ms) { assert(coverflow_flip_eased(ms + 1, 1) >= coverflow_flip_eased(ms, 1)); }
+    assert(coverflow_flip_eased(135, 1) == 57344 && coverflow_flip_eased(135, -1) == 8192);
     /* The sides part over the same ease: none at the start, 12 at half, 24 at the end, the paper between and under the shelf. */
     const unsigned *none[3] = { sides, 0, 0 };
     for (int half = 0; half < 2; ++half) {

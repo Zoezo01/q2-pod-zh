@@ -5355,12 +5355,12 @@ assert [c[1] for c in m.calls if c[0]=='widget_paint']==[m.panel()] and not m.no
 # No canvas: no text on the back, the paper instead; the panel still comes.
 n=classic_light_new(NoCanvas); n.open(); flip_click(n); n.now+=270; last=n.frame(); assert px_at(last,187,150) in (0xff000000,0xffffffff); n.advance(20); assert n.nodes[n.panel()]['visible']; passed()
 # The turn: no timer of its own past 270 ms; the first frame the cover with no reflection, its sides as the shelf drew them;
-# half way the side covers part 12, nothing on the axis; at the end the panel's capture, in the screen's byte order as the frame, parted 24.
+# 56 ms in, the ease-out's half way, the cover is nearly edge on: the back's sliver on the axis, the paper beside it; at the end the panel's capture, in the screen's byte order as the frame, parted 24.
 m=flip_open(); covers=m.covers(); assert not m.nodes[m.panel()]['visible']
-f0=m.frame(); m.advance(135); f1=m.frame(); m.now+=135; f2=m.frame(); m.advance(5); assert m.nodes[m.panel()]['visible']
+f0=m.frame(); m.advance(56); f1=m.frame(); m.now+=214; f2=m.frame(); m.advance(5); assert m.nodes[m.panel()]['visible']
 assert px_at(f2,187,150)==px_at(f2,40,9)==px_at(f2,333,293)==0xff203040  # the panel's as captured, opaque: the frame is the screen's BGRA8888
 assert px_at(f0,187,150)!=0xffffffff and px_at(f0,187,32+162)==0xffffffff  # the cover, nothing under it
-assert px_at(f1,187,100)==px_at(f1,186,100)==px_at(f1,187,200)==0xffffffff  # edge on: the paper; each side parted 12
+assert px_at(f1,187,100)==px_at(f1,186,100)==px_at(f1,187,200)==0xff203040 and px_at(f1,185,100)==px_at(f1,188,100)==px_at(f1,185,200)==px_at(f1,188,200)==0xffffffff  # almost edge on: a 2 px sliver of the back on the axis, the paper beside it
 assert f0!=f1!=f2; passed()
 # The wheel, Centre and Return wait during the turn; a second Centre or Return does nothing; a held tick lands after it.
 m=flip_open(); n0=len(m.lcds)
@@ -5368,14 +5368,14 @@ assert m.key()==11 and len(m.lcds)==n0 and m.nodes[m.panel()]['visible']==0
 assert m.call(O['KEY_CENTER'],gap=2000)==11 and not [c for c in m.calls if c[0] in ('on_home_music_onclick','screen_action')]
 assert m.call(gap=0)==11
 m.advance(300); view=m.find('scroll_view'); m.paint(view); assert m.selected(view)==1 and len(m.lcds)==n0; passed()
-# Return: the panel captured again as it stands, hidden, the same frames backwards, then the covers again and every buffer freed.
+# Return: the panel captured again as it stands, hidden, the same path back eased out, then the covers again and every buffer freed.
 m=classic_light_new(FlipMachine); m.open(); held=flip_held(m); flip_click(m); assert len(flip_backs(m))==1; forward=[]
 for t in (0,45,45,45,45,45): m.advance(t); forward.append(m.frame())
 m.advance(60); frames0=len(m.frames); destroyed=len(m.destroyed); assert m.key()==11; assert m.lcds[1:] and not m.nodes[m.panel()]['visible']
 assert m.key()==11  # a second Return is nothing
 back=[]
 for t in (45,45,45,45,45): m.advance(t); back.append(m.frame())
-assert back==forward[:0:-1],'the same run backwards'
+assert len({bytes(f) for f in back})==5,'five distinct frames back'
 m.advance(50)
 assert not m.panel() and m.nodes[m.slide]['visible'] and m.nodes[m.covers()]['sensitive']==1 and all(m.nodes[w]['visible'] for w in m.nodes[m.covers()]['children'])
 assert len(m.destroyed)==destroyed+1 and flip_held(m)==held and not [t for t in m.timers.values() if t[1] in (payload_syms['flip_tick'],)]
