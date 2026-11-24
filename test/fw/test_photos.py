@@ -9,6 +9,7 @@ import struct
 import pytest
 
 from conftest import FNV_PRIME, O, Config, Files, block, fnv1a, libc
+from test_coverflow import segment
 
 ROOT = '/mnt/mmc/Photos'
 CACHE = '/mnt/mmc/.photos'
@@ -76,10 +77,6 @@ def test_photo_file(fw, name, ok):
 
 
 # The EXIF orientation.
-
-def segment(marker, body):
-    return bytes([0xff, marker]) + struct.pack('>H', len(body) + 2) + body
-
 
 def exif(entries, le=True, ifd=8, order=None, link=True):
     """An APP1 Exif body: a TIFF header in either byte order and IFD0's SHORT entries (tag, value), then (link) its

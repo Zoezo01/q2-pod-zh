@@ -9,6 +9,7 @@ from conftest import Config, rgba
 from test_nav_paint import (ACCENTS, CLASSIC, CLASSIC_BLUE, GRAPHITE, MODERN, RED, RED_PX, TIDAL, WHITE, bitmaps,
                             image_add, msg_paint, named, slider_paint, slider_scrub, SLIDER_PAGES, SLIDERS,
                             layout, st, stock_h, theme, ui_load, world)  # noqa: F401 (fixtures, by name)
+from test_flat_dialogs import flat_on
 from test_flat_pages import TimeCanvas, face, flip
 from test_nav_paint import quick_page as paint_quick_page
 import test_flat_pages as flat_pages
@@ -17,10 +18,6 @@ from test_nav_loop import keys, stock_bytes  # noqa: F401 (fixtures, by name)
 import test_nav_painters as painters
 CLASSIC_MODERN = '3'
 LIGHTS = pytest.mark.parametrize('light', ['0', '1'])
-
-
-def flat_on(fw):
-    return fw.fn('flat_on', C.c_uint)()
 
 
 def red(fw, accent, light):

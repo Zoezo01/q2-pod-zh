@@ -11,6 +11,7 @@ import pytest
 import host
 from conftest import NAVIGATION_SOURCE, O, Config, Deques, Files, claim, high_halves, libc, pod_value
 from test_coverflow import SONGTABLE  # stock's songtable, as demo's CREATE TABLE text has it
+from test_games import run
 from test_navigation import clock
 
 W_PARENT, EVT_CLICK, EVENT_TYPE, EVENT_KEY, EVENT_X = O['W_PARENT'], O['EVT_CLICK'], O['EVENT_TYPE'], O['EVENT_KEY'], O['EVENT_X']
@@ -1065,10 +1066,6 @@ def test_the_genre_shows_in_its_own_scrolling_label(fw, st):
     genre, stock = info.genre(), info.labels['label_genre']
     assert genre.text == 'Genre: Jazz' and genre.parent is stock.parent and genre.box == stock.box and not stock.visible
     assert fw.calls('hscroll_label_set_only_focus')[0][1][:2] == (genre.addr, 1)  # no stock timer: genre_step moves it
-
-
-def run(fn):
-    return C.CFUNCTYPE(C.c_int, C.c_void_p)(fn)(None)
 
 
 def test_a_long_genre_scrolls_to_its_end_holds_and_starts_over(fw, st):

@@ -17,6 +17,7 @@ from conftest import Rows as HeldRows  # Rows here is Folder view's list
 from test_addon import Pg  # test_addon.py keeps the mirror
 from test_coverflow import SONGTABLE
 from test_nav_display_library import Ple  # playlists.c's editor state
+from test_nav_painters import i32 as signed
 from test_navigation import Sa, listen_key  # test_navigation.py keeps the mirror
 from test_tidal import HEARTS, urls_play
 
@@ -42,10 +43,6 @@ TICK = C.CFUNCTYPE(C.c_int, C.c_void_p)
 TYPES = {'window_create': 'window', 'list_item_create': 'list_item', 'hscroll_label_create': 'hscroll_label',
          'image_create': 'image', 'button_create': 'button', 'scroll_view_create': 'scroll_view',
          'list_view_create': 'list_view', 'label_create': 'label'}
-
-
-def signed(v):
-    return C.c_int(v).value
 
 
 class Ui:

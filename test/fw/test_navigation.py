@@ -9,6 +9,7 @@ import pytest
 
 import host
 from conftest import POD, text, Game, opus, pod_value, stock_stub
+from test_nav_painters import strings
 from conftest import FNV_PRIME, O, Deques, Files, channels_low_first, claim, fnv1a, in_fork, rgba  # noqa: F401
 
 STOCK_RED = O['STOCK_RED']
@@ -53,11 +54,6 @@ class Config:
         value = self.values.get(C.string_at(key), C.string_at(default))
         if value or C.string_at(key) in self.values:
             C.memmove(out, value + b'\0', len(value) + 1)
-
-
-def strings(fw):
-    """Stock's AWTK string helpers, which the C leans on."""
-    fw.mock('tk_str_start_with', lambda s, prefix, *_: C.string_at(s).startswith(C.string_at(prefix)))
 
 
 # The clock.

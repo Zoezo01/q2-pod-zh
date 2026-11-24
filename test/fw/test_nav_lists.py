@@ -16,6 +16,7 @@ from conftest import NAVIGATION_SOURCE, O, Deques, claim, pod_value, rgba, ui_na
 from test_coverflow import COVERS, TRACKS, Home, Rec, cf, deque_of  # coverflow.c's home struct, its page and an album
 from test_nav_display_library import Ple  # playlists.c's editor state
 from test_navigation import Config
+from test_nav_playing import wide
 from conftest import Config as AllKeysConfig  # reads every key, an empty default too
 
 W_PARENT, W_EMITTER = O['W_PARENT'], O['W_EMITTER']
@@ -2300,10 +2301,6 @@ def test_classics_panel_sits_on_its_shadow_in_a_ring_and_puts_the_fill_back(fw, 
     assert all(39 <= x and x + w <= 40 + 120 + 1 and 49 <= y <= 50 + 30 for _, x, y, w, _ in canvas.fills)
     assert {y for _, _, y, _, _ in canvas.fills} == set(range(49, 50 + 30 + 1))  # the ring a pixel out
     assert canvas.fill == LCD_FILL
-
-
-def wide(text):
-    return (C.c_uint * (len(text) + 1))(*map(ord, text), 0)
 
 
 def test_a_text_shadow_is_its_text_in_black_at_its_alpha(fw):

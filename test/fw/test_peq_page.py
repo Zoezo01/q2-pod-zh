@@ -9,6 +9,7 @@ import struct
 import pytest
 
 from conftest import Dirent, O
+from test_nav_painters import i32
 
 KEY_CENTER, KEY_PREV, KEY_NEXT, KEY_RETURN = O['KEY_CENTER'], O['KEY_PREV'], O['KEY_NEXT'], O['KEY_RETURN']
 EVT_DESTROY, EVT_VALUE_CHANGED, EVT_CLICK, EVT_FOCUS, EVT_KEY_UP, EVT_IM_ACTION = (O[k] for k in (
@@ -54,10 +55,6 @@ class E3(C.Structure):
     _fields_ = [('view', C.c_void_p), ('save', C.c_uint), ('press', C.c_uint), ('press_at', C.c_uint),
                 *((k, C.c_int) for k in 'focus adjusting dragging dirty on h'.split()), ('gain', C.c_double * 3), ('status', C.c_char_p),
                 ('caption', C.c_int)]
-
-
-def i32(v):
-    return C.c_int(v).value
 
 
 class Card:
