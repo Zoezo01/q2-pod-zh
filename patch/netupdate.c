@@ -280,7 +280,8 @@ static int move(int i, const char *rel) {
     int at = (int)strlen(CARD "/"),
         a = snprintf(from, sizeof from, STAGING "/%s/%s", apps[i].id, rel),
         b = snprintf(to, sizeof to, CARD "/%s", rel);
-    if (a < 0 || a >= (int)sizeof from || b < 0 || b >= (int)sizeof to) return 1;
+    /* rel is a line of the staged list, a card file an app can write: nothing made off the card */
+    if (a < 0 || a >= (int)sizeof from || b < 0 || b >= (int)sizeof to || !card_path(to)) return 1;
     for (char *s = to + at; (s = strstr(s, "/")); *s++ = '/') *s = 0, mkdir(to, 0755);
     return rename(from, to) != 0;
 }

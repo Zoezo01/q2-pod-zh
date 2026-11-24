@@ -670,6 +670,12 @@ def test_a_path_too_long_moves_nothing(fw):
     assert move(fw, b'a' * 600) == 1 and card.log == []
 
 
+def test_a_staged_path_off_the_card_moves_nothing(fw):
+    apps(fw, b'me/foo')
+    card = Card(fw)
+    assert move(fw, b'../../tmp/x') == 1 and card.log == []
+
+
 def test_the_longest_path_fits_exactly(fw):
     apps(fw, b'me/foo')
     Card(fw)
