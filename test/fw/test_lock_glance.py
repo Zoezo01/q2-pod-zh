@@ -65,6 +65,10 @@ class Glance:
         """record's REC_ALBUM: a 4-byte cell, as on the Q2, the empty REC_ARTIST after it (P() reads 8 here)."""
         C.c_uint.from_address(record + O['REC_ALBUM']).value = self.low.take(album + b'\0')
 
+    def path(self, record, path):
+        """record's REC_PATH, its REC_TITLE cell after it empty."""
+        C.c_uint.from_address(record + O['REC_PATH']).value = self.low.take(path + b'\0')
+
     def play_time(self, sec, total, *_):
         C.c_int.from_address(sec).value, C.c_int.from_address(total).value = self.played
 
@@ -277,6 +281,113 @@ def test_the_picture_s_end_forgets_the_window(fw, mcl, now):
     lcd = Lcd(fw)
     lcd.paint(fw, g['img_screensaver'])
     assert lcd.boxes == [] and tick(fw) == RET_OK
+
+
+# The blur.
+
+class Cover:
+    """img_playcover's image as stock loaded it: its name (any widget's "image" reads it), and the picture
+    widget_load_image gives, w x h RGBA8888 (format 1) from rgb(x, y). widget_load_image's calls and stock's
+    image cache's unloads are counted; ok False: the load fails."""
+    def __init__(self, fw, name=b'file:///tmp/cover.jpg', w=16, h=16, rgb=lambda x, y: (200, 100, 50)):
+        self.name, self.ok, self.loads, self.unloads = C.create_string_buffer(name), True, 0, 0
+        self.w, self.h = w, h
+        self.pixels = (C.c_ubyte * (w * h * 4))(*[v for y in range(h) for x in range(w) for v in (*rgb(x, y), 255)])
+        fw.mock('widget_get_prop_str', lambda w_, key, d, *_: C.addressof(self.name) if C.string_at(key) == b'image' else d)
+        fw.mock('widget_load_image', self.load)
+        fw.mock('image_manager_unload_bitmap_by_name', lambda m, n, *_: setattr(self, 'unloads', self.unloads + 1))
+        fw.mock('bitmap_lock_buffer_for_read', lambda bm, *_: C.addressof(self.pixels))
+
+    def load(self, w, name, bitmap, *_):
+        self.loads += 1
+        if not self.ok:
+            return -1
+        C.c_uint.from_address(bitmap).value, C.c_uint.from_address(bitmap + 4).value = self.w, self.h
+        C.c_ushort.from_address(bitmap + 14).value = 1  # RGBA8888
+        return 0
+
+
+def blur_window(fw, mcl, cover, **kw):
+    """At a Glance with a song and cover as its picture: the Bitmaps, and the window."""
+    bitmaps = Bitmaps(fw)
+    made = bitmaps.made
+    fw.mock('bitmap_get_line_length', lambda bm, *_: made[bm][2] if bm in made else cover.w * 4)
+    return bitmaps, Glance(fw, mcl, **{'queue': 1, **kw})
+
+
+def test_the_cover_is_blurred_dimmed_behind_the_song(fw, mcl, now):
+    cover = Cover(fw)
+    bitmaps, g = blur_window(fw, mcl, cover)
+    blur, = bitmaps.made
+    assert bitmaps.made[blur][:2] == (375, 320) and bitmaps.opaque(blur) and (cover.loads, cover.unloads) == (1, 1)
+    r, gr, b = (v * 178 >> 8 for v in (200, 100, 50))  # one colour stays itself, at 178 of 256
+    assert {px for row in bitmaps.pixels(blur) for px in row} == {0xff000000 | b << 16 | gr << 8 | r}
+    seen = draws(fw)
+    lcd = Lcd(fw)
+    lcd.paint(fw, g['img_screensaver'])
+    assert seen == [(blur, (0, 0, 375, 320), (0, 0, 375, 320))] and lcd.boxes == []
+
+
+def test_the_blur_is_the_cover_s_middle_soft(fw, mcl, now):
+    """The cover is a square 495 px wide behind the 375 x 320 screen: its left and right edges are off the screen,
+    and the blur runs smoothly from the left's colour to the right's."""
+    cover = Cover(fw, w=99, h=99, rgb=lambda x, y: (255, 0, 0) if x < 12 else (0, 0, 255) if x >= 87 else (0, 255, 0))
+    bitmaps, _ = blur_window(fw, mcl, cover)
+    blur, = bitmaps.made
+    row = bitmaps.pixels(blur)[160]
+    assert all(px >> 16 & 255 < 40 and px & 255 < 40 for px in row[40:335])  # the red and blue columns are off the screen
+    steps = [abs((a >> 8 & 255) - (b >> 8 & 255)) for a, b in zip(row, row[1:])]
+    assert max(steps) <= 8  # nothing sharp
+
+
+def test_the_blur_follows_the_playing_song_not_the_file_name(fw, mcl, now):
+    """Every song's cover is the same file: the blur is made again when the song (or its cover file) changes, and
+    the cached bitmap is dropped first, so it never shows an earlier song's."""
+    cover = Cover(fw)
+    bitmaps, g = blur_window(fw, mcl, cover, queue=2)
+    g.path(g.records[0], b'/mnt/mmc/a.flac')
+    g.path(g.records[1], b'/mnt/mmc/b.flac')
+    url = fw.var('fw_ctx_g_lastcover_url', C.c_char * 1024)
+    url.value = b'/mnt/mmc/a.flac'
+    fw.var('g_playcover_type', C.c_ubyte).value = 1  # an embedded cover
+    tick(fw)
+    loads = cover.loads
+    tick(fw)
+    assert cover.loads == loads  # the same song: kept
+    mcl.pos, url.value = 1, b'/mnt/mmc/b.flac'
+    tick(fw)
+    assert cover.loads == loads + 1 and cover.unloads == loads + 1 and len(bitmaps.made) == 1  # one bitmap, made again
+    cover.ok = False  # the next song's cover can't be read: black, never the last song's blur
+    mcl.pos, url.value = 0, b'/mnt/mmc/a.flac'
+    tick(fw)
+    lcd = Lcd(fw)
+    seen = draws(fw)
+    lcd.paint(fw, g['img_screensaver'])
+    assert seen == [] and lcd.boxes == [((0, 0, 375, 320), 0xff000000, 0)]
+
+
+def test_stock_s_new_cover_makes_the_blur_again(fw, mcl, now):
+    cover = Cover(fw)
+    _, g = blur_window(fw, mcl, cover)
+    fw.mock('stock_savercover_trampoline', lambda *_: 12)
+    assert fw.fn('lockscreen_cover', C.c_int, C.c_void_p)(0x7700) == 12
+    assert cover.loads == 2
+
+
+def test_a_cover_that_can_t_be_read_is_black(fw, mcl, now):
+    cover = Cover(fw)
+    cover.ok = False
+    bitmaps, g = blur_window(fw, mcl, cover)
+    lcd = Lcd(fw)
+    seen = draws(fw)
+    lcd.paint(fw, g['img_screensaver'])
+    assert seen == [] and lcd.boxes == [((0, 0, 375, 320), 0xff000000, 0)]
+
+
+def test_no_blur_without_a_song(fw, mcl, now):
+    cover = Cover(fw)
+    bitmaps, _ = blur_window(fw, mcl, cover, queue=0)
+    assert cover.loads == 0 and bitmaps.made == {}
 
 
 @pytest.mark.parametrize('layout', [None, '0'])

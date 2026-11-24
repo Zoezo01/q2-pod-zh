@@ -27,6 +27,11 @@ static struct {
     void *full; /* the built-in picture lockscreen.c rendered, 0 for none */
     int picture, mode, minute, queue;
     unsigned timer;
+    /* the playing cover blurred, GL_W x GL_H, kept between windows: made for np_art_key() blur_key
+     * from the image blur_name ("": none made yet) */
+    void *blur;
+    unsigned blur_key;
+    char blur_name[256];
 } gl __attribute__((section(".scratch")));
 
 static const glance_t *style(void) { return &theme()->glance; }
@@ -70,6 +75,94 @@ static void box(canvas_t *canvas, int x, int y, int w, int h, unsigned color, un
     rect_t r = { x, y, w, h };
     unsigned ink = RGBA(flip_if(ipod_light(), color & 0xffffffu)) & 0xffffffu;
     fill_box(canvas, &r, ink | (color & 0xff000000u), radius);
+}
+
+/* The playing cover (the lock window's own img_playcover image, as stock loaded it) blurred into
+ * gl.blur, once per cover: sampled onto a grid of 8 px cells from a square blur_px wide centred
+ * behind the screen, the grid smoothed twice with its neighbours, then drawn back bilinearly and
+ * dimmed to dim of 256. Shapes and colours stay; nothing in it is sharp. 0 when the cover can't be
+ * read: the screen is black then.
+ * ponytail: the bitmap, about 470 KB, is kept for the life of demo, as the built-in picture is. */
+#define GL_GW 47 /* the grid: the screen at a cell each 8 px */
+#define GL_GH 40
+static int blur_cover(void) {
+    static const unsigned char at[4][4] = BITMAP_RGBA_AT;
+    const glance_t *g = style();
+    const char *name = gl.cover ? widget_get_prop_str(gl.cover, "image", "") : "";
+    if (!name || !*name || strlen(name) >= sizeof gl.blur_name) return gl.blur_name[0] = 0;
+    if (gl.blur && !strcmp(name, gl.blur_name)) return 1;
+    gl.blur_name[0] = 0;
+    unsigned bitmap[64]; /* bitmap_t: width @0, height @4, format @14 */
+    memset(bitmap, 0, sizeof bitmap);
+    /* the player writes every song's cover to the same file: the cached bitmap is the last one's */
+    image_manager_unload_bitmap_by_name(image_manager(), name);
+    if (widget_load_image(gl.cover, name, bitmap)) return 0;
+    unsigned w = bitmap[0], h = bitmap[1], format = ((unsigned short *)bitmap)[7] - 1u;
+    if (format >= 4 || w < 8 || h < 8) return 0;
+    unsigned short (*grid)[GL_GW][3] = calloc(2 * GL_GH, sizeof *grid);
+    unsigned short (*t)[GL_GW][3] = grid ? grid + GL_GH : 0;
+    if (!gl.blur) gl.blur = bitmap_create_ex(GL_W, GL_H, GL_W * 4, 1 /* RGBA8888 */);
+    const unsigned char *data = grid && gl.blur ? bitmap_lock_buffer_for_read(bitmap) : 0;
+    if (!data) {
+        free(grid);
+        return 0;
+    }
+    const unsigned char *o = at[format];
+    unsigned stride = bitmap_get_line_length(bitmap);
+    int px = g->blur_px < GL_W ? GL_W : g->blur_px; /* the square covers the screen */
+    for (int j = 0; j < GL_GH; ++j)
+        for (int i = 0; i < GL_GW; ++i) {
+            unsigned sum[3] = { 0, 0, 0 };
+            for (int k = 0; k < 4; ++k) { /* four points in the cell */
+                int sx = i * 8 + 2 + (k & 1) * 4 + (px - GL_W) / 2,
+                    sy = j * 8 + 2 + (k >> 1) * 4 + (px - GL_H) / 2;
+                unsigned u = (unsigned)sx * w / (unsigned)px, v = (unsigned)sy * h / (unsigned)px;
+                const unsigned char *p =
+                    data + (v < h ? v : h - 1) * stride + (u < w ? u : w - 1) * 4;
+                sum[0] += p[o[0]], sum[1] += p[o[1]], sum[2] += p[o[2]];
+            }
+            for (int c = 0; c < 3; ++c) grid[j][i][c] = (unsigned short)(sum[c] / 4);
+        }
+    bitmap_unlock_buffer(bitmap);
+    for (int pass = 0; pass < 2; ++pass) {
+        for (int j = 0; j < GL_GH; ++j)
+            for (int i = 0; i < GL_GW; ++i)
+                for (int c = 0; c < 3; ++c) {
+                    unsigned sum = 0, n = 0;
+                    for (int y = j - 1; y <= j + 1; ++y)
+                        for (int x = i - 1; x <= i + 1; ++x)
+                            if (y >= 0 && y < GL_GH && x >= 0 && x < GL_GW)
+                                sum += grid[y][x][c], ++n;
+                    t[j][i][c] = (unsigned short)(sum / n);
+                }
+        memcpy(grid, t, GL_GH * sizeof *grid);
+    }
+    unsigned *d = (unsigned *)bitmap_lock_buffer_for_write(gl.blur);
+    unsigned line = d ? bitmap_get_line_length(gl.blur) / 4 : 0;
+    for (int y = 0; d && y < GL_H; ++y) {
+        int gy = y * 256 / 8 - 128, j = gy < 0 ? 0 : gy >> 8, fy = gy < 0 ? 0 : gy & 255;
+        int j1 = j + 1 < GL_GH ? j + 1 : GL_GH - 1;
+        if (j >= GL_GH) j = GL_GH - 1;
+        for (int x = 0; x < GL_W; ++x) {
+            int gx = x * 256 / 8 - 128, i = gx < 0 ? 0 : gx >> 8, fx = gx < 0 ? 0 : gx & 255;
+            int i1 = i + 1 < GL_GW ? i + 1 : GL_GW - 1;
+            if (i >= GL_GW) i = GL_GW - 1;
+            unsigned pixel = 0xff000000u;
+            for (int c = 0; c < 3; ++c) {
+                int top = grid[j][i][c] * (256 - fx) + grid[j][i1][c] * fx,
+                    bottom = grid[j1][i][c] * (256 - fx) + grid[j1][i1][c] * fx;
+                unsigned v = (unsigned)(((top * (256 - fy) + bottom * fy) >> 16) * g->dim) >> 8;
+                pixel |= (v > 255 ? 255 : v) << (8 * c);
+            }
+            d[(unsigned)y * line + (unsigned)x] = pixel;
+        }
+    }
+    if (d) bitmap_unlock_buffer(gl.blur);
+    free(grid);
+    if (!d) return 0;
+    *(unsigned short *)((char *)gl.blur + 0xc) |= 1; /* BITMAP_FLAG_OPAQUE */
+    memcpy(gl.blur_name, name, strlen(name) + 1);
+    return 1;
 }
 
 /* The time and the date where the mode has them: top left and right, or, on black with no song,
@@ -153,7 +246,17 @@ static void sync(int force) {
     int minute = tm ? tm[2] * 60 + tm[1] : -1, changed = force || mode != gl.mode;
     gl.mode = mode;
     if (changed || minute != gl.minute) clock_place();
-    if (song) song_lines();
+    if (song) {
+        int had = gl.blur_name[0];
+        const char *name = gl.cover ? widget_get_prop_str(gl.cover, "image", "") : "";
+        /* another song, or its cover file written since (np_art_key holds the file's size and
+         * time): the blur kept from before, whose file name every song's cover shares, is made
+         * again, so it never shows an earlier song's */
+        unsigned key = np_art_key();
+        if (key && key != gl.blur_key) gl.blur_key = key, gl.blur_name[0] = 0, changed = 1;
+        if (strcmp(name ? name : "", gl.blur_name)) changed |= blur_cover() || had;
+        song_lines();
+    }
     if (changed) widget_invalidate_force(gl.win, 0);
 }
 
@@ -223,14 +326,18 @@ void glance_init(widget_t *win, widget_t *img, int picture, void *full) {
     rearm(&gl.timer, tick, 1000);
 }
 
-/* The lock window's cover changed (lockscreen_cover): the screen follows it. */
+/* The lock window's cover changed (lockscreen_cover, stock's same file name): the blur is the old
+ * cover's, made again from this one. */
 void glance_cover(widget_t *cover) {
-    if (gl.img && cover == gl.cover) sync(1);
+    if (!gl.img || cover != gl.cover) return;
+    gl.blur_name[0] = 0;
+    sync(1);
 }
 
 /* lockscreen_paint, for every widget: 1 when w is one of At a Glance's and painted here. The
- * picture: black, or the built-in or the user's own picture (stock drew that) with a shade
- * under the time and date fading out. */
+ * picture: the blurred cover with a song (black while it can't be made); without one the built-in
+ * or the user's own picture (stock drew that) with a shade under the time and date fading out, or
+ * black. */
 int glance_paint(widget_t *w, canvas_t *canvas) {
     if (!w || !gl.img || w != gl.img) return 0;
     void *lcd = canvas ? P(canvas, CANVAS_LCD) : 0;
@@ -239,7 +346,9 @@ int glance_paint(widget_t *w, canvas_t *canvas) {
     unsigned fill = (unsigned)I(lcd, LCD_FILL_COLOR);
     int r[4] = { 0, 0, GL_W, GL_H };
     face(gl.title, g->title_px); /* the artist and the album stay in stock's face, any script */
-    if (gl.mode == GL_PICTURE && gl.full)
+    if (gl.mode == GL_SONG && gl.blur && gl.blur_name[0])
+        canvas_draw_image(canvas, gl.blur, r, r);
+    else if (gl.mode == GL_PICTURE && gl.full)
         canvas_draw_image(canvas, gl.full, r, r);
     else if (gl.mode != GL_PICTURE)
         box(canvas, 0, 0, GL_W, GL_H, 0xff000000u, 0);
