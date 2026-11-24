@@ -656,6 +656,38 @@ def test_previous_goes_back_and_next_returns_to_what_it_left(player):
     assert player.run(1) == [played[1]]
 
 
+def left_behind(player):
+    """Unplayed this round but behind the cursor, where neither Next nor a song's end reaches them."""
+    seen = player.seen()
+    return [x for x in player.order()[:player.s.cursor] if x not in seen and x != player.mcl.pos]
+
+
+def test_previous_after_a_shuffle_change_then_next_comes_back(player):
+    """An album's last track, Shuffle All Songs plays another, Shuffle Off redraws the order around it: Previous goes
+    back to the last track, and Next comes back to the track it left instead of stopping the queue."""
+    player.load([player.song(b'/m/A/%02d.flac' % t, b'A', track=t) for t in (1, 2, 3)], 2)
+    assert player.set(0, 1) == 1
+    left = player.run(1)[0]
+    assert player.set(0, 0) == 1 and player.prev() == 0 and player.mcl.pos == 2 and not left_behind(player)
+    assert player.next(0) >= 0 and player.mcl.pos == left
+
+
+def test_previous_at_a_rounds_start_leaves_no_song_behind(player):
+    """Shuffle Songs and Repeat All draw each round's order at its first song. Previous there goes back to the last
+    round's last song; Next comes back to the new round's first, and the rest of the round still follows."""
+    rows, tried = player.albums(5), 0
+    for seed in range(1, 9):
+        player.clear(), player.load(rows), player.rng(seed)
+        assert player.set(0, 1) == 1 and player.set(1, REPEAT_ALL) == 1
+        played = [player.mcl.pos] + player.run(5)
+        if played[5] == played[4]:
+            continue  # the new round begins with the song the last one ended on
+        tried += 1
+        assert player.prev() == 0 and player.mcl.pos == played[4] and not left_behind(player)
+        assert player.next(0) >= 0 and player.mcl.pos == played[5] and not left_behind(player)
+    assert tried >= 4
+
+
 def test_previous_at_the_start_stays(player):
     player.load(player.albums(3), 1)
     assert player.set(0, 1) == 1
@@ -1047,6 +1079,21 @@ def test_a_group_skip_back_plays_where_it_lands(fw, player):
     assert skip(0) == 1 and player.mcl.pos == order[0]
     assert len(fw.calls('mclStartPlayer')) == started + 1 and player.mcl.preload == 0
     assert player.pending() == [] and player.history() == before[:before.index(order[3])] + [order[0]]
+
+
+def test_a_group_skip_back_at_a_rounds_start_leaves_no_album_behind(fw, player):
+    """Shuffle Albums and Repeat All: Previous Album at a new round's first album goes back to the last round's last
+    album, which plays on, and the new round's other albums still play after it."""
+    skip = fw.fn('playback_group_skip', C.c_int, C.c_int)
+    rows = player.load(player.albums(2, 2, 2))
+    start = next(i for i in range(6) if player.track(i) == 1)
+    for seed in range(1, 9):
+        player.clear(), player.load(rows, start), player.rng(seed)
+        assert player.set(0, 3) == 1 and player.set(1, REPEAT_ALL) == 1
+        player.run(6)
+        assert skip(0) == 1 and not left_behind(player)
+        landed = player.mcl.pos
+        assert player.album(player.run(1)[0]) == player.album(landed)
 
 
 # A load.
