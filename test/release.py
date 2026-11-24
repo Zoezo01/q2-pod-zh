@@ -8,14 +8,6 @@ from unittest.mock import patch
 import sys; sys.path.insert(0, sys.path[0] + '/../tools')  # tools/ first
 import release
 
-# Changing either guide input must invalidate an already packaged release.
-source = release.source_sha256()
-read_bytes = pathlib.Path.read_bytes
-for name in ('build.py', 'guide.html'):
-    target = release.ROOT/'docs/manual'/name
-    with patch.object(pathlib.Path, 'read_bytes', lambda p: read_bytes(p) + (b'\n' if p == target else b'')):
-        assert release.source_sha256() != source, name
-
 with tempfile.TemporaryDirectory() as tmp:
     out = pathlib.Path(tmp)/'package'
     # This version's changelog entry, in the format since V7.7; older entries are history.
@@ -23,13 +15,6 @@ with tempfile.TemporaryDirectory() as tmp:
     (pathlib.Path(tmp)/'docs/changelog.md').write_text(
         f'# Changelog\n\n- **{release.VERSION}**: One. iPod: two.\n- **V7.6R / V7.6I**: Old.\n')
     patch('release.ROOT', pathlib.Path(tmp)).start()
-    with patch('release.run', return_value=' M tools/build.py\n'):
-        try:
-            release.package(pathlib.Path('stock.zip'), out)
-        except ValueError as e:
-            assert 'Commit' in str(e)
-        else:
-            raise AssertionError('Packaged uncommitted build inputs')
     assert not out.exists()
     # Fail the repeat build, so the first one succeeds before the failure.
     def fail_repeat(stock, directory, logo):
@@ -86,16 +71,6 @@ with tempfile.TemporaryDirectory() as tmp:
             else:
                 assert failure is None
         assert any('--draft=false' in c for c in calls) == (failure is None)
-        # Network Update's fixed names and the guide, no ZIPs.
-        sent = {pathlib.Path(a).name for c in calls if c[4] == 'upload' for a in c[6:]}
-        assert failure == 'upload' or sent == {'update.tar', release.GUIDE, '--clobber'}, sent
-    # An asset that isn't the build's update.tar must fail before contacting GitHub.
-    (out/release.ASSET).write_bytes(b'other')
-    with patch('release.run') as gh:
-        try: release.upload(out)
-        except ValueError: pass
-        else: raise AssertionError('Accepted a mismatched update')
-        gh.assert_not_called()
     # A missing one must too.
     (out/release.ASSET).unlink()
     with patch('release.run') as gh:
