@@ -117,6 +117,12 @@ int main(void) {
     walk(64);
     assert(kept == 1 && !strcmp(pairs[0][1], "-6.50 dB"));
 
+    /* a TXXX id3_txxx refuses (encoding byte 4) adds no pair */
+    begin(3);
+    add("TXXX", sizeof latin - 1, latin, sizeof latin - 1), add("TXXX", 4, "\4abc", 4);
+    walk(64);
+    assert(kept == 1 && !strcmp(pairs[0][0], "REPLAYGAIN_TRACK_GAIN"));
+
     /* A 2.3 frame's size is 32 bits, and 0xfffffff6 with its 10-byte header is 0 in 32: the walk read that
      * frame for ever. It ends there now, with what came before it; fd_seek's count stops a walk that doesn't. */
     begin(3);

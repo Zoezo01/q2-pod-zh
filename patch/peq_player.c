@@ -1159,7 +1159,8 @@ void id3_gain(void *s, int size) {
         while (at + 10 <= end && lseek64(fd, at, 0) == at && read(fd, h, 10) == 10 && h[0]) {
             unsigned n = id3_int(h + 4, v4), k, key;
             if (!memcmp(h, "TXXX", 4) && n <= sizeof f && read(fd, f, n) == (int)n &&
-                (k = id3_txxx(f, n, t, sizeof t)) > (key = strlen(t)) + 1)
+                (k = id3_txxx(f, n, t, sizeof t)) &&
+                k > (key = strlen(t)) + 1) /* t is written, then read */
                 AV_DICT_SET(&dict, t, t + key + 1, 0);
             at += 10LL + n; /* 32-bit, 0xfffffff6 + 10 = 0: the same frame for ever */
             /* ponytail: stock's own walker (runs first, 2 KB of frames) still hangs on such a
