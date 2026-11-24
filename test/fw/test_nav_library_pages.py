@@ -576,6 +576,19 @@ def test_most_played_reads_the_library_again_after_it_changed(fw, ui, song):
     assert ui.captions(ui.top()) == ['A', 'B'] and len(library.passes()) == 2
 
 
+def test_most_played_after_a_failed_read_reads_the_counts_again(fw, ui, song):
+    a, b = song(b'/m/a.flac', b'A'), song(b'/m/b.flac', b'B')
+    files = Files(fw, {PLAYS_FILE: plays((b'/m/a.flac', 2), (b'/m/b.flac', 1))})
+    Library(fw, ui, [a, b])
+    files.fail_open = 5  # EIO
+    call(fw, 'most_played')
+    assert ui.rows(ui.top()) == []
+    ui.close(ui.top())
+    files.fail_open = 0
+    call(fw, 'most_played')
+    assert ui.captions(ui.top()) == ['A', 'B']
+
+
 def test_most_played_opens_once(fw, ui, song):
     Files(fw)
     Library(fw, ui)

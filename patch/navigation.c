@@ -7736,23 +7736,25 @@ static int page_closed(void *ctx, event_t *event) {
 #define RESUME_FILE "/mnt/data/ringnav-resume" /* coverflow.c's blob_io */
 #define PLAYS_FILE "/mnt/data/ringnav-plays"
 
+/* The saved places read in (blob_load; an earlier release's 32 read short), 0 while unread; fails
+ * counts a save's failed reads. */
+static int spots_load(unsigned *fails) {
+    return st.spots_read ||
+           (st.spots_read = blob_load(RESUME_FILE, st.spots, sizeof st.spots, fails));
+}
+
 /* key's saved place, 0 for none. */
 static int spot_at(unsigned key) {
-    if (!st.spots_read) {
-        st.spots_read = 1;
-        if (!BLOB_IO(RESUME_FILE, st.spots, 0)) /* earlier releases kept 32 */
-            blob_io(RESUME_FILE, RESUME_FILE, st.spots, 32 * sizeof *st.spots, 0);
-    }
+    if (!spots_load(0)) return 0;
     for (int i = 0; i < RESUME_SLOTS; i++)
         if (st.spots[i].key == key) return st.spots[i].sec;
     return 0;
 }
 
-void plays_load(void) {
-    if (!st.plays_read) {
-        st.plays_read = 1;
-        BLOB_IO(PLAYS_FILE, st.plays, 0);
-    }
+/* The play counts read in (blob_load), 0 while unread; fails counts a save's failed reads. */
+int plays_load(unsigned *fails) {
+    return st.plays_read ||
+           (st.plays_read = blob_load(PLAYS_FILE, st.plays, sizeof st.plays, fails));
 }
 
 /* A play count's key: the path's hash, with a CUE track's start mixed in, since a CUE image's
@@ -8391,6 +8393,7 @@ void ringnav_sort_key(char *s) {
 
 /* Moves key's place to the front of the ring at sec, or forgets it near either end. */
 static void spot_keep(unsigned key, int sec, int total) {
+    if (!spots_load(&st.spots_fails)) return; /* never written over a ring not read */
     int i = 0, keep = sec >= RESUME_EDGE_S && sec < total - RESUME_EDGE_S;
     while (i < RESUME_SLOTS - 1 && st.spots[i].key != key) i++;
     /* nothing to do: already first at sec, or nothing kept to forget */
@@ -8412,7 +8415,7 @@ static void spot_keep(unsigned key, int sec, int total) {
  * once keeps its count until a second play can come. */
 _Static_assert(PLAYS_FRESH < PLAYS_SLOTS, "a full table has a slot to replace");
 static void play_count(void *r, unsigned key) {
-    plays_load();
+    if (!plays_load(&st.plays_fails)) return; /* never written over counts not read */
     int i = PLAYS_FRESH;
     for (int j = 0; j < PLAYS_SLOTS && st.plays[i].key != key; j++)
         if (st.plays[j].key == key || (j >= PLAYS_FRESH && st.plays[j].n <= st.plays[i].n)) i = j;
@@ -8533,6 +8536,8 @@ static void resume_poll(void) {
         int book = st.rs_cue || st.rs_end; /* music CUE images are left alone */
         int min = resume_min();            /* Q2POD RESUMEMIN, 0 for Off */
         st.rs_long = book ? st.rs_spoken : (min && total >= min * 60) || st.rs_spoken;
+        if (st.rs_long && !spots_load(0))
+            st.rs_long = 0; /* ring unread: no jump, no save over it */
         int saved = st.rs_long ? spot_at(st.rs_file) : 0; /* reads the ring spot_keep writes */
         st.rs_pending = book ? 0 : saved;
         if (playback_resumed(r)) st.rs_pending = 0;

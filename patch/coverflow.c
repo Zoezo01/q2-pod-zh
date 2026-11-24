@@ -1829,6 +1829,29 @@ int blob_io(const char *path, const char *tmp, void *buf, unsigned size, int wri
     return !write || !rename(tmp, path);
 }
 
+/* A table kept whole in path (play counts, saved places, ratings) read into buf: 1 with what the
+ * file holds and zeros after it, all zeros with no file; 0 when it could not be read (buf zeros),
+ * so the caller keeps it unread, saves nothing over it and reads it again at the next use. A
+ * save's read counts in fails when the fault is the file's own (a read error, or EIO at the
+ * open; never EMFILE, ENOMEM or the like): the third sets the file aside as <path>.bad and
+ * answers an empty table, so a file that stays unreadable does not stop the saves for good.
+ * ponytail: a file set aside is never read back (the flash is not reachable to move it back),
+ * and no copy is kept when the rename fails or a <path>.bad is already there (the first one is
+ * kept): the next save then replaces the unreadable file. */
+int blob_load(const char *path, void *buf, unsigned size, unsigned *fails) {
+    memset(buf, 0, size);
+    void *f = fopen(path, "rb");
+    int e = f ? 0 : *__errno_location(), bad = f && (fread(buf, 1, size, f), ferror(f));
+    int closed = !f || !fclose(f);
+    if (f ? !bad && closed : e == 2) return 1; /* read, or ENOENT */
+    memset(buf, 0, size);
+    if (!fails || !(bad || e == 5) || ++*fails < 3) return 0; /* 5: EIO */
+    char aside[64];
+    tk_snprintf(aside, sizeof aside, "%s.bad", path);
+    if (access(aside, 0)) rename(path, aside);
+    return 1;
+}
+
 /* Stock pattern (album rows, Now Playing): load the file, set it, drop the load's reference, so the
  * next paint decodes the file again rather than a stale cached copy. Returns 0 when the load fails,
  * as for the empty "no art" marker. size, if given, gets the image's width and height (bitmap_t

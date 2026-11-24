@@ -194,7 +194,8 @@ class Machine:
                   'closedir@GLIBC_2.0', 'pthread_mutex_lock@GLIBC_2.0',
                   'pthread_mutex_unlock@GLIBC_2.0', 'calloc@GLIBC_2.0', 'realloc@GLIBC_2.0',
                   'strdup@GLIBC_2.0',  # no /proc/mounts: the boot logo's poll sees no card
-                  'fread@GLIBC_2.0','fwrite@GLIBC_2.0','fclose@GLIBC_2.2','rename@GLIBC_2.0')
+                  'fread@GLIBC_2.0','fwrite@GLIBC_2.0','fclose@GLIBC_2.2','rename@GLIBC_2.0',
+                  'ferror@GLIBC_2.0','__errno_location@GLIBC_2.0')  # blob_load's: no error, a missing file ENOENT
         self.word(0xa3a270,0x1000010); self.handlers[0x1000010]='scope_free'
         self.resized=[]  # the bytes each realloc kept
         self.sized={}  # a block's size, for realloc to spoil only that
@@ -413,6 +414,9 @@ class Machine:
                 n,t=self.scope_handles[a].pop(0); ret=self.alloc(268)
                 self.byte(ret+10,t); self.u.mem_write(ret+11,n.encode()+b'\0')
         elif name=='closedir@GLIBC_2.0': self.scope_handles.pop(a,None); ret=0
+        elif name=='__errno_location@GLIBC_2.0':  # ENOENT: every failed open here is a missing file
+            if not getattr(self,'enoent',0): self.enoent=self.alloc(4); self.word(self.enoent,2)
+            ret=self.enoent
         elif name=='fopen@GLIBC_2.2':  # the marker rules file alone; any other file is missing
             path,mode=self.text(a),self.text(b); ret=0
             if path.startswith(SCOPE_RULES) and (mode=='wb' or path in self.scope_files):

@@ -157,7 +157,7 @@ static int mp_play(void *ctx, event_t *event) {
  * counts, most recently counted first (the table keeps that order); returns how many. */
 static int mp_rank(void *songs, int *idx, unsigned *score) {
     int top = 0, size = (int)deque_size(songs);
-    plays_load();
+    plays_load(0);
     for (int i = 0; i < size; i++) {
         unsigned key = listen_key(deque_at(songs, i)), c = 0;
         for (int j = 0; j < PLAYS_SLOTS && !c; j++)
@@ -211,7 +211,7 @@ static int counted_query(void *unused) {
 static void *counted_songs(void) {
     unsigned keys[PLAYS_SLOTS], n = 0;
     int count;
-    plays_load();
+    plays_load(0);
     for (int j = 0; j < PLAYS_SLOTS; j++)
         if (st.plays[j].key) keys[n++] = st.plays[j].key;
     ids.n = 0;
@@ -236,7 +236,7 @@ void album_plays(int (*album_of)(void *), unsigned *sum) {
     int n;
     void *songs = counted_songs();
     if (!songs) songs = staged(songs_unsorted, (void *)1, &n);
-    plays_load();
+    plays_load(0);
     for (unsigned i = 0; i < deque_size(songs); i++) {
         void *r = deque_at(songs, i);
         unsigned key = listen_key(r), c = 0;
@@ -288,7 +288,7 @@ int most_played(void *ctx, event_t *event) {
     void *from = st.mp_list;
     if (!from || ll.mp_gen != gen) {
         if (!(from = counted_songs())) from = staged(songs_unsorted, (void *)1, &n);
-        ll.mp_gen = gen;
+        ll.mp_gen = st.plays_read ? gen : ~gen; /* counts not read: read again at the next open */
     }
     int top = mp_rank(from, idx, score);
     void *ranked = song_list();

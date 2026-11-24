@@ -2462,6 +2462,82 @@ def test_a_full_ring_drops_its_oldest_place(fw, ui, st):
     assert len(kept) == O['RESUME_SLOTS'] and kept[0] == (O['RESUME_SLOTS'] + 1, 101 + O['RESUME_SLOTS']) and (1, 101) not in kept
 
 
+def table_saves(fw):
+    """Each table's file, a file holding one entry (key 0x100), and a save of key 0x200: (path, old, save, kept), kept
+    the keys the file now holds."""
+    def pairs(data):
+        return [k for k, _ in struct.iter_unpack('<II', data) if k]
+    return {
+        'plays': (PLAYS_FILE, struct.pack('<II', 0x100, 9).ljust(8 * O['PLAYS_SLOTS'], b'\0'),
+                  lambda: fw.fn('navigation__play_count', None, C.c_void_p, C.c_uint)(None, 0x200), pairs),
+        'places': (RESUME_FILE, places_file((0x100, 500)),
+                   lambda: fw.fn('navigation__spot_keep', None, C.c_uint, C.c_int, C.c_int)(0x200, 100, 3600), pairs),
+        'ratings': ('/mnt/data/ringnav-ratings', struct.pack('<I', 0x100 | 2).ljust(O['RATE_SLOTS'] * 4, b'\0'),
+                    lambda: fw.fn('rate_keep', C.c_int, C.c_int, C.c_uint, C.c_int)(0, 0x200, 3),
+                    lambda data: [w & ~7 for w in struct.unpack(f'<{len(data) // 4}I', data) if w]),
+    }
+
+
+@pytest.mark.parametrize('table', ['plays', 'places', 'ratings'])
+@pytest.mark.parametrize('errno', [24, 23, 12, 13])  # EMFILE, ENFILE, ENOMEM, EACCES: nothing wrong with the file
+def test_a_table_unread_for_a_reason_not_the_files_is_never_set_aside(fw, ui, st, table, errno):
+    path, old, save, kept = table_saves(fw)[table]
+    card = Card(fw, {path: old})
+    card.fail_open = errno
+    for _ in range(6):
+        save()
+    assert card.files == {path: old}
+    card.fail_open = 0
+    save()
+    assert sorted(kept(card.files[path])) == [0x100, 0x200]  # read whole once the open works
+
+
+@pytest.mark.parametrize('table', ['plays', 'places', 'ratings'])
+def test_a_table_unreadable_three_saves_running_is_set_aside(fw, ui, st, table):
+    path, old, save, kept = table_saves(fw)[table]
+    card = Card(fw, {path: old})
+    card.fail_open = 5  # EIO: the file itself
+    save(), save()
+    assert card.files == {path: old}
+    save()
+    assert card.files[path + '.bad'] == old and kept(card.files[path]) == [0x200]
+
+
+@pytest.mark.parametrize('table', ['plays', 'places', 'ratings'])
+def test_a_second_set_aside_keeps_the_first_copy(fw, ui, st, table):
+    path, old, save, kept = table_saves(fw)[table]
+    card = Card(fw, {path: old, path + '.bad': b'first'})
+    card.fail_open = 5
+    save(), save(), save()
+    assert card.files[path + '.bad'] == b'first' and kept(card.files[path]) == [0x200]
+
+
+def test_a_track_whose_place_could_not_be_read_is_not_saved_over(player, recs):
+    """A ring unread when the track starts: no jump, and no save that play, which would put the new second over the
+    book's real place once the ring reads again."""
+    old = places_file((key_of(LONG), 700))
+    player.card.files[RESUME_FILE], player.card.fail_open = old, 5
+    player.play([recs(path=LONG)])
+    player.poll(0), player.poll(1)  # the change, then a poll to settle
+    player.card.fail_open = 0
+    for s in range(2, 130):
+        player.poll(s)
+    assert player.seeks == [] and player.card.files[RESUME_FILE] == old
+
+
+def test_a_place_the_ring_could_not_be_read_for_is_not_kept(fw, ui, st):
+    """A ring that could not be read is never written over: the next save reads it again."""
+    old = places_file((5, 500))
+    card = Card(fw, {RESUME_FILE: old})
+    keep = fw.fn('navigation__spot_keep', None, C.c_uint, C.c_int, C.c_int)
+    card.fail_open = 5  # EIO
+    keep(7, 100, 3600)
+    assert card.files[RESUME_FILE] == old
+    card.fail_open = 0
+    keep(7, 100, 3600)
+    assert ring(card.files[RESUME_FILE]) == [(7, 100), (5, 500)]
+
+
 def test_a_short_track_keeps_no_place(player, recs):
     player.play([recs(path=LONG)], total=29 * 60)
     player.poll(0), player.poll(1), player.poll(600), player.poll(600), player.poll(600)
@@ -2690,6 +2766,34 @@ def test_a_podcast_is_never_counted(player, recs, ui):
     for s in range(150):
         player.poll(s)
     assert PLAYS_FILE not in player.card.files and '/mnt/mmc/.scrobbler.log' not in player.card.files
+
+
+def counted(player, path):
+    """path played to its counted half."""
+    player.play([player.recs(path=path, artist='A')], total=100)
+    for s in range(60):
+        player.poll(s)
+
+
+@pytest.mark.parametrize('at_read', [False, True])  # EIO at the open, or at the read (ferror)
+def test_counts_that_could_not_be_read_are_never_written_over(fw, player, recs, at_read):
+    old = struct.pack('<II', key_of('/mnt/mmc/Music/old.flac'), 9).ljust(8 * O['PLAYS_SLOTS'], b'\0')
+    player.card.files[PLAYS_FILE], player.recs, failing = old, recs, [True]
+    if at_read:
+        fw.mock('fw_ferror', lambda *_: failing[0])
+    else:
+        player.card.fail_open = 5
+    counted(player, '/mnt/mmc/Music/a.flac')
+    assert player.card.files[PLAYS_FILE] == old
+    failing[0], player.card.fail_open = False, 0  # read again at the next count
+    counted(player, '/mnt/mmc/Music/b.flac')
+    assert plays(player.card.files[PLAYS_FILE]) == [(key_of('/mnt/mmc/Music/b.flac'), 1), (key_of('/mnt/mmc/Music/old.flac'), 9)]
+
+
+def test_a_short_counts_file_keeps_what_it_holds(player, recs):
+    player.card.files[PLAYS_FILE], player.recs = struct.pack('<II', key_of('/mnt/mmc/Music/old.flac'), 9), recs
+    counted(player, '/mnt/mmc/Music/a.flac')
+    assert plays(player.card.files[PLAYS_FILE]) == [(key_of('/mnt/mmc/Music/a.flac'), 1), (key_of('/mnt/mmc/Music/old.flac'), 9)]
 
 
 def test_a_repeat_counts_again(player, recs):

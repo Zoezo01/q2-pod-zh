@@ -2011,6 +2011,26 @@ def test_a_rating_not_saved_goes_back(ratings):
     assert keep(0, 0x100, 4) == -1 and kept(0, 0x100) == 2
 
 
+def test_a_rating_table_that_could_not_be_read_is_never_written_over(ratings):
+    files, keep, kept = ratings
+    old = struct.pack('<I', 0x100 | 2).ljust(O['RATE_SLOTS'] * 4, b'\0')
+    files.files['/mnt/data/ringnav-ratings'], files.fail_open = old, 5  # EIO
+    assert keep(0, 0x200, 3) == -1 and kept(0, 0x100) == 0 and files.files['/mnt/data/ringnav-ratings'] == old
+    files.fail_open = 0  # read again at the next use
+    assert keep(0, 0x200, 3) == 1 and kept(0, 0x100) == 2 and kept(0, 0x200) == 3
+
+
+def test_a_rating_lookups_failed_read_doesnt_count_toward_a_set_aside(fw, ratings):
+    files, keep, kept = ratings
+    fw.mock('fw_access', lambda path, *_: 0 if C.string_at(path).decode() in files.files else -1)
+    old = struct.pack('<I', 0x100 | 2).ljust(O['RATE_SLOTS'] * 4, b'\0')
+    files.files['/mnt/data/ringnav-ratings'], files.fail_open = old, 5
+    for _ in range(5):
+        assert kept(0, 0x100) == 0
+    assert keep(0, 0x200, 3) == -1 and keep(0, 0x200, 3) == -1
+    assert keep(0, 0x200, 3) == 1 and files.files['/mnt/data/ringnav-ratings.bad'] == old
+
+
 def test_a_malformed_slot_reads_as_no_rating(fw):
     Files(fw, {'/mnt/data/ringnav-ratings': struct.pack('<I', 0x100 | 7) + b'\0' * (O['RATE_SLOTS'] * 4 - 4)})
     assert fw.fn('rate_kept', C.c_int, C.c_int, C.c_uint)(0, 0x100) == 0

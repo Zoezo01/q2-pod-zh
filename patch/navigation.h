@@ -72,7 +72,7 @@ typedef struct {
         unsigned key;
         int sec;
     } spots[RESUME_SLOTS];
-    unsigned spots_read, rs_at, rs_key, rs_file, rs_go_key, rs_go_at;
+    unsigned spots_read, spots_fails, rs_at, rs_key, rs_file, rs_go_key, rs_go_at;
     int rs_long, rs_settle, rs_sec, rs_saved, rs_still, rs_pending, rs_cue, rs_end, rs_total, rs_go,
         rs_stopped;
     int rs_spoken; /* under Podcasts or Audiobooks: resumed at any length, never counted */
@@ -82,7 +82,7 @@ typedef struct {
     struct {
         unsigned key, n;
     } plays[PLAYS_SLOTS];
-    unsigned plays_read, ls_key;
+    unsigned plays_read, plays_fails, ls_key;
     int ls_sec, ls_heard, ls_done, ls_sent, ls_pct;
     /* Most Played's page and its tracks: the last ranking plus the songs counted since, kept across
      * opens while the library is at library_lists.c's mp_gen; the hold menu reads them too
@@ -402,7 +402,7 @@ int usable(void);
 int all_songs(void *music);
 void text_inks(widget_t *w);
 unsigned listen_key(void *r) __attribute__((pure));
-void plays_load(void);
+int plays_load(unsigned *fails);
 int songs_unsorted(void *music);
 void drop_input(void);
 int pointer_down(void);
