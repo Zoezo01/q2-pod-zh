@@ -2587,7 +2587,7 @@ static void fx_ring(int c, int n, const unsigned **ring) {
 
 /* The flip (docs/ipod.md#cover-flow), under Classic's painter: Centre on a cover turns it
  * about the vertical axis on the centre line, right edge toward the viewer, and it grows into the
- * tracks panel on its back, the side covers parting; Return runs the same frames backwards. The
+ * tracks panel on its back, the side covers parting; Return runs the same path backwards. The
  * shelf's frame, rendered once without the centre cover, holds the side covers. fl.frame and
  * fl.back live only while a turn runs (about 776 KB): at rest the panel stands over the shelf's
  * frame, parted, drawn as it is. */
@@ -2606,15 +2606,11 @@ cf_flip_t fl __attribute__((section(".scratch")));
 /* The flip's turn, or the landing from its click until its motion ends (coverflow_land.c). */
 int coverflow_turning(void) { return fl.dir != 0 || land_turning(); }
 
-/* The time's share of the turn (16.16) at ms of FLIP_MS: ease-in-out, .42, 0, .58, 1, at each
- * sixteenth of the time. Its own mirror, so backwards it's the same frames. */
-int coverflow_flip_eased(int ms) {
-    static const int eased[17] = { 0,     497,   2039,  4686,  8465,  13339, 19187, 25776, 32768,
-                                   39760, 46349, 52197, 57071, 60850, 63497, 65039, 65536 };
-    if (ms <= 0) return 0;
-    if (ms >= FLIP_MS) return CF_ONE;
-    int at = ms * 65536 / FLIP_MS, i = at >> 12;
-    return eased[i] + ((eased[i + 1] - eased[i]) * (at & 4095) >> 12);
+/* Where the turn stands (16.16, the cover's 0 to the panel's CF_ONE) at ms of FLIP_MS, dir 1 to
+ * the panel and -1 back: the landing's cubic ease-out either way, so it moves from the press. */
+int coverflow_flip_eased(int ms, int dir) {
+    int e = (int)(land_ease((float)ms / FLIP_MS) * CF_ONE);
+    return dir > 0 ? e : CF_ONE - e;
 }
 
 /* The frame at e (16.16, the cover's 0 to the panel's CF_ONE), BGRA8888 as the screen, from tex:
@@ -2769,7 +2765,7 @@ static int flip_paint(widget_t *w, canvas_t *canvas) {
         return 1;
     }
     int ms = (int)((unsigned)time_now_ms() - fl.t0);
-    int e = !fl.dir ? CF_ONE : coverflow_flip_eased(fl.dir > 0 ? ms : FLIP_MS - ms);
+    int e = !fl.dir ? CF_ONE : coverflow_flip_eased(ms, fl.dir);
     if (e != fl.drawn) {
         unsigned *d = (unsigned *)bitmap_lock_buffer_for_write(fl.frame);
         const unsigned *tex[3] = { (const unsigned *)bitmap_lock_buffer_for_read(fx.frame),

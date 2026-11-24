@@ -1378,7 +1378,7 @@ static void pinned(void) {
    the back after, narrowed to the axis at 90; the back reads right at the end; the eased time; the side
    covers parting over the same ease. */
 void coverflow_flip_render(unsigned *, int, int, const unsigned *const[3]);
-int coverflow_flip_eased(int);
+int coverflow_flip_eased(int, int);
 /* As texel_render: the side covers (the shelf's frame), the cover and the back go in as the
    screen's, the frame comes out red low. */
 static void (*const bgra_flip)(unsigned *, int, int, const unsigned *const[3]) = coverflow_flip_render;
@@ -1433,14 +1433,11 @@ static void flip_frames(void) {
     assert((f[(top + 5) * 375 + 106] & 0xffffffu) == 106);
     coverflow_flip_render(f, 375, 65536, tex);
     for (int y = 0; y < 285; ++y) for (int x = 0; x < 294; ++x) assert(f[(9 + y) * 375 + 40 + x] == back[y * 294 + x]);
-    /* The eased time: 90 degrees at half of it, and its own mirror, so Return is the same frames. Six frames on a 45 ms clock. */
-    assert(coverflow_flip_eased(0) == 0 && coverflow_flip_eased(135) == 32768 && coverflow_flip_eased(270) == 65536 && coverflow_flip_eased(300) == 65536);
-    int was = 0, count = 0;
-    for (int ms = 45; ms <= 270; ms += 45, ++count) { int e = coverflow_flip_eased(ms); assert(e > was); was = e; }
-    assert(count == 6);
-    for (int ms = 0; ms <= 270; ++ms) { assert(abs(coverflow_flip_eased(ms) + coverflow_flip_eased(270 - ms) - 65536) <= 6); assert(coverflow_flip_eased(ms + 1) >= coverflow_flip_eased(ms)); }
-    /* ... the bezier's own values, a sixteenth at a time and between */
-    assert(abs(coverflow_flip_eased(67) - 8337) <= 100 && abs(coverflow_flip_eased(203) - 57199) <= 100);
+    /* The eased time: an ease-out either way, so the first 16 ms frame is past twice linear's share, to the panel and back. */
+    assert(coverflow_flip_eased(-5, 1) == 0 && coverflow_flip_eased(0, 1) == 0 && coverflow_flip_eased(270, 1) == 65536 && coverflow_flip_eased(300, 1) == 65536);
+    assert(coverflow_flip_eased(0, -1) == 65536 && coverflow_flip_eased(270, -1) == 0);
+    assert(coverflow_flip_eased(16, 1) > 2 * 16 * 65536 / 270 && coverflow_flip_eased(16, -1) < 65536 - 2 * 16 * 65536 / 270);
+    for (int ms = 0; ms <= 270; ++ms) { assert(coverflow_flip_eased(ms + 1, 1) >= coverflow_flip_eased(ms, 1)); assert(coverflow_flip_eased(ms, 1) + coverflow_flip_eased(ms, -1) == 65536); }
     /* The sides part over the same ease: none at the start, 12 at half, 24 at the end, the paper between and under the shelf. */
     const unsigned *none[3] = { sides, 0, 0 };
     for (int half = 0; half < 2; ++half) {
@@ -4510,16 +4507,17 @@ static void flip_turn(void) {
     assert(!s->visible && !label_in(cv, 0)->visible && !label_in(cv, 1)->visible && cv->numb); /* the shelf's surface goes */
     assert(!strcmp(label_in(panel, 0)->text, names[a]) && !strcmp(label_in(panel, 1)->text, "Artist"));
     assert(!strcmp(label_in(row, 0)->text, "Opening") && !label_in(row, 1)); /* no length */
-    /* The frames: the cover itself at first; half way edge on, the side covers parted (measured against the rest's
-       parting below); at the end the panel as captured. */
+    /* The frames: the cover itself at first; at 56 ms, just past the ease-out's half way (55.7), all but edge on, a
+       sliver of the back at the axis, the side covers parted (measured against the rest's parting below); at the end
+       the panel as captured. */
     static unsigned zero[CF_VIEW_W], half[CF_VIEW_W];
     coverflow_paint(cv, canvas);
     memcpy(zero, shown + y * CF_VIEW_W, sizeof zero);
-    clock_ms = 1000 + 135;
+    clock_ms = 1000 + 56;
     assert(tick(0) == 8);
     coverflow_paint(cv, canvas);
     memcpy(half, shown + y * CF_VIEW_W, sizeof half);
-    assert(zero[CF_CX] != 0xff000000u && half[CF_CX] == 0xff000000u && half[CF_CX - 1] == 0xff000000u);
+    assert(zero[CF_CX] != 0xff000000u && half[CF_CX] == 0xff102030u && half[CF_CX - 2] == 0xff000000u && half[CF_CX + 1] == 0xff000000u);
     clock_ms = 1000 + 270;
     coverflow_paint(cv, canvas);
     assert(shown[120 * CF_VIEW_W + CF_CX] == 0xff102030u && shown[120 * CF_VIEW_W + PANEL_X + 5] == 0xff102030u);
