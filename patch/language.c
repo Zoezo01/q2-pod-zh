@@ -32,6 +32,7 @@ static struct {
     lang_line_t *line;
     int picks; /* the page's tables: code, own name, the card file */
     char code[LANG_PICKS][12], name[LANG_PICKS][48], file[LANG_PICKS][96];
+    int zh; /* the language in use is Chinese: its code starts "zh" */
 } lg;
 
 /* s's \n, \t and \\ undone in place; any other backslash stays. */
@@ -148,6 +149,7 @@ static void lang_load(void) {
     }
     qsort(line, m, sizeof *line, by_key_sort);
     lg.raw = raw, lg.line = line, lg.n = m;
+    lg.zh = code[0] == 'z' && code[1] == 'h';
 }
 
 /* Q2 Pod's own English, translated: the same pointer when the language has no line for it. */
@@ -164,6 +166,37 @@ const char *ringnav_locale_tr(void *info, const char *key) {
     if (!lg.loaded) lang_load();
     const char *t = key && en && lg.n ? find(key, en) : 0;
     return t ? t : en;
+}
+
+/* Stock's T9 keyboard as it loads (ringnav_ui_load), built afresh at each open. With a Chinese
+ * pack it starts on stock's pinyin page, by the two calls stock's own key to it makes (0x5f0a38,
+ * 0x5f0ac8: the page, then its lang), and the capitals' case key leads there, so one key takes
+ * lower, upper and pinyin in turn; the pinyin page's own key goes back to lower. A search or
+ * free text starts there: a text box (input_type 0, as stock reads it at 0x69f77c). A sign-in
+ * keeps the letters: a password box (kbwifipass_dialog and searchbox_dialog name kb_default_t9
+ * for theirs), Wi-Fi's editwifi_dialog, whose one text box takes a network's name or its
+ * password, and a card app's field (addon.c marks it _ringnav_letters).
+ * ponytail: stock's engine has Simplified pinyin alone (0x6b1060: zh_cn or en_us), so a
+ * Traditional pack gets Simplified candidates and Japanese or Korean have no method; another
+ * needs an engine of its own. A box is a sign-in only by those marks: q2app has no password
+ * field, so a card app's field rows all keep the letters, a Chinese user name too. */
+void language_keyboard(widget_t *kb) {
+    if (tk_strcmp(widget_get_prop_str(kb, "name", ""), "kb_default_t9")) return;
+    input_method_t *im = input_method();
+    widget_t *box = im ? P(im, IM_WIDGET) : (void *)0; /* set before it loads (0x69f734) */
+    if (!box || widget_get_prop_int(box, "input_type", -1) ||
+        widget_get_prop_int(box, "_ringnav_letters", 0) ||
+        !tk_strcmp(widget_get_prop_str(window_of(box), "name", ""), "editwifi_dialog"))
+        return;
+    if (!lg.loaded) lang_load();
+    widget_t *panel = lg.zh ? widget_lookup(kb, "panel", 1) : 0,
+             *upper = panel ? widget_lookup(kb, "upper", 1) : 0,
+             *key = upper ? widget_lookup(upper, "page:lower", 1) : 0; /* case key: shift's after */
+    if (!key) return;
+    widget_set_name(key, "page:chinese");
+    widget_set_text_utf8(key, "中");
+    pages_set_active_by_name(panel, "chinese");
+    input_method_set_lang(im, "zh_cn");
 }
 
 /* How many of s's first characters make a code: letters and '_', 2 to 11 of them; 0 for fewer

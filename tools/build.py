@@ -946,7 +946,7 @@ def patch_web(path, data):
 # title, Quick Settings' row names, the test-mode pages). Every Chinese text in them is given in English
 # (english_ui); a per-asset entry wins over the shared one. The T9 keyboard's EN key opened its Chinese
 # pinyin page: it toggles case instead (ABC on the lowercase page, abc on the capitals), so that page is
-# never reached, and its 《》 key types «».
+# reached only with a Chinese pack (language.c), and its 《》 key types «».
 CJK = re.compile('[\u3000-\u9fff\uff00-\uffef]')
 ENGLISH = {
     '文件夹': 'Folder', '正在播放': 'Now Playing', '本地音乐': 'Library', '更多': 'More', 'AB复读': 'A-B Repeat',
@@ -975,7 +975,7 @@ ENGLISH_IN = {'testmode/test_key.bin': {'中': 'Centre'}, 'kb_default_t9.bin': {
               'systemset/screensaver_about.bin': {}}
 
 def english_ui(rel, data):
-    """rel's widgets' Chinese text in English, and the T9 keyboard's Chinese page out of reach."""
+    """rel's widgets' Chinese text in English, and the T9 keyboard's EN key a case key."""
     from ipod import decode, encode, walk
     root = decode(data)
     check(encode(root) == data, f'{rel}: UI round trip differs')
@@ -1460,6 +1460,7 @@ FUNCTIONS = {
  'widget_set_focused': ('int', 'widget_t *, int'),
  'input_method': ('input_method_t *', 'void'),
  'input_method_request': ('int', 'input_method_t *, widget_t *'),
+ 'input_method_set_lang': ('int', 'input_method_t *, const char *'),
  'widget_animator_pause': ('int', 'widget_animator_t *'),
  'widget_animator_destroy': ('int', 'widget_animator_t *'),
  'easing_get': ('void *', 'int'),  # Coverflow's glides set a reused animator's easing

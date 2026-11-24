@@ -9,7 +9,7 @@ import pytest
 
 import host
 import art as tools_art  # tools/, on the path host.py set: the art's own sizes
-from conftest import NAVIGATION_SOURCE, O, Config, Deques, Externpic, ask_cover, channels_low_first, in_fork, rgba, ui_name
+from conftest import NAVIGATION_SOURCE, O, Config, Deques, Files, Externpic, ask_cover, channels_low_first, in_fork, rgba, ui_name
 
 THEMES = host.tools_theme.builtins()
 SETS = host.tools_theme.geometry_sets(THEMES)
@@ -2879,6 +2879,24 @@ def test_the_keyboard_coming_up_moves_searchs_field_over_it_and_back(fw, st, ui)
     assert ui.box(item) == down
 
 
+def test_the_keyboard_opens_in_a_chinese_packs_pinyin(fw, st, ui):
+    """ringnav_ui_load hands each keyboard it loads to language.c (test_language.py has the rest)."""
+    Files(fw, {'/mnt/data/q2-lang-zh_CN.tsv': b'# \xe4\xb8\xad\xe6\x96\x87\nOK\tOK\tOK\n'})
+    fw.mock('fw_access', lambda path, *_: 0 if C.string_at(path) == b'/mnt/data/q2-lang-zh_CN.tsv' else -1)
+    Config(fw, LANG='zh_CN')
+    edit = ui.widget(window(ui, 'search_dialog'), 'search_edit', 40, 0, 300, 40)
+    ui.ints[edit, b'input_type'] = 0  # a text box, stock's own get_prop answer
+    im = C.create_string_buffer(0x40)
+    C.c_void_p.from_address(C.addressof(im) + O['IM_WIDGET']).value = edit
+    fw.mock('input_method', lambda *_: C.addressof(im))
+    kb = window(ui, 'kb_default_t9')
+    panel = ui.widget(kb, 'panel', 0, 60, 375, 260)
+    key = ui.widget(ui.widget(panel, 'upper', 0, 0, 375, 260), 'page:lower', 0, 60, 75, 60, text='abc')
+    load(fw, ui, kb)
+    assert [(a[0], C.string_at(a[1])) for _, a in fw.calls('pages_set_active_by_name')] == [(panel, b'chinese')]
+    assert ui.prop(key, b'name') == b'page:chinese'
+
+
 def test_searchs_hint_size_follows_the_field_and_is_written_once(fw, st, ui):
     theme(fw, st, CLASSIC)
     win, nav, item, edit, glass, group = search(fw, ui)
@@ -2947,6 +2965,14 @@ def test_the_keys_faces_and_labels(fw, st, ui):
     assert min(pr, pg, pb) > 200 and max(pr, pg, pb) - min(pr, pg, pb) < 8  # near white
     fr, fg, fb = channels_low_first(mid_row(fn, 60))
     assert max(fr, fg, fb) < min(pr, pg, pb) and fb >= fr  # a darker slate
+
+
+def test_a_pinyin_letter_key_paints_as_a_letter(fw, st, ui):
+    """The pinyin page's key:2 to key:9 (a Chinese pack's, language.c) are letters; a key: without a label a glyph."""
+    theme(fw, st, CLASSIC)
+    kb, cand, row = keyboard(fw, ui)
+    plain, pinyin = paint_key(fw, ui, row, '2', 'abc'), paint_key(fw, ui, row, 'key:2', 'ABC')
+    assert label(pinyin)[1:] == label(plain)[1:] and mid_row(pinyin, 60) == mid_row(plain, 60)
 
 
 @pytest.mark.parametrize('w, h', [(60, 50), (61, 47)])

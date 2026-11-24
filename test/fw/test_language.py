@@ -5,7 +5,7 @@ import struct
 
 import pytest
 
-from conftest import Config, Files
+from conftest import O, Config, Files
 
 langpack = importlib.import_module('tools.langpack')
 
@@ -366,3 +366,80 @@ def test_an_era_and_a_playlist_s_delete_button_say_the_language_s_words(fw, lang
     assert era(out, 8, 1960) == b'60er' and era(out, 8, 2010) == b'2010er'
     assert lang.stock('Delete Playlist') == 'Playlist löschen'
 
+
+
+class Keyboard:
+    """Stock's kb_default_t9 as language_keyboard looks it up (its panel, the capitals' page and its case key), and the
+    input method's box, of input_type kind, in a window named window, marked to keep the letters or not."""
+    W = {'kb': 0x10, 'panel': 0x11, 'upper': 0x12, 'page:lower': 0x13}
+    WM = 0x99
+
+    def __init__(self, fw, name=b'kb_default_t9', kind=0, window=b'search_dialog', letters=0):
+        self.fw, self.renamed, self.text = fw, {}, {}
+        self.win, self.box, self.im = (C.create_string_buffer(0x100) for _ in range(3))
+        for child, parent in ((self.box, C.addressof(self.win)), (self.win, self.WM)):
+            C.c_void_p.from_address(C.addressof(child) + O['W_PARENT']).value = parent
+        C.c_void_p.from_address(C.addressof(self.im) + O['IM_WIDGET']).value = C.addressof(self.box)
+        names = {self.W['kb']: C.create_string_buffer(name), C.addressof(self.win): C.create_string_buffer(window)}
+        found = {(self.W['kb'], b'panel'): self.W['panel'], (self.W['kb'], b'upper'): self.W['upper'],
+                 (self.W['upper'], b'page:lower'): self.W['page:lower']}
+        fw.mock('widget_get_prop_str', lambda w, key, default, *_: C.addressof(names[w])
+                if w in names and C.string_at(key) == b'name' else default)
+        ints = {b'input_type': kind, b'_ringnav_letters': letters}
+        fw.mock('widget_get_prop_int', lambda w, key, default, *_: ints.get(C.string_at(key), default)
+                if w == C.addressof(self.box) else default)
+        fw.mock('window_manager', lambda *_: self.WM)
+        fw.mock('widget_lookup', lambda w, name, *_: found.get((w, C.string_at(name)), 0))
+        fw.mock('widget_set_name', lambda w, s, *_: self.renamed.__setitem__(w, C.string_at(s).decode()))
+        fw.mock('widget_set_text_utf8', lambda w, s, *_: self.text.__setitem__(w, C.string_at(s).decode()))
+        fw.mock('input_method', lambda *_: C.addressof(self.im))
+
+    def open(self):
+        self.fw.fn('language_keyboard', None, C.c_void_p)(self.W['kb'])
+        return ([(a[0], C.string_at(a[1]).decode()) for _, a in self.fw.calls('pages_set_active_by_name')],
+                [(a[0], C.string_at(a[1]).decode()) for _, a in self.fw.calls('input_method_set_lang')])
+
+
+def chinese(fw, lang, code='zh_CN'):
+    lang.files[f'/mnt/data/q2-lang-{code}.tsv'] = lines(('OK', 'OK', '确定'), name='中文')
+    Config(fw, LANG=code)
+
+
+@pytest.mark.parametrize('code', ['zh_CN', 'zh_HK'])
+def test_a_chinese_packs_keyboard_starts_in_pinyin_and_its_case_key_leads_there(fw, lang, code):
+    chinese(fw, lang, code)
+    kb = Keyboard(fw)
+    assert kb.open() == ([(kb.W['panel'], 'chinese')], [(C.addressof(kb.im), 'zh_cn')])  # stock's own key's two calls
+    assert kb.renamed == {kb.W['page:lower']: 'page:chinese'} and kb.text == {kb.W['page:lower']: '中'}
+
+
+@pytest.mark.parametrize('code, copy', [('', None), ('de', COPY), ('zh_CN', None)])
+def test_any_other_keyboard_stays_letters(fw, lang, code, copy):
+    """No pack, a German one, or a Chinese LANG whose copy is gone (English): nothing called, nothing renamed."""
+    if copy:
+        lang.files[copy] = lines(('OK', 'OK', 'OK DE'))
+    Config(fw, LANG=code)
+    kb = Keyboard(fw)
+    assert kb.open() == ([], []) and not kb.renamed and not kb.text
+
+
+@pytest.mark.parametrize('kind, window', [(7, b'kbwifipass_dialog'), (7, b'searchbox_dialog'), (6, b'search_dialog'),
+                                          (0, b'editwifi_dialog')])
+def test_a_password_box_keeps_the_letters(fw, lang, kind, window):
+    """Stock's password boxes that name kb_default_t9, an email box, and Wi-Fi's text box for a name or password."""
+    chinese(fw, lang)
+    kb = Keyboard(fw, kind=kind, window=window)
+    assert kb.open() == ([], []) and not kb.renamed and not kb.text
+
+
+def test_a_card_apps_field_keeps_the_letters(fw, lang):
+    """addon.c marks a field (a sign-in's name, password or address) _ringnav_letters; its Search isn't."""
+    chinese(fw, lang)
+    kb = Keyboard(fw, letters=1)
+    assert kb.open() == ([], []) and not kb.renamed and not kb.text
+
+
+def test_another_keyboard_is_not_touched(fw, lang):
+    chinese(fw, lang)
+    kb = Keyboard(fw, b'kb_ascii_t9')
+    assert kb.open() == ([], []) and not kb.renamed and not kb.text

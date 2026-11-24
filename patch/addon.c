@@ -2518,6 +2518,8 @@ static void search_box(int field) {
     pg.field = field;
     widget_destroy_children(pg.page), pg.view = 0; /* the box alone, as Spotify's */
     pg.edit = edit_create(pg.page, "text", 2, 26);
+    /* a field is a sign-in's name, password or address: letters with a Chinese pack (language.c) */
+    if (field) widget_set_prop_int(pg.edit, "_ringnav_letters", 1);
     t9_box(pg.page, pg.edit, field ? cell(field - 1, 2) : app()->tips);
     if (field && cell(field - 1, 5)[0]) widget_set_text_utf8(pg.edit, cell(field - 1, 5));
     widget_on(pg.edit, EVT_VALUE_CHANGED, searched, 0);

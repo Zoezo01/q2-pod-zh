@@ -4431,6 +4431,27 @@ def test_a_field_row_sends_its_text_and_takes_the_reply_in_the_levels_place(fw):
     assert b'Username:' in texts and not [t for t in texts if SECRET in t]  # nothing on screen holds it
 
 
+
+def letters(fw):
+    """The boxes marked to keep the letters with a Chinese pack (language.c reads the mark)."""
+    return [a[0] for _, a in fw.calls('widget_set_prop_int') if C.string_at(a[1]) == b'_ringnav_letters' and a[2] == 1]
+
+
+def test_a_field_box_keeps_the_letters(fw):
+    """A sign-in's name, password or address: letters with a Chinese pack too (q2app has no password mark)."""
+    p = Page(fw)
+    p.answer(rows=[USER, PASSWORD])
+    box = edit_box(fw)
+    p.click(1)
+    assert p.pg.edit == box and letters(fw) == [box]
+
+
+def test_a_search_box_takes_a_chinese_packs_pinyin(fw):
+    p = Page(fw)
+    p.answer(rows=[SEARCH, item(0, b'list')])
+    tap_find(p)
+    assert p.pg.field == 0 and letters(fw) == []
+
 def test_a_field_text_of_63_bytes_is_sent_whole(fw):
     p = Page(fw)
     p.answer(rows=[USER])

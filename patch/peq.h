@@ -797,6 +797,8 @@ const char *tr(const char *en) __attribute__((format_arg(1)));
 #define N_(en) en
 void language_sync(void);
 void language_removing(const char *dir);
+/* stock's T9 as it loads: a Chinese pack's starts in pinyin */
+void language_keyboard(widget_t *kb);
 int valid_id(const char *s); /* addon.c: a card app's id */
 /* smart_wifi.c: its radio woken, 1 while its link comes up; its radio off; an action
  * held for that link (fn(ctx, 0) once it is up, if page, or any page when 0, is still in use) */

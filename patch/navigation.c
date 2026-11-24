@@ -4998,6 +4998,7 @@ widget_t *ringnav_ui_load(const char *name, widget_t *parent) {
          !tk_strcmp(widget_get_prop_str(root, "name", ""), "checkfw_dialog")))
         widget_set_prop_str(root, "highlight", "");
     if (root && slider_page(root)) slider_open(root); /* every theme's: no knob; Classic's page */
+    if (root) language_keyboard(root);
     if (root && own_pages()) { /* Search, T9 and the playlist's box Classic's alone */
         const char *loaded = widget_get_prop_str(root, "name", "");
         msg_open(root);
