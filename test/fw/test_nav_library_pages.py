@@ -3298,7 +3298,7 @@ def test_shuffle_songs_of_the_one_song_holding_its_place_is_now_playing(fw, ui, 
     playing = song(b'/m/book.flac')
     holding(fw, ui, mcl, st, playing)
     Library(fw, ui, [song(b'/m/book.flac')])
-    call(fw, 'shuffle_songs')
+    call(fw, 'sp_pick')  # 0: Shuffle Songs
     assert not ui.played and [C.string_at(c[1][0]) for c in fw.calls('navigator_switch_to_with_context')] == [b'playing_page']
 
 
@@ -3307,7 +3307,7 @@ def test_shuffle_songs_starts_anywhere_but_the_song_holding_its_place(fw, ui, so
     for _ in range(8):  # rand_below's picks: never the held one
         Library(fw, ui, [song(b'/m/book.flac'), song(b'/m/other.flac')])
         ui.played.clear()
-        call(fw, 'shuffle_songs')
+        call(fw, 'sp_pick')  # 0: Shuffle Songs
         assert ui.played[0][1] == 1
 
 

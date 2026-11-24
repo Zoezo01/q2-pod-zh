@@ -98,31 +98,15 @@ int shuffle_play(void *all) {
     return size;
 }
 
-static int shuffle_songs(void *ctx, void *event) {
-    int n;
-    void *all = staged(songs_unsorted, (void *)1, &n);
-    if (!shuffle_play(all)) toast(tr("Update Library first"));
-    deque_destroy(all);
-    return 0;
-}
-
-static int shuffle_groups(void *ctx, void *event) {
-    int n;
-    void *all = staged(songs_unsorted, (void *)1, &n);
-    if (!playback_groups(all, (int)(long)ctx))
-        toast(deque_size(all) ? tr("Too many songs to shuffle") : tr("Update Library first"));
-    deque_destroy(all);
-    return 0;
-}
-
 /* The Library's Shuffle row opens these three actions on one page. A pick starts playback and
  * leaves the page open, as Most Played's rows do. Album and folder shuffles queue and group the
  * whole library, hence the note. */
 static int sp_pick(void *ctx, event_t *event) {
-    if ((long)ctx)
-        shuffle_groups((void *)((long)ctx - 1), 0);
-    else
-        shuffle_songs(0, 0);
+    int n, k = (int)(long)ctx;
+    void *all = staged(songs_unsorted, (void *)1, &n);
+    if (!(k ? playback_groups(all, k - 1) : shuffle_play(all)))
+        toast(k && deque_size(all) ? tr("Too many songs to shuffle") : tr("Update Library first"));
+    deque_destroy(all);
     return 0;
 }
 
