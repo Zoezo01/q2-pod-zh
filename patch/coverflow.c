@@ -2856,10 +2856,11 @@ void coverflow_paint(widget_t *w, canvas_t *canvas) {
 #if Q2POD_DEV
     unsigned gap_t1 = (unsigned)time_now_ms();
 #endif
-    int still = !th.on && !P(w, SLIDE_ANIMATOR) && !touched();
+    /* the way back's clock read before the test, which a changed frame cuts short */
+    int still = !th.on && !P(w, SLIDE_ANIMATOR) && !touched(), back = back_frame();
     if (!fx.drawn || c != fx.c || frac != fx.frac || lead != fx.lead || arch != fx.arch ||
         mode != fx.mode || still != fx_still || mode == FX_FOLD || mode == FX_ENTRY ||
-        back_frame()) { /* the fold and the way back: the clock, the entry: passes */
+        back) { /* the fold and the way back: the clock, the entry: passes */
         unsigned *d = (unsigned *)bitmap_lock_buffer_for_write(fx.frame);
         if (!d) return;
         cf_still = still;

@@ -975,7 +975,7 @@ void coverflow_paint(void *, void *);
    frames as drawn. */
 extern cf_style_t cfs;
 void cf_restyle(void);
-void cf_back_test(int on, int ms, int x, int y), cf_shelf_still(int still);
+void cf_back_test(int on, int ms, int x, int y), cf_shelf_still(int still), cf_back_stale(int x, int y);
 int fx_base(void);
 static void (*const bgra_render)(unsigned *, int, int, const unsigned *const[7]) = coverflow_render;
 static void texel_render(unsigned *d, int pitch, int frac, const unsigned *const ring[7]) {
@@ -1717,6 +1717,16 @@ static void classic_light_shelf(void) {
     memcpy(g, f, sizeof g), coverflow_render(g, PITCH, 0, ring); /* f's guard pixels */
     assert(!memcmp(f, g, sizeof f));
     cf_back_test(0, 0, 0, 0), cf_shelf_still(0);
+    /* The first paint of a way back after another's end (bk.ms left past its length) and a changed frame: its own ms
+       0, the side covers out, never the shelf at rest a frame before the motion (seen on a Q2, 2026-11-25). */
+    static unsigned rest[CF_VIEW_H * CF_VIEW_W];
+    coverflow_paint(s, canvas);
+    memcpy(rest, shown, sizeof rest);
+    cf_back_stale(20, 30);
+    coverflow_paint(s, canvas);
+    assert(memcmp(rest, shown, sizeof rest));
+    cf_back_test(0, 0, 0, 0);
+    coverflow_paint(s, canvas);
     cb->land_back_ms = cb->land_back_at = cb->land_back_step = cb->land_back_out = 0;
 #undef G
     /* The light half: the shelf is the scheme's paper, and the reflection fades into it. */

@@ -486,7 +486,7 @@ static int back_close(void *ctx, event_t *event) {
     ax -= fx0, ay -= fy0;
     if (ax < 0 || ay < 0 || ax + NP_IPOD_ART > CF_VIEW_W || ay + NP_IPOD_ART > cfs.view_h) return 0;
     flip_done(); /* the panel shut, the shelf at its album */
-    bk.x = ax * 256, bk.y = ay * 256, bk.t0 = (unsigned)time_now_ms(), bk.on = 1;
+    bk.x = ax * 256, bk.y = ay * 256, bk.t0 = (unsigned)time_now_ms(), bk.on = 1, bk.ms = 0;
     if (!(bk.timer = timer_add(back_tick, 0, FLIP_TICK_MS))) back_end();
     widget_invalidate_force(cf.covers, 0);
     return 0;
@@ -542,5 +542,11 @@ int back_pose(shelf_t *f, int t, pose_t *p, const unsigned *tex) {
 /* For test/coverflow.py: the way back running (on) at ms, the art's top left at x, y. */
 void cf_back_test(int on, int ms, int x, int y) {
     bk.on = on, bk.ms = ms, bk.x = x * 256, bk.y = y * 256;
+}
+/* For test/coverflow.py: a way back started now, its ms left at the last one's end, the frame
+ * changed (fx.drawn 0): the first paint after back_close. */
+void cf_back_stale(int x, int y) {
+    cf_back_test(1, 900, x, y);
+    bk.t0 = (unsigned)time_now_ms(), fx.drawn = 0;
 }
 #endif
