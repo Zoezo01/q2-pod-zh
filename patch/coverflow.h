@@ -136,7 +136,8 @@ extern cf_depth_t fx;
 HOT unsigned shade(unsigned p, unsigned b) {
     return ((p & 0xff00ffu) * b >> 8 & 0xff00ffu) | ((p & 0xff00u) * b >> 8 & 0xff00u);
 }
-/* A texel (RGBA8888, red low) as the screen's BGRA8888, opaque; both ways, but for the alpha. */
+/* A colour red low (RGBA8888: a half copy on the card) as the screen's BGRA8888, as a texel is,
+ * opaque; both ways, but for the alpha. */
 HOT unsigned bgra(unsigned p) { /* R and B from p turned half way round (one rotr) */
     return 0xff000000u | (p & 0xff00u) | ((p >> 16 | p << 16) & 0xff00ffu);
 }

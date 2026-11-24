@@ -11,7 +11,7 @@ import pytest
 import fuzz
 import host
 from conftest import O, Config, block, rgba
-from test_coverflow import ART, decoded, tex_rig
+from test_coverflow import ART, bgra, decoded, tex_rig
 from test_coverflow import bitmap as cover
 from test_coverflow import rgba as cover_pixels
 from test_nav_display_library import Ui, appearance, button_of, row_of, writes
@@ -831,11 +831,12 @@ def test_modern_s_light_bar_takes_the_card_page(fw, card, world):
 
 
 def test_cover_flow_and_home_art_lie_on_the_page(fw, card):
-    """A clear cover over the page's colour, each channel its own (texels red low)."""
+    """A clear cover over the page's colour, each channel its own (Cover Flow's texels the screen's
+    BGRA8888, Home's red low)."""
     page_start(fw, card, MIDNIGHT)
     texel = 0xff000000 | 0x10 | 0x18 << 8 | 0x20 << 16
     cover(fw, ART, ART, cover_pixels(ART, ART, lambda x, y: (0, 0, 0, 0)))
-    assert decoded(fw)[1][0] == texel
+    assert decoded(fw)[1][0] == bgra(texel)
     tex, home, _ = tex_rig(fw, 300, 300, cover_pixels(300, 300, lambda x, y: (0, 0, 0, 0)))
     tex(b'x')
     assert (C.c_uint * 8).from_address(home.tex)[5] == texel

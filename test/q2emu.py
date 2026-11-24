@@ -3236,8 +3236,8 @@ ps=payload_syms
 from theme import builtins as theme_builtins
 
 def columns(px,n=160):
-    """An n x n image by rows as a texture holds it: by columns (texel x, y at x * n + y)."""
-    return b''.join(px[4*(y*n+x):4*(y*n+x)+4] for x in range(n) for y in range(n))
+    """An n x n image by rows, red low, as a texture holds it: by columns (texel x, y at x * n + y), the screen's BGRA8888."""
+    return bytes(px[4*(y*n+x)+k] for x in range(n) for y in range(n) for k in (2,1,0,3))
 
 def fitted(px,w,h):  # cf_decode's texture of a w x h image
     side=max(w,h); out=[]

@@ -2068,7 +2068,7 @@ static void column(shelf_t *f, int col, const unsigned *tex, int h, int bright, 
 void cf_column(unsigned *d, int pitch, short *solid, int col, const unsigned *tex, int h,
                int bright, int inset) {
     static shelf_t f;
-    cf_paper = RGBA(flat_page()) & 0xffffff;
+    cf_paper = flat_page() & 0xffffff;
     f.d = d, f.pitch = pitch, f.solid_top[col] = solid[0], f.solid_bottom[col] = solid[1];
     column(&f, col, tex, h, bright, inset);
     solid[0] = f.solid_top[col], solid[1] = f.solid_bottom[col];
@@ -2181,7 +2181,7 @@ static int slot(int frac, int k, int i) {
 void coverflow_render(unsigned *d, int pitch, int frac, const unsigned *const *ring) {
     if (!cfs.eye) cf_restyle(); /* once, for callers which render without opening the page */
     cf_corners();
-    cf_paper = RGBA(flat_page()) & 0xffffff; /* the texels' order, red low */
+    cf_paper = flat_page() & 0xffffff; /* 0xRRGGBB: the texels' order, the screen's */
     shelf_t f;
     f.d = d, f.pitch = pitch;
     for (int x = 0; x < CF_VIEW_W; ++x) f.solid_top[x] = f.solid_bottom[x] = 0;
@@ -2196,17 +2196,17 @@ void coverflow_render(unsigned *d, int pitch, int frac, const unsigned *const *r
                 int j = slot(frac, k, i), t = (j - CF_REACH) * CF_ONE - frac;
                 if (shelf_draws(t)) draw_cover(&f, t, ring[j]);
             }
-    /* Over black, or Light Mode's paper as the page's black flips to it; then in the screen's
-     * BGRA8888, opaque, as stock copies it (opaque_frame): stock's blends and Night Shift read the
-     * alpha it leaves on the screen. */
+    /* Over black, or Light Mode's paper as the page's black flips to it, opaque, as stock copies it
+     * (opaque_frame): stock's blends and Night Shift read the alpha it leaves on the screen. The
+     * texels are the screen's BGRA8888 already. */
     for (int y = 0; y < cfs.view_h; ++y) {
         unsigned *p = d + y * pitch;
         int x = CF_VIEW_W; /* count-down loops, which -Oz keeps tight */
         if (cf_paper) {
-            do put(p, cf_paper, 256), *p = bgra(*p), ++p;
+            do put(p, cf_paper, 256), ++p; /* put leaves every pixel's alpha 255 */
             while (--x);
         } else {
-            do *p = bgra(*p), ++p;
+            do *p++ |= 0xff000000u;
             while (--x);
         }
     }
@@ -2245,7 +2245,8 @@ unsigned *fx_buf(int i) { /* slot i's texture */
 
 /* A decoded image copied into a texture: fitted whole and centred, nearest sampled to ART_SIZE,
  * over bar (a grey level: 0 black, the shelf's), so a non-square cover shows uncropped between
- * bars, as Now Playing shows it. By columns (CF_TEXELS): column() walks down one.
+ * bars, as Now Playing shows it. By columns (CF_TEXELS): column() walks down one. In the screen's
+ * BGRA8888, opaque, so a frame needs no swap.
  * Only 32-bit formats (BITMAP_RGBA_AT); stock decodes covers to RGBA8888 with straight alpha,
  * composited over the page (black or Light Mode's paper). The image manager's copy is only read,
  * and a cover's load is dropped again at once, as stock does. */
@@ -2278,7 +2279,7 @@ int cf_decode(const char *url, unsigned *out, int unload, unsigned bar) {
                     r = (r * a + (paper & 255) * k) / 255,
                     g = (g * a + (paper >> 8 & 255) * k) / 255,
                     b = (b * a + (paper >> 16 & 255) * k) / 255;
-                out[x * ART_SIZE + y] = 0xff000000u | r | g << 8 | b << 16;
+                out[x * ART_SIZE + y] = 0xff000000u | r << 16 | g << 8 | b;
             }
         }
         bitmap_unlock_buffer(bitmap);
@@ -2645,7 +2646,7 @@ void coverflow_flip_render(unsigned *d, int pitch, int e, const unsigned *const 
         for (; y <= last && y < FLIP_H; ++y, o += pitch) {
             int v = (((y << 8) + 128 - y0) >> 4) * step >> 20; /* texel row */
             unsigned px = tc[(v < 0 ? 0 : v >= ah ? ah - 1 : v) * down];
-            px = back ? px | 0xff000000u : bgra(px); /* the back is the screen's already */
+            px |= 0xff000000u; /* both the screen's: the back a capture, the front a texture */
             if (y != first && y != last) {
                 *o = px;
                 continue;

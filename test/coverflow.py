@@ -959,12 +959,22 @@ static int tmp_files(void) {
 /* ---- Depth: the renderer on its own, then on the page. ---- */
 void coverflow_render(unsigned *, int, int, const unsigned *const[7]);
 void coverflow_paint(void *, void *);
-/* The renderers draw the screen's BGRA8888 (opaque_frame); the tests hand them and read their frames
-   in the textures' order, RGBA8888 with red low: R and B swapped back in each row the render filled
-   (all opaque; the guards and any row below left). bgra_frames checks the frames as drawn. */
+/* The renderers take textures and draw frames in the screen's BGRA8888 (opaque_frame); the tests
+   build their textures and read their frames as RGBA8888 with red low: each texture the ring
+   draws (fx_reach's either side) swapped going in, and R and B swapped back in each row the render
+   filled (all opaque; the guards and any row below left). bgra_frames and screen_bytes check the
+   frames as drawn. */
+extern cf_style_t cfs;
+void cf_restyle(void);
+int fx_base(void);
 static void (*const bgra_render)(unsigned *, int, int, const unsigned *const[7]) = coverflow_render;
 static void texel_render(unsigned *d, int pitch, int frac, const unsigned *const ring[7]) {
-    bgra_render(d, pitch, frac, ring);
+    static unsigned screen[15][160 * 160];
+    const unsigned *wide[15] = { 0 };
+    if (!cfs.eye) cf_restyle(); /* as coverflow_render, for fx_base's reach */
+    for (int j = 3 - (fx_base() - 1) / 2; j <= 3 + (fx_base() - 1) / 2; ++j)
+        for (int i = 0; ring[j] && i < 160 * 160; ++i) screen[j + 4][i] = texel(ring[j][i]), wide[j + 4] = screen[j + 4];
+    bgra_render(d, pitch, frac, wide + 4);
     for (unsigned *row = d;; row += pitch) {
         int x = 0;
         while (x < CF_VIEW_W && row[x] >> 24 == 255) ++x;
@@ -1360,14 +1370,15 @@ static void pinned(void) {
    covers parting over the same ease. */
 void coverflow_flip_render(unsigned *, int, int, const unsigned *const[3]);
 int coverflow_flip_eased(int);
-/* As texel_render: the side covers (the shelf's frame) and the back go in as the screen's, the frame
-   comes out in the textures' order. */
+/* As texel_render: the side covers (the shelf's frame), the cover and the back go in as the
+   screen's, the frame comes out red low. */
 static void (*const bgra_flip)(unsigned *, int, int, const unsigned *const[3]) = coverflow_flip_render;
 static void texel_flip(unsigned *d, int pitch, int e, const unsigned *const tex[3]) {
-    static unsigned sides[294 * 375], back[285 * 294];
+    static unsigned sides[294 * 375], front[160 * 160], back[285 * 294];
     for (int i = 0; i < 294 * 375; ++i) sides[i] = texel(tex[0][i]);
+    for (int i = 0; tex[1] && i < 160 * 160; ++i) front[i] = texel(tex[1][i]);
     for (int i = 0; tex[2] && i < 285 * 294; ++i) back[i] = texel(tex[2][i]);
-    bgra_flip(d, pitch, e, (const unsigned *[3]){ sides, tex[1], tex[2] ? back : 0 });
+    bgra_flip(d, pitch, e, (const unsigned *[3]){ sides, tex[1] ? front : 0, tex[2] ? back : 0 });
     for (int y = 0; y < 294; ++y)
         for (int x = 0; x < 375; ++x) d[y * pitch + x] = texel(d[y * pitch + x]);
 }
@@ -1884,19 +1895,22 @@ static void classic_light_follow(void) {
 }
 
 /* The frames as drawn: the screen's BGRA8888, opaque, red at bit 16 (texel_render's, R and B
-   swapped); at rest the centre cover's middle texel, swapped. */
+   swapped) from the screen's textures; at rest the centre cover's middle texel, swapped. */
 static void bgra_frames(void) {
-    static unsigned raw[(CF_VIEW_H + 3) * PITCH];
-    const unsigned *ring[7];
-    for (int j = 0; j < 7; ++j) ring[j] = j == 3 ? art_tex : flat[j];
+    static unsigned raw[(CF_VIEW_H + 3) * PITCH], screen[7][160 * 160];
+    const unsigned *ring[7], *drawn[7];
+    for (int j = 0; j < 7; ++j) {
+        ring[j] = j == 3 ? art_tex : flat[j], drawn[j] = screen[j];
+        for (int i = 0; i < 160 * 160; ++i) screen[j][i] = texel(ring[j][i]);
+    }
     for (light = 0; light < 2; ++light) {
-        bgra_render(raw, PITCH, ONE / 5, ring);
+        bgra_render(raw, PITCH, ONE / 5, drawn);
         render(ONE / 5, ring);
         for (int y = 0; y < CF_VIEW_H; ++y)
             for (int x = 0; x < CF_VIEW_W; ++x) assert(raw[y * PITCH + x] == texel(px(x, y)) && raw[y * PITCH + x] >> 24 == 255);
     }
     light = 0;
-    bgra_render(raw, PITCH, 0, ring);
+    bgra_render(raw, PITCH, 0, drawn);
     unsigned a = art[80 * 160 + 80];
     assert(raw[(CF_TOP + 80) * PITCH + CF_CX] == (0xff000000u | (a & 0xff00u) | (a & 255u) << 16 | (a >> 16 & 255u)));
 }
@@ -2009,10 +2023,48 @@ static void column_fuzz(void) {
 }
 #undef ART_SIZE
 
+/* Covers through cf_decode, square, letterboxed and on a grey bar, drawn as the screen gets them
+   (the renderers' own bytes, nothing swapped here): the shelf dark, on the grey paper and on a
+   coloured one, and the flip's front; hashed, the same bytes whatever order a texture holds. */
+int cf_decode(const char *, unsigned *, int, unsigned);
+static void screen_bytes(void) {
+    static unsigned tex[3][160 * 160], shelf[294 * CF_VIEW_W], f[294 * 375], back[285 * 294];
+    char url[600];
+    int was[4] = { loads, unloads, reads, next_pixels }; /* the page tests after count their own */
+    mkdir(PEQ_ROOT "/screen", 0755);
+    for (int i = 0; i < 3; ++i) {
+        snprintf(url, sizeof url, "file://" PEQ_ROOT "/screen/%c.jpg", 'a' + i);
+        FILE *fp = fopen(url + 7, "w");
+        fputs("jpg", fp);
+        fclose(fp);
+        art_h = i == 1 ? 100 : 160;
+        assert(cf_decode(url, tex[i], 1, i == 2 ? 0x30 : 0));
+    }
+    art_h = 160;
+    for (int i = 0; i < 285 * 294; ++i) back[i] = 0xff000000u | (unsigned)(i * 2654435761u >> 8 & 0xffffff);
+    const unsigned *ring[7] = { tex[0], tex[1], tex[2], tex[0], tex[1], tex[2], tex[0] };
+    unsigned hash = 2166136261u;
+    for (int k = 0; k < 3; ++k) {
+        light = k > 0, card_page = k == 2 ? 0x101820 : 0;
+        for (int frac = -ONE / 2; frac < ONE / 2; frac += ONE / 5) {
+            bgra_render(shelf, CF_VIEW_W, frac, ring);
+            for (int i = 0; i < 294 * CF_VIEW_W; ++i) hash = (hash ^ shelf[i]) * 16777619u;
+        }
+        for (int e = 0; e <= ONE; e += ONE / 4) {
+            bgra_flip(f, 375, e, (const unsigned *[3]){ shelf, tex[k], back });
+            for (int i = 0; i < 294 * 375; ++i) hash = (hash ^ f[i]) * 16777619u;
+        }
+    }
+    light = 0, card_page = 0;
+    loads = was[0], unloads = was[1], reads = was[2], next_pixels = was[3];
+    assert(hash == 0x3b501743u);
+}
+
 static void depth(void) {
     renderer();
     pinned();
     bgra_frames();
+    screen_bytes();
     column_fuzz();
     /* On the page: the slide_menu spans the frame, one album per CF_STRIDE px, with empty children
        under the drawn covers; the captions sit under the covers, over the reflections' tail. */
@@ -7987,7 +8039,7 @@ static void land_playlist(void) {
     w[view->kids[0]].click(w[view->kids[0]].ctx, 0);
     decode_ms = 0;
     assert(coverflow_landing() && land_tex && !coverflow_playlist_queue() && timer_ms == 1);
-    for (int i = 0; i < 160 * 160; ++i) assert(texel(((unsigned *)land_tex)[i]) == want[i % 160 * 160 + i / 160]); /* the landing's by rows, a texture by columns */
+    for (int i = 0; i < 160 * 160; ++i) assert(((unsigned *)land_tex)[i] == want[i % 160 * 160 + i / 160]); /* the landing's by rows, a texture by columns */
     int (*press)(const void *) = timer_fn;
     press(0);
     assert(played_cls == 0xf001 && coverflow_playlist_queue() && coverflow_landing());

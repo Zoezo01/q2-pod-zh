@@ -5233,7 +5233,7 @@ for cut in (False,True):
     assert m.draws[-1][5]==host,(frac,lean,sh)
     # One whole paint going by letters, a pass on, the row still sliding (its window found twice, the loads all made, the
     # render over Light's paper, the big letter): under PAINT_BOUND, set over the 5.0 million it measured (5.2 as clang 17 and 18 build it), the
-    # swap into the screen's BGRA8888 with the paper.
+    # last pass putting the paper under every pixel, opaque.
     tp(m); assert tfloat(m,'pos')!=tfloat(m,'goal'); draws=len(m.draws); n[0]=0
     tpaint(m); m.u.hook_del(h); assert len(m.draws)==draws+1 and n[0]<PAINT_BOUND,n[0]
     cost_line(f'coverflow letters paint cut={int(cut)}',n[0])
