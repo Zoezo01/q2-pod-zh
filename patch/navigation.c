@@ -3148,98 +3148,64 @@ static int cf_art_log __attribute__((section(".scratch")));
 /* Display's Hide Duplicate Albums and Hide Duplicate Songs (CFDUPALBUMS, CFDUPSONGS): coverflow.c
  * music_albums and coverflow_cover_tracks. */
 static int cf_dups[2] __attribute__((section(".scratch")));
-static int *const pod_values[] = { &st.charge_limit,
-                                   &st.wake_double,
-                                   &st.artist_cf,
-                                   &st.year_old,
-                                   0,
-                                   &st.resume,
-                                   &st.lock_clock,
-                                   &st.artist_az,
-                                   &wheel_guard,
-                                   &st.hold_home,
-                                   &st.standby_limit,
-                                   &bt_vol_link,
-                                   0,
-                                   0,
-                                   &st.eq_output,
-                                   0,
-                                   0,
-                                   &st.smart_wifi,
-                                   0,
-                                   0,
-                                   &st.big_library,
-                                   &st.playlist_cf,
-                                   &st.scan_durations,
-                                   &st.cf_position,
-                                   &st.hide_stream,
-                                   &st.hide_folder,
-                                   &st.remind_daily,
-                                   0,
-                                   &hide_lib[0],
-                                   &hide_lib[1],
-                                   &hide_lib[2],
-                                   &hide_lib[3],
-                                   &bt_receive,
-                                   &cf_art_log,
-                                   &cf_dups[0],
-                                   &cf_dups[1] };
+static const struct {
+    int *value;
+    const char *key;
+} pods[] = { { &st.charge_limit, "CHARGELIMIT" },
+             { &st.wake_double, "WAKEDOUBLE" },
+             { &st.artist_cf, "ARTISTCF" },
+             { &st.year_old, "YEAROLD" },
+             { 0, 0 },
+             { &st.resume, "RESUME" },
+             { &st.lock_clock, "LOCKCLOCK" },
+             { &st.artist_az, "ARTISTAZ" },
+             { &wheel_guard, "VOLGUARD" },
+             { &st.hold_home, "HOLDRETURN" },
+             { &st.standby_limit, "STANDBYLIMIT" },
+             { &bt_vol_link, "BTVOLLINK" },
+             { 0, 0 },
+             { 0, 0 },
+             { &st.eq_output, "EQOUTPUT" },
+             { 0, 0 },
+             { 0, 0 },
+             { &st.smart_wifi, "SMARTWIFI" },
+             { 0, 0 },
+             { 0, 0 },
+             { &st.big_library, "BIGLIBRARY" },
+             { &st.playlist_cf, "PLAYLISTCF" },
+             { &st.scan_durations, "SCANDURATIONS" },
+             { &st.cf_position, "CFPOSITION" },
+             { &st.hide_stream, "HIDESTREAM" },
+             { &st.hide_folder, "HIDEFOLDER" },
+             { &st.remind_daily, "REMINDDAILY" },
+             { 0, 0 },
+             { &hide_lib[0], "HIDEAPPS" },
+             { &hide_lib[1], "HIDEGAMES" },
+             { &hide_lib[2], "HIDESTORE" },
+             { &hide_lib[3], "HIDEHIRES" },
+             { &bt_receive, "BTRECEIVE" },
+             { &cf_art_log, "CFARTLOG" },
+             { &cf_dups[0], "CFDUPALBUMS" },
+             { &cf_dups[1], "CFDUPSONGS" } };
 _Static_assert(POD_LOCKCLOCK == 6, "lockscreen.c passes pod_rows 6");
 _Static_assert(POD_REMIND_DAILY == 26, "netupdate.c passes pod_rows 26");
-_Static_assert(sizeof pod_values / sizeof *pod_values == POD_COUNT, "a pod_values per row");
-static const char *const pod_keys[] = { "CHARGELIMIT",
-                                        "WAKEDOUBLE",
-                                        "ARTISTCF",
-                                        "YEAROLD",
-                                        0,
-                                        "RESUME",
-                                        "LOCKCLOCK",
-                                        "ARTISTAZ",
-                                        "VOLGUARD",
-                                        "HOLDRETURN",
-                                        "STANDBYLIMIT",
-                                        "BTVOLLINK",
-                                        0,
-                                        0,
-                                        "EQOUTPUT",
-                                        0,
-                                        0,
-                                        "SMARTWIFI",
-                                        0,
-                                        0,
-                                        "BIGLIBRARY",
-                                        "PLAYLISTCF",
-                                        "SCANDURATIONS",
-                                        "CFPOSITION",
-                                        "HIDESTREAM",
-                                        "HIDEFOLDER",
-                                        "REMINDDAILY",
-                                        0,
-                                        "HIDEAPPS",
-                                        "HIDEGAMES",
-                                        "HIDESTORE",
-                                        "HIDEHIRES",
-                                        "BTRECEIVE",
-                                        "CFARTLOG",
-                                        "CFDUPALBUMS",
-                                        "CFDUPSONGS" };
-_Static_assert(sizeof pod_keys / sizeof *pod_keys == POD_COUNT, "a pod_keys entry per row");
+_Static_assert(sizeof pods / sizeof *pods == POD_COUNT, "a pods row per row");
 /* a row's choices: Artist albums three, Standby limit four, every other row two */
 static int pod_choices(unsigned i) { return i == POD_ARTIST_CF ? 3 : i == POD_STANDBY ? 4 : 2; }
 void pod_settings(void) {
     if (st.pod_read) return;
-    for (unsigned i = 0; i < sizeof pod_keys / sizeof *pod_keys; ++i)
-        if (pod_keys[i]) /* Artist albums defaults to Coverflow, Update Notifications and
+    for (unsigned i = 0; i < sizeof pods / sizeof *pods; ++i)
+        if (pods[i].key) /* Artist albums defaults to Coverflow, Update Notifications and
                             Receive Audio to On */
-            *pod_values[i] =
-                config_value("Q2POD", pod_keys[i], pod_choices(i),
+            *pods[i].value =
+                config_value("Q2POD", pods[i].key, pod_choices(i),
                              i == POD_ARTIST_CF || i == POD_REMIND_DAILY || i == POD_BT_RECEIVE);
     st.pod_read = 1;
 }
-/* A pod_rows row's value (POD_*, one with a pod_values entry), read once from config.ini. */
+/* A pod_rows row's value (POD_*, one with a pods entry), read once from config.ini. */
 int pod_value(int i) {
     pod_settings();
-    return *pod_values[i];
+    return *pods[i].value;
 }
 /* Advanced EQ's row. Turned off, what plays stays. */
 void ringnav_eq_output_toggle(void) {
@@ -3319,7 +3285,7 @@ static void pod_text(int i) {
             : i == POD_CARMODE     ? g_carmode != 0
             : i == POD_COVERMODE   ? g_bigcovermode == 1
             : i == POD_FOLDERCOVER ? g_foldercover_flag != 0
-            : pod_values[i]        ? *pod_values[i]
+            : pods[i].value        ? *pods[i].value
                                    : 0;
     const char *toggle = names[i][0] && !names[i][1] && i != POD_CF_REFRESH ? tr(names[i][0]) : 0;
     char room[128];
@@ -3375,9 +3341,9 @@ static int pod_click(void *ctx, event_t *event) {
         g_foldercover_flag = !g_foldercover_flag;
         write_int_config(g_foldercover_flag, "PLAYSET", "FOLDERCOVER");
     } else {
-        int *value = pod_values[i];
+        int *value = pods[i].value;
         *value = (*value + 1) % pod_choices(i);
-        write_int_config(*value, "Q2POD", pod_keys[i]);
+        write_int_config(*value, "Q2POD", pods[i].key);
         if (i == POD_SCAN_DURATIONS && !*value) durations_cancel();
         if (i == POD_CF_POSITION) coverflow_position_reset();
         if (i == POD_HIDE_STREAM || i == POD_HIDE_FOLDER) coverflow_home_layout();

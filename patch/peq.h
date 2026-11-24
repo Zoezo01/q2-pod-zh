@@ -385,8 +385,8 @@ int album_cmp(void *a, void *b);
 int spoken(const char *path);         /* navigation.c: under Podcasts or Audiobooks, or an M4B */
 void peq_attach(void);                /* peq_ui.c */
 void peq_page_replace(widget_t *old); /* peq_ui.c: the open EQ page closed for a new one */
-/* navigation.c: the settings rows pod_rows builds (pod_values and its Q2POD keys); pod_value(i) is
- * one's value (only rows with a pod_values entry), read once from config.ini. */
+/* navigation.c: the settings rows pod_rows builds (pods and its Q2POD keys); pod_value(i) is
+ * one's value (only rows with a pods entry), read once from config.ini. */
 enum {
     POD_CHARGE,
     POD_WAKE,
