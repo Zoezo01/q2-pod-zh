@@ -201,6 +201,8 @@ int file_holds(const char *path, const void *b, unsigned n, unsigned max) {
 void card_theme_sync(void) {
     const char *note = 0;
     if (access(CT_SRC, 0)) {
+        /* ENOENT on a mounted card only: another error, or a card gone since the mount, keeps it */
+        if (*__errno_location() != 2 || !card_mounted()) return;
         if (!access(CT_DST, 0) || !access(CT_BAD, 0))
             note = N_("Card theme removed. Restart to finish");
         unlink(CT_DST), unlink(CT_BAD), unlink(CT_TRY), unlink(CT_SEEN);

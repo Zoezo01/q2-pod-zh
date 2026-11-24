@@ -504,9 +504,11 @@ static void *logo_sync(void *unused) {
     unsigned n = 0;
     unsigned char *b = 0;
     const char *err = logo_refused;
-    if (access(LOGO_SRC, 0))
-        unlink(LOGO_DST), err = 0;
-    else if ((b = read_all(LOGO_SRC, LOGO_MAX, &n)) && jpeg_size(b, n) == (375u << 16 | 320)) {
+    if (access(LOGO_SRC, 0)) {
+        /* ENOENT on a mounted card only: another error, or a card gone since the mount, keeps it */
+        err = 0;
+        if (*__errno_location() == 2 && card_mounted()) unlink(LOGO_DST);
+    } else if ((b = read_all(LOGO_SRC, LOGO_MAX, &n)) && jpeg_size(b, n) == (375u << 16 | 320)) {
         free(b),
             b = 0; /* landscape: ffmpeg turns it a quarter clockwise (coverflow.c's ff_thumb) */
         int pid = fork();

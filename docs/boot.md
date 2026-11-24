@@ -73,7 +73,7 @@ Put your logo on the microSD card as `/Q2Pod/boot/boot-logo.jpg`. While Q2 Pod i
 - **Format: 8-bit, three-component baseline JPEG, at most 512 KB** ([Making a logo that works](#making-a-logo-that-works)).
 - A file that doesn't qualify shows "Boot logo must be a 320x375 JPEG", and one that can't be saved "Could not save boot logo"; either way the current logo stays. `logo_poll` clears the failure before its toast: the toast's dialog runs the UI loop, which polls again, so a failure still set would toast inside each toast until the watchdog restarted the Q2, at every boot.
 - A refused file is reported once, not at each power-on or mount. A changed file, or a good logo or none in between, is reported again. To see it again, remove the file for one mount or save it again.
-- Removing the file from the card deletes `/mnt/data/boot-logo.jpg` at the next mount while Q2 Pod is running; the following power-on shows the built-in splash.
+- Removing the file from the card deletes `/mnt/data/boot-logo.jpg` at the next mount while Q2 Pod is running; the following power-on shows the built-in splash. The copy goes only when the card is mounted and its file answers as missing (`ENOENT`); any other error, or a card taken out during the check, keeps it. Linux's FAT driver skips a folder block it can't read and then answers the file as missing, so a read error inside the card's `Q2Pod` or `boot` folder can still remove the copy.
 
 ### In a build
 

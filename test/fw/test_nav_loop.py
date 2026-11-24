@@ -240,15 +240,21 @@ def test_jpeg_size_agrees_with_the_builders_check(fw):
 
 
 class Card(Files):
-    """The card and flash as files, access() and stat() too (o32: size word 12, mtime word 16); ffmpeg as a child
-    that writes rot (or fails)."""
+    """The card and flash as files, access() and stat() too (o32: size word 12, mtime word 16; access fails as a read
+    open does); ffmpeg as a child that writes rot (or fails)."""
     def __init__(self, fw, files=None):
         super().__init__(fw, files)
         self.rot, self.status, self.pid, self.mtime = None, 0, 4321, {}
-        fw.mock('fw_access', lambda path, *_: 0 if C.string_at(path).decode() in self.files else -1)
+        fw.mock('fw_access', self.access)
         fw.mock('fw___xstat', self.stat)
         fw.mock('fw_fork', lambda *_: self.pid)
         fw.mock('fw_waitpid', self.wait)
+
+    def access(self, path, *_):
+        if not self.fail_open and C.string_at(path).decode() in self.files:
+            return 0
+        self.errno()[0] = self.fail_open or 2
+        return -1
 
     def stat(self, version, path, info, *_):
         path = C.string_at(path).decode()
@@ -273,8 +279,19 @@ def logo_sync(fw, power):
 
 def test_no_card_logo_brings_the_stock_logo_back(fw, power):
     card = Card(fw, {LOGO_DST: jpeg(320, 375)})
+    Mounts(fw, card)
     power('logo_busy').value = 1
     assert logo_sync(fw, power) is None and LOGO_DST not in card.files and power('logo_busy').value == 0
+
+
+@pytest.mark.parametrize('mounted, eio', [(True, True), (False, False), (False, True)])
+def test_a_card_logo_not_seen_keeps_the_copy(fw, power, mounted, eio):
+    """Only a mounted card whose file answers ENOENT takes the copy away: not another error, nor a card gone since the
+    mount."""
+    card = Card(fw, {LOGO_DST: jpeg(320, 375)})
+    Mounts(fw, card, mounted)
+    card.fail_open = 5 if eio else 0
+    assert logo_sync(fw, power) is None and LOGO_DST in card.files
 
 
 def test_a_portrait_logo_is_kept_on_flash(fw, power):
@@ -288,7 +305,8 @@ def test_the_same_logo_is_not_written_again(fw, power):
     logo = jpeg(320, 375)
     card = Card(fw, {LOGO_SRC: logo, LOGO_DST: logo})
     assert logo_sync(fw, power) is None and card.files[LOGO_DST] == logo
-    assert [C.string_at(c[1][1]) for c in fw.calls('fw_fopen')] == [b'rb', b'rb']  # read both, wrote nothing
+    opens = [C.string_at(c[1][1]) for c in fw.calls('fw_fopen') if C.string_at(c[1][0]) != b'/proc/mounts']
+    assert opens == [b'rb', b'rb']  # read both, wrote nothing (the card theme's check reads the mounts)
 
 
 def test_a_landscape_logo_is_turned_upright_by_ffmpeg(fw, power):

@@ -239,12 +239,27 @@ def test_a_bom_is_kept_in_the_copy(fw, card):
 @pytest.mark.parametrize('there', [(DST, BAD, TRY, SEEN), (DST,), (BAD,)])
 def test_no_file_on_a_mounted_card_removes_the_copy_and_its_marks(fw, card, there):
     seen = toasts(fw)
+    Mounts(fw, card)
     card.files.update({f: AUBERGINE for f in there})
     sync(fw)
     assert not {DST, BAD, TRY, SEEN} & set(card.files)
     assert said(fw, seen) == 'Card theme removed. Restart to finish'
+    opened = len(fw.calls('fw_fopen'))
     sync(fw)
-    assert said(fw, seen) is None and not fw.calls('fw_fopen')  # nothing there: nothing to say, nothing read
+    assert said(fw, seen) is None
+    assert [C.string_at(c[1][0]) for c in fw.calls('fw_fopen')[opened:]] == [b'/proc/mounts']  # nothing else read
+
+
+@pytest.mark.parametrize('mounted, eio', [(True, True), (False, False), (False, True)])
+def test_a_card_theme_not_seen_keeps_the_copy(fw, card, mounted, eio):
+    """Only a mounted card whose file answers ENOENT takes the copy away: not another error, nor a card gone since the
+    mount."""
+    seen = toasts(fw)
+    Mounts(fw, card, mounted)
+    card.files.update({DST: AUBERGINE, BAD: AUBERGINE})
+    card.fail_open = 5 if eio else 0
+    sync(fw)
+    assert card.files[DST] == card.files[BAD] == AUBERGINE and said(fw, seen) is None
 
 
 def test_with_no_card_mounted_nothing_is_touched(fw, card):
