@@ -1383,7 +1383,7 @@ class QueueMachine(Machine):
         """Wheel down steps rows, hold, pick a menu row and let the deferred action run."""
         for _ in range(steps): self.call()
         n=len(self.toasts); self.t=getattr(self,"t",7000)+1; self.press(self.t); assert self.hold()==11 and self.release()==0
-        self.pick(row); self.advance(0)
+        self.pick(row); self.advance(0); blink_out(self)
         return self.toasts[-1][3] if len(self.toasts)>n else None
     def labels(self): return [self.nodes[self.nodes[i]['children'][0]]['text'] for i in self.nodes[self.view]['children']]
     def playback(self): return [c for c in self.calls if c[0] in ('mclStartPlayer','mclStop','mclSetPause','mclSetResume','mclSetSeek','playpause_quick_click')]
@@ -2864,9 +2864,15 @@ def rate_poll(m,left=5):
     m.byte(O['BC_IDLE'],left); m.handlers[HOOKS['main_loop_sleep_default'][0]+12]='stock_sleep'
     m.call(address=HOOKS['main_loop_sleep_default'][0],args=(0x1234,0,0,0),gap=0); return m.u.mem_read(O['BC_IDLE'],1)[0]
 
+def blink_out(m):
+    """A Play Next or Add to Queue that worked blinks its row (queue_menu.c QM_BLINK_MS), then the menu closes: run
+    both halves out."""
+    for name in ('qm_lit','qm_blinked'):
+        due=next((t[0] for t in m.timers.values() if t[1]==payload_syms[name]),None)
+        if due is not None: m.advance(due-m.now,clear=False)
 def hold_pick(m,row):
     n=len(m.toasts); m.t=getattr(m,'t',7000)+1; m.press(m.t); assert m.hold()==11 and m.release()==0
-    m.pick(row); m.advance(0)
+    m.pick(row); m.advance(0); blink_out(m)
     return m.toasts[-1][3] if len(m.toasts)>n else None
 def classic_half(machine,light,**kw):
     SETUP[:]=[lambda k:(k.config.update(THEME='1',LIGHT=light),k)]

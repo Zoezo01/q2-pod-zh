@@ -1378,7 +1378,7 @@ m=QueueMachine(); m.call(); m.call(); assert m.selected(m.surface)==2
 m.call(O['KEY_CENTER']); m.press(100); m.hold(); m.release(); m.advance(300); assert not m.dispatched()
 m.paint(m.view); assert m.call()==11 and m.selected(m.view)==1 and m.selected(m.surface)==2
 assert m.confirm()==11 and m.dispatched()[0][1]==m.nodes[m.view]['children'][1]
-m.pick(1); m.pick(1); m.advance(0)
+m.pick(1); m.pick(1); m.advance(0); blink_out(m)
 assert m.names()==['A','B','C','Row 2'] and not m.toasts
 assert m.top==page and m.selected(m.surface)==2 and not m.playback(); passed()
 # Play next lands after the playing track, on the logical row of a recycled table. Later tracks,
@@ -4351,7 +4351,7 @@ for action,want in ((0,['A','early','late','B','C']),(1,['A','B','C','early','la
     m.press(100); assert m.hold()==11 and m.release()==0
     assert m.nodes[m.title]['text']=='Album 2' and m.labels()==[*COVER_ALBUM,'Go to Artist']
     assert m.hold()==0
-    m.pick(action); m.pick(action); m.advance(0)
+    m.pick(action); m.pick(action); m.advance(0); blink_out(m)
     assert m.names()==want and not m.playback() and not m.plays and m.top==m.page
     assert m.query[:2]==('getMusicByAlbum','Album 2') and m.names(m.get(syms['tools_pdeq_directory']))==['staged']; passed()
 m=CoverflowMachine(); m.open(); assert len(m.nodes[m.slide]['children'])==3; passed()  # no Sort or Refresh card to hold

@@ -13,6 +13,7 @@ import test_nav_loop as NL  # Now Playing's update (NP_UPDATE) and the window ma
 from conftest import O, Deques, Files, Rows, claim, favdir_card, fnv1a, high_halves, in_fork, ui_name
 from test_nav_display_library import Ple  # playlists.c's editor state
 from test_navigation import directory
+from test_coverflow import Cf  # coverflow.c's state
 
 W_X, W_PARENT, W_EMITTER = O['W_X'], O['W_PARENT'], O['W_EMITTER']
 EMIT_TYPE, EMIT_PENDING_REMOVE, EMIT_NEXT = O['EMIT_TYPE'], O['EMIT_PENDING_REMOVE'], O['EMIT_NEXT']
@@ -21,6 +22,7 @@ EVENT_TYPE, EVENT_KEY, EVENT_X, EVENT_Y, EVENT_TARGET = (O[k] for k in ('EVENT_T
 EVT_DESTROY, EVT_CLICK, EVT_KEY_UP, EVT_IM_ACTION = O['EVT_DESTROY'], O['EVT_CLICK'], O['EVT_KEY_UP'], O['EVT_IM_ACTION']
 EVT_WINDOW_CLOSE, EVT_POINTER_ABORT, EVT_POINTER_UP_BEFORE = O['EVT_WINDOW_CLOSE'], O['EVT_POINTER_ABORT'], O['EVT_POINTER_UP_BEFORE']
 KEY_PLAY, KEY_RETURN, KEY_BACK_BTN, KEY_FWD_BTN = O['KEY_PLAY'], O['KEY_RETURN'], O['KEY_BACK_BTN'], O['KEY_FWD_BTN']
+KEY_NEXT = O['KEY_NEXT']
 REC_ID, REC_NAME, REC_PATH, REC_TITLE, REC_ALBUM, REC_ARTIST = (O[k] for k in ('REC_ID', 'REC_NAME', 'REC_PATH', 'REC_TITLE',
                                                                               'REC_ALBUM', 'REC_ARTIST'))
 REC_TYPE, REC_TRACK, REC_DISC, REC_CUE_START, REC_CUE_END = (O[k] for k in ('REC_TYPE', 'REC_TRACK', 'REC_DISC',
@@ -1731,6 +1733,136 @@ def test_a_queue_changed_under_the_menu_is_left_alone(hold, recs, ui):
     hold.deques[hold.queue].append(song(recs, 9))
     hold.pick('Add to Queue')
     assert ui.toasts == ['Queue unchanged'] and len(hold.deques[hold.queue]) == 4
+    assert hold.dialog not in ui.stack and not ui.timers  # no blink: the menu closes at once
+
+
+# Play Next and Add to Queue that worked: the chosen row blinks, dark then lit, and the menu closes; no toast. The
+# queue holds the song from the press.
+@pytest.mark.parametrize('touch', [0, 1])  # a Centre pick, a tap's
+@pytest.mark.parametrize('row', ('Play Next', 'Add to Queue'))
+def test_a_queue_add_blinks_its_row_then_the_menu_closes(hold, recs, ui, st, fw, row, touch):
+    hold.now_playing([song(recs, i) for i in range(3)], at=0, held=True)
+    hold.hold()
+    hold.menu()
+    st('touch_mode').value = touch
+    at = ui.kids(hold.view()).index(ui.find(hold.view(), row))
+    ui.nodes[hold.view()].props['_ringnav_index'] = at  # the wheel's row, or a tap's (keep_selected)
+    hold.pick(row)
+    assert len(hold.deques[hold.queue]) == 4 and hold.dialog in ui.stack and st('touch_mode').value == 1  # dark
+    [(_, _, ms)] = ui.timers.values()
+    assert 250 <= 2 * ms <= 300
+    assert ui.due('qm_lit') == [0] and hold.dialog in ui.stack and not st('touch_mode').value
+    assert ui.nodes[hold.view()].props['_ringnav_index'] == at  # lit, the chosen row
+    [(_, _, ms)] = ui.timers.values()
+    assert 250 <= 2 * ms <= 300
+    ui.due('qm_blinked')
+    assert hold.dialog not in ui.stack and not ui.timers and not ui.toasts
+    assert st('touch_mode').value == touch and not fw.fn('qm_blinking', C.c_int)()  # as before the press
+
+
+def test_a_press_during_the_blink_is_dropped_and_return_ends_it(hold, recs, ui):
+    hold.now_playing([song(recs, i) for i in range(3)], at=0, held=True)
+    hold.hold()
+    hold.menu()
+    item = ui.find(hold.view(), 'Add to Queue')
+    hold.pick('Add to Queue')
+    ui.click(item)  # a second Centre or tap
+    assert not ui.due('qm_run') and len(hold.deques[hold.queue]) == 4
+    assert hold.dialog in ui.stack and ui.pending() == [ui.fn('queue_menu__qm_lit')]  # still blinking
+    assert ui.key(hold.dialog, KEY_RETURN) == STOP and hold.dialog not in ui.stack
+    assert not ui.timers and len(hold.deques[hold.queue]) == 4  # closed mid-blink: no timer, the song kept
+
+
+def test_a_wheel_tick_during_the_blink_is_dropped(hold, recs, ui, st, fw):
+    hold.now_playing([song(recs, i) for i in range(3)], at=0, held=True)
+    hold.hold()
+    hold.menu()
+    at = ui.kids(hold.view()).index(ui.find(hold.view(), 'Add to Queue'))
+    ui.nodes[hold.view()].props['_ringnav_index'] = at
+    hold.pick('Add to Queue')
+    event = C.create_string_buffer(0x40)
+    struct.pack_into('<i', event, EVENT_KEY, KEY_NEXT)
+    for name in ('ringnav_keydown', 'ringnav'):
+        assert fw.fn(name, C.c_int, C.c_void_p, C.c_void_p)(None, event) == STOP
+    assert not fw.calls('stock_keydown_trampoline') and not fw.calls('stock_keyup_trampoline')
+    assert ui.nodes[hold.view()].props['_ringnav_index'] == at and st('touch_mode').value == 1  # still dark
+    ui.nodes[hold.view()].props['_ringnav_index'] = at + 1  # moved anyway: the lit half is the chosen row's
+    ui.due('qm_lit')
+    assert ui.nodes[hold.view()].props['_ringnav_index'] == at
+    ui.due('qm_blinked')
+    assert not fw.fn('qm_blinking', C.c_int)()
+    fw.fn('ringnav_keydown', C.c_int, C.c_void_p, C.c_void_p)(None, event)
+    assert len(fw.calls('stock_keydown_trampoline')) == 1  # the menu gone: the wheel's own again
+
+
+@pytest.mark.parametrize('key', [KEY_PLAY, KEY_FWD_BTN])
+def test_other_keys_go_on_through_the_blink(hold, recs, ui, fw, key):
+    """Play/Pause and the side buttons: the blink owns only the wheel and Centre; their press and release reach stock's
+    filter, so none is left latched."""
+    hold.now_playing([song(recs, i) for i in range(3)], at=0, held=True)
+    hold.hold()
+    hold.menu()
+    hold.pick('Add to Queue')
+    assert fw.fn('qm_blinking', C.c_int)()
+    event = C.create_string_buffer(0x40)
+    struct.pack_into('<i', event, EVENT_KEY, key)
+    fw.fn('ringnav_keydown', C.c_int, C.c_void_p, C.c_void_p)(None, event)
+    fw.fn('ringnav', C.c_int, C.c_void_p, C.c_void_p)(None, event)
+    assert len(fw.calls('stock_keydown_trampoline')) == 1 and len(fw.calls('stock_keyup_trampoline')) == 1
+
+
+@pytest.mark.parametrize('touch', [0, 1])
+def test_the_menu_gone_mid_blink_shows_the_selection_as_before(hold, recs, ui, st, touch):
+    hold.now_playing([song(recs, i) for i in range(3)], at=0, held=True)
+    hold.hold()
+    hold.menu()
+    st('touch_mode').value = touch  # a tap opened it, or a button
+    hold.pick('Add to Queue')
+    assert st('touch_mode').value == 1
+    ui.close(hold.dialog)  # not Return: Hold Return's way home, or stock's
+    assert st('touch_mode').value == touch and not ui.timers and hold.dialog not in ui.stack
+
+
+def cover_flow(fw, ui, recs, screen):
+    """Cover Flow's page, on its covers (its first cover at the centre) or an album's tracks."""
+    cf = fw.var('cf', Cf)
+    cf.page = ui.window('coverflow_page')
+    cf.screen, cf.timer, cf.scoped = screen, 0, 0
+    return cf
+
+
+# The rows read from the page under the menu: it stays on top through the blink (#home review).
+@pytest.mark.parametrize('row', ('Play Next', 'Add to Queue'))
+@pytest.mark.parametrize('where', ('mostplayed', 'longsongs', 'coverflow'))
+def test_a_queue_add_from_a_page_of_its_own_tracks(hold, recs, ui, st, fw, row, where):
+    hold.now_playing([song(recs, i) for i in range(4, 7)], at=0, held=True)
+    ui.stack.remove(hold.page)
+    q = len(hold.deques[hold.queue])
+    songs = [song(recs, i) for i in range(3)]
+    tracks = hold.deques.new(songs)
+    if where == 'coverflow':
+        cf = cover_flow(fw, ui, recs, 2)  # TRACKS
+        ui.stack.remove(cf.page)
+    hold.songs_page(f'{where}_page', songs, sel=1, showlist=False, cls=0xf003)
+    if where == 'coverflow':
+        cf.page, cf.tracks, cf.albums, cf.album = hold.page, tracks, hold.deques.new([recs(kind=4, album='Abbey Road')]), 0
+    else:
+        st('mp_page' if where == 'mostplayed' else 'rt_page', C.c_void_p).value = hold.page
+        st('mp_list' if where == 'mostplayed' else 'rt_list', C.c_void_p).value = tracks
+    hold.hold()
+    hold.menu()
+    hold.pick(row)
+    assert not ui.toasts and len(hold.deques[hold.queue]) == q + 1 and hold.dialog in ui.stack
+
+
+def test_a_cover_s_menu_reads_its_cover_through_the_blink(hold, recs, ui, fw):
+    album = recs(path='/mnt/mmc/Music/a', album='Abbey Road', artist='The Beatles', kind=4)
+    cf = cover_flow(fw, ui, recs, 1)  # COVERS
+    slide = C.create_string_buffer(0x100)
+    cf.slide, cf.albums = C.addressof(slide), hold.deques.new([album])
+    hold.hold()
+    hold.menu()
+    assert hold.dialog in ui.stack and fw.fn('qm_record', C.c_void_p)() == album  # the menu on top: the cover still
 
 
 def test_go_to_folder_opens_the_songs_folder(hold, recs, ui, st):
@@ -1845,6 +1977,7 @@ def test_a_play_next_stocks_shuffle_holds_goes_first_in_up_next(hold, recs, ui, 
     hold.hold()
     hold.menu()
     hold.pick('Play Next')  # Song 0, playing, once more after itself
+    ui.due('qm_lit'), ui.due('qm_blinked')  # the row's blink, then the menu closes
     hold.hold()
     hold.menu()
     hold.pick('View Queue')

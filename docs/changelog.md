@@ -45,6 +45,7 @@
   - Library: play counts, resume places and ratings are no longer lost when their file can't be read for a moment. Q2 Pod started again from an empty list and saved it over the old one at the next song, place or rating; now it leaves the file alone and reads it again next time.
   - Watchdog: the record of what the Q2 was doing is written whole, so a power cut while it was being saved no longer leaves an empty one.
   - Boot logo and card themes: a card taken out at the wrong moment no longer deletes the boot logo or card theme copied from it. Only a mounted card that no longer has the file removes them.
+  - Hold menu: when **Play Next** or **Add to Queue** works, the row you chose blinks and then the menu closes, as on an iPod. The menu just closed, so nothing told you the song was queued.
 - **1.9.1**:
   - Standby: going into Standby gives the card up to 2 seconds to finish and unmount before its power is cut, where it used to cut it at once with files still open, which could leave the card marked as not properly unmounted and lose what was still being written.
   - EQ: in **Advanced**, drag a band up or down on the curve to set its gain, as you drag Simple's sliders. Touch the ring of a band that's on. Choose **Apply changes** to hear it.

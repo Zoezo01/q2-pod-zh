@@ -9272,9 +9272,14 @@ int ringnav_buzzer(int on) {
  * gates and latches still run, and the release clicks when the selection changes. The test reads
  * the tree only: nothing is loaded, selected or restored. Carousels, the pixel-scroll fallback,
  * scrub, the volume and every other key keep the stock click. */
+/* The keys a list takes: the wheel's ticks and Centre. */
+static int menu_key(unsigned key) {
+    return key == KEY_PREV || key == KEY_NEXT || key == KEY_CENTER;
+}
 int ringnav_keydown(void *ctx, event_t *event) {
     unsigned key = event ? (unsigned)I(event, EVENT_KEY) : 0;
     if (ple_key(key, 1) || side_seek(key, 1)) return STOP;
+    if (menu_key(key) && qm_blinking()) return STOP; /* the hold menu's blink owns its keys */
     widget_t *top = window_manager_get_top_window(window_manager());
     unsigned char tone = g_keytone_flag;
     widget_t *row = (void *)0;
@@ -9526,6 +9531,9 @@ int ringnav(void *ctx, event_t *event) {
         if (!usb_prompt()) stock_keyup_trampoline(ctx, event);
         return STOP;
     }
+    /* The hold menu's blink owns the menu's keys, the wheel and Centre; every other key, its
+     * release included, goes on to stock's filter. */
+    if (menu_key(key) && qm_blinking()) return STOP;
     /* This release's press was silenced by ringnav_keydown: a row change below clicks instead. */
     int owned = st.tone_key == key;
     st.tone_key = 0;

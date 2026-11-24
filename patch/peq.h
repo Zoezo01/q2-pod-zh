@@ -456,7 +456,8 @@ void night_set(int on, int kelvin), night_save(void), night_paint(canvas_t *canv
     night_clock(int dark);
 int clock_night(void); /* theme_engine.c: Night Shift's Auto hours now */
 int worker_stop(unsigned long thread, int *running, volatile int *cancel, unsigned *timer);
-void ringnav_select(widget_t *w, int id, int rows);
+void ringnav_select(widget_t *w, int id, int rows), ringnav_light(widget_t *list, int index);
+int qm_blinking(void);              /* queue_menu.c: the hold menu's blink owns the keys */
 int library_scanning(void);         /* coverflow.c: a library scan's thread runs */
 int library_count(const char *sql); /* library_lists.c: sql's one number, -1 when it can't be had */
 int library_counting(void);         /* coverflow.c: a song count reads songtable */
