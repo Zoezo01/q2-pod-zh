@@ -117,10 +117,9 @@ static widget_t *page_of(widget_t *top) {
  * clock; a pop-up or keyboard leaves the bar as it is. USB mode's page has neither title nor
  * clock, with Time in Title on or off, in every theme and Status Bar look; nor has Classic's lock
  * screen, whose date and clock are its own. The own pages' Set Time and Update Library (Classic's,
- * Modern's) have no clock either, so their titles show whole in its room: beside the clock the
- * title's box has 91 px, the scan's title is 104 px and the widest date being set 90. This runs in
- * a paint, which drops the label's invalidate, so bar_repaint follows; the clock waits for its
- * timer. */
+ * Modern's) have no clock either, so their titles take its room as a title does with Time in Title
+ * off. This runs in a paint, which drops the label's invalidate, so
+ * bar_repaint follows; the clock waits for its timer. */
 void bar_title(widget_t *bar, widget_t *top) {
     static const unsigned none = 0;
     unsigned named[48]; /* Now Playing's, Cover Flow's or Home's title, read below its block */
