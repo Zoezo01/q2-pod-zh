@@ -470,7 +470,7 @@ def test_nothing_to_yield(fw):
     assert yielded(fw, [], playing=0)[1] == []
 
 
-def worker(fw, script, connect=0, clock=None):
+def worker(fw, script, connect=0):
     """Spotify's worker over a socket whose recv hands out script; the reply buffer is request()'s size."""
     wk = fw.var('spotify__wk', Wk)
     wk.buf, wk.n, wk.len, wk.cancel = block(fw, b'Q2SPOT/1\n1\tcaps\n', REPLY_MAX + 2), 0, 16, 0

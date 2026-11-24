@@ -2104,7 +2104,7 @@ def test_folder_cover_what_it_can_t_list_is_stock_s_song_alone(fw, track):
     assert tried == [track] and not listing.opens
 
 
-def player_rig(fw, track=b'/m/a.mp3', id3_path=b'/m/a.mp3', artist=b'Art', album=b'Alb'):
+def player_rig(fw, id3_path=b'/m/a.mp3', artist=b'Art', album=b'Alb'):
     buf = fw.var('fw_ctx_g_play_id3_info', C.c_char * 2716)
     C.memmove(C.addressof(buf), id3_path + b'\0', len(id3_path) + 1)
     C.memmove(C.addressof(buf) + 0x504, artist + b'\0', len(artist) + 1)

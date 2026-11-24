@@ -7024,14 +7024,14 @@ def test_a_url_queue_started_is_told_under_its_play_seq(fw, play, seq):
     ap(fw).a[0].id, ap(fw).n = b'a', 1
     fw.fn('addon__stream_poll', None, C.POINTER(App))(C.pointer(ap(fw).a[0]))
     assert sm(fw).seq == seq and sm(fw).state == S_WAIT
-    free_stubbed(fw, lambda: fw.fn('addon__urls_start', C.c_int, C.c_void_p)(None))
+    free_stubbed(lambda: fw.fn('addon__urls_start', C.c_int, C.c_void_p)(None))
     nw = fw.var('addon__nw', Nw)
     assert nw.owner == 1 and nw.seq == seq and nw.live == 0 and fw.var('tidal__au', Au).now == 1
     nw.owner = 0
     world.files[b'/tmp/q2-a.urls'] = b'#Q2URLS/1\tnow=1\n'  # no song: nothing plays
     world.files[b'/tmp/q2-a.play'] = b'43 /tmp/q2-a.urls\n'
     fw.fn('addon__stream_poll', None, C.POINTER(App))(C.pointer(ap(fw).a[0]))
-    free_stubbed(fw, lambda: fw.fn('addon__urls_start', C.c_int, C.c_void_p)(None))
+    free_stubbed(lambda: fw.fn('addon__urls_start', C.c_int, C.c_void_p)(None))
     assert nw.owner == 0
 
 

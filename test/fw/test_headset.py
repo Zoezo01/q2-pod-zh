@@ -341,7 +341,7 @@ def test_a_pause_press_well_after_an_ear_pause_cancels_its_resume(fw):
     assert ears(fw, player, 3) == [1]
 
 
-def link(fw, player, resume='0'):
+def link(fw, resume='0'):
     """The link comes up now (headset_poll), Resume on Connect as given."""
     Config(fw, RESUME=resume)
     fw.var('g_bluetoothflag', C.c_ubyte).value = 1
@@ -352,7 +352,7 @@ def link(fw, player, resume='0'):
 
 def test_play_as_the_link_comes_up_is_dropped(fw):
     player = Player(fw, status=PAUSED)
-    link(fw, player)
+    link(fw)
     command(fw, player, PLAYPAUSE, step=1500)  # AirPods send PLAY with A2DP's setup
     command(fw, player, PLAYKEY, step=1500)
     assert player.toggles() == 0
@@ -363,7 +363,7 @@ def test_play_as_the_link_comes_up_is_dropped(fw):
 def test_the_hold_on_play_is_the_link_s_first_5_s(fw):
     """docs/internals.md#resume-on-connect: PLAY within CONNECT_HOLD_MS (5 s) of the link is dropped."""
     player = Player(fw, status=PAUSED)
-    link(fw, player)
+    link(fw)
     command(fw, player, PLAYKEY, step=4999)
     assert player.toggles() == 0
     command(fw, player, PLAYPAUSE, step=1)
@@ -372,14 +372,14 @@ def test_the_hold_on_play_is_the_link_s_first_5_s(fw):
 
 def test_pause_as_the_link_comes_up_still_pauses(fw):
     player = Player(fw)
-    link(fw, player)
+    link(fw)
     command(fw, player, PLAYPAUSE, step=1000)
     assert player.toggles() == 1
 
 
 def test_with_resume_on_connect_play_on_the_link_plays(fw):
     player = Player(fw, status=PAUSED)
-    link(fw, player, resume='1')
+    link(fw, resume='1')
     command(fw, player, PLAYPAUSE, step=1000)
     assert player.toggles() == 1
 

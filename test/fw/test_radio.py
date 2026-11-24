@@ -892,7 +892,7 @@ def test_held_on_the_menu_or_a_country_list_after_a_station_list_does_nothing(fw
     p.run('leave')
     assert hold(fw, p, 0) is None
     p.menu('By Country')
-    fetched(fw, p, curl)
+    fetched(p)
     assert hold(fw, p, 0) is None and FAVS not in p.card.files
 
 
@@ -911,11 +911,11 @@ def test_a_toggle_on_another_list_rebuilds_nothing(fw, where):
         p.menu('Featured')
     else:
         p.menu('By Country')
-        fetched(fw, p, curl)
+        fetched(p)
         curl.body = m3u(('A', 'http://a.example/'))
         p.rows('pick_click')[0]()
         p.run('go')
-        fetched(fw, p, curl)
+        fetched(p)
     assert hold(fw, p, 0) == 'Added to Favourites' and p.live('go') == []
 
 
@@ -1066,7 +1066,7 @@ def test_a_station_too_long_to_save_leaves_favourites_as_they_were(fw):
     p = page(fw, {FAVS: before})
     curl = Curl(fw, m3u(('Long', 'http://long.example/' + 'x' * 2000)))
     p.menu('Top Stations')
-    fetched(fw, p, curl)
+    fetched(p)
     assert hold(fw, p, 0) == 'Could not save Favourites' and p.card.files[FAVS] == before
 
 
@@ -1079,7 +1079,7 @@ def test_a_favourite_is_saved_whole_or_not_at_all(fw):
     p = page(fw, {FAVS: m3u(one)})
     curl = Curl(fw, m3u(*long))
     p.menu('Top Stations')
-    fetched(fw, p, curl)
+    fetched(p)
     saved = []
     for row, station in enumerate(long):
         p.card.files[FAVS] = m3u(one)
@@ -1174,7 +1174,7 @@ class Curl:
         return self.error
 
 
-def fetched(fw, p, curl):
+def fetched(p):
     """The worker run as its pthread would, then the page's tick."""
     C.CFUNCTYPE(C.c_void_p, C.c_void_p)(p.threads[-1])(0)
     return p.run('tick')
@@ -1189,7 +1189,7 @@ def test_top_stations_fetches_by_votes_over_verified_tls(fw):
     curl = Curl(fw, m3u(('Zed', 'http://z.example/'), ('Abe', 'http://a.example/')))
     p.menu('Top Stations')
     assert fx(fw).running == 1 and 'Loading…' in note(p)
-    fetched(fw, p, curl)
+    fetched(p)
     assert curl.opts[10002] == f'{API}/m3u/stations/topvote/100?hidebroken=true'
     assert (curl.opts[10065], curl.opts[64], curl.opts[81], curl.opts[10018]) == ('/etc/scrobble-ca.pem', 1, 2, 'Q2Pod')
     assert (curl.opts[78], curl.opts[13], curl.opts[52], curl.opts[99]) == (10, 30, 1, 1)
@@ -1203,7 +1203,7 @@ def test_countries_are_a_to_z_and_a_country_s_stations_too(fw):
                     b'Spain,ES,70\nAustria,AT,50\n')
     p.menu('By Country')
     assert curl.opts == {} and fx(fw).url == f'{API}/csv/countries?order=stationcount&reverse=true&limit=60'.encode()
-    fetched(fw, p, curl)
+    fetched(p)
     pick = ui(fw).pick
     assert [(pick.at(pick.name[i]), pick.at(pick.url[i])) for i in range(pick.n)] == [  # "The" aside, as the library
         ('Austria', 'AT'), ('Germany', 'DE'), ('Korea, Republic of', 'KR'), ('The Netherlands', 'NL'), ('Spain', 'ES')]
@@ -1213,7 +1213,7 @@ def test_countries_are_a_to_z_and_a_country_s_stations_too(fw):
     p.run('go')
     assert fx(fw).url == f'{API}/m3u/stations/bycountrycodeexact/NL{QUERY}'.encode()
     assert ui(fw).caption == b'The Netherlands'
-    fetched(fw, p, curl)
+    fetched(p)
     assert [n for n, _ in ui(fw).list.stations()] == ['BNR', 'NPO Radio 2']
 
 
@@ -1222,7 +1222,7 @@ def test_genres_by_tag_escaped(fw):
     curl = Curl(fw, b'name,stationcount\nrock,900\nhip hop,500\n')
     p.menu('By Genre')
     assert fx(fw).url == f'{API}/csv/tags?order=stationcount&reverse=true&limit=60'.encode()
-    fetched(fw, p, curl)
+    fetched(p)
     pick = ui(fw).pick
     assert [pick.at(pick.name[i]) for i in range(pick.n)] == ['hip hop', 'rock']
     p.rows('pick_click')[0]()
@@ -1242,7 +1242,7 @@ def test_a_failed_fetch_says_the_directory_is_unavailable(fw, code, error, body)
     p = page(fw)
     curl = Curl(fw, body, code=code, error=error)
     p.menu('Top Stations')
-    fetched(fw, p, curl)
+    fetched(p)
     assert 'Directory unavailable' in note(p) and ui(fw).note == 1
 
 
@@ -1250,7 +1250,7 @@ def test_a_fetch_with_no_stations_says_so(fw):
     p = page(fw)
     curl = Curl(fw, b'#EXTM3U\n')
     p.menu('Top Stations')
-    fetched(fw, p, curl)
+    fetched(p)
     assert 'No stations' in note(p)
 
 
@@ -1258,7 +1258,7 @@ def test_a_body_over_256_kb_is_cut_off(fw):
     p = page(fw)
     curl = Curl(fw, m3u(('A', 'http://a/')) + b'#' * (300 << 10), chunk=64 << 10)
     p.menu('Top Stations')
-    fetched(fw, p, curl)
+    fetched(p)
     assert curl.wrote == [64 << 10] * 3 + [0] and 'Directory unavailable' in note(p)
 
 
@@ -1287,11 +1287,11 @@ def test_return_goes_up_a_level_each_time(fw):
     p = page(fw)
     curl = Curl(fw, b'name,iso_3166_1,stationcount\nGermany,DE,99\n')
     p.menu('By Country')
-    fetched(fw, p, curl)
+    fetched(p)
     curl.body = m3u(('A', 'http://a/'))
     p.rows('pick_click')[0]()
     p.run('go')
-    fetched(fw, p, curl)
+    fetched(p)
     levels = []
     for _ in range(3):
         p.key(ui(fw).page)
@@ -1363,7 +1363,7 @@ def test_a_fetch_after_a_cancelled_one_completes(fw):
     p.key(ui(fw).page)
     p.run('leave')
     p.menu('Top Stations')
-    fetched(fw, p, curl)
+    fetched(p)
     assert ui(fw).list.stations() == [('A', 'http://a.example/')]
 
 
@@ -1371,12 +1371,12 @@ def test_a_fetch_that_fails_after_a_good_one_says_so(fw):
     p = page(fw)
     curl = Curl(fw, m3u(('A', 'http://a.example/')))
     p.menu('Top Stations')
-    fetched(fw, p, curl)
+    fetched(p)
     p.key(ui(fw).page)
     p.run('leave')
     curl.error = 28  # CURLE_OPERATION_TIMEDOUT, part of the body in
     p.menu('Top Stations')
-    fetched(fw, p, curl)
+    fetched(p)
     assert ui(fw).note == 1 and 'Directory unavailable' in note(p)
 
 
@@ -1385,7 +1385,7 @@ def test_a_finished_fetch_s_thread_is_joined_once(fw):
     p = page(fw)
     curl = Curl(fw, m3u(('A', 'http://a.example/')))
     p.menu('Top Stations')
-    fetched(fw, p, curl)
+    fetched(p)
     assert p.run('tick') == RET_REPEAT and len(fw.calls('fw_pthread_join')) == 1
     assert ui(fw).list.stations() == [('A', 'http://a.example/')] and curl.cleaned == [0x9000]
 
@@ -1395,7 +1395,7 @@ def test_the_directory_s_last_line_needs_no_newline(fw):
     curl = Curl(fw, m3u(('A', 'http://a.example/'), ('B', 'http://b.example/'))[:-1])
     Player(fw)
     p.menu('Top Stations')
-    fetched(fw, p, curl)
+    fetched(p)
     p.rows('station_click')[1]()
     assert rd(fw).list.stations() == [('A', 'http://a.example/'), ('B', 'http://b.example/')] and rd(fw).at == 1
 
@@ -1407,7 +1407,7 @@ def test_a_reply_may_fill_256_kb_but_for_its_nul(fw, extra, whole):
     p = page(fw)
     curl = Curl(fw, body, chunk=64 << 10)
     p.menu('Top Stations')
-    fetched(fw, p, curl)
+    fetched(p)
     assert (ui(fw).list.stations() == [('A', 'http://a.example/')]) == whole and ui(fw).note == (not whole)
 
 
@@ -1416,7 +1416,7 @@ def test_the_directory_s_csv_leaves_out_rows_it_can_t_use(fw):
     p = page(fw)
     curl = Curl(fw, b'name,iso_3166_1,stationcount\nbad row\n,XX,5\nNowhere,,3\n"Korea, Republic of",KR,10\nGermany,DE,99\n')
     p.menu('By Country')
-    fetched(fw, p, curl)
+    fetched(p)
     pick = ui(fw).pick
     assert [(pick.at(pick.name[i]), pick.at(pick.url[i])) for i in range(pick.n)] == [('Germany', 'DE'),
                                                                                      ('Korea, Republic of', 'KR')]
@@ -1426,7 +1426,7 @@ def test_a_quoted_genre_is_fetched_by_its_name(fw):
     p = page(fw)
     curl = Curl(fw, b'name,stationcount\n"rock, pop",50\njazz,40\n')
     p.menu('By Genre')
-    fetched(fw, p, curl)
+    fetched(p)
     assert p.captions('pick_click') == {0: 'jazz', 1: 'rock, pop'}
     p.rows('pick_click')[1]()
     p.run('go')
@@ -1437,7 +1437,7 @@ def test_a_directory_list_holds_200_rows(fw):
     p = page(fw)
     curl = Curl(fw, b'name,stationcount\n' + b''.join(b'tag%03d,%d\n' % (i, 1000 - i) for i in range(250)))
     p.menu('By Genre')
-    fetched(fw, p, curl)
+    fetched(p)
     pick = ui(fw).pick
     tags = [f'tag{i:03}' for i in range(200)]
     assert [(pick.at(pick.name[i]), pick.at(pick.url[i])) for i in range(pick.n)] == list(zip(tags, tags))
@@ -1448,12 +1448,12 @@ def test_equal_names_keep_the_directory_s_vote_order(fw):
     p = page(fw)
     curl = Curl(fw, b'name,iso_3166_1,stationcount\nGermany,DE,99\n')
     p.menu('By Country')
-    fetched(fw, p, curl)
+    fetched(p)
     curl.body = m3u(('Radio 1', 'http://first.example/'), ('Alpha', 'http://a.example/'), ('radio 1', 'http://second.example/'),
                     ('The Radio 1', 'http://third.example/'))
     p.rows('pick_click')[0]()
     p.run('go')
-    fetched(fw, p, curl)
+    fetched(p)
     assert [u for _, u in ui(fw).list.stations()] == ['http://a.example/', 'http://first.example/', 'http://second.example/',
                                                      'http://third.example/']
 
@@ -1462,11 +1462,11 @@ def test_a_country_s_stations_are_titled_with_its_name(fw):
     p = page(fw)
     curl = Curl(fw, b'name,iso_3166_1,stationcount\nGermany,DE,99\n')
     p.menu('By Country')
-    fetched(fw, p, curl)
+    fetched(p)
     curl.body = m3u(('A', 'http://a.example/'))
     p.rows('pick_click')[0]()
     p.run('go')
-    fetched(fw, p, curl)
+    fetched(p)
     assert title(p) == 'Germany'
 
 
@@ -1475,19 +1475,19 @@ def test_a_new_directory_list_opens_on_its_first_row(fw):
     p = page(fw)
     curl = Curl(fw, b'name,iso_3166_1,stationcount\nAustria,AT,9\nBelgium,BE,8\nChile,CL,7\nDenmark,DK,6\n')
     p.menu('By Country')
-    fetched(fw, p, curl)
+    fetched(p)
     at(p, 3)
     curl.body = m3u(('A', 'http://a.example/'), ('B', 'http://b.example/'), ('C', 'http://c.example/'))
     p.rows('pick_click')[3]()
     p.run('go')
-    fetched(fw, p, curl)
+    fetched(p)
     assert selected(p) == 0  # the stations
     for _ in range(2):
         p.key(ui(fw).page)
         p.run('leave')  # the countries, then the menu
     curl.body = b'name,stationcount\njazz,4\npop,3\nrock,2\nsoul,1\n'
     p.menu('By Genre')
-    fetched(fw, p, curl)
+    fetched(p)
     assert selected(p) == 0
 
 
@@ -1504,7 +1504,7 @@ def test_wi_fi_lost_during_a_fetch_says_no_wi_fi(fw):
     curl = Curl(fw, error=6)  # CURLE_COULDNT_RESOLVE_HOST
     p.menu('Top Stations')
     p.wifi = 0
-    fetched(fw, p, curl)
+    fetched(p)
     assert 'No Wi-Fi' in note(p)
 
 
@@ -1513,7 +1513,7 @@ def test_no_curl_handle_no_transfer(fw):
     curl = Curl(fw, m3u(('A', 'http://a.example/')))
     fw.mock('fw_curl_easy_init', lambda *_: 0)
     p.menu('Top Stations')
-    fetched(fw, p, curl)
+    fetched(p)
     assert curl.opts == {} and fw.calls('fw_curl_easy_perform') == [] and 'Directory unavailable' in note(p)
 
 
@@ -1535,7 +1535,7 @@ def test_the_directory_s_certificate_is_checked_without_the_clock(fw):
     p = page(fw)
     curl = Curl(fw, m3u(('A', 'http://a.example/')))
     p.menu('Top Stations')
-    fetched(fw, p, curl)
+    fetched(p)
     assert curl.flags & X509_V_FLAG_NO_CHECK_TIME and ui(fw).list.n == 1
 
 
@@ -1561,7 +1561,7 @@ def test_a_search_fetches_by_name_escaped_in_vote_order(fw):
     assert edit and fw.calls('widget_set_focused')
     p.run('go')
     assert fx(fw).url == f'{API}/m3u/stations/byname/jazz%20%26%20blues{QUERY}'.encode()
-    fetched(fw, p, curl)
+    fetched(p)
     assert [n for n, _ in ui(fw).list.stations()] == ['Zed FM', 'Abe FM'] and ui(fw).caption == b'jazz & blues'
     p.key(ui(fw).page)
     p.run('leave')
@@ -1680,11 +1680,11 @@ def test_return_from_search_results_goes_back_to_the_menu_or_the_country_list(fw
     curl = Curl(fw, b'name,iso_3166_1,stationcount\nGermany,DE,99\n')
     p.menu(over)
     if over == 'By Country':
-        fetched(fw, p, curl)
+        fetched(p)
     curl.body = m3u(('A', 'http://a.example/'))
     search(fw, p, 'jazz')
     p.run('go')
-    fetched(fw, p, curl)
+    fetched(p)
     p.key(ui(fw).page)
     p.run('leave')
     assert ui(fw).level == back
@@ -1696,7 +1696,7 @@ def test_return_from_a_search_selects_the_row_it_was_pulled_over(fw):
     at(p, 4)
     search(fw, p, 'jazz')
     p.run('go')
-    fetched(fw, p, curl)
+    fetched(p)
     at(p, 0)
     p.key(ui(fw).page)
     p.run('leave')
@@ -1732,7 +1732,7 @@ def test_search_results_over_favourites_are_no_favourites_list(fw):
     p.menu('Favourites')
     search(fw, p, 'a')
     p.run('go')
-    fetched(fw, p, curl)
+    fetched(p)
     assert hold(fw, p, 0) == 'Added to Favourites' and p.live('go') == []
 
 
@@ -2211,7 +2211,7 @@ def test_a_hostile_station_url_is_one_argument_of_q2video_and_no_shell_s(fw):
     lines = HOSTILE + urls + ['http://r.example/a\n-r', 'http://r.example/b\r$(reboot)']
     curl = Curl(fw, m3u(*((f'S{i}', line) for i, line in enumerate(lines))))
     p.menu('Top Stations')
-    fetched(fw, p, curl)
+    fetched(p)
     urls += ['http://r.example/a', 'http://r.example/b']  # each cut at its newline: what follows is a line without "://"
     rows = p.rows('station_click')
     assert sorted(rows) == list(range(len(urls)))  # the bare values are no stations

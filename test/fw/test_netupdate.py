@@ -368,7 +368,7 @@ def test_a_cut_or_hostile_release_is_none_or_the_same_answer(fw):
 SHA_CHUNK = 1 << 14
 
 
-def sha256(fw, card, path=b'/mnt/mmc/x'):
+def sha256(fw, path=b'/mnt/mmc/x'):
     out, size = block(fw, size=65), C.c_uint(7)
     ok = fw.fn('netupdate_sha256', C.c_int, C.c_char_p, C.c_void_p, C.POINTER(C.c_uint))(path, out, C.byref(size))
     return ok, C.string_at(out).decode(), size.value
@@ -378,20 +378,21 @@ def sha256(fw, card, path=b'/mnt/mmc/x'):
                                SHA_CHUNK, SHA_CHUNK + 1, 2 * SHA_CHUNK, 3 * SHA_CHUNK + 55, 100003])
 def test_a_file_s_sha256_at_every_edge_of_its_padding(fw, n):
     data = random.Random(n).randbytes(n)
-    assert sha256(fw, Card(fw, {b'/mnt/mmc/x': data})) == (1, sha(data), n)
+    Card(fw, {b'/mnt/mmc/x': data})
+    assert sha256(fw) == (1, sha(data), n)
 
 
 def test_the_known_answers(fw):
-    card = Card(fw, {b'/mnt/mmc/x': b'abc', b'/mnt/mmc/y': b'abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq'})
-    assert sha256(fw, card)[1] == 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'  # FIPS 180-4's examples
-    assert sha256(fw, card, b'/mnt/mmc/y')[1] == '248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1'
+    Card(fw, {b'/mnt/mmc/x': b'abc', b'/mnt/mmc/y': b'abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq'})
+    assert sha256(fw)[1] == 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'  # FIPS 180-4's examples
+    assert sha256(fw, b'/mnt/mmc/y')[1] == '248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1'
 
 
 def test_a_file_that_is_missing_or_fails_to_read_has_no_sha256(fw):
-    card = Card(fw, {b'/mnt/mmc/x': b'abc'})
-    assert sha256(fw, card, b'/mnt/mmc/none')[0] == 0
+    Card(fw, {b'/mnt/mmc/x': b'abc'})
+    assert sha256(fw, b'/mnt/mmc/none')[0] == 0
     fw.mock('fw_ferror', lambda *_: 1)
-    assert sha256(fw, card)[0] == 0
+    assert sha256(fw)[0] == 0
 
 
 def row(size, name):
@@ -1390,39 +1391,41 @@ def test_a_failed_download_says_why(fw):
     assert install(fw, card, net)[0] == SH_MISSING
 
 
-def state(fw, card, latest=b'', i=0):
+def state(fw, latest=b'', i=0):
     (App * SH_MAX).in_dll(fw.lib, 'shelf_apps')[i].latest = latest
     return fw.fn('netupdate__sh_state', C.c_int, C.c_int)(i)
 
 
 def test_installed_with_a_tag(fw):
     apps(fw, b'me/foo')
-    card = Card(fw, {b'/mnt/mmc/.q2/apps/foo.tag': b'2.0'})
-    assert state(fw, card) == ST_INSTALLED and state(fw, card, b'2.0') == ST_INSTALLED
-    assert state(fw, card, b'2.1') == ST_UPDATE
+    Card(fw, {b'/mnt/mmc/.q2/apps/foo.tag': b'2.0'})
+    assert state(fw) == ST_INSTALLED and state(fw, b'2.0') == ST_INSTALLED
+    assert state(fw, b'2.1') == ST_UPDATE
 
 
 def test_a_binary_without_a_tag_is_a_manual_install(fw):
     apps(fw, b'me/foo')
-    assert state(fw, Card(fw, {b'/mnt/mmc/.foo/q2-foo': b''})) == ST_UPDATE
+    Card(fw, {b'/mnt/mmc/.foo/q2-foo': b''})
+    assert state(fw) == ST_UPDATE
 
 
 def test_a_folder_where_the_binary_should_be_is_not_installed(fw):
     apps(fw, b'me/foo')
-    card = Card(fw, {b'/mnt/mmc/.foo/q2-foo': b''})
+    Card(fw, {b'/mnt/mmc/.foo/q2-foo': b''})
     fw.mock('fw___xstat', lambda v, p, info, *_: C.cast(info, C.POINTER(C.c_uint)).__setitem__(5, 0o040755))
-    assert state(fw, card) == ST_INSTALL
+    assert state(fw) == ST_INSTALL
 
 
 def test_nothing_on_the_card(fw):
     apps(fw, b'me/foo', b'x/q2-rockbox-themes')
-    card = Card(fw)
-    assert state(fw, card) == ST_INSTALL and state(fw, card, i=1) == ST_INSTALL  # the themes have no binary
+    Card(fw)
+    assert state(fw) == ST_INSTALL and state(fw, i=1) == ST_INSTALL  # the themes have no binary
 
 
 def test_a_tag_file_too_long_is_held_to_its_buffer(fw):
     apps(fw, b'me/foo')
-    assert state(fw, Card(fw, {b'/mnt/mmc/.q2/apps/foo.tag': b'x' * 500}), b'x' * 31) == ST_UPDATE
+    Card(fw, {b'/mnt/mmc/.q2/apps/foo.tag': b'x' * 500})
+    assert state(fw, b'x' * 31) == ST_UPDATE
 
 
 def test_file_mode_is_its_type_bits(fw):

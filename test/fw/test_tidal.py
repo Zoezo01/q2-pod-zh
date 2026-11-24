@@ -379,7 +379,7 @@ class Au(C.Structure):
                 ('hearts', C.c_int), ('now', C.c_int)]
 
 
-def free_stubbed(fw, play):
+def free_stubbed(play):
     """play(), with toolsFreeStSongInfo, called at its stock address (tidal.c's own define), a ret meanwhile: each
     record's strings stay for the asserts; the byte is put back after, as conftest's map outlives a load."""
     free_rec = int(re.findall(r'toolsFreeStSongInfo \(\(void \(\*\)\(void \*\)\)(0x[0-9a-f]+)u\)',
@@ -397,7 +397,7 @@ def urls_play(fw, files, lines, path='/tmp/q2-a.urls', header=b'#Q2URLS/1'):
     """app_urls_play over a Q2URLS/1 file of lines, put in files (conftest's Files, mocked): its result."""
     files.files[path] = header + b'\n' + b''.join(line + b'\n' for line in lines)
     fw.mock('tk_str_start_with', lambda s, p, *_: C.string_at(s).startswith(C.string_at(p)))
-    return free_stubbed(fw, lambda: fw.fn('app_urls_play', C.c_int, C.c_char_p)(path.encode()))
+    return free_stubbed(lambda: fw.fn('app_urls_play', C.c_int, C.c_char_p)(path.encode()))
 
 
 # A card app's songs' hearts (docs/librespot.md): a line's 7th field is the song's item, the app's own id for it,
