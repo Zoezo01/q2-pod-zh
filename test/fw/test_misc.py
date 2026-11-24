@@ -7,7 +7,7 @@ import struct
 import subprocess
 
 import pytest
-from conftest import Card as BaseCard, Dirent, block
+from conftest import Card as BaseCard, Dirent, block, libc
 from test_peq_page import Band, E3, EqState, Preset, Ui
 
 pytestmark = pytest.mark.usefixtures('stock_gapless')  # Crossfade's page has stock's Gapless on, as stock's default
@@ -16,8 +16,6 @@ CENTER, PREV, NEXT, PLAY = 218, 172, 173, 171
 FNV = 2166136261
 r = C.byref
 
-libc = C.CDLL(None)
-libc.calloc.restype, libc.calloc.argtypes = C.c_void_p, [C.c_size_t, C.c_size_t]
 
 
 def exact(ctype, n):

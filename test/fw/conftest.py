@@ -60,6 +60,10 @@ FNV_SEED, FNV_PRIME = 2166136261, 16777619
 libc = C.CDLL(None)
 libc.mmap.restype, libc.mmap.argtypes = C.c_void_p, [C.c_void_p, C.c_size_t, C.c_int, C.c_int, C.c_int, C.c_long]
 libc.mprotect.argtypes = [C.c_void_p, C.c_size_t, C.c_int]
+libc.munmap.argtypes = [C.c_void_p, C.c_size_t]
+libc.calloc.restype, libc.calloc.argtypes = C.c_void_p, [C.c_size_t, C.c_size_t]
+libc.free.argtypes = [C.c_void_p]
+libc.qsort.argtypes = [C.c_void_p, C.c_size_t, C.c_size_t, C.c_void_p]
 if libc.mmap(0x400000, 0x800000, 3, 0x100022, -1, 0) != 0x400000:  # read/write, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE
     pytest.exit('test/fw needs a position-independent python: 0x400000-0xc00000, stock\'s addresses, is taken '
                             '(a non-PIE python lives there); use one built with -pie, e.g. actions/setup-python\'s or a venv of a PIE build', returncode=4)

@@ -13,7 +13,7 @@ import pytest
 
 import host
 import test_playlist_art
-from conftest import O, Card as BaseCard, Config, Deques, Dirent, Externpic, Files, ask_cover, block, claim, fnv1a, high_halves, in_fork
+from conftest import O, Card as BaseCard, Config, Deques, Dirent, Externpic, Files, ask_cover, block, claim, fnv1a, high_halves, in_fork, libc
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 CX, TOP, ART, ONE, MISS = 187, 13, 160, 65536, 99
@@ -91,11 +91,6 @@ def api(fw):
     return SimpleNamespace(**{k.replace('coverflow__', ''): fw.fn(k, v[0], *v[1:]) for k, v in fns.items()})
 
 
-libc = C.CDLL(None)
-libc.calloc.restype, libc.calloc.argtypes = C.c_void_p, [C.c_size_t, C.c_size_t]
-libc.free.argtypes = [C.c_void_p]
-libc.qsort.argtypes = [C.c_void_p, C.c_size_t, C.c_size_t, C.c_void_p]
-libc.mmap.restype, libc.mmap.argtypes = C.c_void_p, [C.c_void_p, C.c_size_t, C.c_int, C.c_int, C.c_int, C.c_long]
 
 
 def exact(ctype, n):
@@ -3944,9 +3939,6 @@ def test_a_panel_row_keeps_its_reserve_with_no_canvas(fw):
 from test_nav_loop import Clock, Flip, Land  # noqa: E402
 import test_nav_paint  # noqa: E402  its theme(): the settings the C reads
 
-LIBC = C.CDLL(None)
-LIBC.calloc.restype = C.c_void_p
-LIBC.calloc.argtypes = [C.c_size_t, C.c_size_t]
 W_W, W_H, CANVAS_LCD, LCD_FILL_COLOR, REC_PATH = O['W_W'], O['W_H'], O['CANVAS_LCD'], O['LCD_FILL_COLOR'], O['REC_PATH']
 FLIP_H, BACK_W, BACK_H = 294, 294, 285
 RET_REPEAT = 8
@@ -3960,14 +3952,14 @@ def test_the_landing_turns_from_its_click_until_its_motion_ends(fw):
     flip.dir = 1
     assert turning() and not landing()
     flip.dir = 0
-    land.front, land.ms = LIBC.calloc(4, 1), -1  # clicked, no paint yet
+    land.front, land.ms = libc.calloc(4, 1), -1  # clicked, no paint yet
     assert turning() and landing()
     land.ms, land.t0, land.len = 0, 1000, 400
     clock.now = 1399
     assert turning()
     clock.now = 1400
     assert not turning() and landing()  # held
-    land.frame = LIBC.calloc(0x48, 1)
+    land.frame = libc.calloc(0x48, 1)
     end()
     assert not landing() and len(fw.calls('bitmap_destroy')) == 1
     end()
@@ -3991,7 +3983,7 @@ class Run:
         land.to[:] = [16, 22, 178]
         land.len, land.travel, land.out_ms, land.np_at, land.np_ms = 400, 55, 110, 90, 100
         land.win, land.art = C.addressof(self.win), C.addressof(self.art)
-        land.frame, land.back, land.front = LIBC.calloc(0x48, 1), LIBC.calloc(BACK_W * BACK_H, 4), LIBC.calloc(160 * 160, 4)
+        land.frame, land.back, land.front = libc.calloc(0x48, 1), libc.calloc(BACK_W * BACK_H, 4), libc.calloc(160 * 160, 4)
         land.path, land.ms, land.at = fw.fn('coverflow_land__song_key', C.c_uint, C.c_void_p)(self.rec), -1, 1000
         self.top, self.pressed, self.timer = land.win, 0, 7
         fw.mock('window_manager_get_top_window', lambda *_: self.top)

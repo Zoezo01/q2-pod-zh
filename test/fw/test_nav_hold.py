@@ -10,7 +10,7 @@ import pytest
 
 import host
 import test_nav_loop as NL  # Now Playing's update (NP_UPDATE) and the window manager's paint (Wm)
-from conftest import O, Deques, Files, Rows, claim, favdir_card, fnv1a, high_halves, in_fork, ui_name
+from conftest import O, Deques, Files, Rows, claim, favdir_card, fnv1a, high_halves, in_fork, libc, ui_name
 from test_nav_display_library import Ple  # playlists.c's editor state
 from test_navigation import directory
 from test_coverflow import Cf  # coverflow.c's state
@@ -52,9 +52,7 @@ class Records:
     HIGHS = high_halves(0x400)
 
     def __init__(self):
-        self.libc = C.CDLL(None)
-        self.libc.mmap.restype, self.libc.mmap.argtypes = C.c_void_p, [C.c_void_p, C.c_size_t, C.c_int, C.c_int, C.c_int, C.c_long]
-        self.libc.munmap.argtypes = [C.c_void_p, C.c_size_t]
+        self.libc = libc
         self.pages, self.keep = set(), []
         # this file's high halves (conftest.high_halves), each a string's high half once; its low half may sit near
         # its page's end, so page() maps the next page too

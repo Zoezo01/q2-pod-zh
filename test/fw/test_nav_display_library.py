@@ -9,7 +9,7 @@ import struct
 import pytest
 
 import host
-from conftest import NAVIGATION_SOURCE, O, Config, Deques, Files, claim, high_halves, pod_value
+from conftest import NAVIGATION_SOURCE, O, Config, Deques, Files, claim, high_halves, libc, pod_value
 from test_coverflow import SONGTABLE  # stock's songtable, as demo's CREATE TABLE text has it
 from test_navigation import clock
 
@@ -2230,9 +2230,6 @@ def test_an_unknown_artist_reads_stocks_words_only_where_rows_keep_stocks_art(fw
 
 
 # Records: stSongInfo as stock's library fills them.
-libc = C.CDLL(None)
-libc.mmap.restype, libc.mmap.argtypes = C.c_void_p, [C.c_void_p, C.c_size_t, C.c_int, C.c_int, C.c_int, C.c_long]
-libc.munmap.argtypes = [C.c_void_p, C.c_size_t]
 FIELDS = {k: O['REC_' + k.upper()] for k in ('name', 'path', 'title', 'album', 'artist', 'album_artist')}
 
 

@@ -8,7 +8,7 @@ import struct
 
 import pytest
 
-from conftest import FNV_PRIME, O, Config, Files, block, fnv1a
+from conftest import FNV_PRIME, O, Config, Files, block, fnv1a, libc
 
 ROOT = '/mnt/mmc/Photos'
 CACHE = '/mnt/mmc/.photos'
@@ -45,10 +45,6 @@ def key(path):
     return fnv1a(path.encode()) * FNV_PRIME & 0xffffffff
 
 
-LIBC = C.CDLL(None)  # this file's own handle: its argtypes are its own
-LIBC.mmap.restype, LIBC.mmap.argtypes = C.c_void_p, [C.c_void_p, C.c_size_t, C.c_int, C.c_int, C.c_int, C.c_long]
-LIBC.mprotect.argtypes = [C.c_void_p, C.c_size_t, C.c_int]
-LIBC.munmap.argtypes = [C.c_void_p, C.c_size_t]
 PAGE = 0x1000
 
 
@@ -58,14 +54,14 @@ def flush(data=b'', size=None):
     with ASan or without, where a heap block's slack would let it pass."""
     size = len(data) if size is None else size
     span = -(-size // PAGE) * PAGE or PAGE
-    base = LIBC.mmap(None, span + PAGE, 3, 0x22, -1, 0)  # read/write, MAP_PRIVATE | MAP_ANONYMOUS
+    base = libc.mmap(None, span + PAGE, 3, 0x22, -1, 0)  # read/write, MAP_PRIVATE | MAP_ANONYMOUS
     assert base and base != C.c_void_p(-1).value
-    assert not LIBC.mprotect(base + span, PAGE, 0)
+    assert not libc.mprotect(base + span, PAGE, 0)
     C.memmove(base + span - size, data, len(data))
     try:
         yield base + span - size
     finally:
-        LIBC.munmap(base, span + PAGE)
+        libc.munmap(base, span + PAGE)
 
 
 # File names.

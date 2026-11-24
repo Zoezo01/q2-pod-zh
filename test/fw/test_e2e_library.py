@@ -18,7 +18,6 @@ import pytest
 import host
 from conftest import NAVIGATION_SOURCE, FNV_PRIME, O, Deques, Dirent, fnv1a, high_halves, libc
 
-libc.munmap.argtypes = [C.c_void_p, C.c_size_t]
 FIXED = 0x100022  # MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE
 STRINGS = 'name path title album artist genre composer album_artist cover'.split()  # REC_NAME on, a word apart
 RESUME_FILE, XFADE_FILE = '/mnt/data/ringnav-resume', '/tmp/q2xfade'

@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from conftest import O, Card, Config, Dirent, block, fnv1a, rgba
+from conftest import O, Card, Config, Dirent, block, fnv1a, libc, rgba
 
 SEED = 2166136261
 SUD, BEST, SOL, SNK = 0x31445553, 0x31585456, 0x314c4f53, 0x314b4e53
@@ -81,8 +81,6 @@ def api(fw):
 def seed(fw, n):
     fw.var('playback__rng', C.c_uint).value = n or 1
 
-
-libc = C.CDLL(None)
 
 
 def solve(grid, limit=2):
@@ -1119,8 +1117,6 @@ def sealed(fw, struct, magic):
 def no_held_return():
     """games_key reads Return's stock latch at its device address: a zero page there unless this python's own
     image is (its non-PIE build is), which a read survives but only a zero there leaves the key to the game."""
-    libc.mmap.restype = C.c_void_p
-    libc.mmap.argtypes = [C.c_void_p, C.c_size_t, C.c_int, C.c_int, C.c_int, C.c_long]
     libc.mmap(LATCH & ~0xfff, 4096, 3, mmap.MAP_PRIVATE | mmap.MAP_ANONYMOUS | 0x100000, -1, 0)  # MAP_FIXED_NOREPLACE
     if C.c_ubyte.from_address(LATCH).value:
         pytest.skip('the latch address is taken in this process')

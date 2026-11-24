@@ -16,7 +16,6 @@ PAGE, BELOW, WM = 0x7000, 0x6000, 0x9000
 CLICK, CHANGING, CHANGED, DESTROY = O['EVT_CLICK'], O['EVT_VALUE_CHANGING'], O['EVT_VALUE_CHANGED'], O['EVT_DESTROY']
 CENTER, NEXT, PREV = O['KEY_CENTER'], O['KEY_NEXT'], O['KEY_PREV']
 HANDLER = C.CFUNCTYPE(C.c_int, C.c_long, C.c_long)  # an AWTK event handler: (ctx, event)
-libc.munmap.argtypes = [C.c_void_p, C.c_size_t]
 pytestmark = pytest.mark.usefixtures('stock_gapless')  # Crossfade has stock's Gapless on, as stock's default
 
 
