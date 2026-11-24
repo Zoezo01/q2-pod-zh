@@ -786,6 +786,20 @@ def test_queued_keys_are_dispatched_in_order(fw):
         ['player_next_music', 'player_prev_music', 'player_next_music'] and hs(fw).tail == hs(fw).head
 
 
+def test_a_key_the_worker_woke_the_loop_for_is_taken_inside_the_polls_100_ms(fw):
+    player = Player(fw)
+    threads(fw)
+    flags(fw)
+    poll(fw, player)
+    queue(fw, NEXT)
+    poll(fw, player, step=10)
+    assert fw.calls('player_next_music') == []  # paced: a pass 10 ms after the last check leaves it
+    woke = C.c_int.in_dll(fw.lib, 'headset__hs_woke')
+    woke.value = 1  # headset_wake's, with the key
+    poll(fw, player, step=10)
+    assert len(fw.calls('player_next_music')) == 1 and woke.value == 0
+
+
 def test_a_stale_worker_s_keys_wait(fw):
     player = Player(fw)
     threads(fw)
@@ -1238,6 +1252,19 @@ def test_a_socket_that_won_t_go_nonblocking_is_closed_unused(fw):
     kernel = Kernel(fw, fcntl=-1)
     kernel.run()
     assert kernel.sent == [] and AAP in kernel.closed
+
+
+@pytest.mark.parametrize('kernel, wakes', [
+    (dict(batches=[[(1, NEXT, 1)]]), True),  # a key press
+    (dict(batches=[[(1, NEXT, 0)]]), False),  # its release queues nothing
+    (dict(packets=[EAR]), True),  # a new ear report
+    (dict(packets=[OTHER]), False)])  # AirPods' other reports
+def test_the_worker_ends_the_ui_loops_idle_for_a_key_or_a_new_ear_report(fw, kernel, wakes):
+    Kernel(fw, **kernel).run()
+    assert C.c_int.in_dll(fw.lib, 'headset__hs_woke').value == wakes
+    idles = len(fw.calls('sleep_ms'))
+    fw.fn('loop_wait', None, C.c_uint)(25)  # the UI loop's next idle (playback.c)
+    assert len(fw.calls('sleep_ms')) - idles == (not wakes)
 
 
 def test_the_worker_drains_every_report_in_one_pass_and_keeps_the_last_ear_one(fw):

@@ -8726,11 +8726,13 @@ static void bt_volume_poll(void) {
  * (tick_gate): an idling pass dispatched every tick it had slept through at once, so a dark turn
  * clicked in bursts and stepped the volume in jumps (#303). Every idle here is loop_wait
  * (playback.c), which a key ends at once, and a touch too with the screen on, so no input waits
- * one out; a timer or an idle another thread queues still does. For IDLE_MS after an input that
- * reached ringnav_input the dark pass is not the long one either, so a timer that input started
- * is at most SCREEN_OFF_SLEEP_MS late. ponytail: with the screen off and quiet, what is not a key
- * (a cable, a headset, a cast starting) is seen up to DARK_IDLE_SLEEP_MS late, the pace stock's
- * own pollers have then (DARK_POLL_US). The first pass with it back on
+ * one out; a timer or an idle another thread queues still does. For IDLE_MS after a key that
+ * reached ringnav_input the dark pass is not the long one either, so a timer that key started is
+ * at most SCREEN_OFF_SLEEP_MS late; a touch is not counted (its stamp is st.touch_at too), so
+ * something resting on a dark screen leaves the long idle alone. A Bluetooth headset's key or ear
+ * report ends the idle too (headset.c's worker). ponytail: with the screen off and quiet, what is
+ * none of these (a cable, a headset plugged in, a cast starting) is seen up to DARK_IDLE_SLEEP_MS
+ * late, the pace stock's own pollers have then (DARK_POLL_US). The first pass with it back on
  * repaints every window once, so nothing drawn while dark, or only partly, stays on screen until
  * the next input; after a centre press woke it, it also restarts Wake's window for a dropped press
  * (woke_at). With the screen on, a pass idles IDLE_SLEEP_MS once input and window animations have
@@ -8826,8 +8828,10 @@ int ringnav_sleep(void *loop) {
                     (signed char)bt__recv_pageflag != 2 && time_now_ms() - st.wake_at >= WAKE_MS;
         dark_quiet = quiet;
         if ((unsigned)time_now_ms() - st.tick_at >= DARK_TURN_MS)
-            loop_wait(quiet && time_now_ms() - st.last_input >= IDLE_MS ? DARK_IDLE_SLEEP_MS
-                                                                        : SCREEN_OFF_SLEEP_MS);
+            loop_wait(
+                quiet && (time_now_ms() - st.last_input >= IDLE_MS || st.last_input == st.touch_at)
+                    ? DARK_IDLE_SLEEP_MS
+                    : SCREEN_OFF_SLEEP_MS);
     } else if (st.dark) {
         dark_quiet = 0;
         wheel_guard_reset();

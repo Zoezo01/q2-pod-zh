@@ -138,6 +138,15 @@ void media_key(unsigned key) {
         player_prev_music();
 }
 
+/* The worker has a key or a new ear report for headset_poll: the UI loop's idle ends now
+ * (loop_wake; up to a second, dark and quiet) and that pass takes it whatever the poll's own 100
+ * ms pacing. Set after the key or the report is stored. */
+static volatile int hs_woke;
+static void headset_wake(void) {
+    hs_woke = 1;
+    loop_wake();
+}
+
 /* Only complete, valid ear packets are published, in one word. No battery state. */
 int ringnav_aap_parse(const unsigned char *p, int n) {
     if (!p || n != 8 || p[0] != 4 || p[1] || p[2] != 4 || p[3] || p[4] != 6 || p[5] || p[6] > 2 ||
@@ -237,10 +246,12 @@ static void *headset_worker(void *arg) {
             if (n <= 0) close(aap), aap = -1;
             /* Drain the queue: AirPods stream other reports too, and one packet a pass fell
              * behind, delaying ear reports. */
+            unsigned report = hs.report;
             for (int i = 0; n > 0 && i < 64 && generation == hs.generation; ++i) {
                 ringnav_aap_parse(packet, n);
                 n = recv(aap, packet, sizeof packet, 0x40);
             }
+            if (hs.report != report) headset_wake();
         }
         if (ready & 2) {
             struct {
@@ -257,6 +268,7 @@ static void *headset_worker(void *arg) {
                         hs.keys[hs.head % 16] = ev[i].code;
                         __sync_synchronize();
                         ++hs.head;
+                        headset_wake();
                     }
         }
         ++tries;
@@ -390,8 +402,9 @@ void headset_eq_poll(void) {
 }
 void headset_poll(void) {
     unsigned now = time_now_ms();
-    if (now - hs.checked < 100) return;
+    if (now - hs.checked < 100 && !hs_woke) return;
     hs.checked = now;
+    hs_woke = 0;
     int on = g_bluetoothflag && bt_linkstatus && !bt__recv_pageflag;
     if (on != hs.linked) {
         ++hs.generation;

@@ -2885,6 +2885,12 @@ def test_dark_and_quiet_the_idle_is_short_after_an_input(fw, stock_bytes, st):
     assert loop(1) == [O['DARK_IDLE_SLEEP_MS']]
 
 
+def test_dark_and_quiet_a_touch_leaves_the_long_idle(fw, stock_bytes, st):
+    loop = Loop(fw, stock_bytes, lit=False)
+    st('last_input', C.c_uint).value = st('touch_at', C.c_uint).value = loop.clock.now  # a touch's two stamps
+    assert loop(1) == [O['DARK_IDLE_SLEEP_MS']]
+
+
 def test_a_dark_wheel_turn_keeps_stocks_pace(fw, stock_bytes, st):
     loop = Loop(fw, stock_bytes, lit=False)
     st('tick_at', C.c_uint).value = loop.clock.now  # tick_gate's stamp, this very millisecond

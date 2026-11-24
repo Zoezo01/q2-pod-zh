@@ -278,7 +278,11 @@ static void wl_note_tick(unsigned now, unsigned before) {
  * skipped. demo imports no futex(), so the o32 syscall itself (4238), private to the process as
  * hciplayer's are (peq_player.c): FUTEX_WAIT 128 with a relative {s, ns} on the monotonic clock,
  * FUTEX_WAKE 129. A wait that returns early with the word clear (a signal, a kernel that refuses
- * it) hands the rest to sleep_ms, so an idle is never shorter than it was without input. */
+ * it) hands the rest to sleep_ms, so an idle is never shorter than it was without input.
+ * loop_wake is the set and the wake, headset.c's worker's too: its keys reach the UI through
+ * headset_poll, not the queue. ponytail: a thread stopped between the set and the wake for longer
+ * than a pass wakes the next idle with the word already clear, and that one idle is sleep_ms's,
+ * which no input ends; wait on the futex again there if it ever shows. */
 static volatile int loop_woken __attribute__((section(".scratch")));
 int loop_futex(volatile int *word, int op, int value, const long *timeout);
 #ifndef PEQ_HOST
@@ -288,6 +292,10 @@ __attribute__((weak)) int loop_futex(volatile int *word, int op, int value, cons
     return 0; /* the tests': it returns at once, so they see sleep_ms take the idle */
 }
 #endif
+void loop_wake(void) {
+    loop_woken = 1;
+    loop_futex(&loop_woken, 129, 1, 0);
+}
 void loop_wait(unsigned ms) {
     if (!loop_woken) {
         const long timeout[2] = { (long)(ms / 1000), (long)(ms % 1000) * 1000000 };
@@ -317,10 +325,8 @@ int ringnav_queue_event(void *loop, const unsigned *r) {
     }
     int ret = r[0] ? post(loop, r) : 0;
     if (r[0] == EVT_KEY_DOWN || r[0] == EVT_KEY_UP ||
-        (g_backlight_status && r[0] >= EVT_POINTER_FIRST && r[0] <= EVT_POINTER_ABORT)) {
-        loop_woken = 1; /* after the post: the pass this wakes finds the event */
-        loop_futex(&loop_woken, 129, 1, 0);
-    }
+        (g_backlight_status && r[0] >= EVT_POINTER_FIRST && r[0] <= EVT_POINTER_ABORT))
+        loop_wake(); /* after the post: the pass this wakes finds the event */
     return ret;
 }
 
