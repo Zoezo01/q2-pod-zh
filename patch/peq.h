@@ -431,6 +431,7 @@ enum {
      * coverflow_cover_tracks */
     POD_CF_DUP_ALBUMS,
     POD_CF_DUP_SONGS,
+    POD_SAMPLERATE, /* Appearance's Show Sample Rate (samplerate.c): the output's rate in the bar */
     POD_COUNT
 };
 int pod_value(int i);

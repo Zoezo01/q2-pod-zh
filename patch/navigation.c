@@ -3180,7 +3180,8 @@ static const struct {
              { &bt_receive, "BTRECEIVE" },
              { &cf_art_log, "CFARTLOG" },
              { &cf_dups[0], "CFDUPALBUMS" },
-             { &cf_dups[1], "CFDUPSONGS" } };
+             { &cf_dups[1], "CFDUPSONGS" },
+             { &sr_setting, "SAMPLERATE" } };
 _Static_assert(sizeof pods / sizeof *pods == POD_COUNT, "a pods row per row");
 /* a row's choices: Artist albums three, Standby limit four, every other row two */
 static int pod_choices(unsigned i) { return i == POD_ARTIST_CF ? 3 : i == POD_STANDBY ? 4 : 2; }
@@ -3265,6 +3266,7 @@ static void pod_text(int i) {
         { N_("Log Failed Artwork") },
         { N_("Hide Duplicate Albums") },
         { N_("Hide Duplicate Songs") },
+        { N_("Show Sample Rate") },
     };
     _Static_assert(sizeof names / sizeof *names == POD_COUNT, "a names entry per row");
     if (i == POD_CF_SORT) { /* the Sort card's words, as Cover Flow's page holds the row */
@@ -3339,6 +3341,7 @@ static int pod_click(void *ctx, event_t *event) {
         if (i == POD_SCAN_DURATIONS && !*value) durations_cancel();
         if (i == POD_CF_POSITION) coverflow_position_reset();
         if (i == POD_HIDE_STREAM || i == POD_HIDE_FOLDER) coverflow_home_layout();
+        if (i == POD_SAMPLERATE) sr_forget(); /* the bar's next paint reads again */
         st.charge_at = 0;
         /* Control Device Volume: off, stock's gain back at once; on, bt_volume_poll's next pass
          * sends the Q2's level to the device. */
@@ -3828,7 +3831,30 @@ static void bar_sync(widget_t *bar) {
         int fall = classic_light && mode == 2 ? 3 : 0;
         if (reach[mode] > BATT_ROOM || reach[fall] + app <= BATT_ROOM) mode = fall;
     }
-    bar_addon_sync(app && reach[mode] + app <= BATT_ROOM);
+    int app_shown = app && reach[mode] + app <= BATT_ROOM,
+        used = reach[mode] + (app_shown ? app : 0);
+    bar_addon_sync(app_shown);
+    /* Show Sample Rate's text: under Minimal and Modern after the play state and EQ on the left, up
+     * to the widest clock (RATE_CLOCK_LEFT); under Classic, whose left is the wordmark, left of
+     * what the right-hand group uses, in the room after it */
+    if (!classic_row && st.bar_state) {
+        /* the bar's x past whatever the left shows: the play state and EQ in the row, or, with
+         * neither (AirPlay, USB DAC mode), the Q2 mark, which sits on the bar itself */
+        widget_t *l = P(st.bar_state, W_PARENT), *const lefts[] = { st.bar_state, st.bar_eq };
+        int end = 0;
+        for (unsigned k = 0; k < sizeof lefts / sizeof *lefts; ++k)
+            if (lefts[k] && P(lefts[k], W_PARENT) == l && widget_get_visible(lefts[k]) &&
+                I(l, W_X) + I(lefts[k], W_X) + I(lefts[k], W_W) > end)
+                end = I(l, W_X) + I(lefts[k], W_X) + I(lefts[k], W_W);
+        if (!end && st.bar_idle && widget_get_visible(st.bar_idle))
+            end = I(st.bar_idle, W_X) + I(st.bar_idle, W_W);
+        int x = end ? end + STATUS_GAP : I(l, W_X) + I(st.bar_state, W_X);
+        bar_rate_sync(1, x, RATE_CLOCK_LEFT - x);
+    } else
+        bar_rate_sync(0,
+                      I(P(st.bar_slot, W_PARENT), W_X) + I(st.bar_slot, W_X) + I(st.bar_slot, W_W) -
+                          used - STATUS_GAP,
+                      BATT_ROOM - used - STATUS_GAP);
     widget_set_visible(st.bar_icon, 0, 0);
     widget_set_visible(st.bar_pct, 0, 0);
     widget_set_visible(st.bar_slot, 1, 0);
@@ -3871,6 +3897,8 @@ int ringnav_showface(widget_t *bar) {
             widget_invalidate_force(bar, (void *)0);
         }
     }
+    /* a new rate repaints the bar now, not at the clock's next minute on a still page */
+    if (g_backlight_status && bar_rate_stale()) widget_invalidate_force(bar, (void *)0);
     return result;
 }
 
@@ -6422,6 +6450,7 @@ int ringnav_display(widget_t *win, void *ctx) {
         pod_rows(win, "scroll_view_display", POD_HIDE_STREAM, 2, home_icons);
         pod_rows(win, "scroll_view_display", POD_HIDE_APPS, 2, home_icons);
         pod_rows(win, "scroll_view_display", POD_HIDE_STORE, 2, home_icons);
+        pod_rows(win, "scroll_view_display", POD_SAMPLERATE, 1, home_icons);
         return result;
     }
     wheel_row(list_row_into(view, "system_display", xfade_open, (void *)1));
