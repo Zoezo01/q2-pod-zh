@@ -34,10 +34,11 @@ with tempfile.TemporaryDirectory() as tmp:
     (out/'build/manifest.json').write_text(json.dumps(dict(version=release.TAG, update_sha256=release.sha(b'pod'))))
     (out/release.ASSET).write_bytes(b'pod')
     assets = {release.ASSET: release.sha(b'pod')}
-    (out/release.GUIDE).write_bytes(b'%PDF')
+    for name in release.GUIDES:
+        (out/name).write_bytes(name.encode())
     (out/'release-notes.md').write_text(release.release_body(release.notes(), assets))
     record = dict(tag=release.VERSION, revision='revision', source_sha256=release.source_sha256(), assets=assets,
-                  guide_sha256=release.sha(b'%PDF'), notes_sha256=release.sha((out/'release-notes.md').read_bytes()))
+                  guide={name: release.sha(name.encode()) for name in release.GUIDES}, notes_sha256=release.sha((out/'release-notes.md').read_bytes()))
     (out/'release.json').write_text(json.dumps(record))
     # The heading, then bullets, for this version only.
     body = (out/'release-notes.md').read_text()
@@ -60,7 +61,7 @@ with tempfile.TemporaryDirectory() as tmp:
                 raise subprocess.CalledProcessError(1, args)
             if command == 'download':
                 target = pathlib.Path(args[-1])
-                for name in [*assets, release.GUIDE]:
+                for name in [*assets, *release.GUIDES]:
                     (target/name).write_bytes((out/name).read_bytes() if failure != 'corrupt' else b'bad')
             return ''
         with patch('release.run', side_effect=gh), patch('release.BETA', 0):  # a beta never publishes
