@@ -201,7 +201,7 @@ static const time_row_t time_rows[] = {
     { "classic_light_tray_108", 211, 259, 3, 2, { 214, 271 } },
     { "classic_light_tray_165", 183, 231, 3, 3, { 186, 243, 300 } },
 };
-const char time_months[12][4] = {
+const char time_months[12][8] = {
     "1月", "2月", "3月", "4月", "5月", "6月",
     "7月", "8月", "9月", "10月", "11月", "12月"
 };
@@ -226,7 +226,7 @@ static int field_x(const time_row_t *row, int i) {
     return !gap ? row->x[i] : row->x[2] - (2 - i) * gap - (i < 2) * TIME_CELL_W - !i * TIME_YEAR_W;
 }
 static const char *time_month(void) {
-    return tr(time_months[clamp_step(time_value(1) - 1, 11, 0)]);
+    return time_months[clamp_step(time_value(1) - 1, 11, 0)];
 }
 
 /* The bar's title reads the page's own label (bar_title_sync). */
