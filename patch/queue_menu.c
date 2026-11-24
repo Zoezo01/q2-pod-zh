@@ -319,10 +319,12 @@ static int qm_run(const void *unused) {
         batch_add_file(cls, 0xf00a, qm_list(), P(p_vector_select_record, 0), 0);
         ratings_copy_due();
         fav_told(r, 1);
+        st.np_seen = 0; /* the menu's close drew Now Playing's heart before the change: again */
     } else if (r && a == QA_UNFAV) {
         deleteMusicFromFav(r);
         ratings_copy_due();
         fav_told(r, 0);
+        st.np_seen = 0;
         if (cls == 0xf00a)
             g_delete_flag = 1;          /* My Fav reloads, as Now Playing's heart (0x53cafc) */
     } else if (r && a == QA_PLAYLIST) { /* the playlist page's add mode adds the selected row */
