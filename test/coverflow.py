@@ -659,7 +659,7 @@ void rearm(unsigned *t, int (*f)(const void *), unsigned ms) { stop_timer(t); *t
 static void run(void) { while (timer_fn) { int (*f)(const void *) = timer_fn; timer_fn = 0; usleep(1000); f(0); } }
 
 /* libcstl: a deque of record pointers; the query stubs fill the staging deque. */
-typedef struct { unsigned n; void *at[1024]; } deque; /* a playlist of 300 songs fits */
+typedef struct { unsigned n; void *at[1024]; } deque; /* a playlist of 600 songs fits */
 void *shim_dir;
 void *_create_deque(const char *t) { return calloc(1, sizeof(deque)); }
 void deque_init_copy(void *d, const void *s) { *(deque *)d = *(const deque *)s; }
@@ -7233,8 +7233,8 @@ static int pl_staged; /* each getMusicByPlayList */
 int getMusicByPlayList(int cd) { /* a playlist's songs: 40's are records 0 and 1, 41's record 2, 42's 3 to 9 */
     deque *d = shim_dir;
     d->n = 0, ++pl_staged;
-    if (messy) { /* the messy library's cd 3: 300 songs (cd 1's 20,000 would overflow the deque) */
-        for (int i = 0; cd == 3 && i < 300; ++i) d->at[d->n++] = records[i % albums];
+    if (messy) { /* the messy library's cd 3: 600 songs (cd 1's 20,000 would overflow the deque) */
+        for (int i = 0; cd == 3 && i < 600; ++i) d->at[d->n++] = records[i % albums];
         return (int)d->n;
     }
     for (int i = cd == 41 ? 2 : cd == 42 ? 3 : 0; i < (cd == 40 ? 2 : cd == 41 ? 3 : cd == 42 ? 10 : 0); ++i) d->at[d->n++] = records[i];
@@ -7369,7 +7369,7 @@ static void flip_playlist(void) {
         *(const char **)(records[3 + i] + REC_TITLE) = kept[i][0], *(const char **)(records[3 + i] + REC_ARTIST) = kept[i][1];
 }
 /* Classic's turned panel builds every row at once (about 3 KB each): a playlist over PANEL_ROWS
-   (200) opens in stock's list on the Playlists page under the covers instead, as Minimal's Centre
+   (500) opens in stock's list on the Playlists page under the covers instead, as Minimal's Centre
    does: by its count in the table, with no songs loaded, or, the table not read yet (count 0), by the
    songs it loaded. */
 static void flip_big_playlist(void) {

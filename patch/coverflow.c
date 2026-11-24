@@ -3778,9 +3778,9 @@ static int playlist_query(void *r) { return getMusicByPlayList(I(r, REC_DISC)); 
 extern int music_records(void *list, int discovery); /* navigation.c: spoken tracks left out */
 static widget_t *page_under(void);
 /* ponytail: Classic's panel builds every row at once (about 3 KB each), so a longer playlist opens
- * in stock's list; a recycled pool of rows would lift it. At most 512, navigation's MAX_ENTRIES,
- * for the wheel to reach every row. */
-#define PANEL_ROWS 200
+ * in stock's list. 500, under navigation's MAX_ENTRIES (512) for the wheel to reach every row, as
+ * Photos' and Up Next's; past it ringnav would need rows it doesn't build. */
+#define PANEL_ROWS 500
 static int to_tracks(const void *unused) {
     cf.timer = 0;
     int n = 0;
