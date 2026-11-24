@@ -3316,6 +3316,98 @@ def test_a_touch_on_a_prompt_starts_below_the_pull_downs_band(fw, stock_bytes, f
     assert keys(O['EVT_POINTER_FIRST'], 0, y=y) == 7 and start.value == want
 
 
+def lock_screen(fw, stock_bytes, *fronts, power=0):
+    """The lit lock screen (stock's saverscreen_page), with windows over it."""
+    ui = Ui(fw)
+    ui.window('saverscreen_page')
+    over = [ui.window(name, 'dialog') for name in fronts]
+    keys = Input(fw, stock_bytes, ui)
+    fw.var('g_lockscreen_pageflag', C.c_ubyte).value = 1
+    fw.var('g_backlight_status', C.c_ubyte).value = 1
+    fw.var('g_poweroff_state', C.c_ubyte).value = power
+    return ui, over, keys
+
+
+def test_return_on_the_lit_lock_screen_does_nothing(fw, stock_bytes):
+    """Stock's lock window took Return as Back and closed, past the slider."""
+    _, _, keys = lock_screen(fw, stock_bytes)
+    keys(DOWN, KEY_RETURN), keys(LONG, KEY_RETURN, 10), keys(UP, KEY_RETURN, 10)
+    assert keys.stock == []
+
+
+def test_return_over_the_lock_screens_shut_down_is_the_prompts(fw, stock_bytes):
+    _, _, keys = lock_screen(fw, stock_bytes, 'confirminfo_dialog', power=1)
+    keys(DOWN, KEY_RETURN), keys(UP, KEY_RETURN, 10)
+    assert keys.stock == [(DOWN, KEY_RETURN), (UP, KEY_RETURN)]
+
+
+@pytest.mark.parametrize('power, want', [(1, 1), (0, 0)])
+def test_shut_down_over_the_lock_screen_takes_the_wheel_and_centre(fw, stock_bytes, power, want):
+    """usable() said no on the lock flag before it looked for the held power key's prompt."""
+    lock_screen(fw, stock_bytes, 'confirminfo_dialog', power=power)
+    assert fw.fn('usable', C.c_int)() == want
+
+
+@pytest.mark.parametrize('lock, closes', [(1, True), (0, False)])
+def test_a_touch_on_the_lock_screen_puts_the_volume_away_and_goes_on(fw, stock_bytes, lock, closes):
+    """The wheel's volume panel sits over the slider; the same touch may then slide."""
+    _, (vol,), keys = lock_screen(fw, stock_bytes, 'volume_dialog')
+    fw.var('g_lockscreen_pageflag', C.c_ubyte).value = lock
+    closed = []
+    fw.mock('window_close', lambda w, *_: closed.append(w) or 0)
+    keys(O['EVT_POINTER_FIRST'], 0, x=40, y=290)
+    assert closed == ([vol.p] if closes else []) and keys.stock == [(O['EVT_POINTER_FIRST'], 40)]
+
+
+def glance_lock(fw, stock_bytes, *fronts):
+    """The lit lock screen in At a Glance's layout (lock_glance.c glance_init on stock's window), windows over it."""
+    ui, over, keys = lock_screen(fw, stock_bytes)
+    lock = ui.top
+    img = lock.add(W(ui, 'image', 'img_screensaver', h=320))
+    fw.mock('widget_factory_create_widget', lambda f, kind, parent, x, y, w, *_: ui.by[parent].add(W(ui, 'view', x=x, y=y, w=w)).p)
+    fw.mock('hscroll_label_create', lambda parent, *_: ui.by[parent].add(W(ui, 'hscroll_label')).p)
+    fw.fn('glance_init', None, C.c_void_p, C.c_void_p, C.c_int, C.c_void_p)(lock.p, img.p, 0, None)
+    over = [ui.window(name, 'dialog') for name in fronts]
+    return ui, lock, over, keys
+
+
+KNOB_AT = {'x': 319 - 258, 'y': 60}  # the panel's place of the knob's middle on the screen (60, 258)
+
+
+def test_at_a_glance_takes_the_lock_screen_s_touches(fw, stock_bytes):
+    """Its slider moves with the finger itself: stock's swipe-to-unlock and pull-down never see the touch."""
+    _, _, _, keys = glance_lock(fw, stock_bytes)
+    keys(O['EVT_POINTER_FIRST'], 0, **KNOB_AT), keys(0x101, 0, 10, x=61, y=200), keys(0x103, 0, 10, x=61, y=200)
+    assert keys.stock == []
+
+
+def test_at_a_glance_the_touch_that_puts_the_volume_away_goes_on_to_slide(fw, stock_bytes):
+    ui, lock, (vol,), keys = glance_lock(fw, stock_bytes, 'volume_dialog')
+    closed = []
+    fw.mock('window_close', lambda w, *_: closed.append(w) or 0)
+    fw.mock('time_now_ms', lambda *_: 0)
+    keys(O['EVT_POINTER_FIRST'], 0, **KNOB_AT)
+    ui.top = lock  # closed
+    keys(0x101, 0, 10, x=61, y=300), keys(0x103, 0, 10, x=61, y=300)
+    assert closed == [vol.p] and keys.stock == []
+    unlock = C.cast(fw.lib.lock_glance__unlock, C.c_void_p).value
+    assert [ms for fn, _, ms in ui.timers.values() if fn == unlock] == [16]  # slid past 62.5%: unlocking
+
+
+def test_at_a_glance_s_shut_down_keeps_its_own_touches(fw, stock_bytes):
+    """A prompt over the lock screen (Shut Down?) is stock's to touch."""
+    _, _, _, keys = glance_lock(fw, stock_bytes, 'confirminfo_dialog')
+    keys(O['EVT_POINTER_FIRST'], 0, **KNOB_AT)
+    assert keys.stock == [(O['EVT_POINTER_FIRST'], KNOB_AT['x'])]  # the key's place is the event's x
+
+
+def test_at_a_glance_s_touches_need_the_lock_screen_up(fw, stock_bytes):
+    _, _, _, keys = glance_lock(fw, stock_bytes)
+    fw.var('g_lockscreen_pageflag', C.c_ubyte).value = 0
+    keys(O['EVT_POINTER_FIRST'], 0, **KNOB_AT)
+    assert keys.stock == [(O['EVT_POINTER_FIRST'], KNOB_AT['x'])]
+
+
 @pytest.mark.parametrize('lit', [0, 1])
 def test_a_tick_before_the_volume_dialog_takes_keys_steps_it_and_opens_no_other(fw, keys, lit):
     """The dialog is in front from navigator_to on, the window manager's key target only from its open event (#303)."""

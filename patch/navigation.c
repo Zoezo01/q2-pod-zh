@@ -611,14 +611,14 @@ static void home_step(widget_t *w, int dir, unsigned now, int jump) {
  **************************************************************************************************/
 
 int usable(void) {
-    if (!g_backlight_status || g_lockscreen_pageflag || g_testmode_flag || g_guideflag ||
-        g_poweroff_state > 1)
-        return 0;
+    if (!g_backlight_status || g_testmode_flag || g_guideflag || g_poweroff_state > 1) return 0;
     widget_t *top = window_manager_get_top_window(window_manager());
     int confirm = top && !tk_strcmp(widget_get_prop_str(top, "name", ""), "confirminfo_dialog");
     /* A held power key sets g_poweroff_state to 1 while its Shut Down? prompt is up
-     * (on_wm_keylong_fun); 2 is the power-off page itself. */
+     * (on_wm_keylong_fun); 2 is the power-off page itself. Over the lock screen too: the prompt
+     * takes the wheel and Centre there as anywhere. */
     if (g_poweroff_state) return confirm;
+    if (g_lockscreen_pageflag) return 0;
     if (g_usblink_status != 2) return 1;
     /* USB mode's exit asks whether to scan in a confirm dialog before it leaves the mode: once the
      * cable is out, that prompt takes the wheel and Centre. */
@@ -1132,6 +1132,24 @@ static void select_row(widget_t *w, int id, int rows, int show) {
 }
 
 void ringnav_select(widget_t *w, int id, int rows) { select_row(w, id, rows, 1); }
+
+/* A row, by its widget, kept lit after its page's rows were laid out again with another count
+ * (lockscreen.c: Layout's row adds or takes Clock's), which load would otherwise send back to the
+ * top. Only on the top window's own surface; here, as load and select are. */
+void ringnav_keep_row(widget_t *row) {
+    widget_t *w = row ? surface((void *)0, (void *)0) : (void *)0;
+    if (!w || window_of(row) != window_manager_get_top_window(window_manager()) ||
+        !load(&g_menu, w, 0))
+        return;
+    for (int i = 0; i < g_menu.n; ++i)
+        for (widget_t *p = g_menu.at[i]; p && p != w; p = P(p, W_PARENT))
+            if (p == row) {
+                select(&g_menu, g_menu.id[i]);
+                stop_scroll(&g_menu);
+                widget_invalidate_force(w, 0);
+                return;
+            }
+}
 
 /* A row picked as its page goes (coverflow_land.c's landing): lit, though a tap's touch mode hid
  * the selection, and left where it is: a tap on the panel's last row, a few pixels of it shown,
@@ -3142,6 +3160,8 @@ static int cf_art_log __attribute__((section(".scratch")));
 /* Display's Hide Duplicate Albums and Hide Duplicate Songs (CFDUPALBUMS, CFDUPSONGS): coverflow.c
  * music_albums and coverflow_cover_tracks. */
 static int cf_dups[2] __attribute__((section(".scratch")));
+/* The Lock Screen's Layout (LOCKLAYOUT): lockscreen.c reads it as each lock window opens. */
+static int lock_layout __attribute__((section(".scratch")));
 static const struct {
     int *value;
     const char *key;
@@ -3181,7 +3201,8 @@ static const struct {
              { &cf_art_log, "CFARTLOG" },
              { &cf_dups[0], "CFDUPALBUMS" },
              { &cf_dups[1], "CFDUPSONGS" },
-             { &sr_setting, "SAMPLERATE" } };
+             { &sr_setting, "SAMPLERATE" },
+             { &lock_layout, "LOCKLAYOUT" } };
 _Static_assert(sizeof pods / sizeof *pods == POD_COUNT, "a pods row per row");
 /* a row's choices: Artist albums three, Standby limit four, every other row two */
 static int pod_choices(unsigned i) { return i == POD_ARTIST_CF ? 3 : i == POD_STANDBY ? 4 : 2; }
@@ -3267,6 +3288,7 @@ static void pod_text(int i) {
         { N_("Hide Duplicate Albums") },
         { N_("Hide Duplicate Songs") },
         { N_("Show Sample Rate") },
+        { N_("Layout: Default"), N_("Layout: At a Glance") },
     };
     _Static_assert(sizeof names / sizeof *names == POD_COUNT, "a names entry per row");
     if (i == POD_CF_SORT) { /* the Sort card's words, as Cover Flow's page holds the row */
@@ -3342,6 +3364,9 @@ static int pod_click(void *ctx, event_t *event) {
         if (i == POD_CF_POSITION) coverflow_position_reset();
         if (i == POD_HIDE_STREAM || i == POD_HIDE_FOLDER) coverflow_home_layout();
         if (i == POD_SAMPLERATE) sr_forget(); /* the bar's next paint reads again */
+        /* Layout: the Lock Screen page's rows again (Clock is Default's); the next lock window
+         * takes it */
+        if (i == POD_LOCKLAYOUT) lockscreen_layout_turned(window_of(st.pod_label[i]));
         st.charge_at = 0;
         /* Control Device Volume: off, stock's gain back at once; on, bt_volume_poll's next pass
          * sends the Q2's level to the device. */
@@ -4346,6 +4371,12 @@ static unsigned np_art(const char **file) {
     return *file ? fnv(hash_bytes(FNV_SEED, &type, 1), (const unsigned char *)P(r, REC_PATH)) ^
                        written
                  : 0;
+}
+/* np_art's key alone: the playing track and its cover file, 0 while the player has none. At a
+ * Glance's blur is made again when it moves (lock_glance.c). */
+unsigned np_art_key(void) {
+    const char *file;
+    return np_art(&file);
 }
 /* The art np_art_load last loaded is this song's (coverflow_land.c's landing hands over to it). */
 int np_art_ready(void) {
@@ -5554,6 +5585,8 @@ unsigned *ringnav_style_color(unsigned *color, void *style, const char *name, un
         return color;
     }
     if (st.paint_w && name && tk_str_end_with(name, "text_color")) {
+        /* a label whose colour is final in either half (lock_glance.c put): as stored */
+        if (ipod_paper() && widget_get_prop_int(st.paint_w, "_raw_ink", 0)) return color;
         if (kb_key(st.paint_w)) { /* kb_paint_key draws it */
             *color &= 0xffffff;
             return color;
@@ -9175,12 +9208,31 @@ int ringnav_input(widget_t *wm, event_t *e) {
         st.touch_x = I(e, EVENT_X);
         st.touch_y = I(e, EVENT_Y);
     }
+    /* The lock screen's volume panel (the wheel's, stock's volume_dialog) is a full-screen window
+     * over the slider: a finger down anywhere puts it away, and stock's lock window then has the
+     * same touch, so it may go on to slide. */
+    if (type == EVT_POINTER_FIRST && g_lockscreen_pageflag) {
+        widget_t *front = window_manager_get_top_window(wm);
+        if (front && !tk_strcmp(widget_get_prop_str(front, "name", ""), "volume_dialog"))
+            window_close(front);
+    }
+    /* At a Glance's lock window takes its touches itself (lock_glance.c), the volume panel's too,
+     * so the touch that put it away may go on to slide; stock never sees them. A prompt over the
+     * lock screen (Shut Down?) keeps its own. */
+    if (type >= EVT_POINTER_FIRST && type <= EVT_POINTER_ABORT && g_lockscreen_pageflag &&
+        lockscreen_touch(wm, e, type))
+        return 0;
     if ((type == EVT_KEY_DOWN || type == EVT_KEY_UP || type == EVT_KEY_LONG) &&
         (key == KEY_PREV || key == KEY_NEXT || key == KEY_CENTER) && usb_prompt()) {
         reset_poweroptions_timer(1, 1, 1);
         if (type == EVT_KEY_UP) ringnav(0, e);
         return 0;
     }
+    /* Return on the lit lock screen does nothing: stock's lock window took it as Back
+     * (on_common_keyup) and closed, unlocking past the slider. Shut Down? over it keeps Return. */
+    if ((type == EVT_KEY_DOWN || type == EVT_KEY_UP || type == EVT_KEY_LONG) && key == KEY_RETURN &&
+        g_lockscreen_pageflag && g_backlight_status && !g_poweroff_state)
+        return 0;
     widget_t *top = window_manager_get_top_window(wm);
     if (type == EVT_KEY_UP && (key == KEY_PREV || key == KEY_NEXT) && usable() &&
         window_manager_is_animating(wm) && top &&

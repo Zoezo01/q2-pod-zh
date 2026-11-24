@@ -1,6 +1,7 @@
 # Changelog
 
 - **1.9.3**:
+  - Lock Screen: a **Layout** row chooses **Default**, the lock screen as it was, or **At a Glance**: the time and date across the top, the song with its square cover, album, time and place in the queue over its cover blurred, and a **slide to unlock** knob to drag with a shine crossing its words. With nothing queued it shows your lock screen picture, or the time large on black. Hold the clock for a second to switch between the song and the picture. It looks the same in every theme, Light Mode too. **Clock** shows under Default only.
   - Apps: File Browser's **Edit Tags** lists the song playing at the top again. Since 1.9.1 apps run without root and couldn't see which song the player had open; Q2 Pod now tells them (File Browser 1.5 and later).
   - Cover Flow: under Classic and Classic Modern, an album turns over to its songs from the moment you press Centre and slows into place, and Return turns it back the same way. The turn hardly moved in its first frames.
   - Cover Flow: under Classic and Classic Modern, a playlist of up to 500 songs turns over to its songs, with their total time. Only playlists of up to 200 did; a longer one opened as a list, as it still does past 500.

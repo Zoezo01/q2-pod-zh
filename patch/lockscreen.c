@@ -286,7 +286,29 @@ static int info_tick(const void *info) {
     lk.shown = now;
     return 8; /* RET_REPEAT */
 }
+/* screen_action(0)'s disable_fb (tools/build.py LOCK_DARK_CALL). With the lock screen on and no
+ * lock window up, the framebuffer is cleared first: stock's wake unblanks the panel on whatever the
+ * framebuffer holds and opens the lock window after, so the page left at screen-off showed until
+ * the lock window was painted. Both pages go black, so that moment is black. Stock's wake order is
+ * untouched, and the wake's repaint of every window redraws what a wake without a lock window
+ * needs. */
+int lockscreen_dark(void) {
+    int fd = g_screensaver_mode && !g_lockscreen_pageflag ? open("/dev/fb0", 2) : -1; /* O_RDWR */
+    if (fd >= 0) {
+        unsigned v[40] = { 0 };                                   /* fb_var_screeninfo: 160 bytes */
+        if (!ioctl(fd, 0x4600, v) && v[2] && v[3] && v[6] >= 8) { /* FBIOGET_VSCREENINFO */
+            unsigned len =
+                v[2] * v[3] * (v[6] / 8);        /* xres_virtual, yres_virtual, bits_per_pixel */
+            void *p = mmap(0, len, 3, 1, fd, 0); /* PROT_READ | PROT_WRITE, MAP_SHARED */
+            if (p != (void *)-1) memset(p, 0, len), munmap(p, len);
+        }
+        close(fd);
+    }
+    return disable_fb();
+}
+
 void info_poll(void) {
+    glance_poll();
     if (!lk.info || lk.timer || !g_backlight_status) return;
     lk.shown = info_state();
     rearm(&lk.timer, info_tick, 1000);
@@ -408,12 +430,15 @@ static void info_paint(widget_t *w, canvas_t *canvas) {
 }
 
 /* saverscreen_page_init: stock builds the lock window; a built-in picture then paints in place of
- * stock's (lockscreen_paint), Large lays the clock out again, and a card theme's rules apply. */
+ * stock's (lockscreen_paint), Large lays the clock out again, and a card theme's rules apply. At a
+ * Glance (Layout's other choice) lays the window out itself, in every theme, and takes no card
+ * theme's rules. */
 int lockscreen_init(widget_t *win, void *ctx) {
     int result = stock_saver_trampoline(win, ctx);
     widget_t *img = widget_lookup(win, "img_screensaver", 1);
     int id = wall_id(PICTURE);
-    int info = img && classic_pages();
+    int glance = img && pod_value(POD_LOCKLAYOUT);
+    int info = img && classic_pages() && !glance;
     lk.built_in = id >= 0;
     if (img && id >= 0) {
         image_base_set_image(img, ""); /* nothing to look up on every paint */
@@ -431,6 +456,14 @@ int lockscreen_init(widget_t *win, void *ctx) {
         }
         widget_on(img, EVT_DESTROY, forget, img);
     }
+    if (glance) {
+        /* a picture of the user's, or a built-in but Black; stock's default counts as none */
+        int picture =
+            id >= 0 ? id != WALLS - 1 : *PICTURE && tk_strcmp(PICTURE, "screensaver_default");
+        if (id < 0 && !picture) image_base_set_image(img, ""); /* the clock on black */
+        glance_init(win, img, picture, id >= 0 ? lk.full : (void *)0);
+        return result;
+    }
     if (info)
         info_screen(win, img, id);
     else if (pod_value(POD_LOCKCLOCK))
@@ -446,22 +479,35 @@ int lockscreen_cover(widget_t *win) {
     int result = stock_savercover_trampoline(win);
     widget_t *img = widget_lookup(win, "img_playcover", 1);
     if (img) widget_invalidate_force(img, 0);
+    if (img) glance_cover(img);
     return result;
 }
 
+/* Layout's list item, and the page whose rows go again a loop pass after its click. */
+static widget_t *layout_row __attribute__((section(".scratch")));
+static widget_t *rows_win __attribute__((section(".scratch")));
+
 /* The Lock screen page's list (stock 0x4cff00), rebuilt whole when its switch turns: Time show and
- * About, then the picture grid with the switch on. Clock (navigation.c's POD_LOCKCLOCK) follows
- * Time show, 78 high as stock's rows, and the built-ins' thumbnails are found for lockscreen_paint.
+ * About, then the picture grid with the switch on. Clock (navigation.c's POD_LOCKCLOCK, Default's
+ * alone) and Layout (POD_LOCKLAYOUT) follow Time show, 78 high as stock's rows, and the built-ins'
+ * thumbnails are found for lockscreen_paint.
  */
-int lockscreen_rows(widget_t *win) {
+static widget_t *pod_row(widget_t *win, widget_t *view, int pod, int at) {
     static const char *const icons[] = { 0 };
-    int result = stock_saverrows_trampoline(win);
-    widget_t *view = widget_lookup(win, "scroll_view", 1);
-    if (!view || widget_count_children(view) < 2) return result;
-    pod_rows(win, "scroll_view", POD_LOCKCLOCK, 1, icons);
+    pod_rows(win, "scroll_view", pod, 1, icons);
     widget_t *row = widget_get_child(view, widget_count_children(view) - 1);
     widget_resize(row, I(row, W_W), 78);
-    widget_restack(row, 1);
+    widget_restack(row, at);
+    return row;
+}
+int lockscreen_rows(widget_t *win) {
+    int result = stock_saverrows_trampoline(win);
+    widget_t *view = widget_lookup(win, "scroll_view", 1);
+    layout_row = 0;
+    if (!view || widget_count_children(view) < 2) return result;
+    int at = 1;
+    if (!pod_value(POD_LOCKLAYOUT)) pod_row(win, view, POD_LOCKCLOCK, at++);
+    layout_row = pod_row(win, view, POD_LOCKLAYOUT, at);
     void *list = PICTURES;
     for (unsigned i = 0, n = list ? deque_size(list) : 0; i < n; ++i) {
         int id = wall_id(deque_at(list, i));
@@ -476,6 +522,22 @@ int lockscreen_rows(widget_t *win) {
     switch_row(win, view);
     return result;
 }
+static int rows_again(const void *info) {
+    widget_t *win = rows_win;
+    (void)info;
+    rows_win = 0;
+    if (win && win == window_manager_get_top_window(window_manager())) {
+        lockscreen_rows(win);
+        ringnav_keep_row(layout_row); /* the wheel stays on Layout, not the top row */
+    }
+    return 0; /* RET_OK: a timer's end */
+}
+/* pod_click on Layout's row: the rows again with Clock's or without, a loop pass later, not inside
+ * the row's own click. */
+void lockscreen_layout_turned(widget_t *win) {
+    rows_win = win;
+    timer_add(rows_again, (void *)0, 0);
+}
 
 /* ringnav_paint (the border hook, after stock painted the widget) calls this for every widget:
  * over a built-in picture it draws the wallpaper; thumbnails render on first sight. Stock painted
@@ -483,7 +545,7 @@ int lockscreen_rows(widget_t *win) {
  */
 void lockscreen_paint(widget_t *w, canvas_t *canvas) {
     void *bm = 0;
-    if (!w) return;
+    if (!w || glance_paint(w, canvas)) return;
     if (w == lk.img && lk.built_in) bm = lk.full;
     for (int i = 0; !bm && i < WALLS; ++i)
         if (w == lk.thumb[i])

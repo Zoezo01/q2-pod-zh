@@ -893,10 +893,63 @@ def test_a_rebuilt_grid_keeps_the_rendered_thumbnails(fw):
 def test_the_clock_row_is_the_lock_clock_s_setting(fw, large):
     """A click on the row it adds steps Q2POD LOCKCLOCK, Standard and Large in turn."""
     Picker(fw, [b'screensaver_default'], LOCKCLOCK=str(large))
-    for _, click in handlers(fw, EVT_CLICK):  # with no toolbar, the page's switch row's too
+    for _, click in handlers(fw, EVT_CLICK):  # with no toolbar, the page's switch row's too, and Layout's
         click()
-    (value, section, key, *_), = [args for _, args in fw.calls('write_int_config')]
+    (value, section, key, *_), = [args for _, args in fw.calls('write_int_config') if C.string_at(args[2]) == b'LOCKCLOCK']
     assert (value, C.string_at(section), C.string_at(key)) == (1 - large, b'Q2POD', b'LOCKCLOCK')
+
+
+def row_texts(fw, since=0):
+    """The texts pod_text wrote on the rows' labels, in order, from the since'th call on."""
+    return [C.string_at(args[1]).decode() for name, args in fw.calls()[since:] if name == 'widget_set_text_utf8']
+
+
+def calls_since(fw, since, name):
+    return [args for n, args in fw.calls()[since:] if n == name]
+
+
+@pytest.mark.parametrize('layout, texts', [(None, ['Clock: Standard', 'Layout: Default']), ('0', ['Clock: Standard', 'Layout: Default']),
+                                           ('1', ['Layout: At a Glance'])])
+def test_layout_follows_clock_and_clock_is_default_s_alone(fw, layout, texts):
+    """Layout (Q2POD LOCKLAYOUT, Default unless 1) comes after Clock, 78 high, restacked under it; At a Glance has
+    no Clock row, its layout being every theme's own."""
+    picker = Picker(fw, [b'screensaver_default'], **({'LOCKLAYOUT': layout} if layout else {}))
+    assert [t for t in row_texts(fw) if t.startswith(('Clock', 'Layout'))] == texts
+    last = picker.rows[-1]
+    assert [args[:3] for _, args in fw.calls('widget_resize')].count((last, 375, 78)) == len(texts)
+    assert [args[:2] for _, args in fw.calls('widget_restack') if args[0] == last][:len(texts)] == [
+        (last, 1 + i) for i in range(len(texts))]
+
+
+@pytest.mark.parametrize('layout', [0, 1])
+def test_the_layout_row_steps_q2pod_locklayout_and_lays_the_rows_out_again(fw, layout):
+    """A click saves the other layout and, a loop pass later on the page still in front, has stock's rows built
+    again (Clock's comes or goes) with the wheel kept on Layout's row."""
+    picker = Picker(fw, [b'screensaver_default'], LOCKLAYOUT=str(layout))
+    page = fw.var('lockscreen__rows_win', C.c_void_p)
+    layout_click = [click for _, click in handlers(fw, EVT_CLICK)][-1]
+    n = len(fw.calls())
+    layout_click()
+    (value, section, key, *_), = calls_since(fw, n, 'write_int_config')
+    assert (value, C.string_at(section), C.string_at(key)) == (1 - layout, b'Q2POD', b'LOCKLAYOUT')
+    assert row_texts(fw, n) == [('Layout: Default', 'Layout: At a Glance')[1 - layout]]
+    (fn, _, ms, *_), = calls_since(fw, n, 'timer_add')
+    assert ms == 0 and not calls_since(fw, n, 'stock_saverrows_trampoline')  # not inside the row's own click
+    n, win = len(fw.calls()), page.value
+    fw.mock('window_manager_get_top_window', lambda *_: win)  # the row's window, still in front
+    assert win and C.CFUNCTYPE(C.c_int, C.c_void_p)(fn)(0) == RET_OK
+    assert [args[0] for args in calls_since(fw, n, 'stock_saverrows_trampoline')] == [win] and not page.value
+    assert row_texts(fw, n) == [['Clock: Standard', 'Layout: Default'], ['Layout: At a Glance']][1 - layout]
+    assert picker
+
+
+def test_rows_again_skip_a_page_no_longer_in_front(fw):
+    Picker(fw, [b'screensaver_default'])
+    fw.mock('window_manager_get_top_window', lambda *_: 0x9900)
+    [click for _, click in handlers(fw, EVT_CLICK)][-1]()
+    fn = fw.calls('timer_add')[-1][1][0]
+    n = len(fw.calls())
+    assert C.CFUNCTYPE(C.c_int, C.c_void_p)(fn)(0) == RET_OK and not calls_since(fw, n, 'stock_saverrows_trampoline')
 
 
 def test_time_show_and_about_alone_still_get_the_clock_row(fw):
@@ -1569,3 +1622,42 @@ def test_the_info_screen_repaints_on_each_percent_and_on_charging(fw, clock, st,
     playing.charging(True)
     assert tick(0) == RET_REPEAT and len(invalidated(fw)) == 2
     assert tick(0) == RET_REPEAT and len(invalidated(fw)) == 2
+
+
+# Screen-off (lockscreen_dark, screen_action(0)'s disable_fb): black under the next lock screen.
+
+def screen_off(fw, mode, locked, fb_bytes=32):
+    """lockscreen_dark over a fake framebuffer of fb_bytes (4 x 2 x 32 bpp), first all 0xff: its answer, the
+    framebuffer after and the stubbed calls made, in order."""
+    fb = block(fw, size=fb_bytes)
+    C.memset(fb, 0xff, fb_bytes)
+    fw.var('g_screensaver_mode', C.c_ubyte).value = mode
+    fw.var('g_lockscreen_pageflag', C.c_ubyte).value = locked
+    order = []
+
+    def ioctl(fd, req, arg, *_):
+        v = (C.c_uint * 40).from_address(arg)
+        v[2], v[3], v[6] = 4, 2, 32  # xres_virtual, yres_virtual, bits_per_pixel
+        order.append('ioctl')
+        return 0
+    fw.mock('fw_open', lambda *_: order.append('open') or 7)
+    fw.mock('fw_ioctl', ioctl)
+    fw.mock('fw_mmap', lambda *_: order.append('mmap') or fb)
+    fw.mock('fw_munmap', lambda *_: order.append('munmap') or 0)
+    fw.mock('fw_close', lambda *_: order.append('close') or 0)
+    fw.mock('disable_fb', lambda *_: order.append('disable_fb') or 5)
+    ret = fw.fn('lockscreen_dark', C.c_int)()
+    return ret, C.string_at(fb, fb_bytes), order
+
+
+def test_screen_off_with_the_lock_screen_on_clears_the_framebuffer_first(fw):
+    ret, fb, order = screen_off(fw, 1, 0)
+    assert ret == 5 and fb == bytes(32)
+    assert order == ['open', 'ioctl', 'mmap', 'munmap', 'close', 'disable_fb']
+
+
+@pytest.mark.parametrize('mode, locked', [(0, 0), (1, 1)])
+def test_screen_off_without_a_lock_screen_to_come_is_stocks_alone(fw, mode, locked):
+    """The lock screen off, or its window already up: the framebuffer keeps the page."""
+    ret, fb, order = screen_off(fw, mode, locked)
+    assert ret == 5 and fb == b'\xff' * 32 and order == ['disable_fb']
