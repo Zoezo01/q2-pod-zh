@@ -1076,8 +1076,10 @@ int mp3_toc(const unsigned char *h, unsigned n, double t, double *frac, double *
     unsigned head = (unsigned)h[0] << 24 | h[1] << 16 | h[2] << 8 | h[3];
     unsigned version = head >> 19 & 3, rate = head >> 10 & 3, mono = (head >> 6 & 3) == 3;
     if (head >> 21 != 0x7ff || version == 1 || (head >> 17 & 3) != 1 || rate == 3) return 0;
-    unsigned at =
-        4 + (!(head & 0x10000) ? 2 : 0) + (version == 3 ? (mono ? 17 : 32) : (mono ? 9 : 17));
+    unsigned at = 4 + (version == 3 ? (mono ? 17 : 32) : (mono ? 9 : 17));
+    /* A CRC frame: LAME keeps the header at the same place, other encoders put it past the CRC's
+     * two bytes. Both, as mp3_gapless.c's mp3_tag takes them. */
+    if (!(head & 0x10000) && n >= at + 4 && memcmp(h + at, "Xing", 4)) at += 2;
     if (n < at + 8 + 4 + 4 + 100 || memcmp(h + at, "Xing", 4))
         return 0; /* "Info": CBR, already exact */
     const unsigned char *p = h + at + 4;
