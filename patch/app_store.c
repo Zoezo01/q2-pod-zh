@@ -92,22 +92,16 @@ void store_state(widget_t *item, int state) {
     widget_invalidate_force(item, 0);
 }
 
-/* Text on the accent or a coloured band is final white (or the scheme's sel_text); everything
- * else is given in the dark half's colours, which Light Mode flips. */
-static unsigned on_accent(void) {
-    const scheme_t *S = scheme();
-    return S->sel_text ? S->sel_text : 0xffffff;
-}
-
 /* The selected row's look, as paint_selection and ringnav_style_color (st.sel_accent) give it: its
  * colour, flat (Classic's band its middle stop, Modern's bar its tone), and in *ink its labels':
- * on_accent's on a band or a coloured bar or card, near-black on Minimal's light card, else white.
- * *raw: both final, else in the dark half's terms, which Light Mode flips. */
+ * the scheme's sel_text (else white) on a band or a coloured bar or card, near-black on Minimal's
+ * light card, else white. *raw: both final, else in the dark half's terms, which Light Mode flips.
+ */
 static unsigned row_look(unsigned *ink, int *raw) {
     const scheme_t *S = scheme();
     int stops = theme()->painter[PAINT_SELECTION] == SEL_STOPS, card = S->flags & SCHEME_CARD;
     *raw = stops || (!neutral(S->tones[0]) && !card);
-    *ink = *raw ? on_accent() : card ? 0x171717 : 0xffffff;
+    *ink = *raw ? S->sel_text ? S->sel_text : 0xffffff : card ? 0x171717 : 0xffffff;
     return stops ? S->sel.rgb[S->sel.n / 2] : card ? S->fill : S->tones[0];
 }
 
