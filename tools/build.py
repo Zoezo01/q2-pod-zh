@@ -484,6 +484,9 @@ WIFI_LPS = (b'rtwpriv wlan0 pm_set lps=0\0', b'rtwpriv wlan0 pm_set lps=2\0')
 LOCK_CLOCK_12H = (b'hh:mm\0\0\0HH:TT\0', b'hh:mm\0\0\0H:mm\0\0')
 # Now Playing's info page: its one fill (0x53bc78), a bal, becomes jal ringnav_np_info, which tidies the lines.
 NP_INFO_CALL = 0x53d308
+# Now Playing's 250 ms timer (0x53d810): its call of the page update (0x53cf08), a bal, becomes jal ringnav_np_tick,
+# which skips it while the screen is off unless a flag the update consumes is set (navigation.c).
+NP_TICK = 0x53d840
 # Now Playing's A-B markers (0x53baa4): its three calls of their x (0x53b9d8), each a bal, become jal ringnav_ab_x,
 # which puts them on Classic's bar as ipod_times fitted it to the track.
 AB_X_CALLS = (0x53bb78, 0x53bbf4, 0x53bc04)
@@ -1783,6 +1786,8 @@ GLOBALS = ['tidal_albuminfo_thread_run', 'tidal_collection_thread_run',  # 2: a 
            'g_keytone_flag', 'g_folder_layer', 'g_otg_status', 'g_delete_flag', 'g_volume', 'g_maxvolume',
            'g_sleepflag',  # the Sleep Timer's switch: 1 while its count (g_sleep_time) runs (sleep_row.c)
            'g_po_status', 'g_bal_status',  # 3.5 mm and 4.4 mm jacks: 1 plugged (check_headset_status)
+           # one-shot flags Now Playing's update consumes: a track change, a forced refresh, the cover parsed (ringnav_np_tick)
+           'g_autochange_flag', 'g_forcerefresh_flag', 'g_playcover_finishflag',
            'g_usbvol_mode',  # USB DAC volume: 0 fixed, else the volume (config_usbvolmode, device_set_volume)
            'g_usbdac_chargeflag',  # USB mode's charge choice, which switch_charge_enable gets there
            'g_memory_play', 'g_carmode', 'g_carmode_state',  # In-Vehicle Mode (pod_click)
@@ -2292,6 +2297,8 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
               f"{name}: the GOT load written for it names another slot")
     patch_word(patched, NP_INFO_CALL, branch(0x04110000, NP_INFO_CALL, PRIVATE_FUNCTIONS['np_info']),
                jal(ps['ringnav_np_info']), "Now Playing's info lines")
+    patch_word(patched, NP_TICK, branch(0x04110000, NP_TICK, 0x53cf08), jal(ps['ringnav_np_tick']),
+               "Now Playing's update rests while dark")
     for site in AB_X_CALLS:
         patch_word(patched, site, branch(0x04110000, site, PRIVATE_FUNCTIONS['ab_x']),
                    jal(ps['ringnav_ab_x']), "A-B markers on Classic's fitted bar")

@@ -1434,6 +1434,83 @@ def test_now_playing_waits_while_behind_a_window_or_its_bar_is_held(np_front, st
     assert np_front.frame() == [DRAWN, PAINTED]
 
 
+# The page's 250 ms timer calls its update through ringnav_np_tick (NP_TICK in tools/build.py).
+FLAGS = ('g_autochange_flag', 'g_forcerefresh_flag', 'g_playcover_finishflag')  # what the update consumes
+
+
+def tick(fw, force=0):
+    return fw.fn('ringnav_np_tick', C.c_int, C.c_void_p, C.c_int)(0x5100, force)
+
+
+def test_a_dark_tick_skips_the_update(fw, np_front):
+    """A minute dark on the page: 240 ticks, no update."""
+    np_front.lit.value = 0
+    np_front.log.clear()
+    assert [tick(fw) for _ in range(240)] == [0] * 240 and np_front.log == []
+
+
+@pytest.mark.parametrize('flag', FLAGS)
+def test_a_dark_tick_with_a_flag_set_runs_the_update(fw, np_front, flag):
+    """A track change, a forced refresh or new art: the update takes its flag on the same tick as before."""
+    np_front.lit.value = 0
+    fw.var(flag, C.c_ubyte).value = 1
+    np_front.log.clear()
+    tick(fw)
+    assert np_front.log == [('update', 0x5100, 0)]
+
+
+def test_a_dark_forced_tick_runs_the_update(fw, np_front):
+    np_front.lit.value = 0
+    np_front.log.clear()
+    tick(fw, 1)
+    assert np_front.log == [('update', 0x5100, 1)]
+
+
+@pytest.mark.parametrize('stream', [0xf1, 0xf2])
+def test_a_dark_tick_on_a_stream_runs_the_update(fw, np_front, stream):
+    """A stream's change shows the buffering spinner, and only a later tick stops its animation."""
+    np_front.lit.value = 0
+    fw.mock('mclGetPlayType', lambda *_: stream)
+    np_front.log.clear()
+    tick(fw)
+    assert np_front.log == [('update', 0x5100, 0)]
+
+
+def test_a_lit_tick_runs_the_update_as_stock(fw, np_front):
+    np_front.log.clear()
+    tick(fw), tick(fw, 1)
+    assert np_front.log == [('update', 0x5100, 0), ('update', 0x5100, 1)]
+
+
+def test_the_first_lit_frame_after_skipped_ticks_updates_once(fw, np_front):
+    np_front.lit.value = 0
+    for _ in range(3):
+        tick(fw)
+    np_front.lit.value = 1
+    assert [np_front.frame(), np_front.frame()] == [[('update', 0x5100, 0), PAINTED], [PAINTED]]
+
+
+def test_a_song_changed_while_ticks_were_skipped_is_drawn_by_one_forced_update(fw, np_front):
+    np_front.lit.value = 0
+    tick(fw)
+    np_front.song(b'B')
+    tick(fw)
+    np_front.lit.value = 1
+    assert [np_front.frame(), np_front.frame()] == [[DRAWN, PAINTED], [PAINTED]]
+
+
+def test_a_lit_tick_after_the_dark_leaves_no_update_owed(fw, np_front):
+    """The page behind a window at wake: the timer's next tick draws it, so its return to the front owes none."""
+    np_front.lit.value = 0
+    tick(fw)
+    np_front.lit.value = 1
+    np_front.top = 0x5200
+    assert np_front.frame() == [PAINTED]
+    tick(fw)
+    np_front.top = 0x5100
+    assert np_front.frame() == [PAINTED]
+
+
 def test_no_window_manager_is_stocks_bad_params(fw):
     fw.var('g_backlight_status', C.c_ubyte).value = 1
     assert Wm(fw).call(None) == 0x10

@@ -205,6 +205,7 @@ typedef struct {
     unsigned np_art;  /* the track and player cover img_cover last took (np_art_poll) */
     unsigned np_seen; /* the track and tags the page's update last drew (np_update_poll), 0 forces
                          the next one */
+    unsigned char np_stale; /* a dark tick skipped the update (ringnav_np_tick) */
     int np_left;
     /* Minimal's album marquee: np_off px scrolled of the np_over px the album overflows its label.
      */

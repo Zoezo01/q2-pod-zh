@@ -4331,7 +4331,7 @@ static int np_gone(void *win, event_t *event) {
         st.np_pos = st.np_album = st.np_remain = st.np_slider = st.np_elapsed = st.np_cover =
             st.np_slide = st.np_lrc = st.np_title = (void *)0;
         st.scrub_moved = 0; /* the page is going: no seek */
-        st.np_off = st.np_full = st.lyric_held = 0;
+        st.np_off = st.np_full = st.lyric_held = st.np_stale = 0;
         stop_timer(&st.np_marquee);
         stop_timer(&st.np_remain_timer);
         stop_timer(&st.np_fit_timer);
@@ -4410,9 +4410,29 @@ static void np_update_poll(void) {
         return;
     np_sync(st.np_win);
     unsigned key = np_shown();
-    if (key == st.np_seen) return;
+    if (key == st.np_seen && !st.np_stale) return;
+    int force = key != st.np_seen;
     st.np_seen = key;
-    ((int (*)(widget_t *, int))0x53cf08)(st.np_win, 1);
+    ((int (*)(widget_t *, int))0x53cf08)(st.np_win, force);
+    st.np_stale = 0; /* after: the lyric follow inside it scrolls at once (ringnav_lyric_follow) */
+}
+
+/* The page's 250 ms timer (0x53d810) runs the update through here (NP_TICK in tools/build.py),
+ * lit or dark, as long as the page is open. With the screen off it is skipped unless it is forced
+ * or a flag it consumes is set (g_autochange_flag, g_forcerefresh_flag, g_playcover_finishflag),
+ * so what they drive (the flags' clearing, the heart and its SyncLink notice, the art) happens on
+ * the tick it did. What is skipped only draws: the times, the bar, the play state, the lyric line
+ * and the info page. A stream (play types 0xf1, 0xf2) is never skipped: its change shows the
+ * buffering spinner and starts its animation, which only a later tick stops. The timer's Enlarged
+ * Album Art countdown, after this call, runs as before. A skip leaves the page owed an update,
+ * which the first lit frame with it in front runs (np_update_poll). */
+int ringnav_np_tick(widget_t *win, int force) {
+    if (!g_backlight_status && !force && !g_autochange_flag && !g_forcerefresh_flag &&
+        !g_playcover_finishflag && (unsigned)mclGetPlayType() - 0xf1u > 1)
+        return st.np_stale = 1, 0; /* stock's update answers 0 */
+    int ret = ((int (*)(widget_t *, int))0x53cf08)(win, force);
+    st.np_stale = 0; /* after, as np_update_poll: the timer can run the owed update first */
+    return ret;
 }
 
 /* Classic's Spotify or Internet Radio Now Playing closing: its art's slanted frame goes with it.

@@ -2935,6 +2935,45 @@ def test_off_the_lyrics_page_the_follow_scrolls(fw, st):
     assert st('lyric_glide').value == 0 and fw.calls('scroll_view_scroll_to')
 
 
+def test_the_follow_owed_from_the_dark_scrolls_at_once(fw, st):
+    """The first lit update after skipped dark ticks (ringnav_np_tick) puts the line where it is, as a dark follow
+    did, rather than gliding from where the screen went off."""
+    lrc = lyrics(fw, st, Ui(fw), np=True)
+    st('np_stale', C.c_ubyte).value = 1
+    follow(fw, lrc, 60)
+    assert fw.calls('scroll_view_scroll_to') and st('lyric_glide').value == 0
+
+
+NP_UPDATE = 0x53cf08  # Now Playing's update, whose lyric follow is ringnav_lyric_follow (LYRIC_FOLLOW)
+
+
+@pytest.mark.parametrize('wake', ['tick', 'frame'])
+def test_the_update_owed_from_the_dark_follows_at_once_whichever_runs_it_first(fw, st, wake):
+    """At wake the page's timer can run before the first lit paint's update (np_update_poll): either way the owed
+    update's follow scrolls, and only the next one glides."""
+    lrc = lyrics(fw, st, Ui(fw), np=True)
+    update = C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_int)(lambda win, force: follow(fw, lrc, 60) and 0)
+    saved = C.string_at(NP_UPDATE, 12)
+    claim(NP_UPDATE)
+    C.memmove(NP_UPDATE, b'\x48\xb8' + struct.pack('<Q', C.cast(update, C.c_void_p).value) + b'\xff\xe0', 12)
+    try:
+        tick = fw.fn('ringnav_np_tick', C.c_int, C.c_void_p, C.c_int)
+        g(fw, 'g_backlight_status', 0)
+        tick(st('np_win', C.c_void_p).value, 0)
+        g(fw, 'g_backlight_status', 1)
+        if wake == 'tick':
+            tick(st('np_win', C.c_void_p).value, 0)
+        else:
+            fw.mock('widget_set_text_utf8', lambda *_: 0)  # np_sync's album and place, none on this page
+            fw.fn('navigation__np_update_poll', None)()
+        assert fw.calls('scroll_view_scroll_to') and st('lyric_glide').value == 0
+        tick(st('np_win', C.c_void_p).value, 0)
+        assert st('lyric_glide').value == 1
+    finally:
+        C.memmove(NP_UPDATE, saved, 12)
+        assert not libc.mprotect(NP_UPDATE & ~0xfff, 0x2000, 3)
+
+
 LYRIC_ROWS = 0x53b67c  # stock's rebuild of scroll_lrc's rows, which ringnav_lyric_rows calls
 
 
