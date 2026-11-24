@@ -626,6 +626,7 @@ class Card:
                          ('fw_unlink', unlink), ('fw_mkdir', mkdir), ('fw_rmdir', rmdir), ('fw_system', system), ('fw___xstat', stat)):
             fw.mock(stub, fn)
         fw.mock('fw_ftell', lambda f, *_: self.at[f])
+        fw.mock('tk_str_start_with', lambda s, p, *_: C.string_at(s).startswith(C.string_at(p)))  # card_path's
         fw.mock('fw_access', lambda p, *_: 0 if C.string_at(p) in self.files else -1)
 
     def of(self, kind):
@@ -757,6 +758,17 @@ def test_a_folder_left_with_files_stops_the_climb(fw):
     card = Card(fw, {b'/mnt/mmc/.q2/apps/rockbox.files': b'.rockbox/a/b/c\n', b'/mnt/mmc/.rockbox/a/keep': b''})
     remove(fw, 0)
     assert card.of('rmdir') == [(b'/mnt/mmc/.rockbox/a/b',), (b'/mnt/mmc/.rockbox/a',)]
+
+
+def test_a_remove_deletes_nothing_its_list_names_off_the_card(fw):
+    # the list is a card file, which an app (uid 1000) can write; the remove runs as root
+    apps(fw, b'x/q2-rockbox')
+    files = b'../../usr/data/config.ini\n.rockbox/../../../bin/sh\n..\n.rockbox/a/../../../etc/x\n.rockbox/ok\n'
+    card = Card(fw, {b'/mnt/mmc/.q2/apps/rockbox.files': files})
+    remove(fw, 0)
+    gone = [p for (p,) in card.of('unlink') + card.of('rmdir')]
+    assert b'/mnt/mmc/.rockbox/ok' in gone and b'/mnt/mmc/.rockbox' in gone
+    assert not [p for p in gone if b'..' in p], gone
 
 
 def test_a_remove_with_no_list_still_goes(fw):

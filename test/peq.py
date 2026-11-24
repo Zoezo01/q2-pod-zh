@@ -3128,6 +3128,7 @@ int main(void) {
 SHELF_SHIM = r"""
 #include <stdio.h>
 #include <stdlib.h>
+int card_path(const char *path) { return 1; } /* addon.c's */
 void *read_all(const char *path, unsigned max, unsigned *size) { /* scrobble.c's */
     FILE *f = fopen(path, "rb");
     char *p = 0;

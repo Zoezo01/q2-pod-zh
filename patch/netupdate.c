@@ -310,7 +310,8 @@ int shelf_place(int i) {
 
 /* Remove: app i's listed files, but those another app lists too (two fonts are both Rockbox's and
  * the themes'), then the folders that left empty, up to and with its own; then its list and tag.
- * A card app's folder goes whole, with what the app saved there (a login among it). */
+ * A card app's folder goes whole, with what the app saved there (a login among it). A listed path
+ * with a ".." segment is skipped: it can name a file off the card, and this runs as root. */
 void shelf_remove(int i) {
     char path[512];
     unsigned n = 0, m[SH_MAX] = { 0 };
@@ -327,7 +328,9 @@ void shelf_remove(int i) {
         int shared = 0;
         for (int j = 0; j < shelf_n; ++j) shared |= shelf_listed(other[j], m[j], p);
         snprintf(path, sizeof path, CARD "/%s", p);
-        if (*p && !shared) unlink(path);
+        if (!*p || !card_path(path))
+            continue; /* the list is a card file, an app's to write: nothing off the card */
+        if (!shared) unlink(path);
         for (char *s; (s = strrchr(path, '/')) > path + strlen(CARD);) {
             *s = 0;
             if (rmdir(path)) break; /* not empty: nor is any folder above */
