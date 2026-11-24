@@ -294,19 +294,52 @@ def test_no_picture_or_black_is_the_clock_on_black(fw, mcl, now, picture):
     assert g.boxes()['time'][1] == 50
 
 
+SHADE = [((0, 2 * i, 375, 2), (88 - 2 * i) << 24, 0) for i in range(44)]
+LABELS = ('scrlabel_title', 'scrlabel_artist', *ADDED)
+INKS = {'album': 0xd1ffffff, 'place': 0xd1ffffff, 'count': 0xd1ffffff}  # the rest white
+
+
+def light_glance(fw, mcl, theme, light, **kw):
+    """Glance with Light Mode as asked, checked on: one settings read per test, so one half per test."""
+    Bitmaps(fw)
+    g = Glance(fw, mcl, theme=theme, LIGHT=light, **kw)
+    assert fw.fn('ipod_light', C.c_int)() == int(light)
+    return g
+
+
+def screen_ink(fw, st, g, name):
+    """name's text colour as the style hook gives it to the screen (ringnav_style_color, with stock's style
+    answering what the label stores), while the label paints."""
+    stored = g.win.props('widget_set_prop_int', name)['style:normal:text_color'] & 0xffffffff
+    fw.mock('stock_color_trampoline', lambda color, *_: C.c_uint.from_address(color).__setattr__('value', stored))
+    fw.mock('widget_get_prop_int', lambda w, key, d, *_: next(
+        (v for kind, ww, k, v in reversed(g.win.set) if ww == w and k == C.string_at(key).decode()), d))
+    fw.mock('tk_str_end_with', lambda s, end, *_: C.string_at(s).endswith(C.string_at(end)))
+    st('paint_w', C.c_void_p).value = g[name]
+    color = C.c_uint(0)
+    fw.fn('ringnav_style_color', C.c_void_p, C.c_void_p, C.c_void_p, C.c_char_p, C.c_uint)(
+        C.addressof(color), 0, b'text_color', 0)
+    return color.value
+
+
 @pytest.mark.parametrize('theme', THEMES)
-@pytest.mark.parametrize('queue', [0, 1])
-def test_light_mode_leaves_its_look(fw, mcl, now, theme, queue):
-    """Light Mode flips what the payload paints: At a Glance gives its colours flipped there, so they reach the
-    screen as in the dark half, in every theme."""
-    seen = []
-    for light in '01':
-        Bitmaps(fw)
-        g = Glance(fw, mcl, theme=theme, picture=WALLS[AURORA], queue=queue, LIGHT=light)
-        lcd = Lcd(fw)
-        lcd.paint(fw, g['img_screensaver'])
-        seen.append(lcd.boxes)
-    assert seen[0] == seen[1] and seen[0]
+@pytest.mark.parametrize('light', ['0', '1'])
+@pytest.mark.parametrize('queue, want', [(0, SHADE), (1, [((0, 0, 375, 320), 0xff000000, 0)])])
+def test_light_mode_leaves_the_picture_s_look(fw, mcl, now, theme, light, queue, want):
+    """Light Mode flips what the payload paints and the labels' colours: At a Glance's are final, so they reach the
+    screen as in the dark half, in every theme. (A flip given in advance can't: Minimal's and Modern's light half
+    turns no colour into white.)"""
+    g = light_glance(fw, mcl, theme, light, picture=WALLS[AURORA], queue=queue)
+    lcd = Lcd(fw)
+    lcd.paint(fw, g['img_screensaver'])
+    assert lcd.boxes == want
+
+
+@pytest.mark.parametrize('theme', THEMES)
+@pytest.mark.parametrize('light', ['0', '1'])
+def test_light_mode_leaves_the_labels_white(fw, mcl, now, st, theme, light):
+    g = light_glance(fw, mcl, theme, light, queue=1)
+    assert {n: screen_ink(fw, st, g, n) for n in LABELS} == {n: INKS.get(n, 0xffffffff) for n in LABELS}
 
 
 def test_a_paint_of_another_widget_is_not_its(fw, mcl, now):
@@ -454,14 +487,30 @@ def test_the_slider_is_every_theme_s_alike(fw, mcl, now, theme):
 
 
 @pytest.mark.parametrize('theme', THEMES)
-def test_light_mode_leaves_the_slider_s_look(fw, mcl, now, theme):
-    seen = []
-    for light in '01':
-        g = Glance(fw, mcl, theme=theme, queue=1, LIGHT=light)
-        lcd = Lcd(fw)
-        lcd.paint(fw, g['slider'])
-        seen.append((lcd.boxes, lcd.texts))
-    assert seen[0] == seen[1] == (KNOB + ARROW, [('slide to unlock', WORDS_X, 12, 0x8cffffff)])
+@pytest.mark.parametrize('light', ['0', '1'])
+def test_light_mode_leaves_the_slider_s_look(fw, mcl, now, theme, light):
+    g = light_glance(fw, mcl, theme, light, queue=1)
+    lcd = Lcd(fw)
+    for _ in range(20):
+        shine(fw)  # the shine over the words too
+    lcd.paint(fw, g['slider'])
+    assert lcd.boxes == KNOB + ARROW
+    assert [t[3] for t in lcd.texts] == [0x8cffffff, 0x40ffffff, 0x50ffffff, 0x70ffffff]
+    assert not fw.fn('ui_ink_raw', C.c_uint, C.c_uint)(0)  # put back after the paint
+
+
+@pytest.mark.parametrize('theme', THEMES)
+@pytest.mark.parametrize('text, face, px', [('Blue Train', 'classic-light', 20), ('Синий поезд', 'bold', 17),
+                                            ('青い列車', 'default', 17)])
+def test_the_title_is_classic_s_face_in_every_theme(fw, mcl, now, theme, text, face, px):
+    """The title is Classic's bold face (classic-light.ttf, in every theme's rootfs) whatever the theme; a script it
+    lacks takes bold, then stock's, at the fallback's size, as Classic's own titles."""
+    g = Glance(fw, mcl, theme=theme, queue=1)
+    wide = (C.c_uint * (len(text) + 1))(*map(ord, text), 0)
+    fw.mock('widget_get_text', lambda w, *_: C.addressof(wide) if w == g['scrlabel_title'] else 0)
+    Lcd(fw).paint(fw, g['img_screensaver'])
+    assert g.win.props('widget_set_prop_str', 'scrlabel_title')['style:normal:font_name'] == face
+    assert g.win.props('widget_set_prop_int', 'scrlabel_title')['style:normal:font_size'] == px
 
 
 def test_the_shine_crosses_the_words_in_three_bands(fw, mcl, now):

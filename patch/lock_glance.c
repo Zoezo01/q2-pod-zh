@@ -12,8 +12,7 @@
 #include "stock.h"
 #include "theme.h"
 
-extern const int *clock_now(int *buf);       /* theme_engine.c: the local time, a struct tm */
-extern unsigned flip_if(int on, unsigned c); /* theme_engine.c: a colour as Light Mode flips it */
+extern const int *clock_now(int *buf); /* theme_engine.c: the local time, a struct tm */
 extern const char *now_tag(void *r, int field);
 extern void *queue_now(unsigned *pos, unsigned *n); /* coverflow.c: the playing record, or 0 */
 
@@ -65,34 +64,42 @@ static int forget(void *ctx, event_t *event) {
     return 0;
 }
 
-/* A label: its box, size and side, white at alpha a in either half (text_ink). */
+/* A label: its box, size and side, white at alpha a whatever Light Mode is. Its colour is final:
+ * the style hook leaves a "_raw_ink" label's text colour as stored (ringnav_style_color). A flip
+ * given in advance can't do it: Minimal's and Modern's light half flips white to their ink and
+ * every grey to one between paper and ink, so no colour flips back to white there. Not text_ink's
+ * either (_final_n 0), which a Light Mode change would set again flipped (text_inks). */
 static void put(widget_t *w, int x, int y, int ww, int h, int px, const char *face,
                 const char *align, unsigned a) {
     if (!w) return;
     slider_label(w, x, y, ww, h, px, face);
     widget_set_prop_str(w, "style:normal:text_align_h", align);
-    text_ink(w, a << 24 | 0xffffffu, 1);
+    widget_set_prop_int(w, "_final_n", 0);
+    widget_set_prop_int(w, "_raw_ink", 1);
+    widget_set_prop_int(w, "style:normal:text_color", (int)(a << 24 | 0xffffffu));
 }
 static widget_t *new_label(widget_t *parent) {
     return label(parent, 0, 0, 10, 10, "s_label_white20c", 20, 0xffffffffu);
 }
-/* A label's face for its text, any script (theme_face), at px: set again only when it changes. */
-static void face(widget_t *w, int px) {
+/* The title's face for its text at px, set again only when it changes: Classic's (classic-light,
+ * which every theme's rootfs holds) in every theme, else bold, else stock's for a script those
+ * lack (script_face), as Classic's own titles. */
+static void title_face(widget_t *w, int px) {
     if (!w) return;
-    const char *f = theme_face(widget_get_text(w), -1, &px);
-    /* a face is one of theme_face's literals: the payload's .rodata fits the low 24 bits */
-    int key = px << 24 | (int)(long)f;
+    int f = script_face(FONT_CLASSIC_LIGHT, widget_get_text(w), -1, &px), key = px << 24 | f;
     if (widget_get_prop_int(w, "_ringnav_box", 0) == key) return;
     widget_set_prop_int(w, "_ringnav_box", key);
-    widget_set_prop_str(w, "style:normal:font_name", f ? f : "default");
+    widget_set_prop_str(w, "style:normal:font_name",
+                        f == FONT_CLASSIC_LIGHT ? "classic-light"
+                        : f == FONT_BOLD        ? "bold"
+                                                : "default");
     widget_set_prop_int(w, "style:normal:font_size", px);
 }
-/* A box filled in the widget's own pixels, 0xAARRGGBB as it is to look: Light Mode flips what is
- * painted, so there it is given flipped (as text_ink gives a label's colour). */
+/* A box filled in the widget's own pixels, 0xAARRGGBB as it is to look: the paint runs with
+ * ui_ink_raw on (glance_paint), so Light Mode leaves it. */
 static void box(canvas_t *canvas, int x, int y, int w, int h, unsigned color, unsigned radius) {
     rect_t r = { x, y, w, h };
-    unsigned ink = RGBA(flip_if(ipod_light(), color & 0xffffffu)) & 0xffffffu;
-    fill_box(canvas, &r, ink | (color & 0xff000000u), radius);
+    fill_box(canvas, &r, (RGBA(color & 0xffffffu) & 0xffffffu) | (color & 0xff000000u), radius);
 }
 
 /* The playing cover (the lock window's own img_playcover image, as stock loaded it) blurred into
@@ -386,7 +393,7 @@ void glance_cover(widget_t *cover) {
  * out, or black. */
 static void paint_picture(canvas_t *canvas, const glance_t *g) {
     int r[4] = { 0, 0, GL_W, GL_H };
-    face(gl.title, g->title_px); /* the artist and the album stay in stock's face, any script */
+    title_face(gl.title, g->title_px); /* the artist and the album keep stock's, any script */
     if (gl.mode == GL_SONG && gl.blur && gl.blur_name[0])
         canvas_draw_image(canvas, gl.blur, r, r);
     else if (gl.mode == GL_PICTURE && gl.full)
@@ -422,8 +429,7 @@ static void paint_slider(canvas_t *canvas, const glance_t *g) {
     int room = g->knob_in + kw + 2;
     int tx = room + (tw - room - g->knob_in - text) / 2, ty = (th - g->words_px) / 2;
     if (fade) {
-        /* white as it is to look: Light Mode flips painted text too (box) */
-        unsigned white = RGBA(flip_if(ipod_light(), 0xffffffu)) & 0xffffffu;
+        unsigned white = 0xffffffu; /* as it is to look: ui_ink_raw is on (glance_paint) */
         canvas_set_text_color(canvas, (unsigned)(g->words_a * fade / 255) << 24 | white);
         canvas_draw_text(canvas, words, n, tx, ty);
         int at = tx - g->shine_from + gl.shine; /* the shine's middle; past the words it rests */
@@ -454,6 +460,7 @@ int glance_paint(widget_t *w, canvas_t *canvas) {
     void *lcd = canvas ? P(canvas, CANVAS_LCD) : 0;
     if (!lcd) return 1;
     unsigned fill = (unsigned)I(lcd, LCD_FILL_COLOR);
+    unsigned raw = ui_ink_raw(1); /* every colour here is final: Light Mode leaves it */
     if (w == gl.img)
         paint_picture(canvas, style());
     else if (w == gl.slider)
@@ -462,6 +469,7 @@ int glance_paint(widget_t *w, canvas_t *canvas) {
         stock_canvas_set_fill_color(canvas, (unsigned)(gl.fade > 255 ? 255 : gl.fade) << 24);
         canvas_fill_rect(canvas, 0, 0, GL_W, GL_H);
     }
+    ui_ink_raw(raw);
     stock_canvas_set_fill_color(canvas, fill);
     return 1;
 }

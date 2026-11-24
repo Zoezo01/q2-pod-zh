@@ -5557,6 +5557,8 @@ unsigned *ringnav_style_color(unsigned *color, void *style, const char *name, un
         return color;
     }
     if (st.paint_w && name && tk_str_end_with(name, "text_color")) {
+        /* a label whose colour is final in either half (lock_glance.c put): as stored */
+        if (ipod_paper() && widget_get_prop_int(st.paint_w, "_raw_ink", 0)) return color;
         if (kb_key(st.paint_w)) { /* kb_paint_key draws it */
             *color &= 0xffffff;
             return color;
