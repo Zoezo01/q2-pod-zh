@@ -1920,11 +1920,6 @@ RETURN, CENTRE = O['KEY_RETURN'], 218
 SNAKE_SOCK = b'/tmp/q2-snake.input.sock'
 
 
-def settings(fw, **values):
-    """config.ini as Q2 Pod reads its settings: these keys' values, every other its default."""
-    Config(fw, **values)
-
-
 class CardGame:
     """Card games as Library's Games runs them: fork, exec and waitpid stubbed, what reaches a game's input
     socket caught, toasts read, and the UI loop's addon_poll."""
@@ -2791,7 +2786,7 @@ def test_a_game_left_idle_two_minutes_is_ended(fw):
 
 
 def test_smart_awake_keeps_an_idle_game(fw):
-    settings(fw, KEEPLIT=b'1')
+    Config(fw, KEEPLIT=b'1')
     g = CardGame(fw)
     g.start()
     g.poll(120000)
@@ -5752,7 +5747,7 @@ def settings_read(library):
 
 def boot(fw, settings_read, theme):
     """theme() as a boot under theme has it: config.ini read again at its next use."""
-    settings(fw, THEME=theme)
+    Config(fw, THEME=theme)
     C.c_int.from_address(C.addressof(fw.var('st', C.c_char)) + settings_read).value = 0
 
 
@@ -5829,7 +5824,7 @@ def test_classics_progress_bar_is_its_scrubbers_rows(fw, settings_read):
 
 @pytest.mark.parametrize('theme', [b'0', b'1'])  # Minimal, Classic
 def test_a_canvas_that_cant_round_gets_square_plates(fw, theme):
-    settings(fw, THEME=theme)
+    Config(fw, THEME=theme)
     q = Qr(fw, qr_state())
     plates, code = drawn(fw, paint_of(fw, q.qp.qr))
     # each plate filled square where it would have been rounded, in its colour, under the same code

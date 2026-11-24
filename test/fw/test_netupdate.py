@@ -14,7 +14,7 @@ import zipfile
 import pytest
 
 import host
-from conftest import Dirent, O, block
+from conftest import Config, Dirent, O, block
 
 # stock.h's Q2POD_TAG: tools/build.py's VERSION (host.py builds as a release, not --dev)
 TAG = host.tools_build.VERSION.encode()
@@ -3228,8 +3228,8 @@ def test_a_list_of_33_keeps_them_all_and_the_cards_own_lines_after(fw):
 
 @pytest.mark.parametrize('theme', (b'0', b'1', b'2'))  # Minimal, Classic, Modern
 def test_app_store_paints_a_rows_state_as_a_word_and_the_tabs_badges(fw, theme):
-    from test_games import Canvas, config, grey, rgba, tone, words
-    config(fw, THEME=theme)
+    from test_games import Canvas, grey, rgba, tone, words
+    Config(fw, THEME=theme)
     props, strs = {}, {}
     fw.mock('widget_set_prop_int', lambda w, k, v, *_: props.__setitem__((w, C.string_at(k)), C.c_int(v).value) or 0)
     fw.mock('widget_get_prop_int', lambda w, k, d, *_: props.get((w, C.string_at(k)), d))
@@ -3276,8 +3276,8 @@ def test_app_store_paints_a_rows_state_as_a_word_and_the_tabs_badges(fw, theme):
 
 def test_a_selected_rows_state_takes_the_rows_ink_as_stocks_labels_do(fw, st):
     """Minimal's Ivory selects on a light card: the row's labels turn near-black (ringnav_style_color), the state too."""
-    from test_games import Canvas, config, dark, light
-    config(fw, THEME=b'0', MINIMAL_ACCENT=b'7')
+    from test_games import Canvas, dark, light
+    Config(fw, THEME=b'0', MINIMAL_ACCENT=b'7')
     props = {}
     fw.mock('widget_set_prop_int', lambda w, k, v, *_: props.__setitem__((w, C.string_at(k)), C.c_int(v).value) or 0)
     fw.mock('widget_get_prop_int', lambda w, k, d, *_: props.get((w, C.string_at(k)), d))
@@ -3302,8 +3302,7 @@ def test_a_selected_rows_state_takes_the_rows_ink_as_stocks_labels_do(fw, st):
 @pytest.mark.parametrize('theme, x, tab', ((b'0', 105, 1), (b'0', 95, 0), (b'2', 105, 0), (b'2', 200, 1)))
 def test_a_tap_on_the_tabs_switches_after_its_own_event(fw, theme, x, tab):
     """The new rows replace the strip, so the switch waits for a timer; Minimal's Games name starts at 120."""
-    from test_games import config
-    config(fw, THEME=theme)
+    Config(fw, THEME=theme)
     card = Disk(fw, {SOURCES: b'me/q2-foo Foo\n[Games]\nyou/q2-bar Bar\n'})
     store_net(fw)
     fw.mock('widget_factory_create_widget', lambda *_: 88)
@@ -3395,8 +3394,7 @@ def test_next_through_ringnav_opens_games_before_stocks_skip(fw):
 
 def test_classic_moves_the_list_under_the_tabs_strip(fw):
     """Classic has no title row: the list moves down the strip's 44 px, held to the page's height."""
-    from test_games import config
-    config(fw, THEME=b'1')
+    Config(fw, THEME=b'1')
     moved = {}
     fw.mock('widget_move_resize', lambda w, x, y, wd, h, *_: moved.__setitem__(w, (x, y, wd, h)) or 0)
     fw.mock('widget_get_prop_int', lambda w, k, d, *_: 400 if C.string_at(k) == b'h' else d)

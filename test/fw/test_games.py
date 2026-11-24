@@ -2292,7 +2292,7 @@ MINIMAL, CLASSIC, MODERN = b'0', b'1', b'2'
 
 def themed(fw, theme, **keys):
     """The Games page under a theme: its settings are read once, before the page opens."""
-    config(fw, THEME=theme, **keys)
+    Config(fw, THEME=theme, **keys)
     return Page(fw)
 
 
@@ -2579,13 +2579,9 @@ def test_solitaire_paint_asks_before_a_new_deal_and_says_when_it_is_won(fw):
     assert said == 'YOU WIN!' and light(color)
 
 
-def config(fw, **values):
-    Config(fw, **values)
-
-
 @pytest.mark.parametrize('mode', (b'0', b'1'))
 def test_solitaire_paint_a_card_is_paper_white_with_black_suits_in_either_mode(fw, mode):
-    config(fw, LIGHT=mode)
+    Config(fw, LIGHT=mode)
     p = Page(fw)
     p.go(SOLITAIRE)
     deal_table(p.s)

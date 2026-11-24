@@ -343,15 +343,11 @@ def test_a_pause_press_well_after_an_ear_pause_cancels_its_resume(fw):
 
 def link(fw, player, resume='0'):
     """The link comes up now (headset_poll), Resume on Connect as given."""
-    config(fw, RESUME=resume)
+    Config(fw, RESUME=resume)
     fw.var('g_bluetoothflag', C.c_ubyte).value = 1
     fw.var('bt_linkstatus', C.c_ubyte).value = 1
     fw.mock('fw_pthread_create', lambda *_: 0)
     fw.fn('headset_poll', None)()
-
-
-def config(fw, **values):
-    Config(fw, **values)
 
 
 def test_play_as_the_link_comes_up_is_dropped(fw):
@@ -1507,7 +1503,7 @@ def test_autolink_only_when_nothing_is_connected(fw, items, paired, result):
     ('0', [0, 0, 2, 2]),  # sends only: neither; plays and sends: plays, so the Q2 sends
 ])
 def test_receive_audio_off_makes_a_two_way_device_one_the_q2_sends_to(fw, receive, services):
-    config(fw, **({'BTRECEIVE': receive} if receive else {}))
+    Config(fw, **({'BTRECEIVE': receive} if receive else {}))
     asked: list[bytes] = []
     fw.mock('getBtService', lambda mac, *_: asked.append(C.string_at(mac)) or len(asked) - 1)
     assert [fw.fn('headset_bt_service', C.c_int, C.c_char_p)(b'AA:BB:CC:DD:EE:FF') for _ in range(4)] == services
@@ -1623,7 +1619,7 @@ def test_the_connected_link_is_found_among_any_other(fw, other, first):
 
 def test_eq_poll_looks_each_half_second_with_eq_per_output_on(fw):
     player = Player(fw)
-    config(fw, EQOUTPUT='1')
+    Config(fw, EQOUTPUT='1')
     looked, start = [], player.now
     fw.mock('mclGetOutputWay', lambda *_: looked.append(player.now - start))
     for step in (500, 100, 399, 1):
@@ -1635,7 +1631,7 @@ def test_eq_poll_looks_each_half_second_with_eq_per_output_on(fw):
 @pytest.mark.parametrize('way, items, owner', [(2, [], b'usb'), (1, [(3, 'AA:BB:CC:DD:EE:FF')], b'AA:BB:CC:DD:EE:FF')])
 def test_eq_poll_hands_the_eq_to_what_plays(fw, way, items, owner):
     player = Player(fw)
-    config(fw, EQOUTPUT='1')
+    Config(fw, EQOUTPUT='1')
     fw.mock('mclGetOutputWay', lambda *_: way)
     links(fw, *items)
     player.now += 500
@@ -1645,7 +1641,7 @@ def test_eq_poll_hands_the_eq_to_what_plays(fw, way, items, owner):
 
 def test_eq_poll_with_eq_per_output_off_looks_at_nothing(fw):
     player = Player(fw)
-    config(fw, EQOUTPUT='0')
+    Config(fw, EQOUTPUT='0')
     player.now += 1000
     fw.fn('headset_eq_poll', None)()
     assert fw.calls('mclGetOutputWay') == []
