@@ -9,6 +9,7 @@ import struct
 import pytest
 
 import host
+import test_nav_loop as NL  # Now Playing's update (NP_UPDATE) and the window manager's paint (Wm)
 from conftest import O, Deques, Files, Rows, claim, favdir_card, fnv1a, high_halves, in_fork, ui_name
 from test_nav_display_library import Ple  # playlists.c's editor state
 from test_navigation import directory
@@ -1651,6 +1652,34 @@ def test_remove_from_favourites_untags_the_song(hold, recs, ui, fw):
     hold.menu()
     hold.pick('Remove from Favourites')
     assert [a[0] for _, a in fw.calls('deleteMusicFromFav')] == [songs[1]] and fw.var('g_delete_flag', C.c_ubyte).value == 0
+
+
+@pytest.mark.parametrize('row, fav', [('Add to Favourites', 0), ('Remove from Favourites', 1)])
+def test_now_playings_heart_is_drawn_after_a_favourite_from_its_menu(hold, recs, ui, st, fw, row, fav):
+    """The menu closes before its row runs, so Now Playing, in front again, drew its heart from My Fav as it was.
+    The next lit frame forces stock's update once more (np_update_poll), which draws the heart from the change."""
+    hold.now_playing([song(recs, i) for i in range(3)])
+    fw.mock('checkFavExist', lambda *_: fav)
+    st('np_win', C.c_void_p).value = hold.page
+    fw.var('g_backlight_status', C.c_ubyte).value = 1
+    forced = []
+    update = NL.NowPlayingFront.UPDATE(lambda win, force: forced.append(force) or 0)
+    saved = C.string_at(NL.NP_UPDATE, 12)
+    claim(NL.NP_UPDATE)
+    C.memmove(NL.NP_UPDATE, b'\x48\xb8' + struct.pack('<Q', C.cast(update, C.c_void_p).value) + b'\xff\xe0', 12)
+    try:
+        wm = NL.Wm(fw)
+        wm.call(wm.p)  # the page as it opened: its song drawn
+        hold.hold()
+        hold.menu()
+        hold.pick(row)
+        assert hold.dialog not in ui.stack
+        forced.clear()
+        wm.call(wm.p)
+        assert forced == [1]
+    finally:
+        C.memmove(NL.NP_UPDATE, saved, 12)
+        assert not NL.libc.mprotect(NL.NP_UPDATE & ~0xfff, 0x2000, 3)
 
 
 @pytest.mark.parametrize('row, state', [('Add to Favourites', b'1'), ('Remove from Favourites', b'0')])
