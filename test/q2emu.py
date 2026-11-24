@@ -4758,6 +4758,7 @@ def logged(m): return len(m.files.get('/mnt/mmc/.scrobbler.log',b'').split(b'\n'
 
 def settings_page(hook,view_name,config={},stock_rows=2,bt=1,boot=False,cls=QueueMachine,sub=0):
     m=cls(); m.config.update(config); m.restack=True
+    m.present.add('/mnt/data/config.ini')  # a slider page's close writes only into a settings file that is there
     if hook=='display': m.word(payload_syms['display_sub'],sub)  # 3: Controls
     if hook=='audioset': m.word(payload_syms['playset_sub'],sub)  # 1: Library & Folders
     if boot:

@@ -30,7 +30,7 @@
 static struct {
     int read, on, seconds, done, key[8], stops, counted;
     int ctx; /* the page's: 0 Crossfade, 1 Wheel sensitivity, 2 Resume Songs, 3 Night Shift */
-    int sliding, unsaved, setting; /* a finger on the slider; a value it moved; refresh's own set */
+    int was[2], setting; /* the page's values last saved (xfade_save); refresh's own set */
     int rs_read, rs_min;
     int opt_read[2], opt[2]; /* Mono Audio (0) and Swap L/R (1) */
     volatile int *flag, *opt_flag[2], *press_file, *mute_file;
@@ -267,17 +267,37 @@ static const int steps[] = { 1, 10, 5, 1 }; /* a tick or +/-, by xf.ctx */
 /* Whether the page has its switch: Crossfade's and Night Shift's. */
 static int switched(void) { return xf.ctx == 0 || xf.ctx == 3; }
 
-/* The page and the row from xf, and the choice saved: during a drag, at its release (slid). */
-static void refresh(int save) {
-    if (save && xf.sliding) xf.unsaved = 1, save = 0;
-    if (save) xf.unsaved = 0;
-    if (save && xf.ctx == 1) write_int_config(wheel_pct(), "Q2POD", "WHEELSENSITIVITY");
-    if (save && xf.ctx == 2) write_int_config(xf.rs_min, "Q2POD", "RESUMEMIN");
-    if (save && xf.ctx == 3) night_save();
-    if (save && !xf.ctx) {
-        write_int_config(xf.on, "Q2POD", "XFADE");
-        write_int_config(xf.seconds, "Q2POD", "XFADESEC");
+/* The page's keys by xf.ctx and their values now; Night Shift's are nightshift.c's (night_save). */
+static const char *const page_key[3][2] = { { "XFADE", "XFADESEC" },
+                                            { "WHEELSENSITIVITY" },
+                                            { "RESUMEMIN" } };
+static void page_values(int *v) {
+    v[0] = xf.ctx == 2 ? resume_min() : xf.ctx ? wheel_pct() : xf.on;
+    v[1] = xf.seconds;
+}
+/* The page's choice into config.ini: each tick applies at once (the fade, the wheel, the tint) but
+ * a save is a whole rewrite of config.ini and a sync shell (docs/internals.md#settings-writer), so
+ * the keys whose value changed are written once, as the page closes (gone) and at an end with it
+ * still open (ringnav_clean_end, ringnav_standby). ponytail: an end that isn't clean (a crash, the
+ * watchdog) with the page open loses its change; a save once the value has been still a few
+ * seconds, from xfade_poll's pass, would lift it. */
+void xfade_save(void) {
+    /* no config.ini: Reset Settings Only removed it before its reboot, and stock's writer would
+     * make a file of this one key (as volume_save_flush) */
+    if (!xf.page || access("/mnt/data/config.ini", 0)) return;
+    if (xf.ctx == 3) {
+        night_save();
+        return;
     }
+    int v[2];
+    page_values(v);
+    for (int i = 0; i < 2; ++i)
+        if (page_key[xf.ctx][i] && v[i] != xf.was[i])
+            write_int_config(v[i], "Q2POD", page_key[xf.ctx][i]), xf.was[i] = v[i];
+}
+
+/* The page and the rows from xf. */
+static void refresh(void) {
     if (!xf.ctx) gapless_on(); /* at once, a drag too: a drag plays its value */
     widget_t *row = widget_lookup(window_manager(), XF_ROW, 1);
     if (row) row_text(row);
@@ -315,65 +335,53 @@ static void take(int n) {
         int top = (NS_COOL - NS_WARM) / NS_STEP;
         n = n < 0 ? 0 : n > top ? top : n;
         if (n == value() && night_on()) return;
-        /* shown at once, saved as the rest (refresh) */
+        /* shown at once, saved as the rest (xfade_save) */
         night_set(night_on() ? night_on() : 1, NS_COOL - n * NS_STEP);
-        refresh(1);
+        refresh();
         return;
     }
     if (xf.ctx == 2) {
         n = n < RS_MIN ? 0 : n > RS_MAX ? RS_MAX : (n + 2) / 5 * 5; /* the nearest five */
         if (n == resume_min()) return;
         xf.rs_min = n;
-        refresh(1);
+        refresh();
         return;
     }
     if (xf.ctx) {
-        int was = wheel_pct();
-        wheel_set_pct(n);            /* rounds and clamps */
-        refresh(wheel_pct() != was); /* and snaps the slider to the ten */
+        wheel_set_pct(n); /* rounds and clamps */
+        refresh();        /* and snaps the slider to the ten */
         return;
     }
     n = n < 0 ? 0 : n > XF_MAX ? XF_MAX : n;
     if (n == value()) return;
     xf.on = n > 0;
     if (n) xf.seconds = n < XF_MIN ? XF_MIN : n;
-    refresh(1);
-}
-
-/* n, held: a finger dragging the slider, whose values save at its release. Anything else (the
- * release, the wheel, +/-) saves, a held value left unsaved too: stock's slider sends no change
- * for a drag back to its start or an aborted press, so a drag can end unseen. */
-static void set_value(int n, int held) {
-    xf.sliding = held;
-    take(n);
-    if (!held && xf.unsaved) refresh(1);
+    refresh();
 }
 
 static int toggle(void *ctx, event_t *event) {
     if (!switched()) return 0;
-    xf.sliding = 0;
     if (xf.ctx == 3) {
         night_set((night_on() + 1) % 3, night_kelvin()); /* Off, On, Auto */
-        refresh(1);
+        refresh();
         return 0;
     }
     xf.on = !xf.on;
-    refresh(1);
+    refresh();
     return 0;
 }
 static int step(void *ctx, event_t *event) {
-    set_value(value() + (int)(long)ctx * steps[xf.ctx], 0);
+    take(value() + (int)(long)ctx * steps[xf.ctx]);
     return 0;
 }
-/* A drag's values (ctx 1) show and play at once; the release (ctx 0) saves the last. */
+/* A drag's values and its release show and play at once, as every change does. */
 static int slid(void *ctx, event_t *event) {
-    if (!xf.setting) set_value(widget_get_prop_int(xf.slider, "value", value()), ctx != 0);
+    if (!xf.setting) take(widget_get_prop_int(xf.slider, "value", value()));
     return 0;
 }
 static int gone(void *ctx, event_t *event) {
     if (xf.page != ctx) return 0;
-    xf.sliding = 0;
-    if (xf.unsaved) refresh(1); /* a release never seen */
+    xfade_save();
     stop_timer(&xf.press); /* a single press still waiting for its double: it was this page's */
     xf.page = 0, xf.ctx = 0;
     return 0;
@@ -412,7 +420,7 @@ int xfade_open(void *ctx, event_t *event) {
     widget_on(xf.sw, EVT_CLICK, toggle, 0);
     widget_on(xf.dec, EVT_CLICK, step, (void *)-1L);
     widget_on(xf.add, EVT_CLICK, step, (void *)1L);
-    widget_on(xf.slider, EVT_VALUE_CHANGING, slid, (void *)1L);
+    widget_on(xf.slider, EVT_VALUE_CHANGING, slid, 0);
     widget_on(xf.slider, EVT_VALUE_CHANGED, slid, 0);
     widget_on(page, EVT_DESTROY, gone, page);
     widget_set_text_utf8(title, mode == 3   ? tr("Night Shift")
@@ -425,6 +433,7 @@ int xfade_open(void *ctx, event_t *event) {
     widget_set_enable(xf.view, 1);
     slider_number(xf.label);
     xf.ctx = mode;
+    page_values(xf.was);
     if (!switched()) widget_set_visible(xf.sw, 0, 0);
     slider_set_min(xf.slider, mode == 2 ? RS_MIN - 5 : wheel ? WHEEL_PCT_MIN : 0);
     slider_set_max(xf.slider, mode == 3   ? (NS_COOL - NS_WARM) / NS_STEP
@@ -434,7 +443,7 @@ int xfade_open(void *ctx, event_t *event) {
     slider_set_step(xf.slider, steps[mode]);
     xf.page = page;
     if (switched()) slider_centre_hint(page, mode == 3);
-    refresh(0);
+    refresh();
     return 0;
 }
 
@@ -457,7 +466,7 @@ int xfade_key(widget_t *top, unsigned key) {
         return press;
     }
     if (key != KEY_NEXT && key != KEY_PREV) return 0;
-    set_value(value() + (key == KEY_NEXT ? 1 : -1) * steps[xf.ctx], 0);
+    take(value() + (key == KEY_NEXT ? 1 : -1) * steps[xf.ctx]);
     return 1;
 }
 

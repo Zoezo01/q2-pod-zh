@@ -275,6 +275,7 @@ void ringnav_clean_end(void) {
     /* every call's: an update's dialog is a clean end as it opens, and its reboot one more */
     volume_save_flush();
     playback_flush(); /* a skip's place still held: a stopped Restart saves no queue of its own */
+    xfade_save();     /* the slider page's, open as Power is held */
     if (pw.ended) return;
     pw.ended = 1;
     wdt_set(0);
@@ -406,6 +407,7 @@ int ringnav_standby(void) {
     int armed = start && rtc_alarm(0) && rtc_alarm(alarm);
     volume_save_flush(); /* the battery may not last the suspend */
     playback_flush();
+    xfade_save();
     pw.suspended = 1;
     state_poll(); /* the record a resume that never comes leaves behind */
     wdt_set(0);   /* it would count through the suspend */

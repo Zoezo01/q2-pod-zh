@@ -2805,7 +2805,7 @@ xf0.calls=[]; assert xf0.call(O['KEY_NEXT'])==11 and dirty(xf0,xf0.win)==[(125,2
 ns=boot_page(ctx=3); assert ns.nodes[named(ns,ns.win,'caption')]['text']=='Press Centre to Change Mode'; bare(ns); bg(ns,ns.win); assert shadows(ns)[-1][0]=='Press Centre to Change Mode'; passed()  # Centre cycles here
 wheel=boot_page(ctx=1); wsw=wheel.switch; assert wheel.nodes[wheel.title]['text']=='Wheel Sensitivity' and not wheel.nodes[wsw]['visible'] and wheel.nodes[wheel.vol]['visible']==1 and wheel.nodes[wheel.vol]['text']=='50%'
 bare(wheel); bg(wheel,wheel.win); assert art_at(wheel)==BAND_ART and shadows(wheel)==[CAPTION] and not triangle(wheel)
-wheel.calls=[]; assert wheel.call(O['KEY_NEXT'])==11 and [c for c in wheel.calls if c[0]=='write_int_config'] and not dirty(wheel,wheel.win); passed()  # no tray
+wheel.calls=[]; assert wheel.call(O['KEY_NEXT'])==11 and wheel.nodes[wheel.vol]['text']=='60%' and not [c for c in wheel.calls if c[0]=='write_int_config'] and not dirty(wheel,wheel.win); passed()  # no tray; saved as the page closes
 # Classic's bar with a slider page under it. The slider pages and Set Time once had a dark bar of their own; the bar over them is the one every page has.
 def bar_setup(light='1',state=0,name='Balance'):
     db=LoadPlain(); db.config.update(THEME='1',LIGHT=light); classic_light_boot(db)

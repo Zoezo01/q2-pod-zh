@@ -101,7 +101,7 @@ int wheel_pct(void) {
     }
     return wheel_percent;
 }
-/* The nearest ten within 10-200%, live on the next sample; crossfade.c's refresh saves it. */
+/* The nearest ten within 10-200%, live on the next sample; crossfade.c's xfade_save saves it. */
 void wheel_set_pct(int n) {
     n = n < WHEEL_PCT_MIN ? WHEEL_PCT_MIN : n > 200 ? 200 : (n + 5) / 10 * 10;
     if (n != wheel_pct()) wheel_apply(n);

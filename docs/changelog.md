@@ -39,6 +39,7 @@
   - Cover Flow: a cover's picture is held in the screen's own colour order, so drawing a frame no longer converts every pixel.
   - Display: Quick Settings, Home's pane and Classic's dark bars draw a plain ground in one step, not row by row.
   - Playback: with Shuffle or a Repeat option on, skipping through several songs quickly no longer saves the whole queue at every skip. The first skip saves at once and the rest are saved together within 5 seconds, and before the Q2 turns off or goes to Standby.
+  - Settings: on the Crossfade, Wheel Sensitivity, Resume Songs and Night Shift pages, a turn of the wheel or a drag of the slider no longer saves the setting at every step. Each step still applies at once, and the setting is saved once when you leave the page, turn the Q2 off or put it in Standby.
 - **1.9.1**:
   - Standby: going into Standby gives the card up to 2 seconds to finish and unmount before its power is cut, where it used to cut it at once with files still open, which could leave the card marked as not properly unmounted and lose what was still being written.
   - EQ: in **Advanced**, drag a band up or down on the curve to set its gain, as you drag Simple's sliders. Touch the ring of a band that's on. Choose **Apply changes** to hear it.
