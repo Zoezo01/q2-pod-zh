@@ -1166,7 +1166,6 @@ static int change_restarts(int next) {
 }
 /* A local queue's only: a DLNA controller or an online queue (0xf1, 0xf2) keeps stock's way. */
 static int local_class(int cls) { return cls == 1 || (cls & 0xf000) == 0xf000; }
-static int place_held(void) { return local_class(M(MCL_TYPE)) && resume_held(); }
 /* A press that would restart a track holding a place only asks; a second of the same key within
  * RESTART_ASK_MS goes ahead, and resume_poll forgets the place as for any move to the start.
  * Another key asks again and arms for itself, so Previous can't confirm what a stray Next asked. */
@@ -1196,7 +1195,8 @@ static int restart_refused(int key, int restarts) {
 static int change_music(int next) {
     headset_manual();
     /* Stock's skip past a file it can't play is automatic, and never asks. */
-    if (!press_natural && restart_refused(next, place_held() && change_restarts(next)))
+    if (!press_natural &&
+        restart_refused(next, (local_class(M(MCL_TYPE)) && resume_held()) && change_restarts(next)))
         return 0; /* the caller toasts -1 (no storage) and -5 */
     press_stamp();
     if (!s.active) {
@@ -1236,14 +1236,14 @@ int ringnav_seek_time(int sec) {
  * and Previous changes track. */
 int ringnav_seek_start(void) {
     int restarts = player_playtime() > 10;
-    if (restart_refused(0, restarts && place_held())) return 1;
+    if (restart_refused(0, restarts && (local_class(M(MCL_TYPE)) && resume_held()))) return 1;
     if (restarts) press_stamp();
     return stock_seek_start_trampoline();
 }
 /* Is q's entry at the file playing or paused, the same CUE track, on a track holding a place? */
 int playback_keeps(void *q, int at) {
     unsigned pos = (unsigned)M(MCL_POS);
-    if (mclGetPlayStatus() == 1 || !place_held() || !q || !queue() ||
+    if (mclGetPlayStatus() == 1 || !(local_class(M(MCL_TYPE)) && resume_held()) || !q || !queue() ||
         (unsigned)at >= deque_size(q) || pos >= deque_size(queue()))
         return 0;
     void *ra = deque_at(q, (unsigned)at), *rb = deque_at(queue(), pos);
