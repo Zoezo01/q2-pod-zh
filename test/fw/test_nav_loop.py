@@ -2962,6 +2962,8 @@ class QuickHold:
     def __init__(self, fw, loop):
         self.fw, self.loop, self.opened = fw, loop, []
         Config(fw)
+        C.c_uint.from_address(O['MCL_POS']).value = 0
+        fw.var('fw_ctx_mcl_pdeqplaylist', C.c_void_p).value = Deques(fw).new([1])  # a song loaded: there is a page to look at
         self.quick = loop.ui.window('statusbar_dialog', 'dialog')
         fw.mock('navigator_switch_to_with_context', lambda name, *_: self.opened.append(C.string_at(name)) and 0)
         assert fw.fn('compact_now_playing', C.c_int)() == 0
@@ -3286,13 +3288,16 @@ def test_a_failed_songtable_check_ends_the_pass_unwritten(fw, st):
 
 
 # More of the key release: Home's main list, the media keys, the restart toast, a carousel page.
-def test_return_on_homes_list_selects_now_playing_then_opens_it(fw, keys):
+@pytest.mark.parametrize('loaded', (1, 0))
+def test_return_on_homes_list_selects_now_playing_then_opens_it(fw, keys, mcl, loaded):
+    """With nothing loaded Home has no Now Playing row: the first row is Library's, and Return there opens nothing."""
+    fw.var('fw_ctx_mcl_pdeqplaylist', C.c_void_p).value = Deques(fw).new([1]) if loaded else 0
     ui = Ui(fw)
     sv = list_page(ui, 'home_page', rows=6)
     select(fw, sv, 3)
     assert keys(KEY_RETURN) == STOP and sv.ints[SEL] == 0 and not fw.calls('navigator_switch_to_with_context')
-    assert keys(KEY_RETURN, 300) == STOP
-    assert [C.string_at(c[1][0]) for c in fw.calls('navigator_switch_to_with_context')] == [b'playing_page']
+    assert keys(KEY_RETURN, 300) == STOP and sv.ints[SEL] == 0
+    assert [C.string_at(c[1][0]) for c in fw.calls('navigator_switch_to_with_context')] == [b'playing_page'] * loaded
 
 
 def test_homes_list_bumps_and_wraps_as_a_ring_list(fw, keys):

@@ -534,7 +534,7 @@ const char *addon_slot_id(int i); /* slot i's app's id while it has a row anywhe
 int addon_libs(void), addon_lib_open(void *ctx, event_t *event);
 const char *addon_lib_name(int k);
 int addon_apps(void *ctx, event_t *event), addon_apps_sync(void *win, event_t *event);
-void library_apps_show(widget_t *row, int on); /* home.c: the Library's Apps row */
+void list_row_show(widget_t *row, int on); /* home.c: the Library's Apps row, Home's Now Playing */
 /* addon.c: System settings → Network's rows for apps whose q2app says row=network, as the Library's
  * above: addon_network (how many, a scan), addon_network_name, addon_network_icon,
  * addon_network_open (ctx: its place by name). */

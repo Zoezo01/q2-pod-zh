@@ -160,7 +160,7 @@ extern int coverflow_wheel_live(void), coverflow_wheel_poll(int usable, int gate
 extern int coverflow_turning(void), land_key(unsigned key);
 extern unsigned coverflow_scope(widget_t *page);
 extern void coverflow_home_art(widget_t *top);
-extern void coverflow_home_layout(void);
+extern void coverflow_home_layout(void), coverflow_home_sync(void);
 extern int ringnav_reboot(void);
 extern void coverflow_home_clip(widget_t *w, canvas_t *canvas, int begin);
 extern void coverflow_slant(widget_t *w, canvas_t *canvas, unsigned paper),
@@ -3829,6 +3829,8 @@ static void bar_sync(widget_t *bar) {
     } else if (c && st.codec_step >= CODEC_STEPS)
         image_base_set_image(st.bar_bt, BT_GLYPH);
     accent(); /* reads the settings */
+    /* Now Playing's row on Home, as a song loads or the last goes */
+    coverflow_home_sync();
     if (st.home_rockbox != rockbox_available() ||
         (shortcut() == SHORTCUT_GROOVEBOX && st.home_groovebox != groovebox_available()))
         coverflow_home_layout();
@@ -4468,8 +4470,17 @@ int stream_ipod(widget_t *art, widget_t *const text[4], widget_t *elapsed, widge
 
 /* playing_page_init: stock builds the page and starts its 250 ms timer, then the iPod labels bind.
  * Require Output with none to play to: stock toasts, closes the window it was given and
- * returns STOP before it builds anything (0x53e4b4), so nothing binds. */
+ * returns STOP before it builds anything (0x53e4b4), so nothing binds. With no song loaded
+ * (queue_loaded) an open that only looks (no context, or class 0xff: Home's row and card, the
+ * Return hold, Quick Settings, the lock screen, a card app's "now") closes the window the same way,
+ * as an iPod has no Now Playing then; a play (another class) opens as before. ponytail: the window
+ * is made before its init, as for stock's refusal; an opener that checked first would skip making
+ * it. */
 int ringnav_playing(widget_t *win, void *ctx) {
+    if (win && !queue_loaded() && (!ctx || I(ctx, 8) == 0xff)) {
+        window_close(win);
+        return STOP;
+    }
     if (st.np_full)
         np_full(0); /* another Now Playing: the last one's lyrics back in their column */
     /* and their place: np_gone leaves a page this one replaces alone */
@@ -7112,7 +7123,7 @@ int compact_now_playing(void) {
                 if (classic) coverflow_home_top();
                 navigator_back_to_home();
             }
-        } else {
+        } else if (queue_loaded()) { /* nothing loaded: no Now Playing to look at */
             static const int context[4] = { 0, 0, 0xff, 2 };
             st.np_origin = top;
             navigator_switch_to_with_context("playing_page", context, 0);
@@ -9639,7 +9650,8 @@ int ringnav(void *ctx, event_t *event) {
     if (key == KEY_RETURN && coverflow_home_back(window_manager_get_top_window(window_manager())))
         return STOP;
     /* Return on Home's main list selects Now Playing (its first row); on that row it opens Now
-     * Playing with the current queue untouched. The carousel keeps stock's Return. */
+     * Playing with the current queue untouched, and with nothing loaded (no such row) does nothing
+     * more. The carousel keeps stock's Return. */
     if (key == KEY_RETURN && usable()) {
         widget_t *wm = window_manager(), *top = window_manager_get_top_window(wm);
         widget_t *w = home_menu(top) && !window_manager_is_animating(wm)
@@ -9651,7 +9663,7 @@ int ringnav(void *ctx, event_t *event) {
                 select(&g_menu, 0);
                 reveal(&g_menu, 0, 1);
                 widget_invalidate_force(w, (void *)0);
-            } else
+            } else if (queue_loaded())
                 compact_now_playing();
             return STOP;
         }

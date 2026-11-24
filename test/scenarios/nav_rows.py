@@ -235,7 +235,7 @@ passed()
 
 for page in ('home_page', 'folder_page', 'playing_page', 'sysset_page'):
     m = long_machine(); m.page(page)
-    # No playback data is initialized: the switch must work with an empty queue as well.
+    # A song is loaded (long_machine): with nothing loaded nothing opens, below.
     assert long_return(m) == 0
     dest = destinations(m)
     assert len(dest) == 1
@@ -253,6 +253,14 @@ for page in ('home_page', 'folder_page', 'playing_page', 'sysset_page'):
         assert len(destinations(m)) == 1
     assert m.call(170, gap=0) == held
 passed()
+# With nothing loaded there is no Now Playing to look at: the hold on Home opens nothing, nor do Return's two
+# presses on Home's list (the first selects its first row, Library's then).
+m = long_machine(loaded=False); m.page('home_page')
+assert long_return(m) == 0 and not destinations(m)
+m = NavigationMachine(); m.word(syms['mcl_pdeqplaylist'], 0); view, imgs = home_list(m); home = m.top
+m.order = [home]; m.sync_order(); m.paint(view)
+for _ in range(2): assert m.call(O['KEY_RETURN']) == 11
+assert m.top == home and not destinations(m); passed()
 
 # The stock long-key gates stay effective, with the shared navigation restrictions added.
 for flag, value in GATES:

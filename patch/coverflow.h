@@ -191,6 +191,7 @@ extern cf_thumb_t th;
 /* coverflow.c */
 void coverflow_play(int row);
 void *queue_now(unsigned *pos, unsigned *n);
+int queue_loaded(void);
 int flip_alloc(void);
 int flip_capture(void);
 void slant_render(unsigned *d, int pitch, int side, int rows, const unsigned *tex, int t,

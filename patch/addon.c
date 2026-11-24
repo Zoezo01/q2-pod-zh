@@ -2793,7 +2793,7 @@ int addon_apps(void *ctx, event_t *event) {
     return 0;
 }
 /* win back on top (the Library's, Home's or the Apps page), or 0: an App Store install's or
- * remove's end, for the top window. The Library's Apps row there (home.c library_apps_show) shown
+ * remove's end, for the top window. The Library's Apps row there (home.c list_row_show) shown
  * while the card has an app for it, the Apps page's rows built again. The card is read again only
  * after such a job or USB storage: a return from Artists takes the last scan's count. */
 int addon_apps_sync(void *win, event_t *event) {
@@ -2802,7 +2802,7 @@ int addon_apps_sync(void *win, event_t *event) {
     if (!row && (!win || win != la.page)) return 0;
     int n = apps_stale ? addon_libs() : ap.cnt[ROW_LIBRARY];
     apps_stale = 0;
-    if (row) library_apps_show(row, n > 0);
+    if (row) list_row_show(row, n > 0);
     if (win == la.page) apps_rows(n);
     return 0;
 }

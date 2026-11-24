@@ -4245,6 +4245,13 @@ void *queue_now(unsigned *pos, unsigned *n) {
     *n = queue ? deque_size(queue) : 0;
     return *pos < *n ? deque_at(queue, *pos) : (void *)0;
 }
+/* 1 while the queue has a song at its place, playing, paused or stopped: what Now Playing shows
+ * (np_sync), so Home lists its row (coverflow_home_layout) and the page opens to look
+ * (ringnav_playing). Internet Radio, Spotify and stock's AirPlay receiver have their own pages. */
+int queue_loaded(void) {
+    unsigned at, n;
+    return queue_now(&at, &n) != 0;
+}
 
 /* r's REC_ALBUM, REC_ARTIST, REC_ALBUM_ARTIST or REC_TITLE as the player parsed it from the file,
  * once it has parsed r's; else the record's own. Folder plays' records, and those of the next
@@ -4293,6 +4300,7 @@ static struct {
     unsigned ring[4][HOME_PW];
     int clip[4]; /* the canvas clip while the art paints, restored after */
     int clipped;
+    int playing; /* Now Playing's row shown, as last laid out (queue_loaded) */
 } home __attribute__((section(".scratch")));
 extern int ipod_home(void), ipod_home_rockbox(void), home_shortcut_open(void *, event_t *),
     home_lib_on(void), row_preview_on(void), show_q2pod(void), library_search(void);
@@ -5147,26 +5155,32 @@ static void home_show(widget_t *w, int on) {
 /* Stored HOME=0/1/2 is Split/Full/Carousel in every theme: Split halves the screen, the art in the
  * right panel; Full hides the art and widens the list, its rows to the theme's home_full_row;
  * Carousel hides the art and shows stock's cards (tools/ipod.py ipod_home) in the
- * lists' place, and leaving it, the main list. Rockbox without the card's, and Folder and
- * Streaming hidden in Appearance, are restacked last, as the native layout includes hidden rows,
- * and made insensitive, as hidden rows keep their taps. */
+ * lists' place, and leaving it, the main list. Now Playing with no song loaded (queue_loaded, as an
+ * iPod's), Rockbox without the card's, and Folder and Streaming hidden in Appearance, are restacked
+ * last, as the native layout includes hidden rows, and made insensitive, as hidden rows keep their
+ * taps. Now Playing's row moves the list's count and selection with it (list_row_show): it comes
+ * and goes while Home shows (bar_sync). */
 void coverflow_home_layout(void) {
     int mode = ipod_home(), full = mode == 1, carousel = mode == 2;
     const theme_t *T = theme();
     /* The art goes back to the panel; Split's next paint resumes the pan. */
     stop_timer(&home.drift);
     if (!home.list) return;
-    /* Folder, Rockbox and Streaming in their places (HOME_ROWS), then the hidden ones last, as the
-     * native layout includes hidden rows; hidden, they take no taps (Rockbox would take
-     * Streaming's). ponytail: Carousel keeps Folder's and Streaming's cards, as it keeps the
-     * Shortcut's (below). */
-    static const char *const rows[] = { "btn_folder", "btn_rockbox", "btn_stream" };
-    int shown[] = { !pod_value(POD_HIDE_FOLDER), ipod_home_rockbox(), !pod_value(POD_HIDE_STREAM) };
+    /* Now Playing, Folder, Rockbox and Streaming in their places (HOME_ROWS), then the hidden ones
+     * last, as the native layout includes hidden rows; hidden, they take no taps (Rockbox would
+     * take Streaming's). ponytail: Carousel keeps Now Playing's, Folder's and Streaming's cards, as
+     * it keeps the Shortcut's (below); Now Playing's card with nothing loaded opens nothing
+     * (ringnav_playing). Building the carousel's cards again would take it out. */
+    static const char *const rows[] = { "btn_playing", "btn_folder", "btn_rockbox", "btn_stream" };
+    static const unsigned char at[] = { 0, 3, 4, 5 };
+    int shown[] = { home.playing = queue_loaded(), !pod_value(POD_HIDE_FOLDER), ipod_home_rockbox(),
+                    !pod_value(POD_HIDE_STREAM) };
     for (int pass = 0; pass < 2; ++pass)
-        for (int i = 0; i < 3; ++i) {
+        for (int i = 0; i < 4; ++i) {
             widget_t *row = widget_lookup(home.list, rows[i], 1); /* not the carousel's cards */
             if (!row || (pass && shown[i])) continue;
-            widget_restack(row, pass ? 6 : 3 + i);
+            widget_restack(row, pass ? 6 : at[i]);
+            if (!i && !pass) list_row_show(row, shown[i]); /* in its place: the selection's row */
             home_show(row, shown[i]);
         }
     widget_t *rockbox = widget_lookup(home.win, "btn_rockbox", 1);
@@ -5199,6 +5213,12 @@ void coverflow_home_layout(void) {
     }
     home.key = ~0u; /* Split shows the current cover again, next frame if laid out mid-paint */
     rearm(&home.repaint, home_repaint, 0);
+}
+
+/* bar_sync, at each bar paint: Home laid out again when a song loads or the last goes, on screen or
+ * under a page. */
+void coverflow_home_sync(void) {
+    if (home.list && home.playing != queue_loaded()) coverflow_home_layout();
 }
 
 /* w from x+dx to its x over m's ms and easing. Returns 0 without touching w when m->ms is 0;

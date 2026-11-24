@@ -2112,8 +2112,10 @@ LATCH = O['RETURN_RELEASE_LATCH']
 
 class Hold:
     """Hold Return on top of ui's windows: navigator calls move the window stack as stock's do."""
-    def __init__(self, fw, ui, stand_in, hold_home=b'0', theme=b'0'):
+    def __init__(self, fw, ui, stand_in, hold_home=b'0', theme=b'0', loaded=True):
         self.fw, self.ui = fw, ui
+        C.c_uint.from_address(O['MCL_POS']).value = 0
+        fw.var('fw_ctx_mcl_pdeqplaylist', C.c_void_p).value = Deques(fw).new([1]) if loaded else 0  # a song, or none
         Config(fw, HOLDRETURN=hold_home, THEME=theme)
         fw.var('g_backlight_status', C.c_ubyte).value = 1
         stand_in(LATCH, b'\1')  # stock's long Return armed it
@@ -2147,6 +2149,14 @@ def test_hold_return_opens_now_playing_over_the_page_and_leaves_the_latch_to_swa
     assert hold.opened == [('playing_page', (0, 0, 0xff, 2))]  # stock's car-mode context: the queue as it is
     assert st('np_origin', C.c_void_p).value == songs.addr
     assert hold.latch() == 1  # stock's filter swallows the hold's release; cleared, it went back from Now Playing
+
+
+@pytest.mark.parametrize('hold_home', [b'0', b'1'])
+def test_hold_return_with_nothing_loaded_opens_no_now_playing(fw, st, stand_in, hold_home):
+    ui = Ui(fw)
+    ui.window('home_page')
+    hold = Hold(fw, ui, stand_in, hold_home=hold_home, loaded=False)
+    assert hold() == ['home_page'] and not hold.opened and not st('np_origin', C.c_void_p).value
 
 
 def test_hold_return_on_now_playing_goes_back_to_the_page_it_opened_over(fw, st, stand_in):

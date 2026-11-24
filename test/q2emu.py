@@ -1003,12 +1003,18 @@ def album_row(boot):
     assert m.call(address=0x4a6910,args=(w,w,1,0))==0
     return m,m.nodes[m.nodes[w]['children'][0]]['children'][0]
 
-# Long Return executes the stock gates and release filter.
-def long_machine():
+def load_song(m):
+    """A song at the queue's place (queue_loaded), as the base machine's deque mocks answer: one record."""
+    m.mock('deque_size', 'deque_at')
+    m.row_record = m.alloc(0x80); m.word(syms['mcl_pdeqplaylist'], m.alloc(0x20)); m.word(O['MCL_POS'], 0)
+    return m
+
+# Long Return executes the stock gates and release filter. Loaded, Now Playing has a song to show.
+def long_machine(loaded=True):
     m = Machine()
     m.mock('netdisk_folder_clear', 'navigator_back_to_home', 'awake_screen',
            'getFormatString', 'navigator_to_with_context', 'navigator_window_is_exist')
-    return m
+    return load_song(m) if loaded else m
 
 def long_return(m):
     return m.call(170, address=syms['on_wm_keylong_fun'], event_type=0x111, gap=0)
@@ -1143,6 +1149,7 @@ class NavigationMachine(Machine):
     def __init__(self):
         super().__init__()
         self.order=[]; self.block_open=False
+        load_song(self)  # Now Playing opens on a song (queue_loaded)
         self.word(self.wm+0x94,0x9b42b0)
         for name in ('navigator_switch_to_with_context','navigator_back_to_home','navigator_to_with_context',
                      'navigator_to','window_close'):
@@ -2209,7 +2216,9 @@ class CoverflowMachine(QueueMachine):
         view,self.imgs=home_list(self); self.img=self.imgs[2]; self.home=self.top; self.stack=[self.top]
         self.art=named(self,self.top,'img_homeart'); self.list=named(self,self.top,'list_view_home')
         assert self.call(address=home_hook[0],args=(self.top,0,0,0),gap=0)==0
-        self.paint(view); self.nodes[view]['_ringnav_index']=2
+        # Cover Flow's row among those shown: Now Playing's is first only while a song is loaded (queue_loaded)
+        shown=[r for r in self.nodes[view]['children'] if self.nodes[r].get('visible',1)]
+        self.paint(view); self.nodes[view]['_ringnav_index']=next(i for i,r in enumerate(shown) if named(self,r,'img_cover_flow'))
         self.clicks=[]; assert self.confirm()==11 and self.clicks==[self.img]
         f,ctx=self.handler(self.img,O['EVT_CLICK']); assert self.call(address=f,args=(ctx,self.event,0,0),gap=0)==0
         self.page=self.top; self.slide=self.find('slide_menu')

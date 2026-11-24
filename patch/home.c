@@ -123,10 +123,11 @@ int ringnav_localmusic(widget_t *win, void *ctx) {
     return result;
 }
 
-/* The Library's Apps row shown (on) or not, the list's selection kept on its row: navigation.c's
- * load drops a live list's selection when its count of shown rows changes, so the index and the
- * count it keeps move with the row. */
-void library_apps_show(widget_t *row, int on) {
+/* A list's row shown (on) or not, the list's selection kept on its row: the Library's Apps row,
+ * Home's Now Playing row (coverflow_home_layout). navigation.c's load drops a live list's selection
+ * when its count of shown rows changes, so the index and the count it keeps move with the row; a
+ * selection on a row that goes stays on the row that takes its place. */
+void list_row_show(widget_t *row, int on) {
     widget_t *view = P(row, W_PARENT);
     if (!widget_get_visible(row) == !on) return;
     int sel = widget_get_prop_int(view, SEL, -1), count = widget_get_prop_int(view, COUNT, -1);

@@ -46,6 +46,7 @@
   - Watchdog: the record of what the Q2 was doing is written whole, so a power cut while it was being saved no longer leaves an empty one.
   - Boot logo and card themes: a card taken out at the wrong moment no longer deletes the boot logo or card theme copied from it. Only a mounted card that no longer has the file removes them.
   - Hold menu: when **Play Next** or **Add to Queue** works, the row you chose blinks and then the menu closes, as on an iPod. The menu just closed, so nothing told you the song was queued.
+  - Home: as on an iPod, **Now Playing** is on Home only while a song is loaded. After a start with nothing to resume it is not there, and it comes back as soon as you play something. It opened an empty Now Playing.
 - **1.9.1**:
   - Standby: going into Standby gives the card up to 2 seconds to finish and unmount before its power is cut, where it used to cut it at once with files still open, which could leave the card marked as not properly unmounted and lose what was still being written.
   - EQ: in **Advanced**, drag a band up or down on the curve to set its gain, as you drag Simple's sliders. Touch the ring of a band that's on. Choose **Apply changes** to hear it.

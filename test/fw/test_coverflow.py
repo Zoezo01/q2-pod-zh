@@ -47,7 +47,7 @@ class Home(C.Structure):
                 *((k, C.c_void_p) for k in 'row row_image row_label svc'.split()), ('svc_name', C.c_char * 72),
                 *((k, C.c_int) for k in 'kind songs albums services games free_tenths counted counting got_songs got_albums'.split()),
                 ('count_thread', C.c_ulong), *((k, C.c_uint) for k in 'asked pane_read count_timer pane_timer'.split()),
-                ('ring', (C.c_uint * HOME_PW) * 4), ('clip', C.c_int * 4), ('clipped', C.c_int)]
+                ('ring', (C.c_uint * HOME_PW) * 4), ('clip', C.c_int * 4), ('clipped', C.c_int), ('playing', C.c_int)]
 
 
 class Row(C.Structure):
@@ -3110,6 +3110,78 @@ def test_hidden_folder_and_streaming_rows_go_last_and_take_no_taps(fw, folder, s
     assert ui[h.view].kids == [h.rows[n] for n in h.ROWS if h.rows[n] not in hidden] + hidden
     for n in ('img_folder', 'img_services'):
         assert ui[h.rows[n]].visible == ui[h.rows[n]].sensitive == (h.rows[n] not in hidden)
+
+
+# Now Playing's row shows only while a song is loaded (queue_loaded), as an iPod's: with none it goes last, as a hidden
+# Folder does, and takes no taps; loaded, it is back first.
+def now_playing_home(fw, loaded, home='1', theme=CLASSIC):
+    themed(fw, theme, HOME=home)
+    fw.var('fw_ctx_mcl_pdeqplaylist', C.c_void_p).value = Deques(fw).new([1]) if loaded else 0
+    ui = Ui(fw)
+    h = Homes(ui, rockbox=True)
+    ui[h.rows['img_playing']].name = 'btn_playing'
+    return ui, h
+
+
+@pytest.mark.parametrize('home', ('0', '1'))
+@pytest.mark.parametrize('loaded', (0, 1))
+def test_now_playing_s_row_shows_only_while_a_song_is_loaded(fw, mcl, loaded, home):
+    ui, h = now_playing_home(fw, loaded, home)
+    row = h.rows['img_playing']
+    ui.restack(row, 6)  # from anywhere: shown again, it goes back first
+    h.open(fw)
+    others = [h.rows[n] for n in h.ROWS if n != 'img_playing']
+    assert ui[h.view].kids == ([row] + others if loaded else others + [row])
+    assert ui[row].visible == ui[row].sensitive == loaded
+
+
+def test_carousel_s_now_playing_card_with_nothing_loaded_opens_nothing(fw, mcl):
+    """ponytail: the card stays (docs/internals.md, Home: Carousel); its press, stock's on_backplay_click with class
+    0xff, is refused: the window it made closes unbuilt and Home stays as it was."""
+    themed(fw, CLASSIC, HOME='2')
+    fw.var('fw_ctx_mcl_pdeqplaylist', C.c_void_p).value = 0
+    ui = Ui(fw)
+    h = Homes(ui, carousel=True)
+    h.open(fw)
+    before = [(w, ui[w].visible) for w in (h.main, *h.carousel)]
+    closed = []
+    fw.mock('window_close', lambda w, *_: closed.append(w) or 0)
+    np = ui.make(0, 'window', 0, 30, 375, 290, name='playing_page')
+    ctx = (C.c_int * 4)(0, 0, 0xff, 2)
+    assert fw.fn('ringnav_playing', C.c_int, C.c_void_p, C.c_void_p)(np, C.addressof(ctx)) == 11  # STOP
+    assert closed == [np] and [(w, ui[w].visible) for w in (h.main, *h.carousel)] == before
+    assert all(ui[w].visible for w in h.carousel) and not fw.calls('stock_playing_trampoline')
+
+
+@pytest.mark.parametrize('sel, after', ((0, 0), (3, 2), (-1, -1)))
+def test_the_row_going_moves_the_selection_with_its_rows(fw, mcl, sel, after):
+    # a live list: the count and the selection move with the row, so the wheel's ring and the row under the
+    # selection stay (navigation.c's load would drop a selection whose count changed); on the row itself the
+    # selection goes to the row that takes its place
+    ui, h = now_playing_home(fw, 1)
+    h.open(fw)
+    ui[h.view].props.update({'_ringnav_count': 7, '_ringnav_index': sel})
+    fw.var('fw_ctx_mcl_pdeqplaylist', C.c_void_p).value = 0
+    fw.fn('coverflow_home_layout', None)()
+    assert ui[h.view].props == {'_ringnav_count': 6, '_ringnav_index': after}
+    assert ui[h.view].kids[-1] == h.rows['img_playing'] and not ui[h.rows['img_playing']].visible
+    fw.var('fw_ctx_mcl_pdeqplaylist', C.c_void_p).value = Deques(fw).new([1])
+    fw.fn('coverflow_home_layout', None)()  # loaded again: back first, the selection on the same row (Library)
+    assert ui[h.view].props == {'_ringnav_count': 7, '_ringnav_index': after + 1 if after >= 0 else -1}
+    assert ui[h.view].kids[0] == h.rows['img_playing'] and ui[h.rows['img_playing']].visible
+
+
+def test_the_bar_s_pass_lays_home_out_again_only_when_a_song_loads_or_goes(fw, mcl):
+    # bar_sync calls coverflow_home_sync at each bar paint, Home on screen or under a page: no poll of its own
+    ui, h = now_playing_home(fw, 0)
+    h.open(fw)
+    sync, row = fw.fn('coverflow_home_sync', None), h.rows['img_playing']
+    fw.var('fw_ctx_mcl_pdeqplaylist', C.c_void_p).value = Deques(fw).new([1])
+    sync()
+    assert ui[h.view].kids[0] == row and ui[row].visible
+    fw.var('fw_log_n', C.c_int).value = 0
+    sync()  # unchanged: nothing laid out
+    assert not fw.calls('widget_restack')
 
 
 @pytest.mark.parametrize('show, want', (('1', b'Q2 Pod'), ('0', b'')))

@@ -1476,6 +1476,22 @@ def test_a_page_stock_refused_binds_nothing(fw, ui, mcl, st):
     assert st.np_win == 0 and ui.handlers == []
 
 
+# With no song loaded an open that only looks (no context, or class 0xff: Home's row, the carousel's card, the
+# Return hold, Quick Settings, a card app's "now") closes the window and builds nothing, as stock's Require Output
+# refusal does; a play (any other class) opens as before, and with a song loaded every open does.
+@pytest.mark.parametrize('cls, loaded, opens', ((None, 0, 0), (0xff, 0, 0), (0xf001, 0, 1), (0xff, 1, 1), (None, 1, 1)))
+def test_with_nothing_loaded_a_look_at_now_playing_closes_it_unbuilt(fw, ui, mcl, st, cls, loaded, opens):
+    theme(fw, st, CLASSIC)
+    now = Now(fw, ui, mcl, st, opened=False)
+    if not loaded:
+        fw.var('fw_ctx_mcl_pdeqplaylist', C.c_uint).value = 0
+    closed = []
+    fw.mock('window_close', lambda w, *_: closed.append(w) or 0)
+    ctx = (C.c_int * 4)(0, 0, cls or 0, 2)
+    answer = fw.fn('ringnav_playing', C.c_int, C.c_void_p, C.c_void_p)(now.win, None if cls is None else C.addressof(ctx))
+    assert (answer, closed, st.np_win == now.win) == ((41, [], True) if opens else (11, [now.win], False))
+
+
 def test_classics_times_and_bar_fit_a_long_track_off_the_paint(fw, ui, mcl, st):
     theme(fw, st, CLASSIC)
     now = Now(fw, ui, mcl, st, sec=10, total=4000)

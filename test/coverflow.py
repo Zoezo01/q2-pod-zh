@@ -370,6 +370,7 @@ int library_count(const char *sql) {
 int on_home_music_onclick(void *ctx, void *e) { return 0; }
 int on_home_stream_onclick(void *ctx, void *e) { return 0; }
 int widget_layout(void *w) { return 0; }
+void list_row_show(void *row, int on) {}
 int widget_paint(void *w, void *c) { return 0; }
 int widget_set_prop_str(void *x, const char *k, const char *v) {
     if (!strcmp(k, "style:normal:text_align_h")) W(x)->right = !strcmp(v, "right");
