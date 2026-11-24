@@ -699,6 +699,14 @@ static void fx_arm(widget_t *w, int dir) {
     prop(w, FX, st.fx_token);
 }
 
+/* A boundary detent arms only while the selection stays on that row; leaving it or reversing
+ * makes the next boundary detent bump again. Every stopped detent re-arms, so a continuing spin
+ * hard-stops at the end; only a detent after a pause of EDGE_PAUSE_MS carries over. */
+static int edge_wraps(const menu_t *m, int id, int dir, unsigned now) {
+    return id >= 0 && fx_live(m->w) && st.edge_id == id && st.edge_dir == dir &&
+           now - st.edge_time >= EDGE_PAUSE_MS;
+}
+
 /* FNV-1a of the first two non-empty text properties in a small row subtree: the item's own name
  * and an optional subtitle, in pre-order. Each stays 0 while its text has not been seen. No stock
  * list row carries a stable id: emitter tags and pointer props are unused by the app rows (only
@@ -9794,12 +9802,7 @@ int ringnav(void *ctx, event_t *event) {
                 widget_invalidate_force(w, (void *)0); /* a wheel wake still clears touch hiding */
                 return STOP;
             }
-            /* A boundary detent arms only while the selection stays on that row; leaving it or
-             * reversing makes the next boundary detent bump again. Every stopped detent re-arms, so
-             * a continuing spin hard-stops at the end; only a detent after a pause of EDGE_PAUSE_MS
-             * carries over. */
-            if (!(id >= 0 && fx_live(g_menu.w) && st.edge_id == id && st.edge_dir == dir &&
-                  now - st.edge_time >= EDGE_PAUSE_MS)) {
+            if (!edge_wraps(&g_menu, id, dir, now)) {
                 st.edge_id = id;
                 st.edge_dir = dir;
                 st.edge_time = now;
