@@ -25,7 +25,6 @@ for rel, (lits, verdict) in judged.items():
         if how in rebase.SOLID or lit.kind != 'hex' or b == '?': continue
         x = lit.value
         others = [o for o in views if o != b and not x & 3 and views[o].function(x) is not None and maps[o].a.d != maps[o].b.d]
-        if not others and maps[b].a.d != maps[b].b.d: continue
         if not others: continue
         y = maps[b].lookup(x)[0]
         alt = {o: maps[o].lookup(x)[0] for o in others}
