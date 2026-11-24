@@ -1156,6 +1156,8 @@ def test_reset_is_the_default_draft_keeping_the_switch(fw):
     u.draft = peak_preset(6)
     u.draft.bypass, u.name = 0, b'Rock'
     act(fw, ACT_RESET)
+    assert u.draft.bands[0].gain != 0 and u.dirty == 0 and u.name == b'Rock'  # it asks first
+    act(fw, ACT_YES)
     assert u.draft.count == 10 and u.draft.bands[0].gain == 0 and u.draft.bypass == 0
     assert u.name == b'' and u.dirty == 1 and u.draft.preamp == 0 and u.draft.automatic == 1
 

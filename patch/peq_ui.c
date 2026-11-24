@@ -650,8 +650,10 @@ static int action(void *ctx, event_t *event) {
         else if (ui.screen == NAMING)
             ui.screen = RENAMES;
         else
-            ui.screen =
-                ui.from_simple || ui.screen == BAND || ui.screen == PRESETS ? HOME : PRESETS;
+            ui.screen = ui.from_simple || ui.screen == BAND || ui.screen == PRESETS ||
+                                (ui.screen == CONFIRM && ui.previous == HOME)
+                            ? HOME
+                            : PRESETS;
     } else if (id == MENU)
         ui.screen = PRESETS;
     else if (id == IMPORT)
@@ -710,6 +712,9 @@ static int action(void *ctx, event_t *event) {
         snprintf(ui.status, sizeof(ui.status), "%s",
                  apply(0) ? tr("Applied") : tr("Apply failed; active EQ unchanged"));
     } else if (id == RESET) {
+        ui.previous = HOME; /* asks first: the unsaved band edits cannot be got back */
+        ui.screen = CONFIRM;
+    } else if (id == YES && ui.previous == HOME) {
         /* The draft returns to peq_default; On/Off is live state, not part of the edit. */
         int bypass = ui.draft.bypass;
         peq_default(&ui.draft);
@@ -718,6 +723,7 @@ static int action(void *ctx, event_t *event) {
         ui.name[0] = 0;
         ui.dirty = 1;
         snprintf(ui.status, sizeof(ui.status), "%s", tr("Reset; choose Apply to activate"));
+        ui.screen = HOME;
     } else if (id == YES) {
         ui.screen = ui.previous;
         if (ui.screen != DELETES) save_candidate(1);
@@ -858,6 +864,9 @@ static int render(const void *unused) {
         /* Cancel, as every confirm opens: a second Centre deletes or replaces nothing */
         selection = 1;
     }
+    /* back from the Reset confirm: on the Reset to defaults row, where the user was */
+    int reset_back = ui.screen == HOME && ui.rendered == CONFIRM && ui.previous == HOME;
+    if (reset_back) selection = 1;
     ui.rendered = ui.screen;
     ui.edit = 0;
     widget_destroy_children(ui.page);
@@ -975,6 +984,9 @@ static int render(const void *unused) {
         snprintf(text, sizeof(text), tr("Delete %.100s? Confirm"), deleting());
         fit(row(view, n++, text, YES));
         row(view, n++, tr("Cancel"), CANCEL);
+    } else if (ui.screen == CONFIRM && ui.previous == HOME) {
+        fit(row(view, n++, tr("Reset all bands? Confirm"), YES));
+        row(view, n++, tr("Cancel"), CANCEL);
     } else if (ui.screen == CONFIRM) {
         fit(row(view, n++, tr("Replace existing preset? Confirm"), YES));
         row(view, n++, tr("Cancel replacement"), CANCEL);
@@ -1009,7 +1021,8 @@ static int render(const void *unused) {
     }
     widget_set_prop_int(view, "virtual_h", head + n * rh);
     /* ringnav keeps the selection above on a view whose row count it already knows. */
-    if (ui.screen == PICK || ui.screen == CONFIRM) widget_set_prop_int(view, "_ringnav_count", n);
+    if (ui.screen == PICK || ui.screen == CONFIRM || reset_back)
+        widget_set_prop_int(view, "_ringnav_count", n);
     if (head + n * rh <
         rows) { /* short lists: shrink so the list's white background never shows below the rows */
         widget_resize(list, 375, head + n * rh);
@@ -1023,6 +1036,8 @@ static int render(const void *unused) {
     text[0] = 0;
     if (ui.status[0])
         snprintf(text, sizeof(text), "%s", ui.status);
+    else if (ui.screen == CONFIRM && ui.previous == HOME)
+        snprintf(text, sizeof(text), "%s", tr("Reset to defaults"));
     else if (ui.screen == BAND)
         snprintf(text, sizeof(text), tr("Band %d"), ui.band + 1);
     else if (ui.screen == PICK && ui.pick == GAIN)

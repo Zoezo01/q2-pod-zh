@@ -842,9 +842,13 @@ def test_a_kept_screen_keeps_its_selection_and_scroll(fw):
     p = page(fw).advanced()
     view = p.ui.view
     p.props[(view, '_ringnav_index')], p.props[(view, 'yoffset')] = 5, 96
-    p.click('Reset to defaults')
+    p.click('Enabled On')
     assert p.props[(p.ui.view, '_ringnav_index')] == 5 and p.props[(p.ui.view, 'offset')] == 96
-    assert p.title() == 'Reset; choose Apply to activate'
+    p.click('Reset to defaults')
+    p.click('Reset all bands? Confirm')
+    p.props[(p.ui.view, '_ringnav_index')], p.props[(p.ui.view, 'yoffset')] = 5, 96
+    p.click('Apply changes')  # a status message in the title, the rows kept
+    assert p.title() == 'Applied' and p.props[(p.ui.view, '_ringnav_index')] == 5 and p.props[(p.ui.view, 'offset')] == 96
 
 
 # The presets' screens.
@@ -922,6 +926,27 @@ def test_deleting_asks_then_deletes(fw):
     assert f'{SAVED}/a.peq' not in p.card.files and p.title() == 'Deleted a.peq; active EQ unchanged'
     p.ret()
     assert p.ui.screen == PRESETS
+
+
+def test_resetting_asks_first_and_opens_on_cancel(fw):
+    p = page(fw, state(fw, EQ_PEQ, peq=peak(fw, 6))).advanced()
+    p.click('Reset to defaults')
+    assert p.captions() == ['Reset all bands? Confirm', 'Cancel'] and p.ui.screen == CONFIRM
+    assert p.props[(p.ui.view, '_ringnav_index')] == 1 and p.props[(p.ui.view, '_ringnav_count')] == 2
+    assert p.title() == 'Reset to defaults'
+    assert p.ui.draft.bands[0].gain != 0 and not p.ui.dirty
+    p.click('Cancel')
+    assert p.props[(p.ui.view, '_ringnav_index')] == 1 and p.captions()[1] == 'Reset to defaults'  # where the user was
+    assert p.ui.screen == HOME and p.ui.draft.bands[0].gain != 0 and not p.ui.dirty
+    p.click('Reset to defaults')
+    p.ret()
+    assert p.ui.screen == HOME and p.ui.draft.bands[0].gain != 0 and not p.ui.dirty
+    assert p.props[(p.ui.view, '_ringnav_index')] == 1
+    p.click('Reset to defaults')
+    p.click('Reset all bands? Confirm')
+    assert p.props[(p.ui.view, '_ringnav_index')] == 1
+    assert p.ui.screen == HOME and p.ui.draft.bands[0].gain == 0 and p.ui.dirty
+    assert p.title() == 'Reset; choose Apply to activate'
 
 
 def test_a_failed_delete_says_so(fw):
@@ -1451,6 +1476,7 @@ def test_unapplied_advanced_edits_follow_to_the_new_output(fw):
     fw.fn('eq_output', None, C.c_char_p)(b'3.5mm')
     p.advanced()
     p.click('Reset to defaults')
+    p.click('Reset all bands? Confirm')
     fw.fn('eq_output', None, C.c_char_p)(b'usb')
     p.settle()
     assert p.ui.draft.bands[0].gain == 0 and p.ui.dirty and p.captions()[0] == 'Apply changes' and p.captions()[2] == 'Enabled Off'
@@ -1577,10 +1603,12 @@ def test_a_card_app_s_preset_replaces_the_open_page_s_unapplied_edits_and_its_sw
     card = Card(fw, {ACTIVE: saved(state(fw, EQ_PEQ, peq=peak(fw, 6)))})
     p = Page(fw, card).advanced()
     p.click('Reset to defaults')
+    p.click('Reset all bands? Confirm')
     ask(fw, card, b'e1\nFilter 1: ON PK Fc 500 Hz Gain -3 dB Q 2\n')
     p.settle()
     assert not p.ui.dirty and p.ui.draft.bands[0].frequency == 500 and p.captions()[0] == 'Nothing to apply'
     p.click('Reset to defaults')
+    p.click('Reset all bands? Confirm')
     ask(fw, card, b'e2\noff')
     p.settle()
     assert p.ui.dirty and p.ui.draft.bands[0].gain == 0 and p.captions()[2] == 'Enabled Off'

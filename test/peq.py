@@ -978,7 +978,7 @@ def editor_check(lib, tmp):
     # Reset replaces the draft with peq_default's ten flat bands and leaves what plays alone until
     # Apply changes; Advanced's On/Off is live state and stays as it was.
     before = active.read_bytes()
-    click('Reset to defaults')
+    click('Reset to defaults'); click('Reset all bands? Confirm')
     assert title() == 'Reset; choose Apply to activate' and active.read_bytes() == before
     assert ui.shim_click(b'Preamp Auto (44.1: 0.0 / 48: 0.0)', 2) and ui.shim_click(b'Balance Centre', 2)
     assert not ui.shim_click(b'Presets ', 2)  # the draft is no longer a named preset
@@ -990,7 +990,7 @@ def editor_check(lib, tmp):
     # Off stays Off.
     click('Enabled On')  # turns PEQ off
     before = active.read_bytes()
-    click('Reset to defaults')
+    click('Reset to defaults'); click('Reset all bands? Confirm')
     assert active.read_bytes() == before
     click('Apply changes')
     r = read()
