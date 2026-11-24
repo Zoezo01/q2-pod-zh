@@ -3296,7 +3296,8 @@ for theme_ in '0':
     m,win,anim,msg,scan,btn=msg_dialog(theme_=theme_); bare(m); m.paint(win); kids=len(m.nodes[win]['children'])
     assert not m.image_draws and wbox(m,btn)==(44,266,287,40) and m.nodes[anim]['visible'] and m.nodes[msg]['visible'] and kids==4 and not m.sqls and not m.timers and 'style:normal:bg_color' not in m.nodes[btn] and not m.letters
     m,win,ret,img,info,charge,dac=usb_page(0,theme_=theme_); bare(m); m.paint(win)
-    assert not m.image_draws and m.nodes[img]['visible'] and m.nodes[info]['visible'] and len(m.nodes[win]['children'])==5 and not m.letters; passed()
+    ok=m.nodes[win]['children'][5]  # usb_ok: the eject line, in the box of stock's, which it hides
+    assert not m.image_draws and m.nodes[img]['visible'] and not m.nodes[info]['visible'] and len(m.nodes[win]['children'])==6 and m.nodes[ok]['text']=='Eject before disconnecting' and not m.letters; passed()
 # The art's corners: after the image (the border hook), each of the NP_ART_RADIUS rows of a
 # corner is black outside the arc, then one edge pixel at the alpha it leaves uncovered.
 # Classic under Square keeps an iPod's square art.

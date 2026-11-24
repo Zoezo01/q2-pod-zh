@@ -2993,6 +2993,17 @@ def test_usb_audio_mode_has_nothing_to_eject(fw, world, st):
     assert world[named(world, win, 'msg_line')].text is None and world.timers == []
 
 
+def test_minimal_s_usb_page_says_to_eject_before_the_eject(fw, world, st):
+    """Stock's page keeps its box and style: its line is covered as the page loads by a label that says to eject."""
+    Files(fw, {USB_LUN: b'/dev/mmcblk0p1\n'})
+    win = usb_page(fw, world, st, MINIMAL)
+    info = named(world, win, 'scrlabel_info')
+    (ok,) = [c for c in world[win].children if c != info and world[c].kind == 'hscroll_label']  # before any tick
+    assert poll(world) == RET_REPEAT and poll(world) == RET_REPEAT and world[win].children.count(ok) == 1
+    assert world[ok].text == 'Eject before disconnecting' and world[info].visible == 0
+    assert world.at(ok) == world.at(info) and world[ok].props['style'] == 's_scrlabel_white24c'
+
+
 @pytest.mark.parametrize('number', [CLASSIC, MINIMAL])
 def test_the_computer_s_eject_says_ok_to_disconnect(fw, world, st, number):
     """Classic's heading says so and its line goes; elsewhere a label of internals.md's style covers stock's line,

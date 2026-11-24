@@ -4976,16 +4976,30 @@ void paint_tray(canvas_t *canvas, int x, int y, int w, int h) {
 /* USB Storage's page, every theme: the computer's eject (SCSI START STOP UNIT, LoEj) closes the
  * card's LUN in the kernel's f_mass_storage, and its configfs file then reads empty. Once it has
  * read open, empty is the eject: the heading (own pages) or stock's line (scrlabel_info, which
- * stock's timer rewrites "USB Connected" every 500 ms, so a label of its style covers it) says OK
- * to Disconnect. No file (the gadget not built yet, or torn down) is no eject. The LUN stays closed
- * until stock rebuilds the gadget, so the poll ends there.
+ * stock's timer rewrites "USB Connected" every 500 ms, so a label of its style covers it, from the
+ * page's load, saying to eject) says OK to Disconnect. No file (the gadget not built yet, or torn
+ * down) is no eject. The LUN stays closed until stock rebuilds the gadget, so the poll ends there.
  * ponytail: only a host that sends LoEj counts (macOS, Linux, Explorer's Eject); Windows' Safely
  * Remove Hardware may only stop the device, leaving the page on Connected. The upgrade is
  * telling that apart from a cable still in (the gadget's suspend state, which configfs doesn't
  * show). */
 #define USB_LUN "/sys/kernel/config/usb_gadget/storage_demo/functions/mass_storage.msg/lun.0/file"
+/* Stock's page (no msg_heading): its line stays under a label of the same box and style, made as
+ * the page loads, which says to eject. */
+static widget_t *usb_cover(widget_t *win) {
+    widget_t *c, *ok = widget_lookup(win, "usb_ok", 1);
+    if (!ok && !widget_lookup(win, "msg_heading", 1) &&
+        (c = widget_lookup(win, "scrlabel_info", 1))) {
+        ok = hscroll_label_create(P(c, W_PARENT), I(c, W_X), I(c, W_Y), I(c, W_W), I(c, W_H));
+        widget_set_name(ok, "usb_ok");
+        widget_use_style(ok, "s_scrlabel_white24c");
+        widget_set_text_utf8(ok, tr("Eject before disconnecting"));
+        widget_set_visible(c, 0, 0);
+    }
+    return ok;
+}
 static int usb_poll(const void *info) {
-    widget_t *win = P(info, TIMER_CTX), *c;
+    widget_t *win = P(info, TIMER_CTX), *c, *ok = usb_cover(win);
     char path[2];
     void *f = fopen(USB_LUN, "rb");
     int n = f ? (int)fread(path, 1, sizeof path, f) : -1;
@@ -4995,12 +5009,8 @@ static int usb_poll(const void *info) {
     if ((c = widget_lookup(win, "msg_heading", 1))) {
         widget_set_text_utf8(c, tr("OK to Disconnect"));
         widget_set_text_utf8(widget_lookup(win, "msg_line", 1), "");
-    } else if ((c = widget_lookup(win, "scrlabel_info", 1))) {
-        widget_t *ok =
-            hscroll_label_create(P(c, W_PARENT), I(c, W_X), I(c, W_Y), I(c, W_W), I(c, W_H));
-        widget_use_style(ok, "s_scrlabel_white24c");
+    } else if (ok) {
         widget_set_text_utf8(ok, tr("OK to Disconnect"));
-        widget_set_visible(c, 0, 0);
     }
     widget_invalidate_force(win, (void *)0);
     return 7; /* RET_REMOVE */
@@ -5036,7 +5046,7 @@ widget_t *ringnav_ui_load(const char *name, widget_t *parent) {
         if (time_form(root)) time_open(root);
     }
     if (root && g_usbmode != 1 && !tk_strcmp(widget_get_prop_str(root, "name", ""), "usbmode_page"))
-        st.usb_lun = 0, widget_add_timer(root, usb_poll, 500);
+        st.usb_lun = 0, usb_cover(root), widget_add_timer(root, usb_poll, 500);
     if (root) motion_load(root, np);
     return root;
 }
