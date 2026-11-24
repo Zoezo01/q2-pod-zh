@@ -274,6 +274,9 @@ maintenance, with About last; neither list has headings. Play Mode, EQ, Gapless 
 use Shanling's `switch_on` / `switch_off` images with the whole row as the tap target. Settings
 that cycle between named choices retain their value labels. Crossfade, Resume Songs and Wheel
 Sensitivity show a chevron, as do the added Library browsing rows.
+While the Sleep Timer runs, Power's Sleep Timer row reads the time left in every theme
+("Sleep Timer: 45 min", from an hour "Sleep Timer: 1:30"; `sleep_row.c`,
+[internals.md](internals.md#sleep-timer-row)).
 
 Every row is built natively, about 60 builders in all, one pattern throughout: a
 `list_item_create(view, 0, 0, 0, 0)` (some pass 78 as the height) holding a `button_create(item,

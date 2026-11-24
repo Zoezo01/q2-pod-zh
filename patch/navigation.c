@@ -3410,6 +3410,7 @@ int ringnav_powermanager(widget_t *win, void *ctx) {
     pod_rows(win, "scroll_view_powermanager", POD_CHARGE, 1, icons);
     widget_t *view = win ? widget_lookup(win, "scroll_view_powermanager", 1) : (void *)0;
     usb_charge_row(win, view);
+    sleep_row(win); /* stock's Sleep Timer row, its time left */
     pod_rows(win, "scroll_view_powermanager", POD_SMART_WIFI, 1, icons + 3);
     pod_rows(win, "scroll_view_powermanager", POD_CARMODE, 1, icons + 2);
     if (view) /* battery.c's page */

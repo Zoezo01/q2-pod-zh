@@ -1725,6 +1725,67 @@ def test_power_adds_standby_charge_and_in_vehicle_rows_after_stocks(fw):
     assert tr == [b'system_carmode']  # stock's row, stock's translation
 
 
+def sleep_power(fw, which, running, seconds, name='0'):
+    """Power with stock's Sleep Timer row as systemset_powermanager_page_init builds it (its list_item and button both
+    named "0", its title the button's hscroll_label, tr_text powerm_sleep), the timer switched on or off with seconds
+    left on stock's count: (ui, win, the title)."""
+    ui, win, view, settings, build = settings_page(fw, which, 'powermanager_page', 'scroll_view_powermanager')
+    title = []
+
+    def stock(*_):
+        item = ui.add('list_item', view, (0, 0, 375, 70), name)
+        button = ui.add('button', item, (20, 0, 335, 70), name)
+        title.append(ui.add('hscroll_label', button, (10, 0, 246, 70)))
+        ui.set_text(title[0], 'Sleep Timer')
+        return 3
+    fw.mock('stock_power_trampoline', stock)
+    fw.var('g_sleepflag', C.c_ubyte).value = running
+    fw.var('fw_ctx_g_sleep_time', C.c_int).value = seconds
+    fw.fn('ringnav_powermanager', C.c_int, C.c_void_p, C.c_void_p)(win.addr, None)
+    return ui, win, title[0]
+
+
+def tr_texts(fw, label):
+    return [C.string_at(c[1][1]) for c in fw.calls('widget_set_tr_text') if c[1][0] == label.addr]
+
+
+@pytest.mark.parametrize('which', [MINIMAL, CLASSIC])
+@pytest.mark.parametrize('seconds, shown', [(1, 'Sleep Timer: 1 min'), (60, 'Sleep Timer: 1 min'),
+                                            (61, 'Sleep Timer: 2 min'), (2700, 'Sleep Timer: 45 min'),
+                                            (3541, 'Sleep Timer: 1:00'), (3600, 'Sleep Timer: 1:00'),
+                                            (5400, 'Sleep Timer: 1:30'),
+                                            (23 * 3600 + 59 * 60, 'Sleep Timer: 23:59')])
+def test_power_s_sleep_timer_row_shows_the_time_left_while_it_runs(fw, which, seconds, shown):
+    """Stock's own count, g_sleep_time's seconds left, in whole minutes rounded up, in the row's title."""
+    ui, win, title = sleep_power(fw, which, 1, seconds)
+    assert ui.text(title) == shown
+
+
+@pytest.mark.parametrize('running, seconds', [(0, 0), (0, 1800), (1, 0)])
+def test_power_s_sleep_timer_row_is_stock_s_while_it_does_not_run(fw, running, seconds):
+    """Off, or on with no time set (stock counts nothing at 0): stock's title, from its own tr_text."""
+    ui, win, title = sleep_power(fw, MINIMAL, running, seconds)
+    assert ui.text(title) == 'Sleep Timer' and tr_texts(fw, title)[-1:] == [b'powerm_sleep']
+
+
+def test_power_s_sleep_timer_row_follows_the_timer_when_power_is_back(fw):
+    ui, win, title = sleep_power(fw, MINIMAL, 0, 0)
+    fw.var('g_sleepflag', C.c_ubyte).value = 1
+    fw.var('fw_ctx_g_sleep_time', C.c_int).value = 1800  # set on the Sleep Timer page, then Return
+    ui.fire(win, O['EVT_WINDOW_FOREGROUND'])
+    assert ui.text(title) == 'Sleep Timer: 30 min'
+    fw.var('g_sleepflag', C.c_ubyte).value = 0  # switched off there
+    ui.fire(win, O['EVT_WINDOW_FOREGROUND'])
+    assert tr_texts(fw, title) == [b'powerm_sleep'] * 2  # the open's, then the return's
+
+
+def test_a_power_page_without_stock_s_named_row_is_left_alone(fw):
+    """No row named "0" (another stock's Power): the timer running, nothing is set, as Power opens or comes back."""
+    ui, win, title = sleep_power(fw, MINIMAL, 1, 1800, name=None)
+    ui.fire(win, O['EVT_WINDOW_FOREGROUND'])
+    assert ui.text(title) == 'Sleep Timer' and tr_texts(fw, title) == []
+
+
 def test_system_update_adds_remind_daily_under_network_update_on_by_default(fw):
     ui, win, view, settings, build = settings_page(fw, MINIMAL, 'fwupdate_page', 'scroll_view_fwupdate', 2)
 

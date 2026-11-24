@@ -650,6 +650,7 @@ int side_seek(unsigned key, int phase);
 /* usb_charge.c: wrappers for charging, configuration loading and USB gadget dispatch. */
 int ringnav_usb_charge(int on), usb_charge_held(void), usb_charge_wanted(void);
 void usb_charge_row(widget_t *win, widget_t *view); /* Power's USB DAC Charging */
+void sleep_row(widget_t *win); /* sleep_row.c: Power's Sleep Timer row, its time left */
 void row_label(widget_t *label,
                const char *text); /* navigation.c: a settings row's "Title: value" */
 int ringnav_usb_config(void), ringnav_usb_detect(void), ringnav_usb_status(void);
