@@ -358,10 +358,15 @@ Copy your music to the card over USB-C, then run **Library → Update Library �
 - **Library folder markers:** [Hide folders while keeping playlists](docs/discovery.md)
 - **Hardware:** [Specs and internals](docs/hardware.md) · [Replacing the battery](docs/battery.md) · [Teardown photo](docs/teardown.jpg)
 - **For developers:** [Building](docs/building.md) · [Releasing](docs/releasing.md) · [Internals](docs/internals.md) · [Remote control (dev builds)](docs/remote.md) · [Contributing](CONTRIBUTING.md)
-- **Try a build without a Q2:** [Q2 Emulator](https://github.com/bryanmario/q2-emulator), by bryanmario, boots the firmware itself under QEMU (Windows for now), so a build's own screens, lists and navigation run, with touch, the wheel and the buttons: the closest thing to a Q2. [q2-emulation](https://github.com/lampsonlnguyen/q2-emulation), by lampsonlnguyen, is a simulator: it previews a build's assets, settings and card apps and runs card games, without booting the firmware.
-- **EQ Studio on iPhone and iPad:** [EQ Studio for iPhone and iPad](https://github.com/js-surya/q2-eq-studio-ios), by js-surya, is a native app for [EQ Studio](https://github.com/DiamondBond/q2-eq-studio): shape the curve, pick one of AutoEq's presets or fit the bands to a measurement, and hear it on the Q2 as you go. It isn't on the App Store yet; until then you build it with Xcode.
-- **From the community:** [Q2 Theme Studio](https://tyleree.github.io/q2-themes/), by tyleree, makes EQ presets and themes in the browser and saves them to the card you point it at. It isn't part of Q2 Pod, so it's at your own risk. Its EQ presets work here: they go in `EQ/`, to import. Of its themes, Q2 Pod reads the accent and page colours, what it hides, moves and resizes on Now Playing and the lock screen and the Home rows it hides, renames and resizes and its JPEG pictures on Home in Minimal and Modern, and the battery style; the rest of a theme, such as its Home row height and GIFs, needs a test firmware from its author's fork, an unofficial build of an older Q2 Pod that nobody here can help with. Back up the card before you install that one, and repeat the [install steps](#install) to come back to Q2 Pod.
-- **Sync from a Mac:** [Q2 Sync](https://github.com/PaleoLabs/Q2-Sync), by PaleoLabs, is a Mac app (macOS 27.2 or later) that copies the music files in the Music app to the Q2's card, with their playlists, the way Finder syncs an iPod, and can install or update Q2 Pod from its releases. It copies files you own (MP3, AAC, Apple Lossless, WAV, AIFF), not Apple Music subscription songs. It isn't part of Q2 Pod, so it's at your own risk.
+
+## From the community
+
+Made by others, not part of Q2 Pod: use them at your own risk.
+
+- **[Q2 Emulator](https://github.com/bryanmario/q2-emulator)**, by bryanmario: runs a Q2 Pod build on a computer.
+- **[EQ Studio for iPhone and iPad](https://github.com/js-surya/q2-eq-studio-ios)**, by js-surya: shape [EQ Studio](https://github.com/DiamondBond/q2-eq-studio)'s curve on your phone.
+- **[Q2 Theme Studio](https://tyleree.github.io/q2-themes/)**, by tyleree: make themes and EQ presets in the browser.
+- **[Q2 Sync](https://github.com/PaleoLabs/Q2-Sync)**, by PaleoLabs: sync the music files in your Mac's Music app to the Q2.
 
 <details>
 <summary><h2>License</h2></summary>
