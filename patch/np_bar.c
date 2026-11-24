@@ -82,7 +82,7 @@ int np_sync(widget_t *top) {
                             sizeof pos);
     if (h != st.np_hash) {
         st.np_hash = h;
-        if (r) tk_snprintf(s, sizeof s, tr("%d of %d"), at + 1, n);
+        if (r) tk_snprintf(s, sizeof s, "%d / %d", at + 1, n);
         widget_set_text_utf8(st.np_pos, s);
         widget_set_text_utf8(st.np_album, album ? album : "");
         st.np_off = 0;

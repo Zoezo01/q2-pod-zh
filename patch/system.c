@@ -460,7 +460,7 @@ int ringnav_standby_umount(const char *cmd) {
 #define LOGO_MAX (512 * 1024)
 #define LOGO_SEEN "/mnt/data/boot-logo.bad" /* the refused card file: size, mtime */
 /* logo_sync's texts, a thread's: translated where logo_poll toasts them */
-static const char logo_refused[] = N_("Boot logo must be a 320x375 JPEG");
+static const char logo_refused[] = "开机图片必须是 320x375 的 JPEG";
 /* tools/build.py's jpeg_size: w << 16 | h of a baseline 8-bit three-component JPEG, the only kind
  * stock display_logo draws right; 0 for anything else. */
 static unsigned jpeg_size(const unsigned char *b, unsigned n) {

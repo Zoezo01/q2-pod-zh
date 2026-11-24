@@ -525,7 +525,7 @@ static int rt_shuffle(const void *unused) {
     if (!ra.rt_menu) return 0; /* the menu closed */
     void *list = rated_songs(ra.rt_held, &of);
     free(of);
-    if (!shuffle_play(list)) toast(tr("No songs yet"));
+    if (!shuffle_play(list)) toast("暂无歌曲");
     deque_destroy(list);
     return 0;
 }

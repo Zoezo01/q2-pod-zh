@@ -3028,7 +3028,7 @@ static int caption_bold(void) { return theme()->font[ROLE_TITLE] == FONT_CLASSIC
 
 /* A playlist's count, in buf of size: "1 song", "N songs". */
 static const char *songs_text(char *buf, unsigned size, unsigned k) {
-    tk_snprintf(buf, size, k == 1 ? tr("%u song") : tr("%u songs"), k);
+    tk_snprintf(buf, size, k == 1 ? "%u 首" : "%u 首", k);
     return buf;
 }
 

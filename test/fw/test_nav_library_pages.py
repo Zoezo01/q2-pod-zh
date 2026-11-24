@@ -3108,7 +3108,7 @@ def test_a_media_row_opens_folder_view_at_its_folder(fw, ui, st):
 def test_a_media_row_whose_folder_went_says_so(fw, ui, kind, name):
     Disk(fw, {'/mnt/mmc/Podcasts': b'a file, not a folder'}, folders=['/mnt/mmc/Music'])
     call(fw, 'media_click', kind)
-    assert ui.toasts == [f'No {name} folder on the card'] and not ui.went
+    assert ui.toasts == [f'卡上没有 {name} 文件夹'] and not ui.went  # f-string: the table cannot rewrite it
 
 
 def test_photos_opens_its_own_page(fw, ui):

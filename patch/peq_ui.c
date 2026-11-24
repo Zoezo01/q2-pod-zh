@@ -854,7 +854,7 @@ static int render(const void *unused) {
             snprintf(value, sizeof(value), "%s %.1f dB", ui.draft.balance > 0 ? "Centre" : "R",
                      __builtin_fabs(ui.draft.balance));
         else
-            snprintf(value, sizeof(value), "%s", tr("L"));
+            snprintf(value, sizeof(value), "%s", "左");
         row_dim(view, n++, tr("声道平衡"), value, BALANCE, INTO);
         if (on_auto())
             auto_text(value, sizeof(value));
@@ -913,9 +913,9 @@ static int render(const void *unused) {
         for (int i = 0; i < picks[ui.pick - BALANCE].rows; ++i) {
             double v = picks[ui.pick - BALANCE].first + picks[ui.pick - BALANCE].step * i;
             if (ui.pick == BALANCE && i == 24)
-                snprintf(text, sizeof(text), "%s", tr("Centre"));
+                snprintf(text, sizeof(text), "%s", "中间");
             else if (ui.pick == BALANCE) /* L 12.0 dB to R 12.0 dB */
-                snprintf(text, sizeof(text), "%s %.1f dB", v < 0 ? "L" : "R", __builtin_fabs(v));
+                snprintf(text, sizeof(text), "%s %.1f dB", v < 0 ? "左" : "右", __builtin_fabs(v));
             else if (ui.pick == PREAMP && !i)
                 auto_text(text, sizeof(text));
             else

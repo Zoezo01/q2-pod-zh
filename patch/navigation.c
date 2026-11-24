@@ -3382,7 +3382,7 @@ static int pod_click(void *ctx, event_t *event) {
         if (i == POD_BT_LINK && mclGetOutputWay() == 1)
             headset_volume_reset(), device_set_volume(g_volume, 0);
         /* Receive Audio: the direction at the next link, bluealsa's sink at Bluetooth's next on */
-        if (i == POD_BT_RECEIVE) toast(tr("Turn Bluetooth off and on to apply"));
+        if (i == POD_BT_RECEIVE) toast("关闭再打开蓝牙以应用");
     }
     pod_text(i);
     return 0;
@@ -3585,7 +3585,7 @@ int ringnav_audioset(widget_t *win, void *ctx) {
     if (sub) {
         widget_t *nav = widget_lookup(win, "view_navbar", 1),
                  *title = nav ? widget_get_child(nav, 0) : (void *)0;
-        if (title) widget_set_text_utf8(title, tr("Library & Folders"));
+        if (title) widget_set_text_utf8(title, "资料库与文件夹");
         pod_rows(win, "scroll_view_playset", POD_YEAR_OLD, 2, icons);
         pod_rows(win, "scroll_view_playset", POD_ARTIST_AZ, 1, icons);
         char name[256];
@@ -5076,7 +5076,7 @@ static void slider_open(widget_t *win) {
     }
     c = flat ? text(win, 16, 196, 343, 22) : text(win, 0, 228, 375, 32);
     widget_set_name(c, "caption");
-    slider_caption(c, tr("Press Centre When Finished"));
+    slider_caption(c, "完成后按中键");
     if (flat)
         page_label(c, 16, 196, 343, 22, 17, "default", flat_quiet[0]);
     else
@@ -5120,8 +5120,8 @@ void slider_switch(widget_t *w, canvas_t *canvas, widget_t *sw) {
     paint_art(w, canvas, "classic_light_track_inset", 138, 37);
     paint_round_rows(canvas, cell, &scheme()->sel, 6);
     paint_art(w, canvas, "classic_light_lit_edge", cell->x - 1, 36);
-    caption(canvas, tr("Off"), left.x, left.y, left.w, left.h, 21, white);
-    caption(canvas, tr("On"), right.x, right.y, right.w, right.h, 21, white);
+    caption(canvas, "关", left.x, left.y, left.w, left.h, 21, white);
+    caption(canvas, "开", right.x, right.y, right.w, right.h, 21, white);
 }
 /* The page at (0, y, 375, 294): flat in the theme's page_fill, or the half's Home pane colour
  * (theme home_pane), final. */
@@ -6197,15 +6197,15 @@ static void setting_text(int i) {
     const scheme_t *S = scheme();
     /* the card theme's rows (card_theme_sets) name it, not a stored value */
     const char *const names[] = {
-        card_theme_sets(SETTING_ACCENT) ? N_("Accent: Card Theme")
+        card_theme_sets(SETTING_ACCENT) ? "强调色：卡主题"
         : S->label                      ? (const char *)0
                                         : accent_names[a],
         home[st.home],
-        card_theme_sets(SETTING_BATTERY) ? N_("Battery: Card Theme") : battery[st.battery],
+        card_theme_sets(SETTING_BATTERY) ? "电池：卡主题" : battery[st.battery],
         (const char *)0,
         (const char *)0,
         (const char *)0,
-        card_theme_sets(SETTING_LIGHT) ? N_("Light Mode: Card Theme") : light[st.light],
+        card_theme_sets(SETTING_LIGHT) ? "浅色模式：卡主题" : light[st.light],
         (const char *)0,
         (const char *)0
     };
@@ -6294,7 +6294,7 @@ void restart_confirm(int setting, int value);
 static int setting_click(void *ctx, event_t *event) {
     int i = (int)(long)ctx;
     if (card_theme_sets(i)) { /* nothing to cycle or save while the card theme sets it */
-        toast(tr("Set by the card theme"));
+        toast("由卡主题设定");
         return 0;
     }
     const theme_t *T = theme();
@@ -6440,7 +6440,7 @@ int restart_asked(void) {
         int kind, ms;
         char text[0x400];
     } prompt = { 1, 0, "" };
-    tk_snprintf(prompt.text, sizeof prompt.text, "%s", tr("Restart to apply?"));
+    tk_snprintf(prompt.text, sizeof prompt.text, "%s", "重启以应用？");
     return navigator_to_with_context("dialog/confirminfo_dialog", &prompt) == 10;
 }
 /* A choice that needs another geometry set: confirmed, the config takes value (a theme its presets
@@ -6492,7 +6492,7 @@ int ringnav_np_info(widget_t *win) {
     char where[64] = "";
     getFormatString("player_location", where, sizeof where);
     const char *loc =
-        *where && *where != '(' ? where : tr("Location"); /* a missing string reads "(key)" */
+        *where && *where != '(' ? where : "位置"; /* a missing string reads "(key)" */
     for (unsigned i = 0; i < sizeof names / sizeof *names; ++i) {
         widget_t *label = win ? widget_lookup(win, names[i], 1) : (void *)0;
         char s[1024], out[1024 + sizeof where + 8];
@@ -6655,7 +6655,7 @@ int ringnav_display(widget_t *win, void *ctx) {
 #define BOOT_TARGET "/mnt/data/boot-target"
 static int boot_rockbox __attribute__((section(".scratch")));
 static void boot_text(widget_t *label) {
-    widget_set_text_utf8(label, boot_rockbox ? tr("Boot to: Rockbox") : tr("Boot to: Q2 Pod"));
+    widget_set_text_utf8(label, boot_rockbox ? "默认启动：Rockbox" : "默认启动：Q2 Pod");
 }
 static int boot_click(void *label, event_t *event) {
     if (!rockbox_available()) {
@@ -7998,8 +7998,8 @@ static int chapter_poll(const void *unused) {
     }
     st.ch->count = n;
     widget_t *view = page_list_or(
-        st.ch_page, st.ch_page, tr("Chapters"),
-        st.ch->failed ? tr("Could not read chapters") : tr("No embedded chapters"), n, 64);
+        st.ch_page, st.ch_page, "章节",
+        st.ch->failed ? "无法读取章节" : "无内嵌章节", n, 64);
     int sec = 0, total, current = 0;
     player_playtime_and_length(&sec, &total);
     for (int i = 0; i < n; ++i) {
@@ -8173,7 +8173,7 @@ int stream_config(void *ctx, event_t *event) {
     if (st.sc_page || !(st.sc_page = page_open("streamconf_page", page_closed, page_keyup)))
         return 0;
     int n = SVC_FIXED + st.svc_n;
-    widget_t *view = page_list(st.sc_page, st.sc_page, 0, tr("Configuration"), 5 + n, 48);
+    widget_t *view = page_list(st.sc_page, st.sc_page, 0, "流媒体设置", 5 + n, 48);
     for (int i = 0; i < 3; ++i)
         st.sc_row[i] = page_row_detail(view, i, "", 0, sc_click), sc_text(i);
     page_row_detail(view, 3, "停止流媒体服务", 0, sc_click);
@@ -8414,7 +8414,7 @@ int ringnav_about(widget_t *win, void *ctx) {
         widget_set_text_utf8(widget_get_child(widget_get_child(widget_get_child(view, 1), 0), 1),
                              STOCK_VERSION);
         widget_t *button = list_button(view);
-        about_label(button, 10, 166, "s_scrlabel_white24l", tr("CFW. Version"));
+        about_label(button, 10, 166, "s_scrlabel_white24l", "自制固件版本");
         about_label(button, 176, 149, "s_scrlabel_white20r", Q2POD_VERSION);
         widget_restack(P(button, W_PARENT), 2);
         /* Classic's row face is wider than stock's: the MAC address, the one 17-character

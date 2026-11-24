@@ -52,8 +52,8 @@ static void settings(void) {
 
 static void row_text(widget_t *label) {
     char t[96];
-    tk_snprintf(t, sizeof t, tr("交叉淡化：关闭"), xf.seconds);
-    widget_set_text_utf8(label, xf.on ? t : tr("交叉淡化：%d 秒"));
+    tk_snprintf(t, sizeof t, "交叉淡化：%d 秒", xf.seconds);
+    widget_set_text_utf8(label, xf.on ? t : "交叉淡化：关闭");
 }
 
 /* Playback's row (navigation.c ringnav_audioset makes it): the label, named for refresh(). */
@@ -91,8 +91,8 @@ int resume_min(void) {
 
 static void rs_text(widget_t *label) {
     char t[96];
-    tk_snprintf(t, sizeof t, tr("断点续播：关闭"), resume_min());
-    widget_set_text_utf8(label, resume_min() ? t : tr("断点续播：%d 分钟"));
+    tk_snprintf(t, sizeof t, "断点续播：%d 分钟", resume_min());
+    widget_set_text_utf8(label, resume_min() ? t : "断点续播：关闭");
 }
 
 /* Playback's row (navigation.c ringnav_audioset makes it): the label, named for refresh(). */
@@ -103,10 +103,10 @@ void resume_row(widget_t *label) {
 
 static void night_text(widget_t *label) {
     char t[96];
-    tk_snprintf(t, sizeof t, tr("夜览：关"), night_kelvin());
-    widget_set_text_utf8(label, night_on() == 2 ? tr("夜览：自动")
+    tk_snprintf(t, sizeof t, "%dK", night_kelvin());
+    widget_set_text_utf8(label, night_on() == 2 ? "夜览：自动"
                                 : night_on()    ? t
-                                                : tr("夜览：%dK"));
+                                                : "夜览：关");
 }
 
 /* Display's row (navigation.c ringnav_display makes it): the label, named for refresh(). */

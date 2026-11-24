@@ -119,7 +119,7 @@ void card_theme_load(void) {
     if (starts >= '2') {
         unlink(CT_TRY);
         rename(CT_DST, CT_BAD);
-        ct.note = N_("Card theme turned off after a failed start");
+        ct.note = "卡主题在启动失败后已关闭";
         drop(1);
         return;
     }
@@ -202,22 +202,22 @@ void card_theme_sync(void) {
     const char *note = 0;
     if (access(CT_SRC, 0)) {
         if (!access(CT_DST, 0) || !access(CT_BAD, 0))
-            note = N_("Card theme removed. Restart to finish");
+            note = "卡主题已移除，重启以完成";
         unlink(CT_DST), unlink(CT_BAD), unlink(CT_TRY), unlink(CT_SEEN);
     } else {
         unsigned n = 0;
         char *b = read_all(CT_SRC, CT_MAX, &n);
         if (!b || !whole(b, n)) {
             note = told_once(CT_SRC, CT_SEEN, CT_SEEN ".tmp") ? 0
-                                                              : N_("Card theme file can't be used");
+                                                              : "卡主题文件无法使用";
         } else {
             unlink(CT_SEEN);
             /* the same bytes are not written again each mount */
             if (!file_holds(CT_DST, b, n, CT_MAX) && !file_holds(CT_BAD, b, n, CT_MAX)) {
                 if (blob_io(CT_DST, CT_DST ".tmp", b, n, 1))
-                    unlink(CT_BAD), unlink(CT_TRY), note = N_("Card theme saved. Restart to apply");
+                    unlink(CT_BAD), unlink(CT_TRY), note = "卡主题已保存，重启以应用";
                 else
-                    unlink(CT_DST ".tmp"), note = N_("Could not save card theme");
+                    unlink(CT_DST ".tmp"), note = "无法保存卡主题";
             }
         }
         free(b);

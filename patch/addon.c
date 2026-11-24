@@ -2700,7 +2700,7 @@ static int page_at(int k, const char *op, const char *args, const char *title, i
     /* A page is refused when the folder is being deleted or moved into, and while an update
      * downloads for an app that is not running: launch() would be refused too, a dead page. */
     if (busy && !strcmp(busy + 1, b->id) && (shelf_moving() || !b->launched || access(b->pid, 0)))
-        return toast(tr("Wait until the App Store finishes")), 1;
+        return toast("请等应用商店完成"), 1;
     if (pg.page || !(pg.lv = calloc(ADDON_DEPTH, sizeof *pg.lv))) return 0;
     if (!(pg.f = calloc(4 + 6 * ADDON_ROWS * ADDON_PAGES, sizeof *pg.f)) ||
         !(pg.page = page_open("addon_page", closed, keyup)))

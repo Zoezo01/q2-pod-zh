@@ -575,7 +575,7 @@ def test_classic_reads_both_as_its_own_default(fw, card, theme, style, shown):
 # The Display rows
 def labels(page, *titles):
     """The rows' readings, title: value, as a theme with values of their own (Classic's set_text) splits them too."""
-    return [': '.join(filter(None, row_of(button_of(page.view(), t).labels()[0]))) for t in titles]
+    return ['：'.join(filter(None, row_of(button_of(page.view(), t).labels()[0]))) for t in titles]  # 中文行用全角冒号
 
 
 @pytest.mark.parametrize('theme', ['minimal', 'modern'])

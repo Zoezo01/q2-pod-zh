@@ -272,7 +272,7 @@ static int lang_pick(void *ctx, event_t *event) {
     if (i >= 0) {
         tk_snprintf(copy, sizeof copy, LANG_DATA "/q2-lang-%s.tsv", lg.code[i]);
         if (!copy_in(lg.file[i], copy, LANG_BYTES)) {
-            toast(tr("Couldn't copy the language"));
+            toast("无法复制语言文件");
             return 0;
         }
     }

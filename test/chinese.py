@@ -54,7 +54,7 @@ def check(directory):
     dialog = decode(asset('ui/dialog/confirminfo_dialog.bin'))
     assert [n[2].get('name') for n in dialog[3]] == ['img_cancel', 'img_enter']
     payload = (directory / 'patch.bin').read_bytes()
-    for label in ('评价', '播放最多', '音量防误触：打开',
+    for label in ('评价', '播放最多', '音量防误触', '接收音频', '记录失败封面', '隐藏重复专辑', '隐藏重复歌曲',
                   '随机播放歌曲', '查看队列', '网络电台', '待机时限：关闭',
                   '单声道音频', '断点续播：关闭', '上一页', '下一页',
                   '左右声道互换', '章节', '前往文件夹', '编辑播放列表',

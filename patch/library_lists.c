@@ -635,7 +635,7 @@ static int era_pick(void *ctx, event_t *event) {
     if (i < 2) {
         void *all = i ? era_shuffle_songs() : era_songs();
         if (!all) {
-            toast(tr("Era unavailable")); /* as a decade's albums: not a card that's away */
+            toast("年代不可用"); /* as a decade's albums: not a card that's away */
             return 0;
         }
         if (!deque_size(all) || access(P(deque_at(all, 0), REC_PATH), 0))
@@ -670,7 +670,7 @@ static int era_open_decade(void *ctx, event_t *event) {
     era.cap = era.v ? (unsigned)era.count[k] : 0;
     if (!era.v || !era_sql(sql, era_album_row, 0)) { /* as era_menu: not a decade of no albums */
         era_free();
-        toast(tr("Era unavailable"));
+        toast("年代不可用");
         return 0;
     }
     if (!(era.albums = page_open("era_albums_page", era_closed, page_keyup))) {

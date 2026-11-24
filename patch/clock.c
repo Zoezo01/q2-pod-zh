@@ -202,8 +202,8 @@ static const time_row_t time_rows[] = {
     { "classic_light_tray_165", 183, 231, 3, 3, { 186, 243, 300 } },
 };
 const char time_months[12][4] = {
-    N_("Jan"), N_("Feb"), N_("Mar"), N_("Apr"), N_("May"), N_("Jun"),
-    N_("Jul"), N_("Aug"), N_("Sep"), N_("Oct"), N_("Nov"), N_("Dec")
+    "1月", "2月", "3月", "4月", "5月", "6月",
+    "7月", "8月", "9月", "10月", "11月", "12月"
 };
 /* The open form's selectors, by field, AM/PM's none, and its slide view: found after stock's init,
  * so a paint needs no lookup. */
@@ -460,7 +460,7 @@ static const clock_part_t time_clock_flat[2][4] = { TIME_HANDS(0xffffff, 0x2c2c2
                                                     TIME_HANDS(0x1c1c1e, 0xe9e9ec) };
 /* A cell's text: AM or PM, the 12-hour hour, or the field's number in b (cap bytes). */
 static const char *cell_text(char *b, unsigned cap, const time_row_t *row, int f, int hour) {
-    if (f == TIME_AMPM) return hour < 12 ? tr("AM") : tr("PM");
+    if (f == TIME_AMPM) return hour < 12 ? "上午" : "下午";
     if (f == 3 && row->n == 3)
         tk_snprintf(b, cap, "%d", hour % 12 ?: 12);
     else

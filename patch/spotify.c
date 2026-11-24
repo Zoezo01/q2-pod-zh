@@ -819,7 +819,7 @@ static void show(void) {
         br.view = page_list(br.page, br.page, 0, l->title, n = 4, 48);
         for (int i = 0; i < n; ++i) into(i, tr(CATS[i]), 0);
     } else if (l->kind == L_DOWNLOADS) {
-        br.view = page_list(br.page, br.page, 0, tr("Downloads"),
+        br.view = page_list(br.page, br.page, 0, "下载",
                             n = br.downloads ? 4 : 2 + br.can_download, 64);
         if (br.downloads) {
             into(0, tr("已下载歌单"), "");
@@ -1089,7 +1089,7 @@ static int go(const void *unused) {
         if (r == M_PLAYING)
             spot_np();
         else if (r == M_DOWNLOADS)
-            push(L_DOWNLOADS, "", "", "", tr("Downloads"));
+            push(L_DOWNLOADS, "", "", "", "下载");
         else if (r != M_SEARCH)
             push(L_LIST, ops[r], "", "", tr(MENU[r]));
         else { /* peq_ui.c's T9 edit over the title, its keyboard open */

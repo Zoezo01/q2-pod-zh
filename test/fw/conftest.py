@@ -20,6 +20,7 @@ import traceback
 import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))  # tools.langpack, as test_language imports it
 import host  # noqa: E402
 
 ROOT = host.ROOT
@@ -122,6 +123,7 @@ def pseudo_lines(table):
     """(key, English, text) as language.c keeps them, in its order (by_key: strcmp of the key, then the English):
     a .tsv's lines, unescaped, or each of Q2 Pod's own texts with a pseudo translation."""
     sys.path.insert(0, str(ROOT/'tools'))
+    sys.path.insert(0, str(ROOT))  # tools.langpack too, as test_language imports it
     import langpack
     if table.endswith('.tsv'):
         def undo(s):

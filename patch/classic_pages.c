@@ -58,7 +58,7 @@ void kb_paint_key(widget_t *w, canvas_t *canvas) {
     for (int i = 0; i < 2; ++i) round_row(canvas, &down, 6, kh - 2 + i, 0xcc282b30u);
     paint_round_rows(canvas, &r, action ? &enter : fn ? &function : &plain, 6);
     unsigned own[32];
-    if (action || space) wide_text(own, 32, action ? tr("Done") : tr("space"));
+    if (action || space) wide_text(own, 32, action ? "完成" : "空格");
     const unsigned *s = action || space ? own : widget_get_text(w);
     if (s && *s) {
         unsigned n = wide_len(s);
@@ -464,8 +464,8 @@ static const stops_t slider_band = { 8,
  * its word white (the ink on a bright fill), the other's in the half's ink. */
 static void slider_switch_flat(canvas_t *canvas, widget_t *sw) {
     unsigned off[32], on[32];
-    wide_text(off, 32, tr("Off"));
-    wide_text(on, 32, tr("On"));
+    wide_text(off, 32, "关");
+    wide_text(on, 32, "开");
     int light = ipod_light();
     unsigned lit = flat_on(), ink = 0xff000000u | flat_ink[light];
     unsigned over = bright_tone(lit) ? 0xff000000u | flat_ink[1] : 0xffffffffu;

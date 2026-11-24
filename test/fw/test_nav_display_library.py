@@ -224,7 +224,8 @@ def button_of(view, title):  # title 传中文，如 '主题'
     """The button of view's row titled title (its text up to any ': ')."""
     for item in view.children:
         for label in item.labels():
-            if label.name != '_setting_value' and label.text.split(': ')[0] == title:  # 标题已是中文
+            if label.name != '_setting_value' and (label.text.split('：')[0] if '：' in label.text
+                                                    else label.text.split(': ')[0]) == title:  # 标题已是中文
                 return label.parent
     raise KeyError(title)
 
