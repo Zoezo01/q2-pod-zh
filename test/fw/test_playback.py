@@ -871,9 +871,8 @@ def test_stocks_delete_of_the_last_row_while_it_plays(fw, player, key):
 
 
 def test_a_pick_after_deleting_the_playing_last_row_plays_on(fw, player):
-    """View Queue: the last row picked, then deleted while it plays, leaves stock's position past the queue. The
-    cursor stays inside the order at its end: Next ends the queue there, as at its own end, and a pick of an
-    earlier row plays the rows after it."""
+    """The cursor stays inside the order after the playing last row is deleted: Next ends the queue, and a pick
+    plays the rows after it."""
     start = fw.fn('ringnav_start_queue', C.c_int, C.c_int)
     album(player, 4)
     start(3)
@@ -899,9 +898,11 @@ def test_deletes_after_the_playing_last_row_keep_the_cursor_inside_the_order(fw,
         delete(player, row)
         fw.fn('playback_poll', None)()
         assert player.s.cursor < player.s.n
+    assert player.pending() == [1]
     start(1)
     player.mcl.pos = 1
     assert player.run(4) == []
+    assert player.pending() == [] and player.s.cursor == 1
 
 
 def test_stocks_delete_off_the_ui_thread_waits_for_its_pass(fw, player):
