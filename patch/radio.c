@@ -138,12 +138,6 @@ void url_escape(const char *s, char *out, unsigned n) {
 }
 
 #ifndef PEQ_HOST
-/* A USB DAC's volume is in software, hciplayer's as Bluetooth's, only when the USB volume is
- * variable (g_usbvol_mode) and the DAC has no volume control of its own: mclUsbAudioSetVol then
- * finds none (USB_MIXER -2) and tells hciplayer {mcl-softvolflag\1}. Otherwise the DAC applies it.
- */
-static int usb_soft(void) { return g_usbvol_mode && I(USB_MIXER, 0) == -2; }
-
 /* The output in use for q2video (radio_start), librespot's sink (spotify.c) and a card game's
  * sound (addon.c): 0 for the headphone DAC, which keeps the volume set. Bluetooth's is hciplayer's
  * soft volume, so the helper gets g_volume in vol (5 bytes) to apply it the same way, on
@@ -152,7 +146,11 @@ static int usb_soft(void) { return g_usbvol_mode && I(USB_MIXER, 0) == -2; }
  * its volume is soft, else "h" and the volume, which the helper leaves to the DAC. */
 const char *output_device(char *vol) {
     int way = mclGetOutputWay();
-    tk_snprintf(vol, 5, way == 2 && !usb_soft() ? "h%u" : "%u",
+    /* A USB DAC's volume is in software, hciplayer's as Bluetooth's, only when the USB volume is
+     * variable (g_usbvol_mode) and the DAC has no volume control of its own: mclUsbAudioSetVol then
+     * finds none (USB_MIXER -2) and tells hciplayer {mcl-softvolflag\1}. Otherwise the DAC applies
+     * it. */
+    tk_snprintf(vol, 5, way == 2 && !(g_usbvol_mode && I(USB_MIXER, 0) == -2) ? "h%u" : "%u",
                 way == 1 ? headset_gain() : g_volume);
     return way == 1 ? "plug:bluealsa" : way == 2 ? "usb" : 0;
 }
