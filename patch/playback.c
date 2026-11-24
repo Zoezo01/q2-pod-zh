@@ -418,12 +418,10 @@ typedef struct {
     unsigned mode;
 } folder_speed;
 
+static const char *track_path(int at);
 static int speed_folder(int at, char folder[1024]) {
-    void *q = queue();
-    if (!q || at < 0 || (unsigned)at >= deque_size(q)) return 0;
-    void *r = deque_at(q, (unsigned)at);
-    const char *p = r ? P(r, REC_PATH) : (void *)0;
-    if (!p || I(r, REC_TYPE) != 8 || *p != '/') return 0;
+    const char *p = track_path(at);
+    if (!p || *p != '/') return 0;
     const char *end = strrchr(p, '/');
     unsigned n = (unsigned)(end - p) + 1;
     if (n >= 1024 || !end[1]) return 0;
@@ -934,9 +932,7 @@ static void play_now(unsigned next) {
         s.order[i] = t;
         --s.cursor;
     } else if (i > s.cursor && i < s.n) {
-        entry t = s.order[i];
-        for (; i > s.cursor + 1; --i) s.order[i] = s.order[i - 1];
-        s.order[i] = t;
+        move_back(i, s.cursor + 1);
     }
     s.seen[next] = 0;
     s.dirty = 1; /* the order changed: saved at once (playback_poll) */
@@ -1721,9 +1717,7 @@ int ringnav_memory(void *out) {
             }
             for (unsigned j = 0; j < deque_size(rows); ++j) {
                 void *r = deque_at(rows, j);
-                if (I(r, REC_TYPE) == 8 && !strcmp(P(r, REC_PATH), path) &&
-                    (unsigned)I(r, REC_CUE_START) == id[1] &&
-                    (unsigned)I(r, REC_CUE_END) == id[2]) {
+                if (I(r, REC_TYPE) == 8 && !resume_cmp(r, path, id[1], id[2])) {
                     map[i] = deque_size(q);
                     _deque_push_back(q, r);
                     break;
