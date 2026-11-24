@@ -27,6 +27,7 @@
   - EQ: on **Import from SD /EQ**, a preset file's long name ends in an ellipsis and scrolls while it is selected.
   - EQ: **Reset to defaults** on the Advanced EQ page asks first. One press threw away band edits that were not saved.
   - EQ: **Import from SD /EQ** has a first row, **Import all**, that saves every preset file on the page shown, up to 128 at a press. A preset already saved under the same name is left as it is, and the title says how many were saved, already there or could not be read.
+  - Languages: a language pack's font that is damaged or cut short is not loaded. Such a font could crash the player when a Hebrew or Arabic title was drawn.
 - **1.9.1**:
   - Standby: going into Standby gives the card up to 2 seconds to finish and unmount before its power is cut, where it used to cut it at once with files still open, which could leave the card marked as not properly unmounted and lose what was still being written.
   - EQ: in **Advanced**, drag a band up or down on the curve to set its gain, as you drag Simple's sliders. Touch the ring of a band that's on. Choose **Apply changes** to hear it.

@@ -350,7 +350,9 @@ static void refresh(lang_find_t *f, const char *dst, unsigned max) {
     unsigned a = 0;
     lang_apps(file_in, f);
     char *card = *f->file ? read_all(f->file, max, &a) : 0;
-    if (card && !file_holds(dst, card, a, max)) copy_buf(dst, card, a);
+    int font = !strcmp(dst, LANG_FONT);
+    if (card && !(font && !sfnt_whole((unsigned char *)card, a)) && !file_holds(dst, card, a, max))
+        copy_buf(dst, card, a);
     free(card);
 }
 

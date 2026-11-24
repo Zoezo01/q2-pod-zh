@@ -12,6 +12,31 @@ langpack = importlib.import_module('tools.langpack')
 COPY = '/mnt/data/q2-lang-de.tsv'
 
 
+TABLES = [('cmap', 12), ('head', 54), ('hhea', 36), ('hmtx', 4), ('loca', 4), ('glyf', 4), ('maxp', 32)]
+
+
+def sfnt(version=b'\0\1\0\0', tables=TABLES, n=None, count=1):
+    """A font the check takes, as small as it goes: a directory of (tag, length) tables laid one after the other,
+    or (tag, offset, length) where given; the first cmap says count records; n pads or cuts the bytes."""
+    at = 12 + 16 * len(tables)
+    recs = []
+    for t in tables:
+        if len(t) == 2:
+            t = (t[0], at, t[1])
+            at += t[2]
+        recs.append(t)
+    d = bytearray(version + struct.pack('>H', len(recs)) + b'\0' * 6)
+    for tag, off, ln in recs:
+        d += tag.encode().ljust(4) + b'\0' * 4 + struct.pack('>II', off, ln)
+    end = max([o + ln for _, o, ln in recs] + [0])
+    d += b'\0' * ((end if n is None else min(end, n)) - len(d))  # never past n: a table can claim 4 GB
+    for tag, off, ln in recs:
+        if tag == 'cmap' and off + 4 <= len(d):
+            d[off + 2:off + 4] = struct.pack('>H', count)
+            break
+    return bytes(d) if n is None else bytes(d[:n]) + b'\0' * max(0, n - len(d))
+
+
 def lines(*rows, name='Deutsch'):
     return ('# ' + name + '\n' + ''.join('\t'.join(r) + '\n' for r in rows)).encode()
 
@@ -296,11 +321,11 @@ def test_a_failed_copy_says_so_and_keeps_the_language(fw, picking):
 def test_sync_copies_a_packs_font_in_any_language(fw, lang):
     Config(fw)  # English: right-to-left titles want it all the same
     lang.pack('langs', {})
-    lang.files['/mnt/mmc/.langs/lang/font.ttf'] = b'font 2'
+    lang.files['/mnt/mmc/.langs/lang/font.ttf'] = sfnt() + b'2'
     lang.dirs['/mnt/mmc/.langs/lang'].append('font.ttf')
-    lang.files['/mnt/data/q2-font.ttf'] = b'font 1'
+    lang.files['/mnt/data/q2-font.ttf'] = sfnt() + b'1'
     fw.fn('language_sync', None)()
-    assert lang.files['/mnt/data/q2-font.ttf'] == b'font 2' and lang.dirs['/mnt/mmc/.langs/lang'] == ['font.ttf']
+    assert lang.files['/mnt/data/q2-font.ttf'] == sfnt() + b'2' and lang.dirs['/mnt/mmc/.langs/lang'] == ['font.ttf']
     lang.dirs['/mnt/data'] = []
     fw.fn('language_removing', None, C.c_char_p)(b'.langs')
     assert '/mnt/data/q2-font.ttf' not in lang.files
@@ -326,8 +351,8 @@ def test_a_packs_font_draws_what_no_face_has(fw, lang, copied):
     got, made = [], []
     stock, pack = font(got, 'stock'), font(got, 'pack')
     if copied:
-        lang.files['/mnt/data/q2-font.ttf'] = b'TTF'
-    fw.mock('font_stb_create', lambda name, b, *_: made.append((C.string_at(name), C.string_at(b, 3))) or C.addressof(pack))
+        lang.files['/mnt/data/q2-font.ttf'] = sfnt()
+    fw.mock('font_stb_create', lambda name, b, *_: made.append((C.string_at(name), C.string_at(b, 4))) or C.addressof(pack))
     glyph = fw.fn('ringnav_font_glyph', C.c_int, C.c_void_p, C.c_uint, C.c_uint, C.c_void_p)
     g = C.create_string_buffer(32)
     assert glyph(C.addressof(stock), ord('A'), 20, g) == 0 and made == []  # Latin: the font's, nothing read
@@ -335,8 +360,47 @@ def test_a_packs_font_draws_what_no_face_has(fw, lang, copied):
         assert glyph(C.addressof(stock), c, size, g) == 0
     to = 'pack' if copied else 'stock'
     assert got == [('stock', 65, 20), (to, 0x627, 20), (to, 0xfefb, 18), (to, 0x5d0, 20), (to, 0x200f, 20)]
-    assert made == ([(b'q2-font', b'TTF')] if copied else [])  # read at the first, once
+    assert made == ([(b'q2-font', b'\0\1\0\0')] if copied else [])  # read at the first, once
     assert glyph(None, 65, 20, g) == glyph(C.addressof(stock), 65, 20, None) == 0x10  # stock's bad params
+
+
+SHORT = b'\0\1\0\0\0\x05' + b'\0' * 6
+BAD_FONTS = [
+    b'', SHORT, sfnt()[:20], sfnt()[:14], sfnt(b'ttcf'), sfnt(b'abcd'),
+    sfnt(tables=[('cmap', 0xfffffff0, 0x20)] + TABLES[1:], n=len(sfnt())),  # offset + length wraps to inside the file
+    sfnt(tables=[('cmap', 0, 28), ('head', 0, 0)])[:43],  # only the directory's own bound refuses it
+    sfnt(tables=[(t, 108, 0) for t, _ in TABLES[:6]], n=108),  # each at the end, empty
+    sfnt(tables=[('cmap', 4)] + TABLES[1:], count=0xffff),
+    sfnt(tables=[('cmap', 12)] + TABLES[1:], count=2),
+    sfnt(b'OTTO', tables=TABLES + [('CFF ', 4)]), sfnt(tables=[t for t in TABLES if t[0] != 'glyf'] + [('CFF ', 4)]),
+    sfnt(tables=[('glyf', 0, 4)] + [t for t in TABLES if t[0] != 'glyf'] + [('CFF ', 4)]),
+    sfnt(tables=[('head', 53)] + TABLES[:1] + TABLES[2:]), sfnt(tables=TABLES[:2] + [('hhea', 35)] + TABLES[3:]),
+    sfnt(tables=TABLES[:6] + [('maxp', 5)]), sfnt(tables=[('cmap', 3)] + TABLES[1:]),
+] + [sfnt(tables=[t for t in TABLES if t[0] != tag]) for tag in ('cmap', 'head', 'hhea', 'hmtx', 'loca', 'glyf')]
+
+
+@pytest.mark.parametrize('bad', BAD_FONTS, ids=range(len(BAD_FONTS)))
+def test_a_flash_font_that_is_cut_short_never_reaches_the_loader_and_goes(fw, lang, bad):
+    made = []
+    lang.files['/mnt/data/q2-font.ttf'] = bad
+    fw.mock('font_stb_create', lambda name, b, *_: made.append(name) or 0)
+    stock = font([], 'stock')
+    g = C.create_string_buffer(32)
+    fw.fn('ringnav_font_glyph', C.c_int, C.c_void_p, C.c_uint, C.c_uint, C.c_void_p)(C.addressof(stock), 0x5d0, 20, g)
+    assert made == [] and '/mnt/data/q2-font.ttf' not in lang.files
+
+
+@pytest.mark.parametrize('bad', BAD_FONTS, ids=range(len(BAD_FONTS)))
+def test_sync_never_copies_a_font_that_is_cut_short(fw, lang, bad):
+    Config(fw)
+    lang.pack('langs', {})
+    lang.files['/mnt/mmc/.langs/lang/font.ttf'] = bad
+    lang.dirs['/mnt/mmc/.langs/lang'].append('font.ttf')
+    fw.fn('language_sync', None)()
+    assert '/mnt/data/q2-font.ttf' not in lang.files
+    lang.files['/mnt/data/q2-font.ttf'] = sfnt() + b'1'  # the flash copy stays
+    fw.fn('language_sync', None)()
+    assert lang.files['/mnt/data/q2-font.ttf'] == sfnt() + b'1'
 
 
 def test_a_cut_face_takes_a_letter_it_lacks_from_stock_s(fw):

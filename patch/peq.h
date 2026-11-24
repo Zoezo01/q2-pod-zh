@@ -361,6 +361,7 @@ void *song_list(void);                              /* coverflow.c: an empty stS
 long file_size(const char *path);                   /* coverflow.c: -1 when it can't be opened */
 int picture_size(const char *path, int *w, int *h); /* coverflow.c */
 void *read_all(const char *path, unsigned max, unsigned *size); /* scrobble.c */
+int sfnt_whole(const unsigned char *b, unsigned n);             /* script.c */
 int visual(widget_t *s, int n, int *c, int *frac);
 int thumb(const char *src, const char *dst, int w, int h);
 extern volatile unsigned ff_kills; /* coverflow.c: ffmpeg runs killed or never started */
