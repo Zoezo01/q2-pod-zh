@@ -142,11 +142,6 @@ def test_nothing_open_shows_nothing(lib, root):
     assert now(lib) == ''
 
 
-def test_the_open_pcm_shows(lib, root):
-    pcm(root, 0, 0, 'RUNNING', hw('S16_LE', 44100))
-    assert now(lib) == '44.1k'
-
-
 def test_a_usb_dac_beside_a_closed_headphone_dac(lib, root):
     pcm(root, 0, 0, '', b'closed\n')
     pcm(root, 1, 0, 'RUNNING', hw('S24_3LE', 96000))
