@@ -185,9 +185,10 @@ void rate_fill_paint(widget_t *w, canvas_t *canvas) {
     unsigned bitmap[64]; /* bitmap_t: width @0, height @4 */
     if (widget_load_image(w, image, bitmap)) return;
     int bw = (int)bitmap[0], bh = (int)bitmap[1];
-    /* n/5 of the heart's area, not its height: the narrow tip holds little, so n + 2 sevenths of
-     * its rows (play_fav's 21: 9, 12, 15, 18, measured), each level clear of the outline */
-    int k = rows * (n + 2) / 7, y = top + rows - k;
+    /* by area, not height: the narrow tip holds little, so n + 3 ninths of its rows (play_fav's 21:
+     * 9, 11, 14, 16), 1 clear of the outline at the tip and 4 leaving a gap the eye sees at the top
+     */
+    int k = rows * (n + 3) / 9, y = top + rows - k;
     int src[4] = { 0, y, bw, k },
         dst[4] = { (I(w, W_W) - bw) / 2, (I(w, W_H) - bh) / 2 + y, bw, k };
     canvas_draw_image(canvas, bitmap, src, dst);
