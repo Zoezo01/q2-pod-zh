@@ -6403,7 +6403,7 @@ int ringnav_np_info(widget_t *win) {
 }
 
 /* The Display sub-page the next display_page is to be (DISPLAY_*), 0 for Display itself. */
-enum { DISPLAY_APPEARANCE = 1, DISPLAY_COVERFLOW, DISPLAY_CONTROLS, DISPLAY_THEMES };
+enum { DISPLAY_APPEARANCE = 1, DISPLAY_COVERFLOW, DISPLAY_CONTROLS, DISPLAY_THEMES, DISPLAY_HIDE };
 static int display_sub __attribute__((section(".scratch")));
 static int display_open(void *ctx, event_t *event) {
     display_sub = (int)(long)ctx;
@@ -6436,8 +6436,12 @@ static void setting_row(widget_t *view, int i) {
  * and have no chevron, since they change in place. ponytail: stock's page opened over itself; its
  * own rows' state is never touched on a sub-page. */
 int ringnav_display(widget_t *win, void *ctx) {
-    static const char *const titles[] = { 0, N_("Appearance"), N_("Cover Flow"), N_("Controls"),
-                                          N_("Theme") },
+    static const char *const titles[] = { 0,
+                                          N_("Appearance"),
+                                          N_("Cover Flow"),
+                                          N_("Controls"),
+                                          N_("Theme"),
+                                          N_("Hide") },
                              *const sub_icons[] = { 0, "system_display", "playset_covermode",
                                                     "playset_folderjump" };
     static const char *const cf_icons[] = { "playset_covermode", "playset_covermode",
@@ -6492,10 +6496,15 @@ int ringnav_display(widget_t *win, void *ctx) {
         const theme_t *T = theme();
         setting_row(view, SETTING_THEME);
         for (int k = 0; k < T->n_opts; ++k) setting_row(view, T->opts[k].setting);
+        widget_set_text_utf8(
+            list_row_into(view, "system_display", display_open, (void *)DISPLAY_HIDE), tr("Hide"));
+        pod_rows(win, "scroll_view_display", POD_SAMPLERATE, 1, home_icons);
+        return result;
+    }
+    if (sub == DISPLAY_HIDE) { /* Appearance's Hide page: Home's and the Library's hides */
         pod_rows(win, "scroll_view_display", POD_HIDE_STREAM, 2, home_icons);
         pod_rows(win, "scroll_view_display", POD_HIDE_APPS, 2, home_icons);
         pod_rows(win, "scroll_view_display", POD_HIDE_STORE, 2, home_icons);
-        pod_rows(win, "scroll_view_display", POD_SAMPLERATE, 1, home_icons);
         return result;
     }
     wheel_row(list_row_into(view, "system_display", xfade_open, (void *)1));
