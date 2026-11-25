@@ -181,11 +181,9 @@ void light_apply(const int *tm) {
 /* accent()'s first call: the [IPOD] keys. Its own function, so accent()'s every later call (each
  * colour Light Mode flips asks twice: ipod_light(), scheme()) skips this frame. */
 __attribute__((noinline)) static void settings_read(void) {
-    for (int i = 0; i < 4; ++i)
-        *setting_values[i] = config_value("IPOD", setting_keys[i], setting_counts[i], 0);
     /* Shortcut has no key, its default is none (see shortcut()); Rounded's is Round under Minimal;
      * Light's is dark, 2 Auto; Time in Title's is the clock; the rest are off unless chosen. */
-    for (int i = 4; i < SETTING_OWN; ++i)
+    for (int i = 0; i < SETTING_OWN; ++i)
         *setting_values[i] = config_value("IPOD", setting_keys[i], setting_counts[i],
                                           i == 4   ? SETTING_N_SHORTCUT
                                           : i == 5 ? !st.theme
