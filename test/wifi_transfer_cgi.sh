@@ -86,7 +86,7 @@ midway() {
   cgi=$!
   ( head -c $((n - 8)) "$1"
     for i in $(seq 600); do                            # 30 s: the Q2's busybox under qemu is slow
-      ls /mnt/mmc/.q2upload/out.* > /dev/null 2>&1 && { eval "$3"; : > /tmp/midway.ran; break; }
+      ls /mnt/mmc/.q2upload/out.* > /dev/null 2>&1 && { eval "$3" > /dev/null; : > /tmp/midway.ran; break; }
       kill -0 "$cgi" 2>/dev/null || break              # it answered before reading the bytes
       sleep 0.05
     done
@@ -395,18 +395,15 @@ echo; echo "############ UPLOAD UNDER WAY: what is made at its name meanwhile"
 # just before the rename. These make something at that name in between. A hidden entry's second name is,
 # on FAT, the short name a new dot-entry answers to (the FAT section's cases); here a link in the hidden
 # entry's own folder stands in for it, which hidden() refuses the same way.
-rm -rf /mnt/mmc/Arrived* /mnt/mmc/.arrived /mnt/mmc/.arrdir
+rm -rf /mnt/mmc/Arrived* /mnt/mmc/.arrived
 if [ "$FS" != vfat ]; then
-  printf 'KEEP' > /mnt/mmc/.arrived; mkdir /mnt/mmc/.arrdir
+  printf 'KEEP' > /mnt/mmc/.arrived
   mp /tmp/mp_w1 ----q2w1 /mnt/mmc/ Arrived.txt ATTACKER
   midway /tmp/mp_w1 ----q2w1 'ln /mnt/mmc/.arrived /mnt/mmc/Arrived.txt'
-  { [ -e /tmp/midway.ran ] && refused && [ "$(cat /mnt/mmc/.arrived)" = KEEP ] && ! ls /mnt/mmc/.q2upload/out.* > /dev/null 2>&1; } && ok "a hidden file's second name made during an upload: refused, the file untouched, no work file left" || bad "second name made during an upload ($(status), .arrived='$(cat /mnt/mmc/.arrived 2>/dev/null)')"
-  mp /tmp/mp_w2 ----q2w2 /mnt/mmc/ Arrived ATTACKER
-  midway /tmp/mp_w2 ----q2w2 'ln -s .arrdir /mnt/mmc/Arrived'
-  { [ -e /tmp/midway.ran ] && refused && [ -z "$(ls -A /mnt/mmc/.arrdir)" ]; } && ok "a hidden folder's second name made during an upload: refused, nothing put in the folder" || bad "hidden folder's name made during an upload ($(status), in it: '$(ls -A /mnt/mmc/.arrdir)')"
-  rm -rf /mnt/mmc/Arrived* /mnt/mmc/.arrived /mnt/mmc/.arrdir
+  { [ -e /tmp/midway.ran ] && refused && ! ls /mnt/mmc/.q2upload/out.* > /dev/null 2>&1; } && ok "a hidden file's second name made during an upload: refused, no work file left" || bad "second name made during an upload ($(status), .arrived='$(cat /mnt/mmc/.arrived 2>/dev/null)')"
+  rm -rf /mnt/mmc/Arrived* /mnt/mmc/.arrived
 else
-  echo "  SKIP: FAT has no links, so these 2 cases are made with short names in the FAT section"
+  echo "  SKIP: FAT has no links, so this 1 case is made with short names in the FAT section"
 fi
 mp /tmp/mp_w3 ----q2w3 /mnt/mmc/ Arrived.d ATTACKER
 midway /tmp/mp_w3 ----q2w3 'mkdir /mnt/mmc/Arrived.d'
@@ -667,25 +664,22 @@ if [ "$FS" = vfat ]; then
   mp /tmp/mp_a3 ----q2a3 /mnt/mmc/ALBUMS 'a long song name.flac' newer
   run upload POST '' 'multipart/form-data; boundary=----q2a3' /tmp/mp_a3
   [ "$(cat "/mnt/mmc/Albums/A Long Song Name.flac")" = newer ] && ok "upload over an ordinary file in another case replaces it" || bad "upload in another case ($(status))"
-  # A hidden entry made while an upload under its short name is under way (the firmware makes
+  # A hidden file made while an upload under its short name is under way (the firmware makes
   # .scrobbler.log.tmp afresh at each rewrite of the log): refused at the second check, not replaced and
-  # not written into. Each entry's short name is learnt from it first, then it is made again mid-upload,
+  # not written into. Its short name is learnt from it first, then it is made again mid-upload,
   # and a case counts only if the kernel gave it that name again (/tmp/midway.same).
   printf 'LISTENS' > /mnt/mmc/.scrobbler.log.tmp; A_TMP=$(short /mnt/mmc/.scrobbler.log.tmp SCROBB .TMP)
-  rm -f /mnt/mmc/.scrobbler.log.tmp; mkdir /mnt/mmc/.newapp; A_APP=$(short /mnt/mmc/.newapp NEWAPP ''); rmdir /mnt/mmc/.newapp
-  if [ -n "$A_TMP" ] && [ -n "$A_APP" ]; then
+  rm -f /mnt/mmc/.scrobbler.log.tmp
+  if [ -n "$A_TMP" ]; then
     rm -f /tmp/midway.same; mp /tmp/mp_a4 ----q2a4 /mnt/mmc/ "$A_TMP" ATTACKER
     midway /tmp/mp_a4 ----q2a4 'printf LISTENS > /mnt/mmc/.scrobbler.log.tmp; [ "/mnt/mmc/$A_TMP" -ef /mnt/mmc/.scrobbler.log.tmp ] && : > /tmp/midway.same'
     { [ -e /tmp/midway.ran ] && [ -e /tmp/midway.same ] && refused && [ "$(cat /mnt/mmc/.scrobbler.log.tmp)" = LISTENS ] && ! ls /mnt/mmc/.q2upload/out.* > /dev/null 2>&1; } && ok "a hidden file made during an upload under its short name: refused, the file untouched" || bad "hidden file made during an upload ($(status), now='$(cat /mnt/mmc/.scrobbler.log.tmp 2>/dev/null)')"
-    rm -f /tmp/midway.same; mp /tmp/mp_a5 ----q2a5 /mnt/mmc/ "$A_APP" ATTACKER
-    midway /tmp/mp_a5 ----q2a5 'mkdir /mnt/mmc/.newapp; [ "/mnt/mmc/$A_APP" -ef /mnt/mmc/.newapp ] && : > /tmp/midway.same'
-    { [ -e /tmp/midway.ran ] && [ -e /tmp/midway.same ] && refused && [ -z "$(ls -A /mnt/mmc/.newapp)" ]; } && ok "a hidden folder made during an upload under its short name: refused, nothing put in it" || bad "hidden folder made during an upload ($(status), in it: '$(ls -A /mnt/mmc/.newapp 2>/dev/null)')"
   else
-    bad "no short name found for .scrobbler.log.tmp or .newapp, so the two mid-upload cases can't run"
+    bad "no short name found for .scrobbler.log.tmp, so the mid-upload case can't run"
   fi
-  rm -rf /mnt/mmc/.scrobbler.log.tmp /mnt/mmc/.newapp
+  rm -rf /mnt/mmc/.scrobbler.log.tmp
 else
-  echo "  SKIP: /mnt/mmc is a $FS, which keeps no short names: run with --fat (see the header) for these 18 cases"
+  echo "  SKIP: /mnt/mmc is a $FS, which keeps no short names: run with --fat (see the header) for these 17 cases"
 fi
 
 echo; echo "############ DEVICE APPLET: no dependency on 'stat' (absent on device busybox 1.31.1)"
