@@ -158,7 +158,7 @@ HOOKS = {
     'toolsIntoStandby': (0x5d1110, 'ringnav_standby', 'standby'),
     # Standby's card driver reload: no removed and inserted toasts on the wake
     'check_cardmount_status': (0x4f39a4, 'ringnav_cardmount', 'cardmount'),
-    # The Standby page's row click, which has no symbol: turning Auto-shutdown on asks first (system.c)
+    # The Standby page's row click, which has no symbol: turning Auto-standby or Auto-shutdown on asks first (system.c)
     'standby_row': (0x4d1e48, 'ringnav_standby_row', 'standby_row'),
     # Every settings save: one at a time, on a copy that replaces the file by rename (system.c)
     'toolsWriteConfig': (0x5d0284, 'ringnav_config_write', 'config_write'),
@@ -1794,6 +1794,7 @@ GLOBALS = ['tidal_albuminfo_thread_run', 'tidal_collection_thread_run',  # 2: a 
            'g_power_longkey', 'g_ingore_bootkey_flag', 'g_equalizer_flag', 'g_navbar_status', 'g_playcover_type',
            'g_keytone_flag', 'g_folder_layer', 'g_otg_status', 'g_delete_flag', 'g_volume', 'g_maxvolume',
            'g_sleepflag',  # the Sleep Timer's switch: 1 while its count (g_sleep_time) runs (sleep_row.c)
+           'g_standbyflag',  # Auto-standby's switch (SYSSET STANDBYMODE): 1 on (system.c ringnav_standby_row)
            'g_po_status', 'g_bal_status',  # 3.5 mm and 4.4 mm jacks: 1 plugged (check_headset_status)
            # one-shot flags Now Playing's update consumes: a track change, a forced refresh, the cover parsed (ringnav_np_tick)
            'g_autochange_flag', 'g_forcerefresh_flag', 'g_playcover_finishflag',
