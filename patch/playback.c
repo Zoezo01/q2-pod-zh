@@ -363,7 +363,7 @@ void wheel_sample(int *ts, int ret, char *info) {
     d = d < -100 ? d + 200 : d > 100 ? d - 200 : d;
     d *= WHEEL_FINE;
     wh_last = ts[0];
-    if (wheel_raw) { /* games.c's Vortex reads the travel itself; nothing is queued for a menu */
+    if (wheel_raw) { /* games.c's Breakout reads the travel itself; nothing is queued for a menu */
         __sync_fetch_and_add(&wheel_travel, d / WHEEL_FINE);
         wh_acc = 0;
         /* Cover Flow's thumb (2): its travel counts as ticks towards Return's stop */

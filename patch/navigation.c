@@ -8702,8 +8702,8 @@ static int now_playing(void) {
 
 /* Now Playing's visualizer repainting, its album marquee moving or its lyrics gliding: their 40 and
  * 50 ms timers and the glide's steps would run late on an idle pass. Its progress and the lyrics'
- * follow tick every 250 ms and keep up. A game's 33 ms frame timer too: Vortex's raw wheel posts no
- * input to stamp, nor does a card game's, whose travel goes once a pass. */
+ * follow tick every 250 ms and keep up. A game's 33 ms frame timer too: Breakout's raw wheel posts
+ * no input to stamp, nor does a card game's, whose travel goes once a pass. */
 static int np_animating(void) {
     return games_live() || addon_game_front() ||
            (now_playing() && (visualizer_live() || st.lyric_glide ||

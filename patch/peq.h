@@ -534,7 +534,7 @@ void tidal_all(int press, char *out, unsigned size), tidal_poll(void), tidal_all
 #define APPS_MAX 64
 int addon_scan(void), addon_open(void *ctx, event_t *event), addon_hold(widget_t *top);
 int addon_games_last(void); /* the card's games as the last addon_scan found them */
-#define GAMES_BUILTIN 4     /* games.c's Sudoku, Vortex, Solitaire and Snake */
+#define GAMES_BUILTIN 4     /* games.c's Sudoku, Breakout, Solitaire and Snake */
 const char *addon_name(int a), *addon_id(int a), *addon_icon(int a);
 int addon_slot(int a);
 const char *addon_slot_id(int i); /* slot i's app's id while it has a row anywhere, else 0 */

@@ -1,4 +1,4 @@
-"""games.c on its device path: Sudoku's rules, Vortex's physics, Klondike's legality, Snake, keys and saves."""
+"""games.c on its device path: Sudoku's rules, Breakout's physics, Klondike's legality, Snake, keys and saves."""
 import ctypes as C
 import itertools
 import math
@@ -14,7 +14,7 @@ from conftest import O, Card, Config, Dirent, block, channels_low_first as rgb, 
 SEED = 2166136261
 SUD, BEST, SOL, SNK = 0x31445553, 0x31585456, 0x314c4f53, 0x314b4e53
 CENTER, PREV, NEXT, PLAY, RETURN, BACK_BTN, FWD_BTN = 218, 172, 173, 171, 170, 222, 223
-CHOOSER, SUDOKU, VORTEX, SOLITAIRE, SNAKE = range(5)
+CHOOSER, SUDOKU, BREAKOUT, SOLITAIRE, SNAKE = range(5)
 AIM, RUNNING, OVER = range(3)
 RUN, HELD, MENU = range(3)
 UP = 64
@@ -29,7 +29,7 @@ class Sudoku(C.Structure):
     _fields_ = [('magic', C.c_uint), ('cell', C.c_ubyte * 81), ('cur', C.c_ubyte), ('pad', C.c_ubyte * 2), ('sum', C.c_uint)]
 
 
-class Vortex(C.Structure):
+class Breakout(C.Structure):
     _fields_ = [*((k, C.c_int) for k in 'state lives level score pa x y vx vy'.split()),
                 ('brick', C.c_ushort * 3), ('pad', C.c_ushort)]
 
@@ -52,21 +52,21 @@ class Game(C.Structure):
     _fields_ = [*((k, C.c_void_p) for k in 'page list view sheet'.split()),
                 *((k, C.c_uint) for k in 'timer frame at acc'.split()),
                 *((k, C.c_int) for k in 'h screen target picking pick confirm paused choice carry dirty'.split()),
-                ('sud', Sudoku), ('vx', Vortex), ('best', Best), ('sol', Sol), ('save', C.c_uint), ('pop_at', C.c_uint),
+                ('sud', Sudoku), ('vx', Breakout), ('best', Best), ('sol', Sol), ('save', C.c_uint), ('pop_at', C.c_uint),
                 ('pop_ring', C.c_int), ('pop_seg', C.c_int), ('trail', (C.c_int * 2) * 4), ('record', C.c_int),
                 ('sn_best', Best), ('sn', Snake)]
 
 
 def test_structs_are_the_saves_sizes():
-    assert (C.sizeof(Sudoku), C.sizeof(Sol), C.sizeof(Best), C.sizeof(Vortex), C.sizeof(Snake)) == (92, 336, 12, 44, 816)
+    assert (C.sizeof(Sudoku), C.sizeof(Sol), C.sizeof(Best), C.sizeof(Breakout), C.sizeof(Snake)) == (92, 336, 12, 44, 816)
 
 
 def api(fw):
     ptr, i, u = C.c_void_p, C.c_int, C.c_uint
     fns = {'games_ok': (i, ptr, u, u), 'games_seal': (None, ptr, u, u), 'hash_bytes': (u, u, ptr, u),
            'sud_puzzle': (None, i, ptr), 'sud_new': (None, ptr), 'sud_set': (i, ptr, i, i),
-           'sud_conflict': (i, ptr, i), 'sud_done': (i, ptr), 'vortex_new': (None, ptr), 'vortex_launch': (None, ptr),
-           'vortex_step': (None, ptr, i), 'sol_new': (None, ptr), 'sol_draw': (i, ptr), 'sol_move': (i, ptr, i, i),
+           'sud_conflict': (i, ptr, i), 'sud_done': (i, ptr), 'breakout_new': (None, ptr), 'breakout_launch': (None, ptr),
+           'breakout_step': (None, ptr, i), 'sol_new': (None, ptr), 'sol_draw': (i, ptr), 'sol_move': (i, ptr, i, i),
            'sol_home': (i, ptr, i), 'sol_won': (i, ptr), 'sol_finish': (None, ptr), 'snake_new': (None, ptr),
            'snake_turn': (None, ptr, i), 'snake_ms': (i, ptr), 'snake_step': (i, ptr), 'games_live': (i,),
            'games_open': (i, ptr, ptr), 'games_key': (i, ptr, u), 'games__vsin': (i, i), 'games__vcos': (i, i),
@@ -305,7 +305,7 @@ def test_sud_started_is_an_entry_not_a_clue(fw):
     assert g.sud_started(r(s))
 
 
-# Vortex: integer sine, arctangent and square root
+# Breakout: integer sine, arctangent and square root
 
 def test_the_sine_table_is_a_quarter_of_sin(fw):
     table = fw.var('games__quarter', C.c_ushort * 257)
@@ -363,11 +363,11 @@ def test_radius_is_distance_in_256ths_of_a_pixel(fw):
     assert g.radius(150 << 16, 150 << 16) == math.isqrt(2 * (150 * 256) ** 2)
 
 
-# Vortex: the ball
+# Breakout: the ball
 
 def fresh(g, state=RUNNING):
-    v = Vortex()
-    g.vortex_new(r(v))
+    v = Breakout()
+    g.breakout_new(r(v))
     v.state = state
     return v
 
@@ -387,9 +387,9 @@ def off(a, b):
 
 def test_a_new_game(fw):
     g = api(fw)
-    v = Vortex()
+    v = Breakout()
     v.score, v.level, v.vx = 9, 9, 9
-    g.vortex_new(r(v))
+    g.breakout_new(r(v))
     assert (v.state, v.lives, v.level, v.score, v.pa, v.vx, v.vy) == (AIM, 3, 0, 0, 768, 0, 0)
     assert list(v.brick) == [0xffff] * 3
     assert abs(v.x) <= 1 << 8 and abs(v.y + (112 << 16)) <= 112  # the top, on the paddle's inside
@@ -398,7 +398,7 @@ def test_a_new_game(fw):
 @pytest.mark.parametrize('pa', (0, 256, 512, 768, 100, 1023))
 def test_the_ball_rests_6_px_inside_the_paddle(fw, pa):
     g = api(fw)
-    v = Vortex()
+    v = Breakout()
     v.pa = pa
     g.place(r(v))
     x, y = at(pa, R_PAD - 6)
@@ -408,7 +408,7 @@ def test_the_ball_rests_6_px_inside_the_paddle(fw, pa):
 @pytest.mark.parametrize('level, px_per_s', ((0, 120), (1, 135), (2, 150), (9, 255), (10, 270), (11, 270), (99, 270)))
 def test_each_level_is_15_px_a_second_faster_up_to_270(fw, level, px_per_s):
     g = api(fw)
-    v = Vortex()
+    v = Breakout()
     v.level = level
     for a in (0, 100, 256, 700):
         g.head(r(v), a)
@@ -420,7 +420,7 @@ def test_levels_cycle_their_layouts_and_aim_again(fw):
     g = api(fw)
     layouts = [[0xffff] * 3, [0x5555, 0xffff, 0xaaaa], [0x0f0f, 0xf0f0, 0xffff]]
     for level in range(7):
-        v = Vortex()
+        v = Breakout()
         v.level, v.state, v.pa = level, RUNNING, 512
         g.level(r(v))
         assert list(v.brick) == layouts[level % 3] and v.state == AIM
@@ -430,11 +430,11 @@ def test_levels_cycle_their_layouts_and_aim_again(fw):
 def test_the_paddle_turns_and_wraps_and_the_aimed_ball_follows(fw):
     g = api(fw)
     v = fresh(g, AIM)
-    g.vortex_step(r(v), 256)
+    g.breakout_step(r(v), 256)
     assert v.pa == 0 and abs(v.x - (112 << 16)) <= 224 and abs(v.y) <= 224
-    g.vortex_step(r(v), -1)
+    g.breakout_step(r(v), -1)
     assert v.pa == 1023
-    g.vortex_step(r(v), 2048 + 5)
+    g.breakout_step(r(v), 2048 + 5)
     assert v.pa == 4
 
 
@@ -442,17 +442,17 @@ def test_launch_heads_through_the_centre_only_from_aim(fw):
     g = api(fw)
     for pa in range(0, 1024, 37):
         v = fresh(g, AIM)
-        g.vortex_step(r(v), pa - 768)
-        g.vortex_launch(r(v))
+        g.breakout_step(r(v), pa - 768)
+        g.breakout_launch(r(v))
         assert v.state == RUNNING and abs(off(heading(v), pa + 512)) < 1
         assert v.vx * v.x + v.vy * v.y < 0
     v.state = OVER
     before = bytes(v)
-    g.vortex_launch(r(v))
+    g.breakout_launch(r(v))
     assert bytes(v) == before
     v.state = RUNNING
     before = bytes(v)
-    g.vortex_launch(r(v))  # a second press in flight changes nothing
+    g.breakout_launch(r(v))  # a second press in flight changes nothing
     assert bytes(v) == before
 
 
@@ -466,7 +466,7 @@ def test_a_brick_breaks_scores_and_reflects_off_its_radius(fw, ring):
         v.x, v.y = ox, oy = at(a, 40 + 12 * ring - 1)
         vx, vy = at(a + 40, 2)
         v.vx, v.vy = vx, vy
-        g.vortex_step(r(v), 0)
+        g.breakout_step(r(v), 0)
         assert v.brick[ring] == 0xffff & ~(1 << seg) and v.score == 10 * (3 - ring)
         assert (v.x, v.y) == (ox, oy)  # back where it was, so it never sits in a ring
         cx, cy = ox + vx, oy + vy
@@ -481,7 +481,7 @@ def test_a_ring_s_edges_are_40_and_76_px_out(fw):
     def enters(x):
         v = fresh(g)
         v.x, v.y, v.vx, v.vy = x - 1, 0, 1, 0
-        g.vortex_step(r(v), 0)
+        g.breakout_step(r(v), 0)
         return v.score
     assert enters(40 << 16) == 30  # the inner ring's first subpixel
     assert enters((40 << 16) - 256) == 0
@@ -496,7 +496,7 @@ def test_a_gap_lets_the_ball_through(fw):
     v = fresh(g)
     v.brick[0] = 0xffff & ~1
     v.x, v.y, v.vx, v.vy = (40 << 16) - 1, 1 << 10, 1 << 8, 0  # in segment 0
-    g.vortex_step(r(v), 0)
+    g.breakout_step(r(v), 0)
     assert v.score == 0 and v.brick[0] == 0xfffe and v.x == (40 << 16) + 255
 
 
@@ -506,7 +506,7 @@ def test_segments_turn_every_64_clockwise(fw):
         v = fresh(g)
         v.x, v.y = at(a + 0.4, 46)
         v.vx, v.vy = 0, 0
-        g.vortex_step(r(v), 0)
+        g.breakout_step(r(v), 0)
         assert v.brick[0] == 0xffff & ~(1 << seg), a
 
 
@@ -517,7 +517,7 @@ def test_the_last_brick_is_the_next_level(fw):
     v.score = 500
     v.pa = 10
     v.x, v.y = at(3 * 64 + 32, 69)
-    g.vortex_step(r(v), 0)
+    g.breakout_step(r(v), 0)
     assert (v.score, v.level, v.state) == (500 + 10 + 100, 1, AIM)
     assert list(v.brick) == [0x5555, 0xffff, 0xaaaa]
     assert abs(math.hypot(v.x, v.y) - (112 << 16)) < 1000 and v.lives == 3
@@ -533,7 +533,7 @@ def test_the_paddle_sends_it_back_turned_by_how_far_off_centre_it_hit(fw):
         assert g.radius(v.x, v.y) < EDGE <= g.radius(v.x + v.vx, v.y + v.vy)
         a = g.vangle(Y, X)
         v.pa = (a - d) & 1023
-        g.vortex_step(r(v), 0)
+        g.breakout_step(r(v), 0)
         assert v.state == RUNNING and v.lives == 3, d
         assert abs(off(heading(v), a + 512 + 2 * d)) < 1, d  # up to 45 degrees at an end
         assert abs(math.hypot(v.vx, v.vy) - V0) < 4
@@ -549,10 +549,10 @@ def test_past_the_paddle_s_ends_it_goes_through_and_a_life_goes(fw):
         v.vx, v.vy = at(300, 1)
         vx, vy = v.vx, v.vy
         v.pa = (g.vangle(v.y + vy >> 8, v.x + vx >> 8) - d) & 1023
-        g.vortex_step(r(v), 0)
+        g.breakout_step(r(v), 0)
         assert (v.vx, v.vy, v.lives, v.state) == (vx, vy, 3, RUNNING), d
         while v.state == RUNNING:
-            g.vortex_step(r(v), 0)
+            g.breakout_step(r(v), 0)
         assert v.lives == 2 and v.state == AIM and abs(math.hypot(v.x, v.y) - (112 << 16)) < 1000
 
 
@@ -561,7 +561,7 @@ def test_a_ball_that_was_already_outside_the_paddle_does_not_bounce_back(fw):
     v = fresh(g)
     v.pa, v.y = 0, 0
     v.x, v.vx = (R_PAD - 2) << 16, 1 << 16
-    g.vortex_step(r(v), 0)
+    g.breakout_step(r(v), 0)
     assert v.vx == 1 << 16 and v.x == (R_PAD - 1) << 16
 
 
@@ -570,10 +570,10 @@ def test_the_ball_is_lost_exactly_at_128_px(fw):
     v = fresh(g)
     v.pa, v.y = 512, 0  # away from the ball
     v.x, v.vx = (MISS << 16) - (1 << 8) - 1, 1
-    g.vortex_step(r(v), 0)
+    g.breakout_step(r(v), 0)
     assert v.x == (MISS << 16) - (1 << 8) and v.state == RUNNING  # 127.99 px
     v.vx = 1 << 8
-    g.vortex_step(r(v), 0)
+    g.breakout_step(r(v), 0)
     assert v.state == AIM and v.lives == 2
 
 
@@ -582,10 +582,10 @@ def test_the_last_life_ends_the_game_and_over_is_frozen(fw):
     v = fresh(g)
     v.lives, v.pa, v.y = 1, 512, 0
     v.x, v.vx = (MISS << 16) - 1, 2
-    g.vortex_step(r(v), 3)
+    g.breakout_step(r(v), 3)
     assert (v.state, v.lives) == (OVER, 0)
     x, y, pa = v.x, v.y, v.pa
-    g.vortex_step(r(v), 5)
+    g.breakout_step(r(v), 5)
     assert (v.x, v.y, v.state) == (x, y, OVER) and v.pa == pa + 5  # the paddle alone still turns
 
 
@@ -600,7 +600,7 @@ def test_a_bounce_inside_the_rings_never_lands_past_a_ring(fw):
             v.state = RUNNING
             v.level = 99
             g.head(r(v), rng.randrange(1024))
-        g.vortex_step(r(v), rng.randrange(-9, 10))
+        g.breakout_step(r(v), rng.randrange(-9, 10))
         assert g.radius(v.x, v.y) < (MISS + 5) * 256 and 0 <= v.pa < 1024
         assert all(0 <= b <= 0xffff for b in v.brick)
 
@@ -1106,7 +1106,7 @@ class Page:
         self.g.closed(None, None)
 
 
-SUDOKU_FILE, VORTEX_FILE, SOLITAIRE_FILE, SNAKE_FILE = (f'/mnt/data/ringnav-{n}' for n in 'sudoku vortex solitaire snake'.split())
+SUDOKU_FILE, BREAKOUT_FILE, SOLITAIRE_FILE, SNAKE_FILE = (f'/mnt/data/ringnav-{n}' for n in 'sudoku vortex solitaire snake'.split())
 
 
 def sealed(fw, struct, magic):
@@ -1127,7 +1127,7 @@ def test_games_live_is_a_frame_timer_running(fw):
     assert not g.games_live()  # no page
     p = Page(fw)
     assert not g.games_live()
-    p.go(VORTEX)
+    p.go(BREAKOUT)
     assert g.games_live()
     p.close()
     assert not g.games_live()
@@ -1201,7 +1201,7 @@ def test_a_solitaire_save_at_its_limits_stays(fw):
     assert p.s.sol.magic == SOL and p.s.sol.cur == 12 and p.s.sol.len[12] == 24
 
 
-@pytest.mark.parametrize('name, magic, attr', ((VORTEX_FILE, BEST, 'best'), (SNAKE_FILE, SNK, 'sn_best')))
+@pytest.mark.parametrize('name, magic, attr', ((BREAKOUT_FILE, BEST, 'best'), (SNAKE_FILE, SNK, 'sn_best')))
 def test_a_best_score_comes_back_and_a_bad_one_is_zero(fw, name, magic, attr):
     d = Best(score=4321)
     good = sealed(fw, d, magic)
@@ -1217,14 +1217,14 @@ def test_a_best_score_comes_back_and_a_bad_one_is_zero(fw, name, magic, attr):
 
 def test_each_game_s_save_carries_its_own_magic(fw):
     d = Best(score=99)
-    p = Page(fw, {VORTEX_FILE: sealed(fw, d, SNK)})
+    p = Page(fw, {BREAKOUT_FILE: sealed(fw, d, SNK)})
     assert p.s.best.score == 0
 
 
 def test_saves_hostile_sweep(fw):
     rng = random.Random(10)
     p = Page(fw)
-    magics = {SUDOKU_FILE: (SUD, 92), VORTEX_FILE: (BEST, 12), SNAKE_FILE: (SNK, 12), SOLITAIRE_FILE: (SOL, 336)}
+    magics = {SUDOKU_FILE: (SUD, 92), BREAKOUT_FILE: (BEST, 12), SNAKE_FILE: (SNK, 12), SOLITAIRE_FILE: (SOL, 336)}
     g = api(fw)
     valid = full_table(g)
     p.close()
@@ -1413,17 +1413,17 @@ def test_flush_writes_only_the_dirty_games(fw):
 
 def test_a_game_over_saves_a_record_only(fw):
     p = Page(fw)
-    p.go(VORTEX)
+    p.go(BREAKOUT)
     s = p.s
     s.best.score = 100
     s.vx.score, s.vx.state = 100, OVER
     game_over = fw.fn('games__game_over', None)
     game_over()
-    assert not s.record and VORTEX_FILE not in p.card.files
+    assert not s.record and BREAKOUT_FILE not in p.card.files
     s.vx.score = 101
     game_over()
     assert s.record and s.best.score == 101
-    raw = p.card.files[VORTEX_FILE]
+    raw = p.card.files[BREAKOUT_FILE]
     assert len(raw) == 12 and raw[:4] == BEST.to_bytes(4, 'little') and raw[4:8] == (101).to_bytes(4, 'little')
     assert raw[-4:] == fnv1a(raw[:-4]).to_bytes(4, 'little')
 
@@ -1434,7 +1434,7 @@ def test_snake_s_record_is_its_own_file(fw):
     s = p.s
     s.sn.score = 7
     fw.fn('games__game_over', None)()
-    assert s.sn_best.score == 7 and SNAKE_FILE in p.card.files and VORTEX_FILE not in p.card.files
+    assert s.sn_best.score == 7 and SNAKE_FILE in p.card.files and BREAKOUT_FILE not in p.card.files
 
 
 def creep(s):
@@ -1442,9 +1442,9 @@ def creep(s):
     s.vx.x, s.vx.y, s.vx.vx, s.vx.vy = 0, 0, 0, 1 << 8  # so y counts the steps
 
 
-def test_vortex_runs_60_steps_a_second_at_any_frame_rate(fw):
+def test_breakout_runs_60_steps_a_second_at_any_frame_rate(fw):
     p = Page(fw)
-    p.go(VORTEX)
+    p.go(BREAKOUT)
     s = p.s
     creep(s)
     for _ in range(100):
@@ -1455,7 +1455,7 @@ def test_vortex_runs_60_steps_a_second_at_any_frame_rate(fw):
 
 def test_a_frame_never_runs_more_than_4_steps_and_drops_the_backlog(fw):
     p = Page(fw)
-    p.go(VORTEX)
+    p.go(BREAKOUT)
     s = p.s
     creep(s)
     p.now = s.at + 1000
@@ -1468,7 +1468,7 @@ def test_a_frame_never_runs_more_than_4_steps_and_drops_the_backlog(fw):
 
 def test_the_paddle_loses_no_wheel_travel_across_frames(fw):
     p = Page(fw)
-    p.go(VORTEX)
+    p.go(BREAKOUT)
     s = p.s
     travel = fw.var('wheel_travel', C.c_int)
     pa = s.vx.pa
@@ -1483,7 +1483,7 @@ def test_the_paddle_loses_no_wheel_travel_across_frames(fw):
 
 def test_the_screen_off_or_another_window_pauses_a_game(fw):
     p = Page(fw)
-    p.go(VORTEX)
+    p.go(BREAKOUT)
     s = p.s
     fw.var('g_backlight_status', C.c_ubyte).value = 0
     assert p.g.frame(None) == 0
@@ -1496,9 +1496,9 @@ def test_the_screen_off_or_another_window_pauses_a_game(fw):
     assert s.paused == HELD and not s.frame
 
 
-def test_vortex_game_over_stops_the_frame_and_saves_the_record(fw):
+def test_breakout_game_over_stops_the_frame_and_saves_the_record(fw):
     p = Page(fw)
-    p.go(VORTEX)
+    p.go(BREAKOUT)
     s = p.s
     s.vx.state, s.vx.lives, s.vx.score, s.vx.pa = RUNNING, 1, 30, 512
     s.vx.x, s.vx.vx = (MISS << 16) - 1, 2
@@ -1512,7 +1512,7 @@ def test_vortex_game_over_stops_the_frame_and_saves_the_record(fw):
 
 def test_a_broken_brick_is_remembered_for_its_flash(fw):
     p = Page(fw)
-    p.go(VORTEX)
+    p.go(BREAKOUT)
     s = p.s
     s.vx.state = RUNNING
     s.vx.x, s.vx.y = at(5 * 64 + 32, 39)
@@ -1524,7 +1524,7 @@ def test_a_broken_brick_is_remembered_for_its_flash(fw):
 
 def test_the_last_brick_flashes_though_the_level_refilled(fw):
     p = Page(fw)
-    p.go(VORTEX)
+    p.go(BREAKOUT)
     s = p.s
     s.vx.state = RUNNING
     s.vx.brick[0], s.vx.brick[1], s.vx.brick[2] = 0, 0, 1 << 9
@@ -1565,7 +1565,7 @@ def test_snake_s_crash_ends_the_frame_with_its_record(fw):
 
 def test_return_opens_the_menu_and_the_wheel_picks(fw):
     p = Page(fw)
-    p.go(VORTEX)
+    p.go(BREAKOUT)
     s = p.s
     p.key(RETURN)
     assert s.paused == MENU and not s.frame and s.choice == 0
@@ -1581,7 +1581,7 @@ def test_return_opens_the_menu_and_the_wheel_picks(fw):
 
 def test_play_pauses_and_resumes_and_a_paused_centre_resumes(fw):
     p = Page(fw)
-    p.go(VORTEX)
+    p.go(BREAKOUT)
     s = p.s
     p.key(PLAY)
     assert s.paused == HELD and not s.frame
@@ -1593,9 +1593,9 @@ def test_play_pauses_and_resumes_and_a_paused_centre_resumes(fw):
     assert s.vx.state == RUNNING
 
 
-def test_vortex_over_return_is_the_chooser(fw):
+def test_breakout_over_return_is_the_chooser(fw):
     p = Page(fw)
-    p.go(VORTEX)
+    p.go(BREAKOUT)
     s = p.s
     s.vx.state = OVER
     p.key(RETURN)
@@ -1826,7 +1826,7 @@ def test_the_chooser_lists_its_games_then_the_card_s_by_name_and_each_row_opens_
     texts = []
     fw.mock('widget_set_text_utf8', lambda w, s, *_: texts.append(C.string_at(s).decode()))
     p = Page(fw, files)
-    assert texts[-6:] == ['Sudoku', 'Vortex', 'Solitaire', 'Snake', 'Blocks', 'Zork']  # Tunes isn't a game
+    assert texts[-6:] == ['Sudoku', 'Breakout', 'Solitaire', 'Snake', 'Blocks', 'Zork']  # Tunes isn't a game
     rows = handlers(fw, EVT_CLICK)
     assert len(rows) == 6
     fw.mock('fw_fork', lambda *_: 4242)
@@ -1837,12 +1837,12 @@ def test_the_chooser_lists_its_games_then_the_card_s_by_name_and_each_row_opens_
     press(rows[5])  # Zork, its second, over the whole screen
     assert fw.fn('addon_game_front', C.c_int)() == 1 and tried[-1] == b'/mnt/mmc/.zork/q2-zork'
     assert p.s.screen == CHOOSER and not p.timers
-    for row, game in zip(rows, (SUDOKU, VORTEX, SOLITAIRE, SNAKE)):
+    for row, game in zip(rows, (SUDOKU, BREAKOUT, SOLITAIRE, SNAKE)):
         press(row)  # from the next loop pass
         assert p.s.screen == CHOOSER and p.s.target == game and p.timers[-1][1] == 0
     press(rows[1])
     run(p.timers[-1][0])
-    assert p.s.screen == VORTEX and p.g.games_live()
+    assert p.s.screen == BREAKOUT and p.g.games_live()
 
 
 def test_a_game_on_screen_takes_no_tap_for_the_chooser_hidden_under_it(fw):
@@ -1894,7 +1894,7 @@ def test_sudoku_return_goes_back_to_the_chooser_and_saves(fw):
 def test_a_record_that_can_t_be_written_says_so_and_still_shows(fw):
     p = Page(fw)
     toasts = heard(fw)
-    p.go(VORTEX)
+    p.go(BREAKOUT)
     p.s.vx.score = 50
     p.card.fail_write = True
     fw.fn('games__game_over', None)()
@@ -2173,7 +2173,7 @@ def test_a_canvas_that_won_t_round_gets_square_boxes_and_frames_in_their_place(f
     assert texts(ops[k + 7:]) == [t for t, _ in banner(paint(p))]  # the same two lines over it
 
 
-# Vortex.
+# Breakout.
 
 def arcs(ops):
     """The vgcanvas's strokes before the line cap turns round (the track, the bricks, a flash) and after (the paddle)."""
@@ -2181,9 +2181,9 @@ def arcs(ops):
     return [o.color for o in ops[:cap] if o.kind == 'arc'], [o.color for o in ops[cap:] if o.kind == 'arc']
 
 
-def test_vortex_paint_one_arc_a_brick_the_rings_darkening_outwards_from_the_tone(fw):
+def test_breakout_paint_one_arc_a_brick_the_rings_darkening_outwards_from_the_tone(fw):
     p = Page(fw)
-    p.go(VORTEX)
+    p.go(BREAKOUT)
     s = p.s
     s.vx.brick[0], s.vx.brick[1], s.vx.brick[2] = 0x0001, 0x0300, 0x7000
     ops = paint(p)
@@ -2194,9 +2194,9 @@ def test_vortex_paint_one_arc_a_brick_the_rings_darkening_outwards_from_the_tone
     assert [o.text for o in ops if o.kind == 'cap'] == ['round']
 
 
-def test_vortex_paint_waiting_to_launch_is_a_ball_and_the_lives_and_a_hint_to_press_centre(fw):
+def test_breakout_paint_waiting_to_launch_is_a_ball_and_the_lives_and_a_hint_to_press_centre(fw):
     p = Page(fw)
-    p.go(VORTEX)
+    p.go(BREAKOUT)
     ops = paint(p)
     ball, *lives = [o.color for o in ops if o.kind == 'dot']  # no trail
     assert light(ball) and len(lives) == 3 and len(set(lives)) == 1 and grey(lives[0]) and darker(lives[0], ball)
@@ -2205,9 +2205,9 @@ def test_vortex_paint_waiting_to_launch_is_a_ball_and_the_lives_and_a_hint_to_pr
     assert 'CENTRE' not in texts(paint(p))
 
 
-def test_vortex_paint_the_ball_trails_its_last_frames_in_the_tone_fading_behind_it(fw):
+def test_breakout_paint_the_ball_trails_its_last_frames_in_the_tone_fading_behind_it(fw):
     p = Page(fw)
-    p.go(VORTEX)
+    p.go(BREAKOUT)
     s = p.s
     s.vx.lives = 2
     p.key(CENTER)
@@ -2221,9 +2221,9 @@ def test_vortex_paint_the_ball_trails_its_last_frames_in_the_tone_fading_behind_
     assert fades == sorted(set(fades)) and fades[-1] < 255 and len(lives) == 2
 
 
-def test_vortex_paint_a_broken_brick_flashes_white_and_fades_out_linearly(fw):
+def test_breakout_paint_a_broken_brick_flashes_white_and_fades_out_linearly(fw):
     p = Page(fw)
-    p.go(VORTEX)
+    p.go(BREAKOUT)
     s = p.s
     s.vx.state = RUNNING
     s.vx.x, s.vx.y = at(5 * 64 + 32, 39)
@@ -2253,9 +2253,9 @@ def test_vortex_paint_a_broken_brick_flashes_white_and_fades_out_linearly(fw):
     assert flash(0) is None  # paused: no flash
 
 
-def test_vortex_paint_the_hud_shows_the_score_the_best_and_the_level_counted_from_1(fw):
+def test_breakout_paint_the_hud_shows_the_score_the_best_and_the_level_counted_from_1(fw):
     p = Page(fw)
-    p.go(VORTEX)
+    p.go(BREAKOUT)
     s = p.s
     s.vx.score, s.best.score, s.vx.level = 1230, 4560, 2
     hud = words(paint(p))[:6]  # then the hint to press Centre
@@ -2267,18 +2267,18 @@ def test_vortex_paint_the_hud_shows_the_score_the_best_and_the_level_counted_fro
     assert (80 - x) ** 2 + (y - 240) ** 2 < 78 ** 2  # inside the glass's 80 px bottom corner
 
 
-def test_vortex_paint_without_a_vgcanvas_still_shows_the_hud(fw):
+def test_breakout_paint_without_a_vgcanvas_still_shows_the_hud(fw):
     p = Page(fw)
-    p.go(VORTEX)
+    p.go(BREAKOUT)
     ops = paint(p, Canvas(fw, vg=0))
     assert not [o for o in ops if o.kind in ('arc', 'dot', 'cap')] and len(texts(ops)) == 7
     assert not fw.calls('vgcanvas_save') and not fw.calls('vgcanvas_begin_path')
 
 
 def end(p, screen, score):
-    """Ends the game by its own rules through the frame timer: Vortex's last life lost, Snake into a wall."""
+    """Ends the game by its own rules through the frame timer: Breakout's last life lost, Snake into a wall."""
     s = p.s
-    if screen == VORTEX:
+    if screen == BREAKOUT:
         s.vx.state, s.vx.lives, s.vx.score, s.vx.pa = RUNNING, 1, score, 512
         s.vx.x, s.vx.vx, s.vx.y, s.vx.vy = (MISS << 16) - 1, 2, 0, 0
     else:
@@ -2296,7 +2296,7 @@ def themed(fw, theme, **keys):
     return Page(fw)
 
 
-@pytest.mark.parametrize('screen', (VORTEX, SNAKE))
+@pytest.mark.parametrize('screen', (BREAKOUT, SNAKE))
 def test_arcade_paint_return_s_menu_marks_the_choice_with_home_s_dot_in_minimal(fw, screen):
     p = themed(fw, MINIMAL)
     p.go(screen)
@@ -2319,7 +2319,7 @@ def test_arcade_paint_return_s_menu_marks_the_choice_with_home_s_dot_in_minimal(
 @pytest.mark.parametrize('light_mode', (b'0', b'1'))
 def test_arcade_paint_return_s_menu_puts_the_choice_on_the_accent_s_bar_in_modern(fw, light_mode):
     p = themed(fw, MODERN, ACCENT=b'4', LIGHT=light_mode)  # Cobalt
-    p.go(VORTEX)
+    p.go(BREAKOUT)
     p.key(RETURN)
     ops = popup_ops(paint(p))
     (title, _, _), (a, ca, ra), (b, cb, rb) = words(ops)
@@ -2336,7 +2336,7 @@ def test_arcade_paint_return_s_menu_puts_the_choice_on_the_accent_s_bar_in_moder
 @pytest.mark.parametrize('light_mode', (b'0', b'1'))
 def test_arcade_paint_return_s_menu_is_classic_s_panel_the_choice_on_its_band(fw, light_mode):
     p = themed(fw, CLASSIC, LIGHT=light_mode)
-    p.go(VORTEX)
+    p.go(BREAKOUT)
     p.key(RETURN)
     ops = popup_ops(paint(p))
     (title, ct, rt), (a, ca, ra), (b, cb, rb) = words(ops)
@@ -2375,7 +2375,7 @@ def popup_env(fw):
 @pytest.mark.parametrize('theme, accent', ((MINIMAL, b'0'), (MODERN, b'4'), (CLASSIC, b'0')))
 def test_a_card_game_s_q2_popup_is_the_pop_up_as_it_is_drawn(fw, theme, accent, light_mode):
     p = themed(fw, theme, ACCENT=accent, LIGHT=light_mode)
-    p.go(VORTEX)
+    p.go(BREAKOUT)
     p.key(RETURN)
     ops = popup_ops(paint(p))
     (_, ct, _), (_, ca, _), (_, cb, _) = words(ops)
@@ -2402,7 +2402,7 @@ def test_a_card_game_s_q2_popup_is_the_pop_up_as_it_is_drawn(fw, theme, accent, 
         assert light(rgba(box[0] << 16 | box[1] << 8 | box[2])) == (light_mode == b'1')
 
 
-@pytest.mark.parametrize('screen', (VORTEX, SNAKE))
+@pytest.mark.parametrize('screen', (BREAKOUT, SNAKE))
 def test_arcade_paint_pause_and_the_game_over_banners(fw, screen):
     p = Page(fw)
     p.go(screen)
@@ -2640,9 +2640,9 @@ def test_classic_s_snake_is_an_lcd_in_a_bezel_with_square_dots(fw, light_mode):
 
 
 @pytest.mark.parametrize('light_mode', (b'0', b'1'))
-def test_classic_s_vortex_is_a_flat_night_sky_each_ring_its_colour_with_a_light_on_every_brick(fw, light_mode):
+def test_classic_s_breakout_is_a_flat_night_sky_each_ring_its_colour_with_a_light_on_every_brick(fw, light_mode):
     p = themed(fw, CLASSIC, LIGHT=light_mode)
-    p.go(VORTEX)
+    p.go(BREAKOUT)
     ops = paint(p)
     sky = ops[0]
     assert sky.rect == (0, 0, 375, p.s.h) and rgb(sky.color) == (0x0c, 0x17, 0x35)  # one navy, no gradient

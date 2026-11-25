@@ -795,7 +795,7 @@ assert post(0x103)==(0,[0x103]) and post(0xff)==(0,[0xff]) and post(0x110)==(0,[
 assert post(0)==(0,[]) and post(0x103,loop_ok=0)==(0x10,[]) and post(0x103,slot_ok=0)==(0x10,[])
 m=PostMachine(); loop=m.alloc(0x60); m.word(loop+O['LOOP_POST'],m.slot); assert m.fn('ringnav_queue_event',loop,0)==0x10 and not m.posted
 checks+=1
-if 'wheel_raw' in ps:  # iPod: while games.c's Vortex sets wheel_raw, nothing ticks and the travel adds up raw
+if 'wheel_raw' in ps:  # iPod: while games.c's Breakout sets wheel_raw, nothing ticks and the travel adds up raw
     raw=lambda on: lambda m: m.word(ps['wheel_raw'],on)
     m=PlaybackMachine()
     assert wheel([raw(1),(195,1),(5,1),(5+2*U,1),(5+U,1),(5+U,0)],m)==([],[195]*5) and m.get(ps['wheel_travel'])==10+U
@@ -1129,7 +1129,7 @@ m.x=(m.x+4)%200+1; m.read(m.x,1,gap=3600*1000); assert not m.mute() and ghost(m,
 # ghost with no lift ticks on (docs/internals.md); the stop works dark too.
 m=EncoderMachine(); m.word(ps['wheel_guard'],1); m.byte(syms['g_backlight_status'],0)
 m.read(100,1); m.x=100; assert not m.read(100+U,1) and ghost(m,100,5); m.drain(); m.press(); since(m,STOP); m.press(); assert m.mute() and not ghost(m,20,5)
-# Vortex and the lyrics read the raw travel with a thumb held down as long as they like: not ticks.
+# Breakout and the lyrics read the raw travel with a thumb held down as long as they like: not ticks.
 m=EncoderMachine(); m.word(ps['wheel_raw'],1); n=m.turn(3000,2,20)
 assert m.get(ps['wheel_travel'])==2*3000 and not m.q and not n; m.word(ps['wheel_raw'],0)
 m=armed(); m.word(ps['wheel_raw'],1); m.x=100; m.turn(STOP*U,1,20); m.press(); assert not m.mute(); m.word(ps['wheel_raw'],0)  # no stop for them
