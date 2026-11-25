@@ -4343,10 +4343,6 @@ static void pane_invalidate(void) {
     int pane[4] = { HOME_SPLIT_W, 0, HOME_PW, client_h() }; /* rect_t, in the parent */
     widget_invalidate_force(P(home.art, W_PARENT), pane);
 }
-static void drift_place(void) {
-    if (pan_u() == home.du && pan_v() == home.dv) return;
-    pane_invalidate();
-}
 
 /* What a highlighted row shows in Split's pane (theme()->pane_icon_x): Now Playing's and the
  * Library's rows the cover, or with none the note and a count; the others their icon and
@@ -4398,7 +4394,7 @@ static int home_drift(const void *unused) {
     /* modulo a whole number of both axes' cycles, so it never wraps mid-cycle */
     home.drift_ms = (home.drift_ms + (step < DRIFT_MAX_STEP_MS ? step : DRIFT_MAX_STEP_MS)) %
                     (2u * DRIFT_X_MS * DRIFT_Y_MS);
-    drift_place();
+    if (pan_u() != home.du || pan_v() != home.dv) pane_invalidate();
     return 8; /* RET_REPEAT */
 }
 
