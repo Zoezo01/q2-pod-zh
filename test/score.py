@@ -225,7 +225,7 @@ def security():
 
 def p1(build):
     lock = Path.home()/'.cache/q2-build.lock'  # one build or MIPS suite at a time on this machine
-    python = os.environ.get('Q2_PATCH_PYTHON') or shutil.which('python3') or PY  # the one that built: docs/building.md
+    python = shutil.which('python3') or PY  # the one that built: docs/building.md
     code = run('p1', [*(['flock', str(lock)] if lock.exists() else []), python, 'test/patch.py', str(build)])
     text = (WORK/'p1.log').read_text(errors='replace')
     scenarios = re.search(r'^(\d+) MIPS execution scenarios passed', text, re.M)
