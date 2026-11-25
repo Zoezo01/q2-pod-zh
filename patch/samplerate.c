@@ -175,61 +175,22 @@ int sr_setting
     __attribute__((section(".scratch"))); /* POD_SAMPLERATE's value, pod_settings reads it */
 
 #ifndef PEQ_HOST
-#define SR_PX 14 /* smaller than EQ's 16 and the icons' */
+#define SR_PX 14 /* Minimal's and Modern's: smaller than EQ's 16 and the icons' */
 
-/* The text's width at SR_PX, by character, a little over the face's so it hides rather than crowds:
+/* The text's width at px, by character, a little over the face's so it hides rather than crowds:
  * there's no canvas to measure with where bar_sync runs. */
-static int sr_text_width(const char *s) {
+static int sr_text_width(const char *s, int px) {
     int w = 0;
     for (; *s; ++s)
         w += *s == '.' ? 4 : *s == '/' ? 5 : *s == 'k' ? 7 : *s >= 'A' && *s <= 'Z' ? 10 : 8;
-    return w;
-}
-
-/* Whether bar x a..b is clear of everything else the bar shows now: each visible thing in it, at
- * any depth (the play state, EQ, the clock or the title, Bluetooth and its codec badge, Wi-Fi, a
- * card app's icon, the battery, and whatever a later build adds). An image or view is its box; a
- * label is its text, estimated from the characters as sr_text_width is, at its own size and
- * alignment (the clock's box is wider than its text, centred). A box near the bar's width is a
- * background. skip is the rate's own label. */
-static int sr_clear(widget_t *parent, int ox, int a, int b, widget_t *skip, int bar_w) {
-    for (unsigned i = 0, n = widget_count_children(parent); i < n; ++i) {
-        widget_t *c = widget_get_child(parent, i);
-        if (!c || c == skip || !widget_get_visible(c)) continue;
-        int cx = ox + I(c, W_X), cw = I(c, W_W);
-        if (widget_count_children(c)) {
-            if (!sr_clear(c, cx, a, b, skip, bar_w)) return 0;
-            continue;
-        }
-        if (cw <= 0 || cw >= bar_w * 9 / 10) continue;
-        int x0 = cx, x1 = cx + cw;
-        const char *type = widget_get_type(c);
-        if (type && (!strcmp(type, "label") || !strcmp(type, "hscroll_label"))) {
-            char s[64];
-            int tw = cw; /* stock writes nothing unless all of it fits: then its whole box */
-            if (!widget_get_text_utf8(c, s, sizeof s)) {
-                if (!*s) continue;
-                int px = widget_get_prop_int(c, "style:normal:font_size", 20);
-                tw = (int)strlen(s) * px * 5 / 8 + 2; /* bytes: a wider guess for UTF-8 */
-                if (tw > cw) tw = cw;
-            }
-            const char *al = widget_get_prop_str(c, "style:normal:text_align_h", (const char *)0),
-                       *name = widget_get_prop_str(c, "name", "");
-            int centre = al ? !strcmp(al, "center") : !strcmp(name, "label_clock"),
-                right = al ? !strcmp(al, "right") : !strcmp(name, "label_battery");
-            x0 = centre ? cx + (cw - tw) / 2 : right ? cx + cw - tw : cx;
-            x1 = x0 + tw;
-        }
-        if (x0 < b && x1 > a) return 0;
-    }
-    return 1;
+    return w * px / SR_PX;
 }
 
 /* bar_sync, each bar paint: the text starting at x (left: after the play state and EQ) or ending at
- * x (else: left of the right-hand group), shown only while it fits room and stays STATUS_GAP clear
- * of everything else the bar shows (sr_clear), so it gives way rather than cover anything; made
- * the first time there is one. A change repaints the bar after the frame, as addon_bar.c's icon
- * does. */
+ * x (else: left of the right-hand group), shown only within room, the px bar_sync leaves free after
+ * everything else in the bar, and only while the bar's centre holds the clock: a page title there
+ * (Time in Title off) is wider than the clock and reaches the rate's place. Made the first time
+ * there is one. A change repaints the bar after the frame, as addon_bar.c's icon does. */
 static char sr_synced[16]
     __attribute__((section(".scratch"))); /* the text bar_rate_sync last took */
 
@@ -245,37 +206,29 @@ void bar_rate_sync(int left, int x, int room) {
     static widget_t *label __attribute__((section(".scratch")));
     static int aligned __attribute__((section(".scratch"))); /* 1 left, 2 right, 0 not yet */
     char text[16] = { 0 }; /* whole, as memcpy copies all of it into sr_synced */
-    int n = sr_now(pod_value(POD_SAMPLERATE), text, sizeof text), w = n ? sr_text_width(text) : 0;
-    int changed = 0, at = left ? x : x - w;
+    int n = sr_now(pod_value(POD_SAMPLERATE), text, sizeof text);
     memcpy(sr_synced, text, sizeof sr_synced);
-    widget_t *row = P(st.bar_slot, W_PARENT), *bar = P(row, W_PARENT);
-    int on = n && w <= room &&
-             sr_clear(bar, 0, at - STATUS_GAP, at + w + STATUS_GAP, label, I(bar, W_W));
+    /* Classic's text in its bar's face and size, as its title and clock; else SR_PX */
+    int px = left ? SR_PX : theme()->font_px[ROLE_BAR] ?: SR_PX, w = sr_text_width(text, px);
+    int changed = 0, at = left ? x : x - w, on = n && w <= room && !st.bar_titled;
+    widget_t *row = P(st.bar_slot, W_PARENT);
     if (!label) {
         if (!on) return;
         label = label_create(P(row, W_PARENT), at, I(row, W_Y), w, I(row, W_H));
         if (!label) return;
         widget_set_name(label, "label_rate");
         /* every state, as tools/ipod.py gives EQ's: a bar label may draw in another */
-        static const char *const keys[][2] = {
-            { "style:normal:font_size", "style:normal:text_color" },
-            { "style:focused:font_size", "style:focused:text_color" },
-            { "style:disable:font_size", "style:disable:text_color" }
-        };
-        for (unsigned k = 0; k < sizeof keys / sizeof *keys; ++k) {
-            widget_set_prop_int(label, keys[k][0], SR_PX);
-            widget_set_prop_int(label, keys[k][1], (int)0xffffffffu);
-        }
-        changed = 1;
+        widget_set_prop_int(label, "style:normal:text_color", (int)0xffffffffu);
+        widget_set_prop_int(label, "style:focused:text_color", (int)0xffffffffu);
+        widget_set_prop_int(label, "style:disable:text_color", (int)0xffffffffu);
     }
     if (aligned != (left ? 1 : 2)) { /* towards the play state, or towards the icons */
         aligned = left ? 1 : 2;
-        for (unsigned k = 0; k < 3; ++k)
-            widget_set_prop_str(label,
-                                k == 0   ? "style:normal:text_align_h"
-                                : k == 1 ? "style:focused:text_align_h"
-                                         : "style:disable:text_align_h",
-                                left ? "left" : "right");
+        widget_set_prop_str(label, "style:normal:text_align_h", left ? "left" : "right");
+        widget_set_prop_str(label, "style:focused:text_align_h", left ? "left" : "right");
+        widget_set_prop_str(label, "style:disable:text_align_h", left ? "left" : "right");
+        face_states(label, "default", SR_PX);
+        widget_set_prop_int(label, "_font", -1); /* theme_font writes Classic's again */
         changed = 1;
     }
     if (on && (I(label, W_X) != at || I(label, W_W) != w || I(label, W_Y) != I(row, W_Y) ||
@@ -288,6 +241,9 @@ void bar_rate_sync(int left, int x, int room) {
         widget_set_text_utf8(label, text);
         changed = 1;
     }
+    int font = widget_get_prop_int(label, "_font", -1);
+    if (!left) theme_font(label, ROLE_BAR, FONT_ROW); /* after the text: its face has every glyph */
+    if (font != widget_get_prop_int(label, "_font", -1)) changed = 1;
     if (on != !!widget_get_visible(label)) {
         widget_set_visible(label, on, 0);
         changed = 1;
