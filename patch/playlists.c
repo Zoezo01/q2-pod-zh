@@ -458,13 +458,21 @@ done:
 }
 
 /* A confirm whose second cell says verb, under a theme that dresses it the tray (a row action's:
- * the prompt's own text isn't read) or the page. */
+ * the prompt's own text isn't read) or the page. A newline in text starts a second line: stock's
+ * two-line prompt, kind 2, which reads that line at its context's 0x208. */
 int confirm_over(const char *text, const char *verb, int tray) {
     struct {
         int kind, ms;
         char text[0x400];
     } prompt = { 1, 0, "" };
+    unsigned cut = 0;
+    while (text[cut] && text[cut] != '\n') ++cut;
     tk_snprintf(prompt.text, sizeof prompt.text, "%s", text);
+    if (text[cut] && cut < 0x200) {
+        prompt.kind = 2;
+        prompt.text[cut] = 0;
+        tk_snprintf(prompt.text + 0x200, 0x200, "%s", text + cut + 1);
+    }
     st.confirm_verb = verb;
     st.confirm_tray = tray;
     int answer = navigator_to_with_context("dialog/confirminfo_dialog", &prompt);

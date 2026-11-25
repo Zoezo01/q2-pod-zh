@@ -158,6 +158,8 @@ HOOKS = {
     'toolsIntoStandby': (0x5d1110, 'ringnav_standby', 'standby'),
     # Standby's card driver reload: no removed and inserted toasts on the wake
     'check_cardmount_status': (0x4f39a4, 'ringnav_cardmount', 'cardmount'),
+    # The Standby page's row click, which has no symbol: turning Auto-shutdown on asks first (system.c)
+    'standby_row': (0x4d1e48, 'ringnav_standby_row', 'standby_row'),
     # Every settings save: one at a time, on a copy that replaces the file by rename (system.c)
     'toolsWriteConfig': (0x5d0284, 'ringnav_config_write', 'config_write'),
     'playset_playset_page_init': (0x4bd4d0, 'ringnav_audioset', 'audioset'),
@@ -1781,6 +1783,7 @@ PRIVATE_FUNCTIONS = {
     "playermore_online": HOOKS['playermore_online'][0],  # More's Download Cover & Lyrics: (window)
     "specfolder_click": HOOKS['specfolder_click'][0],  # Scan Folders' row click
     "specfolder_scan": HOOKS['specfolder_scan'][0],  # ... and its Scan button's (btn_startscan)
+    "standby_row": HOOKS['standby_row'][0],  # the Standby page's row click: Auto-standby (0), Auto-shutdown (1), its times
 }
 GLOBALS = ['tidal_albuminfo_thread_run', 'tidal_collection_thread_run',  # 2: a Tidal list loaded
            'savestartbt', 'transposition', 'tidalfurlstart',  # a stream to start paused; 1 arms Now Playing's online tick (tidal.c app_start)
@@ -1796,6 +1799,7 @@ GLOBALS = ['tidal_albuminfo_thread_run', 'tidal_collection_thread_run',  # 2: a 
            'g_autochange_flag', 'g_forcerefresh_flag', 'g_playcover_finishflag',
            'g_usbvol_mode',  # USB DAC volume: 0 fixed, else the volume (config_usbvolmode, device_set_volume)
            'g_usbdac_chargeflag',  # USB mode's charge choice, which switch_charge_enable gets there
+           'g_savepower_mode',  # Auto-shutdown's time: 0 off, 1 to 4 (system.c ringnav_standby_row)
            'g_memory_play', 'g_carmode', 'g_carmode_state',  # In-Vehicle Mode (pod_click)
            'g_block_withoutphone_flag',  # Require Output (check_forbid_play_no_headset's switch)
            'g_bigcovermode', 'g_foldercover_flag',  # Enlarged Album Art (1 on) and Folder Album Cover (pod_click)
