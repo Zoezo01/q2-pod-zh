@@ -157,12 +157,25 @@ const char *tr(const char *en) {
     return t ? t : en;
 }
 
+/* The assets whose text is Chinese while their tr_text names the English (ipod.py's Home rows and
+ * the two settings rows): with no language pack they must keep that Chinese, or the Chinese
+ * interface shows Library, Playback and System over them. */
+static const char *zh_asset(const char *en) {
+    static const char *const rows[][2] = {
+        { "Library", "音乐" }, { "Playback", "播放设置" }, { "System", "系统设置" },
+    };
+    for (unsigned i = 0; en && i < sizeof rows / sizeof *rows; ++i)
+        if (!strcmp(en, rows[i][0])) return rows[i][1];
+    return 0;
+}
+
 /* locale_info_tr: stock's text for key (its en_US table's, or key itself when the table has
  * none, as an asset's English tr_text), then the copy's line for that key and that English. */
 const char *ringnav_locale_tr(void *info, const char *key) {
     const char *en = stock_locale_tr_trampoline(info, key);
     if (!lg.loaded) lang_load();
     const char *t = key && en && lg.n ? find(key, en) : 0;
+    if (!t && !lg.n) t = zh_asset(en); /* no pack: the asset's own Chinese */
     return t ? t : en;
 }
 
