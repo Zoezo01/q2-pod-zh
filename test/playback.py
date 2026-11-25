@@ -564,12 +564,8 @@ for folder in (0,1):
     checks+=1
 
 # V1 snapshots (pre-1.0, no queue class) and a bad class are refused.
-def fnv(data):
-    value=2166136261
-    for b in data: value=((value^b)*16777619)&0xffffffff
-    return value
 def snapshot_checksum(data):
-    struct.pack_into('<I',data,12,0); struct.pack_into('<I',data,12,fnv(data))
+    struct.pack_into('<I',data,12,0); struct.pack_into('<I',data,12,fnv1a(data))
 legacy=bytearray(files['/mnt/data/ringnav-queue']); del legacy[52:56]
 struct.pack_into('<I',legacy,4,1); struct.pack_into('<I',legacy,8,len(legacy)); snapshot_checksum(legacy)
 r=PlaybackMachine({'/mnt/data/ringnav-queue':bytes(legacy)}); r.byte(syms['g_memory_play'],2)
@@ -1584,7 +1580,7 @@ for failure in ('open','write','close','rename'):
     m.fail=failure; m.elapsed=53; m.fn('playback_save')
     assert m.files['/mnt/data/ringnav-queue-elapsed']==checkpoint
 m.fail=''; m.fn('playback_save')
-def checkpoint_checksum(data): struct.pack_into('<I',data,0,fnv(data[4:]))
+def checkpoint_checksum(data): struct.pack_into('<I',data,0,fnv1a(data[4:]))
 for kind in ('valid','truncated','checksum','snapshot','position'):
     c=bytearray(checkpoint)
     if kind=='truncated': c=c[:-1]
