@@ -96,15 +96,6 @@ def test_any_other_answer_leaves_both_switches_as_they_were(fw, st, answer, was)
         assert not fw.calls(name), name  # nothing saved, no idle counter reloaded
 
 
-def test_cancel_keeps_the_other_switch_on(fw, st):
-    page = Standby(fw, st, standby=1, answer=4)
-    page.click(1)
-    assert page.state == (1, 0) and page.clicks == []  # Auto-shutdown's question cancelled: Auto-standby still on
-    page = Standby(fw, st, mode=3, answer=4)
-    page.click(0)
-    assert page.state == (0, 3) and page.clicks == []  # Auto-standby's cancelled: Auto-shutdown still on, at its time
-
-
 @pytest.mark.parametrize('row,standby,mode', [(0, 1, 0), (1, 0, 1), (1, 0, 4), (2, 0, 1), (3, 0, 2), (4, 0, 3), (5, 0, 4)])
 def test_no_other_click_asks(fw, st, row, standby, mode):
     """A switch turned off, and Auto-shutdown's times (rows 2 on, there while it is on): stock's at once."""
