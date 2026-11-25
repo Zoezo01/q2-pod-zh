@@ -40,6 +40,11 @@ js-surya/q2-sixtrack Six Track
 Carbon-66/q2-challengerdeep Challenger Deep
 Carbon-66/q2-hero Q2 Hero
 lampsonlnguyen/q2-pico8 PICO-8
+lampsonlnguyen/q2-dailyred Daily Red
+Carbon-66/q2-vortex Vortex
+Carbon-66/q2-wordle Wordle
+# Carbon-66/q2-connectfour Connect Four
+Carbon-66/q2-tictactoe Tic-Tac-Toe
 # Languages last, behind [Apps]: firmware 1.9.0 and older, which has no language support, never reads it.
 [Apps]
 DiamondBond/q2-langs Languages

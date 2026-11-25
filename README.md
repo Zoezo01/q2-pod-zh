@@ -304,6 +304,26 @@ On the App Store's **Games** tab. Each plays in **Library → Games**.
     <td>Play PICO-8 games on a port of the FAKE-08 emulator.</td>
     <td></td>
   </tr>
+  <tr valign="top">
+    <td><b><a href="https://github.com/lampsonlnguyen/q2-dailyred">Daily Red</a></b></td>
+    <td>A battle a day against Red with the day's six random level-100 Pokémon, the same team for everyone, and a practice mode.</td>
+    <td></td>
+  </tr>
+  <tr valign="top">
+    <td><b><a href="https://github.com/Carbon-66/Q2-Vortex">Vortex</a></b></td>
+    <td>Breakout down a tube, your bat running round the rim on the wheel; its art, levels and sound are read from your own copy of the iPod game Vortex.</td>
+    <td></td>
+  </tr>
+  <tr valign="top">
+    <td><b><a href="https://github.com/Carbon-66/Q2-Wordle">Wordle</a></b></td>
+    <td>Guess the five-letter word in six tries: today's New York Times word over Wi-Fi, or a random word offline.</td>
+    <td></td>
+  </tr>
+  <tr valign="top">
+    <td><b><a href="https://github.com/Carbon-66/Q2-TicTacToe">Tic-Tac-Toe</a></b></td>
+    <td>Play the Q2 at three levels, or a friend on the same Q2.</td>
+    <td></td>
+  </tr>
 </table>
 
 </details>
