@@ -73,17 +73,15 @@ int meta(const char *s, const char *key, char *out, unsigned n) {
     return 1;
 }
 
-/* n bytes of s into out (size bytes), line breaks as spaces, short of a UTF-8 sequence cut at the
- * end. */
-static void tag_text(char *out, unsigned size, const char *s, unsigned n) {
-    if (n > size - 1) n = size - 1;
+/* out's first n bytes in place, short of a UTF-8 sequence cut at the end (meta has already left out
+ * any line break). */
+static void tag_text(char *out, unsigned n) {
     unsigned k = n;
-    while (k && ((unsigned char)s[k - 1] & 0xc0) == 0x80) --k; /* its last sequence's lead */
-    if (k && (unsigned char)s[k - 1] >= 0xc0) {
-        unsigned lead = (unsigned char)s[k - 1], whole = lead >= 0xf0 ? 4 : lead >= 0xe0 ? 3 : 2;
+    while (k && ((unsigned char)out[k - 1] & 0xc0) == 0x80) --k; /* its last sequence's lead */
+    if (k && (unsigned char)out[k - 1] >= 0xc0) {
+        unsigned lead = (unsigned char)out[k - 1], whole = lead >= 0xf0 ? 4 : lead >= 0xe0 ? 3 : 2;
         if (n - (k - 1) < whole) n = k - 1;
     }
-    for (unsigned i = 0; i < n; ++i) out[i] = s[i] == '\n' || s[i] == '\r' ? ' ' : s[i];
     out[n] = 0;
 }
 
@@ -94,7 +92,7 @@ int tag_line(const char *s, const char *key, char *out, unsigned n) {
     unsigned k = strlen(key);
     while (*s == ' ') ++s;
     if (strncmp(s, key, k) || (s[k] != ' ' && s[k] != ':') || !meta(s, key, out, n)) return 0;
-    tag_text(out, n, out, strlen(out));
+    tag_text(out, strlen(out));
     return 1;
 }
 
