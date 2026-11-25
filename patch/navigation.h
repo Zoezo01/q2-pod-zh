@@ -726,7 +726,8 @@ int search_del(widget_t *w);
 void search_over(widget_t *w, canvas_t *canvas);
 void slider_scrub(widget_t *w, canvas_t *canvas);
 int restart_asked(void); /* navigation.c: the Restart to apply? confirm, yes or no */
-/* playlists.c: a confirm whose second cell says verb; tray 1 the row action's tray, 0 the page */
+/* playlists.c: a confirm whose second cell says verb; tray 1 the row action's tray, 0 the page; a
+ * newline in text starts its second line */
 int confirm_over(const char *text, const char *verb, int tray);
 
 /* playlists.c */
