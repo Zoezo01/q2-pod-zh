@@ -314,6 +314,11 @@ case $name in
     [ "$(tail -c "$slen" "$out" | vis)" = "$eol$bb--$eol" ] || fail 400 Bad
     dd if=/dev/null of="$out" bs=1 seek="$((rest - slen))" 2>/dev/null || fail 500 Fail
     fsize "$out"; [ "$sz" = "$((rest - slen))" ] || fail 500 Fail
+    # The destination's two checks again, now that the bytes are in: they came at the client's pace, and
+    # meanwhile a hidden entry may have taken this name (on FAT a new one answers to its short name) or a
+    # folder may have been made here. What stays open is the moment between these tests and mv's rename.
+    hidden "$dest" && fail 400 Bad
+    [ -d "$dest" ] && fail 400 Bad
     mv -f -- "$out" "$dest" 2>/dev/null || fail 500 Fail
     emit 'Content-type: application/json; charset=utf-8'; crlf
     printf '{"files":[{"name":"%s"}]}' "$(json_escape "$fname")"
