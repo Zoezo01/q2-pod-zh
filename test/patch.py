@@ -4349,7 +4349,7 @@ for action,want in ((0,['A','early','late','B','C']),(1,['A','B','C','early','la
     m=CoverflowMachine(); m.found=[track(m,'late','/p/z',2,1),track(m,'early','/p/a',1,2)]
     m.open(); m.word(m.slide+O['SLIDE_INDEX'],2)
     m.press(100); assert m.hold()==11 and m.release()==0
-    assert m.nodes[m.title]['text']=='Album 2' and m.labels()==[*COVER_ALBUM,'Go to Artist']
+    assert m.nodes[m.title]['text']=='Album 2' and m.labels()==[*COVER_ALBUM,'Add to Playlist','Go to Artist']
     assert m.hold()==0
     m.pick(action); m.pick(action); m.advance(0); blink_out(m)
     assert m.names()==want and not m.playback() and not m.plays and m.top==m.page
@@ -4373,10 +4373,10 @@ assert m.run(1) is None and m.names()==['A','B','C','T2'] and m.query[:3]==('get
 assert m.names(m.get(syms['tools_pdeq_directory']))==['staged'] and m.pool()==[0,1,2,3]; passed()
 
 # Go to artist uses the album record directly; an absent artist omits that action.
-m=CoverflowMachine(); m.open(); m.run(5)
+m=CoverflowMachine(); m.open(); m.run(6)
 assert m.opened[-1][:2]==('localmusic/artistinfo_page',O['CLASS_ALBUMS']); passed()
 m=CoverflowMachine(); m.word(m.albums[0]+O['REC_ARTIST'],0); m.open(); m.press(100); assert m.hold()==11
-assert m.labels()==COVER_ALBUM; passed()
+assert m.labels()==[*COVER_ALBUM,'Add to Playlist']; passed()
 # Closing the source before the deferred open never creates a dialog.
 m=CoverflowMachine(); m.open(); m.press(100)
 assert m.call(O['KEY_PLAY'],address=syms['on_wm_keylong_fun'],event_type=O['EVT_KEY_LONG'],gap=0)==11
@@ -4465,7 +4465,7 @@ for theme_ in '102':
     m,*_=usb_page(1,theme_=theme_,machine=UsbMachine); assert not m.timers
 passed()
 m=AlbumRateMachine(); m.open(); m.word(m.slide+O['SLIDE_INDEX'],1); a1=m.aid(m.albums[1])
-assert m.menu()==[*COVER_ALBUM,'Go to Artist'] and m.top==m.page; passed()
+assert m.menu()==[*COVER_ALBUM,'Add to Playlist','Go to Artist'] and m.top==m.page; passed()
 # The rating panel under Classic: no opaque fill of its own; the gloss, one fill per row of its 110; "3 Hearts".
 rk=classic_light_new(AlbumRateMachine); rk.mock('strstr@GLIBC_2.0'); rk.open(); rk.word(rk.slide+O['SLIDE_INDEX'],1); assert rk.run(4) is None and rk.panel()
 rp=rk.panel(); assert rk.nodes[rp]['style:normal:bg_color']==0 and 'style:normal:round_radius' not in rk.nodes[rp] and wbox(rk,rp)[2:]==(320,126)  # the panel's 304 x 110, its ring and soft shadow
@@ -4603,7 +4603,7 @@ assert m.call(address=payload_syms['coverflow_goto_album'],args=(m.albums[0],0,0
 # An artist's albums in Coverflow (coverflow_artist) have the same rows and picker; Return leaves the picker first.
 m=AlbumRateMachine(); dq=m.deque(m.albums[:2]); m.top=m.node('window','artistinfo_page'); m.stack=[m.top]
 assert m.call(address=payload_syms['coverflow_artist'],args=(dq,0,0,0),gap=0)==1; m.page=m.top; m.slide=m.find('slide_menu')
-assert m.menu()==[*COVER_ALBUM,'Go to Artist'] and m.rate(5) is None and m.kept()==[(m.aid(m.albums[0])&~7)|5]
+assert m.menu()==[*COVER_ALBUM,'Add to Playlist','Go to Artist'] and m.rate(5) is None and m.kept()==[(m.aid(m.albums[0])&~7)|5]
 assert m.run(4) is None and m.call(O['KEY_RETURN'])==11 and m.panel() is None and m.top==m.page; passed()
 # An artist's covers stop at both ends (All albums the last): a step past kicks the end and springs it back, never wrapping.
 w=m.slide; index=lambda: m.get(w+O['SLIDE_INDEX'])

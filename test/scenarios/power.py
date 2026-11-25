@@ -150,7 +150,7 @@ assert [(c[1],m.text(c[2]),m.text(c[3])) for c in m.calls if c[0]=='write_int_co
 # The row, after Charge Limit: off by default and saved as SMARTWIFI. Turned off while Smart Wi-Fi has
 # the radio off, the user's Wi-Fi comes back, unsaved, and is left alone.
 m,rows,texts,icons,click=settings_page('power','scroll_view_powermanager',cls=SmartMachine,config={'SMARTWIFI':'0'})
-assert texts()==['Standby Limit: Off','Charge Limit (80%)','USB DAC Charging: Off','Smart Wi-Fi','system_carmode','Battery History','Boot to: Rockbox'] and icons[3]=='wifiset_wifi'
+assert texts()==['Standby Limit: Off','Charge Limit (80%)','USB DAC Charging: Off','Smart Wi-Fi','system_carmode','Battery History','Boot to: Q2 Pod'] and icons[3]=='wifiset_wifi'
 assert switch_image(m,rows[3])=='switch_off' and click(3)==[(1,'Q2POD','SMARTWIFI')] and switch_image(m,rows[3])=='switch_on'
 m.pass_(1); m.pass_(SW_IDLE); assert m.flag()==0
 assert click(3)==[(0,'Q2POD','SMARTWIFI')] and switch_image(m,rows[3])=='switch_off'
