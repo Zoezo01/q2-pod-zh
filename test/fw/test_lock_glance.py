@@ -9,6 +9,7 @@ from conftest import O, Config, Deques, block, rgba
 from test_lockscreen import WALLS, AURORA, Bitmaps, Window, draws, handlers
 from test_upnext import Low
 from test_language import COPY, lang, lines  # noqa: F401  (lang: the fixture)
+from test_nav_loop import Clock
 
 THEMES = ['0', '1', '2', '3']  # THEME's stored values: Minimal, Classic, Modern, Classic Modern
 STOCK = ('img_screensaver', 'view_timeinfo', 'clock_time', 'clock_date', 'label_battery', 'img_battery', 'pgbar_battery',
@@ -553,12 +554,6 @@ def test_its_window_or_the_volume_over_it_takes_the_touch(fw, mcl, now, front, t
     assert touch(fw, DOWN, KNOB_X + 10, 250) == taken
 
 
-class Ms:
-    def __init__(self, fw, now=5000):
-        self.now = now
-        fw.mock('time_now_ms', lambda *_: self.now)
-
-
 def flip(fw, g, ms, at=200):
     """The clock held: its hold's timer fired and the veil past its turn."""
     touch(fw, DOWN, 100, 40)
@@ -570,7 +565,7 @@ def flip(fw, g, ms, at=200):
 @pytest.mark.parametrize('light', ['0', '1'])
 def test_the_clock_held_a_second_flips_through_the_plain_ground(fw, mcl, now, light):
     """No picture: the flipped view is the large clock on the plain ground, the veil that colour."""
-    ms = Ms(fw)
+    ms = Clock(fw, 5000)
     g = Glance(fw, mcl, queue=1, LIGHT=light)
     fronted(fw)
     touch(fw, DOWN, 100, 40)
@@ -589,14 +584,14 @@ def test_the_clock_held_a_second_flips_through_the_plain_ground(fw, mcl, now, li
 
 
 def test_a_late_fade_step_still_turns(fw, mcl, now):
-    ms = Ms(fw)
+    ms = Clock(fw, 5000)
     g = Glance(fw, mcl, queue=1)
     fronted(fw)
     assert flip(fw, g, ms, 900) == RET_OK and g.boxes()['time'][1] == 50
 
 
 def test_with_a_picture_the_flip_shows_it_and_the_slider_alone(fw, mcl, now):
-    ms = Ms(fw)
+    ms = Clock(fw, 5000)
     Bitmaps(fw)
     g = Glance(fw, mcl, picture=WALLS[AURORA], queue=1)
     fronted(fw)
@@ -616,7 +611,7 @@ def test_the_hold_is_the_clock_s_with_a_queue_alone(fw, mcl, now, queue, x, y):
 
 @pytest.mark.parametrize('dx, dy, flips', [(14, 0, True), (15, 0, False), (0, -15, False), (-14, 14, True)])
 def test_a_finger_moving_off_the_clock_lets_the_hold_go(fw, mcl, now, dx, dy, flips):
-    Ms(fw)
+    Clock(fw, 5000)
     g = Glance(fw, mcl, queue=1)
     fronted(fw)
     touch(fw, DOWN, 100, 40)
@@ -627,7 +622,7 @@ def test_a_finger_moving_off_the_clock_lets_the_hold_go(fw, mcl, now, dx, dy, fl
 
 def test_the_held_clock_s_view_is_the_next_lock_s(fw, mcl, now):
     """Flipped, unlocked and locked again: the next window opens on the large clock (RAM alone: a restart forgets)."""
-    ms = Ms(fw)
+    ms = Clock(fw, 5000)
     g = Glance(fw, mcl, queue=1)
     fronted(fw)
     flip(fw, g, ms)
@@ -638,7 +633,7 @@ def test_the_held_clock_s_view_is_the_next_lock_s(fw, mcl, now):
 
 
 def test_the_queue_s_end_turns_back(fw, mcl, now):
-    ms = Ms(fw)
+    ms = Clock(fw, 5000)
     g = Glance(fw, mcl, queue=1)
     fronted(fw)
     flip(fw, g, ms)
@@ -681,7 +676,7 @@ def test_a_tick_back_moves_the_knob_back_and_never_past_its_rest(fw, mcl, now):
 def test_ticks_short_of_the_end_go_back_a_second_after_the_last(fw, mcl, now):
     g = Glance(fw, mcl, queue=1)
     fronted(fw)
-    ms = Ms(fw)
+    ms = Clock(fw, 5000)
     wheel(fw), wheel(fw)
     ms.now += 999
     tick(fw)
