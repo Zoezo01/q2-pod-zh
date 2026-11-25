@@ -9323,6 +9323,8 @@ m=LyricSaveMachine({}); assert cover_copy(m,src)==':' and not m.files; passed() 
 # path in single quotes instead, so the shell expands nothing in it; test/fw runs the command through /bin/sh.
 from build import FOLDER_RM_CALL
 assert m.text(0x782ff8)=='rm -rf "%s"' and m.get(FOLDER_RM_CALL)==jal(payload_syms['ringnav_folder_rm'])
+from build import LOCK_DARK_CALL
+assert m.get(LOCK_DARK_CALL[0])==jal(payload_syms['lockscreen_dark']); passed()  # screen off: black under the next lock screen
 cmd=m.alloc(0x61b); m.call(address=payload_syms['ringnav_folder_rm'],args=(cmd,0x61b,0x782ff8,m.string("/mnt/mmc/$NOT/Guns N' Roses")),gap=0)
 assert m.text(cmd)=="rm -rf '/mnt/mmc/$NOT/Guns N'\\'' Roses'"; passed()
 
@@ -11900,7 +11902,7 @@ for _ in range(2):
 m.u.mem_write(syms['g_screensaver_picture'],cards[0].encode()+b'\0'); m.reset=False; m.calls=[]
 assert m.call(address=HOOKS['get_screensaver_image'][0],args=(0,0,0,0),gap=0)==0
 assert listed()==['screensaver_default',*WALLS,*cards] and not [c for c in m.calls if c[0]=='toolsWriteConfig']; passed()
-# The Lock screen page's list: Clock right after Time show, iconless and 78 high as stock's rows,
+# The Lock screen page's list: Layout right after Time show, then Clock and Return Unlocks, iconless and 78 high as stock's rows,
 # Standard unless Q2POD LOCKCLOCK is 1; the built-ins' thumbnails lose their (file://) image.
 def lock_page(config={}):
     m=lock_machine(config=config)
@@ -11912,10 +11914,10 @@ def lock_page(config={}):
     for e in m.nodes[view]['children']: m.word(e+O['W_PARENT'],view)
     m.top=m.node('window','screensaver_page',[m.node('list_view','list_view',[view])]); m.nodes[m.wm]={'children':[m.top]}
     assert m.call(address=HOOKS['screensaver_rows'][0],args=(m.top,0,0,0),gap=0)==0 and m.calls[0][:2]==('stock_saverrows',m.top)
-    row=m.nodes[view]['children'][1]; button=m.nodes[row]['children'][0]; label=m.nodes[button]['children'][-1]
+    row=m.nodes[view]['children'][2]; button=m.nodes[row]['children'][0]; label=m.nodes[button]['children'][-1]
     return m,row,button,label,thumbs
 m,row,button,label,thumbs=lock_page()
-assert len(m.nodes[named(m,m.top,'scroll_view')]['children'])==7 and m.get(row+O['W_H'])==78  # 2 stock rows, Clock, Layout, 3 grid rows
+assert len(m.nodes[named(m,m.top,'scroll_view')]['children'])==8 and m.get(row+O['W_H'])==78  # 2 stock rows, Layout, Clock, Return Unlocks, 3 grid rows
 assert len(m.nodes[button]['children'])==1 and m.get(label+O['W_X'])==10 and m.nodes[label]['text']=='Clock: Standard'
 assert [m.nodes[t]['image'] for t in thumbs]==['file://x']+['']*6+['file://x']
 def clock_click():
@@ -11924,18 +11926,28 @@ def clock_click():
 assert clock_click()==[(1,'Q2POD','LOCKCLOCK')] and m.nodes[label]['text']=='Clock: Large'
 assert clock_click()==[(0,'Q2POD','LOCKCLOCK')] and m.nodes[label]['text']=='Clock: Standard'; passed()
 m,_,_,label,_=lock_page({'LOCKCLOCK':'1'}); assert m.nodes[label]['text']=='Clock: Large'; passed()
-# Layout (Q2POD LOCKLAYOUT, Default unless 1) follows Clock, 78 high; a click saves the other and has the rows built again a
-# loop pass later, Clock's only under Default.
+# Layout (Q2POD LOCKLAYOUT, Default unless 1) follows Time show, 78 high; a click saves the other and has the rows built again a
+# loop pass later: Clock under Default, Background and Shine under At a Glance, then Return Unlocks (Q2POD LOCKRETURN, On unless 0).
 def layout_row(m,at):
     row=m.nodes[named(m,m.top,'scroll_view')]['children'][at]; button=m.nodes[row]['children'][0]
-    return row,button,m.nodes[button]['children'][-1]
-m,_,_,_,_=lock_page(); row,button,label=layout_row(m,2)
+    return row,button,next(c for c in m.nodes[button]['children'] if 'text' in m.nodes[c])  # a switch's image follows its label
+m,_,_,_,_=lock_page(); row,button,label=layout_row(m,1)
+assert m.nodes[layout_row(m,3)[2]]['text']=='Return Unlocks' and m.get(layout_row(m,3)[0]+O['W_H'])==78
 assert m.get(row+O['W_H'])==78 and m.nodes[label]['text']=='Layout: Default'
 m.calls=[]; f,ctx=m.handler(button,O['EVT_CLICK']); assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0
 assert [(c[1],m.text(c[2]),m.text(c[3])) for c in m.calls if c[0]=='write_int_config']==[(1,'Q2POD','LOCKLAYOUT')] and m.nodes[label]['text']=='Layout: At a Glance'
 assert not [c for c in m.calls if c[0]=='stock_saverrows']; passed()  # not inside the row's own click
 m,_,_,_,_=lock_page({'LOCKLAYOUT':'1'}); row,button,label=layout_row(m,1)
-assert len(m.nodes[named(m,m.top,'scroll_view')]['children'])==6 and m.nodes[label]['text']=='Layout: At a Glance'; passed()  # no Clock
+assert len(m.nodes[named(m,m.top,'scroll_view')]['children'])==9 and m.nodes[label]['text']=='Layout: At a Glance'  # no Clock
+assert [m.nodes[layout_row(m,i)[2]]['text'] for i in (2,3,4)]==['Background: Cover Colour','Shine','Return Unlocks']; passed()
+# Background steps its three values; Shine unset shows the theme's (Minimal's off) and its first click saves the other
+m,_,_,_,_=lock_page({'LOCKLAYOUT':'1'}); row,button,label=layout_row(m,2)
+for want in ('Background: Plain','Background: Blurred Cover','Background: Cover Colour'):
+    m.calls=[]; f,ctx=m.handler(button,O['EVT_CLICK']); assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and m.nodes[label]['text']==want
+row,button,label=layout_row(m,3)
+m.calls=[]; f,ctx=m.handler(button,O['EVT_CLICK']); assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0
+assert [(c[1],m.text(c[2]),m.text(c[3])) for c in m.calls if c[0]=='write_int_config']==[(1,'Q2POD','LOCKSHINE')]
+assert [m.nodes[c].get('image') for c in m.nodes[button]['children'] if 'text' not in m.nodes[c]]==['switch_on']; passed()
 # Classic hides this page's toolbar: its switch is the list's first row, reading what stock's hidden img_switch shows; the row's click is
 # that image's, a loop pass later as stock rebuilds the list it's in. Stock's rows follow. Minimal keeps its toolbar and gets no row.
 def lock_switch(boot):
@@ -11946,12 +11958,12 @@ def lock_switch(boot):
     assert m.call(address=HOOKS['screensaver_rows'][0],args=(m.top,0,0,0),gap=0)==0
     return m,sw,view,stock
 m,sw,view,stock=lock_switch(classic_light_on)
-rows=m.nodes[view]['children']; assert len(rows)==5 and rows[1]==stock[0] and rows[4]==stock[1]  # the switch, Show Time, Clock, Layout, Custom
+rows=m.nodes[view]['children']; assert len(rows)==6 and rows[1]==stock[0] and rows[5]==stock[1]  # the switch, Show Time, Layout, Clock, Return Unlocks, Custom
 button=m.nodes[rows[0]]['children'][0]; label,value=m.nodes[button]['children'][:2]
 assert m.nodes[label]['text']=='Lock Screen' and m.nodes[value]['text']=='Off'
 f,ctx=m.handler(button,O['EVT_CLICK']); assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and not m.dispatched()
 m.nodes[sw]['image']='switch_on'; m.advance(0); assert [c[1] for c in m.dispatched()]==[sw] and m.nodes[value]['text']=='On'; passed()
-m,sw,view,stock=lock_switch(lambda _:None); assert m.nodes[view]['children'][0]==stock[0] and len(m.nodes[view]['children'])==4; passed()
+m,sw,view,stock=lock_switch(lambda _:None); assert m.nodes[view]['children'][0]==stock[0] and len(m.nodes[view]['children'])==5; passed()
 # The sleep timer has no list: the row sits over its fields, in the row's font. With the switch off only the row shows, and Centre is its click; on, Centre walks the fields as
 # stock's page has it. Minimal has no row, and its Centre walks the fields either way.
 m,sw,fields_,ok=sleep_page(classic_light_on); button=m.nodes[m.top]['children'][-1]; label,value=m.nodes[button]['children'][:2]

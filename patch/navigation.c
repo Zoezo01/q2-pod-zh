@@ -3160,8 +3160,10 @@ static int cf_art_log __attribute__((section(".scratch")));
 /* Display's Hide Duplicate Albums and Hide Duplicate Songs (CFDUPALBUMS, CFDUPSONGS): coverflow.c
  * music_albums and coverflow_cover_tracks. */
 static int cf_dups[2] __attribute__((section(".scratch")));
-/* The Lock Screen's Layout (LOCKLAYOUT): lockscreen.c reads it as each lock window opens. */
-static int lock_layout __attribute__((section(".scratch")));
+/* The Lock Screen's Layout, Background, Shine and Return Unlocks (LOCKLAYOUT, LOCKGROUND,
+ * LOCKSHINE, LOCKRETURN): lockscreen.c and lock_glance.c read them as each lock window opens,
+ * Return Unlocks at each Return. */
+static int lock_set[4] __attribute__((section(".scratch")));
 static const struct {
     int *value;
     const char *key;
@@ -3202,18 +3204,26 @@ static const struct {
              { &cf_dups[0], "CFDUPALBUMS" },
              { &cf_dups[1], "CFDUPSONGS" },
              { &sr_setting, "SAMPLERATE" },
-             { &lock_layout, "LOCKLAYOUT" } };
+             { &lock_set[0], "LOCKLAYOUT" },
+             { &lock_set[1], "LOCKGROUND" },
+             { &lock_set[2], "LOCKSHINE" },
+             { &lock_set[3], "LOCKRETURN" } };
 _Static_assert(sizeof pods / sizeof *pods == POD_COUNT, "a pods row per row");
-/* a row's choices: Artist albums three, Standby limit four, every other row two */
-static int pod_choices(unsigned i) { return i == POD_ARTIST_CF ? 3 : i == POD_STANDBY ? 4 : 2; }
+/* a row's choices: Artist albums and the lock screen's Background three, Standby limit four,
+ * every other row two */
+static int pod_choices(unsigned i) {
+    return i == POD_ARTIST_CF || i == POD_LOCKGROUND ? 3 : i == POD_STANDBY ? 4 : 2;
+}
 void pod_settings(void) {
     if (st.pod_read) return;
     for (unsigned i = 0; i < sizeof pods / sizeof *pods; ++i)
-        if (pods[i].key) /* Artist albums defaults to Coverflow, Update Notifications and
-                            Receive Audio to On */
+        if (pods[i].key) /* Artist albums defaults to Coverflow, Update Notifications, Receive
+                            Audio and Return Unlocks to On; Shine unset is -1, the theme's */
             *pods[i].value =
                 config_value("Q2POD", pods[i].key, pod_choices(i),
-                             i == POD_ARTIST_CF || i == POD_REMIND_DAILY || i == POD_BT_RECEIVE);
+                             i == POD_LOCKSHINE ? -1
+                                                : i == POD_ARTIST_CF || i == POD_REMIND_DAILY ||
+                                                      i == POD_BT_RECEIVE || i == POD_LOCKRETURN);
     st.pod_read = 1;
 }
 /* A pod_rows row's value (POD_*, one with a pods entry), read once from config.ini. */
@@ -3289,6 +3299,10 @@ static void pod_text(int i) {
         { N_("Hide Duplicate Songs") },
         { N_("Show Sample Rate") },
         { N_("Layout: Default"), N_("Layout: At a Glance") },
+        { N_("Background: Cover Colour"), N_("Background: Plain"),
+          N_("Background: Blurred Cover") },
+        { N_("Shine") },
+        { N_("Return Unlocks") },
     };
     _Static_assert(sizeof names / sizeof *names == POD_COUNT, "a names entry per row");
     if (i == POD_CF_SORT) { /* the Sort card's words, as Cover Flow's page holds the row */
@@ -3301,6 +3315,7 @@ static void pod_text(int i) {
             : i == POD_CARMODE     ? g_carmode != 0
             : i == POD_COVERMODE   ? g_bigcovermode == 1
             : i == POD_FOLDERCOVER ? g_foldercover_flag != 0
+            : i == POD_LOCKSHINE   ? glance_shine() /* unset: the theme's */
             : pods[i].value        ? *pods[i].value
                                    : 0;
     const char *toggle = names[i][0] && !names[i][1] && i != POD_CF_REFRESH ? tr(names[i][0]) : 0;
@@ -3358,6 +3373,7 @@ static int pod_click(void *ctx, event_t *event) {
         write_int_config(g_foldercover_flag, "PLAYSET", "FOLDERCOVER");
     } else {
         int *value = pods[i].value;
+        if (i == POD_LOCKSHINE) *value = glance_shine(); /* unset, the theme's: from what shows */
         *value = (*value + 1) % pod_choices(i);
         write_int_config(*value, "Q2POD", pods[i].key);
         if (i == POD_SCAN_DURATIONS && !*value) durations_cancel();
@@ -4373,7 +4389,7 @@ static unsigned np_art(const char **file) {
                  : 0;
 }
 /* np_art's key alone: the playing track and its cover file, 0 while the player has none. At a
- * Glance's blur is made again when it moves (lock_glance.c). */
+ * Glance's ground is sampled again when it moves (lock_glance.c). */
 unsigned np_art_key(void) {
     const char *file;
     return np_art(&file);
@@ -5585,8 +5601,6 @@ unsigned *ringnav_style_color(unsigned *color, void *style, const char *name, un
         return color;
     }
     if (st.paint_w && name && tk_str_end_with(name, "text_color")) {
-        /* a label whose colour is final in either half (lock_glance.c put): as stored */
-        if (ipod_paper() && widget_get_prop_int(st.paint_w, "_raw_ink", 0)) return color;
         if (kb_key(st.paint_w)) { /* kb_paint_key draws it */
             *color &= 0xffffff;
             return color;
@@ -9208,31 +9222,14 @@ int ringnav_input(widget_t *wm, event_t *e) {
         st.touch_x = I(e, EVENT_X);
         st.touch_y = I(e, EVENT_Y);
     }
-    /* The lock screen's volume panel (the wheel's, stock's volume_dialog) is a full-screen window
-     * over the slider: a finger down anywhere puts it away, and stock's lock window then has the
-     * same touch, so it may go on to slide. */
-    if (type == EVT_POINTER_FIRST && g_lockscreen_pageflag) {
-        widget_t *front = window_manager_get_top_window(wm);
-        if (front && !tk_strcmp(widget_get_prop_str(front, "name", ""), "volume_dialog"))
-            window_close(front);
-    }
-    /* At a Glance's lock window takes its touches itself (lock_glance.c), the volume panel's too,
-     * so the touch that put it away may go on to slide; stock never sees them. A prompt over the
-     * lock screen (Shut Down?) keeps its own. */
-    if (type >= EVT_POINTER_FIRST && type <= EVT_POINTER_ABORT && g_lockscreen_pageflag &&
-        lockscreen_touch(wm, e, type))
-        return 0;
+    /* the lock screen's touches and Return (lockscreen.c): here, as the other input gates are */
+    if (lockscreen_input(wm, e)) return 0;
     if ((type == EVT_KEY_DOWN || type == EVT_KEY_UP || type == EVT_KEY_LONG) &&
         (key == KEY_PREV || key == KEY_NEXT || key == KEY_CENTER) && usb_prompt()) {
         reset_poweroptions_timer(1, 1, 1);
         if (type == EVT_KEY_UP) ringnav(0, e);
         return 0;
     }
-    /* Return on the lit lock screen does nothing: stock's lock window took it as Back
-     * (on_common_keyup) and closed, unlocking past the slider. Shut Down? over it keeps Return. */
-    if ((type == EVT_KEY_DOWN || type == EVT_KEY_UP || type == EVT_KEY_LONG) && key == KEY_RETURN &&
-        g_lockscreen_pageflag && g_backlight_status && !g_poweroff_state)
-        return 0;
     widget_t *top = window_manager_get_top_window(wm);
     if (type == EVT_KEY_UP && (key == KEY_PREV || key == KEY_NEXT) && usable() &&
         window_manager_is_animating(wm) && top &&

@@ -567,7 +567,7 @@ MORE_ARTIST_CLOSE = ((0x5399d4, 0x2624ccf8, 0x26240000 | 0x786994 & 0xffff), (0x
 # mclAutoChange asks hciplayer for its status and waits for the answer: 40 to 125 round trips a second.
 # The call goes through ringnav_mainscheduling (navigation.c), which paces it (docs/internals.md#battery).
 MAINSCHEDULING_CALL = (0x4f42a4, 0x0320f809)
-# screen_action(0)'s bal disable_fb: the framebuffer goes black first when the next wake opens the lock window
+# screen_action(0)'s bal disable_fb: with the lock screen on and no lock window up, the framebuffer goes black first
 # (lockscreen.c lockscreen_dark, docs/internals.md#lock-screen)
 LOCK_DARK_CALL = (0x501ff0, 0x0411f0c2)
 # mclStartPlayer's wired mute and sleep from the idle player (crossfade.c start_mute, docs/internals.md#wired-start).
@@ -1552,7 +1552,7 @@ FUNCTIONS = {
  'dialog_quit': ('int', 'widget_t *, unsigned'),  # quick settings' close, as its swipe up ends (0x4a1fd8)
  'window_manager_close_window_force': ('int', 'widget_t *, widget_t *'),
  'disable_fb': ('int', 'void'),  # FBIOBLANK powerdown (lockscreen.c lockscreen_dark)
- 'saver_unlock': ('int', 'widget_t *, void *'),  # the lock window's slide handler, its window as ctx (lock_glance.c glance_open)
+ 'saver_unlock': ('int', 'widget_t *, void *'),  # the lock window's slide handler: the window first, the second never read (lock_glance.c unlock)
  'navigator_to': ('int', 'const char *'),
  'navigator_to_with_context': ('int', 'const char *, const void *'),
  'window_manager_get_input_device_status': ('char *', 'widget_t *'),

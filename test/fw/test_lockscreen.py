@@ -893,7 +893,7 @@ def test_a_rebuilt_grid_keeps_the_rendered_thumbnails(fw):
 def test_the_clock_row_is_the_lock_clock_s_setting(fw, large):
     """A click on the row it adds steps Q2POD LOCKCLOCK, Standard and Large in turn."""
     Picker(fw, [b'screensaver_default'], LOCKCLOCK=str(large))
-    for _, click in handlers(fw, EVT_CLICK):  # with no toolbar, the page's switch row's too, and Layout's
+    for _, click in handlers(fw, EVT_CLICK):  # with no toolbar, the page's switch row's too, Layout's and Return Unlocks'
         click()
     (value, section, key, *_), = [args for _, args in fw.calls('write_int_config') if C.string_at(args[2]) == b'LOCKCLOCK']
     assert (value, C.string_at(section), C.string_at(key)) == (1 - large, b'Q2POD', b'LOCKCLOCK')
@@ -908,13 +908,17 @@ def calls_since(fw, since, name):
     return [args for n, args in fw.calls()[since:] if n == name]
 
 
-@pytest.mark.parametrize('layout, texts', [(None, ['Clock: Standard', 'Layout: Default']), ('0', ['Clock: Standard', 'Layout: Default']),
-                                           ('1', ['Layout: At a Glance'])])
-def test_layout_follows_clock_and_clock_is_default_s_alone(fw, layout, texts):
-    """Layout (Q2POD LOCKLAYOUT, Default unless 1) comes after Clock, 78 high, restacked under it; At a Glance has
-    no Clock row, its layout being every theme's own."""
+ROWS = ('Clock', 'Layout', 'Background', 'Shine', 'Return')
+DEFAULT_ROWS = ['Layout: Default', 'Clock: Standard', 'Return Unlocks']
+GLANCE_ROWS = ['Layout: At a Glance', 'Background: Cover Colour', 'Shine', 'Return Unlocks']
+
+
+@pytest.mark.parametrize('layout, texts', [(None, DEFAULT_ROWS), ('0', DEFAULT_ROWS), ('1', GLANCE_ROWS)])
+def test_layout_follows_time_show_and_its_rows_follow_it(fw, layout, texts):
+    """Layout (Q2POD LOCKLAYOUT, Default unless 1) comes after Time show, then Clock under Default, or Background
+    and Shine under At a Glance, then Return Unlocks under either, each 78 high and restacked under the last."""
     picker = Picker(fw, [b'screensaver_default'], **({'LOCKLAYOUT': layout} if layout else {}))
-    assert [t for t in row_texts(fw) if t.startswith(('Clock', 'Layout'))] == texts
+    assert [t for t in row_texts(fw) if t.startswith(ROWS)] == texts
     last = picker.rows[-1]
     assert [args[:3] for _, args in fw.calls('widget_resize')].count((last, 375, 78)) == len(texts)
     assert [args[:2] for _, args in fw.calls('widget_restack') if args[0] == last][:len(texts)] == [
@@ -927,7 +931,7 @@ def test_the_layout_row_steps_q2pod_locklayout_and_lays_the_rows_out_again(fw, l
     again (Clock's comes or goes) with the wheel kept on Layout's row."""
     picker = Picker(fw, [b'screensaver_default'], LOCKLAYOUT=str(layout))
     page = fw.var('lockscreen__rows_win', C.c_void_p)
-    layout_click = [click for _, click in handlers(fw, EVT_CLICK)][-1]
+    layout_click = [click for _, click in handlers(fw, EVT_CLICK)][0]  # the first of the page's own rows
     n = len(fw.calls())
     layout_click()
     (value, section, key, *_), = calls_since(fw, n, 'write_int_config')
@@ -939,14 +943,14 @@ def test_the_layout_row_steps_q2pod_locklayout_and_lays_the_rows_out_again(fw, l
     fw.mock('window_manager_get_top_window', lambda *_: win)  # the row's window, still in front
     assert win and C.CFUNCTYPE(C.c_int, C.c_void_p)(fn)(0) == RET_OK
     assert [args[0] for args in calls_since(fw, n, 'stock_saverrows_trampoline')] == [win] and not page.value
-    assert row_texts(fw, n) == [['Clock: Standard', 'Layout: Default'], ['Layout: At a Glance']][1 - layout]
+    assert [t for t in row_texts(fw, n) if t.startswith(ROWS)] == [DEFAULT_ROWS, GLANCE_ROWS][1 - layout]
     assert picker
 
 
 def test_rows_again_skip_a_page_no_longer_in_front(fw):
     Picker(fw, [b'screensaver_default'])
     fw.mock('window_manager_get_top_window', lambda *_: 0x9900)
-    [click for _, click in handlers(fw, EVT_CLICK)][-1]()
+    [click for _, click in handlers(fw, EVT_CLICK)][0]()
     fn = fw.calls('timer_add')[-1][1][0]
     n = len(fw.calls())
     assert C.CFUNCTYPE(C.c_int, C.c_void_p)(fn)(0) == RET_OK and not calls_since(fw, n, 'stock_saverrows_trampoline')

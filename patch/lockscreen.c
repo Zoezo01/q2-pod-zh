@@ -290,8 +290,11 @@ static int info_tick(const void *info) {
  * lock window up, the framebuffer is cleared first: stock's wake unblanks the panel on whatever the
  * framebuffer holds and opens the lock window after, so the page left at screen-off showed until
  * the lock window was painted. Both pages go black, so that moment is black. Stock's wake order is
- * untouched, and the wake's repaint of every window redraws what a wake without a lock window
- * needs. */
+ * untouched. A wake that opens no lock window (awake_screen: a USB cable, a prompt or message, a
+ * held Centre's Shut Down?) shows black until the first lit loop pass repaints the whole screen.
+ * ponytail: a screen-off and such a wake in one loop pass leave no pass dark, so the black stays
+ * until something repaints; clearing at the two lock wakes' enable_fb (0x4f3224, 0x502694)
+ * instead would spare them. */
 int lockscreen_dark(void) {
     int fd = g_screensaver_mode && !g_lockscreen_pageflag ? open("/dev/fb0", 2) : -1; /* O_RDWR */
     if (fd >= 0) {
@@ -307,23 +310,48 @@ int lockscreen_dark(void) {
     return disable_fb();
 }
 
+/* ringnav_input's, every event (e may be 0): 1 when it is taken here and stock never sees it. With
+ * the lock screen up a finger down puts the wheel's volume panel away (stock's volume_dialog, a
+ * full-screen window over the slider) and goes on to stock's lock window, or At a Glance's
+ * (lockscreen_touch). With Return Unlocks off, Return does nothing on the lock window or its volume
+ * panel: the panel is in front from navigator_to on but the key target only from its open event, so
+ * its Return could still reach the lock window; a prompt (Shut Down?, a scan's) keeps Return. A
+ * dropped Return doesn't hold the screen on. A dark Return is wake_gate's. */
+int lockscreen_input(widget_t *wm, event_t *e) {
+    if (!e || !g_lockscreen_pageflag) return 0;
+    unsigned type = (unsigned)I(e, EVENT_TYPE), key = (unsigned)I(e, EVENT_KEY);
+    widget_t *top = window_manager_get_top_window(wm);
+    int vol = top && !tk_strcmp(widget_get_prop_str(top, "name", ""), "volume_dialog");
+    int lock = top && !tk_strcmp(widget_get_prop_str(top, "name", ""), "saverscreen_page");
+    if (type == EVT_POINTER_FIRST && vol) window_close(top);
+    if (type >= EVT_POINTER_FIRST && type <= EVT_POINTER_ABORT)
+        return lockscreen_touch(wm, e, type);
+    return (type == EVT_KEY_DOWN || type == EVT_KEY_UP || type == EVT_KEY_LONG) &&
+           key == KEY_RETURN && !pod_value(POD_LOCKRETURN) && (vol || lock);
+}
+
 void info_poll(void) {
     glance_poll();
     if (!lk.info || lk.timer || !g_backlight_status) return;
     lk.shown = info_state();
     rearm(&lk.timer, info_tick, 1000);
 }
-/* A label's face and size for its text, which stock writes after the window loads, in any script.
- * Answers the face (0: the system font) and px. */
-static const char *info_face(widget_t *w, int *px) {
-    const char *face = theme_face(w ? widget_get_text(w) : 0, -1, px);
-    /* a face is one of theme_face's literals: the payload's .rodata fits the low 24 bits */
-    int key = *px << 24 | (int)(long)face;
+/* A label's face (0: the system font) and size, written again only when they change: stock writes
+ * the text after the window loads, and the paint asks each time. Shared with lock_glance.c. */
+void lock_face(widget_t *w, const char *face, int px) {
+    /* a face is a literal: the payload's .rodata fits the low 24 bits */
+    int key = px << 24 | (int)(long)face;
     if (w && widget_get_prop_int(w, "_ringnav_box", 0) != key) {
         widget_set_prop_int(w, "_ringnav_box", key);
         widget_set_prop_str(w, "style:normal:font_name", face ? face : "default");
-        widget_set_prop_int(w, "style:normal:font_size", *px);
+        widget_set_prop_int(w, "style:normal:font_size", px);
     }
+}
+/* A label's face and size for its text, in any script. Answers the face (0: the system font) and
+ * px. */
+static const char *info_face(widget_t *w, int *px) {
+    const char *face = theme_face(w ? widget_get_text(w) : 0, -1, px);
+    lock_face(w, face, *px);
     return face;
 }
 /* A label's box, face, size and colour, left unless it's centred. */
@@ -488,9 +516,9 @@ static widget_t *layout_row __attribute__((section(".scratch")));
 static widget_t *rows_win __attribute__((section(".scratch")));
 
 /* The Lock screen page's list (stock 0x4cff00), rebuilt whole when its switch turns: Time show and
- * About, then the picture grid with the switch on. Clock (navigation.c's POD_LOCKCLOCK, Default's
- * alone) and Layout (POD_LOCKLAYOUT) follow Time show, 78 high as stock's rows, and the built-ins'
- * thumbnails are found for lockscreen_paint.
+ * About, then the picture grid with the switch on. Layout (navigation.c's POD_LOCKLAYOUT) follows
+ * Time show, then Clock under Default, or Background and Shine under At a Glance, then Return
+ * Unlocks, 78 high as stock's rows, and the built-ins' thumbnails are found for lockscreen_paint.
  */
 static widget_t *pod_row(widget_t *win, widget_t *view, int pod, int at) {
     static const char *const icons[] = { 0 };
@@ -506,8 +534,12 @@ int lockscreen_rows(widget_t *win) {
     layout_row = 0;
     if (!view || widget_count_children(view) < 2) return result;
     int at = 1;
-    if (!pod_value(POD_LOCKLAYOUT)) pod_row(win, view, POD_LOCKCLOCK, at++);
-    layout_row = pod_row(win, view, POD_LOCKLAYOUT, at);
+    layout_row = pod_row(win, view, POD_LOCKLAYOUT, at++);
+    if (!pod_value(POD_LOCKLAYOUT))
+        pod_row(win, view, POD_LOCKCLOCK, at++);
+    else
+        pod_row(win, view, POD_LOCKGROUND, at++), pod_row(win, view, POD_LOCKSHINE, at++);
+    pod_row(win, view, POD_LOCKRETURN, at);
     void *list = PICTURES;
     for (unsigned i = 0, n = list ? deque_size(list) : 0; i < n; ++i) {
         int id = wall_id(deque_at(list, i));
@@ -532,8 +564,8 @@ static int rows_again(const void *info) {
     }
     return 0; /* RET_OK: a timer's end */
 }
-/* pod_click on Layout's row: the rows again with Clock's or without, a loop pass later, not inside
- * the row's own click. */
+/* pod_click on Layout's row: the rows again with Clock's, or Background's and Shine's, a loop pass
+ * later, not inside the row's own click. */
 void lockscreen_layout_turned(widget_t *win) {
     rows_win = win;
     timer_add(rows_again, (void *)0, 0);

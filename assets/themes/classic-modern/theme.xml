@@ -16,4 +16,6 @@
   <!-- Split's pane where no cover shows: the flat pages' pale grey on paper, each row's flat icon in the half's ink
        (coverflow.c pane_art) and the caption quiet in the system's face -->
   <view name="home"><element name="pane" light.stops="#f2f2f7 0, #f2f2f7 100" count_px="17"/></view>
+  <!-- the Lock Screen's At a Glance: the shine across slide to unlock (patch/lock_glance.c), Classic's alone, not here -->
+  <view name="lock"><element name="slider" shine="0"/></view>
 </theme>

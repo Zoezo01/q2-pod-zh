@@ -433,6 +433,9 @@ enum {
     POD_CF_DUP_SONGS,
     POD_SAMPLERATE, /* Appearance's Show Sample Rate (samplerate.c): the output's rate in the bar */
     POD_LOCKLAYOUT, /* the Lock Screen's Layout: 1 At a Glance (lock_glance.c), else Default */
+    POD_LOCKGROUND, /* At a Glance's Background: 0 Cover Colour, 1 Plain, 2 Blurred Cover */
+    POD_LOCKSHINE,  /* At a Glance's Shine: -1 unset (the theme's lock.slider.shine), 0, 1 */
+    POD_LOCKRETURN, /* the Lock Screen's Return Unlocks: 1 (default) Return unlocks, 0 nothing */
     POD_COUNT
 };
 int pod_value(int i);
@@ -786,17 +789,25 @@ void slider_number(widget_t *label), slider_tray_dirty(widget_t *page),
 void switch_row(widget_t *win, widget_t *view); /* the toolbar's, as a row */
 void stock_more_speed(widget_t *win);
 void stock_more_into(widget_t *win);
-void info_poll(void);      /* lockscreen.c: the info screen's timer, with the screen lit */
-unsigned np_art_key(void); /* navigation.c: the playing track and its cover file, 0 none */
-void ringnav_keep_row(widget_t *row); /* navigation.c: row lit again after its list was rebuilt */
-void lockscreen_layout_turned(widget_t *win); /* lockscreen.c: Layout's row was clicked */
-/* lock_glance.c: At a Glance's lock window, from lockscreen.c */
+/* lockscreen.c: ringnav_input's lock screen events, 1 taken; Layout's row was clicked; a label's
+ * face (0 the system font) at px, set again only when it changes */
+int lockscreen_input(widget_t *wm, event_t *e);
+void lockscreen_layout_turned(widget_t *win);
+void lock_face(widget_t *w, const char *face, int px);
+/* navigation.c: the playing track and its cover file, 0 none; a row lit again after its list was
+ * rebuilt */
+unsigned np_art_key(void);
+void ringnav_keep_row(widget_t *row);
+/* lock_glance.c: At a Glance's lock window, from lockscreen.c; Shine's value, the saved one else
+ * the theme's */
 void glance_init(widget_t *win, widget_t *img, int picture, void *full);
 void glance_poll(void), glance_cover(widget_t *cover);
 int glance_paint(widget_t *w, canvas_t *canvas);
-int lockscreen_touch(widget_t *wm, event_t *e, unsigned type); /* ... and from ringnav_input */
-int xfade_page(widget_t *top);                                 /* crossfade.c */
-int ipod_battery(void); /* theme_engine.c: IPOD BATTERY, 0 Icon, else a percentage */
+int lockscreen_touch(widget_t *wm, event_t *e, unsigned type);
+int glance_shine(void);
+void info_poll(void);          /* lockscreen.c: the info screen's timer, with the screen lit */
+int xfade_page(widget_t *top); /* crossfade.c */
+int ipod_battery(void);        /* theme_engine.c: IPOD BATTERY, 0 Icon, else a percentage */
 int title_gone(void *w, event_t *event); /* ... and looks for its source again at the next sync */
 int bar_title_fits(widget_t *label);     /* label's text fits the bar's title box */
 int ipod_light(void);                    /* theme_engine.c: Light Mode */

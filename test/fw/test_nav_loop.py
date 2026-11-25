@@ -3316,8 +3316,10 @@ def test_a_touch_on_a_prompt_starts_below_the_pull_downs_band(fw, stock_bytes, f
     assert keys(O['EVT_POINTER_FIRST'], 0, y=y) == 7 and start.value == want
 
 
-def lock_screen(fw, stock_bytes, *fronts, power=0):
-    """The lit lock screen (stock's saverscreen_page), with windows over it."""
+def lock_screen(fw, stock_bytes, *fronts, power=0, unlocks=None):
+    """The lit lock screen (stock's saverscreen_page), with windows over it; unlocks Return Unlocks' saved value
+    (Q2POD LOCKRETURN, None: never set, On)."""
+    Config(fw, **({} if unlocks is None else {'LOCKRETURN': unlocks}))
     ui = Ui(fw)
     ui.window('saverscreen_page')
     over = [ui.window(name, 'dialog') for name in fronts]
@@ -3328,15 +3330,35 @@ def lock_screen(fw, stock_bytes, *fronts, power=0):
     return ui, over, keys
 
 
-def test_return_on_the_lit_lock_screen_does_nothing(fw, stock_bytes):
-    """Stock's lock window took Return as Back and closed, past the slider."""
-    _, _, keys = lock_screen(fw, stock_bytes)
+@pytest.mark.parametrize('unlocks, stock', [(None, 3), (1, 3), (0, 0)])
+def test_return_on_the_lit_lock_screen_is_return_unlocks(fw, stock_bytes, unlocks, stock):
+    """Return Unlocks On (the default): stock's lock window takes Return as Back and closes. Off: Return does
+    nothing there, and only a slide unlocks."""
+    _, _, keys = lock_screen(fw, stock_bytes, unlocks=unlocks)
     keys(DOWN, KEY_RETURN), keys(LONG, KEY_RETURN, 10), keys(UP, KEY_RETURN, 10)
+    assert keys.stock == [(DOWN, KEY_RETURN), (LONG, KEY_RETURN), (UP, KEY_RETURN)][:stock]
+
+
+@pytest.mark.parametrize('power', [1, 0])
+def test_return_over_a_prompt_on_the_lock_screen_is_the_prompts(fw, stock_bytes, power):
+    """Shut Down? (power 1) or the card's scan prompt (power 0) over the lock window keeps Return, Return Unlocks
+    off or not."""
+    _, _, keys = lock_screen(fw, stock_bytes, 'confirminfo_dialog', power=power, unlocks=0)
+    keys(DOWN, KEY_RETURN), keys(UP, KEY_RETURN, 10)
+    assert keys.stock == [(DOWN, KEY_RETURN), (UP, KEY_RETURN)]
+
+
+def test_return_over_the_lock_screen_s_volume_is_dropped_with_return_unlocks_off(fw, stock_bytes):
+    """The panel is in front before it is the key target: its Return could still reach the lock window."""
+    _, _, keys = lock_screen(fw, stock_bytes, 'volume_dialog', unlocks=0)
+    keys(DOWN, KEY_RETURN), keys(UP, KEY_RETURN, 10)
     assert keys.stock == []
 
 
-def test_return_over_the_lock_screens_shut_down_is_the_prompts(fw, stock_bytes):
-    _, _, keys = lock_screen(fw, stock_bytes, 'confirminfo_dialog', power=1)
+def test_return_over_the_volume_away_from_the_lock_screen_is_stock_s(fw, stock_bytes):
+    """With no lock window up the wheel's volume panel takes Return as stock has it, Return Unlocks off or not."""
+    _, _, keys = lock_screen(fw, stock_bytes, 'volume_dialog', unlocks=0)
+    fw.var('g_lockscreen_pageflag', C.c_ubyte).value = 0
     keys(DOWN, KEY_RETURN), keys(UP, KEY_RETURN, 10)
     assert keys.stock == [(DOWN, KEY_RETURN), (UP, KEY_RETURN)]
 
