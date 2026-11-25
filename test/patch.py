@@ -6978,11 +6978,13 @@ for boot,row in ((lambda k:k.config.update(THEME='0'),SET['ROW']),(lambda k:k.co
     for builder,sub,more,rows in [('display',s,None,0) for s in range(4)]+[(HOOKS['systemset_sysset_page_init'][0],0,None,0),(playset,0,None,0),
                                   (playset,0,lambda k:k.word(payload_syms['playset_sub'],1),0),(HOOKS['systemset_powermanager_page_init'][0],0,stock_page('power'),0),
                                   (HOOKS['btmenu_rows'][0],0,lambda k:(stock_page('btrows')(k),k.byte(syms['g_bluetoothflag'],1)),0),
-                                  (HOOKS['systemset_fwupdate_page_init'][0],0,stock_page('fwupdate'),2),(HOOKS['screensaver_rows'][0],0,stock_page('saverrows'),2)]:
+                                  (HOOKS['systemset_fwupdate_page_init'][0],0,stock_page('fwupdate'),2),(HOOKS['screensaver_rows'][0],0,stock_page('saverrows'),2),
+                                  (HOOKS['screensaver_rows'][0],0,lambda k:(stock_page('saverrows')(k),k.config.update(LOCKLAYOUT='1')),2)]:  # At a Glance's rows
         CONFIG.clear(); CONFIG.update(WHEELSENSITIVITY='200',RESUMEMIN='120',XFADE='1',XFADESEC='15',LIGHT='2')
         m,view=settings(builder,default=row,sub=sub,boot=lambda k:(boot(k),k.byte(syms['g_keytone_flag'],1),more and more(k)))
         if rows: stock_rows(m,view,rows); assert m.call(address=builder,args=(m.top,5,0,0),gap=0,count=5_000_000)==0
         lay(m,view); assert m.nodes[view]['children'],builder
+        if m.config.get('LOCKLAYOUT')=='1': assert any(m.nodes[c].get('text')=='Wheel Unlocks' for c in m.nodes),'At a Glance rows built'
         for r in m.nodes[view]['children']:
             b=m.nodes[r]['children'][0]; f,ctx=m.nodes[b].get('click',(0,0)); seen=[]
             while m.nodes[r].get('visible',1):  # a value row: Centre until its text comes round; a switch, a chevron or stock's row stays
