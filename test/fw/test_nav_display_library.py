@@ -298,6 +298,16 @@ def appearance(fw, ui, **config):
     return page
 
 
+HIDES = ['Hide Streaming', 'Hide Folder', 'Hide Apps', 'Hide Games', 'Hide App Store', 'Hide Hi-Res']
+
+
+def hide_page(fw, ui, **config):
+    """Appearance, then its Hide row: Home's and the Library's hide switches."""
+    page = appearance(fw, ui, **config)
+    ui.click(button_of(page.view(), 'Hide'))
+    return page
+
+
 # The payload's Appearance rows (setting_text, setting_keys[]): a setting's title, its stored key, and whether it is a
 # switch (list_toggle's On or Off). A theme's own option brings its own label and key, its accent the theme's key.
 PAYLOAD = {'SETTING_LIGHT': ('Light Mode', 'LIGHT', False), 'SETTING_ACCENT': ('Accent', None, False),
@@ -311,10 +321,10 @@ STATE = {'THEME': 'theme', 'LIGHT': 'light', 'ACCENT': 'accent', 'ROUNDED': 'rou
 
 
 def appearance_titles(t):
-    """Appearance's rows under theme t: Theme, t's options in its theme.xml's order, the Home switches every theme
+    """Appearance's rows under theme t: Theme, t's options in its theme.xml's order, the Hide page's row every theme
     has, then Show Sample Rate."""
     return ['Theme'] + [o['label'] if o['setting'] == 'SETTING_OWN' else PAYLOAD[o['setting']][0] for o in t['opts']] + \
-        ['Hide Streaming', 'Hide Folder', 'Hide Apps', 'Hide Games', 'Hide App Store', 'Hide Hi-Res', 'Show Sample Rate']
+        ['Hide', 'Show Sample Rate']
 
 
 def stored_key(t, o):
@@ -367,7 +377,7 @@ def test_appearance_lists_theme_then_minimals_options_in_its_order(fw):
     assert titles(page.view()) == appearance_titles(t)
     # no set_text: a row reads "Title: value", a switch its On or Off
     switches = [PAYLOAD[o['setting']][0] for o in t['opts'] if o['setting'] in PAYLOAD and PAYLOAD[o['setting']][2]] + \
-        ['Hide Streaming', 'Hide Folder', 'Hide Apps', 'Hide Games', 'Hide App Store', 'Hide Hi-Res', 'Show Sample Rate']
+        ['Show Sample Rate']
     assert switches and [row[0] for row in rows(page.view()) if row[1] is not None] == switches
     read = readings(page.view())
     # the running theme's name, and Accent at Minimal's own default, under its own key
@@ -375,15 +385,22 @@ def test_appearance_lists_theme_then_minimals_options_in_its_order(fw):
     # nothing stored: the payload's own defaults (dark, Minimal round, Split, the clock in the title); no Rockbox: Favourites
     assert (read['Light Mode'], read['Rounded Corners'], read['Home'], read['Shortcut'], read['Time in Title']) == \
         ('Off', 'On' if t['name'] == 'Minimal' else 'Off', 'Split', 'Favourites', 'On')
-    assert (read['Show Wordmark'], read['Hide Streaming'], read['Hide Folder']) == ('On', 'Off', 'Off')
-    assert (read['Hide Apps'], read['Hide Games'], read['Hide App Store'], read['Hide Hi-Res']) == ('Off',) * 4
+    assert read['Show Wordmark'] == 'On'
+
+
+def test_appearances_hide_row_opens_the_hide_switches_all_off(fw):
+    ui = Ui(fw)
+    page = hide_page(fw, ui)
+    assert len(page.pages) == 3 and page.title() == 'Hide'
+    assert titles(page.view()) == HIDES and [row[0] for row in rows(page.view()) if row[1] is not None] == HIDES
+    assert [readings(page.view())[t] for t in HIDES] == ['Off'] * 6
 
 
 @pytest.mark.parametrize('title, key', [('Hide Apps', 'HIDEAPPS'), ('Hide Games', 'HIDEGAMES'),
                                         ('Hide App Store', 'HIDESTORE'), ('Hide Hi-Res', 'HIDEHIRES')])
 def test_a_library_hide_switch_saves_its_key(fw, title, key):
     ui = Ui(fw)
-    page = appearance(fw, ui)
+    page = hide_page(fw, ui)
     ui.click(button_of(page.view(), title))
     assert readings(page.view())[title] == 'On' and writes(fw) == [(key, 1)]
 
