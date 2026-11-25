@@ -14,7 +14,7 @@
   - Cover Flow: under Classic and Classic Modern, a playlist of up to 500 songs turns over to its songs, with their total time. Only playlists of up to 200 did; a longer one opened as a list, as it still does past 500.
   - Games: **Vortex** is now named **Bricks**. It is the same game, and it keeps its best score.
   - User guide: it has a release of its own, [User Guide](https://github.com/DiamondBond/q2-pod/releases/tag/guide), as PDF, EPUB and Markdown, so a version's release carries only update.tar.
-  - User guide: **Power and battery** now says that Standby may cause freezes, unexpected restarts or an unresponsive Q2, and that **Auto-shutdown** is strongly recommended instead. An update keeps the settings you had, so a Standby that Shanling's firmware or an older Q2 Pod left on is still on: have a look at **System settings → Power → Standby**. Troubleshooting now says that a Q2 frozen going into or out of Standby may not restart by itself.
+  - User guide: the **Charge Limit** row says that a Q2 that is off can charge to 100% and what sets it off, and Troubleshooting says that a Q2 that freezes going into or out of Standby does not start again by itself.
 - **1.9.2**:
   - Now Playing: the heart fills or empties as soon as you choose **Add to Favourites** or **Remove from Favourites** on the hold menu. It kept its old look until the next song, so tapping it then undid the change.
   - Playback: **Previous** then **Next** comes back to the song you left after changing Shuffle, Repeat or Group by, or at the start of a new shuffled Repeat All round, and the songs not yet played still play. Next could jump past them, or stop the queue under Play All. **Previous Album** at those moments no longer skips the albums between.
