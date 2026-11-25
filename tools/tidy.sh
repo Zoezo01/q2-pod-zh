@@ -14,6 +14,6 @@ host.headers(pathlib.Path(sys.argv[1]))
 print(*(f for f in build.FLAGS if f != "-Werror"))' "$inc" 2>/dev/null)
 [ $# -gt 0 ] || set -- $("$PY" -c 'import sys; sys.path[:0] = ["test/fw"]; import host; print(*host.SOURCES)' 2>/dev/null)
 # shellcheck disable=SC2086 # flags is a word list
-printf '%s\n' "$@" | xargs -P "$(nproc)" -I{} "${CLANG_TIDY:-clang-tidy}" -quiet {} -- $flags -fno-math-errno -I "$inc" -I patch
+printf '%s\n' "$@" | xargs -P "$(nproc)" -I{} clang-tidy -quiet {} -- $flags -fno-math-errno -I "$inc" -I patch
 # shellcheck disable=SC2086 # flags is a word list
-printf '%s\n' "$@" | xargs -P "$(nproc)" -I{} "${CLANG:-clang}" -fsyntax-only -Werror {} $flags -fno-math-errno -I "$inc" -I patch
+printf '%s\n' "$@" | xargs -P "$(nproc)" -I{} clang -fsyntax-only -Werror {} $flags -fno-math-errno -I "$inc" -I patch
