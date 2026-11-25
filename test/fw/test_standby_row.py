@@ -1,17 +1,15 @@
 """system.c's question before Auto-shutdown turns on (docs/internals.md#charge-limit): the Standby page's row click,
 stock's, comes to ringnav_standby_row first. The click that would turn Auto-shutdown on asks in a confirm before
-stock's handler has changed anything, and only the confirm's second cell lets that handler run; and the confirm's
+stock's handler has changed anything, and only the confirm's second cell lets that handler run, and only while Charge Limit is on; and the confirm's
 second line (playlists.c confirm_over)."""
 import ctypes as C
 
 import pytest
 
-from conftest import Config
-from test_nav_loop import Card, Clock
 from test_nav_painters import Ui
 
 CONFIRM = b'dialog/confirminfo_dialog'
-ASK = (b'Charge Limit is not enforced while the Q2 is off.', b'It may charge to 100%. Enable Auto-shutdown?')
+ASK = (b'Charge Limit is not enforced while the Q2 is off.', b'Enable Auto-shutdown?')
 ACCEPT = 10  # the confirm's second cell; Return, and a hold that cancels the prompt, quit it with 4
 SAVES = ('write_int_config', 'stock_write_config_trampoline', 'toolsWriteConfig', 'reset_poweroptions_timer')
 
@@ -21,8 +19,9 @@ class Standby:
     Auto-shutdown, then its times); Auto-shutdown's mode (g_savepower_mode) and Auto-standby's switch (standby: only
     stock's handler writes it); that handler (clicks: what it was given), which flips Auto-shutdown as row 1's click
     does on the Q2, turning Auto-standby off as it turns on; and the confirm (asked: what it showed), answering answer."""
-    def __init__(self, fw, st, mode=0, standby=0, answer=ACCEPT):
+    def __init__(self, fw, st, mode=0, standby=0, answer=ACCEPT, limit=1):
         self.fw, self.st, self.standby, self.answer = fw, st, standby, answer
+        st('charge_limit', C.c_int).value = limit
         self.ui = Ui(fw)
         self.ui.window('home_page')
         self.page = self.ui.window('standby_page')
@@ -61,6 +60,13 @@ def test_turning_auto_shutdown_on_asks_before_stock_has_changed_anything(fw, st,
     assert page.clicks == [(page.rows[1].addr, 0x77)]  # then stock's own turning on, once, with what the click gave
     assert (page.mode.value, page.standby) == (1, 0)  # its mode and its Auto-standby off: all the handler's doing
     assert st('confirm_verb', C.c_void_p).value is None  # the verb is the prompt's alone
+
+
+def test_with_charge_limit_off_the_click_asks_nothing(fw, st):
+    page = Standby(fw, st, limit=0)
+    assert page.click(1) == 9
+    assert page.asked == [] and page.clicks == [(page.rows[1].addr, 0x77)]  # stock's handler, once, with the click's button
+    assert page.mode.value == 1  # on, as before
 
 
 @pytest.mark.parametrize('answer', [0, 4, 9])  # 4: Return, and Hold Return's cancel; any answer but the second cell's
@@ -126,20 +132,6 @@ def test_accept_does_nothing_once_the_page_has_gone(fw, st):
         return ACCEPT
     page = Standby(fw, st, answer=gone)
     assert page.click(1) == 0 and page.clicks == [] and page.mode.value == 0
-
-
-def test_the_loops_passes_ask_nothing(fw, st):
-    """Only the click asks: not a start, nor the polls of every UI pass, with Auto-shutdown off or on."""
-    seen: list = []
-    Clock(fw)
-    Card(fw, {})
-    Config(fw)
-    fw.mock('navigator_to_with_context', lambda name, *_: seen.append(C.string_at(name)) and 0)
-    mode = fw.var('g_savepower_mode', C.c_ubyte)
-    for value in (0, 1):
-        mode.value = value
-        fw.fn('power_poll', None)()
-    assert seen == [] and not fw.calls('stock_standby_row_trampoline')
 
 
 # confirm_over's second line

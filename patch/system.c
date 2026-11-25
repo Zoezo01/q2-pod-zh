@@ -69,25 +69,23 @@ static void charge_poll(void) {
 }
 
 /* Auto-shutdown's question (docs/internals.md#charge-limit): Charge Limit runs only while demo
- * does, so a Q2 that Auto-shutdown powered off charges to full on a charger, as stock's does. The
- * Standby page's row click is stock's (0x4d1e48, by the button's name: row 0 Auto-standby, row 1
- * Auto-shutdown, then its times). The click that would turn Auto-shutdown on asks first, before
- * that handler has changed anything, with Cancel in front. Accept runs the handler, once: the
- * mode, Auto-standby off, both saves, the idle counters and the rows are all its own. Any other
- * answer (Cancel, Return, a hold that cancels the prompt) leaves everything as it was. The
- * prompt's loop ran in between, so the click goes on only while the page is still one of the
- * window manager's windows and Auto-shutdown is still off. */
-extern int stock_standby_row_trampoline(widget_t *, event_t *);
+ * does, so a Q2 that Auto-shutdown powered off charges to full on a charger. The Standby page's row
+ * click is stock's (0x4d1e48, by the button's name: row 0 Auto-standby, row 1 Auto-shutdown, then
+ * its times). With Charge Limit on, the click that would turn Auto-shutdown on asks first, before
+ * that handler has changed anything, and only Accept runs it. The prompt's loop ran in between, so
+ * the click goes on only while the page is still one of the window manager's windows and
+ * Auto-shutdown is still off. ponytail: only this switch asks; Standby Limit, the Sleep Timer and
+ * a shutdown by hand also leave the Q2 off, charging to 100%, and ask nothing. */
 /* Auto-shutdown off, as stock's handler reads its mode: a signed byte, 0 off, 1 to 4 its times */
 static int savepower_off(void) { return (signed char)g_savepower_mode <= 0; }
 int ringnav_standby_row(widget_t *button, event_t *event) {
     const char *name = widget_get_prop_str(button, "name", "");
-    if (name[0] == '1' && !name[1] && savepower_off()) {
+    if (name[0] == '1' && !name[1] && st.charge_limit && savepower_off()) {
         widget_t *wm = window_manager(), *page = window_of(button);
         char ask[0x200];
         tk_snprintf(ask, sizeof ask, "%s\n%s",
                     tr("Charge Limit is not enforced while the Q2 is off."),
-                    tr("It may charge to 100%. Enable Auto-shutdown?"));
+                    tr("Enable Auto-shutdown?"));
         if (confirm_over(ask, tr("Accept"), 0) != 10) return 0;
         unsigned held = widget_count_children(wm);
         while (held && widget_get_child(wm, held - 1) != page) --held;
