@@ -10,9 +10,6 @@
 #include "navigation.h"
 #include "theme.h"
 
-extern const char *now_tag(void *r, int field);
-extern void *queue_now(unsigned *pos, unsigned *n); /* coverflow.c: the playing record, or 0 */
-
 enum { GL_SONG, GL_CLOCK, GL_PICTURE };           /* what the screen shows: gl.mode */
 enum { GROUND_COVER, GROUND_PLAIN, GROUND_BLUR }; /* Background: POD_LOCKGROUND */
 #define GL_W 375

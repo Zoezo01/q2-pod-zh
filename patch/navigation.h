@@ -328,7 +328,7 @@ extern int stock_keyup_trampoline(void *, event_t *), stock_touch_trampoline(voi
 extern int scrobble_ready(void), scrobble_start(void), scrobble_poll(int *sent),
     scrobble_flag(const char *key), scrobble_value(const char *key);
 extern const char *now_tag(void *r, int field);
-extern void *queue_now(unsigned *pos, unsigned *n);
+extern void *queue_now(unsigned *pos, unsigned *n); /* coverflow.c: the playing record, or 0 */
 extern int queue_loaded(void);
 extern void *coverflow_tracks(widget_t *page);
 extern void *coverflow_album(widget_t *page);
