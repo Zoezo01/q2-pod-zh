@@ -315,8 +315,18 @@ On the App Store's **Games** tab. Each plays in **Library → Games**.
     <td></td>
   </tr>
   <tr valign="top">
+    <td><b><a href="https://github.com/Carbon-66/Q2-ConnectFour">Connect Four</a></b></td>
+    <td>Line up four discs in a row against the Q2 at three levels, or a friend on the same Q2.</td>
+    <td></td>
+  </tr>
+  <tr valign="top">
     <td><b><a href="https://github.com/Carbon-66/Q2-TicTacToe">Tic-Tac-Toe</a></b></td>
     <td>Play the Q2 at three levels, or a friend on the same Q2.</td>
+    <td></td>
+  </tr>
+  <tr valign="top">
+    <td><b><a href="https://github.com/Carbon-66/Q2-ChessCheckers">Chess &amp; Checkers</a></b></td>
+    <td>Chess and checkers against the Q2 at six levels, or a friend on the same Q2.</td>
     <td></td>
   </tr>
 </table>
