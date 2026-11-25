@@ -1783,6 +1783,7 @@ PRIVATE_FUNCTIONS = {
     "playermore_online": HOOKS['playermore_online'][0],  # More's Download Cover & Lyrics: (window)
     "specfolder_click": HOOKS['specfolder_click'][0],  # Scan Folders' row click
     "specfolder_scan": HOOKS['specfolder_scan'][0],  # ... and its Scan button's (btn_startscan)
+    "standby_row": HOOKS['standby_row'][0],  # the Standby page's row click: the hook's address check reads it here
 }
 GLOBALS = ['tidal_albuminfo_thread_run', 'tidal_collection_thread_run',  # 2: a Tidal list loaded
            'savestartbt', 'transposition', 'tidalfurlstart',  # a stream to start paused; 1 arms Now Playing's online tick (tidal.c app_start)
