@@ -301,9 +301,7 @@ static void clock_place(void) {
 /* A label's text, written only when it changed (each second while a song plays), so a marquee
  * keeps its rests at either end. */
 static void retext(widget_t *w, const char *want) {
-    char had[300];
-    if (w && (widget_get_text_utf8(w, had, sizeof had) || strcmp(had, want)))
-        widget_set_text_utf8(w, want);
+    if (w && text_differs(w, want)) widget_set_text_utf8(w, want);
 }
 /* The song's own lines: the album, how far in, and its place in the queue. */
 static void song_lines(void) {
