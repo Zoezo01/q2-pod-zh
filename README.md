@@ -305,11 +305,6 @@ On the App Store's **Games** tab. Each plays in **Library → Games**.
     <td></td>
   </tr>
   <tr valign="top">
-    <td><b><a href="https://github.com/lampsonlnguyen/q2-dailyred">Daily Red</a></b></td>
-    <td>A battle a day against Red with the day's six random level-100 Pokémon, the same team for everyone, and a practice mode.</td>
-    <td></td>
-  </tr>
-  <tr valign="top">
     <td><b><a href="https://github.com/Carbon-66/Q2-Vortex">Vortex</a></b></td>
     <td>Breakout down a tube, your bat running round the rim on the wheel; its art, levels and sound are read from your own copy of the iPod game Vortex.</td>
     <td></td>
