@@ -3163,7 +3163,7 @@ static int cf_dups[2] __attribute__((section(".scratch")));
 /* The Lock Screen's Layout, Background, Shine and Return Unlocks (LOCKLAYOUT, LOCKGROUND,
  * LOCKSHINE, LOCKRETURN): lockscreen.c and lock_glance.c read them as each lock window opens,
  * Return Unlocks at each Return. */
-static int lock_set[4] __attribute__((section(".scratch")));
+static int lock_rows[4] __attribute__((section(".scratch")));
 static const struct {
     int *value;
     const char *key;
@@ -3204,10 +3204,10 @@ static const struct {
              { &cf_dups[0], "CFDUPALBUMS" },
              { &cf_dups[1], "CFDUPSONGS" },
              { &sr_setting, "SAMPLERATE" },
-             { &lock_set[0], "LOCKLAYOUT" },
-             { &lock_set[1], "LOCKGROUND" },
-             { &lock_set[2], "LOCKSHINE" },
-             { &lock_set[3], "LOCKRETURN" } };
+             { &lock_rows[0], "LOCKLAYOUT" },
+             { &lock_rows[1], "LOCKGROUND" },
+             { &lock_rows[2], "LOCKSHINE" },
+             { &lock_rows[3], "LOCKRETURN" } };
 _Static_assert(sizeof pods / sizeof *pods == POD_COUNT, "a pods row per row");
 /* a row's choices: Artist albums and the lock screen's Background three, Standby limit four,
  * every other row two */

@@ -800,7 +800,9 @@ def test_every_widget_is_found_however_deep_it_sits(fw, clock, flow):
         Window(fw, ['img_playcover'])
         fw.mock('stock_savercover_trampoline', lambda *_: 0)
         fw.fn('lockscreen_cover', C.c_int, C.c_void_p)(0x7700)
-    lookups = fw.calls('widget_lookup')
+    # a switch row's own parts are its button's children, looked up there alone (list_toggle)
+    own = (b'_setting_switch', b'_setting_value')
+    lookups = [c for c in fw.calls('widget_lookup') if C.string_at(c[1][1]) not in own]
     assert lookups and [args[2] for _, args in lookups] == [1] * len(lookups)
 
 
@@ -843,7 +845,7 @@ def test_a_page_with_its_switch_off_gets_no_rows(fw):
 def test_the_built_ins_thumbnails_paint_their_wallpaper_once_at_their_size(fw):
     bitmaps, seen = Bitmaps(fw), draws(fw)
     picker = Picker(fw, [b'screensaver_default', *WALLS, b'/mnt/mmc/lockscreenimage/a.jpg'])
-    cleared = [w for w, _ in picker.win.calls('image_base_set_image')]
+    cleared = [w for w, _ in picker.win.calls('image_base_set_image') if w]  # 0: a switch row's mark
     assert cleared == ['image_%d' % i for i in range(1, 7)]  # not the default's or the card's
     for i, thumb in enumerate(picker.thumbs):
         paint(fw, thumb)
@@ -978,7 +980,7 @@ def test_a_page_with_no_list_looks_for_no_thumbnails(fw):
     Bitmaps(fw)
     picker = Picker(fw, [b'screensaver_default', *WALLS], listed=False)
     assert not [name for name, _ in fw.calls() if 'deque' in name]
-    assert picker.win.calls('image_base_set_image') == [] and handlers(fw, EVT_DESTROY) == []
+    assert [w for w, _ in picker.win.calls('image_base_set_image') if w] == [] and handlers(fw, EVT_DESTROY) == []
     assert (picker.rows[-1], 375, 78) in [args[:3] for _, args in fw.calls('widget_resize')]  # the row still comes
 
 

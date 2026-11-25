@@ -261,7 +261,7 @@ static void clock_place(void) {
     char s[64];
     tk_snprintf(s, sizeof s, now ? "%d:%02d" : "--:--", h12 ? (hour + 11) % 12 + 1 : hour, min);
     if (gl.time) widget_set_text_utf8(gl.time, gl.clock ? s : "");
-    if (gl.ampm) widget_set_text_utf8(gl.ampm, !tm || !h12 ? "" : tr(hour < 12 ? "AM" : "PM"));
+    if (gl.ampm) widget_set_text_utf8(gl.ampm, !tm || !h12 ? "" : hour < 12 ? tr("AM") : tr("PM"));
     int big = gl.mode == GL_CLOCK, px = big ? G.big_px : G.time_px;
     int apx = big ? G.big_ampm_px : G.ampm_px, digits = (int)strlen(s) - 1;
     int tw = now ? digits * px * 56 / 100 + px * 28 / 100 : px * 2;
