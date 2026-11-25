@@ -706,6 +706,7 @@ int ratings_menu(void *ctx, event_t *event), rated_hold(widget_t *top);
 void ratings_copy_due(void);
 void ratings_copy_poll(void);
 int rt_play(void *ctx, event_t *event);
+void rate_fill_paint(widget_t *w, canvas_t *canvas);
 
 /* classic_pages.c */
 int kb_key(widget_t *w);

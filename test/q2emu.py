@@ -3949,8 +3949,8 @@ class RateMachine(FileMocks,ShuffleMachine):
     def kept(self):
         data=self.files.get('/mnt/data/ringnav-ratings',b'')
         return sorted(v for v in struct.unpack(f'<{len(data)//4}I',data) if v)
-    def badge(self):
-        w=self.nodes[self.get(self.fav+O['W_PARENT'])]['children'][-1]; return self.nodes[w].get('text') if self.nodes[w]['visible'] else None
+    def badge(self):  # the fill's hearts as a digit, None while hidden: ratings.c's ra.rate_shown (hearts plus 1, after five pointers)
+        w=self.nodes[self.get(self.fav+O['W_PARENT'])]['children'][-1]; return str(self.get(payload_syms['ra']+20)-1) if self.nodes[w]['visible'] else None
     def panel(self):
         p=[w for w in self.nodes[self.np]['children'] if self.nodes[w]['type']=='hscroll_label']
         return p[0] if p and self.nodes[p[0]]['visible'] else None

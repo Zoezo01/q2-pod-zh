@@ -441,6 +441,10 @@ def validate_assets(directory):
     # Library's Apps and App Store rows: the card app's 52 px square disc, stock's System Update icon
     assert read('rootfs.squashfs', xx+'local_apps.png') == (ROOT/'assets/icons/stream_app.png').read_bytes()
     assert read('rootfs.squashfs', xx+'local_store.png') == read('stock.squashfs', xx+'system_update.png')
+    # Now Playing's heart: the rating fill (ratings.c) cuts play_fav's rows FAV_HEART_TOP for FAV_HEART_ROWS
+    heart = imagemagick('png:-', '-format', '%@', 'info:', data=read('rootfs.squashfs', xx+'play_fav.png'))
+    rows = {k: int(re.search(rf'#define {k} (\d+)', (ROOT/'patch/ratings.c').read_text())[1]) for k in ('FAV_HEART_TOP', 'FAV_HEART_ROWS')}
+    assert re.fullmatch(rb'\d+x(\d+)\+\d+\+(\d+)', heart).groups() == (b'%d' % rows['FAV_HEART_ROWS'], b'%d' % rows['FAV_HEART_TOP']), heart
     flow = read('rootfs.squashfs', xx+'default_album_flow.png')
     assert flow == sized_art(master, 160) and png_header(flow) == (160, 160, 8, 6)
     assert read('rootfs.squashfs', xx+'default_album_home.png') == master

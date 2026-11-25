@@ -2853,6 +2853,7 @@ int ringnav_paint(widget_t *w, canvas_t *canvas) {
     }
     edit_paint(w, canvas);
     photos_paint(w, canvas);
+    rate_fill_paint(w, canvas);
     spot_paint(w, canvas);
     if (theme()->sb_w) {
         int table = 0;
@@ -6492,8 +6493,8 @@ int ringnav_display(widget_t *win, void *ctx) {
         /* Theme, then the active theme's options in order, Show Sample Rate after the bar's rows
          * (Show Wordmark ends them; at the end for a theme without it), and Hide last */
         const theme_t *T = theme();
-        setting_row(view, SETTING_THEME);
         int rate = 0;
+        setting_row(view, SETTING_THEME);
         for (int k = 0; k < T->n_opts; ++k) {
             setting_row(view, T->opts[k].setting);
             if (T->opts[k].setting == SETTING_OWN + OWN_SHOWQ2POD && !rate++)

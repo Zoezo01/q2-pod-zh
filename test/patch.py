@@ -8407,10 +8407,10 @@ m.close(); passed()
 # swapped for one telling a tap, stock's toggle that leaves nothing kept, from a RATE_HOLD_MS hold, which opens the
 # picker: five of the heart's images on a dark panel, the wheel moving the rating, Centre saving and Return leaving it.
 m=RateMachine()
-# Bound: stock's click off img_fav, the payload's click and press on, the badge hidden; nothing read yet beyond the file.
+# Bound: stock's click off img_fav, the payload's click and press on, the fill hidden; nothing read yet beyond the file.
 assert ('widget_off_by_func',m.fav,O['EVT_CLICK'],FAV_CLICK) in m.calls and m.badge() is None and m.panel() is None
 assert [t for t,f,ctx in m.nodes[m.fav]['handlers']]==[O['EVT_CLICK'],O['EVT_POINTER_DOWN']]
-assert m.nodes[m.nodes[m.get(m.fav+O['W_PARENT'])]['children'][-1]]['sensitive']==0; passed()  # the badge leaves the heart its taps
+assert m.nodes[m.nodes[m.get(m.fav+O['W_PARENT'])]['children'][-1]]['sensitive']==0; passed()  # the fill leaves the heart its taps
 # A tap is stock's heart: B (playing) into My Fav, nothing kept; again, out. Its click returns 0, as stock's:
 # a STOP would skip the slide_view's own release and leave its grab on the window.
 assert m.tap()==0 and m.favs=={'B'} and m.nodes[m.fav]['image']=='play_fav' and m.kept()==[]
@@ -8426,7 +8426,7 @@ m.top=m.np
 for k,want in ((O['KEY_NEXT'],5),(O['KEY_PREV'],4),(O['KEY_PREV'],3)): assert m.call(k)==11
 assert m.hearts()==['play_fav']*3+['play_unfav']*2 and m.caption()=='3 of 5' and m.favs=={'B'}
 assert m.call(O['KEY_RETURN'])==11 and m.panel() is None and m.favs=={'B'} and m.kept()==[]; passed()
-# Centre saves 3: My Fav out through stock's own click, 3 kept, the badge on the empty heart.
+# Centre saves 3: My Fav out through stock's own click, 3 kept, the fill on the empty heart.
 m.heart()
 for _ in range(2): m.call(O['KEY_PREV'])
 assert m.call(O['KEY_CENTER'])==11 and m.panel() is None and m.favs==set()
@@ -8450,7 +8450,7 @@ rc_due=payload_syms['rc_due']; m.word(rc_due,0); m.heart(); m.call(O['KEY_RETURN
 assert m.tap()==0 and m.get(rc_due)==1
 m.word(rc_due,0); m.heart(); m.call(O['KEY_NEXT']); m.call(O['KEY_CENTER']); assert m.get(rc_due)==1 and m.kept()==[(key_of('B')&~7)|1]
 assert m.tap()==0 and m.favs=={'B'} and m.kept()==[]; passed()
-# Kept across boots; the badge follows the playing track on the UI tick.
+# Kept across boots; the fill follows the playing track on the UI tick.
 assert m.tap()==0 and m.favs==set(); m.heart(); m.call(O['KEY_NEXT']); m.call(O['KEY_NEXT']); m.call(O['KEY_CENTER'])
 m2=RateMachine(m.files['/mnt/data/ringnav-ratings']); assert m2.badge()=='2'
 m2.word(O['MCL_POS'],0); m2.advance(500); assert m2.badge() is None; passed()

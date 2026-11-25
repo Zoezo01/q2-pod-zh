@@ -877,7 +877,7 @@ MSG_INK = {'l': 0x1c1c1e, 'd': 0xffffff}
 CLOCK_PX = 110
 CLOCK_FACE = {'l': (0xe9e9ec, 0x6e6e73), 'd': (0x2c2c2e, 0x98989d)}
 # Now Playing's marks: a glyph on an NP_BOX px square in the half's ink (MSG_INK); More, pressed, in its quiet grey; the
-# heart the rating panel's at NP_HEART of its size, stock's own, so its rating badge sits where it did, filled when on.
+# heart the rating panel's at NP_HEART of its size, stock's own, so its rating fill sits where it did, filled when on.
 NP_BOX, NP_MARKS, NP_HEART = 32, ('more', 'order', 'shuffle', 'repeat', 'repeat1'), .8
 NP_QUIET = {'l': 0x6e6e73, 'd': 0x98989d}
 def flat_glyph(glyph, ink, size=FLAT_BOX, k=1):

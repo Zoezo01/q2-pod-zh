@@ -200,7 +200,7 @@ static void centre(widget_t *w, widget_t *art, int dx, int dy) {
         widget_move_resize(w, dx + I(art, W_X) + (I(art, W_W) - I(w, W_W)) / 2,
                            dy + I(art, W_Y) + (I(art, W_H) - I(w, W_H)) / 2, I(w, W_W), I(w, W_H));
 }
-/* ringnav_playing, before rate_bind (so the heart's rating badge goes where the heart is), and
+/* ringnav_playing, before rate_bind (so the heart's rating fill goes where the heart is), and
  * lockscreen_init, after big_clock: page's rules on its window, once; Now Playing's only in its
  * iPod layout (Centred's stock page has the same names). A size is the rule's, or, on a row that
  * keeps its own, the box the Studio drew it in (its move fits that size), the widget centred in

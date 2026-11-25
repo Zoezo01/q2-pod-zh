@@ -1215,9 +1215,11 @@ class Heart:
             fw.fn('rate_bind', None, C.c_void_p)(self.win)
 
     def badge(self):
-        """The badge's digit, or None while it's hidden."""
-        badge = [w for w in self.ui.kids[self.win] if self.ui.kind[w] == 'hscroll_label_create'][0]  # before the picker's
-        return None if badge in self.ui.hidden else self.ui.text[badge]
+        """The fill's hearts as a digit, or None while it's hidden: rate_bind's overlay on the heart, and ra's
+        rate_shown (hearts plus 1, after its five pointers)."""
+        fill = [w for w in self.ui.kids[self.win] if self.ui.kind[w] == 'image_create' and w != self.heart][0]
+        shown = C.c_int.from_address(C.addressof(self.fw.var('ratings__ra', C.c_char)) + 5 * 8).value
+        return None if fill in self.ui.hidden else str(shown - 1)
 
     def panel(self):
         return self.ui.lookup(self.win, 'rate_panel', 0)

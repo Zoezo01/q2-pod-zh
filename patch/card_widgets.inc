@@ -4,7 +4,7 @@
  * font rule), and the box a move or size keeps it in, in its parent's coordinates: the parent's
  * laid-out size on the ipod geometry set, or less on purpose; 0s where it takes neither. The art
  * comes first (card_rules.c's ART), Home's rows last (its HOME). Left out on purpose: the heart's
- * hide (its rating badge would stay), icon sizes (Modern's marks draw at their own), the times' and
+ * hide (its rating fill would stay), icon sizes (Modern's marks draw at their own), the times' and
  * the bar's moves (np_beside reads their rows), the dots' (np_full and the visualizer lay them out),
  * the lock clock's size and font (big_clock lays it out), img_more (Tidal's only way to More),
  * tint, the status bar, the Shortcut row's text (its label is the Shortcut's, written at each

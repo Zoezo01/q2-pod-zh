@@ -359,10 +359,10 @@ def test_a_hidden_art_hides_its_glyph_through_np_theme(fw, page):
     assert p.calls('widget_set_opacity', 'img_playstate')[-1] == 0
 
 
-def test_the_heart_moves_before_its_badge(page):
+def test_the_heart_moves_before_its_fill(page):
     p = page(b'move img_fav 20 100')
-    badge = [w for w in p.ui.kids[p.w['view_album']] if not p.ui.names[w]]
-    assert p.box('img_fav') == (20, 100, 50, 50) and [p.ui.box(b)[:2] for b in badge] == [(20 + 50 - 18, 106)]
+    fill = [w for w in p.ui.kids[p.w['view_album']] if not p.ui.names[w]]
+    assert p.box('img_fav') == (20, 100, 50, 50) and [p.ui.box(f) for f in fill] == [(20, 100, 50, 50)]
 
 
 @pytest.mark.parametrize('t', [MINIMAL, MODERN], ids=['minimal', 'modern'])
