@@ -144,7 +144,6 @@ extern int stock_saver_trampoline(widget_t *, void *), stock_saverrows_trampolin
     stock_saverlist_trampoline(void), stock_savercover_trampoline(widget_t *);
 extern void pod_rows(widget_t *win, const char *view_name, int first, int n,
                      const char *const *icons);
-extern int ringnav_wm_paint(widget_t *wm); /* navigation.c: window_manager_paint's leaf */
 
 /* The built-ins' names in the picture list and SYSSET SCREENSAVERPATH, by id. None is a file:
  * stock's lock window falls back to the name as an asset, finds none and draws nothing, and these
