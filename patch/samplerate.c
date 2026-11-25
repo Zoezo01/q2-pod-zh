@@ -236,8 +236,7 @@ void bar_rate_sync(int left, int x, int room) {
         widget_move_resize(label, at, I(row, W_Y), w, I(row, W_H));
         changed = 1;
     }
-    char now[16];
-    if (on && (widget_get_text_utf8(label, now, sizeof now) || strcmp(now, text))) {
+    if (on && text_differs(label, text)) {
         widget_set_text_utf8(label, text);
         changed = 1;
     }
