@@ -5021,7 +5021,7 @@ for name,off,on in thumb_exits():
 # Closing the page, Return's way: the wheel's back with it; the album named is the one kept.
 m=thumb_page(); tp(m); thold(m); tspin(m,300,-30); shown=tcaption(m); m.close(); m.slide=0; to_other(m); tp(m); assert traw(m)==0
 tp(m); assert m.get(ps['wheel_raw'])==0; passed()
-# Whoever owns the wheel next keeps it: Breakout's and a card game's flag, left alone once the covers are gone...
+# Whoever owns the wheel next keeps it: Bricks' and a card game's flag, left alone once the covers are gone...
 m=thumb_page(); tp(m); to_other(m); tp(m); assert traw(m)==0; m.word(ps['wheel_raw'],1)
 for _ in range(5): tp(m)
 assert traw(m)==1; m.word(ps['wheel_raw'],0); passed()
@@ -8677,8 +8677,8 @@ for fail_size in (5, 20):
 passed()
 
 # Games (patch/games.c, iPod): the Library's Games row, always there, opens a chooser of Sudoku,
-# Breakout, Solitaire and Snake. A game's keys never reach stock's filter or the media keys; Return goes game -> chooser ->
-# Library. Breakout's frame timer and raw wheel run only while it plays: Play/Pause, the screen going
+# Bricks, Solitaire and Snake. A game's keys never reach stock's filter or the media keys; Return goes game -> chooser ->
+# Library. Bricks' frame timer and raw wheel run only while it plays: Play/Pause, the screen going
 # off and leaving each stop them, and closing frees the state.
 CONFIG['SHORTCUT']='6'; m=CardMachine({},{}); del CONFIG['SHORTCUT']
 G_SCREEN,G_PICKING,G_PAUSED,G_CELL,G_CUR,G_VX=36,44,56,76,157,164
@@ -8696,7 +8696,7 @@ assert m.call(address=payload_syms['home_shortcut_open'],args=(0,m.event,0,0),ga
 m.page=m.top; assert m.nodes[m.page]['name']=='games_page'
 m.close()
 sheet,chooser=games_open(); G=m.get(payload_syms['g'])
-assert labels(chooser)==['Games','Sudoku','Breakout','Solitaire','Snake'] and not m.nodes[sheet]['visible']
+assert labels(chooser)==['Games','Sudoku','Bricks','Solitaire','Snake'] and not m.nodes[sheet]['visible']
 rows=m.nodes[m.find('scroll_view',chooser)]['children']
 # The wheel carries over at both ends of the real chooser: a bump, then after a pause the other end.
 w=m.find('scroll_view',chooser); m.paint(w,gap=0)
@@ -8734,7 +8734,7 @@ before=cells(); key(O['KEY_PLAY']); assert cells()==before and word(52); paint()
 key(O['KEY_RETURN']); assert cells()==before and not word(52)
 key(O['KEY_RETURN']); m.advance(0); assert word(G_SCREEN)==0 and m.nodes[chooser]['visible'] and not m.nodes[sheet]['visible']
 assert m.key()==11; passed()
-# Breakout: the frame timer and the raw wheel while it plays; the wheel's travel turns the paddle.
+# Bricks: the frame timer and the raw wheel while it plays; the wheel's travel turns the paddle.
 m.page=m.top; pick(1); assert word(G_SCREEN)==2 and len(frames())==1 and m.get(payload_syms['wheel_raw'])==1
 m.word(payload_syms['wheel_travel'],-50&0xffffffff); m.advance(34); assert word(G_VX+16)==0 and m.get(payload_syms['wheel_travel'])==0
 made=lambda *a: [c[0] for c in m.calls if c[0] in a]
@@ -8751,7 +8751,7 @@ m.byte(syms['g_backlight_status'],0); m.advance(40); m.byte(syms['g_backlight_st
 assert word(G_PAUSED)==1 and not frames() and m.get(payload_syms['wheel_raw'])==0
 key(O['KEY_RETURN']); assert word(G_PAUSED)==2; key(O['KEY_NEXT']); paint(); key(O['KEY_CENTER']); m.advance(0)
 assert word(G_SCREEN)==0 and not frames() and m.get(payload_syms['wheel_raw'])==0
-assert m.key()==11; passed()  # Return in the chooser after Breakout goes back to the Library
+assert m.key()==11; passed()  # Return in the chooser after Bricks goes back to the Library
 # Solitaire (piles 0 stock, 1 waste, 2-5 foundations, 6-12 columns; a card suit*13+rank, 64 up): Centre on
 # the stock draws and saves; the wheel walks the piles, Previous/Next jump between the rows; Centre picks a
 # run up and drops it where it fits, turning the card under it; Centre twice sends a card home; Return

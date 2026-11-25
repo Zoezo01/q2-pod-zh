@@ -10,7 +10,7 @@
   - Apps: File Browser's **Edit Tags** lists the song playing at the top again. Since 1.9.1 apps run without root and couldn't see which song the player had open; Q2 Pod now tells them (File Browser 1.5 and later).
   - Cover Flow: under Classic and Classic Modern, an album turns over to its songs from the moment you press Centre and slows into place, and Return turns it back the same way. The turn hardly moved in its first frames.
   - Cover Flow: under Classic and Classic Modern, a playlist of up to 500 songs turns over to its songs, with their total time. Only playlists of up to 200 did; a longer one opened as a list, as it still does past 500.
-  - Games: **Vortex** is now named **Breakout**. It is the same game, and it keeps its best score.
+  - Games: **Vortex** is now named **Bricks**. It is the same game, and it keeps its best score.
   - User guide: it has a release of its own, [User Guide](https://github.com/DiamondBond/q2-pod/releases/tag/guide), as PDF, EPUB and Markdown, so a version's release carries only update.tar.
 - **1.9.2**:
   - Now Playing: the heart fills or empties as soon as you choose **Add to Favourites** or **Remove from Favourites** on the hold menu. It kept its old look until the next song, so tapping it then undid the change.
