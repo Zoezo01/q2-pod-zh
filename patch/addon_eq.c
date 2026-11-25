@@ -39,11 +39,10 @@ static int is(const char *body, const char *word) {
  * 17 always do. */
 static void num(char *out, unsigned size, double v) {
     double back;
-    for (int digits = 15; digits < 17; ++digits) {
+    for (int digits = 15; digits <= 17; ++digits) {
         snprintf(out, size, "%.*g", digits, v);
         if (peq_number(out, &back) && back == v) return;
     }
-    snprintf(out, size, "%.17g", v);
 }
 
 /* p as the card EQ folder's text, which peq_parse reads back to the same preset: no Preamp line is
