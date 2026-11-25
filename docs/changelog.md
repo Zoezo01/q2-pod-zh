@@ -1,6 +1,8 @@
 # Changelog
 
 - **1.9.4**:
+  - Apps: **Rockbox** is an app on **Library → Apps**, with Rockbox 3.24 or later from the App Store. Pick it to start Rockbox; Q2 Pod comes back when Rockbox shuts down. Installing Rockbox no longer makes the Q2 start in it: **System settings → Power → Boot to: Rockbox** does, and without that choice the Q2 starts in Q2 Pod.
+  - Display: **Shortcut**, in **Display → Appearance**, opens a list to pick from: **Favourites**, **Shuffle**, **Rated Albums**, **Playlists**, **Artists**, **Albums**, **Games**, **Podcasts**, **Audiobooks** and **None**, then every app and every card game on the card. With none picked, the Shortcut is **Favourites**; a Shortcut set to Rockbox or Groovebox stays on it.
   - Library: **Era** has two tabs, **Decades** and **Years**. **Years** lists each year with albums, newest first; a year opens its albums, with **Play All** and **Shuffle**, as a decade does. Tap a tab, or press **Previous** or **Next**. Era opens on **Decades**, as before.
   - Cover Flow: under Classic and Classic Modern, Return from a song picked on a turned-over album goes back to the covers: the cover flies from Now Playing's art to the middle as the other covers slide in from the edges, as in spghetti's Cover Flow lab.
 - **1.9.3**:
