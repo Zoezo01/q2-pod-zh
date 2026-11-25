@@ -116,8 +116,7 @@ static const char *library_parse(char *s, char *why, unsigned size) {
             return why;
         }
         *w++ = add ? 'a' : 'i';
-        for (k = 0; name[k]; ++k) w[k] = name[k];
-        w[k] = 0, w[k + 1] = 0;
+        k = strlen(name), memmove(w, name, k + 1), w[k + 1] = 0;
         w += k + 1;
     }
     return 0;
