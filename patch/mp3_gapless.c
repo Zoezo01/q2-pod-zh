@@ -14,12 +14,6 @@ typedef struct {
  * ponytail: a file with no extension and no iTunSMPB (no tag, VBRI) keeps 1624 to 2176 samples of
  * delay and padding at each boundary, nothing says how many to cut. docs/internals.md lists these.
  */
-static int mp3_named(const unsigned char *n, const char *name) {
-    for (unsigned i = 0; i < 4; ++i)
-        if ((n[i] | 32) != name[i]) return 0;
-    return 1;
-}
-
 static unsigned mp3_crc16(const unsigned char *p, unsigned n) {
     unsigned c = 0;
     while (n--) {
@@ -48,7 +42,9 @@ static int mp3_extension(const unsigned char *h, unsigned size, unsigned at, uns
         if (h[at + i] < 32 || h[at + i] > 126) return 0;
     for (unsigned i = 9; i < 21; ++i) text += h[at + i] >= 32 && h[at + i] <= 126;
     if (text == 12) return 0;
-    if (!mp3_named(h + at, "lame") && !mp3_named(h + at, "lavc") && !mp3_named(h + at, "lavf") &&
+    if (strncasecmp((const char *)h + at, "lame", 4) &&
+        strncasecmp((const char *)h + at, "lavc", 4) &&
+        strncasecmp((const char *)h + at, "lavf", 4) &&
         mp3_crc16(h, at + 34) != ((unsigned)h[at + 34] << 8 | h[at + 35]))
         return 0;
     unsigned delay = (unsigned)h[at + 21] << 4 | h[at + 22] >> 4;
