@@ -419,28 +419,23 @@ void paint_clock(widget_t *w, canvas_t *canvas, int x, int y, int size, const ch
     }
     stock_canvas_set_fill_color(canvas, fill);
 }
-static const clock_part_t time_clock[] = {
-    { 0x161b22, 0, 5, 1, { { -12, 0 }, { -21, -60 }, { 0, -190 }, { 21, -60 }, { 12, 0 } } },
-    { 0x161b22, 0, 5, 2, { { -10, 0 }, { -18, -70 }, { 0, -280 }, { 18, -70 }, { 10, 0 } } },
-    { 0x161b22, 37, 0, 0, { { 0 } } }, /* r 3, stroked 1.3 */
-    { 0xffffff, 24, 0, 0, { { 0 } } },
-};
-
 /* UTF-8 text in final colours, as Light Mode's text setter flips what it's given. */
 static void time_text(canvas_t *canvas, const char *s, const rect_t *r, unsigned px, unsigned rgb,
                       unsigned alpha) {
     caption(canvas, s, r->x, r->y, r->w, r->h, px,
             alpha << 24 | (RGBA(flip_if(ipod_light(), rgb)) & 0xffffff));
 }
-/* The flat look's Set Time hands in the half's ink, [0] dark and [1] light (flat_ink), and the
- * pivot's dot in its face's grey (flat_rest). */
+/* The clock's parts for an ink and a face: the flat look's Set Time, in the half's ink, [0] dark
+ * and [1] light (flat_ink), and the pivot's dot in its face's grey (flat_rest); Classic's clock
+ * (time_clock). */
 #define TIME_HANDS(ink, face)                                                                      \
     {                                                                                              \
         { ink, 0, 5, 1, { { -12, 0 }, { -21, -60 }, { 0, -190 }, { 21, -60 }, { 12, 0 } } },       \
         { ink, 0, 5, 2, { { -10, 0 }, { -18, -70 }, { 0, -280 }, { 18, -70 }, { 10, 0 } } },       \
-        { ink, 37, 0, 0, { { 0 } } },                                                              \
+        { ink, 37, 0, 0, { { 0 } } }, /* r 3, stroked 1.3 */                                       \
         { face, 24, 0, 0, { { 0 } } },                                                             \
     }
+static const clock_part_t time_clock[] = TIME_HANDS(0x161b22, 0xffffff);
 static const clock_part_t time_clock_flat[2][4] = { TIME_HANDS(0xffffff, 0x2c2c2e),
                                                     TIME_HANDS(0x1c1c1e, 0xe9e9ec) };
 /* A cell's text: AM or PM, the 12-hour hour, or the field's number in b (cap bytes). */
