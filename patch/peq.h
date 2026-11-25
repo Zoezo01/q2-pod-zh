@@ -198,7 +198,7 @@ typedef struct {
     float ring[VIS_RING][2];
 } vis_tap;
 long long now_ns(void);
-unsigned long long now_ms(void);
+unsigned long long now_ms(void); /* CLOCK_MONOTONIC */
 /* Crossfade (docs/internals.md#crossfade): demo writes the next track change's fade, an int in ms,
  * 0 for none; hciplayer's filter maps the file read-only and holds the outgoing track's tail for
  * it. */
@@ -672,7 +672,6 @@ void caption(canvas_t *canvas, const char *s, int x, int y, int w, int h, unsign
 unsigned wide_text(unsigned *to, unsigned room, const char *s);
 void peq_paint(widget_t *w, canvas_t *canvas);
 /* spotify.c's, shared with radio.c */
-unsigned long long now_ms(void); /* CLOCK_MONOTONIC */
 void field(const char *raw, const char *key, char *out, unsigned n);
 unsigned long long number(const char *raw, const char *key);
 unsigned state_read(const char *path, char *raw, unsigned size);
