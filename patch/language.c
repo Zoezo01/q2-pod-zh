@@ -301,15 +301,6 @@ static int copy_buf(const char *dst, void *b, unsigned n) {
     return 0;
 }
 
-/* src (max bytes at most) into dst whole, as copy_buf. */
-static int copy_in(const char *src, const char *dst, unsigned max) {
-    unsigned n = 0;
-    char *b = read_all(src, max, &n);
-    int ok = b && copy_buf(dst, b, n);
-    free(b);
-    return ok;
-}
-
 /* A pick: the new table's copy, then LANG, then the old copy gone, so a cut keeps the old
  * language, or English. */
 static int lang_pick(void *ctx, event_t *event) {
@@ -320,7 +311,11 @@ static int lang_pick(void *ctx, event_t *event) {
     if (!restart_asked()) return 0;
     if (i >= 0) {
         tk_snprintf(copy, sizeof copy, LANG_DATA "/q2-lang-%s.tsv", lg.code[i]);
-        if (!copy_in(lg.file[i], copy, LANG_BYTES)) {
+        unsigned n = 0; /* lg.file[i] (LANG_BYTES at most) whole into copy, as copy_buf */
+        char *b = read_all(lg.file[i], LANG_BYTES, &n);
+        int ok = b && copy_buf(copy, b, n);
+        free(b);
+        if (!ok) {
             toast(tr("Couldn't copy the language"));
             return 0;
         }
