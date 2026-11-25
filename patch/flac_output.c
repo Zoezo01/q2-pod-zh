@@ -14,12 +14,12 @@
 typedef unsigned int u32;
 typedef unsigned short u16;
 typedef int s32;
-typedef void (*output_fn)(void **, s32 **, int, int, int);
 
 #define OUTPUT(NAME, TYPE, PLANAR, STOCK)                                                          \
     void NAME(void **output, s32 **input, int channels, int length, int shift) {                   \
         if (channels != 1 && channels != 2) {                                                      \
-            ((output_fn)(STOCK))(output, input, channels, length, shift);                          \
+            ((void (*)(void **, s32 **, int, int, int))(STOCK))(output, input, channels, length,   \
+                                                                shift);                            \
             return;                                                                                \
         }                                                                                          \
         if (length <= 0) return;                                                                   \
